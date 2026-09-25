@@ -41,7 +41,7 @@ import {
   instantiateConstraint,
   isNudoConstraint,
   isIntFlag,
-  lit as cLit,
+  litC as cLit,
   number,
   shape,
   string,

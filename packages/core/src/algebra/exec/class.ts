@@ -152,8 +152,8 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
   // JS 内建构造器（Error/Date/URL…）：直接 brand，避免 $call 对非 Abs 炸掉
   if (typeof cls === "function") {
     // new Array(n) → n 元空洞 tuple；new Array(a,b,c) → 字面量 tuple；
-    // 非法 length（1.5/-1/NaN/超 2^32-1）→ RangeError（与 ast-eval 共用
-    // makeArrayCtorAbs 口径）
+    // 非法 length（1.5/-1/NaN/超 2^32-1）→ RangeError
+    // （makeArrayCtorAbs 口径）
     if (cls === Array) {
       return makeArrayCtorAbs(args);
     }
@@ -818,7 +818,7 @@ export function $invoke(
       return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
     }
   }
-  // 数组/元组方法（与 ast-eval 口径对齐）
+  // 数组/元组方法
   if (thisVal.shape.k === "arr" || thisVal.shape.k === "tuple") {
     const arrR = invokeArrMethod(thisVal, method, args);
     if (arrR !== undefined) return arrR;
@@ -833,7 +833,7 @@ export function $invoke(
     const sm = stringRegexMethod(thisVal, method, args);
     if (sm !== undefined) return sm;
   }
-  // 字符串/模板方法表（B 路径此前缺失，与 ast-eval 对齐）
+  // 字符串/模板方法表
   {
     const viaTable = callAbsMethod(thisVal, method, args);
     if (viaTable) return viaTable;
@@ -936,7 +936,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
     if (typeof v === "number" && (v === 0 || Number.isNaN(v))) return false;
     return true;
   };
-  // 统一委托 applyCallbackAbs（不新增 env.fns；Abs 侧 D/E 与 ast-eval 同轨）
+  // 统一委托 applyCallbackAbs（不新增 env.fns）
   const callFn = (fn: unknown, ...fnArgs: Abs[]): Abs => {
     const sumIdx = fnArgs.findIndex(
       (a) => a && typeof a === "object" && "shape" in (a as object) && (a as Abs).shape.k === "sum",
@@ -984,7 +984,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
     }
     const out = callFn(args[0], shape.element, unknownIdx());
     const el = mapElementFallback(asAbs(args[0]), shape.element, out);
-    // 与 ast-eval map 同轨：fallback 强制 partial，否则 confJoin(arr, out)
+    // fallback 强制 partial，否则 confJoin(arr, out)
     const conf =
       el === out ? confJoin(arr.conf, out.conf) : "partial";
     return abs({ k: "arr", element: el }, undefined, undefined, conf);

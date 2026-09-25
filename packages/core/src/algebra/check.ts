@@ -744,8 +744,8 @@ function checkSourceInner(
     setBAssignCollector(prevAssign);
     setBCallCollector(prevCall);
   }
-  // fail-closed：B 绑定表缺失（B-incapable 文件）→ 无绑定表（旧 ast-eval
-  // 兜底已删——「部分覆盖」改为「显式无信息」，与 unknown=引擎债 原则一致）
+  // fail-closed：B 绑定表缺失（B-incapable 文件）→ 无绑定表；
+  // 「部分覆盖」改为「显式无信息」，与 unknown=引擎债 原则一致
   void bBindings;
 
   const callIssues = canSkipLiteralCallScan(source, file)

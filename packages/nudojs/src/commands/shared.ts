@@ -27,6 +27,12 @@ import {
 
 export type EmitCasesOptions = { mode: "add" | "update"; dryRun: boolean; exitOnDiff: boolean };
 
+/** Usage-error face: one-line reason + a product-style `fix:` hint (same face as check diagnostics). */
+function usageError(message: string, fix: string): void {
+  console.error(message);
+  console.error(`fix:  ${fix}`);
+}
+
 export async function reemitUpdate(
   filePath: string,
   source: string,
@@ -51,7 +57,10 @@ export function collectExternalRecords(sites: string[]): CallRecord[] | undefine
   for (const site of sites) {
     const sitePath = resolve(site);
     if (!existsSync(sitePath)) {
-      console.error(`Callsite file not found: ${sitePath}`);
+      usageError(
+        `Callsite file not found: ${sitePath}`,
+        `pass --from <file-or-dir> that exists; it supplies call@ records for generation`,
+      );
       process.exitCode = 1;
       continue;
     }
@@ -79,20 +88,29 @@ export function collectNudoFiles(dir: string): string[] {
 export function resolveTargets(path: string): string[] {
   const resolved = resolve(path);
   if (!existsSync(resolved)) {
-    console.error(`Not found: ${resolved}`);
+    usageError(
+      `Not found: ${resolved}`,
+      `check the path; it must be an existing .js/.mjs/.ts file or a directory containing them`,
+    );
     process.exitCode = 1;
     return [];
   }
   if (statSync(resolved).isDirectory()) {
     const files = collectNudoFiles(resolved);
     if (files.length === 0) {
-      console.error(`No nudo files found in directory: ${resolved}`);
+      usageError(
+        `No nudo files found in directory: ${resolved}`,
+        `add .js/.mjs/.ts sources (or point at a directory that has them); sidecar/decl/JSX are skipped`,
+      );
       process.exitCode = 1;
     }
     return files;
   }
   if (!isNudoTargetPath(resolved)) {
-    console.error(`Not an analysis target (need .js/.mjs/.ts, not sidecar/decl/JSX): ${resolved}`);
+    usageError(
+      `Not an analysis target (need .js/.mjs/.ts, not sidecar/decl/JSX): ${resolved}`,
+      `pass a .js/.mjs/.ts analysis file (not .nudo.js sidecars, .d.ts decls, or .jsx/.tsx)`,
+    );
     process.exitCode = 1;
     return [];
   }

@@ -24,7 +24,7 @@ function pathRegExpBrand(): Abs {
   );
 }
 
-/** RegExp brand：source/flags/lastIndex 进 slots（B-path 与 ast-eval 共用） */
+/** RegExp brand：source/flags/lastIndex 进 slots（B-path evalRegExpCtor / $regex 共用） */
 export function regexBrandAbsFrom(pattern: string, flags: string): Abs {
   return abs(
     {

@@ -9,16 +9,16 @@ description: 安装 Nudo 的 CLI、VS Code 扩展与 Vite 插件，支持 npm、
 ## 前置要求
 
 - **运行发布版 CLI**：Node.js >= 20（各发布包 `engines`）
-- **开发本仓库**：Node.js >= 18（CI 使用 Node 24）
+- **开发本仓库**：Node.js >= 20（CI 使用 Node 24）
 
 发布包以编译后的 ESM `dist/` 发布（`files: ["dist"]`），不是 TypeScript 源码。
 
 ## CLI
 
 ```bash
-# 薄壳包（发布名为 `nudojs`；安装后得到 `nudo` 命令）
+# 全局安装 —— 得到 `nudo` 命令
 npm install -g nudojs
-# 或完整 CLI 包
+# 或作为项目依赖安装
 npm install nudojs
 # 或
 pnpm add nudojs

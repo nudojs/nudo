@@ -22,7 +22,7 @@ import {
 } from "./pred.ts";
 import { implies } from "./pred.ts";
 
-// --- 位运算 / 移位 / 幂 / ToNumber（B-path $bitand 等与 ast-eval 同口径） ---
+// --- 位运算 / 移位 / 幂 / ToNumber（B-path $bitand 等运算符路由） ---
 
 /** 数值可被 JS ToNumber/ToNumeric 折叠的字面量；undefined 字面量不在此列（+undefined → unknown/NaN 不折） */
 function coercibleNumberLit(v: ReturnType<typeof litValue>): v is number | string | boolean | null {

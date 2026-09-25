@@ -14,8 +14,8 @@
  *
  * 在 *.nudo.js 里执行；不是 zod 绑定，是我们自己的运行时 API。
  * 不需要 interface/type 语法——契约用 JS 表达式声明。
- * 注意：本文件的 lit/and 构建器与 term/pred 同名导出在桶导出处冲突，
- * 消费方从 "./constraint.ts" 直接路径导入。
+ * 命名：litC/andC 与 term.ts 的 lit、pred.ts 的 and 消歧（桶导出不再冲突）。
+ * 侧车注入表仍以 `lit`/`and` 为键名（*.nudo.js 用户写法不变）。
  */
 
 import type { Pred, PrimName } from "./pred.ts";
@@ -282,8 +282,8 @@ function toPlainConstraint(c: NudoConstraint): NudoConstraint {
   };
 }
 
-/** lit(v)：字面量契约——prim 按 v 类型、eq(self, v) pred 编码（不开新字段） */
-export function lit(v: number | string | boolean | null | undefined): ConstraintBuilder {
+/** litC(v)：字面量契约——prim 按 v 类型、eq(self, v) pred 编码（不开新字段） */
+export function litC(v: number | string | boolean | null | undefined): ConstraintBuilder {
   const prim: PrimName | undefined =
     typeof v === "number" ? "number"
     : typeof v === "string" ? "string"
@@ -294,7 +294,7 @@ export function lit(v: number | string | boolean | null | undefined): Constraint
 
 /**
  * union/array/shape/fn 嵌套位接受：约束构建器，或指令文法的具体字面量
- * （5 / "hi" / true / null / undefined）。字面量归一为 lit(v) 约束。
+ * （5 / "hi" / true / null / undefined）。字面量归一为 litC(v) 约束。
  */
 function asNestedConstraint(x: unknown, ctx: string): NudoConstraint {
   if (isConstraint(x)) return toPlainConstraint(x);
@@ -305,7 +305,7 @@ function asNestedConstraint(x: unknown, ctx: string): NudoConstraint {
     typeof x === "string" ||
     typeof x === "boolean"
   ) {
-    return toPlainConstraint(lit(x));
+    return toPlainConstraint(litC(x));
   }
   throw new Error(
     `nudo: ${ctx} expects a constraint value (number()/string()/…) or a concrete literal; received a non-constraint`,
@@ -351,11 +351,11 @@ export function fn(
 }
 
 /**
- * and(...cs)：标量合取（Phase 1 最小实现）。
+ * andC(...cs)：标量合取（Phase 1 最小实现）。
  * prim 一致（缺省 prim 视为无 prim 约束、可与任意 prim 合并）→ preds 拼接；
  * prim 不一致或任一含 fields/element/members/fn → throw。
  */
-export function and(
+export function andC(
   ...cs: (NudoConstraint | ConstraintBuilder)[]
 ): ConstraintBuilder {
   if (cs.length === 0)

@@ -17,7 +17,7 @@ import {
   type EffectiveInterfaceOpts,
 } from "../interface.ts";
 import { execNudoModule, takeRefineDiags } from "../refine.ts";
-import { isNudoConstraint, number, string, lit, union, fn, shape, array } from "../constraint.ts";
+import { isNudoConstraint, number, string, litC as lit, union, fn, shape, array } from "../constraint.ts";
 
 /** 虚拟文件系统 loader：相对 spec 按 fromFile 目录解析 */
 function makeFiles(files: Record<string, string>) {

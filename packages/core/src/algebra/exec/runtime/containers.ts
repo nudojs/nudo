@@ -59,7 +59,7 @@ export function tupleOrWiden(els: Abs[], conf: Confidence): Abs {
   return abs({ k: "tuple", elements: els }, undefined, undefined, conf);
 }
 
-/** 数组字面量 → ≤cap tuple（逐元素精确）/ >cap arr；策略与 ast-eval 同源（containers.ts） */
+/** 数组字面量 → ≤cap tuple（逐元素精确）/ >cap arr；策略与 containers.ts 同源 */
 export function $arr(items: Abs[]): Abs {
   return tupleOrWiden(items.map(asAbsVal), "exact");
 }

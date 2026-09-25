@@ -180,7 +180,7 @@ All flags and `package.json#nudo.check` config are specified once in the [CLI Re
 | Option | Description |
 |--------|-------------|
 | `--watch` / `-w` | Re-run on changes (flag, not a verb) |
-| `--json` | Machine-readable signatures + diagnostics (single file) |
+| `--json` | Machine-readable signatures + diagnostics (`CheckJson` / `CheckJsonMulti`) |
 | `--verbose` | Expand Abs signatures (term/pred/conf detail) |
 | `--abs` | Per-function algebra face (shape + conf; `--generalize` adds the symbolic term/pred α) — observation, still gates L1/L2 |
 | `--fn <name>` | With `--abs`: restrict to one function |
@@ -206,7 +206,7 @@ Violations written **in the analyzed file** report `nudo:constraint-violated`. `
 nudo check src/
 # exit 1 on any error-level diagnostic
 
-# machine-readable (single file only)
+# machine-readable (1 file → CheckJson; N files → CheckJsonMulti envelope)
 nudo check src/lib.js --json
 ```
 

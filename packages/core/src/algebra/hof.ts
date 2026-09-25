@@ -834,7 +834,7 @@ export function applyCallbackAbs(
   return applyCallbackHost(cb, args, env, phi, budget);
 }
 
-// --- 双路径共享结果投影（ast-eval 与 exec/class 禁止各写一套）---
+// --- 共享结果投影（exec/class 与 hof 共用，禁止各写一套）---
 
 /** undefined 值的统一 Abs 表示（forEach/find 等） */
 export function undefAbs(): Abs {

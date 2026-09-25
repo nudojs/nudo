@@ -2639,7 +2639,16 @@ describe("check gold recall (human-labeled)", () => {
     expect(FP, `unexpected FP: ${detail} ${failures.join(" | ")}`).toBe(0);
     expect(rec, `recall < 1: ${detail}`).toBe(1);
     expect(prec, `precision < 1: ${detail}`).toBe(1);
-    expect(TP).toBeGreaterThan(5);
+    // TP floor：GOLD 内 violation 标注 65 条，当前全捕获（TP=65）。
+    // 此 floor 只许上调，不得静默下调。
+    expect(TP, `TP floor (${detail})`).toBeGreaterThanOrEqual(65);
+    // 金标用例总数冻结：防止 corpus 被静默缩水（或 violation→ok 换标凑绿）。
+    // 增删用例必须显式改此常量。
+    const GOLD_CASE_COUNT = 144;
+    expect(
+      TP + FN + FP + TN + knownFn,
+      `gold case count changed — corpus must not silently shrink: ${detail}`,
+    ).toBe(GOLD_CASE_COUNT);
     // 已知漏报必须显式成文，禁止静默丢弃或改标凑绿
     expect(knownFn, `knownFn count changed — update notes: ${detail}`).toBe(0);
   });

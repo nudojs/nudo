@@ -9,10 +9,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { analyzeFile } from "../analyzer.ts";
 import {
-  detectDualEntryFromPackageJson,
-  dualEntryForFile,
-  dualEntryIssueForFile,
-} from "../dual-entry.ts";
+  detectEntryVariantsFromPackageJson,
+  entryVariantForFile,
+  entryVariantIssueForFile,
+} from "../entry-variants.ts";
 
 const temps: string[] = [];
 function tempPkg(pkgJson: unknown, files: Record<string, string> = {}): string {
@@ -41,9 +41,9 @@ afterEach(() => {
   }
 });
 
-describe("detectDualEntryFromPackageJson", () => {
+describe("detectEntryVariantsFromPackageJson", () => {
   it("flags exports with differing browser/node conditions", () => {
-    const faces = detectDualEntryFromPackageJson({
+    const faces = detectEntryVariantsFromPackageJson({
       name: "dual",
       exports: {
         ".": {
@@ -59,7 +59,7 @@ describe("detectDualEntryFromPackageJson", () => {
   });
 
   it("flags legacy browser field vs main", () => {
-    const faces = detectDualEntryFromPackageJson({
+    const faces = detectEntryVariantsFromPackageJson({
       name: "legacy",
       main: "./node.js",
       browser: "./browser.js",
@@ -70,16 +70,16 @@ describe("detectDualEntryFromPackageJson", () => {
 
   it("is silent on single-entry packages (zero-FP)", () => {
     expect(
-      detectDualEntryFromPackageJson({ name: "one", main: "./index.js" }),
+      detectEntryVariantsFromPackageJson({ name: "one", main: "./index.js" }),
     ).toBeNull();
     expect(
-      detectDualEntryFromPackageJson({
+      detectEntryVariantsFromPackageJson({
         name: "one",
         exports: { ".": "./index.js" },
       }),
     ).toBeNull();
     expect(
-      detectDualEntryFromPackageJson({
+      detectEntryVariantsFromPackageJson({
         name: "one",
         exports: { ".": { node: "./n.js", default: "./n.js" } },
       }),
@@ -88,14 +88,14 @@ describe("detectDualEntryFromPackageJson", () => {
 
   it("is silent when browser and node resolve to the same file", () => {
     expect(
-      detectDualEntryFromPackageJson({
+      detectEntryVariantsFromPackageJson({
         name: "same",
         main: "./index.js",
         browser: "./index.js",
       }),
     ).toBeNull();
     expect(
-      detectDualEntryFromPackageJson({
+      detectEntryVariantsFromPackageJson({
         name: "same",
         exports: { ".": { browser: "./i.js", node: "./i.js" } },
       }),
@@ -159,23 +159,23 @@ describe("nudo:dual-entry diagnostic", () => {
     expect(r.diagnostics.filter((x) => x.code === "nudo:dual-entry")).toEqual([]);
   });
 
-  it("dualEntryForFile only claims files on exactly one face", () => {
+  it("entryVariantForFile only claims files on exactly one face", () => {
     const dir = tempPkg(DUAL, {
       "browser.js": SRC,
       "node.js": SRC,
       "lib/helper.js": SRC,
     });
-    expect(dualEntryForFile(join(dir, "browser.js"))?.role).toBe("browser");
-    expect(dualEntryForFile(join(dir, "node.js"))?.role).toBe("node");
-    expect(dualEntryForFile(join(dir, "lib", "helper.js"))).toBeNull();
+    expect(entryVariantForFile(join(dir, "browser.js"))?.role).toBe("browser");
+    expect(entryVariantForFile(join(dir, "node.js"))?.role).toBe("node");
+    expect(entryVariantForFile(join(dir, "lib", "helper.js"))).toBeNull();
   });
 
-  it("dualEntryIssueForFile mirrors the analyzeFile diagnostic", () => {
+  it("entryVariantIssueForFile mirrors the analyzeFile diagnostic", () => {
     const dir = tempPkg(DUAL, { "browser.js": SRC });
-    const issue = dualEntryIssueForFile(join(dir, "browser.js"));
+    const issue = entryVariantIssueForFile(join(dir, "browser.js"));
     expect(issue).not.toBeNull();
     expect(issue!.code).toBe("nudo:dual-entry");
     expect(issue!.severity).toBe("info");
-    expect(dualEntryIssueForFile(join(dir, "missing-no-pkg", "x.js"))).toBeNull();
+    expect(entryVariantIssueForFile(join(dir, "missing-no-pkg", "x.js"))).toBeNull();
   });
 });

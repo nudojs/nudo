@@ -56,7 +56,7 @@ changing the signature of any row below is **major**.
 | `Environment`, `createEnvironment` | value/type | env host surface | **public** |
 | `MockHelper`, `stub`, `spy`, `mock` | value/type | test mock helpers | **public** |
 | `stripTypes` | value | AST TS-stripping helper | **public** |
-| `ConstraintBuilder`, `number`, `string`, `boolean`, `lit()`, `shape()`, `union()`, … | value/type | `@nudo:contract` builder grammar | **public** |
+| `ConstraintBuilder`, `number`, `string`, `boolean`, `litC()` (sidecar key `lit()`), `andC()` (sidecar key `and()`), `shape()`, `union()`, … | value/type | `@nudo:contract` builder grammar | **public** |
 | `NudoConstraint`, `instantiateConstraint`, `checkArg`, `checkCall` | value/type | contract checking | **public** |
 | `interfaceTierOf`, `effectiveInterface`, `EffectiveInterface`, `InterfaceTierInfo` | value/type | interface tiers | **public** |
 | `refineAbsForRelTrue`, `extractRefinesFromSource` | value | refinement gate | **public** |

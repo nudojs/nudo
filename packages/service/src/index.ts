@@ -58,13 +58,13 @@ export {
 } from "./static-imports.ts";
 
 export {
-  detectDualEntryFromPackageJson,
-  dualEntryForFile,
-  dualEntryIssueForFile,
+  detectEntryVariantsFromPackageJson,
+  entryVariantForFile,
+  entryVariantIssueForFile,
   findOwningPackage,
-  type DualEntryInfo,
-  type DualEntryIssue,
-} from "./dual-entry.ts";
+  type EntryVariantInfo,
+  type EntryVariantIssue,
+} from "./entry-variants.ts";
 
 export { collectSkipReturns } from "./skip-directives.ts";
 export { defaultLoadModule, type LoadModule } from "./load-module.ts";
@@ -246,9 +246,6 @@ export {
   type SemanticToken,
   type BuildSemanticTokensOpts,
 } from "./semantic-tokens.ts";
-
-export { collectAbsInlays, type AbsInlay } from "@nudojs/core/internal";
-export type { BMemberDiag } from "@nudojs/core/internal";
 
 // ─── Harvest（@types → Abs env；非 CLI 动词） ───────────────────────
 export {

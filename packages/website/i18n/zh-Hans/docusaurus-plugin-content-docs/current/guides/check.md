@@ -178,8 +178,8 @@ nudo check src/ --entry-throws off
 | 选项 | 说明 |
 |------|------|
 | `--watch` / `-w` | 变更时重跑（旗标，不是动词） |
-| `--json` | 机器可读签名 + 诊断 |
-| `--verbose` | 额外细节 |
+| `--json` | 机器可读签名 + 诊断（`CheckJson` / `CheckJsonMulti`） |
+| `--verbose` | 展开 Abs 签名（term/pred/conf 细节） |
 | `--abs` | 逐函数代数面（shape + conf；`--generalize` 附加符号 term/pred α）——观察面，仍对 L1/L2 执法 |
 | `--fn <name>` | 搭配 `--abs`：限定单个函数 |
 | `--assume <pred…>` | 搭配 `--abs`：对入口参数假设约束（如 `x>0 y>=1`） |
@@ -204,7 +204,7 @@ nudo check src/ --entry-throws off
 nudo check src/
 # 任一 error 级诊断 exit 1
 
-# 机器可读（仅单文件）
+# 机器可读（1 文件 → CheckJson；N 文件 → CheckJsonMulti 信封）
 nudo check src/lib.js --json
 ```
 

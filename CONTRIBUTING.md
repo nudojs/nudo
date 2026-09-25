@@ -62,7 +62,10 @@ Because there is no style linter, **reviewers** must watch what the type-checker
 | `packages/core` | Abs type system (algebra, format, refinements) |
 | `packages/parser` | Babel parse + `@nudo:` directive extraction |
 | `packages/service` | Analyzer orchestration + Abs evaluator |
-| `packages/cli` | Product CLI verbs |
+| `packages/nudojs` | Product CLI verbs (bin `nudo`) |
+| `packages/cli` | Deprecated forward stub (`@nudojs/cli` → `nudojs`) |
 | `packages/lsp` | Language server |
 | `packages/env` / `packages/harvester` | API environments / `@types` harvest |
 | `docs/design/` | Design sources of truth (not tutorials) |
+
+> **`@nudojs/core` dual-mapping footgun.** When a `tsconfig` maps `@nudojs/core` to `src`, it must also map `@nudojs/core/internal` → `packages/core/src/internal.ts`. Mapping only `.` while letting `./internal` resolve to `dist` loads **two** copies of engine machinery (e.g. may-throw collectors) and silently drops soft may-throw effects. See [`packages/core/PUBLIC_API.md`](./packages/core/PUBLIC_API.md).

@@ -1,7 +1,7 @@
 /**
- * Abs 域记录类型（ast-eval 执行器删除后保留的类型面）。
+ * Abs 域记录类型面（ast-eval 执行器删除后保留）。
  * 运行时记录由 B 通道（BCallRecord/$assignRecord）产生；此处的类型是
- * checkSource drift / 结构赋值诊断的共享形状。
+ * checkSource drift / 结构赋值诊断的共享形状，仍被 check.ts 等消费。
  */
 import type { Abs } from "./abs.ts";
 

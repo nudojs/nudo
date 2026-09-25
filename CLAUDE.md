@@ -42,12 +42,19 @@ Run a single test file: `pnpm vitest run packages/core/src/algebra/__tests__/che
 pnpm workspaces monorepo. Dependency graph (arrows mean "depends on"):
 
 ```
-core ─┬→ parser ──┐
-      ├→ env ─────┼→ service → cli → nudojs (thin shell)
-      └→ harvester┘      │
-                         ├→ lsp
-                         └→ vite-plugin
+parser ──────┐
+env ─────────┼→ core
+harvester ───┘
+
+service → core, parser, env, harvester
+nudojs  → core, parser, service            (product CLI, bin `nudo`)
+lsp     → service, core, parser
+vite-plugin → core, service
+
+cli → nudojs                               (@nudojs/cli deprecated stub)
 ```
+
+Product CLI lives in `packages/nudojs` (published as `nudojs`, bin `nudo`). `packages/cli` is a **deprecated forward stub** (`@nudojs/cli` → `nudojs`) kept only for migration.
 
 | Package | Purpose |
 |---|---|

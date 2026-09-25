@@ -26,5 +26,3 @@ export {
   type SemanticToken,
   type BuildSemanticTokensOpts,
 } from "./semantic-tokens.ts";
-
-export { collectAbsInlays, type AbsInlay } from "@nudojs/core/internal";

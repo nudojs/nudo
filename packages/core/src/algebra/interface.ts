@@ -39,7 +39,7 @@ import {
   isNudoConstraint,
   fnConstraintToEntryReqs,
   throwConstraintToKinds,
-  and,
+  andC,
   isIntFlag,
 } from "./constraint.ts";
 import {
@@ -668,7 +668,7 @@ function conjoinOrConflict(
   onConflict: () => void,
 ): NudoConstraint {
   try {
-    return and(prev, next);
+    return andC(prev, next);
   } catch {
     onConflict();
     return prev;

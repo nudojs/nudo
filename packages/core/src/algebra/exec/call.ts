@@ -4,7 +4,7 @@
  *
  * 统一顺序：apply → body → relation → isRelFn（委托 applyAbsFn）。
  * 行为对齐说明（与旧 $call 的差异，均属刻意）：
- * 1. 带 body 的函数也进 call-budget（与 ast-eval 同轨；递归会 truncated 而非爆栈）
+ * 1. 带 body 的函数也进 call-budget（递归会 truncated 而非爆栈）
  * 2. body 抛错 → never（applyAbsFn 内恢复，不返回中间值）
  * 3. 无 impl 时 isRelFn 可走 E 路径（旧版恒 unknown）
  */
@@ -116,7 +116,7 @@ export function $call(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
   return unknown;
 }
 
-// 注册到 hof.applyCallbackAbs（原 ast-eval 模块级副作用的 B 等价迁移）：
+// 注册到 hof.applyCallbackAbs（数组回调解释宿主）：
 // Abs 回调 → $call（编译/apply/关系面）；Identifier 节点（解释面残留）→
 // env.vars/env.fns 解析后 $call；inline Node 解释面已删 → unknown（fail-closed）。
 setApplyCallbackHost((cb, args, env) => {

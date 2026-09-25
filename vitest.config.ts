@@ -14,7 +14,7 @@ export default defineConfig({
       exclude: ["**/__tests__/**", "**/*.test.ts"],
       // 防止重构 silently 丢覆盖；数字按当前基线取整，只升不降。
       // 全局阈值是安全网；下面的 per-package glob 防止薄包躲在 core 体量下
-      // 被静默拖垮（env/harvester/vite-plugin/parser/cli 测试面薄）。
+      // 被静默拖垮（env/harvester/vite-plugin/parser 测试面薄）。
       // Vitest 2+/5 thresholds glob：`thresholds['<glob>']` 对匹配文件单独
       // 聚合，glob 之外仍受全局阈值约束（全局对所有文件生效）。
       // 基线（2025-09，lines/stmts/branch/funcs）：
@@ -22,9 +22,7 @@ export default defineConfig({
       //   harvester  82/78/70/88   floors 75/70/62/80
       //   vite-plugin 86/85/72/81 floors 78/78/65/72
       //   parser     89/85/74/90   floors 80/78/68/82
-      //   cli        25/24/26/45   floors 22/21/23/42（纯决策模块抽出后 in-process 覆盖；
-      //     命令面仍经子进程 e2e 测。实测 24.56/23.87/25.51/44.57，floor=baseline−3）
-      // nudojs 无 packages/nudojs/src/**（仅 bin/），不设 floor。
+      // nudojs / cli 无 src（仅 bin/forward stub），不设 floor。
       thresholds: {
         lines: 70,
         functions: 70,
@@ -53,12 +51,6 @@ export default defineConfig({
           functions: 82,
           branches: 68,
           statements: 78,
-        },
-        "packages/cli/**": {
-          lines: 22,
-          functions: 42,
-          branches: 23,
-          statements: 21,
         },
       },
     },

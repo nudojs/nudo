@@ -84,7 +84,7 @@ export function orphanMayThrowEffects(effects: MayThrowEffect[]): void {
   flushMayThrowEffects(effects);
 }
 
-/** B-path：try 开始时压 soft 帧（与 ast-eval evalTry 同口径） */
+/** B-path：try 开始时压 soft 帧 */
 export function $tryMarkSoft(): void {
   pushMayThrowFrame();
 }

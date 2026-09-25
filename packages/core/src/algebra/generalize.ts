@@ -1001,8 +1001,8 @@ function generalizeFromAstUncached(
   //   ① 非类方法（.名，B 导出表只有顶层名）
   //   ② body 不引用导入名（B run 无模块注入；仅侧车/refine 用的 import 不阻断）
   //   ③ 无 require、无 @nudo:mock/env/replace 指令（B run 无 mock 注入）
-  //   ④ 非自递归（body 引用自身名——B 有界展开给 partial，ast-eval 的
-  //      opaque→不写关系契约保留）
+  //   ④ 非自递归（body 引用自身名——B 有界展开给 partial，opaque→
+  //      不写关系契约保留）
   // 其余一律解释路径。B 失败回落。
   const fileAst = opts.file ?? babelParse(source);
   // import 按 spec 可解析性判定：body 引用的导入名其 spec 在注入表内 → B 可
@@ -1089,7 +1089,7 @@ function generalizeFromAstUncached(
     }
     if (result === undefined) {
       // fail-closed：B 失败（B-incapable 构造）/ 非导出类方法等 →
-      // 显式无信息（unknown），不再 ast-eval 解释兜底
+      // 显式无信息（unknown）
       result = abs({ k: "unknown" }, undefined, undefined, "opaque");
     }
     // 截断/失败结果不缓存，避免固化过宽或不稳定结论

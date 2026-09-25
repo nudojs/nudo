@@ -49,7 +49,7 @@ export function collectEntryMayThrows(
     try {
       // P2-a：L2 throws 求值 B-path 优先（may-throw 效果通道共享
       // recordMayThrow）；fail-closed：B 失败（类方法/转译失败）→ 无 L2
-      // throws 证据（ast-eval analyzeFnFull 兜底已删）
+      // throws 证据
       const full = bPathThrowsOf(source, fnName, entryArgs, opts, phi);
       if (!full) return effects;
       // 显式 throw（未被 try 消化）也进 L2

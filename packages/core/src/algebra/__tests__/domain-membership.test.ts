@@ -17,7 +17,7 @@ import {
 } from "../constraint.ts";
 import { eq, ge, ptypeof } from "../pred.ts";
 import { lit, v } from "../term.ts";
-import { lit as cLit, union as cUnion, and as cAnd } from "../constraint.ts";
+import { litC as cLit, union as cUnion, andC as cAnd } from "../constraint.ts";
 
 /** lit(v) 的编码形态（prim + eq(self, lit v)；null 无 PrimName 可配） */
 function litConstraint(value: number | string | boolean | null): NudoConstraint {

@@ -1,7 +1,7 @@
 // IMPLEMENTED:cli-semantics — any 成员访问记 may-throw；unknown-recv 仅引擎债。
 /**
- * 成员缺失诊断（B 路径 + Abs ast-eval 共用）。
- * 无 $call / transpile 依赖，避免 ast-eval ↔ calls 循环。
+ * 成员缺失诊断（B 路径 $invoke / 成员访问共用）。
+ * 无 $call / transpile 依赖，避免与 calls 循环。
  *
  * any vs unknown（design-cli-semantics §2–3）：
  * - any：无约束接收者 → 成员访问记入 throws 域（may-throw TypeError），结果保持 any
@@ -236,7 +236,7 @@ export const OBJECT_PROTO_NAMES = new Set([
 ]);
 
 /**
- * 结构上确定不可调用的成员调用（B-path $invoke 与 ast-eval 共用）：
+ * 结构上确定不可调用的成员调用（B-path $invoke）：
  * - null-proto 对象：无 Object.prototype 可回退，缺失自有槽即确定缺失
  * - 闭 exact 对象：slots 是精确键集，非 OP 名缺失即确定缺失（OP 名经
  *   Object.prototype 存在，未建模 → 保守不抛）

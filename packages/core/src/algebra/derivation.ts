@@ -3,8 +3,8 @@
  *
  * 不叫 provenance：`setProvenanceTracking` 已被 evaluator 的 TypeValue origin map
  * 占用。机制对齐 `setCallCollector` / `setAbsTruncationCollector` 先例——
- * **不进 Abs payload**；ast-eval 与 B-path 共用 core ops（`add` / `joinAbs`），
- * 两条路径天然都覆盖。
+ * **不进 Abs payload**；B-path 核心 ops（`add` / `joinAbs`）上打点，
+ * 执行面天然覆盖。
  *
  * 设计原则：emit 打印的是推导图的投影，**禁止**事后从最终 Abs 反编译 shift 链。
  * 本模块在 ops 层打点：数值常量加法 → shift 边；joinAbs → join 边。

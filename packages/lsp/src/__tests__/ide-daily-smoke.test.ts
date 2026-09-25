@@ -11,9 +11,9 @@ import {
   analyzeFile,
   shouldAnalyzeFile,
   getHoverAtPosition,
-  collectAbsInlays,
   DEFAULT_ANALYSIS_MODE,
 } from "@nudojs/service";
+import { collectAbsInlays } from "@nudojs/core/internal";
 import { parse } from "@nudojs/parser";
 import {
   buildSymbolTable,

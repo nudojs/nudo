@@ -26,7 +26,7 @@ How Nudo packages are versioned, what counts as a breaking change, and how to fo
 | `@nudojs/lsp` | stable 1.x+ | SemVer — breaking = **major**. Freeze inventory: [`packages/lsp/PUBLIC_API.md`](../packages/lsp/PUBLIC_API.md) |
 | `@nudojs/env` | pre-1.0 | Minor may break. Policy authority: [Ecosystem packages](#ecosystem-packages-env--harvester) |
 | `@nudojs/harvester` | pre-1.0 | Minor may break. Policy authority: [Ecosystem packages](#ecosystem-packages-env--harvester) |
-| `nudojs` (shell) | pre-1.0 | Tracks `@nudojs/cli`; prefer depending on `@nudojs/*` directly |
+| `@nudojs/cli` | deprecated stub | Forwards to `nudojs`; do not depend on it. Prefer `nudojs` / `@nudojs/*` directly |
 | `vite-plugin-nudo` | pre-1.0 | Minor may break |
 | `nudo-vscode` | private | Marketplace / Open VSX release notes; not npm-semver for consumers. Bundled `@nudojs/lsp` must match the monorepo lsp dist at package time (see `packages/vscode/RELEASE_CHECKLIST.md`) |
 
@@ -40,7 +40,7 @@ Following common 0.x practice and npm’s caret rules:
 - **`0.x.y` → `0.(x+1).0` (minor)**: **may** include breaking changes. Always read that package’s `CHANGELOG.md` before upgrading.
 - **No 1.0 promise until** the package’s public surface is frozen for a full minor cycle without unplanned breaks.
 
-### 1.x+ SemVer (core / service / cli / parser / lsp)
+### 1.x+ SemVer (core / service / nudojs / parser / lsp)
 
 - **patch**: soundness fixes that do **not** change documented public API shapes; may change inferred types when the old result was wrong (documented as “behavior fix” in the changeset, not API break).
 - **minor**: additive APIs, new diagnostic codes, new CLI flags, new optional config keys.
@@ -217,8 +217,8 @@ Regression pin: `packages/lsp/src/__tests__/public-api-surface.test.ts`.
 > Maturity table and the IDE section above only point here.
 
 `@nudojs/env` and `@nudojs/harvester` are **pre-1.0** sidecar packages consumed
-by `@nudojs/service` / `@nudojs/cli`. They do **not** carry their own SemVer
-1.x freeze; service/cli pin them via workspace/release versions.
+by `@nudojs/service` / `nudojs`. They do **not** carry their own SemVer
+1.x freeze; service/CLI pin them via workspace/release versions.
 
 | Package | Pin style | When to bump minor | Release-notes suggestion |
 |---------|-----------|--------------------|---------------------------|

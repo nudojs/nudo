@@ -172,7 +172,7 @@ export function classChainNames(name: string, env?: AstEnv): string[] {
   let cur: string | undefined = name;
   let depth = 0;
   while (cur && depth++ < 32) {
-    // env 注册类优先；内建错误层级始终回退（ast-eval 总是传 env，不能丢掉 RangeError→Error）
+    // env 注册类优先；内建错误层级始终回退（不能丢掉 RangeError→Error）
     const parent: string | undefined =
       (env ? getClass(env, cur)?.superClass : undefined) ?? BUILTIN_ERROR_SUPER[cur];
     if (!parent || out.includes(parent)) break;

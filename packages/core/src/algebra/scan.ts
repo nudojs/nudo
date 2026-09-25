@@ -99,7 +99,7 @@ function evalArgAbs(
     return lookupVar(node.name);
   }
   try {
-    // B 表达式编译执行（fail-closed：ast-eval evalNode 已删）；自由标识符
+    // B 表达式编译执行（fail-closed）；自由标识符
     // 按绑定表注入（`{...base}` / `[x]` 等复合实参的标识符解析）
     const free = freeIdentifiers(node as unknown as Node, []);
     const bindings: Record<string, Abs> = {};

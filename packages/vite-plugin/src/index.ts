@@ -14,6 +14,7 @@ import {
 } from "@nudojs/service";
 import { dirname } from "node:path";
 import { checkSource, pTrue } from "@nudojs/core";
+import type { Plugin } from "vite";
 
 export type NudoPluginOptions = {
   include?: string[] | string;
@@ -159,7 +160,7 @@ function compileAnyMatcher(patterns: string[] | string): Matcher {
   return (id) => matchers.some((match) => match(id));
 }
 
-export default function nudoPlugin(options: NudoPluginOptions = {}): any {
+export default function nudoPlugin(options: NudoPluginOptions = {}): Plugin {
   const includeMatch = compileAnyMatcher(options.include ?? DEFAULT_INCLUDE);
   const excludeMatch = compileAnyMatcher(options.exclude ?? DEFAULT_EXCLUDE);
   // failOnError 默认 false（E3 有意保留）：构建期诊断先 warn；契约 CI 门禁
@@ -211,16 +212,16 @@ export default function nudoPlugin(options: NudoPluginOptions = {}): any {
 
           if (diag.severity === "error") {
             if (failOnError) {
-              (this as any).error(msg);
+              this.error(msg);
             } else {
-              (this as any).warn(msg);
+              this.warn(msg);
             }
           } else if (diag.severity === "warning") {
-            (this as any).warn(msg);
+            this.warn(msg);
           }
         }
       } catch (err) {
-        (this as any).warn(`[nudo] Failed to analyze ${id}: ${(err as Error).message}`);
+        this.warn(`[nudo] Failed to analyze ${id}: ${(err as Error).message}`);
       }
 
       return null;

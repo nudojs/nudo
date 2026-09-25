@@ -9,16 +9,16 @@ Install Nudo tools via npm, pnpm, or yarn.
 ## Prerequisites
 
 - **Run the published CLI**: Node.js >= 20 (`engines` on all published packages)
-- **Develop this repo**: Node.js >= 18 (CI uses Node 24)
+- **Develop this repo**: Node.js >= 20 (CI uses Node 24)
 
 Packages ship compiled ESM in `dist/` (`files: ["dist"]`), not TypeScript source.
 
 ## CLI
 
 ```bash
-# thin shell (published as `nudojs`; installs the `nudo` command)
+# global install — provides the `nudo` command
 npm install -g nudojs
-# or the full CLI package
+# or add as a project dependency
 npm install nudojs
 # or
 pnpm add nudojs

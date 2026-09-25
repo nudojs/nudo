@@ -1,6 +1,6 @@
 /**
  * B 路径运行时共享状态：phi、就地写、字面量 Abs、真值、循环信号。
- * 叶子模块——不依赖 runtime 其它文件。
+ * 叶子模块——不依赖 runtime 其它文件（tuple/obj 字面量就地构造，避免 state↔containers 环）。
  */
 import type { Abs } from "../../abs.ts";
 import { abs, bool, boolLit, confJoin, litValue, numLit, unknown, type Confidence } from "../../abs.ts";
@@ -11,7 +11,8 @@ import { absFunction, getFnImpl } from "../../abs-fn.ts";
 import { NudoThrow, isNudoThrow } from "../nudo-throw.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { errorTypeAbs, $tryMarkSoft, $tryDigestSoft, $tryReleaseSoft, popMayThrowFrame, orphanMayThrowEffects, type MayThrowEffect } from "../may-throw.ts";
-import { $arr, $obj } from "./containers.ts";
+import { shouldWidenArrayLiteral, widenedArrayConf } from "../../containers.ts";
+import { joinAbs, objOf } from "../../objects.ts";
 
 export { NudoThrow, isNudoThrow };
 
@@ -147,20 +148,29 @@ export function litAbsFromJs(v: unknown, depth = 0): Abs {
       "exact",
     );
   }
-  // JS 数组/纯对象字面量 → tuple/obj（与源码 $arr/$obj 同构）；
+  // JS 数组/纯对象字面量 → tuple/obj（与 runtime $arr/$obj 同构，就地构造以保 state 为叶子）；
   // 循环引用/过深/非 plain 对象（Date/Map/Set/RegExp…）诚实 unknown。
   if (depth < 8) {
     if (Array.isArray(v)) {
-      return $arr(v.map((x) => litAbsFromJs(x, depth + 1)));
+      const els = v.map((x) => litAbsFromJs(x, depth + 1));
+      if (shouldWidenArrayLiteral(els.length)) {
+        return abs(
+          { k: "arr", element: els.reduce((x, y) => joinAbs(x, y)) },
+          undefined,
+          undefined,
+          widenedArrayConf(),
+        );
+      }
+      return abs({ k: "tuple", elements: els }, undefined, undefined, "exact");
     }
     if (t === "object") {
       const proto = Object.getPrototypeOf(v);
       if (proto === Object.prototype || proto === null) {
-        const slots: Record<string, Abs> = {};
+        const slots: Record<string, { value: Abs }> = {};
         for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-          slots[k] = litAbsFromJs(val, depth + 1);
+          slots[k] = { value: litAbsFromJs(val, depth + 1) };
         }
-        return $obj(slots);
+        return objOf(slots);
       }
     }
   }

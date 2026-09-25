@@ -368,7 +368,7 @@ export function runTranspiled(
   source: string,
   opts: RunTranspiledOptions = {},
 ): Record<string, unknown> {
-  resetBCallBudget(); // 宿主入口重置（与 ast-eval resetAbsCallBudget 同口径）
+  resetBCallBudget(); // 宿主入口重置
   const modules = opts.modules ?? {};
   let js = transpile(source, {
     runtimeImport: "@nudojs/core/exec",

@@ -117,7 +117,7 @@ export function findAccessor(
 }
 
 // in / instanceof / classExpr / delete
-// --- in / instanceof / delete（transpile 运算符路由；与 ast-eval 同口径） ---
+// --- in / instanceof / delete（transpile 运算符路由） ---
 
 /**
  * `key in obj`：闭形状精确判定（含 Object.prototype 名、数组下标/length、

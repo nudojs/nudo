@@ -643,9 +643,8 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       if (expr.left.type === "Identifier") {
         const name = expr.left.name;
         // 结构赋值记录（checkSource assign-mismatch 通道）：prev 读在写前；
-        // conditional = 分支/循环体内（与 ast-eval assignFlowDepth 同口径——
-        // structuralAssignIssues 跳过 conditional）。逻辑赋值（||= 等）短路
-        // 分支在前已处理，不记录（与 ast-eval 早期返回同口径）。
+        // conditional = 分支/循环体内（structuralAssignIssues 跳过 conditional）。
+        // 逻辑赋值（||= 等）短路分支在前已处理，不记录。
         const cond = (opts.inLoop ?? 0) > 0 || (opts.conditionalFlow ?? 0) > 0;
         const locLine = expr.loc?.start.line ?? 0;
         const locCol = expr.loc?.start.column ?? 0;

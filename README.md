@@ -32,14 +32,12 @@ Beyond what TypeScript can express: `"0x" + id` → `` `0x${string}` ``, `"a,b,c
 
 ```bash
 npm install -g nudojs
-# or via the thin `nudojs` shell package:
-npm install -g nudojs
 # or without installing:
 npx nudojs check math.js
 npx nudojs test math.js
 ```
 
-> **Version heads-up.** The `nudojs` npm package is a thin installer shell — its version number is **not** the engine version. `nudojs@0.x` wraps `@nudojs/cli@3.x`; engine packages (`@nudojs/core`, …) version independently. Run `nudo --version` to see the engine CLI you actually have. Policy: [`docs/versioning.md`](./docs/versioning.md).
+> **Version heads-up.** `nudojs` is the CLI package (bin `nudo`). Its version may lag the engine packages (`@nudojs/core`, …), which version independently. `@nudojs/cli` is a **deprecated migration stub** that only forwards to `nudojs` — do not depend on it. Run `nudo --version` to see what you actually have. Policy: [`docs/versioning.md`](./docs/versioning.md).
 
 > **Trust boundary.** Nudo analyzes by **executing** the target code (Abs semantics, in-process evaluation). Do not run `nudo check` / `nudo test` on untrusted code — in CI this is the same trust as running the project's tests. Details: [Security](#security).
 
@@ -206,25 +204,32 @@ This is a monorepo managed with [pnpm workspaces](https://pnpm.io/workspaces).
 |---|---|---|
 | [`@nudojs/core`](./packages/core) | Abs type system (`shape × term × pred × conf`) | stable |
 | [`@nudojs/parser`](./packages/parser) | Babel-based parser and directive extraction | stable |
-| [`nudojs`](./packages/nudojs) | CLI tool (check / test / contract / export / health / migrate) | stable |
+| [`nudojs`](./packages/nudojs) | Product CLI (bin `nudo`): check / test / contract / export / health / migrate | stable |
+| [`@nudojs/cli`](./packages/cli) | Deprecated migration stub — forwards to `nudojs` | deprecated |
 | [`@nudojs/service`](./packages/service) | Shared inference service for IDE integrations | stable |
 | [`@nudojs/lsp`](./packages/lsp) | Language Server Protocol server, with AI-agent `executeCommand` support | stable |
 | [`@nudojs/env`](./packages/env) | Built-in API environments (ES globals, Node, Web) loaded by `@nudo:env` | growing |
 | [`@nudojs/harvester`](./packages/harvester) | Harvests `.d.ts` declarations into Nudo env modules | growing |
 | [`vite-plugin-nudo`](./packages/vite-plugin) | Vite plugin for build-time inference | thin |
 | [`nudo-vscode`](./packages/vscode) | VS Code / Cursor extension | thin launcher |
-| [`nudojs`](./packages/nudojs) | Thin installer shell for the `nudo` bin | thin shell |
 | [nudo-zed](https://github.com/nudojs/nudo-zed) | Zed extension (standalone repo; secondary language server) | external |
 | [`website`](./packages/website) | Documentation site (Docusaurus) | docs |
 
 ### Dependency Graph
 
+Arrows mean "depends on":
+
 ```
-core ─┬→ parser ──┐
-      ├→ env ─────┼→ service → cli → nudojs
-      └→ harvester┘      │
-                         ├→ lsp
-                         └→ vite-plugin
+parser ──────┐
+env ─────────┼→ core
+harvester ───┘
+
+service → core, parser, env, harvester
+nudojs  → core, parser, service            (product CLI, bin `nudo`)
+lsp     → service, core, parser
+vite-plugin → core, service
+
+cli → nudojs                               (@nudojs/cli deprecated stub)
 ```
 
 ## Directives

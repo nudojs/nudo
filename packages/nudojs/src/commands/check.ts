@@ -267,8 +267,8 @@ async function runCheck(
   // nudo:dual-entry（T4）：browser/node 双入口变体之一被 check → 观察面只覆盖
   // 本入口（info，单入口零误报）。在缓存之后注入，保证缓存命中也上屏。
   {
-    const { dualEntryIssueForFile } = await import("@nudojs/service");
-    const dual = dualEntryIssueForFile(filePath);
+    const { entryVariantIssueForFile } = await import("@nudojs/service");
+    const dual = entryVariantIssueForFile(filePath);
     if (dual) {
       const dualIssue = dualEntryIssue(dual);
       algebraReport = mergeCheckIssues(algebraReport, [dualIssue]) as typeof algebraReport;

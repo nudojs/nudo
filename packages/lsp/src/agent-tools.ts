@@ -17,7 +17,6 @@ import {
   analyzeFile,
   buildCaseDirective,
   getHoverAtPosition,
-  collectAbsInlays,
   serializeCaseJson,
   getCasesForFile,
   interfaceSurface,
@@ -58,6 +57,7 @@ import {
   type InterfaceSource,
 } from "@nudojs/core";
 import type { CheckJson } from "@nudojs/core";
+import { collectAbsInlays } from "@nudojs/core/internal";
 import { lspLoadModule } from "./validation.ts";
 
 export type TypeBinding = { name: string; type: string };

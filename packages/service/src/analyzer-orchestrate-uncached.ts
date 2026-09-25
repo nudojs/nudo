@@ -66,7 +66,7 @@ import {
   type EnvHarvestConflict,
 } from "./bpath-run.ts";
 import { collectBPathDiagnostics } from "./bpath-diagnostics.ts";
-import { dualEntryForFile, dualEntryMessage, dualEntrySuggestion } from "./dual-entry.ts";
+import { entryVariantForFile, entryVariantMessage, entryVariantSuggestion } from "./entry-variants.ts";
 import {
   fnAnalysisCacheGet,
   fnAnalysisCacheSet,
@@ -1191,14 +1191,14 @@ export function analyzeFileUncachedInner(
   // nudo:dual-entry：browser/node 双入口变体之一被分析 → 记录不跨文件注入，
   // 观察面只覆盖本入口（info，不是门禁；单入口包零误报）。
   try {
-    const dual = dualEntryForFile(filePath);
+    const dual = entryVariantForFile(filePath);
     if (dual) {
       diagnostics.push({
         range: { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } },
         severity: "info",
-        message: dualEntryMessage(dual),
+        message: entryVariantMessage(dual),
         code: "nudo:dual-entry",
-        suggestions: [dualEntrySuggestion()],
+        suggestions: [entryVariantSuggestion()],
       });
     }
   } catch {

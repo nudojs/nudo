@@ -1,5 +1,5 @@
 /**
- * B class 规格表（无 call/ast-eval 依赖，避免循环）。
+ * B class 规格表（无 call 依赖，避免循环）。
  * Abs-eval registerClassDecl 与 transpile $class 共用。
  */
 

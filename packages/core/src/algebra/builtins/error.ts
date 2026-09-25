@@ -61,7 +61,7 @@ export function evalNamespaceCall(
   }
 }
 
-/** JS Error 家族构造器名（B 路径与 ast-eval 共用） */
+/** JS Error 家族构造器名（B 路径 evalBuiltinNew / $new 共用） */
 const ERROR_CTOR_NAMES = new Set([
   "Error",
   "TypeError",
@@ -103,7 +103,7 @@ function errorMessageSlot(messageArg: Abs | undefined): Abs {
  * AggregateError(errors, message[, options])：message 在第二实参，errors
  * 挂 .errors（原生是实参数组副本）；options.cause 挂 .cause（闭槽 miss
  * 会折 undefined 假精确——原生 .cause 可能有值）。
- * $new 与 ast-eval 的 new Error 共用——catch 形参成员访问可解。
+ * $new 的 new Error 路径共用——catch 形参成员访问可解。
  */
 export function errorBrandAbs(name: string, args: Abs[]): Abs {
   const messageArg = name === "AggregateError" ? args[1] : args[0];
@@ -151,7 +151,7 @@ export function evalBuiltinNew(className: string, args: Abs[]): Abs | undefined 
     case "Map":
       // C1.1：可选 entry 元组列表填充字面量映射；
       // 确定非法实参（prim 条目/非可迭代）→ NudoThrow(TypeError)
-      // （与 B-path $new 同口径；ast-eval NewExpression 吸收为 EvalResult{threw}）
+      // （B-path $new 同口径；$catchVal 吸收 NudoThrow）
       if (ctorArgDefinitelyInvalid("Map", args[0])) {
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }

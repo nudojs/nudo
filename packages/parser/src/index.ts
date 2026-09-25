@@ -1,5 +1,6 @@
 export { parse } from "./parse.ts";
-// stripTypes 单源在 core（parser 依赖 core，避免双份拷贝漂移）
+// 解析/剥除实现单源在 core（core 代数需要 AST，不能依赖本包）。
+// 本包产品职责是 @nudo: 指令抽取；此处 re-export 供宿主一条入口拿全。
 export { stripTypes } from "@nudojs/core";
 export {
   asProgram,

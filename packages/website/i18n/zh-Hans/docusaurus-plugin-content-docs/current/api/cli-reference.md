@@ -44,15 +44,15 @@ nudo check <paths...> [options]
 
 | 参数 | 说明 |
 |------|------|
-| `<paths...>` | 一个或多个 `.js` / `.mjs` / `.ts` 文件或目录（递归扫描；排除 `.d.ts`）。TS 注解在解析层剥离，按 JS 语义分析。`--json` 只支持单文件。 |
+| `<paths...>` | 一个或多个 `.js` / `.mjs` / `.ts` 文件或目录（递归扫描；排除 `.d.ts`）。TS 注解在解析层剥离，按 JS 语义分析。 |
 
 **选项：**
 
 | 选项 | 说明 |
 |------|------|
 | `--watch` / `-w` | 变更时重跑（旗标，不是动词） |
-| `--json` | 结构化诊断 + 签名（单文件；不能与 `--abs` 组合） |
-| `--verbose` | 额外诊断细节 |
+| `--json` | 结构化诊断 + 签名 —— `CheckJson`（1 文件）或 `CheckJsonMulti` 信封（N 文件）；不能与 `--abs` 组合 |
+| `--verbose` | 展开 Abs 签名（term/pred/conf 细节） |
 | `--abs` | 每函数代数面（shape + conf）；`--generalize` 附加符号 term/pred α |
 | `--fn <name>` | 搭配 `--abs`：限定单个函数 |
 | `--assume <pred…>` | 搭配 `--abs`：假设约束，如 `x>0 y>=1` |
@@ -113,8 +113,9 @@ L2 **不**门禁内部 helper。`try`/`catch` 与 refine 可清除 L2。
 ```bash
 nudo check user.js
 nudo check src/lib.js --ignore-throws TypeError --from tests/
-# --json 仅支持单文件；目录目标走人类可读报告
+# --json：单文件 → CheckJson；多文件/目录 → CheckJsonMulti 信封
 nudo check src/lib.js --json
+nudo check src/ --json
 ```
 
 **退出码：**
@@ -350,7 +351,7 @@ Result: FAIL (drift or errors found)
 
 - **check --json** —— 签名（含 `any` 入口参数与 throws）、诊断码（如 `nudo:entry-may-throw`）、汇总计数。
 - **test --json** —— 逐函数用例（`entry@` / `call@` / 指令）、`assertions` 摘要（`passed`/`failed`/`unchecked`）、诊断、可选 Abs intension 块；声明断言失败仍 exit 1。
-- **check --json** —— 仅支持单文件（目录目标报 `--json requires a single file, not multiple targets`）；`test --json` 报 `--json requires a single file`。
+- **check --json 文件数** —— 单文件输出裸 `CheckJson`；多文件（或展开为多个文件的目录）输出 **`CheckJsonMulti`** 信封：`kind:"multi"`、聚合 `summary`（追加 `files`、可选 `budgetTruncated`），以及逐文件 `CheckJson` 的 `reports[]`。`test --json` 仍仅支持单文件（`--json requires a single file`）。
 
 ---
 

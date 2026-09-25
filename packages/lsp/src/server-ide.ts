@@ -20,11 +20,11 @@ import {
   buildSemanticTokens,
   isNudoTargetPath,
   shouldAnalyzeFile,
-  collectAbsInlays,
   findProjectConfig,
   interfaceConfig,
 } from "@nudojs/service";
 import type { LoadModule } from "@nudojs/service";
+import { collectAbsInlays } from "@nudojs/core/internal";
 import { parse } from "@nudojs/parser";
 import { buildSignatureHelp } from "./signature-help.ts";
 import {

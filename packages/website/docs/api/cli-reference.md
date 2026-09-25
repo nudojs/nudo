@@ -45,15 +45,15 @@ nudo check <paths...> [options]
 
 | Argument | Description |
 |----------|-------------|
-| `<paths...>` | One or more `.js`, `.mjs`, or `.ts` files or directories (scanned recursively; `.d.ts` excluded). TypeScript annotations are stripped; analysis uses JS semantics. `--json` requires a single file. |
+| `<paths...>` | One or more `.js`, `.mjs`, or `.ts` files or directories (scanned recursively; `.d.ts` excluded). TypeScript annotations are stripped; analysis uses JS semantics. |
 
 **Options:**
 
 | Option | Description |
 |--------|-------------|
 | `--watch` / `-w` | Re-run on file changes (flag, not a verb) |
-| `--json` | Structured diagnostics + signatures (single file; cannot combine with `--abs`) |
-| `--verbose` | Extra diagnosis detail |
+| `--json` | Structured diagnostics + signatures — `CheckJson` (1 file) or `CheckJsonMulti` envelope (N files); cannot combine with `--abs` |
+| `--verbose` | Expand Abs signatures (term/pred/conf detail) |
 | `--abs` | Per-function algebra face (shape + conf); `--generalize` adds the symbolic term/pred α |
 | `--fn <name>` | With `--abs`: restrict to one function |
 | `--assume <pred…>` | With `--abs`: assume constraints, e.g. `x>0 y>=1` |
@@ -122,8 +122,9 @@ nudo check src/lib.js --ignore-throws TypeError --from tests/
 ```
 
 ```bash
-# --json is single-file only; directory targets use the human report face
+# --json: one file → bare CheckJson; multiple files / directories → CheckJsonMulti envelope
 nudo check src/lib.js --json
+nudo check src/ --json
 ```
 
 **Exit codes:**
@@ -411,7 +412,7 @@ Samples: [`docs/examples/migrate/`](https://github.com/nudojs/nudo/tree/main/doc
 
 - **check --json** — signatures (including `any` entry params and throws), diagnostics with codes such as `nudo:entry-may-throw`, summary counts, **`budget`** (call/fork usage + `truncated`), and per-issue **`actions[]`** (structured next steps: `draft` / `relax` / `callsite` / `assume` / `mock` / … with optional executable `command`).
 - **test --json** — per-function cases (`entry@` / `call@` / directive), an `assertions` summary (`passed`/`failed`/`unchecked`), diagnostics, and optional Abs intension blocks. Declared assertion failures still exit 1.
-- **check --json** — single file only (directory targets error with `--json requires a single file, not multiple targets`); `test --json` errors with `--json requires a single file`. Multi-file adds `kind:"multi"` + aggregate `budgetTruncated`.
+- **check --json file counts** — one file emits bare `CheckJson`; multiple files (or a directory expanding to several) emit a **`CheckJsonMulti`** envelope: `kind:"multi"`, aggregate `summary` (adds `files`, optional `budgetTruncated`), and `reports[]` of per-file `CheckJson`. `test --json` stays single-file (`--json requires a single file`).
 
 ---
 

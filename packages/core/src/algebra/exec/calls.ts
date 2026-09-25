@@ -1,7 +1,7 @@
 /**
  * B 路径调用点记录：transpile 把 `f(args)` 改成 $callNamed，
  * 分析时可收集 call@ 所需的 AbsCallRecord。
- * 成员缺失诊断见 member-diag.ts（与 ast-eval 共用，避免循环依赖）。
+ * 成员缺失诊断见 member-diag.ts（共用，避免循环依赖）。
  */
 
 import type { Abs } from "../abs.ts";
@@ -30,7 +30,7 @@ const pureCallMemo = new WeakMap<object, Map<string, Abs>>();
 
 let bCallCollector: ((r: BCallRecord) => void) | null = null;
 
-/** B 赋值记录（与 ast-eval AbsAssignRecord 同形；structuralAssignIssues 消费） */
+/** B 赋值记录（与 ast-records.ts AbsAssignRecord 同形；structuralAssignIssues 消费） */
 export type BAbsAssignRecord = {
   name: string;
   prev: Abs | undefined;
@@ -130,11 +130,11 @@ export function getBCallCollector(): ((r: BCallRecord) => void) | null {
  * loc: [line, column]（1-based line，0-based column，与 Babel 一致）
  * argLocs: 与 args 对齐的实参字面量源位置（provenance；无 loc 用 null）
  */
-// --- B 调用预算（与 ast-eval enterCall 同口径）--------------------------------
+// --- B 调用预算 -----------------------------------------------------------
 // 命名调用（transpile 的 $callNamed 是 B run 全部标识符调用的派发点）此前无
 // 预算：直接自递归/互递归裸奔原生 JS 递归 → 栈溢出，RangeError 被
-// callTranspiledExportFull 兜底静默吞成 unknown+partial（假结果）。此处对齐
-// ast-eval：深度 64 / 总调用 200k / cycle（同 name+arg 指纹）→ 截断 opaque。
+// callTranspiledExportFull 兜底静默吞成 unknown+partial（假结果）。预算：
+// 深度 64 / 总调用 200k / cycle（同 name+arg 指纹）→ 截断 opaque。
 
 export const MAX_B_CALL_DEPTH = 64;
 /** 总调用上限：与 call-budget.MAX_TOTAL_CALLS 同阀（递归×循环×分支展开的

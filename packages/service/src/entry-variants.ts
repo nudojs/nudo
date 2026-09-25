@@ -1,5 +1,8 @@
 /**
- * Dual-entry (browser / node) observation signal.
+ * Entry-variant (browser / node) observation signal.
+ *
+ * (Module named entry-variants to avoid "dual engine" confusion; the
+ * product diagnostic code remains `nudo:dual-entry`.)
  *
  * Call-site records are file-scoped: when a package ships separate browser and
  * node entrypoints, records collected against one variant do **not** inject
@@ -17,7 +20,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
-export type DualEntryInfo = {
+export type EntryVariantInfo = {
   pkgPath: string;
   pkgDir: string;
   pkgName?: string;
@@ -33,7 +36,7 @@ export type DualEntryInfo = {
   nodeTargets: string[];
 };
 
-type DualFaces = {
+type EntryVariantFaces = {
   kind: "exports-conditions" | "browser-field";
   browser: string[];
   node: string[];
@@ -84,7 +87,7 @@ function collectExportFaces(exportsField: unknown, browser: string[], node: stri
  * Detect browser/node dual faces in a parsed package.json.
  * Returns null unless both faces exist and differ (zero-FP on single-entry).
  */
-export function detectDualEntryFromPackageJson(pkg: unknown): DualFaces | null {
+export function detectEntryVariantsFromPackageJson(pkg: unknown): EntryVariantFaces | null {
   if (!pkg || typeof pkg !== "object") return null;
   const p = pkg as Record<string, unknown>;
 
@@ -119,7 +122,7 @@ export function detectDualEntryFromPackageJson(pkg: unknown): DualFaces | null {
     return null;
   }
 
-  const kind: DualFaces["kind"] =
+  const kind: EntryVariantFaces["kind"] =
     typeof p.exports !== "undefined" && collectExportHasBrowser(p.exports)
       ? "exports-conditions"
       : "browser-field";
@@ -181,7 +184,7 @@ export function findOwningPackage(
  * differing faces **and** this file must be one of the entry targets.
  * Returns null otherwise (single-entry packages, shared helpers, …).
  */
-export function dualEntryForFile(filePath: string): DualEntryInfo | null {
+export function entryVariantForFile(filePath: string): EntryVariantInfo | null {
   let owning: { path: string; dir: string; pkg: Record<string, unknown> } | null = null;
   try {
     owning = findOwningPackage(filePath);
@@ -190,7 +193,7 @@ export function dualEntryForFile(filePath: string): DualEntryInfo | null {
   }
   if (!owning) return null;
 
-  const faces = detectDualEntryFromPackageJson(owning.pkg);
+  const faces = detectEntryVariantsFromPackageJson(owning.pkg);
   if (!faces) return null;
 
   const abs = resolve(filePath);
@@ -216,7 +219,7 @@ export function dualEntryForFile(filePath: string): DualEntryInfo | null {
   };
 }
 
-export function dualEntryMessage(info: DualEntryInfo): string {
+export function entryVariantMessage(info: EntryVariantInfo): string {
   const name = info.pkgName ? `"${info.pkgName}"` : info.pkgPath;
   const b = info.browserTargets.join(", ") || "(browser)";
   const n = info.nodeTargets.join(", ") || "(node)";
@@ -226,7 +229,7 @@ export function dualEntryMessage(info: DualEntryInfo): string {
   );
 }
 
-export function dualEntrySuggestion(): string {
+export function entryVariantSuggestion(): string {
   return (
     "analyze the entry you ship and mock or skip the other variant; " +
     "browser/node records stay file-scoped (limits: dual package entrypoints)"
@@ -234,7 +237,7 @@ export function dualEntrySuggestion(): string {
 }
 
 /** Host-facing info issue (CLI check / JSON) for one analyzed entry variant. */
-export type DualEntryIssue = {
+export type EntryVariantIssue = {
   severity: "info";
   code: "nudo:dual-entry";
   message: string;
@@ -243,14 +246,14 @@ export type DualEntryIssue = {
   column: number;
 };
 
-export function dualEntryIssueForFile(filePath: string): DualEntryIssue | null {
-  const info = dualEntryForFile(filePath);
+export function entryVariantIssueForFile(filePath: string): EntryVariantIssue | null {
+  const info = entryVariantForFile(filePath);
   if (!info) return null;
   return {
     severity: "info",
     code: "nudo:dual-entry",
-    message: dualEntryMessage(info),
-    suggestion: dualEntrySuggestion(),
+    message: entryVariantMessage(info),
+    suggestion: entryVariantSuggestion(),
     line: 0,
     column: 0,
   };
