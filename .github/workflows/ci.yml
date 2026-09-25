@@ -157,7 +157,11 @@ jobs:
           fail_ci_if_error: false
 
   # B1: accuracy/perf gate vs benchmark/baseline.json
-  # runner noise is absorbed by the 3.0x threshold in gate.js
+  # 3.0x 阈值（gate.js 硬编码）有意保留：baseline 采自本地 Apple Silicon，
+  # GitHub ubuntu runner 常年慢 ~2.5–3x；收 2.0–2.5x 会把噪声当回归（CI 变红）。
+  # 收紧前提：在 GH runner 上重跑 `pnpm run benchmark:baseline`（或改相对倍率
+  # /固定 perf runner）后再改 gate.js——不要只改数字。
+  # OSS 真包门禁（benchmark:oss + benchmark:oss:gate）挂在 benchmark.yml（main-only）。
   benchmark:
     name: Benchmark gate
     runs-on: ubuntu-latest

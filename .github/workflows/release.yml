@@ -49,6 +49,15 @@ jobs:
       - name: Build packages
         run: npm run build
 
+      # Release must not publish untested code. Inline (not `needs: CI`) because
+      # cross-workflow gates are unreliable; build stays first — path-based
+      # @nudo:env resolves @nudojs/* via package.json exports → dist (see ci.yml).
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test:coverage
+
       - name: Create Release Pull Request
         id: changesets
         uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d  # v1 (branch v1)
@@ -82,15 +91,77 @@ jobs:
           npx @vscode/vsce package --no-dependencies -o ../../dist/nudo-vscode.vsix
 
       - name: Publish to VSCode Marketplace
+        id: vsce-publish
         if: steps.changesets.outputs.hasChangesets == 'false' && env.VSCODE_MARKETPLACE_TOKEN != ''
         # Marketplace PATs expire; do not block Open VSX / GitHub Release.
         continue-on-error: true
         run: npx @vscode/vsce publish --packagePath dist/nudo-vscode.vsix -p ${{ secrets.VSCODE_MARKETPLACE_TOKEN }}
 
+      # keep continue-on-error above (marketplace flake must not block npm / GH Release),
+      # but never fail silently — shout in the step summary + job annotation.
+      - name: Surface VSCode Marketplace failure
+        if: steps.vsce-publish.outcome == 'failure'
+        run: |
+          echo "::warning::VSCode Marketplace publish FAILED — extension is NOT on the Marketplace. Check VSCODE_MARKETPLACE_TOKEN (likely expired) and re-publish manually."
+          {
+            echo "## ⚠️ VSCode Marketplace publish FAILED"
+            echo ""
+            echo "npm packages were published, but the VS Code extension is **not** on the Marketplace."
+            echo "Likely cause: expired \`VSCODE_MARKETPLACE_TOKEN\`."
+            echo "Re-publish manually once the token is renewed:"
+            echo '```bash'
+            echo 'npx @vscode/vsce publish --packagePath dist/nudo-vscode.vsix -p "$VSCODE_MARKETPLACE_TOKEN"'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Publish to Open VSX
+        id: ovsx-publish
         if: steps.changesets.outputs.hasChangesets == 'false' && env.OVSX_MARKETPLACE_TOKEN != ''
         continue-on-error: true
         run: npx ovsx publish dist/nudo-vscode.vsix -p ${{ secrets.OVSX_MARKETPLACE_TOKEN }}
+
+      - name: Surface Open VSX failure
+        if: steps.ovsx-publish.outcome == 'failure'
+        run: |
+          echo "::warning::Open VSX publish FAILED — extension is NOT on Open VSX. Check OVSX_MARKETPLACE_TOKEN (likely expired) and re-publish manually."
+          {
+            echo "## ⚠️ Open VSX publish FAILED"
+            echo ""
+            echo "npm packages were published, but the VS Code extension is **not** on Open VSX."
+            echo "Likely cause: expired \`OVSX_MARKETPLACE_TOKEN\`."
+            echo "Re-publish manually once the token is renewed:"
+            echo '```bash'
+            echo 'npx ovsx publish dist/nudo-vscode.vsix -p "$OVSX_MARKETPLACE_TOKEN"'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # publishedPackages is [{name, version}, …] and can version-skew across
+      # packages (e.g. nudojs 0.x vs @nudojs/* 3.x). Never tag from [0] — take
+      # the highest semver so the monorepo release tag is deterministic.
+      - name: Resolve release tag (highest published version)
+        id: release-tag
+        if: >-
+          steps.changesets.outputs.hasChangesets == 'false' &&
+          steps.changesets.outputs.publishedPackages != '' &&
+          steps.changesets.outputs.publishedPackages != '[]'
+        run: |
+          tag=$(node -e '
+            const pkgs = JSON.parse(process.env.PUBLISHED);
+            const parse = (v) => v.replace(/^v/, "").split(".").map((n) => parseInt(n, 10) || 0);
+            const cmp = (a, b) => {
+              const pa = parse(a), pb = parse(b);
+              for (let i = 0; i < 3; i++) {
+                const d = (pa[i] || 0) - (pb[i] || 0);
+                if (d !== 0) return d;
+              }
+              return 0;
+            };
+            const versions = pkgs.map((p) => p.version);
+            process.stdout.write("v" + versions.slice().sort(cmp).pop());
+          ')
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+        env:
+          PUBLISHED: ${{ steps.changesets.outputs.publishedPackages }}
 
       - name: Create GitHub Release
         if: >-
@@ -99,7 +170,7 @@ jobs:
           steps.changesets.outputs.publishedPackages != '[]'
         uses: softprops/action-gh-release@26994186c0ac3ef5cae75ac16aa32e8153525f77  # v1
         with:
-          tag_name: v${{ fromJSON(steps.changesets.outputs.publishedPackages)[0].version }}
+          tag_name: ${{ steps.release-tag.outputs.tag }}
           files: dist/nudo-vscode.vsix
           generate_release_notes: true
         env:
