@@ -32,85 +32,28 @@ import {
   catchMayRethrow,
 } from "./emit.ts";
 import { memberPathOf, readPathSrc, setPathSrc, readPrefix, setParentPathSrc } from "./member-path.ts";
-import { transpileExpression, transpileShortCircuitExpr } from "./expr.ts";
+import { emitTranspileExpression } from "./transpile-dispatch.ts";
 
 /** switch 共享体函数名序号（跨语句/函数去重） */
 let switchBodySeq = 0;
 
-export function stmtCompletesControl(stmt: Statement | undefined | null): boolean {
-  if (!stmt) return false;
-  switch (stmt.type) {
-    case "BreakStatement":
-    case "ReturnStatement":
-    case "ThrowStatement":
-    case "ContinueStatement":
-      return true;
-    case "BlockStatement":
-      return stmtCompletesControl(stmt.body[stmt.body.length - 1] as Statement);
-    case "IfStatement":
-      return (
-        stmt.alternate != null &&
-        stmtCompletesControl(stmt.consequent as Statement) &&
-        stmtCompletesControl(stmt.alternate as Statement)
-      );
-    default:
-      return false;
-  }
-}
-
-/** 语句或块内是否出现 return/throw（决定 if 是否提升为 return $fork） */
-export function stmtReturns(stmt: Statement): boolean {
-  if (stmt.type === "ReturnStatement" || stmt.type === "ThrowStatement") return true;
-  if (stmt.type === "BlockStatement") return stmt.body.some(stmtReturns);
-  if (stmt.type === "IfStatement") {
-    return stmtReturns(stmt.consequent) && stmt.alternate != null && stmtReturns(stmt.alternate);
-  }
-  // switch：所有可达臂均 return/throw 且 **存在 default** 才视为终止
-  // （无 default 时 no-match 会 fall-through，不得当终止 — P0-1）
-  if (stmt.type === "SwitchStatement") {
-    type Arm = { stmts: Statement[]; isDefault: boolean };
-    const arms: Arm[] = [];
-    for (const c of stmt.cases) {
-      const testIsDefault = c.test === null || c.test === undefined;
-      const last = arms[arms.length - 1];
-      if (last && !last.isDefault && last.stmts.length === 0 && !testIsDefault) {
-        last.stmts = c.consequent;
-        continue;
-      }
-      if (
-        last &&
-        !last.isDefault &&
-        !testIsDefault &&
-        last.stmts.length > 0 &&
-        c.consequent.length === 0
-      ) {
-        continue; // fall-through 空臂并入前一有体臂
-      }
-      arms.push({ stmts: c.consequent, isDefault: testIsDefault });
-    }
-    const armOk = (a: Arm): boolean => a.stmts.length > 0 && a.stmts.every(stmtReturns);
-    const nonDefault = arms.filter((a) => !a.isDefault);
-    const dflt = arms.find((a) => a.isDefault);
-    if (dflt === undefined) return false; // 无 default：必然 fall-through
-    return nonDefault.length > 0 && nonDefault.every(armOk) && armOk(dflt);
-  }
-  return false;
-}
-
-/**
- * 函数体语句序列：早退 if（`if (c) return X;` 无 else）位置敏感提升——
- * 首个该形态语句把「余下全部语句」并入 else 分支，产出
- * `return $fork(c, () => X, () => { …rest })`。抽象条件时
- * join(早退值, 余下值) 与 JS 控制流一致；语句级 $fork 会把 thunk 的
- * 返回值丢掉（早退全部静默失效——compareVersions 类链式卫语句的坑）。
- * 余下语句递归同规则，链式卫语句逐层嵌套 else。
- */
-/** 块体无确定 return 时补隐式 return $lit(undefined)（原生无 return 函数 =
- *  undefined；此前编译产物返回 JS undefined 被宿主折 unknown——精度退化） */
-export function withImplicitReturn(body: Node, bodyStmts: string, depth: number): string {
-  if (stmtReturns(body as unknown as Statement)) return bodyStmts;
-  return `${bodyStmts}\n${indent(depth)}return $lit(undefined);`;
-}
+// 控制流谓词 → stmt-predicates.ts（leaf）
+export {
+  stmtCompletesControl,
+  stmtReturns,
+  isTerminalStmt,
+  completeElseChain,
+  completeElseChains,
+  withImplicitReturn,
+} from "./stmt-predicates.ts";
+import {
+  stmtCompletesControl,
+  stmtReturns,
+  isTerminalStmt,
+  completeElseChain,
+  completeElseChains,
+  withImplicitReturn,
+} from "./stmt-predicates.ts";
 
 /**
  * 方法/函数体统一发射：早退 if 提升（transpileFnBodyStmts）+ 可选隐式 return。
@@ -129,64 +72,10 @@ export function emitFnBlockBody(
     return implicitReturn ? `${indent(depth)}return $lit(undefined);` : "";
   }
   if (body.type !== "BlockStatement") {
-    return `${indent(depth)}return ${transpileExpression(body as Expression, opts)};`;
+    return `${indent(depth)}return ${emitTranspileExpression(body as Expression, opts)};`;
   }
   const stmts = transpileFnBodyStmts(body.body as Statement[], depth, opts);
   return implicitReturn ? withImplicitReturn(body, stmts, depth) : stmts;
-}
-
-/** 终止语句：return / throw */
-export function isTerminalStmt(s: Statement): boolean {
-  return s.type === "ReturnStatement" || s.type === "ThrowStatement";
-}
-
-/**
- * 把 if/else-if 后的终止尾句收进缺失的最终 else：
- *   if (A) return 1; else if (B) return 2; return 0;
- * → if (A) return 1; else if (B) return 2; else return 0;
- * 否则 return $fork 优化不触发，臂内 JS return 被 thunk 吞掉后
- * 尾部 return 覆盖早退值（ms 的 else-if 数字分支即此形态）。
- */
-export function completeElseChain(ifStmt: Statement, tail: Statement[]): Statement | null {
-  if (ifStmt.type !== "IfStatement") return null;
-  if (!tail.every(isTerminalStmt)) return null;
-  const asBlock = (body: Statement): Statement =>
-    body.type === "BlockStatement"
-      ? body
-      : ({ type: "BlockStatement", body: [body] } as unknown as Statement);
-  if (ifStmt.alternate == null) {
-    return {
-      ...ifStmt,
-      alternate: {
-        type: "BlockStatement",
-        body: [...tail],
-      } as unknown as Statement,
-    } as unknown as Statement;
-  }
-  if (ifStmt.alternate.type === "IfStatement") {
-    const inner = completeElseChain(ifStmt.alternate, tail);
-    if (!inner) return null;
-    return { ...ifStmt, alternate: asBlock(inner) } as unknown as Statement;
-  }
-  return null;
-}
-
-export function completeElseChains(stmts: Statement[]): Statement[] {
-  const out = stmts.map((s) => ({ ...s }) as unknown as Statement);
-  for (let i = 0; i < out.length; i++) {
-    const stmt = out[i]!;
-    if (stmt.type !== "IfStatement") continue;
-    // 仅早退 if：consequent 含 return/throw 时，尾句才是「未走 then」的续体
-    if (!stmtReturns(stmt.consequent)) continue;
-    const tail = out.slice(i + 1);
-    if (tail.length === 0) continue;
-    const fixed = completeElseChain(stmt, tail);
-    if (!fixed) continue;
-    out[i] = fixed;
-    out.length = i + 1;
-    break;
-  }
-  return out;
 }
 
 export function transpileFnBodyStmts(stmtsIn: Statement[], depth: number, opts: TranspileOptions): string {
@@ -201,7 +90,7 @@ export function transpileFnBodyStmts(stmtsIn: Statement[], depth: number, opts: 
       .slice(0, i)
       .map((s) => transpileStatement(s, depth, opts))
       .join("\n");
-    const test = transpileExpression(stmt.test, opts);
+    const test = emitTranspileExpression(stmt.test, opts);
     // P0.1：早退提升同样必须隔离臂间 mutator/普通绑定
     const recvSet = new Set<string>([
       ...collectForkBindingNames(stmt.consequent),
@@ -270,7 +159,7 @@ export function transpileFnBodyStmts(stmtsIn: Statement[], depth: number, opts: 
 
 export function transpileBodyNode(node: Node, opts: TranspileOptions): string {
   if (isExpression(node as { type: string })) {
-    return `return ${transpileExpression(node as Expression, opts)};`;
+    return `return ${emitTranspileExpression(node as Expression, opts)};`;
   }
   return withImplicitReturn(node, transpileStatement(node as Statement, 1, opts), 1);
 }
@@ -346,7 +235,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         const inner = transpileStatement(named, depth + 1, opts);
         return `${inner}\n${pad}export default ${name};`;
       }
-      return `${pad}export default ${transpileExpression(d as Expression, opts)};`;
+      return `${pad}export default ${emitTranspileExpression(d as Expression, opts)};`;
     }
     case "FunctionDeclaration": {
       if (!stmt.id) return `${pad}// <anonymous fn skipped>`;
@@ -386,7 +275,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
                 .join("\n"),
               depth + 2,
             )
-          : `${indent(depth + 2)}${thisPrologue.trim()}${argsPrologue.trim()}return ${transpileExpression(stmt.body as unknown as Expression, fnOpts)};`;
+          : `${indent(depth + 2)}${thisPrologue.trim()}${argsPrologue.trim()}return ${emitTranspileExpression(stmt.body as unknown as Expression, fnOpts)};`;
       const restBind = rest
         ? `${indent(depth + 1)}const ${rest} = arguments.length > ${named.length} ? $arr(Array.from(arguments).slice(${named.length})) : $arr([]);\n`
         : "";
@@ -450,11 +339,11 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       };
       if (asVar) return emitRet(asVar);
       if (!stmt.argument) return emitRet(`$lit(undefined)`);
-      const retSrc = transpileExpression(stmt.argument, opts);
+      const retSrc = emitTranspileExpression(stmt.argument, opts);
       return emitRet(retSrc, stmt.argument as Node);
     }
     case "ThrowStatement": {
-      const arg = stmt.argument ? transpileExpression(stmt.argument, opts) : "$lit(undefined)";
+      const arg = stmt.argument ? emitTranspileExpression(stmt.argument, opts) : "$lit(undefined)";
       return `${pad}$throw(${arg});`;
     }
     case "ExpressionStatement": {
@@ -475,7 +364,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         ) {
           const argSrcs = expr.arguments
             .map((a) =>
-              a.type === "SpreadElement" ? "$lit(undefined)" : transpileExpression(a as Expression, opts),
+              a.type === "SpreadElement" ? "$lit(undefined)" : emitTranspileExpression(a as Expression, opts),
             )
             .join(", ");
           const objNode = expr.callee.object as Node;
@@ -496,17 +385,17 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
               return `${pad}${path.rootSrc} = ${setPathSrc(path, mutSrc)};`;
             }
             // 根不可重绑（this 无 thisParam 等）：保持纯调用
-            return `${pad}${transpileExpression(stmt.expression, opts)};`;
+            return `${pad}${emitTranspileExpression(stmt.expression, opts)};`;
           }
         }
       }
       if (exprRebinds.length > 0) {
         return [
-          `${pad}${transpileExpression(expr, opts)};`,
+          `${pad}${emitTranspileExpression(expr, opts)};`,
           ...exprRebinds,
         ].join("\n");
       }
-      return `${pad}${transpileExpression(stmt.expression, opts)};`;
+      return `${pad}${emitTranspileExpression(stmt.expression, opts)};`;
     }
     case "VariableDeclaration": {
       // const → let：成员/下标写经不可变 Abs 更新后需重绑根绑定
@@ -520,7 +409,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           const init = asVar
             ? asVar
             : d.init
-              ? transpileExpression(d.init, opts)
+              ? emitTranspileExpression(d.init, opts)
               : "$lit(undefined)";
           lines.push(`${pad}${kw} ${d.id.name} = ${init};`);
           // 顶层绑定表（checkSource varAbs / scanLiteralCalls 实参解析）
@@ -538,7 +427,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           lines.push(`${pad}// destructure without init`);
           continue;
         }
-        const initSrc = transpileExpression(d.init, opts);
+        const initSrc = emitTranspileExpression(d.init, opts);
         const tmp = `_d${tmpSeq++}_${stmt.loc?.start.line ?? 0}`;
         lines.push(`${pad}const ${tmp} = ${initSrc};`);
         lines.push(...emitArrMutatorRebinds(d.init as Node, opts, pad));
@@ -547,7 +436,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       return lines.join("\n");
     }
     case "IfStatement": {
-      const test = transpileExpression(stmt.test, opts);
+      const test = emitTranspileExpression(stmt.test, opts);
       // 抽象分支：普通绑定 + 数组 mutator + 对象写根 都要 snapshot/join
       const recvSet = new Set<string>([
         ...collectForkBindingNames(stmt.consequent),
@@ -651,8 +540,8 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
             ? null
             : stmt.init.type === "VariableDeclaration"
               ? transpileStatement(stmt.init as Statement, depth, opts)
-              : `${pad}${transpileExpression(stmt.init as Expression, opts)};`;
-        const testSrc = stmt.test ? transpileExpression(stmt.test, opts) : "$lit(true)";
+              : `${pad}${emitTranspileExpression(stmt.init as Expression, opts)};`;
+        const testSrc = stmt.test ? emitTranspileExpression(stmt.test, opts) : "$lit(true)";
         // 步进表达式只取副作用（写真实绑定）；状态线程是合成计数器。
         // i++/i-- 的后置值语义会丢自增写回（步进闭包内无语句级 rebind pass），
         // 与主路径同口径：标识符 Update 强制 `name = $add/$sub(name, 1)`。
@@ -664,7 +553,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           if (upd.type === "SequenceExpression") {
             return (upd.expressions ?? []).map((e) => stepPart(e as Node)).join(", ");
           }
-          return transpileExpression(u as Expression, opts);
+          return emitTranspileExpression(u as Expression, opts);
         };
         const updateSrc = stmt.update ? stepPart(stmt.update as Node) : null;
         const forBodyOpts: TranspileOptions = {
@@ -724,9 +613,9 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       }
       const initExpr =
         stmt.init && stmt.init.type === "VariableDeclaration" && stmt.init.declarations[0]?.init
-          ? transpileExpression(stmt.init.declarations[0].init, opts)
+          ? emitTranspileExpression(stmt.init.declarations[0].init, opts)
           : "$lit(undefined)";
-      const testSrc = stmt.test ? transpileExpression(stmt.test, opts) : "$lit(true)";
+      const testSrc = stmt.test ? emitTranspileExpression(stmt.test, opts) : "$lit(true)";
       // for 步进闭包需要**自增后的新值**作状态线程；不能走 UpdateExpression 的
       // 后置旧值语义（那会丢自增副作用）
       const updateSrc =
@@ -734,7 +623,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         stmt.update.argument.type === "Identifier"
           ? `${stmt.update.argument.name} = ${stmt.update.operator === "++" ? "$add" : "$sub"}(${stmt.update.argument.name}, $lit(1))`
           : stmt.update
-            ? transpileExpression(stmt.update, opts)
+            ? emitTranspileExpression(stmt.update, opts)
             : `$lit(undefined)`;
       const forBodyOpts: TranspileOptions = {
         ...opts,
@@ -789,14 +678,14 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // 块内同用早退提升：`{ if (c) return X; … }` 的 return 是函数级语义
       return transpileFnBodyStmts(stmt.body, depth, opts);
     case "SwitchStatement": {
-      const disc = transpileExpression(stmt.discriminant as Expression, opts);
+      const disc = emitTranspileExpression(stmt.discriminant as Expression, opts);
       type Arm = { tests: string[]; stmts: Statement[]; isDefault: boolean };
 
       // 1) 空 case 测试并入下一有体臂；default 独立
       const pre: Arm[] = [];
       let pendingTests: string[] = [];
       for (const c of stmt.cases) {
-        const testSrc = c.test ? transpileExpression(c.test as Expression, opts) : null;
+        const testSrc = c.test ? emitTranspileExpression(c.test as Expression, opts) : null;
         if (testSrc === null) {
           if (pendingTests.length > 0 && c.consequent.length > 0) {
             pre.push({ tests: pendingTests, stmts: c.consequent, isDefault: false });
@@ -1079,8 +968,8 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const isIn = stmt.type === "ForInStatement";
       // for-in：键序列由 $forInKeys 投影（整数键升序/字符串插入序/hole 跳过）
       const iter = isIn
-        ? `$forInKeys(${transpileExpression(stmt.right as Expression, opts)})`
-        : transpileExpression(stmt.right as Expression, opts);
+        ? `$forInKeys(${emitTranspileExpression(stmt.right as Expression, opts)})`
+        : emitTranspileExpression(stmt.right as Expression, opts);
       // for (const x of xs) / for (const [a,b] of xs)
       let bindName = "_item";
       if (stmt.left.type === "VariableDeclaration") {
@@ -1140,7 +1029,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       ].join("\n");
     }
     case "WhileStatement": {
-      const test = transpileExpression(stmt.test, opts);
+      const test = emitTranspileExpression(stmt.test, opts);
       const bodyOpts: TranspileOptions = {
         ...opts,
         inLoop: (opts.inLoop ?? 0) + 1,
@@ -1176,7 +1065,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
     }
     case "DoWhileStatement": {
       // do { body } while (test) ≡ body; while (test) { body }（有界、可 instrument）
-      const test = transpileExpression(stmt.test, opts);
+      const test = emitTranspileExpression(stmt.test, opts);
       const bodyOpts: TranspileOptions = {
         ...opts,
         inLoop: (opts.inLoop ?? 0) + 1,
@@ -1331,7 +1220,7 @@ export function transpileClass(
       const fname =
         m.key?.type === "Identifier" ? m.key.name : m.key?.type === "StringLiteral" ? String(m.key.value) : null;
       if (fname && m.value) {
-        const vsrc = transpileExpression(m.value as Expression, opts);
+        const vsrc = emitTranspileExpression(m.value as Expression, opts);
         staticFieldParts.push(`${indent(depth + 2)}${JSON.stringify(fname)}: ${vsrc},`);
       }
       continue;
@@ -1503,7 +1392,7 @@ export function transpileBlockAsThunk(stmt: Statement, depth: number, opts: Tran
     return `() => {\n${inner}\n${indent(depth)}}`;
   }
   if (stmt.type === "ReturnStatement") {
-    const v = stmt.argument ? transpileExpression(stmt.argument, opts) : "$lit(undefined)";
+    const v = stmt.argument ? emitTranspileExpression(stmt.argument, opts) : "$lit(undefined)";
     // C2.1：循环体内的 return 是函数提前返回，不是 thunk 的表达式值
     if ((opts.inLoop ?? 0) > 0) {
       return `() => { $loopReturn(${v}); }`;

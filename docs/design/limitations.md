@@ -79,6 +79,12 @@
 `api/harvester.md`。覆盖报告（`docs/reports/env-coverage-baseline.md`）的解析率
 **不是**完备性承诺。
 
+### 1.5 覆盖率地板 ≠ 质量证明
+
+`vitest.config.ts` 的 per-package coverage floors（env/harvester/vite-plugin/parser）
+是**防静默倒退**的地板，不是完备性承诺。env 分支基线仍薄；薄包不得躲在 core
+体量下被全局阈值掩盖。测试面加厚时**只升不降** floors；降 floor 必须在 PR 里写清原因。
+
 ---
 
 ## 3. 已解决

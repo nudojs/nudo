@@ -145,7 +145,7 @@ async function runContractDraft(
     try {
       prev = readFileSync(sidecarDraftPath(filePath), "utf-8");
     } catch {
-      /* no existing draft */
+      /* optional: no existing draft — diff against empty */
     }
     const diff = unifiedDiff(prev, result.draftSource, draftRel);
     console.log(
@@ -199,6 +199,7 @@ async function runContractDraft(
         try {
           return realpathSync(projectRoot);
         } catch {
+          /* optional: realpath failed — use unresolved path */
           return projectRoot;
         }
       })();
@@ -206,6 +207,7 @@ async function runContractDraft(
         try {
           return realpathSync(filePath);
         } catch {
+          /* optional: realpath failed — use unresolved path */
           return filePath;
         }
       })();
@@ -279,6 +281,7 @@ async function runContractEmit(
       const filtered = fnNames.filter((n) => local.has(n));
       localFnNames = filtered.length > 0 ? filtered : undefined;
     } catch {
+      /* optional: local export scan failed — keep requested fn names */
       localFnNames = fnNames;
     }
   }

@@ -1,10 +1,10 @@
 /**
  * 模式解构 / 形参绑定 / 数组 mutator 重绑 / fork 臂 thunk。
- * 发射时调 transpileExpression —— 与 expr.ts 函数级循环导入。
+ * 发射时经 transpile-dispatch 调 transpileExpression（避免与 expr.ts 成环）。
  */
 import type { Statement, Expression, Node } from "@babel/types";
 import type { TranspileOptions } from "./types.ts";
-import { transpileExpression } from "./expr.ts";
+import { emitTranspileExpression } from "./transpile-dispatch.ts";
 import { isExpression, foldRequireSpecArg, staticKeyOf } from "./helpers.ts";
 import { ARR_MUTATOR_NAMES } from "./ops.ts";
 import { memberPathOf, readPathSrc, setPathSrc, readPrefix, setParentPathSrc } from "./member-path.ts";
@@ -56,7 +56,7 @@ export function emitArrMutatorRebinds(
           (a as { type?: string }).type === "SpreadElement"
             ? "$lit(undefined)"
             : isExpression(a as Node)
-              ? transpileExpression(a as Expression, opts)
+              ? emitTranspileExpression(a as Expression, opts)
               : "$lit(undefined)",
         )
         .join(", ");
@@ -101,7 +101,7 @@ export function emitArrMutatorRebinds(
         .map((a) =>
           (a as { type?: string }).type === "SpreadElement"
             ? "$lit(undefined)"
-            : transpileExpression(a, opts),
+            : emitTranspileExpression(a, opts),
         )
         .join(", ");
       const targetName = (node.arguments[0] as { name: string }).name;
@@ -128,7 +128,7 @@ export function emitArrMutatorRebinds(
         // 注意：computed key 在此二次求值（副作用型 key 表达式会重复；
         // 与数组 mutator 参数的重绑口径一致，罕见形态接受）
         const keySrc = m.computed
-          ? transpileExpression(m.property as Expression, opts)
+          ? emitTranspileExpression(m.property as Expression, opts)
           : `$lit(${JSON.stringify((m.property as { name: string }).name)})`;
         lines.push(
           `${pad}${path.rootSrc} = ${setParentPathSrc(path, `$del(${parentRead}, ${keySrc})`)};`,
@@ -202,7 +202,7 @@ export function emitDestructure(
       const keyLit = JSON.stringify(key);
       namedKeys.push(key);
       if (prop.value.type === "AssignmentPattern") {
-        const def = transpileExpression(prop.value.right as Expression, opts);
+        const def = emitTranspileExpression(prop.value.right as Expression, opts);
         const left = prop.value.left;
         if (left.type === "Identifier") {
           out.push(
@@ -246,7 +246,7 @@ export function emitDestructure(
         return;
       }
       if (el.type === "AssignmentPattern") {
-        const def = transpileExpression(el.right as Expression, opts);
+        const def = emitTranspileExpression(el.right as Expression, opts);
         const idx = `$idx(${fromSrc}, $lit(${i}))`;
         if (el.left.type === "Identifier") {
           out.push(`${pad}${kw} ${el.left.name} = $orDefault(${idx}, () => ${def});`);
@@ -305,7 +305,7 @@ export function emitParamBinding(
     const ph = `_p${i}`;
     sig.push(ph);
     if (p.type === "AssignmentPattern") {
-      const def = transpileExpression(p.right as Expression, opts);
+      const def = emitTranspileExpression(p.right as Expression, opts);
       if (p.left.type === "Identifier") {
         prologue.push(`${pad}const ${p.left.name} = $orDefault(${ph}, () => ${def});`);
       } else {
@@ -354,7 +354,7 @@ export function emitParamBindingFromArgs(
       return;
     }
     if (p.type === "AssignmentPattern") {
-      const def = transpileExpression(p.right as Expression, opts);
+      const def = emitTranspileExpression(p.right as Expression, opts);
       if (p.left.type === "Identifier") {
         prologue.push(`${pad}let ${p.left.name} = $orDefault(${idxSrc}, () => ${def});`);
       } else {

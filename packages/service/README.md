@@ -1,6 +1,6 @@
 # @nudojs/service
 
-Shared inference service for [Nudo](https://github.com/nudojs/nudo) IDE integrations.
+Nudo analysis core and emit products: Abs-native file analysis, evaluator host API, interface/dts/schema/guard projections, and session caches.
 
 ## What is Nudo?
 
@@ -8,7 +8,7 @@ Nudo is a type inference engine for JavaScript. The type system is Abs (`shape Ã
 
 ## This package
 
-`@nudojs/service` provides the analysis core used by editor extensions and build tools.
+`@nudojs/service` provides the analysis core used by CLI, editor extensions, and build tools, plus the emit faces that project Abs to dts/schema/guard/interface.
 
 Production evaluation is **Abs-native B-path** (`evalAbsModuleGraph` + `runTranspiled`); the TypeValue AST interpreter is gone. Prefer a focused subpath over the full barrel:
 

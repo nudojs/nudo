@@ -103,6 +103,7 @@ export function buildTestReport(file: string, result: AnalysisResult): TestRepor
       try {
         ok = leqAbs(c.abs, c.expected as Abs).ok;
       } catch {
+        /* optional: leqAbs threw — treat case as failed */
         ok = false;
       }
       outcomes.push({

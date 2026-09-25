@@ -16,7 +16,7 @@ import {
   type LoadDepsFingerprint,
 } from "./load-deps-fp.ts";
 import { runTranspiledOptionsMemoKey } from "./exec/run.ts";
-import type { CheckOptions } from "./check.ts";
+import type { CheckOptions } from "./check-types.ts";
 
 const checkReportMemo = new Map<string, CheckReport>();
 const checkKeyDeps = new Map<string, string[]>();

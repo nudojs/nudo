@@ -13,7 +13,7 @@ How Nudo packages are versioned, what counts as a breaking change, and how to fo
 > 2. **A1:** `analysis.mode` shipped default flipped `directives` → `exports` (`DEFAULT_ANALYSIS_MODE` in `@nudojs/service`). Escape hatch: `package.json#nudo.analysis.mode = "directives"` (old silence) or `"all"` (every target path). On **1.x** packages this is a **default-behavior flip that can invent diagnostics** on previously unanalyzed export-bearing files → treat as **major** in changesets/release notes unless the team ships a documented minor with the escape hatch called out.
 > 3. **CLI semantics:** primary verbs are `check` / `test` / `contract` / `export` / `health`. Observation is check signatures + test case reports + IDE hover; `watch` is `--watch` on check/test. Flags: `--from`, `test --freeze`, `export --format dts|guard|schema|standard|all` with `--dialect zod` for schema, `export --out`. Entry unconstrained params display as **`any`**; true `unknown` = inference failure. Harvest is **not** a product verb (`@types` auto-fill is analysis-internal; env-package generation uses `@nudojs/harvester`).
 >
-> `@nudojs/core` / `@nudojs/service` / `nudojs` / `@nudojs/parser` / `@nudojs/lsp` are on the **stable SemVer 1.x+ line** (each package’s major may differ — see package.json). The monorepo root version is private and is not a publish unit.
+> `@nudojs/core` / `@nudojs/service` / `nudojs` / `@nudojs/parser` / `@nudojs/lsp` are on the **stable SemVer 1.x+ line** (each package’s major may differ — see package.json). **Packages version independently; majors are not lockstep.** At time of writing the major lines differ (illustrative only — package.json is authoritative): core on 3.x, service on 5.x, nudojs on 1.x. The monorepo root version is private and is not a publish unit.
 >
 > **Do not pin exact versions in this policy doc.** Authoritative numbers live in each `packages/*/package.json` and the consumer-facing table in website `guides/versioning.md` (`NUDO-VERSIONS` block). This file states **lines and rules only**.
 
@@ -26,11 +26,28 @@ How Nudo packages are versioned, what counts as a breaking change, and how to fo
 | `@nudojs/lsp` | stable 1.x+ | SemVer — breaking = **major**. Freeze inventory: [`packages/lsp/PUBLIC_API.md`](../packages/lsp/PUBLIC_API.md) |
 | `@nudojs/env` | pre-1.0 | Minor may break. Policy authority: [Ecosystem packages](#ecosystem-packages-env--harvester) |
 | `@nudojs/harvester` | pre-1.0 | Minor may break. Policy authority: [Ecosystem packages](#ecosystem-packages-env--harvester) |
-| `@nudojs/cli` | deprecated stub | Forwards to `nudojs`; do not depend on it. Prefer `nudojs` / `@nudojs/*` directly |
+| `@nudojs/cli` | deprecated stub | Forwards to `nudojs`; do not depend on it. Prefer `npm i nudojs` / `@nudojs/*` directly. **Sunset:** see [`@nudojs/cli` sunset](#nudojscli-sunset-deprecated-forward-stub) |
 | `vite-plugin-nudo` | pre-1.0 | Minor may break |
 | `nudo-vscode` | private | Marketplace / Open VSX release notes; not npm-semver for consumers. Bundled `@nudojs/lsp` must match the monorepo lsp dist at package time (see `packages/vscode/RELEASE_CHECKLIST.md`) |
 
 The monorepo root (`nudo-monorepo@0.3.0`) is private and is **not** a publish unit. Published versions are per-package.
+
+### `@nudojs/cli` sunset (deprecated forward stub)
+
+`@nudojs/cli` is a **deprecated forward stub** kept only for migration. It forwards the `nudo` bin and module entry to [`nudojs`](https://www.npmjs.com/package/nudojs) and prints a deprecation line on stderr. CHANGELOG already claims it will be unpublished after the first stable 1.0 release train / one beta cycle — the **deadline is explicit and checkable**:
+
+- **Unpublish no later than 30 days after `nudojs@1.0.0` stable** ships on npm `latest`.
+- **Or immediately**, whichever comes first, if npm download data shows only monorepo CI traffic (no third-party installs) — in that case the stub can be removed as soon as the stable train lands.
+
+Consumers should migrate now:
+
+```bash
+npm rm @nudojs/cli
+npm i nudojs          # same `nudo` command
+nudo --version        # prints `nudojs <ver>` (+ `@nudojs/core <ver>` when resolvable)
+```
+
+Do not add new dependencies on `@nudojs/cli`. After the unpublish date, `import "@nudojs/cli"` / `npx @nudojs/cli` will fail; use `nudojs` / `nudo` instead.
 
 ### 0.x SemVer (pre-1.0 packages)
 

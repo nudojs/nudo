@@ -39,7 +39,7 @@ import {
 } from "./state.ts";
 import { $unknown, $toNumber, $eq, $ne, $typeof, $add, $sub } from "./ops.ts";
 import { lookupObjAccessor, migrateAccessors, $objAccessor, findClassAccessor, findStaticClassAccessor, $in, $instanceof, $del, accessorTable, BUILTIN_BRAND_METHODS, bClassChain } from "./members.ts";
-import { DEFAULT_MAX_LOOP_ITERS } from "./control.ts";
+import { DEFAULT_MAX_LOOP_ITERS } from "./loop-budget.ts";
 import { isNudoThrow, callAtFunctionBoundary } from "./state.ts";
 import { $call } from "../call.ts";
 

@@ -14,6 +14,7 @@ function readVersionAt(pkgPath: string): string | undefined {
     const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as { version?: string };
     return typeof pkg.version === "string" ? pkg.version : undefined;
   } catch {
+    /* optional: package.json unreadable — omit version line */
     return undefined;
   }
 }
@@ -28,7 +29,7 @@ function findOwnPackageVersion(): string {
         const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as { name?: string; version?: string };
         if (pkg.name === "nudojs" && typeof pkg.version === "string") return pkg.version;
       } catch {
-        /* keep walking */
+        /* optional: package.json unreadable — keep walking parent dirs */
       }
     }
     const parent = dirname(dir);
@@ -47,7 +48,7 @@ function ownPackageDir(): string {
         const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as { name?: string };
         if (pkg.name === "nudojs") return dir;
       } catch {
-        /* keep walking */
+        /* optional: package.json unreadable — keep walking parent dirs */
       }
     }
     const parent = dirname(dir);
@@ -68,7 +69,7 @@ function versionFromResolvedEntry(name: string): string | undefined {
           const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as { name?: string; version?: string };
           if (pkg.name === name && typeof pkg.version === "string") return pkg.version;
         } catch {
-          /* keep walking */
+          /* optional: package.json unreadable — keep walking parent dirs */
         }
       }
       const parent = dirname(dir);
@@ -76,7 +77,7 @@ function versionFromResolvedEntry(name: string): string | undefined {
       dir = parent;
     }
   } catch {
-    /* unresolvable */
+    /* optional: package unresolvable — omit core version line */
   }
   return undefined;
 }

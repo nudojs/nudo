@@ -69,6 +69,7 @@ function readJson(path: string): Record<string, unknown> | undefined {
   try {
     return JSON.parse(readFileSync(path, "utf-8")) as Record<string, unknown>;
   } catch {
+    /* optional: package.json unreadable — omit */
     return undefined;
   }
 }
@@ -83,6 +84,7 @@ function listFiles(dir: string, out: string[] = [], depth = 0): string[] {
   try {
     entries = readdirSync(dir);
   } catch {
+    /* optional: directory unreadable — skip */
     return out;
   }
   for (const name of entries) {
@@ -94,6 +96,7 @@ function listFiles(dir: string, out: string[] = [], depth = 0): string[] {
     try {
       st = statSync(p);
     } catch {
+      /* optional: entry unstatable — skip */
       continue;
     }
     if (st.isDirectory()) listFiles(p, out, depth + 1);
@@ -360,7 +363,7 @@ export async function migrateStrip(
           }
         }
       } catch {
-        /* draft is best-effort */
+        /* optional: draft is best-effort — migrate continues without sidecar */
       }
     }
     results.push({

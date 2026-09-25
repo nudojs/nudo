@@ -243,7 +243,8 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
   return settleForkArms(a, b, exits);
 }
 
-export const DEFAULT_MAX_LOOP_ITERS = 8;
+export { DEFAULT_MAX_LOOP_ITERS } from "./loop-budget.ts";
+import { DEFAULT_MAX_LOOP_ITERS } from "./loop-budget.ts";
 
 /**
  * for 的惰性展开：生成器只负责「按上限吐状态」。

@@ -129,6 +129,11 @@ Updating the snapshot is intentional only: edit `public-api.snapshot.json` in
 the same PR as the export change and say why in the PR body. Unplanned drift
 fails CI.
 
+> **Barrel rule:** `export *` is banned on public barrels (`src/index.ts`,
+> `src/algebra/index.ts`, `src/algebra/exec/index.ts`, `src/internal.ts`).
+> New engine symbols go to `@nudojs/core/internal` or an explicit list
+> reviewed with PUBLIC_API.md + the snapshot.
+
 ## 6. Versioning pointer
 
 - Policy: [`docs/versioning.md`](../../docs/versioning.md)

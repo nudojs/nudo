@@ -270,6 +270,7 @@ export function materializeHarvestJson(j: unknown): HarvestedEnv | null {
       stats: h.stats ?? { files: 0, symbols: 0, skipped: 0 },
     };
   } catch {
+    /* optional: malformed harvest JSON — treat as missing */
     return null;
   }
 }

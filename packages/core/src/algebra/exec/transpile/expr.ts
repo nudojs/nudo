@@ -31,6 +31,10 @@ import {
 } from "./emit.ts";
 import { memberPathOf, readPathSrc, setPathSrc, readPrefix, setParentPathSrc } from "./member-path.ts";
 import {
+  bindTranspileExpression,
+  bindTranspileShortCircuit,
+} from "./transpile-dispatch.ts";
+import {
   transpileStatement,
   transpileFnBodyStmts,
   transpileBlockAsThunk,
@@ -896,3 +900,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       );
   }
 }
+
+// Register leaf dispatch so stmt/emit/member-path need not import this module.
+bindTranspileExpression(transpileExpression);
+bindTranspileShortCircuit(transpileShortCircuitExpr);

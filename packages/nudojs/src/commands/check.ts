@@ -144,6 +144,7 @@ async function runCheck(
       const scPath = sidecarPathOf(filePath);
       if (existsSync(scPath)) sidecarContent = readFileSync(scPath, "utf-8");
     } catch {
+      /* optional: sidecar unreadable — treat as absent */
       sidecarContent = null;
     }
   }
@@ -222,7 +223,7 @@ async function runCheck(
           : {}),
       };
     } catch {
-      /* 注入计算失败：不注入（fail-closed，无解释兜底） */
+      /* optional: injection setup failed — skip injection (fail-closed) */
     }
     algebraReport = checkSource(filePath, source, pTrue, {
       loadModule,
@@ -354,7 +355,7 @@ async function runCheck(
     try {
       disk.set(cacheKey, serializeCheckJson(algebraReport));
     } catch {
-      /* ignore */
+      /* optional: disk cache write failed — check result still valid */
     }
   }
 

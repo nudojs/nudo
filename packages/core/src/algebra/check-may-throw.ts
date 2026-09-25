@@ -12,7 +12,7 @@ import type { Phi } from "./pred.ts";
 import { pTrue } from "./pred.ts";
 import { formatShape } from "./format.ts";
 import type { PolyFn } from "./generalize.ts";
-import type { CheckOptions } from "./check.ts";
+import type { CheckOptions } from "./check-types.ts";
 import { $invoke, $staticInvoke, withExecPhi } from "./exec/index.ts";
 import {
   tryRunTranspiled,

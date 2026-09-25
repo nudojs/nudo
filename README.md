@@ -206,7 +206,7 @@ This is a monorepo managed with [pnpm workspaces](https://pnpm.io/workspaces).
 | [`@nudojs/parser`](./packages/parser) | Babel-based parser and directive extraction | stable |
 | [`nudojs`](./packages/nudojs) | Product CLI (bin `nudo`): check / test / contract / export / health / migrate | stable |
 | [`@nudojs/cli`](./packages/cli) | Deprecated migration stub — forwards to `nudojs` | deprecated |
-| [`@nudojs/service`](./packages/service) | Shared inference service for IDE integrations | stable |
+| [`@nudojs/service`](./packages/service) | Analysis core + emit products (Abs-native analysis, evaluator host API, interface/dts/schema/guard projections, session caches) | stable |
 | [`@nudojs/lsp`](./packages/lsp) | Language Server Protocol server, with AI-agent `executeCommand` support | stable |
 | [`@nudojs/env`](./packages/env) | Built-in API environments (ES globals, Node, Web) loaded by `@nudo:env` | growing |
 | [`@nudojs/harvester`](./packages/harvester) | Harvests `.d.ts` declarations into Nudo env modules | growing |
@@ -225,7 +225,7 @@ env ─────────┼→ core
 harvester ───┘
 
 service → core, parser, env, harvester
-nudojs  → core, parser, service            (product CLI, bin `nudo`)
+nudojs  → core, parser, service, harvester (product CLI, bin `nudo`)
 lsp     → service, core, parser
 vite-plugin → core, service
 

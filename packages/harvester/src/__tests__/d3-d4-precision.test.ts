@@ -2,7 +2,7 @@
  * D3/D4 — infer 端到端收窄 + Promise.then 同步映射回调返回。
  */
 import { describe, it, expect } from "vitest";
-import { harvestDts } from "@nudojs/harvester";
+import { harvestDts } from "../index.ts";
 import {
   getFnImpl,
   formatShape,

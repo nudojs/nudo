@@ -1,10 +1,10 @@
 /**
  * 成员/下标链 → 可重绑路径（$get/$set/$idx/$idxSet）。
- * computed key 会调 transpileExpression —— 与 expr.ts 函数级循环导入（声明提升）。
+ * computed key 经 transpile-dispatch 调 transpileExpression（避免与 expr.ts 成环）。
  */
 import type { Node, Expression } from "@babel/types";
 import type { TranspileOptions } from "./types.ts";
-import { transpileExpression } from "./expr.ts";
+import { emitTranspileExpression } from "./transpile-dispatch.ts";
 import { isExpression } from "./helpers.ts";
 
 export type MemberLayer = { get: (base: string) => string; set: (base: string, v: string) => string };
@@ -35,7 +35,7 @@ export function memberPathOf(m: { object: Node; property: Node; computed: boolea
           set: (b, v) => `$set(${b}, ${key}, ${v})`,
         });
       } else if (isExpression(k)) {
-        const key = transpileExpression(k, opts);
+        const key = emitTranspileExpression(k, opts);
         layers.unshift({
           get: (b) => `$idx(${b}, ${key})`,
           set: (b, v) => `$idxSet(${b}, ${key}, ${v})`,
