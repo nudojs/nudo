@@ -117,6 +117,8 @@ const config: Config = {
                 "@nudojs/core": resolve(repoRoot, "packages/core/src"),
                 "@nudojs/parser": resolve(repoRoot, "packages/parser/src"),
                 "@nudojs/service": resolve(repoRoot, "packages/service/src"),
+                "@nudojs/service/emit": resolve(repoRoot, "packages/service/src/emit"),
+                "@nudojs/lsp": resolve(repoRoot, "packages/lsp/src"),
                 "@nudojs/harvester": resolve(repoRoot, "packages/harvester/src"),
                 "@nudojs/env/es": resolve(repoRoot, "packages/env/src/es.ts"),
                 "@nudojs/env/web": resolve(repoRoot, "packages/env/src/web.ts"),

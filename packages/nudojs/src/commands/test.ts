@@ -6,12 +6,11 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { resolve, relative } from "node:path";
 import type { Command } from "commander";
 import {
-  analyzeFileAsync,
   insertGeneratedCaseDirectives,
   unifiedDiff,
-  type CallRecord,
   type EmitResult,
-} from "@nudojs/service";
+} from "@nudojs/service/emit";
+import { analyzeFileAsync, type CallRecord } from "@nudojs/service";
 import { buildTestReport, formatTestReport } from "../run-test.ts";
 import {
   collectExternalRecords,
@@ -57,7 +56,7 @@ async function runTest(
       return;
     }
     const report = buildTestReport(filePath, result);
-    const { serializeCaseJson } = await import("@nudojs/service");
+    const { serializeCaseJson } = await import("@nudojs/service/emit");
     const json = serializeCaseJson(result, filePath) as Record<string, unknown>;
     json.assertions = {
       passed: report.passed,

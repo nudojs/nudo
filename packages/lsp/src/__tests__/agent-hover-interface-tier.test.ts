@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getHoverAtPosition } from "@nudojs/service";
+import { getHoverAtPosition } from "../lsp-surface.ts";
 import { collectAbsInlays } from "@nudojs/core/internal";
 import { formatInterfaceTierLine } from "@nudojs/core";
 import { computeInterfaceLenses, hoverTool } from "../agent-tools.ts";

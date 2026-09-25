@@ -21,7 +21,7 @@ import {
 import { getBPathCacheSize, clearBPathCache } from "../bpath-run.ts";
 import { analyzeFile } from "../analyzer.ts";
 import { resetAllAnalysisCaches } from "../session-cache.ts";
-import { getHarvestCacheSize, clearHarvestCache, harvestPackageCached } from "../harvest-auto.ts";
+import { getHarvestCacheSize, clearHarvestCache, harvestPackageCached } from "@nudojs/harvester";
 import {
   getAbsModuleCacheSize,
   clearAbsModuleCache,

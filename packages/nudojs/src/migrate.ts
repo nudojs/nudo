@@ -19,7 +19,7 @@ import { execFileSync } from "node:child_process";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { generate } from "@babel/generator";
 import { parseSource, stripTypes, sidecarPathOf } from "@nudojs/core";
-import { draftInterface } from "@nudojs/service";
+import { draftInterface } from "@nudojs/service/emit";
 
 export type MigrateStatusRow = {
   root: string;

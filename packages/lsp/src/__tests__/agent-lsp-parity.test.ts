@@ -13,12 +13,12 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  analyzeFile,
-  getHoverAtPosition,
   interfaceSurface,
   formatInterfaceSurfaceLine,
   serializeCaseJson,
-} from "@nudojs/service";
+} from "@nudojs/service/emit";
+import { getHoverAtPosition } from "../lsp-surface.ts";
+import { analyzeFile } from "@nudojs/service";
 import {
   checkSource,
   serializeCheckJson,

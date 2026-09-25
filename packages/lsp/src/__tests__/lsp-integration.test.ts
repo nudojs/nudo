@@ -3,17 +3,18 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
-  analyzeFile,
-  getTypeAtPosition,
-  getCompletionsAtPosition,
-  getCasesForFile,
   absToTSType,
   absToSchemaSource,
   generateDts,
   generateGuardFunction,
-  buildSemanticTokens,
-  SEMANTIC_TOKEN_TYPES,
-} from "@nudojs/service";
+} from "@nudojs/service/emit";
+import {
+  getTypeAtPosition,
+  getCompletionsAtPosition,
+  getCasesForFile,
+} from "../lsp-surface.ts";
+import { buildSemanticTokens, SEMANTIC_TOKEN_TYPES } from "../semantic-tokens.ts";
+import { analyzeFile } from "@nudojs/service";
 import { abs, num, str, numLit, formatShape, type Abs } from "@nudojs/core";
 import { parse } from "@nudojs/parser";
 import { buildSymbolTable, findDefinition, findReferences, findIdentifierAtPosition } from "../symbols.ts";

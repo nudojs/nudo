@@ -14,25 +14,26 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, resolve, relative, isAbsolute } from "node:path";
 import {
-  analyzeFile,
   buildCaseDirective,
-  getHoverAtPosition,
   serializeCaseJson,
-  getCasesForFile,
   interfaceSurface,
   draftInterface,
   emitInterface,
   formatEmitSummary,
   formatDraftSummary,
   formatInterfaceSurfaceLine,
+  sidecarDraftPath,
+  writeInterfaceDraft,
+  type EmitInterfaceResult,
+} from "@nudojs/service/emit";
+import { getHoverAtPosition, getCasesForFile } from "./lsp-surface.ts";
+import {
+  analyzeFile,
   findProjectConfig,
   interfaceConfig,
   checkConfig,
   collectSkipReturns,
   isNudoTargetPath,
-  sidecarDraftPath,
-  writeInterfaceDraft,
-  type EmitInterfaceResult,
 } from "@nudojs/service";
 import { parse } from "@nudojs/parser";
 import {

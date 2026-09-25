@@ -14,10 +14,12 @@ import {
 import {
   projectAbsToSchema,
   absToStandardSchemaModule,
-  defaultLoadModule,
   type SchemaDialect,
   generateGuardFunctionFromAbs,
   generateFunctionDtsLines,
+} from "@nudojs/service/emit";
+import {
+  defaultLoadModule,
   analyzeFileAsync,
   type CaseResult,
 } from "@nudojs/service";

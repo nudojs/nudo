@@ -10,9 +10,9 @@ import { join } from "node:path";
 import {
   analyzeFile,
   shouldAnalyzeFile,
-  getHoverAtPosition,
   DEFAULT_ANALYSIS_MODE,
 } from "@nudojs/service";
+import { getHoverAtPosition } from "../lsp-surface.ts";
 import { collectAbsInlays } from "@nudojs/core/internal";
 import { parse } from "@nudojs/parser";
 import {

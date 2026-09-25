@@ -57,7 +57,7 @@ import {
   type AgentToolResult,
 } from "./agent-tools.ts";
 import { NUDO_EXECUTE_COMMANDS, NUDO_AGENT_TOOL_NAMES } from "./public-api.ts";
-import { TOKEN_TYPES, TOKEN_MODIFIERS } from "./semantic-tokens.ts";
+import { SEMANTIC_TOKEN_TYPES as TOKEN_TYPES, SEMANTIC_TOKEN_MODIFIERS as TOKEN_MODIFIERS } from "./semantic-tokens.ts";
 import {
   watchedFilesListeners,
   registerWatchedFilesListener,

@@ -49,6 +49,7 @@
     "@nudojs/core": "workspace:*",
     "@nudojs/parser": "workspace:*",
     "@nudojs/service": "workspace:*",
+    "@nudojs/harvester": "workspace:*",
     "commander": "^15.0.0"
   },
   "scripts": {

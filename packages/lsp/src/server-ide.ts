@@ -17,7 +17,9 @@ import {
   getTypeAtPosition,
   getHoverAtPosition,
   getCompletionsAtPosition,
-  buildSemanticTokens,
+} from "./lsp-surface.ts";
+import { buildSemanticTokens } from "./semantic-tokens.ts";
+import {
   isNudoTargetPath,
   shouldAnalyzeFile,
   findProjectConfig,

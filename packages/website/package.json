@@ -21,6 +21,7 @@
     "@nudojs/core": "workspace:*",
     "@nudojs/parser": "workspace:*",
     "@nudojs/service": "workspace:*",
+    "@nudojs/lsp": "workspace:*",
     "clsx": "^2.1.1",
     "prism-react-renderer": "^2.4.1",
     "react": "^19.3.0",

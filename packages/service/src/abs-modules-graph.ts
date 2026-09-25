@@ -18,7 +18,7 @@ import {
   type AbsModuleExports,
 } from "@nudojs/core";
 import type { Node } from "@babel/types";
-import { bareSpecToAbsModules } from "./harvest-to-abs.ts";
+import { bareSpecToAbsModules } from "@nudojs/harvester";
 import { resolveNpmJsEntry } from "./evaluator/resolve-npm.ts";
 import { BoundedLruMap } from "./lru-map.ts";
 

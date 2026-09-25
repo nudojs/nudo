@@ -1,19 +1,16 @@
 /**
- * `@nudojs/service` — full barrel (stable public surface).
+ * `@nudojs/service` — analysis core (stable public surface).
  *
  * Production analysis is Abs-native (shape × term × pred × conf) via the
  * B-path evaluator (`evalAbsModuleGraph` + `runTranspiled`). Prefer the
  * focused subpaths for new consumers:
  *
  * - `@nudojs/service/analysis`  — file analysis + Abs-native module-graph eval
- * - `@nudojs/service/interface` — interface / contract product
- * - `@nudojs/service/dts`       — dts / schema / standard / guard projections
- * - `@nudojs/service/case`      — debug case reports + case directive emit
- * - `@nudojs/service/lsp`       — IDE surface (hover / completions / tokens)
- * - `@nudojs/service/harvest`   — `@types` → Abs env harvesting
  * - `@nudojs/service/evaluator` — host API surface (env/config/CallRecord)
  *
- * This `.` entry re-exports everything below and is kept for compatibility.
+ * Emit products (interface/dts/case) live in `@nudojs/service/emit`; IDE surface in
+ * `@nudojs/lsp`; `@types` harvest in `@nudojs/harvester`. This `.` entry
+ * re-exports the analysis face below.
  */
 
 // ─── Analyzer（文件分析 / 诊断 / 调用点） ────────────────────────────
@@ -41,6 +38,9 @@ export {
   computeDirtySet,
   topoSortDirty,
   analysisFileCacheKey,
+  resolveModule,
+  locFromNode,
+  collectEnvNames,
 } from "./analyzer.ts";
 
 export {
@@ -67,6 +67,12 @@ export {
 } from "./entry-variants.ts";
 
 export { collectSkipReturns } from "./skip-directives.ts";
+// AI3：what-if 绑定注入（CLI / LSP 同构；emit 的 interface 面再导出）
+export {
+  injectBindings,
+  typeExprToDirective,
+  type TypeBinding,
+} from "./what-if.ts";
 export { defaultLoadModule, type LoadModule } from "./load-module.ts";
 export { collectLoadDepContents, type DepContent } from "./dep-contents.ts";
 
@@ -123,187 +129,6 @@ export {
   applyMockModuleDirectivesFromSource,
   type MockModuleApplyResult,
 } from "./mock-module.ts";
-
-// ─── Interface（contract 侧车 / draft / emit / derive） ──────────────
-export {
-  interfaceSurface,
-  formatInterfaceSurfaceLine,
-  type InterfaceSurfaceEntry,
-  type InterfaceSurfaceOpts,
-} from "./interface-surface.ts";
-
-export {
-  emitInterface,
-  formatEmitSummary,
-  type EmitInterfaceOpts,
-  type EmitInterfaceResult,
-  type EmitInterfaceSkipReason,
-} from "./interface-emitter.ts";
-
-export {
-  draftInterface,
-  formatDraftModule,
-  formatDraftSummary,
-  sidecarDraftPath,
-  writeInterfaceDraft,
-  collectParamBodyAccesses,
-  isDraftableEntry,
-  type DraftEvidence,
-  type InterfaceDraftEntry,
-  type InterfaceDraftOpts,
-  type InterfaceDraftResult,
-  type WriteDraftResult,
-} from "./interface-draft.ts";
-
-// Phase 2：root 驱动契约下行（design-refine-derivation §4.2 / §7.3）
-export {
-  deriveFromRoot,
-  emitDerivedFromRoot,
-  extractFnConstraintSources,
-  formatDerivedSection,
-  type ConstraintSourceExpr,
-  type DerivedExport,
-  type DerivedParam,
-  type EmitDerivedResult,
-  type RootDeriveOpts,
-  type RootDeriveResult,
-} from "./interface-derivation.ts";
-
-// AI3：what-if 绑定注入（CLI / LSP 同构）
-export {
-  injectBindings,
-  typeExprToDirective,
-  type TypeBinding,
-} from "./what-if.ts";
-
-// ─── DTS / Schema / Guard（外延投影，单向） ─────────────────────────
-export {
-  generateDts,
-  generateFunctionDtsLines,
-  absToTSType,
-} from "./dts-generator.ts";
-
-export {
-  absToSchemaSource,
-  absToSchemaNode,
-  constraintToSchemaNode,
-  projectAbsToSchema,
-  schemaNodeToZod,
-  type SchemaDialect,
-  type SchemaNode,
-  type SchemaProjection,
-  type SchemaRefinement,
-} from "./schema-generator.ts";
-
-export {
-  absToStandardSchema,
-  absToStandardSchemaModule,
-  validateSchemaNode,
-  type StandardSchemaIssue,
-  type StandardSchemaModuleProjection,
-  type StandardSchemaResult,
-} from "./standard-schema.ts";
-
-export { generateGuardFunction, generateGuardFunctionFromAbs } from "./guard-generator.ts";
-
-// ─── Case（debug 见证 / CaseJson / case 注入，非接口产品） ───────────
-export {
-  serializeCaseJson,
-  type CaseJson,
-  type CaseJsonCase,
-  type CaseJsonFunction,
-} from "./case-json.ts";
-
-export {
-  serializeCaseArg,
-  buildCaseDirective,
-  stripGeneratedCaseDirectives,
-  insertGeneratedCaseDirectives,
-  unifiedDiff,
-  type EmitSkipReason,
-  type EmitResult,
-} from "./case-emitter.ts";
-
-// ─── LSP surface（hover / completions / inlay / semantic tokens） ────
-export {
-  type CaseInfo,
-  getTypeAtPosition,
-  getTypeAtPositionAsync,
-  getAbsAtPosition,
-  getAbsAtPositionAsync,
-  getHoverAtPosition,
-  type HoverInfo,
-  getCompletionsAtPosition,
-  getCasesForFile,
-} from "./lsp-surface.ts";
-
-export {
-  buildSemanticTokens,
-  encodeSemanticTokens,
-  interfaceTierModifierBit,
-  SEMANTIC_TOKEN_TYPES,
-  SEMANTIC_TOKEN_MODIFIERS,
-  type SemanticToken,
-  type BuildSemanticTokensOpts,
-} from "./semantic-tokens.ts";
-
-// ─── Harvest（@types → Abs env；非 CLI 动词） ───────────────────────
-export {
-  harvestPackage,
-  collectDtsFromEntry,
-  formatHarvestSummary,
-  lookupHarvested,
-  resolvePackageRoot,
-  type PackageHarvest,
-} from "./harvest-package.ts";
-
-export {
-  barePackageName,
-  collectBarePackages,
-  autoHarvestModules,
-  harvestPackageCached,
-  clearHarvestCache,
-  getHarvestCacheSize,
-} from "./harvest-auto.ts";
-
-export {
-  depsCacheRoot,
-  dtsClosureHash,
-  harvestPackageWithDisk,
-  loadHarvestEnvFromDisk,
-  readHarvestDisk,
-  writeHarvestDisk,
-} from "./harvest-disk.ts";
-
-export {
-  absToHarvestSig,
-  harvestSigToAbs,
-  serializeHarvestJson,
-  materializeHarvestJson,
-  harvestCacheKey,
-  type HarvestJson,
-  type HarvestSig,
-} from "./harvest-json.ts";
-
-export {
-  harvestToAbsModules,
-  packageHarvestToAbsModules,
-  bareSpecToAbsModules,
-  harvestedValueToAbs,
-} from "./harvest-to-abs.ts";
-
-export {
-  harvestNodeTypes,
-  handwrittenNodeEnv,
-  summarizeNodeEnv,
-  clearNodeHarvestCache,
-  getNodeHarvestCacheSize,
-  isHarvestNodeDisabled,
-  HARVEST_NODE_DEFAULT_MAX_FILES,
-  HARVEST_NODE_DEFAULT_MAX_MS,
-  type NodeEnvResult,
-  type HarvestNodeStats,
-} from "./harvest-node.ts";
 
 // ─── Config / session / cache ───────────────────────────────────────
 // check/LSP 执法路径的 autoBind / L2 entry-throws 接线

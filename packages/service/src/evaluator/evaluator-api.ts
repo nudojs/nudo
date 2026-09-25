@@ -23,6 +23,7 @@ export {
   analysisConfig,
   checkConfig,
   diskCacheRoot,
+  matchesEmitAllowlist,
   type NudoConfig,
   type InterfaceConfig,
   type AnalysisConfig,

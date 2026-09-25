@@ -9,9 +9,8 @@ import {
   formatEmitSummary,
   formatInterfaceSurfaceLine,
   unifiedDiff,
-  isNudoTargetPath,
-  type CallRecord,
-} from "@nudojs/service";
+} from "@nudojs/service/emit";
+import { isNudoTargetPath, type CallRecord } from "@nudojs/service";
 import { collectExternalRecords, resolveTargets } from "./shared.ts";
 
 // ---------------------------------------------------------------------------
@@ -19,7 +18,7 @@ import { collectExternalRecords, resolveTargets } from "./shared.ts";
 // ---------------------------------------------------------------------------
 
 async function runContractPrint(file: string, records?: CallRecord[]): Promise<void> {
-  const { interfaceSurface } = await import("@nudojs/service");
+  const { interfaceSurface } = await import("@nudojs/service/emit");
   const filePath = resolve(file);
   const entries = await interfaceSurface(filePath, { records });
   const rel = relative(process.cwd(), filePath) || filePath;
@@ -44,7 +43,7 @@ async function runContractFromDts(
   opts: { write: boolean; dryRun: boolean },
 ): Promise<void> {
   const { dtsPathToContractDraft, dtsToContractDraft } = await import("@nudojs/harvester");
-  const { harvestPackage } = await import("@nudojs/service");
+  const { harvestPackage } = await import("@nudojs/harvester");
 
   if (paths.length === 0) {
     console.error(
@@ -132,7 +131,7 @@ async function runContractDraft(
   },
 ): Promise<void> {
   const { draftInterface, formatDraftSummary, writeInterfaceDraft, sidecarDraftPath } =
-    await import("@nudojs/service");
+    await import("@nudojs/service/emit");
   const filePath = resolve(file);
   const rel = relative(process.cwd(), filePath) || filePath;
   const result = await draftInterface(filePath, {
@@ -238,7 +237,7 @@ async function runContractEmit(
   file: string,
   opts: { fnNames: string[]; all: boolean; dryRun: boolean; exitOnDiff: boolean; records?: CallRecord[] },
 ): Promise<void> {
-  const { emitInterface, emitDerivedFromRoot } = await import("@nudojs/service");
+  const { emitInterface, emitDerivedFromRoot } = await import("@nudojs/service/emit");
   const filePath = resolve(file);
   const rel = relative(process.cwd(), filePath) || filePath;
   const fnNames = opts.fnNames.length > 0 ? opts.fnNames : undefined;

@@ -103,9 +103,18 @@ importers:
 
   packages/harvester:
     dependencies:
+      '@babel/types':
+        specifier: ^8.0.6
+        version: 8.0.6
       '@nudojs/core':
         specifier: workspace:*
         version: link:../core
+      '@nudojs/env':
+        specifier: workspace:*
+        version: link:../env
+      '@nudojs/parser':
+        specifier: workspace:*
+        version: link:../parser
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -145,6 +154,9 @@ importers:
       '@nudojs/core':
         specifier: workspace:*
         version: link:../core
+      '@nudojs/harvester':
+        specifier: workspace:*
+        version: link:../harvester
       '@nudojs/parser':
         specifier: workspace:*
         version: link:../parser
@@ -233,6 +245,9 @@ importers:
       '@nudojs/core':
         specifier: workspace:*
         version: link:../core
+      '@nudojs/lsp':
+        specifier: workspace:*
+        version: link:../lsp
       '@nudojs/parser':
         specifier: workspace:*
         version: link:../parser

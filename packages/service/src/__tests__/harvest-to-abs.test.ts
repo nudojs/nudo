@@ -8,9 +8,9 @@ import { join } from "node:path";
 import {
   harvestedValueToAbs,
   bareSpecToAbsModules,
-  evalAbsModuleGraph,
   clearHarvestCache,
-} from "@nudojs/service";
+} from "@nudojs/harvester";
+import { evalAbsModuleGraph } from "@nudojs/service";
 import {
   runTranspiled,
   callTranspiledExportFull,

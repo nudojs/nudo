@@ -29,6 +29,9 @@ export {
   type DirectiveCaseMode,
   computeDirtySet,
   topoSortDirty,
+  resolveModule,
+  locFromNode,
+  collectEnvNames,
 } from "./analyzer.ts";
 
 export {

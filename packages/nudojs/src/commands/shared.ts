@@ -5,13 +5,16 @@
 import { readFileSync, existsSync, watch, readdirSync, statSync } from "node:fs";
 import { resolve, dirname, relative, join, basename } from "node:path";
 import {
+  stripGeneratedCaseDirectives,
+  insertGeneratedCaseDirectives,
+  type EmitResult,
+} from "@nudojs/service/emit";
+import {
   analyzeFileAsync,
   buildModuleGraph,
   computeDirtySet,
   topoSortDirty,
   collectCallRecords,
-  stripGeneratedCaseDirectives,
-  insertGeneratedCaseDirectives,
   isNudoTargetPath,
   isWatchRelevantPath,
   isSidecarPath,
@@ -22,7 +25,6 @@ import {
   getAnalysisSession,
   type CallRecord,
   type AnalysisResult,
-  type EmitResult,
 } from "@nudojs/service";
 
 export type EmitCasesOptions = { mode: "add" | "update"; dryRun: boolean; exitOnDiff: boolean };

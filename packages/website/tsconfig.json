@@ -22,6 +22,8 @@
       "@nudojs/service": ["../service/src"],
       "@nudojs/service/*": ["../service/src/*"],
       "@nudojs/service/evaluator": ["../service/src/evaluator/evaluator-api.ts"],
+      "@nudojs/lsp": ["../lsp/src"],
+      "@nudojs/lsp/*": ["../lsp/src/*"],
       "@nudojs/harvester": ["../harvester/src"],
       "@nudojs/harvester/*": ["../harvester/src/*"],
       "@nudojs/env/*": ["../env/src/*"]

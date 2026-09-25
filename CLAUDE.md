@@ -47,7 +47,7 @@ env ─────────┼→ core
 harvester ───┘
 
 service → core, parser, env, harvester
-nudojs  → core, parser, service            (product CLI, bin `nudo`)
+nudojs  → core, parser, service, harvester   (product CLI, bin `nudo`)
 lsp     → service, core, parser
 vite-plugin → core, service
 
@@ -61,9 +61,10 @@ Product CLI lives in `packages/nudojs` (published as `nudojs`, bin `nudo`). `pac
 | `packages/core` | **Type system**: algebra/Abs (term, pred, check, leq, exec/transpile, surface, arithmetic), format (extensional rendering), environment, refinements, interface (sidecar/effectiveInterface/projection) |
 | `packages/parser` | Babel-based parser; extracts function-scoped `@nudo:` directives from JSDoc |
 | `packages/cli` | Deprecated stub for `@nudojs/cli` → forwards to `nudojs` |
-| `packages/service` | Analyzer orchestration, Abs-native evaluator (B-path), dts-generator, harvest, case-json, interface emitter/surface/derivation |
+| `packages/service` | Analysis core: analyzer orchestration, Abs-native evaluator (B-path), session caches |
+| `packages/service` (…/emit) | Emit products are `@nudojs/service/emit` (interface/dts/schema/guard/case) |
 | `packages/nudojs` | The `nudo` CLI (check/test/contract/export/health/migrate), published as `nudojs` |
-| `packages/lsp` | LSP server (check diagnostics, completions, code lens, inlay hints, agent tools) |
+| `packages/lsp` | IDE surface (hover/completions/semantic tokens) + LSP server |
 | `packages/env` | ES / Web / Node API type definitions (`@nudojs/env`) |
 | `packages/harvester` | Harvest `@types` → Abs env (env-package authoring + analysis auto-fill; not a CLI verb) |
 | `packages/vite-plugin` | Vite plugin for build-time inference |

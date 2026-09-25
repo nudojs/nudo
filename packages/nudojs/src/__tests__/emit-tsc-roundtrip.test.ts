@@ -3,7 +3,8 @@ import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { analyzeFileAsync, generateFunctionDtsLines } from "@nudojs/service";
+import { generateFunctionDtsLines } from "@nudojs/service/emit";
+import { analyzeFileAsync } from "@nudojs/service";
 
 const dirs: string[] = [];
 

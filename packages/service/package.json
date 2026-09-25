@@ -4,7 +4,7 @@
   "engines": {
     "node": ">=20"
   },
-  "description": "Shared inference service for Nudo IDE integrations — evaluator, file analysis, completions, and .d.ts generation",
+  "description": "Nudo analysis core and emit products: Abs-native file analysis, evaluator host API, interface/dts/schema/guard projections, and session caches",
   "type": "module",
   "license": "MIT",
   "keywords": [
@@ -26,29 +26,13 @@
       "types": "./dist/analysis.d.ts",
       "default": "./dist/analysis.js"
     },
-    "./interface": {
-      "types": "./dist/interface.d.ts",
-      "default": "./dist/interface.js"
-    },
-    "./dts": {
-      "types": "./dist/dts.d.ts",
-      "default": "./dist/dts.js"
-    },
-    "./case": {
-      "types": "./dist/case.d.ts",
-      "default": "./dist/case.js"
-    },
-    "./lsp": {
-      "types": "./dist/lsp.d.ts",
-      "default": "./dist/lsp.js"
-    },
-    "./harvest": {
-      "types": "./dist/harvest.d.ts",
-      "default": "./dist/harvest.js"
-    },
     "./evaluator": {
       "types": "./dist/evaluator/evaluator-api.d.ts",
       "default": "./dist/evaluator/evaluator-api.js"
+    },
+    "./emit": {
+      "types": "./dist/emit/index.d.ts",
+      "default": "./dist/emit/index.js"
     }
   },
   "files": [
@@ -70,12 +54,12 @@
     "@nudojs/core": "workspace:*",
     "@nudojs/parser": "workspace:*",
     "@nudojs/env": "workspace:*",
-    "@nudojs/harvester": "workspace:*",
     "@babel/traverse": "^8.0.6",
-    "@babel/types": "^8.0.6"
+    "@babel/types": "^8.0.6",
+    "@nudojs/harvester": "workspace:*"
   },
   "scripts": {
-    "build": "tsup src/index.ts src/analysis.ts src/interface.ts src/dts.ts src/case.ts src/lsp.ts src/harvest.ts src/evaluator/evaluator-api.ts --format esm --dts",
-    "prepublishOnly": "tsup src/index.ts src/analysis.ts src/interface.ts src/dts.ts src/case.ts src/lsp.ts src/harvest.ts src/evaluator/evaluator-api.ts --format esm --dts"
+    "build": "tsup src/index.ts src/analysis.ts src/evaluator/evaluator-api.ts src/emit/index.ts --format esm --dts",
+    "prepublishOnly": "tsup src/index.ts src/analysis.ts src/evaluator/evaluator-api.ts src/emit/index.ts --format esm --dts"
   }
 }
