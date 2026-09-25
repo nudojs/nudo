@@ -192,7 +192,14 @@ const config: Config = {
                 "@nudojs/service": resolve(repoRoot, "packages/service/src"),
                 "@nudojs/service/emit": resolve(repoRoot, "packages/service/src/emit"),
                 "@nudojs/lsp": resolve(repoRoot, "packages/lsp/src"),
-                "@nudojs/harvester": resolve(repoRoot, "packages/harvester/src"),
+                // Harvester (.d.ts → Abs) is Node-only: it pulls the full
+                // `typescript` compiler + fs. Playground only needs
+                // `bareSpecToAbsModules` as a last-resort stub.
+                "@nudojs/harvester": resolve(
+                  websiteRoot,
+                  "src/polyfills/harvester-browser.ts",
+                ),
+                typescript: resolve(websiteRoot, "src/polyfills/typescript.ts"),
                 "@nudojs/env/es": resolve(repoRoot, "packages/env/src/es.ts"),
                 "@nudojs/env/web": resolve(repoRoot, "packages/env/src/web.ts"),
                 "@nudojs/env/node": resolve(repoRoot, "packages/env/src/node.ts"),
@@ -225,6 +232,29 @@ const config: Config = {
                 util: false,
                 buffer: false,
                 events: false,
+              },
+            },
+            // Playground engine is route-lazy; further split Babel so a
+            // compiler-only bump does not invalidate the whole  engine chunk
+            // and docs pages never share that cache entry.
+            optimization: {
+              splitChunks: {
+                cacheGroups: {
+                  babel: {
+                    test: /[\\/]node_modules[\\/]@babel[\\/]/,
+                    name: "babel",
+                    chunks: "async",
+                    priority: 30,
+                    reuseExistingChunk: true,
+                  },
+                  nudoEngine: {
+                    test: /[\\/]packages[\\/](core|parser|service|lsp)[\\/]src[\\/]/,
+                    name: "nudo-engine",
+                    chunks: "async",
+                    priority: 20,
+                    reuseExistingChunk: true,
+                  },
+                },
               },
             },
             plugins: [
