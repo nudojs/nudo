@@ -3,6 +3,11 @@
  * 多项目开 LSP 时用 env 封顶内存；单大仓可调高换 warm 命中。
  *
  * 优先级：setSessionCacheLimits（显式）> env > package.json#nudo.sessionCache > 默认
+ *
+ * 覆盖面：analysis-file-cache（maxFiles）/ fn-analysis-cache（maxFns）/
+ * bpath-run（maxBRuns）。其余驻留结构（harvest-auto / harvest-node /
+ * abs-modules-graph / env-loader path-env / env-path-deps）用各自的硬上限常量，
+ * 见各文件与 lru-map.ts。所有上限加起来给出大仓分析后 retained 内存的上界。
  */
 export type SessionCacheLimits = {
   /** 整文件 AnalysisResult LRU；0 = 关闭 */

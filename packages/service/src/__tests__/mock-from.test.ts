@@ -197,6 +197,7 @@ export function load() { return readConfig(); }
       [],
       { mocks },
     );
-    expect(formatAbs(r.result)).toContain("3000");
+    expect(r).toBeDefined();
+    expect(formatAbs(r!.result)).toContain("3000");
   });
 });

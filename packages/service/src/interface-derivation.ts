@@ -13,39 +13,8 @@
 import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, relative, resolve } from "node:path";
 import { parse } from "@nudojs/parser";
-import {
-  beginDerivationSession,
-  constraintToEntryAbs,
-  derivationChain,
-  effectiveInterface,
-  endDerivationSession,
-  execNudoModule,
-  formatConstraint,
-  getDerivation,
-  interfaceDiagCount,
-  isNodeModulesPath,
-  isNudoConstraint,
-  joinThenProject,
-  parseSource,
-  projectDerivationDsl,
-  refineDiagCount,
-  runTranspiled,
-  callTranspiledExportFull,
-  setBCallCollector,
-  listTopFunctions,
-  $new,
-  $invoke,
-  sidecarPathOf,
-  tagDerivationRoot,
-  takeInterfaceDiagsSince,
-  takeRefineDiagsSince,
-  unknown as unknownAbs,
-  type Abs,
-  type AbsCallRecord,
-  type BCallRecord,
-  type DerivationNode,
-  type NudoConstraint,
-} from "@nudojs/core";
+import { constraintToEntryAbs, effectiveInterface, execNudoModule, formatConstraint, interfaceDiagCount, isNodeModulesPath, isNudoConstraint, joinThenProject, parseSource, refineDiagCount, runTranspiled, callTranspiledExportFull, setBCallCollector, $new, $invoke, sidecarPathOf, takeInterfaceDiagsSince, takeRefineDiagsSince, unknown as unknownAbs, type Abs, type AbsCallRecord, type BCallRecord, type NudoConstraint } from "@nudojs/core";
+import { beginDerivationSession, derivationChain, endDerivationSession, getDerivation, projectDerivationDsl, listTopFunctions, tagDerivationRoot, type DerivationNode } from "@nudojs/core/internal";
 import { evalAbsModuleGraph } from "./abs-modules-graph.ts";
 import { defaultLoadModule, type LoadModule } from "./load-module.ts";
 import { findProjectConfig, interfaceConfig, matchesEmitAllowlist } from "./evaluator/config.ts";

@@ -17,47 +17,6 @@ import {
   popCallLoc,
 } from "./member-diag.ts";
 
-export type {
-  BMemberDiag,
-} from "./member-diag.ts";
-export {
-  setMemberDiagCollector,
-  recordMemberDiag,
-  notePrimMemberMissing,
-  noteAnyMemberMayThrow,
-  noteNullishMemberThrows,
-  noteUnknownMemberMissing,
-  noteMemberDispatchMiss,
-  noteObjSlotMissing,
-  isNullishAbs,
-  anyMemberResult,
-  setEvalMissingSlotEnabled,
-  isEvalMissingSlotEnabled,
-  runWithEvalMissingSlot,
-  tagAbsOrigin,
-  getAbsOrigin,
-  OBJECT_PROTO_NAMES,
-  definitelyUncallableMember,
-} from "./member-diag.ts";
-export {
-  setMayThrowCollector,
-  getMayThrowCollector,
-  runWithMayThrowSession,
-  recordMayThrow,
-  pushMayThrowFrame,
-  popMayThrowFrame,
-  flushMayThrowEffects,
-  errorTypeAbs,
-  mayThrowEffectsToAbs,
-  formatThrowsAbs,
-  isThrowsIgnored,
-  filterIgnoredThrows,
-  $tryMarkSoft,
-  $tryDigestSoft,
-  $tryReleaseSoft,
-  type MayThrowEffect,
-} from "./may-throw.ts";
-
 export type BCallRecord = {
   fnName: string;
   args: Abs[];

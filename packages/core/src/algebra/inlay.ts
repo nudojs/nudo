@@ -46,13 +46,17 @@ function listFunctions(source: string): Array<{ name: string; node: Node }> {
       out.push({ name: fd.id!.name, node: fd });
     }
     if (decl.type === "VariableDeclaration") {
-      for (const d of (decl as any).declarations ?? []) {
+      const dcls = (decl as { declarations?: Array<{ id?: { type?: string; name?: string }; init?: Node }> }).declarations ?? [];
+      for (const d of dcls) {
+        const id = d.id;
+        const init = d.init;
         if (
-          d.id?.type === "Identifier" &&
-          d.init &&
-          (d.init.type === "ArrowFunctionExpression" || d.init.type === "FunctionExpression")
+          id?.type === "Identifier" &&
+          id.name &&
+          init &&
+          (init.type === "ArrowFunctionExpression" || init.type === "FunctionExpression")
         ) {
-          out.push({ name: d.id.name, node: d.init });
+          out.push({ name: id.name, node: init });
         }
       }
     }
@@ -182,8 +186,9 @@ export function collectAbsInlays(
       }
     }
 
-    const fnNode = node as any;
-    const paramList: any[] = fnNode.params ?? [];
+    type FnNodeLike = { params?: Array<{ name?: string; loc?: { end: { line: number; column: number } } }>; body?: { loc?: { start?: { line: number; column: number } } } };
+    const fnNode = node as FnNodeLike;
+    const paramList = fnNode.params ?? [];
     for (let i = 0; i < paramList.length; i++) {
       const p = paramList[i];
       const pname = params[i] ?? (p?.name as string | undefined);

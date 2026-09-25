@@ -5,4 +5,4 @@ export * from "./class.ts";
 export * from "./calls.ts";
 export * from "./run.ts";
 export * from "./unsupported.ts";
-export * from "./may-throw.ts";
+// may-throw collectors live in @nudojs/core/internal (host plumbing, not $op runtime)

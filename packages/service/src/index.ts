@@ -35,7 +35,7 @@ export {
   getCasesForFile,
 } from "./lsp-surface.ts";
 
-export { collectAbsInlays, type AbsInlay } from "@nudojs/core";
+export { collectAbsInlays, type AbsInlay } from "@nudojs/core/internal";
 
 export {
   serializeCaseJson,
@@ -56,6 +56,7 @@ export {
   envPathDependents,
   clearEnvPathDeps,
   isEnvTemplatePath,
+  getEnvPathDepsSize,
 } from "./env-path-deps.ts";
 export { DEFAULT_ANALYSIS_MODE } from "./evaluator/config.ts";
 export {
@@ -74,7 +75,10 @@ export {
   type DualEntryInfo,
   type DualEntryIssue,
 } from "./dual-entry.ts";
-export { clearPathEnvCaches } from "./evaluator/env-loader.ts";
+export {
+  clearPathEnvCaches,
+  getPathEnvCacheSizes,
+} from "./evaluator/env-loader.ts";
 export { analysisFileCacheKey } from "./analyzer.ts";
 export {
   collectStaticImports,
@@ -96,6 +100,7 @@ export {
   autoHarvestModules,
   harvestPackageCached,
   clearHarvestCache,
+  getHarvestCacheSize,
 } from "./harvest-auto.ts";
 export {
   depsCacheRoot,
@@ -120,6 +125,7 @@ export {
   defaultAbsLoadModule,
   clearAbsModuleCache,
   evictAbsModuleCacheFiles,
+  getAbsModuleCacheSize,
   type AbsModuleGraphResult,
   type AbsGraphOptions,
   type AbsModuleLoadIssue,
@@ -139,6 +145,7 @@ export {
   clearBPathCache,
   evictBPathCacheForFiles,
   trimBPathCache,
+  getBPathCacheSize,
   collectBPathReplacements,
   collectEnvGlobals,
   collectEnvModules,
@@ -159,6 +166,7 @@ export {
   clearFnAnalysisCache,
   evictFnAnalysisCacheForFiles,
   trimFnAnalysisCache,
+  getFnAnalysisCacheSize,
 } from "./fn-analysis-cache.ts";
 export {
   evictAnalysisCachesForFiles,
@@ -190,7 +198,7 @@ export {
   type DiskCacheOptions,
 } from "./disk-cache.ts";
 export { collectLoadDepContents, type DepContent } from "./dep-contents.ts";
-export type { BMemberDiag } from "@nudojs/core";
+export type { BMemberDiag } from "@nudojs/core/internal";
 
 export {
   collectBPathDiagnostics,

@@ -3,7 +3,8 @@
  * 与 nudo:recursion-truncated 同 collector 管道，但专用码/专用标签。
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { checkSource, pTrue, setBForkBudgetLimit, resetAbsCallBudget, MAX_B_TOTAL_FORKS } from "@nudojs/core";
+import { checkSource, pTrue } from "@nudojs/core";
+import { setBForkBudgetLimit, resetAbsCallBudget, MAX_B_TOTAL_FORKS } from "@nudojs/core/internal";
 
 describe("nudo:fork-truncated diagnostic (checkSource)", () => {
   beforeEach(() => {

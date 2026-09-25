@@ -73,6 +73,28 @@ parser ──▶ core
 - **scripts 不进 `packages/*/src`**。
 - **core 不依赖 parser 包**（`parseSource` 用 `@babel/parser` + `stripTypes`）。
 
+## 执行模型与信任边界
+
+> **本节是信任边界的唯一事实源。** 用户侧警告见 README「Security」与 website
+> `concepts/semantics.md`「Trust boundary」；B-path 机械细节见
+> [`evaluator-paths.md`](./evaluator-paths.md)。
+
+生产分析是 **分析即执行**：B-path 把目标源码转译成 `$add` / `$fork` 等代数调用后，
+用 **`new Function` 编译并运行**（`runTranspiled` / `callTranspiledExportFull`）。
+被分析代码以抽象值（Abs）在分析器进程内**真实求值**——顶层副作用、
+`import` / `require`、以及侧车 `*.nudo.js` 与 `@nudo:mock` / `@nudo:mock-module`
+提供的普通 JS 都在分析期执行。
+
+**信任边界**：`nudo check` / `nudo test`（以及 LSP / vite 插件的分析路径）
+等价于「在本机执行目标代码」。
+
+- **不要**对 untrusted 代码运行 nudo（陌生 npm 包、用户提交、未经审查的 PR）。
+- CI 上只分析**可信仓库**。
+- 侧车契约与 mock 也是普通 JS，同属信任边界之内——它们不是声明式数据。
+
+这不是沙箱声明：Nudo **没有**隔离求值进程。预算（`MAX_CALL_DEPTH` /
+`MAX_TOTAL_CALLS` / forks 截断）只防失控分析，**不构成安全边界**。
+
 ## 不变量（跨产品）
 
 - 检查的是 Abs 上的 **Pred 蕴含**，不是 TS 式类型匹配。

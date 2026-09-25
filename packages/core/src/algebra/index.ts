@@ -1,3 +1,4 @@
+// @public — Abs core (shape × term × pred × conf). See ../PUBLIC_API.md.
 export * from "./term.ts";
 export * from "./pred.ts";
 export * from "./phi.ts";
@@ -8,24 +9,16 @@ export * from "./arithmetic.ts";
 export * from "./surface.ts";
 export * from "./builtins.ts";
 export * from "./methods.ts";
-export * from "./leak.ts";
 export * from "./objects.ts";
 export * from "./collections.ts";
 export * from "./leq.ts";
 export * from "./ast-env.ts";
 export * from "./ast-records.ts";
-export * from "./call-budget.ts";
 export * from "./format.ts";
 export * from "./generalize.ts";
 export * from "./param-surface.ts";
 export * from "./diagnostics.ts";
-export * from "./template.ts";
-export * from "./language.ts";
 export * from "./parse-source.ts";
-export * from "./hash-source.ts";
-export * from "./stable-source-key.ts";
-export * from "./fn-fp.ts";
-export * from "./load-deps-fp.ts";
 export * from "./check.ts";
 export * from "./check-report.ts";
 export * from "./refine.ts";
@@ -35,16 +28,12 @@ export * from "./domain-membership.ts";
 // 显式再导出固定桶含义为 term/pred 侧；constraint 的 lit/and 须从 "./constraint.ts" 直接路径导入。
 export { lit } from "./term.ts";
 export { and } from "./pred.ts";
-export * from "./inlay.ts";
-export * from "./denote.ts";
 export * from "./abs-modules.ts";
 export * from "./exec/index.ts";
 // modules/fs/path 属于 host（service/cli），不进代数
 export * from "./interface.ts";
 export * from "./projection.ts";
-export * from "./derivation.ts";
-// T10b：注入域证据检查经桶导出给 service analyzer（scan.ts 其余为 check.ts 内部机械）
-export { checkInjectedDomainEvidence, type InjectedDomainRecord } from "./scan.ts";
-// C4.2 顶层函数清单（含 Class.method）——service derivation / analyzer 共用
-export { listTopFunctions } from "./scan.ts";
+// Engine machinery (leak / call-budget / hash / derivation / inlay / template /
+// language / scan extras / may-throw collectors) is @nudojs/core/internal —
+// see ../internal.ts and ../PUBLIC_API.md §3.
 

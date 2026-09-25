@@ -10,12 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { analyzeFile } from "../analyzer.ts";
 import { analysisConfig } from "../evaluator/config.ts";
-import {
-  setEvalMissingSlotEnabled,
-  isEvalMissingSlotEnabled,
-  noteObjSlotMissing,
-  setMemberDiagCollector,
-} from "@nudojs/core";
+import { setEvalMissingSlotEnabled, isEvalMissingSlotEnabled, noteObjSlotMissing, setMemberDiagCollector } from "@nudojs/core/internal";
 import { numLit, objOf } from "@nudojs/core";
 
 describe("C0.5 evalMissingSlot config", () => {

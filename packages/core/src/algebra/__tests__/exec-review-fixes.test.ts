@@ -9,14 +9,8 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import {
-  transpile,
-  litValue,
-  formatShape,
-  instanceOf,
-  abs,
-  type Abs,
-} from "@nudojs/core";
+import { transpile, litValue, formatShape, abs, type Abs } from "@nudojs/core";
+import { instanceOf } from "@nudojs/core/internal";
 
 const dirs: string[] = [];
 afterAll(() => {

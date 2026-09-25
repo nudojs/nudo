@@ -8,11 +8,7 @@ import {
   applyBForkBudgetFromConfig,
   currentBForkBudgetLimit,
 } from "../evaluator/config.ts";
-import {
-  setBForkBudgetLimit,
-  getBForkBudgetLimit,
-  MAX_B_TOTAL_FORKS,
-} from "@nudojs/core";
+import { setBForkBudgetLimit, getBForkBudgetLimit, MAX_B_TOTAL_FORKS } from "@nudojs/core/internal";
 
 describe("analysis.maxForks config", () => {
   beforeEach(() => {

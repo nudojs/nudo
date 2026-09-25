@@ -32,6 +32,7 @@ import {
   serializeHarvestJson,
 } from "./harvest-json.ts";
 import { loadEnvs } from "./evaluator/env-loader.ts";
+import { BoundedLruMap } from "./lru-map.ts";
 
 /** IDE-startup budgets for @types/node harvest. Do not raise casually. */
 export const HARVEST_NODE_DEFAULT_MAX_FILES = 12;
@@ -63,8 +64,15 @@ export type NodeEnvResult =
       cached?: boolean;
     };
 
-/** Process-level harvest cache (documented first step; disk cache is follow-up). */
-const nodeHarvestCache = new Map<string, NodeEnvResult>();
+/**
+ * Process-level harvest cache (documented first step; disk cache is follow-up).
+ *
+ * 上限 NODE_HARVEST_CACHE_MAX（32 条 root×budget×package.json 指纹条目）+ LRU：
+ * 命中/写入移到队尾，超限删最旧。条目是整份 HarvestedEnv（globals+modules），
+ * 32 足够多项目/多 budget 组合并把 retained 内存钉在上界内。
+ */
+const NODE_HARVEST_CACHE_MAX = 32;
+const nodeHarvestCache = new BoundedLruMap<NodeEnvResult>(NODE_HARVEST_CACHE_MAX);
 
 /** Cache key for "root not resolvable" — avoids re-walking node_modules on every analysis. */
 function notFoundCacheKey(fromDir: string | undefined): string {

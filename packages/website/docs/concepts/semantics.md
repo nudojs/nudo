@@ -6,6 +6,16 @@ description: Learn the JavaScript semantics Nudo's evaluator models precisely to
 
 Nudo infers types by *executing* your code with symbolic values, so the quality of inference is exactly the quality of the evaluator's JavaScript semantics. This guide lists the language behaviors the evaluator models precisely on the call-site path — every output block below is excerpted from a real `nudo test` run of the code above it (the `nudo test <file>` header and the assertions summary are elided) — followed by the constructs that still degrade to `unknown` (inference failed / engine debt, **not** the default for unconstrained entry params, which display as `any`) and should be verified before you rely on them. Precise semantics are also what make [call-site discovery](../guides/callsite-discovery.md) effective: harvested call shapes only pay off if the evaluator can actually follow them.
 
+## Trust boundary
+
+Because inference **is** execution, `nudo check` / `nudo test` are equivalent to running the target code on your machine (B-path transpile + `new Function`).
+
+- Do **not** run nudo on untrusted code (unknown npm packages, user submissions, unreviewed PRs).
+- In CI, analyze only repositories you trust.
+- Sidecar contracts (`*.nudo.js`) and `@nudo:mock` / `@nudo:mock-module` files are ordinary JS and execute during analysis — same trust boundary.
+
+This is not a sandbox: Nudo does not isolate the evaluation process. Analysis budgets only stop runaway inference. Source of truth: repo `docs/design/kernel-merge.md` →「执行模型与信任边界」.
+
 ## Modeled Precisely
 
 ### String Methods on Literals

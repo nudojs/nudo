@@ -472,6 +472,8 @@ function checkSourceInner(
   // 返回后置：符号返回（body  widen）之外，B 执行态调用点 result 也要对账
   // （循环累加等 body 面常被 widen 成 number，调用点 $arr 具体元组却能精确）
   const returnContracts = new Map<string, { display: string; constraint: NudoConstraint }>();
+  /** 已对 return 后置报过违例的函数——调用点对账跳过，避免同文双计 */
+  const returnViolated = new Set<string>();
   // generalize L0 用调用方原始 loadModule 身份；opts 可能是 per-call I/O wrapper
   const refineLoad = identityOpts.loadModule ?? opts.loadModule;
   const refineFrom = identityOpts.fromFile ?? opts.fromFile ?? filePath;
@@ -544,14 +546,14 @@ function checkSourceInner(
         });
         const display = named?.name ?? formatConstraint(eff.returns.constraint);
         returnContracts.set(name, { display, constraint: eff.returns.constraint });
-        issues.push(
-          ...checkReturnConstraint(
-            name,
-            display,
-            eff.returns.constraint,
-            declared,
-          ),
+        const retIssues = checkReturnConstraint(
+          name,
+          display,
+          eff.returns.constraint,
+          declared,
         );
+        if (retIssues.length > 0) returnViolated.add(name);
+        issues.push(...retIssues);
       }
       continue;
     }
@@ -797,9 +799,14 @@ function checkSourceInner(
         });
         const display = named?.name ?? formatConstraint(eff.returns.constraint);
         returnContracts.set(name, { display, constraint: eff.returns.constraint });
-        issues.push(
-          ...checkReturnConstraint(name, display, eff.returns.constraint, g.symbolic),
+        const retIssues = checkReturnConstraint(
+          name,
+          display,
+          eff.returns.constraint,
+          g.symbolic,
         );
+        if (retIssues.length > 0) returnViolated.add(name);
+        issues.push(...retIssues);
       }
       // T10a drift 候选：generated 段是 emit 时的固化快照，与今日重算的
       // 语义差异在 interfaceDriftIssues 统一判定（warning，generated 不执法）
@@ -904,17 +911,24 @@ function checkSourceInner(
 
   // 调用点 result 对 return 后置再对账（B 执行态精确值 ⊭ 声明）。
   // 符号返回常被循环/抽象参数 widen——这里补上「有具体调用点」时的确定违例。
+  // 入口符号面已报过的函数不再按调用点重复报（同码同文双计）。
   if (returnContracts.size > 0 && callRecords.length > 0) {
     const seenRet = new Set<string>();
     for (const rec of callRecords) {
       const rc = returnContracts.get(rec.fnName);
       if (!rc) continue;
+      if (returnViolated.has(rec.fnName)) continue;
       const k = `${rec.fnName}\0${formatAbs(rec.result)}`;
       if (seenRet.has(k)) continue;
       seenRet.add(k);
-      issues.push(
-        ...checkReturnConstraint(rec.fnName, rc.display, rc.constraint, rec.result),
+      const retIssues = checkReturnConstraint(
+        rec.fnName,
+        rc.display,
+        rc.constraint,
+        rec.result,
       );
+      if (retIssues.length > 0) returnViolated.add(rec.fnName);
+      issues.push(...retIssues);
     }
   }
 

@@ -1,11 +1,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname, relative, sep } from "node:path";
 import { setSessionCacheFromProject } from "../session-cache-limits.ts";
-import {
-  setBForkBudgetLimit,
-  getBForkBudgetLimit,
-  MAX_B_TOTAL_FORKS,
-} from "@nudojs/core";
+import { setBForkBudgetLimit, getBForkBudgetLimit, MAX_B_TOTAL_FORKS } from "@nudojs/core/internal";
 
 export type NudoConfig = {
   env?: string[];

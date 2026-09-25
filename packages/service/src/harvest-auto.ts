@@ -8,6 +8,7 @@ import type { Abs } from "@nudojs/core";
 import { collectDependencySpecs } from "./static-imports.ts";
 import { harvestPackage, type PackageHarvest } from "./harvest-package.ts";
 import { harvestPackageWithDisk } from "./harvest-disk.ts";
+import { BoundedLruMap } from "./lru-map.ts";
 
 /**
  * Node builtin module names (with or without `node:` prefix). Bare imports of
@@ -49,11 +50,23 @@ export function collectBarePackages(source: string): string[] {
   }
 }
 
-/** 进程内 harvest 缓存：同包只 walk 一次 dts */
-const harvestCache = new Map<string, PackageHarvest | null>();
+/**
+ * 进程内 harvest 缓存：同包只 walk 一次 dts。
+ *
+ * 上限 HARVEST_CACHE_MAX（128 条 `fromDir::pkg` 条目）+ LRU：命中/写入移到队尾，
+ * 超限删最旧。retained 内存因此有界；磁盘层（harvest-disk）不受此限。
+ */
+const HARVEST_CACHE_MAX = 128;
+const harvestCache = new BoundedLruMap<PackageHarvest | null>(HARVEST_CACHE_MAX);
+
+/** 测试/诊断：当前条目数（≤ HARVEST_CACHE_MAX） */
+export function getHarvestCacheSize(): number {
+  return harvestCache.size;
+}
 
 export function harvestPackageCached(pkg: string, fromDir: string): PackageHarvest | null {
   const key = `${fromDir}::${pkg}`;
+  // null 是合法缓存值（harvest 失败占位）——必须用 has，不能看 undefined
   if (harvestCache.has(key)) return harvestCache.get(key)!;
   let result: PackageHarvest | null = null;
   try {

@@ -1,5 +1,7 @@
 # nudojs
 
+> 壳包版本 ≠ 引擎版本：`nudojs` 只是安装壳，真正引擎在 `@nudojs/cli` / `@nudojs/core`；`nudo --version` 会同屏打印三者版本。
+
 > **欢迎重回 JS 世界.** — Nudo 不限制你的 JS 表达，只忠实反映中间量与结果，并提供比类型更精确的契约校验。  
 > Welcome back to JavaScript. Your JS stays JS — observe intermediates, enforce contracts sharper than types.
 
@@ -17,6 +19,8 @@ npx nudojs check file.js
 ```
 
 Primary verbs: `check` · `test` · `contract` · `export` · `health`.
+
+> **Version heads-up.** `nudojs` is a thin installer shell — **its version number is not the engine version.** `nudojs@0.x` wraps `@nudojs/cli@3.x` (and `@nudojs/core@2.x`); the two version lines move independently. Run `nudo --version` to see the engine CLI you actually have. Full policy: [docs/versioning.md](https://github.com/nudojs/nudo/blob/main/docs/versioning.md).
 
 Nudo infers types by **executing** your code on Abs (`shape × term × pred × conf`) — see the monorepo packages for the actual engine:
 

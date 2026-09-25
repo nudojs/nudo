@@ -27,7 +27,7 @@ describe("buildSignatureHelp (LSP-G7)", () => {
   });
 
   it("missing paramTypes fall back to any (unconstrained), not unknown", () => {
-    const fn = absFunction(["x", "y"], { body: () => num() });
+    const fn = absFunction(["x", "y"], { apply: () => num() });
     const help = buildSignatureHelp(fn, 1);
     const label = help!.signatures[0]!.label;
     expect(label).toContain("x: any");

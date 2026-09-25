@@ -7,6 +7,7 @@
     "paths": {
       "@nudojs/core": ["../core/src/index.ts"],
       "@nudojs/core/exec": ["../core/src/algebra/exec/index.ts"],
+      "@nudojs/core/internal": ["../core/src/internal.ts"],
       "@nudojs/parser": ["../parser/src/index.ts"],
       "@nudojs/service": ["../service/src/index.ts"],
       "@nudojs/harvester": ["../harvester/src/index.ts"],

@@ -39,6 +39,8 @@ npx nudojs check math.js
 npx nudojs test math.js
 ```
 
+> **Version heads-up.** The `nudojs` npm package is a thin installer shell — its version number is **not** the engine version. `nudojs@0.x` wraps `@nudojs/cli@3.x` (and `@nudojs/core@2.x`). Run `nudo --version` to see the engine CLI you actually have.
+
 Write plain JavaScript. Call sites are evidence:
 
 ```javascript
@@ -218,6 +220,18 @@ With `@nudo:contract x positive`, `scale` gets the term `(x + 1)` **and** the de
 ### Abs projections
 
 Production analysis is **Abs-native**. Extensional TS/schema/dts projections (`formatShape`, `absToTSType`, `absToSchemaSource`) are one-way lossy views of Abs — nothing reads a projection back. Design: [`docs/design/kernel-merge.md`](./docs/design/kernel-merge.md) and the [docs site Abs page](https://nudojs.github.io/nudo/docs/concepts/type-values).
+
+## Security
+
+Nudo's analysis **executes** the code it is given: the B-path evaluator transpiles your source and runs it via `new Function`. Treat `nudo check` / `nudo test` like running the target code.
+
+- Do **not** run nudo on untrusted code (unknown npm packages, user submissions, unreviewed PRs).
+- In CI, analyze only repositories you trust.
+- Sidecar contracts (`*.nudo.js`) and `@nudo:mock` / `@nudo:mock-module` files are ordinary JS and are executed during analysis — they sit inside the same trust boundary.
+
+This is not a sandbox: Nudo does not isolate the evaluation process. Analysis budgets only stop runaway inference; they are not a security boundary.
+
+Execution model & trust boundary (source of truth): [`docs/design/kernel-merge.md`](./docs/design/kernel-merge.md)「执行模型与信任边界」.
 
 ## Development
 

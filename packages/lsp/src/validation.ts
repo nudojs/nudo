@@ -32,18 +32,8 @@ import {
 } from "@nudojs/service";
 
 export { filterDiagnosticsByLevel, diagnosticsLevelForFile };
-import {
-  checkSource,
-  pTrue,
-  evictGeneralizeMemoForPaths,
-  evictCheckSourceMemoForPaths,
-  extractAllLoadSpecs,
-  extractNudoImports,
-  isNodeModulesPath,
-  resolveDepPath,
-  sidecarPathOf,
-  sidecarSpecsOf,
-} from "@nudojs/core";
+import { checkSource, pTrue, evictGeneralizeMemoForPaths, evictCheckSourceMemoForPaths, extractNudoImports, isNodeModulesPath, sidecarPathOf } from "@nudojs/core";
+import { extractAllLoadSpecs, resolveDepPath, sidecarSpecsOf } from "@nudojs/core/internal";
 import { createHash } from "node:crypto";
 
 function sourceFingerprint(s: string): string {

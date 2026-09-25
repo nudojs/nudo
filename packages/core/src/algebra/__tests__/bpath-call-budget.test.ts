@@ -5,17 +5,8 @@
  * callTranspiledExportFull 兜底静默吞成 unknown+partial（假结果）。
  */
 import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  setAbsTruncationCollector,
-  litValue,
-  formatAbs,
-  $lit,
-  abs,
-  num,
-  unknown as unknownAbs,
-} from "@nudojs/core";
+import { runTranspiled, callTranspiledExportFull, litValue, formatAbs, $lit, abs, num, unknown as unknownAbs } from "@nudojs/core";
+import { setAbsTruncationCollector } from "@nudojs/core/internal";
 
 function callFn(src: string, name: string, args: unknown[] = []) {
   const run = runTranspiled(src, { mode: "analyze" });

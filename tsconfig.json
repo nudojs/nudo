@@ -5,6 +5,7 @@
     "paths": {
       "@nudojs/core": ["packages/core/src"],
       "@nudojs/core/exec": ["packages/core/src/algebra/exec/index.ts"],
+      "@nudojs/core/internal": ["packages/core/src/internal.ts"],
       "@nudojs/parser": ["packages/parser/src"],
       "@nudojs/cli": ["packages/cli/src"],
       "@nudojs/service": ["packages/service/src"],

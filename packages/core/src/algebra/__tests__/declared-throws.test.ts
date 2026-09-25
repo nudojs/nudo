@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { checkSource, pTrue } from "../check.ts";
+import { checkSource } from "../check.ts";
+import { pTrue } from "../pred.ts";
 import { extractDeclaredThrows } from "../refine.ts";
 import { throwConstraintToKinds, fn, number } from "../constraint.ts";
 import {

@@ -6,16 +6,8 @@
  * ④ callBudgetKey 对非 Abs 实参防御化
  */
 import { describe, it, expect } from "vitest";
-import {
-  checkSource,
-  generalizeFromAst,
-  pTrue,
-  formatAbs,
-  absFunction,
-  numLit,
-  callBudgetKey,
-  type RunTranspiledOptions,
-} from "@nudojs/core";
+import { checkSource, generalizeFromAst, pTrue, formatAbs, absFunction, numLit, type RunTranspiledOptions } from "@nudojs/core";
+import { callBudgetKey } from "@nudojs/core/internal";
 import { freeIdentifiers } from "../exec/body-fn.ts";
 import { parseSource } from "../parse-source.ts";
 import type { Node } from "@babel/types";

@@ -4,6 +4,11 @@
  * - fail-open：读写失败/版本不符 → miss，绝不 throw
  * - 不存 Abs；只存可 JSON 再执行投影（如 CheckJson）
  * - 缓存根解析见 `evaluator/config.ts` 的 `diskCacheRoot`（唯一入口）
+ *
+ * 内存上界：本层不持有进程内 map——每次 get/set 直读/直写磁盘，retained
+ * heap O(1)。磁盘容量不在本层封顶（由宿主/CI 清理 `diskCacheRoot`）。
+ * 进程内 LRU 上界见 session-cache-limits / lru-map.ts（analysis/fn/bpath/
+ * harvest/abs-module/path-env）。
  */
 
 import { createHash } from "node:crypto";

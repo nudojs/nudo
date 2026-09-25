@@ -10,7 +10,7 @@
     "lint:website": "tsc --noEmit -p packages/website/tsconfig.json",
     "lint:tests": "tsc --noEmit -p tsconfig.test-lint.json",
     "build": "pnpm run build:packages",
-    "build:packages": "pnpm --filter @nudojs/core run build && pnpm --filter @nudojs/parser run build && pnpm --filter @nudojs/env run build && pnpm --filter @nudojs/harvester run build && pnpm --filter @nudojs/service run build && pnpm --filter @nudojs/cli run build && pnpm --filter @nudojs/lsp run build && pnpm --filter vite-plugin-nudo run build",
+    "build:packages": "pnpm -r --filter '@nudojs/*' --filter 'vite-plugin-nudo' run build",
     "test": "NODE_OPTIONS=--max-old-space-size=8192 vitest run",
     "test:coverage": "NODE_OPTIONS=--max-old-space-size=8192 vitest run --coverage",
     "test:watch": "NODE_OPTIONS=--max-old-space-size=8192 vitest",

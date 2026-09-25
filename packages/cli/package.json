@@ -42,7 +42,7 @@
     "registry": "https://registry.npmjs.org"
   },
   "dependencies": {
-    "@babel/generator": "^7.29.8",
+    "@babel/generator": "^8.0.6",
     "@babel/types": "^8.0.6",
     "@nudojs/core": "workspace:*",
     "@nudojs/env": "workspace:*",

@@ -72,7 +72,7 @@ export declare function save(m: Map<string, number>, v: number): void;
 
   it("deep unify: Promise<T> param binds T from Promise<number[]>", () => {
     const T = tvar("T");
-    const pT = abs({ k: "eff", eff: "promise", inner: abs({ k: "arr", element: T }) }, undefined, undefined, "path");
+    const pT = abs({ k: "eff", eff: "promise", inner: abs({ k: "arr", element: T }, undefined, undefined, "path") }, undefined, undefined, "path");
     const f = relationFn([pT], abs({ k: "arr", element: T }, undefined, undefined, "path"));
     const arg = abs(
       { k: "eff", eff: "promise", inner: numArr() },

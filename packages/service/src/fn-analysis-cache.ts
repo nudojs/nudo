@@ -80,6 +80,11 @@ export type CachedFnAnalysis = {
 
 const fnAnalysisCache = new Map<string, CachedFnAnalysis>();
 
+/** 测试/诊断：当前条目数（≤ getSessionCacheLimits().maxFns） */
+export function getFnAnalysisCacheSize(): number {
+  return fnAnalysisCache.size;
+}
+
 export function clearFnAnalysisCache(): void {
   fnAnalysisCache.clear();
 }

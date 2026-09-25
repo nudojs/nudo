@@ -56,20 +56,15 @@ const r = needsPositive(-1);
     expect(result).toBeNull();
   });
 
-  it("analyzes files with @nudo: directives and reports warnings", async () => {
+  it("analyzes files with entry surfaces and reports warnings", async () => {
     const plugin = nudoPlugin();
     const warnFn = vi.fn();
     const ctx = { warn: warnFn, error: vi.fn() };
 
+    // L2 entry-may-throw 仍是 check 门禁（@nudo:case 已降为 debug/test 面）
     const source = `
-/**
- * @nudo:case "negative" (-1)
- */
-function safeSqrt(x) {
-  if (x < 0) {
-    throw new RangeError("negative input");
-  }
-  return x;
+export function getName(user) {
+  return user.name;
 }
 `;
     const result = await plugin.transform.call(ctx, source, "/test/throws.js");
@@ -103,13 +98,10 @@ function safeSqrt(x) {
     const warnFn = vi.fn();
     const ctx = { warn: warnFn, error: errorFn };
 
-    // case 期望返回类型与推断不符 → error 级诊断
+    // L2 entry-may-throw 默认 error 级
     const source = `
-/**
- * @nudo:case "test" (1) => string()
- */
-function identity(x) {
-  return x;
+export function getName(user) {
+  return user.name;
 }
 `;
     await plugin.transform.call(ctx, source, "/test/fail.js");
@@ -118,16 +110,10 @@ function identity(x) {
 });
 
 describe("vite-plugin-nudo glob matching", () => {
-  // 稳定产出 warning（throw 路径），用来证明文件被分析过
+  // 稳定产出 check 诊断（L2 entry-may-throw），用来证明文件被分析过
   const directiveSource = `
-/**
- * @nudo:case "negative" (-1)
- */
-function safeSqrt(x) {
-  if (x < 0) {
-    throw new RangeError("negative input");
-  }
-  return x;
+export function getName(user) {
+  return user.name;
 }
 `;
 

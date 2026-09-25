@@ -6,7 +6,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { extractAllLoadSpecs, loadModuleDepsFingerprint } from "@nudojs/core";
+import { extractAllLoadSpecs, loadModuleDepsFingerprint } from "@nudojs/core/internal";
 import { checkCacheKey } from "../disk-cache.ts";
 import { collectLoadDepContents } from "../dep-contents.ts";
 import { defaultLoadModule } from "../load-module.ts";

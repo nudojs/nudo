@@ -43,6 +43,7 @@
 | [check-real-packages.md](./check-real-packages.md) | 真实包扫描报告 | 报告 |
 | [feasibility-npm-package.md](./feasibility-npm-package.md) | 替换 TypeScript 可行性报告 | 报告 |
 | [versioning.md](./versioning.md) | 发布与 breaking 策略 | 现行 |
+| [reports/limits-resolved.md](./reports/limits-resolved.md) | 已解决限制归档（一行锚，自 design/limitations.md 迁出） | 报告 |
 | [reports/env-coverage-baseline.md](./reports/env-coverage-baseline.md) | env 覆盖基线 | 报告 |
 
 ## 示例

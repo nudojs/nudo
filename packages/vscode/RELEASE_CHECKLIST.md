@@ -16,6 +16,10 @@ Current package: see `packages/vscode/package.json` (private). Version bumps com
       `pnpm run build` (or `pnpm --filter @nudojs/lsp run build`).
 - [ ] Bundle step ran: `packages/vscode/scripts/bundle-server.mjs` copies
       `packages/lsp/dist/server.js` → `packages/vscode/server/server.js`.
+- [ ] Bundled `packages/vscode/server/server.js` matches the LSP dist you just
+      built (`packages/lsp/dist/server.js`) — same build, not a stale copy.
+      Spot-check: `diff -q packages/lsp/dist/server.js packages/vscode/server/server.js`
+      (or re-run `bundle-server.mjs` and confirm no unexpected drift).
 - [ ] Extension launches **bundled** `server/server.js` over IPC
       (`src/extension.ts` — not tsx / not a monorepo sibling path at runtime).
 - [ ] Record the bundled lsp version in extension `CHANGELOG.md`
@@ -77,6 +81,12 @@ pnpm --filter nudo-vscode run build   # tsup extension + bundle-server.mjs
 pnpm --filter nudo-vscode run package # vsce package --no-dependencies
 ```
 
+- [ ] **Clean stale package artifacts first**: delete leftover
+      `packages/vscode/nudo-vscode-*.vsix` (and any other old `.vsix` in the
+      package dir) so the dry-run output is unambiguous and you never ship or
+      upload a previous version by mistake.
+- [ ] `*.vsix` stays gitignored (root `.gitignore`) — package artifacts must
+      never land in git.
 - [ ] Dry-run package succeeds; `.vsix` is produced.
 - [ ] `.vsix` contains `server/server.js` (self-contained; no monorepo path).
 - [ ] `.vsix` does **not** contain `src/`, `scripts/`, or monorepo junk

@@ -263,7 +263,7 @@ pin 'pnpm run nudo -- contract --from-dts docs/examples/retire-real/before/src/a
 
 # retire-debug/ — real npm dep `debug` (visionmedia/debug)
 pin 'pnpm run check docs/examples/retire-debug/after/src/logger.js' \
-  'OK' '0 error' 'createLogger' 'logHello' 'nudo:unknown-inference'
+  'OK' '0 error' 'createLogger' 'logHello' 'nudo:opaque-result'
 pin 'pnpm run nudo -- contract --from-dts docs/examples/retire-debug/before/src/logger.ts' \
   'fn({ namespace: string() }, any())' 'fn({ name: string() }, any())'
 pin 'pnpm run nudo -- migrate status docs/examples/retire-debug/before/package.json' \

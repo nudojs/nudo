@@ -1,18 +1,6 @@
 import { describe, it, expect } from "vitest";
-import {
-  denoteGuard,
-  abs as makeAbs,
-  num,
-  str,
-  bool,
-  numLit,
-  strLit,
-  never,
-  unknown,
-  gt,
-  lit,
-  v as termVar,
-} from "@nudojs/core";
+import { abs as makeAbs, num, str, bool, numLit, strLit, never, unknown, gt, lit, v as termVar } from "@nudojs/core";
+import { denoteGuard } from "@nudojs/core/internal";
 
 describe("denoteGuard", () => {
   it("prim number", () => {

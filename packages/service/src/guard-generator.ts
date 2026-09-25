@@ -1,5 +1,5 @@
 import type { Abs } from "@nudojs/core";
-import { denoteGuard } from "@nudojs/core";
+import { denoteGuard } from "@nudojs/core/internal";
 
 /** Abs 指称守卫（设计 §2.7）：保留 pred */
 export function generateGuardFunctionFromAbs(name: string, abs: Abs): string {

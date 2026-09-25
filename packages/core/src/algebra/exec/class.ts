@@ -10,6 +10,7 @@ import { $get, $set, $lit, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, 
 import { $call } from "./call.ts";
 import { getFnImpl, absFunction } from "../abs-fn.ts";
 import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, extStateOf, getPropFlags, tryMakeRegexAbs, makeArrayCtorAbs, assignSourceSlots, isSymbolAbs, stringOfSymbol, evalPromiseCtor, evalPromiseMethod, builtinCtorNameOf } from "../builtins.ts";
+import { arrayJoinToString } from "../builtins/array.ts";
 import { isMapAbs, isSetAbs, makeMapAbs, makeSetAbs, collectionElementJoin, ctorArgDefinitelyInvalid } from "../collections.ts";
 import { registerMatchIter } from "./match-iter.ts";
 import { TUPLE_MATERIALIZE_CAP } from "../containers.ts";
@@ -26,14 +27,16 @@ import { emptyEnv } from "../ast-env.ts";
 import { defaultLeakBudget } from "../leak.ts";
 import { pTrue } from "../pred.ts";
 import {
+  noteBCallRecord,
+} from "./calls.ts";
+import {
   notePrimMemberMissing,
   noteUnknownMemberMissing,
   noteAnyMemberMayThrow,
   noteNullishMemberThrows,
   anyMemberResult,
   definitelyUncallableMember,
-  noteBCallRecord,
-} from "./calls.ts";
+} from "./member-diag.ts";
 import { errorTypeAbs } from "./may-throw.ts";
 import { NudoThrow, $collectionForEach } from "./runtime.ts";
 import { callAbsMethod } from "../methods.ts";
@@ -1130,26 +1133,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
   }
   if (method === "toString" || method === "toLocaleString") {
     // Array.prototype.toString = join(",")：全字面量元素折叠；含 symbol 元素 TypeError
-    if (shape.k === "tuple") {
-      const holes = shape.holes ?? [];
-      const parts: string[] = [];
-      for (let i = 0; i < shape.elements.length; i++) {
-        if (holes.includes(i)) {
-          parts.push("");
-          continue;
-        }
-        const el = shape.elements[i]!;
-        if (isSymbolAbs(el)) throw new NudoThrow(errorTypeAbs("TypeError"));
-        const t = el.term;
-        if (t?.op !== "lit") return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
-        const v = t.value;
-        if (v === null || v === undefined) parts.push("");
-        else if (typeof v === "object") return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
-        else parts.push(String(v));
-      }
-      return strLit(parts.join(","));
-    }
-    return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
+    return arrayJoinToString(arr);
   }
   if (method === "keys") {
     if (shape.k === "tuple") {

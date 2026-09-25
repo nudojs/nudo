@@ -6,21 +6,8 @@
  * - setBForkBudgetLimit 非法值回默认 5000
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import {
-  $fork,
-  $lit,
-  abs,
-  setAbsTruncationCollector,
-  resetAbsCallBudget,
-  setBForkBudgetLimit,
-  getBForkBudgetLimit,
-  getBForkCount,
-  bumpBForkBudget,
-  noteBForkTruncation,
-  FORK_TRUNCATION_LABEL,
-  MAX_B_TOTAL_FORKS,
-  unknown as unknownAbs,
-} from "@nudojs/core";
+import { $fork, $lit, abs, unknown as unknownAbs } from "@nudojs/core";
+import { setAbsTruncationCollector, resetAbsCallBudget, setBForkBudgetLimit, getBForkBudgetLimit, getBForkCount, bumpBForkBudget, noteBForkTruncation, FORK_TRUNCATION_LABEL, MAX_B_TOTAL_FORKS } from "@nudojs/core/internal";
 
 function abstractBool() {
   return abs({ k: "prim", type: "boolean" } as never, undefined, undefined, "path" as never);

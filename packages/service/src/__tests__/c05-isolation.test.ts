@@ -5,11 +5,7 @@ import { describe, it, expect } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  setEvalMissingSlotEnabled,
-  isEvalMissingSlotEnabled,
-  runWithEvalMissingSlot,
-} from "@nudojs/core";
+import { setEvalMissingSlotEnabled, isEvalMissingSlotEnabled, runWithEvalMissingSlot } from "@nudojs/core/internal";
 import { analyzeFile } from "../analyzer.ts";
 
 describe("C0.5 evalMissingSlot per-analysis isolation", () => {

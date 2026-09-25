@@ -1,12 +1,6 @@
 import type { Abs } from "@nudojs/core";
-import {
-  joinAbs,
-  litValue,
-  abs as makeAbs,
-  isTemplateLike,
-  templatePartsOf,
-  collectAbsFreeVars,
-} from "@nudojs/core";
+import { joinAbs, litValue, abs as makeAbs, collectAbsFreeVars } from "@nudojs/core";
+import { isTemplateLike, templatePartsOf } from "@nudojs/core/internal";
 import type { AnalysisResult, CaseResult, FunctionAnalysis } from "./analyzer.ts";
 
 // ---------------------------------------------------------------------------

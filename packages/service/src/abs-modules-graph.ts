@@ -20,6 +20,7 @@ import {
 import type { Node } from "@babel/types";
 import { bareSpecToAbsModules } from "./harvest-to-abs.ts";
 import { resolveNpmJsEntry } from "./evaluator/resolve-npm.ts";
+import { BoundedLruMap } from "./lru-map.ts";
 
 /** seedFns → Abs fn（本地副本，避免 mock-abs ↔ 本模块循环依赖） */
 function seedFnsToMocks(
@@ -224,8 +225,18 @@ export type AbsModuleCacheEntry = {
  * 都报告其依赖树装载问题」的诊断口径；method-missing / recursion-truncated
  * 等执行期诊断不随缓存重放——它们属于触发执行的调用方文件，且依赖文件
  * 自身被验证时会独立产出。
+ *
+ * 上限 ABS_MODULE_CACHE_MAX（512 个依赖模块条目）+ LRU：命中/写入移到队尾，
+ * 超限删最旧。条目含 AbsModuleExports（导出表）+ 子树 issue 切片，是依赖树
+ * 层主要驻留；大仓分析后 retained 内存由此钉在上界内。evict/clear 语义不变。
  */
-const absModuleCache = new Map<string, AbsModuleCacheEntry>();
+const ABS_MODULE_CACHE_MAX = 512;
+const absModuleCache = new BoundedLruMap<AbsModuleCacheEntry>(ABS_MODULE_CACHE_MAX);
+
+/** 测试/诊断：当前条目数（≤ ABS_MODULE_CACHE_MAX） */
+export function getAbsModuleCacheSize(): number {
+  return absModuleCache.size;
+}
 
 export function clearAbsModuleCache(): void {
   absModuleCache.clear();

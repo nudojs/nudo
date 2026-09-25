@@ -5,26 +5,8 @@
  * throws 经 callTranspiledExportFull 捕获 $throw。
  */
 
-import {
-  runTranspiled,
-  callTranspiledExport,
-  callTranspiledExportFull,
-  setBCallCollector,
-  setMemberDiagCollector,
-  setAbsTruncationCollector,
-  createEnvironment,
-  type BCallRecord,
-  type BMemberDiag,
-  type TranspiledCallResult,
-  type Abs,
-  type AbsModuleExports,
-  type Phi,
-  stableAnalyzeKeySource,
-  formatAbs,
-  hashSource,
-  getFnImpl,
-  loadModuleDepsFingerprint,
-} from "@nudojs/core";
+import { runTranspiled, callTranspiledExport, callTranspiledExportFull, setBCallCollector, createEnvironment, type BCallRecord, type TranspiledCallResult, type Abs, type AbsModuleExports, type Phi, formatAbs, getFnImpl } from "@nudojs/core";
+import { setMemberDiagCollector, setAbsTruncationCollector, type BMemberDiag, stableAnalyzeKeySource, hashSource, loadModuleDepsFingerprint } from "@nudojs/core/internal";
 import { parse, extractInlineDirectives } from "@nudojs/parser";
 import { loadEnvs } from "./evaluator/evaluator-api.ts";
 import { evalAbsModuleGraph } from "./abs-modules-graph.ts";
@@ -379,6 +361,11 @@ export function clearBPathCache(): void {
   // 测试/宿主习惯：清 B-path 时一并丢掉整文件/函数级分析缓存
   clearAnalysisFileCache();
   clearFnAnalysisCache();
+}
+
+/** 测试/诊断：当前 B-path run 缓存条目数（≤ getSessionCacheLimits().maxBRuns） */
+export function getBPathCacheSize(): number {
+  return bRunByFile.size;
 }
 
 /** 依赖文件变更后：逐出以这些文件为入口的 B-path 缓存 */

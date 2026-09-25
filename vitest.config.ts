@@ -8,9 +8,16 @@ export default defineConfig({
     maxWorkers: 4,
     coverage: {
       provider: "v8",
-      reporter: ["json"],
+      reporter: ["json", "text-summary"],
       include: ["packages/*/src/**/*.ts"],
       exclude: ["**/__tests__/**", "**/*.test.ts"],
+      // 防止重构 silently 丢覆盖；数字按当前基线取整，只升不降。
+      thresholds: {
+        lines: 70,
+        functions: 70,
+        branches: 65,
+        statements: 70,
+      },
     },
   },
   resolve: {
@@ -18,6 +25,9 @@ export default defineConfig({
       // packages/*/package.json exports → dist/（发布产物）。测试走 src 别名，
       // 无需先 build；与 CI「lint / build / test 独立」一致。
       "@nudojs/core": new URL("./packages/core/src", import.meta.url)
+        .pathname,
+      // Engine machinery (leak/budgets/derivation/collectors) — product face is @nudojs/core
+      "@nudojs/core/internal": new URL("./packages/core/src/internal.ts", import.meta.url)
         .pathname,
       // B-path transpile 注入 `@nudojs/core/exec` —— 测试必须走 src，否则
       // 与 dist 旧 runtime 分叉（mutator/fork 修复对测试不可见）。

@@ -8,7 +8,7 @@
  * 回读会让缓存键分叉（buffer 编辑后仍命中磁盘旧内容）。
  */
 
-import { loadModuleDepsFingerprint } from "@nudojs/core";
+import { loadModuleDepsFingerprint } from "@nudojs/core/internal";
 
 export type DepContent = { path: string; content: string | null };
 

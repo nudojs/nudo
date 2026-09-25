@@ -3,20 +3,8 @@
  * add/join 打点 → root 标签 → 组合式投影（positive.shift(1)）。
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import {
-  beginDerivationSession,
-  abortDerivationSession,
-  constraintToEntryAbs,
-  endDerivationSession,
-  getDerivation,
-  number,
-  runTranspiled,
-  callTranspiledExportFull,
-  setBCallCollector,
-  tagDerivationRoot,
-  projectDerivationDsl,
-  type BCallRecord,
-} from "../index.ts";
+import { constraintToEntryAbs, number, runTranspiled, callTranspiledExportFull, setBCallCollector, type BCallRecord } from "../index.ts";
+import { beginDerivationSession, abortDerivationSession, endDerivationSession, getDerivation, tagDerivationRoot, projectDerivationDsl } from "../../internal.ts";
 
 /** B 路径驱动：runTranspiled + 导出调用（取代 analyzeFn 的求值面） */
 function analyzeExport(src: string, fnName: string, args: import("../index.ts").Abs[]): import("../index.ts").Abs {
