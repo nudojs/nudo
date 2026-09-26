@@ -302,7 +302,7 @@ actual:   0  #exact     // Abs observed at the call
 expected: price > 0     // Pred from the contract
 ```
 
-Conf markers on Abs: `#exact` / `#path` / `#widened` / `#mock` / `#partial` / `#opaque` — see [Abs](/docs/concepts/type-values).
+Conf markers on Abs: `#exact` / `#path` / `#widened` / `#mock` / `#partial` / `#opaque` — see [Abs](/docs/concepts/abs).
 
 ## Config that affects diagnostics
 

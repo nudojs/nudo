@@ -1,10 +1,10 @@
 ---
-description: "从终端驱动 Nudo：check 签名、test 用例、contract 契约、export 投影 —— 五个一级动词。"
+description: "从终端驱动 Nudo —— 产品动词的任务型工作流（check / test / contract / export / health / migrate）。"
 ---
 
 # CLI 使用指南
 
-`nudo` CLI 是对 `.js` / `.mjs` / `.ts` 运行类型推断的产品命令面。全局安装或通过 `npx` 使用——见[安装](../getting-started/installation.md)。
+`nudo` CLI 在 `.js` / `.mjs` / `.ts` 上的任务型导览。通过 `npx` 使用——见[安装](../getting-started/installation.md)。**完整 flag / 退出码表：** [CLI 参考](../api/cli-reference.md)。
 
 ## 一级动词
 
@@ -20,9 +20,10 @@ nudo — JavaScript types, computed
 
 观察落在 `check` / `test` 的输出与 IDE hover，不设独立观察动词。
 
-**Day 0：** `nudo check`（签名）与 `nudo test`（用例）。  
-**Day 1：** `nudo contract` + `nudo check`。  
+**Day 0：** `nudo check`（签名 + 门禁）。可选调试：`nudo test`（用例见证）。
+**Day 1：** `nudo contract` + `nudo check`。
 **生态：** `nudo export`。
+**离 tsc：** `nudo migrate`（单向 `status` → `strip` → `verify` → `retire`）。
 
 | 想知道什么 | 跑什么 |
 |------------|--------|
@@ -222,8 +223,8 @@ nudo test lib.js --from test.js --freeze=update
 ### Day 0 —— 从现有 JS 读类型
 
 ```bash
-nudo check src/app.js          # 签名 + L2 入口 throws
-nudo test src/app.js           # 全部调用点用例
+nudo check src/app.js          # 签名 + L2 入口 throws（门禁）
+nudo test src/app.js           # 可选调试：全部调用点用例
 ```
 
 ### Day 1 —— 显式契约
@@ -259,10 +260,17 @@ nudo test src/ --watch
 
 ## `any` 与 `unknown` {#any-vs-unknown}
 
-无约束入口参数显示为 **`any`**；**`unknown`** 表示推导失败（引擎债），绝不能被叙述为无约束参数的默认值。完整契约（来源、运算、窄化、产品话术）见 [Abs — any vs unknown](../concepts/type-values.md#any-vs-unknown)。
+无约束入口参数显示为 **`any`**；**`unknown`** 表示推导失败（引擎债），绝不能被叙述为无约束参数的默认值。完整契约（来源、运算、窄化、产品话术）见 [Abs — any vs unknown](../concepts/abs.md#any-vs-unknown)。
 
 ---
 
 ## 退出码
 
 逐命令退出契约：[CLI 参考](../api/cli-reference.md)。CI 门禁只认 `check`（及 `test` 的声明断言、`health` 的 drift）。
+
+## 下一步
+
+- [十分钟心智模型](../getting-started/mental-model.md) —— 产品面
+- [nudo check](./check.md) —— CI 门禁详解
+- [CLI 参考](../api/cli-reference.md) —— 每个 flag 与退出码
+- [示例](./examples.md) —— 真实 check/test 输出

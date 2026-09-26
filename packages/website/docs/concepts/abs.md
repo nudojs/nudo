@@ -176,3 +176,10 @@ len(5);      // → -1  (number call falls through)
 ```
 
 With **abstract** arguments (`number()`, `union(...)`), the condition cannot be decided — both branches run with the same value and their results join. There is no intersection/subtraction of abstract unions. Verified patterns and current limits: [Control Flow Narrowing](./control-flow-narrowing.md).
+
+## Next
+
+- [Abstract Interpretation](./abstract-interpretation.md) — how Abs values are computed
+- [Control Flow Narrowing](./control-flow-narrowing.md) — branch elimination on concrete call sites
+- [Directives](./directives.md) — type expressions in `@nudo:` annotations
+- [Concept layers](./layers.md) — Day 0 / Day 1 / Advanced

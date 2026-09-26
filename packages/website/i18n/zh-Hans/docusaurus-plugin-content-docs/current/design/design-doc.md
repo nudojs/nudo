@@ -4,6 +4,8 @@ description: "Nudo 设计内幕：Abs = shape × term × pred × conf 作为唯�
 
 # 设计文档
 
+> **范围。** 本页是公开设计叙事。架构真源只在仓库：[`docs/design/kernel-merge.md`](https://github.com/nudojs/nudo/blob/main/docs/design/kernel-merge.md)（Abs）与 [`docs/design/cli-semantics.md`](https://github.com/nudojs/nudo/blob/main/docs/design/cli-semantics.md)（CLI/产品）。本页与真源冲突时，以真源为准。
+
 > **Nudo** — 面向 JavaScript 的类型推断引擎。类型系统是 **Abs**（`shape × term × pred × conf`）——类型是可计算值，携带约束并参与代数。不存在第二套 IR：dts/LSP/序列化直接消费 Abs，外延视图是单向、有损的渲染。生产分析 Abs 原生。
 
 ---

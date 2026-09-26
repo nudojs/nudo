@@ -104,7 +104,7 @@ Honest comparison: [Nudo vs TypeScript](./guides/vs-typescript.md). Limits: [wha
 - **[Contracts](./guides/contract.md)** — draft / accept / `nudo contract`
 - **[nudo check](./guides/check.md)** — L1 + L2 gate on Abs
 - **[Migrate from TypeScript](./guides/migrating-from-typescript.md)** — retire `tsc`
-- **[Abs](./concepts/type-values.md)** — `shape × term × pred × conf`
+- **[Abs](./concepts/abs.md)** — `shape × term × pred × conf`
 - **[Directives](./concepts/directives.md)** — `@nudo:contract` / sidecar grammar (reference)
 - **[Playground](/playground)** — browser observation
 - **[Recipes](./guides/recipes.md)** — CI, monorepo, export

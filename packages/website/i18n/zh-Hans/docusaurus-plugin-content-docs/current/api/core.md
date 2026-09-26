@@ -31,7 +31,7 @@ core 包提供 Abs 类型体系、运算符语义以及环境抽象，是 Nudo �
 | `any` | 无约束 JS 值并集 —— 未标注入口参数的默认；开发者负责细化 |
 | `unknown` | 推导失败 / 引擎无信息 —— **不是** `any` 的同义词；Nudo 负责修 |
 
-详见 [Abs — any vs unknown](/docs/concepts/type-values#any-vs-unknown)。
+详见 [Abs — any vs unknown](/docs/concepts/abs#any-vs-unknown)。
 
 ---
 

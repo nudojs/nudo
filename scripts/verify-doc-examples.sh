@@ -211,8 +211,8 @@ verify_check contract packages/website/docs/guides/contract.md \
   'expected: x > 0' \
   'needsPositive(x: number) => number'
 
-# type-values: @nudo:case witnesses across concrete/symbolic/mixed args.
-verify_test type-values packages/website/docs/concepts/type-values.md \
+# abs: @nudo:case witnesses across concrete/symbolic/mixed args.
+verify_test abs packages/website/docs/concepts/abs.md \
   'debug "concrete"  (5, 3) => 8' \
   'debug "symbolic"  (number, number) => number' \
   'debug "mixed"  (0, string) => string'
@@ -293,6 +293,32 @@ verify_check error-faces packages/website/docs/guides/error-faces.md \
   'missing slot port' \
   'getName(user: any) => any  throws TypeError' \
   'nudo contract --draft'
+
+# CLI ↔ docs verb drift: every primary verb named in cli.md / cli-reference.md
+# must be registered in packages/nudojs; every registered command must appear
+# in the reference page. Catches docs that invent or forget product verbs.
+cli_verbs_en=$(grep -oE 'nudo (check|test|contract|export|health|migrate)' \
+  packages/website/docs/guides/cli.md packages/website/docs/api/cli-reference.md \
+  | sed 's/.*nudo //' | sort -u)
+for verb in $cli_verbs_en; do
+  if ! grep -q "\.command(\"$verb\")" packages/nudojs/src/commands/*.ts; then
+    printf 'FAIL cli-docs: documented verb `%s` is not registered in packages/nudojs\n' "$verb"
+    fail=$((fail + 1))
+  else
+    pass=$((pass + 1))
+  fi
+done
+for f in packages/nudojs/src/commands/*.ts; do
+  # Only files that register a CLI command (skip shared helpers).
+  verb=$(grep -oE '\.command\("[a-z-]+"' "$f" | head -1 | sed 's/.*"\(.*\)"/\1/')
+  [ -n "$verb" ] || continue
+  if ! grep -q "nudo $verb" packages/website/docs/api/cli-reference.md; then
+    printf 'FAIL cli-docs: registered command `%s` missing from api/cli-reference.md\n' "$verb"
+    fail=$((fail + 1))
+  else
+    pass=$((pass + 1))
+  fi
+done
 
 printf -- '--------------------------------------------------------------\n'
 printf 'doc examples verified: %s checks passed, %s failed\n' "$pass" "$fail"

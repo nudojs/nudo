@@ -34,7 +34,7 @@ npx nudojs test ./src/app.js    # 全部推断用例
 
 > **默认分析模式：** `nudo.analysis.mode` 出厂默认 `"exports"`（含 export / 侧车 / 指令的文件进 IDE 分析）。完整门禁语义与各模式何时用：[与 TypeScript 共存](../guides/coexistence.md#何时用-modedirectives-vs-modeexports)。CLI 对指定路径的 `check`/`test` 仍会分析目标文件。
 
-**Day 0 要点：** 从 `check` 签名与 `test` 用例读类型。无约束入口参数上的 `any` 是诚实的——它的反面 `unknown` 意味着推断失败（见 [Abs —— any vs unknown](./type-values.md#any-vs-unknown)）。
+**Day 0 要点：** 从 `check` 签名与 `test` 用例读类型。无约束入口参数上的 `any` 是诚实的——它的反面 `unknown` 意味着推断失败（见 [Abs —— any vs unknown](./abs.md#any-vs-unknown)）。
 
 ## Day 1 — 侧车契约
 
@@ -78,13 +78,13 @@ npx nudojs check ./src/math.js
 - 你在用代数推理精化（`x>0` ⇒ `x+1>1`）
 - 你在基于 `@nudojs/core` 做工具
 
-深入阅读：[Abs —— 类型系统](./type-values.md) · [抽象解释](./abstract-interpretation.md)。
+深入阅读：[Abs —— 类型系统](./abs.md) · [抽象解释](./abstract-interpretation.md)。
 
 ## 下一步
 
 - [快速开始](../getting-started/quick-start.md)
 - [check 指南](../guides/check.md)
 - [contract 指南](../guides/contract.md)
-- [Abs —— 类型系统](./type-values.md)
+- [Abs —— 类型系统](./abs.md)
 - [VS Code](../guides/vscode.md)
 - [与 TypeScript 共存](../guides/coexistence.md)

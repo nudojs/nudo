@@ -14,6 +14,9 @@
   "homepage.hero.ctaDocs": {
     "message": "阅读文档"
   },
+  "homepage.hero.ctaMentalModel": {
+    "message": "十分钟心智模型"
+  },
   "homepage.hero.copy": {
     "message": "复制"
   },

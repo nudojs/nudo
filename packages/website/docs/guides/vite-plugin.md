@@ -74,3 +74,10 @@ Glob patterns support any file extension (`**/*.js`, `**/*.mjs`, `**/*.ts`, …)
 - **`failOnError: true`**: Nudo type errors are reported as build errors, causing the build to fail.
 
 Use `failOnError: true` when you want Nudo to enforce type correctness as part of your CI or production build.
+
+## Next
+
+- [Installation](../getting-started/installation.md) — add the plugin to a project
+- [nudo check](./check.md) — the same Abs gate in CI
+- [Coexistence with TypeScript](./coexistence.md) — mixed monorepo recipes
+- [Versioning & Releases](./versioning.md) — what counts as breaking

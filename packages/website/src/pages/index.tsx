@@ -261,6 +261,12 @@ function HeroSection() {
           <Link className="button button--secondary button--lg hero-btn-secondary" to="/docs/intro">
             <Translate id="homepage.hero.ctaDocs">Read the Docs</Translate>
           </Link>
+          <Link
+            className="button button--secondary button--lg hero-btn-secondary"
+            to="/docs/getting-started/mental-model"
+          >
+            <Translate id="homepage.hero.ctaMentalModel">10-min mental model</Translate>
+          </Link>
         </div>
 
         <CopyCommand text={heroCmd} />

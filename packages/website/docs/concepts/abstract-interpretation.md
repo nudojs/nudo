@@ -195,3 +195,10 @@ function divide(a, b) {
 Object Abs values use **reference semantics** — assignment copies references, not values. Multiple variables can point to the same object Abs value.
 
 When entering conditional branches, the engine deep-copies modified objects so each branch has its own copy. On merge, overlapping properties become unions. Without branching, mutations are applied in-place with no overhead.
+
+## Next
+
+- [Abs](./abs.md) — the type system this engine computes over
+- [Control Flow Narrowing](./control-flow-narrowing.md) — per-call-site branch elimination
+- [Language semantics](./semantics.md) — what is modeled precisely vs not yet
+- [Mental model](../getting-started/mental-model.md) — 10 minutes

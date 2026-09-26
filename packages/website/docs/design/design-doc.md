@@ -4,6 +4,8 @@ description: "Nudo by design: Abs = shape × term × pred × conf as the single 
 
 # Design Document
 
+> **Scope.** This page is the public design narrative. Architecture truth sources live only in the repo: [`docs/design/kernel-merge.md`](https://github.com/nudojs/nudo/blob/main/docs/design/kernel-merge.md) (Abs) and [`docs/design/cli-semantics.md`](https://github.com/nudojs/nudo/blob/main/docs/design/cli-semantics.md) (CLI/product). When this page and a truth source disagree, the truth source wins.
+
 > **Nudo** — A type inference engine for JavaScript. The type system is **Abs** (`shape × term × pred × conf`); types are computable values with constraints that participate in algebra. There is no second IR: dts/LSP/serialization consume Abs directly, and the extensional view is a one-way, lossy rendering. Production analysis is Abs-native.
 
 ---

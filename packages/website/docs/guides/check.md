@@ -219,6 +219,6 @@ nudo check src/lib.js --json
 ## Next
 
 - [CLI Usage](./cli.md) — all primary verbs
-- [Abs](../concepts/type-values.md) — `any` vs `unknown`
+- [Abs](../concepts/abs.md) — `any` vs `unknown`
 - [Diagnostics glossary](../reference/diagnostics.md) — stable codes and how to read them
 - [Concept Layers](../concepts/layers.md) — Day 0 / Day 1

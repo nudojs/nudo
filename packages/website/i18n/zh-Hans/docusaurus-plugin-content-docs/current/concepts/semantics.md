@@ -338,3 +338,10 @@ env 模块与 `@types` harvester 覆盖了大量常见 Node/Web API，但**并�
 | 递归 | `walk(2)` | `3` |
 | 字面量折叠 | `1 == "1"` · `JSON.parse('{"port": 3000}')` · `3 ** 2` | `true` · `{ port: 3000 }` · `9` |
 | 收窄 | `typeof` / `===` / `Array.isArray` / `switch` | 逐调用点精度 |
+
+## 下一步
+
+- [Abs](./abs.md) —— 这些规则背后的类型系统
+- [控制流收窄](./control-flow-narrowing.md) —— 何处按调用点收窄
+- [Mocking](./mocking.md) —— 外部依赖处的边界
+- [边界](./limits.md) —— 引擎不宣称什么

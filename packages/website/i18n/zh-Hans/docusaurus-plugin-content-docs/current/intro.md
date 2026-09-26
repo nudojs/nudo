@@ -101,7 +101,7 @@ issues
 - **[快速开始](./getting-started/quick-start.md)** — 第一次 check + 第一份契约
 - **[契约](./guides/contract.md)** — 草稿 / 接受 / `nudo contract`
 - **[nudo check](./guides/check.md)** — Abs 上的 L1 + L2 门禁
-- **[Abs](./concepts/type-values.md)** — `shape × term × pred × conf`
+- **[Abs](./concepts/abs.md)** — `shape × term × pred × conf`
 - **[指令](./concepts/directives.md)** — `@nudo:contract` / 侧车文法（参考）
 - **[Playground](/playground)** — 浏览器观察
 - **[Recipes](./guides/recipes.md)** — CI、monorepo、export

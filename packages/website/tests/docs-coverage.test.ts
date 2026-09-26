@@ -116,6 +116,33 @@ describe("zh docs mirror en docs", () => {
     );
     expect(missing, `untranslated sidebar labels: ${missing.join(", ")}`).toEqual([]);
   });
+
+  it("sidebars use concepts/abs (not the retired type-values id)", () => {
+    const sidebars = readFileSync(join(repoRoot, "packages/website/sidebars.ts"), "utf8");
+    expect(sidebars).not.toContain("concepts/type-values");
+    expect(sidebars).toContain("concepts/abs");
+    // Coexistence is a migration tactic — must not be a top-level peer category label.
+    expect(sidebars).not.toContain("Migrating & Coexistence");
+    expect(sidebars).toContain("Migrate off TypeScript");
+    expect(sidebars).toContain("releases-history");
+  });
+
+  it("docs pages do not link the retired type-values path", () => {
+    // Historical changelog prose may mention TypeValue; live guidance must use abs.
+    const roots = [EN_DOCS, ZH_DOCS];
+    const bad: string[] = [];
+    for (const root of roots) {
+      for (const f of walk(root)) {
+        if (!f.endsWith(".md")) continue;
+        if (/[\\/]releases(-history)?\.md$/.test(f)) continue;
+        const src = readFileSync(f, "utf8");
+        if (/concepts\/type-values|type-values\.md/.test(src)) {
+          bad.push(relative(root, f));
+        }
+      }
+    }
+    expect(bad, `stale type-values links in: ${bad.join(", ")}`).toEqual([]);
+  });
 });
 
 describe("zh navbar/footer i18n coverage", () => {

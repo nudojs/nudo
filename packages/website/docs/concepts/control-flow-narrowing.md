@@ -168,3 +168,10 @@ optchain(null);
 | Ternary conditions | Yes (definite conditions) | `pick(true)` → `"a"`; unknown condition joins branches |
 | `in` | Partial | forks, member results widen |
 | `?.` / `??` | Yes (known shapes) | shallow + deep `??` / `?.` fold; `any` receivers stay `any` + `throws TypeError` |
+
+## Next
+
+- [Abs](./abs.md) — values, terms, and predicates
+- [Abstract Interpretation](./abstract-interpretation.md) — how the engine evaluates
+- [Language semantics](./semantics.md) — precise vs degraded cases
+- [nudo check](../guides/check.md) — the CI gate on the same facts

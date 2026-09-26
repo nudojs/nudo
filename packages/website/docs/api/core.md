@@ -31,7 +31,7 @@ The core package provides the Abs type system, operator semantics, and environme
 | `any` | Unconstrained JS value union — default for unannotated entry params; developer refines |
 | `unknown` | Inference failed / engine has no information — **not** the same as `any`; Nudo owns the fix |
 
-See [Abs — any vs unknown](../concepts/type-values.md#any-vs-unknown).
+See [Abs — any vs unknown](../concepts/abs.md#any-vs-unknown).
 
 ---
 

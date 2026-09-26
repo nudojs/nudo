@@ -549,3 +549,10 @@ const result = a + b;
 | `@nudo:mock-module` | `"module" from "path"`（文件级 `///`） | 替换导入的模块为 mock |
 | `@nudo:as` | `typeValueExpr`（行注释 `//`） | 覆盖下一条语句的值类型 |
 | `@nudo:replace` | `targetExpr typeValueExpr`（行注释 `//`） | 替换下一条语句中子表达式的类型 |
+
+## 下一步
+
+- [Abs](./abs.md) —— 指令中的类型表达式
+- [Mocking](./mocking.md) —— `@nudo:mock` 与 `@nudo:mock-module`
+- [契约](../guides/contract.md) —— `*.nudo.js` 侧车与 `@nudo:contract`
+- [CLI 使用指南](../guides/cli.md) —— `check` / `test` / `contract` / `export` / `health`

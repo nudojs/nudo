@@ -217,6 +217,6 @@ nudo check src/lib.js --json
 ## 下一步
 
 - [CLI 使用指南](./cli.md) —— 全部一级动词
-- [Abs](../concepts/type-values.md) —— `any` 与 `unknown`
+- [Abs](../concepts/abs.md) —— `any` 与 `unknown`
 - [诊断术语表](../reference/diagnostics.md) —— 稳定诊断码及读法
 - [概念分层](../concepts/layers.md) —— Day 0 / Day 1

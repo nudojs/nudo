@@ -21,7 +21,7 @@ description: 诚实边界与非目标 —— Nudo 不宣称什么、调用点上
 
 ## `any` 与 `unknown`
 
-无约束入口参数显示为 **`any`**；真 `unknown` 表示推导失败（引擎债）。完整契约（来源、运算、窄化）：[Abs — any vs unknown](./type-values.md#any-vs-unknown)。
+无约束入口参数显示为 **`any`**；真 `unknown` 表示推导失败（引擎债）。完整契约（来源、运算、窄化）：[Abs — any vs unknown](./abs.md#any-vs-unknown)。
 
 
 ## 调用点发现上限
@@ -69,7 +69,7 @@ setImplicationOracle((phi, pred) => mySolverImplies(phi, pred));
 - **Power feature，不是对外产品面。** 对外 Nudo 是一道 JS 工程门禁 —— 不是定理证明器 / SMT 产品。没有证明证书，没有「已验证」宣称。
 - **两边都 fail-closed。** 没有 oracle（或返回 `false` / `undefined`）时，证不出的目标就保持未证。
 
-这道门禁所在的代数：[Abs](./type-values.md)。为什么这不是 prover：[竞争格局](../guides/competitive-landscape.md)。
+这道门禁所在的代数：[Abs](./abs.md)。为什么这不是 prover：[竞争格局](../guides/competitive-landscape.md)。
 
 ## 何时应继续以 TypeScript 为主
 
@@ -89,7 +89,7 @@ setImplicationOracle((phi, pred) => mySolverImplies(phi, pred));
 
 ## 下一步
 
-- [Abs](./type-values.md)
+- [Abs](./abs.md)
 - [nudo check](../guides/check.md)
 - [诊断](../reference/diagnostics.md)
 - [vs TypeScript](../guides/vs-typescript.md)

@@ -29,4 +29,4 @@ description: 术语表 —— Abs、any vs unknown、L1/L2、contract vs case、
 | **test（动词）** | 可选的调试用例报告器 —— 不是主要产品叙事。 |
 | **health** | 分析错误 + 固化漂移。 |
 
-深入：[Abs](/docs/concepts/type-values) · [边界](/docs/concepts/limits) · [诊断](/docs/reference/diagnostics)。
+深入：[Abs](/docs/concepts/abs) · [边界](/docs/concepts/limits) · [诊断](/docs/reference/diagnostics)。

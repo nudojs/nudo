@@ -80,7 +80,7 @@ nudo check calc.js --abs --generalize # adds symbolic term/pred α
 nudo check calc.js --abs --assume "x>0"
 ```
 
-Deep dive: [Abs](../concepts/type-values.md) · layers note: [Advanced — Abs](../concepts/layers.md#advanced-abs).
+Deep dive: [Abs](../concepts/abs.md) · layers note: [Advanced — Abs](../concepts/layers.md#advanced-abs).
 
 </details>
 
@@ -163,7 +163,7 @@ Coexistence with `tsc` is a **migration tactic only**. The exit is `retire`. Wal
 
 ## What you can ignore for now
 
-- Abs (`shape × term × pred × conf`) — open the **Later / Advanced** box above only when you want `--abs`; deep page: [Abs](../concepts/type-values.md)
+- Abs (`shape × term × pred × conf`) — open the **Later / Advanced** box above only when you want `--abs`; deep page: [Abs](../concepts/abs.md)
 - Harvest / env internals — later: [Dependency types](../guides/env-harvest.md)
 - Export dialects — only when a consumer needs `.d.ts` or validators
 

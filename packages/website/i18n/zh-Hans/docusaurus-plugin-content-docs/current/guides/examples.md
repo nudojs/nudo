@@ -263,7 +263,7 @@ export function scale(x) {
 | 契约草稿 / 接受 / emit | [契约](./contract.md) |
 | CI 门禁 + 诊断码 | [nudo check](./check.md) · [诊断](../reference/diagnostics.md) |
 | 哪些会退化为 `unknown` | [语言语义](../concepts/semantics.md) |
-| Abs 代数 | [Abs](../concepts/type-values.md) |
+| Abs 代数 | [Abs](../concepts/abs.md) |
 | Recipes（CI、monorepo、export） | [Recipes](./recipes.md) |
 
 | 指令 | 在本指南中的角色 |

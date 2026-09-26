@@ -263,7 +263,7 @@ Prefer concrete values or constraint builders (`number()`, `lit(42)`). Assertion
 | Contract draft / accept / emit | [Contracts](./contract.md) |
 | CI gate + diagnostic codes | [nudo check](./check.md) · [Diagnostics](../reference/diagnostics.md) |
 | What degrades to `unknown` | [Language semantics](../concepts/semantics.md) |
-| Abs algebra | [Abs](../concepts/type-values.md) |
+| Abs algebra | [Abs](../concepts/abs.md) |
 | Recipes (CI, monorepo, export) | [Recipes](./recipes.md) |
 
 | Directive | Role in this guide |

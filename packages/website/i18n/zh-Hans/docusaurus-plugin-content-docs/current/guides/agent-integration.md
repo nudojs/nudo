@@ -211,3 +211,10 @@ error 级条目（失败的 `@nudo:contract` 断言、不可达代码等）在 `
 | `nudo-trace` | `nudo.trace` |
 
 需要注意一个行为升级：`nudo.whatIf` 的回答会反映假设的 `bindings`——旧服务器返回的是文件自身的分析结果并静默丢弃假设。依赖旧行为的提示词或流水线需要相应调整。
+
+## 下一步
+
+- [LSP 客户端矩阵](./lsp-clients.md) —— 客户端能力与缺口
+- [错误对照](./error-faces.md) —— `actual ⊭ expected` 长什么样
+- [参考：Agents](../reference/agents.md) —— 规则 + few-shot 修复对
+- [AI-native DX](./ai-native-dx.md) —— agent 循环、tokens · rounds · bugs

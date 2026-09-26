@@ -550,3 +550,10 @@ const result = a + b;
 | `@nudo:mock-module` | `"module" from "path"` (file-level `///`) | Replace imported modules with mocks |
 | `@nudo:as` | `typeValueExpr` (line comment `//`) | Override next statement's value type |
 | `@nudo:replace` | `targetExpr typeValueExpr` (line comment `//`) | Replace sub-expression type in next statement |
+
+## Next
+
+- [Abs](./abs.md) — type expressions used in directives
+- [Mocking](./mocking.md) — `@nudo:mock` and `@nudo:mock-module`
+- [Contracts](../guides/contract.md) — `*.nudo.js` sidecars and `@nudo:contract`
+- [CLI Usage](../guides/cli.md) — `check` / `test` / `contract` / `export` / `health`

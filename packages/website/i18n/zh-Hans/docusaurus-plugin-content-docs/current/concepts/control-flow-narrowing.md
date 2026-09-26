@@ -168,3 +168,10 @@ optchain(null);
 | 三元 | 是（确定条件） | `pick(true)` → `"a"`；unknown 条件两支合并 |
 | `in` | 部分 | 分叉，成员结果拓宽 |
 | `?.` / `??` | 是（已知形状） | 浅层 + 深层 `??` / `?.` 折叠；`any` 接收者保持 `any` + `throws TypeError` |
+
+## 下一步
+
+- [Abs](./abs.md) —— 值、项与谓词
+- [抽象解释](./abstract-interpretation.md) —— 引擎如何求值
+- [语言语义](./semantics.md) —— 精确与降级的情形
+- [nudo check](../guides/check.md) —— 同一批事实上的 CI 门禁

@@ -176,3 +176,10 @@ len(5);      // → -1  （number 调用落空）
 ```
 
 **抽象**实参（`number()`、`union(...)`）无法判定条件——两个分支以相同值运行，结果 join。不存在抽象联合的交集/减法。已验证模式与当前边界：[控制流收窄](./control-flow-narrowing.md)。
+
+## 下一步
+
+- [抽象解释](./abstract-interpretation.md) —— Abs 值如何被计算
+- [控制流收窄](./control-flow-narrowing.md) —— 具体调用点上的分支消除
+- [指令](./directives.md) —— `@nudo:` 注解中的类型表达式
+- [概念分层](./layers.md) —— Day 0 / Day 1 / 进阶

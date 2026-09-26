@@ -67,13 +67,18 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: "category",
-      label: "Migrating & Coexistence",
+      label: "Migrate off TypeScript",
+      link: {
+        type: "generated-index",
+        description:
+          "Replace the tsc gate on JavaScript packages. Coexistence is a short-lived migration tactic — the exit is nudo migrate retire.",
+      },
       items: [
         "guides/migrating-js",
         "guides/migrating-from-typescript",
         "guides/case-study-retire",
-        "guides/vs-typescript",
         "guides/coexistence",
+        "guides/vs-typescript",
         "guides/versioning",
       ],
     },
@@ -82,7 +87,7 @@ const sidebars: SidebarsConfig = {
       label: "Concepts",
       items: [
         "concepts/layers",
-        "concepts/type-values",
+        "concepts/abs",
         "concepts/abstract-interpretation",
         "concepts/semantics",
         "concepts/control-flow-narrowing",
@@ -123,12 +128,13 @@ const sidebars: SidebarsConfig = {
         },
         "reference/agents",
         "releases",
+        "releases-history",
       ],
     },
     {
       type: "category",
-      label: "Design",
-      items: ["design/design-doc", "guides/competitive-landscape", "contributing"],
+      label: "Project",
+      items: ["guides/competitive-landscape", "design/design-doc", "contributing"],
     },
   ],
 };

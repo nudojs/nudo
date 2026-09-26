@@ -80,7 +80,7 @@ nudo check calc.js --abs --generalize # adds symbolic term/pred α
 nudo check calc.js --abs --assume "x>0"
 ```
 
-深潜：[Abs](../concepts/type-values.md) · 分层笔记：[进阶 — Abs](../concepts/layers.md#advanced-abs)。
+深潜：[Abs](../concepts/abs.md) · 分层笔记：[进阶 — Abs](../concepts/layers.md#advanced-abs)。
 
 </details>
 
@@ -163,7 +163,7 @@ npx nudojs migrate retire ./my-pkg
 
 ## 现在可以先不管
 
-- Abs（`shape × term × pred × conf`）—— 只在想用 `--abs` 时打开上面的**之后 / 进阶**折叠框；深页：[Abs](../concepts/type-values.md)
+- Abs（`shape × term × pred × conf`）—— 只在想用 `--abs` 时打开上面的**之后 / 进阶**折叠框；深页：[Abs](../concepts/abs.md)
 - Harvest / env 内部 —— 之后：[依赖类型](../guides/env-harvest.md)
 - 导出方言 —— 只在消费方要 `.d.ts` 或校验器时再看
 

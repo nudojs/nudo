@@ -29,4 +29,4 @@ description: Glossary — Abs, any vs unknown, L1/L2, contract vs case, call@, c
 | **test (verb)** | Optional debug case reporter — not the primary product narrative. |
 | **health** | Analysis errors + solidification drift. |
 
-Deep dives: [Abs](/docs/concepts/type-values) · [Limits](/docs/concepts/limits) · [Diagnostics](/docs/reference/diagnostics).
+Deep dives: [Abs](/docs/concepts/abs) · [Limits](/docs/concepts/limits) · [Diagnostics](/docs/reference/diagnostics).

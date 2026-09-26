@@ -211,3 +211,10 @@ The standalone `@nudojs/mcp` package is retired — its capabilities moved into 
 | `nudo-trace` | `nudo.trace` |
 
 One behavioral upgrade to be aware of: `nudo.whatIf` answers reflect the assumed `bindings` — the old server returned the file's own analysis and silently dropped the assumptions. Retune any prompts or pipelines that relied on the old behavior.
+
+## Next
+
+- [LSP Client Matrix](./lsp-clients.md) — client capabilities and gaps
+- [Error faces](./error-faces.md) — what `actual ⊭ expected` looks like
+- [Reference: Agents](../reference/agents.md) — rules + few-shot fix pairs
+- [AI-native DX](./ai-native-dx.md) — agent loops, tokens · rounds · bugs

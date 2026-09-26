@@ -34,7 +34,7 @@ Open the same file in VS Code with the Nudo extension for hover and inlays.
 
 > **Default analysis mode:** `nudo.analysis.mode` defaults to `"exports"` (files with `export` / sidecar / directives are analyzed by the IDE). Full gate semantics and when to use each mode: [Coexistence with TypeScript](../guides/coexistence.md#when-to-use-modedirectives-vs-modeexports). CLI `check`/`test` on a named path still analyzes any target file.
 
-**Day 0 takeaway:** read types from `check` signatures and `test` cases. `any` on an unconstrained entry param is honest — the alternative, `unknown`, means inference failed (see [Abs — any vs unknown](./type-values.md#any-vs-unknown)).
+**Day 0 takeaway:** read types from `check` signatures and `test` cases. `any` on an unconstrained entry param is honest — the alternative, `unknown`, means inference failed (see [Abs — any vs unknown](./abs.md#any-vs-unknown)).
 
 ## Day 1 — Sidecar contracts
 
@@ -78,13 +78,13 @@ Reach for Advanced when:
 - you are reasoning about refinements in algebra (`x>0` ⇒ `x+1>1`)
 - you are building tooling on `@nudojs/core`
 
-Deeper reading: [Abs — the type system](./type-values.md) · [Abstract interpretation](./abstract-interpretation.md).
+Deeper reading: [Abs — the type system](./abs.md) · [Abstract interpretation](./abstract-interpretation.md).
 
 ## Next
 
 - [Quick start](../getting-started/quick-start.md)
 - [Check guide](../guides/check.md)
 - [Contract guide](../guides/contract.md)
-- [Abs — the type system](./type-values.md)
+- [Abs — the type system](./abs.md)
 - [VS Code](../guides/vscode.md)
 - [Coexistence with TypeScript](../guides/coexistence.md)

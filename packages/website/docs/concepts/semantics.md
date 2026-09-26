@@ -338,3 +338,10 @@ Coverage baselines (`pnpm run coverage:env` → `docs/reports/env-coverage-basel
 | Recursion | `walk(2)` | `3` |
 | Literal folds | `1 == "1"` · `JSON.parse('{"port": 3000}')` · `3 ** 2` | `true` · `{ port: 3000 }` · `9` |
 | Narrowing | `typeof` / `===` / `Array.isArray` / `switch` | per-call-site precision |
+
+## Next
+
+- [Abs](./abs.md) — the type system behind these rules
+- [Control Flow Narrowing](./control-flow-narrowing.md) — what narrows per call site
+- [Mocking](./mocking.md) — the boundary at external dependencies
+- [Limits](./limits.md) — what the engine does not claim

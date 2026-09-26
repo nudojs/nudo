@@ -97,6 +97,9 @@ const config: Config = {
             "**/search/**",
             "**/playground",
             "**/playground/**",
+            // Full changelog archive dilutes search; current notes stay on /docs/releases.
+            "**/releases-history",
+            "**/releases-history/**",
           ],
           createSitemapItems: async ({
             defaultCreateSitemapItems,
@@ -127,6 +130,10 @@ const config: Config = {
       {
         redirects: [
           {
+            to: "/docs/concepts/abs",
+            from: "/docs/concepts/type-values",
+          },
+          {
             to: "/docs/concepts/control-flow-narrowing",
             from: "/docs/guides/control-flow-narrowing",
           },
@@ -153,7 +160,14 @@ const config: Config = {
         language: ["en", "zh"],
         docsRouteBasePath: "/docs",
         // 索引排除：搜索页 / playground 自身会稀释命中质量
-        ignoreFiles: [/^\/search$/, /^\/playground$/, /^\/zh-Hans\/search$/, /^\/zh-Hans\/playground$/],
+        ignoreFiles: [
+          /^\/search$/,
+          /^\/playground$/,
+          /^\/zh-Hans\/search$/,
+          /^\/zh-Hans\/playground$/,
+          /^\/releases-history$/,
+          /^\/zh-Hans\/releases-history$/,
+        ],
         // 长页面噪声：页眉页脚 / 侧栏 / TOC / 公告条不进入索引
         ignoreCssSelectors: [
           "nav.navbar",
@@ -337,7 +351,7 @@ const config: Config = {
         {
           title: "Docs",
           items: [
-            { label: "Abs", to: "/docs/concepts/type-values" },
+            { label: "Abs", to: "/docs/concepts/abs" },
             { label: "nudo check", to: "/docs/guides/check" },
             { label: "nudo contract", to: "/docs/guides/contract" },
             { label: "Nudo vs TypeScript", to: "/docs/guides/vs-typescript" },

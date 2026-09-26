@@ -45,7 +45,7 @@ Base: https://nudojs.github.io/nudo
 
 ### Concepts
 
-- https://nudojs.github.io/nudo/docs/concepts/type-values
+- https://nudojs.github.io/nudo/docs/concepts/abs
 - https://nudojs.github.io/nudo/docs/concepts/abstract-interpretation
 - https://nudojs.github.io/nudo/docs/concepts/semantics
 - https://nudojs.github.io/nudo/docs/concepts/directives
@@ -75,6 +75,7 @@ Base: https://nudojs.github.io/nudo
 - https://nudojs.github.io/nudo/docs/design/design-doc
 - https://nudojs.github.io/nudo/docs/contributing
 - https://nudojs.github.io/nudo/docs/releases
+- https://nudojs.github.io/nudo/docs/releases-history
 
 ### Blog (short slugs)
 
@@ -96,7 +97,7 @@ Every docs page and blog post also ships as raw markdown — append `.md` to the
 - https://nudojs.github.io/nudo/docs/reference/diagnostics.md
 - https://nudojs.github.io/nudo/docs/reference/glossary.md
 - https://nudojs.github.io/nudo/docs/concepts/limits.md
-- https://nudojs.github.io/nudo/docs/concepts/type-values.md
+- https://nudojs.github.io/nudo/docs/concepts/abs.md
 - https://nudojs.github.io/nudo/docs/api/cli-reference.md
 - https://nudojs.github.io/nudo/docs/concepts/directives.md
 - https://nudojs.github.io/nudo/docs/guides/agent-integration.md
@@ -110,7 +111,7 @@ Chinese pages live under the `/zh-Hans/` prefix — same path after the locale s
 - https://nudojs.github.io/nudo/zh-Hans/docs/intro
 - https://nudojs.github.io/nudo/zh-Hans/docs/getting-started/quick-start
 - https://nudojs.github.io/nudo/zh-Hans/docs/guides/check
-- https://nudojs.github.io/nudo/zh-Hans/docs/concepts/type-values
+- https://nudojs.github.io/nudo/zh-Hans/docs/concepts/abs
 - https://nudojs.github.io/nudo/zh-Hans/blog/day0-observe
 
 Raw markdown for the mirror follows the same pattern: append `.md` under `/zh-Hans/…` (e.g. `https://nudojs.github.io/nudo/zh-Hans/docs/intro.md`). Source files live in `packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/` and `…-blog/`.

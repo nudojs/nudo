@@ -74,3 +74,10 @@ glob 模式支持任意扩展名（`**/*.js`、`**/*.mjs`、`**/*.ts` 等）、�
 - **`failOnError: true`**：Nudo 类型错误作为构建错误报告，导致构建失败。
 
 当希望 Nudo 在 CI 或生产构建中强制执行类型正确性时，可使用 `failOnError: true`。
+
+## 下一步
+
+- [安装](../getting-started/installation.md) —— 把插件接入项目
+- [nudo check](./check.md) —— CI 上的同一 Abs 门禁
+- [与 TypeScript 共存](./coexistence.md) —— 混合 monorepo 配方
+- [版本与发布](./versioning.md) —— 什么算破坏性变更

@@ -1,10 +1,10 @@
 ---
-description: "Drive Nudo from the terminal: check signatures, report cases, draft contracts, export projections — the five primary verbs."
+description: "Drive Nudo from the terminal — task-oriented workflows for the product verbs (check / test / contract / export / health / migrate)."
 ---
 
 # CLI Usage
 
-The `nudo` CLI is the product surface for type inference on `.js`, `.mjs`, and `.ts` files. Install it globally or via `npx` — see [Installation](../getting-started/installation.md).
+Task-oriented walkthroughs for the `nudo` CLI on `.js`, `.mjs`, and `.ts` files. Install via `npx` — see [Installation](../getting-started/installation.md). **Full flag / exit-code tables:** [CLI Reference](../api/cli-reference.md).
 
 ## Primary verbs
 
@@ -20,9 +20,10 @@ nudo — JavaScript types, computed
 
 Observation lives in the output of `check` / `test` and in IDE hover — not a separate primary command.
 
-**Day 0:** `nudo check` (signatures) and `nudo test` (cases).  
-**Day 1:** `nudo contract` + `nudo check`.  
+**Day 0:** `nudo check` (signatures + gate). Optional debug: `nudo test` (case witnesses).
+**Day 1:** `nudo contract` + `nudo check`.
 **Ecosystem:** `nudo export`.
+**Off tsc:** `nudo migrate` (one-way `status` → `strip` → `verify` → `retire`).
 
 | Want to know | Run |
 |--------------|-----|
@@ -216,8 +217,8 @@ nudo test lib.js --from test.js --freeze=update
 ### Day 0 — read types from existing JS
 
 ```bash
-nudo check src/app.js          # signatures + L2 entry throws
-nudo test src/app.js           # every call-site case
+nudo check src/app.js          # signatures + L2 entry throws (the gate)
+nudo test src/app.js           # optional debug: every call-site case
 ```
 
 ### Day 1 — explicit contracts
@@ -253,10 +254,17 @@ nudo test src/ --watch
 
 ## `any` vs `unknown`
 
-Unconstrained entry params display as **`any`**; **`unknown`** means inference failed (engine debt) and must never be described as the default for unconstrained params. The full contract (sources, operations, narrowing, product story) lives in [Abs — any vs unknown](../concepts/type-values.md#any-vs-unknown).
+Unconstrained entry params display as **`any`**; **`unknown`** means inference failed (engine debt) and must never be described as the default for unconstrained params. The full contract (sources, operations, narrowing, product story) lives in [Abs — any vs unknown](../concepts/abs.md#any-vs-unknown).
 
 ---
 
 ## Exit codes
 
 Per-command exit contracts: [CLI Reference](../api/cli-reference.md). CI gates only on `check` (plus `test` declared assertions and `health` drift).
+
+## Next
+
+- [Mental model](../getting-started/mental-model.md) — 10 minutes to the product face
+- [nudo check](./check.md) — the CI gate in detail
+- [CLI Reference](../api/cli-reference.md) — every flag and exit code
+- [Examples](./examples.md) — real check/test output

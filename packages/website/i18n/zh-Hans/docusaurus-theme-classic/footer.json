@@ -25,7 +25,7 @@
   },
   "link.item.label.Abs": {
     "message": "Abs",
-    "description": "The label of footer link with label=Abs linking to /docs/concepts/type-values"
+    "description": "The label of footer link with label=Abs linking to /docs/concepts/abs"
   },
   "link.item.label.nudo check": {
     "message": "nudo check",

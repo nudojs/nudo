@@ -165,3 +165,10 @@ const fs = { readFileSync: (path, encoding) => "{ \"port\": 3000 }" };
 
   debug "read"  (string) => "{ \"port\": 3000 }"
 ```
+
+## 下一步
+
+- [指令](./directives.md) —— `@nudo:mock` / `@nudo:mock-module` / `@nudo:env`
+- [语言语义](./semantics.md) —— mock 边界与仍会降级的部分
+- [示例](../guides/examples.md) —— env 与 mock 配方及真实输出
+- [nudo test](../guides/cli.md#nudo-test) —— 可选调试见证

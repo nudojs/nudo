@@ -31,9 +31,9 @@
     "message": "编辑器与 Agent",
     "description": "The label for category Editors & Agents in sidebar docsSidebar"
   },
-  "sidebar.docsSidebar.category.Migrating & Coexistence": {
-    "message": "迁移与共存",
-    "description": "The label for category Migrating & Coexistence in sidebar docsSidebar"
+  "sidebar.docsSidebar.category.Migrate off TypeScript": {
+    "message": "迁离 TypeScript",
+    "description": "The label for category Migrate off TypeScript in sidebar docsSidebar"
   },
   "sidebar.docsSidebar.category.Concepts": {
     "message": "概念",
@@ -51,8 +51,8 @@
     "message": "包 API",
     "description": "The label for category Package APIs in sidebar docsSidebar"
   },
-  "sidebar.docsSidebar.category.Design": {
-    "message": "设计",
-    "description": "The label for category Design in sidebar docsSidebar"
+  "sidebar.docsSidebar.category.Project": {
+    "message": "项目",
+    "description": "The label for category Project in sidebar docsSidebar"
   }
 }

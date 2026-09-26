@@ -165,3 +165,10 @@ const fs = { readFileSync: (path, encoding) => "{ \"port\": 3000 }" };
 
   debug "read"  (string) => "{ \"port\": 3000 }"
 ```
+
+## Next
+
+- [Directives](./directives.md) — `@nudo:mock` / `@nudo:mock-module` / `@nudo:env`
+- [Language semantics](./semantics.md) — the mock boundary and what still degrades
+- [Examples](../guides/examples.md) — env and mock recipes with real output
+- [nudo test](../guides/cli.md#nudo-test) — optional debug witnesses

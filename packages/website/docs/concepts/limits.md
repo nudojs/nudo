@@ -21,7 +21,7 @@ Young tools earn trust by being explicit. This page is the user-facing extract o
 
 ## `any` vs `unknown`
 
-Unconstrained entry params display as **`any`**; true **`unknown`** means inference failed (engine debt). Full contract (sources, operations, narrowing): [Abs — any vs unknown](./type-values.md#any-vs-unknown).
+Unconstrained entry params display as **`any`**; true **`unknown`** means inference failed (engine debt). Full contract (sources, operations, narrowing): [Abs — any vs unknown](./abs.md#any-vs-unknown).
 
 ## Call-site discovery ceiling
 
@@ -68,7 +68,7 @@ setImplicationOracle((phi, pred) => mySolverImplies(phi, pred));
 - **Power feature, not the product face.** Outwardly Nudo is a JS engineering gate — not a theorem prover / SMT product. No proof certificates, no “verified” claims.
 - **Fail-closed either way.** Without an oracle (or when it returns `false` / `undefined`), an unprovable goal stays unproven.
 
-The algebra this gate sits on: [Abs](./type-values.md). Why this is not a prover: [Competitive landscape](../guides/competitive-landscape.md).
+The algebra this gate sits on: [Abs](./abs.md). Why this is not a prover: [Competitive landscape](../guides/competitive-landscape.md).
 
 ## When TypeScript should stay primary
 
@@ -88,7 +88,7 @@ Honest map: [Nudo vs TypeScript](../guides/vs-typescript.md). Coexistence: [guid
 
 ## Next
 
-- [Abs](./type-values.md)
+- [Abs](./abs.md)
 - [nudo check](../guides/check.md)
 - [Diagnostics](../reference/diagnostics.md)
 - [vs TypeScript](../guides/vs-typescript.md)

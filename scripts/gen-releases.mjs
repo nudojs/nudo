@@ -55,29 +55,43 @@ function splitVersions(cl) {
   return out;
 }
 
-function buildReleases(lang) {
+function buildReleases(lang, mode /* "current" | "history" */) {
   const notice = lang === "zh" ? GEN_NOTICE_ZH : GEN_NOTICE_EN;
-  const heading = lang === "zh" ? "发布记录" : "Releases";
+  const heading = mode === "history"
+    ? (lang === "zh" ? "完整发布历史" : "Full release history")
+    : (lang === "zh" ? "发布记录" : "Releases");
   const pkgTable = lang === "zh"
     ? ["| 包 | 当前版本 |", "|----|----------|"]
     : ["| Package | Current version |", "|----------|-----------------|"];
   const historyLabel = lang === "zh" ? "历史版本" : "Version history";
   const jumpLabel = lang === "zh" ? "按包跳转" : "Jump to package";
+  const currentOnlyLabel = lang === "zh"
+    ? "本页只保留各包**当前版本**说明。完整历史见 [完整发布历史](./releases-history.md)。"
+    : "This page keeps each package’s **current** notes only. Full history: [Full release history](./releases-history.md).";
+  const historyTopLabel = lang === "zh"
+    ? "完整历史（含已折叠的旧版本）。当前版本速览见 [发布记录](./releases.md)。"
+    : "Full history (including archived older versions). Current snapshot: [Releases](./releases.md).";
   // Explicit anchors — heading slugs differ across GH/Docusaurus and `@scope/pkg` is messy.
   const anchorOf = (dir) => `pkg-${dir}`;
   const parts = [
     "---",
     `description: ${
-      lang === "zh"
-        ? "各包发布记录 —— 由 changesets CHANGELOG 自动生成；破坏性变更含迁移说明。"
-        : "Per-package release notes — generated from changesets CHANGELOGs; breaking changes carry migration notes."
+      mode === "history"
+        ? (lang === "zh"
+            ? "各包完整发布历史 —— 由 changesets CHANGELOG 自动生成；体量大，不进搜索索引。"
+            : "Full per-package release history — generated from changesets CHANGELOGs; large page, excluded from search.")
+        : (lang === "zh"
+            ? "各包当前版本发布说明 —— 由 changesets CHANGELOG 自动生成；破坏性变更含迁移说明。"
+            : "Current per-package release notes — generated from changesets CHANGELOGs; breaking changes carry migration notes.")
     }`,
-    `slug: /releases`,
+    mode === "history" ? `slug: /releases-history` : `slug: /releases`,
     "---",
     "",
     `# ${heading}`,
     "",
     notice,
+    "",
+    mode === "current" ? currentOnlyLabel : historyTopLabel,
     "",
     ...pkgTable,
     ...PKGS.map((p) => `| \`${p.name}\` | ${versionOf(p.dir)} |`),
@@ -91,19 +105,32 @@ function buildReleases(lang) {
     parts.push(`## ${p.name} ${versionOf(p.dir)} {#${anchorOf(p.dir)}}`, "");
     if (cl) {
       const blocks = splitVersions(cl);
-      // Latest release stays expanded; older versions collapse so the page is scannable.
-      const [latest, ...older] = blocks;
-      parts.push(latest.body, "");
-      if (older.length > 0) {
-        parts.push(
-          `<details>`,
-          `<summary>${historyLabel} (${older.length})</summary>`,
-          "",
-          older.map((b) => b.body).join("\n\n"),
-          "",
-          `</details>`,
-          "",
-        );
+      if (mode === "current") {
+        // Latest only — history lives on releases-history.md so search/docs stay light.
+        parts.push(blocks[0].body, "");
+        if (blocks.length > 1) {
+          parts.push(
+            lang === "zh"
+              ? `更早版本（${blocks.length - 1}）→ [完整发布历史](./releases-history.md#${anchorOf(p.dir)})`
+              : `Older versions (${blocks.length - 1}) → [Full release history](./releases-history.md#${anchorOf(p.dir)})`,
+            "",
+          );
+        }
+      } else {
+        // History page: keep latest + collapse the rest (scannable, not search-indexed).
+        const [latest, ...older] = blocks;
+        parts.push(latest.body, "");
+        if (older.length > 0) {
+          parts.push(
+            `<details>`,
+            `<summary>${historyLabel} (${older.length})</summary>`,
+            "",
+            older.map((b) => b.body).join("\n\n"),
+            "",
+            `</details>`,
+            "",
+          );
+        }
       }
     } else {
       parts.push(
@@ -119,11 +146,19 @@ function buildReleases(lang) {
 
 writeFileSync(
   join(root, "packages/website/docs/releases.md"),
-  buildReleases("en"),
+  buildReleases("en", "current"),
 );
 writeFileSync(
   join(root, "packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/releases.md"),
-  buildReleases("zh"),
+  buildReleases("zh", "current"),
+);
+writeFileSync(
+  join(root, "packages/website/docs/releases-history.md"),
+  buildReleases("en", "history"),
+);
+writeFileSync(
+  join(root, "packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/releases-history.md"),
+  buildReleases("zh", "history"),
 );
 
 // ---------------- versioning.md 版本表注入 ----------------
@@ -210,4 +245,4 @@ inject(
   ECOSYSTEM_ZH,
 );
 
-console.log("docs:gen wrote releases.md (en+zh) and refreshed versioning.md tables");
+console.log("docs:gen wrote releases.md + releases-history.md (en+zh) and refreshed versioning.md tables");
