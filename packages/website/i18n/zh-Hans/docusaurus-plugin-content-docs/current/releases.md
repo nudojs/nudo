@@ -15,7 +15,7 @@ slug: /releases
 | `@nudojs/service` | 1.1.0 |
 | `nudojs (CLI)` | 1.0.0 |
 | `@nudojs/parser` | 1.1.0 |
-| `@nudojs/lsp` | 1.0.0 |
+| `@nudojs/lsp` | 1.1.0 |
 | `@nudojs/env` | 0.4.2 |
 | `@nudojs/harvester` | 0.2.8 |
 | `vite-plugin-nudo` | 0.4.3 |
@@ -161,7 +161,7 @@ slug: /releases
 
 更早版本（10）→ [完整发布历史](./releases-history.md#pkg-parser)
 
-## @nudojs/lsp 1.0.0 {#pkg-lsp}
+## @nudojs/lsp 1.1.0 {#pkg-lsp}
 
 ## 2.0.0-beta.1
 
