@@ -40,20 +40,31 @@ const confirmed = process.env.CONFIRM_MAJOR === '1' || process.env.CONFIRM_MAJOR
 /** @returns {Array<{file: string, packages: Array<{name: string, type: string}>}>} */
 function readPendingChangesets() {
   if (!existsSync(changesetDir)) return [];
-  const files = readdirSync(changesetDir).filter((f) => f.endsWith('.md') && f !== 'README.md');
+  /** @type {Array<{file: string, packages: Array<{name: string, type: string}>}>} */
   const out = [];
-  for (const file of files) {
-    const raw = readFileSync(join(changesetDir, file), 'utf8');
-    const m = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-    if (!m) continue;
-    /** @type {Array<{name: string, type: string}>} */
-    const packages = [];
-    for (const line of m[1].split(/\r?\n/)) {
-      const kv = line.match(/^['"]?([^'":]+)['"]?\s*:\s*['"]?(major|minor|patch|premajor|preminor|prepatch|prerelease)['"]?\s*$/i);
-      if (kv) packages.push({ name: kv[1], type: kv[2].toLowerCase() });
+  /**
+   * Scan one directory of changeset markdown. Must include `.changeset/pre/`:
+   * even after `pre.json` is deleted, `changeset version` still consumes those
+   * files and would re-raise majors (observed after the accidental-stable reset).
+   */
+  const scanDir = (dir, label) => {
+    if (!existsSync(dir)) return;
+    const files = readdirSync(dir).filter((f) => f.endsWith('.md') && f !== 'README.md');
+    for (const file of files) {
+      const raw = readFileSync(join(dir, file), 'utf8');
+      const m = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+      if (!m) continue;
+      /** @type {Array<{name: string, type: string}>} */
+      const packages = [];
+      for (const line of m[1].split(/\r?\n/)) {
+        const kv = line.match(/^['"]?([^'":]+)['"]?\s*:\s*['"]?(major|minor|patch|premajor|preminor|prepatch|prerelease)['"]?\s*$/i);
+        if (kv) packages.push({ name: kv[1], type: kv[2].toLowerCase() });
+      }
+      if (packages.length) out.push({ file: label ? `${label}/${file}` : file, packages });
     }
-    if (packages.length) out.push({ file, packages });
-  }
+  };
+  scanDir(changesetDir, '');
+  scanDir(join(changesetDir, 'pre'), 'pre');
   return out;
 }
 
