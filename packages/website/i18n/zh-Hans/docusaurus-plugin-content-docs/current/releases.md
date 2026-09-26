@@ -12,13 +12,13 @@ slug: /releases
 | 包 | 当前版本 |
 |----|----------|
 | `@nudojs/core` | 3.0.0-beta.0 |
-| `@nudojs/service` | 5.0.0-beta.0 |
-| `nudojs (CLI)` | 1.0.0-beta.1 |
+| `@nudojs/service` | 5.0.0-beta.1 |
+| `nudojs (CLI)` | 1.0.0-beta.3 |
 | `@nudojs/parser` | 1.1.0-beta.0 |
-| `@nudojs/lsp` | 2.0.0-beta.0 |
+| `@nudojs/lsp` | 2.0.0-beta.1 |
 | `@nudojs/env` | 0.4.2-beta.0 |
-| `@nudojs/harvester` | 0.2.8-beta.0 |
-| `vite-plugin-nudo` | 0.4.3-beta.0 |
+| `@nudojs/harvester` | 1.0.0-beta.1 |
+| `vite-plugin-nudo` | 0.4.3-beta.1 |
 | `nudo-vscode` | 0.3.7 |
 
 **按包跳转:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
@@ -95,115 +95,44 @@ slug: /releases
 
 更早版本（10）→ [完整发布历史](./releases-history.md#pkg-core)
 
-## @nudojs/service 5.0.0-beta.0 {#pkg-service}
+## @nudojs/service 5.0.0-beta.1 {#pkg-service}
 
-## 5.0.0-beta.0
+## 5.0.0-beta.1
 
 ### Major Changes
 
-- 22baf33: feat!: product CLI face only — remove deprecated verbs/aliases; L2 entry may-throw
+- 4305674: Split the `@nudojs/service` god package: harvest → `@nudojs/harvester`, IDE surface → `@nudojs/lsp`, emit products consolidated under `@nudojs/service/emit`.
   
-  - **BREAKING — deleted with no compatibility layer:** verbs `infer` / `types` / `interface` / `refine` / `generate` / `emit` / `guard` / `doctor` / top-level `watch` / `harvest`; flags `--callsites`, `--output`, `--format zod`, `--dts`, `--emit-cases`; API `absToZodSchema`; `InferJson`/`serializeInferJson` → `CaseJson`/`serializeCaseJson`; LSP agent tools `nudo.infer` / `nudo.interface*` and aliases → `nudo.test` / `nudo.contract*`; config key `package.json#nudo.interface.*` → `package.json#nudo.contract.*`. Root scripts `infer`/`types`/`interface` removed.
-  - Primary verbs: `check` / `test` / `contract` / `export` / `health` / `env harvest`. Observation is check signatures + test case reports + IDE hover. Thin shell `@nudojs/nudojs` follows `@nudojs/cli` majors.
-  - L2: undigested may-throw on entry/export functions is `nudo:entry-may-throw` (default **error**). Configure with `--ignore-throws` / `--entry-throws` or `package.json#nudo.check.{ignoreThrows,entryThrows}`.
-  - Nested try: soft may-throw from an inner try re-homes to the enclosing try frame. Catch rethrow does not digest soft effects.
-  - `check` always prints signatures on success; unconstrained entry params display as **`any`** (true `unknown` = inference failure + `nudo:unknown-inference`).
-  - `test` prints every case including synthetic `call@`/`entry@`; only declared `@nudo:case` expectations affect exit. `--freeze[=update]` solidifies witnesses.
-  - Flags: `--from`, `export --format dts|guard|schema|standard|all` (`--dialect zod` for schema), `export --out`. `--json` cannot combine with `--abs`.
-  - Design docs consolidated: truth sources `design-kernel-merge.md` + `design-cli-semantics.md`; domain designs compressed to status summaries.
-  - Breaking for CI scripts that still call old verbs or read old config keys.
-- 0e1432a: feat!: source contract directive is `@nudo:contract` only
+  **BREAKING** for `@nudojs/service` subpath consumers:
   
-  `@nudo:refine` and `@nudo:interface` are deleted with no alias layer. The product word is **contract** end to end (sidecar `*.nudo.js`, `@nudo:contract`, `nudo contract`, `package.json#nudo.contract.*`).
+  | Removed subpath | Migrate to |
+  |---|---|
+  | `@nudojs/service/interface` | `@nudojs/service/emit` |
+  | `@nudojs/service/dts` | `@nudojs/service/emit` |
+  | `@nudojs/service/case` | `@nudojs/service/emit` |
+  | `@nudojs/service/lsp` | `@nudojs/lsp` (library entry — no server side effects) |
+  | `@nudojs/service/harvest` | `@nudojs/harvester` |
   
-  - **BREAKING:** replace every `@nudo:refine` / `@nudo:interface` with `@nudo:contract` (including `@nudo:contract return <constraint>`). Grammar is unchanged: `@nudo:contract <param> <constraint>`.
-  - Constraints still enter Abs as Preds and participate in algebra (`x>0` ⇒ `x+1>1`) — this is not a call-site validation gate.
-  - Diagnostic codes `nudo:interface-*` are unchanged in this release.
-  - Chinese product copy uses 契约, not 精化.
-
-### Minor Changes
-
-- P1–P3 engineering hardening (review follow-ups) — no product-face breaks
+  `@nudojs/service` keeps `.`, `./analysis`, `./evaluator`, `./emit`. The language server moves to `@nudojs/lsp/server` (bin `nudo-lsp` unchanged); `@nudojs/lsp` is now a side-effect-free library entry re-exporting the IDE surface.
   
-  - **@nudojs/parser**: export typed Babel AST narrowers (`ast-guards.ts`); service `analyzer-ast` / lsp `symbols` no longer use `as any` on nodes.
-  - **@nudojs/cli**: extract pure decision modules (`check-gate-config`, `check-json-map`, `check-ci-flags`, `export-format`) and cover them with in-process unit tests; per-package coverage floors raised.
-  - **@nudojs/service**: host cache-invalidation contract documented (`docs/design/cache-invalidation.md`) + C1–C8 regression tests; LSP targeted eviction now clears path-env and abs-module cache for changed deps.
-  - **@nudojs/lsp**: `server.ts` split into watch/commands/navigation/code-actions/ide modules (public API unchanged); path-env clear on dependent eviction.
-  - **@nudojs/service**: `interface-derivation` / `analyzer-orchestrate` split into cohesion modules with stable facades.
-  - Docs: trust-boundary note in Quick Start, version narrative consistency, env mock-boundary checklist, CheckJson `actions[]` field table.
-  - vite-plugin: named `logAnalysisSummary` helper (logging surface unchanged).
-- 279d73a: fix review gaps on the B-path migration (PR #34 follow-up):
-  
-  - **inject pipeline**: `CheckOptions.inject` is now threaded into generalize, L2 throws, the record channel, and drift recompute (previously CLI computed mocks/env/replacements but only `modules` reached core; `@nudo:mock`/`env`/`replace` sources were fail-closed `unknown#opaque` under `checkSource`). Memo keys use inject **content** fingerprint (stable across CLI's per-call object allocation). `mode: "analyze"` always wins; `modules` prefers `opts.modules` then `inject.modules`.
-  - **L2 class / CJS methods**: explicit `throw` on class static methods and CJS object methods is no longer hard-coded as `throws: never` — NudoThrow/ReferenceError map to throws Abs (same as `callTranspiledExportFull`). `$call` records throw exits before returning `never`. L2 evaluation now seeds `phi` from `checkSource`.
-  - **`freeIdentifiers`**: lexical scopes (nested params no longer pollute outer free set); non-computed `ObjectMethod`/`ClassMethod` keys are not free refs.
-  - **`callBudgetKey`**: single defensive implementation for non-Abs args (B-run JS function args). `$call` compiled-body path now uses `enterCall`/`exitCall` (same budget as apply). Budget keys use fn object identity (`stableCallId`) instead of `anon#N` (false cycles across same-arity functions). `MAX_TOTAL_CALLS` unified at 20k.
-  - **method early-return (correctness)**: `ObjectMethod` / `ClassMethod` / property `FunctionExpression` bodies now go through `transpileFnBodyStmts` (early-return lift) + implicit return — previously `if (c) return X; return Y` silently always returned `Y` (false precision vs native).
-  - **collectors**: `setBCallCollector` / `setBAssignCollector` / `setMemberDiagCollector` / `setAbsTruncationCollector` return the previous collector; nested call sites save/restore instead of nulling.
-  
-  User-visible notes:
-  
-  - Sources with `@nudo:mock` / `@nudo:env` / `@nudo:replace` get real B evaluation under `nudo check` (CLI already built the inject pack).
-  - Class static / CJS object methods with explicit throws now report `entry-may-throw` (L2 no longer misses them).
-  - Object/class methods with early-return branches now fold the same values as native JS (differential batch19).
-  - `interface-derivation` class-method roots stay fail-closed (no call-chain derivation) — intentional after ast-eval removal.
-- 5a5e167: **feat(export)+review P0–P2**: dialect-aware schema export, Standard Schema path, CLI/LSP honesty fixes.
-  
-  Service / schema:
-  - `absToSchemaSource` / `projectAbsToSchema` / `absToSchemaNode` — SchemaNode carries refinements and `dropped` notes.
-  - Projection prefers core `absToConstraint` (parity for `eq(self,lit)` → `z.literal`, or-literal unions, int/bounds/string length).
-  - Schema projection API: `absToSchemaSource` / `projectAbsToSchema` (zod via `{ dialect: "zod" }`).
-  - New `absToStandardSchemaModule` / `validateSchemaNode` — Standard Schema v1 modules (`~standard`, vendor `nudo`).
-  
-  CLI:
-  - `nudo export --format schema [--dialect zod]` → `*.nudo.schema.<dialect>.ts`
-  - `nudo export --format standard` → `<fn>.nudo.standard.ts` (contract-first domains; joinAbs when no contract)
-  - `test --json` stdout is **one** JSON document (cases only); `check --json` stays a separate command
-  - `--ignore-throws` now **merges** with `package.json#nudo.check.ignoreThrows` (additive)
-  
-  LSP:
-  - Gate codes (`nudo:entry-may-throw` etc.) keep Error **and Warning** under `analysis.diagnostics=off|errors` so IDE matches CLI when `entryThrows=warning`
-  
-  Docs/product copy:
-  - Day1 sidecar example uses `fn({ params }, returns?)` (not bare `number().gt(0)` on a function export)
-  - Help / generated markers use `schema`/`standard` and `nudo contract --emit`
+  No dependency cycles: `lsp → service`, `harvester` stays independent of `service`. Emit is a service subpath (same package). Public function signatures and diagnostic codes are unchanged.
 
 ### Patch Changes
 
-- Updated dependencies [22baf33]
-- Updated dependencies [0e1432a]
-- Updated dependencies [3c3f9d2]
-- Updated dependencies
-- Updated dependencies [279d73a]
-  - @nudojs/core@3.0.0-beta.0
-  - @nudojs/parser@1.1.0-beta.0
-  - @nudojs/env@0.4.2-beta.0
-  - @nudojs/harvester@0.2.8-beta.0
+- Updated dependencies [4305674]
+  - @nudojs/harvester@1.0.0-beta.1
 
-更早版本（11）→ [完整发布历史](./releases-history.md#pkg-service)
+更早版本（12）→ [完整发布历史](./releases-history.md#pkg-service)
 
-## nudojs (CLI) 1.0.0-beta.1 {#pkg-nudojs}
+## nudojs (CLI) 1.0.0-beta.3 {#pkg-nudojs}
 
-## 1.0.0-beta.1
+## 1.0.0-beta.3
 
-### Major Changes
+### Patch Changes
 
-- e29ceac: **BREAKING**: merge `@nudojs/cli` into `nudojs` — one install unit for the `nudo` command.
-  
-  - **`nudojs` is now the full CLI** (`check` / `test` / `contract` / `export` / `health` / `migrate`), with `bin: nudo` and the previous `@nudojs/cli` dependencies. `nudo --version` prints `nudojs <ver>` (+ `@nudojs/core <ver>` when resolvable).
-  - **`@nudojs/cli` is a deprecated migration stub** that forwards `nudo` and the module entry to `nudojs` and prints a deprecation line on stderr. Prefer `npm i -g nudojs`. The stub will be unpublished.
-  - No more "shell ≠ engine" version heads-up: the package you install is the product version.
-  
-  Migration:
-  
-  ```bash
-  npm rm @nudojs/cli
-  npm i -g nudojs   # same `nudo` bin
-  ```
-  
-  `import "@nudojs/cli"` / `npx @nudojs/cli` keep working via the stub for one beta cycle.
+- 247f751: docs(website): product narrative — runtime-adjacent variables, Observation/Contracts layers, cost face (tokens / rounds / edit latency), top-level glossary (Abs origin, B-path, fail-closed, conf grades), TypeScript comparison without permanent dual-gate framing.
 
-更早版本（7）→ [完整发布历史](./releases-history.md#pkg-nudojs)
+更早版本（9）→ [完整发布历史](./releases-history.md#pkg-nudojs)
 
 ## @nudojs/parser 1.1.0-beta.0 {#pkg-parser}
 
@@ -232,77 +161,34 @@ slug: /releases
 
 更早版本（10）→ [完整发布历史](./releases-history.md#pkg-parser)
 
-## @nudojs/lsp 2.0.0-beta.0 {#pkg-lsp}
+## @nudojs/lsp 2.0.0-beta.1 {#pkg-lsp}
 
-## 2.0.0-beta.0
+## 2.0.0-beta.1
 
 ### Major Changes
 
-- 22baf33: feat!: product CLI face only — remove deprecated verbs/aliases; L2 entry may-throw
+- 4305674: Split the `@nudojs/service` god package: harvest → `@nudojs/harvester`, IDE surface → `@nudojs/lsp`, emit products consolidated under `@nudojs/service/emit`.
   
-  - **BREAKING — deleted with no compatibility layer:** verbs `infer` / `types` / `interface` / `refine` / `generate` / `emit` / `guard` / `doctor` / top-level `watch` / `harvest`; flags `--callsites`, `--output`, `--format zod`, `--dts`, `--emit-cases`; API `absToZodSchema`; `InferJson`/`serializeInferJson` → `CaseJson`/`serializeCaseJson`; LSP agent tools `nudo.infer` / `nudo.interface*` and aliases → `nudo.test` / `nudo.contract*`; config key `package.json#nudo.interface.*` → `package.json#nudo.contract.*`. Root scripts `infer`/`types`/`interface` removed.
-  - Primary verbs: `check` / `test` / `contract` / `export` / `health` / `env harvest`. Observation is check signatures + test case reports + IDE hover. Thin shell `@nudojs/nudojs` follows `@nudojs/cli` majors.
-  - L2: undigested may-throw on entry/export functions is `nudo:entry-may-throw` (default **error**). Configure with `--ignore-throws` / `--entry-throws` or `package.json#nudo.check.{ignoreThrows,entryThrows}`.
-  - Nested try: soft may-throw from an inner try re-homes to the enclosing try frame. Catch rethrow does not digest soft effects.
-  - `check` always prints signatures on success; unconstrained entry params display as **`any`** (true `unknown` = inference failure + `nudo:unknown-inference`).
-  - `test` prints every case including synthetic `call@`/`entry@`; only declared `@nudo:case` expectations affect exit. `--freeze[=update]` solidifies witnesses.
-  - Flags: `--from`, `export --format dts|guard|schema|standard|all` (`--dialect zod` for schema), `export --out`. `--json` cannot combine with `--abs`.
-  - Design docs consolidated: truth sources `design-kernel-merge.md` + `design-cli-semantics.md`; domain designs compressed to status summaries.
-  - Breaking for CI scripts that still call old verbs or read old config keys.
-- 0e1432a: feat!: source contract directive is `@nudo:contract` only
+  **BREAKING** for `@nudojs/service` subpath consumers:
   
-  `@nudo:refine` and `@nudo:interface` are deleted with no alias layer. The product word is **contract** end to end (sidecar `*.nudo.js`, `@nudo:contract`, `nudo contract`, `package.json#nudo.contract.*`).
+  | Removed subpath | Migrate to |
+  |---|---|
+  | `@nudojs/service/interface` | `@nudojs/service/emit` |
+  | `@nudojs/service/dts` | `@nudojs/service/emit` |
+  | `@nudojs/service/case` | `@nudojs/service/emit` |
+  | `@nudojs/service/lsp` | `@nudojs/lsp` (library entry — no server side effects) |
+  | `@nudojs/service/harvest` | `@nudojs/harvester` |
   
-  - **BREAKING:** replace every `@nudo:refine` / `@nudo:interface` with `@nudo:contract` (including `@nudo:contract return <constraint>`). Grammar is unchanged: `@nudo:contract <param> <constraint>`.
-  - Constraints still enter Abs as Preds and participate in algebra (`x>0` ⇒ `x+1>1`) — this is not a call-site validation gate.
-  - Diagnostic codes `nudo:interface-*` are unchanged in this release.
-  - Chinese product copy uses 契约, not 精化.
-
-### Minor Changes
-
-- P1–P3 engineering hardening (review follow-ups) — no product-face breaks
+  `@nudojs/service` keeps `.`, `./analysis`, `./evaluator`, `./emit`. The language server moves to `@nudojs/lsp/server` (bin `nudo-lsp` unchanged); `@nudojs/lsp` is now a side-effect-free library entry re-exporting the IDE surface.
   
-  - **@nudojs/parser**: export typed Babel AST narrowers (`ast-guards.ts`); service `analyzer-ast` / lsp `symbols` no longer use `as any` on nodes.
-  - **@nudojs/cli**: extract pure decision modules (`check-gate-config`, `check-json-map`, `check-ci-flags`, `export-format`) and cover them with in-process unit tests; per-package coverage floors raised.
-  - **@nudojs/service**: host cache-invalidation contract documented (`docs/design/cache-invalidation.md`) + C1–C8 regression tests; LSP targeted eviction now clears path-env and abs-module cache for changed deps.
-  - **@nudojs/lsp**: `server.ts` split into watch/commands/navigation/code-actions/ide modules (public API unchanged); path-env clear on dependent eviction.
-  - **@nudojs/service**: `interface-derivation` / `analyzer-orchestrate` split into cohesion modules with stable facades.
-  - Docs: trust-boundary note in Quick Start, version narrative consistency, env mock-boundary checklist, CheckJson `actions[]` field table.
-  - vite-plugin: named `logAnalysisSummary` helper (logging surface unchanged).
-- 5a5e167: **feat(export)+review P0–P2**: dialect-aware schema export, Standard Schema path, CLI/LSP honesty fixes.
-  
-  Service / schema:
-  - `absToSchemaSource` / `projectAbsToSchema` / `absToSchemaNode` — SchemaNode carries refinements and `dropped` notes.
-  - Projection prefers core `absToConstraint` (parity for `eq(self,lit)` → `z.literal`, or-literal unions, int/bounds/string length).
-  - Schema projection API: `absToSchemaSource` / `projectAbsToSchema` (zod via `{ dialect: "zod" }`).
-  - New `absToStandardSchemaModule` / `validateSchemaNode` — Standard Schema v1 modules (`~standard`, vendor `nudo`).
-  
-  CLI:
-  - `nudo export --format schema [--dialect zod]` → `*.nudo.schema.<dialect>.ts`
-  - `nudo export --format standard` → `<fn>.nudo.standard.ts` (contract-first domains; joinAbs when no contract)
-  - `test --json` stdout is **one** JSON document (cases only); `check --json` stays a separate command
-  - `--ignore-throws` now **merges** with `package.json#nudo.check.ignoreThrows` (additive)
-  
-  LSP:
-  - Gate codes (`nudo:entry-may-throw` etc.) keep Error **and Warning** under `analysis.diagnostics=off|errors` so IDE matches CLI when `entryThrows=warning`
-  
-  Docs/product copy:
-  - Day1 sidecar example uses `fn({ params }, returns?)` (not bare `number().gt(0)` on a function export)
-  - Help / generated markers use `schema`/`standard` and `nudo contract --emit`
+  No dependency cycles: `lsp → service`, `harvester` stays independent of `service`. Emit is a service subpath (same package). Public function signatures and diagnostic codes are unchanged.
 
 ### Patch Changes
 
-- Updated dependencies [22baf33]
-- Updated dependencies [0e1432a]
-- Updated dependencies [3c3f9d2]
-- Updated dependencies
-- Updated dependencies [279d73a]
-- Updated dependencies [5a5e167]
-  - @nudojs/core@3.0.0-beta.0
-  - @nudojs/service@5.0.0-beta.0
-  - @nudojs/parser@1.1.0-beta.0
+- Updated dependencies [4305674]
+  - @nudojs/service@5.0.0-beta.1
 
-更早版本（12）→ [完整发布历史](./releases-history.md#pkg-lsp)
+更早版本（13）→ [完整发布历史](./releases-history.md#pkg-lsp)
 
 ## @nudojs/env 0.4.2-beta.0 {#pkg-env}
 
@@ -319,46 +205,40 @@ slug: /releases
 
 更早版本（9）→ [完整发布历史](./releases-history.md#pkg-env)
 
-## @nudojs/harvester 0.2.8-beta.0 {#pkg-harvester}
+## @nudojs/harvester 1.0.0-beta.1 {#pkg-harvester}
 
-## 0.2.8-beta.0
+## 1.0.0-beta.1
 
-### Patch Changes
+### Major Changes
 
-- Updated dependencies [22baf33]
-- Updated dependencies [0e1432a]
-- Updated dependencies [3c3f9d2]
-- Updated dependencies
-- Updated dependencies [279d73a]
-  - @nudojs/core@3.0.0-beta.0
-
-更早版本（8）→ [完整发布历史](./releases-history.md#pkg-harvester)
-
-## vite-plugin-nudo 0.4.3-beta.0 {#pkg-vite-plugin}
-
-## 0.4.3-beta.0
-
-### Patch Changes
-
-- P1–P3 engineering hardening (review follow-ups) — no product-face breaks
+- 4305674: Split the `@nudojs/service` god package: harvest → `@nudojs/harvester`, IDE surface → `@nudojs/lsp`, emit products consolidated under `@nudojs/service/emit`.
   
-  - **@nudojs/parser**: export typed Babel AST narrowers (`ast-guards.ts`); service `analyzer-ast` / lsp `symbols` no longer use `as any` on nodes.
-  - **@nudojs/cli**: extract pure decision modules (`check-gate-config`, `check-json-map`, `check-ci-flags`, `export-format`) and cover them with in-process unit tests; per-package coverage floors raised.
-  - **@nudojs/service**: host cache-invalidation contract documented (`docs/design/cache-invalidation.md`) + C1–C8 regression tests; LSP targeted eviction now clears path-env and abs-module cache for changed deps.
-  - **@nudojs/lsp**: `server.ts` split into watch/commands/navigation/code-actions/ide modules (public API unchanged); path-env clear on dependent eviction.
-  - **@nudojs/service**: `interface-derivation` / `analyzer-orchestrate` split into cohesion modules with stable facades.
-  - Docs: trust-boundary note in Quick Start, version narrative consistency, env mock-boundary checklist, CheckJson `actions[]` field table.
-  - vite-plugin: named `logAnalysisSummary` helper (logging surface unchanged).
-- Updated dependencies [22baf33]
-- Updated dependencies [0e1432a]
-- Updated dependencies [3c3f9d2]
-- Updated dependencies
-- Updated dependencies [279d73a]
-- Updated dependencies [5a5e167]
-  - @nudojs/core@3.0.0-beta.0
-  - @nudojs/service@5.0.0-beta.0
+  **BREAKING** for `@nudojs/service` subpath consumers:
+  
+  | Removed subpath | Migrate to |
+  |---|---|
+  | `@nudojs/service/interface` | `@nudojs/service/emit` |
+  | `@nudojs/service/dts` | `@nudojs/service/emit` |
+  | `@nudojs/service/case` | `@nudojs/service/emit` |
+  | `@nudojs/service/lsp` | `@nudojs/lsp` (library entry — no server side effects) |
+  | `@nudojs/service/harvest` | `@nudojs/harvester` |
+  
+  `@nudojs/service` keeps `.`, `./analysis`, `./evaluator`, `./emit`. The language server moves to `@nudojs/lsp/server` (bin `nudo-lsp` unchanged); `@nudojs/lsp` is now a side-effect-free library entry re-exporting the IDE surface.
+  
+  No dependency cycles: `lsp → service`, `harvester` stays independent of `service`. Emit is a service subpath (same package). Public function signatures and diagnostic codes are unchanged.
 
-更早版本（11）→ [完整发布历史](./releases-history.md#pkg-vite-plugin)
+更早版本（9）→ [完整发布历史](./releases-history.md#pkg-harvester)
+
+## vite-plugin-nudo 0.4.3-beta.1 {#pkg-vite-plugin}
+
+## 0.4.3-beta.1
+
+### Patch Changes
+
+- Updated dependencies [4305674]
+  - @nudojs/service@5.0.0-beta.1
+
+更早版本（12）→ [完整发布历史](./releases-history.md#pkg-vite-plugin)
 
 ## nudo-vscode 0.3.7 {#pkg-vscode}
 

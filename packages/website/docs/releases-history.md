@@ -12,13 +12,13 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 | Package | Current version |
 |----------|-----------------|
 | `@nudojs/core` | 3.0.0-beta.0 |
-| `@nudojs/service` | 5.0.0-beta.0 |
-| `nudojs (CLI)` | 1.0.0-beta.1 |
+| `@nudojs/service` | 5.0.0-beta.1 |
+| `nudojs (CLI)` | 1.0.0-beta.3 |
 | `@nudojs/parser` | 1.1.0-beta.0 |
-| `@nudojs/lsp` | 2.0.0-beta.0 |
+| `@nudojs/lsp` | 2.0.0-beta.1 |
 | `@nudojs/env` | 0.4.2-beta.0 |
-| `@nudojs/harvester` | 0.2.8-beta.0 |
-| `vite-plugin-nudo` | 0.4.3-beta.0 |
+| `@nudojs/harvester` | 1.0.0-beta.1 |
+| `vite-plugin-nudo` | 0.4.3-beta.1 |
 | `nudo-vscode` | 0.3.7 |
 
 **Jump to package:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
@@ -297,7 +297,35 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/service 5.0.0-beta.0 {#pkg-service}
+## @nudojs/service 5.0.0-beta.1 {#pkg-service}
+
+## 5.0.0-beta.1
+
+### Major Changes
+
+- 4305674: Split the `@nudojs/service` god package: harvest → `@nudojs/harvester`, IDE surface → `@nudojs/lsp`, emit products consolidated under `@nudojs/service/emit`.
+  
+  **BREAKING** for `@nudojs/service` subpath consumers:
+  
+  | Removed subpath | Migrate to |
+  |---|---|
+  | `@nudojs/service/interface` | `@nudojs/service/emit` |
+  | `@nudojs/service/dts` | `@nudojs/service/emit` |
+  | `@nudojs/service/case` | `@nudojs/service/emit` |
+  | `@nudojs/service/lsp` | `@nudojs/lsp` (library entry — no server side effects) |
+  | `@nudojs/service/harvest` | `@nudojs/harvester` |
+  
+  `@nudojs/service` keeps `.`, `./analysis`, `./evaluator`, `./emit`. The language server moves to `@nudojs/lsp/server` (bin `nudo-lsp` unchanged); `@nudojs/lsp` is now a side-effect-free library entry re-exporting the IDE surface.
+  
+  No dependency cycles: `lsp → service`, `harvester` stays independent of `service`. Emit is a service subpath (same package). Public function signatures and diagnostic codes are unchanged.
+
+### Patch Changes
+
+- Updated dependencies [4305674]
+  - @nudojs/harvester@1.0.0-beta.1
+
+<details>
+<summary>Version history (12)</summary>
 
 ## 5.0.0-beta.0
 
@@ -381,9 +409,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/parser@1.1.0-beta.0
   - @nudojs/env@0.4.2-beta.0
   - @nudojs/harvester@0.2.8-beta.0
-
-<details>
-<summary>Version history (11)</summary>
 
 ## 4.0.0
 
@@ -655,7 +680,39 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## nudojs (CLI) 1.0.0-beta.1 {#pkg-nudojs}
+## nudojs (CLI) 1.0.0-beta.3 {#pkg-nudojs}
+
+## 1.0.0-beta.3
+
+### Patch Changes
+
+- 247f751: docs(website): product narrative — runtime-adjacent variables, Observation/Contracts layers, cost face (tokens / rounds / edit latency), top-level glossary (Abs origin, B-path, fail-closed, conf grades), TypeScript comparison without permanent dual-gate framing.
+
+<details>
+<summary>Version history (9)</summary>
+
+## 1.0.0-beta.2
+
+### Patch Changes
+
+- 4305674: Split the `@nudojs/service` god package: harvest → `@nudojs/harvester`, IDE surface → `@nudojs/lsp`, emit products consolidated under `@nudojs/service/emit`.
+  
+  **BREAKING** for `@nudojs/service` subpath consumers:
+  
+  | Removed subpath | Migrate to |
+  |---|---|
+  | `@nudojs/service/interface` | `@nudojs/service/emit` |
+  | `@nudojs/service/dts` | `@nudojs/service/emit` |
+  | `@nudojs/service/case` | `@nudojs/service/emit` |
+  | `@nudojs/service/lsp` | `@nudojs/lsp` (library entry — no server side effects) |
+  | `@nudojs/service/harvest` | `@nudojs/harvester` |
+  
+  `@nudojs/service` keeps `.`, `./analysis`, `./evaluator`, `./emit`. The language server moves to `@nudojs/lsp/server` (bin `nudo-lsp` unchanged); `@nudojs/lsp` is now a side-effect-free library entry re-exporting the IDE surface.
+  
+  No dependency cycles: `lsp → service`, `harvester` stays independent of `service`. Emit is a service subpath (same package). Public function signatures and diagnostic codes are unchanged.
+- Updated dependencies [4305674]
+  - @nudojs/service@5.0.0-beta.1
+  - @nudojs/harvester@1.0.0-beta.1
 
 ## 1.0.0-beta.1
 
@@ -675,9 +732,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   ```
   
   `import "@nudojs/cli"` / `npx @nudojs/cli` keep working via the stub for one beta cycle.
-
-<details>
-<summary>Version history (7)</summary>
 
 ## 1.0.0-beta.0
 
@@ -954,7 +1008,35 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/lsp 2.0.0-beta.0 {#pkg-lsp}
+## @nudojs/lsp 2.0.0-beta.1 {#pkg-lsp}
+
+## 2.0.0-beta.1
+
+### Major Changes
+
+- 4305674: Split the `@nudojs/service` god package: harvest → `@nudojs/harvester`, IDE surface → `@nudojs/lsp`, emit products consolidated under `@nudojs/service/emit`.
+  
+  **BREAKING** for `@nudojs/service` subpath consumers:
+  
+  | Removed subpath | Migrate to |
+  |---|---|
+  | `@nudojs/service/interface` | `@nudojs/service/emit` |
+  | `@nudojs/service/dts` | `@nudojs/service/emit` |
+  | `@nudojs/service/case` | `@nudojs/service/emit` |
+  | `@nudojs/service/lsp` | `@nudojs/lsp` (library entry — no server side effects) |
+  | `@nudojs/service/harvest` | `@nudojs/harvester` |
+  
+  `@nudojs/service` keeps `.`, `./analysis`, `./evaluator`, `./emit`. The language server moves to `@nudojs/lsp/server` (bin `nudo-lsp` unchanged); `@nudojs/lsp` is now a side-effect-free library entry re-exporting the IDE surface.
+  
+  No dependency cycles: `lsp → service`, `harvester` stays independent of `service`. Emit is a service subpath (same package). Public function signatures and diagnostic codes are unchanged.
+
+### Patch Changes
+
+- Updated dependencies [4305674]
+  - @nudojs/service@5.0.0-beta.1
+
+<details>
+<summary>Version history (13)</summary>
 
 ## 2.0.0-beta.0
 
@@ -1023,9 +1105,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/core@3.0.0-beta.0
   - @nudojs/service@5.0.0-beta.0
   - @nudojs/parser@1.1.0-beta.0
-
-<details>
-<summary>Version history (12)</summary>
 
 ## 1.0.0
 
@@ -1408,7 +1487,30 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/harvester 0.2.8-beta.0 {#pkg-harvester}
+## @nudojs/harvester 1.0.0-beta.1 {#pkg-harvester}
+
+## 1.0.0-beta.1
+
+### Major Changes
+
+- 4305674: Split the `@nudojs/service` god package: harvest → `@nudojs/harvester`, IDE surface → `@nudojs/lsp`, emit products consolidated under `@nudojs/service/emit`.
+  
+  **BREAKING** for `@nudojs/service` subpath consumers:
+  
+  | Removed subpath | Migrate to |
+  |---|---|
+  | `@nudojs/service/interface` | `@nudojs/service/emit` |
+  | `@nudojs/service/dts` | `@nudojs/service/emit` |
+  | `@nudojs/service/case` | `@nudojs/service/emit` |
+  | `@nudojs/service/lsp` | `@nudojs/lsp` (library entry — no server side effects) |
+  | `@nudojs/service/harvest` | `@nudojs/harvester` |
+  
+  `@nudojs/service` keeps `.`, `./analysis`, `./evaluator`, `./emit`. The language server moves to `@nudojs/lsp/server` (bin `nudo-lsp` unchanged); `@nudojs/lsp` is now a side-effect-free library entry re-exporting the IDE surface.
+  
+  No dependency cycles: `lsp → service`, `harvester` stays independent of `service`. Emit is a service subpath (same package). Public function signatures and diagnostic codes are unchanged.
+
+<details>
+<summary>Version history (9)</summary>
 
 ## 0.2.8-beta.0
 
@@ -1420,9 +1522,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 - Updated dependencies
 - Updated dependencies [279d73a]
   - @nudojs/core@3.0.0-beta.0
-
-<details>
-<summary>Version history (8)</summary>
 
 ## 0.2.7
 
@@ -1514,7 +1613,17 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## vite-plugin-nudo 0.4.3-beta.0 {#pkg-vite-plugin}
+## vite-plugin-nudo 0.4.3-beta.1 {#pkg-vite-plugin}
+
+## 0.4.3-beta.1
+
+### Patch Changes
+
+- Updated dependencies [4305674]
+  - @nudojs/service@5.0.0-beta.1
+
+<details>
+<summary>Version history (12)</summary>
 
 ## 0.4.3-beta.0
 
@@ -1537,9 +1646,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 - Updated dependencies [5a5e167]
   - @nudojs/core@3.0.0-beta.0
   - @nudojs/service@5.0.0-beta.0
-
-<details>
-<summary>Version history (11)</summary>
 
 ## 0.4.2
 

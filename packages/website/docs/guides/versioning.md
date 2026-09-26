@@ -14,12 +14,12 @@ Nudo is a pnpm monorepo that publishes **per-package** versions via [changesets]
 | Package | Line | Upgrade rule |
 |---------|------|----------------|
 | `@nudojs/core` | **3.x**（3.0.0-beta.0） | SemVer: breaking → major |
-| `@nudojs/service` | **5.x**（5.0.0-beta.0） | SemVer: breaking → major |
-| `nudojs` | **1.x**（1.0.0-beta.1） | SemVer: breaking → major |
+| `@nudojs/service` | **5.x**（5.0.0-beta.1） | SemVer: breaking → major |
+| `nudojs` | **1.x**（1.0.0-beta.3） | SemVer: breaking → major |
 | `@nudojs/parser` | **1.x**（1.1.0-beta.0） | SemVer: breaking → major |
-| `@nudojs/lsp` | **2.x**（2.0.0-beta.0） | SemVer: breaking → major. Freeze inventory: `packages/lsp/PUBLIC_API.md` |
-| `@nudojs/env` / `@nudojs/harvester` | 0.x（0.4.2-beta.0 / 0.2.8-beta.0） | Minor may break; pin a minor for stable IDE/CI analysis. Handwritten env wins on overlapping modules/exports (`mergeHarvestUnderEnv`) |
-| `vite-plugin-nudo` | 0.x（0.4.3-beta.0） | Minor may break |
+| `@nudojs/lsp` | **2.x**（2.0.0-beta.1） | SemVer: breaking → major. Freeze inventory: `packages/lsp/PUBLIC_API.md` |
+| `@nudojs/env` / `@nudojs/harvester` | 0.x（0.4.2-beta.0 / 1.0.0-beta.1） | Minor may break; pin a minor for stable IDE/CI analysis. Handwritten env wins on overlapping modules/exports (`mergeHarvestUnderEnv`) |
+| `vite-plugin-nudo` | 0.x（0.4.3-beta.1） | Minor may break |
 | `nudo-vscode` | Marketplace | Follow extension release notes; align bundled lsp before packaging (`packages/vscode/RELEASE_CHECKLIST.md`) |
 <!-- NUDO-VERSIONS:END -->
 
@@ -41,7 +41,7 @@ Full policy (what Nudo treats as breaking): [`docs/versioning.md`](https://githu
 | Package | Current | Pin style | Notes |
 |---------|---------|-----------|-------|
 | `@nudojs/env` | 0.4.2-beta.0 (pre-1.0) | workspace / `~0.4.0` for bit-stable IDE/CI analysis | New Abs modules (e.g. `events` / `stream` / `querystring`) ship as **minor**; signature display may change. Handwritten env **wins** over harvest on overlapping modules/exports. |
-| `@nudojs/harvester` | 0.2.8-beta.0 (pre-1.0) | workspace / `~0.2.8-beta.0` | Harvest is a **side channel** — not the type-system source of truth. Budget defaults: `maxFiles=12`, `maxMs=2500`, disable via `NUDO_HARVEST_NODE=off`. |
+| `@nudojs/harvester` | 1.0.0-beta.1 (pre-1.0) | workspace / `~1.0.0-beta.1` | Harvest is a **side channel** — not the type-system source of truth. Budget defaults: `maxFiles=12`, `maxMs=2500`, disable via `NUDO_HARVEST_NODE=off`. |
 <!-- NUDO-ECOSYSTEM:END -->
 
 Rules:
