@@ -82,9 +82,9 @@ The single-line commands in each subdirectory README and example file header are
 | `pnpm run check docs/examples/structure/assign.js` | **1** | Negative: `config: assignment ⊭ existing shape` (missing port) |
 | `pnpm run check docs/examples/structure/arg-structure.js` | **1** | Negative: shape contract missing field (`constraint-violated`, not a body scan) |
 | `pnpm run check docs/examples/vs-ts/constraints/nudo.js` | **1** | Nudo reports; tsc does not |
-| `pnpm exec tsc --noEmit --strict docs/examples/vs-ts/constraints/tsc.ts` | **0** | tsc side of the contrast (clean) |
+| `pnpm exec tsc --noEmit --strict --ignoreConfig docs/examples/vs-ts/constraints/tsc.ts` | **0** | tsc side of the contrast (clean) |
 | `pnpm run check docs/examples/vs-ts/structure/nudo.js` | **1** | Nudo reports (contract missing name / assignment missing port) |
-| `pnpm exec tsc --noEmit --strict docs/examples/vs-ts/structure/tsc.ts` | **2** | tsc reports 3 sites (missing name / excess / missing port) |
+| `pnpm exec tsc --noEmit --strict --ignoreConfig docs/examples/vs-ts/structure/tsc.ts` | **2** | tsc reports 3 sites (missing name / excess / missing port) |
 | `pnpm run check docs/examples/algebra/0-add-intensional.js` | **0** | Signatures (check; term/pred/conf need `--verbose`/`--abs`) |
 | `pnpm run test:cli docs/examples/algebra/0-add-intensional.js` | **0** | Literal cases (`call@` / `debug`) |
 | `pnpm run check docs/examples/algebra/0-add-intensional.js --abs --assume "x>0"` | **0** | Algebra view (term/pred/conf, `--assume`) |

@@ -1,5 +1,5 @@
 // 结构场景 — tsc 侧（需 interface）
-// 运行：pnpm exec tsc --noEmit --strict docs/examples/vs-ts/structure/tsc.ts
+// 运行：pnpm exec tsc --noEmit --strict --ignoreConfig docs/examples/vs-ts/structure/tsc.ts
 
 interface User {
   id: number;

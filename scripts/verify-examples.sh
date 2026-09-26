@@ -211,7 +211,7 @@ pin 'pnpm run check docs/examples/structure/arg-structure.js' \
 pin 'pnpm run check docs/examples/vs-ts/constraints/nudo.js' \
   '2 error · 0 warning' \
   'setDelay[ms]: argument ⊭ precondition' 'actual:   -50  #exact'
-pin_empty 'pnpm exec tsc --noEmit --strict docs/examples/vs-ts/constraints/tsc.ts'
+pin_empty 'pnpm exec tsc --noEmit --strict --ignoreConfig docs/examples/vs-ts/constraints/tsc.ts'
 
 # migrate/ — public retire-tsc sample (before → after one-way door)
 pin 'pnpm run nudo -- migrate status docs/examples/migrate/before/package.json' \
@@ -273,7 +273,7 @@ pin 'pnpm run check docs/examples/vs-ts/structure/nudo.js' \
   '2 error · 0 warning' \
   'greet[u]' 'constraint-violated' \
   'config: assignment ⊭ existing shape'
-pin 'pnpm exec tsc --noEmit --strict docs/examples/vs-ts/structure/tsc.ts' \
+pin 'pnpm exec tsc --noEmit --strict --ignoreConfig docs/examples/vs-ts/structure/tsc.ts' \
   'error TS2345' 'error TS2353' 'error TS2741'
 
 # algebra/ — pins mirror each file's header-comment promises (actual CLI labels).
