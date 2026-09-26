@@ -1,20 +1,33 @@
 ---
 title: Abs
-description: "Abs — Nudo's only type system (shape × term × pred × conf): computable values with constraints that participate in algebra; projections are one-way and lossy."
+description: "Abs — how Nudo represents a variable close to runtime (shape × term × pred × conf): computable values with constraints that participate in algebra."
 ---
 
 # Abs — the type system
 
-Abs values are symbolic sets of possible JavaScript values — instead of holding a single concrete value like `42` or `"hello"`, an Abs represents *all* values that share certain characteristics (e.g., "any number" or "the literal 1").
+**Abs** is short for **abstract value** (abstract interpretation). Nudo’s goal is to show **variables close to runtime inside the source**. Abs is the representation that makes that possible: not a broad type name, but a symbolic set of possible JavaScript values with identity and constraints.
 
-**Abs** (`shape × term × pred × conf`) is the *only* type system: a computable value whose constraints participate in algebra (`x > 0` ⇒ `x + 1 > 1`). Analysis, display, and projections (`.d.ts` / zod / guards) all consume Abs directly; there is no separate IR. Production analysis is Abs-native — nothing reads a projection back.
+An Abs may hold a single concrete value (`42`, `"hello"`) or *all* values that share characteristics (“any number”, “the literal 1”).
+
+**Abs** (`shape × term × pred × conf`) is the *only* type system: a computable value whose constraints participate in algebra (`x > 0` ⇒ `x + 1 > 1`). Analysis, inlay display, signatures, and projections (`.d.ts` / zod / guards) all consume Abs directly; there is no separate IR. Production analysis is Abs-native — nothing reads a projection back.
 
 ## The Four Components
 
 - **shape** — the extensional carrier: what the value looks like. Kinds: `prim` (with a `lit` term for exact values), `obj`, `arr`, `tuple`, `fn`, `eff` (`promise<…>` / `generator<…>`), `brand` (nominal instances), `sum` (unions), `never`, `any` (unconstrained), `unknown` (inference failed — see [any vs unknown](#any-vs-unknown)).
 - **term** — abstract value identity: `lit` (concrete), `var` (symbolic α like `A1`), or `app` (an application like `(x + 2)`).
 - **pred** — constraints relative to the term: `(x + 2) > 3`.
-- **conf** — how exact the abstraction is: `exact` / `path` / `widened` / `mock` / `partial` / `opaque`.
+- **conf** — how exact the abstraction is. Grades (strong → weak): `exact` → `path` → `widened` → `mock` → `partial` → `opaque` (join keeps the weaker side).
+
+| conf | Meaning |
+|------|---------|
+| `exact` | Literal / precisely evaluable (`25  #exact`) |
+| `path` | Depends on path constraints / symbolic term (`(x+1) · > 1  #path`) |
+| `widened` | Structure lost; conservative extensional domain (loop join, budget) |
+| `mock` | Declared mock / harvest face, not observed evaluation |
+| `partial` | Incomplete set contents |
+| `opaque` | No usable content (budget truncation, eval failure) |
+
+Only `exact` / `path` project into dts / schema details.
 
 ![Abs anatomy — shape × term × pred × conf](/img/abs-anatomy.svg)
 
@@ -182,4 +195,4 @@ With **abstract** arguments (`number()`, `union(...)`), the condition cannot be 
 - [Abstract Interpretation](./abstract-interpretation.md) — how Abs values are computed
 - [Control Flow Narrowing](./control-flow-narrowing.md) — branch elimination on concrete call sites
 - [Directives](./directives.md) — type expressions in `@nudo:` annotations
-- [Concept layers](./layers.md) — Day 0 / Day 1 / Advanced
+- [Concept layers](./layers.md) — Observation / Contracts / Advanced

@@ -285,18 +285,18 @@ export type AdoptStep = {
   cmd: string;
 };
 
-/** Product path — Day0 → Day1 → ecosystem → leave tsc. */
+/** Product path — Observation → Contracts → ecosystem → leave tsc. */
 export const adoptSteps: AdoptStep[] = [
   {
     tagId: "homepage.adopt.day0.tag",
-    tagDefault: "Day 0",
+    tagDefault: "Observation",
     titleId: "homepage.adopt.day0.title",
     titleDefault: "Observe + gate",
     cmd: "npx nudojs check src/",
   },
   {
     tagId: "homepage.adopt.day1.tag",
-    tagDefault: "Day 1",
+    tagDefault: "Contracts",
     titleId: "homepage.adopt.day1.title",
     titleDefault: "Add contracts",
     cmd: "lib.nudo.js  ·  @nudo:contract  ·  nudo check",
@@ -339,6 +339,30 @@ export const trialStats: TrialStat[] = [
     value: "0.2 ms",
     labelId: "homepage.trial.stat4",
     labelDefault: "median file-edit re-analyze",
+  },
+];
+
+/** Cost narrative for AI coding — measured baselines, not a closed benchmark. */
+export type CostStat = { value: string; compare: string; labelId: string; labelDefault: string };
+
+export const costStats: CostStat[] = [
+  {
+    value: "569k",
+    compare: "vs 993k",
+    labelId: "homepage.cost.token",
+    labelDefault: "agent tokens to green (OSS historical-bug slice)",
+  },
+  {
+    value: "45",
+    compare: "vs 63",
+    labelId: "homepage.cost.rounds",
+    labelDefault: "gate rounds on the documented fix path",
+  },
+  {
+    value: "0.19 ms",
+    compare: "vs 10 ms+",
+    labelId: "homepage.cost.edit",
+    labelDefault: "median single-file analyze (vs tsc.LS in micro probe)",
   },
 ];
 
@@ -446,7 +470,7 @@ export const agentCards: AgentCard[] = [
     titleDefault: "Stable product rules",
     descId: "homepage.agent.card3.desc",
     descDefault:
-      "Agents must not invent body-AST obligations or treat `@nudo:case` as contracts. Entry `any` ≠ `unknown`. Day 0 is `check`; Day 1 is `contract` + `check`.",
+      "Agents must not invent body-AST obligations or treat `@nudo:case` as contracts. Entry `any` ≠ `unknown`. Observation is `check`; Contracts is `contract` + `check`.",
     cmd: "actual ⊭ expected · nudo:constraint-violated",
   },
   {

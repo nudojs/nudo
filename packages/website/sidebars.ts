@@ -4,6 +4,7 @@ const sidebars: SidebarsConfig = {
   docsSidebar: [
     "intro",
     "why-nudo",
+    "glossary",
     {
       type: "category",
       label: "Start",
@@ -102,17 +103,13 @@ const sidebars: SidebarsConfig = {
       link: {
         type: "generated-index",
         description:
-          "Authoritative lookups: CLI commands and diagnostics, the glossary, agent surfaces, and per-package API reference for core, parser, service, agent, lsp, and harvester.",
+          "Authoritative lookups: CLI commands and diagnostics, agent surfaces, and per-package API reference for core, parser, service, agent, lsp, and harvester.",
       },
       items: [
         {
           type: "category",
           label: "CLI & Diagnostics",
-          items: [
-            "api/cli-reference",
-            "reference/diagnostics",
-            "reference/glossary",
-          ],
+          items: ["api/cli-reference", "reference/diagnostics"],
         },
         {
           type: "category",

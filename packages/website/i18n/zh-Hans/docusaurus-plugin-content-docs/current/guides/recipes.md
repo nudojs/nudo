@@ -31,7 +31,7 @@ jobs:
 
 ## 2. 在现有包上渐进加契约
 
-**目标：** Day 0 观察 → 草稿 → 手写侧车 → CI。
+**目标：** 观察层观察 → 草稿 → 手写侧车 → CI。
 
 ```bash
 npx nudojs check src/                 # 签名 + L2
@@ -112,4 +112,4 @@ issues
 - [快速开始](../getting-started/quick-start.md)
 - [nudo check](./check.md)
 - [nudo contract](./contract.md)
-- [术语表](../reference/glossary.md)
+- [术语表](../glossary.md)

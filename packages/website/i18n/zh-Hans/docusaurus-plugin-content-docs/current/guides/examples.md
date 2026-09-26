@@ -16,7 +16,7 @@ description: Nudo 实用示例 —— 调用点观察、侧车契约、字符串
 
 ## 调用点与契约（产品路径）
 
-### 1. 调用点减法 —— Day 0 观察
+### 1. 调用点减法 —— 观察层观察
 
 普通 JS + 调用点。无注解。`nudo check` 打印签名；调用点提供证据。
 
@@ -54,7 +54,7 @@ signatures
   call@L6  (1, 10) => -9
 ```
 
-### 2. 侧车契约 —— Day 1 义务
+### 2. 侧车契约 —— 契约层义务
 
 ```javascript verify
 // pricing.js
@@ -268,7 +268,7 @@ export function scale(x) {
 
 | 指令 | 在本指南中的角色 |
 |-----------|-------------------|
-| 调用点 | Day 0 证据（主要） |
-| `*.nudo.js` / `@nudo:contract` | Day 1 契约（主要） |
+| 调用点 | 观察层证据（主要） |
+| `*.nudo.js` / `@nudo:contract` | 契约层契约（主要） |
 | `@nudo:env` / `@nudo:mock` | 环境与边界 |
 | `@nudo:case` | 仅可选调试见证 |

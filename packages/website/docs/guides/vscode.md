@@ -179,4 +179,4 @@ See also: [LSP Client Matrix](./lsp-clients.md) for other editors.
 - [LSP Client Matrix](./lsp-clients.md) — other editors and known gaps
 - [Zed Extension](./zed.md)
 - [Agent Integration](./agent-integration.md) — the same server for coding agents
-- [Mental model](../getting-started/mental-model.md) — 10 minutes
+- [Mental model](../getting-started/mental-model.md)

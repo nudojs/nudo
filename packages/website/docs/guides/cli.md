@@ -20,8 +20,8 @@ nudo — JavaScript types, computed
 
 Observation lives in the output of `check` / `test` and in IDE hover — not a separate primary command.
 
-**Day 0:** `nudo check` (signatures + gate). Optional debug: `nudo test` (case witnesses).
-**Day 1:** `nudo contract` + `nudo check`.
+**Observation:** `nudo check` (signatures + gate). Optional debug: `nudo test` (case witnesses).
+**Contracts:** `nudo contract` + `nudo check`.
 **Ecosystem:** `nudo export`.
 **Off tsc:** `nudo migrate` (one-way `status` → `strip` → `verify` → `retire`).
 
@@ -214,14 +214,14 @@ nudo test lib.js --from test.js --freeze=update
 
 ## Typical workflows
 
-### Day 0 — read types from existing JS
+### Observation — read types from existing JS
 
 ```bash
 nudo check src/app.js          # signatures + L2 entry throws (the gate)
 nudo test src/app.js           # optional debug: every call-site case
 ```
 
-### Day 1 — explicit contracts
+### Contracts — explicit contracts
 
 ```bash
 nudo contract --draft src/lib.js --write   # reviewable draft
@@ -264,7 +264,7 @@ Per-command exit contracts: [CLI Reference](../api/cli-reference.md). CI gates o
 
 ## Next
 
-- [Mental model](../getting-started/mental-model.md) — 10 minutes to the product face
+- [Mental model](../getting-started/mental-model.md)
 - [nudo check](./check.md) — the CI gate in detail
 - [CLI Reference](../api/cli-reference.md) — every flag and exit code
 - [Examples](./examples.md) — real check/test output

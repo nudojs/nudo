@@ -1,44 +1,67 @@
 ---
 slug: /why-nudo
-description: Why Nudo — observe what JavaScript computes, gate contracts without rewriting, project Abs into the ecosystem.
+description: Why Nudo — per-variable precise derivations for code understanding; contracts sharper than type systems for robustness; logic and contracts stay JavaScript with no second type language.
 ---
 
 # Why Nudo
 
-**Welcome back to JavaScript.**
+JavaScript development rarely requires another type language. It requires three capabilities:
 
-Nudo is for teams whose **logic lives in JavaScript** and who need **honest observation** plus **explicit obligations** — without rewriting the codebase into another language surface.
+1. **Code understanding** — precise derivation of every variable, not a broad type name. Sources stay free of type annotations; there is no need to master a value language and a type language in parallel.
+2. **Code robustness** — contracts that state conditions which must hold, sharper than type systems, checked and diagnosed during development.
+3. **Language continuity** — logic remains JavaScript. The tool adapts to the code; the codebase is not rewritten into another language surface.
 
-## What you get
+This page first examines whether a type system is required, then explains how Nudo answers.
 
-| You need | Nudo |
-|----------|------|
-| See what code actually computes | `nudo check` signatures · IDE hover / inlay on Abs |
-| Gate API obligations in CI | Sidecar contracts → `nudo check` (`actual ⊭ expected`) |
-| Keep JS as JS | Logic is plain JS; contracts are plain JS modules (`*.nudo.js`) |
-| Feed TypeScript / Zod / mocks | `nudo export` one-way projections from Abs |
-| **Agent repair loops** | **`check --json` + `actions[]`** — values and commands, not type-name riddles |
+## Do you need a type system?
 
-`nudo check` **only validates**. Artifacts (`.d.ts`, Zod, Standard Schema, guards) come from **`export`** — not from the checker.
+When developers say they “want types,” they usually mean outcomes, not machinery:
 
-**AI-native DX** (tokens · rounds · bugs, measured): [AI-native DX](./guides/ai-native-dx.md).
+| Actual goal | Common means | Limitation |
+|---|---|---|
+| See how each intermediate value is derived while reading | Type annotations in source | Annotations form a second language and distract from the code; they yield broad types without a derivation trail |
+| Detect obvious errors before merge | `tsc --noEmit` | Structural assignability is not a runtime obligation (`0` is valid for `number`, not for `ms > 0`) |
+| Constrain API boundary input | Zod-style runtime checks | Runtime boundary only; silent about how the function computes internally |
+| Retain understanding over long-term maintenance | Comments and tests | Tests provide samples, not signatures; comments decay |
 
-## Two work modes
+**Conclusion: what is required is precise behavior facts and checkable obligations — not necessarily a second type language.**
 
-Nudo does not force a single style of process:
+- **Readability** comes from per-variable derivation, not from annotation text.
+- **Robustness** comes from precise, checkable constraints (bounds, shapes, entry may-throw), not from structural assignability.
+- **Velocity** comes from JavaScript remaining JavaScript; contracts are JS modules, so there is no migration into a type language.
 
-| Mode | Order | Typical fit |
-|------|--------|-------------|
-| **Logic first** | Write logic + call sites → optionally `contract --draft` → review → accept into `*.nudo.js` | Existing JS packages, migration, rich tests |
-| **Contracts first** | Write contract / `@nudo:contract` → implement under the same contract face | New APIs, public surfaces you want locked early |
+TypeScript encodes obligations as source annotations — capable, with explicit non-goals (no soundness promise, no reliance on runtime type information). Nudo takes a complementary path: **execute on JavaScript, observe from facts, diagnose through explicit contracts.**
 
-Both modes meet on the **same Abs contract face** (`shape × term × pred × conf`). The checker validates that face; it does not invent types for you.
+## How Nudo answers
 
-Sidecars (`*.nudo.js`) are **ordinary JS modules** — Nudo does not introduce a second programming language for contracts.
+**Nudo executes JavaScript on abstract values, reports what the code actually computes, and validates the contracts you accept. Sources remain plain `.js`.**
 
-## Why not “just annotations”
+| Goal | Code understanding | Code robustness | Language continuity |
+|---|---|---|---|
+| **Nudo** | per-variable precise derivations · `check` signatures · call-site evidence | contracts sharper than types · `actual ⊭ expected` | logic and contracts are JS · no annotation noise · Abs is the source of truth |
 
-Declared annotations say what you *wrote*. Nudo’s engine **executes** logic on abstract values and records facts from that execution (terms, predicates, confidence). Call sites are evidence.
+### 1. Code understanding — per-variable precise derivation
+
+When reading code, Nudo provides the **exact derivation of each variable**, not a broad type name:
+
+- IDE hover / inlay shows how intermediates are computed: term, constraints, confidence — observation granularity close to a debugger’s watch window, without executing the program.
+- **Call sites are evidence**: `call@L18 (12, 3) => 36`, not “approximately `number`.”
+- `nudo check` **prints signatures even on success** (params / return / may-throw); observation needs no separate command.
+- **Sources stay free of type annotations**: plain JavaScript remains plain JavaScript; reading never requires switching between a value language and a type language.
+- Unconstrained entry params display as **`any`**. True **`unknown`** means inference failed (engine debt) and is independent of coding style.
+
+### 2. Code robustness — contracts sharper than types
+
+Type systems usually express only “roughly this.” Contracts state the **conditions that must hold**:
+
+| Type systems can state | Contracts can state |
+|---|---|
+| `number` | `ms > 0` |
+| `{ host: string; port: number }` | `port ∈ [1, 65535]`; missing fields are rejected |
+| returns `number` | returns `> 0` |
+| (throws are not shown) | entry may throw `TypeError`, included in diagnostics |
+
+Contracts live in a sidecar `*.nudo.js` or as `@nudo:contract` — **ordinary JS modules**:
 
 ```js
 // logic.js
@@ -58,17 +81,34 @@ export const lineTotal = fn(
 npx nudojs check logic.js --from calls.js
 ```
 
-- Unconstrained entry params display as **`any`** (not `unknown`).
-- Violations print **`actual ⊭ expected`** on Abs.
-- `export` can then project `.d.ts` / Zod / Standard Schema for the ecosystem — **lossy views**, Abs stays the truth.
+Violations report **values and predicates**, not type names:
 
-Honest comparison: [Nudo vs TypeScript](./guides/vs-typescript.md).
+```text
+actual:   0  #exact
+expected: price > 0
+→ use a value satisfying price > 0, or relax the precondition on price
+fix:  nudo contract --draft  (emit a sidecar draft you can edit)
+```
 
-## Work modes → ecosystem
+Diagnostics have two layers; neither requires a type language:
+
+| Layer | Source | Examples |
+|---|---|---|
+| **L1 explicit contracts** | Accepted `*.nudo.js` / `@nudo:contract` | `price > 0`, missing shape fields, return bounds |
+| **L2 entry may-throw** | JavaScript runtime export boundary (default: error) | `user.name` on `any` may throw `TypeError` |
+
+No explicit contract does not mean no obligation: the fallback is JavaScript runtime boundary semantics. Entry may-throw reports as error by default; use `--ignore-throws` when intentional. `nudo check` provides checking and diagnostics and may be attached to any local or automated workflow.
+
+### 3. Language continuity — one source of truth; project only for the ecosystem
+
+- Logic is plain JavaScript; contracts are plain JavaScript. **Type annotations are never required.**
+- `nudo check` **only validates**.
+- `.d.ts` / Zod / Standard Schema / guards come from **`nudo export`** — one-way, **lossy** projections of Abs. Abs remains the source of truth.
+- Use `nudo contract --draft` for a draft. **Accepting a draft creates the obligation**; nothing is invented silently.
 
 ```text
 Logic first ──► contract draft ──► *.nudo.js ──┐
-                                               ├──► nudo check  (validate only)
+                                                ├──► nudo check  (validate only)
 Contracts first ──► *.nudo.js / refine ────────┘         │
                                                           ▼
                          Abs (source of truth) ──► nudo export ──► .d.ts
@@ -77,24 +117,39 @@ Contracts first ──► *.nudo.js / refine ────────┘        
                                                           └──► IDE / LSP · Agent / MCP
 ```
 
-## Who should look closer
+There is no need to choose “types first” or “logic first.” Both orders meet on the **same contract face** (`shape × term × pred × conf`). The checker validates that face; it does not invent types.
 
-- **JS-first packages** that do not want a full TS rewrite for a type gate
-- Teams that care about **runtime-shaped obligations** (bounds, shapes, entry throws) more than annotation style
-- Pipelines that need **mocks / schema** from the same facts CI checks
-- Teams ready to **retire `tsc`** on JS packages (`nudo migrate` one-way door)
+## Why this is not “just annotations”
 
-Who should stay on TypeScript as primary: annotation-first `.ts` codebases, heavy generic/conditional type programming, ecosystems built around `tsc` project references. See [vs TypeScript](./guides/vs-typescript.md).
+Annotations describe **what was written**, and often only broadly. Nudo’s engine **executes** logic on abstract values and records precise facts from that execution. Call sites are evidence, not comments.
+
+| | Annotations / declared types | Nudo |
+|---|---|---|
+| Code understanding | Hover shows the broad type written in source | Per-variable derivation: intermediates, constraints, call-site truth |
+| Cognitive load | Value language and type language in parallel | JavaScript only; contracts are JS modules as well |
+| Code robustness | Structural assignability; often admits `0`; throws are invisible | Precise constraint implication + entry may-throw |
+| Precision | Often widens to `string` / `number` | Can retain literals, template structure, loop sums |
+| Source of truth | Source annotations | Abs from execution; projections are lossy and one-way |
+
+Comparison: [Nudo vs TypeScript](./guides/vs-typescript.md). Violation shapes: [Error faces](./guides/error-faces.md).
+
+## Scope of fit
+
+- **JS-first packages** that need signatures, contracts, and a check gate without rewriting to TypeScript
+- Teams that prioritize **runtime-shaped obligations** (bounds, shapes, entry throws) and **precise derivations** over annotation style
+- Pipelines that need diagnostics and **mocks / schema** from the same facts
+- Packages intended to **retire `tsc`** one-way (`nudo migrate`)
+
+TypeScript should remain primary for annotation-first `.ts` codebases, heavy generic/conditional type programming, and ecosystems built around `tsc` project references. See [vs TypeScript](./guides/vs-typescript.md).
 
 ## Next
 
-- [Mental model](./getting-started/mental-model.md) — 10 minutes
-- [Introduction](./intro.md) — product face + how to use these docs
+- [Mental model](./getting-started/mental-model.md) — Observation
+- [Introduction](./intro.md) — product face and docs map
 - [Quick Start](./getting-started/quick-start.md)
-- [Error faces](./guides/error-faces.md)
-- [nudo contract](./guides/contract.md)
-- [Migrate from TypeScript](./guides/migrating-from-typescript.md) — retire `tsc`
-- [Recipes](./guides/recipes.md)
-- [Limits](./concepts/limits.md)
+- [nudo check](./guides/check.md) — signatures and diagnostic gate
+- [Error faces](./guides/error-faces.md) — actual / expected / fix
+- [nudo contract](./guides/contract.md) — draft and accept
+- [Limits](./concepts/limits.md) — what the engine does not claim
 - [Migrate existing JS](./guides/migrating-js.md)
 - [Playground](/playground)

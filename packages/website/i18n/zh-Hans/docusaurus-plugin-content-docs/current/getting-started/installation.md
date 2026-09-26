@@ -126,5 +126,5 @@ npx nudojs check path/to/file.js
 
 - [快速开始](./quick-start.md) —— 签名、用例与第一份侧车契约
 - [心智模型](./mental-model.md) —— Abs 分析与检查器有何不同
-- [概念分层](../concepts/layers.md) —— Day 0 / Day 1 / 进阶，按需选择
+- [概念分层](../concepts/layers.md) —— 观察层 / 契约层 / 进阶，按需选择
 - [CLI 参考](../api/cli-reference.md) —— 每个 flag 与退出码

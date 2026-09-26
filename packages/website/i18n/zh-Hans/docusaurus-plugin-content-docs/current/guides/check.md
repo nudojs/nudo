@@ -219,4 +219,4 @@ nudo check src/lib.js --json
 - [CLI 使用指南](./cli.md) —— 全部一级动词
 - [Abs](../concepts/abs.md) —— `any` 与 `unknown`
 - [诊断术语表](../reference/diagnostics.md) —— 稳定诊断码及读法
-- [概念分层](../concepts/layers.md) —— Day 0 / Day 1
+- [概念分层](../concepts/layers.md) —— 观察层 / 契约层

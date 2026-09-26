@@ -1,20 +1,33 @@
 ---
 title: Abs
-description: "Abs —— Nudo 唯一的类型系统（shape × term × pred × conf）：约束参与代数的可计算值；投影单向有损。"
+description: "Abs —— Nudo 如何表示接近运行时的变量（shape × term × pred × conf）：约束参与代数的可计算值。"
 ---
 
 # Abs —— 类型系统
 
-Abs 值是 JavaScript 可能值的符号集合 —— 它不像具体值 `42` 或 `"hello"` 那样只持有一个值，而是表示共享某些特征的*所有*值（如「任意数字」或「字面量 1」）。
+**Abs** 是 **abstract value（抽象值）** 的缩写，来自抽象解释。Nudo 的目标是**在源码中看到变量接近运行时的样子**。Abs 是支撑该目标的表示：不是宽泛的类型名，而是带有值身份与约束的、可能 JavaScript 值的符号集合。
 
-**Abs**（`shape × term × pred × conf`）是*唯一*的类型系统：一个可计算的值，其约束参与代数（`x > 0` ⇒ `x + 1 > 1`）。分析、展示与投影（`.d.ts` / zod / guard）全部直接消费 Abs；不存在独立 IR。生产分析是 Abs 原生的 —— 没有东西读回投影。
+Abs 可以精确到单个具体值（`42`、`"hello"`），也可以覆盖共享某些特征的*所有*值（「任意数字」「字面量 1」）。
+
+**Abs**（`shape × term × pred × conf`）是*唯一*的类型系统：可计算的值，其约束参与代数（`x > 0` ⇒ `x + 1 > 1`）。分析、inlay 展示、签名与投影（`.d.ts` / zod / guard）全部直接消费 Abs；不存在独立 IR。生产分析是 Abs 原生的——没有东西读回投影。
 
 ## 四个组成
 
 - **shape** —— 外延载体：值长什么样。种类：`prim`（带 `lit` term 即精确值）、`obj`、`arr`、`tuple`、`fn`、`eff`（`promise<…>` / `generator<…>`）、`brand`（名义实例）、`sum`（联合）、`never`、`any`（无约束）、`unknown`（推导失败 —— 见 [any vs unknown](#any-vs-unknown)）。
 - **term** —— 抽象值身份：`lit`（具体）、`var`（符号 α，如 `A1`）或 `app`（应用表达式，如 `(x + 2)`）。
 - **pred** —— 相对 term 的约束：`(x + 2) > 3`。
-- **conf** —— 抽象的精确度：`exact` / `path` / `widened` / `mock` / `partial` / `opaque`。
+- **conf** — 抽象精确度。由强到弱：`exact` → `path` → `widened` → `mock` → `partial` → `opaque`（合并取更弱侧）。
+
+| conf | 含义 |
+|------|---------|
+| `exact` | 字面量 / 可精确求值（`25  #exact`） |
+| `path` | 依赖路径约束 / 符号 term（`(x+1) · > 1  #path`） |
+| `widened` | 结构丢失后的保守外延（循环合流、预算） |
+| `mock` | 声明的 mock / harvest 形面，非观测求值 |
+| `partial` | 集合内容不完整 |
+| `opaque` | 无可用内容（预算截断、求值失败） |
+
+仅 `exact` / `path` 会投影进 dts / schema 细节。
 
 ![Abs 解剖 —— shape × term × pred × conf](/img/abs-anatomy.svg)
 
@@ -182,4 +195,4 @@ len(5);      // → -1  （number 调用落空）
 - [抽象解释](./abstract-interpretation.md) —— Abs 值如何被计算
 - [控制流收窄](./control-flow-narrowing.md) —— 具体调用点上的分支消除
 - [指令](./directives.md) —— `@nudo:` 注解中的类型表达式
-- [概念分层](./layers.md) —— Day 0 / Day 1 / 进阶
+- [概念分层](./layers.md) —— 观察层 / 契约层 / 进阶

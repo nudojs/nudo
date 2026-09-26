@@ -1,6 +1,6 @@
 ---
 slug: /guides/contract
-description: nudo contract — print / draft / emit sidecar contracts. Day-1 product face beside nudo check.
+description: nudo contract — print / draft / emit sidecar contracts. Contracts product face beside nudo check.
 ---
 
 # nudo contract
@@ -29,7 +29,7 @@ Print example:
 npx nudojs contract src/lib.js
 ```
 
-## Day 0 → draft (logic first)
+## Observation → draft (logic first)
 
 ```bash
 npx nudojs contract --draft src/lib.js
@@ -51,7 +51,7 @@ Human review tightens `number()` → `number().gt(0)` etc. Only the accepted sid
 
 [Playground draft story](/playground) · worked sample: [`docs/examples/interface-draft/`](https://github.com/nudojs/nudo/tree/main/docs/examples/interface-draft)
 
-## Contracts first (Day 1 style)
+## Contracts first (Contracts style)
 
 Write the sidecar by hand, then implement under the same face:
 

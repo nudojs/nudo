@@ -121,7 +121,7 @@ issues
   npx nudojs test src/ --watch
   ```
 
-## Export bridge + adoption profile（Day 1 → 生态）
+## Export bridge + adoption profile（契约层 → 生态）
 
 check 变绿之后（或迁移进行中），把 Abs 向外投影——编辑器要的 `.d.ts`，边界代码要的 Zod / Standard Schema / 守卫：
 
@@ -154,7 +154,7 @@ case 实参请用具体值或约束构建器。
 
 ## 下一步
 
-- [十分钟心智模型](./mental-model.md) —— 产品面
+- [心智模型](./mental-model.md) —— 产品面
 - [错误对照](../guides/error-faces.md)
 - [概念分层](../concepts/layers.md)
 - [nudo check](../guides/check.md)

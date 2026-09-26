@@ -29,7 +29,7 @@ This page is the **canonical flag / option / exit-code specification**. Tutorial
 
 There is **no** observation verb. Observation is `check` signatures, `test` case reports, and IDE hover.
 
-**Day 0:** `check` / `test`. **Day 1:** `contract` + `check`. **Ecosystem:** `export`. **Leaving tsc:** `migrate`.
+**Observation:** `check` / `test`. **Contracts:** `contract` + `check`. **Ecosystem:** `export`. **Leaving tsc:** `migrate`.
 
 ---
 

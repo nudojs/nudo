@@ -115,4 +115,4 @@ Drafts are never silent obligations: accepting a contract draft is what creates 
 - **[Runtime generation](./runtime-generation.md)** — `export` → Standard Schema / Zod / guards / `.d.ts`
 - **[nudo check](./check.md)** — L1 contracts + L2 entry throws
 - **[Limits](../concepts/limits.md)** — what the engine does not claim
-- **[Mental model](../getting-started/mental-model.md)** — 10 minutes
+- **[Mental model](../getting-started/mental-model.md)** 

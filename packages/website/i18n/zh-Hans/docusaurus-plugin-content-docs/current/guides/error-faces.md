@@ -126,7 +126,7 @@ issues
 | 1 | `setDelay(0)` 数值界 | 常**静默**（`ms: number` 合法） | `actual: 0 #exact` · `expected: ms > 0` |
 | 2 | `greet({ id: 2 })` 缺 `name` | 要先写 `interface`，否则可能不报 | `missing field u.name` · 形状一处侧车 |
 | 3 | `config = { host: "y" }` 丢 `port` | 依赖推断；宽类型下静默 | `assign-mismatch` · `missing slot port` |
-| 4 | 无约束 `user` 上 `user.name` | **不展示 throws** —— 运行时炸 | `throws TypeError` + L2 `entry-may-throw` 进 CI |
+| 4 | 无约束 `user` 上 `user.name` | **不展示 throws** —— 运行时才崩溃 | `throws TypeError` + L2 `entry-may-throw` 诊断 |
 | 5 | `positive` 下 `return 0` | 返回 `number` 接受 `0` | `return value ⊭ …` · `expected: return > 0` |
 | 6 | 真实 `+`（`x + 1`） | 常谎称 `number`（对 `"7"`） | 诚实 `number \| string`，或契约拦调用 |
 | 7 | `n = "str"`（在 `n = 2` 后） | 熟悉的类型名，无值 | `prim string ⊭ prim number` · `#exact` 字面量 |
@@ -149,7 +149,7 @@ issues
 
 ## 相关
 
-- [十分钟心智模型](../getting-started/mental-model.md)
+- [心智模型](../getting-started/mental-model.md)
 - [nudo check](./check.md) —— L1 + L2 门禁
 - [契约](./contract.md) —— draft / 接受
 - [Nudo vs TypeScript](./vs-typescript.md)

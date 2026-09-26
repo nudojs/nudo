@@ -114,7 +114,7 @@ Same exit surface as `check` for CI purposes — a non-zero run blocks the pipel
 
 | Situation | Command |
 |---|---|
-| CI on every PR (Day 0 / Day 1) | `nudo check` |
+| CI on every PR (Observation / Contracts) | `nudo check` |
 | CI after freezing `call@` cases | `nudo check` then `nudo health --from` |
 | Local watch while editing | `nudo health --watch` (or `nudo check --watch`) |
 | Before a release, with frozen cases | `nudo health src/ --from tests/` |

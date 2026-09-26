@@ -121,7 +121,7 @@ The violation is reported against the call site. Fix the call (or widen the cont
   npx nudojs test src/ --watch
   ```
 
-## Export bridge + adoption profile (Day 1 → ecosystem)
+## Export bridge + adoption profile (Contracts → ecosystem)
 
 Once check is green (or while you are still migrating), project Abs outward — `.d.ts` for editors, Zod / Standard Schema / guards for boundary code:
 
@@ -154,7 +154,7 @@ Prefer concrete values or constraint builders in cases.
 
 ## Next
 
-- [Mental model](./mental-model.md) — 10-minute product face
+- [Mental model](./mental-model.md)
 - [How to use these docs](../intro.md)
 - [Error faces](../guides/error-faces.md) — what violations look like
 - [nudo check](../guides/check.md)

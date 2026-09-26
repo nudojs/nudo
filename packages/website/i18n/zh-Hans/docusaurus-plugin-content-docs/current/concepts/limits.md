@@ -1,13 +1,11 @@
 ---
 slug: /concepts/limits
-description: 诚实边界与非目标 —— Nudo 不宣称什么、调用点上限，以及何时仍应以 TypeScript 为主。
+description: 边界与非目标 — Nudo 不宣称什么、调用点上限、求值缺口，以及与 TypeScript 类型语言的分界。
 ---
 
 # 边界与非目标
 
-**读完你能带走：** 哪里 Nudo 是合适的 JS-first 门禁、哪里不是，以及哪些边界是产品纪律（不是 bug）。
-
-年轻的工具靠明确边界赢得信任。本页是面向用户的边界摘编 —— 完整工程笔记在 monorepo（`docs/design/limitations.md`）。
+边界是产品纪律，不是 bug。本页是面向用户的边界摘编——完整工程笔记在 monorepo（`docs/design/limitations.md`）。替代维度对照：[Nudo vs TypeScript](../guides/vs-typescript.md)。
 
 ## 非目标
 
@@ -71,14 +69,18 @@ setImplicationOracle((phi, pred) => mySolverImplies(phi, pred));
 
 这道门禁所在的代数：[Abs](./abs.md)。为什么这不是 prover：[竞争格局](../guides/competitive-landscape.md)。
 
-## 何时应继续以 TypeScript 为主
+## 与 TypeScript 类型语言的分界
 
-- 代码库是 `.ts`-first，标注/泛型就是产品
-- 你需要完整 TS 类型语言（条件/映射类型作为编程）
-- 生态是 DefinitelyTyped / 工程引用
-- 你需要的门禁语义是「像 tsc 一样赋值」
+Nudo 替代的是 **`tsc` 检查门禁**，不重实现 TypeScript 的**类型语言**：
 
-诚实地图：[Nudo vs TypeScript](../guides/vs-typescript.md)。共存：[指南](../guides/coexistence.md)。
+- 条件 / 映射 / 模板字面量类型作为编程手段，均为**非目标**
+- declaration merging 与 project references 不是产品 IR
+- 门禁是 Abs 上的 Pred 蕴含（及部分 `leqAbs`），不是与 `tsc` 逐位同语义
+- 不承诺健全性
+
+若**产品本身就是类型语言**（类型体操库、DefinitelyTyped 式声明表面），该工作使用 TypeScript。对常规包，门禁终点仍是 `nudo check` + `nudo migrate retire`——仓库里今天是 `.ts` 不是保留 `tsc` 的理由（标注可剥离；`migrate` 为单向门）。
+
+对照：[Nudo vs TypeScript](../guides/vs-typescript.md)。迁移期共存：[指南](../guides/coexistence.md)。
 
 ## 什么是有纪律的产品行为（不要当 bug「修掉」）
 

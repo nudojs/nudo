@@ -15,7 +15,7 @@
     "message": "阅读文档"
   },
   "homepage.hero.ctaMentalModel": {
-    "message": "十分钟心智模型"
+    "message": "心智模型"
   },
   "homepage.hero.copy": {
     "message": "复制"
@@ -45,19 +45,19 @@
     "message": "pricing.nudo.js"
   },
   "homepage.demo.lead": {
-    "message": "Day 0：nudo check 打印签名并门禁入口可能抛错。Day 1：侧车契约把调用点事实变成 L1 义务。生态：export 从 Abs 投影产物。出口：migrate retire —— 共存不是终态。"
+    "message": "观察层：nudo check 打印签名并诊断入口可能抛错。契约层：侧车契约把调用点事实变成 L1 义务。生态：export 从 Abs 投影产物。出口：migrate retire —— 共存不是终态。"
   },
   "homepage.title": {
     "message": "首页"
   },
   "homepage.demo.title": {
-    "message": "Day 0 → Day 1 → 离开 tsc"
+    "message": "观察层 → 契约层 → 离开 tsc"
   },
   "homepage.demo.eyebrow": {
     "message": "产品路径"
   },
   "homepage.path.aria": {
-    "message": "Day 0 check，Day 1 契约，生态 export，然后 retire tsc"
+    "message": "观察层 check，契约层 contract，生态 export，然后 retire tsc"
   },
   "homepage.beyond.eyebrow": {
     "message": "超越声明式类型"
@@ -83,17 +83,41 @@
   "homepage.beyond.foot": {
     "message": "模板字符串 {tpl} 不是普通 string——当调用点是 {call} 时，Nudo 观察到 {lit}。"
   },
+  "homepage.cost.eyebrow": {
+    "message": "成本（已有实测）"
+  },
+  "homepage.cost.title": {
+    "message": "修环更短，载荷更省"
+  },
+  "homepage.cost.lead": {
+    "message": "变量接近运行时，违例带 actual / expected / actions——agent 更早检出、更少往返。下列为仓库内基线（OSS 切片 + 微基准），不是封闭 benchmark。"
+  },
+  "homepage.cost.token": {
+    "message": "修至绿灯的 agent tokens（OSS 历史 bug 切片）"
+  },
+  "homepage.cost.rounds": {
+    "message": "按文档化修复路径的门禁轮次"
+  },
+  "homepage.cost.edit": {
+    "message": "单文件 analyze 中位（对比微基准中 tsc.LS 十毫秒级）"
+  },
+  "homepage.cost.foot": {
+    "message": "TS 的「便宜 token」往往是假绿。Nudo 花 token 来报告。"
+  },
+  "homepage.cost.detail": {
+    "message": "口径与边界 →"
+  },
   "homepage.proof.aria": {
     "message": "真实包上的实测结果"
   },
   "homepage.adopt.day0.tag": {
-    "message": "Day 0"
+    "message": "观察层"
   },
   "homepage.adopt.day0.title": {
     "message": "观察 + 门禁"
   },
   "homepage.adopt.day1.tag": {
-    "message": "Day 1"
+    "message": "契约层"
   },
   "homepage.adopt.day1.title": {
     "message": "加上契约"
@@ -117,7 +141,7 @@
     "message": "调用点变成签名"
   },
   "homepage.trial.lead": {
-    "message": "Day 0 的 check 把无约束参数打印为 any。把 Nudo 指向真实用法——测试、调用点——解释器会从证据综合出精确签名。不改库、不补类型标注。"
+    "message": "观察层的 check 把无约束参数打印为 any。把 Nudo 指向真实用法——测试、调用点——解释器会从证据综合出精确签名。不改库、不补类型标注。"
   },
   "homepage.trial.cardsTitle": {
     "message": "调用点发现会返回什么"
@@ -561,7 +585,7 @@
     "message": "稳定的产品规则"
   },
   "homepage.agent.card3.desc": {
-    "message": "Agent 不得从 body AST 发明义务，也不得把 `@nudo:case` 当契约。入口 `any` ≠ `unknown`。Day 0 是 `check`；Day 1 是 `contract` + `check`。"
+    "message": "Agent 不得从 body AST 发明义务，也不得把 `@nudo:case` 当契约。入口 `any` ≠ `unknown`。观察层是 `check`；契约层是 `contract` + `check`。"
   },
   "homepage.agent.card4.title": {
     "message": "Agent 入口"

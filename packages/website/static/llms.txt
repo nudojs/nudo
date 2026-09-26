@@ -57,7 +57,7 @@ Base: https://nudojs.github.io/nudo
 ### Reference
 
 - https://nudojs.github.io/nudo/docs/reference/diagnostics
-- https://nudojs.github.io/nudo/docs/reference/glossary
+- https://nudojs.github.io/nudo/docs/glossary
 - https://nudojs.github.io/nudo/docs/reference/agents
 
 ### API
@@ -95,7 +95,7 @@ Every docs page and blog post also ships as raw markdown — append `.md` to the
 - https://nudojs.github.io/nudo/docs/guides/contract.md
 - https://nudojs.github.io/nudo/docs/guides/recipes.md
 - https://nudojs.github.io/nudo/docs/reference/diagnostics.md
-- https://nudojs.github.io/nudo/docs/reference/glossary.md
+- https://nudojs.github.io/nudo/docs/glossary.md
 - https://nudojs.github.io/nudo/docs/concepts/limits.md
 - https://nudojs.github.io/nudo/docs/concepts/abs.md
 - https://nudojs.github.io/nudo/docs/api/cli-reference.md

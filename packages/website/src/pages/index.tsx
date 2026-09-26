@@ -22,6 +22,7 @@ import {
   beyondExamples,
   adoptSteps,
   trialStats,
+  costStats,
   signatureCards,
   ecoItems,
   agentCards,
@@ -391,7 +392,7 @@ function ProductPath() {
   return (
     <div className="product-path" aria-label={translate({
       id: "homepage.path.aria",
-      message: "Day 0 check, Day 1 contracts, ecosystem export, then retire tsc",
+      message: "Observation check, Contracts contract, ecosystem export, then retire tsc",
     })}>
       <ol className="product-path-list">
         {adoptSteps.map((step) => (
@@ -418,12 +419,12 @@ function DemoSection() {
           <Translate id="homepage.demo.eyebrow">Product path</Translate>
         </p>
         <h2 className="section-title">
-          <Translate id="homepage.demo.title">Day 0 → Day 1 → leave tsc</Translate>
+          <Translate id="homepage.demo.title">Observation → Contracts → leave tsc</Translate>
         </h2>
         <p className="section-lead">
           <Translate id="homepage.demo.lead">
-            Day 0: `nudo check` prints signatures and gates entry may-throw. Day 1: sidecar
-            contracts turn call-site facts into L1 obligations. Ecosystem: `export` projects
+            Observation: `nudo check` prints signatures and diagnoses entry may-throw. Contracts:
+            sidecar contracts turn call-site facts into L1 obligations. Ecosystem: `export` projects
             artifacts from Abs. Exit: `migrate retire` — coexistence is not the end state.
           </Translate>
         </p>
@@ -500,6 +501,49 @@ function DemoSection() {
             <Translate id="homepage.demo.fromTs">From TypeScript</Translate>
           </Link>
         </div>
+      </div>
+    </section>
+  );
+}
+
+function CostSection() {
+  return (
+    <section className="cost-section" id="cost">
+      <div className="container">
+        <p className="section-eyebrow">
+          <Translate id="homepage.cost.eyebrow">Cost, measured</Translate>
+        </p>
+        <h2 className="section-title">
+          <Translate id="homepage.cost.title">Shorter repair loops, cheaper payloads</Translate>
+        </h2>
+        <p className="section-lead">
+          <Translate id="homepage.cost.lead">
+            Variables show up close to runtime and violations carry actual / expected / actions — so
+            agents detect earlier and iterate less. Numbers are in-repo baselines (OSS slice + micro
+            probes), not a closed benchmark.
+          </Translate>
+        </p>
+        <div className="cost-stats">
+          {costStats.map((stat) => (
+            <article className="cost-stat" key={stat.labelId}>
+              <div className="cost-stat-row">
+                <span className="cost-stat-value">{stat.value}</span>
+                <span className="cost-stat-compare">{stat.compare}</span>
+              </div>
+              <p className="cost-stat-label">
+                <Translate id={stat.labelId}>{stat.labelDefault}</Translate>
+              </p>
+            </article>
+          ))}
+        </div>
+        <p className="cost-foot">
+          <Translate id="homepage.cost.foot">
+            TS “cheap” tokens are often silent green. Nudo pays tokens to report.
+          </Translate>{" "}
+          <Link to="/docs/guides/vs-typescript">
+            <Translate id="homepage.cost.detail">Method and bounds →</Translate>
+          </Link>
+        </p>
       </div>
     </section>
   );
@@ -583,7 +627,7 @@ function TrialSection() {
         </h2>
         <p className="rw-lead">
           <Translate id="homepage.trial.lead">
-            Day 0 check prints unconstrained params as any. Point Nudo at real usage — tests,
+            Observation check prints unconstrained params as any. Point Nudo at real usage — tests,
             call sites — and the interpreter synthesizes precise signatures from evidence. No
             type annotations. No library rewrite.
           </Translate>
@@ -788,6 +832,7 @@ export default function Home(): JSX.Element {
       <HeroSection />
       <main>
         <ProofStrip />
+        <CostSection />
         <BeyondSection />
         <TrialSection />
         <DemoSection />

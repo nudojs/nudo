@@ -126,5 +126,5 @@ If `npx nudojs` is missing or fails to resolve, check the Node version (`node -v
 
 - [Quick start](./quick-start.md) — signatures, cases, and a first sidecar contract
 - [Mental model](./mental-model.md) — how Abs analysis is different from a checker
-- [Concept layers](../concepts/layers.md) — Day 0 / Day 1 / Advanced, pick what you need
+- [Concept layers](../concepts/layers.md) — Observation / Contracts / Advanced, pick what you need
 - [CLI Reference](../api/cli-reference.md) — every flag and exit code

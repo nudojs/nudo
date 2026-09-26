@@ -139,5 +139,5 @@ npx nudojs contract --draft src/app.js --json    # draftSource + unified diff
 
 - [Agents](../reference/agents) — rules + few-shot fix pairs
 - [Error faces](./error-faces) — human-readable `actual ⊭ expected`
-- [Mental model](../getting-started/mental-model) — 10 minutes
+- [Mental model](../getting-started/mental-model)
 - [Migrate from TypeScript](./migrating-from-typescript) — retire tsc

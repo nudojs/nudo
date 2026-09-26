@@ -174,4 +174,4 @@ Nudo 语言服务器的设计目标是在你的其他工具旁保持轻量：
 - [LSP 客户端矩阵](./lsp-clients.md) —— 其他编辑器与 Known gaps
 - [Zed 扩展](./zed.md)
 - [Agent 集成](./agent-integration.md) —— 同一服务器，面向编码代理
-- [十分钟心智模型](../getting-started/mental-model.md) —— 产品面
+- [心智模型](../getting-started/mental-model.md) —— 产品面

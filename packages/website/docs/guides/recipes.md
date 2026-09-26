@@ -31,7 +31,7 @@ jobs:
 
 ## 2. Gradual contracts on an existing package
 
-**Goal:** Day 0 observation → draft → handwritten sidecar → CI.
+**Goal:** Observation observation → draft → handwritten sidecar → CI.
 
 ```bash
 npx nudojs check src/                 # signatures + L2
@@ -112,4 +112,4 @@ issues
 - [Quick Start](../getting-started/quick-start.md)
 - [nudo check](./check.md)
 - [nudo contract](./contract.md)
-- [Glossary](../reference/glossary.md)
+- [Glossary](../glossary.md)

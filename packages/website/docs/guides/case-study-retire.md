@@ -255,4 +255,4 @@ Copy-ready blog / HN / release-notes text: [`docs/reports/retire-tsc-announcemen
 
 - [Migrate from TypeScript](./migrating-from-typescript) — the door itself
 - [Error faces](./error-faces) — what you read after the gate
-- [Mental model](../getting-started/mental-model) — 10 minutes
+- [Mental model](../getting-started/mental-model)

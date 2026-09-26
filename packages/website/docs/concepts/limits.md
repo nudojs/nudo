@@ -1,13 +1,11 @@
 ---
 slug: /concepts/limits
-description: Honest limits and non-goals — what Nudo does not claim, call-site ceilings, and when TypeScript should stay primary.
+description: Limits and non-goals — what Nudo does not claim, call-site ceilings, evaluator gaps, and the TypeScript type-language boundary.
 ---
 
 # Limits & non-goals
 
-**You'll leave with:** where Nudo is the right JS-first gate, where it is not, and which boundaries are product discipline (not bugs).
-
-Young tools earn trust by being explicit. This page is the user-facing extract of design limits — full engineering notes live in the monorepo (`docs/design/limitations.md`).
+Boundaries are product discipline, not bugs. This page is the user-facing extract of design limits — full engineering notes live in the monorepo (`docs/design/limitations.md`). Comparison of replacement dimensions: [Nudo vs TypeScript](../guides/vs-typescript.md).
 
 ## Non-goals
 
@@ -70,14 +68,18 @@ setImplicationOracle((phi, pred) => mySolverImplies(phi, pred));
 
 The algebra this gate sits on: [Abs](./abs.md). Why this is not a prover: [Competitive landscape](../guides/competitive-landscape.md).
 
-## When TypeScript should stay primary
+## TypeScript type-language boundary
 
-- The codebase is `.ts`-first and annotations/generics are the product
-- You need the full TS type language (conditional/mapped types as programming)
-- Ecosystem is DefinitelyTyped / project references
-- The gate you need is “assigns like tsc”
+Nudo replaces `tsc` as the **check gate**; it does not reimplement the TypeScript **type language**:
 
-Honest map: [Nudo vs TypeScript](../guides/vs-typescript.md). Coexistence: [guide](../guides/coexistence.md).
+- Conditional / mapped / template-literal types as programming devices are **non-goals**
+- Declaration merging and project references are not product IR
+- The gate is Pred implication on Abs (and some `leqAbs`), not bit-for-bit `tsc` assignability
+- No soundness claims
+
+If **the product is the type language itself** (type-level libraries, DefinitelyTyped-style surfaces), use TypeScript for that work. For ordinary packages, the gate still ends at `nudo check` + `nudo migrate retire` — the tree being `.ts` today is not a reason to keep `tsc` (annotations strip; `migrate` is one-way).
+
+Comparison: [Nudo vs TypeScript](../guides/vs-typescript.md). Migration coexistence: [guide](../guides/coexistence.md).
 
 ## What is disciplined product behavior (do not “fix” as bugs)
 

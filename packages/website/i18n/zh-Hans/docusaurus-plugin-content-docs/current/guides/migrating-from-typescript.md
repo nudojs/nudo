@@ -9,7 +9,7 @@ description: 用 nudo migrate 退役 tsc —— status → strip → verify → 
 
 **JS 优先包的终局：没有 `tsc`。** Nudo 的目标是**替代** JavaScript 上的 TypeScript 门禁 —— 不是永久并排。共存是**迁移期战术**，出口叫 `migrate retire`。
 
-相关：[十分钟心智模型](../getting-started/mental-model.md) · [为什么选 Nudo](../why-nudo.md) · [Nudo 与 TypeScript](./vs-typescript.md) · [错误对照](./error-faces.md) · [迁移现有 JS](./migrating-js.md)
+相关：[心智模型](../getting-started/mental-model.md) · [为什么选 Nudo](../why-nudo.md) · [Nudo 与 TypeScript](./vs-typescript.md) · [错误对照](./error-faces.md) · [迁移现有 JS](./migrating-js.md)
 
 ## 先做判断
 
@@ -27,7 +27,7 @@ Nudo 按 **JS 语义**分析。指向 `.ts` 会剥注解 —— 用 `migrate str
 
 | TS 习惯 | Nudo 对应 |
 |---------|-----------|
-| 在源码里标注参数/返回 | Day 0：`nudo check` 打印签名（无证据/契约前为 `any`） |
+| 在源码里标注参数/返回 | 观察层：`nudo check` 打印签名（无证据/契约前为 `any`） |
 | CI 里 `tsc --noEmit` | CI 里 `nudo check`（成功也打印 signatures） |
 | `interface` / mapped 当义务 | 侧车 `*.nudo.js` 构造器 + 可选 `@nudo:contract` |
 | Hover 显示声明类型 | Hover / inlay 显示 Abs 事实（term / pred / conf） |
@@ -98,9 +98,9 @@ npx nudojs contract --from-dts ./my-pkg/src/index.ts
 ## Path A —— 先在 TS 应用旁起步，再退役该包
 
 1. **范围** — 一个包（CLI、worker、脚本层）。
-2. **观察（Day 0）** — `npx nudojs check packages/tool/src`。
+2. **观察** — `npx nudojs check packages/tool/src`。
 3. **契约** — 逻辑优先（`contract --draft --from tests/`）或契约优先。
-4. **CI** — 该包路径上的 `nudo check`。
+4. **门禁** — 在工作流中对该包路径跑 `nudo check`。
 5. **退役该包** — 对它跑 `migrate status` / `strip` / `verify` / `retire`。不要把 `tsc` 留成永久第二门禁。
 6. **生态** — 仍要给消费方类型时：`npx nudojs export … --format dts`。
 7. **IDE** — VS Code / Zed 扩展。
@@ -109,18 +109,10 @@ npx nudojs contract --from-dts ./my-pkg/src/index.ts
 
 ## Path B —— 「TS 形态」但拒绝永久标注的逻辑
 
-1. `nudo check` 进 CI 后关掉 `// @ts-check` 压力。
+1. 用 `nudo check` 作为门禁后，关掉 `// @ts-check` 压力。
 2. 用**侧车契约**替换 JSDoc 类型表演，只在需要义务处。
 3. 从测试挖调用点（`--from test/`）；接受草稿前 **widen**。
 4. `export` dts **给消费方**，不是你维护的模型。
-
-## Path C —— 继续以 TypeScript 为主（例外）
-
-仅当 `.ts` 类型语言*就是*产品（重泛型/条件类型编程、`tsc` project references 作为 API）：
-
-- 那边继续 `tsc`。
-- 不要期望 Nudo 镜像 TS 可赋值性。
-- 这**不是** JS 包路径 —— 别用它给 JS 包上的双门禁找理由。
 
 ## 契约审阅清单
 
@@ -143,7 +135,7 @@ npx nudojs contract --from-dts ./my-pkg/src/index.ts
 
 ## 下一步
 
-- [十分钟心智模型](../getting-started/mental-model.md)
+- [心智模型](../getting-started/mental-model.md)
 - [错误对照](./error-faces.md)
 - [Nudo vs TypeScript](./vs-typescript.md)
 - [快速开始](../getting-started/quick-start.md)

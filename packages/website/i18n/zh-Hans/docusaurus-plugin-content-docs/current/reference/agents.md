@@ -1,6 +1,6 @@
 ---
 slug: /reference/agents
-description: 面向 AI coding agent 的 Nudo — 产品规则、Day0 命令、机器可读诊断、MCP/LSP 入口。
+description: 面向 AI coding agent 的 Nudo — 产品规则、观察层命令、机器可读诊断、MCP/LSP 入口。
 ---
 
 # Agents（智能体）
@@ -37,7 +37,7 @@ Leaving tsc: npx nudojs migrate status|strip|verify|retire (exit is retire).
 | HOF promote ≠ check error | body 用法提升只是警告建议 |
 | migrate 是单向门 | `status` → `strip` → `verify` → `retire` tsc；共存不是终态 |
 
-## Day 0 / Day 1 命令
+## 观察层 / 契约层命令
 
 ```bash
 npx nudojs check <path>
@@ -166,5 +166,5 @@ npx nudojs check src/app.js
 - 不要把无约束入口参数叙述成 `unknown`
 - 不要把双跑 `tsc` + `nudo check` 写成永久终态 —— 出口是 `migrate retire`
 
-参见 [Limits](/docs/concepts/limits) · [术语表](/docs/reference/glossary) · [Recipes](/docs/guides/recipes) · [从 TypeScript 迁移](/docs/guides/migrating-from-typescript)。
+参见 [Limits](/docs/concepts/limits) · [术语表](/docs/glossary) · [Recipes](/docs/guides/recipes) · [从 TypeScript 迁移](/docs/guides/migrating-from-typescript)。
 

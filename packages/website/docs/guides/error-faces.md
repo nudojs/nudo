@@ -134,7 +134,7 @@ Each issue is independent — fix them in any order. On GitHub Actions / GitLab,
 | 9 | several violations at once | Nested generic noise | One `actual`/`expected`/`fix:` per site |
 | 10 | how do I fix this? | “Not assignable” | **`fix: nudo contract --draft`** |
 
-Why these are easier to fix: the report is a **value and a predicate**, plus one next command — not a type-name riddle.
+Why these are easier to fix: the report is a **value and a predicate**, plus one next command — not a type name.
 
 ## Reading `actual` / `expected`
 
@@ -149,7 +149,7 @@ Codes and more examples: [Diagnostics](../reference/diagnostics.md).
 
 ## Related
 
-- [Mental model](../getting-started/mental-model.md) — 10-minute product face
+- [Mental model](../getting-started/mental-model.md)
 - [nudo check](./check.md) — L1 + L2 gate
 - [Contracts](./contract.md) — draft / accept
 - [Nudo vs TypeScript](./vs-typescript.md)

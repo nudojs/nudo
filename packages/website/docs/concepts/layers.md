@@ -1,27 +1,27 @@
 ---
 slug: /concepts/layers
-description: Day-0 zero concepts, Day-1 sidecar contracts, advanced Abs — pick the layer you need.
+description: How Nudo layers the goal of runtime-adjacent variables — Observation (Day 0), Contracts (Day 1), advanced Abs.
 ---
 
 # Concept Layers
 
-**You'll leave with:** which Nudo layer you need today — Day 0 (types from execution), Day 1 (sidecar contracts + `nudo check`), or advanced Abs.
+Nudo’s goal is **variables close to runtime in the source**. That outcome is available in layers, so only the concepts you need are required.
 
-Nudo is designed so you only learn what you need.
+Terminology: **Observation** is Day 0, **Contracts** is Day 1 (Day-N names kept as aliases for readers familiar with ops lifecycle jargon).
 
 ## Which layer do you need?
 
 | You want | Layer | Start here |
 |---|---|---|
-| See inferred types, no annotations | **Day 0** | `npx nudojs check` / `test` signatures |
-| CI obligations — contracts that fail a build | **Day 1** | `*.nudo.js` sidecar + `nudo check` |
-| The algebra itself — symbolic terms, preds, `--abs` | **Advanced** | Abs (`shape × term × pred × conf`) |
+| See runtime-adjacent values in signatures / inlays | **Observation** (Day 0) | `npx nudojs check` / IDE hover |
+| Obligations — contracts that report violations | **Contracts** (Day 1) | `*.nudo.js` sidecar + `nudo check` |
+| The representation itself — terms, preds, `--abs` | **Advanced** | Abs (`shape × term × pred × conf`) |
 
-Rule of thumb: if you only want to *read* types, stop at Day 0. If you need CI to *enforce* something, add Day 1. Open the Advanced layer only when you are debugging inference or building on the kernel.
+Rule of thumb: to *read* runtime-adjacent variables, stop at Observation. To *enforce* conditions, add Contracts. Open the Advanced layer only when debugging inference or building on the kernel.
 
-## Day 0 — Zero concepts
+## Observation (Day 0) — zero concepts
 
-Write plain JavaScript. Run the two Day-0 commands:
+Write plain JavaScript. Run the two observation commands:
 
 ```bash
 npx nudojs check ./src/app.js   # signatures + L2 entry throws
@@ -34,11 +34,11 @@ Open the same file in VS Code with the Nudo extension for hover and inlays.
 
 > **Default analysis mode:** `nudo.analysis.mode` defaults to `"exports"` (files with `export` / sidecar / directives are analyzed by the IDE). Full gate semantics and when to use each mode: [Coexistence with TypeScript](../guides/coexistence.md#when-to-use-modedirectives-vs-modeexports). CLI `check`/`test` on a named path still analyzes any target file.
 
-**Day 0 takeaway:** read types from `check` signatures and `test` cases. `any` on an unconstrained entry param is honest — the alternative, `unknown`, means inference failed (see [Abs — any vs unknown](./abs.md#any-vs-unknown)).
+**Observation takeaway:** read runtime-adjacent values from `check` signatures and `test` cases. `any` on an unconstrained entry param is honest — the alternative, `unknown`, means inference failed (see [Abs — any vs unknown](./abs.md#any-vs-unknown)).
 
-## Day 1 — Sidecar contracts
+## Contracts (Day 1) — sidecar obligations
 
-When you need *stronger obligations* (explicit contracts in CI), add a sidecar next to the source:
+When you need *stronger obligations* (explicit contracts checked in any workflow), add a sidecar next to the source:
 
 ```javascript verify
 // math.js
@@ -67,7 +67,7 @@ Explicit contracts come from:
 
 Without an explicit contract, the contract degrades to the JS runtime boundary: entry params are `any`, and export functions must not carry undigested may-throw (L2). Nudo does **not** invent required slots from body AST scans.
 
-**Day 1 takeaway:** the sidecar is the contract product. `nudo check` enforces L1 (explicit contracts) and L2 (entry may-throw). `@nudo:case` is debug / `nudo test` only — not the interface.
+**Contracts takeaway:** the sidecar is the contract product. `nudo check` enforces L1 (explicit contracts) and L2 (entry may-throw). `@nudo:case` is debug / `nudo test` only — not the interface.
 
 ## Advanced — Abs {#advanced-abs}
 

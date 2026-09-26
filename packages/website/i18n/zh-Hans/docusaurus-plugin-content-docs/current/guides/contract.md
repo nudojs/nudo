@@ -1,6 +1,6 @@
 ---
 slug: /guides/contract
-description: nudo contract —— 打印 / 草稿 / 固化侧车契约。Day-1 产品面，位于 nudo check 旁。
+description: nudo contract —— 打印 / 草稿 / 固化侧车契约。契约层产品面，位于 nudo check 旁。
 ---
 
 # nudo contract
@@ -29,7 +29,7 @@ npx nudojs contract --emit <paths…> [--fn name] [--all] [--dry-run]
 npx nudojs contract src/lib.js
 ```
 
-## Day 0 → 草稿（逻辑优先）
+## 观察层 → 草稿（逻辑优先）
 
 ```bash
 npx nudojs contract --draft src/lib.js
@@ -51,7 +51,7 @@ npx nudojs contract --draft --write src/lib.js --fn lineTotal
 
 [Playground 草稿故事](/playground) · 示例：[`docs/examples/interface-draft/`](https://github.com/nudojs/nudo/tree/main/docs/examples/interface-draft)
 
-## 契约优先（Day 1 风格）
+## 契约优先（契约层风格）
 
 先手写侧车，再在同一契约面下实现：
 

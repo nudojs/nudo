@@ -28,7 +28,7 @@ nudo check ./src/utils.js
 
 观察 = `check` 签名 + `test` 用例报告 + IDE hover。
 
-**Day 0：** `check` / `test`。**Day 1：** `contract` + `check`。**生态：** `export`。
+**观察层：** `check` / `test`。**契约层：** `contract` + `check`。**生态：** `export`。
 
 ---
 

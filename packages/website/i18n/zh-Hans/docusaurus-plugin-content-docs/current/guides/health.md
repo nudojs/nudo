@@ -114,7 +114,7 @@ jobs:
 
 | 场景 | 命令 |
 |---|---|
-| 每个 PR 的 CI（Day 0 / Day 1） | `nudo check` |
+| 每个 PR 的 CI（观察层 / 契约层） | `nudo check` |
 | 固化 `call@` 用例之后的 CI | `nudo check` 然后 `nudo health --from` |
 | 编辑时本地 watch | `nudo health --watch`（或 `nudo check --watch`） |
 | 发布前、已有固化用例 | `nudo health src/ --from tests/` |

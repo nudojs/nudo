@@ -133,5 +133,5 @@ npx nudojs contract --draft src/app.js --json    # draftSource + unified diff
 
 - [Agents](../reference/agents) — 规则 + 少样本修复对
 - [错误对照](./error-faces) — 人读的 `actual ⊭ expected`
-- [十分钟心智模型](../getting-started/mental-model)
+- [心智模型](../getting-started/mental-model)
 - [从 TypeScript 迁移](./migrating-from-typescript) — 退役 tsc

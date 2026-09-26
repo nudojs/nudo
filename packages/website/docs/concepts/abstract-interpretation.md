@@ -1,20 +1,20 @@
 ---
-description: Learn how Nudo executes code on Abs (symbolic values) — the abstract interpretation model behind evaluation, narrowing, and merging.
+description: "How Nudo computes runtime-adjacent variables in the source — abstract interpretation: executing code on Abs so intermediates carry values, shapes, and constraints."
 ---
 
 # Abstract Interpretation
 
-Abstract interpretation is the theoretical foundation of Nudo. Instead of running code with concrete values (like a test) or analyzing code without running it (like TypeScript), Nudo **executes code on Abs** (symbolic shape × term × pred × conf values) — and the execution itself produces types.
+Nudo’s goal is to let developers **see variables close to runtime inside the source**. Abstract interpretation is how that is computed: instead of running code with concrete values (like a test) or analyzing code without running it (like TypeScript), Nudo **executes code on Abs** (symbolic `shape × term × pred × conf` values). Execution itself produces what each intermediate will be — a literal, a shape, a constraint — which is what the IDE and `nudo check` display.
 
 ## Three Approaches Compared
 
-| Approach | Input | Output | Completeness |
-|----------|-------|--------|--------------|
-| Unit tests | Concrete values (`1`, `"hello"`) | Concrete result | Only test cases |
-| Nudo | Type values (`number()`, `string()`) | Type values | All values in the type set |
-| TypeScript | AST (no execution) | Types | All syntactic paths |
+| Approach | Input | What a variable shows | Completeness |
+|----------|-------|----------------------|--------------|
+| Unit tests | Concrete values (`1`, `"hello"`) | One concrete result | Only test cases |
+| Nudo | Abs (`number()`, `string()`, literals) | Runtime-adjacent value / shape / constraint | All values in the abstract set |
+| TypeScript | AST (no execution) | Declared type name | All syntactic paths |
 
-When Nudo executes `transform(string())`, the engine propagates `string()` through the function body. At `typeof x === "string"`, the engine knows that branch is taken. At `x.toUpperCase()`, the engine knows the result is `string()`. The result is not a concrete value — it is a **type**.
+When Nudo executes `transform(string())`, the engine propagates `string()` through the function body. At `typeof x === "string"`, the engine knows that branch is taken. At `x.toUpperCase()`, the engine knows the result is `string()`. The variable does not merely get a type name — it carries a **computable Abs**, which is what surfaces as an inlay or signature.
 
 ---
 
@@ -201,4 +201,4 @@ When entering conditional branches, the engine deep-copies modified objects so e
 - [Abs](./abs.md) — the type system this engine computes over
 - [Control Flow Narrowing](./control-flow-narrowing.md) — per-call-site branch elimination
 - [Language semantics](./semantics.md) — what is modeled precisely vs not yet
-- [Mental model](../getting-started/mental-model.md) — 10 minutes
+- [Mental model](../getting-started/mental-model.md)

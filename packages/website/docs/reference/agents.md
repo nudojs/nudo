@@ -1,6 +1,6 @@
 ---
 slug: /reference/agents
-description: Nudo for AI coding agents — product rules, Day0 commands, machine-readable diagnostics, MCP/LSP pointers.
+description: Nudo for AI coding agents — product rules, Observation commands, machine-readable diagnostics, MCP/LSP pointers.
 ---
 
 # Agents
@@ -38,7 +38,7 @@ Leaving tsc: npx nudojs migrate status|strip|verify|retire (exit is retire).
 | HOF promote ≠ check error | Body-usage promotion is a warning suggestion |
 | migrate is one-way | `status` → `strip` → `verify` → `retire` tsc; coexistence is not the end state |
 
-## Day 0 / Day 1 commands
+## Observation / Contracts commands
 
 ```bash
 npx nudojs check <path>
@@ -184,5 +184,5 @@ Do not send server-injected fields (`loadModule`, effective `autoBind`) as JSON-
 - Do not narrate unconstrained entry params as `unknown`
 - Do not present dual `tsc` + `nudo check` as a permanent end state — exit is `migrate retire`
 
-See [Limits](/docs/concepts/limits) · [Glossary](/docs/reference/glossary) · [Recipes](/docs/guides/recipes) · [Migrate from TypeScript](/docs/guides/migrating-from-typescript).
+See [Limits](/docs/concepts/limits) · [Glossary](/docs/glossary) · [Recipes](/docs/guides/recipes) · [Migrate from TypeScript](/docs/guides/migrating-from-typescript).
 

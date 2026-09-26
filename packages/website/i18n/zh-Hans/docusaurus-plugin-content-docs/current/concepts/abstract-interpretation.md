@@ -1,20 +1,20 @@
 ---
-description: 解释 Nudo 如何在 Abs（符号值）上执行代码——求值引擎、窄化与合并背后的抽象解释模型。
+description: Nudo 如何在源码中算出接近运行时的变量——抽象解释：在 Abs 上执行代码，使中间量携带值、形状与约束。
 ---
 
 # 抽象解释
 
-抽象解释是 Nudo 的理论基础。与使用具体值运行代码（如单元测试）或不运行代码仅分析代码（如 TypeScript）不同，Nudo **在 Abs 上执行代码**（符号化的 `shape × term × pred × conf` 值）——执行过程本身产生类型。
+Nudo 的目标是**在源码中看到变量接近运行时的样子**。抽象解释是实现该目标的方法：既不像单元测试那样用具体值运行，也不像 TypeScript 那样只分析不执行，而是**在 Abs 上执行代码**（符号化的 `shape × term × pred × conf` 值）。执行本身产出每个中间量将是什么——字面量、形状或约束——IDE 与 `nudo check` 呈现的正是这些。
 
 ## 三种方法对比
 
-| 方法 | 输入 | 输出 | 完备性 |
+| 方法 | 输入 | 变量呈现什么 | 完备性 |
 |----------|-------|--------|--------------|
-| 单元测试 | 具体值（`1`、`"hello"`） | 具体结果 | 仅覆盖测试用例 |
-| Nudo | Abs（`number()`、`string()`） | Abs | 类型集合中的所有值 |
-| TypeScript | AST（不执行） | 类型 | 所有语法路径 |
+| 单元测试 | 具体值（`1`、`"hello"`） | 单一具体结果 | 仅覆盖测试用例 |
+| Nudo | Abs（`number()`、`string()`、字面量） | 接近运行时的值 / 形状 / 约束 | 抽象集合中的所有值 |
+| TypeScript | AST（不执行） | 声明类型名 | 所有语法路径 |
 
-当 Nudo 执行 `transform(string())` 时，引擎会将 `string()` 在函数体中传播。在 `typeof x === "string"` 处，引擎知道该分支会被执行。在 `x.toUpperCase()` 处，引擎知道结果是 `string()`。结果不是具体值——而是**Abs**。
+当 Nudo 执行 `transform(string())` 时，引擎会将 `string()` 在函数体中传播。在 `typeof x === "string"` 处，引擎知道该分支会被执行。在 `x.toUpperCase()` 处，引擎知道结果是 `string()`。变量得到的不只是类型名，而是**可计算的 Abs**——inlay 与签名显示的正是它。
 
 ---
 
@@ -201,4 +201,4 @@ function divide(a, b) {
 - [Abs](./abs.md) —— 本引擎所计算的类型系统
 - [控制流收窄](./control-flow-narrowing.md) —— 逐调用点的分支消除
 - [语言语义](./semantics.md) —— 何处精确、何处尚未建模
-- [十分钟心智模型](../getting-started/mental-model.md) —— 产品面
+- [心智模型](../getting-started/mental-model.md) —— 产品面

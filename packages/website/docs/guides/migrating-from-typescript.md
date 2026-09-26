@@ -27,7 +27,7 @@ Nudo analyzes **JS semantics**. Pointing it at `.ts` strips annotations — use 
 
 | TypeScript habit | Nudo counterpart |
 |------------------|------------------|
-| Annotate params/returns in source | Day 0: `nudo check` prints signatures (`any` until evidence/contracts) |
+| Annotate params/returns in source | Observation: `nudo check` prints signatures (`any` until evidence/contracts) |
 | `tsc --noEmit` in CI | `nudo check` in CI (still prints signatures on success) |
 | `interface` / mapped types as obligations | Sidecar `*.nudo.js` builders (`fn`, `shape`, `number().gt(0)`) + optional `@nudo:contract` |
 | Hover shows declared type | Hover / inlay show Abs facts (term / pred / conf) |
@@ -104,9 +104,9 @@ Same story, one table:
 Typical monorepo: `apps/*` in TS, `packages/*` tools you want off `tsc`.
 
 1. **Scope** — one package (CLI, worker, script layer). Not the whole monorepo on day one.
-2. **Observe (Day 0)** — `npx nudojs check packages/tool/src`. Read signatures; unconstrained entries are **`any`**.
+2. **Observe** — `npx nudojs check packages/tool/src`. Read signatures; unconstrained entries are **`any`**.
 3. **Contracts** — logic first (`contract --draft --from tests/`) or contracts first (sidecar / `@nudo:contract`).
-4. **CI** — `nudo check` for that package path.
+4. **Gate** — run `nudo check` for that package path in your workflow.
 5. **Retire that package** — `migrate status` / `strip` / `verify` / `retire` on it. Do not leave `tsc` as a second permanent gate.
 6. **Ecosystem** — if other packages still consume types:
 
@@ -124,14 +124,6 @@ Temporary dual gates are fine **during** the package migration. They are not the
 2. Replace JSDoc type theater with **sidecar contracts** only where you need obligations.
 3. Mine call sites from tests (`--from test/`); **widen** drafts before accepting.
 4. Export dts **for consumers**, not as the model you maintain.
-
-## Path C — TypeScript stays primary (exception)
-
-Only when the `.ts` type language *is* the product (heavy generic/conditional type programming, `tsc` project references as the API):
-
-- Keep `tsc` there.
-- Do not expect Nudo to mirror TS assignability.
-- This is **not** the JS-package path — do not use it as a reason to keep dual gates on JS packages.
 
 ## Review checklist (contracts)
 
@@ -154,7 +146,7 @@ Details while the tactic is active: [Coexistence](./coexistence.md).
 
 ## Next
 
-- [Mental model](../getting-started/mental-model.md) — 10 minutes
+- [Mental model](../getting-started/mental-model.md)
 - [Error faces](./error-faces.md) — what you read after the gate
 - [Nudo vs TypeScript](./vs-typescript.md) — replace / not-replace map
 - [Quick Start](../getting-started/quick-start.md)

@@ -16,7 +16,7 @@ Try any sample in the [Playground](/playground).
 
 ## Call sites and contracts (product path)
 
-### 1. Call-site subtraction — Day 0 observation
+### 1. Call-site subtraction — Observation observation
 
 Plain JS + call sites. No annotations. `nudo check` prints signatures; call sites supply evidence.
 
@@ -54,7 +54,7 @@ Optional debug case report (`nudo test` — not required for the gate):
   call@L6  (1, 10) => -9
 ```
 
-### 2. Sidecar contract — Day 1 obligation
+### 2. Sidecar contract — Contracts obligation
 
 ```javascript verify
 // pricing.js
@@ -268,7 +268,7 @@ Prefer concrete values or constraint builders (`number()`, `lit(42)`). Assertion
 
 | Directive | Role in this guide |
 |-----------|-------------------|
-| Call sites | Day 0 evidence (primary) |
-| `*.nudo.js` / `@nudo:contract` | Day 1 contracts (primary) |
+| Call sites | Observation evidence (primary) |
+| `*.nudo.js` / `@nudo:contract` | Contracts contracts (primary) |
 | `@nudo:env` / `@nudo:mock` | Environment & boundaries |
 | `@nudo:case` | Optional debug witnesses only |
