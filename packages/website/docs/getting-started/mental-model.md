@@ -34,6 +34,7 @@ export function scale(x) {
 }
 
 scale(5);
+scale(0); // violates the sidecar precondition below
 ```
 
 ```javascript verify-sidecar

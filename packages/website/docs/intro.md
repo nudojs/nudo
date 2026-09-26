@@ -9,14 +9,19 @@ description: Nudo lets developers see variables close to runtime inside the sour
 
 When reading code, one usually sees only broad type names (`number`, `string`), often with another layer of annotations. Nudo executes JavaScript on abstract values so each variable carries what it will actually compute — literals, shapes, constraints — surfaced next to the source as signatures, IDE inlays, and call-site evidence.
 
-```javascript
+```javascript verify
 // calc.js
 export function scale(x) {
   return x + 1;
 }
 
 scale(5);
-scale(0); // if the contract requires x > 0
+```
+
+```javascript verify-sidecar
+// calc.nudo.js — explicit contract (obligation)
+import { number, fn } from "@nudojs/core";
+export const scale = fn({ x: number().gt(0) }, number());
 ```
 
 In the IDE, intermediates show a runtime-adjacent form per line, not a single type name:

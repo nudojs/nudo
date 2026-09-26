@@ -9,14 +9,19 @@ description: Nudo 让开发者在源码中看到变量接近运行时的样子 �
 
 阅读代码时，通常只能看到宽泛的类型名（`number`、`string`），或再叠一层标注。Nudo 在抽象值上执行 JavaScript，使每个变量携带它实际会算出的内容——字面量、形状、约束——并以签名、IDE inlay、调用点证据的形式呈现在源码旁。
 
-```javascript
+```javascript verify
 // calc.js
 export function scale(x) {
   return x + 1;
 }
 
 scale(5);
-scale(0); // 若契约要求 x > 0
+```
+
+```javascript verify-sidecar
+// calc.nudo.js — 显式契约（义务）
+import { number, fn } from "@nudojs/core";
+export const scale = fn({ x: number().gt(0) }, number());
 ```
 
 在 IDE 中，中间量按行显示接近运行时的形态，而不是单一类型名：
