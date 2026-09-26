@@ -5,7 +5,7 @@
   "type": "module",
   "packageManager": "pnpm@11.28.0",
   "scripts": {
-    "ci:version": "changeset version && node scripts/bump-vscode-version.mjs",
+    "ci:version": "node scripts/gate-major.mjs --save-baseline && changeset version && node scripts/gate-major.mjs --check-baseline && node scripts/bump-vscode-version.mjs",
     "lint": "tsc --noEmit -p tsconfig.lint.json",
     "lint:website": "tsc --noEmit -p packages/website/tsconfig.json",
     "lint:tests": "tsc --noEmit -p tsconfig.test-lint.json",

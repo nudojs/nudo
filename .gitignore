@@ -47,3 +47,6 @@ docs/examples/**/*.d.ts
 
 .playwright-cli/
 **/.playwright-cli/
+
+# gate-major.mjs job-local snapshot (always deleted after --check-baseline)
+.changeset/.major-baseline.json

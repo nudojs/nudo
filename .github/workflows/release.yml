@@ -6,6 +6,11 @@ on:
       - main
       - dev
   workflow_dispatch:
+    inputs:
+      confirm_major:
+        description: 'Allow major version bumps (only this manual path can raise a major)'
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -34,6 +39,9 @@ jobs:
       # secrets cannot appear in step `if`; expose at job level for gating.
       VSCODE_MARKETPLACE_TOKEN: ${{ secrets.VSCODE_MARKETPLACE_TOKEN }}
       OVSX_MARKETPLACE_TOKEN: ${{ secrets.OVSX_MARKETPLACE_TOKEN }}
+      # Major bumps are never automatic: only workflow_dispatch + confirm_major=true.
+      # Push-triggered runs leave this empty and gate-major.mjs fails closed.
+      CONFIRM_MAJOR: ${{ (github.event_name == 'workflow_dispatch' && inputs.confirm_major) && '1' || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
@@ -76,6 +84,10 @@ jobs:
       - name: Publish to npm
         if: steps.changesets.outputs.hasChangesets == 'false'
         run: |
+          set -euo pipefail
+          # Fail closed if package.json still sits at major >= 2 (e.g. unreset
+          # accidental stables / betas). Only confirm_major=true lets those out.
+          node scripts/gate-major.mjs --for-publish
           # setup-node writes _authToken=${NODE_AUTH_TOKEN} into .npmrc, which
           # blocks npm's OIDC trusted-publisher exchange when no real token exists.
           if [ -n "${NPM_CONFIG_USERCONFIG:-}" ] && [ -f "$NPM_CONFIG_USERCONFIG" ]; then
@@ -194,6 +206,9 @@ jobs:
     permissions:
       id-token: write
       contents: write
+    env:
+      # Same policy as stable: push never auto-raises a major.
+      CONFIRM_MAJOR: ${{ (github.event_name == 'workflow_dispatch' && inputs.confirm_major) && '1' || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
@@ -233,12 +248,16 @@ jobs:
 
       # Consume pending changesets into `*-beta.n`, push with [skip ci] so we
       # do not re-enter this job; publish still runs in THIS job.
+      # gate-major fails closed on push: a `major` changeset blocks the beta train
+      # unless this run was dispatched with confirm_major=true.
       - name: Version beta (if changesets pending)
         run: |
           set -euo pipefail
           if ls .changeset/*.md >/dev/null 2>&1 && \
              ls .changeset/*.md | grep -v 'README.md' | grep -q .; then
+            node scripts/gate-major.mjs --save-baseline
             npx changeset version
+            node scripts/gate-major.mjs --check-baseline
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add -A
@@ -251,6 +270,8 @@ jobs:
       - name: Publish to npm (tag from pre.json)
         run: |
           set -euo pipefail
+          # Same ceiling as stable: major >= 2 needs confirm_major=true.
+          node scripts/gate-major.mjs --for-publish
           # setup-node writes _authToken=${NODE_AUTH_TOKEN} into .npmrc, which
           # blocks npm's OIDC trusted-publisher exchange when no real token exists.
           if [ -n "${NPM_CONFIG_USERCONFIG:-}" ] && [ -f "${NPM_CONFIG_USERCONFIG}" ]; then
