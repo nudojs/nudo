@@ -1,9 +1,13 @@
 ---
+date: 2026-09-21
 slug: day0-observe
 title: Day 0 —— 不改写就观察 JavaScript
 authors: [default]
-tags: [nudo, type-inference, check]
+tags: [nudo, type-inference, check, launch-series]
 ---
+
+> **发布系列**（1/5）—— 2026-09-21 同日成套发布。建议按序阅读：
+> **Day 0 —— 不改写就观察 JavaScript** · [契约就是 JS —— Day 1 与侧车 *.nudo.js](/blog/day1-contracts) · [Nudo vs TypeScript —— 何时该选 JS-first 门禁](/blog/vs-typescript) · [面向 coding agent 的 Nudo —— agents.md、agent 集成与稳定诊断码](/blog/agents-docs) · [22 个文件被涂抹——调用点归因如何险些把假精度当成真发布](/blog/attribution-gate)
 
 欢迎回到 JavaScript。Nudo 不要求你在看到类型、门禁义务之前，先把 JS 包改写成另一种语言表面。
 

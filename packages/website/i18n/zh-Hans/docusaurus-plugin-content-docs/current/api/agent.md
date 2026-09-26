@@ -262,3 +262,26 @@ Interface 产品面（与 CLI 同一数据源）：
 | `nudo-trace` | `nudo.trace` |
 
 连接层面的变化见指南的[从 MCP 服务器迁移](../guides/agent-integration.md#从-mcp-服务器迁移)一节。
+
+## Export inventory
+
+<!-- NUDO-API-SKELETON:BEGIN -->
+> 由 `pnpm run docs:gen:api` 从包导出面（`PUBLIC_API.md` / `src/index.ts`）生成 —— 请勿手改本块。重新生成：`node scripts/gen-api-docs.mjs`。
+
+Agent 工具来自 `AGENT_TOOL_SOURCES`（`packages/lsp/src/agent-tools.ts`），与 `src/public-api.ts` 的 `nudo.*` executeCommand / `nudo/*` 请求名同源钉住。`codeLens` 仅服务端；`selectCase` / `getActiveCases` 是编辑器命令，不是 agent 工具。
+
+| 名称 | 种类 | 说明 | 签名 |
+|------|------|------|------|
+| `check` | fn | nudo.check / `nudo/check` — checkSource + serializeCheckJson | `nudo.check \| nudo/check` |
+| `codeLens` | fn | (server-only, no command) — computeInterfaceLenses + interfaceTierOf | — |
+| `contract` | fn | nudo.contract / `nudo/contract` — interfaceSurface + formatInterfaceSurfaceLine | `nudo.contract \| nudo/contract` |
+| `contract.draft` | fn | nudo.contract.draft / `nudo/contract.draft` — draftInterface + formatDraftSummary | `nudo.contract.draft \| nudo/contract.draft` |
+| `contract.emit` | fn | nudo.contract.emit / `nudo/contract.emit` — emitInterface | `nudo.contract.emit \| nudo/contract.emit` |
+| `getActiveCases` | fn | nudo.getActiveCases / `nudo/getActiveCases` — editor command (not an agent tool) | `nudo.getActiveCases \| nudo/getActiveCases` |
+| `hover` | fn | nudo.hover / `nudo/hover` — getHoverAtPosition + interfaceTierOf | `nudo.hover \| nudo/hover` |
+| `selectCase` | fn | nudo.selectCase / `nudo/selectCase` — editor command (not an agent tool) | `nudo.selectCase \| nudo/selectCase` |
+| `suggestCase` | fn | nudo.suggestCase / `nudo/suggestCase` — analyzeFile + buildCaseDirective | `nudo.suggestCase \| nudo/suggestCase` |
+| `test` | fn | nudo.test / `nudo/test` — analyzeFile + serializeCaseJson | `nudo.test \| nudo/test` |
+| `trace` | fn | nudo.trace / `nudo/trace` — analyzeFile cases | `nudo.trace \| nudo/trace` |
+| `whatIf` | fn | nudo.whatIf / `nudo/whatIf` — injectBindings + analyzeFile | `nudo.whatIf \| nudo/whatIf` |
+<!-- NUDO-API-SKELETON:END -->

@@ -1,9 +1,13 @@
 ---
+date: 2026-09-21
 slug: attribution-gate
 title: 22 个文件被涂抹——调用点归因如何险些把假精度当成真发布
 authors: [default]
-tags: [engineering, callsite-discovery]
+tags: [engineering, callsite-discovery, launch-series]
 ---
+
+> **发布系列**（5/5）—— 2026-09-21 同日成套发布。建议按序阅读：
+> [Day 0 —— 不改写就观察 JavaScript](/blog/day0-observe) · [契约就是 JS —— Day 1 与侧车 *.nudo.js](/blog/day1-contracts) · [Nudo vs TypeScript —— 何时该选 JS-first 门禁](/blog/vs-typescript) · [面向 coding agent 的 Nudo —— agents.md、agent 集成与稳定诊断码](/blog/agents-docs) · **22 个文件被涂抹——调用点归因如何险些把假精度当成真发布**
 
 调用点发现（`nudo test lib/ --from test/`）从使用处采集真实实参形态并合成 `call@L…` case。承诺是零成本精度：不要指令、不要标注，只要你的代码**实际被调用时**的实参。
 

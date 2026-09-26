@@ -120,6 +120,7 @@ pnpm exec nudo test path/to/file.js
 - 提交前运行 `pnpm run build` 和 `pnpm run test`。
 - 添加指令或公开 API 时更新文档（如 `docs/concepts/directives.md`、API 参考）。
 - **文档防漂移规则**：修改 CLI 命令/选项、导出 API 或指令语法时，必须在同一个 PR 中同步更新 `packages/website` 下的文档 —— 英文源（`docs/`）与中文镜像（`i18n/zh-Hans/docusaurus-plugin-content-docs/current/`）都要改。
+- **Blog 日期即发布真相。** frontmatter `date:`（及 `YYYY-MM-DD-` 文件名前缀）写真实发布日；不要为“新鲜度”回填或批量改写历史。同日多篇用 `launch-series`（或同类）标签 + 短系列导读条（见 2026-09-21 发布组）；之后的文章按真实日历日落地，保证归档诚实。
 
 ---
 

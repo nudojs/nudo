@@ -1,9 +1,13 @@
 ---
+date: 2026-09-21
 slug: vs-typescript
 title: Nudo vs TypeScript — when a JS-first gate is the right tool
 authors: [default]
-tags: [nudo, typescript, type-inference]
+tags: [nudo, typescript, type-inference, launch-series]
 ---
+
+> **Launch series** (3/5) — published together on 2026-09-21. Read in order:
+> [Day 0 — observe JavaScript without rewriting it](/blog/day0-observe) · [Contracts are JS — Day 1 with sidecar *.nudo.js](/blog/day1-contracts) · **Nudo vs TypeScript — when a JS-first gate is the right tool** · [Nudo for coding agents — agents.md, agent integration, stable diagnostics](/blog/agents-docs) · [The 22-file smear: how call-site attribution almost shipped fake precision](/blog/attribution-gate)
 
 Honest positioning: Nudo is built to **replace TypeScript as the day-to-day type gate for JavaScript-first codebases** — not to reimplement the TypeScript compiler.
 

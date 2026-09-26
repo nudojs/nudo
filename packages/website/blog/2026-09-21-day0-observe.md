@@ -1,9 +1,13 @@
 ---
+date: 2026-09-21
 slug: day0-observe
 title: Day 0 — observe JavaScript without rewriting it
 authors: [default]
-tags: [nudo, type-inference, check]
+tags: [nudo, type-inference, check, launch-series]
 ---
+
+> **Launch series** (1/5) — published together on 2026-09-21. Read in order:
+> **Day 0 — observe JavaScript without rewriting it** · [Contracts are JS — Day 1 with sidecar *.nudo.js](/blog/day1-contracts) · [Nudo vs TypeScript — when a JS-first gate is the right tool](/blog/vs-typescript) · [Nudo for coding agents — agents.md, agent integration, stable diagnostics](/blog/agents-docs) · [The 22-file smear: how call-site attribution almost shipped fake precision](/blog/attribution-gate)
 
 Welcome back to JavaScript. Nudo does not ask you to rewrite a JS package in another language surface before you can see types or gate obligations.
 

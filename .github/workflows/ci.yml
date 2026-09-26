@@ -58,7 +58,7 @@ jobs:
       - name: Verify docs site links
         run: pnpm run verify:links
 
-      # 生成文件（releases*.md / versioning 版本表）不得与 CHANGELOG/package.json 漂移
+      # 生成文件（releases*.md / api skeleton / versioning 版本表）不得与源漂移
       - name: Docs generation drift gate
         run: |
           pnpm run docs:gen
@@ -66,9 +66,11 @@ jobs:
             packages/website/docs/releases.md \
             packages/website/docs/releases-history.md \
             packages/website/docs/guides/versioning.md \
+            packages/website/docs/api \
             packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/releases.md \
             packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/releases-history.md \
-            packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/guides/versioning.md
+            packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/guides/versioning.md \
+            packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/api
 
       # B1 — fail when committed docs/reports baseline drifted from env sources
       - name: Env coverage baseline check

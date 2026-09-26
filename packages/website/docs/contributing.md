@@ -120,6 +120,7 @@ Operator semantics live in the algebra, not a separate `Ops` layer:
 - Run `pnpm run build` and `pnpm run test` before submitting.
 - Update docs (e.g. `docs/concepts/directives.md`, API reference) when adding directives or public APIs.
 - **Docs drift rule**: when changing CLI commands/options, exported APIs, or directive syntax, update the documentation under `packages/website` in the same PR — both the English sources (`docs/`) and the Chinese mirrors (`i18n/zh-Hans/docusaurus-plugin-content-docs/current/`).
+- **Blog dates are publication truth.** Put the real publish date in frontmatter `date:` (and the `YYYY-MM-DD-` filename prefix). Do not backdate or batch-rewrite history for freshness. Multi-post drops get a `launch-series` (or similar) tag plus a short ordered series banner — see the 2026-09-21 launch set. New posts after that date should land on their actual calendar day so the archive stays honest.
 
 ---
 

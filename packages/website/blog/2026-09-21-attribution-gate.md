@@ -1,9 +1,13 @@
 ---
+date: 2026-09-21
 slug: attribution-gate
 title: "The 22-file smear: how call-site attribution almost shipped fake precision"
 authors: [default]
-tags: [engineering, callsite-discovery]
+tags: [engineering, callsite-discovery, launch-series]
 ---
+
+> **Launch series** (5/5) — published together on 2026-09-21. Read in order:
+> [Day 0 — observe JavaScript without rewriting it](/blog/day0-observe) · [Contracts are JS — Day 1 with sidecar *.nudo.js](/blog/day1-contracts) · [Nudo vs TypeScript — when a JS-first gate is the right tool](/blog/vs-typescript) · [Nudo for coding agents — agents.md, agent integration, stable diagnostics](/blog/agents-docs) · **The 22-file smear: how call-site attribution almost shipped fake precision**
 
 Call-site discovery (`nudo test lib/ --from test/`) harvests real argument shapes from usage sites and synthesizes `call@L…` cases from them. The promise is precision for free: no directives, no annotations, just the arguments your code is *actually* called with.
 
