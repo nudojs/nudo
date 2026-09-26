@@ -280,7 +280,7 @@ With `@nudo:contract x positive`, `scale` gets the term `(x + 1)` **and** the de
 
 ### Abs projections
 
-Production analysis is **Abs-native**. Extensional TS/schema/dts projections (`formatShape`, `absToTSType`, `absToSchemaSource`) are one-way lossy views of Abs — nothing reads a projection back. Design: [`docs/design/kernel-merge.md`](./docs/design/kernel-merge.md) and the [docs site Abs page](https://nudojs.github.io/nudo/docs/concepts/type-values).
+Production analysis is **Abs-native**. Extensional TS/schema/dts projections (`formatShape`, `absToTSType`, `absToSchemaSource`) are one-way lossy views of Abs — nothing reads a projection back. Design: [`docs/design/kernel-merge.md`](./docs/design/kernel-merge.md) and the [docs site Abs page](https://nudojs.github.io/nudo/docs/concepts/abs).
 
 ## Security
 
@@ -328,7 +328,7 @@ Full documentation is available at the [Nudo docs site](https://nudojs.github.io
 - [Getting Started](https://nudojs.github.io/nudo/docs/intro) — Welcome back to JavaScript
 - [Quick Start](https://nudojs.github.io/nudo/docs/getting-started/quick-start)
 - [Playground](https://nudojs.github.io/nudo/playground)
-- [Core Concepts](https://nudojs.github.io/nudo/docs/concepts/type-values)
+- [Core Concepts](https://nudojs.github.io/nudo/docs/concepts/abs)
 - [API Reference](https://nudojs.github.io/nudo/docs/api/core)
 - [Design Document](https://nudojs.github.io/nudo/docs/design/design-doc)
 - CLI semantics: [`docs/design/cli-semantics.md`](./docs/design/cli-semantics.md)
