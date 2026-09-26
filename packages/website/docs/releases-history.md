@@ -11,19 +11,19 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 | Package | Current version |
 |----------|-----------------|
-| `@nudojs/core` | 3.0.0-beta.0 |
-| `@nudojs/service` | 5.0.0-beta.1 |
-| `nudojs (CLI)` | 1.0.0-beta.3 |
-| `@nudojs/parser` | 1.1.0-beta.0 |
-| `@nudojs/lsp` | 2.0.0-beta.1 |
-| `@nudojs/env` | 0.4.2-beta.0 |
-| `@nudojs/harvester` | 1.0.0-beta.1 |
-| `vite-plugin-nudo` | 0.4.3-beta.1 |
+| `@nudojs/core` | 1.1.0 |
+| `@nudojs/service` | 1.1.0 |
+| `nudojs (CLI)` | 1.0.0 |
+| `@nudojs/parser` | 1.1.0 |
+| `@nudojs/lsp` | 1.0.0 |
+| `@nudojs/env` | 0.4.2 |
+| `@nudojs/harvester` | 0.2.8 |
+| `vite-plugin-nudo` | 0.4.3 |
 | `nudo-vscode` | 0.3.7 |
 
 **Jump to package:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 3.0.0-beta.0 {#pkg-core}
+## @nudojs/core 1.1.0 {#pkg-core}
 
 ## 3.0.0-beta.0
 
@@ -297,7 +297,7 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/service 5.0.0-beta.1 {#pkg-service}
+## @nudojs/service 1.1.0 {#pkg-service}
 
 ## 5.0.0-beta.1
 
@@ -680,7 +680,7 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## nudojs (CLI) 1.0.0-beta.3 {#pkg-nudojs}
+## nudojs (CLI) 1.0.0 {#pkg-nudojs}
 
 ## 1.0.0-beta.3
 
@@ -847,7 +847,7 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/parser 1.1.0-beta.0 {#pkg-parser}
+## @nudojs/parser 1.1.0 {#pkg-parser}
 
 ## 1.1.0-beta.0
 
@@ -1008,7 +1008,7 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/lsp 2.0.0-beta.1 {#pkg-lsp}
+## @nudojs/lsp 1.0.0 {#pkg-lsp}
 
 ## 2.0.0-beta.1
 
@@ -1351,7 +1351,7 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/env 0.4.2-beta.0 {#pkg-env}
+## @nudojs/env 0.4.2 {#pkg-env}
 
 ## 0.4.2-beta.0
 
@@ -1487,7 +1487,7 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/harvester 1.0.0-beta.1 {#pkg-harvester}
+## @nudojs/harvester 0.2.8 {#pkg-harvester}
 
 ## 1.0.0-beta.1
 
@@ -1613,7 +1613,7 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## vite-plugin-nudo 0.4.3-beta.1 {#pkg-vite-plugin}
+## vite-plugin-nudo 0.4.3 {#pkg-vite-plugin}
 
 ## 0.4.3-beta.1
 

@@ -19,7 +19,7 @@ concurrency:
 # Two trains, ONE workflow file. npm Trusted Publishing is bound to a specific
 # workflow filename + environment — a second workflow file cannot publish.
 #   main → stable (latest): changesets/action version PR + publish + VSCE/OVSX
-#   dev  → beta:            changeset version (pre.json tag) + publish only
+#   dev  → beta:            only while .changeset/pre.json exists; otherwise idle
 jobs:
   release:
     name: Release
@@ -237,20 +237,27 @@ jobs:
       - name: Test
         run: npm run test:coverage
 
-      - name: Require changesets pre mode
+      # Beta train is idle outside changesets pre mode. Stable publishes go
+      # through `main` (release job). Do not hard-fail dev pushes when pre.json
+      # is absent — that is the intentional state after cutting the 1.x line.
+      - name: Detect changesets pre mode
+        id: pre
         run: |
           set -euo pipefail
-          if [ ! -f .changeset/pre.json ]; then
-            echo "::error::Not in changesets pre mode. Run 'npx changeset pre enter beta' on dev before pushing."
-            exit 1
+          if [ -f .changeset/pre.json ]; then
+            echo "active=true" >> "$GITHUB_OUTPUT"
+            echo "pre.json tag: $(node -p "require('./.changeset/pre.json').tag")"
+          else
+            echo "active=false" >> "$GITHUB_OUTPUT"
+            echo "Not in changesets pre mode — beta train idle (stable publishes via main)."
           fi
-          echo "pre.json tag: $(node -p "require('./.changeset/pre.json').tag")"
 
       # Consume pending changesets into `*-beta.n`, push with [skip ci] so we
       # do not re-enter this job; publish still runs in THIS job.
       # gate-major fails closed on push: a `major` changeset blocks the beta train
       # unless this run was dispatched with confirm_major=true.
       - name: Version beta (if changesets pending)
+        if: steps.pre.outputs.active == 'true'
         run: |
           set -euo pipefail
           if ls .changeset/*.md >/dev/null 2>&1 && \
@@ -268,6 +275,7 @@ jobs:
           fi
 
       - name: Publish to npm (tag from pre.json)
+        if: steps.pre.outputs.active == 'true'
         run: |
           set -euo pipefail
           # Same ceiling as stable: major >= 2 needs confirm_major=true.
@@ -285,6 +293,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Summary
+        if: steps.pre.outputs.active == 'true'
         run: |
           {
             echo "## Beta publish"
