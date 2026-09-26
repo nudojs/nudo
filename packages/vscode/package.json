@@ -91,7 +91,7 @@
     "vscode-languageclient": "^10.1.2"
   },
   "devDependencies": {
-    "@types/vscode": "^1.138.0"
+    "@types/vscode": "1.85.0"
   },
   "scripts": {
     "build": "tsup src/extension.ts --format cjs --outDir out --external vscode && node ./scripts/bundle-server.mjs",
