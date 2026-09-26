@@ -1,11 +1,12 @@
 ---
-sidebar_position: 2
 description: "安装 nudo-vscode 扩展：悬停类型、补全、用例切换 CodeLens、内联提示，以及由 Nudo 语言服务器驱动的诊断。"
 ---
 
 # VS Code 扩展
 
 **nudo-vscode** 扩展将 Nudo 的类型推断带入编辑器，提供悬停类型、补全、CodeLens 和内联提示。
+
+**定位（诚实）：** VS Code 是 Nudo 的**旗舰 IDE 路径**——`@nudojs/lsp` 上最完整的客户端面。**门禁路径**仍是 CLI / Agent：CI 里的 `nudo check --json`，以及给 agent 的 `nudo.check` / MCP 工具。IDE 是跑在同一服务器上的尽力而为观察面；它不替代门禁。其他编辑器：[LSP 客户端矩阵](./lsp-clients.md)。
 
 ## 安装
 
@@ -23,21 +24,13 @@ code --install-extension wmzy.nudo-vscode
 
 打开 JavaScript 文件时扩展会激活。它使用 `@nudojs/lsp` 包运行 Language Server Protocol（LSP）服务器，提供所有编辑器功能。
 
-**文件检测**：语言服务器分析 `.js`、`.ts` 与 `.mjs` 文件。出厂默认 `nudo.analysis.mode = "exports"`（含 export / 侧车 / 指令）；可设 `"all"` 或 `"directives"`。契约写在 `*.nudo.js` 侧车与源内 `@nudo:refine` / `@nudo:interface`；`@nudo:case` 是调试 / `nudo test` 子层。完整语法见[指令参考](../concepts/directives.md)。跨编辑器能力对比：[LSP 客户端矩阵](./lsp-clients.md)。
+**文件检测**：语言服务器分析 `.js`、`.ts` 与 `.mjs` 文件。出厂默认 `nudo.analysis.mode = "exports"`（含 export / 侧车 / 指令）；可设 `"all"` 或 `"directives"`。契约写在 `*.nudo.js` 侧车与源内 `@nudo:contract`；`@nudo:case` 是调试 / 可选 `nudo test` 子层。完整语法见[指令参考](../concepts/directives.md)。跨编辑器能力对比：[LSP 客户端矩阵](./lsp-clients.md)。
 
 **激活 vs 分析门**：`activationEvents`（`onLanguage:javascript` / `onLanguage:typescript`）只负责*启动*客户端。缓冲区是否*被分析*由服务端 `shouldAnalyzeFile` 门决定（目标路径 + `nudo.analysis.mode`）。JSX/tsx 可激活扩展，但不是 Nudo 分析目标。
 
 ## 发布检查清单（维护者）
 
-完整清单：monorepo 内 [`packages/vscode/RELEASE_CHECKLIST.md`](https://github.com/nudojs/nudo/blob/main/packages/vscode/RELEASE_CHECKLIST.md)。每次 Marketplace / Open VS X 发布必须覆盖：
-
-1. **Bundled server 对齐** — 扩展经 `scripts/bundle-server.mjs` 将 `@nudojs/lsp` 的 `dist` 拷入 `server/server.js`。先构建 monorepo；在扩展 CHANGELOG 记录 bundled lsp 版本。vsix 自包含（运行时不读 monorepo 兄弟路径）。
-2. **分析默认 + 逃生舱** — 默认 `nudo.analysis.mode = "exports"`。项目 `package.json#nudo.analysis.mode`：`"directives"`（保守，诊断档 `errors`）或 `"all"`。发行说明必须写明该默认；会新增诊断的默认翻转按破坏性变更处理。
-3. **与 tsserver 共存** — Nudo 与内置 TS 服务器并存，不替代 tsc。混合仓库请收紧 `nudo.analysis.include` / `exclude`，见[共存指南](./coexistence.md)。
-4. **打包 dry-run** — `pnpm --filter nudo-vscode run build && pnpm --filter nudo-vscode run package`；本地安装 `.vsix`；在含 export 的 `.js` 上确认 hover/诊断；确认命令面板含 `nudo.selectCase` / `nudo.interface` / `nudo.interface.draft` / `nudo.interfaceEmit`。
-5. **Marketplace / Open VS X 发行说明模板** — 扩展版本、bundled lsp 版本、分析默认、共存说明、协议表面指针（[PUBLIC_API](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md)）、已知问题。
-
-Service 层日用冒烟（无需 live VS Code）：`packages/lsp/src/__tests__/ide-daily-smoke.test.ts`。公开冻结面：`@nudojs/lsp` [`PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md) / [API 页](../api/lsp.md)。
+扩展打包与 Marketplace 发布步骤：[贡献指南 — 发布](../contributing.md)。
 
 ## 功能
 
@@ -45,7 +38,7 @@ Service 层日用冒烟（无需 live VS Code）：`packages/lsp/src/__tests__/i
 
 将鼠标悬停在表达式上可查看其推断类型。扩展通过 `getTypeAtPosition` 计算光标处的类型，并在悬停工具提示中显示。
 
-```javascript
+```javascript verify
 /**
  * @nudo:case "test" (42)
  */
@@ -102,7 +95,7 @@ function process(data) {
 
 ### 查找引用
 
-在当前文件中查找符号的所有使用。按 `Shift+F12`（或右键 -> Find All References）。
+查找符号的所有使用——本文件及跨文件（其他已打开/已知文件中的导入方）。按 `Shift+F12`（或右键 -> Find All References）。
 
 ### 重命名符号
 
@@ -139,11 +132,11 @@ Nudo 根据推断类型提供语法高亮。函数、变量和死代码的高亮
 
 | 面板标题 | 命令 | 行为 |
 |----------|------|------|
-| Nudo: Show Interface | `nudo.interface` | 在 **Nudo** 输出通道打印分层（同 `nudo contract`） |
-| Nudo: Draft Interface (code-first) | `nudo.interface.draft` | Output 预览草稿；可选写入 `*.nudo.draft.js` / `*.nudo.draft.ts`（无项目根时写盘 fail-closed） |
-| Nudo: Persist Interface (@generated) | `nudo.interfaceEmit` | **先 dry-run**（`dryRun: true`，不写盘）→ Output 预览 → 确认 → 真实写入侧车。CodeLens persist/update 共用同一确认流程 |
+| Nudo: Show Contract | `nudo.contract` | 在 **Nudo** 输出通道打印分层（同 `nudo contract`） |
+| Nudo: Draft Contract (code-first) | `nudo.contract.draft` | Output 预览草稿；可选写入 `*.nudo.draft.js` / `*.nudo.draft.ts`（无项目根时写盘 fail-closed） |
+| Nudo: Persist Contract (@generated) | `nudo.contract.emit` | **先 dry-run**（`dryRun: true`，不写盘）→ Output 预览 → 确认 → 真实写入侧车。CodeLens persist/update 共用同一确认流程 |
 
-非手写导出上的 CodeLens 含 `⚡ draft interface`——与 CLI `--draft`、agent `nudo.interface.draft` 同源。persist/update CodeLens 在确认对话框接受前绝不会写盘。
+非手写导出上的 CodeLens 含 `⚡ draft interface`——与 CLI `--draft`、agent `nudo.contract.draft` 同源。persist/update CodeLens 在确认对话框接受前绝不会写盘。
 
 ---
 
@@ -172,6 +165,13 @@ Nudo 语言服务器的设计目标是在你的其他工具旁保持轻量：
 | 代码操作          | 诊断的快速修复                                           |
 | 语义标记          | 类型感知高亮 + interface 档 modifier                     |
 | 状态栏            | 激活时显示 "Nudo" 指示器                                 |
-| 命令              | `nudo.selectCase` / `nudo.interface` / `nudo.interfaceEmit` |
+| 命令              | `nudo.selectCase` / `nudo.contract` / `nudo.contract.emit` |
 
 参见：[LSP 客户端矩阵](./lsp-clients.md)（其他编辑器）。
+
+## 下一步
+
+- [LSP 客户端矩阵](./lsp-clients.md) —— 其他编辑器与 Known gaps
+- [Zed 扩展](./zed.md)
+- [Agent 集成](./agent-integration.md) —— 同一服务器，面向编码代理
+- [心智模型](../getting-started/mental-model.md) —— 产品面

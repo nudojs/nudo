@@ -3,10 +3,11 @@
  * F5 — learning-cost timing script (internal baseline, NOT a CI gate).
  *
  * Times a Day-0 → Day-1 newcomer path against the real CLI:
- *   1. infer a zero-directive sample
+ *   1. check / test a zero-directive sample
  *   2. write a minimal *.nudo.js sidecar
  *   3. check (violation expected, then fix)
  *   4. check again (clean)
+ *   5. contract print
  *
  * Usage:
  *   node scripts/learning-cost.mjs
@@ -45,7 +46,7 @@ function runCli(args, _cwd) {
   const started = process.hrtime.bigint();
   const r = spawnSync(
     "pnpm",
-    ["exec", "tsx", join(root, "packages/cli/src/index.ts"), ...args],
+    ["exec", "tsx", join(root, "packages/nudojs/src/index.ts"), ...args],
     { cwd: root, encoding: "utf-8", env: process.env },
   );
   const ms = Number(process.hrtime.bigint() - started) / 1e6;
@@ -72,8 +73,20 @@ try {
   writeFileSync(srcPath, SAMPLE);
 
   steps.push(
-    step("infer (zero directives)", () => {
-      const r = runCli(["infer", srcPath], dir);
+    step("check (zero directives)", () => {
+      const r = runCli(["check", srcPath], dir);
+      return {
+        cliMs: r.ms,
+        exit: r.code,
+        ok: r.code === 0 && r.stdout.includes("double"),
+        ...(r.code !== 0 ? { note: (r.stderr || r.stdout).slice(0, 160) } : {}),
+      };
+    }),
+  );
+
+  steps.push(
+    step("test (zero directives)", () => {
+      const r = runCli(["test", srcPath], dir);
       return {
         cliMs: r.ms,
         exit: r.code,
@@ -106,8 +119,8 @@ try {
   );
 
   steps.push(
-    step("interface print", () => {
-      const r = runCli(["interface", srcPath], dir);
+    step("contract print", () => {
+      const r = runCli(["contract", srcPath], dir);
       return {
         cliMs: r.ms,
         exit: r.code,

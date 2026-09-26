@@ -1,158 +1,146 @@
 # nudo check 在 CI 中的用法
 
-> 产品能力与边界见 [nudo-check.md](./nudo-check.md)。  
-> CLI 语义权威：[`design-cli-semantics.md`](./design-cli-semantics.md)。  
-> 门禁语义：L1 精化蕴含（`@nudo:refine` / 侧车）+ L2 入口 may-throw（`nudo:entry-may-throw`）；有 `error` 则退出码 1。  
-> 类型代数在 `@nudojs/core`，无独立 kernel 包。
->
-> **报告是 Nudo 原生格式**（Abs 优先），不是 tsc 诊断换皮：
-> - `signatures`：**成功也打印**；一行摘要，`--verbose` 才展开 shape/term/pred/conf；入口无约束参数显示 **`any`**
-> - issues：`actual: …` / `expected: …` 写清 ⊭ 关系；throws 域上屏
-> - dts 经 `nudo export --format dts` 生成，不是本报告主线
-> - 观察无独立动词：签名来自 check，调用点 case 来自 `nudo test`
+> 产品语义 / 诊断码 / 报告格式 / 金标含义：[`design/cli-semantics.md`](./design/cli-semantics.md) §5。
+> 本文只写 **CI 接线**。
 
-## 报告示例
-
-```
-nudo check  src/validators.js
-FAILED
-  1 error · 0 warning · 0 info · 1 fn
-
-signatures
-  needsPositive(x: number) => number
-
-issues
-  [ERROR L12 needsPositive] needsPositive[x]: 实参 ⊭ 前置  (nudo:constraint-violated)
-      actual:   -1  #exact
-      expected: x > 0
-      → 改用满足 x > 0 的值，或放宽 x 的前置
-```
-
-L2 入口 may-throw（默认 error；`--ignore-throws TypeError` 可滤）：
-
-```
-signatures
-  getName(user: any) => any  throws TypeError
-issues
-  [ERROR getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
-      actual:   getName(user: any) => any    throws TypeError
-      expected: entry total, or declare/catch throws
-```
-
-（`--verbose` 会在 signatures 下展开 `term:` / `pred:` / `conf:` 完整 Abs。）
-
-## 义务分层（CI 心智）
-
-| 层 | 来源 | 默认 |
-|----|------|------|
-| L1 | `*.nudo.js` / `@nudo:refine` / 侧车 | 违例 → error |
-| L2 | 入口 export 上未消化 may-throw | error（`nudo:entry-may-throw`） |
-
-C0：**不**从 body AST 发明必填 slot。无显式契约时 shape 缺字段不报 L1；
-入口对 `any` 的危险操作仍进 L2 throws 域。
-
-## 真实包精度
-
-- 金标：`check-real-packages.test.ts`（commander / escape-string-regexp / is-plain-obj / debug / yocto-queue / p-limit / kleur / eventemitter3 / ms / lodash 零误报）+ `check-real-commander.test.ts`（commander 三类 error code 锁零）
-- 人工 recall 金标：`check-recall-gold.test.ts`（recall=precision=1）
-- shape 精化：`check-shape-gold.test.ts`
-- case ⊆ refine：`check-case-consistency.test.ts`
-
-> L2 on 时 any-param / 入口 may-throw 期望需与 L2 off **分套件**；本仓库 zero-FP 叙述以 L2 off 基线为准，启用 L2 的 CI 应显式配置 `ignoreThrows` 或拆期望。
-
-## 金标 recall（CI 门禁）
-
-人工标注集：`packages/core/src/algebra/__tests__/check-recall-gold.test.ts`
-
-| 指标 | 要求 |
-|---|---|
-| recall = TP/(TP+FN) | **1.0**（漏报 = 门禁失效） |
-| precision = TP/(TP+FP) | **1.0**（误报 = 噪音） |
-
-覆盖：延时 >0、百分比 0–100、端口、索引、clamp 真阴性、上界、箭头/export default、无前置不误报。
-
-**当前扫描范围**：
-- `fn(literalArgs)` 直接调用
-- 别名：`const f = fn; f(lit)`
-- 对象属性：`const api = { fn }` / `{ key: fn }` → `api.fn(lit)`
-- 无条件转发：`function w(a){ return target(a); }` → `w(lit)` 用 target 前置
-- 有守卫的转发（clamp）不传播
-- **跨文件 require / ESM import / 动态 import**（CLI check 已解析相对路径）：
-  - `const { fn } = require('./m.js'); fn(lit)`
-  - `const m = require('./m.js'); m.fn(lit)`
-  - `import { fn } from './m.js'; fn(lit)`
-  - `import { fn as x } from './m.js'; x(lit)`
-  - `import * as ns from './m.js'; ns.fn(lit)`
-  - `const { fn } = await import('./m.js'); fn(lit)`
-  - `const ns = await import('./m.js'); ns.fn(lit)`
-- **re-export 一跳**：`export { fn } from './v.js'` 的 barrel 会跟到定义文件取前置
-- **L2 入口 throws**：export / CJS 导出函数上未消化 may-throw（非 body slot）
-
-## 本地
-
-```bash
-# 单文件（Day 0 / CI 正门）
-pnpm run check path/to/file.js
-pnpm run nudo -- check path/to/file.js
-
-# 忽略特定入口 may-throw（只滤 L2，不吞 L1）
-pnpm run check path/to/file.js --ignore-throws TypeError
-pnpm run check path/to/file.js --entry-throws warning   # or off
-
-# 调用点 case 报告（观察；断言失败才挡 exit）
-pnpm run test:cli path/to/file.js
-
-# 真实包精度扫描（多文件/包，生成 docs/check-real-packages.md）
-npx tsx scripts/scan-real-packages.ts commander
-
-# 示例门禁（矩阵 = docs/examples/README.md）
-pnpm run verify:examples
-```
-
-## GitHub Actions 示例
+## 接线
 
 ```yaml
-name: nudo-check
-on: [push, pull_request]
+# GitHub Actions 片段（示意）
+- run: pnpm install
+- run: pnpm run lint
+- run: pnpm run build
+- run: pnpm run check src/          # 门禁：有 error → exit 1
+# GITHUB_ACTIONS=true 时自动打 PR 行内注解（::error / ::warning）
+```
 
+| 命令 | 用途 | exit 1 |
+|------|------|--------|
+| `pnpm run check <path>` | Day 0/CI 门禁 + 打印 signatures | 任一 error 级诊断（L1 或未 ignore 的 L2） |
+| `pnpm run test:cli <path>` | case 报告 + 声明断言 | 仅**声明** `@nudo:case` 断言失败 |
+| `pnpm run nudo -- health` | drift / 分析错误 | drift 或 analysis error |
+| `pnpm run verify:examples` | 示例命令 × 退出码矩阵 | 矩阵不匹配 |
+
+CI 门禁**只认** `check`（及 `test` 的声明断言、`health` 的 drift）。
+
+## PR 行内注解（好过裸 tsc 日志）
+
+诊断会贴到 **Files changed** 对应行，而不是埋在 job log 里。
+
+### GitHub Actions（推荐默认）
+
+```yaml
 jobs:
-  check:
+  nudo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pnpm install
+      # 自动注解：GITHUB_ACTIONS=true 即开；也可显式 --gha
+      - run: pnpm exec nudo check packages/*/src
+      # 要 JSON 留档时：stdout=CheckJson，注解仍进日志（stderr）
+      - run: pnpm exec nudo check packages/*/src --json > nudo-check.json
+```
+
+单文件/多文件都支持；`--json` 多文件是 `kind:"multi"` 信封。
+
+### GitLab Code Quality
+
+```yaml
+script:
+  - pnpm exec nudo check src --gitlab > gl-code-quality-report.json
+artifacts:
+  reports:
+    codequality: gl-code-quality-report.json
+```
+
+### pre-commit / 本地
+
+```bash
+pnpm exec nudo check src          # 人类可读 + exit 1
+# 不需要 GHA 注解时不要设 GITHUB_ACTIONS
+```
+
+| 旗标 | 作用 |
+|------|------|
+| `--gha` | 强制 GHA 注解（默认在 `GITHUB_ACTIONS=true` 自动开） |
+| `--gitlab` | GitLab Code Quality 数组 |
+| `--json` | CheckJson（机器契约）；与 `--gha` 同用时注解在 **stderr** |
+
+## 消费方 monorepo 配方（不入库测试语料）
+
+在**你自己的**仓库接门禁。本仓**不**提交完整测试 monorepo——集成夹具只保留
+`docs/examples/mini-repo/`（小、钉退出码）。
+
+```yaml
+# 消费方仓库 .github/workflows/nudo.yml（示意）
+jobs:
+  nudo:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
       - run: pnpm install
-      - name: Type-as-computation gate
-        run: |
-          # 对 src 下入口文件跑 check；任一 FAILED → 失败
-          # L2 入口 may-throw 默认 error；按需加 --ignore-throws 或 package.json#nudo.check
-          set -e
-          for f in $(find src -name '*.js' -not -path '*/node_modules/*' | head -50); do
-            echo "==> $f"
-            pnpm run check "$f"
-          done
+      # L1：显式契约门禁（默认 L2 error，见下）
+      # 目录/多文件 → CheckJsonMulti 信封（kind:"multi" + reports[]）
+      - run: pnpm exec nudo check packages/*/src --json > nudo-check.json
+      # 可选：把 signatures 贴进 PR comment / artifact
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nudo-check
+          path: nudo-check.json
 ```
 
-## 与 tsc 的关系（现阶段）
+要点：
 
-| | `tsc --noEmit` | `nudo check` |
-|---|---|---|
-| 赋值/结构检查 | 完备 | 部分：Abs leq（`nudo:assign-mismatch`）+ 显式 shape 契约；HOF `arg-structure` 仅回调；宽度子类型无 excess 检查 |
-| 约束（`x>0`）+ 字面量调用 | 做不到 | **做** |
-| 入口 `any.prop` | 通常不报 | throws 域；L2 默认 error |
-| 零注解 JS | 需 checkJs | CLI 点名路径默认分析；IDE 出厂默认 `analysis.mode=exports`（export/侧车/指令）；无 export 脚本需 `mode=all` |
-| 建议 | 大 TS 仓仍用 tsc | JS 仓 / 存量代码 / Agent 流水线 |
+1. **只扫源码根**（`src/` / `lib/`），不要扫 `node_modules`、构建产物、benchmark 语料。
+2. **L2 策略显式选**：默认入口 may-throw = error。渐进迁移可先
+   `--ignore-throws TypeError` 或 `package.json#nudo.check.entryThrows: "off"`，
+   等价于 Day0 只锁 L1 契约违例。
+3. **成功也打印 signatures**——CI 日志里的 `any` 是无约束入口，不是 unknown。
+4. **金标/zero-FP 叙述以 L2 off 为准**；你的 CI 若开 L2，期望要单独钉。
+5. 大 monorepo：会话缓存可配 `NUDO_CACHE_MAX_FILES=32`（多项目）或 `512`（单大仓）。
 
-**推荐双跑**：TS 项目继续 tsc；纯 JS 或渐进迁移目录用 `nudo check` 作补充门禁。
+本仓自检（开发 Nudo 时）：
 
-## 退出码
+```bash
+pnpm run check docs/examples/mini-repo/user-service.js   # 集成夹具
+pnpm run verify:examples                                  # 示例 × 退出码矩阵
+npx tsx scripts/scan-real-packages.ts commander           # 真实包扫描报告
+```
 
-- `0`：OK（signatures 仍打印）  
-- `1`：存在 `severity=error` 的 issue（L1 如 `nudo:constraint-violated`；L2 `nudo:entry-may-throw` 未 ignore 时）
+## L2（入口 may-throw）
 
-`nudo test` exit 1 **仅**当声明的 `@nudo:case` 断言失败；合成 `call@`/`entry@` 不挡 exit。
+默认 **error**。CI 里可选放宽：
+
+```bash
+pnpm run check src/ --ignore-throws TypeError,RangeError
+# 或 package.json
+"nudo": { "check": { "ignoreThrows": ["TypeError"], "entryThrows": "error" } }
+```
+
+- `ignoreThrows` / `entryThrows` **只作用于 L2**，不吞 L1 契约违例。
+- 金标与 zero-FP 叙述默认以 **L2 off** 基线为准；开 L2 的 CI 应显式配置或拆期望。
+
+## 精度门禁（本仓库）
+
+| 门禁 | 位置 |
+|------|------|
+| 人工 recall = precision = 1.0 | `packages/core/src/algebra/__tests__/check-recall-gold.test.ts`（144 条，knownFn=0） |
+| shape 精化 | `check-shape-gold.test.ts` |
+| case ⊆ refine | `check-case-consistency.test.ts` |
+| 真实包零误报 | `check-real-packages.test.ts` / `check-real-commander.test.ts` |
+| 示例矩阵 | `docs/examples/README.md` + `scripts/verify-examples.sh` |
+
+```bash
+# 真实包扫描（报告态产物）
+npx tsx scripts/scan-real-packages.ts commander
+# → docs/check-real-packages.md
+```
+
+## 报告要点（CI 消费）
+
+- **成功也打印 signatures**；入口无约束参数为 **`any`**。
+- issues 为 `actual ⊭ expected`（蕴含失败），不是 tsc 诊断换皮。
+- 机器可读：`nudo check <file> --json`（单文件 CheckJson v1）；gate/签名与 `test --json` cases **分命令**。
+- 契约测试：`check-json.test.ts`；实现 `packages/core/src/algebra/check-report.ts`。

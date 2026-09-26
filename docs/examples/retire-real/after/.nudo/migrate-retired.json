@@ -1,0 +1,8 @@
+{
+  "retiredAt": "2026-09-23T00:00:00.000Z",
+  "note": "public sample: real npm dep `ms` (vercel/ms) — tsc retired in favor of nudo check",
+  "removedDeps": ["devDependencies"],
+  "rewrittenScripts": [
+    { "name": "typecheck", "from": "tsc --noEmit", "to": "nudo check src" }
+  ]
+}

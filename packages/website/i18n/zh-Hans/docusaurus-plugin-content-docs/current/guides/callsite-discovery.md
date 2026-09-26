@@ -1,5 +1,4 @@
 ---
-sidebar_position: 8
 description: "用 --from 从测试与应用中采集真实实参形状，合成 call@L 用例，并用 test --freeze 固化为指令。"
 ---
 
@@ -16,7 +15,7 @@ nudo test lib/ --from test/
 
 给定一个小库：
 
-```js
+```js verify
 // lib/slugify.js
 export function slugify(title) {
   return title.toLowerCase().replace(/ /g, "-");
@@ -44,20 +43,24 @@ nudo test lib/ --from test/
 输出：
 
 ```text
+nudo test  lib/slugify.js
+
 === slugify ===
-  entry@L1  (any) => any
-  call@L4  ("Hello World") => string
+  call@L4  ("Hello World") => "hello-world"
+
+assertions
+  — 0 passed · 0 failed · 0 unchecked (no declared @nudo:case expectations; 1 synthetic case(s) printed above)
 ```
 
-这个 case 不是任何人写的——它采集自测试文件的第 4 行，因此被命名为 `call@L4`。每个被记录的调用点都会成为一个合成的 case；对同一函数的多个调用点会合并为联合类型（combined type），与手写 `@nudo:case` 指令的行为完全一致。无约束入口参数显示为 `any`。
+这个 case 不是任何人写的——它采集自测试文件的第 4 行，因此被命名为 `call@L4`。每个被记录的调用点都会成为一个合成的 case；对同一函数的多个调用点会合并为联合类型（combined type），与手写 `@nudo:case` 指令的行为完全一致。无约束入口参数显示为 `any`。当函数在**任何地方都没有**调用点时，分析器回退为单个 `entry@L…` case（无约束参数为 `(any) => any`）；存在 `call@` case 时，不再为该函数合成 `entry@`。
 
 ### 选项
 
 | 参数 | 描述 |
 |----------|-------------|
 | `<target>` | 要分析的文件或目录——`.js`、`.mjs` 或 `.ts`；目录会递归收集推断目标文件 |
-| `--from <paths...>` | 一个或多个使用方文件或目录（测试、示例、应用）。由 `--callsites` 更名。目录会递归扫描。 |
-| `--freeze[=update]` | 把采集到的用例写回被分析文件，成为 `@nudo:case` 指令（默认只补没有用例指令的函数；`=update` 重新同步已生成的指令）——由 `--emit-cases` 更名 |
+| `--from <paths...>` | 一个或多个使用方文件或目录（测试、示例、应用）。目录会递归扫描。 |
+| `--freeze[=update]` | 把采集到的用例写回被分析文件，成为 `@nudo:case` 指令（默认只补没有用例指令的函数；`=update` 重新同步已生成的指令） |
 
 ## 工作原理
 
@@ -100,7 +103,7 @@ nudo test lib/ --from test/
 | `@hapi/hoek` | 9.3.0 (25 files, 42 functions) | 54.8% → **98.6%** | 291 → **0** |
 | `@discoveryjs/json-ext` | 0.5.7 | 77.8% → **91.8%** | 41 → **0** |
 
-这两个库都没有写任何指令——结果第二列里的每一个 case 都是由某个记录到的调用点合成的。
+这两个库都没有写任何指令——结果第二列里的每一个 case 都是由某个记录到的调用点合成的。零误归因一列之所以成立的完整故事（归属门禁）：[22 文件污染事件](/blog/attribution-gate)。
 
 ## 已知边界
 
@@ -117,7 +120,7 @@ nudo test lib/ --from test/ --freeze           # 补齐尚无用例指令的函�
 nudo test lib/ --from test/ --freeze=update    # 重新同步已生成的指令
 ```
 
-默认 `freeze` 只补齐完全没有用例指令的函数。`=update` 更进一步：先剥离此前生成的 `call@` 指令，在剥离后的源码上重新分析，再回写刷新后的指令集——因此它还能暴露使用处的*漂移*。测试改了实参，就会以 diff 的形式显现；`--freeze=update --dry-run --exit-on-diff` 把它变成 CI 门禁——diff 非空即以 `1` 退出。两种模式都幂等（已同步的文件输出 `No changes.`）。
+默认 `freeze` 只补齐完全没有用例指令的函数。`=update` 更进一步：先剥离此前生成的 `call@` 指令，在剥离后的源码上重新分析，再回写刷新后的指令集——因此它还能暴露使用处的*漂移*。测试改了实参，就会以 diff 的形式显现；`--freeze=update --dry-run --exit-on-diff` 把它变成 CI 门禁——diff 非空即以 `1` 退出。两种模式都幂等（已同步的文件输出 `freeze: no changes.`）。
 
 ### 合并策略
 
@@ -135,7 +138,7 @@ nudo test lib/ --from test/ --freeze=update    # 重新同步已生成的指令
 - **只支持可序列化的形状。** 指令文本能表达原始类型（`number()`/`string()`/`boolean()`/`unknown`/`never`）、字面量、普通对象、数组、元组与联合。实参含函数、Promise、类实例、`bigint` 或 `symbol` 值的用例无法固化——会被跳过并报告 `no-serializable-cases`（函数其余可序列化的用例仍会写入）。
 - **`call@` 是保留前缀。** 名字以 `call@` 开头的 `@nudo:case` 一律视为生成物：`update` 可能改写或删除它。不要把手写用例命名为 `call@…`。
 
-端到端工作流示例（引导与漂移检测）见 [CLI 使用指南 —— 固化 case 指令](./cli.md#固化-case-指令)；基于这些函数的编程接口见 [service API —— 用例固化](../api/service.md#用例固化)。
+端到端工作流示例（引导与漂移检测）见 [CLI 使用指南 —— `nudo test`](./cli.md#nudo-test)；基于这些函数的编程接口见 [service API —— 用例固化](../api/service.md#用例固化)。
 
 要主动检测这种漂移——在 CI 中或发版前——运行 [`nudo health`](./cli.md#nudo-health)：它对你的文件重跑同一条重新固化链路，任一生成指令会变化即以退出码 `1` 结束。
 
@@ -162,5 +165,5 @@ const result = analyzeFile(filePath, source, activeCases, records);
 
 ## 下一步
 
-- **[语言语义](./semantics.md)** —— 求值器能对调用点发现交给它的形状做些什么：`this` 绑定、Promise、可迭代对象等。
+- **[语言语义](../concepts/semantics.md)** —— 求值器能对调用点发现交给它的形状做些什么：`this` 绑定、Promise、可迭代对象等。
 - **[CLI 使用指南](./cli.md)** —— 所有 `nudo check` / `nudo test` 选项。

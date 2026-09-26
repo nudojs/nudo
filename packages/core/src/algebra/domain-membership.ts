@@ -17,7 +17,7 @@
 
 import type { NudoConstraint } from "./constraint.ts";
 import { SELF, isIntFlag } from "./constraint.ts";
-import type { Pred, PrimName } from "./pred.ts";
+import type { Pred, TypeofName } from "./pred.ts";
 import type { LiteralValue, Term } from "./term.ts";
 
 /**
@@ -63,8 +63,13 @@ export function literalMeetsConstraint(
   return c.preds.every((p) => predHolds(lv, p));
 }
 
+/**
+ * typeof 标签与字面量证据的匹配（JS typeof）。
+ * 证据域只有 number|string|boolean|null：object 仅匹配 null
+ * （typeof null === "object"）；function/undefined/bigint/symbol 无字面量证据。
+ */
 function primMatches(
-  prim: PrimName,
+  prim: TypeofName,
   lv: number | string | boolean | null,
 ): boolean {
   switch (prim) {
@@ -74,7 +79,8 @@ function primMatches(
       return typeof lv === "string";
     case "boolean":
       return typeof lv === "boolean";
-    // bigint / symbol 不在字面量证据域内
+    case "object":
+      return lv === null;
     default:
       return false;
   }

@@ -1,0 +1,251 @@
+/**
+ * nudo export — 投影：dts | guard | schema (dialect) | standard | all。
+ * 从 index.ts 原样迁出，行为不变。
+ */
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { resolve, relative, join, basename } from "node:path";
+import type { Command } from "commander";
+import {
+  effectiveInterface,
+  constraintToEntryAbs,
+  joinAbs,
+  obj,
+  type Abs,
+} from "@nudojs/core";
+import {
+  absToStandardSchemaModule,
+  absToZodSchemaModule,
+  type SchemaDialect,
+  generateGuardFunctionFromAbs,
+  generateFunctionDtsLines,
+} from "@nudojs/service/emit";
+import {
+  defaultLoadModule,
+  analyzeFileAsync,
+  type CaseResult,
+} from "@nudojs/service";
+import {
+  EXPORT_FORMATS,
+  SCHEMA_DIALECTS,
+  normalizeDialect,
+  normalizeExportFormat,
+  schemaDialectOf,
+  schemaFileName,
+  wantsSchema,
+  wantsStandard,
+  type ExportFormat,
+} from "../export-format.ts";
+
+// ---------------------------------------------------------------------------
+// export — 投影：dts | guard | schema (dialect) | standard | all
+// ---------------------------------------------------------------------------
+
+async function runExport(
+  file: string,
+  format: ExportFormat,
+  output?: string,
+  dialect?: SchemaDialect,
+): Promise<void> {
+  const filePath = resolve(file);
+  const source = readFileSync(filePath, "utf-8");
+  const result = await analyzeFileAsync(filePath, source, undefined, undefined, undefined, "none");
+  const functions = result.functions.filter((f) => f.cases.length > 0);
+
+  if (functions.length === 0) {
+    console.log("No analyzed functions found.");
+    return;
+  }
+
+  const effectiveDialect = schemaDialectOf(format, dialect);
+  const schemaExports: Record<string, Abs> = {};
+  const standardChunks: string[] = [];
+  const guardChunks: string[] = [];
+  const dtsChunks: string[] = [];
+  const droppedNotes: string[] = [];
+
+  for (const fn of functions) {
+    const caseResults: CaseResult[] = fn.cases;
+    const baseName = fn.name;
+
+    // 运行时校验器应尽量反映**契约域**，而不是单次调用点字面量。
+    const eff = effectiveInterface(source, baseName, {
+      loadModule: defaultLoadModule,
+      fromFile: filePath,
+    });
+    const paramExps: Array<{ name: string; abs: Abs }> = [];
+    let outputAbs: Abs | undefined;
+    if (eff) {
+      for (const p of eff.params) {
+        paramExps.push({
+          name: p.param,
+          abs: constraintToEntryAbs(p.constraint, p.param),
+        });
+      }
+      if (eff.returns) {
+        outputAbs = constraintToEntryAbs(eff.returns.constraint, "return");
+      }
+    }
+    if (paramExps.length === 0) {
+      // 无显式参数契约：对各 case 同槽 argAbs 做 join
+      const arity = Math.max(0, ...caseResults.map((c) => c.argAbs.length));
+      for (let i = 0; i < arity; i++) {
+        const parts = caseResults.map((c) => c.argAbs[i]).filter((a): a is Abs => !!a);
+        if (parts.length === 0) continue;
+        const joined = parts.reduce((a, b) => joinAbs(a, b));
+        paramExps.push({ name: fn.paramNames[i] ?? `arg${i}`, abs: joined });
+      }
+    }
+    if (!outputAbs) {
+      outputAbs = fn.combinedAbs ?? caseResults[0]?.abs;
+    }
+
+    if (wantsSchema(format)) {
+      // 一个可 import 的 zod 模块：`<fn>Input`（参数对象）+ `<fn>Output`
+      const inputSlots: Record<string, { value: Abs; optional?: boolean }> = {};
+      for (const p of paramExps) {
+        inputSlots[p.name] = { value: p.abs };
+      }
+      schemaExports[`${baseName}Input`] = obj(inputSlots);
+      if (outputAbs) {
+        schemaExports[`${baseName}Output`] = outputAbs;
+      }
+    }
+
+    if (wantsStandard(format)) {
+      const exports: Record<string, Abs> = {};
+      if (eff) {
+        for (const p of eff.params) {
+          exports[`${baseName}_${p.param}`] = constraintToEntryAbs(p.constraint, p.param);
+        }
+        if (eff.returns) {
+          exports[`${baseName}Return`] = constraintToEntryAbs(eff.returns.constraint, "return");
+        }
+      }
+      if (Object.keys(exports).length === 0) {
+        // 无显式契约：输出用 combinedAbs；参数位对各 case 同槽 argAbs 做 join
+        if (outputAbs) exports[`${baseName}Output`] = outputAbs;
+        for (const p of paramExps) {
+          exports[`${baseName}_${p.name}`] = p.abs;
+        }
+      } else if (!exports[`${baseName}Return`]) {
+        // 仅有参数契约、无返回契约时，用观察 combined 作 Output
+        if (outputAbs) exports[`${baseName}Output`] = outputAbs;
+      }
+      if (Object.keys(exports).length > 0) {
+        const mod = absToStandardSchemaModule(exports);
+        standardChunks.push(`\n// === ${baseName} Standard Schema ===\n${mod.source}`);
+        for (const note of mod.dropped) {
+          droppedNotes.push(`${baseName} ${note}`);
+        }
+      }
+    }
+
+    if (format === "guard" || format === "all") {
+      const lines: string[] = [`\n// === ${baseName} Type Guards ===`];
+      const absForGuard = fn.combinedAbs ?? caseResults[0]?.abs;
+      if (absForGuard) {
+        lines.push(generateGuardFunctionFromAbs(`is${baseName}Output`, absForGuard));
+      }
+      guardChunks.push(lines.join("\n"));
+    }
+
+    if (format === "dts" || format === "all") {
+      dtsChunks.push(generateFunctionDtsLines(fn).join("\n"));
+    }
+  }
+
+  const stem = basename(filePath).replace(/\.[cm]?[jt]s$/, "");
+  const schemaModule =
+    Object.keys(schemaExports).length > 0
+      ? absToZodSchemaModule(schemaExports)
+      : undefined;
+
+  if (output) {
+    const outDir = resolve(output);
+    mkdirSync(outDir, { recursive: true });
+    const written: string[] = [];
+    if (schemaModule) {
+      const p = join(outDir, schemaFileName(stem, effectiveDialect));
+      writeFileSync(p, schemaModule.source, "utf-8");
+      written.push(p);
+    }
+    if (standardChunks.length > 0) {
+      // 每函数一份模块（各自内联 __nudoCheck，避免合并文件时 helper 重复定义）
+      for (const chunk of standardChunks) {
+        const m = chunk.match(/\/\/ === (\S+) Standard Schema ===/);
+        const fnStem = m?.[1] ?? stem;
+        const p = join(outDir, `${fnStem}.nudo.standard.ts`);
+        const header = `// @generated by nudo export --format standard — Standard Schema v1 (vendor: nudo)\n`;
+        const body = chunk.startsWith("\n") ? chunk.slice(1) : chunk;
+        writeFileSync(p, body.includes("@generated") ? body + "\n" : header + body + "\n", "utf-8");
+        written.push(p);
+      }
+    }
+    if (guardChunks.length > 0) {
+      const p = join(outDir, `${stem}.nudo.guard.ts`);
+      writeFileSync(p, guardChunks.join("\n") + "\n", "utf-8");
+      written.push(p);
+    }
+    if (dtsChunks.length > 0) {
+      const p = join(outDir, `${stem}.d.ts`);
+      writeFileSync(p, dtsChunks.join("\n") + "\n", "utf-8");
+      written.push(p);
+    }
+    for (const p of written) {
+      console.log(`wrote ${relative(process.cwd(), p)}`);
+    }
+    return;
+  }
+
+  const chunks: string[] = [];
+  if (schemaModule) chunks.push(schemaModule.source);
+  chunks.push(...standardChunks, ...guardChunks, ...dtsChunks);
+  for (const chunk of chunks) {
+    console.log(chunk);
+  }
+  if (droppedNotes.length > 0) {
+    console.log(`\n// dropped preds (not projected into ${effectiveDialect}):`);
+    for (const n of droppedNotes) console.log(`//   ${n}`);
+  }
+}
+
+export function registerExportCommand(program: Command): void {
+  program
+    .command("export")
+    .description("Project inferred types: dts | guard | schema | standard | all")
+    .argument("<file>", "JavaScript/TypeScript file to analyze")
+    .option(
+      "--format <format>",
+      "Output format: dts, guard, schema, standard, all",
+      "dts",
+    )
+    .option("--dialect <dialect>", "Schema dialect (currently: zod). Applies to --format schema|all")
+    .option("--out <dir>", "Write projection files to this directory (omit for stdout)")
+    .action(
+      async (
+        file: string,
+        options: { format: string; dialect?: string; out?: string },
+      ) => {
+        const format = normalizeExportFormat(options.format);
+        if (!format) {
+          console.error(
+            `Unknown --format ${options.format}; expected dts | guard | schema | standard | all`,
+          );
+          process.exitCode = 1;
+          return;
+        }
+        const dialect = normalizeDialect(options.dialect);
+        if (options.dialect !== undefined && dialect === undefined) {
+          console.error(`Unknown --dialect ${options.dialect}; expected ${SCHEMA_DIALECTS.join(" | ")}`);
+          process.exitCode = 1;
+          return;
+        }
+        if (dialect !== undefined && !wantsSchema(format)) {
+          console.error(`--dialect is only valid with --format schema|all (got ${format})`);
+          process.exitCode = 1;
+          return;
+        }
+        await runExport(file, format, options.out, dialect);
+      },
+    );
+}

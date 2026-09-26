@@ -1,72 +1,121 @@
 ---
-sidebar_position: 9
 slug: /guides/vs-typescript
-description: Where Nudo replaces TypeScript, where it does not, and how the two coexist — honest positioning.
+description: Nudo vs TypeScript — where the replacement happens (DX and fact quality), how declaration and inference differ, and the scope bounds of “replace.”
 ---
 
 # Nudo vs TypeScript
 
-**You'll leave with:** an honest map of when Nudo can replace TypeScript as a JS-first type gate, when TypeScript should stay primary, and how the two coexist in one repo.
+Code understanding, robustness, and language continuity — how those needs divide between Nudo and TypeScript is what this page answers.
 
-Nudo is built to **replace TypeScript as the day-to-day type gate for JavaScript-first codebases** — not to reimplement the TypeScript compiler. This page is the honest map: when that replacement is real, when it is not, and how the two tools share a repo.
+Related: [Migrate from TypeScript](./migrating-from-typescript.md) · [Why Nudo](../why-nudo.md) · [Error faces](./error-faces.md).
+
+Nudo is built to **replace TypeScript as the day-to-day type check gate** — not to reimplement the TypeScript compiler. Dual gates are a migration tactic only; the exit is `nudo migrate retire`. **Whether the tree is JS or TS today is not a selection criterion** — Nudo analyzes TypeScript (annotations stripped, JS semantics) and ships a one-way `migrate` path. The sections below compare dimensions and state engine scope, not a permanent “keep tsc” checklist.
 
 ## Positioning
 
 | | TypeScript | Nudo |
 |---|---|---|
-| **Primary surface** | `.ts` sources + annotations | Plain `.js` (type syntax stripped if you pass `.ts`) |
-| **Type model** | Declared structural types | **Abs** (`shape × term × pred × conf`) — computable types from abstract interpretation |
-| **Contracts** | `interface` / `type` language | `*.nudo.js` builders (`fn`, `shape`, `number().gt(0)`) + optional `@nudo:refine` |
-| **Inference** | From annotations + local inference | From **executing** code on symbolic Abs (B-path / ast-eval) |
-| **CI gate** | `tsc --noEmit` | `nudo check` (`actual ⊭ expected` on Abs) |
+| **Primary surface** | `.ts` + type annotations | Plain `.js` (type syntax is stripped if `.ts` is passed) |
+| **Type model** | Declared structural types | **Abs** (`shape × term × pred × conf`) — computable types |
+| **Contracts** | `interface` / `type` language | `*.nudo.js` builders (`fn`, `shape`, `number().gt(0)`) + optional `@nudo:contract` |
+| **Inference** | Annotations + local inference | **Executing** code on symbolic Abs (B-path) |
+| **Check / diagnostics** | `tsc --noEmit` | `nudo check` (`actual ⊭ expected` on Abs; signatures even on success) |
 | **Ecosystem exit** | `.d.ts` is the model | `.d.ts` is a **lossy projection** (`absToTSType`) — not the source of truth |
+| **Leaving the other tool** | — | `nudo migrate` → **`retire` tsc** |
 
-The goal is not “TS syntax on JS.” The goal is: **JS stays JS**, obligations come from explicit contracts (L1) plus the JS runtime export boundary (L2 entry throws), and the engine reasons by evaluation rather than by a second type language.
+The goal is not “TypeScript syntax on JavaScript.” The goal is: **JavaScript remains JavaScript**; obligations come from explicit contracts (L1) and the JS runtime export boundary (L2 entry throws); the engine reasons by evaluation, not by a second type language.
 
-| TS | Nudo |
-|----|------|
-| Types written in source / IDE hover | Day 0: `nudo check` prints signatures; `nudo test` prints cases |
-| `tsc --noEmit` | `nudo check` (still prints signatures on success) |
-| `any.prop` does not error | Dangerous ops on `any` at entry enter the **throws** domain; L2 can error |
-| No `tsc show` | **No** `nudo show` / `nudo infer` observation verb |
+### Relation to TypeScript design goals
 
-## When Nudo is the right replacement
+Microsoft’s [TypeScript Design Goals](https://github.com/microsoft/TypeScript/wiki/TypeScript-Design-Goals) list two non-goals that sit on Nudo’s main axes:
 
-Prefer Nudo when **all** of these are true:
+> Apply a sound or "provably correct" type system. Instead, strike a balance between correctness and productivity.
 
-1. **The package is JavaScript-first.** You do not want a second IR (`.ts` + annotations) just to get types.
-2. **Behavior beats declared shape.** Branching, string algebra, loops, and refinements matter more than “does this object structurally match an interface.”
-3. **Contracts are product requirements.** You want `nudo check` in CI: L1 bounds/shape obligations from sidecars + L2 entry may-throw on exports — not body AST slot scans.
-4. **You refuse a second type language.** Contracts are JSON-like builders, not `interface` / mapped / conditional types.
+> Add or rely on run-time type information in programs, or emit different code based on the results of the type system. Instead, encourage programming patterns that do not require run-time metadata.
 
-Typical fits: tooling CLIs, script layers, plugin hosts, data pipelines in plain JS, repos that already have rich tests (call-site mining works well there).
+The **throws** axis (L2 entry may-throw) and the **Pred** axis (constraint implication on Abs) are therefore outside TypeScript’s roadmap by design. Nudo takes that complementary scope. Full map against Flow, Hegel, schema libraries, and refinement types: [Competitive landscape](./competitive-landscape.md).
 
-## When TypeScript should stay primary
+| Goal | TypeScript | Nudo |
+|---|---|---|
+| Code understanding | Source annotations / IDE hover shows declared types | `check` signatures and per-variable derivations; call-site evidence |
+| Check / diagnostics | `tsc --noEmit` | `nudo check` (signatures even on success) |
+| Entry safety | `any.prop` does not error | Dangerous operations on entry `any` enter the throws domain; L2 can error |
+| Violation shape | “Not assignable to type …” | [`actual` / `expected` / `fix:`](./error-faces.md) |
 
-Do **not** expect Nudo to replace `tsc` when:
+## Where the replacement happens
 
-1. **The codebase is `.ts`-first.** Annotations, generics, and the TS language service are the product. Nudo can read stripped TS, but it is not a TypeScript compiler clone.
-2. **You need the full TS type language.** Conditional types, template-literal type *programming*, declaration merging, and project-wide structural assignability are **non-goals** (see the roadmap’s non-targets).
-3. **Your ecosystem is typed packages.** Definitely-typed style APIs, declaration merging with third-party `.d.ts`, and `tsc` project references stay on the TS side.
-4. **The gate is “does this assign like TS.”** Nudo’s gate is Pred implication on Abs and `leqAbs` for some assignment shapes — not bit-for-bit TS assignability.
+The comparison is **developer experience and fact quality**, not file extensions:
 
-Those cases are real. Pointing `nudo check` at a TS monorepo is not the product path.
+| Dimension | TypeScript | Nudo |
+|---|---|---|
+| Annotation burden | Write logic and a type language in parallel | Logic stays JS; contracts optional and draftable via `contract --draft` |
+| Observation grain | Declared type names | Per-variable runtime-adjacent values / shapes / constraints |
+| Constraint expression | Structural types (`number`) | Computable Pred (`ms > 0`, returns `> 0`) |
+| Semantic source | Annotations + local inference | Execution on Abs; call sites are evidence |
+| Error shape | “Not assignable to type …” | `actual` / `expected` / `fix:` |
+| Source of truth | Source annotations | Abs; `.d.ts` and similar are lossy projections |
+| Edit-path cost | Whole-program structural residency (`tsserver`) | Per-file / dirty-set Abs evaluation; bounded memory |
+| Agent loop cost | Prose diagnostics; full-project rounds | Structured `actions[]`; cheaper gate payloads (see below) |
+| Migration cost | — | `migrate status → strip → verify → retire` |
+
+Contracts can be **declared first** (sidecar / `@nudo:contract`) or **drafted from code** and then tightened by hand; the declaration surface is sharper than `interface` (numeric and shape constraints). “Types first vs logic first” is not the divide between TypeScript and Nudo.
+
+## Performance, tokens, and memory
+
+Full comparative suites are still incomplete. Direction is established by **architecture** and by the measurements already in-repo; treat numbers as baselines to be widened, not as a closed benchmark.
+
+### Why the cost structure favors Nudo
+
+| Factor | TypeScript | Nudo |
+|---|---|---|
+| What is resident | Whole-`Program` structural typing — any cross-file shape can change any decision | Per-file Abs results + small bookkeeping; close a file, drop its analysis |
+| Edit path | Language-service / program refresh | Dirty-set re-analysis; single-file `analyzeFile` / `checkSource` |
+| What agents must read | Type-name prose (“Not assignable to type …”) | `actual` / `expected` / `actions[]` — fewer repair rounds |
+| What authors must write | Annotations + type-level work | Optional contracts; no second language in source |
+
+### Measurements already available
+
+| Probe | Nudo | TypeScript | Notes |
+|---|---|---|---|
+| Single-file live edit | `analyzeFile` **0.19 ms**, `checkSource` **0.39 ms** median | `tsc.LS` on the order of **10 ms+** per probe in `benchmark/micro/bench-vs-tsc` (≈ **150×** in the micro harness) | Synthetic monorepo / micro workload; see `docs/reports/s1-perf-baseline.md` |
+| Agent repair (node-semver historical bugs, ~2.4k LOC) | tokenTotal **569k** · rounds **45** · repair loops **16** · gate peak RSS **226 MB** | **993k** (**+75%**) · **63** · **21** · **289 MB** | Both finished 6/6; the gap is cost, not detect ceiling — `benchmark/lsp-rounds/out/OSS-SEMVER.md` |
+| Constraint-shaped gate payload | detects; pays tokens to **report** | often **silent green** (no tokens, bug ships) | `pnpm run agent-dx` — TS “cheap” tokens are silence |
+
+### Boundaries of the claim
+
+- Micro and S1 corpora are **synthetic**; OSS-SEMVER is one real package family. Absolute SLOs need broader suites.
+- Peak RSS is **gate process** RSS during agent loops, not steady-state IDE residency.
+- Memory advantage is **structural** (no whole-program forced residency) and shows up in LSP design ([bounded session model](../api/lsp.md)); long-running multi-GB `tsserver` heaps vs Nudo LSP under the same editor load are not yet a published matrix.
+
+More complete tables (multi-package cold/warm, multi-host) will replace this section as they land.
+
+## Capability bounds (engine non-goals)
+
+These are **Nudo engine non-goals** — not the same question as “should this package keep `tsc` as its gate forever”:
+
+1. **Full TS type-language programming**: conditional types, template-literal type programming, mapped types as programming devices.
+2. **Bit-for-bit `tsc` assignability**: Nudo’s gate is Pred implication on Abs and some `leqAbs` shapes.
+3. **Declaration merging / project references as product IR**: the TypeScript project model is not reimplemented.
+4. **Soundness proofs**: no soundness claim, and no head-to-head contest on “a stricter type system.”
+
+If **the product is the type language itself** (type-level libraries, DefinitelyTyped-style declaration surfaces), TypeScript is the tool for that work. For ordinary application and tooling packages, the check gate still ends at **`nudo check` + `migrate retire`** — not permanent dual gates.
 
 ## What “replace TypeScript” means here
 
-For a **JS package**, the serious-replacement checklist is:
+For a **package**, the full replacement checklist is:
 
 | Capability | Nudo path |
 |---|---|
 | Open a normal `.js` file, get hover / inlay | LSP + `package.json#nudo.analysis.mode` (default `exports`; `all` / `directives` available) |
-| Day-0 observation | `nudo check` signatures + `nudo test` cases (no `infer` verb) |
-| CI type gate | `nudo check` — exit 1 on error issues (L1 + non-ignored L2) |
-| Explicit contracts | `*.nudo.js` + `@nudo:refine`; handwritten = L1 obligation |
-| Generated facts | `nudo contract --emit` → `@generated` segments (drift, not silent rewrites of obligations) |
+| Observation | `nudo check` signatures (no `infer` verb) |
+| Check gate | `nudo check` — exit 1 on error-level diagnostics (L1 + non-ignored L2); attachable to any local or automated workflow |
+| Explicit contracts | `*.nudo.js` + `@nudo:contract`; handwritten = L1 obligation |
+| Generated facts | `nudo contract --emit` → `@generated` segments (drift records, not silent rewrites of obligations) |
 | npm / editor types | `nudo export --format dts` — one-way projection only |
-| Performance story | `benchmark` + `benchmark:gate`：case 集规模一致；exact 回退超过 1-case 抖动 / unknown·error 上升 / 逐 case 顺序变差 / avg > 基线 3.0× → fail |
+| **Retire tsc** | `nudo migrate status` → `strip` → `verify` → **`retire`** |
+| Performance baseline | Repo `benchmark` + `benchmark:gate` — same case-set size; fail on exact regressions beyond 1-case jitter, rising unknown/error counts, per-case order worse than baseline, or average > 3.0× baseline |
 
-What is **not** claimed: one-click migration of a large TS monorepo; full structural typing as the primary model; a second IR.
+What is **not** claimed: one-click migration of a TS monorepo of any size; full structural typing as the primary model; a second IR; bit-for-bit `tsc` semantics.
 
 ## Side-by-side example
 
@@ -79,13 +128,13 @@ export function needsPositive(x: number): number {
 needsPositive(-1); // allowed by tsc
 ```
 
-**Nudo (contract + gate):**
+**Nudo (contract + diagnostics):**
 
 ```javascript
 /// @nudo:import { positive } from "./shapes.nudo.js"
 
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 export function needsPositive(x) {
   return x > 0 ? x : 0;
@@ -97,20 +146,27 @@ needsPositive(-1);
 //   expected: x > 0
 ```
 
-TypeScript encodes intent in the signature. Nudo encodes the same obligation as a **computable** constraint and fails the call site. Both are valid; only one requires a type language.
+TypeScript encodes intent in the signature. Nudo encodes the same obligation as a **computable** constraint and reports the violating call site. Both are valid; only the latter avoids a type language. More shapes: [Error faces](./error-faces.md).
 
-## Coexistence
+## Migration, not permanent dual gates
 
-In a monorepo you usually **split by package**, not by feature inside one TS project:
+In a monorepo, migrate **package by package**, then retire:
 
-- JS packages → Nudo LSP + `nudo check`
-- TS packages → `tsc` / ts-node as today
+```bash
+npx nudojs migrate status packages/tool
+npx nudojs migrate strip packages/tool/src --write
+npx nudojs migrate verify packages/tool/src
+npx nudojs migrate retire packages/tool
+```
 
-Recipes (include/exclude globs, gradual contracts, CI snippets): **[Coexistence with TypeScript](./coexistence.md)**.
+Short-lived dual jobs during migration are a tactic, not an end state — see [Coexistence](./coexistence.md). The product end state is **one gate: `nudo check`**.
 
 ## Related
 
-- **[Concept layers](../concepts/layers.md)** — Day-0 / Day-1 / Abs
-- **[nudo check](./check.md)** — diagnostic codes and interface tiers
-- **[Language semantics](./semantics.md)** — what is precise, what degrades to `unknown`
-- **[Quick start](../getting-started/quick-start.md)** — 30-minute path
+- **[Why Nudo](../why-nudo.md)** — needs and answers
+- **[Mental model](../getting-started/mental-model.md)** — Observation
+- **[Error faces](./error-faces.md)** — `actual` / `expected` / `fix:`
+- **[Concept layers](../concepts/layers.md)** — Observation / Contracts / Abs
+- **[nudo check](./check.md)** — diagnostic codes and contract tiers
+- **[Language semantics](../concepts/semantics.md)** — what is precise, what degrades to `unknown`
+- **[Quick start](../getting-started/quick-start.md)**

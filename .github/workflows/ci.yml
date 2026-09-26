@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, develop, ci]
+    branches: [main, dev, ci]
   pull_request:
-    branches: [main, develop, ci]
+    branches: [main, dev, ci]
 
 permissions:
   contents: read
@@ -42,11 +42,40 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # website tsconfig paths 指向 monorepo 源码，但 @nudojs/* 的 package exports
+      # 仍解析到 dist——未构建时 TS2307。与 Release 一致：先 build 再 lint website。
+      - name: Build packages
+        run: npm run build
+
+      # 文档站 TSX 此前没有任何类型门禁（docusaurus build 走 babel，不检查类型）
+      - name: Lint website
+        run: npm run lint:website
+
       - name: Lint tests
         run: npm run lint:tests
 
       - name: Verify docs examples
         run: pnpm run verify:examples
+
+      - name: Verify website doc examples
+        run: pnpm run verify:docs
+
+      - name: Verify docs site links
+        run: pnpm run verify:links
+
+      # 生成文件（releases*.md / api skeleton / versioning 版本表）不得与源漂移
+      - name: Docs generation drift gate
+        run: |
+          pnpm run docs:gen
+          git diff --exit-code -- \
+            packages/website/docs/releases.md \
+            packages/website/docs/releases-history.md \
+            packages/website/docs/guides/versioning.md \
+            packages/website/docs/api \
+            packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/releases.md \
+            packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/releases-history.md \
+            packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/guides/versioning.md \
+            packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/api
 
       # B1 — fail when committed docs/reports baseline drifted from env sources
       - name: Env coverage baseline check
@@ -96,7 +125,7 @@ jobs:
       # 薄壳 bin 冒烟：走 workspace 链接 → @nudojs/cli dist。用户唯一入口，
       # 「build 后 bin 不能跑」类回归在此兜住（发布面卫生另由 npm-safe 管）。
       - name: Smoke nudo bin
-        run: node packages/nudojs/bin/nudo.mjs --version
+        run: node packages/nudojs/dist/index.js --version
 
   test:
     name: Test & Coverage
@@ -137,7 +166,11 @@ jobs:
           fail_ci_if_error: false
 
   # B1: accuracy/perf gate vs benchmark/baseline.json
-  # runner noise is absorbed by the 3.0x threshold in gate.js
+  # 3.0x 阈值（gate.js 硬编码）有意保留：baseline 采自本地 Apple Silicon，
+  # GitHub ubuntu runner 常年慢 ~2.5–3x；收 2.0–2.5x 会把噪声当回归（CI 变红）。
+  # 收紧前提：在 GH runner 上重跑 `pnpm run benchmark:baseline`（或改相对倍率
+  # /固定 perf runner）后再改 gate.js——不要只改数字。
+  # OSS 真包门禁（benchmark:oss + benchmark:oss:gate）挂在 benchmark.yml（main-only）。
   benchmark:
     name: Benchmark gate
     runs-on: ubuntu-latest

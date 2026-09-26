@@ -1,0 +1,14 @@
+# 生成物：从本地 node-semver checkout 经 oss-semver/build.mjs 产出，不进仓库
+# （ISC 上游源码不 vendoring；夹具真相源 = build.mjs 反向补丁 + acceptance + BUGS）
+starters-oss-semver/
+
+# 评测输出可进仓（人工挑选）；临时/批量 out 默认忽略
+# out/ 下保留的报告用 git add -f 显式纳入
+out/*
+!out/OSS-SEMVER.md
+!out/PRD-RACE-COMPARE.md
+!out/1790254149355-seed1-nudo.json
+!out/1790264057712-seed1-typescript.json
+
+node_modules/
+*.log

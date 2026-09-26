@@ -5,7 +5,7 @@
  *   唯一读取口，来源标注（handwritten / generated / implicit）随值返回。
  *
  * 来源三层（合并序 handwritten > generated > implicit，§4/§11）：
- * - handwritten：源码 `@nudo:refine`/`@nudo:interface` 行（复用 refine.ts 的
+ * - handwritten：源码 `@nudo:contract`/`@nudo:contract` 行（复用 refine.ts 的
  *   extractRefinesFromSource / extractRefineReturnFromSource）∪ 侧车同名**手写**
  *   fn() 绑定。同名同参取合取 and()（§2.1：侧车 x>0 + 源码 x>1 → 有效契约
  *   取合取）；常数界交叉矛盾（x>0 ∧ x<0）→ conflict 标记，由调用方报
@@ -17,8 +17,8 @@
  *
  * 自动绑定边界（§2.2）：只绑源文件**本地 named export**（re-export /
  * export default / 私有名不绑）；opts.autoBind === false 或侧车路径含
- * /node_modules/ → 不 ambient 加载（只看源码 refine）。「项目根内」检查属
- * 宿主层（core 无 projectDir 概念），Phase 1 不在此实现。
+ * /node_modules/ → 不 ambient 加载（只看源码 refine）。opts.projectDir
+ * 提供时，树外侧车不 ambient 绑定（host 从 findProjectConfig 下传）。
  *
  * 侧车绑定 Phase 1 只承诺 fn() 形态：非 fn 的标量/shape 绑定不消费，收集
  * nudo:interface-load 诊断（后续 Phase 再放开单参形态）。
@@ -38,7 +38,8 @@ import {
   type NudoConstraint,
   isNudoConstraint,
   fnConstraintToEntryReqs,
-  and,
+  throwConstraintToKinds,
+  andC,
   isIntFlag,
 } from "./constraint.ts";
 import {
@@ -46,6 +47,7 @@ import {
   NudoSidecarError,
   extractRefinesFromSource,
   extractRefineReturnFromSource,
+  extractDeclaredThrows,
   refineDiagCount,
   takeRefineDiagsSince,
   type RefineResolveOpts,
@@ -398,12 +400,19 @@ function regionHasGeneratedMarker(
 export type EffectiveInterfaceOpts = RefineResolveOpts & {
   /** false（或谓词返回 false）→ 不 ambient 加载侧车；默认 true */
   autoBind?: boolean | ((sidecarPath: string) => boolean);
+  /**
+   * 项目根（host 从 findProjectConfig 下传）。提供时 ambient 绑定仅接受
+   * 树内侧车；树外 → 不加载。undefined = 不限（测试/脚本；node_modules 仍拦）。
+   */
+  projectDir?: string;
 };
 
 export type EffectiveInterface = {
   fnName: string;
   params: Array<{ param: string; constraint: NudoConstraint }>;
   returns?: { constraint: NudoConstraint };
+  /** 申报式抛错（@nudo:throws / case !! throws / sidecar fn.throws） */
+  throws?: { kinds: string[] | "*" };
   source: InterfaceSource;
   /**
    * 合取不可满足标记：params = 常数界交叉矛盾（或 prim 矛盾等 and() 不可
@@ -413,12 +422,22 @@ export type EffectiveInterface = {
   conflict?: { params: string[]; returns?: boolean };
 };
 
-/** 自动绑定边界：node_modules 永不 ambient 加载；autoBind 可关（§2.2） */
+/** 路径是否落在 projectDir 内（含根本身）；分隔符归一后前缀比较 */
+function isUnderProjectRoot(sidecarPath: string, projectDir: string): boolean {
+  const norm = (p: string): string => p.split("\\").join("/").replace(/\/+$/, "");
+  const root = norm(projectDir);
+  const sc = norm(sidecarPath);
+  return sc === root || sc.startsWith(`${root}/`);
+}
+
+/** 自动绑定边界：node_modules / 树外侧车永不 ambient 加载；autoBind 可关（§2.2） */
 function sidecarAutoBindAllowed(
   sidecarPath: string,
   autoBind: boolean | ((sidecarPath: string) => boolean) | undefined,
+  projectDir?: string,
 ): boolean {
   if (isNodeModulesPath(sidecarPath)) return false;
+  if (projectDir && !isUnderProjectRoot(sidecarPath, projectDir)) return false;
   if (autoBind === undefined || autoBind === true) return true;
   if (typeof autoBind === "function") return autoBind(sidecarPath) === true;
   return false;
@@ -454,10 +473,10 @@ function loadSidecarBinding(
   fnName: string,
   opts: EffectiveInterfaceOpts,
 ): SidecarBinding {
-  const { loadModule, fromFile, autoBind } = opts;
+  const { loadModule, fromFile, autoBind, projectDir } = opts;
   if (!loadModule || !fromFile) return { ok: false };
   const sidecarPath = sidecarPathOf(fromFile);
-  if (!sidecarAutoBindAllowed(sidecarPath, autoBind)) return { ok: false };
+  if (!sidecarAutoBindAllowed(sidecarPath, autoBind, projectDir)) return { ok: false };
   if (!localNamedExports(source).has(fnName)) return { ok: false };
   const spec = `./${sidecarPath.slice(sidecarPath.lastIndexOf("/") + 1)}`;
   const sidecarSrc = loadModule(spec, fromFile);
@@ -492,6 +511,18 @@ function loadSidecarBinding(
       if (bag && typeof bag === "object" && !isNudoConstraint(bag)) {
         binding = (bag as Record<string, unknown>)[method!];
       }
+    }
+    // 侧车键近失配：只有裸 `method` 而目标是 `Class.method`——报而非静默不绑
+    if (
+      binding === undefined &&
+      method !== undefined &&
+      exports[method] !== undefined
+    ) {
+      collectDiag({
+        code: "nudo:interface-load",
+        message: `sidecar key '${method}' does not bind '${fnName}' — use '${cls}.${method}', '${cls}_${method}', or nested { ${cls}: { ${method}: … } }`,
+        file: sidecarPath,
+      });
     }
   }
   if (binding === undefined) return { ok: false };
@@ -637,7 +668,7 @@ function conjoinOrConflict(
   onConflict: () => void,
 ): NudoConstraint {
   try {
-    return and(prev, next);
+    return andC(prev, next);
   } catch {
     onConflict();
     return prev;
@@ -659,6 +690,7 @@ export function effectiveInterface(
   const refineSince = refineDiagCount();
   const sourceEntries = extractRefinesFromSource(source, fnName, opts);
   const sourceReturn = extractRefineReturnFromSource(source, fnName, opts);
+  const sourceThrows = extractDeclaredThrows(source, fnName);
 
   // 手写来源 ② ∪ 生成段：侧车同名自动绑定
   const sidecar = loadSidecarBinding(source, fnName, opts);
@@ -669,6 +701,13 @@ export function effectiveInterface(
   const sidecarGenerated = sidecar.ok && sidecar.generated;
   const sidecarParams = sidecarFn ? fnConstraintToEntryReqs(sidecarFn) : [];
   const sidecarReturns = sidecarFn?.fn.returns;
+  const sidecarThrowsKinds = throwConstraintToKinds(sidecarFn?.fn.throws);
+  /** 源码申报 ∪ 侧车 fn.throws（`*` 优先） */
+  const mergedThrows: string[] | "*" | undefined = ((): string[] | "*" | undefined => {
+    if (sourceThrows === "*" || sidecarThrowsKinds === "*") return "*";
+    const set = new Set<string>([...(sourceThrows ?? []), ...(sidecarThrowsKinds ?? [])]);
+    return set.size > 0 ? [...set] : undefined;
+  })();
 
   const hasHandwritten =
     sourceEntries.length > 0 ||
@@ -682,6 +721,7 @@ export function effectiveInterface(
         fnName,
         params: sidecarParams,
         ...(sidecarReturns !== undefined ? { returns: { constraint: sidecarReturns } } : {}),
+        ...(mergedThrows !== undefined ? { throws: { kinds: mergedThrows } } : {}),
         source: "generated",
       };
     }
@@ -747,6 +787,7 @@ export function effectiveInterface(
     fnName,
     params: [...params.entries()].map(([param, constraint]) => ({ param, constraint })),
     ...(returnsC !== undefined ? { returns: { constraint: returnsC } } : {}),
+    ...(mergedThrows !== undefined ? { throws: { kinds: mergedThrows } } : {}),
     source: "handwritten",
     ...(conflictParams.length > 0 || conflictReturns
       ? {
@@ -801,10 +842,10 @@ export function sidecarClosureFingerprint(
   fromFile: string,
   opts: EffectiveInterfaceOpts,
 ): string | undefined {
-  const { loadModule, autoBind } = opts;
+  const { loadModule, autoBind, projectDir } = opts;
   if (!loadModule || !fromFile) return undefined;
   const sidecarPath = sidecarPathOf(fromFile);
-  if (!sidecarAutoBindAllowed(sidecarPath, autoBind)) return undefined;
+  if (!sidecarAutoBindAllowed(sidecarPath, autoBind, projectDir)) return undefined;
   const spec = `./${sidecarPath.slice(sidecarPath.lastIndexOf("/") + 1)}`;
   const sidecarSrc = loadModule(spec, fromFile);
   if (sidecarSrc === undefined) return undefined;

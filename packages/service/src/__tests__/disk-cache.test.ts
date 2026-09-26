@@ -90,7 +90,7 @@ describe("B3 disk cache store", () => {
 
   it("sha256 and relativizePath are stable", () => {
     expect(sha256Hex("x")).toHaveLength(64);
-    expect(ANALYSIS_ABI).toContain("v2");
+    expect(ANALYSIS_ABI).toMatch(/^nudo-check-cache-v\d+\+\d/);
     expect(relativizePath("/root/src/a.js", "/root")).toBe("src/a.js");
   });
 });

@@ -13,6 +13,7 @@ import {
   computeDirtySet,
   defaultLoadModule,
   clearAnalysisSessionCaches,
+  clearPathEnvCaches,
   evictAbsModuleCacheFiles,
   evictBPathCacheForFiles,
   evictAnalysisFileCacheForFiles,
@@ -20,6 +21,7 @@ import {
   findProjectConfig,
   interfaceConfig,
   checkConfig,
+  collectSkipReturns,
   filterDiagnosticsByLevel,
   diagnosticsLevelForFile,
   isProjectConfigPath,
@@ -31,18 +33,8 @@ import {
 } from "@nudojs/service";
 
 export { filterDiagnosticsByLevel, diagnosticsLevelForFile };
-import {
-  checkSource,
-  pTrue,
-  evictGeneralizeMemoForPaths,
-  evictCheckSourceMemoForPaths,
-  extractAllLoadSpecs,
-  extractNudoImports,
-  isNodeModulesPath,
-  resolveDepPath,
-  sidecarPathOf,
-  sidecarSpecsOf,
-} from "@nudojs/core";
+import { checkSource, pTrue, evictGeneralizeMemoForPaths, evictCheckSourceMemoForPaths, extractNudoImports, isNodeModulesPath, sidecarPathOf } from "@nudojs/core";
+import { extractAllLoadSpecs, resolveDepPath, sidecarSpecsOf } from "@nudojs/core/internal";
 import { createHash } from "node:crypto";
 
 function sourceFingerprint(s: string): string {
@@ -59,7 +51,7 @@ function projectConfigFingerprint(filePath: string): string {
     const cfg = proj?.config ?? {};
     return sourceFingerprint(
       JSON.stringify({
-        autoBind: cfg.interface?.autoBind ?? true,
+        autoBind: cfg.contract?.autoBind ?? true,
         analysis: cfg.analysis ?? null,
         env: cfg.env ?? null,
         check: cfg.check ?? null,
@@ -310,6 +302,8 @@ export async function handleNudoDepFileChanged(
   evictBPathCacheForFiles(parentList);
   evictAnalysisFileCacheForFiles(parentList);
   evictFnAnalysisCacheForFiles(parentList);
+  // path-env factory 进程全局；定向逐出若不清它，新 dep-hash 键会被旧 defineEnv 投毒
+  clearPathEnvCaches();
   for (const parent of parentList) {
     // LSP 本地 analysisCache 按 sourceHash 短路：侧车/dep 变更时源码未变，
     // 必须清掉并 force 重算，否则 hover/inlay/evaluator 诊断仍吃旧结果
@@ -369,7 +363,7 @@ export function evictModuleGraphCacheEntries(uris: string[]): void {
 }
 
 export function hasNudoDirectives(source: string): boolean {
-  return /@nudo:(case|mock|pure|skip|sample|refine|interface|import|env|mock-module|as|replace)\b/.test(source);
+  return /@nudo:(case|mock|pure|skip|sample|contract|import|env|mock-module|as|replace)\b/.test(source);
 }
 
 export function uriToFilePath(uri: string): string {
@@ -408,7 +402,10 @@ export function getCachedOrAnalyze(
     return cached.result;
   }
   // E5/A4：与 validateText 同源——buffer-aware loadModule 传入 analyzeFile
-  const result = analyzeFile(filePath, source, activeCases, undefined, loadModule);
+  // 惰性 case：默认不跑 @nudo:case；selectCase 后只跑选中
+  const caseMode =
+    activeCases && activeCases.size > 0 ? ("selected" as const) : ("none" as const);
+  const result = analyzeFile(filePath, source, activeCases, undefined, loadModule, caseMode);
   analysisCache.set(filePath, {
     version,
     result,
@@ -444,6 +441,8 @@ export type OpenDocumentLike = {
   version: number;
   getText(): string;
 };
+
+export type { LspDiagnostic };
 
 export type ValidateTextDeps = {
   sendDiagnostics: (params: { uri: string; diagnostics: LspDiagnostic[] }) => void;
@@ -551,7 +550,7 @@ export function checkToLspDiagnostics(
   loadModule?: (spec: string, fromFile: string) => string | undefined,
 ): LspDiagnostic[] {
   try {
-    // package.json#nudo.interface.autoBind 与 nudo.check（L2）覆盖 LSP 执法路径
+    // package.json#nudo.contract.autoBind 与 nudo.check（L2）覆盖 LSP 执法路径
     // —— 与 CLI runCheck 同源（design-cli-semantics §3.4）
     const proj = findProjectConfig(dirname(filePath));
     const autoBind = interfaceConfig(proj?.config).autoBind;
@@ -560,8 +559,10 @@ export function checkToLspDiagnostics(
       loadModule: loadModule ?? lspLoadModule,
       fromFile: filePath,
       ...(autoBind === false ? { autoBind: false } : {}),
+      ...(proj?.projectDir ? { projectDir: proj.projectDir } : {}),
       entryThrows: cCfg.entryThrows,
       ...(cCfg.ignoreThrows.length > 0 ? { ignoreThrows: cCfg.ignoreThrows } : {}),
+      skips: collectSkipReturns(source),
     });
     return report.issues
       .filter((i) => i.severity === "error" || i.severity === "warning")
@@ -656,8 +657,17 @@ export async function validateText(
   } else {
     try {
       // E5：deps.loadModule（buffer-aware）传入 analyzeFileAsync——未保存
-      // 侧车与 validate/hover/check 同源可见
-      result = await analyzeFileAsync(filePath, text, activeCases, undefined, deps.loadModule);
+      // 侧车与 validate/hover/check 同源可见。惰性 case：默认 none / selectCase 后 selected
+      const caseMode =
+        activeCases && activeCases.size > 0 ? ("selected" as const) : ("none" as const);
+      result = await analyzeFileAsync(
+        filePath,
+        text,
+        activeCases,
+        undefined,
+        deps.loadModule,
+        caseMode,
+      );
     } catch (err) {
       if (!stillCurrent()) return;
       deps.sendDiagnostics({
@@ -718,6 +728,9 @@ export async function validateText(
     evictBPathCacheForFiles([dirtyPath]);
     evictAnalysisFileCacheForFiles([dirtyPath]);
     evictFnAnalysisCacheForFiles([dirtyPath]);
+    // path-env 全局工厂 + abs-module mtime/size 孔：见 docs/design/cache-invalidation.md
+    clearPathEnvCaches();
+    evictAbsModuleCacheFiles([filePath]);
     await validateText(dirtyPath, doc.uri, doc.getText(), doc.version, deps, false, true);
   }
 }

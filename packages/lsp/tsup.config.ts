@@ -14,7 +14,7 @@ import { defineConfig } from "tsup";
  * Shebang is preserved from src/server.ts.
  */
 export default defineConfig({
-  entry: ["src/server.ts", "src/public-api.ts"],
+  entry: ["src/index.ts", "src/server.ts", "src/public-api.ts"],
   format: ["esm"],
   dts: true,
   clean: true,

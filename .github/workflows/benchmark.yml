@@ -14,13 +14,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        # v4（SHA 钉住：supply-chain；升级时更新 pin 与注释）
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        # v4
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        # v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 24
           cache: 'pnpm'
@@ -33,17 +36,35 @@ jobs:
       - name: Build packages
         run: npm run build
 
-      # 跑分 + 硬门禁：exact/unknown/error 回退或 >1.5x 性能回退即失败。
+      # 跑分 + 硬门禁：exact/unknown/error 回退或 >3.0x 性能回退即失败（见 benchmark/src/gate.js）。
       # runner 本身崩溃（引擎回归）同样失败；有意变更走 pnpm run benchmark:baseline。
+      #
+      # 3.0x 阈值（gate.js 硬编码）是有意保留的：baseline 在本地 Apple Silicon 上
+      # 采样（avg 825ms），GitHub ubuntu runner 常年慢 ~2.5–3x（每 case 冷启动
+      # `pnpm run infer`/tsx）。收到 2.0–2.5x 会把 runner 噪声当成回归、CI 变红。
+      # 若要收紧：先在 GH runner 上重跑 `pnpm run benchmark:baseline`（或改成
+      # 相对倍率/固定 perf runner），再改 gate.js 阈值——不要只改数字。
       - name: Run benchmark
         run: npm run benchmark
 
       - name: Gate against baseline
         run: npm run benchmark:gate
 
+      # OSS 真包语料门禁（commander/yargs/semver，离线、无 secret，~20s）。
+      # 只挂在 main：envelope（benchmark/oss/baseline.json）是绝对毫秒上限、
+      # 机器敏感（约 2.5–2.8x runner 余量）；PR 上每个 commit 跑容易把噪声
+      # 当回归。regenerate + gate 成对执行——gate 对比的是本次生成的
+      # docs/reports/oss-perf-baseline.json 与已提交 envelope。
+      - name: Run OSS benchmark
+        run: pnpm run benchmark:oss
+
+      - name: OSS baseline gate
+        run: pnpm run benchmark:oss:gate
+
       - name: Upload results
         if: always()
-        uses: actions/upload-artifact@v4
+        # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: benchmark-results
           path: benchmark/results

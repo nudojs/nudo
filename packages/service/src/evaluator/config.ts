@@ -1,11 +1,13 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname, relative, sep } from "node:path";
+import { setSessionCacheFromProject } from "../session-cache-limits.ts";
+import { setBForkBudgetLimit, getBForkBudgetLimit, MAX_B_TOTAL_FORKS } from "@nudojs/core/internal";
 
 export type NudoConfig = {
   env?: string[];
   mocks?: Record<string, string>;
-  interface?: {
-    /** 侧车 ambient 绑定总开关（check/LSP 执法与 interface 打印共用） */
+  contract?: {
+    /** 侧车 ambient 绑定总开关（check/LSP 执法与 contract 打印共用） */
     autoBind?: boolean;
     /**
      * emit 白名单（Phase 3，§7.3）：glob 数组，相对 projectDir。
@@ -13,7 +15,7 @@ export type NudoConfig = {
      */
     emit?: string[] | string;
   };
-  /** 分析范围与噪声档（design-analysis-scope.md / A2） */
+  /** 分析范围与噪声档（design-cli-semantics.md §7） */
   analysis?: {
     include?: string[] | string;
     exclude?: string[] | string;
@@ -25,9 +27,23 @@ export type NudoConfig = {
     callSiteBudget?: number;
     /** C0.5：求值命中闭对象缺字段 → nudo:missing-slot；默认 off */
     evalMissingSlot?: "off" | "warning";
+    /**
+     * B $fork 总次数上限（默认 5000）。env `NUDO_MAX_FORKS` 优先。
+     * n≥1 有限整数；非法值回默认。启动时 set 进 core（setBForkBudgetLimit）。
+     */
+    maxForks?: number;
   };
   /** 磁盘缓存（B3）：true → `.nudo/cache`；字符串 → 自定义根；false/省略 → 关 */
   cache?: boolean | string;
+  /**
+   * 进程内会话 LRU 上限（内存/速度权衡）。多项目开 IDE 时调低封顶；
+   * 单大仓 warm 命中可调高。0 = 关闭该层。env `NUDO_CACHE_MAX_*` 优先。
+   */
+  sessionCache?: {
+    maxFiles?: number;
+    maxFns?: number;
+    maxBRuns?: number;
+  };
   /** check 门禁（design-cli-semantics §3） */
   check?: {
     /** L2 入口 may-throw：error | warning | off（默认 error） */
@@ -55,6 +71,8 @@ export type AnalysisConfig = {
   callSiteBudget: number;
   /** C0.5 evaluation-driven missing-slot；默认 off */
   evalMissingSlot: "off" | "warning";
+  /** B $fork 总次数上限（已归一化；非法值回 core 默认） */
+  maxForks: number;
 };
 
 export type CheckConfig = {
@@ -132,7 +150,36 @@ export function analysisConfig(config: NudoConfig | null | undefined): AnalysisC
     diagnostics,
     callSiteBudget,
     evalMissingSlot: raw?.evalMissingSlot === "warning" ? "warning" : "off",
+    maxForks: parseMaxForks(raw?.maxForks) ?? MAX_B_TOTAL_FORKS,
   };
+}
+
+/** n≥1 有限整数才生效（向下取整）；非法/缺省 → undefined（由上层回默认） */
+function parseMaxForks(raw: unknown): number | undefined {
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 1) return undefined;
+  return Math.floor(raw);
+}
+
+/**
+ * 把 fork 预算写进 core（core 保持无 IO）。
+ * 优先级：env `NUDO_MAX_FORKS` > `package.json#nudo.analysis.maxForks` > 默认 5000。
+ * 约定：n≥1 有限整数；非法值回默认。返回实际生效值。
+ * 由 findProjectConfig / 宿主启动时调用（与 setSessionCacheFromProject 同时机）。
+ */
+export function applyBForkBudgetFromConfig(
+  config: NudoConfig | null | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  const fromEnv = parseMaxForks(
+    env.NUDO_MAX_FORKS === undefined ? undefined : Number(env.NUDO_MAX_FORKS),
+  );
+  const fromCfg = parseMaxForks(config?.analysis?.maxForks);
+  return setBForkBudgetLimit(fromEnv ?? fromCfg ?? MAX_B_TOTAL_FORKS);
+}
+
+/** 当前生效 fork 上限（调试/测试；与 core getBForkBudgetLimit 同源） */
+export function currentBForkBudgetLimit(): number {
+  return getBForkBudgetLimit();
 }
 
 /** 磁盘缓存根（B3）：config.cache / NUDO_CACHE_DIR / 默认关 */
@@ -155,12 +202,12 @@ export function diskCacheRoot(
 }
 
 /**
- * 归一化 `nudo.interface` 配置段。
+ * 归一化 `nudo.contract` 配置段。
  * - autoBind 默认 true
  * - emit：string | string[] → string[]（空 = 不限制路径）
  */
 export function interfaceConfig(config: NudoConfig | null | undefined): InterfaceConfig {
-  const raw = config?.interface?.emit;
+  const raw = config?.contract?.emit;
   const emit =
     raw === undefined
       ? []
@@ -170,7 +217,7 @@ export function interfaceConfig(config: NudoConfig | null | undefined): Interfac
           ? [raw]
           : [];
   return {
-    autoBind: config?.interface?.autoBind ?? true,
+    autoBind: config?.contract?.autoBind ?? true,
     emit,
   };
 }
@@ -236,7 +283,7 @@ export function findProjectConfig(
   const root = resolve("/");
 
   // 向上查找带 `nudo` 键的 package.json。子包自有 package.json（monorepo
-  // packages/*）时**不**在此停步——否则仓库根的 nudo.interface.autoBind
+  // packages/*）时**不**在此停步——否则仓库根的 nudo.contract.autoBind
   // 对该子包完全不可见。
   while (dir !== root) {
     const pkgPath = resolve(dir, "package.json");
@@ -244,7 +291,12 @@ export function findProjectConfig(
       try {
         const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
         if (pkg.nudo) {
-          return { config: pkg.nudo as NudoConfig, projectDir: dir };
+          const nudo = pkg.nudo as NudoConfig;
+          // 会话 LRU 上限随项目配置接线（env 仍优先；见 session-cache-limits）
+          setSessionCacheFromProject(nudo.sessionCache);
+          // fork 总次数预算：env NUDO_MAX_FORKS > nudo.analysis.maxForks > 默认
+          applyBForkBudgetFromConfig(nudo);
+          return { config: nudo, projectDir: dir };
         }
       } catch {
         // ignore parse errors
@@ -255,5 +307,7 @@ export function findProjectConfig(
     dir = parent;
   }
 
+  // 无项目 nudo 配置：仍应用 env 层（NUDO_MAX_FORKS）
+  applyBForkBudgetFromConfig(null);
   return null;
 }

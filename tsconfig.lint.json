@@ -1,30 +1,12 @@
 {
-  "extends": "./tsconfig.base.json",
+  "extends": ["./tsconfig.base.json", "./tsconfig.paths.json"],
   "compilerOptions": {
-    "rootDir": ".",
-    "baseUrl": ".",
-    "paths": {
-      "@nudojs/core": ["packages/core/src"],
-      "@nudojs/core/*": ["packages/core/src/*"],
-      "@nudojs/parser": ["packages/parser/src"],
-      "@nudojs/parser/*": ["packages/parser/src/*"],
-      "@nudojs/cli": ["packages/cli/src"],
-      "@nudojs/cli/*": ["packages/cli/src/*"],
-      "@nudojs/service": ["packages/service/src"],
-      "@nudojs/service/*": ["packages/service/src/*"],
-      "@nudojs/service/evaluator": ["packages/service/src/evaluator/evaluator-api.ts"],
-      "@nudojs/lsp": ["packages/lsp/src"],
-      "@nudojs/lsp/*": ["packages/lsp/src/*"],
-      "@nudojs/harvester": ["packages/harvester/src"],
-      "@nudojs/harvester/*": ["packages/harvester/src/*"],
-      "@nudojs/env": ["packages/env/src"],
-      "@nudojs/env/*": ["packages/env/src/*"]
-    }
+    "rootDir": "."
   },
   "include": [
     "packages/core/src",
     "packages/parser/src",
-    "packages/cli/src",
+    "packages/nudojs/src",
     "packages/service/src",
     "packages/lsp/src",
     "packages/vite-plugin/src",

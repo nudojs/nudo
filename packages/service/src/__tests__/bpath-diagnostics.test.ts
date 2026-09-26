@@ -75,4 +75,29 @@ function f() {
     const d = collectBPathDiagnostics(src);
     expect(d.builtinUnknown).toHaveLength(0);
   });
+
+  it("static require / require.resolve are not builtin-unknown", () => {
+    const src = `
+const a = require("./a.js");
+const b = require(\`./b.js\`);
+const c = require("./" + "c" + ".js");
+const d = require.resolve("./d.js");
+function f() { return a; }
+`;
+    const d = collectBPathDiagnostics(src);
+    expect(d.builtinUnknown.map((b) => b.name)).not.toContain("require");
+    expect(d.builtinUnknown).toHaveLength(0);
+  });
+
+  it("dynamic require / require.resolve stay honest builtin-unknown", () => {
+    const src = `
+function f(name) {
+  const m = require(name);
+  const p = require.resolve("./" + name + ".js");
+  return m;
+}
+`;
+    const d = collectBPathDiagnostics(src);
+    expect(d.builtinUnknown.map((b) => b.name)).toContain("require");
+  });
 });

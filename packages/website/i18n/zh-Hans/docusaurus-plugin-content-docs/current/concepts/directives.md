@@ -1,5 +1,4 @@
 ---
-sidebar_position: 3
 description: "全部 @nudo: 指令（case、mock、pure、skip、sample、refine、import、env、mock-module、as、replace）的语法、约束与示例完整参考。"
 ---
 
@@ -7,7 +6,7 @@ description: "全部 @nudo: 指令（case、mock、pure、skip、sample、refine
 
 指令是控制 Nudo 如何分析代码的结构化注释。它们使用 `@nudo:` 命名空间以避免与 JSDoc 和其他工具冲突。将指令放在函数上方的块注释中。
 
-**interface 产品**（精化契约）主路径在侧车文件——`*.nudo.js` 模块自动绑定源码同名导出，`@nudo:refine` / `@nudo:interface` 是其兼容的源码内形态。见 [@nudo:refine](#nudorefine--refinement-contract) 与 [`nudo contract`](../guides/cli.md#nudo-contract) 命令。
+**契约产品**主路径在侧车文件——`*.nudo.js` 模块自动绑定源码同名导出，`@nudo:contract` 是其源码内形态。见 [@nudo:contract](#nudocontract--source-contract) 与 [`nudo contract`](../guides/contract.md) 命令。
 
 ## 指令语法
 
@@ -36,13 +35,13 @@ async function fetchUser(id) {
 }
 ```
 
-两种形态解析完全一致——尤其是 mock 表达式的单行规则对两者都适用（见 [@nudo:mock](#nudo--mock-external-dependencies)）。当 `//` 前缀的指令可能被误读为被注释掉的代码时，优先使用块注释形态。
+两种形态解析完全一致——尤其是 mock 表达式的单行规则对两者都适用（见 [@nudo:mock](./mocking.md)）。当 `//` 前缀的指令可能被误读为被注释掉的代码时，优先使用块注释形态。
 
 ---
 
 ## @nudo:case — 调试见证
 
-case 是 **debug 见证**：Nudo 为场景执行而使用的具体输入。它不是 interface 产品——精化契约住在 `*.nudo.js` 侧车（见 [@nudo:refine](#nudorefine--refinement-contract)）。`@nudo:case` 仍支持 `nudo test` 断言与 LSP 场景切换。请优先使用**具体**实参；遗留的符号化 `T.*` 已弃用，产品示例不再使用。
+case 是 **debug 见证**：Nudo 为场景执行而使用的具体输入。它不是契约产品——契约住在 `*.nudo.js` 侧车 / `@nudo:contract`（见 [@nudo:contract](#nudocontract--source-contract)）。`@nudo:case` 仍支持 `nudo test` 断言与 LSP 场景切换。case 实参使用具体值或约束构建器。
 
 提供具名执行用例。每个用例定义**具体**输入，供 Nudo 调试场景执行函数时使用。
 
@@ -54,12 +53,12 @@ case 是 **debug 见证**：Nudo 为场景执行而使用的具体输入。它�
 ```
 
 - **name** — 用例的字符串标识符（如 `"double digits"`）。
-- **args** — 逗号分隔的**具体**参数（`5`、`"hello"`、`{…}`）。遗留的符号化 `T.*` 已弃用。
-- **expected**（可选）— `=>` 之后的期望结果，用于校验。
+- **args** — 逗号分隔的**具体**参数（`5`、`"hello"`、`{…}`）。
+- **expected**（可选）— `=>` 之后的类型表达式（具体字面量或约束构建器，与 args 同一文法），由 `nudo test` 对推断结果断言。
 
 ### 示例
 
-```javascript
+```javascript verify
 /**
  * @nudo:case "positive numbers" (5, 3)
  * @nudo:case "negative result" (1, 10)
@@ -69,7 +68,7 @@ function subtract(a, b) {
 }
 ```
 
-```javascript
+```javascript verify
 /**
  * @nudo:case "strings" ("hello")
  * @nudo:case "numbers" (42)
@@ -84,7 +83,7 @@ function process(x) {
 
 带有预期结果：
 
-```javascript
+```javascript verify
 /**
  * @nudo:case "basic" ("hello") => 5
  * @nudo:case "empty" ("") => 0
@@ -94,175 +93,15 @@ function lengthOf(s) {
 }
 ```
 
-## @nudo:mock — Mock 外部依赖 {#nudo--mock-external-dependencies}
+## @nudo:mock — Mock 外部依赖
 
-在求值期间将外部依赖替换为 mock 实现。适用于 `fetch`、文件系统 API 或其他 Nudo 无法直接执行的代码。
-
-### 语法
-
-支持五种形式。**所有内联表达式必须写在单行内**——见下方警告。
-
-**1. 单行箭头函数。** body 是普通 JavaScript；参数接收类型值：
-
-```text
-@nudo:mock name = (arg) => body
-```
-
-**2. Mock helper** — `stub()`、`spy()`、`mock()`，可链式调用 `.returns(...)`、`.resolves(...)`、`.rejects(...)`、`.withArgs(...)`、`.callsFake(...)`：
-
-```text
-@nudo:mock name = stub().returns(value)
-```
-
-**3. sinon 风格等价物** — `sinon.stub()` / `sinon.spy()`，支持相同链式调用：
-
-```text
-@nudo:mock name = sinon.stub().returns(value)
-```
-
-**4. 约束构建器表达式**（或具体值）：
-
-```text
-@nudo:mock name = number()
-@nudo:mock retries = 3
-```
-
-**5. 从模块导入** — 模块中必须定义与 mock 同名的绑定：
-
-```text
-@nudo:mock name from "path"
-```
-
-- **name** — 要 mock 的标识符（如 `fetch`、`fs`）。
-- **path** — 提供 mock 的模块路径。
-
-**警告：表达式必须单行。** 解析器只读取到行尾，多行表达式会在第一行被截断并报 `nudo:mock-invalid`。以下写法**不**可用：
-
-```text
-@nudo:mock fetch = (url) => ({ ok: true,
-  json: () => ({ id: 1 })
-})
-```
-
-截断行的真实诊断：
-
-```text
-[warning] example.js:0:0 Mock expression "(url) => ({ ok: true," could not be parsed as a known pattern (nudo:mock-invalid)
-[warning] example.js:10:9 Cannot resolve 'json' on unknown value (nudo:unknown-recv)
-```
-
-**警告：箭头函数 mock body 内不要写构建器调用。** 约束构建器只出现在指令类型表达式中（case 参数、`@nudo:skip`、`@nudo:as` 等）。mock body 内只能写普通 JavaScript——普通对象和闭包——或改用 `stub().returns(...)` / `stub().resolves(...)` helper。
-
-### 示例
-
-用箭头函数 mock `fetch`。body 是单行普通 JavaScript：
-
-```javascript
-/**
- * @nudo:mock fetch = (url) => ({ ok: true, json: () => ({ id: 1, name: "Alice" }) })
- * @nudo:case "user" (1)
- */
-async function fetchUser(id) {
-  const res = await fetch(`/api/users/${id}`);
-  return res.json();
-}
-```
-
-**推断输出：**
-
-```text
-=== fetchUser ===
-
-debug "user": (1) => promise<{ id: 1, name: "Alice" }>
-```
-
-决议 Promise 的 mock helper——`stub().resolves(value)` 让每次调用返回 `promise<value>`：
-
-```javascript
-/**
- * @nudo:mock fetch = stub().resolves({ ok: true, json: () => ({ id: 1, name: "Alice" }) })
- * @nudo:case "user" (1)
- */
-async function fetchUser(id) {
-  const res = await fetch(`/api/users/${id}`);
-  return res.json();
-}
-```
-
-**这里并非同样结果：**resolved 对象的闭包槽位不被桥接——`json` 到达时无 body（`json: () => ?`），于是 `res.json()` 求值为 `unknown`，本例实际推断为 `promise<unknown>`（abs `promise<unknown> #partial`），而非箭头 mock 的 `promise<{ id: 1, name: "Alice" }>`。`resolves` 对纯数据保持完整精度（`stub().resolves({ ok: true, id: 1 })` → `promise<{ ok: true, id: 1 }>`）；mock 结果要被调用时，用箭头函数形态。同步 helper：
-
-```javascript
-/**
- * @nudo:mock getPort = stub().returns(8080)
- * @nudo:case "default" ()
- */
-function readPort() {
-  return getPort();
-}
-```
-
-**推断输出：**
-
-```text
-=== readPort ===
-
-debug "default": () => 8080
-```
-
-类型值表达式直接把名称绑定到类型值：
-
-```javascript
-/**
- * @nudo:mock retries = number()
- * @nudo:case "plan" ()
- */
-function plan() {
-  return retries + 1;
-}
-```
-
-**推断输出：**
-
-```text
-=== plan ===
-
-debug "plan": () => number
-```
-
-从模块导入——模块中必须定义与 mock 同名的绑定：
-
-```javascript
-/**
- * @nudo:mock fs from "./mocks/fs.js"
- * @nudo:case "read" (string())
- */
-function readConfig(path) {
-  return fs.readFileSync(path, "utf-8");
-}
-```
-
-```javascript
-// mocks/fs.js
-const fs = { readFileSync: (path, encoding) => "{ \"port\": 3000 }" };
-```
-
-**推断输出：**
-
-```text
-=== readConfig ===
-
-debug "read": (string) => unknown
-
-[warning] read-config.js:6:9 Built-in API "fs" is not covered by Nudo's type inference (nudo:builtin-unknown)
-```
-
-**当前限制：** `from` mock 未被注入 B 路径——而生产分析已 Abs 原生（TypeValue 求值路径已删除），该 mock 目前在所有路径上都会被丢弃：名称按未知全局求值（`nudo:builtin-unknown`），或对真实 Node 全局直接触达裸调用。单行箭头函数形态可正常生效；在 `from` 被注入 B 路径之前请优先使用它。
+在求值期间将外部依赖替换为 mock 实现——`fetch`、文件系统 API 或其他 Nudo 无法直接执行的代码。完整语法（五种形式）、单行规则、B-path 注意事项与可运行示例：[模拟外部依赖](./mocking.md)。
 
 ---
 
 ## @nudo:pure — 标记纯函数
 
-将函数标记为纯函数，使引擎可以记忆化结果。相同的 Abs 输入产生相同的输出，因此重复调用可以复用缓存的结果。
+将函数标记为纯函数。Abs `fn` 值携带纯标记，求值器**按实参 Abs 记忆化调用结果**（同实参命中缓存）。仅用于无副作用函数；加不加指令分析结果都正确。
 
 ### 语法
 
@@ -272,7 +111,7 @@ debug "read": (string) => unknown
 
 ### 示例
 
-```javascript
+```javascript verify
 /**
  * @nudo:pure
  * @nudo:case "add" (number(), number())
@@ -286,7 +125,7 @@ function add(a, b) {
 
 ## @nudo:skip — 跳过求值
 
-跳过抽象解释。引擎不求值函数体。没有返回类型表达式时，函数报告为 `Skipped (no return type declared)`；在指令后添加类型值表达式即可声明返回类型。
+跳过函数体的抽象解释：引擎不求值它，所以被跳过的函数不会产生引擎债（`nudo:unknown-inference`）噪声。没有返回类型表达式时，函数报告为 `skipped (no return type declared)`，且 `nudo check` 把它的返回值打印为 `any`（无约束——不是保留给推导失败的 `unknown`）；在指令后添加约束构造器表达式即可声明返回类型。
 
 ### 语法
 
@@ -297,9 +136,15 @@ function add(a, b) {
 
 - **returnsExpr**（可选）— 用作返回类型的类型值表达式。
 
+### 范围
+
+- **不求值函数体。** 声明的类型（或 `any`）成为签名返回值；被跳过的函数体不参与入口 may-throw（L2）求值。
+- **形参义务保留。** `@nudo:contract` 前置条件仍会门禁调用点，形参展示仍来自手写契约——对带 `@nudo:contract x positive` 的被跳过函数 `needsPositive`，`nudo check` 报告 `needsPositive(x: number) => any`。
+- **返回契约仍被检查。** `@nudo:contract return positive` 之下的 `@nudo:skip lit(0)` 会报告 `nudo:constraint-violated`。
+
 ### 示例
 
-```javascript
+```javascript verify
 /**
  * @nudo:skip
  */
@@ -309,15 +154,14 @@ function heavyComputation(data) {
 }
 ```
 
-**推断输出：**
+**推断输出（`nudo test`）：**
 
 ```text
 === heavyComputation ===
-
-Skipped (no return type declared)
+  skipped (no return type declared)
 ```
 
-```javascript
+```javascript verify
 /**
  * @nudo:skip number()
  */
@@ -327,12 +171,11 @@ function unannotatedHeavy(x) {
 }
 ```
 
-**推断输出：**
+**推断输出（`nudo test`）：**
 
 ```text
 === unannotatedHeavy ===
-
-Skipped (declared): number
+  skipped (declared): number
 ```
 
 ---
@@ -351,11 +194,11 @@ Skipped (declared): number
 
 ---
 
-## @nudo:refine — 精化契约 {#nudorefine--refinement-contract}
+## @nudo:contract — 源内契约 {#nudocontract--source-contract}
 
-把精化契约挂到参数或返回值。约束以 Pred 进入 Abs，**参与代数**（`x>0` ⇒ `x+1>1`），不只是调用点挡板。
+把契约挂到参数或返回值。约束以 Pred 进入 Abs，**参与代数**（`x>0` ⇒ `x+1>1`），不只是调用点挡板。
 
-`@nudo:interface` 是 `@nudo:refine` 的**完全等价别名**（解析为同一源码内精化）；CLI / LSP / 诊断中的产品名为 **interface**。
+产品名：**contract**（侧车 `*.nudo.js` / `@nudo:contract`）；部分诊断码仍保留历史 `interface` 词元（`nudo:interface-param-mismatch` 等）。
 
 ### 主路径：侧车自动绑定
 
@@ -408,7 +251,8 @@ calc.js
 | `union(...cs)` | 域之并 | `union(lit(42), lit("a"))` |
 | `fn(params, returns?, { throws? })` | 一等函数接口 | `fn({ x: number() }, number())` |
 | `.gt(n)` `.ge(n)` `.lt(n)` `.le(n)` `.int()` | 数值界（链式） | `number().gt(0).int()` |
-| `.min(n)` `.max(n)` | 字符串长度界（`length(s)` pred） | `string().min(1)` |
+| `.min(n)` `.max(n)` | 长度界——`length(s)` pred（字符串/数组） | `string().min(1)` |
+| `.length(n)` | 长度等值界（`length(s) = n`） | `string().length(3)` |
 | `.shift(n)` | 每个常数界整体 `+n` 平移 | `positive.shift(1)` |
 | `and(...cs)` | 标量合取（顶层函数，不是链式方法） | `and(positive, number().lt(10))` |
 | `partial(c)` / `pick(c, keys)` / `omit(c, keys)` | 形状工具 | `partial(user)` |
@@ -425,9 +269,9 @@ calc.js
 ### 源码内形态
 
 ```text
-@nudo:refine <param> <constraint>
-@nudo:refine return <constraint>
-@nudo:interface <param> <constraint>   // 别名
+@nudo:contract <param> <constraint>
+@nudo:contract return <constraint>
+@nudo:contract <param> <constraint>   // 别名
 ```
 
 - **param** — 参数名，或字面量 `return` 表示后置
@@ -439,15 +283,15 @@ calc.js
 /// @nudo:import { positive, delay } from "./shapes.nudo.js"
 
 /**
- * @nudo:refine x positive
- * @nudo:refine return positive
+ * @nudo:contract x positive
+ * @nudo:contract return positive
  */
 function inc(x) {
   return x + 1;
 }
 
 /**
- * @nudo:refine ms delay
+ * @nudo:contract ms delay
  */
 function setDelay(ms) {
   if (ms > 0) return ms;
@@ -468,7 +312,7 @@ export const user = shape({
 });
 
 /**
- * @nudo:refine u user
+ * @nudo:contract u user
  */
 function register(u) {
   return `${u.id}:${u.name}`;
@@ -479,7 +323,7 @@ function register(u) {
 
 ## @nudo:import — 约束模板引入
 
-为 `@nudo:refine` 从 `*.nudo.js` 模块引入约束模板。**文件级**指令，三斜线注释。
+为 `@nudo:contract` 从 `*.nudo.js` 模块引入约束模板。**文件级**指令，三斜线注释。
 
 ### 语法
 
@@ -488,8 +332,8 @@ function register(u) {
 /// @nudo:import * as ns from "./shapes.nudo.js"
 ```
 
-- **具名** — 绑定 `@nudo:refine` 使用的导出模板名
-- **命名空间** — 可解析；经 `ns.foo` 展开模板暂不支持
+- **具名** — 绑定 `@nudo:contract` 使用的导出模板名
+- **命名空间** — `@nudo:import * as ns from "…"` 展开为 `@nudo:contract` 中的 `ns.exportName` 引用
 
 ### 示例
 
@@ -497,7 +341,7 @@ function register(u) {
 /// @nudo:import { positive } from "./shapes.nudo.js"
 
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function inc(x) {
   return x + 1;
@@ -618,25 +462,13 @@ import { debounce, throttle } from "lodash";
 // debounce 来自 mock；throttle 正常解析
 ```
 
-### 项目级配置
-
-```json
-{
-  "nudo": {
-    "mocks": {
-      "axios": "./nudo-mocks/axios.js"
-    }
-  }
-}
-```
-
-文件级 `@nudo:mock-module` 指令会覆盖同一模块的项目级 mock。
+模块 mock 逐文件用 `@nudo:mock-module` 声明——不存在项目级 mock 配置。
 
 ---
 
 ## @nudo:as — 类型断言
 
-覆盖下一条语句的值类型。类似 TypeScript 的 `as` 关键字，但以行注释的形式放在语句上方。影响 `VariableDeclaration`、`ReturnStatement` 和 `ExpressionStatement`。
+覆盖下一条语句的值类型。类似 TypeScript 的 `as` 关键字，但以行注释的形式放在语句上方。在 B 路径上作用于被覆盖语句的 `VariableDeclaration` 初始化值与 `ReturnStatement` 返回值。
 
 ### 语法
 
@@ -706,14 +538,21 @@ const result = a + b;
 
 | 指令 | 语法 | 用途 |
 |-----------|--------|---------|
-| `@nudo:case` | `"name" (args...)` 或 `"name" (args) => type` | 提供具名执行用例 |
+| `@nudo:case` | `"name" (args...)` 或 `"name" (args) => type` | 调试 / `nudo test` 见证（不是契约产品） |
 | `@nudo:mock` | `name = expr` 或 `name from "path"` | Mock 外部依赖 |
-| `@nudo:pure` | （无参数） | 标记纯函数以启用记忆化 |
+| `@nudo:pure` | （无参数） | 标记纯函数 —— 求值器按实参记忆化调用结果 |
 | `@nudo:skip` | `[returnsExpr]` | 跳过求值，使用已有类型信息 |
 | `@nudo:sample` | `N` | 保留的无效果指令（已解析，未消费） |
-| `@nudo:refine` / `@nudo:interface` | `param constraint` / `return constraint` | 源码内精化契约（别名对；主路径是 `*.nudo.js` 侧车自动绑定） |
-| `@nudo:import` | `{ name } from "spec"`（文件级 `///`） | 为 `@nudo:refine` 引入 `*.nudo.js` 约束模板 |
+| `@nudo:contract` | `param constraint` / `return constraint` | 源码内契约（主路径是 `*.nudo.js` 侧车自动绑定） |
+| `@nudo:import` | `{ name } from "spec"`（文件级 `///`） | 为 `@nudo:contract` 引入 `*.nudo.js` 约束模板 |
 | `@nudo:env` | `name1, name2`（文件级 `///`） | 声明运行时环境 API |
 | `@nudo:mock-module` | `"module" from "path"`（文件级 `///`） | 替换导入的模块为 mock |
 | `@nudo:as` | `typeValueExpr`（行注释 `//`） | 覆盖下一条语句的值类型 |
 | `@nudo:replace` | `targetExpr typeValueExpr`（行注释 `//`） | 替换下一条语句中子表达式的类型 |
+
+## 下一步
+
+- [Abs](./abs.md) —— 指令中的类型表达式
+- [Mocking](./mocking.md) —— `@nudo:mock` 与 `@nudo:mock-module`
+- [契约](../guides/contract.md) —— `*.nudo.js` 侧车与 `@nudo:contract`
+- [CLI 使用指南](../guides/cli.md) —— `check` / `test` / `contract` / `export` / `health`

@@ -1,17 +1,10 @@
 ---
-sidebar_position: 1
-description: "Drive Nudo from the terminal: check signatures, report cases, draft contracts, export projections — the six primary verbs."
+description: "Drive Nudo from the terminal — task-oriented workflows for the product verbs (check / test / contract / export / health / migrate)."
 ---
 
 # CLI Usage
 
-The `nudo` CLI is the product surface for type inference on `.js`, `.mjs`, and `.ts` files. Install it globally or via `npx`:
-
-```bash
-npm install -g @nudojs/cli
-# or
-pnpm add -g @nudojs/cli
-```
+Task-oriented walkthroughs for the `nudo` CLI on `.js`, `.mjs`, and `.ts` files. Install via `npx` — see [Installation](../getting-started/installation.md). **Full flag / exit-code tables:** [CLI Reference](../api/cli-reference.md).
 
 ## Primary verbs
 
@@ -23,21 +16,21 @@ nudo — JavaScript types, computed
   nudo contract <path>             # draft / emit interfaces
   nudo export <path>               # project dts / guard / schema / standard
   nudo health [paths]              # project health & drift
-  nudo env harvest <pkg>           # harvest @types into an env
 ```
 
-There is **no** observation verb: no `nudo infer`, no `nudo show`, no `nudo types` as a primary command, and no top-level `nudo watch`. Observation lives in the output of `check` / `test` and in IDE hover.
+Observation lives in the output of `check` / `test` and in IDE hover — not a separate primary command.
 
-**Day 0:** `nudo check` (signatures) and `nudo test` (cases).  
-**Day 1:** `nudo contract` + `nudo check`.  
+**Observation:** `nudo check` (signatures + gate). Optional debug: `nudo test` (case witnesses).
+**Contracts:** `nudo contract` + `nudo check`.
 **Ecosystem:** `nudo export`.
+**Off tsc:** `nudo migrate` (one-way `status` → `strip` → `verify` → `retire`).
 
 | Want to know | Run |
 |--------------|-----|
 | Entry signatures / any / unknown / throws | `nudo check <path>` (prints `signatures` even on success) |
 | Per-call-site ground truth / narrowing | `nudo test <path>` (prints every case, including synthetic `call@` / `entry@`) |
 | Usage-site argument shapes | `nudo check` / `test` / `contract` `--from <paths…>` |
-| Algebra face term/pred/conf | `nudo check --abs` (or `test --abs`) |
+| Algebra face (shape + conf; `--generalize` adds term/pred α) | `nudo check --abs` (or `test --abs`) |
 | Machine-readable | `nudo check --json` / `nudo test --json` |
 | Interactive | IDE hover / inlay |
 
@@ -52,71 +45,32 @@ nudo check <path> [--watch|-w] [--json] [--verbose] [--abs]
            [--from paths…] [--ignore-throws names] [--entry-throws error|warning|off]
 ```
 
-Given `user.js`:
-
-```js
-export function getName(user) {
-  return user.name;
-}
-
-export function subtract(a, b) {
-  return a - b;
-}
-```
-
 ```bash
 nudo check user.js
 ```
 
 ```text
+nudo check  user.js
+FAILED
+  1 error · 0 warning · 0 info · 2 fn
+
 signatures
   getName(user: any) => any  throws TypeError
-  subtract(a: any, b: any) => any
+  subtract(a: any, b: any) => number
+
 issues
-  [error] getName (export): may throw TypeError  (nudo:entry-may-throw)
+  [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
+      actual:   getName(user: any) => any    throws TypeError
+      expected: entry total, or @nudo:throws / try-catch
+      → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
 ```
 
-Unconstrained entry parameters display as **`any`**. `unknown` means inference failed (engine debt) — it is never the default for an unconstrained entry parameter.
+Unconstrained entry parameters display as **`any`**. `unknown` means inference failed (engine debt) — it is never the default for an unconstrained entry parameter. In `[ERROR L# name]`, `L#` is the **line number** of the offending call/declaration — not a contract layer (L1/L2 are the layers). The sample above prints `L1` because `getName` is declared on line 1 of that file — its layer is L2.
 
-### Obligation layers
+- **Semantics** (L1 explicit contracts / L2 entry throws, exit codes, filtering): [nudo check](./check.md)
+- **Options & config** (`--watch` / `--json` / `--abs` / `--from` / `--ignore-throws` / `--entry-throws`, `package.json#nudo.check`): [CLI Reference](../api/cli-reference.md#nudo-check)
 
-| Layer | Source | `check` behavior |
-|-------|--------|------------------|
-| **L1 explicit** | `*.nudo.js` / `@nudo:refine` / `@nudo:interface`; call-site evidence can supply domain | Violation → **error** |
-| **L2 default JS contract** | Runtime boundary semantics when nothing is narrowed | Undigested may-throw on **entry/export** functions → **error** (`nudo:entry-may-throw`) |
-
-Without an explicit contract, the contract degrades to the JS runtime boundary: entry params are `any`, operations on `any`/nullish values may throw, and exported functions must not silently carry undeclared, uncaptured throws.
-
-**L2 only gates entry/export functions.** Internal helpers may throw; `check` does not fail the run for internal may-throw. `try`/`catch` and refine can clear L2 on a path.
-
-### Options
-
-| Option | Description |
-|--------|-------------|
-| `--watch` / `-w` | Re-run on file changes (watch is a **flag**, not a verb) |
-| `--json` | Machine-readable diagnostics + signatures |
-| `--verbose` | Extra detail for diagnosis |
-| `--abs` | Print the Abs algebra face (term / pred / conf) |
-| `--from <paths…>` | Usage-site files (tests/apps) that inject call records — renamed from `--callsites` |
-| `--ignore-throws <names>` | Comma-separated L2 throw types to ignore (e.g. `TypeError`); does **not** swallow L1 contract violations |
-| `--entry-throws error\|warning\|off` | Severity for L2 entry may-throw (default `error`) |
-
-`package.json` configuration:
-
-```json
-{
-  "nudo": {
-    "check": {
-      "ignoreThrows": ["TypeError"],
-      "entryThrows": "error"
-    }
-  }
-}
-```
-
-Exit code `1` on any error-level diagnostic (L1 or non-ignored L2).
-
-`nudo check` is the CI gate. Prefer it over legacy observation commands.
+`nudo check` is the CI gate.
 
 ---
 
@@ -125,12 +79,12 @@ Exit code `1` on any error-level diagnostic (L1 or non-ignored L2).
 Report every inferred case and run declared `@nudo:case` assertions.
 
 ```bash
-nudo test <path> [--watch|-w] [--from paths…] [--freeze[=update]] [--json] [--abs]
+nudo test <path> [--watch|-w] [--from paths…] [--freeze[=mode]] [--dry-run] [--exit-on-diff] [--json] [--abs]
 ```
 
 Given `math.js`:
 
-```js
+```js verify
 export function subtract(a, b) {
   return a - b;
 }
@@ -145,22 +99,24 @@ nudo test math.js
 
 ```text
 === subtract ===
-  call@L6  (5, 3) => 2
-  call@L7  (1, 10) => -9
+  call@L5  (5, 3) => 2
+  call@L6  (1, 10) => -9
+
 assertions
-  — 0 passed · 0 failed · 2 unchecked (no declared @nudo:case expectations)
+  — 0 passed · 0 failed · 0 unchecked (no declared @nudo:case expectations; 2 synthetic case(s) printed above)
 ```
 
 - Synthetic `call@` / `entry@` cases **print by default** — that is the call-site observation surface.
 - When usage-site `call@` cases exist, the analyzer does **not** also synthesize `entry@` for that function.
 - Only `@nudo:case` directives **with `=> expected`** enter pass/fail; failures affect the exit code.
-- `--from <paths…>` harvest usage-site call shapes (formerly `--callsites`).
-- `--freeze[=update]` solidifies synthesized cases as directives (formerly `infer --emit-cases`).
+- `--from <paths…>` harvest usage-site call shapes.
+- `--freeze[=mode]` solidifies synthesized cases as directives: `--freeze` (no value, add mode) adds new witnesses; `--freeze=update` re-synchronizes previously generated directives.
+- `--dry-run` (with `--freeze`) prints a unified diff instead of writing; `--exit-on-diff` (with `--freeze --dry-run`) exits 1 when the diff is non-empty.
 - `--json` / `--abs` mirror `check`; `test --json` also carries an `assertions` summary (`passed`/`failed`/`unchecked`) and still exits 1 when a declared assertion fails.
 
 ### Example with declared assertions
 
-```js
+```js verify
 /**
  * @nudo:case "double" (2) => 4
  */
@@ -176,18 +132,17 @@ nudo test file.js
 ```text
 === double ===
   debug "double"  (2) => 4
+
 assertions
   ✓ 1 passed · 0 failed · 0 unchecked
   [ok]   double  case "double" → 4
-assertions
-  ✓ 1 passed · 0 failed · 1 unchecked
 ```
 
 ---
 
 ## `nudo contract`
 
-Draft, print, or emit effective interfaces (handwritten / generated / implicit layers). Replaces the old `nudo interface` / `nudo refine` verbs.
+Draft, print, or emit effective interfaces (handwritten / generated / implicit layers).
 
 ```bash
 nudo contract <path> [--emit] [--draft] [--write] [--fn name] [--all]
@@ -213,7 +168,7 @@ nudo contract --emit src/lib.js --all --dry-run --exit-on-diff  # CI drift gate
 Project Abs into ecosystem artifacts. This is the **only** CLI path for `.d.ts`, guards, and schema projections.
 
 ```bash
-nudo export <path> [--format dts|guard|schema|standard|zod|all] [--dialect zod] [--out dir]
+nudo export <path> [--format dts|guard|schema|standard|all] [--dialect zod] [--out dir]
 ```
 
 ```bash
@@ -229,20 +184,15 @@ nudo export src/user.js --format all --out dist
 | `guard` | Runtime type-guard functions |
 | `schema` | Schema **source** projection for a dialect (default dialect: `zod`) → `*.nudo.schema.<dialect>.ts` |
 | `standard` | **Standard Schema v1** runtime modules (`~standard`, vendor `nudo`) → `<fn>.nudo.standard.ts` |
-| `zod` | **Deprecated alias** of `schema --dialect zod` (removed next major) |
 | `all` | dts + guard + schema + standard |
 
-`--dialect` currently accepts `zod`. Constant numeric bounds / `int` / string length bounds from Abs preds are projected when expressible; unprojectable preds stay on the base shape and are listed under `dropped preds`.
-
-`standard` is the ecosystem interop path: generated modules implement [Standard Schema](https://standardschema.dev) `validate` without depending on Zod/Valibot. When a sidecar / `@nudo:refine` contract exists, parameter validators use **contract domains** (`<fn>_<param>` via `constraintToEntryAbs`); without a contract, args are the **join of observed call-site Abs** (not a single literal). It is a runtime gate — not a replacement for `nudo check`.
-
-`.d.ts` and schema projections are **one-way and lossy** — Abs is the source of truth. Export is a one-shot shipping command; it does not take `--watch`.
+Full per-format semantics and exit codes: [CLI Reference](../api/cli-reference.md#nudo-export).
 
 ---
 
 ## `nudo health`
 
-Project health: analysis errors and solidification drift. Renamed from `nudo doctor`.
+Project health: analysis errors and solidification drift.
 
 ```bash
 nudo health [paths…] [--watch] [--from paths…] [--json]
@@ -262,58 +212,16 @@ nudo test lib.js --from test.js --freeze=update
 
 ---
 
-## `nudo env harvest`
-
-Harvest `@types/<pkg>` into a Nudo env module.
-
-```bash
-nudo env harvest <pkg> [--out dir]
-```
-
-```bash
-nudo env harvest node
-```
-
-Then reference the generated env from source:
-
-```ts
-/// @nudo:env ./nudo-harvest-node.ts
-```
-
----
-
-## Migration / deprecated verbs
-
-Old verbs remain temporarily with **stderr deprecation warnings** and map to the new surface. They will be removed in the next major; they are not permanent silent synonyms.
-
-| Deprecated | Use instead |
-|------------|-------------|
-| `nudo infer <path>` | Signatures → `nudo check <path>`; case report → `nudo test <path>`; dts → `nudo export --format dts` |
-| `nudo types <path>` | `nudo check --abs` |
-| `nudo interface` / `nudo refine` | `nudo contract` |
-| `nudo generate` / `nudo emit` / `nudo guard` | `nudo export --format dts\|guard\|schema\|standard\|all` |
-| `nudo doctor` | `nudo health` |
-| `nudo watch` | `nudo check --watch` / `nudo test --watch` |
-| `nudo harvest <pkg>` | `nudo env harvest <pkg>` |
-| `--callsites` | `--from` |
-| `--emit-cases[=update]` | `nudo test --freeze[=update]` |
-| `infer --dts` | `nudo export --format dts` |
-| `infer --format zod` / `export --format zod` | `nudo export --format schema --dialect zod` |
-
-`infer --json` is deprecated: **stdout carries `test --json` cases only** (one JSON document). Run `nudo check --json` separately for gate/signatures. There is **no** `check --cases` flag — observation and enforcement stay separate.
-
----
-
 ## Typical workflows
 
-### Day 0 — read types from existing JS
+### Observation — read types from existing JS
 
 ```bash
-nudo check src/app.js          # signatures + L2 entry throws
-nudo test src/app.js           # every call-site case
+nudo check src/app.js          # signatures + L2 entry throws (the gate)
+nudo test src/app.js           # optional debug: every call-site case
 ```
 
-### Day 1 — explicit contracts
+### Contracts — explicit contracts
 
 ```bash
 nudo contract --draft src/lib.js --write   # reviewable draft
@@ -346,25 +254,17 @@ nudo test src/ --watch
 
 ## `any` vs `unknown`
 
-| | `any` | `unknown` |
-|---|-------|-----------|
-| Meaning | Unconstrained: the union of JS values; **developer** refines | **Inference failed** / engine has no information; **Nudo** must fix |
-| Source | Unannotated entry params, explicit `any()`, refine parse fallback | Evaluation failure, unmodeled native, truncation, leak, opaque |
-| Display | `any` (optionally with a type-var like `A1`) | `unknown` + conf annotation |
-| Product story | “No written contract ⇒ default constraint is `any` + JS runtime effects” | “Nudo hit a case it cannot handle” |
-
-**Never** describe unconstrained entry params as `unknown`. See [Type Values](../concepts/type-values.md#any-vs-unknown).
+Unconstrained entry params display as **`any`**; **`unknown`** means inference failed (engine debt) and must never be described as the default for unconstrained params. The full contract (sources, operations, narrowing, product story) lives in [Abs — any vs unknown](../concepts/abs.md#any-vs-unknown).
 
 ---
 
 ## Exit codes
 
-| Command | Exit `1` when |
-|---------|----------------|
-| `check` | Any error-level diagnostic (L1 or non-ignored L2) |
-| `test` | Any **declared** assertion fails (synthetic `call@`/`entry@` do not fail the run) |
-| `contract` (read-only) / `export` | Usage / IO errors only |
-| `contract --emit --exit-on-diff` | Write would happen and a diff exists |
-| `health` | Drift or analysis errors |
+Per-command exit contracts: [CLI Reference](../api/cli-reference.md). CI gates only on `check` (plus `test` declared assertions and `health` drift).
 
-CI gates only on `check` (plus `test` declared assertions and `health` drift).
+## Next
+
+- [Mental model](../getting-started/mental-model.md)
+- [nudo check](./check.md) — the CI gate in detail
+- [CLI Reference](../api/cli-reference.md) — every flag and exit code
+- [Examples](./examples.md) — real check/test output

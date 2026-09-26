@@ -1,5 +1,4 @@
 ---
-sidebar_position: 11
 description: "Migrate an existing JavaScript package to Nudo: draft contracts from code, review, persist, then gate with check/health."
 ---
 
@@ -14,7 +13,7 @@ existing JS  →  contract --draft  →  human review  →  *.nudo.js  →  chec
 ## 0. Prerequisites
 
 ```bash
-pnpm add -D @nudojs/cli @nudojs/lsp   # or npx @nudojs/cli
+pnpm add -D nudojs @nudojs/lsp   # or npx nudojs
 # optional project config in package.json
 {
   "nudo": {
@@ -23,7 +22,7 @@ pnpm add -D @nudojs/cli @nudojs/lsp   # or npx @nudojs/cli
       "diagnostics": "default",
       "evalMissingSlot": "off"
     },
-    "interface": { "autoBind": true }
+    "contract": { "autoBind": true }
   }
 }
 ```
@@ -43,7 +42,7 @@ Prints every top-level export with its tier:
 
 | Tier | Meaning | Migration action |
 |------|---------|------------------|
-| `handwritten` | Already contracted (sidecar / `@nudo:refine`) | Leave; enforce with `check` |
+| `handwritten` | Already contracted (sidecar / `@nudo:contract`) | Leave; enforce with `check` |
 | `generated` | Call-site domains frozen into `@generated` | Refresh with `--emit` when usage changes |
 | `implicit` | Inference only — display | **Draft candidates** |
 
@@ -52,7 +51,7 @@ Prints every top-level export with its tier:
 ```bash
 nudo contract --draft src/lib.js
 nudo contract --draft --write src/lib.js --fn greet --fn double
-# or IDE: CodeLens ⚡ draft contract / VS Code “Nudo: Draft Interface”
+# or IDE: CodeLens ⚡ draft contract / VS Code “Nudo: Draft Contract”
 ```
 
 Evidence in the draft module (never invents check obligations):
@@ -130,7 +129,7 @@ nudo contract --emit src/lib.js --dry-run --exit-on-diff   # CI drift gate
 | Hover tier | `● interface / handwritten\|generated\|implicit` |
 | CodeLens | persist / update / **draft** |
 | VS Code | Output channel commands |
-| Agent | `nudo.interface`, `nudo.interface.draft`, `nudo.check` |
+| Agent | `nudo.contract`, `nudo.contract.draft`, `nudo.check` |
 | CLI | `nudo contract` (`--draft` / `--emit`), `nudo check`, `nudo health`, `nudo test --freeze` |
 
 ## 7. Ongoing health
@@ -140,7 +139,7 @@ nudo health src/                         # uncovered fns, drift, analysis errors
 nudo test src/lib.js --from test/ --freeze=update
 ```
 
-Pin package versions per [Versioning & Releases](./versioning.md) (0.x minors may break; 1.x core/service/cli follow SemVer).
+Pin package versions per [Versioning & Releases](./versioning.md) (0.x minors may break; the stable-line core/service/cli — 2.x/4.x/3.x today — follow SemVer).
 
 ## What not to do
 

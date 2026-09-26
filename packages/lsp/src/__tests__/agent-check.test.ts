@@ -9,7 +9,7 @@ export const delay = number().gt(0);
 const src = `
 /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;

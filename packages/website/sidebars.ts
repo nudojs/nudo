@@ -3,30 +3,55 @@ import type { SidebarsConfig } from "@docusaurus/plugin-content-docs";
 const sidebars: SidebarsConfig = {
   docsSidebar: [
     "intro",
+    "why-nudo",
+    "glossary",
     {
       type: "category",
-      label: "Getting Started",
-      items: ["getting-started/installation", "getting-started/quick-start"],
-    },
-    {
-      type: "category",
-      label: "Core Concepts",
+      label: "Start",
       items: [
-        "concepts/layers",
-        "concepts/type-values",
-        "concepts/abstract-interpretation",
-        "concepts/directives",
+        "getting-started/installation",
+        "getting-started/mental-model",
+        "getting-started/quick-start",
       ],
     },
     {
       type: "category",
-      label: "Workflows",
+      label: "How-to",
+      link: {
+        type: "generated-index",
+        description:
+          "Task-oriented guides for working with Nudo: run gates and diagnose failures, author contracts and harnesses, integrate with the toolchain, and grab cookbook recipes.",
+      },
       items: [
-        "guides/cli",
-        "guides/check",
-        "guides/callsite-discovery",
-        "guides/examples",
-        "guides/runtime-generation",
+        {
+          type: "category",
+          label: "Gate",
+          items: ["guides/check", "guides/health", "guides/error-faces"],
+        },
+        {
+          type: "category",
+          label: "Contracts",
+          items: [
+            "guides/contract",
+            "guides/env-harvest",
+            "guides/runtime-generation",
+          ],
+        },
+        {
+          type: "category",
+          label: "Ecosystem",
+          items: [
+            "guides/cli",
+            "guides/export-ecosystem",
+            "guides/callsite-discovery",
+            "guides/examples",
+          ],
+        },
+        {
+          type: "category",
+          label: "Cookbook",
+          items: ["guides/recipes"],
+        },
       ],
     },
     {
@@ -35,48 +60,79 @@ const sidebars: SidebarsConfig = {
       items: [
         "guides/vscode",
         "guides/zed",
-        "guides/mcp-server",
+        "guides/agent-integration",
         "guides/lsp-clients",
         "guides/vite-plugin",
+        "guides/ai-native-dx",
       ],
     },
     {
       type: "category",
-      label: "Semantics & Advanced",
-      items: [
-        "guides/semantics",
-        "guides/control-flow-narrowing",
-      ],
-    },
-    {
-      type: "category",
-      label: "Migrating & Coexistence",
+      label: "Migrate off TypeScript",
+      link: {
+        type: "generated-index",
+        description:
+          "Replace the tsc gate on JavaScript packages. Coexistence is a short-lived migration tactic — the exit is nudo migrate retire.",
+      },
       items: [
         "guides/migrating-js",
-        "guides/vs-typescript",
+        "guides/migrating-from-typescript",
+        "guides/case-study-retire",
         "guides/coexistence",
+        "guides/vs-typescript",
         "guides/versioning",
       ],
     },
     {
       type: "category",
-      label: "API Reference",
+      label: "Concepts",
       items: [
-        "api/core",
-        "api/parser",
-        "api/service",
-        "api/cli-reference",
-        "api/agent",
-        "api/lsp",
-        "api/harvester",
+        "concepts/layers",
+        "concepts/abs",
+        "concepts/abstract-interpretation",
+        "concepts/semantics",
+        "concepts/control-flow-narrowing",
+        "concepts/directives",
+        "concepts/mocking",
+        "concepts/limits",
       ],
     },
     {
       type: "category",
-      label: "Design",
-      items: ["design/design-doc"],
+      label: "Reference",
+      link: {
+        type: "generated-index",
+        description:
+          "Authoritative lookups: CLI commands and diagnostics, agent surfaces, and per-package API reference for core, parser, service, agent, lsp, and harvester.",
+      },
+      items: [
+        {
+          type: "category",
+          label: "CLI & Diagnostics",
+          items: ["api/cli-reference", "reference/diagnostics"],
+        },
+        {
+          type: "category",
+          label: "Package APIs",
+          items: [
+            "api/core",
+            "api/parser",
+            "api/service",
+            "api/agent",
+            "api/lsp",
+            "api/harvester",
+          ],
+        },
+        "reference/agents",
+        "releases",
+        "releases-history",
+      ],
     },
-    "contributing",
+    {
+      type: "category",
+      label: "Project",
+      items: ["guides/competitive-landscape", "design/design-doc", "contributing"],
+    },
   ],
 };
 

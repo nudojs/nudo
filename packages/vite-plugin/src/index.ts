@@ -6,6 +6,7 @@ import {
   shouldAnalyzeFile,
   filterDiagnosticsByLevel,
   findProjectConfig,
+  collectSkipReturns,
   interfaceConfig,
   type AnalysisResult,
   type Diagnostic,
@@ -13,6 +14,7 @@ import {
 } from "@nudojs/service";
 import { dirname } from "node:path";
 import { checkSource, pTrue } from "@nudojs/core";
+import type { Plugin } from "vite";
 
 export type NudoPluginOptions = {
   include?: string[] | string;
@@ -29,13 +31,14 @@ export type NudoPluginOptions = {
 /** Abs check issues → service Diagnostic（与 evaluator 诊断同管道进 vite warn/error） */
 function checkIssuesToDiagnostics(id: string, code: string): Diagnostic[] {
   try {
-    // 与 CLI/LSP/agent 同源：package.json#nudo.interface.autoBind=false 时
+    // 与 CLI/LSP/agent 同源：package.json#nudo.contract.autoBind=false 时
     // 不得强制 ambient 手写契约（避免构建期误报）。
     const autoBind = interfaceConfig(findProjectConfig(dirname(id))?.config).autoBind;
     const report = checkSource(id, code, pTrue, {
       loadModule,
       fromFile: id,
       ...(autoBind === false ? { autoBind: false } : {}),
+      skips: collectSkipReturns(code),
     });
     return report.issues
       .filter((i) => i.severity === "error" || i.severity === "warning")
@@ -95,6 +98,11 @@ const DEFAULT_EXCLUDE = ["**/node_modules/**", "**/*.d.ts"];
 
 type Matcher = (id: string) => boolean;
 
+/** Single named sink for the build-summary line (keeps it greppable / swappable). */
+function logAnalysisSummary(errorCount: number, warnCount: number): void {
+  console.log(`[nudo] Analysis complete: ${errorCount} error(s), ${warnCount} warning(s)`);
+}
+
 const REGEX_SPECIALS = /[\\^$.|?*+(){}\[\]]/;
 
 function escapeRegExpChar(ch: string): string {
@@ -152,7 +160,7 @@ function compileAnyMatcher(patterns: string[] | string): Matcher {
   return (id) => matchers.some((match) => match(id));
 }
 
-export default function nudoPlugin(options: NudoPluginOptions = {}): any {
+export default function nudoPlugin(options: NudoPluginOptions = {}): Plugin {
   const includeMatch = compileAnyMatcher(options.include ?? DEFAULT_INCLUDE);
   const excludeMatch = compileAnyMatcher(options.exclude ?? DEFAULT_EXCLUDE);
   // failOnError 默认 false（E3 有意保留）：构建期诊断先 warn；契约 CI 门禁
@@ -186,7 +194,7 @@ export default function nudoPlugin(options: NudoPluginOptions = {}): any {
 
       try {
         // async 以便 path 型 @nudo:env 预加载（与 LSP analyzeFileAsync 对齐）
-        const result = await analyzeFileAsync(id, code);
+        const result = await analyzeFileAsync(id, code, undefined, undefined, undefined, "none");
         const checkDiags = checkIssuesToDiagnostics(id, code);
         const level = viteDiagnosticsLevel(id);
         const merged = {
@@ -204,16 +212,16 @@ export default function nudoPlugin(options: NudoPluginOptions = {}): any {
 
           if (diag.severity === "error") {
             if (failOnError) {
-              (this as any).error(msg);
+              this.error(msg);
             } else {
-              (this as any).warn(msg);
+              this.warn(msg);
             }
           } else if (diag.severity === "warning") {
-            (this as any).warn(msg);
+            this.warn(msg);
           }
         }
       } catch (err) {
-        (this as any).warn(`[nudo] Failed to analyze ${id}: ${(err as Error).message}`);
+        this.warn(`[nudo] Failed to analyze ${id}: ${(err as Error).message}`);
       }
 
       return null;
@@ -226,7 +234,7 @@ export default function nudoPlugin(options: NudoPluginOptions = {}): any {
         const errorCount = Array.from(analysisCache.values())
           .reduce((sum, r) => sum + r.diagnostics.filter((d) => d.severity === "error").length, 0);
         const warnCount = totalDiags - errorCount;
-        console.log(`[nudo] Analysis complete: ${errorCount} error(s), ${warnCount} warning(s)`);
+        logAnalysisSummary(errorCount, warnCount);
       }
     },
   };

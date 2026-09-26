@@ -84,7 +84,7 @@ export function orphanMayThrowEffects(effects: MayThrowEffect[]): void {
   flushMayThrowEffects(effects);
 }
 
-/** B-path：try 开始时压 soft 帧（与 ast-eval evalTry 同口径） */
+/** B-path：try 开始时压 soft 帧 */
 export function $tryMarkSoft(): void {
   pushMayThrowFrame();
 }
@@ -165,9 +165,10 @@ export function formatThrowsAbs(t: Abs | undefined): string | undefined {
   if (!t || t.shape.k === "never") return undefined;
   if (t.shape.k === "brand") return t.shape.name;
   if (t.shape.k === "sum") {
-    // 诚实展示全部臂（含 any/unknown），不因有 concrete 就吞掉引擎债/无约束臂
-    const names = t.shape.members.map((m) => formatThrowsAbs(m) ?? "Error");
-    return [...new Set(names)].join(" | ");
+    // 诚实展示全部臂（含 any/unknown）；同名去重；Error 在场且全属 Error 族 → 折成 Error
+    const names = [...new Set(t.shape.members.map((m) => formatThrowsAbs(m) ?? "Error"))].sort();
+    if (names.includes("Error") && names.every((n) => ERROR_FAMILY.has(n))) return "Error";
+    return names.join(" | ");
   }
   if (t.shape.k === "prim") {
     // throw "x" / throw 1：诚实显示被抛值的运行时类型名
@@ -193,10 +194,52 @@ export function formatThrowsAbs(t: Abs | undefined): string | undefined {
   return "Error";
 }
 
-/** effects 是否被 ignore 列表吞掉（按 kind 精确匹配） */
+/** JS Error 家族：`@nudo:throws Error` 覆盖全部子类（与 instanceof 语义一致） */
+export const ERROR_FAMILY = new Set([
+  "Error",
+  "TypeError",
+  "RangeError",
+  "ReferenceError",
+  "SyntaxError",
+  "URIError",
+  "EvalError",
+  "AggregateError",
+]);
+
+/** throws Abs → kind 名列表（sum 拆臂；绝不把 `"A | B"` 当单个 kind） */
+export function throwAbsToKinds(t: Abs | undefined): string[] {
+  if (!t || t.shape.k === "never") return [];
+  if (t.shape.k === "sum") {
+    return t.shape.members.flatMap((m) => throwAbsToKinds(m));
+  }
+  const name = formatThrowsAbs(t);
+  return name ? [name] : [];
+}
+
+/** declared/ignore 条目是否盖住 kind（`Error` 盖 Error 家族；`*` 由调用方先判） */
+export function throwsKindCovered(kind: string, names: readonly string[]): boolean {
+  if (names.includes(kind)) return true;
+  // `Error` 申报/忽略 = 整族（ReferenceError extends Error）
+  return names.includes("Error") && ERROR_FAMILY.has(kind);
+}
+
+/** effects 是否被 ignore 列表吞掉（kind 或 Error 族） */
 export function isThrowsIgnored(kind: string, ignore: readonly string[] | undefined): boolean {
   if (!ignore || ignore.length === 0) return false;
-  return ignore.includes(kind);
+  return throwsKindCovered(kind, ignore);
+}
+
+/**
+ * L2 throws 过滤（口径固定）：
+ * 1. **declare 优先**（@nudo:throws / case !! throws / sidecar fn.throws）——有意 fail-fast；
+ * 2. ignoreThrows 其次——迁移期全类放行，**不是**声明的替代品。
+ */
+export function filterGateThrows(
+  effects: MayThrowEffect[],
+  declared: readonly string[] | "*" | undefined,
+  ignore: readonly string[] | undefined,
+): MayThrowEffect[] {
+  return filterIgnoredThrows(filterDeclaredThrows(effects, declared), ignore);
 }
 
 /** effects 过滤后的剩余（L2 --ignore-throws） */
@@ -205,5 +248,20 @@ export function filterIgnoredThrows(
   ignore: readonly string[] | undefined,
 ): MayThrowEffect[] {
   if (!ignore || ignore.length === 0) return effects;
-  return effects.filter((e) => !ignore.includes(e.kind));
+  return effects.filter((e) => !throwsKindCovered(e.kind, ignore));
+}
+
+/**
+ * 申报式抛错过滤（@nudo:throws / case !! throws / sidecar fn.throws）。
+ * `*` = 全部申报，L2 清空；数组 = kind 或 Error 族覆盖。
+ * 申报 ≠ ignoreThrows：前者是「这是有意 fail-fast」，后者是「迁移期先别管」。
+ */
+export function filterDeclaredThrows(
+  effects: MayThrowEffect[],
+  declared: readonly string[] | "*" | undefined,
+): MayThrowEffect[] {
+  if (declared === undefined) return effects;
+  if (declared === "*") return [];
+  if (declared.length === 0) return effects;
+  return effects.filter((e) => !throwsKindCovered(e.kind, declared));
 }

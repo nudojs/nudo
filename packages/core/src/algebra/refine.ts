@@ -1,11 +1,11 @@
 /**
- * 精化契约解析：唯一形态
+ * 源内契约解析：唯一形态
  *
- *   @nudo:refine <param> <constraint>    参数精化（挂入口 Abs，参与运算）
- *   @nudo:refine return <constraint>     返回精化（推断返回值 ⊭ 时红）
+ *   @nudo:contract <param> <constraint>    参数契约（挂入口 Abs，参与运算）
+ *   @nudo:contract return <constraint>     返回契约（推断返回值 ⊭ 时红）
  *
  * 不叫 requires：那只是「校验挡板」。
- * refine 表示约束是类型的一部分——Abs = shape × term × **pred** × conf，
+ * contract 表示约束是类型的一部分——Abs = shape × term × **pred** × conf，
  * pred 会流入代数（x>0 ⇒ x+1>1），不只是调用点挡一下。
  *
  * constraint 来自 *.nudo.js 导出的模板（number().gt(0) 等），
@@ -13,7 +13,6 @@
  * 不支持写 `x > 0`（绑死参数名）。
  * 不用 JSDoc @param/@return：那是类型注解语法。
  *
- * `@nudo:interface` 是 `@nudo:refine` 的等价别名（渐进迁移，§design-refine-derivation）。
  * 侧车加载：Babel 语句级改写（多行 import / 注释与字符串里的同形文本不误伤）、
  * 相对 .nudo.js/.nudo.ts 经 loadModule 递归求值、环检测、执行失败改诊断
  * （nudo:interface-load / nudo:interface-cycle，不再静默吞错）。
@@ -36,10 +35,10 @@ import {
   boolean as booleanC,
   shape,
   array,
-  lit as litC,
+  litC,
   union as unionC,
   fn as fnC,
-  and as andC,
+  andC,
   partial as partialC,
   pick as pickC,
   omit as omitC,
@@ -759,7 +758,16 @@ function collectConstraints(
       continue;
     }
     for (const name of imp.names) {
-      if (name.startsWith("*")) continue; // namespace 暂不展开
+      // 命名空间：`@nudo:import * as ns` → 展开为 `ns.exportName` 供 refine 引用
+      if (name.startsWith("*")) {
+        const ns = name.slice(1);
+        for (const [expName, v] of Object.entries(exports)) {
+          if (isNudoConstraint(v)) {
+            map.set(`${ns}.${expName}`, v);
+          }
+        }
+        continue;
+      }
       const v = exports[name];
       if (isNudoConstraint(v)) {
         map.set(name, v);
@@ -781,11 +789,11 @@ function collectConstraints(
   return map;
 }
 
-/** 从源码抽函数上的 @nudo:refine 行（@nudo:interface 为等价别名） */
+/** 从源码抽函数上的 @nudo:contract 行 */
 function extractRefineLines(source: string, fnName: string): string[] {
   // `export function f` / `export async function f` / `export const f =`
   // 前缀必须一并匹配：否则 match 落在行中，before 以 `export …` 结尾，
-  // 反向注释扫描立即 break，@nudo:refine 整体丢失（导出函数的 refine
+  // 反向注释扫描立即 break，@nudo:contract 整体丢失（导出函数的契约
   // 全部静默失效）。
   const escaped = fnName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const fnRe = new RegExp(
@@ -800,7 +808,7 @@ function extractRefineLines(source: string, fnName: string): string[] {
     const line = lines[i]!.trim();
     if (line === "" || line === "*/") continue;
     if (line.startsWith("*") || line.startsWith("/*") || line.startsWith("//")) {
-      const rm = line.match(/@nudo:(?:refine|interface)\s+(.+)$/);
+      const rm = line.match(/@nudo:contract\s+(.+)$/);
       if (rm) reqs.unshift(rm[1]!.trim().replace(/\*\/$/, "").trim());
       continue;
     }
@@ -825,17 +833,18 @@ export function extractRefinesFromSource(
   fnName: string,
   opts: RefineResolveOpts = {},
 ): RefineEntry[] {
-  // 快路径：整文件无 @nudo:refine/@nudo:interface 时免 regex 扫全文（after-edit 批量 check）
-  if (!source.includes("@nudo:refine") && !source.includes("@nudo:interface")) return [];
+  // 快路径：整文件无 @nudo:contract 时免 regex 扫全文（after-edit 批量 check）
+  if (!source.includes("@nudo:contract")) return [];
   const constraints = collectConstraints(source, opts);
   const out: RefineEntry[] = [];
   for (const line of extractRefineLines(source, fnName)) {
     const parts = line.split(/&&|,/).map((s) => s.trim()).filter(Boolean);
     for (const part of parts) {
-      const m = part.match(/^(\w+)\s+(\w+)$/);
+      // 约束名支持 `ns.foo` 命名空间展开（@nudo:import * as ns）
+      const m = part.match(/^(\w+)\s+([\w.]+)$/);
       if (!m) continue;
       const [, param, cName] = m;
-      // return 是后置目标，不进参数精化
+      // return 是后置目标，不进参数契约
       if (param === "return") continue;
       const c = constraints.get(cName!);
       if (!c) continue;
@@ -866,7 +875,7 @@ export function refineToIndexedFull(
 }
 
 /**
- * 解析 `@nudo:refine return positive` → 返回精化。
+ * 解析 `@nudo:contract return positive` → 返回契约。
  * 返回 undefined = 无声明（不猜后置）。
  */
 export function extractRefineReturnFromSource(
@@ -874,12 +883,12 @@ export function extractRefineReturnFromSource(
   fnName: string,
   opts: RefineResolveOpts = {},
 ): { name: string; constraint: NudoConstraint } | undefined {
-  if (!source.includes("@nudo:refine") && !source.includes("@nudo:interface")) return undefined;
+  if (!source.includes("@nudo:contract")) return undefined;
   const constraints = collectConstraints(source, opts);
   for (const line of extractRefineLines(source, fnName)) {
     const parts = line.split(/&&|,/).map((s) => s.trim()).filter(Boolean);
     for (const part of parts) {
-      const m = part.match(/^return\s+(\w+)$/);
+      const m = part.match(/^return\s+([\w.]+)$/);
       if (!m) continue;
       const cName = m[1]!;
       const c = constraints.get(cName);
@@ -887,5 +896,77 @@ export function extractRefineReturnFromSource(
       return { name: cName, constraint: c };
     }
   }
+  return undefined;
+}
+
+/**
+ * 申报式抛错（declare throws — L2 豁免）：
+ *   @nudo:throws Error
+ *   @nudo:throws Error, TypeError
+ *   @nudo:throws *
+ *   @nudo:case "neg" (0) !! throws          → 申报任意 throw
+ *   @nudo:case "neg" (0) !! throws Error    → 申报 Error
+ *
+ * 与 refine 同扫函数前注释块。返回 `*` = 申报任意；数组 = 按名申报；
+ * undefined = 无申报（L2 照常执法）。
+ */
+export function extractDeclaredThrows(
+  source: string,
+  fnName: string,
+): string[] | "*" | undefined {
+  if (!source.includes("@nudo:throws") && !source.includes("!! throws")) {
+    return undefined;
+  }
+  const kinds = new Set<string>();
+  let any = false;
+  // 与 extractRefineLines 同路径扫函数前注释块（throws/case 不在 refine 行文法里）
+  const escaped = fnName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const fnRe = new RegExp(
+    `(?:export\\s+(?:default\\s+)?)?(?:async\\s+)?(?:function\\s+${escaped}\\b|const\\s+${escaped}\\s*=)`,
+  );
+  const m = source.match(fnRe);
+  if (!m || m.index === undefined) return undefined;
+  const before = source.slice(0, m.index);
+  const lines = before.split("\n");
+  let seenComment = false;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]!.trim();
+    // 先吃 export 前的尾部空行；一旦进入注释块，再遇空行 = 块边界
+    if (line === "") {
+      if (seenComment) break;
+      continue;
+    }
+    if (line === "*/") continue;
+    if (line.startsWith("*") || line.startsWith("/*") || line.startsWith("//")) {
+      seenComment = true;
+      const body = line.replace(/^[*/\s]+/, "").replace(/\*\/$/, "").trim();
+      const th = body.match(/@nudo:throws\s+(.+)$/i);
+      if (th) {
+        const spec = th[1]!.trim();
+        if (spec === "*") any = true;
+        else {
+          for (const k of spec.split(/[,\s|]+/).map((s) => s.trim()).filter(Boolean)) {
+            if (k === "*") any = true;
+            else kinds.add(k);
+          }
+        }
+      }
+      const cs = body.match(/!!\s*throws(?:\s+([A-Za-z*][\w*|,\s]*))?/i);
+      if (cs) {
+        const spec = (cs[1] ?? "*").trim();
+        if (spec === "" || spec === "*") any = true;
+        else {
+          for (const k of spec.split(/[,\s|]+/).map((s) => s.trim()).filter(Boolean)) {
+            if (k === "*") any = true;
+            else kinds.add(k);
+          }
+        }
+      }
+      continue;
+    }
+    break;
+  }
+  if (any) return "*";
+  if (kinds.size > 0) return [...kinds];
   return undefined;
 }

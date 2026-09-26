@@ -2,7 +2,7 @@
  * check/generalize 的 refine 提取收口（design-refine-derivation Phase 1 T7a）：
  * - 手写侧车 fn 契约 + 违例 case → nudo:case-inconsistency
  * - 侧车加载失败 → nudo:interface-load 进 issues（不再静默吞错）
- * - 源码 @nudo:refine 与侧车同名手写绑定常数界矛盾 → nudo:interface-conflict
+ * - 源码 @nudo:contract 与侧车同名手写绑定常数界矛盾 → nudo:interface-conflict
  * - generated 段：case 见证不报 inconsistency（不执法），params 仍进 generalize 入口
  * - 诊断 side-channel：checkSource 多次调用取即清空无泄漏；memo 命中不重复报
  */
@@ -91,7 +91,7 @@ export function broken(x) {
     const src = `
 /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 export function f(x) {
   return x;
@@ -117,7 +117,7 @@ export function f(x) {
     const src = `
 /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 export function f(x) {
   return x;
@@ -141,7 +141,7 @@ f(1);
     const src = `
 /// @nudo:import { fortyTwo } from "./std.nudo.js"
 /**
- * @nudo:refine x fortyTwo
+ * @nudo:contract x fortyTwo
  */
 export function f(x) {
   return x;
@@ -163,14 +163,14 @@ export function f(x) {
     const src = `
 /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 export function area(n) {
   return n > 0 ? n : 0;
 }
 `;
     // 错名：契约写 x，形参是 n
-    const bad = src.replace("@nudo:refine n positive", "@nudo:refine x positive");
+    const bad = src.replace("@nudo:contract n positive", "@nudo:contract x positive");
     const r = checkSource("/t/area.js", bad, pTrue, {
       loadModule,
       fromFile: "/t/area.js",
@@ -191,7 +191,7 @@ export function area(n) {
     const src = `
 /// @nudo:import { positive } from "./std.nudo.js"
 /**
- * @nudo:refine n positive
+ * @nudo:contract n positive
  */
 export function area(n) {
   return n > 0 ? n : 0;

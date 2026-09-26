@@ -1,12 +1,17 @@
 ---
-sidebar_position: 8
 slug: /guides/coexistence
-description: JS 用 Nudo、TS 包继续用 tsc——同一 monorepo 里互不打架的配方。
+description: 迁移期短暂双门禁，按包推进 —— 出口是 nudo migrate retire。
 ---
 
 # 与 TypeScript 共存
 
-Nudo 与 `tsc` 可以共享仓库。Nudo 面向 **JavaScript**（以及剥掉类型标注后的 `.ts` 源码）；它不替代 `.ts` 优先包上的 TypeScript 编译器。
+**共存是迁移战术，不是产品终态。** Nudo 与 `tsc` 只有在包还在 TS 上时才共享仓库。每个 JS 包的出口是 [`nudo migrate retire`](./migrating-from-typescript.md)。
+
+Nudo 面向 **JavaScript**（以及剥掉类型标注后的 `.ts` 源码）；对于产品*就是* TS 类型语言的包，它不替代 TypeScript 编译器。
+
+:::tip 终态
+每包一个门禁：**`nudo check`**。双跑 `tsc` + `nudo check` 只是暂时的 —— 排期 `migrate retire`。
+:::
 
 ## 配方 1：JS 包用 Nudo，TS 包用 tsc
 
@@ -22,7 +27,7 @@ packages/
 ```json
 {
   "nudo": {
-    "interface": { "autoBind": true },
+    "contract": { "autoBind": true },
     "analysis": { "mode": "exports", "diagnostics": "default" }
   }
 }
@@ -67,7 +72,7 @@ npx nudojs check packages/legacy-js/src
 | `include` | 相对项目根的路径白名单。空（默认）= 所有目标路径都可分析；混合仓**务必收窄**，让 tsserver 独占 `.ts`。 |
 | `exclude` | 始终保留 `node_modules` / `dist` / `coverage`。再加 `**/*.ts` / `**/*.tsx` / `**/*.d.ts`，避免打开 TS buffer 时触发 Nudo 分析。 |
 | `mode` | `exports`（出厂默认）分析含 export / 侧车 / 指令的 JS。见下文「directives vs exports」。 |
-| `diagnostics` | IDE 展示档：`default` = error + warning（静音噪声码）；`errors` = 仅 error；`off` 静音 IDE 展示路径（CLI `nudo check` 仍执法）。 |
+| `diagnostics` | IDE 展示档：`default` = error + warning（静音噪声码）；`errors` = 仅 error；`verbose` = 全部诊断不过滤；`off` 静音 IDE 展示路径（CLI `nudo check` 仍执法）。 |
 
 `.ts` 文件交给 tsc。Nudo LSP 仍会对匹配 `include` 且 `analysis.mode` 为 `exports` / `all` 的已打开 `.js` 文件提供 hover/inlay。
 
@@ -84,8 +89,8 @@ npx nudojs check packages/legacy-js/src
 
 ## 配方 3：渐进契约
 
-1. 先 infer——不需要指令。
-2. 某个函数需要 CI 门禁时，在旁边加 `fn.nudo.js`。
+1. 先观察——`nudo check` / `nudo test`，不需要指令。
+2. 某个函数需要 CI 门禁时，在旁边加一个 `<file>.nudo.js` 侧车。
 3. `nudo check` 只执法**手写**侧车；`@generated` 段是事实 + drift，不产生新义务。
 
 ## 配方：混合 JS/TS monorepo（避免双重错误风暴） {#recipe-mixed-js-ts-no-double-error-storm}

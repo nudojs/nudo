@@ -1,11 +1,12 @@
 /**
- * @nudo:mock / sinon 指令 → Abs seed（供 evalProgramAbs）。
- * host 层：依赖 parser 指令形态；core 只吃 seedVars/seedFns。
+ * @nudo:mock / sinon 指令 → Abs seed（供 B 路径注入：runTranspiled
+ * envGlobals / mockSeedsToAbsMocks）。
+ * host 层：依赖 parser 指令形态；core 只吃 Abs 绑定。
  */
 
 import type { Node } from "@babel/types";
-import type { FunctionWithDirectives } from "@nudojs/parser";
-import { parseCaseArgExpr } from "@nudojs/parser";
+import { extractDirectives, type FunctionWithDirectives } from "@nudojs/parser";
+import { parse, parseCaseArgExpr } from "@nudojs/parser";
 import type { MockHelper } from "@nudojs/core";
 import {
   type Abs,
@@ -17,7 +18,12 @@ import {
   litValue,
   formatAbs,
   getFnImpl,
+  tryRunTranspiled,
+  bindingsOf,
+  callTranspiledExportFull,
 } from "@nudojs/core";
+import { defaultLoadModule, type LoadModule } from "./load-module.ts";
+import { evalMockFileWithDeps } from "./mock-file.ts";
 
 /**
  * mock 依赖结果 conf 不得高于 mock。
@@ -227,7 +233,68 @@ function absFromSinon(sinonExpr: {
 export type AbsMockSeeds = {
   seedVars: Record<string, Abs>;
   seedFns: Record<string, { params: string[]; body: Node; async?: boolean; fingerprint?: string }>;
+  /** `@nudo:mock name from "path"` 解析失败（缺文件 / 缺绑定 / 求值失败）——fail-closed 诊断用 */
+  fromErrors?: FromMockError[];
 };
+
+export type FromMockError = {
+  name: string;
+  fromPath: string;
+  message: string;
+};
+
+function isAbsVal(v: unknown): v is Abs {
+  return !!v && typeof v === "object" && "shape" in (v as object) && "conf" in (v as object);
+}
+
+/**
+ * `@nudo:mock name from "path"`：装载 mock 模块并取与 mock 同名的绑定，
+ * 种成 B 路径 Abs seed（与内联 mock 同一注入通道）。
+ * 缺文件 / 求值失败 / 无同名绑定 → 返回 error，不静默丢弃、不造假类型。
+ */
+function loadFromMockBinding(
+  name: string,
+  fromPath: string,
+  fromFile: string | undefined,
+  loadModule: LoadModule | undefined,
+): { abs?: Abs; error?: string } {
+  const base = fromFile ?? `${process.cwd()}/<mock-from>`;
+  // mock 文件自身相对 import：走 abs 模块图（绝对路径入口），不是裸 exec
+  const evaled = evalMockFileWithDeps(fromPath, base, loadModule);
+  if (!evaled.ok) {
+    return {
+      error: evaled.error.includes("not found")
+        ? `Mock file not found for '${name}' (from "${fromPath}")`
+        : evaled.error,
+    };
+  }
+  const run = evaled.run;
+  let val: unknown = run[name];
+  if (val === undefined) {
+    const binds = bindingsOf(run);
+    val = binds?.get(name);
+  }
+  if (val === undefined) {
+    return {
+      error: `Mock file "${fromPath}" does not define a binding named '${name}'`,
+    };
+  }
+  let absVal: Abs;
+  if (isAbsVal(val)) {
+    absVal = val;
+  } else if (typeof val === "function") {
+    const fn = val as { length?: number };
+    const params = Array.from({ length: fn.length ?? 0 }, (_, i) => `arg${i}`);
+    absVal = absFunction(params, {
+      apply: (args: Abs[]): Abs => callTranspiledExportFull(run!, name, args).result,
+      kind: "bpath-export",
+      fingerprint: `from-mock=${fromPath}#${name}`,
+    });
+  } else {
+    absVal = absUnknown;
+  }
+  return { abs: markMockConf(absVal) };
+}
 
 /**
  * B 路径注入用：seedVars + seedFns 统一为 Abs 函数绑定。
@@ -246,12 +313,32 @@ export function mockSeedsToAbsMocks(seeds: AbsMockSeeds): Record<string, Abs> {
 /** 从函数上的 @nudo:mock 指令收集 Abs seed */
 export function mockDirectivesToAbsSeeds(
   functions: Array<{ directives: FunctionWithDirectives["directives"] }>,
+  opts?: {
+    /** `@nudo:mock name from "path"` 相对解析基准（被分析文件） */
+    fromFile?: string;
+    /** 自定义装载器（LSP buffer-aware）；缺省 defaultLoadModule */
+    loadModule?: LoadModule;
+  },
 ): AbsMockSeeds {
   const seedVars: Record<string, Abs> = {};
   const seedFns: AbsMockSeeds["seedFns"] = {};
+  const fromErrors: FromMockError[] = [];
   for (const fn of functions) {
     for (const d of fn.directives) {
       if (d.kind !== "mock") continue;
+      if (d.fromPath) {
+        const r = loadFromMockBinding(d.name, d.fromPath, opts?.fromFile, opts?.loadModule);
+        if (r.abs) {
+          seedVars[d.name] = r.abs;
+        } else {
+          fromErrors.push({
+            name: d.name,
+            fromPath: d.fromPath,
+            message: r.error ?? `Mock file "${d.fromPath}" could not be loaded`,
+          });
+        }
+        continue;
+      }
       if (d.arrowFn) {
         const body = d.arrowFn.body as Node;
         seedFns[d.name] = {
@@ -276,5 +363,14 @@ export function mockDirectivesToAbsSeeds(
       }
     }
   }
-  return { seedVars, seedFns };
+  return { seedVars, seedFns, ...(fromErrors.length > 0 ? { fromErrors } : {}) };
+}
+
+/** 便捷入口：源码 → @nudo:mock 的 B 注入 Abs 绑定（checkSource 注入管线用） */
+export function mockSeedsForSource(
+  source: string,
+  opts?: { fromFile?: string; loadModule?: LoadModule },
+): Record<string, Abs> {
+  const fns = extractDirectives(parse(source));
+  return mockSeedsToAbsMocks(mockDirectivesToAbsSeeds(fns, opts));
 }

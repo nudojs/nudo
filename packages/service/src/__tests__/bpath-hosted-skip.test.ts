@@ -61,25 +61,24 @@ export function go(n) { return twice(n); }
     expect(go!.cases.length + (twice?.cases.length ?? 0)).toBeGreaterThan(0);
   });
 
-  it("nodeAbsMap is populated without TypeValue env walk", () => {
+  it("fail-closed: nodeAbsMap has no Abs fill (node-level collection removed)", () => {
     const src = `const n = 1;
 export function id(x) { return x; }
 `;
     const { result } = analyze(src);
-    expect(result.nodeAbsMap.size).toBeGreaterThan(0);
+    // 节点级 Abs 收集（collectAbsBindsAndNodes）已删——显式无信息
+    expect(result.nodeAbsMap.size).toBe(0);
   });
 
-  it("Abs host fill: nodeAbsMap + BindingInfo.abs even without B hosted", () => {
+  it("BindingInfo.abs filled from B bindings (Abs host fill removed)", () => {
     const src = `const n = 1 + 2;
 export function id(x) { return x; }
 `;
     const { result } = analyze(src);
-    // BindingInfo 携带无损 Abs
     const n = result.bindings.get("n");
+    expect(n).toBeDefined();
+    // 绑定面保留（collectAbsBindingsFromGraph 的 B 版）；节点表面已删
     expect(n?.abs).toBeDefined();
-    // 节点表 Abs
-    expect(result.nodeAbsMap).toBeDefined();
-    expect(result.nodeAbsMap.size).toBeGreaterThan(0);
   });
 
   it("constraint case grammar still fills case Abs via TypeValue fallback", () => {

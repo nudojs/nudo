@@ -10,10 +10,8 @@
  * - custom requests use **slash** form: `nudo/check` (canonical protocol)
  * - every slash-form agent request has a matching executeCommand name
  *
- * CLI semantics (design-cli-semantics): observation is check signatures +
- * test case reports, not a dedicated infer verb. Agent tool names below are
- * the transition surface — prefer documenting check/test/contract/export to
- * users; `nudo.infer` / `nudo.interface*` remain as protocol aliases.
+ * Product names match CLI verbs (design-cli-semantics): check / test /
+ * contract / export / health. There are no protocol aliases.
  */
 
 /** workspace/executeCommand names (dot form) — declared on initialize */
@@ -23,19 +21,17 @@ export const NUDO_EXECUTE_COMMANDS = [
   "nudo.trace",
   "nudo.check",
   "nudo.hover",
-  "nudo.infer",
-  "nudo.interface",
-  "nudo.interface.draft",
-  "nudo.interfaceDraft",
-  "nudo.interfaceEmit",
-  "nudo.interface.emit",
+  "nudo.test",
+  "nudo.contract",
+  "nudo.contract.draft",
+  "nudo.contract.emit",
   "nudo.selectCase",
   "nudo.getActiveCases",
 ] as const;
 
 /**
  * Custom LSP request method names (slash form) — the protocol contract.
- * Agent tools also register the dot-form method as an alias for MCP bridges.
+ * Agent tools also register the dot-form method for MCP bridges.
  */
 export const NUDO_SLASH_REQUESTS = [
   "nudo/selectCase",
@@ -45,10 +41,10 @@ export const NUDO_SLASH_REQUESTS = [
   "nudo/trace",
   "nudo/check",
   "nudo/hover",
-  "nudo/infer",
-  "nudo/interface",
-  "nudo/interface.draft",
-  "nudo/interface.emit",
+  "nudo/test",
+  "nudo/contract",
+  "nudo/contract.draft",
+  "nudo/contract.emit",
 ] as const;
 
 /**
@@ -62,17 +58,11 @@ export const NUDO_AGENT_TOOL_NAMES = [
   "trace",
   "check",
   "hover",
-  "infer",
-  "interface",
-  "interface.draft",
-  "interface.emit",
+  "test",
+  "contract",
+  "contract.draft",
+  "contract.emit",
 ] as const;
-
-/** executeCommand aliases kept for CodeLens / Marketplace command palette */
-export const NUDO_COMMAND_ALIASES: Readonly<Record<string, string>> = {
-  "nudo.interfaceDraft": "nudo.interface.draft",
-  "nudo.interfaceEmit": "nudo.interface.emit",
-};
 
 /** Capability keys declared in connection.onInitialize */
 export const NUDO_INITIALIZE_CAPABILITIES = [

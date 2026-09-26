@@ -1,0 +1,13 @@
+{
+  "name": "checkout-demo",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Public retire-tsc sample: TypeScript checkout helpers before nudo migrate",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p ."
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

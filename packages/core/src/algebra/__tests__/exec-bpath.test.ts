@@ -105,11 +105,12 @@ describe("B-path objects", () => {
     expect(absToString($get(o, "missing"))).toContain("undefined");
   });
 
-  it("$set returns new object with updated slot", () => {
+  it("$set mutates in place (reference semantics)", () => {
     const o = $obj({ id: $lit(1) });
     const o2 = $set(o, "id", $lit(2));
-    expect(litValue($get(o, "id"))).toBe(1);
-    expect(litValue($get(o2, "id"))).toBe(2);
+    // 就地写：原对象与返回值同身份同值（const b = o; b.id = 2 对 o 可见）
+    expect(litValue($get(o, "id"))).toBe(2);
+    expect(o2).toBe(o);
   });
 });
 

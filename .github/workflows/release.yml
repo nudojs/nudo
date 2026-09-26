@@ -4,15 +4,27 @@ on:
   push:
     branches:
       - main
+      - dev
   workflow_dispatch:
+    inputs:
+      confirm_major:
+        description: 'Allow major version bumps (only this manual path can raise a major)'
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
+# Two trains, ONE workflow file. npm Trusted Publishing is bound to a specific
+# workflow filename + environment — a second workflow file cannot publish.
+#   main → stable (latest): changesets/action version PR + publish + VSCE/OVSX
+#   dev  → beta:            only while .changeset/pre.json exists; otherwise idle
 jobs:
   release:
     name: Release
+    # Stable train only.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     # npm Trusted Publishing is bound to this GitHub environment name; the
     # OIDC token must carry the same environment claim or publish 404s.
@@ -22,12 +34,14 @@ jobs:
       contents: write
       pull-requests: write
     outputs:
-      published: ${{ steps.changesets.outputs.hasChangesets == 'false' }}
       publishedPackages: ${{ steps.changesets.outputs.publishedPackages }}
     env:
       # secrets cannot appear in step `if`; expose at job level for gating.
       VSCODE_MARKETPLACE_TOKEN: ${{ secrets.VSCODE_MARKETPLACE_TOKEN }}
       OVSX_MARKETPLACE_TOKEN: ${{ secrets.OVSX_MARKETPLACE_TOKEN }}
+      # Major bumps are never automatic: only workflow_dispatch + confirm_major=true.
+      # Push-triggered runs leave this empty and gate-major.mjs fails closed.
+      CONFIRM_MAJOR: ${{ (github.event_name == 'workflow_dispatch' && inputs.confirm_major) && '1' || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
@@ -50,6 +64,15 @@ jobs:
       - name: Build packages
         run: npm run build
 
+      # Release must not publish untested code. Inline (not `needs: CI`) because
+      # cross-workflow gates are unreliable; build stays first — path-based
+      # @nudo:env resolves @nudojs/* via package.json exports → dist (see ci.yml).
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test:coverage
+
       - name: Create Release Pull Request
         id: changesets
         uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d  # v1 (branch v1)
@@ -61,6 +84,10 @@ jobs:
       - name: Publish to npm
         if: steps.changesets.outputs.hasChangesets == 'false'
         run: |
+          set -euo pipefail
+          # Fail closed if package.json still sits at major >= 2 (e.g. unreset
+          # accidental stables / betas). Only confirm_major=true lets those out.
+          node scripts/gate-major.mjs --for-publish
           # setup-node writes _authToken=${NODE_AUTH_TOKEN} into .npmrc, which
           # blocks npm's OIDC trusted-publisher exchange when no real token exists.
           if [ -n "${NPM_CONFIG_USERCONFIG:-}" ] && [ -f "$NPM_CONFIG_USERCONFIG" ]; then
@@ -70,34 +97,90 @@ jobs:
         env:
           NPM_CONFIG_PROVENANCE: true
 
-      - name: Build website
-        if: steps.changesets.outputs.hasChangesets == 'false'
-        run: pnpm --filter website run build
-
-      - name: Upload Website Build Artifact
-        if: steps.changesets.outputs.hasChangesets == 'false'
-        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa  # v3
-        with:
-          path: packages/website/build
+      # 文档站部署已解耦：docs-deploy.yml 在 main push 时独立构建部署
 
       - name: Package VSCode extension
         if: steps.changesets.outputs.hasChangesets == 'false'
         run: |
           mkdir -p dist
           pnpm --filter nudo-vscode run build
+          # B3: language-client smoke must pass before we ship a .vsix
+          pnpm --filter nudo-vscode run smoke
           cd packages/vscode
           npx @vscode/vsce package --no-dependencies -o ../../dist/nudo-vscode.vsix
 
       - name: Publish to VSCode Marketplace
+        id: vsce-publish
         if: steps.changesets.outputs.hasChangesets == 'false' && env.VSCODE_MARKETPLACE_TOKEN != ''
         # Marketplace PATs expire; do not block Open VSX / GitHub Release.
         continue-on-error: true
         run: npx @vscode/vsce publish --packagePath dist/nudo-vscode.vsix -p ${{ secrets.VSCODE_MARKETPLACE_TOKEN }}
 
+      # keep continue-on-error above (marketplace flake must not block npm / GH Release),
+      # but never fail silently — shout in the step summary + job annotation.
+      - name: Surface VSCode Marketplace failure
+        if: steps.vsce-publish.outcome == 'failure'
+        run: |
+          echo "::warning::VSCode Marketplace publish FAILED — extension is NOT on the Marketplace. Check VSCODE_MARKETPLACE_TOKEN (likely expired) and re-publish manually."
+          {
+            echo "## ⚠️ VSCode Marketplace publish FAILED"
+            echo ""
+            echo "npm packages were published, but the VS Code extension is **not** on the Marketplace."
+            echo "Likely cause: expired \`VSCODE_MARKETPLACE_TOKEN\`."
+            echo "Re-publish manually once the token is renewed:"
+            echo '```bash'
+            echo 'npx @vscode/vsce publish --packagePath dist/nudo-vscode.vsix -p "$VSCODE_MARKETPLACE_TOKEN"'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Publish to Open VSX
+        id: ovsx-publish
         if: steps.changesets.outputs.hasChangesets == 'false' && env.OVSX_MARKETPLACE_TOKEN != ''
         continue-on-error: true
         run: npx ovsx publish dist/nudo-vscode.vsix -p ${{ secrets.OVSX_MARKETPLACE_TOKEN }}
+
+      - name: Surface Open VSX failure
+        if: steps.ovsx-publish.outcome == 'failure'
+        run: |
+          echo "::warning::Open VSX publish FAILED — extension is NOT on Open VSX. Check OVSX_MARKETPLACE_TOKEN (likely expired) and re-publish manually."
+          {
+            echo "## ⚠️ Open VSX publish FAILED"
+            echo ""
+            echo "npm packages were published, but the VS Code extension is **not** on Open VSX."
+            echo "Likely cause: expired \`OVSX_MARKETPLACE_TOKEN\`."
+            echo "Re-publish manually once the token is renewed:"
+            echo '```bash'
+            echo 'npx ovsx publish dist/nudo-vscode.vsix -p "$OVSX_MARKETPLACE_TOKEN"'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # publishedPackages is [{name, version}, …] and can version-skew across
+      # packages (e.g. nudojs 0.x vs @nudojs/* 3.x). Never tag from [0] — take
+      # the highest semver so the monorepo release tag is deterministic.
+      - name: Resolve release tag (highest published version)
+        id: release-tag
+        if: >-
+          steps.changesets.outputs.hasChangesets == 'false' &&
+          steps.changesets.outputs.publishedPackages != '' &&
+          steps.changesets.outputs.publishedPackages != '[]'
+        run: |
+          tag=$(node -e '
+            const pkgs = JSON.parse(process.env.PUBLISHED);
+            const parse = (v) => v.replace(/^v/, "").split(".").map((n) => parseInt(n, 10) || 0);
+            const cmp = (a, b) => {
+              const pa = parse(a), pb = parse(b);
+              for (let i = 0; i < 3; i++) {
+                const d = (pa[i] || 0) - (pb[i] || 0);
+                if (d !== 0) return d;
+              }
+              return 0;
+            };
+            const versions = pkgs.map((p) => p.version);
+            process.stdout.write("v" + versions.slice().sort(cmp).pop());
+          ')
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+        env:
+          PUBLISHED: ${{ steps.changesets.outputs.publishedPackages }}
 
       - name: Create GitHub Release
         if: >-
@@ -106,24 +189,120 @@ jobs:
           steps.changesets.outputs.publishedPackages != '[]'
         uses: softprops/action-gh-release@26994186c0ac3ef5cae75ac16aa32e8153525f77  # v1
         with:
-          tag_name: v${{ fromJSON(steps.changesets.outputs.publishedPackages)[0].version }}
+          tag_name: ${{ steps.release-tag.outputs.tag }}
           files: dist/nudo-vscode.vsix
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  deploy:
-    name: Deploy to GitHub Pages
-    needs: release
-    if: needs.release.outputs.published == 'true'
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  # Beta train — same workflow file so npm Trusted Publishing authorizes us.
+  # `.changeset/pre.json` supplies the dist-tag (`beta`). No VSCE / OVSX / GH Release.
+  release-beta:
+    name: Release (beta)
+    if: github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
+    # Must match the Trusted Publisher environment claim (same as stable).
+    environment: NPM_TOKEN
+    permissions:
+      id-token: write
+      contents: write
+    env:
+      # Same policy as stable: push never auto-raises a major.
+      CONFIRM_MAJOR: ${{ (github.event_name == 'workflow_dispatch' && inputs.confirm_major) && '1' || '' }}
     steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e  # v4
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa  # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: 24
+          cache: 'pnpm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: npm run build
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test:coverage
+
+      # Beta train is idle outside changesets pre mode. Stable publishes go
+      # through `main` (release job). Do not hard-fail dev pushes when pre.json
+      # is absent — that is the intentional state after cutting the 1.x line.
+      - name: Detect changesets pre mode
+        id: pre
+        run: |
+          set -euo pipefail
+          if [ -f .changeset/pre.json ]; then
+            echo "active=true" >> "$GITHUB_OUTPUT"
+            echo "pre.json tag: $(node -p "require('./.changeset/pre.json').tag")"
+          else
+            echo "active=false" >> "$GITHUB_OUTPUT"
+            echo "Not in changesets pre mode — beta train idle (stable publishes via main)."
+          fi
+
+      # Consume pending changesets into `*-beta.n`, push with [skip ci] so we
+      # do not re-enter this job; publish still runs in THIS job.
+      # gate-major fails closed on push: a `major` changeset blocks the beta train
+      # unless this run was dispatched with confirm_major=true.
+      - name: Version beta (if changesets pending)
+        if: steps.pre.outputs.active == 'true'
+        run: |
+          set -euo pipefail
+          if ls .changeset/*.md >/dev/null 2>&1 && \
+             ls .changeset/*.md | grep -v 'README.md' | grep -q .; then
+            node scripts/gate-major.mjs --save-baseline
+            npx changeset version
+            node scripts/gate-major.mjs --check-baseline
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "chore: version beta packages [skip ci]"
+            git push origin HEAD:dev
+          else
+            echo "No pending changesets — publishing current package.json versions."
+          fi
+
+      - name: Publish to npm (tag from pre.json)
+        if: steps.pre.outputs.active == 'true'
+        run: |
+          set -euo pipefail
+          # Same ceiling as stable: major >= 2 needs confirm_major=true.
+          node scripts/gate-major.mjs --for-publish
+          # setup-node writes _authToken=${NODE_AUTH_TOKEN} into .npmrc, which
+          # blocks npm's OIDC trusted-publisher exchange when no real token exists.
+          if [ -n "${NPM_CONFIG_USERCONFIG:-}" ] && [ -f "${NPM_CONFIG_USERCONFIG}" ]; then
+            sed -i '/_authToken/d' "${NPM_CONFIG_USERCONFIG}"
+          fi
+          # Clear NODE_AUTH_TOKEN so npm prefers OIDC (Trusted Publishing).
+          export NODE_AUTH_TOKEN=""
+          npx changeset publish
+        env:
+          NPM_CONFIG_PROVENANCE: true
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        if: steps.pre.outputs.active == 'true'
+        run: |
+          {
+            echo "## Beta publish"
+            echo ""
+            echo "Trigger: \`dev\` @ \`${GITHUB_SHA::7}\`"
+            echo ""
+            echo "npm dist-tag: from \`.changeset/pre.json\` (currently \`beta\`)"
+            echo ""
+            echo "Verify: \`npm view <pkg> dist-tags\` / \`npm view <pkg> versions\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+

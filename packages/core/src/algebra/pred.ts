@@ -5,6 +5,34 @@ import { termEquals, termToString, lit } from "./term.ts";
 
 export type PrimName = "number" | "string" | "boolean" | "bigint" | "symbol";
 
+/** JS `typeof` 完整结果域（8 标签）。Pred 的 typeof 节点用此域。 */
+export type TypeofName =
+  | "undefined"
+  | "object"
+  | "boolean"
+  | "number"
+  | "bigint"
+  | "string"
+  | "symbol"
+  | "function";
+
+/** typeof 标签全集（否定展开用；顺序稳定） */
+export const TYPEOF_NAMES: readonly TypeofName[] = [
+  "undefined",
+  "object",
+  "boolean",
+  "number",
+  "bigint",
+  "string",
+  "symbol",
+  "function",
+];
+
+/** abs prim 标签 → typeof 标签（恒等嵌入）。abs prim 仍是 PrimName 子集。 */
+export function primToTypeof(p: PrimName): TypeofName {
+  return p;
+}
+
 export type Pred =
   | { op: "true" }
   | { op: "false" }
@@ -17,7 +45,7 @@ export type Pred =
   | { op: "and"; args: Pred[] }
   | { op: "or"; args: Pred[] }
   | { op: "not"; arg: Pred }
-  | { op: "typeof"; t: Term; type: PrimName };
+  | { op: "typeof"; t: Term; type: TypeofName };
 
 export const pTrue: Pred = { op: "true" };
 export const pFalse: Pred = { op: "false" };
@@ -28,7 +56,7 @@ export const lt = (a: Term, b: Term): Pred => ({ op: "lt", a, b });
 export const le = (a: Term, b: Term): Pred => ({ op: "le", a, b });
 export const gt = (a: Term, b: Term): Pred => ({ op: "gt", a, b });
 export const ge = (a: Term, b: Term): Pred => ({ op: "ge", a, b });
-export const ptypeof = (t: Term, type: PrimName): Pred => ({
+export const ptypeof = (t: Term, type: TypeofName): Pred => ({
   op: "typeof",
   t,
   type,
@@ -77,7 +105,44 @@ export function not(p: Pred): Pred {
   return { op: "not", arg: p };
 }
 
+/**
+ * 逻辑否定（De Morgan）：¬(A∧B)=¬A∨¬B；¬(A∨B)=¬A∧¬B；双重否定消去。
+ * typeof 否定展开为其余 TypeofName 标签的析取——8 标签域是 JS typeof 的
+ * 完整结果域，展开健全且相对完备。
+ */
+export function negatePred(p: Pred): Pred {
+  switch (p.op) {
+    case "true":
+      return pFalse;
+    case "false":
+      return pTrue;
+    case "eq":
+      return ne(p.a, p.b);
+    case "ne":
+      return eq(p.a, p.b);
+    case "lt":
+      return ge(p.a, p.b);
+    case "le":
+      return gt(p.a, p.b);
+    case "gt":
+      return le(p.a, p.b);
+    case "ge":
+      return lt(p.a, p.b);
+    case "and":
+      return or(...p.args.map(negatePred));
+    case "or":
+      return and(...p.args.map(negatePred));
+    case "not":
+      return p.arg;
+    case "typeof":
+      return or(
+        ...TYPEOF_NAMES.filter((u) => u !== p.type).map((u) => ptypeof(p.t, u)),
+      );
+  }
+}
+
 export function predEquals(a: Pred, b: Pred): boolean {
+  if (a === b) return true;
   if (a.op !== b.op) return false;
   switch (a.op) {
     case "true":
@@ -95,12 +160,18 @@ export function predEquals(a: Pred, b: Pred): boolean {
         termEquals(a.b, (b as typeof a).b)
       );
     case "and":
-    case "or":
-      return (
-        (b.op === "and" || b.op === "or") &&
-        a.args.length === (b as typeof a).args.length &&
-        a.args.every((x, i) => predEquals(x, (b as typeof a).args[i]!))
-      );
+    case "or": {
+      // 多重集相等：合取/析取交换律（顺序无关）
+      if (b.op !== "and" && b.op !== "or") return false;
+      const bag = [...(b as typeof a).args];
+      if (bag.length !== a.args.length) return false;
+      return a.args.every((x) => {
+        const i = bag.findIndex((y) => predEquals(x, y));
+        if (i < 0) return false;
+        bag.splice(i, 1);
+        return true;
+      });
+    }
     case "not":
       return b.op === "not" && predEquals(a.arg, b.arg);
     case "typeof":
@@ -207,13 +278,56 @@ export type Phi = Pred;
 export const emptyPhi: Phi = pTrue;
 export const phiAnd = and;
 
-/** 简单蕴含：在区间/字面量可判定范围内判断 Φ ⊢ pred */
+/**
+ * 外部蕴含 oracle（可选 SMT 等）。内建判定证不出时调用。
+ * 返回 true=可证；false/undefined=仍不可证（保持 fail-closed）。
+ * 默认无 oracle——纯内建区间/线性判定，不引入 solver 依赖。
+ */
+export type ImplicationOracle = (phi: Phi, pred: Pred) => boolean | undefined;
+
+let implicationOracle: ImplicationOracle | undefined;
+
+export function setImplicationOracle(fn: ImplicationOracle | undefined): void {
+  implicationOracle = fn;
+}
+
+export function getImplicationOracle(): ImplicationOracle | undefined {
+  return implicationOracle;
+}
+
+/** 简单蕴含：在区间/线性/字面量/typeof 可判定范围内判断 Φ ⊢ pred */
 export function implies(phi: Phi, pred: Pred): boolean {
   if (pred.op === "true") return true;
   if (pred.op === "false") return false;
   if (phi.op === "false") return true;
   if (predEquals(phi, pred)) return true;
   if (phi.op === "and" && phi.args.some((c) => predEquals(c, pred))) return true;
+
+  // 合取目标：Φ ⊢ A∧B  iff 逐支
+  if (pred.op === "and") {
+    return pred.args.every((a) => implies(phi, a));
+  }
+
+  // ¬P 目标：De Morgan / 双重否定展开为正向形式后再判
+  if (pred.op === "not") {
+    const expanded = negatePred(pred.arg);
+    // 展开结果若仍是 not（非 typeof 的残余形态）——不得递归回自己
+    if (expanded.op !== "not") {
+      return implies(phi, expanded);
+    }
+    // 逆否：¬P ⊢ ¬Q  iff  Q ⊢ P
+    if (phi.op === "not") {
+      return implies(pred.arg, phi.arg);
+    }
+    if (phi.op === "and") {
+      for (const c of phi.args) {
+        if (c.op === "not" && implies(pred.arg, c.arg)) return true;
+      }
+    }
+    // Φ 已知 typeof t=U (U≠T) ⇒ ¬(typeof t=T)（展开为 or 后的兜底）
+    if (pred.arg.op === "typeof" && impliesNotTypeof(phi, pred.arg)) return true;
+    return false;
+  }
 
   // or 蕴含（字面量集 / 析取收窄）：
   //   or(A…) ⇒ P     iff 每个 A ⇒ P
@@ -231,183 +345,487 @@ export function implies(phi: Phi, pred: Pred): boolean {
     return decideLiteralPred(pred) === true;
   }
 
-  // 尝试从 Φ 提取同一 term 的界，做区间蕴含
-  const bounds = extractBounds(phi);
-  const implied = impliesViaBounds(pred, bounds);
-  if (implied !== undefined) return implied;
+  // 上下文：等式类 + ne 收紧后的区间 + 线性原子
+  const ctx = buildCtx(phi);
+  if (proveInCtx(ctx, pred)) return true;
 
   // 字面量可判定
-  const litAns = decideLiteralPred(pred);
-  if (litAns !== undefined) return litAns;
+  if (decideLiteralPred(pred) === true) return true;
+
+  // 可选外部 oracle（SMT 等）：内建证不出时最后一问
+  if (implicationOracle && implicationOracle(phi, pred) === true) return true;
   return false;
 }
 
-type Bounds = {
-  /** term key → { lo 独占? hi 独占? } */
-  lo: Map<string, { bound: number; strict: boolean }>;
-  hi: Map<string, { bound: number; strict: boolean }>;
+/** Φ 含与 want 同项、不同 typeof 标签 → 蕴含 ¬want */
+function impliesNotTypeof(
+  phi: Phi,
+  want: { t: Term; type: TypeofName },
+): boolean {
+  const conjs = phi.op === "and" ? phi.args : [phi];
+  for (const c of conjs) {
+    if (c.op === "typeof" && termEquals(c.t, want.t) && c.type !== want.type) {
+      return true;
+    }
+  }
+  return false;
+}
+
+type Interval = {
+  lo?: { bound: number; strict: boolean };
+  hi?: { bound: number; strict: boolean };
+};
+
+type Lin = {
+  /** atom key → 系数；原子 = var id 或 length(t) / get(t,k) 等 app 项 */
+  c: Map<string, number>;
+  /** 常数 */
+  k: number;
+  /** 原子 key → Term（证明与展示用） */
+  atoms: Map<string, Term>;
+};
+
+type Ctx = {
+  /** 等式类代表（var id → rep） */
+  parent: Map<string, string>;
+  /** rep / atom key → 区间 */
+  iv: Map<string, Interval>;
+  /** 原子 key → Term */
+  atoms: Map<string, Term>;
 };
 
 function termKey(t: Term): string {
   return termToString(t);
 }
 
-function extractBounds(phi: Phi): Bounds {
-  const lo = new Map<string, { bound: number; strict: boolean }>();
-  const hi = new Map<string, { bound: number; strict: boolean }>();
+function findRep(ctx: Ctx, id: string): string {
+  let r = ctx.parent.get(id) ?? id;
+  while (r !== (ctx.parent.get(r) ?? r)) r = ctx.parent.get(r) ?? r;
+  // 路径压缩
+  let cur = id;
+  while (cur !== r) {
+    const next = ctx.parent.get(cur) ?? cur;
+    ctx.parent.set(cur, r);
+    cur = next;
+  }
+  return r;
+}
+
+function unionRep(ctx: Ctx, a: string, b: string): void {
+  const ra = findRep(ctx, a);
+  const rb = findRep(ctx, b);
+  if (ra === rb) return;
+  // 并区间
+  const ia = ctx.iv.get(ra);
+  const ib = ctx.iv.get(rb);
+  const merged = mergeInterval(ia, ib);
+  ctx.parent.set(ra, rb);
+  if (merged) ctx.iv.set(rb, merged);
+  else ctx.iv.delete(rb);
+  if (ia) ctx.iv.delete(ra);
+}
+
+function mergeInterval(a?: Interval, b?: Interval): Interval | undefined {
+  if (!a) return b ? { ...b } : undefined;
+  if (!b) return { ...a };
+  const out: Interval = {};
+  // 取更紧的下界
+  if (a.lo && b.lo) {
+    out.lo =
+      a.lo.bound > b.lo.bound ||
+      (a.lo.bound === b.lo.bound && a.lo.strict && !b.lo.strict)
+        ? a.lo
+        : b.lo;
+  } else out.lo = a.lo ?? b.lo;
+  if (a.hi && b.hi) {
+    out.hi =
+      a.hi.bound < b.hi.bound ||
+      (a.hi.bound === b.hi.bound && a.hi.strict && !b.hi.strict)
+        ? a.hi
+        : b.hi;
+  } else out.hi = a.hi ?? b.hi;
+  return out;
+}
+
+function tightenLo(iv: Interval, bound: number, strict: boolean): void {
+  const cur = iv.lo;
+  if (
+    !cur ||
+    bound > cur.bound ||
+    (bound === cur.bound && strict && !cur.strict)
+  ) {
+    iv.lo = { bound, strict };
+  }
+}
+
+function tightenHi(iv: Interval, bound: number, strict: boolean): void {
+  const cur = iv.hi;
+  if (
+    !cur ||
+    bound < cur.bound ||
+    (bound === cur.bound && strict && !cur.strict)
+  ) {
+    iv.hi = { bound, strict };
+  }
+}
+
+/** 项 → 线性形（var / lit / + / - / *const / length 等原子）；非线性返回 undefined */
+function linOf(t: Term): Lin | undefined {
+  const empty = (): Lin => ({ c: new Map(), k: 0, atoms: new Map() });
+  const fromAtom = (key: string, term: Term): Lin => {
+    const l = empty();
+    l.c.set(key, 1);
+    l.atoms.set(key, term);
+    return l;
+  };
+  const add = (a: Lin, b: Lin): Lin => {
+    const out = empty();
+    for (const [k, v] of a.c) out.c.set(k, (out.c.get(k) ?? 0) + v);
+    for (const [k, v] of b.c) out.c.set(k, (out.c.get(k) ?? 0) + v);
+    out.k = a.k + b.k;
+    for (const [k, v] of a.atoms) out.atoms.set(k, v);
+    for (const [k, v] of b.atoms) out.atoms.set(k, v);
+    return out;
+  };
+  const scale = (a: Lin, n: number): Lin => {
+    const out = empty();
+    for (const [k, v] of a.c) out.c.set(k, v * n);
+    out.k = a.k * n;
+    for (const [k, v] of a.atoms) out.atoms.set(k, v);
+    return out;
+  };
+  const walk = (x: Term): Lin | undefined => {
+    if (x.op === "lit") {
+      if (typeof x.value !== "number") return undefined;
+      const l = empty();
+      l.k = x.value;
+      return l;
+    }
+    if (x.op === "var") return fromAtom(x.id, x);
+    // 原子 app：length(t) / get(t,k) / 其它不可分解应用
+    if (x.op === "app") {
+      if (x.fn === "+" && x.args.length === 2) {
+        const a = walk(x.args[0]!);
+        const b = walk(x.args[1]!);
+        if (!a || !b) return undefined;
+        return add(a, b);
+      }
+      if (x.fn === "-" && x.args.length === 1) {
+        const a = walk(x.args[0]!);
+        return a ? scale(a, -1) : undefined;
+      }
+      if (x.fn === "-" && x.args.length === 2) {
+        const a = walk(x.args[0]!);
+        const b = walk(x.args[1]!);
+        if (!a || !b) return undefined;
+        return add(a, scale(b, -1));
+      }
+      if (x.fn === "*" && x.args.length === 2) {
+        const [a, b] = x.args as [Term, Term];
+        const la = walk(a);
+        const lb = walk(b);
+        if (la && lb) {
+          // 常数 × 线性
+          if (la.c.size === 0) return scale(lb, la.k);
+          if (lb.c.size === 0) return scale(la, lb.k);
+          return undefined; // 非线性
+        }
+        return undefined;
+      }
+      // length / get / 其它 → 不可分解原子
+      return fromAtom(termKey(x), x);
+    }
+    return undefined;
+  };
+  const out = walk(t);
+  if (!out) return undefined;
+  // 去掉零系数
+  for (const [k, v] of [...out.c]) {
+    if (v === 0) out.c.delete(k);
+  }
+  return out;
+}
+
+function linSub(a: Lin, b: Lin): Lin {
+  const out: Lin = { c: new Map(), k: a.k - b.k, atoms: new Map() };
+  for (const [k, v] of a.c) out.c.set(k, (out.c.get(k) ?? 0) + v);
+  for (const [k, v] of b.c) out.c.set(k, (out.c.get(k) ?? 0) - v);
+  for (const [k, v] of a.atoms) out.atoms.set(k, v);
+  for (const [k, v] of b.atoms) out.atoms.set(k, v);
+  for (const [k, v] of [...out.c]) {
+    if (v === 0) out.c.delete(k);
+  }
+  return out;
+}
+
+/** 归一：比较 a op b → (a-b) op 0 */
+function normCmp(
+  op: "gt" | "ge" | "lt" | "le" | "eq" | "ne",
+  a: Term,
+  b: Term,
+): { lin: Lin; op: "gt" | "ge" | "lt" | "le" | "eq" | "ne" } | undefined {
+  const la = linOf(a);
+  const lb = linOf(b);
+  if (!la || !lb) return undefined;
+  return { lin: linSub(la, lb), op };
+}
+
+function buildCtx(phi: Phi): Ctx {
+  const ctx: Ctx = {
+    parent: new Map(),
+    iv: new Map(),
+    atoms: new Map(),
+  };
   const conjs: Pred[] = phi.op === "and" ? phi.args : [phi];
+  const eqAtoms: Array<[string, string]> = [];
+  const neFacts: Array<{ key: string; n: number }> = [];
+
+  const ivFor = (key: string, term: Term): Interval => {
+    ctx.atoms.set(key, term);
+    let iv = ctx.iv.get(key);
+    if (!iv) {
+      iv = {};
+      ctx.iv.set(key, iv);
+    }
+    return iv;
+  };
+
+  // var id 与 lin 归一到 atom key：单原子 + 常数平移统一进该原子区间
+  const applyCmp = (
+    op: "gt" | "ge" | "lt" | "le" | "eq",
+    left: Term,
+    right: Term,
+  ): void => {
+    const n = normCmp(op === "eq" ? "eq" : op, left, right);
+    if (!n) return;
+    const { lin, op: o } = n;
+    // 纯常数：无可提取区间事实
+    if (lin.c.size === 0) return;
+    // 单原子：k 常数并入界
+    if (lin.c.size === 1) {
+      const [key, coeff] = [...lin.c.entries()][0]!;
+      const term = lin.atoms.get(key)!;
+      // coeff * atom + k  op  0  ⟺  atom  op  -k/coeff（注意 coeff 符号）
+      if (coeff === 0) return;
+      const bound = -lin.k / coeff;
+      // 翻转：coeff < 0 时比较方向反转
+      let realOp = o;
+      if (coeff < 0) {
+        realOp =
+          o === "gt" ? "lt" : o === "lt" ? "gt" : o === "ge" ? "le" : o === "le" ? "ge" : o;
+      }
+      // 等式类代表（仅 var 进 union-find；length/get 等原子用自身 key）
+      const isVar = term.op === "var";
+      const storeKey = isVar ? findRep(ctx, term.id) : key;
+      const iv = ivFor(storeKey, term);
+      if (realOp === "gt") tightenLo(iv, bound, true);
+      else if (realOp === "ge") tightenLo(iv, bound, false);
+      else if (realOp === "lt") tightenHi(iv, bound, true);
+      else if (realOp === "le") tightenHi(iv, bound, false);
+      else if (realOp === "eq") {
+        tightenLo(iv, bound, false);
+        tightenHi(iv, bound, false);
+      }
+      return;
+    }
+    // 两原子差/和：x - y 形式记入特殊表——由 prove 时用原子区间合成
+    // 这里只把「差 = 常数」收成等式类
+    if (lin.c.size === 2 && o === "eq") {
+      const entries = [...lin.c.entries()];
+      const [k1, c1] = entries[0]!;
+      const [k2, c2] = entries[1]!;
+      if (c1 + c2 === 0 && Math.abs(c1) === 1) {
+        // x - y + k = 0 ⇒ x = y - k（仅 var-var 且 |c|=1）
+        const t1 = lin.atoms.get(k1)!;
+        const t2 = lin.atoms.get(k2)!;
+        if (t1.op === "var" && t2.op === "var" && lin.k === 0) {
+          eqAtoms.push([t1.id, t2.id]);
+        }
+      }
+    }
+  };
+
   for (const c of conjs) {
-    if (c.op === "gt" || c.op === "ge") {
-      // a > b  or a ≥ b，且 b 是字面量
-      if (c.b.op === "lit" && typeof c.b.value === "number") {
-        const k = termKey(c.a);
-        const cur = lo.get(k);
-        const next = { bound: c.b.value, strict: c.op === "gt" };
-        if (!cur || next.bound > cur.bound || (next.bound === cur.bound && next.strict)) {
-          lo.set(k, next);
+    switch (c.op) {
+      case "gt":
+      case "ge":
+      case "lt":
+      case "le":
+        applyCmp(c.op, c.a, c.b);
+        break;
+      case "eq": {
+        applyCmp("eq", c.a, c.b);
+        if (c.a.op === "var" && c.b.op === "var") {
+          eqAtoms.push([c.a.id, c.b.id]);
         }
+        break;
       }
-      // 反向：字面量 > term  ⇒ term < 字面量
-      if (c.a.op === "lit" && typeof c.a.value === "number") {
-        const k = termKey(c.b);
-        const cur = hi.get(k);
-        const next = { bound: c.a.value, strict: c.op === "gt" };
-        if (!cur || next.bound < cur.bound || (next.bound === cur.bound && next.strict)) {
-          hi.set(k, next);
+      case "ne": {
+        if (c.a.op === "var" && c.b.op === "lit" && typeof c.b.value === "number") {
+          neFacts.push({ key: findRep(ctx, c.a.id), n: c.b.value });
         }
-      }
-    }
-    if (c.op === "lt" || c.op === "le") {
-      if (c.b.op === "lit" && typeof c.b.value === "number") {
-        const k = termKey(c.a);
-        const cur = hi.get(k);
-        const next = { bound: c.b.value, strict: c.op === "lt" };
-        if (!cur || next.bound < cur.bound || (next.bound === cur.bound && next.strict)) {
-          hi.set(k, next);
+        if (c.b.op === "var" && c.a.op === "lit" && typeof c.a.value === "number") {
+          neFacts.push({ key: findRep(ctx, c.b.id), n: c.a.value });
         }
+        break;
       }
-      if (c.a.op === "lit" && typeof c.a.value === "number") {
-        const k = termKey(c.b);
-        const cur = lo.get(k);
-        const next = { bound: c.a.value, strict: c.op === "lt" };
-        if (!cur || next.bound > cur.bound || (next.bound === cur.bound && next.strict)) {
-          lo.set(k, next);
-        }
-      }
-    }
-    if (c.op === "eq" && c.a.op === "var" && c.b.op === "lit" && typeof c.b.value === "number") {
-      lo.set(c.a.id, { bound: c.b.value, strict: false });
-      hi.set(c.a.id, { bound: c.b.value, strict: false });
+      default:
+        break;
     }
   }
-  return { lo, hi };
+
+  for (const [a, b] of eqAtoms) unionRep(ctx, a, b);
+
+  // ne 收紧：x ≠ n ∧ x ≥ n ⇒ x > n；x ≠ n ∧ x ≤ n ⇒ x < n
+  for (const { key, n } of neFacts) {
+    const rep = findRep(ctx, key);
+    const iv = ctx.iv.get(rep);
+    if (!iv) continue;
+    if (iv.lo && !iv.lo.strict && iv.lo.bound === n) {
+      iv.lo = { bound: n, strict: true };
+    }
+    if (iv.hi && !iv.hi.strict && iv.hi.bound === n) {
+      iv.hi = { bound: n, strict: true };
+    }
+  }
+
+  return ctx;
 }
 
 /**
- * 用区间界蕴含原子比较。
- * 支持：term > n / ≥ n / < n / ≤ n，以及 term+lit 形式的简单平移。
- * 返回 undefined 表示无法判定。
+ * 线性式的区间下/上界（独立合成：缺哪侧就缺哪侧）。
+ * 系数符号决定用原子 lo 还是 hi；任一原子缺所需侧则该侧无界。
  */
-function impliesViaBounds(pred: Pred, bounds: Bounds): boolean | undefined {
-  // eq：lo 与 hi 夹逼同一数值（非严格）→ x = n 可 discharge
-  if (pred.op === "eq") {
-    const left = pred.a;
-    const right = pred.b;
-    if (right.op !== "lit" || typeof right.value !== "number") return undefined;
-    const n = right.value;
-    if (left.op === "var") {
-      return eqFromBounds(left.id, n, bounds);
+function linInterval(
+  ctx: Ctx,
+  lin: Lin,
+): { lo?: { bound: number; strict: boolean }; hi?: { bound: number; strict: boolean } } {
+  let lo = lin.k;
+  let hi = lin.k;
+  let loStrict = false;
+  let hiStrict = false;
+  let hasLo = true;
+  let hasHi = true;
+  for (const [key, coeff] of lin.c) {
+    const rep = findRep(ctx, key);
+    const iv = ctx.iv.get(rep) ?? ctx.iv.get(key);
+    if (!iv) return {};
+    if (coeff > 0) {
+      if (iv.lo) {
+        lo += coeff * iv.lo.bound;
+        if (iv.lo.strict) loStrict = true;
+      } else hasLo = false;
+      if (iv.hi) {
+        hi += coeff * iv.hi.bound;
+        if (iv.hi.strict) hiStrict = true;
+      } else hasHi = false;
+    } else {
+      // 负系数：lo 用原子 hi，hi 用原子 lo
+      if (iv.hi) {
+        lo += coeff * iv.hi.bound;
+        if (iv.hi.strict) loStrict = true;
+      } else hasLo = false;
+      if (iv.lo) {
+        hi += coeff * iv.lo.bound;
+        if (iv.lo.strict) hiStrict = true;
+      } else hasHi = false;
     }
-    if (left.op === "app" && left.fn === "+" && left.args.length === 2) {
-      const [a, b] = left.args as [Term, Term];
-      if (a.op === "var" && b.op === "lit" && typeof b.value === "number") {
-        return eqFromBounds(a.id, n - b.value, bounds);
-      }
-      if (b.op === "var" && a.op === "lit" && typeof a.value === "number") {
-        return eqFromBounds(b.id, n - a.value, bounds);
-      }
-    }
-    return undefined;
+  }
+  const out: { lo?: { bound: number; strict: boolean }; hi?: { bound: number; strict: boolean } } = {};
+  if (hasLo) out.lo = { bound: lo, strict: loStrict };
+  if (hasHi) out.hi = { bound: hi, strict: hiStrict };
+  return out;
+}
+
+function proveInCtx(ctx: Ctx, pred: Pred): boolean {
+  // typeof：同项不同标签否定已在上层；正标签需 Φ 显式给出
+  if (pred.op === "typeof") {
+    return false;
   }
   if (
+    pred.op !== "eq" &&
+    pred.op !== "ne" &&
     pred.op !== "gt" &&
     pred.op !== "ge" &&
     pred.op !== "lt" &&
     pred.op !== "le"
   ) {
+    return false;
+  }
+
+  // 纯字面量
+  const litAns = decideLiteralPred(pred);
+  if (litAns !== undefined) return litAns;
+
+  const norm = normCmp(pred.op, pred.a, pred.b);
+  if (!norm) return false;
+  const { lin, op } = norm;
+
+  // 目标本身在 Φ 中（线性形相同）
+  // 常数目标
+  if (lin.c.size === 0) {
+    if (op === "eq") return lin.k === 0;
+    if (op === "ne") return lin.k !== 0;
+    if (op === "gt") return lin.k > 0;
+    if (op === "ge") return lin.k >= 0;
+    if (op === "lt") return lin.k < 0;
+    if (op === "le") return lin.k <= 0;
+  }
+
+  const iv = linInterval(ctx, lin);
+  if (!iv.lo && !iv.hi) return false;
+
+  // 用目标线性式的区间证 lin op 0
+  const proveLinOp0 = (): boolean | undefined => {
+    if (op === "gt") {
+      if (!iv.lo) return undefined;
+      if (iv.lo.strict) return iv.lo.bound >= 0;
+      return iv.lo.bound > 0;
+    }
+    if (op === "ge") {
+      if (!iv.lo) return undefined;
+      return iv.lo.bound >= 0;
+    }
+    if (op === "lt") {
+      if (!iv.hi) return undefined;
+      if (iv.hi.strict) return iv.hi.bound <= 0;
+      return iv.hi.bound < 0;
+    }
+    if (op === "le") {
+      if (!iv.hi) return undefined;
+      return iv.hi.bound <= 0;
+    }
+    if (op === "eq") {
+      // 夹逼
+      if (!iv.lo || !iv.hi) return undefined;
+      if (iv.lo.strict && iv.lo.bound >= 0) return false;
+      if (iv.hi.strict && iv.hi.bound <= 0) return false;
+      if (!iv.lo.strict && iv.lo.bound > 0) return false;
+      if (!iv.hi.strict && iv.hi.bound < 0) return false;
+      if (!iv.lo.strict && !iv.hi.strict && iv.lo.bound === 0 && iv.hi.bound === 0) {
+        return true;
+      }
+      return undefined;
+    }
+    // ne：区间夹成单点且恰为 0 → 证伪；否则不可证
+    if (op === "ne") {
+      if (
+        iv.lo &&
+        iv.hi &&
+        !iv.lo.strict &&
+        !iv.hi.strict &&
+        iv.lo.bound === 0 &&
+        iv.hi.bound === 0
+      ) {
+        return false;
+      }
+      return undefined;
+    }
     return undefined;
-  }
-  // 归一：只处理 term ⊕ lit 比较 lit 的情况
-  const left = pred.a;
-  const right = pred.b;
-  if (right.op !== "lit" || typeof right.value !== "number") return undefined;
-  const n = right.value;
+  };
 
-  // 直接 term
-  if (left.op === "var") {
-    return cmpVar(left.id, pred.op, n, bounds);
-  }
-  // term = x + k
-  if (left.op === "app" && left.fn === "+" && left.args.length === 2) {
-    const [a, b] = left.args as [Term, Term];
-    if (a.op === "var" && b.op === "lit" && typeof b.value === "number") {
-      // x + k  op  n  ⟺  x  op  (n - k)
-      return cmpVar(a.id, pred.op, n - b.value, bounds);
-    }
-    if (b.op === "var" && a.op === "lit" && typeof a.value === "number") {
-      return cmpVar(b.id, pred.op, n - a.value, bounds);
-    }
-  }
-  // 纯字面量已在外层处理
-  return undefined;
-}
-
-function eqFromBounds(id: string, n: number, bounds: Bounds): boolean | undefined {
-  const lo = bounds.lo.get(id);
-  const hi = bounds.hi.get(id);
-  if (!lo || !hi) return undefined;
-  // x ≥ n ∧ x ≤ n（非严格）→ x = n
-  const loCovers = lo.strict ? lo.bound <= n : lo.bound <= n;
-  const hiCovers = hi.strict ? hi.bound >= n : hi.bound >= n;
-  // 严格界：x > n 不能蕴含 x = n；x < n 也不能
-  if (lo.strict && lo.bound >= n) return false; // x > lo≥n ⇒ x≠n
-  if (hi.strict && hi.bound <= n) return false;
-  if (!lo.strict && lo.bound > n) return false; // x ≥ lo>n ⇒ x≠n
-  if (!hi.strict && hi.bound < n) return false;
-  // 夹逼成立当 lo 允许 n 且 hi 允许 n，且界卡死在 n
-  if (!loCovers || !hiCovers) return undefined;
-  if (!lo.strict && !hi.strict && lo.bound === n && hi.bound === n) return true;
-  return undefined;
-}
-
-function cmpVar(
-  id: string,
-  op: "gt" | "ge" | "lt" | "le",
-  n: number,
-  bounds: Bounds,
-): boolean | undefined {
-  const lo = bounds.lo.get(id);
-  const hi = bounds.hi.get(id);
-  // x > n：需要 lo ≥ n（若 strict lo 则 lo ≥ n；若 lo = n 且 non-strict 则 x≥n 不能推出 x>n）
-  if (op === "gt") {
-    if (!lo) return undefined;
-    if (lo.strict) return lo.bound >= n;
-    return lo.bound > n;
-  }
-  if (op === "ge") {
-    if (!lo) return undefined;
-    return lo.bound >= n;
-  }
-  if (op === "lt") {
-    if (!hi) return undefined;
-    if (hi.strict) return hi.bound <= n;
-    return hi.bound < n;
-  }
-  if (op === "le") {
-    if (!hi) return undefined;
-    return hi.bound <= n;
-  }
-  return undefined;
+  const r = proveLinOp0();
+  return r === true;
 }
 
 function decideLiteralPred(pred: Pred): boolean | undefined {

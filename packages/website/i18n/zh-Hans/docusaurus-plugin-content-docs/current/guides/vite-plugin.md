@@ -1,11 +1,10 @@
 ---
-sidebar_position: 3
 description: "使用 vite-plugin-nudo 在 Vite 构建中分析 @nudo: 类型推断指令：支持 include/exclude glob 配置、构建警告与 failOnError 构建失败。"
 ---
 
 # Vite 插件
 
-**vite-plugin-nudo** 将 Nudo 的类型推断集成到 Vite 构建中。文件筛选与 LSP/CLI 同源：经 `nudo.analysis.mode`（`shouldAnalyzeFile`）门控；默认 `"exports"`（含 `@nudo:*` / `export` / 侧车的文件）。
+**vite-plugin-nudo** 将 Nudo 的类型推断集成到 Vite 构建中。文件筛选与 LSP/CLI 同源：经 `nudo.analysis.mode`（`shouldAnalyzeFile`）门控；默认 `"exports"`。模式语义：[共存](./coexistence.md#何时用-modedirectives-vs-modeexports)。
 
 ## 安装
 
@@ -63,11 +62,11 @@ glob 模式支持任意扩展名（`**/*.js`、`**/*.mjs`、`**/*.ts` 等）、�
 ## 行为
 
 - **文件匹配**：插件会处理匹配 `include` 且不匹配 `exclude` 的文件，`exclude` 总是优先。默认 `include` 为 `["**/*.js", "**/*.mjs", "**/*.ts"]`，与 `isNudoTargetPath` 一致（`.cjs`/`.cts`/`.mts`/`.tsx` 不是分析目标）。
-- **分析门控**：glob 之后经 `shouldAnalyzeFile`（`package.json#nudo.analysis.mode`）。默认 `"exports"` — 含 `@nudo:` / `export` / 侧车的文件；可配置 `"all"` / `"directives"`。
+- **分析门控**：glob 之后经 `shouldAnalyzeFile`（`package.json#nudo.analysis.mode`）。默认 `"exports"`；可配置 `"all"` / `"directives"`。
 - **分析**：匹配文件使用 `@nudojs/service` 的 `analyzeFileAsync` 运行类型推断。
-- **精化门禁**：匹配的文件同时会经过 Abs 精化门禁（`@nudojs/core` 的 `checkSource`）：`nudo:constraint-violated`、`nudo:assign-mismatch`、`nudo:arg-structure` 问题会并入同一条诊断管线，与求值器诊断一起报告。
-- **缓存**：分析结果按文件缓存。缓存在 `buildStart` 时清除。
-- **诊断**：分析产生的错误和警告会作为 Vite 警告发出（当 `failOnError` 为 `true` 时为错误）。构建结束时，会输出摘要：`[nudo] Analysis complete: X error(s), Y warning(s)`。
+- **契约门禁**：匹配的文件同时会经过 Abs 契约门禁（`@nudojs/core` 的 `checkSource`）：`nudo:constraint-violated`、`nudo:assign-mismatch`、`nudo:arg-structure` 问题会并入同一条诊断管线，与求值器诊断一起报告。
+- **缓存**：分析结果按文件缓存。缓存在 `buildStart` 及每次 `watchChange`（dev server 文件变更）时清除。
+- **诊断**：分析诊断先经项目 `package.json#nudo.analysis.diagnostics` 档位过滤（默认档：error + warning 减噪码）再发出；幸存者作为 Vite 警告（`failOnError` 为 `true` 时为错误）发出。因此设置 `"diagnostics": "errors"` 会在构建期静音警告，`"off"` 则完全静音插件诊断输出。构建结束时输出摘要：`[nudo] Analysis complete: X error(s), Y warning(s)`。
 
 ## `failOnError`
 
@@ -75,3 +74,10 @@ glob 模式支持任意扩展名（`**/*.js`、`**/*.mjs`、`**/*.ts` 等）、�
 - **`failOnError: true`**：Nudo 类型错误作为构建错误报告，导致构建失败。
 
 当希望 Nudo 在 CI 或生产构建中强制执行类型正确性时，可使用 `failOnError: true`。
+
+## 下一步
+
+- [安装](../getting-started/installation.md) —— 把插件接入项目
+- [nudo check](./check.md) —— CI 上的同一 Abs 门禁
+- [与 TypeScript 共存](./coexistence.md) —— 混合 monorepo 配方
+- [版本与发布](./versioning.md) —— 什么算破坏性变更

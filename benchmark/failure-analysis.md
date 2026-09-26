@@ -1,4 +1,21 @@
-# Benchmark Failure Analysis
+# Benchmark Failure Analysis (legacy infer suite)
+
+> **Status — legacy harness, not current gold.**
+> This document analyzes the old `benchmark/results` **type-string** infer suite.
+> It is **not** the current `nudo check` gold surface (`packages/core/src/algebra/__tests__/check-*.test.ts`).
+> Suite map: [`./README.md`](./README.md).
+>
+> **Fixed items are regression-anchored.** Loop accumulation (`total += n`), Promise
+> double-wrap, and ObjectMethod recognition were fixed and are locked by
+> [`packages/core/src/algebra/__tests__/engine-depth-gold.test.ts`](../packages/core/src/algebra/__tests__/engine-depth-gold.test.ts).
+> Treat those rows as closed historical notes, not open bugs.
+>
+> **Remaining design limits are expected Abs limits**, not open bugs: array chaining
+> (`filter+map+reduce`), `Map.get` key→value tracking, and higher-order function
+> parameter inference stay imprecise by design until Abs gains the corresponding
+> domains. Do not file them as regressions against `nudo check` gold.
+>
+> The historical analysis body below is kept as recorded — do not delete it.
 
 ## 逐个失败用例分析
 

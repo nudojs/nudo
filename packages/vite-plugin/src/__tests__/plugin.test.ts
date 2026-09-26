@@ -2,7 +2,21 @@ import { describe, it, expect, vi } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Plugin } from "vite";
 import nudoPlugin, { type NudoPluginOptions } from "../index.ts";
+
+/** Vite hooks may be fn or ObjectHook{handler}; tests need a direct callable. */
+function hookFn(h: unknown): (...args: never[]) => unknown {
+  if (typeof h === "function") return h as (...args: never[]) => unknown;
+  if (h && typeof h === "object" && "handler" in h && typeof (h as { handler?: unknown }).handler === "function") {
+    return (h as { handler: (...args: never[]) => unknown }).handler;
+  }
+  throw new Error("plugin hook missing");
+}
+
+function transformOf(plugin: Plugin) {
+  return hookFn(plugin.transform) as (this: unknown, code: string, id: string) => Promise<unknown>;
+}
 
 describe("vite-plugin-nudo", () => {
   it("creates a plugin with correct name", () => {
@@ -12,11 +26,11 @@ describe("vite-plugin-nudo", () => {
 
   it("returns null for files without @nudo: directives", async () => {
     const plugin = nudoPlugin();
-    const result = await plugin.transform.call({}, "const x = 1;", "/test/file.js");
+    const result = await transformOf(plugin).call({}, "const x = 1;", "/test/file.js");
     expect(result).toBeNull();
   });
 
-  it("analyzes files that only declare @nudo:refine (gate aligned with LSP)", async () => {
+  it("analyzes files that only declare @nudo:contract (gate aligned with LSP)", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-vite-"));
     try {
       writeFileSync(
@@ -27,7 +41,7 @@ describe("vite-plugin-nudo", () => {
       const source = `/// @nudo:import { positive } from "./shapes.nudo.js"
 
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   return x;
@@ -40,7 +54,7 @@ const r = needsPositive(-1);
       const plugin = nudoPlugin();
       const warnFn = vi.fn();
       const ctx = { warn: warnFn, error: vi.fn() };
-      const result = await plugin.transform.call(ctx, source, filePath);
+      const result = await transformOf(plugin).call(ctx, source, filePath);
       expect(result).toBeNull();
       expect(warnFn).toHaveBeenCalled();
       const msgs = warnFn.mock.calls.map((c) => String(c[0])).join("\n");
@@ -52,48 +66,43 @@ const r = needsPositive(-1);
 
   it("returns null for node_modules files", async () => {
     const plugin = nudoPlugin();
-    const result = await plugin.transform.call({}, "const x = 1;", "/node_modules/pkg/file.js");
+    const result = await transformOf(plugin).call({}, "const x = 1;", "/node_modules/pkg/file.js");
     expect(result).toBeNull();
   });
 
-  it("analyzes files with @nudo: directives and reports warnings", async () => {
+  it("analyzes files with entry surfaces and reports warnings", async () => {
     const plugin = nudoPlugin();
     const warnFn = vi.fn();
     const ctx = { warn: warnFn, error: vi.fn() };
 
+    // L2 entry-may-throw 仍是 check 门禁（@nudo:case 已降为 debug/test 面）
     const source = `
-/**
- * @nudo:case "negative" (-1)
- */
-function safeSqrt(x) {
-  if (x < 0) {
-    throw new RangeError("negative input");
-  }
-  return x;
+export function getName(user) {
+  return user.name;
 }
 `;
-    const result = await plugin.transform.call(ctx, source, "/test/throws.js");
+    const result = await transformOf(plugin).call(ctx, source, "/test/throws.js");
     expect(result).toBeNull();
     expect(warnFn).toHaveBeenCalled();
   });
 
   it("respects custom include patterns", async () => {
     const plugin = nudoPlugin({ include: ["**/*.typed.js"] });
-    const result = await plugin.transform.call({}, "const x = 1;", "/test/file.js");
+    const result = await transformOf(plugin).call({}, "const x = 1;", "/test/file.js");
     expect(result).toBeNull();
   });
 
   it("clears cache on buildStart", () => {
     const plugin = nudoPlugin();
-    plugin.buildStart.call({});
+    hookFn(plugin.buildStart).call({});
     // No error means cache cleared successfully
   });
 
   it("reports summary on buildEnd", () => {
     const plugin = nudoPlugin();
     const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    plugin.buildStart.call({});
-    plugin.buildEnd.call({});
+    hookFn(plugin.buildStart).call({});
+    hookFn(plugin.buildEnd).call({});
     consoleSpy.mockRestore();
   });
 
@@ -103,31 +112,22 @@ function safeSqrt(x) {
     const warnFn = vi.fn();
     const ctx = { warn: warnFn, error: errorFn };
 
-    // case 期望返回类型与推断不符 → error 级诊断
+    // L2 entry-may-throw 默认 error 级
     const source = `
-/**
- * @nudo:case "test" (1) => string()
- */
-function identity(x) {
-  return x;
+export function getName(user) {
+  return user.name;
 }
 `;
-    await plugin.transform.call(ctx, source, "/test/fail.js");
+    await transformOf(plugin).call(ctx, source, "/test/fail.js");
     expect(errorFn).toHaveBeenCalled();
   });
 });
 
 describe("vite-plugin-nudo glob matching", () => {
-  // 稳定产出 warning（throw 路径），用来证明文件被分析过
+  // 稳定产出 check 诊断（L2 entry-may-throw），用来证明文件被分析过
   const directiveSource = `
-/**
- * @nudo:case "negative" (-1)
- */
-function safeSqrt(x) {
-  if (x < 0) {
-    throw new RangeError("negative input");
-  }
-  return x;
+export function getName(user) {
+  return user.name;
 }
 `;
 
@@ -135,7 +135,7 @@ function safeSqrt(x) {
     const plugin = nudoPlugin(options);
     const warnFn = vi.fn();
     const ctx = { warn: warnFn, error: vi.fn() };
-    const result = await plugin.transform.call(ctx, directiveSource, id);
+    const result = await transformOf(plugin).call(ctx, directiveSource, id);
     return result === null && warnFn.mock.calls.length > 0;
   }
 

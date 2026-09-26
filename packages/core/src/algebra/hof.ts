@@ -11,45 +11,11 @@ import type { Pred } from "./pred.ts";
 import { and, pTrue, pFalse, substPred } from "./pred.ts";
 import { getFnImpl } from "./abs-fn.ts";
 import { joinAbs } from "./objects.ts";
-import type { AstEnv } from "./ast-env.ts";
+import type { AstEnv, HofCollectCtx, HofSite, RelSource } from "./hof-types.ts";
 
-// --- P2 types ---
+// --- P2 types（定义在 hof-types.ts，重导出保持稳定导入路径）---
 
-/**
- * 关系来源标记：P4 豁免与 diagnostics 依赖它，禁止隐式猜。
- * - promote：使用驱动提升（generalize symbolic / instantiate 局部）
- * - refine：@nudo:refine 契约
- * - relationFn：harvest/mock/测试直接写入 fnRels 时的预留来源（P4 error 路径）
- */
-export type RelSource = "promote" | "refine" | "relationFn";
-
-export type HofSite = {
-  /** 形参名（函数形参） */
-  param: string;
-  /** 输入侧 term：实参的 term（element 的 var/lit/app）；map 1 个、reduce 2 个 */
-  argTerms: Term[];
-  /** 输出侧：归纳出的返回 Abs */
-  result: Abs;
-  /** 源位置，便于 diagnostics */
-  loc?: { line: number; column: number };
-};
-
-/**
- * run 局部 collector（与 Phi 并列，不进 Φ 合并）。
- * symbolic 一次跑：安装并沉淀到 PolyFn；instantiate 重跑：装 throwaway
- * 副本——形状提升仍生效，结果不写回共享状态（见 generalize.ts run()）。
- */
-export type HofCollectCtx = {
-  /** 本次归纳的形参名集合（身份判定用） */
-  paramNames: ReadonlySet<string>;
-  /** 本次 typeParams 的 α id 集合（term 复用白名单） */
-  alphaIds: Set<string>;
-  /** fresh α 计数 */
-  freshSeq: { n: number };
-  sites: HofSite[];
-  fnRels: Map<string, { abs: Abs; source: RelSource }>;
-  entryShapes: Map<string, { abs: Abs; source: RelSource }>;
-};
+export type { RelSource, HofSite, HofCollectCtx } from "./hof-types.ts";
 
 export function createHofCollectCtx(
   paramNames: ReadonlySet<string>,
@@ -688,23 +654,94 @@ export function substAbs(a: Abs, map: ReadonlyMap<string, Abs>): Abs {
 }
 
 /**
+ * 从 pattern（声明形参）与 arg（实参 Abs）做结构合一，绑定 α 变量。
+ * 首次绑定保留；只下钻 arr / obj / tuple / sum / fn 形参。
+ */
+function bindTypeVars(
+  pattern: Abs,
+  arg: Abs,
+  map: Map<string, Abs>,
+  depth = 0,
+): void {
+  if (depth > 6 || map.size > 16) return;
+  const pt = pattern.term;
+  if (pt?.op === "var") {
+    if (!map.has(pt.id)) map.set(pt.id, arg);
+    return;
+  }
+  const ps = pattern.shape;
+  const as = arg.shape;
+  if (ps.k === "arr" && as.k === "arr") {
+    bindTypeVars(ps.element, as.element, map, depth + 1);
+    return;
+  }
+  if (ps.k === "tuple" && as.k === "tuple") {
+    const n = Math.min(ps.elements.length, as.elements.length);
+    for (let i = 0; i < n; i++) bindTypeVars(ps.elements[i]!, as.elements[i]!, map, depth + 1);
+    return;
+  }
+  if (ps.k === "sum") {
+    // union 形参：在与实参成员最匹配的 pattern 成员上绑定（取首个能下钻的）
+    for (const m of ps.members) {
+      const before = map.size;
+      bindTypeVars(m, arg, map, depth + 1);
+      if (map.size > before) return;
+    }
+    return;
+  }
+  if (ps.k === "obj" && as.k === "obj") {
+    for (const [key, slot] of Object.entries(ps.slots)) {
+      const aSlot = as.slots[key];
+      if (aSlot) bindTypeVars(slot.value, aSlot.value, map, depth + 1);
+    }
+    return;
+  }
+  if (ps.k === "fn" && as.k === "fn" && ps.paramTypes && as.paramTypes) {
+    const n = Math.min(ps.paramTypes.length, as.paramTypes.length);
+    for (let i = 0; i < n; i++) bindTypeVars(ps.paramTypes[i]!, as.paramTypes[i]!, map, depth + 1);
+    return;
+  }
+  if (ps.k === "eff" && as.k === "eff" && ps.eff === as.eff) {
+    // Promise<T> / generator<T>
+    bindTypeVars(ps.inner, as.inner, map, depth + 1);
+    return;
+  }
+  if (ps.k === "brand" && as.k === "brand") {
+    // Map/Set 等：__key/__value/__elem 槽做 α 合一（名字一致才下钻）
+    if (ps.name === as.name) bindTypeVars(ps.shape, as.shape, map, depth + 1);
+    return;
+  }
+  // prim / unknown：无 α 可绑
+}
+
+/**
  * relation-only / isRelFn 的应用：按 paramTypes 做 α 替换得到 returnType。
  * impl.relation 槽优先于 shape.returnType。重复 α 先绑定保留。
+ * **深度合一**：`T[]` 形参可从 `number[]` 实参绑出 T=number（lodash 泛型）。
  */
 export function instantiateReturn(fn: Abs, args: Abs[]): Abs {
   const shape = fn.shape;
   if (!shape || shape.k !== "fn") return unknown;
-  const src = getFnImpl(fn)?.relation ?? {
+  const impl = getFnImpl(fn);
+  const src = impl?.relation ?? {
     paramTypes: shape.paramTypes ?? [],
     returnType: shape.returnType ?? unknown,
   };
   const map = new Map<string, Abs>();
   src.paramTypes.forEach((p, i) => {
-    if (p.term?.op !== "var") return;
-    const id = p.term.id;
-    if (map.has(id)) return;
-    map.set(id, args[i] ?? unknown);
+    bindTypeVars(p, args[i] ?? unknown, map);
   });
+  // 条件类型 infer：T 绑定后投出 E/U；extends 不成立 → fallback 支
+  if (src.inferFrom) {
+    const bound = map.get(src.inferFrom.fromVar);
+    if (src.inferFrom.via === "arr" && bound?.shape.k === "arr") {
+      map.set(src.inferFrom.inferVar, bound.shape.element);
+    } else if (src.inferFrom.via === "promise" && bound?.shape.k === "eff" && bound.shape.eff === "promise") {
+      map.set(src.inferFrom.inferVar, bound.shape.inner);
+    } else if (src.condFallback) {
+      return substAbs(src.condFallback, map);
+    }
+  }
   return substAbs(src.returnType, map);
 }
 
@@ -712,13 +749,13 @@ export function instantiateReturn(fn: Abs, args: Abs[]): Abs {
  * 回调统一入口（单点定义）。A–F + sum：
  * A Node inline | B apply | C body | D relation | E isRelFn | F unknown
  *
- * 实现委托 ast-eval 的 applyAbsFn（已含 sum / D / E / body 优先）。
+ * 实现委托 applyAbsFn（已含 sum / D / E / body 优先）。
  * Identifier 解析层：env.vars 有 Abs → B–E；env.fns 有 → callFunction；否则 unknown。
  *
- * 为避免 hof ↔ ast-eval 循环依赖，本函数由宿主在运行时绑定。
+ * 为避免 hof ↔ exec 循环依赖，本函数由宿主在运行时绑定。
  *
- * 依赖说明：宿主在 `ast-eval.ts` 模块加载时注册（副作用）。
- * 只 import hof.ts 而未加载 ast-eval 时，fallback 仅认 relation/isRelFn。
+ * 依赖说明：宿主在 `exec/call.ts`（B-path `$call` 宿主）加载时注册（副作用）。
+ * 只 import hof.ts 而未加载 exec/call 时，fallback 仅认 relation/isRelFn。
  * 与 §5.1 的「禁止全局 collector」不同——这里是无状态委托钩子，不是 run 局部状态。
  */
 type ApplyCallbackHost = (
@@ -732,13 +769,35 @@ type ApplyCallbackHost = (
 let applyCallbackHost: ApplyCallbackHost | undefined;
 
 /**
- * ast-eval 模块加载时注册（副作用）。
- * 必须经 `ast-eval.ts`（或其依赖方：exec/call、exec/class、generalize）加载，
+ * B-path 宿主 `exec/call.ts` 加载时注册（副作用）。
+ * 必须经 `exec/call.ts`（或其依赖方：exec/class、generalize）加载，
  * 才能启用 Identifier/env.fns/inline body 路径；只 import hof.ts 时 fallback
- * 仅认 relation/isRelFn。勿在多份 ast-eval 实例下各写各的——双包/双副本会覆盖。
+ * 仅认 relation/isRelFn。勿在多份实例下各写各的——双包/双副本会覆盖。
  */
 export function setApplyCallbackHost(fn: ApplyCallbackHost): void {
   applyCallbackHost = fn;
+}
+
+/**
+ * 通用回调实参调用（exec/class invokeArrMethod 与 builtins Array.from 共用）：
+ * 原始 JS 函数直调（展开实参）；Abs fn 走 applyCallbackAbs（sum 分发/宿主）。
+ * B 路径 transpile 的箭头回调是 $fnVal Abs——$fnVal.apply 自带调用边界。
+ */
+export function applyCallbackValue(
+  fn: unknown,
+  args: Abs[],
+  env: unknown,
+  phi: unknown,
+  budget: unknown,
+): Abs {
+  if (typeof fn === "function") {
+    const r = (fn as (...a: Abs[]) => unknown)(...args);
+    if (r && typeof r === "object" && "shape" in (r as object)) return r as Abs;
+    return unknown;
+  }
+  const absFn = asAbs(fn);
+  if (absFn) return applyCallbackAbs(absFn, args, env, phi, budget);
+  return unknown;
 }
 
 export function applyCallbackAbs(
@@ -775,7 +834,7 @@ export function applyCallbackAbs(
   return applyCallbackHost(cb, args, env, phi, budget);
 }
 
-// --- 双路径共享结果投影（ast-eval 与 exec/class 禁止各写一套）---
+// --- 共享结果投影（exec/class 与 hof 共用，禁止各写一套）---
 
 /** undefined 值的统一 Abs 表示（forEach/find 等） */
 export function undefAbs(): Abs {

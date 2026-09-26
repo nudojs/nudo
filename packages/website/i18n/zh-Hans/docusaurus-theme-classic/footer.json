@@ -23,21 +23,37 @@
     "message": "快速上手",
     "description": "The label of footer link with label=Quick Start"
   },
-  "link.item.label.Core Concepts": {
-    "message": "核心概念",
-    "description": "The label of footer link with label=Core Concepts linking to /docs/concepts/type-values"
-  },
-  "link.item.label.Nudo vs TypeScript": {
-    "message": "Nudo vs TypeScript",
-    "description": "The label of footer link with label=Nudo vs TypeScript"
+  "link.item.label.Abs": {
+    "message": "Abs",
+    "description": "The label of footer link with label=Abs linking to /docs/concepts/abs"
   },
   "link.item.label.nudo check": {
     "message": "nudo check",
     "description": "The label of footer link with label=nudo check"
   },
-  "link.item.label.API Reference": {
-    "message": "API 参考",
-    "description": "The label of footer link with label=API Reference linking to /docs/api/core"
+  "link.item.label.nudo contract": {
+    "message": "nudo contract",
+    "description": "The label of footer link with label=nudo contract"
+  },
+  "link.item.label.Nudo vs TypeScript": {
+    "message": "Nudo vs TypeScript",
+    "description": "The label of footer link with label=Nudo vs TypeScript"
+  },
+  "link.item.label.Diagnostics": {
+    "message": "诊断",
+    "description": "The label of footer link with label=Diagnostics linking to /docs/reference/diagnostics"
+  },
+  "link.item.label.Recipes": {
+    "message": "实战配方",
+    "description": "The label of footer link with label=Recipes linking to /docs/guides/recipes"
+  },
+  "link.item.label.Agents": {
+    "message": "Agents",
+    "description": "The label of footer link with label=Agents"
+  },
+  "link.item.label.llms.txt": {
+    "message": "llms.txt",
+    "description": "The label of footer link with label=llms.txt"
   },
   "link.item.label.Blog": {
     "message": "博客",
@@ -46,6 +62,10 @@
   "link.item.label.GitHub": {
     "message": "GitHub",
     "description": "The label of footer link with label=GitHub linking to https://github.com/nudojs/nudo"
+  },
+  "link.item.label.Limits": {
+    "message": "边界与非目标",
+    "description": "The label of footer link with label=Limits linking to /docs/concepts/limits"
   },
   "link.item.label.Design Document": {
     "message": "设计文档",

@@ -1,9 +1,10 @@
 ---
-sidebar_position: 1
 description: "Nudo 设计内幕：Abs = shape × term × pred × conf 作为唯一类型系统、外延投影用于展示、指令系统与抽象解释。"
 ---
 
 # 设计文档
+
+> **范围。** 本页是公开设计叙事。架构真源只在仓库：[`docs/design/kernel-merge.md`](https://github.com/nudojs/nudo/blob/main/docs/design/kernel-merge.md)（Abs）与 [`docs/design/cli-semantics.md`](https://github.com/nudojs/nudo/blob/main/docs/design/cli-semantics.md)（CLI/产品）。本页与真源冲突时，以真源为准。
 
 > **Nudo** — 面向 JavaScript 的类型推断引擎。类型系统是 **Abs**（`shape × term × pred × conf`）——类型是可计算值，携带约束并参与代数。不存在第二套 IR：dts/LSP/序列化直接消费 Abs，外延视图是单向、有损的渲染。生产分析 Abs 原生。
 
@@ -66,7 +67,7 @@ Nudo：       源代码  +  Abs     →  执行  →  类型 + 约束
 | **shape** | 结构种类：`any` / `unknown` / `prim` / `obj` / `arr` / `tuple` / `fn` / `brand` / `eff` / `sum` / `never` |
 | **term** | 值的符号身份：字面量、变量或应用（`x+1`） |
 | **pred** | 相对 term 的约束：`x>0`、合取等 |
-| **conf** | 置信度：`exact` / `path` / `widened` / `partial` / `opaque` |
+| **conf** | 置信度：`exact` / `path` / `widened` / `mock` / `partial` / `opaque` |
 
 `any` 表示「任意 JS 值」（无约束参数）；`unknown` 表示「分析拿不到信息」。二者不同。
 
@@ -74,7 +75,7 @@ Abs 上的运算是代数的：单调算术、比较、`leq` 可赋值、谓词�
 
 ### 2.2 外延投影（不是第二套类型系统）
 
-不存在第二套 IR。dts（`Case:` JSDoc 行）、LSP hover 表面、序列化与 `*.nudo.js` 模板约束都**直接消费 Abs**——外延视图是一种渲染（展示用 `formatShape`，投影用 `absToTSType` / `absToZodSchema` / 守卫生成器）。渲染按设计即有损（`formatShape` 丢弃非字面量 term），但不存在回读：分析从不消费投影。生产分析 Abs 原生（B-path 转译+执行，ast-eval 回退）。
+不存在第二套 IR。dts（`Case:` JSDoc 行）、LSP hover 表面、序列化与 `*.nudo.js` 模板约束都**直接消费 Abs**——外延视图是一种渲染（展示用 `formatShape`，投影用 `absToTSType` / `absToSchemaSource` / `projectAbsToSchema` / 守卫生成器）。渲染按设计即有损（`formatShape` 丢弃非字面量 term），但不存在回读：分析从不消费投影。生产分析 Abs 原生（单引擎 B-path 转译+执行；B 不可托管源 fail-closed）。
 
 ### 2.3 设计原则
 
@@ -94,20 +95,23 @@ combine(5, 3)   // → 8  #exact，而非 number
 
 **原则 3：联合类型懒分配。** 联合类型作为整体传播，只在运算符**必须区分成员**时才展开。这避免了笛卡尔积导致的组合爆炸——并保留相关性（`a + a` 保持同一符号变量：`(A1 + A1)`，绝不会变成 `A1 + A1'`）。
 
-```javascript
+```javascript verify
 function selfAdd(a) { return a + a; }
 selfAdd(1);  // → 2  #exact
 selfAdd(2);  // → 4  #exact
 // 合并：2 | 4 —— 绝不是 1+1 | 1+2 | 2+1 | 2+2
 ```
 
-**原则 4：守卫窄化。** 类型守卫（`typeof`、`instanceof`、真值检查）在分支中窄化值。
+**原则 4：守卫窄化（逐调用点）。** 类型守卫（`typeof`、`instanceof`、真值检查）只在条件对**该调用的具体实参**确定可判定时分叉分支；抽象实参不窄化，两分支以相同值运行后合并。
 
 ```javascript
-function process(x) {          // x: number | string
+function len(x) {              // x: number | string（抽象联合）
   if (typeof x === "string") {
-    // 在此分支中，x 被窄化为 string
+    // 抽象实参下两分支都运行，x 不被窄化；
+    // 具体调用 len("abc") 才走此分支
+    return x.length;
   }
+  return -1;
 }
 ```
 
@@ -118,7 +122,7 @@ function process(x) {          // x: number | string
 numLit(value)                 // 精确数值字面量
 strLit(value)                 // 精确字符串字面量
 num() / str() / bool()        // 基本类型域
-never / unknown               // 空集 / 全集（常量）
+never / unknown               // 空集 / 推导失败标记（全集是 `any`）
 obj({ key: { value, optional? } })  // 对象形状
 abs(shape, term, pred, conf)  // 通用构造器
 absFunction(params, { body, env, apply })  // 函数值
@@ -129,7 +133,7 @@ formatAbs(a)                  // 无损：shape、= term、where pred、#conf
 leqAbs(src, tgt)              // 可赋值性（代数的子类型检查）
 ```
 
-源码级契约用 `@nudo:refine` + `*.nudo.js` 模板（约束构造器）声明，不用裸构造器。
+源码级契约用 `@nudo:contract` + `*.nudo.js` 模板（约束构造器）声明，不用裸构造器。
 
 ### 2.5 运算符语义（Abs 原生表面）
 
@@ -159,7 +163,7 @@ parser ──▶ core
             └── format       ← 外延渲染（dts / hover / 序列化）
                  │
                  ▼
-            service/evaluator    ← Abs 原生：B-path（转译+执行）→ ast-eval
+            service/evaluator    ← Abs 原生：B-path（转译+执行）单引擎
                  │
                  ▼
             service / lsp / vite / dts
@@ -170,7 +174,7 @@ parser ──▶ core
 | **Parser** | 将 JS/TS 源码解析为 AST（Babel） |
 | **Directive Extractor** | 提取 `@nudo:*`；refine/import 在 core 解析 |
 | **algebra (Abs)** | 类型即计算：eval / check / leq / generalize |
-| **Evaluator（Abs 原生）** | B-path 转译+执行；非 B 托管文件走 ast-eval 回退 |
+| **Evaluator（Abs 原生）** | 仅 B-path 转译+执行；B 不可托管源 fail-closed |
 | **surface / arithmetic / abs-route** | 算术、比较、一元、spread 经代数路由 |
 | **Environment** | 变量绑定（名称 → Abs） |
 
@@ -195,7 +199,7 @@ eval(Identifier "x")  →  env.lookup("x")
 eval(BinaryExpression { left, op, right })  →  arithmetic(op, eval(left), eval(right))
 ```
 
-**条件语句（if-else）：** 引擎可能**同时求值两个分支**，各自使用窄化后的值，再合并：
+**条件语句（if-else）：** 测试不可判定时引擎分叉两个分支——**不窄化**任一分支：
 
 ```text
 eval(IfStatement { test, consequent, alternate }) →
@@ -203,23 +207,15 @@ eval(IfStatement { test, consequent, alternate }) →
   if condition === lit(true)   → eval(consequent)
   if condition === lit(false)  → eval(alternate)
   else:
-    [envTrue, envFalse] = narrow(env, test)
-    resultTrue  = eval(consequent, envTrue)
-    resultFalse = eval(alternate, envFalse)
+    // 两分支以相同 env 运行；结果合并（无窄化）
+    resultTrue  = eval(consequent, env)
+    resultFalse = eval(alternate, env)
     return union(resultTrue, resultFalse)
 ```
 
 ### 3.3 窄化规则
 
-| 模式 | True 分支 | False 分支 |
-|---------|-------------|-------------|
-| `typeof x === "string"` | `x ∩ string` | `x - string` |
-| `typeof x === "number"` | `x ∩ number` | `x - number` |
-| `x === null` | `x ∩ null` | `x - null` |
-| `x === <literal>` | `x ∩ lit(v)` | `x - lit(v)` |
-| `Array.isArray(x)` | `x ∩ array` | `x - array` |
-| `x`（真值检查） | `x - null - undefined - falsy` | 补集 |
-| `x instanceof C` | `x ∩ instance(C)` | `x - instance(C)` |
+窄化是**逐调用点**的：条件对该调用的具体实参求值为*确定*真/假时才选分支（`typeof` / `===` / `Array.isArray` / `switch` / 真值 / 判别字段）。抽象实参（`number()`、union）无法判定条件——两分支以相同值运行后合并；不存在抽象类型交集/减法。`in` / `?.` / `??` 仅部分支持。已验证走查：[控制流收窄](../concepts/control-flow-narrowing.md)。
 
 ---
 
@@ -236,7 +232,7 @@ for (let i = 0; i < arr.length; i++) {
 }
 ```
 
-具体边界逐元素累加得到字面量。抽象边界对前 `0…7` 次迭代求和并报告 `28 #exact`。
+具体边界逐元素累加得到字面量。抽象边界展开至上限为止，报告各次迭代的拓宽联合（数值累加器为 `number`）——这是终止守卫，而非不动点精化。
 
 ### 4.2 闭包与高阶函数
 
@@ -271,7 +267,7 @@ Nudo 将异常作为函数类型的一等部分追踪。每个函数不仅有 `r
 | `@nudo:pure` | 标记函数为纯函数，启用记忆化 |
 | `@nudo:skip` | 跳过求值；可选的约束构建器表达式直接声明返回类型（如 `@nudo:skip number()`） |
 | `@nudo:sample` | 保留的无效果指令（已解析，未消费） |
-| `@nudo:refine` | 精化契约：`@nudo:refine param name` / `@nudo:refine return name`（Pred 进入 Abs） |
+| `@nudo:contract` | 契约：`@nudo:contract param name` / `@nudo:contract return name`（Pred 进入 Abs） |
 | `@nudo:env` | 声明运行时环境 API（文件级 `///` 注释） |
 | `@nudo:mock-module` | 用 mock 文件替换导入的模块（文件级 `///` 注释） |
 | `@nudo:as` | 覆盖下一条语句的值类型（行注释 `//`） |
@@ -299,7 +295,7 @@ Nudo 将异常作为函数类型的一等部分追踪。每个函数不仅有 `r
 
 Nudo 自然产生依赖类型（依赖值的类型），无需特殊语法：
 
-```javascript
+```javascript verify
 function clamp(value, min, max) {
   if (value < min) return min;
   if (value > max) return max;
@@ -307,13 +303,14 @@ function clamp(value, min, max) {
 }
 // clamp(5, 0, 10) → 5
 // clamp(number, 0, 10) → number
+clamp(5, 0, 10);
 ```
 
 ### 6.5 更精确的字符串拼接
 
 Nudo 在字符串拼接中保留结构，产生模板字符串类型：
 
-```javascript
+```javascript verify
 function apiUrl(path) {           // path: string
   return "https://api.example.com" + path;
 }
@@ -344,9 +341,9 @@ for (let i = 0; i < 5; i++) sum += i;
 // Nudo: sum → 10 | TS: number
 ```
 
-### 6.8 声明式精化（无需类型语法）
+### 6.8 声明式契约（无需类型语法）
 
-用户侧契约用 `@nudo:refine` 和 `*.nudo.js` 模板声明——不是 `interface` / `type`：
+用户侧契约用 `@nudo:contract` 和 `*.nudo.js` 模板声明——不是 `interface` / `type`：
 
 ```javascript
 // shapes.nudo.js
@@ -357,8 +354,8 @@ export const user = shape({ id: number().gt(0), name: string() });
 /// @nudo:import { positive, user } from "./shapes.nudo.js"
 
 /**
- * @nudo:refine x positive
- * @nudo:refine return positive
+ * @nudo:contract x positive
+ * @nudo:contract return positive
  */
 function inc(x) {
   return x + 1;
@@ -373,7 +370,7 @@ Pred 进入 Abs 并参与代数（`x>0` ⇒ `x+1>1`）。模板的约束构造�
 
 **源码：**
 
-```javascript
+```javascript verify
 /**
  * @nudo:case "concrete" (1, 2)
  * @nudo:case "symbolic" (number(), number())
@@ -398,23 +395,29 @@ function calc(a, b) {
    - False：`a + b` → `number`
 4. 合并：`number`
 
-**组合：** `((1, 2) => 3) & ((number, number) => number)`
+**`nudo test` 渲染两个用例：**
+
+```text
+debug "concrete"  (1, 2) => 3
+debug "symbolic"  (number, number) => number
+```
 
 ---
 
 ## 8. 实现路线图
 
 ### 已完成
-- **求值器 MVP** — Babel、Abs 求值、ops、窄化、调用点观测 + 调试 `@nudo:case`、CLI `infer`。
+- **求值器 MVP** — Babel、Abs 求值、ops、窄化、调用点观测 + 调试 `@nudo:case`。（原 `infer` CLI 动词已删除；观察面现为 `nudo check` / `nudo test`。）
 - **对象/数组** — 对象、数组、元组、Array 方法、`@nudo:mock`。
 - **高级语言特性** — 闭包、递归预算、async/Promise、try-catch、类。
 - **工具链** — LSP、watch、`.d.ts`、Vite 插件、VS Code 扩展。
-- **精化 IR** — 模板/区间精化；源码契约 `@nudo:refine`。
+- **契约 IR** — 模板/区间契约；源码契约 `@nudo:contract`。
 - **Abs 代数（单轨）** — Term/Pred/Abs、算术核、`leqAbs`、generalize、`nudo check` / `nudo test` / `nudo contract` / `nudo export`、CheckJson、金标（recall = precision = 1.0）。
 - **调用预算** — depth/cycle/total 守卫，递归 check 不再栈溢出。
+- **Emit 往返** — 生成的 `.d.ts` 通过 `tsc --noEmit --strict`（`emit-tsc-roundtrip.test.ts`）。
+- **Harvest 内部化** —— 分析经 `bareSpecToAbsModules` 自动补洞 `@types`；env 包生成用 `@nudojs/harvester`。不是产品 CLI 动词。
 
 ### 待做
-- emit 经 tsc 往返；harvest 自动化
 - esbuild / webpack 插件；错误定位 source map
 
 ---

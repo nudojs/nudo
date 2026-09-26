@@ -14,7 +14,7 @@ describe("case vs refine", () => {
   it("ok: case 实参满足契约", () => {
     const r = issuesOf(`
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  * @nudo:case "ok" (5)
  */
 function needsPositive(x) {
@@ -27,7 +27,7 @@ function needsPositive(x) {
   it("error: case 实参 ⊭ refine", () => {
     const r = issuesOf(`
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  * @nudo:case "neg" (-1)
  */
 function needsPositive(x) {
@@ -44,7 +44,7 @@ function needsPositive(x) {
   it("error: percent 上界违例", () => {
     const r = issuesOf(`
 /**
- * @nudo:refine n percent
+ * @nudo:contract n percent
  * @nudo:case "big" (150)
  */
 function pct(n) {

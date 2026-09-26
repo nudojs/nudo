@@ -1,5 +1,4 @@
 ---
-sidebar_position: 6
 description: "@nudojs/lsp API —— 基于 @nudojs/service 的语言服务器：验证管线与缓存、符号、语义 token、agent 工具、服务器能力。"
 ---
 
@@ -9,7 +8,7 @@ Nudo 语言服务器协议（LSP）包的 API 参考。`@nudojs/lsp` 把[服务�
 
 ## Public API 冻结面（A1/A2）
 
-`@nudojs/lsp` 当前为 **0.8.0，pre-1.x**。1.0 之前必须保持稳定的清单在 monorepo：
+`@nudojs/lsp` 为 **1.0.0**。冻结清单 —— 1.x 全线必须保持稳定的内容 —— 在 monorepo：
 
 **[`packages/lsp/PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md)**
 
@@ -17,10 +16,10 @@ Nudo 语言服务器协议（LSP）包的 API 参考。`@nudojs/lsp` 把[服务�
 |--------|------|
 | npm 表面 | `exports["."]` → `dist/server.js`；`bin.nudo-lsp`；`files: ["dist"]`；导入入口 **会启动** 服务器 |
 | initialize capabilities | `textDocumentSync` (Full)、hover、completion（触发 `.`）、codeLens、inlayHint、definition/references/rename、document/workspace symbols、code actions（`quickfix`）、signatureHelp、semanticTokens（full）、executeCommand、pull `diagnosticProvider` |
-| executeCommand | **点号形** `nudo.check` / `nudo.infer` / `nudo.hover` / `nudo.whatIf` / `nudo.suggestCase` / `nudo.trace` / `nudo.interface` / `nudo.interface.draft`（+ 别名 `nudo.interfaceDraft`）/ `nudo.interface.emit`（+ 别名 `nudo.interfaceEmit`）/ `nudo.selectCase` / `nudo.getActiveCases` |
-| custom requests | **斜杠形是协议契约**：`nudo/check`、`nudo/infer`、`nudo/hover`、`nudo/whatIf`、`nudo/suggestCase`、`nudo/trace`、`nudo/interface`、`nudo/interface.draft`、`nudo/interface.emit`、`nudo/selectCase`、`nudo/getActiveCases` — 均有匹配的 executeCommand（`nudo/X` ↔ `nudo.X`） |
-| agent tools | `AGENT_TOOL_SOURCES` 键：`whatIf`、`suggestCase`、`trace`、`check`、`hover`、`infer`、`interface`、`interface.draft`、`interface.emit`、`codeLens`（仅 server） |
-| CheckJson / InferJson | v1 schema 归 core/service；lsp 原样透出；字段只增不删 |
+| executeCommand | **点号形** `nudo.check` / `nudo.test` / `nudo.hover` / `nudo.whatIf` / `nudo.suggestCase` / `nudo.trace` / `nudo.contract` / `nudo.contract.draft` / `nudo.contract.emit` / `nudo.selectCase` / `nudo.getActiveCases` |
+| custom requests | **斜杠形是协议契约**：`nudo/check`、`nudo/test`、`nudo/hover`、`nudo/whatIf`、`nudo/suggestCase`、`nudo/trace`、`nudo/contract`、`nudo/contract.draft`、`nudo/contract.emit`、`nudo/selectCase`、`nudo/getActiveCases` — 均有匹配的 executeCommand（`nudo/X` ↔ `nudo.X`） |
+| agent tools | `AGENT_TOOL_SOURCES` 键：`whatIf`、`suggestCase`、`trace`、`check`、`hover`、`test`、`contract`、`contract.draft`、`contract.emit`、`codeLens`（仅 server） |
+| CheckJson / CaseJson | v1 schema 归 core/service；lsp 原样透出；字段只增不删 |
 | analysis 默认 | `DEFAULT_ANALYSIS_MODE = "exports"`；null 配置 → diagnostics `default`，`evalMissingSlot` `off` |
 | experimental | `src/*` 测试模块、缓存/防抖、hover/CodeLens 人类可读文案 — 不是 npm/协议契约 |
 
@@ -175,7 +174,7 @@ encodeSemanticTokens(tokens: SemanticToken[]): number[];
 |------------|---------|----------|
 | 悬停 | `onHover` | 通过 `getTypeAtPosition` 获取光标处推断类型；光标落在导出函数名上时，首行为 `● interface / handwritten|generated|implicit`（与 CodeLens 同源），handwritten/generated 另附有效契约展示 |
 | 补全（触发 `.`） | `onCompletion` | 来自 `getCompletionsAtPosition` 的属性/方法/变量项 |
-| CodeLens | `onCodeLens` | interface 档在前：`● interface / handwritten|generated|implicit`（+ persist/update + 非手写导出上的 `⚡ draft interface`）；case 为 debug 副层——激活 `● case "name"`，其余 `○`。点击发送 `nudo.selectCase` / `nudo.interface` / `nudo.interface.draft` / `nudo.interfaceEmit` 并刷新透镜 |
+| CodeLens | `onCodeLens` | interface 档在前：`● interface / handwritten|generated|implicit`（+ persist/update + 非手写导出上的 `⚡ draft interface`）；case 为 debug 副层——激活 `● case "name"`，其余 `○`。点击发送 `nudo.selectCase` / `nudo.contract` / `nudo.contract.draft` / `nudo.contract.emit` 并刷新透镜 |
 | 内联提示 | `languages.inlayHint` | 行尾 case `Type` 提示 + Abs 参数/返回 inlay；implicit 导出带 `· derived` |
 | 定义 | `onDefinition` | `buildSymbolTable` + `findDefinition`（含侧车绑定名） |
 | 引用 | `onReferences` | `buildSymbolTable` + `findReferences` |
@@ -229,7 +228,7 @@ encodeSemanticTokens(tokens: SemanticToken[]): number[];
 
 脏传播需要 `knownFiles` 上的 import 图，而重建它过去意味着重读并重解析每个已知文件。`buildModuleGraph`（来自 `@nudojs/service`）现在接收会话级的 `moduleGraphCache`：每个条目以纯字符串存储文件的 `mtimeMs`、`size` 与已抽取的 import 边。只做 `stat` 元数据比对 —— `mtimeMs` **和** `size` 均严格相等即命中，复用缓存的边；未命中则从磁盘重读该文件并回填条目。因此未变文件在每次传播中只花一次 `stat`：零磁盘读取、零解析。包内测试用 `chmod 000` 把依赖文件变为不可读来钉死这一行为 —— 传播仍能从缓存的边算出正确的脏集合。
 
-单条结果的工作量同样有封顶：单个 `AnalysisResult` 对每个函数的合成精确 case 数设上限（`MAX_PRECISE_CALLSITE_CASES = 3`），其余调用记录折叠为一个符号聚合，不会无限增长。
+单条结果的工作量同样有封顶：单个 `AnalysisResult` 对每个函数的合成精确 case 数设上限（`callSiteBudget`，默认 `3`；可经 `package.json#nudo.analysis.callSiteBudget` 配置），其余调用记录折叠为一个符号聚合，不会无限增长。
 
 ### 求值守卫
 
@@ -237,8 +236,57 @@ encodeSemanticTokens(tokens: SemanticToken[]): number[];
 
 ### `interFileDependencies: false`
 
-`initialize` 声明 `diagnosticProvider: { interFileDependencies: false, workspaceDiagnostics: false }`：每个文件的诊断对该文件独立正确，契约来自 `*.nudo.js` 侧车与 `@nudo:refine` / `@nudo:interface`。`@nudo:case` 是调试 / `nudo test` 子层，不是接口产品。这是与 `tsserver` 的结构性差异：tsserver 的全 `Program` 常驻是结构化类型所迫 —— 任何跨文件形状都可能改变任何决策，因此一切都必须保持加载且最新。Nudo 用单文件正确性换取有界内存 —— 这正是两台服务器能在同一编辑器里并排运行的原因。Nudo 不以替代 `tsserver` 为目标。
+`initialize` 声明 `diagnosticProvider: { interFileDependencies: false, workspaceDiagnostics: false }`：每个文件的诊断对该文件独立正确，契约来自 `*.nudo.js` 侧车与 `@nudo:contract`。`@nudo:case` 是调试 / 可选 `nudo test` 子层，不是契约产品。这是与 `tsserver` 的结构性差异：tsserver 的全 `Program` 常驻是结构化类型所迫 —— 任何跨文件形状都可能改变任何决策，因此一切都必须保持加载且最新。Nudo 用单文件正确性换取有界内存 —— 这正是两台服务器能在同一编辑器里并排运行的原因。Nudo 不以替代 `tsserver` 为目标。
 
 ## 与编辑器扩展的关系
 
 `nudo-vscode` 扩展没有重新实现这些内容：它把 `@nudojs/lsp` 编译后的 `dist/server.js` 打进扩展（`server/server.js`），作为子进程经 IPC 启动，并把自定义的 `nudo.selectCase` 命令转发给服务器。[Zed 扩展](../guides/zed.md)通过 stdio 启动同一服务器（`nudo-lsp` / `node dist/server.js`）。编辑器侧视角见 [VS Code 指南](../guides/vscode.md)与 [Zed 指南](../guides/zed.md)。
+
+## Export inventory
+
+<!-- NUDO-API-SKELETON:BEGIN -->
+> 由 `pnpm run docs:gen:api` 从包导出面（`PUBLIC_API.md` / `src/index.ts`）生成 —— 请勿手改本块。重新生成：`node scripts/gen-api-docs.mjs`。
+
+库导出面来自 `src/index.ts` 与无副作用的 `./public-api` 常量。协议命令见表后，来自 `packages/lsp/PUBLIC_API.md` §3。
+
+| 名称 | 种类 | 说明 | 签名 |
+|------|------|------|------|
+| `buildSemanticTokens` | fn | 从源码提取 semantic tokens 并按 LSP 相对编码返回扁平 number[]。 | `buildSemanticTokens( filePath: string, source: string, opts?: BuildSemanticTokensOpts, ): number[]` |
+| `BuildSemanticTokensOpts` | type | — | `BuildSemanticTokensOpts = InterfaceTierOpts & { loadModule?: (spec: string, fromFile: string) => string \| undefined; }` |
+| `CaseInfo` | type | — | `CaseInfo = { functionName: string; caseName: string; caseIndex: number; }` |
+| `encodeSemanticTokens` | fn | LSP 标准相对五元组编码：deltaLine/deltaStartChar/length/tokenType/tokenModifiers。 | `encodeSemanticTokens(tokens: SemanticToken[]): number[]` |
+| `getAbsAtPosition` | fn | 光标处无损 Abs。B-path 节点表优先；用例函数体走 Abs 重放。 | `getAbsAtPosition( filePath: string, source: string, line: number, column: number, activeCases?: Map<string, number>, ): Abs \| null` |
+| `getAbsAtPositionAsync` | fn | Async entry to getAbsAtPosition（与 getTypeAtPositionAsync 同预加载口径） | `getAbsAtPositionAsync( filePath: string, source: string, line: number, column: number, activeCases?: Map<string, number>, ): Promise<Abs \| null>` |
+| `getCasesForFile` | fn | — | `getCasesForFile(filePath: string, source: string)` |
+| `getCompletionsAtPosition` | fn | — | `getCompletionsAtPosition( filePath: string, source: string, line: number, column: number, ): CompletionItem[]` |
+| `getHoverAtPosition` | fn | LSP hover：优先无损 Abs（类型即计算本体）。 | `getHoverAtPosition( filePath: string, source: string, line: number, column: number, activeCases?: Map<string, number>, opts?: HoverInterfaceOpts, ): HoverInfo \| null` |
+| `getTypeAtPosition` | fn | 光标处类型（Abs）。B-path 节点表优先；用例函数体走 Abs 重放。 | `getTypeAtPosition( filePath: string, source: string, line: number, column: number, activeCases?: Map<string, number>, ): Abs \| null` |
+| `getTypeAtPositionAsync` | fn | Async entry to getTypeAtPosition with path-env preloading (see analyzeFileAsync). | `getTypeAtPositionAsync( filePath: string, source: string, line: number, column: number, activeCases?: Map<string, number>, ): Promise<Abs \| null>` |
+| `HoverInfo` | type | — | `HoverInfo = { typeText: string; intension?: string; abs?: string; absMultiline?: string; interfaceSource?: InterfaceSource; interfaceDisp...` |
+| `interfaceTierModifierBit` | fn | A7：interface 档 → semantic token modifier（与 CodeLens 同源） | `interfaceTierModifierBit(src: InterfaceSource): number` |
+| `NUDO_AGENT_TOOL_NAMES` | const | Agent-tool names shared by executeCommand / slash requests / AGENT_TOOL_SOURCES. | `const NUDO_AGENT_TOOL_NAMES` |
+| `NUDO_EXECUTE_COMMANDS` | const | workspace/executeCommand names (dot form) — declared on initialize | `const NUDO_EXECUTE_COMMANDS` |
+| `NUDO_INITIALIZE_CAPABILITIES` | const | Capability keys declared in connection.onInitialize | `const NUDO_INITIALIZE_CAPABILITIES` |
+| `NUDO_LSP_PACKAGE_SURFACE` | const | npm package public surface (mirrors packages/lsp/package.json) | `const NUDO_LSP_PACKAGE_SURFACE` |
+| `NUDO_SLASH_REQUESTS` | const | Custom LSP request method names (slash form) — the protocol contract. | `const NUDO_SLASH_REQUESTS` |
+| `SEMANTIC_TOKEN_MODIFIERS` | const | — | `const SEMANTIC_TOKEN_MODIFIERS` |
+| `SEMANTIC_TOKEN_TYPES` | const | Semantic tokens 图例（tokenTypes 下标即 LSP 编码里的 tokenType 值）。 | `const SEMANTIC_TOKEN_TYPES` |
+| `SemanticToken` | type | — | `SemanticToken = { line: number; char: number; length: number; typeIndex: number; modifierBitmask: number; }` |
+| `slashToExecuteCommand` | fn | Slash-form → matching executeCommand (dot form) | `slashToExecuteCommand(slash: string): string` |
+
+### 协议命令（executeCommand）
+
+| 名称 | 种类 | 说明 | 签名 |
+|------|------|------|------|
+| `nudo.check` | fn | CheckJson v1 gate | — |
+| `nudo.test` | fn | CaseJson v1 case report | — |
+| `nudo.hover` | fn | lossless Abs at position (+ optional inlays) | — |
+| `nudo.whatIf` | fn | inject `@nudo:as` assumptions | — |
+| `nudo.suggestCase` | fn | case coverage / paste-ready directives | — |
+| `nudo.trace` | fn | per-case arg→result listing | — |
+| `nudo.contract` | fn | interface tiers print | — |
+| `nudo.contract.draft` | fn | code-first `*.nudo.draft.*` | — |
+| `nudo.contract.emit` | fn | persist `@generated` sidecar | — |
+| `nudo.selectCase` | fn | switch active case (positional or object args) | — |
+| `nudo.getActiveCases` | fn | active case index map | — |
+<!-- NUDO-API-SKELETON:END -->

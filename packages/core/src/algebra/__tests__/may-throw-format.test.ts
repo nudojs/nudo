@@ -24,11 +24,11 @@ describe("formatThrowsAbs shape coverage", () => {
     expect(formatThrowsAbs(mixed)).toBe("TypeError | any");
   });
   it("prim / any / unknown are honest, not invented Error", () => {
-    expect(formatThrowsAbs(abs({ k: "prim", type: "string" }))).toBe("string");
-    expect(formatThrowsAbs(abs({ k: "prim", type: "number" }))).toBe("number");
-    expect(formatThrowsAbs(abs({ k: "any" }))).toBe("any");
-    expect(formatThrowsAbs(abs({ k: "unknown" }))).toBe("unknown");
-    expect(formatThrowsAbs(abs({ k: "never" }))).toBeUndefined();
+    expect(formatThrowsAbs(abs({ k: "prim", type: "string" }, undefined, undefined, "exact"))).toBe("string");
+    expect(formatThrowsAbs(abs({ k: "prim", type: "number" }, undefined, undefined, "exact"))).toBe("number");
+    expect(formatThrowsAbs(abs({ k: "any" }, undefined, undefined, "exact"))).toBe("any");
+    expect(formatThrowsAbs(abs({ k: "unknown" }, undefined, undefined, "exact"))).toBe("unknown");
+    expect(formatThrowsAbs(abs({ k: "never" }, undefined, undefined, "exact"))).toBeUndefined();
   });
 });
 

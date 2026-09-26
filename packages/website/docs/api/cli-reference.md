@@ -1,17 +1,18 @@
 ---
-sidebar_position: 4
-description: "Reference every nudo CLI command — check, test, contract, export, health, env harvest — with arguments, options, output formats, and exit codes."
+description: "Reference every nudo CLI command — check, test, contract, export, health, migrate — with arguments, options, output formats, and exit codes."
 ---
 
 # CLI Reference
 
-The `nudo` CLI runs type inference on `.js`, `.mjs`, and `.ts` files. Install globally or run via `npx`:
+The `nudo` CLI runs type inference on `.js`, `.mjs`, and `.ts` files. Install it globally or run via `npx` — see [Installation](../getting-started/installation.md).
 
 ```bash
-pnpm add -g @nudojs/cli
-# or
-npx @nudojs/cli check ./src/utils.js
+npx nudojs check ./src/utils.js
+# or, after global install:
+nudo check ./src/utils.js
 ```
+
+This page is the **canonical flag / option / exit-code specification**. Tutorial-style walkthroughs live in [CLI Usage](../guides/cli.md).
 
 ---
 
@@ -24,11 +25,11 @@ npx @nudojs/cli check ./src/utils.js
 | [`nudo contract`](#nudo-contract) | Print / draft / emit effective interfaces — `[handwritten]` / `[generated]` / `[implicit]` layers |
 | [`nudo export`](#nudo-export) | Project Abs into `dts` / `guard` / `schema` / `standard` artifacts |
 | [`nudo health`](#nudo-health) | Health-check files: analysis errors, call-site solidification drift |
-| [`nudo env harvest`](#nudo-env-harvest) | Convert `@types/<pkg>` declarations into a Nudo env file |
+| [`nudo migrate`](#nudo-migrate) | One-way retire-tsc door: `status` / `strip` / `verify` / `retire` |
 
-There is **no** observation verb (`infer` / `show` / `types`). Observation is `check` signatures, `test` case reports, and IDE hover.
+There is **no** observation verb. Observation is `check` signatures, `test` case reports, and IDE hover.
 
-**Day 0:** `check` / `test`. **Day 1:** `contract` + `check`. **Ecosystem:** `export`.
+**Observation:** `check` / `test`. **Contracts:** `contract` + `check`. **Ecosystem:** `export`. **Leaving tsc:** `migrate`.
 
 ---
 
@@ -37,26 +38,31 @@ There is **no** observation verb (`infer` / `show` / `types`). Observation is `c
 Gate contracts (L1) and entry throws (L2). Prints signatures even when the run succeeds.
 
 ```bash
-nudo check <path> [options]
+nudo check <paths...> [options]
 ```
 
 **Arguments:**
 
 | Argument | Description |
 |----------|-------------|
-| `<path>` | A `.js`, `.mjs`, or `.ts` file or a directory (scanned recursively; `.d.ts` excluded). TypeScript annotations are stripped; analysis uses JS semantics. |
+| `<paths...>` | One or more `.js`, `.mjs`, or `.ts` files or directories (scanned recursively; `.d.ts` excluded). TypeScript annotations are stripped; analysis uses JS semantics. |
 
 **Options:**
 
 | Option | Description |
 |--------|-------------|
 | `--watch` / `-w` | Re-run on file changes (flag, not a verb) |
-| `--json` | Structured diagnostics + signatures |
-| `--verbose` | Extra diagnosis detail |
-| `--abs` | Print the Abs algebra face (term / pred / conf) |
-| `--from <paths…>` | Usage-site files (tests/apps); their call records join the analysis — formerly `--callsites` |
+| `--json` | Structured diagnostics + signatures — `CheckJson` (1 file) or `CheckJsonMulti` envelope (N files); cannot combine with `--abs` |
+| `--verbose` | Expand Abs signatures (term/pred/conf detail) |
+| `--abs` | Per-function algebra face (shape + conf); `--generalize` adds the symbolic term/pred α |
+| `--fn <name>` | With `--abs`: restrict to one function |
+| `--assume <pred…>` | With `--abs`: assume constraints, e.g. `x>0 y>=1` |
+| `--generalize` | With `--abs`: polymorphic signatures via symbolic execution |
+| `--from <paths…>` | Usage-site files (tests/apps); their call records join the analysis |
 | `--ignore-throws <names>` | Comma-separated L2 throw types to ignore (e.g. `TypeError,RangeError`). Does not swallow L1 contract violations. |
 | `--entry-throws error\|warning\|off` | Severity for L2 entry may-throw (default `error`) |
+| `--what-if <binding...>` | AI3: assume `name:type` bindings and report `--target` (same semantics as LSP `nudo.whatIf`) |
+| `--target <name>` | With `--what-if`: binding whose inferred type to print |
 
 **Configuration (`package.json`):**
 
@@ -74,12 +80,22 @@ nudo check <path> [options]
 **Output format:**
 
 ```text
+nudo check  user.js
+FAILED
+  1 error · 0 warning · 0 info · 2 fn
+
 signatures
   getName(user: any) => any  throws TypeError
-  subtract(a: any, b: any) => any
+  subtract(a: any, b: any) => number
+
 issues
-  [error] getName (export): may throw TypeError  (nudo:entry-may-throw)
+  [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
+      actual:   getName(user: any) => any    throws TypeError
+      expected: entry total, or @nudo:throws / try-catch
+      → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
 ```
+
+> `L1` in the issue header is the **line number** (the function is declared on line 1 here) — the layer is L2.
 
 - Unconstrained entry parameters print as **`any`**, never `unknown`.
 - True `unknown` means inference failed (engine debt) and is annotated with conf.
@@ -90,7 +106,7 @@ issues
 
 | Layer | Source | Behavior |
 |-------|--------|----------|
-| L1 explicit | `*.nudo.js` / `@nudo:refine` / `@nudo:interface` | Violation → error |
+| L1 explicit | `*.nudo.js` / `@nudo:contract` | Violation → error |
 | L2 default JS contract | Runtime boundary on **entry/export** functions | Undigested may-throw → error (`nudo:entry-may-throw`); filter with `--ignore-throws` |
 
 L2 does **not** gate internal helpers. `try`/`catch` and refine can clear L2.
@@ -106,8 +122,9 @@ nudo check src/lib.js --ignore-throws TypeError --from tests/
 ```
 
 ```bash
-# --json is single-file only; directory targets use the human report face
+# --json: one file → bare CheckJson; multiple files / directories → CheckJsonMulti envelope
 nudo check src/lib.js --json
+nudo check src/ --json
 ```
 
 **Exit codes:**
@@ -124,7 +141,7 @@ nudo check src/lib.js --json
 Report every inferred case (including synthetic `call@` / `entry@`) and run declared assertions.
 
 ```bash
-nudo test <path> [options]
+nudo test <paths...> [options]
 ```
 
 **Options:**
@@ -132,12 +149,12 @@ nudo test <path> [options]
 | Option | Description |
 |--------|-------------|
 | `--watch` / `-w` | Re-run on file changes |
-| `--from <paths…>` | Usage-site files whose calls become `call@L` cases — formerly `--callsites` |
-| `--freeze[=update]` | Write synthesized cases back as `@nudo:case` directives (formerly `infer --emit-cases`). `=update` re-synchronizes previously generated directives. |
-| `--json` | Structured case report |
+| `--from <paths…>` | Usage-site files whose calls become `call@L` cases |
+| `--freeze[=mode]` | Write synthesized cases back as `@nudo:case` directives. Mode: `update` re-synchronizes previously generated directives; no value = add mode, keeps existing directives |
+| `--json` | Structured case report (single file; cannot combine with `--abs` or `--freeze`) |
 | `--abs` | Print Abs algebra for cases |
 | `--dry-run` | With `--freeze`: print a unified diff instead of writing |
-| `--exit-on-diff` | With `--dry-run`: exit `1` when the diff is non-empty |
+| `--exit-on-diff` | With `--freeze --dry-run`: exit `1` when the diff is non-empty |
 
 **Output format:**
 
@@ -145,8 +162,9 @@ nudo test <path> [options]
 === getName ===
   call@L42  ({ name: "Ada" }) => "Ada"
   debug "empty"  ({}) => undefined
+
 assertions
-  — 0 passed · 0 failed · 2 unchecked (no declared @nudo:case expectations)
+  — 0 passed · 0 failed · 0 unchecked (no declared @nudo:case expectations; 1 synthetic case(s) printed above)
 ```
 
 When no usage-site call is found for an entry export:
@@ -162,6 +180,19 @@ When no usage-site call is found for an entry export:
 - Failures of declared assertions set exit `1`; synthetic cases do not.
 - `test --json` includes an `assertions` summary (`passed` / `failed` / `unchecked`) and still exits 1 on declared assertion failure.
 
+A failing declared assertion (`nudo:case-expected`) renders as:
+
+```text
+=== double ===
+  debug "bad"  (2) => 4
+
+assertions
+  ✗ 0 passed · 1 failed · 0 unchecked
+  [FAIL] double  case "bad"
+         expected: 5
+         actual:   4
+```
+
 **Example:**
 
 ```bash
@@ -170,10 +201,11 @@ nudo test math.js
 
 ```text
 === subtract ===
-  call@L6  (5, 3) => 2
-  call@L7  (1, 10) => -9
+  call@L5  (5, 3) => 2
+  call@L6  (1, 10) => -9
+
 assertions
-  — 0 passed · 0 failed · 2 unchecked (no declared @nudo:case expectations)
+  — 0 passed · 0 failed · 0 unchecked (no declared @nudo:case expectations; 2 synthetic case(s) printed above)
 ```
 
 ```bash
@@ -193,17 +225,15 @@ nudo test lib.js --from test.js --freeze=update
 
 Print, draft, or emit each function's effective interface with its source layer.
 
-Replaces `nudo interface` / `nudo refine` (deprecated).
-
 ```bash
 nudo contract <paths...> [--from <paths...>]
 nudo contract --emit <paths...> [--fn <name>] [--all] [--dry-run] [--exit-on-diff] [--from <paths...>]
-nudo contract --draft <paths...> [--write] [--fn <name>] [--dry-run] [--from <paths...>]
+nudo contract --draft <paths...> [--write] [--json] [--fn <name>] [--dry-run] [--from <paths...>]
 ```
 
 **Layers:**
 
-- `[handwritten]` — source `@nudo:refine` / `@nudo:interface` ∪ sidecar binding
+- `[handwritten]` — source `@nudo:contract` / sidecar binding (product term: **contract**)
 - `[generated]` — persisted `@generated` sidecar segment
 - `[implicit]` — call-site inference
 
@@ -214,11 +244,12 @@ nudo contract --draft <paths...> [--write] [--fn <name>] [--dry-run] [--from <pa
 | `--emit` | Persist inferred domains as sidecar `@generated` segments |
 | `--draft` | Generate a reviewable contract draft from existing code (code-first / migration) |
 | `--write` | With `--draft`: write `*.nudo.draft.js` to disk |
-| `--fn <name>` | Restrict to one function (may name a downstream derivation target when a handwritten root exists) |
+| `--fn <name>` | Restrict to one function (**repeatable**; may name a downstream derivation target when a handwritten root exists) |
 | `--all` | Emit all eligible functions |
 | `--dry-run` | Print a unified diff instead of writing |
 | `--exit-on-diff` | With `--emit --dry-run`: exit `1` when the diff is non-empty |
 | `--from <paths…>` | Usage-site evidence for domain projection |
+| `--json` | With `--draft`: `{ draftSource, diff, entries[] }` for agent review (AI4) |
 
 **Examples:**
 
@@ -249,18 +280,16 @@ Handwritten bindings always win; emit refuses to overwrite them (`nudo:interface
 
 Project Abs into ecosystem artifacts. The **only** CLI path for `.d.ts`, guards, and schema projections.
 
-Replaces `nudo generate` / `nudo emit` / `nudo guard` and `infer --dts` (deprecated).
-
 ```bash
-nudo export <path> [--format dts|guard|schema|standard|zod|all] [--dialect zod] [--out dir]
+nudo export <path> [--format dts|guard|schema|standard|all] [--dialect zod] [--out dir]
 ```
 
 **Options:**
 
 | Option | Description |
 |--------|-------------|
-| `--format` | `dts` (default) \| `guard` \| `schema` \| `standard` \| `zod` (deprecated alias) \| `all` |
-| `--dialect` | Schema dialect; currently `zod`. Valid with `schema` / `all` / `zod` |
+| `--format` | `dts` (default) \| `guard` \| `schema` \| `standard` \| `all` |
+| `--dialect` | Schema dialect; currently `zod`. Valid with `schema` / `all` |
 | `--out <dir>` | Write artifacts under this directory instead of stdout |
 
 **Formats:**
@@ -269,9 +298,8 @@ nudo export <path> [--format dts|guard|schema|standard|zod|all] [--dialect zod] 
 |--------|----------|
 | `dts` | TypeScript declarations — one widened signature per function; case precision preserved in JSDoc |
 | `guard` | Runtime type-guards (prefer lossless Abs path when available) |
-| `schema` | Schema source for `--dialect` (default zod) → `*.nudo.schema.<dialect>.ts` |
+| `schema` | Zod JS module for `--dialect` (default zod) → `*.nudo.schema.<dialect>.ts` |
 | `standard` | Standard Schema v1 modules (`~standard`, vendor `nudo`) → `<fn>.nudo.standard.ts` |
-| `zod` | Deprecated alias of `schema --dialect zod` |
 | `all` | dts + guard + schema + standard |
 
 Schema projections carry Abs pred fidelity when expressible (`gt/ge/lt/le`, `int`, string length); symbolic preds are reported as `dropped preds` comments. `standard` enforces the same refinements at runtime via `validate` and remains a one-way projection — `nudo check` is still the CI gate.
@@ -300,8 +328,6 @@ nudo export src/api.js --format all --out dist
 
 Health-check source files: analysis errors and call-site solidification drift.
 
-Replaces `nudo doctor` (deprecated).
-
 ```bash
 nudo health [paths...] [--watch] [--from <paths...>] [--json]
 ```
@@ -322,9 +348,11 @@ nudo health src/ --from tests/
 
 ```text
 src/lib.js
-  ✓ analysis ok
-  ✗ drift: 5 directive(s) changed (+3 new, -2 removed)
-    refresh with: nudo test lib.js --from test.js --freeze=update
+  · 1 function(s)
+  ✗ drift: 3 witness directive(s) changed (+2 new, -1 removed) — refresh: nudo test src/lib.js --from tests/ --freeze=update
+
+Summary: 1 file(s) · 1 case drift · 0 contract drift · 0 error(s) · 0 uncovered function(s)
+Result: FAIL (drift or errors found)
 ```
 
 **Exit codes:**
@@ -336,39 +364,45 @@ src/lib.js
 
 ---
 
-### nudo env harvest
+### nudo migrate
 
-Convert `@types/<pkg>` declarations into a Nudo env module.
-
-Replaces top-level `nudo harvest` (deprecated).
+One-way door off TypeScript: audit → strip annotations → gate with `nudo check` → retire `tsc`. Coexistence is a migration tactic; the exit is `retire`.
 
 ```bash
-nudo env harvest <pkg> [options]
+nudo migrate <status|strip|verify|retire> [paths...] [options]
 ```
+
+| Action | Purpose |
+|--------|---------|
+| `status <pkg-or-dir>` | Audit `.ts`/`.tsx` counts, `tsconfig`, `typescript` dep, `tsc` scripts, **workflow tsc lines**, and **blockers** |
+| `strip <paths...>` | `.ts` → `.js` (type annotations stripped; runtime stays). Dry-run by default |
+| `verify <paths...>` | Run `nudo check` on the JS surface — must pass before retire |
+| `retire <pkg-or-dir>` | Drop `typescript` dep, rewrite `tsc` scripts → `nudo check`, rewrite `.github/workflows` tsc lines, write `.nudo/migrate-retired.json` |
+| `retire --all` | Every workspace package that still has `tsc` / `typescript` (monorepo batch) |
 
 **Options:**
 
 | Option | Description |
 |--------|-------------|
-| `--out <dir>` | Output directory for generated env files |
-| `--auto` | Report analysis-path auto-harvest status |
+| `strip --write` | Write stripped `.js` next to the source (default is dry-run print) |
+| `strip --no-draft` | Skip best-effort sidecar draft (draft is on with `--write`) |
+| `strip --backup` | Rename original `.ts` to `.ts.bak` after write |
+| `verify --with-tsc` | Also run `tsc --noEmit` baseline on `.ts` inputs (migration dual-run only) |
+| `retire --dry-run` | Print the rewrite plan without touching `package.json` / workflows |
+| `retire --all` | Batch every workspace package that still carries tsc/typescript |
+| `retire --no-workflows` | Leave `.github/workflows` untouched |
+| `--json` | Machine-readable output |
 
-**Example:**
+Convert annotations into reviewable contracts with [`contract --from-dts`](#nudo-contract) (`@nudo:draft` is **not** enforced until accepted into `*.nudo.js`).
 
-```bash
-nudo env harvest node
-```
-
-```ts
-/// @nudo:env ./nudo-harvest-node.ts
-```
+Samples: [`docs/examples/migrate/`](https://github.com/nudojs/nudo/tree/main/docs/examples/migrate) · [`docs/examples/retire-real/`](https://github.com/nudojs/nudo/tree/main/docs/examples/retire-real). Walkthrough: [Migrate from TypeScript](../guides/migrating-from-typescript.md).
 
 **Exit codes:**
 
 | Code | Meaning |
 |------|---------|
-| `0` | Env file written / status reported |
-| `1` | `@types/<pkg>` not installed, or no `.d.ts` files found |
+| `0` | Action completed (including dry-runs) |
+| `1` | Usage / IO errors; `verify` fails when `nudo check` fails |
 
 ---
 
@@ -376,11 +410,9 @@ nudo env harvest node
 
 `check --json` and `test --json` are the machine-readable faces.
 
-- **check --json** — signatures (including `any` entry params and throws), diagnostics with codes such as `nudo:entry-may-throw`, and summary counts.
+- **check --json** — signatures (including `any` entry params and throws), diagnostics with codes such as `nudo:entry-may-throw`, summary counts, **`budget`** (call/fork usage + `truncated`), and per-issue **`actions[]`** (structured next steps: `draft` / `relax` / `callsite` / `assume` / `mock` / … with optional executable `command`).
 - **test --json** — per-function cases (`entry@` / `call@` / directive), an `assertions` summary (`passed`/`failed`/`unchecked`), diagnostics, and optional Abs intension blocks. Declared assertion failures still exit 1.
-- **check --json** — single file only (`--json requires a single file` on directory targets).
-
-There is no `infer --json` as a primary command; consumers that still receive it during the deprecation window should migrate to `check --json` or `test --json`.
+- **check --json file counts** — one file emits bare `CheckJson`; multiple files (or a directory expanding to several) emit a **`CheckJsonMulti`** envelope: `kind:"multi"`, aggregate `summary` (adds `files`, optional `budgetTruncated`), and `reports[]` of per-file `CheckJson`. `test --json` stays single-file (`--json requires a single file`).
 
 ---
 
@@ -393,25 +425,6 @@ There is no `infer --json` as a primary command; consumers that still receive it
 | `contract` / `export` (read-only) | Usage / IO errors |
 | `contract --emit --exit-on-diff` | Would write and a diff exists |
 | `health` | Drift or analysis errors |
-| `env harvest` | Missing `@types` package or no declarations |
+| `migrate verify` | `nudo check` fails on the target |
+| `migrate` (other) | Usage / IO errors |
 
----
-
-## Deprecated commands
-
-These verbs print stderr deprecation warnings and map to the new surface. They are removed in the next major — not permanent aliases.
-
-| Deprecated | Replacement |
-|------------|-------------|
-| `nudo infer <path>` | `nudo check` (signatures/gate) + `nudo test` (cases); dts → `nudo export --format dts` |
-| `nudo types <path>` | `nudo check --abs` |
-| `nudo interface` / `nudo refine` | `nudo contract` |
-| `nudo generate` / `nudo emit` / `nudo guard` | `nudo export --format …` |
-| `nudo doctor` | `nudo health` |
-| `nudo watch` | `nudo check --watch` / `nudo test --watch` |
-| `nudo harvest <pkg>` | `nudo env harvest <pkg>` |
-| `--callsites` | `--from` |
-| `--emit-cases[=update]` | `nudo test --freeze[=update]` |
-| `infer --dts` | `nudo export --format dts` |
-
-See the [CLI guide — Migration](../guides/cli.md#migration--deprecated-verbs).

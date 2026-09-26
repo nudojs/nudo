@@ -3,6 +3,7 @@
  * Cleared together with B-path / whole-file analysis caches.
  */
 import type { Abs } from "@nudojs/core";
+import { getSessionCacheLimits } from "./session-cache-limits.ts";
 
 // Structural types — avoid importing analyzer (cycle).
 export type CachedSourceLocation = {
@@ -78,10 +79,24 @@ export type CachedFnAnalysis = {
 };
 
 const fnAnalysisCache = new Map<string, CachedFnAnalysis>();
-const MAX_FN_ANALYSIS_CACHE = 1024;
+
+/** 测试/诊断：当前条目数（≤ getSessionCacheLimits().maxFns） */
+export function getFnAnalysisCacheSize(): number {
+  return fnAnalysisCache.size;
+}
 
 export function clearFnAnalysisCache(): void {
   fnAnalysisCache.clear();
+}
+
+/** 立刻压到当前 maxFns（调低上限时收内存） */
+export function trimFnAnalysisCache(): void {
+  const max = getSessionCacheLimits().maxFns;
+  while (fnAnalysisCache.size > max) {
+    const oldest = fnAnalysisCache.keys().next().value;
+    if (oldest === undefined) break;
+    fnAnalysisCache.delete(oldest);
+  }
 }
 
 export function fnAnalysisCacheGet(key: string): CachedFnAnalysis | undefined {
@@ -94,10 +109,13 @@ export function fnAnalysisCacheGet(key: string): CachedFnAnalysis | undefined {
 }
 
 export function fnAnalysisCacheSet(key: string, value: CachedFnAnalysis): void {
+  const max = getSessionCacheLimits().maxFns;
+  if (max <= 0) return;
   // Only evict when inserting a new key; overwrite of an existing key keeps LRU size
-  if (fnAnalysisCache.size >= MAX_FN_ANALYSIS_CACHE && !fnAnalysisCache.has(key)) {
+  while (fnAnalysisCache.size >= max && !fnAnalysisCache.has(key)) {
     const oldest = fnAnalysisCache.keys().next().value;
-    if (oldest !== undefined) fnAnalysisCache.delete(oldest);
+    if (oldest === undefined) break;
+    fnAnalysisCache.delete(oldest);
   }
   fnAnalysisCache.set(key, value);
 }

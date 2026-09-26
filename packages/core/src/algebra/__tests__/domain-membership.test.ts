@@ -15,9 +15,9 @@ import {
   string,
   type NudoConstraint,
 } from "../constraint.ts";
-import { eq, ge } from "../pred.ts";
+import { eq, ge, ptypeof } from "../pred.ts";
 import { lit, v } from "../term.ts";
-import { lit as cLit, union as cUnion, and as cAnd } from "../constraint.ts";
+import { litC as cLit, union as cUnion, andC as cAnd } from "../constraint.ts";
 
 /** lit(v) 的编码形态（prim + eq(self, lit v)；null 无 PrimName 可配） */
 function litConstraint(value: number | string | boolean | null): NudoConstraint {
@@ -230,6 +230,42 @@ describe("literalMeetsConstraint", () => {
     it("prim 与字面量类型不符 → false", () => {
       expect(literalMeetsConstraint("x", number().gt(0))).toBe(false);
       expect(literalMeetsConstraint(1, boolean())).toBe(false);
+    });
+  });
+
+  describe("typeof 谓词门（TypeofName 全域）", () => {
+    /** 纯 typeof 谓词契约（无 prim 门） */
+    function typeofC(
+      type: "object" | "function" | "undefined" | "number",
+    ): NudoConstraint {
+      return {
+        __nudoConstraint: true,
+        preds: [ptypeof(v(SELF), type)],
+      };
+    }
+
+    it("typeof object：null 匹配（JS typeof(null)=\"object\"），标量不匹配", () => {
+      const c = typeofC("object");
+      expect(literalMeetsConstraint(null, c)).toBe(true);
+      expect(literalMeetsConstraint(0, c)).toBe(false);
+      expect(literalMeetsConstraint("x", c)).toBe(false);
+      expect(literalMeetsConstraint(true, c)).toBe(false);
+    });
+
+    it("typeof function / undefined：字面量证据域无匹配", () => {
+      const fnC = typeofC("function");
+      const unC = typeofC("undefined");
+      for (const lv of [0, "x", true, null] as const) {
+        expect(literalMeetsConstraint(lv, fnC)).toBe(false);
+        expect(literalMeetsConstraint(lv, unC)).toBe(false);
+      }
+    });
+
+    it("typeof number 谓词只收 number 字面量", () => {
+      const c = typeofC("number");
+      expect(literalMeetsConstraint(1, c)).toBe(true);
+      expect(literalMeetsConstraint("1", c)).toBe(false);
+      expect(literalMeetsConstraint(null, c)).toBe(false);
     });
   });
 

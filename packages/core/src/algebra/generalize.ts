@@ -1,4 +1,4 @@
-// ALIGN:cli-semantics → docs/design-cli-semantics.md §2
+// ALIGN:cli-semantics → docs/design/cli-semantics.md §2
 // 入口无约束参数已是 any（非 unknown）。展示层/文档仍常写 unknown——冲突在消费者，不在本文件。
 /**
  * 真·generalize：在新鲜类型变量 α 上执行用户函数，归纳多态签名，
@@ -17,7 +17,8 @@ import { pTrue, predToString } from "./pred.ts";
 import type { Abs, Shape } from "./abs.ts";
 import { abs, unknown } from "./abs.ts";
 import type { AstEnv } from "./ast-env.ts";
-import { evalNode, emptyEnv } from "./ast-eval.ts";
+import { emptyEnv } from "./ast-env.ts";
+import { bindImports, type AbsModuleExports } from "./abs-modules.ts";
 import { defaultLeakBudget, type LeakBudget } from "./leak.ts";
 import { formatShapeSlot } from "./format.ts";
 import { type RefineResolveOpts } from "./refine.ts";
@@ -37,12 +38,94 @@ import {
   normPath,
   type LoadDepsFingerprint,
 } from "./load-deps-fp.ts";
-import {
-  createHofCollectCtx,
-  snapshotAbs,
-  type RelSource,
-  type HofSite,
-} from "./hof.ts";
+import { snapshotAbs, type RelSource, type HofSite } from "./hof.ts";
+import { scanPromotions } from "./promote-scan.ts";
+import { tryRunTranspiled, callTranspiledExportFull, runTranspiledOptionsMemoKey, type RunTranspiledOptions } from "./exec/run.ts";
+import { freeIdentifiers } from "./exec/body-fn.ts";
+import { withExecPhi } from "./exec/runtime.ts";
+import { $new, $invoke } from "./exec/class.ts";
+
+/** generalize 的 B-path 模块执行缓存（按 source；run 不依赖实参） */
+const bRunMemo = new Map<string, Record<string, unknown>>();
+function bPathRunOf(
+  source: string,
+  modules?: Record<string, AbsModuleExports | Record<string, unknown>>,
+  inject?: RunTranspiledOptions,
+): Record<string, unknown> | undefined {
+  // 内容指纹（CLI 每次新建 inject/modules 对象时身份键会 miss）
+  const mKey = `${source}|${runTranspiledOptionsMemoKey({ ...(inject ?? {}), ...(modules ? { modules } : {}) })}`;
+  if (bRunMemo.size >= 256) {
+    const oldest = bRunMemo.keys().next().value;
+    if (oldest !== undefined) bRunMemo.delete(oldest);
+  }
+  let run = bRunMemo.get(mKey);
+  if (run === undefined) {
+    // mode 恒为 analyze；modules 优先参数、缺则 inject.modules（与 bAnalyzeOpts 同口径）
+    const merged = modules ?? inject?.modules;
+    const r = tryRunTranspiled(source, {
+      ...(inject ?? {}),
+      mode: "analyze" as const,
+      ...(merged ? { modules: merged } : {}),
+    });
+    if (r === undefined) return undefined;
+    run = r;
+    bRunMemo.set(mKey, run);
+  }
+  return run;
+}
+
+/** body 是否引用指定标识符（自递归检测；非计算 property key 不计数） */
+/** 类声明的构造器形参个数（类方法桥实例化用：无显式 ctor → 0） */
+function ctorParamCountOf(
+  fileAst: ReturnType<typeof babelParse>,
+  clsName: string,
+): number {
+  for (const stmt of fileAst.program.body) {
+    if (
+      (stmt.type === "ClassDeclaration" || stmt.type === "ExportNamedDeclaration") &&
+      "declaration" in (stmt as object)
+    ) {
+      const decl = stmt.type === "ExportNamedDeclaration"
+        ? (stmt as { declaration?: unknown }).declaration
+        : stmt;
+      const c = decl as { type?: string; id?: { name?: string }; body?: { body?: unknown[] } };
+      if (c.type === "ClassDeclaration" && c.id?.name === clsName) {
+        for (const m of c.body?.body ?? []) {
+          const mem = m as { kind?: string; params?: unknown[] };
+          if (mem.kind === "constructor") return mem.params?.length ?? 0;
+        }
+        return 0;
+      }
+    }
+  }
+  return 0;
+}
+
+function bodyReferencesName(body: Node, name: string): boolean {
+  let found = false;
+  const visit = (n: unknown): void => {
+    if (found || !n || typeof n !== "object") return;
+    const o = n as { type?: string; [k: string]: unknown };
+    if (o.type === "Identifier" && (o as { name?: unknown }).name === name) {
+      found = true;
+      return;
+    }
+    for (const key of Object.keys(o)) {
+      if (key === "loc" || key === "start" || key === "end" || key === "tokens") continue;
+      if (o.type === "MemberExpression" && key === "property" && (o as { computed?: boolean }).computed !== true) {
+        continue;
+      }
+      const v = o[key];
+      if (Array.isArray(v)) {
+        for (const item of v) if (item && typeof item === "object") visit(item);
+      } else if (v && typeof v === "object") {
+        visit(v);
+      }
+    }
+  };
+  visit(body);
+  return found;
+}
 
 /** 进程内 L0：同 (source, fn, refine 指纹, budget, label) 的 generalize 结果 */
 const generalizeMemo = new Map<string, PolyFn | undefined>();
@@ -122,6 +205,19 @@ function refineDepsFingerprint(source: string, refine?: RefineResolveOpts): Load
   return loadModuleDepsFingerprint(source, refine.loadModule, refine.fromFile);
 }
 
+/** 模块表身份（WeakMap）——调用方同表对象跨调用 → 键稳定（与 loadModuleId 同信任模型） */
+const moduleMapIds = new WeakMap<object, number>();
+let moduleMapIdSeq = 0;
+function moduleMapId(m: object | undefined): string {
+  if (!m) return "-";
+  let id = moduleMapIds.get(m);
+  if (id === undefined) {
+    id = ++moduleMapIdSeq;
+    moduleMapIds.set(m, id);
+  }
+  return `m${id}`;
+}
+
 function generalizeMemoKey(
   fnName: string,
   source: string,
@@ -134,6 +230,11 @@ function generalizeMemoKey(
     depsFp?: LoadDepsFingerprint;
     /** checkSource 预计算：ambient 侧车闭包指纹（独立调用时现算） */
     sidecarFp?: string;
+    /** 宿主已求值的依赖导出表（specifier → AbsModuleExports） */
+    modules?: Record<string, AbsModuleExports | Record<string, unknown>>;
+    /** B run 注入包（modules/mocks/envGlobals/replacements/as）——透传
+     *  runTranspiled；内容指纹进 memo 键（CLI 每次新建同对象也可命中） */
+    inject?: RunTranspiledOptions;
   },
 ): { key: string; depPaths: string[]; truncated: boolean } {
   const r = opts.refine;
@@ -160,6 +261,8 @@ function generalizeMemoKey(
     deps.fp,
     sc ?? "-",
     `${budget.maxDepth}/${budget.maxNodes}`,
+    moduleMapId(opts.modules),
+    runTranspiledOptionsMemoKey(opts.inject),
   ].join("|");
   return {
     key,
@@ -213,312 +316,41 @@ function isCacheableAbs(a: Abs): boolean {
   );
 }
 
-type VarRename = ReadonlyMap<string, string>;
-
-function termKey(t: Term, rename?: VarRename): string {
-  switch (t.op) {
-    case "lit":
-      return `L:${typeof t.value}:${String(t.value)}`;
-    case "var":
-      return `V:${rename?.get(t.id) ?? t.id}`;
-    case "app":
-      return `A:${t.fn}(${t.args.map((a) => termKey(a, rename)).join(",")})`;
-  }
-}
-
-/** L2：and/or 子约束按键排序，交换律不造成 miss */
-function predKey(p: Pred, rename?: VarRename): string {
-  switch (p.op) {
-    case "true":
-      return "T";
-    case "false":
-      return "F";
-    case "eq":
-    case "ne":
-    case "lt":
-    case "le":
-    case "gt":
-    case "ge":
-      return `${p.op}(${termKey(p.a, rename)},${termKey(p.b, rename)})`;
-    case "and":
-    case "or": {
-      const keys = p.args.map((a) => predKey(a, rename)).sort();
-      return `${p.op}(${keys.join(",")})`;
-    }
-    case "not":
-      return `not(${predKey(p.arg, rename)})`;
-    case "typeof":
-      return `typeof(${termKey(p.t, rename)},${p.type})`;
-  }
-}
-
-/** 结构键：shape + term + pred；不含 conf（置信度不参与语义输入） */
-function shapeKey(s: Shape, seen: Set<object>, rename?: VarRename): string {
-  switch (s.k) {
-    case "never":
-    case "any":
-    case "unknown":
-      return s.k;
-    case "prim":
-      return `p:${s.type}`;
-    case "brand":
-      return `b:${s.name}(${absKeyInner(s.shape, seen, rename)})`;
-    case "eff":
-      return `e:${s.eff}<${absKeyInner(s.inner, seen, rename)}>`;
-    case "arr":
-      return `arr(${absKeyInner(s.element, seen, rename)})`;
-    case "tuple": {
-      const els = s.elements.map((e) => absKeyInner(e, seen, rename)).join(",");
-      const rest = s.rest ? `...${absKeyInner(s.rest, seen, rename)}` : "";
-      return `tup[${els}${rest}]`;
-    }
-    case "fn": {
-      const pts = (s.paramTypes ?? [])
-        .map((t) => absKeyInner(t, seen, rename))
-        .join(",");
-      const ret = s.returnType ? absKeyInner(s.returnType, seen, rename) : "?";
-      const name = s.name ? `#${s.name}` : "";
-      return `fn${name}(${s.params.join(",")}|${pts})=>${ret}`;
-    }
-    case "sum":
-      return `sum(${s.members.map((m) => absKeyInner(m, seen, rename)).join("|")})`;
-    case "obj": {
-      const slots = Object.keys(s.slots)
-        .sort()
-        .map((k) => {
-          const slot = s.slots[k]!;
-          const flags = (slot.optional ? "?" : "") + (slot.readonly ? "r" : "");
-          return `${k}${flags}:${absKeyInner(slot.value, seen, rename)}`;
-        })
-        .join(",");
-      const idx = s.index
-        ? `idx(${absKeyInner(s.index.key, seen, rename)}→${absKeyInner(s.index.value, seen, rename)})`
-        : "";
-      const open = s.open ? "open" : "";
-      return `obj{${slots}}${idx}${open}`;
-    }
-  }
-}
-
-function absKeyInner(a: Abs, seen: Set<object>, rename?: VarRename): string {
-  if (seen.has(a)) return "cycle";
-  seen.add(a);
-  const t = a.term ? `=${termKey(a.term, rename)}` : "";
-  const p = a.pred ? `@${predKey(a.pred, rename)}` : "";
-  return `${shapeKey(a.shape, seen, rename)}${t}${p}`;
-}
-
-// --- free vars + α-rename (L2) ---
-
-function collectTermVars(t: Term, acc: Set<string>): void {
-  if (t.op === "var") acc.add(t.id);
-  else if (t.op === "app") for (const a of t.args) collectTermVars(a, acc);
-}
-
-function collectPredVars(p: Pred, acc: Set<string>): void {
-  switch (p.op) {
-    case "true":
-    case "false":
-      return;
-    case "eq":
-    case "ne":
-    case "lt":
-    case "le":
-    case "gt":
-    case "ge":
-      collectTermVars(p.a, acc);
-      collectTermVars(p.b, acc);
-      return;
-    case "and":
-    case "or":
-      for (const a of p.args) collectPredVars(a, acc);
-      return;
-    case "not":
-      collectPredVars(p.arg, acc);
-      return;
-    case "typeof":
-      collectTermVars(p.t, acc);
-      return;
-  }
-}
-
-function collectAbsVars(a: Abs, acc: Set<string>, seen: Set<Abs>): void {
-  if (seen.has(a)) return;
-  seen.add(a);
-  if (a.term) collectTermVars(a.term, acc);
-  if (a.pred) collectPredVars(a.pred, acc);
-  const s = a.shape;
-  switch (s.k) {
-    case "brand":
-      collectAbsVars(s.shape, acc, seen);
-      return;
-    case "eff":
-      collectAbsVars(s.inner, acc, seen);
-      return;
-    case "arr":
-      collectAbsVars(s.element, acc, seen);
-      return;
-    case "tuple":
-      for (const e of s.elements) collectAbsVars(e, acc, seen);
-      if (s.rest) collectAbsVars(s.rest, acc, seen);
-      return;
-    case "fn":
-      for (const t of s.paramTypes ?? []) collectAbsVars(t, acc, seen);
-      if (s.returnType) collectAbsVars(s.returnType, acc, seen);
-      return;
-    case "sum":
-      for (const m of s.members) collectAbsVars(m, acc, seen);
-      return;
-    case "obj":
-      for (const slot of Object.values(s.slots)) collectAbsVars(slot.value, acc, seen);
-      if (s.index) {
-        collectAbsVars(s.index.key, acc, seen);
-        collectAbsVars(s.index.value, acc, seen);
-      }
-      return;
-    default:
-      return;
-  }
-}
-
-/** 公开：收集 Abs 自由 term 变元（dts 泛型投影 / α 作用域判定复用 L2 基建）。 */
-export function collectAbsFreeVars(a: Abs): Set<string> {
-  const acc = new Set<string>();
-  collectAbsVars(a, acc, new Set());
-  return acc;
-}
-
-function renameTerm(t: Term, map: VarRename): Term {
-  if (t.op === "var") {
-    const to = map.get(t.id);
-    return to === undefined ? t : termVar(to);
-  }
-  if (t.op === "app") {
-    return { op: "app", fn: t.fn, args: t.args.map((a) => renameTerm(a, map)) };
-  }
-  return t;
-}
-
-function renamePred(p: Pred, map: VarRename): Pred {
-  switch (p.op) {
-    case "true":
-    case "false":
-      return p;
-    case "eq":
-    case "ne":
-    case "lt":
-    case "le":
-    case "gt":
-    case "ge":
-      return { op: p.op, a: renameTerm(p.a, map), b: renameTerm(p.b, map) };
-    case "and":
-    case "or":
-      return { op: p.op, args: p.args.map((a) => renamePred(a, map)) };
-    case "not":
-      return { op: "not", arg: renamePred(p.arg, map) };
-    case "typeof":
-      return { op: "typeof", t: renameTerm(p.t, map), type: p.type };
-  }
-}
-
-function renameAbs(a: Abs, map: VarRename): Abs {
-  const out: Abs = {
-    shape: renameShape(a.shape, map),
-    conf: a.conf,
-  };
-  if (a.term) out.term = renameTerm(a.term, map);
-  if (a.pred) out.pred = renamePred(a.pred, map);
-  return out;
-}
-
-function renameShape(s: Shape, map: VarRename): Shape {
-  switch (s.k) {
-    case "never":
-    case "any":
-    case "unknown":
-    case "prim":
-      return s;
-    case "brand":
-      return { k: "brand", name: s.name, shape: renameAbs(s.shape, map) };
-    case "eff":
-      return { k: "eff", eff: s.eff, inner: renameAbs(s.inner, map) };
-    case "arr":
-      return { k: "arr", element: renameAbs(s.element, map) };
-    case "tuple": {
-      const out: Shape = {
-        k: "tuple",
-        elements: s.elements.map((e) => renameAbs(e, map)),
-      };
-      if (s.rest) out.rest = renameAbs(s.rest, map);
-      return out;
-    }
-    case "fn": {
-      const out: Shape = { k: "fn", params: s.params };
-      if (s.name !== undefined) out.name = s.name;
-      if (s.paramTypes) out.paramTypes = s.paramTypes.map((t) => renameAbs(t, map));
-      if (s.returnType) out.returnType = renameAbs(s.returnType, map);
-      return out;
-    }
-    case "sum":
-      return { k: "sum", members: s.members.map((m) => renameAbs(m, map)) };
-    case "obj": {
-      const slots: Record<string, { value: Abs; optional?: boolean; readonly?: boolean }> = {};
-      for (const [k, slot] of Object.entries(s.slots)) {
-        slots[k] = {
-          value: renameAbs(slot.value, map),
-          ...(slot.optional ? { optional: true } : {}),
-          ...(slot.readonly ? { readonly: true } : {}),
-        };
-      }
-      const out: Shape = { k: "obj", slots };
-      if (s.index) {
-        out.index = { key: renameAbs(s.index.key, map), value: renameAbs(s.index.value, map) };
-      }
-      if (s.open) out.open = true;
-      return out;
-    }
-  }
-}
-
-type InstHit = { result: Abs; varOrder: string[] };
-
-/**
- * L2 键：args+Φ 中自由变元按 id 排序后 α-规范化（→ α0,α1,…）。
- * 同构不同名（x+1 vs y+1）共享条目；命中时把结果变元改回当前名。
- */
-function instantiateMemoKey(
-  args: Abs[],
-  phi: Phi,
-): { key: string; varOrder: string[] } {
-  const acc = new Set<string>();
-  for (const a of args) collectAbsVars(a, acc, new Set());
-  collectPredVars(phi, acc);
-  const varOrder = [...acc].sort();
-  const rename = new Map(varOrder.map((id, i) => [id, `α${i}`]));
-  const key = `${args.map((a) => absKeyInner(a, new Set(), rename)).join(";")}#${predKey(phi, rename)}`;
-  return { key, varOrder };
-}
-
-function alphaRenameResult(
-  result: Abs,
-  fromOrder: string[],
-  toOrder: string[],
-): Abs {
-  if (fromOrder.length !== toOrder.length) return result;
-  let same = true;
-  for (let i = 0; i < fromOrder.length; i++) {
-    if (fromOrder[i] !== toOrder[i]) {
-      same = false;
-      break;
-    }
-  }
-  if (same) return result;
-  const map = new Map<string, string>();
-  for (let i = 0; i < fromOrder.length; i++) {
-    map.set(fromOrder[i]!, toOrder[i]!);
-  }
-  return renameAbs(result, map);
-}
+// Abs 键 / α-rename → generalize-key.ts
+export {
+  type VarRename,
+  type InstHit,
+  termKey,
+  predKey,
+  absKeyInner,
+  collectTermVars,
+  collectPredVars,
+  collectAbsVars,
+  collectAbsFreeVars,
+  renameTerm,
+  renamePred,
+  renameAbs,
+  renameShape,
+  instantiateMemoKey,
+  alphaRenameResult,
+} from "./generalize-key.ts";
+import {
+  type InstHit,
+  type VarRename,
+  termKey,
+  predKey,
+  absKeyInner,
+  collectTermVars,
+  collectPredVars,
+  collectAbsVars,
+  collectAbsFreeVars,
+  renameTerm,
+  renamePred,
+  renameAbs,
+  renameShape,
+  instantiateMemoKey,
+  alphaRenameResult,
+} from "./generalize-key.ts";
 
 export type TypeParam = {
   id: string;
@@ -532,7 +364,7 @@ export type PolyFn = {
   instantiate: (args: Abs[], phi?: Phi) => Abs;
   symbolic: Abs;
   display: string;
-  /** 入口契约（@nudo:refine），供签名/inlay 展示 */
+  /** 入口契约（@nudo:contract），供签名/inlay 展示 */
   entryReqs?: Array<{ param: string; pred: import("./pred.ts").Pred }>;
   /**
    * 形参表面（C4.1）：默认/rest/解构的契约可绑定名。
@@ -578,6 +410,11 @@ export function extractFn(
         async: decl.async === true,
       });
       formalsByName.set(decl.id.name, formals);
+      // export default function named：同时登记 "default"（与 localNamedExports C4.4 同口径）
+      if (stmt.type === "ExportDefaultDeclaration") {
+        env.fns.set("default", env.fns.get(decl.id.name)!);
+        formalsByName.set("default", formals);
+      }
     }
     if (decl.type === "ClassDeclaration" && (decl as { id?: { name?: string } }).id?.name) {
       // C4.2：导出 class 实例/静态方法 → `Class.method`
@@ -634,10 +471,12 @@ export function extractFn(
         }
       }
     }
-    // export default (…) => … / function (…)：本地键 default
+    // export default (…) => … / function (…) / 匿名 function 声明：本地键 default
     if (
       stmt.type === "ExportDefaultDeclaration" &&
-      (decl.type === "ArrowFunctionExpression" || decl.type === "FunctionExpression")
+      (decl.type === "ArrowFunctionExpression" ||
+        decl.type === "FunctionExpression" ||
+        (decl.type === "FunctionDeclaration" && !decl.id))
     ) {
       const init = decl as unknown as {
         params: unknown[];
@@ -762,7 +601,7 @@ export function generalizeFromAst(
   opts: {
     budget?: LeakBudget;
     label?: string;
-    /** 传入则把 @nudo:refine 挂到入口 param Abs */
+    /** 传入则把 @nudo:contract 挂到入口 param Abs */
     refine?: EffectiveInterfaceOpts;
     /** 预解析 AST，避免 check 批量场景重复 parse */
     file?: ReturnType<typeof babelParse>;
@@ -770,6 +609,11 @@ export function generalizeFromAst(
     depsFp?: LoadDepsFingerprint;
     /** 预计算 ambient 侧车闭包指纹（checkSource 整文件一次） */
     sidecarFp?: string;
+    /** 宿主已求值的依赖导出表（specifier → AbsModuleExports） */
+    modules?: Record<string, AbsModuleExports | Record<string, unknown>>;
+    /** B run 注入包（modules/mocks/envGlobals/replacements/as）——透传
+     *  runTranspiled；对象身份进 memo 键（调用方同文件内复用同一对象） */
+    inject?: RunTranspiledOptions;
   } = {},
 ): PolyFn | undefined {
   const { key, depPaths, truncated } = generalizeMemoKey(fnName, source, opts);
@@ -797,6 +641,11 @@ function generalizeFromAstUncached(
     file?: ReturnType<typeof babelParse>;
     /** checkSource 预计算：ambient 侧车闭包指纹（独立调用时现算） */
     sidecarFp?: string;
+    /** 宿主已求值的依赖导出表（specifier → AbsModuleExports） */
+    modules?: Record<string, AbsModuleExports | Record<string, unknown>>;
+    /** B run 注入包（modules/mocks/envGlobals/replacements/as）——透传
+     *  runTranspiled；对象身份进 memo 键（调用方同文件内复用同一对象） */
+    inject?: RunTranspiledOptions;
   } = {},
 ): PolyFn | undefined {
   const extracted = extractFn(source, fnName, opts.file);
@@ -823,7 +672,7 @@ function generalizeFromAstUncached(
       // 入口面，非执法）。无源码指令且无 ambient 侧车时保持旧快路径行为。
       const r = opts.refine;
       const hasDirective =
-        source.includes("@nudo:refine") || source.includes("@nudo:interface");
+        source.includes("@nudo:contract") || source.includes("@nudo:contract");
       const sc =
         opts.sidecarFp ??
         (r.loadModule && r.fromFile
@@ -864,40 +713,120 @@ function generalizeFromAstUncached(
   // 随 L0 的 PolyFn 共享；resetGeneralizeMemo 一并丢弃。
   const instMemo = new Map<string, InstHit>();
 
-  const paramNames = new Set(params);
   const alphaIds = typeParams.map((t) => t.id);
 
-  const run = (
-    args: Abs[],
-    phi: Phi = pTrue,
-    collector?: import("./hof.ts").HofCollectCtx,
-  ): Abs => {
+  // 提升前置化：静态扫描替代求值期挂载点（§promote-scan）。
+  // symbolic/instantiate 共用同一决策；refine 形状（非 any typeParam）
+  // 到达优先拒绝提升（与运行时 promoteParamShape 同口径）。
+  const promoteScan = scanPromotions(
+    body,
+    params,
+    typeParams.map((t) => t.id),
+    new Map(params.map((p, i) => [p, typeParams[i]!.value])),
+  );
+
+  // B-path 门（Φ-native 后约束入口可走 B——Φ 经 callTranspiledExportFull
+  // 种子注入）：
+  //   ① 非类方法（.名，B 导出表只有顶层名）
+  //   ② body 不引用导入名（B run 无模块注入；仅侧车/refine 用的 import 不阻断）
+  //   ③ 无 require、无 @nudo:mock/env/replace 指令（B run 无 mock 注入）
+  //   ④ 非自递归（body 引用自身名——B 有界展开给 partial，opaque→
+  //      不写关系契约保留）
+  // 其余一律解释路径。B 失败回落。
+  const fileAst = opts.file ?? babelParse(source);
+  // import 按 spec 可解析性判定：body 引用的导入名其 spec 在注入表内 → B 可
+  // （绑定缺失名在 B 内 crash-and-swallow，解释路径的未绑定名处理更干净）；
+  // 未注入（调用方未传 modules）→ 与旧行为一致走解释路径。
+  const importSpecByLocal = new Map<string, string>();
+  for (const stmt of fileAst.program.body) {
+    if (stmt.type === "ImportDeclaration") {
+      for (const s of stmt.specifiers) {
+        importSpecByLocal.set(s.local.name, (stmt.source as { value?: string }).value ?? "");
+      }
+    }
+  }
+  const unresolvableImports = [...importSpecByLocal.keys()].some((n) => {
+    if (!bodyReferencesName(body, n)) return false;
+    const spec = importSpecByLocal.get(n);
+    return spec === undefined || !(opts.modules && Object.prototype.hasOwnProperty.call(opts.modules, spec));
+  });
+  // mock/env/replace 指令：注入包缺失时 B run 会执行真实宿主调用（裸 fetch
+  // 崩溃 / 未绑定名 ReferenceError 假 throws）——无注入则拦；注入齐备则放行。
+  // env 门按函数体自由标识符粒度：不引用外部名的纯函数（pureAdd）不受
+  // @nudo:env 牵连；引用 process/JSON 等外部名的函数在注入缺失时 fail-closed。
+  const inject = opts.inject;
+  const hasMocks = inject && Object.keys(inject.mocks ?? {}).length > 0;
+  const hasEnv = inject && Object.keys(inject.envGlobals ?? {}).length > 0;
+  const hasReps = inject && Object.keys(inject.replacements ?? {}).length > 0;
+  // 函数 mock 与模块 mock 分门：mock-module 的注入面是 modules（导出表覆盖），
+  // 不是 inject.mocks——混用会把仅有 mock-module 的文件误门成 fail-closed。
+  const hasFnMockDirective = /@nudo:mock\s+\w+\s*(?:=|from\b)/.test(source);
+  const hasModMockDirective = /@nudo:mock-module\b/.test(source);
+  const hasModInject =
+    inject && inject.modules && Object.keys(inject.modules).length > 0;
+  const mockGated =
+    (hasFnMockDirective && !hasMocks) || (hasModMockDirective && !hasModInject);
+  const envGatedSource = /@nudo:env\b/.test(source) && !hasEnv;
+  // 自由标识符分析用词法绑定名（formals），非展示名（rest 的 "...args" 不匹配
+  // AST 标识符 args）；pattern 取 bound 顶层名。
+  const boundNames = formals.flatMap((f) =>
+    f.kind === "pattern" ? f.bound : [f.name],
+  );
+  const envGated = envGatedSource && freeIdentifiers(body, boundNames).size > 0;
+  const replaceGated = /@nudo:replace\b/.test(source) && !hasReps;
+  const bEligible =
+    !unresolvableImports &&
+    !mockGated &&
+    !envGated &&
+    !replaceGated;
+
+  const run = (args: Abs[], phi: Phi = pTrue): Abs => {
     const { key, varOrder } = instantiateMemoKey(args, phi);
     const hit = instMemo.get(key);
     if (hit !== undefined) {
       return alphaRenameResult(hit.result, hit.varOrder, varOrder);
     }
-    // symbolic 传入 collector 以沉淀关系；instantiate 装 throwaway collector——
-    // 形状提升仍生效（§5.2.5），但 run 结束即丢，不写 PolyFn 共享状态。
-    const hc = collector ?? createHofCollectCtx(paramNames, alphaIds);
-    const local: AstEnv = {
-      vars: new Map(env.vars),
-      fns: env.fns,
-      hofCollect: hc,
-    };
-    params.forEach((p, i) => {
-      local.vars.set(p, args[i] ?? unknown);
-    });
-    const result = evalNode(body, local, phi, budget).value;
+    let result: Abs | undefined;
+    if (bEligible) {
+      try {
+        const bRun = bPathRunOf(source, opts.modules, opts.inject);
+        if (!bRun) {
+          /* B 失败 fail-closed */
+        } else if (fnName.includes(".")) {
+          // 类方法桥：模块导出表取类 Abs → $new（构造参数 any）→ $invoke
+          const [clsName, methodName] = fnName.split(".", 2);
+          const clsAbs = bRun[clsName ?? ""];
+          if (clsAbs && typeof clsAbs === "object" && "shape" in (clsAbs as object)) {
+            const nCtor = ctorParamCountOf(fileAst, clsName ?? "");
+            const inst = $new(clsAbs as Abs, Array.from({ length: nCtor }, () => abs({ k: "any" }, undefined, pTrue, "path")));
+            result = withExecPhi(phi, () => $invoke(inst, methodName ?? "", args));
+          }
+        } else if (fnName in bRun) {
+          // 提升形状预绑定到实参（B 无 env 预绑面；具体实参优先）
+          const bArgs = args.map((a, i) => {
+            const shape = promoteScan.promotedShapes.get(params[i]!);
+            if (shape && (a.shape.k === "any" || a.shape.k === "unknown")) {
+              return { shape, term: a.term, pred: a.pred, conf: "path" } as Abs;
+            }
+            return a;
+          });
+          result = callTranspiledExportFull(bRun, fnName, bArgs, { phi }).result;
+        }
+      } catch {
+        /* B 失败 fail-closed */
+      }
+    }
+    if (result === undefined) {
+      // fail-closed：B 失败（B-incapable 构造）/ 非导出类方法等 →
+      // 显式无信息（unknown）
+      result = abs({ k: "unknown" }, undefined, undefined, "opaque");
+    }
     // 截断/失败结果不缓存，避免固化过宽或不稳定结论
     if (isCacheableAbs(result)) {
       instMemo.set(key, { result, varOrder });
     }
     return result;
   };
-
-  // symbolic 一次跑安装 collector 并沉淀；instantiate 不读其结果
-  const hofCollector = createHofCollectCtx(paramNames, alphaIds);
 
   const symbolic = run(
     typeParams.map((t) => t.value),
@@ -907,7 +836,6 @@ function generalizeFromAstUncached(
         ? entryReqs[0]!.pred
         : { op: "and", args: entryReqs.map((r) => r.pred) }
       : pTrue,
-    hofCollector,
   );
 
   // opaque = call-budget 截断/泄漏 → 不写关系；
@@ -927,18 +855,18 @@ function generalizeFromAstUncached(
         fnRels.set(param, { abs: snapshotAbs(rec.abs), source: rec.source });
       }
     }
-    for (const [param, rec] of hofCollector.fnRels) {
+    for (const [param, rec] of promoteScan.fnRels) {
       if (refineEntryShapes.has(param)) continue;
       if (!fnRels) fnRels = new Map();
       fnRels.set(param, { abs: snapshotAbs(rec.abs), source: rec.source });
     }
-    for (const [param, rec] of hofCollector.entryShapes) {
+    for (const [param, rec] of promoteScan.entryShapes) {
       if (refineEntryShapes.has(param)) continue;
       if (!entryShapes) entryShapes = new Map();
       entryShapes.set(param, { abs: snapshotAbs(rec.abs), source: rec.source });
     }
-    if (hofCollector.sites.length > 0) {
-      hofSites = hofCollector.sites.map((s) => ({
+    if (promoteScan.sites.length > 0) {
+      hofSites = promoteScan.sites.map((s) => ({
         ...s,
         argTerms: [...s.argTerms],
         result: snapshotAbs(s.result),

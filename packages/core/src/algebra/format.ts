@@ -66,6 +66,8 @@ export function formatShape(a: Abs): string {
       const lv = litValue(a);
       // JSON.stringify(NaN|±Infinity) is "null" — keep JS literal spelling.
       if (typeof lv === "number" && !Number.isFinite(lv)) return String(lv);
+      // JSON.stringify(bigint) throws；按 JS 字面量拼法展示
+      if (typeof lv === "bigint") return `${String(lv)}n`;
       if (lv !== undefined) return JSON.stringify(lv);
       return s.type;
     }
@@ -125,12 +127,43 @@ export function formatShape(a: Abs): string {
       }
       return `(${labels.join(", ")}) => ${ret}`;
     }
-    case "brand":
+    case "brand": {
+      // Map/Set/WeakMap 泛型参数（harvest 的 __key/__value/__elem 槽）
+      const inner = s.shape as Abs;
+      const slots = inner && inner.shape && inner.shape.k === "obj" ? inner.shape.slots : undefined;
+      if (slots) {
+        const arg = (key: string): string | undefined => {
+          const sl = slots[key];
+          return sl ? formatShapeSlot(sl.value) : undefined;
+        };
+        if (s.name === "Map" || s.name === "ReadonlyMap" || s.name === "WeakMap") {
+          const k = arg("__key");
+          const v = arg("__value");
+          if (k !== undefined && v !== undefined) return `${s.name}<${k}, ${v}>`;
+        }
+        if (s.name === "Set" || s.name === "ReadonlySet" || s.name === "WeakSet") {
+          const el = arg("__elem");
+          if (el !== undefined) return `${s.name}<${el}>`;
+        }
+      }
       return `${s.name}`;
+    }
     case "eff":
       return `${s.eff}<${formatShape(s.inner)}>`;
-    case "sum":
-      return s.members.map(formatShape).join(" | ");
+    case "sum": {
+      // 渲染去重：不同 term/pred 的成员可能渲染成同一形状（例如两条 number
+      // 路径）——formatShape 是有损外延视图，重复文本只留一次；formatAbs
+      // 仍保留全部成员（无损）。
+      const seen = new Set<string>();
+      const parts: string[] = [];
+      for (const m of s.members) {
+        const t = formatShape(m);
+        if (seen.has(t)) continue;
+        seen.add(t);
+        parts.push(t);
+      }
+      return parts.join(" | ");
+    }
     default:
       return "·";
   }

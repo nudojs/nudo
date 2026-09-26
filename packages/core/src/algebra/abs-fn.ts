@@ -8,7 +8,7 @@ import type { Abs, Confidence, Shape } from "./abs.ts";
 import { abs } from "./abs.ts";
 import type { Term } from "./term.ts";
 import type { Pred } from "./pred.ts";
-import type { AstEnv } from "./ast-env.ts";
+import type { AstEnv } from "./hof-types.ts";
 
 /** Abs 原生 env/builtin 实现（B-path 优先） */
 export type AbsSigImpl = (args: Abs[], thisVal?: Abs) => Abs | undefined;
@@ -22,7 +22,7 @@ export type AbsFnImpl = {
   env?: AstEnv;
   kind?: string;
   /** 调用时直接派发（mock withArgs 等），优先于 body */
-  apply?: (args: Abs[]) => Abs;
+  apply?: (args: Abs[], thisVal?: Abs) => Abs;
   /**
    * 对象方法（ObjectMethod / 方法型 FunctionExpression）：$invoke 时把
    * receiver 作为 apply 的**首参**注入。shape.params 仍是用户可见形参
@@ -37,7 +37,19 @@ export type AbsFnImpl = {
    */
   fingerprint?: string;
   /** 无 body 时，按 paramTypes 做 α 替换得到返回 */
-  relation?: { paramTypes: Abs[]; returnType: Abs };
+  relation?: {
+    paramTypes: Abs[];
+    returnType: Abs;
+    /**
+     * 条件类型 infer：绑定 fromVar 后从 via 投出 inferVar
+     * （`T extends (infer E)[]` → via: "arr"；`T extends Promise<infer U>` → "promise"）。
+     */
+    inferFrom?: { fromVar: string; via: "arr" | "promise"; inferVar: string };
+    /** extends 不成立时的假分支（如 never） */
+    condFallback?: Abs;
+  };
+  /** `@nudo:pure`：调用结果按实参记忆化（无副作用契约） */
+  pureName?: string;
 };
 
 const implByAbs = new WeakMap<object, AbsFnImpl>();
@@ -49,6 +61,22 @@ export function attachFnImpl(a: Abs, impl: AbsFnImpl): void {
 export function getFnImpl(a: Abs): AbsFnImpl | undefined {
   if (!a || typeof a !== "object") return undefined;
   return implByAbs.get(a as object);
+}
+
+/** 标记纯函数（@nudo:pure）：调用结果可按实参记忆化 */
+export function markPureFn(target: object, name: string): void {
+  if (!target || typeof target !== "object") return;
+  (target as { _memoize?: string })._memoize = name;
+  const impl = implByAbs.get(target);
+  if (impl) impl.pureName = name;
+}
+
+/** 读纯函数标记（Abs impl 或对象属性 `_memoize`） */
+export function pureFnNameOf(fn: unknown): string | undefined {
+  if (!fn || (typeof fn !== "object" && typeof fn !== "function")) return undefined;
+  const impl = implByAbs.get(fn as object);
+  if (impl?.pureName) return impl.pureName;
+  return (fn as { _memoize?: string })._memoize;
 }
 
 /** 造一个带实现的 Abs 函数值 */
@@ -170,7 +198,13 @@ export function relationFingerprint(
 export function relationFn(
   paramTypes: Abs[],
   returnType: Abs,
-  opts?: { params?: string[]; conf?: Confidence; fingerprint?: string },
+  opts?: {
+    params?: string[];
+    conf?: Confidence;
+    fingerprint?: string;
+    inferFrom?: { fromVar: string; via: "arr" | "promise"; inferVar: string };
+    condFallback?: Abs;
+  },
 ): Abs {
   const params = opts?.params ?? paramTypes.map((_, i) => `x${i}`);
   const conf = opts?.conf ?? "path";
@@ -187,7 +221,12 @@ export function relationFn(
   };
   attachFnImpl(a, {
     params,
-    relation: { paramTypes, returnType },
+    relation: {
+      paramTypes,
+      returnType,
+      ...(opts?.inferFrom ? { inferFrom: opts.inferFrom } : {}),
+      ...(opts?.condFallback ? { condFallback: opts.condFallback } : {}),
+    },
     fingerprint,
   });
   return a;

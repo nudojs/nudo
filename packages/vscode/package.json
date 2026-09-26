@@ -28,27 +28,74 @@
         "title": "Nudo: Select Case"
       },
       {
-        "command": "nudo.interface",
-        "title": "Nudo: Show Interface"
+        "command": "nudo.contract",
+        "title": "Nudo: Show Contract"
       },
       {
-        "command": "nudo.interface.draft",
-        "title": "Nudo: Draft Interface (code-first)"
+        "command": "nudo.contract.draft",
+        "title": "Nudo: Draft Contract (code-first)"
       },
       {
-        "command": "nudo.interfaceEmit",
-        "title": "Nudo: Persist Interface (@generated)"
+        "command": "nudo.contract.emit",
+        "title": "Nudo: Persist Contract (@generated)"
+      },
+      {
+        "command": "nudo.coexistence.apply",
+        "title": "Nudo: Apply coexistence settings (vs tsserver)"
+      }
+    ],
+    "configuration": {
+      "title": "Nudo",
+      "properties": {
+        "nudo.analysis.mode": {
+          "type": "string",
+          "enum": ["exports", "directives", "all"],
+          "default": "exports",
+          "description": "Analysis mode: exports (default) / directives (quiet) / all (every target path). See package.json#nudo.analysis.mode."
+        },
+        "nudo.coexistence.suggestMuteTsValidation": {
+          "type": "boolean",
+          "default": true,
+          "description": "When true, Nudo may suggest muting tsserver JS validation on nudo-managed files to avoid stacked diagnostics (LSP-G4)."
+        }
+      }
+    },
+    "semanticTokenScopes": [
+      {
+        "language": "javascript",
+        "scopes": {
+          "property": ["variable.other.property.js"],
+          "function": ["entity.name.function.js"],
+          "method": ["entity.name.function.js"],
+          "variable": ["variable.other.readwrite.js"],
+          "parameter": ["variable.parameter.js"],
+          "namespace": ["entity.name.namespace.js"],
+          "class": ["entity.name.class.js"]
+        }
+      },
+      {
+        "language": "typescript",
+        "scopes": {
+          "property": ["variable.other.property.ts"],
+          "function": ["entity.name.function.ts"],
+          "method": ["entity.name.function.ts"],
+          "variable": ["variable.other.readwrite.ts"],
+          "parameter": ["variable.parameter.ts"],
+          "namespace": ["entity.name.namespace.ts"],
+          "class": ["entity.name.class.ts"]
+        }
       }
     ]
   },
   "dependencies": {
-    "vscode-languageclient": "^10.1.1"
+    "vscode-languageclient": "^10.1.2"
   },
   "devDependencies": {
     "@types/vscode": "^1.138.0"
   },
   "scripts": {
     "build": "tsup src/extension.ts --format cjs --outDir out --external vscode && node ./scripts/bundle-server.mjs",
-    "package": "npx @vscode/vsce package --no-dependencies"
+    "package": "npx @vscode/vsce package --no-dependencies",
+    "smoke": "node ./scripts/smoke.mjs"
   }
 }

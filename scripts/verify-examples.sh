@@ -13,14 +13,13 @@
 # every runnable *.js/*.ts under docs/examples must be covered by at least
 # one row (*.nudo.js templates excepted — imported via @nudo:import).
 #
-# CLI product face (docs/design-cli-semantics.md):
+# CLI product face (docs/design/cli-semantics.md):
 #   Day0  pnpm run check      — gate + signatures (any ≠ unknown)
 #         pnpm run test:cli   — case reports (call@/entry@ + debug)
 #   Day1  pnpm run contract   — draft/emit/print sidecars
-#         pnpm run export:nudo — dts | guard | zod
-# Old verbs (infer/types/interface/generate/emit/guard/doctor/watch) are
-# deprecated; this script pins the new verbs and labels that the CLI prints
-# today. Do not invent golden strings that the CLI does not emit.
+#         pnpm run export:nudo — dts | guard | schema | standard | all
+# This script pins current product verbs and the labels the CLI prints.
+# Do not invent golden strings that the CLI does not emit.
 #
 # Output pins (below) mirror the promises in the example files' header
 # comments and the per-directory READMEs: fixed strings that MUST appear in
@@ -181,18 +180,19 @@ done < <(find docs/examples -type f \( -name '*.js' -o -name '*.ts' \) | sort)
 # constraints/ — negative examples pin their diagnostic lines; register.js
 # (positive) pins its signatures so shape-refine drift also goes red.
 pin 'pnpm run check docs/examples/constraints/set-delay.js' \
-  'setDelay[ms]: 实参 ⊭ 前置' 'expected: ms > 0' \
-  'needsPositive[x]: 实参 ⊭ 前置' 'expected: x > 0'
+  'setDelay[ms]: argument ⊭ precondition' 'expected: ms > 0' \
+  'needsPositive[x]: argument ⊭ precondition' 'expected: x > 0'
 pin 'pnpm run check docs/examples/constraints/return-contract.js' \
-  'bad: 返回值 ⊭ @nudo:refine return positive' 'expected: return > 0'
+  'bad: return value ⊭ @nudo:contract return positive' 'expected: return > 0' \
+  'nudo contract --draft'
 pin 'pnpm run check docs/examples/constraints/declared-vs-if.js' \
-  'setDelay[ms]: 实参 ⊭ 前置'
+  'setDelay[ms]: argument ⊭ precondition'
 pin 'pnpm run check docs/examples/constraints/register.js' \
   '0 error · 0 warning' \
   'register(u: { id: number, name: string }) => string' \
   'setup(c: { retries: number, label?: string }) => number'
 pin 'pnpm run check docs/examples/constraints/add-pred.js' \
-  'scale[x]: 实参 ⊭ 前置' 'actual:   -1  #exact'
+  'scale[x]: argument ⊭ precondition' 'actual:   -1  #exact'
 pin 'pnpm run test:cli docs/examples/constraints/add-pred.js' \
   '(1, 3) => 4' '(100, 1) => 101' '(-1, 1) => 0'
 
@@ -202,7 +202,7 @@ pin 'pnpm run test:cli docs/examples/constraints/add-pred.js' \
 # count and goes red).
 pin 'pnpm run check docs/examples/structure/assign.js' \
   '1 error · 0 warning' \
-  'config: 赋值 ⊭ 原有形状' 'missing slot port'
+  'config: assignment ⊭ existing shape' 'missing slot port'
 pin 'pnpm run check docs/examples/structure/arg-structure.js' \
   '2 error · 0 warning' \
   'nudo:constraint-violated' 'missing field p.y'
@@ -210,13 +210,70 @@ pin 'pnpm run check docs/examples/structure/arg-structure.js' \
 # vs-ts/ — nudo side pins its diagnostics; tsc side pins its own.
 pin 'pnpm run check docs/examples/vs-ts/constraints/nudo.js' \
   '2 error · 0 warning' \
-  'setDelay[ms]: 实参 ⊭ 前置' 'actual:   -50  #exact'
-pin_empty 'pnpm exec tsc --noEmit --strict docs/examples/vs-ts/constraints/tsc.ts'
+  'setDelay[ms]: argument ⊭ precondition' 'actual:   -50  #exact'
+pin_empty 'pnpm exec tsc --noEmit --strict --ignoreConfig docs/examples/vs-ts/constraints/tsc.ts'
+
+# migrate/ — public retire-tsc sample (before → after one-way door)
+pin 'pnpm run nudo -- migrate status docs/examples/migrate/before/package.json' \
+  'migrate status' 'typescript dep: yes' 'tsc scripts: typecheck, build'
+pin 'pnpm run nudo -- migrate strip docs/examples/migrate/before/src/math.ts' \
+  'dry' 'math.ts' 'math.js' 'none written'
+pin 'pnpm run nudo -- migrate strip docs/examples/migrate/before/src/cart.ts' \
+  'dry' 'cart.ts' 'cart.js'
+pin 'pnpm run check docs/examples/migrate/after/src/math.js' \
+  'lineTotal' 'applyCoupon' 'formatMoney'
+pin 'pnpm run check docs/examples/migrate/after/src/cart.js' \
+  'cartTotal' 'receipt'
+pin 'pnpm run nudo -- migrate verify docs/examples/migrate/after/src/math.js' \
+  'OK' 'math.js'
+pin 'pnpm run nudo -- migrate retire docs/examples/migrate/before/package.json --dry-run' \
+  'dry-run' 'removed typescript' 'nudo check'
+pin 'pnpm run nudo -- contract --from-dts docs/examples/migrate/before/src/math.ts' \
+  '@nudo:draft' 'NOT a sidecar contract' 'fn({ price: number(), qty: number() }, number())' 'export const lineTotal'
+
+# errors/ — top-10 Nudo error faces (see docs/errors-vs-typescript.md)
+pin 'pnpm run check docs/examples/errors/01-constraint-gt.js' \
+  'constraint-violated' 'ms > 0' 'actual:   0  #exact' 'nudo contract --draft'
+pin 'pnpm run check docs/examples/errors/02-shape-missing.js' \
+  'missing field u.name' 'actual:   { id: 2 }  #exact'
+pin 'pnpm run check docs/examples/errors/03-assign-missing.js' \
+  'assign-mismatch' 'missing slot port'
+pin 'pnpm run check docs/examples/errors/04-entry-throws.js' \
+  'entry-may-throw' 'throws TypeError' 'nudo contract --draft'
+pin 'pnpm run check docs/examples/errors/05-return-refine.js' \
+  'return value ⊭ @nudo:contract return positive' 'expected: return > 0'
+pin 'pnpm run check docs/examples/errors/06-plus-truth.js' \
+  'number | string' 'x > 0' 'actual:   -1  #exact'
+pin 'pnpm run check docs/examples/errors/07-prim-assign.js' \
+  'assign-mismatch' 'prim string ⊭ prim number'
+pin 'pnpm run check docs/examples/errors/08-length-bound.js' \
+  'length(s) ≥ 1' 'actual:   ""  #exact'
+pin 'pnpm run check docs/examples/errors/09-arg-shape.js' \
+  'missing field u.id'
+pin 'pnpm run check docs/examples/errors/10-fix-path.js' \
+  'ms > 0' 'x > 0' 'nudo contract --draft'
+
+# retire-real/ — real npm dep `ms` (vercel/ms)
+pin 'pnpm run nudo -- migrate strip docs/examples/retire-real/before/src/age.ts' \
+  'dry' 'age.ts' 'age.js'
+pin 'pnpm run check docs/examples/retire-real/after/src/age.js' \
+  'formatAge' 'parseAge' '0 error'
+pin 'pnpm run nudo -- contract --from-dts docs/examples/retire-real/before/src/age.ts' \
+  'fn({ durationMs: number() }, string())' 'fn({ text: string() }, number())'
+
+# retire-debug/ — real npm dep `debug` (visionmedia/debug)
+pin 'pnpm run check docs/examples/retire-debug/after/src/logger.js' \
+  'OK' '0 error' 'createLogger' 'logHello' 'nudo:opaque-result'
+pin 'pnpm run nudo -- contract --from-dts docs/examples/retire-debug/before/src/logger.ts' \
+  'fn({ namespace: string() }, any())' 'fn({ name: string() }, any())'
+pin 'pnpm run nudo -- migrate status docs/examples/retire-debug/before/package.json' \
+  'migrate status' 'typescript dep: yes' 'tsc scripts: typecheck'
+
 pin 'pnpm run check docs/examples/vs-ts/structure/nudo.js' \
   '2 error · 0 warning' \
   'greet[u]' 'constraint-violated' \
-  'config: 赋值 ⊭ 原有形状'
-pin 'pnpm exec tsc --noEmit --strict docs/examples/vs-ts/structure/tsc.ts' \
+  'config: assignment ⊭ existing shape'
+pin 'pnpm exec tsc --noEmit --strict --ignoreConfig docs/examples/vs-ts/structure/tsc.ts' \
   'error TS2345' 'error TS2353' 'error TS2741'
 
 # algebra/ — pins mirror each file's header-comment promises (actual CLI labels).
@@ -227,7 +284,7 @@ pin 'pnpm run check docs/examples/algebra/0-add-intensional.js' \
   'twice(x: number) => number'
 pin 'pnpm run test:cli docs/examples/algebra/0-add-intensional.js' \
   '(1, 3) => 4' '(number, 1) => number' 'debug "symbolic"'
-# check --abs = algebra face (was `nudo types`). Unconstrained analyze-args
+# check --abs = algebra face. Unconstrained analyze-args
 # may still print `unknown` in this view; entry unconstrained params on the
 # check signatures face print as `any`.
 pin 'pnpm run check docs/examples/algebra/0-add-intensional.js --abs --assume "x>0"' \
@@ -263,7 +320,7 @@ pin 'pnpm run test:cli docs/examples/algebra/g-narrow-subtract.js' \
 pin 'pnpm run test:cli docs/examples/algebra/h-array-boundary.js' \
   'debug "reduce"  ([1, 2, 3, 4, 5]) => 15' \
   'debug "forEach"  ([1, 2, 3, 4, 5]) => 15' \
-  'debug "some"  ([1, 2, 3, 4, 5]) => boolean'
+  'debug "some"  ([1, 2, 3, 4, 5]) => true'
 pin 'pnpm run test:cli docs/examples/algebra/i-map-set.js' \
   'debug "map-get"  ("alice") => { id: "alice", name: "Alice" }' \
   'debug "set-forof"  ([1, 2, 2, 3]) => [1, 2, 3]'
@@ -280,14 +337,16 @@ pin 'pnpm run test:cli docs/examples/algebra/l-primitive-conversion.js' \
   'debug "float"  ("3.14") => 3.14'
 # sample.js — entry@ fallback; unconstrained params display as any (not unknown).
 pin 'pnpm run test:cli docs/examples/algebra/sample.js' \
-  'entry@' '(any, any) => unknown' \
+  'entry@' '(any, any) => number | string' \
   '(any) => number | string' \
   '{ host: "localhost", port: 8080, debug: false }'
 
 # mini-repo/ — pin the cross-file integration claims.
-# normalizeId may carry nudo:unknown-inference warning (true unknown return)
+# normalizeId may carry nudo:unknown-inference warning (true unknown return);
+# sumAges 无约束 ages 实参 → L2 entry-may-throw（提升是假设、不消除危险）
 pin 'pnpm run check docs/examples/mini-repo/user-service.js' \
-  '0 error' \
+  '1 error' \
+  'sumAges(ages: any) => number | string  throws TypeError' \
   'createService() => { store: MemoryStore, load: (id) => ? }'
 pin 'pnpm run test:cli docs/examples/mini-repo/user-service.js' \
   'debug "ages"  ([10, 20, 30]) => 60' \
@@ -313,7 +372,7 @@ pin 'pnpm run check docs/examples/interface-derivation/add.js' \
   'add2(x: number) => number'
 pin 'pnpm run check docs/examples/interface-derivation/lib.js' \
   '0 error · 0 warning' \
-  'add4(x: number) => number | string'
+  'add4(x: number) => number'
 
 # interface-draft/ — code-first draft promises (F6). Primary verb: contract.
 pin 'pnpm run contract --draft docs/examples/interface-draft/greet.js' \

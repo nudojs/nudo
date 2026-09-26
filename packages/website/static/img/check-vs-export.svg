@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 340" width="680" height="340" role="img" aria-labelledby="t d">
+  <title id="t">check 门禁 vs export 投影</title>
+  <desc id="d">Abs 经实线到 check 校验门禁；经虚线到 dts/guard/schema 单向有损投影；没有东西读回投影</desc>
+  <style>
+    text { font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+    .title { font-size: 14px; font-weight: 500; fill: #1f2937; }
+    .body { font-size: 13px; font-weight: 400; fill: #1f2937; }
+    .caption { font-size: 11px; font-weight: 400; fill: #6b7280; }
+    .ink { fill: #1f2937; }
+    .muted { fill: #6b7280; }
+    .accent { fill: #5b4bdb; }
+    .soft { fill: #eef2ff; stroke: #5b4bdb; stroke-width: 1; }
+    .box { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 1; }
+    .solid { stroke: #5b4bdb; stroke-width: 1.5; fill: none; marker-end: url(#acc); }
+    .dash { stroke: #6b7280; stroke-width: 1.25; stroke-dasharray: 5 4; fill: none; marker-end: url(#mut); }
+    .back { stroke: #94a3b8; stroke-width: 1; stroke-dasharray: 2 4; fill: none; marker-end: url(#mut2); }
+  </style>
+  <defs>
+    <marker id="acc" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#5b4bdb"/>
+    </marker>
+    <marker id="mut" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#6b7280"/>
+    </marker>
+    <marker id="mut2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+
+  <!-- header -->
+  <text class="title" x="28" y="28">validate · project</text>
+  <text class="caption" x="28" y="48">check 是门禁（solid）· export 是单向有损投影（dashed）</text>
+
+  <!-- Abs source -->
+  <rect class="soft" x="268" y="72" width="144" height="56" rx="8"/>
+  <text class="body accent" x="340" y="106" text-anchor="middle" font-weight="500">Abs</text>
+
+  <!-- left: check -->
+  <path class="solid" d="M268 118 C 180 140, 140 160, 120 188"/>
+  <rect class="box" x="48" y="196" width="200" height="72" rx="8"/>
+  <text class="body ink" x="148" y="224" text-anchor="middle" font-weight="500">nudo check</text>
+  <text class="caption muted" x="148" y="246" text-anchor="middle">validate · Pred 蕴含 · L1/L2 门禁</text>
+  <text class="caption accent" x="148" y="288" text-anchor="middle">actual ⊭ expected · 成功也打印 signatures</text>
+
+  <!-- right: export -->
+  <path class="dash" d="M412 118 C 500 140, 540 160, 560 188"/>
+  <rect class="box" x="420" y="196" width="212" height="72" rx="8"/>
+  <text class="body ink" x="526" y="224" text-anchor="middle" font-weight="500">nudo export</text>
+  <text class="caption muted" x="526" y="246" text-anchor="middle">dts / guard / schema</text>
+  <text class="caption muted" x="526" y="288" text-anchor="middle">one-way · lossy · extensional projection</text>
+
+  <!-- no-read-back note -->
+  <path class="back" d="M520 196 C 480 170, 420 150, 380 128"/>
+  <text class="caption muted" x="340" y="322" text-anchor="middle">Nothing reads a projection back · 没有东西读回投影 · 投影只供人/外部工具消费</text>
+</svg>

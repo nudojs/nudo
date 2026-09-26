@@ -1,5 +1,4 @@
 ---
-sidebar_position: 2.6
 description: "Nudo 语言服务器在 VS Code、Zed、Neovim、Helix 及通用 LSP 客户端上的能力对齐表与已知缺口。"
 ---
 
@@ -8,6 +7,31 @@ description: "Nudo 语言服务器在 VS Code、Zed、Neovim、Helix 及通用 L
 Nudo 只交付**一个**语言服务器（`@nudojs/lsp`）。编辑器差异仅在如何启动它、以及客户端侧打开了哪些能力。本页是对齐表：服务器提供什么、各客户端如何消费、缺口在哪里。
 
 服务器按设计与 `tsserver` / `vtsls` **并存**，而不是替代它们。
+
+## Known gaps / 哪些限制在客户端侧（先读） {#known-gaps--which-limits-are-client-side-read-first}
+
+**诚实定位。** 产品门禁是 `nudo check --json` 加上 Agent/MCP 工具。IDE 是跑在同一服务器上的**尽力而为观察面**——不是门禁。服务器能力绝不会为了迁就更弱的客户端而降级；下面几乎每条缺口都是**客户端 UI 或客户端配置**。
+
+| 客户端 | 角色 | 预期 |
+|--------|------|------|
+| **VS Code**（`wmzy.nudo-vscode`） | **旗舰** IDE 客户端 | 完整功能面：hover、CodeLens interface 档 + case 切换、inlay hints、装饰、agent 桥 |
+| **Zed** | 尽力而为 | 核心面可用（diagnostics / hover / rename）。CodeLens 需 `code_lens: "on"`；无 active-case 装饰 API |
+| **Helix** | 尽力而为 | Diagnostics / hover / definition / rename。**无 CodeLens UI**——同一数据请用 CLI `nudo contract` / `nudo check` |
+| **Neovim** | 尽力而为 | 核心面可用；CodeLens / semantic tokens / 装饰取决于插件 |
+| 通用 stdio / agent 桥 | 协议 | `workspace/executeCommand` + `nudo/…` 自定义请求始终可用 |
+
+缺口主题（完整表与 workaround 见下；跟踪 ID 在设计源 [`docs/design/lsp-client-gaps.md`](https://github.com/nudojs/nudo/blob/main/docs/design/lsp-client-gaps.md)）：
+
+| 主题 | ID | 谁会碰到 |
+|------|----|----------|
+| Active-case 装饰 | **LSP-G1** | **VS Code 已闭**（函数体 + case 行装饰）。Zed / Neovim / Helix 仍开（客户端无装饰 API，或需要插件） |
+| CodeLens 不渲染 | **LSP-G2** | Helix / 极简 Neovim — **观察面由 inlay 覆盖** `● interface / <source>`（与 CodeLens 同源）。CodeLens UI 本身仍是客户端限制 |
+| Semantic tokens 默认关闭 | **LSP-G3** | **VS Code 可染色**（`semanticTokenScopes`）。Zed / Neovim / Helix：按 Setup 说明打开 |
+| 与 tsserver 并存的次要服务器噪音 | **LSP-G4** | 所有客户端（配置：`nudo.analysis.include` / `exclude`，或 `mode: "directives"`）。VS Code：命令 `Nudo: Apply coexistence settings` |
+| Pull diagnostics 未被使用 | **LSP-G6** | 较老客户端 — **push 面已钉**（validateText 必 publish）；pull 是增强 |
+| 补全 / signature help UI 太薄 | **LSP-G7** | 服务端：真实 `paramTypes` / 返回 + `@nudo:` 指令补全（`@` 触发）。Helix UI 仍视构建 |
+
+**经验法则：** 如果协议提供了、编辑器却画不出来，那是**客户端限制**——退回 `nudo check` / `nudo contract` 或 agent 工具。服务器端语义在各编辑器间保持一致。
 
 ## 服务器能力
 
@@ -22,14 +46,14 @@ Nudo 只交付**一个**语言服务器（`@nudojs/lsp`）。编辑器差异仅�
 | Inlay hints | `languages.inlayHint` | case 提示 + Abs 参数/返回（implicit 导出标 `derived`） |
 | 跳转定义 / 引用 / 重命名 | 标准 LSP | 含侧车绑定名（A5） |
 | 文档 / 工作区符号 | 标准 LSP | |
-| Signature help | `onSignatureHelp` | 触发 `(`、`,` |
+| Signature help | `onSignatureHelp` | 触发 `(`、`,`；投影真实 `paramTypes` / 返回（G7） |
 | Code actions（`quickfix`） | `onCodeAction` | 不可达代码清理；契约/参数修复（A6） |
 | Semantic tokens（full） | `languages.semanticTokens` | 图例含 `contract` / `generated` / `derived` interface modifier（A7） |
-| Execute command | `nudo.*` | `selectCase`、`interface`、`interfaceEmit`、agent 工具 |
+| Execute command | `nudo.*` | `selectCase`、`contract`、`contract.draft`、`contract.emit`、agent 工具 |
 | Custom request | `nudo/…` | 与 command 同一 handler（E5）；协议契约用 slash 形式 |
 | Pull diagnostics | `diagnosticProvider` | `interFileDependencies: false` |
 
-**文件检测（A1/A2）：** 目标为 `.js` / `.mjs` / `.ts`。**出厂默认 `nudo.analysis.mode = "exports"`** — 含 `export` / 侧车 / 指令的文件进 IDE 分析；`"all"` 全量目标路径，`"directives"` 回到保守门禁。CodeLens interface 档使用更宽的目标路径——诊断可对无指令文件保持安静，档位仍可见。
+**文件检测（A1/A2）：** 目标为 `.js` / `.mjs` / `.ts`。**出厂默认 `nudo.analysis.mode = "exports"`** — 完整门禁语义：[共存](../guides/coexistence.md#何时用-modedirectives-vs-modeexports)。CodeLens interface 档使用更宽的目标路径——诊断可对无指令文件保持安静，档位仍可见。
 
 ## 客户端支持矩阵
 
@@ -63,7 +87,7 @@ Nudo 只交付**一个**语言服务器（`@nudojs/lsp`）。编辑器差异仅�
 ### Zed — 最小配置
 
 1. 安装 [nudojs/nudo-zed](https://github.com/nudojs/nudo-zed)，或直接指定本地 server 二进制。
-2. 项目 `package.json`：`"devDependencies": { "@nudojs/lsp": "^0.8.0" }`。
+2. 项目 `package.json`：`"devDependencies": { "@nudojs/lsp": "^1.0.0" }`。
 3. `~/.config/zed/settings.json`（或项目 `.zed/settings.json`）：
 
 ```json
@@ -157,21 +181,21 @@ Helix 渲染诊断 / hover / 定义 / 重命名。**UI 无 CodeLens**——用 C
 
 ### 通用 / agent 桥
 
-任意 LSP 客户端可 `workspace/executeCommand` 或发送 `nudo/<tool>` custom request。slash 形式（`nudo/check`）是协议契约；dot 形式（`nudo.check`）对齐 MCP 风格桥的 command 名。两者路由到同一 handler（E5）。见 [Agent 集成](./mcp-server.md) 与 [`PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md)。
+任意 LSP 客户端可 `workspace/executeCommand` 或发送 `nudo/<tool>` custom request。slash 形式（`nudo/check`）是协议契约；dot 形式（`nudo.check`）对齐 MCP 风格桥的 command 名。两者路由到同一 handler（E5）。见 [Agent 集成](./agent-integration.md) 与 [`PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md)。
 
 ## 已知缺口
 
-非 VS Code 客户端落地时关注这些。**服务器语义共享**；缺口几乎都在**客户端 UI**。每条均给出权宜 + 跟踪锚。
+[先读摘要](#known-gaps--which-limits-are-client-side-read-first)背后的细节。采用非 VS Code 客户端时关注这些。**服务器语义共享**；缺口几乎都在**客户端 UI**。每条均给出权宜 + 跟踪 ID（仓内真值：[`docs/design/lsp-client-gaps.md`](https://github.com/nudojs/nudo/blob/main/docs/design/lsp-client-gaps.md) —— 先在那里关掉缺口，再同步本表）。
 
 | 缺口 | 影响客户端 | 权宜 | 跟踪 |
 |------|------------|------|------|
-| Active-case 装饰（高亮当前 case 函数体） | Zed、Neovim、Helix | 客户端渲染 CodeLens 时仍可用 `●`/`○` 切换 case，hover 跟随；无 CodeLens UI 时用 CLI `nudo check` / agent `nudo.hover` | 客户端限制 — 无 tracking issue（Zed 无 decoration API；Neovim 需自写插件） |
-| 不渲染 CodeLens | Helix、部分精简 Neovim | CLI `nudo contract` / `nudo check`；agent `nudo.interface` / `nudo.interface.draft`；需要 UI 时用 VS Code / Zed | 客户端限制 — 无 tracking issue（Helix 无 CodeLens UI） |
-| Semantic tokens 默认关闭 | Zed、Neovim、Helix | 按上文 Setup notes 打开客户端设置（Zed `semantic_tokens: "combined"`；Neovim treesitter/semantic-tokens 插件；Helix `editor.semantic-tokens`） | 已按客户端记录在本页 — 无独立 issue |
-| 次要 server 诊断可能与 tsserver 噪声叠加 | 全部 | 收窄 `package.json#nudo.analysis.include` / `exclude`，或 `mode: "directives"` — 完整步骤见 [共存](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) | 配置问题，非 bug — 跟踪文档即 [共存配方](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) |
-| 文档中的文件检测滞后于 analysis-mode 默认 | 文档 | 以 `package.json#nudo.analysis` + [`PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md) 为准 | 文档同步 — 本页 + PUBLIC_API.md |
-| 部分客户端不用 pull diagnostics | 较旧客户端 | push 路径仍有效；didOpen 即 validate | 协议代差 — 无 tracking issue（服务器保留 push） |
-| 部分客户端补全触发 / signature help 偏弱 | Helix（视版本） | 用 hover + `nudo check` / `nudo test`（CLI）；signature help UI 用 VS Code / Zed | 客户端限制 — 无 tracking issue |
+| Active-case 装饰（高亮当前 case **函数体**） | Zed、Neovim、Helix（**VS Code 已闭**） | VS Code 扩展高亮整个函数体 + case 行。其它客户端：渲染 CodeLens 时用 `●`/`○` 切换 case，hover 跟随；无 CodeLens UI 时用 CLI `nudo check` / agent `nudo.hover` | **LSP-G1** — VS Code 已闭；其余为客户端限制（Zed 无 decoration API；Neovim 需自写插件） |
+| 不渲染 CodeLens | Helix、部分精简 Neovim | **Inlay `● interface / …`** 与 CodeLens 同源投影观察面。另有 CLI `nudo contract` / `nudo check`；agent `nudo.contract` / `nudo.contract.draft` | **LSP-G2** — 观察面已由 inlay 覆盖；CodeLens UI 仍为客户端限制 |
+| Semantic tokens 默认关闭 | Zed、Neovim、Helix（**VS Code 可染色**） | VS Code 自带 `semanticTokenScopes`。其它客户端按 Setup notes 打开（Zed `semantic_tokens: "combined"`；Neovim treesitter/semantic-tokens 插件；Helix `editor.semantic-tokens`） | **LSP-G3** — VS Code 已可；其余仍配置债 |
+| 次要 server 诊断可能与 tsserver 噪声叠加 | 全部 | VS Code：命令 `Nudo: Apply coexistence settings`。或收窄 `package.json#nudo.analysis.include` / `exclude`，或 `mode: "directives"` — 完整步骤见 [共存](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) | **LSP-G4** — 配置面；VS Code 可自助 + [共存配方](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) |
+| 文件探测 / `analysis.mode` 文档 | 文档 | 真值：[`@nudojs/service` API](../api/service.md#shouldanalyzefile) + [`PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md) §7 | **LSP-G5** — 已关闭（文档已对齐 `exports` 默认） |
+| 部分客户端不用 pull diagnostics | 较旧客户端 | push 路径必 publish（`validateText` / didOpen）；pull 为可选增强 | **LSP-G6** — push 面已有测试钉住 |
+| 部分客户端补全触发 / signature help 偏弱 | Helix（视版本） | 服务端：真实参数/返回 + `@nudo:` 指令补全。UI 仍薄时用 hover + `nudo check` / `nudo test` | **LSP-G7** — 服务端已强化；Helix UI 仍为客户端限制 |
 
 ## 同源保证
 
@@ -183,7 +207,7 @@ Helix 渲染诊断 / hover / 定义 / 重命名。**UI 无 CodeLens**——用 C
 | Hover 首行 + 契约展示 | `interfaceTierOf` + `getHoverAtPosition` |
 | Inlay `interfaceSource` / `derived` | `collectAbsInlays` + `interfaceTierOf` |
 | Semantic token modifiers | `buildSemanticTokens` + `interfaceTierOf` |
-| Agent `nudo.check` / `nudo.hover` / `nudo.interface` / infer/whatIf/trace | 同一 service/core 入口 + buffer-aware `loadModule`（E5 `AGENT_TOOL_SOURCES`）；工具错误带 `isError: true` |
+| Agent `nudo.check` / `nudo.hover` / `nudo.contract` / test/whatIf/trace | 同一 service/core 入口 + buffer-aware `loadModule`（E5 `AGENT_TOOL_SOURCES`）；工具错误带 `isError: true` |
 | CLI `nudo check` / `nudo contract` | 同一 service/core 入口 |
 | executeCommand `nudo.*` ↔ slash `nudo/…` | 同一 dispatch 表；清单钉在 `packages/lsp/PUBLIC_API.md` + `public-api-surface.test.ts` |
 
@@ -193,6 +217,6 @@ Helix 渲染诊断 / hover / 定义 / 重命名。**UI 无 CodeLens**——用 C
 - [Zed 扩展](./zed.md)
 - [与 TypeScript 共存](./coexistence.md)
 - [迁移已有 JS](./migrating-js.md)
-- [Agent 集成](./mcp-server.md)
+- [Agent 集成](./agent-integration.md)
 - [版本与发布](./versioning.md)
 - [@nudojs/lsp API](../api/lsp.md)

@@ -10,10 +10,10 @@ import {
   boolean,
   array,
   shape,
-  lit,
+  litC,
   union,
   fn,
-  and,
+  andC,
   partial,
   pick,
   omit,
@@ -94,7 +94,7 @@ describe("shift(n)：数值常数界平移", () => {
   });
 
   it("eq 谓词（lit 编码）→ throw", () => {
-    expect(() => lit(42).shift(1)).toThrow();
+    expect(() => litC(42).shift(1)).toThrow();
   });
 
   it("非有限 offset → throw", () => {
@@ -104,34 +104,34 @@ describe("shift(n)：数值常数界平移", () => {
   });
 });
 
-describe("lit(v)：字面量契约", () => {
+describe("litC(v)：字面量契约", () => {
   it("number 编码：prim number + eq(self, 42)", () => {
-    const c = lit(42);
+    const c = litC(42);
     expect(isNudoConstraint(c)).toBe(true);
     expect(c.prim).toBe("number");
     expect(inst(c, "x")).toBe("x = 42");
   });
 
   it("string 编码", () => {
-    const c = lit("a");
+    const c = litC("a");
     expect(c.prim).toBe("string");
     expect(inst(c, "x")).toBe('x = "a"');
   });
 
   it("boolean 编码", () => {
-    const c = lit(true);
+    const c = litC(true);
     expect(c.prim).toBe("boolean");
     expect(inst(c, "x")).toBe("x = true");
   });
 
   it("null 编码：无 prim + eq(self, null)", () => {
-    const c = lit(null);
+    const c = litC(null);
     expect(c.prim).toBeUndefined();
     expect(inst(c, "x")).toBe("x = null");
   });
 
   it("不开新字段：members/fn/fields/element 全空", () => {
-    const c = lit(42);
+    const c = litC(42);
     expect(c.members).toBeUndefined();
     expect(c.fn).toBeUndefined();
     expect(c.fields).toBeUndefined();
@@ -139,7 +139,7 @@ describe("lit(v)：字面量契约", () => {
   });
 
   it("entry Abs：prim 形态", () => {
-    const a = constraintToEntryAbs(lit(42), "x");
+    const a = constraintToEntryAbs(litC(42), "x");
     expect(a.shape.k).toBe("prim");
   });
 });
@@ -183,7 +183,7 @@ describe("union(...cs)：成员析取", () => {
   });
 
   it("isNudoConstraint 接受 union 形态", () => {
-    expect(isNudoConstraint(union(number().gt(0), lit(0)))).toBe(true);
+    expect(isNudoConstraint(union(number().gt(0), litC(0)))).toBe(true);
   });
 
   it("entry Abs 为成员 join（sum）", () => {
@@ -203,14 +203,14 @@ describe("union(...cs)：成员析取", () => {
 
   it("同 prim 字面量 union → or(eq…) 保留字面量域（不塌成裸 number）", () => {
     // joinValues 对同 prim 双字面量会急切塌成裸 prim——entry Abs 必须绕开，
-    // 否则 union(lit(5),lit(7)) 与更宽的字面量集在 leq/drift 下不可区分
-    const a = constraintToEntryAbs(union(lit(5), lit(7)), "x");
+    // 否则 union(litC(5),litC(7)) 与更宽的字面量集在 leq/drift 下不可区分
+    const a = constraintToEntryAbs(union(litC(5), litC(7)), "x");
     expect(a.shape).toEqual({ k: "prim", type: "number" });
     expect(a.pred?.op).toBe("or");
     if (a.pred?.op === "or") {
       expect(a.pred.args).toHaveLength(2);
     }
-    const b = constraintToEntryAbs(union(lit(5), lit(7), lit(-1)), "x");
+    const b = constraintToEntryAbs(union(litC(5), litC(7), litC(-1)), "x");
     expect(b.pred?.op).toBe("or");
     // 更宽的集不是更窄集的子集（今天 ⊄ 期望）→ drift 应能区分
     expect(leqAbs(b, a).ok).toBe(false);
@@ -218,7 +218,7 @@ describe("union(...cs)：成员析取", () => {
   });
 
   it("跨 prim 字面量 union 仍走 sum（number|string）", () => {
-    const a = constraintToEntryAbs(union(lit(42), lit("a")), "x");
+    const a = constraintToEntryAbs(union(litC(42), litC("a")), "x");
     expect(a.shape.k).toBe("sum");
   });
 
@@ -257,10 +257,8 @@ describe("fn(params, returns?, { throws? })：一等函数约束", () => {
     });
   });
 
-  it("entry Abs 退化 unknown", () => {
-    expect(constraintToEntryAbs(fn({ x: number() }), "cb").shape.k).toBe(
-      "unknown",
-    );
+  it("entry Abs 落成 fn shape（refine→error 可测路径）", () => {
+    expect(constraintToEntryAbs(fn({ x: number() }), "cb").shape.k).toBe("fn");
   });
 
   it("fnConstraintToEntryReqs：拆逐参约束表", () => {
@@ -277,45 +275,45 @@ describe("fn(params, returns?, { throws? })：一等函数约束", () => {
   });
 });
 
-describe("and(...cs)：标量合取", () => {
+describe("andC(...cs)：标量合取", () => {
   it("prim 一致 → preds 拼接", () => {
-    const c = and(number().gt(0), number().lt(10));
+    const c = andC(number().gt(0), number().lt(10));
     expect(c.prim).toBe("number");
     expect(inst(c, "n")).toBe("n > 0 ∧ n < 10");
   });
 
   it("lit 参与合取（prim 同为 number）", () => {
-    const c = and(number().gt(0), lit(5));
+    const c = andC(number().gt(0), litC(5));
     expect(inst(c, "n")).toBe("n > 0 ∧ n = 5");
   });
 
-  it("无 prim 标量（lit(null)）不与显式 prim 冲突", () => {
-    const c = and(lit(null), number().gt(0));
+  it("无 prim 标量（litC(null)）不与显式 prim 冲突", () => {
+    const c = andC(litC(null), number().gt(0));
     expect(c.prim).toBe("number");
     expect(inst(c, "n")).toBe("n = null ∧ n > 0");
   });
 
   it("不可变：操作数不受影响", () => {
     const a = number().gt(0);
-    and(a, number().lt(10));
+    andC(a, number().lt(10));
     expect(a.preds).toHaveLength(1);
   });
 
   it("prim 不一致 → throw", () => {
-    expect(() => and(number().gt(0), string())).toThrow();
-    expect(() => and(string(), boolean())).toThrow();
+    expect(() => andC(number().gt(0), string())).toThrow();
+    expect(() => andC(string(), boolean())).toThrow();
   });
 
   it("fields / element / members / fn → throw", () => {
-    expect(() => and(shape({ a: number() }), number())).toThrow();
-    expect(() => and(array(number()), number())).toThrow();
-    expect(() => and(union(number(), number()), number())).toThrow();
-    expect(() => and(fn({ x: number() }), number())).toThrow();
+    expect(() => andC(shape({ a: number() }), number())).toThrow();
+    expect(() => andC(array(number()), number())).toThrow();
+    expect(() => andC(union(number(), number()), number())).toThrow();
+    expect(() => andC(fn({ x: number() }), number())).toThrow();
   });
 
   it("空参 throw；非约束 → throw", () => {
-    expect(() => and()).toThrow();
-    expect(() => and("x" as never)).toThrow();
+    expect(() => andC()).toThrow();
+    expect(() => andC("x" as never)).toThrow();
   });
 });
 
@@ -344,7 +342,7 @@ describe("partial / pick / omit：shape 字段操作", () => {
 
   it("partial 非 shape → throw", () => {
     expect(() => partial(number())).toThrow();
-    expect(() => partial(lit(42))).toThrow();
+    expect(() => partial(litC(42))).toThrow();
   });
 
   it("pick：子形状，保留 optional 标志，忽略不存在 key", () => {

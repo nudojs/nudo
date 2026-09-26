@@ -1,0 +1,43 @@
+# Close Remaining DX Gaps — 未闭环项
+
+> **状态**：P0-A A1–A8 + P0-B B1–B8 主体已交付（2026-09-19）。
+> 已完成任务的证据在 git 与各包测试/文档中，**不在本文保留 evidence 表**。
+>
+> 真源：[`../kernel-merge.md`](../kernel-merge.md) · [`../cli-semantics.md`](../cli-semantics.md) ·
+> 限制与边界：[`../limitations.md`](../limitations.md) · 版本：[`../../versioning.md`](../../versioning.md)。
+
+---
+
+## 未完全闭合（`[~]`）
+
+| ID | 项 | 缺口 |
+|----|----|------|
+| **A6** | IDE 日用冒烟 | service 层冒烟 7/7（`ide-daily-smoke.test.ts`）；延迟证据见 S1 报告 live-editor 段（`docs/reports/s1-perf-baseline.md`） |
+
+> **B2 已完成**：HarvestJson 磁盘缓存 + harvest miss/fail 降级手写 `@nudojs/env` node 面（`harvest-node.ts` / `harvest-node-b2.test.ts`）。
+
+> **A3 已完成**（2026-09 发布）：`nudo-vscode` 经 release CI `vsce package` + Marketplace + Open VS X 发出（run `35428825221`）；清单见 `packages/vscode/RELEASE_CHECKLIST.md`。
+
+---
+
+## Backlog（未开工，按拍板押后）
+
+| ID | 项 | 重新拉起条件 |
+|----|----|--------------|
+| **S1** | 真实 monorepo cold/warm/edit 性能基线 | ~~押后~~ **已落地**（`pnpm run benchmark:s1`；报告 `docs/reports/s1-perf-baseline.md`） |
+| **S2** | 近 strict 默认门禁档 / 官方契约模板 | 侧手写契约成本成为采用阻塞时 |
+| **S3** | 公开成功样板（真实 JS 包迁移故事） | 覆盖报告达标且有外部包愿意公开时 |
+| **S4** | `analysis.mode=all` 大仓 IDE 体验 | 有明确用户需要脚本级全量分析时 |
+| **S5** | 闭包跨调用状态合流等 limitations P2 | ~~押后~~ **B-path 已建模**（`s5-closure-state.test.ts`）；残余仅方法槽展示 `() => ?` |
+
+---
+
+## 更新约定
+
+- 新开工：`[~]` + 一行锚点（PR / issue / 测试名）
+- 完成：从本表删除；证据写进测试/文档/CHANGELOG，不写回本文
+- 取消：移到 Backlog 或删行并留一行原因
+- 与 `limitations.md` / 真源冲突：**以真源为准**
+- 覆盖率数字：只改 `docs/reports/` 生成物，不手工改结论
+
+节奏：无固定周期；只排优先级与依赖。当前优先：闭环 A3/B2 → 视反馈拉 S1–S3。

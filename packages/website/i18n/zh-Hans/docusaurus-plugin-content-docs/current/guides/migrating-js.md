@@ -1,5 +1,4 @@
 ---
-sidebar_position: 11
 description: "把已有 JavaScript 包迁到 Nudo：从逻辑生成契约草稿 → 审阅 → 落盘 → check/doctor 门禁。"
 ---
 
@@ -14,12 +13,12 @@ Nudo **不要求**先写注解。迁移路径是**代码优先**：保留实现�
 ## 0. 前置
 
 ```bash
-pnpm add -D @nudojs/cli @nudojs/lsp
+pnpm add -D nudojs @nudojs/lsp
 # package.json 可选配置
 {
   "nudo": {
     "analysis": { "mode": "exports", "diagnostics": "default", "evalMissingSlot": "off" },
-    "interface": { "autoBind": true }
+    "contract": { "autoBind": true }
   }
 }
 ```
@@ -35,7 +34,7 @@ nudo check src/
 
 | 档位 | 含义 | 迁移动作 |
 |------|------|----------|
-| `handwritten` | 已有契约（侧车 / `@nudo:refine`） | 保留；用 `check` 执法 |
+| `handwritten` | 已有契约（侧车 / `@nudo:contract`） | 保留；用 `check` 执法 |
 | `generated` | 调用点域已固化 `@generated` | 用法变化时 `--emit` 刷新 |
 | `implicit` | 仅推断展示 | **草稿候选** |
 
@@ -44,7 +43,7 @@ nudo check src/
 ```bash
 nudo contract --draft src/lib.js
 nudo contract --draft --write src/lib.js --fn greet --fn double
-# IDE：CodeLens ⚡ draft interface / VS Code「Nudo: Draft Interface」
+# IDE：CodeLens ⚡ draft interface / VS Code「Nudo: Draft Contract」
 ```
 
 草稿证据（**不发明** check 义务）：
@@ -111,7 +110,7 @@ nudo contract --emit src/lib.js --dry-run --exit-on-diff
 | Hover 档位 | `● interface / handwritten\|generated\|implicit` |
 | CodeLens | persist / update / **draft** |
 | VS Code | Nudo Output 通道命令 |
-| Agent | `nudo.interface` / `nudo.interface.draft` / `nudo.check` |
+| Agent | `nudo.contract` / `nudo.contract.draft` / `nudo.check` |
 | CLI | `nudo contract`（`--draft` / `--emit`）、`nudo check`、`nudo health`、`nudo test --freeze` |
 
 ## 7. 持续健康

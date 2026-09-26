@@ -2,7 +2,7 @@
  * Abs inlay hint：把无损约束内联到源码位置。
  * 不是 TS 风格 type annotation 复读，而是 term/pred/conf 的计算结果。
  *
- * 参数侧只展示显式 `@nudo:refine` 契约（entryReqs）——
+ * 参数侧只展示显式 `@nudo:contract` 契约（entryReqs）——
  * 不从函数体 `if` 反推前置条件（那是控制流，不是对外契约）。
  *
  * A7（design-refine-derivation §8）：default 走 symbolic + entryReqs；
@@ -46,13 +46,17 @@ function listFunctions(source: string): Array<{ name: string; node: Node }> {
       out.push({ name: fd.id!.name, node: fd });
     }
     if (decl.type === "VariableDeclaration") {
-      for (const d of (decl as any).declarations ?? []) {
+      const dcls = (decl as { declarations?: Array<{ id?: { type?: string; name?: string }; init?: Node }> }).declarations ?? [];
+      for (const d of dcls) {
+        const id = d.id;
+        const init = d.init;
         if (
-          d.id?.type === "Identifier" &&
-          d.init &&
-          (d.init.type === "ArrowFunctionExpression" || d.init.type === "FunctionExpression")
+          id?.type === "Identifier" &&
+          id.name &&
+          init &&
+          (init.type === "ArrowFunctionExpression" || init.type === "FunctionExpression")
         ) {
-          out.push({ name: d.id.name, node: d.init });
+          out.push({ name: id.name, node: init });
         }
       }
     }
@@ -137,7 +141,7 @@ function formatReturnDisplay(g: PolyFn): string {
 
 /**
  * 收集源码中函数签名的 Abs inlay：
- * - 参数后：仅 `@nudo:refine` / 侧车显式契约（entryReqs）
+ * - 参数后：仅 `@nudo:contract` / 侧车显式契约（entryReqs）
  * - `{` 前：返回计算形（`x | x * 2`），无 term 时退回 shape
  * - interface 档：导出函数带 `interfaceSource`；implicit 返回标 `derived`
  */
@@ -182,8 +186,9 @@ export function collectAbsInlays(
       }
     }
 
-    const fnNode = node as any;
-    const paramList: any[] = fnNode.params ?? [];
+    type FnNodeLike = { params?: Array<{ name?: string; loc?: { end: { line: number; column: number } } }>; body?: { loc?: { start?: { line: number; column: number } } } };
+    const fnNode = node as FnNodeLike;
+    const paramList = fnNode.params ?? [];
     for (let i = 0; i < paramList.length; i++) {
       const p = paramList[i];
       const pname = params[i] ?? (p?.name as string | undefined);

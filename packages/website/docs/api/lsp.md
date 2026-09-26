@@ -1,5 +1,4 @@
 ---
-sidebar_position: 6
 description: "@nudojs/lsp API — the language server over @nudojs/service: validation pipeline and caches, symbols, semantic tokens, agent tools, capabilities."
 ---
 
@@ -9,7 +8,7 @@ API reference for the Nudo Language Server Protocol package. `@nudojs/lsp` wraps
 
 ## Public API freeze surface (A1/A2)
 
-`@nudojs/lsp` is **0.8.0, pre-1.x**. The freeze inventory — what must stay stable when the package later cuts 1.0 — lives in the monorepo:
+`@nudojs/lsp` is **1.0.0**. The freeze inventory — what must stay stable across the 1.x line — lives in the monorepo:
 
 **[`packages/lsp/PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md)**
 
@@ -17,10 +16,10 @@ API reference for the Nudo Language Server Protocol package. `@nudojs/lsp` wraps
 |------------|---------|
 | npm surface | `exports["."]` → `dist/server.js`; `bin.nudo-lsp`; `files: ["dist"]`; importing the entry **starts** the server |
 | initialize capabilities | `textDocumentSync` (Full), hover, completion (trigger `.`), codeLens, inlayHint, definition/references/rename, document/workspace symbols, code actions (`quickfix`), signatureHelp, semanticTokens (full), executeCommand, pull `diagnosticProvider` |
-| executeCommand | **dot form** `nudo.check`, `nudo.infer`, `nudo.hover`, `nudo.whatIf`, `nudo.suggestCase`, `nudo.trace`, `nudo.interface`, `nudo.interface.draft` (+ alias `nudo.interfaceDraft`), `nudo.interface.emit` (+ alias `nudo.interfaceEmit`), `nudo.selectCase`, `nudo.getActiveCases` |
-| custom requests | **slash form is the protocol contract**: `nudo/check`, `nudo/infer`, `nudo/hover`, `nudo/whatIf`, `nudo/suggestCase`, `nudo/trace`, `nudo/interface`, `nudo/interface.draft`, `nudo/interface.emit`, `nudo/selectCase`, `nudo/getActiveCases` — each has a matching executeCommand (`nudo/X` ↔ `nudo.X`) |
-| agent tools | `AGENT_TOOL_SOURCES` keys: `whatIf`, `suggestCase`, `trace`, `check`, `hover`, `infer`, `interface`, `interface.draft`, `interface.emit`, `codeLens` (server-only) |
-| CheckJson / InferJson | v1 schemas owned by core/service (`check-report.ts`, `infer-json.ts`); lsp surfaces them unchanged; field add-only |
+| executeCommand | **dot form** `nudo.check`, `nudo.test`, `nudo.hover`, `nudo.whatIf`, `nudo.suggestCase`, `nudo.trace`, `nudo.contract`, `nudo.contract.draft`, `nudo.contract.emit`, `nudo.selectCase`, `nudo.getActiveCases` |
+| custom requests | **slash form is the protocol contract**: `nudo/check`, `nudo/test`, `nudo/hover`, `nudo/whatIf`, `nudo/suggestCase`, `nudo/trace`, `nudo/contract`, `nudo/contract.draft`, `nudo/contract.emit`, `nudo/selectCase`, `nudo/getActiveCases` — each has a matching executeCommand (`nudo/X` ↔ `nudo.X`) |
+| agent tools | `AGENT_TOOL_SOURCES` keys: `whatIf`, `suggestCase`, `trace`, `check`, `hover`, `test`, `contract`, `contract.draft`, `contract.emit`, `codeLens` (server-only) |
+| CheckJson / CaseJson | v1 schemas owned by core/service (`check-report.ts`, `case-json.ts`); lsp surfaces them unchanged; field add-only |
 | analysis defaults | `DEFAULT_ANALYSIS_MODE = "exports"`; null config → diagnostics `default`, `evalMissingSlot` `off` |
 | experimental | `src/*` test modules, caches/debounce, free-text hover/CodeLens wording — not npm/protocol contracts |
 
@@ -53,7 +52,7 @@ validateText(
   version: number,
   deps: ValidateTextDeps,
   propagate?: boolean,           // default false
-  force?: boolean,               // default false — 脏传播时禁用 sourceHash 短路
+  force?: boolean,               // default false — disables the sourceHash short-circuit on dirty propagation
 ): Promise<void>
 ```
 
@@ -176,7 +175,7 @@ What the server registers on `connection.onInitialize` (`src/server.ts`):
 |------------|---------|----------|
 | Hover | `onHover` | Inferred type at cursor via `getTypeAtPosition`; when the cursor is on an exported function name, the first line is `● interface / handwritten|generated|implicit` (same source as CodeLens) plus the effective contract display for handwritten/generated |
 | Completion (trigger `.`) | `onCompletion` | Property/method/variable items from `getCompletionsAtPosition` |
-| CodeLens | `onCodeLens` | Interface tier first: `● interface / handwritten|generated|implicit` (+ persist/update emit lenses + `⚡ draft interface` for non-handwritten exports); case lenses are the debug sub-layer — `● case "name"` active, `○` otherwise. Clicking sends `nudo.selectCase` / `nudo.interface` / `nudo.interface.draft` / `nudo.interfaceEmit` and refreshes lenses |
+| CodeLens | `onCodeLens` | Interface tier first: `● interface / handwritten|generated|implicit` (+ persist/update emit lenses + `⚡ draft interface` for non-handwritten exports); case lenses are the debug sub-layer — `● case "name"` active, `○` otherwise. Clicking sends `nudo.selectCase` / `nudo.contract` / `nudo.contract.draft` / `nudo.contract.emit` and refreshes lenses |
 | Inlay hints | `languages.inlayHint` | End-of-line case `Type` hints + Abs param/return inlays; implicit exports carry `· derived` |
 | Definition | `onDefinition` | `resolveDefinitionLocations` (local + cross-file + sidecar + workspace fallback) |
 | References | `onReferences` | `buildSymbolTable` + `findReferences` |
@@ -230,7 +229,7 @@ Deletion is the one out-of-band event handled explicitly. A `workspace/didChange
 
 Dirty propagation needs the import graph over `knownFiles`, and rebuilding it used to mean re-reading and re-parsing every known file. `buildModuleGraph` (from `@nudojs/service`) now takes the session-level `moduleGraphCache`: each entry stores a file's `mtimeMs`, `size`, and extracted import edges as plain strings. A `stat`-only metadata check — `mtimeMs` **and** `size` exactly equal — is a hit and reuses the cached edges; a miss re-reads the file from disk and backfills the entry. Unchanged files therefore cost one `stat` per propagation: zero disk reads, zero parsing. The package tests pin this by making a dependency unreadable (`chmod 000`) — propagation still computes the correct dirty set from cached edges.
 
-Per-result work is bounded as well: a single `AnalysisResult` caps synthesized precise cases per function (`MAX_PRECISE_CALLSITE_CASES = 3`), folding the remaining call records into a symbolic aggregate instead of growing without limit.
+Per-result work is bounded as well: a single `AnalysisResult` caps synthesized precise cases per function (`callSiteBudget`, default `3`; configurable via `package.json#nudo.analysis.callSiteBudget`), folding the remaining call records into a symbolic aggregate instead of growing without limit.
 
 ### Evaluation guards
 
@@ -238,8 +237,57 @@ Validation shares the evaluator with the CLI, and module loading there is guarde
 
 ### `interFileDependencies: false`
 
-`initialize` declares `diagnosticProvider: { interFileDependencies: false, workspaceDiagnostics: false }`: each file's diagnostics are correct for that file alone, and contracts come from `*.nudo.js` sidecars / `@nudo:refine` / `@nudo:interface`. `@nudo:case` is a debug / `nudo test` sub-layer, not the interface product. This is the structural difference from `tsserver`, whose whole-`Program` residency is forced by structural typing: any cross-file shape can change any decision, so everything must stay loaded and current. Nudo trades that for single-file correctness with bounded memory — which is precisely what lets both servers run side by side in the same editor. Nudo does not aim to replace `tsserver`.
+`initialize` declares `diagnosticProvider: { interFileDependencies: false, workspaceDiagnostics: false }`: each file's diagnostics are correct for that file alone, and contracts come from `*.nudo.js` sidecars / `@nudo:contract`. `@nudo:case` is a debug / optional `nudo test` sub-layer, not the contract product. This is the structural difference from `tsserver`, whose whole-`Program` residency is forced by structural typing: any cross-file shape can change any decision, so everything must stay loaded and current. Nudo trades that for single-file correctness with bounded memory — which is precisely what lets both servers run side by side in the same editor. Nudo does not aim to replace `tsserver`.
 
 ## Relation to Editor Extensions
 
 The `nudo-vscode` extension does not reimplement any of this: it bundles `@nudojs/lsp`'s compiled `dist/server.js` into the extension as `server/server.js` and launches that child process over IPC, then forwards the custom `nudo.selectCase` command to the server. The [Zed extension](../guides/zed.md) launches the same server over stdio (`nudo-lsp` / `node dist/server.js`). See the [VS Code guide](../guides/vscode.md) and [Zed guide](../guides/zed.md) for the editor-side view of these features.
+
+## Export inventory
+
+<!-- NUDO-API-SKELETON:BEGIN -->
+> Generated by `pnpm run docs:gen:api` from package export surfaces (`PUBLIC_API.md` / `src/index.ts`) — do not edit this block. Regenerate with `node scripts/gen-api-docs.mjs`.
+
+Library exports from `src/index.ts` and side-effect-free `./public-api` constants. Protocol commands (below the table) come from `packages/lsp/PUBLIC_API.md` §3.
+
+| Name | Kind | Summary | Signature |
+|------|------|------|------|
+| `buildSemanticTokens` | fn | 从源码提取 semantic tokens 并按 LSP 相对编码返回扁平 number[]。 | `buildSemanticTokens( filePath: string, source: string, opts?: BuildSemanticTokensOpts, ): number[]` |
+| `BuildSemanticTokensOpts` | type | — | `BuildSemanticTokensOpts = InterfaceTierOpts & { loadModule?: (spec: string, fromFile: string) => string \| undefined; }` |
+| `CaseInfo` | type | — | `CaseInfo = { functionName: string; caseName: string; caseIndex: number; }` |
+| `encodeSemanticTokens` | fn | LSP 标准相对五元组编码：deltaLine/deltaStartChar/length/tokenType/tokenModifiers。 | `encodeSemanticTokens(tokens: SemanticToken[]): number[]` |
+| `getAbsAtPosition` | fn | 光标处无损 Abs。B-path 节点表优先；用例函数体走 Abs 重放。 | `getAbsAtPosition( filePath: string, source: string, line: number, column: number, activeCases?: Map<string, number>, ): Abs \| null` |
+| `getAbsAtPositionAsync` | fn | Async entry to getAbsAtPosition（与 getTypeAtPositionAsync 同预加载口径） | `getAbsAtPositionAsync( filePath: string, source: string, line: number, column: number, activeCases?: Map<string, number>, ): Promise<Abs \| null>` |
+| `getCasesForFile` | fn | — | `getCasesForFile(filePath: string, source: string)` |
+| `getCompletionsAtPosition` | fn | — | `getCompletionsAtPosition( filePath: string, source: string, line: number, column: number, ): CompletionItem[]` |
+| `getHoverAtPosition` | fn | LSP hover：优先无损 Abs（类型即计算本体）。 | `getHoverAtPosition( filePath: string, source: string, line: number, column: number, activeCases?: Map<string, number>, opts?: HoverInterfaceOpts, ): HoverInfo \| null` |
+| `getTypeAtPosition` | fn | 光标处类型（Abs）。B-path 节点表优先；用例函数体走 Abs 重放。 | `getTypeAtPosition( filePath: string, source: string, line: number, column: number, activeCases?: Map<string, number>, ): Abs \| null` |
+| `getTypeAtPositionAsync` | fn | Async entry to getTypeAtPosition with path-env preloading (see analyzeFileAsync). | `getTypeAtPositionAsync( filePath: string, source: string, line: number, column: number, activeCases?: Map<string, number>, ): Promise<Abs \| null>` |
+| `HoverInfo` | type | — | `HoverInfo = { typeText: string; intension?: string; abs?: string; absMultiline?: string; interfaceSource?: InterfaceSource; interfaceDisp...` |
+| `interfaceTierModifierBit` | fn | A7：interface 档 → semantic token modifier（与 CodeLens 同源） | `interfaceTierModifierBit(src: InterfaceSource): number` |
+| `NUDO_AGENT_TOOL_NAMES` | const | Agent-tool names shared by executeCommand / slash requests / AGENT_TOOL_SOURCES. | `const NUDO_AGENT_TOOL_NAMES` |
+| `NUDO_EXECUTE_COMMANDS` | const | workspace/executeCommand names (dot form) — declared on initialize | `const NUDO_EXECUTE_COMMANDS` |
+| `NUDO_INITIALIZE_CAPABILITIES` | const | Capability keys declared in connection.onInitialize | `const NUDO_INITIALIZE_CAPABILITIES` |
+| `NUDO_LSP_PACKAGE_SURFACE` | const | npm package public surface (mirrors packages/lsp/package.json) | `const NUDO_LSP_PACKAGE_SURFACE` |
+| `NUDO_SLASH_REQUESTS` | const | Custom LSP request method names (slash form) — the protocol contract. | `const NUDO_SLASH_REQUESTS` |
+| `SEMANTIC_TOKEN_MODIFIERS` | const | — | `const SEMANTIC_TOKEN_MODIFIERS` |
+| `SEMANTIC_TOKEN_TYPES` | const | Semantic tokens 图例（tokenTypes 下标即 LSP 编码里的 tokenType 值）。 | `const SEMANTIC_TOKEN_TYPES` |
+| `SemanticToken` | type | — | `SemanticToken = { line: number; char: number; length: number; typeIndex: number; modifierBitmask: number; }` |
+| `slashToExecuteCommand` | fn | Slash-form → matching executeCommand (dot form) | `slashToExecuteCommand(slash: string): string` |
+
+### Protocol commands (executeCommand)
+
+| Name | Kind | Summary | Signature |
+|------|------|------|------|
+| `nudo.check` | fn | CheckJson v1 gate | — |
+| `nudo.test` | fn | CaseJson v1 case report | — |
+| `nudo.hover` | fn | lossless Abs at position (+ optional inlays) | — |
+| `nudo.whatIf` | fn | inject `@nudo:as` assumptions | — |
+| `nudo.suggestCase` | fn | case coverage / paste-ready directives | — |
+| `nudo.trace` | fn | per-case arg→result listing | — |
+| `nudo.contract` | fn | interface tiers print | — |
+| `nudo.contract.draft` | fn | code-first `*.nudo.draft.*` | — |
+| `nudo.contract.emit` | fn | persist `@generated` sidecar | — |
+| `nudo.selectCase` | fn | switch active case (positional or object args) | — |
+| `nudo.getActiveCases` | fn | active case index map | — |
+<!-- NUDO-API-SKELETON:END -->

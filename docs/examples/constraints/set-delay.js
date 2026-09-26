@@ -1,11 +1,11 @@
-// 唯一 refine 形态：@nudo:refine <param> <constraint>
+// 唯一 refine 形态：@nudo:contract <param> <constraint>
 // 约束必须来自 .nudo.js 模板，不在 refine 里写 x > 0
 // 运行：pnpm run check docs/examples/constraints/set-delay.js
 
 /// @nudo:import { delay, percent, positive } from "./delay.nudo.js"
 
 /**
- * @nudo:refine ms delay
+ * @nudo:contract ms delay
  */
 function setDelay(ms) {
   if (ms > 0) return ms;
@@ -13,7 +13,7 @@ function setDelay(ms) {
 }
 
 /**
- * @nudo:refine n percent
+ * @nudo:contract n percent
  */
 function pct(n) {
   if (n >= 0 && n <= 100) return n;
@@ -21,7 +21,7 @@ function pct(n) {
 }
 
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   return x;

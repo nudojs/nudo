@@ -8,6 +8,7 @@ import {
   execNudoModule,
   extractNudoImports,
   extractRefinesFromSource,
+  extractRefineReturnFromSource,
   refineToIndexedFull,
 } from "../refine.ts";
 import { checkSource, pTrue } from "../index.ts";
@@ -23,7 +24,7 @@ const loadModule = (spec: string): string | undefined => {
   return undefined;
 };
 
-describe("@nudo:refine <param> <constraint>", () => {
+describe("@nudo:contract <param> <constraint>", () => {
   it("number().gt(0) instantiates to param > 0", () => {
     const c = number().gt(0);
     expect(isNudoConstraint(c)).toBe(true);
@@ -53,7 +54,7 @@ describe("@nudo:refine <param> <constraint>", () => {
     const src = `
 /// @nudo:import { delay } from "./x.nudo.js"
 /**
- * @nudo:refine ms delay
+ * @nudo:contract ms delay
  */
 function setDelay(ms) {
   if (ms > 0) return ms;
@@ -73,7 +74,7 @@ function setDelay(ms) {
     const src = `
 /// @nudo:import { delay } from "./x.nudo.js"
 /**
- * @nudo:refine ms delay
+ * @nudo:contract ms delay
  */
 function setDelay(ms) {
   if (ms > 0) return ms;
@@ -93,8 +94,8 @@ setDelay(0);
     const src = `
 /// @nudo:import { delay, percent } from "./x.nudo.js"
 /**
- * @nudo:refine ms delay
- * @nudo:refine n percent
+ * @nudo:contract ms delay
+ * @nudo:contract n percent
  */
 function f(ms, n) {
   return ms + n;
@@ -105,5 +106,32 @@ function f(ms, n) {
       fromFile: "/t/f.js",
     });
     expect(idx.length).toBe(2);
+  });
+
+  it("namespace import expands ns.foo template refs", () => {
+    const src = `
+/// @nudo:import * as shapes from "./x.nudo.js"
+/**
+ * @nudo:contract ms shapes.delay
+ * @nudo:contract return shapes.percent
+ */
+function setDelay(ms) {
+  return ms;
+}
+`;
+    const reqs = extractRefinesFromSource(src, "setDelay", {
+      loadModule,
+      fromFile: "/t/ns.js",
+    });
+    expect(reqs.length).toBe(1);
+    expect(reqs[0]!.param).toBe("ms");
+    expect(predToString(reqs[0]!.pred)).toBe("ms > 0");
+
+    const ret = extractRefineReturnFromSource(src, "setDelay", {
+      loadModule,
+      fromFile: "/t/ns.js",
+    });
+    expect(ret?.name).toBe("shapes.percent");
+    expect(isNudoConstraint(ret!.constraint)).toBe(true);
   });
 });

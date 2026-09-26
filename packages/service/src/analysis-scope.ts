@@ -1,5 +1,5 @@
 /**
- * 分析范围判定（A1/A2，design-analysis-scope.md）。
+ * 分析范围判定（design-cli-semantics.md §7）。
  * CLI 显式路径不受 mode 限制；本模块供 LSP/watch 自动验证使用。
  */
 
@@ -52,7 +52,7 @@ export function diagnosticsLevelForFile(filePath: string): DiagnosticsLevel {
 }
 
 export function hasNudoDirectives(source: string): boolean {
-  return /@nudo:(case|mock|pure|skip|sample|refine|interface|import|env|mock-module|as|replace)\b/.test(source);
+  return /@nudo:(case|mock|pure|skip|sample|contract|import|env|mock-module|as|replace)\b/.test(source);
 }
 
 /** 去掉注释与字符串字面量，避免 `// export …` 等散文触发 exports 门禁 */

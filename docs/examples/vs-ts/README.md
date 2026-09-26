@@ -1,11 +1,11 @@
 # vs TypeScript — 同逻辑对照
 
-Nudo 不是「另一个类型系统」，是 **少写一门类型语言**：契约旁路 + 边界精化 + 值级报错。
+Nudo 不是「另一个类型系统」，是 **少写一门类型语言**：契约旁路 + 边界契约 + 值级报错。
 
 | 场景 | Nudo | tsc --strict |
 |------|------|----------------|
-| **精化** `setDelay(0)` | **报** `nudo:constraint-violated`（`@nudo:refine ms delay`） | 不报（`number` 合法） |
-| **结构缺属性** `greet({id})` | **报**（shape 契约 `@nudo:refine u user`） | 报（需 `interface User`） |
+| **契约** `setDelay(0)` | **报** `nudo:constraint-violated`（`@nudo:contract ms delay`） | 不报（`number` 合法） |
+| **结构缺属性** `greet({id})` | **报**（shape 契约 `@nudo:contract u user`） | 报（需 `interface User`） |
 | **excess property** | ok（宽度子类型） | **报**（对象字面量） |
 | **赋值缺字段** | **报** `nudo:assign-mismatch` | 报（inferred 形状） |
 | 零契约 JS | 不发明 **shape** 义务（调用点事实 / `any`）；入口 may-throw 属 L2 | 需 checkJs 或迁 TS |
@@ -34,9 +34,9 @@ pnpm run verify:examples   # 验证两侧命令与期望退出码（见 [../READ
 
 - `structure/tsc.ts` 需要 `interface User`（类型定义）+ 参数/返回注解才能报
   「缺 name」；`structure/nudo.js` 用旁路 `user.nudo.js` 的 `shape({id,name})` +
-  `@nudo:refine u user`——**契约只写一次**，源码不写 interface 语法。
+  `@nudo:contract u user`——**契约只写一次**，源码不写 interface 语法。
 - `constraints/tsc.ts` 的 `setDelay(ms: number)` 拦不住 `setDelay(0)`——
-  tsc 查不到 `ms > 0`；`constraints/nudo.js` 用 `@nudo:refine ms delay`
+  tsc 查不到 `ms > 0`；`constraints/nudo.js` 用 `@nudo:contract ms delay`
   （模板一行 `number().gt(0)`）在调用点报 `actual: 0 #exact ⊭ ms > 0`。
 
 价值不在「少打字」，而在 **不用维护第二份真相**（契约只写一次，参与代数）。

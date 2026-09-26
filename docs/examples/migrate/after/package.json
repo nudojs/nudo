@@ -1,0 +1,15 @@
+{
+  "name": "checkout-demo",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Public retire-tsc sample: checkout-demo after nudo migrate (tsc retired)",
+  "scripts": {
+    "check:nudo": "nudo check src",
+    "typecheck": "nudo check src"
+  },
+  "nudo": {
+    "check": {
+      "entryThrows": "warning"
+    }
+  }
+}

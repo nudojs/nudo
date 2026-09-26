@@ -73,4 +73,53 @@ export function go(n) {
     const out = transpile(`export function f(n) { switch (n) { case 1: return 1; default: return 0; } }`);
     expect(out).toContain("$switch(");
   });
+
+  // switch case 匹配是严格相等（===），不是 SameValue：
+  // NaN !== NaN（不匹配自身 case）；0 === -0（互相匹配）。
+  const go1 = (src: string, arg: unknown) =>
+    callTranspiledExportFull(runTranspiled(src, { mode: "analyze" }), "go", [arg as never]);
+
+  it("NaN discriminant does not match NaN case (strict equality)", () => {
+    const r = go1(
+      `export function go(n) {
+      switch (n) { case NaN: return "nan"; default: return "dflt"; }
+    }`,
+      $lit(NaN),
+    );
+    expect(litValue(r.result)).toBe("dflt");
+  });
+
+  it("0 matches -0 case and vice versa (strict equality)", () => {
+    const src = `export function go(n) {
+      switch (n) { case -0: return "negzero"; default: return "dflt"; }
+    }`;
+    const exports = runTranspiled(src, { mode: "analyze" });
+    expect(litValue(callTranspiledExportFull(exports, "go", [$lit(0)]).result)).toBe("negzero");
+    expect(litValue(callTranspiledExportFull(exports, "go", [$lit(-0)]).result)).toBe("negzero");
+    const src2 = `export function go(n) {
+      switch (n) { case 0: return "zero"; default: return "dflt"; }
+    }`;
+    const exports2 = runTranspiled(src2, { mode: "analyze" });
+    expect(litValue(callTranspiledExportFull(exports2, "go", [$lit(-0)]).result)).toBe("zero");
+  });
+
+  it("NaN case does not match NaN expression (0/0)", () => {
+    const r = go1(
+      `export function go() {
+      switch (0 / 0) { case NaN: return "nan"; default: return "dflt"; }
+    }`,
+      $lit(0),
+    );
+    expect(litValue(r.result)).toBe("dflt");
+  });
+
+  it("string case matching is strict (no cross-type coercion)", () => {
+    const exports = runTranspiled(
+      `export function go(n) {
+      switch (n) { case "1": return "str"; default: return "dflt"; }
+    }`,
+      { mode: "analyze" },
+    );
+    expect(litValue(callTranspiledExportFull(exports, "go", [$lit(1)]).result)).toBe("dflt");
+  });
 });

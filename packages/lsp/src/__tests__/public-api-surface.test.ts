@@ -12,7 +12,6 @@ import {
   NUDO_EXECUTE_COMMANDS,
   NUDO_SLASH_REQUESTS,
   NUDO_AGENT_TOOL_NAMES,
-  NUDO_COMMAND_ALIASES,
   NUDO_INITIALIZE_CAPABILITIES,
   NUDO_LSP_PACKAGE_SURFACE,
   slashToExecuteCommand,
@@ -51,12 +50,17 @@ describe("A7 public-api inventory — executeCommand ⊇ slash-form", () => {
     }
   });
 
-  it("executeCommand aliases resolve to a dotted canonical name", () => {
-    const commands = new Set<string>(NUDO_EXECUTE_COMMANDS);
-    for (const [alias, canonical] of Object.entries(NUDO_COMMAND_ALIASES)) {
-      expect(commands.has(alias as (typeof NUDO_EXECUTE_COMMANDS)[number])).toBe(true);
-      expect(commands.has(canonical as (typeof NUDO_EXECUTE_COMMANDS)[number])).toBe(true);
-    }
+  it("executeCommand inventory uses product names only (no aliases)", () => {
+    expect(NUDO_EXECUTE_COMMANDS).not.toContain("nudo.infer");
+    expect(NUDO_EXECUTE_COMMANDS).not.toContain("nudo.interface");
+    expect(NUDO_EXECUTE_COMMANDS).not.toContain("nudo.interfaceDraft");
+    expect(NUDO_EXECUTE_COMMANDS).not.toContain("nudo.interfaceEmit");
+    expect(NUDO_EXECUTE_COMMANDS).not.toContain("nudo.interface.draft");
+    expect(NUDO_EXECUTE_COMMANDS).not.toContain("nudo.interface.emit");
+    expect(NUDO_EXECUTE_COMMANDS).toContain("nudo.test");
+    expect(NUDO_EXECUTE_COMMANDS).toContain("nudo.contract");
+    expect(NUDO_EXECUTE_COMMANDS).toContain("nudo.contract.draft");
+    expect(NUDO_EXECUTE_COMMANDS).toContain("nudo.contract.emit");
   });
 
   it("inventory is documented in PUBLIC_API.md", () => {

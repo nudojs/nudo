@@ -5,6 +5,8 @@
     "moduleResolution": "bundler",
     "esModuleInterop": true,
     "strict": true,
+    "ignoreDeprecations": "6.0",
+    "types": ["node"],
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "skipLibCheck": true,

@@ -36,6 +36,22 @@ describe("CJS require static resolution", () => {
     expect(specs).toContain("./b.js");
   });
 
+  it("collectDependencySpecs folds template / concat / require.resolve", () => {
+    const ast = parse(`
+const a = require(\`./a.js\`);
+const b = require("./" + "b" + ".js");
+const p = require.resolve("./c.js");
+const dyn = require(name);
+`);
+    const specs = collectDependencySpecs(ast);
+    expect(specs).toContain("./a.js");
+    expect(specs).toContain("./b.js");
+    expect(specs).toContain("./c.js");
+    // 真动态：不假装成某模块
+    expect(specs.some((s) => s === "name" || s.includes("name"))).toBe(false);
+    expect(specs).toHaveLength(3);
+  });
+
   it("module.exports = fn registers export", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-cjs2-"));
     try {

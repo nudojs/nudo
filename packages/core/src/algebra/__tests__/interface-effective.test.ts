@@ -17,7 +17,7 @@ import {
   type EffectiveInterfaceOpts,
 } from "../interface.ts";
 import { execNudoModule, takeRefineDiags } from "../refine.ts";
-import { isNudoConstraint, number, string, lit, union, fn, shape, array } from "../constraint.ts";
+import { isNudoConstraint, number, string, litC as lit, union, fn, shape, array } from "../constraint.ts";
 
 /** 虚拟文件系统 loader：相对 spec 按 fromFile 目录解析 */
 function makeFiles(files: Record<string, string>) {
@@ -168,7 +168,7 @@ export const add2 = fn({ x: positive });
   });
 
   it("handwritten source refine beats generated segment", () => {
-    const src = `/// @nudo:import { positive } from "./std.nudo.js"\n/**\n * @nudo:refine x positive\n */\nexport function add2(x) {\n  return x + 2;\n}\n`;
+    const src = `/// @nudo:import { positive } from "./std.nudo.js"\n/**\n * @nudo:contract x positive\n */\nexport function add2(x) {\n  return x + 2;\n}\n`;
     const { loadModule } = makeFiles({
       "/t/std.nudo.js": STD,
       "/t/add.nudo.js": `
@@ -183,7 +183,7 @@ export const add2 = fn({ x: number().lt(99) });
   });
 
   it("conjoins source refine with sidecar binding per param", () => {
-    const src = `/// @nudo:import { positive } from "./std.nudo.js"\n/**\n * @nudo:refine x positive\n */\nexport function add2(x) {\n  return x + 2;\n}\n`;
+    const src = `/// @nudo:import { positive } from "./std.nudo.js"\n/**\n * @nudo:contract x positive\n */\nexport function add2(x) {\n  return x + 2;\n}\n`;
     const { loadModule } = makeFiles({
       "/t/std.nudo.js": STD,
       "/t/add.nudo.js": `export const add2 = fn({ x: number().lt(5) }, number());`,
@@ -195,7 +195,7 @@ export const add2 = fn({ x: number().lt(99) });
   });
 
   it("flags constant-bound contradiction as conflict", () => {
-    const src = `/// @nudo:import { positive } from "./std.nudo.js"\n/**\n * @nudo:refine x positive\n */\nexport function add2(x) {\n  return x + 2;\n}\n`;
+    const src = `/// @nudo:import { positive } from "./std.nudo.js"\n/**\n * @nudo:contract x positive\n */\nexport function add2(x) {\n  return x + 2;\n}\n`;
     const { loadModule } = makeFiles({
       "/t/std.nudo.js": STD,
       "/t/add.nudo.js": `export const add2 = fn({ x: number().lt(0) });`,
@@ -205,7 +205,7 @@ export const add2 = fn({ x: number().lt(99) });
   });
 
   it("flags eq/eq contradiction as conflict", () => {
-    const src = `/// @nudo:import { fortyTwo } from "./std.nudo.js"\n/**\n * @nudo:refine x fortyTwo\n */\nexport function add2(x) {\n  return x + 2;\n}\n`;
+    const src = `/// @nudo:import { fortyTwo } from "./std.nudo.js"\n/**\n * @nudo:contract x fortyTwo\n */\nexport function add2(x) {\n  return x + 2;\n}\n`;
     const { loadModule } = makeFiles({
       "/t/std.nudo.js": STD,
       "/t/add.nudo.js": `export const add2 = fn({ x: lit(43) });`,
@@ -215,7 +215,7 @@ export const add2 = fn({ x: number().lt(99) });
   });
 
   it("flags eq/bound contradiction as conflict", () => {
-    const src = `/// @nudo:import { five } from "./std.nudo.js"\n/**\n * @nudo:refine x five\n */\nexport function add2(x) {\n  return x + 2;\n}\n`;
+    const src = `/// @nudo:import { five } from "./std.nudo.js"\n/**\n * @nudo:contract x five\n */\nexport function add2(x) {\n  return x + 2;\n}\n`;
     const { loadModule } = makeFiles({
       "/t/std.nudo.js": STD,
       "/t/add.nudo.js": `export const add2 = fn({ x: number().gt(10) });`,
@@ -421,7 +421,7 @@ describe("诊断 side-channel（R04/R13：单口取走 + 不窃在途队列）",
     takeRefineDiags();
     const srcWithBadImport = `/// @nudo:import { positive } from "./missing.nudo.js"
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 export function needsPos(x) {
   return x;

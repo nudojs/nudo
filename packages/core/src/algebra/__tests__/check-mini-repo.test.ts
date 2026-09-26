@@ -25,16 +25,23 @@ describe("mini-repo check gold", () => {
     expect(r.ok).toBe(true);
   });
 
-  it("user-service.js: ok (no literal violating calls)", () => {
+  it("user-service.js: L1 clean; any-param array-method entries report L2 may-throw", () => {
     const r = checkSource("user-service.js", mini("user-service.js"));
-    expect(r.ok, r.issues.map((i) => `${i.severity} ${i.message}`).join("; ")).toBe(true);
+    // L2 解耦（design §3.3）：提升不消除危险——any 形参的数组方法调用
+    // 可能非数组，sumAges 如实报 entry-may-throw（TypeError）；L1（字面量
+    // 违例调用）保持零。
+    expect(
+      r.issues.filter((i) => i.severity === "error" && i.code !== "nudo:entry-may-throw"),
+      r.issues.map((i) => `${i.severity} ${i.code} ${i.message}`).join("; "),
+    ).toEqual([]);
+    expect(r.issues.some((i) => i.code === "nudo:entry-may-throw" && i.fn === "sumAges")).toBe(true);
   });
 
   it("inline violating snippet still caught (TP recall)", () => {
     // isPositive 是谓词（无 if-return-param 前置）；真正门禁用 refine
     const src = `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;

@@ -1,5 +1,4 @@
 ---
-sidebar_position: 2.5
 description: "在 Zed 中安装 Nudo 语言服务器：hover 类型、诊断、CodeLens case 切换、inlay hints。"
 ---
 
@@ -102,7 +101,7 @@ git clone https://github.com/nudojs/nudo-zed
 | CodeLens | 需打开 `code_lens: "on"`——**interface 档在前**（`● interface`、persist/update、`⚡ draft interface`），case 副层在后 |
 | Semantic tokens | 默认关闭，设 `semantic_tokens: "combined"`——含 `contract`/`generated`/`derived` modifier |
 | Code actions / Signature help | 标准 LSP quickfix 与 signature help |
-| Agent 命令（`nudo.check` / `nudo.interface.draft` / …） | 经任意 LSP 客户端或 Zed agent 工具可达 |
+| Agent 命令（`nudo.check` / `nudo.contract.draft` / …） | 经任意 LSP 客户端或 Zed agent 工具可达 |
 
 CodeLens `⚡ draft interface` 与 CLI `nudo contract --draft` 同源（仅客户端显式 `write: true` 时写 `*.nudo.draft.js`）。迁移步骤：[迁移已有 JS](./migrating-js.md)。
 
@@ -112,7 +111,7 @@ VS Code 扩展里 active case 的 decoration 在 Zed 无对应 API，请改用 C
 
 ## 文件检测
 
-分析目标为 `.js` / `.mjs` / `.ts`。指令模式偏保守；可用 `package.json#nudo.analysis.mode`（`exports` | `all`）打开无指令分析。CodeLens interface 档使用更宽的目标路径。
+分析目标为 `.js` / `.mjs` / `.ts`。`package.json#nudo.analysis.mode` 出厂默认 `"exports"`；模式语义与保守的 `"directives"` 门禁：[共存](./coexistence.md#何时用-modedirectives-vs-modeexports)。CodeLens interface 档使用更宽的目标路径。
 
 ## 构建 WASM 扩展
 
@@ -130,5 +129,5 @@ cargo build --target wasm32-wasip2 --release
 - [LSP 客户端矩阵](./lsp-clients.md)——跨编辑器能力对齐
 - [迁移已有 JS](./migrating-js.md)
 - [版本与发布](./versioning.md)
-- [Agent 集成](./mcp-server.md)——同一服务器服务 coding agent
+- [Agent 集成](./agent-integration.md)——同一服务器服务 coding agent
 - [@nudojs/lsp API](../api/lsp.md)

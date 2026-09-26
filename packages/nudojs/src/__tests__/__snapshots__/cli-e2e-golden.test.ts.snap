@@ -1,0 +1,109 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`check — default face golden > L2 entry may-throw: issues + exit 1 1`] = `
+"nudo check  <DIR>/boom.js
+FAILED
+  1 error · 0 warning · 0 info · 1 fn
+
+signatures
+  boom() => never  throws TypeError
+
+issues
+  [ERROR L1 boom] boom (export): may throw TypeError  (nudo:entry-may-throw)
+      actual:   boom() => never    throws TypeError
+      expected: entry total, or @nudo:throws / try-catch
+      → throw TypeError → @nudo:throws TypeError / refine / guard / try-catch
+      fix:  nudo contract --draft  (emit a sidecar draft you can edit)
+
+docs
+  nudo:entry-may-throw → https://nudojs.github.io/nudo/docs/reference/diagnostics#nudo-entry-may-throw
+"
+`;
+
+exports[`check — default face golden > OK file: signatures + exit 0 1`] = `
+"nudo check  <DIR>/id.js
+OK
+  0 error · 0 warning · 0 info · 1 fn
+
+signatures
+  id(x: any) => any
+
+(no issues)
+"
+`;
+
+exports[`contract — default face golden > print surface: implicit interface line + exit 0 1`] = `
+"id.js
+  id  [implicit]  (x: 1) → 1
+
+"
+`;
+
+exports[`export — default face golden > default --format dts: declare lines + exit 0 1`] = `
+"/**
+ * Case: call@L4 (1) => 1
+ * @param x - number
+ * @returns number
+ */
+export declare function id(x: number): number;
+"
+`;
+
+exports[`health — default face golden > healthy file: summary + Result OK + exit 0 1`] = `
+"id.js
+  · 1 function(s)
+
+Summary: 1 file(s) · 0 case drift · 0 contract drift · 0 error(s) · 0 uncovered function(s)
+Result: OK (uncovered function(s) are informational only)
+"
+`;
+
+exports[`migrate — status golden > status on empty dir: table + next hint + exit 0 1`] = `
+"migrate status
+
+  .
+    ts files: 0  tsx: 0  tsconfig: no  typescript dep: no
+
+next: nudo migrate strip <path>  →  verify  →  retire <pkg>
+"
+`;
+
+exports[`test — default face golden > declared @nudo:case fail: FAIL row + exit 1 1`] = `
+"nudo test  <DIR>/id.js
+
+=== id ===
+  debug "bad"  (1) => 1
+
+assertions
+  ✗ 0 passed · 1 failed · 0 unchecked
+  [FAIL] id  case "bad"
+         expected: string
+         actual:   1
+
+diagnostics
+  [error] id.js:2:0 debug "bad": expected string, got 1. The inferred return type does not match the expected type declared in the @nudo:case witness (nudo:case-expected)
+"
+`;
+
+exports[`test — default face golden > declared @nudo:case pass: assertions + exit 0 1`] = `
+"nudo test  <DIR>/id.js
+
+=== id ===
+  debug "num"  (1) => 1
+
+assertions
+  ✓ 1 passed · 0 failed · 0 unchecked
+  [ok]   id  case "num" → 1
+"
+`;
+
+exports[`test — default face golden > synthetic call@ case + exit 0 1`] = `
+"nudo test  <DIR>/id.js
+
+=== id ===
+  call@L4  (1) => 1
+
+assertions
+  — 0 passed · 0 failed · 0 unchecked (no declared @nudo:case expectations; 1 synthetic case(s) printed above)
+"
+`;

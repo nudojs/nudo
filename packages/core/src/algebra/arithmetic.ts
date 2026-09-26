@@ -13,6 +13,7 @@ import {
   lt,
   le,
   implies,
+  negatePred,
   predToString,
   pTrue,
   ptypeof,
@@ -24,6 +25,8 @@ import {
   confJoin,
   isNumPrim,
   isStrPrim,
+  isBigPrim,
+  bigintLit,
   litValue,
   num,
   numLit,
@@ -35,6 +38,9 @@ import {
 import { concatString, isTemplateLike } from "./template.ts";
 import { makeSum, absShapeKey } from "./objects.ts";
 import { noteDerivationAdd } from "./derivation.ts";
+import { isSymbolAbs as isSym } from "./symbol-id.ts";
+import { NudoThrow } from "./exec/nudo-throw.ts";
+import { errorTypeAbs } from "./exec/may-throw.ts";
 
 /**
  * 抽象加法：eval(a + b) —— 跟真实 JS，不无根据地假定 number。
@@ -47,6 +53,10 @@ import { noteDerivationAdd } from "./derivation.ts";
  *    无契约的 score(x){return x+1}：score("x") 合法，不得钉成 number。
  */
 export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
+  // Symbol 参与 + / 模板：隐式 ToString 原生 TypeError（String(sym) 走 evalGlobalFn 不抛）
+  if (isSym(a) || isSym(b)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
   // 字面量快速路径
   const va = litValue(a);
   const vb = litValue(b);
@@ -57,6 +67,16 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
     if (typeof va === "string" || typeof vb === "string") {
       return strLitResult(String(va) + String(vb));
     }
+  }
+  // boolean/null 字面量与数字混合：ToNumber 折叠（与 sub/mul/div/mod 同口径；
+  // native 10 + true = 11、2 + null = 2；undefined 参与恒 NaN 不折）
+  if (coercibleLit(va) && coercibleLit(vb)) {
+    return numLit(Number(va) + Number(vb));
+  }
+  const big = foldBigintBinOp(a, b, (x, y) => x + y);
+  if (big) return big;
+  if (isBigPrim(a) && isBigPrim(b)) {
+    return abs({ k: "prim", type: "bigint" }, undefined, undefined, confJoin(a.conf, b.conf));
   }
 
   // 字符串拼接（含 template parts）—— JS + 优先走 string
@@ -116,6 +136,48 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
     return abs({ k: "sum", members: uniq }, term, undefined, "partial");
   }
 
+  // 混合/无法判定：JS + 经 ToPrimitive 可能 number 或 string
+  // （obj/unknown/fn 与 number 拼接等）——诚实并集，不折纯 unknown
+  if (
+    isNumPrim(a) ||
+    isNumPrim(b) ||
+    isBigPrim(a) ||
+    isBigPrim(b) ||
+    a.shape.k === "unknown" ||
+    b.shape.k === "unknown" ||
+    a.shape.k === "obj" ||
+    b.shape.k === "obj" ||
+    a.shape.k === "fn" ||
+    b.shape.k === "fn" ||
+    a.shape.k === "brand" ||
+    b.shape.k === "brand"
+  ) {
+    return abs({ k: "sum", members: [num(), str()] }, undefined, undefined, "partial");
+  }
+
+  return abs({ k: "unknown" }, undefined, undefined, "partial");
+}
+
+/** 双方 bigint 字面量折叠（÷0n 原生 RangeError → unknown）；混合 bigint⊗非 bigint 原生抛 TypeError → unknown */
+function foldBigintBinOp(
+  a: Abs,
+  b: Abs,
+  op: (x: bigint, y: bigint) => bigint,
+): Abs | undefined {
+  const va = litValue(a);
+  const vb = litValue(b);
+  if (typeof va !== "bigint" && typeof vb !== "bigint") return undefined;
+  if (typeof va === "bigint" && typeof vb === "bigint") {
+    try {
+      return bigintLit(op(va, vb));
+    } catch {
+      return abs({ k: "unknown" }, undefined, undefined, "partial");
+    }
+  }
+  // 一侧 bigint 字面量：另一侧为 bigint prim（无字面量）→ 交抽象回退；
+  // 其余（number/string/bool/…）混合原生抛 TypeError → unknown
+  const other = typeof va === "bigint" ? b : a;
+  if (isBigPrim(other)) return undefined;
   return abs({ k: "unknown" }, undefined, undefined, "partial");
 }
 
@@ -331,6 +393,11 @@ function collectBoundsFromPhi(phi: Phi, id: string, acc: NumBounds): void {
 export function sub(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   const va = litValue(a);
   const vb = litValue(b);
+  const big = foldBigintBinOp(a, b, (x, y) => x - y);
+  if (big) return big;
+  if (isBigPrim(a) && isBigPrim(b)) {
+    return abs({ k: "prim", type: "bigint" }, undefined, undefined, confJoin(a.conf, b.conf));
+  }
   if (typeof va === "number" && typeof vb === "number") {
     return numLit(va - vb);
   }
@@ -373,6 +440,11 @@ export function sub(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
 export function mul(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   const va = litValue(a);
   const vb = litValue(b);
+  const big = foldBigintBinOp(a, b, (x, y) => x * y);
+  if (big) return big;
+  if (isBigPrim(a) && isBigPrim(b)) {
+    return abs({ k: "prim", type: "bigint" }, undefined, undefined, confJoin(a.conf, b.conf));
+  }
   if (typeof va === "number" && typeof vb === "number") {
     return numLit(va * vb);
   }
@@ -451,6 +523,11 @@ export function mul(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
 export function div(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   const va = litValue(a);
   const vb = litValue(b);
+  const big = foldBigintBinOp(a, b, (x, y) => x / y);
+  if (big) return big;
+  if (isBigPrim(a) && isBigPrim(b)) {
+    return abs({ k: "prim", type: "bigint" }, undefined, undefined, confJoin(a.conf, b.conf));
+  }
   if (typeof va === "number" && typeof vb === "number") {
     if (vb === 0) {
       // JS：0/0=NaN，n/0=±Infinity —— 保留字面量语义
@@ -502,6 +579,11 @@ export function div(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
 export function mod(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   const va = litValue(a);
   const vb = litValue(b);
+  const big = foldBigintBinOp(a, b, (x, y) => x % y);
+  if (big) return big;
+  if (isBigPrim(a) && isBigPrim(b)) {
+    return abs({ k: "prim", type: "bigint" }, undefined, undefined, confJoin(a.conf, b.conf));
+  }
   if (typeof va === "number" && typeof vb === "number") {
     if (vb === 0) {
       return abs(num().shape, undefined, undefined, "path");
@@ -772,37 +854,6 @@ export function falseConstraint(c: Abs): Pred | undefined {
   if (c.term?.op === "lit" && c.term.value === true) return undefined;
   if (c.term?.op === "lit" && c.term.value === false) return pTrue;
   if (!c.pred) return undefined;
-  // 否定 pred
+  // 否定 pred（De Morgan 展开见 pred.negatePred）
   return negatePred(c.pred);
-}
-
-function negatePred(p: Pred): Pred {
-  switch (p.op) {
-    case "true":
-      return { op: "false" };
-    case "false":
-      return { op: "true" };
-    case "eq":
-      return { op: "ne", a: p.a, b: p.b };
-    case "ne":
-      return { op: "eq", a: p.a, b: p.b };
-    case "lt":
-      return ge(p.a, p.b);
-    case "le":
-      return gt(p.a, p.b);
-    case "gt":
-      return le(p.a, p.b);
-    case "ge":
-      return lt(p.a, p.b);
-    case "and":
-      // De Morgan：¬(A∧B) = ¬A ∨ ¬B —— Phase A 不展开 or，退回 unknown-ish
-      // 保守：返回一个 not 节点（implies 暂不处理）
-      return { op: "not", arg: p };
-    case "or":
-      return { op: "not", arg: p };
-    case "not":
-      return p.arg;
-    case "typeof":
-      return { op: "not", arg: p };
-  }
 }

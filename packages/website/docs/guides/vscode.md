@@ -1,11 +1,12 @@
 ---
-sidebar_position: 2
 description: "Install the nudo-vscode extension for hover types, completions, case-switching CodeLens, inlay hints, and diagnostics powered by Nudo's language server."
 ---
 
 # VS Code Extension
 
 The **nudo-vscode** extension brings Nudo's type inference into your editor with hover types, completions, CodeLens, and inlay hints.
+
+**Positioning (honest):** VS Code is Nudo's **flagship IDE path** — the fullest client face on `@nudojs/lsp`. The **gate path** is still CLI / Agent: `nudo check --json` in CI and `nudo.check` / MCP tools for agents. The IDE is best-effort observation on the same server; it does not replace the gate. Other editors: [LSP Client Matrix](./lsp-clients.md).
 
 ## Installation
 
@@ -23,21 +24,13 @@ code --install-extension wmzy.nudo-vscode
 
 The extension activates when you open JavaScript files. It uses the `@nudojs/lsp` package to run a Language Server Protocol (LSP) server that provides all editor features.
 
-**File detection**: The language server analyzes `.js`, `.ts`, and `.mjs` files. Shipped default is `nudo.analysis.mode = "exports"` (export / sidecar / directives); set `"all"` or `"directives"` to widen or tighten the gate. Contracts live in `*.nudo.js` sidecars and in-source `@nudo:refine` / `@nudo:interface`; `@nudo:case` is a debug / `nudo test` sub-layer. Full syntax: [Directives reference](../concepts/directives.md). Cross-editor capability comparison: [LSP Client Matrix](./lsp-clients.md).
+**File detection**: The language server analyzes `.js`, `.ts`, and `.mjs` files. Shipped default is `nudo.analysis.mode = "exports"` (export / sidecar / directives); see [Coexistence](./coexistence.md#when-to-use-modedirectives-vs-modeexports) for mode semantics. Contracts live in `*.nudo.js` sidecars and in-source `@nudo:contract`; `@nudo:case` is a debug / optional `nudo test` sub-layer. Full syntax: [Directives reference](../concepts/directives.md). Cross-editor capability comparison: [LSP Client Matrix](./lsp-clients.md).
 
 **Activation vs analysis gate**: `activationEvents` (`onLanguage:javascript` / `onLanguage:typescript`) only *starts* the client. Whether a buffer is *analyzed* is the server-side `shouldAnalyzeFile` gate (target path + `nudo.analysis.mode`). JSX/tsx languages may activate the extension but are not Nudo analysis targets.
 
 ## Release checklist (maintainers)
 
-Full checklist: [`packages/vscode/RELEASE_CHECKLIST.md`](https://github.com/nudojs/nudo/blob/main/packages/vscode/RELEASE_CHECKLIST.md) in the monorepo. Summary of what every Marketplace / Open VS X release must cover:
-
-1. **Bundled server align** — extension ships `server/server.js` copied from `@nudojs/lsp` `dist` via `scripts/bundle-server.mjs`. Build the monorepo first; record the bundled lsp version in the extension CHANGELOG. The vsix is self-contained (no monorepo sibling path at runtime).
-2. **Analysis default + escape hatch** — default `nudo.analysis.mode = "exports"`. Escape hatch in project `package.json#nudo.analysis.mode`: `"directives"` (conservative; diagnostics tier `errors`) or `"all"`. Release notes must state this default; a flip that invents diagnostics is a breaking default change.
-3. **tsserver coexistence** — Nudo runs beside the built-in TS server. Mixed repos should scope `nudo.analysis.include` / `exclude` — see [Coexistence](./coexistence.md). Do not point both tools at the same `.ts` sources with conflicting severities.
-4. **Packaging dry-run** — `pnpm --filter nudo-vscode run build && pnpm --filter nudo-vscode run package`; install the `.vsix` locally; confirm hover/diagnostics on an export-bearing `.js` without editing; confirm palette commands `nudo.selectCase` / `nudo.interface` / `nudo.interface.draft` / `nudo.interfaceEmit`.
-5. **Marketplace / Open VS X notes template** — extension version, bundled lsp version, analysis default, coexistence blurb, protocol surface pointer ([PUBLIC_API](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md)), known issues. Both targets in `release.yml` or an explicit skip.
-
-Service-level daily smoke (no live VS Code): `packages/lsp/src/__tests__/ide-daily-smoke.test.ts`. Public freeze inventory: `@nudojs/lsp` [`PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md) / [API page](../api/lsp.md).
+Extension packaging and Marketplace release steps: [Contributing — Releases](../contributing.md).
 
 ## Features
 
@@ -45,7 +38,15 @@ Service-level daily smoke (no live VS Code): `packages/lsp/src/__tests__/ide-dai
 
 Hover over an expression to see its inferred type. The extension uses `getTypeAtPosition` to compute the type at the cursor and displays it in a hover tooltip.
 
-```javascript
+### Active-case decoration (LSP-G1)
+
+Selecting a `@nudo:case` via CodeLens highlights the **whole function body** plus the case comment line (not only the comment). Server-side signature help also projects real `paramTypes` / return shapes.
+
+### Coexistence with tsserver (LSP-G4)
+
+Command palette → **Nudo: Apply coexistence settings (vs tsserver)** writes workspace `javascript.validate.enable=false` after confirmation (never silent). Full recipes: [Coexistence](./coexistence.md).
+
+```javascript verify
 /**
  * @nudo:case "test" (42)
  */
@@ -97,7 +98,7 @@ function process(data) {
 
 ### Find References
 
-Find all usages of a symbol across the current file. Press `Shift+F12` (or right-click → Find All References).
+Find all usages of a symbol — local plus cross-file (importers in other open / known files). Press `Shift+F12` (or right-click → Find All References).
 
 ### Rename Symbol
 
@@ -136,11 +137,11 @@ You can also invoke the command palette (`Cmd+Shift+P` / `Ctrl+Shift+P`) and run
 
 | Palette title | Command | Behavior |
 |---------------|---------|----------|
-| Nudo: Show Interface | `nudo.interface` | Print tiers in the **Nudo** output channel (same as `nudo contract`) |
-| Nudo: Draft Interface (code-first) | `nudo.interface.draft` | Preview draft in Output; optional **Write draft file** → `*.nudo.draft.js` / `*.nudo.draft.ts` (write is fail-closed without a project root) |
-| Nudo: Persist Interface (@generated) | `nudo.interfaceEmit` | **Dry-run first** (`dryRun: true`, no write) → Output preview → confirm → real sidecar write. CodeLens persist/update uses the same confirm flow |
+| Nudo: Show Contract | `nudo.contract` | Print tiers in the **Nudo** output channel (same as `nudo contract`) |
+| Nudo: Draft Contract (code-first) | `nudo.contract.draft` | Preview draft in Output; optional **Write draft file** → `*.nudo.draft.js` / `*.nudo.draft.ts` (write is fail-closed without a project root) |
+| Nudo: Persist Contract (@generated) | `nudo.contract.emit` | **Dry-run first** (`dryRun: true`, no write) → Output preview → confirm → real sidecar write. CodeLens persist/update uses the same confirm flow |
 
-CodeLens on non-handwritten exports includes `⚡ draft interface` — same path as CLI `--draft` and agent `nudo.interface.draft`. Persist/update CodeLens never writes before the dry-run confirm dialog is accepted.
+CodeLens on non-handwritten exports includes `⚡ draft interface` — same path as CLI `--draft` and agent `nudo.contract.draft`. Persist/update CodeLens never writes before the dry-run confirm dialog is accepted.
 
 ---
 
@@ -169,6 +170,13 @@ The Nudo language server is designed to stay small next to your other tooling:
 | Code Actions      | Quick fixes for diagnostics                              |
 | Semantic Tokens   | Type-aware highlighting + interface-tier modifiers       |
 | Status bar        | "Nudo" indicator when active                             |
-| Command           | `nudo.selectCase` / `nudo.interface` / `nudo.interfaceEmit` |
+| Command           | `nudo.selectCase` / `nudo.contract` / `nudo.contract.emit` |
 
 See also: [LSP Client Matrix](./lsp-clients.md) for other editors.
+
+## Next
+
+- [LSP Client Matrix](./lsp-clients.md) — other editors and known gaps
+- [Zed Extension](./zed.md)
+- [Agent Integration](./agent-integration.md) — the same server for coding agents
+- [Mental model](../getting-started/mental-model.md)

@@ -1,6 +1,6 @@
 // if 分支 ≠ 契约
 // 无 refine：越界输入合法；有 refine：才检查
-// 形态：@nudo:refine <param> <constraint>
+// 形态：@nudo:contract <param> <constraint>
 // 运行：pnpm run check docs/examples/constraints/declared-vs-if.js
 
 /// @nudo:import { delay } from "./delay.nudo.js"
@@ -15,7 +15,7 @@ clamp(-5, 0, 10);   // ok —— clamp 的回退守卫不是调用前置
 clamp(99, 0, 10);   // ok
 
 /**
- * @nudo:refine ms delay
+ * @nudo:contract ms delay
  */
 function setDelay(ms) {
   if (ms > 0) return ms;

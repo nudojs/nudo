@@ -6,7 +6,7 @@
 //   pnpm run check docs/examples/algebra/0-add-intensional.js   # 内包式 Abs：term/pred 签名 #path
 //   pnpm run types docs/examples/algebra/0-add-intensional.js --assume "x>0"  # 代数视图（term/pred/conf）
 //
-// infer 输出（TypeValue 桥有损，只看调用点真值）：
+// test/case 输出（外延投影有损，只看调用点真值）：
 //   add(1, 3)        → 4         #exact
 //   add(number, 1)   → number    #widened   （scale 体内 add(x, 1)，x 符号化）
 //
@@ -24,21 +24,21 @@ const add = (a, b) => a + b;
 add(1, 3);
 
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  * @nudo:case "symbolic" (number())
  */
 function scale(x) {
-  // 前置条件：x > 0（来自 @nudo:refine）
+  // 前置条件：x > 0（来自 @nudo:contract）
   // add(x, 1) → term=x+1, pred: (x+1)>1
   return add(x, 1);
 }
 
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  * @nudo:case "symbolic" (number())
  */
 function twice(x) {
-  // 前置条件：x > 0（来自 @nudo:refine）
+  // 前置条件：x > 0（来自 @nudo:contract）
   const c = add(x, 1); // c ↦ x+1, c>1
   return add(c, 1);    // (x+1)+1, >2
 }

@@ -1,36 +1,192 @@
 {
+  "homepage.hero.kicker": {
+    "message": "Nudo"
+  },
+  "homepage.hero.slogan": {
+    "message": "欢迎重回 JS 世界。"
+  },
   "homepage.hero.subtitle": {
     "message": "Nudo 不限制你的 JS 表达，只忠实反映中间量与结果，并提供比类型更精确的契约校验。"
   },
-  "homepage.hero.getStarted": {
-    "message": "快速开始"
+  "homepage.hero.ctaPlayground": {
+    "message": "打开 Playground"
   },
-  "homepage.hero.learnMore": {
-    "message": "了解更多"
+  "homepage.hero.ctaDocs": {
+    "message": "阅读文档"
   },
-  "homepage.comparison.title": {
-    "message": "JS 仍是 JS，义务保持显式。"
+  "homepage.hero.ctaMentalModel": {
+    "message": "心智模型"
   },
-  "homepage.comparison.nudo": {
-    "message": "Nudo — JS + 侧车契约"
+  "homepage.hero.copy": {
+    "message": "复制"
   },
-  "homepage.comparison.typescript": {
-    "message": "TypeScript — 只有语言表面"
+  "homepage.hero.copied": {
+    "message": "已复制"
+  },
+  "homepage.hero.cmdAria": {
+    "message": "复制命令"
+  },
+  "homepage.hero.demoAria": {
+    "message": "Nudo 观测带侧车契约的 pricing.js"
+  },
+  "homepage.hero.hoverHint": {
+    "message": "悬停任意一行——函数体 inlay 是侧车代数 Abs；同文件调用点既是证据，也是 L1 门禁。"
+  },
+  "homepage.hero.outTabsAria": {
+    "message": "CLI 投影输出切换"
+  },
+  "homepage.demo.sourceTabsAria": {
+    "message": "源码与侧车契约切换"
+  },
+  "homepage.demo.tab.source": {
+    "message": "pricing.js"
+  },
+  "homepage.demo.tab.sidecar": {
+    "message": "pricing.nudo.js"
+  },
+  "homepage.demo.lead": {
+    "message": "观察层：nudo check 打印签名并诊断入口可能抛错。契约层：侧车契约把调用点事实变成 L1 义务。生态：export 从 Abs 投影产物。出口：migrate retire —— 共存不是终态。"
   },
   "homepage.title": {
     "message": "首页"
   },
-  "homepage.feature.executeTitle": {
-    "message": "执行，而非声明"
+  "homepage.demo.title": {
+    "message": "观察层 → 契约层 → 离开 tsc"
   },
-  "homepage.feature.executeDesc": {
-    "message": "Nudo 用抽象值执行你的 JavaScript。执行过程本身产出关于参数、返回值以及每个中间步骤的事实。"
+  "homepage.demo.eyebrow": {
+    "message": "产品路径"
   },
-  "homepage.feature.integrationsTitle": {
-    "message": "IDE inlay、CLI 门禁、AI 上下文"
+  "homepage.path.aria": {
+    "message": "观察层 check，契约层 contract，生态 export，然后 retire tsc"
   },
-  "homepage.feature.integrationsDesc": {
-    "message": "中间值的悬停与 inlay 提示，CI 里的 nudo check，以及让 agent 看清代码实际算什么的 LSP/MCP。"
+  "homepage.beyond.eyebrow": {
+    "message": "超越声明式类型"
+  },
+  "homepage.beyond.title": {
+    "message": "TypeScript 会加宽掉的值"
+  },
+  "homepage.beyond.lead": {
+    "message": "Nudo 在 Abs 上求值，结果跟随真实计算——字面量字符串、split、循环求和——不是声明的上界。"
+  },
+  "homepage.beyond.colExpr": {
+    "message": "表达式"
+  },
+  "homepage.beyond.colTs": {
+    "message": "TypeScript"
+  },
+  "homepage.beyond.colNudo": {
+    "message": "Nudo 观察到"
+  },
+  "homepage.beyond.aria": {
+    "message": "Nudo 与 TypeScript 表达式结果对比"
+  },
+  "homepage.beyond.foot": {
+    "message": "模板字符串 {tpl} 不是普通 string——当调用点是 {call} 时，Nudo 观察到 {lit}。"
+  },
+  "homepage.cost.eyebrow": {
+    "message": "成本（已有实测）"
+  },
+  "homepage.cost.title": {
+    "message": "修环更短，载荷更省"
+  },
+  "homepage.cost.lead": {
+    "message": "变量接近运行时，违例带 actual / expected / actions——agent 更早检出、更少往返。下列为仓库内基线（OSS 切片 + 微基准），不是封闭 benchmark。"
+  },
+  "homepage.cost.token": {
+    "message": "修至绿灯的 agent tokens（OSS 历史 bug 切片）"
+  },
+  "homepage.cost.rounds": {
+    "message": "按文档化修复路径的门禁轮次"
+  },
+  "homepage.cost.edit": {
+    "message": "单文件 analyze 中位（对比微基准中 tsc.LS 十毫秒级）"
+  },
+  "homepage.cost.foot": {
+    "message": "TS 的「便宜 token」往往是假绿。Nudo 花 token 来报告。"
+  },
+  "homepage.cost.detail": {
+    "message": "口径与边界 →"
+  },
+  "homepage.proof.aria": {
+    "message": "真实包上的实测结果"
+  },
+  "homepage.adopt.day0.tag": {
+    "message": "观察层"
+  },
+  "homepage.adopt.day0.title": {
+    "message": "观察 + 门禁"
+  },
+  "homepage.adopt.day1.tag": {
+    "message": "契约层"
+  },
+  "homepage.adopt.day1.title": {
+    "message": "加上契约"
+  },
+  "homepage.adopt.eco.tag": {
+    "message": "生态"
+  },
+  "homepage.adopt.eco.title": {
+    "message": "投影产物"
+  },
+  "homepage.adopt.exit.tag": {
+    "message": "出口"
+  },
+  "homepage.adopt.exit.title": {
+    "message": "退役 tsc"
+  },
+  "homepage.trial.eyebrow": {
+    "message": "真实代码上的效果"
+  },
+  "homepage.trial.title": {
+    "message": "调用点变成签名"
+  },
+  "homepage.trial.lead": {
+    "message": "观察层的 check 把无约束参数打印为 any。把 Nudo 指向真实用法——测试、调用点——解释器会从证据综合出精确签名。不改库、不补类型标注。"
+  },
+  "homepage.trial.cardsTitle": {
+    "message": "调用点发现会返回什么"
+  },
+  "homepage.trial.card.beforeLabel": {
+    "message": "before"
+  },
+  "homepage.trial.card.afterLabel": {
+    "message": "nudo"
+  },
+  "homepage.trial.source": {
+    "message": "实测于 @hapi/hoek v9.3.0 与 @discoveryjs/json-ext v0.5.7——签名全部来自 Nudo 抽象解释器，库内零标注。"
+  },
+  "homepage.trial.detail": {
+    "message": "调用点发现如何工作 →"
+  },
+  "homepage.trial.stat1": {
+    "message": "@hapi/hoek 上的精确签名"
+  },
+  "homepage.trial.stat2": {
+    "message": "需要你写的类型标注"
+  },
+  "homepage.trial.stat3": {
+    "message": "契约校验失败被清零"
+  },
+  "homepage.trial.card.before": {
+    "message": "无调用点证据 → any"
+  },
+  "homepage.trial.card.evidence1": {
+    "message": "来自 cart.js 调用点"
+  },
+  "homepage.trial.card.evidence2": {
+    "message": "来自 @hapi/hoek 用法"
+  },
+  "homepage.trial.card.evidence3": {
+    "message": "来自递归 + 循环用法"
+  },
+  "homepage.cta.title": {
+    "message": "准备重回 JS 了吗？"
+  },
+  "homepage.cta.sub": {
+    "message": "在浏览器里观察中间量，用 CLI 在自有文件上门禁契约，或把 coding agent 指向同一套 Abs 面。你的 JS 仍是 JS。"
+  },
+  "homepage.cta.install": {
+    "message": "安装"
   },
   "theme.ErrorPageContent.title": {
     "message": "页面已崩溃。",
@@ -54,7 +210,7 @@
   },
   "theme.blog.paginator.newerEntries": {
     "message": "较新的博文",
-    "description": "The label used to navigate to the newer blog posts page (previous page)"
+    "description": "The label used to navigate to the newer blog posts page (next page)"
   },
   "theme.blog.paginator.olderEntries": {
     "message": "较旧的博文",
@@ -66,11 +222,11 @@
   },
   "theme.blog.post.paginator.newerPost": {
     "message": "较新一篇",
-    "description": "The blog post button label to navigate to the newer/previous post"
+    "description": "The label used to navigate to the newer blog post page (next page)"
   },
   "theme.blog.post.paginator.olderPost": {
     "message": "较旧一篇",
-    "description": "The blog post button label to navigate to the older/next post"
+    "description": "The label used to navigate to the older blog post page (previous page)"
   },
   "theme.colorToggle.ariaLabel.mode.system": {
     "message": "system mode",
@@ -114,7 +270,7 @@
   },
   "theme.docs.tagDocListPageTitle.nDocsTagged": {
     "message": "{count} 篇文档带有标签",
-    "description": "Pluralized label for \"{count} docs tagged\". Use as much plural forms (separated by \"|\") as your language support (see https://www.unicode.org/cldr/cldr-aux/charts/34/supplemental/language_plural_rules.html)"
+    "description": "The label used when navigating to a tag page"
   },
   "theme.docs.tagDocListPageTitle": {
     "message": "{nDocsTagged}「{tagName}」",
@@ -125,11 +281,11 @@
   },
   "theme.docs.versions.unreleasedVersionLabel": {
     "message": "此为 {siteTitle} {versionLabel} 版尚未发行的文档。",
-    "description": "The label used to tell the user that he's browsing an unreleased doc version"
+    "description": "The label used to tell the user that he's browsing an unreleased version"
   },
   "theme.docs.versions.unmaintainedVersionLabel": {
     "message": "此为 {siteTitle} {versionLabel} 版的文档，现已不再积极维护。",
-    "description": "The label used to tell the user that he's browsing an unmaintained doc version"
+    "description": "The label used to tell the user that he's browsing an unmaintained version"
   },
   "theme.docs.versions.latestVersionSuggestionLabel": {
     "message": "最新的文档请参阅 {latestVersionLink} ({versionLabel})。",
@@ -137,31 +293,31 @@
   },
   "theme.docs.versions.latestVersionLinkLabel": {
     "message": "最新版本",
-    "description": "The label used for the latest version suggestion link label"
+    "description": "The label used for the latest version link"
   },
   "theme.common.editThisPage": {
     "message": "编辑此页",
-    "description": "The link label to edit the current page"
+    "description": "The link label to edit this page"
   },
   "theme.lastUpdated.atDate": {
     "message": "于 {date} ",
-    "description": "The words used to describe on which date a page has been last updated"
+    "description": "The words used when the last updated date is displayed"
   },
   "theme.lastUpdated.byUser": {
     "message": "由 {user} ",
-    "description": "The words used to describe by who the page has been last updated"
+    "description": "The words used when the last updated author is displayed"
   },
-  "theme.lastUpdated.lastUpdatedAtBy": {
+  "theme.lastUpdated.lastUpdatedAtDate": {
     "message": "最后{byUser}{atDate}更新",
-    "description": "The sentence used to display when a page has been last updated, and by who"
+    "description": "The words used when the last updated date and author are displayed"
   },
   "theme.common.headingLinkTitle": {
     "message": "{heading}的直接链接",
-    "description": "Title for link to heading"
+    "description": "The title attribute for heading anchors"
   },
   "theme.navbar.mobileVersionsDropdown.label": {
     "message": "选择版本",
-    "description": "The label for the navbar versions dropdown on mobile view"
+    "description": "The label for the mobile versions dropdown in the navbar"
   },
   "theme.NotFound.title": {
     "message": "找不到页面",
@@ -201,23 +357,23 @@
   },
   "theme.blog.sidebar.navAriaLabel": {
     "message": "最近博文导航",
-    "description": "The ARIA label for recent posts in the blog sidebar"
+    "description": "The ARIA label for the blog sidebar"
   },
   "theme.DocSidebarItem.expandCategoryAriaLabel": {
     "message": "展开侧边栏分类 '{label}'",
-    "description": "The ARIA label to expand the sidebar category"
+    "description": "The ARIA label to expand a sidebar category"
   },
   "theme.DocSidebarItem.collapseCategoryAriaLabel": {
-    "message": "折叠侧边栏分类 '{label}'",
-    "description": "The ARIA label to collapse the sidebar category"
+    "message": "收起侧边栏分类 '{label}'",
+    "description": "The ARIA label to collapse a sidebar category"
   },
   "theme.IconExternalLink.ariaLabel": {
     "message": "(opens in new tab)",
-    "description": "The ARIA label for the external link icon"
+    "description": "The ARIA label for external links"
   },
   "theme.NavBar.navAriaLabel": {
     "message": "主导航",
-    "description": "The ARIA label for the main navigation"
+    "description": "The ARIA label for the navbar"
   },
   "theme.navbar.mobileLanguageDropdown.label": {
     "message": "选择语言",
@@ -237,15 +393,15 @@
   },
   "theme.blog.post.readingTime.plurals": {
     "message": "阅读需 {readingTime} 分钟",
-    "description": "Pluralized label for \"{readingTime} min read\". Use as much plural forms (separated by \"|\") as your language support (see https://www.unicode.org/cldr/cldr-aux/charts/34/supplemental/language_plural_rules.html)"
+    "description": "The label used to display the reading time of a blog post"
   },
   "theme.blog.post.readMore": {
     "message": "阅读更多",
-    "description": "The label used in blog post item excerpts to link to full blog posts"
+    "description": "The label used to display the read more link on blog post cards"
   },
   "theme.blog.post.readMoreLabel": {
     "message": "阅读 {title} 的全文",
-    "description": "The ARIA label for the link to full blog posts from excerpts"
+    "description": "The ARIA label for the read more link"
   },
   "theme.CodeBlock.copy": {
     "message": "复制",
@@ -257,71 +413,71 @@
   },
   "theme.CodeBlock.copyButtonAriaLabel": {
     "message": "复制代码到剪贴板",
-    "description": "The ARIA label for copy code blocks button"
+    "description": "The ARIA label for the copy button on code blocks"
   },
   "theme.CodeBlock.wordWrapToggle": {
     "message": "切换自动换行",
-    "description": "The title attribute for toggle word wrapping button of code block lines"
+    "description": "The title attribute for word wrap toggle"
   },
   "theme.docs.sidebar.navAriaLabel": {
     "message": "文档侧边栏",
-    "description": "The ARIA label for the sidebar navigation"
+    "description": "The ARIA label for the docs sidebar"
   },
   "theme.docs.sidebar.collapseButtonTitle": {
     "message": "收起侧边栏",
-    "description": "The title attribute for collapse button of doc sidebar"
+    "description": "The title attribute for the collapse sidebar button"
   },
   "theme.docs.sidebar.collapseButtonAriaLabel": {
     "message": "收起侧边栏",
-    "description": "The title attribute for collapse button of doc sidebar"
+    "description": "The ARIA label for the collapse sidebar button"
   },
   "theme.docs.breadcrumbs.home": {
     "message": "主页面",
-    "description": "The ARIA label for the home page in the breadcrumbs"
+    "description": "The ARIA label for the home breadcrumb"
   },
   "theme.docs.sidebar.closeSidebarButtonAriaLabel": {
     "message": "关闭导航栏",
-    "description": "The ARIA label for close button of mobile sidebar"
+    "description": "The ARIA label for the close sidebar button"
   },
   "theme.navbar.mobileSidebarSecondaryMenu.backButtonLabel": {
     "message": "← 回到主菜单",
-    "description": "The label of the back button to return to main menu, inside the mobile navbar sidebar secondary menu (notably used to display the docs sidebar)"
+    "description": "The label of the back button in the mobile secondary menu"
   },
   "theme.docs.sidebar.toggleSidebarButtonAriaLabel": {
     "message": "切换导航栏",
-    "description": "The ARIA label for hamburger menu button of mobile navigation"
+    "description": "The ARIA label for the hamburger sidebar toggle"
   },
-  "theme.navbar.mobileDropdown.collapseButton.expandAriaLabel": {
-    "message": "Expand the dropdown",
-    "description": "The ARIA label of the button to expand the mobile dropdown navbar item"
+  "theme.navbar.mobileDropdown.collapseDropdownAriaLabel": {
+    "message": "展开下拉菜单",
+    "description": "The ARIA label for expanding the mobile dropdown"
   },
-  "theme.navbar.mobileDropdown.collapseButton.collapseAriaLabel": {
-    "message": "Collapse the dropdown",
-    "description": "The ARIA label of the button to collapse the mobile dropdown navbar item"
+  "theme.navbar.mobileDropdown.collapseDropdownButtonAriaLabel": {
+    "message": "收起下拉菜单",
+    "description": "The ARIA label for collapsing the mobile dropdown"
   },
   "theme.docs.sidebar.expandButtonTitle": {
     "message": "展开侧边栏",
-    "description": "The ARIA label and title attribute for expand button of doc sidebar"
+    "description": "The title attribute for the expand sidebar button"
   },
-  "theme.docs.sidebar.expandButtonAriaLabel": {
+  "theme.docs.sidebar.expandSidebarButtonAriaLabel": {
     "message": "展开侧边栏",
-    "description": "The ARIA label and title attribute for expand button of doc sidebar"
+    "description": "The ARIA label for the expand sidebar button"
   },
   "theme.blog.post.plurals": {
     "message": "{count} 篇博文",
-    "description": "Pluralized label for \"{count} posts\". Use as much plural forms (separated by \"|\") as your language support (see https://www.unicode.org/cldr/cldr-aux/charts/34/supplemental/language_plural_rules.html)"
+    "description": "The label used to display the number of blog posts"
   },
   "theme.blog.tagTitle": {
     "message": "{nPosts} 含有标签「{tagName}」",
     "description": "The title of the page for a blog tag"
   },
   "theme.blog.author.pageTitle": {
-    "message": "{authorName} - {nPosts}",
+    "message": "{authorName} - {title}",
     "description": "The title of the page for a blog author"
   },
   "theme.blog.authorsList.pageTitle": {
-    "message": "作者",
-    "description": "The title of the authors page"
+    "message": "博文作者",
+    "description": "The title of the blog authors page"
   },
   "theme.blog.authorsList.viewAll": {
     "message": "查看所有作者",
@@ -329,133 +485,322 @@
   },
   "theme.blog.author.noPosts": {
     "message": "该作者尚未撰写任何文章。",
-    "description": "The text for authors with 0 blog post"
+    "description": "The message shown when an author has no posts"
   },
   "theme.contentVisibility.unlistedBanner.title": {
     "message": "未列出页",
-    "description": "The unlisted content banner title"
+    "description": "The title of the unlisted content banner"
   },
   "theme.contentVisibility.unlistedBanner.message": {
-    "message": "此页面未列出。搜索引擎不会对其索引，只有拥有直接链接的用户才能访问。",
-    "description": "The unlisted content banner message"
+    "message": "此页面未列出。搜索引擎不会对其索引，只有直接链接的用户才能访问。",
+    "description": "The message of the unlisted content banner"
   },
   "theme.contentVisibility.draftBanner.title": {
     "message": "草稿页",
-    "description": "The draft content banner title"
+    "description": "The title of the draft content banner"
   },
   "theme.contentVisibility.draftBanner.message": {
     "message": "此页面是草稿，仅在开发环境中可见，不会包含在正式版本中。",
-    "description": "The draft content banner message"
+    "description": "The message of the draft content banner"
   },
   "theme.ErrorPageContent.tryAgain": {
     "message": "重试",
-    "description": "The label of the button to try again rendering when the React error boundary captures an error"
+    "description": "The label of the retry button on the error page"
   },
   "theme.common.skipToMainContent": {
     "message": "跳到主要内容",
-    "description": "The skip to content label used for accessibility, allowing to rapidly navigate to main content with keyboard tab/enter navigation"
+    "description": "The skip to content label used for accessibility"
   },
   "theme.tags.tagsPageTitle": {
     "message": "标签",
     "description": "The title of the tag list page"
   },
-  "homepage.hero.slogan": {
-    "message": "欢迎重回 JS 世界。"
+  "homepage.flow.cardA": {
+    "message": "先写逻辑，再生成契约"
   },
-  "homepage.hero.ctaPlayground": {
-    "message": "打开 Playground"
+  "homepage.flow.cardADesc": {
+    "message": "调用点是证据。contract --draft 可生成可审阅的契约草稿，确认后写入 *.nudo.js。草稿不会自动成为校验义务。"
   },
-  "homepage.hero.ctaDocs": {
-    "message": "阅读文档"
+  "homepage.flow.cardB": {
+    "message": "先写契约，再辅助/约束逻辑"
   },
-  "homepage.proof.eyebrow": {
-    "message": "从源码到门禁"
+  "homepage.flow.cardBDesc": {
+    "message": "先写 *.nudo.js 或 @nudo:contract，用同一契约面辅助实现，并在 check 中约束逻辑。"
   },
-  "homepage.proof.title": {
-    "message": "看一个值如何穿过引擎"
+  "homepage.eco.title": {
+    "message": "校验与产物"
   },
-  "homepage.proof.lead": {
-    "message": "同一个模块，四个界面：JS 源码、侧车契约、调用点观测，以及 IDE / check 呈现的内容。"
+  "homepage.eco.lead": {
+    "message": "流程以 Abs 契约为核心。check 只做校验；export 从 Abs 投影 .d.ts / Zod / Standard Schema / guards；IDE 与 Agent 直读 Abs。"
   },
-  "homepage.proof.quickStart": {
-    "message": "完整快速开始 →"
+  "homepage.eco.check": {
+    "message": "只校验 / CI。不生成产物。"
   },
-  "homepage.features.eyebrow": {
-    "message": "为什么是 Nudo"
+  "homepage.eco.dts": {
+    "message": "投影给 TypeScript 消费方的 .d.ts。有损。"
   },
-  "homepage.features.title": {
-    "message": "不改写你的 JS。忠实观测，并提供比类型更精确的契约校验。"
+  "homepage.eco.zod": {
+    "message": "由 Abs 得到的运行时校验。不能替代 check。"
   },
-  "homepage.comparison.eyebrow": {
-    "message": "并排对比"
+  "homepage.eco.ide": {
+    "message": "hover / inlay 直读 Abs。"
   },
-  "homepage.beyond.eyebrow": {
-    "message": "超越声明式类型"
+  "homepage.demo.checkDocs": {
+    "message": "nudo check"
   },
-  "homepage.beyond.title": {
-    "message": "TypeScript 会加宽掉的值"
+  "homepage.flow.modeA": {
+    "message": "逻辑优先"
   },
-  "homepage.beyond.lead": {
-    "message": "Nudo 在 Abs 上求值，结果跟随真实计算——字面量字符串、split、循环求和——不是声明的上界。"
+  "homepage.flow.modeB": {
+    "message": "契约优先"
   },
-  "homepage.feature.contractsTitle": {
-    "message": "比类型更严的契约"
+  "homepage.eco.json": {
+    "message": "Standard Schema 运行时校验器，可接入下游工具链。"
   },
-  "homepage.feature.contractsDesc": {
-    "message": "侧车 *.nudo.js 与 @nudo:refine / @nudo:interface 把关参数与返回。没有契约时保持诚实：any / unknown，不发明字段。"
+  "homepage.eco.agent": {
+    "message": "编码 agent 经 LSP / MCP 读同一套 Abs —— 见下方 AI Agents 专区。"
   },
-  "homepage.trial.eyebrow": {
-    "message": "真实库试炼"
+  "homepage.agent.eyebrow": {
+    "message": "AI Agents"
   },
-  "homepage.trial.title": {
-    "message": "在无标注真实库上验证"
+  "homepage.agent.title": {
+    "message": "帮 agent 门禁契约，而不是发明类型"
   },
-  "homepage.trial.lead": {
-    "message": "我们对真实、未标注的库反复加固引擎，直到观测到的签名与运行时行为一致——没有给库补任何标注。"
+  "homepage.agent.lead": {
+    "message": "编码 agent 与编辑器经 LSP / MCP 读同一套 Abs 面。它们跑 `nudo check`、尊重侧车契约、解析稳定诊断码 —— 不是第二套类型语言。"
   },
-  "homepage.trial.ladderCaption": {
-    "message": "@hapi/hoek 上的精确观测覆盖率——每一波只增加一项引擎能力。"
+  "homepage.agent.card1.title": {
+    "message": "与 IDE 同一套 Abs"
   },
-  "homepage.trial.cardsTitle": {
-    "message": "从无证据到调用点事实"
+  "homepage.agent.card1.desc": {
+    "message": "Hover / inlay 与 agent 工具直接消费 Abs。`export` 投影有损；Abs 仍是唯一真源。"
   },
-  "homepage.trial.source": {
-    "message": "实测于 @hapi/hoek v9.3.0 与 @discoveryjs/json-ext v0.5.7——每个签名都来自 Nudo 的抽象解释器，零类型标注。"
+  "homepage.agent.card2.title": {
+    "message": "LSP + MCP 表面"
   },
-  "homepage.cta.title": {
-    "message": "准备重回 JS 了吗？"
+  "homepage.agent.card2.desc": {
+    "message": "`@nudojs/lsp` 提供 agent `executeCommand` 工具。可为 Cursor、Claude Code 等客户端接 MCP，无需另立协议。"
   },
-  "homepage.cta.sub": {
-    "message": "JS 仍是 JS——在浏览器里观测中间量，或用 CLI 在自己的文件上做更精确的契约校验。"
+  "homepage.agent.card3.title": {
+    "message": "稳定的产品规则"
   },
-  "homepage.cta.install": {
-    "message": "安装"
+  "homepage.agent.card3.desc": {
+    "message": "Agent 不得从 body AST 发明义务，也不得把 `@nudo:case` 当契约。入口 `any` ≠ `unknown`。观察层是 `check`；契约层是 `contract` + `check`。"
   },
-  "homepage.hero.storyJs": {
-    "message": "函数"
+  "homepage.agent.card4.title": {
+    "message": "Agent 入口"
   },
-  "homepage.hero.storyContract": {
-    "message": "契约"
+  "homepage.agent.card4.desc": {
+    "message": "发布 `agents.md` 与 `llms.txt`，让 coding agent 无需猜产品名词即可接入。把 setup 块粘进 agent 即可。"
   },
-  "homepage.hero.storyObserve": {
-    "message": "观测 + 校验"
+  "homepage.agent.pasteTitle": {
+    "message": "粘贴进你的 coding agent"
   },
-  "homepage.proof.playground": {
-    "message": "在 Playground 试 →"
+  "homepage.agent.ctaDocs": {
+    "message": "Agent 文档"
   },
-  "homepage.feature.observeTitle": {
-    "message": "观测中间值"
+  "homepage.agent.ctaMcp": {
+    "message": "Agent 集成"
   },
-  "homepage.feature.observeDesc": {
-    "message": "看到结果背后的代数——如 (x + 1) 这样的 term，如 (x + 1) > 1 这样的 pred，以及 exact / path / partial 置信度。"
+  "homepage.agent.ctaAgentsMd": {
+    "message": "agents.md"
   },
-  "homepage.trial.stat1": {
-    "message": "精确观测签名"
+  "homepage.cta.agents": {
+    "message": "Agents"
   },
-  "homepage.trial.stat2": {
-    "message": "check 失败已修复"
+  "homepage.demo.why": {
+    "message": "为什么选 Nudo"
   },
-  "homepage.trial.stat3": {
-    "message": "引擎加固波次"
+  "homepage.demo.fromTs": {
+    "message": "从 TypeScript 迁移"
+  },
+  "homepage.paths.eyebrow": {
+    "message": "按身份进入"
+  },
+  "homepage.paths.title": {
+    "message": "选择你的入口路径"
+  },
+  "homepage.paths.lead": {
+    "message": "文档按读者身份组织。选择与你情况匹配的路径——每张卡都落在可直接运行的第一步上。"
+  },
+  "homepage.paths.card1.eyebrow": {
+    "message": "JS 工程师"
+  },
+  "homepage.paths.card1.title": {
+    "message": "在真实 JS 上做类型 / CI 门禁"
+  },
+  "homepage.paths.card1.desc": {
+    "message": "先建立心智模型，再在自有文件上跑 check——门禁绿灯时也会打印签名。"
+  },
+  "homepage.paths.card1.cta": {
+    "message": "快速开始"
+  },
+  "homepage.paths.card2.eyebrow": {
+    "message": "TypeScript 用户"
+  },
+  "homepage.paths.card2.title": {
+    "message": "看清差异，然后离开 tsc"
+  },
+  "homepage.paths.card2.desc": {
+    "message": "诚实对比、迁移路径，以及单向 retire 门——共存不是终态。"
+  },
+  "homepage.paths.card2.cta": {
+    "message": "Nudo vs TypeScript"
+  },
+  "homepage.paths.card3.eyebrow": {
+    "message": "既有 JS 包"
+  },
+  "homepage.paths.card3.title": {
+    "message": "从真实用法生成契约"
+  },
+  "homepage.paths.card3.desc": {
+    "message": "把 Nudo 指向测试与调用点。从证据草拟契约，只接受你真正想要的义务。"
+  },
+  "homepage.paths.card3.cta": {
+    "message": "逻辑优先指南"
+  },
+  "homepage.paths.card4.eyebrow": {
+    "message": "CI / 平台"
+  },
+  "homepage.paths.card4.title": {
+    "message": "稳定门禁与诊断"
+  },
+  "homepage.paths.card4.desc": {
+    "message": "CI 里的 nudo check 配方、机器可读报告，以及诊断码表。"
+  },
+  "homepage.paths.card4.cta": {
+    "message": "Recipes"
+  },
+  "homepage.paths.card5.eyebrow": {
+    "message": "AI 编码 Agent"
+  },
+  "homepage.paths.card5.title": {
+    "message": "经 LSP / MCP 读同一套 Abs"
+  },
+  "homepage.paths.card5.desc": {
+    "message": "Agent 跑 nudo check、尊重侧车契约、解析稳定诊断码。"
+  },
+  "homepage.paths.card5.cta": {
+    "message": "Agent 文档"
+  },
+  "homepage.trial.stat4": {
+    "message": "文件编辑后中位重分析"
+  },
+  "theme.CodeBlock.runInPlayground": {
+    "message": "在 Playground 中运行"
+  },
+  "theme.DocItem.footer.feedback.question": {
+    "message": "本页对你有帮助吗？"
+  },
+  "theme.DocItem.footer.feedback.thanks": {
+    "message": "感谢反馈！"
+  },
+  "theme.DocItem.footer.feedback.yes": {
+    "message": "有帮助"
+  },
+  "theme.DocItem.footer.feedback.no": {
+    "message": "需要改进"
+  },
+  "playground.subtitle": {
+    "message": "欢迎重回 JS 世界。观察你的代码在 Abs 上计算出的结果，并用比声明类型更精确的契约做门禁。悬停查看 term / pred / conf 与侧车契约。"
+  },
+  "playground.group.contracts": {
+    "message": "契约与观察"
+  },
+  "playground.group.basic": {
+    "message": "基础示例"
+  },
+  "playground.group.callsite": {
+    "message": "调用点发现"
+  },
+  "playground.group.semantics": {
+    "message": "语言语义"
+  },
+  "playground.caseLabel": {
+    "message": "用例 {index}：\"{name}\"（{args}）"
+  },
+  "playground.copied": {
+    "message": "已复制！"
+  },
+  "playground.share": {
+    "message": "分享"
+  },
+  "playground.observing": {
+    "message": "观察中…"
+  },
+  "playground.observe": {
+    "message": "观察"
+  },
+  "playground.explainer": {
+    "message": "左侧库不带类型注解发布。Nudo 求值右侧使用处，记录每次真实调用的实参/结果类型，并重新合成精确签名——不留下任何推理期 unknown。"
+  },
+  "playground.tag.libReadOnly": {
+    "message": "库 · 只读"
+  },
+  "playground.tag.usageEditable": {
+    "message": "使用处 · 可编辑"
+  },
+  "playground.tag.editable": {
+    "message": "可编辑"
+  },
+  "playground.tag.clickObserve": {
+    "message": "点击 Observe"
+  },
+  "playground.loadingEditor": {
+    "message": "编辑器加载中…"
+  },
+  "playground.error": {
+    "message": "错误：{message}"
+  },
+  "playground.results.discovered": {
+    "message": "发现的调用记录"
+  },
+  "playground.results.synth": {
+    "message": "合成签名"
+  },
+  "playground.results.before": {
+    "message": "之前 · 仅入口分析"
+  },
+  "playground.results.after": {
+    "message": "之后 · 从 {source} 注入"
+  },
+  "playground.results.afterMissing": {
+    "message": "未找到使用处调用"
+  },
+  "playground.hint.noRecords": {
+    "message": "没有收集到调用记录——确认使用处 import 了 ./util 并调用了 {exportName}。"
+  },
+  "playground.hint.observe": {
+    "message": "点击 \"Observe\" 查看推断结果。"
+  },
+  "playground.hint.noCases": {
+    "message": "未找到调用点或用例。添加一个调用点，或选择「契约与观察」预设。"
+  },
+  "playground.results.caseResults": {
+    "message": "用例结果"
+  },
+  "playground.loading": {
+    "message": "Playground 加载中…"
+  },
+  "playground.metaDescription": {
+    "message": "Nudo Playground — 执行 JavaScript、观察中间值"
+  },
+  "theme.DocItem.agent.copyMarkdown": {
+    "message": "复制为 Markdown"
+  },
+  "theme.DocItem.agent.copied": {
+    "message": "已复制！"
+  },
+  "theme.DocItem.agent.openChatGPT": {
+    "message": "在 ChatGPT 打开"
+  },
+  "theme.DocItem.agent.openClaude": {
+    "message": "在 Claude 打开"
+  },
+  "theme.DocItem.agent.hint": {
+    "message": "面向 agent：每个页面都在同路径旁挂一份原始 markdown（URL 加 .md）。"
+  },
+  "playground.explainerLead": {
+    "message": "调用点发现。"
   }
 }

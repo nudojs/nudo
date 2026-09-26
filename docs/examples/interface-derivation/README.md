@@ -19,7 +19,6 @@ positive ──shift(1)──► add2 入参 ──shift(2)──► add2 返回
 
 ```bash
 pnpm run contract --emit docs/examples/interface-derivation/lib.js --fn add2
-# 旧动词 `nudo interface --emit` 已 deprecated → contract
 ```
 
 生成 `add.nudo.js`（组合式，不展开；本仓库已提交该生成物，命令可幂等重跑）：

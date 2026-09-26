@@ -1,10 +1,10 @@
 {
   "name": "@nudojs/core",
-  "version": "2.1.0",
+  "version": "1.1.0",
   "engines": {
     "node": ">=20"
   },
-  "description": "Nudo type system: type-as-computation (Abs) with TypeValue evaluation IR",
+  "description": "Nudo type system: type-as-computation (Abs = shape × term × pred × conf)",
   "type": "module",
   "license": "MIT",
   "keywords": [
@@ -24,6 +24,10 @@
     "./exec": {
       "types": "./dist/exec.d.ts",
       "default": "./dist/exec.js"
+    },
+    "./internal": {
+      "types": "./dist/internal.d.ts",
+      "default": "./dist/internal.js"
     }
   },
   "files": [
@@ -59,6 +63,7 @@
     "lodash": "^4.18.1",
     "ms": "^2.1.3",
     "p-limit": "^7.3.3",
-    "yocto-queue": "^1.2.2"
+    "yocto-queue": "^1.2.2",
+    "@types/node": "^26.6.2"
   }
 }

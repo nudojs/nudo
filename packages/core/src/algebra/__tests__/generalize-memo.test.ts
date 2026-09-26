@@ -222,7 +222,7 @@ describe("L3 deps fingerprint + LRU", () => {
 /// @nudo:import { positive } from "./shapes.nudo.js"
 
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   return x;

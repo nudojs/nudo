@@ -14,12 +14,23 @@
  *
  * 在 *.nudo.js 里执行；不是 zod 绑定，是我们自己的运行时 API。
  * 不需要 interface/type 语法——契约用 JS 表达式声明。
- * 注意：本文件的 lit/and 构建器与 term/pred 同名导出在桶导出处冲突，
- * 消费方从 "./constraint.ts" 直接路径导入。
+ * 命名：litC/andC 与 term.ts 的 lit、pred.ts 的 and 消歧（桶导出不再冲突）。
+ * 侧车注入表仍以 `lit`/`and` 为键名（*.nudo.js 用户写法不变）。
  */
 
 import type { Pred, PrimName } from "./pred.ts";
-import { and as pAnd, or, eq, gt, ge, lt, le, ptypeof, pTrue } from "./pred.ts";
+import {
+  and as pAnd,
+  or,
+  eq,
+  gt,
+  ge,
+  lt,
+  le,
+  primToTypeof,
+  ptypeof,
+  pTrue,
+} from "./pred.ts";
 import { v as termVar, lit as termLit, app as termApp, type Term } from "./term.ts";
 import type { Abs } from "./abs.ts";
 import { abs, unknown } from "./abs.ts";
@@ -169,9 +180,9 @@ function makeBuilder(
         if (!Number.isFinite(n))
           throw new Error("nudo shift(): offset must be a finite number");
         if (fields || element || members || fnSlot)
-          throw new Error("nudo shift(): 仅数值标量约束链合法（不支持 shape/array/union/fn）");
+          throw new Error("nudo shift(): only numeric scalar constraint chains are allowed (shape/array/union/fn are not supported)");
         if (prim !== undefined && prim !== "number")
-          throw new Error(`nudo shift(): 仅数值链合法（prim=${prim}）`);
+          throw new Error(`nudo shift(): only numeric chains are allowed (prim=${prim})`);
         return makeBuilder(prim, shiftBoundPreds(preds, n), extra);
       },
       optional: () => makeBuilder(prim, preds, { ...extra, optional: true }),
@@ -185,12 +196,12 @@ function makeBuilder(
 function shiftBoundPreds(preds: Pred[], n: number): Pred[] {
   return preds.map((p): Pred => {
     if (p.op !== "gt" && p.op !== "ge" && p.op !== "lt" && p.op !== "le")
-      throw new Error(`nudo shift(): 不支持 ${p.op} 谓词（仅 gt/ge/lt/le 常数界）`);
+      throw new Error(`nudo shift(): predicate ${p.op} is not supported (only gt/ge/lt/le constant bounds)`);
     const { a, b } = p;
     if (b.op !== "lit" || typeof b.value !== "number")
-      throw new Error("nudo shift(): 常数界右端须为数字字面量");
+      throw new Error("nudo shift(): the right-hand side of a constant bound must be a numeric literal");
     if (termHasApp(a, "length") || termHasApp(b, "length"))
-      throw new Error("nudo shift(): 不支持 length(...) 界");
+      throw new Error("nudo shift(): length(...) bounds are not supported");
     return { op: p.op, a, b: termLit(b.value + n) };
   });
 }
@@ -256,7 +267,7 @@ export function shape(
 /** 归一化为纯数据约束（剥掉 builder 方法——成员快照不可再链式改写） */
 function toPlainConstraint(c: NudoConstraint): NudoConstraint {
   if (!isConstraint(c))
-    throw new Error("nudo: 期望约束值（number()/string()/…或其组合子）");
+    throw new Error("nudo: expected a constraint value (number()/string()/… or a combinator)");
   return {
     __nudoConstraint: true,
     ...(c.prim ? { prim: c.prim } : {}),
@@ -271,8 +282,8 @@ function toPlainConstraint(c: NudoConstraint): NudoConstraint {
   };
 }
 
-/** lit(v)：字面量契约——prim 按 v 类型、eq(self, v) pred 编码（不开新字段） */
-export function lit(v: number | string | boolean | null | undefined): ConstraintBuilder {
+/** litC(v)：字面量契约——prim 按 v 类型、eq(self, v) pred 编码（不开新字段） */
+export function litC(v: number | string | boolean | null | undefined): ConstraintBuilder {
   const prim: PrimName | undefined =
     typeof v === "number" ? "number"
     : typeof v === "string" ? "string"
@@ -283,7 +294,7 @@ export function lit(v: number | string | boolean | null | undefined): Constraint
 
 /**
  * union/array/shape/fn 嵌套位接受：约束构建器，或指令文法的具体字面量
- * （5 / "hi" / true / null / undefined）。字面量归一为 lit(v) 约束。
+ * （5 / "hi" / true / null / undefined）。字面量归一为 litC(v) 约束。
  */
 function asNestedConstraint(x: unknown, ctx: string): NudoConstraint {
   if (isConstraint(x)) return toPlainConstraint(x);
@@ -294,10 +305,10 @@ function asNestedConstraint(x: unknown, ctx: string): NudoConstraint {
     typeof x === "string" ||
     typeof x === "boolean"
   ) {
-    return toPlainConstraint(lit(x));
+    return toPlainConstraint(litC(x));
   }
   throw new Error(
-    `nudo: ${ctx} 期望约束值（number()/string()/…）或具体字面量，收到非约束`,
+    `nudo: ${ctx} expects a constraint value (number()/string()/…) or a concrete literal; received a non-constraint`,
   );
 }
 
@@ -306,9 +317,9 @@ export function union(
   ...cs: (NudoConstraint | ConstraintBuilder | number | string | boolean | null | undefined)[]
 ): ConstraintBuilder {
   if (cs.length === 0)
-    throw new Error("nudo union(): 至少需要一个成员约束");
+    throw new Error("nudo union(): at least one member constraint is required");
   return makeBuilder(undefined, [], {
-    members: cs.map((c) => asNestedConstraint(c, "union 成员")),
+    members: cs.map((c) => asNestedConstraint(c, "union member")),
   });
 }
 
@@ -324,13 +335,13 @@ export function fn(
 ): ConstraintBuilder {
   const normalized: Record<string, NudoConstraint> = {};
   for (const [k, v] of Object.entries(params)) {
-    normalized[k] = asNestedConstraint(v, `fn 参数 '${k}'`);
+    normalized[k] = asNestedConstraint(v, `fn param '${k}'`);
   }
   return makeBuilder(undefined, [], {
     fn: {
       params: normalized,
       ...(returns !== undefined
-        ? { returns: asNestedConstraint(returns, "fn 返回值") }
+        ? { returns: asNestedConstraint(returns, "fn return value") }
         : {}),
       ...(opts?.throws !== undefined
         ? { throws: asNestedConstraint(opts.throws, "fn throws") }
@@ -340,27 +351,27 @@ export function fn(
 }
 
 /**
- * and(...cs)：标量合取（Phase 1 最小实现）。
+ * andC(...cs)：标量合取（Phase 1 最小实现）。
  * prim 一致（缺省 prim 视为无 prim 约束、可与任意 prim 合并）→ preds 拼接；
  * prim 不一致或任一含 fields/element/members/fn → throw。
  */
-export function and(
+export function andC(
   ...cs: (NudoConstraint | ConstraintBuilder)[]
 ): ConstraintBuilder {
   if (cs.length === 0)
-    throw new Error("nudo and(): 至少需要一个约束");
+    throw new Error("nudo and(): at least one constraint is required");
   let prim: PrimName | undefined;
   let isInt = false;
   let allOptional = true;
   const preds: Pred[] = [];
   for (const c of cs) {
     if (!isConstraint(c))
-      throw new Error("nudo: 期望约束值（number()/string()/…或其组合子）");
+      throw new Error("nudo: expected a constraint value (number()/string()/… or a combinator)");
     if (c.fields || c.element || c.members || c.fn)
-      throw new Error("nudo and(): Phase 1 仅支持标量约束合取（不支持 shape/array/union/fn）");
+      throw new Error("nudo and(): Phase 1 supports scalar constraint conjunction only (shape/array/union/fn are not supported)");
     if (c.prim) {
       if (prim !== undefined && prim !== c.prim)
-        throw new Error(`nudo and(): prim 不一致（${prim} vs ${c.prim}）`);
+        throw new Error(`nudo and(): inconsistent prim (${prim} vs ${c.prim})`);
       prim = c.prim;
     }
     preds.push(...c.preds);
@@ -377,7 +388,7 @@ export function and(
 /** partial(c)：shape 全字段变可选；非 shape throw */
 export function partial(c: NudoConstraint | ConstraintBuilder): ConstraintBuilder {
   if (!isConstraint(c) || !c.fields)
-    throw new Error("nudo partial(): 仅接受 shape(...) 约束");
+    throw new Error("nudo partial(): only shape(...) constraints are accepted");
   const fields: Record<string, NudoField> = {};
   for (const [k, f] of Object.entries(c.fields)) {
     fields[k] = {
@@ -394,7 +405,7 @@ export function pick(
   keys: string[],
 ): ConstraintBuilder {
   if (!isConstraint(c) || !c.fields)
-    throw new Error("nudo pick(): 仅接受 shape(...) 约束");
+    throw new Error("nudo pick(): only shape(...) constraints are accepted");
   const fields: Record<string, NudoField> = {};
   for (const k of keys) {
     const f = c.fields[k];
@@ -409,7 +420,7 @@ export function omit(
   keys: string[],
 ): ConstraintBuilder {
   if (!isConstraint(c) || !c.fields)
-    throw new Error("nudo omit(): 仅接受 shape(...) 约束");
+    throw new Error("nudo omit(): only shape(...) constraints are accepted");
   const drop = new Set(keys);
   const fields: Record<string, NudoField> = {};
   for (const [k, f] of Object.entries(c.fields)) {
@@ -462,7 +473,7 @@ export function instantiateConstraint(
       const fieldTerm = getTerm(termVar(paramName), key);
       parts.push(instantiateOnTerm(field.constraint, fieldTerm));
     }
-    if (c.prim) parts.push(ptypeof(termVar(paramName), c.prim));
+    if (c.prim) parts.push(ptypeof(termVar(paramName), primToTypeof(c.prim)));
     if (parts.length === 0) return { op: "true" };
     return parts.length === 1 ? parts[0]! : pAnd(...parts);
   }
@@ -486,7 +497,7 @@ export function instantiateConstraint(
   const preds = c.preds.map((p) => substPred(p, paramName));
   // prim 可作为 typeof 约束补上（optional）
   if (c.prim && c.preds.length === 0) {
-    return ptypeof(termVar(paramName), c.prim);
+    return ptypeof(termVar(paramName), primToTypeof(c.prim));
   }
   return preds.length === 0 ? { op: "true" } : preds.length === 1 ? preds[0]! : pAnd(...preds);
 }
@@ -536,14 +547,14 @@ function instantiateOnTerm(c: NudoConstraint, t: Term): Pred {
     return own.length === 0 ? pTrue : pAnd(...own);
   }
   const preds = c.preds.map(subst);
-  if (c.prim && c.preds.length === 0) return ptypeof(t, c.prim);
+  if (c.prim && c.preds.length === 0) return ptypeof(t, primToTypeof(c.prim));
   return preds.length === 0 ? { op: "true" } : preds.length === 1 ? preds[0]! : pAnd(...preds);
 }
 
 /**
  * 契约 → 函数入口 param Abs（infer/hover 用）。
  * 标量：prim + pred；shape：obj slots 递归；union：成员 joinAbs；
- * fn 形态：退化 unknown（不是参数位标量值），逐参约束由 fnConstraintToEntryReqs 消费。
+ * fn 形态：一等 fn shape（paramTypes/returnType），供 refine→error / 展示。
  */
 export function constraintToEntryAbs(
   c: NudoConstraint,
@@ -654,14 +665,27 @@ function constraintOnTermAbs(c: NudoConstraint, t: Term): Abs {
       c.members.every((m) => m.prim === (joined.shape as { type: unknown }).type)
     ) {
       const type = (joined.shape as { type: PrimName }).type;
-      return abs({ k: "prim", type }, t, ptypeof(t, type), "path");
+      return abs({ k: "prim", type }, t, ptypeof(t, primToTypeof(type)), "path");
     }
     return joined;
   }
-  // fn 形态出现在参数位：无标量 entry 表达，退化 unknown（不 throw——
-  // entry@ 生成等入口会把任意约束喂进来；逐参约束由 fnConstraintToEntryReqs 消费）
+  // fn 形态 → 一等 fn shape（paramTypes/returnType 进外延槽）。
+  // refine→error 可测路径依赖 shape.k === "fn"（generalize 归入 fnRels[source=refine]）。
+  // 不 attachFnImpl（提升/refine 产物禁止挂 relation；apply 走 shape-only 路径）。
   if (c.fn) {
-    return unknown;
+    const paramNames = Object.keys(c.fn.params);
+    const paramTypes = paramNames.map((p, i) =>
+      constraintOnTermAbs(c.fn!.params[p]!, termVar(`x${i}`)),
+    );
+    const returnType = c.fn.returns
+      ? constraintOnTermAbs(c.fn.returns, termVar("ret"))
+      : unknown;
+    return abs(
+      { k: "fn", params: paramNames, paramTypes, returnType },
+      t,
+      undefined,
+      "path",
+    );
   }
   // array(item) → arr(element)；元素项独立，不继承外层 term
   if (c.element) {
@@ -700,9 +724,42 @@ function constraintOnTermAbs(c: NudoConstraint, t: Term): Abs {
 export function fnConstraintToEntryReqs(
   c: NudoConstraint,
 ): Array<{ param: string; constraint: NudoConstraint }> {
-  if (!c.fn) throw new Error("nudo fnConstraintToEntryReqs(): 约束不是 fn() 形态");
+  if (!c.fn) throw new Error("nudo fnConstraintToEntryReqs(): constraint is not in fn() form");
   return Object.entries(c.fn.params).map(([param, constraint]) => ({
     param,
     constraint,
   }));
+}
+
+/**
+ * fn(..., { throws }) / throws 约束 → 申报的 throws 类型名。
+ * `"Error"` / `lit("Error")` / brand / union 成员 / `*` 全收。
+ */
+export function throwConstraintToKinds(
+  c: NudoConstraint | undefined,
+): string[] | "*" | undefined {
+  if (!c) return undefined;
+  const out = new Set<string>();
+  let any = false;
+  const note = (s: string): void => {
+    if (s === "*" || s === "any") any = true;
+    else if (s) out.add(s);
+  };
+  const walk = (x: NudoConstraint): void => {
+    if (x.members) {
+      for (const m of x.members) walk(m);
+      return;
+    }
+    // `"Error"` / lit("Error") → eq(self, lit)；从 preds 抠字面量名
+    for (const p of x.preds) {
+      if (p.op !== "eq" && p.op !== "ne") continue;
+      for (const side of [p.a, p.b] as const) {
+        if (side.op === "lit" && typeof side.value === "string") note(side.value);
+      }
+    }
+  };
+  walk(c);
+  if (any) return "*";
+  if (out.size > 0) return [...out];
+  return undefined;
 }

@@ -1,9 +1,10 @@
 ---
-sidebar_position: 1
 description: "Nudo by design: Abs = shape × term × pred × conf as the single type system, extensional projection for display, directives, and what executing code computes that a separate type language cannot."
 ---
 
 # Design Document
+
+> **Scope.** This page is the public design narrative. Architecture truth sources live only in the repo: [`docs/design/kernel-merge.md`](https://github.com/nudojs/nudo/blob/main/docs/design/kernel-merge.md) (Abs) and [`docs/design/cli-semantics.md`](https://github.com/nudojs/nudo/blob/main/docs/design/cli-semantics.md) (CLI/product). When this page and a truth source disagree, the truth source wins.
 
 > **Nudo** — A type inference engine for JavaScript. The type system is **Abs** (`shape × term × pred × conf`); types are computable values with constraints that participate in algebra. There is no second IR: dts/LSP/serialization consume Abs directly, and the extensional view is a one-way, lossy rendering. Production analysis is Abs-native.
 
@@ -68,7 +69,7 @@ When Nudo executes `transform` on abstract string input, the engine propagates t
 | **shape** | Structural kind: `any` / `unknown` / `prim` / `obj` / `arr` / `tuple` / `fn` / `brand` / `eff` / `sum` / `never` |
 | **term** | Symbolic identity of the value: literal, variable, or application (`x+1`) |
 | **pred** | Constraint relative to the term: `x>0`, conjunctions, … |
-| **conf** | Confidence: `exact` / `path` / `widened` / `partial` / `opaque` |
+| **conf** | Confidence: `exact` / `path` / `widened` / `mock` / `partial` / `opaque` |
 
 `any` means "any JS value" (unconstrained parameter). `unknown` means "analysis has no information." They are not the same.
 
@@ -76,7 +77,7 @@ Operations on Abs are algebraic: monotonic arithmetic, comparison, `leq` assigna
 
 ### 2.2 Extensional projection (not a second type system)
 
-There is no second IR. dts (`Case:` JSDoc rows), the LSP hover surface, serialization, and the `*.nudo.js` template constraints all consume **Abs directly** — the extensional view is a rendering (`formatShape` for display, `absToTSType` / `absToZodSchema` / guard generators for projections). Rendering is lossy by design (`formatShape` drops non-literal terms), but nothing round-trips: analysis never reads a projection back. Production analysis runs Abs natively (B-path transpile+exec, ast-eval fallback).
+There is no second IR. dts (`Case:` JSDoc rows), the LSP hover surface, serialization, and the `*.nudo.js` template constraints all consume **Abs directly** — the extensional view is a rendering (`formatShape` for display, `absToTSType` / `absToSchemaSource` / `projectAbsToSchema` / guard generators for projections). Rendering is lossy by design (`formatShape` drops non-literal terms), but nothing round-trips: analysis never reads a projection back. Production analysis runs Abs natively (single engine: B-path transpile+exec; fail-closed on B-incapable sources).
 
 ### 2.3 Design Principles
 
@@ -96,7 +97,7 @@ combine(5, 3)   // → 8  #exact, not number
 
 **Principle 3: Lazy union distribution.** Unions propagate as a whole and are expanded only when an operator **must distinguish** members. This avoids combinatorial explosion from Cartesian products — and preserves correlation (`a + a` keeps one symbolic variable: `(A1 + A1)`, never `A1 + A1'`).
 
-```javascript
+```javascript verify
 function selfAdd(a) { return a + a; }
 selfAdd(1);  // → 2  #exact
 selfAdd(2);  // → 4  #exact
@@ -120,7 +121,7 @@ function process(x) {          // x: number | string
 numLit(value)                 // Exact number literal
 strLit(value)                 // Exact string literal
 num() / str() / bool()        // Primitive domains
-never / unknown               // Empty set / universal set (constants)
+never / unknown               // Empty set / inference-failure marker (the universal set is `any`)
 obj({ key: { value, optional? } })  // Object shape
 abs(shape, term, pred, conf)  // General constructor
 absFunction(params, { body, env, apply })  // Function values
@@ -131,7 +132,7 @@ formatAbs(a)                  // Lossless: shape, = term, where pred, #conf
 leqAbs(src, tgt)              // Assignability (the algebra's subtype check)
 ```
 
-Source-level contracts use `@nudo:refine` + `*.nudo.js` templates (constraint builders), not raw constructors.
+Source-level contracts use `@nudo:contract` + `*.nudo.js` templates (constraint builders), not raw constructors.
 
 ### 2.5 Operator Semantics (Abs-native surface)
 
@@ -161,7 +162,7 @@ parser ──▶ core
             └── format       ← extensional rendering (dts / hover / serialization)
                  │
                  ▼
-            service/evaluator    ← Abs-native: B-path (transpile+exec) → ast-eval
+            service/evaluator    ← Abs-native: B-path (transpile+exec) single engine
                  │
                  ▼
             service / lsp / vite / dts
@@ -172,7 +173,7 @@ parser ──▶ core
 | **Parser** | Parse JS/TS source into AST (Babel) |
 | **Directive Extractor** | Extract `@nudo:*` from comments; refine/import parsed in core |
 | **algebra (Abs)** | Types as computation: eval, check, leq, generalize |
-| **Evaluator (Abs-native)** | B-path transpile+exec; ast-eval fallback for non-B-hosted files |
+| **Evaluator (Abs-native)** | B-path transpile+exec only; fail-closed for B-incapable sources |
 | **surface / arithmetic / abs-route** | Arithmetic, comparison, unary, spread routed through algebra |
 | **Environment** | Variable bindings (name → Abs) |
 
@@ -197,7 +198,7 @@ eval(Identifier "x")  →  env.lookup("x")
 eval(BinaryExpression { left, op, right })  →  arithmetic(op, eval(left), eval(right))
 ```
 
-**Conditional (if-else):** The engine may **evaluate both branches** with narrowed values and merge:
+**Conditional (if-else):** The engine forks both branches when the test is not decidable — without narrowing either arm:
 
 ```text
 eval(IfStatement { test, consequent, alternate }) →
@@ -205,23 +206,15 @@ eval(IfStatement { test, consequent, alternate }) →
   if condition === lit(true)   → eval(consequent)
   if condition === lit(false)  → eval(alternate)
   else:
-    [envTrue, envFalse] = narrow(env, test)
-    resultTrue  = eval(consequent, envTrue)
-    resultFalse = eval(alternate, envFalse)
+    // both branches run with the SAME env; results join (no narrowing)
+    resultTrue  = eval(consequent, env)
+    resultFalse = eval(alternate, env)
     return union(resultTrue, resultFalse)
 ```
 
 ### 3.3 Narrowing Rules
 
-| Pattern | True branch | False branch |
-|---------|-------------|--------------|
-| `typeof x === "string"` | `x ∩ string` | `x - string` |
-| `typeof x === "number"` | `x ∩ number` | `x - number` |
-| `x === null` | `x ∩ null` | `x - null` |
-| `x === <literal>` | `x ∩ lit(v)` | `x - lit(v)` |
-| `Array.isArray(x)` | `x ∩ array` | `x - array` |
-| `x` (truthiness) | `x - null - undefined - falsy` | complement |
-| `x instanceof C` | `x ∩ instance(C)` | `x - instance(C)` |
+Narrowing is **per call site**: a branch is taken when the condition evaluates to *definitely* true/false for the concrete argument of that call (`typeof` / `===` / `Array.isArray` / `switch` / truthiness / discriminated fields). Abstract arguments (`number()`, unions) cannot decide a condition — both branches run with the same value and their results join; there is no abstract type intersection/subtraction. `in` / `?.` / `??` are only partially supported. Verified walkthrough: [Control Flow Narrowing](../concepts/control-flow-narrowing.md).
 
 ---
 
@@ -238,7 +231,7 @@ for (let i = 0; i < arr.length; i++) {
 }
 ```
 
-A concrete bound accumulates element-wise to a literal. An abstract bound sums the first `0…7` iterations and reports `28 #exact`.
+A concrete bound accumulates element-wise to a literal. An abstract bound unrolls up to the cap and reports the widened join of the iterations (`number` for a numeric accumulator) — a termination guard, not a fixed-point refinement.
 
 ### 4.2 Closures and Higher-Order Functions
 
@@ -273,7 +266,7 @@ Directives are structured comments that guide the engine. They use the `@nudo:` 
 | `@nudo:pure` | Mark function as pure for memoization |
 | `@nudo:skip` | Skip evaluation; an optional constraint-builder expression declares the return type (e.g. `@nudo:skip number()`) |
 | `@nudo:sample` | Reserved no-op (parsed, not consumed) |
-| `@nudo:refine` | Refinement contract: `@nudo:refine param name` / `@nudo:refine return name` (Pred enters Abs) |
+| `@nudo:contract` | Refinement contract: `@nudo:contract param name` / `@nudo:contract return name` (Pred enters Abs) |
 | `@nudo:env` | Declare runtime environment APIs (file-level `///` comment) |
 | `@nudo:mock-module` | Replace imported modules with mock files (file-level `///` comment) |
 | `@nudo:as` | Override the next statement's value type (line comment `//`) |
@@ -301,7 +294,7 @@ For libraries with JS source, Nudo can execute the code to derive types. For nat
 
 Nudo naturally produces dependent types (types that depend on values) without special syntax:
 
-```javascript
+```javascript verify
 function clamp(value, min, max) {
   if (value < min) return min;
   if (value > max) return max;
@@ -309,13 +302,14 @@ function clamp(value, min, max) {
 }
 // clamp(5, 0, 10) → 5
 // clamp(number, 0, 10) → number
+clamp(5, 0, 10);
 ```
 
 ### 6.5 Precise String Concatenation
 
 Nudo preserves string structure through concatenation, producing template string types:
 
-```javascript
+```javascript verify
 function apiUrl(path) {           // path: string
   return "https://api.example.com" + path;
 }
@@ -348,7 +342,7 @@ for (let i = 0; i < 5; i++) sum += i;
 
 ### 6.8 Declared Refinements (no type syntax)
 
-User-facing contracts are declared with `@nudo:refine` and `*.nudo.js` templates — not `interface` / `type`:
+User-facing contracts are declared with `@nudo:contract` and `*.nudo.js` templates — not `interface` / `type`:
 
 ```javascript
 // shapes.nudo.js
@@ -359,8 +353,8 @@ export const user = shape({ id: number().gt(0), name: string() });
 /// @nudo:import { positive, user } from "./shapes.nudo.js"
 
 /**
- * @nudo:refine x positive
- * @nudo:refine return positive
+ * @nudo:contract x positive
+ * @nudo:contract return positive
  */
 function inc(x) {
   return x + 1;
@@ -375,7 +369,7 @@ The Pred enters Abs and participates in algebra (`x>0` ⇒ `x+1>1`). The templat
 
 **Source:**
 
-```javascript
+```javascript verify
 /**
  * @nudo:case "concrete" (1, 2)
  * @nudo:case "symbolic" (number(), number())
@@ -400,23 +394,29 @@ function calc(a, b) {
    - False: `a + b` → `number`
 4. Merge: `number`
 
-**Observed: ** `((1, 2) => 3) & ((number, number) => number)`
+**`nudo test` renders both cases:**
+
+```text
+debug "concrete"  (1, 2) => 3
+debug "symbolic"  (number, number) => number
+```
 
 ---
 
 ## 8. Implementation Roadmap
 
 ### Done
-- **Evaluator MVP** — Babel, Abs evaluation, ops, narrowing, call-site observations + debug `@nudo:case`, CLI `infer`.
+- **Evaluator MVP** — Babel, Abs evaluation, ops, narrowing, call-site observations + debug `@nudo:case`. (The original `infer` CLI verb was removed; observation is now `nudo check` / `nudo test`.)
 - **Objects/arrays** — objects, arrays, tuples, Array methods, `@nudo:mock`.
 - **Advanced language** — closures, recursion budget, async/Promise, try-catch, classes.
 - **Tooling** — LSP, watch, `.d.ts`, Vite plugin, VS Code extension.
-- **Refined IR** — template/range refinements; source contracts via `@nudo:refine`.
+- **Refined IR** — template/range refinements; source contracts via `@nudo:contract`.
 - **Abs algebra (single-track)** — Term/Pred/Abs, arithmetic kernel, `leqAbs`, generalize, `nudo check` / `nudo test` / `nudo contract` / `nudo export`, CheckJson, gold gates (recall = precision = 1.0).
 - **Call budget** — depth/cycle/total guards so recursive check never stack-overflows.
+- **Emit round-trip** — generated `.d.ts` passes `tsc --noEmit --strict` (`emit-tsc-roundtrip.test.ts`).
+- **Harvest is internal** — analysis auto-fills `@types` modules via `bareSpecToAbsModules`; env-package generation uses `@nudojs/harvester`. Not a product CLI verb.
 
 ### Open
-- emit round-trip through tsc; harvest automation
 - esbuild / webpack plugins; source maps for error locations
 
 ---

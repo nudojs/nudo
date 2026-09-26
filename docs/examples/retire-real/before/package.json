@@ -1,0 +1,16 @@
+{
+  "name": "retire-real-before",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Consumer of real npm package `ms` (vercel/ms) still gated by tsc",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ms": "^2.1.3"
+  },
+  "devDependencies": {
+    "@types/ms": "^0.7.34",
+    "typescript": "^5.9.0"
+  }
+}

@@ -4,10 +4,10 @@ import { withStdImport, stdOpts } from "./nudo-constraints.ts";
 
 describe("nudo check gate", () => {
   it("literal call violating constraint is error", () => {
-    // @nudo:refine 声明契约；调用 -1 应报错
+    // @nudo:contract 声明契约；调用 -1 应报错
     const src = `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -25,7 +25,7 @@ const r = needsPositive(-1);
   it("valid literal call is ok", () => {
     const src = `
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function needsPositive(x) {
   if (x > 0) return x;
@@ -52,7 +52,7 @@ function scale(x) { return add(x, 1); }
     const bad = checkSource(
       "t.js",
       withStdImport(`/**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function f(x){ if (x>0) return x; return 0; }
 f(-1);
@@ -65,13 +65,14 @@ f(-1);
     expect(text).toContain("signatures");
     expect(text).toContain("actual:");
     expect(text).toContain("expected:");
+    expect(text).toContain("nudo contract --draft");
   });
 
   it("formatCheckReport default omits term/pred/conf detail (D2)", () => {
     const ok = checkSource(
       "t.js",
       withStdImport(`/**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function f(x){ if (x>0) return x; return 0; }
 f(1);

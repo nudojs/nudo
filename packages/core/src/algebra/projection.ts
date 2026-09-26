@@ -19,13 +19,13 @@
  * 嵌套 or/not）→ undefined。bigint/symbol、tuple、fn、eff、brand、
  * any（无 or-pred）、never、unknown → undefined。
  *
- * 注意：本模块从 "./constraint.ts" 直接路径 import（桶导出消歧为
- * term.ts 的 lit / pred.ts 的 and，见 constraint.ts 头注释）。
+ * 注意：约束构建器从 "./constraint.ts" 导入（litC/andC 与 term/pred 的
+ * lit/and 已消歧；侧车注入键名仍为 lit/and）。
  */
 
 import type { Abs, Confidence } from "./abs.ts";
 import type { NudoConstraint, NudoField } from "./constraint.ts";
-import { number, string, boolean, lit, union, array, SELF } from "./constraint.ts";
+import { number, string, boolean, litC, union, array, SELF } from "./constraint.ts";
 import { joinAbs } from "./objects.ts";
 import type { Pred, PrimName } from "./pred.ts";
 import { termEquals, v as termVar, type Term, type LiteralValue } from "./term.ts";
@@ -159,7 +159,7 @@ function projectNumber(a: Abs): NudoConstraint | undefined {
   if (a.term?.op === "lit") {
     const v = a.term.value;
     // NaN 字面量：lit(NaN) 不可满足（NaN≠NaN）→ 不投影（join 路径塌缩为 number()）
-    if (typeof v === "number" && !Number.isNaN(v)) return lit(v);
+    if (typeof v === "number" && !Number.isNaN(v)) return litC(v);
     return undefined;
   }
   const leaves = predLeaves(a.pred);
@@ -194,7 +194,7 @@ function projectNumber(a: Abs): NudoConstraint | undefined {
     }
     return undefined; // ne / not / false / length 于 number 等
   }
-  if (eqVal !== undefined) return lit(eqVal); // eq 主导，常数界冗余
+  if (eqVal !== undefined) return litC(eqVal); // eq 主导，常数界冗余
   // 不可满足的界集合（x>5 ∧ x<3）→ undefined，不产垃圾约束
   if (!boundsSatisfiable(bounds)) return undefined;
   let c = number();
@@ -205,7 +205,7 @@ function projectNumber(a: Abs): NudoConstraint | undefined {
 
 function projectString(a: Abs): NudoConstraint | undefined {
   if (a.term?.op === "lit") {
-    return typeof a.term.value === "string" ? lit(a.term.value) : undefined;
+    return typeof a.term.value === "string" ? litC(a.term.value) : undefined;
   }
   const leaves = predLeaves(a.pred);
   if (!leaves) return undefined;
@@ -233,7 +233,7 @@ function projectString(a: Abs): NudoConstraint | undefined {
     }
     return undefined;
   }
-  if (eqVal !== undefined) return lit(eqVal);
+  if (eqVal !== undefined) return litC(eqVal);
   let c = string();
   for (const n of mins) c = c.min(n);
   for (const n of maxs) c = c.max(n);
@@ -242,7 +242,7 @@ function projectString(a: Abs): NudoConstraint | undefined {
 
 function projectBoolean(a: Abs): NudoConstraint | undefined {
   if (a.term?.op === "lit") {
-    return typeof a.term.value === "boolean" ? lit(a.term.value) : undefined;
+    return typeof a.term.value === "boolean" ? litC(a.term.value) : undefined;
   }
   const leaves = predLeaves(a.pred);
   if (!leaves) return undefined;
@@ -262,7 +262,7 @@ function projectBoolean(a: Abs): NudoConstraint | undefined {
     }
     return undefined;
   }
-  return eqVal !== undefined ? lit(eqVal) : boolean();
+  return eqVal !== undefined ? litC(eqVal) : boolean();
 }
 
 /** or-pred 字面量集：or(eq(self, lit)…) 全员锚定 → union(lit…) */
@@ -277,7 +277,7 @@ function projectOrLiterals(a: Abs): NudoConstraint | undefined {
     if (v === undefined) return undefined;
     if (typeof v === "number" && Number.isNaN(v)) return undefined; // NaN 不可满足
     if (expectedPrim !== undefined && primOfLit(v) !== expectedPrim) return undefined;
-    lits.push(lit(v));
+    lits.push(litC(v));
   }
   return lits.length > 0 ? union(...lits) : undefined;
 }
@@ -336,12 +336,12 @@ function absLitConstraint(a: Abs): NudoConstraint | undefined {
   if (s.k !== "prim") return undefined;
   if (a.term?.op === "lit" && primOfLit(a.term.value) === s.type) {
     if (typeof a.term.value === "number" && Number.isNaN(a.term.value)) return undefined;
-    return lit(a.term.value as LitVal);
+    return litC(a.term.value as LitVal);
   }
   if (a.pred?.op === "eq") {
     const v = anchoredEqLit(a.pred, a.term);
     if (v !== undefined && typeof v === "number" && Number.isNaN(v)) return undefined;
-    if (v !== undefined && primOfLit(v) === s.type) return lit(v);
+    if (v !== undefined && primOfLit(v) === s.type) return litC(v);
   }
   return undefined;
 }

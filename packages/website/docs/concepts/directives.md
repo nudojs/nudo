@@ -1,5 +1,4 @@
 ---
-sidebar_position: 3
 description: "Syntax reference for all @nudo: directives — case, mock, pure, skip, sample, refine, import, env, mock-module, as, replace — with constraints and examples."
 ---
 
@@ -7,7 +6,7 @@ description: "Syntax reference for all @nudo: directives — case, mock, pure, s
 
 Directives are structured comments that control how Nudo analyzes your code. They use the `@nudo:` namespace to avoid conflicts with JSDoc and other tools. Place directives in block comments immediately above the function they apply to.
 
-The **interface product** (refinement contracts) lives primarily in sidecar files — `*.nudo.js` modules auto-bound to same-name exports of your source file — with `@nudo:refine` / `@nudo:interface` as the compatible in-source form. See [@nudo:refine](#nudorefine--refinement-contract) and the [`nudo contract`](../guides/cli.md#nudo-contract) command.
+The **contract product** (refinement obligations) lives primarily in sidecar files — `*.nudo.js` modules auto-bound to same-name exports of your source file — with `@nudo:contract` as the in-source form. See [@nudo:contract](#nudocontract--source-contract) and the [`nudo contract`](../guides/contract.md) command.
 
 ## Directive Syntax
 
@@ -36,13 +35,13 @@ async function fetchUser(id) {
 }
 ```
 
-Both forms are parsed identically — in particular, the single-line rule for mock expressions applies to both (see [@nudo:mock](#nudo--mock-external-dependencies)). Prefer the block form when a `//`-prefixed directive could read as commented-out code.
+Both forms are parsed identically — in particular, the single-line rule for mock expressions applies to both (see [@nudo:mock](./mocking.md)). Prefer the block form when a `//`-prefixed directive could read as commented-out code.
 
 ---
 
 ## @nudo:case — Debug Witnesses
 
-Cases are **debug witnesses**: concrete inputs Nudo executes the function with for scenario runs. They are not the interface product — refinement contracts live in `*.nudo.js` sidecars (see [@nudo:refine](#nudorefine--refinement-contract)). `@nudo:case` remains supported for `nudo test` assertions and LSP scenario switching. Prefer **concrete** arguments; legacy symbolic `T.*` case args are deprecated and not used in product examples.
+Cases are **debug witnesses**: concrete inputs Nudo executes the function with for scenario runs. They are **not** the contract product — obligations live in `*.nudo.js` sidecars / `@nudo:contract` (see [@nudo:contract](#nudocontract--source-contract)). `@nudo:case` remains supported for optional `nudo test` assertions and LSP scenario switching. Cases use concrete arguments or constraint builders.
 
 Provide named execution cases. Each case defines inputs (concrete or symbolic) for Nudo to run the function with.
 
@@ -54,12 +53,12 @@ Provide named execution cases. Each case defines inputs (concrete or symbolic) f
 ```
 
 - **name** — A string identifier for the case (e.g. `"double digits"`).
-- **args** — Comma-separated **concrete** arguments (`5`, `"hello"`, `{…}`). Legacy symbolic `T.*` expressions are deprecated.
-- **expected** (optional) — After `=>`, a concrete expected result used for validation.
+- **args** — Comma-separated **concrete** arguments (`5`, `"hello"`, `{…}`) or constraint-builder expressions.
+- **expected** (optional) — After `=>`, a type expression (a concrete literal or a constraint builder, same grammar as args) asserted against the inferred result by `nudo test`.
 
 ### Examples
 
-```javascript
+```javascript verify
 /**
  * @nudo:case "positive numbers" (5, 3)
  * @nudo:case "negative result" (1, 10)
@@ -69,7 +68,7 @@ function subtract(a, b) {
 }
 ```
 
-```javascript
+```javascript verify
 /**
  * @nudo:case "strings" ("hello")
  * @nudo:case "numbers" (42)
@@ -84,9 +83,9 @@ function process(x) {
 
 With expected return type:
 
-```javascript
+```javascript verify
 /**
- * @nudo:case "basic" (string()) => number()
+ * @nudo:case "basic" ("abc") => number()
  * @nudo:case "empty" ("") => lit(0)
  */
 function len(s) {
@@ -98,175 +97,13 @@ function len(s) {
 
 ## @nudo:mock — Mock External Dependencies
 
-Replace external dependencies with mocks during evaluation. Use this for `fetch`, file system APIs, or other code Nudo cannot execute directly.
-
-### Syntax
-
-Five forms are supported. **Every inline expression must fit on a single line** — see the warnings below.
-
-**1. Single-line arrow function.** The body is plain JavaScript; the parameters receive type values:
-
-```text
-@nudo:mock name = (arg) => body
-```
-
-**2. Mock helpers** — `stub()`, `spy()`, `mock()`, chainable with `.returns(...)`, `.resolves(...)`, `.rejects(...)`, `.withArgs(...)`, `.callsFake(...)`:
-
-```text
-@nudo:mock name = stub().returns(value)
-```
-
-**3. Sinon-style equivalents** — `sinon.stub()` / `sinon.spy()` with the same chains:
-
-```text
-@nudo:mock name = sinon.stub().returns(value)
-```
-
-**4. Constraint-builder expression** (or a concrete value):
-
-```text
-@nudo:mock name = number()
-@nudo:mock retries = 3
-```
-
-**5. From module** — the module must define a binding with the same name as the mock:
-
-```text
-@nudo:mock name from "path"
-```
-
-- **name** — The identifier to mock (e.g. `fetch`, `fs`).
-- **path** — Path to a module that provides the mock.
-
-**Warning: the expression must be a single line.** The parser only reads up to the end of the line, so a multi-line expression is truncated at its first line and reported as `nudo:mock-invalid`. The following does **not** work:
-
-```text
-@nudo:mock fetch = (url) => ({ ok: true,
-  json: () => ({ id: 1 })
-})
-```
-
-The real diagnostics for the truncated line:
-
-```text
-[warning] example.js:0:0 Mock expression "(url) => ({ ok: true," could not be parsed as a known pattern (nudo:mock-invalid)
-[warning] example.js:10:9 Cannot resolve 'json' on unknown value (nudo:unknown-recv)
-```
-
-**Warning: no builder calls inside an arrow-function mock body.** Constraint builders exist only in directive type expressions (case args, `@nudo:skip`, `@nudo:as`, …). Inside a mock body write plain JavaScript — plain objects and closures — or use `stub().returns(...)` / `stub().resolves(...)` helpers instead.
-
-**Warning: an unmocked global is executed for real on the B path.** For B-hosted files (the default for sources without top-level `this.`), the transpiled code calls the actual Node runtime global when no mock binds the name. A built-in like `fetch` therefore receives an abstract value as its URL and crashes the run (`ERR_INVALID_URL`, exit `1`) instead of evaluating to `unknown`. Mock any global your analyzed code calls: `@nudo:mock fetch = (url) => ({ ok: true, json: () => ({ ... }) })`.
-
-### Examples
-
-Mock `fetch` with an arrow function. The body is plain JavaScript on one line:
-
-```javascript
-/**
- * @nudo:mock fetch = (url) => ({ ok: true, json: () => ({ id: 1, name: "Alice" }) })
- * @nudo:case "user" (1)
- */
-async function fetchUser(id) {
-  const res = await fetch(`/api/users/${id}`);
-  return res.json();
-}
-```
-
-**Inferred output:**
-
-```text
-=== fetchUser ===
-
-debug "user": (1) => promise<{ id: 1, name: "Alice" }>
-```
-
-A mock helper for resolved promises — `stub().resolves(value)` makes every call return `promise<value>`:
-
-```javascript
-/**
- * @nudo:mock fetch = stub().resolves({ ok: true, json: () => ({ id: 1, name: "Alice" }) })
- * @nudo:case "user" (1)
- */
-async function fetchUser(id) {
-  const res = await fetch(`/api/users/${id}`);
-  return res.json();
-}
-```
-
-**Not the same result here:** the resolved object's closure slots are not bridged — `json` arrives body-less (`json: () => ?`), so `res.json()` evaluates to `unknown` and this example infers `promise<unknown>` (abs `promise<unknown> #partial`), not the arrow mock's `promise<{ id: 1, name: "Alice" }>`. `resolves` keeps full precision for plain data (`stub().resolves({ ok: true, id: 1 })` → `promise<{ ok: true, id: 1 }>`); when the mock result gets called, use the arrow-function form. A synchronous helper:
-
-```javascript
-/**
- * @nudo:mock getPort = stub().returns(8080)
- * @nudo:case "default" ()
- */
-function readPort() {
-  return getPort();
-}
-```
-
-**Inferred output:**
-
-```text
-=== readPort ===
-
-debug "default": () => 8080
-```
-
-A constraint-builder expression binds the name to an abstract domain directly:
-
-```javascript
-/**
- * @nudo:mock retries = number()
- * @nudo:case "plan" ()
- */
-function plan() {
-  return retries + 1;
-}
-```
-
-**Inferred output:**
-
-```text
-=== plan ===
-
-debug "plan": () => number
-```
-
-From a module — the module must define a binding with the mocked name:
-
-```javascript
-/**
- * @nudo:mock fs from "./mocks/fs.js"
- * @nudo:case "read" (string())
- */
-function readConfig(path) {
-  return fs.readFileSync(path, "utf-8");
-}
-```
-
-```javascript
-// mocks/fs.js
-const fs = { readFileSync: (path, encoding) => "{ \"port\": 3000 }" };
-```
-
-**Inferred output:**
-
-```text
-=== readConfig ===
-
-debug "read": (string) => unknown
-
-[warning] read-config.js:6:9 Built-in API "fs" is not covered by Nudo's type inference (nudo:builtin-unknown)
-```
-
-**Current limitation:** `from` mocks are not seeded into the B path — and since production analysis is Abs-native (the TypeValue evaluation path no longer exists), the mock is currently dropped everywhere: the name evaluates as an unknown global (`nudo:builtin-unknown`) or, for real Node globals, the bare call is reached directly. The single-line arrow-function form above works; prefer it until `from` is seeded into the B path.
+Replace external dependencies with mocks during evaluation — `fetch`, file system APIs, or other code Nudo cannot execute directly. Full syntax (five forms), the single-line rule, B-path caveats, and worked examples: [Mocking External Dependencies](./mocking.md).
 
 ---
 
 ## @nudo:pure — Mark Pure Functions
 
-Mark a function as pure so the engine can memoize results. Same Abs inputs produce the same output, so repeated calls can reuse cached results.
+Mark a function as pure. The Abs `fn` value carries a pure marker and the evaluator **memoizes call results by argument Abs** (same args → cached result). Declare it only for side-effect-free functions; analysis results stay correct with or without the directive.
 
 ### Syntax
 
@@ -276,7 +113,7 @@ Mark a function as pure so the engine can memoize results. Same Abs inputs produ
 
 ### Example
 
-```javascript
+```javascript verify
 /**
  * @nudo:pure
  * @nudo:case "add" (number(), number())
@@ -290,7 +127,7 @@ function add(a, b) {
 
 ## @nudo:skip — Skip Evaluation
 
-Skip abstract interpretation. The engine does not evaluate the function body. Without a return type expression, the function is reported as `Skipped (no return type declared)`; add a constraint-builder expression after the directive to declare one.
+Skip abstract interpretation of the function body: the engine does not evaluate it, so a skipped function never produces engine-debt (`nudo:unknown-inference`) noise. Without a return type expression the function is reported as `skipped (no return type declared)` and `nudo check` prints its return as `any` (unconstrained — not `unknown`, which is reserved for inference failure); add a constraint-builder expression after the directive to declare one.
 
 ### Syntax
 
@@ -301,9 +138,15 @@ Skip abstract interpretation. The engine does not evaluate the function body. Wi
 
 - **returnsExpr** (optional) — A constraint-builder / concrete expression used as the return type.
 
+### Scope
+
+- **No body evaluation.** The declared type (or `any`) becomes the signature return; entry may-throw (L2) is not evaluated for a skipped body.
+- **Parameter obligations stay.** `@nudo:contract` preconditions still gate call sites, and the parameter display still comes from the handwritten contract — `nudo check` reports `needsPositive(x: number) => any` for a skipped `needsPositive` with `@nudo:contract x positive`.
+- **Return contracts still checked.** `@nudo:skip lit(0)` under `@nudo:contract return positive` reports `nudo:constraint-violated`.
+
 ### Examples
 
-```javascript
+```javascript verify
 /**
  * @nudo:skip
  */
@@ -313,15 +156,14 @@ function heavyComputation(data) {
 }
 ```
 
-**Inferred output:**
+**Inferred output (`nudo test`):**
 
 ```text
 === heavyComputation ===
-
-Skipped (no return type declared)
+  skipped (no return type declared)
 ```
 
-```javascript
+```javascript verify
 /**
  * @nudo:skip number()
  */
@@ -331,12 +173,11 @@ function unannotatedHeavy(x) {
 }
 ```
 
-**Inferred output:**
+**Inferred output (`nudo test`):**
 
 ```text
 === unannotatedHeavy ===
-
-Skipped (declared): number
+  skipped (declared): number
 ```
 
 ---
@@ -355,11 +196,11 @@ Skipped (declared): number
 
 ---
 
-## @nudo:refine — Refinement Contract {#nudorefine--refinement-contract}
+## @nudo:contract — Source Contract {#nudocontract--source-contract}
 
 Attach a refinement contract to a parameter or the return value. The constraint enters Abs as a Pred and **participates in algebra** (`x>0` ⇒ `x+1>1`) — it is not just a call-site gate.
 
-`@nudo:interface` is an **exact alias** of `@nudo:refine` (both parse to the same in-source refinement); the product name in CLI / LSP / diagnostics is **interface**.
+The **product name** is **contract** (sidecar `*.nudo.js` / `@nudo:contract`); some diagnostic codes still carry the historical `interface` token (`nudo:interface-param-mismatch`, …).
 
 ### Main path: sidecar auto-binding
 
@@ -412,7 +253,8 @@ Sidecars are real JS modules: they may import builders from `@nudojs/core` and c
 | `union(...cs)` | join of domains | `union(lit(42), lit("a"))` |
 | `fn(params, returns?, { throws? })` | first-class function interface | `fn({ x: number() }, number())` |
 | `.gt(n)` `.ge(n)` `.lt(n)` `.le(n)` `.int()` | numeric bounds (chained) | `number().gt(0).int()` |
-| `.min(n)` `.max(n)` | string length bounds (`length(s)` pred) | `string().min(1)` |
+| `.min(n)` `.max(n)` | length bounds — `length(s)` pred (strings/arrays) | `string().min(1)` |
+| `.length(n)` | length equality bound (`length(s) = n`) | `string().length(3)` |
 | `.shift(n)` | translate every constant bound by `+n` | `positive.shift(1)` |
 | `and(...cs)` | scalar conjunction (top-level function, not a chained method) | `and(positive, number().lt(10))` |
 | `partial(c)` / `pick(c, keys)` / `omit(c, keys)` | shape utilities | `partial(user)` |
@@ -429,9 +271,8 @@ Sidecars are real JS modules: they may import builders from `@nudojs/core` and c
 ### In-source form
 
 ```text
-@nudo:refine <param> <constraint>
-@nudo:refine return <constraint>
-@nudo:interface <param> <constraint>   // alias
+@nudo:contract <param> <constraint>
+@nudo:contract return <constraint>
 ```
 
 - **param** — Parameter name, or the literal `return` for the postcondition
@@ -443,15 +284,15 @@ Sidecars are real JS modules: they may import builders from `@nudojs/core` and c
 /// @nudo:import { positive, delay } from "./shapes.nudo.js"
 
 /**
- * @nudo:refine x positive
- * @nudo:refine return positive
+ * @nudo:contract x positive
+ * @nudo:contract return positive
  */
 function inc(x) {
   return x + 1;
 }
 
 /**
- * @nudo:refine ms delay
+ * @nudo:contract ms delay
  */
 function setDelay(ms) {
   if (ms > 0) return ms;
@@ -472,7 +313,7 @@ export const user = shape({
 });
 
 /**
- * @nudo:refine u user
+ * @nudo:contract u user
  */
 function register(u) {
   return `${u.id}:${u.name}`;
@@ -483,7 +324,7 @@ function register(u) {
 
 ## @nudo:import — Constraint Templates
 
-Import constraint templates from a `*.nudo.js` module for use with `@nudo:refine`. This is a **file-level** directive using triple-slash comments.
+Import constraint templates from a `*.nudo.js` module for use with `@nudo:contract`. This is a **file-level** directive using triple-slash comments.
 
 ### Syntax
 
@@ -492,8 +333,8 @@ Import constraint templates from a `*.nudo.js` module for use with `@nudo:refine
 /// @nudo:import * as ns from "./shapes.nudo.js"
 ```
 
-- **named** — bind exported template names used by `@nudo:refine`
-- **namespace** — parsed; template expansion via `ns.foo` is not yet supported
+- **named** — bind exported template names used by `@nudo:contract`
+- **namespace** — `@nudo:import * as ns from "…"` expands to `ns.exportName` refs in `@nudo:contract`
 
 ### Example
 
@@ -501,7 +342,7 @@ Import constraint templates from a `*.nudo.js` module for use with `@nudo:refine
 /// @nudo:import { positive } from "./shapes.nudo.js"
 
 /**
- * @nudo:refine x positive
+ * @nudo:contract x positive
  */
 function inc(x) {
   return x + 1;
@@ -622,25 +463,13 @@ import { debounce, throttle } from "lodash";
 // debounce comes from the mock; throttle resolves normally
 ```
 
-### Project-Level Configuration
-
-```json
-{
-  "nudo": {
-    "mocks": {
-      "axios": "./nudo-mocks/axios.js"
-    }
-  }
-}
-```
-
-File-level `@nudo:mock-module` directives override project-level mocks for the same module.
+Module mocks are declared per file with `@nudo:mock-module` — there is no project-level mock configuration.
 
 ---
 
 ## @nudo:as — Type Assertion
 
-Override the type of the next statement's value. Similar to TypeScript's `as` keyword, but placed as a line comment above the statement. Affects `VariableDeclaration`, `ReturnStatement`, and `ExpressionStatement`.
+Override the type of the next statement's value. Similar to TypeScript's `as` keyword, but placed as a line comment above the statement. Applied on the B path to `VariableDeclaration` initializers and `ReturnStatement` values of the covered statement.
 
 ### Syntax
 
@@ -712,12 +541,19 @@ const result = a + b;
 |-----------|--------|---------|
 | `@nudo:case` | `"name" (args...)` or `"name" (args) => type` | Debug / `nudo test` witnesses (not the contract product) |
 | `@nudo:mock` | `name = expr` or `name from "path"` | Mock external dependencies |
-| `@nudo:pure` | (no args) | Mark function as pure for memoization |
+| `@nudo:pure` | (no args) | Mark function pure — evaluator memoizes call results by args |
 | `@nudo:skip` | `[returnsExpr]` | Skip evaluation, use existing type info |
 | `@nudo:sample` | `N` | Reserved no-op (parsed, not consumed) |
-| `@nudo:refine` / `@nudo:interface` | `param constraint` / `return constraint` | In-source refinement contract (alias pair; main path is the `*.nudo.js` sidecar auto-binding) |
-| `@nudo:import` | `{ name } from "spec"` (file-level `///`) | Import `*.nudo.js` constraint templates for `@nudo:refine` |
+| `@nudo:contract` | `param constraint` / `return constraint` | In-source contract (main path is the `*.nudo.js` sidecar auto-binding) |
+| `@nudo:import` | `{ name } from "spec"` (file-level `///`) | Import `*.nudo.js` constraint templates for `@nudo:contract` |
 | `@nudo:env` | `name1, name2` (file-level `///`) | Declare runtime environment APIs |
 | `@nudo:mock-module` | `"module" from "path"` (file-level `///`) | Replace imported modules with mocks |
 | `@nudo:as` | `typeValueExpr` (line comment `//`) | Override next statement's value type |
 | `@nudo:replace` | `targetExpr typeValueExpr` (line comment `//`) | Replace sub-expression type in next statement |
+
+## Next
+
+- [Abs](./abs.md) — type expressions used in directives
+- [Mocking](./mocking.md) — `@nudo:mock` and `@nudo:mock-module`
+- [Contracts](../guides/contract.md) — `*.nudo.js` sidecars and `@nudo:contract`
+- [CLI Usage](../guides/cli.md) — `check` / `test` / `contract` / `export` / `health`

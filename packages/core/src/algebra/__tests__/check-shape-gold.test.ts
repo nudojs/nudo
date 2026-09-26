@@ -1,6 +1,6 @@
 /**
  * shape 约束金标：契约规范 object 形状，无需 interface/type。
- * 唯一 refine 形态：@nudo:refine <param> <shapeName>
+ * 唯一 refine 形态：@nudo:contract <param> <shapeName>
  */
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue } from "../index.ts";
@@ -66,7 +66,7 @@ describe("check: object literal ⊭ shape", () => {
   it("ok: valid object", () => {
     const r = issuesOf(`
 /**
- * @nudo:refine u userShape
+ * @nudo:contract u userShape
  */
 function register(u) {
   return u.name;
@@ -80,7 +80,7 @@ register({ id: 1, name: "a" });
   it("error: field bound violated (id > 0)", () => {
     const r = issuesOf(`
 /**
- * @nudo:refine u userShape
+ * @nudo:contract u userShape
  */
 function register(u) {
   return u.name;
@@ -98,7 +98,7 @@ register({ id: -1, name: "a" });
     // body 不访问 name，仅契约声明要求该字段
     const r = issuesOf(`
 /**
- * @nudo:refine u userShape
+ * @nudo:contract u userShape
  */
 function register(u) {
   return u.id;
@@ -115,7 +115,7 @@ register({ id: 1 });
   it("error: field prim mismatch (name is number)", () => {
     const r = issuesOf(`
 /**
- * @nudo:refine u userShape
+ * @nudo:contract u userShape
  */
 function register(u) {
   return u.name;
@@ -131,7 +131,7 @@ register({ id: 1, name: 2 });
   it("ok: optional field omitted", () => {
     const r = issuesOf(`
 /**
- * @nudo:refine c configShape
+ * @nudo:contract c configShape
  */
 function setup(c) {
   return c.retries;
@@ -144,7 +144,7 @@ setup({ retries: 3 });
   it("error: optional field present but wrong type", () => {
     const r = issuesOf(`
 /**
- * @nudo:refine c configShape
+ * @nudo:contract c configShape
  */
 function setup(c) {
   return c.retries;
@@ -164,7 +164,7 @@ setup({ retries: 3, label: 9 });
   it("error: numeric upper bound on shape field", () => {
     const r = issuesOf(`
 /**
- * @nudo:refine c configShape
+ * @nudo:contract c configShape
  */
 function setup(c) {
   return c.retries;
@@ -180,7 +180,7 @@ setup({ retries: 99 });
   it("ok: unknown identifier arg (no false positive)", () => {
     const r = issuesOf(`
 /**
- * @nudo:refine u userShape
+ * @nudo:contract u userShape
  */
 function register(u) {
   return u.name;
@@ -204,7 +204,7 @@ open({ id: -1 });
   it("ok: nested shape + array fields", () => {
     const r = issuesOf(`
 /**
- * @nudo:refine o orderShape
+ * @nudo:contract o orderShape
  */
 function place(o) {
   return o.user.id;
@@ -217,7 +217,7 @@ place({ user: { id: 1, name: "a" }, tags: ["x"] });
   it("error: nested shape field bound", () => {
     const r = issuesOf(`
 /**
- * @nudo:refine o orderShape
+ * @nudo:contract o orderShape
  */
 function place(o) {
   return o.user.id;
@@ -231,7 +231,7 @@ place({ user: { id: -1, name: "a" }, tags: ["x"] });
   it("error: array element min length", () => {
     const r = issuesOf(`
 /**
- * @nudo:refine o orderShape
+ * @nudo:contract o orderShape
  */
 function place(o) {
   return o.tags;
@@ -245,7 +245,7 @@ place({ user: { id: 1, name: "a" }, tags: [""] });
   it("ok: int refine", () => {
     const ok = issuesOf(`
 /**
- * @nudo:refine n intId
+ * @nudo:contract n intId
  */
 function take(n) { return n; }
 take(3);
@@ -256,7 +256,7 @@ take(3);
   it("error: int refine rejects non-integer", () => {
     const r = issuesOf(`
 /**
- * @nudo:refine n intId
+ * @nudo:contract n intId
  */
 function take(n) { return n; }
 take(1.5);
@@ -268,7 +268,7 @@ take(1.5);
   it("error: array refine rejects non-array", () => {
     const r = issuesOf(`
 /**
- * @nudo:refine xs positives
+ * @nudo:contract xs positives
  */
 function take(xs) { return xs; }
 take(1);
@@ -280,7 +280,7 @@ take(1);
   it("error: array element bound", () => {
     const r = issuesOf(`
 /**
- * @nudo:refine xs positives
+ * @nudo:contract xs positives
  */
 function take(xs) { return xs; }
 take([-1]);
@@ -292,7 +292,7 @@ take([-1]);
   it("error: string min length", () => {
     const r = issuesOf(`
 /**
- * @nudo:refine s shortName
+ * @nudo:contract s shortName
  */
 function take(s) { return s; }
 take("");

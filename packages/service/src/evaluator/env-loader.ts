@@ -8,6 +8,7 @@ import { type Abs, type Environment } from "@nudojs/core";
 import { defineEnv as defineEsEnv } from "@nudojs/env/es";
 import { defineEnv as defineWebEnv } from "@nudojs/env/web";
 import { defineEnv as defineNodeEnv } from "@nudojs/env/node";
+import { BoundedLruMap } from "../lru-map.ts";
 
 /** Abs 原生 env 定义（内置 es/web/node 与 harvest 产物） */
 type EnvDefinition = {
@@ -47,12 +48,39 @@ export type LoadedEnv = {
 // Path-based env files (`/// @nudo:env ./nudo-harvest-node.ts`) are imported
 // asynchronously and cached here; the sync loadEnvs() below consults this map
 // so sync consumers (analyzeFile & friends) see them after a preload pass.
-const pathEnvCache = new Map<string, () => EnvDefinition>();
+//
+// 上限 PATH_ENV_CACHE_MAX / PATH_ENV_BY_PATH_MAX / PATH_ENV_BASE_DIRS_MAX + LRU：
+// 命中/写入移到队尾，超限删最旧。条目是 defineEnv 工厂（闭包持 HarvestedEnv
+// 级 globals/modules），故必须有界；clearPathEnvCaches 语义不变。
+const PATH_ENV_CACHE_MAX = 64;
+const PATH_ENV_BY_PATH_MAX = 64;
+const PATH_ENV_BASE_DIRS_MAX = 64;
+const pathEnvCache = new BoundedLruMap<() => EnvDefinition>(PATH_ENV_CACHE_MAX);
 // resolvedPath → factory; looked up by trying the directive spelling as-is and
 // resolved against every baseDir seen during preload (covers `./env.ts`,
 // `../env.ts`, and bare `env.ts` spellings from different analyzed files).
-const pathEnvByPath = new Map<string, { factory: () => EnvDefinition; mtimeMs: number }>();
+const pathEnvByPath = new BoundedLruMap<{ factory: () => EnvDefinition; mtimeMs: number }>(PATH_ENV_BY_PATH_MAX);
+// Set 保持插入序；超上限时删最旧 baseDir（LRU 等价——最近 preload 的排到尾）。
 const pathEnvBaseDirs = new Set<string>();
+
+function addPathEnvBaseDir(baseDir: string): void {
+  pathEnvBaseDirs.delete(baseDir);
+  pathEnvBaseDirs.add(baseDir);
+  while (pathEnvBaseDirs.size > PATH_ENV_BASE_DIRS_MAX) {
+    const oldest = pathEnvBaseDirs.values().next().value;
+    if (oldest === undefined) break;
+    pathEnvBaseDirs.delete(oldest);
+  }
+}
+
+/** 测试/诊断：path-env 驻留规模（均 ≤ 对应上限） */
+export function getPathEnvCacheSizes(): { byKey: number; byPath: number; baseDirs: number } {
+  return {
+    byKey: pathEnvCache.size,
+    byPath: pathEnvByPath.size,
+    baseDirs: pathEnvBaseDirs.size,
+  };
+}
 
 function isPathEnvName(name: string, baseDir: string): boolean {
   if (name in envFactories) return false;
@@ -84,7 +112,8 @@ function rewriteBareImports(text: string): string | null {
 
 async function importPathEnv(resolvedPath: string, mtimeMs: number): Promise<void> {
   const cacheKey = `${resolvedPath}:${mtimeMs}`;
-  if (pathEnvCache.has(cacheKey)) return;
+  // get 触发 LRU 触摸（命中仍返回同一 factory）
+  if (pathEnvCache.get(cacheKey)) return;
 
   let mod: { defineEnv?: unknown } | null = null;
   try {
@@ -152,7 +181,7 @@ export function clearPathEnvCaches(): void {
 }
 
 export async function preloadPathEnvs(envNames: string[], baseDir: string): Promise<void> {
-  pathEnvBaseDirs.add(baseDir);
+  addPathEnvBaseDir(baseDir);
   for (const name of envNames) {
     if (!isPathEnvName(name, baseDir)) continue;
     const resolved = resolvePath(baseDir, name);

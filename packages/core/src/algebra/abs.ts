@@ -1,5 +1,5 @@
 /** 抽象值 Abs = 形状 × 项 × 约束 × 置信度 */
-// ALIGN:cli-semantics → docs/design-cli-semantics.md §2
+// ALIGN:cli-semantics → docs/design/cli-semantics.md §2
 // 本文件 any/unknown 定义是产品语义锚点：any=无约束并集；unknown=推导失败。
 // CLI/文档展示与 check L2 应对齐此处，而不是改掉此处。
 
@@ -34,7 +34,13 @@ export type Shape =
       open?: boolean;
     }
   | { k: "arr"; element: Abs }
-  | { k: "tuple"; elements: Abs[]; rest?: Abs }
+  | {
+      k: "tuple";
+      elements: Abs[];
+      rest?: Abs;
+      /** 已删除下标（delete a[i] / 字面量空洞）：读值为 undefined，`in` 判定 false */
+      holes?: number[];
+    }
   | { k: "fn"; params: string[]; name?: string; paramTypes?: Abs[]; returnType?: Abs }
   | { k: "brand"; name: string; shape: Abs }
   | { k: "eff"; eff: "promise" | "generator"; inner: Abs }
@@ -102,6 +108,15 @@ export function boolLit(value: boolean): Abs {
   return {
     shape: { k: "prim", type: "boolean" },
     term: lit(value),
+    pred: pTrue,
+    conf: "exact",
+  };
+}
+
+export function bigintLit(value: bigint): Abs {
+  return {
+    shape: { k: "prim", type: "bigint" },
+    term: lit(value as never),
     pred: pTrue,
     conf: "exact",
   };
@@ -207,6 +222,10 @@ export function isNumPrim(a: Abs): boolean {
 
 export function isStrPrim(a: Abs): boolean {
   return a.shape.k === "prim" && a.shape.type === "string";
+}
+
+export function isBigPrim(a: Abs): boolean {
+  return a.shape.k === "prim" && a.shape.type === "bigint";
 }
 
 /** 置信度：字面量全确定 */

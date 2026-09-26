@@ -1,21 +1,20 @@
 ---
-sidebar_position: 2
-description: 解释 Nudo 如何用符号化类型值执行代码——求值引擎、窄化与合并背后的抽象解释模型。
+description: Nudo 如何在源码中算出接近运行时的变量——抽象解释：在 Abs 上执行代码，使中间量携带值、形状与约束。
 ---
 
 # 抽象解释
 
-抽象解释是 Nudo 的理论基础。与使用具体值运行代码（如单元测试）或不运行代码仅分析代码（如 TypeScript）不同，Nudo **使用符号化的类型值执行代码**——执行过程本身产生类型。
+Nudo 的目标是**在源码中看到变量接近运行时的样子**。抽象解释是实现该目标的方法：既不像单元测试那样用具体值运行，也不像 TypeScript 那样只分析不执行，而是**在 Abs 上执行代码**（符号化的 `shape × term × pred × conf` 值）。执行本身产出每个中间量将是什么——字面量、形状或约束——IDE 与 `nudo check` 呈现的正是这些。
 
 ## 三种方法对比
 
-| 方法 | 输入 | 输出 | 完备性 |
+| 方法 | 输入 | 变量呈现什么 | 完备性 |
 |----------|-------|--------|--------------|
-| 单元测试 | 具体值（`1`、`"hello"`） | 具体结果 | 仅覆盖测试用例 |
-| Nudo | 类型值（`number()`、`string()`） | 类型值 | 类型集合中的所有值 |
-| TypeScript | AST（不执行） | 类型 | 所有语法路径 |
+| 单元测试 | 具体值（`1`、`"hello"`） | 单一具体结果 | 仅覆盖测试用例 |
+| Nudo | Abs（`number()`、`string()`、字面量） | 接近运行时的值 / 形状 / 约束 | 抽象集合中的所有值 |
+| TypeScript | AST（不执行） | 声明类型名 | 所有语法路径 |
 
-当 Nudo 执行 `transform(string())` 时，引擎会将 `string()` 在函数体中传播。在 `typeof x === "string"` 处，引擎知道该分支会被执行。在 `x.toUpperCase()` 处，引擎知道结果是 `string()`。结果不是具体值——而是**类型**。
+当 Nudo 执行 `transform(string())` 时，引擎会将 `string()` 在函数体中传播。在 `typeof x === "string"` 处，引擎知道该分支会被执行。在 `x.toUpperCase()` 处，引擎知道结果是 `string()`。变量得到的不只是类型名，而是**可计算的 Abs**——inlay 与签名显示的正是它。
 
 ---
 
@@ -27,7 +26,7 @@ description: 解释 Nudo 如何用符号化类型值执行代码——求值引�
 │                                                     │
 │  ┌───────────┐   ┌────────────┐   ┌──────────────┐ │
 │  │  Parser   │──▶│ Directive  │──▶│  Evaluator   │ │
-│  │ (Babel)   │   │ Extractor  │   │ (AST Walker) │ │
+│  │ (Babel)   │   │ Extractor  │   │ (B-path/Abs) │ │
 │  └───────────┘   └────────────┘   └──────┬───────┘ │
 │                                          │         │
 │                  ┌───────────────────────┐│         │
@@ -46,7 +45,7 @@ description: 解释 Nudo 如何用符号化类型值执行代码——求值引�
 |-----------|----------------|
 | **Parser** | 将 JS/TS 源码解析为 AST（委托给 Babel） |
 | **Directive Extractor** | 从注释中提取 `@nudo:*` 指令 |
-| **Evaluator** | B-path 转译+执行（ast-eval 回退）：用 Abs 求值每个节点 |
+| **Evaluator** | B-path 转译+执行（单引擎）：用 Abs 求值每个节点 |
 | **surface / arithmetic / abs-route** | 在 Abs 上定义算术、比较、一元、spread 的运算符语义 |
 | **Environment** | 管理变量作用域和绑定（name → Abs） |
 | **Branch Executor** | 处理条件分支：分叉、窄化、求值、合并 |
@@ -56,7 +55,7 @@ description: 解释 Nudo 如何用符号化类型值执行代码——求值引�
 
 ## 求值规则
 
-求值器用 **Abs** 值执行函数体。主 B 路径把源码转译后直接用 Abs 操作数运行；ast-eval 回退路径用同样的 Abs 规则直接遍历 AST。每种 AST 节点类型都有对应的求值规则。
+求值器用 **Abs** 值执行函数体。源码经 B-path 转译后直接用 Abs 操作数运行（单引擎）。每种 AST 节点类型都有对应的 lowering/求值规则。
 
 ### 字面量
 
@@ -88,22 +87,23 @@ eval(AssignmentExpression { left: "x", right: expr })
 
 ### 条件语句（if-else）
 
-这是引擎与普通解释器根本不同的地方。它不会选择单一分支，而可能**同时求值两个分支**，并使用窄化后的 Abs 值：
+这是引擎与普通解释器根本不同的地方。测试不可判定时它分叉执行——但注意：它**不窄化抽象值**。两个分支以**相同**绑定运行：
 
 ```text
 eval(IfStatement { test, consequent, alternate }) →
   condition = eval(test)
 
-  // Case 1: condition is a known literal
+  // Case 1: condition 确定真/假
   if isDefinitelyTrue(condition)   → eval(consequent)
   if isDefinitelyFalse(condition)  → eval(alternate)
 
-  // Case 2: condition is abstract → fork both branches
-  [envTrue, envFalse] = narrow(env, test)
-  resultTrue  = eval(consequent, envTrue)
-  resultFalse = eval(alternate, envFalse)
+  // Case 2: condition 抽象 → 同一 env 运行两个分支
+  resultTrue  = eval(consequent, env)
+  resultFalse = eval(alternate, env)
   return joinAbs(resultTrue, resultFalse)
 ```
+
+`isDefinitelyTrue/False` 正是逐调用点窄化的机制：具体实参常使测试折叠为字面量，于是该调用只跑一个分支。抽象实参无法折叠测试——两个分支都跑，结果 join。
 
 ### 函数声明
 
@@ -126,25 +126,19 @@ eval(CallExpression { callee: "foo", args })
 
 ## 窄化规则
 
-窄化根据条件细化值。引擎支持以下模式：
+窄化是**逐调用点**发生的：条件对**该调用的具体实参***确定*为真/假时，对应分支才运行。每条 `call@L…` case 用该调用的精确实参求值，匹配的分支运行，另一个被消除。**抽象**实参（`number()`、`union(...)`）无法判定条件——两个分支以相同值运行，结果 join。不存在抽象类型的交集/减法。
 
-| 模式 | True 分支 | False 分支 |
-|---------|-------------|--------------|
-| `typeof x === "string"` | `x ∩ string` | `x - string` |
-| `typeof x === "number"` | `x ∩ number` | `x - number` |
-| `x === null` | `x ∩ null` | `x - null` |
-| `x === undefined` | `x ∩ undefined` | `x - undefined` |
-| `x === <literal>` | `x ∩ lit(v)` | `x - lit(v)` |
-| `Array.isArray(x)` | `x ∩ array` | `x - array` |
-| `x`（真值检查） | `x - null - undefined - lit(0) - lit("") - lit(false)` | 补集 |
-| `x instanceof C` | `x ∩ instance(C)` | `x - instance(C)` |
-| `"key" in x` | 含有 `key` 属性的联合成员 | 不含 `key` 属性的联合成员 |
-| `x?.prop` | 正常成员访问（nullish 时短路为 `undefined`） | — |
-| `a ?? b` | 移除 null/undefined 后的 `a` | — |
-| `switch(x) { case v: ... }` | 每个 case 对应 `x ∩ lit(v)` | 所有 case 之外的剩余部分 |
-| `x.kind === "a"`（可辨识联合） | `kind` 匹配该字面量的联合成员 | `kind` 不同的联合成员 |
+| 模式 | 具体调用（逐调用点） | 抽象 / 符号实参 |
+|---------|-------------------------------|------------------------------|
+| `typeof x === "string"` | string 调用走该分支；`x.length` 折叠 | 分支 join |
+| `x === null` / `x === <literal>` | 匹配的调用分叉；另一个落空 | 分支 join |
+| `Array.isArray(x)` | array 调用分叉；`x.length` / `x[0]` 可解 | 分支 join |
+| 真值（`x`） | 字面量实参分叉 | 分支 join |
+| 判别对象（`x.kind === "a"`） | 匹配 shape 的分支为该调用运行 | 成员**不**被过滤；分支 join |
+| `switch(x) { case v: … }` | 具体判别值选中对应子句 | 分支 join |
+| `in` / `?.` / `??` | 部分支持：见下表 | 部分 |
 
-其中 `∩` 为类型交集，`-` 为类型减法。
+其他守卫（`instanceof`、自定义谓词）只有在测试对调用实参折叠为确定布尔时才分叉——它们不在上述已验证集合内。带真实 `nudo test` 输出的已验证逐模式走查：[控制流收窄](./control-flow-narrowing.md)。
 
 ---
 
@@ -184,7 +178,7 @@ Promise 建模为效果形状（`eff`）：
 
 Nudo 将异常视为函数类型的一等属性。每个函数的推断类型都同时包含 `returns` 和 `throws`：
 
-```javascript
+```javascript verify
 function divide(a, b) {
   if (b === 0) throw new Error("Division by zero");
   return a / b;
@@ -201,3 +195,10 @@ function divide(a, b) {
 对象 Abs 值使用**引用语义**——赋值复制引用而非值。多个变量可以指向同一对象 Abs 值。
 
 进入条件分支时，引擎会对被修改对象进行深拷贝，使每个分支拥有自己的副本。合并时，重叠属性变为联合类型。若无分支，则就地应用变更，无额外开销。
+
+## 下一步
+
+- [Abs](./abs.md) —— 本引擎所计算的类型系统
+- [控制流收窄](./control-flow-narrowing.md) —— 逐调用点的分支消除
+- [语言语义](./semantics.md) —— 何处精确、何处尚未建模
+- [心智模型](../getting-started/mental-model.md) —— 产品面

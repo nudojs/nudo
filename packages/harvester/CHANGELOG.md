@@ -1,5 +1,36 @@
 # @nudojs/harvester
 
+## 1.0.0-beta.1
+
+### Major Changes
+
+- 4305674: Split the `@nudojs/service` god package: harvest → `@nudojs/harvester`, IDE surface → `@nudojs/lsp`, emit products consolidated under `@nudojs/service/emit`.
+  
+  **BREAKING** for `@nudojs/service` subpath consumers:
+  
+  | Removed subpath | Migrate to |
+  |---|---|
+  | `@nudojs/service/interface` | `@nudojs/service/emit` |
+  | `@nudojs/service/dts` | `@nudojs/service/emit` |
+  | `@nudojs/service/case` | `@nudojs/service/emit` |
+  | `@nudojs/service/lsp` | `@nudojs/lsp` (library entry — no server side effects) |
+  | `@nudojs/service/harvest` | `@nudojs/harvester` |
+  
+  `@nudojs/service` keeps `.`, `./analysis`, `./evaluator`, `./emit`. The language server moves to `@nudojs/lsp/server` (bin `nudo-lsp` unchanged); `@nudojs/lsp` is now a side-effect-free library entry re-exporting the IDE surface.
+  
+  No dependency cycles: `lsp → service`, `harvester` stays independent of `service`. Emit is a service subpath (same package). Public function signatures and diagnostic codes are unchanged.
+
+## 0.2.8-beta.0
+
+### Patch Changes
+
+- Updated dependencies [22baf33]
+- Updated dependencies [0e1432a]
+- Updated dependencies [3c3f9d2]
+- Updated dependencies
+- Updated dependencies [279d73a]
+  - @nudojs/core@3.0.0-beta.0
+
 ## 0.2.7
 
 ### Patch Changes
@@ -23,7 +54,7 @@
   - **C0.1 contract model:** body-AST required-slot inference removed. `nudo:arg-structure` now means HOF argument not callable / arity mismatch only. Obligations come from explicit `*.nudo.js` / `@nudo:refine` contracts or call-site facts; no evidence → any. Migration: add a sidecar shape contract where you need structure checks.
   - **A1 analysis default:** `package.json#nudo.analysis.mode` shipped default is now `exports` (was `directives`). Files with `export` / sidecar / `@nudo:` directives are analyzed by IDE/build. Escape hatch: `"mode": "directives"` (previous silence) or `"all"` (every target path). Named-path CLI commands still analyze the named file regardless of mode.
 
-  Release notes / policy: `docs/versioning.md`. Scope defaults: `docs/design-analysis-scope.md`.
+  Release notes / policy: `docs/versioning.md`. Scope defaults: `docs/design/cli-semantics.md`.
 
   Feature highlights (after accepting the defaults above):
 

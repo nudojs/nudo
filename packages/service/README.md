@@ -1,20 +1,30 @@
 # @nudojs/service
 
-Shared inference service for [Nudo](https://github.com/nudojs/nudo) IDE integrations.
+Nudo analysis core and emit products: Abs-native file analysis, evaluator host API, interface/dts/schema/guard projections, and session caches.
 
 ## What is Nudo?
 
-Nudo is a type inference engine for JavaScript. Instead of a separate type system, it runs your code with symbolic type values via abstract interpretation — no TypeScript, no build step.
+Nudo is a type inference engine for JavaScript. The type system is Abs (`shape × term × pred × conf`); production analysis is Abs-native via abstract interpretation — no TypeScript, no build step.
 
 ## This package
 
-`@nudojs/service` provides the high-level analysis API used by editor extensions and build tools:
+`@nudojs/service` provides the analysis core used by CLI, editor extensions, and build tools, plus the emit faces that project Abs to dts/schema/guard/interface.
+
+Production evaluation is **Abs-native B-path** (`evalAbsModuleGraph` + `runTranspiled`); the TypeValue AST interpreter is gone. Prefer a focused subpath over the full barrel:
+
+| Subpath | Face |
+|---|---|
+| `@nudojs/service/analysis` | File analysis, diagnostics, call records, Abs module-graph eval |
+| `@nudojs/service/evaluator` | Host API surface (env/config/CallRecord) — not the eval engine |
+| `@nudojs/service` | Full barrel (stable; analysis face) |
+
+Emit products live in `@nudojs/service/emit` (interface/contract, dts, schema, guard, case reports). IDE surface lives in `@nudojs/lsp`; `@types` harvest in `@nudojs/harvester`.
+
+Highlights:
 
 - **File analysis** — `analyzeFile` returns diagnostics, function analyses, and case results
-- **IDE features** — `getTypeAtPosition`, `getCompletionsAtPosition`, `getCasesForFile`
-- **DTS generation** — `generateDts` and `typeValueToTSType` for producing `.d.ts` output
-- **Zod schema generation** — `typeValueToZodSchema` converts inferred types to Zod schema strings
-- **Guard generation** — `generateGuardFunction` produces zero-dependency runtime type guards
+- **Module graph** — `evalAbsModuleGraph` evaluates a file's import closure as Abs
+- **Session caches** — analysis / fn / B-path caches with eviction and project-config limits
 
 ## Install
 

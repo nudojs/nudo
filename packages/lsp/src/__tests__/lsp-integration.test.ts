@@ -3,17 +3,18 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
-  analyzeFile,
+  absToTSType,
+  absToSchemaSource,
+  generateDts,
+  generateGuardFunction,
+} from "@nudojs/service/emit";
+import {
   getTypeAtPosition,
   getCompletionsAtPosition,
   getCasesForFile,
-  absToTSType,
-  generateDts,
-  absToZodSchema,
-  generateGuardFunction,
-  buildSemanticTokens,
-  SEMANTIC_TOKEN_TYPES,
-} from "@nudojs/service";
+} from "../lsp-surface.ts";
+import { buildSemanticTokens, SEMANTIC_TOKEN_TYPES } from "../semantic-tokens.ts";
+import { analyzeFile } from "@nudojs/service";
 import { abs, num, str, numLit, formatShape, type Abs } from "@nudojs/core";
 import { parse } from "@nudojs/parser";
 import { buildSymbolTable, findDefinition, findReferences, findIdentifierAtPosition } from "../symbols.ts";
@@ -542,7 +543,7 @@ describe("LSP Integration - Type Generation", () => {
     const greetingFn = result.functions.find(f => f.name === "getGreeting");
     expect(greetingFn).toBeDefined();
     if (greetingFn?.combinedAbs) {
-      const schema = absToZodSchema(greetingFn.combinedAbs);
+      const schema = absToSchemaSource(greetingFn.combinedAbs);
       expect(schema).toBeTruthy();
       expect(schema.length).toBeGreaterThan(0);
     }

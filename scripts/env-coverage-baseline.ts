@@ -11,7 +11,7 @@
  *   - mock-required:  category still recommended for handwritten mock
  *                     (native bindings / stream machine / dynamic require /
  *                      dual-entry variants / no call-site functions) —
- *                     aligned with docs/design-limitations.md §八
+ *                     aligned with docs/design/limitations.md §2
  *
  * Usage (from monorepo root):
  *   pnpm run coverage:env
@@ -100,7 +100,7 @@ type ProbeResult = Probe & {
 };
 
 /**
- * High-frequency Node API probes (default priority from plan §3 B3).
+ * High-frequency Node API probes (default priority from plan §3 B3 + B-gap pass).
  * Library probes are inventory-only: they document import resolution path
  * (JS execution / @types harvest / mock) rather than env module slots.
  */
@@ -110,6 +110,9 @@ const NODE_PROBES: Probe[] = [
   { id: "fs.writeFileSync", module: "fs", path: ["writeFileSync"] },
   { id: "fs.existsSync", module: "fs", path: ["existsSync"] },
   { id: "fs.statSync", module: "fs", path: ["statSync"] },
+  { id: "fs.readdirSync", module: "fs", path: ["readdirSync"] },
+  { id: "fs.mkdirSync", module: "fs", path: ["mkdirSync"] },
+  { id: "fs.rmSync", module: "fs", path: ["rmSync"] },
   { id: "fs.readFile-callback", module: "fs", path: ["readFile"] },
   { id: "fs.promises.readFile", module: "fs/promises", path: ["readFile"] },
   { id: "fs.promises.writeFile", module: "fs/promises", path: ["writeFile"] },
@@ -130,6 +133,9 @@ const NODE_PROBES: Probe[] = [
   { id: "path.relative", module: "path", path: ["relative"] },
   { id: "path.parse", module: "path", path: ["parse"] },
   { id: "path.isAbsolute", module: "path", path: ["isAbsolute"] },
+  { id: "path.sep", module: "path", path: ["sep"] },
+  { id: "path.posix", module: "path", path: ["posix"] },
+  { id: "path.win32", module: "path", path: ["win32"] },
 
   // url
   { id: "url.URL", module: "url", path: ["URL"] },
@@ -148,42 +154,62 @@ const NODE_PROBES: Probe[] = [
   { id: "util.inspect", module: "util", path: ["inspect"] },
   { id: "util.format", module: "util", path: ["format"] },
   { id: "util.types.isDate", module: "util", path: ["types", "isDate"] },
+  { id: "util.inherits", module: "util", path: ["inherits"] },
+  { id: "util.callbackify", module: "util", path: ["callbackify"] },
 
-  // stream (skeleton; machine callbacks stay mock-recommended)
+  // stream (instance + user hooks signature-level; data machine stays mock)
   { id: "stream.Readable", module: "stream", path: ["Readable"] },
   { id: "stream.Writable", module: "stream", path: ["Writable"] },
   { id: "stream.Duplex", module: "stream", path: ["Duplex"] },
   { id: "stream.Transform", module: "stream", path: ["Transform"] },
   { id: "stream.pipeline", module: "stream", path: ["pipeline"] },
+  { id: "stream.finished", module: "stream", path: ["finished"] },
+  { id: "stream.promises.pipeline", module: "stream", path: ["promises", "pipeline"] },
   {
     id: "stream.machine-callbacks",
     module: "stream",
     path: ["Transform"],
     forceMock: true,
-    note: "Node stream machine drives internal callbacks — design-limitations §八",
+    note: "data/error events are machine-driven (limitations §2); transform/flush hooks are signature-level for refine",
   },
 
   // querystring
   { id: "querystring.parse", module: "querystring", path: ["parse"] },
   { id: "querystring.stringify", module: "querystring", path: ["stringify"] },
 
-  // crypto / process / os
+  // crypto / process / os / Buffer / assert
   { id: "crypto.randomUUID", module: "crypto", path: ["randomUUID"] },
   { id: "crypto.createHash", module: "crypto", path: ["createHash"] },
   { id: "crypto.randomBytes", module: "crypto", path: ["randomBytes"] },
   { id: "process.env", path: ["process", "env"] },
   { id: "process.cwd", path: ["process", "cwd"] },
   { id: "process.argv", path: ["process", "argv"] },
+  { id: "process.nextTick", path: ["process", "nextTick"] },
+  { id: "process.exitCode", path: ["process", "exitCode"] },
+  { id: "process.version", path: ["process", "version"] },
+  { id: "process.platform", path: ["process", "platform"] },
   { id: "os.platform", module: "os", path: ["platform"] },
+  { id: "os.homedir", module: "os", path: ["homedir"] },
+  { id: "os.tmpdir", module: "os", path: ["tmpdir"] },
+  { id: "os.EOL", module: "os", path: ["EOL"] },
+  { id: "os.cpus", module: "os", path: ["cpus"] },
   { id: "Buffer.from", path: ["Buffer", "from"] },
+  { id: "Buffer.alloc", path: ["Buffer", "alloc"] },
+  { id: "Buffer.concat", path: ["Buffer", "concat"] },
+  { id: "assert.ok", module: "assert", path: ["ok"] },
+  { id: "assert.strictEqual", module: "assert", path: ["strictEqual"] },
+  { id: "assert.deepStrictEqual", module: "assert", path: ["deepStrictEqual"] },
 
-  // child_process / native boundary
+  // child_process: instance surface is signature-level; side effects stay mock
+  { id: "child_process.spawn", module: "child_process", path: ["spawn"] },
+  { id: "child_process.execFile", module: "child_process", path: ["execFile"] },
+  { id: "child_process.spawnSync", module: "child_process", path: ["spawnSync"] },
   {
     id: "child_process.spawn-native",
     module: "child_process",
     path: ["spawn"],
     forceMock: true,
-    note: "native process spawn — mock or env signature only; no side-effect simulation",
+    note: "native process spawn — no side-effect simulation; ChildProcess shape is signature-level",
   },
 ];
 
@@ -212,7 +238,7 @@ const LIB_PROBES: LibProbe[] = [
     id: "@types/node",
     package: "@types/node",
     kind: "types",
-    note: ".d.ts harvest via harvestNodeTypes / nudo harvest node",
+    note: ".d.ts harvest via harvestNodeTypes (analysis auto-fill)",
   },
   {
     id: "no-types-example",
@@ -225,6 +251,11 @@ const LIB_PROBES: LibProbe[] = [
 function walkAbs(a: Abs | undefined, path: string[]): { found: Abs | undefined; format?: string } {
   let cur: Abs | undefined = a;
   for (const key of path) {
+    if (!cur) return { found: undefined };
+    // brand carries its payload as shape.shape (an Abs), not as obj slots
+    if (cur.shape.k === "brand") {
+      cur = cur.shape.shape as Abs | undefined;
+    }
     if (!cur || cur.shape.k !== "obj") return { found: undefined };
     const slot = cur.shape.slots[key];
     if (!slot) return { found: undefined };
@@ -415,7 +446,7 @@ function main(): void {
   const report = {
     generatedAt,
     note:
-      "Extensional env coverage baseline — resolution rate is NOT a soundness/completeness claim. See design-limitations.md §八 and website semantics mock-boundary section.",
+      "Extensional env coverage baseline — resolution rate is NOT a soundness/completeness claim. See design/limitations.md §2 and website semantics mock-boundary section.",
     budgets: {
       harvestNodeTypes: { maxFiles: 12, maxMs: 2500, disableEnvVar: "NUDO_HARVEST_NODE=off" },
     },
@@ -500,7 +531,7 @@ function main(): void {
   md.push(">");
   md.push("> **Honest boundary:** resolution rate is *not* a soundness guarantee.");
   md.push("> Categories still recommended for mock are listed below and aligned with");
-  md.push("> `docs/design-limitations.md` §八 (call-site ceiling).");
+  md.push("> `docs/design/limitations.md` §2 (call-site ceiling).");
   md.push("");
   md.push(`- Generated at: \`${generatedAt}\``);
   md.push(`- Harvest budgets: maxFiles=\`${report.budgets.harvestNodeTypes.maxFiles}\`, maxMs=\`${report.budgets.harvestNodeTypes.maxMs}\`, disable=\`NUDO_HARVEST_NODE=off\``);
@@ -556,14 +587,14 @@ function main(): void {
   md.push("| Import target | Analysis path |");
   md.push("|---|---|");
   md.push("| JS source package (e.g. `commander`, `ms`) | Execute/analyze source — `checkSource` / `analyzeFile`; no handwritten mock required for zero-FP gate |");
-  md.push("| `@types/*` / package ships `.d.ts` | `harvestDts` / `harvestNodeTypes` / `nudo harvest` → env injection |");
+  md.push("| `@types/*` / package ships `.d.ts` | `harvestDts` / `harvestNodeTypes` → analysis auto-fill env injection |");
   md.push("| Neither JS analysis path nor types | **mock-required** — use `@nudo:mock` / path `@nudo:env` / sidecar hint |");
   md.push("");
   md.push("## Still mock-recommended categories");
   md.push("");
   md.push("- Native bindings (process spawn, native addons)");
   md.push("- Dynamic `require` / computed module graphs");
-  md.push("- Stream machine callbacks (Node Transform internals) — design-limitations §八");
+  md.push("- Stream machine callbacks (Node Transform internals) — limitations §2");
   md.push("- Dual-entry browser/node variants (call-site records do not cross files)");
   md.push("- Functions with no call-site usage (entry@ fallback is honest)");
   md.push("");

@@ -146,7 +146,7 @@ area(-1);
   it("执行态证据：兄弟函数内未执行的调用不进今日域（fresh emit 零 drift）", () => {
     // 回归（T10a）：语法全树扫描曾把 process() 体内从未执行的 area(-50)
     // 算进今日域 → fresh emit 后立即误报 drift 且重跑 emit 无法消除；
-    // 今日域证据必须与 emit 同为执行态（evalProgramAbs 的 AbsCallRecord）
+    // 今日域证据必须与 emit 同为执行态（AbsCallRecord，host 模块图求值收集）
     const { loadModule } = makeFiles({
       "/t/area.nudo.js": GEN(`export const area = fn({ x: lit(3) }, lit(3));`),
     });

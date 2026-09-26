@@ -1,5 +1,4 @@
 ---
-sidebar_position: 8
 description: "Harvest real argument shapes from your tests and apps with --from, synthesize call@L cases from them, and freeze them as directives with test --freeze."
 ---
 
@@ -16,7 +15,7 @@ nudo check lib/ --from test/
 
 Given a small library:
 
-```js
+```js verify
 // lib/slugify.js
 export function slugify(title) {
   return title.toLowerCase().replace(/ /g, "-");
@@ -43,20 +42,24 @@ nudo test lib/ --from test/
 Output:
 
 ```text
+nudo test  lib/slugify.js
+
 === slugify ===
-  entry@L1  (any) => any
-  call@L4  ("Hello World") => string
+  call@L4  ("Hello World") => "hello-world"
+
+assertions
+  — 0 passed · 0 failed · 0 unchecked (no declared @nudo:case expectations; 1 synthetic case(s) printed above)
 ```
 
-The case was not written by anyone — it was harvested from line 4 of the test file, which is why it is named `call@L4`. Every recorded call site becomes one synthesized case; multiple call sites to the same function union into the combined type, exactly like hand-written `@nudo:case` directives do. Unconstrained entry params display as `any`.
+The case was not written by anyone — it was harvested from line 4 of the test file, which is why it is named `call@L4`. Every recorded call site becomes one synthesized case; multiple call sites to the same function union into the combined type, exactly like hand-written `@nudo:case` directives do. Unconstrained entry params display as `any`. When a function has **no** call sites anywhere, the analyzer falls back to one `entry@L…` case instead (`(any) => any` for unconstrained params); when `call@` cases exist, no `entry@` is synthesized for that function.
 
 ### Options
 
 | Argument | Description |
 |----------|-------------|
 | `<target>` | File or directory to analyze — `.js`, `.mjs`, or `.ts`; directories are scanned recursively for inference targets |
-| `--from <paths...>` | One or more usage-site files or directories (tests, examples, apps). Renamed from `--callsites`. Directories are scanned recursively. |
-| `--freeze[=update]` | Write the harvested cases back into the analyzed file as `@nudo:case` directives (`freeze` fills in functions without case directives; `=update` re-synchronizes generated ones) — formerly `--emit-cases` |
+| `--from <paths...>` | One or more usage-site files or directories (tests, examples, apps). Directories are scanned recursively. |
+| `--freeze[=update]` | Write the harvested cases back into the analyzed file as `@nudo:case` directives (`freeze` fills in functions without case directives; `=update` re-synchronizes generated ones) |
 
 ## How It Works
 
@@ -66,7 +69,7 @@ Call-site discovery runs in two phases.
 
 For each usage-site file, the evaluator runs the file's top-level statements and captures every call it can observe:
 
-- **Top-level evaluation** — `require` calls, setup code, and direct calls at module top level execute, so their argument values are captured as concrete type values.
+- **Top-level evaluation** — `require` calls, setup code, and direct calls at module top level execute, so their argument values are captured as concrete Abs observations.
 - **Test callback injection** — callbacks passed to `it`, `test`, and `describe` are invoked with `unknown` parameters, which executes the test body and captures the calls inside it. The callback bodies execute inside the evaluator — the test framework itself never runs. Only calls that resolve to functions in the analyzed targets are kept.
 - Each observed call produces a **CallRecord**: the callee name, the argument types, the result type, whether the call threw, and the call location.
 
@@ -99,7 +102,7 @@ Run against two real libraries, with their own test suites as usage sites:
 | `@hapi/hoek` | 9.3.0 (25 files, 42 functions) | 54.8% → **98.6%** | 291 → **0** |
 | `@discoveryjs/json-ext` | 0.5.7 | 77.8% → **91.8%** | 41 → **0** |
 
-No directives were written for either library — every case in the second column of results is synthesized from a recorded call site.
+No directives were written for either library — every case in the second column of results is synthesized from a recorded call site. Full story of the attribution gate that made the zero-false-attribution column possible: [the 22-file smear](/blog/attribution-gate).
 
 ## Known Boundaries
 
@@ -116,7 +119,7 @@ nudo test lib/ --from test/ --freeze           # fill in functions that have no 
 nudo test lib/ --from test/ --freeze=update    # re-synchronize previously generated directives
 ```
 
-The default `freeze` mode only fills in functions with no case directives at all. `=update` goes further: it strips the previously generated `call@` directives, re-analyzes the stripped source, and writes the refreshed set back — which is why it also surfaces *drift* at the usage sites. A test that changed its arguments shows up as a diff; `--freeze=update --dry-run --exit-on-diff` turns that into a CI gate that exits `1` on any non-empty diff. Both modes are idempotent (`No changes.` on a synced file).
+The default `freeze` mode only fills in functions with no case directives at all. `=update` goes further: it strips the previously generated `call@` directives, re-analyzes the stripped source, and writes the refreshed set back — which is why it also surfaces *drift* at the usage sites. A test that changed its arguments shows up as a diff; `--freeze=update --dry-run --exit-on-diff` turns that into a CI gate that exits `1` on any non-empty diff. Both modes are idempotent (`freeze: no changes.` on a synced file).
 
 ### Merge policy
 
@@ -161,5 +164,5 @@ See the [service API reference](../api/service.md) for the full `AnalysisResult`
 
 ## Next Steps
 
-- **[Language Semantics](./semantics.md)** — what the evaluator can do with the shapes call-site discovery hands it: literal string methods, concrete-bound loops, recursion, and narrowing guards (plus the constructs that still degrade to `unknown`).
+- **[Language Semantics](../concepts/semantics.md)** — what the evaluator can do with the shapes call-site discovery hands it: literal string methods, concrete-bound loops, recursion, and narrowing guards (plus the constructs that still degrade to `unknown`).
 - **[CLI Usage](./cli.md)** — all `nudo check` / `nudo test` options.

@@ -1,6 +1,6 @@
 # @nudojs/lsp — Public API Freeze Inventory
 
-> **Status (A1/A2):** `@nudojs/lsp` is **0.8.0, pre-1.x**. This file is the freeze
+> **Status:** `@nudojs/lsp` is **1.0.0**. This file is the freeze
 > observation inventory: what the package exposes today, and what counts as
 > **stable** vs **experimental** once the package cuts 1.0. Freezing does **not**
 > auto-bump `package.json`; 1.0 is gated on ≥1 minor cycle with no unplanned
@@ -38,14 +38,14 @@ Declared in `connection.onInitialize` (`src/server.ts`). Keys are the freeze lis
 | `textDocumentSync` | `Full` |
 | `hoverProvider` | Abs / intension + interface tier on export fn names |
 | `completionProvider` | trigger `.`; `resolveProvider: false` |
-| `codeLensProvider` | `resolveProvider: false`; interface tier first |
+| `codeLensProvider` | `resolveProvider: false`; interface tier first; case debug layer; **synthetic `call@`/`entry@` observation lenses** (CLI test facts pinned to source; click → `nudo.trace`) |
 | `inlayHintProvider` | case + Abs param/return |
 | `definitionProvider` | local + cross-file + sidecar |
 | `referencesProvider` | |
-| `renameProvider` | |
+| `renameProvider` | `prepareProvider: true` — 非绑定（属性键/成员属性）prepareRename 返回 null；同绑定 scope 改名（refactor-gold） |
 | `documentSymbolProvider` | |
 | `workspaceSymbolProvider` | |
-| `codeActionProvider` | `codeActionKinds: ["quickfix"]` |
+| `codeActionProvider` | `codeActionKinds: ["quickfix", "refactor.extract"]` — Extract Function on non-empty selection |
 | `signatureHelpProvider` | triggers `(`, `,` |
 | `semanticTokensProvider` | full; legend includes `contract` / `generated` / `derived` |
 | `executeCommandProvider` | commands = `NUDO_EXECUTE_COMMANDS` (dot form) |
@@ -61,40 +61,34 @@ types/modifiers may gain entries (**non-breaking**); removals are breaking.
 | Command | Role |
 |---------|------|
 | `nudo.check` | CheckJson v1 gate |
-| `nudo.infer` | InferJson v1 inference |
+| `nudo.test` | CaseJson v1 case report |
 | `nudo.hover` | lossless Abs at position (+ optional inlays) |
 | `nudo.whatIf` | inject `@nudo:as` assumptions |
 | `nudo.suggestCase` | case coverage / paste-ready directives |
 | `nudo.trace` | per-case arg→result listing |
-| `nudo.interface` | interface tiers print |
-| `nudo.interface.draft` | code-first `*.nudo.draft.*` |
-| `nudo.interface.emit` | persist `@generated` sidecar |
-| `nudo.interfaceDraft` | **alias** of `nudo.interface.draft` (CodeLens / palette) |
-| `nudo.interfaceEmit` | **alias** of `nudo.interface.emit` |
+| `nudo.contract` | interface tiers print |
+| `nudo.contract.draft` | code-first `*.nudo.draft.*` |
+| `nudo.contract.emit` | persist `@generated` sidecar |
 | `nudo.selectCase` | switch active case (positional or object args) |
 | `nudo.getActiveCases` | active case index map |
-
-Alias rows (`interfaceDraft` / `interfaceEmit`) are **stable-alias**: they remain
-valid through 1.x but may be documented as preferred spellings of the dotted
-forms. Removing an alias after 1.0 is still breaking.
 
 ## 4. Custom requests `nudo/…` (slash form) — protocol contract
 
 Slash form is the **protocol contract** for custom LSP requests. Dot-form agent
-methods are also registered as request aliases for MCP-style bridges; both route
+methods are also registered as request methods for MCP-style bridges; both route
 to the same handlers (`AGENT_TOOL_SOURCES` same-source pin).
 
 | Request (slash) | executeCommand twin | Returns |
 |-----------------|---------------------|---------|
 | `nudo/check` | `nudo.check` | AgentToolResult / CheckJson text |
-| `nudo/infer` | `nudo.infer` | InferJson v1 text |
+| `nudo/test` | `nudo.test` | CaseJson v1 text |
 | `nudo/hover` | `nudo.hover` | Abs payload text |
 | `nudo/whatIf` | `nudo.whatIf` | analysis after injection |
 | `nudo/suggestCase` | `nudo.suggestCase` | coverage / directives |
 | `nudo/trace` | `nudo.trace` | case traces |
-| `nudo/interface` | `nudo.interface` | tier lines |
-| `nudo/interface.draft` | `nudo.interface.draft` | draft summary |
-| `nudo/interface.emit` | `nudo.interface.emit` / `nudo.interfaceEmit` | emit summary |
+| `nudo/contract` | `nudo.contract` | tier lines |
+| `nudo/contract.draft` | `nudo.contract.draft` | draft summary |
+| `nudo/contract.emit` | `nudo.contract.emit` | emit summary |
 | `nudo/selectCase` | `nudo.selectCase` | `{ success: true }` — editor-only (slash + executeCommand; no dot-form custom request) |
 | `nudo/getActiveCases` | `nudo.getActiveCases` | `Record<string, number>` — editor-only (slash + executeCommand; no dot-form custom request) |
 
@@ -117,10 +111,10 @@ documented agent tool names; values are the shared computation (E5 same-source).
 | `trace` | `analyzeFile cases` | `nudo.trace` / `nudo/trace` |
 | `check` | `checkSource + serializeCheckJson` | `nudo.check` / `nudo/check` |
 | `hover` | `getHoverAtPosition + interfaceTierOf` | `nudo.hover` / `nudo/hover` |
-| `infer` | `analyzeFile + serializeInferJson` | `nudo.infer` / `nudo/infer` |
-| `interface` | `interfaceSurface + formatInterfaceSurfaceLine` | `nudo.interface` / `nudo/interface` |
-| `interface.draft` | `draftInterface + formatDraftSummary` | `nudo.interface.draft` / `nudo/interface.draft` |
-| `interface.emit` | `emitInterface` | `nudo.interface.emit` / `nudo/interface.emit` |
+| `test` | `analyzeFile + serializeCaseJson` | `nudo.test` / `nudo/test` |
+| `contract` | `interfaceSurface + formatInterfaceSurfaceLine` | `nudo.contract` / `nudo/contract` |
+| `contract.draft` | `draftInterface + formatDraftSummary` | `nudo.contract.draft` / `nudo/contract.draft` |
+| `contract.emit` | `emitInterface` | `nudo.contract.emit` / `nudo/contract.emit` |
 | `codeLens` | `computeInterfaceLenses + interfaceTierOf` | **server-only** (no command) |
 
 `selectCase` / `getActiveCases` are editor commands, not agent tools — they are
@@ -132,7 +126,7 @@ as they keep consuming the same service/core entrypoints (E5). Bypassing
 `AGENT_TOOL_SOURCES` with a second semantic path is a contract break even if
 the tool name stays.
 
-## 6. CheckJson / InferJson schema pointers
+## 6. CheckJson / CaseJson schema pointers
 
 These schemas are owned by **core/service**, not lsp; lsp agent tools surface
 them unchanged. Schema breaks are **major** on 1.x packages.
@@ -140,7 +134,7 @@ them unchanged. Schema breaks are **major** on 1.x packages.
 | Schema | Definition | Serializer | Stability |
 |--------|------------|------------|-----------|
 | **CheckJson v1** | `packages/core/src/algebra/check-report.ts` (`type CheckJson`) | `serializeCheckJson` | fields additive-only; `version: 1` |
-| **InferJson v1** | `packages/service/src/infer-json.ts` (`type InferJson`) | `serializeInferJson` | fields additive-only; `version: 1`; `intension.*` lossless Abs |
+| **CaseJson v1** | `packages/service/src/case-json.ts` (`type CaseJson`) | `serializeCaseJson` | fields additive-only; `version: 1`; `intension.*` lossless Abs |
 
 Consumer docs: [api/agent.md](../website/docs/api/agent.md) ·
 [guides/mcp-server.md](../website/docs/guides/mcp-server.md)
@@ -185,16 +179,16 @@ and the service defaults/scope suites. Live editor latency is **out of scope**
 |---------|-----------|
 | npm `exports` + `bin.nudo-lsp` | **stable** |
 | initialize capability **key set** | **stable** (legend may grow) |
-| executeCommand names (incl. aliases) | **stable** |
+| executeCommand names | **stable** |
 | slash-form `nudo/…` requests + return shapes | **stable** (protocol contract) |
 | agent tool **names** + E5 same-source rule | **stable** |
-| CheckJson / InferJson v1 | **stable** (additive fields only) |
+| CheckJson / CaseJson v1 | **stable** (additive fields only) |
 | Default `analysis.mode=exports` + diagnostics tier | **stable**; flip = major |
 | VS Code bundled server path `server/server.js` | **product-stable** for `nudo-vscode` (private package; follow extension notes, not npm semver) |
 | `src/*` sibling modules (`validation.ts`, `symbols.ts`, …) | **experimental** monorepo test surface — not published |
 | Internal caches / debounce timing / memory bounds | **experimental** — may change without major |
 | Exact human-readable hover/CodeLens string wording | **experimental** — clients must not parse free text as API |
-| CodeLens positional arg order beyond documented cases | **stable** for `selectCase` / `interface` / `interface.draft` / `interfaceEmit` bridges already in tree |
+| CodeLens positional arg order beyond documented cases | **stable** for `selectCase` / `contract` / `contract.draft` / `contract.emit` bridges already in tree |
 
 **1.0 gate (A2):** no automatic bump. Cut major only after this inventory is
 observed for ≥1 lsp minor with no unplanned stable-surface breaks, with a

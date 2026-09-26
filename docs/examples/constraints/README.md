@@ -1,17 +1,17 @@
-# Refinements — 精化契约
+# Contracts — 契约
 
-精化 **只来自声明**，不从 if 猜测。  
+契约 **只来自声明**，不从 if 猜测。  
 约束不是挡板：Pred 进入 Abs，参与代数（`x>0` ⇒ `x+1>1`）。
 
 **唯一形态**：
 
 ```js
-@nudo:refine <param> <constraint>     // 参数精化
-@nudo:refine return <constraint>      // 返回精化
+@nudo:contract <param> <constraint>     // 参数契约
+@nudo:contract return <constraint>      // 返回契约
 ```
 
 - `<constraint>` 必须是 `.nudo.js` 导出的模板  
-- **不在** refine 里写 `x > 0`（绑死参数名）  
+- **不在** `@nudo:contract` 里写 `x > 0`（绑死参数名）  
 - 模板参数无关：`number().gt(0)`、`shape({ id: number().gt(0) })`  
 - **不需要 interface / type**  
 - **不用 JSDoc `@param`/`@return`**（类型注解）  
@@ -21,11 +21,11 @@
 |------|------|
 | [`delay.nudo.js`](./delay.nudo.js) | 标量模板 `number().gt(0)` |
 | [`shapes.nudo.js`](./shapes.nudo.js) | object 形状 `shape({ id, name })` |
-| [`set-delay.js`](./set-delay.js) | 标量：`@nudo:refine ms delay` |
-| [`register.js`](./register.js) | 形状：`@nudo:refine u user` |
-| [`return-contract.js`](./return-contract.js) | 返回：`@nudo:refine return positive` |
+| [`set-delay.js`](./set-delay.js) | 标量：`@nudo:contract ms delay` |
+| [`register.js`](./register.js) | 形状：`@nudo:contract u user` |
+| [`return-contract.js`](./return-contract.js) | 返回：`@nudo:contract return positive` |
 | [`add-pred.js`](./add-pred.js) | Pred 流入代数 |
-| [`declared-vs-if.js`](./declared-vs-if.js) | if ≠ 精化 |
+| [`declared-vs-if.js`](./declared-vs-if.js) | if ≠ 契约 |
 
 ## 标量
 
@@ -37,7 +37,7 @@ export const delay = number().gt(0);
 /// @nudo:import { delay } from "./delay.nudo.js"
 
 /**
- * @nudo:refine ms delay
+ * @nudo:contract ms delay
  */
 function setDelay(ms) { ... }
 
@@ -55,7 +55,7 @@ export const user = shape({
 });
 
 /**
- * @nudo:refine u user
+ * @nudo:contract u user
  */
 function register(u) {
   return `${u.id}:${u.name}`;
@@ -69,22 +69,22 @@ register({ id: 1, name: 2 });      // error: name ⊭ string
 
 可选字段：`string().optional()`
 
-## 返回精化
+## 返回契约
 
 ```js
 /**
- * @nudo:refine x positive
- * @nudo:refine return positive
+ * @nudo:contract x positive
+ * @nudo:contract return positive
  */
 function inc(x) {
   return x + 1;  // (x+1)>1 满足后置
 }
 
 /**
- * @nudo:refine return positive
+ * @nudo:contract return positive
  */
 function bad() {
-  return 0;      // error: 返回值 ⊭ positive
+  return 0;      // error: return value ⊭ positive
 }
 ```
 

@@ -2,13 +2,12 @@
  * 侧车 loader 升级（design-refine-derivation §2.2 Phase 1）：
  * Babel 语句级改写（多行 import / 注释与字符串不误伤）、相对 .nudo 递归、
  * 环检测（NudoSidecarError）、依赖闭包内容指纹缓存、静默吞错翻转
- * （nudo:interface-load / nudo:interface-cycle）、@nudo:interface 别名。
+ * （nudo:interface-load / nudo:interface-cycle）。
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import {
   execNudoModule,
   extractRefinesFromSource,
-  extractRefineReturnFromSource,
   resetNudoModuleExecCache,
   setRefineDiagCollector,
   takeRefineDiags,
@@ -167,7 +166,7 @@ export const top = midPos;
     const src = `
 /// @nudo:import { aName } from "./a.nudo.js"
 /**
- * @nudo:refine x aName
+ * @nudo:contract x aName
  */
 function f(x) { return x; }
 `;
@@ -236,7 +235,7 @@ export const positive = number().gt(0);
     const src = `
 /// @nudo:import { boom } from "./bad.nudo.js"
 /**
- * @nudo:refine x boom
+ * @nudo:contract x boom
  */
 function f(x) { return x; }
 `;
@@ -257,7 +256,7 @@ function f(x) { return x; }
     const src = `
 /// @nudo:import { nope } from "./std.nudo.js"
 /**
- * @nudo:refine x nope
+ * @nudo:contract x nope
  */
 function f(x) { return x; }
 `;
@@ -298,7 +297,7 @@ export const bound = positive;
     const src = `
 /// @nudo:import { bound } from "./parent.nudo.js"
 /**
- * @nudo:refine x bound
+ * @nudo:contract x bound
  */
 function f(x) { return x; }
 `;
@@ -324,7 +323,7 @@ export const bound = positive;
     const src = `
 /// @nudo:import { bound } from "./parent.nudo.js"
 /**
- * @nudo:refine x bound
+ * @nudo:contract x bound
  */
 function f(x) { return x; }
 `;
@@ -332,44 +331,5 @@ function f(x) { return x; }
     const p1 = extractRefinesFromSource(src, "f", opts);
     const p2 = extractRefinesFromSource(src, "f", opts);
     expect(p2[0]!.constraint).toBe(p1[0]!.constraint); // 缓存命中，同一 exports 记录
-  });
-});
-
-describe("@nudo:interface 别名", () => {
-  const std = `export const positive = number().gt(0);`;
-
-  it("参数精化解析出与 @nudo:refine 相同的 RefineEntry", () => {
-    const mk = (directive: string) => `
-/// @nudo:import { positive } from "./std.nudo.js"
-/**
- * ${directive} x positive
- */
-function f(x) { return x; }
-`;
-    const opts = { loadModule: () => std, fromFile: "/t/a.js" };
-    const a = extractRefinesFromSource(mk("@nudo:refine"), "f", opts);
-    const b = extractRefinesFromSource(mk("@nudo:interface"), "f", opts);
-    expect(a.length).toBe(1);
-    expect(b.length).toBe(1);
-    expect(b[0]!.param).toBe(a[0]!.param);
-    expect(predToString(b[0]!.pred)).toBe(predToString(a[0]!.pred));
-    expect(predToString(b[0]!.pred)).toBe("x > 0");
-    expect(b[0]!.constraint).toBe(a[0]!.constraint);
-  });
-
-  it("return 精化同样接受别名", () => {
-    const src = `
-/// @nudo:import { positive } from "./std.nudo.js"
-/**
- * @nudo:interface return positive
- */
-function f(x) { return x; }
-`;
-    const ret = extractRefineReturnFromSource(src, "f", {
-      loadModule: () => std,
-      fromFile: "/t/a.js",
-    });
-    expect(ret?.name).toBe("positive");
-    expect(isNudoConstraint(ret?.constraint)).toBe(true);
   });
 });

@@ -1,5 +1,4 @@
 ---
-sidebar_position: 2
 description: "在普通 JavaScript 上门禁签名与用例——npx nudojs check / test。"
 ---
 
@@ -8,6 +7,8 @@ description: "在普通 JavaScript 上门禁签名与用例——npx nudojs chec
 **读完你能带走：** `nudo check` 的签名、`nudo test` 的用例、一份侧车契约，以及一条可读的 `nudo check` 失败信息。
 
 更想在浏览器里试？打开 [Playground](/playground)。
+
+> **信任边界。** Nudo 通过**执行**目标代码来分析（Abs 语义，进程内求值）。不要对不可信代码运行 `nudo check` / `nudo test`；在 CI 里这与跑项目测试是同一信任级别。
 
 ## 1. 写普通 JavaScript
 
@@ -32,23 +33,34 @@ scale(5);
 
 ```bash
 npx nudojs check calc.js
-npx nudojs test calc.js
 ```
 
 ```text
+nudo check  calc.js
+OK
+  0 error · 0 warning · 0 info · 2 fn
+
 signatures
-  formatName(first: any, last: any) => any
-  scale(x: any) => any
+  scale(x: any) => number | string
+  formatName(first: any, last: any) => number | string
+
+(no issues)
 ```
 
+可选调试用例（`nudo test` —— 不是产品门禁）：
+
 ```text
+=== scale ===
+  call@L10  (5) => 6
+
 === formatName ===
   call@L9  ("Ada", "Lovelace") => "Ada Lovelace"
-=== scale ===
-  call@L12  (5) => 6
+
+assertions
+  — 0 passed · 0 failed · 0 unchecked (no declared @nudo:case expectations; 2 synthetic case(s) printed above)
 ```
 
-Nudo 用实际看到的实参执行了这些函数。无约束入口参数显示为 **`any`**（不是 `unknown`）。没有 `nudo infer` 观察动词 —— 观察 = `check` 签名 + `test` 用例 + IDE hover。
+Nudo 用实际看到的实参执行了这些函数。无约束入口参数显示为 **`any`**（不是 `unknown`）。观察 = `check` 签名 + IDE hover；`nudo test` 是可选的调试用例报告器。
 
 ## 3. 加上显式契约（Day 1）
 
@@ -62,23 +74,37 @@ export const scale = fn({ x: number().gt(0) }, number());
 
 ## 4. 用 check 把关
 
-```bash
-npx nudojs check calc.js
-```
-
-```text
-scale(0)  actual: 1  #exact
-          expected: x > 0
-          nudo:constraint-violated   actual ⊭ expected
-```
-
-加一个错误调用即可复现：
+加一个违反侧车的调用：
 
 ```javascript
 scale(0); // 违反侧车 —— x 必须 > 0
 ```
 
-`if` 守卫**不是** refinement。显式契约只来自侧车 / `@nudo:refine` / `@nudo:interface`。没有它们时，L2 仍门禁导出上的未消化 may-throw（入口参数为 `any`）。
+跑门禁：
+
+```bash
+npx nudojs check calc.js
+```
+
+```text
+nudo check  calc.js
+FAILED
+  1 error · 0 warning · 0 info · 2 fn
+
+signatures
+  scale(x: number) => number
+  formatName(first: any, last: any) => number | string
+
+issues
+  [ERROR L12 scale] scale[x]: argument ⊭ precondition  (nudo:constraint-violated)
+      actual:   0  #exact
+      expected: x > 0
+      → use a value satisfying x > 0, or relax the precondition on x
+```
+
+违例按调用点上报。修正调用（或放宽契约）后 `check` 通过——仍会打印签名。
+
+`if` 守卫**不是** refinement。显式契约只来自侧车 / `@nudo:contract`。没有它们时，L2 仍门禁导出上的未消化 may-throw（入口参数为 `any`）。
 
 ## 选项
 
@@ -95,6 +121,22 @@ scale(0); // 违反侧车 —— x 必须 > 0
   npx nudojs test src/ --watch
   ```
 
+## Export bridge + adoption profile（契约层 → 生态）
+
+check 变绿之后（或迁移进行中），把 Abs 向外投影——编辑器要的 `.d.ts`，边界代码要的 Zod / Standard Schema / 守卫：
+
+```bash
+npx nudojs export calc.js --format all --out dist
+```
+
+schema 管边界数据；Nudo 管内部算出来的事实。完整故事：[Export：通向生态的桥](../guides/export-ecosystem.md)。
+
+遗留 JS 在 L2 下太吵？用命名的迁移门禁档位——L1 契约违例保持 **error**，只有入口 may-throw 降到 warning：
+
+```bash
+npx nudojs check calc.js --profile adoption
+```
+
 ## 调试见证（可选）
 
 `@nudo:case` 用于**场景调试**（`nudo test`、LSP 用例切换）——不是契约产品：
@@ -108,11 +150,14 @@ export function scale(x) {
 }
 ```
 
-case 实参请用具体值。符号化 `T.*` 属遗留语法，现行示例不再使用。
+case 实参请用具体值或约束构建器。
 
 ## 下一步
 
+- [心智模型](./mental-model.md) —— 产品面
+- [错误对照](../guides/error-faces.md)
 - [概念分层](../concepts/layers.md)
 - [nudo check](../guides/check.md)
 - [指令 — refine / interface / 侧车](../concepts/directives.md)
+- [从 TypeScript 迁移](../guides/migrating-from-typescript.md) —— 退役 `tsc`
 - [Playground](/playground)

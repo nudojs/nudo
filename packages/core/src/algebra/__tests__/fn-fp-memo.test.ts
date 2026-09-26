@@ -1,11 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import {
-  canSkipLiteralCallScan,
-  generalizeFromAst,
-  resetGeneralizeMemo,
-  getGeneralizeMemoSize,
-  parseSource,
-} from "../index.ts";
+import { generalizeFromAst, resetGeneralizeMemo, getGeneralizeMemoSize, parseSource } from "../index.ts";
+import { canSkipLiteralCallScan } from "../../internal.ts";
 
 const BASE = `
 function alpha(x) {

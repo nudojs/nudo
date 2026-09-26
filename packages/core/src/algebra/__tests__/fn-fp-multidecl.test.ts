@@ -1,10 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import {
-  generalizeFromAst,
-  resetGeneralizeMemo,
-  parseSource,
-  fnFingerprints,
-} from "../index.ts";
+import { generalizeFromAst, resetGeneralizeMemo, parseSource } from "../index.ts";
+import { fnFingerprints } from "../../internal.ts";
 
 const SRC = `const a = (x) => x, b = (x) => x + 1;
 function gamma(x) { return b(x); }

@@ -1,21 +1,20 @@
 ---
-sidebar_position: 2
-description: Learn how Nudo executes code with symbolic type values — the abstract interpretation model behind its evaluation engine, narrowing, and merging.
+description: "How Nudo computes runtime-adjacent variables in the source — abstract interpretation: executing code on Abs so intermediates carry values, shapes, and constraints."
 ---
 
 # Abstract Interpretation
 
-Abstract interpretation is the theoretical foundation of Nudo. Instead of running code with concrete values (like a test) or analyzing code without running it (like TypeScript), Nudo **executes code with symbolic type values** — and the execution itself produces types.
+Nudo’s goal is to let developers **see variables close to runtime inside the source**. Abstract interpretation is how that is computed: instead of running code with concrete values (like a test) or analyzing code without running it (like TypeScript), Nudo **executes code on Abs** (symbolic `shape × term × pred × conf` values). Execution itself produces what each intermediate will be — a literal, a shape, a constraint — which is what the IDE and `nudo check` display.
 
 ## Three Approaches Compared
 
-| Approach | Input | Output | Completeness |
-|----------|-------|--------|--------------|
-| Unit tests | Concrete values (`1`, `"hello"`) | Concrete result | Only test cases |
-| Nudo | Type values (`number()`, `string()`) | Type values | All values in the type set |
-| TypeScript | AST (no execution) | Types | All syntactic paths |
+| Approach | Input | What a variable shows | Completeness |
+|----------|-------|----------------------|--------------|
+| Unit tests | Concrete values (`1`, `"hello"`) | One concrete result | Only test cases |
+| Nudo | Abs (`number()`, `string()`, literals) | Runtime-adjacent value / shape / constraint | All values in the abstract set |
+| TypeScript | AST (no execution) | Declared type name | All syntactic paths |
 
-When Nudo executes `transform(string())`, the engine propagates `string()` through the function body. At `typeof x === "string"`, the engine knows that branch is taken. At `x.toUpperCase()`, the engine knows the result is `string()`. The result is not a concrete value — it is a **type**.
+When Nudo executes `transform(string())`, the engine propagates `string()` through the function body. At `typeof x === "string"`, the engine knows that branch is taken. At `x.toUpperCase()`, the engine knows the result is `string()`. The variable does not merely get a type name — it carries a **computable Abs**, which is what surfaces as an inlay or signature.
 
 ---
 
@@ -27,7 +26,7 @@ When Nudo executes `transform(string())`, the engine propagates `string()` throu
 │                                                     │
 │  ┌───────────┐   ┌────────────┐   ┌──────────────┐ │
 │  │  Parser   │──▶│ Directive  │──▶│  Evaluator   │ │
-│  │ (Babel)   │   │ Extractor  │   │ (AST Walker) │ │
+│  │ (Babel)   │   │ Extractor  │   │ (B-path/Abs) │ │
 │  └───────────┘   └────────────┘   └──────┬───────┘ │
 │                                          │         │
 │                  ┌───────────────────────┐│         │
@@ -46,7 +45,7 @@ When Nudo executes `transform(string())`, the engine propagates `string()` throu
 |-----------|----------------|
 | **Parser** | Parse JS/TS source into AST (delegates to Babel) |
 | **Directive Extractor** | Extract `@nudo:*` directives from comments |
-| **Evaluator** | B-path transpile+exec (ast-eval fallback): evaluate each node with Abs |
+| **Evaluator** | B-path transpile+exec (single engine): evaluate each node with Abs |
 | **surface / arithmetic / abs-route** | Operator semantics on Abs for arithmetic, comparison, unary, spread |
 | **Environment** | Manage variable scopes and bindings (name → Abs) |
 | **Branch Executor** | Handle conditional branches: fork, narrow, evaluate, merge |
@@ -56,7 +55,7 @@ When Nudo executes `transform(string())`, the engine propagates `string()` throu
 
 ## Evaluation Rules
 
-The evaluator executes the function body with **Abs** values. On the primary B path the source is transpiled and run with Abs operands; the ast-eval fallback walks the AST directly with the same Abs rules. For each AST node type there is a corresponding evaluation rule.
+The evaluator executes the function body with **Abs** values. Source is transpiled and run with Abs operands (single B-path engine). For each AST node type there is a corresponding lowering/evaluation rule.
 
 ### Literals
 
@@ -88,22 +87,23 @@ eval(AssignmentExpression { left: "x", right: expr })
 
 ### Conditional (if-else)
 
-This is where the engine differs fundamentally from a normal interpreter. Instead of choosing one branch, it may **evaluate both branches** with narrowed Abs values:
+This is where the engine differs fundamentally from a normal interpreter. Instead of always choosing one branch, it forks when the test is not decidable — but note: it does **not** narrow abstract values. Both arms run with the **same** bindings:
 
 ```text
 eval(IfStatement { test, consequent, alternate }) →
   condition = eval(test)
 
-  // Case 1: condition is a known literal
+  // Case 1: condition is definitely true/false
   if isDefinitelyTrue(condition)   → eval(consequent)
   if isDefinitelyFalse(condition)  → eval(alternate)
 
-  // Case 2: condition is abstract → fork both branches
-  [envTrue, envFalse] = narrow(env, test)
-  resultTrue  = eval(consequent, envTrue)
-  resultFalse = eval(alternate, envFalse)
+  // Case 2: condition is abstract → run both branches with the same env
+  resultTrue  = eval(consequent, env)
+  resultFalse = eval(alternate, env)
   return joinAbs(resultTrue, resultFalse)
 ```
+
+`isDefinitelyTrue/False` is what makes per-call-site narrowing possible: a concrete argument often makes the test fold to a literal, so only one branch runs for that call. An abstract argument cannot fold the test — both branches run and their results join.
 
 ### Function Declaration
 
@@ -126,25 +126,19 @@ eval(CallExpression { callee: "foo", args })
 
 ## Narrowing Rules
 
-Narrowing refines values based on conditions. The engine supports these patterns:
+Narrowing happens **per call site**: a branch runs when the condition is *definitely* true or false for the **concrete argument of that call**. Each `call@L…` case is evaluated with that call's exact argument, so the matching branch runs and the other is eliminated. With **abstract** arguments (`number()`, `union(...)`) the condition cannot be decided — both branches run with the same value and their results join. There is no intersection/subtraction of abstract types.
 
-| Pattern | True branch | False branch |
-|---------|-------------|--------------|
-| `typeof x === "string"` | `x ∩ string` | `x - string` |
-| `typeof x === "number"` | `x ∩ number` | `x - number` |
-| `x === null` | `x ∩ null` | `x - null` |
-| `x === undefined` | `x ∩ undefined` | `x - undefined` |
-| `x === <literal>` | `x ∩ lit(v)` | `x - lit(v)` |
-| `Array.isArray(x)` | `x ∩ array` | `x - array` |
-| `x` (truthiness) | `x - null - undefined - lit(0) - lit("") - lit(false)` | complement |
-| `x instanceof C` | `x ∩ instance(C)` | `x - instance(C)` |
-| `"key" in x` | union members with `key` property | union members without `key` |
-| `x?.prop` | normal member access (short-circuits to `undefined` for nullish) | — |
-| `a ?? b` | `a` with null/undefined removed | — |
-| `switch(x) { case v: ... }` | `x ∩ lit(v)` per case | remaining after all cases |
-| `x.kind === "a"` (discriminated union) | union members where `kind` matches literal | union members where `kind` differs |
+| Pattern | Concrete call (per call site) | Abstract / symbolic argument |
+|---------|-------------------------------|------------------------------|
+| `typeof x === "string"` | string call takes the branch; `x.length` folds | branches join |
+| `x === null` / `x === <literal>` | matching call forks; the other falls through | branches join |
+| `Array.isArray(x)` | array call forks; `x.length` / `x[0]` resolve | branches join |
+| truthiness (`x`) | literal arguments fork | branches join |
+| discriminated object (`x.kind === "a"`) | the matching shape's branch runs for that call | members are **not** filtered; branches join |
+| `switch(x) { case v: … }` | a concrete discriminant picks its clause | branches join |
+| `in` / `?.` / `??` | partial: see the table below | partial |
 
-Where `∩` is type intersection and `-` is type subtraction.
+Other guards (`instanceof`, custom predicates) fork only when the test folds to a definite boolean for the call's argument — they are not in the verified set above. The verified per-pattern walkthrough with real `nudo test` output: [Control Flow Narrowing](./control-flow-narrowing.md).
 
 ---
 
@@ -184,7 +178,7 @@ Promises are modeled as an effect shape (`eff`):
 
 Nudo treats exceptions as a first-class property of function types. Every function's inferred type includes both `returns` and `throws`:
 
-```javascript
+```javascript verify
 function divide(a, b) {
   if (b === 0) throw new Error("Division by zero");
   return a / b;
@@ -201,3 +195,10 @@ function divide(a, b) {
 Object Abs values use **reference semantics** — assignment copies references, not values. Multiple variables can point to the same object Abs value.
 
 When entering conditional branches, the engine deep-copies modified objects so each branch has its own copy. On merge, overlapping properties become unions. Without branching, mutations are applied in-place with no overhead.
+
+## Next
+
+- [Abs](./abs.md) — the type system this engine computes over
+- [Control Flow Narrowing](./control-flow-narrowing.md) — per-call-site branch elimination
+- [Language semantics](./semantics.md) — what is modeled precisely vs not yet
+- [Mental model](../getting-started/mental-model.md)

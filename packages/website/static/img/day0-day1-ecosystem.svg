@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 400" width="680" height="400" role="img" aria-labelledby="t d">
+  <title id="t">Day 0 → Day 1 → Ecosystem</title>
+  <desc id="d">三条泳道：Day0 check 签名与 L2、Day1 契约 L1、Ecosystem 导出投影；义务递增；any 与 unknown 对照</desc>
+  <style>
+    text { font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+    .title { font-size: 14px; font-weight: 500; fill: #1f2937; }
+    .body { font-size: 13px; font-weight: 400; fill: #1f2937; }
+    .caption { font-size: 11px; font-weight: 400; fill: #6b7280; }
+    .ink { fill: #1f2937; }
+    .muted { fill: #6b7280; }
+    .accent { fill: #5b4bdb; }
+    .blue { fill: #3b82f6; }
+    .lane { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 1; }
+    .lane0 { fill: #eef2ff; stroke: #5b4bdb; stroke-width: 1; }
+    .callout { fill: #eef2ff; stroke: #5b4bdb; stroke-width: 1; }
+    .chip { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1; }
+    .arrow { stroke: #6b7280; stroke-width: 1; fill: none; marker-end: url(#arr); }
+    .arrow-up { stroke: #5b4bdb; stroke-width: 1.25; fill: none; marker-end: url(#arrA); }
+  </style>
+  <defs>
+    <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#6b7280"/>
+    </marker>
+    <marker id="arrA" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#5b4bdb"/>
+    </marker>
+  </defs>
+
+  <!-- header -->
+  <text class="title" x="28" y="28">Day 0 → Day 1 → Ecosystem</text>
+  <text class="caption" x="28" y="48">义务递增 · 产品面固定为 check / contract / export</text>
+
+  <!-- obligation arrow (right side) -->
+  <path class="arrow-up" d="M648 92 L648 320"/>
+  <text class="caption accent" x="640" y="210" text-anchor="end" transform="rotate(-90 640 210)">义务递增 · increasing obligation</text>
+
+  <!-- Day 0 lane -->
+  <rect class="lane0" x="28" y="72" width="592" height="72" rx="8"/>
+  <text class="body accent" x="48" y="98" font-weight="500">Day 0</text>
+  <text class="caption muted" x="48" y="118">只写 JS + 调用点</text>
+  <text class="body ink" x="180" y="98">plain .js + call sites</text>
+  <text class="body muted" x="360" y="98">→</text>
+  <text class="body ink" x="392" y="98">nudo check</text>
+  <text class="caption muted" x="180" y="120">signatures（成功也打印）· L2 entry may-throw</text>
+
+  <!-- Day 1 lane -->
+  <rect class="lane" x="28" y="160" width="592" height="72" rx="8"/>
+  <text class="body ink" x="48" y="186" font-weight="500">Day 1</text>
+  <text class="caption muted" x="48" y="206">+ 侧车契约</text>
+  <text class="body ink" x="180" y="186">*.nudo.js / @nudo:contract</text>
+  <text class="body muted" x="400" y="186">→</text>
+  <text class="body ink" x="432" y="186">nudo check L1</text>
+  <text class="caption muted" x="180" y="208">actual ⊭ expected · Pred 蕴含 · 约束参与代数</text>
+
+  <!-- Ecosystem lane -->
+  <rect class="lane" x="28" y="248" width="592" height="72" rx="8"/>
+  <text class="body ink" x="48" y="274" font-weight="500">Ecosystem</text>
+  <text class="caption muted" x="48" y="294">无需额外交付</text>
+  <text class="body ink" x="180" y="274">nudo export</text>
+  <text class="body muted" x="292" y="274">→</text>
+  <text class="body ink" x="324" y="274">dts / guard / schema</text>
+  <text class="caption muted" x="180" y="296">Abs 的单向有损投影 · 不是第二套类型系统</text>
+
+  <!-- any vs unknown callout -->
+  <rect class="callout" x="28" y="336" width="592" height="48" rx="8"/>
+  <text class="body accent" x="48" y="365" font-weight="500">any vs unknown</text>
+  <text class="caption ink" x="190" y="358">any = 无约束（开发者细化）· unknown = 推导失败（引擎债）</text>
+  <text class="caption muted" x="190" y="374">入口无约束参数显示为 any，绝不显示为 unknown</text>
+</svg>

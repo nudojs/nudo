@@ -9,9 +9,9 @@
 // 全局 fetch，拿 Abs 当 URL 直接 ERR_INVALID_URL 崩溃（exit 1）。这里用块注释
 // 形态（行注释 // @nudo:mock 同样生效，但看起来像被注释掉的代码，易误读）。
 //
-// 坑：注释里也别写「this 加点的访问」——B 路径能力探测按原始源码正则匹配
-// this 访问，注释命中会静默退化到 ast-eval 路径（无 mock 注入 →
-// promise<unknown>）。
+// 坑：@nudo:mock 缺失时 B 路径会真实执行全局 fetch 崩溃（见上）；另顶层
+// this（模块级 this 访问）会让转译抛 unsupported → 静默回落解释路径
+// （能力判定在转译点，非源码正则；注释内容不影响判定）。
 
 /**
  * @nudo:mock fetch = (url) => ({ ok: true, json: () => ({ id: 1, name: "ada" }) })

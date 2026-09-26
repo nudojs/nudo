@@ -1,0 +1,8 @@
+{
+  "retiredAt": "2026-09-23T00:00:00.000Z",
+  "removedDeps": ["devDependencies"],
+  "rewrittenScripts": [
+    { "name": "typecheck", "from": "tsc --noEmit", "to": "nudo check src" }
+  ],
+  "rewrittenWorkflows": []
+}
