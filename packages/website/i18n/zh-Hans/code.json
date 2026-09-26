@@ -86,12 +86,6 @@
   "homepage.proof.aria": {
     "message": "真实包上的实测结果"
   },
-  "homepage.adopt.eyebrow": {
-    "message": "原地采纳"
-  },
-  "homepage.adopt.lead": {
-    "message": "逻辑优先或契约优先；check 只校验，export 再投影产物。"
-  },
   "homepage.adopt.day0.tag": {
     "message": "Day 0"
   },
@@ -139,6 +133,27 @@
   },
   "homepage.trial.detail": {
     "message": "调用点发现如何工作 →"
+  },
+  "homepage.trial.stat1": {
+    "message": "@hapi/hoek 上的精确签名"
+  },
+  "homepage.trial.stat2": {
+    "message": "需要你写的类型标注"
+  },
+  "homepage.trial.stat3": {
+    "message": "契约校验失败被清零"
+  },
+  "homepage.trial.card.before": {
+    "message": "无调用点证据 → any"
+  },
+  "homepage.trial.card.evidence1": {
+    "message": "来自 cart.js 调用点"
+  },
+  "homepage.trial.card.evidence2": {
+    "message": "来自 @hapi/hoek 用法"
+  },
+  "homepage.trial.card.evidence3": {
+    "message": "来自递归 + 循环用法"
   },
   "homepage.cta.title": {
     "message": "准备重回 JS 了吗？"
@@ -476,33 +491,6 @@
     "message": "标签",
     "description": "The title of the tag list page"
   },
-  "homepage.demo.tab.calls": {
-    "message": "calls.js"
-  },
-  "homepage.demo.migrate": {
-    "message": "逻辑优先指南"
-  },
-  "homepage.flow.aria": {
-    "message": "逻辑优先与契约优先汇入以 Abs 为核心的契约；check 校验，export 投影产物"
-  },
-  "homepage.flow.a1": {
-    "message": "逻辑 + 调用"
-  },
-  "homepage.flow.a2": {
-    "message": "draft / 生成"
-  },
-  "homepage.flow.a2c": {
-    "message": "可审阅 · 可选"
-  },
-  "homepage.flow.b1": {
-    "message": "契约"
-  },
-  "homepage.flow.b2": {
-    "message": "辅助 / 约束逻辑"
-  },
-  "homepage.flow.outLabel": {
-    "message": "产物 · 生态（export / 直读 Abs）"
-  },
   "homepage.flow.cardA": {
     "message": "先写逻辑，再生成契约"
   },
@@ -542,32 +530,11 @@
   "homepage.flow.modeB": {
     "message": "契约优先"
   },
-  "homepage.flow.checkRole": {
-    "message": "只校验 · CI"
-  },
-  "homepage.flow.outDts": {
-    "message": "TS 消费方"
-  },
-  "homepage.flow.outZod": {
-    "message": "运行时校验"
-  },
-  "homepage.flow.outJson": {
-    "message": "mock 生成等"
-  },
-  "homepage.flow.outIde": {
-    "message": "IDE / LSP"
-  },
-  "homepage.flow.outAgent": {
-    "message": "Agent / MCP"
-  },
   "homepage.eco.json": {
     "message": "Standard Schema 运行时校验器，可接入下游工具链。"
   },
   "homepage.eco.agent": {
     "message": "编码 agent 经 LSP / MCP 读同一套 Abs —— 见下方 AI Agents 专区。"
-  },
-  "homepage.demo.agents": {
-    "message": "AI Agents"
   },
   "homepage.agent.eyebrow": {
     "message": "AI Agents"
@@ -611,44 +578,11 @@
   "homepage.agent.ctaMcp": {
     "message": "Agent 集成"
   },
-  "homepage.agent.ctaApi": {
-    "message": "LSP agent API"
-  },
   "homepage.agent.ctaAgentsMd": {
     "message": "agents.md"
   },
-  "homepage.agent.ctaLlms": {
-    "message": "llms.txt"
-  },
   "homepage.cta.agents": {
     "message": "Agents"
-  },
-  "homepage.flow.outAgentCap": {
-    "message": "直读同一 Abs"
-  },
-  "homepage.flow.modeACap": {
-    "message": "先写逻辑，再生成契约"
-  },
-  "homepage.flow.modeBCap": {
-    "message": "先写契约，再辅助/约束逻辑"
-  },
-  "homepage.flow.b2c": {
-    "message": "同一契约面"
-  },
-  "homepage.flow.core": {
-    "message": "Abs · 契约"
-  },
-  "homepage.flow.coreAlg": {
-    "message": "shape × term × pred × conf"
-  },
-  "homepage.flow.coreNote": {
-    "message": "唯一真源 · 侧车也是 JS"
-  },
-  "homepage.flow.exportRole": {
-    "message": "从 Abs 投影产物"
-  },
-  "homepage.flow.outIdeCap": {
-    "message": "hover · inlay"
   },
   "homepage.demo.why": {
     "message": "为什么选 Nudo"
