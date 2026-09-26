@@ -1,5 +1,12 @@
 # nudo
 
+## 4.0.0-beta.3
+
+### Patch Changes
+
+- Updated dependencies [247f751]
+  - nudojs@1.0.0-beta.3
+
 ## 4.0.0-beta.2
 
 ### Patch Changes

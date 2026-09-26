@@ -1,5 +1,11 @@
 # nudojs
 
+## 1.0.0-beta.3
+
+### Patch Changes
+
+- 247f751: docs(website): product narrative — runtime-adjacent variables, Observation/Contracts layers, cost face (tokens / rounds / edit latency), top-level glossary (Abs origin, B-path, fail-closed, conf grades), TypeScript comparison without permanent dual-gate framing.
+
 ## 1.0.0-beta.2
 
 ### Patch Changes
