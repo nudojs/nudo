@@ -13,8 +13,6 @@ import {
   sourceHints,
   contractCode,
   contractHints,
-  callsCode,
-  callsHints,
   checkOutput,
   checkHints,
   dtsOutput,
@@ -289,7 +287,7 @@ function HeroSection() {
               <TabGroup
                 ariaLabel={translate({
                   id: "homepage.demo.sourceTabsAria",
-                  message: "Source, sidecar, and call sites",
+                  message: "Source and sidecar contract",
                 })}
                 tabs={[
                   {
@@ -316,18 +314,6 @@ function HeroSection() {
                       />
                     ),
                   },
-                  {
-                    id: "calls",
-                    label: <Translate id="homepage.demo.tab.calls">calls.js</Translate>,
-                    content: (
-                      <NudoCode
-                        code={callsCode}
-                        language="javascript"
-                        hints={callsHints}
-                        dense
-                      />
-                    ),
-                  },
                 ]}
               />
             </div>
@@ -346,17 +332,17 @@ function HeroSection() {
                     ),
                   },
                   {
-                    id: "dts",
-                    label: "export · dts",
-                    content: (
-                      <NudoCode code={dtsOutput} language="typescript" hints={dtsHints} dense />
-                    ),
-                  },
-                  {
                     id: "zod",
                     label: "export · zod",
                     content: (
                       <NudoCode code={zodOutput} language="typescript" hints={zodHints} dense />
+                    ),
+                  },
+                  {
+                    id: "dts",
+                    label: "export · dts",
+                    content: (
+                      <NudoCode code={dtsOutput} language="typescript" hints={dtsHints} dense />
                     ),
                   },
                 ]}
@@ -366,8 +352,8 @@ function HeroSection() {
         </div>
         <p className="hero-hint">
           <Translate id="homepage.hero.hoverHint">
-            Hover a line — body inlays are algebraic Abs from the sidecar; call-site facts live
-            in calls.js.
+            Hover a line — body inlays are algebraic Abs from the sidecar; call sites in the same
+            file are evidence and the L1 gate.
           </Translate>
         </p>
       </div>
@@ -401,176 +387,25 @@ function ProofStrip() {
   );
 }
 
-function FlowDiagram() {
+function ProductPath() {
   return (
-    <div className="flow-panel">
-      <svg
-        className="flow-svg"
-        viewBox="0 0 920 480"
-        role="img"
-        aria-label={translate({
-          id: "homepage.flow.aria",
-          message:
-            "Logic-first and contracts-first meet on an Abs-centered contract face; check validates, export projects artifacts",
-        })}
-      >
-        <defs>
-          <marker
-            id="flow-arrow"
-            viewBox="0 0 10 10"
-            refX="8"
-            refY="5"
-            markerWidth="6"
-            markerHeight="6"
-            orient="auto-start-reverse"
-          >
-            <path d="M0 0 L10 5 L0 10 z" className="flow-marker" />
-          </marker>
-        </defs>
-
-        <text x="36" y="34" className="flow-label flow-label-a">
-          <Translate id="homepage.flow.modeA">Logic first</Translate>
-        </text>
-        <text x="36" y="52" className="flow-node-c" textAnchor="start">
-          <Translate id="homepage.flow.modeACap">Write logic, then generate contracts</Translate>
-        </text>
-        <g className="flow-node">
-          <rect x="36" y="68" width="140" height="48" rx="8" />
-          <text x="106" y="97" className="flow-node-t">
-            <Translate id="homepage.flow.a1">Logic + calls</Translate>
-          </text>
-        </g>
-        <path d="M176 92 H214" className="flow-edge" fill="none" markerEnd="url(#flow-arrow)" />
-        <g className="flow-node flow-node-accent">
-          <rect x="218" y="68" width="150" height="48" rx="8" />
-          <text x="293" y="88" className="flow-node-t">
-            <Translate id="homepage.flow.a2">draft / generate</Translate>
-          </text>
-          <text x="293" y="104" className="flow-node-c">
-            <Translate id="homepage.flow.a2c">reviewable · optional</Translate>
-          </text>
-        </g>
-        <path d="M368 92 H410" className="flow-edge" fill="none" markerEnd="url(#flow-arrow)" />
-
-        <text x="36" y="170" className="flow-label flow-label-b">
-          <Translate id="homepage.flow.modeB">Contracts first</Translate>
-        </text>
-        <text x="36" y="188" className="flow-node-c" textAnchor="start">
-          <Translate id="homepage.flow.modeBCap">
-            Write contracts, then guide/constrain logic
-          </Translate>
-        </text>
-        <g className="flow-node flow-node-signal">
-          <rect x="36" y="204" width="140" height="48" rx="8" />
-          <text x="106" y="225" className="flow-node-t">
-            <Translate id="homepage.flow.b1">Contract</Translate>
-          </text>
-          <text x="106" y="241" className="flow-node-c">*.nudo.js / refine</text>
-        </g>
-        <path d="M176 228 H214" className="flow-edge" fill="none" markerEnd="url(#flow-arrow)" />
-        <g className="flow-node">
-          <rect x="218" y="204" width="150" height="48" rx="8" />
-          <text x="293" y="225" className="flow-node-t">
-            <Translate id="homepage.flow.b2">Guide / constrain logic</Translate>
-          </text>
-          <text x="293" y="241" className="flow-node-c">
-            <Translate id="homepage.flow.b2c">same contract face</Translate>
-          </text>
-        </g>
-        <path d="M368 228 H410" className="flow-edge" fill="none" markerEnd="url(#flow-arrow)" />
-
-        <g className="flow-node flow-node-abs">
-          <rect x="420" y="118" width="200" height="120" rx="12" />
-          <text x="520" y="160" className="flow-node-t flow-node-lg">
-            <Translate id="homepage.flow.core">Abs · contract</Translate>
-          </text>
-          <text x="520" y="186" className="flow-node-c">
-            <Translate id="homepage.flow.coreAlg">shape × term × pred × conf</Translate>
-          </text>
-          <text x="520" y="208" className="flow-node-c">
-            <Translate id="homepage.flow.coreNote">source of truth · sidecar is JS too</Translate>
-          </text>
-        </g>
-        <path d="M410 92 H420" className="flow-edge" fill="none" markerEnd="url(#flow-arrow)" />
-        <path d="M410 228 H420" className="flow-edge" fill="none" markerEnd="url(#flow-arrow)" />
-
-        <path d="M620 150 H680" className="flow-edge" fill="none" markerEnd="url(#flow-arrow)" />
-        <g className="flow-node flow-node-gate">
-          <rect x="684" y="112" width="196" height="56" rx="8" />
-          <text x="782" y="136" className="flow-node-t">nudo check</text>
-          <text x="782" y="156" className="flow-node-c">
-            <Translate id="homepage.flow.checkRole">validate only · CI</Translate>
-          </text>
-        </g>
-        <path d="M620 206 H680" className="flow-edge" fill="none" markerEnd="url(#flow-arrow)" />
-        <g className="flow-node">
-          <rect x="684" y="186" width="196" height="56" rx="8" />
-          <text x="782" y="210" className="flow-node-t">nudo export</text>
-          <text x="782" y="230" className="flow-node-c">
-            <Translate id="homepage.flow.exportRole">project artifacts from Abs</Translate>
-          </text>
-        </g>
-
-        <text x="36" y="310" className="flow-label">
-          <Translate id="homepage.flow.outLabel">
-            Artifacts · ecosystem (export / read Abs)
-          </Translate>
-        </text>
-        <g className="flow-node flow-node-product">
-          <rect x="36" y="326" width="150" height="64" rx="8" />
-          <text x="111" y="354" className="flow-node-t">.d.ts</text>
-          <text x="111" y="374" className="flow-node-c">
-            <Translate id="homepage.flow.outDts">TS consumers</Translate>
-          </text>
-        </g>
-        <g className="flow-node flow-node-product">
-          <rect x="206" y="326" width="150" height="64" rx="8" />
-          <text x="281" y="354" className="flow-node-t">Zod / guards</text>
-          <text x="281" y="374" className="flow-node-c">
-            <Translate id="homepage.flow.outZod">runtime checks</Translate>
-          </text>
-        </g>
-        <g className="flow-node flow-node-product">
-          <rect x="376" y="326" width="160" height="64" rx="8" />
-          <text x="456" y="354" className="flow-node-t">Standard Schema</text>
-          <text x="456" y="374" className="flow-node-c">
-            <Translate id="homepage.flow.outJson">mocks · tooling</Translate>
-          </text>
-        </g>
-        <g className="flow-node flow-node-product">
-          <rect x="556" y="326" width="150" height="64" rx="8" />
-          <text x="631" y="354" className="flow-node-t">
-            <Translate id="homepage.flow.outIde">IDE / LSP</Translate>
-          </text>
-          <text x="631" y="374" className="flow-node-c">
-            <Translate id="homepage.flow.outIdeCap">hover · inlay</Translate>
-          </text>
-        </g>
-        <g className="flow-node flow-node-product">
-          <rect x="726" y="326" width="154" height="64" rx="8" />
-          <text x="803" y="354" className="flow-node-t">
-            <Translate id="homepage.flow.outAgent">Agent / MCP</Translate>
-          </text>
-          <text x="803" y="374" className="flow-node-c">
-            <Translate id="homepage.flow.outAgentCap">
-              LSP / MCP · same Abs
-            </Translate>
-          </text>
-        </g>
-
-        {/* spine: export → product rail */}
-        <path d="M782 242 V292" className="flow-edge flow-edge-dim" fill="none" markerEnd="url(#flow-arrow)" />
-        <path d="M111 292 H782" className="flow-edge flow-edge-dim" fill="none" />
-        <path d="M111 292 V326" className="flow-edge flow-edge-dim" fill="none" markerEnd="url(#flow-arrow)" />
-        <path d="M281 292 V326" className="flow-edge flow-edge-dim" fill="none" markerEnd="url(#flow-arrow)" />
-        <path d="M456 292 V326" className="flow-edge flow-edge-dim" fill="none" markerEnd="url(#flow-arrow)" />
-
-        {/* Abs → IDE / Agent (direct read) */}
-        <path d="M520 238 V300" className="flow-edge flow-edge-dim" fill="none" />
-        <path d="M631 300 V326" className="flow-edge flow-edge-dim" fill="none" markerEnd="url(#flow-arrow)" />
-        <path d="M803 300 V326" className="flow-edge flow-edge-dim" fill="none" markerEnd="url(#flow-arrow)" />
-        <path d="M631 300 H803" className="flow-edge flow-edge-dim" fill="none" />
-      </svg>
+    <div className="product-path" aria-label={translate({
+      id: "homepage.path.aria",
+      message: "Day 0 check, Day 1 contracts, ecosystem export, then retire tsc",
+    })}>
+      <ol className="product-path-list">
+        {adoptSteps.map((step) => (
+          <li key={step.tagId} className="product-path-item">
+            <span className="path-tag">
+              <Translate id={step.tagId}>{step.tagDefault}</Translate>
+            </span>
+            <span className="product-path-title">
+              <Translate id={step.titleId}>{step.titleDefault}</Translate>
+            </span>
+            <code className="path-cmd">{step.cmd}</code>
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }
@@ -579,18 +414,21 @@ function DemoSection() {
   return (
     <section className="demo-section" id="flow">
       <div className="container">
+        <p className="section-eyebrow">
+          <Translate id="homepage.demo.eyebrow">Product path</Translate>
+        </p>
         <h2 className="section-title">
-          <Translate id="homepage.demo.title">Work modes</Translate>
+          <Translate id="homepage.demo.title">Day 0 → Day 1 → leave tsc</Translate>
         </h2>
         <p className="section-lead">
           <Translate id="homepage.demo.lead">
-            Logic first: write logic, then generate contracts. Contracts first: write contracts,
-            then guide or constrain logic. Both meet on the Abs contract face. `check` only
-            validates; `export` projects artifacts from Abs.
+            Day 0: `nudo check` prints signatures and gates entry may-throw. Day 1: sidecar
+            contracts turn call-site facts into L1 obligations. Ecosystem: `export` projects
+            artifacts from Abs. Exit: `migrate retire` — coexistence is not the end state.
           </Translate>
         </p>
 
-        <FlowDiagram />
+        <ProductPath />
 
         <div className="demo-panels demo-panels-2 flow-cards">
           <article className="flow-card">
@@ -655,17 +493,11 @@ function DemoSection() {
           <Link className="button button--primary" to="/docs/why-nudo">
             <Translate id="homepage.demo.why">Why Nudo</Translate>
           </Link>
-          <Link className="button button--secondary" to="/docs/guides/migrating-from-typescript">
-            <Translate id="homepage.demo.fromTs">From TypeScript</Translate>
-          </Link>
-          <Link className="button button--secondary" to="/docs/guides/migrating-js">
-            <Translate id="homepage.demo.migrate">Logic-first guide</Translate>
-          </Link>
           <Link className="button button--secondary" to="/docs/guides/check">
             <Translate id="homepage.demo.checkDocs">nudo check</Translate>
           </Link>
-          <Link className="button button--secondary" to="/docs/reference/agents">
-            <Translate id="homepage.demo.agents">AI agents</Translate>
+          <Link className="button button--secondary" to="/docs/guides/migrating-from-typescript">
+            <Translate id="homepage.demo.fromTs">From TypeScript</Translate>
           </Link>
         </div>
       </div>
@@ -734,43 +566,6 @@ function BeyondSection() {
             }
           </Translate>
         </p>
-      </div>
-    </section>
-  );
-}
-
-function AdoptStrip() {
-  return (
-    <section className="adopt-section">
-      <div className="container">
-        <div className="adopt-bar">
-          <div className="adopt-head">
-            <p className="section-eyebrow adopt-eyebrow">
-              <Translate id="homepage.adopt.eyebrow">Adopt in place</Translate>
-            </p>
-            <p className="adopt-lead">
-              <Translate id="homepage.adopt.lead">
-                Draft from logic, or handwrite contracts first — then one check gate. Project
-                artifacts into the ecosystem when you need them.
-              </Translate>
-            </p>
-          </div>
-          <ol className="adopt-list">
-            {adoptSteps.map((step) => (
-              <li key={step.tagId} className="adopt-item">
-                <div className="adopt-item-top">
-                  <span className="path-tag">
-                    <Translate id={step.tagId}>{step.tagDefault}</Translate>
-                  </span>
-                  <span className="adopt-item-title">
-                    <Translate id={step.titleId}>{step.titleDefault}</Translate>
-                  </span>
-                </div>
-                <code className="path-cmd">{step.cmd}</code>
-              </li>
-            ))}
-          </ol>
-        </div>
       </div>
     </section>
   );
@@ -888,12 +683,6 @@ function AgentSection() {
           <Link className="button button--primary" to="/docs/reference/agents">
             <Translate id="homepage.agent.ctaDocs">Agent docs</Translate>
           </Link>
-          <Link className="button button--secondary" to="/docs/guides/agent-integration">
-            <Translate id="homepage.agent.ctaMcp">Agent integration</Translate>
-          </Link>
-          <Link className="button button--secondary" to="/docs/api/agent">
-            <Translate id="homepage.agent.ctaApi">LSP agent API</Translate>
-          </Link>
           <a
             className="button button--secondary"
             href="https://nudojs.github.io/nudo/agents.md"
@@ -902,14 +691,9 @@ function AgentSection() {
           >
             <Translate id="homepage.agent.ctaAgentsMd">agents.md</Translate>
           </a>
-          <a
-            className="button button--secondary"
-            href="https://nudojs.github.io/nudo/llms.txt"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Translate id="homepage.agent.ctaLlms">llms.txt</Translate>
-          </a>
+          <Link className="button button--secondary" to="/docs/guides/agent-integration">
+            <Translate id="homepage.agent.ctaMcp">Agent integration</Translate>
+          </Link>
         </div>
       </div>
     </section>
@@ -936,16 +720,16 @@ function PersonaSection() {
           {pathCards.map((p) => (
             <Link key={p.to} className="path-card" to={p.to}>
               <span className="path-eyebrow">
-                <Translate id={p.eyebrow}>Role</Translate>
+                <Translate id={p.eyebrowId}>{p.eyebrowDefault}</Translate>
               </span>
               <h3>
-                <Translate id={p.title}>Path</Translate>
+                <Translate id={p.titleId}>{p.titleDefault}</Translate>
               </h3>
               <p>
-                <Translate id={p.desc}>Path description.</Translate>
+                <Translate id={p.descId}>{p.descDefault}</Translate>
               </p>
               <span className="path-cta">
-                <Translate id={p.cta}>Start</Translate>
+                <Translate id={p.ctaId}>{p.ctaDefault}</Translate>
                 <span aria-hidden="true"> →</span>
               </span>
             </Link>
@@ -1004,11 +788,10 @@ export default function Home(): JSX.Element {
       <HeroSection />
       <main>
         <ProofStrip />
-        <PersonaSection />
-        <DemoSection />
-        <AdoptStrip />
         <BeyondSection />
         <TrialSection />
+        <DemoSection />
+        <PersonaSection />
         <AgentSection />
         <CtaSection />
       </main>

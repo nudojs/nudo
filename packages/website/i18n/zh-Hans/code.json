@@ -30,13 +30,13 @@
     "message": "Nudo 观测带侧车契约的 pricing.js"
   },
   "homepage.hero.hoverHint": {
-    "message": "悬停任意一行——函数体 inlay 是侧车代数 Abs；调用点事实在 calls.js。"
+    "message": "悬停任意一行——函数体 inlay 是侧车代数 Abs；同文件调用点既是证据，也是 L1 门禁。"
   },
   "homepage.hero.outTabsAria": {
     "message": "CLI 投影输出切换"
   },
   "homepage.demo.sourceTabsAria": {
-    "message": "源码、侧车与调用点切换"
+    "message": "源码与侧车契约切换"
   },
   "homepage.demo.tab.source": {
     "message": "pricing.js"
@@ -45,13 +45,19 @@
     "message": "pricing.nudo.js"
   },
   "homepage.demo.lead": {
-    "message": "逻辑优先：先写逻辑，再生成契约。契约优先：先写契约，再辅助/约束逻辑。两条路都汇到以 Abs 为核心的契约面。check 只校验；export 从 Abs 投影产物。"
+    "message": "Day 0：nudo check 打印签名并门禁入口可能抛错。Day 1：侧车契约把调用点事实变成 L1 义务。生态：export 从 Abs 投影产物。出口：migrate retire —— 共存不是终态。"
   },
   "homepage.title": {
     "message": "首页"
   },
   "homepage.demo.title": {
-    "message": "工作模式"
+    "message": "Day 0 → Day 1 → 离开 tsc"
+  },
+  "homepage.demo.eyebrow": {
+    "message": "产品路径"
+  },
+  "homepage.path.aria": {
+    "message": "Day 0 check，Day 1 契约，生态 export，然后 retire tsc"
   },
   "homepage.beyond.eyebrow": {
     "message": "超越声明式类型"
@@ -85,6 +91,30 @@
   },
   "homepage.adopt.lead": {
     "message": "逻辑优先或契约优先；check 只校验，export 再投影产物。"
+  },
+  "homepage.adopt.day0.tag": {
+    "message": "Day 0"
+  },
+  "homepage.adopt.day0.title": {
+    "message": "观察 + 门禁"
+  },
+  "homepage.adopt.day1.tag": {
+    "message": "Day 1"
+  },
+  "homepage.adopt.day1.title": {
+    "message": "加上契约"
+  },
+  "homepage.adopt.eco.tag": {
+    "message": "生态"
+  },
+  "homepage.adopt.eco.title": {
+    "message": "投影产物"
+  },
+  "homepage.adopt.exit.tag": {
+    "message": "出口"
+  },
+  "homepage.adopt.exit.title": {
+    "message": "退役 tsc"
   },
   "homepage.trial.eyebrow": {
     "message": "真实代码上的效果"
@@ -634,6 +664,69 @@
   },
   "homepage.paths.lead": {
     "message": "文档按读者身份组织。选择与你情况匹配的路径——每张卡都落在可直接运行的第一步上。"
+  },
+  "homepage.paths.card1.eyebrow": {
+    "message": "JS 工程师"
+  },
+  "homepage.paths.card1.title": {
+    "message": "在真实 JS 上做类型 / CI 门禁"
+  },
+  "homepage.paths.card1.desc": {
+    "message": "先建立心智模型，再在自有文件上跑 check——门禁绿灯时也会打印签名。"
+  },
+  "homepage.paths.card1.cta": {
+    "message": "快速开始"
+  },
+  "homepage.paths.card2.eyebrow": {
+    "message": "TypeScript 用户"
+  },
+  "homepage.paths.card2.title": {
+    "message": "看清差异，然后离开 tsc"
+  },
+  "homepage.paths.card2.desc": {
+    "message": "诚实对比、迁移路径，以及单向 retire 门——共存不是终态。"
+  },
+  "homepage.paths.card2.cta": {
+    "message": "Nudo vs TypeScript"
+  },
+  "homepage.paths.card3.eyebrow": {
+    "message": "既有 JS 包"
+  },
+  "homepage.paths.card3.title": {
+    "message": "从真实用法生成契约"
+  },
+  "homepage.paths.card3.desc": {
+    "message": "把 Nudo 指向测试与调用点。从证据草拟契约，只接受你真正想要的义务。"
+  },
+  "homepage.paths.card3.cta": {
+    "message": "逻辑优先指南"
+  },
+  "homepage.paths.card4.eyebrow": {
+    "message": "CI / 平台"
+  },
+  "homepage.paths.card4.title": {
+    "message": "稳定门禁与诊断"
+  },
+  "homepage.paths.card4.desc": {
+    "message": "CI 里的 nudo check 配方、机器可读报告，以及诊断码表。"
+  },
+  "homepage.paths.card4.cta": {
+    "message": "Recipes"
+  },
+  "homepage.paths.card5.eyebrow": {
+    "message": "AI 编码 Agent"
+  },
+  "homepage.paths.card5.title": {
+    "message": "经 LSP / MCP 读同一套 Abs"
+  },
+  "homepage.paths.card5.desc": {
+    "message": "Agent 跑 nudo check、尊重侧车契约、解析稳定诊断码。"
+  },
+  "homepage.paths.card5.cta": {
+    "message": "Agent 文档"
+  },
+  "homepage.trial.stat4": {
+    "message": "文件编辑后中位重分析"
   },
   "theme.CodeBlock.runInPlayground": {
     "message": "在 Playground 中运行"

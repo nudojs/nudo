@@ -27,9 +27,16 @@ export function applyCoupon(order, code) {
   return {
     ...order,
     total: order.subtotal * (1 - rate),
-    coupon: rate > 0 ? code : null,
+    coupon: rate > 0 ? code : "NONE",
   };
-}`;
+}
+
+// call sites are evidence
+lineTotal(12, 3);
+applyCoupon({ subtotal: 100, items: 3 }, "VIP10");
+
+// L1 gate: price > 0 from pricing.nudo.js
+lineTotal(0, 2);`;
 
 /* Algebraic inlays — no case, no concrete "when" */
 export const sourceHints: LineHint[] = [
@@ -65,9 +72,27 @@ export const sourceHints: LineHint[] = [
   },
   {
     line: 13,
-    inlay: "coupon: string | null",
+    inlay: "coupon: string",
     detail:
-      "field  coupon\n  term  rate>0 ? code : null\n  pred  string ∨ null\n  conf  path",
+      "field  coupon\n  term  rate>0 ? code : \"NONE\"\n  pred  string\n  conf  path",
+  },
+  {
+    line: 18,
+    inlay: "=> 36  #exact",
+    detail:
+      "call   lineTotal(12, 3)\nresult 36  #exact\n\nConcrete values live at the call site.",
+  },
+  {
+    line: 19,
+    inlay: "total 90 · coupon \"VIP10\"",
+    detail:
+      "call   applyCoupon({subtotal:100, items:3}, \"VIP10\")\nrate   0.1\ntotal  90\ncoupon \"VIP10\"  #exact",
+  },
+  {
+    line: 21,
+    inlay: "⊭ price > 0",
+    detail:
+      "call     lineTotal(0, 2)\nactual   0  #exact\nexpected price > 0   // sidecar\ngate     nudo:constraint-violated",
   },
 ];
 
@@ -209,43 +234,58 @@ export const callsHints: LineHint[] = [
   },
 ];
 
-export const checkOutput = `$ npx nudojs check pricing.js --from calls.js
+export const checkOutput = `$ npx nudojs check pricing.js
 signatures
-  applyCoupon(order: any, code: any) => any
-  lineTotal(price: any, qty: any) => any
+  lineTotal(price: number, qty: number) => number
+  applyCoupon(order: { subtotal: number, items: number }, code: string)
+    => { subtotal: number, items: number, total: number, coupon: string }
 issues
-  [error] lineTotal: actual ⊭ expected  (nudo:constraint-violated)
-    call:     lineTotal(0, 2)   // calls.js
-    actual:   0  #exact
-    expected: price > 0         // pricing.nudo.js`;
+  [ERROR L21 lineTotal] lineTotal[price]: argument ⊭ precondition  (nudo:constraint-violated)
+      actual:   0  #exact
+      expected: price > 0
+      → use a value satisfying price > 0, or relax the precondition on price
+      fix:  nudo contract --draft  (emit a sidecar draft you can edit)`;
 
 export const checkHints: LineHint[] = [
   {
     line: 3,
-    inlay: "entry any",
+    inlay: "from sidecar + body",
     detail:
-      "signatures stay any on entry params\nuntil evidence/refinements say otherwise.\nunknown = inference failed — not this.",
+      "signatures reflect Abs after contracts:\nprice: number · price > 0 (sidecar)\nqty:   number · qty ≥ 1\n// unconstrained entry params print as any\n// unknown = inference failed — not this",
   },
   {
     line: 6,
     inlay: "L1 gate",
     detail:
-      "call-site from calls.js ⊭ sidecar pred\nactual ⊭ expected on Abs\nCI: nudo check exits 1",
+      "call site lineTotal(0, 2) ⊭ sidecar pred\nactual ⊭ expected on Abs\nCI: nudo check exits 1",
   },
   {
-    line: 9,
+    line: 8,
     inlay: "price > 0",
-    detail: "expected pred from pricing.nudo.js\nalgebraic — not a declared TS type",
+    detail:
+      "expected pred from pricing.nudo.js\nalgebraic — not a declared TS type\ncontracts are JS modules — no second language",
   },
 ];
 
 export const dtsOutput = `$ npx nudojs export pricing.js --format dts
-// === applyCoupon TypeScript Declarations ===
 /**
- * @param order  - { subtotal: number; items: number }
- * @param code   - string
+ * Case: call@L17 (12, 3) => 36
+ * Case: call@L21 (0, 2) => 0
+ * @param price - number
+ * @param qty   - number
+ * @returns number
+ */
+export declare function lineTotal(
+  price: number,
+  qty: number
+): number;
+
+/**
+ * Case: call@L18 (…) => { …, coupon: "VIP10" }
+ * @param order - { subtotal: number; items: number }
+ * @param code  - string
  * @returns { subtotal: number; items: number;
- *            total: number; coupon: string | null }
+ *            total: number; coupon: string }
  */
 export declare function applyCoupon(
   order: { subtotal: number; items: number },
@@ -254,37 +294,27 @@ export declare function applyCoupon(
   subtotal: number;
   items: number;
   total: number;
-  coupon: string | null;
-};
-
-// === lineTotal TypeScript Declarations ===
-/**
- * @param price - number
- * @param qty   - number
- * @returns number   // sidecar: number().gt(0)
- */
-export declare function lineTotal(
-  price: number,
-  qty: number
-): number;`;
+  coupon: string;
+};`;
 
 export const dtsHints: LineHint[] = [
   {
-    line: 8,
-    inlay: "abs → .d.ts",
+    line: 3,
+    inlay: "call@ evidence",
     detail:
-      "one-way projection of Abs\nparams widened · return keeps structure\nCI gate remains nudo check",
+      "Case rows are extensional notes\nfrom observed call sites\n(not the contract product)",
   },
   {
-    line: 21,
+    line: 13,
     inlay: "abs → .d.ts",
     detail:
-      "export declare function lineTotal…\nTS surface is number; Abs/sidecar keep pred > 0\n(check / zod carry the bound)",
+      "one-way lossy projection of Abs\nCI gate remains nudo check\nZod / guards carry numeric bounds",
   },
 ];
 
 /* CLI export --format schema writes a ready-to-import zod JS module. */
 export const zodOutput = `// nudo export pricing.js --format schema --dialect zod
+// One-way lossy projection of Abs; nudo check remains the gate.
 
 import { z } from "zod";
 
@@ -305,24 +335,24 @@ export const applyCouponOutput = z.object({
   subtotal: z.number(),
   items: z.number(),
   total: z.number().gte(0),
-  coupon: z.string().nullable(),
+  coupon: z.string(),
 });`;
 
 export const zodHints: LineHint[] = [
   {
-    line: 7,
+    line: 8,
     inlay: "pred → z.number().gt(0)",
     detail:
       "sidecar number().gt(0)\nprojects to zod bound\n(absToSchemaSource)",
   },
   {
-    line: 10,
+    line: 11,
     inlay: "return → z.number().gt(0)",
     detail:
       "return contract number().gt(0)\n→ z.number().gt(0)\n// matches algebra on entry preds",
   },
   {
-    line: 22,
+    line: 23,
     inlay: "total ≥ 0 → gte(0)",
     detail:
       "sidecar total: number().ge(0)\n→ z.number().gte(0)",
@@ -379,27 +409,35 @@ export type AdoptStep = {
   cmd: string;
 };
 
+/** Product path — Day0 → Day1 → ecosystem → leave tsc. */
 export const adoptSteps: AdoptStep[] = [
   {
     tagId: "homepage.adopt.day0.tag",
-    tagDefault: "Logic first",
+    tagDefault: "Day 0",
     titleId: "homepage.adopt.day0.title",
-    titleDefault: "Draft contracts",
-    cmd: "npx nudojs contract --draft lib.js --from test/",
+    titleDefault: "Observe + gate",
+    cmd: "npx nudojs check src/",
   },
   {
     tagId: "homepage.adopt.day1.tag",
-    tagDefault: "Contracts first",
+    tagDefault: "Day 1",
     titleId: "homepage.adopt.day1.title",
-    titleDefault: "Handwrite refine",
-    cmd: "lib.nudo.js  ·  @nudo:contract",
+    titleDefault: "Add contracts",
+    cmd: "lib.nudo.js  ·  @nudo:contract  ·  nudo check",
   },
   {
     tagId: "homepage.adopt.eco.tag",
-    tagDefault: "Same validate",
+    tagDefault: "Ecosystem",
     titleId: "homepage.adopt.eco.title",
-    titleDefault: "check → export",
-    cmd: "npx nudojs check src/  ·  export dts|zod|schema",
+    titleDefault: "Project artifacts",
+    cmd: "npx nudojs export src/ --format dts|schema",
+  },
+  {
+    tagId: "homepage.adopt.exit.tag",
+    tagDefault: "Exit",
+    titleId: "homepage.adopt.exit.title",
+    titleDefault: "Retire tsc",
+    cmd: "npx nudojs migrate status|strip|verify|retire",
   },
 ];
 
@@ -420,6 +458,11 @@ export const trialStats: TrialStat[] = [
     value: "291 → 0",
     labelId: "homepage.trial.stat3",
     labelDefault: "contract check failures cleared",
+  },
+  {
+    value: "0.2 ms",
+    labelId: "homepage.trial.stat4",
+    labelDefault: "median file-edit re-analyze",
   },
 ];
 
@@ -547,48 +590,77 @@ Do not invent body-AST obligations. @nudo:case is debug-only.
 Entry params print as any; unknown = inference failed.`;
 
 export type PathCard = {
-  eyebrow: string;
-  title: string;
-  desc: string;
+  eyebrowId: string;
+  eyebrowDefault: string;
+  titleId: string;
+  titleDefault: string;
+  descId: string;
+  descDefault: string;
   to: string;
-  cta: string;
+  ctaId: string;
+  ctaDefault: string;
 };
 
 export const pathCards: PathCard[] = [
   {
-    eyebrow: "homepage.paths.card1.eyebrow",
-    title: "homepage.paths.card1.title",
-    desc: "homepage.paths.card1.desc",
+    eyebrowId: "homepage.paths.card1.eyebrow",
+    eyebrowDefault: "JS engineer",
+    titleId: "homepage.paths.card1.title",
+    titleDefault: "Type / CI gate on real JS",
+    descId: "homepage.paths.card1.desc",
+    descDefault:
+      "Mental model, then a runnable check on your own files — signatures even when the gate is green.",
     to: "/docs/getting-started/quick-start",
-    cta: "homepage.paths.card1.cta",
+    ctaId: "homepage.paths.card1.cta",
+    ctaDefault: "Quick Start",
   },
   {
-    eyebrow: "homepage.paths.card2.eyebrow",
-    title: "homepage.paths.card2.title",
-    desc: "homepage.paths.card2.desc",
+    eyebrowId: "homepage.paths.card2.eyebrow",
+    eyebrowDefault: "TypeScript user",
+    titleId: "homepage.paths.card2.title",
+    titleDefault: "See the difference, then leave tsc",
+    descId: "homepage.paths.card2.desc",
+    descDefault:
+      "Honest comparison, migration path, and a one-way retire gate — coexistence is not the end state.",
     to: "/docs/guides/vs-typescript",
-    cta: "homepage.paths.card2.cta",
+    ctaId: "homepage.paths.card2.cta",
+    ctaDefault: "Nudo vs TypeScript",
   },
   {
-    eyebrow: "homepage.paths.card3.eyebrow",
-    title: "homepage.paths.card3.title",
-    desc: "homepage.paths.card3.desc",
+    eyebrowId: "homepage.paths.card3.eyebrow",
+    eyebrowDefault: "Existing JS package",
+    titleId: "homepage.paths.card3.title",
+    titleDefault: "Contracts from real usage",
+    descId: "homepage.paths.card3.desc",
+    descDefault:
+      "Point Nudo at tests and call sites. Draft contracts from evidence; accept only what you mean.",
     to: "/docs/guides/migrating-js",
-    cta: "homepage.paths.card3.cta",
+    ctaId: "homepage.paths.card3.cta",
+    ctaDefault: "Logic-first guide",
   },
   {
-    eyebrow: "homepage.paths.card4.eyebrow",
-    title: "homepage.paths.card4.title",
-    desc: "homepage.paths.card4.desc",
+    eyebrowId: "homepage.paths.card4.eyebrow",
+    eyebrowDefault: "CI / platform",
+    titleId: "homepage.paths.card4.title",
+    titleDefault: "Stable gates and diagnostics",
+    descId: "homepage.paths.card4.desc",
+    descDefault:
+      "Recipes for `nudo check` in CI, machine-readable reports, and the diagnostics glossary.",
     to: "/docs/guides/recipes",
-    cta: "homepage.paths.card4.cta",
+    ctaId: "homepage.paths.card4.cta",
+    ctaDefault: "Recipes",
   },
   {
-    eyebrow: "homepage.paths.card5.eyebrow",
-    title: "homepage.paths.card5.title",
-    desc: "homepage.paths.card5.desc",
+    eyebrowId: "homepage.paths.card5.eyebrow",
+    eyebrowDefault: "AI coding agent",
+    titleId: "homepage.paths.card5.title",
+    titleDefault: "Same Abs face via LSP / MCP",
+    descId: "homepage.paths.card5.desc",
+    descDefault:
+      "Agents run `nudo check`, respect sidecar contracts, and parse stable diagnostic IDs.",
     to: "/docs/reference/agents",
-    cta: "homepage.paths.card5.cta",
+    ctaId: "homepage.paths.card5.cta",
+    ctaDefault: "Agent docs",
   },
 ];
 

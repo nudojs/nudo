@@ -99,7 +99,9 @@
   font-size: clamp(1.75rem, 3vw, 2.35rem);
   font-weight: 800;
   letter-spacing: -0.025em;
-  margin: 0 0 1rem;
+  margin: 0 auto 1rem;
+  max-width: 28ch;
+  text-wrap: balance;
 }
 
 .section-lead {
@@ -1448,81 +1450,63 @@
 }
 
 /* ==========================================================================
-   Adopt strip — compact command band after the demo
+   Product path — Day 0 → Day 1 → ecosystem → leave tsc
    ========================================================================== */
 
-.adopt-section {
-  padding: 0 0 3.5rem;
-  background: var(--ifm-background-surface-color);
-}
-
-[data-theme="dark"] .adopt-section {
-  background: rgba(0, 0, 0, 0.2);
-}
-
-.adopt-bar {
+.product-path {
   max-width: 1100px;
-  margin: 0 auto;
-  border: 1px solid var(--ifm-color-emphasis-200);
-  border-radius: 14px;
-  background: var(--ifm-card-background-color, var(--ifm-background-color));
-  padding: 1.35rem 1.4rem 1.25rem;
-  display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.4fr);
-  gap: 1.25rem 1.75rem;
-  align-items: center;
+  margin: 0 auto 2.25rem;
 }
 
-[data-theme="dark"] .adopt-bar {
-  border-color: var(--ifm-color-emphasis-700);
-  background: var(--nudo-ink-2);
-}
-
-.adopt-head {
-  min-width: 0;
-}
-
-.adopt-eyebrow {
-  text-align: left;
-  margin-bottom: 0.4rem;
-}
-
-.adopt-lead {
-  margin: 0;
-  font-size: 0.98rem;
-  line-height: 1.5;
-  color: var(--ifm-color-emphasis-700);
-}
-
-[data-theme="dark"] .adopt-lead {
-  color: var(--ifm-color-emphasis-500);
-}
-
-.adopt-list {
+.product-path-list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 0.65rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.85rem;
 }
 
-.adopt-item {
-  display: grid;
-  grid-template-columns: minmax(7.5rem, auto) minmax(0, 1fr);
-  gap: 0.65rem 0.85rem;
-  align-items: center;
-}
-
-.adopt-item-top {
+.product-path-item {
+  border: 1px solid var(--ifm-color-emphasis-200);
+  border-radius: 12px;
+  background: var(--ifm-card-background-color, var(--ifm-background-color));
+  padding: 1rem 1rem 0.95rem;
   display: flex;
-  align-items: center;
-  gap: 0.45rem;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.55rem;
   min-width: 0;
 }
 
-.adopt-item-title {
-  font-weight: 600;
-  font-size: 0.92rem;
+[data-theme="dark"] .product-path-item {
+  border-color: var(--ifm-color-emphasis-700);
+  background: var(--nudo-ink-2);
+}
+
+.product-path-title {
+  font-weight: 700;
+  font-size: 0.98rem;
+  letter-spacing: -0.01em;
+}
+
+.product-path-item .path-cmd {
+  margin-top: auto;
+  font-size: 0.72rem;
+  white-space: normal;
+  word-break: break-word;
+}
+
+@media (max-width: 900px) {
+  .product-path-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .product-path-list {
+    grid-template-columns: 1fr;
+  }
 }
 
 .path-tag {
