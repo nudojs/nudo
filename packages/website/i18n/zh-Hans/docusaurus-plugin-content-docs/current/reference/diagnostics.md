@@ -199,6 +199,10 @@ API 未被 env/推理覆盖（如未建模全局）。优先 `@nudo:env` / mock�
 
 分支展开预算（`$fork` 总次数）用尽；受影响结果拓宽。**warning**。可用 `NUDO_MAX_FORKS` 或 `package.json#nudo.analysis.maxForks` 调高（默认 5000）。
 
+### `nudo:host-effect-blocked` {#nudo-host-effect-blocked}
+
+宿主副作用函数（`fetch` / `XMLHttpRequest` / `WebSocket` / `EventSource` / `setTimeout` / `setInterval` / `setImmediate` / `queueMicrotask` / `requestAnimationFrame` / `requestIdleCallback`）在分析期不真实执行——真实执行会以 Abs 实参发起网络 I/O 或排真实定时器。结果拓宽为 `unknown#opaque`。**info**。用 `@nudo:mock` / `@nudo:env` 打桩，或从调用点喂入值。
+
 ### `nudo:no-signature` {#nudo-no-signature}
 
 函数无法泛化（CJS/匿名形态仍经入口 fallback 得到 L2）。

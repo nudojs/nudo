@@ -10,7 +10,7 @@ import { evalGlobalFn } from "../builtins.ts";
 import { $call } from "./call.ts";
 import { callAtFunctionBoundary, $copy } from "./runtime.ts";
 import { pureFnNameOf } from "../abs-fn.ts";
-import { noteAbsTruncation, callBudgetKey, resetBForkBudget } from "../call-budget.ts";
+import { noteAbsTruncation, callBudgetKey, resetBForkBudget, noteHostEffectBlocked } from "../call-budget.ts";
 import {
   tagAbsOrigin,
   pushCallLoc,
@@ -101,6 +101,36 @@ const GLOBAL_FNS = new Set([
   "eval",
   "Symbol",
 ]);
+
+/**
+ * 分析期禁止真实执行的宿主全局（网络 / 定时器 / 调度）：
+ * 直接执行会把 Abs 实参喂给原生实现——真实网络 I/O、真实定时器。
+ * `fetch(unknownAbs)` 会以 `[object Object]` 发起真请求：同步侧
+ * ERR_INVALID_URL / 未处理 rejection 直接崩掉分析进程（nudo check 非零退出）。
+ * 命中即 fail-closed（unknown + 截断上报），不执行。
+ */
+const NEVER_EXEC_HOST_FN_NAMES = [
+  "fetch",
+  "XMLHttpRequest",
+  "WebSocket",
+  "EventSource",
+  "setTimeout",
+  "setInterval",
+  "setImmediate",
+  "queueMicrotask",
+  "requestAnimationFrame",
+  "requestIdleCallback",
+] as const;
+
+/** 身份校验（含 `const f = fetch` 别名）：命中返回宿主名，否则 null */
+function neverExecHostName(fn: unknown): string | null {
+  if (typeof fn !== "function") return null;
+  const g = globalThis as Record<string, unknown>;
+  for (const n of NEVER_EXEC_HOST_FN_NAMES) {
+    if (fn === g[n]) return n;
+  }
+  return null;
+}
 
 /** 返回先前 collector，便于嵌套调用 save/restore（禁止 finally 置 null 砸外层） */
 /** 成员/方法调用点打点（$invoke 等；无收集器时 no-op）。不进 $callNamed 预算。 */
@@ -237,8 +267,13 @@ export function $callNamed(
       const g = GLOBAL_FNS.has(name) && fn === (globalThis as Record<string, unknown>)[name]
         ? evalGlobalFn(name, args)
         : undefined;
+      const blockedHost = g === undefined ? neverExecHostName(fn) : null;
       if (g !== undefined) {
         result = g;
+      } else if (blockedHost !== null) {
+        // 宿主副作用（网络/定时器）不得真实执行：fail-closed + 专用上报
+        noteHostEffectBlocked(blockedHost);
+        result = bTruncatedAbs();
       } else {
         const entered = bEnterCall(name, fn, args);
         if (!entered.ok) {

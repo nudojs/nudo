@@ -14,10 +14,10 @@ export {
   maybeLeak, resetLeakCounter, termDepth, termNodes
 } from "./algebra/leak.ts";
 export {
-  type AbsBudgetStats, FORK_TRUNCATION_LABEL, MAX_B_TOTAL_FORKS,
+  type AbsBudgetStats, FORK_TRUNCATION_LABEL, HOST_EFFECT_LABEL_PREFIX, MAX_B_TOTAL_FORKS,
   MAX_CALL_DEPTH, MAX_TOTAL_CALLS, bumpBForkBudget, callBudgetKey,
   enterCall, exitCall, getAbsCallBudgetStats, getBForkBudgetLimit,
-  getBForkCount, noteAbsTruncation, noteBForkTruncation,
+  getBForkCount, noteAbsTruncation, noteBForkTruncation, noteHostEffectBlocked,
   resetAbsCallBudget, resetBForkBudget, setAbsTruncationCollector,
   setBForkBudgetLimit, stableCallId, truncatedAbs
 } from "./algebra/call-budget.ts";
