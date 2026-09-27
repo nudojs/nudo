@@ -8,7 +8,7 @@ import {
   transpile,
 } from "@nudojs/core";
 
-describe("B-path switch", () => {
+describe("evaluator switch", () => {
   it("selects matching case by concrete disc", () => {
     const src = `
 export function go(n) {

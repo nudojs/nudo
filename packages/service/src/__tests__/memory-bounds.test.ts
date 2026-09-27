@@ -18,7 +18,7 @@ import {
   fnAnalysisCacheSet,
   type CachedFnAnalysis,
 } from "../fn-analysis-cache.ts";
-import { getBPathCacheSize, clearBPathCache } from "../bpath-run.ts";
+import { getEvalCacheSize, clearEvalCache } from "../eval-run.ts";
 import { analyzeFile } from "../analyzer.ts";
 import { resetAllAnalysisCaches } from "../session-cache.ts";
 import { getHarvestCacheSize, clearHarvestCache, harvestPackageCached } from "@nudojs/harvester";
@@ -113,7 +113,7 @@ describe("BoundedLruMap hard cap", () => {
 
 describe("session analysis caches stay bounded under repeat analyze", () => {
   it("same batch analyzed many times does not grow caches past the caps", () => {
-    setSessionCacheLimits({ maxFiles: 8, maxFns: 16, maxBRuns: 4 });
+    setSessionCacheLimits({ maxFiles: 8, maxFns: 16, maxEvalRuns: 4 });
     const dir = mkdtempSync(join(tmpdir(), "nudo-mem-"));
     const files = writeBatch(dir, 20); // more files than maxFiles
 
@@ -125,7 +125,7 @@ describe("session analysis caches stay bounded under repeat analyze", () => {
       }
       const fileN = getAnalysisFileCacheSize();
       const fnN = getFnAnalysisCacheSize();
-      const bN = getBPathCacheSize();
+      const bN = getEvalCacheSize();
       expect(fileN).toBeLessThanOrEqual(8);
       expect(fnN).toBeLessThanOrEqual(16);
       expect(bN).toBeLessThanOrEqual(4);
@@ -137,7 +137,7 @@ describe("session analysis caches stay bounded under repeat analyze", () => {
   });
 
   it("incrementally growing file set stays under the file/fn caps", () => {
-    setSessionCacheLimits({ maxFiles: 6, maxFns: 10, maxBRuns: 3 });
+    setSessionCacheLimits({ maxFiles: 6, maxFns: 10, maxEvalRuns: 3 });
     const dir = mkdtempSync(join(tmpdir(), "nudo-mem-inc-"));
     for (let i = 0; i < 40; i++) {
       const p = join(dir, `inc${i}.js`);
@@ -145,12 +145,12 @@ describe("session analysis caches stay bounded under repeat analyze", () => {
       analyzeFile(p, `export function g${i}(x) { return x * ${i}; }\n`);
       expect(getAnalysisFileCacheSize()).toBeLessThanOrEqual(6);
       expect(getFnAnalysisCacheSize()).toBeLessThanOrEqual(10);
-      expect(getBPathCacheSize()).toBeLessThanOrEqual(3);
+      expect(getEvalCacheSize()).toBeLessThanOrEqual(3);
     }
   });
 
   it("fn analysis cache LRU-caps at maxFns", () => {
-    setSessionCacheLimits({ maxFiles: 64, maxFns: 5, maxBRuns: 32 });
+    setSessionCacheLimits({ maxFiles: 64, maxFns: 5, maxEvalRuns: 32 });
     for (let i = 0; i < 50; i++) {
       fnAnalysisCacheSet(`/t/f${i}.js${"\0"}own${i}`, fnEntry(`f${i}`));
     }
@@ -158,7 +158,7 @@ describe("session analysis caches stay bounded under repeat analyze", () => {
   });
 
   it("analysis file cache trims to maxFiles even after inserts of many keys", () => {
-    setSessionCacheLimits({ maxFiles: 4, maxFns: 8, maxBRuns: 2 });
+    setSessionCacheLimits({ maxFiles: 4, maxFns: 8, maxEvalRuns: 2 });
     const dir = mkdtempSync(join(tmpdir(), "nudo-mem-trim-"));
     for (let i = 0; i < 30; i++) {
       const p = join(dir, `t${i}.js`);
@@ -208,7 +208,7 @@ describe("harvest / abs-module / path-env resident structures are capped", () =>
 
 describe("repeat analyze does not monotonically grow retained caches", () => {
   it("size plateaus after warm-up rounds", () => {
-    setSessionCacheLimits({ maxFiles: 8, maxFns: 8, maxBRuns: 4 });
+    setSessionCacheLimits({ maxFiles: 8, maxFns: 8, maxEvalRuns: 4 });
     const dir = mkdtempSync(join(tmpdir(), "nudo-mem-plateau-"));
     const files = writeBatch(dir, 12, "p");
     const srcOf = (i: number) => `export function p${i}(x) { return x + 1; }\n`;
@@ -216,7 +216,7 @@ describe("repeat analyze does not monotonically grow retained caches", () => {
     const samples: number[] = [];
     for (let round = 0; round < 8; round++) {
       files.forEach((f, i) => analyzeFile(f, srcOf(i)));
-      samples.push(getAnalysisFileCacheSize() + getFnAnalysisCacheSize() + getBPathCacheSize());
+      samples.push(getAnalysisFileCacheSize() + getFnAnalysisCacheSize() + getEvalCacheSize());
     }
     // 后几轮合计驻留不增长（LRU 稳态，不单调无界）
     const tail = samples.slice(4);

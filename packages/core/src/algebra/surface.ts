@@ -22,7 +22,7 @@ import {
 } from "./pred.ts";
 import { implies } from "./pred.ts";
 
-// --- 位运算 / 移位 / 幂 / ToNumber（B-path $bitand 等运算符路由） ---
+// --- 位运算 / 移位 / 幂 / ToNumber（evaluator $bitand 等运算符路由） ---
 
 /** 数值可被 JS ToNumber/ToNumeric 折叠的字面量；undefined 字面量不在此列（+undefined → unknown/NaN 不折） */
 function coercibleNumberLit(v: ReturnType<typeof litValue>): v is number | string | boolean | null {
@@ -405,8 +405,8 @@ export function strictEqAbs(a: Abs, b: Abs): boolean | undefined {
   }
   // 宿主值泄漏进 ===（非 Abs）：同引用恒等，否则不可判——不得裸读 .shape
   const aIsAbs = !!(a && typeof a === "object" && "shape" in (a as object));
-  const bIsAbs = !!(b && typeof b === "object" && "shape" in (b as object));
-  if (!aIsAbs || !bIsAbs) {
+  const evalIsAbs = !!(b && typeof b === "object" && "shape" in (b as object));
+  if (!aIsAbs || !evalIsAbs) {
     return a === b ? true : undefined;
   }
   // 双字面量折叠必须先看 term.op === "lit"：litValue 无法区分
@@ -438,8 +438,8 @@ export function strictEqAbs(a: Abs, b: Abs): boolean | undefined {
   const vb = litValue(b);
   if (va !== undefined && vb !== undefined) return va === vb;
   const aNullish = va === null || (a.term?.op === "lit" && a.term.value === undefined);
-  const bNullish = vb === null || (b.term?.op === "lit" && b.term.value === undefined);
-  if (bNullish && definitelyNotNullishShape(a.shape)) return false;
+  const evalNullish = vb === null || (b.term?.op === "lit" && b.term.value === undefined);
+  if (evalNullish && definitelyNotNullishShape(a.shape)) return false;
   if (aNullish && definitelyNotNullishShape(b.shape)) return false;
   // 同 var 恒等：number/any/unknown 可能是 NaN，x === x 对 NaN 为 false
   //（与同 Abs 引用路径一致——只对引用语义/非 number 原语恒等）。

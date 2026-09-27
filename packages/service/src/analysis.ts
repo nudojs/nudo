@@ -3,7 +3,7 @@
  *
  * File analysis (`analyzeFile`), call-site discovery, and the Abs-native
  * module-graph evaluation that production analysis actually runs
- * (`evalAbsModuleGraph` + B-path `runTranspiled`; the old TypeValue
+ * (`evalAbsModuleGraph` + evaluator `runTranspiled`; the old TypeValue
  * `evaluateProgram` / `evalProgramAbs` paths are gone).
  */
 export {
@@ -48,16 +48,16 @@ export {
 } from "./abs-modules-graph.ts";
 
 export {
-  isBPathCapable,
-  tryRunBPath,
-  tryBPathCall,
-  tryBPathCallFull,
-  clearBPathCache,
-  evictBPathCacheForFiles,
-  trimBPathCache,
-  getBPathCacheSize,
-  type BPathRunResult,
-} from "./bpath-run.ts";
+  isEvalCapable,
+  tryRunEval,
+  tryEvalCall,
+  tryEvalCallFull,
+  clearEvalCache,
+  evictEvalCacheForFiles,
+  trimEvalCache,
+  getEvalCacheSize,
+  type EvalRunResult,
+} from "./eval-run.ts";
 
 export {
   shouldAnalyzeFile,

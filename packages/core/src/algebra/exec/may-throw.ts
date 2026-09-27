@@ -84,17 +84,17 @@ export function orphanMayThrowEffects(effects: MayThrowEffect[]): void {
   flushMayThrowEffects(effects);
 }
 
-/** B-path：try 开始时压 soft 帧 */
+/** evaluator：try 开始时压 soft 帧 */
 export function $tryMarkSoft(): void {
   pushMayThrowFrame();
 }
 
-/** B-path catch 消化 try 内 soft may-throw */
+/** evaluator catch 消化 try 内 soft may-throw */
 export function $tryDigestSoft(): void {
   popMayThrowFrame(true);
 }
 
-/** B-path 无 handler / 出口 / rethrow：上浮未消化 soft may-throw（外层 try 可再消化） */
+/** evaluator 无 handler / 出口 / rethrow：上浮未消化 soft may-throw（外层 try 可再消化） */
 export function $tryReleaseSoft(): MayThrowEffect[] {
   const effects = popMayThrowFrame(false);
   orphanMayThrowEffects(effects);

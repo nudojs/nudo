@@ -1,5 +1,5 @@
 /**
- * 进程内 B 路径执行：transpile 源码 → new Function 跑在 runtime 上。
+ * 进程内 求值引擎执行：transpile 源码 → new Function 跑在 runtime 上。
  * 不写临时文件；相对 import 用注入的 AbsModuleExports / JS 导出绑定。
  *
  * mode:
@@ -9,9 +9,9 @@
  */
 
 import { rtAllBindings } from "./rt.ts";
-import { resetBCallBudget } from "./calls.ts";
+import { resetEvalCallBudget } from "./calls.ts";
 import { withExecPhi, $copy } from "./runtime.ts";
-import { setBBindingSink } from "./calls.ts";
+import { setEvalBindingSink } from "./calls.ts";
 import type { Abs } from "../abs.ts";
 import type { Phi } from "../pred.ts";
 import { never, unknown, abs } from "../abs.ts";
@@ -362,13 +362,13 @@ export function bindingsOf(run: Record<string, unknown>): Map<string, unknown> |
 }
 
 /**
- * 执行一段 B 路径程序，返回顶层 `export function` / `export const`。
+ * 执行一段 求值引擎程序，返回顶层 `export function` / `export const`。
  */
 export function runTranspiled(
   source: string,
   opts: RunTranspiledOptions = {},
 ): Record<string, unknown> {
-  resetBCallBudget(); // 宿主入口重置
+  resetEvalCallBudget(); // 宿主入口重置
   const modules = opts.modules ?? {};
   let js = transpile(source, {
     runtimeImport: "@nudojs/core/exec",
@@ -429,7 +429,7 @@ export function runTranspiled(
     if (n === "__nudoRequireOptional") {
       return (specs: string[]) => requireOptionalFromModules(modules, specs);
     }
-    // mock 与 env 同通道绑定（service bpath-run 同口径）：check/generalize
+    // mock 与 env 同通道绑定（service eval-run 同口径）：check/generalize
     // 的 inject.mocks 若不进自由标识符作用域，函数体调用会 ReferenceError。
     if (n === "__nudoEnv") return { ...(opts.envGlobals ?? {}), ...(opts.mocks ?? {}) };
     if (n === "__nudoExport") {
@@ -461,7 +461,7 @@ export function runTranspiled(
   }
 
   // CJS 面：exports.X = v / module.exports 命名空间建模（此前 exports 未绑定
-  // → ReferenceError → CJS 文件整体 B-incapable）。exports = 命名空间 obj Abs
+  // → ReferenceError → CJS 文件整体 eval-incapable）。exports = 命名空间 obj Abs
   // （$set 写槽）；module.exports 重赋值 → 单导出（default）。
   const hasCjsExports = /\b(?:exports|module)\s*(?:\.|\[)/.test(source);
   if (hasCjsExports) {
@@ -475,33 +475,33 @@ export function runTranspiled(
     : "{}";
   const ret = `return { ...__nudoExports, ...${cjsMerge}, ${names.join(", ")} };`;
   const fn = new Function(...argNames, `${js}\n${ret}`);
-  setBBindingSink(bindings);
+  setEvalBindingSink(bindings);
   try {
     const result = fn(...args) as Record<string, unknown>;
     runBindings.set(result, bindings);
     return result;
   } finally {
-    setBBindingSink(null);
+    setEvalBindingSink(null);
   }
 }
 
-/** B-path 回落事件（观测单一埋点；reason: unsupported:* = 能力边界，internal = B 自身缺陷） */
-export type BPathFallback = {
+/** evaluator 回落事件（观测单一埋点；reason: unsupported:* = 能力边界，internal = 引擎自身缺陷） */
+export type EvalFallback = {
   reason: string;
   message: string;
   loc?: { line: number; column: number };
 };
 
-let bFallbackCollector: ((f: BPathFallback) => void) | null = null;
+let evalFallbackCollector: ((f: EvalFallback) => void) | null = null;
 
-export function setBPathFallbackCollector(
-  collector: ((f: BPathFallback) => void) | null,
+export function setEvalFallbackCollector(
+  collector: ((f: EvalFallback) => void) | null,
 ): void {
-  bFallbackCollector = collector;
+  evalFallbackCollector = collector;
 }
 
 /** 表达式级求值（scan 的 case 字面量实参等静态求值面）：编译单表达式经
- *  B 运行时执行。bindings：表达式自由标识符 → Abs（调用方按绑定表注入）。
+ *  eval 运行时执行。bindings：表达式自由标识符 → Abs（调用方按绑定表注入）。
  *  编译失败抛错（调用方按需 catch）。 */
 export function evalExprAbs(
   expr: import("@babel/types").Expression,
@@ -519,9 +519,9 @@ export function evalExprAbs(
 }
 
 /** 记录一次 B 回落（body-fn 等非 runTranspiled 入口共用） */
-export function noteBPathFallback(e: unknown): void {
-  if (!bFallbackCollector) return;
-  const f: BPathFallback = e instanceof NudoUnsupportedError
+export function noteEvalFallback(e: unknown): void {
+  if (!evalFallbackCollector) return;
+  const f: EvalFallback = e instanceof NudoUnsupportedError
     ? { reason: `unsupported:${e.reason}`, message: e.message, ...(e.loc ? { loc: e.loc } : {}) }
     : isNudoThrow(e)
       ? // NudoThrow：程序自身的抛（如顶层 this 写 / strict 写 TypeError）——
@@ -529,7 +529,7 @@ export function noteBPathFallback(e: unknown): void {
         { reason: "module-throw", message: e instanceof Error ? e.message : String(e) }
       : { reason: "internal", message: e instanceof Error ? e.message : String(e) };
   try {
-    bFallbackCollector(f);
+    evalFallbackCollector(f);
   } catch {
     /* collector 不得打断 */
   }
@@ -547,7 +547,7 @@ export function tryRunTranspiled(
   try {
     return runTranspiled(source, opts);
   } catch (e) {
-    noteBPathFallback(e);
+    noteEvalFallback(e);
     return undefined;
   }
 }
@@ -563,7 +563,7 @@ function isAbsVal(v: unknown): v is Abs {
 }
 
 /** 调用 runTranspiled 导出（捕获 $throw）。opts.phi：入口 Φ 种子
- *  （instantiate/symbolic 的约束入口——B 侧路径条件收窄）。 */
+ *  （instantiate/symbolic 的约束入口——eval 侧路径条件收窄）。 */
 export function callTranspiledExportFull(
   exports: Record<string, unknown>,
   name: string,
@@ -572,7 +572,7 @@ export function callTranspiledExportFull(
 ): TranspiledCallResult {
   const fn = exports[name];
   if (typeof fn === "function") {
-    resetBCallBudget(); // 每次具名调用独立预算（不跨调用累积 totalCalls）
+    resetEvalCallBudget(); // 每次具名调用独立预算（不跨调用累积 totalCalls）
     // D1：重跑/导入调用用副本——mutator 不得把入参态污染回调用方/记录
     const callArgs = args.map((a) =>
       a && typeof a === "object" && "shape" in (a as object) ? $copy(a) : a,

@@ -45,22 +45,22 @@ import { freeIdentifiers } from "./exec/body-fn.ts";
 import { withExecPhi } from "./exec/runtime.ts";
 import { $new, $invoke } from "./exec/class.ts";
 
-/** generalize 的 B-path 模块执行缓存（按 source；run 不依赖实参） */
-const bRunMemo = new Map<string, Record<string, unknown>>();
-function bPathRunOf(
+/** generalize 的 evaluator 模块执行缓存（按 source；run 不依赖实参） */
+const evalRunMemo = new Map<string, Record<string, unknown>>();
+function evalRunOf(
   source: string,
   modules?: Record<string, AbsModuleExports | Record<string, unknown>>,
   inject?: RunTranspiledOptions,
 ): Record<string, unknown> | undefined {
   // 内容指纹（CLI 每次新建 inject/modules 对象时身份键会 miss）
   const mKey = `${source}|${runTranspiledOptionsMemoKey({ ...(inject ?? {}), ...(modules ? { modules } : {}) })}`;
-  if (bRunMemo.size >= 256) {
-    const oldest = bRunMemo.keys().next().value;
-    if (oldest !== undefined) bRunMemo.delete(oldest);
+  if (evalRunMemo.size >= 256) {
+    const oldest = evalRunMemo.keys().next().value;
+    if (oldest !== undefined) evalRunMemo.delete(oldest);
   }
-  let run = bRunMemo.get(mKey);
+  let run = evalRunMemo.get(mKey);
   if (run === undefined) {
-    // mode 恒为 analyze；modules 优先参数、缺则 inject.modules（与 bAnalyzeOpts 同口径）
+    // mode 恒为 analyze；modules 优先参数、缺则 inject.modules（与 evalAnalyzeOpts 同口径）
     const merged = modules ?? inject?.modules;
     const r = tryRunTranspiled(source, {
       ...(inject ?? {}),
@@ -69,7 +69,7 @@ function bPathRunOf(
     });
     if (r === undefined) return undefined;
     run = r;
-    bRunMemo.set(mKey, run);
+    evalRunMemo.set(mKey, run);
   }
   return run;
 }
@@ -725,7 +725,7 @@ function generalizeFromAstUncached(
     new Map(params.map((p, i) => [p, typeParams[i]!.value])),
   );
 
-  // B-path 门（Φ-native 后约束入口可走 B——Φ 经 callTranspiledExportFull
+  // evaluator 门（Φ-native 后约束入口可走 B——Φ 经 callTranspiledExportFull
   // 种子注入）：
   //   ① 非类方法（.名，B 导出表只有顶层名）
   //   ② body 不引用导入名（B run 无模块注入；仅侧车/refine 用的 import 不阻断）
@@ -735,7 +735,7 @@ function generalizeFromAstUncached(
   // 其余一律解释路径。B 失败回落。
   const fileAst = opts.file ?? babelParse(source);
   // import 按 spec 可解析性判定：body 引用的导入名其 spec 在注入表内 → B 可
-  // （绑定缺失名在 B 内 crash-and-swallow，解释路径的未绑定名处理更干净）；
+  // （绑定缺失名在 eval 内 crash-and-swallow，解释路径的未绑定名处理更干净）；
   // 未注入（调用方未传 modules）→ 与旧行为一致走解释路径。
   const importSpecByLocal = new Map<string, string>();
   for (const stmt of fileAst.program.body) {
@@ -774,7 +774,7 @@ function generalizeFromAstUncached(
   );
   const envGated = envGatedSource && freeIdentifiers(body, boundNames).size > 0;
   const replaceGated = /@nudo:replace\b/.test(source) && !hasReps;
-  const bEligible =
+  const evalEligible =
     !unresolvableImports &&
     !mockGated &&
     !envGated &&
@@ -787,37 +787,37 @@ function generalizeFromAstUncached(
       return alphaRenameResult(hit.result, hit.varOrder, varOrder);
     }
     let result: Abs | undefined;
-    if (bEligible) {
+    if (evalEligible) {
       try {
-        const bRun = bPathRunOf(source, opts.modules, opts.inject);
-        if (!bRun) {
+        const evalRun = evalRunOf(source, opts.modules, opts.inject);
+        if (!evalRun) {
           /* B 失败 fail-closed */
         } else if (fnName.includes(".")) {
           // 类方法桥：模块导出表取类 Abs → $new（构造参数 any）→ $invoke
           const [clsName, methodName] = fnName.split(".", 2);
-          const clsAbs = bRun[clsName ?? ""];
+          const clsAbs = evalRun[clsName ?? ""];
           if (clsAbs && typeof clsAbs === "object" && "shape" in (clsAbs as object)) {
             const nCtor = ctorParamCountOf(fileAst, clsName ?? "");
             const inst = $new(clsAbs as Abs, Array.from({ length: nCtor }, () => abs({ k: "any" }, undefined, pTrue, "path")));
             result = withExecPhi(phi, () => $invoke(inst, methodName ?? "", args));
           }
-        } else if (fnName in bRun) {
+        } else if (fnName in evalRun) {
           // 提升形状预绑定到实参（B 无 env 预绑面；具体实参优先）
-          const bArgs = args.map((a, i) => {
+          const evalArgs = args.map((a, i) => {
             const shape = promoteScan.promotedShapes.get(params[i]!);
             if (shape && (a.shape.k === "any" || a.shape.k === "unknown")) {
               return { shape, term: a.term, pred: a.pred, conf: "path" } as Abs;
             }
             return a;
           });
-          result = callTranspiledExportFull(bRun, fnName, bArgs, { phi }).result;
+          result = callTranspiledExportFull(evalRun, fnName, evalArgs, { phi }).result;
         }
       } catch {
         /* B 失败 fail-closed */
       }
     }
     if (result === undefined) {
-      // fail-closed：B 失败（B-incapable 构造）/ 非导出类方法等 →
+      // fail-closed：B 失败（eval-incapable 构造）/ 非导出类方法等 →
       // 显式无信息（unknown）
       result = abs({ k: "unknown" }, undefined, undefined, "opaque");
     }

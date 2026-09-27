@@ -8,7 +8,7 @@ import {
   never,
 } from "@nudojs/core";
 
-describe("B-path analyze mode", () => {
+describe("evaluator analyze mode", () => {
   it("does not run top-level side effects", () => {
     const src = `
 globalThisNotDefined();
@@ -33,7 +33,7 @@ export function go(n) { return helper(n); }
   });
 });
 
-describe("B-path throws", () => {
+describe("evaluator throws", () => {
   it("captures $throw as throws Abs", () => {
     const src = `
 export function fail(n) {

@@ -5,7 +5,7 @@
 import { describe, it, expect } from "vitest";
 import type { Abs, AbsModuleExports } from "@nudojs/core";
 import { abs, unknown } from "@nudojs/core";
-import { mergeHarvestUnderEnv, collectEnvModules, setEnvHarvestConflictCollector } from "../bpath-run.ts";
+import { mergeHarvestUnderEnv, collectEnvModules, setEnvHarvestConflictCollector } from "../eval-run.ts";
 
 function absTag(tag: string): Abs {
   return abs({ k: "brand", name: tag, shape: unknown }, undefined, undefined, "path");

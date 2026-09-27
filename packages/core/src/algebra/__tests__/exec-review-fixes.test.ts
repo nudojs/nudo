@@ -22,7 +22,7 @@ const runtimeUrl = pathToFileURL(
 ).href;
 
 async function execTranspiled(source: string, exportName = "run") {
-  const dir = mkdtempSync(join(tmpdir(), "nudo-bpath-review-"));
+  const dir = mkdtempSync(join(tmpdir(), "nudo-eval-review-"));
   dirs.push(dir);
   const js = transpile(source, { runtimeImport: runtimeUrl });
   const modPath = join(dir, "mod.mjs");
@@ -104,8 +104,8 @@ describe("review-fix: instanceof non-ident / generator / unknown ctor", () => {
     expect(litValue(r)).toBe(true);
   });
 
-  it("B-path generator call value is not exact undefined/false for instanceof", async () => {
-    // B-path $gen 收集 yield 值而非 Iterator 对象；不得折精确 undefined/false。
+  it("evaluator generator call value is not exact undefined/false for instanceof", async () => {
+    // evaluator $gen 收集 yield 值而非 Iterator 对象；不得折精确 undefined/false。
     // 注意：Node 无 Generator 全局（原生 g() instanceof Generator 是
     // ReferenceError）；RHS 用局部类，保持"生成器值不是类实例"的判定场景。
     const run = await execTranspiled(
@@ -121,7 +121,7 @@ describe("review-fix: instanceof non-ident / generator / unknown ctor", () => {
       `export function run(a){ return a instanceof MyArr; }`,
       "run",
     );
-    // 传入抽象无法在 B-path 路径测 brand 子类；直接测 transpile 后 $instanceof 行为
+    // 传入抽象无法在 evaluator 路径测 brand 子类；直接测 transpile 后 $instanceof 行为
     const { $instanceof, $arr, $lit } = await import(
       pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "../exec/index.ts")).href
     );

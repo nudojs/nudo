@@ -30,7 +30,7 @@ function callAbs(src: string, fnName: string, args: unknown[]) {
 const absBool = { shape: { k: "prim", type: "boolean" }, conf: "path" } as never;
 const absNum = { shape: { k: "prim", type: "number" }, conf: "path" } as never;
 
-describe("P0 fork isolation vs nested shadow names (B-path)", () => {
+describe("P0 fork isolation vs nested shadow names (evaluator)", () => {
   it("outer let write + nested function param same name still joins", () => {
     const src = `export function f(flag) { let x = 0; if (flag) { x = 1; function g(x) { return x; } } return x; }`;
     expect(litValue(call(src, "f", true).result)).toBe(1);
@@ -106,7 +106,7 @@ describe("P0 check-path compound / logical assignment", () => {
 });
 
 describe("P0 do-while dual path", () => {
-  it("B-path runs do-while body at least once", () => {
+  it("evaluator runs do-while body at least once", () => {
     const src = `export function f() { let s = 0; do { s = s + 1; } while (false); return s; }`;
     expect(litValue(call(src, "f").result)).toBe(1);
   });

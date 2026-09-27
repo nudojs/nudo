@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { runTranspiled, callTranspiledExportFull, litValue, checkSource, pTrue } from "@nudojs/core";
 
-describe("S5 closure cross-call state (B-path)", () => {
+describe("S5 closure cross-call state (evaluator)", () => {
   it("increment then getCount sees 1", () => {
     const r = callTranspiledExportFull(
       runTranspiled(

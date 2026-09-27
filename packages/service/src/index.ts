@@ -2,7 +2,7 @@
  * `@nudojs/service` — analysis core (stable public surface).
  *
  * Production analysis is Abs-native (shape × term × pred × conf) via the
- * B-path evaluator (`evalAbsModuleGraph` + `runTranspiled`). Prefer the
+ * evaluator evaluator (`evalAbsModuleGraph` + `runTranspiled`). Prefer the
  * focused subpaths for new consumers:
  *
  * - `@nudojs/service/analysis`  — file analysis + Abs-native module-graph eval
@@ -76,7 +76,7 @@ export {
 export { defaultLoadModule, type LoadModule } from "./load-module.ts";
 export { collectLoadDepContents, type DepContent } from "./dep-contents.ts";
 
-// ─── Evaluator（Abs-native B-path：evalAbsModuleGraph / runTranspiled） ─
+// ─── Evaluator（Abs-native evaluator：evalAbsModuleGraph / runTranspiled） ─
 export {
   evalAbsModuleGraph,
   collectAbsBindingsFromGraph,
@@ -91,15 +91,15 @@ export {
 } from "./abs-modules-graph.ts";
 
 export {
-  isBPathCapable,
-  tryRunBPath,
-  tryBPathCall,
-  tryBPathCallFull,
-  clearBPathCache,
-  evictBPathCacheForFiles,
-  trimBPathCache,
-  getBPathCacheSize,
-  collectBPathReplacements,
+  isEvalCapable,
+  tryRunEval,
+  tryEvalCall,
+  tryEvalCallFull,
+  clearEvalCache,
+  evictEvalCacheForFiles,
+  trimEvalCache,
+  getEvalCacheSize,
+  collectEvalReplacements,
   collectEnvGlobals,
   collectEnvModules,
   mergeHarvestUnderEnv,
@@ -107,15 +107,15 @@ export {
   getEnvHarvestConflictCollector,
   type EnvHarvestConflict,
   type MergeHarvestOptions,
-  type BPathRunResult,
-} from "./bpath-run.ts";
+  type EvalRunResult,
+} from "./eval-run.ts";
 
 export {
-  collectBPathDiagnostics,
-  type BPathDiagnostics,
-  type BPathUnreachable,
-  type BPathBuiltinUnknown,
-} from "./bpath-diagnostics.ts";
+  collectEvalDiagnostics,
+  type EvalDiagnostics,
+  type EvalUnreachable,
+  type EvalBuiltinUnknown,
+} from "./eval-diagnostics.ts";
 
 export {
   mockDirectivesToAbsSeeds,

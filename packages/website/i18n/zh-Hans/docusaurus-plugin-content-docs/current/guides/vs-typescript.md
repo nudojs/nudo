@@ -18,7 +18,7 @@ Nudo 的目标是：**替代 TypeScript 作为日常类型检查门禁**，而�
 | **主表面** | `.ts` + 类型标注 | 普通 `.js`（传入 `.ts` 时剥离类型语法） |
 | **类型模型** | 声明式结构类型 | **Abs**（`shape × term × pred × conf`），可计算类型 |
 | **契约** | `interface` / `type` 语言 | `*.nudo.js` 构建器（`fn` / `shape` / `number().gt(0)`）+ 可选 `@nudo:contract` |
-| **推断** | 标注 + 局部推断 | 在符号 Abs 上**执行**代码（B-path） |
+| **推断** | 标注 + 局部推断 | 在符号 Abs 上**执行**代码（evaluator） |
 | **检查诊断** | `tsc --noEmit` | `nudo check`（Abs 上 `actual ⊭ expected`；成功亦打印 signatures） |
 | **生态出口** | `.d.ts` 即模型 | `.d.ts` 为**有损投影**（`absToTSType`），非真源 |
 | **退出对方** | — | `nudo migrate` → **`retire` tsc** |

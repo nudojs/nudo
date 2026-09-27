@@ -2,7 +2,7 @@
  * L2 入口 may-throw（nudo:entry-may-throw）：entry 求值 / throws 域收集。
  *
  * 从 check.ts 拆出的内聚段：用 any 入口实参求值函数体，捕获 any/nullish
- * 成员访问等 throws 效果；显式 throw 也进 throws 域。B-path 优先，
+ * 成员访问等 throws 效果；显式 throw 也进 throws 域。evaluator 优先，
  * fail-closed（B 失败 → 无 L2 证据）。
  */
 
@@ -47,10 +47,10 @@ export function collectEntryMayThrows(
   return runWithMayThrowSession(() => {
     setMayThrowCollector((e) => effects.push(e));
     try {
-      // P2-a：L2 throws 求值 B-path 优先（may-throw 效果通道共享
+      // P2-a：L2 throws 求值 evaluator 优先（may-throw 效果通道共享
       // recordMayThrow）；fail-closed：B 失败（类方法/转译失败）→ 无 L2
       // throws 证据
-      const full = bPathThrowsOf(source, fnName, entryArgs, opts, phi);
+      const full = evalThrowsOf(source, fnName, entryArgs, opts, phi);
       if (!full) return effects;
       // 显式 throw（未被 try 消化）也进 L2
       if (full.throws && full.throws.shape.k !== "never") {
@@ -73,12 +73,12 @@ export function collectEntryMayThrows(
   });
 }
 
-/** L2 throws 的 B-path 求值：顶层导出直调 + default 别名 + CJS 对象方法 +
+/** L2 throws 的 evaluator 求值：顶层导出直调 + default 别名 + CJS 对象方法 +
  *  类静态方法桥；B 失败 → undefined（fail-closed：无 L2 证据）。 */
-const bPathRunMemo = new Map<string, Record<string, unknown>>();
+const evalRunMemo = new Map<string, Record<string, unknown>>();
 /** B analyze 选项：inject（mocks/env/replace/modules）与 opts.modules 同源合并。
  *  mode 恒为 analyze（inject 不得覆盖）；modules 优先 opts.modules，缺则用 inject.modules。 */
-export function bAnalyzeOpts(opts: CheckOptions): RunTranspiledOptions {
+export function evalAnalyzeOpts(opts: CheckOptions): RunTranspiledOptions {
   const inject = opts.inject ?? {};
   const modules = opts.modules ?? inject.modules;
   return {
@@ -102,7 +102,7 @@ export function invokeAsThrows(fn: () => Abs, phi: Phi = pTrue): TranspiledCallR
     throw e;
   }
 }
-export function bPathThrowsOf(
+export function evalThrowsOf(
   source: string,
   fnName: string,
   args: Abs[],
@@ -112,16 +112,16 @@ export function bPathThrowsOf(
   // L2 解耦后两引擎口径一致：any 实参的数组方法调用同样记 may-throw
   //（提升是假设、不消除危险），约束与无约束入口都走 B。
   const runKey = `${source}|${runTranspiledOptionsMemoKey(opts.inject)}|${runTranspiledOptionsMemoKey(opts.modules ? { modules: opts.modules } : undefined)}`;
-  if (bPathRunMemo.size >= MAX_CHECK_MEMO) {
-    const oldest = bPathRunMemo.keys().next().value;
-    if (oldest !== undefined) bPathRunMemo.delete(oldest);
+  if (evalRunMemo.size >= MAX_CHECK_MEMO) {
+    const oldest = evalRunMemo.keys().next().value;
+    if (oldest !== undefined) evalRunMemo.delete(oldest);
   }
-  let exports = bPathRunMemo.get(runKey);
+  let exports = evalRunMemo.get(runKey);
   if (exports === undefined) {
-    const run = tryRunTranspiled(source, bAnalyzeOpts(opts));
+    const run = tryRunTranspiled(source, evalAnalyzeOpts(opts));
     if (run === undefined) return undefined;
     exports = run;
-    bPathRunMemo.set(runKey, exports);
+    evalRunMemo.set(runKey, exports);
   }
   const isAbsVal = (v: unknown): v is Abs =>
     !!v && typeof v === "object" && "shape" in (v as object) && "conf" in (v as object);

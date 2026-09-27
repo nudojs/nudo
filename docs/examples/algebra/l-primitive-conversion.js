@@ -1,6 +1,6 @@
 // 示例 L：原始值包装构造与全局数值解析——字面量折叠
 // 考察：String / Number / Boolean / parseInt / parseFloat 在字面量实参上
-// 折叠为精确结果（B 路径 evalGlobalFn），符号实参拓宽为目标原语。
+// 折叠为精确结果（求值引擎 evalGlobalFn），符号实参拓宽为目标原语。
 //
 // 逐 case 真值（infer 输出）：
 //   strOf(5)       → "5"    #exact（String 折叠字面量）

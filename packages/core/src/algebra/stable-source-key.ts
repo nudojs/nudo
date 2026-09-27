@@ -3,7 +3,7 @@
  * Keeps every line that may carry @nudo directives.
  *
  * Fast path: already-stable sources return the same string identity (O(1)
- * compare in B-path / analysis caches when the caller reuses the buffer).
+ * compare in evaluator / analysis caches when the caller reuses the buffer).
  */
 export function stableAnalyzeKeySource(source: string): string {
   // Scan back over trailing whitespace/newlines (usually a few chars).

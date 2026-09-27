@@ -162,13 +162,13 @@ function promoteAsFn(ctx: Ctx, name: string, args: Node[], loc?: { line: number;
 /** 挂载点③：HOF 回调实参是形参 → fn 形状按方法名 */
 function promoteCb(
   ctx: Ctx,
-  cbName: string,
+  cevalName: string,
   method: string,
   argTerms: Term[],
   loc?: { line: number; column: number },
 ): void {
-  if (!ctx.params.has(cbName)) return;
-  const prev = ctx.shapes.get(cbName);
+  if (!ctx.params.has(cevalName)) return;
+  const prev = ctx.shapes.get(cevalName);
   if (!prev) return;
   if (prev.shape.k !== "any" && prev.shape.k !== "unknown") return;
   let paramTypes: Abs[];
@@ -179,7 +179,7 @@ function promoteCb(
   } else {
     // map / flatMap / reduce / 默认
     paramTypes = argTerms.map((t) => abs({ k: "any" }, t, undefined, "path"));
-    returnType = abs({ k: "any" }, termVar(`B:${cbName}`), undefined, "path");
+    returnType = abs({ k: "any" }, termVar(`B:${cevalName}`), undefined, "path");
   }
   const fnShape: Shape = {
     k: "fn",
@@ -187,9 +187,9 @@ function promoteCb(
     paramTypes,
     returnType,
   };
-  promoteShape(ctx, cbName, fnShape, loc, false);
+  promoteShape(ctx, cevalName, fnShape, loc, false);
   ctx.sites.push({
-    param: cbName,
+    param: cevalName,
     argTerms,
     result: returnType,
     loc,

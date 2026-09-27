@@ -10,7 +10,7 @@ Nudo is a type inference engine for JavaScript. The type system is Abs (`shape �
 
 `@nudojs/service` provides the analysis core used by CLI, editor extensions, and build tools, plus the emit faces that project Abs to dts/schema/guard/interface.
 
-Production evaluation is **Abs-native B-path** (`evalAbsModuleGraph` + `runTranspiled`); the TypeValue AST interpreter is gone. Prefer a focused subpath over the full barrel:
+Production evaluation is **Abs-native evaluator** (`evalAbsModuleGraph` + `runTranspiled`); the TypeValue AST interpreter is gone. Prefer a focused subpath over the full barrel:
 
 | Subpath | Face |
 |---|---|
@@ -24,7 +24,7 @@ Highlights:
 
 - **File analysis** — `analyzeFile` returns diagnostics, function analyses, and case results
 - **Module graph** — `evalAbsModuleGraph` evaluates a file's import closure as Abs
-- **Session caches** — analysis / fn / B-path caches with eviction and project-config limits
+- **Session caches** — analysis / fn / evaluator caches with eviction and project-config limits
 
 ## Install
 

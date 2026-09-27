@@ -177,7 +177,7 @@ export function stringRegexMethod(recv: Abs, method: string, args: Abs[]): Abs |
 }
 
 /**
- * Object.assign（B-path 专用，accessor 感知）：与 builtins 的槽位合并对齐，
+ * Object.assign（evaluator 专用，accessor 感知）：与 builtins 的槽位合并对齐，
  * 但拷贝源访问器时**调用 getter**（原生语义），结果槽存 getter 返回值。
  */
 /** strict：Object.assign 到不可变/不可扩展/不可写目标 → TypeError（同 $set 口径） */

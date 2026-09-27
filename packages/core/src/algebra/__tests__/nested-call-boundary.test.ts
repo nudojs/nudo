@@ -36,7 +36,7 @@ function callOuter(src: string, args: unknown[] = []) {
   return callTranspiledExportFull(exports, "outer", args.map(toAbsArg));
 }
 
-describe("B-path nested call NudoReturn boundary", () => {
+describe("evaluator nested call NudoReturn boundary", () => {
   it("nested arrow loop early-return is callee result, not outer result", () => {
     const src = `
 export function outer(arr) {
@@ -56,7 +56,7 @@ export function outer(arr) {
     expect(litValue(r.result) === 110 || litValue(r.result) === 9 || s.includes("110") || s.includes("9")).toBe(true);
   });
 
-  it("nested function declaration does not emit export (B-path can run)", () => {
+  it("nested function declaration does not emit export (evaluator can run)", () => {
     const src = `
 export function outer(arr) {
   function inner(y) {

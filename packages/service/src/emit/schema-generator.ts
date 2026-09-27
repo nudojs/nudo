@@ -78,11 +78,11 @@ function litOf(t: Term | undefined): string | number | boolean | null | undefine
 function eqLitValue(p: Pred): string | number | boolean | null | undefined | "unanchored" {
   if (p.op !== "eq") return "unanchored";
   const aLit = litOf(p.a);
-  const bLit = litOf(p.b);
+  const evalLit = litOf(p.b);
   if (aLit !== undefined && (isSelfVar(p.b) || p.b.op === "app")) return aLit;
-  if (bLit !== undefined && (isSelfVar(p.a) || p.a.op === "app")) return bLit;
+  if (evalLit !== undefined && (isSelfVar(p.a) || p.a.op === "app")) return evalLit;
   // 允许 eq(lit, lit) 不常见形态
-  if (aLit !== undefined && bLit !== undefined) return aLit === bLit ? aLit : "unanchored";
+  if (aLit !== undefined && evalLit !== undefined) return aLit === evalLit ? aLit : "unanchored";
   return "unanchored";
 }
 

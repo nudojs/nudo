@@ -1,15 +1,15 @@
 /**
- * 差分 harness：B-path（transpile + exec）vs vm.runInNewContext strict native 对照。
+ * 差分 harness：evaluator（transpile + exec）vs vm.runInNewContext strict native 对照。
  * 每条语料是「隐式 return」的语句体，由 __run 包装执行。
  *
  * 比较规则（diff3 同源）：
- * - bpath 产非具体 Abs（concrete() 返回 undefined）→ 无法比较，跳过；
- * - native 抛错而 bpath 折具体值 → 假精确 MISMATCH；
- * - bpath 抛错而 native 不抛 → FALSE-THROW；
+ * - eval 产非具体 Abs（concrete() 返回 undefined）→ 无法比较，跳过；
+ * - native 抛错而 eval 折具体值 → 假精确 MISMATCH；
+ * - eval 抛错而 native 不抛 → FALSE-THROW；
  * - 两侧具体值不等 → MISMATCH。
  *
  * concrete() 盲区（open obj / undefined 元素 / 非具体值被跳过）由
- * corpus/batch18-readprobes.ts 的读层折叠探针与各 bpath-*.test.ts 的
+ * corpus/batch18-readprobes.ts 的读层折叠探针与各 eval-*.test.ts 的
  * parity describe 互补覆盖——门禁统计 total compared 下限防语料整体退化。
  */
 import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
@@ -80,7 +80,7 @@ function native(body: string): string {
   }
 }
 
-function bpath(body: string): { res: string | undefined; throws: boolean } {
+function evalAbs(body: string): { res: string | undefined; throws: boolean } {
   try {
     const exports = runTranspiled(`export function __run() {\n${body}\n}`, {
       mode: "exec",
@@ -96,16 +96,16 @@ function bpath(body: string): { res: string | undefined; throws: boolean } {
 
 export function diffBody(body: string): string | null {
   const n = native(body);
-  const b = bpath(body);
+  const b = evalAbs(body);
   if (b.throws && !n.startsWith("THROW:")) {
     return `FALSE-THROW native=${n}  [${body.replace(/\n/g, " ").slice(0, 100)}]`;
   }
   if (b.res === undefined) return null; // 非具体 Abs，无法比较
   if (n.startsWith("THROW:")) {
-    return `MISMATCH native=${n} bpath=${b.res}  [${body.replace(/\n/g, " ").slice(0, 100)}]`;
+    return `MISMATCH native=${n} eval=${b.res}  [${body.replace(/\n/g, " ").slice(0, 100)}]`;
   }
   if (n !== b.res) {
-    return `MISMATCH native=${n} bpath=${b.res}  [${body.replace(/\n/g, " ").slice(0, 100)}]`;
+    return `MISMATCH native=${n} eval=${b.res}  [${body.replace(/\n/g, " ").slice(0, 100)}]`;
   }
   return null;
 }
@@ -114,7 +114,7 @@ export function runCorpus(corpus: string[]): { compared: number; mismatches: str
   let compared = 0;
   const mismatches: string[] = [];
   for (const body of corpus) {
-    const b = bpath(body);
+    const b = evalAbs(body);
     if (b.res === undefined) continue;
     compared++;
     const m = diffBody(body); // 内含 native 对照

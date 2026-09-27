@@ -1,6 +1,6 @@
 /**
  * 调用 Abs 一等函数（absFunction impl）或 mock apply。
- * 供 B 路径 import 绑定包装：`(...args) => $call(absFn, args)`。
+ * 供 求值引擎 import 绑定包装：`(...args) => $call(absFn, args)`。
  *
  * 统一顺序：apply → body → relation → isRelFn（委托 applyAbsFn）。
  * 行为对齐说明（与旧 $call 的差异，均属刻意）：

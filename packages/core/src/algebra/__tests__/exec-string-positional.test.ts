@@ -1,5 +1,5 @@
 /**
- * B-path String 方法位置/限制参数差分回归。
+ * evaluator String 方法位置/限制参数差分回归。
  * 回归背景：includes/startsWith/endsWith/split 忽略第二个实参——
  * "hello".includes("ell", 2) 折 true（原生 false）、"a,b,c".split(",", 2)
  * 折 3 元素（原生截断 2）、startsWith("he", 1) 折 true（原生 false）。
@@ -28,7 +28,7 @@ function splitOf(src: string) {
   return r.shape.elements.map((e) => litValue(e));
 }
 
-describe("B-path string method positional args", () => {
+describe("evaluator string method positional args", () => {
   it("includes with fromIndex", () => {
     expect(str(`export function run() { return "hello".includes("ell", 2); }`)).toBe(false);
     expect(str(`export function run() { return "hello".includes("ell", 1); }`)).toBe(true);

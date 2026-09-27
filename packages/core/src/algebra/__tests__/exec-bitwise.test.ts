@@ -1,5 +1,5 @@
 /**
- * B-path 位运算/移位/幂/一元正号差分回归。
+ * evaluator 位运算/移位/幂/一元正号差分回归。
  * 回归背景：transpile 对未登记运算符折叠为 $lit(undefined)——
  * 合法 JS（5 & 1、2 ** 10、+"42"）被断言为精确 undefined（真值 1/1024/42），
  * 属 unsound 折叠。每条断言均与 Node 真实执行结果对齐。
@@ -28,7 +28,7 @@ const runtimeUrl = pathToFileURL(
 ).href;
 
 async function execTranspiled(source: string, exportName: string) {
-  const dir = mkdtempSync(join(tmpdir(), "nudo-bpath-bitwise-"));
+  const dir = mkdtempSync(join(tmpdir(), "nudo-eval-bitwise-"));
   dirs.push(dir);
   const js = transpile(source, { runtimeImport: runtimeUrl });
   const modPath = join(dir, "mod.mjs");
@@ -37,7 +37,7 @@ async function execTranspiled(source: string, exportName: string) {
   return mod[exportName] as (...args: unknown[]) => Abs;
 }
 
-describe("B-path bitwise / shift / exponent / unary-plus", () => {
+describe("evaluator bitwise / shift / exponent / unary-plus", () => {
   it("& | ^ fold on literal operands", async () => {
     const run = await execTranspiled(
       `export function run(a, b) {

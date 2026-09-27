@@ -8,7 +8,7 @@ import {
   transpile,
 } from "@nudojs/core";
 
-describe("B-path try/catch", () => {
+describe("evaluator try/catch", () => {
   it("catches $throw and binds Abs value", () => {
     const src = `
 export function go(n) {

@@ -2,7 +2,7 @@
  * 转译器无法正确 lowering 的构造：抛此错误（替代静默降级注释）。
  * 消费方（tryRunTranspiled / body-fn）捕获后记录并 fail-closed
  * 结构化回落理由（unsupported:*）——能力知识单一事实源在转译点，
- * 不再依赖带外的 isBPathCapable 清单。
+ * 不再依赖带外的 isEvalCapable 清单。
  */
 export class NudoUnsupportedError extends Error {
   readonly reason: string;

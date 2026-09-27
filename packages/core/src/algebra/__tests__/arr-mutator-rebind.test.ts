@@ -41,7 +41,7 @@ export function f() {
     expect(shape).toMatch(/\[|tuple|arr/);
   });
 
-  it("this.arr.pop() via member path does not crash B-path", () => {
+  it("this.arr.pop() via member path does not crash evaluator", () => {
     const r = call(
       `
 export function f() {

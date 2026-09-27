@@ -8,7 +8,7 @@ Nudo infers types by *executing* your code with symbolic values, so the quality 
 
 ## Trust boundary
 
-Because inference **is** execution, `nudo check` / `nudo test` are equivalent to running the target code on your machine (B-path transpile + `new Function`).
+Because inference **is** execution, `nudo check` / `nudo test` are equivalent to running the target code on your machine (evaluator transpile + `new Function`).
 
 - Do **not** run nudo on untrusted code (unknown npm packages, user submissions, unreviewed PRs).
 - In CI, analyze only repositories you trust.

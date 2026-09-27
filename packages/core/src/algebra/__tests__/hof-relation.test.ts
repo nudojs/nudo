@@ -26,7 +26,7 @@ import {
 } from "../index.ts";
 import { gt } from "../pred.ts";
 
-/** B 路径驱动：runTranspiled + 导出调用（取代 analyzeFn 的求值面） */
+/** 求值引擎驱动：runTranspiled + 导出调用（取代 analyzeFn 的求值面） */
 function analyzeExport(src: string, fnName: string, args: Abs[]): Abs {
   const run = runTranspiled(src, { mode: "analyze" });
   return callTranspiledExportFull(run, fnName, args).result;

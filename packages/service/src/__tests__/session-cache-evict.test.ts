@@ -1,7 +1,7 @@
 /**
  * 宿主契约回归：入口 source 未变、依赖模块内容变了时，
  * 必须 evictAnalysisCachesForFiles（CLI watch / vite-plugin），
- * 否则 AnalysisResult / B-path / fn-cache 会命中陈旧结果。
+ * 否则 AnalysisResult / evaluator / fn-cache 会命中陈旧结果。
  */
 import { describe, it, expect, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";

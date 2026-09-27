@@ -248,7 +248,7 @@ Rules:
   generated env consumers — always ship a changeset that names the migration.
 - **Handwritten `@nudojs/env` wins** over harvest when both supply the same
   module key or the same export name. Analysis injects via
-  `mergeHarvestUnderEnv` (`@nudojs/service` `bpath-run.ts`) — harvest only
+  `mergeHarvestUnderEnv` (`@nudojs/service` `eval-run.ts`) — harvest only
   fills missing modules/exports. Changing that priority is **breaking** for
   service analysis results → service 1.x **major** on 1.x / minor on 0.x + callout.
 - Coverage report numbers are **optional release-notes content**, not a

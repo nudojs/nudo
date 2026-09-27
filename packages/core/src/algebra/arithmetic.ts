@@ -272,20 +272,20 @@ function isNumericLike(a: Abs): boolean {
 function addPred(a: Abs, b: Abs, sumTerm: Term, phi: Phi): Pred | undefined {
   // 双方都已有「相对自身 term」的数值下界/上界，且能从 Φ 或自身 pred 得到
   const aBounds = numericBounds(a, phi);
-  const bBounds = numericBounds(b, phi);
-  if (!aBounds && !bBounds) return undefined;
+  const evalBounds = numericBounds(b, phi);
+  if (!aBounds && !evalBounds) return undefined;
 
   const facts: Pred[] = [];
 
   // (a.lo + b.lo) < sum  或  ≤
-  if (aBounds?.lo !== undefined && bBounds?.lo !== undefined) {
-    const loSum = aBounds.lo.value + bBounds.lo.value;
-    const strict = aBounds.lo.strict || bBounds.lo.strict;
+  if (aBounds?.lo !== undefined && evalBounds?.lo !== undefined) {
+    const loSum = aBounds.lo.value + evalBounds.lo.value;
+    const strict = aBounds.lo.strict || evalBounds.lo.strict;
     facts.push(strict ? gt(sumTerm, lit(loSum)) : ge(sumTerm, lit(loSum)));
   }
-  if (aBounds?.hi !== undefined && bBounds?.hi !== undefined) {
-    const hiSum = aBounds.hi.value + bBounds.hi.value;
-    const strict = aBounds.hi.strict || bBounds.hi.strict;
+  if (aBounds?.hi !== undefined && evalBounds?.hi !== undefined) {
+    const hiSum = aBounds.hi.value + evalBounds.hi.value;
+    const strict = aBounds.hi.strict || evalBounds.hi.strict;
     facts.push(strict ? lt(sumTerm, lit(hiSum)) : le(sumTerm, lit(hiSum)));
   }
 

@@ -18,7 +18,7 @@ Nudo is built to **replace TypeScript as the day-to-day type check gate** — no
 | **Primary surface** | `.ts` + type annotations | Plain `.js` (type syntax is stripped if `.ts` is passed) |
 | **Type model** | Declared structural types | **Abs** (`shape × term × pred × conf`) — computable types |
 | **Contracts** | `interface` / `type` language | `*.nudo.js` builders (`fn`, `shape`, `number().gt(0)`) + optional `@nudo:contract` |
-| **Inference** | Annotations + local inference | **Executing** code on symbolic Abs (B-path) |
+| **Inference** | Annotations + local inference | **Executing** code on symbolic Abs (evaluator) |
 | **Check / diagnostics** | `tsc --noEmit` | `nudo check` (`actual ⊭ expected` on Abs; signatures even on success) |
 | **Ecosystem exit** | `.d.ts` is the model | `.d.ts` is a **lossy projection** (`absToTSType`) — not the source of truth |
 | **Leaving the other tool** | — | `nudo migrate` → **`retire` tsc** |

@@ -893,7 +893,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
     case "JSXElement":
     case "JSXFragment":
       // JSX 未 lowering：显式 unknown（不假精确 undefined），文件其余
-      // 构造保持 B-hosted——不再整文件 fail-closed
+      // 构造保持 eval-hosted——不再整文件 fail-closed
       return "$unknown()";
     default:
       // 未 lowering 的表达式：

@@ -85,7 +85,7 @@ term 与 pred 也是一等公民：`lit(value)` / `v(id)` 构造 term，`eq/ne/l
 | `litValue(a)` | 若 Abs 是精确字面量，取出具体值。 |
 | `confJoin(a, b)` | 连接两个置信度（取更差的）。 |
 | `checkSource(source, opts?)` | CI 门禁：Abs 上的契约/Pred 蕴含——见 [Check](../guides/check.md)。 |
-| `runTranspiled` / `callTranspiledExportFull` / `analyzeFn(…)` | Abs 原生求值入口（B-path）。 |
+| `runTranspiled` / `callTranspiledExportFull` / `analyzeFn(…)` | Abs 原生求值入口（evaluator）。 |
 | `generalizeFromAst(…)` | 内涵签名提取——`intension:` 行与 `A1` 形参的来源。 |
 
 ---
@@ -100,7 +100,7 @@ term 与 pred 也是一等公民：`lit(value)` / `v(id)` 构造 term，`eq/ne/l
 | `core/src/algebra/arithmetic.ts` | 二元算术（`+` `-` `*` `/` `%`）与比较 |
 | `service/src/evaluator/abs-route.ts` | 二元/一元运算与对象 spread 的 union 逐成员路由 |
 
-唯一求值引擎是 B-path（`core/algebra/exec`：转译 → 以 Abs 值执行 `new Function`）。B 不可托管源 fail-closed（`unknown` / 空导出）。
+唯一求值引擎是 evaluator（`core/algebra/exec`：转译 → 以 Abs 值执行 `new Function`）。B 不可托管源 fail-closed（`unknown` / 空导出）。
 
 ---
 
@@ -251,13 +251,13 @@ createEnvironment(parent?, bindings?)
 | `$yield` | fn | async / generator | `$yield(v: Abs): Abs` |
 | `abs` | fn | Abs constructors / faces | `abs( shape: Shape, term: Term \| undefined, pred: Pred \| undefined, conf: Confidence, ): Abs` |
 | `Abs` | type | Abs = shape × term × pred × conf | `Abs = { shape: Shape; term?: Term; pred?: Pred; conf: Confidence; pathNote?: string; }` |
-| `AbsAssignRecord` | type | Abs 域赋值记录（B 通道 $assignRecord 的同形投影） | `AbsAssignRecord = { name: string; prev?: Abs; next: Abs; line?: number; column?: number; conditional?: boolean; }` |
-| `AbsCallRecord` | type | Abs 域调用记录（B 通道 BCallRecord 的同形投影） | `AbsCallRecord = { fnName: string; args: Abs[]; result: Abs; callLoc?: { line: number; column: number }; threw?: boolean; }` |
+| `AbsAssignRecord` | type | Abs 域赋值记录（eval 通道 $assignRecord 的同形投影） | `AbsAssignRecord = { name: string; prev?: Abs; next: Abs; line?: number; column?: number; conditional?: boolean; }` |
+| `AbsCallRecord` | type | Abs 域调用记录（eval 通道 EvalCallRecord 的同形投影） | `AbsCallRecord = { fnName: string; args: Abs[]; result: Abs; callLoc?: { line: number; column: number }; threw?: boolean; }` |
 | `AbsFnImpl` | type | — | `AbsFnImpl = { params: string[]; body?: Node; async?: boolean; env?: AstEnv; kind?: string; apply?: (args: Abs[], thisVal?: Abs) => Abs; b...` |
 | `absFunction` | fn | 造一个带实现的 Abs 函数值 | `absFunction( params: string[], impl: Omit<AbsFnImpl, "params">, ): Abs` |
 | `AbsModuleExports` | type | — | `AbsModuleExports = { named: Record<string, Abs>; default?: Abs; }` |
 | `absShapeKey` | fn | — | `absShapeKey(a: Abs, seen: Set<object> = new Set()): string` |
-| `AbsSigImpl` | type | Abs 原生 env/builtin 实现（B-path 优先） | `AbsSigImpl = (args: Abs[], thisVal?: Abs) => Abs \| undefined` |
+| `AbsSigImpl` | type | Abs 原生 env/builtin 实现（evaluator 优先） | `AbsSigImpl = (args: Abs[], thisVal?: Abs) => Abs \| undefined` |
 | `absToConstraint` | fn | Abs → 契约；不可表达 → undefined | `absToConstraint(a: Abs): NudoConstraint \| undefined` |
 | `absToSchemaSource` | const | one-way projections | — |
 | `absToString` | fn | — | `absToString(a: Abs): string` |
@@ -279,9 +279,9 @@ createEnvironment(parent?, bindings?)
 | `assignSourceSlots` | fn | — | `assignSourceSlots(src: Abs): Record<string, { value: Abs }> \| undefined` |
 | `AstEnv` | type | — | — |
 | `attachFnImpl` | fn | — | `attachFnImpl(a: Abs, impl: AbsFnImpl): void` |
-| `BAbsAssignRecord` | type | B 赋值记录（与 ast-records.ts AbsAssignRecord 同形；structuralAssignIssues 消费） | `BAbsAssignRecord = { name: string; prev: Abs \| undefined; next: Abs; line?: number; column?: number; conditional?: boolean; }` |
-| `BCallRecord` | type | call-site recording for analyze | `BCallRecord = { fnName: string; args: Abs[]; result: Abs; callLoc?: { line: number; column: number }; threw?: boolean; }` |
-| `BClassSpec` | type | — | — |
+| `EvalAbsAssignRecord` | type | B 赋值记录（与 ast-records.ts AbsAssignRecord 同形；structuralAssignIssues 消费） | `EvalAbsAssignRecord = { name: string; prev: Abs \| undefined; next: Abs; line?: number; column?: number; conditional?: boolean; }` |
+| `EvalCallRecord` | type | call-site recording for analyze | `EvalCallRecord = { fnName: string; args: Abs[]; result: Abs; callLoc?: { line: number; column: number }; threw?: boolean; }` |
+| `EvalClassSpec` | type | — | — |
 | `beginCollectionFork` | fn | — | `beginCollectionFork(): void` |
 | `betaOf` | fn | 共享输出变量 B:$&#123;param&#125;（§5.1 P2 钉死） | `betaOf(param: string): Term` |
 | `bigintLit` | fn | literal Abs | `bigintLit(value: bigint): Abs` |
@@ -294,14 +294,14 @@ createEnvironment(parent?, bindings?)
 | `bool` | fn | Abs constructors / faces | `bool(): Abs` |
 | `boolean` | fn | `@nudo:contract` builder grammar | `boolean(): ConstraintBuilder` |
 | `boolLit` | fn | literal Abs | `boolLit(value: boolean): Abs` |
-| `BPathFallback` | type | B-path 回落事件（观测单一埋点；reason: unsupported:* = 能力边界，internal = B 自身缺陷） | `BPathFallback = { reason: string; message: string; loc?: { line: number; column: number }; }` |
+| `EvalFallback` | type | evaluator 回落事件（观测单一埋点；reason: unsupported:* = 能力边界，internal = 引擎自身缺陷） | `EvalFallback = { reason: string; message: string; loc?: { line: number; column: number }; }` |
 | `buildArgsFromAssume` | fn | 按 assume 集合构造实参：被 assume 的参数给带约束的符号，其余 any （design-cli-semantics §2：入口无约束 = any，不是 unknown）。 | `buildArgsFromAssume( source: string, fnName: string, assumeIds: Set<string>, ): Abs[]` |
 | `builtinCtorAbs` | fn | — | `builtinCtorAbs(name: string): Abs` |
 | `builtinCtorNameOf` | fn | Abs 侧内建构造器身份（与宿主构造器名对齐） | `builtinCtorNameOf(v: unknown): string \| undefined` |
 | `callAbsMethod` | fn | 调用 Abs 方法。返回 undefined = 未接管（调用方走其它路径）。 | `callAbsMethod( recv: Abs, name: string, args: Abs[], ): Abs \| undefined` |
 | `callAtFunctionBoundary` | fn | 函数调用边界：callee 的 loop/early-return 不得冒泡成 caller 结果。 | `callAtFunctionBoundary<T>(body: () => T): T` |
-| `callTranspiledExport` | fn | B-path execution (analyze mode) | `callTranspiledExport( exports: Record<string, unknown>, name: string, args: Abs[], ): Abs` |
-| `callTranspiledExportFull` | fn | B-path execution (analyze mode) | `callTranspiledExportFull( exports: Record<string, unknown>, name: string, args: Abs[], opts?: { phi?: Phi }, ): TranspiledCallResult` |
+| `callTranspiledExport` | fn | evaluator execution (analyze mode) | `callTranspiledExport( exports: Record<string, unknown>, name: string, args: Abs[], ): Abs` |
+| `callTranspiledExportFull` | fn | evaluator execution (analyze mode) | `callTranspiledExportFull( exports: Record<string, unknown>, name: string, args: Abs[], opts?: { phi?: Phi }, ): TranspiledCallResult` |
 | `canonicalArrayIndex` | fn | ES 规范数组下标（无前导零、&lt; 2^32-1）；非规范键返回 undefined | `canonicalArrayIndex(v: unknown): number \| undefined` |
 | `CheckAction` | type | 结构化修复动作（AI1；稳定枚举，只增不改语义） | `CheckAction = { kind: "draft" \| "relax" \| "callsite" \| "assume" \| "mock" \| "emit" \| "ignore-throws" \| "info"; command?: string; label: st...` |
 | `checkArg` | fn | contract checking | `checkArg( arg: Abs, expect: Pred \| undefined, phi: Phi = pTrue, ): Diagnostic \| undefined` |
@@ -360,7 +360,7 @@ createEnvironment(parent?, bindings?)
 | `evalNamespaceCall` | fn | — | `evalNamespaceCall( ns: string, method: string, args: Abs[], ): Abs \| undefined` |
 | `evalNumberStatic` | fn | Number.isInteger / isNaN / parseFloat 等 | `evalNumberStatic(name: string, args: Abs[]): Abs \| undefined` |
 | `evalObjectMethod` | fn | Object.keys/values/entries/assign + 不变性方法 | `evalObjectMethod(name: string, args: Abs[]): Abs \| undefined` |
-| `evalObjectProtoMethod` | fn | Object.prototype 方法语义（B-path $invoke 与 Object.prototype.X.call 共用）。 | `evalObjectProtoMethod( name: string, thisVal: Abs, args: Abs[], ): Abs \| undefined` |
+| `evalObjectProtoMethod` | fn | Object.prototype 方法语义（evaluator $invoke 与 Object.prototype.X.call 共用）。 | `evalObjectProtoMethod( name: string, thisVal: Abs, args: Abs[], ): Abs \| undefined` |
 | `evalPromiseCtor` | fn | new Promise(executor)：调用 executor(resolve, reject)，收集 resolve 实参作为 promise inner。原生只认第一次 settle——顺序双 resolve 取第一次；执行器内 $fork 分叉时各臂 settle 值 join（路径敏感，不得 first-wins 假精确）。 | `evalPromiseCtor(args: Abs[]): Abs` |
 | `evalPromiseMethod` | fn | then/catch/finally：可映射回调 → 新 inner；做不到诚实 promise&lt;unknown&gt; | `evalPromiseMethod( name: string, recv: Abs, args: Abs[], ): Abs \| undefined` |
 | `evalPromiseStatic` | fn | — | `evalPromiseStatic(name: string, args: Abs[]): Abs \| undefined` |
@@ -407,8 +407,8 @@ createEnvironment(parent?, bindings?)
 | `generatedExportNames` | fn | 侧车源码的生成段导出名：export 之前（跳过紧邻的 import/const 链）的注释 行含 `@generated` → 该名为 generated。组合式下行段（§5.3）形态为 `import` + `@generated 头` + prelude + export；callsite 段则是头紧贴 export。隔了其他代码行 / 无标记 / re-export 列表均不算。 | `generatedExportNames(sidecarSrc: string): Set<string>` |
 | `geNum` | fn | — | `geNum(term: Term, n: number): Pred` |
 | `getAbsProperty` | fn | 属性读取：template/string.length 等 | `getAbsProperty(recv: Abs, name: string): Abs \| undefined` |
-| `getBCallCollector` | fn | — | `getBCallCollector()` |
-| `getBClass` | fn | — | `getBClass(name: string): BClassSpec \| undefined` |
+| `getEvalCallCollector` | fn | — | `getEvalCallCollector()` |
+| `getEvalClass` | fn | — | `getEvalClass(name: string): EvalClassSpec \| undefined` |
 | `getFnImpl` | fn | — | `getFnImpl(a: Abs): AbsFnImpl \| undefined` |
 | `getGeneralizeMemoSize` | fn | — | `getGeneralizeMemoSize(): number` |
 | `getImplicationOracle` | fn | — | `getImplicationOracle(): ImplicationOracle \| undefined` |
@@ -498,8 +498,8 @@ createEnvironment(parent?, bindings?)
 | `markNullProtoObj` | fn | — | `markNullProtoObj(o: Abs): Abs` |
 | `markPureFn` | fn | 标记纯函数（@nudo:pure）：调用结果可按实参记忆化 | `markPureFn(target: object, name: string): void` |
 | `matchRelIdentLit` | fn | 从 Identifier 在比较中的位置解析「对哪个变量、用哪个关系」。 | `matchRelIdentLit( test: unknown, )` |
-| `MAX_B_CALL_DEPTH` | const | — | `const MAX_B_CALL_DEPTH` |
-| `MAX_B_TOTAL_CALLS` | const | 总调用上限：与 call-budget.MAX_TOTAL_CALLS 同阀（递归×循环×分支展开的 规模阀）。200k 在病态展开（lodash _baseFlatten）下 ~30s，20k 收口到 ~3s——截断 → opaque（更保守，zero-FP 安全）。 | `const MAX_B_TOTAL_CALLS` |
+| `MAX_EVAL_CALL_DEPTH` | const | — | `const MAX_EVAL_CALL_DEPTH` |
+| `MAX_EVAL_TOTAL_CALLS` | const | 总调用上限：与 call-budget.MAX_TOTAL_CALLS 同阀（递归×循环×分支展开的 规模阀）。200k 在病态展开（lodash _baseFlatten）下 ~30s，20k 收口到 ~3s——截断 → opaque（更保守，zero-FP 安全）。 | `const MAX_EVAL_TOTAL_CALLS` |
 | `mergeCollectionArms` | fn | 合并 fork 各臂 overlay → 全局表（由 endCollectionFork 实现）。 | `mergeCollectionArms(arms: Array<ArmOverlay \| undefined \| null>): void` |
 | `migrateInvariants` | fn | 写路径产生新副本时迁移不变性侧表（同 migrateAccessors 模式）。 | `migrateInvariants(from: Abs, to: Abs): void` |
 | `migrateNullProto` | fn | 同一对象的不可变更新（$set/$del）迁移 nullProto 标记 | `migrateNullProto(from: Abs, to: Abs): Abs` |
@@ -515,8 +515,8 @@ createEnvironment(parent?, bindings?)
 | `never` | const | Abs constructors / faces | `const never` |
 | `not` | fn | — | `not(p: Pred): Pred` |
 | `notAbs` | fn | 逻辑非 | `notAbs(a: Abs): Abs` |
-| `noteBCallRecord` | fn | 成员/方法调用点打点（$invoke 等；无收集器时 no-op）。不进 $callNamed 预算。 | `noteBCallRecord(r: BCallRecord): void` |
-| `noteBPathFallback` | fn | 记录一次 B 回落（body-fn 等非 runTranspiled 入口共用） | `noteBPathFallback(e: unknown): void` |
+| `noteEvalCallRecord` | fn | 成员/方法调用点打点（$invoke 等；无收集器时 no-op）。不进 $callNamed 预算。 | `noteEvalCallRecord(r: EvalCallRecord): void` |
+| `noteEvalFallback` | fn | 记录一次 B 回落（body-fn 等非 runTranspiled 入口共用） | `noteEvalFallback(e: unknown): void` |
 | `noteCollectionWrite` | fn | — | `noteCollectionWrite(id: object): void` |
 | `notePromiseExecutorFork` | fn | $fork 在 executor 内发生时打点（多臂 resolve 需 join，不得 first-wins 假精确） | `notePromiseExecutorFork(): void` |
 | `NudoConstraint` | type | contract checking | `NudoConstraint = { readonly __nudoConstraint: true; readonly prim?: PrimName; readonly preds: Pred[]; readonly fields?: Record<string, Nu...` |
@@ -576,13 +576,13 @@ createEnvironment(parent?, bindings?)
 | `RefineEntry` | type | 解析 `ms delay` / `n percent` → [param, Pred] 多条用 &amp;&amp; 或换行连接。 | `RefineEntry = { param: string; pred: Pred; constraint: NudoConstraint; }` |
 | `RefineResolveOpts` | type | — | `RefineResolveOpts = { loadModule?: (spec: string, fromFile: string) => string \| undefined; fromFile?: string; }` |
 | `refineToIndexedFull` | fn | refine 参数 → 带约束模板的下标表（shape 检查用） | `refineToIndexedFull( source: string, fnName: string, paramNames: string[], opts: RefineResolveOpts = {}, ): Array<[number, RefineEntry]>` |
-| `regexBrandAbsFrom` | fn | RegExp brand：source/flags/lastIndex 进 slots（B-path evalRegExpCtor / $regex 共用） | `regexBrandAbsFrom(pattern: string, flags: string): Abs` |
-| `registerBClass` | fn | — | `registerBClass(spec: BClassSpec): void` |
+| `regexBrandAbsFrom` | fn | RegExp brand：source/flags/lastIndex 进 slots（evaluator evalRegExpCtor / $regex 共用） | `regexBrandAbsFrom(pattern: string, flags: string): Abs` |
+| `registerEvalClass` | fn | — | `registerEvalClass(spec: EvalClassSpec): void` |
 | `relationFingerprint` | fn | relationFn 稳定 fingerprint（同签名共享，见 §3.3 已知限制） | `relationFingerprint( paramTypes: Abs[], returnType: Abs, ): string` |
 | `relationFn` | fn | 无 body、纯关系的 fn Abs。params 仅记 arity。 | `relationFn( paramTypes: Abs[], returnType: Abs, opts?: { params?: string[]; conf?: Confidence; fingerprint?: string; inferFrom?: { fromVar: string; via: "arr" \| "promise"; inferVar: string }; condFallback?: Abs; }, ): Abs` |
 | `RelSource` | type | — | — |
 | `requiredFnArity` | fn | Required arity from fn param labels — skips rest (`...`) and optional (`?`). | `requiredFnArity(params: readonly string[] \| undefined): number` |
-| `resetBCallBudget` | fn | 宿主入口（runTranspiled / callTranspiledExportFull）前重置 | `resetBCallBudget(): void` |
+| `resetEvalCallBudget` | fn | 宿主入口（runTranspiled / callTranspiledExportFull）前重置 | `resetEvalCallBudget(): void` |
 | `resetCheckSourceMemo` | fn | — | `resetCheckSourceMemo(): void` |
 | `resetGeneralizeMemo` | fn | — | `resetGeneralizeMemo(): void` |
 | `resetNudoModuleExecCache` | fn | — | `resetNudoModuleExecCache(): void` |
@@ -590,7 +590,7 @@ createEnvironment(parent?, bindings?)
 | `resetPhi` | fn | — | `resetPhi(): void` |
 | `RUNTIME_IMPORT_RE` | const | — | `const RUNTIME_IMPORT_RE` |
 | `runtimeImportOf` | fn | JS AST → `$op` program | `runtimeImportOf(runtime: string): string` |
-| `runTranspiled` | fn | B-path execution (analyze mode) | `runTranspiled( source: string, opts: RunTranspiledOptions = {}, ): Record<string, unknown>` |
+| `runTranspiled` | fn | evaluator execution (analyze mode) | `runTranspiled( source: string, opts: RunTranspiledOptions = {}, ): Record<string, unknown>` |
 | `RunTranspiledOptions` | type | — | `RunTranspiledOptions = { modules?: Record<string, AbsModuleExports \| Record<string, unknown>>; maxLoopIters?: number; mode?: "exec" \| "an...` |
 | `runTranspiledOptionsMemoKey` | fn | inject/modules **内容**指纹（memo 键）。对象身份对「每次新建同内容」 的 CLI 注入不稳——同一语义的 inject 跨 checkSource 调用会 miss 缓存。 | `runTranspiledOptionsMemoKey( opts: RunTranspiledOptions \| undefined, ): string` |
 | `runWithLoopExits` | fn | 函数求值作用域：收集抽象分支上的 early-return / throw 值；try 标记栈同边界 | `runWithLoopExits<T>(body: () => T): T` |
@@ -598,11 +598,11 @@ createEnvironment(parent?, bindings?)
 | `serializeCheckJson` | fn | `nudo check` gate | `serializeCheckJson(r: CheckReport): CheckJson` |
 | `serializeCheckJsonMulti` | fn | `nudo check` gate | `serializeCheckJsonMulti(reports: CheckJson[]): CheckJsonMulti` |
 | `setAddEntry` | fn | Set#add：fork 内写 overlay；返回同一 Abs | `setAddEntry(setAbs: Abs, value: Abs): Abs` |
-| `setApplyCallbackHost` | fn | B-path 宿主 `exec/call.ts` 加载时注册（副作用）。 | `setApplyCallbackHost(fn: ApplyCallbackHost): void` |
-| `setBAssignCollector` | fn | 返回先前 collector，便于嵌套调用 save/restore（禁止 finally 置 null 砸外层） | `setBAssignCollector( collector: ((r: BAbsAssignRecord) => void) \| null, )` |
-| `setBBindingSink` | fn | — | `setBBindingSink(sink: Map<string, unknown> \| null): void` |
-| `setBCallCollector` | fn | call-site recording for analyze | `setBCallCollector( collector: ((r: BCallRecord) => void) \| null, )` |
-| `setBPathFallbackCollector` | fn | — | `setBPathFallbackCollector( collector: ((f: BPathFallback) => void) \| null, ): void` |
+| `setApplyCallbackHost` | fn | evaluator 宿主 `exec/call.ts` 加载时注册（副作用）。 | `setApplyCallbackHost(fn: ApplyCallbackHost): void` |
+| `setEvalAssignCollector` | fn | 返回先前 collector，便于嵌套调用 save/restore（禁止 finally 置 null 砸外层） | `setEvalAssignCollector( collector: ((r: EvalAbsAssignRecord) => void) \| null, )` |
+| `setEvalBindingSink` | fn | — | `setEvalBindingSink(sink: Map<string, unknown> \| null): void` |
+| `setEvalCallCollector` | fn | call-site recording for analyze | `setEvalCallCollector( collector: ((r: EvalCallRecord) => void) \| null, )` |
+| `setEvalFallbackCollector` | fn | — | `setEvalFallbackCollector( collector: ((f: EvalFallback) => void) \| null, ): void` |
 | `setClearEntries` | fn | Set#clear | `setClearEntries(setAbs: Abs): Abs` |
 | `setDeleteEntry` | fn | Set#delete：按字面量元素移除；fork overlay 内生效。 | `setDeleteEntry(setAbs: Abs, value: Abs): Abs` |
 | `setElementsAbs` | fn | — | `setElementsAbs(setAbs: Abs): Abs[]` |
@@ -652,7 +652,7 @@ createEnvironment(parent?, bindings?)
 | `toNumberAbs` | fn | 一元 + —— ToNumber 折叠；bigint 原生恒抛 TypeError → 不可折叠 | `toNumberAbs(a: Abs): Abs` |
 | `transpile` | fn | JS AST → `$op` program | `transpile(source: string, opts?: TranspileOptions): string` |
 | `transpileBodyNode` | fn | JS AST → `$op` program | `transpileBodyNode(node: Node, opts: TranspileOptions): string` |
-| `TranspiledCallResult` | type | B-path execution (analyze mode) | `TranspiledCallResult = { result: Abs; throws: Abs; }` |
+| `TranspiledCallResult` | type | evaluator execution (analyze mode) | `TranspiledCallResult = { result: Abs; throws: Abs; }` |
 | `transpileExpression` | fn | JS AST → `$op` program | `transpileExpression(expr: Expression, opts: TranspileOptions = {}): string` |
 | `transpileFile` | fn | JS AST → `$op` program | `transpileFile(file: File, opts: TranspileOptions = {}): string` |
 | `TranspileOptions` | type | JS AST → `$op` program | — |
@@ -661,7 +661,7 @@ createEnvironment(parent?, bindings?)
 | `tryMakeRegexAbs` | fn | new RegExp(pattern, flags) 字面量真构造验证（$new 与 evalRegExpCtor 共用）： - 无参 → /(?:)/（原生 source 归一） - pattern 非字面量（抽象/RegExp 实例）→ undefined（调用方保守） - symbol pattern / flags → TypeError（ToString 抛） - 非法 pattern / 非法 flags（含 number/null/boolean flags 的 ToString） → SyntaxError；合法 → 精确 brand（source/flags 取真构造结果） | `tryMakeRegexAbs(args: Abs[]): Abs \| undefined` |
 | `tryPromoteDirectCall` | fn | 挂载点②：CallExpression callee = 形参 Identifier 直接调用 p(x) / p(a,b)。 | `tryPromoteDirectCall( env: AstEnv, calleeName: string, args: Abs[], loc?: { line: number; column: number }, ): Abs \| undefined` |
 | `tryPromoteForOfIteratee` | fn | for-of 迭代对象提升（applyEach 型）：`for (const x of items)`， items 为形参且仍是 any/unknown → arr(自身 var)。不依赖方法名。 | `tryPromoteForOfIteratee( env: AstEnv, iterateeName: string, loc?: { line: number; column: number }, ): Abs \| undefined` |
-| `tryPromoteHofCallback` | fn | 挂载点③：HOF 回调实参。回调是 Identifier ∈ paramNames 且尚未有 fn 形状。 | `tryPromoteHofCallback( env: AstEnv, cbName: string, method: string, argAbses: Abs[], loc?: { line: number; column: number }, ): Abs \| undefined` |
+| `tryPromoteHofCallback` | fn | 挂载点③：HOF 回调实参。回调是 Identifier ∈ paramNames 且尚未有 fn 形状。 | `tryPromoteHofCallback( env: AstEnv, cevalName: string, method: string, argAbses: Abs[], loc?: { line: number; column: number }, ): Abs \| undefined` |
 | `tryPromoteReceiverAsArr` | fn | 挂载点①：方法派发 miss。receiver 是形参 Identifier 且 shape 为 any/未知， 方法名为 filter/map/reduce/flatMap → 提升为 arr(自身 var)。 | `tryPromoteReceiverAsArr( env: AstEnv, receiverName: string, method: string, loc?: { line: number; column: number }, ): Abs \| undefined` |
 | `tryRunTranspiled` | fn | B 单一入口：runTranspiled + 类型化回落观测。 | `tryRunTranspiled( source: string, opts: RunTranspiledOptions = {}, ): Record<string, unknown> \| undefined` |
 | `TYPEOF_NAMES` | const | typeof 标签全集（否定展开用；顺序稳定） | `const TYPEOF_NAMES` |

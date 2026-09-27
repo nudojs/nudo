@@ -261,7 +261,7 @@ See [`docs/examples/`](./docs/examples/) for runnable examples.
 ## How It Works
 
 1. **Parse** — Babel parses your `.js` file and extracts `@nudo:` directives
-2. **Execute** — The evaluator runs each function with abstract interpretation, tracking **Abs values** through all code paths (production analysis is Abs-native via B-path transpile+exec)
+2. **Execute** — The evaluator runs each function with abstract interpretation, tracking **Abs values** through all code paths (production analysis is Abs-native via evaluator transpile+exec)
 3. **Combine** — Results from multiple cases are merged into a unified type via union simplification
 4. **Report** — `nudo check` prints signatures + gate issues; `nudo test` prints case reports; `nudo export` projects dts / guard / schema / standard
 
@@ -284,7 +284,7 @@ Production analysis is **Abs-native**. Extensional TS/schema/dts projections (`f
 
 ## Security
 
-Nudo's analysis **executes** the code it is given: the B-path evaluator transpiles your source and runs it via `new Function`. Treat `nudo check` / `nudo test` like running the target code.
+Nudo's analysis **executes** the code it is given: the evaluator evaluator transpiles your source and runs it via `new Function`. Treat `nudo check` / `nudo test` like running the target code.
 
 - Do **not** run nudo on untrusted code (unknown npm packages, user submissions, unreviewed PRs).
 - In CI, analyze only repositories you trust.

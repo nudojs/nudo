@@ -11,7 +11,7 @@
  *
  * B3 Phase B：`nudo.cache` / NUDO_CACHE_DIR 打开时，整文件 effectiveInterface
  * 表（含 implicit 负缓存 null）落盘；二次冷启动跳过侧车 exec / 契约合并。
- * 缓存只服务打印/表面，不加速 B-path 分析（design-persistent-cache §0）。
+ * 缓存只服务打印/表面，不加速 evaluator 分析（design-persistent-cache §0）。
  */
 
 import { readFileSync, existsSync } from "node:fs";

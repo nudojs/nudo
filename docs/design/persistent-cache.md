@@ -24,7 +24,7 @@
 加速边界（诚实声明）：
 
 - 服务的是：`contract` **打印/契约读取**冷启动、opt-in 的 `check` 冷路径、以及 harvest 依赖层（L2 已落地）。
-- **不**加速：`test` / `contract --emit` / `health` 的完整 B-path 分析；`export` 整条投影链。
+- **不**加速：`test` / `contract --emit` / `health` 的完整 evaluator 分析；`export` 整条投影链。
 - Abs 本体、AST、PolyFn、AnalysisResult、截断/opaque/mock 改道的**分析**结果——**不进磁盘**。
 
 ### 与 check / 契约配置的关系
@@ -53,7 +53,7 @@
 
 ### 非目标
 
-- 不缓存 Abs 本体 / AST / B-path / AnalysisResult。
+- 不缓存 Abs 本体 / AST / evaluator / AnalysisResult。
 - 不缓存证据不稳的分析结果。
 - 不做远程/共享缓存。
 - 不替代进程内 L0 / check memo——磁盘是冷路径。
@@ -88,7 +88,7 @@ L2 harvest 落地形态（与实现对齐）：
 | 值 | `HarvestJson` 签名投影（modules/globals → `HarvestSig`）；读回 `materializeHarvestJson` → mock Abs 导出表（丢 pred/conf） |
 | 降级链（B2） | 磁盘 miss / harvest 失败 / `@types/node` 缺失 → 手写 `@nudojs/env` node 面，结果标 **`degraded: true`**；重叠处手写 wins（`mergeHarvestUnderEnv`） |
 | 进程内缓存 | 成功 + 终态失败（`not-found`/`no-dts`/`failed`）都进 L0 Map，防重试风暴；`disabled`（`NUDO_HARVEST_NODE=off`）**从不缓存** |
-| 仍不进盘 | 降级/失败结果只在进程内（不写 HarvestJson）；Abs 本体 / AST / B-path / AnalysisResult；`test`/`export` 整条链 |
+| 仍不进盘 | 降级/失败结果只在进程内（不写 HarvestJson）；Abs 本体 / AST / evaluator / AnalysisResult；`test`/`export` 整条链 |
 
 前提（L2 不变式，仍有效）：harvest 出口稳定为可 JSON 化签名表；磁盘层只缓存签名投影，不缓存 Abs 本体。
 

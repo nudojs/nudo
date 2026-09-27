@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { analyzeFile, clearBPathCache } from "@nudojs/service";
+import { analyzeFile, clearEvalCache } from "@nudojs/service";
 import { formatShape } from "@nudojs/core";
 import {
   transpile,
@@ -28,8 +28,8 @@ export function gradeFor(score) {
     expect(js).toMatch(/return \$fork\([\s\S]*\(\) => \$lit\("A"\)/);
   });
 
-  it("B-path evaluateFunction returns A for score=92", () => {
-    clearBPathCache();
+  it("evaluator evaluateFunction returns A for score=92", () => {
+    clearEvalCache();
     const result = analyzeFile("/tmp/nudo-branch-case.js", source);
     const a = result.functions
       .find((f) => f.name === "gradeFor")

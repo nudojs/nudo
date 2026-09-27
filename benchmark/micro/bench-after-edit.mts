@@ -65,7 +65,7 @@ function makeLSMut(fileName: string, source: string) {
 
 async function main() {
   const files = writeFixtures();
-  const { analyzeFile, clearBPathCache, clearAnalysisFileCache } = await import(
+  const { analyzeFile, clearEvalCache, clearAnalysisFileCache } = await import(
     join(ROOT, "packages/service/src/index.ts")
   );
   const { checkSource, pTrue, resetCheckSourceMemo } = await import(
@@ -95,7 +95,7 @@ async function main() {
     const tscBase = readFileSync(tscPath, "utf-8");
     const reps = label.startsWith("scale4") || label.startsWith("w3") ? 8 : 15;
 
-    clearBPathCache();
+    clearEvalCache();
     clearAnalysisFileCache();
     analyzeFile(nudoPath, base);
     resetCheckSourceMemo();
@@ -176,7 +176,7 @@ async function main() {
     }
 
     clearAnalysisFileCache();
-    clearBPathCache();
+    clearEvalCache();
     analyzeFile(cmdPath, cmdSrc);
     resetCheckSourceMemo();
     checkSource(cmdPath, cmdSrc, pTrue, { loadModule: defaultLoadModule, fromFile: cmdPath });

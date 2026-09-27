@@ -1,5 +1,5 @@
 /**
- * B-path BigInt 字面量差分回归。
+ * evaluator BigInt 字面量差分回归。
  * 回归背景：transpile 无 BigIntLiteral case——5n 落到默认分支被折叠为
  * $lit(undefined)：typeof 5n 折 "undefined"、(5n).toString() 报假 TypeError、
  * 5n == 5 折 false、位运算/幂以 undefined 参与。
@@ -22,7 +22,7 @@ const runtimeUrl = pathToFileURL(
 ).href;
 
 async function execTranspiled(source: string, exportName: string) {
-  const dir = mkdtempSync(join(tmpdir(), "nudo-bpath-bigint-"));
+  const dir = mkdtempSync(join(tmpdir(), "nudo-eval-bigint-"));
   dirs.push(dir);
   const js = transpile(source, { runtimeImport: runtimeUrl });
   const modPath = join(dir, "mod.mjs");
@@ -31,7 +31,7 @@ async function execTranspiled(source: string, exportName: string) {
   return mod[exportName] as (...args: unknown[]) => Abs;
 }
 
-describe("B-path BigInt literals", () => {
+describe("evaluator BigInt literals", () => {
   it("typeof 5n is \"bigint\"", async () => {
     const run = await execTranspiled(`export function run() { return typeof 5n; }`, "run");
     expect(litValue(run())).toBe("bigint");

@@ -97,7 +97,7 @@ function len(s) {
 
 ## @nudo:mock — Mock External Dependencies
 
-Replace external dependencies with mocks during evaluation — `fetch`, file system APIs, or other code Nudo cannot execute directly. Full syntax (five forms), the single-line rule, B-path caveats, and worked examples: [Mocking External Dependencies](./mocking.md).
+Replace external dependencies with mocks during evaluation — `fetch`, file system APIs, or other code Nudo cannot execute directly. Full syntax (five forms), the single-line rule, evaluator caveats, and worked examples: [Mocking External Dependencies](./mocking.md).
 
 ---
 
@@ -469,7 +469,7 @@ Module mocks are declared per file with `@nudo:mock-module` — there is no proj
 
 ## @nudo:as — Type Assertion
 
-Override the type of the next statement's value. Similar to TypeScript's `as` keyword, but placed as a line comment above the statement. Applied on the B path to `VariableDeclaration` initializers and `ReturnStatement` values of the covered statement.
+Override the type of the next statement's value. Similar to TypeScript's `as` keyword, but placed as a line comment above the statement. Applied on the eval path to `VariableDeclaration` initializers and `ReturnStatement` values of the covered statement.
 
 ### Syntax
 

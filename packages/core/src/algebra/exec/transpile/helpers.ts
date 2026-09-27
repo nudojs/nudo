@@ -36,7 +36,7 @@ export function matchAsOverride(stmt: Node, opts: TranspileOptions): string | nu
 }
 
 /**
- * 函数体是否含 this：B 路径默认把函数声明/表达式转成无宿主 this 的调用，
+ * 函数体是否含 this：求值引擎默认把函数声明/表达式转成无宿主 this 的调用，
  * 只有 body 引用 this 的函数才需要宿主 this 注入（$rawThis）。
  * 嵌套函数声明/表达式有自己的 this 边界，不下降；箭头函数词法 this 下降。
  */

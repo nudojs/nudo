@@ -1,0 +1,52 @@
+import { describe, it, expect } from "vitest";
+import { analyzeFile } from "@nudojs/service";
+import { formatShape } from "@nudojs/core";
+
+describe("@nudo:replace on eval path", () => {
+  it("replaces only matching sub-expression", () => {
+    const source = `
+/**
+ * @nudo:case "test" (5, 10)
+ */
+function compute(a, b) {
+  // @nudo:replace a lit(100)
+  const result = a + b;
+  return result;
+}
+`;
+    const result = analyzeFile("/test/replace.js", source);
+    expect(formatShape(result.functions[0].cases[0].abs)).toBe("110");
+  });
+
+  it("does not match partial identifiers", () => {
+    const source = `
+/**
+ * @nudo:case "test" ()
+ */
+function test() {
+  const aa = 1;
+  const a = 2;
+  // @nudo:replace a lit(99)
+  const result = aa + a;
+  return result;
+}
+`;
+    const result = analyzeFile("/test/replace2.js", source);
+    expect(formatShape(result.functions[0].cases[0].abs)).toBe("100");
+  });
+
+  it("replaces call expression target", () => {
+    const source = `
+/**
+ * @nudo:case "test" ("{\"id\":1}")
+ */
+function process(input) {
+  // @nudo:replace JSON.parse(input) shape({ id: number() })
+  const data = JSON.parse(input);
+  return data.id;
+}
+`;
+    const result = analyzeFile("/test/replace3.js", source);
+    expect(formatShape(result.functions[0].cases[0].abs)).toBe("number");
+  });
+});

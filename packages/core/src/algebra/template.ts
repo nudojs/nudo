@@ -256,9 +256,9 @@ export function concatString(a: Abs, b: Abs): Abs {
   }
   // 至少一侧是 string（含 template / prim / 可 stringify 字面量）
   const aParts = coerceToStringParts(a);
-  const bParts = coerceToStringParts(b);
-  if (!aParts || !bParts) return abs({ k: "unknown" }, undefined, undefined, "partial");
-  return createTemplateAbs([...aParts, ...bParts]);
+  const evalParts = coerceToStringParts(b);
+  if (!aParts || !evalParts) return abs({ k: "unknown" }, undefined, undefined, "partial");
+  return createTemplateAbs([...aParts, ...evalParts]);
 }
 
 /**

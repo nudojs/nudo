@@ -1,5 +1,5 @@
 ---
-description: Mock external dependencies during evaluation — five @nudo:mock forms (arrow functions, stub helpers, builders, from-module), the single-line rule, and B-path caveats.
+description: Mock external dependencies during evaluation — five @nudo:mock forms (arrow functions, stub helpers, builders, from-module), the single-line rule, and evaluator caveats.
 ---
 
 # Mocking External Dependencies
@@ -63,7 +63,7 @@ The real diagnostics for the truncated line:
 
 **Warning: no builder calls inside an arrow-function mock body.** Constraint builders exist only in directive type expressions (case args, `@nudo:skip`, `@nudo:as`, …). Inside a mock body write plain JavaScript — plain objects and closures — or use `stub().returns(...)` / `stub().resolves(...)` helpers instead.
 
-**Warning: an unmocked global is executed for real on the B path.** For B-hosted files (the default for sources without top-level `this.`), the transpiled code calls the actual Node runtime global when no mock binds the name. A built-in like `fetch` therefore receives an abstract value as its URL and crashes the run (`ERR_INVALID_URL`, exit `1`) instead of evaluating to `unknown`. Mock any global your analyzed code calls: `@nudo:mock fetch = (url) => ({ ok: true, json: () => ({ ... }) })`.
+**Warning: an unmocked global is executed for real on the eval path.** For eval-hosted files (the default for sources without top-level `this.`), the transpiled code calls the actual Node runtime global when no mock binds the name. A built-in like `fetch` therefore receives an abstract value as its URL and crashes the run (`ERR_INVALID_URL`, exit `1`) instead of evaluating to `unknown`. Mock any global your analyzed code calls: `@nudo:mock fetch = (url) => ({ ok: true, json: () => ({ ... }) })`.
 
 ## Examples
 

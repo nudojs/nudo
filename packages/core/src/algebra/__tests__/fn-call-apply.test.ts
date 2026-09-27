@@ -1,5 +1,5 @@
 /**
- * Function.prototype.call/apply/bind（P1）：B 路径不得对合法 HOF 形态签 unknown。
+ * Function.prototype.call/apply/bind（P1）：求值引擎不得对合法 HOF 形态签 unknown。
  */
 import { describe, it, expect } from "vitest";
 import {
@@ -18,7 +18,7 @@ function call(src: string, fnName: string, ...args: unknown[]) {
   );
 }
 
-describe("Function.prototype.call/apply on B-path", () => {
+describe("Function.prototype.call/apply on evaluator", () => {
   it("g.call(null, 41) resolves through $invoke", () => {
     const r = call(
       `
@@ -41,7 +41,7 @@ export function f() { return g.apply(null, [21]); }
     expect(litValue(r.result)).toBe(42);
   });
 
-  it("g.bind works; B-path params fall back to arity names not _rest", () => {
+  it("g.bind works; evaluator params fall back to arity names not _rest", () => {
     const r = call(
       `
 export function g(x, y) { return x + y; }

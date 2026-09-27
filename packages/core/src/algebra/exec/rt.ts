@@ -1,5 +1,5 @@
 /**
- * B-path 运行时绑定表（惰性单例）：
+ * evaluator 运行时绑定表（惰性单例）：
  * 从 run.ts 拆出——body-fn（$call 编译执行）与 run.ts 共用，避免
  * run → calls → call → body-fn → run 的模块初始化环（rtAll 顶层
  * spread 会在环内触发 ReferenceError）。

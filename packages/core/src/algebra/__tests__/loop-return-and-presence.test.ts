@@ -177,7 +177,7 @@ export function pick(obj, key) {
   return obj[key];
 }
 `;
-    // 构造闭 shape：源码字面量对象经 B-path 为 closed
+    // 构造闭 shape：源码字面量对象经 evaluator 为 closed
     const src2 = `
 export function pick(key) {
   return { a: 1, b: "x" }[key];

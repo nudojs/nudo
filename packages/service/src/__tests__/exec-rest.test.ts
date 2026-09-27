@@ -6,9 +6,9 @@ import {
   $arr,
   litValue,
 } from "@nudojs/core";
-import { isBPathCapable } from "@nudojs/service";
+import { isEvalCapable } from "@nudojs/service";
 
-describe("B-path rest parameters", () => {
+describe("evaluator rest parameters", () => {
   it("collects rest into $arr", () => {
     const src = `
 export function sum(a, ...rest) {
@@ -48,8 +48,8 @@ export function restLen(a, ...rest) {
 });
 
 describe("B-primary capable files", () => {
-  it("isBPathCapable allows require now", () => {
-    expect(isBPathCapable("function f(x) { return x + 1; }")).toBe(true);
-    expect(isBPathCapable("const x = require('y');")).toBe(true);
+  it("isEvalCapable allows require now", () => {
+    expect(isEvalCapable("function f(x) { return x + 1; }")).toBe(true);
+    expect(isEvalCapable("const x = require('y');")).toBe(true);
   });
 });

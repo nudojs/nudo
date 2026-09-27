@@ -37,21 +37,21 @@ export {
 export {
   $class, $invoke, $invokeSuper, $new, $optionalGet, $optionalInvoke,
   $orDefault, $reStateCall, $setKey, $staticInvoke, $super, $thisGet,
-  $thisSet, type BClassSpec, clearBClasses, getBClass, registerBClass
+  $thisSet, type EvalClassSpec, clearBClasses, getEvalClass, registerEvalClass
 } from "./class.ts";
 
 export {
-  $assignRecord, $callNamed, $recordBinding, type BAbsAssignRecord,
-  type BCallRecord, MAX_B_CALL_DEPTH, MAX_B_TOTAL_CALLS, getBCallCollector,
-  noteBCallRecord, resetBCallBudget, setBAssignCollector, setBBindingSink,
-  setBCallCollector
+  $assignRecord, $callNamed, $recordBinding, type EvalAbsAssignRecord,
+  type EvalCallRecord, MAX_EVAL_CALL_DEPTH, MAX_EVAL_TOTAL_CALLS, getEvalCallCollector,
+  noteEvalCallRecord, resetEvalCallBudget, setEvalAssignCollector, setEvalBindingSink,
+  setEvalCallCollector
 } from "./calls.ts";
 
 export {
-  type BPathFallback, RUNTIME_IMPORT_RE, type RunTranspiledOptions,
+  type EvalFallback, RUNTIME_IMPORT_RE, type RunTranspiledOptions,
   type TranspiledCallResult, bindingsOf, callTranspiledExport,
-  callTranspiledExportFull, evalExprAbs, noteBPathFallback, runTranspiled,
-  runTranspiledOptionsMemoKey, setBPathFallbackCollector, tryRunTranspiled
+  callTranspiledExportFull, evalExprAbs, noteEvalFallback, runTranspiled,
+  runTranspiledOptionsMemoKey, setEvalFallbackCollector, tryRunTranspiled
 } from "./run.ts";
 
 export {

@@ -1,5 +1,5 @@
 
-// ---- native THROW vs bpath 具体（假精确方向） ----
+// ---- native THROW vs eval 具体（假精确方向） ----
 export const corpus1 = [
   "return [].reduce((a,b)=>a+b)",
   "return [].reduce((a,b)=>a+b, undefined)",

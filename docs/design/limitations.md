@@ -53,7 +53,7 @@
 | 项 | 状态 | 说明 |
 |----|------|------|
 | Pred 蕴含（D2） | **已扩展** | 线性形（`+`/`-`/`*const`）· 跨项区间合成 · 等式类（`x=y`）· `ne` 收紧为严格界 · 合取目标分解 · and/or 交换律相等。非线性 / 量词仍故意不完整；可选 `setImplicationOracle` 外接 SMT（默认无依赖，仅内建证不出时调用、返回 `true` 才抬升，fail-closed） |
-| 闭包跨调用状态合流 | **已建模** | B-path 顺序调用共享闭包 `let`（`s5-closure-state.test.ts`）。残余：**未调用前**方法槽 `returnType` 诚实 `?`（形参名已展示，如 `(n) => ?`）；首次调用后渐进 join 填入（`engine-precision-residuals.test.ts` T7） |
+| 闭包跨调用状态合流 | **已建模** | evaluator 顺序调用共享闭包 `let`（`s5-closure-state.test.ts`）。残余：**未调用前**方法槽 `returnType` 诚实 `?`（形参名已展示，如 `(n) => ?`）；首次调用后渐进 join 填入（`engine-precision-residuals.test.ts` T7） |
 | HOF `constraint` 表达 fn 形状 | **已开** | `fn()` → entry Abs 落 `shape.fn`；refine→**error** 可测（`hof-refine-error.test.ts`）；promote 仍只 warning |
 | 调用点经验泛化（P3） | **明确不做** | 不入主路径（hof-relations） |
 | 手写 Node env leaf-clean | **已收窄** | 高频面 options/Date/null/Record 具体化；残余 `any` 仅真无约束参（`assert.*` value、`util.format` 混参、`util.types.*` 谓词入参）— 见 `docs/reports/env-coverage-baseline.md` |

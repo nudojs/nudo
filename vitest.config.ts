@@ -60,7 +60,7 @@ export default defineConfig({
     // 无需先 build；与 CI「lint / build / test 独立」一致。
     // 别名表唯一来源：scripts/workspace-aliases.mjs（最长前缀优先，
     // 保证 `@nudojs/core/exec` 不被 `@nudojs/core` 前缀吞掉）。
-    // B-path transpile 注入 `@nudojs/core/exec` —— 测试必须走 src，否则
+    // evaluator transpile 注入 `@nudojs/core/exec` —— 测试必须走 src，否则
     // 与 dist 旧 runtime 分叉（mutator/fork 修复对测试不可见）。
     alias: vitestAlias(new URL(".", import.meta.url).pathname),
   },

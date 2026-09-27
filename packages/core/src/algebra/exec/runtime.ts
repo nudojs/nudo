@@ -1,5 +1,5 @@
 /**
- * B 路径运行时：transpile 后的程序在 Node 上执行时，值就是 Abs。
+ * 求值引擎运行时：transpile 后的程序在 Node 上执行时，值就是 Abs。
  * 与 AST 解释器语义同构；TypeValue 不再是求值载体。
  *
  * 实现按域拆在 runtime/*.ts；本文件是 re-export facade。

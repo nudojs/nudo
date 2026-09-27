@@ -7,7 +7,7 @@
  *
  * 内存上界：本层不持有进程内 map——每次 get/set 直读/直写磁盘，retained
  * heap O(1)。磁盘容量不在本层封顶（由宿主/CI 清理 `diskCacheRoot`）。
- * 进程内 LRU 上界见 session-cache-limits / lru-map.ts（analysis/fn/bpath/
+ * 进程内 LRU 上界见 session-cache-limits / lru-map.ts（analysis/fn/eval/
  * harvest/abs-module/path-env）。
  */
 

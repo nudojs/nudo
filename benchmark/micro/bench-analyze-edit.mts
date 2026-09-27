@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 
 const ROOT = join(import.meta.dirname, "..", "..");
-const { analyzeFile, clearAnalysisFileCache, clearBPathCache } = await import(
+const { analyzeFile, clearAnalysisFileCache, clearEvalCache } = await import(
   join(ROOT, "packages/service/src/index.ts")
 );
 const { w3Nudo } = await import("./fixtures.mjs");
@@ -20,7 +20,7 @@ function med(xs: number[]) {
 // warm
 writeFileSync(path, base);
 clearAnalysisFileCache();
-clearBPathCache();
+clearEvalCache();
 analyzeFile(path, base);
 
 const samples: number[] = [];
@@ -37,7 +37,7 @@ console.log("scale400 analyze after-edit median", med(samples), "ms", samples.ma
 const cmd = join(ROOT, "node_modules/commander/lib/command.js");
 const cmdSrc = readFileSync(cmd, "utf-8");
 clearAnalysisFileCache();
-clearBPathCache();
+clearEvalCache();
 analyzeFile(cmd, cmdSrc);
 const cmdS: number[] = [];
 for (let i = 0; i < 5; i++) {

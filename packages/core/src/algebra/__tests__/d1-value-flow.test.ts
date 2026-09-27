@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   runTranspiled,
-  setBCallCollector,
+  setEvalCallCollector,
   formatShape,
   type Abs,
 } from "../index.ts";
@@ -10,7 +10,7 @@ type Rec = { fnName: string; args: Abs[]; result: Abs };
 
 function runCollect(src: string): Rec[] {
   const recs: Rec[] = [];
-  const prev = setBCallCollector((r) => {
+  const prev = setEvalCallCollector((r) => {
     recs.push({
       fnName: r.fnName,
       args: r.args,
@@ -20,7 +20,7 @@ function runCollect(src: string): Rec[] {
   try {
     runTranspiled(src, {});
   } finally {
-    setBCallCollector(prev);
+    setEvalCallCollector(prev);
   }
   return recs;
 }

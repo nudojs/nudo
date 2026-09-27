@@ -1,6 +1,6 @@
 // IMPLEMENTED:cli-semantics — any 成员访问记 may-throw；unknown-recv 仅引擎债。
 /**
- * 成员缺失诊断（B 路径 $invoke / 成员访问共用）。
+ * 成员缺失诊断（求值引擎 $invoke / 成员访问共用）。
  * 无 $call / transpile 依赖，避免与 calls 循环。
  *
  * any vs unknown（design-cli-semantics §2–3）：
@@ -14,7 +14,7 @@ import { abs } from "../abs.ts";
 import { recordMayThrow } from "./may-throw.ts";
 import { isNullProtoObj } from "../objects.ts";
 
-export type BMemberDiag = {
+export type EvalMemberDiag = {
   kind: "method" | "property";
   name: string;
   /** 接收者 prim 类型名，或 "unknown" / "object"（C0.5 闭 shape 缺槽） */
@@ -27,7 +27,7 @@ export type BMemberDiag = {
   code?: string;
 };
 
-let memberDiagCollector: ((d: BMemberDiag) => void) | null = null;
+let memberDiagCollector: ((d: EvalMemberDiag) => void) | null = null;
 const callLocStack: Array<{ line: number; column: number }> = [];
 /** 实参 Abs → 字面量源位置（$callNamed 按 argLocs 打标） */
 const absOrigins = new WeakMap<object, { line: number; column: number }>();
@@ -44,8 +44,8 @@ export function getAbsOrigin(a: Abs | undefined): { line: number; column: number
 
 /** 返回先前 collector，便于嵌套调用 save/restore */
 export function setMemberDiagCollector(
-  c: ((d: BMemberDiag) => void) | null,
-): ((d: BMemberDiag) => void) | null {
+  c: ((d: EvalMemberDiag) => void) | null,
+): ((d: EvalMemberDiag) => void) | null {
   const prev = memberDiagCollector;
   memberDiagCollector = c;
   return prev;
@@ -59,7 +59,7 @@ export function popCallLoc(): void {
   callLocStack.pop();
 }
 
-export function recordMemberDiag(d: BMemberDiag): void {
+export function recordMemberDiag(d: EvalMemberDiag): void {
   if (!memberDiagCollector) return;
   const origin = d.origin ?? callLocStack[callLocStack.length - 1];
   try {
@@ -236,7 +236,7 @@ export const OBJECT_PROTO_NAMES = new Set([
 ]);
 
 /**
- * 结构上确定不可调用的成员调用（B-path $invoke）：
+ * 结构上确定不可调用的成员调用（evaluator $invoke）：
  * - null-proto 对象：无 Object.prototype 可回退，缺失自有槽即确定缺失
  * - 闭 exact 对象：slots 是精确键集，非 OP 名缺失即确定缺失（OP 名经
  *   Object.prototype 存在，未建模 → 保守不抛）
@@ -273,7 +273,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 const evalMissingSlotAls = new AsyncLocalStorage<boolean>();
 let evalMissingSlotFallback = false;
 
-/** host（service analysisConfig）在 B-path 前设置；默认 false */
+/** host（service analysisConfig）在 evaluator 前设置；默认 false */
 export function setEvalMissingSlotEnabled(enabled: boolean): void {
   evalMissingSlotFallback = enabled;
   evalMissingSlotAls.enterWith(enabled);

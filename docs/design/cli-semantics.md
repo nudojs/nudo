@@ -495,7 +495,7 @@ npx tsx scripts/scan-real-packages.ts commander
       "maxForks": 5000
     },
     // 进程内会话 LRU（内存/速度）。0=关。env NUDO_CACHE_MAX_FILES|FNS|BRUNS 优先
-    "sessionCache": { "maxFiles": 64, "maxFns": 1024, "maxBRuns": 32 }
+    "sessionCache": { "maxFiles": 64, "maxFns": 1024, "maxEvalRuns": 32 }
   }
 }
 ```

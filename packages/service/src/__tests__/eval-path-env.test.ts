@@ -1,0 +1,46 @@
+import { describe, it, expect, afterAll } from "vitest";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { analyzeFileAsync, clearEvalCache } from "@nudojs/service";
+import { formatShape } from "@nudojs/core";
+
+const dirs: string[] = [];
+afterAll(() => {
+  for (const d of dirs) rmSync(d, { recursive: true, force: true });
+});
+
+describe("evaluator path-based @nudo:env", () => {
+  it("loads ./custom.env.ts globals", async () => {
+    clearEvalCache();
+    const dir = mkdtempSync(join(tmpdir(), "nudo-path-env-"));
+    dirs.push(dir);
+    writeFileSync(
+      join(dir, "custom.env.ts"),
+      `import { numLit } from "@nudojs/core";
+export function defineEnv() {
+  return {
+    globals: {
+      MAGIC: numLit(99),
+    },
+  };
+}
+`,
+    );
+    const main = `/// @nudo:env ./custom.env.ts
+
+/**
+ * @nudo:case "t" ()
+ */
+function getMagic() {
+  return MAGIC;
+}
+`;
+    const p = join(dir, "main.js");
+    writeFileSync(p, main, "utf-8");
+    const result = await analyzeFileAsync(p, main);
+    const fn = result.functions.find((f) => f.name === "getMagic");
+    expect(fn).toBeDefined();
+    expect(formatShape(fn!.cases[0].abs)).toBe("99");
+  });
+});

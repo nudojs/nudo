@@ -1,5 +1,5 @@
 /**
- * TranspileOptions — B 路径 transpile 的调用方选项面。
+ * TranspileOptions — 求值引擎 transpile 的调用方选项面。
  */
 import type { Node } from "@babel/types";
 

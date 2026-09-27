@@ -30,7 +30,7 @@ import {
   noteAnyMemberMayThrow, noteNullishMemberThrows, isNullishAbs, anyMemberResult,
 } from "../member-diag.ts";
 import { errorTypeAbs, recordMayThrow, type MayThrowEffect } from "../may-throw.ts";
-import { getBClass } from "../class-registry.ts";
+import { getEvalClass } from "../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../class-mark.ts";
 import {
   NudoThrow, undef, throwStrictWrite, writeInPlace, clearStaleTermPred,
@@ -38,7 +38,7 @@ import {
   isNudoReturn, isNudoBreak, isNudoContinue, $fnVal, $rawThis, noBody,
 } from "./state.ts";
 import { $unknown, $toNumber, $eq, $ne, $typeof, $add, $sub } from "./ops.ts";
-import { lookupObjAccessor, migrateAccessors, $objAccessor, findClassAccessor, findStaticClassAccessor, $in, $instanceof, $del, accessorTable, BUILTIN_BRAND_METHODS, bClassChain } from "./members.ts";
+import { lookupObjAccessor, migrateAccessors, $objAccessor, findClassAccessor, findStaticClassAccessor, $in, $instanceof, $del, accessorTable, BUILTIN_BRAND_METHODS, evalClassChain } from "./members.ts";
 import { DEFAULT_MAX_LOOP_ITERS } from "./loop-budget.ts";
 import { isNudoThrow, callAtFunctionBoundary } from "./state.ts";
 import { $call } from "../call.ts";
@@ -593,7 +593,7 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
     if (iv === undefined) return a;
     // 仅用户类（注册表）委派 $set——内建 brand（TypedArray/String 包装等）
     // 下标写语义未建模，保持保守不写（差分抓到：Uint8Array 截断被写穿假精确）
-    if (getBClass(a.shape.name)) return $set(a, String(iv), value);
+    if (getEvalClass(a.shape.name)) return $set(a, String(iv), value);
     return a;
   }
   if (sk === "tuple") {
@@ -1107,8 +1107,8 @@ export function $get(
       if (findClassAccessor(o.shape.name, key)) return undef();
       // 静态方法一等读取（typeof A.m / 高阶传递）：沿继承链在 registry 找
       // 未调用方法槽带 AST 形参展示名（不再假零参）
-      for (const n of bClassChain(o.shape.name)) {
-        const spec = getBClass(n);
+      for (const n of evalClassChain(o.shape.name)) {
+        const spec = getEvalClass(n);
         if (spec?.staticMethods?.[key]) {
           return absFunction(spec.staticMethodParams?.[key] ?? [], { body: noBody });
         }
@@ -1127,8 +1127,8 @@ export function $get(
       if (findStaticClassAccessor(o.shape.name, key)) return undef();
       // 实例方法读取（typeof a.m / 一等值）：沿继承链在 registry 找方法
       // 未调用方法槽带 AST 形参展示名（不再假零参）
-      for (const n of bClassChain(o.shape.name)) {
-        const spec = getBClass(n);
+      for (const n of evalClassChain(o.shape.name)) {
+        const spec = getEvalClass(n);
         if (spec?.methods?.[key]) {
           return absFunction(spec.methodParams?.[key] ?? [], { body: noBody });
         }
@@ -1229,7 +1229,7 @@ export function $get(
 
 /**
  * Map/Set forEach：条目表逐条调用回调（value, key, recv）。
- * 回调是 B 路径 JS 函数（transpile 内联箭头）直接调用；Abs fn 走 $call。
+ * 回调是 求值引擎 JS 函数（transpile 内联箭头）直接调用；Abs fn 走 $call。
  * 回调返回值丢弃；forEach 表达式值恒 undefined。
  */
 export function $collectionForEach(recv: Abs, cb: unknown): Abs | undefined {

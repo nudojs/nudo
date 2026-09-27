@@ -14,9 +14,9 @@ const runtimeUrl = pathToFileURL(
   join(dirname(fileURLToPath(import.meta.url)), "../exec/runtime.ts"),
 ).href;
 
-/** transpile 后写盘并动态 import（真 Node 执行 B 路径程序） */
+/** transpile 后写盘并动态 import（真 Node 执行 求值引擎程序） */
 async function execTranspiled(source: string, exportName: string) {
-  const dir = mkdtempSync(join(tmpdir(), "nudo-bpath-e2e-"));
+  const dir = mkdtempSync(join(tmpdir(), "nudo-eval-e2e-"));
   dirs.push(dir);
   // 指向 monorepo 内 runtime，vitest/node 均可解析 .ts
   const js = transpile(source, { runtimeImport: runtimeUrl });
@@ -26,7 +26,7 @@ async function execTranspiled(source: string, exportName: string) {
   return mod[exportName] as (...args: unknown[]) => unknown;
 }
 
-describe("B-path e2e (transpile + Node import)", () => {
+describe("evaluator e2e (transpile + Node import)", () => {
   it("add executes on Abs literals", async () => {
     const add = await execTranspiled(
       `export function add(a, b) { return a + b; }`,

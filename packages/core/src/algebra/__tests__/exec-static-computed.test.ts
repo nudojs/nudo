@@ -8,7 +8,7 @@ import {
   transpile,
 } from "@nudojs/core";
 
-describe("B-path class static members", () => {
+describe("evaluator class static members", () => {
   it("reads static fields and calls static methods", () => {
     const src = `
 class Point {
@@ -40,7 +40,7 @@ class C {
   });
 });
 
-describe("B-path computed object properties", () => {
+describe("evaluator computed object properties", () => {
   it("{ [k]: v } uses $setKey", () => {
     const src = `
 export function go() {

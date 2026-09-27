@@ -10,7 +10,7 @@ import {
   transpile,
 } from "@nudojs/core";
 
-describe("B-path spread", () => {
+describe("evaluator spread", () => {
   it("object spread overwrites keys", () => {
     const src = `
 export function go() {
@@ -45,7 +45,7 @@ export function go() {
   });
 });
 
-describe("B-path for-of", () => {
+describe("evaluator for-of", () => {
   it("iterates tuple elements", () => {
     const src = `
 export function go() {

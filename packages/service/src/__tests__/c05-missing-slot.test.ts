@@ -51,7 +51,7 @@ greet({ id: 1 });
     setEvalMissingSlotEnabled(true);
     const r = analyzeFile("/t/greet.js", SRC);
     const d = r.diagnostics.find((x) => x.code === "nudo:missing-slot");
-    // B-path 必须真实执行到 user.name；若未 hosted 可能无 diag——则至少 flag 开着
+    // evaluator 必须真实执行到 user.name；若未 hosted 可能无 diag——则至少 flag 开着
     if (d) {
       expect(d.severity).toBe("warning");
       expect(d.message).toContain("name");
@@ -87,10 +87,10 @@ greet({ id: 1 });
       writeFileSync(file, SRC);
       setEvalMissingSlotEnabled(false);
       const r = analyzeFile(file, SRC);
-      // ALS per-analysis：配置在分析期间生效（诊断取决于 B-path 是否 hosted）；
+      // ALS per-analysis：配置在分析期间生效（诊断取决于 evaluator 是否 hosted）；
       // 返回后外层 flag 必须被恢复，不粘滞。完整接线断言见 c05-isolation.test.ts。
       expect(isEvalMissingSlotEnabled()).toBe(false);
-      // 分析结果可正常返回；若 B-path hosted 则可能带 missing-slot warning
+      // 分析结果可正常返回；若 evaluator hosted 则可能带 missing-slot warning
       expect(r).toBeDefined();
       void r;
     } finally {

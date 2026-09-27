@@ -1,5 +1,5 @@
 /**
- * @nudo:mock / sinon 指令 → Abs seed（供 B 路径注入：runTranspiled
+ * @nudo:mock / sinon 指令 → Abs seed（供 求值引擎注入：runTranspiled
  * envGlobals / mockSeedsToAbsMocks）。
  * host 层：依赖 parser 指令形态；core 只吃 Abs 绑定。
  */
@@ -249,7 +249,7 @@ function isAbsVal(v: unknown): v is Abs {
 
 /**
  * `@nudo:mock name from "path"`：装载 mock 模块并取与 mock 同名的绑定，
- * 种成 B 路径 Abs seed（与内联 mock 同一注入通道）。
+ * 种成 求值引擎 Abs seed（与内联 mock 同一注入通道）。
  * 缺文件 / 求值失败 / 无同名绑定 → 返回 error，不静默丢弃、不造假类型。
  */
 function loadFromMockBinding(
@@ -287,7 +287,7 @@ function loadFromMockBinding(
     const params = Array.from({ length: fn.length ?? 0 }, (_, i) => `arg${i}`);
     absVal = absFunction(params, {
       apply: (args: Abs[]): Abs => callTranspiledExportFull(run!, name, args).result,
-      kind: "bpath-export",
+      kind: "eval-export",
       fingerprint: `from-mock=${fromPath}#${name}`,
     });
   } else {
@@ -297,8 +297,8 @@ function loadFromMockBinding(
 }
 
 /**
- * B 路径注入用：seedVars + seedFns 统一为 Abs 函数绑定。
- * arrowFn mock 落在 seedFns（AST body，供 ast-eval），B 路径的
+ * 求值引擎注入用：seedVars + seedFns 统一为 Abs 函数绑定。
+ * arrowFn mock 落在 seedFns（AST body，供 ast-eval），求值引擎的
  * envGlobals 注入只吃 Abs——不合并会把 mock 丢掉，函数体内的调用
  * 会落到真实原生函数（如 fetch 拿 Abs 当 URL，直接崩）。
  */
@@ -353,7 +353,7 @@ export function mockDirectivesToAbsSeeds(
         seedVars[d.name] = markMockConf(absFromSinon(d.sinonExpr));
       } else if (d.expression) {
         // `= T.number` 等类型值 mock：此前只进 TypeValue env（applyMocks），
-        // B 路径注入只吃 seed → 被当 unknown 全局（nudo:builtin-unknown）。
+        // 求值引擎注入只吃 seed → 被当 unknown 全局（nudo:builtin-unknown）。
         // 桥进 seedVars 后两条路径口径一致。
         try {
           seedVars[d.name] = parseCaseArgExpr(d.expression);
@@ -366,7 +366,7 @@ export function mockDirectivesToAbsSeeds(
   return { seedVars, seedFns, ...(fromErrors.length > 0 ? { fromErrors } : {}) };
 }
 
-/** 便捷入口：源码 → @nudo:mock 的 B 注入 Abs 绑定（checkSource 注入管线用） */
+/** 便捷入口：源码 → @nudo:mock 的 eval 注入 Abs 绑定（checkSource 注入管线用） */
 export function mockSeedsForSource(
   source: string,
   opts?: { fromFile?: string; loadModule?: LoadModule },

@@ -77,8 +77,8 @@ function load() { return fetch(); }
     expect(seeds.seedVars.fetch!.conf).toBe("mock");
   });
 
-  it("type-value expression mock seeds a var for the B path", () => {
-    // 回归：`= number()` 只进 TypeValue env，B 路径注入拿不到 → 被当
+  it("type-value expression mock seeds a var for the eval path", () => {
+    // 回归：`= number()` 只进 TypeValue env，求值引擎注入拿不到 → 被当
     // unknown 全局（nudo:builtin-unknown）。seed 后两路径口径一致。
     const src = `
 /**

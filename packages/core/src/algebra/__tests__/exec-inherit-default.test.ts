@@ -8,7 +8,7 @@ import {
   absToString,
 } from "@nudojs/core";
 
-describe("B-path inheritance / super", () => {
+describe("evaluator inheritance / super", () => {
   it("child inherits parent method", () => {
     const src = `
 class Base {
@@ -69,7 +69,7 @@ export function go() {
   });
 });
 
-describe("B-path destructure defaults", () => {
+describe("evaluator destructure defaults", () => {
   it("object default fills undefined", () => {
     const src = `
 export function go() {

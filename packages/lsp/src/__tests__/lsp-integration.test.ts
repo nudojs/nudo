@@ -221,11 +221,11 @@ function foo(x) {
         writeFileSync(bPath, bV1);
         writeFileSync(aPath, aSrc);
 
-        let bText = bV1;
+        let evalText = bV1;
         let bVersion = 1;
         const openDocs = new Map<string, { uri: string; version: number; getText(): string }>([
           [aPath, { uri: uriOf(aPath), version: 1, getText: () => aSrc }],
-          [bPath, { uri: uriOf(bPath), version: bVersion, getText: () => bText }],
+          [bPath, { uri: uriOf(bPath), version: bVersion, getText: () => evalText }],
         ]);
         const sent = new Map<string, any[]>();
         const deps: ValidateTextDeps = {
@@ -244,10 +244,10 @@ function foo(x) {
         expect(initial.some((d) => d.code === "nudo:no-method")).toBe(false);
 
         // b changes (buffer + disk, so a's import resolution sees the new body)
-        bText = bV2;
+        evalText = bV2;
         bVersion = 2;
         writeFileSync(bPath, bV2);
-        await validateText(bPath, uriOf(bPath), bText, bVersion, deps, true);
+        await validateText(bPath, uriOf(bPath), evalText, bVersion, deps, true);
 
         // a was revalidated via dirty propagation and now flags g(42)
         const refreshed = sent.get(uriOf(aPath)) ?? [];
@@ -338,10 +338,10 @@ function foo(x) {
         writeFileSync(aPath, aSrc);
         writeFileSync(bPath, bV1);
 
-        let bText = bV1;
+        let evalText = bV1;
         const openDocs = new Map<string, { uri: string; version: number; getText(): string }>([
           [aPath, { uri: uriOf(aPath), version: 1, getText: () => aSrc }],
-          [bPath, { uri: uriOf(bPath), version: 1, getText: () => bText }],
+          [bPath, { uri: uriOf(bPath), version: 1, getText: () => evalText }],
         ]);
         const sent = new Map<string, any[]>();
         const deps: ValidateTextDeps = {
@@ -360,9 +360,9 @@ function foo(x) {
 
         // 依赖边携带者变磁盘不可读（chmod 不改 mtime/size → 缓存条目仍命中），b 内容换版
         chmodSync(aPath, 0o000);
-        bText = bV2;
+        evalText = bV2;
         writeFileSync(bPath, bV2);
-        await validateText(bPath, uriOf(bPath), bText, 2, deps, true);
+        await validateText(bPath, uriOf(bPath), evalText, 2, deps, true);
 
         // dirty 集仍含 a：传播用缓存边算出 dependents(b)={a}，a 用打开缓冲重验并抓到 g(42)
         const refreshed = sent.get(uriOf(aPath)) ?? [];

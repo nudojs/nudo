@@ -47,7 +47,7 @@ function absRec(p: {
   };
 }
 
-// 用例级缓存隔离：analyzeFile 背后的会话级缓存（analysisFileCache / bRunCache /
+// 用例级缓存隔离：analyzeFile 背后的会话级缓存（analysisFileCache / evalRunCache /
 // fnAnalysisCache / absModuleCache / core 的 checkSource·generalize·nudo-exec
 // memo / AST LRU）全部清空，杜绝跨用例陈旧命中。
 // buildModuleGraph 的 mtime 边缓存测试用的是各自传入的局部 cache，不受影响。
@@ -407,7 +407,7 @@ exports.applyToDefaults = function _apply(src, opts) {
     expect(fn).toBeDefined();
     expect(fn!.noDeclaration).toBe(true);
     // 入口无约束参数展示 any，不是 unknown（design-cli-semantics §2）；
-    // CJS exports 赋值源经 B 的 exports 命名空间建模（run.ts CJS 面）
+    // CJS exports 赋值源经 求值引擎的 exports 命名空间建模（run.ts CJS 面）
     expect(fn!.cases[0].abs.shape.k).toBe("any");
   });
 

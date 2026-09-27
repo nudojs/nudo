@@ -152,7 +152,7 @@ export function assignmentChainName(expr: Node): string | null {
  * Collected non-declaration entries carry `noDeclaration` — see FunctionAnalysis.
  *
  * Member / class-method calls are recorded as `Class.method` / bare `method`
- * (see `$invoke` noteBCallRecord) and synthesize `call@` the same way.
+ * (see `$invoke` noteEvalCallRecord) and synthesize `call@` the same way.
  */
 export function collectTopLevelFunctions(
   ast: Node,

@@ -8,7 +8,7 @@ import {
   absToString,
 } from "@nudojs/core";
 
-describe("B-path async / await", () => {
+describe("evaluator async / await", () => {
   it("await async call unwraps to concrete", () => {
     const src = `
 export async function f(n) {

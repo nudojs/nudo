@@ -14,12 +14,12 @@ export {
   maybeLeak, resetLeakCounter, termDepth, termNodes
 } from "./algebra/leak.ts";
 export {
-  type AbsBudgetStats, FORK_TRUNCATION_LABEL, HOST_EFFECT_LABEL_PREFIX, MAX_B_TOTAL_FORKS,
-  MAX_CALL_DEPTH, MAX_TOTAL_CALLS, bumpBForkBudget, callBudgetKey,
-  enterCall, exitCall, getAbsCallBudgetStats, getBForkBudgetLimit,
-  getBForkCount, noteAbsTruncation, noteBForkTruncation, noteHostEffectBlocked,
-  resetAbsCallBudget, resetBForkBudget, setAbsTruncationCollector,
-  setBForkBudgetLimit, stableCallId, truncatedAbs
+  type AbsBudgetStats, FORK_TRUNCATION_LABEL, HOST_EFFECT_LABEL_PREFIX, MAX_EVAL_TOTAL_FORKS,
+  MAX_CALL_DEPTH, MAX_TOTAL_CALLS, bumpEvalForkBudget, callBudgetKey,
+  enterCall, exitCall, getAbsCallBudgetStats, getEvalForkBudgetLimit,
+  getEvalForkCount, noteAbsTruncation, noteEvalForkTruncation, noteHostEffectBlocked,
+  resetAbsCallBudget, resetEvalForkBudget, setAbsTruncationCollector,
+  setEvalForkBudgetLimit, stableCallId, truncatedAbs
 } from "./algebra/call-budget.ts";
 export {
   hashSource, resetHashSourceCache
@@ -73,7 +73,7 @@ export {
   checkInjectedDomainEvidence, listTopFunctions
 } from "./algebra/scan.ts";
 
-// B-path collectors (not the $op runtime)
+// evaluator collectors (not the $op runtime)
 export {
   $tryDigestSoft, $tryMarkSoft, $tryReleaseSoft, ERROR_FAMILY,
   type MayThrowEffect, errorTypeAbs, filterDeclaredThrows,
@@ -84,7 +84,7 @@ export {
   setMayThrowCollector, throwAbsToKinds, throwsKindCovered
 } from "./algebra/exec/may-throw.ts";
 export {
-  type BMemberDiag, OBJECT_PROTO_NAMES, anyMemberResult,
+  type EvalMemberDiag, OBJECT_PROTO_NAMES, anyMemberResult,
   definitelyUncallableMember, getAbsOrigin, isEvalMissingSlotEnabled,
   isNullishAbs, noteAnyMemberMayThrow, noteMemberDispatchMiss,
   noteNullishMemberThrows, noteObjSlotMissing, notePrimMemberMissing,

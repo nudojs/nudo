@@ -194,7 +194,7 @@ export type AbsModuleGraphResult = {
   modules: Record<string, AbsModuleExports>;
   /** 绝对路径 → 导出表（含依赖；循环时占位为空） */
   byPath: Map<string, AbsModuleExports>;
-  /** cycle / depth / missing（B 路径权威，避免 TypeValue 叠报） */
+  /** cycle / depth / missing（求值引擎权威，避免 TypeValue 叠报） */
   issues: AbsModuleLoadIssue[];
 };
 
@@ -270,7 +270,7 @@ function paramNameOf(p: ParamNodeLike, i: number): string {
 }
 
 /**
- * 顶层函数声明/导出的形参表（B-path JS 函数 → Abs fn 桥接用）：
+ * 顶层函数声明/导出的形参表（evaluator JS 函数 → Abs fn 桥接用）：
  * key 为「导出名」——named 用声明名、default 用 "default"。
  */
 function topLevelFnParams(file: Node): Map<string, string[]> {
@@ -298,13 +298,13 @@ function topLevelFnParams(file: Node): Map<string, string[]> {
 }
 
 /**
- * B-path 执行产出的导出表 → AbsModuleExports。
+ * evaluator 执行产出的导出表 → AbsModuleExports。
  * run 表的键 = 导出名（P1-a：specifier/re-export/star/default 全量收进
  * __nudoExport 动态表）；JS 函数经 absFunction(apply) 桥接成 Abs fn——
  * apply 优先于 body 派发（callFunctionUnchecked 第三路径），跨边界调用
- * 由 callTranspiledExportFull 回进 B-path 函数执行。
+ * 由 callTranspiledExportFull 回进 evaluator 函数执行。
  */
-export function bPathExportsToModuleExports(
+export function evalExportsToModuleExports(
   run: Record<string, unknown>,
   file: Node,
   fingerprintPrefix: string,
@@ -323,7 +323,7 @@ export function bPathExportsToModuleExports(
         Array.from({ length: (v as { length?: number }).length ?? 0 }, (_, i) => `arg${i}`);
       absVal = absFunction(params, {
         apply: (args: Abs[]) => callTranspiledExportFull(run, k, args).result,
-        kind: "bpath-export",
+        kind: "eval-export",
         // 无 body 的桥接 fn 预算键 = fingerprint ?? anon#N——缺省会让所有
         // 桥接导出共享 anon#1，嵌套跨模块调用（a 调 b 调 a'）撞
         // _activeCallKeys 递归守卫被误截断为 opaque。按 模块#导出 唯一化。
@@ -445,12 +445,12 @@ export function evalAbsModuleGraph(
       },
     );
     let exports: AbsModuleExports;
-    const bRun = tryRunTranspiled(source, { mode: "analyze", modules });
-    if (bRun) {
-      // P1：B-path 优先——转译执行收集导出（specifier/re-export/star/default
+    const evalRun = tryRunTranspiled(source, { mode: "analyze", modules });
+    if (evalRun) {
+      // P1：evaluator 优先——转译执行收集导出（specifier/re-export/star/default
       // 全量进 __nudoExport 动态表）；unsupported/internal 回落见
       // tryRunTranspiled（回落事件入收集器）。
-      exports = bPathExportsToModuleExports(bRun, parse(source), `bpath:${absPath}`);
+      exports = evalExportsToModuleExports(evalRun, parse(source), `eval:${absPath}`);
     } else {
       // fail-closed：B 失败 = 无信息（空导出表）——旧 ast-eval 兜底
       // （evalProgramAbs + collectAbsExports）已删，无第二求值路径。
@@ -547,7 +547,7 @@ function importLocalBindings(
  * 收集顶层绑定名 → Abs（含相对 import / 裸包 harvest 注入）。
  * 供 bindings / hover 从 Abs 投影，不必走 TypeValue evaluator。
  *
- * B-path fail-closed：绑定 = B run 绑定表（$recordBinding：顶层 const/let，
+ * evaluator fail-closed：绑定 = B run 绑定表（$recordBinding：顶层 const/let，
  * arrow/function 表达式经 $fnVal 已是 Abs fn）+ 导出表桥接（export
  * function/const）+ import 本地名（模块图解析）；B 失败 → 空 Map
  * （显式无信息，不回落解释求值）。
@@ -575,7 +575,7 @@ export function collectAbsBindingsFromGraph(
       }
     }
     // 导出名（export function/const + specifier/star/default）→ fn Abs 桥接
-    const exports = bPathExportsToModuleExports(run, parse(source), `bpath:bindings:${filePath}`);
+    const exports = evalExportsToModuleExports(run, parse(source), `eval:bindings:${filePath}`);
     for (const [name, v] of Object.entries(exports.named)) {
       if (!out.has(name)) out.set(name, v);
     }

@@ -1,6 +1,6 @@
 /**
  * collectCallRecords 统一 B（exec 模式）：顶层调用 + 测试回调展开
- * （it/test/describe 的回调体才是真实调用点；B 侧以 unknown 实参 $call
+ * （it/test/describe 的回调体才是真实调用点；eval 侧以 unknown 实参 $call
  * 展开，队列自然处理 describe 嵌套）。
  */
 import { describe, it, expect } from "vitest";

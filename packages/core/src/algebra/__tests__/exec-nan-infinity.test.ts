@@ -1,5 +1,5 @@
 /**
- * B-path 全局字面量标识符 NaN/Infinity 转译回归。
+ * evaluator 全局字面量标识符 NaN/Infinity 转译回归。
  * 回归背景：transpile 只转译 undefined（→ $lit(undefined)），NaN/Infinity
  * 作为裸 JS 值留在产物里——Abs 路径把它们当宿主值处理，`return NaN` 折
  * unknown（原生 NaN）、1 + NaN 折 unknown（原生 NaN）、Number.isNaN(NaN)
@@ -22,7 +22,7 @@ function str(src: string) {
   return litValue(call(src, "run").result);
 }
 
-describe("B-path NaN / Infinity global literals", () => {
+describe("evaluator NaN / Infinity global literals", () => {
   it("bare NaN folds to NaN literal", () => {
     const v = str(`export function run() { return NaN; }`);
     expect(typeof v).toBe("number");
