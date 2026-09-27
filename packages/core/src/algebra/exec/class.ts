@@ -28,6 +28,7 @@ import { defaultLeakBudget } from "../leak.ts";
 import { pTrue } from "../pred.ts";
 import {
   noteBCallRecord,
+  blockHostSideEffect,
 } from "./calls.ts";
 import {
   notePrimMemberMissing,
@@ -151,6 +152,12 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
   }
   // JS 内建构造器（Error/Date/URL…）：直接 brand，避免 $call 对非 Abs 炸掉
   if (typeof cls === "function") {
+    // 宿主副作用构造器（new WebSocket / XMLHttpRequest / EventSource…）：
+    // 与 $callNamed 同一 never-execute 守卫——真构造会开真实连接。
+    // 命中 fail-closed 为 unknown#opaque，不落入下方空 brand（那是
+    // 「碰巧安全」而非显式拦截）。
+    const blockedHost = blockHostSideEffect(cls);
+    if (blockedHost) return blockedHost;
     // new Array(n) → n 元空洞 tuple；new Array(a,b,c) → 字面量 tuple；
     // 非法 length（1.5/-1/NaN/超 2^32-1）→ RangeError
     // （makeArrayCtorAbs 口径）

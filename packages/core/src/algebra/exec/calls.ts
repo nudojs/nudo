@@ -107,7 +107,8 @@ const GLOBAL_FNS = new Set([
  * 直接执行会把 Abs 实参喂给原生实现——真实网络 I/O、真实定时器。
  * `fetch(unknownAbs)` 会以 `[object Object]` 发起真请求：同步侧
  * ERR_INVALID_URL / 未处理 rejection 直接崩掉分析进程（nudo check 非零退出）。
- * 命中即 fail-closed（unknown + 截断上报），不执行。
+ * `new WebSocket(abs)` 同理：构造器真执行会开真实 socket。
+ * 命中即 fail-closed（unknown + 截断上报），不执行。$callNamed 与 $new 共用。
  */
 const NEVER_EXEC_HOST_FN_NAMES = [
   "fetch",
@@ -123,13 +124,24 @@ const NEVER_EXEC_HOST_FN_NAMES = [
 ] as const;
 
 /** 身份校验（含 `const f = fetch` 别名）：命中返回宿主名，否则 null */
-function neverExecHostName(fn: unknown): string | null {
+export function neverExecHostName(fn: unknown): string | null {
   if (typeof fn !== "function") return null;
   const g = globalThis as Record<string, unknown>;
   for (const n of NEVER_EXEC_HOST_FN_NAMES) {
     if (fn === g[n]) return n;
   }
   return null;
+}
+
+/**
+ * 守卫宿主副作用（调用与构造共用）：命中名单 → 上报 + 返回 opaque unknown；
+ * 未命中 → null，调用方继续正常路径。
+ */
+export function blockHostSideEffect(fn: unknown): Abs | null {
+  const hostName = neverExecHostName(fn);
+  if (hostName === null) return null;
+  noteHostEffectBlocked(hostName);
+  return abs({ k: "unknown" }, undefined, undefined, "opaque");
 }
 
 /** 返回先前 collector，便于嵌套调用 save/restore（禁止 finally 置 null 砸外层） */
@@ -267,13 +279,11 @@ export function $callNamed(
       const g = GLOBAL_FNS.has(name) && fn === (globalThis as Record<string, unknown>)[name]
         ? evalGlobalFn(name, args)
         : undefined;
-      const blockedHost = g === undefined ? neverExecHostName(fn) : null;
+      const blockedHost = g === undefined ? blockHostSideEffect(fn) : null;
       if (g !== undefined) {
         result = g;
       } else if (blockedHost !== null) {
-        // 宿主副作用（网络/定时器）不得真实执行：fail-closed + 专用上报
-        noteHostEffectBlocked(blockedHost);
-        result = bTruncatedAbs();
+        result = blockedHost;
       } else {
         const entered = bEnterCall(name, fn, args);
         if (!entered.ok) {
