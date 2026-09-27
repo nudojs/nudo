@@ -121,7 +121,10 @@ export function toIOI(v: Abs | undefined): number | null | undefined {
     return Math.trunc(lv);
   }
   if (typeof lv === "string" || typeof lv === "boolean") {
-    return Math.trunc(Number(lv));
+    // ToIntegerOrInfinity：ToNumber 后 NaN→0（'abc'/'-' 等非数字字符串）
+    const n = Number(lv);
+    if (Number.isNaN(n)) return 0;
+    return Math.trunc(n);
   }
   return null; // bigint/symbol/抽象 → 不可判定
 }
