@@ -830,6 +830,24 @@ function checkReturnConstraint(
   if (ret.shape.k === "unknown" && !ret.term) return out;
   if (ret.shape.k === "any") return out;
 
+  // 分支 sum（if 条件赋值 / 多 return 路径）：shape 契约须对每个成员成立——
+  // 分发到成员再聚合。此前 sum 不走 obj 槽位分支 → 直接判 shape ⊭ obj，
+  // 条件赋值返回对象被误报（auditHeaders / buildPackument 形态）。
+  // scalar 契约（prim/数值界/域）不分发：成员可能是 any 参与运算符派生的
+  // 并集（any+any → number|string），报则假阳性（gold 门禁口径）。
+  if (ret.shape.k === "sum" && constraint.fields) {
+    const seen = new Set<string>();
+    for (const m of (ret.shape as { members: Abs[] }).members) {
+      for (const issue of checkReturnConstraint(fnName, cName, constraint, m)) {
+        const key = `${issue.message}\u0000${issue.actual ?? ""}\u0000${issue.expected ?? ""}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(issue);
+      }
+    }
+    return out;
+  }
+
   const push = (actual: string, expected: string, suggestion: string): void => {
     out.push({
       severity: "error",

@@ -112,4 +112,34 @@ function keep(x) {
     // 符号返回带 pred x>0，应满足
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
   });
+
+  it("ok: 条件赋值产生的分支 sum 逐成员对账（不因 sum 直接判违规）", () => {
+    const r = issuesOf(`
+/**
+ * @nudo:contract x userShape
+ * @nudo:contract return userShape
+ */
+function maybe(x) {
+  const o = { id: x.id, name: x.name };
+  if (x.name) o.extra = x.name;
+  return o;
+}
+`);
+    expect(r.issues.filter((i) => i.message.includes("@nudo:contract return"))).toEqual([]);
+  });
+
+  it("error: sum 中单个成员违反契约仍报", () => {
+    const r = issuesOf(`
+/**
+ * @nudo:contract return userShape
+ */
+function pick(flag) {
+  if (flag) return { id: 1, name: "a", extra: 1 };
+  return { id: 1 };
+}
+`);
+    const err = r.issues.find((i) => i.message.includes("@nudo:contract return"));
+    expect(err).toBeDefined();
+    expect(err!.expected).toContain("missing field name");
+  });
 });
