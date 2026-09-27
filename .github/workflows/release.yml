@@ -73,34 +73,27 @@ jobs:
       - name: Test
         run: npm run test:coverage
 
-      - name: Create Release Pull Request
+      # changesets/action both versions (opens the Version Packages PR) and
+      # publishes. Running publish via the action's `publish` input is what
+      # populates `publishedPackages` — a later standalone `changeset publish`
+      # leaves that output empty and the tag / GitHub Release steps silently skip.
+      # createGithubReleases=false: per-package releases would collide with the
+      # monorepo `v*` release created below (which carries the .vsix).
+      - name: Create Release Pull Request / Publish
         id: changesets
         uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d  # v1 (branch v1)
         with:
           version: npm run ci:version
+          publish: npm run ci:publish
+          createGithubReleases: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Publish to npm
-        if: steps.changesets.outputs.hasChangesets == 'false'
-        run: |
-          set -euo pipefail
-          # Fail closed if package.json still sits at major >= 2 (e.g. unreset
-          # accidental stables / betas). Only confirm_major=true lets those out.
-          node scripts/gate-major.mjs --for-publish
-          # setup-node writes _authToken=${NODE_AUTH_TOKEN} into .npmrc, which
-          # blocks npm's OIDC trusted-publisher exchange when no real token exists.
-          if [ -n "${NPM_CONFIG_USERCONFIG:-}" ] && [ -f "$NPM_CONFIG_USERCONFIG" ]; then
-            sed -i '/_authToken/d' "$NPM_CONFIG_USERCONFIG"
-          fi
-          npx @changesets/cli publish
-        env:
           NPM_CONFIG_PROVENANCE: true
 
       # 文档站部署已解耦：docs-deploy.yml 在 main push 时独立构建部署
 
       - name: Package VSCode extension
-        if: steps.changesets.outputs.hasChangesets == 'false'
+        if: steps.changesets.outputs.hasChangesets == 'false' && steps.changesets.outputs.publishedPackages != '' && steps.changesets.outputs.publishedPackages != '[]'
         run: |
           mkdir -p dist
           pnpm --filter nudo-vscode run build
@@ -111,7 +104,11 @@ jobs:
 
       - name: Publish to VSCode Marketplace
         id: vsce-publish
-        if: steps.changesets.outputs.hasChangesets == 'false' && env.VSCODE_MARKETPLACE_TOKEN != ''
+        if: >-
+          steps.changesets.outputs.hasChangesets == 'false' &&
+          steps.changesets.outputs.publishedPackages != '' &&
+          steps.changesets.outputs.publishedPackages != '[]' &&
+          env.VSCODE_MARKETPLACE_TOKEN != ''
         # Marketplace PATs expire; do not block Open VSX / GitHub Release.
         continue-on-error: true
         run: npx @vscode/vsce publish --packagePath dist/nudo-vscode.vsix -p ${{ secrets.VSCODE_MARKETPLACE_TOKEN }}
@@ -135,7 +132,11 @@ jobs:
 
       - name: Publish to Open VSX
         id: ovsx-publish
-        if: steps.changesets.outputs.hasChangesets == 'false' && env.OVSX_MARKETPLACE_TOKEN != ''
+        if: >-
+          steps.changesets.outputs.hasChangesets == 'false' &&
+          steps.changesets.outputs.publishedPackages != '' &&
+          steps.changesets.outputs.publishedPackages != '[]' &&
+          env.OVSX_MARKETPLACE_TOKEN != ''
         continue-on-error: true
         run: npx ovsx publish dist/nudo-vscode.vsix -p ${{ secrets.OVSX_MARKETPLACE_TOKEN }}
 
@@ -190,10 +191,28 @@ jobs:
         uses: softprops/action-gh-release@26994186c0ac3ef5cae75ac16aa32e8153525f77  # v1
         with:
           tag_name: ${{ steps.release-tag.outputs.tag }}
+          name: ${{ steps.release-tag.outputs.tag }}
           files: dist/nudo-vscode.vsix
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release summary
+        if: >-
+          steps.changesets.outputs.hasChangesets == 'false' &&
+          steps.changesets.outputs.publishedPackages != '' &&
+          steps.changesets.outputs.publishedPackages != '[]'
+        run: |
+          {
+            echo "## Released ${{ steps.release-tag.outputs.tag }}"
+            echo ""
+            echo "Published packages:"
+            echo '```json'
+            echo '${{ steps.changesets.outputs.publishedPackages }}'
+            echo '```'
+            echo ""
+            echo "GitHub Release: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.release-tag.outputs.tag }}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # Beta train — same workflow file so npm Trusted Publishing authorizes us.
   # `.changeset/pre.json` supplies the dist-tag (`beta`). No VSCE / OVSX / GH Release.
