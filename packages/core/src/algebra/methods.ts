@@ -203,7 +203,12 @@ export function callAbsMethod(
         if (name === "slice") {
           return strLit(lit.slice(a0 as number | undefined, a1 as number | undefined));
         }
-        return strLit(lit.substring(Number(a0 ?? 0), Number(a1 ?? lit.length)));
+        // substring：start 缺省/undefined/null → ToIntegerOrInfinity → 0；
+        // end 仅 undefined/缺省才取 len（null/false/'' → 0，不得 ?? 吞成缺省）
+        const start = toIntegerOrInfinityLit(args[0]) ?? 0;
+        const end =
+          isUndefinedArg(args[1]) ? lit.length : (toIntegerOrInfinityLit(args[1]) ?? 0);
+        return strLit(lit.substring(start, end));
       }
       return strPrim("path");
     case "charAt": {
