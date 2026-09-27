@@ -78,8 +78,15 @@ describe("indexOf / lastIndexOf literal fold", () => {
   });
 
   it("abstract receiver / needle stay abstract", () => {
-    const r = call(`export function f(s) { return s.indexOf('b'); }`);
+    // 抽象 string receiver：indexOf 返回 number 抽象（不得标 string / unknown）
+    const exports1 = runTranspiled(
+      `export function f(s) { return s.indexOf('b'); }`,
+      { mode: "analyze" },
+    );
+    const absStr = { shape: { k: "prim", type: "string" as const }, conf: "path" as const };
+    const r = callTranspiledExportFull(exports1, "f", [absStr as never]);
     expect(litValue(r.result)).toBeUndefined();
+    expect(r.result.shape).toEqual({ k: "prim", type: "number" });
     // 真正的抽象 needle（非「未绑定参数」——f() 时 n 是 undefined，应折 -1）
     const exports = runTranspiled(
       `export function f(n) { return 'abc'.indexOf(n); }`,
@@ -88,6 +95,7 @@ describe("indexOf / lastIndexOf literal fold", () => {
     const absN = { shape: { k: "any" as const }, conf: "partial" as const };
     const r2 = callTranspiledExportFull(exports, "f", [absN as never]);
     expect(litValue(r2.result)).toBeUndefined();
+    expect(r2.result.shape).toEqual({ k: "prim", type: "number" });
   });
 
   it("missing param n folds like undefined (JS f() ≡ indexOf(undefined))", () => {

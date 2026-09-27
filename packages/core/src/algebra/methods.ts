@@ -78,8 +78,9 @@ function isFoldableIndexArg(x: Abs | undefined): boolean {
 }
 
 /**
- * 实参 ToString 投影（搜索串 / 分隔符 / 替换模式）：缺省 ≡ lit(undefined)
+ * 实参 ToString 投影（搜索串 / 替换模式）：缺省 ≡ lit(undefined)
  * → String(undefined)。抽象 / symbol 原生 THROW 时不折叠。
+ * 注意：String.prototype.split 对 undefined 分隔符有特判（不 ToString）——见 isUndefinedArg。
  */
 function toStringArg(x: Abs | undefined): string | undefined {
   if (x === undefined) return "undefined";
@@ -87,6 +88,11 @@ function toStringArg(x: Abs | undefined): string | undefined {
   const v = x.term.value;
   if (typeof v === "symbol") return undefined;
   return String(v);
+}
+
+/** 缺省实参或显式 lit(undefined)：ES 里都绑定为 undefined */
+function isUndefinedArg(x: Abs | undefined): boolean {
+  return x === undefined || (x.term?.op === "lit" && x.term.value === undefined);
 }
 
 /**
@@ -209,7 +215,7 @@ export function callAbsMethod(
       // 字面量 receiver + 可 ToString 的字面量 needle → 按原生折叠
       // fromIndex 同 ToIntegerOrInfinity（含字符串数字 / 缺省）
       // needle 缺省 ≡ undefined → String(undefined)="undefined"
-      if (lit === undefined) return strPrim("path");
+      if (lit === undefined) return numPrim("path");
       const search = toStringArg(args[0]);
       if (search === undefined) return numPrim("path");
       if (!isFoldableIndexArg(args[1])) return numPrim("path");
@@ -227,14 +233,22 @@ export function callAbsMethod(
     }
     case "split": {
       if (lit !== undefined) {
-        // separator 走 ToString：缺省 ≡ undefined → "undefined"
-        const sep = toStringArg(args[0]);
         // limit：number 字面量或缺省按原生截断；非字面量 → 元素数未知，保守 arr<string>
-        const a1Abs = args[1];
-        const a1 = a1Abs ? litValue(a1Abs) : undefined;
-        if (a1Abs !== undefined && a1Abs.term?.op !== "lit") return strArr("path");
+        const limAbs = args[1];
+        const lim = limAbs ? litValue(limAbs) : undefined;
+        if (limAbs !== undefined && limAbs.term?.op !== "lit") return strArr("path");
+        // ES 特判：separator 为 undefined（含缺省）→ 不 ToString(separator)，
+        // 直接返回 [ToString(O)] 再按 limit 截断。toStringArg 会误折成 "undefined" 分隔。
+        if (isUndefinedArg(args[0])) {
+          const one = abs({ k: "tuple", elements: [strLit(lit)] }, undefined, undefined, "exact");
+          if (lim === undefined) return one;
+          const n = Number(lim);
+          if (!(n > 0)) return abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
+          return one;
+        }
+        const sep = toStringArg(args[0]);
         if (sep !== undefined) {
-          const parts = lit.split(sep, a1 as number | undefined).map((s) => strLit(s));
+          const parts = lit.split(sep, lim as number | undefined).map((s) => strLit(s));
           return abs({ k: "tuple", elements: parts }, undefined, undefined, "exact");
         }
         // 抽象/symbol 分隔符：结果元素数未知（""→逐字符、命中→多段、未命中→1 段），

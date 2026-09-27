@@ -11,7 +11,7 @@ import { errorTypeAbs } from "../exec/may-throw.ts";
  * Math 算子实参：ToNumber（clz32/imul 走 ToInt32/ToUint32 由原生完成）。
  * 抽象 / lit(undefined) 不折叠——transpile 把 call spread 占位成 $lit(undefined)，
  * 折成 NaN 会把 `Math.max(...[1,2,3])` 钉成假精确。symbol/bigint 原生 TypeError。
- * 缺省（实参数组为空）由原生 ToNumber(undefined) 处理。
+ * 空实参（args 为空）由原生 ToNumber(undefined) 处理（min()→+Inf、abs()→NaN）。
  */
 function coerceMathArg(a: Abs | undefined): number | undefined | "throw" {
   if (!a || a.term?.op !== "lit") return undefined;
@@ -25,11 +25,20 @@ function coerceMathArg(a: Abs | undefined): number | undefined | "throw" {
   return "throw";
 }
 
+/** Math 自有数值方法（排除继承的 constructor/toString/valueOf 等） */
+function mathMethod(name: string): ((...a: number[]) => number) | undefined {
+  if (!Object.hasOwn(Math, name)) return undefined;
+  const impl = (Math as unknown as Record<string, unknown>)[name];
+  return typeof impl === "function"
+    ? (impl as (...a: number[]) => number)
+    : undefined;
+}
+
 export function evalMathMethod(name: string, args: Abs[]): Abs | undefined {
   if (name === "random") return numPrim("path");
 
-  const impl = (Math as unknown as Record<string, unknown>)[name];
-  if (typeof impl !== "function") return undefined;
+  const impl = mathMethod(name);
+  if (!impl) return undefined;
 
   const nums: number[] = [];
   for (const a of args) {
@@ -42,7 +51,7 @@ export function evalMathMethod(name: string, args: Abs[]): Abs | undefined {
   try {
     // 空实参：min()→+Inf、max()→-Inf、hypot()→0、abs()→NaN（ToNumber(undefined)）
     // 由原生自身处理，与 ToNumber 语义一致
-    return numLit((impl as (...a: number[]) => number)(...nums));
+    return numLit(impl(...nums));
   } catch {
     return numPrim();
   }

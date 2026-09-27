@@ -83,4 +83,25 @@ describe("Math unmodeled methods fold number literals", () => {
     expect(val(`export function f() { return Math.hypot('3', '4'); }`)).toBe(5);
     expect(val(`export function f() { return Math.imul(true, 4); }`)).toBe(4);
   });
+
+  it("inherited non-Math methods are not folded (constructor/toString)", () => {
+    // Object.hasOwn 白名单：Math.constructor / Math.toString 不是数值算子
+    const exports = runTranspiled(
+      `export function f(n) { return Math[n](1); }`,
+      { mode: "analyze" },
+    );
+    // 抽象方法名 → 不折
+    const absN = { shape: { k: "any" as const }, conf: "partial" as const };
+    const r = callTranspiledExportFull(exports, "f", [absN as never]);
+    expect(litValue(r.result)).toBeUndefined();
+  });
+
+  it("Math.constructor / Math.toString are not treated as numeric folds", async () => {
+    const { evalMathMethod } = await import("../builtins/math.ts");
+    expect(evalMathMethod("constructor", [])).toBeUndefined();
+    expect(evalMathMethod("toString", [])).toBeUndefined();
+    expect(evalMathMethod("valueOf", [])).toBeUndefined();
+    expect(evalMathMethod("abs", [])).toBeDefined();
+    expect(evalMathMethod("random", [])).toBeDefined();
+  });
 });

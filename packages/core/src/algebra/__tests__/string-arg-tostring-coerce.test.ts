@@ -54,6 +54,32 @@ describe("split ToString separator + missing args", () => {
     expect(val(`export function f() { return JSON.stringify('atrueb'.split(true)); }`)).toBe(JSON.stringify(["a", "b"]));
     expect(val(`export function f() { return JSON.stringify('a,b'.split(false)); }`)).toBe(JSON.stringify(["a,b"]));
   });
+
+  it("undefined separator is NOT ToString'd (ES split special case)", () => {
+    // 原生：separator 为 undefined → 整串 1 段，不按 "undefined" 切
+    expect(val(`export function f() { return JSON.stringify('aundefinedb'.split()); }`)).toBe(
+      JSON.stringify(["aundefinedb"]),
+    );
+    expect(val(`export function f() { return JSON.stringify('aundefinedb'.split(undefined)); }`)).toBe(
+      JSON.stringify(["aundefinedb"]),
+    );
+    // 对照：显式字符串 "undefined" 才切
+    expect(val(`export function f() { return JSON.stringify('aundefinedb'.split('undefined')); }`)).toBe(
+      JSON.stringify(["a", "b"]),
+    );
+  });
+
+  it("undefined separator still honors limit", () => {
+    expect(val(`export function f() { return JSON.stringify('hello'.split(undefined, 0)); }`)).toBe(
+      JSON.stringify([]),
+    );
+    expect(val(`export function f() { return JSON.stringify('hello'.split(undefined, 1)); }`)).toBe(
+      JSON.stringify(["hello"]),
+    );
+    expect(val(`export function f() { return JSON.stringify('hello'.split(undefined, 2)); }`)).toBe(
+      JSON.stringify(["hello"]),
+    );
+  });
 });
 
 describe("replace / replaceAll ToString pattern & replacement", () => {
