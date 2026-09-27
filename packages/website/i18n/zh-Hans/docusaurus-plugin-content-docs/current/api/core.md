@@ -279,9 +279,6 @@ createEnvironment(parent?, bindings?)
 | `assignSourceSlots` | fn | — | `assignSourceSlots(src: Abs): Record<string, { value: Abs }> \| undefined` |
 | `AstEnv` | type | — | — |
 | `attachFnImpl` | fn | — | `attachFnImpl(a: Abs, impl: AbsFnImpl): void` |
-| `EvalAbsAssignRecord` | type | B 赋值记录（与 ast-records.ts AbsAssignRecord 同形；structuralAssignIssues 消费） | `EvalAbsAssignRecord = { name: string; prev: Abs \| undefined; next: Abs; line?: number; column?: number; conditional?: boolean; }` |
-| `EvalCallRecord` | type | call-site recording for analyze | `EvalCallRecord = { fnName: string; args: Abs[]; result: Abs; callLoc?: { line: number; column: number }; threw?: boolean; }` |
-| `EvalClassSpec` | type | — | — |
 | `beginCollectionFork` | fn | — | `beginCollectionFork(): void` |
 | `betaOf` | fn | 共享输出变量 B:$&#123;param&#125;（§5.1 P2 钉死） | `betaOf(param: string): Term` |
 | `bigintLit` | fn | literal Abs | `bigintLit(value: bigint): Abs` |
@@ -294,7 +291,6 @@ createEnvironment(parent?, bindings?)
 | `bool` | fn | Abs constructors / faces | `bool(): Abs` |
 | `boolean` | fn | `@nudo:contract` builder grammar | `boolean(): ConstraintBuilder` |
 | `boolLit` | fn | literal Abs | `boolLit(value: boolean): Abs` |
-| `EvalFallback` | type | evaluator 回落事件（观测单一埋点；reason: unsupported:* = 能力边界，internal = 引擎自身缺陷） | `EvalFallback = { reason: string; message: string; loc?: { line: number; column: number }; }` |
 | `buildArgsFromAssume` | fn | 按 assume 集合构造实参：被 assume 的参数给带约束的符号，其余 any （design-cli-semantics §2：入口无约束 = any，不是 unknown）。 | `buildArgsFromAssume( source: string, fnName: string, assumeIds: Set<string>, ): Abs[]` |
 | `builtinCtorAbs` | fn | — | `builtinCtorAbs(name: string): Abs` |
 | `builtinCtorNameOf` | fn | Abs 侧内建构造器身份（与宿主构造器名对齐） | `builtinCtorNameOf(v: unknown): string \| undefined` |
@@ -347,13 +343,17 @@ createEnvironment(parent?, bindings?)
 | `Environment` | type | env host surface | `Environment = { lookup(name: string): Abs; bind(name: string, value: Abs): Environment; update(name: string, value: Abs): boolean; extend...` |
 | `eq` | const | — | `const eq` |
 | `errorBrandAbs` | fn | Error brand：shape 带 name/message（字面量 message 保精确）。 | `errorBrandAbs(name: string, args: Abs[]): Abs` |
+| `EvalAbsAssignRecord` | type | B 赋值记录（与 ast-records.ts AbsAssignRecord 同形；structuralAssignIssues 消费） | `EvalAbsAssignRecord = { name: string; prev: Abs \| undefined; next: Abs; line?: number; column?: number; conditional?: boolean; }` |
 | `evalArrayStatic` | fn | Array.isArray / Array.from / Array.of | `evalArrayStatic(name: string, args: Abs[]): Abs \| undefined` |
 | `evalBuiltinInstanceMethod` | fn | brand 实例方法（Date/RegExp/Map/Set） | `evalBuiltinInstanceMethod( brandName: string, method: string, recv: Abs, args: Abs[], ): Abs \| undefined` |
 | `evalBuiltinNew` | fn | new X(...) | `evalBuiltinNew(className: string, args: Abs[]): Abs \| undefined` |
+| `EvalCallRecord` | type | call-site recording for analyze | `EvalCallRecord = { fnName: string; args: Abs[]; result: Abs; callLoc?: { line: number; column: number }; threw?: boolean; }` |
+| `EvalClassSpec` | type | — | — |
 | `evalDateCtor` | fn | — | `evalDateCtor(args: Abs[]): Abs` |
 | `evalDateMethod` | fn | — | `evalDateMethod(name: string, _recv: Abs, _args: Abs[]): Abs \| undefined` |
 | `evalDateStatic` | fn | — | `evalDateStatic(name: string, _args: Abs[]): Abs \| undefined` |
 | `evalExprAbs` | fn | Abs-native expression eval | `evalExprAbs( expr: import("@babel/types").Expression, bindings: Record<string, Abs> = {}, ): Abs` |
+| `EvalFallback` | type | evaluator 回落事件（观测单一埋点；reason: unsupported:* = 能力边界，internal = 引擎自身缺陷） | `EvalFallback = { reason: string; message: string; loc?: { line: number; column: number }; }` |
 | `evalGlobalFn` | fn | — | `evalGlobalFn(name: string, args: Abs[]): Abs \| undefined` |
 | `evalJsonMethod` | fn | JSON.parse / stringify：字面量实参真执行折叠；失败硬抛（catch 可吸收） | `evalJsonMethod(name: string, args: Abs[]): Abs \| undefined` |
 | `evalMathMethod` | fn | — | `evalMathMethod(name: string, args: Abs[]): Abs \| undefined` |
@@ -515,9 +515,9 @@ createEnvironment(parent?, bindings?)
 | `never` | const | Abs constructors / faces | `const never` |
 | `not` | fn | — | `not(p: Pred): Pred` |
 | `notAbs` | fn | 逻辑非 | `notAbs(a: Abs): Abs` |
+| `noteCollectionWrite` | fn | — | `noteCollectionWrite(id: object): void` |
 | `noteEvalCallRecord` | fn | 成员/方法调用点打点（$invoke 等；无收集器时 no-op）。不进 $callNamed 预算。 | `noteEvalCallRecord(r: EvalCallRecord): void` |
 | `noteEvalFallback` | fn | 记录一次 B 回落（body-fn 等非 runTranspiled 入口共用） | `noteEvalFallback(e: unknown): void` |
-| `noteCollectionWrite` | fn | — | `noteCollectionWrite(id: object): void` |
 | `notePromiseExecutorFork` | fn | $fork 在 executor 内发生时打点（多臂 resolve 需 join，不得 first-wins 假精确） | `notePromiseExecutorFork(): void` |
 | `NudoConstraint` | type | contract checking | `NudoConstraint = { readonly __nudoConstraint: true; readonly prim?: PrimName; readonly preds: Pred[]; readonly fields?: Record<string, Nu...` |
 | `NudoField` | type | — | `NudoField = { constraint: NudoConstraint; optional?: boolean; }` |
@@ -582,8 +582,8 @@ createEnvironment(parent?, bindings?)
 | `relationFn` | fn | 无 body、纯关系的 fn Abs。params 仅记 arity。 | `relationFn( paramTypes: Abs[], returnType: Abs, opts?: { params?: string[]; conf?: Confidence; fingerprint?: string; inferFrom?: { fromVar: string; via: "arr" \| "promise"; inferVar: string }; condFallback?: Abs; }, ): Abs` |
 | `RelSource` | type | — | — |
 | `requiredFnArity` | fn | Required arity from fn param labels — skips rest (`...`) and optional (`?`). | `requiredFnArity(params: readonly string[] \| undefined): number` |
-| `resetEvalCallBudget` | fn | 宿主入口（runTranspiled / callTranspiledExportFull）前重置 | `resetEvalCallBudget(): void` |
 | `resetCheckSourceMemo` | fn | — | `resetCheckSourceMemo(): void` |
+| `resetEvalCallBudget` | fn | 宿主入口（runTranspiled / callTranspiledExportFull）前重置 | `resetEvalCallBudget(): void` |
 | `resetGeneralizeMemo` | fn | — | `resetGeneralizeMemo(): void` |
 | `resetNudoModuleExecCache` | fn | — | `resetNudoModuleExecCache(): void` |
 | `resetParseSourceCache` | fn | Babel parse + memo | `resetParseSourceCache(): void` |
@@ -599,13 +599,13 @@ createEnvironment(parent?, bindings?)
 | `serializeCheckJsonMulti` | fn | `nudo check` gate | `serializeCheckJsonMulti(reports: CheckJson[]): CheckJsonMulti` |
 | `setAddEntry` | fn | Set#add：fork 内写 overlay；返回同一 Abs | `setAddEntry(setAbs: Abs, value: Abs): Abs` |
 | `setApplyCallbackHost` | fn | evaluator 宿主 `exec/call.ts` 加载时注册（副作用）。 | `setApplyCallbackHost(fn: ApplyCallbackHost): void` |
+| `setClearEntries` | fn | Set#clear | `setClearEntries(setAbs: Abs): Abs` |
+| `setDeleteEntry` | fn | Set#delete：按字面量元素移除；fork overlay 内生效。 | `setDeleteEntry(setAbs: Abs, value: Abs): Abs` |
+| `setElementsAbs` | fn | — | `setElementsAbs(setAbs: Abs): Abs[]` |
 | `setEvalAssignCollector` | fn | 返回先前 collector，便于嵌套调用 save/restore（禁止 finally 置 null 砸外层） | `setEvalAssignCollector( collector: ((r: EvalAbsAssignRecord) => void) \| null, )` |
 | `setEvalBindingSink` | fn | — | `setEvalBindingSink(sink: Map<string, unknown> \| null): void` |
 | `setEvalCallCollector` | fn | call-site recording for analyze | `setEvalCallCollector( collector: ((r: EvalCallRecord) => void) \| null, )` |
 | `setEvalFallbackCollector` | fn | — | `setEvalFallbackCollector( collector: ((f: EvalFallback) => void) \| null, ): void` |
-| `setClearEntries` | fn | Set#clear | `setClearEntries(setAbs: Abs): Abs` |
-| `setDeleteEntry` | fn | Set#delete：按字面量元素移除；fork overlay 内生效。 | `setDeleteEntry(setAbs: Abs, value: Abs): Abs` |
-| `setElementsAbs` | fn | — | `setElementsAbs(setAbs: Abs): Abs[]` |
 | `setHasEntry` | fn | — | `setHasEntry(setAbs: Abs, value: Abs): Abs` |
 | `setImplicationOracle` | fn | — | `setImplicationOracle(fn: ImplicationOracle \| undefined): void` |
 | `setInterfaceDiagCollector` | fn | 设置诊断观察者（null 清除）；缓冲照常累积，takeInterfaceDiags 取走 | `setInterfaceDiagCollector( fn: ((d: InterfaceDiag) => void) \| null, ): void` |
