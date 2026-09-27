@@ -1,5 +1,27 @@
 # @nudojs/service
 
+## 1.1.3
+
+### Patch Changes
+
+- 43fb345: fix(service): honor `package.json#nudo.check.profile` in `checkConfig` (LSP parity)
+  
+  The CLI resolves `nudo.check.profile` (`adoption` → L2 `warning`, `strict` →
+  `error`) but the service `checkConfig` — which the LSP uses for
+  `nudo-check` diagnostics — only read `nudo.check.entryThrows`. In a project
+  with `"nudo": { "check": { "profile": "adoption" } }`, `nudo check` printed
+  `nudo:entry-may-throw` as a **warning** while the IDE showed it as an
+  **error**.
+  
+  `checkConfig` now applies the same preset, with the same precedence as the CLI
+  (`entryThrows` → `profile` → default `error`), and `NudoConfig["check"]`
+  gains the `profile` field.
+- Updated dependencies [3bf9997]
+  - @nudojs/core@1.1.3
+  - @nudojs/parser@1.1.3
+  - @nudojs/env@0.4.5
+  - @nudojs/harvester@0.2.11
+
 ## 1.1.2
 
 ### Patch Changes

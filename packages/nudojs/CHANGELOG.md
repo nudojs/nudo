@@ -1,5 +1,16 @@
 # nudojs
 
+## 1.0.3
+
+### Patch Changes
+
+- Updated dependencies [3bf9997]
+- Updated dependencies [43fb345]
+  - @nudojs/core@1.1.3
+  - @nudojs/parser@1.1.3
+  - @nudojs/service@1.1.3
+  - @nudojs/harvester@0.2.11
+
 ## 1.0.2
 
 ### Patch Changes
