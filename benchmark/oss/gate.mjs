@@ -3,6 +3,7 @@
  *
  * Compares docs/reports/oss-perf-baseline.json against benchmark/oss/baseline.json.
  * Never fails for "faster than baseline". New L1 false positives always fail.
+ * Time checks get TIME_SLACK on CI (runner ~2.5–3x slower than trusted local).
  *
  * Usage: node benchmark/oss/gate.mjs
  * Exit 0 = within envelope · exit 1 = regression.
@@ -31,16 +32,20 @@ const report = readJson(REPORT);
 const baseline = readJson(BASELINE);
 const failures = [];
 
+// CI runner 相对 trusted 本地常慢 2.5–3x（与 benchmark/src/gate.js 同策略）。
+// 时间阈值在 CI 上放宽；L1 FP 仍然是硬门禁。
+const TIME_SLACK = process.env.GITHUB_ACTIONS ? 3.0 : 1.0;
+
 // --- totals ---
 const maxFp = baseline.totals?.maxFpCount ?? 0;
 if ((report.totals?.fpCount ?? 0) > maxFp) {
   failures.push(`FP total ${report.totals.fpCount} > baseline max ${maxFp}`);
 }
-if (baseline.totals?.maxColdAnalyzeMs != null && report.totals?.coldAnalyzeMs > baseline.totals.maxColdAnalyzeMs) {
-  failures.push(`cold analyze ${report.totals.coldAnalyzeMs}ms > ${baseline.totals.maxColdAnalyzeMs}ms`);
+if (baseline.totals?.maxColdAnalyzeMs != null && report.totals?.coldAnalyzeMs > baseline.totals.maxColdAnalyzeMs * TIME_SLACK) {
+  failures.push(`cold analyze ${report.totals.coldAnalyzeMs}ms > ${baseline.totals.maxColdAnalyzeMs * TIME_SLACK}ms`);
 }
-if (baseline.totals?.maxCheckAllMs != null && report.totals?.checkAllMs > baseline.totals.maxCheckAllMs) {
-  failures.push(`check all ${report.totals.checkAllMs}ms > ${baseline.totals.maxCheckAllMs}ms`);
+if (baseline.totals?.maxCheckAllMs != null && report.totals?.checkAllMs > baseline.totals.maxCheckAllMs * TIME_SLACK) {
+  failures.push(`check all ${report.totals.checkAllMs}ms > ${baseline.totals.maxCheckAllMs * TIME_SLACK}ms`);
 }
 
 // --- per package ---
@@ -57,14 +62,14 @@ for (const b of baseline.packages ?? []) {
   if (r.fpCount > (b.maxFpCount ?? 0)) {
     failures.push(`${b.name}: L1 FP ${r.fpCount} > ${b.maxFpCount}`);
   }
-  if (b.maxColdAnalyzeMs != null && r.coldAnalyzeMs > b.maxColdAnalyzeMs) {
-    failures.push(`${b.name}: cold analyze ${r.coldAnalyzeMs}ms > ${b.maxColdAnalyzeMs}ms`);
+  if (b.maxColdAnalyzeMs != null && r.coldAnalyzeMs > b.maxColdAnalyzeMs * TIME_SLACK) {
+    failures.push(`${b.name}: cold analyze ${r.coldAnalyzeMs}ms > ${b.maxColdAnalyzeMs * TIME_SLACK}ms`);
   }
-  if (b.maxCheckAllMs != null && r.checkAllMs > b.maxCheckAllMs) {
-    failures.push(`${b.name}: check all ${r.checkAllMs}ms > ${b.maxCheckAllMs}ms`);
+  if (b.maxCheckAllMs != null && r.checkAllMs > b.maxCheckAllMs * TIME_SLACK) {
+    failures.push(`${b.name}: check all ${r.checkAllMs}ms > ${b.maxCheckAllMs * TIME_SLACK}ms`);
   }
-  if (b.maxHubDirtyMedianMs != null && r.hub?.dirtyMedianMs > b.maxHubDirtyMedianMs) {
-    failures.push(`${b.name}: hub-edit ${r.hub.dirtyMedianMs}ms > ${b.maxHubDirtyMedianMs}ms`);
+  if (b.maxHubDirtyMedianMs != null && r.hub?.dirtyMedianMs > b.maxHubDirtyMedianMs * TIME_SLACK) {
+    failures.push(`${b.name}: hub-edit ${r.hub.dirtyMedianMs}ms > ${b.maxHubDirtyMedianMs * TIME_SLACK}ms`);
   }
   if (Array.isArray(r.falsePositives) && r.falsePositives.length > 0) {
     failures.push(`${b.name}: FP detail:\n  ${r.falsePositives.slice(0, 5).join("\n  ")}`);
