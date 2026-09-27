@@ -453,14 +453,7 @@ export function mul(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   }
   if (isNumericLike(a) && isNumericLike(b) && a.term && b.term) {
     const term = simplifyTerm(app("*", [a.term, b.term]));
-    // × 0
-    if (
-      (b.term.op === "lit" && b.term.value === 0) ||
-      (a.term.op === "lit" && a.term.value === 0)
-    ) {
-      return numLit(0);
-    }
-    // × 常数 k
+    // × 常数 k（不可用 ×0=0：NaN*0 / Infinity*0 为 NaN）
     let k: number | undefined;
     let base: Abs | undefined;
     if (b.term.op === "lit" && typeof b.term.value === "number") {

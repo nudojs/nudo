@@ -38,8 +38,10 @@ describe("term simplify", () => {
   it("0+x = x", () => {
     expect(simplifyTerm(app("+", [lit(0), v("x")]))).toEqual(v("x"));
   });
-  it("x*0 = 0", () => {
-    expect(simplifyTerm(app("*", [v("x"), lit(0)]))).toEqual(lit(0));
+  it("x*0 is not exact 0 (NaN*0 and Inf*0 are NaN)", () => {
+    const t = simplifyTerm(app("*", [v("x"), lit(0)]));
+    expect(t.op === "lit" && t.value === 0).toBe(false);
+    expect(t).toEqual(app("*", [v("x"), lit(0)]));
   });
 });
 

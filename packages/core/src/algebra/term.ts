@@ -80,17 +80,12 @@ export function simplifyTerm(t: Term): Term {
     if (a.op === "lit" && a.value === 0) return b;
     if (b.op === "lit" && b.value === 0) return a;
   }
-  // x * 1 = x, 1 * x = x; x * 0 = 0
+  // x * 1 = x, 1 * x = x
+  // （不可用 x*0=0：NaN*0 与 Infinity*0 皆为 NaN）
   if (fn === "*" && args.length === 2) {
     const [a, b] = args as [Term, Term];
     if (a.op === "lit" && a.value === 1) return b;
     if (b.op === "lit" && b.value === 1) return a;
-    if (
-      (a.op === "lit" && a.value === 0) ||
-      (b.op === "lit" && b.value === 0)
-    ) {
-      return lit(0);
-    }
   }
   // x - 0 = x
   if (fn === "-" && args.length === 2) {
