@@ -1,5 +1,59 @@
 # @nudojs/core
 
+## 1.1.1
+
+### Patch Changes
+
+- 86d1f87: fix(core): never execute host side-effect globals in the B path
+  
+  `$callNamed` executed any host function it could not fold, so a module calling
+  `fetch(url)` made the analyzer issue a **real** network request with Abs
+  arguments (`[object Object]`): `nudo check` / `nudo test` died with
+  `TypeError: Failed to parse URL from [object Object]` (ERR_INVALID_URL) via an
+  unhandled rejection. `setTimeout` / `setInterval` scheduled real timers the
+  same way.
+  
+  `fetch` / `XMLHttpRequest` / `WebSocket` / `EventSource` / timers /
+  `queueMicrotask` / `requestAnimationFrame` / `requestIdleCallback` are now
+  identity-guarded (aliases included) and fail closed to `unknown#opaque`,
+  reported through a dedicated `nudo:host-effect-blocked` (info) diagnostic —
+  not `nudo:recursion-truncated`. Other host functions still evaluate for real.
+- 892899d: fix(core): RegExp.exec precision with non-literal subject + nullish return prefilter
+  
+  Two return-path defects that both show up in the classic "parse and return null
+  on no-match" shape:
+  
+  1. `execRegexBrand` documented "exec → null|tuple 的保守并" for a subject that
+     is not a string literal but returned `undefined` instead. The caller then fell
+     through to the "method not found" path and the result became the Abs
+     `undefined`: `typeof m` folded to the literal `"undefined"`, `m === null` folded
+     to `false`, capture groups stayed unknown, and `Number(m[1])`-style returns
+     collapsed. `exec` now returns the conservative `null | array(string|undefined)`.
+  
+  2. `checkReturnConstraint` reported a `null` return as violating a `shape({...})`
+     contract. lit `null`/`undefined` cannot satisfy any constraint, so reporting
+     it is a false positive (`return null` means "no value", not "wrong value").
+     Nullish evidence is now prefiltered there too, matching the parameter-side
+     prefilter (`scan-injected-domain`, T4 caveat).
+  
+  Real-world case: a `parseVersion(v)` that returns `null` for unparsable input
+  and `{ major: Number(m[1]), … }` otherwise — with #40's sum distribution the
+  remaining report was the nullish member alone.
+- faccd76: fix(check): return-shape contract distributes over branch sums
+  
+  `checkReturnConstraint` only accepted `ret.shape.k === "obj"`, so a return value
+  that is a **sum** (e.g. `if (flag) obj.extra = x; return obj;` — the two branch
+  shapes join into a sum when their key sets differ) was reported as
+  `nudo:constraint-violated` even when every member satisfied the declared
+  `shape({...})` contract. Real-world hit: sidecar `fn({...}, shape({...}))`
+  returns with a conditional field.
+  
+  Shape contracts now recurse into sum members (each member must satisfy the
+  contract, issues deduped). Scalar contracts (prim / numeric bounds / domain)
+  still do not distribute: sum members can be operator-derived unions from
+  unconstrained operands (`any + any` → `number | string`) and reporting those
+  is a false positive per the check-gold precision discipline.
+
 ## 3.0.0-beta.0
 
 ### Major Changes

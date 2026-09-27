@@ -1,5 +1,15 @@
 # vite-plugin-nudo
 
+## 0.4.4
+
+### Patch Changes
+
+- Updated dependencies [86d1f87]
+- Updated dependencies [892899d]
+- Updated dependencies [faccd76]
+  - @nudojs/core@1.1.1
+  - @nudojs/service@1.1.1
+
 ## 0.4.3-beta.1
 
 ### Patch Changes

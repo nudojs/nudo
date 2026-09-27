@@ -1,5 +1,17 @@
 # @nudojs/service
 
+## 1.1.1
+
+### Patch Changes
+
+- Updated dependencies [86d1f87]
+- Updated dependencies [892899d]
+- Updated dependencies [faccd76]
+  - @nudojs/core@1.1.1
+  - @nudojs/env@0.4.3
+  - @nudojs/harvester@0.2.9
+  - @nudojs/parser@1.1.1
+
 ## 5.0.0-beta.1
 
 ### Major Changes
