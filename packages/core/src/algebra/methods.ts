@@ -60,6 +60,24 @@ function isStrRecv(recv: Abs): boolean {
 }
 
 /**
+ * ToIntegerOrInfinity / ToNumber 可折叠的字面量位置实参：
+ * 缺省、显式 undefined、number/string/bool/null 字面量。
+ * 符号实参原生 THROW；抽象实参不折叠。
+ */
+function isFoldableIndexArg(x: Abs | undefined): boolean {
+  if (x === undefined) return true;
+  if (x.term?.op !== "lit") return false;
+  const v = x.term.value;
+  return (
+    v === undefined ||
+    typeof v === "number" ||
+    typeof v === "string" ||
+    typeof v === "boolean" ||
+    v === null
+  );
+}
+
+/**
  * 调用 Abs 方法。返回 undefined = 未接管（调用方走其它路径）。
  */
 export function callAbsMethod(
@@ -140,12 +158,9 @@ export function callAbsMethod(
     case "slice":
     case "substring":
       if (lit !== undefined) {
-        // 位置参数：number 字面量或缺省（显式 undefined 字面量 ≡ 缺省）才折叠；
+        // 位置参数走 ToIntegerOrInfinity：number/string/bool/null/缺省/undefined 可折叠；
         // Symbol/抽象实参原生 THROW（Cannot convert a symbol to a number）→ 保守
-        const numOrMissing = (x: Abs | undefined): boolean =>
-          x === undefined ||
-          (x.term?.op === "lit" && (x.term.value === undefined || typeof x.term.value === "number"));
-        if (!numOrMissing(args[0]) || !numOrMissing(args[1])) return strPrim("path");
+        if (!isFoldableIndexArg(args[0]) || !isFoldableIndexArg(args[1])) return strPrim("path");
         const a1 = args[1] ? litValue(args[1]) : undefined;
         if (name === "slice") {
           return strLit(lit.slice(a0 as number | undefined, a1 as number | undefined));
@@ -153,8 +168,12 @@ export function callAbsMethod(
         return strLit(lit.substring(Number(a0 ?? 0), Number(a1 ?? lit.length)));
       }
       return strPrim("path");
-    case "charAt":
-      return lit !== undefined && typeof a0 === "number" ? strLit(lit.charAt(a0)) : strPrim("path");
+    case "charAt": {
+      // 缺省 pos ≡ 0；位置 ToIntegerOrInfinity（'1'/true/null 可折叠）
+      if (lit === undefined) return strPrim("path");
+      if (!isFoldableIndexArg(args[0])) return strPrim("path");
+      return strLit(lit.charAt(Number(a0 ?? 0)));
+    }
     case "toString":
     case "valueOf":
       return lit !== undefined ? strLit(lit) : strPrim("path");
@@ -172,9 +191,28 @@ export function callAbsMethod(
       return strPrim("path");
     }
     case "indexOf":
-    case "lastIndexOf":
-    case "charCodeAt":
-      return numPrim("path");
+    case "lastIndexOf": {
+      // 字面量 receiver + 可 ToString 的字面量 needle → 按原生折叠
+      // fromIndex 同 ToIntegerOrInfinity（含字符串数字 / 缺省）
+      if (lit === undefined) return strPrim("path");
+      const needleAbs = args[0];
+      if (!needleAbs || needleAbs.term?.op !== "lit") return numPrim("path");
+      const needle = needleAbs.term.value;
+      if (typeof needle === "symbol") return numPrim("path");
+      if (!isFoldableIndexArg(args[1])) return numPrim("path");
+      const from = args[1] ? litValue(args[1]) : undefined;
+      const search = String(needle);
+      return numLit(
+        name === "indexOf"
+          ? lit.indexOf(search, from as number | undefined)
+          : lit.lastIndexOf(search, from as number | undefined),
+      );
+    }
+    case "charCodeAt": {
+      if (lit === undefined) return numPrim("path");
+      if (!isFoldableIndexArg(args[0])) return numPrim("path");
+      return numLit(lit.charCodeAt(Number(a0 ?? 0)));
+    }
     case "split": {
       if (lit !== undefined) {
         const sep = typeof a0 === "string" ? a0 : undefined;
