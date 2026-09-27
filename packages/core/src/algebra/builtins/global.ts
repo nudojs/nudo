@@ -29,9 +29,10 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
       return makeArrayCtorAbs(args);
     case "parseInt": {
       // 首参 ToString，radix ToInt32（'2'→2、true→1 越界 NaN、null/false→0）
-      // 缺省首参 ≡ undefined → NaN。抽象不折。
-      if (!a0Lit) return numPrim();
-      if (typeof a0Lit.value === "symbol") throw new NudoThrow(errorTypeAbs("TypeError"));
+      // 缺省首参 ≡ undefined → ToString(undefined)="undefined" → NaN。抽象不折。
+      const sVal = a0Lit ? a0Lit.value : undefined;
+      if (a0Lit && typeof sVal === "symbol") throw new NudoThrow(errorTypeAbs("TypeError"));
+      if (!a0Lit && args[0] && args[0].term?.op !== "lit") return numPrim();
       const rAbs = args[1];
       let radix: number | string | boolean | null | undefined;
       if (!rAbs) {
@@ -49,12 +50,13 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
           return numPrim();
         }
       }
-      return foldParseInt(a0Lit.value as string | number | boolean | null | bigint | undefined, radix);
+      return foldParseInt(sVal as string | number | boolean | null | bigint | undefined, radix);
     }
     case "parseFloat": {
-      if (!a0Lit) return numPrim();
-      if (typeof a0Lit.value === "symbol") throw new NudoThrow(errorTypeAbs("TypeError"));
-      return foldParseFloat(a0Lit.value as string | number | boolean | null | bigint | undefined);
+      // 缺省首参 ≡ undefined → NaN
+      if (!a0Lit && args[0] && args[0].term?.op !== "lit") return numPrim();
+      if (a0Lit && typeof a0Lit.value === "symbol") throw new NudoThrow(errorTypeAbs("TypeError"));
+      return foldParseFloat(a0Lit ? a0Lit.value as string | number | boolean | null | bigint | undefined : undefined);
     }
     case "isNaN": {
       // 全局 isNaN：ToNumber 后判 NaN（与 Number.isNaN 不同，会强制转换）

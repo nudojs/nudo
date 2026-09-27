@@ -36,10 +36,12 @@ type ToStringLit = string | number | boolean | null | bigint | undefined;
 
 /**
  * 取可 ToString 的字面量。返回 {lit:true, v} / {lit:false}（抽象）。
- * symbol 原生 TypeError。lit(undefined) 是合法 ToString 输入。
+ * symbol 原生 TypeError。lit(undefined) 与缺省实参都是合法 ToString 输入
+ * （缺省 ≡ undefined → String(undefined)="undefined"）。
  */
 function toStringLitArg(a: Abs | undefined): { lit: true; v: ToStringLit } | { lit: false } {
-  if (!a || a.term?.op !== "lit") return { lit: false };
+  if (!a) return { lit: true, v: undefined };
+  if (a.term?.op !== "lit") return { lit: false };
   const v = a.term.value;
   if (typeof v === "symbol") throw new NudoThrow(errorTypeAbs("TypeError"));
   return { lit: true, v: v as ToStringLit };

@@ -78,6 +78,18 @@ function isFoldableIndexArg(x: Abs | undefined): boolean {
 }
 
 /**
+ * 实参 ToString 投影（搜索串 / 分隔符 / 替换模式）：缺省 ≡ lit(undefined)
+ * → String(undefined)。抽象 / symbol 原生 THROW 时不折叠。
+ */
+function toStringArg(x: Abs | undefined): string | undefined {
+  if (x === undefined) return "undefined";
+  if (x.term?.op !== "lit") return undefined;
+  const v = x.term.value;
+  if (typeof v === "symbol") return undefined;
+  return String(v);
+}
+
+/**
  * 调用 Abs 方法。返回 undefined = 未接管（调用方走其它路径）。
  */
 export function callAbsMethod(
@@ -88,6 +100,7 @@ export function callAbsMethod(
   if (!isStrRecv(recv)) return undefined;
 
   const a0 = args[0] ? litValue(args[0]) : undefined;
+  const a0Str = toStringArg(args[0]);
   const lit = recv.term?.op === "lit" && typeof recv.term.value === "string"
     ? (recv.term.value as string)
     : undefined;
@@ -99,20 +112,20 @@ export function callAbsMethod(
     switch (name) {
       case "startsWith": {
         if (args[1] && litValue(args[1]) !== undefined) return boolPrim();
-        if (typeof a0 !== "string") return boolPrim();
-        const d = decideStartsWith(prefix, a0);
+        if (a0Str === undefined) return boolPrim();
+        const d = decideStartsWith(prefix, a0Str);
         return d === "unknown" ? boolPrim() : boolLit(d);
       }
       case "endsWith": {
         if (args[1] && litValue(args[1]) !== undefined) return boolPrim();
-        if (typeof a0 !== "string") return boolPrim();
-        const d = decideEndsWith(suffix, a0);
+        if (a0Str === undefined) return boolPrim();
+        const d = decideEndsWith(suffix, a0Str);
         return d === "unknown" ? boolPrim() : boolLit(d);
       }
       case "includes": {
         if (args[1] && litValue(args[1]) !== undefined) return boolPrim();
-        if (typeof a0 !== "string") return boolPrim();
-        const d = decideIncludes(allFixedTextOfViews(views), a0);
+        if (a0Str === undefined) return boolPrim();
+        const d = decideIncludes(allFixedTextOfViews(views), a0Str);
         return d === "unknown" ? boolPrim() : boolLit(d);
       }
       case "toUpperCase":
@@ -138,14 +151,15 @@ export function callAbsMethod(
     case "includes": {
       // 可选位置参数（startsWith/includes 的 position、endsWith 的 length）：
       // number 字面量或缺省（undefined）→ 按原生折叠；非字面量 → boolPrim
+      // searchString 走 ToString：缺省 ≡ undefined → "undefined"
       const a1Abs = args[1];
       const a1 = a1Abs ? litValue(a1Abs) : undefined;
       const a1Unknown = a1Abs !== undefined && a1Abs.term?.op !== "lit";
       if (a1Unknown) return boolPrim();
-      if (lit !== undefined && typeof a0 === "string") {
-        if (name === "startsWith") return boolLit(lit.startsWith(a0, a1 as number | undefined));
-        if (name === "endsWith") return boolLit(lit.endsWith(a0, a1 as number | undefined));
-        return boolLit(lit.includes(a0, a1 as number | undefined));
+      if (lit !== undefined && a0Str !== undefined) {
+        if (name === "startsWith") return boolLit(lit.startsWith(a0Str, a1 as number | undefined));
+        if (name === "endsWith") return boolLit(lit.endsWith(a0Str, a1 as number | undefined));
+        return boolLit(lit.includes(a0Str, a1 as number | undefined));
       }
       return boolPrim();
     }
@@ -194,14 +208,12 @@ export function callAbsMethod(
     case "lastIndexOf": {
       // 字面量 receiver + 可 ToString 的字面量 needle → 按原生折叠
       // fromIndex 同 ToIntegerOrInfinity（含字符串数字 / 缺省）
+      // needle 缺省 ≡ undefined → String(undefined)="undefined"
       if (lit === undefined) return strPrim("path");
-      const needleAbs = args[0];
-      if (!needleAbs || needleAbs.term?.op !== "lit") return numPrim("path");
-      const needle = needleAbs.term.value;
-      if (typeof needle === "symbol") return numPrim("path");
+      const search = toStringArg(args[0]);
+      if (search === undefined) return numPrim("path");
       if (!isFoldableIndexArg(args[1])) return numPrim("path");
       const from = args[1] ? litValue(args[1]) : undefined;
-      const search = String(needle);
       return numLit(
         name === "indexOf"
           ? lit.indexOf(search, from as number | undefined)
@@ -215,7 +227,8 @@ export function callAbsMethod(
     }
     case "split": {
       if (lit !== undefined) {
-        const sep = typeof a0 === "string" ? a0 : undefined;
+        // separator 走 ToString：缺省 ≡ undefined → "undefined"
+        const sep = toStringArg(args[0]);
         // limit：number 字面量或缺省按原生截断；非字面量 → 元素数未知，保守 arr<string>
         const a1Abs = args[1];
         const a1 = a1Abs ? litValue(a1Abs) : undefined;
@@ -224,7 +237,7 @@ export function callAbsMethod(
           const parts = lit.split(sep, a1 as number | undefined).map((s) => strLit(s));
           return abs({ k: "tuple", elements: parts }, undefined, undefined, "exact");
         }
-        // 非字面分隔符：结果元素数未知（""→逐字符、命中→多段、未命中→1 段），
+        // 抽象/symbol 分隔符：结果元素数未知（""→逐字符、命中→多段、未命中→1 段），
         // 不能钉成 1 元 tuple（soundness）；保守 arr<string>
         return strArr("path");
       }
@@ -233,15 +246,20 @@ export function callAbsMethod(
     case "replace":
     case "replaceAll": {
       if (lit !== undefined) {
+        // pattern / replacement 缺省 ≡ undefined → ToString；非字面量保守
         const patAbs = args[0];
         const repAbs = args[1];
-        if (patAbs && repAbs) {
-          // pattern：字符串字面量 / RegExp brand（source/flags 槽）
+        {
+          // pattern：字符串字面量 / ToString 可折叠字面量 / RegExp brand（source/flags 槽）
           let patSrc: string | undefined;
           let patRe: RegExp | undefined;
-          const pv = patAbs.term?.op === "lit" ? patAbs.term.value : undefined;
-          if (typeof pv === "string") {
+          const pv = patAbs?.term?.op === "lit" ? patAbs.term.value : undefined;
+          if (patAbs === undefined) {
+            patSrc = "undefined";
+          } else if (typeof pv === "string") {
             patSrc = pv;
+          } else if (patAbs.term?.op === "lit" && typeof pv !== "symbol") {
+            patSrc = String(pv);
           } else if (patAbs.shape.k === "brand" && patAbs.shape.name === "RegExp") {
             const inner = patAbs.shape.shape;
             const slots = inner.shape.k === "obj" ? inner.shape.slots : undefined;
@@ -261,15 +279,22 @@ export function callAbsMethod(
             throw new NudoThrow(errorTypeAbs("TypeError"));
           }
           const pat = (patSrc ?? patRe)!;
-          // repl 字符串字面量：$ 模式展开真执行
-          const rv = repAbs.term?.op === "lit" ? repAbs.term.value : undefined;
-          if (typeof rv === "string") {
+          // repl 字符串字面量：$ 模式展开真执行；缺省/undefined → "undefined"
+          const rvLit = repAbs?.term?.op === "lit" ? repAbs.term.value : undefined;
+          const rv = repAbs === undefined
+            ? "undefined"
+            : typeof rvLit === "string"
+              ? rvLit
+              : repAbs.term?.op === "lit" && typeof rvLit !== "symbol"
+                ? String(rvLit)
+                : undefined;
+          if (rv !== undefined) {
             return strLit(name === "replaceAll" ? lit.replaceAll(pat as never, rv) : lit.replace(pat as never, rv));
           }
           // repl fn Abs：原生回调语义——逐命中桥接 Abs 回调（副作用真实执行）
           // 参数布局：string 模式 (match, offset, string)；
           // regex (match, ...pN, offset, string)；命名组时末尾多一个 groups 对象。
-          if (repAbs.shape.k === "fn") {
+          if (repAbs && repAbs.shape.k === "fn") {
             let anyUnknown = false;
             const replWrapper = (...caps: unknown[]): string => {
               const last = caps[caps.length - 1];

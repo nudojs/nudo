@@ -80,7 +80,18 @@ describe("indexOf / lastIndexOf literal fold", () => {
   it("abstract receiver / needle stay abstract", () => {
     const r = call(`export function f(s) { return s.indexOf('b'); }`);
     expect(litValue(r.result)).toBeUndefined();
-    const r2 = call(`export function f(n) { return 'abc'.indexOf(n); }`);
+    // 真正的抽象 needle（非「未绑定参数」——f() 时 n 是 undefined，应折 -1）
+    const exports = runTranspiled(
+      `export function f(n) { return 'abc'.indexOf(n); }`,
+      { mode: "analyze" },
+    );
+    const absN = { shape: { k: "any" as const }, conf: "partial" as const };
+    const r2 = callTranspiledExportFull(exports, "f", [absN as never]);
     expect(litValue(r2.result)).toBeUndefined();
+  });
+
+  it("missing param n folds like undefined (JS f() ≡ indexOf(undefined))", () => {
+    expect(val(`export function f(n) { return 'abc'.indexOf(n); }`)).toBe(-1);
+    expect(val(`export function f(n) { return 'abcundefined'.indexOf(n); }`)).toBe(3);
   });
 });
