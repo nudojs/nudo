@@ -39,7 +39,10 @@ export function termEquals(a: Term, b: Term): boolean {
 
 export function termToString(t: Term): string {
   if (t.op === "lit") {
-    return typeof t.value === "string" ? JSON.stringify(t.value) : String(t.value);
+    if (typeof t.value === "string") return JSON.stringify(t.value);
+    // -0 与 0 可观察不同（Object.is / 1/x）；String(-0)==="0" 会抹掉
+    if (typeof t.value === "number" && Object.is(t.value, -0)) return "-0";
+    return String(t.value);
   }
   if (t.op === "var") return t.id;
   // 字段访问：get(u, "id") → u.id
