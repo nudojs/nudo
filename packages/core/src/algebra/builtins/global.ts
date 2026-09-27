@@ -55,7 +55,11 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
     case "isFinite": {
       // 全局 isFinite：ToNumber 后判有限（与 Number.isFinite 不同，会强制转换）
       // isFinite() / isFinite(undefined) → false（ToNumber(undefined)=NaN）
-      if (!a0Lit || a0Lit.value === undefined) return boolLit(false);
+      // 抽象/symbol 实参不得折 false（symbol 原生 ToNumber 抛 TypeError）
+      if (args[0] && isSymbolAbs(args[0])) throw new NudoThrow(errorTypeAbs("TypeError"));
+      if (!args[0] || (args[0].term?.op === "lit" && args[0].term.value === undefined)) {
+        return boolLit(false);
+      }
       if (typeof a0 === "number") return boolLit(Number.isFinite(a0));
       if (typeof a0 === "boolean") return boolLit(true);
       if (typeof a0 === "string") return boolLit(Number.isFinite(Number(a0)));

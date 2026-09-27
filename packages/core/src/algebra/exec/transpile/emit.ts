@@ -54,10 +54,10 @@ export function emitArrMutatorRebinds(
       const argSrcs = (node.arguments ?? [])
         .map((a) =>
           (a as { type?: string }).type === "SpreadElement"
-            ? "$lit(undefined)"
+            ? "$unknown()"
             : isExpression(a as Node)
               ? emitTranspileExpression(a as Expression, opts)
-              : "$lit(undefined)",
+              : "$unknown()",
         )
         .join(", ");
       // 注：RegExp test/exec 的状态写回在表达式内部联 IIFE 完成（顺序副作用
@@ -100,7 +100,7 @@ export function emitArrMutatorRebinds(
       const argSrcs = (node.arguments as unknown as Expression[])
         .map((a) =>
           (a as { type?: string }).type === "SpreadElement"
-            ? "$lit(undefined)"
+            ? "$unknown()"
             : emitTranspileExpression(a, opts),
         )
         .join(", ");
