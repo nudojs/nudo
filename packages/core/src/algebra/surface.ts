@@ -441,9 +441,15 @@ export function strictEqAbs(a: Abs, b: Abs): boolean | undefined {
   const bNullish = vb === null || (b.term?.op === "lit" && b.term.value === undefined);
   if (bNullish && definitelyNotNullishShape(a.shape)) return false;
   if (aNullish && definitelyNotNullishShape(b.shape)) return false;
-  // 同 var 恒等
+  // 同 var 恒等：number/any/unknown 可能是 NaN，x === x 对 NaN 为 false
+  //（与同 Abs 引用路径一致——只对引用语义/非 number 原语恒等）。
   if (a.term && b.term && a.term.op === "var" && b.term.op === "var" && a.term.id === b.term.id) {
-    return true;
+    const k = a.shape.k;
+    if (k === "obj" || k === "arr" || k === "tuple" || k === "fn" || k === "brand" || k === "eff") {
+      return true;
+    }
+    if (k === "prim" && a.shape.type !== "number") return true;
+    return undefined;
   }
   return undefined;
 }
