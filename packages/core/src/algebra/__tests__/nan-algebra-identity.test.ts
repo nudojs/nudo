@@ -3,7 +3,8 @@
  * 回归背景：simplifyTerm / mul 把 `x * 0` 折成精确 0，但 JS 中
  * `NaN * 0 === NaN`、`Infinity * 0 === NaN`——number 域含 NaN/±Infinity，
  * 该恒等式不成立，折成 exact 0 属 unsound。
- * `x + 0 = x`、`x * 1 = x`、`x - 0 = x` 对 NaN/±Inf 仍成立，保留。
+ * `x * 1 = x`、`x - 0 = x` 对 NaN/±Inf/-0 仍成立，保留。
+ * `x + 0 = x` 不成立（-0+0=+0、string+0 拼接），与 x*0 同族一并去掉。
  */
 import { describe, it, expect } from "vitest";
 import { add, mul, numLit, numVar, litValue, simplifyTerm, app, lit, v } from "../index.ts";
@@ -39,8 +40,8 @@ describe("NaN-unsafe algebra identities", () => {
     expect(Number.isNaN(litValue(r))).toBe(true);
   });
 
-  it("x+0 = x and x*1 = x still hold", () => {
-    expect(simplifyTerm(app("+", [v("x"), lit(0)]))).toEqual(v("x"));
+  it("x*1 = x and x-0 = x still hold; x+0 must not fold", () => {
+    expect(simplifyTerm(app("+", [v("x"), lit(0)]))).not.toEqual(v("x"));
     expect(simplifyTerm(app("*", [v("x"), lit(1)]))).toEqual(v("x"));
     expect(simplifyTerm(app("-", [v("x"), lit(0)]))).toEqual(v("x"));
   });

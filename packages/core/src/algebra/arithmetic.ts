@@ -238,8 +238,9 @@ function toNumberResult(
   b: Abs,
   op: "-" | "*" | "/" | "%",
 ): Abs {
-  const term =
-    a.term && b.term ? simplifyTerm(app(op, [a.term, b.term])) : undefined;
+  // 不用 simplifyTerm：x*1=x / x-0=x 只对 number 成立；any 参与时 ToNumber
+  // 后值已变（"5"*1→5），不得把结果项认成原 any 变量（strictEqAbs 同 var 会折 true）。
+  const term = a.term && b.term ? app(op, [a.term, b.term]) : undefined;
   return abs(
     { k: "prim", type: "number" },
     term,
