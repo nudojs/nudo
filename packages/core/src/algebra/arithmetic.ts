@@ -14,6 +14,7 @@ import {
   le,
   implies,
   negatePred,
+  totalOrderDual,
   predToString,
   pTrue,
   ptypeof,
@@ -657,21 +658,17 @@ export function cmp(
                 ? { op: "eq", a: a.term, b: b.term }
                 : { op: "ne", a: a.term, b: b.term };
 
-    // 若 Φ 已蕴含该比较 → true；若蕴含否定 → false
+    // 若 Φ 已蕴含该比较 → true
+    // 若蕴含否定（¬pred，或全序对偶作正向事实）→ false
     if (implies(phi, pred)) return boolLit(true);
-    const neg: Pred =
-      op === "lt"
-        ? ge(a.term, b.term)
-        : op === "le"
-          ? gt(a.term, b.term)
-          : op === "gt"
-            ? le(a.term, b.term)
-            : op === "ge"
-              ? lt(a.term, b.term)
-              : op === "eq"
-                ? { op: "ne", a: a.term, b: b.term }
-                : { op: "eq", a: a.term, b: b.term };
-    if (implies(phi, neg)) return boolLit(false);
+    if (implies(phi, negatePred(pred))) return boolLit(false);
+    const dual: Pred | undefined = totalOrderDual(pred) ??
+      (op === "eq"
+        ? { op: "ne", a: a.term, b: b.term }
+        : op === "ne"
+          ? { op: "eq", a: a.term, b: b.term }
+          : undefined);
+    if (dual && implies(phi, dual)) return boolLit(false);
 
     // 数值界判定：range pred / Φ 中的 min·max 足以决定字面比较
     const decided = decideByBounds(op, a, b, phi);

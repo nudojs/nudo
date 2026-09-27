@@ -109,6 +109,11 @@ export function not(p: Pred): Pred {
  * 逻辑否定（De Morgan）：¬(A∧B)=¬A∨¬B；¬(A∨B)=¬A∧¬B；双重否定消去。
  * typeof 否定展开为其余 TypeofName 标签的析取——8 标签域是 JS typeof 的
  * 完整结果域，展开健全且相对完备。
+ *
+ * 关系比较（lt/le/gt/ge）的否定 **不是** 全序对偶：JS 里 NaN 参与时
+ * 全部关系为 false，故 ¬(x<5) 真而 x≥5 假。精确否定是 not(lt)；
+ * 正向全序事实（Φ ⊢ x≥5 ⇒ x<5 为假）仍由 totalOrderDual 处理。
+ * eq↔ne 是精确否定，不受 NaN 影响。
  */
 export function negatePred(p: Pred): Pred {
   switch (p.op) {
@@ -121,13 +126,10 @@ export function negatePred(p: Pred): Pred {
     case "ne":
       return eq(p.a, p.b);
     case "lt":
-      return ge(p.a, p.b);
     case "le":
-      return gt(p.a, p.b);
     case "gt":
-      return le(p.a, p.b);
     case "ge":
-      return lt(p.a, p.b);
+      return { op: "not", arg: p };
     case "and":
       return or(...p.args.map(negatePred));
     case "or":
@@ -139,6 +141,18 @@ export function negatePred(p: Pred): Pred {
         ...TYPEOF_NAMES.filter((u) => u !== p.type).map((u) => ptypeof(p.t, u)),
       );
   }
+}
+
+/**
+ * 全序对偶（仅作「正向事实 ⇒ 比较为假」用）：x≥5 在 Φ 中 ⇒ x<5 为假。
+ * 不得当 ¬(x<5) 用——反向在 NaN 上不成立。
+ */
+export function totalOrderDual(p: Pred): Pred | undefined {
+  if (p.op === "lt") return ge(p.a, p.b);
+  if (p.op === "le") return gt(p.a, p.b);
+  if (p.op === "gt") return le(p.a, p.b);
+  if (p.op === "ge") return lt(p.a, p.b);
+  return undefined;
 }
 
 export function predEquals(a: Pred, b: Pred): boolean {
@@ -315,6 +329,9 @@ export function implies(phi: Phi, pred: Pred): boolean {
     if (expanded.op !== "not") {
       return implies(phi, expanded);
     }
+    // 全序对偶正向：Φ ⊢ x≥y ⇒ ¬(x<y)（反向不成立——NaN）
+    const dual = totalOrderDual(pred.arg);
+    if (dual && implies(phi, dual)) return true;
     // 逆否：¬P ⊢ ¬Q  iff  Q ⊢ P
     if (phi.op === "not") {
       return implies(pred.arg, phi.arg);
@@ -322,8 +339,10 @@ export function implies(phi: Phi, pred: Pred): boolean {
     if (phi.op === "and") {
       for (const c of phi.args) {
         if (c.op === "not" && implies(pred.arg, c.arg)) return true;
+        if (dual && predEquals(c, dual)) return true;
       }
     }
+    if (dual && predEquals(phi, dual)) return true;
     // Φ 已知 typeof t=U (U≠T) ⇒ ¬(typeof t=T)（展开为 or 后的兜底）
     if (pred.arg.op === "typeof" && impliesNotTypeof(phi, pred.arg)) return true;
     return false;
