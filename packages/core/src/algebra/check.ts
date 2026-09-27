@@ -11,6 +11,7 @@
  */
 
 import { parseSource as parse } from "./parse-source.ts";
+import { isNullishLitAbs } from "./surface.ts";
 import {
   setAbsTruncationCollector,
   resetAbsCallBudget,
@@ -829,6 +830,10 @@ function checkReturnConstraint(
   // 无信息不猜
   if (ret.shape.k === "unknown" && !ret.term) return out;
   if (ret.shape.k === "any") return out;
+  // nullish 字面量预过滤（T4 caveat）：lit null/undefined 对任何约束恒不满足，
+  // 报则 FP——`return null` 的「无值」语义不是「错值」。参数位证据
+  // （scan-injected-domain）同口径。此前 `{…} | null` 的返回被整条判违规。
+  if (isNullishLitAbs(ret)) return out;
 
   // 分支 sum（if 条件赋值 / 多 return 路径）：shape 契约须对每个成员成立——
   // 分发到成员再聚合。此前 sum 不走 obj 槽位分支 → 直接判 shape ⊭ obj，
