@@ -9,7 +9,7 @@
 > 测试锚：`packages/service/src/__tests__/cache-invalidation-contract.test.ts`、
 > `session-cache-evict.test.ts`、`analysis-file-cache-key.test.ts`。
 
-> **Executive summary (EN).** Session analysis caches (file / fn / B-path / abs-module / path-env) are process-global. Most keys now embed a **dep content fingerprint**, so a usual dep edit naturally misses without host help. That is a perf layer, not the correctness contract: hosts MUST still evict on dependency change. Why: path-env factories are process-global; abs-module cache is keyed by `mtimeMs+size` and can miss a same-size same-mtime edit; custom loaders / truncated fingerprints need a safety net. Matrix: LSP does targeted parent eviction (gap: no `clearPathEnvCaches`); CLI watch calls `session.evictForDependents`; vite-plugin full-clears on `buildStart`/`watchChange`; one-shot CLI starts cold. This is **not** a product API. Tests: `cache-invalidation-contract.test.ts`.
+> **Executive summary (EN).** Session analysis caches (file / fn / evaluator / abs-module / path-env) are process-global. Most keys now embed a **dep content fingerprint**, so a usual dep edit naturally misses without host help. That is a perf layer, not the correctness contract: hosts MUST still evict on dependency change. Why: path-env factories are process-global; abs-module cache is keyed by `mtimeMs+size` and can miss a same-size same-mtime edit; custom loaders / truncated fingerprints need a safety net. Matrix: LSP does targeted parent eviction (gap: no `clearPathEnvCaches`); CLI watch calls `session.evictForDependents`; vite-plugin full-clears on `buildStart`/`watchChange`; one-shot CLI starts cold. This is **not** a product API. Tests: `cache-invalidation-contract.test.ts`.
 
 ---
 
@@ -18,7 +18,7 @@
 ### 1.1 性能动机
 
 分析热路径（LSP hover / 重复 validate / watch 增量）会反复对**同一入口 source** 跑
-`analyzeFile` / `tryRunBPath` / per-fn generalize。若每次键都递归哈希整棵依赖树，
+`analyzeFile` / `tryRunEval` / per-fn generalize。若每次键都递归哈希整棵依赖树，
 大仓下 fingerprint 成本会盖过缓存收益。因此早期 L0 键只吃入口 source + 配置维。
 
 ### 1.2 正确性义务（由此产生）
@@ -34,7 +34,7 @@
 |---|---|---|---|
 | 整文件 `AnalysisResult`（`analysisFileCacheKey`） | **是** | `loadModuleDepsFingerprint` → `depSeg` | 内容变 → miss |
 | per-fn `FunctionAnalysis` | **是** | `fnDepSeg`（同口径指纹） | 内容变 → miss |
-| B-path `bRunCache` | **是** | `bPathDepKey`（内容哈希；截断 → 禁 memo） | 内容变 → miss |
+| evaluator `evalRunCache` | **是** | `evalDepKey`（内容哈希；截断 → 禁 memo） | 内容变 → miss |
 | Abs 模块图 `absModuleCache` | **否** | `mtimeMs + size` 严格相等 | 同 size + 同 mtime → **陈旧命中** |
 | path-env factory | **否** | `path:mtime` + `lookupPathEnv` mtime 复核 | 文件 mtime 变 → 失效；进程全局残留 |
 | core generalize / checkSource / nudo-module exec | 按调用参数 | 本轮内 memo | 宿主 `clear`/`reset` 负责 |
@@ -89,7 +89,7 @@ path-based `@nudo:env`（`/// @nudo:env ./custom.env.ts`）经 async preload 导
 
 | 宿主 | 依赖变更时 | 全量重置 | path-env | abs-module dep 缺口 | 备注 |
 |---|---|---|---|---|---|
-| **LSP**（`lsp/src/validation.ts`） | 定向：`evictBPathCacheForFiles` + `evictAnalysisFileCacheForFiles` + `evictFnAnalysisCacheForFiles(parentList)`，再 force 重验 parent | `clearValidationState` → `clearAnalysisSessionCaches` | **未接**（定向路径不清 path-env） | 删除事件才 `evictAbsModuleCacheFiles` | 脏传播算 dependents；本地 `analysisCache` 另清 |
+| **LSP**（`lsp/src/validation.ts`） | 定向：`evictEvalCacheForFiles` + `evictAnalysisFileCacheForFiles` + `evictFnAnalysisCacheForFiles(parentList)`，再 force 重验 parent | `clearValidationState` → `clearAnalysisSessionCaches` | **未接**（定向路径不清 path-env） | 删除事件才 `evictAbsModuleCacheFiles` | 脏传播算 dependents；本地 `analysisCache` 另清 |
 | **CLI watch**（`cli/src/commands/shared.ts`） | `getAnalysisSession().evictForDependents(ordered)` | 文件删除时 `session.clear()` | 经 `evictAnalysisCachesForFiles` **已清** | 同 §2.1 残余 | 200ms debounce；topo 序重跑 |
 | **vite-plugin** | `watchChange` → `clearAnalysisSessionCaches()` | `buildStart` → `clearAnalysisSessionCaches()` | **已清** | 全清，无缺口 | 最重但最安全 |
 | **一次性 CLI**（`check` / `test` / …） | 无增量（冷进程） | 进程退出即丢 | 不适用 | 不适用 | 不需要逐出 API |
@@ -123,7 +123,7 @@ path-based `@nudo:env`（`/// @nudo:env ./custom.env.ts`）经 async preload 导
 
 | 锚 | 钉什么 |
 |---|---|
-| **C1** size-changing dep edit is a natural miss without host eviction | 内容指纹层（file/bpath/fn）常规编辑自然 miss |
+| **C1** size-changing dep edit is a natural miss without host eviction | 内容指纹层（file/eval/fn）常规编辑自然 miss |
 | **C2** evictAnalysisCachesForFiles refreshes after dep change | 宿主契约主路径：dependents 逐出后见到新 dep |
 | **C3** same-size pinned-mtime dep edit is stale under dependents-only eviction | 残余缺口被**显式钉住**（防止有人「修」掉断言后静默回归） |
 | **C4** evictAbsModuleCacheFiles(dep) + evictAnalysisCachesForFiles(entry) recovers | 缺口的安全补法 |
@@ -136,7 +136,7 @@ path-based `@nudo:env`（`/// @nudo:env ./custom.env.ts`）经 async preload 导
 
 - `session-cache-evict.test.ts`——dep-change host eviction contract（含 default-loader 自然 miss）
 - `analysis-file-cache-key.test.ts`——指纹维度（dep / project env / autoBind）
-- `bpath-cache-key.test.ts` / `bpath-trunc-no-cache.test.ts`——B-path 键与 fail-closed
+- `eval-cache-key.test.ts` / `eval-trunc-no-cache.test.ts`——evaluator 键与 fail-closed
 - `abs-module-cache.test.ts`——mtime+size 失效与 evict/clear
 
 ---

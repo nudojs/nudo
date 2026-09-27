@@ -1,7 +1,7 @@
 /**
  * Shared mock-file evaluation: resolve the mock path, run it through the
  * abs module graph (so relative imports inside the mock resolve), and return
- * the B-path export table.
+ * the evaluator export table.
  *
  * Lives apart from mock-abs / mock-module to keep the import graph acyclic:
  *   mock-file → abs-modules-graph (no reverse)

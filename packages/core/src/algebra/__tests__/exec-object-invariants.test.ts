@@ -1,7 +1,7 @@
 /**
- * B-path 对象不变性差分回归（strict ESM 语义）。
+ * evaluator 对象不变性差分回归（strict ESM 语义）。
  * 回归背景：Object.freeze/seal/preventExtensions/defineProperty 完全未建模——
- * freeze 后 o.a=2 静默失败（原生 o.a 仍 1）而 B-path 写入成功。
+ * freeze 后 o.a=2 静默失败（原生 o.a 仍 1）而 evaluator 写入成功。
  * 现按 strict 模块语义建模：不可变/不可扩展/不可写目标的写与删抛
  * TypeError（NudoThrow → never + throws），catch 可吸收；
  * 可写路径（seal 已有键、preventExtensions 已有键、writable:true）照常写入。
@@ -32,7 +32,7 @@ function throwsTypeError(t: unknown): boolean {
   return !!a && typeof a === "object" && a.shape?.k === "brand" && a.shape.name === "TypeError";
 }
 
-describe("B-path object invariants", () => {
+describe("evaluator object invariants", () => {
   it("freeze writes to existing slots throw TypeError", () => {
     const r = call(`export function run() { let o = {a: 1}; Object.freeze(o); o.a = 2; return o.a; }`, "run");
     expect(isNever(r.result)).toBe(true);

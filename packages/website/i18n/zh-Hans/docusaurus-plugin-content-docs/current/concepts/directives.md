@@ -95,7 +95,7 @@ function lengthOf(s) {
 
 ## @nudo:mock — Mock 外部依赖
 
-在求值期间将外部依赖替换为 mock 实现——`fetch`、文件系统 API 或其他 Nudo 无法直接执行的代码。完整语法（五种形式）、单行规则、B-path 注意事项与可运行示例：[模拟外部依赖](./mocking.md)。
+在求值期间将外部依赖替换为 mock 实现——`fetch`、文件系统 API 或其他 Nudo 无法直接执行的代码。完整语法（五种形式）、单行规则、evaluator 注意事项与可运行示例：[模拟外部依赖](./mocking.md)。
 
 ---
 
@@ -468,7 +468,7 @@ import { debounce, throttle } from "lodash";
 
 ## @nudo:as — 类型断言
 
-覆盖下一条语句的值类型。类似 TypeScript 的 `as` 关键字，但以行注释的形式放在语句上方。在 B 路径上作用于被覆盖语句的 `VariableDeclaration` 初始化值与 `ReturnStatement` 返回值。
+覆盖下一条语句的值类型。类似 TypeScript 的 `as` 关键字，但以行注释的形式放在语句上方。在 求值引擎上作用于被覆盖语句的 `VariableDeclaration` 初始化值与 `ReturnStatement` 返回值。
 
 ### 语法
 

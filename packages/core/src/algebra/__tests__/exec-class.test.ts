@@ -7,7 +7,7 @@ import {
   absToString,
 } from "@nudojs/core";
 
-describe("B-path class / this", () => {
+describe("evaluator class / this", () => {
   it("constructor writes fields; method reads this", () => {
     const src = `
 class Point {

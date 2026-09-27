@@ -4,7 +4,7 @@
  * 按 filePath 键控 + source 字符串相等比较：
  * - LSP 同一 buffer 复用 getText() 同一字符串 → SameValueZero O(1)
  * - 编辑后 source 变化 → miss，覆盖旧条目（每文件一份，内存有界）
- * 与 B-path 缓存同生命周期：宿主清 B-path 时一并失效。
+ * 与 evaluator 缓存同生命周期：宿主清 evaluator 时一并失效。
  * 上限可配（session-cache-limits：多项目内存封顶 / 大仓调高）。
  */
 import { getSessionCacheLimits } from "./session-cache-limits.ts";

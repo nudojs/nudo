@@ -2,7 +2,7 @@
  * LSP 表面（hover / 补全 / 用例枚举）——自 analyzer.ts 拆出的展示层。
  *
  * 这里只做「光标位置 → 类型」的查询与渲染：
- * - getTypeAtPosition / getHoverAtPosition：B 路径 Abs 节点表优先；
+ * - getTypeAtPosition / getHoverAtPosition：求值引擎 Abs 节点表优先；
  *   用例函数体内走 Abs 重放（activeCases 选中 case + evalSource）；
  * - getCompletionsAtPosition 及补全辅助（builtinMemberAbs 微求值、
  *   array/promise/string/union 成员补全）——内置成员唯一真值来源是
@@ -37,7 +37,7 @@ import {
 } from "@nudojs/service/evaluator";
 import { mockDirectivesToAbsSeeds } from "@nudojs/service";
 import { evalAbsModuleGraph, collectAbsBindingsFromGraph } from "@nudojs/service";
-import { isBPathCapable } from "@nudojs/service";
+import { isEvalCapable } from "@nudojs/service";
 import {
   resolveModule,
   locFromNode,
@@ -108,10 +108,10 @@ function positionInsideCaseFunction(
 }
 
 /**
- * B-path 节点表 / 标识符绑定上的无损 Abs（不经 TypeValue）。
+ * evaluator 节点表 / 标识符绑定上的无损 Abs（不经 TypeValue）。
  * 用例函数体内返回 null——那里走 case Abs 重放（见 absFromCaseReplay）。
  */
-function absFromBPath(
+function absFromEval(
   filePath: string,
   source: string,
   line: number,
@@ -119,7 +119,7 @@ function absFromBPath(
   ast: ReturnType<typeof parse>,
   envNames: string[],
 ): Abs | null {
-  if (!isBPathCapable(source, envNames)) return null;
+  if (!isEvalCapable(source, envNames)) return null;
   if (positionInsideCaseFunction(source, ast, line)) return null;
   // fail-closed：节点级 Abs 收集（collectAbsNodeTypes/evalProgramAbs）已删；
   // 仅标识符绑定面（evalAbsModuleGraph 的 collectAbsBindingsFromGraph）
@@ -156,7 +156,7 @@ function absFromCaseReplay(
 }
 
 /**
- * 光标处无损 Abs。B-path 节点表优先；用例函数体走 Abs 重放。
+ * 光标处无损 Abs。evaluator 节点表优先；用例函数体走 Abs 重放。
  */
 export function getAbsAtPosition(
   filePath: string,
@@ -170,7 +170,7 @@ export function getAbsAtPosition(
     .filter((d) => d.kind === "env")
     .flatMap((d) => d.envs);
 
-  const fromB = absFromBPath(filePath, source, line, column, ast, envNames);
+  const fromB = absFromEval(filePath, source, line, column, ast, envNames);
   if (fromB) return fromB;
 
   // 用例函数体：按 activeCases 选中 case 做 Abs 重放
@@ -182,7 +182,7 @@ export function getAbsAtPosition(
   return null;
 }
 
-/** 光标处类型（Abs）。B-path 节点表优先；用例函数体走 Abs 重放。 */
+/** 光标处类型（Abs）。evaluator 节点表优先；用例函数体走 Abs 重放。 */
 export function getTypeAtPosition(
   filePath: string,
   source: string,
@@ -217,8 +217,8 @@ export type HoverInterfaceOpts = InterfaceTierOpts;
  *
  * 函数名/调用 callee 位置（design-hof-relations §7）：
  * intension 一律走 generalize/formatPoly（HOF fnRels 在这里）；
- * typeText 仍落 B-path Abs（调用点显示结果类型，不是函数签名）。
- * 禁止用 B-path 的 arity-only fn Abs 冒充权威关系源。
+ * typeText 仍落 evaluator Abs（调用点显示结果类型，不是函数签名）。
+ * 禁止用 evaluator 的 arity-only fn Abs 冒充权威关系源。
  *
  * A7 default 档：函数名 hover 附带 interfaceTierOf 来源 + 契约展示，
  * 与 CodeLens `● interface / <source>` 同源；选 case 时 body 仍走
@@ -247,7 +247,7 @@ export function getHoverAtPosition(
       ? interfaceTierOf(source, fnName, filePath, opts ?? {})
       : undefined;
 
-  // intension 候选：先算、不早退，最后合并进 B-path/TypeValue 结果
+  // intension 候选：先算、不早退，最后合并进 evaluator/TypeValue 结果
   let gDisplay: string | undefined;
   let gAbs: string | undefined;
   let gMulti: string | undefined;
@@ -285,7 +285,7 @@ export function getHoverAtPosition(
     });
   };
 
-  // B 路径：优先 Abs 节点表 / 标识符绑定，不经 TypeValue evaluateProgram。
+  // 求值引擎：优先 Abs 节点表 / 标识符绑定，不经 TypeValue evaluateProgram。
   // 用例函数体内：Abs 重放 selected case（activeCases），再 TypeValue 兜底。
   const insideCaseFn = positionInsideCaseFunction(
     source,
@@ -294,7 +294,7 @@ export function getHoverAtPosition(
   );
 
   if (!insideCaseFn) {
-    const fromB = absFromBPath(
+    const fromB = absFromEval(
       filePath,
       source,
       line,
@@ -332,12 +332,12 @@ export function getHoverAtPosition(
   }
 
   // 标识符绑定优先（比粗粒度节点表更准）。用例函数体内跳过：
-  // B-path 绑定来自调用点，会盖住 activeCases 重放结果。
+  // evaluator 绑定来自调用点，会盖住 activeCases 重放结果。
   const ident = findIdentNameAtPosition(source, line, column, file);
   if (ident && !fnName && !insideCaseFn) {
     try {
       // 经模块图（相对 + 裸包）求 Abs 绑定
-      if (isBPathCapable(source, []) || !/\brequire\s*\(/.test(source)) {
+      if (isEvalCapable(source, []) || !/\brequire\s*\(/.test(source)) {
         const seeds = mockDirectivesToAbsSeeds(extractDirectives(file ?? parse(source)), {
           fromFile: filePath,
         });
@@ -358,7 +358,7 @@ export function getHoverAtPosition(
   }
 
   // fail-closed：Abs 节点表（collectAbsNodeTypes）已删——任意表达式
-  // 光标 Abs 由标识符绑定面（absFromBPath）与 interface 档覆盖
+  // 光标 Abs 由标识符绑定面（absFromEval）与 interface 档覆盖
 
   // 无类型结果时仍附 interface 档（函数名 hover 的同源保证）
   if (tier && gDisplay) {

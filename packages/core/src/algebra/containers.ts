@@ -1,7 +1,7 @@
 /**
  * 容器字面量策略 —— 单一真理源。
  *
- * 数组字面量的 shape 由唯一求值引擎（B 路径 runtime：transpile 目标算子
+ * 数组字面量的 shape 由唯一求值引擎（求值引擎 runtime：transpile 目标算子
  * $arr/$concat）经本策略产生；不存在第二条引擎需要对齐。
  *
  * 不变式（>cap 降级语义）：

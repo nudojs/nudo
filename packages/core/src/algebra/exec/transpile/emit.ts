@@ -135,8 +135,10 @@ export function emitArrMutatorRebinds(
         );
       }
     }
-    // 自增/自减：标识符前缀自包含（n = $add(n,1)），后缀表达式值为旧值需补写回；
-    // 成员目标（o.n++/++o.n）前后缀表达式值均由本 pass 之外的表达式给出，写回在此统一补
+    // 自增/自减：标识符前/后缀均在表达式内自包含写回
+    //（后缀 `(x=x+1, x-1)`），本 pass 不得再补写回——否则双倍自增。
+    // 成员目标（o.n++/++o.n）前后缀表达式值由表达式给出，写回在此统一补
+    //（成员路径无匿名临时量，表达式内无法安全写回）。
     if (
       node.type === "UpdateExpression" &&
       (node as { argument?: unknown }).argument
@@ -149,10 +151,7 @@ export function emitArrMutatorRebinds(
         computed?: boolean;
       };
       const fn = (node as { operator?: string }).operator === "++" ? "$add" : "$sub";
-      const isPostfix = (node as { prefix?: boolean }).prefix !== true;
-      if (arg.type === "Identifier" && arg.name) {
-        if (isPostfix) lines.push(`${pad}${arg.name} = ${fn}(${arg.name}, $lit(1));`);
-      } else if (arg.type === "MemberExpression") {
+      if (arg.type === "MemberExpression") {
         const path = memberPathOf(
           arg as unknown as { object: Node; property: Node; computed: boolean },
           opts,

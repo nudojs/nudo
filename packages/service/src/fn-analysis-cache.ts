@@ -1,6 +1,6 @@
 /**
  * Per-function FunctionAnalysis cache (body-edit: recompute only dirty fns).
- * Cleared together with B-path / whole-file analysis caches.
+ * Cleared together with evaluator / whole-file analysis caches.
  */
 import type { Abs } from "@nudojs/core";
 import { getSessionCacheLimits } from "./session-cache-limits.ts";

@@ -84,7 +84,7 @@ function isExactUndef(a: Abs): boolean {
 
 /** 实参是否携带可执法信息（含确定 undefined；纯 unknown 不算） */
 function isInformativeArg(a: Abs | undefined | null): boolean {
-  // B 执行态 args 可能有空洞（稀疏调用/可选实参）——fail-closed 当无信息
+  // eval 执行态 args 可能有空洞（稀疏调用/可选实参）——fail-closed 当无信息
   if (!a || typeof a !== "object") return false;
   if (a.term?.op === "lit") return true;
   return a.shape?.k !== "unknown" && a.shape !== undefined;
@@ -131,7 +131,7 @@ export function scanLiteralCalls(
     /** 顶层绑定表（与结构赋值共享一次执行态求值结果） */
     varAbs?: Map<string, Abs>;
     /**
-     * B 路径执行态调用记录（值流回退）：静态实参无信息时按 fnName@line 取
+     * 求值引擎执行态调用记录（值流回退）：静态实参无信息时按 fnName@line 取
      * 执行态实参。变量键查找已折 any（hasInfo），不会误触发本回退。
      */
     bCalls?: Array<{
@@ -152,17 +152,17 @@ export function scanLiteralCalls(
   const forwards = collectForwarders(source, knownSet, resolve, file);
   const varAbs = opts?.varAbs ?? new Map<string, Abs>();
   /** fnName@line → 执行态实参表（同名同行多调用按序消费） */
-  const bCallIndex = new Map<string, Array<Abs[]>>();
+  const evalCallIndex = new Map<string, Array<Abs[]>>();
   for (const r of opts?.bCalls ?? []) {
     if (!r.callLoc) continue;
     const key = `${r.fnName}\u0000${r.callLoc.line}`;
-    const list = bCallIndex.get(key) ?? [];
+    const list = evalCallIndex.get(key) ?? [];
     list.push(r.args);
-    bCallIndex.set(key, list);
+    evalCallIndex.set(key, list);
   }
   const takeBCallArgs = (fnName: string, line: number | undefined): Abs[] | undefined => {
     if (line === undefined) return undefined;
-    const list = bCallIndex.get(`${fnName}\u0000${line}`);
+    const list = evalCallIndex.get(`${fnName}\u0000${line}`);
     if (!list || list.length === 0) return undefined;
     return list.shift();
   };
@@ -892,7 +892,7 @@ export function scanLiteralCalls(
         note(abs);
       } else if (a.type === "SpreadElement") {
         // 字面量数组 spread（`f(...[1, -2])`）：静态展开元素（字面量快路径）。
-        // 非字面量（`f(...args)`）不猜——B 通道实参回退。
+        // 非字面量（`f(...args)`）不猜——eval 通道实参回退。
         const inner = (a as { argument?: Record<string, unknown> }).argument;
         if (inner?.type === "ArrayExpression") {
           for (const el of (inner.elements ?? []) as Array<Record<string, unknown> | null>) {
@@ -918,7 +918,7 @@ export function scanLiteralCalls(
         }
       } else if (a.type === "CallExpression") {
         // 内联调用（a.pop()/a.push(…)/xs.find(…)）：transpile 表达式位可能折
-        // $lit(undefined) 假精确，静态不猜——交给 B 执行态实参回退。
+        // $lit(undefined) 假精确，静态不猜——交给 eval 执行态实参回退。
         absArgs.push(absUnknown());
       } else {
         absArgs.push(absUnknown());
@@ -943,10 +943,10 @@ export function scanLiteralCalls(
     // 值流回退：静态实参无信息（嵌套调用形参 / 复杂表达式）时按执行态实参执法。
     // 变量键查找已折 any（hasInfo），不会走到这里。
     if (!hasInfo) {
-      const bArgs = takeBCallArgs(fnName, loc?.start.line);
-      if (bArgs && bArgs.length > 0) {
-        absArgs = bArgs;
-        hasInfo = bArgs.some(isInformativeArg);
+      const evalArgs = takeBCallArgs(fnName, loc?.start.line);
+      if (evalArgs && evalArgs.length > 0) {
+        absArgs = evalArgs;
+        hasInfo = evalArgs.some(isInformativeArg);
       }
     }
     if (!hasInfo || absArgs.length === 0) return;
@@ -1018,10 +1018,10 @@ export function scanLiteralCalls(
     let absArgs = parsedExt.absArgs;
     let hasInfo = parsedExt.hasInfo;
     if (!hasInfo) {
-      const bArgs = takeBCallArgs(ext.fnName, loc?.start.line);
-      if (bArgs && bArgs.length > 0) {
-        absArgs = bArgs;
-        hasInfo = bArgs.some(isInformativeArg);
+      const evalArgs = takeBCallArgs(ext.fnName, loc?.start.line);
+      if (evalArgs && evalArgs.length > 0) {
+        absArgs = evalArgs;
+        hasInfo = evalArgs.some(isInformativeArg);
       }
     }
     if (!hasInfo || absArgs.length === 0) return;

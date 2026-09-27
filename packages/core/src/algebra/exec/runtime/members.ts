@@ -18,7 +18,7 @@ import {
 import { errorTypeAbs, type MayThrowEffect } from "../may-throw.ts";
 import { OBJECT_PROTO_NAMES } from "../member-diag.ts";
 import { $call } from "../call.ts";
-import { getBClass } from "../class-registry.ts";
+import { getEvalClass } from "../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../class-mark.ts";
 import { NudoThrow, noBody, undef, throwStrictWrite, writeInPlace, clearStaleTermPred, asAbsVal, isDefinitelyTrue, isDefinitelyFalse, currentExecPhi, $lit, litTruth } from "./state.ts";
 import { $typeof, $eq, $ne } from "./ops.ts";
@@ -84,9 +84,9 @@ export function findClassAccessor(
   const seen = new Set<string>();
   while (cur && !seen.has(cur)) {
     seen.add(cur);
-    const acc = getBClass(cur)?.accessors?.[key];
+    const acc = getEvalClass(cur)?.accessors?.[key];
     if (acc) return acc;
-    cur = getBClass(cur)?.superName;
+    cur = getEvalClass(cur)?.superName;
   }
   return undefined;
 }
@@ -100,9 +100,9 @@ export function findStaticClassAccessor(
   const seen = new Set<string>();
   while (cur && !seen.has(cur)) {
     seen.add(cur);
-    const acc = getBClass(cur)?.staticAccessors?.[key];
+    const acc = getEvalClass(cur)?.staticAccessors?.[key];
     if (acc) return acc;
-    cur = getBClass(cur)?.superName;
+    cur = getEvalClass(cur)?.superName;
   }
   return undefined;
 }
@@ -201,8 +201,8 @@ export const BUILTIN_BRAND_METHODS: Record<string, ReadonlySet<string>> = {
 };
 
 export function brandHasProtoMember(brandName: string, key: string): boolean {
-  for (const name of bClassChain(brandName)) {
-    const spec = getBClass(name);
+  for (const name of evalClassChain(brandName)) {
+    const spec = getEvalClass(name);
     if (spec?.methods?.[key]) return true;
     if (spec?.accessors?.[key]) return true;
     const builtin = BUILTIN_BRAND_METHODS[name];
@@ -223,13 +223,13 @@ export const BUILTIN_ERROR_SUPER: Record<string, string> = {
   AggregateError: "Error",
 };
 
-/** B-path 品牌链：registry extends 优先，内建错误层级回退（限深防环） */
-export function bClassChain(name: string): string[] {
+/** evaluator 品牌链：registry extends 优先，内建错误层级回退（限深防环） */
+export function evalClassChain(name: string): string[] {
   const out = [name];
   let cur: string | undefined = name;
   let depth = 0;
   while (cur && depth++ < 32) {
-    const spec = getBClass(cur);
+    const spec = getEvalClass(cur);
     const parent: string | undefined = spec?.superName ?? BUILTIN_ERROR_SUPER[cur];
     if (!parent || out.includes(parent)) break;
     out.push(parent);
@@ -280,7 +280,7 @@ export function $instanceof(left: Abs, rightName: string, rightVal?: Abs): Abs {
         return boolLit(rightName === "Function" || rightName === "Object");
       }
       return boolLit(
-        rightName === "Object" || bClassChain(left.shape.name).includes(rightName),
+        rightName === "Object" || evalClassChain(left.shape.name).includes(rightName),
       );
     case "arr":
     case "tuple":

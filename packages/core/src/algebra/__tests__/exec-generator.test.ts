@@ -8,7 +8,7 @@ import {
   transpile,
 } from "@nudojs/core";
 
-describe("B-path generators", () => {
+describe("evaluator generators", () => {
   it("function* collects yields into tuple", () => {
     const src = `
 export function* gen() {

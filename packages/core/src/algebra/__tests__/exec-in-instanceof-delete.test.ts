@@ -1,5 +1,5 @@
 /**
- * B-path in / instanceof / delete 差分回归。
+ * evaluator in / instanceof / delete 差分回归。
  * 回归背景：三个运算符均不在 BIN_OPS / UnaryExpression 路由表——
  * transpile 折叠为 $lit(undefined)（unsound 精确断言）。
  * 每条断言与 Node 真实执行结果对齐。
@@ -33,7 +33,7 @@ const runtimeUrl = pathToFileURL(
 ).href;
 
 async function execTranspiled(source: string, exportName: string) {
-  const dir = mkdtempSync(join(tmpdir(), "nudo-bpath-inop-"));
+  const dir = mkdtempSync(join(tmpdir(), "nudo-eval-inop-"));
   dirs.push(dir);
   const js = transpile(source, { runtimeImport: runtimeUrl });
   const modPath = join(dir, "mod.mjs");
@@ -42,7 +42,7 @@ async function execTranspiled(source: string, exportName: string) {
   return mod[exportName] as (...args: unknown[]) => Abs;
 }
 
-describe("B-path `in` operator", () => {
+describe("evaluator `in` operator", () => {
   it("own slot present / absent", async () => {
     const run = await execTranspiled(
       `export function run(o) { return ('a' in o) * 10 + ('c' in o); }`,
@@ -80,7 +80,7 @@ describe("B-path `in` operator", () => {
   });
 });
 
-describe("B-path `instanceof` operator", () => {
+describe("evaluator `instanceof` operator", () => {
   it("array brand: Array true, Date false", async () => {
     const run = await execTranspiled(
       `export function run(a) { return (a instanceof Array) * 2 + (a instanceof Date); }`,
@@ -152,7 +152,7 @@ describe("B-path `instanceof` operator", () => {
   });
 });
 
-describe("B-path `delete` operator", () => {
+describe("evaluator `delete` operator", () => {
   it("delete returns true and removes own slot", async () => {
     const run = await execTranspiled(
       `export function run(o) {

@@ -61,7 +61,7 @@ export function evalNamespaceCall(
   }
 }
 
-/** JS Error 家族构造器名（B 路径 evalBuiltinNew / $new 共用） */
+/** JS Error 家族构造器名（求值引擎 evalBuiltinNew / $new 共用） */
 const ERROR_CTOR_NAMES = new Set([
   "Error",
   "TypeError",
@@ -151,7 +151,7 @@ export function evalBuiltinNew(className: string, args: Abs[]): Abs | undefined 
     case "Map":
       // C1.1：可选 entry 元组列表填充字面量映射；
       // 确定非法实参（prim 条目/非可迭代）→ NudoThrow(TypeError)
-      // （B-path $new 同口径；$catchVal 吸收 NudoThrow）
+      // （evaluator $new 同口径；$catchVal 吸收 NudoThrow）
       if (ctorArgDefinitelyInvalid("Map", args[0])) {
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }

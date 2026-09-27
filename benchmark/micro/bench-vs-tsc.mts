@@ -106,7 +106,7 @@ function makeLS(fileName: string, source: string) {
 
 async function main() {
   const files = writeFixtures();
-  const { analyzeFile, clearBPathCache, clearAnalysisFileCache } = await import(
+  const { analyzeFile, clearEvalCache, clearAnalysisFileCache } = await import(
     join(ROOT, "packages/service/src/index.ts")
   );
   const { checkSource, pTrue, resetCheckSourceMemo } = await import(
@@ -129,7 +129,7 @@ async function main() {
     const tscSrc = readFileSync(tscPath, "utf-8");
     const reps = label.startsWith("w3") || label.startsWith("w4") ? 10 : 20;
 
-    clearBPathCache();
+    clearEvalCache();
     clearAnalysisFileCache();
     analyzeFile(nudoPath, nudoSrc);
     const nudoAnalyze: number[] = [];
@@ -200,7 +200,7 @@ async function main() {
     writeFileSync(tscPath, tscSrc);
     const reps = n >= 200 ? 5 : 10;
 
-    clearBPathCache();
+    clearEvalCache();
     clearAnalysisFileCache();
     analyzeFile(nudoPath, nudoSrc);
     const nudoSamples: number[] = [];
@@ -291,7 +291,7 @@ async function main() {
     }
 
     clearAnalysisFileCache();
-    clearBPathCache();
+    clearEvalCache();
     const t1 = performance.now();
     analyzeFile(cmdPath, cmdSrc);
     const nudoCold = performance.now() - t1;

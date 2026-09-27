@@ -60,6 +60,24 @@ describe("validateSchemaNode", () => {
     expect(validateSchemaNode(u, 1)).toEqual({ value: 1 });
     expect(validateSchemaNode(u, true).issues).toBeDefined();
   });
+
+  it("promise / fn / brand / unknown pass through without issues", () => {
+    // checkNode 对 promise 是放行（同步投影不 unwrap thenable）。
+    // 该分支曾与 unknown/fn/brand 共用 case 后又重复声明一次（死代码）——
+    // 锁住放行语义，删重复 case 时不得改变行为。
+    const passThrough = [
+      { k: "promise" },
+      { k: "fn" },
+      { k: "brand", name: "Map" },
+      { k: "unknown" },
+    ] as const;
+    const thenable = { then() {} };
+    for (const node of passThrough) {
+      const r = validateSchemaNode(node as never, thenable);
+      expect(r.issues).toBeUndefined();
+      expect(r.value).toBe(thenable);
+    }
+  });
 });
 
 describe("absToStandardSchemaModule", () => {

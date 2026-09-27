@@ -1,7 +1,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname, relative, sep } from "node:path";
 import { setSessionCacheFromProject } from "../session-cache-limits.ts";
-import { setBForkBudgetLimit, getBForkBudgetLimit, MAX_B_TOTAL_FORKS } from "@nudojs/core/internal";
+import { setEvalForkBudgetLimit, getEvalForkBudgetLimit, MAX_EVAL_TOTAL_FORKS } from "@nudojs/core/internal";
 
 export type NudoConfig = {
   env?: string[];
@@ -29,7 +29,7 @@ export type NudoConfig = {
     evalMissingSlot?: "off" | "warning";
     /**
      * B $fork 总次数上限（默认 5000）。env `NUDO_MAX_FORKS` 优先。
-     * n≥1 有限整数；非法值回默认。启动时 set 进 core（setBForkBudgetLimit）。
+     * n≥1 有限整数；非法值回默认。启动时 set 进 core（setEvalForkBudgetLimit）。
      */
     maxForks?: number;
   };
@@ -42,7 +42,7 @@ export type NudoConfig = {
   sessionCache?: {
     maxFiles?: number;
     maxFns?: number;
-    maxBRuns?: number;
+    maxEvalRuns?: number;
   };
   /** check 门禁（design-cli-semantics §3） */
   check?: {
@@ -163,7 +163,7 @@ export function analysisConfig(config: NudoConfig | null | undefined): AnalysisC
     diagnostics,
     callSiteBudget,
     evalMissingSlot: raw?.evalMissingSlot === "warning" ? "warning" : "off",
-    maxForks: parseMaxForks(raw?.maxForks) ?? MAX_B_TOTAL_FORKS,
+    maxForks: parseMaxForks(raw?.maxForks) ?? MAX_EVAL_TOTAL_FORKS,
   };
 }
 
@@ -187,12 +187,12 @@ export function applyBForkBudgetFromConfig(
     env.NUDO_MAX_FORKS === undefined ? undefined : Number(env.NUDO_MAX_FORKS),
   );
   const fromCfg = parseMaxForks(config?.analysis?.maxForks);
-  return setBForkBudgetLimit(fromEnv ?? fromCfg ?? MAX_B_TOTAL_FORKS);
+  return setEvalForkBudgetLimit(fromEnv ?? fromCfg ?? MAX_EVAL_TOTAL_FORKS);
 }
 
-/** 当前生效 fork 上限（调试/测试；与 core getBForkBudgetLimit 同源） */
+/** 当前生效 fork 上限（调试/测试；与 core getEvalForkBudgetLimit 同源） */
 export function currentBForkBudgetLimit(): number {
-  return getBForkBudgetLimit();
+  return getEvalForkBudgetLimit();
 }
 
 /** 磁盘缓存根（B3）：config.cache / NUDO_CACHE_DIR / 默认关 */

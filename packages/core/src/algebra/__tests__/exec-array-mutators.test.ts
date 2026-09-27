@@ -1,5 +1,5 @@
 /**
- * B-path copyWithin / fill 差分回归。
+ * evaluator copyWithin / fill 差分回归。
  * 回归背景：两个方法不在 ARR_MUTATOR_NAMES——语句位置的 a.copyWithin(…)/a.fill(…)
  * 不重绑容器，后续读取仍折旧 tuple（unsound 精确断言）。
  * 每条断言与 Node 真实执行结果对齐（ToIntegerOrInfinity / 负边界自尾计数 /
@@ -22,7 +22,7 @@ const runtimeUrl = pathToFileURL(
 ).href;
 
 async function execTranspiled(source: string, exportName: string) {
-  const dir = mkdtempSync(join(tmpdir(), "nudo-bpath-arrctr-"));
+  const dir = mkdtempSync(join(tmpdir(), "nudo-eval-arrctr-"));
   dirs.push(dir);
   const js = transpile(source, { runtimeImport: runtimeUrl });
   const modPath = join(dir, "mod.mjs");
@@ -35,7 +35,7 @@ function els(a: Abs): unknown[] {
   return (a.shape as { elements: Abs[] }).elements.map((e) => litValue(e));
 }
 
-describe("B-path copyWithin (statement rebind)", () => {
+describe("evaluator copyWithin (statement rebind)", () => {
   it("overlapping window copies backwards", async () => {
     const run = await execTranspiled(
       `export function run(a) { a.copyWithin(2, 0); return a; }`,
@@ -81,7 +81,7 @@ describe("B-path copyWithin (statement rebind)", () => {
   });
 });
 
-describe("B-path fill (statement rebind)", () => {
+describe("evaluator fill (statement rebind)", () => {
   it("fills a bounded range", async () => {
     const run = await execTranspiled(
       `export function run(a) { a.fill(0, 1, 3); return a; }`,

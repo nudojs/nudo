@@ -1,5 +1,5 @@
 ---
-description: 求值期间模拟外部依赖——@nudo:mock 五种形式（箭头函数、stub 帮助函数、构造器、from 模块）、单行规则与 B-path 注意事项。
+description: 求值期间模拟外部依赖——@nudo:mock 五种形式（箭头函数、stub 帮助函数、构造器、from 模块）、单行规则与 evaluator 注意事项。
 ---
 
 # 模拟外部依赖
@@ -63,7 +63,7 @@ mock 模块会像普通依赖一样被装载求值；其中与 mock 同名的绑
 
 **警告：箭头函数 mock 体内不能调用构造器。** 约束构造器只存在于指令类型表达式（case 参数、`@nudo:skip`、`@nudo:as`……）中。mock 体内写普通 JavaScript——普通对象与闭包——或改用 `stub().returns(...)` / `stub().resolves(...)` 帮助函数。
 
-**警告：未 mock 的全局量会在 B 路径上真实执行。** 对 B-hosted 文件（无顶层 `this.` 的源码默认路径），当没有 mock 绑定该名称时，转译代码会调用真实的 Node 运行时全局量。内建量如 `fetch` 因此会拿抽象值当 URL 并让运行崩溃（`ERR_INVALID_URL`，exit `1`），而不是求值为 `unknown`。把你分析代码调用的每个全局量都 mock 掉：`@nudo:mock fetch = (url) => ({ ok: true, json: () => ({ ... }) })`。
+**警告：未 mock 的全局量会在 求值引擎上真实执行。** 对 eval-hosted 文件（无顶层 `this.` 的源码默认路径），当没有 mock 绑定该名称时，转译代码会调用真实的 Node 运行时全局量。内建量如 `fetch` 因此会拿抽象值当 URL 并让运行崩溃（`ERR_INVALID_URL`，exit `1`），而不是求值为 `unknown`。把你分析代码调用的每个全局量都 mock 掉：`@nudo:mock fetch = (url) => ({ ok: true, json: () => ({ ... }) })`。
 
 ## 示例
 

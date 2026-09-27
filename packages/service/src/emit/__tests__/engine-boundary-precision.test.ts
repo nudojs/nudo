@@ -1,6 +1,6 @@
 /**
  * 引擎边界精度：
- * T13 JSX → $unknown（文件其余部分保持 B-hosted）
+ * T13 JSX → $unknown（文件其余部分保持 eval-hosted）
  * T14 import.meta / 动态 import 建模
  * T15 混合 + 粗化为 number|string
  * T16 侧车键近失配（Class.method vs 裸 method）
@@ -28,7 +28,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defaultLoadModule } from "@nudojs/service";
 
-describe("T13 JSX stays B-hosted via $unknown", () => {
+describe("T13 JSX stays eval-hosted via $unknown", () => {
   it("file with JSX still analyzes sibling export precisely", () => {
     const src = `
 export function el() {

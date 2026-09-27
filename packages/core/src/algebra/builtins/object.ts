@@ -232,7 +232,7 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         } else if (src.shape.k !== "obj") {
           // 非 obj 源：tuple（下标键、hole 跳过）/字符串字面量（码元键）/
           // number/boolean/nullish（无键忽略）；键集未知 → 保守降级（与
-          // B-path runtimeAssignObject 同口径——此前整体忽略折假精确）
+          // evaluator runtimeAssignObject 同口径——此前整体忽略折假精确）
           const srcSlots = assignSourceSlots(src);
           if (srcSlots === undefined) {
             if (acc.shape.k === "obj") {
@@ -274,7 +274,7 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
             );
           }
         } else if (acc.shape.k === "tuple" && src.shape.k === "obj") {
-          // 数组 target：与 B-path runtimeAssignObject 同口径——数字键按下标写
+          // 数组 target：与 evaluator runtimeAssignObject 同口径——数字键按下标写
           // （扩展 length）、length 键截断/延长（延长段 hole、非法原生
           // RangeError）、非规范键 expando 忽略；源键序 = 原生属性序
           const slots = (src.shape as { slots: Record<string, { value: Abs }> }).slots;

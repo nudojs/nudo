@@ -44,7 +44,7 @@ function strArr(conf: Abs["conf"] = "path"): Abs {
 
 /**
  * replace 回调桥接的最小环境：宿主 applyCallbackHost 由 exec/call.ts
- * 注册（B-path `$call` 宿主）；fn Abs 的 impl.env（闭包）优先，此 env
+ * 注册（evaluator `$call` 宿主）；fn Abs 的 impl.env（闭包）优先，此 env
  * 仅作 hofCollect 等字段兜底。
  */
 function callbackEnv(): unknown {
@@ -75,6 +75,24 @@ function isFoldableIndexArg(x: Abs | undefined): boolean {
     typeof v === "boolean" ||
     v === null
   );
+}
+
+/**
+ * ES ToIntegerOrInfinity：ToNumber 后 NaN→0、±∞ 保留、其余 truncate 向零。
+ * 缺省实参 ≡ undefined → 0。可折叠返回整数/±Infinity；
+ * 抽象实参 / bigint / symbol（ToNumber 抛）返回 undefined 不折叠。
+ */
+export function toIntegerOrInfinityLit(x: Abs | undefined): number | undefined {
+  if (x === undefined) return 0;
+  if (x.term?.op !== "lit") return undefined;
+  const v = x.term.value;
+  if (typeof v === "symbol" || typeof v === "bigint") return undefined;
+  if (v === undefined) return 0;
+  const n = Number(v);
+  if (Number.isNaN(n)) return 0;
+  if (n === Infinity) return Infinity;
+  if (n === -Infinity) return -Infinity;
+  return Math.trunc(n);
 }
 
 /**
@@ -193,6 +211,16 @@ export function callAbsMethod(
       if (lit === undefined) return strPrim("path");
       if (!isFoldableIndexArg(args[0])) return strPrim("path");
       return strLit(lit.charAt(Number(a0 ?? 0)));
+    }
+    case "at": {
+      // String.prototype.at：ToIntegerOrInfinity，支持负索引；OOB → undefined
+      //（charAt 用 "" 表示 OOB，at 是 undefined——不得混用）
+      if (lit === undefined) return strPrim("path");
+      const iv = toIntegerOrInfinityLit(args[0]);
+      if (iv === undefined) return strPrim("path");
+      const idx = iv < 0 ? lit.length + iv : iv;
+      if (idx >= 0 && idx < lit.length) return strLit(lit[idx]!);
+      return undefAbs();
     }
     case "toString":
     case "valueOf":

@@ -11,7 +11,7 @@ import {
   checkCacheKey,
   checkConfig,
   evalAbsModuleGraph,
-  collectBPathReplacements,
+  collectEvalReplacements,
   collectEnvGlobals,
   collectEnvModules,
   type CallRecord,
@@ -176,12 +176,12 @@ async function runCheck(
     cachedJson = cached;
     algebraReport = reportFromCachedJson(cached) as Awaited<ReturnType<typeof checkSource>>;
   } else {
-    // B 注入包（模块图 + mocks + env 全局 + replace/as）——同文件内复用同一
+    // eval 注入包（模块图 + mocks + env 全局 + replace/as）——同文件内复用同一
     // 对象（checkSource/generalize memo 键按对象身份）
     let inject: import("@nudojs/core").RunTranspiledOptions | undefined;
     try {
       const graph = evalAbsModuleGraph(source, filePath);
-      const reps = collectBPathReplacements(source);
+      const reps = collectEvalReplacements(source);
       const { mockDirectivesToAbsSeeds, mockSeedsToAbsMocks } = await import("@nudojs/service");
       const { extractDirectives } = await import("@nudojs/parser");
       const { parse } = await import("@nudojs/parser");

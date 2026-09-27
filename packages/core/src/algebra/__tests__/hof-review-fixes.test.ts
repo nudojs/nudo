@@ -28,7 +28,7 @@ import {
 import { $call } from "../exec/call.ts";
 import { withStdImport, stdOpts } from "./nudo-constraints.ts";
 
-/** B 路径驱动：runTranspiled + 导出调用（取代 analyzeFn 的求值面） */
+/** 求值引擎驱动：runTranspiled + 导出调用（取代 analyzeFn 的求值面） */
 function analyzeExport(src: string, fnName: string, args: Abs[]): Abs {
   const run = runTranspiled(src, { mode: "analyze" });
   return callTranspiledExportFull(run, fnName, args).result;
@@ -116,7 +116,7 @@ describe("P2: truncated symbolic discards partial relations", () => {
     expect(g).toBeDefined();
     if (!g) return;
     // 截断后 symbolic 为 opaque → 不可缓存 → 不写半截关系
-    // （instantiate→B 实验已回退：B 的递归 partial 与 ast-eval opaque
+    // （instantiate→B 实验已回退：求值引擎的递归 partial 与 ast-eval opaque
     // 语义不同——opaque 门保留，静态关系也随门一起走）
     expect(g.symbolic.conf).toBe("opaque");
     expect(g.fnRels).toBeUndefined();

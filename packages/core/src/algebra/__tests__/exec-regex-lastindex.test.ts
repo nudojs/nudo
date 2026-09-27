@@ -1,5 +1,5 @@
 /**
- * B-path RegExp global lastIndex 状态差分回归。
+ * evaluator RegExp global lastIndex 状态差分回归。
  * 回归背景：execRegexBrand 每次调用 new RegExp 从头执行，receiver 的
  * lastIndex 状态完全丢失；且 test 路径「先 exec 再 test」——exec 先更新
  * 共享 reReal.lastIndex，/g 正则的 test 从错位开始：/b/g.test("abc")
@@ -22,7 +22,7 @@ function str(src: string) {
   return litValue(call(src, "run").result);
 }
 
-describe("B-path RegExp lastIndex state", () => {
+describe("evaluator RegExp lastIndex state", () => {
   it("single global test folds true (no stray exec)", () => {
     expect(str(`export function run() { return /b/g.test("abc"); }`)).toBe(true);
     expect(str(`export function run() { return /b/gi.test("aBc"); }`)).toBe(true);

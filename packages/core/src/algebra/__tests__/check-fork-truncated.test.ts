@@ -4,15 +4,15 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { checkSource, pTrue } from "@nudojs/core";
-import { setBForkBudgetLimit, resetAbsCallBudget, MAX_B_TOTAL_FORKS } from "@nudojs/core/internal";
+import { setEvalForkBudgetLimit, resetAbsCallBudget, MAX_EVAL_TOTAL_FORKS } from "@nudojs/core/internal";
 
 describe("nudo:fork-truncated diagnostic (checkSource)", () => {
   beforeEach(() => {
     resetAbsCallBudget();
-    setBForkBudgetLimit(MAX_B_TOTAL_FORKS);
+    setEvalForkBudgetLimit(MAX_EVAL_TOTAL_FORKS);
   });
   afterEach(() => {
-    setBForkBudgetLimit(MAX_B_TOTAL_FORKS);
+    setEvalForkBudgetLimit(MAX_EVAL_TOTAL_FORKS);
     resetAbsCallBudget();
   });
 
@@ -29,7 +29,7 @@ export function abs(n) {
   });
 
   it("fork budget exhausted → nudo:fork-truncated info (not error, not recursion-truncated)", () => {
-    setBForkBudgetLimit(1);
+    setEvalForkBudgetLimit(1);
     const src = `
 export function branchy(n) {
   if (n > 0) { n = n - 1; }

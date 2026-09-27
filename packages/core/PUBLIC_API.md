@@ -20,7 +20,7 @@
 |---------|-------|-----------|
 | Package name | `@nudojs/core` | **public** |
 | `exports["."]` | types `./dist/index.d.ts`, default `./dist/index.js` | **public** |
-| `exports["./exec"]` | types `./dist/exec.d.ts`, default `./dist/exec.js` — B-path transpile + `$op` runtime | **public** |
+| `exports["./exec"]` | types `./dist/exec.d.ts`, default `./dist/exec.js` — evaluator transpile + `$op` runtime | **public** |
 | `exports["./internal"]` | types `./dist/internal.d.ts`, default `./dist/internal.js` — engine machinery for monorepo hosts | **internal** (minor may break) |
 | `files` | `["dist"]` — no `src/*` published | **public** |
 | Engines | Node `>=20` | **public** |
@@ -60,7 +60,7 @@ changing the signature of any row below is **major**.
 | `NudoConstraint`, `instantiateConstraint`, `checkArg`, `checkCall` | value/type | contract checking | **public** |
 | `interfaceTierOf`, `effectiveInterface`, `EffectiveInterface`, `InterfaceTierInfo` | value/type | interface tiers | **public** |
 | `refineAbsForRelTrue`, `extractRefinesFromSource` | value | refinement gate | **public** |
-| `runTranspiled`, `callTranspiledExport`, `callTranspiledExportFull`, `TranspiledCallResult` | value/type | B-path execution (analyze mode) | **public** |
+| `runTranspiled`, `callTranspiledExport`, `callTranspiledExportFull`, `TranspiledCallResult` | value/type | evaluator execution (analyze mode) | **public** |
 | `evalExprAbs` | value | Abs-native expression eval | **public** |
 
 ### 2.2 Exec runtime (`./exec` = `src/algebra/exec/index.ts`, also re-exported from `.`)
@@ -76,7 +76,7 @@ changing the signature of any row below is **major**.
 | `$fnVal`, `$rawThis`, `$lit`, `asAbsVal`, `$classExpr`, `$instanceof`, `$in` | value / class runtime | **public** |
 | `$async`, `$await`, `$asyncReturn`, `$gen`, `$yield` | async / generator | **public** |
 | `$throw`, `$catchVal`, `$loopReturn`, `$loopBreak`, `$loopContinue`, `NudoReturn`, `NudoLoopSignal`, `NudoThrow` | control-signal / throw | **public** |
-| `$callNamed`, `$assignRecord`, `$recordBinding`, `BCallRecord`, `setBCallCollector` | call-site recording for analyze | **public** (additive) |
+| `$callNamed`, `$assignRecord`, `$recordBinding`, `EvalCallRecord`, `setEvalCallCollector` | call-site recording for analyze | **public** (additive) |
 | `runTranspiled`, `runtimeImportOf` | execution entry | **public** |
 
 `./exec` does **not** re-export may-throw / member-diag collectors (3.0).
@@ -96,7 +96,7 @@ face. Renames / signature changes / removals are **minor**, not major.
 | Inlay helpers | `inlay.ts` | IDE experimental wording |
 | Template / denote / language | `template.ts`, `denote.ts`, `language.ts` | experimental rendering |
 | Scan extras | `checkInjectedDomainEvidence`, `listTopFunctions`, … | service analyzer |
-| B-path collectors | `exec/may-throw.ts`, `exec/member-diag.ts` | host plumbing, not `$op` |
+| evaluator collectors | `exec/may-throw.ts`, `exec/member-diag.ts` | host plumbing, not `$op` |
 
 Import rule: hosts use `@nudojs/core/internal`. Do not deep-import `src/*`
 from published packages.

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { evalAbsModuleGraph } from "@nudojs/service";
 import { runTranspiled, callTranspiledExportFull, litValue, numLit, type Abs } from "@nudojs/core";
 
-/** B 路径驱动：runTranspiled（注入模块图）+ 导出调用（取代 analyzeFn 的求值面） */
+/** 求值引擎驱动：runTranspiled（注入模块图）+ 导出调用（取代 analyzeFn 的求值面） */
 function analyzeExportWithModules(
   src: string,
   fnName: string,
@@ -77,7 +77,7 @@ export function go(x) { return twice(x); }
     expect(litValue(result)).toBe(2);
   });
 
-  it("default export flows through the graph (B-path bridge)", () => {
+  it("default export flows through the graph (evaluator bridge)", () => {
     const dir = tmpProject({
       "inc.js": `export default function(x) { return x + 1; }`,
       "main.js": `

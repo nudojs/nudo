@@ -16,7 +16,7 @@ function findNodeModules(startDir: string): string | null {
 }
 
 /**
- * A3：裸包可执行入口（.js/.cjs/.mjs）。有源码就走 B 执行，而不是 harvest stub
+ * A3：裸包可执行入口（.js/.cjs/.mjs）。有源码就走 eval 执行，而不是 harvest stub
  * （ms/debug 等纯 JS 包的返回面由此从 unknown 变成真实折叠）。
  */
 export function resolveNpmJsEntry(

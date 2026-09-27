@@ -1,7 +1,7 @@
 /**
  * P0.1 数组 mutator 在抽象 if 臂间不得泄漏；
  * P0.3 a.at(-1) 是末元素，不是首元素；
- * P0.2 Map/Set delete/clear 建模（经 B-path builtin）。
+ * P0.2 Map/Set delete/clear 建模（经 evaluator builtin）。
  */
 import { describe, it, expect } from "vitest";
 import {

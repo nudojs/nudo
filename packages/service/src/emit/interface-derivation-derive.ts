@@ -12,7 +12,7 @@ import {
   isNodeModulesPath,
   runTranspiled,
   callTranspiledExportFull,
-  setBCallCollector,
+  setEvalCallCollector,
   $new,
   $invoke,
   sidecarPathOf,
@@ -20,7 +20,7 @@ import {
   unknown as unknownAbs,
   type Abs,
   type AbsCallRecord,
-  type BCallRecord,
+  type EvalCallRecord,
   type NudoConstraint,
 } from "@nudojs/core";
 import {
@@ -385,10 +385,10 @@ function deriveOneRoot(
     }
 
     const calls: AbsCallRecord[] = [];
-    const bCalls: BCallRecord[] = [];
-    const prevCall = setBCallCollector((r) => bCalls.push(r));
+    const bCalls: EvalCallRecord[] = [];
+    const prevCall = setEvalCallCollector((r) => bCalls.push(r));
     try {
-      // B-path 优先（迁移件 3）：derivation 打点在共享代数层（arithmetic.add
+      // evaluator 优先（迁移件 3）：derivation 打点在共享代数层（arithmetic.add
       // noteDerivationAdd / joinAbs noteDerivationJoin），$add/$join 执行
       // 时自动打点——无需 transpile 插桩。类方法（.名）走类方法桥
       // （与 generalize 同轨：$new + $invoke），不再 fail-closed 跳过。
@@ -418,7 +418,7 @@ function deriveOneRoot(
     } catch {
       return [];
     } finally {
-      setBCallCollector(prevCall);
+      setEvalCallCollector(prevCall);
     }
 
     const byCallee = new Map<string, CallAgg>();

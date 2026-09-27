@@ -1,5 +1,5 @@
 /**
- * `@nudo:mock name from "path"` 必须种入 B 路径（与内联 mock 同一 seed 通道）：
+ * `@nudo:mock name from "path"` 必须种入 求值引擎（与内联 mock 同一 seed 通道）：
  * - from-mock 装载成功 → 调用走 mock 实现，无 builtin-unknown
  * - 缺文件 → 明确 nudo:module-missing 诊断，不静默丢弃
  * - 内联 mock 不回归
@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { formatAbs, litValue } from "@nudojs/core";
 import { mockDirectivesToAbsSeeds, mockSeedsToAbsMocks } from "../mock-abs.ts";
 import { parse, extractDirectives } from "@nudojs/parser";
-import { tryBPathCallFull } from "../bpath-run.ts";
+import { tryEvalCallFull } from "../eval-run.ts";
 import { analyzeFile } from "../analyzer.ts";
 
 const dirs: string[] = [];
@@ -35,7 +35,7 @@ function seedsOf(source: string, fromFile: string) {
   return mockDirectivesToAbsSeeds(fns, { fromFile });
 }
 
-describe("@nudo:mock name from path seeds B path", () => {
+describe("@nudo:mock name from path seeds eval path", () => {
   it("from-mock binding is seeded and call results use the mock implementation", () => {
     const dir = tmpProject({
       "mocks/fs.js": `const fs = { readFileSync: (path, encoding) => "{ \\"port\\": 3000 }" };\n`,
@@ -61,8 +61,8 @@ function readConfig(path) {
     expect(seeds.fromErrors).toBeUndefined();
     expect(seeds.seedVars.fs).toBeDefined();
 
-    // B 路径调用必须拿到 mock 返回值（不是 unknown / builtin-unknown）
-    const run = tryBPathCallFull(source, entry, "readConfig", [], {
+    // 求值引擎调用必须拿到 mock 返回值（不是 unknown / builtin-unknown）
+    const run = tryEvalCallFull(source, entry, "readConfig", [], {
       mocks: mockSeedsToAbsMocks(seeds),
       envNames: [],
     });
@@ -190,7 +190,7 @@ export function load() { return readConfig(); }
     const seeds = seedsOf(source, join(dir, "app.js"));
     expect(seeds.fromErrors).toBeUndefined();
     const mocks = mockSeedsToAbsMocks(seeds);
-    const r = tryBPathCallFull(
+    const r = tryEvalCallFull(
       `export function load() { return readConfig(); }\n`,
       join(dir, "app.js"),
       "load",

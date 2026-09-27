@@ -256,12 +256,12 @@ Library exports from `src/index.ts` and side-effect-free `./public-api` constant
 | `BuildSemanticTokensOpts` | type | — | `BuildSemanticTokensOpts = InterfaceTierOpts & { loadModule?: (spec: string, fromFile: string) => string \| undefined; }` |
 | `CaseInfo` | type | — | `CaseInfo = { functionName: string; caseName: string; caseIndex: number; }` |
 | `encodeSemanticTokens` | fn | LSP 标准相对五元组编码：deltaLine/deltaStartChar/length/tokenType/tokenModifiers。 | `encodeSemanticTokens(tokens: SemanticToken[]): number[]` |
-| `getAbsAtPosition` | fn | 光标处无损 Abs。B-path 节点表优先；用例函数体走 Abs 重放。 | `getAbsAtPosition( filePath: string, source: string, line: number, column: number, activeCases?: Map<string, number>, ): Abs \| null` |
+| `getAbsAtPosition` | fn | 光标处无损 Abs。evaluator 节点表优先；用例函数体走 Abs 重放。 | `getAbsAtPosition( filePath: string, source: string, line: number, column: number, activeCases?: Map<string, number>, ): Abs \| null` |
 | `getAbsAtPositionAsync` | fn | Async entry to getAbsAtPosition（与 getTypeAtPositionAsync 同预加载口径） | `getAbsAtPositionAsync( filePath: string, source: string, line: number, column: number, activeCases?: Map<string, number>, ): Promise<Abs \| null>` |
 | `getCasesForFile` | fn | — | `getCasesForFile(filePath: string, source: string)` |
 | `getCompletionsAtPosition` | fn | — | `getCompletionsAtPosition( filePath: string, source: string, line: number, column: number, ): CompletionItem[]` |
 | `getHoverAtPosition` | fn | LSP hover：优先无损 Abs（类型即计算本体）。 | `getHoverAtPosition( filePath: string, source: string, line: number, column: number, activeCases?: Map<string, number>, opts?: HoverInterfaceOpts, ): HoverInfo \| null` |
-| `getTypeAtPosition` | fn | 光标处类型（Abs）。B-path 节点表优先；用例函数体走 Abs 重放。 | `getTypeAtPosition( filePath: string, source: string, line: number, column: number, activeCases?: Map<string, number>, ): Abs \| null` |
+| `getTypeAtPosition` | fn | 光标处类型（Abs）。evaluator 节点表优先；用例函数体走 Abs 重放。 | `getTypeAtPosition( filePath: string, source: string, line: number, column: number, activeCases?: Map<string, number>, ): Abs \| null` |
 | `getTypeAtPositionAsync` | fn | Async entry to getTypeAtPosition with path-env preloading (see analyzeFileAsync). | `getTypeAtPositionAsync( filePath: string, source: string, line: number, column: number, activeCases?: Map<string, number>, ): Promise<Abs \| null>` |
 | `HoverInfo` | type | — | `HoverInfo = { typeText: string; intension?: string; abs?: string; absMultiline?: string; interfaceSource?: InterfaceSource; interfaceDisp...` |
 | `interfaceTierModifierBit` | fn | A7：interface 档 → semantic token modifier（与 CodeLens 同源） | `interfaceTierModifierBit(src: InterfaceSource): number` |

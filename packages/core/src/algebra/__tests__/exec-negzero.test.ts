@@ -1,5 +1,5 @@
 /**
- * B-path -0 语义差分回归。
+ * evaluator -0 语义差分回归。
  * 回归背景：term.ts lit() 把 -0 归一化为 +0——JS 中 -0 虽 === 0，
  * 但在除法（1/-0=-Infinity）、Math.sign/min/round/ceil/atan2 与 Object.is
  * 上有可观察语义，折叠丢失负零产生假精确。
@@ -21,7 +21,7 @@ function isNegZero(v: unknown): boolean {
   return typeof v === "number" && Object.is(v, -0);
 }
 
-describe("B-path negative zero", () => {
+describe("evaluator negative zero", () => {
   it("unary minus on zero keeps -0", () => {
     const r = call(`export function run() { return -0; }`, "run");
     expect(isNegZero(litValue(r.result))).toBe(true);

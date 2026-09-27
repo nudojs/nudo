@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { collectBPathDiagnostics } from "../bpath-diagnostics.ts";
+import { collectEvalDiagnostics } from "../eval-diagnostics.ts";
 
 describe("C2.2 catch params are not builtin-unknown", () => {
   it("does not flag catch (e) body references", () => {
@@ -12,7 +12,7 @@ export function f() {
   }
 }
 `;
-    const d = collectBPathDiagnostics(src);
+    const d = collectEvalDiagnostics(src);
     expect(d.builtinUnknown.map((x) => x.name)).not.toContain("e");
   });
 
@@ -22,7 +22,7 @@ export function f() {
   return WeakRef;
 }
 `;
-    const d = collectBPathDiagnostics(src);
+    const d = collectEvalDiagnostics(src);
     expect(d.builtinUnknown.some((x) => x.name === "WeakRef")).toBe(true);
   });
 });

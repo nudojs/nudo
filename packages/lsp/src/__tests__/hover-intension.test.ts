@@ -62,7 +62,7 @@ const r = scale(3);
     // intension 来自 generalize，不是 arity-only
     expect(hover!.intension).toBeDefined();
     expect(hover!.intension).toContain("scale");
-    // typeText 落 B-path/TypeValue（调用点结果），不是「只有签名」的早退
+    // typeText 落 evaluator/TypeValue（调用点结果），不是「只有签名」的早退
     expect(hover!.typeText).toBeDefined();
     expect(hover!.typeText).not.toBe(hover!.intension);
   });
@@ -88,7 +88,7 @@ function caller(items) {
 });
 
 describe("getAbsAtPosition", () => {
-  it("B-path binding returns lossless Abs (no TypeValue bridge)", () => {
+  it("evaluator binding returns lossless Abs (no TypeValue bridge)", () => {
     const source = `const x = 1 + 2;\n`;
     const abs = getAbsAtPosition("/t/abs-pos.js", source, 1, 7);
     expect(abs).not.toBeNull();

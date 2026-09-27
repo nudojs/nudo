@@ -36,7 +36,7 @@ describe("mod by zero folds to exact NaN", () => {
     }
   });
 
-  it("B-path 5 % 0 folds to NaN", () => {
+  it("evaluator 5 % 0 folds to NaN", () => {
     const r = call(`export function f() { return 5 % 0; }`).result;
     expect(Number.isNaN(litValue(r))).toBe(true);
     expect(r.conf).toBe("exact");
@@ -76,7 +76,7 @@ describe("x % k bounds must not exclude NaN", () => {
     expect(p.includes("5")).toBe(true);
   });
 
-  it("B-path Infinity % 5 is NaN (native parity)", () => {
+  it("evaluator Infinity % 5 is NaN (native parity)", () => {
     const r = call(`export function f() { return Infinity % 5; }`).result;
     expect(Number.isNaN(litValue(r))).toBe(true);
   });

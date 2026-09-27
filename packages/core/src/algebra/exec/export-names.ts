@@ -1,7 +1,7 @@
 /**
  * 静态声明导出名回收 —— run.ts 与测试共用。
  *
- * 格式耦合点：B 路径 transpile 的发射约定是——顶层 function 声明一律带
+ * 格式耦合点：求值引擎 transpile 的发射约定是——顶层 function 声明一律带
  * `export ` 前缀（含未写 export 的，见 stmt.ts exportKw），顶层 export
  * const/let/class 以 `export (const|let) <name>` 发射（class 折成 `let X = $class`）。
  * 因此用正则从生成文本回收导出名。刻意不走 AST——历史口径要复现既有 quirk：

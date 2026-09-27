@@ -1,5 +1,5 @@
 /**
- * B-path 访问器（get/set）差分回归。
+ * evaluator 访问器（get/set）差分回归。
  * 回归背景：transpile 把 class 的 get/set 与对象字面量访问器都当普通方法
  * 存槽——new A().x 读到占位 fn / undefined，a.x = v 直写槽位绕过 setter。
  * 每条断言与 Node 真实执行结果对齐。
@@ -29,7 +29,7 @@ const runtimeUrl = pathToFileURL(
 ).href;
 
 async function execTranspiled(source: string, exportName: string) {
-  const dir = mkdtempSync(join(tmpdir(), "nudo-bpath-accessor-"));
+  const dir = mkdtempSync(join(tmpdir(), "nudo-eval-accessor-"));
   dirs.push(dir);
   const js = transpile(source, { runtimeImport: runtimeUrl });
   const modPath = join(dir, "mod.mjs");
@@ -38,7 +38,7 @@ async function execTranspiled(source: string, exportName: string) {
   return mod[exportName] as (...args: unknown[]) => Abs;
 }
 
-describe("B-path class accessors", () => {
+describe("evaluator class accessors", () => {
   it("class getter invoked on read", async () => {
     const run = await execTranspiled(
       `export function run() {
@@ -93,7 +93,7 @@ describe("B-path class accessors", () => {
   });
 });
 
-describe("B-path object-literal accessors", () => {
+describe("evaluator object-literal accessors", () => {
   it("getter invoked on read", async () => {
     const run = await execTranspiled(
       `export function run() {

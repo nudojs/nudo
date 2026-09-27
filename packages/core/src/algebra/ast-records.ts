@@ -1,11 +1,11 @@
 /**
  * Abs 域记录类型面（ast-eval 执行器删除后保留）。
- * 运行时记录由 B 通道（BCallRecord/$assignRecord）产生；此处的类型是
+ * 运行时记录由 eval 通道（EvalCallRecord/$assignRecord）产生；此处的类型是
  * checkSource drift / 结构赋值诊断的共享形状，仍被 check.ts 等消费。
  */
 import type { Abs } from "./abs.ts";
 
-/** Abs 域调用记录（B 通道 BCallRecord 的同形投影） */
+/** Abs 域调用记录（eval 通道 EvalCallRecord 的同形投影） */
 export type AbsCallRecord = {
   fnName: string;
   args: Abs[];
@@ -14,7 +14,7 @@ export type AbsCallRecord = {
   threw?: boolean;
 };
 
-/** Abs 域赋值记录（B 通道 $assignRecord 的同形投影） */
+/** Abs 域赋值记录（eval 通道 $assignRecord 的同形投影） */
 export type AbsAssignRecord = {
   name: string;
   prev?: Abs;

@@ -644,10 +644,10 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | `applyMockModuleDirectivesFromSource` | fn | Source string → apply mock-module (CLI / one-shot hosts). | `applyMockModuleDirectivesFromSource( source: string, base: Record<string, AbsModuleExports>, opts: { fromFile: string; loadModule?: LoadModule }, ): MockModuleApplyResult` |
 | `applySessionCacheConfig` | fn | 接线 package.json#nudo.sessionCache（进程内 LRU 上限）并立刻 trim。 | `applySessionCacheConfig(config: NudoConfig \| null \| undefined): SessionCacheLimits` |
 | `BindingInfo` | type | — | `BindingInfo = { abs: Abs; loc?: SourceLocation; }` |
-| `BPathBuiltinUnknown` | type | — | `BPathBuiltinUnknown = { name: string; range: BPathLoc }` |
-| `BPathDiagnostics` | type | — | `BPathDiagnostics = { unreachable: BPathUnreachable[]; builtinUnknown: BPathBuiltinUnknown[]; }` |
-| `BPathRunResult` | type | — | `BPathRunResult = { exports: Record<string, unknown>; modules: Record<string, AbsModuleExports>; memberDiags?: BMemberDiag[]; moduleIssues...` |
-| `BPathUnreachable` | type | — | `BPathUnreachable = { range: BPathLoc }` |
+| `EvalBuiltinUnknown` | type | — | `EvalBuiltinUnknown = { name: string; range: EvalLoc }` |
+| `EvalDiagnostics` | type | — | `EvalDiagnostics = { unreachable: EvalUnreachable[]; builtinUnknown: EvalBuiltinUnknown[]; }` |
+| `EvalRunResult` | type | — | `EvalRunResult = { exports: Record<string, unknown>; modules: Record<string, AbsModuleExports>; memberDiags?: EvalMemberDiag[]; moduleIssues...` |
+| `EvalUnreachable` | type | — | `EvalUnreachable = { range: EvalLoc }` |
 | `buildCaseDirective` | fn | 组装单行 ` * @nudo:case "name" (a, b)` 指令文本（无尾换行）。 | `buildCaseDirective(name: string, argsAbs: Abs[]): string \| null` |
 | `buildModuleGraph` | fn | Statically extract each file's relative import edges (extension resolution identical to CLI resolveModule: ''/'.js'/'.ts'/'.mjs'; bare npm specifiers skipped). | `buildModuleGraph( files: string[], cache?: ModuleGraphCache, )` |
 | `CallRecord` | type | — | — |
@@ -662,13 +662,13 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | `clearAbsModuleCache` | fn | — | `clearAbsModuleCache(): void` |
 | `clearAnalysisFileCache` | fn | — | `clearAnalysisFileCache(): void` |
 | `clearAnalysisSessionCaches` | fn | 清空全部会话级分析缓存（service + core）。 | `clearAnalysisSessionCaches(): void` |
-| `clearBPathCache` | fn | — | `clearBPathCache(): void` |
+| `clearEvalCache` | fn | — | `clearEvalCache(): void` |
 | `clearEnvPathDeps` | fn | — | `clearEnvPathDeps(): void` |
 | `clearFnAnalysisCache` | fn | — | `clearFnAnalysisCache(): void` |
 | `clearPathEnvCaches` | fn | Host cache-clear hooks (CLI watch / vite / tests) must drop path-env modules too | `clearPathEnvCaches(): void` |
 | `collectAbsBindingsFromGraph` | fn | 收集顶层绑定名 → Abs（含相对 import / 裸包 harvest 注入）。 | `collectAbsBindingsFromGraph( source: string, filePath: string, opts: AbsGraphOptions = {}, ): Map<string, Abs>` |
-| `collectBPathDiagnostics` | fn | 静态收集 B 路径诊断。 | `collectBPathDiagnostics( source: string, extraKnown?: Iterable<string>, ): BPathDiagnostics` |
-| `collectBPathReplacements` | fn | 收集 @nudo:replace + @nudo:as → transpile 注入表 | `collectBPathReplacements(source: string)` |
+| `collectEvalDiagnostics` | fn | 静态收集 求值引擎诊断。 | `collectEvalDiagnostics( source: string, extraKnown?: Iterable<string>, ): EvalDiagnostics` |
+| `collectEvalReplacements` | fn | 收集 @nudo:replace + @nudo:as → transpile 注入表 | `collectEvalReplacements(source: string)` |
 | `collectCallRecords` | fn | 调用点发现（阶段一）：在"使用现场"文件（测试 / 上层应用）中求值 顶层代码，收集它对（外部模块导出的）函数的调用记录。每条记录带 真实的实参类型与结果类型——后续 analyzeFile 将其注入合成 case， 使被使用方从 entry-only（参数全 unknown）升级为真实调用形态。 | `collectCallRecords(filePath: string, source: string): CallRecord[]` |
 | `collectDependencySpecs` | fn | 从 AST 收集静态相对依赖（ESM import + CJS require） | `collectDependencySpecs(ast: File): string[]` |
 | `collectEnvGlobals` | fn | — | `collectEnvGlobals(envNames: string[]): Record<string, Abs>` |
@@ -682,7 +682,7 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | `computeDirtySet` | fn | changed plus its transitive dependents (reverse-edge BFS); cycle-safe via visited. | `computeDirtySet(dependents: Map<string, Set<string>>, changedFile: string): string[]` |
 | `ConstraintSourceExpr` | type | — | `ConstraintSourceExpr = { expr: string; importFrom?: string; importName?: string; }` |
 | `constraintToSchemaNode` | fn | NudoConstraint → SchemaNode（与 absToConstraint 投影语义对齐） | `constraintToSchemaNode(c: NudoConstraint): SchemaNode` |
-| `currentBForkBudgetLimit` | fn | 当前生效 fork 上限（调试/测试；与 core getBForkBudgetLimit 同源） | `currentBForkBudgetLimit(): number` |
+| `currentBForkBudgetLimit` | fn | 当前生效 fork 上限（调试/测试；与 core getEvalForkBudgetLimit 同源） | `currentBForkBudgetLimit(): number` |
 | `DEFAULT_ANALYSIS_MODE` | const | ", ]; /** A1 产品默认：exports — 普通带导出的 .js 进 IDE；directives/all 需显式 | `const DEFAULT_ANALYSIS_MODE` |
 | `DEFAULT_SESSION_CACHE_LIMITS` | const | 保守默认：多项目共存时不悄悄吃内存（大仓请显式调高） | `const DEFAULT_SESSION_CACHE_LIMITS` |
 | `defaultAbsLoadModule` | fn | 相对说明符 → 源码 | `defaultAbsLoadModule(spec: string, fromFile: string): string \| undefined` |
@@ -721,7 +721,7 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | `evictAbsModuleCacheFiles` | fn | — | `evictAbsModuleCacheFiles(paths: string[]): void` |
 | `evictAnalysisCachesForFiles` | fn | 依赖内容变更后：按入口文件定向逐出 service 层缓存。 | `evictAnalysisCachesForFiles(files: string[]): void` |
 | `evictAnalysisFileCacheForFiles` | fn | 依赖变更后：按入口文件逐出 | `evictAnalysisFileCacheForFiles(files: string[]): number` |
-| `evictBPathCacheForFiles` | fn | 依赖文件变更后：逐出以这些文件为入口的 B-path 缓存 | `evictBPathCacheForFiles(files: string[]): number` |
+| `evictEvalCacheForFiles` | fn | 依赖文件变更后：逐出以这些文件为入口的 evaluator 缓存 | `evictEvalCacheForFiles(files: string[]): number` |
 | `evictFnAnalysisCacheForFiles` | fn | Dependency content changed: drop every per-fn entry for these entry files. | `evictFnAnalysisCacheForFiles(files: string[]): number` |
 | `extractFnConstraintSources` | fn | — | `extractFnConstraintSources( sidecarSrc: string, fnName: string, )` |
 | `extractNudoImportSpecs` | fn | 从源码提取 `@nudo:import` / `@nudo:import * as` 的 specifier | `extractNudoImportSpecs(source: string): string[]` |
@@ -741,7 +741,7 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | `getAbsModuleCacheSize` | fn | 测试/诊断：当前条目数（≤ ABS_MODULE_CACHE_MAX） | `getAbsModuleCacheSize(): number` |
 | `getAnalysisFileCacheSize` | fn | — | `getAnalysisFileCacheSize(): number` |
 | `getAnalysisSession` | fn | 进程内默认 AnalysisSession（LSP server / CLI watch / agent tools 共用） | `getAnalysisSession(): AnalysisSession` |
-| `getBPathCacheSize` | fn | 测试/诊断：当前 B-path run 缓存条目数（≤ getSessionCacheLimits().maxBRuns） | `getBPathCacheSize(): number` |
+| `getEvalCacheSize` | fn | 测试/诊断：当前 evaluator run 缓存条目数（≤ getSessionCacheLimits().maxEvalRuns） | `getEvalCacheSize(): number` |
 | `getEnvHarvestConflictCollector` | fn | Read-only peek for tests / nested restore. | `getEnvHarvestConflictCollector()` |
 | `getEnvPathDepsSize` | fn | 测试/诊断：反向依赖驻留规模 | `getEnvPathDepsSize(): number` |
 | `getFnAnalysisCacheSize` | fn | 测试/诊断：当前条目数（≤ getSessionCacheLimits().maxFns） | `getFnAnalysisCacheSize(): number` |
@@ -758,7 +758,7 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | `interfaceSurface` | fn | 单文件 interface 表面：analyzer 推断结果给出函数清单与 implicit 展示， effectiveInterface 给出契约命中（手写 &gt; 生成段）。诊断 side-channel 在收尾时取走丢弃——打印命令不执法，interface-load 等错误留给 check 路径。 | `interfaceSurface( filePath: string, opts: InterfaceSurfaceOpts = {}, ): Promise<InterfaceSurfaceEntry[]>` |
 | `InterfaceSurfaceEntry` | type | — | `InterfaceSurfaceEntry = { fn: string; kind: "export" \| "local"; source: "handwritten" \| "generated" \| "implicit"; params: Array<{ name: s...` |
 | `InterfaceSurfaceOpts` | type | — | `InterfaceSurfaceOpts = { autoBind?: boolean; loadModule?: LoadModule; records?: CallRecord[]; source?: string; }` |
-| `isBPathCapable` | fn | 可走 transpile+exec 的快速预判（env 经 loadEnvs 内置 + 已 preload 的路径型）。 | `isBPathCapable(source: string, envNames: string[] = []): boolean` |
+| `isEvalCapable` | fn | 可走 transpile+exec 的快速预判（env 经 loadEnvs 内置 + 已 preload 的路径型）。 | `isEvalCapable(source: string, envNames: string[] = []): boolean` |
 | `isDraftableEntry` | fn | Parse-layer draftable: at least one entry has generated DSL and was not skipped | `isDraftableEntry(entries: ReadonlyArray<Pick<InterfaceDraftEntry, "dsl" \| "skipped">>): boolean` |
 | `isEnvTemplatePath` | fn | watch 门禁：env 模板变更必须可被接收（即便扩展名不进 isNudoTargetPath） | `isEnvTemplatePath(path: string): boolean` |
 | `isNudoTargetPath` | fn | nudo 推断目标文件判定（纯扩展名规则，路径无需存在）。 | `isNudoTargetPath(path: string): boolean` |
@@ -772,8 +772,8 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | `mergeHarvestUnderEnv` | fn | Handwritten `@nudojs/env` wins over harvest / graph modules on overlapping module keys and overlapping export names (docs/versioning.md B8 + website harvester API). | `mergeHarvestUnderEnv( harvestModules: Record<string, AbsModuleExports>, envModules: Record<string, AbsModuleExports>, opts?: MergeHarvestOptions, ): Record<string, AbsModuleExports>` |
 | `mockDirectivesToAbsSeeds` | fn | 从函数上的 @nudo:mock 指令收集 Abs seed | `mockDirectivesToAbsSeeds( functions: Array<{ directives: FunctionWithDirectives["directives"] }>, opts?: { fromFile?: string; loadModule?: LoadModule; }, ): AbsMockSeeds` |
 | `MockModuleApplyResult` | type | — | `MockModuleApplyResult = { modules: Record<string, AbsModuleExports>; errors: FromMockError[]; applied: boolean; }` |
-| `mockSeedsForSource` | fn | 便捷入口：源码 → @nudo:mock 的 B 注入 Abs 绑定（checkSource 注入管线用） | `mockSeedsForSource( source: string, opts?: { fromFile?: string; loadModule?: LoadModule }, ): Record<string, Abs>` |
-| `mockSeedsToAbsMocks` | fn | B 路径注入用：seedVars + seedFns 统一为 Abs 函数绑定。 | `mockSeedsToAbsMocks(seeds: AbsMockSeeds): Record<string, Abs>` |
+| `mockSeedsForSource` | fn | 便捷入口：源码 → @nudo:mock 的 eval 注入 Abs 绑定（checkSource 注入管线用） | `mockSeedsForSource( source: string, opts?: { fromFile?: string; loadModule?: LoadModule }, ): Record<string, Abs>` |
+| `mockSeedsToAbsMocks` | fn | 求值引擎注入用：seedVars + seedFns 统一为 Abs 函数绑定。 | `mockSeedsToAbsMocks(seeds: AbsMockSeeds): Record<string, Abs>` |
 | `ModuleExports` | type | — | `ModuleExports = { path: string; named: Map<string, string>; defaultExport?: string; source: string; poly: Map<string, PolyFn>; }` |
 | `ModuleGraphCache` | type | mtime 边缓存：key 为文件路径，edges 为已抽取的相对 import 边（与 buildModuleGraph 返回语义一致）。 | `ModuleGraphCache = Map<string, { mtimeMs: number; size: number; edges: string[] }>` |
 | `noteEnvPathDeps` | fn | 源码里的 path-based load specs 解析为绝对路径后登记反向边 | `noteEnvPathDeps(sourcePath: string, source: string): void` |
@@ -793,7 +793,7 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | `SchemaRefinement` | type | — | `SchemaRefinement = \| { kind: "numBound"; op: "gt" \| "ge" \| "lt" \| "le"; n: number } \| { kind: "int" } \| { kind: "strMin"; n: number } \| {...` |
 | `serializeCaseArg` | fn | 单个 Abs → parseCaseArgExpr 可解析回去的表达式文本；不可表达返回 null | `serializeCaseArg(a: Abs): string \| null` |
 | `serializeCaseJson` | fn | — | `serializeCaseJson( result: AnalysisResult, file: string, ): CaseJson` |
-| `SessionCacheLimits` | type | 会话级内存 LRU 上限（进程内，非磁盘 cache）。 | `SessionCacheLimits = { maxFiles: number; maxFns: number; maxBRuns: number; }` |
+| `SessionCacheLimits` | type | 会话级内存 LRU 上限（进程内，非磁盘 cache）。 | `SessionCacheLimits = { maxFiles: number; maxFns: number; maxEvalRuns: number; }` |
 | `setAnalysisSession` | fn | 测试：替换默认 session（返回旧值以便恢复） | `setAnalysisSession(session: AnalysisSession \| undefined): AnalysisSession \| undefined` |
 | `setEnvHarvestConflictCollector` | fn | Install conflict collector; returns the previous one so nested/concurrent analyzeFile callers can save/restore (module-global is not re-entrant). | `setEnvHarvestConflictCollector( collector: ((c: EnvHarvestConflict) => void) \| null, )` |
 | `setSessionCacheFromProject` | fn | package.json#nudo.sessionCache 层（findProjectConfig / 宿主接线） | `setSessionCacheFromProject(partial: PartialLimits \| null \| undefined): void` |
@@ -811,11 +811,11 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | `SymbolTable` | type | — | `SymbolTable = { definitions: Map<string, SymbolInfo>; references: ReferenceInfo[]; }` |
 | `topoSortDirty` | fn | Topological order with dependencies before dependents (only imports edges internal to dirty; cycles tolerated — remaining files appended in arbitrary order). | `topoSortDirty(imports: Map<string, Set<string>>, dirty: string[]): string[]` |
 | `trimAnalysisFileCache` | fn | 立刻压到当前 maxFiles（调低上限时收内存） | `trimAnalysisFileCache(): void` |
-| `trimBPathCache` | fn | 立刻压到当前 maxBRuns（调低上限时收内存） | `trimBPathCache(): void` |
+| `trimEvalCache` | fn | 立刻压到当前 maxEvalRuns（调低上限时收内存） | `trimEvalCache(): void` |
 | `trimFnAnalysisCache` | fn | 立刻压到当前 maxFns（调低上限时收内存） | `trimFnAnalysisCache(): void` |
-| `tryBPathCall` | fn | B 路径求值具名导出（仅成功结果） | `tryBPathCall( source: string, filePath: string, fnName: string, args: Abs[], opts: { envNames?: string[]; mocks?: Record<string, Abs>; phi?: Phi } = {}, ): Abs \| undefined` |
-| `tryBPathCallFull` | fn | B 路径求值具名导出（结果 + throws）；opts.collectCalls 时附带调用点记录。 | `tryBPathCallFull( source: string, filePath: string, fnName: string, args: Abs[], opts: { collectCalls?: boolean; collectMemberDiags?: boolean; envNames?: string[]; mocks?: Record<string, Abs>; phi?: Phi; } = {}, )` |
-| `tryRunBPath` | fn | 模块图 + runTranspiled（默认 analyze 模式） | `tryRunBPath( source: string, filePath: string, opts: { maxLoopIters?: number; mode?: "exec" \| "analyze"; envNames?: string[]; mocks?: Record<string, Abs>; lenientGlobals?: boolean; } = {}, ): BPathRunResult \| undefined` |
+| `tryEvalCall` | fn | 求值引擎求值具名导出（仅成功结果） | `tryEvalCall( source: string, filePath: string, fnName: string, args: Abs[], opts: { envNames?: string[]; mocks?: Record<string, Abs>; phi?: Phi } = {}, ): Abs \| undefined` |
+| `tryEvalCallFull` | fn | 求值引擎求值具名导出（结果 + throws）；opts.collectCalls 时附带调用点记录。 | `tryEvalCallFull( source: string, filePath: string, fnName: string, args: Abs[], opts: { collectCalls?: boolean; collectMemberDiags?: boolean; envNames?: string[]; mocks?: Record<string, Abs>; phi?: Phi; } = {}, )` |
+| `tryRunEval` | fn | 模块图 + runTranspiled（默认 analyze 模式） | `tryRunEval( source: string, filePath: string, opts: { maxLoopIters?: number; mode?: "exec" \| "analyze"; envNames?: string[]; mocks?: Record<string, Abs>; lenientGlobals?: boolean; } = {}, ): EvalRunResult \| undefined` |
 | `TypeBinding` | type | — | `TypeBinding = { name: string; type: string }` |
 | `typeExprToDirective` | fn | agent 面类型表达式 → `@nudo:as` 文法 | `typeExprToDirective(expr: string): string` |
 | `unifiedDiff` | fn | 行级 unified diff：`--- a/path` 头 + `@@` hunk + 上下文 3 行；相同返回 "" | `unifiedDiff(a: string, b: string, path: string): string` |

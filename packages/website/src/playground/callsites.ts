@@ -2,7 +2,7 @@ import { parse } from '@nudojs/parser';
 import {
   runTranspiled,
   callTranspiledExportFull,
-  setBCallCollector,
+  setEvalCallCollector,
   abs as makeAbs,
   type Abs,
   type AbsModuleExports,
@@ -74,11 +74,11 @@ export function discoverCallsites(
   // Evaluate the library once via the B run, inject its exports under './util',
   // then run the usage site (exec + lenient globals) with B call collection.
   const records: { fnName: string; args: Abs[]; result: Abs; callLoc?: { line: number; column: number }; threw?: boolean }[] = [];
-  let libRun: Record<string, unknown> | undefined;
+  let lievalRun: Record<string, unknown> | undefined;
   try {
-    libRun = runTranspiled(libCode, { mode: "analyze" });
+    lievalRun = runTranspiled(libCode, { mode: "analyze" });
     const libExports: AbsModuleExports = { named: {} };
-    for (const [name, v] of Object.entries(libRun)) {
+    for (const [name, v] of Object.entries(lievalRun)) {
       if (v === undefined || v === null) continue;
       if (v && typeof v === "object" && "shape" in (v as object)) {
         libExports.named[name] = v as Abs;
@@ -91,11 +91,11 @@ export function discoverCallsites(
       './util': libExports,
       './util.js': libExports,
     };
-    const prev = setBCallCollector((r) => records.push(r));
+    const prev = setEvalCallCollector((r) => records.push(r));
     try {
       runTranspiled(testCode, { mode: "exec", modules, lenientGlobals: true });
     } finally {
-      setBCallCollector(prev);
+      setEvalCallCollector(prev);
     }
   } catch (e) {
     result.error = e instanceof Error ? e.message : String(e);
@@ -115,14 +115,14 @@ export function discoverCallsites(
   // Signature synthesis: entry-only (all params unknown) vs the injection of
   // the first usage-site record's argument types.
   try {
-    if (libRun) {
-      result.before = callTranspiledExportFull(libRun, exportName, result.beforeArgs).result;
+    if (lievalRun) {
+      result.before = callTranspiledExportFull(lievalRun, exportName, result.beforeArgs).result;
       const topRecord = relevant.find(
         (r) => r.callLoc?.line !== undefined && usageLines.has(r.callLoc.line),
       );
       if (topRecord) {
         result.afterArgs = topRecord.args;
-        result.after = callTranspiledExportFull(libRun, exportName, topRecord.args).result;
+        result.after = callTranspiledExportFull(lievalRun, exportName, topRecord.args).result;
         result.afterSource = `call@test.js:${topRecord.callLoc?.line}`;
       }
     }

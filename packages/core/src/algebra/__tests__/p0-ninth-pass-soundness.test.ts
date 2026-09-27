@@ -28,7 +28,7 @@ function callAbs(src: string, fnName: string, args: unknown[]) {
 const absBool = { shape: { k: "prim", type: "boolean" }, conf: "path" } as never;
 const absNum = { shape: { k: "prim", type: "number" }, conf: "path" } as never;
 
-describe("P0 ordinary binding fork isolation (B-path)", () => {
+describe("P0 ordinary binding fork isolation (evaluator)", () => {
   it("if/else assign then read enumerates both arms", () => {
     const src = `export function f(flag) { let x = 0; if (flag) { x = 1; } else { x = 2; } return x; }`;
     expect(litValue(call(src, "f", true).result)).toBe(1);

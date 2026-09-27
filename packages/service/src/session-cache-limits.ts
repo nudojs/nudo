@@ -5,7 +5,7 @@
  * 优先级：setSessionCacheLimits（显式）> env > package.json#nudo.sessionCache > 默认
  *
  * 覆盖面：analysis-file-cache（maxFiles）/ fn-analysis-cache（maxFns）/
- * bpath-run（maxBRuns）。其余驻留结构（harvest-auto / harvest-node /
+ * eval-run（maxEvalRuns）。其余驻留结构（harvest-auto / harvest-node /
  * abs-modules-graph / env-loader path-env / env-path-deps）用各自的硬上限常量，
  * 见各文件与 lru-map.ts。所有上限加起来给出大仓分析后 retained 内存的上界。
  */
@@ -14,15 +14,15 @@ export type SessionCacheLimits = {
   maxFiles: number;
   /** per-fn FunctionAnalysis LRU；0 = 关闭 */
   maxFns: number;
-  /** B-path run LRU；0 = 关闭 */
-  maxBRuns: number;
+  /** evaluator run LRU；0 = 关闭 */
+  maxEvalRuns: number;
 };
 
 /** 保守默认：多项目共存时不悄悄吃内存（大仓请显式调高） */
 export const DEFAULT_SESSION_CACHE_LIMITS: SessionCacheLimits = {
   maxFiles: 64,
   maxFns: 1024,
-  maxBRuns: 32,
+  maxEvalRuns: 32,
 };
 
 const HARD_CAP = 65_536;
@@ -49,7 +49,7 @@ function envLimits(env: NodeJS.ProcessEnv): PartialLimits {
   return {
     maxFiles: parseLimit(env.NUDO_CACHE_MAX_FILES, NaN),
     maxFns: parseLimit(env.NUDO_CACHE_MAX_FNS, NaN),
-    maxBRuns: parseLimit(env.NUDO_CACHE_MAX_BRUNS, NaN),
+    maxEvalRuns: parseLimit(env.NUDO_CACHE_MAX_EVALRUNS, NaN),
   };
 }
 
@@ -74,7 +74,7 @@ export function getSessionCacheLimits(
   return {
     maxFiles: pick("maxFiles", envCache, DEFAULT_SESSION_CACHE_LIMITS.maxFiles),
     maxFns: pick("maxFns", envCache, DEFAULT_SESSION_CACHE_LIMITS.maxFns),
-    maxBRuns: pick("maxBRuns", envCache, DEFAULT_SESSION_CACHE_LIMITS.maxBRuns),
+    maxEvalRuns: pick("maxEvalRuns", envCache, DEFAULT_SESSION_CACHE_LIMITS.maxEvalRuns),
   };
 }
 

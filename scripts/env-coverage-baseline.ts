@@ -419,11 +419,11 @@ function main(): void {
     { id: "AbortController", path: ["AbortController"] },
   ];
   const esResults = ES_PROBES.map((p) => classify(envs.es!, p));
-  const webResults = WEB_PROBES.map((p) => classify(envs.web!, p));
+  const weevalResults = WEB_PROBES.map((p) => classify(envs.web!, p));
   const esLeaf = countLeaf(esResults);
-  const webLeaf = countLeaf(webResults);
+  const webLeaf = countLeaf(weevalResults);
 
-  const libResults = LIB_PROBES.map((lib) => {
+  const lievalResults = LIB_PROBES.map((lib) => {
     const installed = tryResolvePkg(lib.package);
     let status: ProbeStatus | "installed" | "absent";
     let reason: string;
@@ -469,12 +469,12 @@ function main(): void {
       results: esResults,
     },
     webProbes: {
-      counts: countByStatus(webResults),
+      counts: countByStatus(weevalResults),
       leaf: webLeaf,
-      total: webResults.length,
-      results: webResults,
+      total: weevalResults.length,
+      results: weevalResults,
     },
-    libraryProbes: libResults,
+    libraryProbes: lievalResults,
   };
 
   const outDir = join(root, "docs", "reports");
@@ -570,13 +570,13 @@ function main(): void {
   md.push("### ES / web sample");
   md.push("");
   md.push(`- ES: resolved ${countByStatus(esResults).resolved}/${esResults.length}`);
-  md.push(`- Web: resolved ${countByStatus(webResults).resolved}/${webResults.length}`);
+  md.push(`- Web: resolved ${countByStatus(weevalResults).resolved}/${weevalResults.length}`);
   md.push("");
   md.push("## Library three-state path");
   md.push("");
   md.push("| Package | Kind | Installed here | Classification | Note |");
   md.push("|---|---|---|---|---|");
-  for (const lib of libResults) {
+  for (const lib of lievalResults) {
     md.push(
       `| \`${lib.package}\` | ${lib.kind} | ${lib.installed ? "yes" : "no"} | ${lib.status} | ${lib.note} |`,
     );

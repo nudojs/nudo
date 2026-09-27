@@ -3,9 +3,9 @@ import { checkSource, serializeCheckJson, serializeCheckJsonMulti, formatCheckRe
 import {
   resetAbsCallBudget,
   getAbsCallBudgetStats,
-  setBForkBudgetLimit,
-  bumpBForkBudget,
-  MAX_B_TOTAL_FORKS,
+  setEvalForkBudgetLimit,
+  bumpEvalForkBudget,
+  MAX_EVAL_TOTAL_FORKS,
 } from "../call-budget.ts";
 
 describe("A2 budget observability", () => {
@@ -32,10 +32,10 @@ describe("A2 budget observability", () => {
 
   it("fork exhaustion sets truncated and surfaces in JSON + human face", () => {
     resetAbsCallBudget();
-    setBForkBudgetLimit(2);
-    expect(bumpBForkBudget()).toBe(true);
-    expect(bumpBForkBudget()).toBe(true);
-    expect(bumpBForkBudget()).toBe(false);
+    setEvalForkBudgetLimit(2);
+    expect(bumpEvalForkBudget()).toBe(true);
+    expect(bumpEvalForkBudget()).toBe(true);
+    expect(bumpEvalForkBudget()).toBe(false);
     const stats = getAbsCallBudgetStats();
     expect(stats.forkTruncated).toBe(true);
     expect(stats.truncated).toBe(true);
@@ -51,7 +51,7 @@ describe("A2 budget observability", () => {
     // recursion/fork-truncated diagnostics tests; here we assert the wire shape.
     expect(report.budget).toBeDefined();
     expect(report.budget!.maxForks).toBeGreaterThan(0);
-    setBForkBudgetLimit(MAX_B_TOTAL_FORKS);
+    setEvalForkBudgetLimit(MAX_EVAL_TOTAL_FORKS);
     resetAbsCallBudget();
   });
 

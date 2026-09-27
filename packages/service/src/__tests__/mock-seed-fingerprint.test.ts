@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { numLit, unknown } from "@nudojs/core";
 import { parseCaseArgExpr } from "@nudojs/parser";
-import { mockSeedFingerprint } from "../bpath-run.ts";
+import { mockSeedFingerprint } from "../eval-run.ts";
 import { mockDirectivesToAbsSeeds } from "../mock-abs.ts";
 
 describe("mockSeedFingerprint", () => {

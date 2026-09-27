@@ -8,7 +8,7 @@ import { withStdImport, stdOpts } from "./nudo-constraints.ts";
  * body 不评估 → 不产生 unknown-inference 噪音；签名按声明返回上屏（无声明 any）；
  * 参数位/调用点 L1 义务不解除。
  *
- * body 用 `eval(data)`：B-path 下会折真 unknown（引擎债）。未定义调用
+ * body 用 `eval(data)`：evaluator 下会折真 unknown（引擎债）。未定义调用
  * （如 processData）在新引擎是精确 `never`（ReferenceError 必抛），不能
  * 当作 unknown-inference 对照。
  */

@@ -1,5 +1,5 @@
 /**
- * B 路径调用点记录：transpile 把 `f(args)` 改成 $callNamed，
+ * 求值引擎调用点记录：transpile 把 `f(args)` 改成 $callNamed，
  * 分析时可收集 call@ 所需的 AbsCallRecord。
  * 成员缺失诊断见 member-diag.ts（共用，避免循环依赖）。
  */
@@ -10,14 +10,14 @@ import { evalGlobalFn } from "../builtins.ts";
 import { $call } from "./call.ts";
 import { callAtFunctionBoundary, $copy } from "./runtime.ts";
 import { pureFnNameOf } from "../abs-fn.ts";
-import { noteAbsTruncation, callBudgetKey, resetBForkBudget, noteHostEffectBlocked } from "../call-budget.ts";
+import { noteAbsTruncation, callBudgetKey, resetEvalForkBudget, noteHostEffectBlocked } from "../call-budget.ts";
 import {
   tagAbsOrigin,
   pushCallLoc,
   popCallLoc,
 } from "./member-diag.ts";
 
-export type BCallRecord = {
+export type EvalCallRecord = {
   fnName: string;
   args: Abs[];
   result: Abs;
@@ -28,10 +28,10 @@ export type BCallRecord = {
 /** @nudo:pure 宿主调用结果缓存（fn 对象身份 → args key → result） */
 const pureCallMemo = new WeakMap<object, Map<string, Abs>>();
 
-let bCallCollector: ((r: BCallRecord) => void) | null = null;
+let evalCallCollector: ((r: EvalCallRecord) => void) | null = null;
 
 /** B 赋值记录（与 ast-records.ts AbsAssignRecord 同形；structuralAssignIssues 消费） */
-export type BAbsAssignRecord = {
+export type EvalAbsAssignRecord = {
   name: string;
   prev: Abs | undefined;
   next: Abs;
@@ -40,14 +40,14 @@ export type BAbsAssignRecord = {
   conditional?: boolean;
 };
 
-let bAssignCollector: ((r: BAbsAssignRecord) => void) | null = null;
+let evalAssignCollector: ((r: EvalAbsAssignRecord) => void) | null = null;
 
 /** 返回先前 collector，便于嵌套调用 save/restore（禁止 finally 置 null 砸外层） */
-export function setBAssignCollector(
-  collector: ((r: BAbsAssignRecord) => void) | null,
-): ((r: BAbsAssignRecord) => void) | null {
-  const prev = bAssignCollector;
-  bAssignCollector = collector;
+export function setEvalAssignCollector(
+  collector: ((r: EvalAbsAssignRecord) => void) | null,
+): ((r: EvalAbsAssignRecord) => void) | null {
+  const prev = evalAssignCollector;
+  evalAssignCollector = collector;
   return prev;
 }
 
@@ -60,9 +60,9 @@ export function $assignRecord(
   column: number,
   conditional: boolean,
 ): void {
-  if (!bAssignCollector) return;
+  if (!evalAssignCollector) return;
   try {
-    bAssignCollector({
+    evalAssignCollector({
       name,
       prev,
       next,
@@ -78,7 +78,7 @@ export function $assignRecord(
 /** 顶层绑定表收集 sink（run.ts 每次执行时安装；真实 ESM 路径 no-op） */
 let bindingSink: Map<string, unknown> | null = null;
 
-export function setBBindingSink(sink: Map<string, unknown> | null): void {
+export function setEvalBindingSink(sink: Map<string, unknown> | null): void {
   bindingSink = sink;
 }
 
@@ -146,25 +146,25 @@ export function blockHostSideEffect(fn: unknown): Abs | null {
 
 /** 返回先前 collector，便于嵌套调用 save/restore（禁止 finally 置 null 砸外层） */
 /** 成员/方法调用点打点（$invoke 等；无收集器时 no-op）。不进 $callNamed 预算。 */
-export function noteBCallRecord(r: BCallRecord): void {
-  if (!bCallCollector) return;
+export function noteEvalCallRecord(r: EvalCallRecord): void {
+  if (!evalCallCollector) return;
   try {
-    bCallCollector(r);
+    evalCallCollector(r);
   } catch {
     /* collector 不得打断 */
   }
 }
 
-export function setBCallCollector(
-  collector: ((r: BCallRecord) => void) | null,
-): ((r: BCallRecord) => void) | null {
-  const prev = bCallCollector;
-  bCallCollector = collector;
+export function setEvalCallCollector(
+  collector: ((r: EvalCallRecord) => void) | null,
+): ((r: EvalCallRecord) => void) | null {
+  const prev = evalCallCollector;
+  evalCallCollector = collector;
   return prev;
 }
 
-export function getBCallCollector(): ((r: BCallRecord) => void) | null {
-  return bCallCollector;
+export function getEvalCallCollector(): ((r: EvalCallRecord) => void) | null {
+  return evalCallCollector;
 }
 
 /**
@@ -172,74 +172,74 @@ export function getBCallCollector(): ((r: BCallRecord) => void) | null {
  * loc: [line, column]（1-based line，0-based column，与 Babel 一致）
  * argLocs: 与 args 对齐的实参字面量源位置（provenance；无 loc 用 null）
  */
-// --- B 调用预算 -----------------------------------------------------------
+// --- eval 调用预算 -----------------------------------------------------------
 // 命名调用（transpile 的 $callNamed 是 B run 全部标识符调用的派发点）此前无
 // 预算：直接自递归/互递归裸奔原生 JS 递归 → 栈溢出，RangeError 被
 // callTranspiledExportFull 兜底静默吞成 unknown+partial（假结果）。预算：
 // 深度 64 / 总调用 200k / cycle（同 name+arg 指纹）→ 截断 opaque。
 
-export const MAX_B_CALL_DEPTH = 64;
+export const MAX_EVAL_CALL_DEPTH = 64;
 /** 总调用上限：与 call-budget.MAX_TOTAL_CALLS 同阀（递归×循环×分支展开的
  *  规模阀）。200k 在病态展开（lodash _baseFlatten）下 ~30s，20k 收口到
  *  ~3s——截断 → opaque（更保守，zero-FP 安全）。 */
-export const MAX_B_TOTAL_CALLS = 20_000;
+export const MAX_EVAL_TOTAL_CALLS = 20_000;
 
-let bCallDepth = 0;
-let bTotalCalls = 0;
-let bActiveCallKeys: string[] = [];
-const bFnCallIds = new WeakMap<object, string>();
-let bFnCallIdSeq = 0;
+let evalCallDepth = 0;
+let evalTotalCalls = 0;
+let evalActiveCallKeys: string[] = [];
+const evalFnCallIds = new WeakMap<object, string>();
+let evalFnCallIdSeq = 0;
 
-function bStableId(obj: object): string {
-  let id = bFnCallIds.get(obj);
+function evalStableId(obj: object): string {
+  let id = evalFnCallIds.get(obj);
   if (id === undefined) {
-    id = `#${++bFnCallIdSeq}`;
-    bFnCallIds.set(obj, id);
+    id = `#${++evalFnCallIdSeq}`;
+    evalFnCallIds.set(obj, id);
   }
   return id;
 }
 
 /** 宿主入口（runTranspiled / callTranspiledExportFull）前重置 */
-export function resetBCallBudget(): void {
-  bCallDepth = 0;
-  bTotalCalls = 0;
-  bActiveCallKeys = [];
+export function resetEvalCallBudget(): void {
+  evalCallDepth = 0;
+  evalTotalCalls = 0;
+  evalActiveCallKeys = [];
   // fork 总次数与调用预算同轮生命周期（不跨宿主入口累积）
-  resetBForkBudget();
+  resetEvalForkBudget();
 }
 
 /** 截断结果：unknown#opaque——预算截断，不触发 unknown-inference */
-function bTruncatedAbs(): Abs {
+function evalTruncatedAbs(): Abs {
   return abs({ k: "unknown" }, undefined, undefined, "opaque");
 }
 
-function bCallBudgetKey(name: string, fn: unknown, args: Abs[]): string {
+function evalCallBudgetKey(name: string, fn: unknown, args: Abs[]): string {
   // 实参可能是裸 JS 值（B run 里模块函数作实参传的就是 JS 函数）——统一走
   // call-budget 的防御化键（不得裸读 shape）
-  const id = fn && typeof fn === "object" ? bStableId(fn) : "prim";
+  const id = fn && typeof fn === "object" ? evalStableId(fn) : "prim";
   return callBudgetKey(name, id, args);
 }
 
 /** 进入命名调用：超限/cycle → 不执行，返回 opaque（并上报截断） */
-function bEnterCall(name: string, fn: unknown, args: Abs[]): { ok: boolean; key?: string } {
-  const key = bCallBudgetKey(name, fn, args);
+function evalEnterCall(name: string, fn: unknown, args: Abs[]): { ok: boolean; key?: string } {
+  const key = evalCallBudgetKey(name, fn, args);
   if (
-    bActiveCallKeys.includes(key) ||
-    bCallDepth >= MAX_B_CALL_DEPTH ||
-    bTotalCalls >= MAX_B_TOTAL_CALLS
+    evalActiveCallKeys.includes(key) ||
+    evalCallDepth >= MAX_EVAL_CALL_DEPTH ||
+    evalTotalCalls >= MAX_EVAL_TOTAL_CALLS
   ) {
     noteAbsTruncation(name);
     return { ok: false };
   }
-  bActiveCallKeys.push(key);
-  bCallDepth++;
-  bTotalCalls++;
+  evalActiveCallKeys.push(key);
+  evalCallDepth++;
+  evalTotalCalls++;
   return { ok: true, key };
 }
 
-function bExitCall(): void {
-  bCallDepth--;
-  bActiveCallKeys.pop();
+function evalExitCall(): void {
+  evalCallDepth--;
+  evalActiveCallKeys.pop();
 }
 
 export function $callNamed(
@@ -285,28 +285,28 @@ export function $callNamed(
       } else if (blockedHost !== null) {
         result = blockedHost;
       } else {
-        const entered = bEnterCall(name, fn, args);
+        const entered = evalEnterCall(name, fn, args);
         if (!entered.ok) {
-          result = bTruncatedAbs();
+          result = evalTruncatedAbs();
         } else {
           try {
-            // 嵌套 B 路径函数：调用边界收 NudoReturn，不得污染 caller
+            // 嵌套 求值引擎函数：调用边界收 NudoReturn，不得污染 caller
             result = callAtFunctionBoundary(() => (fn as (...a: Abs[]) => Abs)(...args));
           } finally {
-            bExitCall();
+            evalExitCall();
           }
         }
       }
     } else if (fn && typeof fn === "object" && "shape" in (fn as object)) {
       // Abs fn 分支同口径预算（编译递归经 $call 会绕到此处——cycle/深度守卫）
-      const entered = bEnterCall(name, fn, args);
+      const entered = evalEnterCall(name, fn, args);
       if (!entered.ok) {
-        result = bTruncatedAbs();
+        result = evalTruncatedAbs();
       } else {
         try {
           result = $call(fn as Abs, args);
         } finally {
-          bExitCall();
+          evalExitCall();
         }
       }
     }
@@ -323,9 +323,9 @@ export function $callNamed(
       }
       m.set(pk, result);
     }
-    if (bCallCollector) {
+    if (evalCallCollector) {
       try {
-        bCallCollector({
+        evalCallCollector({
           fnName: name,
           args: argsSnapshot,
           result: threw ? unknown : result,

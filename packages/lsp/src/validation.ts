@@ -15,7 +15,7 @@ import {
   clearAnalysisSessionCaches,
   clearPathEnvCaches,
   evictAbsModuleCacheFiles,
-  evictBPathCacheForFiles,
+  evictEvalCacheForFiles,
   evictAnalysisFileCacheForFiles,
   evictFnAnalysisCacheForFiles,
   findProjectConfig,
@@ -298,8 +298,8 @@ export async function handleNudoDepFileChanged(
   }
   if (parentSet.size === 0) return;
   const parentList = [...parentSet];
-  // 父文件源码未变但依赖内容变了：整文件 check / B-path / AnalysisResult / fn-cache 都可能陈旧
-  evictBPathCacheForFiles(parentList);
+  // 父文件源码未变但依赖内容变了：整文件 check / evaluator / AnalysisResult / fn-cache 都可能陈旧
+  evictEvalCacheForFiles(parentList);
   evictAnalysisFileCacheForFiles(parentList);
   evictFnAnalysisCacheForFiles(parentList);
   // path-env factory 进程全局；定向逐出若不清它，新 dep-hash 键会被旧 defineEnv 投毒
@@ -329,7 +329,7 @@ export function clearValidationState(): void {
   nudoDepParents.clear();
   moduleGraphCache.clear();
   validateGeneration.clear();
-  // service+core 会话 memo 全清（B-path / analysis-file / fn-analysis /
+  // service+core 会话 memo 全清（evaluator / analysis-file / fn-analysis /
   // abs-module / generalize L0 / check 整文件 / nudo-module exec）
   clearAnalysisSessionCaches();
 }
@@ -724,8 +724,8 @@ export async function validateText(
     if (dirtyPath === filePath) continue;
     const doc = deps.getOpenDocumentByPath(dirtyPath);
     if (!doc) continue;
-    // 依赖内容变了但父文件源码未变：整文件 AnalysisResult / B-path / fn-cache 键不含 dep 指纹
-    evictBPathCacheForFiles([dirtyPath]);
+    // 依赖内容变了但父文件源码未变：整文件 AnalysisResult / evaluator / fn-cache 键不含 dep 指纹
+    evictEvalCacheForFiles([dirtyPath]);
     evictAnalysisFileCacheForFiles([dirtyPath]);
     evictFnAnalysisCacheForFiles([dirtyPath]);
     // path-env 全局工厂 + abs-module mtime/size 孔：见 docs/design/cache-invalidation.md

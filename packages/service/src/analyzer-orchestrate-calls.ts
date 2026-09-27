@@ -4,20 +4,20 @@
  */
 import { dirname } from "node:path";
 import {
-  getBCallCollector,
+  getEvalCallCollector,
   getFnImpl,
-  setBCallCollector,
+  setEvalCallCollector,
   $call,
   unknown as absUnknown,
   type Abs,
-  type BCallRecord,
+  type EvalCallRecord,
 } from "@nudojs/core";
 import { parse, extractFileDirectives } from "@nudojs/parser";
 import { mockSeedsForSource } from "./mock-abs.ts";
 import { findProjectConfig } from "./evaluator/config.ts";
 import {
-  tryRunBPath,
-} from "./bpath-run.ts";
+  tryRunEval,
+} from "./eval-run.ts";
 import {
   buildAbsImportLocalMap,
   callRecordFromAbsCall,
@@ -56,7 +56,7 @@ export function collectCallRecords(filePath: string, source: string): CallRecord
       const mocks = mockSeedsForSource(source, {
         fromFile: filePath || undefined,
       });
-      const run = tryRunBPath(source, filePath, {
+      const run = tryRunEval(source, filePath, {
         mode: "exec",
         lenientGlobals: true,
         ...(Object.keys(mocks).length > 0 ? { mocks } : {}),
@@ -69,12 +69,12 @@ export function collectCallRecords(filePath: string, source: string): CallRecord
       /* B 失败 fail-closed */
     }
   }
-  // fail-closed：B 失败（历史语法/B-incapable 构造）→ 无记录（旧 Abs 兜底已删）
+  // fail-closed：B 失败（历史语法/eval-incapable 构造）→ 无记录（旧 Abs 兜底已删）
   return [];
 }
 
 /** 测试回调展开：describe 队列展开（预算 + 对象去重防自注册死循环） */
-export function expandTestCallbacks(calls: BCallRecord[]): BCallRecord[] {
+export function expandTestCallbacks(calls: EvalCallRecord[]): EvalCallRecord[] {
   const out = [...calls];
   const seenDescribe = new Set<object>();
   let cursor = 0;
@@ -92,16 +92,16 @@ export function expandTestCallbacks(calls: BCallRecord[]): BCallRecord[] {
       }
       const impl = getFnImpl(abs);
       const params = impl?.params ?? [];
-      // 以 unknown 执行回调体——内部调用点经 BCallCollector 追加
-      const collected: BCallRecord[] = [];
-      const prev = getBCallCollector();
-      setBCallCollector((r) => collected.push(r));
+      // 以 unknown 执行回调体——内部调用点经 EvalCallCollector 追加
+      const collected: EvalCallRecord[] = [];
+      const prev = getEvalCallCollector();
+      setEvalCallCollector((r) => collected.push(r));
       try {
         $call(abs, params.map(() => absUnknown));
       } catch {
         /* 单个回调失败不影响其余 */
       } finally {
-        setBCallCollector(prev);
+        setEvalCallCollector(prev);
       }
       out.push(...collected);
       expanded++;

@@ -83,7 +83,7 @@ export function widenForAssign(a: Abs): Abs {
  *
  * 分支/循环体内的重赋值不参与：可变绑定在路径上取并集是合法 JS
  * （特性检测 `if (!x.__proto__) flag = false` 是常见模式），conditional
- * 记录已在 B 通道 $assignRecord 侧标记。
+ * 记录已在 eval 通道 $assignRecord 侧标记。
  */
 export function structuralAssignIssues(records: AbsAssignRecord[]): CheckIssue[] {
   const out: CheckIssue[] = [];

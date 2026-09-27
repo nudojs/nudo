@@ -1,6 +1,6 @@
 /**
  * Abs 重求值 / intension 挂载 / 调用记录转换辅助。
- * 自 analyzer.ts 机械拆出；语义未改。B-path 仍是唯一引擎（失败 fail-closed）。
+ * 自 analyzer.ts 机械拆出；语义未改。evaluator 仍是唯一引擎（失败 fail-closed）。
  */
 import { existsSync, statSync } from "node:fs";
 import { resolve, dirname } from "node:path";
@@ -22,7 +22,7 @@ import {
   neverAbs,
   type CallRecord,
 } from "./evaluator/call-record.ts";
-import { tryBPathCallFull } from "./bpath-run.ts";
+import { tryEvalCallFull } from "./eval-run.ts";
 import type { CaseResult, FunctionAnalysis } from "./analyzer-types.ts";
 
 /**
@@ -147,7 +147,7 @@ export function resolveImportAbs(spec: string, fromFile: string): string | null 
   return null;
 }
 
-/** Abs 原生重求值（无损）；B-path 唯一引擎，失败返回 undefined（fail-closed） */
+/** Abs 原生重求值（无损）；evaluator 唯一引擎，失败返回 undefined（fail-closed） */
 export function tryEvalAbsRaw(
   source: string,
   fnName: string,
@@ -160,7 +160,7 @@ export function tryEvalAbsRaw(
 }
 
 /**
- * Abs 原生重求值 + throws（T19）：B-path 带 throws；失败返回 undefined。
+ * Abs 原生重求值 + throws（T19）：evaluator 带 throws；失败返回 undefined。
  * require 源码不走 Abs。
  */
 export function tryEvalAbsFull(
@@ -177,8 +177,8 @@ export function tryEvalAbsFull(
   try {
     if (filePath) {
       const viaB =
-        tryBPathCallFull(source, filePath, fnName, args, { mocks }) ??
-        (assignedName ? tryBPathCallFull(source, filePath, assignedName, args, { mocks }) : undefined);
+        tryEvalCallFull(source, filePath, fnName, args, { mocks }) ??
+        (assignedName ? tryEvalCallFull(source, filePath, assignedName, args, { mocks }) : undefined);
       if (viaB) {
         const r = viaB.result;
         if (r && !(r.shape.k === "unknown" && !r.term)) {
@@ -194,7 +194,7 @@ export function tryEvalAbsFull(
 }
 
 /**
- * entry@ 的 Abs 原生路径：自包含源码走 B-path（类型即计算）。
+ * entry@ 的 Abs 原生路径：自包含源码走 evaluator（类型即计算）。
  * 含 import/require 或求值失败时返回 undefined。
  */
 export function tryEvalEntryAbs(
@@ -307,7 +307,7 @@ export function safeAbsOrUnknown(a: unknown): Abs {
 }
 
 /**
- * B-path / Abs program 调用记录 → CallRecord（Abs 唯一）。
+ * evaluator / Abs program 调用记录 → CallRecord（Abs 唯一）。
  * threw 时 result 位为 never、throws 位为抛出值。
  */
 export function callRecordFromAbsCall(

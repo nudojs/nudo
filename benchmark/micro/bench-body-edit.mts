@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 
 const ROOT = join(import.meta.dirname, "..", "..");
-const { analyzeFile, clearAnalysisFileCache, clearBPathCache } = await import(
+const { analyzeFile, clearAnalysisFileCache, clearEvalCache } = await import(
   join(ROOT, "packages/service/src/index.ts")
 );
 const { checkSource, pTrue, resetCheckSourceMemo } = await import(
@@ -22,7 +22,7 @@ const base = w3Nudo(400);
 const path = join(ROOT, "benchmark/micro/out/scale_nudo_400.js");
 writeFileSync(path, base);
 clearAnalysisFileCache();
-clearBPathCache();
+clearEvalCache();
 resetCheckSourceMemo();
 analyzeFile(path, base);
 checkSource(path, base, pTrue, {});
@@ -45,7 +45,7 @@ console.log("scale400 BODY-edit analyze", med(an), "check", med(ch));
 const cmd = join(ROOT, "node_modules/commander/lib/command.js");
 const cmdSrc = readFileSync(cmd, "utf-8");
 clearAnalysisFileCache();
-clearBPathCache();
+clearEvalCache();
 resetCheckSourceMemo();
 analyzeFile(cmd, cmdSrc);
 checkSource(cmd, cmdSrc, pTrue, {});

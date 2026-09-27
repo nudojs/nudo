@@ -258,7 +258,7 @@ export async function runAbsView(
     process.exitCode = 1;
     return;
   }
-  const { defaultLoadModule: loadModule, tryBPathCall } = await import("@nudojs/service");
+  const { defaultLoadModule: loadModule, tryEvalCall } = await import("@nudojs/service");
   console.log(`nudo check --abs  ${basename(filePath)}`);
   if (assumeLines.length > 0) {
     console.log(`assume: ${assumeLines.join(", ")}`);
@@ -276,10 +276,10 @@ export async function runAbsView(
       continue;
     }
     const args = algebra.buildArgsFromAssume(source, name, assumeIds);
-    // fail-closed：B-only（Φ 种子经 tryBPathCall）；B 失败（类方法等）
+    // fail-closed：B-only（Φ 种子经 tryEvalCall）；B 失败（类方法等）
     // → unknown（显式无信息，ast-eval 兜底已删）
-    const bResult = tryBPathCall(source, filePath, name, args, { phi });
-    const result = bResult ?? algebra.unknown;
+    const evalResult = tryEvalCall(source, filePath, name, args, { phi });
+    const result = evalResult ?? algebra.unknown;
     const label = `${name}(${args.map((a) => algebra.formatShape(a)).join(", ")})`;
     console.log(algebra.formatAbsMultiline(result, label));
     console.log("");

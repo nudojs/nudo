@@ -179,7 +179,7 @@ function typeTagOf(recv: Abs): string | undefined {
 }
 
 /**
- * Object.prototype 方法语义（B-path $invoke 与 Object.prototype.X.call 共用）。
+ * Object.prototype 方法语义（evaluator $invoke 与 Object.prototype.X.call 共用）。
  * null-proto 接收者无这些方法——返回 undefined（调用方走 TypeError 路径）。
  * 返回 undefined = 未接管。
  */

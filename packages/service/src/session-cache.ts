@@ -2,7 +2,7 @@
  * 会话缓存失效入口（宿主契约的唯一接线点）。
  * 契约文档：docs/design/cache-invalidation.md；测试锚 cache-invalidation-contract.test.ts。
  *
- * 内容指纹已进 analysisFileCacheKey / bpath depKey / fnDepSeg（常规编辑自然 miss）；
+ * 内容指纹已进 analysisFileCacheKey / eval depKey / fnDepSeg（常规编辑自然 miss）；
  * 宿主主动逐出仍是义务——path-env 进程全局须清、abs-module 的 mtime+size 指纹
  * 盖不住「同 size + 同 mtime」编辑、自定义 loader / 截断指纹需要安全网。
  * LSP 走定向逐出；CLI watch / vite-plugin 走这里。
@@ -14,7 +14,7 @@ import {
   resetParseSourceCache,
 } from "@nudojs/core";
 import { clearAbsModuleCache, evictAbsModuleCacheFiles } from "./abs-modules-graph.ts";
-import { clearBPathCache, evictBPathCacheForFiles, trimBPathCache } from "./bpath-run.ts";
+import { clearEvalCache, evictEvalCacheForFiles, trimEvalCache } from "./eval-run.ts";
 import {
   clearAnalysisFileCache,
   evictAnalysisFileCacheForFiles,
@@ -42,7 +42,7 @@ import type { NudoConfig } from "./evaluator/config.ts";
  */
 export function evictAnalysisCachesForFiles(files: string[]): void {
   if (files.length === 0) return;
-  evictBPathCacheForFiles(files);
+  evictEvalCacheForFiles(files);
   evictAnalysisFileCacheForFiles(files);
   evictFnAnalysisCacheForFiles(files);
   evictAbsModuleCacheFiles(files);
@@ -59,7 +59,7 @@ export function evictAnalysisCachesForFiles(files: string[]): void {
  * memo 不受影响（它们在同一轮里先写后读）。
  */
 export function clearAnalysisSessionCaches(): void {
-  clearBPathCache(); // cascades analysis-file + fn-analysis
+  clearEvalCache(); // cascades analysis-file + fn-analysis
   clearAbsModuleCache();
   clearPathEnvCaches();
   resetGeneralizeMemo();
@@ -76,7 +76,7 @@ export function applySessionCacheConfig(config: NudoConfig | null | undefined): 
   const limits = getSessionCacheLimits();
   trimAnalysisFileCache();
   trimFnAnalysisCache();
-  trimBPathCache();
+  trimEvalCache();
   return limits;
 }
 

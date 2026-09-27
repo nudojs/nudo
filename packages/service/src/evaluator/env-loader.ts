@@ -40,7 +40,7 @@ function resolveEnvNames(names: string[]): string[] {
 }
 
 export type LoadedEnv = {
-  /** Abs 原生模块导出（B 路径 / Abs 模块图） */
+  /** Abs 原生模块导出（求值引擎 / Abs 模块图） */
   modules: Record<string, Record<string, Abs>>;
   globals: Record<string, Abs>;
 };

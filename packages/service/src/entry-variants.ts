@@ -97,14 +97,14 @@ export function detectEntryVariantsFromPackageJson(pkg: unknown): EntryVariantFa
   collectExportFaces(p.exports, browser, node);
 
   // legacy top-level `browser` field (string entry or remap map)
-  const bField = p.browser;
-  if (typeof bField === "string") browser.push(bField);
-  else if (bField && typeof bField === "object") {
-    for (const v of Object.values(bField as Record<string, unknown>)) {
+  const evalField = p.browser;
+  if (typeof evalField === "string") browser.push(evalField);
+  else if (evalField && typeof evalField === "object") {
+    for (const v of Object.values(evalField as Record<string, unknown>)) {
       if (typeof v === "string") browser.push(v);
     }
     // remap keys are the node-side sources
-    for (const k of Object.keys(bField as Record<string, unknown>)) {
+    for (const k of Object.keys(evalField as Record<string, unknown>)) {
       if (k.startsWith(".")) node.push(k);
     }
   }

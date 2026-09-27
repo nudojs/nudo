@@ -1,5 +1,5 @@
 /**
- * B 路径 transpile：JS AST → 可在 Node 上执行的抽象值程序（源码字符串）。
+ * 求值引擎 transpile：JS AST → 可在 Node 上执行的抽象值程序（源码字符串）。
  * 运算符改为 $add/$sub/…；if 改为 $fork；for 改为 $for。
  * 值类型是 Abs；副作用与模块仍由 host mock/注入。
  *
@@ -32,7 +32,7 @@ export function runtimeImportOf(runtime: string): string {
 export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   const lines: string[] = [
-    `// nudo B-path transpile — values are Abs; operators are overloaded calls`,
+    `// nudo evaluator transpile — values are Abs; operators are overloaded calls`,
     `import { $add, $sub, $mul, $div, $mod, $bitand, $bitor, $bitxor, $bitnot, $shl, $shr, $ushr, $pow, $toNumber, $in, $instanceof, $instanceofNonIdent, $classExpr, $del, $delRes, $objAccessor, $neg, $typeof, $not, $eq, $ne, $eqLoose, $neLoose, $lt, $le, $gt, $ge, $join, $lit, $fork, $for, $forIter, $obj, $get, $set, $while, $whileSeq, $arr, $arrWithHoles, $arrMutContainer, $idx, $idxSet, $len, $call, $throw, $loopReturn, $loopBreak, $loopContinue, $class, $new, $invoke, $invokeSuper, $super, $async, $copy, $await, $asyncReturn, $orDefault, $callNamed, $optionalGet, $optionalInvoke, $spread, $concat, $forOf, $forInKeys, $catchVal, $switch, $staticInvoke, $setKey, $gen, $yield, $fnVal, $regex, $reStateCall, $rethrowIfNudoReturn, $nullishTest, $tryMark, $assignRecord, $recordBinding, $unknown, $importMeta, $dynamicImport, $tryTakeSince, $tryCurrentMark, $tryPopMark, $tryDigestSoftCatch, $tryReleaseSoftOut, $tryDetachSoftCatch, $tryDiscardSoft, $tryOrphanSoft, $pushLoopExit, $objRest, $arrRest, $arguments, $isForkExit, $rawThis, $isBreakTo } from ${JSON.stringify(runtime)};`,
     ``,
   ];

@@ -1,6 +1,6 @@
 /**
  * 差分语料门禁（P0 oracle 收编）：batch1–9——字符串/数组/对象/正则/
- * 控制流/数字静态等基础面。每条语料 B-path 执行 vs strict native 对照，
+ * 控制流/数字静态等基础面。每条语料 evaluator 执行 vs strict native 对照，
  * 零 mismatch；total compared 下限防语料整体退化（concrete 盲区哨兵）。
  */
 import { describe, it, expect } from "vitest";

@@ -1,5 +1,5 @@
 /**
- * B 路径 class：brand 实例 + ctor/method 闭包 + 继承链。
+ * 求值引擎 class：brand 实例 + ctor/method 闭包 + 继承链。
  * 方法内 this 由 transpile 改写为 thisVal 参数。
  */
 
@@ -27,7 +27,7 @@ import { emptyEnv } from "../ast-env.ts";
 import { defaultLeakBudget } from "../leak.ts";
 import { pTrue } from "../pred.ts";
 import {
-  noteBCallRecord,
+  noteEvalCallRecord,
   blockHostSideEffect,
 } from "./calls.ts";
 import {
@@ -40,23 +40,23 @@ import {
 } from "./member-diag.ts";
 import { errorTypeAbs } from "./may-throw.ts";
 import { NudoThrow, $collectionForEach } from "./runtime.ts";
-import { callAbsMethod } from "../methods.ts";
+import { callAbsMethod, toIntegerOrInfinityLit } from "../methods.ts";
 import {
-  registerBClass,
+  registerEvalClass,
   markClassValue,
-  getBClass,
-  type BClassSpec,
+  getEvalClass,
+  type EvalClassSpec,
 } from "./class-registry.ts";
 
-export type { BClassSpec } from "./class-registry.ts";
-export { registerBClass, getBClass, clearBClasses } from "./class-registry.ts";
+export type { EvalClassSpec } from "./class-registry.ts";
+export { registerEvalClass, getEvalClass, clearBClasses } from "./class-registry.ts";
 
-const classImpl = new WeakMap<object, BClassSpec>();
+const classImpl = new WeakMap<object, EvalClassSpec>();
 
 /** 定义类 → 可 new 的 Abs（brand 标记；静态字段挂在 slots） */
 export function $class(
   name: string,
-  spec: Omit<BClassSpec, "name"> & { extends?: string | Abs | unknown },
+  spec: Omit<EvalClassSpec, "name"> & { extends?: string | Abs | unknown },
 ): Abs {
   // extends 是活引用：类值取 brand 名、宿主 ctor 取 .name、字符串向后兼容
   const ext = spec.extends;
@@ -68,7 +68,7 @@ export function $class(
   } else if (typeof ext === "function") {
     superName = (ext as { name?: string }).name;
   }
-  const full: BClassSpec = {
+  const full: EvalClassSpec = {
     name,
     superName,
     ctor: spec.ctor,
@@ -80,7 +80,7 @@ export function $class(
     accessors: spec.accessors,
     staticAccessors: spec.staticAccessors,
   };
-  registerBClass(full);
+  registerEvalClass(full);
   const slots: Record<string, { value: Abs }> = {};
   if (spec.statics) {
     for (const [k, v] of Object.entries(spec.statics)) slots[k] = { value: asAbsVal(v) };
@@ -98,9 +98,9 @@ export function $class(
   return val;
 }
 
-function specOf(cls: Abs): BClassSpec | undefined {
+function specOf(cls: Abs): EvalClassSpec | undefined {
   if (classImpl.has(cls as object)) return classImpl.get(cls as object);
-  if (cls.shape.k === "brand") return getBClass(cls.shape.name);
+  if (cls.shape.k === "brand") return getEvalClass(cls.shape.name);
   return undefined;
 }
 
@@ -113,7 +113,7 @@ function findMethod(
   const seen = new Set<string>();
   while (cur && !seen.has(cur)) {
     seen.add(cur);
-    const spec = getBClass(cur);
+    const spec = getEvalClass(cur);
     if (spec?.methods?.[method]) return spec.methods[method];
     cur = spec?.superName;
   }
@@ -127,7 +127,7 @@ function findCtor(
   const seen = new Set<string>();
   while (cur && !seen.has(cur)) {
     seen.add(cur);
-    const spec = getBClass(cur);
+    const spec = getEvalClass(cur);
     if (spec?.ctor) return { ctor: spec.ctor, className: cur };
     cur = spec?.superName;
   }
@@ -253,7 +253,7 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
  * transpile: super(a,b) → __this = $super(__this, "Child", [a,b])
  */
 export function $super(thisVal: Abs, childName: string, args: Abs[]): Abs {
-  const child = getBClass(childName);
+  const child = getEvalClass(childName);
   const parentName = child?.superName;
   if (!parentName) return thisVal;
   const found = findCtor(parentName);
@@ -372,7 +372,7 @@ function runtimeAssignObject(args: Abs[]): Abs {
 }
 
 /**
- * Object.assign 数组 target 的逐键写（B-path）：
+ * Object.assign 数组 target 的逐键写（evaluator）：
  * 与原生同序处理 length 键与下标键（先写后截断可抹掉写入）。
  * getter 源键调用 getter；frozen/sealed 新下标 strict TypeError。
  */
@@ -434,7 +434,7 @@ export function $invoke(
   args: Abs[],
   loc?: [number, number],
 ): Abs {
-  // Function.prototype.call/apply/bind：fn Abs **或** B 路径 JS 函数（P1）
+  // Function.prototype.call/apply/bind：fn Abs **或** 求值引擎 JS 函数（P1）
   if (method === "call" || method === "apply" || method === "bind") {
     // apply 第二参：tuple 精确展开；JS 数组逐项；Abs arr 长度未知 → 单 element
     // （类型层欠近似）；null/undefined → 无参（JS 语义）；其它 → unknown 槽位
@@ -569,7 +569,7 @@ export function $invoke(
           : unknown;
         throw e;
       } finally {
-        noteBCallRecord({
+        noteEvalCallRecord({
           fnName: `${brandName}.${method}`,
           args,
           result,
@@ -578,7 +578,7 @@ export function $invoke(
         });
       }
     }
-    const spec = getBClass(brandName);
+    const spec = getEvalClass(brandName);
     const sm = spec?.staticMethods?.[method];
     if (sm) {
       let result: Abs = unknown;
@@ -593,7 +593,7 @@ export function $invoke(
           : unknown;
         throw e;
       } finally {
-        noteBCallRecord({
+        noteEvalCallRecord({
           fnName: `${brandName}.${method}`,
           args,
           result,
@@ -722,7 +722,7 @@ export function $invoke(
         : unknown;
       throw e;
     } finally {
-      noteBCallRecord({
+      noteEvalCallRecord({
         fnName: recordName,
         args,
         result,
@@ -1089,8 +1089,9 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
     if (shape.k === "arr") return joinAbs(shape.element, undefAbs());
   }
   if (method === "at") {
-    const raw = args[0] !== undefined ? litValue(args[0]) : undefined;
-    const iv = typeof raw === "number" && Number.isInteger(raw) ? raw : undefined;
+    // ToIntegerOrInfinity：缺省/undefined/null/NaN → 0；true → 1；'1' → 1；
+    // 1.9 → 1；±∞ → OOB undefined。抽象下标 join 全部元素 ∪ undefined。
+    const iv = toIntegerOrInfinityLit(args[0]);
     if (shape.k === "tuple") {
       const els = shape.elements;
       if (iv === undefined) {
@@ -1113,7 +1114,7 @@ export function $invokeSuper(
   method: string,
   args: Abs[],
 ): Abs {
-  const child = getBClass(childName);
+  const child = getEvalClass(childName);
   const parentName = child?.superName;
   if (!parentName) return unknown;
   const m = findMethod(parentName, method);
@@ -1237,7 +1238,7 @@ export function $staticInvoke(cls: Abs, method: string, args: Abs[]): Abs {
       : unknown;
     throw e;
   } finally {
-    noteBCallRecord({ fnName: recordName, args, result, threw });
+    noteEvalCallRecord({ fnName: recordName, args, result, threw });
   }
 }
 

@@ -6,15 +6,15 @@
 > 产品命令面 / any·unknown / check 门禁语义见
 > [`cli-semantics.md`](./cli-semantics.md)。
 >
-> **无第二套 IR**：生产求值 Abs 原生、单引擎 **B-path**（transpile+exec）；
-> B-incapable / 求值失败 **fail-closed**（unknown/空导出），无解释兜底。
+> **无第二套 IR**：生产求值 Abs 原生、单引擎 **evaluator**（transpile+exec）；
+> 不可求值 / 求值失败 **fail-closed**（unknown/空导出），无解释兜底。
 > dts / schema / guard / LSP hover / 序列化都是 **Abs 的单向外延投影**
 > （`formatShape` / `absToTSType` / `absToSchemaSource` / 守卫生成器）。
 > 约束构建器（`number()` / `shape({...})` 等，`*.nudo.js` 模板）进入 Abs 作为 Pred。
 >
 > 无 `NUDO_KERNEL` 开关、无 `packages/kernel`、无双矩阵。
 
-> **Executive summary (EN).** This document is the single source of truth for the Abs architecture: `Abs = shape × term × pred × conf` (types as computation). There is one IR and one evaluation engine (B-path: transpile + `new Function`); failures fail closed (unknown / empty exports) — no interpreter fallback. dts / schema / guard / LSP hover / serialization are **one-way lossy projections** of Abs and are never read back. Constraint builders (`number()`, `shape({…})`, …) enter Abs as Preds and participate in algebra. Trust boundary: analysis **executes** target code in-process — treat `nudo check` / `nudo test` like running the code; sidecar `*.nudo.js` and mocks are ordinary JS inside that boundary. Cross-product invariants are listed near the end of this document; product CLI face lives in `cli-semantics.md`.
+> **Executive summary (EN).** This document is the single source of truth for the Abs architecture: `Abs = shape × term × pred × conf` (types as computation). There is one IR and one evaluation engine (evaluator: transpile + `new Function`); failures fail closed (unknown / empty exports) — no interpreter fallback. dts / schema / guard / LSP hover / serialization are **one-way lossy projections** of Abs and are never read back. Constraint builders (`number()`, `shape({…})`, …) enter Abs as Preds and participate in algebra. Trust boundary: analysis **executes** target code in-process — treat `nudo check` / `nudo test` like running the code; sidecar `*.nudo.js` and mocks are ordinary JS inside that boundary. Cross-product invariants are listed near the end of this document; product CLI face lives in `cli-semantics.md`.
 
 ---
 
@@ -27,7 +27,7 @@ parser ──▶ core
             └── refinements  ← *.nudo.js 约束构建器 → Pred
                  │
                  ▼
-            service/evaluator    ← Abs 原生：B-path（transpile+exec）单引擎
+            service/evaluator    ← Abs 原生：evaluator（transpile+exec）单引擎
                  │
                  ▼
             service / lsp / vscode / dts / schema
@@ -78,10 +78,10 @@ parser ──▶ core
 ## 执行模型与信任边界
 
 > **本节是信任边界的唯一事实源。** 用户侧警告见 README「Security」与 website
-> `concepts/semantics.md`「Trust boundary」；B-path 机械细节见
-> [`evaluator-paths.md`](./evaluator-paths.md)。
+> `concepts/semantics.md`「Trust boundary」；求值引擎机械细节见
+> [`evaluation.md`](./evaluation.md)。
 
-生产分析是 **分析即执行**：B-path 把目标源码转译成 `$add` / `$fork` 等代数调用后，
+生产分析是 **分析即执行**：evaluator 把目标源码转译成 `$add` / `$fork` 等代数调用后，
 用 **`new Function` 编译并运行**（`runTranspiled` / `callTranspiledExportFull`）。
 被分析代码以抽象值（Abs）在分析器进程内**真实求值**——顶层副作用、
 `import` / `require`、以及侧车 `*.nudo.js` 与 `@nudo:mock` / `@nudo:mock-module`

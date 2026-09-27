@@ -9,7 +9,7 @@ import {
 import { analyzeFile, resetAllAnalysisCaches } from "@nudojs/service";
 
 // 用例级缓存隔离：整文件分析管线背后的会话级缓存
-// （analysisFileCache / bRunCache / fnAnalysisCache / absModuleCache / core memo）清空。
+// （analysisFileCache / evalRunCache / fnAnalysisCache / absModuleCache / core memo）清空。
 beforeEach(() => {
   resetAllAnalysisCaches();
 });

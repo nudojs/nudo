@@ -143,8 +143,8 @@ export const top = midPos;
   });
 
   it("spec 链成环 → NudoSidecarError（code=nudo:interface-cycle，消息含链）", () => {
-    const a = `import { bName } from "./b.nudo.js";\nexport const aName = bName;\n`;
-    const b = `import { aName } from "./a.nudo.js";\nexport const bName = aName;\n`;
+    const a = `import { evalName } from "./b.nudo.js";\nexport const aName = evalName;\n`;
+    const b = `import { aName } from "./a.nudo.js";\nexport const evalName = aName;\n`;
     const loadModule = (spec: string) => (spec === "./a.nudo.js" ? a : b);
     let err: unknown;
     try {
@@ -160,8 +160,8 @@ export const top = midPos;
   });
 
   it("环经 collectConstraints 转为 nudo:interface-cycle 诊断（不裸抛）", () => {
-    const a = `import { bName } from "./b.nudo.js";\nexport const aName = bName;\n`;
-    const b = `import { aName } from "./a.nudo.js";\nexport const bName = aName;\n`;
+    const a = `import { evalName } from "./b.nudo.js";\nexport const aName = evalName;\n`;
+    const b = `import { aName } from "./a.nudo.js";\nexport const evalName = aName;\n`;
     const loadModule = (spec: string) => (spec === "./a.nudo.js" ? a : b);
     const src = `
 /// @nudo:import { aName } from "./a.nudo.js"

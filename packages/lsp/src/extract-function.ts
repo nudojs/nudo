@@ -79,10 +79,10 @@ function locIntersects(
   const aBeforeB =
     a.end.line < b.start.line ||
     (a.end.line === b.start.line && a.end.column <= b.start.column);
-  const bBeforeA =
+  const evalBeforeA =
     b.end.line < a.start.line ||
     (b.end.line === a.start.line && b.end.column <= a.start.column);
-  return !(aBeforeB || bBeforeA);
+  return !(aBeforeB || evalBeforeA);
 }
 
 function isValidIdent(name: string): boolean {
@@ -210,8 +210,8 @@ function analyzeSelectionBindings(
           // 全局 / 未解析（console、Math…）不当形参
           return;
         }
-        const bLoc = (binding.identifier as Node).loc;
-        const declInSel = bLoc && locIntersects(bLoc, selLoc);
+        const evalLoc = (binding.identifier as Node).loc;
+        const declInSel = evalLoc && locIntersects(evalLoc, selLoc);
         if (!declInSel) {
           freeReads.add(name);
         }

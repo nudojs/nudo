@@ -10,7 +10,7 @@
  */
 import { describe, it, expect, beforeAll } from "vitest";
 import { checkSource, pTrue, formatAbs, resetGeneralizeMemo } from "@nudojs/core";
-import { collectEnvGlobals } from "../bpath-run.ts";
+import { collectEnvGlobals } from "../eval-run.ts";
 import { analyzeFileAsync } from "../analyzer.ts";
 import type { RunTranspiledOptions } from "@nudojs/core";
 

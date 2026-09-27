@@ -1,6 +1,6 @@
 /**
  * concrete() 盲区读层补探：结果 open / 含 undefined 元素时整值不可比，
- * 读具体槽位折叠成字面量走正常比较。与 bpath-*.test.ts parity describe
+ * 读具体槽位折叠成字面量走正常比较。与 eval-*.test.ts parity describe
  * 互补——本批（loop-fix 第 18 批）六类修复的回归金丝雀。
  */
 export const readProbes = [

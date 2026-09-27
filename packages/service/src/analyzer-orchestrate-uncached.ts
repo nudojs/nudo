@@ -9,8 +9,8 @@ import {
   createEnvironment,
   type Environment,
   generalizeFromAst,
-  setBCallCollector,
-  getBCallCollector,
+  setEvalCallCollector,
+  getEvalCallCollector,
   getFnImpl,
   markPureFn,
   $call,
@@ -24,7 +24,7 @@ import {
   abs as makeAbsVal,
   formalParamsFromNodes,
   type Abs,
-  type BCallRecord,
+  type EvalCallRecord,
 } from "@nudojs/core";
 import {
   setMayThrowCollector,
@@ -54,18 +54,18 @@ import { applyMockModuleDirectives } from "./mock-module.ts";
 import { defaultLoadModule } from "./load-module.ts";
 import { evalAbsModuleGraph, collectAbsBindingsFromGraph } from "./abs-modules-graph.ts";
 import {
-  tryBPathCall,
-  tryBPathCallFull,
-  tryRunBPath,
-  isBPathCapable,
+  tryEvalCall,
+  tryEvalCallFull,
+  tryRunEval,
+  isEvalCapable,
   mockSeedFingerprint,
   collectEnvGlobals,
   collectEnvModules,
   mergeHarvestUnderEnv,
   setEnvHarvestConflictCollector,
   type EnvHarvestConflict,
-} from "./bpath-run.ts";
-import { collectBPathDiagnostics } from "./bpath-diagnostics.ts";
+} from "./eval-run.ts";
+import { collectEvalDiagnostics } from "./eval-diagnostics.ts";
 import { entryVariantForFile, entryVariantMessage, entryVariantSuggestion } from "./entry-variants.ts";
 import {
   fnAnalysisCacheGet,
@@ -189,14 +189,14 @@ export function analyzeFileUncachedInner(
   // Environment 绑定 Abs（BindingInfo.abs）；nodeAbsMap 另走 absBinds
   const globalEnv = createEnvironment();
 
-  /** B 路径已报告的 method/property 名（避免双报） */
-  const bMemberDiagNames = new Set<string>();
-  const bMemberDiagSeen = new Set<string>();
+  /** 求值引擎已报告的 method/property 名（避免双报） */
+  const evalMemberDiagNames = new Set<string>();
+  const evalMemberDiagSeen = new Set<string>();
   const pushBMemberDiag = (d: { kind: string; name: string; receiver: string; line?: number; column?: number; origin?: { line: number; column: number }; code?: string }, fallbackLine: number) => {
-    bMemberDiagNames.add(d.name);
+    evalMemberDiagNames.add(d.name);
     const key = `${d.kind}:${d.name}:${d.receiver}:${d.line ?? fallbackLine}:${d.column ?? 0}:${d.code ?? ""}`;
-    if (bMemberDiagSeen.has(key)) return;
-    bMemberDiagSeen.add(key);
+    if (evalMemberDiagSeen.has(key)) return;
+    evalMemberDiagSeen.add(key);
     // C0.5：求值命中闭 shape 缺槽（默认 off；per-analysis ALS 已就绪）
     if (d.code === "nudo:missing-slot") {
       diagnostics.push({
@@ -251,22 +251,22 @@ export function analyzeFileUncachedInner(
   // @nudo:mock 已编译为 Abs seed 注入（mockDirectivesToAbsSeeds）；无 TypeValue applyMocks。
   const selfContained = isSelfContainedSource(source, envNames);
   const canAbsModules = absModulesOk(source, envNames);
-  const bCapable = isBPathCapable(source, envNames);
+  const evalCapable = isEvalCapable(source, envNames);
 
   /** B 已上报的模块加载问题种类 + 递归截断函数名（压 TypeValue 叠报） */
-  const bModuleIssueKinds = new Set<"cycle" | "depth" | "missing">();
-  const bTruncatedFns = new Set<string>();
-  /** B 静态 builtin-unknown 名（压 TypeValue unknown-global 叠报） */
-  const bBuiltinUnknownNames = new Set<string>();
+  const evalModuleIssueKinds = new Set<"cycle" | "depth" | "missing">();
+  const evalTruncatedFns = new Set<string>();
+  /** eval 静态 builtin-unknown 名（压 TypeValue unknown-global 叠报） */
+  const evalBuiltinUnknownNames = new Set<string>();
   /** B 成功跑通本文件 → TypeValue method/property 诊断整类让位 */
-  let bHostedEval = false;
+  let evalHosted = false;
 
   const pushBModuleIssues = (
     issues: Array<{ kind: "cycle" | "depth" | "missing"; label: string; reason: string }> | undefined,
   ) => {
     if (!issues) return;
     for (const iss of issues) {
-      bModuleIssueKinds.add(iss.kind);
+      evalModuleIssueKinds.add(iss.kind);
       const code =
         iss.kind === "cycle"
           ? "nudo:module-cycle"
@@ -300,16 +300,16 @@ export function analyzeFileUncachedInner(
     });
   }
   let absCallRecords: CallRecord[] = [];
-  /** B 顶层 $callNamed 记录（call@ 合成；TypeValue skip 后的主源） */
-  let bTopCallRecords: CallRecord[] = [];
-  /** 一次 evalAbsModuleGraph（模块图求值）的共享产物（避免 B 路径 4+ 次重求值） */
+  /** eval 顶层 $callNamed 记录（call@ 合成；TypeValue skip 后的主源） */
+  let evalTopCallRecords: CallRecord[] = [];
+  /** 一次 evalAbsModuleGraph（模块图求值）的共享产物（避免 求值引擎 4+ 次重求值） */
   let absGraphModules: Record<string, import("@nudojs/core").AbsModuleExports> | undefined;
   let absBindsShared: Map<string, Abs> | undefined;
   let absNodesShared: Map<Node, Abs> | undefined;
 
   // B 模块图：cycle/depth/missing + 顶层 memberDiags（注入 @nudo:mock，
   // 避免缩进 const 调到真 fetch；$callNamed 实参 loc 提供参数级 provenance）
-  if (bCapable && filePath) {
+  if (evalCapable && filePath) {
     try {
       const g = evalAbsModuleGraph(source, filePath, {
         seedVars: seeds.seedVars,
@@ -338,60 +338,60 @@ export function analyzeFileUncachedInner(
     } catch {
       /* 模块图失败交还 TypeValue */
     }
-    const bRun = tryRunBPath(source, filePath, {
+    const evalRun = tryRunEval(source, filePath, {
       envNames,
       mocks: mockSeedsToAbsMocks(seeds),
     });
-    if (bRun) {
-      bHostedEval = true;
-      if (bRun.memberDiags?.length) {
-        for (const d of bRun.memberDiags) {
+    if (evalRun) {
+      evalHosted = true;
+      if (evalRun.memberDiags?.length) {
+        for (const d of evalRun.memberDiags) {
           pushBMemberDiag(d, 1);
         }
       }
-      if (bRun.truncatedFns) {
-        for (const fn of bRun.truncatedFns) bTruncatedFns.add(fn);
+      if (evalRun.truncatedFns) {
+        for (const fn of evalRun.truncatedFns) evalTruncatedFns.add(fn);
       }
-      if (bRun.calls?.length) {
+      if (evalRun.calls?.length) {
         const impMap = buildAbsImportLocalMap(source, filePath);
-        for (const c of bRun.calls) {
-          bTopCallRecords.push(callRecordFromAbsCall(c, impMap));
+        for (const c of evalRun.calls) {
+          evalTopCallRecords.push(callRecordFromAbsCall(c, impMap));
         }
       }
     }
   }
-  // fail-closed：Abs 调用记录通道已删（collectAbsCallRecords）——非 B-hosted
-  // 源的调用点仅来自 B 顶层记录（bTopCallRecords）
+  // fail-closed：Abs 调用记录通道已删（collectAbsCallRecords）——非 eval-hosted
+  // 源的调用点仅来自 eval 顶层记录（evalTopCallRecords）
 
-  // fail-closed：bHostedEval 的 Abs bindings/nodeTypes 补齐已删
-  // （collectAbsBindsAndNodes）——B 侧的 nodeTypeMap/binding 通道是唯一源
+  // fail-closed：evalHosted 的 Abs bindings/nodeTypes 补齐已删
+  // （collectAbsBindsAndNodes）——eval 侧的 nodeTypeMap/binding 通道是唯一源
 
-  // TypeValue evaluateProgram / applyMocks 已删除：非 B-hosted 源不跑全程序求值；
+  // TypeValue evaluateProgram / applyMocks 已删除：非 eval-hosted 源不跑全程序求值；
   // 绑定/节点靠 Abs 宿主（collectAbsBindsAndNodes）。case 兜底 Abs-first。
 
-  // Abs / B 顶层调用记录：B-hosted 时 B 路径优先（调用点实参含宿主 JS 函数
+  // Abs / eval 顶层调用记录：eval-hosted 时 求值引擎优先（调用点实参含宿主 JS 函数
   // 时 Abs 会把它们打成 unknown——C3.1）；否则 Abs 优先。
-  if (bHostedEval && bTopCallRecords.length > 0) {
+  if (evalHosted && evalTopCallRecords.length > 0) {
     callRecords.length = 0;
-    callRecords.push(...bTopCallRecords);
+    callRecords.push(...evalTopCallRecords);
   } else if ((selfContained || canAbsModules) && absCallRecords.length > 0) {
     callRecords.length = 0;
     callRecords.push(...absCallRecords);
-  } else if (bTopCallRecords.length > 0) {
+  } else if (evalTopCallRecords.length > 0) {
     callRecords.length = 0;
-    callRecords.push(...bTopCallRecords);
+    callRecords.push(...evalTopCallRecords);
   }
 
   const unreachableRanges: SourceLocation[] = [];
-  if (bCapable) {
-    // B 路径静态诊断接管 unreachable + builtin-unknown
-    // env/mock 已覆盖的全局不在 builtin-unknown 之列（B 注入后不再是裸原生调用）
-    const bKnownGlobals = new Set<string>([
+  if (evalCapable) {
+    // 求值引擎静态诊断接管 unreachable + builtin-unknown
+    // env/mock 已覆盖的全局不在 builtin-unknown 之列（eval 注入后不再是裸原生调用）
+    const evalKnownGlobals = new Set<string>([
       ...Object.keys(collectEnvGlobals(envNames)),
       ...Object.keys(mockSeedsToAbsMocks(seeds)),
     ]);
-    const bDiag = collectBPathDiagnostics(source, bKnownGlobals);
-    for (const ur of bDiag.unreachable) {
+    const evalDiag = collectEvalDiagnostics(source, evalKnownGlobals);
+    for (const ur of evalDiag.unreachable) {
       diagnostics.push({
         range: ur.range,
         severity: "info",
@@ -401,8 +401,8 @@ export function analyzeFileUncachedInner(
         suggestions: ["Remove the unreachable code after the return/throw statement"],
       });
     }
-    for (const b of bDiag.builtinUnknown) {
-      bBuiltinUnknownNames.add(b.name);
+    for (const b of evalDiag.builtinUnknown) {
+      evalBuiltinUnknownNames.add(b.name);
       diagnostics.push({
         range: b.range,
         severity: "warning",
@@ -429,7 +429,7 @@ export function analyzeFileUncachedInner(
 
   // Abs 宿主补齐（T15）：B 未成功宿主时仍收集 Abs 绑定/节点表——
   // BindingInfo.abs / nodeAbsMap / hover / completions 不必等 B 成功。
-  if (!absNodesShared && !bHostedEval && (selfContained || canAbsModules)) {
+  if (!absNodesShared && !evalHosted && (selfContained || canAbsModules)) {
     try {
       const collected = { binds: new Map<string, Abs>(), nodes: new Map<Node, Abs>() }; // fail-closed
       if (!absBindsShared) absBindsShared = collected.binds;
@@ -443,7 +443,7 @@ export function analyzeFileUncachedInner(
 
   // fail-closed：绑定补全仅来自 B run 的绑定表（bindingsOf）；Abs 模块图
   // 宿主已删。B 不可用 → 无补全（显式无信息）。
-  if (isBPathCapable(source, envNames)) {
+  if (isEvalCapable(source, envNames)) {
     try {
       // 绑定补全走 B 版 collectAbsBindingsFromGraph：recordBinding 顶层绑定
       // + 导出桥 + import 局部名（静态解析依赖模块）——单一事实源
@@ -617,32 +617,32 @@ export function analyzeFileUncachedInner(
       let caseThrowLoc: SourceLocation | undefined;
       let caseUnreachable: SourceLocation[] = [];
 
-      const bCapable = isBPathCapable(source, envNames);
-      const bPrimary = bCapable;
-      if (bCapable && filePath) {
+      const evalCapable = isEvalCapable(source, envNames);
+      const evalPrimary = evalCapable;
+      if (evalCapable && filePath) {
         const caseArgsAbs = directive.argsAbs;
-        const bFull = tryBPathCallFull(
+        const evalFull = tryEvalCallFull(
           source,
           filePath,
           fn.name,
           caseArgsAbs,
           { collectCalls: true, envNames, mocks: mockSeedsToAbsMocks(seeds) },
         );
-        const res = bFull?.result;
+        const res = evalFull?.result;
         const weakUnknown =
           !!res &&
           res.shape.k === "unknown" &&
           (!res.term || (res.term.op === "lit" && res.term.value === undefined));
-        const bOk = !!res && (bHostedEval || (!weakUnknown && res.conf !== "opaque"));
-        if (bOk && bFull && bPrimary) {
-          caseAbs = bFull.result;
-          caseThrowsAbs = bFull.throws;
-          for (const d of bFull.memberDiags ?? []) {
+        const evalOk = !!res && (evalHosted || (!weakUnknown && res.conf !== "opaque"));
+        if (evalOk && evalFull && evalPrimary) {
+          caseAbs = evalFull.result;
+          caseThrowsAbs = evalFull.throws;
+          for (const d of evalFull.memberDiags ?? []) {
             pushBMemberDiag(d, fnLoc.start.line);
           }
-          if (bFull.calls?.length) {
+          if (evalFull.calls?.length) {
             const impMap = buildAbsImportLocalMap(source, filePath);
-            for (const c of bFull.calls) {
+            for (const c of evalFull.calls) {
               callRecords.push(callRecordFromAbsCall(c, impMap));
             }
           }
@@ -650,7 +650,7 @@ export function analyzeFileUncachedInner(
       }
 
       if (!caseAbs) {
-        if (bHostedEval) {
+        if (evalHosted) {
           caseAbs = absUnknown;
           caseThrowsAbs = neverAbs;
         } else {
@@ -744,8 +744,8 @@ export function analyzeFileUncachedInner(
           });
         }
 
-        // B 路径可分析时文件级静态收集已报 unreachable，跳过 case 级
-        if (!isBPathCapable(source, envNames)) {
+        // 求值引擎可分析时文件级静态收集已报 unreachable，跳过 case 级
+        if (!isEvalCapable(source, envNames)) {
           for (const ur of caseUnreachable) {
             diagnostics.push({
               range: ur,
@@ -952,7 +952,7 @@ export function analyzeFileUncachedInner(
             }
           }
         }
-        // 记录自带的无损结果 Abs：重求值失败/跳过时作兜底（B-path 产物）
+        // 记录自带的无损结果 Abs：重求值失败/跳过时作兜底（evaluator 产物）
         if (!absRaw && rec.resultAbs.shape.k !== "never") {
           absRaw = rec.resultAbs;
         }
@@ -983,21 +983,21 @@ export function analyzeFileUncachedInner(
           // （target || [] 等）对 unknown 全塌，对 undefined 正常走默认分支
           widenJoinAbs(remaining.map((rec) => rec.argAbs[i] ?? undefAbs)),
         );
-        // B 路径优先（capable）；否则 Abs 优先
+        // 求值引擎优先（capable）；否则 Abs 优先
         let symAbs: Abs | undefined;
-        if (isBPathCapable(source, envNames) && filePath) {
-          const bSym = tryBPathCall(
+        if (isEvalCapable(source, envNames) && filePath) {
+          const evalSym = tryEvalCall(
             source,
             filePath,
             candidate.name,
             widenedArgsAbs,
             { envNames, mocks: mockSeedsToAbsMocks(seeds) },
           );
-          if (bSym && (bHostedEval || !(bSym.shape.k === "unknown" && !bSym.term))) {
-            symAbs = bSym;
+          if (evalSym && (evalHosted || !(evalSym.shape.k === "unknown" && !evalSym.term))) {
+            symAbs = evalSym;
           }
         }
-        if (!symAbs && !bHostedEval) {
+        if (!symAbs && !evalHosted) {
           const absTry = tryEvalAbsRaw(
             source,
             candidate.name,
@@ -1041,15 +1041,15 @@ export function analyzeFileUncachedInner(
     const fnNode = resolveFunctionNode(candidate.node);
     // 入口无约束参数 = any（design-cli-semantics §2）；不是 unknown（推导失败）
     const argAbsEntry = extractParamNames(fnNode).map(() => anyAbs);
-    // B-path 唯一求值；失败 fail-closed（entryAbs 保持 undefined）
+    // evaluator 唯一求值；失败 fail-closed（entryAbs 保持 undefined）
     let entryAbs: Abs | undefined;
     let entryThrowsAbs: Abs = makeAbsVal({ k: "never" }, undefined, undefined, "exact");
     const entryEffects: MayThrowEffect[] = [];
     setMayThrowCollector((e) => entryEffects.push(e));
     try {
-      if (isBPathCapable(source, envNames) && filePath) {
-        const bEntryFull =
-          tryBPathCallFull(
+      if (isEvalCapable(source, envNames) && filePath) {
+        const evalEntryFull =
+          tryEvalCallFull(
             source,
             filePath,
             candidate.analysis.name,
@@ -1057,24 +1057,24 @@ export function analyzeFileUncachedInner(
             { envNames, mocks: mockSeedsToAbsMocks(seeds), collectMemberDiags: true },
           ) ??
           (candidate.assignedName
-            ? tryBPathCallFull(source, filePath, candidate.assignedName, argAbsEntry, {
+            ? tryEvalCallFull(source, filePath, candidate.assignedName, argAbsEntry, {
                 envNames,
                 mocks: mockSeedsToAbsMocks(seeds),
               })
             : undefined);
-        if (bEntryFull?.memberDiags?.length) {
-          for (const d of bEntryFull.memberDiags) {
+        if (evalEntryFull?.memberDiags?.length) {
+          for (const d of evalEntryFull.memberDiags) {
             pushBMemberDiag(d, candidate.analysis.loc.start.line);
           }
         }
-        const bEntry = bEntryFull?.result;
-        if (bEntry && (bHostedEval || !(bEntry.shape.k === "unknown" && !bEntry.term))) {
-          entryAbs = bEntry;
-          if (bEntryFull?.throws) entryThrowsAbs = bEntryFull.throws;
+        const evalEntry = evalEntryFull?.result;
+        if (evalEntry && (evalHosted || !(evalEntry.shape.k === "unknown" && !evalEntry.term))) {
+          entryAbs = evalEntry;
+          if (evalEntryFull?.throws) entryThrowsAbs = evalEntryFull.throws;
         }
       }
       if (!entryAbs) {
-        if (bHostedEval) {
+        if (evalHosted) {
           entryAbs = absUnknown;
           entryThrowsAbs = makeAbsVal({ k: "never" }, undefined, undefined, "exact");
         } else {
@@ -1155,7 +1155,7 @@ export function analyzeFileUncachedInner(
     }
   }
 
-  if (!bHostedEval) {
+  if (!evalHosted) {
     buildNodeTypeMap(ast, globalEnv, nodeAbsMap);
   }
 

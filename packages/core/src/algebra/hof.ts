@@ -206,14 +206,14 @@ export function tryPromoteDirectCall(
  */
 export function tryPromoteHofCallback(
   env: AstEnv,
-  cbName: string,
+  cevalName: string,
   method: string,
   argAbses: Abs[],
   loc?: { line: number; column: number },
 ): Abs | undefined {
   const hc = env.hofCollect;
-  if (!hc || !hc.paramNames.has(cbName)) return undefined;
-  const prev = env.vars.get(cbName);
+  if (!hc || !hc.paramNames.has(cevalName)) return undefined;
+  const prev = env.vars.get(cevalName);
   if (!prev) return undefined;
   if (prev.shape.k !== "any" && prev.shape.k !== "unknown") return undefined;
 
@@ -228,13 +228,13 @@ export function tryPromoteHofCallback(
     paramTypes = argAbses.map((a) =>
       abs({ k: "any" }, alphaOf(a, hc), undefined, "path"),
     );
-    returnType = abs({ k: "any" }, betaOf(cbName), undefined, "path");
+    returnType = abs({ k: "any" }, betaOf(cevalName), undefined, "path");
   } else {
     // map / flatMap / 默认
     paramTypes = argAbses.map((a) =>
       abs({ k: "any" }, alphaOf(a, hc), undefined, "path"),
     );
-    returnType = abs({ k: "any" }, betaOf(cbName), undefined, "path");
+    returnType = abs({ k: "any" }, betaOf(cevalName), undefined, "path");
   }
   const fnShape: Shape = {
     k: "fn",
@@ -242,14 +242,14 @@ export function tryPromoteHofCallback(
     paramTypes,
     returnType,
   };
-  promoteParamShape(env, cbName, fnShape, { loc, recordSite: false });
+  promoteParamShape(env, cevalName, fnShape, { loc, recordSite: false });
   hc.sites.push({
-    param: cbName,
+    param: cevalName,
     argTerms: argAbses.map((a) => a.term ?? { op: "var", id: "_" }),
     result: returnType,
     loc,
   });
-  return env.vars.get(cbName);
+  return env.vars.get(cevalName);
 }
 
 /** deep-ish copy for snapshot（新对象，不是 env.vars 同一引用） */
@@ -754,7 +754,7 @@ export function instantiateReturn(fn: Abs, args: Abs[]): Abs {
  *
  * 为避免 hof ↔ exec 循环依赖，本函数由宿主在运行时绑定。
  *
- * 依赖说明：宿主在 `exec/call.ts`（B-path `$call` 宿主）加载时注册（副作用）。
+ * 依赖说明：宿主在 `exec/call.ts`（evaluator `$call` 宿主）加载时注册（副作用）。
  * 只 import hof.ts 而未加载 exec/call 时，fallback 仅认 relation/isRelFn。
  * 与 §5.1 的「禁止全局 collector」不同——这里是无状态委托钩子，不是 run 局部状态。
  */
@@ -769,7 +769,7 @@ type ApplyCallbackHost = (
 let applyCallbackHost: ApplyCallbackHost | undefined;
 
 /**
- * B-path 宿主 `exec/call.ts` 加载时注册（副作用）。
+ * evaluator 宿主 `exec/call.ts` 加载时注册（副作用）。
  * 必须经 `exec/call.ts`（或其依赖方：exec/class、generalize）加载，
  * 才能启用 Identifier/env.fns/inline body 路径；只 import hof.ts 时 fallback
  * 仅认 relation/isRelFn。勿在多份实例下各写各的——双包/双副本会覆盖。
@@ -781,7 +781,7 @@ export function setApplyCallbackHost(fn: ApplyCallbackHost): void {
 /**
  * 通用回调实参调用（exec/class invokeArrMethod 与 builtins Array.from 共用）：
  * 原始 JS 函数直调（展开实参）；Abs fn 走 applyCallbackAbs（sum 分发/宿主）。
- * B 路径 transpile 的箭头回调是 $fnVal Abs——$fnVal.apply 自带调用边界。
+ * 求值引擎 transpile 的箭头回调是 $fnVal Abs——$fnVal.apply 自带调用边界。
  */
 export function applyCallbackValue(
   fn: unknown,

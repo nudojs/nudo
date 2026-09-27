@@ -56,15 +56,15 @@ export async function analyzeFileAsync(
 
 /**
  * 整文件分析。同 (path, source, cases, external) 命中 memo → O(1)。
- * 不再每次 clearBPathCache：B 路径按本文件 source 键控。
+ * 不再每次 clearEvalCache：求值引擎按本文件 source 键控。
  *
  * `loadModule`：可选；提供时用于相对 import / 侧车 ambient（LSP
  * buffer-aware）。未提供时走 defaultLoadModule（磁盘）。
  *
  * 宿主契约：入口 source 未变但依赖模块内容变了时，必须调用
- * `evictBPathCacheForFiles` / `evictAnalysisFileCacheForFiles` /
+ * `evictEvalCacheForFiles` / `evictAnalysisFileCacheForFiles` /
  * `evictFnAnalysisCacheForFiles`（LSP 已接好）。非 LSP 宿主
- * （CLI watch / vite-plugin）在 dep 变更时应 `clearBPathCache()` 或上述逐出。
+ * （CLI watch / vite-plugin）在 dep 变更时应 `clearEvalCache()` 或上述逐出。
  */
 export function analyzeFile(
   filePath: string,

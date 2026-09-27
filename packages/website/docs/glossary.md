@@ -1,6 +1,6 @@
 ---
 slug: /glossary
-description: Glossary — Abs (name and parts), conf grades, B-path, fail-closed, any vs unknown, L1/L2, contracts, call sites.
+description: Glossary — Abs (name and parts), conf grades, evaluator, fail-closed, any vs unknown, L1/L2, contracts, call sites.
 ---
 
 # Glossary
@@ -52,8 +52,8 @@ Terms used across the docs. Name origins are given where the English short form 
 
 | Term | Meaning |
 |------|---------|
-| **B-path** | The single production evaluation engine: **transpile** the target into algebra calls (`$add`, `$fork`, …) then **`new Function`** execute on Abs. Named after the B-path implementation (`bpath-run`); the older AST-walk interpreter was removed. |
-| **fail-closed** | On B-incapable sources or evaluation failure, the engine reports **no information** (`unknown` / empty exports) instead of guessing or falling back to another evaluator. Same idea for unprovable Pred goals and truncated cache keys. |
+| **evaluator** | The single production evaluation engine: **transpile** the target into algebra calls (`$add`, `$fork`, …) then **`new Function`** execute on Abs. |
+| **fail-closed** | On non-eval sources or evaluation failure, the engine reports **no information** (`unknown` / empty exports) instead of guessing or falling back to another evaluator. Same idea for unprovable Pred goals and truncated cache keys. |
 | **abstract interpretation** | The technique behind Nudo: execute on abstract values rather than concrete samples (tests) or pure AST analysis (classic type checkers). |
 | **leqAbs** | Structural “is at least as defined as” check on Abs used for some assignment shapes. |
 | **Pred implication** | The L1 gate: does the actual Abs imply the contract Pred? Bounded prover (linear / equality fragments); otherwise fail-closed. |

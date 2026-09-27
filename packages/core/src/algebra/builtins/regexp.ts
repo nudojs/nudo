@@ -24,7 +24,7 @@ function pathRegExpBrand(): Abs {
   );
 }
 
-/** RegExp brand：source/flags/lastIndex 进 slots（B-path evalRegExpCtor / $regex 共用） */
+/** RegExp brand：source/flags/lastIndex 进 slots（evaluator evalRegExpCtor / $regex 共用） */
 export function regexBrandAbsFrom(pattern: string, flags: string): Abs {
   return abs(
     {
@@ -72,7 +72,7 @@ export function tryMakeRegexAbs(args: Abs[]): Abs | undefined {
 
 export function evalRegExpMethod(name: string, recv: Abs, args: Abs[]): Abs | undefined {
   if (name === "test" || name === "exec") {
-    // 字面量 brand（source/flags 槽）+ 字面量 subject → 真执行（与 B-path 同轨）
+    // 字面量 brand（source/flags 槽）+ 字面量 subject → 真执行（与 evaluator 同轨）
     const inner =
       recv.shape.k === "brand" && recv.shape.name === "RegExp"
         ? recv.shape.shape

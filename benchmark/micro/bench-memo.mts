@@ -8,7 +8,7 @@ const ROOT = join(import.meta.dirname, "..", "..");
 async function main() {
   const { checkSource, pTrue, resetCheckSourceMemo, getCheckSourceMemoSize, resetParseSourceCache } =
     await import(join(ROOT, "packages/core/src/index.ts"));
-  const { analyzeFile, clearBPathCache, clearAnalysisFileCache } =
+  const { analyzeFile, clearEvalCache, clearAnalysisFileCache } =
     await import(join(ROOT, "packages/service/src/index.ts"));
   const { defaultLoadModule } = await import(join(ROOT, "packages/service/src/load-module.ts"));
 
@@ -62,7 +62,7 @@ async function main() {
   }
 
   // --- analyzeFile ---
-  clearBPathCache();
+  clearEvalCache();
   clearAnalysisFileCache();
   resetParseSourceCache();
   {
@@ -85,7 +85,7 @@ async function main() {
   try {
     const w1src = readFileSync(w1, "utf-8");
     clearAnalysisFileCache();
-    clearBPathCache();
+    clearEvalCache();
     analyzeFile(w1, w1src);
     const samples: number[] = [];
     for (let i = 0; i < 50; i++) {
@@ -104,7 +104,7 @@ async function main() {
     try {
       const s = readFileSync(p, "utf-8");
       clearAnalysisFileCache();
-      clearBPathCache();
+      clearEvalCache();
       analyzeFile(p, s);
       const samples: number[] = [];
       const reps = n >= 200 ? 5 : 10;

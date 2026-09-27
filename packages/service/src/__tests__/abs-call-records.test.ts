@@ -14,9 +14,9 @@ describe("Abs call records with relative import", () => {
   it("tags imported calls with targetModule and feeds externalFunctions", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-abs-call-"));
     dirs.push(dir);
-    const bSrc = `export function triple(x) { return x * 3; }\n`;
+    const evalSrc = `export function triple(x) { return x * 3; }\n`;
     const aSrc = `import { triple } from "./b.js";\nfunction caller(n) { return triple(n); }\nconst r = caller(4);\n`;
-    writeFileSync(join(dir, "b.js"), bSrc);
+    writeFileSync(join(dir, "b.js"), evalSrc);
     const aPath = resolve(dir, "a.js");
     writeFileSync(aPath, aSrc);
 

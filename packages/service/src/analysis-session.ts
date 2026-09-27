@@ -1,7 +1,7 @@
 /**
  * B5：workspace 级 AnalysisSession——LSP 与 CLI（同进程）共享的分析 memo 面。
  *
- * core/service 的 analyzeFile / B-path / generalize / checkSource 都是
+ * core/service 的 analyzeFile / evaluator / generalize / checkSource 都是
  * 进程级模块缓存；本模块把「清空 / 定向逐出 / 依赖变更」收成一个显式
  * session 对象，避免宿主各接一套失效逻辑，也便于测试隔离。
  *

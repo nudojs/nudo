@@ -1,5 +1,5 @@
 /**
- * 调用预算 + 截断观测（B 路径共享面）。
+ * 调用预算 + 截断观测（求值引擎共享面）。
  * 抽象求值对递归做展开而非不动点：参数类型每层变形（fac(n-1)）时
  * cycle key 不重复，必须靠深度/总调用数封顶。超限结果 conf=opaque。
  */
@@ -8,7 +8,7 @@ import { abs } from "./abs.ts";
 import { termToString } from "./term.ts";
 
 export const MAX_CALL_DEPTH = 64;
-/** 与 B 命名调用（calls.ts MAX_B_TOTAL_CALLS）同阀：病态展开下 200k 级不可接受 */
+/** 与 B 命名调用（calls.ts MAX_EVAL_TOTAL_CALLS）同阀：病态展开下 200k 级不可接受 */
 export const MAX_TOTAL_CALLS = 20_000;
 
 let _absCallDepth = 0;
@@ -35,11 +35,11 @@ export function getAbsCallBudgetStats(): AbsBudgetStats {
   return {
     calls: _absTotalCalls,
     maxCalls: MAX_TOTAL_CALLS,
-    forks: _bForkCount,
-    maxForks: _bForkBudgetLimit,
+    forks: _evalForkCount,
+    maxForks: _evalForkBudgetLimit,
     callTruncated: _callTruncated,
-    forkTruncated: _bForkTruncNoted,
-    truncated: _callTruncated || _bForkTruncNoted,
+    forkTruncated: _evalForkTruncNoted,
+    truncated: _callTruncated || _evalForkTruncNoted,
   };
 }
 
@@ -49,7 +49,7 @@ export function resetAbsCallBudget(): void {
   _absTotalCalls = 0;
   _activeCallKeys = [];
   _callTruncated = false;
-  resetBForkBudget();
+  resetEvalForkBudget();
 }
 
 export function stableCallId(obj: object): string {
@@ -136,16 +136,16 @@ export function exitCall(): void {
  *   独立封顶，任一超限都 fail-closed 成 unknown。
  *
  * 默认 5000：monorepo 语料（含 core/service 全量测试与 check 金门）下
- * 正常函数远低于此；病态递归×循环能在秒级内兜住（对照 MAX_B_TOTAL_CALLS
- * 从 200k 收到 20k 的先例）。可经 setBForkBudgetLimit / env NUDO_MAX_FORKS /
+ * 正常函数远低于此；病态递归×循环能在秒级内兜住（对照 MAX_EVAL_TOTAL_CALLS
+ * 从 200k 收到 20k 的先例）。可经 setEvalForkBudgetLimit / env NUDO_MAX_FORKS /
  * package.json#nudo.analysis.maxForks 调节。
  */
-export const MAX_B_TOTAL_FORKS = 5000;
+export const MAX_EVAL_TOTAL_FORKS = 5000;
 
-let _bForkBudgetLimit = MAX_B_TOTAL_FORKS;
-let _bForkCount = 0;
+let _evalForkBudgetLimit = MAX_EVAL_TOTAL_FORKS;
+let _evalForkCount = 0;
 /** 本轮是否已上报过 fork 截断（避免 collector 被同一轮刷屏） */
-let _bForkTruncNoted = false;
+let _evalForkTruncNoted = false;
 
 /**
  * 专用标签：fork 截断不是「某个递归函数被截断」，不能复用函数名 label
@@ -168,44 +168,44 @@ export function noteHostEffectBlocked(name: string): void {
 }
 
 /** fork 超限观测（service/LSP 映射 nudo:fork-truncated；与调用截断同 collector 管道） */
-export function noteBForkTruncation(): void {
+export function noteEvalForkTruncation(): void {
   noteAbsTruncation(FORK_TRUNCATION_LABEL);
 }
 
 /**
  * 调整 fork 总次数上限。约定：n ≥ 1 的有限整数才生效（向下取整）；
- * 非法值（0 / 负数 / NaN / Infinity / 非数）回默认 MAX_B_TOTAL_FORKS。
+ * 非法值（0 / 负数 / NaN / Infinity / 非数）回默认 MAX_EVAL_TOTAL_FORKS。
  * 返回实际生效值。core 无 IO——env/package.json 由 service 读取后 set 进来。
  */
-export function setBForkBudgetLimit(n: number): number {
+export function setEvalForkBudgetLimit(n: number): number {
   if (typeof n === "number" && Number.isFinite(n) && n >= 1) {
-    _bForkBudgetLimit = Math.floor(n);
+    _evalForkBudgetLimit = Math.floor(n);
   } else {
-    _bForkBudgetLimit = MAX_B_TOTAL_FORKS;
+    _evalForkBudgetLimit = MAX_EVAL_TOTAL_FORKS;
   }
-  return _bForkBudgetLimit;
+  return _evalForkBudgetLimit;
 }
 
-export function getBForkBudgetLimit(): number {
-  return _bForkBudgetLimit;
+export function getEvalForkBudgetLimit(): number {
+  return _evalForkBudgetLimit;
 }
 
-export function getBForkCount(): number {
-  return _bForkCount;
+export function getEvalForkCount(): number {
+  return _evalForkCount;
 }
 
-/** 宿主入口前重置 fork 计数（与 resetAbsCallBudget / resetBCallBudget 同口径） */
-export function resetBForkBudget(): void {
-  _bForkCount = 0;
-  _bForkTruncNoted = false;
+/** 宿主入口前重置 fork 计数（与 resetAbsCallBudget / resetEvalCallBudget 同口径） */
+export function resetEvalForkBudget(): void {
+  _evalForkCount = 0;
+  _evalForkTruncNoted = false;
 }
 
 /** $fork 入口：超限放弃该分支（调用方返回 unknown = 最保守，安全）。 */
-export function bumpBForkBudget(): boolean {
-  if (++_bForkCount <= _bForkBudgetLimit) return true;
-  if (!_bForkTruncNoted) {
-    _bForkTruncNoted = true;
-    noteBForkTruncation();
+export function bumpEvalForkBudget(): boolean {
+  if (++_evalForkCount <= _evalForkBudgetLimit) return true;
+  if (!_evalForkTruncNoted) {
+    _evalForkTruncNoted = true;
+    noteEvalForkTruncation();
   }
   return false;
 }

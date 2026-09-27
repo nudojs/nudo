@@ -1,5 +1,5 @@
 /**
- * B 路径运行时共享状态：phi、就地写、字面量 Abs、真值、循环信号。
+ * 求值引擎运行时共享状态：phi、就地写、字面量 Abs、真值、循环信号。
  * 叶子模块——不依赖 runtime 其它文件（tuple/obj 字面量就地构造，避免 state↔containers 环）。
  */
 import type { Abs } from "../../abs.ts";
@@ -53,7 +53,7 @@ export const noBody: EmptyBlock = { type: "BlockStatement", body: [], directives
 
 /**
  * transpile 泄漏的 JS 函数值 → 一等 fn Abs。
- * B 路径把函数声明/表达式编译成真实 JS 函数；它们流进对象槽、
+ * 求值引擎把函数声明/表达式编译成真实 JS 函数；它们流进对象槽、
  * 元组、join 等 Abs 结构时不能裸存——下游（bridge/leq/join）读 `.shape`。
  * 参数名无法从运行时函数恢复（用 fn.length → argN，与 analyzer 的
  * extractParamNames 回退口径一致）；带真实参数名走 $fnVal（transpile 侧）。
@@ -74,7 +74,7 @@ export function asAbsVal(v: unknown): Abs {
 
 /**
  * 函数调用边界：callee 的 loop/early-return 不得冒泡成 caller 结果。
- * 每个 B 路径调用帧独立 ALS；NudoReturn 收成该调用的返回值。
+ * 每个 求值引擎调用帧独立 ALS；NudoReturn 收成该调用的返回值。
  */
 export function callAtFunctionBoundary<T>(body: () => T): T {
   return runWithLoopExits(() => {
@@ -108,7 +108,7 @@ export function $fnVal(
 /**
  * 宿主 this → Abs：函数体 prologue 用它承接 call/apply/bind 传入的 thisArg。
  * Abs 原样返回；宿主 undefined（普通调用/call 缺 thisArg）→ $lit(undefined)。
- * B 路径产物是 new Function 拼接（sloppy），裸调用的宿主 this 泄漏为
+ * 求值引擎产物是 new Function 拼接（sloppy），裸调用的宿主 this 泄漏为
  * globalThis——归一到 $lit(undefined)（strict 模块语义下的 this）。
  */
 export function $rawThis(v: unknown): Abs {
@@ -338,7 +338,7 @@ export function $tryReleaseSoftOut(): void {
 // 循环信号（NudoReturn / NudoLoopSignal）
 // --- early return from loop bodies (C2.1) ---
 
-/** B 路径「函数提前 return」信号（区别于 throw） */
+/** 求值引擎「函数提前 return」信号（区别于 throw） */
 export class NudoReturn extends Error {
   readonly absValue: Abs;
   constructor(absValue: Abs) {

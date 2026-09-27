@@ -1,6 +1,6 @@
 ---
 slug: /glossary
-description: 术语表 — Abs（名称与四元组）、conf 分档、B-path、fail-closed、any vs unknown、L1/L2、契约、调用点。
+description: 术语表 — Abs（名称与四元组）、conf 分档、evaluator、fail-closed、any vs unknown、L1/L2、契约、调用点。
 ---
 
 # 术语表
@@ -52,8 +52,8 @@ description: 术语表 — Abs（名称与四元组）、conf 分档、B-path、
 
 | 术语 | 含义 |
 |------|---------|
-| **B-path** | 唯一生产求值引擎：**转译**目标为代数调用（`$add`、`$fork`、…），再以 **`new Function`** 在 Abs 上执行。名称来自实现 `bpath-run`；旧的 AST 遍历解释器已移除。 |
-| **fail-closed（失败即封闭）** | B 无法处理或求值失败时，报告**无信息**（`unknown` / 空导出），而不是猜测或回落到另一套求值器。Pred 证不出、缓存键截断时同理。 |
+| **evaluator** | 唯一生产求值引擎：**转译**目标为代数调用（`$add`、`$fork`、…），再以 **`new Function`** 在 Abs 上执行。 |
+| **fail-closed（失败即封闭）** | 不可求值或求值失败时，报告**无信息**（`unknown` / 空导出），而不是猜测或回落到另一套求值器。Pred 证不出、缓存键截断时同理。 |
 | **abstract interpretation（抽象解释）** | Nudo 的技术基础：在抽象值上执行，而不是用具体样例（测试）或纯 AST 分析（经典类型检查器）。 |
 | **leqAbs** | Abs 上的结构性「不更缺信息」比较，用于部分赋值形状。 |
 | **Pred 蕴含** | L1 门禁：实际 Abs 是否蕴含契约 Pred？证明器有界（线性 / 等式片段）；否则 fail-closed。 |

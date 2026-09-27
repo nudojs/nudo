@@ -75,7 +75,7 @@ import {
   findFnLoc,
   formatSigCached,
 } from "./check-signatures.ts";
-import { collectEntryMayThrows, bAnalyzeOpts } from "./check-may-throw.ts";
+import { collectEntryMayThrows, evalAnalyzeOpts } from "./check-may-throw.ts";
 import { structuralAssignIssues } from "./check-assign.ts";
 import { scanCaseInconsistency } from "./check-case-scan.ts";
 import {
@@ -83,7 +83,7 @@ import {
   callTranspiledExportFull,
   bindingsOf,
 } from "./exec/run.ts";
-import { setBAssignCollector, setBCallCollector, type BCallRecord } from "./exec/calls.ts";
+import { setEvalAssignCollector, setEvalCallCollector, type EvalCallRecord } from "./exec/calls.ts";
 import {
   filterGateThrows,
   mayThrowEffectsToAbs,
@@ -281,7 +281,7 @@ function checkSourceInner(
   const ignoreThrows = opts.ignoreThrows;
   // T10a：generated 事实快照的 drift 候选（每函数级，统一在拿到 varAbs 后判定）
   const driftCandidates: DriftCandidate[] = [];
-  // 返回后置：符号返回（body  widen）之外，B 执行态调用点 result 也要对账
+  // 返回后置：符号返回（body  widen）之外，eval 执行态调用点 result 也要对账
   // （循环累加等 body 面常被 widen 成 number，调用点 $arr 具体元组却能精确）
   const returnContracts = new Map<string, { display: string; constraint: NudoConstraint }>();
   /** 已对 return 后置报过违例的函数——调用点对账跳过，避免同文双计 */
@@ -681,22 +681,22 @@ function checkSourceInner(
 
   // 一次执行态求值：结构赋值记录 + 顶层绑定表（scanLiteralCalls 实参
   // 解析用）+ 执行态调用记录（T10a drift 的今日域证据，与 emit 同源）。
-  // B-path 优先（迁移件 2：$recordBinding/$assignRecord 插桩 + $callNamed
-  // BCallRecord）；失败 fail-closed。
+  // evaluator 优先（迁移件 2：$recordBinding/$assignRecord 插桩 + $callNamed
+  // EvalCallRecord）；失败 fail-closed。
   const records: AbsAssignRecord[] = [];
   const varAbs = new Map<string, Abs>();
   const callRecords: AbsCallRecord[] = [];
-  // fail-closed：记录通道唯一源 = B（BCallRecord/$assignRecord）
-  const bCalls: BCallRecord[] = [];
-  const prevAssign = setBAssignCollector((r) => records.push(r));
-  const prevCall = setBCallCollector((r) => bCalls.push(r));
-  let bBindings: Map<string, unknown> | undefined;
-  const bAnalyze = bAnalyzeOpts(opts);
+  // fail-closed：记录通道唯一源 = B（EvalCallRecord/$assignRecord）
+  const bCalls: EvalCallRecord[] = [];
+  const prevAssign = setEvalAssignCollector((r) => records.push(r));
+  const prevCall = setEvalCallCollector((r) => bCalls.push(r));
+  let evalBindings: Map<string, unknown> | undefined;
+  const evalAnalyze = evalAnalyzeOpts(opts);
   try {
-    const bRun = tryRunTranspiled(source, bAnalyze);
-    bBindings = bRun ? bindingsOf(bRun) : undefined;
-    if (bBindings) {
-      for (const [k, v] of bBindings) {
+    const evalRun = tryRunTranspiled(source, evalAnalyze);
+    evalBindings = evalRun ? bindingsOf(evalRun) : undefined;
+    if (evalBindings) {
+      for (const [k, v] of evalBindings) {
         if (v && typeof v === "object" && "shape" in (v as object) && "conf" in (v as object)) {
           varAbs.set(k, v as Abs);
         }
@@ -713,12 +713,12 @@ function checkSourceInner(
   } catch {
     /* B 失败 fail-closed（无 Abs 兜底） */
   } finally {
-    setBAssignCollector(prevAssign);
-    setBCallCollector(prevCall);
+    setEvalAssignCollector(prevAssign);
+    setEvalCallCollector(prevCall);
   }
-  // fail-closed：B 绑定表缺失（B-incapable 文件）→ 无绑定表；
+  // fail-closed：B 绑定表缺失（eval-incapable 文件）→ 无绑定表；
   // 「部分覆盖」改为「显式无信息」，与 unknown=引擎债 原则一致
-  void bBindings;
+  void evalBindings;
 
   const callIssues = canSkipLiteralCallScan(source, file)
     ? []
@@ -735,7 +735,7 @@ function checkSourceInner(
       });
   issues.push(...callIssues);
 
-  // 调用点 result 对 return 后置再对账（B 执行态精确值 ⊭ 声明）。
+  // 调用点 result 对 return 后置再对账（eval 执行态精确值 ⊭ 声明）。
   // 符号返回常被循环/抽象参数 widen——这里补上「有具体调用点」时的确定违例。
   // 入口符号面已报过的函数不再按调用点重复报（同码同文双计）。
   if (returnContracts.size > 0 && callRecords.length > 0) {
@@ -770,7 +770,7 @@ function checkSourceInner(
         return (fnName, args) => {
           try {
             if (!driftInit) {
-              driftRun = tryRunTranspiled(source, bAnalyze);
+              driftRun = tryRunTranspiled(source, evalAnalyze);
               driftInit = true;
             }
             if (!driftRun || !(fnName in driftRun)) return undefined;

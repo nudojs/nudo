@@ -1,5 +1,5 @@
 /**
- * B-path 成员复合赋值 / 自增自减 / 解构赋值差分回归。
+ * evaluator 成员复合赋值 / 自增自减 / 解构赋值差分回归。
  * 回归背景：成员目标上的 += / ++ / -- 不读-改-写（o.n += 5 折 11、o.n++ 落 undefined、
  * a.length += 1 不生效）；数组解构赋值完全不求值；右侧引用旧值的求值顺序错。
  * 每条断言与 Node 真实执行结果对齐。
@@ -32,7 +32,7 @@ const runtimeUrl = pathToFileURL(
 ).href;
 
 async function execTranspiled(source: string, exportName: string) {
-  const dir = mkdtempSync(join(tmpdir(), "nudo-bpath-memupd-"));
+  const dir = mkdtempSync(join(tmpdir(), "nudo-eval-memupd-"));
   dirs.push(dir);
   const js = transpile(source, { runtimeImport: runtimeUrl });
   const modPath = join(dir, "mod.mjs");
@@ -41,7 +41,7 @@ async function execTranspiled(source: string, exportName: string) {
   return mod[exportName] as (...args: unknown[]) => Abs;
 }
 
-describe("B-path member compound assignment", () => {
+describe("evaluator member compound assignment", () => {
   it("o.n += 5 reads current slot (1 + 5 = 6)", async () => {
     const run = await execTranspiled(
       `export function run(o) { o.n += 5; return o.n; }`,
@@ -90,7 +90,7 @@ describe("B-path member compound assignment", () => {
   });
 });
 
-describe("B-path compound assignment bitwise/shift/pow operators", () => {
+describe("evaluator compound assignment bitwise/shift/pow operators", () => {
   // COMPOUND_OPS 表只登记 += -= *= /= %=——**= <<= >>= >>>= &= |= ^=
   // 落「x = rhs」路径（x >>= 1 折 1、x **= 3 折 3），读-改-写整体丢失。
   it("identifier targets fold the operator, not the rhs", async () => {
@@ -136,7 +136,7 @@ describe("B-path compound assignment bitwise/shift/pow operators", () => {
   });
 });
 
-describe("B-path member update expressions", () => {
+describe("evaluator member update expressions", () => {
   it("o.n++ returns old value and writes back", async () => {
     const run = await execTranspiled(
       `export function run(o) { const r = o.n++; return r * 10 + o.n; }`,
@@ -217,7 +217,7 @@ describe("runTranspiled compound assignment bitwise/shift/pow parity", () => {
   });
 });
 
-describe("B-path destructuring assignment", () => {
+describe("evaluator destructuring assignment", () => {
   it("[a, b] = [b, a] swaps", async () => {
     const run = await execTranspiled(
       `export function run() {
@@ -255,7 +255,7 @@ describe("B-path destructuring assignment", () => {
   });
 });
 
-describe("B-path assignment evaluation order", () => {
+describe("evaluator assignment evaluation order", () => {
   it("a = (a = 10) + a reads updated value (10 + 10 = 20)", async () => {
     const run = await execTranspiled(
       `export function run() {

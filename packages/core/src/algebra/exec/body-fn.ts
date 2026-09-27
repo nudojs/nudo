@@ -3,7 +3,7 @@
  * 调用时直接执行（替代 evalNode 解释）。语义门：
  * - 自由名从 impl.env 注入（vars/fns）；全局名留给 new Function 全局作用域
  *   （未定义名 ReferenceError = 原生奇偶，不再整体回落解释）；
- * - phi 由调用方 gate（phi 线程收窄是解释语义，B 执行不支持）。
+ * - phi 由调用方 gate（phi 线程收窄是解释语义，eval 执行不支持）。
  * 按 impl 对象 WeakMap memo（body AST 身份稳定）。
  * 编译失败 → undefined（调用方回落非 body 面 / fail-closed）。
  */
@@ -12,7 +12,7 @@ import { absFunction, type AbsFnImpl } from "../abs-fn.ts";
 import type { Node } from "@babel/types";
 import { transpileBodyNode, runtimeImportOf } from "./transpile.ts";
 import { rtAllBindings } from "./rt.ts";
-import { noteBPathFallback } from "./run.ts";
+import { noteEvalFallback } from "./run.ts";
 
 const RUNTIME_IMPORT_RE = /^import\s*\{[^}]+\}\s*from\s*"[^"]+";\s*$/m;
 
@@ -125,7 +125,7 @@ export function compiledBodyOf(impl: AbsFnImpl): ((args: Abs[]) => Abs) | undefi
   const free = freeIdentifiers(impl.body, impl.params);
   // 闭包注入面：env 可解析名注入（vars → Abs；fns → absFunction 包装）；
   // 自名（env 条目指向同一 body）经 per-body 缓存的同一 Abs 注入——递归
-  // 走 $callNamed（B 调用预算：cycle 键按对象身份，同一 Abs → 立即截断，
+  // 走 $callNamed（eval 调用预算：cycle 键按对象身份，同一 Abs → 立即截断，
   // 深度 64 兜底）。其余自由名（Math/JSON 等全局）不注入——编译产物经
   // new Function 全局作用域解析，与 B run 同语义（未定义名 ReferenceError
   // = 原生奇偶；不再整体回落）。
@@ -173,7 +173,7 @@ export function compiledBodyOf(impl: AbsFnImpl): ((args: Abs[]) => Abs) | undefi
     compiledByImpl.set(implKey, runner);
   } catch (e) {
     // 编译面回落：unsupported（body 含未 lowering 构造）/ internal 都记录
-    noteBPathFallback(e);
+    noteEvalFallback(e);
     return undefined;
   }
   return runner;

@@ -2,7 +2,7 @@
  * 控制流：loop/try 退出栈、$fork/$for/$while、$throw。
  */
 import { AsyncLocalStorage } from "node:async_hooks";
-import { bumpBForkBudget } from "../../call-budget.ts";
+import { bumpEvalForkBudget } from "../../call-budget.ts";
 import type { Abs } from "../../abs.ts";
 import { abs, bool, boolLit, confJoin, litValue, numLit, unknown, type Confidence } from "../../abs.ts";
 import { lit } from "../../term.ts";
@@ -105,8 +105,8 @@ export function runForkArm(arm: () => Abs, exits: Abs[] | undefined): ForkArm {
 export function settleForkArms(a: ForkArm, b: ForkArm, exits: Abs[] | undefined): Abs {
   // 避开 filter 数组分配：两臂直判
   const aThrow = a.kind === "throw";
-  const bThrow = b.kind === "throw";
-  if (aThrow && bThrow) {
+  const evalThrow = b.kind === "throw";
+  if (aThrow && evalThrow) {
     // 全 throw：兄弟臂已探索完，再抛 join（调用边界收成 throws）
     throw new NudoThrow(joinAbs(a.v, b.v));
   }
@@ -116,7 +116,7 @@ export function settleForkArms(a: ForkArm, b: ForkArm, exits: Abs[] | undefined)
   if (first.kind === "ret" && second.kind === "ret") {
     throw new NudoReturn(joinAbs(first.v, second.v));
   }
-  if (aThrow !== bThrow) {
+  if (aThrow !== evalThrow) {
     // 恰一臂 throw：只携带非 throw 臂
     if (first.kind === "ret") {
       if (!exits) throw new NudoReturn(first.v);
@@ -167,8 +167,8 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
   // 缺参/宿主裸值：先收成 Abs，否则 litTruth 读 .shape 炸掉、被 executor catch 成 unknown
   const testAbs = asAbsVal(test);
   // 分支展开上限（递归×循环爆炸阀）：超限放弃分支 = unknown（最保守）。
-  // 截断已由 bumpBForkBudget → noteBForkTruncation 上报（nudo:fork-truncated）
-  if (!bumpBForkBudget()) return unknown;
+  // 截断已由 bumpEvalForkBudget → noteEvalForkTruncation 上报（nudo:fork-truncated）
+  if (!bumpEvalForkBudget()) return unknown;
   // Φ-native：测试判定已由 cmp 消费 currentExecPhi（$gt 等传模块级 currentExecPhi()）；
   // 此处把 Φ∧test（真臂）/ Φ∧¬test（假臂）压进臂作用域——嵌套/兄弟分支的
   // 路径事实沿臂累积（外层已证 x>y ⇒ 内层同测试折叠）。

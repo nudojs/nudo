@@ -1,8 +1,8 @@
 /**
  * `@nudojs/service/evaluator` — host API surface（宿主接入面），不是生产求值引擎。
  *
- * 生产求值是 Abs-native B-path：`evalAbsModuleGraph` + `runTranspiled`
- * （见 `@nudojs/service/analysis` / `abs-modules-graph.ts` / `bpath-run.ts`）。
+ * 生产求值是 Abs-native evaluator：`evalAbsModuleGraph` + `runTranspiled`
+ * （见 `@nudojs/service/analysis` / `abs-modules-graph.ts` / `eval-run.ts`）。
  * TypeValue AST 解释器（evaluator.ts）已从生产路径删除；本子路径只保留
  * 宿主仍需要的 env/config/prototype 表与 CallRecord。
  */

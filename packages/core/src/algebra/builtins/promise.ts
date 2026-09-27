@@ -106,7 +106,7 @@ export function evalPromiseCtor(args: Abs[]): Abs {
     return undefAbs();
   };
 
-  // B 路径 $callNamed("r", r, …) 对 JS 函数直调；Abs fn 走 applyCallbackValue/$call
+  // 求值引擎 $callNamed("r", r, …) 对 JS 函数直调；Abs fn 走 applyCallbackValue/$call
   // 必须包成 Abs fn：裸 JS 函数当实参时 $call 认不出 apply，fork 臂里 r(1) 会掉成 unknown
   const resolveAbs = absFunction(["value"], {
     body: noBody,

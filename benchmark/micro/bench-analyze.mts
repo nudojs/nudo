@@ -15,7 +15,7 @@ function stats(xs: number[]) {
 }
 
 async function main() {
-  const { analyzeFile, clearBPathCache, clearAnalysisFileCache } = await import(
+  const { analyzeFile, clearEvalCache, clearAnalysisFileCache } = await import(
     join(ROOT, "packages/service/src/index.ts")
   );
 
@@ -29,7 +29,7 @@ async function main() {
     const path = join(ROOT, p);
     const src = readFileSync(path, "utf-8");
     clearAnalysisFileCache();
-    clearBPathCache();
+    clearEvalCache();
     const t0 = performance.now();
     analyzeFile(path, src);
     const cold = performance.now() - t0;
@@ -48,7 +48,7 @@ async function main() {
     const path = join(ROOT, "node_modules/commander/lib/command.js");
     const src = readFileSync(path, "utf-8");
     clearAnalysisFileCache();
-    clearBPathCache();
+    clearEvalCache();
     const t0 = performance.now();
     try {
       analyzeFile(path, src);

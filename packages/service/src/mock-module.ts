@@ -11,7 +11,7 @@ import { extractFileDirectives, parse, type FileDirective } from "@nudojs/parser
 import type { AbsModuleExports } from "@nudojs/core";
 import { obj as absObj, type Abs } from "@nudojs/core";
 import type { LoadModule } from "./load-module.ts";
-import { bPathExportsToModuleExports } from "./abs-modules-graph.ts";
+import { evalExportsToModuleExports } from "./abs-modules-graph.ts";
 import { evalMockFileWithDeps } from "./mock-file.ts";
 import type { FromMockError } from "./mock-abs.ts";
 
@@ -36,7 +36,7 @@ function loadMockModuleExports(
         : evaled.error,
     };
   }
-  const exports = bPathExportsToModuleExports(evaled.run, parse(evaled.source), `mock-module:${fromPath}`);
+  const exports = evalExportsToModuleExports(evaled.run, parse(evaled.source), `mock-module:${fromPath}`);
   // CJS/文档示例友好：仅有 named 时合成 default 命名空间，支持
   // `import axios from "axios"` 后 `axios.get(...)`。
   if (exports.default === undefined && Object.keys(exports.named).length > 0) {

@@ -12,7 +12,7 @@ Day 0 观察：`pnpm run test:cli <file>`（逐 case）· `pnpm run check <file>
 | [`c-reduce-sum.js`](./c-reduce-sum.js) | reduce 累加器单 pass：字面量逐元素累加 → `15`；符号路径对 element 一次应用 → `number` |
 | [`d-mixin-meet.js`](./d-mixin-meet.js) | spread 形状 meet：右值覆盖同槽，其余并集，调用点保留字面量 |
 | [`e-index-proj.js`](./e-index-proj.js) | 索引投影：字面量 key 精确取槽（`1` / `"x"` / `"/usr/bin"`）；动态 key → 保守并集所有槽 |
-| [`f-async-eff.js`](./f-async-eff.js) | async / Promise eff × `@nudo:mock` 替换内置 fetch（mock 必填：无 mock 时 B 路径泄漏真实 fetch，`ERR_INVALID_URL` 崩溃） |
+| [`f-async-eff.js`](./f-async-eff.js) | async / Promise eff × `@nudo:mock` 替换内置 fetch（mock 必填：无 mock 时 求值引擎泄漏真实 fetch，`ERR_INVALID_URL` 崩溃） |
 | [`g-narrow-subtract.js`](./g-narrow-subtract.js) | 守卫窄化：调用点逐位收窄（`3 \| 2 \| -1`） |
 | [`h-array-boundary.js`](./h-array-boundary.js) | 数组方法精度边界：`reduce` / `forEach` 副作用 / `some` 均精确（`15` / `15` / `boolean`） |
 | [`i-map-set.js`](./i-map-set.js) | Map / Set 字面量条目：`m.set`→`m.get` 精确回查；Set 字面量元素去重后 for-of |

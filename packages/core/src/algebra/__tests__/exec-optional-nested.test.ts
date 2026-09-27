@@ -10,7 +10,7 @@ import {
   transpile,
 } from "@nudojs/core";
 
-describe("B-path optional chaining", () => {
+describe("evaluator optional chaining", () => {
   it("a?.b short-circuits on nullish", () => {
     const src = `
 export function go(o) {
@@ -45,7 +45,7 @@ export function go(o) {
   });
 });
 
-describe("B-path nested destructure", () => {
+describe("evaluator nested destructure", () => {
   it("nested object pattern", () => {
     const src = `
 export function go() {

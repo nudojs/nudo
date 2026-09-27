@@ -8,7 +8,7 @@ Nudo 通过*执行*你的代码来推断类型，所以推断质量正好等于�
 
 ## 信任边界
 
-推断**就是**执行：`nudo check` / `nudo test` 等价于在本机运行目标代码（B-path 转译 + `new Function`）。
+推断**就是**执行：`nudo check` / `nudo test` 等价于在本机运行目标代码（evaluator 转译 + `new Function`）。
 
 - **不要**对不可信代码运行 nudo（陌生 npm 包、用户提交、未经审查的 PR）。
 - CI 上只分析**可信仓库**。
