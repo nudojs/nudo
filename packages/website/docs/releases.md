@@ -11,183 +11,128 @@ This page keeps each package’s **current** notes only. Full history: [Full rel
 
 | Package | Current version |
 |----------|-----------------|
-| `@nudojs/core` | 1.1.3 |
-| `@nudojs/service` | 1.1.3 |
-| `nudojs (CLI)` | 1.0.3 |
-| `@nudojs/parser` | 1.1.3 |
-| `@nudojs/lsp` | 1.1.3 |
-| `@nudojs/env` | 0.4.5 |
-| `@nudojs/harvester` | 0.2.11 |
-| `vite-plugin-nudo` | 0.4.6 |
-| `nudo-vscode` | 0.3.10 |
+| `@nudojs/core` | 1.1.4 |
+| `@nudojs/service` | 1.1.4 |
+| `nudojs (CLI)` | 1.0.4 |
+| `@nudojs/parser` | 1.1.4 |
+| `@nudojs/lsp` | 1.1.4 |
+| `@nudojs/env` | 0.4.6 |
+| `@nudojs/harvester` | 0.2.12 |
+| `vite-plugin-nudo` | 0.4.7 |
+| `nudo-vscode` | 0.3.11 |
 
 **Jump to package:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.1.3 {#pkg-core}
+## @nudojs/core 1.1.4 {#pkg-core}
 
-## 1.1.3
-
-### Patch Changes
-
-- 3bf9997: fix(core): JS semantics soundness — ToString args, compare undefined, NaN identity, JSON.stringify
-  
-  B-path Abs folding corrections so concrete results match native JS:
-  
-  - string/parse methods (`startsWith`/`endsWith`/`includes`/`split`/`replace`/
-    `indexOf`/`parseInt`/`parseFloat`) honor ToString and missing-arg defaults;
-    `split` keeps the ES special case that an **undefined** separator returns
-    `[ToString(O)]` without splitting
-  - relational compare of `lit(undefined)` folds via ToNumber (all relations false)
-  - same-var `===` is not exact `true` when the value may be NaN
-  - `JSON.stringify` of top-level function/symbol returns the JS `undefined` value
-  - NaN literal identity uses SameValue (assignment/`leq`), not `===`
-  - drop unsound `x*0=0` / `x+0=x` algebra identities (NaN/`-0`/string domain)
-  - `n % 0` folds to NaN; `x % k` bounds only for finite dividends
-  - `0n` is falsy; `Number.is*` fold non-number lits to false; global `isNaN` coerces
-  - string index methods (`charAt`/`slice`/…) honor ToNumber and default args
-  - unary minus and `parseInt`/`parseFloat` honor ToNumber/ToInt32
-  - Math.* folds ToNumber lits (own numeric methods only — no `constructor`/`toString`)
-  - tuple index reads use canonical array index (`a["0"] === a[0]`)
-  - call-spread placeholder is `unknown`, not `undefined` lit
-  
-  `fix(parser)`: directive scanners (`splitTopLevelArgs` / colon / arrow / balanced
-  parens) respect string literals.
-  
-  Review follow-ups folded in: `split(undefined)` special case, `indexOf` returns
-  number shape on abstract receivers, Math method allowlist.
-
-Older versions (13) → [Full release history](./releases-history.md#pkg-core)
-
-## @nudojs/service 1.1.3 {#pkg-service}
-
-## 1.1.3
+## 1.1.4
 
 ### Patch Changes
 
-- 43fb345: fix(service): honor `package.json#nudo.check.profile` in `checkConfig` (LSP parity)
+- 634932f: fix(core): Array.prototype method reads no longer hijack `$invoke`
   
-  The CLI resolves `nudo.check.profile` (`adoption` → L2 `warning`, `strict` →
-  `error`) but the service `checkConfig` — which the LSP uses for
-  `nudo-check` diagnostics — only read `nudo.check.entryThrows`. In a project
-  with `"nudo": { "check": { "profile": "adoption" } }`, `nudo check` printed
-  `nudo:entry-may-throw` as a **warning** while the IDE showed it as an
-  **error**.
+  `$get` returned `absFunction([], { body: noBody })` for Array.prototype
+  methods (`concat`/`sort`/…). `$invoke` treated that hollow impl as an object
+  method and `$call`ed it, folding `a.concat(b)` to exact `undefined` and
+  `arr.sort()` to `never`/TypeError — false precision vs the previous
+  conservative `unknown` (benchmark gate: `array-03` / `complex-01` regressed
+  `unknown → mismatch`).
   
-  `checkConfig` now applies the same preset, with the same precedence as the CLI
-  (`entryThrows` → `profile` → default `error`), and `NudoConfig["check"]`
-  gains the `profile` field.
-- Updated dependencies [3bf9997]
-  - @nudojs/core@1.1.3
-  - @nudojs/parser@1.1.3
-  - @nudojs/env@0.4.5
-  - @nudojs/harvester@0.2.11
+  First-class reads still expose a function-shaped Abs (`typeof a.push ===
+  "function"`), but without a callable impl so method calls fall through to
+  `invokeArrMethod` / conservative `unknown`.
 
-Older versions (15) → [Full release history](./releases-history.md#pkg-service)
+Older versions (14) → [Full release history](./releases-history.md#pkg-core)
 
-## nudojs (CLI) 1.0.3 {#pkg-nudojs}
+## @nudojs/service 1.1.4 {#pkg-service}
 
-## 1.0.3
+## 1.1.4
 
 ### Patch Changes
 
-- Updated dependencies [3bf9997]
-- Updated dependencies [43fb345]
-  - @nudojs/core@1.1.3
-  - @nudojs/parser@1.1.3
-  - @nudojs/service@1.1.3
-  - @nudojs/harvester@0.2.11
+- Updated dependencies [634932f]
+  - @nudojs/core@1.1.4
+  - @nudojs/env@0.4.6
+  - @nudojs/harvester@0.2.12
+  - @nudojs/parser@1.1.4
 
-Older versions (12) → [Full release history](./releases-history.md#pkg-nudojs)
+Older versions (16) → [Full release history](./releases-history.md#pkg-service)
 
-## @nudojs/parser 1.1.3 {#pkg-parser}
+## nudojs (CLI) 1.0.4 {#pkg-nudojs}
 
-## 1.1.3
-
-### Patch Changes
-
-- 3bf9997: fix(core): JS semantics soundness — ToString args, compare undefined, NaN identity, JSON.stringify
-  
-  B-path Abs folding corrections so concrete results match native JS:
-  
-  - string/parse methods (`startsWith`/`endsWith`/`includes`/`split`/`replace`/
-    `indexOf`/`parseInt`/`parseFloat`) honor ToString and missing-arg defaults;
-    `split` keeps the ES special case that an **undefined** separator returns
-    `[ToString(O)]` without splitting
-  - relational compare of `lit(undefined)` folds via ToNumber (all relations false)
-  - same-var `===` is not exact `true` when the value may be NaN
-  - `JSON.stringify` of top-level function/symbol returns the JS `undefined` value
-  - NaN literal identity uses SameValue (assignment/`leq`), not `===`
-  - drop unsound `x*0=0` / `x+0=x` algebra identities (NaN/`-0`/string domain)
-  - `n % 0` folds to NaN; `x % k` bounds only for finite dividends
-  - `0n` is falsy; `Number.is*` fold non-number lits to false; global `isNaN` coerces
-  - string index methods (`charAt`/`slice`/…) honor ToNumber and default args
-  - unary minus and `parseInt`/`parseFloat` honor ToNumber/ToInt32
-  - Math.* folds ToNumber lits (own numeric methods only — no `constructor`/`toString`)
-  - tuple index reads use canonical array index (`a["0"] === a[0]`)
-  - call-spread placeholder is `unknown`, not `undefined` lit
-  
-  `fix(parser)`: directive scanners (`splitTopLevelArgs` / colon / arrow / balanced
-  parens) respect string literals.
-  
-  Review follow-ups folded in: `split(undefined)` special case, `indexOf` returns
-  number shape on abstract receivers, Math method allowlist.
-- Updated dependencies [3bf9997]
-  - @nudojs/core@1.1.3
-
-Older versions (13) → [Full release history](./releases-history.md#pkg-parser)
-
-## @nudojs/lsp 1.1.3 {#pkg-lsp}
-
-## 1.1.3
+## 1.0.4
 
 ### Patch Changes
 
-- Updated dependencies [3bf9997]
-- Updated dependencies [43fb345]
-  - @nudojs/core@1.1.3
-  - @nudojs/parser@1.1.3
-  - @nudojs/service@1.1.3
+- Updated dependencies [634932f]
+  - @nudojs/core@1.1.4
+  - @nudojs/harvester@0.2.12
+  - @nudojs/parser@1.1.4
+  - @nudojs/service@1.1.4
 
-Older versions (16) → [Full release history](./releases-history.md#pkg-lsp)
+Older versions (13) → [Full release history](./releases-history.md#pkg-nudojs)
 
-## @nudojs/env 0.4.5 {#pkg-env}
+## @nudojs/parser 1.1.4 {#pkg-parser}
 
-## 0.4.5
-
-### Patch Changes
-
-- Updated dependencies [3bf9997]
-  - @nudojs/core@1.1.3
-
-Older versions (12) → [Full release history](./releases-history.md#pkg-env)
-
-## @nudojs/harvester 0.2.11 {#pkg-harvester}
-
-## 0.2.11
+## 1.1.4
 
 ### Patch Changes
 
-- Updated dependencies [3bf9997]
-  - @nudojs/core@1.1.3
-  - @nudojs/parser@1.1.3
-  - @nudojs/env@0.4.5
+- Updated dependencies [634932f]
+  - @nudojs/core@1.1.4
 
-Older versions (12) → [Full release history](./releases-history.md#pkg-harvester)
+Older versions (14) → [Full release history](./releases-history.md#pkg-parser)
 
-## vite-plugin-nudo 0.4.6 {#pkg-vite-plugin}
+## @nudojs/lsp 1.1.4 {#pkg-lsp}
+
+## 1.1.4
+
+### Patch Changes
+
+- Updated dependencies [634932f]
+  - @nudojs/core@1.1.4
+  - @nudojs/parser@1.1.4
+  - @nudojs/service@1.1.4
+
+Older versions (17) → [Full release history](./releases-history.md#pkg-lsp)
+
+## @nudojs/env 0.4.6 {#pkg-env}
 
 ## 0.4.6
 
 ### Patch Changes
 
-- Updated dependencies [3bf9997]
-- Updated dependencies [43fb345]
-  - @nudojs/core@1.1.3
-  - @nudojs/service@1.1.3
+- Updated dependencies [634932f]
+  - @nudojs/core@1.1.4
 
-Older versions (15) → [Full release history](./releases-history.md#pkg-vite-plugin)
+Older versions (13) → [Full release history](./releases-history.md#pkg-env)
 
-## nudo-vscode 0.3.10 {#pkg-vscode}
+## @nudojs/harvester 0.2.12 {#pkg-harvester}
+
+## 0.2.12
+
+### Patch Changes
+
+- Updated dependencies [634932f]
+  - @nudojs/core@1.1.4
+  - @nudojs/env@0.4.6
+  - @nudojs/parser@1.1.4
+
+Older versions (13) → [Full release history](./releases-history.md#pkg-harvester)
+
+## vite-plugin-nudo 0.4.7 {#pkg-vite-plugin}
+
+## 0.4.7
+
+### Patch Changes
+
+- Updated dependencies [634932f]
+  - @nudojs/core@1.1.4
+  - @nudojs/service@1.1.4
+
+Older versions (16) → [Full release history](./releases-history.md#pkg-vite-plugin)
+
+## nudo-vscode 0.3.11 {#pkg-vscode}
 
 ## Unreleased
 

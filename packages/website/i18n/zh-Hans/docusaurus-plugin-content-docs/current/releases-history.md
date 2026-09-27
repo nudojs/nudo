@@ -11,19 +11,39 @@ slug: /releases-history
 
 | 包 | 当前版本 |
 |----|----------|
-| `@nudojs/core` | 1.1.3 |
-| `@nudojs/service` | 1.1.3 |
-| `nudojs (CLI)` | 1.0.3 |
-| `@nudojs/parser` | 1.1.3 |
-| `@nudojs/lsp` | 1.1.3 |
-| `@nudojs/env` | 0.4.5 |
-| `@nudojs/harvester` | 0.2.11 |
-| `vite-plugin-nudo` | 0.4.6 |
-| `nudo-vscode` | 0.3.10 |
+| `@nudojs/core` | 1.1.4 |
+| `@nudojs/service` | 1.1.4 |
+| `nudojs (CLI)` | 1.0.4 |
+| `@nudojs/parser` | 1.1.4 |
+| `@nudojs/lsp` | 1.1.4 |
+| `@nudojs/env` | 0.4.6 |
+| `@nudojs/harvester` | 0.2.12 |
+| `vite-plugin-nudo` | 0.4.7 |
+| `nudo-vscode` | 0.3.11 |
 
 **按包跳转:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.1.3 {#pkg-core}
+## @nudojs/core 1.1.4 {#pkg-core}
+
+## 1.1.4
+
+### Patch Changes
+
+- 634932f: fix(core): Array.prototype method reads no longer hijack `$invoke`
+  
+  `$get` returned `absFunction([], { body: noBody })` for Array.prototype
+  methods (`concat`/`sort`/…). `$invoke` treated that hollow impl as an object
+  method and `$call`ed it, folding `a.concat(b)` to exact `undefined` and
+  `arr.sort()` to `never`/TypeError — false precision vs the previous
+  conservative `unknown` (benchmark gate: `array-03` / `complex-01` regressed
+  `unknown → mismatch`).
+  
+  First-class reads still expose a function-shaped Abs (`typeof a.push ===
+  "function"`), but without a callable impl so method calls fall through to
+  `invokeArrMethod` / conservative `unknown`.
+
+<details>
+<summary>历史版本 (14)</summary>
 
 ## 1.1.3
 
@@ -55,9 +75,6 @@ slug: /releases-history
   
   Review follow-ups folded in: `split(undefined)` special case, `indexOf` returns
   number shape on abstract receivers, Math method allowlist.
-
-<details>
-<summary>历史版本 (13)</summary>
 
 ## 1.1.2
 
@@ -395,7 +412,20 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/service 1.1.3 {#pkg-service}
+## @nudojs/service 1.1.4 {#pkg-service}
+
+## 1.1.4
+
+### Patch Changes
+
+- Updated dependencies [634932f]
+  - @nudojs/core@1.1.4
+  - @nudojs/env@0.4.6
+  - @nudojs/harvester@0.2.12
+  - @nudojs/parser@1.1.4
+
+<details>
+<summary>历史版本 (16)</summary>
 
 ## 1.1.3
 
@@ -418,9 +448,6 @@ slug: /releases-history
   - @nudojs/parser@1.1.3
   - @nudojs/env@0.4.5
   - @nudojs/harvester@0.2.11
-
-<details>
-<summary>历史版本 (15)</summary>
 
 ## 1.1.2
 
@@ -822,7 +849,20 @@ slug: /releases-history
 
 </details>
 
-## nudojs (CLI) 1.0.3 {#pkg-nudojs}
+## nudojs (CLI) 1.0.4 {#pkg-nudojs}
+
+## 1.0.4
+
+### Patch Changes
+
+- Updated dependencies [634932f]
+  - @nudojs/core@1.1.4
+  - @nudojs/harvester@0.2.12
+  - @nudojs/parser@1.1.4
+  - @nudojs/service@1.1.4
+
+<details>
+<summary>历史版本 (13)</summary>
 
 ## 1.0.3
 
@@ -834,9 +874,6 @@ slug: /releases-history
   - @nudojs/parser@1.1.3
   - @nudojs/service@1.1.3
   - @nudojs/harvester@0.2.11
-
-<details>
-<summary>历史版本 (12)</summary>
 
 ## 1.0.2
 
@@ -1022,7 +1059,17 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/parser 1.1.3 {#pkg-parser}
+## @nudojs/parser 1.1.4 {#pkg-parser}
+
+## 1.1.4
+
+### Patch Changes
+
+- Updated dependencies [634932f]
+  - @nudojs/core@1.1.4
+
+<details>
+<summary>历史版本 (14)</summary>
 
 ## 1.1.3
 
@@ -1056,9 +1103,6 @@ slug: /releases-history
   number shape on abstract receivers, Math method allowlist.
 - Updated dependencies [3bf9997]
   - @nudojs/core@1.1.3
-
-<details>
-<summary>历史版本 (13)</summary>
 
 ## 1.1.2
 
@@ -1232,7 +1276,19 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/lsp 1.1.3 {#pkg-lsp}
+## @nudojs/lsp 1.1.4 {#pkg-lsp}
+
+## 1.1.4
+
+### Patch Changes
+
+- Updated dependencies [634932f]
+  - @nudojs/core@1.1.4
+  - @nudojs/parser@1.1.4
+  - @nudojs/service@1.1.4
+
+<details>
+<summary>历史版本 (17)</summary>
 
 ## 1.1.3
 
@@ -1243,9 +1299,6 @@ slug: /releases-history
   - @nudojs/core@1.1.3
   - @nudojs/parser@1.1.3
   - @nudojs/service@1.1.3
-
-<details>
-<summary>历史版本 (16)</summary>
 
 ## 1.1.2
 
@@ -1605,7 +1658,17 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/env 0.4.5 {#pkg-env}
+## @nudojs/env 0.4.6 {#pkg-env}
+
+## 0.4.6
+
+### Patch Changes
+
+- Updated dependencies [634932f]
+  - @nudojs/core@1.1.4
+
+<details>
+<summary>历史版本 (13)</summary>
 
 ## 0.4.5
 
@@ -1613,9 +1676,6 @@ slug: /releases-history
 
 - Updated dependencies [3bf9997]
   - @nudojs/core@1.1.3
-
-<details>
-<summary>历史版本 (12)</summary>
 
 ## 0.4.4
 
@@ -1764,7 +1824,19 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/harvester 0.2.11 {#pkg-harvester}
+## @nudojs/harvester 0.2.12 {#pkg-harvester}
+
+## 0.2.12
+
+### Patch Changes
+
+- Updated dependencies [634932f]
+  - @nudojs/core@1.1.4
+  - @nudojs/env@0.4.6
+  - @nudojs/parser@1.1.4
+
+<details>
+<summary>历史版本 (13)</summary>
 
 ## 0.2.11
 
@@ -1774,9 +1846,6 @@ slug: /releases-history
   - @nudojs/core@1.1.3
   - @nudojs/parser@1.1.3
   - @nudojs/env@0.4.5
-
-<details>
-<summary>历史版本 (12)</summary>
 
 ## 0.2.10
 
@@ -1919,7 +1988,18 @@ slug: /releases-history
 
 </details>
 
-## vite-plugin-nudo 0.4.6 {#pkg-vite-plugin}
+## vite-plugin-nudo 0.4.7 {#pkg-vite-plugin}
+
+## 0.4.7
+
+### Patch Changes
+
+- Updated dependencies [634932f]
+  - @nudojs/core@1.1.4
+  - @nudojs/service@1.1.4
+
+<details>
+<summary>历史版本 (16)</summary>
 
 ## 0.4.6
 
@@ -1929,9 +2009,6 @@ slug: /releases-history
 - Updated dependencies [43fb345]
   - @nudojs/core@1.1.3
   - @nudojs/service@1.1.3
-
-<details>
-<summary>历史版本 (15)</summary>
 
 ## 0.4.5
 
@@ -2114,7 +2191,7 @@ slug: /releases-history
 
 </details>
 
-## nudo-vscode 0.3.10 {#pkg-vscode}
+## nudo-vscode 0.3.11 {#pkg-vscode}
 
 ## Unreleased
 
