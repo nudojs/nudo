@@ -499,21 +499,16 @@ export function $idx(a: Abs, i: Abs): Abs {
     // 闭 shape 未知 key：已知槽 ∪ undefined（键可能不存在）
     return joinSlotsWithUndef();
   }
-  // 字符串下标：s[i] → 第 i 个字符（字面量精确）
+  // 字符串下标：s[i] → 第 i 个字符（字面量精确）。
+  // 与元组同口径走 canonicalArrayIndex：s["1"] ≡ s[1]；s["foo"]/s[1.5]/s["01"]
+  // 为缺失属性 → undefined（不得 unknown 掩掉）。
   const sv = litValue(a);
   if (typeof sv === "string") {
-    if (typeof iv === "number" && Number.isInteger(iv)) {
-      if (iv >= 0 && iv < sv.length) {
-        return abs(
-          { k: "prim", type: "string" },
-          { op: "lit", value: sv[iv] as unknown as import("../../term.ts").LiteralValue },
-          pTrue,
-          "exact",
-        );
-      }
-      return undef();
-    }
-    return unknown;
+    if (i.term?.op !== "lit") return unknown;
+    const idx = canonicalArrayIndex(i.term.value);
+    if (idx === undefined) return undef();
+    if (idx < sv.length) return $lit(sv[idx]!);
+    return undef();
   }
   return unknown;
 }
@@ -1155,6 +1150,18 @@ export function $get(
     const els = o.shape.elements;
     if (idx !== undefined) return idx < els.length ? els[idx]! : undef();
     if (!isPossiblyProtoMemberKey(key)) return undef();
+  }
+  // 字符串下标字符串键（s["1"] ≡ s[1]）；确定非下标自有键 → undefined
+  // （与元组同口径 canonicalArrayIndex；length/原型方法继续走下方投影）
+  if (o.shape.k === "prim" && o.shape.type === "string") {
+    const idx = canonicalArrayIndex(key);
+    const sv = litValue(o);
+    if (idx !== undefined) {
+      if (typeof sv === "string") return idx < sv.length ? $lit(sv[idx]!) : undef();
+      return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
+    }
+    if (key === "length" && typeof sv === "string") return numLit(sv.length);
+    if (!isPossiblyProtoMemberKey(key) && key !== "length") return undef();
   }
   // 元组/数组/prim 上的 Object.prototype / Array.prototype 方法读取
   if (
