@@ -84,6 +84,12 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
     return concatString(a, b);
   }
 
+  // 数组 ToPrimitive = join(",")，结果恒 string：`[] + []`→""、`[1] + 1`→"11"
+  //（不得落进 number|string 并集——数组侧不会产出 number）
+  if (a.shape.k === "tuple" || a.shape.k === "arr" || b.shape.k === "tuple" || b.shape.k === "arr") {
+    return concatString(a, b);
+  }
+
   // 双方 number prim：数值加法 + 约束传播
   if (isNumPrim(a) && isNumPrim(b)) {
     if (!a.term || !b.term) {

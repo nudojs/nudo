@@ -12,6 +12,7 @@ import type { Abs } from "./abs.ts";
 import { abs, litValue } from "./abs.ts";
 import { lit, termToString, type Term } from "./term.ts";
 import { pTrue, type Pred } from "./pred.ts";
+import { isNullProtoObj } from "./objects.ts";
 
 export type TemplateMeta = {
   templateParts: Abs[];
@@ -260,17 +261,66 @@ export function concatString(a: Abs, b: Abs): Abs {
   return createTemplateAbs([...aParts, ...bParts]);
 }
 
+/**
+ * JS ToString / 数组 ToPrimitive（join）投影为 string part。
+ * 返回 undefined = 不可折叠（抽象 / symbol 经 + 是 TypeError 由上层抛）。
+ *
+ * 注意 litValue 哨兵：lit(undefined) 读出来是 undefined，与「无 lit」
+ * 不可分——必须先看 term.op === "lit"。
+ */
 function coerceToStringParts(a: Abs): Abs[] | undefined {
   if (isTemplateAbs(a) || isStrPrim(a)) return templatePartsOf(a);
   if (isStrLit(a)) return [a];
-  // 数值/布尔字面量：JS ToPrimitive 拼接
-  const lv = litValue(a);
-  if (typeof lv === "number" || typeof lv === "boolean") {
-    return [abs({ k: "prim", type: "string" }, lit(String(lv)), undefined, "exact")];
+  if (a.term?.op === "lit") {
+    const v = a.term.value;
+    if (typeof v === "symbol") return undefined;
+    // number/boolean/null/undefined/bigint：ToString
+    return [abs({ k: "prim", type: "string" }, lit(String(v)), undefined, "exact")];
   }
   if (a.shape.k === "prim" && a.shape.type === "number") {
     // abstract number → `${number}` part
     return [a];
   }
+  // 数组：ToPrimitive = join(",")，结果恒为 string
+  if (a.shape.k === "tuple" || a.shape.k === "arr") {
+    return [arrayToPrimitiveString(a)];
+  }
+  // 闭普通对象（无自定义 valueOf/toString 槽）：Default Object ToString
+  // 注意：slots 是普通对象，`slots["toString"]` 会命中 Object.prototype——
+  // 必须 hasOwn，否则所有对象都被误判为带自定义 toString。
+  // null-proto 无 Object.prototype.toString：ToPrimitive 原生 TypeError，不得折。
+  if (a.shape.k === "obj" && !a.shape.open && !a.shape.index && !isNullProtoObj(a)) {
+    const slots = a.shape.slots;
+    if (!Object.hasOwn(slots, "toString") && !Object.hasOwn(slots, "valueOf")) {
+      return [
+        abs({ k: "prim", type: "string" }, lit("[object Object]"), undefined, "exact"),
+      ];
+    }
+  }
   return undefined;
+}
+
+/** 数组 ToPrimitive：join(",")——全字面量元素精确折叠，否则抽象 string */
+function arrayToPrimitiveString(a: Abs): Abs {
+  const s = a.shape;
+  const strPrimPart = (): Abs =>
+    abs({ k: "prim", type: "string" }, undefined, undefined, "path");
+  if (s.k === "arr") return strPrimPart();
+  if (s.k !== "tuple") return strPrimPart();
+  const holes = s.holes ?? [];
+  const parts: string[] = [];
+  for (let i = 0; i < s.elements.length; i++) {
+    if (holes.includes(i)) {
+      parts.push("");
+      continue;
+    }
+    const el = s.elements[i]!;
+    if (el.term?.op !== "lit") return strPrimPart();
+    const v = el.term.value;
+    if (typeof v === "symbol") return strPrimPart(); // + 上层对 symbol 元素可能抛
+    if (v === null || v === undefined) parts.push("");
+    else if (typeof v === "object") return strPrimPart();
+    else parts.push(String(v));
+  }
+  return abs({ k: "prim", type: "string" }, lit(parts.join(",")), undefined, "exact");
 }
