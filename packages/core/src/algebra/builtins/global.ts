@@ -7,7 +7,7 @@ import { objOf } from "../objects.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs } from "../exec/may-throw.ts";
 import { numPrim, str, boolPrim } from "./shared.ts";
-import { foldParseInt } from "./number.ts";
+import { foldParseInt, foldParseFloat } from "./number.ts";
 import { makeArrayCtorAbs } from "./array.ts";
 import { makeSymbolAbs, isSymbolAbs, stringOfSymbol } from "./symbol.ts";
 
@@ -27,17 +27,35 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
     case "Array":
       // Array(n)/Array(a,b)/Array() 与 new Array 同语义（共享 makeArrayCtorAbs）
       return makeArrayCtorAbs(args);
-    case "parseInt":
-      if (typeof a0 === "string" || typeof a0 === "number") {
-        const radix = args[1] ? litValue(args[1]) : undefined;
-        if (radix === undefined) return foldParseInt(a0, undefined);
-        if (typeof radix === "number") return foldParseInt(a0, radix);
+    case "parseInt": {
+      // 首参 ToString，radix ToInt32（'2'→2、true→1 越界 NaN、null/false→0）
+      // 缺省首参 ≡ undefined → NaN。抽象不折。
+      if (!a0Lit) return numPrim();
+      if (typeof a0Lit.value === "symbol") throw new NudoThrow(errorTypeAbs("TypeError"));
+      const rAbs = args[1];
+      let radix: number | string | boolean | null | undefined;
+      if (!rAbs) {
+        radix = undefined;
+      } else if (rAbs.term?.op !== "lit") {
         return numPrim();
+      } else if (typeof rAbs.term.value === "symbol") {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      } else {
+        const rv = rAbs.term.value;
+        radix = rv === undefined
+          ? undefined
+          : (rv as number | string | boolean | null);
+        if (rv !== undefined && typeof rv !== "number" && typeof rv !== "string" && typeof rv !== "boolean" && rv !== null) {
+          return numPrim();
+        }
       }
-      return numPrim();
-    case "parseFloat":
-      if (typeof a0 === "string" || typeof a0 === "number") return numLit(parseFloat(String(a0)));
-      return numPrim();
+      return foldParseInt(a0Lit.value as string | number | boolean | null | bigint | undefined, radix);
+    }
+    case "parseFloat": {
+      if (!a0Lit) return numPrim();
+      if (typeof a0Lit.value === "symbol") throw new NudoThrow(errorTypeAbs("TypeError"));
+      return foldParseFloat(a0Lit.value as string | number | boolean | null | bigint | undefined);
+    }
     case "isNaN": {
       // 全局 isNaN：ToNumber 后判 NaN（与 Number.isNaN 不同，会强制转换）
       // isNaN('x')===true、isNaN(true)===false、isNaN(null)===false、

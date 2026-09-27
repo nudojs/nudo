@@ -263,11 +263,19 @@ function typeofName(s: Shape): string {
   }
 }
 
-/** 一元负号：字面量折叠；符号数翻转不等式 */
+/** 一元负号：字面量折叠（含 ToNumber 强制）；符号数翻转不等式 */
 export function negAbs(a: Abs, _phi: Phi = pTrue): Abs {
   const v = litValue(a);
   if (typeof v === "number") return numLitAbs(-v);
   if (typeof v === "bigint") return bigintLit(-(v as bigint));
+  // ToNumber 强制（与 unary + / ~ 的 coercibleNumberLit 同族）：
+  // -'5'=-5、-true=-1、-null=-0。lit(undefined) 不折（与 +undefined 同口径）。
+  if (a.term?.op === "lit") {
+    const tv = a.term.value;
+    if (typeof tv === "string" || typeof tv === "boolean" || tv === null) {
+      return numLitAbs(-Number(tv));
+    }
+  }
   if (a.shape.k === "prim" && a.shape.type === "number") {
     if (!a.term) {
       return abs(num().shape, undefined, undefined, confJoin(a.conf, "widened"));
