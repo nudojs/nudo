@@ -32,14 +32,19 @@ describe("term simplify", () => {
   it("folds 1+3", () => {
     expect(simplifyTerm(app("+", [lit(1), lit(3)]))).toEqual(lit(4));
   });
-  it("x+0 = x", () => {
-    expect(simplifyTerm(app("+", [v("x"), lit(0)]))).toEqual(v("x"));
+  it("x+0 is not folded to x (-0+0=+0, string+0 concat)", () => {
+    expect(simplifyTerm(app("+", [v("x"), lit(0)]))).not.toEqual(v("x"));
+    expect(simplifyTerm(app("+", [v("x"), lit(0)]))).toEqual(
+      app("+", [v("x"), lit(0)]),
+    );
   });
-  it("0+x = x", () => {
-    expect(simplifyTerm(app("+", [lit(0), v("x")]))).toEqual(v("x"));
+  it("0+x is not folded to x", () => {
+    expect(simplifyTerm(app("+", [lit(0), v("x")]))).not.toEqual(v("x"));
   });
-  it("x*0 = 0", () => {
-    expect(simplifyTerm(app("*", [v("x"), lit(0)]))).toEqual(lit(0));
+  it("x*0 is not exact 0 (NaN*0 and Inf*0 are NaN)", () => {
+    const t = simplifyTerm(app("*", [v("x"), lit(0)]));
+    expect(t.op === "lit" && t.value === 0).toBe(false);
+    expect(t).toEqual(app("*", [v("x"), lit(0)]));
   });
 });
 
@@ -101,11 +106,15 @@ describe("add monotonicity", () => {
     }
   });
 
-  it("x≥1 + 0 literal keeps ≥ via simplify to x", () => {
+  it("x≥1 + 0 keeps ≥ on the sum term (no x+0=x fold)", () => {
     const phi = geNum(v("x"), 1);
     const r = add(numVar("x", geNum(v("x"), 1)), numLit(0), phi);
-    // x+0 simplifies to x
-    expect(termToString(r.term!)).toBe("x");
+    // 不折成 x（-0+0=+0）；界挂在 (x+0) 上
+    expect(termToString(r.term!)).toBe("(x + 0)");
+    expect(r.pred!.op).toBe("ge");
+    if (r.pred!.op === "ge") {
+      expect(r.pred!.b).toEqual(lit(1));
+    }
   });
 
   it("literal 2+3 = 5 exact", () => {

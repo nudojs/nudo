@@ -19,7 +19,13 @@ export const app = (fn: string, args: Term[]): Term => ({ op: "app", fn, args })
 export function termEquals(a: Term, b: Term): boolean {
   if (a === b) return true;
   if (a.op !== b.op) return false;
-  if (a.op === "lit" && b.op === "lit") return a.value === b.value;
+  // 项身份用 SameValue 的 NaN 口径：NaN 与自身同项；-0 与 0 仍同项（与 === 一致）
+  if (a.op === "lit" && b.op === "lit") {
+    if (typeof a.value === "number" && typeof b.value === "number" && Number.isNaN(a.value) && Number.isNaN(b.value)) {
+      return true;
+    }
+    return a.value === b.value;
+  }
   if (a.op === "var" && b.op === "var") return a.id === b.id;
   if (a.op === "app" && b.op === "app") {
     return (
@@ -68,25 +74,16 @@ export function simplifyTerm(t: Term): Term {
     if (folded !== undefined) return lit(folded);
   }
 
-  // x + 0 = x, 0 + x = x
-  if (fn === "+" && args.length === 2) {
-    const [a, b] = args as [Term, Term];
-    if (a.op === "lit" && a.value === 0) return b;
-    if (b.op === "lit" && b.value === 0) return a;
-  }
-  // x * 1 = x, 1 * x = x; x * 0 = 0
+  // 不可用 x+0=x / 0+x=x：-0+0=+0（非 -0），且 any/string 参与 + 是拼接
+  // （"a"+0="a0"）。与已删除的 x*0=0 同族——恒等式在全值域上不成立。
+  // x * 1 = x, 1 * x = x
+  // （不可用 x*0=0：NaN*0 与 Infinity*0 皆为 NaN；x*1 对 number 含 -0/NaN/Inf 仍成立）
   if (fn === "*" && args.length === 2) {
     const [a, b] = args as [Term, Term];
     if (a.op === "lit" && a.value === 1) return b;
     if (b.op === "lit" && b.value === 1) return a;
-    if (
-      (a.op === "lit" && a.value === 0) ||
-      (b.op === "lit" && b.value === 0)
-    ) {
-      return lit(0);
-    }
   }
-  // x - 0 = x
+  // x - 0 = x（number 含 -0 仍成立；非 number 走 ToNumber 不经此项）
   if (fn === "-" && args.length === 2) {
     const [a, b] = args as [Term, Term];
     if (b.op === "lit" && b.value === 0) return a;

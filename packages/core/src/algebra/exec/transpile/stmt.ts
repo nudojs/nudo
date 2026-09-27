@@ -364,7 +364,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         ) {
           const argSrcs = expr.arguments
             .map((a) =>
-              a.type === "SpreadElement" ? "$lit(undefined)" : emitTranspileExpression(a as Expression, opts),
+              a.type === "SpreadElement" ? "$unknown()" : emitTranspileExpression(a as Expression, opts),
             )
             .join(", ");
           const objNode = expr.callee.object as Node;

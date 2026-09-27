@@ -155,7 +155,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       const cname =
         callee.type === "Identifier" ? callee.name : isExpression(callee) ? transpileExpression(callee, opts) : "$lit(undefined)";
       const args = expr.arguments
-        .map((a) => (a.type === "SpreadElement" ? "$lit(undefined)" : transpileExpression(a as Expression, opts)))
+        .map((a) => (a.type === "SpreadElement" ? "$unknown()" : transpileExpression(a as Expression, opts)))
         .join(", ");
       return `$new(${cname}, [${args}])`;
     }
@@ -677,7 +677,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       // super() → __this = $super(__this, Child, [...])
       if (callee.type === "Super" && opts.thisParam && opts.className) {
         const args = expr.arguments
-          .map((a) => (a.type === "SpreadElement" ? "$lit(undefined)" : transpileExpression(a as Expression, opts)))
+          .map((a) => (a.type === "SpreadElement" ? "$unknown()" : transpileExpression(a as Expression, opts)))
           .join(", ");
         return `${opts.thisParam} = $super(${opts.thisParam}, ${JSON.stringify(opts.className)}, [${args}])`;
       }
@@ -691,7 +691,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         opts.className
       ) {
         const args = expr.arguments
-          .map((a) => (a.type === "SpreadElement" ? "$lit(undefined)" : transpileExpression(a as Expression, opts)))
+          .map((a) => (a.type === "SpreadElement" ? "$unknown()" : transpileExpression(a as Expression, opts)))
           .join(", ");
         return `$invokeSuper(${opts.thisParam}, ${JSON.stringify(opts.className)}, ${JSON.stringify(callee.property.name)}, [${args}])`;
       }
@@ -725,7 +725,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       ) {
         const recv = transpileExpression(callee.object as Expression, opts);
         const args = expr.arguments
-          .map((a) => (a.type === "SpreadElement" ? "$lit(undefined)" : transpileExpression(a as Expression, opts)))
+          .map((a) => (a.type === "SpreadElement" ? "$unknown()" : transpileExpression(a as Expression, opts)))
           .join(", ");
         const name = JSON.stringify(callee.property.name);
         const opt = optionalCall || (callee as { optional?: boolean }).optional === true;
@@ -752,7 +752,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         const argLocSrcs: string[] = [];
         for (const a of expr.arguments) {
           if (a.type === "SpreadElement") {
-            argSrcs.push("$lit(undefined)");
+            argSrcs.push("$unknown()");
             argLocSrcs.push("null");
           } else {
             argSrcs.push(transpileExpression(a as Expression, opts));

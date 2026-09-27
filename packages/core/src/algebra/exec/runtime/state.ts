@@ -192,7 +192,8 @@ export function litTruth(a: Abs): boolean | undefined {
     case "eff":
       return true;
     case "prim":
-      return a.shape.type === "symbol" || a.shape.type === "bigint" ? true : undefined;
+      // 0n 为 falsy（Boolean(0n)===false）；symbol 恒真
+      return a.shape.type === "symbol" ? true : undefined;
     case "never":
       return false;
     default:

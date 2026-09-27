@@ -319,39 +319,115 @@ function parsePrimitiveValue(s: string): string | number | boolean | null | unde
   return s;
 }
 
+/**
+ * 字符串感知的括号深度扫描：引号内字符不当结构（与 findReplaceSeparator 同口径）。
+ * onChar 对每个可见字符（含字符串内容）回调；onStructural 仅对非字符串字符回调。
+ */
+function scanWithStrings(
+  s: string,
+  onChar: (ch: string, i: number) => void,
+  onStructural: (ch: string, i: number, depth: number) => void,
+): void {
+  let depth = 0;
+  let inString: string | null = null;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i]!;
+    if (inString) {
+      onChar(ch, i);
+      if (ch === "\\") {
+        i++;
+        if (i < s.length) onChar(s[i]!, i);
+        continue;
+      }
+      if (ch === inString) inString = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      inString = ch;
+      onChar(ch, i);
+      continue;
+    }
+    if (ch === "(" || ch === "[" || ch === "{") {
+      depth++;
+      onChar(ch, i);
+      onStructural(ch, i, depth);
+      continue;
+    }
+    if (ch === ")" || ch === "]" || ch === "}") {
+      depth--;
+      onChar(ch, i);
+      onStructural(ch, i, depth);
+      continue;
+    }
+    onChar(ch, i);
+    onStructural(ch, i, depth);
+  }
+}
+
 function splitTopLevelArgs(s: string): string[] {
   const result: string[] = [];
-  let depth = 0;
   let current = "";
-  for (const ch of s) {
+  let depth = 0;
+  let inString: string | null = null;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i]!;
+    if (inString) {
+      current += ch;
+      if (ch === "\\") {
+        i++;
+        if (i < s.length) current += s[i]!;
+        continue;
+      }
+      if (ch === inString) inString = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      inString = ch;
+      current += ch;
+      continue;
+    }
     if (ch === "(" || ch === "[" || ch === "{") depth++;
     if (ch === ")" || ch === "]" || ch === "}") depth--;
     if (ch === "," && depth === 0) {
       result.push(current.trim());
       current = "";
-    } else {
-      current += ch;
+      continue;
     }
+    current += ch;
   }
   if (current.trim()) result.push(current.trim());
   return result;
 }
 
 function findTopLevelColon(s: string): number {
-  let depth = 0;
-  for (let i = 0; i < s.length; i++) {
-    const ch = s[i];
-    if (ch === "(" || ch === "[" || ch === "{") depth++;
-    if (ch === ")" || ch === "]" || ch === "}") depth--;
-    if (ch === ":" && depth === 0) return i;
-  }
-  return -1;
+  let found = -1;
+  scanWithStrings(
+    s,
+    () => {},
+    (ch, i, depth) => {
+      if (found === -1 && ch === ":" && depth === 0) found = i;
+    },
+  );
+  return found;
 }
 
 function findTopLevelArrow(s: string): number {
   let depth = 0;
+  let inString: string | null = null;
   for (let i = 0; i < s.length - 1; i++) {
-    const ch = s[i];
+    const ch = s[i]!;
+    if (inString) {
+      if (ch === "\\") {
+        i++;
+        continue;
+      }
+      if (ch === inString) inString = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      inString = ch;
+      continue;
+    }
     if (ch === "(" || ch === "[" || ch === "{") depth++;
     else if (ch === ")" || ch === "]" || ch === "}") depth--;
     else if (depth === 0 && ch === "=" && s[i + 1] === ">") return i;
@@ -362,9 +438,23 @@ function findTopLevelArrow(s: string): number {
 function extractBalancedParens(text: string, startIdx: number): string | null {
   if (text[startIdx] !== "(") return null;
   let depth = 0;
+  let inString: string | null = null;
   for (let i = startIdx; i < text.length; i++) {
-    if (text[i] === "(") depth++;
-    if (text[i] === ")") depth--;
+    const ch = text[i]!;
+    if (inString) {
+      if (ch === "\\") {
+        i++;
+        continue;
+      }
+      if (ch === inString) inString = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      inString = ch;
+      continue;
+    }
+    if (ch === "(") depth++;
+    if (ch === ")") depth--;
     if (depth === 0) return text.slice(startIdx + 1, i);
   }
   return null;

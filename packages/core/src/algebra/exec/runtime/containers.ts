@@ -451,21 +451,27 @@ export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
   return arr;
 }
 
-/** 下标读 a[i]；字面量 i 走 tuple 精确投影，否则并所有元素；string[i] → 单字符 */
+/** 下标读 a[i]；规范数组下标走精确投影，确定非下标键 → undefined，否则并所有元素；string[i] → 单字符 */
 export function $idx(a: Abs, i: Abs): Abs {
   // any 下标：无约束读（any ≠ unknown）
   if (a?.shape?.k === "any") return anyMemberResult();
   const iv = litValue(i);
+  const idx = iv !== undefined ? canonicalArrayIndex(iv) : undefined;
   if (a.shape.k === "tuple") {
     const els = a.shape.elements;
-    if (typeof iv === "number" && Number.isInteger(iv)) {
-      if (iv >= 0 && iv < els.length) return els[iv]!;
+    // 确定非下标键（"foo"、1.5…）：缺失属性 → undefined
+    if (iv !== undefined && idx === undefined) return undef();
+    if (idx !== undefined) {
+      if (idx < els.length) return els[idx]!;
       return undef();
     }
     if (els.length === 0) return undef();
     return els.reduce((x, y) => joinAbs(x, y));
   }
-  if (a.shape.k === "arr") return a.shape.element;
+  if (a.shape.k === "arr") {
+    if (iv !== undefined && idx === undefined) return undef();
+    return a.shape.element;
+  }
   if (a.shape.k === "sum") {
     return a.shape.members.map((m) => $idx(m, i)).reduce((x, y) => joinAbs(x, y));
   }
@@ -1005,6 +1011,24 @@ export function $regex(pattern: string, flags = ""): Abs {
   return regexBrandAbsFrom(pattern, flags);
 }
 
+/** Array.prototype 自有可读键（push/map/keys/… 与 Symbol.iterator 投影名） */
+const ARRAY_PROTO_METHOD_NAMES = new Set([
+  "at", "concat", "copyWithin", "entries", "every", "fill", "filter", "find",
+  "findIndex", "findLast", "findLastIndex", "flat", "flatMap", "forEach",
+  "includes", "indexOf", "join", "keys", "lastIndexOf", "map", "pop", "push",
+  "reduce", "reduceRight", "reverse", "shift", "slice", "some", "sort", "splice",
+  "toLocaleString", "toString", "unshift", "values", "@@iterator",
+]);
+
+function isPossiblyProtoMemberKey(key: string): boolean {
+  return (
+    OBJECT_PROTO_METHOD_NAMES.has(key) ||
+    ARRAY_PROTO_METHOD_NAMES.has(key) ||
+    key === "constructor" ||
+    key.startsWith("@@")
+  );
+}
+
 /** 成员读：obj.slots[key]；缺失 → undefined 字面量；brand 解包内层 */
 export function $get(
   o: Abs,
@@ -1121,14 +1145,26 @@ export function $get(
   if ((o.shape.k === "tuple" || o.shape.k === "arr") && key === "length") {
     return $len(o);
   }
-  // 元组/数组/prim 上的 Object.prototype 方法读取
+  // 元组下标字符串键（a["0"] ≡ a[0]）；确定非下标自有键 → undefined
+  // （原型方法 / Symbol.iterator 不在此列，继续走下方方法投影）
+  if (o.shape.k === "tuple") {
+    const idx = canonicalArrayIndex(key);
+    const els = o.shape.elements;
+    if (idx !== undefined) return idx < els.length ? els[idx]! : undef();
+    if (!isPossiblyProtoMemberKey(key)) return undef();
+  }
+  // 元组/数组/prim 上的 Object.prototype / Array.prototype 方法读取
   if (
     (o.shape.k === "tuple" || o.shape.k === "arr" || o.shape.k === "prim") &&
-    OBJECT_PROTO_METHOD_NAMES.has(key) &&
+    (OBJECT_PROTO_METHOD_NAMES.has(key) || (o.shape.k !== "prim" && ARRAY_PROTO_METHOD_NAMES.has(key))) &&
     !(o.shape.k === "prim" && o.shape.type === "string" && key === "toString")
   ) {
     if ((o.shape.k === "tuple" || o.shape.k === "arr") && (key === "toString" || key === "toLocaleString" || key === "join")) {
       return arrayMethodAbs(key === "join" ? "join" : key);
+    }
+    // Array.prototype 方法 / Symbol.iterator：一等函数（typeof a.push === "function"）
+    if (o.shape.k !== "prim" && (ARRAY_PROTO_METHOD_NAMES.has(key) || key === "@@iterator")) {
+      return absFunction([], { body: noBody });
     }
     // string.toString/valueOf 由 callAbsMethod 处理调用；一等读取仍给 OP 函数
     return objectProtoMethodAbs(key);

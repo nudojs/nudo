@@ -69,6 +69,16 @@ function jsonValueToAbs(v: unknown): Abs {
   return abs({ k: "obj", slots }, undefined, undefined, "exact");
 }
 
+/**
+ * 顶层非 JSON 值（function / symbol）：JSON.stringify 返回 undefined 值。
+ * 嵌套 function/symbol 仍走 NOT_LITERAL→partial（可接受超集）。
+ */
+function isNonJsonTopLevel(a: Abs): boolean {
+  if (a.shape.k === "fn") return true;
+  if (a.shape.k === "prim" && a.shape.type === "symbol") return true;
+  return false;
+}
+
 /** JSON.parse / stringify：字面量实参真执行折叠；失败硬抛（catch 可吸收） */
 export function evalJsonMethod(name: string, args: Abs[]): Abs | undefined {
   if (name === "parse") {
@@ -100,11 +110,15 @@ export function evalJsonMethod(name: string, args: Abs[]): Abs | undefined {
     }
   }
   if (name === "stringify") {
-    // 顶层 undefined（无参/显式/函数/symbol）→ 原生返回 undefined 值
+    // 顶层 undefined / function / symbol → 原生返回 undefined 值（非字符串）
     const a0Abs = args[0];
     if (!a0Abs) return undefAbs();
     const v = absToJsonNative(a0Abs, new Set());
-    if (v === NOT_LITERAL) return str("partial");
+    if (v === NOT_LITERAL) {
+      // 顶层 function/symbol：JSON.stringify 返回 undefined，不是 string
+      if (isNonJsonTopLevel(a0Abs)) return undefAbs();
+      return str("partial");
+    }
     // replacer：数组字面量 → 白名单键；null/非数组非函数 → 原生忽略；
     // 函数 replacer / 抽象 → 保守（结果串不可判定）
     const replacerArg = args[1];
