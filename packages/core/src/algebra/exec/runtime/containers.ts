@@ -1162,9 +1162,12 @@ export function $get(
     if ((o.shape.k === "tuple" || o.shape.k === "arr") && (key === "toString" || key === "toLocaleString" || key === "join")) {
       return arrayMethodAbs(key === "join" ? "join" : key);
     }
-    // Array.prototype 方法 / Symbol.iterator：一等函数（typeof a.push === "function"）
+    // Array.prototype 方法 / Symbol.iterator：一等函数（typeof a.push === "function"）。
+    // 不得挂空 body impl：$invoke 会把 getFnImpl 命中的 noBody 当对象方法 $call，
+    // 把 concat/sort 等未在 invokeArrMethod 接管的方法折成 undefined（假精确）。
+    // 无 impl 的 fn shape 仍满足 typeof，调用侧继续走 invokeArrMethod / 保守 unknown。
     if (o.shape.k !== "prim" && (ARRAY_PROTO_METHOD_NAMES.has(key) || key === "@@iterator")) {
-      return absFunction([], { body: noBody });
+      return { shape: { k: "fn", params: [] }, conf: "path" };
     }
     // string.toString/valueOf 由 callAbsMethod 处理调用；一等读取仍给 OP 函数
     return objectProtoMethodAbs(key);
