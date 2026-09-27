@@ -34,7 +34,7 @@ jobs:
       contents: write
       pull-requests: write
     outputs:
-      publishedPackages: ${{ steps.changesets.outputs.publishedPackages }}
+      publishedPackages: ${{ steps.changesets.outputs.published-packages }}
     env:
       # secrets cannot appear in step `if`; expose at job level for gating.
       VSCODE_MARKETPLACE_TOKEN: ${{ secrets.VSCODE_MARKETPLACE_TOKEN }}
@@ -74,18 +74,20 @@ jobs:
         run: npm run test:coverage
 
       # changesets/action both versions (opens the Version Packages PR) and
-      # publishes. Running publish via the action's `publish` input is what
-      # populates `publishedPackages` — a later standalone `changeset publish`
+      # publishes. Running publish via the action's `publish-script` input is what
+      # populates `published-packages` — a later standalone `changeset publish`
       # leaves that output empty and the tag / GitHub Release steps silently skip.
-      # createGithubReleases=false: per-package releases would collide with the
+      # create-github-releases=false: per-package releases would collide with the
       # monorepo `v*` release created below (which carries the .vsix).
+      # push-git-tags stays default true — package tags are wanted even without
+      # per-package GitHub Releases (v1 createGithubReleases:false also killed tags).
       - name: Create Release Pull Request / Publish
         id: changesets
-        uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51  # v1 (branch v1)
+        uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51  # v2.1.2
         with:
-          version: npm run ci:version
-          publish: npm run ci:publish
-          createGithubReleases: false
+          version-script: npm run ci:version
+          publish-script: npm run ci:publish
+          create-github-releases: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
@@ -93,7 +95,7 @@ jobs:
       # 文档站部署已解耦：docs-deploy.yml 在 main push 时独立构建部署
 
       - name: Package VSCode extension
-        if: steps.changesets.outputs.hasChangesets == 'false' && steps.changesets.outputs.publishedPackages != '' && steps.changesets.outputs.publishedPackages != '[]'
+        if: steps.changesets.outputs.has-changesets == 'false' && steps.changesets.outputs.published-packages != '' && steps.changesets.outputs.published-packages != '[]'
         run: |
           mkdir -p dist
           pnpm --filter nudo-vscode run build
@@ -105,9 +107,9 @@ jobs:
       - name: Publish to VSCode Marketplace
         id: vsce-publish
         if: >-
-          steps.changesets.outputs.hasChangesets == 'false' &&
-          steps.changesets.outputs.publishedPackages != '' &&
-          steps.changesets.outputs.publishedPackages != '[]' &&
+          steps.changesets.outputs.has-changesets == 'false' &&
+          steps.changesets.outputs.published-packages != '' &&
+          steps.changesets.outputs.published-packages != '[]' &&
           env.VSCODE_MARKETPLACE_TOKEN != ''
         # Marketplace PATs expire; do not block Open VSX / GitHub Release.
         continue-on-error: true
@@ -133,9 +135,9 @@ jobs:
       - name: Publish to Open VSX
         id: ovsx-publish
         if: >-
-          steps.changesets.outputs.hasChangesets == 'false' &&
-          steps.changesets.outputs.publishedPackages != '' &&
-          steps.changesets.outputs.publishedPackages != '[]' &&
+          steps.changesets.outputs.has-changesets == 'false' &&
+          steps.changesets.outputs.published-packages != '' &&
+          steps.changesets.outputs.published-packages != '[]' &&
           env.OVSX_MARKETPLACE_TOKEN != ''
         continue-on-error: true
         run: npx ovsx publish dist/nudo-vscode.vsix -p ${{ secrets.OVSX_MARKETPLACE_TOKEN }}
@@ -155,15 +157,15 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # publishedPackages is [{name, version}, …] and can version-skew across
+      # published-packages is [{name, version}, …] and can version-skew across
       # packages (e.g. nudojs 0.x vs @nudojs/* 3.x). Never tag from [0] — take
       # the highest semver so the monorepo release tag is deterministic.
       - name: Resolve release tag (highest published version)
         id: release-tag
         if: >-
-          steps.changesets.outputs.hasChangesets == 'false' &&
-          steps.changesets.outputs.publishedPackages != '' &&
-          steps.changesets.outputs.publishedPackages != '[]'
+          steps.changesets.outputs.has-changesets == 'false' &&
+          steps.changesets.outputs.published-packages != '' &&
+          steps.changesets.outputs.published-packages != '[]'
         run: |
           tag=$(node -e '
             const pkgs = JSON.parse(process.env.PUBLISHED);
@@ -181,14 +183,14 @@ jobs:
           ')
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
         env:
-          PUBLISHED: ${{ steps.changesets.outputs.publishedPackages }}
+          PUBLISHED: ${{ steps.changesets.outputs.published-packages }}
 
       - name: Create GitHub Release
         if: >-
-          steps.changesets.outputs.hasChangesets == 'false' &&
-          steps.changesets.outputs.publishedPackages != '' &&
-          steps.changesets.outputs.publishedPackages != '[]'
-        uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844  # v1
+          steps.changesets.outputs.has-changesets == 'false' &&
+          steps.changesets.outputs.published-packages != '' &&
+          steps.changesets.outputs.published-packages != '[]'
+        uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844  # v3.0.3
         with:
           tag_name: ${{ steps.release-tag.outputs.tag }}
           name: ${{ steps.release-tag.outputs.tag }}
@@ -199,16 +201,16 @@ jobs:
 
       - name: Release summary
         if: >-
-          steps.changesets.outputs.hasChangesets == 'false' &&
-          steps.changesets.outputs.publishedPackages != '' &&
-          steps.changesets.outputs.publishedPackages != '[]'
+          steps.changesets.outputs.has-changesets == 'false' &&
+          steps.changesets.outputs.published-packages != '' &&
+          steps.changesets.outputs.published-packages != '[]'
         run: |
           {
             echo "## Released ${{ steps.release-tag.outputs.tag }}"
             echo ""
             echo "Published packages:"
             echo '```json'
-            echo '${{ steps.changesets.outputs.publishedPackages }}'
+            echo '${{ steps.changesets.outputs.published-packages }}'
             echo '```'
             echo ""
             echo "GitHub Release: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.release-tag.outputs.tag }}"

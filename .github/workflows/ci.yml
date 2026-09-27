@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        # v4（SHA 钉住：supply-chain；升级时更新 pin 与注释）
+        # v7（SHA 钉住：supply-chain；升级时更新 pin 与注释）
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Setup pnpm
@@ -30,7 +30,7 @@ jobs:
         uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
 
       - name: Setup Node.js
-        # v4
+        # v7
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 24
@@ -88,7 +88,7 @@ jobs:
 
       - name: Upload env coverage report
         if: always()
-        # v4
+        # v7
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: env-coverage-baseline
@@ -102,7 +102,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        # v4
+        # v7
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Setup pnpm
@@ -110,7 +110,7 @@ jobs:
         uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
 
       - name: Setup Node.js
-        # v4
+        # v7
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 24
@@ -132,7 +132,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        # v4
+        # v7
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Setup pnpm
@@ -140,7 +140,7 @@ jobs:
         uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
 
       - name: Setup Node.js
-        # v4
+        # v7
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 24
@@ -157,7 +157,7 @@ jobs:
 
       - name: Upload coverage
         if: always()
-        # v4
+        # v7
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}

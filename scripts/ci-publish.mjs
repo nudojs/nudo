@@ -1,7 +1,7 @@
 /**
  * ci:publish — gate + OIDC prep + `changeset publish`.
  *
- * Wired as changesets/action `publish:` so the action records `publishedPackages`
+ * Wired as changesets/action `publish-script:` so the action records `published-packages`
  * (needed by the tag / GitHub Release steps). A bare `npx changeset publish` in a
  * later step leaves that output empty and the release is silently skipped.
  *
