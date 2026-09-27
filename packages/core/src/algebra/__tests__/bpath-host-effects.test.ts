@@ -15,10 +15,17 @@ function callFn(src: string, name: string, args: unknown[] = []) {
 
 const origFetch = globalThis.fetch;
 const origSetTimeout = globalThis.setTimeout;
+const origWS = (globalThis as Record<string, unknown>).WebSocket;
+const origXhr = (globalThis as Record<string, unknown>).XMLHttpRequest;
+const origEs = (globalThis as Record<string, unknown>).EventSource;
 
 afterEach(() => {
   globalThis.fetch = origFetch;
   globalThis.setTimeout = origSetTimeout;
+  const g = globalThis as Record<string, unknown>;
+  if (origWS === undefined) delete g.WebSocket; else g.WebSocket = origWS;
+  if (origXhr === undefined) delete g.XMLHttpRequest; else g.XMLHttpRequest = origXhr;
+  if (origEs === undefined) delete g.EventSource; else g.EventSource = origEs;
 });
 
 describe("B host side-effect guard", () => {
@@ -94,5 +101,59 @@ describe("B host side-effect guard", () => {
     expect(blocked[0]!.severity).toBe("info");
     expect(blocked[0]!.message).toContain("fetch");
     expect(r.issues.filter((i) => i.code === "nudo:recursion-truncated")).toHaveLength(0);
+  });
+
+  it("new WebSocket：构造器不真实执行，fail-closed opaque", () => {
+    let constructed = 0;
+    class FakeWS {
+      constructor() {
+        constructed++;
+        throw new Error("must not construct");
+      }
+    }
+    (globalThis as Record<string, unknown>).WebSocket = FakeWS;
+
+    const seen: string[] = [];
+    setAbsTruncationCollector((l: string) => seen.push(l));
+    try {
+      const r = callFn(`export function open(u) { return new WebSocket(u); }`, "open", [
+        strLit("wss://example.com"),
+      ]);
+      expect(constructed).toBe(0);
+      expect(r.result.shape.k).toBe("unknown");
+      expect(r.result.conf).toBe("opaque");
+      expect(seen).toContain("#host-effect:WebSocket");
+    } finally {
+      setAbsTruncationCollector(null);
+    }
+  });
+
+  it("new XMLHttpRequest / EventSource 同样不真实构造", () => {
+    let xhrCtor = 0;
+    let esCtor = 0;
+    (globalThis as Record<string, unknown>).XMLHttpRequest = function FakeXhr() {
+      xhrCtor++;
+      throw new Error("must not construct");
+    };
+    (globalThis as Record<string, unknown>).EventSource = function FakeEs() {
+      esCtor++;
+      throw new Error("must not construct");
+    };
+
+    const r1 = callFn(`export function mk() { return new XMLHttpRequest(); }`, "mk", []);
+    const r2 = callFn(`export function mk2(u) { return new EventSource(u); }`, "mk2", [
+      strLit("https://example.com/es"),
+    ]);
+    expect(xhrCtor).toBe(0);
+    expect(esCtor).toBe(0);
+    expect(r1.result.conf).toBe("opaque");
+    expect(r2.result.conf).toBe("opaque");
+  });
+
+  it("非守卫构造器（new Date）仍走正常 brand 路径", () => {
+    const r = callFn(`export function d() { return new Date(0); }`, "d", []);
+    // 非名单构造器不得被守卫打成 opaque unknown
+    expect(r.result.shape.k).not.toBe("unknown");
+    expect(r.result.conf).not.toBe("opaque");
   });
 });
