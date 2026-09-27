@@ -11,19 +11,65 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 | Package | Current version |
 |----------|-----------------|
-| `@nudojs/core` | 1.1.4 |
-| `@nudojs/service` | 1.1.4 |
-| `nudojs (CLI)` | 1.0.4 |
-| `@nudojs/parser` | 1.1.4 |
-| `@nudojs/lsp` | 1.1.4 |
-| `@nudojs/env` | 0.4.6 |
-| `@nudojs/harvester` | 0.2.12 |
-| `vite-plugin-nudo` | 0.4.7 |
-| `nudo-vscode` | 0.3.11 |
+| `@nudojs/core` | 1.2.0 |
+| `@nudojs/service` | 1.2.0 |
+| `nudojs (CLI)` | 1.0.5 |
+| `@nudojs/parser` | 1.1.5 |
+| `@nudojs/lsp` | 1.1.5 |
+| `@nudojs/env` | 0.4.7 |
+| `@nudojs/harvester` | 0.2.13 |
+| `vite-plugin-nudo` | 0.4.8 |
+| `nudo-vscode` | 0.3.12 |
 
 **Jump to package:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.1.4 {#pkg-core}
+## @nudojs/core 1.2.0 {#pkg-core}
+
+## 1.2.0
+
+### Minor Changes
+
+- 5ff4202: refactor!: rename B-path / BPath engine identifiers to eval / evaluator
+  
+  The AST-walk interpreter is long gone, so the dual-engine campaign name
+  "B-path" no longer means anything and forced a glossary entry just to
+  explain itself. The single production evaluation engine is now simply
+  the **evaluator** (mechanism: transpile → `new Function` on Abs).
+  
+  Breaking renames (no major bump — package has no external users yet):
+  
+  | Old | New |
+  |---|---|
+  | `tryBPathCall` / `tryBPathCallFull` | `tryEvalCall` / `tryEvalCallFull` |
+  | `tryRunBPath` | `tryRunEval` |
+  | `isBPathCapable` | `isEvalCapable` |
+  | `clearBPathCache` / `trimBPathCache` / `getBPathCacheSize` | `clearEvalCache` / `trimEvalCache` / `getEvalCacheSize` |
+  | `evictBPathCacheForFiles` | `evictEvalCacheForFiles` |
+  | `collectBPathDiagnostics` / `collectBPathReplacements` | `collectEvalDiagnostics` / `collectEvalReplacements` |
+  | `BPathRunResult` / `BPathDiagnostics` / `BPathFallback` / … | `EvalRunResult` / `EvalDiagnostics` / `EvalFallback` / … |
+  | `BCallRecord` / `setBCallCollector` / `getBCallCollector` | `EvalCallRecord` / `setEvalCallCollector` / `getEvalCallCollector` |
+  | `noteBPathFallback` / `setBPathFallbackCollector` | `noteEvalFallback` / `setEvalFallbackCollector` |
+  | `MAX_B_CALL_DEPTH` / `MAX_B_TOTAL_CALLS` / `MAX_B_TOTAL_FORKS` | `MAX_EVAL_CALL_DEPTH` / `MAX_EVAL_TOTAL_CALLS` / `MAX_EVAL_TOTAL_FORKS` |
+  | `maxBRuns` (sessionCache) | `maxEvalRuns` |
+  | `NUDO_CACHE_MAX_BRUNS` | `NUDO_CACHE_MAX_EVALRUNS` |
+  
+  Source files `bpath-run.ts` / `bpath-diagnostics.ts` / `bpath-*.test.ts`
+  are now `eval-run.ts` / `eval-diagnostics.ts` / `eval-*.test.ts`.
+  Docs no longer introduce a "B-path" term or explain why the engine is
+  called B. Historical CHANGELOG / releases-history keep the old name.
+
+### Patch Changes
+
+- 5ff4202: fix(core): more JS semantics soundness — Array.of / .at() / postfix ++-- / ToPrimitive
+  
+  - `Array.of` packs arguments into a tuple, not an array of the first element
+  - `.at()` honors ToIntegerOrInfinity (string.at + array.at index)
+  - postfix `++`/`--` writes back inside the expression
+  - `+` honors ToPrimitive/ToString for arrays, objects, undefined
+  - drop dead duplicate `case "promise"` in checkNode
+
+<details>
+<summary>Version history (15)</summary>
 
 ## 1.1.4
 
@@ -41,9 +87,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   First-class reads still expose a function-shaped Abs (`typeof a.push ===
   "function"`), but without a callable impl so method calls fall through to
   `invokeArrMethod` / conservative `unknown`.
-
-<details>
-<summary>Version history (14)</summary>
 
 ## 1.1.3
 
@@ -412,7 +455,59 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/service 1.1.4 {#pkg-service}
+## @nudojs/service 1.2.0 {#pkg-service}
+
+## 1.2.0
+
+### Minor Changes
+
+- 5ff4202: refactor!: rename B-path / BPath engine identifiers to eval / evaluator
+  
+  The AST-walk interpreter is long gone, so the dual-engine campaign name
+  "B-path" no longer means anything and forced a glossary entry just to
+  explain itself. The single production evaluation engine is now simply
+  the **evaluator** (mechanism: transpile → `new Function` on Abs).
+  
+  Breaking renames (no major bump — package has no external users yet):
+  
+  | Old | New |
+  |---|---|
+  | `tryBPathCall` / `tryBPathCallFull` | `tryEvalCall` / `tryEvalCallFull` |
+  | `tryRunBPath` | `tryRunEval` |
+  | `isBPathCapable` | `isEvalCapable` |
+  | `clearBPathCache` / `trimBPathCache` / `getBPathCacheSize` | `clearEvalCache` / `trimEvalCache` / `getEvalCacheSize` |
+  | `evictBPathCacheForFiles` | `evictEvalCacheForFiles` |
+  | `collectBPathDiagnostics` / `collectBPathReplacements` | `collectEvalDiagnostics` / `collectEvalReplacements` |
+  | `BPathRunResult` / `BPathDiagnostics` / `BPathFallback` / … | `EvalRunResult` / `EvalDiagnostics` / `EvalFallback` / … |
+  | `BCallRecord` / `setBCallCollector` / `getBCallCollector` | `EvalCallRecord` / `setEvalCallCollector` / `getEvalCallCollector` |
+  | `noteBPathFallback` / `setBPathFallbackCollector` | `noteEvalFallback` / `setEvalFallbackCollector` |
+  | `MAX_B_CALL_DEPTH` / `MAX_B_TOTAL_CALLS` / `MAX_B_TOTAL_FORKS` | `MAX_EVAL_CALL_DEPTH` / `MAX_EVAL_TOTAL_CALLS` / `MAX_EVAL_TOTAL_FORKS` |
+  | `maxBRuns` (sessionCache) | `maxEvalRuns` |
+  | `NUDO_CACHE_MAX_BRUNS` | `NUDO_CACHE_MAX_EVALRUNS` |
+  
+  Source files `bpath-run.ts` / `bpath-diagnostics.ts` / `bpath-*.test.ts`
+  are now `eval-run.ts` / `eval-diagnostics.ts` / `eval-*.test.ts`.
+  Docs no longer introduce a "B-path" term or explain why the engine is
+  called B. Historical CHANGELOG / releases-history keep the old name.
+
+### Patch Changes
+
+- 5ff4202: fix(core): more JS semantics soundness — Array.of / .at() / postfix ++-- / ToPrimitive
+  
+  - `Array.of` packs arguments into a tuple, not an array of the first element
+  - `.at()` honors ToIntegerOrInfinity (string.at + array.at index)
+  - postfix `++`/`--` writes back inside the expression
+  - `+` honors ToPrimitive/ToString for arrays, objects, undefined
+  - drop dead duplicate `case "promise"` in checkNode
+- Updated dependencies [5ff4202]
+- Updated dependencies [5ff4202]
+  - @nudojs/core@1.2.0
+  - @nudojs/env@0.4.7
+  - @nudojs/harvester@0.2.13
+  - @nudojs/parser@1.1.5
+
+<details>
+<summary>Version history (17)</summary>
 
 ## 1.1.4
 
@@ -423,9 +518,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/env@0.4.6
   - @nudojs/harvester@0.2.12
   - @nudojs/parser@1.1.4
-
-<details>
-<summary>Version history (16)</summary>
 
 ## 1.1.3
 
@@ -849,7 +941,49 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## nudojs (CLI) 1.0.4 {#pkg-nudojs}
+## nudojs (CLI) 1.0.5 {#pkg-nudojs}
+
+## 1.0.5
+
+### Patch Changes
+
+- 5ff4202: refactor!: rename B-path / BPath engine identifiers to eval / evaluator
+  
+  The AST-walk interpreter is long gone, so the dual-engine campaign name
+  "B-path" no longer means anything and forced a glossary entry just to
+  explain itself. The single production evaluation engine is now simply
+  the **evaluator** (mechanism: transpile → `new Function` on Abs).
+  
+  Breaking renames (no major bump — package has no external users yet):
+  
+  | Old | New |
+  |---|---|
+  | `tryBPathCall` / `tryBPathCallFull` | `tryEvalCall` / `tryEvalCallFull` |
+  | `tryRunBPath` | `tryRunEval` |
+  | `isBPathCapable` | `isEvalCapable` |
+  | `clearBPathCache` / `trimBPathCache` / `getBPathCacheSize` | `clearEvalCache` / `trimEvalCache` / `getEvalCacheSize` |
+  | `evictBPathCacheForFiles` | `evictEvalCacheForFiles` |
+  | `collectBPathDiagnostics` / `collectBPathReplacements` | `collectEvalDiagnostics` / `collectEvalReplacements` |
+  | `BPathRunResult` / `BPathDiagnostics` / `BPathFallback` / … | `EvalRunResult` / `EvalDiagnostics` / `EvalFallback` / … |
+  | `BCallRecord` / `setBCallCollector` / `getBCallCollector` | `EvalCallRecord` / `setEvalCallCollector` / `getEvalCallCollector` |
+  | `noteBPathFallback` / `setBPathFallbackCollector` | `noteEvalFallback` / `setEvalFallbackCollector` |
+  | `MAX_B_CALL_DEPTH` / `MAX_B_TOTAL_CALLS` / `MAX_B_TOTAL_FORKS` | `MAX_EVAL_CALL_DEPTH` / `MAX_EVAL_TOTAL_CALLS` / `MAX_EVAL_TOTAL_FORKS` |
+  | `maxBRuns` (sessionCache) | `maxEvalRuns` |
+  | `NUDO_CACHE_MAX_BRUNS` | `NUDO_CACHE_MAX_EVALRUNS` |
+  
+  Source files `bpath-run.ts` / `bpath-diagnostics.ts` / `bpath-*.test.ts`
+  are now `eval-run.ts` / `eval-diagnostics.ts` / `eval-*.test.ts`.
+  Docs no longer introduce a "B-path" term or explain why the engine is
+  called B. Historical CHANGELOG / releases-history keep the old name.
+- Updated dependencies [5ff4202]
+- Updated dependencies [5ff4202]
+  - @nudojs/core@1.2.0
+  - @nudojs/service@1.2.0
+  - @nudojs/harvester@0.2.13
+  - @nudojs/parser@1.1.5
+
+<details>
+<summary>Version history (14)</summary>
 
 ## 1.0.4
 
@@ -860,9 +994,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/harvester@0.2.12
   - @nudojs/parser@1.1.4
   - @nudojs/service@1.1.4
-
-<details>
-<summary>Version history (13)</summary>
 
 ## 1.0.3
 
@@ -1059,7 +1190,18 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/parser 1.1.4 {#pkg-parser}
+## @nudojs/parser 1.1.5 {#pkg-parser}
+
+## 1.1.5
+
+### Patch Changes
+
+- Updated dependencies [5ff4202]
+- Updated dependencies [5ff4202]
+  - @nudojs/core@1.2.0
+
+<details>
+<summary>Version history (15)</summary>
 
 ## 1.1.4
 
@@ -1067,9 +1209,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 - Updated dependencies [634932f]
   - @nudojs/core@1.1.4
-
-<details>
-<summary>Version history (14)</summary>
 
 ## 1.1.3
 
@@ -1276,7 +1415,48 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/lsp 1.1.4 {#pkg-lsp}
+## @nudojs/lsp 1.1.5 {#pkg-lsp}
+
+## 1.1.5
+
+### Patch Changes
+
+- 5ff4202: refactor!: rename B-path / BPath engine identifiers to eval / evaluator
+  
+  The AST-walk interpreter is long gone, so the dual-engine campaign name
+  "B-path" no longer means anything and forced a glossary entry just to
+  explain itself. The single production evaluation engine is now simply
+  the **evaluator** (mechanism: transpile → `new Function` on Abs).
+  
+  Breaking renames (no major bump — package has no external users yet):
+  
+  | Old | New |
+  |---|---|
+  | `tryBPathCall` / `tryBPathCallFull` | `tryEvalCall` / `tryEvalCallFull` |
+  | `tryRunBPath` | `tryRunEval` |
+  | `isBPathCapable` | `isEvalCapable` |
+  | `clearBPathCache` / `trimBPathCache` / `getBPathCacheSize` | `clearEvalCache` / `trimEvalCache` / `getEvalCacheSize` |
+  | `evictBPathCacheForFiles` | `evictEvalCacheForFiles` |
+  | `collectBPathDiagnostics` / `collectBPathReplacements` | `collectEvalDiagnostics` / `collectEvalReplacements` |
+  | `BPathRunResult` / `BPathDiagnostics` / `BPathFallback` / … | `EvalRunResult` / `EvalDiagnostics` / `EvalFallback` / … |
+  | `BCallRecord` / `setBCallCollector` / `getBCallCollector` | `EvalCallRecord` / `setEvalCallCollector` / `getEvalCallCollector` |
+  | `noteBPathFallback` / `setBPathFallbackCollector` | `noteEvalFallback` / `setEvalFallbackCollector` |
+  | `MAX_B_CALL_DEPTH` / `MAX_B_TOTAL_CALLS` / `MAX_B_TOTAL_FORKS` | `MAX_EVAL_CALL_DEPTH` / `MAX_EVAL_TOTAL_CALLS` / `MAX_EVAL_TOTAL_FORKS` |
+  | `maxBRuns` (sessionCache) | `maxEvalRuns` |
+  | `NUDO_CACHE_MAX_BRUNS` | `NUDO_CACHE_MAX_EVALRUNS` |
+  
+  Source files `bpath-run.ts` / `bpath-diagnostics.ts` / `bpath-*.test.ts`
+  are now `eval-run.ts` / `eval-diagnostics.ts` / `eval-*.test.ts`.
+  Docs no longer introduce a "B-path" term or explain why the engine is
+  called B. Historical CHANGELOG / releases-history keep the old name.
+- Updated dependencies [5ff4202]
+- Updated dependencies [5ff4202]
+  - @nudojs/core@1.2.0
+  - @nudojs/service@1.2.0
+  - @nudojs/parser@1.1.5
+
+<details>
+<summary>Version history (18)</summary>
 
 ## 1.1.4
 
@@ -1286,9 +1466,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/core@1.1.4
   - @nudojs/parser@1.1.4
   - @nudojs/service@1.1.4
-
-<details>
-<summary>Version history (17)</summary>
 
 ## 1.1.3
 
@@ -1658,7 +1835,18 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/env 0.4.6 {#pkg-env}
+## @nudojs/env 0.4.7 {#pkg-env}
+
+## 0.4.7
+
+### Patch Changes
+
+- Updated dependencies [5ff4202]
+- Updated dependencies [5ff4202]
+  - @nudojs/core@1.2.0
+
+<details>
+<summary>Version history (14)</summary>
 
 ## 0.4.6
 
@@ -1666,9 +1854,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 - Updated dependencies [634932f]
   - @nudojs/core@1.1.4
-
-<details>
-<summary>Version history (13)</summary>
 
 ## 0.4.5
 
@@ -1824,7 +2009,20 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/harvester 0.2.12 {#pkg-harvester}
+## @nudojs/harvester 0.2.13 {#pkg-harvester}
+
+## 0.2.13
+
+### Patch Changes
+
+- Updated dependencies [5ff4202]
+- Updated dependencies [5ff4202]
+  - @nudojs/core@1.2.0
+  - @nudojs/env@0.4.7
+  - @nudojs/parser@1.1.5
+
+<details>
+<summary>Version history (14)</summary>
 
 ## 0.2.12
 
@@ -1834,9 +2032,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/core@1.1.4
   - @nudojs/env@0.4.6
   - @nudojs/parser@1.1.4
-
-<details>
-<summary>Version history (13)</summary>
 
 ## 0.2.11
 
@@ -1988,7 +2183,19 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## vite-plugin-nudo 0.4.7 {#pkg-vite-plugin}
+## vite-plugin-nudo 0.4.8 {#pkg-vite-plugin}
+
+## 0.4.8
+
+### Patch Changes
+
+- Updated dependencies [5ff4202]
+- Updated dependencies [5ff4202]
+  - @nudojs/core@1.2.0
+  - @nudojs/service@1.2.0
+
+<details>
+<summary>Version history (17)</summary>
 
 ## 0.4.7
 
@@ -1997,9 +2204,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 - Updated dependencies [634932f]
   - @nudojs/core@1.1.4
   - @nudojs/service@1.1.4
-
-<details>
-<summary>Version history (16)</summary>
 
 ## 0.4.6
 
@@ -2191,7 +2395,7 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## nudo-vscode 0.3.11 {#pkg-vscode}
+## nudo-vscode 0.3.12 {#pkg-vscode}
 
 ## Unreleased
 

@@ -1,5 +1,54 @@
 # @nudojs/service
 
+## 1.2.0
+
+### Minor Changes
+
+- 5ff4202: refactor!: rename B-path / BPath engine identifiers to eval / evaluator
+  
+  The AST-walk interpreter is long gone, so the dual-engine campaign name
+  "B-path" no longer means anything and forced a glossary entry just to
+  explain itself. The single production evaluation engine is now simply
+  the **evaluator** (mechanism: transpile → `new Function` on Abs).
+  
+  Breaking renames (no major bump — package has no external users yet):
+  
+  | Old | New |
+  |---|---|
+  | `tryBPathCall` / `tryBPathCallFull` | `tryEvalCall` / `tryEvalCallFull` |
+  | `tryRunBPath` | `tryRunEval` |
+  | `isBPathCapable` | `isEvalCapable` |
+  | `clearBPathCache` / `trimBPathCache` / `getBPathCacheSize` | `clearEvalCache` / `trimEvalCache` / `getEvalCacheSize` |
+  | `evictBPathCacheForFiles` | `evictEvalCacheForFiles` |
+  | `collectBPathDiagnostics` / `collectBPathReplacements` | `collectEvalDiagnostics` / `collectEvalReplacements` |
+  | `BPathRunResult` / `BPathDiagnostics` / `BPathFallback` / … | `EvalRunResult` / `EvalDiagnostics` / `EvalFallback` / … |
+  | `BCallRecord` / `setBCallCollector` / `getBCallCollector` | `EvalCallRecord` / `setEvalCallCollector` / `getEvalCallCollector` |
+  | `noteBPathFallback` / `setBPathFallbackCollector` | `noteEvalFallback` / `setEvalFallbackCollector` |
+  | `MAX_B_CALL_DEPTH` / `MAX_B_TOTAL_CALLS` / `MAX_B_TOTAL_FORKS` | `MAX_EVAL_CALL_DEPTH` / `MAX_EVAL_TOTAL_CALLS` / `MAX_EVAL_TOTAL_FORKS` |
+  | `maxBRuns` (sessionCache) | `maxEvalRuns` |
+  | `NUDO_CACHE_MAX_BRUNS` | `NUDO_CACHE_MAX_EVALRUNS` |
+  
+  Source files `bpath-run.ts` / `bpath-diagnostics.ts` / `bpath-*.test.ts`
+  are now `eval-run.ts` / `eval-diagnostics.ts` / `eval-*.test.ts`.
+  Docs no longer introduce a "B-path" term or explain why the engine is
+  called B. Historical CHANGELOG / releases-history keep the old name.
+
+### Patch Changes
+
+- 5ff4202: fix(core): more JS semantics soundness — Array.of / .at() / postfix ++-- / ToPrimitive
+  
+  - `Array.of` packs arguments into a tuple, not an array of the first element
+  - `.at()` honors ToIntegerOrInfinity (string.at + array.at index)
+  - postfix `++`/`--` writes back inside the expression
+  - `+` honors ToPrimitive/ToString for arrays, objects, undefined
+  - drop dead duplicate `case "promise"` in checkNode
+- Updated dependencies [5ff4202]
+- Updated dependencies [5ff4202]
+  - @nudojs/core@1.2.0
+  - @nudojs/env@0.4.7
+  - @nudojs/harvester@0.2.13
+  - @nudojs/parser@1.1.5
+
 ## 1.1.4
 
 ### Patch Changes

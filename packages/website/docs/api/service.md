@@ -644,10 +644,6 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | `applyMockModuleDirectivesFromSource` | fn | Source string → apply mock-module (CLI / one-shot hosts). | `applyMockModuleDirectivesFromSource( source: string, base: Record<string, AbsModuleExports>, opts: { fromFile: string; loadModule?: LoadModule }, ): MockModuleApplyResult` |
 | `applySessionCacheConfig` | fn | 接线 package.json#nudo.sessionCache（进程内 LRU 上限）并立刻 trim。 | `applySessionCacheConfig(config: NudoConfig \| null \| undefined): SessionCacheLimits` |
 | `BindingInfo` | type | — | `BindingInfo = { abs: Abs; loc?: SourceLocation; }` |
-| `EvalBuiltinUnknown` | type | — | `EvalBuiltinUnknown = { name: string; range: EvalLoc }` |
-| `EvalDiagnostics` | type | — | `EvalDiagnostics = { unreachable: EvalUnreachable[]; builtinUnknown: EvalBuiltinUnknown[]; }` |
-| `EvalRunResult` | type | — | `EvalRunResult = { exports: Record<string, unknown>; modules: Record<string, AbsModuleExports>; memberDiags?: EvalMemberDiag[]; moduleIssues...` |
-| `EvalUnreachable` | type | — | `EvalUnreachable = { range: EvalLoc }` |
 | `buildCaseDirective` | fn | 组装单行 ` * @nudo:case "name" (a, b)` 指令文本（无尾换行）。 | `buildCaseDirective(name: string, argsAbs: Abs[]): string \| null` |
 | `buildModuleGraph` | fn | Statically extract each file's relative import edges (extension resolution identical to CLI resolveModule: ''/'.js'/'.ts'/'.mjs'; bare npm specifiers skipped). | `buildModuleGraph( files: string[], cache?: ModuleGraphCache, )` |
 | `CallRecord` | type | — | — |
@@ -662,18 +658,18 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | `clearAbsModuleCache` | fn | — | `clearAbsModuleCache(): void` |
 | `clearAnalysisFileCache` | fn | — | `clearAnalysisFileCache(): void` |
 | `clearAnalysisSessionCaches` | fn | 清空全部会话级分析缓存（service + core）。 | `clearAnalysisSessionCaches(): void` |
-| `clearEvalCache` | fn | — | `clearEvalCache(): void` |
 | `clearEnvPathDeps` | fn | — | `clearEnvPathDeps(): void` |
+| `clearEvalCache` | fn | — | `clearEvalCache(): void` |
 | `clearFnAnalysisCache` | fn | — | `clearFnAnalysisCache(): void` |
 | `clearPathEnvCaches` | fn | Host cache-clear hooks (CLI watch / vite / tests) must drop path-env modules too | `clearPathEnvCaches(): void` |
 | `collectAbsBindingsFromGraph` | fn | 收集顶层绑定名 → Abs（含相对 import / 裸包 harvest 注入）。 | `collectAbsBindingsFromGraph( source: string, filePath: string, opts: AbsGraphOptions = {}, ): Map<string, Abs>` |
-| `collectEvalDiagnostics` | fn | 静态收集 求值引擎诊断。 | `collectEvalDiagnostics( source: string, extraKnown?: Iterable<string>, ): EvalDiagnostics` |
-| `collectEvalReplacements` | fn | 收集 @nudo:replace + @nudo:as → transpile 注入表 | `collectEvalReplacements(source: string)` |
 | `collectCallRecords` | fn | 调用点发现（阶段一）：在"使用现场"文件（测试 / 上层应用）中求值 顶层代码，收集它对（外部模块导出的）函数的调用记录。每条记录带 真实的实参类型与结果类型——后续 analyzeFile 将其注入合成 case， 使被使用方从 entry-only（参数全 unknown）升级为真实调用形态。 | `collectCallRecords(filePath: string, source: string): CallRecord[]` |
 | `collectDependencySpecs` | fn | 从 AST 收集静态相对依赖（ESM import + CJS require） | `collectDependencySpecs(ast: File): string[]` |
 | `collectEnvGlobals` | fn | — | `collectEnvGlobals(envNames: string[]): Record<string, Abs>` |
 | `collectEnvModules` | fn | — | `collectEnvModules(envNames: string[]): Record<string, AbsModuleExports>` |
 | `collectEnvNames` | fn | — | `collectEnvNames(filePath: string, source: string, includeProject: boolean): string[]` |
+| `collectEvalDiagnostics` | fn | 静态收集 求值引擎诊断。 | `collectEvalDiagnostics( source: string, extraKnown?: Iterable<string>, ): EvalDiagnostics` |
+| `collectEvalReplacements` | fn | 收集 @nudo:replace + @nudo:as → transpile 注入表 | `collectEvalReplacements(source: string)` |
 | `collectLoadDepContents` | fn | — | `collectLoadDepContents( filePath: string, source: string, loadModule: (spec: string, fromFile: string) => string \| undefined, )` |
 | `collectParamBodyAccesses` | fn | Draft-only：收集每个顶层函数形参上的成员读取键（`user.name` → name）。 | `collectParamBodyAccesses( source: string, ): Map` |
 | `collectSkipReturns` | fn | 每个带 `@nudo:skip` 的顶层函数 → 声明的返回 Abs；`null` = 未声明返回类型。 | `collectSkipReturns(source: string): Map<string, Abs \| null>` |
@@ -718,6 +714,10 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | `EnvHarvestConflict` | type | Conflict when handwritten env overwrote a harvest module/export (B8). | `EnvHarvestConflict = { module: string; exports: string[]; defaultOverwritten: boolean; }` |
 | `envPathDependents` | fn | 依赖该 env 模板的源文件列表 | `envPathDependents(envPath: string): string[]` |
 | `evalAbsModuleGraph` | fn | 递归求值相对依赖 + 裸包 harvest，产出入口可用的 modules 表。 | `evalAbsModuleGraph( entrySource: string, entryFile: string, opts: AbsGraphOptions = {}, ): AbsModuleGraphResult` |
+| `EvalBuiltinUnknown` | type | — | `EvalBuiltinUnknown = { name: string; range: EvalLoc }` |
+| `EvalDiagnostics` | type | — | `EvalDiagnostics = { unreachable: EvalUnreachable[]; builtinUnknown: EvalBuiltinUnknown[]; }` |
+| `EvalRunResult` | type | — | `EvalRunResult = { exports: Record<string, unknown>; modules: Record<string, AbsModuleExports>; memberDiags?: EvalMemberDiag[]; moduleIssu...` |
+| `EvalUnreachable` | type | — | `EvalUnreachable = { range: EvalLoc }` |
 | `evictAbsModuleCacheFiles` | fn | — | `evictAbsModuleCacheFiles(paths: string[]): void` |
 | `evictAnalysisCachesForFiles` | fn | 依赖内容变更后：按入口文件定向逐出 service 层缓存。 | `evictAnalysisCachesForFiles(files: string[]): void` |
 | `evictAnalysisFileCacheForFiles` | fn | 依赖变更后：按入口文件逐出 | `evictAnalysisFileCacheForFiles(files: string[]): number` |
@@ -741,9 +741,9 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | `getAbsModuleCacheSize` | fn | 测试/诊断：当前条目数（≤ ABS_MODULE_CACHE_MAX） | `getAbsModuleCacheSize(): number` |
 | `getAnalysisFileCacheSize` | fn | — | `getAnalysisFileCacheSize(): number` |
 | `getAnalysisSession` | fn | 进程内默认 AnalysisSession（LSP server / CLI watch / agent tools 共用） | `getAnalysisSession(): AnalysisSession` |
-| `getEvalCacheSize` | fn | 测试/诊断：当前 evaluator run 缓存条目数（≤ getSessionCacheLimits().maxEvalRuns） | `getEvalCacheSize(): number` |
 | `getEnvHarvestConflictCollector` | fn | Read-only peek for tests / nested restore. | `getEnvHarvestConflictCollector()` |
 | `getEnvPathDepsSize` | fn | 测试/诊断：反向依赖驻留规模 | `getEnvPathDepsSize(): number` |
+| `getEvalCacheSize` | fn | 测试/诊断：当前 evaluator run 缓存条目数（≤ getSessionCacheLimits().maxEvalRuns） | `getEvalCacheSize(): number` |
 | `getFnAnalysisCacheSize` | fn | 测试/诊断：当前条目数（≤ getSessionCacheLimits().maxFns） | `getFnAnalysisCacheSize(): number` |
 | `getPathEnvCacheSizes` | fn | 测试/诊断：path-env 驻留规模（均 ≤ 对应上限） | `getPathEnvCacheSizes()` |
 | `getSessionCacheLimits` | fn | — | `getSessionCacheLimits( env: NodeJS.ProcessEnv = process.env, ): SessionCacheLimits` |
@@ -758,9 +758,9 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | `interfaceSurface` | fn | 单文件 interface 表面：analyzer 推断结果给出函数清单与 implicit 展示， effectiveInterface 给出契约命中（手写 &gt; 生成段）。诊断 side-channel 在收尾时取走丢弃——打印命令不执法，interface-load 等错误留给 check 路径。 | `interfaceSurface( filePath: string, opts: InterfaceSurfaceOpts = {}, ): Promise<InterfaceSurfaceEntry[]>` |
 | `InterfaceSurfaceEntry` | type | — | `InterfaceSurfaceEntry = { fn: string; kind: "export" \| "local"; source: "handwritten" \| "generated" \| "implicit"; params: Array<{ name: s...` |
 | `InterfaceSurfaceOpts` | type | — | `InterfaceSurfaceOpts = { autoBind?: boolean; loadModule?: LoadModule; records?: CallRecord[]; source?: string; }` |
-| `isEvalCapable` | fn | 可走 transpile+exec 的快速预判（env 经 loadEnvs 内置 + 已 preload 的路径型）。 | `isEvalCapable(source: string, envNames: string[] = []): boolean` |
 | `isDraftableEntry` | fn | Parse-layer draftable: at least one entry has generated DSL and was not skipped | `isDraftableEntry(entries: ReadonlyArray<Pick<InterfaceDraftEntry, "dsl" \| "skipped">>): boolean` |
 | `isEnvTemplatePath` | fn | watch 门禁：env 模板变更必须可被接收（即便扩展名不进 isNudoTargetPath） | `isEnvTemplatePath(path: string): boolean` |
+| `isEvalCapable` | fn | 可走 transpile+exec 的快速预判（env 经 loadEnvs 内置 + 已 preload 的路径型）。 | `isEvalCapable(source: string, envNames: string[] = []): boolean` |
 | `isNudoTargetPath` | fn | nudo 推断目标文件判定（纯扩展名规则，路径无需存在）。 | `isNudoTargetPath(path: string): boolean` |
 | `isProjectConfigPath` | fn | — | `isProjectConfigPath(path: string): boolean` |
 | `isSidecarPath` | fn | Formal sidecar contracts only — drafts never ambient-bind and need not reanalyze | `isSidecarPath(path: string): boolean` |
