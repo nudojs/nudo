@@ -267,12 +267,16 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       return `/* unary ${expr.operator} */ $lit(undefined)`;
     }
     case "UpdateExpression": {
-      // i++/++i/i--/--i：前缀 = 新值；后缀表达式值为旧值，写回由语句级 rebind pass 完成
+      // i++/++i/i--/--i：前缀 = 新值（自包含写回）；后缀表达式值为旧值，
+      // 但**必须在表达式内立刻写回**——否则同表达式后续读到未自增的旧值
+      // （`x++ + x` 原生 11，语句级延迟写回会折成 10）。
+      // 后缀： (x = x+1, x-1) / (x = x-1, x+1)
       const arg = expr.argument as Expression;
       const fn = expr.operator === "++" ? "$add" : "$sub";
+      const undo = expr.operator === "++" ? "$sub" : "$add";
       if (arg.type === "Identifier") {
         if (expr.prefix) return `${arg.name} = ${fn}(${arg.name}, $lit(1))`;
-        return arg.name;
+        return `(${arg.name} = ${fn}(${arg.name}, $lit(1)), ${undo}(${arg.name}, $lit(1)))`;
       }
       if (arg.type === "MemberExpression") {
         const m = arg as unknown as { object: Node; property: Node; computed: boolean };
