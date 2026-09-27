@@ -631,11 +631,20 @@ export function cmp(
   b: Abs,
   phi: Phi = pTrue,
 ): Abs {
-  const va = litValue(a);
-  const vb = litValue(b);
-  if (va !== undefined && vb !== undefined) {
-    const result = compareLits(op, va, vb);
+  // 双 lit 用 term 值（含 undefined）：litValue 哨兵会把 lit(undefined)
+  // 误判成「无字面量」。关系比较 ToNumber(undefined)=NaN → 恒 false。
+  const ta = a.term;
+  const tb = b.term;
+  if (ta?.op === "lit" && tb?.op === "lit") {
+    const result = compareLits(op, ta.value, tb.value);
     if (result !== undefined) return boolLit(result);
+  } else {
+    const va = litValue(a);
+    const vb = litValue(b);
+    if (va !== undefined && vb !== undefined) {
+      const result = compareLits(op, va, vb);
+      if (result !== undefined) return boolLit(result);
+    }
   }
 
   // 符号比较：构造 pred 挂在 boolean 上，供 if 分支消费
