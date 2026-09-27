@@ -1,5 +1,14 @@
 # @nudojs/harvester
 
+## 0.2.10
+
+### Patch Changes
+
+- Updated dependencies [c1f3e93]
+  - @nudojs/core@1.1.2
+  - @nudojs/env@0.4.4
+  - @nudojs/parser@1.1.2
+
 ## 0.2.9
 
 ### Patch Changes
