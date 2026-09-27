@@ -347,7 +347,8 @@ function isDefinitelyTruthyShape(s: Shape): boolean {
     case "eff":
       return true;
     case "prim":
-      return s.type === "symbol" || s.type === "bigint";
+      // 0n 为 falsy，bigint 不可判恒真；symbol 恒真
+      return s.type === "symbol";
     default:
       return false;
   }
