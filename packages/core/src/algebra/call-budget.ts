@@ -154,6 +154,19 @@ let _bForkTruncNoted = false;
  */
 export const FORK_TRUNCATION_LABEL = "#fork-budget";
 
+/**
+ * 宿主副作用未执行标签前缀：网络/定时器全局（fetch/setTimeout…）在分析期
+ * 不真实执行（Abs 实参喂原生实现会真发请求/真排定时器，且可能崩进程），
+ * fail-closed 为 unknown#opaque。专用前缀让 check 映射为
+ * `nudo:host-effect-blocked`，不复用「某函数被截断」文案。
+ */
+export const HOST_EFFECT_LABEL_PREFIX = "#host-effect:";
+
+/** 宿主副作用未执行观测（service/LSP 映射 nudo:host-effect-blocked；与调用截断同 collector 管道） */
+export function noteHostEffectBlocked(name: string): void {
+  noteAbsTruncation(`${HOST_EFFECT_LABEL_PREFIX}${name}`);
+}
+
 /** fork 超限观测（service/LSP 映射 nudo:fork-truncated；与调用截断同 collector 管道） */
 export function noteBForkTruncation(): void {
   noteAbsTruncation(FORK_TRUNCATION_LABEL);

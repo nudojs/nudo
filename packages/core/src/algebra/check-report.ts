@@ -198,6 +198,11 @@ export function actionsForIssue(i: {
           label: "results widened to unknown — raise budget or narrow control flow",
         },
       ];
+    case "nudo:host-effect-blocked":
+      return [
+        { kind: "mock", label: "pin the host API with @nudo:mock / @nudo:env" },
+        { kind: "info", label: "results widened to unknown — or feed the value in from a call site" },
+      ];
     case "nudo:interface-drift":
       return [
         {

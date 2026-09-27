@@ -199,6 +199,10 @@ Recursion budget hit; result widened.
 
 Branch-expansion budget (`$fork` total count) hit; affected results widened. **Warning.** Raise via `NUDO_MAX_FORKS` or `package.json#nudo.analysis.maxForks` (default 5000).
 
+### `nudo:host-effect-blocked` {#nudo-host-effect-blocked}
+
+Host side-effect function (`fetch` / `XMLHttpRequest` / `WebSocket` / `EventSource` / `setTimeout` / `setInterval` / `setImmediate` / `queueMicrotask` / `requestAnimationFrame` / `requestIdleCallback`) was not executed during analysis — running it for real would perform network I/O or schedule real timers with Abs arguments. Result widened to `unknown#opaque`. **Info.** Mock it with `@nudo:mock` / `@nudo:env`, or feed the value in from a call site.
+
 ### `nudo:no-signature` {#nudo-no-signature}
 
 Function could not be generalized (CJS/anon forms still get L2 via entry fallback).

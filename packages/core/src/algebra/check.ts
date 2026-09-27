@@ -17,6 +17,7 @@ import {
   resetAbsCallBudget,
   getAbsCallBudgetStats,
   FORK_TRUNCATION_LABEL,
+  HOST_EFFECT_LABEL_PREFIX,
 } from "./call-budget.ts";
 import type { AbsAssignRecord, AbsCallRecord } from "./ast-records.ts";
 import { leqAbs } from "./leq.ts";
@@ -652,6 +653,20 @@ function checkSourceInner(
         message: `Branch expansion was truncated (fork budget); affected results widened to unknown#opaque (budget)`,
         suggestion:
           "optional: simplify branching or raise nudo.analysis.maxForks — non-blocking",
+      });
+      continue;
+    }
+    // 宿主副作用未执行（网络/定时器）：不是递归、不是预算——专用文案，
+    // 避免「Recursive evaluation of 'fetch'」误导
+    if (label.startsWith(HOST_EFFECT_LABEL_PREFIX)) {
+      const hostName = label.slice(HOST_EFFECT_LABEL_PREFIX.length);
+      issues.push({
+        severity: "info",
+        code: "nudo:host-effect-blocked",
+        message: `Host function '${hostName}' is not executed during analysis (network/timer side effect); result widened to unknown#opaque`,
+        suggestion:
+          "optional: mock it with @nudo:mock / @nudo:env, or pass the value in from a call site",
+        fn: hostName,
       });
       continue;
     }
