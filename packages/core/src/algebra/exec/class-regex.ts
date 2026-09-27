@@ -2,8 +2,8 @@
  * RegExp brand 执行面（leaf-ish）：从 class.ts 拆出，避免巨型文件。
  */
 import type { Abs } from "../abs.ts";
-import { abs, litValue, boolLit, strLit, numLit } from "../abs.ts";
-import { isObj, objOf } from "../objects.ts";
+import { abs, litValue, boolLit, strLit, numLit, str } from "../abs.ts";
+import { isObj, objOf, joinAbs } from "../objects.ts";
 import { undefAbs } from "../hof.ts";
 import { NudoThrow } from "./runtime.ts";
 import { errorTypeAbs } from "./may-throw.ts";
@@ -63,10 +63,18 @@ export function execRegexBrand(re: Abs, method: string, args: Abs[]): Abs | unde
   if (method === "toString") return strLit(`/${parts.pat}/${parts.flags}`);
   const subject = args[0] ? litValue(args[0]) : undefined;
   if (typeof subject !== "string") {
-    // subject 非字面量：保持抽象（test → boolean，exec → null|tuple 的保守并）
-    return method === "test"
-      ? abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial")
-      : undefined;
+    // subject 非字面量：保持抽象（test → boolean，exec → null|match 的保守并）。
+    // 此前 exec 直接返回 undefined（注释承诺的保守并未实现）——调用方回落到
+    // 「方法不存在」路径，结果被当成 Abs undefined：`typeof m === "undefined"`、
+    // `m === null` 折 false，捕获组下标全 unknown，整条 return 退化。
+    if (method === "test") {
+      return abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial");
+    }
+    // exec：null | 匹配数组（下标可读；未参与捕获组为 undefined）
+    const element = joinAbs(str(), undefAbs());
+    const matchAbs = abs({ k: "arr", element }, undefined, undefined, "path");
+    const nullAbs = abs({ k: "unknown" }, { op: "lit", value: null as never }, undefined, "exact");
+    return joinAbs(nullAbs, matchAbs);
   }
   try {
     return regexExecWithState(re, method, subject).result;
