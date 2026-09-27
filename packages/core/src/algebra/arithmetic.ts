@@ -213,6 +213,18 @@ function normalizeNegZero(n: number): number {
   return n === 0 ? 0 : n;
 }
 
+/**
+ * IEEE 安全的不等式端点。
+ * - 非有限（NaN/±Inf）：不能当端点（NaN 恒假、Inf 与溢出值比较失真）
+ * - 0 作 strict 端点仅当运算不会把正值下溢成 0（见各调用点的 strictZeroOk）
+ */
+function ieeeBound(n: number, strict: boolean, strictZeroOk: boolean): number | undefined {
+  if (!Number.isFinite(n)) return undefined;
+  const z = normalizeNegZero(n);
+  if (z === 0 && strict && !strictZeroOk) return undefined;
+  return z;
+}
+
 /** any / unknown（含无 term 的裸 unknown）：JS ToNumber 语义用于 - * / % */
 function isAnyLike(a: Abs): boolean {
   if (a.shape.k === "any") return true;
@@ -279,15 +291,21 @@ function addPred(a: Abs, b: Abs, sumTerm: Term, phi: Phi): Pred | undefined {
   const facts: Pred[] = [];
 
   // (a.lo + b.lo) < sum  或  ≤
+  // 溢出到 ±Inf 的和不能当端点（x>1e308 + y>1e308 ⊬ x+y > Infinity）
+  // 正数之和不会下溢成 0，strict 0 端点可保留
   if (aBounds?.lo !== undefined && evalBounds?.lo !== undefined) {
-    const loSum = aBounds.lo.value + evalBounds.lo.value;
     const strict = aBounds.lo.strict || evalBounds.lo.strict;
-    facts.push(strict ? gt(sumTerm, lit(loSum)) : ge(sumTerm, lit(loSum)));
+    const loSum = ieeeBound(aBounds.lo.value + evalBounds.lo.value, strict, true);
+    if (loSum !== undefined) {
+      facts.push(strict ? gt(sumTerm, lit(loSum)) : ge(sumTerm, lit(loSum)));
+    }
   }
   if (aBounds?.hi !== undefined && evalBounds?.hi !== undefined) {
-    const hiSum = aBounds.hi.value + evalBounds.hi.value;
     const strict = aBounds.hi.strict || evalBounds.hi.strict;
-    facts.push(strict ? lt(sumTerm, lit(hiSum)) : le(sumTerm, lit(hiSum)));
+    const hiSum = ieeeBound(aBounds.hi.value + evalBounds.hi.value, strict, true);
+    if (hiSum !== undefined) {
+      facts.push(strict ? lt(sumTerm, lit(hiSum)) : le(sumTerm, lit(hiSum)));
+    }
   }
 
   // 保留原 Φ 中可平移的事实：若 a 是 var(x) 且 Φ ⊢ x>0，则 sum=x+b 时
@@ -317,8 +335,8 @@ function numericBounds(a: Abs, phi: Phi = pTrue): NumBounds | undefined {
   if (a.term?.op === "var") {
     collectBoundsFromPhi(phi, a.term.id, result);
   }
-  // 字面量：上下界都是自身
-  if (a.term?.op === "lit" && typeof a.term.value === "number") {
+  // 字面量：上下界都是自身（NaN 无序，不得当端点）
+  if (a.term?.op === "lit" && typeof a.term.value === "number" && !Number.isNaN(a.term.value)) {
     result.lo = { value: a.term.value, strict: false };
     result.hi = { value: a.term.value, strict: false };
   }
@@ -408,14 +426,18 @@ export function sub(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
     const bb = numericBounds(b, phi);
     const facts: Pred[] = [];
     if (ab?.lo !== undefined && bb?.hi !== undefined) {
-      const lo = ab.lo.value - bb.hi.value;
       const strict = ab.lo.strict || bb.hi.strict;
-      facts.push(strict ? gt(term, lit(lo)) : ge(term, lit(lo)));
+      const lo = ieeeBound(ab.lo.value - bb.hi.value, strict, true);
+      if (lo !== undefined) {
+        facts.push(strict ? gt(term, lit(lo)) : ge(term, lit(lo)));
+      }
     }
     if (ab?.hi !== undefined && bb?.lo !== undefined) {
-      const hi = ab.hi.value - bb.lo.value;
       const strict = ab.hi.strict || bb.lo.strict;
-      facts.push(strict ? lt(term, lit(hi)) : le(term, lit(hi)));
+      const hi = ieeeBound(ab.hi.value - bb.lo.value, strict, true);
+      if (hi !== undefined) {
+        facts.push(strict ? lt(term, lit(hi)) : le(term, lit(hi)));
+      }
     }
     const conf =
       term.op === "lit"
@@ -460,26 +482,28 @@ export function mul(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
       k = a.term.value;
       base = b;
     }
-    if (k !== undefined && base !== undefined && k !== 0) {
+    if (k !== undefined && base !== undefined && k !== 0 && Number.isFinite(k)) {
+      // |k|≥1 不会把正值下溢成 0，strict 0 端点可保留（x>0 * 2 ⇒ >0）
+      const strictZeroOk = Math.abs(k) >= 1;
       const ab = numericBounds(base, phi);
       const facts: Pred[] = [];
       if (ab?.lo !== undefined) {
         if (k > 0) {
-          const lo = ab.lo.value * k;
-          facts.push(ab.lo.strict ? gt(term, lit(lo)) : ge(term, lit(lo)));
+          const lo = ieeeBound(ab.lo.value * k, ab.lo.strict, strictZeroOk);
+          if (lo !== undefined) facts.push(ab.lo.strict ? gt(term, lit(lo)) : ge(term, lit(lo)));
         } else {
           // 负数：lo * k 变成上界
-          const hi = ab.lo.value * k;
-          facts.push(ab.lo.strict ? lt(term, lit(normalizeNegZero(hi))) : le(term, lit(normalizeNegZero(hi))));
+          const hi = ieeeBound(ab.lo.value * k, ab.lo.strict, strictZeroOk);
+          if (hi !== undefined) facts.push(ab.lo.strict ? lt(term, lit(hi)) : le(term, lit(hi)));
         }
       }
       if (ab?.hi !== undefined) {
         if (k > 0) {
-          const hi = ab.hi.value * k;
-          facts.push(ab.hi.strict ? lt(term, lit(hi)) : le(term, lit(hi)));
+          const hi = ieeeBound(ab.hi.value * k, ab.hi.strict, strictZeroOk);
+          if (hi !== undefined) facts.push(ab.hi.strict ? lt(term, lit(hi)) : le(term, lit(hi)));
         } else {
-          const lo = ab.hi.value * k;
-          facts.push(ab.hi.strict ? gt(term, lit(normalizeNegZero(lo))) : ge(term, lit(normalizeNegZero(lo))));
+          const lo = ieeeBound(ab.hi.value * k, ab.hi.strict, strictZeroOk);
+          if (lo !== undefined) facts.push(ab.hi.strict ? gt(term, lit(lo)) : ge(term, lit(lo)));
         }
       }
       return abs(
@@ -530,19 +554,30 @@ export function div(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   }
   if (isNumericLike(a) && isNumericLike(b) && a.term && b.term) {
     const term = simplifyTerm(app("/", [a.term, b.term]));
-    if (b.term.op === "lit" && typeof b.term.value === "number" && b.term.value !== 0) {
+    if (
+      b.term.op === "lit" &&
+      typeof b.term.value === "number" &&
+      b.term.value !== 0 &&
+      Number.isFinite(b.term.value)
+    ) {
       const k = b.term.value;
+      // |k|≤1 时 x/k 不会把正值下溢成 0；|k|>1 可以（5e-324/2→0）
+      const strictZeroOk = Math.abs(k) <= 1;
       const ab = numericBounds(a, phi);
       const facts: Pred[] = [];
       if (ab?.lo !== undefined) {
-        const lo = ab.lo.value / k;
-        if (k > 0) facts.push(ab.lo.strict ? gt(term, lit(lo)) : ge(term, lit(lo)));
-        else facts.push(ab.lo.strict ? lt(term, lit(lo)) : le(term, lit(lo)));
+        const lo = ieeeBound(ab.lo.value / k, ab.lo.strict, strictZeroOk);
+        if (lo !== undefined) {
+          if (k > 0) facts.push(ab.lo.strict ? gt(term, lit(lo)) : ge(term, lit(lo)));
+          else facts.push(ab.lo.strict ? lt(term, lit(lo)) : le(term, lit(lo)));
+        }
       }
       if (ab?.hi !== undefined) {
-        const hi = ab.hi.value / k;
-        if (k > 0) facts.push(ab.hi.strict ? lt(term, lit(hi)) : le(term, lit(hi)));
-        else facts.push(ab.hi.strict ? gt(term, lit(hi)) : ge(term, lit(hi)));
+        const hi = ieeeBound(ab.hi.value / k, ab.hi.strict, strictZeroOk);
+        if (hi !== undefined) {
+          if (k > 0) facts.push(ab.hi.strict ? lt(term, lit(hi)) : le(term, lit(hi)));
+          else facts.push(ab.hi.strict ? gt(term, lit(hi)) : ge(term, lit(hi)));
+        }
       }
       return abs(
         num().shape,
