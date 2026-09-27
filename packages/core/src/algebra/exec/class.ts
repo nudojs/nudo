@@ -40,7 +40,7 @@ import {
 } from "./member-diag.ts";
 import { errorTypeAbs } from "./may-throw.ts";
 import { NudoThrow, $collectionForEach } from "./runtime.ts";
-import { callAbsMethod } from "../methods.ts";
+import { callAbsMethod, toIntegerOrInfinityLit } from "../methods.ts";
 import {
   registerBClass,
   markClassValue,
@@ -1089,8 +1089,9 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
     if (shape.k === "arr") return joinAbs(shape.element, undefAbs());
   }
   if (method === "at") {
-    const raw = args[0] !== undefined ? litValue(args[0]) : undefined;
-    const iv = typeof raw === "number" && Number.isInteger(raw) ? raw : undefined;
+    // ToIntegerOrInfinity：缺省/undefined/null/NaN → 0；true → 1；'1' → 1；
+    // 1.9 → 1；±∞ → OOB undefined。抽象下标 join 全部元素 ∪ undefined。
+    const iv = toIntegerOrInfinityLit(args[0]);
     if (shape.k === "tuple") {
       const els = shape.elements;
       if (iv === undefined) {
