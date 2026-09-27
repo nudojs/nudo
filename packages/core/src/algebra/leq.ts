@@ -67,30 +67,33 @@ function leqWithPred(
 
   // never ≤ 任意
   if (src.shape.k === "never") return ok();
-  // 任意 ≤ any / unknown（目标放宽）
+
+  // 字面量同一性：litValue 哨兵把 lit(undefined) 折成「无字面量」，必须直接看
+  // term。null/undefined 字面量的 shape 是 unknown，不得再走「unknown 目标放宽」。
+  // SameValue：NaN 可赋给 NaN（=== 对 NaN 为 false，赋值同一性不可用 ===）
+  const srcLitTerm = src.term?.op === "lit" ? src.term : undefined;
+  const tgtLitTerm = tgt.term?.op === "lit" ? tgt.term : undefined;
+  if (tgtLitTerm && srcLitTerm) {
+    const sv = srcLitTerm.value;
+    const tv = tgtLitTerm.value;
+    const sameLit =
+      sv === tv ||
+      (typeof sv === "number" && typeof tv === "number" && Number.isNaN(sv) && Number.isNaN(tv));
+    if (sameLit) return ok();
+    return fail(`lit ${String(sv)} ⊭ lit ${String(tv)}`);
+  }
+  if (tgtLitTerm && !srcLitTerm) {
+    // 目标是具体字面量（含 null/undefined），源不是同一字面量：
+    // number ⊄ 1、any 之外的任意值 ⊄ undefined
+    // any ≤ 任意（源是任意值，目标收窄时不在此判定失败——由 pred/slot 再卡）
+    if (src.shape.k === "any") return ok();
+    return fail(`non-lit ⊭ lit ${String(tgtLitTerm.value)}`);
+  }
+
+  // 任意 ≤ any / unknown（目标放宽；带 lit 的 unknown 已在上面按字面量裁定）
   if (tgt.shape.k === "any" || tgt.shape.k === "unknown") return ok();
   // any ≤ 任意（源是任意值，目标收窄时不在此判定失败——由 pred/slot 再卡）
   if (src.shape.k === "any") return ok();
-
-  // 字面量：先按 lit 值裁定，再走 shape
-  // SameValue：NaN 可赋给 NaN（=== 对 NaN 为 false，赋值同一性不可用 ===）
-  const sv = litValue(src);
-  const tv = litValue(tgt);
-  const sameLit =
-    sv === tv || (typeof sv === "number" && typeof tv === "number" && Number.isNaN(sv) && Number.isNaN(tv));
-  if (sv !== undefined && tv !== undefined) {
-    if (sameLit) return ok();
-    // 目标是具体字面量而源不是同一值：不得仅因同 prim 放行（P1-5）
-    if (tgt.shape.k === "prim") {
-      return fail(`lit ${String(sv)} ⊭ lit ${String(tv)}`);
-    }
-    // 数值字面量可进带 pred 的 number（走 pred 蕴含）
-  } else if (tv !== undefined && sv === undefined) {
-    // 目标是具体字面量，源是 prim/无 term：number ⊄ 1
-    if (tgt.shape.k === "prim") {
-      return fail(`non-lit prim ⊭ lit ${String(tv)}`);
-    }
-  }
 
   const shapeR = leqShape(src, tgt, phi, env, depth);
   if (!shapeR.ok) return shapeR;
