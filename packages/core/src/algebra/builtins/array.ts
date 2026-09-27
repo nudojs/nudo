@@ -70,7 +70,14 @@ export function evalArrayStatic(name: string, args: Abs[]): Abs | undefined {
       return boolLit(false);
     }
     case "of":
-      return abs({ k: "arr", element: a0 ?? unknown }, undefined, undefined, "path");
+      // Array.of 把全部实参打包成数组元素——不是 Array(n) 的空洞语义：
+      // Array.of() → []、Array.of(7) → [7]、Array.of(1,2,3) → [1,2,3]
+      return abs(
+        { k: "tuple", elements: args.map((a) => asAbs(a) ?? unknown) },
+        undefined,
+        undefined,
+        "exact",
+      );
     case "from": {
       // Array.from(iterable[, mapFn])：取可迭代物的元素，不是把实参整个当元素
       //（那是 Array.of 的语义）。mapFn 逐位应用 (el, i)——副作用必须落地：
