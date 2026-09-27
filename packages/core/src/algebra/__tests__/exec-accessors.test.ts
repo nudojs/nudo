@@ -13,6 +13,7 @@ import {
   transpile,
   litValue,
   formatShape,
+  abs,
   $lit,
   $arr,
   type Abs,
@@ -158,7 +159,18 @@ describe("B-path object-literal accessors", () => {
       `export function run(o) { return o.x; }`,
       "run",
     );
-    const r = run($arr([$lit(1)]));
+    // 真正的开放对象：槽位未知，不得假精确
+    const open = abs({ k: "obj", slots: {}, open: true }, undefined, undefined, "path");
+    const r = run(open);
     expect(formatShape(r)).not.toBe("undefined");
+  });
+
+  it("tuple missing own key is undefined (native [1].x)", async () => {
+    const run = await execTranspiled(
+      `export function run(o) { return o.x; }`,
+      "run",
+    );
+    const r = run($arr([$lit(1)]));
+    expect(formatShape(r)).toBe("undefined");
   });
 });
