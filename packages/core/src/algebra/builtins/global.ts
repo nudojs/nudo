@@ -32,9 +32,20 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
     case "parseFloat":
       if (typeof a0 === "string" || typeof a0 === "number") return numLit(parseFloat(String(a0)));
       return numPrim();
-    case "isNaN":
+    case "isNaN": {
+      // 全局 isNaN：ToNumber 后判 NaN（与 Number.isNaN 不同，会强制转换）
+      // isNaN('x')===true、isNaN(true)===false、isNaN(null)===false、
+      // isNaN(undefined)===true、isNaN('')===false、isNaN('42')===false
+      if (args[0] && isSymbolAbs(args[0])) throw new NudoThrow(errorTypeAbs("TypeError"));
+      if (!args[0] || (args[0].term?.op === "lit" && args[0].term.value === undefined)) {
+        return boolLit(true);
+      }
       if (typeof a0 === "number") return boolLit(Number.isNaN(a0));
+      if (typeof a0 === "boolean" || a0 === null) return boolLit(false);
+      if (typeof a0 === "string") return boolLit(Number.isNaN(Number(a0)));
+      if (typeof a0 === "bigint") throw new NudoThrow(errorTypeAbs("TypeError"));
       return boolPrim();
+    }
     case "isFinite": {
       // 全局 isFinite：ToNumber 后判有限（与 Number.isFinite 不同，会强制转换）
       if (a0 === undefined && args.length === 0) return boolLit(false);

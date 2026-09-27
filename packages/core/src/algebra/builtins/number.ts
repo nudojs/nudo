@@ -18,17 +18,28 @@ export function foldParseInt(s: string | number, radix: number | undefined): Abs
 
 /** Number.isInteger / isNaN / parseFloat 等 */
 export function evalNumberStatic(name: string, args: Abs[]): Abs | undefined {
-  const a0 = args[0] ? litValue(args[0]) : undefined;
+  const a0Arg = args[0];
+  const a0 = a0Arg ? litValue(a0Arg) : undefined;
+  /**
+   * Number.isInteger / Number.isNaN / Number.isFinite 不做 ToNumber：
+   * 非 number（含缺省实参、undefined/null/bool/string/bigint）恒 false。
+   * 仅当实参为具体字面量时折叠；抽象实参保持 boolPrim。
+   */
+  const foldStrictNumberPred = (
+    pred: (n: number) => boolean,
+  ): Abs | undefined => {
+    if (!a0Arg) return boolLit(false);
+    if (a0Arg.term?.op !== "lit") return undefined;
+    const v = a0Arg.term.value;
+    return boolLit(typeof v === "number" && pred(v));
+  };
   switch (name) {
     case "isInteger":
-      if (typeof a0 === "number") return boolLit(Number.isInteger(a0));
-      return boolPrim();
+      return foldStrictNumberPred(Number.isInteger) ?? boolPrim();
     case "isNaN":
-      if (typeof a0 === "number") return boolLit(Number.isNaN(a0));
-      return boolPrim();
+      return foldStrictNumberPred(Number.isNaN) ?? boolPrim();
     case "isFinite":
-      if (typeof a0 === "number") return boolLit(Number.isFinite(a0));
-      return boolPrim();
+      return foldStrictNumberPred(Number.isFinite) ?? boolPrim();
     case "parseInt":
       if (typeof a0 === "string" || typeof a0 === "number") {
         const radix = args[1] ? litValue(args[1]) : undefined;

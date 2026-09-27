@@ -537,14 +537,15 @@ export function $invoke(
   }
   const brandName = thisVal.shape.k === "brand" ? thisVal.shape.name : undefined;
   if (brandName) {
-    // C1：Map/Set 方法（条目表）
-    if (brandName === "Map" || brandName === "Set") {
-      const viaCol = evalBuiltinInstanceMethod(brandName, method, thisVal, args);
-      if (viaCol !== undefined) return viaCol;
-      if (method === "forEach") {
-        const r = $collectionForEach(thisVal, args[0]);
-        if (r !== undefined) return r;
-      }
+    // 内建 brand 实例方法（Date/RegExp/Map/Set）：统一经 builtin 表分派。
+    // 此前只对 Map/Set 调 evalBuiltinInstanceMethod，Date.getTime 等落到
+    // findMethod 未命中 → 折 lit(undefined)，Number.isNaN(getTime()) 假 false。
+    const viaBuiltin = evalBuiltinInstanceMethod(brandName, method, thisVal, args);
+    if (viaBuiltin !== undefined) return viaBuiltin;
+    // C1：Map/Set forEach（条目表回调）
+    if ((brandName === "Map" || brandName === "Set") && method === "forEach") {
+      const r = $collectionForEach(thisVal, args[0]);
+      if (r !== undefined) return r;
     }
     const m = findMethod(brandName, method);
     if (m) {
