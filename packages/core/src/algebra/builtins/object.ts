@@ -135,8 +135,13 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         );
       }
       if (a0?.term?.op === "lit" && typeof a0.term.value === "string") {
+        // code unit（与 Object.keys 同口径），不是 Array.from 的 code point
+        const s = a0.term.value;
         return abs(
-          { k: "tuple", elements: Array.from(a0.term.value, (c) => strLit(c)) },
+          {
+            k: "tuple",
+            elements: Array.from({ length: s.length }, (_, i) => strLit(s[i]!)),
+          },
           undefined,
           undefined,
           "exact",
@@ -169,11 +174,13 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         return abs({ k: "tuple", elements: entries }, undefined, undefined, "exact");
       }
       if (a0?.term?.op === "lit" && typeof a0.term.value === "string") {
+        // code unit 下标（与 Object.keys 同口径），不是 code point 序号
+        const s = a0.term.value;
         return abs(
           {
             k: "tuple",
-            elements: Array.from(a0.term.value, (c, i) =>
-              abs({ k: "tuple", elements: [strLit(String(i)), strLit(c)] }, undefined, undefined, "exact"),
+            elements: Array.from({ length: s.length }, (_, i) =>
+              abs({ k: "tuple", elements: [strLit(String(i)), strLit(s[i]!)] }, undefined, undefined, "exact"),
             ),
           },
           undefined,

@@ -139,10 +139,11 @@ function spreadIndexSlots(over: Abs): Record<string, Slot> | undefined {
   const sv =
     over.term?.op === "lit" && typeof over.term.value === "string" ? over.term.value : undefined;
   if (sv !== undefined) {
-    // code point 展开（surrogate pair 合并——for...of 即 code point）
+    // String exotic own keys 是 UTF-16 code unit 下标（不是 for-of 的 code point）
     const slots: Record<string, Slot> = {};
-    let i = 0;
-    for (const ch of sv) slots[String(i++)] = { value: strLit(ch) };
+    for (let i = 0; i < sv.length; i++) {
+      slots[String(i)] = { value: strLit(sv[i]!) };
+    }
     return slots;
   }
   return undefined;
