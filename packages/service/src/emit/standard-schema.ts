@@ -84,7 +84,8 @@ function checkNode(
     case "fn":
     case "brand":
     case "promise":
-      // Phase C：不执法这些形态（fn/brand 无可靠运行时判据；unknown 放行）
+      // Phase C：不执法这些形态（fn/brand 无可靠运行时判据；unknown 放行；
+      // promise 同步投影不 unwrap thenable，仅当已是 resolved 形态时无从得知——放行）
       return;
     case "never":
       pushIssue(issues, path, "expected never");
@@ -165,10 +166,6 @@ function checkNode(
         path,
         `expected one of ${node.members.length} union members, got ${typeOf(value)}`,
       );
-      return;
-    }
-    case "promise": {
-      // 同步投影：不 unwrap thenable；仅当已是 resolved 形态时无从得知 —— 放行并注明
       return;
     }
     default:
