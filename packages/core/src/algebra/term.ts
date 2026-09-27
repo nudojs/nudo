@@ -19,7 +19,13 @@ export const app = (fn: string, args: Term[]): Term => ({ op: "app", fn, args })
 export function termEquals(a: Term, b: Term): boolean {
   if (a === b) return true;
   if (a.op !== b.op) return false;
-  if (a.op === "lit" && b.op === "lit") return a.value === b.value;
+  // 项身份用 SameValue 的 NaN 口径：NaN 与自身同项；-0 与 0 仍同项（与 === 一致）
+  if (a.op === "lit" && b.op === "lit") {
+    if (typeof a.value === "number" && typeof b.value === "number" && Number.isNaN(a.value) && Number.isNaN(b.value)) {
+      return true;
+    }
+    return a.value === b.value;
+  }
   if (a.op === "var" && b.op === "var") return a.id === b.id;
   if (a.op === "app" && b.op === "app") {
     return (

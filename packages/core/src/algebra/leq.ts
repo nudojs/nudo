@@ -73,10 +73,13 @@ function leqWithPred(
   if (src.shape.k === "any") return ok();
 
   // 字面量：先按 lit 值裁定，再走 shape
+  // SameValue：NaN 可赋给 NaN（=== 对 NaN 为 false，赋值同一性不可用 ===）
   const sv = litValue(src);
   const tv = litValue(tgt);
+  const sameLit =
+    sv === tv || (typeof sv === "number" && typeof tv === "number" && Number.isNaN(sv) && Number.isNaN(tv));
   if (sv !== undefined && tv !== undefined) {
-    if (sv === tv) return ok();
+    if (sameLit) return ok();
     // 目标是具体字面量而源不是同一值：不得仅因同 prim 放行（P1-5）
     if (tgt.shape.k === "prim") {
       return fail(`lit ${String(sv)} ⊭ lit ${String(tv)}`);
