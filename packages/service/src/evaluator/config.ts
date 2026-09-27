@@ -90,17 +90,22 @@ export function checkConfig(config: NudoConfig | null | undefined): CheckConfig 
   const rawEntry = raw?.entryThrows;
   const rawProfile = raw?.profile;
   let entryThrows: CheckConfig["entryThrows"] = "error";
-  if (rawEntry === "off" || rawEntry === "warning" || rawEntry === "error") {
+  const entryValid = rawEntry === "off" || rawEntry === "warning" || rawEntry === "error";
+  if (entryValid) {
     // 显式 entryThrows 优先于 profile 预设（与 CLI resolveEntryThrows 同优先级）
     entryThrows = rawEntry;
-  } else if (rawProfile === "adoption" || rawProfile === "strict") {
-    // profile 预设（design-cli-semantics §1.4）：CLI 与 LSP 必须同口径，
-    // 否则 IDE 把 CLI 已降级的 L2 显示为 error
-    entryThrows = rawProfile === "adoption" ? "warning" : "error";
-  } else if (rawEntry !== undefined) {
-    process.stderr?.write?.(
-      `nudo.check.entryThrows: invalid value ${JSON.stringify(rawEntry)} (expected error|warning|off); using error\n`,
-    );
+  } else {
+    // 非法 entryThrows 始终告警——不得因 profile 合法而被吞掉
+    if (rawEntry !== undefined) {
+      process.stderr?.write?.(
+        `nudo.check.entryThrows: invalid value ${JSON.stringify(rawEntry)} (expected error|warning|off); using error\n`,
+      );
+    }
+    if (rawProfile === "adoption" || rawProfile === "strict") {
+      // profile 预设（design-cli-semantics §1.4）：CLI 与 LSP 必须同口径，
+      // 否则 IDE 把 CLI 已降级的 L2 显示为 error
+      entryThrows = rawProfile === "adoption" ? "warning" : "error";
+    }
   }
   const ignore = Array.isArray(raw?.ignoreThrows)
     ? raw.ignoreThrows.filter((s): s is string => typeof s === "string" && s.length > 0)

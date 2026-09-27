@@ -31,6 +31,24 @@ describe("checkConfig gate profile", () => {
     ).toBe("error");
   });
 
+  it("invalid entryThrows still warns even when profile is valid", () => {
+    const writes: string[] = [];
+    const orig = process.stderr.write;
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      writes.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      // 非法 entryThrows + 合法 profile：应用 profile，但告警不得被吞
+      expect(
+        checkConfig({ check: { entryThrows: "warn", profile: "adoption" } as never }).entryThrows,
+      ).toBe("warning");
+      expect(writes.join("")).toContain("nudo.check.entryThrows: invalid value");
+    } finally {
+      process.stderr.write = orig;
+    }
+  });
+
   it("ignoreThrows list still parsed", () => {
     expect(checkConfig({ check: { ignoreThrows: ["TypeError"] } }).ignoreThrows).toEqual([
       "TypeError",
