@@ -505,12 +505,12 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2 (plus non-`$op` na
 | `migrateNullProto` | fn | 同一对象的不可变更新（$set/$del）迁移 nullProto 标记 | `migrateNullProto(from: Abs, to: Abs): Abs` |
 | `mock` | fn | test mock helpers | `mock(): MockHelper` |
 | `MockHelper` | type | test mock helpers | `MockHelper = { kind: "mock-helper"; returnValue?: Abs; resolvedValue?: Abs; rejectedValue?: Abs; onFirstCallValue?: Abs; onSecondCallValu...` |
-| `mod` | fn | 取模：字面量折叠；`x % k`（k&gt;0 字面量）结果界在 (−\|k\|, \|k\|)。 | `mod(a: Abs, b: Abs, phi: Phi = pTrue): Abs` |
+| `mod` | fn | 取模：字面量折叠；`x % k`（k 为有限非零字面量）仅当被除数有限时 结果界在 (−\|k\|, \|k\|)。整数模可收紧到 [0, k)，此处先做保守实数界。 | `mod(a: Abs, b: Abs, phi: Phi = pTrue): Abs` |
 | `mul` | fn | 乘法：字面量直接求值；×正数同向缩放；×负数翻转不等式；×0 归零 | `mul(a: Abs, b: Abs, phi: Phi = pTrue): Abs` |
 | `NamedImport` | type | `/// @nudo:import { delay, percent } from "./delay.nudo.js"` | `NamedImport = { names: string[]; spec: string }` |
 | `namespaceNameOf` | fn | 命名空间身份表：transpile 后 `Math.max(0, x)` 的接收者是宿主 JS 全局对象 （非 Abs）。按对象身份识别命名空间，路由到 Abs builtin 表。 | `namespaceNameOf(v: unknown): string \| undefined` |
 | `ne` | const | — | `const ne` |
-| `negAbs` | fn | 一元负号：字面量折叠；符号数翻转不等式 | `negAbs(a: Abs, _phi: Phi = pTrue): Abs` |
+| `negAbs` | fn | 一元负号：字面量折叠（含 ToNumber 强制）；符号数翻转不等式 | `negAbs(a: Abs, _phi: Phi = pTrue): Abs` |
 | `negatePred` | fn | 逻辑否定（De Morgan）：¬(A∧B)=¬A∨¬B；¬(A∨B)=¬A∧¬B；双重否定消去。 | `negatePred(p: Pred): Pred` |
 | `never` | const | Abs constructors / faces | `const never` |
 | `not` | fn | — | `not(p: Pred): Pred` |

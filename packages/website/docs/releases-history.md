@@ -11,19 +11,120 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 | Package | Current version |
 |----------|-----------------|
-| `@nudojs/core` | 1.1.0 |
-| `@nudojs/service` | 1.1.0 |
-| `nudojs (CLI)` | 1.0.0 |
-| `@nudojs/parser` | 1.1.0 |
-| `@nudojs/lsp` | 1.1.0 |
-| `@nudojs/env` | 0.4.2 |
-| `@nudojs/harvester` | 0.2.8 |
-| `vite-plugin-nudo` | 0.4.3 |
-| `nudo-vscode` | 0.3.7 |
+| `@nudojs/core` | 1.1.3 |
+| `@nudojs/service` | 1.1.3 |
+| `nudojs (CLI)` | 1.0.3 |
+| `@nudojs/parser` | 1.1.3 |
+| `@nudojs/lsp` | 1.1.3 |
+| `@nudojs/env` | 0.4.5 |
+| `@nudojs/harvester` | 0.2.11 |
+| `vite-plugin-nudo` | 0.4.6 |
+| `nudo-vscode` | 0.3.10 |
 
 **Jump to package:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.1.0 {#pkg-core}
+## @nudojs/core 1.1.3 {#pkg-core}
+
+## 1.1.3
+
+### Patch Changes
+
+- 3bf9997: fix(core): JS semantics soundness — ToString args, compare undefined, NaN identity, JSON.stringify
+  
+  B-path Abs folding corrections so concrete results match native JS:
+  
+  - string/parse methods (`startsWith`/`endsWith`/`includes`/`split`/`replace`/
+    `indexOf`/`parseInt`/`parseFloat`) honor ToString and missing-arg defaults;
+    `split` keeps the ES special case that an **undefined** separator returns
+    `[ToString(O)]` without splitting
+  - relational compare of `lit(undefined)` folds via ToNumber (all relations false)
+  - same-var `===` is not exact `true` when the value may be NaN
+  - `JSON.stringify` of top-level function/symbol returns the JS `undefined` value
+  - NaN literal identity uses SameValue (assignment/`leq`), not `===`
+  - drop unsound `x*0=0` / `x+0=x` algebra identities (NaN/`-0`/string domain)
+  - `n % 0` folds to NaN; `x % k` bounds only for finite dividends
+  - `0n` is falsy; `Number.is*` fold non-number lits to false; global `isNaN` coerces
+  - string index methods (`charAt`/`slice`/…) honor ToNumber and default args
+  - unary minus and `parseInt`/`parseFloat` honor ToNumber/ToInt32
+  - Math.* folds ToNumber lits (own numeric methods only — no `constructor`/`toString`)
+  - tuple index reads use canonical array index (`a["0"] === a[0]`)
+  - call-spread placeholder is `unknown`, not `undefined` lit
+  
+  `fix(parser)`: directive scanners (`splitTopLevelArgs` / colon / arrow / balanced
+  parens) respect string literals.
+  
+  Review follow-ups folded in: `split(undefined)` special case, `indexOf` returns
+  number shape on abstract receivers, Math method allowlist.
+
+<details>
+<summary>Version history (13)</summary>
+
+## 1.1.2
+
+### Patch Changes
+
+- c1f3e93: fix(core): never-execute host side-effect guard also covers `new`
+  
+  `$new` was not identity-guarded against the host side-effect list
+  (`WebSocket` / `XMLHttpRequest` / `EventSource`), so `new WebSocket(url)`
+  only avoided real network I/O by falling through to an empty brand —
+  a coincidence, not an explicit block. Both `$callNamed` and `$new` now
+  share `blockHostSideEffect`: identity match fails closed to
+  `unknown#opaque` and reports `nudo:host-effect-blocked`.
+
+## 1.1.1
+
+### Patch Changes
+
+- 86d1f87: fix(core): never execute host side-effect globals in the B path
+  
+  `$callNamed` executed any host function it could not fold, so a module calling
+  `fetch(url)` made the analyzer issue a **real** network request with Abs
+  arguments (`[object Object]`): `nudo check` / `nudo test` died with
+  `TypeError: Failed to parse URL from [object Object]` (ERR_INVALID_URL) via an
+  unhandled rejection. `setTimeout` / `setInterval` scheduled real timers the
+  same way.
+  
+  `fetch` / `XMLHttpRequest` / `WebSocket` / `EventSource` / timers /
+  `queueMicrotask` / `requestAnimationFrame` / `requestIdleCallback` are now
+  identity-guarded (aliases included) and fail closed to `unknown#opaque`,
+  reported through a dedicated `nudo:host-effect-blocked` (info) diagnostic —
+  not `nudo:recursion-truncated`. Other host functions still evaluate for real.
+- 892899d: fix(core): RegExp.exec precision with non-literal subject + nullish return prefilter
+  
+  Two return-path defects that both show up in the classic "parse and return null
+  on no-match" shape:
+  
+  1. `execRegexBrand` documented "exec → null|tuple 的保守并" for a subject that
+     is not a string literal but returned `undefined` instead. The caller then fell
+     through to the "method not found" path and the result became the Abs
+     `undefined`: `typeof m` folded to the literal `"undefined"`, `m === null` folded
+     to `false`, capture groups stayed unknown, and `Number(m[1])`-style returns
+     collapsed. `exec` now returns the conservative `null | array(string|undefined)`.
+  
+  2. `checkReturnConstraint` reported a `null` return as violating a `shape({...})`
+     contract. lit `null`/`undefined` cannot satisfy any constraint, so reporting
+     it is a false positive (`return null` means "no value", not "wrong value").
+     Nullish evidence is now prefiltered there too, matching the parameter-side
+     prefilter (`scan-injected-domain`, T4 caveat).
+  
+  Real-world case: a `parseVersion(v)` that returns `null` for unparsable input
+  and `{ major: Number(m[1]), … }` otherwise — with #40's sum distribution the
+  remaining report was the nullish member alone.
+- faccd76: fix(check): return-shape contract distributes over branch sums
+  
+  `checkReturnConstraint` only accepted `ret.shape.k === "obj"`, so a return value
+  that is a **sum** (e.g. `if (flag) obj.extra = x; return obj;` — the two branch
+  shapes join into a sum when their key sets differ) was reported as
+  `nudo:constraint-violated` even when every member satisfied the declared
+  `shape({...})` contract. Real-world hit: sidecar `fn({...}, shape({...}))`
+  returns with a conditional field.
+  
+  Shape contracts now recurse into sum members (each member must satisfy the
+  contract, issues deduped). Scalar contracts (prim / numeric bounds / domain)
+  still do not distribute: sum members can be operator-derived unions from
+  unconstrained operands (`any + any` → `number | string`) and reporting those
+  is a false positive per the check-gold precision discipline.
 
 ## 3.0.0-beta.0
 
@@ -92,9 +193,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - **@nudojs/service**: `interface-derivation` / `analyzer-orchestrate` split into cohesion modules with stable facades.
   - Docs: trust-boundary note in Quick Start, version narrative consistency, env mock-boundary checklist, CheckJson `actions[]` field table.
   - vite-plugin: named `logAnalysisSummary` helper (logging surface unchanged).
-
-<details>
-<summary>Version history (10)</summary>
 
 ## 2.1.0
 
@@ -297,7 +395,54 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/service 1.1.0 {#pkg-service}
+## @nudojs/service 1.1.3 {#pkg-service}
+
+## 1.1.3
+
+### Patch Changes
+
+- 43fb345: fix(service): honor `package.json#nudo.check.profile` in `checkConfig` (LSP parity)
+  
+  The CLI resolves `nudo.check.profile` (`adoption` → L2 `warning`, `strict` →
+  `error`) but the service `checkConfig` — which the LSP uses for
+  `nudo-check` diagnostics — only read `nudo.check.entryThrows`. In a project
+  with `"nudo": { "check": { "profile": "adoption" } }`, `nudo check` printed
+  `nudo:entry-may-throw` as a **warning** while the IDE showed it as an
+  **error**.
+  
+  `checkConfig` now applies the same preset, with the same precedence as the CLI
+  (`entryThrows` → `profile` → default `error`), and `NudoConfig["check"]`
+  gains the `profile` field.
+- Updated dependencies [3bf9997]
+  - @nudojs/core@1.1.3
+  - @nudojs/parser@1.1.3
+  - @nudojs/env@0.4.5
+  - @nudojs/harvester@0.2.11
+
+<details>
+<summary>Version history (15)</summary>
+
+## 1.1.2
+
+### Patch Changes
+
+- Updated dependencies [c1f3e93]
+  - @nudojs/core@1.1.2
+  - @nudojs/env@0.4.4
+  - @nudojs/harvester@0.2.10
+  - @nudojs/parser@1.1.2
+
+## 1.1.1
+
+### Patch Changes
+
+- Updated dependencies [86d1f87]
+- Updated dependencies [892899d]
+- Updated dependencies [faccd76]
+  - @nudojs/core@1.1.1
+  - @nudojs/env@0.4.3
+  - @nudojs/harvester@0.2.9
+  - @nudojs/parser@1.1.1
 
 ## 5.0.0-beta.1
 
@@ -323,9 +468,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 - Updated dependencies [4305674]
   - @nudojs/harvester@1.0.0-beta.1
-
-<details>
-<summary>Version history (12)</summary>
 
 ## 5.0.0-beta.0
 
@@ -680,16 +822,49 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## nudojs (CLI) 1.0.0 {#pkg-nudojs}
+## nudojs (CLI) 1.0.3 {#pkg-nudojs}
+
+## 1.0.3
+
+### Patch Changes
+
+- Updated dependencies [3bf9997]
+- Updated dependencies [43fb345]
+  - @nudojs/core@1.1.3
+  - @nudojs/parser@1.1.3
+  - @nudojs/service@1.1.3
+  - @nudojs/harvester@0.2.11
+
+<details>
+<summary>Version history (12)</summary>
+
+## 1.0.2
+
+### Patch Changes
+
+- Updated dependencies [c1f3e93]
+  - @nudojs/core@1.1.2
+  - @nudojs/harvester@0.2.10
+  - @nudojs/parser@1.1.2
+  - @nudojs/service@1.1.2
+
+## 1.0.1
+
+### Patch Changes
+
+- Updated dependencies [86d1f87]
+- Updated dependencies [892899d]
+- Updated dependencies [faccd76]
+  - @nudojs/core@1.1.1
+  - @nudojs/harvester@0.2.9
+  - @nudojs/parser@1.1.1
+  - @nudojs/service@1.1.1
 
 ## 1.0.0-beta.3
 
 ### Patch Changes
 
 - 247f751: docs(website): product narrative — runtime-adjacent variables, Observation/Contracts layers, cost face (tokens / rounds / edit latency), top-level glossary (Abs origin, B-path, fail-closed, conf grades), TypeScript comparison without permanent dual-gate framing.
-
-<details>
-<summary>Version history (9)</summary>
 
 ## 1.0.0-beta.2
 
@@ -847,7 +1022,59 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/parser 1.1.0 {#pkg-parser}
+## @nudojs/parser 1.1.3 {#pkg-parser}
+
+## 1.1.3
+
+### Patch Changes
+
+- 3bf9997: fix(core): JS semantics soundness — ToString args, compare undefined, NaN identity, JSON.stringify
+  
+  B-path Abs folding corrections so concrete results match native JS:
+  
+  - string/parse methods (`startsWith`/`endsWith`/`includes`/`split`/`replace`/
+    `indexOf`/`parseInt`/`parseFloat`) honor ToString and missing-arg defaults;
+    `split` keeps the ES special case that an **undefined** separator returns
+    `[ToString(O)]` without splitting
+  - relational compare of `lit(undefined)` folds via ToNumber (all relations false)
+  - same-var `===` is not exact `true` when the value may be NaN
+  - `JSON.stringify` of top-level function/symbol returns the JS `undefined` value
+  - NaN literal identity uses SameValue (assignment/`leq`), not `===`
+  - drop unsound `x*0=0` / `x+0=x` algebra identities (NaN/`-0`/string domain)
+  - `n % 0` folds to NaN; `x % k` bounds only for finite dividends
+  - `0n` is falsy; `Number.is*` fold non-number lits to false; global `isNaN` coerces
+  - string index methods (`charAt`/`slice`/…) honor ToNumber and default args
+  - unary minus and `parseInt`/`parseFloat` honor ToNumber/ToInt32
+  - Math.* folds ToNumber lits (own numeric methods only — no `constructor`/`toString`)
+  - tuple index reads use canonical array index (`a["0"] === a[0]`)
+  - call-spread placeholder is `unknown`, not `undefined` lit
+  
+  `fix(parser)`: directive scanners (`splitTopLevelArgs` / colon / arrow / balanced
+  parens) respect string literals.
+  
+  Review follow-ups folded in: `split(undefined)` special case, `indexOf` returns
+  number shape on abstract receivers, Math method allowlist.
+- Updated dependencies [3bf9997]
+  - @nudojs/core@1.1.3
+
+<details>
+<summary>Version history (13)</summary>
+
+## 1.1.2
+
+### Patch Changes
+
+- Updated dependencies [c1f3e93]
+  - @nudojs/core@1.1.2
+
+## 1.1.1
+
+### Patch Changes
+
+- Updated dependencies [86d1f87]
+- Updated dependencies [892899d]
+- Updated dependencies [faccd76]
+  - @nudojs/core@1.1.1
 
 ## 1.1.0-beta.0
 
@@ -871,9 +1098,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 - Updated dependencies
 - Updated dependencies [279d73a]
   - @nudojs/core@3.0.0-beta.0
-
-<details>
-<summary>Version history (10)</summary>
 
 ## 1.0.0
 
@@ -1008,7 +1232,40 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/lsp 1.1.0 {#pkg-lsp}
+## @nudojs/lsp 1.1.3 {#pkg-lsp}
+
+## 1.1.3
+
+### Patch Changes
+
+- Updated dependencies [3bf9997]
+- Updated dependencies [43fb345]
+  - @nudojs/core@1.1.3
+  - @nudojs/parser@1.1.3
+  - @nudojs/service@1.1.3
+
+<details>
+<summary>Version history (16)</summary>
+
+## 1.1.2
+
+### Patch Changes
+
+- Updated dependencies [c1f3e93]
+  - @nudojs/core@1.1.2
+  - @nudojs/parser@1.1.2
+  - @nudojs/service@1.1.2
+
+## 1.1.1
+
+### Patch Changes
+
+- Updated dependencies [86d1f87]
+- Updated dependencies [892899d]
+- Updated dependencies [faccd76]
+  - @nudojs/core@1.1.1
+  - @nudojs/parser@1.1.1
+  - @nudojs/service@1.1.1
 
 ## 2.0.0-beta.1
 
@@ -1034,9 +1291,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 - Updated dependencies [4305674]
   - @nudojs/service@5.0.0-beta.1
-
-<details>
-<summary>Version history (13)</summary>
 
 ## 2.0.0-beta.0
 
@@ -1351,7 +1605,33 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/env 0.4.2 {#pkg-env}
+## @nudojs/env 0.4.5 {#pkg-env}
+
+## 0.4.5
+
+### Patch Changes
+
+- Updated dependencies [3bf9997]
+  - @nudojs/core@1.1.3
+
+<details>
+<summary>Version history (12)</summary>
+
+## 0.4.4
+
+### Patch Changes
+
+- Updated dependencies [c1f3e93]
+  - @nudojs/core@1.1.2
+
+## 0.4.3
+
+### Patch Changes
+
+- Updated dependencies [86d1f87]
+- Updated dependencies [892899d]
+- Updated dependencies [faccd76]
+  - @nudojs/core@1.1.1
 
 ## 0.4.2-beta.0
 
@@ -1363,9 +1643,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 - Updated dependencies
 - Updated dependencies [279d73a]
   - @nudojs/core@3.0.0-beta.0
-
-<details>
-<summary>Version history (9)</summary>
 
 ## 0.4.1
 
@@ -1487,7 +1764,39 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/harvester 0.2.8 {#pkg-harvester}
+## @nudojs/harvester 0.2.11 {#pkg-harvester}
+
+## 0.2.11
+
+### Patch Changes
+
+- Updated dependencies [3bf9997]
+  - @nudojs/core@1.1.3
+  - @nudojs/parser@1.1.3
+  - @nudojs/env@0.4.5
+
+<details>
+<summary>Version history (12)</summary>
+
+## 0.2.10
+
+### Patch Changes
+
+- Updated dependencies [c1f3e93]
+  - @nudojs/core@1.1.2
+  - @nudojs/env@0.4.4
+  - @nudojs/parser@1.1.2
+
+## 0.2.9
+
+### Patch Changes
+
+- Updated dependencies [86d1f87]
+- Updated dependencies [892899d]
+- Updated dependencies [faccd76]
+  - @nudojs/core@1.1.1
+  - @nudojs/env@0.4.3
+  - @nudojs/parser@1.1.1
 
 ## 1.0.0-beta.1
 
@@ -1508,9 +1817,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   `@nudojs/service` keeps `.`, `./analysis`, `./evaluator`, `./emit`. The language server moves to `@nudojs/lsp/server` (bin `nudo-lsp` unchanged); `@nudojs/lsp` is now a side-effect-free library entry re-exporting the IDE surface.
   
   No dependency cycles: `lsp → service`, `harvester` stays independent of `service`. Emit is a service subpath (same package). Public function signatures and diagnostic codes are unchanged.
-
-<details>
-<summary>Version history (9)</summary>
 
 ## 0.2.8-beta.0
 
@@ -1613,7 +1919,37 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## vite-plugin-nudo 0.4.3 {#pkg-vite-plugin}
+## vite-plugin-nudo 0.4.6 {#pkg-vite-plugin}
+
+## 0.4.6
+
+### Patch Changes
+
+- Updated dependencies [3bf9997]
+- Updated dependencies [43fb345]
+  - @nudojs/core@1.1.3
+  - @nudojs/service@1.1.3
+
+<details>
+<summary>Version history (15)</summary>
+
+## 0.4.5
+
+### Patch Changes
+
+- Updated dependencies [c1f3e93]
+  - @nudojs/core@1.1.2
+  - @nudojs/service@1.1.2
+
+## 0.4.4
+
+### Patch Changes
+
+- Updated dependencies [86d1f87]
+- Updated dependencies [892899d]
+- Updated dependencies [faccd76]
+  - @nudojs/core@1.1.1
+  - @nudojs/service@1.1.1
 
 ## 0.4.3-beta.1
 
@@ -1621,9 +1957,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 - Updated dependencies [4305674]
   - @nudojs/service@5.0.0-beta.1
-
-<details>
-<summary>Version history (12)</summary>
 
 ## 0.4.3-beta.0
 
@@ -1781,7 +2114,7 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## nudo-vscode 0.3.7 {#pkg-vscode}
+## nudo-vscode 0.3.10 {#pkg-vscode}
 
 ## Unreleased
 

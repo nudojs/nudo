@@ -11,236 +11,183 @@ slug: /releases
 
 | 包 | 当前版本 |
 |----|----------|
-| `@nudojs/core` | 1.1.0 |
-| `@nudojs/service` | 1.1.0 |
-| `nudojs (CLI)` | 1.0.0 |
-| `@nudojs/parser` | 1.1.0 |
-| `@nudojs/lsp` | 1.1.0 |
-| `@nudojs/env` | 0.4.2 |
-| `@nudojs/harvester` | 0.2.8 |
-| `vite-plugin-nudo` | 0.4.3 |
-| `nudo-vscode` | 0.3.7 |
+| `@nudojs/core` | 1.1.3 |
+| `@nudojs/service` | 1.1.3 |
+| `nudojs (CLI)` | 1.0.3 |
+| `@nudojs/parser` | 1.1.3 |
+| `@nudojs/lsp` | 1.1.3 |
+| `@nudojs/env` | 0.4.5 |
+| `@nudojs/harvester` | 0.2.11 |
+| `vite-plugin-nudo` | 0.4.6 |
+| `nudo-vscode` | 0.3.10 |
 
 **按包跳转:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.1.0 {#pkg-core}
+## @nudojs/core 1.1.3 {#pkg-core}
 
-## 3.0.0-beta.0
-
-### Major Changes
-
-- 22baf33: feat!: product CLI face only — remove deprecated verbs/aliases; L2 entry may-throw
-  
-  - **BREAKING — deleted with no compatibility layer:** verbs `infer` / `types` / `interface` / `refine` / `generate` / `emit` / `guard` / `doctor` / top-level `watch` / `harvest`; flags `--callsites`, `--output`, `--format zod`, `--dts`, `--emit-cases`; API `absToZodSchema`; `InferJson`/`serializeInferJson` → `CaseJson`/`serializeCaseJson`; LSP agent tools `nudo.infer` / `nudo.interface*` and aliases → `nudo.test` / `nudo.contract*`; config key `package.json#nudo.interface.*` → `package.json#nudo.contract.*`. Root scripts `infer`/`types`/`interface` removed.
-  - Primary verbs: `check` / `test` / `contract` / `export` / `health` / `env harvest`. Observation is check signatures + test case reports + IDE hover. Thin shell `@nudojs/nudojs` follows `@nudojs/cli` majors.
-  - L2: undigested may-throw on entry/export functions is `nudo:entry-may-throw` (default **error**). Configure with `--ignore-throws` / `--entry-throws` or `package.json#nudo.check.{ignoreThrows,entryThrows}`.
-  - Nested try: soft may-throw from an inner try re-homes to the enclosing try frame. Catch rethrow does not digest soft effects.
-  - `check` always prints signatures on success; unconstrained entry params display as **`any`** (true `unknown` = inference failure + `nudo:unknown-inference`).
-  - `test` prints every case including synthetic `call@`/`entry@`; only declared `@nudo:case` expectations affect exit. `--freeze[=update]` solidifies witnesses.
-  - Flags: `--from`, `export --format dts|guard|schema|standard|all` (`--dialect zod` for schema), `export --out`. `--json` cannot combine with `--abs`.
-  - Design docs consolidated: truth sources `design-kernel-merge.md` + `design-cli-semantics.md`; domain designs compressed to status summaries.
-  - Breaking for CI scripts that still call old verbs or read old config keys.
-- 0e1432a: feat!: source contract directive is `@nudo:contract` only
-  
-  `@nudo:refine` and `@nudo:interface` are deleted with no alias layer. The product word is **contract** end to end (sidecar `*.nudo.js`, `@nudo:contract`, `nudo contract`, `package.json#nudo.contract.*`).
-  
-  - **BREAKING:** replace every `@nudo:refine` / `@nudo:interface` with `@nudo:contract` (including `@nudo:contract return <constraint>`). Grammar is unchanged: `@nudo:contract <param> <constraint>`.
-  - Constraints still enter Abs as Preds and participate in algebra (`x>0` ⇒ `x+1>1`) — this is not a call-site validation gate.
-  - Diagnostic codes `nudo:interface-*` are unchanged in this release.
-  - Chinese product copy uses 契约, not 精化.
-- 3c3f9d2: Reduce `@nudojs/core` public export surface (breaking).
-  
-  Engine machinery is no longer re-exported from `.` or `./exec`. Hosts that
-  need leak/call-budget/hash/derivation/inlay/template/language/scan extras or
-  may-throw · member-diag collectors import `@nudojs/core/internal` instead.
-  
-  - `@nudojs/core` (`.`) keeps the product face only (Abs, check, format,
-    projections, contract builders, B-path `$op` runtime + transpile).
-  - New subpath `@nudojs/core/internal` (minor-escape hatch; no SemVer promise).
-  - `packages/core/PUBLIC_API.md` + `public-api.snapshot.json` updated; freeze
-    test also asserts product face does not leak internal names.
-  
-  Product CLI faces (`check` / `test` / `contract` / `export` / `health`) are
-  unchanged. `@nudojs/service` / `@nudojs/lsp` already retargeted.
-
-### Minor Changes
-
-- 279d73a: fix review gaps on the B-path migration (PR #34 follow-up):
-  
-  - **inject pipeline**: `CheckOptions.inject` is now threaded into generalize, L2 throws, the record channel, and drift recompute (previously CLI computed mocks/env/replacements but only `modules` reached core; `@nudo:mock`/`env`/`replace` sources were fail-closed `unknown#opaque` under `checkSource`). Memo keys use inject **content** fingerprint (stable across CLI's per-call object allocation). `mode: "analyze"` always wins; `modules` prefers `opts.modules` then `inject.modules`.
-  - **L2 class / CJS methods**: explicit `throw` on class static methods and CJS object methods is no longer hard-coded as `throws: never` — NudoThrow/ReferenceError map to throws Abs (same as `callTranspiledExportFull`). `$call` records throw exits before returning `never`. L2 evaluation now seeds `phi` from `checkSource`.
-  - **`freeIdentifiers`**: lexical scopes (nested params no longer pollute outer free set); non-computed `ObjectMethod`/`ClassMethod` keys are not free refs.
-  - **`callBudgetKey`**: single defensive implementation for non-Abs args (B-run JS function args). `$call` compiled-body path now uses `enterCall`/`exitCall` (same budget as apply). Budget keys use fn object identity (`stableCallId`) instead of `anon#N` (false cycles across same-arity functions). `MAX_TOTAL_CALLS` unified at 20k.
-  - **method early-return (correctness)**: `ObjectMethod` / `ClassMethod` / property `FunctionExpression` bodies now go through `transpileFnBodyStmts` (early-return lift) + implicit return — previously `if (c) return X; return Y` silently always returned `Y` (false precision vs native).
-  - **collectors**: `setBCallCollector` / `setBAssignCollector` / `setMemberDiagCollector` / `setAbsTruncationCollector` return the previous collector; nested call sites save/restore instead of nulling.
-  
-  User-visible notes:
-  
-  - Sources with `@nudo:mock` / `@nudo:env` / `@nudo:replace` get real B evaluation under `nudo check` (CLI already built the inject pack).
-  - Class static / CJS object methods with explicit throws now report `entry-may-throw` (L2 no longer misses them).
-  - Object/class methods with early-return branches now fold the same values as native JS (differential batch19).
-  - `interface-derivation` class-method roots stay fail-closed (no call-chain derivation) — intentional after ast-eval removal.
+## 1.1.3
 
 ### Patch Changes
 
-- P1–P3 engineering hardening (review follow-ups) — no product-face breaks
+- 3bf9997: fix(core): JS semantics soundness — ToString args, compare undefined, NaN identity, JSON.stringify
   
-  - **@nudojs/parser**: export typed Babel AST narrowers (`ast-guards.ts`); service `analyzer-ast` / lsp `symbols` no longer use `as any` on nodes.
-  - **@nudojs/cli**: extract pure decision modules (`check-gate-config`, `check-json-map`, `check-ci-flags`, `export-format`) and cover them with in-process unit tests; per-package coverage floors raised.
-  - **@nudojs/service**: host cache-invalidation contract documented (`docs/design/cache-invalidation.md`) + C1–C8 regression tests; LSP targeted eviction now clears path-env and abs-module cache for changed deps.
-  - **@nudojs/lsp**: `server.ts` split into watch/commands/navigation/code-actions/ide modules (public API unchanged); path-env clear on dependent eviction.
-  - **@nudojs/service**: `interface-derivation` / `analyzer-orchestrate` split into cohesion modules with stable facades.
-  - Docs: trust-boundary note in Quick Start, version narrative consistency, env mock-boundary checklist, CheckJson `actions[]` field table.
-  - vite-plugin: named `logAnalysisSummary` helper (logging surface unchanged).
-
-更早版本（10）→ [完整发布历史](./releases-history.md#pkg-core)
-
-## @nudojs/service 1.1.0 {#pkg-service}
-
-## 5.0.0-beta.1
-
-### Major Changes
-
-- 4305674: Split the `@nudojs/service` god package: harvest → `@nudojs/harvester`, IDE surface → `@nudojs/lsp`, emit products consolidated under `@nudojs/service/emit`.
+  B-path Abs folding corrections so concrete results match native JS:
   
-  **BREAKING** for `@nudojs/service` subpath consumers:
+  - string/parse methods (`startsWith`/`endsWith`/`includes`/`split`/`replace`/
+    `indexOf`/`parseInt`/`parseFloat`) honor ToString and missing-arg defaults;
+    `split` keeps the ES special case that an **undefined** separator returns
+    `[ToString(O)]` without splitting
+  - relational compare of `lit(undefined)` folds via ToNumber (all relations false)
+  - same-var `===` is not exact `true` when the value may be NaN
+  - `JSON.stringify` of top-level function/symbol returns the JS `undefined` value
+  - NaN literal identity uses SameValue (assignment/`leq`), not `===`
+  - drop unsound `x*0=0` / `x+0=x` algebra identities (NaN/`-0`/string domain)
+  - `n % 0` folds to NaN; `x % k` bounds only for finite dividends
+  - `0n` is falsy; `Number.is*` fold non-number lits to false; global `isNaN` coerces
+  - string index methods (`charAt`/`slice`/…) honor ToNumber and default args
+  - unary minus and `parseInt`/`parseFloat` honor ToNumber/ToInt32
+  - Math.* folds ToNumber lits (own numeric methods only — no `constructor`/`toString`)
+  - tuple index reads use canonical array index (`a["0"] === a[0]`)
+  - call-spread placeholder is `unknown`, not `undefined` lit
   
-  | Removed subpath | Migrate to |
-  |---|---|
-  | `@nudojs/service/interface` | `@nudojs/service/emit` |
-  | `@nudojs/service/dts` | `@nudojs/service/emit` |
-  | `@nudojs/service/case` | `@nudojs/service/emit` |
-  | `@nudojs/service/lsp` | `@nudojs/lsp` (library entry — no server side effects) |
-  | `@nudojs/service/harvest` | `@nudojs/harvester` |
+  `fix(parser)`: directive scanners (`splitTopLevelArgs` / colon / arrow / balanced
+  parens) respect string literals.
   
-  `@nudojs/service` keeps `.`, `./analysis`, `./evaluator`, `./emit`. The language server moves to `@nudojs/lsp/server` (bin `nudo-lsp` unchanged); `@nudojs/lsp` is now a side-effect-free library entry re-exporting the IDE surface.
-  
-  No dependency cycles: `lsp → service`, `harvester` stays independent of `service`. Emit is a service subpath (same package). Public function signatures and diagnostic codes are unchanged.
+  Review follow-ups folded in: `split(undefined)` special case, `indexOf` returns
+  number shape on abstract receivers, Math method allowlist.
+
+更早版本（13）→ [完整发布历史](./releases-history.md#pkg-core)
+
+## @nudojs/service 1.1.3 {#pkg-service}
+
+## 1.1.3
 
 ### Patch Changes
 
-- Updated dependencies [4305674]
-  - @nudojs/harvester@1.0.0-beta.1
+- 43fb345: fix(service): honor `package.json#nudo.check.profile` in `checkConfig` (LSP parity)
+  
+  The CLI resolves `nudo.check.profile` (`adoption` → L2 `warning`, `strict` →
+  `error`) but the service `checkConfig` — which the LSP uses for
+  `nudo-check` diagnostics — only read `nudo.check.entryThrows`. In a project
+  with `"nudo": { "check": { "profile": "adoption" } }`, `nudo check` printed
+  `nudo:entry-may-throw` as a **warning** while the IDE showed it as an
+  **error**.
+  
+  `checkConfig` now applies the same preset, with the same precedence as the CLI
+  (`entryThrows` → `profile` → default `error`), and `NudoConfig["check"]`
+  gains the `profile` field.
+- Updated dependencies [3bf9997]
+  - @nudojs/core@1.1.3
+  - @nudojs/parser@1.1.3
+  - @nudojs/env@0.4.5
+  - @nudojs/harvester@0.2.11
 
-更早版本（12）→ [完整发布历史](./releases-history.md#pkg-service)
+更早版本（15）→ [完整发布历史](./releases-history.md#pkg-service)
 
-## nudojs (CLI) 1.0.0 {#pkg-nudojs}
+## nudojs (CLI) 1.0.3 {#pkg-nudojs}
 
-## 1.0.0-beta.3
+## 1.0.3
 
 ### Patch Changes
 
-- 247f751: docs(website): product narrative — runtime-adjacent variables, Observation/Contracts layers, cost face (tokens / rounds / edit latency), top-level glossary (Abs origin, B-path, fail-closed, conf grades), TypeScript comparison without permanent dual-gate framing.
+- Updated dependencies [3bf9997]
+- Updated dependencies [43fb345]
+  - @nudojs/core@1.1.3
+  - @nudojs/parser@1.1.3
+  - @nudojs/service@1.1.3
+  - @nudojs/harvester@0.2.11
 
-更早版本（9）→ [完整发布历史](./releases-history.md#pkg-nudojs)
+更早版本（12）→ [完整发布历史](./releases-history.md#pkg-nudojs)
 
-## @nudojs/parser 1.1.0 {#pkg-parser}
+## @nudojs/parser 1.1.3 {#pkg-parser}
 
-## 1.1.0-beta.0
-
-### Minor Changes
-
-- P1–P3 engineering hardening (review follow-ups) — no product-face breaks
-  
-  - **@nudojs/parser**: export typed Babel AST narrowers (`ast-guards.ts`); service `analyzer-ast` / lsp `symbols` no longer use `as any` on nodes.
-  - **@nudojs/cli**: extract pure decision modules (`check-gate-config`, `check-json-map`, `check-ci-flags`, `export-format`) and cover them with in-process unit tests; per-package coverage floors raised.
-  - **@nudojs/service**: host cache-invalidation contract documented (`docs/design/cache-invalidation.md`) + C1–C8 regression tests; LSP targeted eviction now clears path-env and abs-module cache for changed deps.
-  - **@nudojs/lsp**: `server.ts` split into watch/commands/navigation/code-actions/ide modules (public API unchanged); path-env clear on dependent eviction.
-  - **@nudojs/service**: `interface-derivation` / `analyzer-orchestrate` split into cohesion modules with stable facades.
-  - Docs: trust-boundary note in Quick Start, version narrative consistency, env mock-boundary checklist, CheckJson `actions[]` field table.
-  - vite-plugin: named `logAnalysisSummary` helper (logging surface unchanged).
+## 1.1.3
 
 ### Patch Changes
 
-- Updated dependencies [22baf33]
-- Updated dependencies [0e1432a]
-- Updated dependencies [3c3f9d2]
-- Updated dependencies
-- Updated dependencies [279d73a]
-  - @nudojs/core@3.0.0-beta.0
-
-更早版本（10）→ [完整发布历史](./releases-history.md#pkg-parser)
-
-## @nudojs/lsp 1.1.0 {#pkg-lsp}
-
-## 2.0.0-beta.1
-
-### Major Changes
-
-- 4305674: Split the `@nudojs/service` god package: harvest → `@nudojs/harvester`, IDE surface → `@nudojs/lsp`, emit products consolidated under `@nudojs/service/emit`.
+- 3bf9997: fix(core): JS semantics soundness — ToString args, compare undefined, NaN identity, JSON.stringify
   
-  **BREAKING** for `@nudojs/service` subpath consumers:
+  B-path Abs folding corrections so concrete results match native JS:
   
-  | Removed subpath | Migrate to |
-  |---|---|
-  | `@nudojs/service/interface` | `@nudojs/service/emit` |
-  | `@nudojs/service/dts` | `@nudojs/service/emit` |
-  | `@nudojs/service/case` | `@nudojs/service/emit` |
-  | `@nudojs/service/lsp` | `@nudojs/lsp` (library entry — no server side effects) |
-  | `@nudojs/service/harvest` | `@nudojs/harvester` |
+  - string/parse methods (`startsWith`/`endsWith`/`includes`/`split`/`replace`/
+    `indexOf`/`parseInt`/`parseFloat`) honor ToString and missing-arg defaults;
+    `split` keeps the ES special case that an **undefined** separator returns
+    `[ToString(O)]` without splitting
+  - relational compare of `lit(undefined)` folds via ToNumber (all relations false)
+  - same-var `===` is not exact `true` when the value may be NaN
+  - `JSON.stringify` of top-level function/symbol returns the JS `undefined` value
+  - NaN literal identity uses SameValue (assignment/`leq`), not `===`
+  - drop unsound `x*0=0` / `x+0=x` algebra identities (NaN/`-0`/string domain)
+  - `n % 0` folds to NaN; `x % k` bounds only for finite dividends
+  - `0n` is falsy; `Number.is*` fold non-number lits to false; global `isNaN` coerces
+  - string index methods (`charAt`/`slice`/…) honor ToNumber and default args
+  - unary minus and `parseInt`/`parseFloat` honor ToNumber/ToInt32
+  - Math.* folds ToNumber lits (own numeric methods only — no `constructor`/`toString`)
+  - tuple index reads use canonical array index (`a["0"] === a[0]`)
+  - call-spread placeholder is `unknown`, not `undefined` lit
   
-  `@nudojs/service` keeps `.`, `./analysis`, `./evaluator`, `./emit`. The language server moves to `@nudojs/lsp/server` (bin `nudo-lsp` unchanged); `@nudojs/lsp` is now a side-effect-free library entry re-exporting the IDE surface.
+  `fix(parser)`: directive scanners (`splitTopLevelArgs` / colon / arrow / balanced
+  parens) respect string literals.
   
-  No dependency cycles: `lsp → service`, `harvester` stays independent of `service`. Emit is a service subpath (same package). Public function signatures and diagnostic codes are unchanged.
+  Review follow-ups folded in: `split(undefined)` special case, `indexOf` returns
+  number shape on abstract receivers, Math method allowlist.
+- Updated dependencies [3bf9997]
+  - @nudojs/core@1.1.3
+
+更早版本（13）→ [完整发布历史](./releases-history.md#pkg-parser)
+
+## @nudojs/lsp 1.1.3 {#pkg-lsp}
+
+## 1.1.3
 
 ### Patch Changes
 
-- Updated dependencies [4305674]
-  - @nudojs/service@5.0.0-beta.1
+- Updated dependencies [3bf9997]
+- Updated dependencies [43fb345]
+  - @nudojs/core@1.1.3
+  - @nudojs/parser@1.1.3
+  - @nudojs/service@1.1.3
 
-更早版本（13）→ [完整发布历史](./releases-history.md#pkg-lsp)
+更早版本（16）→ [完整发布历史](./releases-history.md#pkg-lsp)
 
-## @nudojs/env 0.4.2 {#pkg-env}
+## @nudojs/env 0.4.5 {#pkg-env}
 
-## 0.4.2-beta.0
-
-### Patch Changes
-
-- Updated dependencies [22baf33]
-- Updated dependencies [0e1432a]
-- Updated dependencies [3c3f9d2]
-- Updated dependencies
-- Updated dependencies [279d73a]
-  - @nudojs/core@3.0.0-beta.0
-
-更早版本（9）→ [完整发布历史](./releases-history.md#pkg-env)
-
-## @nudojs/harvester 0.2.8 {#pkg-harvester}
-
-## 1.0.0-beta.1
-
-### Major Changes
-
-- 4305674: Split the `@nudojs/service` god package: harvest → `@nudojs/harvester`, IDE surface → `@nudojs/lsp`, emit products consolidated under `@nudojs/service/emit`.
-  
-  **BREAKING** for `@nudojs/service` subpath consumers:
-  
-  | Removed subpath | Migrate to |
-  |---|---|
-  | `@nudojs/service/interface` | `@nudojs/service/emit` |
-  | `@nudojs/service/dts` | `@nudojs/service/emit` |
-  | `@nudojs/service/case` | `@nudojs/service/emit` |
-  | `@nudojs/service/lsp` | `@nudojs/lsp` (library entry — no server side effects) |
-  | `@nudojs/service/harvest` | `@nudojs/harvester` |
-  
-  `@nudojs/service` keeps `.`, `./analysis`, `./evaluator`, `./emit`. The language server moves to `@nudojs/lsp/server` (bin `nudo-lsp` unchanged); `@nudojs/lsp` is now a side-effect-free library entry re-exporting the IDE surface.
-  
-  No dependency cycles: `lsp → service`, `harvester` stays independent of `service`. Emit is a service subpath (same package). Public function signatures and diagnostic codes are unchanged.
-
-更早版本（9）→ [完整发布历史](./releases-history.md#pkg-harvester)
-
-## vite-plugin-nudo 0.4.3 {#pkg-vite-plugin}
-
-## 0.4.3-beta.1
+## 0.4.5
 
 ### Patch Changes
 
-- Updated dependencies [4305674]
-  - @nudojs/service@5.0.0-beta.1
+- Updated dependencies [3bf9997]
+  - @nudojs/core@1.1.3
 
-更早版本（12）→ [完整发布历史](./releases-history.md#pkg-vite-plugin)
+更早版本（12）→ [完整发布历史](./releases-history.md#pkg-env)
 
-## nudo-vscode 0.3.7 {#pkg-vscode}
+## @nudojs/harvester 0.2.11 {#pkg-harvester}
+
+## 0.2.11
+
+### Patch Changes
+
+- Updated dependencies [3bf9997]
+  - @nudojs/core@1.1.3
+  - @nudojs/parser@1.1.3
+  - @nudojs/env@0.4.5
+
+更早版本（12）→ [完整发布历史](./releases-history.md#pkg-harvester)
+
+## vite-plugin-nudo 0.4.6 {#pkg-vite-plugin}
+
+## 0.4.6
+
+### Patch Changes
+
+- Updated dependencies [3bf9997]
+- Updated dependencies [43fb345]
+  - @nudojs/core@1.1.3
+  - @nudojs/service@1.1.3
+
+更早版本（15）→ [完整发布历史](./releases-history.md#pkg-vite-plugin)
+
+## nudo-vscode 0.3.10 {#pkg-vscode}
 
 ## Unreleased
 
