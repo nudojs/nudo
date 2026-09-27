@@ -567,8 +567,9 @@ export function div(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
 }
 
 /**
- * 取模：字面量折叠；`x % k`（k>0 字面量）结果界在 (−|k|, |k|)。
- * 整数模可收紧到 [0, k)，此处先做保守实数界。
+ * 取模：字面量折叠；`x % k`（k 为有限非零字面量）仅当被除数有限时
+ * 结果界在 (−|k|, |k|)。整数模可收紧到 [0, k)，此处先做保守实数界。
+ * `n % 0` / `x % 0` / `x % NaN` 恒为 NaN（JS）。
  */
 export function mod(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   const va = litValue(a);
@@ -579,9 +580,7 @@ export function mod(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
     return abs({ k: "prim", type: "bigint" }, undefined, undefined, confJoin(a.conf, b.conf));
   }
   if (typeof va === "number" && typeof vb === "number") {
-    if (vb === 0) {
-      return abs(num().shape, undefined, undefined, "path");
-    }
+    // JS：n % 0 === NaN（含 0%0 / NaN%0 / ±Infinity%0）——直接折字面量
     return numLit(va % vb);
   }
   if (coercibleLit(va) && coercibleLit(vb)) {
@@ -589,15 +588,30 @@ export function mod(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   }
   if (isNumericLike(a) && isNumericLike(b) && a.term && b.term) {
     const term = simplifyTerm(app("%", [a.term, b.term]));
-    if (b.term.op === "lit" && typeof b.term.value === "number" && b.term.value !== 0) {
+    // number 域：x % 0 与 x % NaN 恒 NaN
+    if (b.term.op === "lit") {
+      const bv = b.term.value;
+      if (typeof bv === "number" && (bv === 0 || Number.isNaN(bv))) {
+        return numLit(NaN);
+      }
+    }
+    if (b.term.op === "lit" && typeof b.term.value === "number" && Number.isFinite(b.term.value) && b.term.value !== 0) {
       const k = Math.abs(b.term.value);
-      // 余数始终落在 (−k, k)
-      return abs(
-        num().shape,
-        term,
-        and(gt(term, lit(-k)), lt(term, lit(k))),
-        confJoin(confJoin(a.conf, b.conf), "path"),
-      );
+      // (−k, k) 只对有限被除数成立：Inf%k 与 NaN%k 皆为 NaN，不在界内
+      const ab = numericBounds(a, phi);
+      const finiteDividend =
+        ab?.lo !== undefined &&
+        ab?.hi !== undefined &&
+        Number.isFinite(ab.lo.value) &&
+        Number.isFinite(ab.hi.value);
+      if (finiteDividend) {
+        return abs(
+          num().shape,
+          term,
+          and(gt(term, lit(-k)), lt(term, lit(k))),
+          confJoin(confJoin(a.conf, b.conf), "path"),
+        );
+      }
     }
     return abs(num().shape, term, undefined, confJoin(confJoin(a.conf, b.conf), "path"));
   }
