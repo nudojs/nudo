@@ -30,6 +30,13 @@ fail=0
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
+# @nudo:env 动态 import 按 package.json exports 解析 @nudojs/* → dist。
+# 没 build 时 CLI 起不来，每个 pin 都会假红——这里直接拦住并说明原因。
+if [ ! -d packages/core/dist ] || [ ! -d packages/env/dist ] || [ ! -d packages/nudojs/dist ]; then
+  echo "FAIL: packages/*/dist missing — run 'pnpm run build' before verify:docs"
+  exit 1
+fi
+
 cli() { pnpm exec tsx packages/nudojs/src/index.ts "$@"; }
 
 # fences <page> <tag> <outfile> — extract fenced js blocks tagged <tag>.

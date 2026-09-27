@@ -48,6 +48,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # verify:docs 经 tsx 跑 CLI；@nudo:env 动态 import 按 package exports
+      # 解析 @nudojs/* → dist。与 CI 一致：先 build 再验文档，否则每个 pin
+      # 都会因 CLI 起不来而变红（假失败）。
+      - name: Build packages
+        run: pnpm run build
+
       # 部署前必须全绿：文档示例在引擎行为漂移时不出版
       - name: Verify docs examples
         run: pnpm run verify:docs -- --report
