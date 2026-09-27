@@ -326,73 +326,62 @@ function numericBounds(a: Abs, phi: Phi = pTrue): NumBounds | undefined {
   return result;
 }
 
+/** 等值处收紧界：更紧的值 / 等值时 strict 胜出（le→gt 顺序无关） */
+function tightenLo(acc: NumBounds, n: number, strict: boolean): void {
+  if (acc.lo === undefined || n > acc.lo.value || (n === acc.lo.value && strict && !acc.lo.strict)) {
+    acc.lo = { value: n, strict };
+  }
+}
+
+function tightenHi(acc: NumBounds, n: number, strict: boolean): void {
+  if (acc.hi === undefined || n < acc.hi.value || (n === acc.hi.value && strict && !acc.hi.strict)) {
+    acc.hi = { value: n, strict };
+  }
+}
+
+/**
+ * 关系原子 → 对 term 的数值界。两侧都认：
+ *   t > n / n < t → lo strict；t ≥ n / n ≤ t → lo
+ *   t < n / n > t → hi strict；t ≤ n / n ≥ t → hi
+ * （旧实现只认「变量在左」，`0 < x` / `5 > x` 的界被整段丢掉。）
+ */
+function noteBoundFromRel(p: Pred, isTarget: (t: Term) => boolean, acc: NumBounds): void {
+  if (p.op !== "gt" && p.op !== "ge" && p.op !== "lt" && p.op !== "le") return;
+  let op = p.op;
+  let litSide: Term;
+  if (isTarget(p.a) && p.b.op === "lit" && typeof p.b.value === "number") {
+    litSide = p.b;
+  } else if (isTarget(p.b) && p.a.op === "lit" && typeof p.a.value === "number") {
+    // 翻转：`n < t` ≡ `t > n`
+    op = op === "gt" ? "lt" : op === "lt" ? "gt" : op === "ge" ? "le" : "ge";
+    litSide = p.a;
+  } else {
+    return;
+  }
+  const n = (litSide as { value: number }).value;
+  if (op === "gt") tightenLo(acc, n, true);
+  else if (op === "ge") tightenLo(acc, n, false);
+  else if (op === "lt") tightenHi(acc, n, true);
+  else tightenHi(acc, n, false);
+}
+
 function collectBoundsFromPred(pred: Pred, term: Term, acc: NumBounds): void {
-  const match = (t: Term): boolean => termToString(t) === termToString(term);
+  const isTarget = (t: Term): boolean => termToString(t) === termToString(term);
   const apply = (p: Pred): void => {
     if (p.op === "and") {
       p.args.forEach(apply);
       return;
     }
-    if (p.op === "gt" && match(p.a) && p.b.op === "lit" && typeof p.b.value === "number") {
-      const n = p.b.value;
-      // 等值处 strict 胜出（与 lt 对称，保证 le→gt 顺序无关）
-      if (acc.lo === undefined || n > acc.lo.value || (n === acc.lo.value && !acc.lo.strict)) {
-        acc.lo = { value: n, strict: true };
-      }
-      return;
-    }
-    if (p.op === "ge" && match(p.a) && p.b.op === "lit" && typeof p.b.value === "number") {
-      const n = p.b.value;
-      if (acc.lo === undefined || n > acc.lo.value) {
-        acc.lo = { value: n, strict: false };
-      }
-      return;
-    }
-    if (p.op === "lt" && match(p.a) && p.b.op === "lit" && typeof p.b.value === "number") {
-      const n = p.b.value;
-      // 与 gt 对称：x < n 在 x ≤ n 之上更紧，等值须升级 strict（否则 le 在前会吞掉 lt）
-      if (acc.hi === undefined || n < acc.hi.value || (n === acc.hi.value && !acc.hi.strict)) {
-        acc.hi = { value: n, strict: true };
-      }
-      return;
-    }
-    if (p.op === "le" && match(p.a) && p.b.op === "lit" && typeof p.b.value === "number") {
-      const n = p.b.value;
-      if (acc.hi === undefined || n < acc.hi.value) {
-        acc.hi = { value: n, strict: false };
-      }
-    }
+    noteBoundFromRel(p, isTarget, acc);
   };
   apply(pred);
 }
 
 function collectBoundsFromPhi(phi: Phi, id: string, acc: NumBounds): void {
+  const isTarget = (t: Term): boolean => t.op === "var" && t.id === id;
   const conjs = phi.op === "and" ? phi.args : [phi];
   for (const p of conjs) {
-    if (p.op === "gt" && p.a.op === "var" && p.a.id === id && p.b.op === "lit" && typeof p.b.value === "number") {
-      const n = p.b.value;
-      if (acc.lo === undefined || n > acc.lo.value || (n === acc.lo.value && !acc.lo.strict)) {
-        acc.lo = { value: n, strict: true };
-      }
-    }
-    if (p.op === "ge" && p.a.op === "var" && p.a.id === id && p.b.op === "lit" && typeof p.b.value === "number") {
-      const n = p.b.value;
-      if (acc.lo === undefined || n > acc.lo.value) {
-        acc.lo = { value: n, strict: false };
-      }
-    }
-    if (p.op === "lt" && p.a.op === "var" && p.a.id === id && p.b.op === "lit" && typeof p.b.value === "number") {
-      const n = p.b.value;
-      if (acc.hi === undefined || n < acc.hi.value || (n === acc.hi.value && !acc.hi.strict)) {
-        acc.hi = { value: n, strict: true };
-      }
-    }
-    if (p.op === "le" && p.a.op === "var" && p.a.id === id && p.b.op === "lit" && typeof p.b.value === "number") {
-      const n = p.b.value;
-      if (acc.hi === undefined || n < acc.hi.value) {
-        acc.hi = { value: n, strict: false };
-      }
-    }
+    noteBoundFromRel(p, isTarget, acc);
   }
 }
 
@@ -772,25 +761,32 @@ function decideByBounds(
   const bLo = bB?.lo;
   const bHi = bB?.hi;
 
-  // a < b：a.hi < b.lo ⇒ true；a.lo ≥ b.hi ⇒ false
+  // 等值处必须看 strict：x<5 ∧ y>5 仍推出 x<y（旧实现 5<5 漏判）。
+  // 一侧 open 的等界同样能定假：x>5 ∧ y≤5 ⇒ x>y（对 le）。
+  const tighterHi = (x: { value: number; strict: boolean }, y: { value: number; strict: boolean }): boolean =>
+    x.value < y.value || (x.value === y.value && (x.strict || y.strict));
+  const tighterLo = (x: { value: number; strict: boolean }, y: { value: number; strict: boolean }): boolean =>
+    x.value > y.value || (x.value === y.value && (x.strict || y.strict));
+
+  // a < b：a.hi < b.lo 或等值+至少一侧 open ⇒ true；a.lo ≥ b.hi ⇒ false
   if (op === "lt") {
-    if (aHi && bLo && aHi.value < bLo.value) return true;
+    if (aHi && bLo && tighterHi(aHi, bLo)) return true;
     if (aLo && bHi && aLo.value >= bHi.value) return false;
     return undefined;
   }
   if (op === "le") {
-    if (aHi && bLo && aHi.value < bLo.value) return true;
-    if (aLo && bHi && aLo.value > bHi.value) return false;
+    if (aHi && bLo && aHi.value <= bLo.value) return true;
+    if (aLo && bHi && tighterLo(aLo, bHi)) return false;
     return undefined;
   }
   if (op === "gt") {
-    if (aLo && bHi && aLo.value > bHi.value) return true;
+    if (aLo && bHi && tighterLo(aLo, bHi)) return true;
     if (aHi && bLo && aHi.value <= bLo.value) return false;
     return undefined;
   }
   if (op === "ge") {
     if (aLo && bHi && aLo.value >= bHi.value) return true;
-    if (aHi && bLo && aHi.value < bLo.value) return false;
+    if (aHi && bLo && tighterHi(aHi, bLo)) return false;
     return undefined;
   }
   return undefined;
