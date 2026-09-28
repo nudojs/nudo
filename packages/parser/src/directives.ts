@@ -324,6 +324,9 @@ function parsePrimitiveValue(s: string): string | number | boolean | null | unde
 
 /**
  * 字符串感知的括号深度扫描：引号内字符不当结构（与 findReplaceSeparator 同口径）。
+ * 与 parseCaseArgExpr 的**原样 slice**（不反转义）一致：引号内 `\` 不是转义
+ * ——`"foo\"` 的值是 `foo\`，引号正常闭合。此前把 `\` 当转义会吃掉闭合引号，
+ * 整条 case 被静默丢弃。
  * onChar 对每个可见字符（含字符串内容）回调；onStructural 仅对非字符串字符回调。
  */
 function scanWithStrings(
@@ -337,11 +340,6 @@ function scanWithStrings(
     const ch = s[i]!;
     if (inString) {
       onChar(ch, i);
-      if (ch === "\\") {
-        i++;
-        if (i < s.length) onChar(s[i]!, i);
-        continue;
-      }
       if (ch === inString) inString = null;
       continue;
     }
@@ -376,11 +374,7 @@ function splitTopLevelArgs(s: string): string[] {
     const ch = s[i]!;
     if (inString) {
       current += ch;
-      if (ch === "\\") {
-        i++;
-        if (i < s.length) current += s[i]!;
-        continue;
-      }
+      // 原样 slice：`\` 不是转义（与 parseCaseArgExpr 一致）
       if (ch === inString) inString = null;
       continue;
     }
@@ -445,10 +439,7 @@ function extractBalancedParens(text: string, startIdx: number): string | null {
   for (let i = startIdx; i < text.length; i++) {
     const ch = text[i]!;
     if (inString) {
-      if (ch === "\\") {
-        i++;
-        continue;
-      }
+      // 原样 slice：`\` 不是转义
       if (ch === inString) inString = null;
       continue;
     }
@@ -925,7 +916,8 @@ function findReplaceSeparator(raw: string): number {
   for (let i = 0; i < raw.length; i++) {
     const ch = raw[i];
     if (inString) {
-      if (ch === inString && raw[i - 1] !== "\\") inString = null;
+      // 原样 slice：`\` 不是转义
+      if (ch === inString) inString = null;
       continue;
     }
     if (ch === '"' || ch === "'") { inString = ch; continue; }
