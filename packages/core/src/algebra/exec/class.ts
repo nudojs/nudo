@@ -9,7 +9,7 @@ import { objOf, joinAbs, isObj, canonicalArrayIndex, getSlot, setSlot } from "..
 import { $get, $set, $lit, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary, lookupObjAccessor, fillTuple, clearStaleTermPred } from "./runtime.ts";
 import { $call } from "./call.ts";
 import { getFnImpl, absFunction } from "../abs-fn.ts";
-import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, extStateOf, getPropFlags, tryMakeRegexAbs, makeArrayCtorAbs, assignSourceSlots, isSymbolAbs, stringOfSymbol, evalPromiseCtor, evalPromiseMethod, builtinCtorNameOf } from "../builtins.ts";
+import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, extStateOf, getPropFlags, isEnumerableView, tryMakeRegexAbs, makeArrayCtorAbs, assignSourceSlots, isSymbolAbs, stringOfSymbol, evalPromiseCtor, evalPromiseMethod, builtinCtorNameOf } from "../builtins.ts";
 import { arrayJoinToString } from "../builtins/array.ts";
 import { isMapAbs, isSetAbs, makeMapAbs, makeSetAbs, collectionElementJoin, ctorArgDefinitelyInvalid } from "../collections.ts";
 import { registerMatchIter } from "./match-iter.ts";
@@ -307,6 +307,9 @@ function runtimeAssignObject(args: Abs[]): Abs {
     const base = (accObj.shape as Extract<Abs["shape"], { k: "obj" }>).slots;
     const flags = getPropFlags(accObj);
     for (const [k, s] of Object.entries((srcAbs.shape as Extract<Abs["shape"], { k: "obj" }>).slots)) {
+      // Object.assign 走 [[OwnPropertyKeys]] + EnumerableOwnProperties：
+      // enumerable:false 自有键不拷贝（与 Object.keys 同口径）
+      if (!isEnumerableView(srcAbs, k)) continue;
       // sealed/nonext 目标新键 / writable:false 键覆写：strict TypeError
       if (
         (st === "sealed" || st === "nonext") &&

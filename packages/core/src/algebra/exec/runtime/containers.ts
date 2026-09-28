@@ -19,7 +19,7 @@ import {
 import { shouldWidenArrayLiteral, widenedArrayConf, TUPLE_MATERIALIZE_CAP } from "../../containers.ts";
 import { registerMatchIter, matchIterElements } from "../match-iter.ts";
 import {
-  evalNamespaceCall, extStateOf, getPropFlags, migrateInvariants,
+  evalNamespaceCall, extStateOf, getPropFlags, migrateInvariants, enumOwnKeys,
   regexBrandAbsFrom, evalObjectProtoMethod, objectProtoMethodAbs,
   isObjectProtoBrand, OBJECT_PROTO_METHOD_NAMES, isSymbolAbs,
   symbolDescriptionAbs, objectProtoBrand, builtinCtorAbs, ctorNameOfRecv,
@@ -905,7 +905,9 @@ export function $forInKeys(o: Abs): Abs {
     );
   };
   if (shape.k === "obj") {
-    const keys = Object.keys(shape.slots);
+    // 仅自有可枚举键——与 Object.keys 的 enumKeys 同口径
+    // （getPropFlags().enumerable === false 的 defineProperty 键剔除）
+    const keys = enumOwnKeys(o, shape.slots);
     const intKeys = keys.filter(isArrayIndexKey).sort((a, b) => Number(a) - Number(b));
     const strKeys = keys.filter((k) => !isArrayIndexKey(k));
     return $arr([...intKeys, ...strKeys].map((k) => $lit(k)));
