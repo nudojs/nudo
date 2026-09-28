@@ -131,13 +131,18 @@ function packageRoots(root: string): string[] {
   return roots;
 }
 
-function countExt(files: string[], exts: Set<string>): number {
-  let n = 0;
-  for (const f of files) {
-    const e = extname(f).toLowerCase();
-    if (exts.has(e) || (exts === TS_EXT && e === ".ts")) n += 1;
-  }
-  return n;
+/** 声明文件（.d.ts / .d.mts / .d.cts）不是可 strip 的实现源 */
+const DTS_RE = /\.d\.(m|c)?ts$/i;
+
+function isDeclarationFile(file: string): boolean {
+  return DTS_RE.test(file);
+}
+
+/** migrate strip 的源门：TS/TSX 实现源，排除 .d.* 声明 */
+function isStripSource(file: string): boolean {
+  if (isDeclarationFile(file)) return false;
+  const e = extname(file).toLowerCase();
+  return TS_EXT.has(e) || TSX_EXT.has(e);
 }
 
 /** 单条 shell 命令里的 tsc → nudo check（A1：CI workflow 可改写） */
@@ -247,7 +252,8 @@ export function migrateStatus(rootDir: string): MigrateStatusRow[] {
     const pkgPath = join(r, "package.json");
     const pkg = readJson(pkgPath);
     const files = listFiles(r);
-    const tsFiles = files.filter((f) => TS_EXT.has(extname(f).toLowerCase())).length;
+    // .d.ts/.d.mts/.d.cts 是声明 stub（retire 时删除/保留 ambient），不是可 strip 源
+    const tsFiles = files.filter((f) => TS_EXT.has(extname(f).toLowerCase()) && !isDeclarationFile(f)).length;
     const tsxFiles = files.filter((f) => TSX_EXT.has(extname(f).toLowerCase())).length;
     const scripts = (pkg?.scripts ?? {}) as Record<string, string>;
     const tscScripts = Object.entries(scripts)
@@ -327,10 +333,15 @@ export async function migrateStrip(
     }
     if (statSync(abs).isDirectory()) {
       for (const f of listFiles(abs)) {
-        const e = extname(f).toLowerCase();
-        if (TS_EXT.has(e) || TSX_EXT.has(e)) files.push(f);
+        if (isStripSource(f)) files.push(f);
       }
     } else {
+      // 显式路径同样过扩展名门：非 TS / .d.* 声明是用法错误（不静默跳过）
+      if (!isStripSource(abs)) {
+        throw new Error(
+          `not a TypeScript source (need .ts/.mts/.cts/.tsx, not .d.ts decls or .js): ${p}`,
+        );
+      }
       files.push(abs);
     }
   }
@@ -342,7 +353,9 @@ export async function migrateStrip(
     const outFile = TSX_EXT.has(ext)
       ? file.replace(/\.tsx$/i, ".jsx")
       : file.replace(/\.tsx$/i, ".js").replace(/\.mts$/i, ".mjs").replace(/\.cts$/i, ".cjs").replace(/\.ts$/i, ".js");
-    if (opts.write) {
+    // 防御：映射不变（outFile==源）且源不是 TS 实现时禁止原地覆盖 JS
+    const wouldClobberNonTs = outFile === file && !isStripSource(file);
+    if (opts.write && !wouldClobberNonTs) {
       if (opts.backup && existsSync(file) && !existsSync(`${file}.bak`)) {
         renameSync(file, `${file}.bak`);
       } else if (opts.backup !== true && existsSync(file) && extname(file).toLowerCase() !== extname(outFile).toLowerCase()) {

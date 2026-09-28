@@ -87,6 +87,53 @@ describe("nudo migrate", () => {
     expect(js).not.toContain(": number");
   });
 
+  it("strip refuses explicit non-TS paths and never overwrites .js in place", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-strip-js-"));
+    dirs.push(dir);
+    const js = join(dir, "foo.js");
+    const original = `export const x = 1; // keep me\n`;
+    writeFileSync(js, original, "utf-8");
+    await expect(migrateStrip([js], { write: true })).rejects.toThrow(/not a TypeScript source/);
+    expect(readFileSync(js, "utf-8")).toBe(original);
+    expect(existsSync(join(dir, "foo.d.js"))).toBe(false);
+  });
+
+  it("strip skips .d.ts declarations (no .d.js output)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-strip-dts-"));
+    dirs.push(dir);
+    writeFileSync(join(dir, "a.ts"), `export const x: number = 1;\n`, "utf-8");
+    writeFileSync(join(dir, "b.d.ts"), `export declare function f(): void;\n`, "utf-8");
+    writeFileSync(join(dir, "c.d.mts"), `export declare const y: number;\n`, "utf-8");
+    const results = await migrateStrip([dir], { write: true, draft: false });
+    const outs = results.map((r) => r.outFile);
+    expect(outs.some((o) => o.endsWith(".d.js") || o.endsWith("b.d.js"))).toBe(false);
+    expect(results.map((r) => r.file).some((f) => f.includes("b.d.ts") || f.includes("c.d.mts"))).toBe(false);
+    expect(existsSync(join(dir, "b.d.js"))).toBe(false);
+    expect(existsSync(join(dir, "c.d.mjs"))).toBe(false);
+    expect(existsSync(join(dir, "a.js"))).toBe(true);
+    // 显式 .d.ts 同样是用法错误，不产出 .d.js
+    await expect(migrateStrip([join(dir, "b.d.ts")], { write: true })).rejects.toThrow(
+      /not a TypeScript source/,
+    );
+    expect(existsSync(join(dir, "b.d.js"))).toBe(false);
+  });
+
+  it("status does not count .d.ts as stripable tsFiles", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-status-dts-"));
+    dirs.push(dir);
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "demo", scripts: { check: "nudo check ." } }),
+      "utf-8",
+    );
+    mkdirSync(join(dir, "src"));
+    writeFileSync(join(dir, "src", "a.ts"), `export const x: number = 1;\n`, "utf-8");
+    writeFileSync(join(dir, "src", "ms.d.ts"), `export declare function ms(): void;\n`, "utf-8");
+    writeFileSync(join(dir, "src", "lib.d.mts"), `export declare const z: number;\n`, "utf-8");
+    const rows = migrateStatus(dir);
+    expect(rows[0]!.tsFiles).toBe(1);
+  });
+
   it("verify fails when nudo check is red and passes when green", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-verify-"));
     dirs.push(dir);
