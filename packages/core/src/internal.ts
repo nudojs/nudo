@@ -10,6 +10,10 @@
 
 // leak / budgets / memo keys
 export {
+  stripCommentsAndStrings, sourceHasRequireCall,
+  sourceHasModuleDependency, sourceHasCjsExports
+} from "./algebra/code-text.ts";
+export {
   type LeakBudget, defaultLeakBudget, exceedsBudget, leakIfNeeded,
   maybeLeak, resetLeakCounter, termDepth, termNodes
 } from "./algebra/leak.ts";

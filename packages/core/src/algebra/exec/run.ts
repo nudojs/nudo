@@ -23,6 +23,7 @@ import { NudoUnsupportedError } from "./unsupported.ts";
 import { stripStaticExportDecls } from "./export-names.ts";
 import { errorTypeAbs } from "./may-throw.ts";
 import { drainPromiseMicros } from "../builtins.ts";
+import { sourceHasCjsExports } from "../code-text.ts";
 import {
   isNudoThrow,
   isNudoReturn,
@@ -463,7 +464,8 @@ export function runTranspiled(
   // CJS 面：exports.X = v / module.exports 命名空间建模（此前 exports 未绑定
   // → ReferenceError → CJS 文件整体 eval-incapable）。exports = 命名空间 obj Abs
   // （$set 写槽）；module.exports 重赋值 → 单导出（default）。
-  const hasCjsExports = /\b(?:exports|module)\s*(?:\.|\[)/.test(source);
+  // 字符串/注释里的 exports. 不算 CJS 面。
+  const hasCjsExports = sourceHasCjsExports(source);
   if (hasCjsExports) {
     js = `let exports = $obj({});\nlet module = $obj({ exports });\nconst __nudoCjsOrig = exports;\n${js}`;
   }

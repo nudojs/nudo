@@ -14,6 +14,7 @@ import {
   type DiagnosticsLevel,
 } from "./evaluator/config.ts";
 import { isNudoTargetPath } from "./target-path.ts";
+import { stripCommentsAndStrings } from "@nudojs/core/internal";
 
 /** 默认档下应静音的 evaluator warning 码（噪声控制，A3） */
 const NOISY_WARNING_CODES = new Set([
@@ -53,59 +54,6 @@ export function diagnosticsLevelForFile(filePath: string): DiagnosticsLevel {
 
 export function hasNudoDirectives(source: string): boolean {
   return /@nudo:(case|mock|pure|skip|sample|contract|import|env|mock-module|as|replace)\b/.test(source);
-}
-
-/**
- * 去掉注释与字符串字面量，避免 `// export …` 等散文触发 exports 门禁。
- * 单遍状态机：字符串/模板/注释互不串台——字符串里的 `//`、`/*` 不是注释
- * （否则 `"https://a"; export …` 的 export 会被行注释吃掉）。
- */
-function stripCommentsAndStrings(source: string): string {
-  let out = "";
-  let i = 0;
-  const n = source.length;
-  while (i < n) {
-    const c = source[i]!;
-    const next = i + 1 < n ? source[i + 1]! : "";
-    // 行注释
-    if (c === "/" && next === "/") {
-      while (i < n && source[i] !== "\n") i++;
-      out += " ";
-      continue;
-    }
-    // 块注释
-    if (c === "/" && next === "*") {
-      i += 2;
-      while (i < n && !(source[i] === "*" && i + 1 < n && source[i + 1] === "/")) i++;
-      i = Math.min(i + 2, n);
-      out += " ";
-      continue;
-    }
-    // 字符串 / 模板（含转义）
-    if (c === '"' || c === "'" || c === "`") {
-      const quote = c;
-      i++;
-      while (i < n) {
-        if (source[i] === "\\") {
-          i += 2;
-          continue;
-        }
-        if (source[i] === quote) {
-          i++;
-          break;
-        }
-        // 模板插值 ${...} 内的代码要保留（可能含 export 语句）；这里保守：
-        // 只把整个模板当字符串擦掉——hasExport 关心的是真实 export 声明，
-        // 模板插值极少写 export。到 ` 结束。
-        i++;
-      }
-      out += '""';
-      continue;
-    }
-    out += c;
-    i++;
-  }
-  return out;
 }
 
 function hasExport(source: string): boolean {
