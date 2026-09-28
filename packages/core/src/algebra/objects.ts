@@ -322,8 +322,16 @@ export function absShapeKey(a: Abs, seen: Set<object> = new Set()): string {
     if (s.k === "never") return "never";
     if (s.k === "any") return "any";
     if (s.k === "unknown") {
-      // lit undefined 与真 unknown 不可合并（存在性语义）
-      if (a.term?.op === "lit" && a.term.value === undefined) return "unknown:undefined";
+      // lit null/undefined 与真 unknown 不可合并（存在性语义）。
+      // litValue 哨兵对 lit(undefined) 折成 undefined，须直接看 term。
+      if (a.term?.op === "lit") {
+        const v = a.term.value;
+        if (v === undefined) return "unknown:undefined";
+        if (v === null) return "unknown:null";
+        return `unknown:lit:${typeof v}:${String(v)}`;
+      }
+      // 非字面量 term（var/app）不得与真 unknown 同键
+      if (a.term) return `unknown:${termToString(a.term)}`;
       return "unknown";
     }
     if (s.k === "arr") return `arr(${absShapeKey(s.element, seen)})`;
