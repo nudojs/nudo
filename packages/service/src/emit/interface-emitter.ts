@@ -35,6 +35,7 @@ import {
   type Abs,
   type NudoConstraint,
 } from "@nudojs/core";
+import { sanitizeCommentText } from "@nudojs/core/internal";
 import { randomBytes } from "node:crypto";
 
 import { unifiedDiff } from "./case-emitter.ts";
@@ -410,7 +411,7 @@ function projectFunctionDsl(fn: FunctionAnalysis): string | undefined {
 // ---------------------------------------------------------------------------
 
 function sectionText(fn: string, dsl: string, srcRel: string): string {
-  return `${GENERATED_HEADER}\n// source: ${srcRel}:${fn}\nexport const ${fn} = ${dsl};\n`;
+  return `${GENERATED_HEADER}\n// source: ${sanitizeCommentText(`${srcRel}:${fn}`)}\nexport const ${fn} = ${dsl};\n`;
 }
 
 /**

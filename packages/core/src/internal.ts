@@ -64,6 +64,10 @@ export {
   denoteGuard
 } from "./algebra/denote.ts";
 export {
+  escapeTemplateTypeFixed, formatObjectKey, isJsIdent, safeMemberAccess,
+  sanitizeCommentText
+} from "./algebra/codegen-escape.ts";
+export {
   type ClassDef, type MethodDef, awaitAbs, classChainNames,
   classFromMethods, coerceAsyncReturn, defineClass, getClass,
   getClassChain, instanceOf, instantiateClass, lookupMethod,

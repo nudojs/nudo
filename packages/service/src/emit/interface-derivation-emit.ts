@@ -13,6 +13,7 @@ import {
   sidecarPathOf,
   takeRefineDiagsSince,
 } from "@nudojs/core";
+import { sanitizeCommentText } from "@nudojs/core/internal";
 
 import { unifiedDiff } from "./case-emitter.ts";
 import { deriveFromRoot } from "./interface-derivation-derive.ts";
@@ -219,8 +220,8 @@ export function emitDerivedFromRoot(
       const srcRel = relative(targetSidecarDir, targetFile) || basename(targetFile);
       const section = [
         DERIVED_HEADER,
-        `// source: ${srcRel}:${row.fn}`,
-        `// derived-from: ${row.derivedFrom}`,
+        `// source: ${sanitizeCommentText(`${srcRel}:${row.fn}`)}`,
+        `// derived-from: ${sanitizeCommentText(row.derivedFrom)}`,
         body.text,
         "",
       ].join("\n");
