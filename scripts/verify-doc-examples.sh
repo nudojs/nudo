@@ -138,7 +138,7 @@ verify_check quick-start packages/website/docs/getting-started/quick-start.md \
   'nudo:constraint-violated' \
   'expected: x > 0' \
   'scale(x: number) => number' \
-  'formatName(first: any, last: any) => number | string'
+  'formatName(first: any, last: any) => string'
 
 # check: L2 entry may-throw gates; subtract body arith yields number.
 verify_check check packages/website/docs/guides/check.md \

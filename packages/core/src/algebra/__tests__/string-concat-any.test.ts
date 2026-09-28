@@ -25,28 +25,32 @@ export function length(x) { return \`\${x}\`.length; }
 export function num(x) { return 1 + x; }
 `;
 
+/** formatAbs 前缀即 shape 面：`string  #path` / `number  #path`，并集是 `number | string` */
+function faceOf(src: string, name: string, args: unknown[] = []) {
+  const out = formatAbs(callFn(SRC, name, args).result);
+  return out.split(/\s{2,}/)[0]!;
+}
+
 describe("string concat with an any operand", () => {
   it("template with an any part is string", () => {
-    expect(formatAbs(callFn(SRC, "tpl", [anyAbs()]).result)).toContain("string");
+    expect(faceOf(SRC, "tpl", [anyAbs()])).toBe("string");
   });
 
   it("string on either side is string", () => {
-    expect(formatAbs(callFn(SRC, "left", [anyAbs()]).result)).toContain("string");
-    expect(formatAbs(callFn(SRC, "right", [anyAbs()]).result)).toContain("string");
+    expect(faceOf(SRC, "left", [anyAbs()])).toBe("string");
+    expect(faceOf(SRC, "right", [anyAbs()])).toBe("string");
   });
 
   it("multi-part template with any parts is string", () => {
-    expect(formatAbs(callFn(SRC, "tplTwo", [anyAbs(), anyAbs()]).result)).toContain("string");
+    expect(faceOf(SRC, "tplTwo", [anyAbs(), anyAbs()])).toBe("string");
   });
 
   it("length of a template with an any part stays number", () => {
-    expect(formatAbs(callFn(SRC, "length", [anyAbs()]).result)).toContain("number");
+    expect(faceOf(SRC, "length", [anyAbs()])).toBe("number");
   });
 
   it("mixed number + any still narrows to number | string (unchanged)", () => {
-    const out = formatAbs(callFn(SRC, "num", [anyAbs()]).result);
-    expect(out).toContain("number");
-    expect(out).toContain("string");
+    expect(faceOf(SRC, "num", [anyAbs()])).toBe("number | string");
   });
 
   it("all-literal concat still folds exactly", () => {
