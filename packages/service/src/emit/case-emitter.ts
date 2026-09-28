@@ -67,7 +67,8 @@ export function serializeCaseArg(a: Abs): string | null {
     const v = a.term.value;
     if (typeof v === "number") {
       if (!Number.isFinite(v)) return null;
-      const n = String(v);
+      // String(-0)==="0" 会抹掉可观察的 -0（Object.is / 1/x）；必须字面保真
+      const n = Object.is(v, -0) ? "-0" : String(v);
       return NUMBER_LITERAL_REGEX.test(n) ? n : null;
     }
     if (typeof v === "boolean") return v ? "true" : "false";
