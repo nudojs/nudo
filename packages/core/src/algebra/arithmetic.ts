@@ -65,8 +65,16 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
     if (typeof va === "number" && typeof vb === "number") {
       return numLit(va + vb);
     }
+    // 含 string → 走 ToString 拼接（bigint 也可 ToString：10n+'' === "10"）
     if (typeof va === "string" || typeof vb === "string") {
       return strLitResult(String(va) + String(vb));
+    }
+    // 非 string 的混合 bigint⊗number/bool/null/undefined：ToNumeric 混型 TypeError
+    if (
+      (typeof va === "bigint" && typeof vb !== "bigint") ||
+      (typeof vb === "bigint" && typeof va !== "bigint")
+    ) {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
     }
   }
   // boolean/null 字面量与数字混合：ToNumber 折叠（与 sub/mul/div/mod 同口径；
@@ -165,7 +173,7 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   return abs({ k: "unknown" }, undefined, undefined, "partial");
 }
 
-/** 双方 bigint 字面量折叠（÷0n 原生 RangeError → unknown）；混合 bigint⊗非 bigint 原生抛 TypeError → unknown */
+/** 双方 bigint 字面量折叠；÷0n / 负指数等原生 RangeError、混合 bigint⊗非 bigint 原生 TypeError——硬抛（catch 可吸收），不得静默 unknown */
 function foldBigintBinOp(
   a: Abs,
   b: Abs,
@@ -177,15 +185,16 @@ function foldBigintBinOp(
   if (typeof va === "bigint" && typeof vb === "bigint") {
     try {
       return bigintLit(op(va, vb));
-    } catch {
-      return abs({ k: "unknown" }, undefined, undefined, "partial");
+    } catch (e) {
+      if (e instanceof RangeError) throw new NudoThrow(errorTypeAbs("RangeError"));
+      throw new NudoThrow(errorTypeAbs("TypeError"));
     }
   }
   // 一侧 bigint 字面量：另一侧为 bigint prim（无字面量）→ 交抽象回退；
-  // 其余（number/string/bool/…）混合原生抛 TypeError → unknown
+  // 其余（number/string/bool/…）混合原生抛 TypeError → 硬抛
   const other = typeof va === "bigint" ? b : a;
   if (isBigPrim(other)) return undefined;
-  return abs({ k: "unknown" }, undefined, undefined, "partial");
+  throw new NudoThrow(errorTypeAbs("TypeError"));
 }
 
 function dedupAbsMembers(ms: Abs[]): Abs[] {

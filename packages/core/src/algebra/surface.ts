@@ -21,6 +21,8 @@ import {
   type Phi,
 } from "./pred.ts";
 import { implies } from "./pred.ts";
+import { NudoThrow } from "./exec/nudo-throw.ts";
+import { errorTypeAbs } from "./exec/may-throw.ts";
 
 // --- 位运算 / 移位 / 幂 / ToNumber（evaluator $bitand 等运算符路由） ---
 
@@ -53,8 +55,10 @@ function foldNumericBinOp(
   const va = litValue(a);
   const vb = litValue(b);
   if (typeof va === "bigint" || typeof vb === "bigint") {
+    // 混合 bigint⊗非 bigint：原生 TypeError；bigint 上无此算子（>>>）：TypeError；
+    // 负指数 ** 等：RangeError——一律硬抛（catch 可吸收），不得静默 unknown
     if (typeof va === "bigint" && typeof vb === "bigint") {
-      if (!bigOp) return unknownPartial();
+      if (!bigOp) throw new NudoThrow(errorTypeAbs("TypeError"));
       try {
         return abs(
           { k: "prim", type: "bigint" },
@@ -62,11 +66,12 @@ function foldNumericBinOp(
           pTrue,
           "exact",
         );
-      } catch {
-        return unknownPartial();
+      } catch (e) {
+        if (e instanceof RangeError) throw new NudoThrow(errorTypeAbs("RangeError"));
+        throw new NudoThrow(errorTypeAbs("TypeError"));
       }
     }
-    return unknownPartial();
+    throw new NudoThrow(errorTypeAbs("TypeError"));
   }
   if (coercibleNumberLit(va) && coercibleNumberLit(vb)) {
     return abs(
@@ -87,11 +92,13 @@ function foldNumericUnOp(
 ): Abs | undefined {
   const v = litValue(a);
   if (typeof v === "bigint") {
-    if (!bigOp) return unknownPartial();
+    // bigint 上无此一元算子（如 unary +）→ TypeError；折叠失败同口径硬抛
+    if (!bigOp) throw new NudoThrow(errorTypeAbs("TypeError"));
     try {
       return abs({ k: "prim", type: "bigint" }, lit(bigOp(v) as never), pTrue, "exact");
-    } catch {
-      return unknownPartial();
+    } catch (e) {
+      if (e instanceof RangeError) throw new NudoThrow(errorTypeAbs("RangeError"));
+      throw new NudoThrow(errorTypeAbs("TypeError"));
     }
   }
   if (coercibleNumberLit(v)) {
@@ -187,12 +194,12 @@ export function powAbs(a: Abs, b: Abs): Abs {
   );
 }
 
-/** 一元 + —— ToNumber 折叠；bigint 原生恒抛 TypeError → 不可折叠 */
+/** 一元 + —— ToNumber 折叠；bigint 原生恒抛 TypeError → 硬抛 */
 export function toNumberAbs(a: Abs): Abs {
   const v = litValue(a);
   if (typeof v === "bigint") {
-    // +5n 原生抛 TypeError，不得折出数值
-    return abs({ k: "unknown" }, undefined, undefined, "partial");
+    // +5n 原生抛 TypeError（catch 可吸收），不得静默 unknown
+    throw new NudoThrow(errorTypeAbs("TypeError"));
   }
   if (coercibleNumberLit(v)) {
     return abs({ k: "prim", type: "number" }, lit(Number(v)), pTrue, "exact");
