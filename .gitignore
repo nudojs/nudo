@@ -50,3 +50,4 @@ docs/examples/**/*.d.ts
 
 # gate-major.mjs job-local snapshot (always deleted after --check-baseline)
 .changeset/.major-baseline.json
+.ai-bug-hunt/
