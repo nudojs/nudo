@@ -70,7 +70,7 @@ export {
   bindingsOf, bitandAbs, bitnotAbs, bitorAbs, bitxorAbs, bool, boolLit,
   boolean, buildArgsFromAssume, builtinCtorAbs, builtinCtorNameOf,
   callAbsMethod, callAtFunctionBoundary, callTranspiledExport,
-  callTranspiledExportFull, canonicalArrayIndex, checkArg, checkCall,
+  callTranspiledExportFull, canonicalArrayIndex, propertyKeyOf, checkArg, checkCall,
   checkSource, clearBClasses, clearCollectionTables, clearStaleTermPred,
   cmp, collectAbsExports, collectAbsFreeVars, collectionElementJoin,
   collectionExactLen, confJoin, constraintToEntryAbs, contractParamNameSet,

@@ -74,7 +74,7 @@ export {
 } from "./methods.ts";
 
 export {
-  type FnAbs, type ObjShape, type Slot, absShapeKey, canonicalArrayIndex,
+  type FnAbs, type ObjShape, type Slot, absShapeKey, canonicalArrayIndex, propertyKeyOf,
   fnOf, getSlot, isNullProtoObj, isObj, joinAbs, joinFunctions,
   joinObjects, joinValues, makeSum, markNullProtoObj, migrateNullProto,
   objOf, spread

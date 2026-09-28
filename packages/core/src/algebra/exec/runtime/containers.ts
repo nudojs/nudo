@@ -10,7 +10,7 @@ import { absFunction, getFnImpl } from "../../abs-fn.ts";
 import {
   joinAbs, objOf, isObj, spread as spreadObj, type ObjShape, type Slot,
   isNullProtoObj, migrateNullProto, getSlot, setSlot, setProtoAbs,
-  canonicalArrayIndex,
+  canonicalArrayIndex, propertyKeyOf,
 } from "../../objects.ts";
 import {
   isMapAbs, isSetAbs, setElementsAbs, collectionExactLen,
@@ -459,7 +459,10 @@ export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
 export function $idx(a: Abs, i: Abs): Abs {
   // any 下标：无约束读（any ≠ unknown）
   if (a?.shape?.k === "any") return anyMemberResult();
-  const iv = litValue(i);
+  // ToPropertyKey：null/undefined/boolean 字面量 → "null"/"undefined"/"true"…
+  //（litValue 哨兵会把 lit(undefined) 吞成「无 lit」，不得走抽象下标）
+  const keyStr = propertyKeyOf(i);
+  const iv = keyStr !== undefined ? keyStr : litValue(i);
   const idx = iv !== undefined ? canonicalArrayIndex(iv) : undefined;
   if (a.shape.k === "tuple") {
     const els = a.shape.elements;
@@ -529,7 +532,9 @@ export function widenTupleToArr(
 
 /** 下标写 a[i]=v → 新 tuple（越界写按 JS 语义增长，空洞为 undefined） */
 export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
-  const iv = litValue(i);
+  // ToPropertyKey：lit(undefined) 哨兵不得当抽象键
+  const pk = propertyKeyOf(i);
+  const iv = pk !== undefined ? pk : litValue(i);
   if (a.shape.k === "tuple" && typeof iv === "number" && Number.isInteger(iv) && iv >= 0) {
     const st = extStateOf(a);
     if (st === "frozen") throwStrictWrite(); // frozen 数组：下标写 TypeError

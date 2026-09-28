@@ -25,6 +25,20 @@ export function canonicalArrayIndex(v: unknown): number | undefined {
   return undefined;
 }
 
+/**
+ * ES ToPropertyKey 的字面量折叠：null→"null"、undefined→"undefined"、
+ * true/false→"true"/"false"、number/string 原样。
+ * 必须看 term——litValue 把 lit(undefined) 吞成哨兵 undefined。
+ * 抽象 / symbol 返回 undefined（调用方保守处理）。
+ */
+export function propertyKeyOf(a: Abs | undefined): string | undefined {
+  if (a === undefined) return undefined;
+  if (a.term?.op !== "lit") return undefined;
+  const v = a.term.value;
+  if (typeof v === "symbol") return undefined;
+  return String(v);
+}
+
 export type ObjShape = {
   k: "obj";
   slots: Record<string, Slot>;

@@ -5,7 +5,7 @@
 
 import type { Abs } from "../abs.ts";
 import { abs, unknown, confJoin, litValue, bool, boolLit, str, strLit, numLit } from "../abs.ts";
-import { objOf, joinAbs, isObj, canonicalArrayIndex, getSlot, setSlot } from "../objects.ts";
+import { objOf, joinAbs, isObj, canonicalArrayIndex, getSlot, setSlot, propertyKeyOf } from "../objects.ts";
 import { $get, $set, $lit, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary, lookupObjAccessor, fillTuple, clearStaleTermPred } from "./runtime.ts";
 import { $call } from "./call.ts";
 import { getFnImpl, absFunction } from "../abs-fn.ts";
@@ -1247,7 +1247,9 @@ export function $staticInvoke(cls: Abs, method: string, args: Abs[]): Abs {
 
 /** 计算属性写：o[kAbs] = v。非字面量 key → open + index join（不得写成字面槽 "?"） */
 export function $setKey(o: Abs, key: Abs, value: Abs): Abs {
-  const k = litValue(key);
+  // ToPropertyKey：null/undefined/boolean 字面量 → "null"/"undefined"/"true"
+  const pk = propertyKeyOf(key);
+  const k = pk !== undefined ? pk : litValue(key);
   if (typeof k === "string" || typeof k === "number") {
     const ks = String(k);
     // 对象字面量计算键 `{['__proto__']: v}` 是自有数据属性（CreateDataProperty），
