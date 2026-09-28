@@ -11,19 +11,47 @@ slug: /releases-history
 
 | 包 | 当前版本 |
 |----|----------|
-| `@nudojs/core` | 1.2.1 |
-| `@nudojs/service` | 1.2.1 |
-| `nudojs (CLI)` | 1.0.6 |
-| `@nudojs/parser` | 1.1.6 |
-| `@nudojs/lsp` | 1.1.6 |
-| `@nudojs/env` | 0.4.8 |
-| `@nudojs/harvester` | 0.2.14 |
-| `vite-plugin-nudo` | 0.4.9 |
-| `nudo-vscode` | 0.3.13 |
+| `@nudojs/core` | 1.2.2 |
+| `@nudojs/service` | 1.2.2 |
+| `nudojs (CLI)` | 1.0.7 |
+| `@nudojs/parser` | 1.1.7 |
+| `@nudojs/lsp` | 1.1.7 |
+| `@nudojs/env` | 0.4.9 |
+| `@nudojs/harvester` | 0.2.15 |
+| `vite-plugin-nudo` | 0.4.10 |
+| `nudo-vscode` | 0.3.14 |
 
 **按包跳转:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.2.1 {#pkg-core}
+## @nudojs/core 1.2.2 {#pkg-core}
+
+## 1.2.2
+
+### Patch Changes
+
+- 662aeb5: fix(env): env-declared `Number`/`Array`/`Promise`/`Date` no longer shadow away call/construct
+  
+  Declaring `nudo.env` (e.g. `"es"`) bound these globals as namespace-only
+  `objAbs` objects. Once shadowed, `Number(x)` and `new Array(n)` found nothing
+  callable/constructible and degraded to `unknown` — the opposite of the host
+  identity path (no env), which folds via `GLOBAL_FNS` / `$new`'s `cls === Array`.
+  
+  Dual-facet globals now model both faces (issue #58 option 1):
+  
+  - Abs `fn` may carry static `slots` (`Number.isFinite`, `Array.isArray`, …).
+    `$get` / `$in` read them; `typeof` stays `"function"`.
+  - `$new` dispatches Abs constructors by name through `evalBuiltinNew`
+    (Array/Date/Promise/Number/String/Boolean/Map/Set/Error), instead of only
+    the Error/Promise special cases.
+  - ES env declares `Number`/`Array`/`Promise`/`Date` as callable `envFn` with
+    static slots and a ctor `name`, so call, construct, and statics all keep
+    builtin semantics under env shadowing.
+  
+  `Number(s)` folds to `number`, `new Array(n)` to a holey tuple, and
+  `Number.isInteger` / `Array.isArray` stay precise with `nudo.env` declared.
+
+<details>
+<summary>历史版本 (17)</summary>
 
 ## 1.2.1
 
@@ -67,9 +95,6 @@ slug: /releases-history
   Verified on a real project: `tarballUrl`-shaped templates and
   `printScore` / `printPublishResult`-shaped helpers stop reporting
   `nudo:unknown-inference`.
-
-<details>
-<summary>历史版本 (16)</summary>
 
 ## 1.2.0
 
@@ -498,7 +523,20 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/service 1.2.1 {#pkg-service}
+## @nudojs/service 1.2.2 {#pkg-service}
+
+## 1.2.2
+
+### Patch Changes
+
+- Updated dependencies [662aeb5]
+  - @nudojs/core@1.2.2
+  - @nudojs/env@0.4.9
+  - @nudojs/harvester@0.2.15
+  - @nudojs/parser@1.1.7
+
+<details>
+<summary>历史版本 (19)</summary>
 
 ## 1.2.1
 
@@ -512,9 +550,6 @@ slug: /releases-history
   - @nudojs/core@1.2.1
   - @nudojs/harvester@0.2.14
   - @nudojs/parser@1.1.6
-
-<details>
-<summary>历史版本 (18)</summary>
 
 ## 1.2.0
 
@@ -977,7 +1012,20 @@ slug: /releases-history
 
 </details>
 
-## nudojs (CLI) 1.0.6 {#pkg-nudojs}
+## nudojs (CLI) 1.0.7 {#pkg-nudojs}
+
+## 1.0.7
+
+### Patch Changes
+
+- Updated dependencies [662aeb5]
+  - @nudojs/core@1.2.2
+  - @nudojs/harvester@0.2.15
+  - @nudojs/parser@1.1.7
+  - @nudojs/service@1.2.2
+
+<details>
+<summary>历史版本 (16)</summary>
 
 ## 1.0.6
 
@@ -990,9 +1038,6 @@ slug: /releases-history
   - @nudojs/harvester@0.2.14
   - @nudojs/service@1.2.1
   - @nudojs/parser@1.1.6
-
-<details>
-<summary>历史版本 (15)</summary>
 
 ## 1.0.5
 
@@ -1218,7 +1263,17 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/parser 1.1.6 {#pkg-parser}
+## @nudojs/parser 1.1.7 {#pkg-parser}
+
+## 1.1.7
+
+### Patch Changes
+
+- Updated dependencies [662aeb5]
+  - @nudojs/core@1.2.2
+
+<details>
+<summary>历史版本 (17)</summary>
 
 ## 1.1.6
 
@@ -1228,9 +1283,6 @@ slug: /releases-history
 - Updated dependencies [af8cb68]
 - Updated dependencies [ff37d91]
   - @nudojs/core@1.2.1
-
-<details>
-<summary>历史版本 (16)</summary>
 
 ## 1.1.5
 
@@ -1452,7 +1504,19 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/lsp 1.1.6 {#pkg-lsp}
+## @nudojs/lsp 1.1.7 {#pkg-lsp}
+
+## 1.1.7
+
+### Patch Changes
+
+- Updated dependencies [662aeb5]
+  - @nudojs/core@1.2.2
+  - @nudojs/parser@1.1.7
+  - @nudojs/service@1.2.2
+
+<details>
+<summary>历史版本 (20)</summary>
 
 ## 1.1.6
 
@@ -1464,9 +1528,6 @@ slug: /releases-history
   - @nudojs/core@1.2.1
   - @nudojs/service@1.2.1
   - @nudojs/parser@1.1.6
-
-<details>
-<summary>历史版本 (19)</summary>
 
 ## 1.1.5
 
@@ -1863,7 +1924,37 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/env 0.4.8 {#pkg-env}
+## @nudojs/env 0.4.9 {#pkg-env}
+
+## 0.4.9
+
+### Patch Changes
+
+- 662aeb5: fix(env): env-declared `Number`/`Array`/`Promise`/`Date` no longer shadow away call/construct
+  
+  Declaring `nudo.env` (e.g. `"es"`) bound these globals as namespace-only
+  `objAbs` objects. Once shadowed, `Number(x)` and `new Array(n)` found nothing
+  callable/constructible and degraded to `unknown` — the opposite of the host
+  identity path (no env), which folds via `GLOBAL_FNS` / `$new`'s `cls === Array`.
+  
+  Dual-facet globals now model both faces (issue #58 option 1):
+  
+  - Abs `fn` may carry static `slots` (`Number.isFinite`, `Array.isArray`, …).
+    `$get` / `$in` read them; `typeof` stays `"function"`.
+  - `$new` dispatches Abs constructors by name through `evalBuiltinNew`
+    (Array/Date/Promise/Number/String/Boolean/Map/Set/Error), instead of only
+    the Error/Promise special cases.
+  - ES env declares `Number`/`Array`/`Promise`/`Date` as callable `envFn` with
+    static slots and a ctor `name`, so call, construct, and statics all keep
+    builtin semantics under env shadowing.
+  
+  `Number(s)` folds to `number`, `new Array(n)` to a holey tuple, and
+  `Number.isInteger` / `Array.isArray` stay precise with `nudo.env` declared.
+- Updated dependencies [662aeb5]
+  - @nudojs/core@1.2.2
+
+<details>
+<summary>历史版本 (16)</summary>
 
 ## 0.4.8
 
@@ -1884,9 +1975,6 @@ slug: /releases-history
 - Updated dependencies [af8cb68]
 - Updated dependencies [ff37d91]
   - @nudojs/core@1.2.1
-
-<details>
-<summary>历史版本 (15)</summary>
 
 ## 0.4.7
 
@@ -2057,7 +2145,19 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/harvester 0.2.14 {#pkg-harvester}
+## @nudojs/harvester 0.2.15 {#pkg-harvester}
+
+## 0.2.15
+
+### Patch Changes
+
+- Updated dependencies [662aeb5]
+  - @nudojs/core@1.2.2
+  - @nudojs/env@0.4.9
+  - @nudojs/parser@1.1.7
+
+<details>
+<summary>历史版本 (16)</summary>
 
 ## 0.2.14
 
@@ -2070,9 +2170,6 @@ slug: /releases-history
   - @nudojs/env@0.4.8
   - @nudojs/core@1.2.1
   - @nudojs/parser@1.1.6
-
-<details>
-<summary>历史版本 (15)</summary>
 
 ## 0.2.13
 
@@ -2243,7 +2340,18 @@ slug: /releases-history
 
 </details>
 
-## vite-plugin-nudo 0.4.9 {#pkg-vite-plugin}
+## vite-plugin-nudo 0.4.10 {#pkg-vite-plugin}
+
+## 0.4.10
+
+### Patch Changes
+
+- Updated dependencies [662aeb5]
+  - @nudojs/core@1.2.2
+  - @nudojs/service@1.2.2
+
+<details>
+<summary>历史版本 (19)</summary>
 
 ## 0.4.9
 
@@ -2254,9 +2362,6 @@ slug: /releases-history
 - Updated dependencies [ff37d91]
   - @nudojs/core@1.2.1
   - @nudojs/service@1.2.1
-
-<details>
-<summary>历史版本 (18)</summary>
 
 ## 0.4.8
 

@@ -11,179 +11,154 @@ slug: /releases
 
 | 包 | 当前版本 |
 |----|----------|
-| `@nudojs/core` | 1.2.1 |
-| `@nudojs/service` | 1.2.1 |
-| `nudojs (CLI)` | 1.0.6 |
-| `@nudojs/parser` | 1.1.6 |
-| `@nudojs/lsp` | 1.1.6 |
-| `@nudojs/env` | 0.4.8 |
-| `@nudojs/harvester` | 0.2.14 |
-| `vite-plugin-nudo` | 0.4.9 |
-| `nudo-vscode` | 0.3.13 |
+| `@nudojs/core` | 1.2.2 |
+| `@nudojs/service` | 1.2.2 |
+| `nudojs (CLI)` | 1.0.7 |
+| `@nudojs/parser` | 1.1.7 |
+| `@nudojs/lsp` | 1.1.7 |
+| `@nudojs/env` | 0.4.9 |
+| `@nudojs/harvester` | 0.2.15 |
+| `vite-plugin-nudo` | 0.4.10 |
+| `nudo-vscode` | 0.3.14 |
 
 **按包跳转:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.2.1 {#pkg-core}
+## @nudojs/core 1.2.2 {#pkg-core}
 
-## 1.2.1
-
-### Patch Changes
-
-- 7b8df37: fix(core): JS semantics — UpdateExpression, optional chain, enumerable, ToPropertyKey, copyWithin, split limit, isPrototypeOf
-  
-  Seven evaluator/transpile correctness fixes (one commit per class):
-  
-  - `x++`/`x--` use ToNumeric ± 1 (bigint gets `1n`); postfix caches the old value (IEEE 2^53 safe). `"5"++` is `6`, not `"51"`.
-  - Optional chains short-circuit the **remaining** chain (`a?.b.c` ≡ `a == null ? undefined : a.b.c`), including `o?.length` / `o?.[k]` / `g?.()` / `o.m?.()`. RegExp `test`/`exec` inside a chain still rebind `lastIndex`.
-  - `for-in` / `Object.assign` honor `enumerable` (shared `enumOwnKeys` / `isEnumerableView` with `Object.keys`).
-  - ToPropertyKey stringifies `null`/`undefined`/`boolean` computed keys (`o[null]` ≡ `o["null"]`) for get/set/in/delete.
-  - `copyWithin` overlap direction uses the **resolved** window (negative indices no longer flip).
-  - `split(undefined, limit)` uses ToUint32 (`0.5`/`±Infinity` → `[]`; `-1` → `2^32-1`).
-  - `Object.prototype.isPrototypeOf(Object.prototype)` is `false`.
-- af8cb68: fix(core): JS semantics soundness — JSON space, bigint throws, `__proto__` keys
-  
-  - `JSON.stringify` space goes through to the host (`min(10, ToIntegerOrInfinity)`); `Infinity` / `(0,1)` fractions no longer collapse to compact.
-  - Mixed / invalid bigint ops hard-throw `TypeError`/`RangeError` when the other operand is **definitely** non-bigint (number/bool/null/undefined). Abstract operands (`any`/`obj`/string-prim for `+`) no longer fold to `never` — `1n + s` is string concat, `1n + x` (any) is `bigint | string` with soft may-throw.
-  - `__proto__` own keys survive (`JSON.parse`, computed literal, method named `__proto__`, spread/assign copy) via `defineProperty`; non-computed `{__proto__: v}` is the ES prototype special form; `Object.setPrototypeOf` missing/`undefined` proto throws.
-- ff37d91: fix(core): string-face typing — concat/template with an `any` operand, abstract `.length`
-  
-  Two gaps that made provably-string expressions come out as `unknown` (and
-  raised `nudo:unknown-inference` on real projects):
-  
-  - `concatString` fell back to `unknown` whenever one side had no
-    string-parts view — including `any`/`unknown`. But a string operand
-    determines the result type: `"s" + x`, `x + "s"` and `` `${x}` `` are all
-    `string` (the ToString-throws-on-Symbol path is not modelled here). This
-    contradicted `docs/design/limitations.md`'s mixed-`+` narrowing discipline
-    (`number ⊗ obj/unknown → number | string`) — `1 + x` narrowed, `"s" + x` did
-    not. Now a definitely-string side yields `string` (`path` conf); all-other
-    cases keep the previous `unknown`.
-  
-  - `$len` had no branch for an abstract string prim (template / concat result /
-    abstract `string`), so `` `${x}`.length `` and `String(x).length` fell to the
-    trailing `unknown`. String length is always `number`; literal strings still
-    fold exactly.
-  
-  Verified on a real project: `tarballUrl`-shaped templates and
-  `printScore` / `printPublishResult`-shaped helpers stop reporting
-  `nudo:unknown-inference`.
-
-更早版本（16）→ [完整发布历史](./releases-history.md#pkg-core)
-
-## @nudojs/service 1.2.1 {#pkg-service}
-
-## 1.2.1
+## 1.2.2
 
 ### Patch Changes
 
-- Updated dependencies [5494f67]
-- Updated dependencies [7b8df37]
-- Updated dependencies [af8cb68]
-- Updated dependencies [ff37d91]
-  - @nudojs/env@0.4.8
-  - @nudojs/core@1.2.1
-  - @nudojs/harvester@0.2.14
-  - @nudojs/parser@1.1.6
-
-更早版本（18）→ [完整发布历史](./releases-history.md#pkg-service)
-
-## nudojs (CLI) 1.0.6 {#pkg-nudojs}
-
-## 1.0.6
-
-### Patch Changes
-
-- Updated dependencies [7b8df37]
-- Updated dependencies [af8cb68]
-- Updated dependencies [ff37d91]
-  - @nudojs/core@1.2.1
-  - @nudojs/harvester@0.2.14
-  - @nudojs/service@1.2.1
-  - @nudojs/parser@1.1.6
-
-更早版本（15）→ [完整发布历史](./releases-history.md#pkg-nudojs)
-
-## @nudojs/parser 1.1.6 {#pkg-parser}
-
-## 1.1.6
-
-### Patch Changes
-
-- Updated dependencies [7b8df37]
-- Updated dependencies [af8cb68]
-- Updated dependencies [ff37d91]
-  - @nudojs/core@1.2.1
-
-更早版本（16）→ [完整发布历史](./releases-history.md#pkg-parser)
-
-## @nudojs/lsp 1.1.6 {#pkg-lsp}
-
-## 1.1.6
-
-### Patch Changes
-
-- Updated dependencies [7b8df37]
-- Updated dependencies [af8cb68]
-- Updated dependencies [ff37d91]
-  - @nudojs/core@1.2.1
-  - @nudojs/service@1.2.1
-  - @nudojs/parser@1.1.6
-
-更早版本（19）→ [完整发布历史](./releases-history.md#pkg-lsp)
-
-## @nudojs/env 0.4.8 {#pkg-env}
-
-## 0.4.8
-
-### Patch Changes
-
-- 5494f67: fix(env): `Math.min` / `Math.max` / `Math.hypot` are variadic
+- 662aeb5: fix(env): env-declared `Number`/`Array`/`Promise`/`Date` no longer shadow away call/construct
   
-  The ES env declared them as binary (`envFn([prim.num(), prim.num()], num)`), so
-  `Math.min(a, b, c)` — the ordinary usage — no longer matched the arity, and the
-  call degraded to `unknown`. On a real project this turned an OSA
-  Damerau–Levenshtein implementation into `unknown` and failed 8 case assertions
-  the moment `nudo.env` was declared.
+  Declaring `nudo.env` (e.g. `"es"`) bound these globals as namespace-only
+  `objAbs` objects. Once shadowed, `Number(x)` and `new Array(n)` found nothing
+  callable/constructible and degraded to `unknown` — the opposite of the host
+  identity path (no env), which folds via `GLOBAL_FNS` / `$new`'s `cls === Array`.
   
-  They now use `envFnVariadic(prim.num(), prim.num(), { apply: numImplVAbs(...) })`:
-  any number of literal numeric args fold (`Math.min(3, 1, 2) === 1`), and
-  non-literal args yield `number` instead of `unknown`.
-- Updated dependencies [7b8df37]
-- Updated dependencies [af8cb68]
-- Updated dependencies [ff37d91]
-  - @nudojs/core@1.2.1
+  Dual-facet globals now model both faces (issue #58 option 1):
+  
+  - Abs `fn` may carry static `slots` (`Number.isFinite`, `Array.isArray`, …).
+    `$get` / `$in` read them; `typeof` stays `"function"`.
+  - `$new` dispatches Abs constructors by name through `evalBuiltinNew`
+    (Array/Date/Promise/Number/String/Boolean/Map/Set/Error), instead of only
+    the Error/Promise special cases.
+  - ES env declares `Number`/`Array`/`Promise`/`Date` as callable `envFn` with
+    static slots and a ctor `name`, so call, construct, and statics all keep
+    builtin semantics under env shadowing.
+  
+  `Number(s)` folds to `number`, `new Array(n)` to a holey tuple, and
+  `Number.isInteger` / `Array.isArray` stay precise with `nudo.env` declared.
 
-更早版本（15）→ [完整发布历史](./releases-history.md#pkg-env)
+更早版本（17）→ [完整发布历史](./releases-history.md#pkg-core)
 
-## @nudojs/harvester 0.2.14 {#pkg-harvester}
+## @nudojs/service 1.2.2 {#pkg-service}
 
-## 0.2.14
+## 1.2.2
 
 ### Patch Changes
 
-- Updated dependencies [5494f67]
-- Updated dependencies [7b8df37]
-- Updated dependencies [af8cb68]
-- Updated dependencies [ff37d91]
-  - @nudojs/env@0.4.8
-  - @nudojs/core@1.2.1
-  - @nudojs/parser@1.1.6
+- Updated dependencies [662aeb5]
+  - @nudojs/core@1.2.2
+  - @nudojs/env@0.4.9
+  - @nudojs/harvester@0.2.15
+  - @nudojs/parser@1.1.7
 
-更早版本（15）→ [完整发布历史](./releases-history.md#pkg-harvester)
+更早版本（19）→ [完整发布历史](./releases-history.md#pkg-service)
 
-## vite-plugin-nudo 0.4.9 {#pkg-vite-plugin}
+## nudojs (CLI) 1.0.7 {#pkg-nudojs}
+
+## 1.0.7
+
+### Patch Changes
+
+- Updated dependencies [662aeb5]
+  - @nudojs/core@1.2.2
+  - @nudojs/harvester@0.2.15
+  - @nudojs/parser@1.1.7
+  - @nudojs/service@1.2.2
+
+更早版本（16）→ [完整发布历史](./releases-history.md#pkg-nudojs)
+
+## @nudojs/parser 1.1.7 {#pkg-parser}
+
+## 1.1.7
+
+### Patch Changes
+
+- Updated dependencies [662aeb5]
+  - @nudojs/core@1.2.2
+
+更早版本（17）→ [完整发布历史](./releases-history.md#pkg-parser)
+
+## @nudojs/lsp 1.1.7 {#pkg-lsp}
+
+## 1.1.7
+
+### Patch Changes
+
+- Updated dependencies [662aeb5]
+  - @nudojs/core@1.2.2
+  - @nudojs/parser@1.1.7
+  - @nudojs/service@1.2.2
+
+更早版本（20）→ [完整发布历史](./releases-history.md#pkg-lsp)
+
+## @nudojs/env 0.4.9 {#pkg-env}
 
 ## 0.4.9
 
 ### Patch Changes
 
-- Updated dependencies [7b8df37]
-- Updated dependencies [af8cb68]
-- Updated dependencies [ff37d91]
-  - @nudojs/core@1.2.1
-  - @nudojs/service@1.2.1
+- 662aeb5: fix(env): env-declared `Number`/`Array`/`Promise`/`Date` no longer shadow away call/construct
+  
+  Declaring `nudo.env` (e.g. `"es"`) bound these globals as namespace-only
+  `objAbs` objects. Once shadowed, `Number(x)` and `new Array(n)` found nothing
+  callable/constructible and degraded to `unknown` — the opposite of the host
+  identity path (no env), which folds via `GLOBAL_FNS` / `$new`'s `cls === Array`.
+  
+  Dual-facet globals now model both faces (issue #58 option 1):
+  
+  - Abs `fn` may carry static `slots` (`Number.isFinite`, `Array.isArray`, …).
+    `$get` / `$in` read them; `typeof` stays `"function"`.
+  - `$new` dispatches Abs constructors by name through `evalBuiltinNew`
+    (Array/Date/Promise/Number/String/Boolean/Map/Set/Error), instead of only
+    the Error/Promise special cases.
+  - ES env declares `Number`/`Array`/`Promise`/`Date` as callable `envFn` with
+    static slots and a ctor `name`, so call, construct, and statics all keep
+    builtin semantics under env shadowing.
+  
+  `Number(s)` folds to `number`, `new Array(n)` to a holey tuple, and
+  `Number.isInteger` / `Array.isArray` stay precise with `nudo.env` declared.
+- Updated dependencies [662aeb5]
+  - @nudojs/core@1.2.2
 
-更早版本（18）→ [完整发布历史](./releases-history.md#pkg-vite-plugin)
+更早版本（16）→ [完整发布历史](./releases-history.md#pkg-env)
+
+## @nudojs/harvester 0.2.15 {#pkg-harvester}
+
+## 0.2.15
+
+### Patch Changes
+
+- Updated dependencies [662aeb5]
+  - @nudojs/core@1.2.2
+  - @nudojs/env@0.4.9
+  - @nudojs/parser@1.1.7
+
+更早版本（16）→ [完整发布历史](./releases-history.md#pkg-harvester)
+
+## vite-plugin-nudo 0.4.10 {#pkg-vite-plugin}
+
+## 0.4.10
+
+### Patch Changes
+
+- Updated dependencies [662aeb5]
+  - @nudojs/core@1.2.2
+  - @nudojs/service@1.2.2
+
+更早版本（19）→ [完整发布历史](./releases-history.md#pkg-vite-plugin)
 
 ## nudo-vscode 0.3.7 {#pkg-vscode}
 
