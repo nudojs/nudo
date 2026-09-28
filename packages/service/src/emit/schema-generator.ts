@@ -66,8 +66,18 @@ function predLeaves(p: Pred | undefined): Pred[] | "unexpressible" {
   return [p];
 }
 
-function isSelfVar(t: Term | undefined): boolean {
-  return !!t && t.op === "var";
+function isSelfVar(t: Term | undefined, self?: Term): boolean {
+  if (!t || t.op !== "var") return false;
+  if (t.id === "__nudo_self__") return true;
+  if (self && self.op === "var") return t.id === self.id;
+  return false;
+}
+
+/** length 参数是否锚定 self（length(self) / length(__nudo_self__)） */
+function isLengthSelf(t: Term | undefined, self?: Term): boolean {
+  if (!t) return false;
+  if (t.op === "var") return isSelfVar(t, self);
+  return false;
 }
 
 function litOf(t: Term | undefined): string | number | boolean | null | undefined {
@@ -75,18 +85,18 @@ function litOf(t: Term | undefined): string | number | boolean | null | undefine
 }
 
 /** eq 的字面量端（任一侧为 lit 即可）；锚定要求另一侧是 var 或 length(var) 等简单项 */
-function eqLitValue(p: Pred): string | number | boolean | null | undefined | "unanchored" {
+function eqLitValue(p: Pred, self?: Term): string | number | boolean | null | undefined | "unanchored" {
   if (p.op !== "eq") return "unanchored";
   const aLit = litOf(p.a);
   const evalLit = litOf(p.b);
-  if (aLit !== undefined && (isSelfVar(p.b) || p.b.op === "app")) return aLit;
-  if (evalLit !== undefined && (isSelfVar(p.a) || p.a.op === "app")) return evalLit;
+  if (aLit !== undefined && (isSelfVar(p.b, self) || p.b.op === "app")) return aLit;
+  if (evalLit !== undefined && (isSelfVar(p.a, self) || p.a.op === "app")) return evalLit;
   // 允许 eq(lit, lit) 不常见形态
   if (aLit !== undefined && evalLit !== undefined) return aLit === evalLit ? aLit : "unanchored";
   return "unanchored";
 }
 
-function isIntModOne(p: Pred): boolean {
+function isIntModOne(p: Pred, self?: Term): boolean {
   if (p.op !== "eq") return false;
   const zero = (t: Term | undefined): boolean => !!t && t.op === "lit" && t.value === 0;
   const isModOne = (t: Term | undefined): boolean =>
@@ -96,23 +106,24 @@ function isIntModOne(p: Pred): boolean {
     t.args.length === 2 &&
     t.args[1]?.op === "lit" &&
     t.args[1].value === 1 &&
-    (isSelfVar(t.args[0]) || t.args[0]!.op === "app");
+    (isSelfVar(t.args[0], self) || t.args[0]!.op === "app");
   return (isModOne(p.a) && zero(p.b)) || (isModOne(p.b) && zero(p.a));
 }
 
-function numericBound(p: Pred, allowSelfVar: boolean): { op: "gt" | "ge" | "lt" | "le"; n: number } | "skip" | "drop" {
+function numericBound(p: Pred, self: Term | undefined, allowSelfVar: boolean): { op: "gt" | "ge" | "lt" | "le"; n: number } | "skip" | "drop" {
   if (p.op !== "gt" && p.op !== "ge" && p.op !== "lt" && p.op !== "le") return "drop";
   const n = litOf(p.b);
   if (typeof n !== "number") return "drop";
   if (p.a.op === "app" && p.a.fn === "length") return "skip"; // 交给长度路径
-  if (allowSelfVar && isSelfVar(p.a)) return { op: p.op, n };
+  if (allowSelfVar && isSelfVar(p.a, self)) return { op: p.op, n };
   if (p.a.op === "app" && (p.a.fn === "get" || p.a.fn === "length")) return "skip";
   return "drop";
 }
 
-function lengthBound(p: Pred): { dir: "min" | "max"; n: number } | undefined {
+function lengthBound(p: Pred, self?: Term): { dir: "min" | "max"; n: number } | undefined {
   if (p.op !== "gt" && p.op !== "ge" && p.op !== "lt" && p.op !== "le") return undefined;
   if (p.a.op !== "app" || p.a.fn !== "length") return undefined;
+  if (!isLengthSelf(p.a.args[0], self)) return undefined;
   const n = litOf(p.b);
   if (typeof n !== "number") return undefined;
   if (p.op === "ge") return { dir: "min", n: Math.ceil(n) };
@@ -130,19 +141,20 @@ function primOfType(type: string): SchemaNode["k"] extends never ? never : Extra
 
 function refinementsFromPreds(
   preds: readonly Pred[],
-  opts: { kind: "number" | "string" | "boolean" | "other" },
+  opts: { kind: "number" | "string" | "boolean" | "other"; self?: Term },
 ): { refinements: SchemaRefinement[]; eqLit?: string | number | boolean | null | undefined; dropped: string[] } {
   const refinements: SchemaRefinement[] = [];
   const dropped: string[] = [];
+  const self = opts.self;
   let eqLit: string | number | boolean | null | undefined;
   for (const p of preds) {
     if (p.op === "typeof") continue;
     if (p.op === "eq") {
-      if (opts.kind === "number" && isIntModOne(p)) {
+      if (opts.kind === "number" && isIntModOne(p, self)) {
         if (!refinements.some((r) => r.kind === "int")) refinements.push({ kind: "int" });
         continue;
       }
-      const v = eqLitValue(p);
+      const v = eqLitValue(p, self);
       if (v === "unanchored") {
         dropped.push(`pred not projected: ${predToString(p)}`);
         continue;
@@ -160,7 +172,7 @@ function refinementsFromPreds(
     }
     if (p.op === "gt" || p.op === "ge" || p.op === "lt" || p.op === "le") {
       if (opts.kind === "string") {
-        const lb = lengthBound(p);
+        const lb = lengthBound(p, self);
         if (lb) {
           refinements.push(lb.dir === "min" ? { kind: "strMin", n: lb.n } : { kind: "strMax", n: lb.n });
           continue;
@@ -168,7 +180,7 @@ function refinementsFromPreds(
         dropped.push(`pred not projected: ${predToString(p)}`);
         continue;
       }
-      const b = numericBound(p, opts.kind === "number" || opts.kind === "other");
+      const b = numericBound(p, self, opts.kind === "number" || opts.kind === "other");
       if (b === "skip") continue;
       if (b === "drop") {
         dropped.push(`pred not projected: ${predToString(p)}`);
@@ -218,7 +230,10 @@ export function constraintToSchemaNode(c: NudoConstraint): SchemaNode {
             ? "other"
             : "other";
 
-  const { refinements, eqLit, dropped } = refinementsFromPreds(preds, { kind: kind as "number" | "string" | "boolean" | "other" });
+  const { refinements, eqLit, dropped } = refinementsFromPreds(preds, {
+    kind: kind as "number" | "string" | "boolean" | "other",
+    // constraint 路径：absToConstraint 已把 self 改写成 __nudo_self__
+  });
   // eq 主导 → lit 节点（与 core projectNumber/projectString 一致）
   if (eqLit !== undefined && (kind === "number" || kind === "string" || kind === "boolean" || !c.prim)) {
     return { k: "lit", value: eqLit };
@@ -261,7 +276,9 @@ function constraintDropped(c: NudoConstraint, prefix = ""): string[] {
     if (n.fn) return;
     const kind =
       n.prim === "number" ? "number" : n.prim === "string" ? "string" : n.prim === "boolean" ? "boolean" : "other";
-    const { eqLit, dropped } = refinementsFromPreds(n.preds ?? [], { kind: kind as "number" | "string" | "boolean" | "other" });
+    const { eqLit, dropped } = refinementsFromPreds(n.preds ?? [], {
+      kind: kind as "number" | "string" | "boolean" | "other",
+    });
     for (const d of dropped) out.push(path ? `${path}: ${d}` : d);
     if (eqLit === undefined && n.preds?.some((p) => p.op === "eq") && !isIntFlag(n)) {
       // eq 已在 refinementsFromPreds 处理
@@ -327,7 +344,10 @@ export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] }
         }
         return { node: { k: "prim", type: s.type, refinements: [] }, dropped };
       }
-      const { refinements, eqLit, dropped: d } = refinementsFromPreds(leaves, { kind: kind as "number" | "string" | "boolean" | "other" });
+      const { refinements, eqLit, dropped: d } = refinementsFromPreds(leaves, {
+        kind: kind as "number" | "string" | "boolean" | "other",
+        self: a.term,
+      });
       dropped.push(...d);
       if (eqLit !== undefined && !Number.isNaN(eqLit as number)) {
         return { node: { k: "lit", value: eqLit }, dropped };
