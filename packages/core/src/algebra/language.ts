@@ -135,7 +135,9 @@ function mergeInstanceFields(instance: Abs, fields: Abs, className: string): Abs
     fields.shape.k === "brand" ? fields.shape.shape : fields;
   if (fieldObj.shape.k === "obj") {
     for (const [k, s] of Object.entries(fieldObj.shape.slots)) {
-      slots[k] = s;
+      Object.defineProperty(slots, k, {
+        value: s, enumerable: true, writable: true, configurable: true,
+      });
     }
   }
   return abs(
@@ -357,15 +359,18 @@ export function classFromMethods(
   const slots: Record<string, { value: Abs }> = {};
   if (superShape?.shape.k === "obj") {
     for (const [k, s] of Object.entries(superShape.shape.slots)) {
-      slots[k] = s;
+      Object.defineProperty(slots, k, {
+        value: s, enumerable: true, writable: true, configurable: true,
+      });
     }
   }
   for (const m of methods) {
     methodMap.set(m.name, m);
     if (m.kind !== "constructor") {
-      slots[m.name] = {
+      Object.defineProperty(slots, m.name, {
         value: abs({ k: "fn", params: m.params, name: m.name }, undefined, undefined, "exact"),
-      };
+        enumerable: true, writable: true, configurable: true,
+      });
     }
   }
   return {

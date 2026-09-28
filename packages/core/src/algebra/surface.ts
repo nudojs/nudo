@@ -4,7 +4,7 @@
  */
 
 import type { Abs, Shape, Confidence } from "./abs.ts";
-import { abs, litValue, confJoin, num, bool, boolLit, strLit, bigintLit } from "./abs.ts";
+import { abs, litValue, confJoin, num, bool, boolLit, strLit, bigintLit, isStrPrim, isBigPrim } from "./abs.ts";
 import { classNameOfValue } from "./class-mark.ts";
 import { builtinCtorNameOf, hostBuiltinCtorName } from "./builtins.ts";
 import { symbolIdOf } from "./symbol-id.ts";
@@ -22,7 +22,7 @@ import {
 } from "./pred.ts";
 import { implies } from "./pred.ts";
 import { NudoThrow } from "./exec/nudo-throw.ts";
-import { errorTypeAbs } from "./exec/may-throw.ts";
+import { errorTypeAbs, recordMayThrow } from "./exec/may-throw.ts";
 
 // --- 位运算 / 移位 / 幂 / ToNumber（evaluator $bitand 等运算符路由） ---
 
@@ -41,10 +41,34 @@ function unknownPartial(): Abs {
 }
 
 /**
+ * 已知非 bigint 的数值面（number/bool/null/undefined 字面量或 prim）——与 bigint 混型恒 TypeError。
+ */
+function isKnownNonBigintNumeric(a: Abs): boolean {
+  const va = litValue(a);
+  if (typeof va === "number" || typeof va === "boolean" || va === null) return true;
+  if (a.term?.op === "lit" && a.term.value === undefined) return true;
+  return a.shape.k === "prim" && (a.shape.type === "number" || a.shape.type === "boolean");
+}
+
+/** 可能经 ToPrimitive 变成 bigint（any/unknown/obj/fn/brand/sum）——不得硬抛成 never */
+function isMaybeBigintOperand(a: Abs): boolean {
+  return (
+    a.shape.k === "any" ||
+    a.shape.k === "unknown" ||
+    a.shape.k === "obj" ||
+    a.shape.k === "fn" ||
+    a.shape.k === "brand" ||
+    a.shape.k === "sum"
+  );
+}
+
+/**
  * 双字面量二元折叠：双方 bigint → bigint 算子；其余走 number 算子
- * （JS 位运算/移位自身完成 ToInt32/ToUint32&31）。混合 bigint⊗number
- * 原生恒抛 TypeError；bigint 上未定义的算子（如 >>>）或抛错（如 2n**-1n）
- * 一律返回 unknown，不得回落成 bigint 形状。number 侧不可折叠返回 undefined。
+ * （JS 位运算/移位自身完成 ToInt32/ToUint32&31）。
+ * 混合 bigint⊗确定非 bigint（number/bool/null/undefined/string）→ 硬抛 TypeError。
+ * 混合 bigint⊗抽象面（any/obj/…）→ 记 soft may-throw 并回退，不得硬抛成 never
+ * （`1n & x` 在 x 实为 2n 时得 0n）。bigint 上无此算子（>>>）一侧是 bigint 即 TypeError。
+ * 不得回落成 bigint 形状除非双方确实同型。number 侧不可折叠返回 undefined。
  */
 function foldNumericBinOp(
   a: Abs,
@@ -54,15 +78,18 @@ function foldNumericBinOp(
 ): Abs | undefined {
   const va = litValue(a);
   const vb = litValue(b);
+  // 无 bigint 重载的算子（>>>）：任一侧是 bigint（字面量或抽象 prim）即恒 TypeError
+  if (!bigOp && (typeof va === "bigint" || typeof vb === "bigint" || isBigPrim(a) || isBigPrim(b))) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
   if (typeof va === "bigint" || typeof vb === "bigint") {
-    // 混合 bigint⊗非 bigint：原生 TypeError；bigint 上无此算子（>>>）：TypeError；
-    // 负指数 ** 等：RangeError——一律硬抛（catch 可吸收），不得静默 unknown
     if (typeof va === "bigint" && typeof vb === "bigint") {
-      if (!bigOp) throw new NudoThrow(errorTypeAbs("TypeError"));
+      // 折叠失败（2n**-1n）→ RangeError；上方已排除 !bigOp
+      const op = bigOp!;
       try {
         return abs(
           { k: "prim", type: "bigint" },
-          lit(bigOp(va, vb) as never),
+          lit(op(va, vb) as never),
           pTrue,
           "exact",
         );
@@ -70,6 +97,23 @@ function foldNumericBinOp(
         if (e instanceof RangeError) throw new NudoThrow(errorTypeAbs("RangeError"));
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }
+    }
+    const other = typeof va === "bigint" ? b : a;
+    // bigint prim 对面：交抽象回退（bitwiseResultShape 分流）
+    if (isBigPrim(other)) return undefined;
+    // 无 bigint 重载的算子（>>>）：一侧是 bigint 即恒 TypeError
+    if (!bigOp) throw new NudoThrow(errorTypeAbs("TypeError"));
+    // 确定非 bigint 数值面 / string（ToNumber 后混型）→ TypeError
+    if (isKnownNonBigintNumeric(other) || isStrPrim(other)) {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+    // 抽象面：可能同为 bigint（成功）或混型（TypeError）——soft may-throw + 回退
+    if (isMaybeBigintOperand(other)) {
+      recordMayThrow({
+        kind: "TypeError",
+        cause: "mixed bigint ⊗ abstract operand",
+      });
+      return undefined;
     }
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
@@ -194,11 +238,11 @@ export function powAbs(a: Abs, b: Abs): Abs {
   );
 }
 
-/** 一元 + —— ToNumber 折叠；bigint 原生恒抛 TypeError → 硬抛 */
+/** 一元 + —— ToNumber 折叠；bigint（含抽象 prim）原生恒抛 TypeError → 硬抛 */
 export function toNumberAbs(a: Abs): Abs {
   const v = litValue(a);
-  if (typeof v === "bigint") {
-    // +5n 原生抛 TypeError（catch 可吸收），不得静默 unknown
+  if (typeof v === "bigint" || isBigPrim(a)) {
+    // +5n / +bigPrim 原生抛 TypeError（catch 可吸收），不得静默 unknown
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
   if (coercibleNumberLit(v)) {

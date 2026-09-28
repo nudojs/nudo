@@ -114,3 +114,54 @@ describe("o.__proto__ = obj on a normal object sets the prototype", () => {
     expect(isExactUndefined(r.result)).toBe(false);
   });
 });
+
+describe("method named __proto__ is an own data property", () => {
+  it("{ __proto__() {} } keeps an own key (MethodDefinition is not the special form)", () => {
+    expect(
+      val(`export function f() { return Object.keys({ __proto__() { return 1; } }).length; }`),
+    ).toBe(1);
+    expect(
+      val(`export function f() { const o={ __proto__() { return 1; } }; return typeof o['__proto__']; }`),
+    ).toBe("function");
+  });
+
+  it("{ get __proto__() {} } keeps an own accessor key", () => {
+    expect(
+      val(`export function f() { return Object.keys({ get __proto__() { return 1; } }).length; }`),
+    ).toBe(1);
+  });
+});
+
+describe("spread / assign copies a __proto__ own key without hitting the setter", () => {
+  it("{...JSON.parse('{\"__proto__\":1}')} keeps the key", () => {
+    expect(
+      val(`export function f() { return Object.keys({ ...JSON.parse('{"__proto__":1}') }).length; }`),
+    ).toBe(1);
+    expect(
+      val(`export function f() { const o={ ...JSON.parse('{"__proto__":1}') }; return o['__proto__']; }`),
+    ).toBe(1);
+  });
+
+  it("Object.assign({}, JSON.parse('{\"__proto__\":1}')) keeps the key", () => {
+    expect(
+      val(`export function f() { return Object.keys(Object.assign({}, JSON.parse('{"__proto__":1}'))).length; }`),
+    ).toBe(1);
+  });
+});
+
+describe("Object.setPrototypeOf arity", () => {
+  it("missing proto argument throws TypeError", () => {
+    const r = call(`export function f() { return Object.setPrototypeOf({}); }`);
+    expect((r.throws as { shape?: { name?: string } })?.shape?.name).toBe("TypeError");
+  });
+
+  it("zero arguments throw TypeError", () => {
+    const r = call(`export function f() { return Object.setPrototypeOf(); }`);
+    expect((r.throws as { shape?: { name?: string } })?.shape?.name).toBe("TypeError");
+  });
+
+  it("explicit undefined proto throws TypeError", () => {
+    const r = call(`export function f() { return Object.setPrototypeOf({}, undefined); }`);
+    expect((r.throws as { shape?: { name?: string } })?.shape?.name).toBe("TypeError");
+  });
+});

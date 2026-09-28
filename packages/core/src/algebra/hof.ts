@@ -286,7 +286,9 @@ export function snapshotAbs(a: Abs): Abs {
             { value: snapshotAbs(slot.value) };
           if (slot.optional) nextSlot.optional = true;
           if (slot.readonly) nextSlot.readonly = true;
-          slots[k] = nextSlot;
+          Object.defineProperty(slots, k, {
+            value: nextSlot, enumerable: true, writable: true, configurable: true,
+          });
         }
         const next: Shape = { k: "obj", slots };
         if (s.index) {
@@ -585,7 +587,9 @@ function substShape(
           { value: substAbsInner(slot.value, map, cache, visiting) };
         if (slot.optional) nextSlot.optional = true;
         if (slot.readonly) nextSlot.readonly = true;
-        slots[k] = nextSlot;
+        Object.defineProperty(slots, k, {
+          value: nextSlot, enumerable: true, writable: true, configurable: true,
+        });
       }
       const next: Shape = { k: "obj", slots };
       if (s.index) {

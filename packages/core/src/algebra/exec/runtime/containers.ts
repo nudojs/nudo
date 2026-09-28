@@ -287,7 +287,7 @@ export function $copy(a: Abs): Abs {
   if (s.k === "obj") {
     const slots: Record<string, Slot> = {};
     for (const [k, v] of Object.entries(s.slots)) {
-      slots[k] = { ...v, value: $copy(v.value) };
+      setSlot(slots, k, { ...v, value: $copy(v.value) });
     }
     const next = objOf(slots, {
       index: s.index ? { key: $copy(s.index.key), value: $copy(s.index.value) } : undefined,
@@ -689,7 +689,7 @@ export function $spread(a: Abs, b: Abs): Abs {
     for (const [k, fn] of acc) {
       // 纯 getter（无同名数据槽）也要求值拷入——{ get x(){return 5} } 展开后 .x===5
       if (fn.get) {
-        slots[k] = { value: fn.get(bb) };
+        setSlot(slots, k, { value: fn.get(bb) });
         changed = true;
       }
     }
@@ -735,7 +735,7 @@ export function $objRest(o: Abs, keys: string[]): Abs {
   let openRest = o.shape.open === true;
   for (const [k, s] of Object.entries(o.shape.slots)) {
     if (drop.has(k)) continue;
-    slots[k] = s;
+    setSlot(slots, k, s);
     // optional 源键可能仍以 undefined 出现在 rest 的动态面；闭槽无需 open
   }
   // 提取的 optional 键：JS rest 会排除该键，但 open 对象上未知键仍可能进 rest
@@ -1313,7 +1313,7 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
           throwStrictWrite(); // 不可扩展：新键写 TypeError
         }
         if (getPropFlags(o)?.get(key)?.writable === false) throwStrictWrite();
-        inner.shape.slots[key] = { value: asAbsVal(value) };
+        setSlot(inner.shape.slots, key, { value: asAbsVal(value) });
         clearStaleTermPred(o);
         return o;
       }

@@ -83,10 +83,10 @@ export function $class(
   registerEvalClass(full);
   const slots: Record<string, { value: Abs }> = {};
   if (spec.statics) {
-    for (const [k, v] of Object.entries(spec.statics)) slots[k] = { value: asAbsVal(v) };
+    for (const [k, v] of Object.entries(spec.statics)) setSlot(slots, k, { value: asAbsVal(v) });
   }
   // 类值自有 name 属性（原生 Function.name；类表达式/声明均可读）
-  slots["name"] = { value: strLit(name) };
+  setSlot(slots, "name", { value: strLit(name) });
   const val = abs(
     { k: "brand", name, shape: objOf(slots) },
     undefined,
@@ -1137,7 +1137,7 @@ export function $thisSet(thisVal: Abs, key: string, value: Abs): Abs {
   if (thisVal.shape.k === "brand") {
     const inner = thisVal.shape.shape;
     const slots = inner.shape.k === "obj" ? { ...inner.shape.slots } : {};
-    slots[key] = { value: asAbsVal(value) };
+    setSlot(slots, key, { value: asAbsVal(value) });
     return abs(
       {
         k: "brand",

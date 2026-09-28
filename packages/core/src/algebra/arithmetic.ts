@@ -41,7 +41,7 @@ import { makeSum, absShapeKey } from "./objects.ts";
 import { noteDerivationAdd } from "./derivation.ts";
 import { isSymbolAbs as isSym } from "./symbol-id.ts";
 import { NudoThrow } from "./exec/nudo-throw.ts";
-import { errorTypeAbs } from "./exec/may-throw.ts";
+import { errorTypeAbs, recordMayThrow } from "./exec/may-throw.ts";
 
 /**
  * 抽象加法：eval(a + b) —— 跟真实 JS，不无根据地假定 number。
@@ -77,6 +77,11 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
       throw new NudoThrow(errorTypeAbs("TypeError"));
     }
   }
+  // 字符串拼接（含 template parts）—— JS + 优先走 string：
+  // `1n + "s" === "1s"`（ToString），不得落进 bigint 混型硬抛。
+  if (isStrPrim(a) || isStrPrim(b) || isTemplateLike(a) || isTemplateLike(b)) {
+    return concatString(a, b);
+  }
   // boolean/null 字面量与数字混合：ToNumber 折叠（与 sub/mul/div/mod 同口径；
   // native 10 + true = 11、2 + null = 2；undefined 参与恒 NaN 不折）
   if (coercibleLit(va) && coercibleLit(vb)) {
@@ -86,11 +91,6 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   if (big) return big;
   if (isBigPrim(a) && isBigPrim(b)) {
     return abs({ k: "prim", type: "bigint" }, undefined, undefined, confJoin(a.conf, b.conf));
-  }
-
-  // 字符串拼接（含 template parts）—— JS + 优先走 string
-  if (isStrPrim(a) || isStrPrim(b) || isTemplateLike(a) || isTemplateLike(b)) {
-    return concatString(a, b);
   }
 
   // 数组 ToPrimitive = join(",")，结果恒 string：`[] + []`→""、`[1] + 1`→"11"
@@ -114,12 +114,20 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
     return result;
   }
 
-  // any / type-var：JS + 的并集，不是 unknown，也不是 number
+  // any / type-var：JS + 的并集，不是 unknown，也不是 number。
+  // 一侧是 bigint 面时结果只能是 bigint（对面实为 bigint）或 string（ToString），
+  // 不是 number——`1n + 1` 已在上游 TypeError。
   if (isAnyLike(a) || isAnyLike(b)) {
     const term =
       a.term && b.term ? simplifyTerm(app("+", [a.term, b.term])) : undefined;
+    const bigFace = isBigPrim(a) || isBigPrim(b);
     return abs(
-      { k: "sum", members: [num(), str()] },
+      {
+        k: "sum",
+        members: bigFace
+          ? [abs({ k: "prim", type: "bigint" }, undefined, undefined, "exact"), str()]
+          : [num(), str()],
+      },
       term,
       undefined,
       "partial",
@@ -173,7 +181,35 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   return abs({ k: "unknown" }, undefined, undefined, "partial");
 }
 
-/** 双方 bigint 字面量折叠；÷0n / 负指数等原生 RangeError、混合 bigint⊗非 bigint 原生 TypeError——硬抛（catch 可吸收），不得静默 unknown */
+/**
+ * 已知不是 bigint 的操作数面：number/bool/null/undefined 字面量或 prim。
+ * 与 bigint 做算术/位运算时 ToNumeric 后是 number，混型恒 TypeError。
+ * string 不在此列——`+` 的 string 臂走拼接，其余算子在调用点单独判。
+ */
+function isKnownNonBigintNumeric(a: Abs): boolean {
+  const va = litValue(a);
+  if (typeof va === "number" || typeof va === "boolean" || va === null) return true;
+  if (a.term?.op === "lit" && a.term.value === undefined) return true;
+  return a.shape.k === "prim" && (a.shape.type === "number" || a.shape.type === "boolean");
+}
+
+/**
+ * 可能经 ToPrimitive 变成 bigint 的操作数（any/unknown/obj/fn/brand/sum）。
+ * `1n + x`（x:any）在 x 实为 2n 时得 3n、x 为 "s" 时得 "1s"、x 为 1 时才 TypeError——
+ * 不得硬抛成 never。
+ */
+function isMaybeBigintOperand(a: Abs): boolean {
+  return (
+    a.shape.k === "any" ||
+    a.shape.k === "unknown" ||
+    a.shape.k === "obj" ||
+    a.shape.k === "fn" ||
+    a.shape.k === "brand" ||
+    a.shape.k === "sum"
+  );
+}
+
+/** 双方 bigint 字面量折叠；÷0n / 负指数等原生 RangeError、确定混型原生 TypeError——硬抛（catch 可吸收），不得静默 unknown */
 function foldBigintBinOp(
   a: Abs,
   b: Abs,
@@ -190,10 +226,27 @@ function foldBigintBinOp(
       throw new NudoThrow(errorTypeAbs("TypeError"));
     }
   }
-  // 一侧 bigint 字面量：另一侧为 bigint prim（无字面量）→ 交抽象回退；
-  // 其余（number/string/bool/…）混合原生抛 TypeError → 硬抛
+  // 一侧 bigint 字面量：另一侧为 bigint prim（无字面量）→ 交抽象回退
   const other = typeof va === "bigint" ? b : a;
   if (isBigPrim(other)) return undefined;
+  // 已知非 bigint 数值面（number/bool/null/undefined）：混型恒 TypeError
+  if (isKnownNonBigintNumeric(other)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  // string prim：非 `+` 的算术/位运算 ToNumber 后混型恒 TypeError；
+  // `+` 的 string 臂已在 add() 上游分流，到这里即算术算子。
+  if (isStrPrim(other)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  // any/unknown/obj/…：可能 ToPrimitive 成 bigint（成功）或 number（TypeError）——
+  // 记 soft may-throw，交回上层分流，不得硬抛成 never
+  if (isMaybeBigintOperand(other)) {
+    recordMayThrow({
+      kind: "TypeError",
+      cause: "mixed bigint ⊗ abstract operand",
+    });
+    return undefined;
+  }
   throw new NudoThrow(errorTypeAbs("TypeError"));
 }
 
@@ -260,6 +313,7 @@ function coercibleLit(
 /**
  * 减乘除模在 any 上走 JS ToNumber：结果恒为 number（可能 NaN）。
  * 与 + 不同——+ 可能拼接；减乘除模不会。
+ * 一侧是 bigint 面时成功路径恒为 bigint（对面须同为 bigint），不得折 number。
  */
 function toNumberResult(
   a: Abs,
@@ -269,8 +323,9 @@ function toNumberResult(
   // 不用 simplifyTerm：x*1=x / x-0=x 只对 number 成立；any 参与时 ToNumber
   // 后值已变（"5"*1→5），不得把结果项认成原 any 变量（strictEqAbs 同 var 会折 true）。
   const term = a.term && b.term ? app(op, [a.term, b.term]) : undefined;
+  const bigFace = isBigPrim(a) || isBigPrim(b);
   return abs(
-    { k: "prim", type: "number" },
+    bigFace ? { k: "prim", type: "bigint" } : { k: "prim", type: "number" },
     term,
     undefined,
     term ? confJoin(confJoin(a.conf, b.conf), "partial") : "partial",

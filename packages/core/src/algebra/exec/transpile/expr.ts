@@ -353,6 +353,9 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
             return symbolKeyOf(prop.key as unknown as Parameters<typeof symbolKeyOf>[0]);
           })();
           if (mkey === null) continue;
+          // 方法名 `__proto__` 是自有数据属性（MethodDefinition 不是 proto 特殊形），
+          // 不得进 $obj({ "__proto__": … })——宿主对象字面量会当 proto 设定丢键。
+          const isProtoKey = mkey === '"__proto__"';
           const displayNames = paramDisplayNames(prop.params);
           const bindNames = methodBindNames(prop.params);
           // 方法体是新的函数边界：inLoop/inTry 必须归零；直接引用 arguments 时建槽
@@ -367,7 +370,12 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           // get/set 访问器：注册进运行时侧表（$get/$set 派发；展开/assign 时调用）
           if (prop.kind === "get" || prop.kind === "set") {
             // 占位槽保键存在性（'x' in o / keys / assign 拷贝目标）；读写在 $get/$set 层派发
-            props.push(`${mkey}: $lit(undefined)`);
+            const slotSrc = `${mkey}: $lit(undefined)`;
+            if (isProtoKey) {
+              acc = `$setKey(${acc ?? "$obj({})"}, $lit("__proto__"), $lit(undefined))`;
+            } else {
+              props.push(slotSrc);
+            }
             if (prop.kind === "get") {
               const bodySrc = `{\n${emitFnBlockBody(prop.body, 1, methodOpts)}\n}`;
               accRegs.push({ key: mkey, get: `(__this) => ${bodySrc}` });
@@ -394,7 +402,11 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           }
           const bodySrc = `{\n${mBodyInner}\n}`;
           const fnValSrc = `$fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${mParams.join(", ")}) => ${bodySrc}, { bindThis: true })`;
-          props.push(`${mkey}: ${fnValSrc}`);
+          if (isProtoKey) {
+            acc = `$setKey(${acc ?? "$obj({})"}, $lit("__proto__"), ${fnValSrc})`;
+          } else {
+            props.push(`${mkey}: ${fnValSrc}`);
+          }
           continue;
         }
         if (prop.type !== "ObjectProperty") continue;

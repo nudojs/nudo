@@ -129,7 +129,7 @@ export function spread(base: Abs, over: Abs): Abs {
     const indexSlots = spreadIndexSlots(over);
     if (indexSlots && isObj(base)) {
       const slots: Record<string, Slot> = { ...base.shape.slots };
-      for (const [k, s] of Object.entries(indexSlots)) slots[k] = s;
+      for (const [k, s] of Object.entries(indexSlots)) setSlot(slots, k, s);
       const shape: ObjShape = { k: "obj", slots };
       if (base.shape.open) shape.open = true;
       return { shape, conf: confJoin(base.conf, over.conf) };
@@ -147,7 +147,7 @@ export function spread(base: Abs, over: Abs): Abs {
 
   const slots: Record<string, Slot> = { ...base.shape.slots };
   for (const [k, s] of Object.entries(over.shape.slots)) {
-    slots[k] = s;
+    setSlot(slots, k, s);
   }
   // over 缺席的 key：若 over 是 open/有动态 key，则原 key 可能仍存在也可能被删
   // JS spread 只覆盖 over 上出现的 key，缺席 key 保留 → 直接保留
@@ -214,7 +214,7 @@ export function joinObjects(a: Abs, b: Abs): Abs {
     const optional = sa.optional || sb.optional;
     const jv = joinValues(sa.value, sb.value);
     conf = confJoin(conf, jv.conf);
-    slots[k] = { value: jv, optional };
+    setSlot(slots, k, { value: jv, optional });
   }
   return { shape: { k: "obj", slots }, conf };
 }
