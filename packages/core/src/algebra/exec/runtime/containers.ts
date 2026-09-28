@@ -1160,6 +1160,14 @@ export function $get(
     }
     return $get(inner, key, opts);
   }
+  // dual-facet fn 静态槽（Number.isFinite / Array.isArray）：自有槽优先
+  if (o.shape.k === "fn" && o.shape.slots) {
+    const slot = getSlot(o.shape.slots, key);
+    if (slot) {
+      if (slot.optional) return joinAbs(slot.value, undef());
+      return slot.value;
+    }
+  }
   // 数组 length：成员路径（a.length += 1 等复合写）与 a.length 读同源
   if ((o.shape.k === "tuple" || o.shape.k === "arr") && key === "length") {
     return $len(o);

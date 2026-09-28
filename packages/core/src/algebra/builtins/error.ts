@@ -2,7 +2,7 @@
  * Error 家族 + evalBuiltinNew / evalBuiltinInstanceMethod + namespace 分派
  */
 import type { Abs } from "../abs.ts";
-import { abs, strLit, unknown } from "../abs.ts";
+import { abs, strLit, numLit, litValue, unknown } from "../abs.ts";
 import { objOf } from "../objects.ts";
 import {
   makeMapAbs,
@@ -148,6 +148,39 @@ export function evalBuiltinNew(className: string, args: Abs[]): Abs | undefined 
       return evalPromiseCtor(args);
     case "Array":
       return makeArrayCtorAbs(args);
+    case "Number":
+    case "Boolean":
+      // 装箱：与宿主 $new 同口径（空箱 brand；valueOf 可读）
+      return abs(
+        { k: "brand", name: className, shape: objOf({}) },
+        undefined,
+        undefined,
+        "path",
+      );
+    case "String": {
+      // new String(prim)：包装箱带 length/下标槽（与 evalGlobalFn Object 装箱同口径）
+      const a0 = args[0] ? litValue(args[0]) : undefined;
+      if (typeof a0 === "string") {
+        const slots: Record<string, { value: Abs }> = {
+          length: { value: numLit(a0.length) },
+        };
+        for (let i = 0; i < a0.length; i++) {
+          slots[String(i)] = { value: strLit(a0[i]!) };
+        }
+        return abs(
+          { k: "brand", name: "String", shape: objOf(slots) },
+          undefined,
+          undefined,
+          "exact",
+        );
+      }
+      return abs(
+        { k: "brand", name: "String", shape: objOf({}, { open: true }) },
+        undefined,
+        undefined,
+        "path",
+      );
+    }
     case "Map":
       // C1.1：可选 entry 元组列表填充字面量映射；
       // 确定非法实参（prim 条目/非可迭代）→ NudoThrow(TypeError)

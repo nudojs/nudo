@@ -10,10 +10,15 @@ import {
   numLit,
   strLit,
   boolLit,
+  evalGlobalFn,
+  makeArrayCtorAbs,
+  evalPromiseCtor,
+  evalDateCtor,
 } from "@nudojs/core";
 import {
   arrOf,
   brandOf,
+  dateAbs,
   errorBrandOf,
   envFn,
   envFnVariadic,
@@ -181,6 +186,26 @@ export function defineEnv(): EnvDefinition {
     return undefined;
   };
 
+  /** Number(x)：ToNumber（与宿主 evalGlobalFn Number 同口径） */
+  const numberImplAbs: AbsSigImpl = (args) => {
+    return evalGlobalFn("Number", args);
+  };
+
+  /** Array(...)/new Array(...)：makeArrayCtorAbs（call 与 construct 同语义） */
+  const arrayImplAbs: AbsSigImpl = (args) => {
+    return makeArrayCtorAbs(args);
+  };
+
+  /** new Promise(executor)（$new 按名派发 evalPromiseCtor；call 面同口径） */
+  const promiseCtorImplAbs: AbsSigImpl = (args) => {
+    return evalPromiseCtor(args);
+  };
+
+  /** new Date(...)（$new 按名派发 evalDateCtor；call 面同口径） */
+  const dateCtorImplAbs: AbsSigImpl = (args) => {
+    return evalDateCtor(args);
+  };
+
   const promiseResolveImplAbs: AbsSigImpl = (args) => {
     if (!args[0]) return undefined;
     return promiseOf(args[0]);
@@ -249,30 +274,46 @@ export function defineEnv(): EnvDefinition {
         SQRT1_2: prim.num(),
       }),
 
-      Number: objAbs({
-        isFinite: envFn([prim.unknown], prim.bool(), isFiniteImplAbs),
-        isInteger: envFn([prim.unknown], prim.bool(), isIntegerImplAbs),
-        isNaN: envFn([prim.unknown], prim.bool(), isNaNImplAbs),
-        isSafeInteger: envFn([prim.unknown], prim.bool(), isSafeIntegerImplAbs),
-        parseFloat: envFn([prim.str()], prim.num(), parseFloatImplAbs),
-        parseInt: envFn([prim.str()], prim.num(), parseIntImplAbs),
-        MAX_SAFE_INTEGER: prim.num(),
-        MIN_SAFE_INTEGER: prim.num(),
-        MAX_VALUE: prim.num(),
-        MIN_VALUE: prim.num(),
-        POSITIVE_INFINITY: prim.num(),
-        NEGATIVE_INFINITY: prim.num(),
-        NaN: prim.num(),
-        EPSILON: prim.num(),
+      // dual-facet：Number/Array 既可调用/构造，又带静态槽。
+      // 此前 objAbs 遮蔽宿主全局后 $call/$new 折 unknown（issue #58）。
+      Number: envFn([prim.unknown], prim.num(), numberImplAbs, {
+        name: "Number",
+        params: ["value"],
+        slots: {
+          isFinite: envFn([prim.unknown], prim.bool(), isFiniteImplAbs),
+          isInteger: envFn([prim.unknown], prim.bool(), isIntegerImplAbs),
+          isNaN: envFn([prim.unknown], prim.bool(), isNaNImplAbs),
+          isSafeInteger: envFn([prim.unknown], prim.bool(), isSafeIntegerImplAbs),
+          parseFloat: envFn([prim.str()], prim.num(), parseFloatImplAbs),
+          parseInt: envFn([prim.str()], prim.num(), parseIntImplAbs),
+          MAX_SAFE_INTEGER: prim.num(),
+          MIN_SAFE_INTEGER: prim.num(),
+          MAX_VALUE: prim.num(),
+          MIN_VALUE: prim.num(),
+          POSITIVE_INFINITY: prim.num(),
+          NEGATIVE_INFINITY: prim.num(),
+          NaN: prim.num(),
+          EPSILON: prim.num(),
+        },
       }),
 
-      Boolean: envFn([prim.unknown], prim.bool(), booleanImplAbs),
-      String: envFn([prim.unknown], prim.str(), stringImplAbs),
+      Boolean: envFn([prim.unknown], prim.bool(), booleanImplAbs, {
+        name: "Boolean",
+        params: ["value"],
+      }),
+      String: envFn([prim.unknown], prim.str(), stringImplAbs, {
+        name: "String",
+        params: ["value"],
+      }),
 
-      Array: objAbs({
-        isArray: envFn([prim.unknown], prim.bool(), isArrayImplAbs),
-        from: envFn([prim.unknown], arrOf(prim.unknown)),
-        of: envFn([prim.unknown], arrOf(prim.unknown)),
+      Array: envFn([prim.unknown], arrOf(prim.unknown), arrayImplAbs, {
+        name: "Array",
+        params: ["items"],
+        slots: {
+          isArray: envFn([prim.unknown], prim.bool(), isArrayImplAbs),
+          from: envFn([prim.unknown], arrOf(prim.unknown)),
+          of: envFn([prim.unknown], arrOf(prim.unknown)),
+        },
       }),
 
       console: objAbs(consoleSlots),
@@ -301,22 +342,30 @@ export function defineEnv(): EnvDefinition {
       ReferenceError: envFn([prim.str()], errorBrandOf("ReferenceError")),
       URIError: envFn([prim.str()], errorBrandOf("URIError")),
 
-      Promise: objAbs({
-        resolve: envFn([prim.unknown], promiseOf(prim.unknown), promiseResolveImplAbs),
-        reject: envFn([prim.unknown], promiseOf(prim.never)),
-        all: envFn([arrOf(promiseOf(prim.unknown))], promiseOf(arrOf(prim.unknown))),
-        allSettled: envFn(
-          [arrOf(promiseOf(prim.unknown))],
-          promiseOf(arrOf(prim.unknown)),
-        ),
-        race: envFn([arrOf(promiseOf(prim.unknown))], promiseOf(prim.unknown)),
-        any: envFn([arrOf(promiseOf(prim.unknown))], promiseOf(prim.unknown)),
+      Promise: envFn([prim.unknown], promiseOf(prim.unknown), promiseCtorImplAbs, {
+        name: "Promise",
+        params: ["executor"],
+        slots: {
+          resolve: envFn([prim.unknown], promiseOf(prim.unknown), promiseResolveImplAbs),
+          reject: envFn([prim.unknown], promiseOf(prim.never)),
+          all: envFn([arrOf(promiseOf(prim.unknown))], promiseOf(arrOf(prim.unknown))),
+          allSettled: envFn(
+            [arrOf(promiseOf(prim.unknown))],
+            promiseOf(arrOf(prim.unknown)),
+          ),
+          race: envFn([arrOf(promiseOf(prim.unknown))], promiseOf(prim.unknown)),
+          any: envFn([arrOf(promiseOf(prim.unknown))], promiseOf(prim.unknown)),
+        },
       }),
 
-      Date: objAbs({
-        now: envFn([], prim.num()),
-        parse: envFn([prim.str()], prim.num()),
-        UTC: envFn([prim.num(), prim.num()], prim.num()),
+      Date: envFn([], dateAbs(), dateCtorImplAbs, {
+        name: "Date",
+        params: ["value"],
+        slots: {
+          now: envFn([], prim.num()),
+          parse: envFn([prim.str()], prim.num()),
+          UTC: envFn([prim.num(), prim.num()], prim.num()),
+        },
       }),
 
       Symbol: envFn([prim.str()], brandOf("Symbol")),
