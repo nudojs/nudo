@@ -129,9 +129,12 @@ export type FunctionWithDirectives = {
 const CASE_NAME_REGEX = /@nudo:case\s+"([^"]+)"\s*\(/g;
 const MOCK_INLINE_REGEX = /@nudo:mock\s+(\w+)\s*=\s*(.+)/g;
 const MOCK_FROM_REGEX = /@nudo:mock\s+(\w+)\s+from\s+"([^"]+)"/g;
-const PURE_REGEX = /@nudo:pure\b/g;
-const SKIP_REGEX = /@nudo:skip(?:\s+(.+))?/g;
-const SAMPLE_REGEX = /@nudo:sample\s+(\d+)/g;
+// 指令标签只在「注释行首」匹配（可选 `*` / `//` 已由 comment.value 剥掉）：
+// 不得命中 case 参数字符串或文档散文里的 `@nudo:skip` 字样。
+// `\b` 防 `@nudo:skipped` 误命中 skip。
+const PURE_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:pure\b/g;
+const SKIP_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:skip\b(?:[ \t]+(\S[^\n]*))?/g;
+const SAMPLE_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:sample[ \t]+(\d+)/g;
 
 /**
  * 约束表达式（design-refine-derivation：case 实参主文法）。
