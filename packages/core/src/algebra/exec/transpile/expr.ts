@@ -108,6 +108,203 @@ export function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
   ].join("\n");
 }
 
+// --- 可选链整链短路 -------------------------------------------------------
+// ES：`a?.b.c` ≡ `a == null ? undefined : a.b.c`——`?.` 命中 nullish 时
+// **剩余整条链**（含非可选访问/调用）不得再求值。此前每跳独立 `$optionalGet`，
+// 下一跳 `$get(undefined, "x")` 硬抛 TypeError。
+type ChainHop =
+  | { kind: "get"; key: string; optional: boolean }
+  | { kind: "idx"; keySrc: string; optional: boolean }
+  | { kind: "len"; optional: boolean }
+  | { kind: "call"; argsSrc: string; optional: boolean; locArg: string }
+  | {
+      kind: "invoke";
+      method: string;
+      argsSrc: string;
+      locArg: string;
+      /** `o?.m()`：接收者 nullish 短路 */
+      recvOptional: boolean;
+      /** `o.m?.()`：方法值 nullish 短路（this 仍绑 o） */
+      fnOptional: boolean;
+    };
+
+function isChainLink(n: { type?: string }): boolean {
+  return (
+    n.type === "MemberExpression" ||
+    n.type === "OptionalMemberExpression" ||
+    n.type === "CallExpression" ||
+    n.type === "OptionalCallExpression"
+  );
+}
+
+function linkIsOptional(n: { type?: string; optional?: boolean }): boolean {
+  // Babel 用 OptionalMember/CallExpression 表达整条链，`optional: true` 只标
+  // 当前这一跳的 `?.`。类型名不是判定依据。
+  return n.optional === true;
+}
+
+/** 脊柱上任一跳 optional → 整链需短路编译 */
+function chainNeedsShortCircuit(n: Node): boolean {
+  let cur = n as { type?: string; optional?: boolean; object?: Node; callee?: Node };
+  while (isChainLink(cur)) {
+    if (linkIsOptional(cur)) return true;
+    cur = (cur.callee ?? cur.object) as typeof cur;
+  }
+  return false;
+}
+
+function flattenChain(
+  expr: Expression,
+  opts: TranspileOptions,
+): { baseSrc: string; hops: ChainHop[] } | undefined {
+  const hops: ChainHop[] = [];
+  let cur = expr as unknown as {
+    type: string;
+    optional?: boolean;
+    object?: Node;
+    callee?: Node;
+    property?: Node;
+    computed?: boolean;
+    arguments?: unknown[];
+    loc?: { start: { line: number; column: number } };
+  };
+  while (isChainLink(cur)) {
+    const optional = linkIsOptional(cur);
+    if (cur.type === "CallExpression" || cur.type === "OptionalCallExpression") {
+      const args = (cur.arguments ?? [])
+        .map((a) =>
+          (a as { type?: string }).type === "SpreadElement"
+            ? "$unknown()"
+            : transpileExpression(a as Expression, opts),
+        )
+        .join(", ");
+      const loc = cur.loc;
+      const locArg = loc ? `, [${loc.start.line}, ${loc.start.column}]` : "";
+      // obj.method(args) / obj?.method(args) / obj.method?.() —— $invoke 保 this
+      const callee = cur.callee as typeof cur | undefined;
+      if (
+        callee &&
+        (callee.type === "MemberExpression" || callee.type === "OptionalMemberExpression") &&
+        !callee.computed &&
+        callee.property &&
+        (callee.property as { type?: string }).type === "Identifier"
+      ) {
+        const method = (callee.property as { name: string }).name;
+        hops.unshift({
+          kind: "invoke",
+          method: JSON.stringify(method),
+          argsSrc: `[${args}]`,
+          locArg,
+          recvOptional: linkIsOptional(callee),
+          fnOptional: linkIsOptional(cur),
+        });
+        cur = callee.object as typeof cur;
+        continue;
+      }
+      hops.unshift({ kind: "call", argsSrc: `[${args}]`, optional: linkIsOptional(cur), locArg });
+      cur = (cur.callee ?? cur.object) as typeof cur;
+      continue;
+    }
+    // member
+    const optionalM = optional;
+    if (cur.computed) {
+      const key = cur.property as { type?: string; value?: unknown };
+      if (key?.type === "StringLiteral") {
+        hops.unshift({ kind: "get", key: JSON.stringify(key.value), optional: optionalM });
+      } else if (key?.type === "NumericLiteral") {
+        hops.unshift({ kind: "idx", keySrc: `$lit(${key.value})`, optional: optionalM });
+      } else if (isExpression(cur.property as Node)) {
+        hops.unshift({
+          kind: "idx",
+          keySrc: transpileExpression(cur.property as Expression, opts),
+          optional: optionalM,
+        });
+      } else {
+        return undefined;
+      }
+      cur = cur.object as typeof cur;
+      continue;
+    }
+    const prop = cur.property as { type?: string; name?: string };
+    if (prop?.type !== "Identifier") return undefined;
+    if (prop.name === "length") {
+      hops.unshift({ kind: "len", optional: optionalM });
+    } else {
+      hops.unshift({ kind: "get", key: JSON.stringify(prop.name), optional: optionalM });
+    }
+    cur = cur.object as typeof cur;
+  }
+  if (cur.type === "Super") return undefined; // super 链走专用路径
+  const baseSrc = isExpression(cur as unknown as Node)
+    ? transpileExpression(cur as unknown as Expression, opts)
+    : undefined;
+  if (baseSrc === undefined) return undefined;
+  return { baseSrc, hops };
+}
+
+function emitChainFrom(hops: ChainHop[], i: number, valSrc: string): string {
+  if (i >= hops.length) return valSrc;
+  const hop = hops[i]!;
+  const rest = (recv: string): string => emitChainFrom(hops, i + 1, recv);
+  switch (hop.kind) {
+    case "get":
+      return hop.optional
+        ? shortCircuitHop(valSrc, `$get($__oc, ${hop.key})`, hops, i)
+        : rest(`$get(${valSrc}, ${hop.key})`);
+    case "idx":
+      return hop.optional
+        ? shortCircuitHop(valSrc, `$idx($__oc, ${hop.keySrc})`, hops, i)
+        : rest(`$idx(${valSrc}, ${hop.keySrc})`);
+    case "len":
+      return hop.optional
+        ? shortCircuitHop(valSrc, `$len($__oc)`, hops, i)
+        : rest(`$len(${valSrc})`);
+    case "call":
+      return hop.optional
+        ? shortCircuitHop(valSrc, `$callNamed("call", $__oc, ${hop.argsSrc}${hop.locArg})`, hops, i)
+        : rest(`$callNamed("call", ${valSrc}, ${hop.argsSrc}${hop.locArg})`);
+    case "invoke": {
+      const invokeOf = (recv: string, fnCheck: boolean): string => {
+        const call = `$invoke(${recv}, ${hop.method}, ${hop.argsSrc}${hop.locArg})`;
+        if (!fnCheck) return call;
+        // o.m?.()：方法值 nullish 短路；this 仍绑 recv
+        return `(($__fn) => $fork($nullishTest($__fn), () => $lit(undefined), () => ${call}))($get(${recv}, ${hop.method}))`;
+      };
+      if (hop.recvOptional) {
+        return shortCircuitHop(valSrc, invokeOf("$__oc", hop.fnOptional), hops, i);
+      }
+      return rest(invokeOf(valSrc, hop.fnOptional));
+    }
+  }
+}
+
+/** 可选跳：valSrc nullish → 剩余链短路 undefined；否则从 apply($__oc) 继续 */
+function shortCircuitHop(
+  valSrc: string,
+  appliedWithOc: string,
+  hops: ChainHop[],
+  i: number,
+): string {
+  return `(($__oc) => $fork($nullishTest($__oc), () => $lit(undefined), () => ${emitChainFrom(hops, i + 1, appliedWithOc)}))(${valSrc})`;
+}
+
+/** 若 expr 是含 `?.` 的成员/调用脊柱，返回整链短路源码 */
+function tryTranspileOptionalChain(expr: Expression, opts: TranspileOptions): string | undefined {
+  const t = (expr as { type?: string }).type;
+  if (
+    t !== "MemberExpression" &&
+    t !== "OptionalMemberExpression" &&
+    t !== "CallExpression" &&
+    t !== "OptionalCallExpression"
+  ) {
+    return undefined;
+  }
+  if (!chainNeedsShortCircuit(expr as Node)) return undefined;
+  const flat = flattenChain(expr, opts);
+  if (!flat) return undefined;
+  return emitChainFrom(flat.hops, 0, flat.baseSrc);
+}
+
 export function transpileExpression(expr: Expression, opts: TranspileOptions = {}): string {
   // @nudo:replace：节点源码文本匹配则换成注入变量
   const rep = matchReplacement(expr as Node, opts);
@@ -117,6 +314,9 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
   if (anyExpr.type === "ChainExpression" && anyExpr.expression) {
     return transpileExpression(anyExpr.expression, opts);
   }
+  // 可选链整链短路（?. 命中 nullish 时剩余链不再求值）
+  const chainSrc = tryTranspileOptionalChain(expr, opts);
+  if (chainSrc !== undefined) return chainSrc;
   if (anyExpr.type === "Super") {
     return `/* super */`;
   }
