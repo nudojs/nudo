@@ -5,7 +5,7 @@
 
 import type { Abs } from "../abs.ts";
 import { abs, unknown, confJoin, litValue, bool, boolLit, str, strLit, numLit } from "../abs.ts";
-import { objOf, joinAbs, isObj, canonicalArrayIndex, getSlot } from "../objects.ts";
+import { objOf, joinAbs, isObj, canonicalArrayIndex, getSlot, setSlot } from "../objects.ts";
 import { $get, $set, $lit, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary, lookupObjAccessor, fillTuple, clearStaleTermPred } from "./runtime.ts";
 import { $call } from "./call.ts";
 import { getFnImpl, absFunction } from "../abs-fn.ts";
@@ -83,10 +83,10 @@ export function $class(
   registerEvalClass(full);
   const slots: Record<string, { value: Abs }> = {};
   if (spec.statics) {
-    for (const [k, v] of Object.entries(spec.statics)) slots[k] = { value: asAbsVal(v) };
+    for (const [k, v] of Object.entries(spec.statics)) setSlot(slots, k, { value: asAbsVal(v) });
   }
   // 类值自有 name 属性（原生 Function.name；类表达式/声明均可读）
-  slots["name"] = { value: strLit(name) };
+  setSlot(slots, "name", { value: strLit(name) });
   const val = abs(
     { k: "brand", name, shape: objOf(slots) },
     undefined,
@@ -1137,7 +1137,7 @@ export function $thisSet(thisVal: Abs, key: string, value: Abs): Abs {
   if (thisVal.shape.k === "brand") {
     const inner = thisVal.shape.shape;
     const slots = inner.shape.k === "obj" ? { ...inner.shape.slots } : {};
-    slots[key] = { value: asAbsVal(value) };
+    setSlot(slots, key, { value: asAbsVal(value) });
     return abs(
       {
         k: "brand",
@@ -1246,7 +1246,18 @@ export function $staticInvoke(cls: Abs, method: string, args: Abs[]): Abs {
 export function $setKey(o: Abs, key: Abs, value: Abs): Abs {
   const k = litValue(key);
   if (typeof k === "string" || typeof k === "number") {
-    return $set(o, String(k), value);
+    const ks = String(k);
+    // 对象字面量计算键 `{['__proto__']: v}` 是自有数据属性（CreateDataProperty），
+    // 不是 `o.__proto__ = v` 的 setter。与 $set 分流。
+    if (ks === "__proto__" && o.shape.k === "obj") {
+      setSlot((o.shape as { slots: Record<string, { value: Abs }> }).slots, ks, {
+        value: asAbsVal(value),
+      });
+      o.conf = confJoin(o.conf, value.conf);
+      clearStaleTermPred(o);
+      return o;
+    }
+    return $set(o, ks, value);
   }
   const val = asAbsVal(value);
   if (o.shape.k === "brand") {

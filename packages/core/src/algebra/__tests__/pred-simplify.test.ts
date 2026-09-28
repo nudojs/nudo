@@ -56,14 +56,15 @@ describe("negatePred De Morgan", () => {
     const x = v("x");
     const y = v("y");
     const p = and(gt(x, lit(0)), gt(y, lit(0)));
-    expect(predToString(negatePred(p))).toBe("(x ≤ 0 ∨ y ≤ 0)");
+    // 关系否定是 not(rel)，不是全序对偶（NaN 上 ¬(x>0) ⇏ x≤0）
+    expect(predToString(negatePred(p))).toBe("(¬(x > 0) ∨ ¬(y > 0))");
   });
 
   it("¬(A∨B) = ¬A∧¬B", () => {
     const x = v("x");
     const y = v("y");
     const p = or(gt(x, lit(0)), gt(y, lit(0)));
-    expect(predToString(negatePred(p))).toBe("x ≤ 0 ∧ y ≤ 0");
+    expect(predToString(negatePred(p))).toBe("¬(x > 0) ∧ ¬(y > 0)");
   });
 
   it("双重否定消去", () => {
@@ -71,10 +72,10 @@ describe("negatePred De Morgan", () => {
     expect(negatePred(negatePred(gt(x, lit(0))))).toEqual(gt(x, lit(0)));
   });
 
-  it("原子比较取互补", () => {
+  it("eq 取互补；关系保留 not（NaN 上全序对偶不成立）", () => {
     const x = v("x");
     expect(negatePred(eq(x, lit(1)))).toEqual(ne(x, lit(1)));
-    expect(negatePred(lt(x, lit(1)))).toEqual(ge(x, lit(1)));
+    expect(negatePred(lt(x, lit(1)))).toEqual({ op: "not", arg: lt(x, lit(1)) });
   });
 
   it("typeof 否定展开为其余 7 标签析取", () => {

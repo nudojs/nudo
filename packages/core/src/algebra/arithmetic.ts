@@ -14,6 +14,7 @@ import {
   le,
   implies,
   negatePred,
+  totalOrderDual,
   predToString,
   pTrue,
   ptypeof,
@@ -40,7 +41,7 @@ import { makeSum, absShapeKey } from "./objects.ts";
 import { noteDerivationAdd } from "./derivation.ts";
 import { isSymbolAbs as isSym } from "./symbol-id.ts";
 import { NudoThrow } from "./exec/nudo-throw.ts";
-import { errorTypeAbs } from "./exec/may-throw.ts";
+import { errorTypeAbs, recordMayThrow } from "./exec/may-throw.ts";
 
 /**
  * 抽象加法：eval(a + b) —— 跟真实 JS，不无根据地假定 number。
@@ -64,9 +65,22 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
     if (typeof va === "number" && typeof vb === "number") {
       return numLit(va + vb);
     }
+    // 含 string → 走 ToString 拼接（bigint 也可 ToString：10n+'' === "10"）
     if (typeof va === "string" || typeof vb === "string") {
       return strLitResult(String(va) + String(vb));
     }
+    // 非 string 的混合 bigint⊗number/bool/null/undefined：ToNumeric 混型 TypeError
+    if (
+      (typeof va === "bigint" && typeof vb !== "bigint") ||
+      (typeof vb === "bigint" && typeof va !== "bigint")
+    ) {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+  }
+  // 字符串拼接（含 template parts）—— JS + 优先走 string：
+  // `1n + "s" === "1s"`（ToString），不得落进 bigint 混型硬抛。
+  if (isStrPrim(a) || isStrPrim(b) || isTemplateLike(a) || isTemplateLike(b)) {
+    return concatString(a, b);
   }
   // boolean/null 字面量与数字混合：ToNumber 折叠（与 sub/mul/div/mod 同口径；
   // native 10 + true = 11、2 + null = 2；undefined 参与恒 NaN 不折）
@@ -77,11 +91,6 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   if (big) return big;
   if (isBigPrim(a) && isBigPrim(b)) {
     return abs({ k: "prim", type: "bigint" }, undefined, undefined, confJoin(a.conf, b.conf));
-  }
-
-  // 字符串拼接（含 template parts）—— JS + 优先走 string
-  if (isStrPrim(a) || isStrPrim(b) || isTemplateLike(a) || isTemplateLike(b)) {
-    return concatString(a, b);
   }
 
   // 数组 ToPrimitive = join(",")，结果恒 string：`[] + []`→""、`[1] + 1`→"11"
@@ -105,12 +114,20 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
     return result;
   }
 
-  // any / type-var：JS + 的并集，不是 unknown，也不是 number
+  // any / type-var：JS + 的并集，不是 unknown，也不是 number。
+  // 一侧是 bigint 面时结果只能是 bigint（对面实为 bigint）或 string（ToString），
+  // 不是 number——`1n + 1` 已在上游 TypeError。
   if (isAnyLike(a) || isAnyLike(b)) {
     const term =
       a.term && b.term ? simplifyTerm(app("+", [a.term, b.term])) : undefined;
+    const bigFace = isBigPrim(a) || isBigPrim(b);
     return abs(
-      { k: "sum", members: [num(), str()] },
+      {
+        k: "sum",
+        members: bigFace
+          ? [abs({ k: "prim", type: "bigint" }, undefined, undefined, "exact"), str()]
+          : [num(), str()],
+      },
       term,
       undefined,
       "partial",
@@ -164,7 +181,35 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   return abs({ k: "unknown" }, undefined, undefined, "partial");
 }
 
-/** 双方 bigint 字面量折叠（÷0n 原生 RangeError → unknown）；混合 bigint⊗非 bigint 原生抛 TypeError → unknown */
+/**
+ * 已知不是 bigint 的操作数面：number/bool/null/undefined 字面量或 prim。
+ * 与 bigint 做算术/位运算时 ToNumeric 后是 number，混型恒 TypeError。
+ * string 不在此列——`+` 的 string 臂走拼接，其余算子在调用点单独判。
+ */
+function isKnownNonBigintNumeric(a: Abs): boolean {
+  const va = litValue(a);
+  if (typeof va === "number" || typeof va === "boolean" || va === null) return true;
+  if (a.term?.op === "lit" && a.term.value === undefined) return true;
+  return a.shape.k === "prim" && (a.shape.type === "number" || a.shape.type === "boolean");
+}
+
+/**
+ * 可能经 ToPrimitive 变成 bigint 的操作数（any/unknown/obj/fn/brand/sum）。
+ * `1n + x`（x:any）在 x 实为 2n 时得 3n、x 为 "s" 时得 "1s"、x 为 1 时才 TypeError——
+ * 不得硬抛成 never。
+ */
+function isMaybeBigintOperand(a: Abs): boolean {
+  return (
+    a.shape.k === "any" ||
+    a.shape.k === "unknown" ||
+    a.shape.k === "obj" ||
+    a.shape.k === "fn" ||
+    a.shape.k === "brand" ||
+    a.shape.k === "sum"
+  );
+}
+
+/** 双方 bigint 字面量折叠；÷0n / 负指数等原生 RangeError、确定混型原生 TypeError——硬抛（catch 可吸收），不得静默 unknown */
 function foldBigintBinOp(
   a: Abs,
   b: Abs,
@@ -176,15 +221,33 @@ function foldBigintBinOp(
   if (typeof va === "bigint" && typeof vb === "bigint") {
     try {
       return bigintLit(op(va, vb));
-    } catch {
-      return abs({ k: "unknown" }, undefined, undefined, "partial");
+    } catch (e) {
+      if (e instanceof RangeError) throw new NudoThrow(errorTypeAbs("RangeError"));
+      throw new NudoThrow(errorTypeAbs("TypeError"));
     }
   }
-  // 一侧 bigint 字面量：另一侧为 bigint prim（无字面量）→ 交抽象回退；
-  // 其余（number/string/bool/…）混合原生抛 TypeError → unknown
+  // 一侧 bigint 字面量：另一侧为 bigint prim（无字面量）→ 交抽象回退
   const other = typeof va === "bigint" ? b : a;
   if (isBigPrim(other)) return undefined;
-  return abs({ k: "unknown" }, undefined, undefined, "partial");
+  // 已知非 bigint 数值面（number/bool/null/undefined）：混型恒 TypeError
+  if (isKnownNonBigintNumeric(other)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  // string prim：非 `+` 的算术/位运算 ToNumber 后混型恒 TypeError；
+  // `+` 的 string 臂已在 add() 上游分流，到这里即算术算子。
+  if (isStrPrim(other)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  // any/unknown/obj/…：可能 ToPrimitive 成 bigint（成功）或 number（TypeError）——
+  // 记 soft may-throw，交回上层分流，不得硬抛成 never
+  if (isMaybeBigintOperand(other)) {
+    recordMayThrow({
+      kind: "TypeError",
+      cause: "mixed bigint ⊗ abstract operand",
+    });
+    return undefined;
+  }
+  throw new NudoThrow(errorTypeAbs("TypeError"));
 }
 
 function dedupAbsMembers(ms: Abs[]): Abs[] {
@@ -210,6 +273,18 @@ function strLitResult(s: string): Abs {
 /** -0 与 0 在约束里等价 */
 function normalizeNegZero(n: number): number {
   return n === 0 ? 0 : n;
+}
+
+/**
+ * IEEE 安全的不等式端点。
+ * - 非有限（NaN/±Inf）：不能当端点（NaN 恒假、Inf 与溢出值比较失真）
+ * - 0 作 strict 端点仅当运算不会把正值下溢成 0（见各调用点的 strictZeroOk）
+ */
+function ieeeBound(n: number, strict: boolean, strictZeroOk: boolean): number | undefined {
+  if (!Number.isFinite(n)) return undefined;
+  const z = normalizeNegZero(n);
+  if (z === 0 && strict && !strictZeroOk) return undefined;
+  return z;
 }
 
 /** any / unknown（含无 term 的裸 unknown）：JS ToNumber 语义用于 - * / % */
@@ -238,6 +313,7 @@ function coercibleLit(
 /**
  * 减乘除模在 any 上走 JS ToNumber：结果恒为 number（可能 NaN）。
  * 与 + 不同——+ 可能拼接；减乘除模不会。
+ * 一侧是 bigint 面时成功路径恒为 bigint（对面须同为 bigint），不得折 number。
  */
 function toNumberResult(
   a: Abs,
@@ -247,8 +323,9 @@ function toNumberResult(
   // 不用 simplifyTerm：x*1=x / x-0=x 只对 number 成立；any 参与时 ToNumber
   // 后值已变（"5"*1→5），不得把结果项认成原 any 变量（strictEqAbs 同 var 会折 true）。
   const term = a.term && b.term ? app(op, [a.term, b.term]) : undefined;
+  const bigFace = isBigPrim(a) || isBigPrim(b);
   return abs(
-    { k: "prim", type: "number" },
+    bigFace ? { k: "prim", type: "bigint" } : { k: "prim", type: "number" },
     term,
     undefined,
     term ? confJoin(confJoin(a.conf, b.conf), "partial") : "partial",
@@ -278,15 +355,21 @@ function addPred(a: Abs, b: Abs, sumTerm: Term, phi: Phi): Pred | undefined {
   const facts: Pred[] = [];
 
   // (a.lo + b.lo) < sum  或  ≤
+  // 溢出到 ±Inf 的和不能当端点（x>1e308 + y>1e308 ⊬ x+y > Infinity）
+  // 正数之和不会下溢成 0，strict 0 端点可保留
   if (aBounds?.lo !== undefined && evalBounds?.lo !== undefined) {
-    const loSum = aBounds.lo.value + evalBounds.lo.value;
     const strict = aBounds.lo.strict || evalBounds.lo.strict;
-    facts.push(strict ? gt(sumTerm, lit(loSum)) : ge(sumTerm, lit(loSum)));
+    const loSum = ieeeBound(aBounds.lo.value + evalBounds.lo.value, strict, true);
+    if (loSum !== undefined) {
+      facts.push(strict ? gt(sumTerm, lit(loSum)) : ge(sumTerm, lit(loSum)));
+    }
   }
   if (aBounds?.hi !== undefined && evalBounds?.hi !== undefined) {
-    const hiSum = aBounds.hi.value + evalBounds.hi.value;
     const strict = aBounds.hi.strict || evalBounds.hi.strict;
-    facts.push(strict ? lt(sumTerm, lit(hiSum)) : le(sumTerm, lit(hiSum)));
+    const hiSum = ieeeBound(aBounds.hi.value + evalBounds.hi.value, strict, true);
+    if (hiSum !== undefined) {
+      facts.push(strict ? lt(sumTerm, lit(hiSum)) : le(sumTerm, lit(hiSum)));
+    }
   }
 
   // 保留原 Φ 中可平移的事实：若 a 是 var(x) 且 Φ ⊢ x>0，则 sum=x+b 时
@@ -316,8 +399,8 @@ function numericBounds(a: Abs, phi: Phi = pTrue): NumBounds | undefined {
   if (a.term?.op === "var") {
     collectBoundsFromPhi(phi, a.term.id, result);
   }
-  // 字面量：上下界都是自身
-  if (a.term?.op === "lit" && typeof a.term.value === "number") {
+  // 字面量：上下界都是自身（NaN 无序，不得当端点）
+  if (a.term?.op === "lit" && typeof a.term.value === "number" && !Number.isNaN(a.term.value)) {
     result.lo = { value: a.term.value, strict: false };
     result.hi = { value: a.term.value, strict: false };
   }
@@ -326,73 +409,62 @@ function numericBounds(a: Abs, phi: Phi = pTrue): NumBounds | undefined {
   return result;
 }
 
+/** 等值处收紧界：更紧的值 / 等值时 strict 胜出（le→gt 顺序无关） */
+function tightenLo(acc: NumBounds, n: number, strict: boolean): void {
+  if (acc.lo === undefined || n > acc.lo.value || (n === acc.lo.value && strict && !acc.lo.strict)) {
+    acc.lo = { value: n, strict };
+  }
+}
+
+function tightenHi(acc: NumBounds, n: number, strict: boolean): void {
+  if (acc.hi === undefined || n < acc.hi.value || (n === acc.hi.value && strict && !acc.hi.strict)) {
+    acc.hi = { value: n, strict };
+  }
+}
+
+/**
+ * 关系原子 → 对 term 的数值界。两侧都认：
+ *   t > n / n < t → lo strict；t ≥ n / n ≤ t → lo
+ *   t < n / n > t → hi strict；t ≤ n / n ≥ t → hi
+ * （旧实现只认「变量在左」，`0 < x` / `5 > x` 的界被整段丢掉。）
+ */
+function noteBoundFromRel(p: Pred, isTarget: (t: Term) => boolean, acc: NumBounds): void {
+  if (p.op !== "gt" && p.op !== "ge" && p.op !== "lt" && p.op !== "le") return;
+  let op = p.op;
+  let litSide: Term;
+  if (isTarget(p.a) && p.b.op === "lit" && typeof p.b.value === "number") {
+    litSide = p.b;
+  } else if (isTarget(p.b) && p.a.op === "lit" && typeof p.a.value === "number") {
+    // 翻转：`n < t` ≡ `t > n`
+    op = op === "gt" ? "lt" : op === "lt" ? "gt" : op === "ge" ? "le" : "ge";
+    litSide = p.a;
+  } else {
+    return;
+  }
+  const n = (litSide as { value: number }).value;
+  if (op === "gt") tightenLo(acc, n, true);
+  else if (op === "ge") tightenLo(acc, n, false);
+  else if (op === "lt") tightenHi(acc, n, true);
+  else tightenHi(acc, n, false);
+}
+
 function collectBoundsFromPred(pred: Pred, term: Term, acc: NumBounds): void {
-  const match = (t: Term): boolean => termToString(t) === termToString(term);
+  const isTarget = (t: Term): boolean => termToString(t) === termToString(term);
   const apply = (p: Pred): void => {
     if (p.op === "and") {
       p.args.forEach(apply);
       return;
     }
-    if (p.op === "gt" && match(p.a) && p.b.op === "lit" && typeof p.b.value === "number") {
-      const n = p.b.value;
-      // 等值处 strict 胜出（与 lt 对称，保证 le→gt 顺序无关）
-      if (acc.lo === undefined || n > acc.lo.value || (n === acc.lo.value && !acc.lo.strict)) {
-        acc.lo = { value: n, strict: true };
-      }
-      return;
-    }
-    if (p.op === "ge" && match(p.a) && p.b.op === "lit" && typeof p.b.value === "number") {
-      const n = p.b.value;
-      if (acc.lo === undefined || n > acc.lo.value) {
-        acc.lo = { value: n, strict: false };
-      }
-      return;
-    }
-    if (p.op === "lt" && match(p.a) && p.b.op === "lit" && typeof p.b.value === "number") {
-      const n = p.b.value;
-      // 与 gt 对称：x < n 在 x ≤ n 之上更紧，等值须升级 strict（否则 le 在前会吞掉 lt）
-      if (acc.hi === undefined || n < acc.hi.value || (n === acc.hi.value && !acc.hi.strict)) {
-        acc.hi = { value: n, strict: true };
-      }
-      return;
-    }
-    if (p.op === "le" && match(p.a) && p.b.op === "lit" && typeof p.b.value === "number") {
-      const n = p.b.value;
-      if (acc.hi === undefined || n < acc.hi.value) {
-        acc.hi = { value: n, strict: false };
-      }
-    }
+    noteBoundFromRel(p, isTarget, acc);
   };
   apply(pred);
 }
 
 function collectBoundsFromPhi(phi: Phi, id: string, acc: NumBounds): void {
+  const isTarget = (t: Term): boolean => t.op === "var" && t.id === id;
   const conjs = phi.op === "and" ? phi.args : [phi];
   for (const p of conjs) {
-    if (p.op === "gt" && p.a.op === "var" && p.a.id === id && p.b.op === "lit" && typeof p.b.value === "number") {
-      const n = p.b.value;
-      if (acc.lo === undefined || n > acc.lo.value || (n === acc.lo.value && !acc.lo.strict)) {
-        acc.lo = { value: n, strict: true };
-      }
-    }
-    if (p.op === "ge" && p.a.op === "var" && p.a.id === id && p.b.op === "lit" && typeof p.b.value === "number") {
-      const n = p.b.value;
-      if (acc.lo === undefined || n > acc.lo.value) {
-        acc.lo = { value: n, strict: false };
-      }
-    }
-    if (p.op === "lt" && p.a.op === "var" && p.a.id === id && p.b.op === "lit" && typeof p.b.value === "number") {
-      const n = p.b.value;
-      if (acc.hi === undefined || n < acc.hi.value || (n === acc.hi.value && !acc.hi.strict)) {
-        acc.hi = { value: n, strict: true };
-      }
-    }
-    if (p.op === "le" && p.a.op === "var" && p.a.id === id && p.b.op === "lit" && typeof p.b.value === "number") {
-      const n = p.b.value;
-      if (acc.hi === undefined || n < acc.hi.value) {
-        acc.hi = { value: n, strict: false };
-      }
-    }
+    noteBoundFromRel(p, isTarget, acc);
   }
 }
 
@@ -418,14 +490,18 @@ export function sub(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
     const bb = numericBounds(b, phi);
     const facts: Pred[] = [];
     if (ab?.lo !== undefined && bb?.hi !== undefined) {
-      const lo = ab.lo.value - bb.hi.value;
       const strict = ab.lo.strict || bb.hi.strict;
-      facts.push(strict ? gt(term, lit(lo)) : ge(term, lit(lo)));
+      const lo = ieeeBound(ab.lo.value - bb.hi.value, strict, true);
+      if (lo !== undefined) {
+        facts.push(strict ? gt(term, lit(lo)) : ge(term, lit(lo)));
+      }
     }
     if (ab?.hi !== undefined && bb?.lo !== undefined) {
-      const hi = ab.hi.value - bb.lo.value;
       const strict = ab.hi.strict || bb.lo.strict;
-      facts.push(strict ? lt(term, lit(hi)) : le(term, lit(hi)));
+      const hi = ieeeBound(ab.hi.value - bb.lo.value, strict, true);
+      if (hi !== undefined) {
+        facts.push(strict ? lt(term, lit(hi)) : le(term, lit(hi)));
+      }
     }
     const conf =
       term.op === "lit"
@@ -470,26 +546,28 @@ export function mul(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
       k = a.term.value;
       base = b;
     }
-    if (k !== undefined && base !== undefined && k !== 0) {
+    if (k !== undefined && base !== undefined && k !== 0 && Number.isFinite(k)) {
+      // |k|≥1 不会把正值下溢成 0，strict 0 端点可保留（x>0 * 2 ⇒ >0）
+      const strictZeroOk = Math.abs(k) >= 1;
       const ab = numericBounds(base, phi);
       const facts: Pred[] = [];
       if (ab?.lo !== undefined) {
         if (k > 0) {
-          const lo = ab.lo.value * k;
-          facts.push(ab.lo.strict ? gt(term, lit(lo)) : ge(term, lit(lo)));
+          const lo = ieeeBound(ab.lo.value * k, ab.lo.strict, strictZeroOk);
+          if (lo !== undefined) facts.push(ab.lo.strict ? gt(term, lit(lo)) : ge(term, lit(lo)));
         } else {
           // 负数：lo * k 变成上界
-          const hi = ab.lo.value * k;
-          facts.push(ab.lo.strict ? lt(term, lit(normalizeNegZero(hi))) : le(term, lit(normalizeNegZero(hi))));
+          const hi = ieeeBound(ab.lo.value * k, ab.lo.strict, strictZeroOk);
+          if (hi !== undefined) facts.push(ab.lo.strict ? lt(term, lit(hi)) : le(term, lit(hi)));
         }
       }
       if (ab?.hi !== undefined) {
         if (k > 0) {
-          const hi = ab.hi.value * k;
-          facts.push(ab.hi.strict ? lt(term, lit(hi)) : le(term, lit(hi)));
+          const hi = ieeeBound(ab.hi.value * k, ab.hi.strict, strictZeroOk);
+          if (hi !== undefined) facts.push(ab.hi.strict ? lt(term, lit(hi)) : le(term, lit(hi)));
         } else {
-          const lo = ab.hi.value * k;
-          facts.push(ab.hi.strict ? gt(term, lit(normalizeNegZero(lo))) : ge(term, lit(normalizeNegZero(lo))));
+          const lo = ieeeBound(ab.hi.value * k, ab.hi.strict, strictZeroOk);
+          if (lo !== undefined) facts.push(ab.hi.strict ? gt(term, lit(lo)) : ge(term, lit(lo)));
         }
       }
       return abs(
@@ -540,19 +618,30 @@ export function div(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   }
   if (isNumericLike(a) && isNumericLike(b) && a.term && b.term) {
     const term = simplifyTerm(app("/", [a.term, b.term]));
-    if (b.term.op === "lit" && typeof b.term.value === "number" && b.term.value !== 0) {
+    if (
+      b.term.op === "lit" &&
+      typeof b.term.value === "number" &&
+      b.term.value !== 0 &&
+      Number.isFinite(b.term.value)
+    ) {
       const k = b.term.value;
+      // |k|≤1 时 x/k 不会把正值下溢成 0；|k|>1 可以（5e-324/2→0）
+      const strictZeroOk = Math.abs(k) <= 1;
       const ab = numericBounds(a, phi);
       const facts: Pred[] = [];
       if (ab?.lo !== undefined) {
-        const lo = ab.lo.value / k;
-        if (k > 0) facts.push(ab.lo.strict ? gt(term, lit(lo)) : ge(term, lit(lo)));
-        else facts.push(ab.lo.strict ? lt(term, lit(lo)) : le(term, lit(lo)));
+        const lo = ieeeBound(ab.lo.value / k, ab.lo.strict, strictZeroOk);
+        if (lo !== undefined) {
+          if (k > 0) facts.push(ab.lo.strict ? gt(term, lit(lo)) : ge(term, lit(lo)));
+          else facts.push(ab.lo.strict ? lt(term, lit(lo)) : le(term, lit(lo)));
+        }
       }
       if (ab?.hi !== undefined) {
-        const hi = ab.hi.value / k;
-        if (k > 0) facts.push(ab.hi.strict ? lt(term, lit(hi)) : le(term, lit(hi)));
-        else facts.push(ab.hi.strict ? gt(term, lit(hi)) : ge(term, lit(hi)));
+        const hi = ieeeBound(ab.hi.value / k, ab.hi.strict, strictZeroOk);
+        if (hi !== undefined) {
+          if (k > 0) facts.push(ab.hi.strict ? lt(term, lit(hi)) : le(term, lit(hi)));
+          else facts.push(ab.hi.strict ? gt(term, lit(hi)) : ge(term, lit(hi)));
+        }
       }
       return abs(
         num().shape,
@@ -668,21 +757,17 @@ export function cmp(
                 ? { op: "eq", a: a.term, b: b.term }
                 : { op: "ne", a: a.term, b: b.term };
 
-    // 若 Φ 已蕴含该比较 → true；若蕴含否定 → false
+    // 若 Φ 已蕴含该比较 → true
+    // 若蕴含否定（¬pred，或全序对偶作正向事实）→ false
     if (implies(phi, pred)) return boolLit(true);
-    const neg: Pred =
-      op === "lt"
-        ? ge(a.term, b.term)
-        : op === "le"
-          ? gt(a.term, b.term)
-          : op === "gt"
-            ? le(a.term, b.term)
-            : op === "ge"
-              ? lt(a.term, b.term)
-              : op === "eq"
-                ? { op: "ne", a: a.term, b: b.term }
-                : { op: "eq", a: a.term, b: b.term };
-    if (implies(phi, neg)) return boolLit(false);
+    if (implies(phi, negatePred(pred))) return boolLit(false);
+    const dual: Pred | undefined = totalOrderDual(pred) ??
+      (op === "eq"
+        ? { op: "ne", a: a.term, b: b.term }
+        : op === "ne"
+          ? { op: "eq", a: a.term, b: b.term }
+          : undefined);
+    if (dual && implies(phi, dual)) return boolLit(false);
 
     // 数值界判定：range pred / Φ 中的 min·max 足以决定字面比较
     const decided = decideByBounds(op, a, b, phi);
@@ -772,25 +857,32 @@ function decideByBounds(
   const bLo = bB?.lo;
   const bHi = bB?.hi;
 
-  // a < b：a.hi < b.lo ⇒ true；a.lo ≥ b.hi ⇒ false
+  // 等值处必须看 strict：x<5 ∧ y>5 仍推出 x<y（旧实现 5<5 漏判）。
+  // 一侧 open 的等界同样能定假：x>5 ∧ y≤5 ⇒ x>y（对 le）。
+  const tighterHi = (x: { value: number; strict: boolean }, y: { value: number; strict: boolean }): boolean =>
+    x.value < y.value || (x.value === y.value && (x.strict || y.strict));
+  const tighterLo = (x: { value: number; strict: boolean }, y: { value: number; strict: boolean }): boolean =>
+    x.value > y.value || (x.value === y.value && (x.strict || y.strict));
+
+  // a < b：a.hi < b.lo 或等值+至少一侧 open ⇒ true；a.lo ≥ b.hi ⇒ false
   if (op === "lt") {
-    if (aHi && bLo && aHi.value < bLo.value) return true;
+    if (aHi && bLo && tighterHi(aHi, bLo)) return true;
     if (aLo && bHi && aLo.value >= bHi.value) return false;
     return undefined;
   }
   if (op === "le") {
-    if (aHi && bLo && aHi.value < bLo.value) return true;
-    if (aLo && bHi && aLo.value > bHi.value) return false;
+    if (aHi && bLo && aHi.value <= bLo.value) return true;
+    if (aLo && bHi && tighterLo(aLo, bHi)) return false;
     return undefined;
   }
   if (op === "gt") {
-    if (aLo && bHi && aLo.value > bHi.value) return true;
+    if (aLo && bHi && tighterLo(aLo, bHi)) return true;
     if (aHi && bLo && aHi.value <= bLo.value) return false;
     return undefined;
   }
   if (op === "ge") {
     if (aLo && bHi && aLo.value >= bHi.value) return true;
-    if (aHi && bLo && aHi.value < bLo.value) return false;
+    if (aHi && bLo && tighterHi(aHi, bLo)) return false;
     return undefined;
   }
   return undefined;

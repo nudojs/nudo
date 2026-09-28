@@ -649,7 +649,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2 (plus non-`$op` na
 | `termEquals` | fn | — | `termEquals(a: Term, b: Term): boolean` |
 | `termToString` | fn | — | `termToString(t: Term): string` |
 | `throwConstraintToKinds` | fn | fn(..., &#123; throws &#125;) / throws 约束 → 申报的 throws 类型名。 | `throwConstraintToKinds( c: NudoConstraint \| undefined, ): string[]` |
-| `toNumberAbs` | fn | 一元 + —— ToNumber 折叠；bigint 原生恒抛 TypeError → 不可折叠 | `toNumberAbs(a: Abs): Abs` |
+| `toNumberAbs` | fn | 一元 + —— ToNumber 折叠；bigint（含抽象 prim）原生恒抛 TypeError → 硬抛 | `toNumberAbs(a: Abs): Abs` |
 | `transpile` | fn | JS AST → `$op` program | `transpile(source: string, opts?: TranspileOptions): string` |
 | `transpileBodyNode` | fn | JS AST → `$op` program | `transpileBodyNode(node: Node, opts: TranspileOptions): string` |
 | `TranspiledCallResult` | type | evaluator execution (analyze mode) | `TranspiledCallResult = { result: Abs; throws: Abs; }` |

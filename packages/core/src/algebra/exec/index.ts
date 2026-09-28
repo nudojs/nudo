@@ -11,7 +11,7 @@ export {
   $isForkExit, $join, $le, $len, $lit, $loopBreak, $loopContinue,
   $loopReturn, $lt, $mod, $mul, $ne, $neLoose, $neg, $not, $nullishTest,
   $obj, $objAccessor, $objRest, $pow, $pushLoopExit, $rawThis, $regex,
-  $rethrowIfNudoReturn, $set, $shl, $shr, $spread, $sub, $switch, $throw,
+  $rethrowIfNudoReturn, $set, $setProto, $shl, $shr, $spread, $sub, $switch, $throw,
   $toNumber, $tryCurrentMark, $tryDetachSoftCatch, $tryDigestSoftCatch,
   $tryDiscardSoft, $tryMark, $tryOrphanSoft, $tryPopMark,
   $tryReleaseSoftCatch, $tryReleaseSoftOut, $tryTakeSince, $typeof,

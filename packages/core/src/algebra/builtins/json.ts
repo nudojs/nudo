@@ -3,7 +3,7 @@
  */
 import type { Abs } from "../abs.ts";
 import { abs, numLit, strLit, boolLit, unknown } from "../abs.ts";
-import { getSlot } from "../objects.ts";
+import { getSlot, setSlot } from "../objects.ts";
 import { undefAbs } from "../hof.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs } from "../exec/may-throw.ts";
@@ -62,9 +62,9 @@ function jsonValueToAbs(v: unknown): Abs {
   if (Array.isArray(v)) {
     return abs({ k: "tuple", elements: v.map(jsonValueToAbs) }, undefined, undefined, "exact");
   }
-  const slots: Record<string, { value: Abs }> = {};
+  const slots: Record<string, { value: Abs }> = Object.create(null);
   for (const [k, sv] of Object.entries(v as Record<string, unknown>)) {
-    slots[k] = { value: jsonValueToAbs(sv) };
+    setSlot(slots, k, { value: jsonValueToAbs(sv) });
   }
   return abs({ k: "obj", slots }, undefined, undefined, "exact");
 }
@@ -135,17 +135,17 @@ export function evalJsonMethod(name: string, args: Abs[]): Abs | undefined {
       }
       // 其余（null/prim/对象）：原生忽略 replacer，照常序列化
     }
-    // space：number（NaN/±Inf→0，负→0，>10→10，截断）/ string（前 10 字符）；
-    // 缺省/null/undefined → 紧凑。非字面量 → 保守
+    // space：number/string 原样交给宿主 JSON.stringify（其内部即规范
+    // min(10, ToIntegerOrInfinity(space)) + 「原 space>0 即使 <1 也 pretty」）；
+    // 预折 isFinite/floor 会把 Infinity 折成 0、(0,1) 折成紧凑——同族漏网。
+    // 缺省/null/undefined → 紧凑。其余非字面量 → 保守
     const spaceArg = args[2];
     let space: number | string | undefined;
     if (spaceArg) {
       const t = spaceArg.term;
       if (t?.op !== "lit") return str("partial");
       const sv = t.value;
-      if (typeof sv === "number") {
-        space = Number.isFinite(sv) ? Math.min(10, Math.max(0, Math.floor(sv))) : 0;
-      } else if (typeof sv === "string") {
+      if (typeof sv === "number" || typeof sv === "string") {
         space = sv;
       } else if (sv !== undefined && sv !== null) {
         return str("partial");

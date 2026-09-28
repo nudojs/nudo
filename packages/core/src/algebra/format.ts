@@ -58,14 +58,21 @@ export function formatShape(a: Abs): string {
     case "any":
       return "any";
     case "unknown": {
-      // lit undefined（缺键 / Map miss）必须展示为 undefined，不能与真 unknown 混淆
-      if (a.term?.op === "lit" && a.term.value === undefined) return "undefined";
+      // lit undefined / lit null（缺键 / Map miss / null 字面量）必须展示为
+      // 自己的名字，不能与真 unknown 混淆。litValue 哨兵对 lit(undefined) 也是
+      // undefined，须直接看 term。
+      if (a.term?.op === "lit") {
+        if (a.term.value === undefined) return "undefined";
+        if (a.term.value === null) return "null";
+      }
       return "unknown";
     }
     case "prim": {
       const lv = litValue(a);
       // JSON.stringify(NaN|±Infinity) is "null" — keep JS literal spelling.
       if (typeof lv === "number" && !Number.isFinite(lv)) return String(lv);
+      // -0 与 0 可观察不同（1/x、Object.is）；JSON.stringify(-0)==="0" 会抹掉
+      if (typeof lv === "number" && Object.is(lv, -0)) return "-0";
       // JSON.stringify(bigint) throws；按 JS 字面量拼法展示
       if (typeof lv === "bigint") return `${String(lv)}n`;
       if (lv !== undefined) return JSON.stringify(lv);

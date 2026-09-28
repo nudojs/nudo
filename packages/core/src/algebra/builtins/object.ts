@@ -3,7 +3,7 @@
  */
 import type { Abs } from "../abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, bigintLit, unknown, confJoin, isExactLit } from "../abs.ts";
-import { joinAbs, objOf, markNullProtoObj, canonicalArrayIndex } from "../objects.ts";
+import { joinAbs, objOf, markNullProtoObj, canonicalArrayIndex, setSlot, setProtoAbs } from "../objects.ts";
 import { TUPLE_MATERIALIZE_CAP } from "../containers.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs } from "../exec/may-throw.ts";
@@ -36,7 +36,7 @@ export function assignSourceSlots(src: Abs): Record<string, { value: Abs }> | un
       const slots: Record<string, { value: Abs }> = {};
       for (const [k, v] of Object.entries(inner.shape.slots)) {
         if (k === "length") continue;
-        slots[k] = v;
+        setSlot(slots, k, v);
       }
       if (Object.keys(slots).length > 0 || !inner.shape.open) return slots;
     }
@@ -135,8 +135,13 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         );
       }
       if (a0?.term?.op === "lit" && typeof a0.term.value === "string") {
+        // code unit（与 Object.keys 同口径），不是 Array.from 的 code point
+        const s = a0.term.value;
         return abs(
-          { k: "tuple", elements: Array.from(a0.term.value, (c) => strLit(c)) },
+          {
+            k: "tuple",
+            elements: Array.from({ length: s.length }, (_, i) => strLit(s[i]!)),
+          },
           undefined,
           undefined,
           "exact",
@@ -169,11 +174,13 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         return abs({ k: "tuple", elements: entries }, undefined, undefined, "exact");
       }
       if (a0?.term?.op === "lit" && typeof a0.term.value === "string") {
+        // code unit 下标（与 Object.keys 同口径），不是 code point 序号
+        const s = a0.term.value;
         return abs(
           {
             k: "tuple",
-            elements: Array.from(a0.term.value, (c, i) =>
-              abs({ k: "tuple", elements: [strLit(String(i)), strLit(c)] }, undefined, undefined, "exact"),
+            elements: Array.from({ length: s.length }, (_, i) =>
+              abs({ k: "tuple", elements: [strLit(String(i)), strLit(s[i]!)] }, undefined, undefined, "exact"),
             ),
           },
           undefined,
@@ -209,6 +216,25 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       }
       // 具体原型带 constructor 槽（.constructor.name 链可解）；不可判保持 unknown
       return protoOfRecv(a0);
+    }
+    case "setPrototypeOf": {
+      // Object.setPrototypeOf(o, proto) → 返回 o；proto 为 object/null 时改原型
+      // （分析侧：null → nullProto 标记；object → open，继承读不折 exact）。
+      // proto 为 primitive 或缺参：原生 TypeError 硬抛
+      if (!args.length) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      const t0 = args[0];
+      const p0 = args[1];
+      // 缺 proto 实参（args[1] 为 JS undefined）≡ proto=undefined → TypeError
+      if (!t0 || !p0) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      const pv = litValue(p0);
+      if (p0.term?.op === "lit" && (pv === undefined || (pv !== null && typeof pv !== "object"))) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      return setProtoAbs(t0, p0);
     }
     case "assign": {
       // Object.assign(a, b) ≈ spread

@@ -6,7 +6,7 @@
 
 import type { AbsAssignRecord } from "./ast-records.ts";
 import type { Abs } from "./abs.ts";
-import { abs, anyAbs, litValue } from "./abs.ts";
+import { abs, anyAbs } from "./abs.ts";
 import { joinAbs } from "./objects.ts";
 import { leqAbs } from "./leq.ts";
 import { formatAbs } from "./format.ts";
@@ -58,8 +58,15 @@ export function widenForAssign(a: Abs): Abs {
       a.conf,
     );
   }
-  const lv = litValue(a);
-  if (lv !== undefined && a.term?.op === "lit") {
+  // litValue 哨兵：lit(undefined) 读出 undefined，必须直接看 term。
+  // null/undefined 字面量无 prim 域（shape=unknown），mutable 拓宽时剥掉
+  // lit 钉死（var x; x = 1 / let n = null; n = 1 是合法 JS），
+  // 收成裸 unknown——既有形状端可再收任意值，新值端仍不得装进 number 等 prim。
+  if (a.term?.op === "lit") {
+    const lv = a.term.value;
+    if (lv === null || lv === undefined) {
+      return abs({ k: "unknown" }, undefined, undefined, a.conf);
+    }
     if (typeof lv === "number") {
       return abs({ k: "prim", type: "number" }, undefined, undefined, a.conf);
     }

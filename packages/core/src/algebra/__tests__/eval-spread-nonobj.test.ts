@@ -1,11 +1,12 @@
 /**
  * 对象 spread 的非对象源未建模（假精确）：
- * 原生 {...'ab'} → {0:'a', 1:'b'}（code point 数字键）、{...[1,2]} →
+ * 原生 {...'ab'} → {0:'a', 1:'b'}（code unit 数字键）、{...[1,2]} →
  * {0:1, 1:2}（下标键、hole 跳过）、{...5}/{...null} → {}（prim 忽略）。
  * evaluator $spread 与 ast-eval ObjectExpression 对非 obj 源只标 open——
  * 空对象字面量 base 折 {}（假精确）。
  * 修复：spread 对字符串字面量/元组源投影数字键槽合并；prim 字面量源
  * 忽略；不可判定（抽象字符串/arr）保持 open 保守。
+ * 字符串 own keys 是 UTF-16 code unit（astral 两键），不是 for-of code point。
  */
 import { describe, it, expect } from "vitest";
 import { runTranspiled, callTranspiledExportFull, litValue, unknown } from "@nudojs/core";
@@ -16,15 +17,15 @@ function call(src: string, fnName = "f") {
 }
 
 describe("evaluator object spread of non-object sources", () => {
-  it("string source spreads code-point index keys", () => {
+  it("string source spreads code-unit index keys", () => {
     expect(
       litValue(call(`export function f() { return JSON.stringify({...'ab'}); }`).result),
     ).toBe('{"0":"a","1":"b"}');
     expect(litValue(call(`export function f() { return ({...'ab'})['1']; }`).result)).toBe("b");
-    // surrogate pair 按 code point（𠮷 一个键）
+    // surrogate pair 按 code unit（𠮷 两个键），与 Object.keys 一致
     expect(
       litValue(call(`export function f() { return Object.keys({...'a\u{20BB7}'}).length; }`).result),
-    ).toBe(2);
+    ).toBe(3);
   });
 
   it("tuple source spreads index keys, holes skipped", () => {

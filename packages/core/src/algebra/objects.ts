@@ -60,6 +60,42 @@ export function getSlot<S extends { value: Abs }>(
 }
 
 /**
+ * 自有槽位写入。必须走 defineProperty：`slots[k] =` 在 k==="__proto__" 时
+ * 触发宿主 [[SetPrototypeOf]]，键静默丢失（与 getSlot 同族历史 bug）。
+ */
+export function setSlot<S extends { value: Abs }>(
+  slots: Record<string, S>,
+  key: string,
+  slot: S,
+): void {
+  Object.defineProperty(slots, key, {
+    value: slot,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
+}
+
+/**
+ * 对象字面量非计算 `__proto__: v` / `Object.setPrototypeOf(o, v)` / `o.__proto__ = v`
+ * 的原型设定（保守建模）：
+ * - v 为 null → null-proto（无 Object.prototype 回退）
+ * - v 为 object → 保守 open（继承读不折 exact undefined；原型细节不建模）
+ * - v 为 primitive → 原生忽略（对象字面量）；setter 路径由调用方决定是否 TypeError
+ */
+export function setProtoAbs(o: Abs, proto: Abs): Abs {
+  const pv = litValue(proto);
+  if (pv === null) return markNullProtoObj(o);
+  if (proto.term?.op === "lit" && (pv === undefined || typeof pv !== "object")) {
+    return o;
+  }
+  if (isObj(o)) {
+    (o.shape as { open?: boolean }).open = true;
+  }
+  return o;
+}
+
+/**
  * spread：base ⊕ over（右侧覆盖，不是 join）
  * 未出现在 over 的 key 保留 base；over 的 key 覆盖。
  */
@@ -93,7 +129,7 @@ export function spread(base: Abs, over: Abs): Abs {
     const indexSlots = spreadIndexSlots(over);
     if (indexSlots && isObj(base)) {
       const slots: Record<string, Slot> = { ...base.shape.slots };
-      for (const [k, s] of Object.entries(indexSlots)) slots[k] = s;
+      for (const [k, s] of Object.entries(indexSlots)) setSlot(slots, k, s);
       const shape: ObjShape = { k: "obj", slots };
       if (base.shape.open) shape.open = true;
       return { shape, conf: confJoin(base.conf, over.conf) };
@@ -111,7 +147,7 @@ export function spread(base: Abs, over: Abs): Abs {
 
   const slots: Record<string, Slot> = { ...base.shape.slots };
   for (const [k, s] of Object.entries(over.shape.slots)) {
-    slots[k] = s;
+    setSlot(slots, k, s);
   }
   // over 缺席的 key：若 over 是 open/有动态 key，则原 key 可能仍存在也可能被删
   // JS spread 只覆盖 over 上出现的 key，缺席 key 保留 → 直接保留
@@ -139,10 +175,11 @@ function spreadIndexSlots(over: Abs): Record<string, Slot> | undefined {
   const sv =
     over.term?.op === "lit" && typeof over.term.value === "string" ? over.term.value : undefined;
   if (sv !== undefined) {
-    // code point 展开（surrogate pair 合并——for...of 即 code point）
+    // String exotic own keys 是 UTF-16 code unit 下标（不是 for-of 的 code point）
     const slots: Record<string, Slot> = {};
-    let i = 0;
-    for (const ch of sv) slots[String(i++)] = { value: strLit(ch) };
+    for (let i = 0; i < sv.length; i++) {
+      slots[String(i)] = { value: strLit(sv[i]!) };
+    }
     return slots;
   }
   return undefined;
@@ -177,7 +214,7 @@ export function joinObjects(a: Abs, b: Abs): Abs {
     const optional = sa.optional || sb.optional;
     const jv = joinValues(sa.value, sb.value);
     conf = confJoin(conf, jv.conf);
-    slots[k] = { value: jv, optional };
+    setSlot(slots, k, { value: jv, optional });
   }
   return { shape: { k: "obj", slots }, conf };
 }

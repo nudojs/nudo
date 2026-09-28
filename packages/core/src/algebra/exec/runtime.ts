@@ -120,6 +120,7 @@ export {
   $objRest,
   $regex,
   $set,
+  $setProto,
   $spread,
   fillTuple,
   isArrMutator,

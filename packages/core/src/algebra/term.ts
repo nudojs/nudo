@@ -39,7 +39,10 @@ export function termEquals(a: Term, b: Term): boolean {
 
 export function termToString(t: Term): string {
   if (t.op === "lit") {
-    return typeof t.value === "string" ? JSON.stringify(t.value) : String(t.value);
+    if (typeof t.value === "string") return JSON.stringify(t.value);
+    // -0 与 0 可观察不同（Object.is / 1/x）；String(-0)==="0" 会抹掉
+    if (typeof t.value === "number" && Object.is(t.value, -0)) return "-0";
+    return String(t.value);
   }
   if (t.op === "var") return t.id;
   // 字段访问：get(u, "id") → u.id
@@ -76,17 +79,29 @@ export function simplifyTerm(t: Term): Term {
 
   // 不可用 x+0=x / 0+x=x：-0+0=+0（非 -0），且 any/string 参与 + 是拼接
   // （"a"+0="a0"）。与已删除的 x*0=0 同族——恒等式在全值域上不成立。
-  // x * 1 = x, 1 * x = x
+  // x * 1 = x, 1 * x = x（仅 number 路径；非 number 字面量走 ToNumber 折值）
   // （不可用 x*0=0：NaN*0 与 Infinity*0 皆为 NaN；x*1 对 number 含 -0/NaN/Inf 仍成立）
   if (fn === "*" && args.length === 2) {
     const [a, b] = args as [Term, Term];
-    if (a.op === "lit" && a.value === 1) return b;
-    if (b.op === "lit" && b.value === 1) return a;
+    const one = (t: Term): boolean => t.op === "lit" && t.value === 1;
+    const surviveMulOne = (t: Term): Term => {
+      if (t.op !== "lit") return t; // var / app 走 number 路径
+      const v = t.value;
+      if (typeof v === "number") return t;
+      // ToNumber：true→1、null→0、"5"→5、undefined→NaN
+      if (typeof v === "boolean") return lit(v ? 1 : 0);
+      if (v === null) return lit(0);
+      if (typeof v === "string") return lit(Number(v));
+      return lit(NaN);
+    };
+    if (one(b)) return surviveMulOne(a);
+    if (one(a)) return surviveMulOne(b);
   }
-  // x - 0 = x（number 含 -0 仍成立；非 number 走 ToNumber 不经此项）
+  // x - 0 = x 只对 **+0** 成立：(-0)-(-0)=+0，-0 被减数被抹掉
+  // （b.value === 0 会连 lit(-0) 一起匹配——JS 里 -0 === 0）
   if (fn === "-" && args.length === 2) {
     const [a, b] = args as [Term, Term];
-    if (b.op === "lit" && b.value === 0) return a;
+    if (b.op === "lit" && Object.is(b.value, 0)) return a;
   }
 
   return app(fn, args);

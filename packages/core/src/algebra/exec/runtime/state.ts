@@ -168,7 +168,12 @@ export function litAbsFromJs(v: unknown, depth = 0): Abs {
       if (proto === Object.prototype || proto === null) {
         const slots: Record<string, { value: Abs }> = {};
         for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-          slots[k] = { value: litAbsFromJs(val, depth + 1) };
+          Object.defineProperty(slots, k, {
+            value: { value: litAbsFromJs(val, depth + 1) },
+            enumerable: true,
+            writable: true,
+            configurable: true,
+          });
         }
         return objOf(slots);
       }

@@ -9,7 +9,8 @@ import { pTrue, and, predEquals } from "../../pred.ts";
 import { absFunction, getFnImpl } from "../../abs-fn.ts";
 import {
   joinAbs, objOf, isObj, spread as spreadObj, type ObjShape, type Slot,
-  isNullProtoObj, migrateNullProto, getSlot, canonicalArrayIndex,
+  isNullProtoObj, migrateNullProto, getSlot, setSlot, setProtoAbs,
+  canonicalArrayIndex,
 } from "../../objects.ts";
 import {
   isMapAbs, isSetAbs, setElementsAbs, collectionExactLen,
@@ -121,7 +122,10 @@ export function toIOI(v: Abs | undefined): number | null | undefined {
     return Math.trunc(lv);
   }
   if (typeof lv === "string" || typeof lv === "boolean") {
-    return Math.trunc(Number(lv));
+    // ToIntegerOrInfinity：ToNumber 后 NaN→0（'abc'/'-' 等非数字字符串）
+    const n = Number(lv);
+    if (Number.isNaN(n)) return 0;
+    return Math.trunc(n);
   }
   return null; // bigint/symbol/抽象 → 不可判定
 }
@@ -283,7 +287,7 @@ export function $copy(a: Abs): Abs {
   if (s.k === "obj") {
     const slots: Record<string, Slot> = {};
     for (const [k, v] of Object.entries(s.slots)) {
-      slots[k] = { ...v, value: $copy(v.value) };
+      setSlot(slots, k, { ...v, value: $copy(v.value) });
     }
     const next = objOf(slots, {
       index: s.index ? { key: $copy(s.index.key), value: $copy(s.index.value) } : undefined,
@@ -496,21 +500,16 @@ export function $idx(a: Abs, i: Abs): Abs {
     // 闭 shape 未知 key：已知槽 ∪ undefined（键可能不存在）
     return joinSlotsWithUndef();
   }
-  // 字符串下标：s[i] → 第 i 个字符（字面量精确）
+  // 字符串下标：s[i] → 第 i 个字符（字面量精确）。
+  // 与元组同口径走 canonicalArrayIndex：s["1"] ≡ s[1]；s["foo"]/s[1.5]/s["01"]
+  // 为缺失属性 → undefined（不得 unknown 掩掉）。
   const sv = litValue(a);
   if (typeof sv === "string") {
-    if (typeof iv === "number" && Number.isInteger(iv)) {
-      if (iv >= 0 && iv < sv.length) {
-        return abs(
-          { k: "prim", type: "string" },
-          { op: "lit", value: sv[iv] as unknown as import("../../term.ts").LiteralValue },
-          pTrue,
-          "exact",
-        );
-      }
-      return undef();
-    }
-    return unknown;
+    if (i.term?.op !== "lit") return unknown;
+    const idx = canonicalArrayIndex(i.term.value);
+    if (idx === undefined) return undef();
+    if (idx < sv.length) return $lit(sv[idx]!);
+    return undef();
   }
   return unknown;
 }
@@ -664,11 +663,25 @@ export function $len(a: Abs): Abs {
 // 对象 / 成员
 // --- 对象 / 成员 ---
 
-/** 对象字面量 → Abs obj */
+/** 对象字面量 → Abs obj（槽位写走 setSlot，`__proto__` 不踩宿主 setter） */
 export function $obj(slots: Record<string, Abs>): Abs {
-  const s: Record<string, { value: Abs }> = {};
-  for (const [k, v] of Object.entries(slots)) s[k] = { value: asAbsVal(v) };
+  const s: Record<string, { value: Abs }> = Object.create(null);
+  for (const k of Object.keys(slots)) {
+    setSlot(s, k, { value: asAbsVal(slots[k]!) });
+  }
   return objOf(s);
+}
+
+/**
+ * 对象字面量非计算 `__proto__: v` 的特殊原型设定（ES PropertyDefinition）。
+ * - v 为 null → null-proto（无 Object.prototype 回退）
+ * - v 为 object → 保守 open（继承读不折 exact undefined；细节不建模）
+ * - v 为 primitive → 原生忽略（无自有键、不改原型）
+ */
+export function $setProto(o: Abs, proto: Abs): Abs {
+  const next = setProtoAbs(o, proto);
+  if (next !== o) clearStaleTermPred(o);
+  return next;
 }
 
 /** 对象展开 { ...a, b } */
@@ -682,7 +695,7 @@ export function $spread(a: Abs, b: Abs): Abs {
     for (const [k, fn] of acc) {
       // 纯 getter（无同名数据槽）也要求值拷入——{ get x(){return 5} } 展开后 .x===5
       if (fn.get) {
-        slots[k] = { value: fn.get(bb) };
+        setSlot(slots, k, { value: fn.get(bb) });
         changed = true;
       }
     }
@@ -728,7 +741,7 @@ export function $objRest(o: Abs, keys: string[]): Abs {
   let openRest = o.shape.open === true;
   for (const [k, s] of Object.entries(o.shape.slots)) {
     if (drop.has(k)) continue;
-    slots[k] = s;
+    setSlot(slots, k, s);
     // optional 源键可能仍以 undefined 出现在 rest 的动态面；闭槽无需 open
   }
   // 提取的 optional 键：JS rest 会排除该键，但 open 对象上未知键仍可能进 rest
@@ -1159,6 +1172,18 @@ export function $get(
     if (idx !== undefined) return idx < els.length ? els[idx]! : undef();
     if (!isPossiblyProtoMemberKey(key)) return undef();
   }
+  // 字符串下标字符串键（s["1"] ≡ s[1]）；确定非下标自有键 → undefined
+  // （与元组同口径 canonicalArrayIndex；length/原型方法继续走下方投影）
+  if (o.shape.k === "prim" && o.shape.type === "string") {
+    const idx = canonicalArrayIndex(key);
+    const sv = litValue(o);
+    if (idx !== undefined) {
+      if (typeof sv === "string") return idx < sv.length ? $lit(sv[idx]!) : undef();
+      return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
+    }
+    if (key === "length" && typeof sv === "string") return numLit(sv.length);
+    if (!isPossiblyProtoMemberKey(key) && key !== "length") return undef();
+  }
   // 元组/数组/prim 上的 Object.prototype / Array.prototype 方法读取
   if (
     (o.shape.k === "tuple" || o.shape.k === "arr" || o.shape.k === "prim") &&
@@ -1294,7 +1319,7 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
           throwStrictWrite(); // 不可扩展：新键写 TypeError
         }
         if (getPropFlags(o)?.get(key)?.writable === false) throwStrictWrite();
-        inner.shape.slots[key] = { value: asAbsVal(value) };
+        setSlot(inner.shape.slots, key, { value: asAbsVal(value) });
         clearStaleTermPred(o);
         return o;
       }
@@ -1410,8 +1435,13 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
     if (!acc.set) throwStrictWrite(); // getter-only：写 TypeError
     return acc.set(o, value);
   }
+  // `o.__proto__ = v` 走 Object.prototype setter（设原型）；null-proto 无 setter
+  // → 自有数据属性。不得 slots[key]=（宿主 __proto__ setter 丢键）。
+  if (key === "__proto__" && !isNullProtoObj(o)) {
+    return $setProto(o, value);
+  }
   // 就地写槽（引用语义：const b = o; b.x = v 对 o 可见）——Abs 身份不变
-  shape.slots[key] = { value: asAbsVal(value) };
+  setSlot(shape.slots, key, { value: asAbsVal(value) });
   o.conf = confJoin(o.conf, value.conf);
   clearStaleTermPred(o);
   return o;
