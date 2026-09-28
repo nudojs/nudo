@@ -7,7 +7,7 @@
 > Categories still recommended for mock are listed below and aligned with
 > `docs/design/limitations.md` §2 (call-site ceiling).
 
-- Generated at: `2026-09-28T14:58:52.862Z`
+- Generated at: `2026-09-28T16:06:14.581Z`
 - Harvest budgets: maxFiles=`12`, maxMs=`2500`, disable=`NUDO_HARVEST_NODE=off`
 
 ## Summary — Node env probes
@@ -107,7 +107,7 @@ Leaf-clean ratio (format has no unknown/any token / total): **89.6%**
 
 ### ES / web sample
 
-- ES: resolved 4/4
+- ES: resolved 3/4
 - Web: resolved 3/3
 
 ## Library three-state path
