@@ -92,8 +92,17 @@ export function formatShape(a: Abs): string {
       }
       return `${formatShape(s.element)}[]`;
     }
-    case "tuple":
-      return `[${s.elements.map(formatShape).join(", ")}]`;
+    case "tuple": {
+      // hole 槽是稀疏空位（`1 in a` 为 false），不得渲染成 undefined 槽
+      const holes = s.holes ?? [];
+      const parts = s.elements.map((el, i) =>
+        holes.includes(i) ? "" : formatShape(el),
+      );
+      if (s.rest) {
+        parts.push(`...${formatShape(s.rest)}`);
+      }
+      return `[${parts.join(", ")}]`;
+    }
     case "fn": {
       const ret =
         s.returnType !== undefined ? formatShapeSlot(s.returnType) : "?";

@@ -328,9 +328,11 @@ export function absShapeKey(a: Abs, seen: Set<object> = new Set()): string {
     }
     if (s.k === "arr") return `arr(${absShapeKey(s.element, seen)})`;
     if (s.k === "tuple") {
+      // holes 必须进 key：[1,,3] 与 [1, undefined, 3] 可观察不同，不得去重合并
+      const holes = s.holes && s.holes.length > 0 ? `holes:${[...s.holes].sort((a, b) => a - b).join(",")}` : "";
       const els = s.elements.map((e) => absShapeKey(e, seen)).join(",");
       const rest = s.rest ? `...${absShapeKey(s.rest, seen)}` : "";
-      return `tuple[${els}${rest}]`;
+      return `tuple[${els}${rest}${holes ? `;${holes}` : ""}]`;
     }
     if (s.k === "brand") return `brand:${s.name}(${absShapeKey(s.shape, seen)})`;
     if (s.k === "eff") return `eff:${s.eff}<${absShapeKey(s.inner, seen)}>`;

@@ -276,6 +276,12 @@ function leqShape(
     if (s.elements.length !== t.elements.length) {
       return fail(`tuple arity ${s.elements.length} ⊭ ${t.elements.length}`);
     }
+    // hole 槽 ≠ 显式 undefined 槽（`1 in a` 可观察）：稀疏/稠密不得互赋
+    const sHoles = s.holes ?? [];
+    const tHoles = t.holes ?? [];
+    if (sHoles.length !== tHoles.length || sHoles.some((h, i) => h !== tHoles[i])) {
+      return fail(`tuple holes [${sHoles.join(",")}] ⊭ [${tHoles.join(",")}]`);
+    }
     for (let i = 0; i < t.elements.length; i++) {
       const r = leqWithPred(s.elements[i]!, t.elements[i]!, phi, env, depth + 1);
       if (!r.ok) return fail(`tuple[${i}]: ${r.reason}`);
