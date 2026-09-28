@@ -475,12 +475,14 @@ export function $idx(a: Abs, i: Abs): Abs {
       if (idx < els.length) return els[idx]!;
       return undef();
     }
+    // 抽象下标：可能命中任一元素，也可能越界/非下标 → 必须并入 undefined
     if (els.length === 0) return undef();
-    return els.reduce((x, y) => joinAbs(x, y));
+    return joinAbs(els.reduce((x, y) => joinAbs(x, y)), undef());
   }
   if (a.shape.k === "arr") {
     if (iv !== undefined && idx === undefined) return undef();
-    return a.shape.element;
+    // 抽象下标可能 miss → 元素 ∪ undefined（与对象未知键同口径）
+    return joinAbs(a.shape.element, undef());
   }
   if (a.shape.k === "sum") {
     return a.shape.members.map((m) => $idx(m, i)).reduce((x, y) => joinAbs(x, y));
