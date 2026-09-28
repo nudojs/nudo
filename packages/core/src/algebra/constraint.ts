@@ -579,9 +579,12 @@ export function constraintToEntryAbs(
 
 /**
  * lit(v) 形态提取：prim + 唯一 eq(self, v)（and 展平一层）。
- * 非字面量形态 → undefined。
+ * 非字面量形态 → { ok: false }。
+ * ok:true 时 v 可为 undefined（lit(undefined) 合法，不得与「无字面量」混同）。
  */
-function memberLitValue(m: NudoConstraint): number | string | boolean | null | undefined {
+function memberLitValue(m: NudoConstraint):
+  | { ok: true; v: number | string | boolean | null | undefined }
+  | { ok: false } {
   const leaves: Pred[] = [];
   const visit = (p: Pred): void => {
     if (p.op === "and") {
@@ -591,12 +594,16 @@ function memberLitValue(m: NudoConstraint): number | string | boolean | null | u
     leaves.push(p);
   };
   m.preds.forEach(visit);
-  if (leaves.length !== 1) return undefined;
+  if (leaves.length !== 1) return { ok: false };
   const p = leaves[0]!;
-  if (p.op !== "eq") return undefined;
-  if (p.a.op === "var" && p.b.op === "lit") return p.b.value as number | string | boolean | null;
-  if (p.b.op === "var" && p.a.op === "lit") return p.a.value as number | string | boolean | null;
-  return undefined;
+  if (p.op !== "eq") return { ok: false };
+  if (p.a.op === "var" && p.b.op === "lit") {
+    return { ok: true, v: p.b.value as number | string | boolean | null | undefined };
+  }
+  if (p.b.op === "var" && p.a.op === "lit") {
+    return { ok: true, v: p.a.value as number | string | boolean | null | undefined };
+  }
+  return { ok: false };
 }
 
 /**
@@ -613,14 +620,15 @@ function samePrimLiteralUnionAbs(
   const values: Array<number | string | boolean> = [];
   let prim: PrimName | undefined;
   for (const m of members) {
-    const v = memberLitValue(m);
-    if (v === undefined) return undefined;
-    // lit(null) 无 prim；与有 prim 成员混排不算「同 prim 字面量集」
-    if (v === null) return undefined;
+    const mk = memberLitValue(m);
+    // 非字面量 / lit(undefined)（无 prim）：不走同 prim 字面量集快路径
+    if (!mk.ok) return undefined;
+    const v = mk.v;
+    if (v === undefined || v === null) return undefined;
     const mp = m.prim ?? (typeof v === "number" ? "number" : typeof v === "string" ? "string" : "boolean");
     if (prim === undefined) prim = mp;
     else if (prim !== mp) return undefined;
-    values.push(v);
+    values.push(v as number | string | boolean);
   }
   if (prim === undefined) return undefined;
   // 去重（union(lit(1), lit(1)) ≡ lit(1)）
@@ -697,17 +705,18 @@ function constraintOnTermAbs(c: NudoConstraint, t: Term): Abs {
   if (c.prim) {
     return abs({ k: "prim", type: c.prim }, t, predOut, "path");
   }
-  // lit(null)：null 无 prim 域（prim 缺失 + eq(self, null)）——unknown 形状
-  // 挂 eq 谓词，不落 number 回退（typeof null ≠ "number"，污染 join/leq 锚定）
-  const allEqNull =
+  // lit(null) / lit(undefined)：无 prim 域（prim 缺失 + eq(self, null/undefined)）
+  // ——unknown 形状挂 eq 谓词，不落 number 回退（typeof null ≠ "number"，
+  // undefined 更不是；否则 leq/契约把 undefined 误报成 number）
+  const allEqNullish =
     c.preds.length > 0 &&
     c.preds.every(
       (p) =>
         p.op === "eq" &&
-        ((p.b.op === "lit" && p.b.value === null) ||
-          (p.a.op === "lit" && p.a.value === null)),
+        ((p.b.op === "lit" && (p.b.value === null || p.b.value === undefined)) ||
+          (p.a.op === "lit" && (p.a.value === null || p.a.value === undefined))),
     );
-  if (allEqNull) {
+  if (allEqNullish) {
     return abs({ k: "unknown" }, t, predOut, "path");
   }
   // 有界但无 prim：按 number 处理（number().gt(0) 已带 prim）

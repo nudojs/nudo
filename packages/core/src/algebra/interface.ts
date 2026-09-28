@@ -588,9 +588,9 @@ function boundsOf(c: NudoConstraint): Bound[] {
   return out;
 }
 
-/** eq(self, lit v) 提取（and 嵌套展开） */
-function eqLitsOf(c: NudoConstraint): Array<{ term: string; value: number | string | boolean | null }> {
-  const out: Array<{ term: string; value: number | string | boolean | null }> = [];
+/** eq(self, lit v) 提取（and 嵌套展开）；lit(undefined) 合法，不得被哨兵吞掉 */
+function eqLitsOf(c: NudoConstraint): Array<{ term: string; value: number | string | boolean | null | undefined }> {
+  const out: Array<{ term: string; value: number | string | boolean | null | undefined }> = [];
   const visit = (p: Pred): void => {
     if (p.op === "and") {
       p.args.forEach(visit);
@@ -599,14 +599,17 @@ function eqLitsOf(c: NudoConstraint): Array<{ term: string; value: number | stri
     if (p.op !== "eq") return;
     let term: Term | undefined;
     let value: number | string | boolean | null | undefined;
+    let hasLit = false;
     if (p.a.op === "var" && p.b.op === "lit") {
       term = p.a;
       value = p.b.value as number | string | boolean | null | undefined;
+      hasLit = true;
     } else if (p.b.op === "var" && p.a.op === "lit") {
       term = p.b;
       value = p.a.value as number | string | boolean | null | undefined;
+      hasLit = true;
     }
-    if (term !== undefined && value !== undefined) {
+    if (term !== undefined && hasLit) {
       out.push({ term: termToString(term), value });
     }
   };
