@@ -185,7 +185,7 @@ slug: /releases
 
 更早版本（18）→ [完整发布历史](./releases-history.md#pkg-vite-plugin)
 
-## nudo-vscode 0.3.13 {#pkg-vscode}
+## nudo-vscode 0.3.7 {#pkg-vscode}
 
 ## 0.3.7
 

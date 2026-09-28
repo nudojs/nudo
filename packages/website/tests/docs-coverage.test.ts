@@ -51,8 +51,17 @@ const ZH_BLOG = join(
 );
 const LLMS_TXT = join(repoRoot, "packages/website/static/llms.txt");
 
-// en 页允许残留 CJK 的白名单（生成的历史聚合页），数组便于后续扩充。
-const EN_CJK_ALLOWLIST = ["releases-history.md"];
+// en 页允许残留 CJK 的白名单，数组便于后续扩充。
+const EN_CJK_ALLOWLIST = [
+  "releases-history.md",
+  // api/* 生成页（gen-api-docs.mjs）：en 表 Summary 回退显示源 JSDoc 的中文首句——
+  // 比空 `—` 有信息量，zh 镜像本就显示同一摘要。仅收录实际含 CJK 的页。
+  "api/core.md",
+  "api/harvester.md",
+  "api/lsp.md",
+  "api/parser.md",
+  "api/service.md",
+];
 // harvest 只在 env-harvest / harvester 参考页与发布史叙述中出现。
 const HARVEST_ALLOWLIST = [
   /^releases[\w-]*\.md$/, // releases.md / releases-history.md

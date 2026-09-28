@@ -105,10 +105,17 @@ function buildReleases(lang, mode /* "current" | "history" */) {
   ];
   for (const p of PKGS) {
     const cl = changelogOf(p.dir);
+    const blocks = cl ? splitVersions(cl) : [];
+    // Heading version follows the section body: release-CI auto-bumps (vscode) push
+    // package.json past the newest CHANGELOG entry, which would read as
+    // "## nudo-vscode 0.3.13" over a `## 0.3.7` body. The top-of-page table
+    // still shows the true current version from package.json.
+    const headingVersion =
+      blocks.find((b) => b.version && b.version !== "Unreleased")?.version ??
+      versionOf(p.dir);
     // Heading custom id — Docusaurus onBrokenAnchors tracks heading ids, not raw HTML <a id>.
-    parts.push(`## ${p.name} ${versionOf(p.dir)} {#${anchorOf(p.dir)}}`, "");
+    parts.push(`## ${p.name} ${headingVersion} {#${anchorOf(p.dir)}}`, "");
     if (cl) {
-      const blocks = splitVersions(cl);
       if (mode === "current") {
         // Latest only — history lives on releases-history.md so search/docs stay light.
         parts.push(blocks[0].body, "");
