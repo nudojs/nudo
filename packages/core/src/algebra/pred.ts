@@ -402,6 +402,12 @@ type Lin = {
   k: number;
   /** 原子 key → Term（证明与展示用） */
   atoms: Map<string, Term>;
+  /**
+   * 线性形是否可按实数环语义使用。IEEE 下 x-x / 0*x / 异号合并对
+   * ±Infinity/NaN 不成立（对齐 arithmetic.ts/term.ts 禁止 x*0=0），
+   * 构造中一旦出现此类化简即置 false，证明侧 fail-closed。
+   */
+  ieeeOk: boolean;
 };
 
 type Ctx = {
@@ -490,7 +496,7 @@ function tightenHi(iv: Interval, bound: number, strict: boolean): void {
 
 /** 项 → 线性形（var / lit / + / - / *const / length 等原子）；非线性返回 undefined */
 function linOf(t: Term): Lin | undefined {
-  const empty = (): Lin => ({ c: new Map(), k: 0, atoms: new Map() });
+  const empty = (): Lin => ({ c: new Map(), k: 0, atoms: new Map(), ieeeOk: true });
   const fromAtom = (key: string, term: Term): Lin => {
     const l = empty();
     l.c.set(key, 1);
@@ -499,8 +505,14 @@ function linOf(t: Term): Lin | undefined {
   };
   const add = (a: Lin, b: Lin): Lin => {
     const out = empty();
+    out.ieeeOk = a.ieeeOk && b.ieeeOk;
     for (const [k, v] of a.c) out.c.set(k, (out.c.get(k) ?? 0) + v);
-    for (const [k, v] of b.c) out.c.set(k, (out.c.get(k) ?? 0) + v);
+    for (const [k, v] of b.c) {
+      const prev = out.c.get(k) ?? 0;
+      // 同原子异号合并（含 x-x）：IEEE 下 Inf-Inf/NaN 按环消去不成立
+      if (prev !== 0 && v !== 0 && prev > 0 !== v > 0) out.ieeeOk = false;
+      out.c.set(k, prev + v);
+    }
     out.k = a.k + b.k;
     for (const [k, v] of a.atoms) out.atoms.set(k, v);
     for (const [k, v] of b.atoms) out.atoms.set(k, v);
@@ -508,9 +520,12 @@ function linOf(t: Term): Lin | undefined {
   };
   const scale = (a: Lin, n: number): Lin => {
     const out = empty();
+    out.ieeeOk = a.ieeeOk;
     for (const [k, v] of a.c) out.c.set(k, v * n);
     out.k = a.k * n;
     for (const [k, v] of a.atoms) out.atoms.set(k, v);
+    // 0*x 折 0 不可用：NaN*0 / Inf*0 为 NaN
+    if (n === 0 && a.atoms.size > 0) out.ieeeOk = false;
     return out;
   };
   const walk = (x: Term): Lin | undefined => {
@@ -544,9 +559,22 @@ function linOf(t: Term): Lin | undefined {
         const la = walk(a);
         const lb = walk(b);
         if (la && lb) {
-          // 常数 × 线性
-          if (la.c.size === 0) return scale(lb, la.k);
-          if (lb.c.size === 0) return scale(la, lb.k);
+          // 双常量：IEEE 字面量乘积（0*Inf=NaN 等按 JS 折）
+          if (la.c.size === 0 && lb.c.size === 0) {
+            const out = empty();
+            out.k = la.k * lb.k;
+            return out;
+          }
+          // 常数 × 单原子（无常数项）：表示该乘积本身，非分配律
+          // 不可用 ×0=0 / ×Inf：NaN*0、Inf*0 为 NaN（对齐 arithmetic.ts）
+          const scaleAtom = (lin: Lin, k: number, whole: Term): Lin | undefined => {
+            if (k === 0 || !Number.isFinite(k)) return fromAtom(termKey(whole), whole);
+            // 仅单原子纯乘积可缩放；分配律 k*(c1*x1+c2*x2+k0) 在 IEEE 不成立
+            if (lin.c.size === 1 && lin.k === 0) return scale(lin, k);
+            return fromAtom(termKey(whole), whole);
+          };
+          if (la.c.size === 0) return scaleAtom(lb, la.k, x);
+          if (lb.c.size === 0) return scaleAtom(la, lb.k, x);
           return undefined; // 非线性
         }
         return undefined;
@@ -566,7 +594,14 @@ function linOf(t: Term): Lin | undefined {
 }
 
 function linSub(a: Lin, b: Lin): Lin {
-  const out: Lin = { c: new Map(), k: a.k - b.k, atoms: new Map() };
+  // normCmp 的比较归一（a op b → a-b op 0）只传播 ieeeOk，不因消去置 false：
+  // eq(x,x) 归一到 x-x 后仍应可证（比较语义，非项内减法）。
+  const out: Lin = {
+    c: new Map(),
+    k: a.k - b.k,
+    atoms: new Map(),
+    ieeeOk: a.ieeeOk && b.ieeeOk,
+  };
   for (const [k, v] of a.c) out.c.set(k, (out.c.get(k) ?? 0) + v);
   for (const [k, v] of b.c) out.c.set(k, (out.c.get(k) ?? 0) - v);
   for (const [k, v] of a.atoms) out.atoms.set(k, v);
@@ -618,6 +653,8 @@ function buildCtx(phi: Phi): Ctx {
     const n = normCmp(op === "eq" ? "eq" : op, left, right);
     if (!n) return;
     const { lin, op: o } = n;
+    // IEEE 不健全线性形（x-x / 0*x 等环消去）不提取事实
+    if (!lin.ieeeOk) return;
     // 纯常数：无可提取区间事实
     if (lin.c.size === 0) return;
     // 单原子：k 常数并入界
@@ -780,9 +817,13 @@ function proveInCtx(ctx: Ctx, pred: Pred): boolean {
   if (!norm) return false;
   const { lin, op } = norm;
 
+  // IEEE：项内环消去（x-x / 0*x / 异号合并）不按实数环证
+  if (!lin.ieeeOk) return false;
+
   // 目标本身在 Φ 中（线性形相同）
-  // 常数目标
+  // 常数目标：仍有原子参与（消去后）时不得按常数恒等式证
   if (lin.c.size === 0) {
+    if (lin.atoms.size > 0) return false;
     if (op === "eq") return lin.k === 0;
     if (op === "ne") return lin.k !== 0;
     if (op === "gt") return lin.k > 0;
