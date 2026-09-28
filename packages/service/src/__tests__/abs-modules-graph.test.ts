@@ -118,20 +118,34 @@ export function go(x) { return inc(dec(x)); }
     expect(litValue(result)).toBe(5);
   });
 
-  it("cycle does not hang", () => {
+  it("cycle does not hang and backfills in-cycle bindings (BUG-005)", () => {
     const dir = tmpProject({
       "a.js": `
 import { b } from "./b.js";
-export function a(x) { return b(x); }
+export function fa(x) { return b(x); }
+export const ka = 1;
 `,
       "b.js": `
-import { a } from "./a.js";
+import { fa, ka } from "./a.js";
 export function b(x) { return x; }
 `,
     });
-    const mainSrc = `import { a } from "./a.js"; export function go(x) { return a(x); }`;
-    const { modules } = evalAbsModuleGraph(mainSrc, join(dir, "main.js"));
+    const mainSrc = `import { fa, ka } from "./a.js"; export function go(x) { return fa(x); }`;
+    const { modules, byPath, issues } = evalAbsModuleGraph(mainSrc, join(dir, "main.js"));
     expect(modules["./a.js"]).toBeDefined();
+    // cycle recorded, load does not hang
+    expect(issues.some((i) => i.kind === "cycle")).toBe(true);
+    // in-cycle bindings must be backfilled into the placeholder (not stay { named: {} })
+    expect(modules["./a.js"]!.named.fa).toBeDefined();
+    expect(modules["./a.js"]!.named.ka).toBeDefined();
+    const aExports = byPath.get(join(dir, "a.js"))!;
+    const bExports = byPath.get(join(dir, "b.js"))!;
+    expect(aExports.named.fa).toBeDefined();
+    expect(aExports.named.ka).toBeDefined();
+    expect(bExports.named.b).toBeDefined();
+    // placeholder held by the cycle peer is the same object, now non-empty
+    expect(Object.keys(aExports.named).length).toBeGreaterThan(0);
+    expect(Object.keys(bExports.named).length).toBeGreaterThan(0);
   });
 
   it("export * as ns re-exports a namespace slot (BUG-004)", () => {

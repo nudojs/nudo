@@ -192,7 +192,7 @@ export type AbsModuleLoadIssue = {
 export type AbsModuleGraphResult = {
   /** 入口 import 说明符 → 依赖导出表 */
   modules: Record<string, AbsModuleExports>;
-  /** 绝对路径 → 导出表（含依赖；循环时占位为空） */
+  /** 绝对路径 → 导出表（含依赖；循环占位求值后就地回填） */
   byPath: Map<string, AbsModuleExports>;
   /** cycle / depth / missing（求值引擎权威，避免 TypeValue 叠报） */
   issues: AbsModuleLoadIssue[];
@@ -404,7 +404,9 @@ export function evalAbsModuleGraph(
       cache.set(absPath, empty);
       return empty;
     }
-    cache.set(absPath, { named: {} });
+    // 循环占位：后续 cache 重绑不得换对象——环内消费者持有本引用，必须就地回填。
+    const placeholder: AbsModuleExports = { named: {} };
+    cache.set(absPath, placeholder);
     loading.push(absPath);
 
     const source = load(spec, fromFile) ?? (() => {
@@ -421,10 +423,8 @@ export function evalAbsModuleGraph(
         spec,
         `Module file not found for '${spec}' (from ${moduleLabel(fromFile)}); tried: ${absPath}`,
       );
-      const empty: AbsModuleExports = { named: {} };
-      cache.set(absPath, empty);
       loading.pop();
-      return empty;
+      return placeholder;
     }
 
     // 子树 issue 切片起点：本模块自身（含其依赖）产生的装载问题。
@@ -457,7 +457,10 @@ export function evalAbsModuleGraph(
       exports = { named: {} };
     }
     loading.pop();
-    cache.set(absPath, exports);
+    // 就地回填占位：环内 import 持有的是 placeholder 引用，换新对象会永远空导出。
+    Object.assign(placeholder.named, exports.named);
+    if (exports.default !== undefined) placeholder.default = exports.default;
+    cache.set(absPath, placeholder);
 
     let fingerprint: { mtimeMs: number; size: number } | undefined;
     try {
@@ -469,11 +472,11 @@ export function evalAbsModuleGraph(
     if (fingerprint) {
       absModuleCache.set(absPath, {
         ...fingerprint,
-        exports,
+        exports: placeholder,
         issues: issues.slice(issueStart),
       });
     }
-    return exports;
+    return placeholder;
   }
 
   const modules = buildModulesForFile(
