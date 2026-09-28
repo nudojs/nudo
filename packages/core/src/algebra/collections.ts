@@ -9,6 +9,9 @@ import { abs, litValue, unknown, confJoin, strLit } from "./abs.ts";
 import { objOf, joinAbs } from "./objects.ts";
 
 type LitKey = string | number | boolean | null | undefined;
+/** litKeyOf 无字面量哨兵：lit(undefined) 是合法键，不得与「无字面量」共用 undefined */
+const NO_LIT_KEY: unique symbol = Symbol("nudo:no-lit-key");
+type LitKeyResult = LitKey | typeof NO_LIT_KEY;
 
 type MapTable = {
   byLit: Map<LitKey, Abs>;
@@ -209,7 +212,7 @@ export function endCollectionFork(arms: Array<ArmOverlay | undefined | null>): v
         const armLits = new Set<LitKey>();
         for (const el of t.elements) {
           const lk = litKeyOf(el);
-          if (lk !== undefined) {
+          if (isLitKey(lk)) {
             if (!seen.has(lk)) {
               seen.add(lk);
               mergedEls.push(el);
@@ -270,16 +273,20 @@ function brandOf(name: string): Abs {
   );
 }
 
-function litKeyOf(a: Abs | undefined): LitKey | undefined {
-  if (!a) return undefined;
+function litKeyOf(a: Abs | undefined): LitKeyResult {
+  if (!a) return NO_LIT_KEY;
+  // 仅 term lit 是字面量键（含 lit(undefined)）；抽象 Abs → NO_LIT_KEY
   if (a.term?.op === "lit") return a.term.value as LitKey;
-  const v = litValue(a);
-  if (v === undefined && a.term === undefined) return undefined;
-  return v;
+  return NO_LIT_KEY;
+}
+
+function isLitKey(x: LitKeyResult): x is LitKey {
+  return x !== NO_LIT_KEY;
 }
 
 /** SameValueZero（JS Set/Map 键语义）：NaN 相等、+0/-0 相等 */
-function sameValueZeroKey(a: LitKey | undefined, b: LitKey | undefined): boolean {
+function sameValueZeroKey(a: LitKeyResult, b: LitKeyResult): boolean {
+  if (a === NO_LIT_KEY || b === NO_LIT_KEY) return false;
   if (a === b) return true;
   return typeof a === "number" && typeof b === "number" && Number.isNaN(a) && Number.isNaN(b);
 }
@@ -357,7 +364,7 @@ export function makeMapAbs(iterable?: Abs): Abs {
     if (el.shape.k === "tuple" && el.shape.elements.length >= 2) {
       const k = litKeyOf(el.shape.elements[0]);
       const v = el.shape.elements[1]!;
-      if (k !== undefined) table.byLit.set(k, v);
+      if (isLitKey(k)) table.byLit.set(k, v);
       else table.shadowValues.push(v);
     }
   }
@@ -371,7 +378,7 @@ export function makeSetAbs(iterable?: Abs): Abs {
   const seen = new Set<LitKey>();
   for (const el of elementsFrom(iterable)) {
     const lk = litKeyOf(el);
-    if (lk !== undefined) {
+    if (isLitKey(lk)) {
       if (seen.has(lk)) continue;
       seen.add(lk);
     }
@@ -461,7 +468,7 @@ function setTableForRead(a: Abs): SetTable | undefined {
 export function mapSetEntry(mapAbs: Abs, key: Abs | undefined, value: Abs): Abs {
   const t = mapTableForWrite(mapAbs);
   const k = litKeyOf(key);
-  if (k !== undefined) t.byLit.set(k, value);
+  if (isLitKey(k)) t.byLit.set(k, value);
   else if (value) t.shadowValues.push(value);
   return mapAbs;
 }
@@ -470,7 +477,7 @@ export function mapSetEntry(mapAbs: Abs, key: Abs | undefined, value: Abs): Abs 
 export function mapDeleteEntry(mapAbs: Abs, key: Abs | undefined): Abs {
   const t = mapTableForWrite(mapAbs);
   const k = litKeyOf(key);
-  if (k !== undefined) {
+  if (isLitKey(k)) {
     t.byLit.delete(k);
     t.maybeAbsent?.delete(k);
     // 删除后若仍有 shadow 写入，get/has 仍须保守
@@ -509,7 +516,7 @@ export function mapGetEntry(mapAbs: Abs, key: Abs | undefined): Abs {
   const t = mapTableForRead(mapAbs);
   if (!t) return unknown;
   const k = litKeyOf(key);
-  if (k !== undefined) {
+  if (isLitKey(k)) {
     const v = t.byLit.get(k);
     const absent = t.maybeAbsent?.has(k) === true;
     if (v !== undefined && !absent && t.shadowValues.length === 0) return v;
@@ -522,12 +529,12 @@ export function mapGetEntry(mapAbs: Abs, key: Abs | undefined): Abs {
   // 字面量 miss / 未知 key：并入 undefined（存在性）+ 全部已知值
   const known = [...t.byLit.values(), ...t.shadowValues];
   const joined = joinAll(known);
-  if (k !== undefined && t.shadowValues.length === 0) {
+  if (isLitKey(k) && t.shadowValues.length === 0) {
     // 纯字面量 miss：值只能是 undefined（shadows 为空时）
     return undefAbs();
   }
   if (joined === undefined) {
-    return k !== undefined ? undefAbs() : unknown;
+    return isLitKey(k) ? undefAbs() : unknown;
   }
   return joinAbs(joined, undefAbs());
 }
@@ -537,7 +544,7 @@ export function mapHasEntry(mapAbs: Abs, key: Abs | undefined): Abs {
   const t = mapTableForRead(mapAbs);
   if (!t) return unknown;
   const k = litKeyOf(key);
-  if (k === undefined) {
+  if (!isLitKey(k)) {
     // 未知 key：有条目则可能 true/false，无条目 unknown
     return t.byLit.size > 0 || t.shadowValues.length > 0
       ? abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial")
@@ -626,7 +633,7 @@ export function mapEntriesAbs(mapAbs: Abs): Abs[] {
 export function setAddEntry(setAbs: Abs, value: Abs): Abs {
   const t = setTableForWrite(setAbs);
   const lk = litKeyOf(value);
-  if (lk !== undefined && t.elements.some((el) => sameValueZeroKey(litKeyOf(el), lk))) {
+  if (isLitKey(lk) && t.elements.some((el) => sameValueZeroKey(litKeyOf(el), lk))) {
     return setAbs; // JS Set 语义：重复 add 不增长（SameValueZero）
   }
   t.elements.push(value);
@@ -639,9 +646,9 @@ export function setAddEntry(setAbs: Abs, value: Abs): Abs {
 export function setDeleteEntry(setAbs: Abs, value: Abs): Abs {
   const t = setTableForWrite(setAbs);
   const lk = litKeyOf(value);
-  if (lk !== undefined) {
+  if (isLitKey(lk)) {
     t.elements = t.elements.filter((el) => !sameValueZeroKey(litKeyOf(el), lk));
-    const hasUnknown = t.elements.some((el) => litKeyOf(el) === undefined);
+    const hasUnknown = t.elements.some((el) => !isLitKey(litKeyOf(el)));
     if (hasUnknown) t.maybeAbsent = true;
     else delete t.maybeAbsent;
   } else {
@@ -662,7 +669,7 @@ export function setHasEntry(setAbs: Abs, value: Abs): Abs {
   const t = setTableForRead(setAbs);
   if (!t) return unknown;
   const k = litKeyOf(value);
-  if (k !== undefined) {
+  if (isLitKey(k)) {
     const hit = t.elements.some((el) => sameValueZeroKey(litKeyOf(el), k));
     // 该字面 key 跨臂 membership 不一致 → 不能折 exact
     if (setAbsentKey(t, k)) {

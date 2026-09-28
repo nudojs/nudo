@@ -148,22 +148,24 @@ export function callAbsMethod(
     const prefix = knownPrefixOfViews(views);
     const suffix = knownSuffixOfViews(views);
     switch (name) {
-      case "startsWith": {
-        if (args[1] && litValue(args[1]) !== undefined) return boolPrim();
-        if (a0Str === undefined) return boolPrim();
-        const d = decideStartsWith(prefix, a0Str);
-        return d === "unknown" ? boolPrim() : boolLit(d);
-      }
-      case "endsWith": {
-        if (args[1] && litValue(args[1]) !== undefined) return boolPrim();
-        if (a0Str === undefined) return boolPrim();
-        const d = decideEndsWith(suffix, a0Str);
-        return d === "unknown" ? boolPrim() : boolLit(d);
-      }
+      case "startsWith":
+      case "endsWith":
       case "includes": {
-        if (args[1] && litValue(args[1]) !== undefined) return boolPrim();
+        // 位置/长度参：缺省或 lit(undefined) 按默认（0 / 全长）；
+        // 真实字面量或**抽象实参**都不得假装缺省（litValue 哨兵会把抽象
+        // 参折成 undefined）——抽象位置可能改变判定，保守 boolPrim。
+        const a1Abs = args[1];
+        if (a1Abs !== undefined) {
+          const omitted = a1Abs.term?.op === "lit" && a1Abs.term.value === undefined;
+          if (!omitted) return boolPrim();
+        }
         if (a0Str === undefined) return boolPrim();
-        const d = decideIncludes(allFixedTextOfViews(views), a0Str);
+        const d =
+          name === "startsWith"
+            ? decideStartsWith(prefix, a0Str)
+            : name === "endsWith"
+              ? decideEndsWith(suffix, a0Str)
+              : decideIncludes(allFixedTextOfViews(views), a0Str);
         return d === "unknown" ? boolPrim() : boolLit(d);
       }
       case "toUpperCase":
