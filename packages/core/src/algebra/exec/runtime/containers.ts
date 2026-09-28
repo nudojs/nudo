@@ -167,8 +167,11 @@ export function copyWithinTuple(
     if (win) {
       const els = [...shape.elements];
       const holesSet = new Set(origHoles);
-      // 重叠且源在目标之后（s < t）：按规范倒序复制
-      const backwards = (s ?? 0) < (t ?? 0) && win.s + (win.e - win.s) > win.t;
+      // 重叠且源在目标之后：按规范倒序复制。
+      // ES copyWithin step 11 用**相对解析后**的 from/to（win.s/win.t）比较
+      // （from < to && from+count > to）。此前用原始 toIOI 的 s/t，负下标会翻方向：
+      //   [0,1,2,3,4].copyWithin(1,-3) 原生 [0,2,3,4,4]（from=2>to=1 正序）。
+      const backwards = win.s < win.t && win.s + (win.e - win.s) > win.t;
       const count = win.e - win.s;
       // 源存在性按**原始** holes 快照判定（集合在循环中会变）
       for (let kk = 0; kk < count; kk++) {
@@ -532,21 +535,28 @@ export function widenTupleToArr(
 
 /** 下标写 a[i]=v → 新 tuple（越界写按 JS 语义增长，空洞为 undefined） */
 export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
-  // ToPropertyKey：lit(undefined) 哨兵不得当抽象键
+  // ToPropertyKey + 数值下标分流：
+  // 数组写走数值 iv（1 / 1n / "1" 都是下标 1）；对象写走字符串键。
+  // 不得只用 propertyKeyOf —— 那会把 1 变成 "1"，tuple 数值门失效（洞写丢失）。
   const pk = propertyKeyOf(i);
+  const raw = i.term?.op === "lit" ? i.term.value : litValue(i);
+  let numIdx: number | undefined;
+  if (typeof raw === "number") numIdx = raw;
+  else if (typeof raw === "bigint") numIdx = Number(raw);
+  else if (pk !== undefined) numIdx = canonicalArrayIndex(pk);
   const iv = pk !== undefined ? pk : litValue(i);
-  if (a.shape.k === "tuple" && typeof iv === "number" && Number.isInteger(iv) && iv >= 0) {
+  if (a.shape.k === "tuple" && numIdx !== undefined && Number.isInteger(numIdx) && numIdx >= 0) {
     const st = extStateOf(a);
     if (st === "frozen") throwStrictWrite(); // frozen 数组：下标写 TypeError
     if (
       (st === "sealed" || st === "nonext") &&
-      iv >= a.shape.elements.length
+      numIdx >= a.shape.elements.length
     ) {
       throwStrictWrite(); // 不可扩展：越界写（新下标）TypeError
     }
     // i ≥ 2^32-1：非数组下标，原生是 expando 属性（length 不变、`i in a` 可见）。
     // 数组模型无 expando 槽：就地降 arr（读/keys/in 全保守），不得假精确
-    if (iv >= 4294967295) {
+    if (numIdx >= 4294967295) {
       a.shape = widenTupleToArr(a.shape.elements, a.shape.holes, value);
       a.conf = confJoin(a.conf, "path");
       clearStaleTermPred(a);
@@ -554,7 +564,7 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
     }
     // 巨大合法下标：原生 length 增长到 iv+1 的稀疏数组；
     // 分析不物化巨 tuple（OOM/DoS），就地降 arr
-    if (iv + 1 > TUPLE_MATERIALIZE_CAP) {
+    if (numIdx + 1 > TUPLE_MATERIALIZE_CAP) {
       a.shape = widenTupleToArr(a.shape.elements, a.shape.holes, value);
       a.conf = confJoin(a.conf, "path");
       clearStaleTermPred(a);
@@ -562,13 +572,13 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
     }
     const els = [...a.shape.elements];
     const holes = [...(a.shape.holes ?? [])];
-    while (els.length < iv) {
+    while (els.length < numIdx) {
       holes.push(els.length); // 越界写增长段是 hole（原生 [1].x=3 中间槽不存在）
       els.push(undef());
     }
-    els[iv] = asAbsVal(value);
+    els[numIdx] = asAbsVal(value);
     // 写 hole 位置：槽被填实，清除 hole 标记
-    const hi = holes.indexOf(iv);
+    const hi = holes.indexOf(numIdx);
     if (hi >= 0) holes.splice(hi, 1);
     // 就地写回：别名（const b=a）同步（JS 引用语义）
     a.shape = { k: "tuple", elements: els, holes: holes.length > 0 ? holes : undefined };
