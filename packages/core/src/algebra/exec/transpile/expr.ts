@@ -17,6 +17,7 @@ import {
   collectFreeAssignedNames,
   collectForkBindingNames,
   foldRequireSpecArg,
+  isConstAssignTarget,
 } from "./helpers.ts";
 import { BIN_OPS, COMPOUND_OPS, isStatefulMethodName, REGEX_STATEFUL_NAMES } from "./ops.ts";
 import { NudoUnsupportedError } from "../unsupported.ts";
@@ -494,6 +495,10 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       const arg = expr.argument as Expression;
       const fn = expr.operator === "++" ? "$updateAdd" : "$updateSub";
       if (arg.type === "Identifier") {
+        // const 绑定自增/自减：Assignment to constant variable
+        if (isConstAssignTarget(arg.name, opts)) {
+          return `$throwConstAssign()`;
+        }
         if (expr.prefix) return `${arg.name} = ${fn}(${arg.name})`;
         return `((__old) => (${arg.name} = ${fn}(__old), __old))($toNumeric(${arg.name}))`;
       }
@@ -832,6 +837,19 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           return setSrc(sc);
         };
         if (expr.left.type === "Identifier") {
+          // 逻辑赋值真正写入 const 绑定 → TypeError。
+          // 短路（保持原值）不抛；无法判定时保守抛（可能写入）。
+          if (isConstAssignTarget((expr.left as { name: string }).name, opts)) {
+            const lhs = (expr.left as { name: string }).name;
+            // ||= 仅当左侧真值时跳过写；&&= 仅当假值时跳过；??= 仅当非 nullish 时跳过
+            const skipsWrite =
+              op === "||="
+                ? `$litTruth(${lhs}) === true`
+                : op === "&&="
+                  ? `$litTruth(${lhs}) === false`
+                  : `$litTruth($nullishTest(${lhs})) === false`;
+            return `((${lhs}) => { if (!(${skipsWrite})) $throwConstAssign(); return ${lhs}; })(${lhs})`;
+          }
           return emitLogicalAssign(expr.left.name, (val) => `${expr.left.type === "Identifier" ? (expr.left as { name: string }).name : ""} = ${val}`);
         }
         if (expr.left.type === "MemberExpression") {
@@ -890,6 +908,10 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       }
       if (expr.left.type === "Identifier") {
         const name = expr.left.name;
+        // const 绑定再赋值：strict/ESM 下 Assignment to constant variable
+        if (isConstAssignTarget(name, opts)) {
+          return `$throwConstAssign()`;
+        }
         // 结构赋值记录（checkSource assign-mismatch 通道）：prev 读在写前；
         // conditional = 分支/循环体内（structuralAssignIssues 跳过 conditional）。
         // 逻辑赋值（||= 等）短路分支在前已处理，不记录。

@@ -18,6 +18,8 @@ import {
   staticKeyOf,
   symbolKeyOf,
   paramDisplayNames,
+  computeConstScope,
+  collectPatternNames,
 } from "./helpers.ts";
 import { BIN_OPS, COMPOUND_OPS, isStatefulMethodName } from "./ops.ts";
 import {
@@ -80,6 +82,11 @@ export function emitFnBlockBody(
 
 export function transpileFnBodyStmts(stmtsIn: Statement[], depth: number, opts: TranspileOptions): string {
   const stmts = completeElseChains(stmtsIn);
+  // 本层 const 可见性（含父作用域、扣除本层 let/var 遮蔽）——用户再赋值 TypeError
+  const scopedOpts: TranspileOptions = {
+    ...opts,
+    constNames: computeConstScope(stmts, opts.constNames),
+  };
   for (let i = 0; i < stmts.length; i++) {
     const stmt = stmts[i]!;
     if (stmt.type !== "IfStatement" || stmt.alternate != null) continue;
@@ -88,9 +95,9 @@ export function transpileFnBodyStmts(stmtsIn: Statement[], depth: number, opts: 
     if (rest.length === 0) continue;
     const head = stmts
       .slice(0, i)
-      .map((s) => transpileStatement(s, depth, opts))
+      .map((s) => transpileStatement(s, depth, scopedOpts))
       .join("\n");
-    const test = emitTranspileExpression(stmt.test, opts);
+    const test = emitTranspileExpression(stmt.test, scopedOpts);
     // P0.1：早退提升同样必须隔离臂间 mutator/普通绑定
     const recvSet = new Set<string>([
       ...collectForkBindingNames(stmt.consequent),
@@ -123,10 +130,10 @@ export function transpileFnBodyStmts(stmtsIn: Statement[], depth: number, opts: 
     };
     const testRecvs = collectArrMutatorReceivers(stmt.test);
     const testRebinds = testRecvs.size
-      ? emitArrMutatorRebinds(stmt.test as Node, opts, pad)
+      ? emitArrMutatorRebinds(stmt.test as Node, scopedOpts, pad)
       : [];
-    const cons = wrapArm(transpileBlockAsThunk(stmt.consequent, depth, opts), "fk1_");
-    const altBody = transpileFnBodyStmts(rest, depth + 1, { ...opts, inLoop: opts.inLoop });
+    const cons = wrapArm(transpileBlockAsThunk(stmt.consequent, depth, scopedOpts), "fk1_");
+    const altBody = transpileFnBodyStmts(rest, depth + 1, { ...scopedOpts, inLoop: opts.inLoop });
     const altThunk = `() => {\n${altBody}\n${pad}}`;
     const alt = wrapArm(altThunk, "fk2_");
     const inCtrl = (opts.inLoop ?? 0) > 0 || (opts.inTry ?? 0) > 0;
@@ -153,7 +160,7 @@ export function transpileFnBodyStmts(stmtsIn: Statement[], depth: number, opts: 
     ].join("\n");
     return head ? `${head}\n${promoted}` : promoted;
   }
-  return stmts.map((s) => transpileStatement(s, depth, opts)).join("\n");
+  return stmts.map((s) => transpileStatement(s, depth, scopedOpts)).join("\n");
 }
 
 
@@ -674,9 +681,11 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         `${pad});`,
       ].join("\n");
     }
-    case "BlockStatement":
-      // 块内同用早退提升：`{ if (c) return X; … }` 的 return 是函数级语义
-      return transpileFnBodyStmts(stmt.body, depth, opts);
+    case "BlockStatement": {
+      // 真块级作用域：同名 let/const 遮蔽外层，不得摊平成重复 let 声明
+      const body = transpileFnBodyStmts(stmt.body, depth + 1, opts);
+      return `${pad}{\n${body}\n${pad}}`;
+    }
     case "SwitchStatement": {
       const disc = emitTranspileExpression(stmt.discriminant as Expression, opts);
       type Arm = { tests: string[]; stmts: Statement[]; isDefault: boolean };
@@ -896,7 +905,8 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         lines.push(`${indent(depth + 1)}const __xs_${markName} = $tryTakeSince(${markName});`);
         lines.push(`${indent(depth + 1)}__xs_${markName}.push($catchVal(${catchTmp}));`);
         lines.push(
-          `${indent(depth + 1)}const ${catchParam} = __xs_${markName}.reduce((a, b) => $join(a, b));`,
+          // catch 绑定可再赋（let 语义），不是 const
+          `${indent(depth + 1)}let ${catchParam} = __xs_${markName}.reduce((a, b) => $join(a, b));`,
         );
         lines.push(`${indent(depth + 1)}try {`);
         lines.push(catchBody);
@@ -943,7 +953,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         lines.push(`${indent(depth + 1)}const __post_${markName} = $tryTakeSince(${markName});`);
         lines.push(`${indent(depth + 1)}if (__post_${markName}.length) {`);
         lines.push(
-          `${indent(depth + 2)}const ${catchParam} = __post_${markName}.reduce((a, b) => $join(a, b));`,
+          `${indent(depth + 2)}let ${catchParam} = __post_${markName}.reduce((a, b) => $join(a, b));`,
         );
         lines.push(
           catchBody
@@ -983,6 +993,22 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         bindName = stmt.left.name;
       }
       const bodyLines: string[] = [];
+      // for (const x of …) 头绑定在循环体内不可再赋
+      const loopConstNames = new Set(opts.constNames);
+      let loopBindIsConst = false;
+      if (stmt.left.type === "VariableDeclaration" && stmt.left.kind === "const") {
+        loopBindIsConst = true;
+        if (stmt.left.declarations[0]?.id.type === "Identifier") {
+          loopConstNames.add(stmt.left.declarations[0].id.name);
+        } else if (
+          stmt.left.declarations[0]?.id.type === "ObjectPattern" ||
+          stmt.left.declarations[0]?.id.type === "ArrayPattern"
+        ) {
+          const patternNames = new Set<string>();
+          collectPatternNames(stmt.left.declarations[0].id, patternNames);
+          for (const n of patternNames) loopConstNames.add(n);
+        }
+      }
       if (
         stmt.left.type === "VariableDeclaration" &&
         stmt.left.declarations[0] &&
@@ -994,13 +1020,14 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           bindName,
           "const",
           indent(depth + 2),
-          opts,
+          { ...opts, constNames: loopConstNames },
           bodyLines,
           { n: 0 },
         );
       }
       const bodyOpts: TranspileOptions = {
         ...opts,
+        constNames: loopConstNames,
         inLoop: (opts.inLoop ?? 0) + 1,
         loopLabel: undefined,
       };

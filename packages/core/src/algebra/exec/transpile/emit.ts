@@ -5,7 +5,7 @@
 import type { Statement, Expression, Node } from "@babel/types";
 import type { TranspileOptions } from "./types.ts";
 import { emitTranspileExpression } from "./transpile-dispatch.ts";
-import { isExpression, foldRequireSpecArg, staticKeyOf } from "./helpers.ts";
+import { isExpression, foldRequireSpecArg, staticKeyOf, isConstAssignTarget } from "./helpers.ts";
 import { ARR_MUTATOR_NAMES } from "./ops.ts";
 import { memberPathOf, readPathSrc, setPathSrc, readPrefix, setParentPathSrc } from "./member-path.ts";
 
@@ -184,8 +184,16 @@ export function emitDestructure(
   out: string[],
   tmpSeq: { n: number },
 ): void {
+  // 赋值解构（kw 为空）写 const 绑定 → TypeError；声明解构走 kw（let/const）
+  const assignName = (name: string): void => {
+    if (kw === "" && isConstAssignTarget(name, opts)) {
+      out.push(`${pad}$throwConstAssign();`);
+      return;
+    }
+    out.push(`${pad}${kw} ${name} = ${fromSrc};`);
+  };
   if (pattern.type === "Identifier") {
-    out.push(`${pad}${kw} ${pattern.name} = ${fromSrc};`);
+    assignName(pattern.name);
     return;
   }
   if (pattern.type === "ObjectPattern") {
@@ -205,9 +213,13 @@ export function emitDestructure(
         const def = emitTranspileExpression(prop.value.right as Expression, opts);
         const left = prop.value.left;
         if (left.type === "Identifier") {
-          out.push(
-            `${pad}${kw} ${left.name} = $orDefault($get(${fromSrc}, ${keyLit}), () => ${def});`,
-          );
+          if (kw === "" && isConstAssignTarget(left.name, opts)) {
+            out.push(`${pad}$throwConstAssign();`);
+          } else {
+            out.push(
+              `${pad}${kw} ${left.name} = $orDefault($get(${fromSrc}, ${keyLit}), () => ${def});`,
+            );
+          }
         } else {
           // 嵌套 + 默认：const { a: { b } = {} } = o
           const t = `_n${tmpSeq.n++}`;
@@ -223,13 +235,21 @@ export function emitDestructure(
         continue;
       }
       if (prop.value.type === "Identifier") {
-        out.push(`${pad}${kw} ${prop.value.name} = $get(${fromSrc}, ${keyLit});`);
+        if (kw === "" && isConstAssignTarget(prop.value.name, opts)) {
+          out.push(`${pad}$throwConstAssign();`);
+        } else {
+          out.push(`${pad}${kw} ${prop.value.name} = $get(${fromSrc}, ${keyLit});`);
+        }
       }
     }
     if (restName) {
-      out.push(
-        `${pad}${kw} ${restName} = $objRest(${fromSrc}, ${JSON.stringify(namedKeys)});`,
-      );
+      if (kw === "" && isConstAssignTarget(restName, opts)) {
+        out.push(`${pad}$throwConstAssign();`);
+      } else {
+        out.push(
+          `${pad}${kw} ${restName} = $objRest(${fromSrc}, ${JSON.stringify(namedKeys)});`,
+        );
+      }
     }
     return;
   }
@@ -249,7 +269,11 @@ export function emitDestructure(
         const def = emitTranspileExpression(el.right as Expression, opts);
         const idx = `$idx(${fromSrc}, $lit(${i}))`;
         if (el.left.type === "Identifier") {
-          out.push(`${pad}${kw} ${el.left.name} = $orDefault(${idx}, () => ${def});`);
+          if (kw === "" && isConstAssignTarget(el.left.name, opts)) {
+            out.push(`${pad}$throwConstAssign();`);
+          } else {
+            out.push(`${pad}${kw} ${el.left.name} = $orDefault(${idx}, () => ${def});`);
+          }
         } else {
           const t = `_n${tmpSeq.n++}`;
           out.push(`${pad}const ${t} = $orDefault(${idx}, () => ${def});`);
@@ -264,11 +288,19 @@ export function emitDestructure(
         return;
       }
       if (el.type === "Identifier") {
-        out.push(`${pad}${kw} ${el.name} = $idx(${fromSrc}, $lit(${i}));`);
+        if (kw === "" && isConstAssignTarget(el.name, opts)) {
+          out.push(`${pad}$throwConstAssign();`);
+        } else {
+          out.push(`${pad}${kw} ${el.name} = $idx(${fromSrc}, $lit(${i}));`);
+        }
       }
     });
     if (restName) {
-      out.push(`${pad}${kw} ${restName} = $arrRest(${fromSrc}, ${restAt});`);
+      if (kw === "" && isConstAssignTarget(restName, opts)) {
+        out.push(`${pad}$throwConstAssign();`);
+      } else {
+        out.push(`${pad}${kw} ${restName} = $arrRest(${fromSrc}, ${restAt});`);
+      }
     }
   }
 }

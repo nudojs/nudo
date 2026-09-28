@@ -50,4 +50,9 @@ export type TranspileOptions = {
    * 箭头沿外层继承；无绑定（模块顶层 / 仅嵌套箭头引用）→ Identifier 分支折 $unknown()。
    */
   argsBinding?: string;
+  /**
+   * 当前词法作用域可见的 const 绑定名（用户层再赋值须 TypeError）。
+   * 成员/下标写对根的内部重绑不在用户赋值路径，不走此表。
+   */
+  constNames?: ReadonlySet<string>;
 };

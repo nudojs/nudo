@@ -375,6 +375,59 @@ export function collectLexicalDeclNames(node: unknown, acc: Set<string>): void {
 }
 
 /**
+ * 计算语句列表层的可见 const 绑定名：
+ * childConsts = (parentConsts − 本层 let/var 遮蔽) ∪ 本层 const。
+ * 不进入嵌套块/函数体（那些作用域各自计算）。
+ */
+export function computeConstScope(
+  stmts: readonly unknown[],
+  parentConsts: ReadonlySet<string> | undefined,
+): ReadonlySet<string> {
+  const consts = new Set<string>();
+  const mutables = new Set<string>();
+  const walkList = (list: readonly unknown[]): void => {
+    for (const s of list) {
+      if (!s || typeof s !== "object") continue;
+      const n = s as {
+        type?: string;
+        kind?: string;
+        declarations?: Array<{ id?: unknown }>;
+        id?: unknown;
+        body?: unknown;
+      };
+      if (n.type === "VariableDeclaration") {
+        const target = n.kind === "const" ? consts : mutables;
+        for (const d of n.declarations ?? []) collectPatternNames(d.id, target);
+        continue;
+      }
+      if (n.type === "FunctionDeclaration" || n.type === "ClassDeclaration") {
+        // function/class 绑定可再赋（let 语义），遮蔽同名 parent const
+        collectPatternNames(n.id, mutables);
+        continue;
+      }
+      // 不进入 BlockStatement / Function / ClassBody / 循环体——嵌套作用域自算
+    }
+  };
+  walkList(stmts);
+  const out = new Set<string>();
+  if (parentConsts) {
+    for (const name of parentConsts) {
+      if (!mutables.has(name)) out.add(name);
+    }
+  }
+  for (const name of consts) out.add(name);
+  return out;
+}
+
+/** 赋值/自增目标若是 const 绑定 → 发射 TypeError 抛出 */
+export function isConstAssignTarget(
+  name: string,
+  opts: { constNames?: ReadonlySet<string> },
+): boolean {
+  return !!opts.constNames?.has(name);
+}
+
+/**
  * 臂内「自由写」绑定：赋值/mutator 标识符在赋值点未被臂内声明遮蔽。
  * 嵌套函数参数 / for-of 绑定 / catch 参数不得把外层自由写从 fork
  * 协议里剔除（P0-1）。
