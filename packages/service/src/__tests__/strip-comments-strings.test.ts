@@ -41,6 +41,23 @@ describe("hasExport is string/comment-aware", () => {
     expect(analyzes("const u = `https://x`; export function f() { return 1; }")).toBe(true);
   });
 
+  it("regex with // does not swallow a following export", () => {
+    expect(analyzes("const re = /https?:\\/\\//; export const x = 1;")).toBe(true);
+  });
+
+  it("export text inside a regex body is not an export", () => {
+    expect(analyzes("const re = /export const x/; const y = 2;")).toBe(false);
+  });
+
+  it("export inside template interpolation is real code", () => {
+    expect(analyzes("const s = `${exports.x}`; const y = 2;")).toBe(true);
+  });
+
+  it("nested template cooked text does not fake export / hide real one", () => {
+    expect(analyzes("const s = `a${`export b`}d`; export const y = 2;")).toBe(true);
+    expect(analyzes("const s = `export const x = 1`; const y = 2;")).toBe(false);
+  });
+
   it("escaped quote in string does not end the string early", () => {
     expect(analyzes(`const s = "a\\"//b"; export const x = 1;`)).toBe(true);
   });
