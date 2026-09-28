@@ -4,7 +4,6 @@ const sidebars: SidebarsConfig = {
   docsSidebar: [
     "intro",
     "why-nudo",
-    "glossary",
     {
       type: "category",
       label: "Start",
@@ -25,7 +24,6 @@ const sidebars: SidebarsConfig = {
         "concepts/abstract-interpretation",
         "concepts/semantics",
         "concepts/control-flow-narrowing",
-        "concepts/directives",
         "concepts/mocking",
         "concepts/limits",
       ],
@@ -48,7 +46,6 @@ const sidebars: SidebarsConfig = {
             "guides/performance",
             "guides/health",
             "guides/error-faces",
-            "guides/errors-vs-typescript",
           ],
         },
         {
@@ -63,7 +60,6 @@ const sidebars: SidebarsConfig = {
           type: "category",
           label: "Ecosystem",
           items: [
-            "guides/cli",
             "guides/export-ecosystem",
             "guides/callsite-discovery",
             "guides/examples",
@@ -101,6 +97,7 @@ const sidebars: SidebarsConfig = {
         "guides/migrating-from-typescript",
         "guides/case-study-retire",
         "guides/coexistence",
+        "guides/errors-vs-typescript",
         "guides/vs-typescript",
         "guides/versioning",
       ],
@@ -117,8 +114,15 @@ const sidebars: SidebarsConfig = {
         {
           type: "category",
           label: "CLI & Diagnostics",
-          items: ["api/cli-reference", "reference/config", "reference/diagnostics"],
+          items: [
+            "guides/cli",
+            "api/cli-reference",
+            "reference/config",
+            "reference/diagnostics",
+          ],
         },
+        "glossary",
+        "concepts/directives",
         {
           type: "category",
           label: "Package APIs",

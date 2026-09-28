@@ -235,7 +235,7 @@
     "description": "The label used to navigate to the older blog post page (previous page)"
   },
   "theme.colorToggle.ariaLabel.mode.system": {
-    "message": "system mode",
+    "message": "跟随系统",
     "description": "The name for the system color mode"
   },
   "theme.colorToggle.ariaLabel.mode.light": {
@@ -374,7 +374,7 @@
     "description": "The ARIA label to collapse a sidebar category"
   },
   "theme.IconExternalLink.ariaLabel": {
-    "message": "(opens in new tab)",
+    "message": "（在新标签页中打开）",
     "description": "The ARIA label for external links"
   },
   "theme.NavBar.navAriaLabel": {

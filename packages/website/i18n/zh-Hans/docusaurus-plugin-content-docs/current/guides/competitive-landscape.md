@@ -28,13 +28,7 @@ Nudo 是一道 **JS 工程门禁**：它通过执行代码计算 Abs 事实，�
 
 TypeScript 是类型化 JS/TS 的默认静态门禁。Nudo 只对 **JavaScript 优先**的包替代那道门——完整地图见 [Nudo vs TypeScript](./vs-typescript.md)。
 
-最锐利的产品边界写在 Microsoft 自己的 [TypeScript Design Goals](https://github.com/microsoft/TypeScript/wiki/TypeScript-Design-Goals) 里。其中的 non-goals 包括：
-
-> Apply a sound or "provably correct" type system. Instead, strike a balance between correctness and productivity.
-
-> Add or rely on run-time type information in programs, or emit different code based on the results of the type system. Instead, encourage programming patterns that do not require run-time metadata.
-
-Nudo 的 **throws** 轴（L2 入口 may-throw）与 **Pred** 轴（Abs 上的约束蕴含）恰好落在这些 non-goals 排除掉的地方：义务来自*运行时形态的行为*，而不只是可擦除的结构标注。那不是 TypeScript 的 bug——那是有意的范围选择。Nudo 取互补的范围。
+最锐利的产品边界写在 Microsoft 自己的 [TypeScript Design Goals](https://github.com/microsoft/TypeScript/wiki/TypeScript-Design-Goals) 里：其中两条 non-goals 明确不承诺健全性、也不依赖运行时类型信息——完整引文见 [Nudo vs TypeScript](./vs-typescript.md)。Nudo 的 **throws** 轴（L2 入口 may-throw）与 **Pred** 轴（Abs 上的约束蕴含）恰好落在这些 non-goals 排除掉的地方：义务来自*运行时形态的行为*，而不只是可擦除的结构标注。那不是 TypeScript 的 bug——那是有意的范围选择。Nudo 取互补的范围。
 
 另外：类型在 TypeScript 里会被擦除。Nudo 把 Abs 留作模型，并把 `.d.ts` 当作**单向、有损投影**（`nudo export --format dts`）。
 

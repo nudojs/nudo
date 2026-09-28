@@ -123,15 +123,7 @@ fix:  nudo contract --draft  (emit a sidecar draft you can edit)
 
 标注描述的是**书写内容**，且往往宽泛。Nudo 引擎在抽象值上**执行**逻辑，并从执行中记录精确事实。调用点是证据，不是注释。
 
-| | 标注 / 声明类型 | Nudo |
-|---|---|---|
-| 代码理解 | hover 显示所书写的宽泛类型 | 逐变量推导：中间量、约束、调用点真值 |
-| 阅读负担 | 值语言与类型语言并行 | 仅 JavaScript；契约同为 JS 模块 |
-| 代码健壮性 | 结构可赋值；常放行 `0`；不展示 throws | 精确约束蕴含 + 入口 may-throw |
-| 精度 | 常拓宽为 `string` / `number` | 可保留字面量、模板结构、循环求和 |
-| 真源 | 源码标注 | 执行所得 Abs；投影有损且单向 |
-
-对照：[Nudo 与 TypeScript](./guides/vs-typescript.md)。违例形态：[错误对照](./guides/error-faces.md)。
+与声明类型的逐行对照——观察粒度、精度、真源——见 [Nudo 与 TypeScript](./guides/vs-typescript.md)。违例形态：[错误对照](./guides/error-faces.md)。
 
 ## 适用范围
 
