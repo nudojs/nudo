@@ -5,7 +5,7 @@ description: Glossary — Abs (name and parts), conf grades, evaluator, fail-clo
 
 # Glossary
 
-Terms used across the docs. Name origins are given where the English short form is non-obvious. CLI verbs live in the [CLI guide](/docs/guides/cli).
+Terms used across the docs. Name origins are given where the English short form is non-obvious. CLI verbs live in the [CLI guide](./guides/cli.md).
 
 ## Type model
 
@@ -58,4 +58,4 @@ Terms used across the docs. Name origins are given where the English short form 
 | **leqAbs** | Structural “is at least as defined as” check on Abs used for some assignment shapes. |
 | **Pred implication** | The L1 gate: does the actual Abs imply the contract Pred? Bounded prover (linear / equality fragments); otherwise fail-closed. |
 
-Deep dives: [Abs](/docs/concepts/abs) · [Abstract interpretation](/docs/concepts/abstract-interpretation) · [Concept layers](/docs/concepts/layers) · [Limits](/docs/concepts/limits) · [Diagnostics](/docs/reference/diagnostics) · [CLI](/docs/guides/cli).
+Deep dives: [Abs](./concepts/abs.md) · [Abstract interpretation](./concepts/abstract-interpretation.md) · [Concept layers](./concepts/layers.md) · [Limits](./concepts/limits.md) · [Diagnostics](./reference/diagnostics.md) · [CLI](./guides/cli.md).

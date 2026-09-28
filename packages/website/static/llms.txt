@@ -20,6 +20,7 @@ Base: https://nudojs.github.io/nudo
 ### How-to (guides)
 
 - https://nudojs.github.io/nudo/docs/guides/check
+- https://nudojs.github.io/nudo/docs/guides/test
 - https://nudojs.github.io/nudo/docs/guides/performance
 - https://nudojs.github.io/nudo/docs/guides/contract
 - https://nudojs.github.io/nudo/docs/guides/cli
@@ -35,7 +36,6 @@ Base: https://nudojs.github.io/nudo
 - https://nudojs.github.io/nudo/docs/guides/coexistence
 - https://nudojs.github.io/nudo/docs/guides/case-study-retire
 - https://nudojs.github.io/nudo/docs/guides/versioning
-- https://nudojs.github.io/nudo/docs/guides/runtime-generation
 - https://nudojs.github.io/nudo/docs/guides/competitive-landscape
 - https://nudojs.github.io/nudo/docs/guides/vs-typescript
 - https://nudojs.github.io/nudo/docs/guides/ai-native-dx

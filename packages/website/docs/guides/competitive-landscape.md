@@ -72,7 +72,7 @@ These libraries are **boundary runtime validation**. They parse or `safeParse` d
 | Truth | The schema object | Abs (`shape × term × pred × conf`) |
 | Compile-time | Schema-as-type helpers | Full Abs algebra (`x>0` ⇒ `x+1>1`) |
 
-They compose: **`nudo export` projects Abs into schema dialects** (Zod dialect, Standard Schema, guards) so boundary code and CI agree on the same facts. The projection is one-way and lossy — Abs stays the source of truth. See [Runtime generation](./runtime-generation.md).
+They compose: **`nudo export` projects Abs into schema dialects** (Zod dialect, Standard Schema, guards) so boundary code and CI agree on the same facts. The projection is one-way and lossy — Abs stays the source of truth. See [Export](./export-ecosystem.md).
 
 ArkType's library docs are at **arktype.io**. (`arktype.org` is an unrelated company — do not send readers there.)
 
@@ -112,7 +112,7 @@ Drafts are never silent obligations: accepting a contract draft is what creates 
 
 - **[Nudo vs TypeScript](./vs-typescript.md)** — when Nudo replaces `tsc`
 - **[Why Nudo](../why-nudo.md)** — product face
-- **[Runtime generation](./runtime-generation.md)** — `export` → Standard Schema / Zod / guards / `.d.ts`
+- **[Export](./export-ecosystem.md)** — `export` → Standard Schema / Zod / guards / `.d.ts`
 - **[nudo check](./check.md)** — L1 contracts + L2 entry throws
 - **[Limits](../concepts/limits.md)** — what the engine does not claim
 - **[Mental model](../getting-started/mental-model.md)** 

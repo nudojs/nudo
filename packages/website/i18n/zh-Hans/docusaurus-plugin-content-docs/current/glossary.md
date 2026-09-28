@@ -5,7 +5,7 @@ description: 术语表 — Abs（名称与四元组）、conf 分档、evaluator
 
 # 术语表
 
-文档中使用的术语。英文缩写若不自明，给出名称来源。CLI 动词见 [CLI 指南](/docs/guides/cli)。
+文档中使用的术语。英文缩写若不自明，给出名称来源。CLI 动词见 [CLI 指南](./guides/cli.md)。
 
 ## 类型模型
 
@@ -58,4 +58,4 @@ description: 术语表 — Abs（名称与四元组）、conf 分档、evaluator
 | **leqAbs** | Abs 上的结构性「不更缺信息」比较，用于部分赋值形状。 |
 | **Pred 蕴含** | L1 门禁：实际 Abs 是否蕴含契约 Pred？证明器有界（线性 / 等式片段）；否则 fail-closed。 |
 
-深入：[Abs](/docs/concepts/abs) · [抽象解释](/docs/concepts/abstract-interpretation) · [概念分层](/docs/concepts/layers) · [边界](/docs/concepts/limits) · [诊断](/docs/reference/diagnostics) · [CLI](/docs/guides/cli)。
+深入：[Abs](./concepts/abs.md) · [抽象解释](./concepts/abstract-interpretation.md) · [概念分层](./concepts/layers.md) · [边界](./concepts/limits.md) · [诊断](./reference/diagnostics.md) · [CLI](./guides/cli.md)。

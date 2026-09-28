@@ -37,12 +37,7 @@ npx nudojs migrate verify ./my-pkg/src
 npx nudojs migrate retire ./my-pkg --dry-run   # then drop --dry-run
 ```
 
-| Step | Effect | Exit when |
-|------|--------|-----------|
-| `status` | Counts `.ts`, finds `tsc` scripts + `typescript` dep, lists **blockers** | You know the surface area |
-| `strip` | `.ts` → `.js`; optional best-effort sidecar draft | Sources are plain JS |
-| `verify` | Runs `nudo check` on the stripped JS (optional `--with-tsc` dual-run **during** the move only) | Gate is green |
-| `retire` | Drops `typescript`, rewrites `tsc` scripts → `nudo check`, rewrites `.github/workflows`, writes `.nudo/migrate-retired.json` | **tsc is gone** |
+Step recap: `status` audits the surface (`.ts` count, `tsc` scripts, **blockers**) → `strip` emits plain JS (`--write`, optional sidecar draft) → `verify` gates the stripped JS with `nudo check` (`--with-tsc` dual-run **during** the move only) → `retire` drops `typescript`, rewrites `tsc` scripts and workflow lines, writes `.nudo/migrate-retired.json`. Full per-step table (what it does / exit when): [Migrate from TypeScript](./migrating-from-typescript.md#path-r--retire-tsc-nudo-migrate).
 
 `migrate retire --all` batches a monorepo. Dual-run exists only as `migrate verify --with-tsc` during the move — never as the endgame.
 
@@ -215,7 +210,7 @@ issues
       → add @nudo:case or a call site
 ```
 
-With `@types/debug` present, harvest fills signatures; or pin with `@nudo:mock` / `refine return`. That is the same story as `ms()`.
+With `@types/debug` present, harvest fills signatures; or pin with `@nudo:mock` / a declared return contract (`@nudo:contract` or a sidecar return slot). That is the same story as `ms()`.
 
 ## Friction and time (example-scale)
 
@@ -223,7 +218,7 @@ With `@types/debug` present, harvest fills signatures; or pin with `@nudo:mock` 
 |----------|--------------------|---------------|----------------------|
 | `tsc` scripts + `typescript` dep still present | `migrate status` blockers list | `migrate retire` rewrites scripts; drops dep | One command (`--dry-run` first) |
 | Old annotations become obligations only if you accept them | `contract --from-dts` emits `@nudo:draft` | Review → copy into `*.nudo.js` | Minutes per file; **never silent** |
-| Native / unharvested deps (`ms()`, `debug()`) | `unknown` / `conf=opaque` / `nudo:unknown-inference` | `@types/*` harvest, `@nudo:mock`, or `refine return` | Bounded; stays a **warning** until you pin |
+| Native / unharvested deps (`ms()`, `debug()`) | `unknown` / `conf=opaque` / `nudo:unknown-inference` | `@types/*` harvest, `@nudo:mock`, or a declared return contract | Bounded; stays a **warning** until you pin |
 | L2 `entry-may-throw` on intentional `throw` | checkout-demo `applyCoupon` | `@nudo:throws RangeError` / guard, or `nudo.check.entryThrows: "warning"` | One line in `package.json` or a throws directive |
 | Dual-run temptation | mid-migration CI | Keep `verify --with-tsc` **only** during the move; retire is the exit | Policy, not tooling |
 

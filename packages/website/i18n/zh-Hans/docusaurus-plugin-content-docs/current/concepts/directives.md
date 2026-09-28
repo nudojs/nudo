@@ -1,5 +1,5 @@
 ---
-description: "全部 @nudo: 指令（case、mock、pure、skip、sample、refine、import、env、mock-module、as、replace）的语法、约束与示例完整参考。"
+description: "全部 @nudo: 指令（case、mock、pure、skip、sample、contract、throws、import、env、mock-module、as、replace）的语法、约束与示例完整参考。"
 ---
 
 # 指令系统
@@ -39,7 +39,7 @@ async function fetchUser(id) {
 
 ---
 
-## @nudo:case — 调试见证
+## @nudo:case — 调试见证 {#nudocase--debug-witnesses}
 
 case 是 **debug 见证**：Nudo 为场景执行而使用的具体输入。它不是契约产品——契约住在 `*.nudo.js` 侧车 / `@nudo:contract`（见 [@nudo:contract](#nudocontract--source-contract)）。`@nudo:case` 仍支持 `nudo test` 断言与 LSP 场景切换。case 实参使用具体值或约束构建器。
 

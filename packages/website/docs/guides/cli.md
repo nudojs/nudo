@@ -43,7 +43,15 @@ Gate contracts and entry throws. On success **and** failure, `check` prints sign
 ```bash
 nudo check <path> [--watch|-w] [--json] [--verbose] [--abs]
            [--from paths…] [--ignore-throws names] [--entry-throws error|warning|off]
+           [--profile adoption|strict] [--gha] [--gitlab] [--what-if name:type… [--target name]]
 ```
+
+Further flags, one line each (full tables in the [CLI Reference](../api/cli-reference.md#nudo-check)):
+
+- `--profile adoption|strict` — gate profile (default `strict`): `adoption` demotes L2 entry may-throw to warning, L1 stays error; an explicit `--entry-throws` value overrides.
+- `--gha` — GitHub Actions inline annotations (`::error` / `::warning`); auto-enabled when `GITHUB_ACTIONS=true`.
+- `--gitlab` — GitLab Code Quality JSON array on stdout; redirect to `gl-code-quality-report.json` in CI.
+- `--what-if <name:type…>` — assume `name:type` bindings (e.g. `raw:string`); with `--target <name>`, print that binding's inferred type (AI3).
 
 ```bash
 nudo check user.js
@@ -60,15 +68,15 @@ signatures
 
 issues
   [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
-      actual:   getName(user: any) => any    throws TypeError
-      expected: entry total, or @nudo:throws / try-catch
-      → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
+      …
 ```
+
+Excerpt — the full transcript, its `user.js` source, and remediation paths: [nudo check](./check.md).
 
 Unconstrained entry parameters display as **`any`**. `unknown` means inference failed (engine debt) — it is never the default for an unconstrained entry parameter. In `[ERROR L# name]`, `L#` is the **line number** of the offending call/declaration — not a contract layer (L1/L2 are the layers). The sample above prints `L1` because `getName` is declared on line 1 of that file — its layer is L2.
 
 - **Semantics** (L1 explicit contracts / L2 entry throws, exit codes, filtering): [nudo check](./check.md)
-- **Options & config** (`--watch` / `--json` / `--abs` / `--from` / `--ignore-throws` / `--entry-throws`, `package.json#nudo.check`): [CLI Reference](../api/cli-reference.md#nudo-check)
+- **Options & config** (`--watch` / `--json` / `--abs` / `--from` / `--ignore-throws` / `--entry-throws` / `--profile` / `--gha` / `--gitlab` / `--what-if`, `package.json#nudo.check`): [CLI Reference](../api/cli-reference.md#nudo-check)
 
 `nudo check` is the CI gate.
 
@@ -113,6 +121,8 @@ assertions
 - `--freeze[=mode]` solidifies synthesized cases as directives: `--freeze` (no value, add mode) adds new witnesses; `--freeze=update` re-synchronizes previously generated directives.
 - `--dry-run` (with `--freeze`) prints a unified diff instead of writing; `--exit-on-diff` (with `--freeze --dry-run`) exits 1 when the diff is non-empty.
 - `--json` / `--abs` mirror `check`; `test --json` also carries an `assertions` summary (`passed`/`failed`/`unchecked`) and still exits 1 when a declared assertion fails.
+
+Full walkthrough — synthetic-case lifecycle, `--freeze` workflows, assertion authoring: [nudo test](./test.md).
 
 ### Example with declared assertions
 

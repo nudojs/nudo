@@ -31,7 +31,7 @@ jobs:
 
 ## 2. Gradual contracts on an existing package
 
-**Goal:** Observation observation → draft → handwritten sidecar → CI.
+**Goal:** Observation → draft → handwritten sidecar → CI.
 
 ```bash
 npx nudojs check src/                 # signatures + L2
@@ -66,7 +66,7 @@ npx nudojs export src/api.js --format dts --out dist/types
 npx nudojs export src/api.js --format schema --dialect zod --out dist/schema
 ```
 
-Projections are **lossy**; Abs + `nudo check` remain the truth. Guide: [runtime generation](./runtime-generation.md).
+Projections are **lossy**; Abs + `nudo check` remain the truth. Guide: [export](./export-ecosystem.md).
 
 ## 5. Mock boundaries + env
 
@@ -103,7 +103,7 @@ issues
   [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
 ```
 
-`any` = unconstrained entry. `throws` = L2 domain. `L1` in the header is the **line number** (`getName` is declared on line 1 here) — the layer is L2. Codes: [Diagnostics](../reference/diagnostics.md).
+`any` = unconstrained entry. `throws` = L2 domain. `L1` in the header is the **line number** (`getName` is declared on line 1 here) — the layer is L2. Codes: [Diagnostics](../reference/diagnostics.md) · full transcript walkthrough: [nudo check](./check.md).
 
 ---
 

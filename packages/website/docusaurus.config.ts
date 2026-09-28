@@ -47,6 +47,7 @@ const config: Config = {
   title: "Nudo",
   tagline:
     "Welcome back to JavaScript — Your JS stays JS: observe intermediates, enforce contracts sharper than types.",
+  // og:image 已由 themeConfig.image 覆盖；Twitter 卡片类型在 themeConfig.metadata（Config 顶层无此字段）
   favicon: "img/favicon.svg",
 
   url: "https://nudojs.github.io",
@@ -138,6 +139,10 @@ const config: Config = {
             from: "/docs/guides/control-flow-narrowing",
           },
           { to: "/docs/concepts/semantics", from: "/docs/guides/semantics" },
+          {
+            to: "/docs/guides/export-ecosystem",
+            from: "/docs/guides/runtime-generation",
+          },
           {
             to: "/docs/guides/agent-integration",
             from: "/docs/guides/mcp-server",
@@ -299,6 +304,8 @@ const config: Config = {
 
   themeConfig: {
     image: "img/nudo-og.png",
+    // og:image 已由上面的 image 覆盖，这里只补 Twitter 卡片类型（不造 handle）
+    metadata: [{ name: "twitter:card", content: "summary_large_image" }],
     announcementBar: {
       id: "docs-track",
       content: DOCS_TRACK,
@@ -315,6 +322,12 @@ const config: Config = {
           sidebarId: "docsSidebar",
           position: "left",
           label: "Docs",
+        },
+        {
+          // Reference 分类的 generated-index 页（sidebars.ts 无自定义 slug）
+          to: "/docs/category/reference",
+          label: "Reference",
+          position: "left",
         },
         {
           to: "/playground",
@@ -344,7 +357,7 @@ const config: Config = {
           title: "Start",
           items: [
             { label: "Playground", to: "/playground" },
-            { label: "Getting Started", to: "/docs/intro" },
+            { label: "Introduction", to: "/docs/intro" },
             { label: "Quick Start", to: "/docs/getting-started/quick-start" },
           ],
         },

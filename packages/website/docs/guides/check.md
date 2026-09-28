@@ -20,6 +20,7 @@ npx nudojs check path/to/file.js
 ```bash
 nudo check <path> [--watch|-w] [--json] [--verbose] [--abs]
            [--from paths…] [--ignore-throws names] [--entry-throws error|warning|off]
+           [--profile adoption|strict]
 ```
 
 ![check validate vs export project](/img/check-vs-export.svg)
@@ -73,18 +74,46 @@ issues
 | `nudo:assign-mismatch` | L1 | error | Assignment ⊭ previous binding shape (`leqAbs`) |
 | `nudo:arg-structure` | L1 | error (explicit contract) / warning (body-promote) | HOF: argument is not a callable `fn` / arity mismatch. Usage-driven body promotion is a **warning suggestion**; only explicit relation contracts make it an error |
 | `nudo:case-inconsistency` | L1 | error | `@nudo:case` witness ⊭ refine |
+| `nudo:constraint-unproven` | L1 | warning | Cannot prove the argument satisfies the contract Pred (`cannot prove … x > 0`) — inconclusive, not failed. Add a call site / `@nudo:case`, or state preconditions via `--assume` |
+| `nudo:arg-opaque` | L1 | warning | Argument Abs is `unknown` (no term) — the constraint cannot even be checked. Add a call site / `@nudo:case` / `--assume`, or model the value's source |
+| `nudo:arg-count` | L1 | error | Arity mismatch between the call and the generalized parameter face |
+| `nudo:fn-not-found` | L1 | error | Call references a function the analyzer cannot resolve in scope |
+| `nudo:partial-result` | L1 | info | Result Abs carries `#partial` confidence — observation only |
 | `nudo:interface-param-mismatch` | L1 | error | Handwritten contract param name is not on the formal surface |
 | `nudo:interface-conflict` | L1 | error | Handwritten contract conjunction unsatisfiable |
+| `nudo:interface-load` | L1 | error | Sidecar file failed to load (parse / import / resolution error) |
+| `nudo:interface-name-clash` | L1 | error | Sidecar export name collides with a source export, or emit would overwrite a handwritten binding (handwritten wins, write skipped) |
+| `nudo:interface-cycle` | L1 | error | Sidecar `@nudo:import` chain forms a cycle |
+| `nudo:interface-domain-exceeds` | L1 | error | Call records injected via `--from` ⊄ the handwritten contract domain |
+| `nudo:interface-drift` | L1 | warning | Persisted `@generated` segment ≠ today's recomputed interface (also surfaced by `nudo health`; does not gate exit) |
+| `nudo:interface-entry-only` | L1 | info | Export has no contract root and no call-site domain (only synthesized `entry@`) — coverage gap, not a gate failure |
+| `nudo:dual-entry` | L1 | info | Browser/node dual entrypoints: call-site records do not cross files — analysis observes only one entry variant |
+| `nudo:interface-emit-denied` | L1 | warning | `contract --emit` target outside the `package.json#nudo.contract.emit` allowlist — write skipped |
+| `nudo:interface-multi-declarator` | L1 | warning | `@generated` section hand-merged into one multi-declarator export — kept verbatim |
+| `nudo:interface-not-projectable` | L1 | error | Assembled sidecar failed round-trip re-parse — nothing written (engine debt) |
 | **`nudo:entry-may-throw`** | **L2** | **error** (default) | Entry/export function has undigested may-throw |
 | `nudo:may-throw` | test / L2 clue | warning | Case path may throw (internal included); L2 can elevate entry throws |
 | `nudo:unknown-inference` | engine debt | warning | True `unknown` on a signature (inference failed) — unconstrained entry params are `any`, not this code |
 | `nudo:unknown-recv` | engine debt | warning | Member access on `unknown` receiver — does **not** replace L2 throws modeling |
-| `nudo:no-signature` | engine/L1 | warning | Function could not be generalized (CJS/anon forms still get L2 via entry fallback) |
+| `nudo:builtin-unknown` | engine debt | warning | API not covered by env/inference (e.g. unmodeled global). Prefer `@nudo:env` / mock |
 | `nudo:opaque-result` | engine | info | Evaluation returned opaque / uninformative Abs |
 | `nudo:eval-error` | engine | error | Body evaluation threw during analysis |
 | `nudo:recursion-truncated` | engine | warning | Recursion budget hit; result widened |
 | `nudo:fork-truncated` | engine | warning | Branch-expansion (`$fork`) budget hit; result widened |
+| `nudo:host-effect-blocked` | engine | info | Host side-effect function (`fetch` / timers / …) not executed during analysis — result widened to `unknown#opaque`. Mock with `@nudo:mock` / `@nudo:env` |
+| `nudo:no-signature` | engine/L1 | warning | Function could not be generalized (CJS/anon forms still get L2 via entry fallback) |
+| `nudo:no-method` | engine | error (primitive receivers) / warning | Member access cannot resolve — ``Method 'x' does not exist on type 'T'``. Distinct from `nudo:unknown-recv` |
+| `nudo:mock-invalid` | engine | warning | `@nudo:mock` expression is not a known pattern (stub/spy/mock, arrow, type expression) |
+| `nudo:env-harvest-conflict` | engine | warning | Handwritten `@nudo:env` and `@types` harvest supply the same module key — handwritten wins, harvest fills missing slots only |
+| `nudo:interface-underivable` | engine | info | Derived contract row has no source evidence (opaque / truncated / none) — row skipped; handwritten rows never flagged |
 | `nudo-unreachable` | info | info | Code after return/throw |
+| `nudo:module-cycle` | module graph | warning | Circular module load — bindings inside the cycle resolve to partially evaluated types |
+| `nudo:module-depth` | module graph | warning | Module load chain too deep — loading truncated, deeper modules typed `unknown` |
+| `nudo:module-missing` | module graph | error | Imported module the loader cannot resolve — fix the spec or mock it (`@nudo:mock-module`) |
+| `nudo:missing-slot` | eval | warning (default off) | Evaluation hit a closed object shape's missing field (opt in `nudo.analysis.evalMissingSlot`) — observation, never invents check errors |
+| `nudo:case-expected` | test | error (fails `nudo test`) | Declared `@nudo:case` expected type ⊭ inferred result — synthetic `call@` / `entry@` cases never fail the run |
+
+Full list — per-code anchors, minimal repros, Abs views, and fixes: [Diagnostics glossary](../reference/diagnostics.md).
 
 ## L1 — explicit contracts
 
@@ -132,19 +161,13 @@ export function getName(user) {
 }
 ```
 
-```text
-nudo check  user.js
-FAILED
-  1 error · 0 warning · 0 info · 1 fn
+Key lines from the report — the full transcript lives in [Default output](./check.md#default-output-signatures--issues):
 
+```text
 signatures
   getName(user: any) => any  throws TypeError
-
 issues
   [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
-      actual:   getName(user: any) => any    throws TypeError
-      expected: entry total, or @nudo:throws / try-catch
-      → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
 ```
 
 > Reminder: `L1` in the header is the **line number** — this diagnostic's layer is L2.
@@ -175,6 +198,39 @@ Semantics:
 
 Persist these in `package.json#nudo.check` — config block: [CLI Reference](../api/cli-reference.md#nudo-check).
 
+### Profiles: adoption vs strict
+
+`--profile` is a **named L2 preset** — it is not a way to turn the gate off:
+
+- `strict` (default) — L2 `entry-may-throw` is **error**.
+- `adoption` — migration profile: L2 entry may-throw demoted to **warning** (exit 0), while **L1 explicit contract violations stay error**. Adoption never swallows L1.
+
+```bash
+nudo check src/ --profile adoption
+```
+
+Persist it under `package.json#nudo.check.profile` instead of passing the flag:
+
+```json
+{
+  "nudo": {
+    "check": {
+      "profile": "adoption"
+    }
+  }
+}
+```
+
+L2 entry-throws severity resolves first-match:
+
+1. CLI `--entry-throws` — an explicit value overrides any profile
+2. CLI `--profile` (`adoption` → `warning`, `strict` → `error`)
+3. `package.json#nudo.check.entryThrows`
+4. `package.json#nudo.check.profile`
+5. default `strict` (`error`)
+
+Full flag / config table: [CLI Reference](../api/cli-reference.md#nudo-check).
+
 ### Node analogy
 
 An uncaught exception makes a Node process exit non-zero. Likewise, undeclared/uncaptured throws on the **export boundary** fail `nudo check`. Throws inside an internal call stack are implementation details, handled by the caller or by L1.
@@ -195,16 +251,16 @@ All flags and `package.json#nudo.check` config are specified once in the [CLI Re
 | `--from <paths…>` | Usage-site files injecting call records |
 | `--ignore-throws <names>` | Comma-separated L2 throw types to ignore (never swallows L1) |
 | `--entry-throws error\|warning\|off` | L2 severity (default `error`) |
+| `--profile adoption\|strict` | Gate profile (default `strict`); `adoption` ≡ L2 entry-throws `warning`, L1 stays error — see [Profiles](./check.md#profiles-adoption-vs-strict) |
+| `--gha` | GitHub Actions inline annotations (`::error` / `::warning`); auto-enabled when `GITHUB_ACTIONS=true` |
+| `--gitlab` | GitLab Code Quality JSON array on stdout — redirect to `gl-code-quality-report.json` |
 
 ## Interface diagnostics
 
-| Code | Severity | Meaning |
-|------|----------|---------|
-| `nudo:interface-drift` | warning | Persisted `@generated` segment ≠ today's recomputed interface. Also surfaced by `nudo health` as a CI gate |
-| `nudo:interface-name-clash` | error | `nudo contract --emit` target is already a handwritten sidecar binding (handwritten wins, write skipped) |
-| `nudo:interface-domain-exceeds` | error | Call records injected via `--from` exceed the declared domain |
+The sidecar / contract-plumbing codes (`nudo:interface-*`, `nudo:dual-entry`) are all listed in [What it checks](./check.md#what-it-checks). Two scoping rules:
 
-Violations written **in the analyzed file** report `nudo:constraint-violated`. `nudo:interface-domain-exceeds` covers call records injected from usage-site files (`nudo check --from <paths...>`).
+- Violations written **in the analyzed file** report `nudo:constraint-violated`.
+- `nudo:interface-domain-exceeds` covers call records injected from usage-site files (`nudo check --from <paths...>`).
 
 ## CI integration
 
@@ -252,22 +308,10 @@ nudo check src/lib.js --json
 npx nudojs check packages/*/src
 ```
 
-**L2 adoption policy** — by default L2 (`nudo:entry-may-throw`) is error. Adopting on legacy JS? `--profile adoption` keeps L1 contract violations at **error** and demotes only entry may-throw to warning (exit 0):
+**L2 adoption policy** — by default L2 (`nudo:entry-may-throw`) is error. Adopting on legacy JS? `--profile adoption` demotes only entry may-throw to warning while L1 stays error — semantics, persistence, and resolution order in [Profiles](./check.md#profiles-adoption-vs-strict):
 
 ```bash
 npx nudojs check . --profile adoption
-```
-
-Persist it next to the code instead of passing the flag:
-
-```json
-{
-  "nudo": {
-    "check": {
-      "profile": "adoption"
-    }
-  }
-}
 ```
 
 **Cache sizing** — the analysis session cache is an in-process LRU (default 64 files). Cap it when CI analyzes many projects; raise it for warm hits on one large repo:
@@ -282,6 +326,7 @@ Full internal design note (in-repo, leaves this site): [`docs/ci-nudo-check.md`]
 ## Next
 
 - [CLI Usage](./cli.md) — all primary verbs
+- [nudo test](./test.md) — case reports and declared assertions
 - [Abs](../concepts/abs.md) — `any` vs `unknown`
 - [Diagnostics glossary](../reference/diagnostics.md) — stable codes and how to read them
 - [Concept Layers](../concepts/layers.md) — Observation / Contracts

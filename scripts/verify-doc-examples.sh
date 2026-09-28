@@ -154,9 +154,9 @@ verify_test mocking packages/website/docs/concepts/mocking.md \
   'debug "plan"  () => number' \
   '=== readConfig ==='
 
-# runtime-generation: call-site evidence + sidecar contract project to Standard
+# export-ecosystem: call-site evidence + sidecar contract project to Standard
 # Schema validators (one module per function; names `<fn>_<param>` / `<fn>Return`).
-verify_export_standard runtime-generation packages/website/docs/guides/runtime-generation.md \
+verify_export_standard export-ecosystem packages/website/docs/guides/export-ecosystem.md \
   'export const createUser_input' \
   'export const createUserReturn' \
   'export const iscreateUserOutputOutput' \

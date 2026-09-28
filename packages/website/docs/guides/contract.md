@@ -114,5 +114,5 @@ See [nudo check](./check.md) and the [diagnostics glossary](../reference/diagnos
 
 - [Migrating existing JS](./migrating-js.md) — full draft → accept → CI path
 - [Recipes](./recipes.md) — gradual contracts, monorepo
-- [Directives](/docs/concepts/directives) — `@nudo:contract` grammar
-- [Limits](/docs/concepts/limits) — promote ≠ obligation; honest boundaries
+- [Directives](../concepts/directives.md) — `@nudo:contract` grammar
+- [Limits](../concepts/limits.md) — promote ≠ obligation; honest boundaries

@@ -7,7 +7,7 @@ description: 稳定的 Nudo 诊断码 —— 含义、最小复现、Abs 视图�
 
 `nudo check` / 分析打印的稳定诊断码。产品原生消息使用 **`actual ⊭ expected`**（Nudo Abs 蕴含），不是 TypeScript 诊断的伪装。
 
-机器可读面：`nudo check --json`。Agent：见 [Agents](/docs/reference/agents) 与已发布的 [agents.md](https://nudojs.github.io/nudo/agents.md)。
+机器可读面：`nudo check --json`。Agent：见 [Agents](./agents.md) 与已发布的 [agents.md](https://nudojs.github.io/nudo/agents.md)。
 
 ## 契约门禁（L1）
 
@@ -125,7 +125,7 @@ records do not cross files — analysis observes only the browser entry variant
 
 该包发布 **browser/node 双入口**（package.json `exports` 条件或 `browser` 字段指向与 `main`/`node` 不同的文件），且本次分析跑在其中一个变体上。调用点记录按文件归因：另一入口上的证据**不会**注入到这里。**Info** —— 观察信号，不是门禁失败。单入口包、以及不是入口目标的共享 helper 上**绝不**触发。
 
-**修复：** 分析你实际发布的入口，另一变体 mock 或跳过；不要期望 `--from` 记录跨两个面合并。这仍是天花板 —— 见[边界与非目标](/docs/concepts/limits)。
+**修复：** 分析你实际发布的入口，另一变体 mock 或跳过；不要期望 `--from` 记录跨两个面合并。这仍是天花板 —— 见[边界与非目标](../concepts/limits.md)。
 
 ### `nudo:interface-emit-denied` {#nudo-interface-emit-denied}
 
@@ -193,11 +193,11 @@ API 未被 env/推理覆盖（如未建模全局）。优先 `@nudo:env` / mock�
 
 ### `nudo:recursion-truncated` {#nudo-recursion-truncated}
 
-递归预算用尽；结果拓宽。预算旋钮与修复：[性能：预算与分析缓存](/docs/guides/performance)。
+递归预算用尽；结果拓宽。预算旋钮与修复：[性能：预算与分析缓存](../guides/performance.md)。
 
 ### `nudo:fork-truncated` {#nudo-fork-truncated}
 
-分支展开预算（`$fork` 总次数）用尽；受影响结果拓宽。**warning**。可用 `NUDO_MAX_FORKS` 或 `package.json#nudo.analysis.maxForks` 调高（默认 5000）。预算与修复：[性能：预算与分析缓存](/docs/guides/performance)。
+分支展开预算（`$fork` 总次数）用尽；受影响结果拓宽。**warning**。可用 `NUDO_MAX_FORKS` 或 `package.json#nudo.analysis.maxForks` 调高（默认 5000）。预算与修复：[性能：预算与分析缓存](../guides/performance.md)。
 
 ### `nudo:host-effect-blocked` {#nudo-host-effect-blocked}
 
@@ -306,7 +306,7 @@ actual:   0  #exact     // 调用点观测到的 Abs
 expected: price > 0     // 来自契约的 Pred
 ```
 
-Abs 上的 conf 标记：`#exact` / `#path` / `#widened` / `#mock` / `#partial` / `#opaque` —— 见 [Abs](/docs/concepts/abs)。
+Abs 上的 conf 标记：`#exact` / `#path` / `#widened` / `#mock` / `#partial` / `#opaque` —— 见 [Abs](../concepts/abs.md)。
 
 ## 影响诊断的配置
 
@@ -327,7 +327,7 @@ Abs 上的 conf 标记：`#exact` / `#path` / `#widened` / `#mock` / `#partial` 
 
 ## 下一步
 
-- [nudo check](/docs/guides/check)
-- [契约](/docs/guides/contract)
-- [边界](/docs/concepts/limits)
-- [CLI 参考](/docs/api/cli-reference)
+- [nudo check](../guides/check.md)
+- [契约](../guides/contract.md)
+- [边界](../concepts/limits.md)
+- [CLI 参考](../api/cli-reference.md)

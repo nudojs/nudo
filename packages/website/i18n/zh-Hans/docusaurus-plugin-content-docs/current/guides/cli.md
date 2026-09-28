@@ -43,7 +43,15 @@ nudo — JavaScript types, computed
 ```bash
 nudo check <path> [--watch|-w] [--json] [--verbose] [--abs]
            [--from paths…] [--ignore-throws names] [--entry-throws error|warning|off]
+           [--profile adoption|strict] [--gha] [--gitlab] [--what-if name:type… [--target name]]
 ```
+
+其余旗标各一句（完整表见 [CLI 参考](../api/cli-reference.md#nudo-check)）：
+
+- `--profile adoption|strict` —— 门禁 profile（默认 `strict`）：`adoption` 把 L2 入口 may-throw 降为 warning、L1 仍为 error；显式 `--entry-throws` 值可覆盖。
+- `--gha` —— GitHub Actions 行内注解（`::error` / `::warning`）；`GITHUB_ACTIONS=true` 时自动启用。
+- `--gitlab` —— GitLab Code Quality JSON 数组打到 stdout；CI 中重定向为 `gl-code-quality-report.json`。
+- `--what-if <name:type…>` —— 假设 `name:type` 绑定（如 `raw:string`）；配合 `--target <name>` 打印该绑定的推导类型（AI3）。
 
 ```bash
 nudo check user.js
@@ -60,15 +68,15 @@ signatures
 
 issues
   [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
-      actual:   getName(user: any) => any    throws TypeError
-      expected: entry total, or @nudo:throws / try-catch
-      → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
+      …
 ```
+
+摘录 —— 完整 transcript、`user.js` 源码与修复路径见 [nudo check](./check.md)。
 
 无约束入口参数显示为 **`any`**。`unknown` 表示推导失败（引擎债）—— 绝不是无约束入口参数的默认值。`[ERROR L# name]` 中 `L#` 是违规调用/声明的**行号**，不是契约层（L1/L2 才是层）。上方示例打印 `L1` 是因为该文件中 `getName` 声明在第 1 行 —— 其层是 L2。
 
 - **语义**（L1 显式契约 / L2 入口 throws、退出码、过滤）：[nudo check](./check.md)
-- **选项与配置**（`--watch` / `--json` / `--abs` / `--from` / `--ignore-throws` / `--entry-throws`、`package.json#nudo.check`）：[CLI 参考](../api/cli-reference.md#nudo-check)
+- **选项与配置**（`--watch` / `--json` / `--abs` / `--from` / `--ignore-throws` / `--entry-throws` / `--profile` / `--gha` / `--gitlab` / `--what-if`、`package.json#nudo.check`）：[CLI 参考](../api/cli-reference.md#nudo-check)
 
 `nudo check` 是 CI 门禁。
 
@@ -112,7 +120,9 @@ assertions
 - `--from <paths…>` 挖掘使用处调用形状。
 - `--freeze[=mode]` 把合成用例固化为指令：`--freeze`（不给值，add 模式）新增见证；`--freeze=update` 重同步此前生成的指令。
 - `--dry-run`（配合 `--freeze`）打印 unified diff 而非写盘；`--exit-on-diff`（配合 `--freeze --dry-run`）在 diff 非空时 exit 1。
-- `--json` / `--abs` 与 `check` 对齐；`test --json` 含 `assertions` 摘要，声明断言失败仍 exit 1。
+- `--json` / `--abs` 与 `check` 对齐；`test --json` 含 `assertions` 摘要（`passed`/`failed`/`unchecked`），声明断言失败仍 exit 1。
+
+完整走读 —— 合成用例生命周期、`--freeze` 工作流、断言编写：[nudo test](./test.md)。
 
 ### 带声明断言的示例
 
@@ -189,8 +199,6 @@ nudo export src/user.js --format all --out dist
 | `all` | dts + guard + schema + standard |
 
 `--dialect` 当前接受 `zod`。Abs 上可表达的常数界 / `int` / 字符串长度界会落入 schema；落不了的 pred 保留在基类型上，并列在 `dropped preds` 注释里。
-
-`standard` 是生态互操作出口：生成模块实现 [Standard Schema](https://standardschema.dev) 的 `validate`，不依赖 Zod/Valibot。存在侧车 / `@nudo:contract` 契约时，参数校验器使用**契约域**（`<fn>_<param>`）；无契约时参数位取各调用点 Abs 的 **join**（不钉死单次字面量）。它是运行时挡板，**不能**替代 `nudo check`。
 
 `.d.ts` 与 schema 都是**单向、有损投影** —— Abs 才是真理源。export 是一次性出货命令，不接受 `--watch`。
 

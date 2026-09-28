@@ -72,7 +72,7 @@ Hegel（GitHub 上的 `JSMonk/hegel`）曾是概念上最近的邻居：**无标
 | 真理 | schema 对象 | Abs（`shape × term × pred × conf`） |
 | 编译期 | schema-as-type 辅助 | 完整 Abs 代数（`x>0` ⇒ `x+1>1`） |
 
-它们可以组合：**`nudo export` 把 Abs 投影进 schema 方言**（Zod 方言、Standard Schema、守卫），让边界代码与 CI 对同一批事实达成一致。投影是单向且有损的——Abs 仍是真理源。见[运行时生成](./runtime-generation.md)。
+它们可以组合：**`nudo export` 把 Abs 投影进 schema 方言**（Zod 方言、Standard Schema、守卫），让边界代码与 CI 对同一批事实达成一致。投影是单向且有损的——Abs 仍是真理源。见[Export](./export-ecosystem.md)。
 
 ArkType 的库文档在 **arktype.io**。（`arktype.org` 是一家无关公司——不要把读者指到那里。）
 
@@ -112,7 +112,7 @@ LLM 类型推断研究（例如 SCAM 2026）适合**混合**回路，而不是�
 
 - **[Nudo vs TypeScript](./vs-typescript.md)** —— Nudo 何时替代 `tsc`
 - **[为什么选 Nudo](../why-nudo.md)** —— 产品面
-- **[运行时生成](./runtime-generation.md)** —— `export` → Standard Schema / Zod / 守卫 / `.d.ts`
+- **[Export](./export-ecosystem.md)** —— `export` → Standard Schema / Zod / 守卫 / `.d.ts`
 - **[nudo check](./check.md)** —— L1 契约 + L2 入口 throws
 - **[边界](../concepts/limits.md)** —— 引擎不宣称什么
 - **[心智模型](../getting-started/mental-model.md)** —— 10 分钟

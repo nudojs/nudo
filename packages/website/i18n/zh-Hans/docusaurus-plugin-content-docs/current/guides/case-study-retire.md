@@ -37,12 +37,7 @@ npx nudojs migrate verify ./my-pkg/src
 npx nudojs migrate retire ./my-pkg --dry-run   # then drop --dry-run
 ```
 
-| 步骤 | 作用 | 何时退出 |
-|------|------|----------|
-| `status` | 统计 `.ts`、找出 `tsc` scripts + `typescript` 依赖、列出 **blockers** | 你摸清了面积 |
-| `strip` | `.ts` → `.js`；可选 best-effort 侧车草稿 | 源码已是普通 JS |
-| `verify` | 在剥好的 JS 上跑 `nudo check`（迁移**期间**可选 `--with-tsc` 双跑） | 门禁变绿 |
-| `retire` | 摘掉 `typescript`，把 `tsc` scripts 改写成 `nudo check`，改写 `.github/workflows`，写出 `.nudo/migrate-retired.json` | **tsc 已消失** |
+步骤回顾：`status` 摸清面积（`.ts` 数量、`tsc` scripts、**blockers**）→ `strip` 产出纯 JS（`--write`，可选侧车草稿）→ `verify` 用 `nudo check` 门禁剥好的 JS（`--with-tsc` 双跑仅限迁移**期间**）→ `retire` 摘掉 `typescript`、改写 `tsc` scripts 与 workflow 行、写出 `.nudo/migrate-retired.json`。完整步骤表（做什么 / 何时退出）见[从 TypeScript 迁移](./migrating-from-typescript.md#path-r--retire-tsc-nudo-migrate)。
 
 `migrate retire --all` 可批处理 monorepo。双跑只作为迁移期间的 `migrate verify --with-tsc` 存在——永远不是终局。
 
@@ -215,7 +210,7 @@ issues
       → add @nudo:case or a call site
 ```
 
-有 `@types/debug` 时，harvest 会填满签名；或用 `@nudo:mock` / `refine return` 钉住。这与 `ms()` 是同一个故事。
+有 `@types/debug` 时，harvest 会填满签名；或用 `@nudo:mock` / 声明的返回契约（`@nudo:contract` 或侧车返回槽）钉住。这与 `ms()` 是同一个故事。
 
 ## 摩擦与耗时（示例级）
 
@@ -223,7 +218,7 @@ issues
 |------|------------|----------|----------------|
 | `tsc` scripts + `typescript` 依赖还在 | `migrate status` blockers 列表 | `migrate retire` 改写 scripts；摘掉依赖 | 一条命令（先 `--dry-run`） |
 | 旧标注只有被你接受才变成义务 | `contract --from-dts` 发出 `@nudo:draft` | 审阅 → 拷进 `*.nudo.js` | 每文件几分钟；**绝不静默** |
-| native / 未 harvest 依赖（`ms()`、`debug()`） | `unknown` / `conf=opaque` / `nudo:unknown-inference` | `@types/*` harvest、`@nudo:mock`，或 `refine return` | 有界；在你钉住之前一直是 **warning** |
+| native / 未 harvest 依赖（`ms()`、`debug()`） | `unknown` / `conf=opaque` / `nudo:unknown-inference` | `@types/*` harvest、`@nudo:mock`，或声明的返回契约 | 有界；在你钉住之前一直是 **warning** |
 | 有意 `throw` 上的 L2 `entry-may-throw` | checkout-demo 的 `applyCoupon` | `@nudo:throws RangeError` / guard，或 `nudo.check.entryThrows: "warning"` | `package.json` 一行，或一条 throws 指令 |
 | 双跑诱惑 | 迁移中期的 CI | **只**在迁移期间保留 `verify --with-tsc`；出口是 retire | 政策问题，不是工具问题 |
 

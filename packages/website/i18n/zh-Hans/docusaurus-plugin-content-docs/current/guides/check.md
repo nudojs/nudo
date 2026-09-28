@@ -20,13 +20,14 @@ npx nudojs check path/to/file.js
 ```bash
 nudo check <path> [--watch|-w] [--json] [--verbose] [--abs]
            [--from paths…] [--ignore-throws names] [--entry-throws error|warning|off]
+           [--profile adoption|strict]
 ```
 
 ![check 校验 vs export 投影](/img/check-vs-export.svg)
 
 *`check` 校验 Abs（实线）；`export` 单向有损投影 dts/guard/schema（虚线）。没有东西读回投影。*
 
-## 默认输出（signatures + issues）
+## 默认输出（signatures + issues） {#default-output}
 
 ```js verify
 export function getName(user) {
@@ -65,7 +66,7 @@ issues
 - 存在 throws 时必须上屏。
 - `[ERROR L# name]` —— `L#` 是违规调用/声明的**行号**，不是契约层（L1/L2 才是层；`L#` 是位置）。
 
-## 检查什么
+## 检查什么 {#what-it-checks}
 
 | 码 | 层 | 严重级别 | 含义 |
 |----|----|----------|------|
@@ -73,18 +74,46 @@ issues
 | `nudo:assign-mismatch` | L1 | error | 赋值 ⊭ 原绑定 shape（`leqAbs`） |
 | `nudo:arg-structure` | L1 | error（显式契约）/ warning（body-promote） | HOF：实参不是可调用 `fn` / 元数不匹配。用法驱动的 body 提升是**警告建议**；只有显式关系契约才升级为 error |
 | `nudo:case-inconsistency` | L1 | error | `@nudo:case` 见证 ⊭ refine |
+| `nudo:constraint-unproven` | L1 | warning | 无法证明实参满足契约 Pred（`cannot prove … x > 0`）—— 悬而未决，不是失败。补调用点 / `@nudo:case`，或用 `--assume` 声明前置条件 |
+| `nudo:arg-opaque` | L1 | warning | 实参 Abs 是 `unknown`（无 term）—— 约束根本无法检查。补调用点 / `@nudo:case` / `--assume`，或建模该值来源 |
+| `nudo:arg-count` | L1 | error | 调用元数与泛化参数面不匹配 |
+| `nudo:fn-not-found` | L1 | error | 调用引用了分析器在作用域内无法解析的函数 |
+| `nudo:partial-result` | L1 | info | 结果 Abs 携带 `#partial` 置信 —— 仅观察 |
 | `nudo:interface-param-mismatch` | L1 | error | 手写契约参数名不在形式参数面上 |
 | `nudo:interface-conflict` | L1 | error | 手写契约合取不可满足 |
+| `nudo:interface-load` | L1 | error | 侧车文件加载失败（解析 / import / 路径解析错误） |
+| `nudo:interface-name-clash` | L1 | error | 侧车导出名与源码导出冲突，或 emit 会覆盖手写绑定（手写优先，跳过写入） |
+| `nudo:interface-cycle` | L1 | error | 侧车 `@nudo:import` 链成环 |
+| `nudo:interface-domain-exceeds` | L1 | error | 经 `--from` 注入的调用记录 ⊄ 手写契约域 |
+| `nudo:interface-drift` | L1 | warning | 固化 `@generated` 段 ≠ 今日重算接口（`nudo health` 亦上浮；不挡 exit） |
+| `nudo:interface-entry-only` | L1 | info | 导出无契约根且无调用点域（仅合成 `entry@`）—— 覆盖缺口，不是门禁失败 |
+| `nudo:dual-entry` | L1 | info | browser/node 双入口：调用点记录不跨文件 —— 分析只观察一个入口变体 |
+| `nudo:interface-emit-denied` | L1 | warning | `contract --emit` 目标在 `package.json#nudo.contract.emit` 允许列表之外 —— 跳过写入 |
+| `nudo:interface-multi-declarator` | L1 | warning | `@generated` 段被手工合并成多声明导出 —— 原样保留 |
+| `nudo:interface-not-projectable` | L1 | error | 组装侧车 round-trip 重解析失败 —— 不写任何文件（引擎债） |
 | **`nudo:entry-may-throw`** | **L2** | **error**（默认） | 入口/导出函数有未消化 may-throw |
 | `nudo:may-throw` | test / L2 线索 | warning | case 路径可能抛（含内部）；L2 可升格入口 throws |
-| `nudo:unknown-inference` | 引擎债 | warning | 签名出现真 `unknown`（推导失败）——入口无约束参数是 `any`，不走此码 |
+| `nudo:unknown-inference` | 引擎债 | warning | 签名出现真 `unknown`（推导失败）—— 入口无约束参数是 `any`，不走此码 |
 | `nudo:unknown-recv` | 引擎债 | warning | `unknown` 接收者成员访问 —— **不得**替代 L2 throws 建模 |
-| `nudo:no-signature` | 引擎/L1 | warning | 函数无法泛化为符号 Abs（CJS/匿名形态仍走入口 fallback 执法 L2） |
+| `nudo:builtin-unknown` | 引擎债 | warning | API 未被 env/推理覆盖（如未建模全局）。优先 `@nudo:env` / mock |
 | `nudo:opaque-result` | 引擎 | info | 求值返回 opaque / 无信息 Abs |
 | `nudo:eval-error` | 引擎 | error | 分析期间 body 求值抛出 |
 | `nudo:recursion-truncated` | 引擎 | warning | 递归预算用尽；结果拓宽 |
 | `nudo:fork-truncated` | 引擎 | warning | 分支展开（$fork）预算用尽；结果拓宽 |
+| `nudo:host-effect-blocked` | 引擎 | info | 宿主副作用函数（`fetch` / 定时器等）分析期不真实执行 —— 结果拓宽为 `unknown#opaque`。用 `@nudo:mock` / `@nudo:env` 打桩 |
+| `nudo:no-signature` | 引擎/L1 | warning | 函数无法泛化为符号 Abs（CJS/匿名形态仍走入口 fallback 执法 L2） |
+| `nudo:no-method` | 引擎 | error（原始类型接收者）/ warning | 成员访问无法解析 —— ``Method 'x' does not exist on type 'T'``。与 `nudo:unknown-recv` 不同 |
+| `nudo:mock-invalid` | 引擎 | warning | `@nudo:mock` 表达式不是已知形态（stub/spy/mock、箭头函数、类型表达式） |
+| `nudo:env-harvest-conflict` | 引擎 | warning | 手写 `@nudo:env` 与 `@types` harvest 提供同一模块键 —— 手写优先，harvest 只补缺失槽 |
+| `nudo:interface-underivable` | 引擎 | info | 派生契约行无源码证据（opaque / 截断 / 无证据）—— 该行跳过；手写行从不触发 |
 | `nudo-unreachable` | info | info | return/throw 之后的代码 |
+| `nudo:module-cycle` | 模块图 | warning | 循环模块装载 —— 环内绑定解析为部分求值类型 |
+| `nudo:module-depth` | 模块图 | warning | 模块装载链过深 —— 装载截断，更深模块为 `unknown` |
+| `nudo:module-missing` | 模块图 | error | import 了装载器无法解析的模块 —— 修 spec 或 mock（`@nudo:mock-module`） |
+| `nudo:missing-slot` | 求值 | warning（默认 off） | 求值命中闭对象 shape 缺字段（用 `nudo.analysis.evalMissingSlot` 打开）—— 观察，不凭空产生 check 错误 |
+| `nudo:case-expected` | test | error（`nudo test` 失败） | 声明的 `@nudo:case` 期望类型 ⊭ 推断结果 —— 合成 `call@` / `entry@` 永不导致运行失败 |
+
+完整术语表（逐码锚点、最小复现、Abs 视图与修复）：[诊断术语表](../reference/diagnostics.md)。
 
 ## L1 —— 显式契约
 
@@ -132,19 +161,13 @@ export function getName(user) {
 }
 ```
 
-```text
-nudo check  user.js
-FAILED
-  1 error · 0 warning · 0 info · 1 fn
+报告关键行 —— 完整 transcript 见[默认输出](./check.md#default-output)：
 
+```text
 signatures
   getName(user: any) => any  throws TypeError
-
 issues
   [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
-      actual:   getName(user: any) => any    throws TypeError
-      expected: entry total, or @nudo:throws / try-catch
-      → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
 ```
 
 > 提醒：报头里的 `L1` 是**行号** —— 该诊断的层是 L2。
@@ -175,6 +198,39 @@ nudo check src/ --entry-throws off
 
 把这些持久化到 `package.json#nudo.check` —— 配置块见 [CLI 参考](../api/cli-reference.md#nudo-check)。
 
+### 门禁 profile：adoption 与 strict {#profiles-adoption-vs-strict}
+
+`--profile` 是**L2 命名档** —— 不是关掉门禁的方式：
+
+- `strict`（默认）—— L2 `entry-may-throw` 为 **error**。
+- `adoption` —— 迁移档：L2 入口 may-throw 降为 **warning**（exit 0），**L1 显式契约违例仍是 error**。adoption 绝不吞 L1。
+
+```bash
+nudo check src/ --profile adoption
+```
+
+把策略固化到 `package.json#nudo.check.profile`，替代每次传旗标：
+
+```json
+{
+  "nudo": {
+    "check": {
+      "profile": "adoption"
+    }
+  }
+}
+```
+
+L2 entry-throws 严重级按首个命中解析：
+
+1. CLI `--entry-throws` —— 显式值压过任何 profile
+2. CLI `--profile`（`adoption` → `warning`，`strict` → `error`）
+3. `package.json#nudo.check.entryThrows`
+4. `package.json#nudo.check.profile`
+5. 默认 `strict`（`error`）
+
+完整旗标 / 配置表见 [CLI 参考](../api/cli-reference.md#nudo-check)。
+
 ### 与 Node 类比
 
 未捕获异常使 Node 进程以非零码退出。同样，**导出边界**上的未声明/未捕获 throws 使 `nudo check` 失败。内部调用栈中的 throw 是实现细节，由调用方或 L1 处理。
@@ -193,16 +249,16 @@ nudo check src/ --entry-throws off
 | `--from <paths…>` | 使用处文件注入调用记录 |
 | `--ignore-throws <names>` | 逗号分隔、可忽略的 L2 throws 类型 |
 | `--entry-throws error\|warning\|off` | L2 严重级别（默认 `error`） |
+| `--profile adoption\|strict` | 门禁档（默认 `strict`）；`adoption` ≡ L2 entry-throws `warning`，L1 仍 error —— 见[门禁 profile](./check.md#profiles-adoption-vs-strict) |
+| `--gha` | GitHub Actions 行内注解（`::error` / `::warning`）；`GITHUB_ACTIONS=true` 时自动开 |
+| `--gitlab` | stdout 输出 GitLab Code Quality JSON 数组 —— 重定向到 `gl-code-quality-report.json` |
 
 ## 接口诊断
 
-| 码 | 严重级别 | 含义 |
-|----|----------|------|
-| `nudo:interface-drift` | warning | 固化 `@generated` 段 ≠ 今日重算接口。`nudo health` 也作为 CI 门禁上浮 |
-| `nudo:interface-name-clash` | error | `nudo contract --emit` 目标已是手写侧车绑定（手写优先，跳过写入） |
-| `nudo:interface-domain-exceeds` | error | 通过 `--from` 注入的调用记录超出声明域 |
+侧车 / 契约管线相关码（`nudo:interface-*`、`nudo:dual-entry`）已全部列在[检查什么](./check.md#what-it-checks)。两条归属规则：
 
-写在**被分析文件内**的违例报告 `nudo:constraint-violated`。`nudo:interface-domain-exceeds` 覆盖从使用处文件注入的调用记录（`nudo check --from <paths...>`）。
+- 写在**被分析文件内**的违例报告 `nudo:constraint-violated`。
+- `nudo:interface-domain-exceeds` 覆盖从使用处文件注入的调用记录（`nudo check --from <paths...>`）。
 
 ## CI 集成
 
@@ -250,22 +306,10 @@ nudo check src/lib.js --json
 npx nudojs check packages/*/src
 ```
 
-**L2 渐进策略** —— L2（`nudo:entry-may-throw`）默认 error。在遗留 JS 上渐进采用？`--profile adoption` 让 L1 契约违例保持 **error**，只把入口 may-throw 降为 warning（exit 0）：
+**L2 渐进策略** —— L2（`nudo:entry-may-throw`）默认 error。在遗留 JS 上渐进采用？`--profile adoption` 只把入口 may-throw 降为 warning，L1 保持 error —— 语义、持久化与解析顺序见[门禁 profile](./check.md#profiles-adoption-vs-strict)：
 
 ```bash
 npx nudojs check . --profile adoption
-```
-
-把策略固化到代码旁，替代每次传旗标：
-
-```json
-{
-  "nudo": {
-    "check": {
-      "profile": "adoption"
-    }
-  }
-}
 ```
 
 **缓存调参** —— 分析会话缓存是进程内 LRU（默认 64 文件）。CI 并行分析多个项目时封顶；单个大仓调高换 warm 命中：
@@ -280,6 +324,7 @@ NUDO_CACHE_MAX_FILES=512 npx nudojs check .               # 单个大仓
 ## 下一步
 
 - [CLI 使用指南](./cli.md) —— 全部一级动词
+- [nudo test](./test.md) —— case 报告与声明断言
 - [Abs](../concepts/abs.md) —— `any` 与 `unknown`
 - [诊断术语表](../reference/diagnostics.md) —— 稳定诊断码及读法
 - [概念分层](../concepts/layers.md) —— 观察层 / 契约层

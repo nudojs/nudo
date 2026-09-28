@@ -37,7 +37,7 @@ Nudo 按 **JS 语义**分析。指向 `.ts` 会剥注解 —— 用 `migrate str
 **工作模式**（同一 checker）：
 
 1. **逻辑优先** — 保留/实现 JS → `contract --draft` → 审阅 → `*.nudo.js`
-2. **契约优先** — 先写侧车/refine → 在该面下实现
+2. **契约优先** — 先写侧车 / `@nudo:contract` → 在该面下实现
 
 `nudo check` 只校验。schema/dts/guards 来自 `nudo export`。
 
@@ -102,7 +102,11 @@ npx nudojs contract --from-dts ./my-pkg/src/index.ts
 3. **契约** — 逻辑优先（`contract --draft --from tests/`）或契约优先。
 4. **门禁** — 在工作流中对该包路径跑 `nudo check`。
 5. **退役该包** — 对它跑 `migrate status` / `strip` / `verify` / `retire`。不要把 `tsc` 留成永久第二门禁。
-6. **生态** — 仍要给消费方类型时：`npx nudojs export … --format dts`。
+6. **生态** — 仍要给消费方类型时：
+
+   ```bash
+   npx nudojs export packages/tool/src/index.js --format dts --out packages/tool/dist/types
+   ```
 7. **IDE** — VS Code / Zed 扩展。
 
 双门禁只应**存在于迁移过程中**。

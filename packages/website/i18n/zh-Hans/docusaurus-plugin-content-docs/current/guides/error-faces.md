@@ -97,8 +97,6 @@ issues
   [ERROR L24 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
       actual:   getName(user: any) => any    throws TypeError
       expected: entry total, or @nudo:throws / try-catch
-      → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
-      fix:  nudo contract --draft  (emit a sidecar draft you can edit)
 
   [ERROR L31 setDelay] setDelay[ms]: argument ⊭ precondition  (nudo:constraint-violated)
       actual:   0  #exact
@@ -119,7 +117,7 @@ issues
       fix:  nudo contract --draft  (emit a sidecar draft you can edit)
 ```
 
-每条 issue 独立 —— 按任意顺序修。在 GitHub Actions / GitLab 上，`nudo check` 还会出内联注解 / Code Quality 行。
+每条 issue 独立 —— 按任意顺序修。在 GitHub Actions / GitLab 上，`nudo check` 还会出内联注解 / Code Quality 行。`getName` 的 L2 入口 may-throw 面就是在 [nudo check](./check.md) 中逐步走读的那张脸。
 
 ## 对照表
 

@@ -34,7 +34,7 @@ Try any sample in the [Playground](/playground).
 
 ## Call sites and contracts (product path)
 
-### 1. Call-site subtraction — Observation observation
+### 1. Call-site subtraction — Observation
 
 Plain JS + call sites. No annotations. `nudo check` prints signatures; call sites supply evidence.
 
@@ -287,6 +287,6 @@ Prefer concrete values or constraint builders (`number()`, `lit(42)`). Assertion
 | Directive | Role in this guide |
 |-----------|-------------------|
 | Call sites | Observation evidence (primary) |
-| `*.nudo.js` / `@nudo:contract` | Contracts contracts (primary) |
+| `*.nudo.js` / `@nudo:contract` | Contracts (primary) |
 | `@nudo:env` / `@nudo:mock` | Environment & boundaries |
 | `@nudo:case` | Optional debug witnesses only |

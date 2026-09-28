@@ -95,8 +95,6 @@ issues
   [ERROR L24 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
       actual:   getName(user: any) => any    throws TypeError
       expected: entry total, or @nudo:throws / try-catch
-      → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
-      fix:  nudo contract --draft  (emit a sidecar draft you can edit)
 
   [ERROR L31 setDelay] setDelay[ms]: argument ⊭ precondition  (nudo:constraint-violated)
       actual:   0  #exact
@@ -117,7 +115,7 @@ issues
       fix:  nudo contract --draft  (emit a sidecar draft you can edit)
 ```
 
-Each issue is independent — fix them in any order. On GitHub Actions / GitLab, `nudo check` also emits inline annotations / Code Quality rows.
+Each issue is independent — fix them in any order. On GitHub Actions / GitLab, `nudo check` also emits inline annotations / Code Quality rows. The `getName` L2 entry-may-throw face is the one walked through step by step in [nudo check](./check.md).
 
 ## Top faces side by side
 

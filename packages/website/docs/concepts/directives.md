@@ -1,5 +1,5 @@
 ---
-description: "Syntax reference for all @nudo: directives — case, mock, pure, skip, sample, refine, import, env, mock-module, as, replace — with constraints and examples."
+description: "Syntax reference for all @nudo: directives — case, mock, pure, skip, sample, contract, throws, import, env, mock-module, as, replace — with constraints and examples."
 ---
 
 # Directives
@@ -39,7 +39,7 @@ Both forms are parsed identically — in particular, the single-line rule for mo
 
 ---
 
-## @nudo:case — Debug Witnesses
+## @nudo:case — Debug Witnesses {#nudocase--debug-witnesses}
 
 Cases are **debug witnesses**: concrete inputs Nudo executes the function with for scenario runs. They are **not** the contract product — obligations live in `*.nudo.js` sidecars / `@nudo:contract` (see [@nudo:contract](#nudocontract--source-contract)). `@nudo:case` remains supported for optional `nudo test` assertions and LSP scenario switching. Cases use concrete arguments or constraint builders.
 

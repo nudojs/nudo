@@ -7,7 +7,7 @@ description: Stable Nudo diagnostic codes — meaning, minimal repro, Abs view, 
 
 Stable codes printed by `nudo check` / analysis. Product-native messages use **`actual ⊭ expected`** (Nudo Abs implication), not TypeScript diagnostics in disguise.
 
-Machine-readable face: `nudo check --json`. Agents: see [Agents](/docs/reference/agents) and the published [agents.md](https://nudojs.github.io/nudo/agents.md).
+Machine-readable face: `nudo check --json`. Agents: see [Agents](./agents.md) and the published [agents.md](https://nudojs.github.io/nudo/agents.md).
 
 ## Contract gate (L1)
 
@@ -125,7 +125,7 @@ records do not cross files — analysis observes only the browser entry variant
 
 The package ships **browser/node dual entrypoints** (package.json `exports` conditions or a `browser` field pointing at a different file than `main`/`node`), and this analysis ran on one variant. Call-site records are file-scoped: evidence collected against the other entry does **not** inject here. **Info** — observation, not a gate failure. Never fires on single-entry packages or on shared helpers that are not an entry target.
 
-**Fix:** analyze the entry you ship and mock or skip the other variant; do not expect `--from` records to merge across the two faces. Still a ceiling — see [Limits](/docs/concepts/limits).
+**Fix:** analyze the entry you ship and mock or skip the other variant; do not expect `--from` records to merge across the two faces. Still a ceiling — see [Limits](../concepts/limits.md).
 
 ### `nudo:interface-emit-denied` {#nudo-interface-emit-denied}
 
@@ -193,11 +193,11 @@ Body evaluation threw during analysis.
 
 ### `nudo:recursion-truncated` {#nudo-recursion-truncated}
 
-Recursion budget hit; result widened. Budget knobs and what to do: [Performance](/docs/guides/performance).
+Recursion budget hit; result widened. Budget knobs and what to do: [Performance](../guides/performance.md).
 
 ### `nudo:fork-truncated` {#nudo-fork-truncated}
 
-Branch-expansion budget (`$fork` total count) hit; affected results widened. **Warning.** Raise via `NUDO_MAX_FORKS` or `package.json#nudo.analysis.maxForks` (default 5000). Budgets and fixes: [Performance](/docs/guides/performance).
+Branch-expansion budget (`$fork` total count) hit; affected results widened. **Warning.** Raise via `NUDO_MAX_FORKS` or `package.json#nudo.analysis.maxForks` (default 5000). Budgets and fixes: [Performance](../guides/performance.md).
 
 ### `nudo:host-effect-blocked` {#nudo-host-effect-blocked}
 
@@ -306,7 +306,7 @@ actual:   0  #exact     // Abs observed at the call
 expected: price > 0     // Pred from the contract
 ```
 
-Conf markers on Abs: `#exact` / `#path` / `#widened` / `#mock` / `#partial` / `#opaque` — see [Abs](/docs/concepts/abs).
+Conf markers on Abs: `#exact` / `#path` / `#widened` / `#mock` / `#partial` / `#opaque` — see [Abs](../concepts/abs.md).
 
 ## Config that affects diagnostics
 
@@ -327,7 +327,7 @@ Conf markers on Abs: `#exact` / `#path` / `#widened` / `#mock` / `#partial` / `#
 
 ## Next
 
-- [nudo check](/docs/guides/check)
-- [Contracts](/docs/guides/contract)
-- [Limits](/docs/concepts/limits)
-- [CLI reference](/docs/api/cli-reference)
+- [nudo check](../guides/check.md)
+- [Contracts](../guides/contract.md)
+- [Limits](../concepts/limits.md)
+- [CLI reference](../api/cli-reference.md)

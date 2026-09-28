@@ -13,6 +13,11 @@
 // 10. llms.txt ↔ en 文档树/博客双向同步（route 解析与 gen-llms.mjs 一致，.md 旁挂形式归一）。
 // 11. 相对 markdown 链接（](./x) / ](../x)）必须带 .md 扩展名（en + zh；围栏内不扫描，允许 #anchor）。
 // 12. en/zh 博客帖文件名集合一致。
+// 13. sidebar 里每个 doc id（字符串项）的 en 文件与 zh 镜像都必须存在（规则 9 的通用化；
+//     硬编码 performance/hof-relations 哨兵保留，本规则是其超集）。
+// 14. 手写文档页（排除生成物 releases*/versioning/api）zh 与 en 结构新鲜：``` 围栏行数一致，
+//     围栏外 http(s) 外链 URL 集合一致（zh 漏译段落/陈旧外链会被抓住；allowlist 见注释）。
+// 15. en 文档禁止站内绝对链接（](/docs/… / ](/blog/… 形态；https:// 外链不管）——统一相对 .md 路径。
 import { describe, it, expect } from "vitest";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join, relative } from "node:path";
@@ -60,6 +65,29 @@ const FENCE_OPEN_RE = /^```(?:js|javascript)(?![\w-])[ \t]*(.*)$/;
 const FENCE_META_OK = new Set(["", "verify", "verify-sidecar", "noplayground"]);
 // 相对 markdown 链接目标（](./x) / ](../x)）：必须以 .md 结尾（#anchor 允许）。
 const REL_LINK_RE = /\]\((\.{1,2}\/[^)\s]*)\)/g;
+// sidebar 文档 id（字符串项）形态：小写字母/数字/连字符/斜杠；label/type/description 等
+// 键值与 import 说明符（@scope、大写、空格）都不匹配，天然被排除。
+const SIDEBAR_ID_RE = /^[a-z0-9][a-z0-9/-]*$/;
+// 字符串字面量若紧跟这些键（窗口末尾），是元数据值不是 doc id。
+const SIDEBAR_META_KEY_RE = /\b(?:type|label|description|title)\s*:\s*$/;
+// 规则 14 排除生成物：releases/releases-history 由脚本聚合，versioning 由 changesets 生成，
+// api/ 目录整目录生成 —— 它们的 zh 镜像不承诺结构同步。
+const ZH_STRUCT_EXCLUDE = [
+  /^releases\.md$/,
+  /^releases-history\.md$/,
+  /^guides\/versioning\.md$/,
+  /^api\//,
+];
+// 规则 14 allowlist：zh 缺块/多链的显式豁免（须带理由）。
+const ZH_STRUCT_ALLOWLIST: Record<string, Array<"fences" | "urls">> = {
+  // 2026-09 补齐后清空：zh 缺块/多链均已修复（migrating-js、agents、migrating-from-typescript、cli）。
+};
+// 规则 15 allowlist：/blog/ 跨插件链接 Docusaurus 不解析相对 .md，绝对路径是正确形态（baseUrl 自动前缀）。
+const ABS_LINK_ALLOWLIST = [
+  "guides/callsite-discovery.md", // ](/blog/attribution-gate)
+];
+// 站内绝对链接目标：](/docs/… 或 ](/blog/…（https:// 外链不受此规则约束）。
+const ABS_LINK_RE = /\]\((\/(?:docs|blog)\/[^)\s]*)\)/g;
 
 // 与 scripts/gen-llms.mjs 的 slugOf 一致：frontmatter `slug:` 优先，否则相对路径去 .md。
 function frontmatterSlug(src: string): string | null {
@@ -147,6 +175,35 @@ function emittedCodes(): Set<string> {
 }
 
 const anchorOf = (code: string): string => `{#${code.replaceAll(":", "-")}}`;
+
+// sidebars.ts 中的文档 id 集合（字符串项）：剥注释后取所有字符串字面量，
+// 排除 type:/label:/description:/title: 键值与不匹配 id 形态的说明符（import 路径等）。
+function sidebarDocIds(): string[] {
+  const src = readFileSync(join(repoRoot, "packages/website/sidebars.ts"), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^[ \t]*\/\/[^\n]*/gm, "");
+  const ids: string[] = [];
+  for (const m of src.matchAll(/"((?:[^"\\]|\\.)*)"/g)) {
+    const before = src.slice(Math.max(0, (m.index ?? 0) - 40), m.index);
+    if (SIDEBAR_META_KEY_RE.test(before)) continue;
+    if (SIDEBAR_ID_RE.test(m[1])) ids.push(m[1]);
+  }
+  return ids;
+}
+
+// ``` 开头行计数（stripFences 之前）：en/zh 相等 ⟺ 代码块数量同构（漏译整段会被抓住）。
+function fenceLineCount(src: string): number {
+  return src.split("\n").filter((l) => /^\s*```/.test(l)).length;
+}
+
+// 围栏外 http(s) 外链 URL 集合：句读尾巴（含 CJK 句读/右括号引号）不算 URL 的一部分。
+function externalUrls(src: string): Set<string> {
+  return new Set(
+    [...stripFences(src).matchAll(/https?:\/\/[^\s)\]"'<”）』》]+/g)].map((m) =>
+      m[0].replace(/[.,;:!?，。；：！？]+$/, ""),
+    ),
+  );
+}
 
 describe("diagnostic code ↔ docs glossary", () => {
   const en = readFileSync(GLOSSARY_EN, "utf8");
@@ -440,5 +497,99 @@ describe("blog en/zh parity", () => {
     const onlyZh = [...zh].filter((n) => !en.has(n)).sort();
     expect(onlyEn, `zh blog missing posts: ${onlyEn.join(", ")}`).toEqual([]);
     expect(onlyZh, `en blog missing posts: ${onlyZh.join(", ")}`).toEqual([]);
+  });
+});
+
+describe("sidebar ↔ doc files pairing (rule 13)", () => {
+  it("extracts doc ids, not labels/types/import specifiers", () => {
+    const ids = sidebarDocIds();
+    // 提取器健全性：既不漏（顶层入口在），也不误收（type 值 / import 说明符不在）。
+    expect(ids).toContain("intro");
+    expect(ids).toContain("guides/check");
+    expect(ids).not.toContain("generated-index");
+    expect(ids).not.toContain("@docusaurus/plugin-content-docs");
+  });
+
+  it("every sidebar doc id has both an en file and a zh mirror on disk", () => {
+    const missing: string[] = [];
+    for (const id of sidebarDocIds()) {
+      for (const [label, root] of [["en", EN_DOCS], ["zh", ZH_DOCS]] as const) {
+        if (!existsSync(join(root, `${id}.md`))) missing.push(`${label}/${id}.md`);
+      }
+    }
+    expect(
+      missing,
+      `sidebar ids without page files (new page? land en + zh + sidebar together): ${missing.join(", ")}`,
+    ).toEqual([]);
+  });
+});
+
+describe("zh structural freshness (rule 14)", () => {
+  // 手写页 = en 文档树排除生成物（releases*/versioning/api 整目录）。
+  const handwritten = walk(EN_DOCS)
+    .filter((f) => f.endsWith(".md"))
+    .map((f) => relative(EN_DOCS, f))
+    .filter((rel) => !ZH_STRUCT_EXCLUDE.some((re) => re.test(rel)))
+    .sort();
+
+  it("exclusion list trims only the generated pages", () => {
+    // 排除过宽会把整个门禁架空：抽查手写页必须仍在、生成页必须已排除。
+    for (const kept of ["intro.md", "glossary.md", "guides/check.md"]) {
+      expect(handwritten, `${kept} must stay in scope`).toContain(kept);
+    }
+    for (const dropped of ["releases.md", "releases-history.md", "guides/versioning.md", "api/core.md"]) {
+      expect(handwritten, `${dropped} must be excluded`).not.toContain(dropped);
+    }
+  });
+
+  it("fence line counts match between en and zh (allowlisted drift aside)", () => {
+    const bad: string[] = [];
+    for (const rel of handwritten) {
+      if (ZH_STRUCT_ALLOWLIST[rel]?.includes("fences")) continue;
+      const en = fenceLineCount(readFileSync(join(EN_DOCS, rel), "utf8"));
+      const zh = fenceLineCount(readFileSync(join(ZH_DOCS, rel), "utf8"));
+      if (en !== zh) bad.push(`${rel}: en=${en} zh=${zh}`);
+    }
+    expect(
+      bad,
+      `fence drift, zh missing translated blocks? (fix zh or extend ZH_STRUCT_ALLOWLIST with justification): ${bad.join(", ")}`,
+    ).toEqual([]);
+  });
+
+  it("external http(s) URL sets match between en and zh (allowlisted drift aside)", () => {
+    const bad: string[] = [];
+    for (const rel of handwritten) {
+      if (ZH_STRUCT_ALLOWLIST[rel]?.includes("urls")) continue;
+      const en = externalUrls(readFileSync(join(EN_DOCS, rel), "utf8"));
+      const zh = externalUrls(readFileSync(join(ZH_DOCS, rel), "utf8"));
+      const onlyEn = [...en].filter((u) => !zh.has(u));
+      const onlyZh = [...zh].filter((u) => !en.has(u));
+      if (onlyEn.length || onlyZh.length) {
+        bad.push(`${rel}: only-en [${onlyEn.join(" ")}] only-zh [${onlyZh.join(" ")}]`);
+      }
+    }
+    expect(
+      bad,
+      `external URL drift, stale zh mirror? (fix zh or extend ZH_STRUCT_ALLOWLIST with justification): ${bad.join("; ")}`,
+    ).toEqual([]);
+  });
+});
+
+describe("absolute in-site link gates (rule 15)", () => {
+  it("en docs never link /docs/ or /blog/ absolute paths (allowlist aside, fences excluded)", () => {
+    const bad: string[] = [];
+    for (const f of walk(EN_DOCS)) {
+      if (!f.endsWith(".md")) continue;
+      const rel = relative(EN_DOCS, f);
+      if (ABS_LINK_ALLOWLIST.includes(rel)) continue;
+      const src = stripFences(readFileSync(f, "utf8"));
+      for (const m of src.matchAll(ABS_LINK_RE)) {
+        bad.push(`${rel}: ${m[1]}`);
+      }
+    }
+    expect(
+      bad,
+      `absolute in-site links (rewrite as relative .md paths, or extend ABS_LINK_ALLOWLIST with justification): ${bad.join(", ")}`,
+    ).toEqual([]);
   });
 });

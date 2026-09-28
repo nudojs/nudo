@@ -31,7 +31,7 @@ jobs:
 
 ## 2. 在现有包上渐进加契约
 
-**目标：** 观察层观察 → 草稿 → 手写侧车 → CI。
+**目标：** 观察 → 草稿 → 手写侧车 → CI。
 
 ```bash
 npx nudojs check src/                 # 签名 + L2
@@ -66,7 +66,7 @@ npx nudojs export src/api.js --format dts --out dist/types
 npx nudojs export src/api.js --format schema --dialect zod --out dist/schema
 ```
 
-投影是**有损的**；Abs + `nudo check` 仍是真源。指南：[运行时生成](./runtime-generation.md)。
+投影是**有损的**；Abs + `nudo check` 仍是真源。指南：[export](./export-ecosystem.md)。
 
 ## 5. Mock 边界 + env
 
@@ -103,7 +103,7 @@ issues
   [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
 ```
 
-`any` = 无约束入口。`throws` = L2 域。报头里的 `L1` 是**行号**（此处 `getName` 声明在第 1 行）—— 层是 L2。诊断码：[诊断](../reference/diagnostics.md)。
+`any` = 无约束入口。`throws` = L2 域。报头里的 `L1` 是**行号**（此处 `getName` 声明在第 1 行）—— 层是 L2。诊断码：[诊断](../reference/diagnostics.md) · 完整输出走读：[nudo check](./check.md)。
 
 ---
 

@@ -96,10 +96,10 @@ signatures
 
 issues
   [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
-      actual:   getName(user: any) => any    throws TypeError
-      expected: entry total, or @nudo:throws / try-catch
-      → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
+      …
 ```
+
+Excerpt — the full transcript, its `user.js` source, and remediation paths: [nudo check](../guides/check.md).
 
 > `L1` in the issue header is the **line number** (the function is declared on line 1 here) — the layer is L2.
 

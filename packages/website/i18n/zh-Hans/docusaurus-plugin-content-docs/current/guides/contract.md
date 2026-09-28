@@ -15,7 +15,7 @@ npx nudojs contract --emit <paths…> [--fn name] [--all] [--dry-run]
 
 **产品规则：** 手写契约即义务。草稿与 `@generated` 段是可审阅的快照 —— 它们绝不会静默变成 check 错误。
 
-## 分层
+## 分层 {#layers}
 
 | 层 | 来源 | 迁移动作 |
 |------|--------|------------------|

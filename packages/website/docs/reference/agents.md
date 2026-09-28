@@ -65,7 +65,7 @@ npx nudojs migrate retire <pkg> --dry-run
 }
 ```
 
-Default analysis mode is `"exports"` (export / sidecar / directives); named-path CLI `check` still analyzes that file. Full config surface: [CLI Reference](/docs/api/cli-reference).
+Default analysis mode is `"exports"` (export / sidecar / directives); named-path CLI `check` still analyzes that file. Full config surface: [CLI Reference](../api/cli-reference.md).
 
 ## Machine-readable diagnostics
 
@@ -73,7 +73,7 @@ Default analysis mode is `"exports"` (export / sidecar / directives); named-path
 npx nudojs check file.js --json
 ```
 
-Human face uses `actual ⊭ expected` on Abs. Stable codes: [Diagnostics glossary](/docs/reference/diagnostics).
+Human face uses `actual ⊭ expected` on Abs. Stable codes: [Diagnostics glossary](./diagnostics.md).
 
 Each `issues[]` entry may carry **`actions[]`** (AI1) — prefer these over parsing `suggestion` prose:
 
@@ -170,9 +170,9 @@ Never invent body-AST slots. Never rewrite JS → TS “for types”.
 
 | Surface | Docs |
 |---------|------|
-| LSP package | [`@nudojs/lsp`](/docs/api/lsp) |
-| Agent executeCommand | [API · agent](/docs/api/agent) |
-| MCP | [Agent integration guide](/docs/guides/agent-integration) |
+| LSP package | [`@nudojs/lsp`](../api/lsp.md) |
+| Agent executeCommand | [API · agent](../api/agent.md) |
+| MCP | [Agent integration guide](../guides/agent-integration.md) |
 
 Do not send server-injected fields (`loadModule`, effective `autoBind`) as JSON-RPC parameters.
 
@@ -184,5 +184,5 @@ Do not send server-injected fields (`loadModule`, effective `autoBind`) as JSON-
 - Do not narrate unconstrained entry params as `unknown`
 - Do not present dual `tsc` + `nudo check` as a permanent end state — exit is `migrate retire`
 
-See [Limits](/docs/concepts/limits) · [Glossary](/docs/glossary) · [Recipes](/docs/guides/recipes) · [Migrate from TypeScript](/docs/guides/migrating-from-typescript).
+See [Limits](../concepts/limits.md) · [Glossary](../glossary.md) · [Recipes](../guides/recipes.md) · [Migrate from TypeScript](../guides/migrating-from-typescript.md).
 

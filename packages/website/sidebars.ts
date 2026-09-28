@@ -17,6 +17,21 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: "category",
+      label: "Concepts",
+      items: [
+        "concepts/layers",
+        "concepts/abs",
+        "concepts/hof-relations",
+        "concepts/abstract-interpretation",
+        "concepts/semantics",
+        "concepts/control-flow-narrowing",
+        "concepts/directives",
+        "concepts/mocking",
+        "concepts/limits",
+      ],
+    },
+    {
+      type: "category",
       label: "How-to",
       link: {
         type: "generated-index",
@@ -29,6 +44,7 @@ const sidebars: SidebarsConfig = {
           label: "Gate",
           items: [
             "guides/check",
+            "guides/test",
             "guides/performance",
             "guides/health",
             "guides/error-faces",
@@ -40,7 +56,6 @@ const sidebars: SidebarsConfig = {
           items: [
             "guides/contract",
             "guides/env-harvest",
-            "guides/runtime-generation",
           ],
         },
         {
@@ -87,21 +102,6 @@ const sidebars: SidebarsConfig = {
         "guides/coexistence",
         "guides/vs-typescript",
         "guides/versioning",
-      ],
-    },
-    {
-      type: "category",
-      label: "Concepts",
-      items: [
-        "concepts/layers",
-        "concepts/abs",
-        "concepts/hof-relations",
-        "concepts/abstract-interpretation",
-        "concepts/semantics",
-        "concepts/control-flow-narrowing",
-        "concepts/directives",
-        "concepts/mocking",
-        "concepts/limits",
       ],
     },
     {

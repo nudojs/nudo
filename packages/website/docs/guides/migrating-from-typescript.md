@@ -37,7 +37,7 @@ Nudo analyzes **JS semantics**. Pointing it at `.ts` strips annotations — use 
 **Work modes** (same checker):
 
 1. **Logic first** — keep/implement JS → `contract --draft` → review → `*.nudo.js`
-2. **Contracts first** — write sidecar/refine first → implement under that face
+2. **Contracts first** — write the sidecar / `@nudo:contract` first → implement under that face
 
 `nudo check` only validates. Schema/dts/guards come from `nudo export`.
 
