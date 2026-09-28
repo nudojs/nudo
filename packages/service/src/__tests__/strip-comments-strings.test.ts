@@ -50,3 +50,25 @@ describe("hasExport is string/comment-aware", () => {
     expect(hasNudoDirectives("export function f() { return 1; }")).toBe(false);
   });
 });
+
+describe("hasNudoDirectives ignores string/template false hits", () => {
+  it("directive text inside a string is not a directive", () => {
+    expect(hasNudoDirectives('const x = "@nudo:case";')).toBe(false);
+    expect(hasNudoDirectives('const doc = "@nudo:contract";')).toBe(false);
+  });
+
+  it("directive text inside a template literal is not a directive", () => {
+    expect(hasNudoDirectives("const x = `@nudo:pure`;")).toBe(false);
+  });
+
+  it("line-comment directive still counts (directives live in comments)", () => {
+    expect(hasNudoDirectives('// @nudo:case "a" (1)')).toBe(true);
+    expect(hasNudoDirectives("// @nudo:skip\nfunction f() {}")).toBe(true);
+  });
+
+  it("mode=directives does not pull in string-only false-hit files", () => {
+    const dirCfg = { ...analysisConfig({ analysis: { mode: "directives" } }) };
+    expect(shouldAnalyzeFile("/proj/a.js", 'const note = "@nudo:case";', dirCfg)).toBe(false);
+    expect(shouldAnalyzeFile("/proj/a.js", '// @nudo:case "a" (1)\nfunction f(){}', dirCfg)).toBe(true);
+  });
+});

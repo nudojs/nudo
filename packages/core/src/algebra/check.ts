@@ -11,6 +11,7 @@
  */
 
 import { parseSource as parse } from "./parse-source.ts";
+import { stripStringsKeepComments } from "./code-text.ts";
 import { isNullishLitAbs } from "./surface.ts";
 import {
   setAbsTruncationCollector,
@@ -270,8 +271,8 @@ function checkSourceInner(
   sidecarFp?: string,
 ): CheckReport {
   // 整文件一次判定，避免 per-function includes 全文扫
-  const hasRefineDirective =
-    source.includes("@nudo:contract") || source.includes("@nudo:contract");
+  // 指令住注释：字符串里的 `@nudo:contract` 不是契约来源
+  const hasRefineDirective = stripStringsKeepComments(source).includes("@nudo:contract");
   // ambient 侧车存在时预取本地导出表（一次 parse）：侧车同名绑定只落本地 named export
   const exportedNames =
     sidecarFp !== undefined ? localNamedExports(source) : undefined;

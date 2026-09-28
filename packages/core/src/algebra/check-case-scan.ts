@@ -8,6 +8,7 @@
  */
 
 import { parseSource as parse } from "./parse-source.ts";
+import { stripStringsKeepComments } from "./code-text.ts";
 import type { Abs } from "./abs.ts";
 import { abs, numLit, litValue } from "./abs.ts";
 import type { Pred } from "./pred.ts";
@@ -65,11 +66,11 @@ export function scanCaseInconsistency(
 ): CheckIssue[] {
   const out: CheckIssue[] = [];
   // 快路径：无 case 指令则免整树 walk；无契约来源时 case 不可能 ⊄ 契约
-  if (!source.includes("@nudo:case")) return out;
+  // 指令住注释——字符串里的同形文本不算命中
+  const directiveSrc = stripStringsKeepComments(source);
+  if (!directiveSrc.includes("@nudo:case")) return out;
   const hasContractOrigin =
-    source.includes("@nudo:contract") ||
-    source.includes("@nudo:contract") ||
-    opts.sidecarPresent === true;
+    directiveSrc.includes("@nudo:contract") || opts.sidecarPresent === true;
   if (!hasContractOrigin) return out;
   const file = opts.file ?? parse(source);
 

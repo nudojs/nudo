@@ -10,7 +10,10 @@
 
 // leak / budgets / memo keys
 export {
-  stripCommentsAndStrings, sourceHasRequireCall,
+  stripCommentsAndStrings, stripStringsKeepComments,
+  maskCommentsAndStrings, scanStringLiterals,
+  type StringLiteralSpan,
+  sourceHasRequireCall,
   sourceHasModuleDependency, sourceHasCjsExports
 } from "./algebra/code-text.ts";
 export {

@@ -72,6 +72,20 @@ export function f(x) { return double(x); }
     expect(formatAbs(a!.symbolic)).not.toContain("unknown");
     expect(b!.symbolic.shape.k).toBe("unknown");
   });
+
+  it("mock directive inside a string does not fail-close the gate", () => {
+    // 字符串里的 `@nudo:mock` 不是指令——无 mock 注入也不该被门禁打成 unknown
+    const fakeSrc = `
+export function f(x) {
+  const note = "@nudo:mock double = (x) => x + x";
+  return x + 1;
+}
+`;
+    const g = generalizeFromAst("f", fakeSrc);
+    expect(g).toBeTruthy();
+    expect(g!.symbolic.shape.k).not.toBe("unknown");
+    expect(formatAbs(g!.symbolic)).not.toContain("unknown");
+  });
 });
 
 describe("L2 class / CJS method explicit throws", () => {

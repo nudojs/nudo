@@ -34,7 +34,7 @@ import {
 
 export { filterDiagnosticsByLevel, diagnosticsLevelForFile };
 import { checkSource, pTrue, evictGeneralizeMemoForPaths, evictCheckSourceMemoForPaths, extractNudoImports, isNodeModulesPath, sidecarPathOf } from "@nudojs/core";
-import { extractAllLoadSpecs, resolveDepPath, sidecarSpecsOf } from "@nudojs/core/internal";
+import { extractAllLoadSpecs, resolveDepPath, sidecarSpecsOf, stripStringsKeepComments } from "@nudojs/core/internal";
 import { createHash } from "node:crypto";
 
 function sourceFingerprint(s: string): string {
@@ -363,7 +363,10 @@ export function evictModuleGraphCacheEntries(uris: string[]): void {
 }
 
 export function hasNudoDirectives(source: string): boolean {
-  return /@nudo:(case|mock|pure|skip|sample|contract|import|env|mock-module|as|replace)\b/.test(source);
+  // 与 service analysis-scope.hasNudoDirectives 同口径：指令住注释，字符串内不算
+  return /@nudo:(case|mock|pure|skip|sample|contract|import|env|mock-module|as|replace)\b/.test(
+    stripStringsKeepComments(source),
+  );
 }
 
 export function uriToFilePath(uri: string): string {

@@ -145,22 +145,127 @@ function isStripSource(file: string): boolean {
   return TS_EXT.has(e) || TSX_EXT.has(e);
 }
 
+/**
+ * shell/YAML 命令行的字符串+注释掩码（等长）。
+ * 不能复用 JS 的 stripCommentsAndStrings：`//` 在 shell 里不是注释
+ * （`curl https://…` 会被误截），`#` 才是。
+ * 引号内不改写：`echo "please run tsc first"` 不是 tsc 调用。
+ */
+function maskShellStringsAndComments(cmd: string): string {
+  const out = cmd.split("");
+  const blank = (from: number, to: number, keepNewlines: boolean): void => {
+    for (let i = from; i < to && i < out.length; i++) {
+      if (keepNewlines && cmd[i] === "\n") continue;
+      out[i] = " ";
+    }
+  };
+  let i = 0;
+  const n = cmd.length;
+  while (i < n) {
+    const c = cmd[i]!;
+    if (c === "'" || c === '"' || c === "`") {
+      const quote = c;
+      const start = i;
+      i++;
+      while (i < n) {
+        if (quote !== "'" && cmd[i] === "\\") {
+          i += 2;
+          continue;
+        }
+        if (cmd[i] === quote) {
+          i++;
+          break;
+        }
+        i++;
+      }
+      blank(start, i, true);
+      continue;
+    }
+    // shell 注释：# 起于词首（行首或空白后），不是 URL 里的 #fragment
+    if (c === "#" && (i === 0 || /\s/.test(cmd[i - 1]!))) {
+      const start = i;
+      while (i < n && cmd[i] !== "\n") i++;
+      blank(start, i, true);
+      continue;
+    }
+    if (c === "\\") {
+      i += 2;
+      continue;
+    }
+    i++;
+  }
+  return out.join("");
+}
+
+/** 代码区（非字符串/注释）片段重写：改写只发生在 shell 代码区 */
+function mapShellCodeSegments(cmd: string, map: (code: string) => string): string {
+  let out = "";
+  let i = 0;
+  let segStart = 0;
+  const n = cmd.length;
+  const flush = (end: number): void => {
+    if (end > segStart) out += map(cmd.slice(segStart, end));
+  };
+  while (i < n) {
+    const c = cmd[i]!;
+    if (c === "'" || c === '"' || c === "`") {
+      const quote = c;
+      const start = i;
+      i++;
+      while (i < n) {
+        if (quote !== "'" && cmd[i] === "\\") {
+          i += 2;
+          continue;
+        }
+        if (cmd[i] === quote) {
+          i++;
+          break;
+        }
+        i++;
+      }
+      flush(start);
+      out += cmd.slice(start, i);
+      segStart = i;
+      continue;
+    }
+    if (c === "#" && (i === 0 || /\s/.test(cmd[i - 1]!))) {
+      const start = i;
+      while (i < n && cmd[i] !== "\n") i++;
+      flush(start);
+      out += cmd.slice(start, i);
+      segStart = i;
+      continue;
+    }
+    if (c === "\\") {
+      i += 2;
+      continue;
+    }
+    i++;
+  }
+  flush(n);
+  return out;
+}
+
 /** 单条 shell 命令里的 tsc → nudo check（A1：CI workflow 可改写） */
 export function rewriteTscCommand(cmd: string): { cmd: string; changed: boolean } {
   const before = cmd;
-  let next = cmd;
-  // npx / pnpm exec / yarn tsc [--noEmit] [-p …]
-  next = next.replace(
-    /\b(?:npx |pnpm exec |pnpm dlx |yarn dlx |yarn )tsc\b(?:\s+--noEmit)?(?:\s+-p\s+[^\s;&|]+)?(?:\s+--pretty\s+\S+)?(?:\s+--skipLibCheck)?/g,
-    "npx nudojs check .",
-  );
-  // bare tsc
-  next = next.replace(
-    /(?<![\w./-])tsc\b(?:\s+--noEmit)?(?:\s+-p\s+[^\s;&|]+)?(?:\s+--pretty\s+\S+)?(?:\s+--skipLibCheck)?/g,
-    "nudo check .",
-  );
-  next = next.replace(/nudo check \.\s*&&\s*nudo check \./g, "nudo check .");
-  next = next.replace(/npx nudojs check \.\s*&&\s*npx nudojs check \./g, "npx nudojs check .");
+  // 只改写代码区：字符串/注释里的 tsc 是文本，不是编译器调用
+  const next = mapShellCodeSegments(cmd, (code) => {
+    let out = code;
+    // npx / pnpm exec / yarn tsc [--noEmit] [-p …]
+    out = out.replace(
+      /\b(?:npx |pnpm exec |pnpm dlx |yarn dlx |yarn )tsc\b(?:\s+--noEmit)?(?:\s+-p\s+[^\s;&|]+)?(?:\s+--pretty\s+\S+)?(?:\s+--skipLibCheck)?/g,
+      "npx nudojs check .",
+    );
+    // bare tsc
+    out = out.replace(
+      /(?<![\w./-])tsc\b(?:\s+--noEmit)?(?:\s+-p\s+[^\s;&|]+)?(?:\s+--pretty\s+\S+)?(?:\s+--skipLibCheck)?/g,
+      "nudo check .",
+    );
+    out = out.replace(/nudo check \.\s*&&\s*nudo check \./g, "nudo check .");
+    out = out.replace(/npx nudojs check \.\s*&&\s*npx nudojs check \./g, "npx nudojs check .");
+    return out;
+  });
   return { cmd: next, changed: next !== before };
 }
 
@@ -169,7 +274,10 @@ function looksLikeTscCommand(line: string): boolean {
   if (/^\s*#/.test(line)) return false;
   if (/^\s*-?\s*name\s*:/.test(line)) return false;
   if (/^\s*if\s*:/.test(line)) return false;
-  return /(?:^|[\s;&|`"'-])(?:npx |pnpm exec |pnpm dlx |yarn dlx |yarn )?tsc(?:\s|$|-)/.test(line);
+  // 字符串/注释里的 tsc 不算
+  return /(?:^|[\s;&|`"'-])(?:npx |pnpm exec |pnpm dlx |yarn dlx |yarn )?tsc(?:\s|$|-)/.test(
+    maskShellStringsAndComments(line),
+  );
 }
 
 export function rewriteWorkflowText(text: string): {
@@ -256,11 +364,12 @@ export function migrateStatus(rootDir: string): MigrateStatusRow[] {
     const tsFiles = files.filter((f) => TS_EXT.has(extname(f).toLowerCase()) && !isDeclarationFile(f)).length;
     const tsxFiles = files.filter((f) => TSX_EXT.has(extname(f).toLowerCase())).length;
     const scripts = (pkg?.scripts ?? {}) as Record<string, string>;
+    // 脚本是 shell 命令：字符串里的 tsc 不算
     const tscScripts = Object.entries(scripts)
-      .filter(([, cmd]) => /\btsc\b/.test(cmd))
+      .filter(([, cmd]) => /\btsc\b/.test(maskShellStringsAndComments(cmd)))
       .map(([name]) => name);
     const nudoScripts = Object.entries(scripts)
-      .filter(([, cmd]) => /\bnudo\b/.test(cmd))
+      .filter(([, cmd]) => /\bnudo\b/.test(maskShellStringsAndComments(cmd)))
       .map(([name]) => name);
     const deps = {
       ...((pkg?.dependencies ?? {}) as Record<string, string>),
@@ -487,7 +596,7 @@ export function migrateRetire(
 
   const scripts = (pkg.scripts ?? {}) as Record<string, string>;
   for (const [name, cmd] of Object.entries(scripts)) {
-    if (!/\btsc\b/.test(cmd)) continue;
+    if (!/\btsc\b/.test(maskShellStringsAndComments(cmd))) continue;
     const { cmd: next } = rewriteTscCommand(cmd);
     // package.json scripts 用本地 bin 名
     const local = next.replace(/npx nudojs check \./g, "nudo check .");
@@ -496,7 +605,7 @@ export function migrateRetire(
       scripts[name] = local;
     }
   }
-  if (!scripts["check:nudo"] && !Object.values(scripts).some((c) => c.includes("nudo check"))) {
+  if (!scripts["check:nudo"] && !Object.values(scripts).some((c) => maskShellStringsAndComments(c).includes("nudo check"))) {
     const to = "nudo check .";
     scripts["check:nudo"] = to;
     rewrittenScripts.push({ name: "check:nudo", from: "(none)", to });
@@ -551,7 +660,8 @@ export function migrateRetireAll(
     };
     const scripts = (pkg.scripts ?? {}) as Record<string, string>;
     const hasTsc =
-      Boolean(deps.typescript) || Object.values(scripts).some((c) => /\btsc\b/.test(c));
+      Boolean(deps.typescript) ||
+      Object.values(scripts).some((c) => /\btsc\b/.test(maskShellStringsAndComments(c)));
     if (!hasTsc) continue;
     // workflow 只改写一次（monorepo 根共享 .github）
     const doWf = opts.workflows !== false && !workflowsDone;

@@ -1,16 +1,15 @@
 /**
  * A6 missing-field quickfix：在目标 fn 的 `fn(` 调用括号内定位契约 `{`。
  * 纯函数（便于测试）：共享 shape / 跨 export 时返回 null，避免误改。
+ *
+ * 所有结构定位（`export const`、`fn(`、括号深度）只在**代码区**进行——
+ * 字符串/注释里的同形文本会把插入点指进字符串或错误递减 braceDepth。
  */
+
+import { maskCommentsAndStrings } from "@nudojs/core/internal";
 
 export function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-/** 去掉行注释，避免 `// fn({` 被误定位 */
-function stripLineComment(line: string): string {
-  const idx = line.indexOf("//");
-  return idx >= 0 ? line.slice(0, idx) : line;
 }
 
 export type SidecarInsertPos = { line: number; character: number };
@@ -24,18 +23,21 @@ export function findFnContractInsertPos(
   sidecarLines: string[],
   fnName: string,
 ): SidecarInsertPos | null {
+  // 等长掩码：注释/字符串整段变空格（保留 \n），下标与原文一一对应
+  const mask = maskCommentsAndStrings(sidecarLines.join("\n")).split("\n");
+
   const exportRe = new RegExp(`export\\s+const\\s+${escapeRegExp(fnName)}\\b`);
-  const fnLineIdx = sidecarLines.findIndex((l) => exportRe.test(l));
+  const fnLineIdx = mask.findIndex((l) => exportRe.test(l));
   if (fnLineIdx < 0) return null;
 
   let startLine = -1;
   let startCol = -1; // 指向 `fn(` 的 `(`
-  for (let i = fnLineIdx; i < sidecarLines.length; i++) {
+  for (let i = fnLineIdx; i < mask.length; i++) {
     // 已进入下一 export 绑定仍未找到 fn( → 不属于目标
-    if (i > fnLineIdx && /\bexport\s+(?:const|let|var|function|default)\b/.test(sidecarLines[i]!)) {
+    if (i > fnLineIdx && /\bexport\s+(?:const|let|var|function|default)\b/.test(mask[i]!)) {
       break;
     }
-    const line = stripLineComment(sidecarLines[i]!);
+    const line = mask[i]!;
     const col = line.indexOf("fn(");
     if (col >= 0) {
       // 导出行上：只接受绑定名之后的 fn(
@@ -52,8 +54,8 @@ export function findFnContractInsertPos(
 
   let callDepth = 0;
   let braceDepth = 0;
-  for (let i = startLine; i < sidecarLines.length; i++) {
-    const t = sidecarLines[i]!;
+  for (let i = startLine; i < mask.length; i++) {
+    const t = mask[i]!;
     const col0 = i === startLine ? startCol : 0;
     for (let col = col0; col < t.length; col++) {
       const ch = t[col]!;

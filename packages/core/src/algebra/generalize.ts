@@ -9,6 +9,7 @@
  */
 
 import { parseSource as babelParse } from "./parse-source.ts";
+import { stripStringsKeepComments } from "./code-text.ts";
 import type { Node } from "@babel/types";
 import type { Term } from "./term.ts";
 import { v as termVar } from "./term.ts";
@@ -695,8 +696,8 @@ function generalizeFromAstUncached(
       // 有效契约单点读取（handwritten 与 generated 都可用——这是推导/展示
       // 入口面，非执法）。无源码指令且无 ambient 侧车时保持旧快路径行为。
       const r = opts.refine;
-      const hasDirective =
-        source.includes("@nudo:contract") || source.includes("@nudo:contract");
+      // 指令住注释：字符串里的 `@nudo:contract` 不是契约来源
+      const hasDirective = stripStringsKeepComments(source).includes("@nudo:contract");
       const sc =
         opts.sidecarFp ??
         (r.loadModule && r.fromFile
@@ -784,20 +785,22 @@ function generalizeFromAstUncached(
   const hasReps = inject && Object.keys(inject.replacements ?? {}).length > 0;
   // 函数 mock 与模块 mock 分门：mock-module 的注入面是 modules（导出表覆盖），
   // 不是 inject.mocks——混用会把仅有 mock-module 的文件误门成 fail-closed。
-  const hasFnMockDirective = /@nudo:mock\s+\w+\s*(?:=|from\b)/.test(source);
-  const hasModMockDirective = /@nudo:mock-module\b/.test(source);
+  // 指令探测同 hasNudoDirectives：注释算命中，字符串/模板里的同形文本不算。
+  const directiveSrc = stripStringsKeepComments(source);
+  const hasFnMockDirective = /@nudo:mock\s+\w+\s*(?:=|from\b)/.test(directiveSrc);
+  const hasModMockDirective = /@nudo:mock-module\b/.test(directiveSrc);
   const hasModInject =
     inject && inject.modules && Object.keys(inject.modules).length > 0;
   const mockGated =
     (hasFnMockDirective && !hasMocks) || (hasModMockDirective && !hasModInject);
-  const envGatedSource = /@nudo:env\b/.test(source) && !hasEnv;
+  const envGatedSource = /@nudo:env\b/.test(directiveSrc) && !hasEnv;
   // 自由标识符分析用词法绑定名（formals），非展示名（rest 的 "...args" 不匹配
   // AST 标识符 args）；pattern 取 bound 顶层名。
   const boundNames = formals.flatMap((f) =>
     f.kind === "pattern" ? f.bound : [f.name],
   );
   const envGated = envGatedSource && freeIdentifiers(body, boundNames).size > 0;
-  const replaceGated = /@nudo:replace\b/.test(source) && !hasReps;
+  const replaceGated = /@nudo:replace\b/.test(directiveSrc) && !hasReps;
   const evalEligible =
     !unresolvableImports &&
     !mockGated &&

@@ -10,6 +10,7 @@
  */
 import type { Node, File } from "@babel/types";
 import { hashSource } from "./hash-source.ts";
+import { stripStringsKeepComments } from "./code-text.ts";
 
 export type FnFp = { own: string; deps: string; nRefs: number };
 
@@ -283,7 +284,8 @@ function hasModuleSyntax(file: File): boolean {
  * 只认顶层 ExpressionStatement 会漏报约束违规。
  */
 export function canSkipLiteralCallScan(source: string, file: File): boolean {
-  if (source.includes("@nudo:contract")) return false;
+  // 指令住注释：字符串里的 `@nudo:contract` 不挡跳过
+  if (stripStringsKeepComments(source).includes("@nudo:contract")) return false;
   if (hasModuleSyntax(file)) return false;
   if (hasAnyCallLike(file)) return false;
   const fps = fnFingerprints(source, file);

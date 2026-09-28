@@ -256,6 +256,75 @@ describe("nudo migrate", () => {
     expect(rewriteTscCommand("pnpm run typecheck").changed).toBe(false);
   });
 
+  it("tsc inside shell strings / comments is not rewritten", () => {
+    // 字符串里的 tsc 是普通文本
+    expect(rewriteTscCommand('echo "please run tsc first"').changed).toBe(false);
+    expect(rewriteTscCommand("echo 'please run tsc first'").changed).toBe(false);
+    expect(rewriteTscCommand('echo "please run tsc first"').cmd).toBe(
+      'echo "please run tsc first"',
+    );
+    // 注释里的 tsc 不是命令
+    expect(rewriteTscCommand("tsc --noEmit # keep tsc around").cmd).toBe(
+      "nudo check . # keep tsc around",
+    );
+    expect(rewriteTscCommand("# tsc --noEmit").changed).toBe(false);
+    // 字符串外的真实 tsc 仍改写，字符串原样保留
+    expect(rewriteTscCommand('tsc --noEmit && echo "tsc done"').cmd).toBe(
+      'nudo check . && echo "tsc done"',
+    );
+  });
+
+  it("workflow line with tsc only in a string is not a tsc line", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-str-"));
+    dirs.push(dir);
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "demo" }), "utf-8");
+    const wfDir = join(dir, ".github", "workflows");
+    mkdirSync(wfDir, { recursive: true });
+    const wf = join(wfDir, "ci.yml");
+    writeFileSync(
+      wf,
+      [
+        "name: CI",
+        "jobs:",
+        "  check:",
+        "    steps:",
+        '      - run: echo "please run tsc first"',
+        "      - run: pnpm run lint && tsc --noEmit",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const hits = listWorkflowTscLines(dir);
+    // 只有真 tsc 命令那行计入
+    expect(hits.length).toBe(1);
+    expect(hits[0]!.line).toContain("tsc --noEmit");
+
+    const result = migrateRetire(dir);
+    const text = readFileSync(wf, "utf-8");
+    // 字符串里的 tsc 原样保留
+    expect(text).toContain('echo "please run tsc first"');
+    expect(text).toContain("nudo check .");
+  });
+
+  it("package.json script with tsc only in a string is not a tsc script", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-pkg-"));
+    dirs.push(dir);
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "demo",
+        scripts: {
+          hint: 'echo "run tsc yourself"',
+          typecheck: "tsc --noEmit",
+        },
+      }),
+      "utf-8",
+    );
+    const rows = migrateStatus(dir);
+    expect(rows[0]!.tscScripts).toEqual(["typecheck"]);
+  });
+
   it("CLI migrate status is wired", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-cli-"));
     dirs.push(dir);

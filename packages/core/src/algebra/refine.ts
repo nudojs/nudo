@@ -22,6 +22,7 @@ import type { Pred } from "./pred.ts";
 import { v as termVar } from "./term.ts";
 import { parseSource } from "./parse-source.ts";
 import { hashSource } from "./hash-source.ts";
+import { stripStringsKeepComments } from "./code-text.ts";
 // leaf 模块：load-deps-fp.ts 已 import 本文件（extractNudoImports），
 // 反向 import 会成环——路径函数从 sidecar-path.ts 单源取用
 import { isNodeModulesPath, resolveDepPath } from "./sidecar-path.ts";
@@ -834,7 +835,8 @@ export function extractRefinesFromSource(
   opts: RefineResolveOpts = {},
 ): RefineEntry[] {
   // 快路径：整文件无 @nudo:contract 时免 regex 扫全文（after-edit 批量 check）
-  if (!source.includes("@nudo:contract")) return [];
+  // 指令住注释——字符串里的同形文本不算
+  if (!stripStringsKeepComments(source).includes("@nudo:contract")) return [];
   const constraints = collectConstraints(source, opts);
   const out: RefineEntry[] = [];
   for (const line of extractRefineLines(source, fnName)) {
@@ -883,7 +885,7 @@ export function extractRefineReturnFromSource(
   fnName: string,
   opts: RefineResolveOpts = {},
 ): { name: string; constraint: NudoConstraint } | undefined {
-  if (!source.includes("@nudo:contract")) return undefined;
+  if (!stripStringsKeepComments(source).includes("@nudo:contract")) return undefined;
   const constraints = collectConstraints(source, opts);
   for (const line of extractRefineLines(source, fnName)) {
     const parts = line.split(/&&|,/).map((s) => s.trim()).filter(Boolean);
@@ -914,7 +916,8 @@ export function extractDeclaredThrows(
   source: string,
   fnName: string,
 ): string[] | "*" | undefined {
-  if (!source.includes("@nudo:throws") && !source.includes("!! throws")) {
+  const directiveSrc = stripStringsKeepComments(source);
+  if (!directiveSrc.includes("@nudo:throws") && !directiveSrc.includes("!! throws")) {
     return undefined;
   }
   const kinds = new Set<string>();
