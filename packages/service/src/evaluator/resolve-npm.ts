@@ -101,7 +101,9 @@ export function resolveNpmJsEntry(
 function resolveExportsNudo(exports: unknown, subpath: string): string | null {
   if (!exports || typeof exports !== "object") return null;
 
-  const entry = (exports as Record<string, unknown>)[subpath];
+  // package.json exports 键："." 或 "./sub"（subpath 已去掉前导 /）
+  const key = subpath === "." ? "." : `./${subpath}`;
+  const entry = (exports as Record<string, unknown>)[key];
   if (!entry) return null;
 
   if (typeof entry === "object" && entry !== null && "nudo" in entry) {
@@ -123,7 +125,8 @@ export function resolveNpmNudo(
     ? source.split("/").slice(0, 2)
     : source.split("/").slice(0, 1);
   const pkgName = parts.join("/");
-  const subpath = source.slice(pkgName.length) || ".";
+  // exports 键是 "./sub" / "."，不是 "/sub"（与 resolveNpmJsEntry 同口径）
+  const subpath = source.slice(pkgName.length).replace(/^\//, "") || ".";
 
   const nodeModules = findNodeModules(fromDir);
   if (!nodeModules) return null;
