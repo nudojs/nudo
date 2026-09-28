@@ -256,9 +256,19 @@ export function concatString(a: Abs, b: Abs): Abs {
   }
   // 至少一侧是 string（含 template / prim / 可 stringify 字面量）
   const aParts = coerceToStringParts(a);
-  const evalParts = coerceToStringParts(b);
-  if (!aParts || !evalParts) return abs({ k: "unknown" }, undefined, undefined, "partial");
-  return createTemplateAbs([...aParts, ...evalParts]);
+  const bParts = coerceToStringParts(b);
+  if (!aParts || !bParts) {
+    // 一侧确定是 string（string prim/lit/template），另一侧 any/unknown（无信息）：
+    // JS 里字符串操作数决定结果类型为 string——`"s" + x` / `x + "s"` / `${x}`
+    // 都是 string（ToString 对 Symbol 抛的路径不在此建模）。此前返回 unknown
+    // 与 limitations.md 的混合 `+` 粗化纪律（number|obj → number|string）自相
+    // 矛盾，并把整条返回污染成 unknown + 误报 nudo:unknown-inference。
+    if (isStrPrim(a) || isStrPrim(b)) {
+      return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
+    }
+    return abs({ k: "unknown" }, undefined, undefined, "partial");
+  }
+  return createTemplateAbs([...aParts, ...bParts]);
 }
 
 /**

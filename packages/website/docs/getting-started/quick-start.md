@@ -42,7 +42,7 @@ OK
 
 signatures
   scale(x: any) => number | string
-  formatName(first: any, last: any) => number | string
+  formatName(first: any, last: any) => string
 
 (no issues)
 ```
@@ -93,7 +93,7 @@ FAILED
 
 signatures
   scale(x: number) => number
-  formatName(first: any, last: any) => number | string
+  formatName(first: any, last: any) => string
 
 issues
   [ERROR L12 scale] scale[x]: argument ⊭ precondition  (nudo:constraint-violated)

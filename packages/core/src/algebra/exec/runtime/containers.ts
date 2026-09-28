@@ -640,6 +640,12 @@ export function $len(a: Abs): Abs {
       "exact",
     );
   }
+  // 抽象 string prim（含模板串、拼接结果）：内容未知但 .length 恒为 number。
+  // 此前落到末尾 unknown —— `String(x).length` / `${x}.length` 被污染成
+  // unknown 并误报 nudo:unknown-inference（类型上不可能不是 number）。
+  if (a.shape.k === "prim" && a.shape.type === "string") {
+    return abs({ k: "prim", type: "number" }, undefined, undefined, "path");
+  }
   // String 包装对象（Object('ab') / new String）：内层 length 槽
   if (a.shape.k === "brand" && a.shape.name === "String") {
     const inner = a.shape.shape;
