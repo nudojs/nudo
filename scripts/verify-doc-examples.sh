@@ -213,10 +213,18 @@ verify_test cli packages/website/docs/guides/cli.md \
   '1 passed'
 
 # contract: @nudo:import template + refine + violating call gates check.
+# The lap fences add: accepted sidecar bindings (lineTotal/greet/tag tighten
+# the signatures), the violating lineTotal(-1, 5) call gates on the tightened
+# pred, and the stale @generated wrap segment drifts — warning only.
 verify_check contract packages/website/docs/guides/contract.md \
   'nudo:constraint-violated' \
   'expected: x > 0' \
-  'needsPositive(x: number) => number'
+  'needsPositive(x: number) => number' \
+  'lineTotal(qty: number, price: number) => number' \
+  'greet(user: { name: string }) => string' \
+  'expected: qty > 0' \
+  'nudo:interface-drift' \
+  'wrap[text]: persisted @generated segment ≠ today'\''s call-site domain'
 
 # abs: @nudo:case witnesses across concrete/symbolic/mixed args.
 verify_test abs packages/website/docs/concepts/abs.md \
