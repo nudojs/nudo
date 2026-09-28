@@ -83,7 +83,8 @@ function dynamicImportSpec(node: Record<string, unknown>): string | undefined {
  * 跳转 spec 必须相对**当前中间模块**目录解析（不是原始调用方）：`a.js` →
  * `sub/b.js` → `./c.js` 的目标是 `sub/c.js`，不是与 `a.js` 同目录的 `c.js`。
  */
-function resolveExportSource(
+/** 沿 re-export 链解析 fn 的定义源（导出测试 / 侧车基址用） */
+export function resolveExportSource(
   modSrc: string,
   fnName: string,
   loadSpecFrom: (spec: string, fromFile: string) => string | undefined,
@@ -103,6 +104,8 @@ function resolveExportSource(
   }
   const file = parse(modSrc);
   let nextSpec: string | undefined;
+  /** 跳到下一模块时要找的本地名（export { foo as bar } → foo） */
+  let nextFnName = fnName;
   for (const stmt of file.program.body) {
     if (stmt.type !== "ExportNamedDeclaration" && stmt.type !== "ExportAllDeclaration") continue;
     const src = (stmt as { source?: { type?: string; value?: unknown } }).source;
@@ -114,9 +117,22 @@ function resolveExportSource(
     const clause = ((stmt as { specifiers?: unknown[] }).specifiers ?? []) as Array<Record<string, unknown>>;
     for (const sp of clause) {
       if (sp.type !== "ExportSpecifier") continue;
-      const local = sp.local as { type?: string; name?: string } | undefined;
-      if (local?.type === "Identifier" && local.name === fnName) {
+      const local = sp.local as { type?: string; name?: string; value?: unknown } | undefined;
+      const exported = (sp.exported ?? sp.local) as
+        | { type?: string; name?: string; value?: unknown }
+        | undefined;
+      // 对外可见名是 exported（`export { foo as bar }` 的 bar）；
+      // 跳到源模块后要按 local 名（foo）继续找定义。
+      const exportedName =
+        exported?.type === "Identifier"
+          ? exported.name
+          : exported && "value" in exported
+            ? String(exported.value ?? "")
+            : undefined;
+      if (exportedName === fnName) {
         nextSpec = String(src.value);
+        nextFnName =
+          local?.type === "Identifier" && local.name ? local.name : fnName;
         break;
       }
     }
@@ -130,7 +146,7 @@ function resolveExportSource(
   const nextFromFile = hopFrom ? resolveDepPath(hopFrom, nextSpec) : "";
   return resolveExportSource(
     next,
-    fnName,
+    nextFnName,
     loadSpecFrom,
     depth + 1,
     baseFromFile,
