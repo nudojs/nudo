@@ -7,12 +7,12 @@ import { readFileSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { parse } from "@nudojs/parser";
 import {
-  abs as makeAbs,
   absFunction,
   bindingsOf,
   tryRunTranspiled,
   callTranspiledExportFull,
   foldStaticStringExpr,
+  namespaceAbsOf,
   unknown,
   type Abs,
   type AbsModuleExports,
@@ -524,11 +524,8 @@ function importLocalBindings(
       const local = sp.local?.name;
       if (!local) continue;
       if (sp.type === "ImportNamespaceSpecifier") {
-        // 命名空间（named + default 槽）→ open obj Abs（与 bindNamespace 同口径）
-        const slots: Record<string, { value: Abs }> = {};
-        for (const [k, v] of Object.entries(mod.named)) slots[k] = { value: v };
-        if (mod.default) slots["default"] = { value: mod.default };
-        out.set(local, makeAbs({ k: "obj", slots, open: true }, undefined, undefined, "path"));
+        // 命名空间（named + default 槽）→ open obj Abs（与 namespaceAbsOf 同口径）
+        out.set(local, namespaceAbsOf(mod));
       } else if (sp.type === "ImportDefaultSpecifier") {
         if (mod.default) out.set(local, mod.default);
       } else if (sp.type === "ImportSpecifier") {

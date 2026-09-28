@@ -161,7 +161,7 @@ export {
 } from "./domain-membership.ts";
 
 export {
-  type AbsModuleExports, bindImports, collectAbsExports
+  type AbsModuleExports, bindImports, collectAbsExports, namespaceAbsOf
 } from "./abs-modules.ts";
 
 export {

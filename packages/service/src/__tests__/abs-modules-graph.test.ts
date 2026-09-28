@@ -133,4 +133,59 @@ export function b(x) { return x; }
     const { modules } = evalAbsModuleGraph(mainSrc, join(dir, "main.js"));
     expect(modules["./a.js"]).toBeDefined();
   });
+
+  it("export * as ns re-exports a namespace slot (BUG-004)", () => {
+    const dir = tmpProject({
+      "m.js": `export function inc(x) { return x + 1; }
+export const k = 1;`,
+      "barrel.js": `export * as ns from "./m.js";`,
+      "main.js": `
+import { ns } from "./barrel.js";
+export function go(x) { return ns.inc(x); }
+`,
+    });
+    const mainSrc = `import { ns } from "./barrel.js";
+export function go(x) { return ns.inc(x); }
+`;
+    const { modules } = evalAbsModuleGraph(mainSrc, join(dir, "main.js"));
+    const barrel = modules["./barrel.js"]!;
+    expect(barrel.named.ns).toBeDefined();
+    const ns = barrel.named.ns!;
+    expect(ns.shape.k).toBe("obj");
+    expect((ns.shape as { open?: boolean }).open).toBe(true);
+    expect(ns.conf).toBe("path");
+    const slots = (ns.shape as { slots: Record<string, { value: unknown }> }).slots;
+    expect(slots.inc).toBeDefined();
+    expect(slots.k).toBeDefined();
+
+    const result = analyzeExportWithModules(mainSrc, "go", [numLit(10)], modules);
+    expect(litValue(result)).toBe(11);
+  });
+
+  it("import * as ns missing member does not false-throw TypeError (BUG-004)", () => {
+    const dir = tmpProject({
+      "m.js": `export function inc(x) { return x + 1; }`,
+      "main.js": `
+import * as ns from "./m.js";
+export function go() { return ns.notThere(); }
+`,
+    });
+    const mainSrc = `import * as ns from "./m.js";
+export function go() { return ns.notThere(); }
+`;
+    const { modules } = evalAbsModuleGraph(mainSrc, join(dir, "main.js"));
+    const run = runTranspiled(mainSrc, { mode: "analyze", modules });
+    const res = callTranspiledExportFull(run, "go", []);
+    // open+path：缺失成员是分析视图不完整，不得按「运行时缺失」假抛 TypeError
+    expect(res.result).toBeDefined();
+    const throwsShape = res.throws.shape as { k: string; name?: string; members?: Array<{ shape?: { name?: string } }> };
+    if (throwsShape.k === "brand") {
+      expect(throwsShape.name).not.toBe("TypeError");
+    }
+    if (throwsShape.k === "sum") {
+      for (const m of throwsShape.members ?? []) {
+        expect(m.shape?.name).not.toBe("TypeError");
+      }
+    }
+  });
 });

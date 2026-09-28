@@ -14,9 +14,9 @@ import { withExecPhi, $copy } from "./runtime.ts";
 import { setEvalBindingSink } from "./calls.ts";
 import type { Abs } from "../abs.ts";
 import type { Phi } from "../pred.ts";
-import { never, unknown, abs } from "../abs.ts";
+import { never, unknown } from "../abs.ts";
 import { joinAbs } from "../objects.ts";
-import type { AbsModuleExports } from "../abs-modules.ts";
+import { type AbsModuleExports, namespaceAbsOf } from "../abs-modules.ts";
 import { formatAbs } from "../format.ts";
 import { transpile, transpileExpression, runtimeImportOf } from "./transpile.ts";
 import { NudoUnsupportedError } from "./unsupported.ts";
@@ -258,18 +258,6 @@ function bindImport(
   return absCallable(v as Abs);
 }
 
-/**
- * 命名空间 Abs（import * as ns / CJS require 绑定）：
- * open + path——导出收集可能不全（CJS 收集失败等），缺失成员是分析
- * 视图不完整，不得按「运行时缺失」判定（不可调用判定会假抛 TypeError）。
- */
-function namespaceAbsOf(mod: AbsModuleExports): Abs {
-  const slots: Record<string, { value: Abs }> = {};
-  for (const [k, v] of Object.entries(mod.named)) slots[k] = { value: v };
-  if (mod.default) slots["default"] = { value: mod.default };
-  return abs({ k: "obj", slots, open: true }, undefined, undefined, "path");
-}
-
 /** `import * as ns`：整命名空间（named + default 槽）→ Abs 对象 */
 function bindNamespace(modules: RunTranspiledOptions["modules"], spec: string): Abs {
   const mod = modules?.[spec] as AbsModuleExports | undefined;
@@ -328,6 +316,13 @@ function rewriteExportStatements(js: string): string {
           return `__nudoExport(${JSON.stringify(exp)}, __nudoBindImport(${JSON.stringify(spec)}, ${JSON.stringify(local)}));`;
         })
         .join("\n"),
+  );
+  // export * as ns from "spec"：命名空间 re-export（与 importLocalBindings 的
+  // namespace open-obj 口径一致——__nudoBindNamespace → namespaceAbsOf）
+  js = js.replace(
+    /^export\s*\*\s+as\s+([A-Za-z_$][\w$]*)\s+from\s*["']([^"']+)["'];\s*$/gm,
+    (_all, ns: string, spec: string) =>
+      `__nudoExport(${JSON.stringify(ns)}, __nudoBindNamespace(${JSON.stringify(spec)}));`,
   );
   // export * from "spec"：并入 named（不含 default，ESM 语义）
   js = js.replace(

@@ -214,11 +214,26 @@ export function localNamedExports(source: string): Set<string> {
 
     // --- ESM named ---
     if (s.type === "ExportNamedDeclaration") {
-      if (s.source) continue; // export {…} from "…"（re-export）
+      if (s.source) {
+        // `export * as ns from "…"`：导出名 ns 进集合（re-export 不绑源码，
+        // 但 namespace 槽是本模块导出面）
+        const specs = (s.specifiers as NodeLike[] | undefined) ?? [];
+        for (const spec of specs) {
+          if (spec.type !== "ExportNamespaceSpecifier") continue;
+          const name = identName(spec.exported as NodeLike);
+          if (name) out.add(name);
+        }
+        continue; // export {…} from "…"（re-export）
+      }
       const d = s.declaration as NodeLike | null | undefined;
       if (!d) {
         const specs = (s.specifiers as NodeLike[] | undefined) ?? [];
         for (const spec of specs) {
+          if (spec.type === "ExportNamespaceSpecifier") {
+            const name = identName(spec.exported as NodeLike);
+            if (name) out.add(name);
+            continue;
+          }
           if (spec.type !== "ExportSpecifier") continue;
           const name = identName(spec.exported as NodeLike);
           if (!name) continue;

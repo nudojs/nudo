@@ -180,6 +180,18 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         // 保留合法 ESM 形态：run.ts 后处理改写为 __nudoExport（modules 表
         // 注入绑定）；真实 .mjs import 消费者直接吃标准 ESM 语义。
         if (depth !== 0) return `${pad}/* nested export specifiers skipped */`;
+        // ExportNamespaceSpecifier：`export * as ns from "spec"`（Babel 8 无 local）
+        const nsSpecs = stmt.specifiers.filter((s) => s.type === "ExportNamespaceSpecifier");
+        if (nsSpecs.length > 0) {
+          if (!stmt.source) return `${pad}/* export * as without source skipped */`;
+          return nsSpecs
+            .map((s) => {
+              const exported =
+                s.exported.type === "Identifier" ? s.exported.name : s.exported.value;
+              return `${pad}export * as ${exported} from ${JSON.stringify(stmt.source!.value)};`;
+            })
+            .join("\n");
+        }
         const specs = stmt.specifiers
           .filter(
             (s): s is typeof s & {

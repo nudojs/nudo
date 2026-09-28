@@ -112,7 +112,7 @@ export {
   mapGetEntry, mapHasEntry, mapSetEntry, mapSizeAbs, mapValuesAbs,
   markExtState, markNullProtoObj, markPureFn, matchRelIdentLit,
   mergeCollectionArms, migrateInvariants, migrateNullProto, mod, mul,
-  namespaceNameOf, ne, negAbs, negatePred, never, not, notAbs,
+  namespaceAbsOf, namespaceNameOf, ne, negAbs, negatePred, never, not, notAbs,
   noteEvalCallRecord, noteEvalFallback, noteCollectionWrite,
   notePromiseExecutorFork, num, numLit, numVar, number, obj, objOf,
   objectProtoBrand, objectProtoMethodAbs, omit, or, pFalse, pTrue,
