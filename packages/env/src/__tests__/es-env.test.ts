@@ -7,6 +7,7 @@ import {
   numLit,
   strLit,
   boolLit,
+  abs,
 } from "@nudojs/core";
 import type { Abs } from "@nudojs/core";
 
@@ -100,6 +101,26 @@ describe("es env load + key builtins", () => {
     const impl = getFnImpl(floor)!;
     const folded = impl.apply!([numLit(3.7)]);
     expect(litValue(folded!)).toBe(3);
+  });
+
+  it("Math.min / Math.max / Math.hypot are variadic (3+ args stay number)", () => {
+    const Math_ = globalOf(env, "Math");
+    for (const [name, args, expected] of [
+      ["min", [3, 1, 2], 1],
+      ["max", [3, 1, 2], 3],
+      ["hypot", [3, 4, 12], 13],
+    ] as const) {
+      const fn = walk(Math_, name)!;
+      // 签名：required 为空 + 一个 rest 槽（形状里出现 "..."）
+      expect(shapeOf(fn, `Math.${name}`)).toContain("...");
+      const impl = getFnImpl(fn)!;
+      const folded = impl.apply!(args.map((n) => numLit(n)));
+      expect(litValue(folded!), `Math.${name}(${args.join(", ")})`).toBe(expected);
+      // 抽象实参：结果仍是 number（不再因 arity 不匹配落 unknown）
+      const abstractNum = abs({ k: "prim", type: "number" }, undefined, undefined, "path");
+      const abstract = impl.apply!([abstractNum, abstractNum, abstractNum]);
+      expect(shapeOf(abstract, `Math.${name} abstract`)).toContain("number");
+    }
   });
 
   it("Number static checks and parseInt/parseFloat are present", () => {

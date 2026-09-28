@@ -16,6 +16,7 @@ import {
   brandOf,
   errorBrandOf,
   envFn,
+  envFnVariadic,
   nullLit,
   objAbs,
   promiseOf,
@@ -53,6 +54,19 @@ function numImpl2Abs(fn: (a: number, b: number) => number): AbsSigImpl {
     const a = absNumLit(args[0]);
     const b = absNumLit(args[1]);
     return a !== undefined && b !== undefined ? numLit(fn(a, b)) : undefined;
+  };
+}
+
+/** 变参数值内建（Math.min / Math.max / Math.hypot）：全字面量才折 */
+function numImplVAbs(fn: (...xs: number[]) => number): AbsSigImpl {
+  return (args) => {
+    const nums: number[] = [];
+    for (const a of args) {
+      const n = absNumLit(a);
+      if (n === undefined) return undefined;
+      nums.push(n);
+    }
+    return numLit(fn(...nums));
   };
 }
 
@@ -190,8 +204,18 @@ export function defineEnv(): EnvDefinition {
         round: envFn([prim.num()], prim.num(), numImpl1Abs(Math.round)),
         trunc: envFn([prim.num()], prim.num(), numImpl1Abs(Math.trunc)),
         sign: envFn([prim.num()], prim.num(), numImpl1Abs(Math.sign)),
-        max: envFn([prim.num(), prim.num()], prim.num(), numImpl2Abs(Math.max)),
-        min: envFn([prim.num(), prim.num()], prim.num(), numImpl2Abs(Math.min)),
+        // min/max/hypot 在 JS 里是变参（`Math.min(a, b, c)`）——二元声明会让
+        // 多实参调用落进 arity 不匹配 → unknown
+        max: envFnVariadic(prim.num(), prim.num(), {
+          apply: numImplVAbs(Math.max),
+          restName: "...values",
+          name: "Math.max",
+        }),
+        min: envFnVariadic(prim.num(), prim.num(), {
+          apply: numImplVAbs(Math.min),
+          restName: "...values",
+          name: "Math.min",
+        }),
         pow: envFn([prim.num(), prim.num()], prim.num(), numImpl2Abs(Math.pow)),
         sqrt: envFn([prim.num()], prim.num(), numImpl1Abs(Math.sqrt)),
         cbrt: envFn([prim.num()], prim.num(), numImpl1Abs(Math.cbrt)),
@@ -207,7 +231,11 @@ export function defineEnv(): EnvDefinition {
         acos: envFn([prim.num()], prim.num(), numImpl1Abs(Math.acos)),
         atan: envFn([prim.num()], prim.num(), numImpl1Abs(Math.atan)),
         atan2: envFn([prim.num(), prim.num()], prim.num(), numImpl2Abs(Math.atan2)),
-        hypot: envFn([prim.num(), prim.num()], prim.num(), numImpl2Abs(Math.hypot)),
+        hypot: envFnVariadic(prim.num(), prim.num(), {
+          apply: numImplVAbs(Math.hypot),
+          restName: "...values",
+          name: "Math.hypot",
+        }),
         clz32: envFn([prim.num()], prim.num(), numImpl1Abs(Math.clz32)),
         imul: envFn([prim.num(), prim.num()], prim.num(), numImpl2Abs(Math.imul)),
         fround: envFn([prim.num()], prim.num(), numImpl1Abs(Math.fround)),
