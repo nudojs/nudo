@@ -10,6 +10,7 @@ import { add, sub, mul, div, mod, cmp, falseConstraint } from "../../arithmetic.
 import {
   typeofAbs, negAbs, notAbs, strictEqAbs, looseEqAbs, bitandAbs, bitorAbs,
   bitxorAbs, bitnotAbs, shlAbs, shrAbs, ushrAbs, powAbs, toNumberAbs,
+  toNumericAbs, updateAddAbs, updateSubAbs,
 } from "../../surface.ts";
 import { joinAbs } from "../../objects.ts";
 import { asAbsVal, currentExecPhi, $lit, litTruth, isDefinitelyTrue, isDefinitelyFalse, noBody, undef, throwStrictWrite, NudoThrow } from "./state.ts";
@@ -88,6 +89,18 @@ export function $pow(a: Abs, b: Abs): Abs {
 
 export function $toNumber(a: Abs): Abs {
   return toNumberAbs(a);
+}
+/** ToNumeric（UpdateExpression）：number|bigint，bigint 保持 */
+export function $toNumeric(a: Abs): Abs {
+  return toNumericAbs(a);
+}
+/** UpdateExpression `old+1`：ToNumeric 后按 numeric type 加 1（无 string concat） */
+export function $updateAdd(a: Abs): Abs {
+  return updateAddAbs(a);
+}
+/** UpdateExpression `old-1` */
+export function $updateSub(a: Abs): Abs {
+  return updateSubAbs(a);
 }
 
 export function $neg(a: Abs): Abs {

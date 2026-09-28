@@ -267,16 +267,19 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       return `/* unary ${expr.operator} */ $lit(undefined)`;
     }
     case "UpdateExpression": {
-      // i++/++i/i--/--i：前缀 = 新值（自包含写回）；后缀表达式值为旧值，
+      // i++/++i/i--/--i：ES 规范 oldValue = ToNumeric(GetValue(lvalue))，
+      // newValue = oldValue ± 1（1 随 numeric type：number→1 / bigint→1n）。
+      // 不得走 $add/$sub 的字符串拼接臂（`"5"++` 原生 6，拼接会得 "51"）。
+      // 前缀 = 新值（自包含写回）；后缀表达式值为旧值，
       // 但**必须在表达式内立刻写回**——否则同表达式后续读到未自增的旧值
       // （`x++ + x` 原生 11，语句级延迟写回会折成 10）。
-      // 后缀： (x = x+1, x-1) / (x = x-1, x+1)
+      // 后缀缓存 ToNumeric 旧值：不得用 `(x=x+1, x-1)` 还原
+      // （2^53+1 舍回 2^53，减 1 得 2^53-1，丢旧值）。
       const arg = expr.argument as Expression;
-      const fn = expr.operator === "++" ? "$add" : "$sub";
-      const undo = expr.operator === "++" ? "$sub" : "$add";
+      const fn = expr.operator === "++" ? "$updateAdd" : "$updateSub";
       if (arg.type === "Identifier") {
-        if (expr.prefix) return `${arg.name} = ${fn}(${arg.name}, $lit(1))`;
-        return `(${arg.name} = ${fn}(${arg.name}, $lit(1)), ${undo}(${arg.name}, $lit(1)))`;
+        if (expr.prefix) return `${arg.name} = ${fn}(${arg.name})`;
+        return `((__old) => (${arg.name} = ${fn}(__old), __old))($toNumeric(${arg.name}))`;
       }
       if (arg.type === "MemberExpression") {
         const m = arg as unknown as { object: Node; property: Node; computed: boolean };
@@ -284,9 +287,9 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         if (path) {
           const readSrc = readPathSrc(path);
           // 前缀表达式的值是**新值**；容器写回由语句级 rebind pass 完成
-          // （标识符前缀自包含 `n = $add(n, 1)`，值即新值，无此问题）
-          if (expr.prefix) return `${fn}(${readSrc}, $lit(1))`;
-          return readSrc;
+          // （标识符前缀自包含 `n = $updateAdd(n)`，值即新值，无此问题）
+          if (expr.prefix) return `${fn}(${readSrc})`;
+          return `$toNumeric(${readSrc})`;
         }
       }
       return `/* update ${expr.operator} */ $lit(undefined)`;

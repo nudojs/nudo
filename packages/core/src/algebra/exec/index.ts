@@ -12,7 +12,7 @@ export {
   $loopReturn, $lt, $mod, $mul, $ne, $neLoose, $neg, $not, $nullishTest,
   $obj, $objAccessor, $objRest, $pow, $pushLoopExit, $rawThis, $regex,
   $rethrowIfNudoReturn, $set, $setProto, $shl, $shr, $spread, $sub, $switch, $throw,
-  $toNumber, $tryCurrentMark, $tryDetachSoftCatch, $tryDigestSoftCatch,
+  $toNumber, $toNumeric, $updateAdd, $updateSub, $tryCurrentMark, $tryDetachSoftCatch, $tryDigestSoftCatch,
   $tryDiscardSoft, $tryMark, $tryOrphanSoft, $tryPopMark,
   $tryReleaseSoftCatch, $tryReleaseSoftOut, $tryTakeSince, $typeof,
   $unknown, $ushr, $while, $whileSeq, $yield, DEFAULT_MAX_LOOP_ITERS,

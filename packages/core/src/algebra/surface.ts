@@ -4,7 +4,7 @@
  */
 
 import type { Abs, Shape, Confidence } from "./abs.ts";
-import { abs, litValue, confJoin, num, bool, boolLit, strLit, bigintLit, isStrPrim, isBigPrim } from "./abs.ts";
+import { abs, litValue, confJoin, num, numLit, bool, boolLit, strLit, bigintLit, isStrPrim, isBigPrim } from "./abs.ts";
 import { classNameOfValue } from "./class-mark.ts";
 import { builtinCtorNameOf, hostBuiltinCtorName } from "./builtins.ts";
 import { symbolIdOf } from "./symbol-id.ts";
@@ -235,6 +235,79 @@ export function powAbs(a: Abs, b: Abs): Abs {
   return (
     foldNumericBinOp(a, b, (x, y) => x ** y, (x, y) => x ** y) ??
     bitwiseResultShape(a, b)
+  );
+}
+
+/**
+ * ES ToNumeric：number | bigint（UpdateExpression 的 oldValue）。
+ * bigint 保持（`1n++` 是 2n，不得 ToNumber 硬抛）；其余走 ToNumber。
+ * 结果域恒为 number|bigint——unknown 是推断失败，不得当作 ToNumeric 结果。
+ */
+export function toNumericAbs(a: Abs): Abs {
+  const v = litValue(a);
+  if (typeof v === "bigint") return bigintLit(v);
+  if (isBigPrim(a)) return a;
+  // lit(undefined)：litValue 哨兵吞成「无 lit」，必须看 term
+  if (a.term?.op === "lit" && a.term.value === undefined) {
+    return abs({ k: "prim", type: "number" }, lit(NaN), pTrue, "exact");
+  }
+  const n = toNumberAbs(a);
+  if (n.shape.k === "unknown") {
+    return abs({ k: "prim", type: "number" }, undefined, undefined, "partial");
+  }
+  return n;
+}
+
+/**
+ * UpdateExpression 的 `oldValue + 1`：ToNumeric 后按 numeric type 加 1
+ * （bigint→1n，number→1）。不得走 `$add` 的字符串拼接臂。
+ */
+export function updateAddAbs(a: Abs): Abs {
+  const n = toNumericAbs(a);
+  const one = n.shape.k === "prim" && n.shape.type === "bigint" ? bigintLit(1n) : numLit(1);
+  if (n.shape.k === "prim" && n.shape.type === "bigint" && !n.term) {
+    return abs({ k: "prim", type: "bigint" }, undefined, undefined, confJoin(n.conf, "exact"));
+  }
+  // 双方已是 numeric 面：add 的 number/bigint 臂（无 string concat）
+  return addNumeric(n, one);
+}
+
+/** UpdateExpression 的 `oldValue - 1`（与 updateAddAbs 同口径） */
+export function updateSubAbs(a: Abs): Abs {
+  const n = toNumericAbs(a);
+  const one = n.shape.k === "prim" && n.shape.type === "bigint" ? bigintLit(1n) : numLit(1);
+  if (n.shape.k === "prim" && n.shape.type === "bigint" && !n.term) {
+    return abs({ k: "prim", type: "bigint" }, undefined, undefined, confJoin(n.conf, "exact"));
+  }
+  return subNumeric(n, one);
+}
+
+/** numeric 面加法（调用方保证无 string 拼接臂）：lit 折叠，否则 number|bigint prim */
+function addNumeric(a: Abs, b: Abs): Abs {
+  const va = litValue(a) as number | bigint | undefined;
+  const vb = litValue(b) as number | bigint | undefined;
+  if (typeof va === "bigint" && typeof vb === "bigint") return bigintLit(va + vb);
+  if (typeof va === "number" && typeof vb === "number") return numLit(va + vb);
+  const big = (a.shape.k === "prim" && a.shape.type === "bigint") || typeof va === "bigint";
+  return abs(
+    { k: "prim", type: big ? "bigint" : "number" },
+    undefined,
+    undefined,
+    confJoin(confJoin(a.conf, b.conf), "path"),
+  );
+}
+
+function subNumeric(a: Abs, b: Abs): Abs {
+  const va = litValue(a) as number | bigint | undefined;
+  const vb = litValue(b) as number | bigint | undefined;
+  if (typeof va === "bigint" && typeof vb === "bigint") return bigintLit(va - vb);
+  if (typeof va === "number" && typeof vb === "number") return numLit(va - vb);
+  const big = (a.shape.k === "prim" && a.shape.type === "bigint") || typeof va === "bigint";
+  return abs(
+    { k: "prim", type: big ? "bigint" : "number" },
+    undefined,
+    undefined,
+    confJoin(confJoin(a.conf, b.conf), "path"),
   );
 }
 

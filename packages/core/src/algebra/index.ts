@@ -48,7 +48,7 @@ export {
 export {
   bitandAbs, bitnotAbs, bitorAbs, bitxorAbs, definitelyNotNullishShape,
   isNullishLitAbs, looseEqAbs, negAbs, notAbs, powAbs, shlAbs, shrAbs,
-  strictEqAbs, toNumberAbs, typeofAbs, ushrAbs
+  strictEqAbs, toNumberAbs, toNumericAbs, updateAddAbs, updateSubAbs, typeofAbs, ushrAbs
 } from "./surface.ts";
 
 export {
@@ -177,7 +177,7 @@ export {
   $objAccessor, $objRest, $optionalGet, $optionalInvoke, $orDefault, $pow,
   $pushLoopExit, $rawThis, $reStateCall, $recordBinding, $regex,
   $rethrowIfNudoReturn, $set, $setKey, $shl, $shr, $spread, $staticInvoke,
-  $sub, $super, $switch, $thisGet, $thisSet, $throw, $toNumber,
+  $sub, $super, $switch, $thisGet, $thisSet, $throw, $toNumber, $toNumeric, $updateAdd, $updateSub,
   $tryCurrentMark, $tryDetachSoftCatch, $tryDigestSoftCatch,
   $tryDiscardSoft, $tryMark, $tryOrphanSoft, $tryPopMark,
   $tryReleaseSoftCatch, $tryReleaseSoftOut, $tryTakeSince, $typeof,
