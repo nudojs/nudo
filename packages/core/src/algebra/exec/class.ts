@@ -38,7 +38,7 @@ import {
   anyMemberResult,
   definitelyUncallableMember,
 } from "./member-diag.ts";
-import { errorTypeAbs } from "./may-throw.ts";
+import { errorTypeAbs, throwPayloadOf } from "./may-throw.ts";
 import { NudoThrow, $collectionForEach } from "./runtime.ts";
 import { callAbsMethod, toIntegerOrInfinityLit } from "../methods.ts";
 import {
@@ -567,9 +567,7 @@ export function $invoke(
         return result;
       } catch (e) {
         threw = true;
-        result = e && typeof e === "object" && "absValue" in (e as object)
-          ? ((e as { absValue: Abs }).absValue)
-          : unknown;
+        result = throwPayloadOf(e);
         throw e;
       } finally {
         noteEvalCallRecord({
@@ -591,9 +589,7 @@ export function $invoke(
         return result;
       } catch (e) {
         threw = true;
-        result = e && typeof e === "object" && "absValue" in (e as object)
-          ? ((e as { absValue: Abs }).absValue)
-          : unknown;
+        result = throwPayloadOf(e);
         throw e;
       } finally {
         noteEvalCallRecord({
@@ -720,9 +716,7 @@ export function $invoke(
       return result;
     } catch (e) {
       threw = true;
-      result = e && typeof e === "object" && "absValue" in (e as object)
-        ? ((e as { absValue: Abs }).absValue)
-        : unknown;
+      result = throwPayloadOf(e);
       throw e;
     } finally {
       noteEvalCallRecord({
@@ -1236,9 +1230,7 @@ export function $staticInvoke(cls: Abs, method: string, args: Abs[]): Abs {
     return result;
   } catch (e) {
     threw = true;
-    result = e && typeof e === "object" && "absValue" in (e as object)
-      ? ((e as { absValue: Abs }).absValue)
-      : unknown;
+    result = throwPayloadOf(e);
     throw e;
   } finally {
     noteEvalCallRecord({ fnName: recordName, args, result, threw });

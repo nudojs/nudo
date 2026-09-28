@@ -1,6 +1,6 @@
 /**
  * Review 修复钉死：
- * 1. $call / applyAbsFn 抛错 → never
+ * 1. $call / applyAbsFn 抛错 → rethrow（边界吸收，不返回中间值）
  * 2. display 不再出现 arr(A1) = A1 噪音
  * 3. refine 契约优先、不重复提升
  * 4. symbolic 截断 → 不写半截 fnRels
@@ -45,23 +45,33 @@ function throwFnAbs(): Abs {
   return absFunction(["x"], { body: decl.body });
 }
 
-describe("regression: $call / applyAbsFn body throw → never", () => {
-  it("$call on throwing body returns never, not intermediate value", () => {
+describe("regression: $call / applyAbsFn body throw → boundary", () => {
+  it("$call on throwing body rethrows (no intermediate value)", () => {
     const f = throwFnAbs();
     expect(getFnImpl(f)?.body).toBeDefined();
-    const out = $call(f, [num()]);
-    expect(out.shape.k).toBe("never");
-    expect(out.conf).toBe("exact");
+    // 与 apply 路径同径 rethrow：不得把中间值当返回值，也不得吞成 never
+    // （吞成 never 会让调用点 record 落成 never+never 被判泄漏丢弃）。
+    let threw: unknown;
+    try {
+      $call(f, [num()]);
+    } catch (e) {
+      threw = e;
+    }
+    expect(threw).toBeDefined();
+    expect((threw as { name?: string }).name).toBe("NudoThrow");
+    expect((threw as { absValue: { shape: { k: string } } }).absValue.shape.k).not.toBe("never");
   });
 
-  it("B export call on throwing named fn also yields never result", () => {
+  it("B export call on throwing named fn still yields never result + throws", () => {
     const src = `
       export function boom(x) {
         throw "bad";
       }
     `;
-    const r = analyzeExport(src, "boom", [numLit(1)]);
-    expect(r.shape.k).toBe("never");
+    const full = callTranspiledExportFull(runTranspiled(src, { mode: "analyze" }), "boom", [numLit(1)]);
+    // 调用边界吸收：result=never，throws 携带载荷
+    expect(full.result.shape.k).toBe("never");
+    expect(full.throws.shape.k).not.toBe("never");
   });
 });
 

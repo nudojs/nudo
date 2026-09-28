@@ -21,7 +21,7 @@ import { formatAbs } from "../format.ts";
 import { transpile, transpileExpression, runtimeImportOf } from "./transpile.ts";
 import { NudoUnsupportedError } from "./unsupported.ts";
 import { stripStaticExportDecls } from "./export-names.ts";
-import { errorTypeAbs } from "./may-throw.ts";
+import { errorTypeAbs, throwPayloadOf } from "./may-throw.ts";
 import { drainPromiseMicros } from "../builtins.ts";
 import { sourceHasCjsExports } from "../code-text.ts";
 import {
@@ -602,7 +602,13 @@ export function callTranspiledExportFull(
             throws: joinThrowExits(errorTypeAbs("ReferenceError")),
           };
         }
-        return joinControlExits(unknown);
+        // 其余原生异常（TypeError/RangeError/栈溢出/引擎缺陷…）也必须进 throws 域：
+        // 折成「… + throws=never」会假报「保证不抛」（L2 entry-may-throw 假阴性）。
+        // result 保持 fail-closed unknown（不谎称 never）。
+        return {
+          result: joinLoopExits(unknown),
+          throws: joinThrowExits(throwPayloadOf(e)),
+        };
       }
     });
   }
@@ -620,7 +626,11 @@ export function callTranspiledExportFull(
           if (isNudoThrow(e)) {
             return { result: joinLoopExits(never), throws: joinThrowExits(e.absValue) };
           }
-          return joinControlExits(unknown);
+          // 同上：原生异常不得折成 throws=never（result 保持 fail-closed unknown）
+          return {
+            result: joinLoopExits(unknown),
+            throws: joinThrowExits(throwPayloadOf(e)),
+          };
         }
       });
     }

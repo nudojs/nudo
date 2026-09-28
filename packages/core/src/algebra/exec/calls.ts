@@ -9,6 +9,7 @@ import { abs, unknown } from "../abs.ts";
 import { evalGlobalFn } from "../builtins.ts";
 import { $call } from "./call.ts";
 import { callAtFunctionBoundary, $copy } from "./runtime.ts";
+import { throwPayloadOf } from "./may-throw.ts";
 import { pureFnNameOf } from "../abs-fn.ts";
 import { noteAbsTruncation, callBudgetKey, resetEvalForkBudget, noteHostEffectBlocked } from "../call-budget.ts";
 import {
@@ -312,6 +313,9 @@ export function $callNamed(
     }
   } catch (e) {
     threw = true;
+    // 抛出载荷进 record：与 class.ts 同约定——threw 时 result 位承载抛出 Abs
+    //（桥 callRecordFromAbsCall 据此填 throwsAbs），不得留初值 unknown。
+    result = throwPayloadOf(e);
     throw e;
   } finally {
     if (loc) popCallLoc();
@@ -328,7 +332,7 @@ export function $callNamed(
         evalCallCollector({
           fnName: name,
           args: argsSnapshot,
-          result: threw ? unknown : result,
+          result,
           callLoc: loc ? { line: loc[0], column: loc[1] } : undefined,
           threw,
         });
