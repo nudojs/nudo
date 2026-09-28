@@ -41,7 +41,18 @@ export type Shape =
       /** 已删除下标（delete a[i] / 字面量空洞）：读值为 undefined，`in` 判定 false */
       holes?: number[];
     }
-  | { k: "fn"; params: string[]; name?: string; paramTypes?: Abs[]; returnType?: Abs }
+  | {
+      k: "fn";
+      params: string[];
+      name?: string;
+      paramTypes?: Abs[];
+      returnType?: Abs;
+      /**
+       * Dual-facet globals (Number/Array/…): callable AND carries static members.
+       * `$get` reads these before falling back to Function.prototype names.
+       */
+      slots?: Record<string, { value: Abs; optional?: boolean; readonly?: boolean }>;
+    }
   | { k: "brand"; name: string; shape: Abs }
   | { k: "eff"; eff: "promise" | "generator"; inner: Abs }
   | { k: "sum"; members: Abs[] };

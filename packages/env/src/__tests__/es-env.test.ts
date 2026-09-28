@@ -38,6 +38,10 @@ function walk(a: Abs | undefined, ...keys: string[]): Abs | undefined {
     if (cur.shape.k === "brand") {
       cur = cur.shape.shape as Abs | undefined;
     }
+    if (cur && cur.shape.k === "fn" && cur.shape.slots) {
+      cur = cur.shape.slots[k]?.value;
+      continue;
+    }
     if (!cur || cur.shape.k !== "obj") return undefined;
     const slot = cur.shape.slots[k];
     cur = slot?.value;
@@ -229,5 +233,39 @@ describe("es env load + key builtins", () => {
     const stringFn = globalOf(env, "String");
     const sImpl = getFnImpl(stringFn)!;
     expect(litValue(sImpl.apply!([boolLit(false)])!)).toBe("false");
+  });
+
+  // issue #58：dual-facet 全局（Number/Array）既可调用/构造，又带静态槽。
+  // 此前 objAbs 遮蔽宿主全局后 $call/$new 折 unknown。
+  it("Number/Array are dual-facet: callable + static slots", () => {
+    const numberFn = globalOf(env, "Number");
+    expect(numberFn.shape.k).toBe("fn");
+    expect(getFnImpl(numberFn)?.apply).toBeTruthy();
+    // Number("42") → 42
+    expect(litValue(getFnImpl(numberFn)!.apply!([strLit("42")])!)).toBe(42);
+    expect(shapeOf(walk(numberFn, "isFinite"), "Number.isFinite")).toContain("=>");
+    expect(shapeOf(walk(numberFn, "MAX_SAFE_INTEGER"), "Number.MAX_SAFE_INTEGER")).toContain(
+      "number",
+    );
+
+    const arrayFn = globalOf(env, "Array");
+    expect(arrayFn.shape.k).toBe("fn");
+    const arrImpl = getFnImpl(arrayFn)!;
+    // Array(3) → 3 元空洞 tuple
+    const a3 = arrImpl.apply!([numLit(3)]);
+    expect(a3.shape.k).toBe("tuple");
+    expect(shapeOf(walk(arrayFn, "isArray"), "Array.isArray")).toContain("=>");
+  });
+
+  it("Promise/Date are constructible namespaces with statics", () => {
+    const promiseFn = globalOf(env, "Promise");
+    expect(promiseFn.shape.k).toBe("fn");
+    expect(promiseFn.shape.k === "fn" && promiseFn.shape.name).toBe("Promise");
+    expect(shapeOf(walk(promiseFn, "resolve"), "Promise.resolve")).toContain("=>");
+
+    const dateFn = globalOf(env, "Date");
+    expect(dateFn.shape.k).toBe("fn");
+    expect(dateFn.shape.k === "fn" && dateFn.shape.name).toBe("Date");
+    expect(shapeOf(walk(dateFn, "now"), "Date.now")).toContain("=>");
   });
 });

@@ -146,18 +146,25 @@ export function envFn(
     conf?: Confidence;
     /** 仅声明、无 relation 应用时的 fingerprint 后缀 */
     name?: string;
+    /** dual-facet 静态槽（Number.isFinite / Array.isArray） */
+    slots?: Record<string, Abs | Slot>;
   },
 ): Abs {
   const params =
     opts?.params ?? paramTypes.map((_, i) => (paramTypes.length === 1 && i === 0 ? "x" : `x${i}`));
+  const staticSlots = opts?.slots ? slotsOf(opts.slots) : undefined;
   if (!apply) {
-    return relationFn(paramTypes, returnType, {
+    const a = relationFn(paramTypes, returnType, {
       params,
       conf: opts?.conf ?? "exact",
       fingerprint: opts?.name
         ? `${opts.name}|${relationFingerprint(paramTypes, returnType)}`
         : undefined,
     });
+    if (staticSlots) {
+      a.shape = { ...(a.shape as { k: "fn"; params: string[] }), slots: staticSlots };
+    }
+    return a;
   }
   const implApply = apply;
   const a = absFunction(params, {
@@ -177,6 +184,7 @@ export function envFn(
     paramTypes,
     returnType,
     ...(opts?.name ? { name: opts.name } : {}),
+    ...(staticSlots ? { slots: staticSlots } : {}),
   };
   if (opts?.conf && opts.conf !== "exact") a.conf = opts.conf;
   return a;
