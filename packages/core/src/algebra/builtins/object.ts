@@ -254,7 +254,12 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         if (acc.shape.k === "obj" && src.shape.k === "obj") {
           const base = (acc.shape as { slots: Record<string, { value: Abs }> }).slots;
           const over = (src.shape as { slots: Record<string, { value: Abs }> }).slots;
-          acc = abs({ k: "obj", slots: { ...base, ...over } }, undefined, undefined, confJoin(acc.conf, src.conf));
+          // enumerable:false 自有键不拷贝（EnumerableOwnProperties）
+          const filtered: Record<string, { value: Abs }> = { ...base };
+          for (const k of enumKeys(over as Record<string, unknown>, src)) {
+            filtered[k] = over[k]!;
+          }
+          acc = abs({ k: "obj", slots: filtered }, undefined, undefined, confJoin(acc.conf, src.conf));
         } else if (src.shape.k !== "obj") {
           // 非 obj 源：tuple（下标键、hole 跳过）/字符串字面量（码元键）/
           // number/boolean/nullish（无键忽略）；键集未知 → 保守降级（与

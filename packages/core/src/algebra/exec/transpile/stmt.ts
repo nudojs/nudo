@@ -544,11 +544,11 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         const testSrc = stmt.test ? emitTranspileExpression(stmt.test, opts) : "$lit(true)";
         // 步进表达式只取副作用（写真实绑定）；状态线程是合成计数器。
         // i++/i-- 的后置值语义会丢自增写回（步进闭包内无语句级 rebind pass），
-        // 与主路径同口径：标识符 Update 强制 `name = $add/$sub(name, 1)`。
+        // 与主路径同口径：标识符 Update 强制 `name = $updateAdd/$updateSub(name)`。
         const stepPart = (u: Node): string => {
           const upd = u as { type?: string; operator?: string; argument?: { type?: string; name?: string }; expressions?: unknown[] };
           if (upd.type === "UpdateExpression" && upd.argument?.type === "Identifier" && upd.argument.name) {
-            return `${upd.argument.name} = ${upd.operator === "++" ? "$add" : "$sub"}(${upd.argument.name}, $lit(1))`;
+            return `${upd.argument.name} = ${upd.operator === "++" ? "$updateAdd" : "$updateSub"}(${upd.argument.name})`;
           }
           if (upd.type === "SequenceExpression") {
             return (upd.expressions ?? []).map((e) => stepPart(e as Node)).join(", ");

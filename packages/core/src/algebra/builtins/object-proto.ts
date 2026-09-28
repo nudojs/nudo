@@ -223,8 +223,11 @@ export function evalObjectProtoMethod(
       const vObjLike = vk === "obj" || vk === "arr" || vk === "tuple" || vk === "brand" || vk === "fn" || vk === "eff";
       if (!vObjLike && vk !== "sum" && vk !== "any" && vk !== "unknown") return boolLit(false);
       if (vObjLike && isNullProtoObj(v)) return boolLit(false);
-      // Object.prototype.isPrototypeOf(普通对象) → true
+      // Object.prototype.isPrototypeOf(V)：V 先取 [[GetPrototypeOf]] 再比 SameValue
+      // —— 对象**不在**自己的原型链上：
+      //   Object.prototype.isPrototypeOf(Object.prototype) === false
       if (isObjectProtoBrand(thisVal)) {
+        if (isObjectProtoBrand(v)) return boolLit(false);
         return vObjLike ? boolLit(true) : boolPrimB();
       }
       return boolPrimB();
