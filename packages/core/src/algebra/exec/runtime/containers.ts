@@ -481,8 +481,12 @@ export function $idx(a: Abs, i: Abs): Abs {
   }
   if (a.shape.k === "arr") {
     if (iv !== undefined && idx === undefined) return undef();
-    // 抽象下标可能 miss → 元素 ∪ undefined（与对象未知键同口径）
-    return joinAbs(a.shape.element, undef());
+    // 抽象下标可能 miss → 元素 ∪ undefined（与对象未知键同口径）；
+    // 已知规范下标仍按元素投影（split()[0] 等非空序列链不断）
+    if (idx === undefined) {
+      return joinAbs(a.shape.element, undef());
+    }
+    return a.shape.element;
   }
   if (a.shape.k === "sum") {
     return a.shape.members.map((m) => $idx(m, i)).reduce((x, y) => joinAbs(x, y));
