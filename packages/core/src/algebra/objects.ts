@@ -60,6 +60,42 @@ export function getSlot<S extends { value: Abs }>(
 }
 
 /**
+ * 自有槽位写入。必须走 defineProperty：`slots[k] =` 在 k==="__proto__" 时
+ * 触发宿主 [[SetPrototypeOf]]，键静默丢失（与 getSlot 同族历史 bug）。
+ */
+export function setSlot<S extends { value: Abs }>(
+  slots: Record<string, S>,
+  key: string,
+  slot: S,
+): void {
+  Object.defineProperty(slots, key, {
+    value: slot,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
+}
+
+/**
+ * 对象字面量非计算 `__proto__: v` / `Object.setPrototypeOf(o, v)` / `o.__proto__ = v`
+ * 的原型设定（保守建模）：
+ * - v 为 null → null-proto（无 Object.prototype 回退）
+ * - v 为 object → 保守 open（继承读不折 exact undefined；原型细节不建模）
+ * - v 为 primitive → 原生忽略（对象字面量）；setter 路径由调用方决定是否 TypeError
+ */
+export function setProtoAbs(o: Abs, proto: Abs): Abs {
+  const pv = litValue(proto);
+  if (pv === null) return markNullProtoObj(o);
+  if (proto.term?.op === "lit" && (pv === undefined || typeof pv !== "object")) {
+    return o;
+  }
+  if (isObj(o)) {
+    (o.shape as { open?: boolean }).open = true;
+  }
+  return o;
+}
+
+/**
  * spread：base ⊕ over（右侧覆盖，不是 join）
  * 未出现在 over 的 key 保留 base；over 的 key 覆盖。
  */

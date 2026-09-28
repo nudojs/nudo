@@ -9,7 +9,8 @@ import { pTrue, and, predEquals } from "../../pred.ts";
 import { absFunction, getFnImpl } from "../../abs-fn.ts";
 import {
   joinAbs, objOf, isObj, spread as spreadObj, type ObjShape, type Slot,
-  isNullProtoObj, migrateNullProto, getSlot, canonicalArrayIndex,
+  isNullProtoObj, migrateNullProto, getSlot, setSlot, setProtoAbs,
+  canonicalArrayIndex,
 } from "../../objects.ts";
 import {
   isMapAbs, isSetAbs, setElementsAbs, collectionExactLen,
@@ -656,11 +657,25 @@ export function $len(a: Abs): Abs {
 // 对象 / 成员
 // --- 对象 / 成员 ---
 
-/** 对象字面量 → Abs obj */
+/** 对象字面量 → Abs obj（槽位写走 setSlot，`__proto__` 不踩宿主 setter） */
 export function $obj(slots: Record<string, Abs>): Abs {
-  const s: Record<string, { value: Abs }> = {};
-  for (const [k, v] of Object.entries(slots)) s[k] = { value: asAbsVal(v) };
+  const s: Record<string, { value: Abs }> = Object.create(null);
+  for (const k of Object.keys(slots)) {
+    setSlot(s, k, { value: asAbsVal(slots[k]!) });
+  }
   return objOf(s);
+}
+
+/**
+ * 对象字面量非计算 `__proto__: v` 的特殊原型设定（ES PropertyDefinition）。
+ * - v 为 null → null-proto（无 Object.prototype 回退）
+ * - v 为 object → 保守 open（继承读不折 exact undefined；细节不建模）
+ * - v 为 primitive → 原生忽略（无自有键、不改原型）
+ */
+export function $setProto(o: Abs, proto: Abs): Abs {
+  const next = setProtoAbs(o, proto);
+  if (next !== o) clearStaleTermPred(o);
+  return next;
 }
 
 /** 对象展开 { ...a, b } */
@@ -1414,8 +1429,13 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
     if (!acc.set) throwStrictWrite(); // getter-only：写 TypeError
     return acc.set(o, value);
   }
+  // `o.__proto__ = v` 走 Object.prototype setter（设原型）；null-proto 无 setter
+  // → 自有数据属性。不得 slots[key]=（宿主 __proto__ setter 丢键）。
+  if (key === "__proto__" && !isNullProtoObj(o)) {
+    return $setProto(o, value);
+  }
   // 就地写槽（引用语义：const b = o; b.x = v 对 o 可见）——Abs 身份不变
-  shape.slots[key] = { value: asAbsVal(value) };
+  setSlot(shape.slots, key, { value: asAbsVal(value) });
   o.conf = confJoin(o.conf, value.conf);
   clearStaleTermPred(o);
   return o;

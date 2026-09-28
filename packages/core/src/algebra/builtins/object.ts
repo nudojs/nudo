@@ -3,7 +3,7 @@
  */
 import type { Abs } from "../abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, bigintLit, unknown, confJoin, isExactLit } from "../abs.ts";
-import { joinAbs, objOf, markNullProtoObj, canonicalArrayIndex } from "../objects.ts";
+import { joinAbs, objOf, markNullProtoObj, canonicalArrayIndex, setSlot, setProtoAbs } from "../objects.ts";
 import { TUPLE_MATERIALIZE_CAP } from "../containers.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs } from "../exec/may-throw.ts";
@@ -216,6 +216,20 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       }
       // 具体原型带 constructor 槽（.constructor.name 链可解）；不可判保持 unknown
       return protoOfRecv(a0);
+    }
+    case "setPrototypeOf": {
+      // Object.setPrototypeOf(o, proto) → 返回 o；proto 为 object/null 时改原型
+      // （分析侧：null → nullProto 标记；object → open，继承读不折 exact）。
+      // proto 为 primitive：原生 TypeError 硬抛
+      if (!args.length) return unknown;
+      const t0 = args[0];
+      const p0 = args[1];
+      if (!t0 || !p0) return t0 ?? unknown;
+      const pv = litValue(p0);
+      if (p0.term?.op === "lit" && (pv === undefined || (pv !== null && typeof pv !== "object"))) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      return setProtoAbs(t0, p0);
     }
     case "assign": {
       // Object.assign(a, b) ≈ spread

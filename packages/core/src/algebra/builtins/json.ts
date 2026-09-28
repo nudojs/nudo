@@ -3,7 +3,7 @@
  */
 import type { Abs } from "../abs.ts";
 import { abs, numLit, strLit, boolLit, unknown } from "../abs.ts";
-import { getSlot } from "../objects.ts";
+import { getSlot, setSlot } from "../objects.ts";
 import { undefAbs } from "../hof.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs } from "../exec/may-throw.ts";
@@ -62,9 +62,9 @@ function jsonValueToAbs(v: unknown): Abs {
   if (Array.isArray(v)) {
     return abs({ k: "tuple", elements: v.map(jsonValueToAbs) }, undefined, undefined, "exact");
   }
-  const slots: Record<string, { value: Abs }> = {};
+  const slots: Record<string, { value: Abs }> = Object.create(null);
   for (const [k, sv] of Object.entries(v as Record<string, unknown>)) {
-    slots[k] = { value: jsonValueToAbs(sv) };
+    setSlot(slots, k, { value: jsonValueToAbs(sv) });
   }
   return abs({ k: "obj", slots }, undefined, undefined, "exact");
 }

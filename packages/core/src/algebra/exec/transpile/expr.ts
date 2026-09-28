@@ -324,6 +324,8 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       let acc: string | null = null;
       const props: string[] = [];
       const accRegs: Array<{ key: string; get?: string; set?: string }> = [];
+      /** 非计算 `__proto__: v` 的特殊原型设定（ES）；primitive 忽略 */
+      let protoSet: string | null = null;
       const flushProps = () => {
         if (props.length === 0) return;
         const obj = `$obj({ ${props.join(", ")} })`;
@@ -415,6 +417,12 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           return k === null ? null : JSON.stringify(k);
         })();
         if (key === null) continue;
+        // 非计算 `__proto__` 是 ES 特殊原型设定，不是自有键
+        //（`{ "__proto__": v }` 经宿主 JS 对象字面量会丢键/改 [[Prototype]]）。
+        if (!prop.computed && key === '"__proto__"') {
+          protoSet = transpileExpression(prop.value as Expression, opts);
+          continue;
+        }
         // 方法型 FunctionExpression：与 ObjectMethod 同 this 绑定语义
         if (
           prop.value.type === "FunctionExpression" &&
@@ -461,6 +469,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       for (const r of accRegs) {
         result = `$objAccessor(${result}, ${r.key}, ${r.get ?? "null"}, ${r.set ?? "null"})`;
       }
+      if (protoSet !== null) result = `$setProto(${result}, ${protoSet})`;
       return result;
     }
     case "MemberExpression":

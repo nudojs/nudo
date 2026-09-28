@@ -190,12 +190,10 @@ describe("review-fix: own slot wins over prototype accessor", () => {
   });
 });
 
-describe("review-fix: bigint >>> is unknown, not bigint", () => {
-  it("5n >>> 1n never claims bigint result", async () => {
+describe("review-fix: bigint >>> is TypeError, not bigint", () => {
+  it("5n >>> 1n hard-throws TypeError (no bigint/unknown value claim)", async () => {
     const run = await execTranspiled(`export function run(){ return 5n >>> 1n; }`);
-    const r = run();
-    expect(formatShape(r)).toBe("unknown");
-    expect(litValue(r)).toBeUndefined();
+    expect(() => run()).toThrow();
   });
 });
 
