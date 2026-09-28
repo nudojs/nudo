@@ -433,7 +433,9 @@ export function schemaNodeToZod(node: SchemaNode): string {
       const entries = node.slots
         .map((slot) => {
           const inner = schemaNodeToZod(slot.node);
-          return `${slot.key}: ${slot.optional ? `${inner}.optional()` : inner}`;
+          // 非标识符键必须 JSON 引号，否则生成非法 JS（foo-bar / a b / 1x）
+          const key = formatJsObjectKey(slot.key);
+          return `${key}: ${slot.optional ? `${inner}.optional()` : inner}`;
         })
         .join(", ");
       return `z.object({ ${entries} })`;
@@ -485,6 +487,18 @@ function zodExportIdent(name: string): string {
   if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name)) return name;
   const cleaned = name.replace(/[^A-Za-z0-9_$]/g, "_");
   return /^[A-Za-z_$]/.test(cleaned) ? cleaned : `_${cleaned}`;
+}
+
+/** JS 对象字面量键：ident / 纯数字可裸写，其余 JSON 引号（与 dts formatPropKey 同口径） */
+export function formatJsObjectKey(k: string): string {
+  if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(k)) return k;
+  if (/^\d+$/.test(k)) return k;
+  return JSON.stringify(k);
+}
+
+/** 生成代码里的 export/function 名：合法 ident 原样，否则清洗 */
+export function safeExportIdent(name: string): string {
+  return zodExportIdent(name);
 }
 
 /**

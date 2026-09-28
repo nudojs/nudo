@@ -81,7 +81,9 @@ export function formatShape(a: Abs): string {
     case "obj": {
       const entries = Object.entries(s.slots).map(([k, slot]) => {
         const opt = slot.optional ? "?" : "";
-        return `${k}${opt}: ${formatShape(slot.value)}`;
+        // 非标识符键 JSON 引号，避免展示串本身不可解析（`a, b: 1`）
+        const key = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(k) ? k : JSON.stringify(k);
+        return `${key}${opt}: ${formatShape(slot.value)}`;
       });
       return `{ ${entries.join(", ")} }`;
     }
