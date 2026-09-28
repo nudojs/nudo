@@ -123,6 +123,24 @@ describe("es env load + key builtins", () => {
     }
   });
 
+  it("Math.min / Math.max / Math.hypot fold at 0 and 1 args (ES empty-call edge)", () => {
+    const Math_ = globalOf(env, "Math");
+    const cases = [
+      ["min", [], Infinity],
+      ["max", [], -Infinity],
+      ["hypot", [], 0],
+      ["min", [3], 3],
+      ["max", [3], 3],
+      ["hypot", [5], 5],
+    ] as const;
+    for (const [name, args, expected] of cases) {
+      const fn = walk(Math_, name)!;
+      const impl = getFnImpl(fn)!;
+      const folded = impl.apply!(args.map((n) => numLit(n)));
+      expect(litValue(folded!), `Math.${name}(${args.join(", ")})`).toBe(expected);
+    }
+  });
+
   it("Number static checks and parseInt/parseFloat are present", () => {
     const Number_ = globalOf(env, "Number");
     for (const name of [
