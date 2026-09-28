@@ -27,7 +27,7 @@ export function canonicalArrayIndex(v: unknown): number | undefined {
 
 /**
  * ES ToPropertyKey 的字面量折叠：null→"null"、undefined→"undefined"、
- * true/false→"true"/"false"、number/string 原样。
+ * true/false→"true"/"false"、number/bigint/string → String(v)（ToString）。
  * 必须看 term——litValue 把 lit(undefined) 吞成哨兵 undefined。
  * 抽象 / symbol 返回 undefined（调用方保守处理）。
  */

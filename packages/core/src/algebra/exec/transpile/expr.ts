@@ -126,6 +126,8 @@ type ChainHop =
       recvOptional: boolean;
       /** `o.m?.()`：方法值 nullish 短路（this 仍绑 o） */
       fnOptional: boolean;
+      /** 标识符 receiver（RegExp test/exec 的 lastIndex 写回目标） */
+      recvName?: string;
     };
 
 function isChainLink(n: { type?: string }): boolean {
@@ -181,22 +183,29 @@ function flattenChain(
       const loc = cur.loc;
       const locArg = loc ? `, [${loc.start.line}, ${loc.start.column}]` : "";
       // obj.method(args) / obj?.method(args) / obj.method?.() —— $invoke 保 this
+      // 字符串字面量计算键 `o["m"]()` 同走 invoke（this 仍绑 o；非链路径 $call 丢 this）
       const callee = cur.callee as typeof cur | undefined;
-      if (
+      const calleeProp = callee?.property as { type?: string; name?: string; value?: unknown } | undefined;
+      const methodName: string | undefined =
         callee &&
-        (callee.type === "MemberExpression" || callee.type === "OptionalMemberExpression") &&
-        !callee.computed &&
-        callee.property &&
-        (callee.property as { type?: string }).type === "Identifier"
-      ) {
-        const method = (callee.property as { name: string }).name;
+        (callee.type === "MemberExpression" || callee.type === "OptionalMemberExpression")
+          ? !callee.computed && calleeProp?.type === "Identifier"
+            ? calleeProp.name
+            : callee.computed && calleeProp?.type === "StringLiteral"
+              ? String(calleeProp.value)
+              : undefined
+          : undefined;
+      if (callee && methodName !== undefined) {
+        const recvNode = callee.object as { type?: string; name?: string } | undefined;
         hops.unshift({
           kind: "invoke",
-          method: JSON.stringify(method),
+          method: JSON.stringify(methodName),
           argsSrc: `[${args}]`,
           locArg,
           recvOptional: linkIsOptional(callee),
           fnOptional: linkIsOptional(cur),
+          recvName:
+            recvNode?.type === "Identifier" && recvNode.name ? recvNode.name : undefined,
         });
         cur = callee.object as typeof cur;
         continue;
@@ -265,9 +274,16 @@ function emitChainFrom(hops: ChainHop[], i: number, valSrc: string): string {
         : rest(`$callNamed("call", ${valSrc}, ${hop.argsSrc}${hop.locArg})`);
     case "invoke": {
       const invokeOf = (recv: string, fnCheck: boolean): string => {
-        const call = `$invoke(${recv}, ${hop.method}, ${hop.argsSrc}${hop.locArg})`;
+        let call = `$invoke(${recv}, ${hop.method}, ${hop.argsSrc}${hop.locArg})`;
+        // RegExp test/exec 的 lastIndex 写回：与非链路径同口径（receiver 为标识符时
+        // 表达式内联 IIFE）。漏掉会让 `r.exec(s)?.[0]` 不推进 lastIndex。
+        const rawMethod = JSON.parse(hop.method) as string;
+        if (hop.recvName && REGEX_STATEFUL_NAMES.has(rawMethod)) {
+          call = `(() => { const __v = ${call}; ${hop.recvName} = $reStateCall(${hop.recvName}, ${hop.method}, ${hop.argsSrc}); return __v; })()`;
+        }
         if (!fnCheck) return call;
-        // o.m?.()：方法值 nullish 短路；this 仍绑 recv
+        // o.m?.()：方法值 nullish 短路；this 仍绑 recv（$invoke 二次 get 方法属已知
+        // 取舍——保 builtin 派发，getter 会跑两遍）
         return `(($__fn) => $fork($nullishTest($__fn), () => $lit(undefined), () => ${call}))($get(${recv}, ${hop.method}))`;
       };
       if (hop.recvOptional) {
