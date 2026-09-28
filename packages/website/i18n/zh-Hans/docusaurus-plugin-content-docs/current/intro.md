@@ -40,7 +40,7 @@ signatures
   scale(x: number) => number
 
 issues
-  [ERROR …] scale[x]: argument ⊭ precondition  (nudo:constraint-violated)
+  [ERROR L7 scale] scale[x]: argument ⊭ precondition  (nudo:constraint-violated)
       actual:   0  #exact
       expected: x > 0
 ```

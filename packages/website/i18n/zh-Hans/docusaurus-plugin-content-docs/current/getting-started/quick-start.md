@@ -47,6 +47,8 @@ signatures
 (no issues)
 ```
 
+这个 `number | string` 是老实的 JavaScript 语义，不是 bug：`+` 的操作数无约束（`any`）时，既可能走数值相加，也可能走字符串拼接（`"7" + 1`），Nudo 两条分支都保留。给 `x` 加约束——侧车契约或调用点证据——联合就会坍缩为 `number`。见[语言语义](../concepts/semantics.md)。
+
 可选调试用例（`nudo test` —— 不是产品门禁）：
 
 ```text
@@ -155,6 +157,7 @@ case 实参请用具体值或约束构建器。
 ## 下一步
 
 - [心智模型](./mental-model.md) —— 产品面
+- [故障排查](./troubleshooting.md) —— 第一个小时的高频问题
 - [错误对照](../guides/error-faces.md)
 - [概念分层](../concepts/layers.md)
 - [nudo check](../guides/check.md)

@@ -386,6 +386,11 @@ printf 'doc examples verified: %s checks passed, %s failed\n' "$pass" "$fail"
 if [ "$REPORT_MODE" -eq 1 ]; then
   # 覆盖率：js/javascript 围栏总数 vs 打 verify 标签并被真实执行的数量。
   # 输出为 CI 友好行，便于后续作为阈值门禁的输入。
+  # 页面覆盖率下限（ratchet 门禁）：verified_pages / pages_with_js 的百分比不得低于此值。
+  # 该值只升不降（ratchet）；调整需 docs 团队签核并在提交说明里附新的测量值。
+  # 测量基线 2026-09：22/37 页 = 59.5%（en docs，```js|javascript 围栏 vs verify/verify-sidecar），
+  # 当前低于 60%，取 5 的整数倍向下留量 → 55。
+  MIN_VERIFY_PAGE_COVERAGE=55
   total_js=0
   verified_js=0
   pages_with_js=0
@@ -415,6 +420,15 @@ if [ "$REPORT_MODE" -eq 1 ]; then
   printf 'doc verify coverage: %s/%s pages with js fences verified, %s/%s js fences executed (%.1f%%)\n' \
     "$verified_pages" "$pages_with_js" "$verified_js" "$total_js" \
     "$(awk -v a="$verified_js" -v b="$total_js" 'BEGIN { printf "%.1f", b ? 100 * a / b : 0 }')"
+
+  # 页面覆盖率下限：低于 MIN_VERIFY_PAGE_COVERAGE 即失败（给新增带 js 围栏但未打
+  # verify 标签的页面兜底 —— 要么补 verify 围栏，要么下调需 docs 团队签核）。
+  page_pct=$(awk -v a="$verified_pages" -v b="$pages_with_js" 'BEGIN { printf "%.1f", b ? 100 * a / b : 0 }')
+  if awk -v p="$page_pct" -v m="$MIN_VERIFY_PAGE_COVERAGE" 'BEGIN { exit (p < m) ? 0 : 1 }'; then
+    printf 'doc verify coverage floor violated: %s%% of pages with js fences verified < MIN_VERIFY_PAGE_COVERAGE=%s\n' \
+      "$page_pct" "$MIN_VERIFY_PAGE_COVERAGE" >&2
+    exit 1
+  fi
 fi
 
 [ "$fail" -eq 0 ]

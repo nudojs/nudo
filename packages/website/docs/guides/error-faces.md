@@ -9,7 +9,7 @@ description: Top Nudo error faces next to TypeScript — actual values, Preds, a
 
 Goal: **not “report more.” Report more true, with evidence, and with a next step.**
 
-Full CI-pinned suite: [`docs/examples/errors/`](https://github.com/nudojs/nudo/tree/main/docs/examples/errors) (`pnpm run verify:examples`). Deep Chinese write-up: [`docs/errors-vs-typescript.md`](https://github.com/nudojs/nudo/blob/main/docs/errors-vs-typescript.md).
+Full CI-pinned suite: [`docs/examples/errors/`](https://github.com/nudojs/nudo/tree/main/docs/examples/errors) (`pnpm run verify:examples`). Deep dive: [`docs/errors-vs-typescript.md`](https://github.com/nudojs/nudo/blob/main/docs/errors-vs-typescript.md) — an in-repo design note, written in Chinese; the link leaves this site for GitHub.
 
 ## The face every violation shares
 
@@ -86,7 +86,7 @@ signatures
   getName(user: any) => any  throws TypeError
 
 issues
-  [ERROR bad] bad: return value ⊭ @nudo:contract return positive  (nudo:constraint-violated)
+  [ERROR L32 bad] bad: return value ⊭ @nudo:contract return positive  (nudo:constraint-violated)
       actual:   0  #exact
       expected: return > 0
       → return a value satisfying > 0

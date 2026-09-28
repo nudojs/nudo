@@ -81,7 +81,7 @@ needsPositive(-1); // ⊭ x > 0 → nudo:constraint-violated
 
 Templates referenced by `@nudo:contract` must be imported with `@nudo:import` — the sidecar auto-binds only same-name `fn` exports.
 
-`@nudo:contract` is an exact **alias** of `@nudo:contract`. Product name: **contract**.
+`@nudo:contract` is the only in-source contract directive (the historical `@nudo:refine` / `@nudo:interface` spellings were removed with no alias layer). Product name: **contract**.
 
 ## Emit generated segments
 

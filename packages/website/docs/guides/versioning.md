@@ -67,7 +67,7 @@ Rules:
 
 Each published package ships a `CHANGELOG.md` maintained by changesets. Breaking entries are prefixed `**BREAKING**:` and include a one-line migration.
 
-Example (`@nudojs/core` 2.0.0): evaluator subpath moved from `@nudojs/cli/evaluator` to `@nudojs/service/evaluator`.
+Example (`@nudojs/core` 1.0.0): evaluator subpath moved from `@nudojs/cli/evaluator` to `@nudojs/service/evaluator`.
 
 ```bash
 # after a minor bump on a 0.x package
@@ -101,10 +101,10 @@ Pick packages + bump type, then write a short **who breaks / how to migrate** su
 
 ```jsonc
 // reproducible CI
-{ "dependencies": { "@nudojs/core": "2.1.0" } }
+{ "dependencies": { "@nudojs/core": "1.2.0" } }
 
 // 1.x: track compatible fixes
-{ "dependencies": { "@nudojs/core": "^2.1.0" } }
+{ "dependencies": { "@nudojs/core": "^1.2.0" } }
 
 // 0.x: only take patches automatically
 { "dependencies": { "@nudojs/env": "~0.4.0" } }

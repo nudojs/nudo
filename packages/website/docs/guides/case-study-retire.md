@@ -7,7 +7,7 @@ description: Public retire-tsc case studies — checkout-demo, real packages ms 
 
 **You'll leave with:** a forwardable migration playbook — before/after diagnostics, the command sequence `status → strip → verify → retire`, and honest friction notes — backed by runnable samples in this monorepo.
 
-End state is always the same: **`nudo check` is the only gate; `typescript` is gone.** Coexistence is a migration tactic, not the destination. Command walkthrough: [Migrate from TypeScript](./migrating-from-typescript).
+End state is always the same: **`nudo check` is the only gate; `typescript` is gone.** Coexistence is a migration tactic, not the destination. Command walkthrough: [Migrate from TypeScript](./migrating-from-typescript.md).
 
 > **Honesty label.** Every package below is an **example-scale** sample from [`docs/examples/`](https://github.com/nudojs/nudo/tree/main/docs/examples) (two real npm *consumers*, one public demo package). Timings and friction counts are **example-scale, not production-size** — not a production migration audit. Do not invent external company names; the evidence is the committed `before/` / `after/` trees and `pnpm run verify:examples`.
 
@@ -96,7 +96,7 @@ issues
 
 Read that as: signatures still print; unconstrained params are **`any`** (not `unknown`); the intentional `throw` surfaces as **L2** with a next step. The after package flips it to warning via `package.json#nudo.check.entryThrows` if you want a softer first week.
 
-Tighten later and the face becomes value + predicate (not a type name) — see [Error faces](./error-faces):
+Tighten later and the face becomes value + predicate (not a type name) — see [Error faces](./error-faces.md):
 
 ```text
 actual:   -1  #exact
@@ -253,6 +253,6 @@ Copy-ready blog / HN / release-notes text: [`docs/reports/retire-tsc-announcemen
 
 ## Next
 
-- [Migrate from TypeScript](./migrating-from-typescript) — the door itself
-- [Error faces](./error-faces) — what you read after the gate
-- [Mental model](../getting-started/mental-model)
+- [Migrate from TypeScript](./migrating-from-typescript.md) — the door itself
+- [Error faces](./error-faces.md) — what you read after the gate
+- [Mental model](../getting-started/mental-model.md)

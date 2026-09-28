@@ -81,7 +81,7 @@ needsPositive(-1); // ⊭ x > 0 → nudo:constraint-violated
 
 `@nudo:contract` 引用的模板必须用 `@nudo:import` 引入 —— 侧车只自动绑定同名 `fn` 导出。
 
-产品名：**contract**。
+`@nudo:contract` 是唯一的源内契约指令（历史拼写 `@nudo:refine` / `@nudo:interface` 已移除，没有别名层）。产品名：**contract**。
 
 ## 固化生成段
 

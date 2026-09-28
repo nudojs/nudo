@@ -47,6 +47,8 @@ signatures
 (no issues)
 ```
 
+That `number | string` is honest JavaScript, not a bug: an unconstrained (`any`) operand to `+` can drive numeric addition *or* string concatenation (`"7" + 1`), so Nudo keeps both branches. Constrain `x` — a sidecar contract or call-site evidence — and the union collapses to `number`. See [Language semantics](../concepts/semantics.md).
+
 Optional debug cases (`nudo test` — not the product gate):
 
 ```text
@@ -155,6 +157,7 @@ Prefer concrete values or constraint builders in cases.
 ## Next
 
 - [Mental model](./mental-model.md)
+- [Troubleshooting](./troubleshooting.md) — first-hour FAQ
 - [How to use these docs](../intro.md)
 - [Error faces](../guides/error-faces.md) — what violations look like
 - [nudo check](../guides/check.md)

@@ -10,9 +10,12 @@
 // 7. harvest 不是产品动词：白名单外 en 页不得出现 `nudo harvest` 命令形态或 Primary verbs 列出 harvest。
 // 8. js/javascript 围栏 meta 仅允许 空 / verify / verify-sidecar / noplayground（en + zh）。
 // 9. 新页必须成对落地：sidebar 注册 + en/zh 文件同时存在（防孤儿引用）。
+// 10. llms.txt ↔ en 文档树/博客双向同步（route 解析与 gen-llms.mjs 一致，.md 旁挂形式归一）。
+// 11. 相对 markdown 链接（](./x) / ](../x)）必须带 .md 扩展名（en + zh；围栏内不扫描，允许 #anchor）。
+// 12. en/zh 博客帖文件名集合一致。
 import { describe, it, expect } from "vitest";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { basename, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
@@ -36,6 +39,12 @@ const ZH_DOCS = join(
 );
 const GLOSSARY_EN = join(EN_DOCS, "reference/diagnostics.md");
 const GLOSSARY_ZH = join(ZH_DOCS, "reference/diagnostics.md");
+const EN_BLOG = join(repoRoot, "packages/website/blog");
+const ZH_BLOG = join(
+  repoRoot,
+  "packages/website/i18n/zh-Hans/docusaurus-plugin-content-blog",
+);
+const LLMS_TXT = join(repoRoot, "packages/website/static/llms.txt");
 
 // en 页允许残留 CJK 的白名单（生成的历史聚合页），数组便于后续扩充。
 const EN_CJK_ALLOWLIST = ["releases-history.md"];
@@ -49,6 +58,75 @@ const HARVEST_VERB_RE = /nudo(\s+--)?\s+harvest\b|Primary verbs:[^\n]*\bharvest\
 // ```js / ```javascript 开启行：语言后只允许这几种 meta（或无 meta）。
 const FENCE_OPEN_RE = /^```(?:js|javascript)(?![\w-])[ \t]*(.*)$/;
 const FENCE_META_OK = new Set(["", "verify", "verify-sidecar", "noplayground"]);
+// 相对 markdown 链接目标（](./x) / ](../x)）：必须以 .md 结尾（#anchor 允许）。
+const REL_LINK_RE = /\]\((\.{1,2}\/[^)\s]*)\)/g;
+
+// 与 scripts/gen-llms.mjs 的 slugOf 一致：frontmatter `slug:` 优先，否则相对路径去 .md。
+function frontmatterSlug(src: string): string | null {
+  const m = /^---\n([\s\S]*?)\n---/.exec(src);
+  if (!m) return null;
+  const s = /^slug:\s*(.+)$/m.exec(m[1]);
+  return s ? s[1].trim().replace(/['"]/g, "") : null;
+}
+
+// en 文档页路由集合（slug 去 leading /，否则相对路径去 .md）。
+function docRoutes(root: string): Set<string> {
+  return new Set(
+    walk(root)
+      .filter((f) => f.endsWith(".md"))
+      .map((f) =>
+        (
+          frontmatterSlug(readFileSync(f, "utf8")) ??
+          relative(root, f).replace(/\.md$/, "")
+        ).replace(/^\//, ""),
+      ),
+  );
+}
+
+// 博客帖路由集合：frontmatter slug 优先，否则 YYYY/MM/DD/name（同 gen-llms.mjs）。
+function blogRoutes(root: string): Set<string> {
+  const routes = new Set<string>();
+  for (const f of walk(root).filter((f) => f.endsWith(".md"))) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})-(.+)\.md$/.exec(basename(f));
+    if (!m) continue;
+    const slug = frontmatterSlug(readFileSync(f, "utf8"));
+    routes.add(
+      slug ? slug.replace(/^\//, "") : `${m[1]}/${m[2]}/${m[3]}/${m[4]}`,
+    );
+  }
+  return routes;
+}
+
+// llms.txt 中所有 docs / blog URL 的路由集合（去 .md 旁挂后缀与 #anchor；zh-Hans 前缀不在此列）。
+function llmsRoutes(): { docs: Set<string>; blog: Set<string> } {
+  const docs = new Set<string>();
+  const blog = new Set<string>();
+  const src = readFileSync(LLMS_TXT, "utf8");
+  for (const m of src.matchAll(
+    /https:\/\/nudojs\.github\.io\/nudo\/(docs|blog)\/[^\s)\]]+/g,
+  )) {
+    const route = m[0]
+      .slice(`https://nudojs.github.io/nudo/${m[1]}/`.length)
+      .replace(/#.*$/, "")
+      .replace(/\.md$/, "");
+    (m[1] === "docs" ? docs : blog).add(route);
+  }
+  return { docs, blog };
+}
+
+// 去掉围栏代码块（``` 开闭行之间），围栏内的“链接”是示例文本不是导航。
+function stripFences(src: string): string {
+  const lines: string[] = [];
+  let inFence = false;
+  for (const line of src.split("\n")) {
+    if (/^\s*```/.test(line)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (!inFence) lines.push(line);
+  }
+  return lines.join("\n");
+}
 
 function srcFiles(): string[] {
   return SRC_DIRS.flatMap((dir) =>
@@ -292,5 +370,75 @@ describe("zh navbar/footer i18n coverage", () => {
       .filter((l) => !known.has(l))
       .sort();
     expect(stale, `stale navbar i18n keys: ${stale.join(", ")}`).toEqual([]);
+  });
+});
+
+describe("llms.txt ↔ docs tree sync", () => {
+  const llms = llmsRoutes();
+
+  it("every en docs route appears as a URL in static/llms.txt", () => {
+    const missing = [...docRoutes(EN_DOCS)].filter((r) => !llms.docs.has(r)).sort();
+    expect(
+      missing,
+      `llms.txt missing doc routes (hand-maintained index — add the URL line): ${missing.join(", ")}`,
+    ).toEqual([]);
+  });
+
+  it("every blog slug appears as a URL in static/llms.txt", () => {
+    const missing = [...blogRoutes(EN_BLOG)].filter((r) => !llms.blog.has(r)).sort();
+    expect(
+      missing,
+      `llms.txt missing blog routes: ${missing.join(", ")}`,
+    ).toEqual([]);
+  });
+
+  it("every docs/blog URL in static/llms.txt maps to an existing page or post", () => {
+    const docs = docRoutes(EN_DOCS);
+    const blog = blogRoutes(EN_BLOG);
+    const stale = [
+      ...[...llms.docs].filter((r) => !docs.has(r)).map((r) => `docs/${r}`),
+      ...[...llms.blog].filter((r) => !blog.has(r)).map((r) => `blog/${r}`),
+    ].sort();
+    expect(
+      stale,
+      `llms.txt lists routes with no page/post on disk (page removed? drop the URL line): ${stale.join(", ")}`,
+    ).toEqual([]);
+  });
+});
+
+describe("relative link hygiene", () => {
+  it("relative markdown links keep the .md extension (en + zh, fences excluded)", () => {
+    const bad: string[] = [];
+    for (const [label, root] of [["en", EN_DOCS], ["zh", ZH_DOCS]] as const) {
+      for (const f of walk(root)) {
+        if (!f.endsWith(".md")) continue;
+        const rel = relative(root, f);
+        const src = stripFences(readFileSync(f, "utf8"));
+        for (const m of src.matchAll(REL_LINK_RE)) {
+          if (!/\.md(#.*)?$/.test(m[1])) bad.push(`${label}/${rel}: ${m[0]}`);
+        }
+      }
+    }
+    expect(
+      bad,
+      `extensionless relative links (append .md, keep anchors): ${bad.join(", ")}`,
+    ).toEqual([]);
+  });
+});
+
+describe("blog en/zh parity", () => {
+  it("en and zh blog post file sets are identical", () => {
+    const names = (dir: string) =>
+      new Set(
+        readdirSync(dir)
+          .filter((n) => n.endsWith(".md"))
+          .sort(),
+      );
+    const en = names(EN_BLOG);
+    const zh = names(ZH_BLOG);
+    const onlyEn = [...en].filter((n) => !zh.has(n)).sort();
+    const onlyZh = [...zh].filter((n) => !en.has(n)).sort();
+    expect(onlyEn, `zh blog missing posts: ${onlyEn.join(", ")}`).toEqual([]);
+    expect(onlyZh, `en blog missing posts: ${onlyZh.join(", ")}`).toEqual([]);
   });
 });

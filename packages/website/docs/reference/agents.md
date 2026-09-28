@@ -29,7 +29,7 @@ Leaving tsc: npx nudojs migrate status|strip|verify|retire (exit is retire).
 |------|--------|
 | Verbs | `check` \| `test` \| `contract` \| `export` \| `health` \| `migrate` only |
 | No `infer` verb | Observation = check signatures + IDE |
-| Contracts | Sidecar / `@nudo:contract`; `@nudo:contract` is alias |
+| Contracts | Sidecar / `@nudo:contract` (historical `@nudo:refine` / `@nudo:interface` removed, no alias) |
 | `@nudo:case` | Debug / `nudo test` / LSP only |
 | any vs unknown | Entry `any`; `unknown` = inference failed |
 | check vs export | check validates; export projects (lossy) |

@@ -94,6 +94,20 @@ env 覆盖（配置未设时）：`NUDO_CACHE_DIR` —— 绝对路径，或 `of
 - **不可信 runner：** 保持关闭 —— `nudo.cache: false`（或不设）且 `NUDO_CACHE_DIR=off`。
 - **依赖层**（`~/.cache/nudo/deps`）才是 CI 值得弄的那层：默认开启、跨项目、纯签名投影。把 `NUDO_DEPS_CACHE_DIR` 指到 restore 出来的目录即可跨 job 复用 harvest 成果；陈旧或损坏的副本只会 miss。
 
+## 会话缓存上限（进程内 LRU）
+
+与上面的磁盘缓存是两个不同的杠杆：每个 Nudo 进程内部都维护内存 LRU 缓存，服务热路径重分析 —— 整文件分析结果、逐函数分析、求值器 run。它们的**条目数**通过 `package.json#nudo.sessionCache` 封顶。这只是内存与 warm 命中之间的取舍，绝不是精度旋钮 —— 逐出只是诚实重算，结果与诊断完全不变。
+
+| 键（`nudo.sessionCache.*`） | 环境变量 | 封什么 | 默认 |
+|---|---|---|---|
+| `maxFiles` | `NUDO_CACHE_MAX_FILES` | 整文件分析结果 LRU 条目 | `64` |
+| `maxFns` | `NUDO_CACHE_MAX_FNS` | 逐函数分析 LRU 条目 | `1024` |
+| `maxEvalRuns` | `NUDO_CACHE_MAX_EVALRUNS` | 求值器 run LRU 条目 | `32` |
+
+- 优先级：环境变量 > `package.json#nudo.sessionCache` > 默认。`0` / `off` 关闭该层；数值钳制到 `65,536`。
+- 多项目共用一个 IDE/LSP 进程时调低；大单仓可调高换 warm 命中。
+- 与持久化磁盘缓存（上面的 `nudo.cache` / `NUDO_CACHE_DIR`）正交：会话上限随进程消失，绝不落盘。
+
 ## 配置速查
 
 | 想要 | 设置 |
@@ -103,6 +117,9 @@ env 覆盖（配置未设时）：`NUDO_CACHE_DIR` —— 绝对路径，或 `of
 | 打开项目磁盘缓存 | `package.json#nudo.cache: true`（→ `.nudo/cache`） |
 | 自定义缓存目录 | `nudo.cache: ".nudo-cache"` 或 `NUDO_CACHE_DIR=/abs/path` |
 | 关闭依赖缓存 | `NUDO_DEPS_CACHE_DIR=off` |
+| 封顶进程内会话缓存 | `package.json#nudo.sessionCache.*` / `NUDO_CACHE_MAX_FILES` · `NUDO_CACHE_MAX_FNS` · `NUDO_CACHE_MAX_EVALRUNS` |
+
+完整配置表 —— 全部 `package.json#nudo` 键与 `NUDO_*` 变量 —— 见[配置参考](../reference/config.md)。
 
 ## 下一步
 

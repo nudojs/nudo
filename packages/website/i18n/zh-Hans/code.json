@@ -829,5 +829,92 @@
   },
   "playground.results.noIssues": {
     "message": "无问题——所有调用点都满足侧车契约"
+  },
+  "playground.preset.refine-positive.name": {
+    "message": "精化 — @nudo:contract positive"
+  },
+  "playground.preset.observe-scale.name": {
+    "message": "观察 — scale 中间代数"
+  },
+  "playground.preset.debug-case.name": {
+    "message": "调试用例 — 仅具体见证"
+  },
+  "playground.preset.sidecar-scale.name": {
+    "message": "侧车 — calc.nudo.js 门禁"
+  },
+  "playground.preset.basic-subtract.name": {
+    "message": "调用点减法"
+  },
+  "playground.preset.string-transform.name": {
+    "message": "字符串变换"
+  },
+  "playground.preset.array-map.name": {
+    "message": "数组 map"
+  },
+  "playground.preset.object-property.name": {
+    "message": "对象属性"
+  },
+  "playground.preset.conditional-return.name": {
+    "message": "条件返回"
+  },
+  "playground.preset.function-compose.name": {
+    "message": "函数组合"
+  },
+  "playground.preset.null-handling.name": {
+    "message": "null 处理"
+  },
+  "playground.preset.type-guard.name": {
+    "message": "类型守卫"
+  },
+  "playground.preset.recursion.name": {
+    "message": "递归"
+  },
+  "playground.preset.spread-operator.name": {
+    "message": "展开运算符"
+  },
+  "playground.preset.ternary-operator.name": {
+    "message": "三元运算符"
+  },
+  "playground.preset.default-param.name": {
+    "message": "默认参数"
+  },
+  "playground.preset.discriminated-union.name": {
+    "message": "可辨识联合"
+  },
+  "playground.preset.optional-chaining.name": {
+    "message": "可选链"
+  },
+  "playground.preset.truthiness-narrowing.name": {
+    "message": "真值收窄"
+  },
+  "playground.preset.isarray-narrowing.name": {
+    "message": "Array.isArray 收窄"
+  },
+  "playground.preset.in-operator.name": {
+    "message": "in 运算符收窄"
+  },
+  "playground.preset.cs-formatname.name": {
+    "message": "formatName — 首个精确签名"
+  },
+  "playground.preset.cs-wait.name": {
+    "message": "wait — Promise resolve 扫描"
+  },
+  "playground.preset.cs-uniq.name": {
+    "message": "uniq — Set 迭代"
+  },
+  "playground.preset.cs-flat.name": {
+    "message": "flat — 递归调用 + 自调用"
+  },
+  "playground.preset.promise-resolve-scan.name": {
+    "message": "Promise resolve 扫描"
+  },
+  "playground.preset.set-iteration.name": {
+    "message": "Set 迭代（for-of）"
+  },
+  "playground.preset.recursive-flatten.name": {
+    "message": "递归展平"
+  },
+  "playground.preset.in-brand-check.name": {
+    "message": "in 运算符品牌校验"
   }
 }

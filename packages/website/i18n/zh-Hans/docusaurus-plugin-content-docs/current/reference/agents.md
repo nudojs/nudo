@@ -28,7 +28,7 @@ Leaving tsc: npx nudojs migrate status|strip|verify|retire (exit is retire).
 |------|------|
 | 动词 | 仅 `check` \| `test` \| `contract` \| `export` \| `health` \| `migrate` |
 | 无 `infer` 动词 | 观察 = check 签名 + IDE |
-| 契约 | sidecar / `@nudo:contract` |
+| 契约 | sidecar / `@nudo:contract`（历史拼写 `@nudo:refine` / `@nudo:interface` 已移除，无别名层） |
 | `@nudo:case` | 仅调试 / `nudo test` / LSP |
 | any vs unknown | 入口 `any`；`unknown` = 推导失败 |
 | check vs export | check 校验；export 有损投影 |

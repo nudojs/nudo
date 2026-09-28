@@ -146,13 +146,14 @@ assertions
 
 ```bash
 nudo contract <path> [--emit] [--draft] [--write] [--fn name] [--all]
-              [--dry-run] [--exit-on-diff] [--from paths…]
+              [--dry-run] [--exit-on-diff] [--from paths…] [--from-dts]
 ```
 
 ```bash
 nudo contract src/lib.js                     # 打印有效接口
 nudo contract --draft src/lib.js             # 可审阅的 *.nudo.draft.js
 nudo contract --draft --write src/lib.js     # 写盘草稿
+nudo contract --from-dts ./my-pkg/src/index.ts  # 把 .d.ts / TS 注解逆向为可审阅草稿
 nudo contract --emit src/lib.js --fn add2    # 持久化 @generated 侧车段
 nudo contract --emit src/lib.js --all --dry-run --exit-on-diff  # CI 漂移门禁
 ```
@@ -160,6 +161,7 @@ nudo contract --emit src/lib.js --all --dry-run --exit-on-diff  # CI 漂移门�
 - 手写侧车绑定始终优先于生成段。
 - `--emit --exit-on-diff`：将写盘且有 diff 时退出 `1`。
 - 使用处证据：`--from <paths…>`。
+- `--from-dts <paths…>`：把 TypeScript `.d.ts` / 包类型逆向为可审阅的 `@nudo:draft` —— 复制进 `*.nudo.js` 前**不**执法（TS 退役路径上的契约步骤，见[从 TypeScript 迁移](./migrating-from-typescript.md)）。
 
 ---
 

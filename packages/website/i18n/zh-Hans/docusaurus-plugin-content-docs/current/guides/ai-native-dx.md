@@ -42,7 +42,7 @@ description: AI-native DX —— 为什么 agent 在 Nudo 上更少噪音地红�
 }
 ```
 
-少样本「错→对」在 [Agents](../reference/agents)（及 `packages/lsp/agent-skill/SKILL.md`）。粘贴块：
+少样本「错→对」在 [Agents](../reference/agents.md)（及 `packages/lsp/agent-skill/SKILL.md`）。粘贴块：
 
 ```text
 Read https://nudojs.github.io/nudo/agents.md and set up Nudo in this project.
@@ -131,7 +131,7 @@ npx nudojs contract --draft src/app.js --json    # draftSource + unified diff
 
 ## 下一步
 
-- [Agents](../reference/agents) — 规则 + 少样本修复对
-- [错误对照](./error-faces) — 人读的 `actual ⊭ expected`
-- [心智模型](../getting-started/mental-model)
-- [从 TypeScript 迁移](./migrating-from-typescript) — 退役 tsc
+- [Agents](../reference/agents.md) — 规则 + 少样本修复对
+- [错误对照](./error-faces.md) — 人读的 `actual ⊭ expected`
+- [心智模型](../getting-started/mental-model.md)
+- [从 TypeScript 迁移](./migrating-from-typescript.md) — 退役 tsc

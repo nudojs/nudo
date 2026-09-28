@@ -9,7 +9,9 @@ description: Nudo 与 TypeScript 的错误对照 —— 真值、Pred、下一�
 
 目标：**不是「报得更多」，是「报得更真、带证据、带下一步」。**
 
-完整 CI 钉住套件：[`docs/examples/errors/`](https://github.com/nudojs/nudo/tree/main/docs/examples/errors)（`pnpm run verify:examples`）。仓库深文：[`docs/errors-vs-typescript.md`](https://github.com/nudojs/nudo/blob/main/docs/errors-vs-typescript.md)。
+完整 CI 钉住套件：[`docs/examples/errors/`](https://github.com/nudojs/nudo/tree/main/docs/examples/errors)（`pnpm run verify:examples`）。
+
+> **深读（中文）：** [`docs/errors-vs-typescript.md`](https://github.com/nudojs/nudo/blob/main/docs/errors-vs-typescript.md) —— 本仓库内的设计笔记，逐例展开每张错误脸的 TS 对照与修法；链接离开文档站，前往 GitHub。
 
 ## 每条违例共有的脸
 
@@ -86,7 +88,7 @@ signatures
   getName(user: any) => any  throws TypeError
 
 issues
-  [ERROR bad] bad: return value ⊭ @nudo:contract return positive  (nudo:constraint-violated)
+  [ERROR L32 bad] bad: return value ⊭ @nudo:contract return positive  (nudo:constraint-violated)
       actual:   0  #exact
       expected: return > 0
       → return a value satisfying > 0

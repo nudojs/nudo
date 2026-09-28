@@ -22,6 +22,7 @@ import {
   GROUP_CALLSITE,
   GROUP_SEMANTICS,
   tGroup,
+  tPresetName,
 } from './presets';
 import { discoverCallsites } from './callsites';
 import {
@@ -42,15 +43,24 @@ import { registerNudoJsLanguage } from './monaco-lang';
 
 const MonacoEditor = lazy(() => import('@monaco-editor/react'));
 
-function readSharedCode(): string | null {
+// 分享链接编解码：btoa(encodeURIComponent(x)) ↔ decodeURIComponent(atob(x))
+function readSharedParam(key: 'code' | 'sidecar'): string | null {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = new URLSearchParams(window.location.search).get('code');
+    const raw = new URLSearchParams(window.location.search).get(key);
     if (!raw) return null;
     return decodeURIComponent(atob(raw));
   } catch {
     return null;
   }
+}
+
+function readSharedCode(): string | null {
+  return readSharedParam('code');
+}
+
+function readSharedSidecar(): string | null {
+  return readSharedParam('sidecar');
 }
 
 // ---------------------------------------------------------------------------
@@ -91,6 +101,19 @@ export default function PlaygroundApp() {
     activeCaseIndexRef.current = activeCaseIndex;
   }, [activeCaseIndex]);
   useEffect(() => {
+    const sharedSidecar = readSharedSidecar();
+    if (sharedSidecar !== null) {
+      // ?sidecar= 决定布局：以首个 sidecar 预设打开；主代码取 ?code=（缺省回退该预设主码）
+      const sidecarPreset = presets.find((p) => p.mode === 'sidecar');
+      if (sidecarPreset) {
+        setSelectedPreset(sidecarPreset.id);
+        const shared = readSharedCode();
+        setCode(shared && shared !== '' ? shared : sidecarPreset.mainCode);
+        setSidecarCode(sharedSidecar);
+        setPlaygroundSidecar(sidecarPreset.sidecarFile, sharedSidecar);
+        return;
+      }
+    }
     const shared = readSharedCode();
     if (shared) setCode(shared);
     else if (presets[0].mode === 'sidecar') {
@@ -193,9 +216,14 @@ export default function PlaygroundApp() {
   };
 
   const shareUrl = () => {
-    const encoded = btoa(encodeURIComponent(code));
     const url = new URL(window.location.href);
-    url.searchParams.set('code', encoded);
+    url.searchParams.set('code', btoa(encodeURIComponent(code)));
+    if (isSidecarMode && sidecarCode) {
+      url.searchParams.set('sidecar', btoa(encodeURIComponent(sidecarCode)));
+    } else {
+      // 空 sidecar / 非 sidecar 模式：清掉残留参数，避免旧侧车内容混进新链接
+      url.searchParams.delete('sidecar');
+    }
     navigator.clipboard.writeText(url.toString()).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -444,7 +472,7 @@ export default function PlaygroundApp() {
                 {presets
                   .filter((p) => p.group === group)
                   .map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
+                    <option key={p.id} value={p.id}>{tPresetName(p)}</option>
                   ))}
               </optgroup>
             ))}
@@ -469,7 +497,7 @@ export default function PlaygroundApp() {
             </select>
           )}
 
-          {preset.mode === 'single' && (
+          {!isCallsiteMode && (
             <button onClick={shareUrl} className="share-button">
               {copied
                 ? <Translate id="playground.copied">Copied!</Translate>

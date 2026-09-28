@@ -120,7 +120,7 @@ clamp(-5, 0, 10);  // OK — no @nudo:contract declared
 
 Nudo **不**从 body AST 扫描发明必填 slot。
 
-## L2 —— 入口 throws
+## L2 —— 入口 throws {#l2--entry-throws}
 
 无显式契约时，契约退化为 **JS 运行时边界**：
 
@@ -155,6 +155,8 @@ issues
 - **内部 helper 不门禁。** 它们可以 throw；在 `nudo test` 中观察。
 - `try`/`catch` 消化路径上的 throws（从出口效果中移除）。
 - refine 把参数收成 shape 后，L2 消失或降为 L1。
+
+首选修复路径是用 [`@nudo:throws`](../concepts/directives.md#nudothrows--declare-intentional-throws) 在函数上申报有意的 throw —— 完整语法（`Error` 家族覆盖、`*` 通配、`!! throws` 用例后缀、侧车 `fn` 选项）见指令参考。
 
 ### 过滤 L2
 
@@ -240,7 +242,40 @@ nudo:check:
 nudo check src/lib.js --json
 ```
 
-更多接线配方 —— monorepo 扫描根、L2 渐进策略（`--profile adoption`）、缓存调参 —— 见内部设计文档 [`docs/ci-nudo-check.md`](https://github.com/nudojs/nudo/blob/main/docs/ci-nudo-check.md)。
+### CI 接线配方
+
+**Monorepo 扫描根** —— 只门禁源码根，绝不扫 `node_modules`、构建产物或 vendored 语料：
+
+```bash
+npx nudojs check packages/*/src
+```
+
+**L2 渐进策略** —— L2（`nudo:entry-may-throw`）默认 error。在遗留 JS 上渐进采用？`--profile adoption` 让 L1 契约违例保持 **error**，只把入口 may-throw 降为 warning（exit 0）：
+
+```bash
+npx nudojs check . --profile adoption
+```
+
+把策略固化到代码旁，替代每次传旗标：
+
+```json
+{
+  "nudo": {
+    "check": {
+      "profile": "adoption"
+    }
+  }
+}
+```
+
+**缓存调参** —— 分析会话缓存是进程内 LRU（默认 64 文件）。CI 并行分析多个项目时封顶；单个大仓调高换 warm 命中：
+
+```bash
+NUDO_CACHE_MAX_FILES=32 npx nudojs check packages/*/src   # 多项目
+NUDO_CACHE_MAX_FILES=512 npx nudojs check .               # 单个大仓
+```
+
+完整内部设计笔记（仓库内文档，离开本站）：[`docs/ci-nudo-check.md`](https://github.com/nudojs/nudo/blob/main/docs/ci-nudo-check.md)。
 
 ## 下一步
 

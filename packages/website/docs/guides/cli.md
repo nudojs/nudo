@@ -146,13 +146,14 @@ Draft, print, or emit effective interfaces (handwritten / generated / implicit l
 
 ```bash
 nudo contract <path> [--emit] [--draft] [--write] [--fn name] [--all]
-              [--dry-run] [--exit-on-diff] [--from paths…]
+              [--dry-run] [--exit-on-diff] [--from paths…] [--from-dts]
 ```
 
 ```bash
 nudo contract src/lib.js                     # print effective interfaces
 nudo contract --draft src/lib.js             # reviewable *.nudo.draft.js
 nudo contract --draft --write src/lib.js     # write the draft
+nudo contract --from-dts ./my-pkg/src/index.ts  # reverse .d.ts / TS annotations into a reviewable draft
 nudo contract --emit src/lib.js --fn add2    # persist @generated sidecar segment
 nudo contract --emit src/lib.js --all --dry-run --exit-on-diff  # CI drift gate
 ```
@@ -160,6 +161,7 @@ nudo contract --emit src/lib.js --all --dry-run --exit-on-diff  # CI drift gate
 - Handwritten sidecar bindings always win over generated segments.
 - `--emit --exit-on-diff` exits `1` when the write would produce a diff.
 - Usage-site evidence: `--from <paths…>`.
+- `--from-dts <paths…>` reverses TypeScript `.d.ts` / package types into a reviewable `@nudo:draft` — **not** enforced until you copy accepted exports into `*.nudo.js` (the contracts step of TS retirement; see [Migrate from TypeScript](./migrating-from-typescript.md)).
 
 ---
 

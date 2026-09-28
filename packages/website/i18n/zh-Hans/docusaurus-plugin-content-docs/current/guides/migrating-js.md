@@ -120,7 +120,7 @@ nudo health src/                         # uncovered fns, drift, analysis errors
 nudo test src/lib.js --from test/ --freeze=update
 ```
 
-版本锁定见 [版本与发布](./versioning.md)。
+版本锁定见 [版本与发布](./versioning.md)（0.x 的 minor 可能破坏；稳定线的 core/service/nudojs 今天均为 1.x，遵循 SemVer——见该页版本表）。
 
 ## 不要做的事
 

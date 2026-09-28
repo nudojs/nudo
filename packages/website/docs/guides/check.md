@@ -156,6 +156,8 @@ issues
 - `try`/`catch` digests throws on a path (removed from exit effects).
 - Refine narrowing the param to a shape removes or downgrades L2 (becomes L1).
 
+The first fix path is declaring the intentional throw on the function with [`@nudo:throws`](../concepts/directives.md#nudothrows--declare-intentional-throws) — full syntax (`Error`-family coverage, `*` wildcard, `!! throws` case suffix, sidecar `fn` option) in the directive reference.
+
 ### Filtering L2
 
 ```bash
@@ -242,7 +244,40 @@ nudo:check:
 nudo check src/lib.js --json
 ```
 
-More wiring recipes — monorepo scan roots, L2 adoption policy (`--profile adoption`), cache sizing — in the internal design doc [`docs/ci-nudo-check.md`](https://github.com/nudojs/nudo/blob/main/docs/ci-nudo-check.md).
+### CI wiring recipes
+
+**Monorepo scan roots** — gate source roots only, never `node_modules`, build output, or vendored corpora:
+
+```bash
+npx nudojs check packages/*/src
+```
+
+**L2 adoption policy** — by default L2 (`nudo:entry-may-throw`) is error. Adopting on legacy JS? `--profile adoption` keeps L1 contract violations at **error** and demotes only entry may-throw to warning (exit 0):
+
+```bash
+npx nudojs check . --profile adoption
+```
+
+Persist it next to the code instead of passing the flag:
+
+```json
+{
+  "nudo": {
+    "check": {
+      "profile": "adoption"
+    }
+  }
+}
+```
+
+**Cache sizing** — the analysis session cache is an in-process LRU (default 64 files). Cap it when CI analyzes many projects; raise it for warm hits on one large repo:
+
+```bash
+NUDO_CACHE_MAX_FILES=32 npx nudojs check packages/*/src   # many projects
+NUDO_CACHE_MAX_FILES=512 npx nudojs check .               # one large repo
+```
+
+Full internal design note (in-repo, leaves this site): [`docs/ci-nudo-check.md`](https://github.com/nudojs/nudo/blob/main/docs/ci-nudo-check.md).
 
 ## Next
 

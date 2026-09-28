@@ -179,7 +179,7 @@ parser ──▶ core
 
 ### 3.2 Evaluation Rules
 
-The evaluator is an AST walker. For each node type, there is a corresponding rule:
+The evaluator is a single engine, not an AST-walking interpreter: source is transpiled and run via `new Function` with **Abs** operands. The transpiler lowers each construct to the corresponding Abs operation — arithmetic, comparison, and unary operators route through the algebra (`surface.ts` / `arithmetic.ts`); there is no second IR. Evaluation is fail-closed: eval-incapable sources yield `unknown` / empty exports, with no interpreter fallback. For each construct there is a corresponding lowering rule:
 
 **Literals:**
 ```text

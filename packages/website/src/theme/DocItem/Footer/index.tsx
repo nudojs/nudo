@@ -10,6 +10,9 @@ import EditMetaRow from '@theme/EditMetaRow';
 
 const FEEDBACK_KEY = 'nudo-doc-feedback';
 
+// 反馈按页存储：全局键会让投一票就全站致谢（pathname 含 locale 前缀，各语言页独立计）
+const feedbackStorageKey = () => `${FEEDBACK_KEY}:${window.location.pathname}`;
+
 /**
  * 每页 agent 面：文档页在构建期旁挂同名 `.md`（scripts/gen-llms.mjs），
  * 这里提供「复制 markdown」与「在 ChatGPT / Claude 打开」。
@@ -73,7 +76,7 @@ function AgentActions({permalink, title}: {permalink?: string; title?: string}):
 function FeedbackRow({issueUrl}: {issueUrl: string}): ReactNode {
   const [vote, setVote] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
-    return window.localStorage.getItem(FEEDBACK_KEY);
+    return window.localStorage.getItem(feedbackStorageKey());
   });
 
   const thanks = vote === 'yes' || vote === 'no';
@@ -98,7 +101,7 @@ function FeedbackRow({issueUrl}: {issueUrl: string}): ReactNode {
             className="doc-feedback-button"
             aria-label="Yes, this page was helpful"
             onClick={() => {
-              window.localStorage.setItem(FEEDBACK_KEY, 'yes');
+              window.localStorage.setItem(feedbackStorageKey(), 'yes');
               setVote('yes');
             }}>
             <Translate id="theme.DocItem.footer.feedback.yes">Yes</Translate>
@@ -110,7 +113,7 @@ function FeedbackRow({issueUrl}: {issueUrl: string}): ReactNode {
             rel="noopener noreferrer"
             aria-label="No, this page needs work — report an issue"
             onClick={() => {
-              window.localStorage.setItem(FEEDBACK_KEY, 'no');
+              window.localStorage.setItem(feedbackStorageKey(), 'no');
               setVote('no');
             }}>
             <Translate id="theme.DocItem.footer.feedback.no">No</Translate>

@@ -67,7 +67,7 @@ patch 修健全性（结果可能变得*更正确*）；minor 增 API / 诊断�
 
 每个已发布包都带 changeset 维护的 `CHANGELOG.md`。破坏性条目以 `**BREAKING**:` 开头，并附一行迁移说明。
 
-示例（`@nudojs/core` 2.0.0）：求值器子路径从 `@nudojs/cli/evaluator` 迁到 `@nudojs/service/evaluator`。
+示例（`@nudojs/core` 1.0.0）：求值器子路径从 `@nudojs/cli/evaluator` 迁到 `@nudojs/service/evaluator`。
 
 ```bash
 # 0.x 包升 minor 之后
@@ -101,10 +101,10 @@ pnpm exec changeset
 
 ```jsonc
 // CI 可复现
-{ "dependencies": { "@nudojs/core": "2.1.0" } }
+{ "dependencies": { "@nudojs/core": "1.2.0" } }
 
 // 1.x：跟踪兼容修复
-{ "dependencies": { "@nudojs/core": "^2.1.0" } }
+{ "dependencies": { "@nudojs/core": "^1.2.0" } }
 
 // 0.x：只自动吃 patch
 { "dependencies": { "@nudojs/env": "~0.4.0" } }

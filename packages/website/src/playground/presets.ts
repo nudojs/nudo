@@ -20,6 +20,11 @@ export function tGroup(group: string): string {
     : group;
 }
 
+// 预设名 → 翻译 id（下拉 option 文案用；英文名即回退默认值）
+export function tPresetName(preset: Preset): string {
+  return translate({ id: `playground.preset.${preset.id}.name`, message: preset.name });
+}
+
 export const presets: Preset[] = [
   {
     mode: 'single',

@@ -12,6 +12,7 @@ const sidebars: SidebarsConfig = {
         "getting-started/installation",
         "getting-started/mental-model",
         "getting-started/quick-start",
+        "getting-started/troubleshooting",
       ],
     },
     {
@@ -115,7 +116,7 @@ const sidebars: SidebarsConfig = {
         {
           type: "category",
           label: "CLI & Diagnostics",
-          items: ["api/cli-reference", "reference/diagnostics"],
+          items: ["api/cli-reference", "reference/config", "reference/diagnostics"],
         },
         {
           type: "category",

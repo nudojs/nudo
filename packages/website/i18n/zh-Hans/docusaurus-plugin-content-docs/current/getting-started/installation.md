@@ -112,6 +112,10 @@ export default defineConfig({
 
 ## 验证安装
 
+:::note 信任边界
+Nudo 通过**执行**目标代码来分析（Abs 语义，进程内求值）。不要对不可信代码运行 `nudo check` / `nudo test`；在 CI 里这与跑项目测试是同一信任级别。为何以执行为模型：[语言语义](../concepts/semantics.md)。
+:::
+
 在任意小 JS 文件上对 CLI 做冒烟测试：
 
 ```bash

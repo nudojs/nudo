@@ -7,7 +7,7 @@ description: 公开的退役 tsc 案例研究 —— checkout-demo，真实包 m
 
 **读完你能带走：** 一份可转发的迁移剧本——前后诊断对照、命令序列 `status → strip → verify → retire`，以及诚实的摩擦记录——背后是本 monorepo 里可运行的样例。
 
-终局始终一样：**`nudo check` 是唯一的门禁；`typescript` 被摘掉。** 共存是迁移战术，不是目的地。命令走读：[从 TypeScript 迁移](./migrating-from-typescript)。
+终局始终一样：**`nudo check` 是唯一的门禁；`typescript` 被摘掉。** 共存是迁移战术，不是目的地。命令走读：[从 TypeScript 迁移](./migrating-from-typescript.md)。
 
 > **诚实标签。** 下面每个包都是来自 [`docs/examples/`](https://github.com/nudojs/nudo/tree/main/docs/examples) 的**示例级**样例（两个真实 npm *消费方*，一个公开 demo 包）。耗时与摩擦计数是**示例级，非生产规模** —— 不是一次生产迁移审计。不要编造外部公司名；证据是已提交的 `before/` / `after/` 树与 `pnpm run verify:examples`。
 
@@ -96,7 +96,7 @@ issues
 
 读法是：签名照常打印；无约束参数是 **`any`**（不是 `unknown`）；有意的 `throw` 以 **L2** 浮出，并带下一步。如果你想要第一周更软，after 包可以用 `package.json#nudo.check.entryThrows` 把它翻成 warning。
 
-之后再收紧，脸会变成值 + 谓词（而不是类型名）——见[错误对照](./error-faces)：
+之后再收紧，脸会变成值 + 谓词（而不是类型名）——见[错误对照](./error-faces.md)：
 
 ```text
 actual:   -1  #exact
@@ -253,6 +253,6 @@ pnpm run verify:examples
 
 ## 下一步
 
-- [从 TypeScript 迁移](./migrating-from-typescript) —— 那道门本身
-- [错误对照](./error-faces) —— 门禁之后你怎么读
-- [心智模型](../getting-started/mental-model) —— 10 分钟
+- [从 TypeScript 迁移](./migrating-from-typescript.md) —— 那道门本身
+- [错误对照](./error-faces.md) —— 门禁之后你怎么读
+- [心智模型](../getting-started/mental-model.md) —— 10 分钟

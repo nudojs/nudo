@@ -94,6 +94,20 @@ The cache makes repeated checks of unchanged files cheaper on the algebra surfac
 - **Untrusted runners:** keep it off — `nudo.cache: false` (or unset) and `NUDO_CACHE_DIR=off`.
 - **The deps layer** (`~/.cache/nudo/deps`) is the CI-worthy one: default-on, cross-project, pure signature projections. Point `NUDO_DEPS_CACHE_DIR` at a restored directory to reuse harvest work across jobs; a stale or corrupt copy simply misses.
 
+## Session cache limits (in-process LRU)
+
+Separate lever from the disk cache above: every Nudo process keeps in-memory LRU caches for warm re-analysis — whole-file analysis results, per-function analyses, and evaluator runs. Their **entry counts** are capped via `package.json#nudo.sessionCache`. This is a memory-vs-warm-hit tradeoff, never a precision knob — eviction just recomputes honestly; results and diagnostics are identical either way.
+
+| Key (`nudo.sessionCache.*`) | Env var | Caps | Default |
+|---|---|---|---|
+| `maxFiles` | `NUDO_CACHE_MAX_FILES` | whole-file analysis-result LRU entries | `64` |
+| `maxFns` | `NUDO_CACHE_MAX_FNS` | per-function analysis LRU entries | `1024` |
+| `maxEvalRuns` | `NUDO_CACHE_MAX_EVALRUNS` | evaluator-run LRU entries | `32` |
+
+- Precedence: env var > `package.json#nudo.sessionCache` > default. `0` / `off` disables that layer; values are clamped to `65,536`.
+- Lower the caps when several projects share one IDE/LSP process; raise them for a large monorepo to keep warm hits.
+- Orthogonal to the persistent disk cache (`nudo.cache` / `NUDO_CACHE_DIR` above): session limits die with the process and never touch disk.
+
 ## Config summary
 
 | Want | Set |
@@ -103,6 +117,9 @@ The cache makes repeated checks of unchanged files cheaper on the algebra surfac
 | Enable the project disk cache | `package.json#nudo.cache: true` (→ `.nudo/cache`) |
 | Custom cache directory | `nudo.cache: ".nudo-cache"` or `NUDO_CACHE_DIR=/abs/path` |
 | Disable the deps cache | `NUDO_DEPS_CACHE_DIR=off` |
+| Cap the in-process session caches | `package.json#nudo.sessionCache.*` / `NUDO_CACHE_MAX_FILES` · `NUDO_CACHE_MAX_FNS` · `NUDO_CACHE_MAX_EVALRUNS` |
+
+For the full config table — every `package.json#nudo` key and `NUDO_*` variable — see the [configuration reference](../reference/config.md).
 
 ## Next
 
