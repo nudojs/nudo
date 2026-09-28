@@ -109,6 +109,7 @@ export function mergeAdjacentFixedViews<P>(
  * 抽象 part 吃掉任意（含空）子串；相邻抽象合并成一段可变间隙。
  * 非末尾固定段从当前位置向后找；末尾固定段须落在字符串末尾
  * （`${x}abc` 匹配 "abcabc"，x="abc"）。
+ * (pos, si) 记忆化：多间隙长串下否则为 O(n^k) 指数回溯。
  */
 export function templateMatchesValue(value: string, views: TemplatePartView[]): boolean {
   // 压缩相邻抽象 → 一个可变间隙
@@ -121,7 +122,17 @@ export function templateMatchesValue(value: string, views: TemplatePartView[]): 
       segs.push({ fixed: v.fixed });
     }
   }
+  const memo = new Map<number, boolean>();
+  const memoKey = (pos: number, si: number): number => si * (value.length + 1) + pos;
   const matchFrom = (pos: number, si: number): boolean => {
+    const key = memoKey(pos, si);
+    const hit = memo.get(key);
+    if (hit !== undefined) return hit;
+    const out = matchUncached(pos, si);
+    memo.set(key, out);
+    return out;
+  };
+  const matchUncached = (pos: number, si: number): boolean => {
     if (si >= segs.length) return pos === value.length;
     const seg = segs[si]!;
     const isLast = si === segs.length - 1;
