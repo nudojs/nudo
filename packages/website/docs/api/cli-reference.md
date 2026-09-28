@@ -53,6 +53,8 @@ nudo check <paths...> [options]
 |--------|-------------|
 | `--watch` / `-w` | Re-run on file changes (flag, not a verb) |
 | `--json` | Structured diagnostics + signatures — `CheckJson` (1 file) or `CheckJsonMulti` envelope (N files); cannot combine with `--abs` |
+| `--gha` | GitHub Actions inline annotations (`::error` / `::warning`); auto-enabled when `GITHUB_ACTIONS=true` |
+| `--gitlab` | GitLab Code Quality JSON array for `gl-code-quality-report.json` (emitted on stdout — redirect to the file in CI) |
 | `--verbose` | Expand Abs signatures (term/pred/conf detail) |
 | `--abs` | Per-function algebra face (shape + conf); `--generalize` adds the symbolic term/pred α |
 | `--fn <name>` | With `--abs`: restrict to one function |
@@ -61,6 +63,7 @@ nudo check <paths...> [options]
 | `--from <paths…>` | Usage-site files (tests/apps); their call records join the analysis |
 | `--ignore-throws <names>` | Comma-separated L2 throw types to ignore (e.g. `TypeError,RangeError`). Does not swallow L1 contract violations. |
 | `--entry-throws error\|warning\|off` | Severity for L2 entry may-throw (default `error`) |
+| `--profile adoption\|strict` | Gate profile (default `strict`). `adoption` = L2 entry may-throw demoted to warning; L1 stays error. An explicit `--entry-throws` value overrides the profile |
 | `--what-if <binding...>` | AI3: assume `name:type` bindings and report `--target` (same semantics as LSP `nudo.whatIf`) |
 | `--target <name>` | With `--what-if`: binding whose inferred type to print |
 
@@ -70,12 +73,15 @@ nudo check <paths...> [options]
 {
   "nudo": {
     "check": {
+      "profile": "strict",
       "ignoreThrows": ["TypeError"],
       "entryThrows": "error"
     }
   }
 }
 ```
+
+Every `package.json#nudo` key and `NUDO_*` variable on one page: the [configuration reference](../reference/config.md).
 
 **Output format:**
 
@@ -90,10 +96,10 @@ signatures
 
 issues
   [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
-      actual:   getName(user: any) => any    throws TypeError
-      expected: entry total, or @nudo:throws / try-catch
-      → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
+      …
 ```
+
+Excerpt — the full transcript, its `user.js` source, and remediation paths: [nudo check](../guides/check.md).
 
 > `L1` in the issue header is the **line number** (the function is declared on line 1 here) — the layer is L2.
 
@@ -229,6 +235,7 @@ Print, draft, or emit each function's effective interface with its source layer.
 nudo contract <paths...> [--from <paths...>]
 nudo contract --emit <paths...> [--fn <name>] [--all] [--dry-run] [--exit-on-diff] [--from <paths...>]
 nudo contract --draft <paths...> [--write] [--json] [--fn <name>] [--dry-run] [--from <paths...>]
+nudo contract --from-dts <paths...> [--write] [--dry-run]
 ```
 
 **Layers:**
@@ -243,7 +250,8 @@ nudo contract --draft <paths...> [--write] [--json] [--fn <name>] [--dry-run] [-
 |--------|-------------|
 | `--emit` | Persist inferred domains as sidecar `@generated` segments |
 | `--draft` | Generate a reviewable contract draft from existing code (code-first / migration) |
-| `--write` | With `--draft`: write `*.nudo.draft.js` to disk |
+| `--from-dts` | Reverse TypeScript `.d.ts` / annotated `.ts` sources, or an npm package's types (the positional `<paths...>`), into a reviewable `@nudo:draft` (`*.nudo.draft.js`). **Not enforced** until you review it and copy accepted exports into a `*.nudo.js` sidecar — the contracts step of the TypeScript-retirement path ([Migrate from TypeScript](../guides/migrating-from-typescript.md)) |
+| `--write` | With `--draft` / `--from-dts`: write `*.nudo.draft.js` to disk |
 | `--fn <name>` | Restrict to one function (**repeatable**; may name a downstream derivation target when a handwritten root exists) |
 | `--all` | Emit all eligible functions |
 | `--dry-run` | Print a unified diff instead of writing |
@@ -256,6 +264,7 @@ nudo contract --draft <paths...> [--write] [--json] [--fn <name>] [--dry-run] [-
 ```bash
 nudo contract calc.js
 nudo contract --draft double.js --write
+nudo contract --from-dts ./my-pkg/src/index.ts
 nudo contract --emit lib.js --fn add2
 ```
 

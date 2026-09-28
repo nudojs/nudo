@@ -4,7 +4,6 @@ const sidebars: SidebarsConfig = {
   docsSidebar: [
     "intro",
     "why-nudo",
-    "glossary",
     {
       type: "category",
       label: "Start",
@@ -12,6 +11,21 @@ const sidebars: SidebarsConfig = {
         "getting-started/installation",
         "getting-started/mental-model",
         "getting-started/quick-start",
+        "getting-started/troubleshooting",
+      ],
+    },
+    {
+      type: "category",
+      label: "Concepts",
+      items: [
+        "concepts/layers",
+        "concepts/abs",
+        "concepts/hof-relations",
+        "concepts/abstract-interpretation",
+        "concepts/semantics",
+        "concepts/control-flow-narrowing",
+        "concepts/mocking",
+        "concepts/limits",
       ],
     },
     {
@@ -26,7 +40,13 @@ const sidebars: SidebarsConfig = {
         {
           type: "category",
           label: "Gate",
-          items: ["guides/check", "guides/health", "guides/error-faces"],
+          items: [
+            "guides/check",
+            "guides/test",
+            "guides/performance",
+            "guides/health",
+            "guides/error-faces",
+          ],
         },
         {
           type: "category",
@@ -34,14 +54,12 @@ const sidebars: SidebarsConfig = {
           items: [
             "guides/contract",
             "guides/env-harvest",
-            "guides/runtime-generation",
           ],
         },
         {
           type: "category",
           label: "Ecosystem",
           items: [
-            "guides/cli",
             "guides/export-ecosystem",
             "guides/callsite-discovery",
             "guides/examples",
@@ -79,22 +97,9 @@ const sidebars: SidebarsConfig = {
         "guides/migrating-from-typescript",
         "guides/case-study-retire",
         "guides/coexistence",
+        "guides/errors-vs-typescript",
         "guides/vs-typescript",
         "guides/versioning",
-      ],
-    },
-    {
-      type: "category",
-      label: "Concepts",
-      items: [
-        "concepts/layers",
-        "concepts/abs",
-        "concepts/abstract-interpretation",
-        "concepts/semantics",
-        "concepts/control-flow-narrowing",
-        "concepts/directives",
-        "concepts/mocking",
-        "concepts/limits",
       ],
     },
     {
@@ -109,8 +114,15 @@ const sidebars: SidebarsConfig = {
         {
           type: "category",
           label: "CLI & Diagnostics",
-          items: ["api/cli-reference", "reference/diagnostics"],
+          items: [
+            "guides/cli",
+            "api/cli-reference",
+            "reference/config",
+            "reference/diagnostics",
+          ],
         },
+        "glossary",
+        "concepts/directives",
         {
           type: "category",
           label: "Package APIs",
@@ -125,7 +137,6 @@ const sidebars: SidebarsConfig = {
         },
         "reference/agents",
         "releases",
-        "releases-history",
       ],
     },
     {

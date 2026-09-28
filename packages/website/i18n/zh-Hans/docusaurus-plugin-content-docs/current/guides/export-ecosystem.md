@@ -1,15 +1,21 @@
 ---
 slug: /guides/export-ecosystem
-description: "用 nudo export 桥接到生态 —— dts / guard / schema / standard、Zod 方言，以及 Nudo 在哪里结束、schema 库从哪里开始。"
+description: "用 nudo export 桥接到生态 —— .d.ts、零依赖守卫、Zod 方言 schema、Standard Schema 校验器；带验证示例的完整走读，以及 Nudo 在哪里结束、schema 库从哪里开始。"
 ---
 
 # Export：通向生态的桥
 
-**读完你能带走：** `nudo export` 的命令面、它如何把事实交给 Zod / ArkType / TypeBox，以及一行分工。
+**读完你能带走：** `nudo export` 的命令面、每种产物的验证走读（`.d.ts` / 守卫 / Zod / Standard Schema），以及一行分工。
 
 > **schema 管边界；Nudo 管内部。**
 
 `nudo check` 只做校验。产物来自 **`nudo export`** —— Abs 的单向、有损投影。Abs 保持真理源；没有任何东西把投影读回来。
+
+```text
+JS 代码（+ 可选侧车契约） → Abs → nudo export → 运行时校验器 / .d.ts / schema
+```
+
+Export 是一次性出货命令——没有 `--watch`。
 
 ## 命令面
 
@@ -17,77 +23,164 @@ description: "用 nudo export 桥接到生态 —— dts / guard / schema / stan
 nudo export <path> [--format dts|guard|schema|standard|all] [--dialect zod] [--out dir]
 ```
 
-| `--format` | 产物 |
-|---|---|
-| `dts` | TypeScript 声明（默认）—— 单向 npm / 编辑器桥 |
-| `guard` | 零依赖运行时类型守卫函数 |
-| `schema` | `--dialect` 的 zod JS 模块（`import { z } from "zod"`，目前 `zod`）→ `*.nudo.schema.zod.ts` |
-| `standard` | [Standard Schema](https://standardschema.dev) v1 模块（`~standard`，vendor `nudo`） |
-| `all` | dts + guard + schema + standard |
+`--dialect zod` 作用于 `--format schema|all`。`--out dir` 写出文件；不带它时 export 打印到 stdout。Flag / 退出码契约：[CLI 参考](../api/cli-reference.md#nudo-export)。
 
-`--dialect zod` 作用于 `--format schema|all`。`--out dir` 写出文件；不带它时 export 打印到 stdout。Export 是一次性出货命令——没有 `--watch`。
-
-```bash
-nudo export src/api.js --format dts --out dist/types
-nudo export src/api.js --format schema --dialect zod --out dist
-nudo export src/api.js --format all --out dist
-```
-
-各格式的输入与示例：[运行时生成](./runtime-generation.md)。Flag / 退出码契约：[CLI 参考](../api/cli-reference.md#nudo-export)。
-
-## 每种格式用在哪
-
-| 格式 | 何时用 | 投影自 | 示例消费者 |
+| 格式 | 产物 | 投影输入 | 何时用 |
 |---|---|---|---|
-| `dts` | JS 包给 TS 编辑器 / npm 的类型 | 调用点用例（参数加宽，返回保精度） | `tsc`、IDE 跳转 |
-| `guard` | 内联运行时检查、零依赖 | 合并后的调用点 Abs | `if (!isUserOutput(x)) …` |
-| `schema` | 自己组装 Zod（或方言）模块 | 逐用例 Abs（`call@L…` / `entry@L…`） | Zod / resolver 生态 |
-| `standard` | 接入任何 Standard Schema 库 | 侧车 / `@nudo:contract` 域，否则合并调用点 Abs | `~standard.validate` |
+| `dts` | TypeScript 声明（默认） | 调用点 case：参数放宽，返回保持精度 | JS 包给 TS 编辑器 / npm 的类型 |
+| `guard` | 零依赖 `typeof` 守卫函数 | 调用点 Abs 的 join | 内联运行时检查、零依赖 |
+| `schema` | `--dialect`（目前 `zod`）可直接 import 的 Zod 模块 → `*.nudo.schema.zod.ts` | 逐 case Abs（`call@L…` / `entry@L…`） | 自己组装 schema 模块 |
+| `standard` | [Standard Schema](https://standardschema.dev) v1 模块（`~standard`，vendor `nudo`） | 侧车 / `@nudo:contract` 契约域，否则合并调用点 Abs | 接入任何 Standard Schema 库——无需 Zod 依赖 |
+| `all` | dts + guard + schema + standard | — | 出全套 |
 
-### dts —— 给 TS 消费者的声明
+## 契约先行：从侧车生成校验器
 
-```bash
-nudo export src/api.js --format dts --out dist/types
+最强的工作流：在侧车里声明一次域，让 `export` 从中生成运行时门禁。
+
+```js verify
+// src/api/users.js
+export function createUser(input) {
+  return { id: 123, name: input.name, age: input.age };
+}
 ```
 
-每个函数一份加宽签名；用例精度留在 JSDoc `Case:` 行里（调试用外延笔记，不是接口产品）。适合 JS 包需要 `.d.ts` 面、又不想上 TypeScript 的场景。
+```js verify-sidecar
+// src/api/users.nudo.js — contract (also plain JS)
+import { number, string, shape, fn } from "@nudojs/core";
 
-### guard —— 零依赖类型守卫
-
-```bash
-nudo export src/api.js --format guard --out dist
+export const createUser = fn(
+  { input: shape({ name: string(), age: number().ge(0) }) },
+  shape({ id: number(), name: string(), age: number() })
+);
 ```
 
-纯 `typeof` 检查，每个导出一个函数（`is<Fn>Output`）。适合不想引入 schema 库的运行时代码：
+```bash
+nudo export src/api/users.js --format standard --out dist
+# 写入 dist/createUser.nudo.standard.ts
+```
+
+生成的模块为每个参数导出一个校验器（`<fn>_<param>`），另有返回值校验器——存在返回契约时命名为 **`<fn>Return`**（仅当无契约或只有参数契约时才用 `<fn>Output`）。**契约约束直接烘焙进校验器**——`age: number().ge(0)` 变成 `numBound { op: "ge", n: 0 }` 检查，`lit(42)` 契约则钉死确切值：
+
+```ts
+// dist/createUser.nudo.standard.ts（节选）
+// （另导出 createUserReturn —— 侧车返回 shape 校验器）
+export const createUser_input = {
+  "~standard": {
+    version: 1,
+    vendor: "nudo",
+    validate(value) {
+      const issues = [];
+      __nudoCheck({"k":"obj","slots":[
+        {"key":"name","node":{"k":"prim","type":"string","refinements":[]}},
+        {"key":"age","node":{"k":"prim","type":"number","refinements":[{"kind":"numBound","op":"ge","n":0}]}}
+      ]}, value, [], issues);
+      return issues.length ? { issues } : { value };
+    },
+  },
+} as const;
+```
+
+在任何支持 Standard Schema 的地方消费——不需要 Zod/Valibot 依赖：
 
 ```js
+import { createUser_input } from "./dist/createUser.nudo.standard.js";
+
+const r = createUser_input["~standard"].validate(body);
+if (r.issues) return Response.json({ errors: r.issues }, { status: 400 });
+const user = createUser(r.value);
+```
+
+它是运行时门禁——**不是** `nudo check` 的替代品。CI 仍在 Abs 上检查同一份契约。
+
+## 证据驱动：从调用点生成校验器
+
+没有侧车时，export 投影**观测到的调用点 Abs 的 join**——你的代码实际传入的东西，而不是手写类型：
+
+```js
+// src/api/inline.js
+export function createUser(input) {
+  return { id: 123, name: input.name, age: input.age };
+}
+
+createUser({ name: "Ada", age: 36 });
+```
+
+```bash
+nudo export src/api/inline.js --format standard --out dist
+```
+
+调用点观测到的字面量会钉死确切值（`z.literal` / lit 节点 / `=== "Ada"` 检查）。想要契约界（`gt/ge/lt/le`、`int`、字符串长度）而不是观测字面量时，加上侧车。
+
+诚实边界：**未被调用**的导出回退到 `entry@L…`——参数投影为 `unknown`，不做猜测。这是 `--from` 天花板（[Limits](../concepts/limits.md#调用点发现上限)），不是推断 bug。
+
+## Zod 方言 schema（`--format schema`）
+
+Schema 导出是**可直接 import 的 JS 模块**（`import { z } from "zod"` + `export const`），不是注释堆：
+
+```bash
+nudo export src/api/inline.js --format schema --dialect zod
+# 或直接写盘：
+nudo export src/api/inline.js --format schema --dialect zod --out dist
+# 写入 dist/inline.nudo.schema.zod.ts
+```
+
+```js
+// @generated by nudo export --format schema — dialect: zod
+// One-way lossy projection of Abs; do not edit. nudo check remains the gate.
+
+import { z } from "zod";
+
+export const createUserInput = z.object({ input: z.object({ name: z.string(), age: z.number() }) });
+
+export const createUserOutput = z.object({ id: z.number(), name: z.string(), age: z.number() });
+```
+
+每个函数导出 `<fn>Input`（命名参数构成的 `z.object`）和 `<fn>Output`。Abs 上可表达的常量数值界 / `int` / 字符串长度 pred 会被投影；不可表达的出现在 `dropped preds`。与你喜欢的 resolver 一起用：
+
+```js
+import { createUserInput } from "./inline.nudo.schema.zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+const { register, handleSubmit } = useForm({ resolver: zodResolver(createUserInput) });
+```
+
+## 零依赖守卫（`--format guard`）
+
+守卫是纯 `typeof` 检查，无外部导入、无 schema 解释——每个导出函数一个，命名为 `is<Fn>Output`：
+
+```bash
+nudo export src/api/inline.js --format guard
+# 或直接写盘：
+nudo export src/api/inline.js --format guard --out dist
+# 写入 dist/inline.nudo.guard.ts
+```
+
+```js verify
+// === createUser Type Guards ===
 export function iscreateUserOutput(data) {
   return typeof data === "object" && data !== null && data.id === 123 && data.name === "Ada" && data.age === 36;
 }
 ```
 
-### schema —— Zod 方言源码
+把打印出的函数存进模块（`src/api/users.guard.js`）再导入。选择前用你的实际载荷形状分别测一下 guard 与 schema 两条路径；权衡点是错误信息丰富度 vs 零依赖。
+
+## TypeScript 声明（`--format dts`）
+
+每个函数一个放宽后的签名。参数位（逆变）把字面量放宽到基类型，让调用方可以传任何兼容值；返回类型保持推断精度：
 
 ```bash
-nudo export src/api.js --format schema --dialect zod --out dist
-# 写出 dist/*.nudo.schema.zod.ts
+nudo export src/api/inline.js --format dts
 ```
 
-按用例打印 schema 表达式（注释或文件）。常数数值界 / `int` / 字符串长度 pred 在可表达时被投影；无法投影的 pred 出现在 `dropped preds` 下。组装进你自己的模块，交给 resolver（React Hook Form 等）。
-
-### standard —— Standard Schema 校验器
-
-```bash
-nudo export src/api.js --format standard --out dist
-# 写出 <fn>.nudo.standard.ts
+```ts
+/**
+ * Case: call@L5 ({ name: "Ada"; age: 36 }) => { id: 123; name: "Ada"; age: 36 }
+ * @param input - { name: string; age: number }
+ * @returns { id: 123; name: "Ada"; age: 36 }
+ */
+export declare function createUser(input: { name: string; age: number }): { id: 123; name: "Ada"; age: 36 };
 ```
 
-每个参数一个校验器（`<fn>_<param>`），外加返回值（存在返回契约时为 `<fn>Return`）。契约精化被烘进去（`number().ge(0)` → `numBound { op: "ge", n: 0 }`）。在任何支持 Standard Schema 的地方消费 —— 无需 Zod 依赖：
-
-```js
-const r = createUser_input["~standard"].validate(body);
-if (r.issues) return Response.json({ errors: r.issues }, { status: 400 });
-```
+多个 case 时签名仍保持单个——参数跨 case 取并集并放宽；每个 case 的精确结果保留在 `Case:` JSDoc 行里（调试用外延笔记，不是接口产品）。写 `.d.ts` 文件到目录：`nudo export <file> --format dts --out <dir>`。
 
 ## 校验 vs 投影
 
@@ -136,7 +229,18 @@ jobs:
       # 随你的包发布 dist/
 ```
 
-`export` 成功退出 `0`、usage / IO 错误退出 `1` —— 它不会重跑契约门禁。与 `check` 配对（固化了 `call@` 用例时可再加 `health`）。配方：[Recipes](./recipes.md)。
+或者把生成接进 package scripts，产出不进 review：
+
+```json
+{
+  "scripts": {
+    "generate": "nudo export src/api/users.js --format standard --out src/generated",
+    "gate": "nudo check src/"
+  }
+}
+```
+
+`export` 成功退出 `0`、usage / IO 错误退出 `1` —— 它不会重跑契约门禁。与 `check` 配对（固化了 `call@` 用例时可再加 `health`）。流水线用的机器可读事实来自 `nudo check --json` / `nudo test --json`——见 [CLI 参考](../api/cli-reference.md#nudo-check)。配方：[Recipes](./recipes.md)。
 
 ## 迁移备注
 
@@ -151,7 +255,7 @@ nudo check src/ --profile strict     # 默认：L1 + L2 error
 
 ## 下一步
 
-- [运行时生成](./runtime-generation.md) —— 完整 export 走读
 - [竞争格局](./competitive-landscape.md) —— Nudo 相对 schema 库 / TS 的位置
 - [nudo check](./check.md) —— 保持真理源的那道门
+- [契约](./contract.md) —— 起草 / 接受 / 固化侧车接口
 - [CLI 参考](../api/cli-reference.md#nudo-export)

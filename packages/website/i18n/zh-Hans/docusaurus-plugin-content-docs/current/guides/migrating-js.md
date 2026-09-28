@@ -1,5 +1,5 @@
 ---
-description: "把已有 JavaScript 包迁到 Nudo：从逻辑生成契约草稿 → 审阅 → 落盘 → check/doctor 门禁。"
+description: "把已有 JavaScript 包迁到 Nudo：从逻辑生成契约草稿 → 审阅 → 落盘 → check/health 门禁。"
 ---
 
 # 迁移已有 JS
@@ -7,7 +7,7 @@ description: "把已有 JavaScript 包迁到 Nudo：从逻辑生成契约草稿 
 Nudo **不要求**先写注解。迁移路径是**代码优先**：保留实现，生成可审阅契约，人工收紧，再进 CI。
 
 ```text
-既有 JS  →  --draft  →  人工审阅  →  *.nudo.js  →  check / doctor / IDE
+既有 JS  →  contract --draft  →  人工审阅  →  *.nudo.js  →  check / health / IDE
 ```
 
 ## 0. 前置
@@ -32,28 +32,19 @@ nudo contract src/
 nudo check src/
 ```
 
-| 档位 | 含义 | 迁移动作 |
-|------|------|----------|
-| `handwritten` | 已有契约（侧车 / `@nudo:contract`） | 保留；用 `check` 执法 |
-| `generated` | 调用点域已固化 `@generated` | 用法变化时 `--emit` 刷新 |
-| `implicit` | 仅推断展示 | **草稿候选** |
+`contract` 打印每个顶层导出及其档位；`check` 打印签名（含 L2 入口抛错）。
+
+三档：`handwritten`（已接受的侧车 / `@nudo:contract` —— 由 `check` 执法）、`generated`（固化进 `@generated` 的调用点快照 —— 用法变化时用 `--emit` 刷新）、`implicit`（仅推断展示 —— 你的**草稿候选**）。完整档位表见 [nudo contract](./contract.md#layers)。
 
 ## 2. 从逻辑生成草稿
 
 ```bash
 nudo contract --draft src/lib.js
 nudo contract --draft --write src/lib.js --fn greet --fn double
-# IDE：CodeLens ⚡ draft interface / VS Code「Nudo: Draft Contract」
+# IDE：CodeLens ⚡ draft contract / VS Code「Nudo: Draft Contract」
 ```
 
-草稿证据（**不发明** check 义务）：
-
-| 证据 | 来源 | 用法 |
-|------|------|------|
-| `callsite` / `directive` | 观察到的实参 | 最可信起点 |
-| `body` | 实现读到的字段 | 仅建议 — 类型需人工填 |
-| `symbolic` | generalize 返回形 | 无 case 时的返回位 |
-| 省略槽 | 无证据 | TODO 注释 |
+草稿证据（**不发明** check 义务）：`callsite` / `directive` 证据是最可信起点，`body` 读取仅作建议（类型需人工填），无 case 时 `symbolic` 形状补返回位，无证据的槽保持 TODO 注释。完整证据表见 [nudo contract](./contract.md)。
 
 产物是 `src/lib.nudo.draft.js` — **不** ambient 加载。审阅后复制进 `src/lib.nudo.js`。
 
@@ -91,10 +82,17 @@ nudo check src/lib.js --json
 ```
 
 - **handwritten** 违例 → 构建失败。
+- **L2** 入口 may-throw 默认是 error —— 可捕获、声明 `@nudo:throws`，或单次运行加 `--ignore-throws`。迁移窗口内优先 `check --profile adoption`：L2 降为 warning（exit 0）、L1 仍是 error；迁移落定后回到默认 strict。详见 [Check 指南](./check.md)。
 - **generated** 漂移 → warning（事实 + 刷新），不是新义务。
 - **implicit** 展示本身不发明 error。
 
-可选求值提示（默认 **off**）：`nudo.analysis.evalMissingSlot: "warning"` → `nudo:missing-slot`（收紧草稿的线索，不是自动契约）。
+可选求值提示（默认 **off**）：
+
+```json
+{ "nudo": { "analysis": { "evalMissingSlot": "warning" } } }
+```
+
+命中已关闭对象形状缺字段时浮出 `nudo:missing-slot` —— 收紧草稿的线索，不是自动契约。
 
 ## 5. 固化调用点域（可选）
 
@@ -120,7 +118,7 @@ nudo health src/                         # uncovered fns, drift, analysis errors
 nudo test src/lib.js --from test/ --freeze=update
 ```
 
-版本锁定见 [版本与发布](./versioning.md)。
+版本锁定见 [版本与发布](./versioning.md)（0.x 的 minor 可能破坏；稳定线的 core/service/nudojs 今天均为 1.x，遵循 SemVer——见该页版本表）。
 
 ## 不要做的事
 

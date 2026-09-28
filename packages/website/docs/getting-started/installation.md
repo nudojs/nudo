@@ -112,6 +112,10 @@ During the build the plugin analyzes files that pass `nudo.analysis.mode` (shipp
 
 ## Verify the install
 
+:::note Trust boundary
+Nudo analyzes by **executing** the target code (Abs semantics, in-process evaluation). Do not run `nudo check` / `nudo test` on untrusted code; in CI this is the same trust as running the project's tests. Why execution is the model: [Language semantics](../concepts/semantics.md).
+:::
+
 Smoke-test the CLI on any small JS file:
 
 ```bash

@@ -154,9 +154,9 @@ verify_test mocking packages/website/docs/concepts/mocking.md \
   'debug "plan"  () => number' \
   '=== readConfig ==='
 
-# runtime-generation: call-site evidence + sidecar contract project to Standard
+# export-ecosystem: call-site evidence + sidecar contract project to Standard
 # Schema validators (one module per function; names `<fn>_<param>` / `<fn>Return`).
-verify_export_standard runtime-generation packages/website/docs/guides/runtime-generation.md \
+verify_export_standard export-ecosystem packages/website/docs/guides/export-ecosystem.md \
   'export const createUser_input' \
   'export const createUserReturn' \
   'export const iscreateUserOutputOutput' \
@@ -213,10 +213,18 @@ verify_test cli packages/website/docs/guides/cli.md \
   '1 passed'
 
 # contract: @nudo:import template + refine + violating call gates check.
+# The lap fences add: accepted sidecar bindings (lineTotal/greet/tag tighten
+# the signatures), the violating lineTotal(-1, 5) call gates on the tightened
+# pred, and the stale @generated wrap segment drifts — warning only.
 verify_check contract packages/website/docs/guides/contract.md \
   'nudo:constraint-violated' \
   'expected: x > 0' \
-  'needsPositive(x: number) => number'
+  'needsPositive(x: number) => number' \
+  'lineTotal(qty: number, price: number) => number' \
+  'greet(user: { name: string }) => string' \
+  'expected: qty > 0' \
+  'nudo:interface-drift' \
+  'wrap[text]: persisted @generated segment ≠ today'\''s call-site domain'
 
 # abs: @nudo:case witnesses across concrete/symbolic/mixed args.
 verify_test abs packages/website/docs/concepts/abs.md \
@@ -301,6 +309,38 @@ verify_check error-faces packages/website/docs/guides/error-faces.md \
   'getName(user: any) => any  throws TypeError' \
   'nudo contract --draft'
 
+# errors-vs-typescript: the ten-scenario catalog — all `verify` blocks concatenate
+# into one file (unique top-level names), all `verify-sidecar` blocks into one
+# sidecar (fn bindings auto-bind by name; builders imported once, in block 1).
+# Pins mirror the per-scenario text blocks — every issue entry on the page is a
+# verbatim slice of this single run. Exit code not asserted: the page teaches
+# failing gates on purpose (11 errors across the ten scenarios).
+verify_check errors-vs-typescript packages/website/docs/guides/errors-vs-typescript.md \
+  '11 error · 0 warning · 0 info · 10 fn' \
+  'setDelay(ms: number) => number' \
+  'greet(u: { id: number, name: string }) => string' \
+  'inc(x: any) => number | string' \
+  'getName(user: any) => any  throws TypeError' \
+  'nudo:constraint-violated' \
+  'nudo:entry-may-throw' \
+  'nudo:assign-mismatch' \
+  'expected: ms > 0' \
+  'expected: missing field u.name' \
+  'missing slot port' \
+  'expected: return > 0' \
+  'expected: x > 0' \
+  'expected: length(s) ≥ 1' \
+  'prim string ⊭ prim number' \
+  'nudo contract --draft'
+
+# hof-relations: fnRels keep HOF result shapes derivable — apply-style relays,
+# map/filter relation sites, and the entry face of relation-consuming exports.
+verify_test hof-relations packages/website/docs/concepts/hof-relations.md \
+  'call@L5  ((n) => ?, 5) => 7' \
+  'call@L6  ((s) => ?, "hi") => "hi!!"' \
+  'call@L11  ([1, 2, 3, 4], (n) => ?, (n) => ?) => [20, 40]' \
+  'call@L16  ([{ id: 1 }, { id: 2 }, { id: 3 }], (r) => ?) => [1, 2, 3]'
+
 # CLI ↔ docs verb drift: every primary verb named in cli.md / cli-reference.md
 # must be registered in packages/nudojs; every registered command must appear
 # in the reference page. Catches docs that invent or forget product verbs.
@@ -327,12 +367,62 @@ for f in packages/nudojs/src/commands/*.ts; do
   fi
 done
 
+# CLI ↔ docs flag drift: every long option registered on a product command must
+# be documented in api/cli-reference.md (en). Same discipline as the verb audit
+# above — catches flags that ship silently or get documented before existing.
+# (-z lets \s span the newline of multi-line `.option(\n  "--flag <v>"` calls.)
+cli_flags=$(grep -hzoE '\.option\(\s*"--[a-z-]+' packages/nudojs/src/commands/*.ts \
+  | tr '\0' '\n' | grep -oE '\--[a-z-]+' | sort -u)
+for flag in $cli_flags; do
+  if ! grep -qF -- "$flag" packages/website/docs/api/cli-reference.md; then
+    printf 'FAIL cli-docs: registered flag `%s` missing from api/cli-reference.md\n' "$flag"
+    fail=$((fail + 1))
+  else
+    pass=$((pass + 1))
+  fi
+done
+
+# zh ↔ en fence parity: tagged code blocks are language-independent — the zh
+# translation may only translate prose. Any byte drift in a `verify` /
+# `verify-sidecar` fence (en page vs zh mirror) is a doc bug and goes red here,
+# because only the en fences are executed above.
+zh_docs_root="packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current"
+# (repo paths are space-free; a plain for-loop avoids process substitution,
+# which can block under some CI shells when children inherit its pipe fd)
+for page in $(find packages/website/docs -name '*.md' | sort); do
+  rel=${page#packages/website/docs/}
+  zh_page="$zh_docs_root/$rel"
+  if [ ! -f "$zh_page" ]; then
+    printf 'FAIL zh-parity: no zh mirror for %s\n' "$rel"
+    fail=$((fail + 1))
+    continue
+  fi
+  for tag in verify verify-sidecar; do
+    fences "$page" "$tag" "$tmp/par-en.js"
+    fences "$zh_page" "$tag" "$tmp/par-zh.js"
+    if [ -s "$tmp/par-en.js" ] || [ -s "$tmp/par-zh.js" ]; then
+      if cmp -s "$tmp/par-en.js" "$tmp/par-zh.js"; then
+        pass=$((pass + 1))
+      else
+        printf 'FAIL zh-parity: `%s` fence drift between en and zh in %s\n' "$tag" "$rel"
+        diff -u "$tmp/par-en.js" "$tmp/par-zh.js" | sed 's/^/    /'
+        fail=$((fail + 1))
+      fi
+    fi
+  done
+done
+
 printf -- '--------------------------------------------------------------\n'
 printf 'doc examples verified: %s checks passed, %s failed\n' "$pass" "$fail"
 
 if [ "$REPORT_MODE" -eq 1 ]; then
   # 覆盖率：js/javascript 围栏总数 vs 打 verify 标签并被真实执行的数量。
   # 输出为 CI 友好行，便于后续作为阈值门禁的输入。
+  # 页面覆盖率下限（ratchet 门禁）：verified_pages / pages_with_js 的百分比不得低于此值。
+  # 该值只升不降（ratchet）；调整需 docs 团队签核并在提交说明里附新的测量值。
+  # 测量基线 2026-09-28：23/38 页 = 60.5%（en docs，```js|javascript 围栏 vs verify/verify-sidecar；
+  # errors-vs-typescript 十场景页全量 verify 落地后测得），取 5 的整数倍向下留量 → 60。
+  MIN_VERIFY_PAGE_COVERAGE=60
   total_js=0
   verified_js=0
   pages_with_js=0
@@ -362,6 +452,15 @@ if [ "$REPORT_MODE" -eq 1 ]; then
   printf 'doc verify coverage: %s/%s pages with js fences verified, %s/%s js fences executed (%.1f%%)\n' \
     "$verified_pages" "$pages_with_js" "$verified_js" "$total_js" \
     "$(awk -v a="$verified_js" -v b="$total_js" 'BEGIN { printf "%.1f", b ? 100 * a / b : 0 }')"
+
+  # 页面覆盖率下限：低于 MIN_VERIFY_PAGE_COVERAGE 即失败（给新增带 js 围栏但未打
+  # verify 标签的页面兜底 —— 要么补 verify 围栏，要么下调需 docs 团队签核）。
+  page_pct=$(awk -v a="$verified_pages" -v b="$pages_with_js" 'BEGIN { printf "%.1f", b ? 100 * a / b : 0 }')
+  if awk -v p="$page_pct" -v m="$MIN_VERIFY_PAGE_COVERAGE" 'BEGIN { exit (p < m) ? 0 : 1 }'; then
+    printf 'doc verify coverage floor violated: %s%% of pages with js fences verified < MIN_VERIFY_PAGE_COVERAGE=%s\n' \
+      "$page_pct" "$MIN_VERIFY_PAGE_COVERAGE" >&2
+    exit 1
+  fi
 fi
 
 [ "$fail" -eq 0 ]

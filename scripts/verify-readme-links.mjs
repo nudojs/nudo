@@ -64,7 +64,8 @@ const bad = [];
 for (const f of scanFiles) {
   const src = readFileSync(f, "utf8");
   for (const m of src.matchAll(/https:\/\/nudojs\.github\.io\/nudo([^\s)"'<>]+)/g)) {
-    const path = m[1].replace(/\/+$/, "") || "/";
+    // 锚点属于页面内部结构（Docusaurus 构建/文档门禁另行覆盖），路由校验只看路径
+    const path = m[1].replace(/#.*$/, "").replace(/\/+$/, "") || "/";
     if (!routes.has(path)) {
       bad.push(`${relative(root, f)}: ${SITE}${path}`);
     }

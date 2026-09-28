@@ -1,7 +1,9 @@
 import { parse, extractDirectives, type CaseDirective } from '@nudojs/parser';
 import {
+  checkSource,
   effectiveInterface,
   formatConstraint,
+  type CheckReport,
 } from '@nudojs/core';
 import type { HoverInfo } from '@nudojs/lsp';
 import { collectAbsInlays, type AbsInlay } from '@nudojs/core/internal';
@@ -55,8 +57,31 @@ export const scale = fn({ x: number().gt(0) }, number());
 `,
 };
 
+/**
+ * Sidecar 模式的动态覆盖层：优先于 VIRTUAL_NUDO_MODULES 静态模板。
+ * 把侧车编辑器内容注册在两个键上——
+ * - 侧车文件 basename：主源码显式 `import … from "./calc.nudo.js"` 可命中
+ * - 'playground.nudo.js'：PLAYGROUND_FILE（/playground.js）的同名 ambient
+ *   绑定键（core interface.ts 的 sidecarPathOf 把 /playground.js 解析为
+ *   ./playground.nudo.js 再走 loadModule）
+ * 传 null 清除覆盖，恢复静态模板（single / callsite 模式不受影响）。
+ */
+const SIDECAR_MODULE_OVERRIDES: Record<string, string> = {};
+
+export function setPlaygroundSidecar(sidecarFile: string | null, content: string): void {
+  for (const key of Object.keys(SIDECAR_MODULE_OVERRIDES)) {
+    delete SIDECAR_MODULE_OVERRIDES[key];
+  }
+  if (!sidecarFile) return;
+  const base = sidecarFile.split(/[\\/]/).pop() ?? sidecarFile;
+  SIDECAR_MODULE_OVERRIDES[base] = content;
+  SIDECAR_MODULE_OVERRIDES['playground.nudo.js'] = content;
+}
+
 export function playgroundLoadModule(spec: string, _fromFile: string): string | undefined {
   const base = spec.split(/[\\/]/).pop() ?? spec;
+  if (SIDECAR_MODULE_OVERRIDES[base]) return SIDECAR_MODULE_OVERRIDES[base];
+  if (SIDECAR_MODULE_OVERRIDES[spec]) return SIDECAR_MODULE_OVERRIDES[spec];
   if (VIRTUAL_NUDO_MODULES[base]) return VIRTUAL_NUDO_MODULES[base];
   if (VIRTUAL_NUDO_MODULES[spec]) return VIRTUAL_NUDO_MODULES[spec];
   if (base.endsWith('.nudo.js') || base.endsWith('.nudo.ts')) {
@@ -69,6 +94,24 @@ export const PLAYGROUND_LOAD_OPTS = {
   loadModule: playgroundLoadModule,
   fromFile: PLAYGROUND_FILE,
 };
+
+// ---------------------------------------------------------------------------
+// Sidecar check gate（/playground.js + ambient 侧车 → checkSource 报告）
+// ---------------------------------------------------------------------------
+
+/**
+ * Sidecar 模式的 Observe：对主源码跑真实 check 门禁。
+ * checkSource 经 PLAYGROUND_LOAD_OPTS 的 loadModule 读到注册的侧车内容
+ * （ambient 同名绑定 + 显式 `./x.nudo.js` import），产出签名表与
+ * `actual ⊭ expected` 契约违规报告——与 `nudo check` 同一执法路径。
+ */
+export function runPlaygroundCheck(source: string): CheckReport {
+  return checkSource(PLAYGROUND_FILE, source, undefined, {
+    loadModule: playgroundLoadModule,
+    fromFile: PLAYGROUND_FILE,
+    autoBind: true,
+  });
+}
 
 const KNOWN_TEMPLATE_DISPLAY: Record<string, string> = {
   positive: 'number().gt(0)   // x > 0',

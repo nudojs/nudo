@@ -1,4 +1,10 @@
 {
+  "theme.CodeBlock.verified": {
+    "message": "引擎已验证"
+  },
+  "theme.DocItem.footer.feedback.tellUs": {
+    "message": "说说哪里帮到了你"
+  },
   "homepage.hero.kicker": {
     "message": "Nudo"
   },
@@ -229,7 +235,7 @@
     "description": "The label used to navigate to the older blog post page (previous page)"
   },
   "theme.colorToggle.ariaLabel.mode.system": {
-    "message": "system mode",
+    "message": "跟随系统",
     "description": "The name for the system color mode"
   },
   "theme.colorToggle.ariaLabel.mode.light": {
@@ -368,7 +374,7 @@
     "description": "The ARIA label to collapse a sidebar category"
   },
   "theme.IconExternalLink.ariaLabel": {
-    "message": "(opens in new tab)",
+    "message": "（在新标签页中打开）",
     "description": "The ARIA label for external links"
   },
   "theme.NavBar.navAriaLabel": {
@@ -802,5 +808,119 @@
   },
   "playground.explainerLead": {
     "message": "调用点发现。"
+  },
+  "playground.sidecarLead": {
+    "message": "侧车契约。"
+  },
+  "playground.sidecarExplainer": {
+    "message": "左侧源码保持纯 JavaScript——零注解。右侧 .nudo.js 侧车声明义务；Nudo 按文件邻接绑定它，并经 check 门禁每个调用点。scale(0) 会报告 actual ⊭ expected——修调用，或放宽契约。"
+  },
+  "playground.tag.mainEditable": {
+    "message": "源码 · 可编辑"
+  },
+  "playground.tag.sidecarEditable": {
+    "message": "侧车 · 可编辑"
+  },
+  "playground.check.ok": {
+    "message": "OK"
+  },
+  "playground.check.failed": {
+    "message": "FAILED"
+  },
+  "playground.results.signatures": {
+    "message": "签名"
+  },
+  "playground.results.issues": {
+    "message": "问题"
+  },
+  "playground.results.noIssues": {
+    "message": "无问题——所有调用点都满足侧车契约"
+  },
+  "playground.preset.refine-positive.name": {
+    "message": "精化 — @nudo:contract positive"
+  },
+  "playground.preset.observe-scale.name": {
+    "message": "观察 — scale 中间代数"
+  },
+  "playground.preset.debug-case.name": {
+    "message": "调试用例 — 仅具体见证"
+  },
+  "playground.preset.sidecar-scale.name": {
+    "message": "侧车 — calc.nudo.js 门禁"
+  },
+  "playground.preset.basic-subtract.name": {
+    "message": "调用点减法"
+  },
+  "playground.preset.string-transform.name": {
+    "message": "字符串变换"
+  },
+  "playground.preset.array-map.name": {
+    "message": "数组 map"
+  },
+  "playground.preset.object-property.name": {
+    "message": "对象属性"
+  },
+  "playground.preset.conditional-return.name": {
+    "message": "条件返回"
+  },
+  "playground.preset.function-compose.name": {
+    "message": "函数组合"
+  },
+  "playground.preset.null-handling.name": {
+    "message": "null 处理"
+  },
+  "playground.preset.type-guard.name": {
+    "message": "类型守卫"
+  },
+  "playground.preset.recursion.name": {
+    "message": "递归"
+  },
+  "playground.preset.spread-operator.name": {
+    "message": "展开运算符"
+  },
+  "playground.preset.ternary-operator.name": {
+    "message": "三元运算符"
+  },
+  "playground.preset.default-param.name": {
+    "message": "默认参数"
+  },
+  "playground.preset.discriminated-union.name": {
+    "message": "可辨识联合"
+  },
+  "playground.preset.optional-chaining.name": {
+    "message": "可选链"
+  },
+  "playground.preset.truthiness-narrowing.name": {
+    "message": "真值收窄"
+  },
+  "playground.preset.isarray-narrowing.name": {
+    "message": "Array.isArray 收窄"
+  },
+  "playground.preset.in-operator.name": {
+    "message": "in 运算符收窄"
+  },
+  "playground.preset.cs-formatname.name": {
+    "message": "formatName — 首个精确签名"
+  },
+  "playground.preset.cs-wait.name": {
+    "message": "wait — Promise resolve 扫描"
+  },
+  "playground.preset.cs-uniq.name": {
+    "message": "uniq — Set 迭代"
+  },
+  "playground.preset.cs-flat.name": {
+    "message": "flat — 递归调用 + 自调用"
+  },
+  "playground.preset.promise-resolve-scan.name": {
+    "message": "Promise resolve 扫描"
+  },
+  "playground.preset.set-iteration.name": {
+    "message": "Set 迭代（for-of）"
+  },
+  "playground.preset.recursive-flatten.name": {
+    "message": "递归展平"
+  },
+  "playground.preset.in-brand-check.name": {
+    "message": "in 运算符品牌校验"
   }
 }

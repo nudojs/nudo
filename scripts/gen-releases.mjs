@@ -52,7 +52,11 @@ function splitVersions(cl) {
     const end = i + 1 < marks.length ? marks[i + 1].index : cl.length;
     out.push({ version: marks[i][1].trim(), body: cl.slice(start, end).trimEnd() });
   }
-  return out;
+  // 跳过零条目版本段（如 changesets `version` 后残留的空 `## Unreleased`）——
+  // 只剩标题的段不渲染，也避免虚增「Older versions (N)」计数。
+  return out.filter(
+    (b) => b.body.split("\n").some((line) => line.trim() && !/^#{1,6}\s/.test(line.trim())),
+  );
 }
 
 function buildReleases(lang, mode /* "current" | "history" */) {
@@ -101,10 +105,17 @@ function buildReleases(lang, mode /* "current" | "history" */) {
   ];
   for (const p of PKGS) {
     const cl = changelogOf(p.dir);
+    const blocks = cl ? splitVersions(cl) : [];
+    // Heading version follows the section body: release-CI auto-bumps (vscode) push
+    // package.json past the newest CHANGELOG entry, which would read as
+    // "## nudo-vscode 0.3.13" over a `## 0.3.7` body. The top-of-page table
+    // still shows the true current version from package.json.
+    const headingVersion =
+      blocks.find((b) => b.version && b.version !== "Unreleased")?.version ??
+      versionOf(p.dir);
     // Heading custom id — Docusaurus onBrokenAnchors tracks heading ids, not raw HTML <a id>.
-    parts.push(`## ${p.name} ${versionOf(p.dir)} {#${anchorOf(p.dir)}}`, "");
+    parts.push(`## ${p.name} ${headingVersion} {#${anchorOf(p.dir)}}`, "");
     if (cl) {
-      const blocks = splitVersions(cl);
       if (mode === "current") {
         // Latest only — history lives on releases-history.md so search/docs stay light.
         parts.push(blocks[0].body, "");
@@ -184,18 +195,22 @@ const envVersions = `${versionOf("env")} / ${versionOf("harvester")}`;
 
 function versionTable(lang) {
   const R = lang === "zh" ? RULES_ZH : RULES_EN;
+  // en 页用 ASCII 括号 (1.2.0)，zh 页保留全角（1.2.0）排版。
+  const lp = lang === "zh" ? "（" : "(";
+  const rp = lang === "zh" ? "）" : ")";
+  const ver = (v) => `${lp}${v}${rp}`;
   const head =
     lang === "zh"
       ? "| 包 | 版本线 | 升级规则 |\n|----|--------|----------|"
       : "| Package | Line | Upgrade rule |\n|---------|------|----------------|";
   const rows = [
-    `| \`@nudojs/core\` | **${lineOf(versionOf("core"))}**（${versionOf("core")}） | ${R.stable} |`,
-    `| \`@nudojs/service\` | **${lineOf(versionOf("service"))}**（${versionOf("service")}） | ${R.stable} |`,
-    `| \`nudojs\` | **${lineOf(versionOf("nudojs"))}**（${versionOf("nudojs")}） | ${R.stable} |`,
-    `| \`@nudojs/parser\` | **${lineOf(versionOf("parser"))}**（${versionOf("parser")}） | ${R.stable} |`,
-    `| \`@nudojs/lsp\` | **${lineOf(versionOf("lsp"))}**（${versionOf("lsp")}） | ${R.lsp} |`,
-    `| \`@nudojs/env\` / \`@nudojs/harvester\` | 0.x（${envVersions}） | ${R.env} |`,
-    `| \`vite-plugin-nudo\` | 0.x（${versionOf("vite-plugin")}） | ${R.minor} |`,
+    `| \`@nudojs/core\` | **${lineOf(versionOf("core"))}**${ver(versionOf("core"))} | ${R.stable} |`,
+    `| \`@nudojs/service\` | **${lineOf(versionOf("service"))}**${ver(versionOf("service"))} | ${R.stable} |`,
+    `| \`nudojs\` | **${lineOf(versionOf("nudojs"))}**${ver(versionOf("nudojs"))} | ${R.stable} |`,
+    `| \`@nudojs/parser\` | **${lineOf(versionOf("parser"))}**${ver(versionOf("parser"))} | ${R.stable} |`,
+    `| \`@nudojs/lsp\` | **${lineOf(versionOf("lsp"))}**${ver(versionOf("lsp"))} | ${R.lsp} |`,
+    `| \`@nudojs/env\` / \`@nudojs/harvester\` | 0.x${ver(envVersions)} | ${R.env} |`,
+    `| \`vite-plugin-nudo\` | 0.x${ver(versionOf("vite-plugin"))} | ${R.minor} |`,
     `| \`nudo-vscode\` | Marketplace | ${R.vscode} |`,
   ];
   return `${head}\n${rows.join("\n")}`;

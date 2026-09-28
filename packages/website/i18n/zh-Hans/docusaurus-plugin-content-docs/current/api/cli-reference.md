@@ -1,5 +1,5 @@
 ---
-description: "nudo CLI 参考 —— check、test、contract、export、health 的参数、选项、输出格式与退出码。"
+description: "nudo CLI 参考 —— check、test、contract、export、health、migrate 的参数、选项、输出格式与退出码。"
 ---
 
 # CLI 参考
@@ -25,10 +25,11 @@ nudo check ./src/utils.js
 | [`nudo contract`](#nudo-contract) | 打印 / draft / emit 有效接口 —— `[handwritten]` / `[generated]` / `[implicit]` 分层 |
 | [`nudo export`](#nudo-export) | 把 Abs 投影为 `dts` / `guard` / `schema` / `standard` |
 | [`nudo health`](#nudo-health) | 健康检查：分析错误、调用点固化漂移 |
+| [`nudo migrate`](#nudo-migrate) | 单向 retire-tsc 之门：`status` / `strip` / `verify` / `retire` |
 
 观察 = `check` 签名 + `test` 用例报告 + IDE hover。
 
-**观察层：** `check` / `test`。**契约层：** `contract` + `check`。**生态：** `export`。
+**观察层：** `check` / `test`。**契约层：** `contract` + `check`。**生态：** `export`。**离 tsc：** `migrate`。
 
 ---
 
@@ -52,6 +53,8 @@ nudo check <paths...> [options]
 |------|------|
 | `--watch` / `-w` | 变更时重跑（旗标，不是动词） |
 | `--json` | 结构化诊断 + 签名 —— `CheckJson`（1 文件）或 `CheckJsonMulti` 信封（N 文件）；不能与 `--abs` 组合 |
+| `--gha` | GitHub Actions 行内注解（`::error` / `::warning`）；`GITHUB_ACTIONS=true` 时自动启用 |
+| `--gitlab` | GitLab Code Quality JSON 数组，用于 `gl-code-quality-report.json`（打到 stdout —— CI 中重定向落盘） |
 | `--verbose` | 展开 Abs 签名（term/pred/conf 细节） |
 | `--abs` | 每函数代数面（shape + conf）；`--generalize` 附加符号 term/pred α |
 | `--fn <name>` | 搭配 `--abs`：限定单个函数 |
@@ -60,6 +63,9 @@ nudo check <paths...> [options]
 | `--from <paths…>` | 使用处文件（tests/apps）；其调用记录并入分析 |
 | `--ignore-throws <names>` | 逗号分隔、可忽略的 L2 throws 类型（如 `TypeError,RangeError`）。不吞 L1 契约违例。 |
 | `--entry-throws error\|warning\|off` | L2 入口 may-throw 严重级别（默认 `error`） |
+| `--profile adoption\|strict` | 门禁 profile（默认 `strict`）。`adoption` = L2 入口 may-throw 降为 warning；L1 仍为 error。显式 `--entry-throws` 值覆盖 profile |
+| `--what-if <binding...>` | AI3：假设 `name:type` 绑定并报告 `--target`（与 LSP `nudo.whatIf` 同语义） |
+| `--target <name>` | 搭配 `--what-if`：要打印其推导类型的绑定名 |
 
 **配置（`package.json`）：**
 
@@ -67,12 +73,15 @@ nudo check <paths...> [options]
 {
   "nudo": {
     "check": {
+      "profile": "strict",
       "ignoreThrows": ["TypeError"],
       "entryThrows": "error"
     }
   }
 }
 ```
+
+全部 `package.json#nudo` 键与 `NUDO_*` 变量见[配置参考](../reference/config.md)。
 
 **输出格式：**
 
@@ -87,10 +96,10 @@ signatures
 
 issues
   [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
-      actual:   getName(user: any) => any    throws TypeError
-      expected: entry total, or @nudo:throws / try-catch
-      → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
+      …
 ```
+
+摘录 —— 完整 transcript、`user.js` 源码与修复路径见 [nudo check 指南](../guides/check.md)。
 
 > 报头里的 `L1` 是**行号**（此处函数声明在第 1 行）—— 该诊断的层是 L2。
 
@@ -219,7 +228,8 @@ nudo test lib.js --from test.js --freeze=update
 ```bash
 nudo contract <paths...> [--from <paths...>]
 nudo contract --emit <paths...> [--fn <name>] [--all] [--dry-run] [--exit-on-diff] [--from <paths...>]
-nudo contract --draft <paths...> [--write] [--fn <name>] [--dry-run] [--from <paths...>]
+nudo contract --draft <paths...> [--write] [--json] [--fn <name>] [--dry-run] [--from <paths...>]
+nudo contract --from-dts <paths...> [--write] [--dry-run]
 ```
 
 **分层：**
@@ -234,18 +244,21 @@ nudo contract --draft <paths...> [--write] [--fn <name>] [--dry-run] [--from <pa
 |------|------|
 | `--emit` | 把推断域固化为侧车 `@generated` 段 |
 | `--draft` | 从已有逻辑生成可审阅契约草稿（代码优先 / 迁移） |
-| `--write` | 搭配 `--draft`：写入 `*.nudo.draft.js` |
+| `--from-dts` | 把 TypeScript `.d.ts` / 带注解的 `.ts` 源或 npm 包类型（位置参数 `<paths...>`）逆向为可审阅的 `@nudo:draft`（`*.nudo.draft.js`）。**不执法** —— 审阅并把接受的导出复制进 `*.nudo.js` 侧车后才生效；这是 TS 退役路径上的契约步骤（[从 TypeScript 迁移](../guides/migrating-from-typescript.md)） |
+| `--write` | 搭配 `--draft` / `--from-dts`：写入 `*.nudo.draft.js` |
 | `--fn <name>` | 限定单个函数（**可重复**；有手写根时可命名下游派生目标） |
 | `--all` | emit 所有合格函数 |
 | `--dry-run` | 打印 unified diff 而不写盘 |
 | `--exit-on-diff` | 搭配 `--emit --dry-run`：diff 非空时退出 `1` |
 | `--from <paths…>` | 使用处证据，供域投影 |
+| `--json` | 搭配 `--draft`：输出 `{ draftSource, diff, entries[] }` 供 agent 审阅（AI4） |
 
 **示例：**
 
 ```bash
 nudo contract calc.js
 nudo contract --draft double.js --write
+nudo contract --from-dts ./my-pkg/src/index.ts
 nudo contract --emit lib.js --fn add2
 ```
 
@@ -345,11 +358,53 @@ Result: FAIL (drift or errors found)
 
 ---
 
+### nudo migrate
+
+单向 TS 退役之门：审计 → 剥离注解 → 用 `nudo check` 门禁 → 退役 `tsc`。共存只是迁移战术，出口是 `retire`。
+
+```bash
+nudo migrate <status|strip|verify|retire> [paths...] [options]
+```
+
+| 动作 | 用途 |
+|------|------|
+| `status <pkg-or-dir>` | 审计 `.ts`/`.tsx` 数量、`tsconfig`、`typescript` 依赖、`tsc` 脚本、**workflow tsc 行**与 **blocker** |
+| `strip <paths...>` | `.ts` → `.js`（剥离类型注解；运行时不变）。默认 dry-run |
+| `verify <paths...>` | 在 JS 面上运行 `nudo check` —— retire 前必须通过 |
+| `retire <pkg-or-dir>` | 移除 `typescript` 依赖，`tsc` 脚本改写为 `nudo check`，改写 `.github/workflows` 的 tsc 行，写入 `.nudo/migrate-retired.json` |
+| `retire --all` | 仍带 `tsc` / `typescript` 的所有 workspace 包（monorepo 批量） |
+
+**选项：**
+
+| 选项 | 说明 |
+|------|------|
+| `strip --write` | 把剥离后的 `.js` 写到源文件旁（默认 dry-run 打印） |
+| `strip --no-draft` | 跳过尽力而为的侧车草稿（`--write` 时草稿默认开启） |
+| `strip --backup` | 写盘后把原 `.ts` 重命名为 `.ts.bak` |
+| `verify --with-tsc` | 同时对 `.ts` 输入跑 `tsc --noEmit` 基线（仅迁移双跑期） |
+| `retire --dry-run` | 只打印改写计划，不动 `package.json` / workflows |
+| `retire --all` | 批量处理仍带 tsc/typescript 的所有 workspace 包 |
+| `retire --no-workflows` | 保持 `.github/workflows` 不动 |
+| `--json` | 机器可读输出 |
+
+用 [`contract --from-dts`](#nudo-contract) 把注解转换为可审阅契约（`@nudo:draft` 被接受进 `*.nudo.js` 前**不**执法）。
+
+样本：[`docs/examples/migrate/`](https://github.com/nudojs/nudo/tree/main/docs/examples/migrate) · [`docs/examples/retire-real/`](https://github.com/nudojs/nudo/tree/main/docs/examples/retire-real)。走读：[从 TypeScript 迁移](../guides/migrating-from-typescript.md)。
+
+**退出码：**
+
+| 码 | 含义 |
+|----|------|
+| `0` | 动作完成（含 dry-run） |
+| `1` | 用法 / IO 错误；`verify` 随 `nudo check` 失败而失败 |
+
+---
+
 ## JSON 输出
 
 `check --json` 与 `test --json` 是机器可读面。
 
-- **check --json** —— 签名（含 `any` 入口参数与 throws）、诊断码（如 `nudo:entry-may-throw`）、汇总计数。
+- **check --json** —— 签名（含 `any` 入口参数与 throws）、诊断码（如 `nudo:entry-may-throw`）、汇总计数、**`budget`**（call/fork 用量 + `truncated`）、逐 issue 的 **`actions[]`**（结构化下一步：`draft` / `relax` / `callsite` / `assume` / `mock` / …，可附可执行 `command`）。
 - **test --json** —— 逐函数用例（`entry@` / `call@` / 指令）、`assertions` 摘要（`passed`/`failed`/`unchecked`）、诊断、可选 Abs intension 块；声明断言失败仍 exit 1。
 - **check --json 文件数** —— 单文件输出裸 `CheckJson`；多文件（或展开为多个文件的目录）输出 **`CheckJsonMulti`** 信封：`kind:"multi"`、聚合 `summary`（追加 `files`、可选 `budgetTruncated`），以及逐文件 `CheckJson` 的 `reports[]`。`test --json` 仍仅支持单文件（`--json requires a single file`）。
 
@@ -364,3 +419,5 @@ Result: FAIL (drift or errors found)
 | `contract` / `export`（只读） | 用法 / IO 错误 |
 | `contract --emit --exit-on-diff` | 将写盘且有 diff |
 | `health` | 漂移或分析错误 |
+| `migrate verify` | 目标上 `nudo check` 失败 |
+| `migrate`（其余） | 用法 / IO 错误 |

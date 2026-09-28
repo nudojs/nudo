@@ -7,9 +7,9 @@ description: Public retire-tsc case studies — checkout-demo, real packages ms 
 
 **You'll leave with:** a forwardable migration playbook — before/after diagnostics, the command sequence `status → strip → verify → retire`, and honest friction notes — backed by runnable samples in this monorepo.
 
-End state is always the same: **`nudo check` is the only gate; `typescript` is gone.** Coexistence is a migration tactic, not the destination. Command walkthrough: [Migrate from TypeScript](./migrating-from-typescript).
+End state is always the same: **`nudo check` is the only gate; `typescript` is gone.** Coexistence is a migration tactic, not the destination. Command walkthrough: [Migrate from TypeScript](./migrating-from-typescript.md).
 
-> **Honesty label.** Every package below is an **example-scale** sample from [`docs/examples/`](https://github.com/nudojs/nudo/tree/main/docs/examples) (two real npm *consumers*, one public demo package). Timings and friction counts are **示例级，非生产规模** — not a production migration audit. Do not invent external company names; the evidence is the committed `before/` / `after/` trees and `pnpm run verify:examples`.
+> **Honesty label.** Every package below is an **example-scale** sample from [`docs/examples/`](https://github.com/nudojs/nudo/tree/main/docs/examples) (two real npm *consumers*, one public demo package). Timings and friction counts are **example-scale, not production-size** — not a production migration audit. Do not invent external company names; the evidence is the committed `before/` / `after/` trees and `pnpm run verify:examples`.
 
 ## The one-way door
 
@@ -37,12 +37,7 @@ npx nudojs migrate verify ./my-pkg/src
 npx nudojs migrate retire ./my-pkg --dry-run   # then drop --dry-run
 ```
 
-| Step | Effect | Exit when |
-|------|--------|-----------|
-| `status` | Counts `.ts`, finds `tsc` scripts + `typescript` dep, lists **blockers** | You know the surface area |
-| `strip` | `.ts` → `.js`; optional best-effort sidecar draft | Sources are plain JS |
-| `verify` | Runs `nudo check` on the stripped JS (optional `--with-tsc` dual-run **during** the move only) | Gate is green |
-| `retire` | Drops `typescript`, rewrites `tsc` scripts → `nudo check`, rewrites `.github/workflows`, writes `.nudo/migrate-retired.json` | **tsc is gone** |
+Step recap: `status` audits the surface (`.ts` count, `tsc` scripts, **blockers**) → `strip` emits plain JS (`--write`, optional sidecar draft) → `verify` gates the stripped JS with `nudo check` (`--with-tsc` dual-run **during** the move only) → `retire` drops `typescript`, rewrites `tsc` scripts and workflow lines, writes `.nudo/migrate-retired.json`. Full per-step table (what it does / exit when): [Migrate from TypeScript](./migrating-from-typescript.md#path-r--retire-tsc-nudo-migrate).
 
 `migrate retire --all` batches a monorepo. Dual-run exists only as `migrate verify --with-tsc` during the move — never as the endgame.
 
@@ -96,7 +91,7 @@ issues
 
 Read that as: signatures still print; unconstrained params are **`any`** (not `unknown`); the intentional `throw` surfaces as **L2** with a next step. The after package flips it to warning via `package.json#nudo.check.entryThrows` if you want a softer first week.
 
-Tighten later and the face becomes value + predicate (not a type name) — see [Error faces](./error-faces):
+Tighten later and the face becomes value + predicate (not a type name) — see [Error faces](./error-faces.md):
 
 ```text
 actual:   -1  #exact
@@ -215,7 +210,7 @@ issues
       → add @nudo:case or a call site
 ```
 
-With `@types/debug` present, harvest fills signatures; or pin with `@nudo:mock` / `refine return`. That is the same story as `ms()`.
+With `@types/debug` present, harvest fills signatures; or pin with `@nudo:mock` / a declared return contract (`@nudo:contract` or a sidecar return slot). That is the same story as `ms()`.
 
 ## Friction and time (example-scale)
 
@@ -223,11 +218,11 @@ With `@types/debug` present, harvest fills signatures; or pin with `@nudo:mock` 
 |----------|--------------------|---------------|----------------------|
 | `tsc` scripts + `typescript` dep still present | `migrate status` blockers list | `migrate retire` rewrites scripts; drops dep | One command (`--dry-run` first) |
 | Old annotations become obligations only if you accept them | `contract --from-dts` emits `@nudo:draft` | Review → copy into `*.nudo.js` | Minutes per file; **never silent** |
-| Native / unharvested deps (`ms()`, `debug()`) | `unknown` / `conf=opaque` / `nudo:unknown-inference` | `@types/*` harvest, `@nudo:mock`, or `refine return` | Bounded; stays a **warning** until you pin |
+| Native / unharvested deps (`ms()`, `debug()`) | `unknown` / `conf=opaque` / `nudo:unknown-inference` | `@types/*` harvest, `@nudo:mock`, or a declared return contract | Bounded; stays a **warning** until you pin |
 | L2 `entry-may-throw` on intentional `throw` | checkout-demo `applyCoupon` | `@nudo:throws RangeError` / guard, or `nudo.check.entryThrows: "warning"` | One line in `package.json` or a throws directive |
 | Dual-run temptation | mid-migration CI | Keep `verify --with-tsc` **only** during the move; retire is the exit | Policy, not tooling |
 
-**Wall-clock (示例级，非生产规模):** these samples are small (2–3 modules, ~1–2 files stripped per package). The committed trees are the evidence — run `pnpm run verify:examples` yourself. We do **not** publish production-scale hour/days numbers; a “7-day retire path” in release notes is a *product target narrative*, not a measured median. For a real package, budget by `.ts` file count from `migrate status`, not by blog post.
+**Wall-clock (example-scale, not production-size):** these samples are small (2–3 modules, ~1–2 files stripped per package). The committed trees are the evidence — run `pnpm run verify:examples` yourself. We do **not** publish production-scale hour/days numbers; a “7-day retire path” in release notes is a *product target narrative*, not a measured median. For a real package, budget by `.ts` file count from `migrate status`, not by blog post.
 
 ## What these prove
 
@@ -253,6 +248,6 @@ Copy-ready blog / HN / release-notes text: [`docs/reports/retire-tsc-announcemen
 
 ## Next
 
-- [Migrate from TypeScript](./migrating-from-typescript) — the door itself
-- [Error faces](./error-faces) — what you read after the gate
-- [Mental model](../getting-started/mental-model)
+- [Migrate from TypeScript](./migrating-from-typescript.md) — the door itself
+- [Error faces](./error-faces.md) — what you read after the gate
+- [Mental model](../getting-started/mental-model.md)

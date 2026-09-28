@@ -15,15 +15,19 @@ Base: https://nudojs.github.io/nudo
 - https://nudojs.github.io/nudo/docs/getting-started/installation
 - https://nudojs.github.io/nudo/docs/getting-started/mental-model
 - https://nudojs.github.io/nudo/docs/getting-started/quick-start
+- https://nudojs.github.io/nudo/docs/getting-started/troubleshooting
 
 ### How-to (guides)
 
 - https://nudojs.github.io/nudo/docs/guides/check
+- https://nudojs.github.io/nudo/docs/guides/test
+- https://nudojs.github.io/nudo/docs/guides/performance
 - https://nudojs.github.io/nudo/docs/guides/contract
 - https://nudojs.github.io/nudo/docs/guides/cli
 - https://nudojs.github.io/nudo/docs/guides/recipes
 - https://nudojs.github.io/nudo/docs/guides/examples
 - https://nudojs.github.io/nudo/docs/guides/error-faces
+- https://nudojs.github.io/nudo/docs/guides/errors-vs-typescript
 - https://nudojs.github.io/nudo/docs/guides/export-ecosystem
 - https://nudojs.github.io/nudo/docs/guides/health
 - https://nudojs.github.io/nudo/docs/guides/env-harvest
@@ -33,7 +37,6 @@ Base: https://nudojs.github.io/nudo
 - https://nudojs.github.io/nudo/docs/guides/coexistence
 - https://nudojs.github.io/nudo/docs/guides/case-study-retire
 - https://nudojs.github.io/nudo/docs/guides/versioning
-- https://nudojs.github.io/nudo/docs/guides/runtime-generation
 - https://nudojs.github.io/nudo/docs/guides/competitive-landscape
 - https://nudojs.github.io/nudo/docs/guides/vs-typescript
 - https://nudojs.github.io/nudo/docs/guides/ai-native-dx
@@ -46,6 +49,7 @@ Base: https://nudojs.github.io/nudo
 ### Concepts
 
 - https://nudojs.github.io/nudo/docs/concepts/abs
+- https://nudojs.github.io/nudo/docs/concepts/hof-relations
 - https://nudojs.github.io/nudo/docs/concepts/abstract-interpretation
 - https://nudojs.github.io/nudo/docs/concepts/semantics
 - https://nudojs.github.io/nudo/docs/concepts/directives
@@ -59,6 +63,7 @@ Base: https://nudojs.github.io/nudo
 - https://nudojs.github.io/nudo/docs/reference/diagnostics
 - https://nudojs.github.io/nudo/docs/glossary
 - https://nudojs.github.io/nudo/docs/reference/agents
+- https://nudojs.github.io/nudo/docs/reference/config
 
 ### API
 
@@ -84,6 +89,7 @@ Base: https://nudojs.github.io/nudo
 - https://nudojs.github.io/nudo/blog/vs-typescript
 - https://nudojs.github.io/nudo/blog/attribution-gate
 - https://nudojs.github.io/nudo/blog/agents-docs
+- https://nudojs.github.io/nudo/blog/retiring-typescript-in-practice
 
 ## Per-page markdown (same route + `.md`)
 

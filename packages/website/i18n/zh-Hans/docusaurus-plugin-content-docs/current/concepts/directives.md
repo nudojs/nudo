@@ -1,5 +1,5 @@
 ---
-description: "全部 @nudo: 指令（case、mock、pure、skip、sample、refine、import、env、mock-module、as、replace）的语法、约束与示例完整参考。"
+description: "全部 @nudo: 指令（case、mock、pure、skip、sample、contract、throws、import、env、mock-module、as、replace）的语法、约束与示例完整参考。"
 ---
 
 # 指令系统
@@ -39,7 +39,7 @@ async function fetchUser(id) {
 
 ---
 
-## @nudo:case — 调试见证
+## @nudo:case — 调试见证 {#nudocase--debug-witnesses}
 
 case 是 **debug 见证**：Nudo 为场景执行而使用的具体输入。它不是契约产品——契约住在 `*.nudo.js` 侧车 / `@nudo:contract`（见 [@nudo:contract](#nudocontract--source-contract)）。`@nudo:case` 仍支持 `nudo test` 断言与 LSP 场景切换。case 实参使用具体值或约束构建器。
 
@@ -85,10 +85,10 @@ function process(x) {
 
 ```javascript verify
 /**
- * @nudo:case "basic" ("hello") => 5
- * @nudo:case "empty" ("") => 0
+ * @nudo:case "basic" ("abc") => number()
+ * @nudo:case "empty" ("") => lit(0)
  */
-function lengthOf(s) {
+function len(s) {
   return s.length;
 }
 ```
@@ -149,7 +149,7 @@ function add(a, b) {
  * @nudo:skip
  */
 function heavyComputation(data) {
-  // Nudo 不应求值的复杂算法
+  // Complex algorithm Nudo should not evaluate
   return processData(data);
 }
 ```
@@ -166,7 +166,7 @@ function heavyComputation(data) {
  * @nudo:skip number()
  */
 function unannotatedHeavy(x) {
-  // 通过指令显式指定返回类型
+  // Explicit return type via the directive
   return expensiveOp(x);
 }
 ```
@@ -318,6 +318,79 @@ function register(u) {
   return `${u.id}:${u.name}`;
 }
 ```
+
+---
+
+## @nudo:throws — 申报有意抛错 {#nudothrows--declare-intentional-throws}
+
+申报函数**有意抛错**。L2（`nudo:entry-may-throw`）要求入口/导出函数不携带未申报的 throw —— 与其藏起 fail-fast，不如把它申报出来。申报只解除已申报种类的 L2；throw 仍保留在签名上（是申报，不是抹除）。
+
+### 语法
+
+```text
+@nudo:throws Error
+@nudo:throws Error, TypeError
+@nudo:throws *
+```
+
+- **kinds** —— 逗号分隔的构造器名（空格或 `|` 亦可分隔）。申报 `Error` 覆盖整个 Error 家族（`TypeError`、`RangeError`、`ReferenceError`、`SyntaxError`、`URIError`、`EvalError`、`AggregateError`），语义同 `instanceof Error`；申报具体种类只覆盖自身。
+- **`*`** —— 申报任意 throw，L2 全部解除。
+- 未申报的种类照常报告 —— 申报是精确的，不是一刀切忽略。
+
+指令为函数级：写在函数正上方的注释块里，与 `@nudo:contract` 同一条扫描路径。另有两个等价申报形态：
+
+- `@nudo:case "name" (args) !! throws` —— 用例后缀申报；裸 `!! throws` 申报任意 throw，`!! throws Error` 按种类申报（`@nudo:case` 仍是 debug 专用）。
+- 侧车选项 —— 同名 `*.nudo.js` 绑定上的 `fn(params, returns, { throws: "Error" })`。
+
+申报 ≠ `--ignore-throws`：申报表达「这个 fail-fast 是有意的」，按种类生效；`--ignore-throws` 是迁移期的一揽子放行。两者同时存在时先应用申报。
+
+### 示例
+
+```javascript
+/**
+ * @nudo:throws RangeError
+ */
+export function clampPercent(n) {
+  if (n < 0 || n > 100) throw new RangeError("n must be within 0..100");
+  return n;
+}
+```
+
+**输出（`nudo check`）：**
+
+```text
+nudo check  clamp.js
+OK
+  0 error · 0 warning · 0 info · 1 fn
+
+signatures
+  clampPercent(n: any) => any  throws RangeError
+
+(no issues)
+```
+
+去掉申报后，同一函数 L2 失败 —— `throw RangeError` 未消化：
+
+```text
+nudo check  clamp.js
+FAILED
+  1 error · 0 warning · 0 info · 1 fn
+
+signatures
+  clampPercent(n: any) => any  throws RangeError
+
+issues
+  [ERROR L1 clampPercent] clampPercent (export): may throw RangeError  (nudo:entry-may-throw)
+      actual:   clampPercent(n: any) => any    throws RangeError
+      expected: entry total, or @nudo:throws / try-catch
+      → throw RangeError → @nudo:throws RangeError / refine / guard / try-catch
+      fix:  nudo contract --draft  (emit a sidecar draft you can edit)
+
+docs
+  nudo:entry-may-throw → https://nudojs.github.io/nudo/docs/reference/diagnostics#nudo-entry-may-throw
+```
+
+报头里的 `L1` 是**行号**，不是契约层 —— 该诊断的层是 L2。L2 语义与其他解除路径（refine 收窄、`try`/`catch` 消化、`--ignore-throws`）见 [L2 —— 入口 throws](../guides/check.md#l2--entry-throws)。
 
 ---
 
@@ -544,6 +617,7 @@ const result = a + b;
 | `@nudo:skip` | `[returnsExpr]` | 跳过求值，使用已有类型信息 |
 | `@nudo:sample` | `N` | 保留的无效果指令（已解析，未消费） |
 | `@nudo:contract` | `param constraint` / `return constraint` | 源码内契约（主路径是 `*.nudo.js` 侧车自动绑定） |
+| `@nudo:throws` | `Error, TypeError` 或 `*` | 申报有意抛错 —— 按申报种类解除 L2 `nudo:entry-may-throw` |
 | `@nudo:import` | `{ name } from "spec"`（文件级 `///`） | 为 `@nudo:contract` 引入 `*.nudo.js` 约束模板 |
 | `@nudo:env` | `name1, name2`（文件级 `///`） | 声明运行时环境 API |
 | `@nudo:mock-module` | `"module" from "path"`（文件级 `///`） | 替换导入的模块为 mock |

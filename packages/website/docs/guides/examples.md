@@ -10,13 +10,31 @@ description: Practical Nudo examples — call-site observation, sidecar contract
 
 Every output block below is excerpted from a real engine run of the code above it (`nudo check` / `nudo test` header lines and the assertions summary are elided where noted). The repo's CI-pinned suite lives in [`docs/examples/`](https://github.com/nudojs/nudo/blob/main/docs/examples/README.md) (`pnpm run verify:examples`); this guide browses the same engine by theme.
 
+The suite's topic directories at a glance (exit codes are the command matrix's pinned expectations — negative rows exit non-zero **on purpose**, the reported lines are the demo):
+
+| Topic directory | What it demonstrates | Representative files | Expected exit |
+|---|---|---|---|
+| [`constraints/`](https://github.com/nudojs/nudo/tree/main/docs/examples/constraints) | `@nudo:contract` × Pred: scalars / shapes / return refinement; an `if` is not a refinement | [`set-delay.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/constraints/set-delay.js) · [`register.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/constraints/register.js) · [`return-contract.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/constraints/return-contract.js) | `1` negatives · `0` register / `test:cli` |
+| [`structure/`](https://github.com/nudojs/nudo/tree/main/docs/examples/structure) | Abs `leq`: assignment / argument structure (width subtyping) | [`assign.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/structure/assign.js) · [`arg-structure.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/structure/arg-structure.js) | `1` (both rows) |
+| [`vs-ts/`](https://github.com/nudojs/nudo/tree/main/docs/examples/vs-ts) | Same logic, side by side with TypeScript | [`constraints/nudo.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/vs-ts/constraints/nudo.js) · [`constraints/tsc.ts`](https://github.com/nudojs/nudo/blob/main/docs/examples/vs-ts/constraints/tsc.ts) · [`structure/nudo.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/vs-ts/structure/nudo.js) | nudo `1` · tsc `0` / `2` |
+| [`mini-repo/`](https://github.com/nudojs/nudo/tree/main/docs/examples/mini-repo) | Multi-file integration (ESM + class + async) | [`user-service.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/mini-repo/user-service.js) · [`store.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/mini-repo/store.js) · [`validators.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/mini-repo/validators.js) | `1` user-service `check` (L2) · `0` rest |
+| [`algebra/`](https://github.com/nudojs/nudo/tree/main/docs/examples/algebra) | Types as computation (spread / HOF / reduce / mixin) | [`0-add-intensional.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/0-add-intensional.js) · [`b-hof-map.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/b-hof-map.js) · [`c-reduce-sum.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/c-reduce-sum.js) | `0` |
+| [`interface-derivation/`](https://github.com/nudojs/nudo/tree/main/docs/examples/interface-derivation) | Contract tier derivation (handwritten root → generated rows) | [`lib.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/interface-derivation/lib.js) · [`lib.nudo.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/interface-derivation/lib.nudo.js) · [`add.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/interface-derivation/add.js) | `0` |
+| [`interface-draft/`](https://github.com/nudojs/nudo/tree/main/docs/examples/interface-draft) | Code first: reviewable contract drafts from logic | [`greet.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/interface-draft/greet.js) · [`README.md`](https://github.com/nudojs/nudo/blob/main/docs/examples/interface-draft/README.md) | `0` (`contract --draft`) |
+| [`migrate/`](https://github.com/nudojs/nudo/tree/main/docs/examples/migrate) | Retire the tsc boilerplate package (one-way before/after gate) | [`before/src/math.ts`](https://github.com/nudojs/nudo/blob/main/docs/examples/migrate/before/src/math.ts) · [`after/src/math.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/migrate/after/src/math.js) · [`before/package.json`](https://github.com/nudojs/nudo/blob/main/docs/examples/migrate/before/package.json) | `0` (status / strip / verify / retire) |
+| [`errors/`](https://github.com/nudojs/nudo/tree/main/docs/examples/errors) | Top-10 error faces (Nudo real output) | [`01-constraint-gt.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/errors/01-constraint-gt.js) · [`04-entry-throws.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/errors/04-entry-throws.js) · [`10-fix-path.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/errors/10-fix-path.js) | `1` (all ten) |
+| [`retire-real/`](https://github.com/nudojs/nudo/tree/main/docs/examples/retire-real) | Real-package `ms` retire-tsc case (not a synthetic fixture) | [`before/src/age.ts`](https://github.com/nudojs/nudo/blob/main/docs/examples/retire-real/before/src/age.ts) · [`after/src/age.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/retire-real/after/src/age.js) | `0` |
+| [`retire-debug/`](https://github.com/nudojs/nudo/tree/main/docs/examples/retire-debug) | Real-package `debug` retire-tsc case (visionmedia/debug) | [`before/src/logger.ts`](https://github.com/nudojs/nudo/blob/main/docs/examples/retire-debug/before/src/logger.ts) · [`after/src/logger.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/retire-debug/after/src/logger.js) | `0` |
+
+Root-level [`l2-export-any.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/l2-export-any.js) pins L2 export-`any` gating outside any directory: `check` exits `1`, `--ignore-throws TypeError` exits `0`. One command verifies the whole matrix: `pnpm run verify:examples`.
+
 Try any sample in the [Playground](/playground).
 
 ---
 
 ## Call sites and contracts (product path)
 
-### 1. Call-site subtraction — Observation observation
+### 1. Call-site subtraction — Observation
 
 Plain JS + call sites. No annotations. `nudo check` prints signatures; call sites supply evidence.
 
@@ -269,6 +287,6 @@ Prefer concrete values or constraint builders (`number()`, `lit(42)`). Assertion
 | Directive | Role in this guide |
 |-----------|-------------------|
 | Call sites | Observation evidence (primary) |
-| `*.nudo.js` / `@nudo:contract` | Contracts contracts (primary) |
+| `*.nudo.js` / `@nudo:contract` | Contracts (primary) |
 | `@nudo:env` / `@nudo:mock` | Environment & boundaries |
 | `@nudo:case` | Optional debug witnesses only |

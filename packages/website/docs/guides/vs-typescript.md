@@ -77,8 +77,8 @@ Full comparative suites are still incomplete. Direction is established by **arch
 
 | Probe | Nudo | TypeScript | Notes |
 |---|---|---|---|
-| Single-file live edit | `analyzeFile` **0.19 ms**, `checkSource` **0.39 ms** median | `tsc.LS` on the order of **10 ms+** per probe in `benchmark/micro/bench-vs-tsc` (≈ **150×** in the micro harness) | Synthetic monorepo / micro workload; see `docs/reports/s1-perf-baseline.md` |
-| Agent repair (node-semver historical bugs, ~2.4k LOC) | tokenTotal **569k** · rounds **45** · repair loops **16** · gate peak RSS **226 MB** | **993k** (**+75%**) · **63** · **21** · **289 MB** | Both finished 6/6; the gap is cost, not detect ceiling — `benchmark/lsp-rounds/out/OSS-SEMVER.md` |
+| Single-file live edit | `analyzeFile` **0.19 ms**, `checkSource` **0.39 ms** median | `tsc.LS` on the order of **10 ms+** per probe in `benchmark/micro/bench-vs-tsc` (≈ **150×** in the micro harness) | Synthetic monorepo / micro workload; see [Performance](./performance.md) · [S1 baseline report](https://github.com/nudojs/nudo/blob/main/docs/reports/s1-perf-baseline.md) |
+| Agent repair (node-semver historical bugs, ~2.4k LOC) | tokenTotal **569k** · rounds **45** · repair loops **16** · gate peak RSS **226 MB** | **993k** (**+75%**) · **63** · **21** · **289 MB** | Both finished 6/6; the gap is cost, not detect ceiling — [OSS-SEMVER report](https://github.com/nudojs/nudo/blob/main/benchmark/lsp-rounds/out/OSS-SEMVER.md) |
 | Constraint-shaped gate payload | detects; pays tokens to **report** | often **silent green** (no tokens, bug ships) | `pnpm run agent-dx` — TS “cheap” tokens are silence |
 
 ### Boundaries of the claim
@@ -87,7 +87,7 @@ Full comparative suites are still incomplete. Direction is established by **arch
 - Peak RSS is **gate process** RSS during agent loops, not steady-state IDE residency.
 - Memory advantage is **structural** (no whole-program forced residency) and shows up in LSP design ([bounded session model](../api/lsp.md)); long-running multi-GB `tsserver` heaps vs Nudo LSP under the same editor load are not yet a published matrix.
 
-More complete tables (multi-package cold/warm, multi-host) will replace this section as they land.
+The Nudo-side performance story — budgets, truncation diagnostics, and the analysis cache — is covered in [Performance](./performance.md).
 
 ## Capability bounds (engine non-goals)
 
@@ -146,7 +146,7 @@ needsPositive(-1);
 //   expected: x > 0
 ```
 
-TypeScript encodes intent in the signature. Nudo encodes the same obligation as a **computable** constraint and reports the violating call site. Both are valid; only the latter avoids a type language. More shapes: [Error faces](./error-faces.md).
+TypeScript encodes intent in the signature. Nudo encodes the same obligation as a **computable** constraint and reports the violating call site. Both are valid; only the latter avoids a type language. More shapes: [Error faces](./error-faces.md); ten runnable scenarios with pinned outputs: [Error catalog](./errors-vs-typescript.md).
 
 ## Migration, not permanent dual gates
 

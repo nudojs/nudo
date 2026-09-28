@@ -28,7 +28,7 @@ Leaving tsc: npx nudojs migrate status|strip|verify|retire (exit is retire).
 |------|------|
 | 动词 | 仅 `check` \| `test` \| `contract` \| `export` \| `health` \| `migrate` |
 | 无 `infer` 动词 | 观察 = check 签名 + IDE |
-| 契约 | sidecar / `@nudo:contract` |
+| 契约 | sidecar / `@nudo:contract`（历史拼写 `@nudo:refine` / `@nudo:interface` 已移除，无别名层） |
 | `@nudo:case` | 仅调试 / `nudo test` / LSP |
 | any vs unknown | 入口 `any`；`unknown` = 推导失败 |
 | check vs export | check 校验；export 有损投影 |
@@ -65,7 +65,7 @@ npx nudojs migrate retire <pkg> --dry-run
 }
 ```
 
-默认分析模式 `"exports"`（export / 侧车 / 指令）；命名路径的 CLI `check` 仍会分析该文件。完整配置面：[CLI 参考](/docs/api/cli-reference)。
+默认分析模式 `"exports"`（export / 侧车 / 指令）；命名路径的 CLI `check` 仍会分析该文件。完整配置面：[CLI 参考](../api/cli-reference.md)。
 
 ## 机器可读诊断
 
@@ -73,7 +73,22 @@ npx nudojs migrate retire <pkg> --dry-run
 npx nudojs check file.js --json
 ```
 
-人类可读面使用 Abs 上的 `actual ⊭ expected`。稳定诊断码见 [诊断码词典](/docs/reference/diagnostics)。
+人类可读面使用 Abs 上的 `actual ⊭ expected`。稳定诊断码见 [诊断码词典](./diagnostics.md)。
+
+每个 `issues[]` 条目可携带 **`actions[]`**（AI1）——优先消费它们，而不是解析 `suggestion` 文本：
+
+```json
+{
+  "code": "nudo:constraint-violated",
+  "actual": "0  #exact",
+  "expected": "ms > 0",
+  "actions": [
+    { "kind": "callsite", "label": "use a value satisfying the constraint", "hint": "ms > 0" },
+    { "kind": "relax", "label": "relax the precondition (edit *.nudo.js / @nudo:contract)" },
+    { "kind": "draft", "command": "nudo contract --draft", "label": "emit a sidecar draft you can edit" }
+  ]
+}
+```
 
 ## 少样本修复对（该这么改，别那么改）
 
@@ -152,9 +167,9 @@ npx nudojs check src/app.js
 
 | 表面 | 文档 |
 |------|------|
-| LSP 包 | [`@nudojs/lsp`](/docs/api/lsp) |
-| Agent executeCommand | [API · agent](/docs/api/agent) |
-| Agent 集成 | [Agent 集成指南](/docs/guides/agent-integration) |
+| LSP 包 | [`@nudojs/lsp`](../api/lsp.md) |
+| Agent executeCommand | [API · agent](../api/agent.md) |
+| Agent 集成 | [Agent 集成指南](../guides/agent-integration.md) |
 
 不要把服务端注入字段（`loadModule`、生效中的 `autoBind`）当作 JSON-RPC 参数发送。
 
@@ -166,5 +181,5 @@ npx nudojs check src/app.js
 - 不要把无约束入口参数叙述成 `unknown`
 - 不要把双跑 `tsc` + `nudo check` 写成永久终态 —— 出口是 `migrate retire`
 
-参见 [Limits](/docs/concepts/limits) · [术语表](/docs/glossary) · [Recipes](/docs/guides/recipes) · [从 TypeScript 迁移](/docs/guides/migrating-from-typescript)。
+参见 [Limits](../concepts/limits.md) · [术语表](../glossary.md) · [Recipes](../guides/recipes.md) · [从 TypeScript 迁移](../guides/migrating-from-typescript.md)。
 

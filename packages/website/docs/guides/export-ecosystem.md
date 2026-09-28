@@ -1,15 +1,21 @@
 ---
 slug: /guides/export-ecosystem
-description: "Bridge Abs to the ecosystem with nudo export — dts / guard / schema / standard, Zod dialect, and where Nudo ends and schema libraries begin."
+description: "Bridge Abs to the ecosystem with nudo export — .d.ts, zero-dependency guards, Zod dialect schemas, Standard Schema validators; a full walkthrough with verified examples, and where Nudo ends and schema libraries begin."
 ---
 
 # Export: bridge to the ecosystem
 
-**You'll leave with:** the `nudo export` surface, how it hands facts to Zod / ArkType / TypeBox, and the one-line division of labor.
+**You'll leave with:** the `nudo export` surface, a verified walkthrough of every artifact (`.d.ts` / guards / Zod / Standard Schema), and the one-line division of labor.
 
-> **schema 管边界；Nudo 管内部。**
+> **Schema libraries own the boundary; Nudo owns the internals.**
 
 `nudo check` only validates. Artifacts come from **`nudo export`** — a one-way, lossy projection of Abs. Abs stays the source of truth; nothing reads a projection back.
+
+```text
+JS code (+ optional sidecar contract) → Abs → nudo export → runtime validators / .d.ts / schemas
+```
+
+Export is a one-shot shipping command — no `--watch`.
 
 ## Command surface
 
@@ -17,77 +23,164 @@ description: "Bridge Abs to the ecosystem with nudo export — dts / guard / sch
 nudo export <path> [--format dts|guard|schema|standard|all] [--dialect zod] [--out dir]
 ```
 
-| `--format` | Artifact |
-|---|---|
-| `dts` | TypeScript declarations (default) — one-way npm/editor bridge |
-| `guard` | Zero-dependency runtime type-guard functions |
-| `schema` | Zod JS module (`import { z } from "zod"`) for `--dialect` (currently `zod`) → `*.nudo.schema.zod.ts` |
-| `standard` | [Standard Schema](https://standardschema.dev) v1 modules (`~standard`, vendor `nudo`) |
-| `all` | dts + guard + schema + standard |
+`--dialect zod` applies to `--format schema|all`. `--out dir` writes the files; without it, export prints to stdout. Flag/exit contract: [CLI Reference](../api/cli-reference.md#nudo-export).
 
-`--dialect zod` applies to `--format schema|all`. `--out dir` writes the files; without it, export prints to stdout. Export is a one-shot shipping command — no `--watch`.
-
-```bash
-nudo export src/api.js --format dts --out dist/types
-nudo export src/api.js --format schema --dialect zod --out dist
-nudo export src/api.js --format all --out dist
-```
-
-Per-format inputs and examples: [Runtime generation](./runtime-generation.md). Flag/exit contract: [CLI Reference](../api/cli-reference.md#nudo-export).
-
-## What each format is for
-
-| Format | When to use | Projects from | Example consumer |
+| Format | Artifact | Inputs projected | When to use |
 |---|---|---|---|
-| `dts` | TS editors / npm types for JS packages | Call-site cases (params widened, returns keep precision) | `tsc`, IDE go-to-def |
-| `guard` | Inline runtime checks with zero deps | Joined call-site Abs | `if (!isUserOutput(x)) …` |
-| `schema` | Assemble your own Zod (or dialect) module | Per-case Abs (`call@L…` / `entry@L…`) | Zod / resolver ecosystem |
-| `standard` | Plug into any Standard Schema library | Sidecar / `@nudo:contract` domains, else joined call-site Abs | `~standard.validate` |
+| `dts` | TypeScript declarations (default) | Call-site cases: params widened, returns keep precision | TS editors / npm types for a JS package |
+| `guard` | Zero-dependency `typeof` guard functions | Joined call-site Abs | Inline runtime checks with no deps |
+| `schema` | Ready-to-import Zod module (`import { z } from "zod"`) for `--dialect` (currently `zod`) → `*.nudo.schema.zod.ts` | Per-case Abs (`call@L…` / `entry@L…`) | Assemble your own schema module |
+| `standard` | [Standard Schema](https://standardschema.dev) v1 modules (`~standard`, vendor `nudo`) | Sidecar / `@nudo:contract` domains, else joined call-site Abs | Plug into any Standard Schema library — no Zod dependency |
+| `all` | dts + guard + schema + standard | — | Ship the full set |
 
-### dts — declarations for TS consumers
+## Contracts-first: validators from your sidecar
 
-```bash
-nudo export src/api.js --format dts --out dist/types
+The strongest workflow: declare the domain once in a sidecar, let `export` generate the runtime gate from it.
+
+```js verify
+// src/api/users.js
+export function createUser(input) {
+  return { id: 123, name: input.name, age: input.age };
+}
 ```
 
-One widened signature per function; case precision stays in JSDoc `Case:` rows (debug extensional notes, not the interface product). Use when a JS package needs a `.d.ts` face without adopting TypeScript.
+```js verify-sidecar
+// src/api/users.nudo.js — contract (also plain JS)
+import { number, string, shape, fn } from "@nudojs/core";
 
-### guard — zero-dependency type guards
-
-```bash
-nudo export src/api.js --format guard --out dist
+export const createUser = fn(
+  { input: shape({ name: string(), age: number().ge(0) }) },
+  shape({ id: number(), name: string(), age: number() })
+);
 ```
 
-Plain `typeof` checks, one function per export (`is<Fn>Output`). Use inside runtime code that must not import a schema library:
+```bash
+nudo export src/api/users.js --format standard --out dist
+# writes dist/createUser.nudo.standard.ts
+```
+
+The generated module exposes one validator per parameter (`<fn>_<param>`) plus one for the return — named **`<fn>Return`** when a return contract exists (`<fn>Output` is used only when there is no contract, or only parameter contracts). **Contract refinements are baked in** — `age: number().ge(0)` becomes a `numBound { op: "ge", n: 0 }` check, and a `lit(42)` contract pins the exact value:
+
+```ts
+// dist/createUser.nudo.standard.ts (excerpt)
+// (also exports createUserReturn — the return-shape validator from the sidecar)
+export const createUser_input = {
+  "~standard": {
+    version: 1,
+    vendor: "nudo",
+    validate(value) {
+      const issues = [];
+      __nudoCheck({"k":"obj","slots":[
+        {"key":"name","node":{"k":"prim","type":"string","refinements":[]}},
+        {"key":"age","node":{"k":"prim","type":"number","refinements":[{"kind":"numBound","op":"ge","n":0}]}}
+      ]}, value, [], issues);
+      return issues.length ? { issues } : { value };
+    },
+  },
+} as const;
+```
+
+Consume it anywhere Standard Schema is supported — no Zod/Valibot dependency:
 
 ```js
+import { createUser_input } from "./dist/createUser.nudo.standard.js";
+
+const r = createUser_input["~standard"].validate(body);
+if (r.issues) return Response.json({ errors: r.issues }, { status: 400 });
+const user = createUser(r.value);
+```
+
+It is a runtime gate — **not** a replacement for `nudo check`. CI still gates the same contract on Abs.
+
+## Evidence-based: validators from call sites
+
+Without a sidecar, export projects **the join of observed call-site Abs** — what your code actually passes, not a hand-written type:
+
+```js
+// src/api/inline.js
+export function createUser(input) {
+  return { id: 123, name: input.name, age: input.age };
+}
+
+createUser({ name: "Ada", age: 36 });
+```
+
+```bash
+nudo export src/api/inline.js --format standard --out dist
+```
+
+Literals observed at call sites pin exact values (`z.literal` / lit nodes / `=== "Ada"` checks). Add a sidecar when you want contract bounds (`gt/ge/lt/le`, `int`, string length) instead of observed literals.
+
+Honest boundary: an **uncalled** export falls back to `entry@L…` — arguments project as `unknown`, not a guess. That is the `--from`-ceiling ([Limits](../concepts/limits.md#call-site-discovery-ceiling)), not an inference bug.
+
+## Zod dialect schemas (`--format schema`)
+
+Schema export is a **ready-to-import JS module** (`import { z } from "zod"` + `export const`), not a comment dump:
+
+```bash
+nudo export src/api/inline.js --format schema --dialect zod
+# or write it to disk directly:
+nudo export src/api/inline.js --format schema --dialect zod --out dist
+# writes dist/inline.nudo.schema.zod.ts
+```
+
+```js
+// @generated by nudo export --format schema — dialect: zod
+// One-way lossy projection of Abs; do not edit. nudo check remains the gate.
+
+import { z } from "zod";
+
+export const createUserInput = z.object({ input: z.object({ name: z.string(), age: z.number() }) });
+
+export const createUserOutput = z.object({ id: z.number(), name: z.string(), age: z.number() });
+```
+
+Each function gets `<fn>Input` (a `z.object` of named parameters) and `<fn>Output`. Constant numeric bounds / `int` / string length preds from Abs are projected when expressible; unprojectable preds appear under `dropped preds`. Use it with your favorite resolver:
+
+```js
+import { createUserInput } from "./inline.nudo.schema.zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+const { register, handleSubmit } = useForm({ resolver: zodResolver(createUserInput) });
+```
+
+## Zero-dependency guards (`--format guard`)
+
+Guards are plain `typeof` checks with no external imports and no schema interpretation — one function per exported fn, named `is<Fn>Output`:
+
+```bash
+nudo export src/api/inline.js --format guard
+# or write it to disk directly:
+nudo export src/api/inline.js --format guard --out dist
+# writes dist/inline.nudo.guard.ts
+```
+
+```js verify
+// === createUser Type Guards ===
 export function iscreateUserOutput(data) {
   return typeof data === "object" && data !== null && data.id === 123 && data.name === "Ada" && data.age === 36;
 }
 ```
 
-### schema — Zod dialect source
+Save the printed function into a module (`src/api/users.guard.js`) and import it. Measure both guard and schema paths against your payload shape before choosing; the tradeoff is error-message richness vs zero deps.
+
+## TypeScript declarations (`--format dts`)
+
+One widened signature per function. Parameter positions (contravariant) widen literals to base types so callers can pass any compatible value; return types keep inferred precision:
 
 ```bash
-nudo export src/api.js --format schema --dialect zod --out dist
-# writes dist/*.nudo.schema.zod.ts
+nudo export src/api/inline.js --format dts
 ```
 
-Prints per-case schema expressions (comments or file). Constant numeric bounds / `int` / string-length preds project when expressible; unprojectable preds appear under `dropped preds`. Assemble into your own module and hand to a resolver (React Hook Form, etc.).
-
-### standard — Standard Schema validators
-
-```bash
-nudo export src/api.js --format standard --out dist
-# writes <fn>.nudo.standard.ts
+```ts
+/**
+ * Case: call@L5 ({ name: "Ada"; age: 36 }) => { id: 123; name: "Ada"; age: 36 }
+ * @param input - { name: string; age: number }
+ * @returns { id: 123; name: "Ada"; age: 36 }
+ */
+export declare function createUser(input: { name: string; age: number }): { id: 123; name: "Ada"; age: 36 };
 ```
 
-One validator per parameter (`<fn>_<param>`) plus the return (`<fn>Return` when a return contract exists). Contract refinements are baked in (`number().ge(0)` → `numBound { op: "ge", n: 0 }`). Consume anywhere Standard Schema is supported — no Zod dependency:
-
-```js
-const r = createUser_input["~standard"].validate(body);
-if (r.issues) return Response.json({ errors: r.issues }, { status: 400 });
-```
+With multiple cases the signature stays single — params union and widen across cases; each case's precise result is preserved in the `Case:` JSDoc rows (debug extensional notes, not the interface product). To write `.d.ts` files under a directory: `nudo export <file> --format dts --out <dir>`.
 
 ## Validate vs project
 
@@ -136,7 +229,18 @@ jobs:
       # publish dist/ with your package
 ```
 
-`export` exits `0` on success and `1` on usage / IO errors — it does not re-run the contract gate. Pair it with `check` (and optionally `health` when you freeze `call@` cases). Recipes: [Recipes](./recipes.md).
+Or wire generation into package scripts and keep artifacts out of review:
+
+```json
+{
+  "scripts": {
+    "generate": "nudo export src/api/users.js --format standard --out src/generated",
+    "gate": "nudo check src/"
+  }
+}
+```
+
+`export` exits `0` on success and `1` on usage / IO errors — it does not re-run the contract gate. Pair it with `check` (and optionally `health` when you freeze `call@` cases). Machine-readable facts for pipelines come from `nudo check --json` / `nudo test --json` — see [CLI Reference](../api/cli-reference.md#nudo-check). Recipes: [Recipes](./recipes.md).
 
 ## Migration note
 
@@ -151,7 +255,7 @@ Explicit `--entry-throws error|warning|off` overrides the profile. See [nudo che
 
 ## Next
 
-- [Runtime generation](./runtime-generation.md) — full export walkthrough
 - [Competitive landscape](./competitive-landscape.md) — where Nudo sits vs schema libs / TS
 - [nudo check](./check.md) — the gate that stays the source of truth
+- [Contracts](./contract.md) — draft / accept / emit sidecar interfaces
 - [CLI Reference](../api/cli-reference.md#nudo-export)

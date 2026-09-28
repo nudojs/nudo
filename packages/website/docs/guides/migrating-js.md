@@ -38,13 +38,7 @@ nudo check src/
 
 `contract` prints every top-level export with its tier; `check` prints signatures (including L2 entry throws).
 
-Prints every top-level export with its tier:
-
-| Tier | Meaning | Migration action |
-|------|---------|------------------|
-| `handwritten` | Already contracted (sidecar / `@nudo:contract`) | Leave; enforce with `check` |
-| `generated` | Call-site domains frozen into `@generated` | Refresh with `--emit` when usage changes |
-| `implicit` | Inference only — display | **Draft candidates** |
+Three tiers: `handwritten` (accepted sidecar / `@nudo:contract` — enforced by `check`), `generated` (`@generated` call-site snapshots — refresh with `--emit` when usage changes), and `implicit` (inference-only display — your **draft candidates**). Full tier table: [nudo contract](./contract.md#layers).
 
 ## 2. Draft contracts from code
 
@@ -54,14 +48,7 @@ nudo contract --draft --write src/lib.js --fn greet --fn double
 # or IDE: CodeLens ⚡ draft contract / VS Code “Nudo: Draft Contract”
 ```
 
-Evidence in the draft module (never invents check obligations):
-
-| Evidence | Source | Use |
-|----------|--------|-----|
-| `callsite` / `directive` | Observed arguments | Best starting point |
-| `body` | Fields the implementation reads | Suggestions only — fill types by hand |
-| `symbolic` | `generalize` return shape | Return slot when no cases |
-| omitted slots | No evidence | TODO comments |
+Evidence in the draft module (never invents check obligations): `callsite` / `directive` evidence is the best starting point, `body` reads are suggestions only (fill types by hand), `symbolic` shapes cover the return slot when no cases exist, and slots without evidence stay TODO comments. Full evidence table: [nudo contract](./contract.md).
 
 Output lands in `src/lib.nudo.draft.js` — **not** ambient-loaded. Copy reviewed lines into `src/lib.nudo.js`.
 
@@ -101,7 +88,7 @@ nudo check src/lib.js --json   # CI
 ```
 
 - Violations on **handwritten** contracts fail the build (L1).
-- **L2** entry may-throw on exports is an error by default — refine, catch, or `--ignore-throws` while migrating.
+- **L2** entry may-throw on exports is an error by default — catch it, declare `@nudo:throws`, or pass `--ignore-throws` for a single run. For the migration window, prefer `check --profile adoption`: L2 drops to a warning (exit 0) while L1 stays error; return to strict (the default) once the migration settles. Details: [nudo check](./check.md).
 - **generated** segments report drift as warnings (facts + refresh), not as new obligations.
 - **implicit** display never invents errors by itself.
 
@@ -139,7 +126,7 @@ nudo health src/                         # uncovered fns, drift, analysis errors
 nudo test src/lib.js --from test/ --freeze=update
 ```
 
-Pin package versions per [Versioning & Releases](./versioning.md) (0.x minors may break; the stable-line core/service/cli — 2.x/4.x/3.x today — follow SemVer).
+Pin package versions per [Versioning & Releases](./versioning.md) (0.x minors may break; the stable-line packages — core/service/nudojs, all 1.x today — follow SemVer; see the version table there).
 
 ## What not to do
 

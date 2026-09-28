@@ -28,13 +28,7 @@ Two axes matter more than feature lists:
 
 TypeScript is the default static gate for typed JS/TS. Nudo replaces that gate only for **JavaScript-first** packages — see the full map in [Nudo vs TypeScript](./vs-typescript.md).
 
-The sharpest product boundary is in Microsoft's own [TypeScript Design Goals](https://github.com/microsoft/TypeScript/wiki/TypeScript-Design-Goals). Non-goals there include:
-
-> Apply a sound or "provably correct" type system. Instead, strike a balance between correctness and productivity.
-
-> Add or rely on run-time type information in programs, or emit different code based on the results of the type system. Instead, encourage programming patterns that do not require run-time metadata.
-
-Nudo's **throws** axis (L2 entry may-throw) and **Pred** axis (constraint implication on Abs) sit exactly on what those non-goals exclude: obligations derived from *runtime-shaped behavior*, not only from erasable structural annotations. That is not a TypeScript bug — it is a deliberate scope choice. Nudo takes the complementary scope.
+The sharpest product boundary is in Microsoft's own [TypeScript Design Goals](https://github.com/microsoft/TypeScript/wiki/TypeScript-Design-Goals): two non-goals there explicitly decline a soundness promise and any reliance on run-time type information — the full quotes are in [Nudo vs TypeScript](./vs-typescript.md). Nudo's **throws** axis (L2 entry may-throw) and **Pred** axis (constraint implication on Abs) sit exactly on what those non-goals exclude: obligations derived from *runtime-shaped behavior*, not only from erasable structural annotations. That is not a TypeScript bug — it is a deliberate scope choice. Nudo takes the complementary scope.
 
 Also: types are erased in TypeScript. Nudo keeps Abs as the model and treats `.d.ts` as a **one-way, lossy projection** (`nudo export --format dts`).
 
@@ -72,7 +66,7 @@ These libraries are **boundary runtime validation**. They parse or `safeParse` d
 | Truth | The schema object | Abs (`shape × term × pred × conf`) |
 | Compile-time | Schema-as-type helpers | Full Abs algebra (`x>0` ⇒ `x+1>1`) |
 
-They compose: **`nudo export` projects Abs into schema dialects** (Zod dialect, Standard Schema, guards) so boundary code and CI agree on the same facts. The projection is one-way and lossy — Abs stays the source of truth. See [Runtime generation](./runtime-generation.md).
+They compose: **`nudo export` projects Abs into schema dialects** (Zod dialect, Standard Schema, guards) so boundary code and CI agree on the same facts. The projection is one-way and lossy — Abs stays the source of truth. See [Export](./export-ecosystem.md).
 
 ArkType's library docs are at **arktype.io**. (`arktype.org` is an unrelated company — do not send readers there.)
 
@@ -112,7 +106,7 @@ Drafts are never silent obligations: accepting a contract draft is what creates 
 
 - **[Nudo vs TypeScript](./vs-typescript.md)** — when Nudo replaces `tsc`
 - **[Why Nudo](../why-nudo.md)** — product face
-- **[Runtime generation](./runtime-generation.md)** — `export` → Standard Schema / Zod / guards / `.d.ts`
+- **[Export](./export-ecosystem.md)** — `export` → Standard Schema / Zod / guards / `.d.ts`
 - **[nudo check](./check.md)** — L1 contracts + L2 entry throws
 - **[Limits](../concepts/limits.md)** — what the engine does not claim
 - **[Mental model](../getting-started/mental-model.md)** 

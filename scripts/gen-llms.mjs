@@ -31,6 +31,11 @@ function slugOf(path) {
 
 const stripFrontmatter = (src) => src.replace(/^---\n[\s\S]*?\n---\n*/, "").trimEnd() + "\n";
 
+// llms-full.txt exclusions: releases-history is a ~130KB changelog aggregate that
+// would dominate the concatenated corpus. Its per-page .md sidecar and llms.txt
+// index entry stay intact (docs-coverage rule 10 only checks those).
+const FULL_EXCLUDE = new Set(["/docs/releases-history"]);
+
 const fullParts = [];
 let mdCount = 0;
 
@@ -51,7 +56,7 @@ for (const { base, prefix, inFull } of docRoots) {
     mkdirSync(dirname(out), { recursive: true });
     writeFileSync(out, body);
     mdCount++;
-    if (inFull) fullParts.push(body);
+    if (inFull && !FULL_EXCLUDE.has(route)) fullParts.push(body);
   }
 }
 

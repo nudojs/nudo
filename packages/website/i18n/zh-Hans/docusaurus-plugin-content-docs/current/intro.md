@@ -19,7 +19,7 @@ scale(5);
 ```
 
 ```javascript verify-sidecar
-// calc.nudo.js — 显式契约（义务）
+// calc.nudo.js — explicit contract (obligation)
 import { number, fn } from "@nudojs/core";
 export const scale = fn({ x: number().gt(0) }, number());
 ```
@@ -40,7 +40,7 @@ signatures
   scale(x: number) => number
 
 issues
-  [ERROR …] scale[x]: argument ⊭ precondition  (nudo:constraint-violated)
+  [ERROR L7 scale] scale[x]: argument ⊭ precondition  (nudo:constraint-violated)
       actual:   0  #exact
       expected: x > 0
 ```

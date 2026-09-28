@@ -154,7 +154,7 @@ L2 `entryThrows` 解析顺序：
 | 含义 | 无约束：JS 值的并集；**开发者**负责细化 | **推导失败 / 引擎无信息**；**Nudo** 负责修 |
 | 来源 | 未标注入口参数、显式 `any()`、refine 解析失败回退 | 求值失败、native 未建模、截断、泄漏、opaque |
 | 运算 | 按真实 JS 语义取并集；不是「分析失败」 | 不得假装成合法契约；应触发引擎债诊断 |
-| 窄化 | 条件语句可窄化（`typeof` / `===` / `Array.isArray` / `switch` / 真值 / 判别字段）——**已实现**，见 `guides/control-flow-narrowing.md` | **不能**被用户条件「合法化」；先修推导或补 env/mock/refine |
+| 窄化 | 条件语句可窄化（`typeof` / `===` / `Array.isArray` / `switch` / 真值 / 判别字段）——**已实现**，见 `concepts/control-flow-narrowing.md` | **不能**被用户条件「合法化」；先修推导或补 env/mock/refine |
 | 展示 | `any`、可带 type-var（`A1`） | `unknown` + conf 标注 |
 | 产品话术 | 「未写契约 ⇒ 默认约束为 any + JS 运行时效果」 | 「Nudo 遇到无法处理的场景」 |
 
@@ -563,4 +563,4 @@ Day 0   check（读签名）/ test（看 case） · Day 1   contract + check · 
 | CLI | `packages/cli/src/index.ts` |
 | case 报告 | `packages/cli/src/run-test.ts` · `packages/service/src/case-json.ts` |
 | analysisConfig | `packages/service/src/evaluator/config.ts` |
-| 窄化指南 | `packages/website/docs/guides/control-flow-narrowing.md` |
+| 窄化指南 | `packages/website/docs/concepts/control-flow-narrowing.md` |

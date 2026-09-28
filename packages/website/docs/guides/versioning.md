@@ -13,13 +13,13 @@ Nudo is a pnpm monorepo that publishes **per-package** versions via [changesets]
 <!-- NUDO-VERSIONS:BEGIN -->
 | Package | Line | Upgrade rule |
 |---------|------|----------------|
-| `@nudojs/core` | **1.x**（1.2.1） | SemVer: breaking → major |
-| `@nudojs/service` | **1.x**（1.2.1） | SemVer: breaking → major |
-| `nudojs` | **1.x**（1.0.6） | SemVer: breaking → major |
-| `@nudojs/parser` | **1.x**（1.1.6） | SemVer: breaking → major |
-| `@nudojs/lsp` | **1.x**（1.1.6） | SemVer: breaking → major. Freeze inventory: `packages/lsp/PUBLIC_API.md` |
-| `@nudojs/env` / `@nudojs/harvester` | 0.x（0.4.8 / 0.2.14） | Minor may break; pin a minor for stable IDE/CI analysis. Handwritten env wins on overlapping modules/exports (`mergeHarvestUnderEnv`) |
-| `vite-plugin-nudo` | 0.x（0.4.9） | Minor may break |
+| `@nudojs/core` | **1.x**(1.2.1) | SemVer: breaking → major |
+| `@nudojs/service` | **1.x**(1.2.1) | SemVer: breaking → major |
+| `nudojs` | **1.x**(1.0.6) | SemVer: breaking → major |
+| `@nudojs/parser` | **1.x**(1.1.6) | SemVer: breaking → major |
+| `@nudojs/lsp` | **1.x**(1.1.6) | SemVer: breaking → major. Freeze inventory: `packages/lsp/PUBLIC_API.md` |
+| `@nudojs/env` / `@nudojs/harvester` | 0.x(0.4.8 / 0.2.14) | Minor may break; pin a minor for stable IDE/CI analysis. Handwritten env wins on overlapping modules/exports (`mergeHarvestUnderEnv`) |
+| `vite-plugin-nudo` | 0.x(0.4.9) | Minor may break |
 | `nudo-vscode` | Marketplace | Follow extension release notes; align bundled lsp before packaging (`packages/vscode/RELEASE_CHECKLIST.md`) |
 <!-- NUDO-VERSIONS:END -->
 
@@ -67,7 +67,7 @@ Rules:
 
 Each published package ships a `CHANGELOG.md` maintained by changesets. Breaking entries are prefixed `**BREAKING**:` and include a one-line migration.
 
-Example (`@nudojs/core` 2.0.0): evaluator subpath moved from `@nudojs/cli/evaluator` to `@nudojs/service/evaluator`.
+Example (`@nudojs/core` 1.0.0): evaluator subpath moved from `@nudojs/cli/evaluator` to `@nudojs/service/evaluator`.
 
 ```bash
 # after a minor bump on a 0.x package
@@ -79,7 +79,7 @@ npm i @nudojs/env@0.4.1
 
 The site documents **`main`** — the announcement bar shows which package versions that corresponds to (read from `packages/*/package.json` at build time), and the table above is generated from the same source. Per-package release history: [Releases](../releases.md) and each package's `CHANGELOG.md`.
 
-Versioned docs (`/docs/<version>/…` snapshots) are deliberately deferred until 1.0: today the CLI/service lines move together and a second copy would drift faster than it helps. Until then, pin package versions (table above) when you need bit-stable behaviour.
+Versioned docs (`/docs/<version>/…` snapshots) stay **off** for the 1.x line: `nudojs` / `@nudojs/service` / `@nudojs/parser` still move in lockstep, every snapshot would double the en/zh mirror plus the docs-as-code gates that keep it honest, and the announcement bar already answers "which versions does this page describe". The revisit trigger is concrete — the first 2.0, or the first release where the published CLI and service lines diverge. Until then, pin package versions (table above) when you need bit-stable behaviour.
 
 ## Changesets (contributors)
 
@@ -101,10 +101,10 @@ Pick packages + bump type, then write a short **who breaks / how to migrate** su
 
 ```jsonc
 // reproducible CI
-{ "dependencies": { "@nudojs/core": "2.1.0" } }
+{ "dependencies": { "@nudojs/core": "1.2.0" } }
 
 // 1.x: track compatible fixes
-{ "dependencies": { "@nudojs/core": "^2.1.0" } }
+{ "dependencies": { "@nudojs/core": "^1.2.0" } }
 
 // 0.x: only take patches automatically
 { "dependencies": { "@nudojs/env": "~0.4.0" } }

@@ -527,27 +527,7 @@ slug: /releases-history
   explain itself. The single production evaluation engine is now simply
   the **evaluator** (mechanism: transpile → `new Function` on Abs).
   
-  Breaking renames (no major bump — package has no external users yet):
-  
-  | Old | New |
-  |---|---|
-  | `tryBPathCall` / `tryBPathCallFull` | `tryEvalCall` / `tryEvalCallFull` |
-  | `tryRunBPath` | `tryRunEval` |
-  | `isBPathCapable` | `isEvalCapable` |
-  | `clearBPathCache` / `trimBPathCache` / `getBPathCacheSize` | `clearEvalCache` / `trimEvalCache` / `getEvalCacheSize` |
-  | `evictBPathCacheForFiles` | `evictEvalCacheForFiles` |
-  | `collectBPathDiagnostics` / `collectBPathReplacements` | `collectEvalDiagnostics` / `collectEvalReplacements` |
-  | `BPathRunResult` / `BPathDiagnostics` / `BPathFallback` / … | `EvalRunResult` / `EvalDiagnostics` / `EvalFallback` / … |
-  | `BCallRecord` / `setBCallCollector` / `getBCallCollector` | `EvalCallRecord` / `setEvalCallCollector` / `getEvalCallCollector` |
-  | `noteBPathFallback` / `setBPathFallbackCollector` | `noteEvalFallback` / `setEvalFallbackCollector` |
-  | `MAX_B_CALL_DEPTH` / `MAX_B_TOTAL_CALLS` / `MAX_B_TOTAL_FORKS` | `MAX_EVAL_CALL_DEPTH` / `MAX_EVAL_TOTAL_CALLS` / `MAX_EVAL_TOTAL_FORKS` |
-  | `maxBRuns` (sessionCache) | `maxEvalRuns` |
-  | `NUDO_CACHE_MAX_BRUNS` | `NUDO_CACHE_MAX_EVALRUNS` |
-  
-  Source files `bpath-run.ts` / `bpath-diagnostics.ts` / `bpath-*.test.ts`
-  are now `eval-run.ts` / `eval-diagnostics.ts` / `eval-*.test.ts`.
-  Docs no longer introduce a "B-path" term or explain why the engine is
-  called B. Historical CHANGELOG / releases-history keep the old name.
+  Renamed B-path engine to evaluator/eval — see the @nudojs/core table above.
 
 ### Patch Changes
 
@@ -1025,27 +1005,7 @@ slug: /releases-history
   explain itself. The single production evaluation engine is now simply
   the **evaluator** (mechanism: transpile → `new Function` on Abs).
   
-  Breaking renames (no major bump — package has no external users yet):
-  
-  | Old | New |
-  |---|---|
-  | `tryBPathCall` / `tryBPathCallFull` | `tryEvalCall` / `tryEvalCallFull` |
-  | `tryRunBPath` | `tryRunEval` |
-  | `isBPathCapable` | `isEvalCapable` |
-  | `clearBPathCache` / `trimBPathCache` / `getBPathCacheSize` | `clearEvalCache` / `trimEvalCache` / `getEvalCacheSize` |
-  | `evictBPathCacheForFiles` | `evictEvalCacheForFiles` |
-  | `collectBPathDiagnostics` / `collectBPathReplacements` | `collectEvalDiagnostics` / `collectEvalReplacements` |
-  | `BPathRunResult` / `BPathDiagnostics` / `BPathFallback` / … | `EvalRunResult` / `EvalDiagnostics` / `EvalFallback` / … |
-  | `BCallRecord` / `setBCallCollector` / `getBCallCollector` | `EvalCallRecord` / `setEvalCallCollector` / `getEvalCallCollector` |
-  | `noteBPathFallback` / `setBPathFallbackCollector` | `noteEvalFallback` / `setEvalFallbackCollector` |
-  | `MAX_B_CALL_DEPTH` / `MAX_B_TOTAL_CALLS` / `MAX_B_TOTAL_FORKS` | `MAX_EVAL_CALL_DEPTH` / `MAX_EVAL_TOTAL_CALLS` / `MAX_EVAL_TOTAL_FORKS` |
-  | `maxBRuns` (sessionCache) | `maxEvalRuns` |
-  | `NUDO_CACHE_MAX_BRUNS` | `NUDO_CACHE_MAX_EVALRUNS` |
-  
-  Source files `bpath-run.ts` / `bpath-diagnostics.ts` / `bpath-*.test.ts`
-  are now `eval-run.ts` / `eval-diagnostics.ts` / `eval-*.test.ts`.
-  Docs no longer introduce a "B-path" term or explain why the engine is
-  called B. Historical CHANGELOG / releases-history keep the old name.
+  Renamed B-path engine to evaluator/eval — see the @nudojs/core table above.
 - Updated dependencies [5ff4202]
 - Updated dependencies [5ff4202]
   - @nudojs/core@1.2.0
@@ -1519,27 +1479,7 @@ slug: /releases-history
   explain itself. The single production evaluation engine is now simply
   the **evaluator** (mechanism: transpile → `new Function` on Abs).
   
-  Breaking renames (no major bump — package has no external users yet):
-  
-  | Old | New |
-  |---|---|
-  | `tryBPathCall` / `tryBPathCallFull` | `tryEvalCall` / `tryEvalCallFull` |
-  | `tryRunBPath` | `tryRunEval` |
-  | `isBPathCapable` | `isEvalCapable` |
-  | `clearBPathCache` / `trimBPathCache` / `getBPathCacheSize` | `clearEvalCache` / `trimEvalCache` / `getEvalCacheSize` |
-  | `evictBPathCacheForFiles` | `evictEvalCacheForFiles` |
-  | `collectBPathDiagnostics` / `collectBPathReplacements` | `collectEvalDiagnostics` / `collectEvalReplacements` |
-  | `BPathRunResult` / `BPathDiagnostics` / `BPathFallback` / … | `EvalRunResult` / `EvalDiagnostics` / `EvalFallback` / … |
-  | `BCallRecord` / `setBCallCollector` / `getBCallCollector` | `EvalCallRecord` / `setEvalCallCollector` / `getEvalCallCollector` |
-  | `noteBPathFallback` / `setBPathFallbackCollector` | `noteEvalFallback` / `setEvalFallbackCollector` |
-  | `MAX_B_CALL_DEPTH` / `MAX_B_TOTAL_CALLS` / `MAX_B_TOTAL_FORKS` | `MAX_EVAL_CALL_DEPTH` / `MAX_EVAL_TOTAL_CALLS` / `MAX_EVAL_TOTAL_FORKS` |
-  | `maxBRuns` (sessionCache) | `maxEvalRuns` |
-  | `NUDO_CACHE_MAX_BRUNS` | `NUDO_CACHE_MAX_EVALRUNS` |
-  
-  Source files `bpath-run.ts` / `bpath-diagnostics.ts` / `bpath-*.test.ts`
-  are now `eval-run.ts` / `eval-diagnostics.ts` / `eval-*.test.ts`.
-  Docs no longer introduce a "B-path" term or explain why the engine is
-  called B. Historical CHANGELOG / releases-history keep the old name.
+  Renamed B-path engine to evaluator/eval — see the @nudojs/core table above.
 - Updated dependencies [5ff4202]
 - Updated dependencies [5ff4202]
   - @nudojs/core@1.2.0
@@ -2525,12 +2465,7 @@ slug: /releases-history
 
 </details>
 
-## nudo-vscode 0.3.13 {#pkg-vscode}
-
-## Unreleased
-
-<details>
-<summary>历史版本 (3)</summary>
+## nudo-vscode 0.3.7 {#pkg-vscode}
 
 ## 0.3.7
 
@@ -2538,6 +2473,9 @@ slug: /releases-history
 - Launch the bundled `server/server.js` (compiled `@nudojs/lsp` dist) over IPC instead of `tsx` + `packages/lsp/src/server.ts`. The vsix is self-contained — no monorepo sibling path or tsx loader required at runtime.
 - Commands: `nudo.selectCase` / `nudo.contract` / `nudo.contract.draft` / `nudo.contract.emit`.
 - Intermediate 0.3.1–0.3.6 were release-CI auto-bumps alongside the monorepo `@nudojs/*` line; see git `Version Packages` commits.
+
+<details>
+<summary>历史版本 (2)</summary>
 
 ## 0.3.0
 

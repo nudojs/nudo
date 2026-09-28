@@ -28,13 +28,7 @@ Nudo 是一道 **JS 工程门禁**：它通过执行代码计算 Abs 事实，�
 
 TypeScript 是类型化 JS/TS 的默认静态门禁。Nudo 只对 **JavaScript 优先**的包替代那道门——完整地图见 [Nudo vs TypeScript](./vs-typescript.md)。
 
-最锐利的产品边界写在 Microsoft 自己的 [TypeScript Design Goals](https://github.com/microsoft/TypeScript/wiki/TypeScript-Design-Goals) 里。其中的 non-goals 包括：
-
-> Apply a sound or "provably correct" type system. Instead, strike a balance between correctness and productivity.
-
-> Add or rely on run-time type information in programs, or emit different code based on the results of the type system. Instead, encourage programming patterns that do not require run-time metadata.
-
-Nudo 的 **throws** 轴（L2 入口 may-throw）与 **Pred** 轴（Abs 上的约束蕴含）恰好落在这些 non-goals 排除掉的地方：义务来自*运行时形态的行为*，而不只是可擦除的结构标注。那不是 TypeScript 的 bug——那是有意的范围选择。Nudo 取互补的范围。
+最锐利的产品边界写在 Microsoft 自己的 [TypeScript Design Goals](https://github.com/microsoft/TypeScript/wiki/TypeScript-Design-Goals) 里：其中两条 non-goals 明确不承诺健全性、也不依赖运行时类型信息——完整引文见 [Nudo vs TypeScript](./vs-typescript.md)。Nudo 的 **throws** 轴（L2 入口 may-throw）与 **Pred** 轴（Abs 上的约束蕴含）恰好落在这些 non-goals 排除掉的地方：义务来自*运行时形态的行为*，而不只是可擦除的结构标注。那不是 TypeScript 的 bug——那是有意的范围选择。Nudo 取互补的范围。
 
 另外：类型在 TypeScript 里会被擦除。Nudo 把 Abs 留作模型，并把 `.d.ts` 当作**单向、有损投影**（`nudo export --format dts`）。
 
@@ -72,7 +66,7 @@ Hegel（GitHub 上的 `JSMonk/hegel`）曾是概念上最近的邻居：**无标
 | 真理 | schema 对象 | Abs（`shape × term × pred × conf`） |
 | 编译期 | schema-as-type 辅助 | 完整 Abs 代数（`x>0` ⇒ `x+1>1`） |
 
-它们可以组合：**`nudo export` 把 Abs 投影进 schema 方言**（Zod 方言、Standard Schema、守卫），让边界代码与 CI 对同一批事实达成一致。投影是单向且有损的——Abs 仍是真理源。见[运行时生成](./runtime-generation.md)。
+它们可以组合：**`nudo export` 把 Abs 投影进 schema 方言**（Zod 方言、Standard Schema、守卫），让边界代码与 CI 对同一批事实达成一致。投影是单向且有损的——Abs 仍是真理源。见[Export](./export-ecosystem.md)。
 
 ArkType 的库文档在 **arktype.io**。（`arktype.org` 是一家无关公司——不要把读者指到那里。）
 
@@ -112,7 +106,7 @@ LLM 类型推断研究（例如 SCAM 2026）适合**混合**回路，而不是�
 
 - **[Nudo vs TypeScript](./vs-typescript.md)** —— Nudo 何时替代 `tsc`
 - **[为什么选 Nudo](../why-nudo.md)** —— 产品面
-- **[运行时生成](./runtime-generation.md)** —— `export` → Standard Schema / Zod / 守卫 / `.d.ts`
+- **[Export](./export-ecosystem.md)** —— `export` → Standard Schema / Zod / 守卫 / `.d.ts`
 - **[nudo check](./check.md)** —— L1 契约 + L2 入口 throws
 - **[边界](../concepts/limits.md)** —— 引擎不宣称什么
 - **[心智模型](../getting-started/mental-model.md)** —— 10 分钟

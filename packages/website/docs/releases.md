@@ -185,8 +185,13 @@ Older versions (15) → [Full release history](./releases-history.md#pkg-harvest
 
 Older versions (18) → [Full release history](./releases-history.md#pkg-vite-plugin)
 
-## nudo-vscode 0.3.13 {#pkg-vscode}
+## nudo-vscode 0.3.7 {#pkg-vscode}
 
-## Unreleased
+## 0.3.7
 
-Older versions (3) → [Full release history](./releases-history.md#pkg-vscode)
+- Current published line (Marketplace + Open VS X via release CI).
+- Launch the bundled `server/server.js` (compiled `@nudojs/lsp` dist) over IPC instead of `tsx` + `packages/lsp/src/server.ts`. The vsix is self-contained — no monorepo sibling path or tsx loader required at runtime.
+- Commands: `nudo.selectCase` / `nudo.contract` / `nudo.contract.draft` / `nudo.contract.emit`.
+- Intermediate 0.3.1–0.3.6 were release-CI auto-bumps alongside the monorepo `@nudojs/*` line; see git `Version Packages` commits.
+
+Older versions (2) → [Full release history](./releases-history.md#pkg-vscode)

@@ -34,7 +34,7 @@ export function scale(x) {
 }
 
 scale(5);
-scale(0); // 违反下方侧车前置条件
+scale(0); // violates the sidecar precondition below
 ```
 
 ```javascript verify-sidecar

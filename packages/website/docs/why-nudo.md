@@ -123,15 +123,7 @@ There is no need to choose “types first” or “logic first.” Both orders m
 
 Annotations describe **what was written**, and often only broadly. Nudo’s engine **executes** logic on abstract values and records precise facts from that execution. Call sites are evidence, not comments.
 
-| | Annotations / declared types | Nudo |
-|---|---|---|
-| Code understanding | Hover shows the broad type written in source | Per-variable derivation: intermediates, constraints, call-site truth |
-| Cognitive load | Value language and type language in parallel | JavaScript only; contracts are JS modules as well |
-| Code robustness | Structural assignability; often admits `0`; throws are invisible | Precise constraint implication + entry may-throw |
-| Precision | Often widens to `string` / `number` | Can retain literals, template structure, loop sums |
-| Source of truth | Source annotations | Abs from execution; projections are lossy and one-way |
-
-Comparison: [Nudo vs TypeScript](./guides/vs-typescript.md). Violation shapes: [Error faces](./guides/error-faces.md).
+The row-by-row contrast — observation grain, precision, source of truth — lives in [Nudo vs TypeScript](./guides/vs-typescript.md). Violation shapes: [Error faces](./guides/error-faces.md).
 
 ## Scope of fit
 

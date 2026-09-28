@@ -10,13 +10,31 @@ description: Nudo 实用示例 —— 调用点观察、侧车契约、字符串
 
 下方每个输出块都摘录自对上面代码的真实引擎运行（`nudo check` / `nudo test` 头部行与 assertions 摘要按标注省略）。仓库内 CI 钉住的套件在 [`docs/examples/`](https://github.com/nudojs/nudo/blob/main/docs/examples/README.md)（`pnpm run verify:examples`）；本指南按主题浏览同一引擎。
 
+套件的主题目录一览（退出码是命令矩阵钉住的期望 —— 负例行**故意**非零退出，报出的行才是演示内容）：
+
+| 主题目录 | 演示什么 | 代表文件 | 期望 exit code |
+|---|---|---|---|
+| [`constraints/`](https://github.com/nudojs/nudo/tree/main/docs/examples/constraints) | `@nudo:contract` × Pred：标量 / 形状 / 返回精化；`if` 不是精化 | [`set-delay.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/constraints/set-delay.js) · [`register.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/constraints/register.js) · [`return-contract.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/constraints/return-contract.js) | 负例 `1` · register / `test:cli` 为 `0` |
+| [`structure/`](https://github.com/nudojs/nudo/tree/main/docs/examples/structure) | Abs `leq`：赋值 / 传参结构（宽度子类型） | [`assign.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/structure/assign.js) · [`arg-structure.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/structure/arg-structure.js) | `1`（两行均为负例） |
+| [`vs-ts/`](https://github.com/nudojs/nudo/tree/main/docs/examples/vs-ts) | 同一逻辑与 TypeScript 并排对照 | [`constraints/nudo.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/vs-ts/constraints/nudo.js) · [`constraints/tsc.ts`](https://github.com/nudojs/nudo/blob/main/docs/examples/vs-ts/constraints/tsc.ts) · [`structure/nudo.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/vs-ts/structure/nudo.js) | nudo `1` · tsc `0` / `2` |
+| [`mini-repo/`](https://github.com/nudojs/nudo/tree/main/docs/examples/mini-repo) | 多文件集成（ESM + class + async） | [`user-service.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/mini-repo/user-service.js) · [`store.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/mini-repo/store.js) · [`validators.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/mini-repo/validators.js) | user-service `check` `1`（L2）· 其余 `0` |
+| [`algebra/`](https://github.com/nudojs/nudo/tree/main/docs/examples/algebra) | 类型即计算（spread / HOF / reduce / mixin） | [`0-add-intensional.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/0-add-intensional.js) · [`b-hof-map.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/b-hof-map.js) · [`c-reduce-sum.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/algebra/c-reduce-sum.js) | `0` |
+| [`interface-derivation/`](https://github.com/nudojs/nudo/tree/main/docs/examples/interface-derivation) | 契约分层推导（手写根 → 生成下游行） | [`lib.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/interface-derivation/lib.js) · [`lib.nudo.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/interface-derivation/lib.nudo.js) · [`add.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/interface-derivation/add.js) | `0` |
+| [`interface-draft/`](https://github.com/nudojs/nudo/tree/main/docs/examples/interface-draft) | 代码优先：从逻辑生成可审阅契约草稿 | [`greet.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/interface-draft/greet.js) · [`README.md`](https://github.com/nudojs/nudo/blob/main/docs/examples/interface-draft/README.md) | `0`（`contract --draft`） |
+| [`migrate/`](https://github.com/nudojs/nudo/tree/main/docs/examples/migrate) | 退役 tsc 样板包（单向 before/after 门） | [`before/src/math.ts`](https://github.com/nudojs/nudo/blob/main/docs/examples/migrate/before/src/math.ts) · [`after/src/math.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/migrate/after/src/math.js) · [`before/package.json`](https://github.com/nudojs/nudo/blob/main/docs/examples/migrate/before/package.json) | `0`（status / strip / verify / retire） |
+| [`errors/`](https://github.com/nudojs/nudo/tree/main/docs/examples/errors) | Top-10 错误面孔（Nudo 真实输出） | [`01-constraint-gt.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/errors/01-constraint-gt.js) · [`04-entry-throws.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/errors/04-entry-throws.js) · [`10-fix-path.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/errors/10-fix-path.js) | `1`（全部十例） |
+| [`retire-real/`](https://github.com/nudojs/nudo/tree/main/docs/examples/retire-real) | 真实包 `ms` 的 tsc 退役案例（非合成夹具） | [`before/src/age.ts`](https://github.com/nudojs/nudo/blob/main/docs/examples/retire-real/before/src/age.ts) · [`after/src/age.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/retire-real/after/src/age.js) | `0` |
+| [`retire-debug/`](https://github.com/nudojs/nudo/tree/main/docs/examples/retire-debug) | 真实包 `debug` 的 tsc 退役案例（visionmedia/debug） | [`before/src/logger.ts`](https://github.com/nudojs/nudo/blob/main/docs/examples/retire-debug/before/src/logger.ts) · [`after/src/logger.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/retire-debug/after/src/logger.js) | `0` |
+
+根目录的 [`l2-export-any.js`](https://github.com/nudojs/nudo/blob/main/docs/examples/l2-export-any.js) 在目录之外钉住 L2 export-`any` 门禁：`check` 退出 `1`，`--ignore-throws TypeError` 退出 `0`。一条命令验证整个矩阵：`pnpm run verify:examples`。
+
 在 [Playground](/playground) 试跑任意示例。
 
 ---
 
 ## 调用点与契约（产品路径）
 
-### 1. 调用点减法 —— 观察层观察
+### 1. 调用点减法 —— 观察层
 
 普通 JS + 调用点。无注解。`nudo check` 打印签名；调用点提供证据。
 
@@ -67,7 +85,7 @@ lineTotal(0, 2);
 ```
 
 ```javascript verify-sidecar
-// pricing.nudo.js —— 契约（同样是普通 JS）
+// pricing.nudo.js — contract (also plain JS)
 import { number, fn } from "@nudojs/core";
 
 export const lineTotal = fn(
@@ -269,6 +287,6 @@ export function scale(x) {
 | 指令 | 在本指南中的角色 |
 |-----------|-------------------|
 | 调用点 | 观察层证据（主要） |
-| `*.nudo.js` / `@nudo:contract` | 契约层契约（主要） |
+| `*.nudo.js` / `@nudo:contract` | 契约（主要） |
 | `@nudo:env` / `@nudo:mock` | 环境与边界 |
 | `@nudo:case` | 仅可选调试见证 |

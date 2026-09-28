@@ -9,7 +9,7 @@ description: Top Nudo error faces next to TypeScript — actual values, Preds, a
 
 Goal: **not “report more.” Report more true, with evidence, and with a next step.**
 
-Full CI-pinned suite: [`docs/examples/errors/`](https://github.com/nudojs/nudo/tree/main/docs/examples/errors) (`pnpm run verify:examples`). Deep Chinese write-up: [`docs/errors-vs-typescript.md`](https://github.com/nudojs/nudo/blob/main/docs/errors-vs-typescript.md).
+Full CI-pinned suite: [`docs/examples/errors/`](https://github.com/nudojs/nudo/tree/main/docs/examples/errors) (`pnpm run verify:examples`). Deep dive: [`docs/errors-vs-typescript.md`](https://github.com/nudojs/nudo/blob/main/docs/errors-vs-typescript.md) — an in-repo design note, written in Chinese; the link leaves this site for GitHub. That note is now also a site page: [Error catalog: Nudo vs tsc](./errors-vs-typescript.md) — ten scenarios, each with its tsc line and its real `nudo check` entry.
 
 ## The face every violation shares
 
@@ -86,7 +86,7 @@ signatures
   getName(user: any) => any  throws TypeError
 
 issues
-  [ERROR bad] bad: return value ⊭ @nudo:contract return positive  (nudo:constraint-violated)
+  [ERROR L32 bad] bad: return value ⊭ @nudo:contract return positive  (nudo:constraint-violated)
       actual:   0  #exact
       expected: return > 0
       → return a value satisfying > 0
@@ -95,8 +95,6 @@ issues
   [ERROR L24 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
       actual:   getName(user: any) => any    throws TypeError
       expected: entry total, or @nudo:throws / try-catch
-      → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
-      fix:  nudo contract --draft  (emit a sidecar draft you can edit)
 
   [ERROR L31 setDelay] setDelay[ms]: argument ⊭ precondition  (nudo:constraint-violated)
       actual:   0  #exact
@@ -117,7 +115,7 @@ issues
       fix:  nudo contract --draft  (emit a sidecar draft you can edit)
 ```
 
-Each issue is independent — fix them in any order. On GitHub Actions / GitLab, `nudo check` also emits inline annotations / Code Quality rows.
+Each issue is independent — fix them in any order. On GitHub Actions / GitLab, `nudo check` also emits inline annotations / Code Quality rows. The `getName` L2 entry-may-throw face is the one walked through step by step in [nudo check](./check.md).
 
 ## Top faces side by side
 

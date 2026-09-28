@@ -1,5 +1,5 @@
 ---
-description: "Syntax reference for all @nudo: directives — case, mock, pure, skip, sample, refine, import, env, mock-module, as, replace — with constraints and examples."
+description: "Syntax reference for all @nudo: directives — case, mock, pure, skip, sample, contract, throws, import, env, mock-module, as, replace — with constraints and examples."
 ---
 
 # Directives
@@ -39,7 +39,7 @@ Both forms are parsed identically — in particular, the single-line rule for mo
 
 ---
 
-## @nudo:case — Debug Witnesses
+## @nudo:case — Debug Witnesses {#nudocase--debug-witnesses}
 
 Cases are **debug witnesses**: concrete inputs Nudo executes the function with for scenario runs. They are **not** the contract product — obligations live in `*.nudo.js` sidecars / `@nudo:contract` (see [@nudo:contract](#nudocontract--source-contract)). `@nudo:case` remains supported for optional `nudo test` assertions and LSP scenario switching. Cases use concrete arguments or constraint builders.
 
@@ -322,6 +322,79 @@ function register(u) {
 
 ---
 
+## @nudo:throws — Declare Intentional Throws {#nudothrows--declare-intentional-throws}
+
+Declare that a function **intentionally throws**. L2 (`nudo:entry-may-throw`) requires entry/export functions to be total — instead of hiding a fail-fast, declare it. The declaration discharges L2 for the declared kinds only; the throw stays visible on the signature (declared, not removed).
+
+### Syntax
+
+```text
+@nudo:throws Error
+@nudo:throws Error, TypeError
+@nudo:throws *
+```
+
+- **kinds** — Comma-separated constructor names (spaces or `|` also separate). Declaring `Error` covers the whole Error family (`TypeError`, `RangeError`, `ReferenceError`, `SyntaxError`, `URIError`, `EvalError`, `AggregateError`) — `instanceof Error` semantics; a specific kind covers only itself.
+- **`*`** — Declares any throw; L2 is fully discharged.
+- Undeclared kinds still report — a declaration is precise, not a blanket ignore.
+
+The directive is function-scoped: it lives in the comment block immediately above the function, on the same scan path as `@nudo:contract`. Two other forms declare the same thing:
+
+- `@nudo:case "name" (args) !! throws` — a case-suffix declaration; bare `!! throws` declares any throw, `!! throws Error` declares by kind (`@nudo:case` stays debug-only).
+- Sidecar option — `fn(params, returns, { throws: "Error" })` on a same-name `*.nudo.js` binding.
+
+Declaring is not `--ignore-throws`: a declaration says "this fail-fast is intentional" and is honored per-kind; `--ignore-throws` is a migration-period blanket pass. When both are present, the declaration is applied first.
+
+### Example
+
+```javascript
+/**
+ * @nudo:throws RangeError
+ */
+export function clampPercent(n) {
+  if (n < 0 || n > 100) throw new RangeError("n must be within 0..100");
+  return n;
+}
+```
+
+**Inferred output (`nudo check`):**
+
+```text
+nudo check  clamp.js
+OK
+  0 error · 0 warning · 0 info · 1 fn
+
+signatures
+  clampPercent(n: any) => any  throws RangeError
+
+(no issues)
+```
+
+Without the declaration, the same function fails L2 — the `throw RangeError` is undigested:
+
+```text
+nudo check  clamp.js
+FAILED
+  1 error · 0 warning · 0 info · 1 fn
+
+signatures
+  clampPercent(n: any) => any  throws RangeError
+
+issues
+  [ERROR L1 clampPercent] clampPercent (export): may throw RangeError  (nudo:entry-may-throw)
+      actual:   clampPercent(n: any) => any    throws RangeError
+      expected: entry total, or @nudo:throws / try-catch
+      → throw RangeError → @nudo:throws RangeError / refine / guard / try-catch
+      fix:  nudo contract --draft  (emit a sidecar draft you can edit)
+
+docs
+  nudo:entry-may-throw → https://nudojs.github.io/nudo/docs/reference/diagnostics#nudo-entry-may-throw
+```
+
+`L1` in the issue header is the **line number**, not a contract layer — the diagnostic's layer is L2. For L2 semantics and the other discharge paths (refine narrowing, `try`/`catch` digestion, `--ignore-throws`), see [L2 — entry throws](../guides/check.md#l2--entry-throws).
+
+---
+
 ## @nudo:import — Constraint Templates
 
 Import constraint templates from a `*.nudo.js` module for use with `@nudo:contract`. This is a **file-level** directive using triple-slash comments.
@@ -545,6 +618,7 @@ const result = a + b;
 | `@nudo:skip` | `[returnsExpr]` | Skip evaluation, use existing type info |
 | `@nudo:sample` | `N` | Reserved no-op (parsed, not consumed) |
 | `@nudo:contract` | `param constraint` / `return constraint` | In-source contract (main path is the `*.nudo.js` sidecar auto-binding) |
+| `@nudo:throws` | `Error, TypeError` or `*` | Declare intentional throws — discharges L2 `nudo:entry-may-throw` for the declared kinds |
 | `@nudo:import` | `{ name } from "spec"` (file-level `///`) | Import `*.nudo.js` constraint templates for `@nudo:contract` |
 | `@nudo:env` | `name1, name2` (file-level `///`) | Declare runtime environment APIs |
 | `@nudo:mock-module` | `"module" from "path"` (file-level `///`) | Replace imported modules with mocks |

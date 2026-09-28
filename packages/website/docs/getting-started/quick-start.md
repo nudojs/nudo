@@ -4,7 +4,7 @@ description: "Gate signatures and cases on a plain JavaScript file — npx nudoj
 
 # Quick Start
 
-**You'll leave with:** signatures from `nudo check`, cases from `nudo test`, a sidecar contract, and a `nudo check` failure you can read.
+**You'll leave with:** signatures from `nudo check`, cases from `nudo test`, a sidecar contract, a `nudo check` failure you can read — and the green re-run that closes the loop.
 
 Prefer the browser? Open the [Playground](/playground).
 
@@ -46,6 +46,8 @@ signatures
 
 (no issues)
 ```
+
+That `number | string` is honest JavaScript, not a bug: an unconstrained (`any`) operand to `+` can drive numeric addition *or* string concatenation (`"7" + 1`), so Nudo keeps both branches. Constrain `x` — a sidecar contract or call-site evidence — and the union collapses to `number`. See [Language semantics](../concepts/semantics.md).
 
 Optional debug cases (`nudo test` — not the product gate):
 
@@ -106,6 +108,37 @@ The violation is reported against the call site. Fix the call (or widen the cont
 
 `if` guards are **not** refinements. Explicit contracts come from sidecars / `@nudo:contract`. Without them, L2 still gates undigested may-throw on exports (entry params are `any`).
 
+## 5. Close the loop: green, CI, IDE
+
+Fix the violating call — any value satisfying `x > 0`:
+
+```js
+scale(2); // satisfies the sidecar — x must be > 0
+```
+
+Re-run the gate:
+
+```bash
+npx nudojs check calc.js
+```
+
+```text
+nudo check  calc.js
+OK
+  0 error · 0 warning · 0 info · 2 fn
+
+signatures
+  scale(x: number) => number
+  formatName(first: any, last: any) => string
+
+(no issues)
+```
+
+Green — and signatures still print; only the `OK` / `FAILED` line and the exit code (`0`) tell you the gate passed. Two places left to close the loop:
+
+- **CI** — wire `nudo check` into GitHub Actions: [CI integration → GitHub Actions](../guides/check.md#github-actions)
+- **IDE** — hover, inlay hints, and case switching in VS Code: [VS Code guide](../guides/vscode.md)
+
 ## Options
 
 - **`.d.ts` projection** — ecosystem bridge (one-way, lossy; Abs is the truth):
@@ -155,6 +188,7 @@ Prefer concrete values or constraint builders in cases.
 ## Next
 
 - [Mental model](./mental-model.md)
+- [Troubleshooting](./troubleshooting.md) — first-hour FAQ
 - [How to use these docs](../intro.md)
 - [Error faces](../guides/error-faces.md) — what violations look like
 - [nudo check](../guides/check.md)

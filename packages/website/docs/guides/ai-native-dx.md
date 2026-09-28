@@ -42,7 +42,7 @@ Nudge for agents: **do not trust declarations. Run `nudo check --json`. The `act
 }
 ```
 
-Few-shot wrong→right pairs live in [Agents](../reference/agents) (and `packages/lsp/agent-skill/SKILL.md`). Paste block:
+Few-shot wrong→right pairs live in [Agents](../reference/agents.md) (and `packages/lsp/agent-skill/SKILL.md`). Paste block:
 
 ```text
 Read https://nudojs.github.io/nudo/agents.md and set up Nudo in this project.
@@ -137,7 +137,7 @@ npx nudojs contract --draft src/app.js --json    # draftSource + unified diff
 
 ## Next
 
-- [Agents](../reference/agents) — rules + few-shot fix pairs
-- [Error faces](./error-faces) — human-readable `actual ⊭ expected`
-- [Mental model](../getting-started/mental-model)
-- [Migrate from TypeScript](./migrating-from-typescript) — retire tsc
+- [Agents](../reference/agents.md) — rules + few-shot fix pairs
+- [Error faces](./error-faces.md) — human-readable `actual ⊭ expected`
+- [Mental model](../getting-started/mental-model.md)
+- [Migrate from TypeScript](./migrating-from-typescript.md) — retire tsc

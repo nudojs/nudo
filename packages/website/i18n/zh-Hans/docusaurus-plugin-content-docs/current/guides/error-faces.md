@@ -9,7 +9,9 @@ description: Nudo 与 TypeScript 的错误对照 —— 真值、Pred、下一�
 
 目标：**不是「报得更多」，是「报得更真、带证据、带下一步」。**
 
-完整 CI 钉住套件：[`docs/examples/errors/`](https://github.com/nudojs/nudo/tree/main/docs/examples/errors)（`pnpm run verify:examples`）。仓库深文：[`docs/errors-vs-typescript.md`](https://github.com/nudojs/nudo/blob/main/docs/errors-vs-typescript.md)。
+完整 CI 钉住套件：[`docs/examples/errors/`](https://github.com/nudojs/nudo/tree/main/docs/examples/errors)（`pnpm run verify:examples`）。
+
+> **深读（中文）：** [`docs/errors-vs-typescript.md`](https://github.com/nudojs/nudo/blob/main/docs/errors-vs-typescript.md) —— 本仓库内的设计笔记，逐例展开每张错误脸的 TS 对照与修法；链接离开文档站，前往 GitHub。这份笔记现在也是站点页面：[错误信息对照：Nudo vs tsc](./errors-vs-typescript.md) —— 十个场景，各带一行 tsc 对照与真实的 `nudo check` 条目。
 
 ## 每条违例共有的脸
 
@@ -86,7 +88,7 @@ signatures
   getName(user: any) => any  throws TypeError
 
 issues
-  [ERROR bad] bad: return value ⊭ @nudo:contract return positive  (nudo:constraint-violated)
+  [ERROR L32 bad] bad: return value ⊭ @nudo:contract return positive  (nudo:constraint-violated)
       actual:   0  #exact
       expected: return > 0
       → return a value satisfying > 0
@@ -95,8 +97,6 @@ issues
   [ERROR L24 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
       actual:   getName(user: any) => any    throws TypeError
       expected: entry total, or @nudo:throws / try-catch
-      → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
-      fix:  nudo contract --draft  (emit a sidecar draft you can edit)
 
   [ERROR L31 setDelay] setDelay[ms]: argument ⊭ precondition  (nudo:constraint-violated)
       actual:   0  #exact
@@ -117,7 +117,7 @@ issues
       fix:  nudo contract --draft  (emit a sidecar draft you can edit)
 ```
 
-每条 issue 独立 —— 按任意顺序修。在 GitHub Actions / GitLab 上，`nudo check` 还会出内联注解 / Code Quality 行。
+每条 issue 独立 —— 按任意顺序修。在 GitHub Actions / GitLab 上，`nudo check` 还会出内联注解 / Code Quality 行。`getName` 的 L2 入口 may-throw 面就是在 [nudo check](./check.md) 中逐步走读的那张脸。
 
 ## 对照表
 

@@ -18,6 +18,7 @@ Primary gate: npx nudojs check <path>
 Contracts are *.nudo.js / @nudo:contract
 Do not invent body-AST obligations. @nudo:case is debug-only.
 Entry params print as any; unknown = inference failed.
+Leaving tsc: npx nudojs migrate status|strip|verify|retire (exit is retire)
 ```
 
 ## Non-negotiable rules (full set on the canonical page)

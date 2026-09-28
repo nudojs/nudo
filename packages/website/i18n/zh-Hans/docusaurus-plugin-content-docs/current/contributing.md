@@ -10,7 +10,7 @@ description: 搭建 Nudo monorepo 开发环境并参与贡献——项目结构�
 
 ## 环境要求
 
-- **Node.js** 18 或更高（CI 使用 Node 24）
+- **Node.js** >= 20（CI 使用 Node 24）
 - **pnpm** 9.1.0（由 `packageManager` 固定；后续 9.x 亦可）
 
 ```bash
@@ -38,9 +38,10 @@ pnpm run build
 |---------|-------------|
 | `@nudojs/core` | 类型系统（Abs 代数）、外延渲染（format）、Environment |
 | `@nudojs/parser` | Babel 解析、指令提取、`parseCaseArgExpr` |
-| `@nudojs/cli` | 仅 CLI 命令（`check`、`test`、`contract`、`export`、`health`） |
-| `@nudojs/service` | 高层 API：`analyzeFile`、`getTypeAtPosition`、`getCompletionsAtPosition` |
-| `@nudojs/lsp` | Language Server Protocol 实现，含面向 AI agent 的 executeCommand/自定义请求（见 [Agent 集成指南](./guides/agent-integration.md)） |
+| `nudojs` | `nudo` CLI 本体（`check` / `test` / `contract` / `export` / `health`，外加单向 `migrate` TypeScript 退休门 `status` \| `strip` \| `verify` \| `retire`） |
+| `@nudojs/cli` | 已弃用的转发 stub（→ `nudojs`，仅供迁移） |
+| `@nudojs/service` | 分析核心：analyzer 编排（`analyzeFile`）、Abs-native 求值器、会话缓存；emit 产物在 `@nudojs/service/emit`（interface/dts/schema/guard/case） |
+| `@nudojs/lsp` | Language Server Protocol 实现——hover/补全（`getTypeAtPosition`、`getCompletionsAtPosition`）与面向 AI agent 的 executeCommand/自定义请求（见 [Agent 集成指南](./guides/agent-integration.md)） |
 | `@nudojs/harvester` | 把 `@types/*.d.ts` 转为 Abs env 定义，服务 env 包编写与分析自动补洞（不是产品 CLI 动词） |
 | `@nudojs/env` | 内置环境类型定义（`/// @nudo:env es\|web\|node`，子路径导出 `/es` `/web` `/node`） |
 | `vite-plugin-nudo` | 开发阶段的类型推断 Vite 插件 |

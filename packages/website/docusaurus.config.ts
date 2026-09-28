@@ -6,6 +6,7 @@ import type * as Preset from "@docusaurus/preset-classic";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { readFileSync } from "node:fs";
+import { remarkPairSidecarPlayground } from "./src/plugins/remark-pair-sidecar";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const websiteRoot = resolve(dirname(fileURLToPath(import.meta.url)));
@@ -47,6 +48,7 @@ const config: Config = {
   title: "Nudo",
   tagline:
     "Welcome back to JavaScript — Your JS stays JS: observe intermediates, enforce contracts sharper than types.",
+  // og:image 已由 themeConfig.image 覆盖；Twitter 卡片类型在 themeConfig.metadata（Config 顶层无此字段）
   favicon: "img/favicon.svg",
 
   url: "https://nudojs.github.io",
@@ -78,6 +80,10 @@ const config: Config = {
           editUrl: "https://github.com/nudojs/nudo/tree/main/packages/website/",
           showLastUpdateTime: true,
           showLastUpdateAuthor: true,
+          // ```js verify-sidecar``` 围栏配对最近的前置 ```js verify``` 主码
+          // （hProperties → CodeBlock playgroundMain prop），让契约围栏
+          // 也能拿到双栏 Playground 链接。
+          remarkPlugins: [remarkPairSidecarPlayground],
         },
         blog: {
           showReadingTime: true,
@@ -138,6 +144,10 @@ const config: Config = {
             from: "/docs/guides/control-flow-narrowing",
           },
           { to: "/docs/concepts/semantics", from: "/docs/guides/semantics" },
+          {
+            to: "/docs/guides/export-ecosystem",
+            from: "/docs/guides/runtime-generation",
+          },
           {
             to: "/docs/guides/agent-integration",
             from: "/docs/guides/mcp-server",
@@ -298,7 +308,9 @@ const config: Config = {
   ],
 
   themeConfig: {
-    image: "img/nudo-og.png",
+    image: "img/nudo-og.jpg",
+    // og:image 已由上面的 image 覆盖，这里只补 Twitter 卡片类型（不造 handle）
+    metadata: [{ name: "twitter:card", content: "summary_large_image" }],
     announcementBar: {
       id: "docs-track",
       content: DOCS_TRACK,
@@ -315,6 +327,12 @@ const config: Config = {
           sidebarId: "docsSidebar",
           position: "left",
           label: "Docs",
+        },
+        {
+          // Reference 分类的 generated-index 页（sidebars.ts 无自定义 slug）
+          to: "/docs/category/reference",
+          label: "Reference",
+          position: "left",
         },
         {
           to: "/playground",
@@ -344,7 +362,7 @@ const config: Config = {
           title: "Start",
           items: [
             { label: "Playground", to: "/playground" },
-            { label: "Getting Started", to: "/docs/intro" },
+            { label: "Introduction", to: "/docs/intro" },
             { label: "Quick Start", to: "/docs/getting-started/quick-start" },
           ],
         },
