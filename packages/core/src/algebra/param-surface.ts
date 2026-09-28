@@ -80,8 +80,20 @@ function collectPatternNames(
             : undefined;
       const v = (prop.value ?? prop.key) as AstParam | undefined;
       if (!v) continue;
-      // rename（{a: b}）：契约面同时接受属性键 a 与绑定名 b
-      if (keyName && v.type === "Identifier" && v.name && keyName !== v.name) {
+      // rename（{a: b} / {a: b = 1}）：契约面同时接受属性键 a 与绑定名 b
+      // AssignmentPattern 的 left 是绑定名，同样要建立 propKey[b]=a
+      const renameTarget =
+        v.type === "Identifier"
+          ? v
+          : v.type === "AssignmentPattern"
+            ? (v.left as AstParam | undefined)
+            : undefined;
+      if (
+        keyName &&
+        renameTarget?.type === "Identifier" &&
+        renameTarget.name &&
+        keyName !== renameTarget.name
+      ) {
         if (depth === 0) top.push(keyName);
         else nested.push(keyName);
         if (propKey && depth === 0) propKey[keyName] = keyName;
@@ -94,7 +106,16 @@ function collectPatternNames(
           if (propKey && keyName) propKey[v.name] = keyName;
         } else nested.push(v.name);
       } else if (v.type === "AssignmentPattern") {
-        collectPatternNames(v, top, nested, depth, propKey);
+        const left = v.left as AstParam | undefined;
+        // `{a: b = 1}`：b 是顶层绑定，propKey[b]=a；`{a = 1}` 时 left.name===keyName
+        if (left?.type === "Identifier" && left.name) {
+          if (depth === 0) {
+            top.push(left.name);
+            if (propKey && keyName) propKey[left.name] = keyName;
+          } else nested.push(left.name);
+        } else {
+          collectPatternNames(v, top, nested, depth, propKey);
+        }
       } else {
         collectPatternNames(v, top, nested, depth + 1, propKey);
       }
