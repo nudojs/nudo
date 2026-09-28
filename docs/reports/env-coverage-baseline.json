@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-28T14:58:52.862Z",
+  "generatedAt": "2026-09-28T16:06:14.581Z",
   "note": "Extensional env coverage baseline — resolution rate is NOT a soundness/completeness claim. See design/limitations.md §2 and website semantics mock-boundary section.",
   "budgets": {
     "harvestNodeTypes": {
@@ -906,13 +906,13 @@
   },
   "esProbes": {
     "counts": {
-      "resolved": 4,
-      "unknown": 0,
+      "resolved": 3,
+      "unknown": 1,
       "mock-required": 0
     },
     "leaf": {
       "clean": 1,
-      "mentionsUnknown": 3
+      "mentionsUnknown": 2
     },
     "total": 4,
     "results": [
@@ -922,10 +922,8 @@
           "Array",
           "isArray"
         ],
-        "status": "resolved",
-        "format": "(unknown) => boolean",
-        "leaf": "mentions-unknown",
-        "reason": "present in env; signature-level — format still mentions unknown/any leaves"
+        "status": "unknown",
+        "reason": "missing from env globals"
       },
       {
         "id": "JSON.stringify",
@@ -955,7 +953,7 @@
           "Promise"
         ],
         "status": "resolved",
-        "format": "{ resolve: (unknown) => promise<unknown>, reject: (unknown) => promise<never>, all: (promise<unknown>[]) => promise<unknown[]>, allSettled: (promise<unknown>[]) => promise<unknown[]>, race: (promise<unknown>[]) => promise<unknown>, any: (promise<unknown>[]) => promise<unknown> }",
+        "format": "(unknown) => promise<unknown>",
         "leaf": "mentions-unknown",
         "reason": "present in env; signature-level — format still mentions unknown/any leaves"
       }

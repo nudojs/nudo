@@ -9,7 +9,7 @@ import { objOf, joinAbs, isObj, canonicalArrayIndex, getSlot, setSlot, propertyK
 import { $get, $set, $lit, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary, lookupObjAccessor, fillTuple, clearStaleTermPred } from "./runtime.ts";
 import { $call } from "./call.ts";
 import { getFnImpl, absFunction } from "../abs-fn.ts";
-import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, extStateOf, getPropFlags, isEnumerableView, tryMakeRegexAbs, makeArrayCtorAbs, assignSourceSlots, isSymbolAbs, stringOfSymbol, evalPromiseCtor, evalPromiseMethod, builtinCtorNameOf } from "../builtins.ts";
+import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, evalBuiltinNew, extStateOf, getPropFlags, isEnumerableView, tryMakeRegexAbs, makeArrayCtorAbs, assignSourceSlots, isSymbolAbs, stringOfSymbol, evalPromiseCtor, evalPromiseMethod, builtinCtorNameOf } from "../builtins.ts";
 import { arrayJoinToString } from "../builtins/array.ts";
 import { isMapAbs, isSetAbs, makeMapAbs, makeSetAbs, collectionElementJoin, ctorArgDefinitelyInvalid } from "../collections.ts";
 import { registerMatchIter } from "./match-iter.ts";
@@ -136,18 +136,18 @@ function findCtor(
 
 /** new C(...) → 空 brand 实例 + ctor 写字段；非类构造走 impl/$call */
 export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Abs {
-  // Abs 侧内建构造器（builtinCtorAbs / env fn）：按名派发 Error/Promise
+  // Abs 侧内建构造器（builtinCtorAbs / env fn）：按名派发。
+  // dual-facet 全局（Array/Date/Promise/Number…）经 env 遮蔽后 cls 是 Abs，
+  // 必须走 evalBuiltinNew 按名构造，否则 $call 回退对无 apply 的 obj 折 unknown。
   if (cls && typeof cls === "object" && "shape" in (cls as object)) {
     const cs = (cls as Abs).shape;
     const ctorName =
       cs.k === "brand"
         ? cs.name
         : builtinCtorNameOf(cls) ?? (cs.k === "fn" ? (cs.name ?? undefined) : undefined);
-    if (ctorName && isErrorCtorName(ctorName)) {
-      return errorBrandAbs(ctorName, args);
-    }
-    if (ctorName === "Promise") {
-      return evalPromiseCtor(args);
+    if (ctorName) {
+      const built = evalBuiltinNew(ctorName, args);
+      if (built !== undefined) return built;
     }
   }
   // JS 内建构造器（Error/Date/URL…）：直接 brand，避免 $call 对非 Abs 炸掉

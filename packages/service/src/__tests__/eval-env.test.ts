@@ -77,4 +77,51 @@ loadUser(42);
     // mock 覆盖后 fetch 不再是 builtin-unknown
     expect(result.diagnostics.some((d) => d.code === "nudo:builtin-unknown")).toBe(false);
   });
+
+  // issue #58：nudo.env 遮蔽宿主全局后，Number(x) / new Array(n) 曾折 unknown。
+  it("env-shadowed Number(x) and new Array(n) stay precise", () => {
+    clearEvalCache();
+    const source = `/// @nudo:env es
+
+/**
+ * @nudo:case "n" ("42")
+ */
+export function n1(s) { return Number(s); }
+
+/**
+ * @nudo:case "n" (3)
+ */
+export function n2(n) { return new Array(n).length; }
+
+/**
+ * @nudo:case "n" (1)
+ */
+export function n3(n) { return Array.isArray(new Array(n)); }
+
+/**
+ * @nudo:case "x" (1.5)
+ */
+export function n4(x) { return Number.isInteger(x); }
+`;
+    const r1 = tryEvalCall(source, "/test/issue58.js", "n1", [$lit("42")], {
+      envNames: ["es"],
+    });
+    expect(formatShape(r1!)).toBe("42");
+
+    const r2 = tryEvalCall(source, "/test/issue58.js", "n2", [$lit(3)], {
+      envNames: ["es"],
+    });
+    expect(formatShape(r2!)).toBe("3");
+
+    const r3 = tryEvalCall(source, "/test/issue58.js", "n3", [$lit(1)], {
+      envNames: ["es"],
+    });
+    // new Array(1) 是 tuple → Array.isArray → true
+    expect(formatShape(r3!)).toBe("true");
+
+    const r4 = tryEvalCall(source, "/test/issue58.js", "n4", [$lit(1.5)], {
+      envNames: ["es"],
+    });
+    expect(formatShape(r4!)).toBe("false");
+  });
 });

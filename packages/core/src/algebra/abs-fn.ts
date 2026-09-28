@@ -83,10 +83,24 @@ export function pureFnNameOf(fn: unknown): string | undefined {
 export function absFunction(
   params: string[],
   impl: Omit<AbsFnImpl, "params">,
+  opts?: {
+    name?: string;
+    paramTypes?: Abs[];
+    returnType?: Abs;
+    slots?: Record<string, { value: Abs; optional?: boolean; readonly?: boolean }>;
+    conf?: Confidence;
+  },
 ): Abs {
   const a: Abs = {
-    shape: { k: "fn", params },
-    conf: "exact",
+    shape: {
+      k: "fn",
+      params,
+      ...(opts?.name ? { name: opts.name } : {}),
+      ...(opts?.paramTypes ? { paramTypes: opts.paramTypes } : {}),
+      ...(opts?.returnType ? { returnType: opts.returnType } : {}),
+      ...(opts?.slots ? { slots: opts.slots } : {}),
+    },
+    conf: opts?.conf ?? "exact",
   };
   attachFnImpl(a, { params, ...impl });
   return a;
@@ -146,7 +160,13 @@ function shapeStableKey(s: Shape, seen: Set<object>): string {
       const pts = (s.paramTypes ?? []).map((t) => absStableKey(t, seen)).join(",");
       const ret = s.returnType ? absStableKey(s.returnType, seen) : "?";
       const name = s.name ? `#${s.name}` : "";
-      return `fn${name}(${s.params.join(",")}|${pts})=>${ret}`;
+      const slots = s.slots
+        ? `{${Object.keys(s.slots)
+            .sort()
+            .map((k) => `${k}:${absStableKey(s.slots![k]!.value, seen)}`)
+            .join(",")}}`
+        : "";
+      return `fn${name}(${s.params.join(",")}|${pts})=>${ret}${slots}`;
     }
     case "sum":
       return `sum(${s.members.map((m) => absStableKey(m, seen)).join("|")})`;

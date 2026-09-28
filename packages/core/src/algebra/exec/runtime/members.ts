@@ -174,6 +174,9 @@ export function $in(key: Abs, o: Abs): Abs {
     return boolLit(OBJECT_PROTO_NAMES.has(keyStr));
   }
   if (o.shape.k === "fn") {
+    if (o.shape.slots && getSlot(o.shape.slots, keyStr) && !o.shape.slots[keyStr]!.optional) {
+      return boolLit(true);
+    }
     return boolLit(OBJECT_PROTO_NAMES.has(keyStr) || FUNCTION_PROTO_NAMES.has(keyStr));
   }
   // eff：Promise/Generator 原型方法
