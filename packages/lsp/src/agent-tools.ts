@@ -60,8 +60,13 @@ import {
 import type { CheckJson } from "@nudojs/core";
 import { collectAbsInlays } from "@nudojs/core/internal";
 import { lspLoadModule } from "./validation.ts";
+import {
+  injectBindings,
+  typeExprToDirective,
+  type TypeBinding,
+} from "@nudojs/service";
 
-export type TypeBinding = { name: string; type: string };
+export { injectBindings, typeExprToDirective, type TypeBinding };
 
 /** MCP-compatible tool result shape — keeps bridge layers zero-rewrite. */
 export type AgentToolResult = { content: [{ type: "text"; text: string }]; isError?: boolean };
@@ -169,135 +174,6 @@ export function assertEmitTargetAllowed(
     return `Error: '${filePath}' is outside allowed roots (${roots.join(", ")})`;
   }
   return undefined;
-}
-
-/** Split a type expression on top-level `|`, respecting nesting and strings. */
-function splitTopLevelUnion(expr: string): string[] {
-  const members: string[] = [];
-  let depth = 0;
-  let inString: string | null = null;
-  let start = 0;
-  for (let i = 0; i < expr.length; i++) {
-    const ch = expr[i];
-    if (inString) {
-      if (ch === inString && expr[i - 1] !== "\\") inString = null;
-      continue;
-    }
-    if (ch === '"' || ch === "'") {
-      inString = ch;
-      continue;
-    }
-    if (ch === "(" || ch === "[" || ch === "{") {
-      depth++;
-      continue;
-    }
-    if (ch === ")" || ch === "]" || ch === "}") {
-      depth--;
-      continue;
-    }
-    if (ch === "|" && depth === 0) {
-      members.push(expr.slice(start, i));
-      start = i + 1;
-    }
-  }
-  members.push(expr.slice(start));
-  return members.map((m) => m.trim()).filter(Boolean);
-}
-
-/**
- * Translate an agent-facing type expression into `@nudo:as` directive syntax
- * (parser's parseCaseArgExpr language: constraint builders + concrete literals).
- * Bare primitives become `number()` / `string()` / `boolean()`; unions become
- * `union(...)`; structural forms pass through untouched.
- */
-export function typeExprToDirective(expr: string): string {
-  const members = splitTopLevelUnion(expr);
-  if (members.length === 0) return "any()";
-  const mapped = members.map((m) => {
-    if (m.startsWith("T.")) return "any()"; // legacy T.* removed
-    if (m === "number" || m === "string" || m === "boolean") return `${m}()`;
-    if (m === "unknown" || m === "any") return "any()";
-    if (m === "null" || m === "undefined" || m === "true" || m === "false") return m;
-    if (/^-?\d+(\.\d+)?$/.test(m)) return m;
-    if (/^["']/.test(m)) return m;
-    if (/[([{]|=>/.test(m) && !m.startsWith("T.")) return m;
-    if (/^(number|string|boolean|any|array|shape|lit|union|fn)\s*\(/.test(m)) return m;
-    return "any()";
-  });
-  return mapped.length === 1 ? mapped[0] : `union(${mapped.join(", ")})`;
-}
-
-/** Collect the names a top-level statement declares (descends into exports). */
-function declaredNames(stmt: any, out: Set<string>): void {
-  if (stmt.type === "FunctionDeclaration" && stmt.id) {
-    out.add(stmt.id.name);
-  } else if (stmt.type === "ClassDeclaration" && stmt.id) {
-    out.add(stmt.id.name);
-  } else if (stmt.type === "VariableDeclaration") {
-    for (const decl of stmt.declarations) {
-      if (decl.id?.type === "Identifier") out.add(decl.id.name);
-    }
-  } else if (stmt.type === "ExportNamedDeclaration" && stmt.declaration) {
-    declaredNames(stmt.declaration, out);
-  }
-}
-
-/**
- * Inject each binding as a `// @nudo:as <type>` line above the statement that
- * declares its name. The comment is placed above any existing leading
- * comments, so the assumption takes priority over source-level directives
- * (only the first `as` on a statement wins — hence one binding per statement;
- * siblings of multi-declarator statements share the override, a known
- * limitation of statement-granular `as`).
- */
-export function injectBindings(
-  source: string,
-  bindings: TypeBinding[],
-): { source: string; applied: string[]; unapplied: string[] } {
-  const applied: string[] = [];
-  const unapplied: string[] = [];
-  if (bindings.length === 0) return { source, applied, unapplied };
-
-  const ast = parse(source);
-  const declLines = new Map<string, number>();
-  for (const stmt of ast.program.body as any[]) {
-    const names = new Set<string>();
-    declaredNames(stmt, names);
-    if (names.size === 0 || !stmt.loc) continue;
-    // anchor above existing leading comments so the injected `as` wins
-    const anchorLine = stmt.leadingComments?.[0]?.loc?.start.line ?? stmt.loc.start.line;
-    for (const name of names) {
-      if (!declLines.has(name)) declLines.set(name, anchorLine);
-    }
-  }
-
-  const byLine = new Map<number, TypeBinding[]>();
-  for (const binding of bindings) {
-    const line = declLines.get(binding.name);
-    if (line === undefined) {
-      unapplied.push(binding.name);
-      continue;
-    }
-    const group = byLine.get(line) ?? [];
-    group.push(binding);
-    byLine.set(line, group);
-  }
-
-  const insertions: Array<{ index: number; text: string }> = [];
-  for (const [line, group] of byLine) {
-    insertions.push({
-      index: line - 1,
-      text: `// @nudo:as ${typeExprToDirective(group[0].type)}`,
-    });
-    applied.push(`${group[0].name}: ${group[0].type}`);
-    for (const shadowed of group.slice(1)) unapplied.push(shadowed.name);
-  }
-  // bottom-up so earlier indices stay valid
-  insertions.sort((a, b) => b.index - a.index);
-  const lines = source.split("\n");
-  for (const ins of insertions) lines.splice(ins.index, 0, ins.text);
-
-  return { source: lines.join("\n"), applied, unapplied };
 }
 
 /**

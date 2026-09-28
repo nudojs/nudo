@@ -6,12 +6,24 @@ import { parse } from "@nudojs/parser";
 
 export type TypeBinding = { name: string; type: string };
 
+/**
+ * 顶层 `|` 切分；字符串内不切。与 parseCaseArgExpr 一致：引号内 `\` 不是转义。
+ */
 function splitTopLevelUnion(expr: string): string[] {
   const members: string[] = [];
   let start = 0;
   let depth = 0;
+  let inString: string | null = null;
   for (let i = 0; i < expr.length; i++) {
-    const c = expr[i];
+    const c = expr[i]!;
+    if (inString) {
+      if (c === inString) inString = null;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      inString = c;
+      continue;
+    }
     if (c === "(" || c === "[" || c === "{") depth++;
     else if (c === ")" || c === "]" || c === "}") depth--;
     else if (c === "|" && depth === 0) {
@@ -53,6 +65,77 @@ function declaredNames(stmt: any, out: Set<string>): void {
   }
 }
 
+type AstNode = {
+  type: string;
+  start?: number | null;
+  end?: number | null;
+  loc?: { start: { line: number } } | null;
+  leadingComments?: Array<{ loc?: { start: { line: number } } | null }> | null;
+  declarations?: AstNode[];
+  declaration?: AstNode | null;
+  id?: { type: string; name?: string; start?: number; end?: number } | null;
+  init?: { start?: number | null; end?: number | null } | null;
+  kind?: string;
+  program?: { body: AstNode[] };
+};
+
+/**
+ * `@nudo:as` 是语句级 init 覆盖（见 transpile matchAsOverride）。
+ * 多声明符 `const a=1, b=2` 若不拆开，一个 as 会盖住全部 Identifier init。
+ * 在注入前把「含绑定名的多声明符声明」拆成单声明符语句。
+ */
+function splitMultiDeclarators(source: string, bound: Set<string>): string {
+  if (bound.size === 0) return source;
+  let ast: AstNode;
+  try {
+    ast = parse(source) as unknown as AstNode;
+  } catch {
+    return source;
+  }
+  const body = ast.program?.body ?? [];
+  const replacements: Array<{ start: number; end: number; text: string }> = [];
+
+  const visit = (stmt: AstNode): void => {
+    let decl: AstNode | null = null;
+    let isExport = false;
+    if (stmt.type === "VariableDeclaration") decl = stmt;
+    else if (stmt.type === "ExportNamedDeclaration" && stmt.declaration?.type === "VariableDeclaration") {
+      decl = stmt.declaration;
+      isExport = true;
+    }
+    if (!decl) return;
+    const decls = decl.declarations ?? [];
+    if (decls.length <= 1) return;
+    const names = new Set<string>();
+    declaredNames(stmt, names);
+    if (![...names].some((n) => bound.has(n))) return;
+    if (decls.some((d) => !d.id || d.id.type !== "Identifier")) return;
+    if (stmt.start == null || stmt.end == null) return;
+
+    const kw = decl.kind ?? "const";
+    const prefix = isExport ? `export ${kw}` : kw;
+    const parts = decls.map((d) => {
+      const idName = d.id!.name!;
+      const initSrc =
+        d.init && d.init.start != null && d.init.end != null
+          ? source.slice(d.init.start, d.init.end)
+          : "";
+      return `${prefix} ${idName}${initSrc ? ` = ${initSrc}` : ""};`;
+    });
+    replacements.push({ start: stmt.start, end: stmt.end, text: parts.join("\n") });
+  };
+
+  for (const stmt of body) visit(stmt);
+
+  if (replacements.length === 0) return source;
+  replacements.sort((a, b) => b.start - a.start);
+  let out = source;
+  for (const r of replacements) {
+    out = out.slice(0, r.start) + r.text + out.slice(r.end);
+  }
+  return out;
+}
+
 export function injectBindings(
   source: string,
   bindings: TypeBinding[],
@@ -61,7 +144,10 @@ export function injectBindings(
   const unapplied: string[] = [];
   if (bindings.length === 0) return { source, applied, unapplied };
 
-  const ast = parse(source) as unknown as {
+  const bound = new Set(bindings.map((b) => b.name));
+  const rewritten = splitMultiDeclarators(source, bound);
+
+  const ast = parse(rewritten) as unknown as {
     program: { body: Array<Record<string, any>> };
   };
   const declLines = new Map<string, number>();
@@ -86,18 +172,21 @@ export function injectBindings(
     const group = byLine.get(line) ?? [];
     group.push(binding);
     byLine.set(line, group);
-    applied.push(binding.name);
   }
 
   const insertions: Array<{ index: number; text: string }> = [];
   for (const [line, group] of byLine) {
+    // 语句级 as 只能表达一个类型；拆分后正常一行一个。同侧行撞车时只认第一个。
+    const b = group[0]!;
     insertions.push({
       index: line - 1,
-      text: `// @nudo:as ${typeExprToDirective(group[0]!.type)}`,
+      text: `// @nudo:as ${typeExprToDirective(b.type)}`,
     });
+    applied.push(`${b.name}: ${b.type}`);
+    for (const shadowed of group.slice(1)) unapplied.push(shadowed.name);
   }
   insertions.sort((a, b) => b.index - a.index);
-  const lines = source.split("\n");
+  const lines = rewritten.split("\n");
   for (const ins of insertions) lines.splice(ins.index, 0, ins.text);
   return { source: lines.join("\n"), applied, unapplied };
 }
