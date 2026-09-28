@@ -6,6 +6,7 @@ import { readFileSync, existsSync, statSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { parse } from "@nudojs/parser";
 import { resolveNpmNudo } from "./evaluator/resolve-npm.ts";
+import { collectDependencySpecs } from "./static-imports.ts";
 
 export function resolveModule(source: string, fromDir: string): { ast: ReturnType<typeof parse>; filePath: string; json?: unknown } | null {
   const extensions = [".js", ".ts", ".mjs"];
@@ -115,7 +116,12 @@ export function buildModuleGraph(
   return { imports, dependents };
 }
 
-/** 磁盘直读并解析单个文件，抽取其相对 import 边（读取/解析失败返回空数组）。 */
+/**
+ * 磁盘直读并解析单个文件，抽取其相对依赖边（读取/解析失败返回空数组）。
+ * 与求值侧 importSpecs 同口径：ImportDeclaration + ExportNamed/ExportAll 的
+ * source（re-export）+ require()/require.resolve()（collectDependencySpecs，
+ * AST 走、foldStaticStringExpr 折叠说明符——字符串/注释里的假 require 不进边）。
+ */
 function extractImportEdges(file: string): string[] {
   const edges: string[] = [];
   let ast: ReturnType<typeof parse>;
@@ -124,9 +130,7 @@ function extractImportEdges(file: string): string[] {
   } catch {
     return edges;
   }
-  for (const stmt of ast.program.body) {
-    if (stmt.type !== "ImportDeclaration") continue;
-    const specifier = stmt.source.value;
+  for (const specifier of collectDependencySpecs(ast)) {
     if (!specifier.startsWith(".") && !specifier.startsWith("/")) continue;
     const resolved = resolveImportPath(specifier, dirname(file));
     if (resolved) edges.push(resolved);
