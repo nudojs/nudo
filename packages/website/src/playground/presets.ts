@@ -65,6 +65,23 @@ export function scale(x) {
   return x + 1;
 }`,
   },
+  {
+    mode: 'sidecar',
+    group: GROUP_CONTRACTS,
+    id: 'sidecar-scale',
+    name: 'Sidecar — calc.nudo.js gate',
+    mainFile: 'calc.js',
+    mainCode: `export function scale(x) {
+  return x + 1;
+}
+
+scale(5);
+scale(0); // violates the sidecar — x must be > 0`,
+    sidecarFile: 'calc.nudo.js',
+    sidecarCode: `import { number, fn } from "@nudojs/core";
+
+export const scale = fn({ x: number().gt(0) }, number());`,
+  },
   { mode: 'single', group: GROUP_BASIC, id: 'basic-subtract', name: 'Call-site subtraction', code: `export function subtract(a, b) {
   return a - b;
 }

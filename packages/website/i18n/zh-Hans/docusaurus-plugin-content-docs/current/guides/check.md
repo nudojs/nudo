@@ -28,7 +28,7 @@ nudo check <path> [--watch|-w] [--json] [--verbose] [--abs]
 
 ## 默认输出（signatures + issues）
 
-```js
+```js verify
 export function getName(user) {
   return user.name;
 }
@@ -109,13 +109,13 @@ needsPositive(-1);
 
 **`if` 不是契约。** 未声明 refine 时，clamp 式守卫接受越界输入：
 
-```js
+```js verify
 function clamp(n, lo, hi) {
   if (n < lo) return lo;
   if (n > hi) return hi;
   return n;
 }
-clamp(-5, 0, 10);  // OK — 未声明 @nudo:contract
+clamp(-5, 0, 10);  // OK — no @nudo:contract declared
 ```
 
 Nudo **不**从 body AST 扫描发明必填 slot。
@@ -202,17 +202,45 @@ nudo check src/ --entry-throws off
 
 写在**被分析文件内**的违例报告 `nudo:constraint-violated`。`nudo:interface-domain-exceeds` 覆盖从使用处文件注入的调用记录（`nudo check --from <paths...>`）。
 
-## CI
+## CI 集成
+
+`nudo check` 是契约与入口 throws 的 CI 门禁 —— 与 `tsc --noEmit` 对齐，但 check **成功时仍打印 signatures**。`--abs` 仍是观察面，但 L1/L2 error 仍门禁。退出码：`0` = 无 error 级诊断，`1` = 任一 error 级诊断（L1 或未 ignore 的 L2）—— 完整表见 [CLI 参考](../api/cli-reference.md#nudo-check)。
+
+### GitHub Actions
+
+```yaml
+name: nudo-check
+on: [pull_request]
+jobs:
+  nudo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npx nudojs check .
+```
+
+诊断以 PR 行内注解（`::error` / `::warning`）落在 **Files changed** 对应行 —— 无需额外旗标：GitHub runner 会设 `GITHUB_ACTIONS=true`，`--gha` 自动生效。环境变量缺失时可显式传 `--gha` 强制注解；搭配 `--json` 时 stdout 保持机器契约，注解仍进入日志流（stderr）。
+
+### GitLab CI
+
+```yaml
+nudo:check:
+  script:
+    - npx nudojs check . --gitlab > gl-code-quality-report.json
+  artifacts:
+    reports:
+      codequality: gl-code-quality-report.json
+```
+
+`--gitlab` 把 GitLab Code Quality JSON 数组打到 stdout；重定向写出 `gl-code-quality-report.json`，声明为 `codequality` 产物后，流水线的 **Code Quality** 标签页会在 MR diff 上渲染诊断。
 
 ```bash
-nudo check src/
-# 任一 error 级诊断 exit 1
-
 # 机器可读（1 文件 → CheckJson；N 文件 → CheckJsonMulti 信封）
 nudo check src/lib.js --json
 ```
 
-`nudo check` 是契约与入口 throws 的 CI 门禁 —— 与 `tsc --noEmit` 对齐，但 check **成功时仍打印 signatures**。`--abs` 仍是观察面，但 L1/L2 error 仍门禁。
+更多接线配方 —— monorepo 扫描根、L2 渐进策略（`--profile adoption`）、缓存调参 —— 见内部设计文档 [`docs/ci-nudo-check.md`](https://github.com/nudojs/nudo/blob/main/docs/ci-nudo-check.md)。
 
 ## 下一步
 

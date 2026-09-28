@@ -14,7 +14,7 @@ Because inference **is** execution, `nudo check` / `nudo test` are equivalent to
 - In CI, analyze only repositories you trust.
 - Sidecar contracts (`*.nudo.js`) and `@nudo:mock` / `@nudo:mock-module` files are ordinary JS and execute during analysis — same trust boundary.
 
-This is not a sandbox: Nudo does not isolate the evaluation process. Analysis budgets only stop runaway inference. Source of truth: repo `docs/design/kernel-merge.md` →「执行模型与信任边界」.
+This is not a sandbox: Nudo does not isolate the evaluation process. Analysis budgets only stop runaway inference. Source of truth: repo `docs/design/kernel-merge.md` → the "Execution model and trust boundary" section.
 
 ## Modeled Precisely
 

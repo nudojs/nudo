@@ -53,6 +53,8 @@ nudo check <paths...> [options]
 |--------|-------------|
 | `--watch` / `-w` | Re-run on file changes (flag, not a verb) |
 | `--json` | Structured diagnostics + signatures — `CheckJson` (1 file) or `CheckJsonMulti` envelope (N files); cannot combine with `--abs` |
+| `--gha` | GitHub Actions inline annotations (`::error` / `::warning`); auto-enabled when `GITHUB_ACTIONS=true` |
+| `--gitlab` | GitLab Code Quality JSON array for `gl-code-quality-report.json` (emitted on stdout — redirect to the file in CI) |
 | `--verbose` | Expand Abs signatures (term/pred/conf detail) |
 | `--abs` | Per-function algebra face (shape + conf); `--generalize` adds the symbolic term/pred α |
 | `--fn <name>` | With `--abs`: restrict to one function |
@@ -61,6 +63,7 @@ nudo check <paths...> [options]
 | `--from <paths…>` | Usage-site files (tests/apps); their call records join the analysis |
 | `--ignore-throws <names>` | Comma-separated L2 throw types to ignore (e.g. `TypeError,RangeError`). Does not swallow L1 contract violations. |
 | `--entry-throws error\|warning\|off` | Severity for L2 entry may-throw (default `error`) |
+| `--profile adoption\|strict` | Gate profile (default `strict`). `adoption` = L2 entry may-throw demoted to warning; L1 stays error. An explicit `--entry-throws` value overrides the profile |
 | `--what-if <binding...>` | AI3: assume `name:type` bindings and report `--target` (same semantics as LSP `nudo.whatIf`) |
 | `--target <name>` | With `--what-if`: binding whose inferred type to print |
 
@@ -70,6 +73,7 @@ nudo check <paths...> [options]
 {
   "nudo": {
     "check": {
+      "profile": "strict",
       "ignoreThrows": ["TypeError"],
       "entryThrows": "error"
     }

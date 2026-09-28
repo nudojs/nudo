@@ -5,6 +5,8 @@ import {
   formatShape,
   formatAbs,
   type Abs,
+  type CheckIssue,
+  type CheckReport,
 } from '@nudojs/core';
 import { analyzeFile } from '@nudojs/service';
 import { getHoverAtPosition } from '@nudojs/lsp';
@@ -33,6 +35,8 @@ import {
   buildActiveCases,
   hoverToMarkdown,
   collectLspInlays,
+  runPlaygroundCheck,
+  setPlaygroundSidecar,
 } from './engine';
 import { registerNudoJsLanguage } from './monaco-lang';
 
@@ -70,9 +74,13 @@ export default function PlaygroundApp() {
   >(null);
   const [singleError, setSingleError] = useState<string | null>(null);
   const [callsiteResult, setCallsiteResult] = useState<CallsiteResult | null>(null);
+  const [sidecarCode, setSidecarCode] = useState('');
+  const [checkResult, setCheckResult] = useState<CheckReport | null>(null);
+  const [checkError, setCheckError] = useState<string | null>(null);
 
   const preset = presets.find((p) => p.id === selectedPreset) ?? presets[0];
   const isCallsiteMode = preset.mode === 'callsite';
+  const isSidecarMode = preset.mode === 'sidecar';
 
   // Refs read by the Monaco providers (they are registered once on mount)
   const modeRef = useRef(isCallsiteMode);
@@ -85,6 +93,12 @@ export default function PlaygroundApp() {
   useEffect(() => {
     const shared = readSharedCode();
     if (shared) setCode(shared);
+    else if (presets[0].mode === 'sidecar') {
+      // 首个预设即 sidecar 时：主/侧车内容 + 虚拟模块注册一次到位
+      setCode(presets[0].mainCode);
+      setSidecarCode(presets[0].sidecarCode);
+      setPlaygroundSidecar(presets[0].sidecarFile, presets[0].sidecarCode);
+    }
   }, []);
   useEffect(() => {
     modeRef.current = isCallsiteMode;
@@ -125,6 +139,18 @@ export default function PlaygroundApp() {
     }
   };
 
+  // Sidecar 模式：checkSource 经注册进虚拟模块表的侧车内容执法（ambient
+  // 同名绑定），报告 = 签名表 + actual ⊭ expected 契约违规
+  const runSidecarCheck = () => {
+    try {
+      setCheckResult(runPlaygroundCheck(code));
+      setCheckError(null);
+    } catch (error) {
+      setCheckError(error instanceof Error ? error.message : String(error));
+      setCheckResult(null);
+    }
+  };
+
   const handlePresetChange = (presetId: string) => {
     const next = presets.find((p) => p.id === presetId);
     if (!next) return;
@@ -133,10 +159,18 @@ export default function PlaygroundApp() {
     setSingleResults(null);
     setSingleError(null);
     setCallsiteResult(null);
+    setCheckResult(null);
+    setCheckError(null);
     usageRecordsRef.current = [];
     if (next.mode === 'single') {
+      setPlaygroundSidecar(null, '');
       setCode(next.code);
+    } else if (next.mode === 'sidecar') {
+      setCode(next.mainCode);
+      setSidecarCode(next.sidecarCode);
+      setPlaygroundSidecar(next.sidecarFile, next.sidecarCode);
     } else {
+      setPlaygroundSidecar(null, '');
       setCode('');
       setTestCode(next.testCode);
       runCallsiteDiscovery(next.testCode, next);
@@ -148,6 +182,8 @@ export default function PlaygroundApp() {
     try {
       if (preset.mode === 'callsite') {
         runCallsiteDiscovery(testCode, preset);
+      } else if (preset.mode === 'sidecar') {
+        runSidecarCheck();
       } else {
         runSingle();
       }
@@ -363,6 +399,30 @@ export default function PlaygroundApp() {
     </div>
   );
 
+  // check 门禁违规卡片：L 行号 · 函数 + actual ⊭ expected + 修复建议
+  const renderIssueCard = (keyId: string, issue: CheckIssue) => (
+    <div key={keyId} className={`cs-case-card cs-issue-${issue.severity}`}>
+      <span className="cs-case-label">
+        [{issue.severity.toUpperCase()}
+        {issue.line !== undefined ? ` L${issue.line}` : ''}
+        {issue.fn ? ` · ${issue.fn}` : ''}]
+      </span>
+      <span className="cs-case-sig">
+        {issue.message}
+        {issue.actual !== undefined && (
+          <>
+            {' — '}
+            <span className="cs-issue-actual">{issue.actual}</span>{' '}
+            <span className="cs-arrow">⊭</span>{' '}
+            <span className="cs-issue-expected">{issue.expected}</span>
+          </>
+        )}
+      </span>
+      <span className={`cs-badge cs-badge-${issue.severity}`}>{issue.code}</span>
+      {issue.suggestion && <div className="cs-issue-fix">→ {issue.suggestion}</div>}
+    </div>
+  );
+
   return (
     <div className="cs-playground">
         <h1>Nudo Playground</h1>
@@ -409,7 +469,7 @@ export default function PlaygroundApp() {
             </select>
           )}
 
-          {!isCallsiteMode && (
+          {preset.mode === 'single' && (
             <button onClick={shareUrl} className="share-button">
               {copied
                 ? <Translate id="playground.copied">Copied!</Translate>
@@ -557,7 +617,123 @@ export default function PlaygroundApp() {
           </>
         )}
 
-        {!isCallsiteMode && (
+        {isSidecarMode && preset.mode === 'sidecar' && (
+          <>
+            <div className="cs-explainer">
+              <strong>
+                <Translate id="playground.sidecarLead">Sidecar Contract.</Translate>
+              </strong>{' '}
+              <Translate id="playground.sidecarExplainer">
+                The source (left) stays plain JavaScript — zero annotations. The .nudo.js sidecar
+                (right) declares the obligation; Nudo binds it by file adjacency and gates every
+                call site through check. scale(0) reports actual ⊭ expected — fix the call or
+                relax the contract.
+              </Translate>
+            </div>
+
+            <div className="cs-dual">
+              <div className="cs-pane">
+                <div className="cs-pane-header">
+                  <span className="cs-pane-file">{preset.mainFile}</span>
+                  <span className="cs-pane-tag"><Translate id="playground.tag.mainEditable">source · editable</Translate></span>
+                </div>
+                <Suspense fallback={<div className="editor-loading"><Translate id="playground.loadingEditor">Loading editor…</Translate></div>}>
+                  <MonacoEditor
+                    height="min(420px, calc(100vh - 320px))"
+                    defaultLanguage="nudo-js"
+                    beforeMount={handleEditorBeforeMount}
+                    value={code}
+                    onChange={(value) => setCode(value || '')}
+                    onMount={handleEditorDidMount}
+                    theme="vs-light"
+                    options={editorOptions(false)}
+                  />
+                </Suspense>
+              </div>
+              <div className="cs-pane">
+                <div className="cs-pane-header">
+                  <span className="cs-pane-file">{preset.sidecarFile}</span>
+                  <span className="cs-pane-tag"><Translate id="playground.tag.sidecarEditable">sidecar · editable</Translate></span>
+                </div>
+                <Suspense fallback={<div className="editor-loading"><Translate id="playground.loadingEditor">Loading editor…</Translate></div>}>
+                  <MonacoEditor
+                    height="min(420px, calc(100vh - 320px))"
+                    defaultLanguage="nudo-js"
+                    beforeMount={handleEditorBeforeMount}
+                    value={sidecarCode}
+                    onChange={(value) => {
+                      const next = value || '';
+                      setSidecarCode(next);
+                      // 立即重注册：主编辑器悬停/inlay 与下次 Observe 都读到最新契约
+                      setPlaygroundSidecar(preset.sidecarFile, next);
+                    }}
+                    onMount={handleEditorDidMount}
+                    theme="vs-light"
+                    options={editorOptions(false)}
+                  />
+                </Suspense>
+              </div>
+            </div>
+
+            <div className="cs-results">
+              {checkError && (
+                <div className="cs-error"><Translate id="playground.error" values={{ message: checkError }}>{`Error: {message}`}</Translate></div>
+              )}
+
+              {!checkError && checkResult && (
+                <>
+                  <div className={`cs-check-status ${checkResult.ok ? 'cs-check-ok' : 'cs-check-fail'}`}>
+                    {checkResult.ok
+                      ? <Translate id="playground.check.ok">OK</Translate>
+                      : <Translate id="playground.check.failed">FAILED</Translate>}
+                    {'  '}
+                    {checkResult.summary.errors} error · {checkResult.summary.warnings} warning ·{' '}
+                    {checkResult.summary.infos} info · {checkResult.summary.functions} fn
+                  </div>
+
+                  {checkResult.signatures.length > 0 && (
+                    <div className="cs-section">
+                      <div className="cs-section-title">
+                        <Translate id="playground.results.signatures">Signatures</Translate>{' '}
+                        <span className="cs-count">{checkResult.signatures.length}</span>
+                      </div>
+                      {checkResult.signatures.map((s, i) =>
+                        renderCaseCard(
+                          `sig-${i}`,
+                          s.name,
+                          (s.paramTypes ?? s.params.map(() => 'any')).join(', '),
+                          s.display,
+                          isPrecise(s.display),
+                          false,
+                        ),
+                      )}
+                    </div>
+                  )}
+
+                  <div className="cs-section">
+                    <div className="cs-section-title">
+                      <Translate id="playground.results.issues">Issues</Translate>{' '}
+                      <span className="cs-count">{checkResult.issues.length}</span>
+                    </div>
+                    {checkResult.issues.length > 0 ? (
+                      checkResult.issues.map((issue, i) => renderIssueCard(`issue-${i}`, issue))
+                    ) : (
+                      <div className="cs-hint">
+                        <Translate id="playground.results.noIssues">no issues — every call site satisfies the sidecar</Translate>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {!checkError && !checkResult && (
+                <div className="cs-hint"><Translate id="playground.hint.observe">Click "Observe" to see inference results.</Translate></div>
+              )}
+            </div>
+          </>
+        )}
+
+        {!isCallsiteMode && !isSidecarMode && (
           <>
             <div className="cs-dual cs-dual-editor-out">
               <div className="cs-pane">

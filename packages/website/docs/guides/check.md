@@ -204,17 +204,45 @@ All flags and `package.json#nudo.check` config are specified once in the [CLI Re
 
 Violations written **in the analyzed file** report `nudo:constraint-violated`. `nudo:interface-domain-exceeds` covers call records injected from usage-site files (`nudo check --from <paths...>`).
 
-## CI
+## CI integration
+
+`nudo check` is the CI gate for contracts and entry throws — aligned with `tsc --noEmit`, except check **still prints signatures on success**. `--abs` remains observation but still gates on L1/L2 errors. Exit codes: `0` = no error-level diagnostic, `1` = any error-level diagnostic (L1 or non-ignored L2) — full table in [CLI Reference](../api/cli-reference.md#nudo-check).
+
+### GitHub Actions
+
+```yaml
+name: nudo-check
+on: [pull_request]
+jobs:
+  nudo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npx nudojs check .
+```
+
+Diagnostics land as PR inline annotations (`::error` / `::warning`) on the offending lines in **Files changed** — no extra flag needed: GitHub runners set `GITHUB_ACTIONS=true`, which auto-enables `--gha`. Pass `--gha` explicitly to force annotations when that variable is absent; combined with `--json`, stdout stays machine-readable while annotations still reach the log stream (stderr).
+
+### GitLab CI
+
+```yaml
+nudo:check:
+  script:
+    - npx nudojs check . --gitlab > gl-code-quality-report.json
+  artifacts:
+    reports:
+      codequality: gl-code-quality-report.json
+```
+
+`--gitlab` emits the GitLab Code Quality JSON array on stdout; the redirect writes `gl-code-quality-report.json`, and declaring it as a `codequality` artifact lets the pipeline's **Code Quality** tab render the diagnostics on merge-request diffs.
 
 ```bash
-nudo check src/
-# exit 1 on any error-level diagnostic
-
 # machine-readable (1 file → CheckJson; N files → CheckJsonMulti envelope)
 nudo check src/lib.js --json
 ```
 
-`nudo check` is the CI gate for contracts and entry throws — aligned with `tsc --noEmit`, except check **still prints signatures on success**. `--abs` remains observation but still gates on L1/L2 errors.
+More wiring recipes — monorepo scan roots, L2 adoption policy (`--profile adoption`), cache sizing — in the internal design doc [`docs/ci-nudo-check.md`](https://github.com/nudojs/nudo/blob/main/docs/ci-nudo-check.md).
 
 ## Next
 

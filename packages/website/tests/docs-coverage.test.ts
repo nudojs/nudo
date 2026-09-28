@@ -6,8 +6,12 @@
 // 4. sidebars.ts 的每个 category label 在 zh current.json 有翻译。
 // 5. docusaurus.config.ts 的 navbar/footer label、footer title 都在 zh navbar.json / footer.json 有翻译；
 //    footer.json 不得残留 config 里已不存在的 stale key。
+// 6. en 文档（白名单除外）不得残留 CJK —— en 是源语言，zh 走 i18n 镜像。
+// 7. harvest 不是产品动词：白名单外 en 页不得出现 `nudo harvest` 命令形态或 Primary verbs 列出 harvest。
+// 8. js/javascript 围栏 meta 仅允许 空 / verify / verify-sidecar / noplayground（en + zh）。
+// 9. 新页必须成对落地：sidebar 注册 + en/zh 文件同时存在（防孤儿引用）。
 import { describe, it, expect } from "vitest";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -32,6 +36,19 @@ const ZH_DOCS = join(
 );
 const GLOSSARY_EN = join(EN_DOCS, "reference/diagnostics.md");
 const GLOSSARY_ZH = join(ZH_DOCS, "reference/diagnostics.md");
+
+// en 页允许残留 CJK 的白名单（生成的历史聚合页），数组便于后续扩充。
+const EN_CJK_ALLOWLIST = ["releases-history.md"];
+// harvest 只在 env-harvest / harvester 参考页与发布史叙述中出现。
+const HARVEST_ALLOWLIST = [
+  /^releases[\w-]*\.md$/, // releases.md / releases-history.md
+  /^guides\/env-harvest\.md$/,
+  /^api\/harvester\.md$/,
+];
+const HARVEST_VERB_RE = /nudo(\s+--)?\s+harvest\b|Primary verbs:[^\n]*\bharvest\b/;
+// ```js / ```javascript 开启行：语言后只允许这几种 meta（或无 meta）。
+const FENCE_OPEN_RE = /^```(?:js|javascript)(?![\w-])[ \t]*(.*)$/;
+const FENCE_META_OK = new Set(["", "verify", "verify-sidecar", "noplayground"]);
 
 function srcFiles(): string[] {
   return SRC_DIRS.flatMap((dir) =>
@@ -117,14 +134,35 @@ describe("zh docs mirror en docs", () => {
     expect(missing, `untranslated sidebar labels: ${missing.join(", ")}`).toEqual([]);
   });
 
-  it("sidebars use concepts/abs (not the retired type-values id)", () => {
+  it("sidebars use live ids (type-values and releases-history retired)", () => {
     const sidebars = readFileSync(join(repoRoot, "packages/website/sidebars.ts"), "utf8");
     expect(sidebars).not.toContain("concepts/type-values");
     expect(sidebars).toContain("concepts/abs");
     // Coexistence is a migration tactic — must not be a top-level peer category label.
     expect(sidebars).not.toContain("Migrating & Coexistence");
     expect(sidebars).toContain("Migrate off TypeScript");
-    expect(sidebars).toContain("releases-history");
+    // releases-history 离开 sidebar，但页面仍在 docs 根，入口由 releases.md 文内链接保留。
+    expect(sidebars, "sidebar must not list releases-history").not.toContain("releases-history");
+    expect(sidebars, "sidebar must keep releases").toContain('"releases"');
+    const releases = readFileSync(join(EN_DOCS, "releases.md"), "utf8");
+    expect(
+      releases,
+      "releases.md must link releases-history.md (in-page entry)",
+    ).toMatch(/\]\(\.?\/?releases-history\.md/);
+  });
+
+  it("new pages guides/performance & concepts/hof-relations are wired with en+zh files", () => {
+    const sidebars = readFileSync(join(repoRoot, "packages/website/sidebars.ts"), "utf8");
+    const ids = ["guides/performance", "concepts/hof-relations"];
+    const unwired = ids.filter((id) => !sidebars.includes(`"${id}"`));
+    expect(unwired, `sidebar missing new page ids: ${unwired.join(", ")}`).toEqual([]);
+    const missing: string[] = [];
+    for (const id of ids) {
+      for (const [label, root] of [["en", EN_DOCS], ["zh", ZH_DOCS]] as const) {
+        if (!existsSync(join(root, `${id}.md`))) missing.push(`${label}/${id}.md`);
+      }
+    }
+    expect(missing, `new page files missing: ${missing.join(", ")}`).toEqual([]);
   });
 
   it("docs pages do not link the retired type-values path", () => {
@@ -142,6 +180,60 @@ describe("zh docs mirror en docs", () => {
       }
     }
     expect(bad, `stale type-values links in: ${bad.join(", ")}`).toEqual([]);
+  });
+});
+
+describe("en docs language gates", () => {
+  it("en pages contain no CJK (allowlist: releases-history.md)", () => {
+    const bad: string[] = [];
+    for (const f of walk(EN_DOCS)) {
+      if (!f.endsWith(".md")) continue;
+      const rel = relative(EN_DOCS, f);
+      if (EN_CJK_ALLOWLIST.includes(rel)) continue;
+      readFileSync(f, "utf8").split("\n").forEach((line, i) => {
+        if (/[\u4e00-\u9fff]/.test(line)) bad.push(`${rel}:${i + 1}`);
+      });
+    }
+    expect(
+      bad,
+      `CJK in en docs (extend EN_CJK_ALLOWLIST only with justification): ${bad.join(", ")}`,
+    ).toEqual([]);
+  });
+
+  it("harvest is never presented as a product verb outside its allowlist", () => {
+    const bad: string[] = [];
+    for (const f of walk(EN_DOCS)) {
+      if (!f.endsWith(".md")) continue;
+      const rel = relative(EN_DOCS, f);
+      if (HARVEST_ALLOWLIST.some((re) => re.test(rel))) continue;
+      readFileSync(f, "utf8").split("\n").forEach((line, i) => {
+        if (HARVEST_VERB_RE.test(line)) bad.push(`${rel}:${i + 1}`);
+      });
+    }
+    expect(
+      bad,
+      `harvest shown as a CLI/product verb (harvest is not a product verb): ${bad.join(", ")}`,
+    ).toEqual([]);
+  });
+});
+
+describe("code fence meta gates", () => {
+  it("js/javascript fence metas are limited to verify | verify-sidecar | noplayground (en + zh)", () => {
+    const bad: string[] = [];
+    for (const [label, root] of [["en", EN_DOCS], ["zh", ZH_DOCS]] as const) {
+      for (const f of walk(root)) {
+        if (!f.endsWith(".md")) continue;
+        const rel = relative(root, f);
+        readFileSync(f, "utf8").split("\n").forEach((line, i) => {
+          const m = FENCE_OPEN_RE.exec(line);
+          const meta = m?.[1].trim();
+          if (meta !== undefined && !FENCE_META_OK.has(meta)) {
+            bad.push(`${label}/${rel}:${i + 1} meta "${meta}"`);
+          }
+        });
+      }
+    }
+    expect(bad, `illegal js/javascript fence meta: ${bad.join(", ")}`).toEqual([]);
   });
 });
 

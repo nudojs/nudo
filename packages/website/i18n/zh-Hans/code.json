@@ -802,5 +802,32 @@
   },
   "playground.explainerLead": {
     "message": "调用点发现。"
+  },
+  "playground.sidecarLead": {
+    "message": "侧车契约。"
+  },
+  "playground.sidecarExplainer": {
+    "message": "左侧源码保持纯 JavaScript——零注解。右侧 .nudo.js 侧车声明义务；Nudo 按文件邻接绑定它，并经 check 门禁每个调用点。scale(0) 会报告 actual ⊭ expected——修调用，或放宽契约。"
+  },
+  "playground.tag.mainEditable": {
+    "message": "源码 · 可编辑"
+  },
+  "playground.tag.sidecarEditable": {
+    "message": "侧车 · 可编辑"
+  },
+  "playground.check.ok": {
+    "message": "OK"
+  },
+  "playground.check.failed": {
+    "message": "FAILED"
+  },
+  "playground.results.signatures": {
+    "message": "签名"
+  },
+  "playground.results.issues": {
+    "message": "问题"
+  },
+  "playground.results.noIssues": {
+    "message": "无问题——所有调用点都满足侧车契约"
   }
 }

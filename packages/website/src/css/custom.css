@@ -2591,6 +2591,74 @@ main .cs-playground,
   padding: 0.05rem 0.3rem;
 }
 
+/* Sidecar check gate（checkSource 报告：状态行 + 违规卡片） */
+.cs-check-status {
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 0.35rem 0;
+  margin-bottom: 0.75rem;
+}
+
+.cs-check-ok {
+  color: var(--nudo-signal);
+}
+
+[data-theme="dark"] .cs-check-ok {
+  color: var(--nudo-signal-lit);
+}
+
+.cs-check-fail {
+  color: var(--ifm-color-danger);
+}
+
+.cs-issue-error {
+  border-left: 4px solid var(--ifm-color-danger);
+}
+
+.cs-issue-warning {
+  border-left: 4px solid var(--ifm-color-warning);
+}
+
+.cs-issue-info {
+  border-left: 4px solid var(--ifm-color-info);
+}
+
+.cs-issue-actual {
+  color: var(--ifm-color-danger);
+}
+
+.cs-issue-expected {
+  color: var(--nudo-signal);
+  font-weight: 600;
+}
+
+[data-theme="dark"] .cs-issue-expected {
+  color: var(--nudo-signal-lit);
+}
+
+.cs-issue-fix {
+  flex-basis: 100%;
+  color: var(--ifm-color-emphasis-600);
+  font-family: var(--ifm-font-family-base);
+  font-size: 0.8rem;
+}
+
+.cs-badge-error {
+  color: var(--ifm-color-danger);
+  background: color-mix(in srgb, var(--ifm-color-danger) 12%, transparent);
+}
+
+.cs-badge-warning {
+  color: var(--ifm-color-warning);
+  background: color-mix(in srgb, var(--ifm-color-warning) 14%, transparent);
+}
+
+.cs-badge-info {
+  color: var(--ifm-color-info);
+  background: color-mix(in srgb, var(--ifm-color-info) 12%, transparent);
+}
+
 /* Docs page polish */
 .theme-doc-markdown h1:first-child {
   letter-spacing: -0.02em;

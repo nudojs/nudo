@@ -52,6 +52,8 @@ nudo check <paths...> [options]
 |------|------|
 | `--watch` / `-w` | 变更时重跑（旗标，不是动词） |
 | `--json` | 结构化诊断 + 签名 —— `CheckJson`（1 文件）或 `CheckJsonMulti` 信封（N 文件）；不能与 `--abs` 组合 |
+| `--gha` | GitHub Actions 行内注解（`::error` / `::warning`）；`GITHUB_ACTIONS=true` 时自动启用 |
+| `--gitlab` | GitLab Code Quality JSON 数组，用于 `gl-code-quality-report.json`（打到 stdout —— CI 中重定向落盘） |
 | `--verbose` | 展开 Abs 签名（term/pred/conf 细节） |
 | `--abs` | 每函数代数面（shape + conf）；`--generalize` 附加符号 term/pred α |
 | `--fn <name>` | 搭配 `--abs`：限定单个函数 |
@@ -60,6 +62,7 @@ nudo check <paths...> [options]
 | `--from <paths…>` | 使用处文件（tests/apps）；其调用记录并入分析 |
 | `--ignore-throws <names>` | 逗号分隔、可忽略的 L2 throws 类型（如 `TypeError,RangeError`）。不吞 L1 契约违例。 |
 | `--entry-throws error\|warning\|off` | L2 入口 may-throw 严重级别（默认 `error`） |
+| `--profile adoption\|strict` | 门禁 profile（默认 `strict`）。`adoption` = L2 入口 may-throw 降为 warning；L1 仍为 error。显式 `--entry-throws` 值覆盖 profile |
 
 **配置（`package.json`）：**
 
@@ -67,6 +70,7 @@ nudo check <paths...> [options]
 {
   "nudo": {
     "check": {
+      "profile": "strict",
       "ignoreThrows": ["TypeError"],
       "entryThrows": "error"
     }

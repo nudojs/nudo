@@ -7,7 +7,7 @@ description: "Bridge Abs to the ecosystem with nudo export — dts / guard / sch
 
 **You'll leave with:** the `nudo export` surface, how it hands facts to Zod / ArkType / TypeBox, and the one-line division of labor.
 
-> **schema 管边界；Nudo 管内部。**
+> **Schema libraries own the boundary; Nudo owns the internals.**
 
 `nudo check` only validates. Artifacts come from **`nudo export`** — a one-way, lossy projection of Abs. Abs stays the source of truth; nothing reads a projection back.
 

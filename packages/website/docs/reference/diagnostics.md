@@ -193,11 +193,11 @@ Body evaluation threw during analysis.
 
 ### `nudo:recursion-truncated` {#nudo-recursion-truncated}
 
-Recursion budget hit; result widened.
+Recursion budget hit; result widened. Budget knobs and what to do: [Performance](/docs/guides/performance).
 
 ### `nudo:fork-truncated` {#nudo-fork-truncated}
 
-Branch-expansion budget (`$fork` total count) hit; affected results widened. **Warning.** Raise via `NUDO_MAX_FORKS` or `package.json#nudo.analysis.maxForks` (default 5000).
+Branch-expansion budget (`$fork` total count) hit; affected results widened. **Warning.** Raise via `NUDO_MAX_FORKS` or `package.json#nudo.analysis.maxForks` (default 5000). Budgets and fixes: [Performance](/docs/guides/performance).
 
 ### `nudo:host-effect-blocked` {#nudo-host-effect-blocked}
 

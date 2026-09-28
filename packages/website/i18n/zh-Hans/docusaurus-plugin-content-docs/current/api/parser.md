@@ -243,62 +243,62 @@ parseCaseArgExpr(expr: string): Abs
 ## Export inventory
 
 <!-- NUDO-API-SKELETON:BEGIN -->
-> 由 `pnpm run docs:gen:api` 从包导出面（`PUBLIC_API.md` / `src/index.ts`）生成 —— 请勿手改本块。重新生成：`node scripts/gen-api-docs.mjs`。
+> 由 `pnpm run docs:gen:api` 从包导出面（`PUBLIC_API.md` / `src/index.ts`）生成 —— 请勿手改本块。重新生成：`node scripts/gen-api-docs.mjs`。每行名字带稳定锚点 `#slug`（符号名小写）。
 
 | 名称 | 种类 | 说明 | 签名 |
 |------|------|------|------|
-| `asAssignmentExpression` | fn | — | `asAssignmentExpression( node: Node \| null \| undefined, ): AssignmentExpression \| undefined` |
-| `AsDirective` | type | — | `AsDirective = { kind: "as"; typeAbs: Abs; }` |
-| `asExpression` | fn | — | `asExpression(node: Node \| null \| undefined): Expression \| undefined` |
-| `asIdentifier` | fn | — | `asIdentifier(node: Node \| null \| undefined): Identifier \| undefined` |
-| `asMemberExpression` | fn | — | `asMemberExpression( node: Node \| null \| undefined, ): MemberExpression \| undefined` |
-| `asProgram` | fn | File → its Program; Program → itself. | `asProgram(ast: Node \| File \| Program \| null \| undefined): Program \| undefined` |
-| `CaseDirective` | type | — | `CaseDirective = { kind: "case"; name: string; argsAbs: Abs[]; expected?: Abs; commentLine?: number; }` |
-| `classIdName` | fn | ClassDeclaration/ClassExpression `id?.name`. | `classIdName(node: Node \| null \| undefined): string \| undefined` |
-| `classInstanceMethods` | fn | Instance methods of a class-like node. | `classInstanceMethods(node: Node \| null \| undefined): InstanceMethod[]` |
-| `classMemberKey` | fn | Key node of a class member (for range selection). | `classMemberKey(member: Node \| null \| undefined): Node \| undefined` |
-| `classMemberKeyName` | fn | `key.name ?? key.value` on a class/object member key. | `classMemberKeyName(member: Node \| null \| undefined): string \| number \| undefined` |
-| `Directive` | type | — | `Directive = CaseDirective \| MockDirective \| PureDirective \| SkipDirective \| SampleDirective` |
-| `EnvDirective` | type | — | `EnvDirective = { kind: "env"; envs: string[]; }` |
-| `exportSpecifierExportedName` | fn | ExportSpecifier exported name (`exported.name ?? exported.value`). | `exportSpecifierExportedName( spec: Node \| null \| undefined, ): string \| number \| undefined` |
-| `exportSpecifierLocalName` | fn | ExportSpecifier local name — Identifier only (matches `local.name`). | `exportSpecifierLocalName(spec: Node \| null \| undefined): string \| undefined` |
-| `extractDirectives` | fn | — | `extractDirectives(ast: Node): FunctionWithDirectives[]` |
-| `extractFileDirectives` | fn | — | `extractFileDirectives(ast: Node): FileDirective[]` |
-| `extractInlineDirectives` | fn | — | `extractInlineDirectives(node: Node): InlineDirective[]` |
-| `FileDirective` | type | — | `FileDirective = EnvDirective \| MockModuleDirective` |
-| `fnOrClassIdLoc` | fn | `id.loc` of a named function/class (undefined when anonymous or unlocated). | `fnOrClassIdLoc(node: Node \| null \| undefined): Node` |
-| `fnOrClassIdName` | fn | Function/Class declaration or expression `id?.name`. | `fnOrClassIdName(node: Node \| null \| undefined): string \| undefined` |
-| `FunctionWithDirectives` | type | — | `FunctionWithDirectives = { node: Node; name: string; directives: Directive[]; }` |
-| `getClassMembers` | fn | Class body members; empty when node is not a class. | `getClassMembers(node: Node \| null \| undefined): ClassBody` |
-| `getDeclarations` | fn | VariableDeclaration.declarations; empty for other nodes. | `getDeclarations(node: Node \| null \| undefined): VariableDeclarator[]` |
-| `getDeclaratorId` | fn | VariableDeclarator id narrowed to Identifier. | `getDeclaratorId(node: Node \| null \| undefined): Identifier \| undefined` |
-| `getDeclaratorInit` | fn | First declarator's init (fn-binding extraction). | `getDeclaratorInit(node: Node \| null \| undefined): Expression \| undefined` |
-| `getExportDeclaration` | fn | Inner declaration of `export default` / `export …` (undefined for other nodes). | `getExportDeclaration(node: Node \| null \| undefined): Node \| undefined` |
-| `getExportSpecifiers` | fn | ExportNamedDeclaration.specifiers (empty for other nodes). | `getExportSpecifiers( node: Node \| null \| undefined, )` |
-| `getExpressionStatementExpression` | fn | ExpressionStatement.expression. | `getExpressionStatementExpression( node: Node \| null \| undefined, ): Expression \| undefined` |
-| `getFirstDeclaratorId` | fn | First declarator of a VariableDeclaration, narrowed to Identifier id. | `getFirstDeclaratorId(node: Node \| null \| undefined): Identifier \| undefined` |
-| `identifierName` | fn | Identifier.name only (undefined for string export names). | `identifierName(node: Node \| null \| undefined): string \| undefined` |
-| `InlineDirective` | type | — | `InlineDirective = AsDirective \| ReplaceDirective` |
-| `InstanceMethod` | type | — | `InstanceMethod = { name: string; node: Node }` |
-| `isModuleExportsMember` | fn | `module.exports` / `module["exports"]` is rejected here: computed keys return false. | `isModuleExportsMember(member: Node \| null \| undefined): boolean` |
-| `memberObjectName` | fn | Identifier name of a non-computed member's object (e.g. | `memberObjectName(member: Node \| null \| undefined): string \| undefined` |
-| `memberPropertyKey` | fn | Non-computed member property key text (Identifier.name or StringLiteral.value). | `memberPropertyKey(member: Node \| null \| undefined): string \| null` |
-| `memberPropertyName` | fn | Identifier name of a non-computed member's property (e.g. | `memberPropertyName(member: Node \| null \| undefined): string \| undefined` |
-| `methodFunctionNode` | fn | Class/TSDeclare method function node (ESTree MethodDefinition → its `value`). | `methodFunctionNode(member: Node \| null \| undefined): Node \| undefined` |
-| `MockDirective` | type | — | `MockDirective = { kind: "mock"; name: string; expression?: string; fromPath?: string; arrowFn?: { params: string[]; body: Node; paramPatt...` |
-| `MockModuleDirective` | type | — | `MockModuleDirective = { kind: "mock-module"; source: string; names?: string[]; fromPath: string; }` |
-| `nameOrStringValue` | fn | Identifier.name, else StringLiteral.value (module string export names). | `nameOrStringValue(node: Node \| null \| undefined): string \| undefined` |
-| `paramDisplayName` | fn | Parameter display label: `name`, `...rest`, or `_`. | `paramDisplayName(param: Node \| null \| undefined): string` |
-| `paramName` | fn | RestElement argument name, else plain Identifier name. | `paramName(param: Node \| null \| undefined): string \| undefined` |
-| `parse` | fn | 所有权：Babel 解析与 TS 剥除的**实现**在 `@nudojs/core` （`algebra/parse-source.ts` / `strip-types.ts`）—— core 代数层 （check/scan/generalize）需要 AST 且不能反向依赖本包。本包职责是 `@nudo:` 指令抽取与 AST 卫兵；`parse()` 是宿主入口，委托 core 同一实现与 AST LRU。 | `parse(source: string, opts?: { errorRecovery?: boolean }): File` |
-| `parseCaseArgExpr` | fn | case 实参 / 指令类型表达式唯一文法：约束构建器优先，其余为具体字面量、 结构字面量与箭头函数。`T.*` 文法已物理删除。 | `parseCaseArgExpr(expr: string): Abs` |
-| `programBody` | fn | Top-level statements of a File/Program (empty when neither). | `programBody(ast: Node \| File \| Program \| null \| undefined): Statement[]` |
-| `PureDirective` | type | — | `PureDirective = { kind: "pure"; }` |
-| `ReplaceDirective` | type | — | `ReplaceDirective = { kind: "replace"; targetSource: string; typeAbs: Abs; }` |
-| `SampleDirective` | type | — | `SampleDirective = { kind: "sample"; count: number; }` |
-| `SinonExpression` | type | — | `SinonExpression = { type: "stub" \| "spy" \| "mock"; returnValue?: Abs; resolvedValue?: Abs; rejectedValue?: Abs; }` |
-| `SkipDirective` | type | — | `SkipDirective = { kind: "skip"; returns?: Abs; }` |
-| `stripTypes` | const | — | — |
-| `unwrapDefaultExport` | fn | CJS/ESM default interop: callable module or `{ default }` wrapper. | `unwrapDefaultExport<T>(mod: T \| { default: T }): T` |
-| `unwrapExport` | fn | Unwrap an export form: named/default exports yield their inner declaration with `exported: true`; any other statement is returned as-is with `exported: false`. | `unwrapExport(node: Node \| null \| undefined)` |
+| <a id="asassignmentexpression"></a>`asAssignmentExpression` | fn | — | `asAssignmentExpression( node: Node \| null \| undefined, ): AssignmentExpression \| undefined` |
+| <a id="asdirective"></a>`AsDirective` | type | — | `AsDirective = { kind: "as"; typeAbs: Abs; }` |
+| <a id="asexpression"></a>`asExpression` | fn | — | `asExpression(node: Node \| null \| undefined): Expression \| undefined` |
+| <a id="asidentifier"></a>`asIdentifier` | fn | — | `asIdentifier(node: Node \| null \| undefined): Identifier \| undefined` |
+| <a id="asmemberexpression"></a>`asMemberExpression` | fn | — | `asMemberExpression( node: Node \| null \| undefined, ): MemberExpression \| undefined` |
+| <a id="asprogram"></a>`asProgram` | fn | File → its Program; Program → itself. | `asProgram(ast: Node \| File \| Program \| null \| undefined): Program \| undefined` |
+| <a id="casedirective"></a>`CaseDirective` | type | — | `CaseDirective = { kind: "case"; name: string; argsAbs: Abs[]; expected?: Abs; commentLine?: number; }` |
+| <a id="classidname"></a>`classIdName` | fn | ClassDeclaration/ClassExpression `id?.name`. | `classIdName(node: Node \| null \| undefined): string \| undefined` |
+| <a id="classinstancemethods"></a>`classInstanceMethods` | fn | Instance methods of a class-like node. | `classInstanceMethods(node: Node \| null \| undefined): InstanceMethod[]` |
+| <a id="classmemberkey"></a>`classMemberKey` | fn | Key node of a class member (for range selection). | `classMemberKey(member: Node \| null \| undefined): Node \| undefined` |
+| <a id="classmemberkeyname"></a>`classMemberKeyName` | fn | `key.name ?? key.value` on a class/object member key. | `classMemberKeyName(member: Node \| null \| undefined): string \| number \| undefined` |
+| <a id="directive"></a>`Directive` | type | — | `Directive = CaseDirective \| MockDirective \| PureDirective \| SkipDirective \| SampleDirective` |
+| <a id="envdirective"></a>`EnvDirective` | type | — | `EnvDirective = { kind: "env"; envs: string[]; }` |
+| <a id="exportspecifierexportedname"></a>`exportSpecifierExportedName` | fn | ExportSpecifier exported name (`exported.name ?? exported.value`). | `exportSpecifierExportedName( spec: Node \| null \| undefined, ): string \| number \| undefined` |
+| <a id="exportspecifierlocalname"></a>`exportSpecifierLocalName` | fn | ExportSpecifier local name — Identifier only (matches `local.name`). | `exportSpecifierLocalName(spec: Node \| null \| undefined): string \| undefined` |
+| <a id="extractdirectives"></a>`extractDirectives` | fn | — | `extractDirectives(ast: Node): FunctionWithDirectives[]` |
+| <a id="extractfiledirectives"></a>`extractFileDirectives` | fn | — | `extractFileDirectives(ast: Node): FileDirective[]` |
+| <a id="extractinlinedirectives"></a>`extractInlineDirectives` | fn | — | `extractInlineDirectives(node: Node): InlineDirective[]` |
+| <a id="filedirective"></a>`FileDirective` | type | — | `FileDirective = EnvDirective \| MockModuleDirective` |
+| <a id="fnorclassidloc"></a>`fnOrClassIdLoc` | fn | `id.loc` of a named function/class (undefined when anonymous or unlocated). | `fnOrClassIdLoc(node: Node \| null \| undefined): Node` |
+| <a id="fnorclassidname"></a>`fnOrClassIdName` | fn | Function/Class declaration or expression `id?.name`. | `fnOrClassIdName(node: Node \| null \| undefined): string \| undefined` |
+| <a id="functionwithdirectives"></a>`FunctionWithDirectives` | type | — | `FunctionWithDirectives = { node: Node; name: string; directives: Directive[]; }` |
+| <a id="getclassmembers"></a>`getClassMembers` | fn | Class body members; empty when node is not a class. | `getClassMembers(node: Node \| null \| undefined): ClassBody` |
+| <a id="getdeclarations"></a>`getDeclarations` | fn | VariableDeclaration.declarations; empty for other nodes. | `getDeclarations(node: Node \| null \| undefined): VariableDeclarator[]` |
+| <a id="getdeclaratorid"></a>`getDeclaratorId` | fn | VariableDeclarator id narrowed to Identifier. | `getDeclaratorId(node: Node \| null \| undefined): Identifier \| undefined` |
+| <a id="getdeclaratorinit"></a>`getDeclaratorInit` | fn | First declarator's init (fn-binding extraction). | `getDeclaratorInit(node: Node \| null \| undefined): Expression \| undefined` |
+| <a id="getexportdeclaration"></a>`getExportDeclaration` | fn | Inner declaration of `export default` / `export …` (undefined for other nodes). | `getExportDeclaration(node: Node \| null \| undefined): Node \| undefined` |
+| <a id="getexportspecifiers"></a>`getExportSpecifiers` | fn | ExportNamedDeclaration.specifiers (empty for other nodes). | `getExportSpecifiers( node: Node \| null \| undefined, )` |
+| <a id="getexpressionstatementexpression"></a>`getExpressionStatementExpression` | fn | ExpressionStatement.expression. | `getExpressionStatementExpression( node: Node \| null \| undefined, ): Expression \| undefined` |
+| <a id="getfirstdeclaratorid"></a>`getFirstDeclaratorId` | fn | First declarator of a VariableDeclaration, narrowed to Identifier id. | `getFirstDeclaratorId(node: Node \| null \| undefined): Identifier \| undefined` |
+| <a id="identifiername"></a>`identifierName` | fn | Identifier.name only (undefined for string export names). | `identifierName(node: Node \| null \| undefined): string \| undefined` |
+| <a id="inlinedirective"></a>`InlineDirective` | type | — | `InlineDirective = AsDirective \| ReplaceDirective` |
+| <a id="instancemethod"></a>`InstanceMethod` | type | — | `InstanceMethod = { name: string; node: Node }` |
+| <a id="ismoduleexportsmember"></a>`isModuleExportsMember` | fn | `module.exports` / `module["exports"]` is rejected here: computed keys return false. | `isModuleExportsMember(member: Node \| null \| undefined): boolean` |
+| <a id="memberobjectname"></a>`memberObjectName` | fn | Identifier name of a non-computed member's object (e.g. | `memberObjectName(member: Node \| null \| undefined): string \| undefined` |
+| <a id="memberpropertykey"></a>`memberPropertyKey` | fn | Non-computed member property key text (Identifier.name or StringLiteral.value). | `memberPropertyKey(member: Node \| null \| undefined): string \| null` |
+| <a id="memberpropertyname"></a>`memberPropertyName` | fn | Identifier name of a non-computed member's property (e.g. | `memberPropertyName(member: Node \| null \| undefined): string \| undefined` |
+| <a id="methodfunctionnode"></a>`methodFunctionNode` | fn | Class/TSDeclare method function node (ESTree MethodDefinition → its `value`). | `methodFunctionNode(member: Node \| null \| undefined): Node \| undefined` |
+| <a id="mockdirective"></a>`MockDirective` | type | — | `MockDirective = { kind: "mock"; name: string; expression?: string; fromPath?: string; arrowFn?: { params: string[]; body: Node; paramPatt...` |
+| <a id="mockmoduledirective"></a>`MockModuleDirective` | type | — | `MockModuleDirective = { kind: "mock-module"; source: string; names?: string[]; fromPath: string; }` |
+| <a id="nameorstringvalue"></a>`nameOrStringValue` | fn | Identifier.name, else StringLiteral.value (module string export names). | `nameOrStringValue(node: Node \| null \| undefined): string \| undefined` |
+| <a id="paramdisplayname"></a>`paramDisplayName` | fn | Parameter display label: `name`, `...rest`, or `_`. | `paramDisplayName(param: Node \| null \| undefined): string` |
+| <a id="paramname"></a>`paramName` | fn | RestElement argument name, else plain Identifier name. | `paramName(param: Node \| null \| undefined): string \| undefined` |
+| <a id="parse"></a>`parse` | fn | 所有权：Babel 解析与 TS 剥除的**实现**在 `@nudojs/core` （`algebra/parse-source.ts` / `strip-types.ts`）—— core 代数层 （check/scan/generalize）需要 AST 且不能反向依赖本包。本包职责是 `@nudo:` 指令抽取与 AST 卫兵；`parse()` 是宿主入口，委托 core 同一实现与 AST LRU。 | `parse(source: string, opts?: { errorRecovery?: boolean }): File` |
+| <a id="parsecaseargexpr"></a>`parseCaseArgExpr` | fn | case 实参 / 指令类型表达式唯一文法：约束构建器优先，其余为具体字面量、 结构字面量与箭头函数。`T.*` 文法已物理删除。 | `parseCaseArgExpr(expr: string): Abs` |
+| <a id="programbody"></a>`programBody` | fn | Top-level statements of a File/Program (empty when neither). | `programBody(ast: Node \| File \| Program \| null \| undefined): Statement[]` |
+| <a id="puredirective"></a>`PureDirective` | type | — | `PureDirective = { kind: "pure"; }` |
+| <a id="replacedirective"></a>`ReplaceDirective` | type | — | `ReplaceDirective = { kind: "replace"; targetSource: string; typeAbs: Abs; }` |
+| <a id="sampledirective"></a>`SampleDirective` | type | — | `SampleDirective = { kind: "sample"; count: number; }` |
+| <a id="sinonexpression"></a>`SinonExpression` | type | — | `SinonExpression = { type: "stub" \| "spy" \| "mock"; returnValue?: Abs; resolvedValue?: Abs; rejectedValue?: Abs; }` |
+| <a id="skipdirective"></a>`SkipDirective` | type | — | `SkipDirective = { kind: "skip"; returns?: Abs; }` |
+| <a id="striptypes"></a>`stripTypes` | const | — | — |
+| <a id="unwrapdefaultexport"></a>`unwrapDefaultExport` | fn | CJS/ESM default interop: callable module or `{ default }` wrapper. | `unwrapDefaultExport<T>(mod: T \| { default: T }): T` |
+| <a id="unwrapexport"></a>`unwrapExport` | fn | Unwrap an export form: named/default exports yield their inner declaration with `exported: true`; any other statement is returned as-is with `exported: false`. | `unwrapExport(node: Node \| null \| undefined)` |
 <!-- NUDO-API-SKELETON:END -->

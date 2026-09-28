@@ -40,7 +40,7 @@ export function createUser(input) {
 ```
 
 ```js verify-sidecar
-// src/api/users.nudo.js — 契约（同样是普通 JS）
+// src/api/users.nudo.js — contract (also plain JS)
 import { number, string, shape, fn } from "@nudojs/core";
 
 export const createUser = fn(

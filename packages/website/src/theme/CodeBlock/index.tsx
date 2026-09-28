@@ -26,7 +26,9 @@ const RUNNABLE_LANGUAGES = new Set(['js', 'javascript']);
 /**
  * Playground preload query for runnable code blocks.
  * Encoding mirrors /playground's decode (`decodeURIComponent(atob(raw))`);
- * blocks marked with `noplayground` meta opt out. Language comes from the
+ * blocks marked with `noplayground` meta opt out, as do `verify-sidecar`
+ * fences (sidecar contract files — the single-editor playground cannot run
+ * them; plain `verify` blocks keep the link). Language comes from the
  * prism `language-<lang>` className (md fences do not pass a `language` prop).
  */
 function playgroundQuery(
@@ -36,7 +38,8 @@ function playgroundQuery(
 ): string | undefined {
   const language = /language-([\w-]+)/.exec(className ?? '')?.[1];
   if (!RUNNABLE_LANGUAGES.has(language ?? '')) return undefined;
-  if (metastring?.split(/\s+/).includes('noplayground')) return undefined;
+  const meta = metastring?.split(/\s+/) ?? [];
+  if (meta.includes('noplayground') || meta.includes('verify-sidecar')) return undefined;
   try {
     const encoded = btoa(encodeURIComponent(code));
     return `code=${encoded}`;

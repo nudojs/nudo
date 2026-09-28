@@ -48,7 +48,7 @@ export function add2(x) {
 ```
 
 ```javascript verify-sidecar
-// math.nudo.js — 函数绑定必须是 fn({ params }, returns?)
+// math.nudo.js — function binding must be fn({ params }, returns?)
 import { number, fn } from "@nudojs/core";
 
 export const add2 = fn({ x: number().gt(0) }, number());

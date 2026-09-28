@@ -14,7 +14,7 @@ description: "在普通 JavaScript 上门禁签名与用例——npx nudojs chec
 
 创建 `calc.js`：
 
-```javascript
+```javascript verify
 export function scale(x) {
   return x + 1;
 }
@@ -66,7 +66,7 @@ Nudo 用实际看到的实参执行了这些函数。无约束入口参数显示
 
 在源码旁创建 `calc.nudo.js`：
 
-```javascript
+```javascript verify-sidecar
 import { number, fn } from "@nudojs/core";
 
 export const scale = fn({ x: number().gt(0) }, number());
@@ -76,8 +76,8 @@ export const scale = fn({ x: number().gt(0) }, number());
 
 加一个违反侧车的调用：
 
-```javascript
-scale(0); // 违反侧车 —— x 必须 > 0
+```javascript verify
+scale(0); // fails the sidecar — x must be > 0
 ```
 
 跑门禁：

@@ -26,7 +26,12 @@ const sidebars: SidebarsConfig = {
         {
           type: "category",
           label: "Gate",
-          items: ["guides/check", "guides/health", "guides/error-faces"],
+          items: [
+            "guides/check",
+            "guides/performance",
+            "guides/health",
+            "guides/error-faces",
+          ],
         },
         {
           type: "category",
@@ -89,6 +94,7 @@ const sidebars: SidebarsConfig = {
       items: [
         "concepts/layers",
         "concepts/abs",
+        "concepts/hof-relations",
         "concepts/abstract-interpretation",
         "concepts/semantics",
         "concepts/control-flow-narrowing",
@@ -125,7 +131,6 @@ const sidebars: SidebarsConfig = {
         },
         "reference/agents",
         "releases",
-        "releases-history",
       ],
     },
     {

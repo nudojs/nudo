@@ -163,7 +163,7 @@ assembled sidecar failed round-trip (path); refusing to write
 
 ```javascript verify
 export function getName(user) {
-  return user.name; // 任意接收者 → 可能抛
+  return user.name; // any receiver → may throw
 }
 ```
 
@@ -193,11 +193,11 @@ API 未被 env/推理覆盖（如未建模全局）。优先 `@nudo:env` / mock�
 
 ### `nudo:recursion-truncated` {#nudo-recursion-truncated}
 
-递归预算用尽；结果拓宽。
+递归预算用尽；结果拓宽。预算旋钮与修复：[性能：预算与分析缓存](/docs/guides/performance)。
 
 ### `nudo:fork-truncated` {#nudo-fork-truncated}
 
-分支展开预算（`$fork` 总次数）用尽；受影响结果拓宽。**warning**。可用 `NUDO_MAX_FORKS` 或 `package.json#nudo.analysis.maxForks` 调高（默认 5000）。
+分支展开预算（`$fork` 总次数）用尽；受影响结果拓宽。**warning**。可用 `NUDO_MAX_FORKS` 或 `package.json#nudo.analysis.maxForks` 调高（默认 5000）。预算与修复：[性能：预算与分析缓存](/docs/guides/performance)。
 
 ### `nudo:host-effect-blocked` {#nudo-host-effect-blocked}
 

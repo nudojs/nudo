@@ -99,7 +99,7 @@ combine(5, 3)   // → 8  #exact，而非 number
 function selfAdd(a) { return a + a; }
 selfAdd(1);  // → 2  #exact
 selfAdd(2);  // → 4  #exact
-// 合并：2 | 4 —— 绝不是 1+1 | 1+2 | 2+1 | 2+2
+// Observed: 2 | 4 — never 1+1 | 1+2 | 2+1 | 2+2
 ```
 
 **原则 4：守卫窄化（逐调用点）。** 类型守卫（`typeof`、`instanceof`、真值检查）只在条件对**该调用的具体实参**确定可判定时分叉分支；抽象实参不窄化，两分支以相同值运行后合并。
@@ -314,8 +314,8 @@ Nudo 在字符串拼接中保留结构，产生模板字符串类型：
 function apiUrl(path) {           // path: string
   return "https://api.example.com" + path;
 }
-// Nudo: 带已知前缀的模板 `https://api.example.com${string}`
-// TypeScript: string（丢失已知前缀）
+// Nudo: template with known prefix `https://api.example.com${string}`
+// TypeScript: string (loses the known prefix)
 
 apiUrl("/x").startsWith("https://")  // Nudo: true | TypeScript: boolean
 ```

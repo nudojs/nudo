@@ -85,10 +85,10 @@ function process(x) {
 
 ```javascript verify
 /**
- * @nudo:case "basic" ("hello") => 5
- * @nudo:case "empty" ("") => 0
+ * @nudo:case "basic" ("abc") => number()
+ * @nudo:case "empty" ("") => lit(0)
  */
-function lengthOf(s) {
+function len(s) {
   return s.length;
 }
 ```
@@ -149,7 +149,7 @@ function add(a, b) {
  * @nudo:skip
  */
 function heavyComputation(data) {
-  // Nudo 不应求值的复杂算法
+  // Complex algorithm Nudo should not evaluate
   return processData(data);
 }
 ```
@@ -166,7 +166,7 @@ function heavyComputation(data) {
  * @nudo:skip number()
  */
 function unannotatedHeavy(x) {
-  // 通过指令显式指定返回类型
+  // Explicit return type via the directive
   return expensiveOp(x);
 }
 ```

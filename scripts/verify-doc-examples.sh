@@ -301,6 +301,14 @@ verify_check error-faces packages/website/docs/guides/error-faces.md \
   'getName(user: any) => any  throws TypeError' \
   'nudo contract --draft'
 
+# hof-relations: fnRels keep HOF result shapes derivable — apply-style relays,
+# map/filter relation sites, and the entry face of relation-consuming exports.
+verify_test hof-relations packages/website/docs/concepts/hof-relations.md \
+  'call@L5  ((n) => ?, 5) => 7' \
+  'call@L6  ((s) => ?, "hi") => "hi!!"' \
+  'call@L11  ([1, 2, 3, 4], (n) => ?, (n) => ?) => [20, 40]' \
+  'call@L16  ([{ id: 1 }, { id: 2 }, { id: 3 }], (r) => ?) => [1, 2, 3]'
+
 # CLI ↔ docs verb drift: every primary verb named in cli.md / cli-reference.md
 # must be registered in packages/nudojs; every registered command must appear
 # in the reference page. Catches docs that invent or forget product verbs.
@@ -325,6 +333,51 @@ for f in packages/nudojs/src/commands/*.ts; do
   else
     pass=$((pass + 1))
   fi
+done
+
+# CLI ↔ docs flag drift: every long option registered on a product command must
+# be documented in api/cli-reference.md (en). Same discipline as the verb audit
+# above — catches flags that ship silently or get documented before existing.
+# (-z lets \s span the newline of multi-line `.option(\n  "--flag <v>"` calls.)
+cli_flags=$(grep -hzoE '\.option\(\s*"--[a-z-]+' packages/nudojs/src/commands/*.ts \
+  | tr '\0' '\n' | grep -oE '\--[a-z-]+' | sort -u)
+for flag in $cli_flags; do
+  if ! grep -qF -- "$flag" packages/website/docs/api/cli-reference.md; then
+    printf 'FAIL cli-docs: registered flag `%s` missing from api/cli-reference.md\n' "$flag"
+    fail=$((fail + 1))
+  else
+    pass=$((pass + 1))
+  fi
+done
+
+# zh ↔ en fence parity: tagged code blocks are language-independent — the zh
+# translation may only translate prose. Any byte drift in a `verify` /
+# `verify-sidecar` fence (en page vs zh mirror) is a doc bug and goes red here,
+# because only the en fences are executed above.
+zh_docs_root="packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current"
+# (repo paths are space-free; a plain for-loop avoids process substitution,
+# which can block under some CI shells when children inherit its pipe fd)
+for page in $(find packages/website/docs -name '*.md' | sort); do
+  rel=${page#packages/website/docs/}
+  zh_page="$zh_docs_root/$rel"
+  if [ ! -f "$zh_page" ]; then
+    printf 'FAIL zh-parity: no zh mirror for %s\n' "$rel"
+    fail=$((fail + 1))
+    continue
+  fi
+  for tag in verify verify-sidecar; do
+    fences "$page" "$tag" "$tmp/par-en.js"
+    fences "$zh_page" "$tag" "$tmp/par-zh.js"
+    if [ -s "$tmp/par-en.js" ] || [ -s "$tmp/par-zh.js" ]; then
+      if cmp -s "$tmp/par-en.js" "$tmp/par-zh.js"; then
+        pass=$((pass + 1))
+      else
+        printf 'FAIL zh-parity: `%s` fence drift between en and zh in %s\n' "$tag" "$rel"
+        diff -u "$tmp/par-en.js" "$tmp/par-zh.js" | sed 's/^/    /'
+        fail=$((fail + 1))
+      fi
+    fi
+  done
 done
 
 printf -- '--------------------------------------------------------------\n'

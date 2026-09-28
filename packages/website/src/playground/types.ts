@@ -26,7 +26,20 @@ export interface CallsitePreset {
   paramCount: number;
 }
 
-export type Preset = SinglePreset | CallsitePreset;
+export interface SidecarPreset {
+  mode: 'sidecar';
+  id: string;
+  name: string;
+  group: string;
+  /** 主源码文件名（展示用；分析时固定挂在 /playground.js） */
+  mainFile: string;
+  mainCode: string;
+  /** 侧车契约文件名（同时是虚拟模块解析键） */
+  sidecarFile: string;
+  sidecarCode: string;
+}
+
+export type Preset = SinglePreset | CallsitePreset | SidecarPreset;
 
 export interface DiscoveredCall {
   fnName: string;

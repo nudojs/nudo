@@ -9,7 +9,7 @@ description: Public retire-tsc case studies — checkout-demo, real packages ms 
 
 End state is always the same: **`nudo check` is the only gate; `typescript` is gone.** Coexistence is a migration tactic, not the destination. Command walkthrough: [Migrate from TypeScript](./migrating-from-typescript).
 
-> **Honesty label.** Every package below is an **example-scale** sample from [`docs/examples/`](https://github.com/nudojs/nudo/tree/main/docs/examples) (two real npm *consumers*, one public demo package). Timings and friction counts are **示例级，非生产规模** — not a production migration audit. Do not invent external company names; the evidence is the committed `before/` / `after/` trees and `pnpm run verify:examples`.
+> **Honesty label.** Every package below is an **example-scale** sample from [`docs/examples/`](https://github.com/nudojs/nudo/tree/main/docs/examples) (two real npm *consumers*, one public demo package). Timings and friction counts are **example-scale, not production-size** — not a production migration audit. Do not invent external company names; the evidence is the committed `before/` / `after/` trees and `pnpm run verify:examples`.
 
 ## The one-way door
 
@@ -227,7 +227,7 @@ With `@types/debug` present, harvest fills signatures; or pin with `@nudo:mock` 
 | L2 `entry-may-throw` on intentional `throw` | checkout-demo `applyCoupon` | `@nudo:throws RangeError` / guard, or `nudo.check.entryThrows: "warning"` | One line in `package.json` or a throws directive |
 | Dual-run temptation | mid-migration CI | Keep `verify --with-tsc` **only** during the move; retire is the exit | Policy, not tooling |
 
-**Wall-clock (示例级，非生产规模):** these samples are small (2–3 modules, ~1–2 files stripped per package). The committed trees are the evidence — run `pnpm run verify:examples` yourself. We do **not** publish production-scale hour/days numbers; a “7-day retire path” in release notes is a *product target narrative*, not a measured median. For a real package, budget by `.ts` file count from `migrate status`, not by blog post.
+**Wall-clock (example-scale, not production-size):** these samples are small (2–3 modules, ~1–2 files stripped per package). The committed trees are the evidence — run `pnpm run verify:examples` yourself. We do **not** publish production-scale hour/days numbers; a “7-day retire path” in release notes is a *product target narrative*, not a measured median. For a real package, budget by `.ts` file count from `migrate status`, not by blog post.
 
 ## What these prove
 
