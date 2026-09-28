@@ -146,7 +146,7 @@ needsPositive(-1);
 //   expected: x > 0
 ```
 
-TypeScript encodes intent in the signature. Nudo encodes the same obligation as a **computable** constraint and reports the violating call site. Both are valid; only the latter avoids a type language. More shapes: [Error faces](./error-faces.md).
+TypeScript encodes intent in the signature. Nudo encodes the same obligation as a **computable** constraint and reports the violating call site. Both are valid; only the latter avoids a type language. More shapes: [Error faces](./error-faces.md); ten runnable scenarios with pinned outputs: [Error catalog](./errors-vs-typescript.md).
 
 ## Migration, not permanent dual gates
 

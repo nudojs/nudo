@@ -48,6 +48,7 @@ const sidebars: SidebarsConfig = {
             "guides/performance",
             "guides/health",
             "guides/error-faces",
+            "guides/errors-vs-typescript",
           ],
         },
         {

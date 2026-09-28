@@ -1,4 +1,10 @@
 {
+  "theme.CodeBlock.verified": {
+    "message": "引擎已验证"
+  },
+  "theme.DocItem.footer.feedback.tellUs": {
+    "message": "说说哪里帮到了你"
+  },
   "homepage.hero.kicker": {
     "message": "Nudo"
   },

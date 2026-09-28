@@ -73,7 +73,7 @@ function AgentActions({permalink, title}: {permalink?: string; title?: string}):
   );
 }
 
-function FeedbackRow({issueUrl}: {issueUrl: string}): ReactNode {
+function FeedbackRow({issueUrl, praiseUrl}: {issueUrl: string; praiseUrl: string}): ReactNode {
   const [vote, setVote] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
     return window.localStorage.getItem(feedbackStorageKey());
@@ -89,11 +89,26 @@ function FeedbackRow({issueUrl}: {issueUrl: string}): ReactNode {
         </Translate>
       </span>
       {thanks ? (
-        <span className="doc-feedback-thanks">
-          <Translate id="theme.DocItem.footer.feedback.thanks">
-            Thanks for the feedback!
-          </Translate>
-        </span>
+        <>
+          <span className="doc-feedback-thanks">
+            <Translate id="theme.DocItem.footer.feedback.thanks">
+              Thanks for the feedback!
+            </Translate>
+          </span>
+          {vote === 'yes' && (
+            // 正样本也要能被收集：Yes 只写 localStorage 无法聚合，
+            // 追一个预填 issue 的轻入口（与 No 的负反馈对称）。
+            <a
+              className="doc-feedback-button doc-feedback-link"
+              href={praiseUrl}
+              target="_blank"
+              rel="noopener noreferrer">
+              <Translate id="theme.DocItem.footer.feedback.tellUs">
+                Tell us what worked
+              </Translate>
+            </a>
+          )}
+        </>
       ) : (
         <>
           <button
@@ -135,6 +150,10 @@ export default function DocItemFooter(): ReactNode {
   const issueUrl = `https://github.com/nudojs/nudo/issues/new?title=${encodeURIComponent(
     `Docs feedback: ${metadata.permalink ?? metadata.title ?? ""}`,
   )}&labels=documentation`;
+  // 「Yes」的对称入口：同样进 issue 队列（title 前缀区分正负样本）。
+  const praiseUrl = `https://github.com/nudojs/nudo/issues/new?title=${encodeURIComponent(
+    `Docs feedback (positive): ${metadata.permalink ?? metadata.title ?? ""}`,
+  )}&labels=documentation`;
 
   return (
     <footer
@@ -151,7 +170,7 @@ export default function DocItemFooter(): ReactNode {
         </div>
       )}
       <AgentActions permalink={metadata.permalink} title={metadata.title} />
-      <FeedbackRow issueUrl={issueUrl} />
+      <FeedbackRow issueUrl={issueUrl} praiseUrl={praiseUrl} />
       {canDisplayEditMetaRow && (
         <EditMetaRow
           className={clsx(

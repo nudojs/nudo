@@ -11,7 +11,7 @@ description: Nudo 与 TypeScript 的错误对照 —— 真值、Pred、下一�
 
 完整 CI 钉住套件：[`docs/examples/errors/`](https://github.com/nudojs/nudo/tree/main/docs/examples/errors)（`pnpm run verify:examples`）。
 
-> **深读（中文）：** [`docs/errors-vs-typescript.md`](https://github.com/nudojs/nudo/blob/main/docs/errors-vs-typescript.md) —— 本仓库内的设计笔记，逐例展开每张错误脸的 TS 对照与修法；链接离开文档站，前往 GitHub。
+> **深读（中文）：** [`docs/errors-vs-typescript.md`](https://github.com/nudojs/nudo/blob/main/docs/errors-vs-typescript.md) —— 本仓库内的设计笔记，逐例展开每张错误脸的 TS 对照与修法；链接离开文档站，前往 GitHub。这份笔记现在也是站点页面：[错误信息对照：Nudo vs tsc](./errors-vs-typescript.md) —— 十个场景，各带一行 tsc 对照与真实的 `nudo check` 条目。
 
 ## 每条违例共有的脸
 

@@ -9,7 +9,7 @@ description: Top Nudo error faces next to TypeScript — actual values, Preds, a
 
 Goal: **not “report more.” Report more true, with evidence, and with a next step.**
 
-Full CI-pinned suite: [`docs/examples/errors/`](https://github.com/nudojs/nudo/tree/main/docs/examples/errors) (`pnpm run verify:examples`). Deep dive: [`docs/errors-vs-typescript.md`](https://github.com/nudojs/nudo/blob/main/docs/errors-vs-typescript.md) — an in-repo design note, written in Chinese; the link leaves this site for GitHub.
+Full CI-pinned suite: [`docs/examples/errors/`](https://github.com/nudojs/nudo/tree/main/docs/examples/errors) (`pnpm run verify:examples`). Deep dive: [`docs/errors-vs-typescript.md`](https://github.com/nudojs/nudo/blob/main/docs/errors-vs-typescript.md) — an in-repo design note, written in Chinese; the link leaves this site for GitHub. That note is now also a site page: [Error catalog: Nudo vs tsc](./errors-vs-typescript.md) — ten scenarios, each with its tsc line and its real `nudo check` entry.
 
 ## The face every violation shares
 

@@ -301,6 +301,30 @@ verify_check error-faces packages/website/docs/guides/error-faces.md \
   'getName(user: any) => any  throws TypeError' \
   'nudo contract --draft'
 
+# errors-vs-typescript: the ten-scenario catalog — all `verify` blocks concatenate
+# into one file (unique top-level names), all `verify-sidecar` blocks into one
+# sidecar (fn bindings auto-bind by name; builders imported once, in block 1).
+# Pins mirror the per-scenario text blocks — every issue entry on the page is a
+# verbatim slice of this single run. Exit code not asserted: the page teaches
+# failing gates on purpose (11 errors across the ten scenarios).
+verify_check errors-vs-typescript packages/website/docs/guides/errors-vs-typescript.md \
+  '11 error · 0 warning · 0 info · 10 fn' \
+  'setDelay(ms: number) => number' \
+  'greet(u: { id: number, name: string }) => string' \
+  'inc(x: any) => number | string' \
+  'getName(user: any) => any  throws TypeError' \
+  'nudo:constraint-violated' \
+  'nudo:entry-may-throw' \
+  'nudo:assign-mismatch' \
+  'expected: ms > 0' \
+  'expected: missing field u.name' \
+  'missing slot port' \
+  'expected: return > 0' \
+  'expected: x > 0' \
+  'expected: length(s) ≥ 1' \
+  'prim string ⊭ prim number' \
+  'nudo contract --draft'
+
 # hof-relations: fnRels keep HOF result shapes derivable — apply-style relays,
 # map/filter relation sites, and the entry face of relation-consuming exports.
 verify_test hof-relations packages/website/docs/concepts/hof-relations.md \
@@ -388,9 +412,9 @@ if [ "$REPORT_MODE" -eq 1 ]; then
   # 输出为 CI 友好行，便于后续作为阈值门禁的输入。
   # 页面覆盖率下限（ratchet 门禁）：verified_pages / pages_with_js 的百分比不得低于此值。
   # 该值只升不降（ratchet）；调整需 docs 团队签核并在提交说明里附新的测量值。
-  # 测量基线 2026-09：22/37 页 = 59.5%（en docs，```js|javascript 围栏 vs verify/verify-sidecar），
-  # 当前低于 60%，取 5 的整数倍向下留量 → 55。
-  MIN_VERIFY_PAGE_COVERAGE=55
+  # 测量基线 2026-09-28：23/38 页 = 60.5%（en docs，```js|javascript 围栏 vs verify/verify-sidecar；
+  # errors-vs-typescript 十场景页全量 verify 落地后测得），取 5 的整数倍向下留量 → 60。
+  MIN_VERIFY_PAGE_COVERAGE=60
   total_js=0
   verified_js=0
   pages_with_js=0

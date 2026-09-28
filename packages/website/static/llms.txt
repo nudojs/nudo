@@ -27,6 +27,7 @@ Base: https://nudojs.github.io/nudo
 - https://nudojs.github.io/nudo/docs/guides/recipes
 - https://nudojs.github.io/nudo/docs/guides/examples
 - https://nudojs.github.io/nudo/docs/guides/error-faces
+- https://nudojs.github.io/nudo/docs/guides/errors-vs-typescript
 - https://nudojs.github.io/nudo/docs/guides/export-ecosystem
 - https://nudojs.github.io/nudo/docs/guides/health
 - https://nudojs.github.io/nudo/docs/guides/env-harvest

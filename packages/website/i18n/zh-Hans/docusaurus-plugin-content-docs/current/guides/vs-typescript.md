@@ -146,7 +146,7 @@ needsPositive(-1);
 //   expected: x > 0
 ```
 
-TypeScript 将意图写入签名；Nudo 将同一义务编码为**可计算**约束，并在调用点给出违例。两者皆合法；仅后者不依赖类型语言。更多形态：[错误对照](./error-faces.md)。
+TypeScript 将意图写入签名；Nudo 将同一义务编码为**可计算**约束，并在调用点给出违例。两者皆合法；仅后者不依赖类型语言。更多形态：[错误对照](./error-faces.md)；十个可运行场景（输出已钉住）：[错误信息对照](./errors-vs-typescript.md)。
 
 ## 迁移，而非永久双门
 

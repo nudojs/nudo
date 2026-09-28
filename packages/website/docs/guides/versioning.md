@@ -79,7 +79,7 @@ npm i @nudojs/env@0.4.1
 
 The site documents **`main`** — the announcement bar shows which package versions that corresponds to (read from `packages/*/package.json` at build time), and the table above is generated from the same source. Per-package release history: [Releases](../releases.md) and each package's `CHANGELOG.md`.
 
-Versioned docs (`/docs/<version>/…` snapshots) are deliberately deferred until 1.0: today the CLI/service lines move together and a second copy would drift faster than it helps. Until then, pin package versions (table above) when you need bit-stable behaviour.
+Versioned docs (`/docs/<version>/…` snapshots) stay **off** for the 1.x line: `nudojs` / `@nudojs/service` / `@nudojs/parser` still move in lockstep, every snapshot would double the en/zh mirror plus the docs-as-code gates that keep it honest, and the announcement bar already answers "which versions does this page describe". The revisit trigger is concrete — the first 2.0, or the first release where the published CLI and service lines diverge. Until then, pin package versions (table above) when you need bit-stable behaviour.
 
 ## Changesets (contributors)
 

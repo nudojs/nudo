@@ -344,8 +344,16 @@ function parseCorePublicApi() {
   const section = md.slice(start, stop);
 
   const rows = new Map();
+  // Track the current `###` subsection (2.1 type system core / 2.2 exec runtime)
+  // so rows can be grouped on the page. Rows before any subsection → "2.1".
+  let subsection = "2.1";
   // | Symbol | Kind | Role | Stability |  and  | Symbol family | Role | Stability |
   for (const line of section.split("\n")) {
+    const head = /^###\s+(\d+\.\d+)/.exec(line);
+    if (head) {
+      subsection = head[1];
+      continue;
+    }
     if (!line.trim().startsWith("|")) continue;
     const cells = line.split("|").slice(1, -1).map((c) => c.trim());
     if (cells.length < 3) continue;
@@ -364,7 +372,7 @@ function parseCorePublicApi() {
           : name[0] === name[0].toUpperCase() && name[0] !== name[0].toLowerCase()
             ? "type"
             : "const";
-      rows.set(name, { name, kind, summary: roleCell.replace(/\*\*/g, "").trim() || null, signature: null });
+      rows.set(name, { name, kind, summary: roleCell.replace(/\*\*/g, "").trim() || null, signature: null, subsection });
     }
   }
   return [...rows.values()].sort((a, b) => a.name.localeCompare(b.name));
@@ -469,7 +477,7 @@ function buildLspRows() {
 
 // ─── page builders ───────────────────────────────────────────────────────────
 
-function buildCoreRows() {
+function buildCoreGroups() {
   const rows = parseCorePublicApi();
   // Enrich from barrels: signatures/kinds when the name is a real export.
   const barrel = parseBarrel("packages/core/src/index.ts");
@@ -483,13 +491,40 @@ function buildCoreRows() {
     if (!r.summary && b.summary) r.summary = b.summary;
   }
   // Supplement with non-runtime index.ts names missing from §2 (skip $op runtime).
+  const inSection2 = new Set(rows.map((r) => r.name));
+  const extra = [];
   for (const r of barrel) {
     if (r.name.startsWith("$")) continue;
-    if (rows.some((x) => x.name === r.name)) continue;
-    rows.push(r);
+    if (inSection2.has(r.name)) continue;
+    extra.push(r);
   }
-  rows.sort((a, b) => a.name.localeCompare(b.name));
-  return rows;
+  const byNameAZ = (a, b) => a.name.localeCompare(b.name);
+  return {
+    core: rows.filter((r) => r.subsection === "2.1").sort(byNameAZ),
+    exec: rows.filter((r) => r.subsection === "2.2").sort(byNameAZ),
+    extra: extra.sort(byNameAZ),
+  };
+}
+
+function buildCoreBlock(lang, groups, extraNote) {
+  const zh = lang === "zh";
+  const parts = [notice(lang)];
+  if (extraNote) parts.push("", extraNote);
+  parts.push("", zh ? "### 类型系统核心（§2.1）" : "### Type system core (§2.1)");
+  parts.push("", symbolTable(lang, groups.core));
+  parts.push("", zh ? "### Exec 运行时（$op，§2.2）" : "### Exec runtime ($op, §2.2)");
+  parts.push("", symbolTable(lang, groups.exec));
+  // MDX: blank lines around the inner markdown table keep it out of JSX text.
+  parts.push(
+    "",
+    "<details>",
+    `<summary>${zh ? `src/index.ts 其余导出（${groups.extra.length}）` : `Additional exports from src/index.ts (${groups.extra.length})`}</summary>`,
+    "",
+    symbolTable(lang, groups.extra),
+    "",
+    "</details>",
+  );
+  return parts.join("\n");
 }
 
 function buildBlock(lang, rows, extraNote) {
@@ -500,9 +535,9 @@ function buildBlock(lang, rows, extraNote) {
 }
 
 const NOTE_CORE_EN =
-  "Product-face inventory from `packages/core/PUBLIC_API.md` §2 (plus non-`$op` names re-exported from `src/index.ts`). Engine `$op` runtime is the `./exec` family in §2.2; host machinery lives on `@nudojs/core/internal` and is intentionally out of scope.";
+  "Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsection: type system core (§2.1) and exec runtime (§2.2, the `$op` family). Remaining non-`$op` names re-exported from `src/index.ts` are folded into the collapsible list below. Host machinery lives on `@nudojs/core/internal` and is intentionally out of scope.";
 const NOTE_CORE_ZH =
-  "产品面清单来自 `packages/core/PUBLIC_API.md` §2（并补入 `src/index.ts` 中非 `$op` 的再导出名）。`$op` 运行时即 §2.2 的 `./exec` 族；宿主机件在 `@nudojs/core/internal`，刻意不在本表。";
+  "产品面清单来自 `packages/core/PUBLIC_API.md` §2，按子节分组：类型系统核心（§2.1）与 Exec 运行时（§2.2，`$op` 族）。`src/index.ts` 中其余非 `$op` 再导出名折叠进下方清单。宿主机件在 `@nudojs/core/internal`，刻意不在本表。";
 
 const NOTE_SERVICE_EN =
   "Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-exported from `@nudojs/service/emit`.";
@@ -523,7 +558,12 @@ const PAGES = [
   {
     id: "core",
     build() {
-      return { rows: buildCoreRows(), noteEn: NOTE_CORE_EN, noteZh: NOTE_CORE_ZH };
+      const groups = buildCoreGroups();
+      return {
+        blockEn: buildCoreBlock("en", groups, NOTE_CORE_EN),
+        blockZh: buildCoreBlock("zh", groups, NOTE_CORE_ZH),
+        count: groups.core.length + groups.exec.length + groups.extra.length,
+      };
     },
   },
   {
@@ -605,19 +645,20 @@ function injectOrAppend(path, block) {
 
 let wrote = 0;
 for (const page of PAGES) {
-  const { rows, noteEn, noteZh, trailerEn, trailerZh } = page.build();
+  const { rows, count, noteEn, noteZh, trailerEn, trailerZh, blockEn, blockZh } = page.build();
   const enPath = join(root, EN_DOCS, `${page.id}.md`);
   const zhPath = join(root, ZH_DOCS, `${page.id}.md`);
   if (!existsSync(enPath)) {
     console.warn(`skip ${page.id}: missing ${EN_DOCS}/${page.id}.md`);
     continue;
   }
-  const enBlock = [buildBlock("en", rows, noteEn), trailerEn].filter(Boolean).join("\n\n");
-  const zhBlock = [buildBlock("zh", rows, noteZh), trailerZh].filter(Boolean).join("\n\n");
+  // Pages with custom structure (e.g. grouped core tables) provide ready blocks.
+  const enBlock = blockEn ?? [buildBlock("en", rows, noteEn), trailerEn].filter(Boolean).join("\n\n");
+  const zhBlock = blockZh ?? [buildBlock("zh", rows, noteZh), trailerZh].filter(Boolean).join("\n\n");
   const enMode = injectOrAppend(enPath, enBlock);
   const zhMode = existsSync(zhPath) ? injectOrAppend(zhPath, zhBlock) : "missing-zh";
   wrote++;
-  console.log(`api/${page.id}.md  (${rows.length} symbols)  en=${enMode} zh=${zhMode}`);
+  console.log(`api/${page.id}.md  (${rows ? rows.length : count} symbols)  en=${enMode} zh=${zhMode}`);
 }
 
 console.log(`gen-api-docs refreshed ${wrote} api page(s) (en+zh skeleton blocks)`);

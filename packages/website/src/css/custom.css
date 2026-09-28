@@ -2771,6 +2771,34 @@ main .cs-playground,
   text-decoration: none;
 }
 
+/* Engine-verified badge: ```js verify / verify-sidecar``` fences are executed
+   against the real engine at build time (scripts/verify-doc-examples.sh).
+   Shares the playground bar — badge left, link right (margin-right: auto). */
+.nudo-code-playground-bar {
+  gap: 0.5rem;
+}
+
+.nudo-code-verified {
+  margin-right: auto;
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.7rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.12rem 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--nudo-signal) 40%, transparent);
+  border-radius: 999px;
+  color: var(--nudo-signal);
+  background: color-mix(in srgb, var(--nudo-signal) 10%, transparent);
+}
+
+[data-theme="dark"] .nudo-code-verified {
+  color: var(--nudo-signal-lit);
+  border-color: color-mix(in srgb, var(--nudo-signal-lit) 40%, transparent);
+  background: color-mix(in srgb, var(--nudo-signal-lit) 10%, transparent);
+}
+
 /* Agent-facing page actions (Copy as Markdown / Open in ChatGPT / Claude) */
 .doc-agent-actions {
   display: flex;
