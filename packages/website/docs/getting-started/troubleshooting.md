@@ -58,12 +58,7 @@ L2 requires entry/export functions not to carry **undeclared, uncaptured** throw
 
 ## Where did `infer` / `types` / `interface` / `refine` go?
 
-Deleted in the CLI product-face cleanup — breaking, no compatibility layer ([release history](../releases-history.md)). The primary verbs are `check` / `test` / `contract` / `export` / `health`:
-
-| Old habit | Replacement |
-|---|---|
-| `nudo infer` / `nudo types` | `nudo check` signatures, `nudo test` cases, IDE hover |
-| `nudo interface` / `nudo refine` | `nudo contract` + `*.nudo.js` sidecars |
+Deleted in the CLI product-face cleanup — breaking, no compatibility layer ([release history](../releases-history.md)). The primary verbs are `check` / `test` / `contract` / `export` / `health`.
 
 Current per-package notes: [Releases](../releases.md).
 

@@ -58,12 +58,7 @@ L2 要求入口/导出函数不得携带**未声明、未捕获**的抛出——
 
 ## `infer` / `types` / `interface` / `refine` 动词去哪了？
 
-在 CLI 产品面清理中被删除——破坏性变更，无兼容层（[完整发布历史](../releases-history.md)）。如今的主动词是 `check` / `test` / `contract` / `export` / `health`：
-
-| 旧习惯 | 替代方式 |
-|---|---|
-| `nudo infer` / `nudo types` | `nudo check` 签名、`nudo test` 用例、IDE 悬浮 |
-| `nudo interface` / `nudo refine` | `nudo contract` + `*.nudo.js` 侧车 |
+在 CLI 产品面清理中被删除——破坏性变更，无兼容层（[完整发布历史](../releases-history.md)）。如今的主动词是 `check` / `test` / `contract` / `export` / `health`。
 
 各包当前版本说明：[发布说明](../releases.md)。
 

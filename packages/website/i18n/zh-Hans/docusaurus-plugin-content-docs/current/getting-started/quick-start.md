@@ -4,7 +4,7 @@ description: "在普通 JavaScript 上门禁签名与用例——npx nudojs chec
 
 # 快速开始
 
-**读完你能带走：** `nudo check` 的签名、`nudo test` 的用例、一份侧车契约，以及一条可读的 `nudo check` 失败信息。
+**读完你能带走：** `nudo check` 的签名、`nudo test` 的用例、一份侧车契约、一条可读的 `nudo check` 失败信息，以及让门禁重新变绿的收尾闭环。
 
 更想在浏览器里试？打开 [Playground](/playground)。
 
@@ -107,6 +107,37 @@ issues
 违例按调用点上报。修正调用（或放宽契约）后 `check` 通过——仍会打印签名。
 
 `if` 守卫**不是** refinement。显式契约只来自侧车 / `@nudo:contract`。没有它们时，L2 仍门禁导出上的未消化 may-throw（入口参数为 `any`）。
+
+## 5. 收尾闭环：变绿、CI、IDE
+
+修正违规调用——任何满足 `x > 0` 的值都行：
+
+```js
+scale(2); // satisfies the sidecar — x must be > 0
+```
+
+再跑一次门禁：
+
+```bash
+npx nudojs check calc.js
+```
+
+```text
+nudo check  calc.js
+OK
+  0 error · 0 warning · 0 info · 2 fn
+
+signatures
+  scale(x: number) => number
+  formatName(first: any, last: any) => string
+
+(no issues)
+```
+
+变绿了——签名照常打印；只有 `OK` / `FAILED` 行和退出码（`0`）说明门禁是否通过。闭环还剩两个落点：
+
+- **CI** —— 把 `nudo check` 接入 GitHub Actions：[CI 集成 → GitHub Actions](../guides/check.md#github-actions)
+- **IDE** —— VS Code 里的悬浮、内联提示与用例切换：[VS Code 指南](../guides/vscode.md)
 
 ## 选项
 
