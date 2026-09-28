@@ -1,6 +1,6 @@
 {
   "name": "@nudojs/harvester",
-  "version": "0.2.13",
+  "version": "0.2.14",
   "engines": {
     "node": ">=20"
   },
