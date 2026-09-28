@@ -11,19 +11,65 @@ slug: /releases-history
 
 | 包 | 当前版本 |
 |----|----------|
-| `@nudojs/core` | 1.2.0 |
-| `@nudojs/service` | 1.2.0 |
-| `nudojs (CLI)` | 1.0.5 |
-| `@nudojs/parser` | 1.1.5 |
-| `@nudojs/lsp` | 1.1.5 |
-| `@nudojs/env` | 0.4.7 |
-| `@nudojs/harvester` | 0.2.13 |
-| `vite-plugin-nudo` | 0.4.8 |
-| `nudo-vscode` | 0.3.12 |
+| `@nudojs/core` | 1.2.1 |
+| `@nudojs/service` | 1.2.1 |
+| `nudojs (CLI)` | 1.0.6 |
+| `@nudojs/parser` | 1.1.6 |
+| `@nudojs/lsp` | 1.1.6 |
+| `@nudojs/env` | 0.4.8 |
+| `@nudojs/harvester` | 0.2.14 |
+| `vite-plugin-nudo` | 0.4.9 |
+| `nudo-vscode` | 0.3.13 |
 
 **按包跳转:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.2.0 {#pkg-core}
+## @nudojs/core 1.2.1 {#pkg-core}
+
+## 1.2.1
+
+### Patch Changes
+
+- 7b8df37: fix(core): JS semantics — UpdateExpression, optional chain, enumerable, ToPropertyKey, copyWithin, split limit, isPrototypeOf
+  
+  Seven evaluator/transpile correctness fixes (one commit per class):
+  
+  - `x++`/`x--` use ToNumeric ± 1 (bigint gets `1n`); postfix caches the old value (IEEE 2^53 safe). `"5"++` is `6`, not `"51"`.
+  - Optional chains short-circuit the **remaining** chain (`a?.b.c` ≡ `a == null ? undefined : a.b.c`), including `o?.length` / `o?.[k]` / `g?.()` / `o.m?.()`. RegExp `test`/`exec` inside a chain still rebind `lastIndex`.
+  - `for-in` / `Object.assign` honor `enumerable` (shared `enumOwnKeys` / `isEnumerableView` with `Object.keys`).
+  - ToPropertyKey stringifies `null`/`undefined`/`boolean` computed keys (`o[null]` ≡ `o["null"]`) for get/set/in/delete.
+  - `copyWithin` overlap direction uses the **resolved** window (negative indices no longer flip).
+  - `split(undefined, limit)` uses ToUint32 (`0.5`/`±Infinity` → `[]`; `-1` → `2^32-1`).
+  - `Object.prototype.isPrototypeOf(Object.prototype)` is `false`.
+- af8cb68: fix(core): JS semantics soundness — JSON space, bigint throws, `__proto__` keys
+  
+  - `JSON.stringify` space goes through to the host (`min(10, ToIntegerOrInfinity)`); `Infinity` / `(0,1)` fractions no longer collapse to compact.
+  - Mixed / invalid bigint ops hard-throw `TypeError`/`RangeError` when the other operand is **definitely** non-bigint (number/bool/null/undefined). Abstract operands (`any`/`obj`/string-prim for `+`) no longer fold to `never` — `1n + s` is string concat, `1n + x` (any) is `bigint | string` with soft may-throw.
+  - `__proto__` own keys survive (`JSON.parse`, computed literal, method named `__proto__`, spread/assign copy) via `defineProperty`; non-computed `{__proto__: v}` is the ES prototype special form; `Object.setPrototypeOf` missing/`undefined` proto throws.
+- ff37d91: fix(core): string-face typing — concat/template with an `any` operand, abstract `.length`
+  
+  Two gaps that made provably-string expressions come out as `unknown` (and
+  raised `nudo:unknown-inference` on real projects):
+  
+  - `concatString` fell back to `unknown` whenever one side had no
+    string-parts view — including `any`/`unknown`. But a string operand
+    determines the result type: `"s" + x`, `x + "s"` and `` `${x}` `` are all
+    `string` (the ToString-throws-on-Symbol path is not modelled here). This
+    contradicted `docs/design/limitations.md`'s mixed-`+` narrowing discipline
+    (`number ⊗ obj/unknown → number | string`) — `1 + x` narrowed, `"s" + x` did
+    not. Now a definitely-string side yields `string` (`path` conf); all-other
+    cases keep the previous `unknown`.
+  
+  - `$len` had no branch for an abstract string prim (template / concat result /
+    abstract `string`), so `` `${x}`.length `` and `String(x).length` fell to the
+    trailing `unknown`. String length is always `number`; literal strings still
+    fold exactly.
+  
+  Verified on a real project: `tarballUrl`-shaped templates and
+  `printScore` / `printPublishResult`-shaped helpers stop reporting
+  `nudo:unknown-inference`.
+
+<details>
+<summary>历史版本 (16)</summary>
 
 ## 1.2.0
 
@@ -67,9 +113,6 @@ slug: /releases-history
   - postfix `++`/`--` writes back inside the expression
   - `+` honors ToPrimitive/ToString for arrays, objects, undefined
   - drop dead duplicate `case "promise"` in checkNode
-
-<details>
-<summary>历史版本 (15)</summary>
 
 ## 1.1.4
 
@@ -455,7 +498,23 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/service 1.2.0 {#pkg-service}
+## @nudojs/service 1.2.1 {#pkg-service}
+
+## 1.2.1
+
+### Patch Changes
+
+- Updated dependencies [5494f67]
+- Updated dependencies [7b8df37]
+- Updated dependencies [af8cb68]
+- Updated dependencies [ff37d91]
+  - @nudojs/env@0.4.8
+  - @nudojs/core@1.2.1
+  - @nudojs/harvester@0.2.14
+  - @nudojs/parser@1.1.6
+
+<details>
+<summary>历史版本 (18)</summary>
 
 ## 1.2.0
 
@@ -505,9 +564,6 @@ slug: /releases-history
   - @nudojs/env@0.4.7
   - @nudojs/harvester@0.2.13
   - @nudojs/parser@1.1.5
-
-<details>
-<summary>历史版本 (17)</summary>
 
 ## 1.1.4
 
@@ -941,7 +997,22 @@ slug: /releases-history
 
 </details>
 
-## nudojs (CLI) 1.0.5 {#pkg-nudojs}
+## nudojs (CLI) 1.0.6 {#pkg-nudojs}
+
+## 1.0.6
+
+### Patch Changes
+
+- Updated dependencies [7b8df37]
+- Updated dependencies [af8cb68]
+- Updated dependencies [ff37d91]
+  - @nudojs/core@1.2.1
+  - @nudojs/harvester@0.2.14
+  - @nudojs/service@1.2.1
+  - @nudojs/parser@1.1.6
+
+<details>
+<summary>历史版本 (15)</summary>
 
 ## 1.0.5
 
@@ -981,9 +1052,6 @@ slug: /releases-history
   - @nudojs/service@1.2.0
   - @nudojs/harvester@0.2.13
   - @nudojs/parser@1.1.5
-
-<details>
-<summary>历史版本 (14)</summary>
 
 ## 1.0.4
 
@@ -1190,7 +1258,19 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/parser 1.1.5 {#pkg-parser}
+## @nudojs/parser 1.1.6 {#pkg-parser}
+
+## 1.1.6
+
+### Patch Changes
+
+- Updated dependencies [7b8df37]
+- Updated dependencies [af8cb68]
+- Updated dependencies [ff37d91]
+  - @nudojs/core@1.2.1
+
+<details>
+<summary>历史版本 (16)</summary>
 
 ## 1.1.5
 
@@ -1199,9 +1279,6 @@ slug: /releases-history
 - Updated dependencies [5ff4202]
 - Updated dependencies [5ff4202]
   - @nudojs/core@1.2.0
-
-<details>
-<summary>历史版本 (15)</summary>
 
 ## 1.1.4
 
@@ -1415,7 +1492,21 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/lsp 1.1.5 {#pkg-lsp}
+## @nudojs/lsp 1.1.6 {#pkg-lsp}
+
+## 1.1.6
+
+### Patch Changes
+
+- Updated dependencies [7b8df37]
+- Updated dependencies [af8cb68]
+- Updated dependencies [ff37d91]
+  - @nudojs/core@1.2.1
+  - @nudojs/service@1.2.1
+  - @nudojs/parser@1.1.6
+
+<details>
+<summary>历史版本 (19)</summary>
 
 ## 1.1.5
 
@@ -1454,9 +1545,6 @@ slug: /releases-history
   - @nudojs/core@1.2.0
   - @nudojs/service@1.2.0
   - @nudojs/parser@1.1.5
-
-<details>
-<summary>历史版本 (18)</summary>
 
 ## 1.1.4
 
@@ -1835,7 +1923,30 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/env 0.4.7 {#pkg-env}
+## @nudojs/env 0.4.8 {#pkg-env}
+
+## 0.4.8
+
+### Patch Changes
+
+- 5494f67: fix(env): `Math.min` / `Math.max` / `Math.hypot` are variadic
+  
+  The ES env declared them as binary (`envFn([prim.num(), prim.num()], num)`), so
+  `Math.min(a, b, c)` — the ordinary usage — no longer matched the arity, and the
+  call degraded to `unknown`. On a real project this turned an OSA
+  Damerau–Levenshtein implementation into `unknown` and failed 8 case assertions
+  the moment `nudo.env` was declared.
+  
+  They now use `envFnVariadic(prim.num(), prim.num(), { apply: numImplVAbs(...) })`:
+  any number of literal numeric args fold (`Math.min(3, 1, 2) === 1`), and
+  non-literal args yield `number` instead of `unknown`.
+- Updated dependencies [7b8df37]
+- Updated dependencies [af8cb68]
+- Updated dependencies [ff37d91]
+  - @nudojs/core@1.2.1
+
+<details>
+<summary>历史版本 (15)</summary>
 
 ## 0.4.7
 
@@ -1844,9 +1955,6 @@ slug: /releases-history
 - Updated dependencies [5ff4202]
 - Updated dependencies [5ff4202]
   - @nudojs/core@1.2.0
-
-<details>
-<summary>历史版本 (14)</summary>
 
 ## 0.4.6
 
@@ -2009,7 +2117,22 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/harvester 0.2.13 {#pkg-harvester}
+## @nudojs/harvester 0.2.14 {#pkg-harvester}
+
+## 0.2.14
+
+### Patch Changes
+
+- Updated dependencies [5494f67]
+- Updated dependencies [7b8df37]
+- Updated dependencies [af8cb68]
+- Updated dependencies [ff37d91]
+  - @nudojs/env@0.4.8
+  - @nudojs/core@1.2.1
+  - @nudojs/parser@1.1.6
+
+<details>
+<summary>历史版本 (15)</summary>
 
 ## 0.2.13
 
@@ -2020,9 +2143,6 @@ slug: /releases-history
   - @nudojs/core@1.2.0
   - @nudojs/env@0.4.7
   - @nudojs/parser@1.1.5
-
-<details>
-<summary>历史版本 (14)</summary>
 
 ## 0.2.12
 
@@ -2183,7 +2303,20 @@ slug: /releases-history
 
 </details>
 
-## vite-plugin-nudo 0.4.8 {#pkg-vite-plugin}
+## vite-plugin-nudo 0.4.9 {#pkg-vite-plugin}
+
+## 0.4.9
+
+### Patch Changes
+
+- Updated dependencies [7b8df37]
+- Updated dependencies [af8cb68]
+- Updated dependencies [ff37d91]
+  - @nudojs/core@1.2.1
+  - @nudojs/service@1.2.1
+
+<details>
+<summary>历史版本 (18)</summary>
 
 ## 0.4.8
 
@@ -2193,9 +2326,6 @@ slug: /releases-history
 - Updated dependencies [5ff4202]
   - @nudojs/core@1.2.0
   - @nudojs/service@1.2.0
-
-<details>
-<summary>历史版本 (17)</summary>
 
 ## 0.4.7
 
@@ -2395,7 +2525,7 @@ slug: /releases-history
 
 </details>
 
-## nudo-vscode 0.3.12 {#pkg-vscode}
+## nudo-vscode 0.3.13 {#pkg-vscode}
 
 ## Unreleased
 
