@@ -590,6 +590,30 @@ export function extractFn(
     }
   }
 
+  // 本地 `export { foo as bar }` / `export { foo as default }`：导出名别名到同一 fn
+  // （无 from 的 ExportNamedDeclaration 才是本地改名；有 from 的是 re-export 跳转）
+  for (const stmt of file.program.body) {
+    if (stmt.type !== "ExportNamedDeclaration" || stmt.declaration) continue;
+    if ((stmt as { source?: unknown }).source) continue;
+    const specs = ((stmt as { specifiers?: unknown[] }).specifiers ?? []) as Array<{
+      type?: string;
+      local?: { name?: string };
+      exported?: { name?: string; value?: unknown };
+    }>;
+    for (const spec of specs) {
+      if (spec.type !== "ExportSpecifier") continue;
+      const localName = spec.local?.name;
+      const exportedName = spec.exported?.name ?? spec.exported?.value;
+      if (!localName || exportedName == null) continue;
+      const exp = String(exportedName);
+      if (exp === localName || env.fns.has(exp)) continue;
+      const target = env.fns.get(localName);
+      if (!target) continue;
+      env.fns.set(exp, target);
+      formalsByName.set(exp, formalsByName.get(localName) ?? []);
+    }
+  }
+
   const fn = env.fns.get(fnName);
   if (!fn) return undefined;
   return { params: fn.params, body: fn.body, env, formals: formalsByName.get(fnName) ?? [] };
