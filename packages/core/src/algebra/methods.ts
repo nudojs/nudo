@@ -19,7 +19,7 @@ import {
   absTemplateViews,
   knownPrefixOfViews,
   knownSuffixOfViews,
-  allFixedTextOfViews,
+  fixedRunsOfViews,
   fixedLengthOfViews,
   decideStartsWith,
   decideEndsWith,
@@ -165,7 +165,7 @@ export function callAbsMethod(
             ? decideStartsWith(prefix, a0Str)
             : name === "endsWith"
               ? decideEndsWith(suffix, a0Str)
-              : decideIncludes(allFixedTextOfViews(views), a0Str);
+              : decideIncludes(fixedRunsOfViews(views), a0Str);
         return d === "unknown" ? boolPrim() : boolLit(d);
       }
       case "toUpperCase":
