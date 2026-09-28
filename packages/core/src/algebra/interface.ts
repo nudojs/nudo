@@ -33,6 +33,7 @@ import type { Term } from "./term.ts";
 import { termToString } from "./term.ts";
 import { parseSource } from "./parse-source.ts";
 import { hashSource } from "./hash-source.ts";
+import { escapeRegExp } from "./code-text.ts";
 import { isNodeModulesPath, resolveDepPath, sidecarPathOf } from "./sidecar-path.ts";
 import {
   type NudoConstraint,
@@ -456,15 +457,21 @@ type SidecarBinding =
 
 /** 本地声明名是否以 default 形态导出（C4.4：`export { x as default }` / `export default function x`） */
 function isDefaultExportLocal(source: string, localName: string): boolean {
+  // JS 标识符含 `$`：`\b` 把 `$` 当非词，`export { $fn as default }` 会漏。
+  // 边界用 (?<![$\w]) / (?![$\w])，名字本身先转义（`Store.get` 的 `.`）。
+  const name = escapeRegExp(localName);
   const reList = new RegExp(
-    `export\\s*\\{[^}]*\\b${localName}\\s+as\\s+default\\b[^}]*\\}`,
+    `export\\s*\\{[^}]*(?<![\\w$])${name}(?![\\w$])\\s+as\\s+default(?![\\w$])[^}]*\\}`,
     "m",
   );
   const reDefaultFn = new RegExp(
-    `export\\s+default\\s+(?:async\\s+)?function\\s+${localName}\\b`,
+    `export\\s+default\\s+(?:async\\s+)?function\\s+(?<![\\w$])${name}(?![\\w$])`,
     "m",
   );
-  const reDefaultId = new RegExp(`export\\s+default\\s+${localName}\\b`, "m");
+  const reDefaultId = new RegExp(
+    `export\\s+default\\s+(?<![\\w$])${name}(?![\\w$])`,
+    "m",
+  );
   return reList.test(source) || reDefaultFn.test(source) || reDefaultId.test(source);
 }
 

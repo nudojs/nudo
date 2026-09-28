@@ -8,6 +8,7 @@
 import type { parseSource } from "./parse-source.ts";
 import type { Abs } from "./abs.ts";
 import { formatAbs, formatAbsMultiline, formatShape } from "./format.ts";
+import { escapeRegExp } from "./code-text.ts";
 import type { PolyFn } from "./generalize.ts";
 
 type ParsedFile = ReturnType<typeof parseSource>;
@@ -75,8 +76,9 @@ export function estimateEntryParamCount(
   } catch {
     /* fallthrough */
   }
+  const escaped = escapeRegExp(fnName);
   const re = new RegExp(
-    `(?:function\\s+${fnName}\\s*\\(([^)]*)\\)|${fnName}\\s*=\\s*(?:async\\s*)?function(?:\\s+${fnName})?\\s*\\(([^)]*)\\)|${fnName}\\s*=\\s*(?:async\\s*)?\\(([^)]*)\\)\\s*=>)`,
+    `(?:function\\s+${escaped}\\s*\\(([^)]*)\\)|${escaped}\\s*=\\s*(?:async\\s*)?function(?:\\s+${escaped})?\\s*\\(([^)]*)\\)|${escaped}\\s*=\\s*(?:async\\s*)?\\(([^)]*)\\)\\s*=>)`,
   );
   const m = re.exec(source);
   if (m) {
@@ -90,8 +92,9 @@ export function estimateEntryParamCount(
 /** export default 是否绑定到该本地函数名 */
 export function isDefaultExportName(source: string, fnName: string): boolean {
   // export default function fn / export default fn / export default () =>
+  const name = escapeRegExp(fnName);
   const re = new RegExp(
-    `export\\s+default\\s+(?:async\\s+)?(?:function\\s+${fnName}\\b|${fnName}\\b)`,
+    `export\\s+default\\s+(?:async\\s+)?(?:function\\s+${name}\\b|${name}\\b)`,
   );
   return re.test(source);
 }

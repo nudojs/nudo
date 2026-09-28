@@ -61,3 +61,8 @@ export function sourceHasModuleDependency(source: string): boolean {
 export function sourceHasCjsExports(source: string): boolean {
   return /\b(?:exports|module)\s*(?:\.|\[)/.test(stripCommentsAndStrings(source));
 }
+
+/** 标识符/导出名插入 RegExp 前转义（`$` `.` `Class.method` 等） */
+export function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
