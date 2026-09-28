@@ -41,7 +41,9 @@ export function go(o) {
 
   it("transpiles optional member", () => {
     const out = transpile(`export function f(o) { return o?.x; }`);
-    expect(out).toContain("$optionalGet(");
+    // 整链短路：$fork + $nullishTest（?. 命中 nullish 时剩余链不再求值）
+    expect(out).toContain("$fork(");
+    expect(out).toContain("$nullishTest(");
   });
 });
 

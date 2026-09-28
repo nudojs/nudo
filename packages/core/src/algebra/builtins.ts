@@ -13,6 +13,8 @@ export {
   getPropFlags,
   setPropFlags,
   migrateInvariants,
+  enumOwnKeys,
+  isEnumerableView,
 } from "./builtins/invariants.ts";
 export { evalMathMethod } from "./builtins/math.ts";
 export { assignSourceSlots, evalObjectMethod } from "./builtins/object.ts";

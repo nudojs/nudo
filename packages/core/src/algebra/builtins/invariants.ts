@@ -27,6 +27,18 @@ export function getPropFlags(o: Abs): Map<string, PropFlags> | undefined {
   return propFlagsTable.get(o);
 }
 
+/** 枚举视图键（for-in / Object.keys|values|entries / Object.assign）：
+ *  剔除 defineProperty 记下的 enumerable:false 自有键。 */
+export function enumOwnKeys(o: Abs, slots: Record<string, unknown>): string[] {
+  const flags = getPropFlags(o);
+  return Object.keys(slots).filter((k) => flags?.get(k)?.enumerable !== false);
+}
+
+/** 该键是否出现在枚举视图（无 flags 表 = 默认 enumerable） */
+export function isEnumerableView(o: Abs, key: string): boolean {
+  return getPropFlags(o)?.get(key)?.enumerable !== false;
+}
+
 export function setPropFlags(o: Abs, key: string, f: PropFlags): void {
   let m = propFlagsTable.get(o);
   if (!m) {

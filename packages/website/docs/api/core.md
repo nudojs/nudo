@@ -559,6 +559,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2 (plus non-`$op` na
 | `projectAbsToSchema` | const | one-way projections | — |
 | `projectFlatMapResult` | fn | flatMap 统一结果：展开后的元素 join 成 arr(γ)。 | `projectFlatMapResult( arrConf: Confidence, mapped: Abs[], ): Abs` |
 | `promoteParamShape` | fn | 提升写入载体：替换 env.vars map 项，禁止 mutate 共享 Abs。 | `promoteParamShape( env: AstEnv, param: string, promotedShape: Shape, opts?: { loc?: { line: number; column: number }; recordSite?: boolean }, ): boolean` |
+| `propertyKeyOf` | fn | ES ToPropertyKey 的字面量折叠：null→"null"、undefined→"undefined"、 true/false→"true"/"false"、number/bigint/string → String(v)（ToString）。 | `propertyKeyOf(a: Abs \| undefined): string \| undefined` |
 | `PropFlags` | type | — | `PropFlags = { writable?: boolean; enumerable?: boolean; configurable?: boolean; }` |
 | `protoBrandAbs` | fn | `X.prototype` 形态（getPrototypeOf 结果；带 constructor 槽） | `protoBrandAbs(ctorName: string): Abs` |
 | `protoOfRecv` | fn | Object.getPrototypeOf 的具体原型投影（constructor 链可解）。 | `protoOfRecv(a: Abs): Abs` |

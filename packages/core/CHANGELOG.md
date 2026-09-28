@@ -1,5 +1,48 @@
 # @nudojs/core
 
+## 1.2.1
+
+### Patch Changes
+
+- 7b8df37: fix(core): JS semantics — UpdateExpression, optional chain, enumerable, ToPropertyKey, copyWithin, split limit, isPrototypeOf
+  
+  Seven evaluator/transpile correctness fixes (one commit per class):
+  
+  - `x++`/`x--` use ToNumeric ± 1 (bigint gets `1n`); postfix caches the old value (IEEE 2^53 safe). `"5"++` is `6`, not `"51"`.
+  - Optional chains short-circuit the **remaining** chain (`a?.b.c` ≡ `a == null ? undefined : a.b.c`), including `o?.length` / `o?.[k]` / `g?.()` / `o.m?.()`. RegExp `test`/`exec` inside a chain still rebind `lastIndex`.
+  - `for-in` / `Object.assign` honor `enumerable` (shared `enumOwnKeys` / `isEnumerableView` with `Object.keys`).
+  - ToPropertyKey stringifies `null`/`undefined`/`boolean` computed keys (`o[null]` ≡ `o["null"]`) for get/set/in/delete.
+  - `copyWithin` overlap direction uses the **resolved** window (negative indices no longer flip).
+  - `split(undefined, limit)` uses ToUint32 (`0.5`/`±Infinity` → `[]`; `-1` → `2^32-1`).
+  - `Object.prototype.isPrototypeOf(Object.prototype)` is `false`.
+- af8cb68: fix(core): JS semantics soundness — JSON space, bigint throws, `__proto__` keys
+  
+  - `JSON.stringify` space goes through to the host (`min(10, ToIntegerOrInfinity)`); `Infinity` / `(0,1)` fractions no longer collapse to compact.
+  - Mixed / invalid bigint ops hard-throw `TypeError`/`RangeError` when the other operand is **definitely** non-bigint (number/bool/null/undefined). Abstract operands (`any`/`obj`/string-prim for `+`) no longer fold to `never` — `1n + s` is string concat, `1n + x` (any) is `bigint | string` with soft may-throw.
+  - `__proto__` own keys survive (`JSON.parse`, computed literal, method named `__proto__`, spread/assign copy) via `defineProperty`; non-computed `{__proto__: v}` is the ES prototype special form; `Object.setPrototypeOf` missing/`undefined` proto throws.
+- ff37d91: fix(core): string-face typing — concat/template with an `any` operand, abstract `.length`
+  
+  Two gaps that made provably-string expressions come out as `unknown` (and
+  raised `nudo:unknown-inference` on real projects):
+  
+  - `concatString` fell back to `unknown` whenever one side had no
+    string-parts view — including `any`/`unknown`. But a string operand
+    determines the result type: `"s" + x`, `x + "s"` and `` `${x}` `` are all
+    `string` (the ToString-throws-on-Symbol path is not modelled here). This
+    contradicted `docs/design/limitations.md`'s mixed-`+` narrowing discipline
+    (`number ⊗ obj/unknown → number | string`) — `1 + x` narrowed, `"s" + x` did
+    not. Now a definitely-string side yields `string` (`path` conf); all-other
+    cases keep the previous `unknown`.
+  
+  - `$len` had no branch for an abstract string prim (template / concat result /
+    abstract `string`), so `` `${x}`.length `` and `String(x).length` fell to the
+    trailing `unknown`. String length is always `number`; literal strings still
+    fold exactly.
+  
+  Verified on a real project: `tarballUrl`-shaped templates and
+  `printScore` / `printPublishResult`-shaped helpers stop reporting
+  `nudo:unknown-inference`.
+
 ## 1.2.0
 
 ### Minor Changes

@@ -5,11 +5,11 @@
 
 import type { Abs } from "../abs.ts";
 import { abs, unknown, confJoin, litValue, bool, boolLit, str, strLit, numLit } from "../abs.ts";
-import { objOf, joinAbs, isObj, canonicalArrayIndex, getSlot, setSlot } from "../objects.ts";
+import { objOf, joinAbs, isObj, canonicalArrayIndex, getSlot, setSlot, propertyKeyOf } from "../objects.ts";
 import { $get, $set, $lit, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary, lookupObjAccessor, fillTuple, clearStaleTermPred } from "./runtime.ts";
 import { $call } from "./call.ts";
 import { getFnImpl, absFunction } from "../abs-fn.ts";
-import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, evalBuiltinNew, extStateOf, getPropFlags, tryMakeRegexAbs, makeArrayCtorAbs, assignSourceSlots, isSymbolAbs, stringOfSymbol, evalPromiseCtor, evalPromiseMethod, builtinCtorNameOf } from "../builtins.ts";
+import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, evalBuiltinNew, extStateOf, getPropFlags, isEnumerableView, tryMakeRegexAbs, makeArrayCtorAbs, assignSourceSlots, isSymbolAbs, stringOfSymbol, evalPromiseCtor, evalPromiseMethod, builtinCtorNameOf } from "../builtins.ts";
 import { arrayJoinToString } from "../builtins/array.ts";
 import { isMapAbs, isSetAbs, makeMapAbs, makeSetAbs, collectionElementJoin, ctorArgDefinitelyInvalid } from "../collections.ts";
 import { registerMatchIter } from "./match-iter.ts";
@@ -307,6 +307,9 @@ function runtimeAssignObject(args: Abs[]): Abs {
     const base = (accObj.shape as Extract<Abs["shape"], { k: "obj" }>).slots;
     const flags = getPropFlags(accObj);
     for (const [k, s] of Object.entries((srcAbs.shape as Extract<Abs["shape"], { k: "obj" }>).slots)) {
+      // Object.assign 走 [[OwnPropertyKeys]] + EnumerableOwnProperties：
+      // enumerable:false 自有键不拷贝（与 Object.keys 同口径）
+      if (!isEnumerableView(srcAbs, k)) continue;
       // sealed/nonext 目标新键 / writable:false 键覆写：strict TypeError
       if (
         (st === "sealed" || st === "nonext") &&
@@ -1244,7 +1247,9 @@ export function $staticInvoke(cls: Abs, method: string, args: Abs[]): Abs {
 
 /** 计算属性写：o[kAbs] = v。非字面量 key → open + index join（不得写成字面槽 "?"） */
 export function $setKey(o: Abs, key: Abs, value: Abs): Abs {
-  const k = litValue(key);
+  // ToPropertyKey：null/undefined/boolean 字面量 → "null"/"undefined"/"true"
+  const pk = propertyKeyOf(key);
+  const k = pk !== undefined ? pk : litValue(key);
   if (typeof k === "string" || typeof k === "number") {
     const ks = String(k);
     // 对象字面量计算键 `{['__proto__']: v}` 是自有数据属性（CreateDataProperty），

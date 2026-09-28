@@ -7,7 +7,7 @@ import { lit } from "../../term.ts";
 import type { Phi } from "../../pred.ts";
 import { pTrue, and, predEquals } from "../../pred.ts";
 import { absFunction, getFnImpl } from "../../abs-fn.ts";
-import { joinAbs, isObj, type ObjShape, type Slot, isNullProtoObj, getSlot, canonicalArrayIndex } from "../../objects.ts";
+import { joinAbs, isObj, type ObjShape, type Slot, isNullProtoObj, getSlot, canonicalArrayIndex, propertyKeyOf } from "../../objects.ts";
 import { isNullishLitAbs } from "../../surface.ts";
 import { isMapAbs, isSetAbs, mapSizeAbs, setSizeAbs } from "../../collections.ts";
 import {
@@ -132,11 +132,15 @@ export function $in(key: Abs, o: Abs): Abs {
   if (o.shape.k === "prim" || o.shape.k === "never" || isNullishLitAbs(o)) {
     return unknown;
   }
-  // null/undefined 键原生抛 TypeError；非字面量键 → boolean 近似
-  const kv = key.term?.op === "lit" ? key.term.value : undefined;
-  if (kv === null || kv === undefined) {
-    return isNullishLitAbs(key) ? unknown : bool();
+  // null/undefined/boolean 键走 ToPropertyKey（"null"/"undefined"/"true"）——
+  // 原生 `undefined in o` / `null in o` 不抛，是普通字符串键查询。
+  // 仅**右操作数**非对象才 TypeError。非字面量键 → boolean 近似。
+  const keyStr = propertyKeyOf(key);
+  if (keyStr === undefined) {
+    // 抽象 / symbol 键
+    return bool();
   }
+  const kv: string | number = keyStr;
   if (o.shape.k === "tuple") {
     if (kv === "length") return boolLit(true);
     const idx = canonicalArrayIndex(kv);
@@ -147,9 +151,6 @@ export function $in(key: Abs, o: Abs): Abs {
     return boolLit(false);
   }
   if (o.shape.k === "arr") return bool(); // 抽象数组：索引域未知
-  const keyStr =
-    typeof kv === "number" ? String(kv) : typeof kv === "string" ? kv : undefined;
-  if (keyStr === undefined) return bool(); // symbol 键：抽象
   if (o.shape.k === "obj" || o.shape.k === "brand") {
     const objShape: ObjShape | undefined =
       o.shape.k === "brand"
@@ -401,7 +402,8 @@ export function $delRes(o: Abs, _key: Abs): Abs {
  * 抽象 arr 元素并入 undefined；无法表达的形态原样返回。
  */
 export function $del(o: Abs, key: Abs): Abs {
-  const kv = litValue(key);
+  // ToPropertyKey：null/undefined/boolean → "null"/"undefined"/"true"
+  const keyStr = propertyKeyOf(key);
   if (o.shape.k === "sum") {
     return abs(
       { k: "sum", members: o.shape.members.map((m) => $del(m, key)) },
@@ -421,8 +423,6 @@ export function $del(o: Abs, key: Abs): Abs {
     if (clsName) markClassValue(next as object, clsName);
     return next;
   }
-  const keyStr =
-    typeof kv === "number" ? String(kv) : typeof kv === "string" ? kv : undefined;
   if (o.shape.k === "obj" && keyStr !== undefined) {
     if (getPropFlags(o)?.get(keyStr)?.configurable === false) throwStrictWrite();
     if (o.shape.open) return o;
@@ -439,7 +439,7 @@ export function $del(o: Abs, key: Abs): Abs {
     return o;
   }
   if (o.shape.k === "tuple") {
-    const idx = canonicalArrayIndex(kv);
+    const idx = canonicalArrayIndex(keyStr);
     if (idx === undefined || idx >= o.shape.elements.length) return o; // 越界 delete 不影响数组
     o.shape.elements[idx] = $lit(undefined);
     if (!o.shape.holes) o.shape.holes = [];

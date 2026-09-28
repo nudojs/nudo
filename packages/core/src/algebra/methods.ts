@@ -114,6 +114,20 @@ function isUndefinedArg(x: Abs | undefined): boolean {
 }
 
 /**
+ * String.prototype.split 的 limit → ToUint32。
+ * NaN/±Infinity/±0 → 0；其余 truncate 向零后 mod 2^32。
+ * bigint/symbol（ToNumber 抛 TypeError）→ 返回 undefined 由调用方保守。
+ */
+function toUint32Limit(v: number | string | boolean | null | bigint): number | undefined {
+  if (typeof v === "bigint" || typeof v === "symbol") return undefined;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n === 0) return 0;
+  const int = Math.trunc(n);
+  const mod = int % 4294967296;
+  return mod < 0 ? mod + 4294967296 : mod;
+}
+
+/**
  * 调用 Abs 方法。返回 undefined = 未接管（调用方走其它路径）。
  */
 export function callAbsMethod(
@@ -274,9 +288,12 @@ export function callAbsMethod(
         // 直接返回 [ToString(O)] 再按 limit 截断。toStringArg 会误折成 "undefined" 分隔。
         if (isUndefinedArg(args[0])) {
           const one = abs({ k: "tuple", elements: [strLit(lit)] }, undefined, undefined, "exact");
+          // limit 缺省/显式 undefined → lim = 2^32-1（不是 ToUint32(undefined)=0）
           if (lim === undefined) return one;
-          const n = Number(lim);
-          if (!(n > 0)) return abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
+          // limit 走 ToUint32：0.5/±Infinity → 0（空数组）；-1 → 2^32-1（保 1 段）
+          const n = toUint32Limit(lim);
+          if (n === undefined) return strArr("path"); // bigint/symbol limit：ToNumber 抛，保守
+          if (n === 0) return abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
           return one;
         }
         const sep = toStringArg(args[0]);
