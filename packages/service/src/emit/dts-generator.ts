@@ -97,7 +97,11 @@ export function absToTSType(a: Abs, typeVars?: Map<string, string>): string {
     if (a.shape.k === "prim") {
       if (typeof v === "string") return JSON.stringify(v);
       if (typeof v === "boolean") return String(v);
-      if (typeof v === "number") return String(v);
+      if (typeof v === "number") {
+        // NaN/±Infinity 不是 TS 类型名；投影到基类型 number
+        if (!Number.isFinite(v)) return "number";
+        return String(v);
+      }
     }
   }
 
