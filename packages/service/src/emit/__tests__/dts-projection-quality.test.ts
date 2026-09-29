@@ -146,6 +146,28 @@ describe("absToTSType legality (E1)", () => {
     expect(check.ok, check.stderr).toBe(true);
   });
 
+  it("hole-marked tuples stay tsc-clean and distinct from undefined slots (BUG-020)", () => {
+    const undefLit = (): Abs =>
+      abs({ k: "unknown" }, { op: "lit", value: undefined }, undefined, "exact");
+    const sparse = abs(
+      { k: "tuple", elements: [numLit(1), undefLit(), numLit(3)], holes: [1] },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const dense = abs(
+      { k: "tuple", elements: [numLit(1), undefLit(), numLit(3)] },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const sparseTs = absToTSType(sparse);
+    const denseTs = absToTSType(dense);
+    expect(sparseTs).not.toBe(denseTs);
+    const check = tscNoEmit(`export type S = ${sparseTs};\nexport type D = ${denseTs};`);
+    expect(check.ok, check.stderr).toBe(true);
+  });
+
   it("keeps brand | primitive unions legal", () => {
     // Brand names are extensional projections (e.g. "Error"); tsc-clean checks
     // run with --skipLibCheck and do not assert ambient brand declarations exist.

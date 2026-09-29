@@ -381,7 +381,14 @@ export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] }
       return { node: { k: "arr", element: sub.node }, dropped };
     }
     case "tuple": {
-      const elements = s.elements.map((e) => {
+      // hole 槽（`in` 为 false）≠ 显式 undefined 槽。zod tuple 无空槽概念，
+      // 映射 z.unknown() 而非 z.undefined()，并把洞记入 dropped（有损投影台账）。
+      const holes = s.holes ?? [];
+      const elements = s.elements.map((e, i) => {
+        if (holes.includes(i)) {
+          dropped.push(`tuple hole at ${i} not projected (slot absent ≠ undefined)`);
+          return { k: "unknown" } as const;
+        }
         const sub = absToSchemaNode(e);
         dropped.push(...sub.dropped);
         return sub.node;

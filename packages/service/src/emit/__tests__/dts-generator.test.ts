@@ -87,6 +87,48 @@ describe("absToTSType", () => {
     );
   });
 
+  it("renders tuple holes distinctly from explicit undefined (BUG-020)", () => {
+    // hole 槽（`1 in a` 为 false）不得伪装成显式 undefined 元素
+    const sparse = abs(
+      { k: "tuple", elements: [numLit(1), undefLit(), numLit(3)], holes: [1] },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const dense = abs(
+      { k: "tuple", elements: [numLit(1), undefLit(), numLit(3)] },
+      undefined,
+      undefined,
+      "exact",
+    );
+    expect(absToTSType(sparse)).toBe("[1, hole: undefined, 3]");
+    expect(absToTSType(dense)).toBe("[1, undefined, 3]");
+  });
+
+  it("renders leading/trailing tuple holes (BUG-020)", () => {
+    const lead = abs(
+      { k: "tuple", elements: [undefLit(), numLit(1)], holes: [0] },
+      undefined,
+      undefined,
+      "exact",
+    );
+    expect(absToTSType(lead)).toBe("[hole: undefined, 1]");
+    const trail = abs(
+      { k: "tuple", elements: [numLit(1), undefLit()], holes: [1] },
+      undefined,
+      undefined,
+      "exact",
+    );
+    expect(absToTSType(trail)).toBe("[1, hole: undefined]");
+    const multi = abs(
+      { k: "tuple", elements: [undefLit(), numLit(1), undefLit()], holes: [0, 2] },
+      undefined,
+      undefined,
+      "exact",
+    );
+    expect(absToTSType(multi)).toBe("[hole: undefined, 1, hole: undefined]");
+  });
+
   it("converts promise type", () => {
     expect(absToTSType(promiseOf(num()))).toBe("Promise<number>");
   });
