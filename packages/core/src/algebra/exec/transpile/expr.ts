@@ -445,7 +445,13 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         return `$instanceofNonIdent(${l})`;
       }
       const fn = BIN_OPS[expr.operator];
-      if (!fn) return `/* unsupported ${expr.operator} */ $lit(undefined)`;
+      if (!fn) {
+        // 未映射二元运算符：抛 unsupported 交消费方回落（不得假精确 undefined）
+        throw new NudoUnsupportedError(
+          `binary:${expr.operator}`,
+          expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
+        );
+      }
       const l = isExpression(expr.left) ? transpileExpression(expr.left, opts) : "$lit(undefined)";
       const r = isExpression(expr.right) ? transpileExpression(expr.right, opts) : "$lit(undefined)";
       return `${fn}(${l}, ${r})`;
@@ -472,7 +478,11 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
                 : transpileExpression(m.object as Expression, opts);
           return `$delRes(${parentRead}, ${keySrc})`;
         }
-        return `/* delete ${(arg as { type?: string }).type ?? ""} */ $lit(undefined)`;
+        // 非成员目标的 delete 未 lowering：值应为 boolean，折 $lit(undefined) 是假精确
+        throw new NudoUnsupportedError(
+          `delete:${(arg as { type?: string }).type ?? ""}`,
+          expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
+        );
       }
       const arg = transpileExpression(expr.argument as Expression, opts);
       if (expr.operator === "-") return `$neg(${arg})`;
@@ -481,7 +491,11 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       if (expr.operator === "+") return `$toNumber(${arg})`;
       if (expr.operator === "~") return `$bitnot(${arg})`;
       if (expr.operator === "void") return `((${arg}), $lit(undefined))`;
-      return `/* unary ${expr.operator} */ $lit(undefined)`;
+      // 未 lowering 的一元运算符：抛 unsupported 交消费方回落（不得假精确 undefined）
+      throw new NudoUnsupportedError(
+        `unary:${expr.operator}`,
+        expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
+      );
     }
     case "UpdateExpression": {
       // i++/++i/i--/--i：ES 规范 oldValue = ToNumeric(GetValue(lvalue))，
@@ -513,7 +527,12 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           return `$toNumeric(${readSrc})`;
         }
       }
-      return `/* update ${expr.operator} */ $lit(undefined)`;
+      // 不可写回目标（如 foo().x++ / super.x++ / 解构怪形 / 可选链更新）：
+      // 静默折 $lit(undefined) 是假精确——抛 unsupported 交消费方回落
+      throw new NudoUnsupportedError(
+        `update:${expr.operator}`,
+        expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
+      );
     }
     case "AwaitExpression": {
       const arg = transpileExpression(expr.argument as Expression, opts);
@@ -740,10 +759,18 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           const k = transpileExpression(key, opts);
           return `$idx(${obj}, ${k})`;
         }
-        return `/* computed member */ $lit(undefined)`;
+        // 计算属性键非 Expression：抛 unsupported 交消费方回落（不得假精确 undefined）
+        throw new NudoUnsupportedError(
+          `member:computed`,
+          expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
+        );
       }
       if (expr.property.type !== "Identifier") {
-        return `/* member */ $lit(undefined)`;
+        // 非 Identifier 属性（如 PrivateName）：抛 unsupported 交消费方回落
+        throw new NudoUnsupportedError(
+          `member:${expr.property.type}`,
+          expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
+        );
       }
       // o.length
       if (expr.property.name === "length") {
@@ -866,7 +893,11 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
             });
           }
         }
-        return `/* assign ${op} */ $lit(undefined)`;
+        // 逻辑赋值不可写回目标（如 foo().x ||= v）：折 $lit(undefined) 是假精确
+        throw new NudoUnsupportedError(
+          `assign:${op}`,
+          expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
+        );
       }
       if (expr.left.type === "MemberExpression") {
         const m = expr.left as unknown as {
