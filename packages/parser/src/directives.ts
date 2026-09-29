@@ -737,10 +737,33 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
   for (const comment of comments) {
     const text = comment.value;
 
+    // 先收集 case 的括号实参区间：多行实参里的 `@nudo:*` 字样是数据不是指令。
+    // 行首锚定挡不住续行（` * ` 前缀被剥掉后实参行就是「注释行首」），故必须
+    // 在 PURE/SKIP/MOCK/SAMPLE/CASE 扫描前遮罩实参区间。
+    const caseArgSpans: [number, number][] = [];
+    const caseMatches: { match: RegExpExecArray; argsStr: string; afterParen: number }[] = [];
+    CASE_NAME_REGEX.lastIndex = 0;
+    let caseMatch: RegExpExecArray | null;
+    while ((caseMatch = CASE_NAME_REGEX.exec(text)) !== null) {
+      const parenStart = caseMatch.index + caseMatch[0].length - 1;
+      const argsStr = extractBalancedParens(text, parenStart);
+      if (argsStr === null) continue;
+      const afterParen = parenStart + argsStr.length + 2;
+      // 嵌套 case：标签落在已有实参区间内 → 数据，不产出指令
+      const nested = caseArgSpans.some(([s, e]) => caseMatch!.index >= s && caseMatch!.index < e);
+      if (nested) continue;
+      caseArgSpans.push([caseMatch.index, afterParen]);
+      caseMatches.push({ match: caseMatch, argsStr, afterParen });
+    }
+    const inCaseArgs = (idx: number): boolean =>
+      caseArgSpans.some(([s, e]) => idx >= s && idx < e);
+    const commentStartLine = comment.loc?.start.line ?? 0;
+
     MOCK_FROM_REGEX.lastIndex = 0;
     let mockFromMatch: RegExpExecArray | null;
     const mockFromRanges: [number, number][] = [];
     while ((mockFromMatch = MOCK_FROM_REGEX.exec(text)) !== null) {
+      if (inCaseArgs(mockFromMatch.index)) continue;
       directives.push({
         kind: "mock",
         name: mockFromMatch[1],
@@ -755,7 +778,7 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
       const inFromRange = mockFromRanges.some(
         ([s, e]) => mockMatch!.index >= s && mockMatch!.index < e,
       );
-      if (inFromRange) continue;
+      if (inFromRange || inCaseArgs(mockMatch.index)) continue;
 
       const expr = mockMatch[2].trim();
       let arrowFn = parseArrowFunctionExpr(expr);
@@ -782,14 +805,8 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
       });
     }
 
-    CASE_NAME_REGEX.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    const commentStartLine = comment.loc?.start.line ?? 0;
-    while ((match = CASE_NAME_REGEX.exec(text)) !== null) {
+    for (const { match, argsStr, afterParen } of caseMatches) {
       const name = match[1];
-      const parenStart = match.index + match[0].length - 1;
-      const argsStr = extractBalancedParens(text, parenStart);
-      if (argsStr === null) continue;
       // 块注释续行的 ` * ` 前缀不属于实参文本（键名会被污染成 "* supplyChain"）
       const cleaned = argsStr
         .split("\n")
@@ -797,7 +814,6 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
         .join("\n");
       const argsAbs = splitTopLevelArgs(cleaned).map(parseCaseArgExpr);
 
-      const afterParen = parenStart + argsStr.length + 2;
       const restLine = text.slice(afterParen).split("\n")[0].trim();
       const arrowMatch = restLine.match(/^=>\s*(.+)/);
       const expected = arrowMatch ? parseCaseArgExpr(arrowMatch[1].trim()) : undefined;
@@ -817,13 +833,17 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
     }
 
     PURE_REGEX.lastIndex = 0;
-    if (PURE_REGEX.test(text)) {
+    let pureMatch: RegExpExecArray | null;
+    while ((pureMatch = PURE_REGEX.exec(text)) !== null) {
+      if (inCaseArgs(pureMatch.index)) continue;
       directives.push({ kind: "pure" });
+      break;
     }
 
     SKIP_REGEX.lastIndex = 0;
     let skipMatch: RegExpExecArray | null;
     while ((skipMatch = SKIP_REGEX.exec(text)) !== null) {
+      if (inCaseArgs(skipMatch.index)) continue;
       const returnsExpr = skipMatch[1]?.trim();
       directives.push({
         kind: "skip",
@@ -834,6 +854,7 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
     SAMPLE_REGEX.lastIndex = 0;
     let sampleMatch: RegExpExecArray | null;
     while ((sampleMatch = SAMPLE_REGEX.exec(text)) !== null) {
+      if (inCaseArgs(sampleMatch.index)) continue;
       directives.push({ kind: "sample", count: Number(sampleMatch[1]) });
     }
   }

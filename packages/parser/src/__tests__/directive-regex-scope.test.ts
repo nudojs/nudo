@@ -172,4 +172,112 @@ export function f(x) { return x; }
     const kinds = d.flatMap((f) => f.directives.map((x) => x.kind));
     expect(kinds).toContain("case");
   });
+
+  it("directives inside multi-line case args do not leak", () => {
+    const src = `
+/**
+ * @nudo:case "t" (
+ * @nudo:pure
+ * @nudo:skip
+ * @nudo:mock g = 1
+ * )
+ */
+export function f(x) { return x; }
+`;
+    const d = dirs(src);
+    const kinds = d.flatMap((f) => f.directives.map((x) => x.kind));
+    expect(kinds).toEqual(["case"]);
+  });
+
+  it("multi-line case args containing @nudo:pure does not mark pure", () => {
+    const src = `
+/**
+ * @nudo:case "t" (
+ * @nudo:pure
+ * )
+ */
+export function f(x) { return x; }
+`;
+    const d = dirs(src);
+    const kinds = d.flatMap((f) => f.directives.map((x) => x.kind));
+    expect(kinds).toContain("case");
+    expect(kinds).not.toContain("pure");
+  });
+
+  it("multi-line case args containing @nudo:skip does not skip", () => {
+    const src = `
+/**
+ * @nudo:case "t" (
+ * @nudo:skip
+ * )
+ */
+export function f(x) { return x; }
+`;
+    const d = dirs(src);
+    const kinds = d.flatMap((f) => f.directives.map((x) => x.kind));
+    expect(kinds).toContain("case");
+    expect(kinds).not.toContain("skip");
+  });
+
+  it("multi-line case args containing @nudo:mock does not create mock", () => {
+    const src = `
+/**
+ * @nudo:case "t" (
+ * @nudo:mock g = 1
+ * )
+ */
+export function f(x) { return x; }
+`;
+    const d = dirs(src);
+    const kinds = d.flatMap((f) => f.directives.map((x) => x.kind));
+    expect(kinds).toContain("case");
+    expect(kinds).not.toContain("mock");
+  });
+
+  it("nested @nudo:case inside multi-line case args does not fabricate a second case", () => {
+    const src = `
+/**
+ * @nudo:case "t" (
+ *   1
+ *   @nudo:case "inner" (9)
+ * )
+ */
+export function f(x) { return x; }
+`;
+    const d = dirs(src);
+    const cases = d.flatMap((f) => f.directives.filter((x) => x.kind === "case"));
+    expect(cases).toHaveLength(1);
+    expect(cases[0]?.kind === "case" && cases[0].name).toBe("t");
+  });
+
+  it("sibling cases after a multi-line case still work", () => {
+    const src = `
+/**
+ * @nudo:case "t" (
+ *   1
+ * )
+ * @nudo:case "inner" (9)
+ */
+export function f(x) { return x; }
+`;
+    const d = dirs(src);
+    const cases = d.flatMap((f) => f.directives.filter((x) => x.kind === "case"));
+    expect(cases).toHaveLength(2);
+  });
+
+  it("real @nudo:pure after multi-line case args still works", () => {
+    const src = `
+/**
+ * @nudo:case "t" (
+ *   1
+ * )
+ * @nudo:pure
+ */
+export function f(x) { return x; }
+`;
+    const d = dirs(src);
+    const kinds = d.flatMap((f) => f.directives.map((x) => x.kind));
+    expect(kinds).toContain("case");
+    expect(kinds).toContain("pure");
+  });
 });
