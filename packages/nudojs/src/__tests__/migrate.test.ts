@@ -256,6 +256,35 @@ describe("nudo migrate", () => {
     expect(rewriteTscCommand("pnpm run typecheck").changed).toBe(false);
   });
 
+  // F5-migrate-rewrite-tsc-flags-mangled：输入/期望输出逐行锁定
+  it("rewriteTscCommand: runner prefix whitelist has no residual prefix", () => {
+    // 裸 pnpm tsc 走 bare 段会留下 `pnpm ` → `pnpm nudo` 非产品命令
+    expect(rewriteTscCommand("pnpm tsc --noEmit").cmd).toBe("npx nudojs check .");
+    expect(rewriteTscCommand("pnpm tsc --noEmit").changed).toBe(true);
+    // npm exec 不在旧前缀表 → `npm exec nudo check .` 残前缀
+    expect(rewriteTscCommand("npm exec tsc --noEmit").cmd).toBe("npx nudojs check .");
+    expect(rewriteTscCommand("npx --no-install tsc --noEmit").cmd).toBe("npx nudojs check .");
+    expect(rewriteTscCommand("npm exec -- tsc --noEmit").cmd).toBe("npx nudojs check .");
+    // script 形态前缀也不得残 `run `
+    expect(rewriteTscCommand("pnpm run tsc --noEmit").cmd).toBe("npx nudojs check .");
+    // 非产品 wrapper 保留，只换 tsc 本体
+    expect(rewriteTscCommand("sudo tsc --noEmit").cmd).toBe("sudo nudo check .");
+  });
+
+  it("rewriteTscCommand: tsc flags are swallowed as a phrase, never residual", () => {
+    // 旧 regex 固定顺序只吞 --noEmit/-p/--pretty/--skipLibCheck
+    expect(rewriteTscCommand("tsc -b").cmd).toBe("nudo check .");
+    expect(rewriteTscCommand("tsc --build").cmd).toBe("nudo check .");
+    expect(rewriteTscCommand("tsc --project tsconfig.json").cmd).toBe("nudo check .");
+    // 顺序无关：-p 在前时 --noEmit 旧实现会残留
+    expect(rewriteTscCommand("tsc -p tsconfig.build.json --noEmit").cmd).toBe("nudo check .");
+    // 未知旗标：剥离而非残留
+    expect(rewriteTscCommand("tsc --someUnknownFlag --noEmit").cmd).toBe("nudo check .");
+    expect(rewriteTscCommand("tsc --strict --incremental --pretty false").cmd).toBe("nudo check .");
+    // 引号值属于短语，不得残成 check 参数
+    expect(rewriteTscCommand('tsc -p "my tsconfig.json" --noEmit').cmd).toBe("nudo check .");
+  });
+
   it("tsc inside shell strings / comments is not rewritten", () => {
     // 字符串里的 tsc 是普通文本
     expect(rewriteTscCommand('echo "please run tsc first"').changed).toBe(false);

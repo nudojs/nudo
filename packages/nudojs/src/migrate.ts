@@ -197,43 +197,65 @@ function maskShellStringsAndComments(cmd: string): string {
   return out.join("");
 }
 
-/** 代码区（非字符串/注释）片段重写：改写只发生在 shell 代码区 */
-function mapShellCodeSegments(cmd: string, map: (code: string) => string): string {
-  let out = "";
-  let i = 0;
-  let segStart = 0;
+/** 跳过引号字符串（shell 词法），返回结束位置 */
+function skipShellQuoted(cmd: string, start: number): number {
+  const quote = cmd[start]!;
+  let i = start + 1;
   const n = cmd.length;
-  const flush = (end: number): void => {
-    if (end > segStart) out += map(cmd.slice(segStart, end));
-  };
   while (i < n) {
-    const c = cmd[i]!;
-    if (c === "'" || c === '"' || c === "`") {
-      const quote = c;
-      const start = i;
-      i++;
-      while (i < n) {
-        if (quote !== "'" && cmd[i] === "\\") {
-          i += 2;
-          continue;
-        }
-        if (cmd[i] === quote) {
-          i++;
-          break;
-        }
-        i++;
-      }
-      flush(start);
-      out += cmd.slice(start, i);
-      segStart = i;
+    if (quote !== "'" && cmd[i] === "\\") {
+      i += 2;
       continue;
     }
-    if (c === "#" && (i === 0 || /\s/.test(cmd[i - 1]!))) {
-      const start = i;
-      while (i < n && cmd[i] !== "\n") i++;
-      flush(start);
-      out += cmd.slice(start, i);
-      segStart = i;
+    if (cmd[i] === quote) return i + 1;
+    i++;
+  }
+  return n;
+}
+
+/** shell 元字符：tsc 命令短语在此结束 */
+function isPhraseBoundary(c: string): boolean {
+  return (
+    c === ";" ||
+    c === "&" ||
+    c === "|" ||
+    c === "\n" ||
+    c === "<" ||
+    c === ">" ||
+    c === "(" ||
+    c === ")"
+  );
+}
+
+/**
+ * tsc 调用前缀白名单（包管理器 / runner）。命中则整段（前缀+tsc）换成产品命令
+ * `npx nudojs check .`；不在表内的 wrapper（`sudo`/`time`/`env`…）保留，只换 tsc 本体。
+ * 长前缀必须先于短前缀（`pnpm exec ` 先于 `pnpm `），否则会吃残前缀。
+ */
+const TSC_RUNNER_PREFIX_SRC =
+  "(?:npx(?:\\s+(?:--no-install|--yes|-y|--quiet|-q)|(?:\\s+(?:--package|-p)\\s+\\S+))*\\s+" +
+  "|npm exec(?:\\s+--)?\\s+|npm run\\s+" +
+  "|pnpm exec\\s+|pnpm dlx\\s+|pnpm run\\s+|pnpm\\s+" +
+  "|yarn dlx\\s+|yarn run\\s+|yarn\\s+" +
+  "|bunx\\s+|bun x\\s+)";
+
+/** tsc 命令词：可带 runner 前缀；argv 由调用方按短语消费 */
+const TSC_CMD_SRC = `(?<![\\w./-])(?:${TSC_RUNNER_PREFIX_SRC})?tsc(?=$|[\\s;&|<>()])`;
+const TSC_CMD_STICKY = new RegExp(TSC_CMD_SRC, "y");
+
+/**
+ * 消费 tsc argv 直到 shell 元字符。旗标（含未知旗标）与位置参数一并剥离——
+ * 归一后的产品命令是干净的 `nudo check .`，不残留任何 tsc 旗标。
+ */
+function consumeTscArgv(cmd: string, start: number): number {
+  let i = start;
+  const n = cmd.length;
+  while (i < n) {
+    const c = cmd[i]!;
+    if (isPhraseBoundary(c)) break;
+    if (c === "#" && (i === 0 || /\s/.test(cmd[i - 1]!))) break;
+    if (c === "'" || c === '"' || c === "`") {
+      i = skipShellQuoted(cmd, i);
       continue;
     }
     if (c === "\\") {
@@ -242,30 +264,57 @@ function mapShellCodeSegments(cmd: string, map: (code: string) => string): strin
     }
     i++;
   }
-  flush(n);
+  // 不吞短语后的空白：保留 ` && ` / ` # 注释` 结构
+  while (i > start && /\s/.test(cmd[i - 1]!)) i--;
+  return i;
+}
+
+/**
+ * 以「命令短语」为单位改写 tsc：前缀白名单 + tsc + argv。
+ * 字符串/注释里的 tsc 是文本，不是编译器调用。
+ */
+function rewriteTscPhrases(cmd: string): string {
+  let out = "";
+  let i = 0;
+  const n = cmd.length;
+  while (i < n) {
+    const c = cmd[i]!;
+    if (c === "'" || c === '"' || c === "`") {
+      const start = i;
+      i = skipShellQuoted(cmd, i);
+      out += cmd.slice(start, i);
+      continue;
+    }
+    if (c === "#" && (i === 0 || /\s/.test(cmd[i - 1]!))) {
+      const start = i;
+      while (i < n && cmd[i] !== "\n") i++;
+      out += cmd.slice(start, i);
+      continue;
+    }
+    if (c === "\\") {
+      out += cmd.slice(i, i + 2);
+      i += 2;
+      continue;
+    }
+    TSC_CMD_STICKY.lastIndex = i;
+    const m = TSC_CMD_STICKY.exec(cmd);
+    if (m) {
+      out += m[0] === "tsc" ? "nudo check ." : "npx nudojs check .";
+      i = consumeTscArgv(cmd, i + m[0].length);
+      continue;
+    }
+    out += c;
+    i++;
+  }
   return out;
 }
 
 /** 单条 shell 命令里的 tsc → nudo check（A1：CI workflow 可改写） */
 export function rewriteTscCommand(cmd: string): { cmd: string; changed: boolean } {
   const before = cmd;
-  // 只改写代码区：字符串/注释里的 tsc 是文本，不是编译器调用
-  const next = mapShellCodeSegments(cmd, (code) => {
-    let out = code;
-    // npx / pnpm exec / yarn tsc [--noEmit] [-p …]
-    out = out.replace(
-      /\b(?:npx |pnpm exec |pnpm dlx |yarn dlx |yarn )tsc\b(?:\s+--noEmit)?(?:\s+-p\s+[^\s;&|]+)?(?:\s+--pretty\s+\S+)?(?:\s+--skipLibCheck)?/g,
-      "npx nudojs check .",
-    );
-    // bare tsc
-    out = out.replace(
-      /(?<![\w./-])tsc\b(?:\s+--noEmit)?(?:\s+-p\s+[^\s;&|]+)?(?:\s+--pretty\s+\S+)?(?:\s+--skipLibCheck)?/g,
-      "nudo check .",
-    );
-    out = out.replace(/nudo check \.\s*&&\s*nudo check \./g, "nudo check .");
-    out = out.replace(/npx nudojs check \.\s*&&\s*npx nudojs check \./g, "npx nudojs check .");
-    return out;
-  });
+  let next = rewriteTscPhrases(cmd);
+  next = next.replace(/nudo check \.\s*&&\s*nudo check \./g, "nudo check .");
+  next = next.replace(/npx nudojs check \.\s*&&\s*npx nudojs check \./g, "npx nudojs check .");
   return { cmd: next, changed: next !== before };
 }
 
@@ -275,9 +324,7 @@ function looksLikeTscCommand(line: string): boolean {
   if (/^\s*-?\s*name\s*:/.test(line)) return false;
   if (/^\s*if\s*:/.test(line)) return false;
   // 字符串/注释里的 tsc 不算
-  return /(?:^|[\s;&|`"'-])(?:npx |pnpm exec |pnpm dlx |yarn dlx |yarn )?tsc(?:\s|$|-)/.test(
-    maskShellStringsAndComments(line),
-  );
+  return new RegExp(TSC_CMD_SRC).test(maskShellStringsAndComments(line));
 }
 
 export function rewriteWorkflowText(text: string): {
