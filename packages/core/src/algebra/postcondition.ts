@@ -253,9 +253,14 @@ function assertScalar(
     if (retPrim && retPrim !== constraint.prim) {
       return disproved(`typeof return = "${retPrim}" ⊭ "${constraint.prim}"`);
     }
-    // ret 无 prim（如 nullish 已在上游处理）但契约要求 prim：shape 不匹配
-    if (!retPrim && ret.shape.k !== "sum" && ret.shape.k !== "never") {
-      // 值域已知但无 prim（如 unknown+term）——交给 pred 通道
+    // ret 无 prim 但契约要求 prim：结构性形状（obj/arr/tuple/fn/brand/eff）
+    // 与 prim 域不相交 → 直接 disproved（勿落到 empty-preds proved）。
+    // sum / unknown+term 保持现行为（sum 是 gold FP 保护；unknown+term 走 pred 通道）。
+    if (!retPrim) {
+      const k = ret.shape.k;
+      if (k === "obj" || k === "arr" || k === "tuple" || k === "fn" || k === "brand" || k === "eff") {
+        return disproved(`return shape ${k} ⊭ prim "${constraint.prim}"`);
+      }
     }
   }
 
