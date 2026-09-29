@@ -21,6 +21,8 @@ import {
   tryRunTranspiled,
   bindingsOf,
   callTranspiledExportFull,
+  NudoThrow,
+  pushThrowExit,
 } from "@nudojs/core";
 import { defaultLoadModule, type LoadModule } from "./load-module.ts";
 import { evalMockFileWithDeps } from "./mock-file.ts";
@@ -286,7 +288,15 @@ function loadFromMockBinding(
     const fn = val as { length?: number };
     const params = Array.from({ length: fn.length ?? 0 }, (_, i) => `arg${i}`);
     absVal = absFunction(params, {
-      apply: (args: Abs[]): Abs => callTranspiledExportFull(run!, name, args).result,
+      apply: (args: Abs[]): Abs => {
+        const full = callTranspiledExportFull(run!, name, args);
+        // throws 面不得在 mock 桥丢弃（BUG-006）：与导出桥同径
+        if (full.throws.shape.k !== "never") {
+          if (full.result.shape.k === "never") throw new NudoThrow(full.throws);
+          pushThrowExit(full.throws);
+        }
+        return full.result;
+      },
       kind: "eval-export",
       fingerprint: `from-mock=${fromPath}#${name}`,
     });

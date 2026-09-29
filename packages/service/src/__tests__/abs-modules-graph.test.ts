@@ -202,4 +202,41 @@ export function go() { return ns.notThere(); }
       }
     }
   });
+
+  it("imported always-throw fn surfaces throws non-never in caller (BUG-006)", () => {
+    const dir = tmpProject({
+      "a.js": `export function boom() { throw new TypeError("x"); }`,
+      "b.js": `
+import { boom } from "./a.js";
+export function f() { return boom(); }
+`,
+    });
+    const mainSrc = `import { boom } from "./a.js";
+export function f() { return boom(); }
+`;
+    const { modules } = evalAbsModuleGraph(mainSrc, join(dir, "b.js"));
+    const run = runTranspiled(mainSrc, { mode: "analyze", modules });
+    const res = callTranspiledExportFull(run, "f", []);
+    // always-throw：result=never，throws 必须非 never（不得假「不抛」）
+    expect(res.result.shape.k).toBe("never");
+    expect(res.throws.shape.k).not.toBe("never");
+  });
+
+  it("imported may-throw fn surfaces throws non-never in caller (BUG-006)", () => {
+    const dir = tmpProject({
+      "a.js": `export function maybe(x) { if (x) throw new TypeError("x"); return 1; }`,
+      "b.js": `
+import { maybe } from "./a.js";
+export function f(x) { return maybe(x); }
+`,
+    });
+    const mainSrc = `import { maybe } from "./a.js";
+export function f(x) { return maybe(x); }
+`;
+    const { modules } = evalAbsModuleGraph(mainSrc, join(dir, "b.js"));
+    const run = runTranspiled(mainSrc, { mode: "analyze", modules });
+    const res = callTranspiledExportFull(run, "f", [numLit(1)]);
+    // may-throw：throws 面必须非 never（不得丢弃）
+    expect(res.throws.shape.k).not.toBe("never");
+  });
 });

@@ -16,6 +16,8 @@ import {
   undefAbs,
   unknown,
   abs,
+  NudoThrow,
+  pushThrowExit,
   type Abs,
   type AbsModuleExports,
 } from "@nudojs/core";
@@ -333,7 +335,17 @@ export function evalExportsToModuleExports(
         paramTable.get(k) ??
         Array.from({ length: (v as { length?: number }).length ?? 0 }, (_, i) => `arg${i}`);
       absVal = absFunction(params, {
-        apply: (args: Abs[]) => callTranspiledExportFull(run, k, args).result,
+        apply: (args: Abs[]) => {
+          const full = callTranspiledExportFull(run, k, args);
+          // throws 面不得在导出桥丢弃（BUG-006）：always-throw re-throw
+          // NudoThrow 由调用边界收成 throws；may-throw pushThrowExit 记入
+          // 调用方 throwExits（与抽象分支 throw 同径）后返回 result。
+          if (full.throws.shape.k !== "never") {
+            if (full.result.shape.k === "never") throw new NudoThrow(full.throws);
+            pushThrowExit(full.throws);
+          }
+          return full.result;
+        },
         kind: "eval-export",
         // 无 body 的桥接 fn 预算键 = fingerprint ?? anon#N——缺省会让所有
         // 桥接导出共享 anon#1，嵌套跨模块调用（a 调 b 调 a'）撞
