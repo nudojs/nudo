@@ -329,6 +329,20 @@ export function maskCommentsAndStrings(source: string): string {
   return out;
 }
 
+/**
+ * 等长掩码：只把字符串/模板/正则整段替换为空格（保留 `\n`），**注释原文保留**。
+ * 下标与原文一一对应。供「先剥字符串再定位」的源码正则：
+ * 字符串里的同形文本不是代码；但注释不能变空白——导出前缀与 function 之间
+ * 若夹着契约注释，注释一旦成空白会被导出前缀的空白匹配吞掉，反向扫描扫不到契约。
+ */
+export function maskStringsKeepComments(source: string): string {
+  let out = "";
+  for (const span of scanSource(source).spans) {
+    out += span.kind === "string" ? span.text.replace(/[^\n]/g, " ") : span.text;
+  }
+  return out;
+}
+
 /** 代码区字符串/模板字面量（注释内引号不算；插值模板不报整体，正则不报） */
 export function scanStringLiterals(source: string): StringLiteralSpan[] {
   return scanSource(source).literals;

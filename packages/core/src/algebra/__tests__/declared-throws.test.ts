@@ -47,6 +47,15 @@ describe("P0 declared throws (@nudo:throws / case !! throws)", () => {
     ).toBe("*");
   });
 
+  it("declared throws still found when string contains same fn name", () => {
+    expect(
+      extractDeclaredThrows(
+        `const s = "function f() {}";\n/**\n * @nudo:throws Error\n */\nexport function f() { throw new Error(); }`,
+        "f",
+      ),
+    ).toEqual(["Error"]);
+  });
+
   it("filterDeclaredThrows: * clears; Error covers family; undefined passthrough", () => {
     const mixed = [fx("Error"), fx("TypeError"), fx("ReferenceError")];
     expect(filterDeclaredThrows(mixed, "*")).toEqual([]);

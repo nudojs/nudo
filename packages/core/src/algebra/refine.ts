@@ -22,7 +22,11 @@ import type { Pred } from "./pred.ts";
 import { v as termVar } from "./term.ts";
 import { parseSource } from "./parse-source.ts";
 import { hashSource } from "./hash-source.ts";
-import { identBoundaryRegex, stripStringsKeepComments } from "./code-text.ts";
+import {
+  identBoundaryRegex,
+  maskStringsKeepComments,
+  stripStringsKeepComments,
+} from "./code-text.ts";
 // leaf 模块：load-deps-fp.ts 已 import 本文件（extractNudoImports），
 // 反向 import 会成环——路径函数从 sidecar-path.ts 单源取用
 import { isNodeModulesPath, resolveDepPath } from "./sidecar-path.ts";
@@ -51,11 +55,17 @@ export type NamedImport = { names: string[]; spec: string };
 
 export function extractNudoImports(source: string): NamedImport[] {
   const out: NamedImport[] = [];
+  // 指令住注释；字符串/模板里的同形文本不是 import（code-text.ts 不变量）
+  const src = stripStringsKeepComments(source);
   // named: import { a, b as c } from "..."
   const named = /@nudo:import\s*\{([^}]+)\}\s*from\s*["']([^"']+)["']/g;
   let m: RegExpExecArray | null;
-  while ((m = named.exec(source))) {
+  while ((m = named.exec(src))) {
+    // 多行 /// / // 续行前缀不是名字的一部分
     const names = m[1]!
+      .split("\n")
+      .map((line) => line.replace(/^\s*\/\/\/?\s?/, "").trim())
+      .join("\n")
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean)
@@ -64,7 +74,7 @@ export function extractNudoImports(source: string): NamedImport[] {
   }
   // 兼容 namespace（仍支持）
   const ns = /@nudo:import\s+\*\s+as\s+(\w+)\s+from\s*["']([^"']+)["']/g;
-  while ((m = ns.exec(source))) {
+  while ((m = ns.exec(src))) {
     out.push({ names: [`*${m[1]}`], spec: m[2]! });
   }
   return out;
@@ -819,7 +829,9 @@ function extractRefineLines(source: string, fnName: string): string[] {
   const fnRe = new RegExp(
     `(?:export\\s+(?:default\\s+)?)?(?:async\\s+)?(?:function\\s+${escaped}|const\\s+${escaped}\\s*=)`,
   );
-  const m = source.match(fnRe);
+  // 先剥字符串再定位：字符串里的 `function foo` 不是声明（注释必须保留——
+  // `export default /** 契约 */ function f` 的注释若变空白会被导出前缀吞掉）
+  const m = maskStringsKeepComments(source).match(fnRe);
   if (!m || m.index === undefined) return [];
   const before = source.slice(0, m.index);
   const lines = before.split("\n");
@@ -946,7 +958,9 @@ export function extractDeclaredThrows(
   const fnRe = new RegExp(
     `(?:export\\s+(?:default\\s+)?)?(?:async\\s+)?(?:function\\s+${escaped}|const\\s+${escaped}\\s*=)`,
   );
-  const m = source.match(fnRe);
+  // 先剥字符串再定位：字符串里的 `function foo` 不是声明（注释必须保留——
+  // `export default /** 契约 */ function f` 的注释若变空白会被导出前缀吞掉）
+  const m = maskStringsKeepComments(source).match(fnRe);
   if (!m || m.index === undefined) return undefined;
   const before = source.slice(0, m.index);
   const lines = before.split("\n");
@@ -1012,7 +1026,9 @@ export function extractFnBudget(
   const fnRe = new RegExp(
     `(?:export\\s+(?:default\\s+)?)?(?:async\\s+)?(?:function\\s+${escaped}|const\\s+${escaped}\\s*=)`,
   );
-  const m = source.match(fnRe);
+  // 先剥字符串再定位：字符串里的 `function foo` 不是声明（注释必须保留——
+  // `export default /** 契约 */ function f` 的注释若变空白会被导出前缀吞掉）
+  const m = maskStringsKeepComments(source).match(fnRe);
   if (!m || m.index === undefined) return undefined;
   const before = source.slice(0, m.index);
   const lines = before.split("\n");

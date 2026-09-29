@@ -56,6 +56,11 @@ export function f(x) {
     expect(extractFnBudget(src, "f")).toBeUndefined();
   });
 
+  it("budget still found when string contains same fn name", () => {
+    const src = `const s = "function f() {}";\n/**\n * @nudo:budget forks=20000\n */\nexport function f(x) {\n  return x;\n}\n`;
+    expect(extractFnBudget(src, "f")).toEqual({ forks: 20000 });
+  });
+
   it("withFnBudgetOverride raises fork limit during run and restores after", () => {
     setEvalForkBudgetLimit(2);
     expect(getAbsCallBudgetStats().maxForks).toBe(2);

@@ -50,6 +50,38 @@ describe("@nudo:contract <param> <constraint>", () => {
     ]);
   });
 
+  it("multiline /// @nudo:import strips line prefixes from names", () => {
+    const src = `/// @nudo:import {\n///   delay,\n///   percent\n/// } from "./x.nudo.js"\n`;
+    expect(extractNudoImports(src)).toEqual([
+      { names: ["delay", "percent"], spec: "./x.nudo.js" },
+    ]);
+  });
+
+  it("import-like text inside a template string is not an import", () => {
+    const src =
+      'const d = `\n@nudo:import { delay } from "./evil.nudo.js"\n`;\nexport function f(x){return x}';
+    expect(extractNudoImports(src)).toEqual([]);
+  });
+
+  it("function name inside a string literal does not steal contract scan", () => {
+    const src = `
+/// @nudo:import { delay } from "./x.nudo.js"
+/**
+ * @nudo:contract ms delay
+ */
+const code = "function setDelay() { return 0; }";
+/**
+ * @nudo:contract n delay
+ */
+export function setDelay(n) { return n; }
+`;
+    const reqs = extractRefinesFromSource(src, "setDelay", {
+      loadModule,
+      fromFile: "/t/demo.js",
+    });
+    expect(reqs.map((r) => r.param)).toEqual(["n"]);
+  });
+
   it("resolves ms delay to Pred", () => {
     const src = `
 /// @nudo:import { delay } from "./x.nudo.js"
