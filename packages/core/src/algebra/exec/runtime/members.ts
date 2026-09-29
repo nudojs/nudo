@@ -126,7 +126,9 @@ export function findAccessor(
  */
 export function $in(key: Abs, o: Abs): Abs {
   if (o.shape.k === "sum") {
-    return o.shape.members.map((m) => $in(key, m)).reduce((a, b) => joinAbs(a, b));
+    // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce
+    const parts = o.shape.members.map((m) => $in(key, m));
+    return parts.length ? parts.reduce((a, b) => joinAbs(a, b)) : unknown;
   }
   // 原生：prim/nullish 接收者抛 TypeError（'a' in 5 → TypeError）
   if (o.shape.k === "prim" || o.shape.k === "never" || isNullishLitAbs(o)) {
@@ -364,7 +366,9 @@ export function $delRes(o: Abs, _key: Abs): Abs {
     return unknown;
   }
   if (o.shape.k === "sum") {
-    return o.shape.members.map((m) => $delRes(m, _key)).reduce((a, b) => joinAbs(a, b));
+    // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce
+    const parts = o.shape.members.map((m) => $delRes(m, _key));
+    return parts.length ? parts.reduce((a, b) => joinAbs(a, b)) : unknown;
   }
   const st = extStateOf(o);
   const kv = litValue(_key);

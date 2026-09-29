@@ -493,7 +493,9 @@ export function $idx(a: Abs, i: Abs): Abs {
     return a.shape.element;
   }
   if (a.shape.k === "sum") {
-    return a.shape.members.map((m) => $idx(m, i)).reduce((x, y) => joinAbs(x, y));
+    // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce
+    const parts = a.shape.members.map((m) => $idx(m, i));
+    return parts.length ? parts.reduce((x, y) => joinAbs(x, y)) : unknown;
   }
   // C1.3：对象 + key 投影；闭 shape miss / 未知 key 必须并入 undefined
   if (a.shape.k === "obj" || (a.shape.k === "brand" && a.shape.shape.shape.k === "obj")) {
@@ -758,9 +760,9 @@ export function $spread(a: Abs, b: Abs): Abs {
 export function $objRest(o: Abs, keys: string[]): Abs {
   o = asAbsVal(o);
   if (o.shape.k === "sum") {
-    return o.shape.members
-      .map((m) => $objRest(m, keys))
-      .reduce((a, b) => joinAbs(a, b));
+    // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce
+    const parts = o.shape.members.map((m) => $objRest(m, keys));
+    return parts.length ? parts.reduce((a, b) => joinAbs(a, b)) : unknown;
   }
   if (!isObj(o)) {
     // any 解构 rest：无约束对象面（open），不是 unknown
@@ -789,7 +791,9 @@ export function $objRest(o: Abs, keys: string[]): Abs {
 export function $arrRest(a: Abs, start: number): Abs {
   a = asAbsVal(a);
   if (a.shape.k === "sum") {
-    return a.shape.members.map((m) => $arrRest(m, start)).reduce((x, y) => joinAbs(x, y));
+    // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce
+    const parts = a.shape.members.map((m) => $arrRest(m, start));
+    return parts.length ? parts.reduce((x, y) => joinAbs(x, y)) : unknown;
   }
   if (a.shape.k === "tuple") {
     return tupleOrWiden(a.shape.elements.slice(start), a.conf);
@@ -882,7 +886,12 @@ export function $concat(a: Abs, b: Abs): Abs {
   }
   // 双侧皆非精确容器：元素 join（any → any；空 tuple 不贡献元素）
   const sideEl = (x: Abs, expanded: Abs[] | null): Abs => {
-    if (expanded) return expanded.reduce((u, y) => joinAbs(u, y));
+    // DEC-006：空 Set/Map/match-iter 展开无元素——不得裸 reduce
+    if (expanded) {
+      return expanded.length
+        ? expanded.reduce((u, y) => joinAbs(u, y))
+        : abs({ k: "never" }, undefined, undefined, "exact");
+    }
     if (x?.shape?.k === "any") return anyMemberResult();
     if (x?.shape?.k === "tuple") {
       const els = x.shape.elements;
@@ -926,8 +935,9 @@ export function $elems(a: Abs): Abs[] {
 export function $forInKeys(o: Abs): Abs {
   const shape = o.shape;
   if (shape.k === "sum") {
+    // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce
     const members = shape.members.map((m) => $forInKeys(m));
-    return members.reduce((a, b) => joinAbs(a, b));
+    return members.length ? members.reduce((a, b) => joinAbs(a, b)) : unknown;
   }
   const isArrayIndexKey = (k: string): boolean => {
     const n = Number(k);
@@ -1280,8 +1290,9 @@ export function $get(
     return undef();
   }
   if (o.shape.k === "sum") {
+    // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce
     const parts = o.shape.members.map((m) => $get(m, key, opts));
-    return parts.reduce((a, b) => joinAbs(a, b));
+    return parts.length ? parts.reduce((a, b) => joinAbs(a, b)) : unknown;
   }
   // prim / tuple / arr / fn / eff 的原型 constructor（上文未命中自有槽）
   if (key === "constructor") {
