@@ -424,27 +424,49 @@ describe("nudo migrate", () => {
   });
 
   it("rewriteTscCommand: -p/--project scope is preserved (monorepo)", () => {
-    // tsconfig 文件 → 所在目录
+    // tsconfig 文件 → 所在目录（非 "." 一律单引号字面量）
     expect(rewriteTscCommand("tsc -p packages/foo/tsconfig.json").cmd).toBe(
-      "nudo check packages/foo",
+      "nudo check 'packages/foo'",
     );
     expect(rewriteTscCommand("tsc --project packages/foo/tsconfig.json --noEmit").cmd).toBe(
-      "nudo check packages/foo",
+      "nudo check 'packages/foo'",
     );
     // 目录原样
-    expect(rewriteTscCommand("tsc -p packages/foo").cmd).toBe("nudo check packages/foo");
-    expect(rewriteTscCommand("tsc --project=packages/bar").cmd).toBe("nudo check packages/bar");
+    expect(rewriteTscCommand("tsc -p packages/foo").cmd).toBe("nudo check 'packages/foo'");
+    expect(rewriteTscCommand("tsc --project=packages/bar").cmd).toBe("nudo check 'packages/bar'");
     // -b 带路径同样保留
-    expect(rewriteTscCommand("tsc -b packages/foo").cmd).toBe("nudo check packages/foo");
+    expect(rewriteTscCommand("tsc -b packages/foo").cmd).toBe("nudo check 'packages/foo'");
     expect(rewriteTscCommand("tsc --build apps/web/tsconfig.json").cmd).toBe(
-      "nudo check apps/web",
+      "nudo check 'apps/web'",
     );
     // 裸 -b / 无 -p 仍是 cwd
     expect(rewriteTscCommand("tsc -b").cmd).toBe("nudo check .");
     // runner 前缀 + 项目路径
     expect(rewriteTscCommand("pnpm exec tsc -p packages/foo/tsconfig.json").cmd).toBe(
-      "npx nudojs check packages/foo",
+      "npx nudojs check 'packages/foo'",
     );
+  });
+
+  // BUG-019 / F-4：重写后的路径必须是安全字面量，不得引入 shell 注入面
+  it("rewriteTscCommand: path with shell metacharacters stays a safe literal", () => {
+    // 原先单引号字面量被去壳后裸写 → $( ) 在 CI 展开
+    expect(rewriteTscCommand("tsc -p 'x$(id)'").cmd).toBe("nudo check 'x$(id)'");
+    // .json 会折叠到 dirname：元字符须在目录段才存活
+    expect(rewriteTscCommand("tsc -p 'tsconfig.$(echo pwned)/tsconfig.json'").cmd).toBe(
+      "nudo check 'tsconfig.$(echo pwned)'",
+    );
+    // backtick / glob 同理（非 .json 路径原样保留）
+    expect(rewriteTscCommand("tsc -p 'src/`id`.ts'").cmd).toBe("nudo check 'src/`id`.ts'");
+    expect(rewriteTscCommand("tsc -p 'foo*'").cmd).toBe("nudo check 'foo*'");
+    // 含空白 + 元字符：旧 JSON.stringify 双引号内 $() 仍会展开
+    expect(rewriteTscCommand("tsc -p 'dir with space/$(id)'").cmd).toBe(
+      "nudo check 'dir with space/$(id)'",
+    );
+    // 路径内单引号按 '\'' 转义，整体仍是单引号字面量
+    expect(rewriteTscCommand(`tsc -p "a'b$(id)"`).cmd).toBe(`nudo check 'a'\\''b$(id)'`);
+    // 空格路径也不得回退到双引号；tsconfig 文件 → 目录为 "." 时保持裸写
+    expect(rewriteTscCommand("tsc -p 'my tsconfig.json'").cmd).toBe("nudo check .");
+    expect(rewriteTscCommand("tsc -p 'dir with space'").cmd).toBe("nudo check 'dir with space'");
   });
 
   it("tsc inside shell strings / comments is not rewritten", () => {

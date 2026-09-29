@@ -532,6 +532,14 @@ function consumeTscArgv(cmd: string, start: number): number {
 }
 
 /**
+ * 单引号 shell 安全引用：内部 `'` 以 `'\''` 闭合再拼。
+ * 禁止「仅空白才加引号」/JSON.stringify——那会让 $()/`/glob 在重写后被展开。
+ */
+function shellQuote(s: string): string {
+  return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
  * 以「命令短语」为单位改写 tsc：前缀白名单 + tsc + argv。
  * 字符串/注释里的 tsc 是文本，不是编译器调用。
  */
@@ -563,10 +571,9 @@ function rewriteTscPhrases(cmd: string): string {
     if (m) {
       const argvStart = i + m[0].length;
       const projectPath = projectPathFromTscArgv(cmd, argvStart);
-      const target = projectPath === "." ? "." : projectPath;
-      // 路径含空格时加引号，避免拆词
-      const quoted = /\s/.test(target) ? JSON.stringify(target) : target;
-      out += (m[0] === "tsc" ? "nudo check " : "npx nudojs check ") + quoted;
+      // 统一单引号包裹（`.` 保持裸写，稳定快照）；路径一律按字面量落盘
+      const target = projectPath === "." ? "." : shellQuote(projectPath);
+      out += (m[0] === "tsc" ? "nudo check " : "npx nudojs check ") + target;
       i = consumeTscArgv(cmd, argvStart);
       continue;
     }
