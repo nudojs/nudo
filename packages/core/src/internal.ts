@@ -27,13 +27,14 @@ export {
   enterCall, exitCall, getAbsCallBudgetStats, getEvalForkBudgetLimit,
   getEvalForkCount, noteAbsTruncation, noteEvalForkTruncation, noteHostEffectBlocked,
   resetAbsCallBudget, resetEvalForkBudget, setAbsTruncationCollector,
-  setEvalForkBudgetLimit, stableCallId, truncatedAbs
+  setEvalForkBudgetLimit, stableCallId, truncatedAbs, withFnBudgetOverride
 } from "./algebra/call-budget.ts";
 export {
   MAX_PROMISE_MICROS, getPromiseMicrosLength
 } from "./algebra/builtins/promise.ts";
 export {
-  enterEvalCallBudgetSession, exitEvalCallBudgetSession, getEvalCallBudgetState
+  enterEvalCallBudgetSession, exitEvalCallBudgetSession, getEvalCallBudgetState,
+  withEvalBudgetOverride
 } from "./algebra/exec/calls.ts";
 export {
   hashSource, resetHashSourceCache

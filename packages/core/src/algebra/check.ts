@@ -35,6 +35,7 @@ import {
   formatConstraint,
   interfaceDiagCount,
   localNamedExports,
+  resetSidecarLoadFailureCache,
   setInterfaceDiagCollector,
   sidecarClosureFingerprint,
   sidecarPathOf,
@@ -48,7 +49,7 @@ import {
 import { absToConstraint } from "./projection.ts";
 import { assertImplies } from "./postcondition.ts";
 import { extractFn, generalizeFromAst } from "./generalize.ts";
-import { contractParamNameSet } from "./param-surface.ts";
+import { contractParamNameSet, formalParamSignatureNames } from "./param-surface.ts";
 import { canSkipLiteralCallScan } from "./fn-fp.ts";
 import { stableAnalyzeKeySource } from "./stable-source-key.ts";
 import {
@@ -146,6 +147,8 @@ export function checkSource(
   // 诊断纯缓冲模式：refine/interface 侧车诊断由 checkSource 统一收口进报告
   setRefineDiagCollector(null);
   setInterfaceDiagCollector(null);
+  // #64：侧车加载失败去重表按次分析重置——同一侧车失败只报一次，且下次 check 仍可见
+  resetSidecarLoadFailureCache();
   // since 锚：memo 命中路径只排干本次（指纹/侧车加载）产生的增量诊断，
   // 不全量 take——全量 take 会窃取在途 LSP validateText 的待消费诊断
   const refineSince = refineDiagCount();
@@ -415,10 +418,10 @@ function checkSourceInner(
             actual: `${name}(…)    throws ${gateDisplay}`,
             expected: "entry total, or @nudo:throws / try-catch",
             suggestion: first.cause
-              ? `${first.cause} → ${first.kind === "ReferenceError" ? "re-export `export { x } from` 不是局部绑定——改 `import { x }` / @nudo:throws ReferenceError" : `@nudo:throws ${first.kind} / refine / guard / try-catch`}`
+              ? `${first.cause} → ${first.kind === "ReferenceError" ? "re-export `export { x } from` 不是局部绑定——改 `import { x }` / @nudo:throws ReferenceError" : `@nudo:throws ${first.kind} / sidecar fn({ … }) contract / refine / guard / try-catch`}`
               : first.kind === "ReferenceError"
                 ? "re-export `export { x } from` 不是局部绑定——改 `import { x }` / @nudo:throws ReferenceError"
-                : `@nudo:throws ${first.kind} / refine / guard / try-catch`,
+                : `@nudo:throws ${first.kind} / sidecar fn({ … }) contract / refine / guard / try-catch`,
             fn: name,
             ...(loc.line !== undefined ? { line: loc.line } : {}),
             ...(loc.column !== undefined ? { column: loc.column } : {}),
@@ -474,10 +477,10 @@ function checkSourceInner(
           actual: `${formatEntrySigLine(name, g, gateDisplay)}`,
           expected: "entry total, or @nudo:throws / try-catch",
           suggestion: first.cause
-            ? `${first.cause} → ${first.kind === "ReferenceError" ? "re-export `export { x } from` 不是局部绑定——改 `import { x }` / @nudo:throws ReferenceError" : `@nudo:throws ${first.kind} / refine / guard / try-catch`}`
+            ? `${first.cause} → ${first.kind === "ReferenceError" ? "re-export `export { x } from` 不是局部绑定——改 `import { x }` / @nudo:throws ReferenceError" : `@nudo:throws ${first.kind} / sidecar fn({ … }) contract / refine / guard / try-catch`}`
             : first.kind === "ReferenceError"
               ? "re-export `export { x } from` 不是局部绑定——改 `import { x }` / @nudo:throws ReferenceError"
-              : `@nudo:throws ${first.kind} / refine / guard / try-catch`,
+              : `@nudo:throws ${first.kind} / sidecar fn({ … }) contract / refine / guard / try-catch`,
           fn: name,
           ...(loc.line !== undefined ? { line: loc.line } : {}),
           ...(loc.column !== undefined ? { column: loc.column } : {}),
@@ -499,7 +502,11 @@ function checkSourceInner(
     });
     signatures.push({
       name,
-      params: g.params,
+      // 解构形参展示 `{ grade, findings }`，不落 `_p0`（#64：契约要上屏）
+      params:
+        g.formals && g.formals.length > 0
+          ? formalParamSignatureNames(g.formals)
+          : g.params,
       paramTypes,
       abs: g.symbolic,
       display: throwsDisplay
@@ -652,7 +659,7 @@ function checkSourceInner(
         code: "nudo:fork-truncated",
         message: `Branch expansion was truncated (fork budget); affected results widened to unknown#opaque (budget)`,
         suggestion:
-          "optional: simplify branching or raise nudo.analysis.maxForks — non-blocking",
+          "optional: raise nudo.analysis.maxForks, or @nudo:budget forks=… on the function — non-blocking",
       });
       continue;
     }
@@ -693,7 +700,8 @@ function checkSourceInner(
       severity: "info",
       code: "nudo:recursion-truncated",
       message: `Recursive evaluation of '${label}' was truncated (depth/size budget); result widened to unknown#opaque (budget — not inference debt)`,
-      suggestion: "narrow the recursion base case or declare an explicit @nudo:contract return contract",
+      suggestion:
+        "raise the function budget with @nudo:budget calls=… depth=… (or narrow the recursion base case / declare @nudo:contract return)",
       fn: label,
     });
   }

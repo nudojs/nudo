@@ -45,7 +45,7 @@ export {
   type EvalCallRecord, MAX_EVAL_CALL_DEPTH, MAX_EVAL_TOTAL_CALLS, getEvalCallBudgetState,
   getEvalCallCollector, enterEvalCallBudgetSession, exitEvalCallBudgetSession,
   noteEvalCallRecord, resetEvalCallBudget, setEvalAssignCollector, setEvalBindingSink,
-  setEvalCallCollector
+  setEvalCallCollector, withEvalBudgetOverride
 } from "./calls.ts";
 
 export {

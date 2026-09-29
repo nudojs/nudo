@@ -206,6 +206,9 @@ let evalTotalCalls = 0;
 let evalActiveCallKeys: string[] = [];
 /** 执行会话嵌套深度：导出桥 re-entry 是被调帧，不是宿主入口 */
 let evalBudgetSessionDepth = 0;
+/** 当前生效上限（@nudo:budget 可逐函数抬高） */
+let evalCallDepthLimit = MAX_EVAL_CALL_DEPTH;
+let evalTotalCallsLimit = MAX_EVAL_TOTAL_CALLS;
 const evalFnCallIds = new WeakMap<object, string>();
 let evalFnCallIdSeq = 0;
 
@@ -224,8 +227,31 @@ export function resetEvalCallBudget(): void {
   evalTotalCalls = 0;
   evalActiveCallKeys = [];
   evalBudgetSessionDepth = 0;
+  evalCallDepthLimit = MAX_EVAL_CALL_DEPTH;
+  evalTotalCallsLimit = MAX_EVAL_TOTAL_CALLS;
   // fork 总次数与调用预算同轮生命周期（不跨宿主入口累积）
   resetEvalForkBudget();
+}
+
+/** @nudo:budget：在 run 期间抬高 B 路径 depth/calls 上限；finally 恢复 */
+export function withEvalBudgetOverride(
+  budget: { depth?: number; calls?: number },
+  run: () => void,
+): void {
+  const prevDepth = evalCallDepthLimit;
+  const prevCalls = evalTotalCallsLimit;
+  if (typeof budget.depth === "number" && Number.isFinite(budget.depth) && budget.depth >= 1) {
+    evalCallDepthLimit = Math.floor(budget.depth);
+  }
+  if (typeof budget.calls === "number" && Number.isFinite(budget.calls) && budget.calls >= 1) {
+    evalTotalCallsLimit = Math.floor(budget.calls);
+  }
+  try {
+    run();
+  } finally {
+    evalCallDepthLimit = prevDepth;
+    evalTotalCallsLimit = prevCalls;
+  }
 }
 
 /**
@@ -280,8 +306,8 @@ function evalEnterCall(name: string, fn: unknown, args: Abs[]): { ok: boolean; k
   const key = evalCallBudgetKey(name, fn, args);
   if (
     evalActiveCallKeys.includes(key) ||
-    evalCallDepth >= MAX_EVAL_CALL_DEPTH ||
-    evalTotalCalls >= MAX_EVAL_TOTAL_CALLS
+    evalCallDepth >= evalCallDepthLimit ||
+    evalTotalCalls >= evalTotalCallsLimit
   ) {
     noteAbsTruncation(name);
     return { ok: false };

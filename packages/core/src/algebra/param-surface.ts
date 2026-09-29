@@ -199,6 +199,25 @@ export function formalParamDisplayNames(formals: FormalParam[]): string[] {
   });
 }
 
+/**
+ * 签名展示名（C4.1 #64）：解构形参渲染为 `{ grade, findings }`，
+ * 不落回求值占位 `_p0`——否则读签名的人以为没有契约。
+ * 求值/内部键仍用 formalParamDisplayNames（`_p0`）。
+ */
+export function formalParamSignatureNames(formals: FormalParam[]): string[] {
+  return formals.map((f) => {
+    switch (f.kind) {
+      case "id":
+      case "default":
+        return f.name;
+      case "rest":
+        return f.display;
+      case "pattern":
+        return f.bound.length > 0 ? `{ ${f.bound.join(", ")} }` : f.placeholder;
+    }
+  });
+}
+
 /** 侧车契约可绑定的参数名全集 */
 export function contractParamNameSet(formals: FormalParam[]): Set<string> {
   const out = new Set<string>();

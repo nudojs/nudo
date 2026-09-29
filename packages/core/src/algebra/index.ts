@@ -115,6 +115,7 @@ export {
 
 export {
   type FormalParam, contractParamNameSet, formalParamDisplayNames,
+  formalParamSignatureNames,
   formalParamsFromNodes, locateContractParam
 } from "./param-surface.ts";
 
@@ -140,7 +141,7 @@ export {
 
 export {
   type NamedImport, NudoSidecarError, type RefineDiag, type RefineEntry,
-  type RefineResolveOpts, execNudoModule, extractDeclaredThrows,
+  type RefineResolveOpts, execNudoModule, extractDeclaredThrows, extractFnBudget,
   extractNudoImports, extractRefineReturnFromSource,
   extractRefinesFromSource, refineDiagCount, refineToIndexedFull,
   resetNudoModuleExecCache, setRefineDiagCollector, takeRefineDiags,
@@ -207,7 +208,7 @@ export {
   effectiveInterface, formatConstraint, formatEffectiveInterfaceDisplay,
   formatInterfaceTierLine, generatedExportNames, interfaceDiagCount,
   interfaceSourceOf, interfaceTierOf, isNodeModulesPath, localNamedExports,
-  setInterfaceDiagCollector, sidecarClosureFingerprint, sidecarPathOf,
+  resetSidecarLoadFailureCache, setInterfaceDiagCollector, sidecarClosureFingerprint, sidecarPathOf,
   takeInterfaceDiags, takeInterfaceDiagsSince
 } from "./interface.ts";
 

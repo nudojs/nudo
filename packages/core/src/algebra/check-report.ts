@@ -162,6 +162,13 @@ export function actionsForIssue(i: {
     case "nudo:entry-may-throw":
       return [
         {
+          kind: "draft",
+          command: "nudo contract --draft",
+          label:
+            "narrow the entry with a sidecar fn({ … }) param contract — most honest fix for helpers (also tightens the signature)",
+          ...(i.fn ? { hint: i.fn } : {}),
+        },
+        {
           kind: "relax",
           label: "declare intentional fail-fast: @nudo:throws Error (or case `!! throws`)",
           ...(i.fn ? { hint: i.fn } : {}),
@@ -175,7 +182,6 @@ export function actionsForIssue(i: {
           command: "nudo check --ignore-throws TypeError",
           label: "migration switch: ignore this throw class on L2",
         },
-        draft,
       ];
     case "nudo:unknown-inference":
     case "nudo:opaque-result":
@@ -197,7 +203,8 @@ export function actionsForIssue(i: {
       return [
         {
           kind: "info",
-          label: "results widened to unknown — raise budget or narrow control flow",
+          label:
+            "results widened to unknown — raise budget (@nudo:budget forks/calls/depth on the function) or narrow control flow",
         },
       ];
     case "nudo:host-effect-blocked":

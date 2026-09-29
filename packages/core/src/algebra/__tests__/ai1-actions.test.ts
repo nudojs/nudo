@@ -31,6 +31,10 @@ describe("AI1 structured actions in CheckJson", () => {
     const acts = actionsForIssue({ code: "nudo:entry-may-throw", fn: "getName" });
     const ign = acts.find((a) => a.kind === "ignore-throws");
     expect(ign?.command).toContain("--ignore-throws");
+    // #64：侧车形参契约是最诚实的修法——排在 @nudo:throws 之前
+    expect(acts[0]!.kind).toBe("draft");
+    expect(acts[0]!.label).toContain("param contract");
+    expect(acts.some((a) => a.kind === "relax" && a.label.includes("@nudo:throws"))).toBe(true);
   });
 
   it("serializeCheckJson embeds actions on each issue", () => {

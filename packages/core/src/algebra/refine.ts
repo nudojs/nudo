@@ -629,6 +629,8 @@ export type RefineResolveOpts = {
 
 /** *.nudo.js 构建器执行结果（LRU）。键 = 依赖闭包内容指纹；无 loadModule 退化为 src */
 const nudoModuleExecCache = new Map<string, Record<string, unknown>>();
+/** 执行失败缓存（#64）：同指纹失败只 exec 一次，后续调用重抛同一错误 */
+const nudoModuleFailCache = new Map<string, unknown>();
 const MAX_NUDO_MODULE_EXEC = 64;
 /** 防病态侧车依赖图；截断时指纹不可信 → 本次不读写缓存 */
 const MAX_SIDECAR_CLOSURE = 64;
@@ -696,21 +698,36 @@ function execNudoModuleCached(src: string, opts: RefineResolveOpts): Record<stri
       nudoModuleExecCache.set(key, hit);
       return hit;
     }
+    if (nudoModuleFailCache.has(key)) {
+      throw nudoModuleFailCache.get(key);
+    }
   }
 
-  const out = execSidecar(src, opts, opts.fromFile ? [opts.fromFile] : [], preloaded);
-  if (key !== undefined) {
-    if (nudoModuleExecCache.size >= MAX_NUDO_MODULE_EXEC) {
-      const oldest = nudoModuleExecCache.keys().next().value;
-      if (oldest !== undefined) nudoModuleExecCache.delete(oldest);
+  try {
+    const out = execSidecar(src, opts, opts.fromFile ? [opts.fromFile] : [], preloaded);
+    if (key !== undefined) {
+      if (nudoModuleExecCache.size >= MAX_NUDO_MODULE_EXEC) {
+        const oldest = nudoModuleExecCache.keys().next().value;
+        if (oldest !== undefined) nudoModuleExecCache.delete(oldest);
+      }
+      nudoModuleExecCache.set(key, out);
     }
-    nudoModuleExecCache.set(key, out);
+    return out;
+  } catch (e) {
+    if (key !== undefined) {
+      if (nudoModuleFailCache.size >= MAX_NUDO_MODULE_EXEC) {
+        const oldest = nudoModuleFailCache.keys().next().value;
+        if (oldest !== undefined) nudoModuleFailCache.delete(oldest);
+      }
+      nudoModuleFailCache.set(key, e);
+    }
+    throw e;
   }
-  return out;
 }
 
 export function resetNudoModuleExecCache(): void {
   nudoModuleExecCache.clear();
+  nudoModuleFailCache.clear();
 }
 
 /**
@@ -974,4 +991,59 @@ export function extractDeclaredThrows(
   if (any) return "*";
   if (kinds.size > 0) return [...kinds];
   return undefined;
+}
+
+/**
+ * 函数级预算旋钮（#64 P4）：
+ *   @nudo:budget forks=20000
+ *   @nudo:budget calls=50000 depth=128
+ *   @nudo:budget forks=20000, calls=50000
+ *
+ * 与 @nudo:throws 同路径扫函数前注释块。只抬高预算（不降低全局默认）；
+ * 未声明的维度沿用全局。非法值忽略。
+ */
+export function extractFnBudget(
+  source: string,
+  fnName: string,
+): { forks?: number; calls?: number; depth?: number } | undefined {
+  const directiveSrc = stripStringsKeepComments(source);
+  if (!directiveSrc.includes("@nudo:budget")) return undefined;
+  const escaped = identBoundaryRegex(fnName);
+  const fnRe = new RegExp(
+    `(?:export\\s+(?:default\\s+)?)?(?:async\\s+)?(?:function\\s+${escaped}|const\\s+${escaped}\\s*=)`,
+  );
+  const m = source.match(fnRe);
+  if (!m || m.index === undefined) return undefined;
+  const before = source.slice(0, m.index);
+  const lines = before.split("\n");
+  let seenComment = false;
+  const out: { forks?: number; calls?: number; depth?: number } = {};
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]!.trim();
+    if (line === "") {
+      if (seenComment) break;
+      continue;
+    }
+    if (line === "*/") continue;
+    if (line.startsWith("*") || line.startsWith("/*") || line.startsWith("//")) {
+      seenComment = true;
+      const body = line.replace(/^[*/\s]+/, "").replace(/\*\/$/, "").trim();
+      const bd = body.match(/@nudo:budget\s+(.+)$/i);
+      if (bd) {
+        for (const part of bd[1]!.split(/[,\s|]+/).map((s) => s.trim()).filter(Boolean)) {
+          const kv = part.match(/^(forks|calls|depth)\s*=\s*(\d+)$/i);
+          if (kv) {
+            const n = Number(kv[2]);
+            if (Number.isFinite(n) && n >= 1) {
+              const key = kv[1]!.toLowerCase() as "forks" | "calls" | "depth";
+              out[key] = Math.floor(n);
+            }
+          }
+        }
+      }
+      continue;
+    }
+    break;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }

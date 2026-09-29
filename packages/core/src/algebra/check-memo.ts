@@ -10,6 +10,7 @@ import type { CheckReport } from "./check-report.ts";
 import type { Abs } from "./abs.ts";
 import { formatAbs } from "./format.ts";
 import { hashSource, resetHashSourceCache } from "./hash-source.ts";
+import { resetSidecarLoadFailureCache } from "./interface.ts";
 import {
   loadModuleDepsFingerprint,
   normPath,
@@ -30,6 +31,9 @@ export function resetCheckSourceMemo(): void {
   checkKeyDeps.clear();
   checkDepIndex.clear();
   resetHashSourceCache();
+  // 侧车加载失败去重表（#64）与 check memo 同生命周期：测试/会话清空时一并丢弃，
+  // 否则同一侧车失败在后续分析里被吞掉。
+  resetSidecarLoadFailureCache();
 }
 
 function loadModuleId(fn?: (spec: string, fromFile: string) => string | undefined): number {

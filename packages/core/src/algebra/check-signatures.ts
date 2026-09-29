@@ -10,6 +10,7 @@ import type { Abs } from "./abs.ts";
 import { formatAbs, formatAbsMultiline, formatShape } from "./format.ts";
 import { identBoundaryRegex } from "./code-text.ts";
 import type { PolyFn } from "./generalize.ts";
+import { formalParamSignatureNames } from "./param-surface.ts";
 
 type ParsedFile = ReturnType<typeof parseSource>;
 
@@ -102,7 +103,9 @@ export function isDefaultExportName(source: string, fnName: string): boolean {
 }
 
 export function formatEntrySigLine(name: string, g: PolyFn, throws: string): string {
-  const ps = g.params
+  const names =
+    g.formals && g.formals.length > 0 ? formalParamSignatureNames(g.formals) : g.params;
+  const ps = names
     .map((p, i) => {
       const t = g.typeParams[i]?.value;
       // design §2：无约束 any；真 unknown 不得伪装

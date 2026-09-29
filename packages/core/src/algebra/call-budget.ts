@@ -18,6 +18,9 @@ const _fnCallIds = new WeakMap<object, string>();
 let _fnCallIdSeq = 0;
 /** 本轮是否发生调用预算截断（A2 可观测） */
 let _callTruncated = false;
+/** 当前生效的调用预算（@nudo:budget 可逐函数抬高；默认 = 全局常量） */
+let _callDepthLimit = MAX_CALL_DEPTH;
+let _totalCallsLimit = MAX_TOTAL_CALLS;
 
 /** A2：预算/截断快照（check --json / health 上屏） */
 export type AbsBudgetStats = {
@@ -34,7 +37,7 @@ export type AbsBudgetStats = {
 export function getAbsCallBudgetStats(): AbsBudgetStats {
   return {
     calls: _absTotalCalls,
-    maxCalls: MAX_TOTAL_CALLS,
+    maxCalls: _totalCallsLimit,
     forks: _evalForkCount,
     maxForks: _evalForkBudgetLimit,
     callTruncated: _callTruncated,
@@ -49,7 +52,38 @@ export function resetAbsCallBudget(): void {
   _absTotalCalls = 0;
   _activeCallKeys = [];
   _callTruncated = false;
+  _callDepthLimit = MAX_CALL_DEPTH;
+  _totalCallsLimit = MAX_TOTAL_CALLS;
   resetEvalForkBudget();
+}
+
+/**
+ * 函数级预算覆盖（`@nudo:budget`）：在 fn 期间抬高 depth/calls/forks 上限。
+ * 返回 restore 回调（恢复先前值）。非法值忽略对应维。
+ */
+export function withFnBudgetOverride(
+  budget: { depth?: number; calls?: number; forks?: number },
+  run: () => void,
+): void {
+  const prevDepth = _callDepthLimit;
+  const prevCalls = _totalCallsLimit;
+  const prevForks = _evalForkBudgetLimit;
+  if (typeof budget.depth === "number" && Number.isFinite(budget.depth) && budget.depth >= 1) {
+    _callDepthLimit = Math.floor(budget.depth);
+  }
+  if (typeof budget.calls === "number" && Number.isFinite(budget.calls) && budget.calls >= 1) {
+    _totalCallsLimit = Math.floor(budget.calls);
+  }
+  if (typeof budget.forks === "number" && Number.isFinite(budget.forks) && budget.forks >= 1) {
+    setEvalForkBudgetLimit(Math.floor(budget.forks));
+  }
+  try {
+    run();
+  } finally {
+    _callDepthLimit = prevDepth;
+    _totalCallsLimit = prevCalls;
+    setEvalForkBudgetLimit(prevForks);
+  }
 }
 
 export function stableCallId(obj: object): string {
@@ -107,8 +141,8 @@ export function noteAbsTruncation(label: string): void {
 export function enterCall(key: string, label: string): boolean {
   if (
     _activeCallKeys.includes(key) ||
-    _absCallDepth >= MAX_CALL_DEPTH ||
-    _absTotalCalls >= MAX_TOTAL_CALLS
+    _absCallDepth >= _callDepthLimit ||
+    _absTotalCalls >= _totalCallsLimit
   ) {
     _callTruncated = true;
     noteAbsTruncation(label);

@@ -490,6 +490,59 @@ function isDefaultExportLocal(source: string, localName: string): boolean {
   return reList.test(source) || reDefaultFn.test(source) || reDefaultId.test(source);
 }
 
+/**
+ * 侧车源码可能绑定的导出名（解析导出名，不执行）。
+ * 解析失败 → undefined（调用方回落到尝试 exec，让加载诊断照常浮出）。
+ */
+function sidecarExportNames(sidecarSrc: string): Set<string> | undefined {
+  try {
+    return localNamedExports(sidecarSrc);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 侧车导出面是否可能绑定 fnName（C4.2 键解析的静态近似）：
+ * 直接同名 / default（源侧 default 导出）/ `Class.method` 的
+ * `Class_method`、嵌套 `Class`、近失配裸 `method`。
+ * 用于在 exec 前跳过与该侧车无关的源导出——侧车加载失败不得按源导出逐个上报。
+ */
+function sidecarMayBind(
+  sidecarNames: Set<string> | undefined,
+  fnName: string,
+  source: string,
+): boolean {
+  if (!sidecarNames) return true; // 未知导出面：保守尝试
+  if (sidecarNames.size === 0) return true; // 解析空表：可能是坏源，让 exec 报
+  if (sidecarNames.has(fnName)) return true;
+  if (sidecarNames.has("default") && isDefaultExportLocal(source, fnName)) return true;
+  if (fnName.includes(".")) {
+    const [cls, method] = fnName.split(".", 2);
+    if (cls && method) {
+      if (sidecarNames.has(`${cls}_${method}`)) return true;
+      if (sidecarNames.has(cls)) return true;
+      if (sidecarNames.has(method)) return true;
+    }
+  }
+  return false;
+}
+
+/** 模块级加载/执行失败去重：同 (路径, 原因) 只报一次，后续绑定静默跳过 */
+const sidecarLoadFailures = new Map<string, string>(); // key → reason
+
+function noteSidecarLoadFailure(sidecarPath: string, reason: string): boolean {
+  const key = `${sidecarPath}\0${reason}`;
+  if (sidecarLoadFailures.has(key)) return false;
+  sidecarLoadFailures.set(key, reason);
+  return true;
+}
+
+/** 与 resetNudoModuleExecCache 同口径：分析会话/测试间清空失败去重表 */
+export function resetSidecarLoadFailureCache(): void {
+  sidecarLoadFailures.clear();
+}
+
 function loadSidecarBinding(
   source: string,
   fnName: string,
@@ -506,15 +559,37 @@ function loadSidecarBinding(
   // 自加载守卫：host loader 误把源文件/自身内容当作侧车返回时不当侧车 exec
   // （CJS 源含 module.exports 时会变成 "module is not defined" 假诊断）
   if (sidecarSrc === source) return { ok: false };
+  // #64：侧车只绑定部分源导出时，无关导出不得各自上报同一加载失败。
+  // 先按导出名静态过滤；exec 失败也按 (路径, 原因) 去重，措辞不点名函数。
+  const scNames = sidecarExportNames(sidecarSrc);
+  if (!sidecarMayBind(scNames, fnName, source)) return { ok: false };
   let exports: Record<string, unknown>;
   try {
     exports = execNudoModule(sidecarSrc, { loadModule, fromFile: sidecarPath });
   } catch (e) {
-    collectDiag({
-      code: e instanceof NudoSidecarError ? e.code : "nudo:interface-load",
-      message: `sidecar '${spec}' for '${fnName}' failed: ${e instanceof Error ? e.message : String(e)}`,
-      file: sidecarPath,
-    });
+    const reason = e instanceof Error ? e.message : String(e);
+    const code = e instanceof NudoSidecarError ? e.code : "nudo:interface-load";
+    if (noteSidecarLoadFailure(sidecarPath, reason)) {
+      // 模块级失败：不写 for 'X'（读起来像 X 自身有问题）。
+      // 影响面 = 侧车导出名 ∩ 源本地导出名（静态近似；exec 失败时无法枚举真实绑定）。
+      let affected = 1;
+      if (scNames && scNames.size > 0) {
+        const srcExports = localNamedExports(source);
+        let n = 0;
+        for (const name of srcExports) {
+          if (sidecarMayBind(scNames, name, source)) n++;
+        }
+        if (n > 0) affected = n;
+      }
+      collectDiag({
+        code,
+        message:
+          affected > 1
+            ? `sidecar '${spec}' failed to load: ${reason} (affects ${affected} bindings)`
+            : `sidecar '${spec}' failed to load: ${reason}`,
+        file: sidecarPath,
+      });
+    }
     return { ok: false };
   }
   // C4.2 绑定键解析：

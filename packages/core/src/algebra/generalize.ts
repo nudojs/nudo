@@ -22,7 +22,9 @@ import { emptyEnv } from "./ast-env.ts";
 import { bindImports, type AbsModuleExports } from "./abs-modules.ts";
 import { defaultLeakBudget, type LeakBudget } from "./leak.ts";
 import { formatShapeSlot } from "./format.ts";
-import { type RefineResolveOpts } from "./refine.ts";
+import { type RefineResolveOpts, extractFnBudget } from "./refine.ts";
+import { withFnBudgetOverride } from "./call-budget.ts";
+import { withEvalBudgetOverride } from "./exec/calls.ts";
 import { constraintToEntryAbs, instantiateConstraint } from "./constraint.ts";
 import {
   effectiveInterface,
@@ -32,7 +34,7 @@ import {
   type EffectiveInterfaceOpts,
 } from "./interface.ts";
 import { generalizeSourceKeyPart, resetFnFpCache } from "./fn-fp.ts";
-import { formalParamsFromNodes, formalParamDisplayNames, type FormalParam } from "./param-surface.ts";
+import { formalParamsFromNodes, formalParamDisplayNames, locateContractParam, type FormalParam } from "./param-surface.ts";
 import { resetHashSourceCache } from "./hash-source.ts";
 import {
   loadModuleDepsFingerprint,
@@ -713,6 +715,8 @@ function generalizeFromAstUncached(
           param: e.param,
           pred: instantiateConstraint(e.constraint, e.param),
         }));
+        /** 解构形参（C4.1）：字段契约聚合成 obj Abs，挂到 placeholder 槽 */
+        const patternFields = new Map<number, Record<string, { abs: Abs; optional?: boolean }>>();
         for (const e of reqs) {
           const idx = params.indexOf(e.param);
           if (idx >= 0) {
@@ -726,7 +730,57 @@ function generalizeFromAstUncached(
               abs: snapshotAbs(entryAbs),
               source: "refine",
             });
+            continue;
           }
+          // C4.1：契约名是解构绑定名/属性键 → 投影到 pattern 形参
+          const hit = formals.length > 0 ? locateContractParam(formals, e.param) : undefined;
+          if (hit && hit.field !== undefined) {
+            let bag = patternFields.get(hit.index);
+            if (!bag) {
+              bag = {};
+              patternFields.set(hit.index, bag);
+            }
+            const fieldAbs = constraintToEntryAbs(e.constraint, e.param);
+            bag[hit.field] = {
+              abs: fieldAbs,
+              ...(e.constraint.isOptional ? { optional: true } : {}),
+            };
+          } else if (hit) {
+            // placeholder / `_` / rest 裸名：整参契约
+            const entryAbs = constraintToEntryAbs(e.constraint, e.param);
+            typeParams[hit.index] = {
+              id: typeParams[hit.index]!.id,
+              value: entryAbs,
+            };
+            refineEntryShapes.set(e.param, {
+              abs: snapshotAbs(entryAbs),
+              source: "refine",
+            });
+          }
+        }
+        // 解构字段合成 obj Abs（签名上屏 `{ grade: string, … }`，不再是 any）
+        for (const [pIdx, bag] of patternFields) {
+          const slots: Record<string, { value: Abs; optional?: boolean }> = {};
+          for (const [key, rec] of Object.entries(bag)) {
+            slots[key] = {
+              value: rec.abs,
+              ...(rec.optional ? { optional: true } : {}),
+            };
+          }
+          const objAbs = abs(
+            { k: "obj", slots },
+            termVar(params[pIdx] ?? `_p${pIdx}`),
+            undefined,
+            "path",
+          );
+          typeParams[pIdx] = {
+            id: typeParams[pIdx]!.id,
+            value: objAbs,
+          };
+          refineEntryShapes.set(params[pIdx] ?? `_p${pIdx}`, {
+            abs: snapshotAbs(objAbs),
+            source: "refine",
+          });
         }
       }
     } catch {
@@ -807,6 +861,44 @@ function generalizeFromAstUncached(
     !envGated &&
     !replaceGated;
 
+  // #64 P4：@nudo:budget —— 该函数求值期间抬高 depth/calls/forks 上限
+  const fnBudget = extractFnBudget(source, fnName);
+
+  const runCore = (args: Abs[], phi: Phi): Abs | undefined => {
+    if (!evalEligible) return undefined;
+    try {
+      const evalRun = evalRunOf(source, opts.modules, opts.inject);
+      if (!evalRun) {
+        /* B 失败 fail-closed */
+        return undefined;
+      } else if (fnName.includes(".")) {
+        // 类方法桥：模块导出表取类 Abs → $new（构造参数 any）→ $invoke
+        const [clsName, methodName] = fnName.split(".", 2);
+        const clsAbs = evalRun[clsName ?? ""];
+        if (clsAbs && typeof clsAbs === "object" && "shape" in (clsAbs as object)) {
+          const nCtor = ctorParamCountOf(fileAst, clsName ?? "");
+          const inst = $new(clsAbs as Abs, Array.from({ length: nCtor }, () => abs({ k: "any" }, undefined, pTrue, "path")));
+          return withExecPhi(phi, () => $invoke(inst, methodName ?? "", args));
+        }
+        return undefined;
+      } else if (fnName in evalRun) {
+        // 提升形状预绑定到实参（B 无 env 预绑面；具体实参优先）
+        const evalArgs = args.map((a, i) => {
+          const shape = promoteScan.promotedShapes.get(params[i]!);
+          if (shape && (a.shape.k === "any" || a.shape.k === "unknown")) {
+            return { shape, term: a.term, pred: a.pred, conf: "path" } as Abs;
+          }
+          return a;
+        });
+        return callTranspiledExportFull(evalRun, fnName, evalArgs, { phi }).result;
+      }
+      return undefined;
+    } catch {
+      /* B 失败 fail-closed */
+      return undefined;
+    }
+  };
+
   const run = (args: Abs[], phi: Phi = pTrue): Abs => {
     const { key, varOrder } = instantiateMemoKey(args, phi);
     const hit = instMemo.get(key);
@@ -814,34 +906,14 @@ function generalizeFromAstUncached(
       return alphaRenameResult(hit.result, hit.varOrder, varOrder);
     }
     let result: Abs | undefined;
-    if (evalEligible) {
-      try {
-        const evalRun = evalRunOf(source, opts.modules, opts.inject);
-        if (!evalRun) {
-          /* B 失败 fail-closed */
-        } else if (fnName.includes(".")) {
-          // 类方法桥：模块导出表取类 Abs → $new（构造参数 any）→ $invoke
-          const [clsName, methodName] = fnName.split(".", 2);
-          const clsAbs = evalRun[clsName ?? ""];
-          if (clsAbs && typeof clsAbs === "object" && "shape" in (clsAbs as object)) {
-            const nCtor = ctorParamCountOf(fileAst, clsName ?? "");
-            const inst = $new(clsAbs as Abs, Array.from({ length: nCtor }, () => abs({ k: "any" }, undefined, pTrue, "path")));
-            result = withExecPhi(phi, () => $invoke(inst, methodName ?? "", args));
-          }
-        } else if (fnName in evalRun) {
-          // 提升形状预绑定到实参（B 无 env 预绑面；具体实参优先）
-          const evalArgs = args.map((a, i) => {
-            const shape = promoteScan.promotedShapes.get(params[i]!);
-            if (shape && (a.shape.k === "any" || a.shape.k === "unknown")) {
-              return { shape, term: a.term, pred: a.pred, conf: "path" } as Abs;
-            }
-            return a;
-          });
-          result = callTranspiledExportFull(evalRun, fnName, evalArgs, { phi }).result;
-        }
-      } catch {
-        /* B 失败 fail-closed */
-      }
+    if (fnBudget) {
+      withFnBudgetOverride(fnBudget, () => {
+        withEvalBudgetOverride(fnBudget, () => {
+          result = runCore(args, phi);
+        });
+      });
+    } else {
+      result = runCore(args, phi);
     }
     if (result === undefined) {
       // fail-closed：B 失败（eval-incapable 构造）/ 非导出类方法等 →
