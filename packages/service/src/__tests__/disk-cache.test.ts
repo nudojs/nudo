@@ -1,7 +1,7 @@
-import { describe, it, expect } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { mkdtempSync, rmSync, readFileSync, readdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   DiskCache,
   checkCacheKey,
@@ -12,6 +12,42 @@ import {
   ANALYSIS_ABI,
 } from "../disk-cache.ts";
 import { diskCacheRoot, analysisConfig } from "../evaluator/config.ts";
+
+type FsModule = typeof import("node:fs");
+
+/** 允许测试在真实 fs 之上注入写/改名失败（ESM namespace 不可 spyOn） */
+const fsControl = vi.hoisted(() => ({
+  real: null as FsModule | null,
+  writeFileSync: null as
+    | null
+    | ((p: Parameters<FsModule["writeFileSync"]>[0], data: Parameters<FsModule["writeFileSync"]>[1], opts?: Parameters<FsModule["writeFileSync"]>[2]) => void),
+  renameSync: null as
+    | null
+    | ((oldPath: Parameters<FsModule["renameSync"]>[0], newPath: Parameters<FsModule["renameSync"]>[1]) => void),
+}));
+
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<FsModule>();
+  fsControl.real = actual;
+  return {
+    ...actual,
+    writeFileSync: ((
+      p: Parameters<FsModule["writeFileSync"]>[0],
+      data: Parameters<FsModule["writeFileSync"]>[1],
+      opts?: Parameters<FsModule["writeFileSync"]>[2],
+    ) => {
+      if (fsControl.writeFileSync) return fsControl.writeFileSync(p, data, opts);
+      return actual.writeFileSync(p, data, opts);
+    }) as FsModule["writeFileSync"],
+    renameSync: ((
+      oldPath: Parameters<FsModule["renameSync"]>[0],
+      newPath: Parameters<FsModule["renameSync"]>[1],
+    ) => {
+      if (fsControl.renameSync) return fsControl.renameSync(oldPath, newPath);
+      return actual.renameSync(oldPath, newPath);
+    }) as FsModule["renameSync"],
+  };
+});
 
 describe("B3 disk cache store", () => {
   it("round-trips JSON values when enabled", () => {
@@ -92,6 +128,87 @@ describe("B3 disk cache store", () => {
     expect(sha256Hex("x")).toHaveLength(64);
     expect(ANALYSIS_ABI).toMatch(/^nudo-check-cache-v\d+\+\d/);
     expect(relativizePath("/root/src/a.js", "/root")).toBe("src/a.js");
+  });
+});
+
+describe("B3 disk cache atomic write", () => {
+  afterEach(() => {
+    fsControl.writeFileSync = null;
+    fsControl.renameSync = null;
+  });
+
+  const cachePath = (root: string, key: string) =>
+    join(root, "check", key.slice(0, 2), `${key}.json`);
+
+  it("interrupted write leaves no torn JSON at the cache path", () => {
+    const root = mkdtempSync(join(tmpdir(), "nudo-cache-atomic-"));
+    try {
+      const c = new DiskCache({ root, namespace: "check" });
+      const key = checkCacheKey("/p/a.js", "export const x = 1;\n", { autoBind: true });
+      const first = { ok: true, n: 1 };
+      c.set(key, first);
+
+      const target = cachePath(root, key);
+      expect(JSON.parse(readFileSync(target, "utf8")).value).toEqual(first);
+
+      // 模拟中断写：writeFileSync 只落一半字节后崩溃
+      fsControl.writeFileSync = (p, data, opts) => {
+        const text = String(data);
+        fsControl.real!.writeFileSync(p, text.slice(0, Math.floor(text.length / 2)), opts as never);
+        throw new Error("simulated crash mid-write");
+      };
+
+      // fail-open：不抛出
+      expect(() => c.set(key, { ok: false, n: 2 })).not.toThrow();
+
+      // 目标仍是完整 JSON（旧值），绝不能是半截
+      const raw = readFileSync(target, "utf8");
+      expect(() => JSON.parse(raw)).not.toThrow();
+      expect(JSON.parse(raw).value).toEqual(first);
+
+      // 不残留孤儿 tmp
+      expect(readdirSync(dirname(target)).filter((f) => f.includes(".tmp-"))).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rename failure cleans tmp and keeps the previous entry intact", () => {
+    const root = mkdtempSync(join(tmpdir(), "nudo-cache-atomic-"));
+    try {
+      const c = new DiskCache({ root, namespace: "check" });
+      const key = checkCacheKey("/p/a.js", "export const x = 2;\n", { autoBind: true });
+      const first = { ok: true };
+      c.set(key, first);
+      const target = cachePath(root, key);
+
+      fsControl.renameSync = () => {
+        throw new Error("simulated rename failure");
+      };
+
+      expect(() => c.set(key, { ok: false })).not.toThrow();
+
+      expect(JSON.parse(readFileSync(target, "utf8")).value).toEqual(first);
+      expect(readdirSync(dirname(target)).filter((f) => f.includes(".tmp-"))).toEqual([]);
+      expect(existsSync(target)).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("successful set publishes atomically and leaves no tmp files", () => {
+    const root = mkdtempSync(join(tmpdir(), "nudo-cache-atomic-"));
+    try {
+      const c = new DiskCache({ root, namespace: "check" });
+      const key = checkCacheKey("/p/a.js", "export const x = 3;\n", { autoBind: true });
+      c.set(key, { v: 1 });
+      c.set(key, { v: 2 });
+      const target = cachePath(root, key);
+      expect(JSON.parse(readFileSync(target, "utf8")).value).toEqual({ v: 2 });
+      expect(readdirSync(dirname(target))).toEqual([`${key}.json`]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

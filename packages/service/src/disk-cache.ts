@@ -11,9 +11,17 @@
  * harvest/abs-module/path-env）。
  */
 
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
-import { mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
+import {
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  rmSync,
+  renameSync,
+  unlinkSync,
+} from "node:fs";
 import { join, dirname, relative, sep, isAbsolute } from "node:path";
 import { diskCacheRoot } from "./evaluator/config.ts";
 
@@ -107,12 +115,25 @@ export class DiskCache {
 
   set(key: string, value: unknown): void {
     if (!this.enabled || !this.root) return;
+    let tmp: string | undefined;
     try {
       const p = this.pathFor(key);
       mkdirSync(dirname(p), { recursive: true });
-      writeFileSync(p, JSON.stringify({ abi: ANALYSIS_ABI, value }), "utf8");
+      // 同目录 temp + rename：崩溃/磁盘满时缓存条目不会变成半截 JSON。
+      // 随机后缀防可预测 tmp 路径被预置符号链接劫持。
+      tmp = `${p}.tmp-${process.pid}-${randomBytes(4).toString("hex")}`;
+      writeFileSync(tmp, JSON.stringify({ abi: ANALYSIS_ABI, value }), "utf8");
+      renameSync(tmp, p);
+      tmp = undefined;
     } catch {
-      // fail-open：写失败不影响分析
+      // fail-open：写失败不影响分析；清理孤儿 tmp
+      if (tmp) {
+        try {
+          if (existsSync(tmp)) unlinkSync(tmp);
+        } catch {
+          /* best-effort */
+        }
+      }
     }
   }
 
