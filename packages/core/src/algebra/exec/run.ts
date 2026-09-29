@@ -235,7 +235,7 @@ function bindImport(
   name: string,
 ): unknown {
   const mod = modules?.[spec] as AbsModuleExports | undefined;
-  if (!mod) return undefined;
+  if (!mod) return unknown;
   const absCallable = (v: Abs): unknown => {
     // fn Abs → JS 可调用；class/其它 Abs 原样（供 $new / $get）
     if (v && typeof v === "object" && "shape" in v) {
@@ -246,7 +246,7 @@ function bindImport(
   };
   if (name === "default") {
     const d = (mod as AbsModuleExports).default;
-    if (d === undefined) return undefined;
+    if (d === undefined) return unknown;
     if (typeof d === "function") return d;
     return absCallable(d as Abs);
   }
@@ -255,7 +255,8 @@ function bindImport(
   if (v === undefined) {
     const rec = (mod as Record<string, unknown>)[name];
     if (typeof rec === "function") return rec;
-    return undefined;
+    // 缺名：unknown Abs（非 JS undefined）——re-export 走 __nudoExport 时留槽
+    return unknown;
   }
   if (typeof v === "function") return v;
   return absCallable(v as Abs);

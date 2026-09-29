@@ -8,10 +8,17 @@ import type { Abs } from "./abs.ts";
 import { unknown, abs } from "./abs.ts";
 import type { AstEnv } from "./ast-env.ts";
 import { absFunction } from "./abs-fn.ts";
+import { undefAbs } from "./hof.ts";
 
 export type AbsModuleExports = {
   named: Record<string, Abs>;
   default?: Abs;
+  /**
+   * 导出表来自成功求值（evalExportsToModuleExports）。
+   * fail-closed 空表 / harvest stub / env 手写表不设——missing-export 只对
+   * 成功求值的表报（zero-FP，避免与 module-missing 叠报）。
+   */
+  evaluated?: boolean;
 };
 
 /**
@@ -99,9 +106,10 @@ export function collectAbsExports(
             const exported =
               spec.exported.type === "Identifier" ? spec.exported.name : spec.exported.value;
             const v = local === "default" ? mod.default : mod.named[local];
-            if (v === undefined) continue;
-            if (exported === "default") defaultExport = v;
-            else named[exported] = v;
+            // 缺名：留 unknown 槽而非 continue 丢槽（消费方 import 还能拿到 unknown）
+            const slot = v ?? unknown;
+            if (exported === "default") defaultExport = slot;
+            else named[exported] = slot;
           }
         }
         continue;
@@ -109,16 +117,14 @@ export function collectAbsExports(
       const decl = stmt.declaration;
       if (decl) {
         if (decl.type === "FunctionDeclaration" && decl.id) {
-          const v = lookupExport(env, decl.id.name);
-          if (v) named[decl.id.name] = v;
+          // 声明即导出名：lookup 缺值也留槽（与「从未导出」可区分）
+          named[decl.id.name] = lookupExport(env, decl.id.name) ?? unknown;
         } else if (decl.type === "ClassDeclaration" && decl.id) {
-          const v = lookupExport(env, decl.id.name);
-          if (v) named[decl.id.name] = v;
+          named[decl.id.name] = lookupExport(env, decl.id.name) ?? unknown;
         } else if (decl.type === "VariableDeclaration") {
           for (const d of decl.declarations) {
             if (d.id.type === "Identifier") {
-              const v = lookupExport(env, d.id.name);
-              if (v) named[d.id.name] = v;
+              named[d.id.name] = lookupExport(env, d.id.name) ?? unknown;
             }
           }
         }
@@ -135,8 +141,9 @@ export function collectAbsExports(
         const local = spec.local.type === "Identifier" ? spec.local.name : spec.local.value;
         const exported =
           spec.exported.type === "Identifier" ? spec.exported.name : spec.exported.value;
-        const v = lookupExport(env, local);
-        if (v) named[exported] = v;
+        const v = lookupExport(env, local) ?? unknown;
+        if (exported === "default") defaultExport = v;
+        else named[exported] = v;
       }
     } else if (stmt.type === "ExportAllDeclaration" && stmt.source && modules) {
       // export * from "mod"：并入 named（不含 default，与 ESM 一致）
@@ -148,16 +155,20 @@ export function collectAbsExports(
     } else if (stmt.type === "ExportDefaultDeclaration") {
       const d = stmt.declaration;
       if (d.type === "FunctionDeclaration") {
-        defaultExport = lookupExport(env, d.id ? d.id.name : "default");
+        defaultExport = lookupExport(env, d.id ? d.id.name : "default") ?? unknown;
       } else if (d.type === "ClassDeclaration" && d.id) {
-        defaultExport = lookupExport(env, d.id.name);
+        defaultExport = lookupExport(env, d.id.name) ?? unknown;
       } else if (d.type === "Identifier") {
-        defaultExport = lookupExport(env, d.name);
+        // `export default undefined` / `export default x`：槽位保留
+        defaultExport = d.name === "undefined" ? undefAbs() : (lookupExport(env, d.name) ?? unknown);
+      } else {
+        // 字面量/表达式默认导出：名存在（值可折叠与否交给求值路径）
+        defaultExport = lookupExport(env, "default") ?? unknown;
       }
     }
   }
 
   const result: AbsModuleExports = { named };
-  if (defaultExport) result.default = defaultExport;
+  if (defaultExport !== undefined) result.default = defaultExport;
   return result;
 }

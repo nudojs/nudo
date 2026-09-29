@@ -82,6 +82,7 @@ export { collectLoadDepContents, type DepContent } from "./dep-contents.ts";
 export {
   evalAbsModuleGraph,
   collectAbsBindingsFromGraph,
+  collectMissingExportIssues,
   defaultAbsLoadModule,
   clearAbsModuleCache,
   evictAbsModuleCacheFiles,

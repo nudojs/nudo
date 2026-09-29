@@ -99,3 +99,123 @@ const boom = deep(3);
     expect(rec.length).toBeLessThanOrEqual(1);
   });
 });
+
+describe("nudo:missing-export (named import / re-export 缺名)", () => {
+  it("reports missing named import against a successfully evaluated module", () => {
+    const dir = setup({
+      "m.js": `export const a = 1;\n`,
+    });
+    const src = `import { b } from "./m.js";
+/**
+ * @nudo:case
+ */
+export function go() { return b; }
+`;
+    const r = analyze(dir, src);
+    const missing = r.diagnostics.filter((d) => d.code === "nudo:missing-export");
+    expect(missing.length).toBe(1);
+    expect(missing[0]!.severity).toBe("error");
+    expect(missing[0]!.message).toContain("m.js");
+    expect(missing[0]!.message).toContain("b");
+  });
+
+  it("does not report when the named export exists", () => {
+    const dir = setup({
+      "m.js": `export const a = 1;\n`,
+    });
+    const src = `import { a } from "./m.js";
+/**
+ * @nudo:case
+ */
+export function go() { return a; }
+`;
+    const r = analyze(dir, src);
+    expect(r.diagnostics.filter((d) => d.code === "nudo:missing-export")).toEqual([]);
+  });
+
+  it("reports re-export missing name and keeps the unknown slot for consumers", () => {
+    const dir = setup({
+      "m.js": `export const a = 1;\n`,
+      "barrel.js": `export { nope } from "./m.js";\n`,
+    });
+    const src = `import { nope } from "./barrel.js";
+/**
+ * @nudo:case
+ */
+export function go() { return nope; }
+`;
+    const r = analyze(dir, src);
+    const missing = r.diagnostics.filter((d) => d.code === "nudo:missing-export");
+    // 仅 barrel 对 m.js 的 re-export 缺名报一条；消费方从 barrel 拿到的是 unknown 槽（名仍在）
+    expect(missing.length).toBe(1);
+    expect(missing[0]!.message).toContain("nope");
+    expect(missing[0]!.message).toContain("m.js");
+
+    // 槽位：barrel 的导出表必须仍有 nope（unknown），消费方 import 不落空
+    writeFileSync(join(dir, "index.js"), src);
+    clearEvalCache();
+    const g = evalAbsModuleGraph(src, join(dir, "index.js"));
+    const barrel = g.modules["./barrel.js"];
+    expect(barrel).toBeDefined();
+    expect(barrel!.named.nope).toBeDefined();
+    expect(barrel!.evaluated).toBe(true);
+  });
+
+  it("fail-closed empty table (eval failure) does not stack missing-export on module-missing", () => {
+    const dir = setup({});
+    // 模块文件不存在 → module-missing；不得叠报 missing-export
+    const src = `import { x } from "./nope.js";
+/**
+ * @nudo:case
+ */
+export function go() { return x; }
+`;
+    const r = analyze(dir, src);
+    expect(r.diagnostics.filter((d) => d.code === "nudo:module-missing").length).toBe(1);
+    expect(r.diagnostics.filter((d) => d.code === "nudo:missing-export")).toEqual([]);
+  });
+
+  it("evalAbsModuleGraph issues carry kind missing-export", () => {
+    const dir = setup({
+      "m.js": `export const a = 1;\n`,
+    });
+    const src = `import { b } from "./m.js";
+export function go() { return b; }
+`;
+    writeFileSync(join(dir, "index.js"), src);
+    clearEvalCache();
+    const g = evalAbsModuleGraph(src, join(dir, "index.js"));
+    expect(g.issues.some((i) => i.kind === "missing-export" && i.label.includes("b"))).toBe(true);
+  });
+});
+
+describe("export slots survive undefined / missing re-export names", () => {
+  it("export let x keeps the named slot (value undefined ≠ never exported)", () => {
+    const dir = setup({
+      "m.js": `export let x;\nexport const y = 1;\n`,
+    });
+    const src = `import { x, y } from "./m.js";
+/**
+ * @nudo:case
+ */
+export function go() { return [x, y]; }
+`;
+    const r = analyze(dir, src);
+    // x 是 undefined 值槽，不是 missing-export
+    expect(r.diagnostics.filter((d) => d.code === "nudo:missing-export")).toEqual([]);
+  });
+
+  it("export default undefined keeps the default slot", () => {
+    const dir = setup({
+      "m.js": `export default undefined;\n`,
+    });
+    const src = `import d from "./m.js";
+/**
+ * @nudo:case
+ */
+export function go() { return d; }
+`;
+    const r = analyze(dir, src);
+    expect(r.diagnostics.filter((d) => d.code === "nudo:missing-export")).toEqual([]);
+  });
+});

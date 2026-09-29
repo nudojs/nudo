@@ -329,7 +329,7 @@ Context: [L2 — entry throws](../guides/check.md#l2--entry-throws) · [@nudo:th
 
 ## Module graph
 
-Reported when Abs module evaluation (`evalAbsModuleGraph`) hits a load problem. `cycle`/`depth` are warnings; `missing` is an error.
+Reported when Abs module evaluation (`evalAbsModuleGraph`) hits a load problem. `cycle`/`depth` are warnings; `missing` / `missing-export` are errors.
 
 ### `nudo:module-cycle` {#nudo-module-cycle}
 
@@ -360,6 +360,16 @@ Module file not found for 'spec' (from file); tried: path
 ```
 
 **Error.** The analyzed file imports a module the loader cannot resolve. **Fix:** correct the spec, or mock the module (`@nudo:mock-module` / `@nudo:mock`).
+
+Context: [@nudo:mock-module](../concepts/directives.md#nudo--module-level-mock) · [nudo check](../guides/check.md#what-it-checks)
+
+### `nudo:missing-export` {#nudo-missing-export}
+
+```text
+Module './m.js' has no export 'b' (from index.js)
+```
+
+**Error.** A named `import` (or `export { x } from`) references a name the source module does not export — typically a typo. Only reported when the source module's export table came from a successful evaluation (fail-closed empty tables and unresolved modules stay silent so this never stacks on `nudo:module-missing`). **Fix:** correct the imported name, add the export to the source module, or mock the module (`@nudo:mock-module`).
 
 Context: [@nudo:mock-module](../concepts/directives.md#nudo--module-level-mock) · [nudo check](../guides/check.md#what-it-checks)
 

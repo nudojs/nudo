@@ -329,7 +329,7 @@ Context: [L2 —— 入口 throws](../guides/check.md#l2--entry-throws) · [@nud
 
 ## 模块图
 
-Abs 模块求值（`evalAbsModuleGraph`）遇到装载问题时上报。`cycle` / `depth` 为 warning；`missing` 为 error。
+Abs 模块求值（`evalAbsModuleGraph`）遇到装载问题时上报。`cycle` / `depth` 为 warning；`missing` / `missing-export` 为 error。
 
 ### `nudo:module-cycle` {#nudo-module-cycle}
 
@@ -360,6 +360,16 @@ Module file not found for 'spec' (from file); tried: path
 ```
 
 **Error。** 被分析文件 import 了装载器无法解析的模块。**修复：** 修正 spec，或 mock 该模块（`@nudo:mock-module` / `@nudo:mock`）。
+
+Context: [@nudo:mock-module](../concepts/directives.md#nudo--模块级-mock) · [nudo check](../guides/check.md#what-it-checks)
+
+### `nudo:missing-export` {#nudo-missing-export}
+
+```text
+Module './m.js' has no export 'b' (from index.js)
+```
+
+**Error。** 具名 `import`（或 `export { x } from`）引用了源模块并未导出的名字——通常是拼写错误。仅当源模块导出表来自成功求值时才报（fail-closed 空表与未解析模块保持静默，不与 `nudo:module-missing` 叠报）。**修复：** 修正导入名、在源模块补上导出，或 mock 该模块（`@nudo:mock-module`）。
 
 Context: [@nudo:mock-module](../concepts/directives.md#nudo--模块级-mock) · [nudo check](../guides/check.md#what-it-checks)
 

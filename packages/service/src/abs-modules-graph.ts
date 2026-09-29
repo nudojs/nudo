@@ -13,7 +13,9 @@ import {
   callTranspiledExportFull,
   foldStaticStringExpr,
   namespaceAbsOf,
+  undefAbs,
   unknown,
+  abs,
   type Abs,
   type AbsModuleExports,
 } from "@nudojs/core";
@@ -178,7 +180,7 @@ function buildModulesForFile(
 
 /** 模块加载守卫：与 TypeValue loadModuleEnv 口径对齐，供 analyzer 映射诊断 */
 export type AbsModuleLoadIssue = {
-  kind: "cycle" | "depth" | "missing";
+  kind: "cycle" | "depth" | "missing" | "missing-export";
   /** 诊断定位用标签（文件 basename 或 require/import 说明符） */
   label: string;
   reason: string;
@@ -250,6 +252,11 @@ function isAbsVal(v: unknown): v is Abs {
   return !!v && typeof v === "object" && "shape" in (v as object) && "conf" in (v as object);
 }
 
+/** null 值的 Abs 表示（export default null 等；与 undefAbs 同口径） */
+function nullAbs(): Abs {
+  return abs({ k: "unknown" }, { op: "lit", value: null as never }, undefined, "exact");
+}
+
 type ParamNodeLike = {
   type?: string;
   name?: string;
@@ -308,9 +315,11 @@ export function evalExportsToModuleExports(
   let def: Abs | undefined;
   const paramTable = topLevelFnParams(file);
   for (const [k, v] of Object.entries(run)) {
-    if (v === undefined || v === null) continue;
     let absVal: Abs;
-    if (isAbsVal(v)) {
+    if (v === undefined || v === null) {
+      // 「名存在但值 undefined/null」≠「从未导出」：保留槽位
+      absVal = v === null ? nullAbs() : undefAbs();
+    } else if (isAbsVal(v)) {
       absVal = v;
     } else if (typeof v === "function") {
       const params =
@@ -330,15 +339,88 @@ export function evalExportsToModuleExports(
     if (k === "default") def = absVal;
     else named[k] = absVal;
   }
-  const out: AbsModuleExports = { named };
-  if (def) out.default = def;
+  const out: AbsModuleExports = { named, evaluated: true };
+  if (def !== undefined) out.default = def;
   return out;
+}
+
+/**
+ * named import / re-export 缺名 → missing-export issue。
+ * zero-FP：仅当源模块导出表来自成功求值（`evaluated`）才报——fail-closed 空表 /
+ * harvest stub / 缺模块不报，避免与 module-missing 叠报。
+ */
+export function collectMissingExportIssues(
+  source: string,
+  modules: Record<string, AbsModuleExports>,
+  fromFile: string,
+): AbsModuleLoadIssue[] {
+  const issues: AbsModuleLoadIssue[] = [];
+  let file: Node;
+  try {
+    file = parse(source);
+  } catch {
+    return issues;
+  }
+  const from = moduleLabel(fromFile);
+  const push = (spec: string, name: string, kind: "import" | "re-export") => {
+    issues.push({
+      kind: "missing-export",
+      label: `${spec}#${name}`,
+      reason:
+        kind === "import"
+          ? `Module '${spec}' has no export '${name}' (from ${from})`
+          : `Module '${spec}' has no export '${name}' to re-export (from ${from})`,
+    });
+  };
+  const checkName = (spec: string, name: string, kind: "import" | "re-export") => {
+    const mod = modules[spec];
+    // 仅成功求值的导出表才可作缺名判定（zero-FP）
+    if (!mod?.evaluated) return;
+    const has = name === "default" ? mod.default !== undefined : name in mod.named;
+    if (!has) push(spec, name, kind);
+  };
+
+  const body = ((file as { program?: { body?: unknown[] } }).program?.body ?? []) as Array<{
+    type?: string;
+    source?: { value?: unknown };
+    specifiers?: Array<{
+      type?: string;
+      local?: { name?: string; type?: string; value?: string } | null;
+      imported?: { type?: string; name?: string; value?: string } | null;
+      exported?: { type?: string; name?: string; value?: string } | null;
+    }>;
+  }>;
+  for (const stmt of body) {
+    if (stmt.type === "ImportDeclaration" && typeof stmt.source?.value === "string") {
+      const spec = stmt.source.value;
+      for (const sp of stmt.specifiers ?? []) {
+        if (sp.type === "ImportDefaultSpecifier") {
+          checkName(spec, "default", "import");
+        } else if (sp.type === "ImportSpecifier") {
+          const imported =
+            sp.imported?.type === "StringLiteral" ? sp.imported.value : sp.imported?.name;
+          if (imported !== undefined) checkName(spec, imported, "import");
+        }
+      }
+    } else if (
+      stmt.type === "ExportNamedDeclaration" &&
+      typeof stmt.source?.value === "string"
+    ) {
+      const spec = stmt.source.value;
+      for (const sp of stmt.specifiers ?? []) {
+        if (sp.type !== "ExportSpecifier") continue;
+        const local = sp.local?.type === "StringLiteral" ? sp.local.value : sp.local?.name;
+        if (local !== undefined) checkName(spec, local, "re-export");
+      }
+    }
+  }
+  return issues;
 }
 
 /**
  * 递归求值相对依赖 + 裸包 harvest，产出入口可用的 modules 表。
  * 循环依赖：先放空表再回填（与 TypeValue 路径 partial 口径一致），
- * 并记录 cycle/depth/missing 供诊断。
+ * 并记录 cycle/depth/missing/missing-export 供诊断。
  */
 export function evalAbsModuleGraph(
   entrySource: string,
@@ -451,10 +533,15 @@ export function evalAbsModuleGraph(
       // （evalProgramAbs + collectAbsExports）已删，无第二求值路径。
       exports = { named: {} };
     }
+    // named import / re-export 缺名（仅 evaluated 表；fail-closed 空表不报）
+    for (const iss of collectMissingExportIssues(source, modules, absPath)) {
+      pushIssue(iss.kind, iss.label, iss.reason);
+    }
     loading.pop();
     // 就地回填占位：环内 import 持有的是 placeholder 引用，换新对象会永远空导出。
     Object.assign(placeholder.named, exports.named);
     if (exports.default !== undefined) placeholder.default = exports.default;
+    if (exports.evaluated) placeholder.evaluated = true;
     cache.set(absPath, placeholder);
 
     let fingerprint: { mtimeMs: number; size: number } | undefined;
@@ -489,6 +576,10 @@ export function evalAbsModuleGraph(
       );
     },
   );
+  // 入口文件自身的 named import / re-export 缺名
+  for (const iss of collectMissingExportIssues(entrySource, modules, entryFile)) {
+    pushIssue(iss.kind, iss.label, iss.reason);
+  }
 
   return { modules, byPath: cache, issues };
 }
@@ -525,13 +616,14 @@ function importLocalBindings(
         // 命名空间（named + default 槽）→ open obj Abs（与 namespaceAbsOf 同口径）
         out.set(local, namespaceAbsOf(mod));
       } else if (sp.type === "ImportDefaultSpecifier") {
-        if (mod.default) out.set(local, mod.default);
+        // 缺 default 也留槽（unknown），与「从未 import」可区分
+        out.set(local, mod.default ?? unknown);
       } else if (sp.type === "ImportSpecifier") {
         const imported =
           sp.imported?.type === "StringLiteral" ? sp.imported.value : sp.imported?.name;
         if (imported === undefined) continue;
         const absVal = imported === "default" ? mod.default : mod.named[imported];
-        if (absVal) out.set(local, absVal);
+        out.set(local, absVal ?? unknown);
       }
     }
   }

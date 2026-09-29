@@ -37,6 +37,7 @@ export {
 export {
   evalAbsModuleGraph,
   collectAbsBindingsFromGraph,
+  collectMissingExportIssues,
   defaultAbsLoadModule,
   clearAbsModuleCache,
   evictAbsModuleCacheFiles,
