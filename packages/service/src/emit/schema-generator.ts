@@ -85,13 +85,15 @@ function litOf(t: Term | undefined): string | number | boolean | null | undefine
   return t && t.op === "lit" ? t.value : undefined;
 }
 
-/** eq 的字面量端（任一侧为 lit 即可）；锚定要求另一侧是 var 或 length(var) 等简单项 */
+/** eq 的字面量端（任一侧为 lit 即可）；锚定要求另一侧是 self var（与 core anchoredEqLit 同口径）。
+ *  裸 app（length(other)、get(self,"x") 等）不是 self 锚定——length(self) 约束应走 length 路径，
+ *  否则 eq(length(s),5) 会错投影成 z.literal(5)。 */
 function eqLitValue(p: Pred, self?: Term): string | number | boolean | null | undefined | "unanchored" {
   if (p.op !== "eq") return "unanchored";
   const aLit = litOf(p.a);
   const evalLit = litOf(p.b);
-  if (aLit !== undefined && (isSelfVar(p.b, self) || p.b.op === "app")) return aLit;
-  if (evalLit !== undefined && (isSelfVar(p.a, self) || p.a.op === "app")) return evalLit;
+  if (aLit !== undefined && isSelfVar(p.b, self)) return aLit;
+  if (evalLit !== undefined && isSelfVar(p.a, self)) return evalLit;
   // 允许 eq(lit, lit) 不常见形态
   if (aLit !== undefined && evalLit !== undefined) return aLit === evalLit ? aLit : "unanchored";
   return "unanchored";
@@ -107,7 +109,7 @@ function isIntModOne(p: Pred, self?: Term): boolean {
     t.args.length === 2 &&
     t.args[1]?.op === "lit" &&
     t.args[1].value === 1 &&
-    (isSelfVar(t.args[0], self) || t.args[0]!.op === "app");
+    isSelfVar(t.args[0], self);
   return (isModOne(p.a) && zero(p.b)) || (isModOne(p.b) && zero(p.a));
 }
 
