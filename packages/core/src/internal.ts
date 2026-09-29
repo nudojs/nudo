@@ -10,17 +10,31 @@
 
 // leak / budgets / memo keys
 export {
+  stripCommentsAndStrings, stripStringsKeepComments,
+  maskCommentsAndStrings, scanStringLiterals,
+  type StringLiteralSpan,
+  sourceHasRequireCall,
+  sourceHasModuleDependency, sourceHasCjsExports
+} from "./algebra/code-text.ts";
+export {
   type LeakBudget, defaultLeakBudget, exceedsBudget, leakIfNeeded,
   maybeLeak, resetLeakCounter, termDepth, termNodes
 } from "./algebra/leak.ts";
 export {
   type AbsBudgetStats, FORK_TRUNCATION_LABEL, HOST_EFFECT_LABEL_PREFIX, MAX_EVAL_TOTAL_FORKS,
-  MAX_CALL_DEPTH, MAX_TOTAL_CALLS, bumpEvalForkBudget, callBudgetKey,
+  MAX_CALL_DEPTH, MAX_TOTAL_CALLS, PROMISE_MICRO_ERROR_LABEL, PROMISE_MICRO_OVERFLOW_LABEL,
+  bumpEvalForkBudget, callBudgetKey,
   enterCall, exitCall, getAbsCallBudgetStats, getEvalForkBudgetLimit,
   getEvalForkCount, noteAbsTruncation, noteEvalForkTruncation, noteHostEffectBlocked,
   resetAbsCallBudget, resetEvalForkBudget, setAbsTruncationCollector,
   setEvalForkBudgetLimit, stableCallId, truncatedAbs
 } from "./algebra/call-budget.ts";
+export {
+  MAX_PROMISE_MICROS, getPromiseMicrosLength
+} from "./algebra/builtins/promise.ts";
+export {
+  enterEvalCallBudgetSession, exitEvalCallBudgetSession, getEvalCallBudgetState
+} from "./algebra/exec/calls.ts";
 export {
   hashSource, resetHashSourceCache
 } from "./algebra/hash-source.ts";
@@ -60,6 +74,10 @@ export {
   denoteGuard
 } from "./algebra/denote.ts";
 export {
+  escapeTemplateTypeFixed, formatObjectKey, isJsIdent, safeMemberAccess,
+  sanitizeCommentText
+} from "./algebra/codegen-escape.ts";
+export {
   type ClassDef, type MethodDef, awaitAbs, classChainNames,
   classFromMethods, coerceAsyncReturn, defineClass, getClass,
   getClassChain, instanceOf, instantiateClass, lookupMethod,
@@ -83,6 +101,9 @@ export {
   pushMayThrowFrame, recordMayThrow, runWithMayThrowSession,
   setMayThrowCollector, throwAbsToKinds, throwsKindCovered
 } from "./algebra/exec/may-throw.ts";
+export {
+  type EvalFallbackStats, getEvalFallbackStats, resetEvalFallbackStats
+} from "./algebra/exec/run.ts";
 export {
   type EvalMemberDiag, OBJECT_PROTO_NAMES, anyMemberResult,
   definitelyUncallableMember, getAbsOrigin, isEvalMissingSlotEnabled,

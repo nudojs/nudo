@@ -9,10 +9,10 @@ export {
 
 export {
   type ImplicationOracle, type Phi, type Pred, type PrimName, TYPEOF_NAMES,
-  type TypeofName, and, emptyPhi, eq, ge, geNum, getImplicationOracle, gt,
-  gtNum, implies, le, leNum, lt, ltNum, ne, negatePred, not, or, pFalse,
-  pTrue, phiAnd, predEquals, predToString, predVars, primToTypeof, ptypeof,
-  setImplicationOracle, substPred
+  type TypeofName, and, assumeFinite, emptyPhi, eq, ge, geNum,
+  getImplicationOracle, gt, gtNum, implies, le, leNum, lt, ltNum, ne,
+  negatePred, not, or, pFalse, pTrue, phiAnd, predEquals, predToString,
+  predVars, primToTypeof, ptypeof, setImplicationOracle, substPred
 } from "./pred.ts";
 
 export {
@@ -150,9 +150,9 @@ export {
 export {
   type ConstraintBuilder, type NudoConstraint, type NudoField,
   type NudoFnConstraint, SELF, andC, any, array, boolean,
-  constraintToEntryAbs, fn, fnConstraintToEntryReqs, getTerm,
+  constraintAdmitsNullish, constraintToEntryAbs, fn, fnConstraintToEntryReqs, getTerm,
   instantiateConstraint, isIntFlag, isNudoConstraint, lenTerm, litC,
-  number, omit, partial, pick, shape, string, throwConstraintToKinds,
+  nullable, number, omit, partial, pick, shape, string, throwConstraintToKinds,
   union
 } from "./constraint.ts";
 
@@ -161,7 +161,7 @@ export {
 } from "./domain-membership.ts";
 
 export {
-  type AbsModuleExports, bindImports, collectAbsExports
+  type AbsModuleExports, bindImports, collectAbsExports, namespaceAbsOf
 } from "./abs-modules.ts";
 
 export {

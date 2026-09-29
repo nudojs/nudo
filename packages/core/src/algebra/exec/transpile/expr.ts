@@ -17,6 +17,7 @@ import {
   collectFreeAssignedNames,
   collectForkBindingNames,
   foldRequireSpecArg,
+  isConstAssignTarget,
 } from "./helpers.ts";
 import { hostIntrinsicLit, HOST_INTRINSIC_SET } from "./intrinsics.ts";
 import { BIN_OPS, COMPOUND_OPS, isStatefulMethodName, REGEX_STATEFUL_NAMES } from "./ops.ts";
@@ -373,7 +374,11 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       const cname =
         callee.type === "Identifier" ? callee.name : isExpression(callee) ? transpileExpression(callee, opts) : "$lit(void 0)";
       const args = expr.arguments
-        .map((a) => (a.type === "SpreadElement" ? "$unknown()" : transpileExpression(a as Expression, opts)))
+        .map((a) =>
+          a.type === "SpreadElement"
+            ? `...$elems(${transpileExpression(a.argument as Expression, opts)})`
+            : transpileExpression(a as Expression, opts),
+        )
         .join(", ");
       return `$new(${cname}, [${args}])`;
     }
@@ -446,7 +451,13 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         return `$instanceofNonIdent(${l})`;
       }
       const fn = BIN_OPS[expr.operator];
-      if (!fn) return `/* unsupported ${expr.operator} */ $lit(void 0)`;
+      if (!fn) {
+        // 未映射二元运算符：抛 unsupported 交消费方回落（不得假精确 undefined）
+        throw new NudoUnsupportedError(
+          `binary:${expr.operator}`,
+          expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
+        );
+      }
       const l = isExpression(expr.left) ? transpileExpression(expr.left, opts) : "$lit(void 0)";
       const r = isExpression(expr.right) ? transpileExpression(expr.right, opts) : "$lit(void 0)";
       return `${fn}(${l}, ${r})`;
@@ -473,7 +484,11 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
                 : transpileExpression(m.object as Expression, opts);
           return `$delRes(${parentRead}, ${keySrc})`;
         }
-        return `/* delete ${(arg as { type?: string }).type ?? ""} */ $lit(void 0)`;
+        // 非成员目标的 delete 未 lowering：值应为 boolean，折 undefined 是假精确
+        throw new NudoUnsupportedError(
+          `delete:${(arg as { type?: string }).type ?? ""}`,
+          expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
+        );
       }
       const arg = transpileExpression(expr.argument as Expression, opts);
       if (expr.operator === "-") return `$neg(${arg})`;
@@ -482,7 +497,11 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       if (expr.operator === "+") return `$toNumber(${arg})`;
       if (expr.operator === "~") return `$bitnot(${arg})`;
       if (expr.operator === "void") return `((${arg}), $lit(void 0))`;
-      return `/* unary ${expr.operator} */ $lit(void 0)`;
+      // 未 lowering 的一元运算符：抛 unsupported 交消费方回落（不得假精确 undefined）
+      throw new NudoUnsupportedError(
+        `unary:${expr.operator}`,
+        expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
+      );
     }
     case "UpdateExpression": {
       // i++/++i/i--/--i：ES 规范 oldValue = ToNumeric(GetValue(lvalue))，
@@ -496,6 +515,10 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       const arg = expr.argument as Expression;
       const fn = expr.operator === "++" ? "$updateAdd" : "$updateSub";
       if (arg.type === "Identifier") {
+        // const 绑定自增/自减：Assignment to constant variable
+        if (isConstAssignTarget(arg.name, opts)) {
+          return `$throwConstAssign()`;
+        }
         if (expr.prefix) return `${arg.name} = ${fn}(${arg.name})`;
         return `((__old) => (${arg.name} = ${fn}(__old), __old))($toNumeric(${arg.name}))`;
       }
@@ -510,7 +533,12 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           return `$toNumeric(${readSrc})`;
         }
       }
-      return `/* update ${expr.operator} */ $lit(void 0)`;
+      // 不可写回目标（如 foo().x++ / super.x++ / 解构怪形 / 可选链更新）：
+      // 静默折 undefined 是假精确——抛 unsupported 交消费方回落
+      throw new NudoUnsupportedError(
+        `update:${expr.operator}`,
+        expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
+      );
     }
     case "AwaitExpression": {
       const arg = transpileExpression(expr.argument as Expression, opts);
@@ -737,10 +765,18 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           const k = transpileExpression(key, opts);
           return `$idx(${obj}, ${k})`;
         }
-        return `/* computed member */ $lit(void 0)`;
+        // 计算属性键非 Expression：抛 unsupported 交消费方回落（不得假精确 undefined）
+        throw new NudoUnsupportedError(
+          `member:computed`,
+          expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
+        );
       }
       if (expr.property.type !== "Identifier") {
-        return `/* member */ $lit(void 0)`;
+        // 非 Identifier 属性（如 PrivateName）：抛 unsupported 交消费方回落
+        throw new NudoUnsupportedError(
+          `member:${expr.property.type}`,
+          expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
+        );
       }
       // o.length
       if (expr.property.name === "length") {
@@ -834,6 +870,19 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           return setSrc(sc);
         };
         if (expr.left.type === "Identifier") {
+          // 逻辑赋值真正写入 const 绑定 → TypeError。
+          // 短路（保持原值）不抛；无法判定时保守抛（可能写入）。
+          if (isConstAssignTarget((expr.left as { name: string }).name, opts)) {
+            const lhs = (expr.left as { name: string }).name;
+            // ||= 仅当左侧真值时跳过写；&&= 仅当假值时跳过；??= 仅当非 nullish 时跳过
+            const skipsWrite =
+              op === "||="
+                ? `$litTruth(${lhs}) === true`
+                : op === "&&="
+                  ? `$litTruth(${lhs}) === false`
+                  : `$litTruth($nullishTest(${lhs})) === false`;
+            return `((${lhs}) => { if (!(${skipsWrite})) $throwConstAssign(); return ${lhs}; })(${lhs})`;
+          }
           return emitLogicalAssign(expr.left.name, (val) => `${expr.left.type === "Identifier" ? (expr.left as { name: string }).name : ""} = ${val}`);
         }
         if (expr.left.type === "MemberExpression") {
@@ -850,7 +899,11 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
             });
           }
         }
-        return `/* assign ${op} */ $lit(void 0)`;
+        // 逻辑赋值不可写回目标（如 foo().x ||= v）：折 undefined 是假精确
+        throw new NudoUnsupportedError(
+          `assign:${op}`,
+          expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
+        );
       }
       if (expr.left.type === "MemberExpression") {
         const m = expr.left as unknown as {
@@ -892,6 +945,10 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       }
       if (expr.left.type === "Identifier") {
         const name = expr.left.name;
+        // const 绑定再赋值：strict/ESM 下 Assignment to constant variable
+        if (isConstAssignTarget(name, opts)) {
+          return `$throwConstAssign()`;
+        }
         // 结构赋值记录（checkSource assign-mismatch 通道）：prev 读在写前；
         // conditional = 分支/循环体内（structuralAssignIssues 跳过 conditional）。
         // 逻辑赋值（||= 等）短路分支在前已处理，不记录。
@@ -923,7 +980,11 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       // super() → __this = $super(__this, Child, [...])
       if (callee.type === "Super" && opts.thisParam && opts.className) {
         const args = expr.arguments
-          .map((a) => (a.type === "SpreadElement" ? "$unknown()" : transpileExpression(a as Expression, opts)))
+          .map((a) =>
+            a.type === "SpreadElement"
+              ? `...$elems(${transpileExpression(a.argument as Expression, opts)})`
+              : transpileExpression(a as Expression, opts),
+          )
           .join(", ");
         return `${opts.thisParam} = $super(${opts.thisParam}, ${JSON.stringify(opts.className)}, [${args}])`;
       }
@@ -937,7 +998,11 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         opts.className
       ) {
         const args = expr.arguments
-          .map((a) => (a.type === "SpreadElement" ? "$unknown()" : transpileExpression(a as Expression, opts)))
+          .map((a) =>
+            a.type === "SpreadElement"
+              ? `...$elems(${transpileExpression(a.argument as Expression, opts)})`
+              : transpileExpression(a as Expression, opts),
+          )
           .join(", ");
         return `$invokeSuper(${opts.thisParam}, ${JSON.stringify(opts.className)}, ${JSON.stringify(callee.property.name)}, [${args}])`;
       }
@@ -971,7 +1036,11 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       ) {
         const recv = transpileExpression(callee.object as Expression, opts);
         const args = expr.arguments
-          .map((a) => (a.type === "SpreadElement" ? "$unknown()" : transpileExpression(a as Expression, opts)))
+          .map((a) =>
+            a.type === "SpreadElement"
+              ? `...$elems(${transpileExpression(a.argument as Expression, opts)})`
+              : transpileExpression(a as Expression, opts),
+          )
           .join(", ");
         const name = JSON.stringify(callee.property.name);
         const opt = optionalCall || (callee as { optional?: boolean }).optional === true;
@@ -999,7 +1068,9 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         const argLocSrcs: string[] = [];
         for (const a of expr.arguments) {
           if (a.type === "SpreadElement") {
-            argSrcs.push("$unknown()");
+            // spread 实参展开（DEC-006 K5）：$elems → JS Abs[]，数组字面量 JS spread 平铺
+            // 此前折 $unknown() 单参，后续形参绑到 JS undefined
+            argSrcs.push(`...$elems(${transpileExpression(a.argument as Expression, opts)})`);
             argLocSrcs.push("null");
           } else {
             argSrcs.push(transpileExpression(a as Expression, opts));
@@ -1017,7 +1088,9 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       }
       const args = expr.arguments
         .map((a) =>
-          a.type === "SpreadElement" ? `/* spread */` : transpileExpression(a as Expression, opts),
+          a.type === "SpreadElement"
+            ? `...$elems(${transpileExpression(a.argument as Expression, opts)})`
+            : transpileExpression(a as Expression, opts),
         )
         .join(", ");
       const c =
@@ -1056,15 +1129,22 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         ...(hasThis ? { thisParam: "__this" } : {}),
         ...(isArrow ? {} : { argsBinding: hasArgs ? "__nudoArgs" : undefined }),
       };
-      const paramParts = rest ? [...sig, `...${rest}`] : sig;
+      // FunctionExpression 无宿主 this 时编成箭头（无真实 arguments）——需要
+      // arguments 时改收 `(...__allArgs)`，从 $arguments 槽绑定形参（strict 独立）。
+      const useArgsSlot = hasArgs && !hasThis;
+      // rest 形参：JS rest 收集的是 Abs[]（裸 JS 数组），必须包 $arr 才是 Abs
+      // （DEC-006 K1b：rest.length 直接 $len 炸）。useArgsSlot 路径已由
+      // emitParamBindingFromArgs 的 $arrRest 处理。
+      const restRaw = rest && !useArgsSlot ? `__rest_raw` : rest;
+      const restPrologue = rest && !useArgsSlot && restRaw
+        ? [`  const ${rest} = $arr(${restRaw});`]
+        : [];
+      const paramParts = restRaw ? [...sig, `...${restRaw}`] : sig;
       // 一等 fn Abs：参数名进 shape（bridge/dts 可展示）——用展示名（含 rest/默认参），
       // 不是宿主绑定 sig（默认参是 `_p{i}` 占位，rest 不在 sig 里）。
       // 异步 body 包 $async 保持 eff(promise) 语义（裸 JS async 会泄漏 Promise）。
       const nameList = `[${paramDisplayNames(fn.params).map((p) => JSON.stringify(p)).join(", ")}]`;
       const thisPrologue = hasThis ? [`const __this = $rawThis(this);`] : [];
-      // FunctionExpression 无宿主 this 时编成箭头（无真实 arguments）——需要
-      // arguments 时改收 `(...__allArgs)`，从 $arguments 槽绑定形参（strict 独立）。
-      const useArgsSlot = hasArgs && !hasThis;
       let argsSlotPrologue: string[] = [];
       let argsParamParts = paramParts;
       if (useArgsSlot) {
@@ -1077,7 +1157,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       }
       const allPrologue = useArgsSlot
         ? [...argsSlotPrologue, ...thisPrologue]
-        : [...prologue, ...thisPrologue, ...argsSlotPrologue];
+        : [...prologue, ...restPrologue, ...thisPrologue, ...argsSlotPrologue];
       if (fn.body.type === "BlockStatement") {
         const inner = withImplicitReturn(
           fn.body,

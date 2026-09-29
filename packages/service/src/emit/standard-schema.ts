@@ -9,7 +9,8 @@
  */
 
 import type { Abs } from "@nudojs/core";
-import { absToSchemaNode, type SchemaNode } from "./schema-generator.ts";
+import { sanitizeCommentText } from "@nudojs/core/internal";
+import { absToSchemaNode, safeExportIdent, type SchemaNode } from "./schema-generator.ts";
 
 export type StandardSchemaIssue = {
   message: string;
@@ -291,9 +292,9 @@ function makeStandardSchemaSource(exportName: string, node: SchemaNode, dropped:
   const json = JSON.stringify(node);
   const notes =
     dropped.length > 0
-      ? dropped.map((d) => `//   ${d}`).join("\n") + "\n"
+      ? dropped.map((d) => `//   ${sanitizeCommentText(d)}`).join("\n") + "\n"
       : "";
-  return `${notes}export const ${exportName} = {
+  return `${notes}export const ${safeExportIdent(exportName)} = {
   "~standard": {
     version: 1,
     vendor: "nudo",

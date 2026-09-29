@@ -192,6 +192,8 @@ export function actionsForIssue(i: {
       ];
     case "nudo:fork-truncated":
     case "nudo:recursion-truncated":
+    case "nudo:promise-micro-truncated":
+    case "nudo:promise-micro-error":
       return [
         {
           kind: "info",

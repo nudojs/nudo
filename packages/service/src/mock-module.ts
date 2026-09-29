@@ -103,7 +103,11 @@ export function applyMockModuleDirectives(
     const orig = out[d.source] ?? { named: {} };
     const overlay = pickNamed(mock, d.names);
     const named = { ...orig.named, ...overlay.named };
-    const merged: AbsModuleExports = { named };
+    const merged: AbsModuleExports = {
+      named,
+      // 任一侧成功求值则合并表可作 missing-export 判定
+      ...(orig.evaluated || mock.evaluated ? { evaluated: true } : {}),
+    };
     const wantDefault = d.names.includes("default");
     if (wantDefault && overlay.default !== undefined) {
       merged.default = overlay.default;

@@ -73,7 +73,7 @@ export function relaxSidecarConstraint(
   const tryParam = (region: string): string | undefined => {
     if (!param) return undefined;
     const re = new RegExp(
-      `(\\b${escapeRegExp(param)}\\s*:\\s*)number(\\(\\)(?:\\.[A-Za-z]+(?:\\([^)]*\\))?)*)`,
+      `((?<![\\w$])${escapeRegExp(param)}(?![\\w$])\\s*:\\s*)number(\\(\\)(?:\\.[A-Za-z]+(?:\\([^)]*\\))?)*)`,
       "g",
     );
     const next = region.replace(re, (_m, p1, chain: string) => {
@@ -84,7 +84,7 @@ export function relaxSidecarConstraint(
   };
   const tryFn = (region: string): string | undefined => {
     const re = new RegExp(
-      `(\\b${escapeRegExp(fnName)}\\s*=\\s*)number(\\(\\)(?:\\.[A-Za-z]+(?:\\([^)]*\\))?)*)`,
+      `((?<![\\w$])${escapeRegExp(fnName)}(?![\\w$])\\s*=\\s*)number(\\(\\)(?:\\.[A-Za-z]+(?:\\([^)]*\\))?)*)`,
       "g",
     );
     const next = region.replace(re, (_m, p1, chain: string) => {

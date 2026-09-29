@@ -34,6 +34,8 @@ type HealthReport = {
     forks: number;
     maxForks: number;
   };
+  /** D6-A：evaluator internal 回落计数（指标暴露，非 fail 条件） */
+  internalFallbacks?: number;
   error?: string;
 };
 
@@ -52,6 +54,8 @@ async function healthFile(filePath: string, records?: CallRecord[]): Promise<Hea
     return report;
   }
   try {
+    const { getAbsCallBudgetStats, getEvalFallbackStats, resetEvalFallbackStats } = await import("@nudojs/core/internal");
+    resetEvalFallbackStats();
     const result = await analyzeFileAsync(
       filePath,
       source,
@@ -66,7 +70,6 @@ async function healthFile(filePath: string, records?: CallRecord[]): Promise<Hea
       .filter((fn) => fn.cases.length === 0 && !fn.skipped && !fn.entryOnly)
       .map((fn) => fn.name);
     {
-      const { getAbsCallBudgetStats } = await import("@nudojs/core/internal");
       const b = getAbsCallBudgetStats();
       report.budget = {
         truncated: b.truncated,
@@ -77,6 +80,10 @@ async function healthFile(filePath: string, records?: CallRecord[]): Promise<Hea
         forks: b.forks,
         maxForks: b.maxForks,
       };
+    }
+    {
+      // D6-A：internal 回落是缺陷指标（接受暴露），不吞、不单独 fail
+      report.internalFallbacks = getEvalFallbackStats().internal;
     }
     if (records) {
       const { emitOut, removed } = await reemitUpdate(filePath, source, records);
@@ -161,6 +168,7 @@ async function runHealth(paths: string[], opts: { from?: string[]; json?: boolea
             uncovered: r.uncovered,
             ...(r.drift ? { drift: r.drift } : {}),
             ...(r.interfaceDrift ? { interfaceDrift: r.interfaceDrift } : {}),
+            ...(r.internalFallbacks !== undefined ? { internal_fallbacks: r.internalFallbacks } : {}),
             ...(r.error ? { error: r.error } : {}),
           })),
           summary: {
@@ -169,6 +177,7 @@ async function runHealth(paths: string[], opts: { from?: string[]; json?: boolea
             interfaceDrift: ifaceDriftCount,
             errors: errorCount,
             uncovered: uncoveredTotal,
+            internal_fallbacks: reports.reduce((n, r) => n + (r.internalFallbacks ?? 0), 0),
           },
         },
         null,
@@ -208,9 +217,15 @@ async function runHealth(paths: string[], opts: { from?: string[]; json?: boolea
             `${r.budget.callTruncated ? "  (calls)" : ""}${r.budget.forkTruncated ? "  (forks)" : ""} — some results widened to unknown`,
         );
       }
+      if ((r.internalFallbacks ?? 0) > 0) {
+        // D6-A：internal 回落=引擎缺陷指标（接受暴露，不静默）
+        console.log(`  ⚠ internal_fallbacks: ${r.internalFallbacks}`);
+      }
     }
+    const internalTotal = reports.reduce((n, r) => n + (r.internalFallbacks ?? 0), 0);
     console.log(
-      `\nSummary: ${reports.length} file(s) · ${driftCount} case drift · ${ifaceDriftCount} contract drift · ${errorCount} error(s) · ${uncoveredTotal} uncovered function(s)`,
+      `\nSummary: ${reports.length} file(s) · ${driftCount} case drift · ${ifaceDriftCount} contract drift · ${errorCount} error(s) · ${uncoveredTotal} uncovered function(s)` +
+        (internalTotal > 0 ? ` · ${internalTotal} internal_fallback(s)` : ""),
     );
     console.log(failed ? "Result: FAIL (drift or errors found)" : "Result: OK (uncovered function(s) are informational only)");
   }

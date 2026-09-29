@@ -26,6 +26,7 @@ import {
   type InterfaceSource,
   type InterfaceTierOpts,
 } from "@nudojs/core";
+import { sourceHasRequireCall } from "@nudojs/core/internal";
 import { parse, extractDirectives, extractFileDirectives } from "@nudojs/parser";
 import type { FunctionWithDirectives } from "@nudojs/parser";
 import {
@@ -337,7 +338,7 @@ export function getHoverAtPosition(
   if (ident && !fnName && !insideCaseFn) {
     try {
       // 经模块图（相对 + 裸包）求 Abs 绑定
-      if (isEvalCapable(source, []) || !/\brequire\s*\(/.test(source)) {
+      if (isEvalCapable(source, []) || !sourceHasRequireCall(source)) {
         const seeds = mockDirectivesToAbsSeeds(extractDirectives(file ?? parse(source)), {
           fromFile: filePath,
         });

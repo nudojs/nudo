@@ -22,6 +22,7 @@ import type { Pred } from "./pred.ts";
 import { v as termVar } from "./term.ts";
 import { parseSource } from "./parse-source.ts";
 import { hashSource } from "./hash-source.ts";
+import { identBoundaryRegex, stripStringsKeepComments } from "./code-text.ts";
 // leaf 模块：load-deps-fp.ts 已 import 本文件（extractNudoImports），
 // 反向 import 会成环——路径函数从 sidecar-path.ts 单源取用
 import { isNodeModulesPath, resolveDepPath } from "./sidecar-path.ts";
@@ -42,6 +43,7 @@ import {
   partial as partialC,
   pick as pickC,
   omit as omitC,
+  nullable as nullableC,
 } from "./constraint.ts";
 
 /** `/// @nudo:import { delay, percent } from "./delay.nudo.js"` */
@@ -150,6 +152,7 @@ const sidecarInjects: Record<string, unknown> = {
   partial: partialC,
   pick: pickC,
   omit: omitC,
+  nullable: nullableC,
 };
 
 function isSidecarSpec(spec: string): boolean {
@@ -795,9 +798,9 @@ function extractRefineLines(source: string, fnName: string): string[] {
   // 前缀必须一并匹配：否则 match 落在行中，before 以 `export …` 结尾，
   // 反向注释扫描立即 break，@nudo:contract 整体丢失（导出函数的契约
   // 全部静默失效）。
-  const escaped = fnName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escaped = identBoundaryRegex(fnName);
   const fnRe = new RegExp(
-    `(?:export\\s+(?:default\\s+)?)?(?:async\\s+)?(?:function\\s+${escaped}\\b|const\\s+${escaped}\\s*=)`,
+    `(?:export\\s+(?:default\\s+)?)?(?:async\\s+)?(?:function\\s+${escaped}|const\\s+${escaped}\\s*=)`,
   );
   const m = source.match(fnRe);
   if (!m || m.index === undefined) return [];
@@ -834,7 +837,8 @@ export function extractRefinesFromSource(
   opts: RefineResolveOpts = {},
 ): RefineEntry[] {
   // 快路径：整文件无 @nudo:contract 时免 regex 扫全文（after-edit 批量 check）
-  if (!source.includes("@nudo:contract")) return [];
+  // 指令住注释——字符串里的同形文本不算
+  if (!stripStringsKeepComments(source).includes("@nudo:contract")) return [];
   const constraints = collectConstraints(source, opts);
   const out: RefineEntry[] = [];
   for (const line of extractRefineLines(source, fnName)) {
@@ -883,7 +887,7 @@ export function extractRefineReturnFromSource(
   fnName: string,
   opts: RefineResolveOpts = {},
 ): { name: string; constraint: NudoConstraint } | undefined {
-  if (!source.includes("@nudo:contract")) return undefined;
+  if (!stripStringsKeepComments(source).includes("@nudo:contract")) return undefined;
   const constraints = collectConstraints(source, opts);
   for (const line of extractRefineLines(source, fnName)) {
     const parts = line.split(/&&|,/).map((s) => s.trim()).filter(Boolean);
@@ -914,15 +918,16 @@ export function extractDeclaredThrows(
   source: string,
   fnName: string,
 ): string[] | "*" | undefined {
-  if (!source.includes("@nudo:throws") && !source.includes("!! throws")) {
+  const directiveSrc = stripStringsKeepComments(source);
+  if (!directiveSrc.includes("@nudo:throws") && !directiveSrc.includes("!! throws")) {
     return undefined;
   }
   const kinds = new Set<string>();
   let any = false;
   // 与 extractRefineLines 同路径扫函数前注释块（throws/case 不在 refine 行文法里）
-  const escaped = fnName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escaped = identBoundaryRegex(fnName);
   const fnRe = new RegExp(
-    `(?:export\\s+(?:default\\s+)?)?(?:async\\s+)?(?:function\\s+${escaped}\\b|const\\s+${escaped}\\s*=)`,
+    `(?:export\\s+(?:default\\s+)?)?(?:async\\s+)?(?:function\\s+${escaped}|const\\s+${escaped}\\s*=)`,
   );
   const m = source.match(fnRe);
   if (!m || m.index === undefined) return undefined;

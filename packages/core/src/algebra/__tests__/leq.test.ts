@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { leqAbs, requiredFnArity } from "../leq.ts";
 import { abs, numLit, strLit, boolLit, num, str, unknown, never } from "../abs.ts";
 import { v, lit } from "../term.ts";
-import { gt, ge, pTrue } from "../pred.ts";
+import { gt, ge, lt, le, pTrue } from "../pred.ts";
 
 function numWithPred(n: number, op: "gt" | "ge" = "gt") {
   return abs(num().shape, v("x"), op === "gt" ? gt(v("x"), lit(n)) : ge(v("x"), lit(n)), "path");
@@ -77,6 +77,30 @@ describe("leqAbs structural assignability", () => {
     const x0 = numWithPred(0, "gt");
     expect(leqAbs(x5, x0).ok).toBe(true);
     expect(leqAbs(x0, x5).ok).toBe(false);
+  });
+
+  it("numeric pred: tighter ge is assignable to wider gt", () => {
+    // x≥6 ⇒ x>5，但 x≥5 ⇒ x>5 不成立
+    const ge6 = abs(num().shape, v("x"), ge(v("x"), lit(6)), "path");
+    const gt5 = abs(num().shape, v("x"), gt(v("x"), lit(5)), "path");
+    const ge5 = abs(num().shape, v("x"), ge(v("x"), lit(5)), "path");
+    expect(leqAbs(ge6, gt5).ok).toBe(true);
+    expect(leqAbs(ge5, gt5).ok).toBe(false);
+    expect(leqAbs(ge5, ge5).ok).toBe(true);
+  });
+
+  it("numeric pred: tighter le is assignable to wider lt", () => {
+    const le4 = abs(num().shape, v("x"), le(v("x"), lit(4)), "path");
+    const lt5 = abs(num().shape, v("x"), lt(v("x"), lit(5)), "path");
+    const le5 = abs(num().shape, v("x"), le(v("x"), lit(5)), "path");
+    expect(leqAbs(le4, lt5).ok).toBe(true);
+    expect(leqAbs(le5, lt5).ok).toBe(false);
+  });
+
+  it("numeric pred: gt⇒ge with equal bound stays assignable", () => {
+    const gt5 = abs(num().shape, v("x"), gt(v("x"), lit(5)), "path");
+    const ge5 = abs(num().shape, v("x"), ge(v("x"), lit(5)), "path");
+    expect(leqAbs(gt5, ge5).ok).toBe(true);
   });
 
   it("eff promise inner", () => {
@@ -173,5 +197,19 @@ describe("leqAbs structural assignability", () => {
       expect(leqAbs(fn(["x0", "...paths"]), fn(["path"])).ok).toBe(true);
       expect(leqAbs(fn(["path"]), fn(["x0", "...paths"])).ok).toBe(true);
     });
+  });
+});
+
+describe("implies ge/gt probe", () => {
+  it("implies(ge(x,6), gt(x,5))", async () => {
+    const { implies, ge, gt, lt, le } = await import("../pred.ts");
+    const { v, lit } = await import("../term.ts");
+    const x = v("x");
+    expect(implies(ge(x, lit(6)), gt(x, lit(5)))).toBe(true);
+    expect(implies(ge(x, lit(5)), gt(x, lit(5)))).toBe(false);
+    expect(implies(le(x, lit(4)), lt(x, lit(5)))).toBe(true);
+    expect(implies(le(x, lit(5)), lt(x, lit(5)))).toBe(false);
+    expect(implies(gt(x, lit(5)), ge(x, lit(5)))).toBe(true);
+    // numericBoundsImply-only path: force non-implies? or check leq when implies is false
   });
 });

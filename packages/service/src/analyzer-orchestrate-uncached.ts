@@ -254,7 +254,7 @@ export function analyzeFileUncachedInner(
   const evalCapable = isEvalCapable(source, envNames);
 
   /** B 已上报的模块加载问题种类 + 递归截断函数名（压 TypeValue 叠报） */
-  const evalModuleIssueKinds = new Set<"cycle" | "depth" | "missing">();
+  const evalModuleIssueKinds = new Set<"cycle" | "depth" | "missing" | "missing-export" | "exports-unresolved">();
   const evalTruncatedFns = new Set<string>();
   /** eval 静态 builtin-unknown 名（压 TypeValue unknown-global 叠报） */
   const evalBuiltinUnknownNames = new Set<string>();
@@ -262,7 +262,9 @@ export function analyzeFileUncachedInner(
   let evalHosted = false;
 
   const pushBModuleIssues = (
-    issues: Array<{ kind: "cycle" | "depth" | "missing"; label: string; reason: string }> | undefined,
+    issues:
+      | Array<{ kind: "cycle" | "depth" | "missing" | "missing-export" | "exports-unresolved"; label: string; reason: string }>
+      | undefined,
   ) => {
     if (!issues) return;
     for (const iss of issues) {
@@ -272,10 +274,14 @@ export function analyzeFileUncachedInner(
           ? "nudo:module-cycle"
           : iss.kind === "depth"
             ? "nudo:module-depth"
-            : "nudo:module-missing";
+            : iss.kind === "missing-export"
+              ? "nudo:missing-export"
+              : iss.kind === "exports-unresolved"
+                ? "nudo:exports-unresolved"
+                : "nudo:module-missing";
       diagnostics.push({
         range: { start: { line: 1, column: 0 }, end: { line: 1, column: 0 } },
-        severity: iss.kind === "missing" ? "error" : "warning",
+        severity: iss.kind === "missing" || iss.kind === "missing-export" ? "error" : "warning",
         message: iss.reason,
         code,
       });

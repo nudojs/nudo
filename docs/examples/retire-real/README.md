@@ -35,7 +35,9 @@ pnpm run nudo -- migrate retire docs/examples/retire-real/after --dry-run
 ## 诚实边界
 
 - `ms` 无自带 `.d.ts`：before 用最小 `ms.d.ts`（等价 `@types/ms`）。
-- 剥除后 `ms()` 返回在分析里是 **unknown**（native/未 harvest）——这是引擎债告警，不是契约失败；契约面参数已是 `number`/`string`。
+- `ms()` **可被求值**：字面量调用折到具体值，抽象 `string` 入参折到
+  `number | undefined`（非法时长 `parse()` 静默 `return`）。侧车契约是
+  `nullable(number())`——不是引擎写坏，是真实包语义。
 - 有 `@types/ms` 时 harvest 会自动补签名；也可用 `@nudo:mock` / `refine return` 钉住。
 
 ```bash

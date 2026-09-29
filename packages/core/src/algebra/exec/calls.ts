@@ -6,9 +6,10 @@
 
 import type { Abs } from "../abs.ts";
 import { abs, unknown } from "../abs.ts";
-import { evalGlobalFn } from "../builtins.ts";
+import { evalGlobalFn, hostBuiltinCtorName } from "../builtins.ts";
 import { $call } from "./call.ts";
 import { callAtFunctionBoundary, $copy } from "./runtime.ts";
+import { throwPayloadOf } from "./may-throw.ts";
 import { pureFnNameOf } from "../abs-fn.ts";
 import { noteAbsTruncation, callBudgetKey, resetEvalForkBudget, noteHostEffectBlocked } from "../call-budget.ts";
 import {
@@ -100,6 +101,22 @@ const GLOBAL_FNS = new Set([
   "Array",
   "eval",
   "Symbol",
+  // 原生构造器无 `new` 调用（BigInt / Error 家族 / Map·Set·Promise 等）：
+  // 必须走 Abs 分发，禁止裸宿主调用（Abs 实参会炸 internal / 静默假精确）
+  "BigInt",
+  "Error",
+  "TypeError",
+  "RangeError",
+  "ReferenceError",
+  "SyntaxError",
+  "URIError",
+  "EvalError",
+  "AggregateError",
+  "Map",
+  "Set",
+  "WeakMap",
+  "WeakSet",
+  "Promise",
 ]);
 
 /**
@@ -187,6 +204,8 @@ export const MAX_EVAL_TOTAL_CALLS = 20_000;
 let evalCallDepth = 0;
 let evalTotalCalls = 0;
 let evalActiveCallKeys: string[] = [];
+/** 执行会话嵌套深度：导出桥 re-entry 是被调帧，不是宿主入口 */
+let evalBudgetSessionDepth = 0;
 const evalFnCallIds = new WeakMap<object, string>();
 let evalFnCallIdSeq = 0;
 
@@ -199,13 +218,49 @@ function evalStableId(obj: object): string {
   return id;
 }
 
-/** 宿主入口（runTranspiled / callTranspiledExportFull）前重置 */
+/** 宿主入口前强制清零（测试 / 显式 API）。执行入口请用 enterEvalCallBudgetSession。 */
 export function resetEvalCallBudget(): void {
   evalCallDepth = 0;
   evalTotalCalls = 0;
   evalActiveCallKeys = [];
+  evalBudgetSessionDepth = 0;
   // fork 总次数与调用预算同轮生命周期（不跨宿主入口累积）
   resetEvalForkBudget();
+}
+
+/**
+ * 进入执行会话。最外层才重置预算；嵌套（导出桥 $call → apply →
+ * callTranspiledExportFull）必须继承外层深度/cycle 键/totalCalls，否则
+ * 外层帧被抹掉，$callNamed 的 evalExitCall 再把 depth 打成负数。
+ */
+export function enterEvalCallBudgetSession(): void {
+  if (evalBudgetSessionDepth === 0) {
+    evalCallDepth = 0;
+    evalTotalCalls = 0;
+    evalActiveCallKeys = [];
+    resetEvalForkBudget();
+  }
+  evalBudgetSessionDepth++;
+}
+
+/** 退出执行会话。禁止把 sessionDepth 留在负数。 */
+export function exitEvalCallBudgetSession(): void {
+  if (evalBudgetSessionDepth > 0) evalBudgetSessionDepth--;
+}
+
+/** 预算快照（测试/诊断：断言嵌套期间 depth/keys 不被清空、depth 不为负） */
+export function getEvalCallBudgetState(): {
+  depth: number;
+  totalCalls: number;
+  activeKeys: number;
+  sessionDepth: number;
+} {
+  return {
+    depth: evalCallDepth,
+    totalCalls: evalTotalCalls,
+    activeKeys: evalActiveCallKeys.length,
+    sessionDepth: evalBudgetSessionDepth,
+  };
 }
 
 /** 截断结果：unknown#opaque——预算截断，不触发 unknown-inference */
@@ -238,8 +293,9 @@ function evalEnterCall(name: string, fn: unknown, args: Abs[]): { ok: boolean; k
 }
 
 function evalExitCall(): void {
-  evalCallDepth--;
-  evalActiveCallKeys.pop();
+  // 禁止负数：嵌套 reset 曾把 depth 清零后再 --，守卫从此失效
+  if (evalCallDepth > 0) evalCallDepth--;
+  if (evalActiveCallKeys.length > 0) evalActiveCallKeys.pop();
 }
 
 export function $callNamed(
@@ -276,9 +332,19 @@ export function $callNamed(
     if (typeof fn === "function") {
       // 宿主全局函数（Number/String/parseInt…）：按身份识别，路由到 Abs builtin 表。
       // 直接调用会把 Abs 喂给真 JS 函数（Number(absObj) → NaN）——静默错误。
-      const g = GLOBAL_FNS.has(name) && fn === (globalThis as Record<string, unknown>)[name]
-        ? evalGlobalFn(name, args)
-        : undefined;
+      // 原生构造器（BigInt/Error/Map…）同样禁止裸调：BigInt(absObj) 炸
+      // "Cannot convert [object Object] to a BigInt"，AggregateError(absArr) 炸
+      // "object is not iterable"。GLOBAL_FNS 按名匹配不够（别名 `const f = BigInt`），
+      // 补 hostBuiltinCtorName 身份兜底。
+      let g: Abs | undefined;
+      if (GLOBAL_FNS.has(name) && fn === (globalThis as Record<string, unknown>)[name]) {
+        g = evalGlobalFn(name, args);
+      } else {
+        const ctorName = hostBuiltinCtorName(fn);
+        if (ctorName !== undefined) {
+          g = evalGlobalFn(ctorName, args);
+        }
+      }
       const blockedHost = g === undefined ? blockHostSideEffect(fn) : null;
       if (g !== undefined) {
         result = g;
@@ -312,6 +378,9 @@ export function $callNamed(
     }
   } catch (e) {
     threw = true;
+    // 抛出载荷进 record：与 class.ts 同约定——threw 时 result 位承载抛出 Abs
+    //（桥 callRecordFromAbsCall 据此填 throwsAbs），不得留初值 unknown。
+    result = throwPayloadOf(e);
     throw e;
   } finally {
     if (loc) popCallLoc();
@@ -328,7 +397,7 @@ export function $callNamed(
         evalCallCollector({
           fnName: name,
           args: argsSnapshot,
-          result: threw ? unknown : result,
+          result,
           callLoc: loc ? { line: loc[0], column: loc[1] } : undefined,
           threw,
         });

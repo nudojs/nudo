@@ -12,9 +12,11 @@
  * entries were covered.
  *
  * Zero-FP discipline: fires only when package.json really declares two faces
- * (browser + node/default) that resolve to **different** files, and the file
- * being analyzed is one of those entry targets. Single-entry packages never
- * fire.
+ * (browser + node/default) that resolve to **different** files, **within the
+ * same subpath / field-source group**, and the file being analyzed is one of
+ * those entry targets. Multi-subpath packages do not leak faces across
+ * subpaths (a single-entry `"."` never inherits `"./tool"`'s dual pair).
+ * Single-entry groups never fire.
  */
 
 import { existsSync, readFileSync } from "node:fs";
@@ -36,97 +38,144 @@ export type EntryVariantInfo = {
   nodeTargets: string[];
 };
 
-type EntryVariantFaces = {
-  kind: "exports-conditions" | "browser-field";
+/** One browser/node face pair, scoped to a subpath or field source. */
+export type EntryVariantFaceGroup = {
+  /** group id: `exports:.`, `exports:./tool`, `browser-field`, `browser:./lib.js` */
+  key: string;
   browser: string[];
   node: string[];
 };
 
-function collectStrings(value: unknown, into: string[]): void {
-  if (typeof value === "string") into.push(value);
-  else if (Array.isArray(value)) for (const v of value) collectStrings(v, into);
-  else if (value && typeof value === "object") {
-    for (const v of Object.values(value as Record<string, unknown>)) collectStrings(v, into);
-  }
-}
+export type EntryVariantFaces = {
+  kind: "exports-conditions" | "browser-field";
+  /**
+   * Faces grouped by subpath / field source. A group is dual only when its own
+   * browser and node leaves resolve to different files — never compare across
+   * groups (multi-subpath zero-FP).
+   */
+  groups: Map<string, EntryVariantFaceGroup>;
+};
 
-/** Walk a package.json `exports` condition tree, splitting browser vs node-ish leaves. */
-function collectExportFaces(exportsField: unknown, browser: string[], node: string[]): void {
-  if (exportsField == null) return;
-  if (typeof exportsField === "string") {
-    node.push(exportsField);
-    return;
-  }
-  const walk = (val: unknown, inBrowser: boolean): void => {
-    if (typeof val === "string") {
-      if (inBrowser) browser.push(val);
-      else node.push(val);
+/** Walk one condition tree, splitting browser vs node-ish leaves. */
+function collectConditionFaces(val: unknown): { browser: string[]; node: string[] } {
+  const browser: string[] = [];
+  const node: string[] = [];
+  const walk = (v: unknown, inBrowser: boolean): void => {
+    if (typeof v === "string") {
+      (inBrowser ? browser : node).push(v);
       return;
     }
-    if (Array.isArray(val)) {
-      for (const v of val) walk(v, inBrowser);
+    if (Array.isArray(v)) {
+      for (const x of v) walk(x, inBrowser);
       return;
     }
-    if (!val || typeof val !== "object") return;
-    for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
-      if (k.startsWith(".")) {
-        // subpath key (".", "./feature") — same condition tree
-        walk(v, inBrowser);
-      } else if (k === "browser" || k === "web") {
-        walk(v, true);
-      } else {
-        // node / default / import / require / types / … — node-ish unless already under browser
-        walk(v, inBrowser);
-      }
+    if (!v || typeof v !== "object") return;
+    for (const [k, child] of Object.entries(v as Record<string, unknown>)) {
+      if (k === "browser" || k === "web") walk(child, true);
+      // node / default / import / require / types / … — node-ish unless already under browser
+      else walk(child, inBrowser);
     }
   };
-  walk(exportsField, false);
+  walk(val, false);
+  return { browser, node };
+}
+
+function putGroup(
+  groups: Map<string, EntryVariantFaceGroup>,
+  key: string,
+  faces: { browser: string[]; node: string[] },
+): void {
+  const existing = groups.get(key);
+  if (!existing) {
+    groups.set(key, { key, browser: [...faces.browser], node: [...faces.node] });
+    return;
+  }
+  existing.browser.push(...faces.browser);
+  existing.node.push(...faces.node);
+}
+
+/**
+ * Collect `exports` faces **per subpath** (`.`, `./feature`, …). Top-level
+ * condition keys without a subpath map mean the implicit `"."` subpath.
+ */
+function collectExportGroups(exportsField: unknown, groups: Map<string, EntryVariantFaceGroup>): void {
+  if (exportsField == null) return;
+  if (typeof exportsField === "string") {
+    putGroup(groups, "exports:.", { browser: [], node: [exportsField] });
+    return;
+  }
+  if (Array.isArray(exportsField)) {
+    putGroup(groups, "exports:.", collectConditionFaces(exportsField));
+    return;
+  }
+  if (typeof exportsField !== "object") return;
+  const entries = Object.entries(exportsField as Record<string, unknown>);
+  const hasSubpath = entries.some(([k]) => k.startsWith("."));
+  if (hasSubpath) {
+    for (const [k, v] of entries) {
+      if (k.startsWith(".")) putGroup(groups, `exports:${k}`, collectConditionFaces(v));
+    }
+    return;
+  }
+  // condition map for the implicit "." subpath
+  putGroup(groups, "exports:.", collectConditionFaces(exportsField));
+}
+
+/** True when a single group's own browser and node faces both exist and differ. */
+function isGroupDual(group: { browser: string[]; node: string[] }): boolean {
+  const browserPaths = uniqueResolved(group.browser, null);
+  const nodePaths = uniqueResolved(group.node, null);
+  if (browserPaths.length === 0 || nodePaths.length === 0) return false;
+  const browserSet = new Set(browserPaths);
+  const nodeSet = new Set(nodePaths);
+  // identical faces = not dual (e.g. browser === main)
+  if (browserSet.size === nodeSet.size && [...browserSet].every((p) => nodeSet.has(p))) return false;
+  return true;
 }
 
 /**
  * Detect browser/node dual faces in a parsed package.json.
- * Returns null unless both faces exist and differ (zero-FP on single-entry).
+ * Faces are grouped by subpath / field source; returns null unless **some
+ * group** is dual (zero-FP on single-entry groups and single-entry packages).
  */
 export function detectEntryVariantsFromPackageJson(pkg: unknown): EntryVariantFaces | null {
   if (!pkg || typeof pkg !== "object") return null;
   const p = pkg as Record<string, unknown>;
 
-  const browser: string[] = [];
-  const node: string[] = [];
+  const groups = new Map<string, EntryVariantFaceGroup>();
 
-  collectExportFaces(p.exports, browser, node);
+  collectExportGroups(p.exports, groups);
 
   // legacy top-level `browser` field (string entry or remap map)
-  const evalField = p.browser;
-  if (typeof evalField === "string") browser.push(evalField);
-  else if (evalField && typeof evalField === "object") {
-    for (const v of Object.values(evalField as Record<string, unknown>)) {
+  const browserField = p.browser;
+  if (typeof browserField === "string") {
+    // classic pair: browser string vs main (the node entry). `module` is a
+    // bundler ESM face — not a node face — and is deliberately not collected.
+    putGroup(groups, "browser-field", {
+      browser: [browserField],
+      node: typeof p.main === "string" ? [p.main] : [],
+    });
+  } else if (browserField && typeof browserField === "object") {
+    for (const [k, v] of Object.entries(browserField as Record<string, unknown>)) {
+      // remap key = node-side source file; bare module ids ("fs": false) are not file entries
+      if (!k.startsWith(".")) continue;
+      const browser: string[] = [];
       if (typeof v === "string") browser.push(v);
-    }
-    // remap keys are the node-side sources
-    for (const k of Object.keys(evalField as Record<string, unknown>)) {
-      if (k.startsWith(".")) node.push(k);
+      // v === true means "same file in browser"
+      else if (v === true) browser.push(k);
+      // v === false disables the module in browser — no browser face (do not
+      // fake one); the key stays the node-side source of *this* pair only.
+      putGroup(groups, `browser:${normalizeTarget(k)}`, { browser, node: [k] });
     }
   }
-  if (typeof p.main === "string") node.push(p.main);
-  if (typeof p.module === "string") node.push(p.module);
 
-  const browserPaths = uniqueResolved(browser, null);
-  const nodePaths = uniqueResolved(node, null);
-  if (browserPaths.length === 0 || nodePaths.length === 0) return null;
-
-  const browserSet = new Set(browserPaths);
-  const nodeSet = new Set(nodePaths);
-  // identical faces = not dual (e.g. browser === main)
-  if (browserSet.size === nodeSet.size && [...browserSet].every((p) => nodeSet.has(p))) {
-    return null;
-  }
+  if (![...groups.values()].some(isGroupDual)) return null;
 
   const kind: EntryVariantFaces["kind"] =
     typeof p.exports !== "undefined" && collectExportHasBrowser(p.exports)
       ? "exports-conditions"
       : "browser-field";
-  return { kind, browser: [...new Set(browser)], node: [...new Set(node)] };
+  return { kind, groups };
 }
 
 function collectExportHasBrowser(exportsField: unknown): boolean {
@@ -180,9 +229,11 @@ export function findOwningPackage(
 }
 
 /**
- * Dual-entry info for an analyzed file: the owning package must declare two
- * differing faces **and** this file must be one of the entry targets.
- * Returns null otherwise (single-entry packages, shared helpers, …).
+ * Dual-entry info for an analyzed file: the owning package must declare a
+ * dual group (browser + node faces resolving to different files **in the same
+ * subpath / field source**) **and** this file must be one of that group's
+ * entry targets on exactly one face. Returns null otherwise (single-entry
+ * groups, shared helpers, single-entry subpaths of a multi-subpath package, …).
  */
 export function entryVariantForFile(filePath: string): EntryVariantInfo | null {
   let owning: { path: string; dir: string; pkg: Record<string, unknown> } | null = null;
@@ -197,26 +248,32 @@ export function entryVariantForFile(filePath: string): EntryVariantInfo | null {
   if (!faces) return null;
 
   const abs = resolve(filePath);
-  const browserPaths = uniqueResolved(faces.browser, owning.dir);
-  const nodePaths = uniqueResolved(faces.node, owning.dir);
-  const inBrowser = browserPaths.includes(abs);
-  const inNode = nodePaths.includes(abs);
-  // shared target (same file on both faces) is not a dual variant — records
-  // would land on the same path; never fire (zero-FP).
-  if (!inBrowser && !inNode) return null;
-  if (inBrowser && inNode) return null;
+  // only the group this file belongs to may justify a dual-entry signal
+  for (const group of faces.groups.values()) {
+    const browserPaths = uniqueResolved(group.browser, owning.dir);
+    const nodePaths = uniqueResolved(group.node, owning.dir);
+    const inBrowser = browserPaths.includes(abs);
+    const inNode = nodePaths.includes(abs);
+    if (!inBrowser && !inNode) continue;
+    // shared target (same file on both faces) is not a dual variant — records
+    // would land on the same path; never fire (zero-FP).
+    if (inBrowser && inNode) continue;
+    // single-entry group (e.g. exports "." with one file) never fires
+    if (!isGroupDual(group)) continue;
 
-  return {
-    pkgPath: owning.path,
-    pkgDir: owning.dir,
-    ...(typeof owning.pkg.name === "string" ? { pkgName: owning.pkg.name } : {}),
-    kind: faces.kind,
-    browserPaths,
-    nodePaths,
-    role: inBrowser ? "browser" : "node",
-    browserTargets: [...new Set(faces.browser.map(normalizeTarget))],
-    nodeTargets: [...new Set(faces.node.map(normalizeTarget))],
-  };
+    return {
+      pkgPath: owning.path,
+      pkgDir: owning.dir,
+      ...(typeof owning.pkg.name === "string" ? { pkgName: owning.pkg.name } : {}),
+      kind: faces.kind,
+      browserPaths,
+      nodePaths,
+      role: inBrowser ? "browser" : "node",
+      browserTargets: [...new Set(group.browser.map(normalizeTarget))],
+      nodeTargets: [...new Set(group.node.map(normalizeTarget))],
+    };
+  }
+  return null;
 }
 
 export function entryVariantMessage(info: EntryVariantInfo): string {

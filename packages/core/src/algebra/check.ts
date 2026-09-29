@@ -11,13 +11,15 @@
  */
 
 import { parseSource as parse } from "./parse-source.ts";
-import { isNullishLitAbs } from "./surface.ts";
+import { stripStringsKeepComments } from "./code-text.ts";
 import {
   setAbsTruncationCollector,
   resetAbsCallBudget,
   getAbsCallBudgetStats,
   FORK_TRUNCATION_LABEL,
   HOST_EFFECT_LABEL_PREFIX,
+  PROMISE_MICRO_OVERFLOW_LABEL,
+  PROMISE_MICRO_ERROR_LABEL,
 } from "./call-budget.ts";
 import type { AbsAssignRecord, AbsCallRecord } from "./ast-records.ts";
 import { leqAbs } from "./leq.ts";
@@ -42,20 +44,18 @@ import {
 import {
   constraintToEntryAbs,
   type NudoConstraint,
-  type NudoField,
 } from "./constraint.ts";
 import { absToConstraint } from "./projection.ts";
-import { literalMeetsConstraint } from "./domain-membership.ts";
+import { assertImplies } from "./postcondition.ts";
 import { extractFn, generalizeFromAst } from "./generalize.ts";
 import { contractParamNameSet } from "./param-surface.ts";
-import { getSlot } from "./objects.ts";
 import { canSkipLiteralCallScan } from "./fn-fp.ts";
 import { stableAnalyzeKeySource } from "./stable-source-key.ts";
 import {
   normPath,
   type LoadDepsFingerprint,
 } from "./load-deps-fp.ts";
-import { anyAbs, litValue } from "./abs.ts";
+import { anyAbs } from "./abs.ts";
 import type { Abs } from "./abs.ts";
 import { abs } from "./abs.ts";
 import type { Phi } from "./pred.ts";
@@ -270,8 +270,8 @@ function checkSourceInner(
   sidecarFp?: string,
 ): CheckReport {
   // 整文件一次判定，避免 per-function includes 全文扫
-  const hasRefineDirective =
-    source.includes("@nudo:contract") || source.includes("@nudo:contract");
+  // 指令住注释：字符串里的 `@nudo:contract` 不是契约来源
+  const hasRefineDirective = stripStringsKeepComments(source).includes("@nudo:contract");
   // ambient 侧车存在时预取本地导出表（一次 parse）：侧车同名绑定只落本地 named export
   const exportedNames =
     sidecarFp !== undefined ? localNamedExports(source) : undefined;
@@ -364,7 +364,7 @@ function checkSourceInner(
           eff.returns.constraint,
           declared,
         );
-        if (retIssues.length > 0) returnViolated.add(name);
+        if (retIssues.some((i) => i.severity === "error")) returnViolated.add(name);
         issues.push(...retIssues);
       }
       continue;
@@ -617,7 +617,7 @@ function checkSourceInner(
           eff.returns.constraint,
           g.symbolic,
         );
-        if (retIssues.length > 0) returnViolated.add(name);
+        if (retIssues.some((i) => i.severity === "error")) returnViolated.add(name);
         issues.push(...retIssues);
       }
       // T10a drift 候选：generated 段是 emit 时的固化快照，与今日重算的
@@ -653,6 +653,25 @@ function checkSourceInner(
         message: `Branch expansion was truncated (fork budget); affected results widened to unknown#opaque (budget)`,
         suggestion:
           "optional: simplify branching or raise nudo.analysis.maxForks — non-blocking",
+      });
+      continue;
+    }
+    // promise 微队列溢出 / drain 抛错：不是递归——专用文案
+    if (label === PROMISE_MICRO_OVERFLOW_LABEL) {
+      issues.push({
+        severity: "info",
+        code: "nudo:promise-micro-truncated",
+        message: `Promise microtask queue hit its hard cap; further then/catch callbacks were dropped (results stay fail-closed)`,
+        suggestion: "optional: reduce top-level Promise.then fan-out — non-blocking",
+      });
+      continue;
+    }
+    if (label === PROMISE_MICRO_ERROR_LABEL) {
+      issues.push({
+        severity: "info",
+        code: "nudo:promise-micro-error",
+        message: `A promise microtask threw while draining; the error was recorded and did not rewrite the synchronous return value`,
+        suggestion: "optional: inspect the then/catch callback for a throw path — non-blocking",
       });
       continue;
     }
@@ -753,7 +772,7 @@ function checkSourceInner(
         rc.constraint,
         rec.result,
       );
-      if (retIssues.length > 0) returnViolated.add(rec.fnName);
+      if (retIssues.some((i) => i.severity === "error")) returnViolated.add(rec.fnName);
       issues.push(...retIssues);
     }
   }
@@ -827,12 +846,9 @@ function checkSourceInner(
 // L2 入口 may-throw → check-may-throw.ts；签名格式化 → check-signatures.ts
 // ---------------------------------------------------------------------------
 
-/**
- * 后置契约：推断返回 Abs ⊭ @nudo:contract return 声明。
- * 只在有确定信息时报（字面量界 / prim 类型 / shape 缺字段）。
- */
 // ---------------------------------------------------------------------------
 // L1 返回约束对账（声明 returns vs 推断返回 Abs）
+// 统一证明通道：assertImplies（Pred 蕴含 + 域隶属 + nullish 显式化）
 // ---------------------------------------------------------------------------
 
 function checkReturnConstraint(
@@ -841,157 +857,42 @@ function checkReturnConstraint(
   constraint: NudoConstraint,
   ret: Abs,
 ): CheckIssue[] {
-  const out: CheckIssue[] = [];
-  // 无信息不猜
-  if (ret.shape.k === "unknown" && !ret.term) return out;
-  if (ret.shape.k === "any") return out;
-  // nullish 字面量预过滤（T4 caveat）：lit null/undefined 对任何约束恒不满足，
-  // 报则 FP——`return null` 的「无值」语义不是「错值」。参数位证据
-  // （scan-injected-domain）同口径。此前 `{…} | null` 的返回被整条判违规。
-  if (isNullishLitAbs(ret)) return out;
-
-  // 分支 sum（if 条件赋值 / 多 return 路径）：shape 契约须对每个成员成立——
-  // 分发到成员再聚合。此前 sum 不走 obj 槽位分支 → 直接判 shape ⊭ obj，
-  // 条件赋值返回对象被误报（auditHeaders / buildPackument 形态）。
-  // scalar 契约（prim/数值界/域）不分发：成员可能是 any 参与运算符派生的
-  // 并集（any+any → number|string），报则假阳性（gold 门禁口径）。
-  if (ret.shape.k === "sum" && constraint.fields) {
-    const seen = new Set<string>();
-    for (const m of (ret.shape as { members: Abs[] }).members) {
-      for (const issue of checkReturnConstraint(fnName, cName, constraint, m)) {
-        const key = `${issue.message}\u0000${issue.actual ?? ""}\u0000${issue.expected ?? ""}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        out.push(issue);
-      }
-    }
-    return out;
-  }
-
-  const push = (actual: string, expected: string, suggestion: string): void => {
-    out.push({
-      severity: "error",
-      code: "nudo:constraint-violated",
+  const proof = assertImplies(ret, constraint);
+  if (proof.status === "proved") return [];
+  const push = (
+    severity: "error" | "warning",
+    actual: string,
+    expected: string,
+    suggestion: string,
+  ): CheckIssue[] => [
+    {
+      severity,
+      code: severity === "error" ? "nudo:constraint-violated" : "nudo:unproven-return",
       message: `${fnName}: return value ⊭ @nudo:contract return ${cName}`,
       actual,
       expected,
       suggestion,
       fn: fnName,
-    });
-  };
-
-  // shape 后置
-  if (constraint.fields) {
-    const slots =
-      ret.shape.k === "obj"
-        ? (ret.shape as { slots: Record<string, { value: Abs; optional?: boolean }> }).slots
-        : undefined;
-    if (!slots) {
-      if (ret.shape.k !== "never") {
-        push(formatAbs(ret), `object shape (${cName})`, `return an object satisfying the ${cName} shape`);
-      }
-      return out;
-    }
-    for (const [key, field] of Object.entries(constraint.fields) as Array<
-      [string, NudoField]
-    >) {
-      const slot = getSlot(slots, key);
-      if (!slot) {
-        if (!field.optional && !field.constraint.isOptional) {
-          push(formatAbs(ret), `missing field ${key}`, `add the missing field ${key} to the return value`);
-        }
-        continue;
-      }
-      // 字段 prim
-      if (field.constraint.prim && slot.value.shape.k === "prim") {
-        const actualPrim = (slot.value.shape as { type: string }).type;
-        if (actualPrim !== field.constraint.prim) {
-          push(
-            formatAbs(slot.value),
-            `typeof ${key} = "${field.constraint.prim}"`,
-            `change the return value's ${key} to ${field.constraint.prim}`,
-          );
-          continue;
-        }
-      }
-      // 字段数值界
-      const lv = litValue(slot.value);
-      if (lv !== undefined && typeof lv === "number") {
-        for (const p of field.constraint.preds) {
-          const flat = p.op === "and" ? p.args : [p];
-          for (const atom of flat) {
-            if (
-              (atom.op === "gt" || atom.op === "ge" || atom.op === "lt" || atom.op === "le") &&
-              atom.b.op === "lit" &&
-              typeof atom.b.value === "number"
-            ) {
-              const n = atom.b.value;
-              let ok = true;
-              if (atom.op === "gt") ok = lv > n;
-              if (atom.op === "ge") ok = lv >= n;
-              if (atom.op === "lt") ok = lv < n;
-              if (atom.op === "le") ok = lv <= n;
-              if (!ok) {
-                const opSym = { gt: ">", ge: "≥", lt: "<", le: "≤" }[atom.op];
-                push(
-                  formatAbs(slot.value),
-                  `${key} ${opSym} ${n}`,
-                  `the return value's ${key} should satisfy ${key} ${opSym} ${n}`,
-                );
-              }
-            }
-          }
-        }
-      }
-    }
-    return out;
+    },
+  ];
+  if (proof.status === "disproved") {
+    return push(
+      "error",
+      formatAbs(ret),
+      proof.reason,
+      proof.reason.includes("nullish")
+        ? `use nullable(${formatConstraint(constraint)}) or union(..., lit(null)) to allow nullish returns`
+        : `return a value satisfying ${formatConstraint(constraint)}`,
+    );
   }
-
-  // 标量后置
-  if (constraint.prim && ret.shape.k === "prim") {
-    const actualPrim = (ret.shape as { type: string }).type;
-    if (actualPrim !== constraint.prim) {
-      push(formatAbs(ret), `typeof return = "${constraint.prim}"`, `return ${constraint.prim}`);
-      return out;
-    }
-  }
-  const lv = litValue(ret);
-  if (lv !== undefined && typeof lv === "number") {
-    for (const p of constraint.preds) {
-      const flat = p.op === "and" ? p.args : [p];
-      for (const atom of flat) {
-        if (
-          (atom.op === "gt" || atom.op === "ge" || atom.op === "lt" || atom.op === "le") &&
-          atom.b.op === "lit" &&
-          typeof atom.b.value === "number"
-        ) {
-          const n = atom.b.value;
-          let ok = true;
-          if (atom.op === "gt") ok = lv > n;
-          if (atom.op === "ge") ok = lv >= n;
-          if (atom.op === "lt") ok = lv < n;
-          if (atom.op === "le") ok = lv <= n;
-          if (!ok) {
-            const opSym = { gt: ">", ge: "≥", lt: "<", le: "≤" }[atom.op];
-            push(formatAbs(ret), `return ${opSym} ${n}`, `return a value satisfying ${opSym} ${n}`);
-          }
-        }
-      }
-    }
-  }
-  // eq/or/length 域：数值 bounds 分支判不了 eq 与 length(self)，统一走域隶属
-  // （string().min/max/length 返回契约此前静默放过）
-  if (
-    lv !== undefined &&
-    (typeof lv === "number" || typeof lv === "string" || typeof lv === "boolean") &&
-    ((constraint.members?.length ?? 0) > 0 ||
-      constraint.preds.some((p) => p.op === "eq") ||
-      (typeof lv === "string" && constraint.preds.length > 0)) &&
-    !literalMeetsConstraint(lv, constraint)
-  ) {
-    push(formatAbs(ret), formatConstraint(constraint), `return a value satisfying ${formatConstraint(constraint)}`);
-  }
-  return out;
+  // unprovable：any / unknown=推断失败 / opaque —— 不得伪装成功（warning 可见）
+  // 也不得计 error（gold FP 门禁：opaque/截断误报是已知禁区）
+  return push(
+    "warning",
+    formatAbs(ret),
+    formatConstraint(constraint),
+    `${proof.reason}; add a precondition, narrow the return expression, or relax the return contract`,
+  );
 }
 
 // ---------------------------------------------------------------------------

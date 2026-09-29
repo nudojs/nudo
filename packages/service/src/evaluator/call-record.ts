@@ -36,9 +36,14 @@ export const undefAbs: Abs = {
 
 /** Abs 结构 key（dedupe）：lit 优先，否则 formatAbs */
 export function absStructureKey(a: Abs): string {
+  // String(-0)==="0" 会把 f(0) 与 f(-0) 折成同一 case；必须 Object.is 保真
+  const keyOfLit = (v: unknown): string =>
+    typeof v === "number" && Object.is(v, -0)
+      ? `L:number:-0`
+      : `L:${typeof v}:${String(v)}`;
   const v = litValue(a);
-  if (v !== undefined) return `L:${typeof v}:${String(v)}`;
-  if (a.term?.op === "lit") return `L:${typeof a.term.value}:${String(a.term.value)}`;
+  if (v !== undefined) return keyOfLit(v);
+  if (a.term?.op === "lit") return keyOfLit(a.term.value);
   try {
     return formatAbs(a);
   } catch {

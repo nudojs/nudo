@@ -8,6 +8,7 @@
 import type { Abs, Shape } from "./abs.ts";
 import { litValue } from "./abs.ts";
 import type { Pred } from "./pred.ts";
+import { safeMemberAccess } from "./codegen-escape.ts";
 
 /** Abs 上的运行时守卫表达式（JS boolean 布尔串） */
 export function denoteGuard(a: Abs, v: string): string {
@@ -48,7 +49,7 @@ function denoteShape(s: Shape, v: string): string {
     case "obj": {
       const checks = [`typeof ${v} === "object"`, `${v} !== null`];
       for (const [key, slot] of Object.entries(s.slots)) {
-        const access = `${v}.${key}`;
+        const access = safeMemberAccess(v, key);
         const inner = denoteGuard(slot.value, access);
         if (slot.optional) {
           if (inner !== "true") checks.push(`(${access} === undefined || ${inner})`);

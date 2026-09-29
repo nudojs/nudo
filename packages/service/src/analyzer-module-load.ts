@@ -3,12 +3,14 @@
  * 自 analyzer.ts 机械拆出；语义未改。
  */
 import { readFileSync, existsSync, statSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { resolve } from "node:path";
 import { parse } from "@nudojs/parser";
 import { resolveNpmNudo } from "./evaluator/resolve-npm.ts";
+import { MODULE_RESOLVE_EXTS, resolveModuleFile } from "./load-module.ts";
+import { collectDependencySpecs } from "./static-imports.ts";
 
 export function resolveModule(source: string, fromDir: string): { ast: ReturnType<typeof parse>; filePath: string; json?: unknown } | null {
-  const extensions = [".js", ".ts", ".mjs"];
+  const extensions = [...MODULE_RESOLVE_EXTS];
 
   const nudoPath = resolveNpmNudo(source, fromDir);
   if (nudoPath) {
@@ -59,14 +61,9 @@ export function resolveModule(source: string, fromDir: string): { ast: ReturnTyp
   return null;
 }
 
-/** Resolve a relative import specifier to an existing file (extension rules identical to CLI resolveModule: ''/'.js'/'.ts'/'.mjs'); null when unresolvable. */
-function resolveImportPath(specifier: string, fromDir: string): string | null {
-  const basePath = resolve(fromDir, specifier);
-  for (const ext of ["", ".js", ".ts", ".mjs"]) {
-    const candidate = basePath + ext;
-    if (existsSync(candidate)) return candidate;
-  }
-  return null;
+/** Resolve a relative import specifier to an existing file (shared moduleResolveCandidates table: ''/'.js'/'.mjs'/'.ts' + index entries); null when unresolvable. */
+function resolveImportPath(specifier: string, fromFile: string): string | null {
+  return resolveModuleFile(specifier, fromFile) ?? null;
 }
 
 /** mtime 边缓存：key 为文件路径，edges 为已抽取的相对 import 边（与 buildModuleGraph 返回语义一致）。 */
@@ -115,7 +112,12 @@ export function buildModuleGraph(
   return { imports, dependents };
 }
 
-/** 磁盘直读并解析单个文件，抽取其相对 import 边（读取/解析失败返回空数组）。 */
+/**
+ * 磁盘直读并解析单个文件，抽取其相对依赖边（读取/解析失败返回空数组）。
+ * 与求值侧 importSpecs 同口径：ImportDeclaration + ExportNamed/ExportAll 的
+ * source（re-export）+ require()/require.resolve()（collectDependencySpecs，
+ * AST 走、foldStaticStringExpr 折叠说明符——字符串/注释里的假 require 不进边）。
+ */
 function extractImportEdges(file: string): string[] {
   const edges: string[] = [];
   let ast: ReturnType<typeof parse>;
@@ -124,11 +126,9 @@ function extractImportEdges(file: string): string[] {
   } catch {
     return edges;
   }
-  for (const stmt of ast.program.body) {
-    if (stmt.type !== "ImportDeclaration") continue;
-    const specifier = stmt.source.value;
+  for (const specifier of collectDependencySpecs(ast)) {
     if (!specifier.startsWith(".") && !specifier.startsWith("/")) continue;
-    const resolved = resolveImportPath(specifier, dirname(file));
+    const resolved = resolveImportPath(specifier, file);
     if (resolved) edges.push(resolved);
   }
   return edges;

@@ -43,6 +43,8 @@ export {
   notePromiseExecutorFork,
   queuePromiseMicro,
   drainPromiseMicros,
+  getPromiseMicrosLength,
+  MAX_PROMISE_MICROS,
   evalPromiseCtor,
   evalPromiseMethod,
   evalPromiseStatic,

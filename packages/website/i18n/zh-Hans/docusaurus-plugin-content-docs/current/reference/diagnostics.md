@@ -221,6 +221,12 @@ Context: [L2 —— 入口 throws](../guides/check.md#l2--entry-throws) · [@nud
 
 Context: [`any` 与 `unknown`](../concepts/limits.md#any-与-unknown) · [依赖类型](../guides/env-harvest.md)
 
+### `nudo:unproven-return` {#nudo-unproven-return}
+
+Return postcondition could not be proved (any / unknown / opaque / widened face with no pred evidence). **Warning** — inference failed to discharge the obligation; do not treat as success. Distinct from `nudo:constraint-violated` (definite violation).
+
+Context: [nudo check](../guides/check.md#what-it-checks)
+
 ### `nudo:unknown-recv` {#nudo-unknown-recv}
 
 `unknown` 接收者上的成员访问。不能替代 L2 throws 建模。
@@ -254,6 +260,18 @@ Context: [分析预算](../guides/performance.md#分析预算)
 ### `nudo:fork-truncated` {#nudo-fork-truncated}
 
 分支展开预算（`$fork` 总次数）用尽；受影响结果拓宽。**warning**。可用 `NUDO_MAX_FORKS` 或 `package.json#nudo.analysis.maxForks` 调高（默认 5000）。预算与修复：[性能：预算与分析缓存](../guides/performance.md)。
+
+Context: [分析预算](../guides/performance.md#分析预算)
+
+### `nudo:promise-micro-truncated` {#nudo-promise-micro-truncated}
+
+Promise 微任务队列触及硬上限（`MAX_PROMISE_MICROS = 1024`），剩余排队回调被丢弃。**info**。受影响的 promise 结果保持拓宽，而不是静默出错。
+
+Context: [分析预算](../guides/performance.md#分析预算)
+
+### `nudo:promise-micro-error` {#nudo-promise-micro-error}
+
+求值出口排空微任务时，某个 then/catch 回调抛错。**info**。该回调效果不完整；请检查报告的错误以及排队该回调的表达式。
 
 Context: [分析预算](../guides/performance.md#分析预算)
 
@@ -311,7 +329,7 @@ Context: [L2 —— 入口 throws](../guides/check.md#l2--entry-throws) · [@nud
 
 ## 模块图
 
-Abs 模块求值（`evalAbsModuleGraph`）遇到装载问题时上报。`cycle` / `depth` 为 warning；`missing` 为 error。
+Abs 模块求值（`evalAbsModuleGraph`）遇到装载问题时上报。`cycle` / `depth` 为 warning；`missing` / `missing-export` 为 error。
 
 ### `nudo:module-cycle` {#nudo-module-cycle}
 
@@ -342,6 +360,22 @@ Module file not found for 'spec' (from file); tried: path
 ```
 
 **Error。** 被分析文件 import 了装载器无法解析的模块。**修复：** 修正 spec，或 mock 该模块（`@nudo:mock-module` / `@nudo:mock`）。
+
+Context: [@nudo:mock-module](../concepts/directives.md#nudo--模块级-mock) · [nudo check](../guides/check.md#what-it-checks)
+
+### `nudo:exports-unresolved` {#nudo-exports-unresolved}
+
+package.json 声明了 `exports` 目标，但子路径/条件未解析到文件。**warning** —— 分析回落 harvest stub / 文件直猜，可能与真实入口不符。与 `nudo:module-missing`（完全没有模块）不同。
+
+Context: [求值器缺口](../concepts/limits.md#求值器缺口摘要)
+
+### `nudo:missing-export` {#nudo-missing-export}
+
+```text
+Module './m.js' has no export 'b' (from index.js)
+```
+
+**Error。** 具名 `import`（或 `export { x } from`）引用了源模块并未导出的名字——通常是拼写错误。仅当源模块导出表来自成功求值时才报（fail-closed 空表与未解析模块保持静默，不与 `nudo:module-missing` 叠报）。**修复：** 修正导入名、在源模块补上导出，或 mock 该模块（`@nudo:mock-module`）。
 
 Context: [@nudo:mock-module](../concepts/directives.md#nudo--模块级-mock) · [nudo check](../guides/check.md#what-it-checks)
 

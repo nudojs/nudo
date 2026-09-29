@@ -105,55 +105,391 @@ function listFiles(dir: string, out: string[] = [], depth = 0): string[] {
   return out;
 }
 
+/** 剥离 YAML 行注释（引号内 `#` 不是注释） */
+function stripYamlLineComment(line: string): string {
+  let i = 0;
+  const n = line.length;
+  while (i < n) {
+    const c = line[i]!;
+    if (c === '"' || c === "'") {
+      const quote = c;
+      i++;
+      while (i < n) {
+        if (quote === '"' && line[i] === "\\") {
+          i += 2;
+          continue;
+        }
+        if (line[i] === quote) {
+          i++;
+          break;
+        }
+        i++;
+      }
+      continue;
+    }
+    if (c === "#" && (i === 0 || /\s/.test(line[i - 1]!))) {
+      return line.slice(0, i);
+    }
+    i++;
+  }
+  return line;
+}
+
+function unquoteYamlScalar(s: string): string {
+  const t = s.trim();
+  if (t.length >= 2) {
+    if (t.startsWith('"') && t.endsWith('"')) return t.slice(1, -1);
+    if (t.startsWith("'") && t.endsWith("'")) return t.slice(1, -1);
+  }
+  return t;
+}
+
+/**
+ * 最小解析 pnpm-workspace.yaml 的 `packages:` 列表（非完整 YAML）。
+ * 认块列表（`- item`）与单行流列表（`packages: [a, b]`）；处理注释/引号。
+ * 排除模式（`!…`）原样返回，由调用方决定是否跳过。
+ */
+function parsePnpmWorkspacePackages(root: string): string[] {
+  const yamlPath = join(root, "pnpm-workspace.yaml");
+  if (!existsSync(yamlPath)) return [];
+  let text: string;
+  try {
+    text = readFileSync(yamlPath, "utf-8");
+  } catch {
+    return [];
+  }
+  const out: string[] = [];
+  let inPackages = false;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = stripYamlLineComment(rawLine);
+    if (!line.trim()) continue;
+    const top = !/^\s/.test(line);
+    const trimmed = line.trim();
+    if (top) {
+      const m = trimmed.match(/^packages:\s*(.*)$/);
+      if (m) {
+        const rest = m[1]!.trim();
+        if (rest.startsWith("[")) {
+          const inner = rest.endsWith("]") ? rest.slice(1, -1) : rest.slice(1);
+          for (const part of inner.split(",")) {
+            const item = unquoteYamlScalar(part);
+            if (item) out.push(item);
+          }
+          inPackages = false;
+        } else if (rest) {
+          const item = unquoteYamlScalar(rest);
+          if (item) out.push(item);
+          inPackages = false;
+        } else {
+          inPackages = true;
+        }
+        continue;
+      }
+      inPackages = false;
+      continue;
+    }
+    if (!inPackages) continue;
+    const itemMatch = trimmed.match(/^-\s+(.+)$/);
+    if (itemMatch) {
+      const item = unquoteYamlScalar(itemMatch[1]!);
+      if (item) out.push(item);
+    }
+  }
+  return out;
+}
+
 function packageRoots(root: string): string[] {
-  const pkgPath = join(root, "package.json");
-  const pkg = readJson(pkgPath);
-  if (!pkg) return [root];
-  const workspaces = pkg.workspaces;
-  const roots = [root];
+  const patterns: string[] = [];
+  const pkg = readJson(join(root, "package.json"));
+  const workspaces = pkg?.workspaces;
   if (Array.isArray(workspaces)) {
     for (const w of workspaces) {
-      if (typeof w !== "string") continue;
-      // support "packages/*" style
-      if (w.endsWith("/*") || w.endsWith("/**")) {
-        const base = join(root, w.replace(/\/\*\*?$/, ""));
-        if (!existsSync(base)) continue;
-        for (const name of readdirSync(base)) {
-          const p = join(base, name);
-          if (existsSync(join(p, "package.json"))) roots.push(p);
-        }
-      } else {
-        const p = join(root, w);
-        if (existsSync(join(p, "package.json"))) roots.push(p);
+      if (typeof w === "string") patterns.push(w);
+    }
+  }
+  patterns.push(...parsePnpmWorkspacePackages(root));
+
+  const roots = [root];
+  const seen = new Set<string>([root]);
+  for (const w of patterns) {
+    // pnpm 排除模式（`!…`）不新增根；最小解析不做排除匹配
+    if (w.startsWith("!")) continue;
+    // support "packages/*" style
+    if (w.endsWith("/*") || w.endsWith("/**")) {
+      const base = join(root, w.replace(/\/\*\*?$/, ""));
+      if (!existsSync(base)) continue;
+      for (const name of readdirSync(base)) {
+        const p = join(base, name);
+        if (!existsSync(join(p, "package.json"))) continue;
+        if (seen.has(p)) continue;
+        seen.add(p);
+        roots.push(p);
       }
+    } else {
+      const p = join(root, w);
+      if (!existsSync(join(p, "package.json"))) continue;
+      if (seen.has(p)) continue;
+      seen.add(p);
+      roots.push(p);
     }
   }
   return roots;
 }
 
-function countExt(files: string[], exts: Set<string>): number {
-  let n = 0;
-  for (const f of files) {
-    const e = extname(f).toLowerCase();
-    if (exts.has(e) || (exts === TS_EXT && e === ".ts")) n += 1;
+/** 声明文件（.d.ts / .d.mts / .d.cts）不是可 strip 的实现源 */
+const DTS_RE = /\.d\.(m|c)?ts$/i;
+
+function isDeclarationFile(file: string): boolean {
+  return DTS_RE.test(file);
+}
+
+/** migrate strip 的源门：TS/TSX 实现源，排除 .d.* 声明 */
+function isStripSource(file: string): boolean {
+  if (isDeclarationFile(file)) return false;
+  const e = extname(file).toLowerCase();
+  return TS_EXT.has(e) || TSX_EXT.has(e);
+}
+
+/**
+ * shell/YAML 命令行的字符串+注释掩码（等长）。
+ * 不能复用 JS 的 stripCommentsAndStrings：`//` 在 shell 里不是注释
+ * （`curl https://…` 会被误截），`#` 才是。
+ * 引号内不改写：`echo "please run tsc first"` 不是 tsc 调用。
+ */
+function maskShellStringsAndComments(cmd: string): string {
+  const out = cmd.split("");
+  const blank = (from: number, to: number, keepNewlines: boolean): void => {
+    for (let i = from; i < to && i < out.length; i++) {
+      if (keepNewlines && cmd[i] === "\n") continue;
+      out[i] = " ";
+    }
+  };
+  let i = 0;
+  const n = cmd.length;
+  while (i < n) {
+    const c = cmd[i]!;
+    if (c === "'" || c === '"' || c === "`") {
+      const quote = c;
+      const start = i;
+      i++;
+      while (i < n) {
+        if (quote !== "'" && cmd[i] === "\\") {
+          i += 2;
+          continue;
+        }
+        if (cmd[i] === quote) {
+          i++;
+          break;
+        }
+        i++;
+      }
+      blank(start, i, true);
+      continue;
+    }
+    // shell 注释：# 起于词首（行首或空白后），不是 URL 里的 #fragment
+    if (c === "#" && (i === 0 || /\s/.test(cmd[i - 1]!))) {
+      const start = i;
+      while (i < n && cmd[i] !== "\n") i++;
+      blank(start, i, true);
+      continue;
+    }
+    if (c === "\\") {
+      i += 2;
+      continue;
+    }
+    i++;
+  }
+  return out.join("");
+}
+
+/** 跳过引号字符串（shell 词法），返回结束位置 */
+function skipShellQuoted(cmd: string, start: number): number {
+  const quote = cmd[start]!;
+  let i = start + 1;
+  const n = cmd.length;
+  while (i < n) {
+    if (quote !== "'" && cmd[i] === "\\") {
+      i += 2;
+      continue;
+    }
+    if (cmd[i] === quote) return i + 1;
+    i++;
   }
   return n;
+}
+
+/** shell 元字符：tsc 命令短语在此结束 */
+function isPhraseBoundary(c: string): boolean {
+  return (
+    c === ";" ||
+    c === "&" ||
+    c === "|" ||
+    c === "\n" ||
+    c === "<" ||
+    c === ">" ||
+    c === "(" ||
+    c === ")"
+  );
+}
+
+/**
+ * tsc 调用前缀白名单（包管理器 / runner）。命中则整段（前缀+tsc）换成产品命令
+ * `npx nudojs check .`；不在表内的 wrapper（`sudo`/`time`/`env`…）保留，只换 tsc 本体。
+ * 长前缀必须先于短前缀（`pnpm exec ` 先于 `pnpm `），否则会吃残前缀。
+ */
+const TSC_RUNNER_PREFIX_SRC =
+  "(?:npx(?:\\s+(?:--no-install|--yes|-y|--quiet|-q)|(?:\\s+(?:--package|-p)\\s+\\S+))*\\s+" +
+  "|npm exec(?:\\s+--)?\\s+|npm run\\s+" +
+  "|pnpm exec\\s+|pnpm dlx\\s+|pnpm run\\s+|pnpm\\s+" +
+  "|yarn dlx\\s+|yarn run\\s+|yarn\\s+" +
+  "|bunx\\s+|bun x\\s+)";
+
+/** tsc 命令词：可带 runner 前缀；argv 由调用方按短语消费 */
+const TSC_CMD_SRC = `(?<![\\w./-])(?:${TSC_RUNNER_PREFIX_SRC})?tsc(?=$|[\\s;&|<>()])`;
+const TSC_CMD_STICKY = new RegExp(TSC_CMD_SRC, "y");
+
+/**
+ * 从 tsc argv 抽出项目路径（-p / --project / -b / --build 的首个位置参数）。
+ * tsconfig 文件 → 其所在目录；目录原样。无路径 → "."。
+ */
+function projectPathFromTscArgv(cmd: string, start: number): string {
+  const argvEnd = consumeTscArgv(cmd, start);
+  const raw = cmd.slice(start, argvEnd);
+  // 按空白切词，保留引号内容（粗切即可：路径通常无空格；有引号时去壳）
+  const tokens: string[] = [];
+  let i = 0;
+  while (i < raw.length) {
+    if (/\s/.test(raw[i]!)) {
+      i++;
+      continue;
+    }
+    if (raw[i] === "'" || raw[i] === '"' || raw[i] === "`") {
+      const q = raw[i]!;
+      i++;
+      let tok = "";
+      while (i < raw.length && raw[i] !== q) {
+        if (raw[i] === "\\" && i + 1 < raw.length) {
+          tok += raw[i + 1];
+          i += 2;
+          continue;
+        }
+        tok += raw[i];
+        i++;
+      }
+      i++; // 闭合引号
+      tokens.push(tok);
+      continue;
+    }
+    let tok = "";
+    while (i < raw.length && !/\s/.test(raw[i]!) && !"'\"`".includes(raw[i]!)) {
+      tok += raw[i];
+      i++;
+    }
+    tokens.push(tok);
+  }
+
+  let projectPath: string | null = null;
+  for (let t = 0; t < tokens.length; t++) {
+    const tok = tokens[t]!;
+    if (tok === "-p" || tok === "--project") {
+      projectPath = tokens[t + 1] ?? null;
+      break;
+    }
+    if (tok.startsWith("--project=")) {
+      projectPath = tok.slice("--project=".length);
+      break;
+    }
+    if (tok === "-b" || tok === "--build") {
+      // -b [project…]：取首个非旗标参数；裸 -b → "."
+      const next = tokens[t + 1];
+      projectPath = next !== undefined && !next.startsWith("-") ? next : ".";
+      break;
+    }
+  }
+  if (projectPath === null || projectPath === "") return ".";
+  // tsconfig 文件 → 目录（nudo check 吃源码路径，不解析 tsconfig）
+  if (/\.json$/i.test(projectPath)) {
+    const dir = dirname(projectPath);
+    return dir === "" ? "." : dir;
+  }
+  return projectPath;
+}
+
+/**
+ * 消费 tsc argv 直到 shell 元字符。旗标（含未知旗标）与位置参数一并剥离——
+ * 项目路径由 projectPathFromTscArgv 另行抽出，映射为 `nudo check <path>`。
+ */
+function consumeTscArgv(cmd: string, start: number): number {
+  let i = start;
+  const n = cmd.length;
+  while (i < n) {
+    const c = cmd[i]!;
+    if (isPhraseBoundary(c)) break;
+    if (c === "#" && (i === 0 || /\s/.test(cmd[i - 1]!))) break;
+    if (c === "'" || c === '"' || c === "`") {
+      i = skipShellQuoted(cmd, i);
+      continue;
+    }
+    if (c === "\\") {
+      i += 2;
+      continue;
+    }
+    i++;
+  }
+  // 不吞短语后的空白：保留 ` && ` / ` # 注释` 结构
+  while (i > start && /\s/.test(cmd[i - 1]!)) i--;
+  return i;
+}
+
+/**
+ * 以「命令短语」为单位改写 tsc：前缀白名单 + tsc + argv。
+ * 字符串/注释里的 tsc 是文本，不是编译器调用。
+ */
+function rewriteTscPhrases(cmd: string): string {
+  let out = "";
+  let i = 0;
+  const n = cmd.length;
+  while (i < n) {
+    const c = cmd[i]!;
+    if (c === "'" || c === '"' || c === "`") {
+      const start = i;
+      i = skipShellQuoted(cmd, i);
+      out += cmd.slice(start, i);
+      continue;
+    }
+    if (c === "#" && (i === 0 || /\s/.test(cmd[i - 1]!))) {
+      const start = i;
+      while (i < n && cmd[i] !== "\n") i++;
+      out += cmd.slice(start, i);
+      continue;
+    }
+    if (c === "\\") {
+      out += cmd.slice(i, i + 2);
+      i += 2;
+      continue;
+    }
+    TSC_CMD_STICKY.lastIndex = i;
+    const m = TSC_CMD_STICKY.exec(cmd);
+    if (m) {
+      const argvStart = i + m[0].length;
+      const projectPath = projectPathFromTscArgv(cmd, argvStart);
+      const target = projectPath === "." ? "." : projectPath;
+      // 路径含空格时加引号，避免拆词
+      const quoted = /\s/.test(target) ? JSON.stringify(target) : target;
+      out += (m[0] === "tsc" ? "nudo check " : "npx nudojs check ") + quoted;
+      i = consumeTscArgv(cmd, argvStart);
+      continue;
+    }
+    out += c;
+    i++;
+  }
+  return out;
 }
 
 /** 单条 shell 命令里的 tsc → nudo check（A1：CI workflow 可改写） */
 export function rewriteTscCommand(cmd: string): { cmd: string; changed: boolean } {
   const before = cmd;
-  let next = cmd;
-  // npx / pnpm exec / yarn tsc [--noEmit] [-p …]
-  next = next.replace(
-    /\b(?:npx |pnpm exec |pnpm dlx |yarn dlx |yarn )tsc\b(?:\s+--noEmit)?(?:\s+-p\s+[^\s;&|]+)?(?:\s+--pretty\s+\S+)?(?:\s+--skipLibCheck)?/g,
-    "npx nudojs check .",
-  );
-  // bare tsc
-  next = next.replace(
-    /(?<![\w./-])tsc\b(?:\s+--noEmit)?(?:\s+-p\s+[^\s;&|]+)?(?:\s+--pretty\s+\S+)?(?:\s+--skipLibCheck)?/g,
-    "nudo check .",
-  );
+  let next = rewriteTscPhrases(cmd);
   next = next.replace(/nudo check \.\s*&&\s*nudo check \./g, "nudo check .");
   next = next.replace(/npx nudojs check \.\s*&&\s*npx nudojs check \./g, "npx nudojs check .");
   return { cmd: next, changed: next !== before };
@@ -164,7 +500,8 @@ function looksLikeTscCommand(line: string): boolean {
   if (/^\s*#/.test(line)) return false;
   if (/^\s*-?\s*name\s*:/.test(line)) return false;
   if (/^\s*if\s*:/.test(line)) return false;
-  return /(?:^|[\s;&|`"'-])(?:npx |pnpm exec |pnpm dlx |yarn dlx |yarn )?tsc(?:\s|$|-)/.test(line);
+  // 字符串/注释里的 tsc 不算
+  return new RegExp(TSC_CMD_SRC).test(maskShellStringsAndComments(line));
 }
 
 export function rewriteWorkflowText(text: string): {
@@ -247,14 +584,16 @@ export function migrateStatus(rootDir: string): MigrateStatusRow[] {
     const pkgPath = join(r, "package.json");
     const pkg = readJson(pkgPath);
     const files = listFiles(r);
-    const tsFiles = files.filter((f) => TS_EXT.has(extname(f).toLowerCase())).length;
+    // .d.ts/.d.mts/.d.cts 是声明 stub（retire 时删除/保留 ambient），不是可 strip 源
+    const tsFiles = files.filter((f) => TS_EXT.has(extname(f).toLowerCase()) && !isDeclarationFile(f)).length;
     const tsxFiles = files.filter((f) => TSX_EXT.has(extname(f).toLowerCase())).length;
     const scripts = (pkg?.scripts ?? {}) as Record<string, string>;
+    // 脚本是 shell 命令：字符串里的 tsc 不算
     const tscScripts = Object.entries(scripts)
-      .filter(([, cmd]) => /\btsc\b/.test(cmd))
+      .filter(([, cmd]) => /\btsc\b/.test(maskShellStringsAndComments(cmd)))
       .map(([name]) => name);
     const nudoScripts = Object.entries(scripts)
-      .filter(([, cmd]) => /\bnudo\b/.test(cmd))
+      .filter(([, cmd]) => /\bnudo\b/.test(maskShellStringsAndComments(cmd)))
       .map(([name]) => name);
     const deps = {
       ...((pkg?.dependencies ?? {}) as Record<string, string>),
@@ -327,10 +666,15 @@ export async function migrateStrip(
     }
     if (statSync(abs).isDirectory()) {
       for (const f of listFiles(abs)) {
-        const e = extname(f).toLowerCase();
-        if (TS_EXT.has(e) || TSX_EXT.has(e)) files.push(f);
+        if (isStripSource(f)) files.push(f);
       }
     } else {
+      // 显式路径同样过扩展名门：非 TS / .d.* 声明是用法错误（不静默跳过）
+      if (!isStripSource(abs)) {
+        throw new Error(
+          `not a TypeScript source (need .ts/.mts/.cts/.tsx, not .d.ts decls or .js): ${p}`,
+        );
+      }
       files.push(abs);
     }
   }
@@ -342,7 +686,9 @@ export async function migrateStrip(
     const outFile = TSX_EXT.has(ext)
       ? file.replace(/\.tsx$/i, ".jsx")
       : file.replace(/\.tsx$/i, ".js").replace(/\.mts$/i, ".mjs").replace(/\.cts$/i, ".cjs").replace(/\.ts$/i, ".js");
-    if (opts.write) {
+    // 防御：映射不变（outFile==源）且源不是 TS 实现时禁止原地覆盖 JS
+    const wouldClobberNonTs = outFile === file && !isStripSource(file);
+    if (opts.write && !wouldClobberNonTs) {
       if (opts.backup && existsSync(file) && !existsSync(`${file}.bak`)) {
         renameSync(file, `${file}.bak`);
       } else if (opts.backup !== true && existsSync(file) && extname(file).toLowerCase() !== extname(outFile).toLowerCase()) {
@@ -474,16 +820,16 @@ export function migrateRetire(
 
   const scripts = (pkg.scripts ?? {}) as Record<string, string>;
   for (const [name, cmd] of Object.entries(scripts)) {
-    if (!/\btsc\b/.test(cmd)) continue;
+    if (!/\btsc\b/.test(maskShellStringsAndComments(cmd))) continue;
     const { cmd: next } = rewriteTscCommand(cmd);
-    // package.json scripts 用本地 bin 名
-    const local = next.replace(/npx nudojs check \./g, "nudo check .");
+    // package.json scripts 用本地 bin 名（任意 check 路径，不只 "."）
+    const local = next.replace(/npx nudojs check /g, "nudo check ");
     if (local !== cmd) {
       rewrittenScripts.push({ name, from: cmd, to: local });
       scripts[name] = local;
     }
   }
-  if (!scripts["check:nudo"] && !Object.values(scripts).some((c) => c.includes("nudo check"))) {
+  if (!scripts["check:nudo"] && !Object.values(scripts).some((c) => maskShellStringsAndComments(c).includes("nudo check"))) {
     const to = "nudo check .";
     scripts["check:nudo"] = to;
     rewrittenScripts.push({ name: "check:nudo", from: "(none)", to });
@@ -538,7 +884,8 @@ export function migrateRetireAll(
     };
     const scripts = (pkg.scripts ?? {}) as Record<string, string>;
     const hasTsc =
-      Boolean(deps.typescript) || Object.values(scripts).some((c) => /\btsc\b/.test(c));
+      Boolean(deps.typescript) ||
+      Object.values(scripts).some((c) => /\btsc\b/.test(maskShellStringsAndComments(c)));
     if (!hasTsc) continue;
     // workflow 只改写一次（monorepo 根共享 .github）
     const doWf = opts.workflows !== false && !workflowsDone;

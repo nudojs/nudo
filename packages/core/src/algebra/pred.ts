@@ -45,7 +45,14 @@ export type Pred =
   | { op: "and"; args: Pred[] }
   | { op: "or"; args: Pred[] }
   | { op: "not"; arg: Pred }
-  | { op: "typeof"; t: Term; type: TypeofName };
+  | { op: "typeof"; t: Term; type: TypeofName }
+  /**
+   * 显式有限证据：t 是有限数（非 NaN/±Inf）。
+   * 在场时允许线性环化简（x-x=0、k*(x+y) 分配等）；
+   * 默认关闭——无此谓词（或由 typeof=number + 双侧有限界自动导出）时
+   * 仍 fail-closed，与 BUG-001 / DEC-007A 口径一致。
+   */
+  | { op: "assumeFinite"; t: Term };
 
 export const pTrue: Pred = { op: "true" };
 export const pFalse: Pred = { op: "false" };
@@ -61,6 +68,8 @@ export const ptypeof = (t: Term, type: TypeofName): Pred => ({
   t,
   type,
 });
+/** 显式有限证据：t 为有限数（非 NaN/±Inf），开启线性环化简 */
+export const assumeFinite = (t: Term): Pred => ({ op: "assumeFinite", t });
 
 export function and(...preds: Pred[]): Pred {
   const flat: Pred[] = [];
@@ -140,6 +149,8 @@ export function negatePred(p: Pred): Pred {
       return or(
         ...TYPEOF_NAMES.filter((u) => u !== p.type).map((u) => ptypeof(p.t, u)),
       );
+    case "assumeFinite":
+      return { op: "not", arg: p };
   }
 }
 
@@ -192,8 +203,10 @@ export function predEquals(a: Pred, b: Pred): boolean {
       return (
         b.op === "typeof" &&
         a.type === b.type &&
-        termEquals(a.t, b.t)
+        termEquals(a.t, (b as typeof a).t)
       );
+    case "assumeFinite":
+      return b.op === "assumeFinite" && termEquals(a.t, (b as typeof a).t);
   }
 }
 
@@ -223,6 +236,8 @@ export function predToString(p: Pred): string {
       return `¬(${predToString(p.arg)})`;
     case "typeof":
       return `typeof ${termToString(p.t)} = "${p.type}"`;
+    case "assumeFinite":
+      return `assumeFinite(${termToString(p.t)})`;
   }
 }
 
@@ -246,6 +261,8 @@ export function substPred(p: Pred, subst: (t: Term) => Term): Pred {
       return { op: "not", arg: substPred(p.arg, subst) };
     case "typeof":
       return { op: "typeof", t: subst(p.t), type: p.type };
+    case "assumeFinite":
+      return { op: "assumeFinite", t: subst(p.t) };
   }
 }
 
@@ -278,6 +295,9 @@ export function predVars(p: Pred): Set<string> {
         walk(p.arg);
         return;
       case "typeof":
+        walkTerm(p.t);
+        return;
+      case "assumeFinite":
         walkTerm(p.t);
         return;
     }
@@ -402,6 +422,12 @@ type Lin = {
   k: number;
   /** 原子 key → Term（证明与展示用） */
   atoms: Map<string, Term>;
+  /**
+   * 线性形是否可按实数环语义使用。IEEE 下 x-x / 0*x / 异号合并对
+   * ±Infinity/NaN 不成立（对齐 arithmetic.ts/term.ts 禁止 x*0=0），
+   * 构造中一旦出现此类化简即置 false，证明侧 fail-closed。
+   */
+  ieeeOk: boolean;
 };
 
 type Ctx = {
@@ -411,6 +437,12 @@ type Ctx = {
   iv: Map<string, Interval>;
   /** 原子 key → Term */
   atoms: Map<string, Term>;
+  /**
+   * 已知有限（非 NaN/±Inf）的原子 key 集合。
+   * 来源：显式 assumeFinite(t) 谓词，或 typeof t=number ∧ 双侧有限界自动导出。
+   * 在场原子允许线性环化简（消去/分配）；缺省 fail-closed。
+   */
+  finite: Set<string>;
 };
 
 function termKey(t: Term): string {
@@ -489,18 +521,30 @@ function tightenHi(iv: Interval, bound: number, strict: boolean): void {
 }
 
 /** 项 → 线性形（var / lit / + / - / *const / length 等原子）；非线性返回 undefined */
-function linOf(t: Term): Lin | undefined {
-  const empty = (): Lin => ({ c: new Map(), k: 0, atoms: new Map() });
+function linOf(t: Term, finite?: ReadonlySet<string>): Lin | undefined {
+  const empty = (): Lin => ({ c: new Map(), k: 0, atoms: new Map(), ieeeOk: true });
   const fromAtom = (key: string, term: Term): Lin => {
     const l = empty();
     l.c.set(key, 1);
     l.atoms.set(key, term);
     return l;
   };
+  /** 线性形中所有原子 key 是否都在 finite 集合内 */
+  const allFinite = (lin: Lin): boolean =>
+    finite !== undefined && [...lin.c.keys()].every((k) => finite.has(k));
   const add = (a: Lin, b: Lin): Lin => {
     const out = empty();
+    out.ieeeOk = a.ieeeOk && b.ieeeOk;
     for (const [k, v] of a.c) out.c.set(k, (out.c.get(k) ?? 0) + v);
-    for (const [k, v] of b.c) out.c.set(k, (out.c.get(k) ?? 0) + v);
+    for (const [k, v] of b.c) {
+      const prev = out.c.get(k) ?? 0;
+      // 同原子异号合并（含 x-x）：IEEE 下 Inf-Inf/NaN 按环消去不成立
+      // 有 finite 证据时该原子非 NaN/±Inf，消去安全
+      if (prev !== 0 && v !== 0 && prev > 0 !== v > 0) {
+        if (!finite?.has(k)) out.ieeeOk = false;
+      }
+      out.c.set(k, prev + v);
+    }
     out.k = a.k + b.k;
     for (const [k, v] of a.atoms) out.atoms.set(k, v);
     for (const [k, v] of b.atoms) out.atoms.set(k, v);
@@ -508,9 +552,12 @@ function linOf(t: Term): Lin | undefined {
   };
   const scale = (a: Lin, n: number): Lin => {
     const out = empty();
+    out.ieeeOk = a.ieeeOk;
     for (const [k, v] of a.c) out.c.set(k, v * n);
     out.k = a.k * n;
     for (const [k, v] of a.atoms) out.atoms.set(k, v);
+    // 0*x 折 0 不可用：NaN*0 / Inf*0 为 NaN；有 finite 证据时可折
+    if (n === 0 && a.atoms.size > 0 && !allFinite(a)) out.ieeeOk = false;
     return out;
   };
   const walk = (x: Term): Lin | undefined => {
@@ -544,9 +591,30 @@ function linOf(t: Term): Lin | undefined {
         const la = walk(a);
         const lb = walk(b);
         if (la && lb) {
-          // 常数 × 线性
-          if (la.c.size === 0) return scale(lb, la.k);
-          if (lb.c.size === 0) return scale(la, lb.k);
+          // 双常量：IEEE 字面量乘积（0*Inf=NaN 等按 JS 折）
+          if (la.c.size === 0 && lb.c.size === 0) {
+            const out = empty();
+            out.k = la.k * lb.k;
+            return out;
+          }
+          // 常数 × 线性式：单原子纯乘积始终可缩放；
+          // 分配律 k*(c1*x1+…+k0) 仅在所有原子有 finite 证据时启用
+          const scaleAtom = (lin: Lin, k: number, whole: Term): Lin | undefined => {
+            // 0*x=0 仅在 x 有 finite 证据时成立（Inf*0=NaN）
+            if (k === 0) {
+              if (allFinite(lin)) return scale(lin, 0);
+              return fromAtom(termKey(whole), whole);
+            }
+            if (!Number.isFinite(k)) return fromAtom(termKey(whole), whole);
+            // 单原子纯乘积（无常数项）：表示该乘积本身，非分配律
+            if (lin.c.size === 1 && lin.k === 0) return scale(lin, k);
+            // 多原子/带常数项：分配律在 IEEE 溢出时可不等，
+            // 仅当所有原子已证有限时才按环展开
+            if (allFinite(lin)) return scale(lin, k);
+            return fromAtom(termKey(whole), whole);
+          };
+          if (la.c.size === 0) return scaleAtom(lb, la.k, x);
+          if (lb.c.size === 0) return scaleAtom(la, lb.k, x);
           return undefined; // 非线性
         }
         return undefined;
@@ -565,8 +633,30 @@ function linOf(t: Term): Lin | undefined {
   return out;
 }
 
-function linSub(a: Lin, b: Lin): Lin {
-  const out: Lin = { c: new Map(), k: a.k - b.k, atoms: new Map() };
+function linSub(a: Lin, b: Lin, finite?: ReadonlySet<string>): Lin {
+  // 比较归一 a op b → (a-b) op 0 的差式：
+  // 同原子两侧同时出现时（含 x-x、2x-x、x+y-y），±Inf 上实际是 Inf-Inf=NaN，
+  // 系数合并不再对应真实差值——与 linOf add 异号合并同口径置 ieeeOk=false。
+  // 有 finite 证据的原子消去安全，不置 false。
+  // 反身比较（eq(x,x)/ge(x,x)）不走减法，见 proveCmpDirect。
+  let cancel = false;
+  for (const k of a.c.keys()) {
+    const av = a.c.get(k) ?? 0;
+    const bv = b.c.get(k) ?? 0;
+    if (av !== 0 && bv !== 0) {
+      if (!finite?.has(k)) {
+        cancel = true;
+        break;
+      }
+    }
+  }
+  const kDiff = a.k - b.k;
+  const out: Lin = {
+    c: new Map(),
+    k: kDiff,
+    atoms: new Map(),
+    ieeeOk: a.ieeeOk && b.ieeeOk && !cancel && !Number.isNaN(kDiff),
+  };
   for (const [k, v] of a.c) out.c.set(k, (out.c.get(k) ?? 0) + v);
   for (const [k, v] of b.c) out.c.set(k, (out.c.get(k) ?? 0) - v);
   for (const [k, v] of a.atoms) out.atoms.set(k, v);
@@ -577,16 +667,174 @@ function linSub(a: Lin, b: Lin): Lin {
   return out;
 }
 
+/** 两线性形系数与常数全同（环语义下值相同） */
+function linFormsEqual(a: Lin, b: Lin): boolean {
+  if (!Object.is(a.k, b.k)) return false;
+  if (a.c.size !== b.c.size) return false;
+  for (const [k, v] of a.c) {
+    if ((b.c.get(k) ?? 0) !== v) return false;
+  }
+  return true;
+}
+
 /** 归一：比较 a op b → (a-b) op 0 */
 function normCmp(
   op: "gt" | "ge" | "lt" | "le" | "eq" | "ne",
   a: Term,
   b: Term,
+  finite?: ReadonlySet<string>,
 ): { lin: Lin; op: "gt" | "ge" | "lt" | "le" | "eq" | "ne" } | undefined {
-  const la = linOf(a);
-  const lb = linOf(b);
+  const la = linOf(a, finite);
+  const lb = linOf(b, finite);
   if (!la || !lb) return undefined;
-  return { lin: linSub(la, lb), op };
+  return { lin: linSub(la, lb, finite), op };
+}
+
+/**
+ * 线性形是否可能取 NaN：
+ * - 任一原子缺少区间事实（值未知，可能是 NaN）；
+ * - 常数或区间端点已是 NaN；
+ * - ieeeOk=false（环消去形已不代表真实值）；
+ * - 不同加项可分别取 +Inf 与 -Inf（Inf+(-Inf)=NaN）。
+ * 关系比较（eq/ge/le/gt/lt）在 NaN 上一律为 false，故必须先排除 NaN。
+ */
+function linMayBeNaN(ctx: Ctx, lin: Lin): boolean {
+  if (!lin.ieeeOk) return true;
+  if (Number.isNaN(lin.k)) return true;
+  // 所有原子有 finite 证据：环语义下加法不产生 NaN
+  //（溢出至 ±Inf 仍非 NaN；NaN 常数已在上一行拦截）
+  if (lin.c.size > 0 && [...lin.c.keys()].every((k) => ctx.finite.has(k))) {
+    return false;
+  }
+  type Dir = { pos: boolean; neg: boolean };
+  const parts: Dir[] = [];
+  if (lin.k === Infinity || lin.k === -Infinity) {
+    parts.push({ pos: lin.k === Infinity, neg: lin.k === -Infinity });
+  }
+  for (const [key, coeff] of lin.c) {
+    if (coeff === 0) continue;
+    const rep = findRep(ctx, key);
+    const iv = ctx.iv.get(rep) ?? ctx.iv.get(key);
+    if (!iv) return true;
+    if (iv.lo && Number.isNaN(iv.lo.bound)) return true;
+    if (iv.hi && Number.isNaN(iv.hi.bound)) return true;
+    const atomPos = iv.hi === undefined || iv.hi.bound === Infinity;
+    const atomNeg = iv.lo === undefined || iv.lo.bound === -Infinity;
+    if (coeff > 0) parts.push({ pos: atomPos, neg: atomNeg });
+    else parts.push({ pos: atomNeg, neg: atomPos });
+  }
+  // 不同加项分别可为 +Inf 与 -Inf ⇒ Inf+(-Inf)=NaN
+  for (let i = 0; i < parts.length; i++) {
+    for (let j = 0; j < parts.length; j++) {
+      if (i !== j && parts[i]!.pos && parts[j]!.neg) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * 两侧直接比较（不经 a-b 归一）。±Inf 上 a-b op 0 与 a op b 不等价
+ * （eq(Inf,Inf) 真而 Inf-Inf=NaN 假；ne(Inf,Inf) 假而 NaN!==0 真），
+ * 故 eq/ge/le/ne 直接比较两侧区间（proveInCtx 对 gt/lt 仍可用减法归一：
+ * `a>b` 与 `a-b>0` 在 IEEE 上等价）。
+ * 反身 a op a：eq/ge/le 在非 NaN 时为真；ne 在恒 NaN 时为真。
+ */
+function proveCmpDirect(
+  ctx: Ctx,
+  op: "gt" | "ge" | "lt" | "le" | "eq" | "ne",
+  a: Term,
+  b: Term,
+): boolean {
+  // 反身比较：比较语义（a===a / a≥a），非项内减法（x-x 在 ±Inf 上为 NaN）
+  if (termEquals(a, b)) {
+    const la = linOf(a, ctx.finite);
+    if (op === "eq" || op === "ge" || op === "le") {
+      return la !== undefined && !linMayBeNaN(ctx, la);
+    }
+    if (op === "ne") {
+      // a!==a 仅当 a 恒为 NaN
+      if (!la || !la.ieeeOk) return false;
+      return la.c.size === 0 && Number.isNaN(la.k);
+    }
+    return false; // gt/lt(a,a) 恒 false
+  }
+
+  const la = linOf(a, ctx.finite);
+  const lb = linOf(b, ctx.finite);
+  if (!la || !lb) return false;
+  if (!la.ieeeOk || !lb.ieeeOk) return false;
+
+  if (op === "ne") {
+    // 任一侧恒 NaN ⇒ a!==b 恒真
+    if (la.c.size === 0 && Number.isNaN(la.k)) return true;
+    if (lb.c.size === 0 && Number.isNaN(lb.k)) return true;
+    const ivA = linInterval(ctx, la);
+    const ivB = linInterval(ctx, lb);
+    if (!ivA.lo && !ivA.hi) return false;
+    if (!ivB.lo && !ivB.hi) return false;
+    // 任一侧可能 NaN ⇒ a!==b 可真可假，不可一概而论
+    if (linMayBeNaN(ctx, la) || linMayBeNaN(ctx, lb)) return false;
+    // 区间可分（含端点严格性）⇒ a≠b
+    if (ivA.hi && ivB.lo) {
+      if (ivA.hi.bound < ivB.lo.bound) return true;
+      if (ivA.hi.bound === ivB.lo.bound && (ivA.hi.strict || ivB.lo.strict)) {
+        return true;
+      }
+    }
+    if (ivA.lo && ivB.hi) {
+      if (ivA.lo.bound > ivB.hi.bound) return true;
+      if (ivA.lo.bound === ivB.hi.bound && (ivA.lo.strict || ivB.hi.strict)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // eq/ge/le/gt/lt：任一侧可能 NaN ⇒ 比较为 false，不可证
+  if (linMayBeNaN(ctx, la) || linMayBeNaN(ctx, lb)) return false;
+
+  // 同线性形（系数与常数全同）：环语义下两侧值相同
+  // （x+y-y 与 x 消去后同形；2*x 与 x+x 同形）
+  if (linFormsEqual(la, lb)) {
+    return op === "eq" || op === "ge" || op === "le";
+  }
+
+  const ivA = linInterval(ctx, la);
+  const ivB = linInterval(ctx, lb);
+
+  if (op === "eq") {
+    // 两侧夹逼到同一非严格点
+    if (!ivA.lo || !ivA.hi || !ivB.lo || !ivB.hi) return false;
+    if (ivA.lo.strict || ivA.hi.strict || ivB.lo.strict || ivB.hi.strict) {
+      return false;
+    }
+    return (
+      ivA.lo.bound === ivA.hi.bound &&
+      ivA.lo.bound === ivB.lo.bound &&
+      ivA.lo.bound === ivB.hi.bound
+    );
+  }
+
+  // 端点比较：a op b 对所有取值成立
+  if (op === "ge") {
+    if (!ivA.lo || !ivB.hi) return false;
+    return ivA.lo.bound >= ivB.hi.bound;
+  }
+  if (op === "gt") {
+    if (!ivA.lo || !ivB.hi) return false;
+    if (ivA.lo.bound > ivB.hi.bound) return true;
+    return (
+      ivA.lo.bound === ivB.hi.bound && (ivA.lo.strict || ivB.hi.strict)
+    );
+  }
+  if (op === "le") {
+    if (!ivA.hi || !ivB.lo) return false;
+    return ivA.hi.bound <= ivB.lo.bound;
+  }
+  // lt
+  if (!ivA.hi || !ivB.lo) return false;
+  if (ivA.hi.bound < ivB.lo.bound) return true;
+  return ivA.hi.bound === ivB.lo.bound && (ivA.hi.strict || ivB.lo.strict);
 }
 
 function buildCtx(phi: Phi): Ctx {
@@ -594,10 +842,13 @@ function buildCtx(phi: Phi): Ctx {
     parent: new Map(),
     iv: new Map(),
     atoms: new Map(),
+    finite: new Set(),
   };
   const conjs: Pred[] = phi.op === "and" ? phi.args : [phi];
   const eqAtoms: Array<[string, string]> = [];
   const neFacts: Array<{ key: string; n: number }> = [];
+  /** typeof t=number 的项 key（自动导出有限时用） */
+  const typeofNumberKeys = new Set<string>();
 
   const ivFor = (key: string, term: Term): Interval => {
     ctx.atoms.set(key, term);
@@ -618,6 +869,8 @@ function buildCtx(phi: Phi): Ctx {
     const n = normCmp(op === "eq" ? "eq" : op, left, right);
     if (!n) return;
     const { lin, op: o } = n;
+    // IEEE 不健全线性形（x-x / 0*x 等环消去）不提取事实
+    if (!lin.ieeeOk) return;
     // 纯常数：无可提取区间事实
     if (lin.c.size === 0) return;
     // 单原子：k 常数并入界
@@ -688,6 +941,20 @@ function buildCtx(phi: Phi): Ctx {
         }
         break;
       }
+      case "typeof": {
+        if (c.type === "number") {
+          typeofNumberKeys.add(termKey(c.t));
+          if (c.t.op === "var") typeofNumberKeys.add(c.t.id);
+        }
+        break;
+      }
+      case "assumeFinite": {
+        // 显式有限证据：t 为有限数，直接入 finite 集
+        const key = termKey(c.t);
+        ctx.finite.add(key);
+        if (c.t.op === "var") ctx.finite.add(c.t.id);
+        break;
+      }
       default:
         break;
     }
@@ -705,6 +972,24 @@ function buildCtx(phi: Phi): Ctx {
     }
     if (iv.hi && !iv.hi.strict && iv.hi.bound === n) {
       iv.hi = { bound: n, strict: true };
+    }
+  }
+
+  // 自动导出有限：typeof t=number ∧ 区间排除 NaN/±Inf
+  // （双侧有界且界为有限数，或 strict ±Inf 端点排除该极值）
+  for (const key of typeofNumberKeys) {
+    if (ctx.finite.has(key)) continue;
+    const rep = findRep(ctx, key);
+    const iv = ctx.iv.get(rep) ?? ctx.iv.get(key);
+    if (!iv) continue;
+    if (!iv.lo || !iv.hi) continue;
+    if (Number.isNaN(iv.lo.bound) || Number.isNaN(iv.hi.bound)) continue;
+    const loOk = Number.isFinite(iv.lo.bound) || (iv.lo.bound === -Infinity && iv.lo.strict);
+    const hiOk = Number.isFinite(iv.hi.bound) || (iv.hi.bound === Infinity && iv.hi.strict);
+    if (loOk && hiOk) {
+      ctx.finite.add(key);
+      // 等式类代表也标记
+      if (rep !== key) ctx.finite.add(rep);
     }
   }
 
@@ -761,6 +1046,11 @@ function proveInCtx(ctx: Ctx, pred: Pred): boolean {
   if (pred.op === "typeof") {
     return false;
   }
+  // assumeFinite 目标：需 Φ 显式给出或由区间自动导出
+  if (pred.op === "assumeFinite") {
+    const key = termKey(pred.t);
+    return ctx.finite.has(key) || (pred.t.op === "var" && ctx.finite.has(pred.t.id));
+  }
   if (
     pred.op !== "eq" &&
     pred.op !== "ne" &&
@@ -776,13 +1066,31 @@ function proveInCtx(ctx: Ctx, pred: Pred): boolean {
   const litAns = decideLiteralPred(pred);
   if (litAns !== undefined) return litAns;
 
-  const norm = normCmp(pred.op, pred.a, pred.b);
+  // eq/ge/le/ne：不经 a-b op 0 归一（±Inf 上不等价），两侧直接比较
+  if (
+    pred.op === "eq" ||
+    pred.op === "ge" ||
+    pred.op === "le" ||
+    pred.op === "ne"
+  ) {
+    return proveCmpDirect(ctx, pred.op, pred.a, pred.b);
+  }
+
+  const norm = normCmp(pred.op, pred.a, pred.b, ctx.finite);
   if (!norm) return false;
   const { lin, op } = norm;
 
+  // IEEE：项内环消去（x-x / 0*x / 异号合并）不按实数环证
+  // 有 finite 证据时 ieeeOk 保持 true，环消去已生效
+  if (!lin.ieeeOk) return false;
+
   // 目标本身在 Φ 中（线性形相同）
-  // 常数目标
+  // 常数目标：仍有原子参与（消去后）时，仅当所有原子有 finite 证据才能按常数裁定
   if (lin.c.size === 0) {
+    if (lin.atoms.size > 0) {
+      const allFin = [...lin.atoms.keys()].every((k) => ctx.finite.has(k));
+      if (!allFin) return false;
+    }
     if (op === "eq") return lin.k === 0;
     if (op === "ne") return lin.k !== 0;
     if (op === "gt") return lin.k > 0;

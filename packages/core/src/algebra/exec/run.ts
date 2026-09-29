@@ -9,21 +9,25 @@
  */
 
 import { rtAllBindings } from "./rt.ts";
-import { resetEvalCallBudget } from "./calls.ts";
+import {
+  enterEvalCallBudgetSession,
+  exitEvalCallBudgetSession,
+  setEvalBindingSink,
+} from "./calls.ts";
 import { withExecPhi, $copy } from "./runtime.ts";
-import { setEvalBindingSink } from "./calls.ts";
 import type { Abs } from "../abs.ts";
 import type { Phi } from "../pred.ts";
-import { never, unknown, abs } from "../abs.ts";
+import { never, unknown } from "../abs.ts";
 import { joinAbs } from "../objects.ts";
-import type { AbsModuleExports } from "../abs-modules.ts";
+import { type AbsModuleExports, namespaceAbsOf } from "../abs-modules.ts";
 import { formatAbs } from "../format.ts";
 import { transpile, transpileExpression, runtimeImportOf } from "./transpile.ts";
 import { HOST_INTRINSIC_SET } from "./transpile/intrinsics.ts";
 import { NudoUnsupportedError } from "./unsupported.ts";
 import { stripStaticExportDecls } from "./export-names.ts";
-import { errorTypeAbs } from "./may-throw.ts";
+import { errorTypeAbs, throwPayloadOf } from "./may-throw.ts";
 import { drainPromiseMicros } from "../builtins.ts";
+import { sourceHasCjsExports } from "../code-text.ts";
 import {
   isNudoThrow,
   isNudoReturn,
@@ -232,7 +236,7 @@ function bindImport(
   name: string,
 ): unknown {
   const mod = modules?.[spec] as AbsModuleExports | undefined;
-  if (!mod) return undefined;
+  if (!mod) return unknown;
   const absCallable = (v: Abs): unknown => {
     // fn Abs → JS 可调用；class/其它 Abs 原样（供 $new / $get）
     if (v && typeof v === "object" && "shape" in v) {
@@ -243,7 +247,7 @@ function bindImport(
   };
   if (name === "default") {
     const d = (mod as AbsModuleExports).default;
-    if (d === undefined) return undefined;
+    if (d === undefined) return unknown;
     if (typeof d === "function") return d;
     return absCallable(d as Abs);
   }
@@ -252,22 +256,11 @@ function bindImport(
   if (v === undefined) {
     const rec = (mod as Record<string, unknown>)[name];
     if (typeof rec === "function") return rec;
-    return undefined;
+    // 缺名：unknown Abs（非 JS undefined）——re-export 走 __nudoExport 时留槽
+    return unknown;
   }
   if (typeof v === "function") return v;
   return absCallable(v as Abs);
-}
-
-/**
- * 命名空间 Abs（import * as ns / CJS require 绑定）：
- * open + path——导出收集可能不全（CJS 收集失败等），缺失成员是分析
- * 视图不完整，不得按「运行时缺失」判定（不可调用判定会假抛 TypeError）。
- */
-function namespaceAbsOf(mod: AbsModuleExports): Abs {
-  const slots: Record<string, { value: Abs }> = {};
-  for (const [k, v] of Object.entries(mod.named)) slots[k] = { value: v };
-  if (mod.default) slots["default"] = { value: mod.default };
-  return abs({ k: "obj", slots, open: true }, undefined, undefined, "path");
 }
 
 /** `import * as ns`：整命名空间（named + default 槽）→ Abs 对象 */
@@ -329,6 +322,13 @@ function rewriteExportStatements(js: string): string {
         })
         .join("\n"),
   );
+  // export * as ns from "spec"：命名空间 re-export（与 importLocalBindings 的
+  // namespace open-obj 口径一致——__nudoBindNamespace → namespaceAbsOf）
+  js = js.replace(
+    /^export\s*\*\s+as\s+([A-Za-z_$][\w$]*)\s+from\s*["']([^"']+)["'];\s*$/gm,
+    (_all, ns: string, spec: string) =>
+      `__nudoExport(${JSON.stringify(ns)}, __nudoBindNamespace(${JSON.stringify(spec)}));`,
+  );
   // export * from "spec"：并入 named（不含 default，ESM 语义）
   js = js.replace(
     /^export\s*\*\s*from\s*["']([^"']+)["'];\s*$/gm,
@@ -386,7 +386,18 @@ export function runTranspiled(
   source: string,
   opts: RunTranspiledOptions = {},
 ): Record<string, unknown> {
-  resetEvalCallBudget(); // 宿主入口重置
+  enterEvalCallBudgetSession(); // 宿主入口：最外层重置；嵌套导出桥继承外层预算
+  try {
+    return runTranspiledInner(source, opts);
+  } finally {
+    exitEvalCallBudgetSession();
+  }
+}
+
+function runTranspiledInner(
+  source: string,
+  opts: RunTranspiledOptions,
+): Record<string, unknown> {
   const modules = opts.modules ?? {};
   let js = transpile(source, {
     runtimeImport: "@nudojs/core/exec",
@@ -484,7 +495,8 @@ export function runTranspiled(
   // CJS 面：exports.X = v / module.exports 命名空间建模（此前 exports 未绑定
   // → ReferenceError → CJS 文件整体 eval-incapable）。exports = 命名空间 obj Abs
   // （$set 写槽）；module.exports 重赋值 → 单导出（default）。
-  const hasCjsExports = /\b(?:exports|module)\s*(?:\.|\[)/.test(source);
+  // 字符串/注释里的 exports. 不算 CJS 面。
+  const hasCjsExports = sourceHasCjsExports(source);
   if (hasCjsExports) {
     js = `let exports = $obj({});\nlet module = $obj({ exports });\nconst __nudoCjsOrig = exports;\n${js}`;
   }
@@ -503,6 +515,8 @@ export function runTranspiled(
     return result;
   } finally {
     setEvalBindingSink(null);
+    // 每次求值出口排空微队列：模块级 Promise.then 不得窜到后续文件的调用窗口
+    drainPromiseMicros();
   }
 }
 
@@ -539,9 +553,37 @@ export function evalExprAbs(
   return factory(...Object.values(rtAllBindings()), ...Object.values(bindings));
 }
 
-/** 记录一次 B 回落（body-fn 等非 runTranspiled 入口共用） */
+/** 回落计数（D6-A：internal 可暴露为 health 指标，不静默吞） */
+export type EvalFallbackStats = {
+  internal: number;
+  unsupported: number;
+  moduleThrow: number;
+  total: number;
+};
+
+let _fbInternal = 0;
+let _fbUnsupported = 0;
+let _fbModuleThrow = 0;
+
+/** 始终累计（与 collector 无关）——health / 测试读同一口径 */
+export function getEvalFallbackStats(): EvalFallbackStats {
+  return {
+    internal: _fbInternal,
+    unsupported: _fbUnsupported,
+    moduleThrow: _fbModuleThrow,
+    total: _fbInternal + _fbUnsupported + _fbModuleThrow,
+  };
+}
+
+/** 宿主入口 / health 按文件分析前重置 */
+export function resetEvalFallbackStats(): void {
+  _fbInternal = 0;
+  _fbUnsupported = 0;
+  _fbModuleThrow = 0;
+}
+
+/** 记录一次 B 回落（body-fn / tryRunTranspiled / call 边界兜底共用） */
 export function noteEvalFallback(e: unknown): void {
-  if (!evalFallbackCollector) return;
   const f: EvalFallback = e instanceof NudoUnsupportedError
     ? { reason: `unsupported:${e.reason}`, message: e.message, ...(e.loc ? { loc: e.loc } : {}) }
     : isNudoThrow(e)
@@ -549,6 +591,10 @@ export function noteEvalFallback(e: unknown): void {
         // 模块装载失败，不是 B 能力边界也不是 B 缺陷（catch 可吸收）
         { reason: "module-throw", message: e instanceof Error ? e.message : String(e) }
       : { reason: "internal", message: e instanceof Error ? e.message : String(e) };
+  if (f.reason === "internal") _fbInternal++;
+  else if (f.reason === "module-throw") _fbModuleThrow++;
+  else if (f.reason.startsWith("unsupported:")) _fbUnsupported++;
+  if (!evalFallbackCollector) return;
   try {
     evalFallbackCollector(f);
   } catch {
@@ -584,8 +630,23 @@ function isAbsVal(v: unknown): v is Abs {
 }
 
 /** 调用 runTranspiled 导出（捕获 $throw）。opts.phi：入口 Φ 种子
- *  （instantiate/symbolic 的约束入口——eval 侧路径条件收窄）。 */
+ *  （instantiate/symbolic 的约束入口——eval 侧路径条件收窄）。
+ *  嵌套进入（导出桥 apply）继承外层预算；仅最外层宿主入口重置。 */
 export function callTranspiledExportFull(
+  exports: Record<string, unknown>,
+  name: string,
+  args: Abs[],
+  opts?: { phi?: Phi },
+): TranspiledCallResult {
+  enterEvalCallBudgetSession();
+  try {
+    return callTranspiledExportFullInner(exports, name, args, opts);
+  } finally {
+    exitEvalCallBudgetSession();
+  }
+}
+
+function callTranspiledExportFullInner(
   exports: Record<string, unknown>,
   name: string,
   args: Abs[],
@@ -593,7 +654,6 @@ export function callTranspiledExportFull(
 ): TranspiledCallResult {
   const fn = exports[name];
   if (typeof fn === "function") {
-    resetEvalCallBudget(); // 每次具名调用独立预算（不跨调用累积 totalCalls）
     // D1：重跑/导入调用用副本——mutator 不得把入参态污染回调用方/记录
     const callArgs = args.map((a) =>
       a && typeof a === "object" && "shape" in (a as object) ? $copy(a) : a,
@@ -626,7 +686,15 @@ export function callTranspiledExportFull(
             throws: joinThrowExits(errorTypeAbs("ReferenceError")),
           };
         }
-        return joinControlExits(unknown);
+        // 其余原生异常（TypeError/RangeError/栈溢出/引擎缺陷…）也必须进 throws 域：
+        // 折成「… + throws=never」会假报「保证不抛」（L2 entry-may-throw 假阴性）。
+        // result 保持 fail-closed unknown（不谎称 never）。
+        // D6-A canary：与 tryRunTranspiled 同口径记 internal 回落（不静默吞）。
+        noteEvalFallback(e);
+        return {
+          result: joinLoopExits(unknown),
+          throws: joinThrowExits(throwPayloadOf(e)),
+        };
       }
     });
   }
@@ -636,20 +704,31 @@ export function callTranspiledExportFull(
       return runWithLoopExits(() => {
         try {
           const r = $call(fn, args);
+          // 与 JS 函数分支同口径：同步返回值算完后排空微队列
+          drainPromiseMicros();
           return joinControlExits(r);
         } catch (e) {
+          drainPromiseMicros();
           if (isNudoReturn(e)) {
             return joinControlExits(e.absValue);
           }
           if (isNudoThrow(e)) {
             return { result: joinLoopExits(never), throws: joinThrowExits(e.absValue) };
           }
-          return joinControlExits(unknown);
+          // 同上：原生异常不得折成 throws=never（result 保持 fail-closed unknown）
+          // D6-A canary：与 tryRunTranspiled 同口径记 internal 回落
+          noteEvalFallback(e);
+          return {
+            result: joinLoopExits(unknown),
+            throws: joinThrowExits(throwPayloadOf(e)),
+          };
         }
       });
     }
+    drainPromiseMicros();
     return { result: fn, throws: never };
   }
+  drainPromiseMicros();
   return { result: unknown, throws: never };
 }
 

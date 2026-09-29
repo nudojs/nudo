@@ -52,4 +52,46 @@ describe("findFnContractInsertPos", () => {
     const lines = [`export const foo = fn(x, number());`];
     expect(findFnContractInsertPos(lines, "foo")).toBeNull();
   });
+
+  it("string containing // does not truncate the line (URL case)", () => {
+    const line = `export const api = fn({ url: "http://x" }, number());`;
+    const pos = findFnContractInsertPos([line], "api")!;
+    expect(pos.line).toBe(0);
+    expect(line[pos.character - 1]).toBe("{");
+  });
+
+  it("brace inside a string does not close the contract object", () => {
+    const lines = [`export const foo = fn({ desc: "}" }, number());`];
+    const pos = findFnContractInsertPos(lines, "foo")!;
+    expect(lines[0]![pos.character - 1]).toBe("{");
+  });
+
+  it("fn( inside a comment is not the call site", () => {
+    const lines = [
+      `export const foo = helper(x); // fn({ fake: 1 })`,
+      `export const bar = fn({ y: number() }, number());`,
+    ];
+    // foo 无真实 fn( → null；bar 自身仍可定位
+    expect(findFnContractInsertPos(lines, "foo")).toBeNull();
+    const pos = findFnContractInsertPos(lines, "bar")!;
+    expect(pos.line).toBe(1);
+  });
+
+  it("fn( inside a string is not the call site", () => {
+    const lines = [
+      `export const foo = note("fn({ fake: 1 })");`,
+      `export const bar = fn({ y: number() }, number());`,
+    ];
+    expect(findFnContractInsertPos(lines, "foo")).toBeNull();
+    const pos = findFnContractInsertPos(lines, "bar")!;
+    expect(lines[1]![pos.character - 1]).toBe("{");
+  });
+
+  it("export name inside a string is not the target binding", () => {
+    const lines = [
+      `const s = "export const foo = fn({ x: 1 }, 2)";`,
+      `export const bar = fn({ y: number() }, number());`,
+    ];
+    expect(findFnContractInsertPos(lines, "foo")).toBeNull();
+  });
 });

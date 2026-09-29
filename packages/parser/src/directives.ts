@@ -126,12 +126,15 @@ export type FunctionWithDirectives = {
   directives: Directive[];
 };
 
-const CASE_NAME_REGEX = /@nudo:case\s+"([^"]+)"\s*\(/g;
-const MOCK_INLINE_REGEX = /@nudo:mock\s+(\w+)\s*=\s*(.+)/g;
-const MOCK_FROM_REGEX = /@nudo:mock\s+(\w+)\s+from\s+"([^"]+)"/g;
-const PURE_REGEX = /@nudo:pure\b/g;
-const SKIP_REGEX = /@nudo:skip(?:\s+(.+))?/g;
-const SAMPLE_REGEX = /@nudo:sample\s+(\d+)/g;
+// 指令标签只在「注释行首」匹配（可选 `*` / `//` 已由 comment.value 剥掉）：
+// 不得命中 case 参数字符串或文档散文里的 `@nudo:skip` / `@nudo:case` / `@nudo:mock` 字样。
+// `\b` 防 `@nudo:skipped` / `@nudo:cases` 误命中。
+const CASE_NAME_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:case\s+"([^"]+)"\s*\(/g;
+const MOCK_INLINE_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:mock\s+(\w+)\s*=\s*(.+)/g;
+const MOCK_FROM_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:mock\s+(\w+)\s+from\s+"([^"]+)"/g;
+const PURE_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:pure\b/g;
+const SKIP_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:skip\b(?:[ \t]+(\S[^\n]*))?/g;
+const SAMPLE_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:sample[ \t]+(\d+)/g;
 
 /**
  * 约束表达式（design-refine-derivation：case 实参主文法）。
@@ -321,6 +324,9 @@ function parsePrimitiveValue(s: string): string | number | boolean | null | unde
 
 /**
  * 字符串感知的括号深度扫描：引号内字符不当结构（与 findReplaceSeparator 同口径）。
+ * 与 parseCaseArgExpr 的**原样 slice**（不反转义）一致：引号内 `\` 不是转义
+ * ——`"foo\"` 的值是 `foo\`，引号正常闭合。此前把 `\` 当转义会吃掉闭合引号，
+ * 整条 case 被静默丢弃。
  * onChar 对每个可见字符（含字符串内容）回调；onStructural 仅对非字符串字符回调。
  */
 function scanWithStrings(
@@ -334,11 +340,6 @@ function scanWithStrings(
     const ch = s[i]!;
     if (inString) {
       onChar(ch, i);
-      if (ch === "\\") {
-        i++;
-        if (i < s.length) onChar(s[i]!, i);
-        continue;
-      }
       if (ch === inString) inString = null;
       continue;
     }
@@ -373,11 +374,7 @@ function splitTopLevelArgs(s: string): string[] {
     const ch = s[i]!;
     if (inString) {
       current += ch;
-      if (ch === "\\") {
-        i++;
-        if (i < s.length) current += s[i]!;
-        continue;
-      }
+      // 原样 slice：`\` 不是转义（与 parseCaseArgExpr 一致）
       if (ch === inString) inString = null;
       continue;
     }
@@ -442,10 +439,7 @@ function extractBalancedParens(text: string, startIdx: number): string | null {
   for (let i = startIdx; i < text.length; i++) {
     const ch = text[i]!;
     if (inString) {
-      if (ch === "\\") {
-        i++;
-        continue;
-      }
+      // 原样 slice：`\` 不是转义
       if (ch === inString) inString = null;
       continue;
     }
@@ -808,7 +802,9 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
       const arrowMatch = restLine.match(/^=>\s*(.+)/);
       const expected = arrowMatch ? parseCaseArgExpr(arrowMatch[1].trim()) : undefined;
 
-      const linesBeforeMatch = text.slice(0, match.index).split("\n").length - 1;
+      // match.index 可能落在行首前缀（`\n * `）上；commentLine 按标签实际位置计行
+      const tagOffset = match.index + match[0].indexOf("@nudo:case");
+      const linesBeforeMatch = text.slice(0, tagOffset).split("\n").length - 1;
       const commentLine = commentStartLine + linesBeforeMatch;
 
       directives.push({
@@ -922,7 +918,8 @@ function findReplaceSeparator(raw: string): number {
   for (let i = 0; i < raw.length; i++) {
     const ch = raw[i];
     if (inString) {
-      if (ch === inString && raw[i - 1] !== "\\") inString = null;
+      // 原样 slice：`\` 不是转义
+      if (ch === inString) inString = null;
       continue;
     }
     if (ch === '"' || ch === "'") { inString = ch; continue; }

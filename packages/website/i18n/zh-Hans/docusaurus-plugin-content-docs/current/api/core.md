@@ -358,7 +358,7 @@ createEnvironment(parent?, bindings?)
 | <a id="transpilesource"></a>`transpileSource` | fn | JS AST → `$op` program | `transpileSource(source: string, opts: TranspileOptions = {}): string` |
 
 <details>
-<summary>src/index.ts 其余导出（328）</summary>
+<summary>src/index.ts 其余导出（332）</summary>
 
 | 名称 | 种类 | 说明 | 签名 |
 |------|------|------|------|
@@ -366,7 +366,7 @@ createEnvironment(parent?, bindings?)
 | <a id="abscallrecord"></a>`AbsCallRecord` | type | Abs 域调用记录（eval 通道 EvalCallRecord 的同形投影） | `AbsCallRecord = { fnName: string; args: Abs[]; result: Abs; callLoc?: { line: number; column: number }; threw?: boolean; }` |
 | <a id="absfnimpl"></a>`AbsFnImpl` | type | — | `AbsFnImpl = { params: string[]; body?: Node; async?: boolean; env?: AstEnv; kind?: string; apply?: (args: Abs[], thisVal?: Abs) => Abs; b...` |
 | <a id="absfunction"></a>`absFunction` | fn | 造一个带实现的 Abs 函数值 | `absFunction( params: string[], impl: Omit<AbsFnImpl, "params">, opts?: { name?: string; paramTypes?: Abs[]; returnType?: Abs; slots?: Record<string, { value: Abs; optional?: boolean; readonly?: boolean }>; conf?: Confidence; }, ): Abs` |
-| <a id="absmoduleexports"></a>`AbsModuleExports` | type | — | `AbsModuleExports = { named: Record<string, Abs>; default?: Abs; }` |
+| <a id="absmoduleexports"></a>`AbsModuleExports` | type | — | `AbsModuleExports = { named: Record<string, Abs>; default?: Abs; evaluated?: boolean; }` |
 | <a id="absshapekey"></a>`absShapeKey` | fn | — | `absShapeKey(a: Abs, seen: Set<object> = new Set()): string` |
 | <a id="abssigimpl"></a>`AbsSigImpl` | type | Abs 原生 env/builtin 实现（evaluator 优先） | `AbsSigImpl = (args: Abs[], thisVal?: Abs) => Abs \| undefined` |
 | <a id="abstoconstraint"></a>`absToConstraint` | fn | Abs → 契约；不可表达 → undefined | `absToConstraint(a: Abs): NudoConstraint \| undefined` |
@@ -378,6 +378,7 @@ createEnvironment(parent?, bindings?)
 | <a id="applycallbackvalue"></a>`applyCallbackValue` | fn | 通用回调实参调用（exec/class invokeArrMethod 与 builtins Array.from 共用）： 原始 JS 函数直调（展开实参）；Abs fn 走 applyCallbackAbs（sum 分发/宿主）。 | `applyCallbackValue( fn: unknown, args: Abs[], env: unknown, phi: unknown, budget: unknown, ): Abs` |
 | <a id="asabs"></a>`asAbs` | fn | 从 map/filter/reduce 回调实参里取出 Abs（Identifier 已绑定或直接 Abs） | `asAbs(v: unknown): Abs \| undefined` |
 | <a id="assignsourceslots"></a>`assignSourceSlots` | fn | — | `assignSourceSlots(src: Abs): Record<string, { value: Abs }> \| undefined` |
+| <a id="assumefinite"></a>`assumeFinite` | const | 显式有限证据：t 为有限数（非 NaN/±Inf），开启线性环化简 | `const assumeFinite` |
 | <a id="astenv"></a>`AstEnv` | type | — | — |
 | <a id="attachfnimpl"></a>`attachFnImpl` | fn | — | `attachFnImpl(a: Abs, impl: AbsFnImpl): void` |
 | <a id="begincollectionfork"></a>`beginCollectionFork` | fn | — | `beginCollectionFork(): void` |
@@ -406,6 +407,7 @@ createEnvironment(parent?, bindings?)
 | <a id="collectabsfreevars"></a>`collectAbsFreeVars` | fn | 公开：收集 Abs 自由 term 变元（dts 泛型投影 / α 作用域判定复用 L2 基建）。 | `collectAbsFreeVars(a: Abs): Set<string>` |
 | <a id="collectionelementjoin"></a>`collectionElementJoin` | fn | 元素联合（for-of / Array.from）；无表 → unknown。 | `collectionElementJoin(c: Abs): Abs` |
 | <a id="collectionexactlen"></a>`collectionExactLen` | fn | 确切条目数：Set 无 maybeAbsent / Map 无 shadow+maybeAbsent 时返回长度； 否则 undefined（for-of 不得假装有界）。 | `collectionExactLen(c: Abs): number \| undefined` |
+| <a id="constraintadmitsnullish"></a>`constraintAdmitsNullish` | fn | 契约域是否包含 nullish（null / undefined）。 | `constraintAdmitsNullish(c: NudoConstraint): boolean` |
 | <a id="constrainttoentryabs"></a>`constraintToEntryAbs` | fn | 契约 → 函数入口 param Abs（infer/hover 用）。 | `constraintToEntryAbs( c: NudoConstraint, paramName: string, ): Abs` |
 | <a id="contractparamnameset"></a>`contractParamNameSet` | fn | 侧车契约可绑定的参数名全集 | `contractParamNameSet(formals: FormalParam[]): Set<string>` |
 | <a id="createhofcollectctx"></a>`createHofCollectCtx` | fn | — | `createHofCollectCtx( paramNames: ReadonlySet<string>, alphaIds: Iterable<string>, ): HofCollectCtx` |
@@ -562,6 +564,7 @@ createEnvironment(parent?, bindings?)
 | <a id="mod"></a>`mod` | fn | 取模：字面量折叠；`x % k`（k 为有限非零字面量）仅当被除数有限时 结果界在 (−\|k\|, \|k\|)。整数模可收紧到 [0, k)，此处先做保守实数界。 | `mod(a: Abs, b: Abs, phi: Phi = pTrue): Abs` |
 | <a id="mul"></a>`mul` | fn | 乘法：字面量直接求值；×正数同向缩放；×负数翻转不等式；×0 归零 | `mul(a: Abs, b: Abs, phi: Phi = pTrue): Abs` |
 | <a id="namedimport"></a>`NamedImport` | type | `/// @nudo:import { delay, percent } from "./delay.nudo.js"` | `NamedImport = { names: string[]; spec: string }` |
+| <a id="namespaceabsof"></a>`namespaceAbsOf` | fn | 命名空间 Abs（`import * as ns` / `export * as ns` / CJS require 绑定）： open + path——导出收集可能不全（CJS 收集失败等），缺失成员是分析 视图不完整，不得按「运行时缺失」判定（不可调用判定会假抛 TypeError）。 | `namespaceAbsOf(mod: AbsModuleExports): Abs` |
 | <a id="namespacenameof"></a>`namespaceNameOf` | fn | 命名空间身份表：transpile 后 `Math.max(0, x)` 的接收者是宿主 JS 全局对象 （非 Abs）。按对象身份识别命名空间，路由到 Abs builtin 表。 | `namespaceNameOf(v: unknown): string \| undefined` |
 | <a id="ne"></a>`ne` | const | — | `const ne` |
 | <a id="negabs"></a>`negAbs` | fn | 一元负号：字面量折叠（含 ToNumber 强制）；符号数翻转不等式 | `negAbs(a: Abs, _phi: Phi = pTrue): Abs` |
@@ -570,13 +573,14 @@ createEnvironment(parent?, bindings?)
 | <a id="notabs"></a>`notAbs` | fn | 逻辑非 | `notAbs(a: Abs): Abs` |
 | <a id="notecollectionwrite"></a>`noteCollectionWrite` | fn | — | `noteCollectionWrite(id: object): void` |
 | <a id="noteevalcallrecord"></a>`noteEvalCallRecord` | fn | 成员/方法调用点打点（$invoke 等；无收集器时 no-op）。不进 $callNamed 预算。 | `noteEvalCallRecord(r: EvalCallRecord): void` |
-| <a id="noteevalfallback"></a>`noteEvalFallback` | fn | 记录一次 B 回落（body-fn 等非 runTranspiled 入口共用） | `noteEvalFallback(e: unknown): void` |
+| <a id="noteevalfallback"></a>`noteEvalFallback` | fn | 记录一次 B 回落（body-fn / tryRunTranspiled / call 边界兜底共用） | `noteEvalFallback(e: unknown): void` |
 | <a id="notepromiseexecutorfork"></a>`notePromiseExecutorFork` | fn | $fork 在 executor 内发生时打点（多臂 resolve 需 join，不得 first-wins 假精确） | `notePromiseExecutorFork(): void` |
 | <a id="nudofield"></a>`NudoField` | type | — | `NudoField = { constraint: NudoConstraint; optional?: boolean; }` |
 | <a id="nudofnconstraint"></a>`NudoFnConstraint` | type | fn(params, returns?, &#123; throws? | `NudoFnConstraint = { params: Record<string, NudoConstraint>; returns?: NudoConstraint; throws?: NudoConstraint; }` |
 | <a id="nudosidecarerror"></a>`NudoSidecarError` | fn | 侧车模块错误：code ∈ nudo:interface-cycle \| nudo:interface-load | `NudoSidecarError extends Error { readonly code: string; constructor(code: string, message: string) { super(message); this.name = "NudoSid...` |
 | <a id="nudosig"></a>`NudoSig` | type | 无损函数签名（类型即计算） | `NudoSig = { name: string; params: string[]; paramTypes?: string[]; abs: Abs; display: string; detail: string; conf: Confidence; throws?: ...` |
 | <a id="nudounsupportederror"></a>`NudoUnsupportedError` | fn | 转译器无法正确 lowering 的构造：抛此错误（替代静默降级注释）。 | `NudoUnsupportedError extends Error { readonly reason: string; readonly loc?: { line: number; column: number }; constructor(reason: string...` |
+| <a id="nullable"></a>`nullable` | fn | nullable(c)：允许 null / undefined 的约束（nullish 显式化）。 | `nullable( c: NudoConstraint \| ConstraintBuilder \| number \| string \| boolean, ): ConstraintBuilder` |
 | <a id="numvar"></a>`numVar` | fn | 带项的符号数，例如参数 x | `numVar(id: string, pred?: Pred, conf: Confidence = "path"): Abs` |
 | <a id="object_proto_method_names"></a>`OBJECT_PROTO_METHOD_NAMES` | const | — | `const OBJECT_PROTO_METHOD_NAMES` |
 | <a id="objectprotobrand"></a>`objectProtoBrand` | fn | Object.prototype 单例（$get(Object, "prototype") 与 host Object.prototype 共用）。 | `objectProtoBrand(): Abs` |
@@ -623,7 +627,7 @@ createEnvironment(parent?, bindings?)
 | <a id="relsource"></a>`RelSource` | type | — | — |
 | <a id="requiredfnarity"></a>`requiredFnArity` | fn | Required arity from fn param labels — skips rest (`...`) and optional (`?`). | `requiredFnArity(params: readonly string[] \| undefined): number` |
 | <a id="resetchecksourcememo"></a>`resetCheckSourceMemo` | fn | — | `resetCheckSourceMemo(): void` |
-| <a id="resetevalcallbudget"></a>`resetEvalCallBudget` | fn | 宿主入口（runTranspiled / callTranspiledExportFull）前重置 | `resetEvalCallBudget(): void` |
+| <a id="resetevalcallbudget"></a>`resetEvalCallBudget` | fn | 宿主入口前强制清零（测试 / 显式 API）。执行入口请用 enterEvalCallBudgetSession。 | `resetEvalCallBudget(): void` |
 | <a id="resetgeneralizememo"></a>`resetGeneralizeMemo` | fn | — | `resetGeneralizeMemo(): void` |
 | <a id="resetnudomoduleexeccache"></a>`resetNudoModuleExecCache` | fn | — | `resetNudoModuleExecCache(): void` |
 | <a id="resetphi"></a>`resetPhi` | fn | — | `resetPhi(): void` |

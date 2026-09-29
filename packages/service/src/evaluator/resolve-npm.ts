@@ -1,5 +1,17 @@
 import { readFileSync, existsSync, statSync } from "node:fs";
-import { resolve, join, dirname } from "node:path";
+import { resolve, join, dirname, relative, isAbsolute, sep } from "node:path";
+
+/** target 必须落在 dir 内（禁止 `..` 逃逸出包目录）。 */
+function isInsideDir(dir: string, target: string): boolean {
+  const rel = relative(dir, target);
+  return rel !== "" && !rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel);
+}
+
+/** 路径段含 `..`（或绝对路径）→ 不是包内相对目标。 */
+function escapesPackageRoot(rel: string): boolean {
+  if (isAbsolute(rel)) return true;
+  return rel.split(/[/\\]/).some((seg) => seg === "..");
+}
 
 function findNodeModules(startDir: string): string | null {
   let dir = resolve(startDir);
@@ -16,15 +28,172 @@ function findNodeModules(startDir: string): string | null {
 }
 
 /**
+ * JS 入口条件键优先级。`browser` 排在 `default` 之后：
+ * 有 default 时取 Node 面，仅 browser-only 包才落到 browser。
+ * `types` 不在此表——见 pickExport 兜底（且不作为可执行入口）。
+ */
+const JS_CONDITIONS = ["node", "require", "import", "default", "browser"] as const;
+
+/**
+ * 递归展开 exports 目标树：字符串直出；数组按序首个命中（Node fallback 语义，
+ * tryTarget 判存在性）；对象按条件键递归。types 仅在所有条件键都未命中时兜底。
+ */
+function pickExport(
+  entry: unknown,
+  conditions: readonly string[],
+  tryTarget: (rel: string) => string | null,
+): string | null {
+  if (typeof entry === "string") return tryTarget(entry);
+  if (Array.isArray(entry)) {
+    for (const item of entry) {
+      const r = pickExport(item, conditions, tryTarget);
+      if (r) return r;
+    }
+    return null;
+  }
+  if (entry && typeof entry === "object") {
+    const o = entry as Record<string, unknown>;
+    for (const k of conditions) {
+      if (k in o) {
+        const r = pickExport(o[k], conditions, tryTarget);
+        if (r) return r;
+      }
+    }
+    // types 仅兜底：主条件键全部 miss 后才尝试。
+    // .d.ts 不是可执行入口——不返回给 eval 路径（声明文件求值必失败）。
+    if ("types" in o) {
+      const r = pickExport(o["types"], conditions, tryTarget);
+      if (r && !/\.(d\.[cm]?ts)$/.test(r)) return r;
+    }
+  }
+  return null;
+}
+
+/**
+ * 在 exports 目标树中专找 `nudo` 条件（可嵌套于数组/条件对象深处）。
+ * 找到 nudo 子树后用 JS 条件键继续解析（处理 nudo: { import, default } 等嵌套）。
+ * 非 nudo 字符串不匹配——那是普通 JS 入口，不属于 sidecar。
+ */
+function pickNudoExport(
+  entry: unknown,
+  tryTarget: (rel: string) => string | null,
+): string | null {
+  if (typeof entry === "string") return null;
+  if (Array.isArray(entry)) {
+    for (const item of entry) {
+      const r = pickNudoExport(item, tryTarget);
+      if (r) return r;
+    }
+    return null;
+  }
+  if (entry && typeof entry === "object") {
+    const o = entry as Record<string, unknown>;
+    if ("nudo" in o) {
+      return pickExport(o["nudo"], JS_CONDITIONS, tryTarget);
+    }
+    for (const v of Object.values(o)) {
+      const r = pickNudoExport(v, tryTarget);
+      if (r) return r;
+    }
+  }
+  return null;
+}
+
+type ExportsEntry = { target: unknown; substitution: string | null };
+
+/**
+ * 在 exports map 中定位 subpath 的原始目标（精确键优先，其次模式键 `./x/*`）。
+ * 模式键返回 * 捕获段（substitution），供目标字符串替换。
+ */
+function findExportsEntry(exportsField: unknown, subpath: string): ExportsEntry | null {
+  const key = subpath === "." ? "." : `./${subpath}`;
+
+  if (typeof exportsField === "string") {
+    return subpath === "." ? { target: exportsField, substitution: null } : null;
+  }
+  if (!exportsField || typeof exportsField !== "object") return null;
+
+  const map = exportsField as Record<string, unknown>;
+
+  // 精确键
+  if (key in map) {
+    return { target: map[key], substitution: null };
+  }
+
+  // 模式键：`./x/*` → 目标 `*` 替换（单 `*`，Node subpath patterns 同向）
+  if (subpath !== ".") {
+    let best: { target: unknown; substitution: string; prefixLen: number } | null = null;
+    for (const [patternKey, target] of Object.entries(map)) {
+      const starIdx = patternKey.indexOf("*");
+      if (starIdx === -1) continue;
+      if (patternKey.indexOf("*", starIdx + 1) !== -1) continue; // 仅支持单 *
+
+      const prefix = patternKey.slice(0, starIdx);
+      const suffix = patternKey.slice(starIdx + 1);
+      if (!key.startsWith(prefix) || !key.endsWith(suffix)) continue;
+      if (key.length < prefix.length + suffix.length) continue;
+
+      const substitution = key.slice(prefix.length, key.length - suffix.length);
+      if (!best || prefix.length > best.prefixLen) {
+        best = { target, substitution, prefixLen: prefix.length };
+      }
+    }
+    if (best) return { target: best.target, substitution: best.substitution };
+  }
+
+  // 顶层条件对象（无 ./ 键）：exports: { "require": ..., "default": ... } 糖式主入口
+  if (subpath === "." && !("." in map)) {
+    const keys = Object.keys(map);
+    if (keys.length > 0 && keys.every((k) => !k.startsWith("."))) {
+      return { target: map, substitution: null };
+    }
+  }
+
+  return null;
+}
+
+/** 基于 substitution 生成 tryTarget：先替换 *，再检查存在性；结果必须在 pkgDir 内。 */
+function makeTryTarget(
+  pkgDir: string,
+  substitution: string | null,
+  tryFile: (p: string) => string | null,
+): (rel: string) => string | null {
+  return (rel: string) => {
+    const substituted = substitution !== null ? rel.replace("*", substitution) : rel;
+    return tryInsidePkg(pkgDir, substituted, tryFile);
+  };
+}
+
+/** pkgDir 内解析相对目标；`..` / 绝对路径逃逸返回 null。 */
+function tryInsidePkg(
+  pkgDir: string,
+  rel: string,
+  tryFile: (p: string) => string | null,
+): string | null {
+  if (escapesPackageRoot(rel)) return null;
+  const abs = resolve(pkgDir, rel);
+  if (!isInsideDir(pkgDir, abs)) return null;
+  return tryFile(abs);
+}
+
+/** resolveNpmJsEntry 详细结果：路径 + exports 声明未命中标志。 */
+export type ResolveNpmJsEntryResult = {
+  path: string | null;
+  /** package.json 确有 exports 声明但当前 subpath 未命中（或目标文件缺失）。 */
+  exportsUnresolved: boolean;
+};
+
+/**
  * A3：裸包可执行入口（.js/.cjs/.mjs）。有源码就走 eval 执行，而不是 harvest stub
  * （ms/debug 等纯 JS 包的返回面由此从 unknown 变成真实折叠）。
  */
-export function resolveNpmJsEntry(
+export function resolveNpmJsEntryDetailed(
   source: string,
   fromDir: string,
-): string | null {
+): ResolveNpmJsEntryResult {
+  const none: ResolveNpmJsEntryResult = { path: null, exportsUnresolved: false };
   if (!source || source.startsWith(".") || source.startsWith("/") || source.startsWith("node:")) {
-    return null;
+    return none;
   }
   const parts = source.startsWith("@")
     ? source.split("/").slice(0, 2)
@@ -33,10 +202,10 @@ export function resolveNpmJsEntry(
   const subpath = source.slice(pkgName.length).replace(/^\//, "") || ".";
 
   const nodeModules = findNodeModules(fromDir);
-  if (!nodeModules) return null;
+  if (!nodeModules) return none;
   const pkgDir = join(nodeModules, pkgName);
   const pkgJsonPath = join(pkgDir, "package.json");
-  if (!existsSync(pkgJsonPath)) return null;
+  if (!existsSync(pkgJsonPath)) return none;
 
   const tryFile = (p: string): string | null => {
     for (const c of [p, `${p}.js`, `${p}.cjs`, `${p}.mjs`, join(p, "index.js"), join(p, "index.cjs")]) {
@@ -53,63 +222,44 @@ export function resolveNpmJsEntry(
   try {
     pkg = JSON.parse(readFileSync(pkgJsonPath, "utf-8")) as Record<string, unknown>;
   } catch {
-    return null;
+    return none;
   }
 
-  // exports["."] / exports 子路径（仅字符串或 {require,default,node} 字符串）
   const exportsField = pkg.exports;
-  const pickExport = (entry: unknown): string | null => {
-    if (typeof entry === "string") return entry;
-    if (entry && typeof entry === "object") {
-      const o = entry as Record<string, unknown>;
-      for (const k of ["nudo", "node", "require", "import", "default"]) {
-        const v = o[k];
-        const r = pickExport(v);
-        if (r) return r;
-      }
+
+  // Node 语义：exports 一旦表态就只走 exports——未命中不得回落 main/直接路径。
+  if (exportsField !== undefined && exportsField !== null) {
+    const entry = findExportsEntry(exportsField, subpath);
+    if (entry) {
+      const tryTarget = makeTryTarget(pkgDir, entry.substitution, tryFile);
+      const rel = pickExport(entry.target, JS_CONDITIONS, tryTarget);
+      if (rel) return { path: rel, exportsUnresolved: false };
     }
-    return null;
-  };
-  if (exportsField) {
-    let rel: string | null = null;
-    if (typeof exportsField === "string" && subpath === ".") rel = exportsField;
-    else if (exportsField && typeof exportsField === "object") {
-      const map = exportsField as Record<string, unknown>;
-      const key = subpath === "." ? "." : `./${subpath}`;
-      rel = pickExport(map[key] ?? (subpath === "." ? map : undefined));
-    }
-    if (rel) {
-      const hit = tryFile(resolve(pkgDir, rel));
-      if (hit) return hit;
-    }
+    // exports 声明了但键不匹配 / 目标缺失 / 目标逃出包目录
+    return { path: null, exportsUnresolved: true };
   }
 
+  // 无 exports：legacy main / module / 直接子路径（仍限制在包目录内）
   if (subpath === ".") {
     const main = typeof pkg.main === "string" ? pkg.main : undefined;
-    const hit = tryFile(resolve(pkgDir, main ?? "."));
-    if (hit) return hit;
+    const hit = tryInsidePkg(pkgDir, main ?? ".", tryFile);
+    if (hit) return { path: hit, exportsUnresolved: false };
     const mod = typeof pkg.module === "string" ? pkg.module : undefined;
     if (mod) {
-      const hitMod = tryFile(resolve(pkgDir, mod));
-      if (hitMod) return hitMod;
+      const hitMod = tryInsidePkg(pkgDir, mod, tryFile);
+      if (hitMod) return { path: hitMod, exportsUnresolved: false };
     }
-    return null;
+    return none;
   }
-  return tryFile(resolve(pkgDir, subpath));
+  return { path: tryInsidePkg(pkgDir, subpath, tryFile), exportsUnresolved: false };
 }
 
-function resolveExportsNudo(exports: unknown, subpath: string): string | null {
-  if (!exports || typeof exports !== "object") return null;
-
-  const entry = (exports as Record<string, unknown>)[subpath];
-  if (!entry) return null;
-
-  if (typeof entry === "object" && entry !== null && "nudo" in entry) {
-    const nudoEntry = (entry as Record<string, unknown>)["nudo"];
-    if (typeof nudoEntry === "string") return nudoEntry;
-  }
-
-  return null;
+/** 兼容包装：只取路径。 */
+export function resolveNpmJsEntry(
+  source: string,
+  fromDir: string,
+): string | null {
+  return resolveNpmJsEntryDetailed(source, fromDir).path;
 }
 
 export function resolveNpmNudo(
@@ -123,21 +273,34 @@ export function resolveNpmNudo(
     ? source.split("/").slice(0, 2)
     : source.split("/").slice(0, 1);
   const pkgName = parts.join("/");
-  const subpath = source.slice(pkgName.length) || ".";
+  // exports 键是 "./sub" / "."，不是 "/sub"（与 resolveNpmJsEntry 同口径）
+  const subpath = source.slice(pkgName.length).replace(/^\//, "") || ".";
 
   const nodeModules = findNodeModules(fromDir);
   if (!nodeModules) return null;
 
-  const pkgJsonPath = join(nodeModules, pkgName, "package.json");
+  const pkgDir = join(nodeModules, pkgName);
+  const pkgJsonPath = join(pkgDir, "package.json");
   if (!existsSync(pkgJsonPath)) return null;
 
   try {
-    const pkg = JSON.parse(readFileSync(pkgJsonPath, "utf-8"));
-    const nudoEntry = resolveExportsNudo(pkg.exports, subpath);
-    if (nudoEntry) {
-      const resolved = resolve(dirname(pkgJsonPath), nudoEntry);
-      if (existsSync(resolved)) return resolved;
-    }
+    const pkg = JSON.parse(readFileSync(pkgJsonPath, "utf-8")) as Record<string, unknown>;
+    const exportsField = pkg.exports;
+    if (exportsField === undefined || exportsField === null) return null;
+
+    const entry = findExportsEntry(exportsField, subpath);
+    if (!entry) return null;
+
+    const tryFile = (p: string): string | null => {
+      try {
+        if (existsSync(p) && statSync(p).isFile()) return p;
+      } catch {
+        /* ignore */
+      }
+      return null;
+    };
+    const tryTarget = makeTryTarget(pkgDir, entry.substitution, tryFile);
+    return pickNudoExport(entry.target, tryTarget);
   } catch {
     // ignore parse errors
   }

@@ -2,7 +2,7 @@
  * Error 家族 + evalBuiltinNew / evalBuiltinInstanceMethod + namespace 分派
  */
 import type { Abs } from "../abs.ts";
-import { abs, strLit, numLit, litValue, unknown } from "../abs.ts";
+import { abs, strLit, numLit, litValue, bigintLit, unknown } from "../abs.ts";
 import { objOf } from "../objects.ts";
 import {
   makeMapAbs,
@@ -56,9 +56,38 @@ export function evalNamespaceCall(
       return evalDateStatic(method, args);
     case "Promise":
       return evalPromiseStatic(method, args);
+    case "BigInt":
+      return evalBigIntStatic(method, args);
     default:
       return undefined;
   }
+}
+
+/** BigInt.asIntN / BigInt.asUintN（wrap 到指定位宽） */
+function evalBigIntStatic(method: string, args: Abs[]): Abs | undefined {
+  if (method !== "asIntN" && method !== "asUintN") return undefined;
+  const bitsA = args[0];
+  const valA = args[1];
+  const bits = bitsA?.term?.op === "lit" ? (bitsA.term as { value: unknown }).value : undefined;
+  const val = valA?.term?.op === "lit" ? (valA.term as { value: unknown }).value : undefined;
+  // 确定非法 bits（负数 / 非整数 / 非 number）→ RangeError（原生）
+  if (bitsA && bitsA.term?.op === "lit" && (typeof bits !== "number" || !Number.isInteger(bits) || bits < 0)) {
+    throw new NudoThrow(errorTypeAbs("RangeError"));
+  }
+  if (typeof bits === "number" && typeof val === "bigint") {
+    try {
+      return bigintLit(method === "asIntN" ? BigInt.asIntN(bits, val) : BigInt.asUintN(bits, val));
+    } catch {
+      throw new NudoThrow(errorTypeAbs("RangeError"));
+    }
+  }
+  // 抽象实参：保守 bigint 非具体
+  return abs(
+    { k: "prim", type: "bigint" },
+    undefined,
+    undefined,
+    "path",
+  );
 }
 
 /** JS Error 家族构造器名（求值引擎 evalBuiltinNew / $new 共用） */

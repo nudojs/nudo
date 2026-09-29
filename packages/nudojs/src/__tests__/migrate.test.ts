@@ -87,6 +87,53 @@ describe("nudo migrate", () => {
     expect(js).not.toContain(": number");
   });
 
+  it("strip refuses explicit non-TS paths and never overwrites .js in place", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-strip-js-"));
+    dirs.push(dir);
+    const js = join(dir, "foo.js");
+    const original = `export const x = 1; // keep me\n`;
+    writeFileSync(js, original, "utf-8");
+    await expect(migrateStrip([js], { write: true })).rejects.toThrow(/not a TypeScript source/);
+    expect(readFileSync(js, "utf-8")).toBe(original);
+    expect(existsSync(join(dir, "foo.d.js"))).toBe(false);
+  });
+
+  it("strip skips .d.ts declarations (no .d.js output)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-strip-dts-"));
+    dirs.push(dir);
+    writeFileSync(join(dir, "a.ts"), `export const x: number = 1;\n`, "utf-8");
+    writeFileSync(join(dir, "b.d.ts"), `export declare function f(): void;\n`, "utf-8");
+    writeFileSync(join(dir, "c.d.mts"), `export declare const y: number;\n`, "utf-8");
+    const results = await migrateStrip([dir], { write: true, draft: false });
+    const outs = results.map((r) => r.outFile);
+    expect(outs.some((o) => o.endsWith(".d.js") || o.endsWith("b.d.js"))).toBe(false);
+    expect(results.map((r) => r.file).some((f) => f.includes("b.d.ts") || f.includes("c.d.mts"))).toBe(false);
+    expect(existsSync(join(dir, "b.d.js"))).toBe(false);
+    expect(existsSync(join(dir, "c.d.mjs"))).toBe(false);
+    expect(existsSync(join(dir, "a.js"))).toBe(true);
+    // 显式 .d.ts 同样是用法错误，不产出 .d.js
+    await expect(migrateStrip([join(dir, "b.d.ts")], { write: true })).rejects.toThrow(
+      /not a TypeScript source/,
+    );
+    expect(existsSync(join(dir, "b.d.js"))).toBe(false);
+  });
+
+  it("status does not count .d.ts as stripable tsFiles", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-status-dts-"));
+    dirs.push(dir);
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "demo", scripts: { check: "nudo check ." } }),
+      "utf-8",
+    );
+    mkdirSync(join(dir, "src"));
+    writeFileSync(join(dir, "src", "a.ts"), `export const x: number = 1;\n`, "utf-8");
+    writeFileSync(join(dir, "src", "ms.d.ts"), `export declare function ms(): void;\n`, "utf-8");
+    writeFileSync(join(dir, "src", "lib.d.mts"), `export declare const z: number;\n`, "utf-8");
+    const rows = migrateStatus(dir);
+    expect(rows[0]!.tsFiles).toBe(1);
+  });
+
   it("verify fails when nudo check is red and passes when green", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-verify-"));
     dirs.push(dir);
@@ -202,11 +249,262 @@ describe("nudo migrate", () => {
     }
   });
 
+  it("pnpm-workspace.yaml: status covers workspace sub-packages", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-pnpm-status-"));
+    dirs.push(dir);
+    // 本仓形态：根 package.json 无 workspaces，包声明在 pnpm-workspace.yaml
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "root", private: true }),
+      "utf-8",
+    );
+    writeFileSync(
+      join(dir, "pnpm-workspace.yaml"),
+      [
+        "# pnpm workspace",
+        "packages:",
+        '  - "packages/*" # trailing comment',
+        "  - 'apps/*'",
+        "allowBuilds:",
+        "  esbuild: true",
+        "minimumReleaseAgeExclude:",
+        "  - 'vitest@5.0.2'",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    for (const [sub, name] of [
+      ["packages", "a"],
+      ["apps", "b"],
+    ] as const) {
+      const p = join(dir, sub, name);
+      mkdirSync(p, { recursive: true });
+      writeFileSync(
+        join(p, "package.json"),
+        JSON.stringify({
+          name,
+          scripts: { typecheck: "tsc --noEmit" },
+          devDependencies: { typescript: "^5.0.0" },
+        }),
+        "utf-8",
+      );
+      mkdirSync(join(p, "src"));
+      writeFileSync(join(p, "src", "x.ts"), `export const x: number = 1;\n`, "utf-8");
+    }
+    // decoy：后续顶格 key 下的 list 不得当成包路径
+    const rows = migrateStatus(dir);
+    expect(rows).toHaveLength(3); // root + packages/a + apps/b
+    const subs = rows.filter((r) => r.typescriptDep);
+    expect(subs).toHaveLength(2);
+    for (const r of subs) {
+      expect(r.tsFiles).toBe(1);
+      expect(r.tscScripts).toContain("typecheck");
+    }
+  });
+
+  it("pnpm-workspace.yaml: retire --all covers workspace sub-packages", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-pnpm-retire-"));
+    dirs.push(dir);
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "root", private: true }),
+      "utf-8",
+    );
+    writeFileSync(
+      join(dir, "pnpm-workspace.yaml"),
+      ["packages:", '  - "packages/*"', "  - 'tools/*'", ""].join("\n"),
+      "utf-8",
+    );
+    for (const [sub, name] of [
+      ["packages", "a"],
+      ["packages", "b"],
+      ["tools", "c"],
+    ] as const) {
+      const p = join(dir, sub, name);
+      mkdirSync(p, { recursive: true });
+      writeFileSync(
+        join(p, "package.json"),
+        JSON.stringify({
+          name,
+          scripts: { typecheck: "tsc --noEmit" },
+          devDependencies: { typescript: "^5.0.0" },
+        }),
+        "utf-8",
+      );
+    }
+    const results = migrateRetireAll(dir, { workflows: false });
+    expect(results).toHaveLength(3);
+    for (const r of results) {
+      expect(r.removedDeps.length).toBeGreaterThan(0);
+      const abs = resolve(r.root);
+      expect(existsSync(join(abs, ".nudo", "migrate-retired.json"))).toBe(true);
+      const pkg = JSON.parse(readFileSync(join(abs, "package.json"), "utf-8"));
+      expect(pkg.devDependencies.typescript).toBeUndefined();
+      expect(pkg.scripts.typecheck).toContain("nudo check");
+    }
+  });
+
+  it("packageRoots merges package.json#workspaces and pnpm-workspace.yaml without dupes", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-pnpm-merge-"));
+    dirs.push(dir);
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "root", private: true, workspaces: ["packages/*"] }),
+      "utf-8",
+    );
+    writeFileSync(
+      join(dir, "pnpm-workspace.yaml"),
+      ["packages:", '  - "packages/*"', "  - apps/*", ""].join("\n"),
+      "utf-8",
+    );
+    for (const [sub, name] of [
+      ["packages", "a"],
+      ["apps", "b"],
+    ] as const) {
+      const p = join(dir, sub, name);
+      mkdirSync(p, { recursive: true });
+      writeFileSync(
+        join(p, "package.json"),
+        JSON.stringify({
+          name,
+          scripts: { typecheck: "tsc --noEmit" },
+          devDependencies: { typescript: "^5.0.0" },
+        }),
+        "utf-8",
+      );
+    }
+    const rows = migrateStatus(dir);
+    // root + packages/a（两源同 pattern，去重）+ apps/b
+    expect(rows).toHaveLength(3);
+  });
+
   it("rewriteTscCommand covers npx/pnpm/bare forms", () => {
     expect(rewriteTscCommand("npx tsc --noEmit").cmd).toBe("npx nudojs check .");
     expect(rewriteTscCommand("tsc --noEmit").cmd).toBe("nudo check .");
     expect(rewriteTscCommand("pnpm exec tsc -p tsconfig.json").cmd).toBe("npx nudojs check .");
     expect(rewriteTscCommand("pnpm run typecheck").changed).toBe(false);
+  });
+
+  // F5-migrate-rewrite-tsc-flags-mangled：输入/期望输出逐行锁定
+  it("rewriteTscCommand: runner prefix whitelist has no residual prefix", () => {
+    // 裸 pnpm tsc 走 bare 段会留下 `pnpm ` → `pnpm nudo` 非产品命令
+    expect(rewriteTscCommand("pnpm tsc --noEmit").cmd).toBe("npx nudojs check .");
+    expect(rewriteTscCommand("pnpm tsc --noEmit").changed).toBe(true);
+    // npm exec 不在旧前缀表 → `npm exec nudo check .` 残前缀
+    expect(rewriteTscCommand("npm exec tsc --noEmit").cmd).toBe("npx nudojs check .");
+    expect(rewriteTscCommand("npx --no-install tsc --noEmit").cmd).toBe("npx nudojs check .");
+    expect(rewriteTscCommand("npm exec -- tsc --noEmit").cmd).toBe("npx nudojs check .");
+    // script 形态前缀也不得残 `run `
+    expect(rewriteTscCommand("pnpm run tsc --noEmit").cmd).toBe("npx nudojs check .");
+    // 非产品 wrapper 保留，只换 tsc 本体
+    expect(rewriteTscCommand("sudo tsc --noEmit").cmd).toBe("sudo nudo check .");
+  });
+
+  it("rewriteTscCommand: tsc flags are swallowed as a phrase, never residual", () => {
+    // 旧 regex 固定顺序只吞 --noEmit/-p/--pretty/--skipLibCheck
+    expect(rewriteTscCommand("tsc -b").cmd).toBe("nudo check .");
+    expect(rewriteTscCommand("tsc --build").cmd).toBe("nudo check .");
+    expect(rewriteTscCommand("tsc --project tsconfig.json").cmd).toBe("nudo check .");
+    // 顺序无关：-p 在前时 --noEmit 旧实现会残留
+    expect(rewriteTscCommand("tsc -p tsconfig.build.json --noEmit").cmd).toBe("nudo check .");
+    // 未知旗标：剥离而非残留
+    expect(rewriteTscCommand("tsc --someUnknownFlag --noEmit").cmd).toBe("nudo check .");
+    expect(rewriteTscCommand("tsc --strict --incremental --pretty false").cmd).toBe("nudo check .");
+    // 引号值属于短语，不得残成 check 参数
+    expect(rewriteTscCommand('tsc -p "my tsconfig.json" --noEmit').cmd).toBe("nudo check .");
+  });
+
+  it("rewriteTscCommand: -p/--project scope is preserved (monorepo)", () => {
+    // tsconfig 文件 → 所在目录
+    expect(rewriteTscCommand("tsc -p packages/foo/tsconfig.json").cmd).toBe(
+      "nudo check packages/foo",
+    );
+    expect(rewriteTscCommand("tsc --project packages/foo/tsconfig.json --noEmit").cmd).toBe(
+      "nudo check packages/foo",
+    );
+    // 目录原样
+    expect(rewriteTscCommand("tsc -p packages/foo").cmd).toBe("nudo check packages/foo");
+    expect(rewriteTscCommand("tsc --project=packages/bar").cmd).toBe("nudo check packages/bar");
+    // -b 带路径同样保留
+    expect(rewriteTscCommand("tsc -b packages/foo").cmd).toBe("nudo check packages/foo");
+    expect(rewriteTscCommand("tsc --build apps/web/tsconfig.json").cmd).toBe(
+      "nudo check apps/web",
+    );
+    // 裸 -b / 无 -p 仍是 cwd
+    expect(rewriteTscCommand("tsc -b").cmd).toBe("nudo check .");
+    // runner 前缀 + 项目路径
+    expect(rewriteTscCommand("pnpm exec tsc -p packages/foo/tsconfig.json").cmd).toBe(
+      "npx nudojs check packages/foo",
+    );
+  });
+
+  it("tsc inside shell strings / comments is not rewritten", () => {
+    // 字符串里的 tsc 是普通文本
+    expect(rewriteTscCommand('echo "please run tsc first"').changed).toBe(false);
+    expect(rewriteTscCommand("echo 'please run tsc first'").changed).toBe(false);
+    expect(rewriteTscCommand('echo "please run tsc first"').cmd).toBe(
+      'echo "please run tsc first"',
+    );
+    // 注释里的 tsc 不是命令
+    expect(rewriteTscCommand("tsc --noEmit # keep tsc around").cmd).toBe(
+      "nudo check . # keep tsc around",
+    );
+    expect(rewriteTscCommand("# tsc --noEmit").changed).toBe(false);
+    // 字符串外的真实 tsc 仍改写，字符串原样保留
+    expect(rewriteTscCommand('tsc --noEmit && echo "tsc done"').cmd).toBe(
+      'nudo check . && echo "tsc done"',
+    );
+  });
+
+  it("workflow line with tsc only in a string is not a tsc line", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-str-"));
+    dirs.push(dir);
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "demo" }), "utf-8");
+    const wfDir = join(dir, ".github", "workflows");
+    mkdirSync(wfDir, { recursive: true });
+    const wf = join(wfDir, "ci.yml");
+    writeFileSync(
+      wf,
+      [
+        "name: CI",
+        "jobs:",
+        "  check:",
+        "    steps:",
+        '      - run: echo "please run tsc first"',
+        "      - run: pnpm run lint && tsc --noEmit",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const hits = listWorkflowTscLines(dir);
+    // 只有真 tsc 命令那行计入
+    expect(hits.length).toBe(1);
+    expect(hits[0]!.line).toContain("tsc --noEmit");
+
+    const result = migrateRetire(dir);
+    const text = readFileSync(wf, "utf-8");
+    // 字符串里的 tsc 原样保留
+    expect(text).toContain('echo "please run tsc first"');
+    expect(text).toContain("nudo check .");
+  });
+
+  it("package.json script with tsc only in a string is not a tsc script", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-pkg-"));
+    dirs.push(dir);
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "demo",
+        scripts: {
+          hint: 'echo "run tsc yourself"',
+          typecheck: "tsc --noEmit",
+        },
+      }),
+      "utf-8",
+    );
+    const rows = migrateStatus(dir);
+    expect(rows[0]!.tscScripts).toEqual(["typecheck"]);
   });
 
   it("CLI migrate status is wired", () => {

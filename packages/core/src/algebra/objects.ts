@@ -322,15 +322,25 @@ export function absShapeKey(a: Abs, seen: Set<object> = new Set()): string {
     if (s.k === "never") return "never";
     if (s.k === "any") return "any";
     if (s.k === "unknown") {
-      // lit undefined 与真 unknown 不可合并（存在性语义）
-      if (a.term?.op === "lit" && a.term.value === undefined) return "unknown:undefined";
+      // lit null/undefined 与真 unknown 不可合并（存在性语义）。
+      // litValue 哨兵对 lit(undefined) 折成 undefined，须直接看 term。
+      if (a.term?.op === "lit") {
+        const v = a.term.value;
+        if (v === undefined) return "unknown:undefined";
+        if (v === null) return "unknown:null";
+        return `unknown:lit:${typeof v}:${String(v)}`;
+      }
+      // 非字面量 term（var/app）不得与真 unknown 同键
+      if (a.term) return `unknown:${termToString(a.term)}`;
       return "unknown";
     }
     if (s.k === "arr") return `arr(${absShapeKey(s.element, seen)})`;
     if (s.k === "tuple") {
+      // holes 必须进 key：[1,,3] 与 [1, undefined, 3] 可观察不同，不得去重合并
+      const holes = s.holes && s.holes.length > 0 ? `holes:${[...s.holes].sort((a, b) => a - b).join(",")}` : "";
       const els = s.elements.map((e) => absShapeKey(e, seen)).join(",");
       const rest = s.rest ? `...${absShapeKey(s.rest, seen)}` : "";
-      return `tuple[${els}${rest}]`;
+      return `tuple[${els}${rest}${holes ? `;${holes}` : ""}]`;
     }
     if (s.k === "brand") return `brand:${s.name}(${absShapeKey(s.shape, seen)})`;
     if (s.k === "eff") return `eff:${s.eff}<${absShapeKey(s.inner, seen)}>`;

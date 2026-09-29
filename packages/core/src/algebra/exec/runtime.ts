@@ -16,6 +16,8 @@ export {
   $pushLoopExit,
   $rawThis,
   $rethrowIfNudoReturn,
+  $throwConstAssign,
+  $litTruth,
   $tryCurrentMark,
   $tryDetachSoftCatch,
   $tryDigestSoftCatch,

@@ -118,19 +118,88 @@ export function go(x) { return inc(dec(x)); }
     expect(litValue(result)).toBe(5);
   });
 
-  it("cycle does not hang", () => {
+  it("cycle does not hang and backfills in-cycle bindings (BUG-005)", () => {
     const dir = tmpProject({
       "a.js": `
 import { b } from "./b.js";
-export function a(x) { return b(x); }
+export function fa(x) { return b(x); }
+export const ka = 1;
 `,
       "b.js": `
-import { a } from "./a.js";
+import { fa, ka } from "./a.js";
 export function b(x) { return x; }
 `,
     });
-    const mainSrc = `import { a } from "./a.js"; export function go(x) { return a(x); }`;
-    const { modules } = evalAbsModuleGraph(mainSrc, join(dir, "main.js"));
+    const mainSrc = `import { fa, ka } from "./a.js"; export function go(x) { return fa(x); }`;
+    const { modules, byPath, issues } = evalAbsModuleGraph(mainSrc, join(dir, "main.js"));
     expect(modules["./a.js"]).toBeDefined();
+    // cycle recorded, load does not hang
+    expect(issues.some((i) => i.kind === "cycle")).toBe(true);
+    // in-cycle bindings must be backfilled into the placeholder (not stay { named: {} })
+    expect(modules["./a.js"]!.named.fa).toBeDefined();
+    expect(modules["./a.js"]!.named.ka).toBeDefined();
+    const aExports = byPath.get(join(dir, "a.js"))!;
+    const bExports = byPath.get(join(dir, "b.js"))!;
+    expect(aExports.named.fa).toBeDefined();
+    expect(aExports.named.ka).toBeDefined();
+    expect(bExports.named.b).toBeDefined();
+    // placeholder held by the cycle peer is the same object, now non-empty
+    expect(Object.keys(aExports.named).length).toBeGreaterThan(0);
+    expect(Object.keys(bExports.named).length).toBeGreaterThan(0);
+  });
+
+  it("export * as ns re-exports a namespace slot (BUG-004)", () => {
+    const dir = tmpProject({
+      "m.js": `export function inc(x) { return x + 1; }
+export const k = 1;`,
+      "barrel.js": `export * as ns from "./m.js";`,
+      "main.js": `
+import { ns } from "./barrel.js";
+export function go(x) { return ns.inc(x); }
+`,
+    });
+    const mainSrc = `import { ns } from "./barrel.js";
+export function go(x) { return ns.inc(x); }
+`;
+    const { modules } = evalAbsModuleGraph(mainSrc, join(dir, "main.js"));
+    const barrel = modules["./barrel.js"]!;
+    expect(barrel.named.ns).toBeDefined();
+    const ns = barrel.named.ns!;
+    expect(ns.shape.k).toBe("obj");
+    expect((ns.shape as { open?: boolean }).open).toBe(true);
+    expect(ns.conf).toBe("path");
+    const slots = (ns.shape as { slots: Record<string, { value: unknown }> }).slots;
+    expect(slots.inc).toBeDefined();
+    expect(slots.k).toBeDefined();
+
+    const result = analyzeExportWithModules(mainSrc, "go", [numLit(10)], modules);
+    expect(litValue(result)).toBe(11);
+  });
+
+  it("import * as ns missing member does not false-throw TypeError (BUG-004)", () => {
+    const dir = tmpProject({
+      "m.js": `export function inc(x) { return x + 1; }`,
+      "main.js": `
+import * as ns from "./m.js";
+export function go() { return ns.notThere(); }
+`,
+    });
+    const mainSrc = `import * as ns from "./m.js";
+export function go() { return ns.notThere(); }
+`;
+    const { modules } = evalAbsModuleGraph(mainSrc, join(dir, "main.js"));
+    const run = runTranspiled(mainSrc, { mode: "analyze", modules });
+    const res = callTranspiledExportFull(run, "go", []);
+    // open+path：缺失成员是分析视图不完整，不得按「运行时缺失」假抛 TypeError
+    expect(res.result).toBeDefined();
+    const throwsShape = res.throws.shape as { k: string; name?: string; members?: Array<{ shape?: { name?: string } }> };
+    if (throwsShape.k === "brand") {
+      expect(throwsShape.name).not.toBe("TypeError");
+    }
+    if (throwsShape.k === "sum") {
+      for (const m of throwsShape.members ?? []) {
+        expect(m.shape?.name).not.toBe("TypeError");
+      }
+    }
   });
 });

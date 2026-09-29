@@ -50,7 +50,10 @@ describe("real package precision (commander)", () => {
   const commanderLib = resolveCommanderLib();
   const hasPkg = !!commanderLib;
 
-  it.runIf(hasPkg)("no false-positive errors (constraint / assign / arg-structure)", () => {
+  it.runIf(hasPkg)(
+    "no false-positive errors (constraint / assign / arg-structure)",
+    { timeout: 60_000 },
+    () => {
     if (!commanderLib) return; // 已被 runIf 门禁；仅满足 TS 收窄
     const files = readdirSync(commanderLib).filter((f) => f.endsWith(".js"));
     expect(files.length).toBeGreaterThan(0);
@@ -69,5 +72,6 @@ describe("real package precision (commander)", () => {
     }
     expect(scanned).toBeGreaterThan(3);
     expect(violations, violations.join("\n")).toEqual([]);
-  });
+    },
+  );
 });

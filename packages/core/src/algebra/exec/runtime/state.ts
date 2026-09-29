@@ -127,6 +127,16 @@ export function throwStrictWrite(): never {
   throw new NudoThrow(errorTypeAbs("TypeError"));
 }
 
+/** const 绑定再赋值（Assignment to constant variable）→ hard TypeError */
+export function $throwConstAssign(): never {
+  throw new NudoThrow(errorTypeAbs("TypeError"));
+}
+
+/** 生成代码可用的真值判定（undefined = 无法判定）；与 litTruth 同口径 */
+export function $litTruth(a: Abs): boolean | undefined {
+  return litTruth(a);
+}
+
 /** 字面量 → Abs（transpile 侧数字/字符串/布尔/null/undefined） */
 export function $lit(v: unknown): Abs {
   if (v && typeof v === "object" && "shape" in (v as object) && "conf" in (v as object)) {

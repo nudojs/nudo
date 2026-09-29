@@ -7,7 +7,7 @@ import type { Abs, Shape, Confidence } from "./abs.ts";
 import { abs, litValue, confJoin, num, numLit, bool, boolLit, strLit, bigintLit, isStrPrim, isBigPrim } from "./abs.ts";
 import { classNameOfValue } from "./class-mark.ts";
 import { builtinCtorNameOf, hostBuiltinCtorName } from "./builtins.ts";
-import { symbolIdOf } from "./symbol-id.ts";
+import { symbolIdOf, isSymbolAbs as isSym } from "./symbol-id.ts";
 import type { Term } from "./term.ts";
 import { lit, simplifyTerm, app } from "./term.ts";
 import type { Pred } from "./pred.ts";
@@ -76,6 +76,10 @@ function foldNumericBinOp(
   numOp: (x: number, y: number) => number,
   bigOp?: (x: bigint, y: bigint) => bigint,
 ): Abs | undefined {
+  // Symbol 参与位运算/移位/幂：ToNumeric 原生 TypeError（与 add 同口径）
+  if (isSym(a) || isSym(b)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
   const va = litValue(a);
   const vb = litValue(b);
   // 无 bigint 重载的算子（>>>）：任一侧是 bigint（字面量或抽象 prim）即恒 TypeError
@@ -134,6 +138,10 @@ function foldNumericUnOp(
   numOp: (x: number) => number,
   bigOp?: (x: bigint) => bigint,
 ): Abs | undefined {
+  // Symbol 参与一元数值运算（~ / +）：ToNumber 原生 TypeError（与 add 同口径）
+  if (isSym(a)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
   const v = litValue(a);
   if (typeof v === "bigint") {
     // bigint 上无此一元算子（如 unary +）→ TypeError；折叠失败同口径硬抛
@@ -313,6 +321,10 @@ function subNumeric(a: Abs, b: Abs): Abs {
 
 /** 一元 + —— ToNumber 折叠；bigint（含抽象 prim）原生恒抛 TypeError → 硬抛 */
 export function toNumberAbs(a: Abs): Abs {
+  // Symbol 参与一元 + / ToNumber：原生 TypeError（与 add 同口径）
+  if (isSym(a)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
   const v = litValue(a);
   if (typeof v === "bigint" || isBigPrim(a)) {
     // +5n / +bigPrim 原生抛 TypeError（catch 可吸收），不得静默 unknown
@@ -336,6 +348,11 @@ export function toNumberAbs(a: Abs): Abs {
 
 /** JS typeof：结果域永远是 string */
 export function typeofAbs(a: Abs): Abs {
+  // DEC-006 B/C：free identifier 可能把宿主值/undefined 漏进来（typeof process…）——
+  // 非 Abs 入参 fail-closed 为 partial string，禁止读 .shape 炸宿主 TypeError
+  if (!a || typeof a !== "object" || !("shape" in (a as object))) {
+    return abs({ k: "prim", type: "string" }, undefined, undefined, "partial");
+  }
   const v = litValue(a);
   if (v === null) return strLit("object");
   // lit(undefined) 与「无 lit」在 litValue 上都是 undefined，须看 term
@@ -389,6 +406,10 @@ function typeofName(s: Shape): string {
 
 /** 一元负号：字面量折叠（含 ToNumber 强制）；符号数翻转不等式 */
 export function negAbs(a: Abs, _phi: Phi = pTrue): Abs {
+  // Symbol 参与一元 -：ToNumber 原生 TypeError（与 add 同口径）
+  if (isSym(a)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
   const v = litValue(a);
   if (typeof v === "number") return numLitAbs(-v);
   if (typeof v === "bigint") return bigintLit(-(v as bigint));

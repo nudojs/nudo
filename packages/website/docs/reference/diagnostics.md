@@ -221,6 +221,12 @@ True `unknown` on a signature — inference failed. **Not** unconstrained entry 
 
 Context: [`any` vs `unknown`](../concepts/limits.md#any-vs-unknown) · [Dependency types](../guides/env-harvest.md)
 
+### `nudo:unproven-return` {#nudo-unproven-return}
+
+Return postcondition could not be proved (any / unknown / opaque / widened face with no pred evidence). **Warning** — inference failed to discharge the obligation; do not treat as success. Distinct from `nudo:constraint-violated` (definite violation).
+
+Context: [nudo check](../guides/check.md#what-it-checks)
+
 ### `nudo:unknown-recv` {#nudo-unknown-recv}
 
 Member access on `unknown` receiver. Does not replace L2 throws modeling.
@@ -254,6 +260,18 @@ Context: [Analysis budgets](../guides/performance.md#analysis-budgets)
 ### `nudo:fork-truncated` {#nudo-fork-truncated}
 
 Branch-expansion budget (`$fork` total count) hit; affected results widened. **Warning.** Raise via `NUDO_MAX_FORKS` or `package.json#nudo.analysis.maxForks` (default 5000). Budgets and fixes: [Performance](../guides/performance.md).
+
+Context: [Analysis budgets](../guides/performance.md#analysis-budgets)
+
+### `nudo:promise-micro-truncated` {#nudo-promise-micro-truncated}
+
+Promise microtask queue hit the hard cap (`MAX_PROMISE_MICROS = 1024`); remaining queued callbacks were dropped. **Info.** Affected promise results stay widened rather than silently wrong.
+
+Context: [Analysis budgets](../guides/performance.md#analysis-budgets)
+
+### `nudo:promise-micro-error` {#nudo-promise-micro-error}
+
+A queued promise microtask threw while being drained at an eval exit. **Info.** The callback's effect is incomplete; inspect the reported error and the expression that queued the then/catch.
 
 Context: [Analysis budgets](../guides/performance.md#analysis-budgets)
 
@@ -311,7 +329,7 @@ Context: [L2 — entry throws](../guides/check.md#l2--entry-throws) · [@nudo:th
 
 ## Module graph
 
-Reported when Abs module evaluation (`evalAbsModuleGraph`) hits a load problem. `cycle`/`depth` are warnings; `missing` is an error.
+Reported when Abs module evaluation (`evalAbsModuleGraph`) hits a load problem. `cycle`/`depth` are warnings; `missing` / `missing-export` are errors.
 
 ### `nudo:module-cycle` {#nudo-module-cycle}
 
@@ -342,6 +360,22 @@ Module file not found for 'spec' (from file); tried: path
 ```
 
 **Error.** The analyzed file imports a module the loader cannot resolve. **Fix:** correct the spec, or mock the module (`@nudo:mock-module` / `@nudo:mock`).
+
+Context: [@nudo:mock-module](../concepts/directives.md#nudo--module-level-mock) · [nudo check](../guides/check.md#what-it-checks)
+
+### `nudo:exports-unresolved` {#nudo-exports-unresolved}
+
+Package.json `exports` declared targets but the subpath/conditions did not resolve to a file. **Warning** — analysis fell back to harvest stub / file guess, which may not match the real entry. Distinct from `nudo:module-missing` (no module at all).
+
+Context: [Evaluator gaps](../concepts/limits.md#evaluator-gaps-summary)
+
+### `nudo:missing-export` {#nudo-missing-export}
+
+```text
+Module './m.js' has no export 'b' (from index.js)
+```
+
+**Error.** A named `import` (or `export { x } from`) references a name the source module does not export — typically a typo. Only reported when the source module's export table came from a successful evaluation (fail-closed empty tables and unresolved modules stay silent so this never stacks on `nudo:module-missing`). **Fix:** correct the imported name, add the export to the source module, or mock the module (`@nudo:mock-module`).
 
 Context: [@nudo:mock-module](../concepts/directives.md#nudo--module-level-mock) · [nudo check](../guides/check.md#what-it-checks)
 

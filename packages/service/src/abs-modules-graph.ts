@@ -4,22 +4,25 @@
  */
 
 import { readFileSync, statSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname } from "node:path";
 import { parse } from "@nudojs/parser";
 import {
-  abs as makeAbs,
   absFunction,
   bindingsOf,
   tryRunTranspiled,
   callTranspiledExportFull,
   foldStaticStringExpr,
+  namespaceAbsOf,
+  undefAbs,
   unknown,
+  abs,
   type Abs,
   type AbsModuleExports,
 } from "@nudojs/core";
 import type { Node } from "@babel/types";
 import { bareSpecToAbsModules } from "@nudojs/harvester";
-import { resolveNpmJsEntry } from "./evaluator/resolve-npm.ts";
+import { resolveNpmJsEntryDetailed } from "./evaluator/resolve-npm.ts";
+import { moduleResolveCandidates } from "./load-module.ts";
 import { BoundedLruMap } from "./lru-map.ts";
 
 /** seedFns → Abs fn（本地副本，避免 mock-abs ↔ 本模块循环依赖） */
@@ -39,12 +42,11 @@ function seedFnsToMocks(
 
 export type AbsLoadModule = (spec: string, fromFile: string) => string | undefined;
 
-/** 相对说明符 → 源码 */
+/** 相对说明符 → 源码（与 defaultLoadModule 同一扩展名/入口候选表） */
 export function defaultAbsLoadModule(spec: string, fromFile: string): string | undefined {
   if (!spec.startsWith(".") && !spec.startsWith("/")) return undefined;
   try {
-    const p = resolve(dirname(resolve(fromFile)), spec);
-    for (const cand of [p, `${p}.js`, `${p}.mjs`, `${p}.ts`, resolve(p, "index.js")]) {
+    for (const cand of moduleResolveCandidates(spec, fromFile)) {
       try {
         return readFileSync(cand, "utf-8");
       } catch {
@@ -57,14 +59,9 @@ export function defaultAbsLoadModule(spec: string, fromFile: string): string | u
   }
 }
 
-function relCandidates(spec: string, fromFile: string): string[] {
-  const p = resolve(dirname(resolve(fromFile)), spec);
-  return [p, `${p}.js`, `${p}.mjs`, `${p}.ts`, resolve(p, "index.js")];
-}
-
 function resolveRel(spec: string, fromFile: string): string | null {
   if (!spec.startsWith(".") && !spec.startsWith("/")) return null;
-  for (const cand of relCandidates(spec, fromFile)) {
+  for (const cand of moduleResolveCandidates(spec, fromFile)) {
     try {
       readFileSync(cand, "utf-8");
       return cand;
@@ -150,23 +147,30 @@ function buildModulesForFile(
   evalDep: (absPath: string, spec: string, fromFile: string, depth: number) => AbsModuleExports,
   depth: number,
   maxDepth: number,
-  onMissing: (spec: string, fromFile: string, tried: string[]) => void,
+  onIssue: (kind: AbsModuleLoadIssue["kind"], label: string, reason: string) => void,
 ): Record<string, AbsModuleExports> {
   const modules: Record<string, AbsModuleExports> = {};
   for (const spec of importSpecs(source)) {
     if (spec.startsWith(".") || spec.startsWith("/")) {
       const childPath = resolveRel(spec, fromFile);
       if (!childPath) {
-        onMissing(spec, fromFile, relCandidates(spec, fromFile));
+        onIssue("missing", spec, `Module file not found for '${spec}' (from ${moduleLabel(fromFile)}); tried: ${moduleResolveCandidates(spec, fromFile).join(", ")}`);
         continue;
       }
       modules[spec] = evalDep(childPath, spec, fromFile, depth + 1);
     } else if (!spec.startsWith("node:")) {
       // A3：优先执行包入口 JS（ms/debug 等纯 JS 包返回面可折叠）；
       // 无入口或求值失败再 harvest stub。
-      const entry = resolveNpmJsEntry(spec, dirname(fromFile));
-      if (entry) {
-        const executed = evalDep(entry, spec, fromFile, depth + 1);
+      const resolved = resolveNpmJsEntryDetailed(spec, dirname(fromFile));
+      if (resolved.exportsUnresolved) {
+        onIssue(
+          "exports-unresolved",
+          spec,
+          `package.json exports declared but '${spec}' did not resolve (from ${moduleLabel(fromFile)}); falling back to harvest`,
+        );
+      }
+      if (resolved.path) {
+        const executed = evalDep(resolved.path, spec, fromFile, depth + 1);
         if (executed && (executed.default !== undefined || Object.keys(executed.named ?? {}).length > 0)) {
           modules[spec] = executed;
           continue;
@@ -183,7 +187,7 @@ function buildModulesForFile(
 
 /** 模块加载守卫：与 TypeValue loadModuleEnv 口径对齐，供 analyzer 映射诊断 */
 export type AbsModuleLoadIssue = {
-  kind: "cycle" | "depth" | "missing";
+  kind: "cycle" | "depth" | "missing" | "missing-export" | "exports-unresolved";
   /** 诊断定位用标签（文件 basename 或 require/import 说明符） */
   label: string;
   reason: string;
@@ -192,7 +196,7 @@ export type AbsModuleLoadIssue = {
 export type AbsModuleGraphResult = {
   /** 入口 import 说明符 → 依赖导出表 */
   modules: Record<string, AbsModuleExports>;
-  /** 绝对路径 → 导出表（含依赖；循环时占位为空） */
+  /** 绝对路径 → 导出表（含依赖；循环占位求值后就地回填） */
   byPath: Map<string, AbsModuleExports>;
   /** cycle / depth / missing（求值引擎权威，避免 TypeValue 叠报） */
   issues: AbsModuleLoadIssue[];
@@ -255,6 +259,11 @@ function isAbsVal(v: unknown): v is Abs {
   return !!v && typeof v === "object" && "shape" in (v as object) && "conf" in (v as object);
 }
 
+/** null 值的 Abs 表示（export default null 等；与 undefAbs 同口径） */
+function nullAbs(): Abs {
+  return abs({ k: "unknown" }, { op: "lit", value: null as never }, undefined, "exact");
+}
+
 type ParamNodeLike = {
   type?: string;
   name?: string;
@@ -313,9 +322,11 @@ export function evalExportsToModuleExports(
   let def: Abs | undefined;
   const paramTable = topLevelFnParams(file);
   for (const [k, v] of Object.entries(run)) {
-    if (v === undefined || v === null) continue;
     let absVal: Abs;
-    if (isAbsVal(v)) {
+    if (v === undefined || v === null) {
+      // 「名存在但值 undefined/null」≠「从未导出」：保留槽位
+      absVal = v === null ? nullAbs() : undefAbs();
+    } else if (isAbsVal(v)) {
       absVal = v;
     } else if (typeof v === "function") {
       const params =
@@ -335,15 +346,88 @@ export function evalExportsToModuleExports(
     if (k === "default") def = absVal;
     else named[k] = absVal;
   }
-  const out: AbsModuleExports = { named };
-  if (def) out.default = def;
+  const out: AbsModuleExports = { named, evaluated: true };
+  if (def !== undefined) out.default = def;
   return out;
+}
+
+/**
+ * named import / re-export 缺名 → missing-export issue。
+ * zero-FP：仅当源模块导出表来自成功求值（`evaluated`）才报——fail-closed 空表 /
+ * harvest stub / 缺模块不报，避免与 module-missing 叠报。
+ */
+export function collectMissingExportIssues(
+  source: string,
+  modules: Record<string, AbsModuleExports>,
+  fromFile: string,
+): AbsModuleLoadIssue[] {
+  const issues: AbsModuleLoadIssue[] = [];
+  let file: Node;
+  try {
+    file = parse(source);
+  } catch {
+    return issues;
+  }
+  const from = moduleLabel(fromFile);
+  const push = (spec: string, name: string, kind: "import" | "re-export") => {
+    issues.push({
+      kind: "missing-export",
+      label: `${spec}#${name}`,
+      reason:
+        kind === "import"
+          ? `Module '${spec}' has no export '${name}' (from ${from})`
+          : `Module '${spec}' has no export '${name}' to re-export (from ${from})`,
+    });
+  };
+  const checkName = (spec: string, name: string, kind: "import" | "re-export") => {
+    const mod = modules[spec];
+    // 仅成功求值的导出表才可作缺名判定（zero-FP）
+    if (!mod?.evaluated) return;
+    const has = name === "default" ? mod.default !== undefined : name in mod.named;
+    if (!has) push(spec, name, kind);
+  };
+
+  const body = ((file as { program?: { body?: unknown[] } }).program?.body ?? []) as Array<{
+    type?: string;
+    source?: { value?: unknown };
+    specifiers?: Array<{
+      type?: string;
+      local?: { name?: string; type?: string; value?: string } | null;
+      imported?: { type?: string; name?: string; value?: string } | null;
+      exported?: { type?: string; name?: string; value?: string } | null;
+    }>;
+  }>;
+  for (const stmt of body) {
+    if (stmt.type === "ImportDeclaration" && typeof stmt.source?.value === "string") {
+      const spec = stmt.source.value;
+      for (const sp of stmt.specifiers ?? []) {
+        if (sp.type === "ImportDefaultSpecifier") {
+          checkName(spec, "default", "import");
+        } else if (sp.type === "ImportSpecifier") {
+          const imported =
+            sp.imported?.type === "StringLiteral" ? sp.imported.value : sp.imported?.name;
+          if (imported !== undefined) checkName(spec, imported, "import");
+        }
+      }
+    } else if (
+      stmt.type === "ExportNamedDeclaration" &&
+      typeof stmt.source?.value === "string"
+    ) {
+      const spec = stmt.source.value;
+      for (const sp of stmt.specifiers ?? []) {
+        if (sp.type !== "ExportSpecifier") continue;
+        const local = sp.local?.type === "StringLiteral" ? sp.local.value : sp.local?.name;
+        if (local !== undefined) checkName(spec, local, "re-export");
+      }
+    }
+  }
+  return issues;
 }
 
 /**
  * 递归求值相对依赖 + 裸包 harvest，产出入口可用的 modules 表。
  * 循环依赖：先放空表再回填（与 TypeValue 路径 partial 口径一致），
- * 并记录 cycle/depth/missing 供诊断。
+ * 并记录 cycle/depth/missing/missing-export 供诊断。
  */
 export function evalAbsModuleGraph(
   entrySource: string,
@@ -404,7 +488,9 @@ export function evalAbsModuleGraph(
       cache.set(absPath, empty);
       return empty;
     }
-    cache.set(absPath, { named: {} });
+    // 循环占位：后续 cache 重绑不得换对象——环内消费者持有本引用，必须就地回填。
+    const placeholder: AbsModuleExports = { named: {} };
+    cache.set(absPath, placeholder);
     loading.push(absPath);
 
     const source = load(spec, fromFile) ?? (() => {
@@ -421,10 +507,8 @@ export function evalAbsModuleGraph(
         spec,
         `Module file not found for '${spec}' (from ${moduleLabel(fromFile)}); tried: ${absPath}`,
       );
-      const empty: AbsModuleExports = { named: {} };
-      cache.set(absPath, empty);
       loading.pop();
-      return empty;
+      return placeholder;
     }
 
     // 子树 issue 切片起点：本模块自身（含其依赖）产生的装载问题。
@@ -436,12 +520,8 @@ export function evalAbsModuleGraph(
       evalDep,
       depth,
       maxDepth,
-      (spec, fromFile, tried) => {
-        pushIssue(
-          "missing",
-          spec,
-          `Module file not found for '${spec}' (from ${moduleLabel(fromFile)}); tried: ${tried.join(", ")}`,
-        );
+      (kind, label, reason) => {
+        pushIssue(kind, label, reason);
       },
     );
     let exports: AbsModuleExports;
@@ -456,8 +536,16 @@ export function evalAbsModuleGraph(
       // （evalProgramAbs + collectAbsExports）已删，无第二求值路径。
       exports = { named: {} };
     }
+    // named import / re-export 缺名（仅 evaluated 表；fail-closed 空表不报）
+    for (const iss of collectMissingExportIssues(source, modules, absPath)) {
+      pushIssue(iss.kind, iss.label, iss.reason);
+    }
     loading.pop();
-    cache.set(absPath, exports);
+    // 就地回填占位：环内 import 持有的是 placeholder 引用，换新对象会永远空导出。
+    Object.assign(placeholder.named, exports.named);
+    if (exports.default !== undefined) placeholder.default = exports.default;
+    if (exports.evaluated) placeholder.evaluated = true;
+    cache.set(absPath, placeholder);
 
     let fingerprint: { mtimeMs: number; size: number } | undefined;
     try {
@@ -469,11 +557,11 @@ export function evalAbsModuleGraph(
     if (fingerprint) {
       absModuleCache.set(absPath, {
         ...fingerprint,
-        exports,
+        exports: placeholder,
         issues: issues.slice(issueStart),
       });
     }
-    return exports;
+    return placeholder;
   }
 
   const modules = buildModulesForFile(
@@ -483,14 +571,14 @@ export function evalAbsModuleGraph(
     evalDep,
     0,
     maxDepth,
-    (spec, fromFile, tried) => {
-      pushIssue(
-        "missing",
-        spec,
-        `Module file not found for '${spec}' (from ${moduleLabel(fromFile)}); tried: ${tried.join(", ")}`,
-      );
+    (kind, label, reason) => {
+      pushIssue(kind, label, reason);
     },
   );
+  // 入口文件自身的 named import / re-export 缺名
+  for (const iss of collectMissingExportIssues(entrySource, modules, entryFile)) {
+    pushIssue(iss.kind, iss.label, iss.reason);
+  }
 
   return { modules, byPath: cache, issues };
 }
@@ -524,19 +612,17 @@ function importLocalBindings(
       const local = sp.local?.name;
       if (!local) continue;
       if (sp.type === "ImportNamespaceSpecifier") {
-        // 命名空间（named + default 槽）→ open obj Abs（与 bindNamespace 同口径）
-        const slots: Record<string, { value: Abs }> = {};
-        for (const [k, v] of Object.entries(mod.named)) slots[k] = { value: v };
-        if (mod.default) slots["default"] = { value: mod.default };
-        out.set(local, makeAbs({ k: "obj", slots, open: true }, undefined, undefined, "path"));
+        // 命名空间（named + default 槽）→ open obj Abs（与 namespaceAbsOf 同口径）
+        out.set(local, namespaceAbsOf(mod));
       } else if (sp.type === "ImportDefaultSpecifier") {
-        if (mod.default) out.set(local, mod.default);
+        // 缺 default 也留槽（unknown），与「从未 import」可区分
+        out.set(local, mod.default ?? unknown);
       } else if (sp.type === "ImportSpecifier") {
         const imported =
           sp.imported?.type === "StringLiteral" ? sp.imported.value : sp.imported?.name;
         if (imported === undefined) continue;
         const absVal = imported === "default" ? mod.default : mod.named[imported];
-        if (absVal) out.set(local, absVal);
+        out.set(local, absVal ?? unknown);
       }
     }
   }

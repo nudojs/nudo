@@ -62,6 +62,8 @@ export {
   entryVariantForFile,
   entryVariantIssueForFile,
   findOwningPackage,
+  type EntryVariantFaceGroup,
+  type EntryVariantFaces,
   type EntryVariantInfo,
   type EntryVariantIssue,
 } from "./entry-variants.ts";
@@ -80,6 +82,7 @@ export { collectLoadDepContents, type DepContent } from "./dep-contents.ts";
 export {
   evalAbsModuleGraph,
   collectAbsBindingsFromGraph,
+  collectMissingExportIssues,
   defaultAbsLoadModule,
   clearAbsModuleCache,
   evictAbsModuleCacheFiles,

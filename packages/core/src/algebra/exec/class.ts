@@ -38,7 +38,7 @@ import {
   anyMemberResult,
   definitelyUncallableMember,
 } from "./member-diag.ts";
-import { errorTypeAbs } from "./may-throw.ts";
+import { errorTypeAbs, throwPayloadOf } from "./may-throw.ts";
 import { NudoThrow, $collectionForEach } from "./runtime.ts";
 import { callAbsMethod, toIntegerOrInfinityLit } from "../methods.ts";
 import {
@@ -567,9 +567,7 @@ export function $invoke(
         return result;
       } catch (e) {
         threw = true;
-        result = e && typeof e === "object" && "absValue" in (e as object)
-          ? ((e as { absValue: Abs }).absValue)
-          : unknown;
+        result = throwPayloadOf(e);
         throw e;
       } finally {
         noteEvalCallRecord({
@@ -591,9 +589,7 @@ export function $invoke(
         return result;
       } catch (e) {
         threw = true;
-        result = e && typeof e === "object" && "absValue" in (e as object)
-          ? ((e as { absValue: Abs }).absValue)
-          : unknown;
+        result = throwPayloadOf(e);
         throw e;
       } finally {
         noteEvalCallRecord({
@@ -720,9 +716,7 @@ export function $invoke(
       return result;
     } catch (e) {
       threw = true;
-      result = e && typeof e === "object" && "absValue" in (e as object)
-        ? ((e as { absValue: Abs }).absValue)
-        : unknown;
+      result = throwPayloadOf(e);
       throw e;
     } finally {
       noteEvalCallRecord({
@@ -836,7 +830,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
   if (method === "map" && args[0]) {
     if (shape.k === "tuple") {
       const mapped = shape.elements.map((el, i) =>
-        isHole(i) ? el : callFn(args[0], el, $lit(i)),
+        isHole(i) ? el : callFn(args[0], el, $lit(i), arr),
       );
       return abs(
         { k: "tuple", elements: mapped, holes: holes.length > 0 ? [...holes] : undefined },
@@ -845,7 +839,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
         "path",
       );
     }
-    const out = callFn(args[0], shape.element, unknownIdx());
+    const out = callFn(args[0], shape.element, unknownIdx(), arr);
     const el = mapElementFallback(asAbs(args[0]), shape.element, out);
     // fallback 强制 partial，否则 confJoin(arr, out)
     const conf =
@@ -863,11 +857,11 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
     if (shape.k === "tuple") {
       for (let i = 0; i < shape.elements.length; i++) {
         if (isHole(i)) continue;
-        acc = callFn(fn, acc, shape.elements[i]!, $lit(i));
+        acc = callFn(fn, acc, shape.elements[i]!, $lit(i), arr);
       }
       return acc;
     }
-    return callFn(fn, acc, shape.element, unknownIdx());
+    return callFn(fn, acc, shape.element, unknownIdx(), arr);
   }
   if (method === "reduceRight" && args.length >= 1) {
     const fn = args[0]!;
@@ -875,11 +869,11 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
     if (shape.k === "tuple") {
       for (let i = shape.elements.length - 1; i >= 0; i--) {
         if (isHole(i)) continue;
-        acc = callFn(fn, acc, shape.elements[i]!, $lit(i));
+        acc = callFn(fn, acc, shape.elements[i]!, $lit(i), arr);
       }
       return acc;
     }
-    return callFn(fn, acc, shape.element, unknownIdx());
+    return callFn(fn, acc, shape.element, unknownIdx(), arr);
   }
   if (method === "filter" && args[0]) {
     // 逐位谓词：具体 true 保留、具体 false 丢弃、不确定并入（side effect 计数精确）。
@@ -889,7 +883,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
       let anyUncertain = false;
       shape.elements.forEach((el, i) => {
         if (isHole(i)) return;
-        const p = callFn(args[0], el, $lit(i));
+        const p = callFn(args[0], el, $lit(i), arr);
         const t = callbackTruth(p);
         if (t === false) return;
         if (t === undefined) anyUncertain = true;
@@ -911,20 +905,20 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
   if (method === "flatMap" && args[0]) {
     if (shape.k === "tuple") {
       const mapped = shape.elements.map((el, i) =>
-        isHole(i) ? abs({ k: "tuple", elements: [] }, undefined, undefined, "exact") : callFn(args[0], el, $lit(i)),
+        isHole(i) ? abs({ k: "tuple", elements: [] }, undefined, undefined, "exact") : callFn(args[0], el, $lit(i), arr),
       );
       return projectFlatMapResult(arr.conf, mapped);
     }
-    const out = callFn(args[0], shape.element, unknownIdx());
+    const out = callFn(args[0], shape.element, unknownIdx(), arr);
     return projectFlatMapResult(arr.conf, [out]);
   }
   if (method === "forEach" && args[0]) {
     if (shape.k === "tuple") {
       shape.elements.forEach((el, i) => {
-        if (!isHole(i)) callFn(args[0], el, $lit(i));
+        if (!isHole(i)) callFn(args[0], el, $lit(i), arr);
       });
     } else {
-      callFn(args[0], shape.element, unknownIdx());
+      callFn(args[0], shape.element, unknownIdx(), arr);
     }
     return undefAbs();
   }
@@ -935,7 +929,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
     if (shape.k === "tuple") {
       for (let i = 0; i < shape.elements.length; i++) {
         if (isHole(i)) continue;
-        const t = callbackTruth(callFn(args[0], shape.elements[i]!, $lit(i)));
+        const t = callbackTruth(callFn(args[0], shape.elements[i]!, $lit(i), arr));
         if (t === undefined) {
           undecided = true;
           continue;
@@ -944,7 +938,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
         if (method === "every" && !t) return boolLit(false);
       }
     } else {
-      const t = callbackTruth(callFn(args[0], shape.element, unknownIdx()));
+      const t = callbackTruth(callFn(args[0], shape.element, unknownIdx(), arr));
       // 抽象 arr 长度未知（可能空）：单代表元素无法下结论
       if (t === undefined) return bool();
       if (method === "some" && t) return boolLit(true);
@@ -959,7 +953,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
       let undecided = false;
       for (let i = 0; i < shape.elements.length; i++) {
         const el = shape.elements[i]!;
-        const t = callbackTruth(callFn(args[0], el, $lit(i)));
+        const t = callbackTruth(callFn(args[0], el, $lit(i), arr));
         if (t === true) return el;
         if (t === undefined) undecided = true;
       }
@@ -970,7 +964,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
       return undefAbs();
     }
     const el = shape.element;
-    const t = callbackTruth(callFn(args[0], el, unknownIdx()));
+    const t = callbackTruth(callFn(args[0], el, unknownIdx(), arr));
     if (t === true) return el;
     if (t === false) return undefAbs();
     return joinAbs(el, undefAbs());
@@ -979,14 +973,14 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
     if (shape.k === "tuple") {
       let undecided = false;
       for (let i = 0; i < shape.elements.length; i++) {
-        const t = callbackTruth(callFn(args[0], shape.elements[i]!, $lit(i)));
+        const t = callbackTruth(callFn(args[0], shape.elements[i]!, $lit(i), arr));
         if (t === true) return $lit(i);
         if (t === undefined) undecided = true;
       }
       if (undecided) return joinAbs(unknownIdx(), $lit(-1));
       return $lit(-1);
     }
-    const t = callbackTruth(callFn(args[0], shape.element, unknownIdx()));
+    const t = callbackTruth(callFn(args[0], shape.element, unknownIdx(), arr));
     if (t === true) return unknownIdx();
     if (t === false) return $lit(-1);
     return joinAbs(unknownIdx(), $lit(-1));
@@ -1236,9 +1230,7 @@ export function $staticInvoke(cls: Abs, method: string, args: Abs[]): Abs {
     return result;
   } catch (e) {
     threw = true;
-    result = e && typeof e === "object" && "absValue" in (e as object)
-      ? ((e as { absValue: Abs }).absValue)
-      : unknown;
+    result = throwPayloadOf(e);
     throw e;
   } finally {
     noteEvalCallRecord({ fnName: recordName, args, result, threw });

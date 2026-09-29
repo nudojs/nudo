@@ -714,6 +714,53 @@ describe("buildModuleGraph / computeDirtySet / topoSortDirty", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  // BUG-006：re-export / require 边必须进脏图——仅 barrel 形态时 base 变更 → barrel 进 dirty set
+  it("collects export * from / export {} from re-export edges into the dirty graph", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-graph-reexport-"));
+    try {
+      const star = tmpWrite(dir, "star.js", `export * from "./base.js";\n`);
+      const named = tmpWrite(dir, "named.js", `export { k } from "./base.js";\n`);
+      const base = tmpWrite(dir, "base.js", `export const k = 1;\n`);
+      const { imports, dependents } = buildModuleGraph([star, named, base]);
+      expect(dependents.get(base)).toEqual(new Set([star, named]));
+      expect(imports.get(star)).toEqual(new Set([base]));
+      expect(imports.get(named)).toEqual(new Set([base]));
+
+      const dirty = computeDirtySet(dependents, base);
+      expect(new Set(dirty)).toEqual(new Set([base, star, named]));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("collects require() / require.resolve edges into the dirty graph", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-graph-require-"));
+    try {
+      const barrel = tmpWrite(dir, "barrel.js", `const m = require("./base.js");\nmodule.exports = m;\n`);
+      const viaResolve = tmpWrite(dir, "via-resolve.js", `const p = require.resolve("./base.js");\n`);
+      const base = tmpWrite(dir, "base.js", `exports.k = 1;\n`);
+      const { dependents } = buildModuleGraph([barrel, viaResolve, base]);
+      expect(dependents.get(base)).toEqual(new Set([barrel, viaResolve]));
+
+      const dirty = computeDirtySet(dependents, base);
+      expect(new Set(dirty)).toEqual(new Set([base, barrel, viaResolve]));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not create edges from require/import mentioned only in strings or comments", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-graph-str-"));
+    try {
+      const a = tmpWrite(dir, "a.js", `// require("./base.js");\nconst s = "require('./base.js')";\nexport const a = s;\n`);
+      const base = tmpWrite(dir, "base.js", `export const k = 1;\n`);
+      const { dependents } = buildModuleGraph([a, base]);
+      expect(dependents.get(base) ?? new Set()).toEqual(new Set());
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 // 来源：LSP 隔离控制工程化——buildModuleGraph mtime 边缓存

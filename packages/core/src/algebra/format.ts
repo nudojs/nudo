@@ -81,7 +81,9 @@ export function formatShape(a: Abs): string {
     case "obj": {
       const entries = Object.entries(s.slots).map(([k, slot]) => {
         const opt = slot.optional ? "?" : "";
-        return `${k}${opt}: ${formatShape(slot.value)}`;
+        // 非标识符键 JSON 引号，避免展示串本身不可解析（`a, b: 1`）
+        const key = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(k) ? k : JSON.stringify(k);
+        return `${key}${opt}: ${formatShape(slot.value)}`;
       });
       return `{ ${entries.join(", ")} }`;
     }
@@ -92,8 +94,17 @@ export function formatShape(a: Abs): string {
       }
       return `${formatShape(s.element)}[]`;
     }
-    case "tuple":
-      return `[${s.elements.map(formatShape).join(", ")}]`;
+    case "tuple": {
+      // hole 槽是稀疏空位（`1 in a` 为 false），不得渲染成 undefined 槽
+      const holes = s.holes ?? [];
+      const parts = s.elements.map((el, i) =>
+        holes.includes(i) ? "" : formatShape(el),
+      );
+      if (s.rest) {
+        parts.push(`...${formatShape(s.rest)}`);
+      }
+      return `[${parts.join(", ")}]`;
+    }
     case "fn": {
       const ret =
         s.returnType !== undefined ? formatShapeSlot(s.returnType) : "?";

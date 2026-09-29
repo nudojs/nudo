@@ -134,6 +134,8 @@ function predKey(p: Pred): string {
       return `not(${predKey(p.arg)})`;
     case "typeof":
       return `typeof(${termKey(p.t)},${p.type})`;
+    case "assumeFinite":
+      return `assumeFinite(${termKey(p.t)})`;
   }
 }
 

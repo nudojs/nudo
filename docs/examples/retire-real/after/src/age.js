@@ -13,6 +13,8 @@ export function formatAge(durationMs) {
 
 /**
  * @nudo:contract return number
+ * 注：ms 对非法时长可返回 undefined；侧车契约是 nullable(number())。
+ * 此 JSDoc 名仅作显示（无 @nudo:import 同名约束时不执法）。
  */
 export function parseAge(text) {
   return ms(text);

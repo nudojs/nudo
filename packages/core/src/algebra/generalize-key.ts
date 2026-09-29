@@ -42,6 +42,8 @@ export function predKey(p: Pred, rename?: VarRename): string {
       return `not(${predKey(p.arg, rename)})`;
     case "typeof":
       return `typeof(${termKey(p.t, rename)},${p.type})`;
+    case "assumeFinite":
+      return `assumeFinite(${termKey(p.t, rename)})`;
   }
 }
 
@@ -211,6 +213,8 @@ export function renamePred(p: Pred, map: VarRename): Pred {
       return { op: "not", arg: renamePred(p.arg, map) };
     case "typeof":
       return { op: "typeof", t: renameTerm(p.t, map), type: p.type };
+    case "assumeFinite":
+      return { op: "assumeFinite", t: renameTerm(p.t, map) };
   }
 }
 

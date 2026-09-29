@@ -2,8 +2,6 @@
  * Abs 重求值 / intension 挂载 / 调用记录转换辅助。
  * 自 analyzer.ts 机械拆出；语义未改。evaluator 仍是唯一引擎（失败 fail-closed）。
  */
-import { existsSync, statSync } from "node:fs";
-import { resolve, dirname } from "node:path";
 import type { Node } from "@babel/types";
 import {
   generalizeFromAst,
@@ -18,6 +16,8 @@ import {
   type Abs,
 } from "@nudojs/core";
 import { parse } from "@nudojs/parser";
+import { sourceHasModuleDependency, sourceHasRequireCall } from "@nudojs/core/internal";
+import { resolveModuleFile } from "./load-module.ts";
 import {
   neverAbs,
   type CallRecord,
@@ -54,10 +54,11 @@ export function absIsBetter(next: Abs, prev: Abs): boolean {
  * 自包含 = 无 import/require、无 @nudo:env。
  * @nudo:mock 不阻断 Abs：已编译为 seedVars/seedFns 注入 evalAbsModuleGraph。
  * 相对 import 经 Abs 模块图注入后，也不再阻断 Abs 路径。
+ * 字符串/注释里的 require/import 文本不算依赖。
  */
 export function isSelfContainedSource(source: string, envNames: string[]): boolean {
   if (envNames.length > 0) return false;
-  return !/\brequire\s*\(|\bimport\s*[{'"*]/.test(source);
+  return !sourceHasModuleDependency(source);
 }
 
 /** Abs 模块图可处理：env 由 loadEnvs 处理（内置 + 预加载路径型） */
@@ -139,12 +140,7 @@ export function buildAbsImportLocalMap(
 }
 
 export function resolveImportAbs(spec: string, fromFile: string): string | null {
-  const base = dirname(resolve(fromFile));
-  const p = resolve(base, spec);
-  for (const cand of [p, `${p}.js`, `${p}.mjs`, `${p}.ts`, resolve(p, "index.js")]) {
-    if (existsSync(cand) && !statSync(cand).isDirectory()) return cand;
-  }
-  return null;
+  return resolveModuleFile(spec, fromFile) ?? null;
 }
 
 /** Abs 原生重求值（无损）；evaluator 唯一引擎，失败返回 undefined（fail-closed） */
@@ -171,7 +167,8 @@ export function tryEvalAbsFull(
   mocks?: Record<string, Abs>,
   assignedName?: string,
 ): { result: Abs; throws: Abs; throwLoc?: { line: number; column: number } } | undefined {
-  if (/\brequire\s*\(/.test(source)) return undefined;
+  // 真实 require 源码不走 Abs（字符串/注释里的 require( 文本不是依赖）
+  if (sourceHasRequireCall(source)) return undefined;
   // fail-closed：B-only（ast-eval analyzeFnFull 兜底已删——无 throwLoc 补充、
   // 无 Abs 重求值；B 失败 → undefined）
   try {

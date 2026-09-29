@@ -33,6 +33,7 @@ import type { Term } from "./term.ts";
 import { termToString } from "./term.ts";
 import { parseSource } from "./parse-source.ts";
 import { hashSource } from "./hash-source.ts";
+import { identBoundaryRegex } from "./code-text.ts";
 import { isNodeModulesPath, resolveDepPath, sidecarPathOf } from "./sidecar-path.ts";
 import {
   type NudoConstraint,
@@ -213,11 +214,26 @@ export function localNamedExports(source: string): Set<string> {
 
     // --- ESM named ---
     if (s.type === "ExportNamedDeclaration") {
-      if (s.source) continue; // export {…} from "…"（re-export）
+      if (s.source) {
+        // `export * as ns from "…"`：导出名 ns 进集合（re-export 不绑源码，
+        // 但 namespace 槽是本模块导出面）
+        const specs = (s.specifiers as NodeLike[] | undefined) ?? [];
+        for (const spec of specs) {
+          if (spec.type !== "ExportNamespaceSpecifier") continue;
+          const name = identName(spec.exported as NodeLike);
+          if (name) out.add(name);
+        }
+        continue; // export {…} from "…"（re-export）
+      }
       const d = s.declaration as NodeLike | null | undefined;
       if (!d) {
         const specs = (s.specifiers as NodeLike[] | undefined) ?? [];
         for (const spec of specs) {
+          if (spec.type === "ExportNamespaceSpecifier") {
+            const name = identName(spec.exported as NodeLike);
+            if (name) out.add(name);
+            continue;
+          }
           if (spec.type !== "ExportSpecifier") continue;
           const name = identName(spec.exported as NodeLike);
           if (!name) continue;
@@ -456,15 +472,21 @@ type SidecarBinding =
 
 /** 本地声明名是否以 default 形态导出（C4.4：`export { x as default }` / `export default function x`） */
 function isDefaultExportLocal(source: string, localName: string): boolean {
+  // JS 标识符含 `$`：`\b` 把 `$` 当非词，`export { $fn as default }` 会漏。
+  // 边界统一走 identBoundaryRegex（`Store.get` 的 `.` 由 escapeRegExp 处理）。
+  const name = identBoundaryRegex(localName);
   const reList = new RegExp(
-    `export\\s*\\{[^}]*\\b${localName}\\s+as\\s+default\\b[^}]*\\}`,
+    `export\\s*\\{[^}]*${name}\\s+as\\s+default(?![\\w$])[^}]*\\}`,
     "m",
   );
   const reDefaultFn = new RegExp(
-    `export\\s+default\\s+(?:async\\s+)?function\\s+${localName}\\b`,
+    `export\\s+default\\s+(?:async\\s+)?function\\s+${name}`,
     "m",
   );
-  const reDefaultId = new RegExp(`export\\s+default\\s+${localName}\\b`, "m");
+  const reDefaultId = new RegExp(
+    `export\\s+default\\s+${name}`,
+    "m",
+  );
   return reList.test(source) || reDefaultFn.test(source) || reDefaultId.test(source);
 }
 
@@ -588,9 +610,9 @@ function boundsOf(c: NudoConstraint): Bound[] {
   return out;
 }
 
-/** eq(self, lit v) 提取（and 嵌套展开） */
-function eqLitsOf(c: NudoConstraint): Array<{ term: string; value: number | string | boolean | null }> {
-  const out: Array<{ term: string; value: number | string | boolean | null }> = [];
+/** eq(self, lit v) 提取（and 嵌套展开）；lit(undefined) 合法，不得被哨兵吞掉 */
+function eqLitsOf(c: NudoConstraint): Array<{ term: string; value: number | string | boolean | null | undefined }> {
+  const out: Array<{ term: string; value: number | string | boolean | null | undefined }> = [];
   const visit = (p: Pred): void => {
     if (p.op === "and") {
       p.args.forEach(visit);
@@ -599,14 +621,17 @@ function eqLitsOf(c: NudoConstraint): Array<{ term: string; value: number | stri
     if (p.op !== "eq") return;
     let term: Term | undefined;
     let value: number | string | boolean | null | undefined;
+    let hasLit = false;
     if (p.a.op === "var" && p.b.op === "lit") {
       term = p.a;
       value = p.b.value as number | string | boolean | null | undefined;
+      hasLit = true;
     } else if (p.b.op === "var" && p.a.op === "lit") {
       term = p.b;
       value = p.a.value as number | string | boolean | null | undefined;
+      hasLit = true;
     }
-    if (term !== undefined && value !== undefined) {
+    if (term !== undefined && hasLit) {
       out.push({ term: termToString(term), value });
     }
   };

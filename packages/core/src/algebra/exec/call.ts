@@ -5,18 +5,17 @@
  * 统一顺序：apply → body → relation → isRelFn（委托 applyAbsFn）。
  * 行为对齐说明（与旧 $call 的差异，均属刻意）：
  * 1. 带 body 的函数也进 call-budget（递归会 truncated 而非爆栈）
- * 2. body 抛错 → never（applyAbsFn 内恢复，不返回中间值）
+ * 2. body 抛错与 apply 同径 rethrow（不吞成 never 返回，调用边界决定吸收）
  * 3. 无 impl 时 isRelFn 可走 E 路径（旧版恒 unknown）
  */
 
 import type { Abs } from "../abs.ts";
-import { never, unknown } from "../abs.ts";
+import { unknown } from "../abs.ts";
 import { getFnImpl, absFunction, pureFnNameOf } from "../abs-fn.ts";
 import { compiledBodyOf } from "./body-fn.ts";
 import { joinAbs } from "../objects.ts";
 import { instantiateReturn, isRelFn, setApplyCallbackHost } from "../hof.ts";
 import type { AstEnv } from "../ast-env.ts";
-import { isNudoThrow, pushThrowExit } from "./runtime.ts";
 import {
   callBudgetKey,
   enterCall,
@@ -88,27 +87,21 @@ export function $call(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
     const key = callBudgetKey("absbody", impl.fingerprint ?? stableCallId(fn as object), args);
     const label = (fn.shape as { name?: string }).name ?? "anonymous";
     if (!enterCall(key, label)) return truncatedAbs();
+    // body 抛错与 apply 路径对齐：NudoThrow 原样 rethrow，由调用边界
+    // （callAtFunctionBoundary / callTranspiledExportFull / 用户 try/catch）
+    // 决定吸收。此前吞成 pushThrowExit+return never，调用点 record 落成
+    // never+never 被 isLeakedCallRecord 判「泄漏」丢弃，抛出 case 从 call@ 消失。
     try {
-      try {
-        const r = compiled(args);
-        if (fnObj && pk !== undefined) {
-          let m = pureMemo.get(fnObj);
-          if (!m) {
-            m = new Map();
-            pureMemo.set(fnObj, m);
-          }
-          m.set(pk, r);
+      const r = compiled(args);
+      if (fnObj && pk !== undefined) {
+        let m = pureMemo.get(fnObj);
+        if (!m) {
+          m = new Map();
+          pureMemo.set(fnObj, m);
         }
-        return r;
-      } catch (e) {
-        // body 抛错 → never（不把中间值当返回值）；throw 载荷进 throwExits
-        // 供 callTranspiledExportFull 的 L2 throws 收集
-        if (isNudoThrow(e)) {
-          pushThrowExit(e.absValue);
-          return never;
-        }
-        throw e;
+        m.set(pk, r);
       }
+      return r;
     } finally {
       exitCall();
     }

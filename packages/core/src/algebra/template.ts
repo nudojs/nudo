@@ -104,27 +104,56 @@ export function mergeAdjacentFixedViews<P>(
   return out;
 }
 
-/** 具体字符串是否匹配模板（Refinement.check 的判定语义） */
+/**
+ * 具体字符串是否匹配模板（Refinement.check 的判定语义）。
+ * 抽象 part 吃掉任意（含空）子串；相邻抽象合并成一段可变间隙。
+ * 非末尾固定段从当前位置向后找；末尾固定段须落在字符串末尾
+ * （`${x}abc` 匹配 "abcabc"，x="abc"）。
+ * (pos, si) 记忆化：多间隙长串下否则为 O(n^k) 指数回溯。
+ */
 export function templateMatchesValue(value: string, views: TemplatePartView[]): boolean {
-  let pos = 0;
-  for (let i = 0; i < views.length; i++) {
-    const v = views[i]!;
-    if (v.fixed !== undefined) {
-      if (!value.startsWith(v.fixed, pos)) return false;
-      pos += v.fixed.length;
+  // 压缩相邻抽象 → 一个可变间隙
+  const segs: Array<{ fixed: string | undefined }> = [];
+  for (const v of views) {
+    const last = segs[segs.length - 1];
+    if (v.fixed === undefined) {
+      if (!last || last.fixed !== undefined) segs.push({ fixed: undefined });
     } else {
-      if (i === views.length - 1) return true;
-      const next = views[i + 1];
-      if (next?.fixed !== undefined) {
-        const idx = value.indexOf(next.fixed, pos);
-        if (idx === -1) return false;
-        pos = idx;
-      } else {
-        return true;
-      }
+      segs.push({ fixed: v.fixed });
     }
   }
-  return pos === value.length;
+  const memo = new Map<number, boolean>();
+  const memoKey = (pos: number, si: number): number => si * (value.length + 1) + pos;
+  const matchFrom = (pos: number, si: number): boolean => {
+    const key = memoKey(pos, si);
+    const hit = memo.get(key);
+    if (hit !== undefined) return hit;
+    const out = matchUncached(pos, si);
+    memo.set(key, out);
+    return out;
+  };
+  const matchUncached = (pos: number, si: number): boolean => {
+    if (si >= segs.length) return pos === value.length;
+    const seg = segs[si]!;
+    const isLast = si === segs.length - 1;
+    if (seg.fixed === undefined) {
+      // 尾部抽象吃掉剩余；否则尝试所有分割点
+      if (isLast) return true;
+      for (let k = pos; k <= value.length; k++) {
+        if (matchFrom(k, si + 1)) return true;
+      }
+      return false;
+    }
+    const f = seg.fixed;
+    if (isLast) {
+      // 末尾固定段：必须从 pos 起正好补到串尾
+      return value.startsWith(f, pos) && pos + f.length === value.length;
+    }
+    const idx = value.indexOf(f, pos);
+    if (idx === -1) return false;
+    return matchFrom(idx + f.length, si + 1);
+  };
+  return matchFrom(0, 0);
 }
 
 // --- 谓词判定：startsWith / endsWith / includes ---
@@ -144,8 +173,37 @@ export function decideEndsWith(suffix: string, search: string): TemplatePredicat
   return false;
 }
 
-export function decideIncludes(fixedText: string, search: string): TemplatePredicateDecision {
-  return fixedText.includes(search) ? true : "unknown";
+/**
+ * includes 判定：search 必须落在**单个**固定段内才是 true。
+ * 跨抽象间隙拼接固定段会假精确（`a${x}b` 的固定文本 "ab" 并不蕴含
+ * includes("ab")——x="zz" 时 "azzb" 不含 "ab"）。无固定段命中 → unknown。
+ */
+export function decideIncludes(
+  fixedRuns: readonly string[],
+  search: string,
+): TemplatePredicateDecision {
+  // includes("") 恒 true
+  if (search.length === 0) return true;
+  for (const run of fixedRuns) {
+    if (run.includes(search)) return true;
+  }
+  return "unknown";
+}
+
+/** 各固定段（不跨抽象间隙）的列表；供 includes 单段判定 */
+export function fixedRunsOfViews(views: TemplatePartView[]): string[] {
+  const runs: string[] = [];
+  let cur = "";
+  for (const v of views) {
+    if (v.fixed !== undefined) {
+      cur += v.fixed;
+    } else {
+      if (cur.length > 0) runs.push(cur);
+      cur = "";
+    }
+  }
+  if (cur.length > 0) runs.push(cur);
+  return runs;
 }
 
 // --- Abs 侧适配 ---

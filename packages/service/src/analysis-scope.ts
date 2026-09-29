@@ -14,6 +14,7 @@ import {
   type DiagnosticsLevel,
 } from "./evaluator/config.ts";
 import { isNudoTargetPath } from "./target-path.ts";
+import { stripCommentsAndStrings, stripStringsKeepComments } from "@nudojs/core/internal";
 
 /** 默认档下应静音的 evaluator warning 码（噪声控制，A3） */
 const NOISY_WARNING_CODES = new Set([
@@ -52,15 +53,10 @@ export function diagnosticsLevelForFile(filePath: string): DiagnosticsLevel {
 }
 
 export function hasNudoDirectives(source: string): boolean {
-  return /@nudo:(case|mock|pure|skip|sample|contract|import|env|mock-module|as|replace)\b/.test(source);
-}
-
-/** 去掉注释与字符串字面量，避免 `// export …` 等散文触发 exports 门禁 */
-function stripCommentsAndStrings(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .replace(/\/\/[^\n]*/g, " ")
-    .replace(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`/g, '""');
+  // 指令合法住在注释里，字符串/模板里的同形文本不算——先剥字符串再测
+  return /@nudo:(case|mock|pure|skip|sample|contract|import|env|mock-module|as|replace)\b/.test(
+    stripStringsKeepComments(source),
+  );
 }
 
 function hasExport(source: string): boolean {

@@ -4,7 +4,7 @@
  * Collector/tryFrames 经 AsyncLocalStorage 会话隔离，避免 LSP 并发串档。
  */
 import type { Abs } from "../abs.ts";
-import { abs } from "../abs.ts";
+import { abs, unknown } from "../abs.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 
 export type MayThrowEffect = {
@@ -126,6 +126,17 @@ export function recordMayThrow(e: MayThrowEffect): void {
   } catch {
     /* ignore collector errors */
   }
+}
+
+/** 抛出载荷 → Abs。NudoThrow 携带的 absValue 原样保留；原生 Error 折成
+ *  errorTypeAbs(name)；其余（裸值/非 Error）→ unknown。调用边界统一用它把
+ *  异常写进 throws 域 / CallRecord，禁止折成 throws=never。 */
+export function throwPayloadOf(e: unknown): Abs {
+  if (e && typeof e === "object" && "absValue" in (e as object)) {
+    return (e as { absValue: Abs }).absValue;
+  }
+  if (e instanceof Error) return errorTypeAbs(e.name || "Error");
+  return unknown;
 }
 
 /** throws 类型名 → Abs（brand Error 形态，formatShape 打出名字） */

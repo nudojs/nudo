@@ -1,6 +1,12 @@
 import type { Abs } from "@nudojs/core";
 import { joinAbs, litValue, abs as makeAbs, collectAbsFreeVars } from "@nudojs/core";
-import { isTemplateLike, templatePartsOf } from "@nudojs/core/internal";
+import {
+  isTemplateLike,
+  templatePartsOf,
+  escapeTemplateTypeFixed,
+  formatObjectKey,
+  sanitizeCommentText,
+} from "@nudojs/core/internal";
 import type { AnalysisResult, CaseResult, FunctionAnalysis } from "../analyzer.ts";
 
 // ---------------------------------------------------------------------------
@@ -61,11 +67,9 @@ function sanitizeParamName(name: string, index: number): string {
   return `arg${index}`;
 }
 
-/** 对象字面量键：ident 与数字键可裸写，其余 JSON 引号。 */
+/** 对象字面量键：ident / 规范数字键可裸写，其余 JSON 引号（与 schema formatJsObjectKey 同口径）。 */
 function formatPropKey(k: string): string {
-  if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(k)) return k;
-  if (/^\d+$/.test(k)) return k;
-  return JSON.stringify(k);
+  return formatObjectKey(k);
 }
 
 /**
@@ -97,7 +101,11 @@ export function absToTSType(a: Abs, typeVars?: Map<string, string>): string {
     if (a.shape.k === "prim") {
       if (typeof v === "string") return JSON.stringify(v);
       if (typeof v === "boolean") return String(v);
-      if (typeof v === "number") return String(v);
+      if (typeof v === "number") {
+        // NaN/±Infinity 不是 TS 类型名；投影到基类型 number
+        if (!Number.isFinite(v)) return "number";
+        return String(v);
+      }
     }
   }
 
@@ -107,7 +115,8 @@ export function absToTSType(a: Abs, typeVars?: Map<string, string>): string {
     const inner = parts
       .map((p) => {
         const lv = litValue(p);
-        if (typeof lv === "string") return lv;
+        // 固定段是嵌入语言：`\` `` ` `` `$` 必须转义，否则 `${` 变成类型插值
+        if (typeof lv === "string") return escapeTemplateTypeFixed(lv);
         return `\${${absToTSType(p, typeVars)}}`;
       })
       .join("");
@@ -425,12 +434,13 @@ function generateJSDoc(fn: FunctionAnalysis, sig: MainSignature): string {
       absToTSType(c.abs) !== sig.returnType;
     if (!preciseDiffers) continue;
     const argsStr = c.argAbs.map((a) => absToTSType(a)).join(", ");
-    lines.push(` * Case: ${c.name} (${argsStr}) => ${absToTSType(c.abs)}`);
+    // Case 名 / 类型串都可能含 `*/`、换行——注释体必须先清洗，否则提前闭合 JSDoc
+    lines.push(` * Case: ${sanitizeCommentText(`${c.name} (${argsStr}) => ${absToTSType(c.abs)}`)}`);
   }
   for (let i = 0; i < sig.paramTypes.length; i++) {
-    lines.push(` * @param ${sig.paramNames[i]} - ${sig.paramTypes[i]}`);
+    lines.push(` * @param ${sanitizeCommentText(`${sig.paramNames[i]} - ${sig.paramTypes[i]}`)}`);
   }
-  lines.push(` * @returns ${sig.returnType}`);
+  lines.push(` * @returns ${sanitizeCommentText(sig.returnType)}`);
   lines.push(" */");
   return lines.join("\n");
 }

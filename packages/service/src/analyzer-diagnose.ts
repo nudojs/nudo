@@ -4,6 +4,7 @@
  */
 import type { Node } from "@babel/types";
 import type { FunctionWithDirectives } from "@nudojs/parser";
+import { maskCommentsAndStrings, scanStringLiterals } from "@nudojs/core/internal";
 import {
   absStructureKey,
   collapseAbsLits,
@@ -210,19 +211,18 @@ export function findModuleImportLoc(
   module: string,
 ): { line: number; column: number; length: number } | null {
   const bare = module.startsWith("node:") ? module.slice("node:".length) : module;
-  const alts = [...new Set([module, bare, `node:${bare}`])];
-  const lines = source.split(/\r?\n/);
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!;
-    for (const alt of alts) {
-      const re = new RegExp(
-        `["'\`]${alt.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}["'\`]`,
-      );
-      const m = re.exec(line);
-      if (m && m.index !== undefined) {
-        return { line: i, column: m.index, length: m[0].length };
-      }
-    }
+  const alts = new Set([module, bare, `node:${bare}`]);
+  // 只认 import/require 的 specifier 位置：`const note = "fs"` / `// uses "path"`
+  // 不是依赖声明。字符串字面量取自代码区（注释内引号已跳过），再看字面前
+  // 的代码是否以 from / require( / import( / import 收尾。
+  for (const lit of scanStringLiterals(source)) {
+    if (!alts.has(lit.value)) continue;
+    const beforeCode = maskCommentsAndStrings(source.slice(0, lit.start));
+    if (!/(?:\bfrom|\brequire\s*\(|\bimport\s*\(|\bimport)\s*$/.test(beforeCode)) continue;
+    const prefix = source.slice(0, lit.start);
+    const line = (prefix.match(/\n/g) ?? []).length;
+    const lineStart = prefix.lastIndexOf("\n") + 1;
+    return { line, column: lit.start - lineStart, length: lit.length };
   }
   return null;
 }

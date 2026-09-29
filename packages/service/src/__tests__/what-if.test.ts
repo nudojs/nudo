@@ -13,7 +13,7 @@ describe("AI3 what-if injectBindings", () => {
     const { source, applied, unapplied } = injectBindings(src, [
       { name: "x", type: "number" },
     ]);
-    expect(applied).toEqual(["x"]);
+    expect(applied).toEqual(["x: number"]);
     expect(unapplied).toEqual([]);
     expect(source).toContain("// @nudo:as number()");
   });

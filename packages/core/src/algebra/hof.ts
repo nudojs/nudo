@@ -405,6 +405,8 @@ function predUsesMappedVars(p: Pred, map: ReadonlyMap<string, Abs>): boolean {
         return walk(q.arg);
       case "typeof":
         return walkTerm(q.t);
+      case "assumeFinite":
+        return walkTerm(q.t);
     }
   };
   return walk(p);
@@ -438,6 +440,8 @@ function mapHasShapeOnlyVar(p: Pred, map: ReadonlyMap<string, Abs>): boolean {
       case "not":
         return walk(q.arg);
       case "typeof":
+        return walkTerm(q.t);
+      case "assumeFinite":
         return walkTerm(q.t);
     }
   };
@@ -509,6 +513,8 @@ export function substPredAbs(
         return { op: "not", arg: inner };
       }
       case "typeof":
+        return q;
+      case "assumeFinite":
         return q;
     }
   };

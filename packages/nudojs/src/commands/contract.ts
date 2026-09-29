@@ -260,7 +260,6 @@ async function runContractEmit(
       } else if (sc.changed) {
         console.log(`Updated ${rel} → ${scRel} (derived-from ${derived.roots.join(", ")})`);
         console.log(`  written: ${sc.fn}`);
-        derivedChanged = true;
       } else {
         console.log(`${scRel}: no derived contract changes (${sc.skipped ?? "no-change"})`);
       }
@@ -269,7 +268,9 @@ async function runContractEmit(
         // design §1.3：contract 只读/emit 不因分析诊断挡 CI；
         // 仅 usage/IO 与 --exit-on-diff（且须 --dry-run）影响 exit
       }
-      if (sc.written) derivedChanged = true;
+      // §1.3「将写盘且有 diff → 1」：changed 即计入（含 dry-run 与 written 为空的
+      // 纯归一化重排），不依赖 sc.written（written.length>0 && changed 的子集）
+      if (sc.changed) derivedChanged = true;
     }
   }
 

@@ -460,6 +460,10 @@ export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
 
 /** 下标读 a[i]；规范数组下标走精确投影，确定非下标键 → undefined，否则并所有元素；string[i] → 单字符 */
 export function $idx(a: Abs, i: Abs): Abs {
+  // DEC-006 B/C：非 Abs 目标 fail-closed unknown（禁止读 .shape 炸宿主 TypeError）
+  if (!a || typeof a !== "object" || !("shape" in (a as object))) {
+    return unknown;
+  }
   // any 下标：无约束读（any ≠ unknown）
   if (a?.shape?.k === "any") return anyMemberResult();
   // ToPropertyKey：null/undefined/boolean 字面量 → "null"/"undefined"/"true"…
@@ -475,11 +479,17 @@ export function $idx(a: Abs, i: Abs): Abs {
       if (idx < els.length) return els[idx]!;
       return undef();
     }
+    // 抽象下标：可能命中任一元素，也可能越界/非下标 → 必须并入 undefined
     if (els.length === 0) return undef();
-    return els.reduce((x, y) => joinAbs(x, y));
+    return joinAbs(els.reduce((x, y) => joinAbs(x, y)), undef());
   }
   if (a.shape.k === "arr") {
     if (iv !== undefined && idx === undefined) return undef();
+    // 抽象下标可能 miss → 元素 ∪ undefined（与对象未知键同口径）；
+    // 已知规范下标仍按元素投影（split()[0] 等非空序列链不断）
+    if (idx === undefined) {
+      return joinAbs(a.shape.element, undef());
+    }
     return a.shape.element;
   }
   if (a.shape.k === "sum") {
@@ -535,6 +545,10 @@ export function widenTupleToArr(
 
 /** 下标写 a[i]=v → 新 tuple（越界写按 JS 语义增长，空洞为 undefined） */
 export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
+  // DEC-006 B/C：非 Abs 目标 fail-closed（与 $set 同口径）
+  if (!a || typeof a !== "object" || !("shape" in (a as object))) {
+    return a;
+  }
   // ToPropertyKey + 数值下标分流：
   // 数组写走数值 iv（1 / 1n / "1" 都是下标 1）；对象写走字符串键。
   // 不得只用 propertyKeyOf —— 那会把 1 变成 "1"，tuple 数值门失效（洞写丢失）。
@@ -622,6 +636,11 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
 
 /** 数组/字符串长度 */
 export function $len(a: Abs): Abs {
+  // DEC-006 B/C：形参/回调可能漏出 JS undefined（rest 未包 $arr、map 缺第 3 参）——
+  // 非 Abs 入参 fail-closed unknown，禁止读 .shape 炸宿主 TypeError
+  if (!a || typeof a !== "object" || !("shape" in (a as object))) {
+    return unknown;
+  }
   // any 上的 .length：无约束成员（any ≠ unknown——不得报引擎债）
   if (a?.shape?.k === "any") return anyMemberResult();
   if (a.shape.k === "tuple") {
@@ -801,13 +820,14 @@ export function $concat(a: Abs, b: Abs): Abs {
   // 一侧是抽象数组（arr）：spread 语义按元素并入（元素 join），
   // 不得整体嵌为单元素——字面量链超 cap 降级为 arr 后继续吸收后续元素也走此分支
   if (as.k === "arr" || bs.k === "arr") {
+    // 空 tuple 元素 join 无单位元——不得裸 reduce（DEC-006: Reduce of empty array）
     const ea: Abs = as.k === "tuple"
-      ? as.elements.reduce((x, y) => joinAbs(x, y))
+      ? (as.elements.length ? as.elements.reduce((x, y) => joinAbs(x, y)) : unknown)
       : as.k === "arr"
         ? as.element
         : a;
     const eb: Abs = bs.k === "tuple"
-      ? bs.elements.reduce((x, y) => joinAbs(x, y))
+      ? (bs.elements.length ? bs.elements.reduce((x, y) => joinAbs(x, y)) : unknown)
       : bs.k === "arr"
         ? bs.element
         : b;
@@ -1039,6 +1059,7 @@ export function namespaceNameOf(v: unknown): string | undefined {
   if (v === String) return "String";
   if (v === Date) return "Date";
   if (v === Promise) return "Promise";
+  if (v === BigInt) return "BigInt";
   return undefined;
 }
 
@@ -1321,6 +1342,12 @@ export function $collectionForEach(recv: Abs, cb: unknown): Abs | undefined {
 
 /** 成员写：返回新 obj/brand（不可变更新）；frozen/sealed/只读目标按 sloppy 静默失败 */
 export function $set(o: Abs, key: string, value: Abs): Abs {
+  // DEC-006 B/C：free identifier 可能把宿主值（globalThis…）漏进来——
+  // 非 Abs 目标 fail-closed 返回原接收者（调用点 `root = $set(root, …)` 重绑
+  // 为自赋值 no-op），禁止读 .shape 炸宿主 TypeError（$get 同口径）
+  if (!o || typeof o !== "object" || !("shape" in (o as object))) {
+    return o;
+  }
   if (o.shape.k === "brand") {
     if (extStateOf(o) === "frozen") throwStrictWrite();
     const isClassVal = classNameOfValue(o as object) === o.shape.name;
