@@ -1,5 +1,14 @@
 import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync, readFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import {
+  mkdtempSync,
+  writeFileSync,
+  rmSync,
+  readFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  chmodSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -577,5 +586,99 @@ describe("nudo migrate", () => {
     const result = migrateRetire(join(dir, "package.json"), { workflows: false });
     expect(result.removedDeps).toContain("devDependencies");
     expect(existsSync(join(dir, ".nudo", "migrate-retired.json"))).toBe(true);
+  });
+
+  // BUG-010 / F-4: retire 持久化必须原子——注入写失败时树一致或可恢复
+  function setupRetireFixture(name: string): {
+    dir: string;
+    pkgPath: string;
+    wfPath: string;
+    pkgBefore: string;
+    wfBefore: string;
+  } {
+    const dir = mkdtempSync(join(tmpdir(), `nudo-migrate-${name}-`));
+    dirs.push(dir);
+    const pkgBefore = JSON.stringify(
+      {
+        name: "demo",
+        scripts: { typecheck: "tsc --noEmit" },
+        devDependencies: { typescript: "^5.0.0" },
+      },
+      null,
+      2,
+    );
+    const pkgPath = join(dir, "package.json");
+    writeFileSync(pkgPath, pkgBefore, "utf-8");
+    const wfDir = join(dir, ".github", "workflows");
+    mkdirSync(wfDir, { recursive: true });
+    const wfPath = join(wfDir, "ci.yml");
+    const wfBefore = "name: CI\njobs:\n  check:\n    steps:\n      - run: npx tsc --noEmit\n";
+    writeFileSync(wfPath, wfBefore, "utf-8");
+    return { dir, pkgPath, wfPath, pkgBefore, wfBefore };
+  }
+
+  it("BUG-010: package.json write failure leaves tree unchanged (zero half-state)", () => {
+    const { dir, pkgPath, wfPath, pkgBefore, wfBefore } = setupRetireFixture("retire-fail-pkg");
+    // 整包目录只读 → package.json（第一个写）即失败
+    chmodSync(dir, 0o555);
+    try {
+      expect(() => migrateRetire(dir)).toThrow();
+    } finally {
+      chmodSync(dir, 0o755);
+    }
+    expect(readFileSync(pkgPath, "utf-8")).toBe(pkgBefore);
+    expect(readFileSync(wfPath, "utf-8")).toBe(wfBefore);
+    expect(existsSync(join(dir, ".nudo", "migrate-retired.json"))).toBe(false);
+    expect(existsSync(join(dir, ".nudo", "migrate-retiring.json"))).toBe(false);
+  });
+
+  it("BUG-010: workflow write failure rolls back package.json (no nudo-pkg + tsc-CI mix)", () => {
+    const { dir, pkgPath, wfPath, pkgBefore, wfBefore } = setupRetireFixture("retire-fail-wf");
+    const wfDir = join(dir, ".github", "workflows");
+    // workflow 目录只读：package.json 先写成功，workflow 写失败 → 必须回滚 package.json
+    chmodSync(wfDir, 0o555);
+    try {
+      expect(() => migrateRetire(dir)).toThrow();
+    } finally {
+      chmodSync(wfDir, 0o755);
+    }
+    // 一致：全旧（不能出现 package.json 已 nudo 而 workflow 仍 tsc）
+    expect(readFileSync(pkgPath, "utf-8")).toBe(pkgBefore);
+    expect(readFileSync(wfPath, "utf-8")).toBe(wfBefore);
+    expect(existsSync(join(dir, ".nudo", "migrate-retired.json"))).toBe(false);
+    expect(existsSync(join(dir, ".nudo", "migrate-retiring.json"))).toBe(false);
+    // status 不得报 retired
+    const rows = migrateStatus(dir);
+    expect(rows[0]!.retired).toBe(false);
+    expect(rows[0]!.retiring).toBe(false);
+  });
+
+  it("BUG-010: marker write failure rolls back package.json + workflows", () => {
+    const { dir, pkgPath, wfPath, pkgBefore, wfBefore } = setupRetireFixture("retire-fail-marker");
+    // marker 路径被目录占住 → rename 到目标失败（package.json + workflows 已写）
+    mkdirSync(join(dir, ".nudo", "migrate-retired.json"), { recursive: true });
+    expect(() => migrateRetire(dir)).toThrow();
+    expect(readFileSync(pkgPath, "utf-8")).toBe(pkgBefore);
+    expect(readFileSync(wfPath, "utf-8")).toBe(wfBefore);
+    // 成功标记不存在（占位目录不算 retired）
+    const rows = migrateStatus(dir);
+    expect(rows[0]!.retired).toBe(false);
+  });
+
+  it("BUG-010: retire is recoverable after a failed attempt (re-run completes)", () => {
+    const { dir, pkgPath, wfPath } = setupRetireFixture("retire-recover");
+    mkdirSync(join(dir, ".nudo", "migrate-retired.json"), { recursive: true });
+    expect(() => migrateRetire(dir)).toThrow();
+    // 清掉故障注入后重跑 → 完整 retired
+    rmSync(join(dir, ".nudo", "migrate-retired.json"), { recursive: true, force: true });
+    const result = migrateRetire(dir);
+    expect(result.removedDeps).toContain("devDependencies");
+    expect(existsSync(join(dir, ".nudo", "migrate-retired.json"))).toBe(true);
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+    expect(pkg.devDependencies?.typescript).toBeUndefined();
+    expect(readFileSync(wfPath, "utf-8")).toContain("npx nudojs check .");
+    const rows = migrateStatus(dir);
+    expect(rows[0]!.retired).toBe(true);
+    expect(rows[0]!.retiring).toBe(false);
   });
 });
