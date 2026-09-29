@@ -619,7 +619,7 @@ type SymbolTable = {
 | <a id="absmockseeds"></a>`AbsMockSeeds` | type | — | `AbsMockSeeds = { seedVars: Record<string, Abs>; seedFns: Record<string, { params: string[]; body: Node; async?: boolean; fingerprint?: st...` |
 | <a id="absmodulecacheentry"></a>`AbsModuleCacheEntry` | type | 会话级依赖模块缓存条目：stat 指纹 + 导出 + 子树装载 issue。 | `AbsModuleCacheEntry = { mtimeMs: number; size: number; exports: AbsModuleExports; issues: AbsModuleLoadIssue[]; }` |
 | <a id="absmodulegraphresult"></a>`AbsModuleGraphResult` | type | — | `AbsModuleGraphResult = { modules: Record<string, AbsModuleExports>; byPath: Map<string, AbsModuleExports>; issues: AbsModuleLoadIssue[]; }` |
-| <a id="absmoduleloadissue"></a>`AbsModuleLoadIssue` | type | 模块加载守卫：与 TypeValue loadModuleEnv 口径对齐，供 analyzer 映射诊断 | `AbsModuleLoadIssue = { kind: "cycle" \| "depth" \| "missing"; label: string; reason: string; }` |
+| <a id="absmoduleloadissue"></a>`AbsModuleLoadIssue` | type | 模块加载守卫：与 TypeValue loadModuleEnv 口径对齐，供 analyzer 映射诊断 | `AbsModuleLoadIssue = { kind: "cycle" \| "depth" \| "missing" \| "missing-export" \| "exports-unresolved"; label: string; reason: string; }` |
 | <a id="abstoschemanode"></a>`absToSchemaNode` | fn | Abs → SchemaNode + dropped（优先 core absToConstraint；失败则 shape 尽力） | `absToSchemaNode(a: Abs)` |
 | <a id="abstoschemasource"></a>`absToSchemaSource` | fn | — | `absToSchemaSource(a: Abs, opts?: { dialect?: SchemaDialect }): string` |
 | <a id="abstostandardschema"></a>`absToStandardSchema` | fn | 便捷：单个 Abs → 单导出模块（默认导出名 `schema`）。 | `absToStandardSchema( a: Abs, opts?: { name?: string }, ): StandardSchemaModuleProjection` |
@@ -669,6 +669,7 @@ type SymbolTable = {
 | <a id="collectevaldiagnostics"></a>`collectEvalDiagnostics` | fn | 静态收集 求值引擎诊断。 | `collectEvalDiagnostics( source: string, extraKnown?: Iterable<string>, ): EvalDiagnostics` |
 | <a id="collectevalreplacements"></a>`collectEvalReplacements` | fn | 收集 @nudo:replace + @nudo:as → transpile 注入表 | `collectEvalReplacements(source: string)` |
 | <a id="collectloaddepcontents"></a>`collectLoadDepContents` | fn | — | `collectLoadDepContents( filePath: string, source: string, loadModule: (spec: string, fromFile: string) => string \| undefined, )` |
+| <a id="collectmissingexportissues"></a>`collectMissingExportIssues` | fn | named import / re-export 缺名 → missing-export issue。 | `collectMissingExportIssues( source: string, modules: Record<string, AbsModuleExports>, fromFile: string, ): AbsModuleLoadIssue[]` |
 | <a id="collectparambodyaccesses"></a>`collectParamBodyAccesses` | fn | Draft-only：收集每个顶层函数形参上的成员读取键（`user.name` → name）。 | `collectParamBodyAccesses( source: string, ): Map` |
 | <a id="collectskipreturns"></a>`collectSkipReturns` | fn | 每个带 `@nudo:skip` 的顶层函数 → 声明的返回 Abs；`null` = 未声明返回类型。 | `collectSkipReturns(source: string): Map<string, Abs \| null>` |
 | <a id="collectstaticimports"></a>`collectStaticImports` | fn | 从入口文件沿静态相对 import/require 收集（仅类型事实，不是运行时加载器）。 | `collectStaticImports( entryFile: string, maxDepth = 8, ): Map<string, ModuleExports>` |
@@ -679,7 +680,7 @@ type SymbolTable = {
 | <a id="currentbforkbudgetlimit"></a>`currentBForkBudgetLimit` | fn | 当前生效 fork 上限（调试/测试；与 core getEvalForkBudgetLimit 同源） | `currentBForkBudgetLimit(): number` |
 | <a id="default_analysis_mode"></a>`DEFAULT_ANALYSIS_MODE` | const | ", ]; /** A1 产品默认：exports — 普通带导出的 .js 进 IDE；directives/all 需显式 | `const DEFAULT_ANALYSIS_MODE` |
 | <a id="default_session_cache_limits"></a>`DEFAULT_SESSION_CACHE_LIMITS` | const | 保守默认：多项目共存时不悄悄吃内存（大仓请显式调高） | `const DEFAULT_SESSION_CACHE_LIMITS` |
-| <a id="defaultabsloadmodule"></a>`defaultAbsLoadModule` | fn | 相对说明符 → 源码 | `defaultAbsLoadModule(spec: string, fromFile: string): string \| undefined` |
+| <a id="defaultabsloadmodule"></a>`defaultAbsLoadModule` | fn | 相对说明符 → 源码（与 defaultLoadModule 同一扩展名/入口候选表） | `defaultAbsLoadModule(spec: string, fromFile: string): string \| undefined` |
 | <a id="defaultloadmodule"></a>`defaultLoadModule` | fn | 默认 loadModule：支持 .js/.mjs/.ts 与 index 入口 | `defaultLoadModule(spec: string, fromFile: string): string \| undefined` |
 | <a id="depcontent"></a>`DepContent` | type | — | `DepContent = { path: string; content: string \| null }` |
 | <a id="derivedexport"></a>`DerivedExport` | type | — | `DerivedExport = { file: string; fn: string; paramNames: string[]; params: DerivedParam[]; returns?: { constraint: NudoConstraint; dsl: st...` |
@@ -705,7 +706,9 @@ type SymbolTable = {
 | <a id="emitinterfaceskipreason"></a>`EmitInterfaceSkipReason` | type | — | `EmitInterfaceSkipReason = \| "name-clash" \| "not-projectable" \| "not-an-export" \| "no-change" \| "emit-denied" \| "multi-declarator"` |
 | <a id="emitresult"></a>`EmitResult` | type | — | `EmitResult = { source: string; changed: boolean; written: Array<{ fn: string; cases: string[] }>; skipped: Array<{ fn: string; reason: Em...` |
 | <a id="emitskipreason"></a>`EmitSkipReason` | type | — | `EmitSkipReason = \| "hand-written" \| "already-generated" \| "entry-only" \| "no-serializable-cases" \| "no-declaration" \| "skipped"` |
-| <a id="entryvariantforfile"></a>`entryVariantForFile` | fn | Dual-entry info for an analyzed file: the owning package must declare two differing faces **and** this file must be one of the entry targets. | `entryVariantForFile(filePath: string): EntryVariantInfo \| null` |
+| <a id="entryvariantfacegroup"></a>`EntryVariantFaceGroup` | type | One browser/node face pair, scoped to a subpath or field source. | `EntryVariantFaceGroup = { key: string; browser: string[]; node: string[]; }` |
+| <a id="entryvariantfaces"></a>`EntryVariantFaces` | type | — | `EntryVariantFaces = { kind: "exports-conditions" \| "browser-field"; groups: Map<string, EntryVariantFaceGroup>; }` |
+| <a id="entryvariantforfile"></a>`entryVariantForFile` | fn | Dual-entry info for an analyzed file: the owning package must declare a dual group (browser + node faces resolving to different files **in the same subpath / field source**) **and** this file must be one of that group's entry targets on exactly one face. | `entryVariantForFile(filePath: string): EntryVariantInfo \| null` |
 | <a id="entryvariantinfo"></a>`EntryVariantInfo` | type | — | `EntryVariantInfo = { pkgPath: string; pkgDir: string; pkgName?: string; kind: "exports-conditions" \| "browser-field"; browserPaths: strin...` |
 | <a id="entryvariantissue"></a>`EntryVariantIssue` | type | Host-facing info issue (CLI check / JSON) for one analyzed entry variant. | `EntryVariantIssue = { severity: "info"; code: "nudo:dual-entry"; message: string; suggestion: string; line: number; column: number; }` |
 | <a id="entryvariantissueforfile"></a>`entryVariantIssueForFile` | fn | — | `entryVariantIssueForFile(filePath: string): EntryVariantIssue \| null` |
