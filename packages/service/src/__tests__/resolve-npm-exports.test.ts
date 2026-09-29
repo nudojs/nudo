@@ -91,6 +91,18 @@ describe("exports condition keys (browser)", () => {
     expect(hit).toBe(join(pkgDir, "only-browser.js"));
   });
 
+  it("prefers default over browser when both present", () => {
+    const { dir, pkgDir } = makePkg(
+      { exports: { ".": { browser: "./browser.js", default: "./default.js" } } },
+      {
+        "browser.js": "export const a = 1;",
+        "default.js": "export const b = 2;",
+      },
+    );
+    // 分析面取 Node/default；browser 仅 browser-only 时兜底
+    expect(resolveNpmJsEntry("pkg", dir)).toBe(join(pkgDir, "default.js"));
+  });
+
   it("prefers node over browser when both present", () => {
     const { dir, pkgDir } = makePkg(
       { exports: { ".": { browser: "./browser.js", node: "./node.js" } } },
@@ -115,12 +127,13 @@ describe("exports condition keys (browser)", () => {
     expect(resolveNpmJsEntry("pkg", dir)).toBe(join(pkgDir, "index.js"));
   });
 
-  it("types used when no JS condition matches", () => {
-    const { dir, pkgDir } = makePkg(
+  it("does not treat .d.ts as a runnable entry (types fallback skipped for eval)", () => {
+    const { dir } = makePkg(
       { exports: { ".": { types: "./index.d.ts" } } },
       { "index.d.ts": "export declare const x: number;" },
     );
-    expect(resolveNpmJsEntry("pkg", dir)).toBe(join(pkgDir, "index.d.ts"));
+    // 声明文件不是可执行入口——eval 路径不得返回 .d.ts
+    expect(resolveNpmJsEntry("pkg", dir)).toBeNull();
   });
 
   it("recursive condition nesting: { node: { require: ... } }", () => {
@@ -177,6 +190,76 @@ describe("exports array fallback", () => {
       { "hit.js": "export const x = 1;" },
     );
     expect(resolveNpmJsEntry("pkg", dir)).toBe(join(pkgDir, "hit.js"));
+  });
+});
+
+describe("package-dir containment (no .. escape)", () => {
+  it("rejects subpath with .. segments", () => {
+    const { dir } = makePkg(
+      { exports: { ".": "./index.js" } },
+      { "index.js": "export const x = 1;" },
+    );
+    // pkg/../../evil 不是包内说明符——不得解析出包外文件
+    const r = resolveNpmJsEntryDetailed("pkg/../../evil", dir);
+    expect(r.path).toBeNull();
+  });
+
+  it("rejects pattern substitution that escapes via ..", () => {
+    const { dir, pkgDir } = makePkg(
+      { exports: { "./*": "./dist/*.js" } },
+      {
+        "dist/feature.js": "export const a = 1;",
+        "escape.js": "export const evil = 1;",
+      },
+    );
+    // substitution "../../escape" → dist/../../escape.js 会逃出 pkgDir
+    // 合法 feature 仍须命中
+    expect(resolveNpmJsEntry("pkg/feature", dir)).toBe(join(pkgDir, "dist", "feature.js"));
+    const escaped = resolveNpmJsEntryDetailed("pkg/feature/../../escape", dir);
+    expect(escaped.path).toBeNull();
+  });
+
+  it("rejects exports target that points outside the package", () => {
+    const { dir } = makePkg({ exports: { ".": "../outside.js" } }, {});
+    // 包外旁路文件（node_modules/outside.js）
+    writeFileSync(join(dir, "node_modules", "outside.js"), "export const x = 1;");
+    const r = resolveNpmJsEntryDetailed("pkg", dir);
+    expect(r.path).toBeNull();
+    expect(r.exportsUnresolved).toBe(true);
+  });
+});
+
+describe("exports misses do not fall through to main / direct path", () => {
+  it("does not fall back to main when exports key is missing", () => {
+    const { dir } = makePkg(
+      { main: "index.js", exports: { "./other": "./other.js" } },
+      { "index.js": "export const x = 1;", "other.js": "export const y = 2;" },
+    );
+    // Node: ERR_PACKAGE_PATH_NOT_EXPORTED——不得静默改用 main
+    const r = resolveNpmJsEntryDetailed("pkg/feature", dir);
+    expect(r.path).toBeNull();
+    expect(r.exportsUnresolved).toBe(true);
+  });
+
+  it("does not fall back to main when exports target file is missing", () => {
+    const { dir } = makePkg(
+      { main: "index.js", exports: { "./f": "./missing.js" } },
+      { "index.js": "export const x = 1;" },
+    );
+    const r = resolveNpmJsEntryDetailed("pkg/f", dir);
+    expect(r.path).toBeNull();
+    expect(r.exportsUnresolved).toBe(true);
+  });
+
+  it("does not fall back to a sibling file when exports target is missing", () => {
+    const { dir } = makePkg(
+      { exports: { "./f": "./dist/f.js" } },
+      { "f.js": "export const wrong = 1;" },
+    );
+    // exports 指向 dist/f.js（缺失）；包根 f.js 不得顶替
+    const r = resolveNpmJsEntryDetailed("pkg/f", dir);
+    expect(r.path).toBeNull();
+    expect(r.exportsUnresolved).toBe(true);
   });
 });
 

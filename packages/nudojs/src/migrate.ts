@@ -349,8 +349,75 @@ const TSC_CMD_SRC = `(?<![\\w./-])(?:${TSC_RUNNER_PREFIX_SRC})?tsc(?=$|[\\s;&|<>
 const TSC_CMD_STICKY = new RegExp(TSC_CMD_SRC, "y");
 
 /**
+ * 从 tsc argv 抽出项目路径（-p / --project / -b / --build 的首个位置参数）。
+ * tsconfig 文件 → 其所在目录；目录原样。无路径 → "."。
+ */
+function projectPathFromTscArgv(cmd: string, start: number): string {
+  const argvEnd = consumeTscArgv(cmd, start);
+  const raw = cmd.slice(start, argvEnd);
+  // 按空白切词，保留引号内容（粗切即可：路径通常无空格；有引号时去壳）
+  const tokens: string[] = [];
+  let i = 0;
+  while (i < raw.length) {
+    if (/\s/.test(raw[i]!)) {
+      i++;
+      continue;
+    }
+    if (raw[i] === "'" || raw[i] === '"' || raw[i] === "`") {
+      const q = raw[i]!;
+      i++;
+      let tok = "";
+      while (i < raw.length && raw[i] !== q) {
+        if (raw[i] === "\\" && i + 1 < raw.length) {
+          tok += raw[i + 1];
+          i += 2;
+          continue;
+        }
+        tok += raw[i];
+        i++;
+      }
+      i++; // 闭合引号
+      tokens.push(tok);
+      continue;
+    }
+    let tok = "";
+    while (i < raw.length && !/\s/.test(raw[i]!) && !"'\"`".includes(raw[i]!)) {
+      tok += raw[i];
+      i++;
+    }
+    tokens.push(tok);
+  }
+
+  let projectPath: string | null = null;
+  for (let t = 0; t < tokens.length; t++) {
+    const tok = tokens[t]!;
+    if (tok === "-p" || tok === "--project") {
+      projectPath = tokens[t + 1] ?? null;
+      break;
+    }
+    if (tok.startsWith("--project=")) {
+      projectPath = tok.slice("--project=".length);
+      break;
+    }
+    if (tok === "-b" || tok === "--build") {
+      // -b [project…]：取首个非旗标参数；裸 -b → "."
+      const next = tokens[t + 1];
+      projectPath = next !== undefined && !next.startsWith("-") ? next : ".";
+      break;
+    }
+  }
+  if (projectPath === null || projectPath === "") return ".";
+  // tsconfig 文件 → 目录（nudo check 吃源码路径，不解析 tsconfig）
+  if (/\.json$/i.test(projectPath)) {
+    const dir = dirname(projectPath);
+    return dir === "" ? "." : dir;
+  }
+  return projectPath;
+}
+
+/**
  * 消费 tsc argv 直到 shell 元字符。旗标（含未知旗标）与位置参数一并剥离——
- * 归一后的产品命令是干净的 `nudo check .`，不残留任何 tsc 旗标。
+ * 项目路径由 projectPathFromTscArgv 另行抽出，映射为 `nudo check <path>`。
  */
 function consumeTscArgv(cmd: string, start: number): number {
   let i = start;
@@ -404,8 +471,13 @@ function rewriteTscPhrases(cmd: string): string {
     TSC_CMD_STICKY.lastIndex = i;
     const m = TSC_CMD_STICKY.exec(cmd);
     if (m) {
-      out += m[0] === "tsc" ? "nudo check ." : "npx nudojs check .";
-      i = consumeTscArgv(cmd, i + m[0].length);
+      const argvStart = i + m[0].length;
+      const projectPath = projectPathFromTscArgv(cmd, argvStart);
+      const target = projectPath === "." ? "." : projectPath;
+      // 路径含空格时加引号，避免拆词
+      const quoted = /\s/.test(target) ? JSON.stringify(target) : target;
+      out += (m[0] === "tsc" ? "nudo check " : "npx nudojs check ") + quoted;
+      i = consumeTscArgv(cmd, argvStart);
       continue;
     }
     out += c;
@@ -750,8 +822,8 @@ export function migrateRetire(
   for (const [name, cmd] of Object.entries(scripts)) {
     if (!/\btsc\b/.test(maskShellStringsAndComments(cmd))) continue;
     const { cmd: next } = rewriteTscCommand(cmd);
-    // package.json scripts 用本地 bin 名
-    const local = next.replace(/npx nudojs check \./g, "nudo check .");
+    // package.json scripts 用本地 bin 名（任意 check 路径，不只 "."）
+    const local = next.replace(/npx nudojs check /g, "nudo check ");
     if (local !== cmd) {
       rewrittenScripts.push({ name, from: cmd, to: local });
       scripts[name] = local;

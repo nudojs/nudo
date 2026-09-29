@@ -126,12 +126,12 @@ export type FunctionWithDirectives = {
   directives: Directive[];
 };
 
-const CASE_NAME_REGEX = /@nudo:case\s+"([^"]+)"\s*\(/g;
-const MOCK_INLINE_REGEX = /@nudo:mock\s+(\w+)\s*=\s*(.+)/g;
-const MOCK_FROM_REGEX = /@nudo:mock\s+(\w+)\s+from\s+"([^"]+)"/g;
 // 指令标签只在「注释行首」匹配（可选 `*` / `//` 已由 comment.value 剥掉）：
-// 不得命中 case 参数字符串或文档散文里的 `@nudo:skip` 字样。
-// `\b` 防 `@nudo:skipped` 误命中 skip。
+// 不得命中 case 参数字符串或文档散文里的 `@nudo:skip` / `@nudo:case` / `@nudo:mock` 字样。
+// `\b` 防 `@nudo:skipped` / `@nudo:cases` 误命中。
+const CASE_NAME_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:case\s+"([^"]+)"\s*\(/g;
+const MOCK_INLINE_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:mock\s+(\w+)\s*=\s*(.+)/g;
+const MOCK_FROM_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:mock\s+(\w+)\s+from\s+"([^"]+)"/g;
 const PURE_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:pure\b/g;
 const SKIP_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:skip\b(?:[ \t]+(\S[^\n]*))?/g;
 const SAMPLE_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:sample[ \t]+(\d+)/g;
@@ -802,7 +802,9 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
       const arrowMatch = restLine.match(/^=>\s*(.+)/);
       const expected = arrowMatch ? parseCaseArgExpr(arrowMatch[1].trim()) : undefined;
 
-      const linesBeforeMatch = text.slice(0, match.index).split("\n").length - 1;
+      // match.index 可能落在行首前缀（`\n * `）上；commentLine 按标签实际位置计行
+      const tagOffset = match.index + match[0].indexOf("@nudo:case");
+      const linesBeforeMatch = text.slice(0, tagOffset).split("\n").length - 1;
       const commentLine = commentStartLine + linesBeforeMatch;
 
       directives.push({

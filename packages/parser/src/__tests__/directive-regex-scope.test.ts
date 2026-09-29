@@ -112,4 +112,64 @@ export function f(x) { return x; }
     expect(kinds).toContain("case");
     expect(kinds).not.toContain("skip");
   });
+
+  it("case arg string @nudo:case does not fabricate a second case", () => {
+    const src = `
+/**
+ * @nudo:case "outer" ("@nudo:case \\"inner\\" (1)")
+ */
+export function f(x) { return x; }
+`;
+    const d = dirs(src);
+    const cases = d.flatMap((f) => f.directives.filter((x) => x.kind === "case"));
+    expect(cases).toHaveLength(1);
+  });
+
+  it("prose mentioning @nudo:case does not create a case", () => {
+    const src = `
+/**
+ * Docs: write @nudo:case "n" (1) to add a case.
+ */
+export function f(x) { return x; }
+`;
+    const d = dirs(src);
+    const kinds = d.flatMap((f) => f.directives.map((x) => x.kind));
+    expect(kinds).not.toContain("case");
+  });
+
+  it("prose mentioning @nudo:mock does not create a mock", () => {
+    const src = `
+/**
+ * Docs: @nudo:mock x = 1 is how you mock.
+ */
+export function f(x) { return x; }
+`;
+    const d = dirs(src);
+    const kinds = d.flatMap((f) => f.directives.map((x) => x.kind));
+    expect(kinds).not.toContain("mock");
+  });
+
+  it("real @nudo:mock tag at line start still works", () => {
+    const src = `
+/**
+ * @nudo:mock x = 1
+ */
+export function f(x) { return x; }
+`;
+    const d = dirs(src);
+    const kinds = d.flatMap((f) => f.directives.map((x) => x.kind));
+    expect(kinds).toContain("mock");
+  });
+
+  it("real @nudo:case tag at line start still works", () => {
+    const src = `
+/**
+ * @nudo:case "real" (1)
+ */
+export function f(x) { return x; }
+`;
+    const d = dirs(src);
+    const kinds = d.flatMap((f) => f.directives.map((x) => x.kind));
+    expect(kinds).toContain("case");
+  });
 });

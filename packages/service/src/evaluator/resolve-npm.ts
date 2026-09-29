@@ -1,5 +1,17 @@
 import { readFileSync, existsSync, statSync } from "node:fs";
-import { resolve, join, dirname } from "node:path";
+import { resolve, join, dirname, relative, isAbsolute, sep } from "node:path";
+
+/** target 必须落在 dir 内（禁止 `..` 逃逸出包目录）。 */
+function isInsideDir(dir: string, target: string): boolean {
+  const rel = relative(dir, target);
+  return rel !== "" && !rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel);
+}
+
+/** 路径段含 `..`（或绝对路径）→ 不是包内相对目标。 */
+function escapesPackageRoot(rel: string): boolean {
+  if (isAbsolute(rel)) return true;
+  return rel.split(/[/\\]/).some((seg) => seg === "..");
+}
 
 function findNodeModules(startDir: string): string | null {
   let dir = resolve(startDir);
@@ -15,8 +27,12 @@ function findNodeModules(startDir: string): string | null {
   return null;
 }
 
-/** JS 入口条件键优先级：browser 进白名单；types 仅兜底（见 pickExport）。 */
-const JS_CONDITIONS = ["node", "require", "import", "browser", "default"] as const;
+/**
+ * JS 入口条件键优先级。`browser` 排在 `default` 之后：
+ * 有 default 时取 Node 面，仅 browser-only 包才落到 browser。
+ * `types` 不在此表——见 pickExport 兜底（且不作为可执行入口）。
+ */
+const JS_CONDITIONS = ["node", "require", "import", "default", "browser"] as const;
 
 /**
  * 递归展开 exports 目标树：字符串直出；数组按序首个命中（Node fallback 语义，
@@ -43,10 +59,11 @@ function pickExport(
         if (r) return r;
       }
     }
-    // types 仅兜底：主条件键全部 miss 后才尝试
+    // types 仅兜底：主条件键全部 miss 后才尝试。
+    // .d.ts 不是可执行入口——不返回给 eval 路径（声明文件求值必失败）。
     if ("types" in o) {
       const r = pickExport(o["types"], conditions, tryTarget);
-      if (r) return r;
+      if (r && !/\.(d\.[cm]?ts)$/.test(r)) return r;
     }
   }
   return null;
@@ -135,7 +152,7 @@ function findExportsEntry(exportsField: unknown, subpath: string): ExportsEntry 
   return null;
 }
 
-/** 基于 substitution 生成 tryTarget：先替换 *，再检查文件存在性。 */
+/** 基于 substitution 生成 tryTarget：先替换 *，再检查存在性；结果必须在 pkgDir 内。 */
 function makeTryTarget(
   pkgDir: string,
   substitution: string | null,
@@ -143,8 +160,20 @@ function makeTryTarget(
 ): (rel: string) => string | null {
   return (rel: string) => {
     const substituted = substitution !== null ? rel.replace("*", substitution) : rel;
-    return tryFile(resolve(pkgDir, substituted));
+    return tryInsidePkg(pkgDir, substituted, tryFile);
   };
+}
+
+/** pkgDir 内解析相对目标；`..` / 绝对路径逃逸返回 null。 */
+function tryInsidePkg(
+  pkgDir: string,
+  rel: string,
+  tryFile: (p: string) => string | null,
+): string | null {
+  if (escapesPackageRoot(rel)) return null;
+  const abs = resolve(pkgDir, rel);
+  if (!isInsideDir(pkgDir, abs)) return null;
+  return tryFile(abs);
 }
 
 /** resolveNpmJsEntry 详细结果：路径 + exports 声明未命中标志。 */
@@ -197,8 +226,8 @@ export function resolveNpmJsEntryDetailed(
   }
 
   const exportsField = pkg.exports;
-  let exportsUnresolved = false;
 
+  // Node 语义：exports 一旦表态就只走 exports——未命中不得回落 main/直接路径。
   if (exportsField !== undefined && exportsField !== null) {
     const entry = findExportsEntry(exportsField, subpath);
     if (entry) {
@@ -206,22 +235,23 @@ export function resolveNpmJsEntryDetailed(
       const rel = pickExport(entry.target, JS_CONDITIONS, tryTarget);
       if (rel) return { path: rel, exportsUnresolved: false };
     }
-    // 有 exports 声明但未命中（键不匹配或目标文件缺失）
-    exportsUnresolved = true;
+    // exports 声明了但键不匹配 / 目标缺失 / 目标逃出包目录
+    return { path: null, exportsUnresolved: true };
   }
 
+  // 无 exports：legacy main / module / 直接子路径（仍限制在包目录内）
   if (subpath === ".") {
     const main = typeof pkg.main === "string" ? pkg.main : undefined;
-    const hit = tryFile(resolve(pkgDir, main ?? "."));
-    if (hit) return { path: hit, exportsUnresolved };
+    const hit = tryInsidePkg(pkgDir, main ?? ".", tryFile);
+    if (hit) return { path: hit, exportsUnresolved: false };
     const mod = typeof pkg.module === "string" ? pkg.module : undefined;
     if (mod) {
-      const hitMod = tryFile(resolve(pkgDir, mod));
-      if (hitMod) return { path: hitMod, exportsUnresolved };
+      const hitMod = tryInsidePkg(pkgDir, mod, tryFile);
+      if (hitMod) return { path: hitMod, exportsUnresolved: false };
     }
-    return { path: null, exportsUnresolved };
+    return none;
   }
-  return { path: tryFile(resolve(pkgDir, subpath)), exportsUnresolved };
+  return { path: tryInsidePkg(pkgDir, subpath, tryFile), exportsUnresolved: false };
 }
 
 /** 兼容包装：只取路径。 */

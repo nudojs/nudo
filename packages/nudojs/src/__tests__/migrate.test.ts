@@ -414,6 +414,30 @@ describe("nudo migrate", () => {
     expect(rewriteTscCommand('tsc -p "my tsconfig.json" --noEmit').cmd).toBe("nudo check .");
   });
 
+  it("rewriteTscCommand: -p/--project scope is preserved (monorepo)", () => {
+    // tsconfig 文件 → 所在目录
+    expect(rewriteTscCommand("tsc -p packages/foo/tsconfig.json").cmd).toBe(
+      "nudo check packages/foo",
+    );
+    expect(rewriteTscCommand("tsc --project packages/foo/tsconfig.json --noEmit").cmd).toBe(
+      "nudo check packages/foo",
+    );
+    // 目录原样
+    expect(rewriteTscCommand("tsc -p packages/foo").cmd).toBe("nudo check packages/foo");
+    expect(rewriteTscCommand("tsc --project=packages/bar").cmd).toBe("nudo check packages/bar");
+    // -b 带路径同样保留
+    expect(rewriteTscCommand("tsc -b packages/foo").cmd).toBe("nudo check packages/foo");
+    expect(rewriteTscCommand("tsc --build apps/web/tsconfig.json").cmd).toBe(
+      "nudo check apps/web",
+    );
+    // 裸 -b / 无 -p 仍是 cwd
+    expect(rewriteTscCommand("tsc -b").cmd).toBe("nudo check .");
+    // runner 前缀 + 项目路径
+    expect(rewriteTscCommand("pnpm exec tsc -p packages/foo/tsconfig.json").cmd).toBe(
+      "npx nudojs check packages/foo",
+    );
+  });
+
   it("tsc inside shell strings / comments is not rewritten", () => {
     // 字符串里的 tsc 是普通文本
     expect(rewriteTscCommand('echo "please run tsc first"').changed).toBe(false);
