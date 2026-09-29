@@ -66,7 +66,7 @@ export {
   absFunction, absShapeKey, absToConstraint, absToString, actionsForIssue,
   add, alphaOf, and, andC, any, anyAbs, anyVar, app, applyCallbackAbs,
   applyCallbackValue, array, asAbs, asAbsVal, assignSourceSlots,
-  attachFnImpl, beginCollectionFork, betaOf, bigintLit, bindImports,
+  assumeFinite, attachFnImpl, beginCollectionFork, betaOf, bigintLit, bindImports,
   bindingsOf, bitandAbs, bitnotAbs, bitorAbs, bitxorAbs, bool, boolLit,
   boolean, buildArgsFromAssume, builtinCtorAbs, builtinCtorNameOf,
   callAbsMethod, callAtFunctionBoundary, callTranspiledExport,

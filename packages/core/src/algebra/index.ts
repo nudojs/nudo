@@ -9,10 +9,10 @@ export {
 
 export {
   type ImplicationOracle, type Phi, type Pred, type PrimName, TYPEOF_NAMES,
-  type TypeofName, and, emptyPhi, eq, ge, geNum, getImplicationOracle, gt,
-  gtNum, implies, le, leNum, lt, ltNum, ne, negatePred, not, or, pFalse,
-  pTrue, phiAnd, predEquals, predToString, predVars, primToTypeof, ptypeof,
-  setImplicationOracle, substPred
+  type TypeofName, and, assumeFinite, emptyPhi, eq, ge, geNum,
+  getImplicationOracle, gt, gtNum, implies, le, leNum, lt, ltNum, ne,
+  negatePred, not, or, pFalse, pTrue, phiAnd, predEquals, predToString,
+  predVars, primToTypeof, ptypeof, setImplicationOracle, substPred
 } from "./pred.ts";
 
 export {
