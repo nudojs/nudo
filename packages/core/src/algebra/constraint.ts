@@ -324,6 +324,44 @@ export function union(
 }
 
 /**
+ * nullable(c)：允许 null / undefined 的约束（nullish 显式化）。
+ * 糖 = union(c, lit(null), lit(undefined))。
+ * `return null` / `return undefined` 只对含 nullish 的契约合法；
+ * 对不含 nullish 的契约（如 number().gt(0)）报 constraint-violated。
+ */
+export function nullable(
+  c: NudoConstraint | ConstraintBuilder | number | string | boolean,
+): ConstraintBuilder {
+  return makeBuilder(undefined, [], {
+    members: [
+      asNestedConstraint(c, "nullable()"),
+      toPlainConstraint(litC(null)),
+      toPlainConstraint(litC(undefined)),
+    ],
+  });
+}
+
+/**
+ * 契约域是否包含 nullish（null / undefined）。
+ * union 任一成员含 nullish 即含；lit(null)/lit(undefined) 的 eq 谓词识别。
+ */
+export function constraintAdmitsNullish(c: NudoConstraint): boolean {
+  if (c.members) return c.members.some((m) => constraintAdmitsNullish(m));
+  // any()（无 prim、无 preds、无 shape）接受一切含 nullish
+  if (!c.prim && c.preds.length === 0 && !c.fields && !c.element && !c.fn) return true;
+  // eq(self, null) / eq(self, undefined) 谓词
+  for (const p of c.preds) {
+    for (const flat of p.op === "and" ? p.args : [p]) {
+      if (flat.op !== "eq") continue;
+      for (const side of [flat.a, flat.b] as const) {
+        if (side.op === "lit" && (side.value === null || side.value === undefined)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
  * fn(params, returns?, { throws? })：一等函数约束。
  * Phase 1 只展示不执法：参数位 instantiate 恒真（pTrue），
  * 逐参约束经 fnConstraintToEntryReqs 消费。
@@ -502,8 +540,8 @@ export function instantiateConstraint(
   return preds.length === 0 ? { op: "true" } : preds.length === 1 ? preds[0]! : pAnd(...preds);
 }
 
-/** 在给定项上实例化约束（shape 字段/union 成员递归用） */
-function instantiateOnTerm(c: NudoConstraint, t: Term): Pred {
+/** 在给定项上实例化约束（shape 字段/union 成员递归用；assertImplies 统一证明通道） */
+export function instantiateOnTerm(c: NudoConstraint, t: Term): Pred {
   const subst = (p: Pred): Pred => {
     switch (p.op) {
       case "gt":

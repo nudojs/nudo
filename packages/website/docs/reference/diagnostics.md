@@ -221,6 +221,12 @@ True `unknown` on a signature — inference failed. **Not** unconstrained entry 
 
 Context: [`any` vs `unknown`](../concepts/limits.md#any-vs-unknown) · [Dependency types](../guides/env-harvest.md)
 
+### `nudo:unproven-return` {#nudo-unproven-return}
+
+Return postcondition could not be proved (any / unknown / opaque / widened face with no pred evidence). **Warning** — inference failed to discharge the obligation; do not treat as success. Distinct from `nudo:constraint-violated` (definite violation).
+
+Context: [nudo check](../guides/check.md#what-it-checks)
+
 ### `nudo:unknown-recv` {#nudo-unknown-recv}
 
 Member access on `unknown` receiver. Does not replace L2 throws modeling.

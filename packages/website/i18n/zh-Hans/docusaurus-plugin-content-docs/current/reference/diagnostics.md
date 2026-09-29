@@ -221,6 +221,12 @@ Context: [L2 —— 入口 throws](../guides/check.md#l2--entry-throws) · [@nud
 
 Context: [`any` 与 `unknown`](../concepts/limits.md#any-与-unknown) · [依赖类型](../guides/env-harvest.md)
 
+### `nudo:unproven-return` {#nudo-unproven-return}
+
+Return postcondition could not be proved (any / unknown / opaque / widened face with no pred evidence). **Warning** — inference failed to discharge the obligation; do not treat as success. Distinct from `nudo:constraint-violated` (definite violation).
+
+Context: [nudo check](../guides/check.md#what-it-checks)
+
 ### `nudo:unknown-recv` {#nudo-unknown-recv}
 
 `unknown` 接收者上的成员访问。不能替代 L2 throws 建模。

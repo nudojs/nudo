@@ -43,6 +43,7 @@ import {
   partial as partialC,
   pick as pickC,
   omit as omitC,
+  nullable as nullableC,
 } from "./constraint.ts";
 
 /** `/// @nudo:import { delay, percent } from "./delay.nudo.js"` */
@@ -151,6 +152,7 @@ const sidecarInjects: Record<string, unknown> = {
   partial: partialC,
   pick: pickC,
   omit: omitC,
+  nullable: nullableC,
 };
 
 function isSidecarSpec(spec: string): boolean {

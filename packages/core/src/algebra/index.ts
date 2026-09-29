@@ -150,9 +150,9 @@ export {
 export {
   type ConstraintBuilder, type NudoConstraint, type NudoField,
   type NudoFnConstraint, SELF, andC, any, array, boolean,
-  constraintToEntryAbs, fn, fnConstraintToEntryReqs, getTerm,
+  constraintAdmitsNullish, constraintToEntryAbs, fn, fnConstraintToEntryReqs, getTerm,
   instantiateConstraint, isIntFlag, isNudoConstraint, lenTerm, litC,
-  number, omit, partial, pick, shape, string, throwConstraintToKinds,
+  nullable, number, omit, partial, pick, shape, string, throwConstraintToKinds,
   union
 } from "./constraint.ts";
 

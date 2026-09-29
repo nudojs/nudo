@@ -26,7 +26,9 @@ export function viaEqNull(v) { const m = RE.exec(v); if (m === null) return "non
 export function group(v) { const m = RE.exec(v); if (!m) return null; return { major: Number(m[1]), minor: Number(m[2]) }; }
 `;
 
-const STDLIB = `import { shape, number } from "@nudojs/core";\nexport const parsed = shape({ major: number(), minor: number() });`;
+const STDLIB = `import { shape, number, nullable } from "@nudojs/core";
+export const parsed = shape({ major: number(), minor: number() });
+export const maybeParsed = nullable(shape({ major: number(), minor: number() }));`;
 
 function checkWith(src: string) {
   return checkSource("/t/exec.js", src, pTrue, {
@@ -67,11 +69,26 @@ describe("RegExp.exec with non-literal subject", () => {
   });
 });
 
-describe("nullish return evidence is prefiltered (T4 caveat)", () => {
-  it("`return null` against a shape return contract is not a violation", () => {
+describe("nullish return is explicitized (DEC-001)", () => {
+  it("`return null` against a non-nullish shape contract is a violation", () => {
     const r = checkWith(`/// @nudo:import { parsed } from "./std.nudo.js"
 /**
  * @nudo:contract return parsed
+ */
+export function nothing(v) {
+  if (v) return null;
+  return null;
+}
+`);
+    const violated = r.issues.filter((i) => i.code === "nudo:constraint-violated");
+    expect(violated.length).toBeGreaterThan(0);
+    expect(violated[0]!.severity).toBe("error");
+  });
+
+  it("`return null` against nullable(shape(...)) is allowed", () => {
+    const r = checkWith(`/// @nudo:import { maybeParsed } from "./std.nudo.js"
+/**
+ * @nudo:contract return maybeParsed
  */
 export function nothing(v) {
   if (v) return null;

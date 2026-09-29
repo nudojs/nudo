@@ -339,7 +339,11 @@ issues
 export const delay = number().gt(0);
 export const percent = number().ge(0).le(100);
 export const user = shape({ id: number().gt(0), name: string() });
+export const maybeDelay = nullable(number().gt(0));   // 允许 null / undefined
+export const posOrNull = union(number().gt(0), lit(null));
 ```
+
+**nullish 显式化（DEC-001）**：`return null` / `return undefined` 对不含 nullish 的契约报 `nudo:constraint-violated`；用 `nullable()` 或 `union(..., lit(null))` 显式声明允许 nullish。`any` / unknown（推断失败）返回对有界契约报 `nudo:unproven-return` warning——不得伪装成功，也不计 error。
 
 ```js
 /// @nudo:import { delay, user } from "./shapes.nudo.js"
