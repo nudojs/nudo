@@ -6,7 +6,7 @@
 
 import type { Abs } from "../abs.ts";
 import { abs, unknown } from "../abs.ts";
-import { evalGlobalFn } from "../builtins.ts";
+import { evalGlobalFn, hostBuiltinCtorName } from "../builtins.ts";
 import { $call } from "./call.ts";
 import { callAtFunctionBoundary, $copy } from "./runtime.ts";
 import { throwPayloadOf } from "./may-throw.ts";
@@ -101,6 +101,22 @@ const GLOBAL_FNS = new Set([
   "Array",
   "eval",
   "Symbol",
+  // 原生构造器无 `new` 调用（BigInt / Error 家族 / Map·Set·Promise 等）：
+  // 必须走 Abs 分发，禁止裸宿主调用（Abs 实参会炸 internal / 静默假精确）
+  "BigInt",
+  "Error",
+  "TypeError",
+  "RangeError",
+  "ReferenceError",
+  "SyntaxError",
+  "URIError",
+  "EvalError",
+  "AggregateError",
+  "Map",
+  "Set",
+  "WeakMap",
+  "WeakSet",
+  "Promise",
 ]);
 
 /**
@@ -316,9 +332,19 @@ export function $callNamed(
     if (typeof fn === "function") {
       // 宿主全局函数（Number/String/parseInt…）：按身份识别，路由到 Abs builtin 表。
       // 直接调用会把 Abs 喂给真 JS 函数（Number(absObj) → NaN）——静默错误。
-      const g = GLOBAL_FNS.has(name) && fn === (globalThis as Record<string, unknown>)[name]
-        ? evalGlobalFn(name, args)
-        : undefined;
+      // 原生构造器（BigInt/Error/Map…）同样禁止裸调：BigInt(absObj) 炸
+      // "Cannot convert [object Object] to a BigInt"，AggregateError(absArr) 炸
+      // "object is not iterable"。GLOBAL_FNS 按名匹配不够（别名 `const f = BigInt`），
+      // 补 hostBuiltinCtorName 身份兜底。
+      let g: Abs | undefined;
+      if (GLOBAL_FNS.has(name) && fn === (globalThis as Record<string, unknown>)[name]) {
+        g = evalGlobalFn(name, args);
+      } else {
+        const ctorName = hostBuiltinCtorName(fn);
+        if (ctorName !== undefined) {
+          g = evalGlobalFn(ctorName, args);
+        }
+      }
       const blockedHost = g === undefined ? blockHostSideEffect(fn) : null;
       if (g !== undefined) {
         result = g;

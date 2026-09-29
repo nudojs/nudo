@@ -1046,6 +1046,7 @@ export function namespaceNameOf(v: unknown): string | undefined {
   if (v === String) return "String";
   if (v === Date) return "Date";
   if (v === Promise) return "Promise";
+  if (v === BigInt) return "BigInt";
   return undefined;
 }
 

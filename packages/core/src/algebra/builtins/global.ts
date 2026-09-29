@@ -1,8 +1,9 @@
 /**
- * 全局转换函数（parseInt / Number / String / Boolean / Object / Array / Symbol …）
+ * 全局转换函数（parseInt / Number / String / Boolean / Object / Array / Symbol / BigInt …）
+ * 以及无 `new` 的原生构造器调用（Error 家族 / Map / Set / Promise …）。
  */
 import type { Abs } from "../abs.ts";
-import { abs, litValue, numLit, strLit, boolLit, unknown } from "../abs.ts";
+import { abs, litValue, numLit, strLit, boolLit, bigintLit, unknown, confJoin } from "../abs.ts";
 import { objOf } from "../objects.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs } from "../exec/may-throw.ts";
@@ -10,10 +11,51 @@ import { numPrim, str, boolPrim } from "./shared.ts";
 import { foldParseInt, foldParseFloat } from "./number.ts";
 import { makeArrayCtorAbs } from "./array.ts";
 import { makeSymbolAbs, isSymbolAbs, stringOfSymbol } from "./symbol.ts";
+import { errorBrandAbs, isErrorCtorName } from "./error.ts";
 
 /** term 确为 lit（含 lit(undefined)）；litValue 无法区分「字面量 undefined」与「无 lit」 */
 function litTermOf(a: Abs | undefined): { value: unknown } | undefined {
   return a?.term?.op === "lit" ? (a.term as { value: unknown }) : undefined;
+}
+
+/**
+ * ToBigInt（BigInt(x) 调用语义；`new BigInt` 原生 TypeError，不在此路径）。
+ * 抽象 prim 折 bigint 非具体；确定非法 lit 硬抛（与 bigint-mixed-op 同口径）。
+ */
+function toBigIntAbs(args: Abs[]): Abs {
+  const a0 = args[0];
+  if (!a0) throw new NudoThrow(errorTypeAbs("TypeError")); // BigInt() → TypeError
+  const lit = litTermOf(a0);
+  if (lit) {
+    const v = lit.value;
+    if (typeof v === "bigint") return bigintLit(v);
+    if (typeof v === "number") {
+      // NumberToBigInt：非整数 / NaN / Infinity → RangeError
+      if (!Number.isFinite(v) || !Number.isInteger(v)) {
+        throw new NudoThrow(errorTypeAbs("RangeError"));
+      }
+      return bigintLit(BigInt(v));
+    }
+    if (typeof v === "string") {
+      // StringToBigInt：解析失败 → SyntaxError
+      try {
+        return bigintLit(BigInt(v));
+      } catch {
+        throw new NudoThrow(errorTypeAbs("SyntaxError"));
+      }
+    }
+    if (typeof v === "boolean") return bigintLit(v ? 1n : 0n);
+    // undefined / null / symbol → TypeError
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  if (isSymbolAbs(a0)) throw new NudoThrow(errorTypeAbs("TypeError"));
+  // 抽象 prim / 对象：ToPrimitive 后仍可能是任意可转值——保守 bigint 非具体
+  return abs(
+    { k: "prim", type: "bigint" },
+    undefined,
+    undefined,
+    confJoin(a0.conf, "widened"),
+  );
 }
 
 export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
@@ -156,8 +198,26 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
       // obj/brand/arr/tuple/fn/eff/sum：ToObject 恒等
       return arg;
     }
-    default:
+    case "BigInt":
+      return toBigIntAbs(args);
+    default: {
+      // Error 家族无 `new` 调用 ≡ new Error(...)（原生同语义）→ errorBrandAbs。
+      // 此前落到宿主直调：AggregateError(absArr) 走 iterable 协议炸 internal；
+      // Error(absObj) 静默 ToString 成 "[object Object]" 假 message。
+      if (isErrorCtorName(name)) return errorBrandAbs(name, args);
+      // Map/Set/WeakMap/WeakSet/Promise 必须 `new`——原生 TypeError。
+      // 此前宿主直调抛 "requires 'new'"，被 call 边界折成 internal。
+      if (
+        name === "Map" ||
+        name === "Set" ||
+        name === "WeakMap" ||
+        name === "WeakSet" ||
+        name === "Promise"
+      ) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
       return undefined;
+    }
   }
 }
 
