@@ -358,7 +358,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="transpilesource"></a>`transpileSource` | fn | JS AST → `$op` program | `transpileSource(source: string, opts: TranspileOptions = {}): string` |
 
 <details>
-<summary>Additional exports from src/index.ts (332)</summary>
+<summary>Additional exports from src/index.ts (335)</summary>
 
 | Name | Kind | Summary | Signature |
 |------|------|------|------|
@@ -456,6 +456,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="execnudomodule"></a>`execNudoModule` | fn | 执行 *.nudo.js（真实 JS + 我们的构建器）。import/export 由 Babel 语句级 改写：多行 named import、注释/字符串里的同形文本不误伤；相对 .nudo 递归 求值；环 → throw NudoSidecarError。结果进 exec 缓存（依赖闭包内容指纹键）。 | `execNudoModule(src: string, opts?: RefineResolveOpts): Record<string, unknown>` |
 | <a id="extractdeclaredthrows"></a>`extractDeclaredThrows` | fn | 申报式抛错（declare throws — L2 豁免）： 与 refine 同扫函数前注释块。返回 `*` = 申报任意；数组 = 按名申报； undefined = 无申报（L2 照常执法）。 | `extractDeclaredThrows( source: string, fnName: string, ): string[]` |
 | <a id="extractfn"></a>`extractFn` | fn | — | `extractFn( source: string, fnName: string, fileAst?: ReturnType<typeof babelParse>, )` |
+| <a id="extractfnbudget"></a>`extractFnBudget` | fn | 函数级预算旋钮（#64 P4）： 与 @nudo:throws 同路径扫函数前注释块。只抬高预算（不降低全局默认）； 未声明的维度沿用全局。非法值忽略。 | `extractFnBudget( source: string, fnName: string, )` |
 | <a id="extractnudoimports"></a>`extractNudoImports` | fn | — | `extractNudoImports(source: string): NamedImport[]` |
 | <a id="extractrefinereturnfromsource"></a>`extractRefineReturnFromSource` | fn | 解析 `@nudo:contract return positive` → 返回契约。 | `extractRefineReturnFromSource( source: string, fnName: string, opts: RefineResolveOpts = {}, )` |
 | <a id="extstate"></a>`ExtState` | type | — | `ExtState = "nonext" \| "sealed" \| "frozen"` |
@@ -466,6 +467,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="formalparam"></a>`FormalParam` | type | C4.1：函数形参表面（contract surface）—— 侧车 `fn({…})` / `@nudo:contract` 参数名与求值形参的对齐基线。 | `FormalParam = \| { kind: "id"; name: string; index: number } \| { kind: "default"; name: string; index: number } \| { kind: "rest"; name: st...` |
 | <a id="formalparamdisplaynames"></a>`formalParamDisplayNames` | fn | 求值/签名用形参名（与 analyzer extractParamNames / dts 对齐） | `formalParamDisplayNames(formals: FormalParam[]): string[]` |
 | <a id="formalparamsfromnodes"></a>`formalParamsFromNodes` | fn | — | `formalParamsFromNodes(params: AstParam[] \| undefined \| null): FormalParam[]` |
+| <a id="formalparamsignaturenames"></a>`formalParamSignatureNames` | fn | 签名展示名（C4.1 #64）：解构形参渲染为 `{ grade, findings }`， 不落回求值占位 `_p0`——否则读签名的人以为没有契约。 | `formalParamSignatureNames(formals: FormalParam[]): string[]` |
 | <a id="formatabsmultiline"></a>`formatAbsMultiline` | fn | 多行展示，CLI 用 | `formatAbsMultiline(a: Abs, label?: string): string` |
 | <a id="formatdiagnostics"></a>`formatDiagnostics` | fn | — | `formatDiagnostics(diags: Diagnostic[]): string` |
 | <a id="formateffectiveinterfacedisplay"></a>`formatEffectiveInterfaceDisplay` | fn | EffectiveInterface → 契约展示串（与 CLI interface 打印同口径，不含函数名） | `formatEffectiveInterfaceDisplay(eff: EffectiveInterface): string` |
@@ -631,6 +633,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="resetgeneralizememo"></a>`resetGeneralizeMemo` | fn | — | `resetGeneralizeMemo(): void` |
 | <a id="resetnudomoduleexeccache"></a>`resetNudoModuleExecCache` | fn | — | `resetNudoModuleExecCache(): void` |
 | <a id="resetphi"></a>`resetPhi` | fn | — | `resetPhi(): void` |
+| <a id="resetsidecarloadfailurecache"></a>`resetSidecarLoadFailureCache` | fn | 与 resetNudoModuleExecCache 同口径：分析会话/测试间清空失败去重表 | `resetSidecarLoadFailureCache(): void` |
 | <a id="runtime_import_re"></a>`RUNTIME_IMPORT_RE` | const | — | `const RUNTIME_IMPORT_RE` |
 | <a id="runtranspiledoptions"></a>`RunTranspiledOptions` | type | — | `RunTranspiledOptions = { modules?: Record<string, AbsModuleExports \| Record<string, unknown>>; maxLoopIters?: number; mode?: "exec" \| "an...` |
 | <a id="runtranspiledoptionsmemokey"></a>`runTranspiledOptionsMemoKey` | fn | inject/modules **内容**指纹（memo 键）。对象身份对「每次新建同内容」 的 CLI 注入不稳——同一语义的 inject 跨 checkSource 调用会 miss 缓存。 | `runTranspiledOptionsMemoKey( opts: RunTranspiledOptions \| undefined, ): string` |
