@@ -594,13 +594,25 @@ function linOf(t: Term): Lin | undefined {
 }
 
 function linSub(a: Lin, b: Lin): Lin {
-  // normCmp 的比较归一（a op b → a-b op 0）只传播 ieeeOk，不因消去置 false：
-  // eq(x,x) 归一到 x-x 后仍应可证（比较语义，非项内减法）。
+  // 比较归一 a op b → (a-b) op 0 的差式：
+  // 同原子两侧同时出现时（含 x-x、2x-x、x+y-y），±Inf 上实际是 Inf-Inf=NaN，
+  // 系数合并不再对应真实差值——与 linOf add 异号合并同口径置 ieeeOk=false。
+  // 反身比较（eq(x,x)/ge(x,x)）不走减法，见 proveCmpDirect。
+  let cancel = false;
+  for (const k of a.c.keys()) {
+    const av = a.c.get(k) ?? 0;
+    const bv = b.c.get(k) ?? 0;
+    if (av !== 0 && bv !== 0) {
+      cancel = true;
+      break;
+    }
+  }
+  const kDiff = a.k - b.k;
   const out: Lin = {
     c: new Map(),
-    k: a.k - b.k,
+    k: kDiff,
     atoms: new Map(),
-    ieeeOk: a.ieeeOk && b.ieeeOk,
+    ieeeOk: a.ieeeOk && b.ieeeOk && !cancel && !Number.isNaN(kDiff),
   };
   for (const [k, v] of a.c) out.c.set(k, (out.c.get(k) ?? 0) + v);
   for (const [k, v] of b.c) out.c.set(k, (out.c.get(k) ?? 0) - v);
@@ -622,6 +634,142 @@ function normCmp(
   const lb = linOf(b);
   if (!la || !lb) return undefined;
   return { lin: linSub(la, lb), op };
+}
+
+/**
+ * 线性形是否可能取 NaN：
+ * - 任一原子缺少区间事实（值未知，可能是 NaN）；
+ * - 常数或区间端点已是 NaN；
+ * - ieeeOk=false（环消去形已不代表真实值）；
+ * - 不同加项可分别取 +Inf 与 -Inf（Inf+(-Inf)=NaN）。
+ * 关系比较（eq/ge/le/gt/lt）在 NaN 上一律为 false，故必须先排除 NaN。
+ */
+function linMayBeNaN(ctx: Ctx, lin: Lin): boolean {
+  if (!lin.ieeeOk) return true;
+  if (Number.isNaN(lin.k)) return true;
+  type Dir = { pos: boolean; neg: boolean };
+  const parts: Dir[] = [];
+  if (lin.k === Infinity || lin.k === -Infinity) {
+    parts.push({ pos: lin.k === Infinity, neg: lin.k === -Infinity });
+  }
+  for (const [key, coeff] of lin.c) {
+    if (coeff === 0) continue;
+    const rep = findRep(ctx, key);
+    const iv = ctx.iv.get(rep) ?? ctx.iv.get(key);
+    if (!iv) return true;
+    if (iv.lo && Number.isNaN(iv.lo.bound)) return true;
+    if (iv.hi && Number.isNaN(iv.hi.bound)) return true;
+    const atomPos = iv.hi === undefined || iv.hi.bound === Infinity;
+    const atomNeg = iv.lo === undefined || iv.lo.bound === -Infinity;
+    if (coeff > 0) parts.push({ pos: atomPos, neg: atomNeg });
+    else parts.push({ pos: atomNeg, neg: atomPos });
+  }
+  // 不同加项分别可为 +Inf 与 -Inf ⇒ Inf+(-Inf)=NaN
+  for (let i = 0; i < parts.length; i++) {
+    for (let j = 0; j < parts.length; j++) {
+      if (i !== j && parts[i]!.pos && parts[j]!.neg) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * 两侧直接比较（不经 a-b 归一）。±Inf 上 a-b op 0 与 a op b 不等价
+ * （eq(Inf,Inf) 真而 Inf-Inf=NaN 假；ne(Inf,Inf) 假而 NaN!==0 真），
+ * 故 eq/ge/le/ne 直接比较两侧区间（proveInCtx 对 gt/lt 仍可用减法归一：
+ * `a>b` 与 `a-b>0` 在 IEEE 上等价）。
+ * 反身 a op a：eq/ge/le 在非 NaN 时为真；ne 在恒 NaN 时为真。
+ */
+function proveCmpDirect(
+  ctx: Ctx,
+  op: "gt" | "ge" | "lt" | "le" | "eq" | "ne",
+  a: Term,
+  b: Term,
+): boolean {
+  // 反身比较：比较语义（a===a / a≥a），非项内减法（x-x 在 ±Inf 上为 NaN）
+  if (termEquals(a, b)) {
+    const la = linOf(a);
+    if (op === "eq" || op === "ge" || op === "le") {
+      return la !== undefined && !linMayBeNaN(ctx, la);
+    }
+    if (op === "ne") {
+      // a!==a 仅当 a 恒为 NaN
+      if (!la || !la.ieeeOk) return false;
+      return la.c.size === 0 && Number.isNaN(la.k);
+    }
+    return false; // gt/lt(a,a) 恒 false
+  }
+
+  const la = linOf(a);
+  const lb = linOf(b);
+  if (!la || !lb) return false;
+  if (!la.ieeeOk || !lb.ieeeOk) return false;
+
+  if (op === "ne") {
+    // 任一侧恒 NaN ⇒ a!==b 恒真
+    if (la.c.size === 0 && Number.isNaN(la.k)) return true;
+    if (lb.c.size === 0 && Number.isNaN(lb.k)) return true;
+    const ivA = linInterval(ctx, la);
+    const ivB = linInterval(ctx, lb);
+    if (!ivA.lo && !ivA.hi) return false;
+    if (!ivB.lo && !ivB.hi) return false;
+    // 任一侧可能 NaN ⇒ a!==b 可真可假，不可一概而论
+    if (linMayBeNaN(ctx, la) || linMayBeNaN(ctx, lb)) return false;
+    // 区间可分（含端点严格性）⇒ a≠b
+    if (ivA.hi && ivB.lo) {
+      if (ivA.hi.bound < ivB.lo.bound) return true;
+      if (ivA.hi.bound === ivB.lo.bound && (ivA.hi.strict || ivB.lo.strict)) {
+        return true;
+      }
+    }
+    if (ivA.lo && ivB.hi) {
+      if (ivA.lo.bound > ivB.hi.bound) return true;
+      if (ivA.lo.bound === ivB.hi.bound && (ivA.lo.strict || ivB.hi.strict)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // eq/ge/le/gt/lt：任一侧可能 NaN ⇒ 比较为 false，不可证
+  if (linMayBeNaN(ctx, la) || linMayBeNaN(ctx, lb)) return false;
+
+  const ivA = linInterval(ctx, la);
+  const ivB = linInterval(ctx, lb);
+
+  if (op === "eq") {
+    // 两侧夹逼到同一非严格点
+    if (!ivA.lo || !ivA.hi || !ivB.lo || !ivB.hi) return false;
+    if (ivA.lo.strict || ivA.hi.strict || ivB.lo.strict || ivB.hi.strict) {
+      return false;
+    }
+    return (
+      ivA.lo.bound === ivA.hi.bound &&
+      ivA.lo.bound === ivB.lo.bound &&
+      ivA.lo.bound === ivB.hi.bound
+    );
+  }
+
+  // 端点比较：a op b 对所有取值成立
+  if (op === "ge") {
+    if (!ivA.lo || !ivB.hi) return false;
+    return ivA.lo.bound >= ivB.hi.bound;
+  }
+  if (op === "gt") {
+    if (!ivA.lo || !ivB.hi) return false;
+    if (ivA.lo.bound > ivB.hi.bound) return true;
+    return (
+      ivA.lo.bound === ivB.hi.bound && (ivA.lo.strict || ivB.hi.strict)
+    );
+  }
+  if (op === "le") {
+    if (!ivA.hi || !ivB.lo) return false;
+    return ivA.hi.bound <= ivB.lo.bound;
+  }
+  // lt
+  if (!ivA.hi || !ivB.lo) return false;
+  if (ivA.hi.bound < ivB.lo.bound) return true;
+  return ivA.hi.bound === ivB.lo.bound && (ivA.hi.strict || ivB.lo.strict);
 }
 
 function buildCtx(phi: Phi): Ctx {
@@ -812,6 +960,16 @@ function proveInCtx(ctx: Ctx, pred: Pred): boolean {
   // 纯字面量
   const litAns = decideLiteralPred(pred);
   if (litAns !== undefined) return litAns;
+
+  // eq/ge/le/ne：不经 a-b op 0 归一（±Inf 上不等价），两侧直接比较
+  if (
+    pred.op === "eq" ||
+    pred.op === "ge" ||
+    pred.op === "le" ||
+    pred.op === "ne"
+  ) {
+    return proveCmpDirect(ctx, pred.op, pred.a, pred.b);
+  }
 
   const norm = normCmp(pred.op, pred.a, pred.b);
   if (!norm) return false;
