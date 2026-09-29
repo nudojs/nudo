@@ -2,9 +2,8 @@
  * path-based `@nudo:env` / `@nudo:mock-module` 反向依赖（watch 失效）。
  * named env（es/node/web）不进此表——它们不随工作区文件变更。
  */
-import { existsSync, statSync } from "node:fs";
-import { dirname, resolve, join } from "node:path";
 import { extractAllLoadSpecs } from "@nudojs/core/internal";
+import { resolveModuleFile } from "./load-module.ts";
 import { BoundedLruMap } from "./lru-map.ts";
 
 /**
@@ -32,20 +31,7 @@ function norm(p: string): string {
 export function resolveLoadSpecPath(spec: string, fromFile: string): string | undefined {
   if (!spec.startsWith(".") && !spec.startsWith("/")) return undefined;
   try {
-    const base = dirname(resolve(fromFile));
-    const p = resolve(base, spec);
-    for (const cand of [
-      p,
-      `${p}.js`,
-      `${p}.mjs`,
-      `${p}.ts`,
-      join(p, "index.js"),
-      join(p, "index.mjs"),
-      join(p, "index.ts"),
-    ]) {
-      if (existsSync(cand) && !statSync(cand).isDirectory()) return cand;
-    }
-    return undefined;
+    return resolveModuleFile(spec, fromFile);
   } catch {
     return undefined;
   }

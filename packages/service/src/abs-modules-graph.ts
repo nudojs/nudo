@@ -4,7 +4,7 @@
  */
 
 import { readFileSync, statSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname } from "node:path";
 import { parse } from "@nudojs/parser";
 import {
   absFunction,
@@ -20,6 +20,7 @@ import {
 import type { Node } from "@babel/types";
 import { bareSpecToAbsModules } from "@nudojs/harvester";
 import { resolveNpmJsEntry } from "./evaluator/resolve-npm.ts";
+import { moduleResolveCandidates } from "./load-module.ts";
 import { BoundedLruMap } from "./lru-map.ts";
 
 /** seedFns → Abs fn（本地副本，避免 mock-abs ↔ 本模块循环依赖） */
@@ -39,12 +40,11 @@ function seedFnsToMocks(
 
 export type AbsLoadModule = (spec: string, fromFile: string) => string | undefined;
 
-/** 相对说明符 → 源码 */
+/** 相对说明符 → 源码（与 defaultLoadModule 同一扩展名/入口候选表） */
 export function defaultAbsLoadModule(spec: string, fromFile: string): string | undefined {
   if (!spec.startsWith(".") && !spec.startsWith("/")) return undefined;
   try {
-    const p = resolve(dirname(resolve(fromFile)), spec);
-    for (const cand of [p, `${p}.js`, `${p}.mjs`, `${p}.ts`, resolve(p, "index.js")]) {
+    for (const cand of moduleResolveCandidates(spec, fromFile)) {
       try {
         return readFileSync(cand, "utf-8");
       } catch {
@@ -57,14 +57,9 @@ export function defaultAbsLoadModule(spec: string, fromFile: string): string | u
   }
 }
 
-function relCandidates(spec: string, fromFile: string): string[] {
-  const p = resolve(dirname(resolve(fromFile)), spec);
-  return [p, `${p}.js`, `${p}.mjs`, `${p}.ts`, resolve(p, "index.js")];
-}
-
 function resolveRel(spec: string, fromFile: string): string | null {
   if (!spec.startsWith(".") && !spec.startsWith("/")) return null;
-  for (const cand of relCandidates(spec, fromFile)) {
+  for (const cand of moduleResolveCandidates(spec, fromFile)) {
     try {
       readFileSync(cand, "utf-8");
       return cand;
@@ -157,7 +152,7 @@ function buildModulesForFile(
     if (spec.startsWith(".") || spec.startsWith("/")) {
       const childPath = resolveRel(spec, fromFile);
       if (!childPath) {
-        onMissing(spec, fromFile, relCandidates(spec, fromFile));
+        onMissing(spec, fromFile, moduleResolveCandidates(spec, fromFile));
         continue;
       }
       modules[spec] = evalDep(childPath, spec, fromFile, depth + 1);

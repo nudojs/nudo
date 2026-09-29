@@ -2,8 +2,6 @@
  * Abs 重求值 / intension 挂载 / 调用记录转换辅助。
  * 自 analyzer.ts 机械拆出；语义未改。evaluator 仍是唯一引擎（失败 fail-closed）。
  */
-import { existsSync, statSync } from "node:fs";
-import { resolve, dirname } from "node:path";
 import type { Node } from "@babel/types";
 import {
   generalizeFromAst,
@@ -19,6 +17,7 @@ import {
 } from "@nudojs/core";
 import { parse } from "@nudojs/parser";
 import { sourceHasModuleDependency, sourceHasRequireCall } from "@nudojs/core/internal";
+import { resolveModuleFile } from "./load-module.ts";
 import {
   neverAbs,
   type CallRecord,
@@ -141,12 +140,7 @@ export function buildAbsImportLocalMap(
 }
 
 export function resolveImportAbs(spec: string, fromFile: string): string | null {
-  const base = dirname(resolve(fromFile));
-  const p = resolve(base, spec);
-  for (const cand of [p, `${p}.js`, `${p}.mjs`, `${p}.ts`, resolve(p, "index.js")]) {
-    if (existsSync(cand) && !statSync(cand).isDirectory()) return cand;
-  }
-  return null;
+  return resolveModuleFile(spec, fromFile) ?? null;
 }
 
 /** Abs 原生重求值（无损）；evaluator 唯一引擎，失败返回 undefined（fail-closed） */
