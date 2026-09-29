@@ -357,6 +357,22 @@ function rewriteExportStatements(js: string): string {
 /** runTranspiled 顶层绑定表（checkSource varAbs 通道；WeakMap 不碰返回面） */
 const runBindings = new WeakMap<object, Map<string, unknown>>();
 
+/**
+ * env 全局注入时**不得**遮蔽的宿主内建名。
+ *
+ * 注入形式是模块级 `const <name> = __nudoEnv["<name>"]`，会遮蔽宿主全局。而
+ * 转译产物依赖 `undefined`/`NaN`/`Infinity` 保持原生身份：
+ * - `expr.ts` 把这三个标识符硬编码折成 `$lit(undefined|NaN|Infinity)`；
+ * - `stmt.ts` 缺 else 臂、隐式返回等位置直接发**裸 `undefined` 文本**。
+ *
+ * 一旦 env（如 `@nudojs/env/es` 的 `undefined: undef()`）把 `undefined` 绑成
+ * Abs，产物里的 `undefined` 就成了 Abs 对象：`$lit(<Abs>)` 折 unknown，循环内
+ * 提前 return 的分支 join 整条变 unknown；`NaN` 被绑成 `prim.num()` 时
+ * `x === NaN` 从原生恒 false 退化成 boolean。这三个名字转译器已自行处理，
+ * 注入 const 无收益 → 跳过（等同未声明）。
+ */
+const ENV_SHADOW_SKIP = new Set(["undefined", "NaN", "Infinity"]);
+
 export function bindingsOf(run: Record<string, unknown>): Map<string, unknown> | undefined {
   return runBindings.get(run);
 }
@@ -453,8 +469,11 @@ export function runTranspiled(
 
   // @nudo:env 全局 + @nudo:mock 绑定（与 __nudoEnv 合并表一致）
   const envAndMocks = { ...(opts.envGlobals ?? {}), ...(opts.mocks ?? {}) };
-  if (Object.keys(envAndMocks).length > 0) {
-    const envBinds = Object.keys(envAndMocks)
+  const envInjectNames = Object.keys(envAndMocks).filter(
+    (k) => !ENV_SHADOW_SKIP.has(k),
+  );
+  if (envInjectNames.length > 0) {
+    const envBinds = envInjectNames
       .map((k) => `const ${k} = __nudoEnv[${JSON.stringify(k)}];`)
       .join("\n");
     js = `${envBinds}\n${js}`;
