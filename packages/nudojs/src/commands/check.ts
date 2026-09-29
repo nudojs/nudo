@@ -16,6 +16,7 @@ import {
   collectEnvModules,
   type CallRecord,
 } from "@nudojs/service";
+import { stripStringsKeepComments } from "@nudojs/core/internal";
 import {
   collectExternalRecords,
   reportPathErrors,
@@ -82,6 +83,33 @@ function printDocsLinks(issues: Array<{ code?: string }>): void {
   }
 }
 
+/**
+ * 文件级 `@nudo:env` 命名 env 抽取。与 parser `extractFileDirectives` 同契约：
+ * 只认 `//` / `///` 行注释前缀，先剥字符串（字符串里的同形文本不是指令），
+ * env 名 token 只收 `\w+` 或 path-like（拒绝 `node";` 这类字符串截断捕获）。
+ */
+export function fileEnvNamesFromText(source: string): string[] {
+  // 剥字符串 + 块注释：只留 `//` / `///` 行注释可见（`/* // @nudo:env */` 不算）。
+  const directiveSrc = stripStringsKeepComments(source).replace(/\/\*[\s\S]*?\*\//g, " ");
+  // `[^/:]` 排除 `http://` 伪注释起点与 `////` 多余斜杠；`\/\/\/?` 只认 `//` / `///`。
+  const envRe = /(?:^|[^/:])\/\/\/?\s*@nudo:env\s+([^\n*]+)/g;
+  const isPathLike = (s: string): boolean =>
+    /^[^\s]+$/.test(s) &&
+    (s.startsWith("./") ||
+      s.startsWith("../") ||
+      s.startsWith("/") ||
+      /\.(ts|js|mjs|cjs|tsx|jsx)$/.test(s));
+  const out: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = envRe.exec(directiveSrc))) {
+    for (const part of m[1]!.split(",")) {
+      const name = part.trim().replace(/^['"]|['"]$/g, "");
+      if (name && (/^\w+$/.test(name) || isPathLike(name))) out.push(name);
+    }
+  }
+  return out;
+}
+
 async function runCheck(
   file: string,
   opts: {
@@ -128,9 +156,7 @@ async function runCheck(
   // 符号面必须与 test 同口径注入，否则 @nudo:env 文件整体退化 unknown。
   // path 型 @nudo:env（./custom.env.ts）由 preloadPathEnvs 在 test 路径
   // 预载；check 同步路径只收命名 env（collectEnvGlobals 对未知名安全跳过）。
-  const fileEnvNames = [...source.matchAll(/@nudo:env\s+([^\n*]+)/g)].flatMap(
-    (m) => m[1]!.split(",").map((s) => s.trim().replace(/^['"]|['"]$/g, "")).filter(Boolean),
-  );
+  const fileEnvNames = fileEnvNamesFromText(source);
   const allEnvNames = [...new Set([...projectEnvNames, ...fileEnvNames])];
   const cacheRoot = diskCacheRoot(proj?.config, proj?.projectDir);
   const disk = new DiskCache({ root: cacheRoot, namespace: "check" });

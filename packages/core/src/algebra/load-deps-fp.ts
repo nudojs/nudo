@@ -5,6 +5,7 @@
  * fail-open（不得写入/读取 memo）。
  */
 import { extractNudoImports } from "./refine.ts";
+import { stripStringsKeepComments } from "./code-text.ts";
 import { hashSource } from "./hash-source.ts";
 import { normPath, resolveDepPath, sidecarPathOf } from "./sidecar-path.ts";
 
@@ -38,23 +39,28 @@ export function extractAllLoadSpecs(source: string): string[] {
   // @nudo:env 路径模板（/// @nudo:env ./custom.env.ts）与
   // @nudo:mock-module "mod" from "./mock.js" 的 from 路径会改变分析结果。
   // 命名 env（es/node/web）不是 loadModule 可解析文件，只收 path-like。
+  // 指令只认 `//` / `///` 行注释（与 parser extractFileDirectives 同契约），
+  // 且先剥字符串——字符串里的同形文本不是指令，不得进依赖指纹。
   const isPathLikeSpec = (spec: string): boolean =>
     spec.startsWith("./") ||
     spec.startsWith("../") ||
     spec.startsWith("/") ||
     /\.(ts|js|mjs|cjs|tsx|jsx)$/.test(spec);
-  const envRe = /@nudo:env\s+([^\n*]+)/g;
+  // 剥字符串 + 块注释：只留 `//` / `///` 行注释可见（与 parser 同识别面）。
+  const directiveSrc = stripStringsKeepComments(source).replace(/\/\*[\s\S]*?\*\//g, " ");
+  // `[^/:]` 排除 `http://` 伪注释起点与 `////` 多余斜杠；`\/\/\/?` 只认 `//` / `///`。
+  const envRe = /(?:^|[^/:])\/\/\/?\s*@nudo:env\s+([^\n]+)/g;
   let envM: RegExpExecArray | null;
-  while ((envM = envRe.exec(source))) {
+  while ((envM = envRe.exec(directiveSrc))) {
     for (const part of envM[1]!.split(",")) {
       const spec = part.trim().replace(/^['"]|['"]$/g, "");
       if (spec && isPathLikeSpec(spec)) specs.add(spec);
     }
   }
   const mockFromRe =
-    /@nudo:mock-module\s+"[^"]+"\s+(?:\{[^}]*\}\s+)?from\s+["']([^"']+)["']/g;
+    /(?:^|[^/:])\/\/\/?\s*@nudo:mock-module\s+"[^"]+"\s+(?:\{[^}]*\}\s+)?from\s+["']([^"']+)["']/g;
   let mockM: RegExpExecArray | null;
-  while ((mockM = mockFromRe.exec(source))) specs.add(mockM[1]!);
+  while ((mockM = mockFromRe.exec(directiveSrc))) specs.add(mockM[1]!);
   const patterns = [
     /\bfrom\s*['"]([^'"]+)['"]/g,
     /\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/g,

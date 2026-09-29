@@ -973,9 +973,12 @@ function findReplaceSeparator(raw: string): number {
   return -1;
 }
 
-const ENV_REGEX = /^\/\s*@nudo:env\s+(.+)/;
-const MOCK_MODULE_REGEX = /^\/\s*@nudo:mock-module\s+"([^"]+)"\s+from\s+"([^"]+)"/;
-const MOCK_MODULE_PARTIAL_REGEX = /^\/\s*@nudo:mock-module\s+"([^"]+)"\s*\{([^}]+)\}\s*from\s+"([^"]+)"/;
+// 文件级指令前缀契约：`//` 与 `///` 等价（comment.value 已剥掉首个 `//`，
+// `///` 形态残留一个 `/`，`//` 形态是空白/原文）。只认 CommentLine 行注释，
+// 块注释与字符串里的同形文本不算。check / load-deps 侧同契约，三套抽取器不合并。
+const ENV_REGEX = /^\/?\s*@nudo:env\s+(.+)/;
+const MOCK_MODULE_REGEX = /^\/?\s*@nudo:mock-module\s+"([^"]+)"\s+from\s+"([^"]+)"/;
+const MOCK_MODULE_PARTIAL_REGEX = /^\/?\s*@nudo:mock-module\s+"([^"]+)"\s*\{([^}]+)\}\s*from\s+"([^"]+)"/;
 
 export function extractFileDirectives(ast: Node): FileDirective[] {
   const results: FileDirective[] = [];
@@ -1010,8 +1013,19 @@ export function extractFileDirectives(ast: Node): FileDirective[] {
 
     const envMatch = text.match(ENV_REGEX);
     if (envMatch) {
-      const envs = envMatch[1].split(",").map((e) => e.trim()).filter(Boolean);
-      results.push({ kind: "env", envs });
+      // env 名 token 只收 `\w+` 或 path-like——拒绝 `node";` 这类截断捕获，
+      // 与 check 的 fileEnvNamesFromText 同口径（不合并抽取器，只统一识别面）。
+      const isPathLikeEnv = (s: string): boolean =>
+        /^[^\s]+$/.test(s) &&
+        (s.startsWith("./") ||
+          s.startsWith("../") ||
+          s.startsWith("/") ||
+          /\.(ts|js|mjs|cjs|tsx|jsx)$/.test(s));
+      const envs = envMatch[1]!
+        .split(",")
+        .map((e) => e.trim().replace(/^['"]|['"]$/g, ""))
+        .filter((e) => e && (/^\w+$/.test(e) || isPathLikeEnv(e)));
+      if (envs.length > 0) results.push({ kind: "env", envs });
     }
   }
 
