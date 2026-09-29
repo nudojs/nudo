@@ -249,6 +249,135 @@ describe("nudo migrate", () => {
     }
   });
 
+  it("pnpm-workspace.yaml: status covers workspace sub-packages", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-pnpm-status-"));
+    dirs.push(dir);
+    // 本仓形态：根 package.json 无 workspaces，包声明在 pnpm-workspace.yaml
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "root", private: true }),
+      "utf-8",
+    );
+    writeFileSync(
+      join(dir, "pnpm-workspace.yaml"),
+      [
+        "# pnpm workspace",
+        "packages:",
+        '  - "packages/*" # trailing comment',
+        "  - 'apps/*'",
+        "allowBuilds:",
+        "  esbuild: true",
+        "minimumReleaseAgeExclude:",
+        "  - 'vitest@5.0.2'",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    for (const [sub, name] of [
+      ["packages", "a"],
+      ["apps", "b"],
+    ] as const) {
+      const p = join(dir, sub, name);
+      mkdirSync(p, { recursive: true });
+      writeFileSync(
+        join(p, "package.json"),
+        JSON.stringify({
+          name,
+          scripts: { typecheck: "tsc --noEmit" },
+          devDependencies: { typescript: "^5.0.0" },
+        }),
+        "utf-8",
+      );
+      mkdirSync(join(p, "src"));
+      writeFileSync(join(p, "src", "x.ts"), `export const x: number = 1;\n`, "utf-8");
+    }
+    // decoy：后续顶格 key 下的 list 不得当成包路径
+    const rows = migrateStatus(dir);
+    expect(rows).toHaveLength(3); // root + packages/a + apps/b
+    const subs = rows.filter((r) => r.typescriptDep);
+    expect(subs).toHaveLength(2);
+    for (const r of subs) {
+      expect(r.tsFiles).toBe(1);
+      expect(r.tscScripts).toContain("typecheck");
+    }
+  });
+
+  it("pnpm-workspace.yaml: retire --all covers workspace sub-packages", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-pnpm-retire-"));
+    dirs.push(dir);
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "root", private: true }),
+      "utf-8",
+    );
+    writeFileSync(
+      join(dir, "pnpm-workspace.yaml"),
+      ["packages:", '  - "packages/*"', "  - 'tools/*'", ""].join("\n"),
+      "utf-8",
+    );
+    for (const [sub, name] of [
+      ["packages", "a"],
+      ["packages", "b"],
+      ["tools", "c"],
+    ] as const) {
+      const p = join(dir, sub, name);
+      mkdirSync(p, { recursive: true });
+      writeFileSync(
+        join(p, "package.json"),
+        JSON.stringify({
+          name,
+          scripts: { typecheck: "tsc --noEmit" },
+          devDependencies: { typescript: "^5.0.0" },
+        }),
+        "utf-8",
+      );
+    }
+    const results = migrateRetireAll(dir, { workflows: false });
+    expect(results).toHaveLength(3);
+    for (const r of results) {
+      expect(r.removedDeps.length).toBeGreaterThan(0);
+      const abs = resolve(r.root);
+      expect(existsSync(join(abs, ".nudo", "migrate-retired.json"))).toBe(true);
+      const pkg = JSON.parse(readFileSync(join(abs, "package.json"), "utf-8"));
+      expect(pkg.devDependencies.typescript).toBeUndefined();
+      expect(pkg.scripts.typecheck).toContain("nudo check");
+    }
+  });
+
+  it("packageRoots merges package.json#workspaces and pnpm-workspace.yaml without dupes", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-pnpm-merge-"));
+    dirs.push(dir);
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "root", private: true, workspaces: ["packages/*"] }),
+      "utf-8",
+    );
+    writeFileSync(
+      join(dir, "pnpm-workspace.yaml"),
+      ["packages:", '  - "packages/*"', "  - apps/*", ""].join("\n"),
+      "utf-8",
+    );
+    for (const [sub, name] of [
+      ["packages", "a"],
+      ["apps", "b"],
+    ] as const) {
+      const p = join(dir, sub, name);
+      mkdirSync(p, { recursive: true });
+      writeFileSync(
+        join(p, "package.json"),
+        JSON.stringify({
+          name,
+          scripts: { typecheck: "tsc --noEmit" },
+          devDependencies: { typescript: "^5.0.0" },
+        }),
+        "utf-8",
+      );
+    }
+    const rows = migrateStatus(dir);
+    // root + packages/a（两源同 pattern，去重）+ apps/b
+    expect(rows).toHaveLength(3);
+  });
+
   it("rewriteTscCommand covers npx/pnpm/bare forms", () => {
     expect(rewriteTscCommand("npx tsc --noEmit").cmd).toBe("npx nudojs check .");
     expect(rewriteTscCommand("tsc --noEmit").cmd).toBe("nudo check .");

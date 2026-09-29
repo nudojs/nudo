@@ -105,27 +105,132 @@ function listFiles(dir: string, out: string[] = [], depth = 0): string[] {
   return out;
 }
 
+/** 剥离 YAML 行注释（引号内 `#` 不是注释） */
+function stripYamlLineComment(line: string): string {
+  let i = 0;
+  const n = line.length;
+  while (i < n) {
+    const c = line[i]!;
+    if (c === '"' || c === "'") {
+      const quote = c;
+      i++;
+      while (i < n) {
+        if (quote === '"' && line[i] === "\\") {
+          i += 2;
+          continue;
+        }
+        if (line[i] === quote) {
+          i++;
+          break;
+        }
+        i++;
+      }
+      continue;
+    }
+    if (c === "#" && (i === 0 || /\s/.test(line[i - 1]!))) {
+      return line.slice(0, i);
+    }
+    i++;
+  }
+  return line;
+}
+
+function unquoteYamlScalar(s: string): string {
+  const t = s.trim();
+  if (t.length >= 2) {
+    if (t.startsWith('"') && t.endsWith('"')) return t.slice(1, -1);
+    if (t.startsWith("'") && t.endsWith("'")) return t.slice(1, -1);
+  }
+  return t;
+}
+
+/**
+ * 最小解析 pnpm-workspace.yaml 的 `packages:` 列表（非完整 YAML）。
+ * 认块列表（`- item`）与单行流列表（`packages: [a, b]`）；处理注释/引号。
+ * 排除模式（`!…`）原样返回，由调用方决定是否跳过。
+ */
+function parsePnpmWorkspacePackages(root: string): string[] {
+  const yamlPath = join(root, "pnpm-workspace.yaml");
+  if (!existsSync(yamlPath)) return [];
+  let text: string;
+  try {
+    text = readFileSync(yamlPath, "utf-8");
+  } catch {
+    return [];
+  }
+  const out: string[] = [];
+  let inPackages = false;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = stripYamlLineComment(rawLine);
+    if (!line.trim()) continue;
+    const top = !/^\s/.test(line);
+    const trimmed = line.trim();
+    if (top) {
+      const m = trimmed.match(/^packages:\s*(.*)$/);
+      if (m) {
+        const rest = m[1]!.trim();
+        if (rest.startsWith("[")) {
+          const inner = rest.endsWith("]") ? rest.slice(1, -1) : rest.slice(1);
+          for (const part of inner.split(",")) {
+            const item = unquoteYamlScalar(part);
+            if (item) out.push(item);
+          }
+          inPackages = false;
+        } else if (rest) {
+          const item = unquoteYamlScalar(rest);
+          if (item) out.push(item);
+          inPackages = false;
+        } else {
+          inPackages = true;
+        }
+        continue;
+      }
+      inPackages = false;
+      continue;
+    }
+    if (!inPackages) continue;
+    const itemMatch = trimmed.match(/^-\s+(.+)$/);
+    if (itemMatch) {
+      const item = unquoteYamlScalar(itemMatch[1]!);
+      if (item) out.push(item);
+    }
+  }
+  return out;
+}
+
 function packageRoots(root: string): string[] {
-  const pkgPath = join(root, "package.json");
-  const pkg = readJson(pkgPath);
-  if (!pkg) return [root];
-  const workspaces = pkg.workspaces;
-  const roots = [root];
+  const patterns: string[] = [];
+  const pkg = readJson(join(root, "package.json"));
+  const workspaces = pkg?.workspaces;
   if (Array.isArray(workspaces)) {
     for (const w of workspaces) {
-      if (typeof w !== "string") continue;
-      // support "packages/*" style
-      if (w.endsWith("/*") || w.endsWith("/**")) {
-        const base = join(root, w.replace(/\/\*\*?$/, ""));
-        if (!existsSync(base)) continue;
-        for (const name of readdirSync(base)) {
-          const p = join(base, name);
-          if (existsSync(join(p, "package.json"))) roots.push(p);
-        }
-      } else {
-        const p = join(root, w);
-        if (existsSync(join(p, "package.json"))) roots.push(p);
+      if (typeof w === "string") patterns.push(w);
+    }
+  }
+  patterns.push(...parsePnpmWorkspacePackages(root));
+
+  const roots = [root];
+  const seen = new Set<string>([root]);
+  for (const w of patterns) {
+    // pnpm 排除模式（`!…`）不新增根；最小解析不做排除匹配
+    if (w.startsWith("!")) continue;
+    // support "packages/*" style
+    if (w.endsWith("/*") || w.endsWith("/**")) {
+      const base = join(root, w.replace(/\/\*\*?$/, ""));
+      if (!existsSync(base)) continue;
+      for (const name of readdirSync(base)) {
+        const p = join(base, name);
+        if (!existsSync(join(p, "package.json"))) continue;
+        if (seen.has(p)) continue;
+        seen.add(p);
+        roots.push(p);
       }
+    } else {
+      const p = join(root, w);
+      if (!existsSync(join(p, "package.json"))) continue;
+      if (seen.has(p)) continue;
+      seen.add(p);
+      roots.push(p);
     }
   }
   return roots;
