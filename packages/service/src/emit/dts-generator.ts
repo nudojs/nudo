@@ -150,10 +150,12 @@ export function absToTSType(a: Abs, typeVars?: Map<string, string>): string {
       const parts = a.shape.elements.map((e) => absToTSType(e, typeVars));
       if (a.shape.rest) {
         const rest = a.shape.rest;
+        // rest 元素类型位与 arr 元素位同口径：union/fn 必须括号，
+        // 否则 `...number | string[]` / `...(x) => T[]` 语义不同或非法
         const restTs =
           rest.shape.k === "arr"
             ? absToTSType(rest, typeVars)
-            : `${absToTSType(rest, typeVars)}[]`;
+            : `${wrapComplexAbs(rest, typeVars)}[]`;
         parts.push(`...${restTs}`);
       }
       return `[${parts.join(", ")}]`;

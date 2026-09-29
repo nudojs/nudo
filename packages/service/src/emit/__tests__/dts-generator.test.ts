@@ -14,10 +14,13 @@ import { absToTSType, generateDts } from "../dts-generator.ts";
 import { analyzeFile } from "@nudojs/service";
 
 const arrOf = (element: Abs): Abs => abs({ k: "arr", element }, undefined, undefined, "exact");
-const tupleOf = (elements: Abs[]): Abs => abs({ k: "tuple", elements }, undefined, undefined, "exact");
+const tupleOf = (elements: Abs[], rest?: Abs): Abs =>
+  abs({ k: "tuple", elements, rest }, undefined, undefined, "exact");
 const promiseOf = (inner: Abs): Abs => abs({ k: "eff", eff: "promise", inner }, undefined, undefined, "exact");
 const brandOf = (name: string): Abs => abs({ k: "brand", name, shape: objOf({}) }, undefined, undefined, "path");
 const unionOf = (...members: Abs[]): Abs => abs({ k: "sum", members }, undefined, undefined, "exact");
+const fnAbs = (params: string[], returnType?: Abs, paramTypes?: Abs[]): Abs =>
+  abs({ k: "fn", params, returnType, paramTypes }, undefined, undefined, "exact");
 const nullLit = (): Abs => abs({ k: "unknown" }, { op: "lit", value: null }, undefined, "exact");
 const undefLit = (): Abs => abs({ k: "unknown" }, { op: "lit", value: undefined }, undefined, "exact");
 const unknownAbs = (): Abs => abs({ k: "unknown" }, undefined, undefined, "partial");
@@ -64,6 +67,24 @@ describe("absToTSType", () => {
 
   it("converts tuple type", () => {
     expect(absToTSType(tupleOf([num(), str()]))).toBe("[number, string]");
+  });
+
+  it("converts tuple rest element union with parens (BUG-005)", () => {
+    expect(absToTSType(tupleOf([str()], unionOf(num(), str())))).toBe(
+      "[string, ...(number | string)[]]",
+    );
+  });
+
+  it("converts tuple rest element fn with parens (BUG-005)", () => {
+    expect(absToTSType(tupleOf([str()], fnAbs(["x"], num(), [num()])))).toBe(
+      "[string, ...((x: number) => number)[]]",
+    );
+  });
+
+  it("keeps tuple rest arr path unchanged (BUG-005 regression)", () => {
+    expect(absToTSType(tupleOf([str()], arrOf(unionOf(num(), str()))))).toBe(
+      "[string, ...(number | string)[]]",
+    );
   });
 
   it("converts promise type", () => {
