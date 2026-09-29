@@ -372,7 +372,11 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       const cname =
         callee.type === "Identifier" ? callee.name : isExpression(callee) ? transpileExpression(callee, opts) : "$lit(undefined)";
       const args = expr.arguments
-        .map((a) => (a.type === "SpreadElement" ? "$unknown()" : transpileExpression(a as Expression, opts)))
+        .map((a) =>
+          a.type === "SpreadElement"
+            ? `...$elems(${transpileExpression(a.argument as Expression, opts)})`
+            : transpileExpression(a as Expression, opts),
+        )
         .join(", ");
       return `$new(${cname}, [${args}])`;
     }
@@ -974,7 +978,11 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       // super() → __this = $super(__this, Child, [...])
       if (callee.type === "Super" && opts.thisParam && opts.className) {
         const args = expr.arguments
-          .map((a) => (a.type === "SpreadElement" ? "$unknown()" : transpileExpression(a as Expression, opts)))
+          .map((a) =>
+            a.type === "SpreadElement"
+              ? `...$elems(${transpileExpression(a.argument as Expression, opts)})`
+              : transpileExpression(a as Expression, opts),
+          )
           .join(", ");
         return `${opts.thisParam} = $super(${opts.thisParam}, ${JSON.stringify(opts.className)}, [${args}])`;
       }
@@ -988,7 +996,11 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         opts.className
       ) {
         const args = expr.arguments
-          .map((a) => (a.type === "SpreadElement" ? "$unknown()" : transpileExpression(a as Expression, opts)))
+          .map((a) =>
+            a.type === "SpreadElement"
+              ? `...$elems(${transpileExpression(a.argument as Expression, opts)})`
+              : transpileExpression(a as Expression, opts),
+          )
           .join(", ");
         return `$invokeSuper(${opts.thisParam}, ${JSON.stringify(opts.className)}, ${JSON.stringify(callee.property.name)}, [${args}])`;
       }
@@ -1022,7 +1034,11 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       ) {
         const recv = transpileExpression(callee.object as Expression, opts);
         const args = expr.arguments
-          .map((a) => (a.type === "SpreadElement" ? "$unknown()" : transpileExpression(a as Expression, opts)))
+          .map((a) =>
+            a.type === "SpreadElement"
+              ? `...$elems(${transpileExpression(a.argument as Expression, opts)})`
+              : transpileExpression(a as Expression, opts),
+          )
           .join(", ");
         const name = JSON.stringify(callee.property.name);
         const opt = optionalCall || (callee as { optional?: boolean }).optional === true;
@@ -1049,7 +1065,9 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         const argLocSrcs: string[] = [];
         for (const a of expr.arguments) {
           if (a.type === "SpreadElement") {
-            argSrcs.push("$unknown()");
+            // spread 实参展开（DEC-006 K5）：$elems → JS Abs[]，数组字面量 JS spread 平铺
+            // 此前折 $unknown() 单参，后续形参绑到 JS undefined
+            argSrcs.push(`...$elems(${transpileExpression(a.argument as Expression, opts)})`);
             argLocSrcs.push("null");
           } else {
             argSrcs.push(transpileExpression(a as Expression, opts));
@@ -1067,7 +1085,9 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       }
       const args = expr.arguments
         .map((a) =>
-          a.type === "SpreadElement" ? `/* spread */` : transpileExpression(a as Expression, opts),
+          a.type === "SpreadElement"
+            ? `...$elems(${transpileExpression(a.argument as Expression, opts)})`
+            : transpileExpression(a as Expression, opts),
         )
         .join(", ");
       const c =
@@ -1106,15 +1126,22 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         ...(hasThis ? { thisParam: "__this" } : {}),
         ...(isArrow ? {} : { argsBinding: hasArgs ? "__nudoArgs" : undefined }),
       };
-      const paramParts = rest ? [...sig, `...${rest}`] : sig;
+      // FunctionExpression 无宿主 this 时编成箭头（无真实 arguments）——需要
+      // arguments 时改收 `(...__allArgs)`，从 $arguments 槽绑定形参（strict 独立）。
+      const useArgsSlot = hasArgs && !hasThis;
+      // rest 形参：JS rest 收集的是 Abs[]（裸 JS 数组），必须包 $arr 才是 Abs
+      // （DEC-006 K1b：rest.length 直接 $len 炸）。useArgsSlot 路径已由
+      // emitParamBindingFromArgs 的 $arrRest 处理。
+      const restRaw = rest && !useArgsSlot ? `__rest_raw` : rest;
+      const restPrologue = rest && !useArgsSlot && restRaw
+        ? [`  const ${rest} = $arr(${restRaw});`]
+        : [];
+      const paramParts = restRaw ? [...sig, `...${restRaw}`] : sig;
       // 一等 fn Abs：参数名进 shape（bridge/dts 可展示）——用展示名（含 rest/默认参），
       // 不是宿主绑定 sig（默认参是 `_p{i}` 占位，rest 不在 sig 里）。
       // 异步 body 包 $async 保持 eff(promise) 语义（裸 JS async 会泄漏 Promise）。
       const nameList = `[${paramDisplayNames(fn.params).map((p) => JSON.stringify(p)).join(", ")}]`;
       const thisPrologue = hasThis ? [`const __this = $rawThis(this);`] : [];
-      // FunctionExpression 无宿主 this 时编成箭头（无真实 arguments）——需要
-      // arguments 时改收 `(...__allArgs)`，从 $arguments 槽绑定形参（strict 独立）。
-      const useArgsSlot = hasArgs && !hasThis;
       let argsSlotPrologue: string[] = [];
       let argsParamParts = paramParts;
       if (useArgsSlot) {
@@ -1127,7 +1154,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       }
       const allPrologue = useArgsSlot
         ? [...argsSlotPrologue, ...thisPrologue]
-        : [...prologue, ...thisPrologue, ...argsSlotPrologue];
+        : [...prologue, ...restPrologue, ...thisPrologue, ...argsSlotPrologue];
       if (fn.body.type === "BlockStatement") {
         const inner = withImplicitReturn(
           fn.body,

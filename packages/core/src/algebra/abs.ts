@@ -245,5 +245,7 @@ export function isExactLit(a: Abs): boolean {
 }
 
 export function litValue(a: Abs): LiteralValue | undefined {
-  return a.term?.op === "lit" ? a.term.value : undefined;
+  // DEC-006 B/C：绑定层可能漏出 JS undefined（缺参/spread 未展开）——
+  // fail-closed 折 undefined，禁止宿主 TypeError 冒进 internal
+  return a?.term?.op === "lit" ? a.term.value : undefined;
 }

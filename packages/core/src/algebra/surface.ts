@@ -348,6 +348,11 @@ export function toNumberAbs(a: Abs): Abs {
 
 /** JS typeof：结果域永远是 string */
 export function typeofAbs(a: Abs): Abs {
+  // DEC-006 B/C：free identifier 可能把宿主值/undefined 漏进来（typeof process…）——
+  // 非 Abs 入参 fail-closed 为 partial string，禁止读 .shape 炸宿主 TypeError
+  if (!a || typeof a !== "object" || !("shape" in (a as object))) {
+    return abs({ k: "prim", type: "string" }, undefined, undefined, "partial");
+  }
   const v = litValue(a);
   if (v === null) return strLit("object");
   // lit(undefined) 与「无 lit」在 litValue 上都是 undefined，须看 term
