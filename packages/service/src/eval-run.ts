@@ -5,7 +5,7 @@
  * throws 经 callTranspiledExportFull 捕获 $throw。
  */
 
-import { runTranspiled, callTranspiledExport, callTranspiledExportFull, setEvalCallCollector, createEnvironment, type EvalCallRecord, type TranspiledCallResult, type Abs, type AbsModuleExports, type Phi, formatAbs, getFnImpl } from "@nudojs/core";
+import { runTranspiled, callTranspiledExport, callTranspiledExportFull, setEvalCallCollector, createEnvironment, noteEvalFallback, type EvalCallRecord, type TranspiledCallResult, type Abs, type AbsModuleExports, type Phi, formatAbs, getFnImpl } from "@nudojs/core";
 import { setMemberDiagCollector, setAbsTruncationCollector, type EvalMemberDiag, stableAnalyzeKeySource, hashSource, loadModuleDepsFingerprint } from "@nudojs/core/internal";
 import { parse, extractInlineDirectives } from "@nudojs/parser";
 import { loadEnvs } from "./evaluator/evaluator-api.ts";
@@ -76,7 +76,8 @@ export function collectEnvGlobals(envNames: string[]): Record<string, Abs> {
   const env = createEnvironment();
   try {
     return { ...loadEnvs(envNames, env).globals };
-  } catch {
+  } catch (e) {
+    noteEvalFallback(e);
     return {};
   }
 }
@@ -88,7 +89,8 @@ export function collectEnvModules(envNames: string[]): Record<string, AbsModuleE
   let mods: Record<string, Record<string, Abs>> = {};
   try {
     mods = loadEnvs(envNames, env).modules;
-  } catch {
+  } catch (e) {
+    noteEvalFallback(e);
     return {};
   }
   const out: Record<string, AbsModuleExports> = {};
@@ -340,7 +342,8 @@ type EvalCacheEntry = {
   envKey: string;
   mockKey: string;
   depKey: string;
-  value: EvalRunResult | null;
+  /** 只缓存成功求值；失败结果禁止入 memo（瞬时失败不得固化为空导出） */
+  value: EvalRunResult;
 };
 const evalRunByFile = new Map<string, EvalCacheEntry>();
 
@@ -384,7 +387,7 @@ function evalCacheSet(
   envKey: string,
   mockKey: string,
   depKey: string,
-  value: EvalRunResult | null,
+  value: EvalRunResult,
 ): void {
   const max = getSessionCacheLimits().maxEvalRuns;
   if (max <= 0) return;
@@ -443,7 +446,7 @@ export function tryRunEval(
       // LRU：命中移到队尾
       evalRunByFile.delete(filePath);
       evalRunByFile.set(filePath, cached);
-      return cached.value ?? undefined;
+      return cached.value;
     }
   }
   let out: EvalRunResult | null = null;
@@ -491,10 +494,13 @@ export function tryRunEval(
       setAbsTruncationCollector(prevTrunc);
       setEvalCallCollector(prevCall);
     }
-  } catch {
+  } catch (e) {
+    // 与 tryRunTranspiled 同口径：失败可观测，且不得写入 memo
+    // （瞬时失败入缓存会把该 source 固化成永久空导出）
+    noteEvalFallback(e);
     out = null;
   }
-  if (canCache && depKey !== null) {
+  if (out !== null && canCache && depKey !== null) {
     evalCacheSet(filePath, stable, mode, envKey, mockKey, depKey, out);
   }
   return out ?? undefined;
