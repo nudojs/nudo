@@ -79,4 +79,11 @@ describe("evaluator spread of concrete containers (regression)", () => {
   it("string spread", () => {
     expect(litValue(call(`export function f() { return [...'ab', 'c'][1]; }`).result)).toBe("b");
   });
+  // DEC-006：空 tuple 元素 join 无单位元，$concat 不得裸 reduce 抛
+  it("spread of Array.from(...).keys() does not crash $concat on empty tuple", () => {
+    const r = call(`export function f() { return [...Array.from('ab').keys()]; }`);
+    expect(r.result.shape.k).not.toBe("never");
+    // 不得把引擎缺陷折成「保证不抛」：无异常时 throws=never
+    expect(r.throws.shape.k).toBe("never");
+  });
 });

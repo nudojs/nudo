@@ -807,13 +807,14 @@ export function $concat(a: Abs, b: Abs): Abs {
   // 一侧是抽象数组（arr）：spread 语义按元素并入（元素 join），
   // 不得整体嵌为单元素——字面量链超 cap 降级为 arr 后继续吸收后续元素也走此分支
   if (as.k === "arr" || bs.k === "arr") {
+    // 空 tuple 元素 join 无单位元——不得裸 reduce（DEC-006: Reduce of empty array）
     const ea: Abs = as.k === "tuple"
-      ? as.elements.reduce((x, y) => joinAbs(x, y))
+      ? (as.elements.length ? as.elements.reduce((x, y) => joinAbs(x, y)) : unknown)
       : as.k === "arr"
         ? as.element
         : a;
     const eb: Abs = bs.k === "tuple"
-      ? bs.elements.reduce((x, y) => joinAbs(x, y))
+      ? (bs.elements.length ? bs.elements.reduce((x, y) => joinAbs(x, y)) : unknown)
       : bs.k === "arr"
         ? bs.element
         : b;

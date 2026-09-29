@@ -49,9 +49,10 @@ export {
 } from "./calls.ts";
 
 export {
-  type EvalFallback, RUNTIME_IMPORT_RE, type RunTranspiledOptions,
+  type EvalFallback, type EvalFallbackStats, RUNTIME_IMPORT_RE, type RunTranspiledOptions,
   type TranspiledCallResult, bindingsOf, callTranspiledExport,
-  callTranspiledExportFull, evalExprAbs, noteEvalFallback, runTranspiled,
+  callTranspiledExportFull, evalExprAbs, getEvalFallbackStats, noteEvalFallback,
+  resetEvalFallbackStats, runTranspiled,
   runTranspiledOptionsMemoKey, setEvalFallbackCollector, tryRunTranspiled
 } from "./run.ts";
 

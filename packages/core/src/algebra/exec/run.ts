@@ -532,9 +532,37 @@ export function evalExprAbs(
   return factory(...Object.values(rtAllBindings()), ...Object.values(bindings));
 }
 
-/** 记录一次 B 回落（body-fn 等非 runTranspiled 入口共用） */
+/** 回落计数（D6-A：internal 可暴露为 health 指标，不静默吞） */
+export type EvalFallbackStats = {
+  internal: number;
+  unsupported: number;
+  moduleThrow: number;
+  total: number;
+};
+
+let _fbInternal = 0;
+let _fbUnsupported = 0;
+let _fbModuleThrow = 0;
+
+/** 始终累计（与 collector 无关）——health / 测试读同一口径 */
+export function getEvalFallbackStats(): EvalFallbackStats {
+  return {
+    internal: _fbInternal,
+    unsupported: _fbUnsupported,
+    moduleThrow: _fbModuleThrow,
+    total: _fbInternal + _fbUnsupported + _fbModuleThrow,
+  };
+}
+
+/** 宿主入口 / health 按文件分析前重置 */
+export function resetEvalFallbackStats(): void {
+  _fbInternal = 0;
+  _fbUnsupported = 0;
+  _fbModuleThrow = 0;
+}
+
+/** 记录一次 B 回落（body-fn / tryRunTranspiled / call 边界兜底共用） */
 export function noteEvalFallback(e: unknown): void {
-  if (!evalFallbackCollector) return;
   const f: EvalFallback = e instanceof NudoUnsupportedError
     ? { reason: `unsupported:${e.reason}`, message: e.message, ...(e.loc ? { loc: e.loc } : {}) }
     : isNudoThrow(e)
@@ -542,6 +570,10 @@ export function noteEvalFallback(e: unknown): void {
         // 模块装载失败，不是 B 能力边界也不是 B 缺陷（catch 可吸收）
         { reason: "module-throw", message: e instanceof Error ? e.message : String(e) }
       : { reason: "internal", message: e instanceof Error ? e.message : String(e) };
+  if (f.reason === "internal") _fbInternal++;
+  else if (f.reason === "module-throw") _fbModuleThrow++;
+  else if (f.reason.startsWith("unsupported:")) _fbUnsupported++;
+  if (!evalFallbackCollector) return;
   try {
     evalFallbackCollector(f);
   } catch {
@@ -636,6 +668,8 @@ function callTranspiledExportFullInner(
         // 其余原生异常（TypeError/RangeError/栈溢出/引擎缺陷…）也必须进 throws 域：
         // 折成「… + throws=never」会假报「保证不抛」（L2 entry-may-throw 假阴性）。
         // result 保持 fail-closed unknown（不谎称 never）。
+        // D6-A canary：与 tryRunTranspiled 同口径记 internal 回落（不静默吞）。
+        noteEvalFallback(e);
         return {
           result: joinLoopExits(unknown),
           throws: joinThrowExits(throwPayloadOf(e)),
@@ -661,6 +695,8 @@ function callTranspiledExportFullInner(
             return { result: joinLoopExits(never), throws: joinThrowExits(e.absValue) };
           }
           // 同上：原生异常不得折成 throws=never（result 保持 fail-closed unknown）
+          // D6-A canary：与 tryRunTranspiled 同口径记 internal 回落
+          noteEvalFallback(e);
           return {
             result: joinLoopExits(unknown),
             throws: joinThrowExits(throwPayloadOf(e)),

@@ -102,6 +102,9 @@ export {
   setMayThrowCollector, throwAbsToKinds, throwsKindCovered
 } from "./algebra/exec/may-throw.ts";
 export {
+  type EvalFallbackStats, getEvalFallbackStats, resetEvalFallbackStats
+} from "./algebra/exec/run.ts";
+export {
   type EvalMemberDiag, OBJECT_PROTO_NAMES, anyMemberResult,
   definitelyUncallableMember, getAbsOrigin, isEvalMissingSlotEnabled,
   isNullishAbs, noteAnyMemberMayThrow, noteMemberDispatchMiss,
