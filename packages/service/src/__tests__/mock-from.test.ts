@@ -136,6 +136,88 @@ function readConfig(path) {
   });
 });
 
+describe("undefined export is not confused with missing binding", () => {
+  it("mock file exporting undefined binding is accepted (undefAbs slot, not 'not defined')", () => {
+    const dir = tmpProject({
+      "mocks/stub.js": `export const stub = undefined;\n`,
+    });
+    const entry = join(dir, "app.js");
+    const source = `/**
+ * @nudo:mock stub from "./mocks/stub.js"
+ * @nudo:case "default" ()
+ */
+function f() {
+  return stub;
+}
+`;
+    const seeds = seedsOf(source, entry);
+    expect(seeds.fromErrors).toBeUndefined();
+    expect(seeds.seedVars.stub).toBeDefined();
+    // 「名存在但值 undefined」：undefAbs 槽位，不是 missing
+    expect(seeds.seedVars.stub!.term).toEqual({ op: "lit", value: undefined });
+  });
+
+  it("mock file with export let (undefined initial) is accepted", () => {
+    const dir = tmpProject({
+      "mocks/stub.js": `export let stub;\n`,
+    });
+    const entry = join(dir, "app.js");
+    const source = `/**
+ * @nudo:mock stub from "./mocks/stub.js"
+ * @nudo:case "default" ()
+ */
+function f() {
+  return stub;
+}
+`;
+    const seeds = seedsOf(source, entry);
+    expect(seeds.fromErrors).toBeUndefined();
+    expect(seeds.seedVars.stub).toBeDefined();
+    expect(seeds.seedVars.stub!.term).toEqual({ op: "lit", value: undefined });
+  });
+
+  it("mock file without the binding still errors (missing ≠ undefined)", () => {
+    const dir = tmpProject({
+      "mocks/other.js": `export const other = 1;\n`,
+    });
+    const entry = join(dir, "app.js");
+    const source = `/**
+ * @nudo:mock stub from "./mocks/other.js"
+ * @nudo:case "default" ()
+ */
+function f() {
+  return stub;
+}
+`;
+    const seeds = seedsOf(source, entry);
+    expect(seeds.seedVars.stub).toBeUndefined();
+    expect(seeds.fromErrors).toHaveLength(1);
+    expect(seeds.fromErrors![0]!.message).toContain("does not define a binding named 'stub'");
+  });
+
+  it("undefined export seeds inject and do not fall through to real host", () => {
+    const dir = tmpProject({
+      "mocks/fetch.js": `export const fetchStub = undefined;\n`,
+    });
+    const entry = join(dir, "app.js");
+    const source = `/**
+ * @nudo:mock fetchStub from "./mocks/fetch.js"
+ * @nudo:case "go" ()
+ */
+function go() {
+  return fetchStub;
+}
+`;
+    const seeds = seedsOf(source, entry);
+    expect(seeds.fromErrors).toBeUndefined();
+    const mocks = mockSeedsToAbsMocks(seeds);
+    expect(mocks.fetchStub).toBeDefined();
+    const r = tryEvalCallFull(source, entry, "go", [], { mocks, envNames: [] });
+    expect(r).toBeDefined();
+    expect(r!.result.term).toEqual({ op: "lit", value: undefined });
+  });
+});
+
 describe("inline mocks do not regress", () => {
   it("arrow / stub inline mocks still seed", () => {
     const source = `/**

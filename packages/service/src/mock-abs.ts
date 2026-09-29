@@ -15,6 +15,7 @@ import {
   abs as makeAbs,
   confJoin,
   unknown as absUnknown,
+  undefAbs,
   litValue,
   formatAbs,
   getFnImpl,
@@ -271,18 +272,30 @@ function loadFromMockBinding(
     };
   }
   const run = evaled.run;
-  let val: unknown = run[name];
-  if (val === undefined) {
+  // 「名存在但值 undefined」≠「从未绑定」：用 in / Map.has 判存在，
+  // 与 evalExportsToModuleExports 保留 undefined 槽位同口径
+  let val: unknown;
+  let found = false;
+  if (name in run) {
+    val = run[name];
+    found = true;
+  } else {
     const binds = bindingsOf(run);
-    val = binds?.get(name);
+    if (binds?.has(name)) {
+      val = binds.get(name);
+      found = true;
+    }
   }
-  if (val === undefined) {
+  if (!found) {
     return {
       error: `Mock file "${fromPath}" does not define a binding named '${name}'`,
     };
   }
   let absVal: Abs;
-  if (isAbsVal(val)) {
+  if (val === undefined) {
+    // 名存在但值 undefined：保留槽位为 undefAbs（与 evalExportsToModuleExports 同口径）
+    absVal = undefAbs();
+  } else if (isAbsVal(val)) {
     absVal = val;
   } else if (typeof val === "function") {
     const fn = val as { length?: number };
