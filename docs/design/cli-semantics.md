@@ -105,6 +105,7 @@ assertions
 | `migrate verify` | 任一文件 `nudo check` 不 ok（tsc 基线仅对照，不单独挡 exit） |
 | `migrate strip|retire` | 用法 / IO 错误（`retire --dry-run` 不写盘） |
 | `contract --emit --exit-on-diff` | 将写盘且有 diff（须同时 `--dry-run`；无 dry-run 时为 usage error） |
+| `test --freeze[=update] --dry-run --exit-on-diff` | 将写盘且有 diff（须同时 `--dry-run`；无 dry-run 时为 usage error） |
 
 CI 门禁只认 `check`（及 `test` 的声明断言、`health` 的 drift）。
 
@@ -430,6 +431,7 @@ npx tsx scripts/scan-real-packages.ts commander
   "version": 1,
   "file": "…",
   "summary": { "functions": 1, "externalFunctions": 0, "cases": 1, "diagnostics": 0 },
+  "assertions": { "passed": 2, "failed": 0, "unchecked": 1 },
   "functions": [{
     "name": "scale",
     "loc": { "start": {…}, "end": {…} },
@@ -456,6 +458,7 @@ npx tsx scripts/scan-real-packages.ts commander
 - `version: 1` — 字段只增不改语义  
 - **ext**：`args` / `result` 为 `formatShape(Abs)` 字符串（有损兼容）；入口无约束参数序列化为 **`any`**  
 - **intension**：无损 Abs（`abs` / `term` / `pred` / `conf`）  
+- **assertions**：`{passed,failed,unchecked}` 声明断言计数（`test --json` 追加；只增字段）  
 - 实现：`packages/service/src/case-json.ts`（`serializeCaseJson`）；契约测试：`case-json.test.ts`
 
 ### 6.3 Agent / LSP 通道
@@ -560,7 +563,7 @@ Day 0   check（读签名）/ test（看 case） · Day 1   contract + check · 
 | 示例矩阵 | [`../examples/README.md`](../examples/README.md) |
 | 门禁核心 | `packages/core/src/algebra/check.ts` |
 | 金标 | `packages/core/src/algebra/__tests__/check-recall-gold.test.ts` 等 |
-| CLI | `packages/cli/src/index.ts` |
-| case 报告 | `packages/cli/src/run-test.ts` · `packages/service/src/case-json.ts` |
+| CLI | `packages/nudojs/src/index.ts` |
+| case 报告 | `packages/nudojs/src/run-test.ts` · `packages/service/src/case-json.ts` |
 | analysisConfig | `packages/service/src/evaluator/config.ts` |
 | 窄化指南 | `packages/website/docs/concepts/control-flow-narrowing.md` |
