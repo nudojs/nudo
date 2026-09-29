@@ -8,7 +8,7 @@
 import type { parseSource } from "./parse-source.ts";
 import type { Abs } from "./abs.ts";
 import { formatAbs, formatAbsMultiline, formatShape } from "./format.ts";
-import { escapeRegExp } from "./code-text.ts";
+import { identBoundaryRegex } from "./code-text.ts";
 import type { PolyFn } from "./generalize.ts";
 
 type ParsedFile = ReturnType<typeof parseSource>;
@@ -76,9 +76,10 @@ export function estimateEntryParamCount(
   } catch {
     /* fallthrough */
   }
-  const escaped = escapeRegExp(fnName);
+  // JS 标识符含 `$`：两侧用 lookaround，不用 `\b`（`\b` 会把 `alf` 的尾巴 `f` 当独立名）
+  const name = identBoundaryRegex(fnName);
   const re = new RegExp(
-    `(?:function\\s+${escaped}\\s*\\(([^)]*)\\)|${escaped}\\s*=\\s*(?:async\\s*)?function(?:\\s+${escaped})?\\s*\\(([^)]*)\\)|${escaped}\\s*=\\s*(?:async\\s*)?\\(([^)]*)\\)\\s*=>)`,
+    `(?:function\\s+${name}\\s*\\(([^)]*)\\)|${name}\\s*=\\s*(?:async\\s*)?function(?:\\s+${name})?\\s*\\(([^)]*)\\)|${name}\\s*=\\s*(?:async\\s*)?\\(([^)]*)\\)\\s*=>)`,
   );
   const m = re.exec(source);
   if (m) {
@@ -92,9 +93,10 @@ export function estimateEntryParamCount(
 /** export default 是否绑定到该本地函数名 */
 export function isDefaultExportName(source: string, fnName: string): boolean {
   // export default function fn / export default fn / export default () =>
-  const name = escapeRegExp(fnName);
+  // 边界用 lookaround 而非 `\b`：`$` 是标识符字符，`\b` 会漏 `foo$`、误命中 `$fn$`
+  const name = identBoundaryRegex(fnName);
   const re = new RegExp(
-    `export\\s+default\\s+(?:async\\s+)?(?:function\\s+${name}\\b|${name}\\b)`,
+    `export\\s+default\\s+(?:async\\s+)?(?:function\\s+${name}|${name})`,
   );
   return re.test(source);
 }

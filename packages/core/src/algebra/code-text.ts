@@ -354,3 +354,12 @@ export function sourceHasCjsExports(source: string): boolean {
 export function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+
+/**
+ * JS 标识符边界 lookaround：名字转义后两侧包 `(?<![\w$])` / `(?![\w$])`。
+ * `$` 是标识符字符，`\b` 的"词"只含 `[A-Za-z0-9_]`——二者错位，
+ * 拿 `\b` 当标识符边界会漏 `foo$`、误命中 `$fn$` 的 `$fn`。
+ */
+export function identBoundaryRegex(name: string): string {
+  return `(?<![\\w$])${escapeRegExp(name)}(?![\\w$])`;
+}

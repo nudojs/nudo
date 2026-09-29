@@ -22,7 +22,7 @@ import type { Pred } from "./pred.ts";
 import { v as termVar } from "./term.ts";
 import { parseSource } from "./parse-source.ts";
 import { hashSource } from "./hash-source.ts";
-import { stripStringsKeepComments } from "./code-text.ts";
+import { identBoundaryRegex, stripStringsKeepComments } from "./code-text.ts";
 // leaf 模块：load-deps-fp.ts 已 import 本文件（extractNudoImports），
 // 反向 import 会成环——路径函数从 sidecar-path.ts 单源取用
 import { isNodeModulesPath, resolveDepPath } from "./sidecar-path.ts";
@@ -796,9 +796,9 @@ function extractRefineLines(source: string, fnName: string): string[] {
   // 前缀必须一并匹配：否则 match 落在行中，before 以 `export …` 结尾，
   // 反向注释扫描立即 break，@nudo:contract 整体丢失（导出函数的契约
   // 全部静默失效）。
-  const escaped = fnName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escaped = identBoundaryRegex(fnName);
   const fnRe = new RegExp(
-    `(?:export\\s+(?:default\\s+)?)?(?:async\\s+)?(?:function\\s+${escaped}\\b|const\\s+${escaped}\\s*=)`,
+    `(?:export\\s+(?:default\\s+)?)?(?:async\\s+)?(?:function\\s+${escaped}|const\\s+${escaped}\\s*=)`,
   );
   const m = source.match(fnRe);
   if (!m || m.index === undefined) return [];
@@ -923,9 +923,9 @@ export function extractDeclaredThrows(
   const kinds = new Set<string>();
   let any = false;
   // 与 extractRefineLines 同路径扫函数前注释块（throws/case 不在 refine 行文法里）
-  const escaped = fnName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const escaped = identBoundaryRegex(fnName);
   const fnRe = new RegExp(
-    `(?:export\\s+(?:default\\s+)?)?(?:async\\s+)?(?:function\\s+${escaped}\\b|const\\s+${escaped}\\s*=)`,
+    `(?:export\\s+(?:default\\s+)?)?(?:async\\s+)?(?:function\\s+${escaped}|const\\s+${escaped}\\s*=)`,
   );
   const m = source.match(fnRe);
   if (!m || m.index === undefined) return undefined;

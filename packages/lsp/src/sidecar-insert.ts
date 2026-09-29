@@ -26,7 +26,10 @@ export function findFnContractInsertPos(
   // 等长掩码：注释/字符串整段变空格（保留 \n），下标与原文一一对应
   const mask = maskCommentsAndStrings(sidecarLines.join("\n")).split("\n");
 
-  const exportRe = new RegExp(`export\\s+const\\s+${escapeRegExp(fnName)}\\b`);
+  // JS 标识符含 `$`：边界用 lookaround，不用 `\b`（否则 `foo$` 绑定匹配不上）
+  const exportRe = new RegExp(
+    `export\\s+const\\s+(?<![\\w$])${escapeRegExp(fnName)}(?![\\w$])`,
+  );
   const fnLineIdx = mask.findIndex((l) => exportRe.test(l));
   if (fnLineIdx < 0) return null;
 
