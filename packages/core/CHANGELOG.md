@@ -1,5 +1,68 @@
 # @nudojs/core
 
+## 1.3.0
+
+### Minor Changes
+
+- c717017: fix(dx): sidecar load failure reported once (#64) + contract/DX improvements
+  
+  1. **Sidecar load failure dedup** (defect): a broken `*.nudo.js` no longer
+     reports the same `nudo:interface-load` once per source export. Unrelated
+     exports are filtered by the sidecar's export names before exec; module-level
+     failures dedup by (path, reason) with one message and `(affects N bindings)`
+     — wording no longer says `for 'X'` (reads like X itself is broken).
+  
+  2. **L2 entry-may-throw actions**: the most honest fix (sidecar `fn({ … })`
+     param contract) is now the first suggested action, ahead of `@nudo:throws`.
+  
+  3. **Destructured param contracts render**: `decide({ grade, findings })` with
+     a sidecar field contract shows `{ grade, findings }: { grade: string, … }`
+     instead of `decide(_p0: any)`.
+  
+  4. **`@nudo:budget` function-level budget knob**:
+     `@nudo:budget forks=20000` / `calls=… depth=…` raises the call/fork budget
+     for that function's evaluation only (restored after). Truncation
+     suggestions point at this knob instead of only global `maxForks`.
+
+### Patch Changes
+
+- 6bc08c7: fix(env): env globals no longer shadow the host `undefined` / `NaN` / `Infinity`
+  
+  `runTranspiled` injects every `@nudo:env` global as a module-scope
+  `const <name> = __nudoEnv["<name>"]`, which shadows the host global for the
+  whole transpiled body. `@nudojs/env/es` declares `undefined: undef()`, and
+  `web` / `node` imply `es` — so any `nudo.env` declaration shadowed `undefined`:
+  
+  - the transpiler's own bare `undefined` text (`stmt` missing `else` arm,
+    implicit return) and `$lit(undefined)` received an **Abs object**;
+  - effect: a conditional `return` inside a loop joined to `unknown`, so
+    `for (const s of list) { if (s === "high") return "l1"; } return "l0";`
+    folded to `unknown` instead of `"l0" | "l1"`;
+  - `NaN` bound as `prim.num()` degraded `0 === NaN` from the definite `false`
+    of native semantics to `boolean`.
+  
+  Injection now skips `undefined` / `NaN` / `Infinity`: the transpiler already
+  hardcodes those identifiers as `$lit(...)`, so the consts had no upside and
+  only shadowed the host.
+  
+  Measured on a consumer project (npm-safe) with `nudo.env = ["es","node","web"]`:
+  `nudo test` went 39/39 → 23 passed / 10 failed; with this fix it is 33 + 6
+  planned cases green again, plus `opaque-result` 34 → 28, `unknown-inference`
+  9 → 6, `host-effect-blocked` 1 → 0 (env-declared builtins now fold instead of
+  failing closed).
+- d925692: fix(core): transpile emissions no longer depend on host `undefined` / `NaN` / `Infinity` identifier identity
+  
+  Follow-up hardening after the env-injection skip fix:
+  
+  - emit `$lit(void 0)` / `$lit(0/0)` / `$lit(1/0)` instead of `$lit(undefined)` /
+    `$lit(NaN)` / `$lit(Infinity)` so generated code never reads those identifiers;
+  - omit `$fork`'s third argument when there is no `else` arm (previously emitted a
+    bare `undefined` sentinel that broke if the name was shadowed);
+  - share one `HOST_INTRINSIC_NAMES` table between transpile folding and the env
+    inject skip set, so the two lists cannot drift;
+  - free-assignment / fork-binding filters exclude all three intrinsics, not just
+    `undefined`.
+
 ## 1.2.2
 
 ### Patch Changes
