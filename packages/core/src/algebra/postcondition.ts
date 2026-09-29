@@ -151,10 +151,13 @@ export function assertImplies(
       : disproved(`return ⊭ union(${constraint.members.map((m) => formatConstraint(m)).join(", ")})`);
   }
 
-  // --- sum 分发：shape 契约逐成员对账（条件赋值 / 多 return 路径）。
+  // --- sum 分发：形状/数组契约逐成员对账（条件赋值 / 多 return 路径）。
   // scalar 契约不向 sum 成员分发——成员可能是 any 参与运算符派生的
-  // 并集（any+any → number|string），报则假阳性（gold 门禁口径）。---
-  if (sumMembers && constraint.fields) {
+  // 并集（any+any → number|string），报则假阳性（gold 门禁口径）。
+  // array 契约同为结构契约：`[] | [x]` 的每个成员单独都是数组，不得因
+  // 「sum 既不是 arr 也不是 tuple」判违规（此前落下方 element 分支 →
+  // 消费方 `const out = []; if (…) out.push(x); return out;` 全数假阳性）。
+  if (sumMembers && (constraint.fields || constraint.element)) {
     let sawUnprovable = false;
     for (const m of sumMembers) {
       if (isValueSetUnknown(m)) continue; // gold FP 保护：any 派生成员
