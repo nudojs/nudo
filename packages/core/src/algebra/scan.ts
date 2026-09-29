@@ -711,13 +711,17 @@ export function scanLiteralCalls(
     }
 
     // eq / union 域（lit()/union() 字段契约）：bounds 分支判不了——域隶属
-    // 判定（domain-membership 语义复用）；仅 eq/union 形态触发，防双报
+    // 判定（domain-membership 语义复用）；仅 eq/union 形态触发，防双报。
+    // litValue 哨兵：lit(undefined)/lit(null) 也是字面量证据，须看 term
+    // 后走完整域隶属（与 leq / domain-membership 同口径）。
+    const fieldLit = fieldAbs.term?.op === "lit" ? fieldAbs.term.value : undefined;
+    const fieldIsLit = fieldAbs.term?.op === "lit";
     if (
-      lv !== undefined &&
-      (typeof lv === "number" || typeof lv === "string" || typeof lv === "boolean") &&
+      fieldIsLit &&
+      (typeof fieldLit === "number" || typeof fieldLit === "string" || typeof fieldLit === "boolean" || fieldLit === null || fieldLit === undefined) &&
       ((constraint.members?.length ?? 0) > 0 ||
         constraint.preds.some((p) => p.op === "eq")) &&
-      !literalMeetsConstraint(lv, constraint)
+      !literalMeetsConstraint(fieldLit, constraint)
     ) {
       out.push({
         severity: "error",

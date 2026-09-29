@@ -5,7 +5,7 @@
  * NudoConstraint 表达的域内。只覆盖可判定的标量子集：
  *
  *   - prim 门（prim 缺失或不匹配字面量类型 → false）
- *   - eq(self, lit v) 字面量等值（number/string/boolean/null）
+ *   - eq(self, lit v) 字面量等值（SameValue：含 undefined/NaN；与 leq 同口径）
  *   - gt/ge/lt/le 数值常数界（self op n）
  *   - 字符串长度界（length(self) op n，即 min/max/length 链）
  *   - int（整数性）
@@ -18,7 +18,7 @@
 import type { NudoConstraint } from "./constraint.ts";
 import { SELF, isIntFlag } from "./constraint.ts";
 import type { Pred, TypeofName } from "./pred.ts";
-import type { LiteralValue, Term } from "./term.ts";
+import type { Term } from "./term.ts";
 
 /**
  * members / fn 是 Phase 1 constraint 扩展形态（union()/fn() 构建器）。
@@ -31,7 +31,7 @@ type ExtendedConstraint = NudoConstraint & {
 
 /** 字面量 lv 是否落在约束 c 表达的域内（保守：判不了 → false）。 */
 export function literalMeetsConstraint(
-  lv: number | string | boolean | null,
+  lv: number | string | boolean | null | undefined,
   c: NudoConstraint,
 ): boolean {
   const ext = c as ExtendedConstraint;
@@ -42,8 +42,8 @@ export function literalMeetsConstraint(
   if (Array.isArray(ext.members) && ext.members.length > 0) {
     return ext.members.some((m) => literalMeetsConstraint(lv, m));
   }
-  // prim 门：缺失时（lit(null)/any() 等）只按 preds 判定——eq(self,null)
-  // 能满足 null；any()（无 pred）接受一切字面量。有 prim 则必须类型匹配。
+  // prim 门：缺失时（lit(null)/lit(undefined)/any() 等）只按 preds 判定——
+  // eq(self,null) 能满足 null；any()（无 pred）接受一切字面量。有 prim 则必须类型匹配。
   if (c.prim === undefined) {
     return c.preds.every((p) => predHolds(lv, p));
   }
@@ -65,12 +65,12 @@ export function literalMeetsConstraint(
 
 /**
  * typeof 标签与字面量证据的匹配（JS typeof）。
- * 证据域只有 number|string|boolean|null：object 仅匹配 null
- * （typeof null === "object"）；function/undefined/bigint/symbol 无字面量证据。
+ * 证据域含 undefined/null：object 仅匹配 null（typeof null === "object"），
+ * undefined 匹配 "undefined"；function/bigint/symbol 无字面量证据。
  */
 function primMatches(
   prim: TypeofName,
-  lv: number | string | boolean | null,
+  lv: number | string | boolean | null | undefined,
 ): boolean {
   switch (prim) {
     case "number":
@@ -81,16 +81,23 @@ function primMatches(
       return typeof lv === "boolean";
     case "object":
       return lv === null;
+    case "undefined":
+      return lv === undefined;
     default:
       return false;
   }
 }
 
-function predHolds(lv: number | string | boolean | null, p: Pred): boolean {
+function predHolds(lv: number | string | boolean | null | undefined, p: Pred): boolean {
   switch (p.op) {
     case "eq": {
-      const v = selfEqLiteral(p);
-      return v !== undefined && lv === v;
+      // eq(self, lit v)：lit(undefined)/lit(NaN) 的 litValue 哨兵 + === 都会漏；
+      // 直接看 term + SameValue（Object.is），与 leq 同口径。
+      const litT = isSelfVar(p.a) && p.b.op === "lit" ? p.b
+        : isSelfVar(p.b) && p.a.op === "lit" ? p.a
+        : undefined;
+      if (!litT) return false;
+      return Object.is(lv, litT.value);
     }
     case "gt":
     case "ge":
@@ -107,13 +114,6 @@ function predHolds(lv: number | string | boolean | null, p: Pred): boolean {
     default:
       return false;
   }
-}
-
-/** eq(self, lit v) / eq(lit v, self) 取字面量端；其余形态 undefined。 */
-function selfEqLiteral(p: { a: Term; b: Term }): LiteralValue | undefined {
-  if (isSelfVar(p.a) && p.b.op === "lit") return p.b.value;
-  if (isSelfVar(p.b) && p.a.op === "lit") return p.a.value;
-  return undefined;
 }
 
 type Cmp = "gt" | "ge" | "lt" | "le";
@@ -133,7 +133,7 @@ function cmpHolds(x: number, op: Cmp, n: number): boolean {
 
 /** 数值界（self op n）与长度界（length(self) op n）；右端必须是数字 lit。 */
 function boundHolds(
-  lv: number | string | boolean | null,
+  lv: number | string | boolean | null | undefined,
   p: { op: Cmp; a: Term; b: Term },
 ): boolean {
   if (p.b.op !== "lit" || typeof p.b.value !== "number") return false;

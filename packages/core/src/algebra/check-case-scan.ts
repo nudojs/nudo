@@ -10,7 +10,7 @@
 import { parseSource as parse } from "./parse-source.ts";
 import { stripStringsKeepComments } from "./code-text.ts";
 import type { Abs } from "./abs.ts";
-import { abs, numLit, litValue } from "./abs.ts";
+import { abs, numLit } from "./abs.ts";
 import type { Pred } from "./pred.ts";
 import { predToString } from "./pred.ts";
 import { formatAbs } from "./format.ts";
@@ -215,10 +215,13 @@ export function scanCaseInconsistency(
         }
         arg = projected;
       }
-      const lv = litValue(arg);
+      // litValue 哨兵：lit(undefined)/lit(null) 也是字面量证据，须看 term
+      // 后走完整域隶属（与 domain-membership / scan 同口径）。
+      const argLit = arg.term?.op === "lit" ? arg.term.value : undefined;
+      const argIsLit = arg.term?.op === "lit";
       if (
-        lv === undefined ||
-        (typeof lv !== "number" && typeof lv !== "string" && typeof lv !== "boolean")
+        !argIsLit ||
+        (typeof argLit !== "number" && typeof argLit !== "string" && typeof argLit !== "boolean" && argLit !== null && argLit !== undefined)
       ) {
         continue;
       }
@@ -226,7 +229,7 @@ export function scanCaseInconsistency(
         (entry.constraint.members?.length ?? 0) > 0 ||
         entry.constraint.preds.some((p) => p.op === "eq");
       if (hasEqOr) {
-        if (!literalMeetsConstraint(lv, entry.constraint)) {
+        if (!literalMeetsConstraint(argLit, entry.constraint)) {
           const paramName = entry.param || paramNames[idx] || `arg${idx}`;
           out.push({
             severity: "error",
@@ -241,7 +244,7 @@ export function scanCaseInconsistency(
         }
         continue;
       }
-      if (typeof lv !== "number") continue;
+      if (typeof argLit !== "number") continue;
       const flatten = (p: Pred): Pred[] => (p.op === "and" ? p.args.flatMap(flatten) : p.op === "true" ? [] : [p]);
       for (const p of flatten(entry.pred)) {
         if (
@@ -251,10 +254,10 @@ export function scanCaseInconsistency(
         ) {
           const n = p.b.value;
           let ok = true;
-          if (p.op === "gt") ok = lv > n;
-          if (p.op === "ge") ok = lv >= n;
-          if (p.op === "lt") ok = lv < n;
-          if (p.op === "le") ok = lv <= n;
+          if (p.op === "gt") ok = argLit > n;
+          if (p.op === "ge") ok = argLit >= n;
+          if (p.op === "lt") ok = argLit < n;
+          if (p.op === "le") ok = argLit <= n;
           if (!ok) {
             const paramName = entry.param || paramNames[idx] || `arg${idx}`;
             out.push({

@@ -17,7 +17,7 @@ import {
 } from "../constraint.ts";
 import { eq, ge, ptypeof } from "../pred.ts";
 import { lit, v } from "../term.ts";
-import { litC as cLit, union as cUnion, andC as cAnd } from "../constraint.ts";
+import { litC as cLit, union as cUnion, andC as cAnd, nullable } from "../constraint.ts";
 
 /** lit(v) 的编码形态（prim + eq(self, lit v)；null 无 PrimName 可配） */
 function litConstraint(value: number | string | boolean | null): NudoConstraint {
@@ -266,6 +266,38 @@ describe("literalMeetsConstraint", () => {
       expect(literalMeetsConstraint(1, c)).toBe(true);
       expect(literalMeetsConstraint("1", c)).toBe(false);
       expect(literalMeetsConstraint(null, c)).toBe(false);
+    });
+  });
+
+  describe("lit(undefined) / lit(NaN)：哨兵 + SameValue（BUG-003）", () => {
+    it("lit(undefined) domain membership", () => {
+      expect(literalMeetsConstraint(undefined, cLit(undefined))).toBe(true);
+      expect(literalMeetsConstraint(0, cLit(undefined))).toBe(false);
+      expect(literalMeetsConstraint(undefined, cLit(null))).toBe(false);
+      expect(literalMeetsConstraint(null, cLit(undefined))).toBe(false);
+    });
+
+    it("nullable admits undefined", () => {
+      const c = nullable(number().gt(0)) as unknown as NudoConstraint;
+      expect(literalMeetsConstraint(undefined, c)).toBe(true);
+      expect(literalMeetsConstraint(1, c)).toBe(true);
+      expect(literalMeetsConstraint(0, c)).toBe(false);
+      expect(literalMeetsConstraint(null, c)).toBe(true);
+    });
+
+    it("lit(NaN) uses SameValue like leqAbs", () => {
+      expect(literalMeetsConstraint(NaN, cLit(NaN))).toBe(true);
+      expect(literalMeetsConstraint(1, cLit(NaN))).toBe(false);
+      expect(literalMeetsConstraint(undefined, cLit(NaN))).toBe(false);
+    });
+
+    it("eq 端 lit(undefined) 在左同样可满足", () => {
+      const flipped: NudoConstraint = {
+        __nudoConstraint: true,
+        preds: [eq(lit(undefined), v(SELF))],
+      };
+      expect(literalMeetsConstraint(undefined, flipped)).toBe(true);
+      expect(literalMeetsConstraint(0, flipped)).toBe(false);
     });
   });
 

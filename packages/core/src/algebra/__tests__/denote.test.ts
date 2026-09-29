@@ -68,4 +68,32 @@ describe("denoteGuard", () => {
     expect(denoteGuard(unknown, "x")).toBe("true");
     expect(denoteGuard(bool(), "x")).toBe('typeof x === "boolean"');
   });
+
+  it("lit(undefined) / lit(null) generate equality guards (BUG-003)", () => {
+    // litValue 哨兵把 lit(undefined) 折成「无字面量」，旧实现恒真
+    const undefLit = makeAbs({ k: "unknown" }, lit(undefined), undefined, "exact");
+    const nullLit = makeAbs({ k: "unknown" }, lit(null), undefined, "exact");
+    expect(denoteGuard(undefLit, "data")).toBe("data === undefined");
+    expect(denoteGuard(nullLit, "data")).toBe("data === null");
+  });
+
+  it("null|undefined union guard is not constantly true (BUG-003)", () => {
+    const nullLit = makeAbs({ k: "unknown" }, lit(null), undefined, "exact");
+    const undefLit = makeAbs({ k: "unknown" }, lit(undefined), undefined, "exact");
+    const s = makeAbs({ k: "sum", members: [nullLit, undefLit] }, undefined, undefined, "exact");
+    expect(denoteGuard(s, "data")).toBe("(data === null || data === undefined)");
+  });
+
+  it("object required undefined field is checked (BUG-003)", () => {
+    const undefLit = makeAbs({ k: "unknown" }, lit(undefined), undefined, "exact");
+    const o = makeAbs(
+      { k: "obj", slots: { x: { value: undefLit }, y: { value: numLit(1) } } },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const g = denoteGuard(o, "data");
+    expect(g).toContain("data.x === undefined");
+    expect(g).toContain("data.y === 1");
+  });
 });

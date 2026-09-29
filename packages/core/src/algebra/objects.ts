@@ -275,7 +275,8 @@ export function makeSum(a: Abs, b: Abs): Abs {
         (m) =>
           m.shape.k === "prim" &&
           (m.shape as { type: string }).type === (first.shape as { type: string }).type &&
-          litValue(m) !== undefined,
+          // litValue 哨兵对 lit(undefined) 折成 undefined，须看 term
+          m.term?.op === "lit",
       );
     if (samePrimLit) {
       return abs(first.shape, undefined, undefined, "path");
@@ -313,8 +314,8 @@ export function absShapeKey(a: Abs, seen: Set<object> = new Set()): string {
     const s = a.shape;
     // prim 按 term/pred 区分：`number=A1>3` 与 `number=A1*2` 是不同路径，不能按 shape 去重
     if (s.k === "prim") {
-      const lv = litValue(a);
-      if (lv !== undefined) return `prim:${s.type}:${String(lv)}`;
+      // litValue 哨兵对 lit(undefined) 折成 undefined，须看 term
+      if (a.term?.op === "lit") return `prim:${s.type}:${String(a.term.value)}`;
       const t = a.term ? termToString(a.term) : "";
       const p = a.pred && a.pred.op !== "true" ? predToString(a.pred) : "";
       return `prim:${s.type}:${t}:${p}`;

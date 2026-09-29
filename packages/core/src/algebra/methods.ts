@@ -386,12 +386,12 @@ export function callAbsMethod(
                 typeof whole === "string" ? strLit(whole) : unknown,
               ];
               const r = applyCallbackAbs(repAbs, callArgs, callbackEnv(), pTrue, defaultLeakBudget);
-              const lv = litValue(r);
-              if (lv === undefined) {
+              // litValue 哨兵：lit(undefined) 折成 undefined，须看 term
+              if (r.term?.op !== "lit") {
                 anyUnknown = true;
                 return "";
               }
-              return String(lv); // ToString：99→"99"、null→"null"
+              return String(r.term.value); // ToString：99→"99"、null→"null"、undefined→"undefined"
             };
             try {
               const out =
