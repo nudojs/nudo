@@ -11,7 +11,7 @@ import {
   unifiedDiff,
 } from "@nudojs/service/emit";
 import { isNudoTargetPath, type CallRecord } from "@nudojs/service";
-import { collectExternalRecords, resolveTargets } from "./shared.ts";
+import { collectExternalRecords, reportPathErrors, resolveTargetsCollect, type PathError } from "./shared.ts";
 
 // ---------------------------------------------------------------------------
 // contract — 契约：打印 / draft / emit
@@ -128,6 +128,8 @@ async function runContractDraft(
     dryRun: boolean;
     json?: boolean;
     records?: CallRecord[];
+    /** --json 面：路径错误并入 draft JSON（绝不静默 ok + exit≠0） */
+    pathErrors?: PathError[];
   },
 ): Promise<void> {
   const { draftInterface, formatDraftSummary, writeInterfaceDraft, sidecarDraftPath } =
@@ -148,6 +150,7 @@ async function runContractDraft(
       /* optional: no existing draft — diff against empty */
     }
     const diff = unifiedDiff(prev, result.draftSource, draftRel);
+    const pathErrors = opts.pathErrors ?? [];
     console.log(
       JSON.stringify(
         {
@@ -162,6 +165,16 @@ async function runContractDraft(
             paramEvidence: e.paramEvidence,
             returnEvidence: e.returnEvidence,
           })),
+          ...(pathErrors.length > 0
+            ? {
+                pathErrors: pathErrors.map((e) => ({
+                  path: e.path,
+                  code: e.code,
+                  message: e.message,
+                  suggestion: e.suggestion,
+                })),
+              }
+            : {}),
         },
         null,
         2,
@@ -395,17 +408,47 @@ export function registerContractCommand(program: Command): void {
           process.exitCode = 1;
           return;
         }
-        const externalRecords = opts.from?.length ? collectExternalRecords(opts.from) : undefined;
+        const fromErrors: PathError[] = [];
+        const externalRecords = opts.from?.length
+          ? collectExternalRecords(opts.from, opts.json ? fromErrors : undefined)
+          : undefined;
         const targets: string[] = [];
-        for (const p of paths) targets.push(...resolveTargets(p));
+        const pathErrors: PathError[] = [];
+        for (const p of paths) {
+          const r = resolveTargetsCollect(p);
+          targets.push(...r.targets);
+          pathErrors.push(...r.errors);
+        }
+        const allPathErrors = [...pathErrors, ...fromErrors];
+        if (!opts.json) reportPathErrors(allPathErrors);
         const roots = targets.filter((t) => isNudoTargetPath(t));
         if (roots.length === 0) {
+          if (opts.json && allPathErrors.length > 0) {
+            // --json：路径错误也必须有 body（绝不空 stdout + exit 1）
+            console.log(
+              JSON.stringify(
+                {
+                  pathErrors: allPathErrors.map((e) => ({
+                    path: e.path,
+                    code: e.code,
+                    message: e.message,
+                    suggestion: e.suggestion,
+                  })),
+                },
+                null,
+                2,
+              ),
+            );
+            process.exitCode = 1;
+            return;
+          }
           if (targets.length > 0) {
             console.error(`Usage error: no nudo analysis targets in the given paths: ${paths.join(", ")}`);
             process.exitCode = 1;
           }
           return;
         }
+        if (opts.json && allPathErrors.length > 0) process.exitCode = 1;
         for (const t of roots) {
           try {
             if (opts.draft) {
@@ -415,6 +458,7 @@ export function registerContractCommand(program: Command): void {
                 dryRun: opts.dryRun === true,
                 json: opts.json === true,
                 records: externalRecords,
+                ...(opts.json && allPathErrors.length > 0 ? { pathErrors: allPathErrors } : {}),
               });
             } else if (opts.emit) {
               await runContractEmit(t, {

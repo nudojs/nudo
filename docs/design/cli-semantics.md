@@ -99,7 +99,7 @@ assertions
 | 命令 | exit 1 |
 |------|--------|
 | `export` / `contract`（只读） | 仅用法 / IO 错误 |
-| `check`（含 `--abs` / `--json`） | 任一 error 级诊断（L1 或未 ignore 的 L2）；`--abs` 是观察面，**不是**关 CI 的旁路 |
+| `check`（含 `--abs` / `--json`） | 任一 error 级诊断（L1 或未 ignore 的 L2）；`--abs` 是观察面，**不是**关 CI 的旁路；路径/IO 错误也 exit 1（`--json` 下并入 `pathErrors` 且 `ok:false`） |
 | `test`（含 `--json` / `--abs`） | 任一**声明断言**失败（合成 case / entry@ 不挡 exit） |
 | `health` | drift 或 analysis error |
 | `migrate verify` | 任一文件 `nudo check` 不 ok（tsc 基线仅对照，不单独挡 exit） |
@@ -114,7 +114,7 @@ CI 门禁只认 `check`（及 `test` 的声明断言、`health` 的 drift）。
 | 旗标 | 作用 |
 |------|------|
 | `--watch` / `-w` | 持续重跑（模式旗标，不是一级动词） |
-| `--json` | CheckJson v1；**多文件**输出 `CheckJsonMulti` 信封（`kind:"multi"` + `reports[]`） |
+| `--json` | CheckJson v1；**多文件**输出 `CheckJsonMulti` 信封（`kind:"multi"` + `reports[]`）。路径错误进信封 `pathErrors[]`（additive）并强制 `ok:false`；`--json` 下 stdout 永不为空 |
 | `--gha` | GitHub Actions 行内注解 `::error`/`::warning`（`GITHUB_ACTIONS=true` 时**自动**开；`--json` 下注解走 stderr） |
 | `--gitlab` | GitLab Code Quality JSON 数组（可写 `gl-code-quality-report.json`） |
 | `--verbose` | 展开 Abs 签名（term/pred/conf） |
@@ -427,6 +427,14 @@ npx tsx scripts/scan-real-packages.ts commander
 - `ok` — 有 error 则 false；CLI 退出码对齐  
 - Abs 以 **formatAbs 字符串**给出，不序列化内部 shape 图  
 - 契约测试：`check-json.test.ts`；实现：`packages/core/src/algebra/check-report.ts`
+
+**路径错误 / ok↔exit 单一来源**（`CheckJsonMulti.pathErrors`，additive）：
+
+- 路径解析错误（缺文件 / 空目录 / 非分析目标 / `--from` 缺文件）进信封 `pathErrors[]`：`{ path, code, message, suggestion? }`，码为 `nudo:path-not-found` | `nudo:path-empty-dir` | `nudo:path-not-target` | `nudo:path-missing-callsite`。
+- `pathErrors` 非空 ⇒ `ok: false`（并计入 `summary.errors`）⇒ CLI exit 1。
+- `--json` 下 stdout 永不为空：即使全部路径失败也输出信封（`reports: []` + `pathErrors`）。
+- exit 与 `ok` 单一来源：`--json` 路径的 exit **只**由打印出的 `ok` 决定（`process.exitCode = ok ? 0 : 1`），绝不出现 `"ok": true` + 非零 exit，也不出现空 stdout + 非零 exit。
+- 单文件干净输入仍输出裸 `CheckJson`；一旦有 `pathErrors` 或多文件，输出 `CheckJsonMulti` 信封。
 
 ### 6.2 `test --json`（CaseJson）
 

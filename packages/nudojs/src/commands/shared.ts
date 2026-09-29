@@ -35,6 +35,20 @@ function usageError(message: string, fix: string): void {
   console.error(`fix:  ${fix}`);
 }
 
+/** CLI 路径解析错误（--json 信封的 pathErrors 面；非 JSON 面走 usageError）。 */
+export type PathError = {
+  path: string;
+  code: "nudo:path-not-found" | "nudo:path-empty-dir" | "nudo:path-not-target" | "nudo:path-missing-callsite";
+  message: string;
+  suggestion: string;
+};
+
+/** 非 --json 面：打印 usageError 并挡 exit（历史行为）。 */
+export function reportPathErrors(errors: PathError[]): void {
+  for (const e of errors) usageError(e.message, e.suggestion);
+  if (errors.length > 0) process.exitCode = 1;
+}
+
 export async function reemitUpdate(
   filePath: string,
   source: string,
@@ -53,17 +67,23 @@ export async function reemitUpdate(
   return { result, emitOut, removed: stripped.removed };
 }
 
-/** --from 公共采集 */
-export function collectExternalRecords(sites: string[]): CallRecord[] | undefined {
+/** --from 公共采集。`errorSink` 提供时路径错误进 sink（不设 exit），否则保持 usageError+exit。 */
+export function collectExternalRecords(
+  sites: string[],
+  errorSink?: PathError[],
+): CallRecord[] | undefined {
   const records: CallRecord[] = [];
   for (const site of sites) {
     const sitePath = resolve(site);
     if (!existsSync(sitePath)) {
-      usageError(
-        `Callsite file not found: ${sitePath}`,
-        `pass --from <file-or-dir> that exists; it supplies call@ records for generation`,
-      );
-      process.exitCode = 1;
+      const err: PathError = {
+        path: sitePath,
+        code: "nudo:path-missing-callsite",
+        message: `Callsite file not found: ${sitePath}`,
+        suggestion: `pass --from <file-or-dir> that exists; it supplies call@ records for generation`,
+      };
+      if (errorSink) errorSink.push(err);
+      else reportPathErrors([err]);
       continue;
     }
     const siteFiles = statSync(sitePath).isDirectory() ? collectNudoFiles(sitePath) : [sitePath];
@@ -87,36 +107,59 @@ export function collectNudoFiles(dir: string): string[] {
   return results;
 }
 
-export function resolveTargets(path: string): string[] {
+/** 路径解析（无副作用）：返回可分析目标 + 路径错误，由调用方决定 exit/JSON 面。 */
+export function resolveTargetsCollect(path: string): { targets: string[]; errors: PathError[] } {
   const resolved = resolve(path);
   if (!existsSync(resolved)) {
-    usageError(
-      `Not found: ${resolved}`,
-      `check the path; it must be an existing .js/.mjs/.ts file or a directory containing them`,
-    );
-    process.exitCode = 1;
-    return [];
+    return {
+      targets: [],
+      errors: [
+        {
+          path: resolved,
+          code: "nudo:path-not-found",
+          message: `Not found: ${resolved}`,
+          suggestion: `check the path; it must be an existing .js/.mjs/.ts file or a directory containing them`,
+        },
+      ],
+    };
   }
   if (statSync(resolved).isDirectory()) {
     const files = collectNudoFiles(resolved);
     if (files.length === 0) {
-      usageError(
-        `No nudo files found in directory: ${resolved}`,
-        `add .js/.mjs/.ts sources (or point at a directory that has them); sidecar/decl/JSX are skipped`,
-      );
-      process.exitCode = 1;
+      return {
+        targets: [],
+        errors: [
+          {
+            path: resolved,
+            code: "nudo:path-empty-dir",
+            message: `No nudo files found in directory: ${resolved}`,
+            suggestion: `add .js/.mjs/.ts sources (or point at a directory that has them); sidecar/decl/JSX are skipped`,
+          },
+        ],
+      };
     }
-    return files;
+    return { targets: files, errors: [] };
   }
   if (!isNudoTargetPath(resolved)) {
-    usageError(
-      `Not an analysis target (need .js/.mjs/.ts, not sidecar/decl/JSX): ${resolved}`,
-      `pass a .js/.mjs/.ts analysis file (not .nudo.js sidecars, .d.ts decls, or .jsx/.tsx)`,
-    );
-    process.exitCode = 1;
-    return [];
+    return {
+      targets: [],
+      errors: [
+        {
+          path: resolved,
+          code: "nudo:path-not-target",
+          message: `Not an analysis target (need .js/.mjs/.ts, not sidecar/decl/JSX): ${resolved}`,
+          suggestion: `pass a .js/.mjs/.ts analysis file (not .nudo.js sidecars, .d.ts decls, or .jsx/.tsx)`,
+        },
+      ],
+    };
   }
-  return [resolved];
+  return { targets: [resolved], errors: [] };
+}
+
+export function resolveTargets(path: string): string[] {
+  const { targets, errors } = resolveTargetsCollect(path);
+  reportPathErrors(errors);
+  return targets;
 }
 
 // ---------------------------------------------------------------------------

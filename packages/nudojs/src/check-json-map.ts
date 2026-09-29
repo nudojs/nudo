@@ -157,3 +157,42 @@ export function mergeJsonIssues<T extends JsonSummarized>(
     },
   };
 }
+
+type PathErrorLike = {
+  path: string;
+  code: string;
+  message: string;
+  suggestion?: string;
+};
+
+type MultiEnvelope = {
+  ok: boolean;
+  summary: { errors: number; warnings: number; infos: number; functions: number; files: number; budgetTruncated?: boolean };
+  pathErrors?: PathErrorLike[];
+  reports: unknown[];
+};
+
+/**
+ * 路径错误纳入 CheckJsonMulti 信封：ok:false + pathErrors，并计入 summary.errors。
+ * ok↔exit 单一来源：CLI 在 --json 路径只按信封 ok 设 exit。
+ */
+export function attachPathErrors<T extends MultiEnvelope>(
+  envelope: T,
+  errors: PathErrorLike[],
+): T {
+  if (errors.length === 0) return envelope;
+  return {
+    ...envelope,
+    ok: false,
+    summary: {
+      ...envelope.summary,
+      errors: envelope.summary.errors + errors.length,
+    },
+    pathErrors: errors.map((e) => ({
+      path: e.path,
+      code: e.code,
+      message: e.message,
+      ...(e.suggestion !== undefined ? { suggestion: e.suggestion } : {}),
+    })),
+  };
+}

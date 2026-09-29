@@ -234,3 +234,70 @@ describe("CLI flag contract", () => {
     expect(parsed.file).toContain("sj-a.js");
   });
 });
+
+describe("check --json ok↔exit single source (BUG-008)", () => {
+  it("good+missing mixed: stdout non-empty, ok:false ⇔ exit 1", () => {
+    const a = write("mix-good.js", "export function id(x){ return x; }\n");
+    const missing = join(dir, "mix-missing.js");
+    const r = runCli(["check", a, missing, "--json"]);
+    expect(r.stdout.length, `stdout empty; stderr=${r.stderr}`).toBeGreaterThan(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.ok).toBe(false);
+    expect(parsed.pathErrors?.length ?? 0).toBeGreaterThan(0);
+    expect(parsed.pathErrors[0].path).toContain("mix-missing.js");
+    // ok ⇔ exit0
+    expect(r.status).toBe(parsed.ok ? 0 : 1);
+    expect(r.status).toBe(1);
+  });
+
+  it("only missing: stdout non-empty CheckJsonMulti with pathErrors, exit 1", () => {
+    const missing = join(dir, "only-missing.js");
+    const r = runCli(["check", missing, "--json"]);
+    expect(r.stdout.length, `stdout empty; stderr=${r.stderr}`).toBeGreaterThan(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.kind).toBe("multi");
+    expect(parsed.ok).toBe(false);
+    expect(parsed.reports).toEqual([]);
+    expect(parsed.pathErrors?.length).toBeGreaterThan(0);
+    expect(r.status).toBe(1);
+  });
+
+  it("good only: ok:true ⇔ exit 0", () => {
+    const a = write("solo-good.js", "export function id(x){ return x; }\n");
+    const r = runCli(["check", a, "--json"]);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.ok).toBe(true);
+    expect(r.status).toBe(0);
+  });
+
+  it("multi good files still ok:true ⇔ exit 0", () => {
+    const a = write("mg-a.js", "export function id(x){ return x; }\n");
+    const b = write("mg-b.js", "export function id(x){ return x; }\n");
+    const r = runCli(["check", a, b, "--json"]);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.kind).toBe("multi");
+    expect(parsed.ok).toBe(true);
+    expect(parsed.pathErrors).toBeUndefined();
+    expect(r.status).toBe(0);
+  });
+
+  it("test --json missing path emits CaseJson body with pathErrors, exit 1", () => {
+    const missing = join(dir, "test-missing.js");
+    const r = runCli(["test", missing, "--json"]);
+    expect(r.stdout.length, `stdout empty; stderr=${r.stderr}`).toBeGreaterThan(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.pathErrors?.length ?? 0).toBeGreaterThan(0);
+    expect(r.status).toBe(1);
+  });
+
+  it("test --json good+missing includes pathErrors and exit 1", () => {
+    const a = write("test-mix-good.js", "export function id(x){ return x; }\n");
+    const missing = join(dir, "test-mix-missing.js");
+    const r = runCli(["test", a, missing, "--json"]);
+    expect(r.stdout.length).toBeGreaterThan(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.file).toContain("test-mix-good.js");
+    expect(parsed.pathErrors?.length ?? 0).toBeGreaterThan(0);
+    expect(r.status).toBe(1);
+  });
+});

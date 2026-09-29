@@ -18,9 +18,12 @@ import {
 } from "@nudojs/service";
 import {
   collectExternalRecords,
+  reportPathErrors,
   resolveTargets,
+  resolveTargetsCollect,
   startWatch,
   runAbsView,
+  type PathError,
 } from "./shared.ts";
 import {
   checkGateFromConfig,
@@ -38,6 +41,7 @@ import {
   docsDiagnosticCodes,
   domainIssuesFromDiagnostics,
   dualEntryIssue,
+  attachPathErrors,
   mergeCheckIssues,
   mergeJsonIssues,
   mockFromErrorIssues,
@@ -359,7 +363,10 @@ async function runCheck(
     }
   }
 
-  if (!opts.jsonCollect && !algebraReport.ok) {
+  // --json 单文件：exit 与打印出的 ok 同源（路径错误在 action 层已并入信封）
+  if (opts.json && !opts.jsonCollect) {
+    process.exitCode = checkJson.ok ? 0 : 1;
+  } else if (!opts.jsonCollect && !algebraReport.ok) {
     process.exitCode = 1;
   }
 }
@@ -450,14 +457,27 @@ export function registerCheckCommand(program: Command): void {
           return;
         }
         const targets: string[] = [];
-        for (const p of paths) targets.push(...resolveTargets(p));
-        if (targets.length === 0) return;
+        const pathErrors: PathError[] = [];
+        for (const p of paths) {
+          const r = resolveTargetsCollect(p);
+          targets.push(...r.targets);
+          pathErrors.push(...r.errors);
+        }
         if (opts.json && opts.abs) {
           console.error("error: --json cannot be combined with --abs");
           process.exitCode = 1;
           return;
         }
-        const externalRecords = opts.from?.length ? collectExternalRecords(opts.from) : undefined;
+        // 非 --json：路径错误走 usageError+exit（历史行为）
+        if (!opts.json) {
+          reportPathErrors(pathErrors);
+          if (targets.length === 0) return;
+        }
+        const fromErrors: PathError[] = [];
+        const externalRecords = opts.from?.length
+          ? collectExternalRecords(opts.from, opts.json ? fromErrors : undefined)
+          : undefined;
+        const allPathErrors = [...pathErrors, ...fromErrors];
         const ignoreThrows = parseIgnoreThrows(opts.ignoreThrows);
         const gateErr = validateGateFlags(opts);
         if (gateErr) {
@@ -500,15 +520,26 @@ export function registerCheckCommand(program: Command): void {
           ...(profile ? { profile } : {}),
         };
 
-        if (opts.json && targets.length > 1) {
-          const collected: Array<import("@nudojs/core").CheckJson> = [];
-          for (const t of targets) {
-            await runCheck(t, { ...shared, json: true, jsonCollect: collected });
+        if (opts.json) {
+          // --json：路径错误纳入信封；exit 与 ok 单一来源（绝不 ok:true + exit≠0）
+          const wantMulti = targets.length > 1 || allPathErrors.length > 0;
+          if (wantMulti) {
+            const collected: Array<import("@nudojs/core").CheckJson> = [];
+            for (const t of targets) {
+              await runCheck(t, { ...shared, json: true, jsonCollect: collected });
+            }
+            const { serializeCheckJsonMulti: multi } = await import("@nudojs/core");
+            const envelope = attachPathErrors(multi(collected), allPathErrors);
+            console.log(JSON.stringify(envelope, null, 2));
+            process.exitCode = envelope.ok ? 0 : 1;
+            return;
           }
-          const { serializeCheckJsonMulti: multi } = await import("@nudojs/core");
-          const envelope = multi(collected);
-          console.log(JSON.stringify(envelope, null, 2));
-          if (!envelope.ok) process.exitCode = 1;
+          if (targets.length === 1) {
+            await runCheck(targets[0]!, { ...shared, json: true });
+            return;
+          }
+          // 0 targets 且无路径错误：paths 必有值，每个路径要么出目标要么出错误
+          process.exitCode = allPathErrors.length > 0 ? 1 : 0;
           return;
         }
 
