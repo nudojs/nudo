@@ -17,6 +17,7 @@ import {
   execNudoModule,
   isNudoConstraint,
   constraintToEntryAbs,
+  CONSTRAINT_EXPR_RE,
   SELF,
 } from "@nudojs/core";
 import { parse as babelParse } from "./parse.ts";
@@ -139,11 +140,11 @@ const SAMPLE_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:sample[ \t]+(\d+)/g;
 /**
  * 约束表达式（design-refine-derivation：case 实参主文法）。
  * 识别 `number()` / `number().gt(0)` / `lit(42)` / `union(…)` / `shape({…})` /
- * `array(…)` / `fn({…}, …)` / `any()` / `partial` / `pick` / `omit` / `and` 等构建器。
+ * `array(…)` / `fn({…}, …)` / `any()` / `nullable(…)` / `partial` / `pick` / `omit` / `and` 等构建器。
  * 不匹配裸字面量 / 箭头函数；`T.*` 文法已删除。
+ * 名单单源在 core 的 CONSTRAINT_BUILDERS；CONSTRAINT_EXPR_RE 由
+ * CONSTRAINT_BUILDER_NAMES 生成，本文件不再手维护一份。
  */
-const CONSTRAINT_EXPR_RE =
-  /^(number|string|boolean|any|array|shape|lit|union|fn|partial|pick|omit|record|required|readonly|nonNullable|and)\s*\(/;
 
 /** 约束表达式 → NudoConstraint；非约束文法或执行失败 → undefined */
 function tryParseConstraint(expr: string): NudoConstraint | undefined {

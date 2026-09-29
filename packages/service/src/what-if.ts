@@ -3,6 +3,7 @@
  * 把 `{name, type}` 注入为 `@nudo:as`，供 analyzeFile 观察 target 推断。
  */
 import { parse } from "@nudojs/parser";
+import { CONSTRAINT_EXPR_RE } from "@nudojs/core";
 
 export type TypeBinding = { name: string; type: string };
 
@@ -47,7 +48,7 @@ export function typeExprToDirective(expr: string): string {
     if (/^-?\d+(\.\d+)?$/.test(m)) return m;
     if (/^["']/.test(m)) return m;
     if (/[([{]|=>/.test(m) && !m.startsWith("T.")) return m;
-    if (/^(number|string|boolean|any|array|shape|lit|union|fn)\s*\(/.test(m)) return m;
+    if (CONSTRAINT_EXPR_RE.test(m)) return m;
     return "any()";
   });
   return mapped.length === 1 ? mapped[0]! : `union(${mapped.join(", ")})`;

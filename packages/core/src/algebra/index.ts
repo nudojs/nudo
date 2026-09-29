@@ -150,7 +150,8 @@ export {
 
 export {
   type ConstraintBuilder, type NudoConstraint, type NudoField,
-  type NudoFnConstraint, SELF, andC, any, array, boolean,
+  type NudoFnConstraint, CONSTRAINT_BUILDERS, CONSTRAINT_BUILDER_NAMES,
+  CONSTRAINT_EXPR_RE, SELF, andC, any, array, boolean,
   constraintAdmitsNullish, constraintToEntryAbs, fn, fnConstraintToEntryReqs, getTerm,
   instantiateConstraint, isIntFlag, isNudoConstraint, lenTerm, litC,
   nullable, number, omit, partial, pick, shape, string, throwConstraintToKinds,

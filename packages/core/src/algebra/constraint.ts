@@ -467,6 +467,44 @@ export function omit(
   return makeBuilder(c.prim, c.preds, { fields });
 }
 
+/**
+ * 约束构建器表面名表（单一真源）：case 实参文法、mock 类型表达式识别与
+ * 侧车注入共用的名字 → 实现映射。键名是 *.nudo.js / 指令里的用户写法
+ * （`lit`/`and` 而非内部的 litC/andC）。
+ *
+ * 任何「构建器名单」硬编码（CONSTRAINT_EXPR_RE 一类的识别正则）必须由
+ * `CONSTRAINT_BUILDER_NAMES` 生成，禁止再手维护一份。
+ */
+export const CONSTRAINT_BUILDERS: Record<string, unknown> = {
+  number,
+  string,
+  boolean,
+  any,
+  array,
+  shape,
+  lit: litC,
+  union,
+  nullable,
+  fn,
+  and: andC,
+  partial,
+  pick,
+  omit,
+};
+
+/** 构建器表面名（供文法正则 / 测试枚举；顺序即表定义顺序） */
+export const CONSTRAINT_BUILDER_NAMES: readonly string[] = Object.keys(
+  CONSTRAINT_BUILDERS,
+);
+
+/**
+ * 约束表达式头：`name(` 形态。由 CONSTRAINT_BUILDER_NAMES 生成——
+ * 名单只在 CONSTRAINT_BUILDERS 一处维护。
+ */
+export const CONSTRAINT_EXPR_RE: RegExp = new RegExp(
+  `^(${CONSTRAINT_BUILDER_NAMES.join("|")})\\s*\\(`,
+);
+
 function substTerm(t: Term, paramName: string): Term {
   if (t.op === "var" && t.id === SELF) return termVar(paramName);
   if (t.op === "app" && t.fn === "get" && t.args.length === 2) {

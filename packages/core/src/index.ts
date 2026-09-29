@@ -74,6 +74,7 @@ export {
   checkSource, clearBClasses, clearCollectionTables, clearStaleTermPred,
   cmp, collectAbsExports, collectAbsFreeVars, collectionElementJoin,
   collectionExactLen, confJoin, constraintAdmitsNullish, constraintToEntryAbs, contractParamNameSet,
+  CONSTRAINT_BUILDERS, CONSTRAINT_BUILDER_NAMES, CONSTRAINT_EXPR_RE,
   createHofCollectCtx, ctorArgDefinitelyInvalid, ctorNameOfRecv,
   currentExecPhi, currentPhi, definitelyNotNullishShape, describePhi, div,
   drainPromiseMicros, effectiveInterface, emptyEnv, emptyPhi,

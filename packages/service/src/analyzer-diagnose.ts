@@ -5,6 +5,7 @@
 import type { Node } from "@babel/types";
 import type { FunctionWithDirectives } from "@nudojs/parser";
 import { maskCommentsAndStrings, scanStringLiterals } from "@nudojs/core/internal";
+import { CONSTRAINT_EXPR_RE } from "@nudojs/core";
 import {
   absStructureKey,
   collapseAbsLits,
@@ -33,7 +34,7 @@ export function validateMockDirectives(
     const expr = d.expression.trim();
     // constraint builders / literals / structure are valid raw mock RHS
     const isTypeExpr =
-      /^(number|string|boolean|any|array|shape|lit|union|fn|partial|pick|omit|record|required|readonly|nonNullable|and)\s*\(/.test(expr) ||
+      CONSTRAINT_EXPR_RE.test(expr) ||
       expr === "unknown" ||
       expr === "any" ||
       expr === "never" ||

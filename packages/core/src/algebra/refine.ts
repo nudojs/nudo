@@ -35,19 +35,7 @@ import {
   type NudoConstraint,
   isNudoConstraint,
   instantiateConstraint,
-  number,
-  string as stringC,
-  boolean as booleanC,
-  shape,
-  array,
-  litC,
-  union as unionC,
-  fn as fnC,
-  andC,
-  partial as partialC,
-  pick as pickC,
-  omit as omitC,
-  nullable as nullableC,
+  CONSTRAINT_BUILDERS,
 } from "./constraint.ts";
 
 /** `/// @nudo:import { delay, percent } from "./delay.nudo.js"` */
@@ -147,23 +135,9 @@ export class NudoSidecarError extends Error {
 
 /**
  * 侧车可注入的构建器：`@nudojs/core` 与一切裸包名 import 一律注入。
- * 后续构建器（lit/union/fn/…）落地时只追加此表。
+ * 名单单源在 constraint.ts 的 CONSTRAINT_BUILDERS——新增构建器只改那一处。
  */
-const sidecarInjects: Record<string, unknown> = {
-  number,
-  string: stringC,
-  boolean: booleanC,
-  shape,
-  array,
-  lit: litC,
-  union: unionC,
-  fn: fnC,
-  and: andC,
-  partial: partialC,
-  pick: pickC,
-  omit: omitC,
-  nullable: nullableC,
-};
+const sidecarInjects: Record<string, unknown> = CONSTRAINT_BUILDERS;
 
 function isSidecarSpec(spec: string): boolean {
   return spec.endsWith(".nudo.js") || spec.endsWith(".nudo.ts");
