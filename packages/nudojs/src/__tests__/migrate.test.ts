@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync, readFileSync, existsSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, readFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -515,5 +515,67 @@ describe("nudo migrate", () => {
     // command should parse (status 0) and emit JSON rows
     expect(r.status).toBe(0);
     expect(r.stdout).toContain('"packageJson"');
+  });
+
+  // BUG-009 / F-4: 不存在路径禁止 silent dirname 回退到真实 package 根
+  it("missing path is rejected by status/retire/retireAll (never falls back to parent root)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-missing-"));
+    dirs.push(dir);
+    const pkgBefore = JSON.stringify({
+      name: "real-root",
+      scripts: { typecheck: "tsc --noEmit" },
+      devDependencies: { typescript: "^5.0.0" },
+    });
+    writeFileSync(join(dir, "package.json"), pkgBefore, "utf-8");
+    const missing = join(dir, "typo-does-not-exist");
+
+    expect(() => migrateStatus(missing)).toThrow(/not found/);
+    expect(() => migrateRetire(missing, { workflows: false })).toThrow(/not found/);
+    expect(() => migrateRetireAll(missing, { workflows: false })).toThrow(/not found/);
+
+    // 零写入：父 package.json 原样，无 retire 标记
+    expect(readFileSync(join(dir, "package.json"), "utf-8")).toBe(pkgBefore);
+    expect(existsSync(join(dir, ".nudo", "migrate-retired.json"))).toBe(false);
+  });
+
+  it("missing path is rejected by strip/verify with zero writes", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-missing-io-"));
+    dirs.push(dir);
+    const pkgBefore = JSON.stringify({ name: "real-root" });
+    writeFileSync(join(dir, "package.json"), pkgBefore, "utf-8");
+    const missing = join(dir, "typo-does-not-exist");
+
+    await expect(migrateStrip([missing], { write: true })).rejects.toThrow(/not found/);
+    await expect(migrateVerify([missing])).rejects.toThrow(/not found/);
+
+    expect(readFileSync(join(dir, "package.json"), "utf-8")).toBe(pkgBefore);
+    expect(existsSync(join(dir, ".nudo", "migrate-retired.json"))).toBe(false);
+    expect(readdirSync(dir).filter((f) => f.endsWith(".js"))).toHaveLength(0);
+  });
+
+  it("existing package.json / source file still resolves to its directory", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-file-root-"));
+    dirs.push(dir);
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "demo",
+        scripts: { typecheck: "tsc --noEmit" },
+        devDependencies: { typescript: "^5.0.0" },
+      }),
+      "utf-8",
+    );
+    mkdirSync(join(dir, "src"));
+    writeFileSync(join(dir, "src", "a.ts"), `export const x: number = 1;\n`, "utf-8");
+
+    // 传 package.json 文件本身 → 仍取所在目录（保留既有契约）
+    const rows = migrateStatus(join(dir, "package.json"));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.typescriptDep).toBe(true);
+    expect(rows[0]!.tsFiles).toBe(1);
+
+    const result = migrateRetire(join(dir, "package.json"), { workflows: false });
+    expect(result.removedDeps).toContain("devDependencies");
+    expect(existsSync(join(dir, ".nudo", "migrate-retired.json"))).toBe(true);
   });
 });

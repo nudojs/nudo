@@ -573,10 +573,20 @@ export function rewriteWorkflowsNear(
   return out;
 }
 
-export function migrateStatus(rootDir: string): MigrateStatusRow[] {
+/**
+ * migrate 根解析：已存在目录原样；已存在文件（package.json / 源文件）取所在目录。
+ * 路径不存在必须报错——禁止 silent `dirname` 回退到真实 package 根（误改父目录）。
+ */
+function resolveMigrateRoot(rootDir: string): string {
   const raw = resolve(rootDir);
-  // 允许传 package.json / 源文件：取所在目录
-  const root = existsSync(raw) && statSync(raw).isDirectory() ? raw : dirname(raw);
+  if (!existsSync(raw)) {
+    throw new Error(`not found: ${rootDir}`);
+  }
+  return statSync(raw).isDirectory() ? raw : dirname(raw);
+}
+
+export function migrateStatus(rootDir: string): MigrateStatusRow[] {
+  const root = resolveMigrateRoot(rootDir);
   const roots = packageRoots(root);
   const workflowHits = listWorkflowTscLines(root);
   const rows: MigrateStatusRow[] = [];
@@ -750,6 +760,9 @@ export async function migrateVerify(
   const files: string[] = [];
   for (const p of paths) {
     const abs = resolve(p);
+    if (!existsSync(abs)) {
+      throw new Error(`not found: ${p}`);
+    }
     if (statSync(abs).isDirectory()) {
       for (const f of listFiles(abs)) {
         const e = extname(f).toLowerCase();
@@ -802,8 +815,7 @@ export function migrateRetire(
   rootDir: string,
   opts: { dryRun?: boolean; workflows?: boolean } = {},
 ): RetireResult {
-  const raw = resolve(rootDir);
-  const root = existsSync(raw) && statSync(raw).isDirectory() ? raw : dirname(raw);
+  const root = resolveMigrateRoot(rootDir);
   const pkgPath = join(root, "package.json");
   const pkg = readJson(pkgPath);
   if (!pkg) throw new Error(`no package.json under ${rootDir}`);
@@ -870,8 +882,7 @@ export function migrateRetireAll(
   rootDir: string,
   opts: { dryRun?: boolean; workflows?: boolean } = {},
 ): RetireResult[] {
-  const raw = resolve(rootDir);
-  const root = existsSync(raw) && statSync(raw).isDirectory() ? raw : dirname(raw);
+  const root = resolveMigrateRoot(rootDir);
   const roots = packageRoots(root);
   const results: RetireResult[] = [];
   let workflowsDone = false;
