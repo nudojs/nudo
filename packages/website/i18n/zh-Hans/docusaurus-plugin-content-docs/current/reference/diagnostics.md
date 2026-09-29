@@ -417,6 +417,50 @@ assertions
 
 Context: [声明断言](../guides/test.md#声明断言) · [@nudo:case](../concepts/directives.md#nudocase--debug-witnesses)
 
+## CLI 路径解析
+
+CLI 目标 / `--from` 路径解析错误 —— 收集在 `--json` 信封的 `pathErrors[]`（`{ path, code, message, suggestion? }`）中；人类可读面打印一行原因 + `fix:` 提示。`pathErrors` 非空 ⇒ `ok: false` ⇒ exit `1`。分析开始前的用法错误 —— 不是 Abs 诊断。
+
+### `nudo:path-not-found` {#nudo-path-not-found}
+
+```text
+Not found: /abs/path
+```
+
+请求的路径不存在。**Error**（usage）—— 检查路径；它必须是已存在的 `.js`/`.mjs`/`.ts` 文件，或包含这类文件的目录。
+
+Context: [nudo check](../api/cli-reference.md#nudo-check) · [检查内容](../guides/check.md#what-it-checks)
+
+### `nudo:path-empty-dir` {#nudo-path-empty-dir}
+
+```text
+No nudo files found in directory: /abs/dir
+```
+
+目录存在但没有分析目标。**Error**（usage）—— 补上 `.js`/`.mjs`/`.ts` 源码（或指向有这类文件的目录）；sidecar/decl/JSX 会被跳过。
+
+Context: [nudo check](../api/cli-reference.md#nudo-check) · [检查内容](../guides/check.md#what-it-checks)
+
+### `nudo:path-not-target` {#nudo-path-not-target}
+
+```text
+Not an analysis target (need .js/.mjs/.ts, not sidecar/decl/JSX): /abs/file.nudo.js
+```
+
+文件存在但不是分析目标（`.nudo.js` 侧车、`.d.ts` 声明、`.jsx`/`.tsx` 被排除）。**Error**（usage）—— 传入 `.js`/`.mjs`/`.ts` 分析文件。
+
+Context: [nudo check](../api/cli-reference.md#nudo-check) · [检查内容](../guides/check.md#what-it-checks)
+
+### `nudo:path-missing-callsite` {#nudo-path-missing-callsite}
+
+```text
+Callsite file not found: /abs/tests
+```
+
+`--from` 使用处路径不存在。**Error**（usage）—— 传入已存在的 `--from <file-or-dir>`；它为生成提供 `call@` 记录。
+
+Context: [使用处（`--from`）](../guides/test.md#使用处--from) · [nudo check](../api/cli-reference.md#nudo-check)
+
 ## 读懂 `actual ⊭ expected`
 
 ```text

@@ -417,6 +417,50 @@ assertions
 
 Context: [Declared assertions](../guides/test.md#declared-assertions) · [@nudo:case](../concepts/directives.md#nudocase--debug-witnesses)
 
+## CLI path resolution
+
+Path errors from CLI target / `--from` resolution — collected in the `--json` envelope's `pathErrors[]` (`{ path, code, message, suggestion? }`), or printed as a one-line reason + `fix:` hint on the human face. Non-empty `pathErrors` ⇒ `ok: false` ⇒ exit `1`. Usage errors before analysis starts — not Abs diagnostics.
+
+### `nudo:path-not-found` {#nudo-path-not-found}
+
+```text
+Not found: /abs/path
+```
+
+The requested path does not exist. **Error** (usage) — check the path; it must be an existing `.js`/`.mjs`/`.ts` file or a directory containing them.
+
+Context: [nudo check](../api/cli-reference.md#nudo-check) · [What it checks](../guides/check.md#what-it-checks)
+
+### `nudo:path-empty-dir` {#nudo-path-empty-dir}
+
+```text
+No nudo files found in directory: /abs/dir
+```
+
+The directory exists but holds no analysis targets. **Error** (usage) — add `.js`/`.mjs`/`.ts` sources (or point at a directory that has them); sidecar/decl/JSX are skipped.
+
+Context: [nudo check](../api/cli-reference.md#nudo-check) · [What it checks](../guides/check.md#what-it-checks)
+
+### `nudo:path-not-target` {#nudo-path-not-target}
+
+```text
+Not an analysis target (need .js/.mjs/.ts, not sidecar/decl/JSX): /abs/file.nudo.js
+```
+
+The file exists but is not an analysis target (`.nudo.js` sidecars, `.d.ts` decls, and `.jsx`/`.tsx` are excluded). **Error** (usage) — pass a `.js`/`.mjs`/`.ts` analysis file.
+
+Context: [nudo check](../api/cli-reference.md#nudo-check) · [What it checks](../guides/check.md#what-it-checks)
+
+### `nudo:path-missing-callsite` {#nudo-path-missing-callsite}
+
+```text
+Callsite file not found: /abs/tests
+```
+
+A `--from` usage-site path does not exist. **Error** (usage) — pass `--from <file-or-dir>` that exists; it supplies `call@` records for generation.
+
+Context: [Usage sites (`--from`)](../guides/test.md#usage-sites---from) · [nudo check](../api/cli-reference.md#nudo-check)
+
 ## Reading `actual ⊭ expected`
 
 ```text
