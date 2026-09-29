@@ -22,6 +22,7 @@ import { joinAbs } from "../objects.ts";
 import { type AbsModuleExports, namespaceAbsOf } from "../abs-modules.ts";
 import { formatAbs } from "../format.ts";
 import { transpile, transpileExpression, runtimeImportOf } from "./transpile.ts";
+import { HOST_INTRINSIC_SET } from "./transpile/intrinsics.ts";
 import { NudoUnsupportedError } from "./unsupported.ts";
 import { stripStaticExportDecls } from "./export-names.ts";
 import { errorTypeAbs, throwPayloadOf } from "./may-throw.ts";
@@ -357,6 +358,23 @@ function rewriteExportStatements(js: string): string {
 /** runTranspiled 顶层绑定表（checkSource varAbs 通道；WeakMap 不碰返回面） */
 const runBindings = new WeakMap<object, Map<string, unknown>>();
 
+/**
+ * env 全局注入时**不得**遮蔽的宿主内建名 = `HOST_INTRINSIC_SET`（与转译折叠同源）。
+ *
+ * 注入形式是模块级 `const <name> = __nudoEnv["<name>"]`，会遮蔽宿主全局。
+ * 转译产物对这三个名字发**无标识符**源（`void 0` / `0/0` / `1/0` → `$lit`），
+ * 但产物里仍有依赖宿主 `undefined` 身份的省略哨兵（`$fork` 缺 else 臂的第三参
+ * 省略），且用户源里裸标识符一经遮蔽也会把 Abs 送进 `$lit`/调用位。
+ *
+ * 典型故障（已修）：env 把 `undefined` 绑成 Abs 后，`$fork(test, cons, undefined)`
+ * 的第三参从「省略」变成 truthy 非函数 → 调用炸 → fail-closed unknown，
+ * 循环内提前 return 整条折 unknown；`NaN` 绑 `prim.num()` 时 `$lit(NaN)` 丢
+ * NaN 字面量身份，`0 === NaN` 从恒 false 退化成 boolean。
+ *
+ * 转译器已自行处理这三个名字，注入 const 无收益 → 跳过（等同未声明）。
+ */
+const ENV_SHADOW_SKIP = HOST_INTRINSIC_SET;
+
 export function bindingsOf(run: Record<string, unknown>): Map<string, unknown> | undefined {
   return runBindings.get(run);
 }
@@ -464,8 +482,11 @@ function runTranspiledInner(
 
   // @nudo:env 全局 + @nudo:mock 绑定（与 __nudoEnv 合并表一致）
   const envAndMocks = { ...(opts.envGlobals ?? {}), ...(opts.mocks ?? {}) };
-  if (Object.keys(envAndMocks).length > 0) {
-    const envBinds = Object.keys(envAndMocks)
+  const envInjectNames = Object.keys(envAndMocks).filter(
+    (k) => !ENV_SHADOW_SKIP.has(k),
+  );
+  if (envInjectNames.length > 0) {
+    const envBinds = envInjectNames
       .map((k) => `const ${k} = __nudoEnv[${JSON.stringify(k)}];`)
       .join("\n");
     js = `${envBinds}\n${js}`;

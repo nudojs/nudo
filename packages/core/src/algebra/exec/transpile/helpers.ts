@@ -6,6 +6,7 @@ import type { Statement, Node, Expression } from "@babel/types";
 import { formalParamsFromNodes, formalParamDisplayNames } from "../../param-surface.ts";
 import type { TranspileOptions } from "./types.ts";
 import { isStatefulMethodName } from "./ops.ts";
+import { HOST_INTRINSIC_SET } from "./intrinsics.ts";
 
 export function paramDisplayNames(params: unknown[] | undefined): string[] {
   return formalParamDisplayNames(formalParamsFromNodes(params as unknown as Parameters<typeof formalParamsFromNodes>[0]));
@@ -456,7 +457,7 @@ export function collectFreeAssignedNames(...nodes: Array<unknown>): string[] {
   }
   const free = new Set<string>();
   const markFree = (name: string | undefined, shadowed: Set<string>): void => {
-    if (name && name !== "undefined" && !shadowed.has(name)) free.add(name);
+    if (name && !HOST_INTRINSIC_SET.has(name) && !shadowed.has(name)) free.add(name);
   };
   // 同批节点内的词法声明（let/const/function）遮蔽本批自由写——
   // 臂内 `let shares = []; shares.push` 不得进外层 fork 协议（$copy(TDZ)）。
