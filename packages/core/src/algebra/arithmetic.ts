@@ -742,6 +742,11 @@ export function cmp(
   b: Abs,
   phi: Phi = pTrue,
 ): Abs {
+  // Symbol 参与关系比较：ToNumber/ToNumeric 原生 TypeError（与 add 同口径）。
+  // eq/ne 不走此守卫：Symbol() === Symbol() 合法，由 strictEqAbs/looseEqAbs 分流。
+  if (op !== "eq" && op !== "ne" && (isSym(a) || isSym(b))) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
   // 双 lit 用 term 值（含 undefined）：litValue 哨兵会把 lit(undefined)
   // 误判成「无字面量」。关系比较 ToNumber(undefined)=NaN → 恒 false。
   const ta = a.term;

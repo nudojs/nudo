@@ -5,7 +5,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { numLit } from "../abs.ts";
-import { add, sub, mul, div, mod } from "../arithmetic.ts";
+import { add, sub, mul, div, mod, cmp } from "../arithmetic.ts";
 import {
   negAbs,
   toNumberAbs,
@@ -82,6 +82,30 @@ describe("BUG-012: symbol × numeric/bitwise ops throw TypeError", () => {
     expectTypeError(() => powAbs(s, one));
     expectTypeError(() => powAbs(one, s));
   });
+
+  it("relational: s<1 / 1<s / s>s / s<=1 / s>=1 throw TypeError", () => {
+    expectTypeError(() => cmp("lt", s, one));
+    expectTypeError(() => cmp("lt", one, s));
+    expectTypeError(() => cmp("gt", s, one));
+    expectTypeError(() => cmp("gt", one, s));
+    expectTypeError(() => cmp("le", s, one));
+    expectTypeError(() => cmp("le", one, s));
+    expectTypeError(() => cmp("ge", s, one));
+    expectTypeError(() => cmp("ge", one, s));
+  });
+
+  it("relational: s<s / s<=s / s>s / s>=s throw TypeError", () => {
+    expectTypeError(() => cmp("lt", s, s));
+    expectTypeError(() => cmp("le", s, s));
+    expectTypeError(() => cmp("gt", s, s));
+    expectTypeError(() => cmp("ge", s, s));
+  });
+
+  it("eq/ne do NOT throw (Symbol === Symbol is legal)", () => {
+    // 仅验证不抛；结果由 strictEqAbs 决定，此处不钉具体值
+    expect(() => cmp("eq", s, one)).not.toThrow();
+    expect(() => cmp("ne", s, one)).not.toThrow();
+  });
 });
 
 describe("BUG-012: evaluator routes Symbol() ops to THROW", () => {
@@ -105,6 +129,18 @@ describe("BUG-012: evaluator routes Symbol() ops to THROW", () => {
     `Symbol() >> 1`,
     `Symbol() >>> 1`,
     `Symbol() ** 1`,
+    `Symbol() < 1`,
+    `1 < Symbol()`,
+    `Symbol() > 1`,
+    `1 > Symbol()`,
+    `Symbol() <= 1`,
+    `1 <= Symbol()`,
+    `Symbol() >= 1`,
+    `1 >= Symbol()`,
+    `Symbol() < Symbol()`,
+    `Symbol() <= Symbol()`,
+    `Symbol() > Symbol()`,
+    `Symbol() >= Symbol()`,
   ];
 
   for (const expr of cases) {
@@ -117,5 +153,17 @@ describe("BUG-012: evaluator routes Symbol() ops to THROW", () => {
   it("Symbol() + 1 still throws (baseline add)", () => {
     const r = call(`export function f() { try { return Symbol() + 1; } catch(e) { return 'THROW'; } }`);
     expect(litValue(r.result)).toBe("THROW");
+  });
+
+  it("Symbol() === Symbol() is false, not throw (eq/ne excluded)", () => {
+    const r = call(`export function f() { return Symbol() === Symbol(); }`);
+    expect(litValue(r.result)).toBe(false);
+  });
+
+  it("Symbol() == 1 does not throw (loose eq excluded)", () => {
+    // JS Abstract Equality：Symbol vs Number 直接 false，不走 ToNumber，不抛
+    const r = call(`export function f() { return Symbol() == 1; }`);
+    expect(r.result.shape.k).toBe("prim");
+    expect((r.result.shape as { type?: string }).type).toBe("boolean");
   });
 });
