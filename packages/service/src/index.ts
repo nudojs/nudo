@@ -62,6 +62,8 @@ export {
   entryVariantForFile,
   entryVariantIssueForFile,
   findOwningPackage,
+  type EntryVariantFaceGroup,
+  type EntryVariantFaces,
   type EntryVariantInfo,
   type EntryVariantIssue,
 } from "./entry-variants.ts";
