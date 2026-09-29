@@ -121,8 +121,9 @@ export function enterCall(key: string, label: string): boolean {
 }
 
 export function exitCall(): void {
-  _absCallDepth--;
-  _activeCallKeys.pop();
+  // 禁止负数：嵌套 reset 后 exit 会把 depth 打穿
+  if (_absCallDepth > 0) _absCallDepth--;
+  if (_activeCallKeys.length > 0) _activeCallKeys.pop();
 }
 
 // --- B $fork 总次数预算 -------------------------------------------------------
@@ -161,6 +162,11 @@ export const FORK_TRUNCATION_LABEL = "#fork-budget";
  * `nudo:host-effect-blocked`，不复用「某函数被截断」文案。
  */
 export const HOST_EFFECT_LABEL_PREFIX = "#host-effect:";
+
+/** promise 微队列溢出标签（队列硬上限丢弃；check 映射，避免误报 recursion-truncated） */
+export const PROMISE_MICRO_OVERFLOW_LABEL = "#promise-micro-overflow";
+/** promise 微任务 drain 抛错标签（不得静默吞掉） */
+export const PROMISE_MICRO_ERROR_LABEL = "#promise-micro-error";
 
 /** 宿主副作用未执行观测（service/LSP 映射 nudo:host-effect-blocked；与调用截断同 collector 管道） */
 export function noteHostEffectBlocked(name: string): void {

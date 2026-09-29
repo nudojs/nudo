@@ -19,6 +19,8 @@ import {
   getAbsCallBudgetStats,
   FORK_TRUNCATION_LABEL,
   HOST_EFFECT_LABEL_PREFIX,
+  PROMISE_MICRO_OVERFLOW_LABEL,
+  PROMISE_MICRO_ERROR_LABEL,
 } from "./call-budget.ts";
 import type { AbsAssignRecord, AbsCallRecord } from "./ast-records.ts";
 import { leqAbs } from "./leq.ts";
@@ -654,6 +656,25 @@ function checkSourceInner(
         message: `Branch expansion was truncated (fork budget); affected results widened to unknown#opaque (budget)`,
         suggestion:
           "optional: simplify branching or raise nudo.analysis.maxForks — non-blocking",
+      });
+      continue;
+    }
+    // promise 微队列溢出 / drain 抛错：不是递归——专用文案
+    if (label === PROMISE_MICRO_OVERFLOW_LABEL) {
+      issues.push({
+        severity: "info",
+        code: "nudo:promise-micro-truncated",
+        message: `Promise microtask queue hit its hard cap; further then/catch callbacks were dropped (results stay fail-closed)`,
+        suggestion: "optional: reduce top-level Promise.then fan-out — non-blocking",
+      });
+      continue;
+    }
+    if (label === PROMISE_MICRO_ERROR_LABEL) {
+      issues.push({
+        severity: "info",
+        code: "nudo:promise-micro-error",
+        message: `A promise microtask threw while draining; the error was recorded and did not rewrite the synchronous return value`,
+        suggestion: "optional: inspect the then/catch callback for a throw path — non-blocking",
       });
       continue;
     }

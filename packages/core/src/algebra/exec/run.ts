@@ -9,9 +9,12 @@
  */
 
 import { rtAllBindings } from "./rt.ts";
-import { resetEvalCallBudget } from "./calls.ts";
+import {
+  enterEvalCallBudgetSession,
+  exitEvalCallBudgetSession,
+  setEvalBindingSink,
+} from "./calls.ts";
 import { withExecPhi, $copy } from "./runtime.ts";
-import { setEvalBindingSink } from "./calls.ts";
 import type { Abs } from "../abs.ts";
 import type { Phi } from "../pred.ts";
 import { never, unknown } from "../abs.ts";
@@ -364,7 +367,18 @@ export function runTranspiled(
   source: string,
   opts: RunTranspiledOptions = {},
 ): Record<string, unknown> {
-  resetEvalCallBudget(); // 宿主入口重置
+  enterEvalCallBudgetSession(); // 宿主入口：最外层重置；嵌套导出桥继承外层预算
+  try {
+    return runTranspiledInner(source, opts);
+  } finally {
+    exitEvalCallBudgetSession();
+  }
+}
+
+function runTranspiledInner(
+  source: string,
+  opts: RunTranspiledOptions,
+): Record<string, unknown> {
   const modules = opts.modules ?? {};
   let js = transpile(source, {
     runtimeImport: "@nudojs/core/exec",
@@ -479,6 +493,8 @@ export function runTranspiled(
     return result;
   } finally {
     setEvalBindingSink(null);
+    // 每次求值出口排空微队列：模块级 Promise.then 不得窜到后续文件的调用窗口
+    drainPromiseMicros();
   }
 }
 
@@ -560,8 +576,23 @@ function isAbsVal(v: unknown): v is Abs {
 }
 
 /** 调用 runTranspiled 导出（捕获 $throw）。opts.phi：入口 Φ 种子
- *  （instantiate/symbolic 的约束入口——eval 侧路径条件收窄）。 */
+ *  （instantiate/symbolic 的约束入口——eval 侧路径条件收窄）。
+ *  嵌套进入（导出桥 apply）继承外层预算；仅最外层宿主入口重置。 */
 export function callTranspiledExportFull(
+  exports: Record<string, unknown>,
+  name: string,
+  args: Abs[],
+  opts?: { phi?: Phi },
+): TranspiledCallResult {
+  enterEvalCallBudgetSession();
+  try {
+    return callTranspiledExportFullInner(exports, name, args, opts);
+  } finally {
+    exitEvalCallBudgetSession();
+  }
+}
+
+function callTranspiledExportFullInner(
   exports: Record<string, unknown>,
   name: string,
   args: Abs[],
@@ -569,7 +600,6 @@ export function callTranspiledExportFull(
 ): TranspiledCallResult {
   const fn = exports[name];
   if (typeof fn === "function") {
-    resetEvalCallBudget(); // 每次具名调用独立预算（不跨调用累积 totalCalls）
     // D1：重跑/导入调用用副本——mutator 不得把入参态污染回调用方/记录
     const callArgs = args.map((a) =>
       a && typeof a === "object" && "shape" in (a as object) ? $copy(a) : a,
@@ -618,8 +648,11 @@ export function callTranspiledExportFull(
       return runWithLoopExits(() => {
         try {
           const r = $call(fn, args);
+          // 与 JS 函数分支同口径：同步返回值算完后排空微队列
+          drainPromiseMicros();
           return joinControlExits(r);
         } catch (e) {
+          drainPromiseMicros();
           if (isNudoReturn(e)) {
             return joinControlExits(e.absValue);
           }
@@ -634,8 +667,10 @@ export function callTranspiledExportFull(
         }
       });
     }
+    drainPromiseMicros();
     return { result: fn, throws: never };
   }
+  drainPromiseMicros();
   return { result: unknown, throws: never };
 }
 

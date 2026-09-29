@@ -9,6 +9,11 @@ import { absFunction, getFnImpl } from "../abs-fn.ts";
 import { pTrue } from "../pred.ts";
 import { defaultLeakBudget } from "../leak.ts";
 import { emptyEnv } from "../ast-env.ts";
+import {
+  noteAbsTruncation,
+  PROMISE_MICRO_OVERFLOW_LABEL,
+  PROMISE_MICRO_ERROR_LABEL,
+} from "../call-budget.ts";
 import { numPrim, str, boolPrim, noBody } from "./shared.ts";
 
 const promiseExecStack: number[] = [];
@@ -56,11 +61,24 @@ function litFromJs(value: unknown): Abs {
 }
 
 // then/catch 回调是微任务：不得在同步 then() 里跑（否则外层 return 前被写回）。
-// 在 callTranspiledExportFull 出口排空，对齐原生执行序。
+// 在每次求值出口（runTranspiled / callTranspiledExportFull）排空，对齐原生执行序；
+// 模块级排队不得窜到后续无关文件的调用窗口。
 const promiseMicros: Array<() => void> = [];
 
+/** 队列硬上限：无界增长是 LSP 长会话泄漏点（只进不出的模块求值路径） */
+export const MAX_PROMISE_MICROS = 1024;
+
 export function queuePromiseMicro(task: () => void): void {
+  if (promiseMicros.length >= MAX_PROMISE_MICROS) {
+    // 背压：丢弃新任务并记录截断（不得无界累积闭包）
+    noteAbsTruncation(PROMISE_MICRO_OVERFLOW_LABEL);
+    return;
+  }
   promiseMicros.push(task);
+}
+
+export function getPromiseMicrosLength(): number {
+  return promiseMicros.length;
 }
 
 export function drainPromiseMicros(): void {
@@ -69,7 +87,8 @@ export function drainPromiseMicros(): void {
     try {
       task();
     } catch {
-      /* 微任务抛错不改写已计算的同步返回值 */
+      // 微任务抛错不改写已计算的同步返回值，但必须可观测（不得静默）
+      noteAbsTruncation(PROMISE_MICRO_ERROR_LABEL);
     }
   }
 }

@@ -22,12 +22,19 @@ export {
 } from "./algebra/leak.ts";
 export {
   type AbsBudgetStats, FORK_TRUNCATION_LABEL, HOST_EFFECT_LABEL_PREFIX, MAX_EVAL_TOTAL_FORKS,
-  MAX_CALL_DEPTH, MAX_TOTAL_CALLS, bumpEvalForkBudget, callBudgetKey,
+  MAX_CALL_DEPTH, MAX_TOTAL_CALLS, PROMISE_MICRO_ERROR_LABEL, PROMISE_MICRO_OVERFLOW_LABEL,
+  bumpEvalForkBudget, callBudgetKey,
   enterCall, exitCall, getAbsCallBudgetStats, getEvalForkBudgetLimit,
   getEvalForkCount, noteAbsTruncation, noteEvalForkTruncation, noteHostEffectBlocked,
   resetAbsCallBudget, resetEvalForkBudget, setAbsTruncationCollector,
   setEvalForkBudgetLimit, stableCallId, truncatedAbs
 } from "./algebra/call-budget.ts";
+export {
+  MAX_PROMISE_MICROS, getPromiseMicrosLength
+} from "./algebra/builtins/promise.ts";
+export {
+  enterEvalCallBudgetSession, exitEvalCallBudgetSession, getEvalCallBudgetState
+} from "./algebra/exec/calls.ts";
 export {
   hashSource, resetHashSourceCache
 } from "./algebra/hash-source.ts";

@@ -188,6 +188,8 @@ export const MAX_EVAL_TOTAL_CALLS = 20_000;
 let evalCallDepth = 0;
 let evalTotalCalls = 0;
 let evalActiveCallKeys: string[] = [];
+/** 执行会话嵌套深度：导出桥 re-entry 是被调帧，不是宿主入口 */
+let evalBudgetSessionDepth = 0;
 const evalFnCallIds = new WeakMap<object, string>();
 let evalFnCallIdSeq = 0;
 
@@ -200,13 +202,49 @@ function evalStableId(obj: object): string {
   return id;
 }
 
-/** 宿主入口（runTranspiled / callTranspiledExportFull）前重置 */
+/** 宿主入口前强制清零（测试 / 显式 API）。执行入口请用 enterEvalCallBudgetSession。 */
 export function resetEvalCallBudget(): void {
   evalCallDepth = 0;
   evalTotalCalls = 0;
   evalActiveCallKeys = [];
+  evalBudgetSessionDepth = 0;
   // fork 总次数与调用预算同轮生命周期（不跨宿主入口累积）
   resetEvalForkBudget();
+}
+
+/**
+ * 进入执行会话。最外层才重置预算；嵌套（导出桥 $call → apply →
+ * callTranspiledExportFull）必须继承外层深度/cycle 键/totalCalls，否则
+ * 外层帧被抹掉，$callNamed 的 evalExitCall 再把 depth 打成负数。
+ */
+export function enterEvalCallBudgetSession(): void {
+  if (evalBudgetSessionDepth === 0) {
+    evalCallDepth = 0;
+    evalTotalCalls = 0;
+    evalActiveCallKeys = [];
+    resetEvalForkBudget();
+  }
+  evalBudgetSessionDepth++;
+}
+
+/** 退出执行会话。禁止把 sessionDepth 留在负数。 */
+export function exitEvalCallBudgetSession(): void {
+  if (evalBudgetSessionDepth > 0) evalBudgetSessionDepth--;
+}
+
+/** 预算快照（测试/诊断：断言嵌套期间 depth/keys 不被清空、depth 不为负） */
+export function getEvalCallBudgetState(): {
+  depth: number;
+  totalCalls: number;
+  activeKeys: number;
+  sessionDepth: number;
+} {
+  return {
+    depth: evalCallDepth,
+    totalCalls: evalTotalCalls,
+    activeKeys: evalActiveCallKeys.length,
+    sessionDepth: evalBudgetSessionDepth,
+  };
 }
 
 /** 截断结果：unknown#opaque——预算截断，不触发 unknown-inference */
@@ -239,8 +277,9 @@ function evalEnterCall(name: string, fn: unknown, args: Abs[]): { ok: boolean; k
 }
 
 function evalExitCall(): void {
-  evalCallDepth--;
-  evalActiveCallKeys.pop();
+  // 禁止负数：嵌套 reset 曾把 depth 清零后再 --，守卫从此失效
+  if (evalCallDepth > 0) evalCallDepth--;
+  if (evalActiveCallKeys.length > 0) evalActiveCallKeys.pop();
 }
 
 export function $callNamed(

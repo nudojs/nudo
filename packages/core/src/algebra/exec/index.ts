@@ -42,7 +42,8 @@ export {
 
 export {
   $assignRecord, $callNamed, $recordBinding, type EvalAbsAssignRecord,
-  type EvalCallRecord, MAX_EVAL_CALL_DEPTH, MAX_EVAL_TOTAL_CALLS, getEvalCallCollector,
+  type EvalCallRecord, MAX_EVAL_CALL_DEPTH, MAX_EVAL_TOTAL_CALLS, getEvalCallBudgetState,
+  getEvalCallCollector, enterEvalCallBudgetSession, exitEvalCallBudgetSession,
   noteEvalCallRecord, resetEvalCallBudget, setEvalAssignCollector, setEvalBindingSink,
   setEvalCallCollector
 } from "./calls.ts";
