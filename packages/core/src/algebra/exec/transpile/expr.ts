@@ -18,6 +18,7 @@ import {
   collectForkBindingNames,
   foldRequireSpecArg,
 } from "./helpers.ts";
+import { hostIntrinsicLit, HOST_INTRINSIC_SET } from "./intrinsics.ts";
 import { BIN_OPS, COMPOUND_OPS, isStatefulMethodName, REGEX_STATEFUL_NAMES } from "./ops.ts";
 import { NudoUnsupportedError } from "../unsupported.ts";
 import {
@@ -284,7 +285,7 @@ function emitChainFrom(hops: ChainHop[], i: number, valSrc: string): string {
         if (!fnCheck) return call;
         // o.m?.()：方法值 nullish 短路；this 仍绑 recv（$invoke 二次 get 方法属已知
         // 取舍——保 builtin 派发，getter 会跑两遍）
-        return `(($__fn) => $fork($nullishTest($__fn), () => $lit(undefined), () => ${call}))($get(${recv}, ${hop.method}))`;
+        return `(($__fn) => $fork($nullishTest($__fn), () => $lit(void 0), () => ${call}))($get(${recv}, ${hop.method}))`;
       };
       if (hop.recvOptional) {
         return shortCircuitHop(valSrc, invokeOf("$__oc", hop.fnOptional), hops, i);
@@ -301,7 +302,7 @@ function shortCircuitHop(
   hops: ChainHop[],
   i: number,
 ): string {
-  return `(($__oc) => $fork($nullishTest($__oc), () => $lit(undefined), () => ${emitChainFrom(hops, i + 1, appliedWithOc)}))(${valSrc})`;
+  return `(($__oc) => $fork($nullishTest($__oc), () => $lit(void 0), () => ${emitChainFrom(hops, i + 1, appliedWithOc)}))(${valSrc})`;
 }
 
 /** 若 expr 是含 `?.` 的成员/调用脊柱，返回整链短路源码 */
@@ -349,10 +350,10 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
     case "ClassExpression":
       // 类表达式值是构造器；类体未建模时给 fn 形状，不得折精确 undefined
       return `$classExpr()`;
-    case "Identifier":
-      if (expr.name === "undefined") return "$lit(undefined)";
-      if (expr.name === "NaN") return "$lit(NaN)";
-      if (expr.name === "Infinity") return "$lit(Infinity)";
+    case "Identifier": {
+      // 内建标识符折无标识符源（void 0 / 0/0 / 1/0）——不读模块作用域绑定
+      const intrinsic = hostIntrinsicLit(expr.name);
+      if (intrinsic) return intrinsic;
       if (expr.name === "arguments") {
         // 词法外层 arguments：仅非箭头函数体**直接**引用时建 argsBinding；
         // 箭头沿该绑定继承。无绑定（模块顶层 / 仅嵌套箭头引用）→ 诚实 unknown
@@ -361,15 +362,16 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         return opts.argsBinding ?? "$unknown()";
       }
       return expr.name;
+    }
     case "ThisExpression":
       // 顶层 this（无 thisParam 且不在函数体）：ESM 语义 this === undefined。
       // 读 → undefined；写（this.x = 1）经写路径 strict 语义硬抛 TypeError
       // （模块装载失败，与原生一致）。函数体 this 由 thisParam/降级处理。
-      return opts.thisParam ?? "$lit(undefined)";
+      return opts.thisParam ?? "$lit(void 0)";
     case "NewExpression": {
       const callee = expr.callee;
       const cname =
-        callee.type === "Identifier" ? callee.name : isExpression(callee) ? transpileExpression(callee, opts) : "$lit(undefined)";
+        callee.type === "Identifier" ? callee.name : isExpression(callee) ? transpileExpression(callee, opts) : "$lit(void 0)";
       const args = expr.arguments
         .map((a) => (a.type === "SpreadElement" ? "$unknown()" : transpileExpression(a as Expression, opts)))
         .join(", ");
@@ -435,7 +437,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
     case "BinaryExpression": {
       // instanceof 需右操作数的**类名**（不是值）：右操作数必须是标识符
       if (expr.operator === "instanceof") {
-        const l = isExpression(expr.left) ? transpileExpression(expr.left, opts) : "$lit(undefined)";
+        const l = isExpression(expr.left) ? transpileExpression(expr.left, opts) : "$lit(void 0)";
         if (expr.right.type === "Identifier") {
           // 第三参传 RHS 值：@@hasInstance 派发需要（类名派发不读第三参）
           return `$instanceof(${l}, ${JSON.stringify(expr.right.name)}, ${expr.right.name})`;
@@ -444,9 +446,9 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         return `$instanceofNonIdent(${l})`;
       }
       const fn = BIN_OPS[expr.operator];
-      if (!fn) return `/* unsupported ${expr.operator} */ $lit(undefined)`;
-      const l = isExpression(expr.left) ? transpileExpression(expr.left, opts) : "$lit(undefined)";
-      const r = isExpression(expr.right) ? transpileExpression(expr.right, opts) : "$lit(undefined)";
+      if (!fn) return `/* unsupported ${expr.operator} */ $lit(void 0)`;
+      const l = isExpression(expr.left) ? transpileExpression(expr.left, opts) : "$lit(void 0)";
+      const r = isExpression(expr.right) ? transpileExpression(expr.right, opts) : "$lit(void 0)";
       return `${fn}(${l}, ${r})`;
     }
     case "UnaryExpression": {
@@ -471,7 +473,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
                 : transpileExpression(m.object as Expression, opts);
           return `$delRes(${parentRead}, ${keySrc})`;
         }
-        return `/* delete ${(arg as { type?: string }).type ?? ""} */ $lit(undefined)`;
+        return `/* delete ${(arg as { type?: string }).type ?? ""} */ $lit(void 0)`;
       }
       const arg = transpileExpression(expr.argument as Expression, opts);
       if (expr.operator === "-") return `$neg(${arg})`;
@@ -479,8 +481,8 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       if (expr.operator === "typeof") return `$typeof(${arg})`;
       if (expr.operator === "+") return `$toNumber(${arg})`;
       if (expr.operator === "~") return `$bitnot(${arg})`;
-      if (expr.operator === "void") return `((${arg}), $lit(undefined))`;
-      return `/* unary ${expr.operator} */ $lit(undefined)`;
+      if (expr.operator === "void") return `((${arg}), $lit(void 0))`;
+      return `/* unary ${expr.operator} */ $lit(void 0)`;
     }
     case "UpdateExpression": {
       // i++/++i/i--/--i：ES 规范 oldValue = ToNumeric(GetValue(lvalue))，
@@ -508,7 +510,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           return `$toNumeric(${readSrc})`;
         }
       }
-      return `/* update ${expr.operator} */ $lit(undefined)`;
+      return `/* update ${expr.operator} */ $lit(void 0)`;
     }
     case "AwaitExpression": {
       const arg = transpileExpression(expr.argument as Expression, opts);
@@ -517,7 +519,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
     case "YieldExpression": {
       const arg = expr.argument
         ? transpileExpression(expr.argument as Expression, opts)
-        : "$lit(undefined)";
+        : "$lit(void 0)";
       return `$yield(${arg})`;
     }
     case "TemplateLiteral": {
@@ -589,9 +591,9 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           // get/set 访问器：注册进运行时侧表（$get/$set 派发；展开/assign 时调用）
           if (prop.kind === "get" || prop.kind === "set") {
             // 占位槽保键存在性（'x' in o / keys / assign 拷贝目标）；读写在 $get/$set 层派发
-            const slotSrc = `${mkey}: $lit(undefined)`;
+            const slotSrc = `${mkey}: $lit(void 0)`;
             if (isProtoKey) {
-              acc = `$setKey(${acc ?? "$obj({})"}, $lit("__proto__"), $lit(undefined))`;
+              acc = `$setKey(${acc ?? "$obj({})"}, $lit("__proto__"), $lit(void 0))`;
             } else {
               props.push(slotSrc);
             }
@@ -735,10 +737,10 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           const k = transpileExpression(key, opts);
           return `$idx(${obj}, ${k})`;
         }
-        return `/* computed member */ $lit(undefined)`;
+        return `/* computed member */ $lit(void 0)`;
       }
       if (expr.property.type !== "Identifier") {
-        return `/* member */ $lit(undefined)`;
+        return `/* member */ $lit(void 0)`;
       }
       // o.length
       if (expr.property.name === "length") {
@@ -757,7 +759,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         for (const el of expr.elements) {
           if (!el) {
             holes.push(items.length);
-            items.push("$lit(undefined)");
+            items.push("$lit(void 0)");
             continue;
           }
           items.push(transpileExpression(el as Expression, opts));
@@ -848,7 +850,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
             });
           }
         }
-        return `/* assign ${op} */ $lit(undefined)`;
+        return `/* assign ${op} */ $lit(void 0)`;
       }
       if (expr.left.type === "MemberExpression") {
         const m = expr.left as unknown as {
@@ -991,7 +993,8 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           : `$invoke(${recv}, ${name}, [${args}]${locArg})`;
       }
       // 标识符调用 → $callNamed（可采集 call@ + 实参 provenance）
-      if (callee.type === "Identifier" && callee.name !== "undefined") {
+      // 内建名（undefined/NaN/Infinity）不走 callNamed：调用位读的是标识符绑定
+      if (callee.type === "Identifier" && !HOST_INTRINSIC_SET.has(callee.name)) {
         const argSrcs: string[] = [];
         const argLocSrcs: string[] = [];
         for (const a of expr.arguments) {
@@ -1008,7 +1011,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         const locArg = loc ? `, [${loc.start.line}, ${loc.start.column}]` : "";
         const argLocArg = loc ? `, [${argLocSrcs.join(", ")}]` : "";
         const calleeRef = opts.lenientGlobals
-          ? `(typeof ${callee.name} !== "undefined" ? ${callee.name} : undefined)`
+          ? `(typeof ${callee.name} !== "undefined" ? ${callee.name} : void 0)`
           : callee.name;
         return `$callNamed(${JSON.stringify(callee.name)}, ${calleeRef}, [${argSrcs.join(", ")}]${locArg}${argLocArg})`;
       }
@@ -1137,7 +1140,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       return "$unknown()";
     default:
       // 未 lowering 的表达式：
-      // 静默折 $lit(undefined) 是假精确——抛 unsupported 交消费方回落
+      // 静默折 $lit(void 0) 是假精确——抛 unsupported 交消费方回落
       throw new NudoUnsupportedError(
         `expression:${expr.type}`,
         expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,

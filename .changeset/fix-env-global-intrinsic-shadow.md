@@ -24,5 +24,5 @@ only shadowed the host.
 Measured on a consumer project (npm-safe) with `nudo.env = ["es","node","web"]`:
 `nudo test` went 39/39 → 23 passed / 10 failed; with this fix it is 33 + 6
 planned cases green again, plus `opaque-result` 34 → 28, `unknown-inference`
-11 → 6, `host-effect-blocked` 1 → 0 (env-declared builtins now fold instead of
+9 → 6, `host-effect-blocked` 1 → 0 (env-declared builtins now fold instead of
 failing closed).

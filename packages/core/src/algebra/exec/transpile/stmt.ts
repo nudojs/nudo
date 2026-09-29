@@ -33,6 +33,7 @@ import {
 } from "./emit.ts";
 import { memberPathOf, readPathSrc, setPathSrc, readPrefix, setParentPathSrc } from "./member-path.ts";
 import { emitTranspileExpression } from "./transpile-dispatch.ts";
+import { UNDEF_LIT, HOST_INTRINSIC_SET } from "./intrinsics.ts";
 
 /** switch 共享体函数名序号（跨语句/函数去重） */
 let switchBodySeq = 0;
@@ -69,7 +70,7 @@ export function emitFnBlockBody(
 ): string {
   const implicitReturn = o.implicitReturn !== false;
   if (!body) {
-    return implicitReturn ? `${indent(depth)}return $lit(undefined);` : "";
+    return implicitReturn ? `${indent(depth)}return $lit(void 0);` : "";
   }
   if (body.type !== "BlockStatement") {
     return `${indent(depth)}return ${emitTranspileExpression(body as Expression, opts)};`;
@@ -338,12 +339,12 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         ].join("\n");
       };
       if (asVar) return emitRet(asVar);
-      if (!stmt.argument) return emitRet(`$lit(undefined)`);
+      if (!stmt.argument) return emitRet(`$lit(void 0)`);
       const retSrc = emitTranspileExpression(stmt.argument, opts);
       return emitRet(retSrc, stmt.argument as Node);
     }
     case "ThrowStatement": {
-      const arg = stmt.argument ? emitTranspileExpression(stmt.argument, opts) : "$lit(undefined)";
+      const arg = stmt.argument ? emitTranspileExpression(stmt.argument, opts) : "$lit(void 0)";
       return `${pad}$throw(${arg});`;
     }
     case "ExpressionStatement": {
@@ -410,7 +411,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
             ? asVar
             : d.init
               ? emitTranspileExpression(d.init, opts)
-              : "$lit(undefined)";
+              : "$lit(void 0)";
           lines.push(`${pad}${kw} ${d.id.name} = ${init};`);
           // 顶层绑定表（checkSource varAbs / scanLiteralCalls 实参解析）
           if (depth === 0) {
@@ -479,11 +480,15 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
             ...opts,
             conditionalFlow: (opts.conditionalFlow ?? 0) + 1,
           })
-        : "undefined";
+        : null;
       const cons = wrapArm(consRaw, "fk1_");
+      // 缺 else：names 空时**省略** $fork 第三参（不得发裸 undefined 哨兵——
+      // 那是标识符，被遮蔽后会把 Abs 当 alternate 函数传进去）；有 fork 绑定时
+      // 需要真 alternate 参与 join，折 UNDEF_LIT。
       const alt = names.length
-        ? wrapArm(altRaw === "undefined" ? "() => $lit(undefined)" : altRaw, "fk2_")
+        ? wrapArm(altRaw === null ? `() => ${UNDEF_LIT}` : altRaw, "fk2_")
         : altRaw;
+      const altArg = alt === null ? "" : `, ${alt}`;
       const joinLines = names.length
         ? [...testRebinds, ...forkBindingDecls(names, padDecl)]
         : testRebinds;
@@ -504,14 +509,14 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           return [
             ...joinLines,
             inCtrl
-              ? `${pad}$loopReturn($fork(${test}, ${cons}, ${alt}));`
-              : `${pad}return $fork(${test}, ${cons}, ${alt});`,
+              ? `${pad}$loopReturn($fork(${test}, ${cons}${altArg}));`
+              : `${pad}return $fork(${test}, ${cons}${altArg});`,
           ].join("\n");
         }
         return [
           openBlock,
           ...joinLines,
-          `${padDecl}const __fkR = $fork(${test}, ${cons}, ${alt});`,
+          `${padDecl}const __fkR = $fork(${test}, ${cons}${altArg});`,
           applyJoin,
           inCtrl ? `${padDecl}$loopReturn(__fkR);` : `${padDecl}return __fkR;`,
           closeBlock,
@@ -520,7 +525,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       return [
         openBlock,
         ...joinLines,
-        `${padDecl}$fork(${test}, ${cons}, ${alt});`,
+        `${padDecl}$fork(${test}, ${cons}${altArg});`,
         applyJoin,
         closeBlock,
       ]
@@ -573,7 +578,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         collectAssignedIds(stmt.test, assigned);
         collectAssignedIds(stmt.update, assigned);
         collectArrMutatorReceivers(stmt.body, assigned);
-        const names = [...assigned].filter((n) => n !== "undefined");
+        const names = [...assigned].filter((n) => !HOST_INTRINSIC_SET.has(n));
         const packSrc =
           names.length === 0
             ? null
@@ -614,7 +619,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const initExpr =
         stmt.init && stmt.init.type === "VariableDeclaration" && stmt.init.declarations[0]?.init
           ? emitTranspileExpression(stmt.init.declarations[0].init, opts)
-          : "$lit(undefined)";
+          : "$lit(void 0)";
       const testSrc = stmt.test ? emitTranspileExpression(stmt.test, opts) : "$lit(true)";
       // for 步进闭包需要**自增后的新值**作状态线程；不能走 UpdateExpression 的
       // 后置旧值语义（那会丢自增副作用）
@@ -624,7 +629,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           ? `${stmt.update.argument.name} = ${stmt.update.operator === "++" ? "$add" : "$sub"}(${stmt.update.argument.name}, $lit(1))`
           : stmt.update
             ? emitTranspileExpression(stmt.update, opts)
-            : `$lit(undefined)`;
+            : `$lit(void 0)`;
       const forBodyOpts: TranspileOptions = {
         ...opts,
         inLoop: (opts.inLoop ?? 0) + 1,
@@ -642,7 +647,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       collectAssignedIds(stmt.test, assigned);
       collectAssignedIds(stmt.update, assigned);
       collectArrMutatorReceivers(stmt.body, assigned);
-      const names = [...assigned].filter((n) => n !== initName && n !== "undefined");
+      const names = [...assigned].filter((n) => n !== initName && !HOST_INTRINSIC_SET.has(n));
       const packSrc =
         names.length === 0
           ? null
@@ -792,7 +797,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       }
       // 无 default：合成 no-match 臂，把快照写入 join 槽（抽象 disc 时参与 join）
       if (!defaultArm && names.length > 0) {
-        defaultSrc = wrapArmThunk(`() => {\n${indent(depth + 2)}return $lit(undefined);\n${indent(depth + 1)}}`, armSeq);
+        defaultSrc = wrapArmThunk(`() => {\n${indent(depth + 2)}return $lit(void 0);\n${indent(depth + 1)}}`, armSeq);
       }
       switchBodySeq += Math.max(bodyIdx, 1);
       const dflt = defaultSrc ? `, ${defaultSrc}` : "";
@@ -1013,7 +1018,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const assigned = new Set<string>();
       collectAssignedIds(stmt.body, assigned);
       collectArrMutatorReceivers(stmt.body, assigned);
-      const names = [...assigned].filter((n) => n !== bindName && n !== "undefined");
+      const names = [...assigned].filter((n) => n !== bindName && !HOST_INTRINSIC_SET.has(n));
       const loopOpts = opts.loopLabel ? `label: ${JSON.stringify(opts.loopLabel)}` : "";
       const optsSrc =
         names.length === 0
@@ -1044,7 +1049,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const assigned = new Set<string>();
       collectAssignedIds(stmt.body, assigned);
       collectAssignedIds(stmt.test, assigned);
-      const names = [...assigned].filter((n) => n !== "undefined");
+      const names = [...assigned].filter((n) => !HOST_INTRINSIC_SET.has(n));
       const loopOpts = opts.loopLabel ? `label: ${JSON.stringify(opts.loopLabel)}` : "";
       if (names.length === 0) {
         return [
@@ -1080,7 +1085,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       collectAssignedIds(stmt.body, assigned);
       collectAssignedIds(stmt.test, assigned);
       collectArrMutatorReceivers(stmt.body, assigned);
-      const names = [...assigned].filter((n) => n !== "undefined");
+      const names = [...assigned].filter((n) => !HOST_INTRINSIC_SET.has(n));
       const packSrc =
         names.length === 0
           ? null
@@ -1392,7 +1397,7 @@ export function transpileBlockAsThunk(stmt: Statement, depth: number, opts: Tran
     return `() => {\n${inner}\n${indent(depth)}}`;
   }
   if (stmt.type === "ReturnStatement") {
-    const v = stmt.argument ? emitTranspileExpression(stmt.argument, opts) : "$lit(undefined)";
+    const v = stmt.argument ? emitTranspileExpression(stmt.argument, opts) : "$lit(void 0)";
     // C2.1：循环体内的 return 是函数提前返回，不是 thunk 的表达式值
     if ((opts.inLoop ?? 0) > 0) {
       return `() => { $loopReturn(${v}); }`;

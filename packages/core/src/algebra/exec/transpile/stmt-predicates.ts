@@ -118,8 +118,8 @@ export function completeElseChains(stmts: Statement[]): Statement[] {
   return out;
 }
 
-/** 块体无确定 return 时补隐式 return $lit(undefined) */
+/** 块体无确定 return 时补隐式 return $lit(void 0) */
 export function withImplicitReturn(body: Node, bodyStmts: string, depth: number): string {
   if (stmtReturns(body as unknown as Statement)) return bodyStmts;
-  return `${bodyStmts}\n${indent(depth)}return $lit(undefined);`;
+  return `${bodyStmts}\n${indent(depth)}return $lit(void 0);`;
 }

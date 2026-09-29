@@ -19,6 +19,7 @@ import { joinAbs } from "../objects.ts";
 import type { AbsModuleExports } from "../abs-modules.ts";
 import { formatAbs } from "../format.ts";
 import { transpile, transpileExpression, runtimeImportOf } from "./transpile.ts";
+import { HOST_INTRINSIC_SET } from "./transpile/intrinsics.ts";
 import { NudoUnsupportedError } from "./unsupported.ts";
 import { stripStaticExportDecls } from "./export-names.ts";
 import { errorTypeAbs } from "./may-throw.ts";
@@ -358,20 +359,21 @@ function rewriteExportStatements(js: string): string {
 const runBindings = new WeakMap<object, Map<string, unknown>>();
 
 /**
- * env 全局注入时**不得**遮蔽的宿主内建名。
+ * env 全局注入时**不得**遮蔽的宿主内建名 = `HOST_INTRINSIC_SET`（与转译折叠同源）。
  *
- * 注入形式是模块级 `const <name> = __nudoEnv["<name>"]`，会遮蔽宿主全局。而
- * 转译产物依赖 `undefined`/`NaN`/`Infinity` 保持原生身份：
- * - `expr.ts` 把这三个标识符硬编码折成 `$lit(undefined|NaN|Infinity)`；
- * - `stmt.ts` 缺 else 臂、隐式返回等位置直接发**裸 `undefined` 文本**。
+ * 注入形式是模块级 `const <name> = __nudoEnv["<name>"]`，会遮蔽宿主全局。
+ * 转译产物对这三个名字发**无标识符**源（`void 0` / `0/0` / `1/0` → `$lit`），
+ * 但产物里仍有依赖宿主 `undefined` 身份的省略哨兵（`$fork` 缺 else 臂的第三参
+ * 省略），且用户源里裸标识符一经遮蔽也会把 Abs 送进 `$lit`/调用位。
  *
- * 一旦 env（如 `@nudojs/env/es` 的 `undefined: undef()`）把 `undefined` 绑成
- * Abs，产物里的 `undefined` 就成了 Abs 对象：`$lit(<Abs>)` 折 unknown，循环内
- * 提前 return 的分支 join 整条变 unknown；`NaN` 被绑成 `prim.num()` 时
- * `x === NaN` 从原生恒 false 退化成 boolean。这三个名字转译器已自行处理，
- * 注入 const 无收益 → 跳过（等同未声明）。
+ * 典型故障（已修）：env 把 `undefined` 绑成 Abs 后，`$fork(test, cons, undefined)`
+ * 的第三参从「省略」变成 truthy 非函数 → 调用炸 → fail-closed unknown，
+ * 循环内提前 return 整条折 unknown；`NaN` 绑 `prim.num()` 时 `$lit(NaN)` 丢
+ * NaN 字面量身份，`0 === NaN` 从恒 false 退化成 boolean。
+ *
+ * 转译器已自行处理这三个名字，注入 const 无收益 → 跳过（等同未声明）。
  */
-const ENV_SHADOW_SKIP = new Set(["undefined", "NaN", "Infinity"]);
+const ENV_SHADOW_SKIP = HOST_INTRINSIC_SET;
 
 export function bindingsOf(run: Record<string, unknown>): Map<string, unknown> | undefined {
   return runBindings.get(run);
