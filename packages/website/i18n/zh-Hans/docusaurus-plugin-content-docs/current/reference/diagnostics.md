@@ -363,6 +363,12 @@ Module file not found for 'spec' (from file); tried: path
 
 Context: [@nudo:mock-module](../concepts/directives.md#nudo--模块级-mock) · [nudo check](../guides/check.md#what-it-checks)
 
+### `nudo:exports-unresolved` {#nudo-exports-unresolved}
+
+package.json 声明了 `exports` 目标，但子路径/条件未解析到文件。**warning** —— 分析回落 harvest stub / 文件直猜，可能与真实入口不符。与 `nudo:module-missing`（完全没有模块）不同。
+
+Context: [求值器缺口](../concepts/limits.md#求值器缺口摘要)
+
 ### `nudo:missing-export` {#nudo-missing-export}
 
 ```text

@@ -363,6 +363,12 @@ Module file not found for 'spec' (from file); tried: path
 
 Context: [@nudo:mock-module](../concepts/directives.md#nudo--module-level-mock) · [nudo check](../guides/check.md#what-it-checks)
 
+### `nudo:exports-unresolved` {#nudo-exports-unresolved}
+
+Package.json `exports` declared targets but the subpath/conditions did not resolve to a file. **Warning** — analysis fell back to harvest stub / file guess, which may not match the real entry. Distinct from `nudo:module-missing` (no module at all).
+
+Context: [Evaluator gaps](../concepts/limits.md#evaluator-gaps-summary)
+
 ### `nudo:missing-export` {#nudo-missing-export}
 
 ```text

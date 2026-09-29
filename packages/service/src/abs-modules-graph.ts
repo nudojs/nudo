@@ -21,7 +21,7 @@ import {
 } from "@nudojs/core";
 import type { Node } from "@babel/types";
 import { bareSpecToAbsModules } from "@nudojs/harvester";
-import { resolveNpmJsEntry } from "./evaluator/resolve-npm.ts";
+import { resolveNpmJsEntryDetailed } from "./evaluator/resolve-npm.ts";
 import { moduleResolveCandidates } from "./load-module.ts";
 import { BoundedLruMap } from "./lru-map.ts";
 
@@ -147,23 +147,30 @@ function buildModulesForFile(
   evalDep: (absPath: string, spec: string, fromFile: string, depth: number) => AbsModuleExports,
   depth: number,
   maxDepth: number,
-  onMissing: (spec: string, fromFile: string, tried: string[]) => void,
+  onIssue: (kind: AbsModuleLoadIssue["kind"], label: string, reason: string) => void,
 ): Record<string, AbsModuleExports> {
   const modules: Record<string, AbsModuleExports> = {};
   for (const spec of importSpecs(source)) {
     if (spec.startsWith(".") || spec.startsWith("/")) {
       const childPath = resolveRel(spec, fromFile);
       if (!childPath) {
-        onMissing(spec, fromFile, moduleResolveCandidates(spec, fromFile));
+        onIssue("missing", spec, `Module file not found for '${spec}' (from ${moduleLabel(fromFile)}); tried: ${moduleResolveCandidates(spec, fromFile).join(", ")}`);
         continue;
       }
       modules[spec] = evalDep(childPath, spec, fromFile, depth + 1);
     } else if (!spec.startsWith("node:")) {
       // A3：优先执行包入口 JS（ms/debug 等纯 JS 包返回面可折叠）；
       // 无入口或求值失败再 harvest stub。
-      const entry = resolveNpmJsEntry(spec, dirname(fromFile));
-      if (entry) {
-        const executed = evalDep(entry, spec, fromFile, depth + 1);
+      const resolved = resolveNpmJsEntryDetailed(spec, dirname(fromFile));
+      if (resolved.exportsUnresolved) {
+        onIssue(
+          "exports-unresolved",
+          spec,
+          `package.json exports declared but '${spec}' did not resolve (from ${moduleLabel(fromFile)}); falling back to harvest`,
+        );
+      }
+      if (resolved.path) {
+        const executed = evalDep(resolved.path, spec, fromFile, depth + 1);
         if (executed && (executed.default !== undefined || Object.keys(executed.named ?? {}).length > 0)) {
           modules[spec] = executed;
           continue;
@@ -180,7 +187,7 @@ function buildModulesForFile(
 
 /** 模块加载守卫：与 TypeValue loadModuleEnv 口径对齐，供 analyzer 映射诊断 */
 export type AbsModuleLoadIssue = {
-  kind: "cycle" | "depth" | "missing" | "missing-export";
+  kind: "cycle" | "depth" | "missing" | "missing-export" | "exports-unresolved";
   /** 诊断定位用标签（文件 basename 或 require/import 说明符） */
   label: string;
   reason: string;
@@ -513,12 +520,8 @@ export function evalAbsModuleGraph(
       evalDep,
       depth,
       maxDepth,
-      (spec, fromFile, tried) => {
-        pushIssue(
-          "missing",
-          spec,
-          `Module file not found for '${spec}' (from ${moduleLabel(fromFile)}); tried: ${tried.join(", ")}`,
-        );
+      (kind, label, reason) => {
+        pushIssue(kind, label, reason);
       },
     );
     let exports: AbsModuleExports;
@@ -568,12 +571,8 @@ export function evalAbsModuleGraph(
     evalDep,
     0,
     maxDepth,
-    (spec, fromFile, tried) => {
-      pushIssue(
-        "missing",
-        spec,
-        `Module file not found for '${spec}' (from ${moduleLabel(fromFile)}); tried: ${tried.join(", ")}`,
-      );
+    (kind, label, reason) => {
+      pushIssue(kind, label, reason);
     },
   );
   // 入口文件自身的 named import / re-export 缺名
