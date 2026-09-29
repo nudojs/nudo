@@ -257,6 +257,18 @@ Context: [分析预算](../guides/performance.md#分析预算)
 
 Context: [分析预算](../guides/performance.md#分析预算)
 
+### `nudo:promise-micro-truncated` {#nudo-promise-micro-truncated}
+
+Promise 微任务队列触及硬上限（`MAX_PROMISE_MICROS = 1024`），剩余排队回调被丢弃。**info**。受影响的 promise 结果保持拓宽，而不是静默出错。
+
+Context: [分析预算](../guides/performance.md#分析预算)
+
+### `nudo:promise-micro-error` {#nudo-promise-micro-error}
+
+求值出口排空微任务时，某个 then/catch 回调抛错。**info**。该回调效果不完整；请检查报告的错误以及排队该回调的表达式。
+
+Context: [分析预算](../guides/performance.md#分析预算)
+
 ### `nudo:host-effect-blocked` {#nudo-host-effect-blocked}
 
 宿主副作用函数（`fetch` / `XMLHttpRequest` / `WebSocket` / `EventSource` / `setTimeout` / `setInterval` / `setImmediate` / `queueMicrotask` / `requestAnimationFrame` / `requestIdleCallback`）在分析期不真实执行——真实执行会以 Abs 实参发起网络 I/O 或排真实定时器。结果拓宽为 `unknown#opaque`。**info**。用 `@nudo:mock` / `@nudo:env` 打桩，或从调用点喂入值。

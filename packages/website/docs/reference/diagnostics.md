@@ -257,6 +257,18 @@ Branch-expansion budget (`$fork` total count) hit; affected results widened. **W
 
 Context: [Analysis budgets](../guides/performance.md#analysis-budgets)
 
+### `nudo:promise-micro-truncated` {#nudo-promise-micro-truncated}
+
+Promise microtask queue hit the hard cap (`MAX_PROMISE_MICROS = 1024`); remaining queued callbacks were dropped. **Info.** Affected promise results stay widened rather than silently wrong.
+
+Context: [Analysis budgets](../guides/performance.md#analysis-budgets)
+
+### `nudo:promise-micro-error` {#nudo-promise-micro-error}
+
+A queued promise microtask threw while being drained at an eval exit. **Info.** The callback's effect is incomplete; inspect the reported error and the expression that queued the then/catch.
+
+Context: [Analysis budgets](../guides/performance.md#analysis-budgets)
+
 ### `nudo:host-effect-blocked` {#nudo-host-effect-blocked}
 
 Host side-effect function (`fetch` / `XMLHttpRequest` / `WebSocket` / `EventSource` / `setTimeout` / `setInterval` / `setImmediate` / `queueMicrotask` / `requestAnimationFrame` / `requestIdleCallback`) was not executed during analysis — running it for real would perform network I/O or schedule real timers with Abs arguments. Result widened to `unknown#opaque`. **Info.** Mock it with `@nudo:mock` / `@nudo:env`, or feed the value in from a call site.
