@@ -470,6 +470,10 @@ function collectBoundsFromPhi(phi: Phi, id: string, acc: NumBounds): void {
 
 /** 减法：a - b = a + (-b)，数值上做单调性 */
 export function sub(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
+  // Symbol 参与算术/位运算：ToNumber/ToNumeric 原生 TypeError（与 add 同口径）
+  if (isSym(a) || isSym(b)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
   const va = litValue(a);
   const vb = litValue(b);
   const big = foldBigintBinOp(a, b, (x, y) => x - y);
@@ -521,6 +525,10 @@ export function sub(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
 
 /** 乘法：字面量直接求值；×正数同向缩放；×负数翻转不等式；×0 归零 */
 export function mul(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
+  // Symbol 参与算术/位运算：ToNumber/ToNumeric 原生 TypeError（与 add 同口径）
+  if (isSym(a) || isSym(b)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
   const va = litValue(a);
   const vb = litValue(b);
   const big = foldBigintBinOp(a, b, (x, y) => x * y);
@@ -599,6 +607,10 @@ export function mul(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
  * 除以 0：JS 语义为 ±Infinity / NaN，shape 仍 number（不报违例）。
  */
 export function div(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
+  // Symbol 参与算术/位运算：ToNumber/ToNumeric 原生 TypeError（与 add 同口径）
+  if (isSym(a) || isSym(b)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
   const va = litValue(a);
   const vb = litValue(b);
   const big = foldBigintBinOp(a, b, (x, y) => x / y);
@@ -667,6 +679,10 @@ export function div(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
  * `n % 0` / `x % 0` / `x % NaN` 恒为 NaN（JS）。
  */
 export function mod(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
+  // Symbol 参与算术/位运算：ToNumber/ToNumeric 原生 TypeError（与 add 同口径）
+  if (isSym(a) || isSym(b)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
   const va = litValue(a);
   const vb = litValue(b);
   const big = foldBigintBinOp(a, b, (x, y) => x % y);
