@@ -24,6 +24,7 @@ import {
   callTranspiledExportFull,
   NudoThrow,
   pushThrowExit,
+  CONSTRAINT_EXPR_RE,
 } from "@nudojs/core";
 import { defaultLoadModule, type LoadModule } from "./load-module.ts";
 import { evalMockFileWithDeps } from "./mock-file.ts";
@@ -244,6 +245,8 @@ export type FromMockError = {
   name: string;
   fromPath: string;
   message: string;
+  /** 缺省 nudo:module-missing；表达式解析失败 = nudo:mock-invalid */
+  code?: string;
 };
 
 function isAbsVal(v: unknown): v is Abs {
@@ -266,9 +269,10 @@ function loadFromMockBinding(
   const evaled = evalMockFileWithDeps(fromPath, base, loadModule);
   if (!evaled.ok) {
     return {
-      error: evaled.error.includes("not found")
-        ? `Mock file not found for '${name}' (from "${fromPath}")`
-        : evaled.error,
+      error:
+        evaled.kind === "not-found"
+          ? `Mock file not found for '${name}' (from "${fromPath}")`
+          : evaled.error,
     };
   }
   const run = evaled.run;
@@ -378,10 +382,37 @@ export function mockDirectivesToAbsSeeds(
         // `= T.number` 等类型值 mock：此前只进 TypeValue env（applyMocks），
         // 求值引擎注入只吃 seed → 被当 unknown 全局（nudo:builtin-unknown）。
         // 桥进 seedVars 后两条路径口径一致。
+        // fail-closed：解析失败不得静默 absUnknown——否则无法区分
+        // 「mock 故意 unknown」与「表达式没解析出来」。
+        const expr = d.expression.trim();
+        const intentionalUnknown =
+          expr === "unknown" ||
+          expr === "any" ||
+          /^T(\.|$)/.test(expr) ||
+          CONSTRAINT_EXPR_RE.test(expr);
         try {
-          seedVars[d.name] = parseCaseArgExpr(d.expression);
-        } catch {
-          seedVars[d.name] = absUnknown;
+          const abs = parseCaseArgExpr(d.expression);
+          const silentFallback =
+            abs.shape.k === "unknown" && !abs.term && !intentionalUnknown;
+          if (silentFallback) {
+            fromErrors.push({
+              name: d.name,
+              fromPath: "(inline)",
+              message: `Failed to parse mock expression for '${d.name}': ${d.expression}`,
+              code: "nudo:mock-invalid",
+            });
+          } else {
+            seedVars[d.name] = abs;
+          }
+        } catch (e) {
+          fromErrors.push({
+            name: d.name,
+            fromPath: "(inline)",
+            message: `Failed to parse mock expression for '${d.name}': ${
+              e instanceof Error ? e.message : String(e)
+            }`,
+            code: "nudo:mock-invalid",
+          });
         }
       }
     }

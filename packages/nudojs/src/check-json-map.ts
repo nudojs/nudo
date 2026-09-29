@@ -54,14 +54,19 @@ export function docsDiagnosticCodes(issues: Array<{ code?: string }>): string[] 
 }
 
 export function mockFromErrorIssues(
-  mockFromErrors: Array<{ name: string; fromPath: string; message: string }>,
+  mockFromErrors: Array<{ name: string; fromPath: string; message: string; code?: string }>,
 ): CheckIssue[] {
-  return mockFromErrors.map((fe) => ({
-    severity: "error" as const,
-    code: "nudo:module-missing" as const,
-    message: fe.message,
-    suggestion: `Create the mock file or fix the path in @nudo:mock ${fe.name} from "${fe.fromPath}"`,
-  }));
+  return mockFromErrors.map((fe) => {
+    const isExpr = fe.code === "nudo:mock-invalid";
+    return {
+      severity: "error" as const,
+      code: (fe.code ?? "nudo:module-missing") as string,
+      message: fe.message,
+      suggestion: isExpr
+        ? "Fix the @nudo:mock expression (constraint builders, literals, or arrow functions)"
+        : `Create the mock file or fix the path in @nudo:mock ${fe.name} from "${fe.fromPath}"`,
+    };
+  });
 }
 
 export type DomainDiagnosticLike = {

@@ -5,9 +5,9 @@
  * - 内联 mock 不回归
  */
 import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { formatAbs, litValue } from "@nudojs/core";
 import { mockDirectivesToAbsSeeds, mockSeedsToAbsMocks } from "../mock-abs.ts";
 import { parse, extractDirectives } from "@nudojs/parser";
@@ -281,5 +281,119 @@ export function load() { return readConfig(); }
     );
     expect(r).toBeDefined();
     expect(formatAbs(r!.result)).toContain("3000");
+  });
+});
+
+describe("mock dependency-graph failure is fail-closed", () => {
+  it("missing relative import inside the mock file is reported, not silent unknown", () => {
+    const dir = tmpProject({
+      "mocks/stub.js": `import { helper } from "./missing-dep.js";\nexport const stub = () => helper();\n`,
+    });
+    const entry = join(dir, "app.js");
+    const source = `/**
+ * @nudo:mock stub from "./mocks/stub.js"
+ * @nudo:case "default" ()
+ */
+function f() {
+  return stub();
+}
+`;
+    const seeds = seedsOf(source, entry);
+    expect(seeds.seedVars.stub).toBeUndefined();
+    expect(seeds.fromErrors).toHaveLength(1);
+    expect(seeds.fromErrors![0]!.message).toContain("failed to resolve dependencies");
+    expect(seeds.fromErrors![0]!.message).toContain("missing-dep.js");
+
+    const result = analyzeFile(entry, source);
+    const missing = result.diagnostics.filter((d) => d.code === "nudo:module-missing");
+    expect(missing.length).toBeGreaterThanOrEqual(1);
+    expect(missing[0]!.message).toContain("failed to resolve dependencies");
+  });
+
+  it("graph throw (loader failure on a resolved dep) is reported, not silent empty modules", () => {
+    const dir = tmpProject({
+      "lib/dep.js": `export function helper() { return "ok"; }\n`,
+      "mocks/stub.js": `import { helper } from "../lib/dep.js";\nexport const stub = () => helper();\n`,
+    });
+    const entry = join(dir, "app.js");
+    const source = `/**
+ * @nudo:mock stub from "./mocks/stub.js"
+ * @nudo:case "default" ()
+ */
+function f() {
+  return stub();
+}
+`;
+    // inject graph failure: loader throws while resolving the mock's dep
+    const loadModule = (spec: string, fromFile: string): string | undefined => {
+      if (spec.includes("dep.js")) throw new Error("injected loader boom");
+      const abs = spec.startsWith(".") ? join(dirname(fromFile), spec) : spec;
+      try {
+        return readFileSync(abs, "utf-8");
+      } catch {
+        return undefined;
+      }
+    };
+    const fns = extractDirectives(parse(source));
+    const seeds = mockDirectivesToAbsSeeds(fns, { fromFile: entry, loadModule });
+    expect(seeds.seedVars.stub).toBeUndefined();
+    expect(seeds.fromErrors).toHaveLength(1);
+    expect(seeds.fromErrors![0]!.message).toContain("failed to resolve dependencies");
+    expect(seeds.fromErrors![0]!.message).toContain("injected loader boom");
+  });
+});
+
+describe("unparseable mock expression is fail-closed", () => {
+  it("surfaces in fromErrors instead of silently seeding absUnknown", () => {
+    const source = `/**
+ * @nudo:mock foo = @@@invalid@@@
+ * @nudo:case "default" ()
+ */
+function f() {
+  return foo;
+}
+`;
+    const seeds = seedsOf(source, "/tmp/inline.js");
+    expect(seeds.seedVars.foo).toBeUndefined();
+    expect(seeds.fromErrors).toHaveLength(1);
+    expect(seeds.fromErrors![0]!.name).toBe("foo");
+    expect(seeds.fromErrors![0]!.code).toBe("nudo:mock-invalid");
+    expect(seeds.fromErrors![0]!.message).toContain("Failed to parse mock expression");
+  });
+
+  it("analyzeFile reports nudo:mock-invalid for garbage mock RHS", () => {
+    const source = `/**
+ * @nudo:mock foo = @@@invalid@@@
+ * @nudo:case "default" ()
+ */
+function f() {
+  return foo;
+}
+`;
+    const result = analyzeFile("/tmp/inline.js", source);
+    const diags = result.diagnostics.filter((d) => d.code === "nudo:mock-invalid");
+    expect(diags.length).toBeGreaterThanOrEqual(1);
+    expect(diags[0]!.message).toContain("foo");
+  });
+
+  it("intentional unknown mock expressions still seed without error", () => {
+    const source = `/**
+ * @nudo:mock a = unknown
+ * @nudo:mock b = any
+ * @nudo:mock c = T.number
+ * @nudo:mock d = number()
+ * @nudo:case "default" ()
+ */
+function f() {
+  return [a, b, c, d];
+}
+`;
+    const seeds = seedsOf(source, "/tmp/inline.js");
+    expect(seeds.fromErrors).toBeUndefined();
+    expect(seeds.seedVars.a).toBeDefined();
+    expect(seeds.seedVars.b).toBeDefined();
+    expect(seeds.seedVars.c).toBeDefined();
+    expect(seeds.seedVars.d).toBeDefined();
+    expect(seeds.seedVars.d!.shape.k).toBe("prim");
   });
 });

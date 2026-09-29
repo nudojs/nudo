@@ -293,16 +293,24 @@ export function analyzeFileUncachedInner(
     ...(loadModule ? { loadModule } : {}),
   });
   // @nudo:mock name from "path" 解析失败 → 明确诊断（缺文件/缺绑定/求值失败），不静默丢弃
+  // 内联表达式解析失败 → nudo:mock-invalid
   for (const fe of seeds.fromErrors ?? []) {
+    const isExpr = fe.code === "nudo:mock-invalid";
     diagnostics.push({
       range: { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } },
       severity: "error",
       message: fe.message,
-      code: "nudo:module-missing",
-      suggestions: [
-        `Create the mock file or fix the path in @nudo:mock ${fe.name} from "${fe.fromPath}"`,
-        "The mock module must define a binding with the same name as the mock",
-      ],
+      code: fe.code ?? "nudo:module-missing",
+      suggestions: isExpr
+        ? [
+            "Supported formats: stub(), stub().returns(value), spy(), mock()",
+            "Arrow functions: (args) => expression or (args) => { statements; return value; }",
+            "Type expressions: number(), string(), shape({...}), union(...), or concrete literals",
+          ]
+        : [
+            `Create the mock file or fix the path in @nudo:mock ${fe.name} from "${fe.fromPath}"`,
+            "The mock module must define a binding with the same name as the mock",
+          ],
     });
   }
   let absCallRecords: CallRecord[] = [];

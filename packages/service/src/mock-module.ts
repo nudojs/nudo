@@ -31,9 +31,10 @@ function loadMockModuleExports(
   const evaled = evalMockFileWithDeps(fromPath, fromFile, loadModule);
   if (!evaled.ok) {
     return {
-      error: evaled.error.includes("not found")
-        ? `Mock module not found (from "${fromPath}")`
-        : evaled.error,
+      error:
+        evaled.kind === "not-found"
+          ? `Mock module not found (from "${fromPath}")`
+          : evaled.error,
     };
   }
   const exports = evalExportsToModuleExports(evaled.run, parse(evaled.source), `mock-module:${fromPath}`);

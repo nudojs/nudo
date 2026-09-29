@@ -202,7 +202,7 @@ async function runCheck(
   const cached = cacheKey ? disk.get<ReturnType<typeof serializeCheckJson>>(cacheKey) : undefined;
   let cachedJson: ReturnType<typeof serializeCheckJson> | undefined;
   let algebraReport;
-  let mockFromErrors: Array<{ name: string; fromPath: string; message: string }> = [];
+  let mockFromErrors: Array<{ name: string; fromPath: string; message: string; code?: string }> = [];
   if (cached) {
     cachedJson = cached;
     algebraReport = reportFromCachedJson(cached) as Awaited<ReturnType<typeof checkSource>>;
@@ -238,7 +238,12 @@ async function runCheck(
       mergedMods = mm.modules;
       mockFromErrors = [
         ...mockFromErrors,
-        ...mm.errors.map((e) => ({ name: e.name, fromPath: e.fromPath, message: e.message })),
+        ...mm.errors.map((e) => ({
+          name: e.name,
+          fromPath: e.fromPath,
+          message: e.message,
+          ...(e.code !== undefined ? { code: e.code } : {}),
+        })),
       ];
       inject = {
         ...(hasCycle
