@@ -195,6 +195,7 @@ async function runCheck(
             callSiteBudget: aCfg.callSiteBudget,
             entryThrows,
             ignoreThrows: ignoreThrows.join(","),
+            maxForks: aCfg.maxForks,
           },
         })
     : undefined;

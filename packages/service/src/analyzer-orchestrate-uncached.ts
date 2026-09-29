@@ -530,8 +530,8 @@ export function analyzeFileUncachedInner(
     // the fingerprint). Case-directive results are self-contained.
     const fp = fnFpMap?.get(fn.name);
     // analysis 配置维度进 fn 键：evalMissingSlot / budget 等变更必须 miss
-    // （整文件键已含，fn 键不加会陈旧命中 C0.5 诊断）
-    const analysisFnKey = `m=${analysisCfg.mode}|e=${analysisCfg.evalMissingSlot}|b=${analysisCfg.callSiteBudget}`;
+    // （整文件键已含，fn 键不加会陈旧命中 C0.5 诊断；maxForks 截断同理）
+    const analysisFnKey = `m=${analysisCfg.mode}|e=${analysisCfg.evalMissingSlot}|b=${analysisCfg.callSiteBudget}|f=${analysisCfg.maxForks}`;
     // dep 内容进 fn 键（default 与 custom loader 同口径），避免入口文本未变时旧诊断命中
     // truncated / fingerprint 失败：与整文件 noCache 同口径 fail-closed
     let fnDepSeg: string | null = "-";

@@ -149,6 +149,8 @@ export function checkCacheKey(
       callSiteBudget?: number;
       entryThrows?: string;
       ignoreThrows?: string;
+      /** fork 预算（NUDO_MAX_FORKS / nudo.analysis.maxForks）——截断会 widen 结果 */
+      maxForks?: number;
     };
   },
 ): string {
@@ -164,7 +166,7 @@ export function checkCacheKey(
     ? [...(opts.projectEnvNames ?? [])].sort().join(",")
     : "-";
   const cfgSeg = opts.analysisCfg
-    ? `${opts.analysisCfg.mode ?? "-"}|${opts.analysisCfg.evalMissingSlot ?? "-"}|${opts.analysisCfg.callSiteBudget ?? "-"}|${opts.analysisCfg.entryThrows ?? "-"}|${opts.analysisCfg.ignoreThrows ?? "-"}`
+    ? `${opts.analysisCfg.mode ?? "-"}|${opts.analysisCfg.evalMissingSlot ?? "-"}|${opts.analysisCfg.callSiteBudget ?? "-"}|${opts.analysisCfg.entryThrows ?? "-"}|${opts.analysisCfg.ignoreThrows ?? "-"}|${opts.analysisCfg.maxForks ?? "-"}`
     : "-";
   return sha256Hex(
     [
