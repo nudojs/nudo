@@ -305,8 +305,9 @@ function requireOptionalFromModules(
 
 /** 导出语句后处理：specifier / re-export / star / default → __nudoExport 调用。
  *  静态声明导出（export function/const/let）走既有正则扫描 + 返回对象；
- *  冲突语义：显式导出压过 export *（ESM 早错保证 decl/specifier 不重名，
- *  star×star 按源序后者覆盖——与 collectAbsExports 顺序口径一致）。 */
+ *  冲突语义：显式导出（decl / specifier / 显式 re-export）压过 export *
+ *  （ESM 早错保证 decl/specifier 不重名，star×star 按源序后者覆盖——
+ *  与 collectAbsExports 顺序口径一致）。 */
 function rewriteExportStatements(js: string): string {
   // export { x as y } from "spec"：绑定经 modules 表注入
   js = js.replace(
@@ -430,6 +431,9 @@ function runTranspiledInner(
   const { names, js: stripped } = stripStaticExportDecls(js);
   js = stripped;
   const dynExports: Record<string, unknown> = {};
+  // ESM：显式导出（静态 decl 名 + __nudoExport 的 specifier/re-export）恒压过
+  // export *。star 只填「从未显式导出」的名；star×star 仍按源序后者覆盖。
+  const explicitExportNames = new Set<string>(names);
   const bindings = new Map<string, unknown>();
   const argNames = [
     ...runtimeArgNames(),
@@ -465,6 +469,7 @@ function runTranspiledInner(
     if (n === "__nudoExport") {
       return (name: string, value: unknown) => {
         dynExports[name] = value;
+        explicitExportNames.add(name);
       };
     }
     if (n === "__nudoExportStar") {
@@ -472,7 +477,7 @@ function runTranspiledInner(
         const mod = modules?.[spec];
         if (mod && "named" in (mod as object)) {
           for (const [k, v] of Object.entries((mod as AbsModuleExports).named)) {
-            dynExports[k] = v;
+            if (!explicitExportNames.has(k)) dynExports[k] = v;
           }
         }
       };
@@ -502,8 +507,10 @@ function runTranspiledInner(
     js = `let exports = $obj({});\nlet module = $obj({ exports });\nconst __nudoCjsOrig = exports;\n${js}`;
   }
 
-  // 动态导出（specifier/re-export/star/default）先展开，静态声明名后写：
-  // 显式导出压过 export *（ESM 语义；decl/specifier 重名是 ESM 早错）。
+  // 动态导出（specifier/re-export/star/default）先展开，静态声明名后写。
+  // 冲突语义：显式导出（静态 decl / specifier / 显式 re-export）恒压过 export *
+  // （ESM 早错保证 decl/specifier 不重名，star×star 按源序后者覆盖——
+  // 与 collectAbsExports 顺序口径一致）。
   const cjsMerge = hasCjsExports
     ? `(() => { const me = $get(module, "exports"); if (me !== __nudoCjsOrig && me && typeof me === "object" && "shape" in me) { return { default: me }; } const out = {}; if (__nudoCjsOrig && __nudoCjsOrig.shape && __nudoCjsOrig.shape.k === "obj") { for (const k of Object.keys(__nudoCjsOrig.shape.slots)) out[k] = __nudoCjsOrig.shape.slots[k].value; } return out; })()`
     : "{}";
