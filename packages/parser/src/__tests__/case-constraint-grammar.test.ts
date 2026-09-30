@@ -28,14 +28,14 @@ describe("parseCaseArgExpr constraint grammar", () => {
   });
 
   it("lit(42) / lit(\"a\")", () => {
-    expect(litValue(parseCaseArgExpr("lit(42)"))).toBe(42);
-    expect(litValue(parseCaseArgExpr('lit("a")'))).toBe("a");
+    expect(litValue(parseCaseArgExpr("lit(42)"))).toEqual({ ok: true, value: 42 });
+    expect(litValue(parseCaseArgExpr('lit("a")'))).toEqual({ ok: true, value: "a" });
   });
 
   it("concrete literals parse without builders", () => {
-    expect(litValue(parseCaseArgExpr("42"))).toBe(42);
-    expect(litValue(parseCaseArgExpr("null"))).toBe(null);
-    expect(litValue(parseCaseArgExpr("undefined"))).toBe(undefined);
+    expect(litValue(parseCaseArgExpr("42"))).toEqual({ ok: true, value: 42 });
+    expect(litValue(parseCaseArgExpr("null"))).toEqual({ ok: true, value: null });
+    expect(litValue(parseCaseArgExpr("undefined"))).toEqual({ ok: true, value: undefined });
     expect(parseCaseArgExpr("never").shape.k).toBe("never");
   });
 
@@ -111,7 +111,7 @@ function id(x) { return x; }
       argsAbs: Abs[];
       args?: unknown;
     };
-    expect(litValue(c.argsAbs[0]!)).toBe(7);
+    expect(litValue(c.argsAbs[0]!)).toEqual({ ok: true, value: 7 });
     expect(c.args).toBeUndefined();
   });
 

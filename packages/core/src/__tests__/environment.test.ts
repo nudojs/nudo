@@ -6,7 +6,7 @@ describe("Environment", () => {
   it("binds and looks up Abs values", () => {
     const env = createEnvironment();
     env.bind("x", numLit(42));
-    expect(litValue(env.lookup("x"))).toBe(42);
+    expect(litValue(env.lookup("x"))).toEqual({ ok: true, value: 42 });
   });
 
   it("returns unknown for unbound names", () => {
@@ -18,16 +18,16 @@ describe("Environment", () => {
     const parent = createEnvironment();
     parent.bind("x", numLit(1));
     const child = parent.extend({ y: numLit(2) });
-    expect(litValue(child.lookup("x"))).toBe(1);
-    expect(litValue(child.lookup("y"))).toBe(2);
+    expect(litValue(child.lookup("x"))).toEqual({ ok: true, value: 1 });
+    expect(litValue(child.lookup("y"))).toEqual({ ok: true, value: 2 });
   });
 
   it("child binding shadows parent", () => {
     const parent = createEnvironment();
     parent.bind("x", numLit(1));
     const child = parent.extend({ x: numLit(99) });
-    expect(litValue(child.lookup("x"))).toBe(99);
-    expect(litValue(parent.lookup("x"))).toBe(1);
+    expect(litValue(child.lookup("x"))).toEqual({ ok: true, value: 99 });
+    expect(litValue(parent.lookup("x"))).toEqual({ ok: true, value: 1 });
   });
 
   it("has checks existence", () => {
@@ -42,7 +42,7 @@ describe("Environment", () => {
     env.bind("x", numLit(1));
     const snap = env.snapshot();
     env.bind("x", numLit(2));
-    expect(litValue(snap.lookup("x"))).toBe(1);
-    expect(litValue(env.lookup("x"))).toBe(2);
+    expect(litValue(snap.lookup("x"))).toEqual({ ok: true, value: 1 });
+    expect(litValue(env.lookup("x"))).toEqual({ ok: true, value: 2 });
   });
 });

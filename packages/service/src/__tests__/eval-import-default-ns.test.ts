@@ -49,7 +49,7 @@ export function go(a, b) {
 }
 `,
     );
-    expect(litValue(abs!)).toBe(3);
+    expect(litValue(abs!)).toEqual({ ok: true, value: 3 });
   });
 
   it("default import of export default function", () => {
@@ -66,7 +66,7 @@ export function go(a, b) {
 }
 `,
     );
-    expect(litValue(abs!)).toBe(12);
+    expect(litValue(abs!)).toEqual({ ok: true, value: 12 });
     expect(diagnostics.filter((d) => d.severity === "error")).toHaveLength(0);
   });
 
@@ -84,7 +84,7 @@ export function go(a, b) {
 }
 `,
     );
-    expect(litValue(abs!)).toBe(11);
+    expect(litValue(abs!)).toEqual({ ok: true, value: 11 });
     expect(diagnostics.filter((d) => d.severity === "error")).toHaveLength(0);
   });
 
@@ -102,6 +102,6 @@ export function go(a, b) {
 }
 `,
     );
-    expect(litValue(abs!)).toBe(10);
+    expect(litValue(abs!)).toEqual({ ok: true, value: 10 });
   });
 });

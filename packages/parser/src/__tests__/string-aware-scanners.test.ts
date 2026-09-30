@@ -29,8 +29,8 @@ function split(xs) { return xs; }
     expect(tuple.shape.k).toBe("tuple");
     if (tuple.shape.k !== "tuple") throw new Error("expected tuple");
     expect(tuple.shape.elements).toHaveLength(2);
-    expect(litValue(tuple.shape.elements[0]!)).toBe("a,b");
-    expect(litValue(tuple.shape.elements[1]!)).toBe(1);
+    expect(litValue(tuple.shape.elements[0]!)).toEqual({ ok: true, value: "a,b" });
+    expect(litValue(tuple.shape.elements[1]!)).toEqual({ ok: true, value: 1 });
   });
 
   it("paren inside string arg is kept as one string literal", () => {
@@ -41,7 +41,7 @@ function split(xs) { return xs; }
 function f(x) { return x; }
 `);
     expect(d.argsAbs).toHaveLength(1);
-    expect(litValue(d.argsAbs[0]!)).toBe(")");
+    expect(litValue(d.argsAbs[0]!)).toEqual({ ok: true, value: ")" });
   });
 
   it("colon inside object key string is not a key separator", () => {
@@ -55,7 +55,7 @@ function f(o) { return o; }
     expect(obj.shape.k).toBe("obj");
     if (obj.shape.k !== "obj") throw new Error("expected obj");
     expect(Object.keys(obj.shape.slots)).toEqual(["a:b"]);
-    expect(litValue(obj.shape.slots["a:b"]!.value)).toBe(1);
+    expect(litValue(obj.shape.slots["a:b"]!.value)).toEqual({ ok: true, value: 1 });
   });
 
   it("comma inside quoted string arg does not split", () => {
@@ -66,7 +66,7 @@ function f(o) { return o; }
 function f(a, b) { return a; }
 `);
     expect(d.argsAbs).toHaveLength(2);
-    expect(litValue(d.argsAbs[0]!)).toBe("a,b");
-    expect(litValue(d.argsAbs[1]!)).toBe(2);
+    expect(litValue(d.argsAbs[0]!)).toEqual({ ok: true, value: "a,b" });
+    expect(litValue(d.argsAbs[1]!)).toEqual({ ok: true, value: 2 });
   });
 });

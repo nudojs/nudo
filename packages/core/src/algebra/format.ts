@@ -68,14 +68,15 @@ export function formatShape(a: Abs): string {
       return "unknown";
     }
     case "prim": {
-      const lv = litValue(a);
+      const lvR = litValue(a);
+      const lv = lvR.ok ? lvR.value : undefined;
       // JSON.stringify(NaN|±Infinity) is "null" — keep JS literal spelling.
       if (typeof lv === "number" && !Number.isFinite(lv)) return String(lv);
       // -0 与 0 可观察不同（1/x、Object.is）；JSON.stringify(-0)==="0" 会抹掉
       if (typeof lv === "number" && Object.is(lv, -0)) return "-0";
       // JSON.stringify(bigint) throws；按 JS 字面量拼法展示
       if (typeof lv === "bigint") return `${String(lv)}n`;
-      if (lv !== undefined) return JSON.stringify(lv);
+      if (lvR.ok) return JSON.stringify(lv);
       return s.type;
     }
     case "obj": {

@@ -10,6 +10,11 @@
 
 import type { Abs } from "./abs.ts";
 import { abs, litValue } from "./abs.ts";
+
+function litStrOf(a: Parameters<typeof litValue>[0]): string {
+  const r = litValue(a);
+  return r.ok ? String(r.value) : "";
+}
 import { lit, termToString, type Term } from "./term.ts";
 import { pTrue, type Pred } from "./pred.ts";
 import { isNullProtoObj } from "./objects.ts";
@@ -232,7 +237,7 @@ function isTemplateAbs(a: Abs): boolean {
 }
 
 function describeAbsPart(p: Abs): TemplatePartDesc {
-  if (isStrLit(p)) return { fixed: String(litValue(p)) };
+  if (isStrLit(p)) { const r = litValue(p); return { fixed: r.ok ? String(r.value) : "" }; }
   return { render: p.term ? termToString(p.term) : "string" };
 }
 
@@ -307,7 +312,7 @@ export function concatString(a: Abs, b: Abs): Abs {
   if (isStrLit(a) && isStrLit(b)) {
     return abs(
       { k: "prim", type: "string" },
-      lit(String(litValue(a)) + String(litValue(b))),
+      lit(String(litStrOf(a)) + String(litStrOf(b))),
       undefined,
       "exact",
     );

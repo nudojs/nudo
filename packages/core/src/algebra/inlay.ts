@@ -109,7 +109,8 @@ function formatReturnDisplay(g: PolyFn): string {
       const t = stripParens(renameTypeVars(termToString(m.term), varMap));
       return { key: `app:${t}`, text: t };
     }
-    const lv = litValue(m);
+    const lvR = litValue(m);
+    const lv = lvR.ok ? lvR.value : undefined;
     if (typeof lv === "number" && !Number.isFinite(lv)) {
       return { key: `lit:${String(lv)}`, text: String(lv) };
     }

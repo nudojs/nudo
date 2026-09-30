@@ -23,70 +23,70 @@ describe("evaluator for statement init forms", () => {
     const r = call(
       `export function f() { let i = 0; for (;;) { if (++i === 3) break; } return i; }`,
     );
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 
   it("empty init with test/step counts outer variable", () => {
     const r = call(
       `export function f() { let i = 0, s = ""; for (; i < 3; i++) { s += i; } return s; }`,
     );
-    expect(litValue(r.result)).toBe("012");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "012" });
   });
 
   it("empty init and empty step loops via body mutation", () => {
     const r = call(
       `export function f() { let i = 0, s = ""; for (; i < 3; ) { s += i; i++; } return s; }`,
     );
-    expect(litValue(r.result)).toBe("012");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "012" });
   });
 
   it("assignment-expression init runs the loop", () => {
     const r = call(
       `export function f() { let i = 0, s = ""; for (i = 0; i < 3; i++) { s += i; } return s; }`,
     );
-    expect(litValue(r.result)).toBe("012");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "012" });
   });
 
   it("sequence init (comma) drives multiple variables", () => {
     const r = call(
       `export function f() { let i = 0, j = 3, s = ""; for (i = 0, j = 3; i < 2; i++, j--) { s += j; } return s; }`,
     );
-    expect(litValue(r.result)).toBe("32");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "32" });
   });
 
   it("comma in test and update works with expression init", () => {
     const r = call(
       `export function f() { let i = 0, j = 5, s = ""; for (i = 0; i < 2 && j > 3; i++, j--) { s += j; } return s; }`,
     );
-    expect(litValue(r.result)).toBe("54");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "54" });
   });
 
   it("side-effecting update expression runs", () => {
     const r = call(
       `export function f() { let i = 0, s = ""; for (i = 0; i < 2; i++, s += "x") {} return s; }`,
     );
-    expect(litValue(r.result)).toBe("xx");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "xx" });
   });
 
   it("continue works with assignment-init loop", () => {
     const r = call(
       `export function f() { let i = 0, s = ""; for (i = 0; i < 3; i++) { if (i === 1) continue; s += i; } return s; }`,
     );
-    expect(litValue(r.result)).toBe("02");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "02" });
   });
 
   it("break works with sequence-init loop", () => {
     const r = call(
       `export function f() { let i = 0; for (i = 0, i = 0; i < 10; i++) { if (i === 2) break; } return i; }`,
     );
-    expect(litValue(r.result)).toBe(2);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
   });
 
   it("labeled break through expression-init loop", () => {
     const r = call(
       `export function f() { let i = 0; outer: for (i = 0; i < 10; i++) { for (let j = 0; j < 10; j++) { if (j === 2) break outer; } } return i; }`,
     );
-    expect(litValue(r.result)).toBe(0);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 0 });
   });
 
   it("expression-init loop still packs outer writes across abstract exit", () => {
@@ -94,6 +94,6 @@ describe("evaluator for statement init forms", () => {
     const r = call(
       `export function f(n) { let s = 0; for (n = 1; n > 0; n--) { s += n; } return s; }`,
     );
-    expect(litValue(r.result)).toBe(1);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 1 });
   });
 });

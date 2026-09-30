@@ -125,7 +125,7 @@ export function f() {
 `,
       "f",
     );
-    expect(litValue(r.result)).toBe("last");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "last" });
   });
 
   it("a.at(0) is first element", () => {
@@ -138,7 +138,7 @@ export function f() {
 `,
       "f",
     );
-    expect(litValue(r.result)).toBe("first");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "first" });
   });
 
   it("a.at(1) is second element", () => {
@@ -151,7 +151,7 @@ export function f() {
 `,
       "f",
     );
-    expect(litValue(r.result)).toBe("last");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "last" });
   });
 
   it("a.at(out of range) is undefined", () => {
@@ -218,7 +218,7 @@ export function f() {
 `,
       "f",
     );
-    expect(litValue(r.result)).toBe(false);
+    expect(litValue(r.result)).toEqual({ ok: true, value: false });
   });
 
   it("map.clear then get is undefined", () => {
@@ -271,7 +271,7 @@ export function f() {
 `,
       "f",
     );
-    expect(litValue(r.result)).toBe(false);
+    expect(litValue(r.result)).toEqual({ ok: true, value: false });
   });
 
   it("set.clear empties membership", () => {
@@ -286,7 +286,7 @@ export function f() {
 `,
       "f",
     );
-    expect(litValue(r.result)).toBe(false);
+    expect(litValue(r.result)).toEqual({ ok: true, value: false });
   });
 
   it("set.delete in abstract arm: has is not exact true", () => {
@@ -308,7 +308,7 @@ export function probe(flag) {
     const r = callTranspiledExportFull(exports, "probe", [absFlag]);
     expect(r.result.conf).not.toBe("exact");
     if (r.result.conf === "exact") {
-      expect(litValue(r.result)).not.toBe(true);
+      expect(litValue(r.result)).not.toEqual({ ok: true, value: true });
     }
   });
 });

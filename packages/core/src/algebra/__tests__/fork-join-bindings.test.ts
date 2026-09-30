@@ -34,7 +34,7 @@ export function f() {
           "f",
         ).result,
       ),
-    ).toBe(2);
+    ).toEqual({ ok: true, value: 2 });
     expect(
       litValue(
         call(
@@ -48,7 +48,7 @@ export function f() {
           "f",
         ).result,
       ),
-    ).toBe(3);
+    ).toEqual({ ok: true, value: 3 });
   });
 
   it("ternary arms isolate mutators", () => {
@@ -65,6 +65,6 @@ export function f() {
           "f",
         ).result,
       ),
-    ).toBe(3);
+    ).toEqual({ ok: true, value: 3 });
   });
 });

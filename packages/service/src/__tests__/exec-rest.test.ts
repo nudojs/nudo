@@ -26,7 +26,7 @@ export function sum(a, ...rest) {
     // named args then rest as separate args — callTranspiledExport only spreads args
     // Our convention: call with named + rest items as extra args via Function arguments
     const r = sum($lit(1), $lit(2), $lit(3));
-    expect(litValue(r as never)).toBe(6);
+    expect(litValue(r as never)).toEqual({ ok: true, value: 6 });
   });
 
   it("rest empty when only named args", () => {
@@ -41,9 +41,9 @@ export function restLen(a, ...rest) {
     const exports = runTranspiled(src, { mode: "analyze" });
     const first = exports.first as (...a: unknown[]) => unknown;
     const restLen = exports.restLen as (...a: unknown[]) => unknown;
-    expect(litValue(first($lit(9)) as never)).toBe(9);
-    expect(litValue(restLen($lit(9)) as never)).toBe(0);
-    expect(litValue(restLen($lit(9), $lit(1), $lit(2)) as never)).toBe(2);
+    expect(litValue(first($lit(9)) as never)).toEqual({ ok: true, value: 9 });
+    expect(litValue(restLen($lit(9)) as never)).toEqual({ ok: true, value: 0 });
+    expect(litValue(restLen($lit(9), $lit(1), $lit(2)) as never)).toEqual({ ok: true, value: 2 });
   });
 });
 

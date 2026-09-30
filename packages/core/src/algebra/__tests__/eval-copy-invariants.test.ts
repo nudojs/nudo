@@ -43,7 +43,7 @@ describe("strict invariants survive fork snapshots", () => {
     );
     expect(throwsTypeError(r.throws)).toBe(true);
     // 假成功会把写入值 2 折进结果；修复后另一臂仍是 1
-    expect(litValue(r.result)).toBe(1);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 1 });
   });
 
   it("frozen array push in a branch records TypeError", () => {
@@ -52,7 +52,7 @@ describe("strict invariants survive fork snapshots", () => {
     );
     expect(throwsTypeError(r.throws)).toBe(true);
     // 假成功会得到 3；修复后未写臂保持 2
-    expect(litValue(r.result)).toBe(2);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
   });
 
   it("sealed object new-slot write in a branch records TypeError", () => {
@@ -75,7 +75,7 @@ describe("strict invariants survive fork snapshots", () => {
       `export function f(x) { const o = {a:1}; Object.freeze(o); if (x) { try { o.a = 2; } catch(e) { return 'caught'; } } return 'ok'; }`,
     );
     const v = litValue(r.result);
-    expect(["caught", "ok"]).toContain(v);
+    expect(v.ok && (v.value === "caught" || v.value === "ok")).toBe(true);
   });
 
   it("switch arm frozen write records TypeError", () => {
@@ -83,7 +83,7 @@ describe("strict invariants survive fork snapshots", () => {
       `export function f(x) { const a = [1,2]; Object.freeze(a); switch (x) { case 1: a[0] = 9; break; default: break; } return a[0]; }`,
     );
     expect(throwsTypeError(r.throws)).toBe(true);
-    expect(litValue(r.result)).toBe(1);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 1 });
   });
 
   it("non-frozen branch write stays allowed", () => {

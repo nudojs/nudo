@@ -27,7 +27,7 @@ function expectExactUndefined(src: string) {
   const r = run(src);
   expect(r.throws?.shape?.k, `throws for: ${src}`).toBe("never");
   expect(formatAbs(r.result), `result for: ${src}`).toContain("undefined");
-  expect(litValue(r.result), `lit for: ${src}`).toBeUndefined();
+  expect(litValue(r.result), `lit for: ${src}`).toEqual({ ok: true, value: undefined });
 }
 
 describe("optional chain keeps RegExp lastIndex writeback", () => {
@@ -38,7 +38,7 @@ describe("optional chain keeps RegExp lastIndex writeback", () => {
         const m = r.exec("abc")?.[0];
         return m === "b" && r.lastIndex === 2;
       }`),
-    ).toBe(true);
+    ).toEqual({ ok: true, value: true });
   });
 
   it("r.exec(s)?.groups advances lastIndex", () => {
@@ -48,7 +48,7 @@ describe("optional chain keeps RegExp lastIndex writeback", () => {
         const g = r.exec("abc")?.groups;
         return r.lastIndex === 2;
       }`),
-    ).toBe(true);
+    ).toEqual({ ok: true, value: true });
   });
 
   it("r.test(s)?.foo advances lastIndex even when rest short-circuits", () => {
@@ -59,7 +59,7 @@ describe("optional chain keeps RegExp lastIndex writeback", () => {
         const hit = r.test("abc")?.foo;
         return r.lastIndex === 2;
       }`),
-    ).toBe(true);
+    ).toEqual({ ok: true, value: true });
   });
 
   it("consecutive exec via optional chain behaves like non-optional", () => {
@@ -71,7 +71,7 @@ describe("optional chain keeps RegExp lastIndex writeback", () => {
         const c = r.exec("abc")?.[0];
         return a === "b" && b === undefined && c === "b";
       }`),
-    ).toBe(true);
+    ).toEqual({ ok: true, value: true });
   });
 
   it("r?.exec(s)?.[0] on null receiver short-circuits without throw", () => {
@@ -86,7 +86,7 @@ describe("optional chain keeps RegExp lastIndex writeback", () => {
         const m = r.exec("abc");
         return m[0] === "b" && r.lastIndex === 2;
       }`),
-    ).toBe(true);
+    ).toEqual({ ok: true, value: true });
   });
 });
 
@@ -97,7 +97,7 @@ describe("optional chain computed-string method keeps this", () => {
         const o = { n: 7, m() { return this.n; } };
         return o["m"]?.();
       }`),
-    ).toBe(7);
+    ).toEqual({ ok: true, value: 7 });
   });
 
   it('o["m"]?.() on missing method → undefined', () => {
@@ -111,6 +111,6 @@ describe("optional chain computed-string method keeps this", () => {
         const m = r["exec"]("abc")?.[0];
         return m === "b" && r.lastIndex === 2;
       }`),
-    ).toBe(true);
+    ).toEqual({ ok: true, value: true });
   });
 });

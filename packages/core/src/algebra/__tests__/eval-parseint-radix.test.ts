@@ -14,30 +14,30 @@ function call(src: string, fnName = "f") {
 
 describe("evaluator parseInt radix ToInt32", () => {
   it("fractional radix truncates toward zero", () => {
-    expect(litValue(call(`export function f() { return parseInt("101", 2.5); }`).result)).toBe(5);
-    expect(litValue(call(`export function f() { return parseInt("101", 2.9); }`).result)).toBe(5);
-    expect(litValue(call(`export function f() { return parseInt("12345678", 2.999); }`).result)).toBe(1);
+    expect(litValue(call(`export function f() { return parseInt("101", 2.5); }`).result)).toEqual({ ok: true, value: 5 });
+    expect(litValue(call(`export function f() { return parseInt("101", 2.9); }`).result)).toEqual({ ok: true, value: 5 });
+    expect(litValue(call(`export function f() { return parseInt("12345678", 2.999); }`).result)).toEqual({ ok: true, value: 1 });
   });
 
   it("radix 0 behaves as absent", () => {
-    expect(litValue(call(`export function f() { return parseInt("101", 0); }`).result)).toBe(101);
-    expect(litValue(call(`export function f() { return parseInt("0x10", 0); }`).result)).toBe(16);
+    expect(litValue(call(`export function f() { return parseInt("101", 0); }`).result)).toEqual({ ok: true, value: 101 });
+    expect(litValue(call(`export function f() { return parseInt("0x10", 0); }`).result)).toEqual({ ok: true, value: 16 });
   });
 
   it("NaN radix coerces to 0 (absent)", () => {
-    expect(litValue(call(`export function f() { return parseInt("42", NaN); }`).result)).toBe(42);
+    expect(litValue(call(`export function f() { return parseInt("42", NaN); }`).result)).toEqual({ ok: true, value: 42 });
   });
 
   it("out-of-range radix stays NaN", () => {
-    expect(litValue(call(`export function f() { return parseInt("101", 1.5); }`).result)).toBe(NaN);
-    expect(litValue(call(`export function f() { return parseInt("101", 37.5); }`).result)).toBe(NaN);
+    expect(litValue(call(`export function f() { return parseInt("101", 1.5); }`).result)).toEqual({ ok: true, value: NaN });
+    expect(litValue(call(`export function f() { return parseInt("101", 37.5); }`).result)).toEqual({ ok: true, value: NaN });
   });
 
   it("Number.parseInt shares the fold", () => {
-    expect(litValue(call(`export function f() { return Number.parseInt("101", 2.5); }`).result)).toBe(5);
+    expect(litValue(call(`export function f() { return Number.parseInt("101", 2.5); }`).result)).toEqual({ ok: true, value: 5 });
   });
 
   it("integer radix unchanged", () => {
-    expect(litValue(call(`export function f() { return parseInt("ff", 16); }`).result)).toBe(255);
+    expect(litValue(call(`export function f() { return parseInt("ff", 16); }`).result)).toEqual({ ok: true, value: 255 });
   });
 });

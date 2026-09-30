@@ -133,7 +133,7 @@ export function protoOfRecv(a: Abs): Abs {
   const s = a.shape;
   const nullProtoLit = abs(
     { k: "unknown" },
-    { op: "lit", value: null as never },
+    { op: "lit", value: null },
     pTrue,
     "exact",
   );

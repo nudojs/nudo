@@ -40,9 +40,9 @@ twice(21);
     const r = runTranspiled(src, { mode: "exec" });
     expect("twice" in r).toBe(true);
     const out = callTranspiledExportFull(r, "twice", [
-      abs({ k: "prim", type: "number" }, { op: "lit", value: 4 as never }, undefined, "exact"),
+      abs({ k: "prim", type: "number" }, { op: "lit", value: 4 }, undefined, "exact"),
     ]);
-    expect(litValue(out.result)).toBe(8);
+    expect(litValue(out.result)).toEqual({ ok: true, value: 8 });
     // JSX 函数本身：显式 unknown，不是整文件 fail-closed
     const el = callTranspiledExportFull(r, "el", []);
     expect(el.result.shape.k).toBe("unknown");

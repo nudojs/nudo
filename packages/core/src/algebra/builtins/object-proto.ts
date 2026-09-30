@@ -88,7 +88,8 @@ function hasOwnDecision(recv: Abs, key: string): Abs {
       if (key === "length") return boolLit(true);
       const idx = canonicalArrayIndex(key);
       if (idx !== undefined) {
-        const lit = litValue(recv);
+        const litR = litValue(recv);
+        const lit = litR.ok && typeof litR.value === "string" ? litR.value : undefined;
         if (typeof lit === "string") return boolLit(idx < lit.length);
         return boolPrimB();
       }
@@ -107,7 +108,8 @@ function hasOwnDecision(recv: Abs, key: string): Abs {
 /** propertyIsEnumerable：自有 + 可枚举（length 不可枚举；defineProperty enumerable:false） */
 function propertyIsEnumerableDecision(recv: Abs, key: string): Abs {
   const own = hasOwnDecision(recv, key);
-  const ownV = litValue(own);
+  const ownR = litValue(own);
+  const ownV = ownR.ok ? ownR.value : undefined;
   if (ownV === false) return boolLit(false);
   // length 在数组/字符串包装上自有但不可枚举
   if (key === "length") {
@@ -158,7 +160,8 @@ function typeTagOf(recv: Abs): string | undefined {
     if (inner.shape.k === "obj") {
       const tag = getSlot(inner.shape.slots, "@@toStringTag");
       if (tag) {
-        const v = litValue(tag.value);
+        const vR = litValue(tag.value);
+        const v = vR.ok ? vR.value : undefined;
         if (typeof v === "string") return v;
       }
     }
@@ -170,7 +173,8 @@ function typeTagOf(recv: Abs): string | undefined {
   if (s.k === "obj") {
     const tag = getSlot(s.slots, "@@toStringTag");
     if (tag) {
-      const v = litValue(tag.value);
+      const vR = litValue(tag.value);
+      const v = vR.ok ? vR.value : undefined;
       if (typeof v === "string") return v;
     }
     return "Object";

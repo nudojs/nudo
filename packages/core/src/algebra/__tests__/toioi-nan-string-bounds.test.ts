@@ -38,7 +38,7 @@ async function execTranspiled(source: string, exportName: string) {
 }
 
 function els(a: Abs): unknown[] {
-  return (a.shape as { elements: Abs[] }).elements.map((e) => litValue(e));
+  return (a.shape as { elements: Abs[] }).elements.map((e) => { const r = litValue(e); return r.ok ? r.value : undefined; });
 }
 
 function arr(...xs: number[]): Abs {

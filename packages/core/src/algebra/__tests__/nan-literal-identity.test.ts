@@ -11,12 +11,12 @@ import { termEquals, lit } from "../term.ts";
 import { abs, numLit } from "../abs.ts";
 
 function nanAbs() {
-  return abs({ k: "prim", type: "number" }, lit(NaN as never), undefined, "exact");
+  return abs({ k: "prim", type: "number" }, lit(NaN), undefined, "exact");
 }
 
 describe("NaN literal identity (SameValue)", () => {
   it("termEquals(NaN, NaN) is true for distinct lit terms", () => {
-    expect(termEquals(lit(NaN as never), lit(NaN as never))).toBe(true);
+    expect(termEquals(lit(NaN), lit(NaN))).toBe(true);
     expect(termEquals(lit(1), lit(1))).toBe(true);
     expect(termEquals(lit(1), lit(2))).toBe(false);
   });

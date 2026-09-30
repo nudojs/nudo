@@ -22,154 +22,154 @@ function call(src: string, fnName = "f") {
 describe("evaluator array callback methods: hole skipping", () => {
   it("map skips the hole callback and keeps the hole position", () => {
     const r = call(`export function f() { const a = [1,,3].map(x => 7); return 1 in a; }`);
-    expect(litValue(r.result)).toBe(false);
+    expect(litValue(r.result)).toEqual({ ok: true, value: false });
     const r2 = call(`export function f() { const a = [1,,3].map(x => 7); return a[0]; }`);
-    expect(litValue(r2.result)).toBe(7);
+    expect(litValue(r2.result)).toEqual({ ok: true, value: 7 });
     const r3 = call(`export function f() { const a = [1,,3].map(x => 7); return a[2]; }`);
-    expect(litValue(r3.result)).toBe(7);
+    expect(litValue(r3.result)).toEqual({ ok: true, value: 7 });
     const r4 = call(`export function f() { const a = [1,,3].map(x => 7); return a.length; }`);
-    expect(litValue(r4.result)).toBe(3);
+    expect(litValue(r4.result)).toEqual({ ok: true, value: 3 });
   });
 
   it("forEach invokes the callback once per present element", () => {
     const r = call(`export function f() { let t = 0; [1,,3].forEach((x) => { t++; }); return t; }`);
-    expect(litValue(r.result)).toBe(2);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
   });
 
   it("reduce skips holes in the accumulator fold", () => {
     const r = call(`export function f() { let t = 0; [1,,3].reduce((a, b) => { t++; return a; }, 0); return t; }`);
-    expect(litValue(r.result)).toBe(2);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
     const r2 = call(`export function f() { return [1,,3].reduce((a, b) => a + b, 0); }`);
-    expect(litValue(r2.result)).toBe(4);
+    expect(litValue(r2.result)).toEqual({ ok: true, value: 4 });
   });
 
   it("reduceRight skips holes", () => {
     const r = call(`export function f() { let t = 0; [1,,3].reduceRight((a, b) => { t++; return a; }, 0); return t; }`);
-    expect(litValue(r.result)).toBe(2);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
   });
 
   it("some/every skip holes (HasProperty check)", () => {
     const r = call(`export function f() { return [1,,3].some((x) => x === undefined); }`);
-    expect(litValue(r.result)).toBe(false);
+    expect(litValue(r.result)).toEqual({ ok: true, value: false });
     const r2 = call(`export function f() { let t = 0; [1,,3].some((x) => { t++; return false; }); return t; }`);
-    expect(litValue(r2.result)).toBe(2);
+    expect(litValue(r2.result)).toEqual({ ok: true, value: 2 });
     const r3 = call(`export function f() { return [1,,3].every((x) => x !== undefined); }`);
-    expect(litValue(r3.result)).toBe(true);
+    expect(litValue(r3.result)).toEqual({ ok: true, value: true });
     const r4 = call(`export function f() { let t = 0; [1,,3].every((x) => { t++; return typeof x === "number"; }); return t; }`);
-    expect(litValue(r4.result)).toBe(2);
+    expect(litValue(r4.result)).toEqual({ ok: true, value: 2 });
   });
 
   it("find/findIndex visit holes as undefined (Get, no HasProperty check)", () => {
     const r = call(`export function f() { let t = 0; [,2,3].find((x) => { t++; return false; }); return t; }`);
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
     const r2 = call(`export function f() { let t = 0; [,2,3].findIndex((x) => { t++; return false; }); return t; }`);
-    expect(litValue(r2.result)).toBe(3);
+    expect(litValue(r2.result)).toEqual({ ok: true, value: 3 });
     const r3 = call(`export function f() { return [1,,3].findIndex((x) => x === undefined); }`);
-    expect(litValue(r3.result)).toBe(1);
+    expect(litValue(r3.result)).toEqual({ ok: true, value: 1 });
   });
 
   it("flatMap skips the hole callback", () => {
     const r = call(`export function f() { let t = 0; [1,,3].flatMap((x) => { t++; return [x]; }); return t; }`);
-    expect(litValue(r.result)).toBe(2);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
   });
 
   it("filter skips the hole predicate and drops the hole from the result", () => {
     const r = call(`export function f() { const a = [1,,3].filter((x) => true); return a.length; }`);
-    expect(litValue(r.result)).toBe(2);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
     const r2 = call(`export function f() { const a = [1,,3].filter((x) => true); return a[1]; }`);
-    expect(litValue(r2.result)).toBe(3);
+    expect(litValue(r2.result)).toEqual({ ok: true, value: 3 });
   });
 
   it("regression: dense arrays still invoke per element", () => {
     const r = call(`export function f() { let t = 0; [1,2,3].forEach((x) => { t++; }); return t; }`);
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 
   it("regression: empty literal maps to empty", () => {
     const r = call(`export function f() { return [].map((x) => x).length; }`);
-    expect(litValue(r.result)).toBe(0);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 0 });
   });
 });
 
 describe("evaluator array callback methods: index argument", () => {
   it("map/forEach pass the element index", () => {
     const r = call(`export function f() { const a = [1,,3].map((x, i) => i); return a[0]; }`);
-    expect(litValue(r.result)).toBe(0);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 0 });
     const r2 = call(`export function f() { const a = [1,,3].map((x, i) => i); return a[2]; }`);
-    expect(litValue(r2.result)).toBe(2);
+    expect(litValue(r2.result)).toEqual({ ok: true, value: 2 });
     const r3 = call(`export function f() { let t = 0; [1,2,3].forEach((x, i) => { t += i; }); return t; }`);
-    expect(litValue(r3.result)).toBe(3);
+    expect(litValue(r3.result)).toEqual({ ok: true, value: 3 });
   });
 
   it("reduce passes the element index", () => {
     const r = call(`export function f() { let t = 0; [1,2,3].reduce((a, b, i) => { t += i; return a; }, 0); return t; }`);
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 
   it("reduceRight passes the reversed index", () => {
     const r = call(`export function f() { let t = 0; [1,2,3].reduceRight((a, b, i) => { t += i; return a; }, 0); return t; }`);
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 
   it("filter predicate receives the index", () => {
     const r = call(`export function f() { const a = [1,2,3].filter((x, i) => i > 0); return a.length; }`);
-    expect(litValue(r.result)).toBe(2);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
     const r2 = call(`export function f() { const a = [1,2,3].filter((x, i) => i > 0); return a[0]; }`);
-    expect(litValue(r2.result)).toBe(2);
+    expect(litValue(r2.result)).toEqual({ ok: true, value: 2 });
   });
 
   it("find receives the index", () => {
     const r = call(`export function f() { return [1,2,3].find((x, i) => i === 1); }`);
-    expect(litValue(r.result)).toBe(2);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
   });
 
   it("flatMap receives the index", () => {
     const r = call(`export function f() { let t = 0; [1,2,3].flatMap((x, i) => { t += i; return [x]; }); return t; }`);
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 });
 
 describe("evaluator array callback methods: short-circuit", () => {
   it("some stops at the first truthy callback result", () => {
     const r = call(`export function f() { let t = 0; [1,2,3].some((x) => { t++; return x === 2; }); return t; }`);
-    expect(litValue(r.result)).toBe(2);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
     const r2 = call(`export function f() { return [1,2,3].some((x) => x === 2); }`);
-    expect(litValue(r2.result)).toBe(true);
+    expect(litValue(r2.result)).toEqual({ ok: true, value: true });
     const r3 = call(`export function f() { return [1,2,3].some((x) => x === 9); }`);
-    expect(litValue(r3.result)).toBe(false);
+    expect(litValue(r3.result)).toEqual({ ok: true, value: false });
   });
 
   it("every stops at the first falsy callback result", () => {
     const r = call(`export function f() { let t = 0; [1,2,3].every((x) => { t++; return x < 2; }); return t; }`);
-    expect(litValue(r.result)).toBe(2);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
     const r2 = call(`export function f() { return [1,2,3].every((x) => x > 0); }`);
-    expect(litValue(r2.result)).toBe(true);
+    expect(litValue(r2.result)).toEqual({ ok: true, value: true });
     const r3 = call(`export function f() { return [1,2,3].every((x) => x > 2); }`);
-    expect(litValue(r3.result)).toBe(false);
+    expect(litValue(r3.result)).toEqual({ ok: true, value: false });
   });
 
   it("find stops at the first truthy callback result and returns the element", () => {
     const r = call(`export function f() { let t = 0; const v = [1,2,3].find((x) => { t++; return x === 2; }); return t; }`);
-    expect(litValue(r.result)).toBe(2);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
     const r2 = call(`export function f() { return [1,2,3].find((x) => x === 2); }`);
-    expect(litValue(r2.result)).toBe(2);
+    expect(litValue(r2.result)).toEqual({ ok: true, value: 2 });
     const r3 = call(`export function f() { return [1,2,3].find((x) => x === 9); }`);
-    expect(litValue(r3.result)).toBe(undefined);
+    expect(litValue(r3.result)).toEqual({ ok: true, value: undefined });
   });
 
   it("findIndex stops at the first truthy result; -1 on miss", () => {
     const r = call(`export function f() { let t = 0; [1,2,3].findIndex((x) => { t++; return x === 2; }); return t; }`);
-    expect(litValue(r.result)).toBe(2);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
     const r2 = call(`export function f() { return [1,2,3].findIndex((x) => x === 2); }`);
-    expect(litValue(r2.result)).toBe(1);
+    expect(litValue(r2.result)).toEqual({ ok: true, value: 1 });
     const r3 = call(`export function f() { return [1,2,3].findIndex((x) => x === 9); }`);
-    expect(litValue(r3.result)).toBe(-1);
+    expect(litValue(r3.result)).toEqual({ ok: true, value: -1 });
     const r4 = call(`export function f() { return [1,,3].findIndex((x) => x === 3); }`);
-    expect(litValue(r4.result)).toBe(2);
+    expect(litValue(r4.result)).toEqual({ ok: true, value: 2 });
   });
 
   it("filter invokes the predicate for every element (no short-circuit)", () => {
     const r = call(`export function f() { let t = 0; [1,2,3].filter((x) => { t++; return x > 1; }); return t; }`);
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 });

@@ -21,7 +21,7 @@ import {
 describe("evaluator runtime ops", () => {
   it("add(lit, lit) stays exact literal", () => {
     const r = $add($lit(1), $lit(3));
-    expect(litValue(r)).toBe(4);
+    expect(litValue(r)).toEqual({ ok: true, value: 4 });
   });
 
   it("add(number, lit) is number", () => {
@@ -39,12 +39,12 @@ describe("evaluator runtime ops", () => {
 describe("evaluator $fork", () => {
   it("literal true takes consequent only", () => {
     const r = $fork($lit(true), () => $lit(1), () => $lit(2));
-    expect(litValue(r)).toBe(1);
+    expect(litValue(r)).toEqual({ ok: true, value: 1 });
   });
 
   it("literal false takes alternate only", () => {
     const r = $fork($lit(false), () => $lit(1), () => $lit(2));
-    expect(litValue(r)).toBe(2);
+    expect(litValue(r)).toEqual({ ok: true, value: 2 });
   });
 
   it("abstract boolean joins both branches", () => {
@@ -53,7 +53,7 @@ describe("evaluator $fork", () => {
       conf: "exact" as const,
     };
     const r = $fork(cond, () => $lit(1), () => $lit(2));
-    expect(litValue(r)).toBeUndefined();
+    expect(litValue(r)).toEqual({ ok: false });
   });
 });
 
@@ -66,7 +66,7 @@ describe("evaluator $for (bounded)", () => {
       (s) => s,
       8,
     );
-    expect(litValue(r)).toBe(3);
+    expect(litValue(r)).toEqual({ ok: true, value: 3 });
   });
 
   it("abstract bound terminates within budget", () => {
@@ -99,9 +99,9 @@ describe("evaluator $for (bounded)", () => {
 describe("evaluator objects", () => {
   it("$get reads slots; miss is undefined", () => {
     const o = $obj({ id: $lit(1), name: $lit("Ada") });
-    expect(litValue($get(o, "id"))).toBe(1);
-    expect(litValue($get(o, "name"))).toBe("Ada");
-    expect(litValue($get(o, "missing"))).toBeUndefined();
+    expect(litValue($get(o, "id"))).toEqual({ ok: true, value: 1 });
+    expect(litValue($get(o, "name"))).toEqual({ ok: true, value: "Ada" });
+    expect(litValue($get(o, "missing"))).toEqual({ ok: true, value: undefined });
     expect(absToString($get(o, "missing"))).toContain("undefined");
   });
 
@@ -109,7 +109,7 @@ describe("evaluator objects", () => {
     const o = $obj({ id: $lit(1) });
     const o2 = $set(o, "id", $lit(2));
     // 就地写：原对象与返回值同身份同值（const b = o; b.id = 2 对 o 可见）
-    expect(litValue($get(o, "id"))).toBe(2);
+    expect(litValue($get(o, "id"))).toEqual({ ok: true, value: 2 });
     expect(o2).toBe(o);
   });
 });
@@ -124,7 +124,7 @@ describe("evaluator $while", () => {
     );
     // i>0 false immediately after first step sets i=0... actually first test 0<3 true
     // step: acc=0+3=3, i=0 → next test 0<0 false → exit  {i:0, acc:3}
-    expect(litValue($get(r, "acc"))).toBe(3);
+    expect(litValue($get(r, "acc"))).toEqual({ ok: true, value: 3 });
   });
 
   it("$whileSeq runs body while test true", () => {
@@ -133,13 +133,14 @@ describe("evaluator $while", () => {
     $whileSeq(
       () => $lt(i, $lit(3)),
       () => {
-        hits.push(litValue(i) as number);
+        const ir = litValue(i);
+        hits.push((ir.ok ? ir.value : undefined) as number);
         i = $add(i, $lit(1));
       },
       8,
     );
     expect(hits).toEqual([0, 1, 2]);
-    expect(litValue(i)).toBe(3);
+    expect(litValue(i)).toEqual({ ok: true, value: 3 });
   });
 });
 

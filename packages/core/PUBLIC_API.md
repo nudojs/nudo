@@ -43,10 +43,10 @@ changing the signature of any row below is **major**.
 
 | Symbol | Kind | Role | Stability |
 |--------|------|------|-----------|
-| `Abs`, `Shape`, `Term`, `Pred`, `Phi`, `Confidence`, `ObjShape`, `Slot` | type | Abs = shape × term × pred × conf | **public** |
+| `Abs`, `Shape`, `Term`, `Pred`, `Phi`, `Confidence`, `ObjShape`, `Slot`, `LiteralValue`, `LitValueResult` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | **public** |
 | `abs`, `unknown`, `never`, `num`, `str`, `bool`, `any`, `anyAbs`, `anyVar` | value | Abs constructors / faces | **public** |
 | `lit`, `v`, `app`, `fn`, `fnOf`, `obj`, `array`, `union`, `makeSum`, `shape` | value | term / shape builders | **public** |
-| `numLit`, `strLit`, `boolLit`, `bigintLit`, `litValue`, `isExactLit` | value | literal Abs | **public** |
+| `numLit`, `strLit`, `boolLit`, `bigintLit`, `litValue`, `isExactLit` | value | literal Abs; `litValue` → `LitValueResult` tagged (`{ok:true,value}\|{ok:false}`) | **public** |
 | `leqAbs`, `joinAbs`, `joinValues`, `confJoin` | value | assignability / join | **public** |
 | `formatAbs`, `formatShape`, `formatConstraint`, `formatCheckReport` | value | extensional rendering (one-way) | **public** |
 | `absToTSType`, `absToSchemaSource`, `projectAbsToSchema` | value | one-way projections | **public** |

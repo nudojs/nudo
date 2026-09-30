@@ -104,7 +104,7 @@ describe("es env load + key builtins", () => {
     const floor = walk(Math_, "floor")!;
     const impl = getFnImpl(floor)!;
     const folded = impl.apply!([numLit(3.7)]);
-    expect(litValue(folded!)).toBe(3);
+    expect(litValue(folded!)).toEqual({ ok: true, value: 3 });
   });
 
   it("Math.min / Math.max / Math.hypot are variadic (3+ args stay number)", () => {
@@ -119,7 +119,7 @@ describe("es env load + key builtins", () => {
       expect(shapeOf(fn, `Math.${name}`)).toContain("...");
       const impl = getFnImpl(fn)!;
       const folded = impl.apply!(args.map((n) => numLit(n)));
-      expect(litValue(folded!), `Math.${name}(${args.join(", ")})`).toBe(expected);
+      expect(litValue(folded!), `Math.${name}(${args.join(", ")})`).toEqual({ ok: true, value: expected });
       // 抽象实参：结果仍是 number（不再因 arity 不匹配落 unknown）
       const abstractNum = abs({ k: "prim", type: "number" }, undefined, undefined, "path");
       const abstract = impl.apply!([abstractNum, abstractNum, abstractNum]);
@@ -141,7 +141,7 @@ describe("es env load + key builtins", () => {
       const fn = walk(Math_, name)!;
       const impl = getFnImpl(fn)!;
       const folded = impl.apply!(args.map((n) => numLit(n)));
-      expect(litValue(folded!), `Math.${name}(${args.join(", ")})`).toBe(expected);
+      expect(litValue(folded!), `Math.${name}(${args.join(", ")})`).toEqual({ ok: true, value: expected });
     }
   });
 
@@ -229,10 +229,10 @@ describe("es env load + key builtins", () => {
   it("Boolean/String coercions fold on literals", () => {
     const booleanFn = globalOf(env, "Boolean");
     const impl = getFnImpl(booleanFn)!;
-    expect(litValue(impl.apply!([strLit("x")])!)).toBe(true);
+    expect(litValue(impl.apply!([strLit("x")])!)).toEqual({ ok: true, value: true });
     const stringFn = globalOf(env, "String");
     const sImpl = getFnImpl(stringFn)!;
-    expect(litValue(sImpl.apply!([boolLit(false)])!)).toBe("false");
+    expect(litValue(sImpl.apply!([boolLit(false)])!)).toEqual({ ok: true, value: "false" });
   });
 
   // issue #58：dual-facet 全局（Number/Array）既可调用/构造，又带静态槽。
@@ -242,7 +242,7 @@ describe("es env load + key builtins", () => {
     expect(numberFn.shape.k).toBe("fn");
     expect(getFnImpl(numberFn)?.apply).toBeTruthy();
     // Number("42") → 42
-    expect(litValue(getFnImpl(numberFn)!.apply!([strLit("42")])!)).toBe(42);
+    expect(litValue(getFnImpl(numberFn)!.apply!([strLit("42")])!)).toEqual({ ok: true, value: 42 });
     expect(shapeOf(walk(numberFn, "isFinite"), "Number.isFinite")).toContain("=>");
     expect(shapeOf(walk(numberFn, "MAX_SAFE_INTEGER"), "Number.MAX_SAFE_INTEGER")).toContain(
       "number",

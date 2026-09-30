@@ -311,7 +311,8 @@ function elementsFrom(iterable: Abs | undefined): Abs[] {
     return iterable.shape.members.flatMap(elementsFrom);
   }
   // 字符串字面量：按 code point 迭代（new Set('aab') → {a,b}）
-  const sv = litValue(iterable);
+  const svR = litValue(iterable);
+  const sv = svR.ok && typeof svR.value === "string" ? svR.value : undefined;
   if (typeof sv === "string") {
     return [...sv].map((c) => strLit(c));
   }
@@ -338,7 +339,8 @@ export function ctorArgDefinitelyInvalid(
   if (iterable.term?.op === "lit" && iterable.term.value === undefined) return false;
   const nonIterableLit = (a: Abs): boolean => {
     if (a.shape.k === "prim") {
-      const v = litValue(a);
+      const vR = litValue(a);
+      const v = vR.ok ? vR.value : undefined;
       if (typeof v === "string") return false; // 字符串可迭代
       return true; // number/bool/symbol/bigint 字面量不可迭代
     }
@@ -349,7 +351,8 @@ export function ctorArgDefinitelyInvalid(
   if (name !== "Map") return false;
   // Map：外层 iterable 的每个条目必须是对象；lit prim 条目（含字符串字符）→ TypeError
   const primEntry = (a: Abs): boolean => a.shape.k === "prim";
-  const sv = litValue(iterable);
+  const svR = litValue(iterable);
+  const sv = svR.ok && typeof svR.value === "string" ? svR.value : undefined;
   if (typeof sv === "string") return sv.length > 0;
   if (iterable.shape.k === "tuple") return iterable.shape.elements.some(primEntry);
   if (isSetAbs(iterable)) return setElementsAbs(iterable).some(primEntry);
@@ -503,7 +506,7 @@ export function mapClearEntries(mapAbs: Abs): Abs {
 }
 
 function undefAbs(): Abs {
-  return abs({ k: "unknown" }, { op: "lit", value: undefined as never }, undefined, "exact");
+  return abs({ k: "unknown" }, { op: "lit", value: undefined }, undefined, "exact");
 }
 
 function joinAll(els: Abs[]): Abs | undefined {
@@ -558,7 +561,7 @@ export function mapHasEntry(mapAbs: Abs, key: Abs | undefined): Abs {
   }
   return abs(
     { k: "prim", type: "boolean" },
-    { op: "lit", value: hit as never },
+    { op: "lit", value: hit },
     undefined,
     "exact",
   );
@@ -587,14 +590,14 @@ export function mapValuesAbs(mapAbs: Abs): Abs[] {
 /** LitKey → key Abs（Map entry 迭代用）；非字面量 key 走 unknown */
 function keyAbsFromLitKey(k: LitKey): Abs {
   if (k === null) {
-    return abs({ k: "unknown" }, { op: "lit", value: null as never }, undefined, "exact");
+    return abs({ k: "unknown" }, { op: "lit", value: null }, undefined, "exact");
   }
   if (k === undefined) {
-    return abs({ k: "unknown" }, { op: "lit", value: undefined as never }, undefined, "exact");
+    return abs({ k: "unknown" }, { op: "lit", value: undefined }, undefined, "exact");
   }
-  if (typeof k === "string") return abs({ k: "prim", type: "string" }, { op: "lit", value: k as never }, undefined, "exact");
-  if (typeof k === "number") return abs({ k: "prim", type: "number" }, { op: "lit", value: k as never }, undefined, "exact");
-  return abs({ k: "prim", type: "boolean" }, { op: "lit", value: k as never }, undefined, "exact");
+  if (typeof k === "string") return abs({ k: "prim", type: "string" }, { op: "lit", value: k }, undefined, "exact");
+  if (typeof k === "number") return abs({ k: "prim", type: "number" }, { op: "lit", value: k }, undefined, "exact");
+  return abs({ k: "prim", type: "boolean" }, { op: "lit", value: k }, undefined, "exact");
 }
 
 /**
@@ -677,7 +680,7 @@ export function setHasEntry(setAbs: Abs, value: Abs): Abs {
     }
     return abs(
       { k: "prim", type: "boolean" },
-      { op: "lit", value: hit as never },
+      { op: "lit", value: hit },
       undefined,
       "exact",
     );

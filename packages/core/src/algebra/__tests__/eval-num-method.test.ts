@@ -27,43 +27,43 @@ function throwsError(t: unknown, name: string): boolean {
 
 describe("evaluator number instance method folding", () => {
   it("toString folds base 10 and radix", () => {
-    expect(litValue(call(`export function f() { return (5).toString(); }`).result)).toBe("5");
-    expect(litValue(call(`export function f() { return (5).toString(2); }`).result)).toBe("101");
-    expect(litValue(call(`export function f() { return (255).toString(16); }`).result)).toBe("ff");
-    expect(litValue(call(`export function f() { return (0.5).toString(); }`).result)).toBe("0.5");
-    expect(litValue(call(`export function f() { return (-5).toString(); }`).result)).toBe("-5");
-    expect(litValue(call(`export function f() { return (1e21).toString(); }`).result)).toBe("1e+21");
-    expect(litValue(call(`export function f() { return NaN.toString(); }`).result)).toBe("NaN");
-    expect(litValue(call(`export function f() { return Infinity.toString(); }`).result)).toBe("Infinity");
+    expect(litValue(call(`export function f() { return (5).toString(); }`).result)).toEqual({ ok: true, value: "5" });
+    expect(litValue(call(`export function f() { return (5).toString(2); }`).result)).toEqual({ ok: true, value: "101" });
+    expect(litValue(call(`export function f() { return (255).toString(16); }`).result)).toEqual({ ok: true, value: "ff" });
+    expect(litValue(call(`export function f() { return (0.5).toString(); }`).result)).toEqual({ ok: true, value: "0.5" });
+    expect(litValue(call(`export function f() { return (-5).toString(); }`).result)).toEqual({ ok: true, value: "-5" });
+    expect(litValue(call(`export function f() { return (1e21).toString(); }`).result)).toEqual({ ok: true, value: "1e+21" });
+    expect(litValue(call(`export function f() { return NaN.toString(); }`).result)).toEqual({ ok: true, value: "NaN" });
+    expect(litValue(call(`export function f() { return Infinity.toString(); }`).result)).toEqual({ ok: true, value: "Infinity" });
   });
 
   it("toFixed folds", () => {
-    expect(litValue(call(`export function f() { return (5).toFixed(2); }`).result)).toBe("5.00");
-    expect(litValue(call(`export function f() { return (5).toFixed(); }`).result)).toBe("5");
-    expect(litValue(call(`export function f() { return (5.5).toFixed(0); }`).result)).toBe("6");
-    expect(litValue(call(`export function f() { return (1.005).toFixed(2); }`).result)).toBe("1.00");
+    expect(litValue(call(`export function f() { return (5).toFixed(2); }`).result)).toEqual({ ok: true, value: "5.00" });
+    expect(litValue(call(`export function f() { return (5).toFixed(); }`).result)).toEqual({ ok: true, value: "5" });
+    expect(litValue(call(`export function f() { return (5.5).toFixed(0); }`).result)).toEqual({ ok: true, value: "6" });
+    expect(litValue(call(`export function f() { return (1.005).toFixed(2); }`).result)).toEqual({ ok: true, value: "1.00" });
   });
 
   it("toPrecision folds", () => {
-    expect(litValue(call(`export function f() { return (5).toPrecision(2); }`).result)).toBe("5.0");
-    expect(litValue(call(`export function f() { return (123).toPrecision(2); }`).result)).toBe("1.2e+2");
-    expect(litValue(call(`export function f() { return (123.456).toPrecision(4); }`).result)).toBe("123.5");
-    expect(litValue(call(`export function f() { return (5).toPrecision(); }`).result)).toBe("5");
+    expect(litValue(call(`export function f() { return (5).toPrecision(2); }`).result)).toEqual({ ok: true, value: "5.0" });
+    expect(litValue(call(`export function f() { return (123).toPrecision(2); }`).result)).toEqual({ ok: true, value: "1.2e+2" });
+    expect(litValue(call(`export function f() { return (123.456).toPrecision(4); }`).result)).toEqual({ ok: true, value: "123.5" });
+    expect(litValue(call(`export function f() { return (5).toPrecision(); }`).result)).toEqual({ ok: true, value: "5" });
   });
 
   it("toExponential folds", () => {
-    expect(litValue(call(`export function f() { return (5).toExponential(); }`).result)).toBe("5e+0");
-    expect(litValue(call(`export function f() { return (5).toExponential(2); }`).result)).toBe("5.00e+0");
-    expect(litValue(call(`export function f() { return (123456).toExponential(2); }`).result)).toBe("1.23e+5");
+    expect(litValue(call(`export function f() { return (5).toExponential(); }`).result)).toEqual({ ok: true, value: "5e+0" });
+    expect(litValue(call(`export function f() { return (5).toExponential(2); }`).result)).toEqual({ ok: true, value: "5.00e+0" });
+    expect(litValue(call(`export function f() { return (123456).toExponential(2); }`).result)).toEqual({ ok: true, value: "1.23e+5" });
   });
 
   it("valueOf returns the number", () => {
-    expect(litValue(call(`export function f() { return (5).valueOf(); }`).result)).toBe(5);
+    expect(litValue(call(`export function f() { return (5).valueOf(); }`).result)).toEqual({ ok: true, value: 5 });
   });
 
   it("abstract args stay abstract", () => {
     const r = call(`export function f(x) { return x.toFixed(2); }`);
-    expect(litValue(r.result)).toBeUndefined();
+    expect(litValue(r.result)).toEqual({ ok: false });
   });
 });
 
@@ -77,7 +77,7 @@ describe("evaluator number instance method invalid args throw RangeError", () =>
   });
 
   it("toString fractional radix truncates via ToIntegerOrInfinity", () => {
-    expect(litValue(call(`export function f() { return (5).toString(2.5); }`).result)).toBe("101");
+    expect(litValue(call(`export function f() { return (5).toString(2.5); }`).result)).toEqual({ ok: true, value: "101" });
   });
 
   it("toFixed digits out of 0..100", () => {
@@ -111,13 +111,13 @@ describe("evaluator number instance method invalid args throw RangeError", () =>
       `export function f() { try { (5).toPrecision(0); } catch(e) { return 'caught'; } return 'missed'; }`,
       `export function f() { try { (5).toExponential(101); } catch(e) { return 'caught'; } return 'missed'; }`,
     ]) {
-      expect(litValue(call(src).result), src).toBe("caught");
+      expect(litValue(call(src).result), src).toEqual({ ok: true, value: "caught" });
     }
   });
 
   it("symbol arg stays abstract (native THROW TypeError)", () => {
     const r = call(`export function f() { return (5).toString(Symbol()); }`);
-    expect(litValue(r.result)).toBeUndefined();
+    expect(litValue(r.result)).toEqual({ ok: false });
   });
 });
 

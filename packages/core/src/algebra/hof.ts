@@ -347,14 +347,14 @@ export function isRelFn(a: Abs | undefined | null): boolean {
 
 // --- pred 归约 ---
 
-function litOfTerm(t: Term): number | string | boolean | null | undefined {
+function litOfTerm(t: Term): import("./term.ts").LiteralValue | undefined {
   return t.op === "lit" ? t.value : undefined;
 }
 
 function foldCompare(
   op: Pred["op"],
-  a: number | string | boolean | null | undefined,
-  b: number | string | boolean | null | undefined,
+  a: import("./term.ts").LiteralValue | undefined,
+  b: import("./term.ts").LiteralValue | undefined,
 ): Pred | undefined {
   if (a === undefined || b === undefined) return undefined;
   if (typeof a !== typeof b) {
@@ -850,7 +850,7 @@ export function applyCallbackAbs(
 export function undefAbs(): Abs {
   return abs(
     { k: "unknown" },
-    { op: "lit", value: undefined as never },
+    { op: "lit", value: undefined },
     pTrue,
     "exact",
   );

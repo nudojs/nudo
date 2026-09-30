@@ -147,13 +147,13 @@ export function harvestSigToAbs(sig: HarvestSig): Abs {
                 : null;
       if (sig.value === null || t === null) {
         return mark(
-          abs({ k: "unknown" }, { op: "lit", value: sig.value as never }, undefined, "mock"),
+          abs({ k: "unknown" }, { op: "lit", value: sig.value }, undefined, "mock"),
         );
       }
       return mark(
         abs(
           { k: "prim", type: t as "number" | "string" | "boolean" | "bigint" },
-          { op: "lit", value: sig.value as never },
+          { op: "lit", value: sig.value },
           undefined,
           "mock",
         ),

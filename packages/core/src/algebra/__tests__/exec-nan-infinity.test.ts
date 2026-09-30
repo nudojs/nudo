@@ -25,34 +25,34 @@ function str(src: string) {
 describe("evaluator NaN / Infinity global literals", () => {
   it("bare NaN folds to NaN literal", () => {
     const v = str(`export function run() { return NaN; }`);
-    expect(typeof v).toBe("number");
-    expect(Number.isNaN(v)).toBe(true);
+    expect(v.ok && typeof v.value).toBe("number");
+    expect(Number.isNaN((v).ok ? (v).value : undefined)).toBe(true);
   });
 
   it("bare Infinity folds to Infinity literal", () => {
-    expect(str(`export function run() { return Infinity; }`)).toBe(Infinity);
-    expect(str(`export function run() { return -Infinity; }`)).toBe(-Infinity);
+    expect(str(`export function run() { return Infinity; }`)).toEqual({ ok: true, value: Infinity });
+    expect(str(`export function run() { return -Infinity; }`)).toEqual({ ok: true, value: -Infinity });
   });
 
   it("arithmetic with NaN folds to NaN", () => {
-    expect(Number.isNaN(str(`export function run() { return 1 + NaN; }`))).toBe(true);
-    expect(Number.isNaN(str(`export function run() { return 1 * NaN; }`))).toBe(true);
+    expect(Number.isNaN((str(`export function run() { return 1 + NaN; }`)).ok ? (str(`export function run() { return 1 + NaN; }`)).value : undefined)).toBe(true);
+    expect(Number.isNaN((str(`export function run() { return 1 * NaN; }`)).ok ? (str(`export function run() { return 1 * NaN; }`)).value : undefined)).toBe(true);
   });
 
   it("Number.isNaN(NaN) is true", () => {
-    expect(str(`export function run() { return Number.isNaN(NaN); }`)).toBe(true);
-    expect(str(`export function run() { return Number.isNaN(1); }`)).toBe(false);
+    expect(str(`export function run() { return Number.isNaN(NaN); }`)).toEqual({ ok: true, value: true });
+    expect(str(`export function run() { return Number.isNaN(1); }`)).toEqual({ ok: true, value: false });
   });
 
   it("Math.min/max with NaN and Infinity", () => {
-    expect(Number.isNaN(str(`export function run() { return Math.min(NaN, 1); }`))).toBe(true);
-    expect(str(`export function run() { return Math.max(1, Infinity); }`)).toBe(Infinity);
-    expect(str(`export function run() { return Math.min(1, Infinity); }`)).toBe(1);
+    expect(Number.isNaN((str(`export function run() { return Math.min(NaN, 1); }`)).ok ? (str(`export function run() { return Math.min(NaN, 1); }`)).value : undefined)).toBe(true);
+    expect(str(`export function run() { return Math.max(1, Infinity); }`)).toEqual({ ok: true, value: Infinity });
+    expect(str(`export function run() { return Math.min(1, Infinity); }`)).toEqual({ ok: true, value: 1 });
   });
 
   it("NaN flows into method positional args", () => {
-    expect(str(`export function run() { return "hello".startsWith("hell", NaN); }`)).toBe(true);
-    expect(str(`export function run() { return "hello".endsWith("lo", NaN); }`)).toBe(false);
+    expect(str(`export function run() { return "hello".startsWith("hell", NaN); }`)).toEqual({ ok: true, value: true });
+    expect(str(`export function run() { return "hello".endsWith("lo", NaN); }`)).toEqual({ ok: true, value: false });
   });
 
   it("NaN as split limit yields empty array (ToUint32(NaN)=0)", () => {
@@ -62,18 +62,18 @@ describe("evaluator NaN / Infinity global literals", () => {
   });
 
   it("NaN inside array/object literal folds", () => {
-    expect(Number.isNaN(str(`export function run() { return [NaN][0]; }`))).toBe(true);
-    expect(Number.isNaN(str(`export function run() { return { n: NaN }.n; }`))).toBe(true);
+    expect(Number.isNaN((str(`export function run() { return [NaN][0]; }`)).ok ? (str(`export function run() { return [NaN][0]; }`)).value : undefined)).toBe(true);
+    expect(Number.isNaN((str(`export function run() { return { n: NaN }.n; }`)).ok ? (str(`export function run() { return { n: NaN }.n; }`)).value : undefined)).toBe(true);
   });
 
   it("comparisons with NaN / Infinity", () => {
-    expect(str(`export function run() { return NaN === NaN; }`)).toBe(false);
-    expect(str(`export function run() { return NaN !== NaN; }`)).toBe(true);
-    expect(str(`export function run() { return Infinity > 1; }`)).toBe(true);
-    expect(str(`export function run() { return 1 / Infinity; }`)).toBe(0);
+    expect(str(`export function run() { return NaN === NaN; }`)).toEqual({ ok: true, value: false });
+    expect(str(`export function run() { return NaN !== NaN; }`)).toEqual({ ok: true, value: true });
+    expect(str(`export function run() { return Infinity > 1; }`)).toEqual({ ok: true, value: true });
+    expect(str(`export function run() { return 1 / Infinity; }`)).toEqual({ ok: true, value: 0 });
   });
 
   it("NaN binding can be reassigned like any local", () => {
-    expect(str(`export function run() { let n = NaN; n = 5; return n; }`)).toBe(5);
+    expect(str(`export function run() { let n = NaN; n = 5; return n; }`)).toEqual({ ok: true, value: 5 });
   });
 });

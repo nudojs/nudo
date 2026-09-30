@@ -47,8 +47,8 @@ describe("JSON.stringify top-level non-JSON values return undefined", () => {
   });
 
   it("plain JSON values still fold to strings (control)", () => {
-    expect(val(`export function f() { return JSON.stringify(1); }`)).toBe("1");
-    expect(val(`export function f() { return JSON.stringify('a'); }`)).toBe('"a"');
-    expect(val(`export function f() { return JSON.stringify(null); }`)).toBe("null");
+    expect(val(`export function f() { return JSON.stringify(1); }`)).toEqual({ ok: true, value: "1" });
+    expect(val(`export function f() { return JSON.stringify('a'); }`)).toEqual({ ok: true, value: '"a"' });
+    expect(val(`export function f() { return JSON.stringify(null); }`)).toEqual({ ok: true, value: "null" });
   });
 });

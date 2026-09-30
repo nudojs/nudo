@@ -50,19 +50,19 @@ export function checkArg(
       : phi;
   if (implies(combined, expect)) return undefined;
 
-  // 字面量直接判定
-  const lv = litValue(arg);
+  // 字面量直接判定（tagged：.ok 才是字面量，含 lit(undefined)）
+  const lvR = litValue(arg);
   if (
-    lv !== undefined &&
+    lvR.ok &&
     (expect.op === "gt" || expect.op === "ge" || expect.op === "lt" || expect.op === "le")
   ) {
-    const ok = decideLitCmp(lv, expect);
+    const ok = decideLitCmp(lvR.value, expect);
     if (ok === true) return undefined;
     if (ok === false) {
       return {
         severity: "error",
         code: "nudo:constraint-violated",
-        message: `argument ${JSON.stringify(lv)} does not satisfy ${predToString(expect)}`,
+        message: `argument ${JSON.stringify(lvR.value)} does not satisfy ${predToString(expect)}`,
         suggestion: `use a value satisfying the constraint, or relax the function precondition`,
       };
     }
@@ -77,7 +77,7 @@ export function checkArg(
 }
 
 function decideLitCmp(
-  lv: string | number | boolean | null | undefined,
+  lv: import("./term.ts").LiteralValue,
   p: Extract<Pred, { op: "gt" | "ge" | "lt" | "le" }>,
 ): boolean | undefined {
   if (typeof lv !== "number" || p.b.op !== "lit" || typeof p.b.value !== "number") {

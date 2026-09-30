@@ -114,8 +114,10 @@ function constantMockFn(result: Abs): Abs {
  */
 function absArgMatches(declared: Abs, actual: Abs | undefined): boolean {
   if (!actual) return false;
-  const av = litValue(actual);
-  const dv = litValue(declared);
+  const avR = litValue(actual);
+  const av = avR.ok ? avR.value : undefined;
+  const dvR = litValue(declared);
+  const dv = dvR.ok ? dvR.value : undefined;
   if (dv !== undefined) {
     return av !== undefined && Object.is(av, dv);
   }

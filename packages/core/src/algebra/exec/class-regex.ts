@@ -18,11 +18,14 @@ export function regexParts(re: Abs): { pat: string; flags: string; lastIndex: nu
   const patAbs = slots["source"]?.value;
   const flagsAbs = slots["flags"]?.value;
   const lastAbs = slots["lastIndex"]?.value;
-  const pat = patAbs ? litValue(patAbs) : undefined;
+  const patR = patAbs ? litValue(patAbs) : undefined;
+  const pat = patR?.ok ? patR.value : undefined;
   if (typeof pat !== "string") return undefined;
-  const flagsV = flagsAbs ? litValue(flagsAbs) : undefined;
+  const flagsR = flagsAbs ? litValue(flagsAbs) : undefined;
+  const flagsV = flagsR?.ok ? flagsR.value : undefined;
   const flags = typeof flagsV === "string" ? flagsV : "";
-  const lv = lastAbs ? litValue(lastAbs) : undefined;
+  const lvR = lastAbs ? litValue(lastAbs) : undefined;
+  const lv = lvR?.ok ? lvR.value : undefined;
   const lastIndex = typeof lv === "number" ? lv : 0;
   return { pat, flags, lastIndex };
 }
@@ -43,7 +46,7 @@ export function regexExecWithState(
   const m = reReal.exec(subject);
   if (!m) {
     return {
-      result: abs({ k: "unknown" }, { op: "lit", value: null as never }, undefined, "exact"),
+      result: abs({ k: "unknown" }, { op: "lit", value: null }, undefined, "exact"),
       lastIndex: reReal.lastIndex,
     };
   }
@@ -61,7 +64,8 @@ export function execRegexBrand(re: Abs, method: string, args: Abs[]): Abs | unde
   const parts = regexParts(re);
   if (!parts) return undefined;
   if (method === "toString") return strLit(`/${parts.pat}/${parts.flags}`);
-  const subject = args[0] ? litValue(args[0]) : undefined;
+  const subjectR = args[0] ? litValue(args[0]) : undefined;
+  const subject = subjectR?.ok ? subjectR.value : undefined;
   if (typeof subject !== "string") {
     // subject 非字面量：保持抽象（test → boolean，exec → null|match 的保守并）。
     // 此前 exec 直接返回 undefined（注释承诺的保守并未实现）——调用方回落到
@@ -73,7 +77,7 @@ export function execRegexBrand(re: Abs, method: string, args: Abs[]): Abs | unde
     // exec：null | 匹配数组（下标可读；未参与捕获组为 undefined）
     const element = joinAbs(str(), undefAbs());
     const matchAbs = abs({ k: "arr", element }, undefined, undefined, "path");
-    const nullAbs = abs({ k: "unknown" }, { op: "lit", value: null as never }, undefined, "exact");
+    const nullAbs = abs({ k: "unknown" }, { op: "lit", value: null }, undefined, "exact");
     return joinAbs(nullAbs, matchAbs);
   }
   try {
@@ -91,7 +95,8 @@ export function execRegexBrand(re: Abs, method: string, args: Abs[]): Abs | unde
 export function $reStateCall(re: Abs, method: string, args: Abs[]): Abs {
   const parts = regexParts(re);
   if (!parts || (method !== "test" && method !== "exec")) return re;
-  const subject = args[0] ? litValue(args[0]) : undefined;
+  const subjectR = args[0] ? litValue(args[0]) : undefined;
+  const subject = subjectR?.ok ? subjectR.value : undefined;
   if (typeof subject !== "string") return re; // 抽象 subject：状态不可判定，保守不动
   try {
     const { lastIndex } = regexExecWithState(re, method, subject);
@@ -120,10 +125,13 @@ export function stringRegexMethod(recv: Abs, method: string, args: Abs[]): Abs |
   const inner = reBrand?.shape.shape;
   const patAbs = inner && inner.shape.k === "obj" ? inner.shape.slots["source"]?.value : undefined;
   const flagsAbs = inner && inner.shape.k === "obj" ? inner.shape.slots["flags"]?.value : undefined;
-  const pat = patAbs ? litValue(patAbs) : undefined;
-  const sv = litValue(recv);
+  const patR = patAbs ? litValue(patAbs) : undefined;
+  const pat = patR?.ok ? patR.value : undefined;
+  const svR = litValue(recv);
+  const sv = svR.ok && typeof svR.value === "string" ? svR.value : undefined;
   if (typeof pat !== "string" || typeof sv !== "string") return undefined;
-  const flagsV = flagsAbs ? litValue(flagsAbs) : undefined;
+  const flagsR = flagsAbs ? litValue(flagsAbs) : undefined;
+  const flagsV = flagsR?.ok ? flagsR.value : undefined;
   const flags = typeof flagsV === "string" ? flagsV : "";
   let reReal: RegExp;
   try {
@@ -133,20 +141,20 @@ export function stringRegexMethod(recv: Abs, method: string, args: Abs[]): Abs |
   }
   if (method === "search") {
     const idx = sv.search(reReal);
-    return abs({ k: "prim", type: "number" }, { op: "lit", value: idx as never }, undefined, "exact");
+    return abs({ k: "prim", type: "number" }, { op: "lit", value: idx }, undefined, "exact");
   }
   if (method === "match") {
     // 非 global match ≡ exec；global → 全部命中串；无命中 → null（不是 []）
     if (flags.includes("g")) {
       const all = sv.match(reReal);
       if (all === null) {
-        return abs({ k: "unknown" }, { op: "lit", value: null as never }, undefined, "exact");
+        return abs({ k: "unknown" }, { op: "lit", value: null }, undefined, "exact");
       }
       return abs({ k: "tuple", elements: all.map((s) => strLit(s)) }, undefined, undefined, "exact");
     }
     const m = reReal.exec(sv);
     if (!m) {
-      return abs({ k: "unknown" }, { op: "lit", value: null as never }, undefined, "exact");
+      return abs({ k: "unknown" }, { op: "lit", value: null }, undefined, "exact");
     }
     const els: Abs[] = m.map((g) => (g === undefined ? undefAbs() : strLit(g)));
     return abs({ k: "tuple", elements: els }, undefined, undefined, "exact");

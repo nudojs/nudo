@@ -359,8 +359,10 @@ export function $for(
     }
 
     if (i > 0) {
-      const nv = litValue(next);
-      const sv = litValue(state);
+      const nvR = litValue(next);
+      const nv = nvR.ok ? nvR.value : undefined;
+      const svR = litValue(state);
+      const sv = svR.ok ? svR.value : undefined;
       const stuck =
         (nv !== undefined && sv !== undefined && nv === sv) ||
         (nv === undefined && sv === undefined && leqAbs(next, state).ok);
@@ -405,8 +407,10 @@ export function $while(
     }
     const next = step(state);
     if (i > 0) {
-      const nv = litValue(next);
-      const sv = litValue(state);
+      const nvR = litValue(next);
+      const nv = nvR.ok ? nvR.value : undefined;
+      const svR = litValue(state);
+      const sv = svR.ok ? svR.value : undefined;
       const stuck =
         (nv !== undefined && sv !== undefined && nv === sv) ||
         (nv === undefined && sv === undefined && leqAbs(next, state).ok);
@@ -480,10 +484,12 @@ export function $switch(
   cases: Array<{ test: Abs; run: () => Abs }>,
   dflt?: () => Abs,
 ): Abs {
-  const dv = litValue(disc);
+  const dvR = litValue(disc);
+  const dv = dvR.ok ? dvR.value : undefined;
   if (dv !== undefined) {
     for (const c of cases) {
-      const tv = litValue(c.test);
+      const tvR = litValue(c.test);
+      const tv = tvR.ok ? tvR.value : undefined;
       // switch case 匹配是严格相等（===）：NaN 不匹配 NaN case；0 与 -0 互配。
       // Object.is 是 SameValue（NaN 相等），会假匹配 NaN case（假精确）。
       if (tv !== undefined && tv === dv) return asAbsVal(c.run());

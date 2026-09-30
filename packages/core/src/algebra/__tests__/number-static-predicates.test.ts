@@ -25,48 +25,48 @@ function val(src: string) {
 
 describe("Number.isInteger / isNaN / isFinite on non-number lits", () => {
   it("Number.isInteger non-numbers fold to false", () => {
-    expect(val(`export function f() { return Number.isInteger('5'); }`)).toBe(false);
-    expect(val(`export function f() { return Number.isInteger(true); }`)).toBe(false);
-    expect(val(`export function f() { return Number.isInteger(null); }`)).toBe(false);
-    expect(val(`export function f() { return Number.isInteger(undefined); }`)).toBe(false);
-    expect(val(`export function f() { return Number.isInteger(); }`)).toBe(false);
-    expect(val(`export function f() { return Number.isInteger(5n); }`)).toBe(false);
+    expect(val(`export function f() { return Number.isInteger('5'); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return Number.isInteger(true); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return Number.isInteger(null); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return Number.isInteger(undefined); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return Number.isInteger(); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return Number.isInteger(5n); }`)).toEqual({ ok: true, value: false });
   });
 
   it("Number.isInteger numbers still fold correctly", () => {
-    expect(val(`export function f() { return Number.isInteger(5); }`)).toBe(true);
-    expect(val(`export function f() { return Number.isInteger(5.5); }`)).toBe(false);
-    expect(val(`export function f() { return Number.isInteger(NaN); }`)).toBe(false);
-    expect(val(`export function f() { return Number.isInteger(Infinity); }`)).toBe(false);
-    expect(val(`export function f() { return Number.isInteger(-0); }`)).toBe(true);
+    expect(val(`export function f() { return Number.isInteger(5); }`)).toEqual({ ok: true, value: true });
+    expect(val(`export function f() { return Number.isInteger(5.5); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return Number.isInteger(NaN); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return Number.isInteger(Infinity); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return Number.isInteger(-0); }`)).toEqual({ ok: true, value: true });
   });
 
   it("Number.isNaN non-numbers fold to false (no coercion)", () => {
-    expect(val(`export function f() { return Number.isNaN('x'); }`)).toBe(false);
-    expect(val(`export function f() { return Number.isNaN(true); }`)).toBe(false);
-    expect(val(`export function f() { return Number.isNaN(null); }`)).toBe(false);
-    expect(val(`export function f() { return Number.isNaN(undefined); }`)).toBe(false);
-    expect(val(`export function f() { return Number.isNaN(); }`)).toBe(false);
-    expect(val(`export function f() { return Number.isNaN('NaN'); }`)).toBe(false);
+    expect(val(`export function f() { return Number.isNaN('x'); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return Number.isNaN(true); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return Number.isNaN(null); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return Number.isNaN(undefined); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return Number.isNaN(); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return Number.isNaN('NaN'); }`)).toEqual({ ok: true, value: false });
   });
 
   it("Number.isNaN numbers fold correctly", () => {
-    expect(val(`export function f() { return Number.isNaN(NaN); }`)).toBe(true);
-    expect(val(`export function f() { return Number.isNaN(5); }`)).toBe(false);
+    expect(val(`export function f() { return Number.isNaN(NaN); }`)).toEqual({ ok: true, value: true });
+    expect(val(`export function f() { return Number.isNaN(5); }`)).toEqual({ ok: true, value: false });
   });
 
   it("Number.isFinite non-numbers fold to false (no coercion)", () => {
-    expect(val(`export function f() { return Number.isFinite('5'); }`)).toBe(false);
-    expect(val(`export function f() { return Number.isFinite(true); }`)).toBe(false);
-    expect(val(`export function f() { return Number.isFinite(null); }`)).toBe(false);
-    expect(val(`export function f() { return Number.isFinite(undefined); }`)).toBe(false);
-    expect(val(`export function f() { return Number.isFinite(); }`)).toBe(false);
+    expect(val(`export function f() { return Number.isFinite('5'); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return Number.isFinite(true); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return Number.isFinite(null); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return Number.isFinite(undefined); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return Number.isFinite(); }`)).toEqual({ ok: true, value: false });
   });
 
   it("Number.isFinite numbers fold correctly", () => {
-    expect(val(`export function f() { return Number.isFinite(5); }`)).toBe(true);
-    expect(val(`export function f() { return Number.isFinite(Infinity); }`)).toBe(false);
-    expect(val(`export function f() { return Number.isFinite(NaN); }`)).toBe(false);
+    expect(val(`export function f() { return Number.isFinite(5); }`)).toEqual({ ok: true, value: true });
+    expect(val(`export function f() { return Number.isFinite(Infinity); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return Number.isFinite(NaN); }`)).toEqual({ ok: true, value: false });
   });
 
   it("abstract args stay abstract", () => {
@@ -76,27 +76,27 @@ describe("Number.isInteger / isNaN / isFinite on non-number lits", () => {
     );
     const absX = { shape: { k: "any" as const }, conf: "partial" as const };
     const r = callTranspiledExportFull(exports, "f", [absX]);
-    expect(litValue(r.result)).toBeUndefined();
+    expect(litValue(r.result)).toEqual({ ok: false });
   });
 
   it("f() with no args binds x to undefined → false", () => {
     // 调用 f() 时 x === undefined，Number.isInteger(undefined) 恒 false
-    expect(val(`export function f(x) { return Number.isInteger(x); }`)).toBe(false);
-    expect(val(`export function f() { return Number.isInteger(undefined); }`)).toBe(false);
+    expect(val(`export function f(x) { return Number.isInteger(x); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return Number.isInteger(undefined); }`)).toEqual({ ok: true, value: false });
   });
 });
 
 describe("global isNaN does ToNumber (unlike Number.isNaN)", () => {
   it("isNaN coerces strings/bools/null/undefined", () => {
-    expect(val(`export function f() { return isNaN('x'); }`)).toBe(true);
-    expect(val(`export function f() { return isNaN('42'); }`)).toBe(false);
-    expect(val(`export function f() { return isNaN(''); }`)).toBe(false);
-    expect(val(`export function f() { return isNaN(true); }`)).toBe(false);
-    expect(val(`export function f() { return isNaN(false); }`)).toBe(false);
-    expect(val(`export function f() { return isNaN(null); }`)).toBe(false);
-    expect(val(`export function f() { return isNaN(undefined); }`)).toBe(true);
-    expect(val(`export function f() { return isNaN(); }`)).toBe(true);
-    expect(val(`export function f() { return isNaN(NaN); }`)).toBe(true);
-    expect(val(`export function f() { return isNaN(42); }`)).toBe(false);
+    expect(val(`export function f() { return isNaN('x'); }`)).toEqual({ ok: true, value: true });
+    expect(val(`export function f() { return isNaN('42'); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return isNaN(''); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return isNaN(true); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return isNaN(false); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return isNaN(null); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return isNaN(undefined); }`)).toEqual({ ok: true, value: true });
+    expect(val(`export function f() { return isNaN(); }`)).toEqual({ ok: true, value: true });
+    expect(val(`export function f() { return isNaN(NaN); }`)).toEqual({ ok: true, value: true });
+    expect(val(`export function f() { return isNaN(42); }`)).toEqual({ ok: true, value: false });
   });
 });

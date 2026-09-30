@@ -40,7 +40,7 @@ describe("tryEvalAbsFull ignores require text in strings", () => {
     const src = `export function f(s) {\n  const doc = "call require('x') to load";\n  return s + "!";\n}\n`;
     const abs = tryEvalAbsFull(src, "f", [$lit("hi")], "/tmp/require-in-string.js");
     expect(abs).toBeDefined();
-    expect(litValue(abs!.result)).toBe("hi!");
+    expect(litValue(abs!.result)).toEqual({ ok: true, value: "hi!" });
   });
 
   it("analyzeFile still infers precise return despite require-in-string", () => {

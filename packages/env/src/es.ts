@@ -37,13 +37,15 @@ export type EnvDefinition = {
 
 function absNumLit(a: Abs | undefined): number | undefined {
   if (!a) return undefined;
-  const v = litValue(a);
+  const vR = litValue(a);
+  const v = vR.ok ? vR.value : undefined;
   return typeof v === "number" ? v : undefined;
 }
 
 function absStrLit(a: Abs | undefined): string | undefined {
   if (!a) return undefined;
-  const v = litValue(a);
+  const vR = litValue(a);
+  const v = vR.ok ? vR.value : undefined;
   return typeof v === "string" ? v : undefined;
 }
 
@@ -112,7 +114,8 @@ export function defineEnv(): EnvDefinition {
   const jsonStringifyImplAbs: AbsSigImpl = (args) => {
     const a = args[0];
     if (!a) return undefined;
-    const v = litValue(a);
+    const vR = litValue(a);
+    const v = vR.ok ? vR.value : undefined;
     if (v === undefined && a.term?.op !== "lit") return undefined;
     try {
       const result = JSON.stringify(v);
@@ -162,7 +165,8 @@ export function defineEnv(): EnvDefinition {
   const booleanImplAbs: AbsSigImpl = (args) => {
     const a = args[0];
     if (!a) return undefined;
-    const v = litValue(a);
+    const vR = litValue(a);
+    const v = vR.ok ? vR.value : undefined;
     if (v === undefined && a.term?.op !== "lit") return undefined;
     return boolLit(Boolean(v));
   };
@@ -170,7 +174,8 @@ export function defineEnv(): EnvDefinition {
   const stringImplAbs: AbsSigImpl = (args) => {
     const a = args[0];
     if (!a) return undefined;
-    const v = litValue(a);
+    const vR = litValue(a);
+    const v = vR.ok ? vR.value : undefined;
     if (v === null || v === undefined) return undefined;
     return strLit(String(v));
   };

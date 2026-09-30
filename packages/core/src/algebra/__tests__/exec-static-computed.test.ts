@@ -24,7 +24,7 @@ export function go() {
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
     const r = callTranspiledExportFull(exports, "go", []);
-    expect(litValue(r.result)).toBe(6); // make(3)=6 + origin=0
+    expect(litValue(r.result)).toEqual({ ok: true, value: 6 }); // make(3)=6 + origin=0
   });
 
   it("transpiles static to $class statics/staticMethods", () => {
@@ -51,7 +51,7 @@ export function go() {
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
     const r = callTranspiledExportFull(exports, "go", []);
-    expect(litValue(r.result)).toBe(7);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 7 });
   });
 
   it("transpiles computed property", () => {

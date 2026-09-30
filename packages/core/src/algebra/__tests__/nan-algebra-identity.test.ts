@@ -22,22 +22,22 @@ describe("NaN-unsafe algebra identities", () => {
 
   it("mul(x, 0) is not exact 0", () => {
     const r = mul(numVar("x"), numLit(0));
-    expect(r.conf === "exact" && litValue(r) === 0).toBe(false);
+    expect(r.conf === "exact" && ((litValue(r)).ok ? (litValue(r)).value : undefined) === 0).toBe(false);
     expect(r.shape).toEqual({ k: "prim", type: "number" });
   });
 
   it("mul(0, x) is not exact 0", () => {
     const r = mul(numLit(0), numVar("x"));
-    expect(r.conf === "exact" && litValue(r) === 0).toBe(false);
+    expect(r.conf === "exact" && ((litValue(r)).ok ? (litValue(r)).value : undefined) === 0).toBe(false);
     expect(r.shape).toEqual({ k: "prim", type: "number" });
   });
 
   it("NaN*0 literal still folds to NaN", () => {
     const r = mul(
-      { shape: { k: "prim", type: "number" }, term: lit(NaN as never), pred: undefined, conf: "exact" },
+      { shape: { k: "prim", type: "number" }, term: lit(NaN), pred: undefined, conf: "exact" },
       numLit(0),
     );
-    expect(Number.isNaN(litValue(r))).toBe(true);
+    expect(Number.isNaN((litValue(r)).ok ? (litValue(r)).value : undefined)).toBe(true);
   });
 
   it("x*1 = x and x-0 = x still hold; x+0 must not fold", () => {
@@ -47,8 +47,8 @@ describe("NaN-unsafe algebra identities", () => {
   });
 
   it("x+0 literal fold with NaN still yields NaN", () => {
-    const nan = { shape: { k: "prim", type: "number" } as const, term: lit(NaN as never), pred: undefined, conf: "exact" as const };
+    const nan = { shape: { k: "prim", type: "number" } as const, term: lit(NaN), pred: undefined, conf: "exact" as const };
     const r = add(nan, numLit(0));
-    expect(Number.isNaN(litValue(r))).toBe(true);
+    expect(Number.isNaN((litValue(r)).ok ? (litValue(r)).value : undefined)).toBe(true);
   });
 });

@@ -54,7 +54,7 @@ export function f(n) {
       "f",
       1,
     );
-    expect(litValue(r.result)).toBe(101);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 101 });
   });
 
   it("switch all-return still returns from function", () => {
@@ -70,7 +70,7 @@ export function f(n) {
       "f",
       1,
     );
-    expect(litValue(r.result)).toBe("one");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "one" });
   });
 
   it("abstract mixed return/break keeps early-exit in exits join (P0)", () => {
@@ -101,8 +101,8 @@ export function f(n) {
   return 100;
 }
 `;
-    expect(litValue(call(src, "f", 1).result)).toBe(1);
-    expect(litValue(call(src, "f", 2).result)).toBe(100);
+    expect(litValue(call(src, "f", 1).result)).toEqual({ ok: true, value: 1 });
+    expect(litValue(call(src, "f", 2).result)).toEqual({ ok: true, value: 100 });
   });
 });
 
@@ -145,7 +145,7 @@ export function f() {
 `,
       "f",
     );
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 
   it("concrete true && a.pop() still mutates", () => {
@@ -160,7 +160,7 @@ export function f() {
 `,
       "f",
     );
-    expect(litValue(r.result)).toBe(2);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
   });
 
   it("abstract flag && a.pop() is not exact 2", () => {
@@ -190,7 +190,7 @@ export function f() {
 `,
       "f",
     );
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 
   it("left mutator in a.pop() && x still rebinds container", () => {
@@ -204,6 +204,6 @@ export function f() {
 `,
       "f",
     );
-    expect(litValue(r.result)).toBe(2);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
   });
 });

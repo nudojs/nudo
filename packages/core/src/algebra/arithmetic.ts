@@ -3,7 +3,7 @@
  * 这是「类型即计算」的主武器——x>0 时 x+1 必须得到 >1。
  */
 
-import type { Term } from "./term.ts";
+import type { LiteralValue, Term } from "./term.ts";
 import { app, lit, simplifyTerm, termToString } from "./term.ts";
 import type { Pred } from "./pred.ts";
 import {
@@ -58,10 +58,12 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   if (isSym(a) || isSym(b)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
-  // 字面量快速路径
-  const va = litValue(a);
-  const vb = litValue(b);
-  if (va !== undefined && vb !== undefined) {
+  // 字面量快速路径（tagged：.ok 才是字面量，含 lit(undefined)）
+  const ra = litValue(a);
+  const rb = litValue(b);
+  if (ra.ok && rb.ok) {
+    const va = ra.value;
+    const vb = rb.value;
     if (typeof va === "number" && typeof vb === "number") {
       return numLit(va + vb);
     }
@@ -84,8 +86,8 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   }
   // boolean/null 字面量与数字混合：ToNumber 折叠（与 sub/mul/div/mod 同口径；
   // native 10 + true = 11、2 + null = 2；undefined 参与恒 NaN 不折）
-  if (coercibleLit(va) && coercibleLit(vb)) {
-    return numLit(Number(va) + Number(vb));
+  if (ra.ok && rb.ok && coercibleLit(ra.value) && coercibleLit(rb.value)) {
+    return numLit(Number(ra.value) + Number(rb.value));
   }
   const big = foldBigintBinOp(a, b, (x, y) => x + y);
   if (big) return big;
@@ -187,9 +189,9 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
  * string 不在此列——`+` 的 string 臂走拼接，其余算子在调用点单独判。
  */
 function isKnownNonBigintNumeric(a: Abs): boolean {
-  const va = litValue(a);
-  if (typeof va === "number" || typeof va === "boolean" || va === null) return true;
-  if (a.term?.op === "lit" && a.term.value === undefined) return true;
+  const r = litValue(a);
+  if (r.ok && (typeof r.value === "number" || typeof r.value === "boolean" || r.value === null)) return true;
+  if (r.ok && r.value === undefined) return true;
   return a.shape.k === "prim" && (a.shape.type === "number" || a.shape.type === "boolean");
 }
 
@@ -215,8 +217,10 @@ function foldBigintBinOp(
   b: Abs,
   op: (x: bigint, y: bigint) => bigint,
 ): Abs | undefined {
-  const va = litValue(a);
-  const vb = litValue(b);
+  const ra = litValue(a);
+  const rb = litValue(b);
+  const va = ra.ok ? ra.value : undefined;
+  const vb = rb.ok ? rb.value : undefined;
   if (typeof va !== "bigint" && typeof vb !== "bigint") return undefined;
   if (typeof va === "bigint" && typeof vb === "bigint") {
     try {
@@ -299,14 +303,15 @@ function isAnyLike(a: Abs): boolean {
  * `- * / %` 上可按 JS ToNumber 折叠：`"a"*2`→NaN，`true*2`→2，`"3"*2`→6。
  */
 function coercibleLit(
-  v: ReturnType<typeof litValue>,
-): v is number | string | boolean | null | undefined {
+  v: LiteralValue,
+): v is number | string | boolean | null {
+  // 值域判定（调用方已 .ok）：lit(undefined) 是合法字面量，但 + 参与
+  // 恒 NaN 且历史口径不折（见 add 注释）；bigint 走 foldBigintBinOp。
   return (
-    v !== undefined &&
-    (typeof v === "number" ||
-      typeof v === "string" ||
-      typeof v === "boolean" ||
-      v === null)
+    typeof v === "number" ||
+    typeof v === "string" ||
+    typeof v === "boolean" ||
+    v === null
   );
 }
 
@@ -474,18 +479,18 @@ export function sub(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   if (isSym(a) || isSym(b)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
-  const va = litValue(a);
-  const vb = litValue(b);
+  const ra = litValue(a);
+  const rb = litValue(b);
   const big = foldBigintBinOp(a, b, (x, y) => x - y);
   if (big) return big;
   if (isBigPrim(a) && isBigPrim(b)) {
     return abs({ k: "prim", type: "bigint" }, undefined, undefined, confJoin(a.conf, b.conf));
   }
-  if (typeof va === "number" && typeof vb === "number") {
-    return numLit(va - vb);
+  if (ra.ok && rb.ok && typeof ra.value === "number" && typeof rb.value === "number") {
+    return numLit(ra.value - rb.value);
   }
-  if (coercibleLit(va) && coercibleLit(vb)) {
-    return numLit(Number(va) - Number(vb));
+  if (ra.ok && rb.ok && coercibleLit(ra.value) && coercibleLit(rb.value)) {
+    return numLit(Number(ra.value) - Number(rb.value));
   }
   if (isNumericLike(a) && isNumericLike(b) && a.term && b.term) {
     const term = simplifyTerm(app("-", [a.term, b.term]));
@@ -529,18 +534,18 @@ export function mul(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   if (isSym(a) || isSym(b)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
-  const va = litValue(a);
-  const vb = litValue(b);
+  const ra = litValue(a);
+  const rb = litValue(b);
   const big = foldBigintBinOp(a, b, (x, y) => x * y);
   if (big) return big;
   if (isBigPrim(a) && isBigPrim(b)) {
     return abs({ k: "prim", type: "bigint" }, undefined, undefined, confJoin(a.conf, b.conf));
   }
-  if (typeof va === "number" && typeof vb === "number") {
-    return numLit(va * vb);
+  if (ra.ok && rb.ok && typeof ra.value === "number" && typeof rb.value === "number") {
+    return numLit(ra.value * rb.value);
   }
-  if (coercibleLit(va) && coercibleLit(vb)) {
-    return numLit(Number(va) * Number(vb));
+  if (ra.ok && rb.ok && coercibleLit(ra.value) && coercibleLit(rb.value)) {
+    return numLit(Number(ra.value) * Number(rb.value));
   }
   if (isNumericLike(a) && isNumericLike(b) && a.term && b.term) {
     const term = simplifyTerm(app("*", [a.term, b.term]));
@@ -611,8 +616,10 @@ export function div(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   if (isSym(a) || isSym(b)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
-  const va = litValue(a);
-  const vb = litValue(b);
+  const ra = litValue(a);
+  const rb = litValue(b);
+  const va = ra.ok ? ra.value : undefined;
+  const vb = rb.ok ? rb.value : undefined;
   const big = foldBigintBinOp(a, b, (x, y) => x / y);
   if (big) return big;
   if (isBigPrim(a) && isBigPrim(b)) {
@@ -625,7 +632,7 @@ export function div(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
     }
     return numLit(va / vb);
   }
-  if (coercibleLit(va) && coercibleLit(vb)) {
+  if (ra.ok && rb.ok && coercibleLit(ra.value) && coercibleLit(rb.value)) {
     return numLit(Number(va) / Number(vb));
   }
   if (isNumericLike(a) && isNumericLike(b) && a.term && b.term) {
@@ -683,8 +690,10 @@ export function mod(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   if (isSym(a) || isSym(b)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
-  const va = litValue(a);
-  const vb = litValue(b);
+  const ra = litValue(a);
+  const rb = litValue(b);
+  const va = ra.ok ? ra.value : undefined;
+  const vb = rb.ok ? rb.value : undefined;
   const big = foldBigintBinOp(a, b, (x, y) => x % y);
   if (big) return big;
   if (isBigPrim(a) && isBigPrim(b)) {
@@ -694,7 +703,7 @@ export function mod(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
     // JS：n % 0 === NaN（含 0%0 / NaN%0 / ±Infinity%0）——直接折字面量
     return numLit(va % vb);
   }
-  if (coercibleLit(va) && coercibleLit(vb)) {
+  if (ra.ok && rb.ok && coercibleLit(ra.value) && coercibleLit(rb.value)) {
     return numLit(Number(va) % Number(vb));
   }
   if (isNumericLike(a) && isNumericLike(b) && a.term && b.term) {
@@ -755,10 +764,10 @@ export function cmp(
     const result = compareLits(op, ta.value, tb.value);
     if (result !== undefined) return boolLit(result);
   } else {
-    const va = litValue(a);
-    const vb = litValue(b);
-    if (va !== undefined && vb !== undefined) {
-      const result = compareLits(op, va, vb);
+    const ra = litValue(a);
+    const rb = litValue(b);
+    if (ra.ok && rb.ok) {
+      const result = compareLits(op, ra.value, rb.value);
       if (result !== undefined) return boolLit(result);
     }
   }
@@ -807,8 +816,8 @@ export function cmp(
 
 function compareLits(
   op: "lt" | "le" | "gt" | "ge" | "eq" | "ne",
-  a: string | number | boolean | null | undefined,
-  b: string | number | boolean | null | undefined,
+  a: string | number | boolean | bigint | null | undefined,
+  b: string | number | boolean | bigint | null | undefined,
 ): boolean | undefined {
   if (op === "eq") return a === b;
   if (op === "ne") return a !== b;

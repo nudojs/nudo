@@ -60,7 +60,7 @@ describe("strict write semantics: non-object targets", () => {
     const run = runTranspiled(`export function f() { return this; }`, { mode: "analyze" });
     // 函数内 this 已由 transpile 降级；顶层读：
     const run2 = runTranspiled(`export const t = this; export function f() { return 1; }`, { mode: "analyze" });
-    expect(litValue(run2.t as never)).toBeUndefined();
+    expect(litValue(run2.t as never)).toEqual({ ok: true, value: undefined });
     expect(run).toBeDefined();
   });
 

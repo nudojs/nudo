@@ -98,7 +98,8 @@ export function setSlot<S extends { value: Abs }>(
  * - v 为 primitive → 原生忽略（对象字面量）；setter 路径由调用方决定是否 TypeError
  */
 export function setProtoAbs(o: Abs, proto: Abs): Abs {
-  const pv = litValue(proto);
+  const pvR = litValue(proto);
+  const pv = pvR.ok ? pvR.value : undefined;
   if (pv === null) return markNullProtoObj(o);
   if (proto.term?.op === "lit" && (pv === undefined || typeof pv !== "object")) {
     return o;
@@ -238,10 +239,11 @@ export function joinValues(a: Abs, b: Abs): Abs {
   if (a.shape.k === "never") return b;
   if (b.shape.k === "never") return a;
 
-  const va = litValue(a);
-  const vb = litValue(b);
-  // Object.is：NaN 与自身相等（`NaN === NaN` 为 false，不能用 ===）
-  if (va !== undefined && Object.is(va, vb)) return a;
+  const vaR = litValue(a);
+  const vbR = litValue(b);
+  // Object.is：NaN 与自身相等（`NaN === NaN` 为 false，不能用 ===）。
+  // tagged：.ok 才是字面量（含 lit(undefined)），禁止用 value!==undefined 哨兵。
+  if (vaR.ok && vbR.ok && Object.is(vaR.value, vbR.value)) return a;
 
   if (
     a.shape.k === "prim" &&
@@ -249,7 +251,9 @@ export function joinValues(a: Abs, b: Abs): Abs {
     a.shape.type === b.shape.type
   ) {
     // 双字面量：枚举 sum（1|2）；NaN 不可满足，不得进枚举 → 收成 path
-    if (va !== undefined && vb !== undefined) {
+    if (vaR.ok && vbR.ok) {
+      const va = vaR.value;
+      const vb = vbR.value;
       const nanA = typeof va === "number" && Number.isNaN(va);
       const nanB = typeof vb === "number" && Number.isNaN(vb);
       if (nanA || nanB) {

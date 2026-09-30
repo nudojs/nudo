@@ -16,23 +16,23 @@ function call(src: string, fnName = "f") {
 describe("evaluator eval is conservative unknown", () => {
   it("direct eval does not fold the code string", () => {
     const r = call(`export function f() { return eval('1+2'); }`);
-    expect(litValue(r.result)).toBeUndefined();
+    expect(litValue(r.result)).toEqual({ ok: false });
   });
 
   it("direct eval of expression code stays unknown", () => {
     const r = call(`export function f() { return eval('Math.max(1,2)'); }`);
-    expect(litValue(r.result)).toBeUndefined();
+    expect(litValue(r.result)).toEqual({ ok: false });
   });
 
   it("eval result feeding arithmetic stays unknown, not precise", () => {
     const r = call(`export function f() { return eval('2') + 1; }`);
-    expect(litValue(r.result)).toBeUndefined();
+    expect(litValue(r.result)).toEqual({ ok: false });
   });
 
   it("indirect eval stays unknown", () => {
     // (0, eval)(...) 走表达式 callee → $call 宿主函数路径，同样保守
     const r = call(`export function f() { return (0, eval)('1+2'); }`);
-    expect(litValue(r.result)).toBeUndefined();
+    expect(litValue(r.result)).toEqual({ ok: false });
   });
 });
 

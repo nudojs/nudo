@@ -27,43 +27,43 @@ function val(src: string) {
 
 describe("unary minus honors ToNumber on coercible literals", () => {
   it("-'5' / -true / -null fold like native", () => {
-    expect(val(`export function f() { return -'5'; }`)).toBe(-5);
-    expect(val(`export function f() { return -true; }`)).toBe(-1);
+    expect(val(`export function f() { return -'5'; }`)).toEqual({ ok: true, value: -5 });
+    expect(val(`export function f() { return -true; }`)).toEqual({ ok: true, value: -1 });
     const n = val(`export function f() { return -null; }`);
-    expect(Object.is(n, -0)).toBe(true);
+    expect(n.ok && Object.is(n.value, -0)).toBe(true);
   });
 
   it("number literals and unary + / ~ already work (regression guard)", () => {
-    expect(val(`export function f() { return -5; }`)).toBe(-5);
-    expect(val(`export function f() { return +true; }`)).toBe(1);
-    expect(val(`export function f() { return +null; }`)).toBe(0);
-    expect(val(`export function f() { return ~'5'; }`)).toBe(-6);
-    expect(val(`export function f() { return ~true; }`)).toBe(-2);
-    expect(val(`export function f() { return ~null; }`)).toBe(-1);
+    expect(val(`export function f() { return -5; }`)).toEqual({ ok: true, value: -5 });
+    expect(val(`export function f() { return +true; }`)).toEqual({ ok: true, value: 1 });
+    expect(val(`export function f() { return +null; }`)).toEqual({ ok: true, value: 0 });
+    expect(val(`export function f() { return ~'5'; }`)).toEqual({ ok: true, value: -6 });
+    expect(val(`export function f() { return ~true; }`)).toEqual({ ok: true, value: -2 });
+    expect(val(`export function f() { return ~null; }`)).toEqual({ ok: true, value: -1 });
   });
 });
 
 describe("parseInt radix goes through ToInt32", () => {
   it("numeric-string / bool / null / false / empty-string radix", () => {
-    expect(val(`export function f() { return parseInt('10', '2'); }`)).toBe(2);
+    expect(val(`export function f() { return parseInt('10', '2'); }`)).toEqual({ ok: true, value: 2 });
     // ToInt32(true)=1 → 越界 → NaN
     const t = val(`export function f() { return parseInt('10', true); }`);
-    expect(typeof t).toBe("number");
-    expect(Number.isNaN(t)).toBe(true);
+    expect(t.ok && typeof t.value).toBe("number");
+    expect(Number.isNaN((t).ok ? (t).value : undefined)).toBe(true);
     // ToInt32(null)=0 / false=0 / ''=0 / NaN=0 → 视为未提供
-    expect(val(`export function f() { return parseInt('10', null); }`)).toBe(10);
-    expect(val(`export function f() { return parseInt('10', false); }`)).toBe(10);
-    expect(val(`export function f() { return parseInt('08', ''); }`)).toBe(8);
-    expect(val(`export function f() { return parseInt('0x10', 0); }`)).toBe(16);
+    expect(val(`export function f() { return parseInt('10', null); }`)).toEqual({ ok: true, value: 10 });
+    expect(val(`export function f() { return parseInt('10', false); }`)).toEqual({ ok: true, value: 10 });
+    expect(val(`export function f() { return parseInt('08', ''); }`)).toEqual({ ok: true, value: 8 });
+    expect(val(`export function f() { return parseInt('0x10', 0); }`)).toEqual({ ok: true, value: 16 });
   });
 
   it("Number.parseInt shares the same radix coercion", () => {
-    expect(val(`export function f() { return Number.parseInt('10', '2'); }`)).toBe(2);
-    expect(val(`export function f() { return Number.parseInt('10', null); }`)).toBe(10);
+    expect(val(`export function f() { return Number.parseInt('10', '2'); }`)).toEqual({ ok: true, value: 2 });
+    expect(val(`export function f() { return Number.parseInt('10', null); }`)).toEqual({ ok: true, value: 10 });
     // 已正确的 number radix 对照
-    expect(val(`export function f() { return parseInt('10', 2); }`)).toBe(2);
-    expect(val(`export function f() { return parseInt('10', 2.9); }`)).toBe(2);
-    expect(val(`export function f() { return parseInt('0x10'); }`)).toBe(16);
+    expect(val(`export function f() { return parseInt('10', 2); }`)).toEqual({ ok: true, value: 2 });
+    expect(val(`export function f() { return parseInt('10', 2.9); }`)).toEqual({ ok: true, value: 2 });
+    expect(val(`export function f() { return parseInt('0x10'); }`)).toEqual({ ok: true, value: 16 });
   });
 });
 
@@ -71,23 +71,23 @@ describe("parseInt / parseFloat first arg ToString then parse", () => {
   it("bool / null / undefined / bigint first args", () => {
     // ToString(true)='true' → parseInt 得 NaN
     const p = val(`export function f() { return parseInt(true); }`);
-    expect(Number.isNaN(p)).toBe(true);
+    expect(p.ok && Number.isNaN(p.value as number)).toBe(true);
     const n = val(`export function f() { return parseInt(null); }`);
-    expect(Number.isNaN(n)).toBe(true);
+    expect(Number.isNaN((n).ok ? (n).value : undefined)).toBe(true);
     const u = val(`export function f() { return parseInt(undefined); }`);
-    expect(Number.isNaN(u)).toBe(true);
-    expect(val(`export function f() { return parseInt(5n); }`)).toBe(5);
+    expect(Number.isNaN((u).ok ? (u).value : undefined)).toBe(true);
+    expect(val(`export function f() { return parseInt(5n); }`)).toEqual({ ok: true, value: 5 });
 
-    expect(Number.isNaN(val(`export function f() { return parseFloat(true); }`))).toBe(true);
-    expect(Number.isNaN(val(`export function f() { return parseFloat(null); }`))).toBe(true);
-    expect(Number.isNaN(val(`export function f() { return parseFloat(undefined); }`))).toBe(true);
-    expect(val(`export function f() { return parseFloat(5n); }`)).toBe(5);
+    expect(Number.isNaN((val(`export function f() { return parseFloat(true); }`)).ok ? (val(`export function f() { return parseFloat(true); }`)).value : undefined)).toBe(true);
+    expect(Number.isNaN((val(`export function f() { return parseFloat(null); }`)).ok ? (val(`export function f() { return parseFloat(null); }`)).value : undefined)).toBe(true);
+    expect(Number.isNaN((val(`export function f() { return parseFloat(undefined); }`)).ok ? (val(`export function f() { return parseFloat(undefined); }`)).value : undefined)).toBe(true);
+    expect(val(`export function f() { return parseFloat(5n); }`)).toEqual({ ok: true, value: 5 });
   });
 
   it("string / number first args stay exact", () => {
-    expect(val(`export function f() { return parseInt('10'); }`)).toBe(10);
-    expect(val(`export function f() { return parseFloat('3.5'); }`)).toBe(3.5);
-    expect(val(`export function f() { return parseFloat(3.5); }`)).toBe(3.5);
-    expect(val(`export function f() { return Number.parseFloat(true); }`)).toBeNaN();
+    expect(val(`export function f() { return parseInt('10'); }`)).toEqual({ ok: true, value: 10 });
+    expect(val(`export function f() { return parseFloat('3.5'); }`)).toEqual({ ok: true, value: 3.5 });
+    expect(val(`export function f() { return parseFloat(3.5); }`)).toEqual({ ok: true, value: 3.5 });
+    expect(val(`export function f() { return Number.parseFloat(true); }`)).toEqual({ ok: true, value: NaN });
   });
 });

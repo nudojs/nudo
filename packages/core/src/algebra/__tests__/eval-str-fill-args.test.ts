@@ -19,7 +19,7 @@ function call(src: string, fnName = "f") {
 function concreteTuple(r: unknown): unknown[] | undefined {
   const a = r as { shape?: { k?: string; elements?: unknown[] } };
   if (!a || typeof a !== "object" || a.shape?.k !== "tuple" || !a.shape.elements) return undefined;
-  const els = a.shape.elements.map((e) => litValue(e as never));
+  const els = a.shape.elements.map((e) => { const r = litValue(e as never); return r.ok ? r.value : undefined; });
   if (els.some((e) => e === undefined)) return undefined;
   return els as unknown[];
 }
@@ -27,32 +27,32 @@ function concreteTuple(r: unknown): unknown[] | undefined {
 describe("evaluator string method abstract position args", () => {
   it("substring with symbol arg stays abstract (native THROW)", () => {
     const r = call(`export function f() { return "abc".substring(Symbol()); }`);
-    expect(litValue(r.result)).toBeUndefined();
+    expect(litValue(r.result)).toEqual({ ok: false });
   });
 
   it("substring second arg symbol stays abstract", () => {
     const r = call(`export function f() { return "abc".substring(1, Symbol()); }`);
-    expect(litValue(r.result)).toBeUndefined();
+    expect(litValue(r.result)).toEqual({ ok: false });
   });
 
   it("slice with symbol arg stays abstract", () => {
     const r = call(`export function f() { return "abc".slice(Symbol()); }`);
-    expect(litValue(r.result)).toBeUndefined();
+    expect(litValue(r.result)).toEqual({ ok: false });
     const r2 = call(`export function f() { return "abc".slice(0, Symbol()); }`);
-    expect(litValue(r2.result)).toBeUndefined();
+    expect(litValue(r2.result)).toEqual({ ok: false });
   });
 
   it("concat with symbol arg stays abstract (native THROW)", () => {
     const r = call(`export function f() { return "abc".concat(Symbol()); }`);
-    expect(litValue(r.result)).toBeUndefined();
+    expect(litValue(r.result)).toEqual({ ok: false });
     const r2 = call(`export function f() { return "abc".concat(Symbol("x")); }`);
-    expect(litValue(r2.result)).toBeUndefined();
+    expect(litValue(r2.result)).toEqual({ ok: false });
   });
 
   it("literal position args stay exact", () => {
-    expect(litValue(call(`export function f() { return "abc".slice(1); }`).result)).toBe("bc");
-    expect(litValue(call(`export function f() { return "abc".substring(1, 2); }`).result)).toBe("b");
-    expect(litValue(call(`export function f() { return "abc".concat("d"); }`).result)).toBe("abcd");
+    expect(litValue(call(`export function f() { return "abc".slice(1); }`).result)).toEqual({ ok: true, value: "bc" });
+    expect(litValue(call(`export function f() { return "abc".substring(1, 2); }`).result)).toEqual({ ok: true, value: "b" });
+    expect(litValue(call(`export function f() { return "abc".concat("d"); }`).result)).toEqual({ ok: true, value: "abcd" });
   });
 });
 

@@ -26,48 +26,48 @@ function val(src: string) {
 
 describe("String / Boolean fold undefined literal and missing args", () => {
   it("String(undefined) is 'undefined'; String() is ''", () => {
-    expect(val(`export function f() { return String(undefined); }`)).toBe("undefined");
-    expect(val(`export function f() { return String(); }`)).toBe("");
+    expect(val(`export function f() { return String(undefined); }`)).toEqual({ ok: true, value: "undefined" });
+    expect(val(`export function f() { return String(); }`)).toEqual({ ok: true, value: "" });
     // 已正确的同族对照
-    expect(val(`export function f() { return String(null); }`)).toBe("null");
-    expect(val(`export function f() { return String(true); }`)).toBe("true");
-    expect(val(`export function f() { return String(5n); }`)).toBe("5");
+    expect(val(`export function f() { return String(null); }`)).toEqual({ ok: true, value: "null" });
+    expect(val(`export function f() { return String(true); }`)).toEqual({ ok: true, value: "true" });
+    expect(val(`export function f() { return String(5n); }`)).toEqual({ ok: true, value: "5" });
   });
 
   it("Boolean(undefined) and Boolean() fold to false", () => {
-    expect(val(`export function f() { return Boolean(undefined); }`)).toBe(false);
-    expect(val(`export function f() { return Boolean(); }`)).toBe(false);
-    expect(val(`export function f() { return Boolean(0n); }`)).toBe(false);
-    expect(val(`export function f() { return Boolean(1n); }`)).toBe(true);
-    expect(val(`export function f() { return Boolean(null); }`)).toBe(false);
-    expect(val(`export function f() { return Boolean(0); }`)).toBe(false);
+    expect(val(`export function f() { return Boolean(undefined); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return Boolean(); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return Boolean(0n); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return Boolean(1n); }`)).toEqual({ ok: true, value: true });
+    expect(val(`export function f() { return Boolean(null); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return Boolean(0); }`)).toEqual({ ok: true, value: false });
   });
 });
 
 describe("Number folds ToNumber of all primitive literals", () => {
   it("Number(undefined) is NaN; Number() is 0", () => {
     const u = val(`export function f() { return Number(undefined); }`);
-    expect(typeof u).toBe("number");
-    expect(Number.isNaN(u)).toBe(true);
-    expect(val(`export function f() { return Number(); }`)).toBe(0);
+    expect(u.ok && typeof u.value).toBe("number");
+    expect(Number.isNaN((u).ok ? (u).value : undefined)).toBe(true);
+    expect(val(`export function f() { return Number(); }`)).toEqual({ ok: true, value: 0 });
   });
 
   it("Number(null) is 0; Number(5n) is 5", () => {
-    expect(val(`export function f() { return Number(null); }`)).toBe(0);
-    expect(val(`export function f() { return Number(5n); }`)).toBe(5);
+    expect(val(`export function f() { return Number(null); }`)).toEqual({ ok: true, value: 0 });
+    expect(val(`export function f() { return Number(5n); }`)).toEqual({ ok: true, value: 5 });
     // 已正确的同族对照
-    expect(val(`export function f() { return Number(true); }`)).toBe(1);
-    expect(val(`export function f() { return Number(''); }`)).toBe(0);
-    expect(val(`export function f() { return Number('42'); }`)).toBe(42);
+    expect(val(`export function f() { return Number(true); }`)).toEqual({ ok: true, value: 1 });
+    expect(val(`export function f() { return Number(''); }`)).toEqual({ ok: true, value: 0 });
+    expect(val(`export function f() { return Number('42'); }`)).toEqual({ ok: true, value: 42 });
   });
 });
 
 describe("isFinite folds explicit undefined literal", () => {
   it("isFinite(undefined) is false (same as isFinite())", () => {
-    expect(val(`export function f() { return isFinite(undefined); }`)).toBe(false);
-    expect(val(`export function f() { return isFinite(); }`)).toBe(false);
-    expect(val(`export function f() { return isFinite(1); }`)).toBe(true);
-    expect(val(`export function f() { return isFinite('x'); }`)).toBe(false);
-    expect(val(`export function f() { return isFinite(null); }`)).toBe(true);
+    expect(val(`export function f() { return isFinite(undefined); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return isFinite(); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return isFinite(1); }`)).toEqual({ ok: true, value: true });
+    expect(val(`export function f() { return isFinite('x'); }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return isFinite(null); }`)).toEqual({ ok: true, value: true });
   });
 });

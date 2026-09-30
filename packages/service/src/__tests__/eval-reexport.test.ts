@@ -45,7 +45,7 @@ describe("evaluator re-export / export *", () => {
 export function go(a, b) { return add(a, b); }
 `,
     );
-    expect(litValue(abs!)).toBe(5);
+    expect(litValue(abs!)).toEqual({ ok: true, value: 5 });
   });
 
   it("export { add as default } from './core.js'", () => {
@@ -64,7 +64,7 @@ export function go(a, b) { return add(a, b); }
 export function go(a, b) { return add(a, b); }
 `,
     );
-    expect(litValue(abs!)).toBe(10);
+    expect(litValue(abs!)).toEqual({ ok: true, value: 10 });
   });
 
   it("export * from './core.js'", () => {
@@ -84,7 +84,7 @@ export function mul(a, b) { return a * b; }
 export function go(a, b) { return mul(a, b); }
 `,
     );
-    expect(litValue(abs!)).toBe(15);
+    expect(litValue(abs!)).toEqual({ ok: true, value: 15 });
   });
 
   it("class default export", () => {
@@ -107,7 +107,7 @@ export function go(v) {
 }
 `,
     );
-    expect(litValue(abs!)).toBe(7);
+    expect(litValue(abs!)).toEqual({ ok: true, value: 7 });
   });
 
   it("async default export", () => {

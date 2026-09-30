@@ -39,7 +39,7 @@ describe("BUG-013 promise micro queue", () => {
       mode: "analyze",
     });
     const r = callTranspiledExportFull(runB, "f", []);
-    expect(litValue(r.result)).toBe(42);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 42 });
     expect(getPromiseMicrosLength()).toBe(0);
   });
 

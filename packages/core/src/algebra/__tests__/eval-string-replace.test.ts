@@ -28,34 +28,34 @@ function throwsTypeError(t: unknown): boolean {
 
 describe("evaluator string replace folding", () => {
   it("string patterns fold", () => {
-    expect(litValue(call(`export function f() { return 'abc'.replace('b', 'X'); }`).result)).toBe("aXc");
-    expect(litValue(call(`export function f() { return 'abc'.replace('z', 'X'); }`).result)).toBe("abc");
-    expect(litValue(call(`export function f() { return 'a-b-c'.replaceAll('-', '+'); }`).result)).toBe("a+b+c");
-    expect(litValue(call(`export function f() { return 'aaa'.replaceAll('a', 'b'); }`).result)).toBe("bbb");
+    expect(litValue(call(`export function f() { return 'abc'.replace('b', 'X'); }`).result)).toEqual({ ok: true, value: "aXc" });
+    expect(litValue(call(`export function f() { return 'abc'.replace('z', 'X'); }`).result)).toEqual({ ok: true, value: "abc" });
+    expect(litValue(call(`export function f() { return 'a-b-c'.replaceAll('-', '+'); }`).result)).toEqual({ ok: true, value: "a+b+c" });
+    expect(litValue(call(`export function f() { return 'aaa'.replaceAll('a', 'b'); }`).result)).toEqual({ ok: true, value: "bbb" });
   });
 
   it("regex patterns fold with $ substitution", () => {
-    expect(litValue(call(`export function f() { return 'abc'.replace(/b/, 'X'); }`).result)).toBe("aXc");
-    expect(litValue(call(`export function f() { return 'abc'.replace(/b/g, 'X'); }`).result)).toBe("aXc");
-    expect(litValue(call(`export function f() { return 'abc'.replace(/(b)(c)/, '$2$1'); }`).result)).toBe("acb");
-    expect(litValue(call(`export function f() { return 'xyz'.replace(/y/, '<$&>'); }`).result)).toBe("x<y>z");
+    expect(litValue(call(`export function f() { return 'abc'.replace(/b/, 'X'); }`).result)).toEqual({ ok: true, value: "aXc" });
+    expect(litValue(call(`export function f() { return 'abc'.replace(/b/g, 'X'); }`).result)).toEqual({ ok: true, value: "aXc" });
+    expect(litValue(call(`export function f() { return 'abc'.replace(/(b)(c)/, '$2$1'); }`).result)).toEqual({ ok: true, value: "acb" });
+    expect(litValue(call(`export function f() { return 'xyz'.replace(/y/, '<$&>'); }`).result)).toEqual({ ok: true, value: "x<y>z" });
     // 未匹配的 $n 保留字面（ES GetSubstitution：无对应捕获组不改写）
-    expect(litValue(call(`export function f() { return 'abc'.replace(/b/, '[$1]'); }`).result)).toBe("a[$1]c");
-    expect(litValue(call(`export function f() { return 'abc'.replace(/(b)/, '[$1][$2]'); }`).result)).toBe("a[b][$2]c");
+    expect(litValue(call(`export function f() { return 'abc'.replace(/b/, '[$1]'); }`).result)).toEqual({ ok: true, value: "a[$1]c" });
+    expect(litValue(call(`export function f() { return 'abc'.replace(/(b)/, '[$1][$2]'); }`).result)).toEqual({ ok: true, value: "a[b][$2]c" });
   });
 
   it("callback repl is invoked per match with (match, ...groups, offset, whole)", () => {
     expect(
       litValue(call(`export function f() { return 'abc'.replace('b', (m, i) => String(i)); }`).result),
-    ).toBe("a1c");
+    ).toEqual({ ok: true, value: "a1c" });
     expect(
       litValue(call(`export function f() { return 'a1b2'.replace(/\\d/g, (m, i) => m + '@' + i); }`).result),
-    ).toBe("a1@1b2@3");
+    ).toEqual({ ok: true, value: "a1@1b2@3" });
     expect(
       litValue(
         call(`export function f() { return 'ab'.replace(/(a)(b)/, (m, p1, p2, off, whole) => p1 + '|' + p2 + '|' + off + '|' + whole); }`).result,
       ),
-    ).toBe("a|b|0|ab");
+    ).toEqual({ ok: true, value: "a|b|0|ab" });
   });
 
   it("callback side effects run (no more fake zero count)", () => {
@@ -63,27 +63,27 @@ describe("evaluator string replace folding", () => {
       litValue(
         call(`export function f() { let n = 0; 'a1b2c3'.replace(/\\d/g, () => { n++; return 'X'; }); return n; }`).result,
       ),
-    ).toBe(3);
+    ).toEqual({ ok: true, value: 3 });
     expect(
       litValue(call(`export function f() { let n = 0; 'aaa'.replace('a', () => { n++; return 'X'; }); return n; }`).result),
-    ).toBe(1);
+    ).toEqual({ ok: true, value: 1 });
     expect(
       litValue(call(`export function f() { let n = 0; 'aaa'.replaceAll('a', () => { n++; return 'X'; }); return n; }`).result),
-    ).toBe(3);
+    ).toEqual({ ok: true, value: 3 });
   });
 
   it("callback return value is ToStringed", () => {
-    expect(litValue(call(`export function f() { return 'a1'.replace(/\\d/, () => 99); }`).result)).toBe("a99");
-    expect(litValue(call(`export function f() { return 'abc'.replace('b', () => null); }`).result)).toBe("anullc");
+    expect(litValue(call(`export function f() { return 'a1'.replace(/\\d/, () => 99); }`).result)).toEqual({ ok: true, value: "a99" });
+    expect(litValue(call(`export function f() { return 'abc'.replace('b', () => null); }`).result)).toEqual({ ok: true, value: "anullc" });
   });
 
   it("replaceAll with non-global regex throws TypeError", () => {
     expect(
       litValue(call(`export function f() { try { 'a-b'.replaceAll(/-/, (m) => m); } catch(e) { return 'caught'; } return 'missed'; }`).result),
-    ).toBe("caught");
+    ).toEqual({ ok: true, value: "caught" });
     expect(
       litValue(call(`export function f() { try { 'a-b'.replaceAll(/-/, 'X'); } catch(e) { return 'caught'; } return 'missed'; }`).result),
-    ).toBe("caught");
+    ).toEqual({ ok: true, value: "caught" });
     const r = call(`export function f() { return 'a-b'.replaceAll(/-/, 'X'); }`);
     expect(isNever(r.result)).toBe(true);
     expect(throwsTypeError(r.throws)).toBe(true);

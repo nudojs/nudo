@@ -41,12 +41,12 @@ function isExactUndefined(r: unknown): boolean {
 
 describe("JSON.parse __proto__ is an own data property", () => {
   it("keys and reads survive (no proto-pollution, no key loss)", () => {
-    expect(val(`export function f() { return Object.keys(JSON.parse('{"__proto__":1}')).length; }`)).toBe(1);
-    expect(val(`export function f() { const o=JSON.parse('{"__proto__":1}'); return o['__proto__']; }`)).toBe(1);
-    expect(val(`export function f() { const o=JSON.parse('{"a":1,"__proto__":2}'); return Object.keys(o).length; }`)).toBe(2);
-    expect(val(`export function f() { const o=JSON.parse('{"a":1,"__proto__":2}'); return o['__proto__']; }`)).toBe(2);
+    expect(val(`export function f() { return Object.keys(JSON.parse('{"__proto__":1}')).length; }`)).toEqual({ ok: true, value: 1 });
+    expect(val(`export function f() { const o=JSON.parse('{"__proto__":1}'); return o['__proto__']; }`)).toEqual({ ok: true, value: 1 });
+    expect(val(`export function f() { const o=JSON.parse('{"a":1,"__proto__":2}'); return Object.keys(o).length; }`)).toEqual({ ok: true, value: 2 });
+    expect(val(`export function f() { const o=JSON.parse('{"a":1,"__proto__":2}'); return o['__proto__']; }`)).toEqual({ ok: true, value: 2 });
     // 仍是自有数据属性，不污染原型
-    expect(val(`export function f() { const o = JSON.parse('{"__proto__":{"p":1}}'); return o.p === undefined && "toString" in o; }`)).toBe(true);
+    expect(val(`export function f() { const o = JSON.parse('{"__proto__":{"p":1}}'); return o.p === undefined && "toString" in o; }`)).toEqual({ ok: true, value: true });
   });
 });
 
@@ -60,25 +60,25 @@ describe("object literal non-computed __proto__ is the prototype special form", 
 
   it("'x' in o is true for inherited x", () => {
     const r = call(`export function f() { const o={__proto__:{x:1}}; return 'x' in o; }`);
-    expect(litValue(r.result)).not.toBe(false);
+    expect(litValue(r.result)).not.toEqual({ ok: true, value: false });
   });
 
   it("__proto__: null is null-proto (no Object.prototype toString)", () => {
     const r = call(`export function f() { const o={__proto__:null}; return o.toString; }`);
-    expect(litValue(r.result)).toBe(undefined);
+    expect(litValue(r.result)).toEqual({ ok: true, value: undefined });
     expect(
       val(`export function f() { const o={__proto__:null}; return 'toString' in o; }`),
-    ).toBe(false);
+    ).toEqual({ ok: true, value: false });
   });
 
   it("__proto__: primitive is ignored (no own key, no proto change)", () => {
     // 原生 Object.keys({__proto__:1}) === [] 且 o 仍是普通对象
-    expect(val(`export function f() { return Object.keys({__proto__:1}).length; }`)).toBe(0);
-    expect(val(`export function f() { const o={__proto__:1}; return 'toString' in o; }`)).toBe(true);
+    expect(val(`export function f() { return Object.keys({__proto__:1}).length; }`)).toEqual({ ok: true, value: 0 });
+    expect(val(`export function f() { const o={__proto__:1}; return 'toString' in o; }`)).toEqual({ ok: true, value: true });
   });
 
   it("other own keys still land alongside the proto special form", () => {
-    expect(val(`export function f() { const o={__proto__:{x:1}, y:2}; return o.y; }`)).toBe(2);
+    expect(val(`export function f() { const o={__proto__:{x:1}, y:2}; return o.y; }`)).toEqual({ ok: true, value: 2 });
   });
 });
 
@@ -86,19 +86,19 @@ describe("computed / assignment __proto__ keeps an own property on null-proto", 
   it("Object.create(null); o['__proto__']=1 stores an own key", () => {
     expect(
       val(`export function f() { const o=Object.create(null); o['__proto__']=1; return o['__proto__']; }`),
-    ).toBe(1);
+    ).toEqual({ ok: true, value: 1 });
     expect(
       val(`export function f() { const o=Object.create(null); o['__proto__']=1; return Object.keys(o).length; }`),
-    ).toBe(1);
+    ).toEqual({ ok: true, value: 1 });
   });
 
   it("object literal computed {['__proto__']: v} is an own property", () => {
     expect(
       val(`export function f() { const o={['__proto__']:1}; return o['__proto__']; }`),
-    ).toBe(1);
+    ).toEqual({ ok: true, value: 1 });
     expect(
       val(`export function f() { return Object.keys({['__proto__']:1}).length; }`),
-    ).toBe(1);
+    ).toEqual({ ok: true, value: 1 });
   });
 });
 
@@ -119,16 +119,16 @@ describe("method named __proto__ is an own data property", () => {
   it("{ __proto__() {} } keeps an own key (MethodDefinition is not the special form)", () => {
     expect(
       val(`export function f() { return Object.keys({ __proto__() { return 1; } }).length; }`),
-    ).toBe(1);
+    ).toEqual({ ok: true, value: 1 });
     expect(
       val(`export function f() { const o={ __proto__() { return 1; } }; return typeof o['__proto__']; }`),
-    ).toBe("function");
+    ).toEqual({ ok: true, value: "function" });
   });
 
   it("{ get __proto__() {} } keeps an own accessor key", () => {
     expect(
       val(`export function f() { return Object.keys({ get __proto__() { return 1; } }).length; }`),
-    ).toBe(1);
+    ).toEqual({ ok: true, value: 1 });
   });
 });
 
@@ -136,16 +136,16 @@ describe("spread / assign copies a __proto__ own key without hitting the setter"
   it("{...JSON.parse('{\"__proto__\":1}')} keeps the key", () => {
     expect(
       val(`export function f() { return Object.keys({ ...JSON.parse('{"__proto__":1}') }).length; }`),
-    ).toBe(1);
+    ).toEqual({ ok: true, value: 1 });
     expect(
       val(`export function f() { const o={ ...JSON.parse('{"__proto__":1}') }; return o['__proto__']; }`),
-    ).toBe(1);
+    ).toEqual({ ok: true, value: 1 });
   });
 
   it("Object.assign({}, JSON.parse('{\"__proto__\":1}')) keeps the key", () => {
     expect(
       val(`export function f() { return Object.keys(Object.assign({}, JSON.parse('{"__proto__":1}'))).length; }`),
-    ).toBe(1);
+    ).toEqual({ ok: true, value: 1 });
   });
 });
 

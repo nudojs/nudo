@@ -25,7 +25,7 @@ export function go() {
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
     const r = callTranspiledExportFull(exports, "go", []);
-    expect(litValue(r.result)).toBe(10);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 10 });
   });
 
   it("super() runs parent ctor", () => {
@@ -47,7 +47,7 @@ export function go() {
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
     const r = callTranspiledExportFull(exports, "go", []);
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 
   it("super.method() calls parent implementation", () => {
@@ -65,7 +65,7 @@ export function go() {
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
     const r = callTranspiledExportFull(exports, "go", []);
-    expect(litValue(r.result)).toBe("base+child");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "base+child" });
   });
 });
 
@@ -80,7 +80,7 @@ export function go() {
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
     const r = callTranspiledExportFull(exports, "go", []);
-    expect(litValue(r.result)).toBe(100);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 100 });
   });
 
   it("object present value wins over default", () => {
@@ -93,7 +93,7 @@ export function go() {
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
     const r = callTranspiledExportFull(exports, "go", []);
-    expect(litValue(r.result)).toBe(5);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 5 });
   });
 
   it("array default fills out-of-range", () => {
@@ -106,6 +106,6 @@ export function go() {
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
     const r = callTranspiledExportFull(exports, "go", []);
-    expect(litValue(r.result)).toBe(8);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 8 });
   });
 });

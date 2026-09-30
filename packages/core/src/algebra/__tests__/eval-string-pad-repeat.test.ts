@@ -26,42 +26,42 @@ function throwsError(t: unknown, name: string): boolean {
 
 describe("evaluator string repeat folding", () => {
   it("folds integer repeat", () => {
-    expect(litValue(call(`export function f() { return 'a'.repeat(3); }`).result)).toBe("aaa");
-    expect(litValue(call(`export function f() { return 'ab'.repeat(2); }`).result)).toBe("abab");
-    expect(litValue(call(`export function f() { return 'a'.repeat(0); }`).result)).toBe("");
+    expect(litValue(call(`export function f() { return 'a'.repeat(3); }`).result)).toEqual({ ok: true, value: "aaa" });
+    expect(litValue(call(`export function f() { return 'ab'.repeat(2); }`).result)).toEqual({ ok: true, value: "abab" });
+    expect(litValue(call(`export function f() { return 'a'.repeat(0); }`).result)).toEqual({ ok: true, value: "" });
   });
 
   it("truncates fractional count via ToIntegerOrInfinity", () => {
-    expect(litValue(call(`export function f() { return 'a'.repeat(2.5); }`).result)).toBe("aa");
-    expect(litValue(call(`export function f() { return 'a'.repeat('2'); }`).result)).toBe("aa");
-    expect(litValue(call(`export function f() { return 'a'.repeat(NaN); }`).result)).toBe("");
+    expect(litValue(call(`export function f() { return 'a'.repeat(2.5); }`).result)).toEqual({ ok: true, value: "aa" });
+    expect(litValue(call(`export function f() { return 'a'.repeat('2'); }`).result)).toEqual({ ok: true, value: "aa" });
+    expect(litValue(call(`export function f() { return 'a'.repeat(NaN); }`).result)).toEqual({ ok: true, value: "" });
   });
 });
 
 describe("evaluator string padStart/padEnd folding", () => {
   it("pads with explicit fill", () => {
-    expect(litValue(call(`export function f() { return 'abc'.padStart(5, 'x'); }`).result)).toBe("xxabc");
-    expect(litValue(call(`export function f() { return 'abc'.padStart(7, 'xy'); }`).result)).toBe("xyxyabc");
-    expect(litValue(call(`export function f() { return 'ab'.padEnd(4, 'x'); }`).result)).toBe("abxx");
+    expect(litValue(call(`export function f() { return 'abc'.padStart(5, 'x'); }`).result)).toEqual({ ok: true, value: "xxabc" });
+    expect(litValue(call(`export function f() { return 'abc'.padStart(7, 'xy'); }`).result)).toEqual({ ok: true, value: "xyxyabc" });
+    expect(litValue(call(`export function f() { return 'ab'.padEnd(4, 'x'); }`).result)).toEqual({ ok: true, value: "abxx" });
   });
 
   it("no-op when target <= length", () => {
-    expect(litValue(call(`export function f() { return 'abc'.padStart(2, 'x'); }`).result)).toBe("abc");
-    expect(litValue(call(`export function f() { return 'abc'.padStart(-1, 'x'); }`).result)).toBe("abc");
-    expect(litValue(call(`export function f() { return 'abc'.padEnd(3, 'x'); }`).result)).toBe("abc");
+    expect(litValue(call(`export function f() { return 'abc'.padStart(2, 'x'); }`).result)).toEqual({ ok: true, value: "abc" });
+    expect(litValue(call(`export function f() { return 'abc'.padStart(-1, 'x'); }`).result)).toEqual({ ok: true, value: "abc" });
+    expect(litValue(call(`export function f() { return 'abc'.padEnd(3, 'x'); }`).result)).toEqual({ ok: true, value: "abc" });
   });
 
   it("defaults and coercions", () => {
-    expect(litValue(call(`export function f() { return 'abc'.padStart(5); }`).result)).toBe("  abc");
-    expect(litValue(call(`export function f() { return 'abc'.padStart('5', 'x'); }`).result)).toBe("xxabc");
-    expect(litValue(call(`export function f() { return 'a'.padStart(3, 'xyz'); }`).result)).toBe("xya");
+    expect(litValue(call(`export function f() { return 'abc'.padStart(5); }`).result)).toEqual({ ok: true, value: "  abc" });
+    expect(litValue(call(`export function f() { return 'abc'.padStart('5', 'x'); }`).result)).toEqual({ ok: true, value: "xxabc" });
+    expect(litValue(call(`export function f() { return 'a'.padStart(3, 'xyz'); }`).result)).toEqual({ ok: true, value: "xya" });
   });
 
   it("abstract args stay abstract", () => {
     const r = call(`export function f(x) { return x.repeat(3); }`);
-    expect(litValue(r.result)).toBeUndefined();
+    expect(litValue(r.result)).toEqual({ ok: false });
     const r2 = call(`export function f(s, n) { return s.padStart(n, 'x'); }`);
-    expect(litValue(r2.result)).toBeUndefined();
+    expect(litValue(r2.result)).toEqual({ ok: false });
   });
 });
 
@@ -78,7 +78,7 @@ describe("evaluator string repeat/pad invalid args throw", () => {
   });
 
   it("repeat -0.5 truncates to 0 (empty string)", () => {
-    expect(litValue(call(`export function f() { return 'a'.repeat(-0.5); }`).result)).toBe("");
+    expect(litValue(call(`export function f() { return 'a'.repeat(-0.5); }`).result)).toEqual({ ok: true, value: "" });
   });
 
   it("caught by try/catch", () => {
@@ -86,16 +86,16 @@ describe("evaluator string repeat/pad invalid args throw", () => {
       `export function f() { try { 'a'.repeat(-1); } catch(e) { return 'caught'; } return 'missed'; }`,
       `export function f() { try { 'ab'.repeat(Infinity); } catch(e) { return 'caught'; } return 'missed'; }`,
     ]) {
-      expect(litValue(call(src).result), src).toBe("caught");
+      expect(litValue(call(src).result), src).toEqual({ ok: true, value: "caught" });
     }
   });
 
   it("symbol args stay abstract on no-catch path", () => {
     // Symbol() 未建模为 symbol 字面量——保守非具体（不假精确、不硬抛）
     const r = call(`export function f() { return 'a'.repeat(Symbol()); }`);
-    expect(litValue(r.result)).toBeUndefined();
+    expect(litValue(r.result)).toEqual({ ok: false });
     const r2 = call(`export function f() { return 'a'.padStart(Symbol()); }`);
-    expect(litValue(r2.result)).toBeUndefined();
+    expect(litValue(r2.result)).toEqual({ ok: false });
   });
 });
 

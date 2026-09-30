@@ -81,7 +81,7 @@ describe("BUG-013 nested call budget session", () => {
     });
 
     const r = callTranspiledExportFull(runA, "g", [numLit(7)]);
-    expect(litValue(r.result)).toBe(7);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 7 });
     expect(midState).not.toBeNull();
     expect(midState!.sessionDepth).toBeGreaterThanOrEqual(1);
     expect(midState!.depth).toBeGreaterThanOrEqual(1);
@@ -153,7 +153,7 @@ describe("BUG-013 nested call budget session", () => {
     // 再跑深递归——必须仍能按 MAX_EVAL_CALL_DEPTH 截断。
     const { runA } = setupCrossModule({ src: `export function f(n) { return n; }` });
     const ok = callTranspiledExportFull(runA, "g", [numLit(3)]);
-    expect(litValue(ok.result)).toBe(3);
+    expect(litValue(ok.result)).toEqual({ ok: true, value: 3 });
     expect(getEvalCallBudgetState().depth).toBe(0);
 
     const deep = runTranspiled(
@@ -170,7 +170,7 @@ describe("BUG-013 nested call budget session", () => {
     const src = `export function down(n) { if (n <= 0) { return 0; } return down(n - 1); }`;
     const run = runTranspiled(src, { mode: "analyze" });
     const a = callTranspiledExportFull(run, "down", [numLit(10)]);
-    expect(litValue(a.result)).toBe(0);
+    expect(litValue(a.result)).toEqual({ ok: true, value: 0 });
     expect(getEvalCallBudgetState()).toMatchObject({
       depth: 0,
       activeKeys: 0,
@@ -178,7 +178,7 @@ describe("BUG-013 nested call budget session", () => {
     });
 
     const b = callTranspiledExportFull(run, "down", [numLit(10)]);
-    expect(litValue(b.result)).toBe(0);
+    expect(litValue(b.result)).toEqual({ ok: true, value: 0 });
     expect(getEvalCallBudgetState()).toMatchObject({
       depth: 0,
       activeKeys: 0,

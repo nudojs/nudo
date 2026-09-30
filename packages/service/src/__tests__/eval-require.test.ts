@@ -39,7 +39,7 @@ export function go(n) {
     expect(isEvalCapable(main)).toBe(true);
     const r = tryEvalCall(main, p, "go", [$lit(21)]);
     expect(r).toBeDefined();
-    expect(litValue(r!)).toBe(42);
+    expect(litValue(r!)).toEqual({ ok: true, value: 42 });
   });
 
   it("analyzeFile case works with require", () => {
@@ -84,7 +84,7 @@ export function go(n) {
     writeFileSync(p, main, "utf-8");
     const r = tryEvalCall(main, p, "go", [$lit(21)]);
     expect(r).toBeDefined();
-    expect(litValue(r!)).toBe(42);
+    expect(litValue(r!)).toEqual({ ok: true, value: 42 });
   });
 
   it("dynamic require degrades to unknown without crashing", () => {
@@ -136,9 +136,9 @@ export function go2(n) {
     writeFileSync(p, main, "utf-8");
     const r = tryEvalCall(main, p, "go", [$lit(0)]);
     expect(r).toBeDefined();
-    expect(litValue(r!)).toBe("from-b");
+    expect(litValue(r!)).toEqual({ ok: true, value: "from-b" });
     const r2 = tryEvalCall(main, p, "go2", [$lit(0)]);
     expect(r2).toBeDefined();
-    expect(litValue(r2!)).toBe("from-a");
+    expect(litValue(r2!)).toEqual({ ok: true, value: "from-a" });
   });
 });

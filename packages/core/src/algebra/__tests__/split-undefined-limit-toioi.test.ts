@@ -18,28 +18,28 @@ function json(src: string) {
 
 describe("split(undefined, limit) uses ToUint32", () => {
   it("limit 0.5 → ToUint32 0 → []", () => {
-    expect(json(`"abc".split(undefined, 0.5)`)).toBe("[]");
-    expect(json(`"abc".split(undefined, 0.9)`)).toBe("[]");
+    expect(json(`"abc".split(undefined, 0.5)`)).toEqual({ ok: true, value: "[]" });
+    expect(json(`"abc".split(undefined, 0.9)`)).toEqual({ ok: true, value: "[]" });
   });
 
   it("limit -1 / -1.5 → ToUint32 2^32-1 → [\"abc\"]", () => {
-    expect(json(`"abc".split(undefined, -1)`)).toBe('["abc"]');
-    expect(json(`"abc".split(undefined, -1.5)`)).toBe('["abc"]');
+    expect(json(`"abc".split(undefined, -1)`)).toEqual({ ok: true, value: '["abc"]' });
+    expect(json(`"abc".split(undefined, -1.5)`)).toEqual({ ok: true, value: '["abc"]' });
   });
 
   it("limit -0.5 → ToUint32 0 → [] (truncate(-0.5)=0)", () => {
-    expect(json(`"abc".split(undefined, -0.5)`)).toBe("[]");
-    expect(json(`"abc".split(undefined, -0)`)).toBe("[]");
+    expect(json(`"abc".split(undefined, -0.5)`)).toEqual({ ok: true, value: "[]" });
+    expect(json(`"abc".split(undefined, -0)`)).toEqual({ ok: true, value: "[]" });
   });
 
   it("limit Infinity / -Infinity → ToUint32 0 → []", () => {
-    expect(json(`"abc".split(undefined, Infinity)`)).toBe("[]");
-    expect(json(`"abc".split(undefined, -Infinity)`)).toBe("[]");
+    expect(json(`"abc".split(undefined, Infinity)`)).toEqual({ ok: true, value: "[]" });
+    expect(json(`"abc".split(undefined, -Infinity)`)).toEqual({ ok: true, value: "[]" });
   });
 
   it("integer limits 0/1/2 unchanged", () => {
-    expect(json(`"abc".split(undefined, 0)`)).toBe("[]");
-    expect(json(`"abc".split(undefined, 1)`)).toBe('["abc"]');
-    expect(json(`"abc".split(undefined, 2)`)).toBe('["abc"]');
+    expect(json(`"abc".split(undefined, 0)`)).toEqual({ ok: true, value: "[]" });
+    expect(json(`"abc".split(undefined, 1)`)).toEqual({ ok: true, value: '["abc"]' });
+    expect(json(`"abc".split(undefined, 2)`)).toEqual({ ok: true, value: '["abc"]' });
   });
 });

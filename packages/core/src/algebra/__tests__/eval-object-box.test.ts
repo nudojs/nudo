@@ -17,39 +17,39 @@ function call(src: string, fnName = "f") {
 
 describe("evaluator Object() boxing", () => {
   it("Object(number) is a boxed object", () => {
-    expect(litValue(call(`export function f() { return typeof Object(5); }`).result)).toBe("object");
+    expect(litValue(call(`export function f() { return typeof Object(5); }`).result)).toEqual({ ok: true, value: "object" });
   });
 
   it("Object(null) / Object(undefined) / Object() are plain objects", () => {
-    expect(litValue(call(`export function f() { return typeof Object(null); }`).result)).toBe("object");
-    expect(litValue(call(`export function f() { return typeof Object(undefined); }`).result)).toBe("object");
-    expect(litValue(call(`export function f() { return typeof Object(); }`).result)).toBe("object");
+    expect(litValue(call(`export function f() { return typeof Object(null); }`).result)).toEqual({ ok: true, value: "object" });
+    expect(litValue(call(`export function f() { return typeof Object(undefined); }`).result)).toEqual({ ok: true, value: "object" });
+    expect(litValue(call(`export function f() { return typeof Object(); }`).result)).toEqual({ ok: true, value: "object" });
   });
 
   it("Object(string) keeps string-wrapper reads", () => {
-    expect(litValue(call(`export function f() { return typeof Object('s'); }`).result)).toBe("object");
-    expect(litValue(call(`export function f() { return Object('ab').length; }`).result)).toBe(2);
-    expect(litValue(call(`export function f() { return Object('ab')[0]; }`).result)).toBe("a");
+    expect(litValue(call(`export function f() { return typeof Object('s'); }`).result)).toEqual({ ok: true, value: "object" });
+    expect(litValue(call(`export function f() { return Object('ab').length; }`).result)).toEqual({ ok: true, value: 2 });
+    expect(litValue(call(`export function f() { return Object('ab')[0]; }`).result)).toEqual({ ok: true, value: "a" });
   });
 
   it("Object(boolean) is a boxed object", () => {
-    expect(litValue(call(`export function f() { return typeof Object(true); }`).result)).toBe("object");
-    expect(litValue(call(`export function f() { return typeof Object(false); }`).result)).toBe("object");
+    expect(litValue(call(`export function f() { return typeof Object(true); }`).result)).toEqual({ ok: true, value: "object" });
+    expect(litValue(call(`export function f() { return typeof Object(false); }`).result)).toEqual({ ok: true, value: "object" });
   });
 
   it("nested Object() boxing stays object", () => {
-    expect(litValue(call(`export function f() { return typeof Object(Object(5)); }`).result)).toBe("object");
+    expect(litValue(call(`export function f() { return typeof Object(Object(5)); }`).result)).toEqual({ ok: true, value: "object" });
   });
 
   it("Object on object shapes is identity (ToObject)", () => {
-    expect(litValue(call(`export function f() { return typeof Object([]); }`).result)).toBe("object");
-    expect(litValue(call(`export function f() { return Object({a: 1}).a; }`).result)).toBe(1);
-    expect(litValue(call(`export function f() { return typeof Object({a: 1}); }`).result)).toBe("object");
+    expect(litValue(call(`export function f() { return typeof Object([]); }`).result)).toEqual({ ok: true, value: "object" });
+    expect(litValue(call(`export function f() { return Object({a: 1}).a; }`).result)).toEqual({ ok: true, value: 1 });
+    expect(litValue(call(`export function f() { return typeof Object({a: 1}); }`).result)).toEqual({ ok: true, value: "object" });
   });
 
   it("new Object(prim) stays object-shaped", () => {
-    expect(litValue(call(`export function f() { return typeof new Object(5); }`).result)).toBe("object");
-    expect(litValue(call(`export function f() { return typeof new Object(); }`).result)).toBe("object");
+    expect(litValue(call(`export function f() { return typeof new Object(5); }`).result)).toEqual({ ok: true, value: "object" });
+    expect(litValue(call(`export function f() { return typeof new Object(); }`).result)).toEqual({ ok: true, value: "object" });
   });
 });
 
@@ -57,22 +57,22 @@ describe("evaluator new String() wrapper slots", () => {
   // $new 通用 branch 折空 slots 包装——new String('ab')['0'] / .length
   // 折 undefined（原生 'a' / 2），Object.assign({}, boxed) 折 {}。
   it("new String(string) keeps length and index slots", () => {
-    expect(litValue(call(`export function f() { return new String('ab').length; }`).result)).toBe(2);
-    expect(litValue(call(`export function f() { return new String('ab')['0']; }`).result)).toBe("a");
-    expect(litValue(call(`export function f() { return new String('ab')['1']; }`).result)).toBe("b");
-    expect(litValue(call(`export function f() { return new String('ab')['2']; }`).result)).toBe(undefined);
-    expect(litValue(call(`export function f() { return typeof new String('ab'); }`).result)).toBe("object");
+    expect(litValue(call(`export function f() { return new String('ab').length; }`).result)).toEqual({ ok: true, value: 2 });
+    expect(litValue(call(`export function f() { return new String('ab')['0']; }`).result)).toEqual({ ok: true, value: "a" });
+    expect(litValue(call(`export function f() { return new String('ab')['1']; }`).result)).toEqual({ ok: true, value: "b" });
+    expect(litValue(call(`export function f() { return new String('ab')['2']; }`).result)).toEqual({ ok: true, value: undefined });
+    expect(litValue(call(`export function f() { return typeof new String('ab'); }`).result)).toEqual({ ok: true, value: "object" });
   });
 
   it("new String(string) is an assignable wrapper source", () => {
-    expect(litValue(call(`export function f() { return Object.assign({}, new String('ab'))['0']; }`).result)).toBe("a");
+    expect(litValue(call(`export function f() { return Object.assign({}, new String('ab'))['0']; }`).result)).toEqual({ ok: true, value: "a" });
     expect(
       litValue(call(`export function f() { return Object.keys(Object.assign({}, new String('ab'))).length; }`).result),
-    ).toBe(2);
+    ).toEqual({ ok: true, value: 2 });
   });
 
   it("non-literal arg stays conservative", () => {
     const r = call(`export function f(s) { return new String(s).length; }`);
-    expect(litValue(r.result)).toBeUndefined();
+    expect(litValue(r.result)).toEqual({ ok: false });
   });
 });

@@ -128,8 +128,8 @@ describe("C: helpers fail-closed on undefined / host values", () => {
   });
 
   it("litValue on undefined returns undefined (no host TypeError)", () => {
-    expect(litValue(undefined as never)).toBeUndefined();
-    expect(litValue(null as never)).toBeUndefined();
+    expect(litValue(undefined as never)).toEqual({ ok: false });
+    expect(litValue(null as never)).toEqual({ ok: false });
   });
 
   it("globalThis.__x = … does not corrupt host globalThis", () => {

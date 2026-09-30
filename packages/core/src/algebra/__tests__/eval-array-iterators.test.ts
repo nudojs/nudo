@@ -20,13 +20,18 @@ function call(src: string, fnName = "f") {
 function tupleLits(r: unknown): unknown[] | undefined {
   const a = r as { shape?: { k?: string; elements?: unknown[] } };
   if (a?.shape?.k !== "tuple" || !a.shape.elements) return undefined;
-  const els = a.shape.elements.map((e) => {
-    const lv = litValue(e as never);
-    if (lv !== undefined) return lv;
-    return tupleLits(e); // 嵌套 entry 元组
-  });
-  if (els.some((e) => e === undefined)) return undefined;
-  return els as unknown[];
+  const els: unknown[] = [];
+  for (const e of a.shape.elements) {
+    const lr = litValue(e as never);
+    if (lr.ok) {
+      els.push(lr.value); // 含 lit(undefined)
+      continue;
+    }
+    const nested = tupleLits(e); // 嵌套 entry 元组
+    if (nested === undefined) return undefined;
+    els.push(nested);
+  }
+  return els;
 }
 
 describe("evaluator array keys/values/entries", () => {
@@ -44,13 +49,13 @@ describe("evaluator array keys/values/entries", () => {
   });
 
   it("values() yields undefined at holes (Get semantics)", () => {
-    expect(litValue(call(`export function f() { return [...[1,,3].values()].length; }`).result)).toBe(3);
+    expect(litValue(call(`export function f() { return [...[1,,3].values()].length; }`).result)).toEqual({ ok: true, value: 3 });
     expect(
       litValue(call(`export function f() { let c = 0; for (const v of [1,,3].values()) { c++; } return c; }`).result),
-    ).toBe(3);
+    ).toEqual({ ok: true, value: 3 });
     expect(
       litValue(call(`export function f() { return [...[1,,3].values()][1] === undefined; }`).result),
-    ).toBe(true);
+    ).toEqual({ ok: true, value: true });
   });
 
   it("entries() yields numeric [index, value] pairs", () => {
@@ -64,13 +69,13 @@ describe("evaluator array keys/values/entries", () => {
   it("entries() does not skip holes (value is undefined)", () => {
     expect(
       litValue(call(`export function f() { return [...[1,,3].entries()][1][0]; }`).result),
-    ).toBe(1);
+    ).toEqual({ ok: true, value: 1 });
     expect(
       litValue(call(`export function f() { return [...[1,,3].entries()][1][1] === undefined; }`).result),
-    ).toBe(true);
+    ).toEqual({ ok: true, value: true });
     expect(
       litValue(call(`export function f() { return [...new Array(3).entries()].length; }`).result),
-    ).toBe(3);
+    ).toEqual({ ok: true, value: 3 });
   });
 
   it("for-of over keys() accumulates exactly", () => {

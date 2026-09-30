@@ -62,7 +62,7 @@ describe("B fallback observation (unsupported at transpile time)", () => {
       const r = callTranspiledExportFull(result!, "f", []);
       expect(formatAbs(r.result), src).toContain("promise");
       // 不假精确 undefined / 字面量
-      expect(litValue(r.result), src).toBeUndefined();
+      expect(litValue(r.result), src).toEqual({ ok: false });
     }
     {
       const src = `export function f() { return import.meta.url; }`;
@@ -71,7 +71,7 @@ describe("B fallback observation (unsupported at transpile time)", () => {
       expect(fallbacks, src).toEqual([]);
       const r = callTranspiledExportFull(result!, "f", []);
       expect(formatAbs(r.result), src).toContain("string");
-      expect(litValue(r.result), src).toBeUndefined();
+      expect(litValue(r.result), src).toEqual({ ok: false });
     }
   });
 

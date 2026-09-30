@@ -114,7 +114,8 @@ export function absToTSType(a: Abs, typeVars?: Map<string, string>): string {
     const parts = templatePartsOf(a);
     const inner = parts
       .map((p) => {
-        const lv = litValue(p);
+        const lvR = litValue(p);
+        const lv = lvR.ok ? lvR.value : undefined;
         // 固定段是嵌入语言：`\` `` ` `` `$` 必须转义，否则 `${` 变成类型插值
         if (typeof lv === "string") return escapeTemplateTypeFixed(lv);
         return `\${${absToTSType(p, typeVars)}}`;

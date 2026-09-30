@@ -11,24 +11,24 @@ describe("parseCaseArgExpr", () => {
   });
 
   it("parses numeric literals", () => {
-    expect(litValue(parseCaseArgExpr("42"))).toBe(42);
-    expect(litValue(parseCaseArgExpr("-3"))).toBe(-3);
-    expect(litValue(parseCaseArgExpr("1.5"))).toBe(1.5);
+    expect(litValue(parseCaseArgExpr("42"))).toEqual({ ok: true, value: 42 });
+    expect(litValue(parseCaseArgExpr("-3"))).toEqual({ ok: true, value: -3 });
+    expect(litValue(parseCaseArgExpr("1.5"))).toEqual({ ok: true, value: 1.5 });
   });
 
   it("parses string literals", () => {
-    expect(litValue(parseCaseArgExpr('"hello"'))).toBe("hello");
-    expect(litValue(parseCaseArgExpr("'world'"))).toBe("world");
+    expect(litValue(parseCaseArgExpr('"hello"'))).toEqual({ ok: true, value: "hello" });
+    expect(litValue(parseCaseArgExpr("'world'"))).toEqual({ ok: true, value: "world" });
   });
 
   it("parses boolean literals", () => {
-    expect(litValue(parseCaseArgExpr("true"))).toBe(true);
-    expect(litValue(parseCaseArgExpr("false"))).toBe(false);
+    expect(litValue(parseCaseArgExpr("true"))).toEqual({ ok: true, value: true });
+    expect(litValue(parseCaseArgExpr("false"))).toEqual({ ok: true, value: false });
   });
 
   it("parses null and undefined", () => {
-    expect(litValue(parseCaseArgExpr("null"))).toBe(null);
-    expect(litValue(parseCaseArgExpr("undefined"))).toBe(undefined);
+    expect(litValue(parseCaseArgExpr("null"))).toEqual({ ok: true, value: null });
+    expect(litValue(parseCaseArgExpr("undefined"))).toEqual({ ok: true, value: undefined });
   });
 
   it("parses bare unknown / any / never", () => {
@@ -39,8 +39,8 @@ describe("parseCaseArgExpr", () => {
   });
 
   it("parses lit(...)", () => {
-    expect(litValue(parseCaseArgExpr("lit(42)"))).toBe(42);
-    expect(litValue(parseCaseArgExpr('lit("hi")'))).toBe("hi");
+    expect(litValue(parseCaseArgExpr("lit(42)"))).toEqual({ ok: true, value: 42 });
+    expect(litValue(parseCaseArgExpr('lit("hi")'))).toEqual({ ok: true, value: "hi" });
   });
 
   it("parses union(...)", () => {
@@ -80,7 +80,7 @@ describe("parseCaseArgExpr", () => {
 
   it("does not treat strings containing => as functions", () => {
     const result = parseCaseArgExpr('"a => b"');
-    expect(litValue(result)).toBe("a => b");
+    expect(litValue(result)).toEqual({ ok: true, value: "a => b" });
     expect(result.shape.k).toBe("prim");
     if (result.shape.k === "prim") {
       expect(result.shape.type).toBe("string");
@@ -114,8 +114,8 @@ function calc(a, b) {
     if (d0.kind !== "case") throw new Error("expected case directive");
     expect(d0.name).toBe("concrete");
     expect(d0.argsAbs).toHaveLength(2);
-    expect(litValue(d0.argsAbs[0]!)).toBe(1);
-    expect(litValue(d0.argsAbs[1]!)).toBe(2);
+    expect(litValue(d0.argsAbs[0]!)).toEqual({ ok: true, value: 1 });
+    expect(litValue(d0.argsAbs[1]!)).toEqual({ ok: true, value: 2 });
 
     const d1 = results[0].directives[1];
     expect(d1.kind).toBe("case");
@@ -171,8 +171,8 @@ function greet(a, b) { return a + b; }
     const d = results[0].directives[0];
     if (d.kind !== "case") throw new Error("expected case directive");
     expect(d.argsAbs).toHaveLength(2);
-    expect(litValue(d.argsAbs[0]!)).toBe("hello");
-    expect(litValue(d.argsAbs[1]!)).toBe("world");
+    expect(litValue(d.argsAbs[0]!)).toEqual({ ok: true, value: "hello" });
+    expect(litValue(d.argsAbs[1]!)).toEqual({ ok: true, value: "world" });
   });
 
   it("extracts arrow function literal as case argument", () => {
@@ -233,8 +233,8 @@ function f(x) { return x; }
 `);
     expect(cases).toHaveLength(1);
     expect(cases[0]!.expected).toBeDefined();
-    expect(litValue(cases[0]!.expected!)).toBe(2);
-    expect(litValue(cases[0]!.argsAbs[0]!)).toBe(1);
+    expect(litValue(cases[0]!.expected!)).toEqual({ ok: true, value: 2 });
+    expect(litValue(cases[0]!.argsAbs[0]!)).toEqual({ ok: true, value: 1 });
   });
 
   it("single-line => expected still works (control)", () => {
@@ -246,7 +246,7 @@ function f(x) { return x; }
 `);
     expect(cases).toHaveLength(1);
     expect(cases[0]!.expected).toBeDefined();
-    expect(litValue(cases[0]!.expected!)).toBe(2);
+    expect(litValue(cases[0]!.expected!)).toEqual({ ok: true, value: 2 });
   });
 
   it("multi-line args + expected on a later line", () => {
@@ -262,10 +262,10 @@ function f(a, b) { return a + b; }
 `);
     expect(cases).toHaveLength(1);
     expect(cases[0]!.argsAbs).toHaveLength(2);
-    expect(litValue(cases[0]!.argsAbs[0]!)).toBe(1);
-    expect(litValue(cases[0]!.argsAbs[1]!)).toBe(2);
+    expect(litValue(cases[0]!.argsAbs[0]!)).toEqual({ ok: true, value: 1 });
+    expect(litValue(cases[0]!.argsAbs[1]!)).toEqual({ ok: true, value: 2 });
     expect(cases[0]!.expected).toBeDefined();
-    expect(litValue(cases[0]!.expected!)).toBe(3);
+    expect(litValue(cases[0]!.expected!)).toEqual({ ok: true, value: 3 });
   });
 
   it("does not swallow the next @nudo:case directive", () => {
@@ -279,9 +279,9 @@ function f(x) { return x; }
 `);
     expect(cases).toHaveLength(2);
     expect(cases[0]!.name).toBe("t");
-    expect(litValue(cases[0]!.expected!)).toBe(2);
+    expect(litValue(cases[0]!.expected!)).toEqual({ ok: true, value: 2 });
     expect(cases[1]!.name).toBe("u");
-    expect(litValue(cases[1]!.expected!)).toBe(4);
+    expect(litValue(cases[1]!.expected!)).toEqual({ ok: true, value: 4 });
   });
 
   it("same-line non-arrow content keeps no expected (old behavior)", () => {
@@ -305,7 +305,7 @@ function f(x) { return x; }
 function f(x) { return x; }
 `);
     expect(cases).toHaveLength(1);
-    expect(litValue(cases[0]!.expected!)).toBe(2);
+    expect(litValue(cases[0]!.expected!)).toEqual({ ok: true, value: 2 });
   });
 
   it("next-line !! throws without => does not invent an expected", () => {

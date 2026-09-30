@@ -51,10 +51,10 @@ export function run(n) { return double(n); }
     const { modules } = evalAbsModuleGraph(mainSrc, join(dir, "main.js"));
     expect(modules["./math.js"]).toBeDefined();
     expect(modules["./math.js"]!.named.double).toBeDefined();
-    expect(litValue(modules["./math.js"]!.named.answer!)).toBe(42);
+    expect(litValue(modules["./math.js"]!.named.answer!)).toEqual({ ok: true, value: 42 });
 
     const r = analyzeExportWithModules(mainSrc, "run", [numLit(21)], modules);
-    expect(litValue(r)).toBe(42);
+    expect(litValue(r)).toEqual({ ok: true, value: 42 });
   });
 
   it("chained relative imports resolve", () => {
@@ -74,7 +74,7 @@ export function go(x) { return twice(x); }
 `;
     const { modules } = evalAbsModuleGraph(mainSrc, join(dir, "main.js"));
     const result = analyzeExportWithModules(mainSrc, "go", [numLit(0)], modules);
-    expect(litValue(result)).toBe(2);
+    expect(litValue(result)).toEqual({ ok: true, value: 2 });
   });
 
   it("default export flows through the graph (evaluator bridge)", () => {
@@ -91,7 +91,7 @@ export function go(x) { return inc(inc(x)); }
     const { modules } = evalAbsModuleGraph(mainSrc, join(dir, "main.js"));
     expect(modules["./inc.js"]!.default).toBeDefined();
     const result = analyzeExportWithModules(mainSrc, "go", [numLit(0)], modules);
-    expect(litValue(result)).toBe(2);
+    expect(litValue(result)).toEqual({ ok: true, value: 2 });
   });
 
   it("barrel re-exports (export * + default re-export) resolve", () => {
@@ -115,7 +115,7 @@ export function go(x) { return inc(dec(x)); }
     expect(modules["./barrel.js"]!.default).toBeDefined();
     const result = analyzeExportWithModules(mainSrc, "go", [numLit(5)], modules);
     // dec(5)=4, inc(4)=5
-    expect(litValue(result)).toBe(5);
+    expect(litValue(result)).toEqual({ ok: true, value: 5 });
   });
 
   it("cycle does not hang and backfills in-cycle bindings (BUG-005)", () => {
@@ -173,7 +173,7 @@ export function go(x) { return ns.inc(x); }
     expect(slots.k).toBeDefined();
 
     const result = analyzeExportWithModules(mainSrc, "go", [numLit(10)], modules);
-    expect(litValue(result)).toBe(11);
+    expect(litValue(result)).toEqual({ ok: true, value: 11 });
   });
 
   it("import * as ns missing member does not false-throw TypeError (BUG-004)", () => {

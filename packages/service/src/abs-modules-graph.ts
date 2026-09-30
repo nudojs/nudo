@@ -263,7 +263,7 @@ function isAbsVal(v: unknown): v is Abs {
 
 /** null 值的 Abs 表示（export default null 等；与 undefAbs 同口径） */
 function nullAbs(): Abs {
-  return abs({ k: "unknown" }, { op: "lit", value: null as never }, undefined, "exact");
+  return abs({ k: "unknown" }, { op: "lit", value: null }, undefined, "exact");
 }
 
 type ParamNodeLike = {

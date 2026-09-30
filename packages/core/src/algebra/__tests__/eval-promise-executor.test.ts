@@ -46,7 +46,7 @@ describe("new Promise executor resolve", () => {
   it("resolve('a') → promise with string inner", () => {
     const r = call(`export function f() { return new Promise((r) => { r("a"); }); }`);
     const inner = promiseInner(r.result);
-    expect(litValue(inner as never)).toBe("a");
+    expect(litValue(inner as never)).toEqual({ ok: true, value: "a" });
   });
 
   it("resolve(value) from parameter stays typed", () => {
@@ -63,7 +63,7 @@ describe("new Promise executor resolve", () => {
     // 无 fork：first-wins → "a"；若实现退化为 join 也可，但不得只剩 "b"
     const lv = litValue(inner as never);
     if (lv !== undefined) {
-      expect(lv).toBe("a");
+      expect(lv).toEqual({ ok: true, value: "a" });
     } else {
       // join 拓宽：shape 至少是 string
       expect(innerShape(inner)).toBe("prim");
@@ -79,10 +79,10 @@ describe("new Promise executor resolve", () => {
     const inner = promiseInner(r.result);
     // 抽象条件两臂都跑：inner 须覆盖 1 与 2（sum(1|2) 或拓宽 number），
     // 不得只剩 1，也不得掉成 unknown
-    const lv = litValue(inner as never);
-    if (lv !== undefined) {
+    const lvR = litValue(inner as never);
+    if (lvR.ok) {
       // 只可能在条件被折死时出现；符号条件不应折叠
-      expect([1, 2]).toContain(lv);
+      expect([1, 2]).toContain(lvR.value);
     } else {
       expect(["prim", "sum"]).toContain(innerShape(inner));
     }
@@ -91,7 +91,7 @@ describe("new Promise executor resolve", () => {
   it("arrow expression body resolve", () => {
     const r = call(`export function f() { return new Promise((r) => r(7)); }`);
     const inner = promiseInner(r.result);
-    expect(litValue(inner as never) === 7 || innerShape(inner) === "prim").toBe(true);
+    expect((((litValue(inner as never)).ok ? (litValue(inner as never)).value : undefined).ok ? ((litValue(inner as never)).ok ? (litValue(inner as never)).value : undefined).value : undefined) === 7 || innerShape(inner) === "prim").toBe(true);
   });
 });
 
@@ -109,7 +109,7 @@ describe("new Promise reject / never settle", () => {
     const inner = promiseInner(r.result);
     expect(isUnknownInner(inner)).toBe(true);
     const t = call(`export function f() { return typeof new Promise(() => {}); }`);
-    expect(litValue(t.result)).toBe("object");
+    expect(litValue(t.result)).toEqual({ ok: true, value: "object" });
   });
 
   it("executor that throws keeps unknown inner", () => {
@@ -133,13 +133,13 @@ describe("Promise.resolve aligned with new Promise", () => {
   it("Promise.resolve(42) has number inner", () => {
     const r = call(`export function f() { return Promise.resolve(42); }`);
     const inner = promiseInner(r.result);
-    expect(litValue(inner as never)).toBe(42);
+    expect(litValue(inner as never)).toEqual({ ok: true, value: 42 });
   });
 
   it("new Promise(r => r(42)) matches Promise.resolve(42) inner", () => {
     const a = promiseInner(call(`export function f() { return new Promise((r) => r(42)); }`).result);
     const b = promiseInner(call(`export function f() { return Promise.resolve(42); }`).result);
-    expect(litValue(a as never)).toBe(litValue(b as never));
+    expect(litValue(a as never)).toEqual(litValue(b as never));
   });
 });
 
@@ -147,19 +147,19 @@ describe("promise .then mapping", () => {
   it("Promise.resolve(1).then(() => 5) → promise number/5", () => {
     const r = call(`export function f() { return Promise.resolve(1).then(() => 5); }`);
     const inner = promiseInner(r.result);
-    expect(litValue(inner as never) === 5 || innerShape(inner) === "prim").toBe(true);
+    expect(((litValue(inner as never)).ok ? (litValue(inner as never)).value : undefined) === 5 || innerShape(inner) === "prim").toBe(true);
   });
 
   it("then maps inner through callback param", () => {
     const r = call(`export function f() { return Promise.resolve(2).then((v) => v * 10); }`);
     const inner = promiseInner(r.result);
-    expect(litValue(inner as never) === 20 || innerShape(inner) === "prim").toBe(true);
+    expect(((litValue(inner as never)).ok ? (litValue(inner as never)).value : undefined) === 20 || innerShape(inner) === "prim").toBe(true);
   });
 
   it("then without callback passes inner through", () => {
     const r = call(`export function f() { return Promise.resolve(3).then(); }`);
     const inner = promiseInner(r.result);
-    expect(litValue(inner as never)).toBe(3);
+    expect(litValue(inner as never)).toEqual({ ok: true, value: 3 });
   });
 
   it("uncallable then target widens honestly", () => {
@@ -174,22 +174,22 @@ describe("promise .then mapping", () => {
 describe("promise .constructor (shared with prim constructor channel)", () => {
   it("Promise.resolve(42).constructor === Promise / .name", () => {
     const eq = call(`export function f() { return Promise.resolve(42).constructor === Promise; }`);
-    expect(litValue(eq.result)).toBe(true);
+    expect(litValue(eq.result)).toEqual({ ok: true, value: true });
     const name = call(`export function f() { return Promise.resolve(1).constructor.name; }`);
-    expect(litValue(name.result)).toBe("Promise");
+    expect(litValue(name.result)).toEqual({ ok: true, value: "Promise" });
   });
 
   it("then result .constructor.name is Promise", () => {
     const name = call(
       `export function f() { return Promise.resolve().then(() => 5).constructor.name; }`,
     );
-    expect(litValue(name.result)).toBe("Promise");
+    expect(litValue(name.result)).toEqual({ ok: true, value: "Promise" });
   });
 
   it("new Promise result .constructor === Promise", () => {
     const eq = call(
       `export function f() { return new Promise((r) => r(1)).constructor === Promise; }`,
     );
-    expect(litValue(eq.result)).toBe(true);
+    expect(litValue(eq.result)).toEqual({ ok: true, value: true });
   });
 });

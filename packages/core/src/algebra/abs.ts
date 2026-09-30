@@ -127,7 +127,7 @@ export function boolLit(value: boolean): Abs {
 export function bigintLit(value: bigint): Abs {
   return {
     shape: { k: "prim", type: "bigint" },
-    term: lit(value as never),
+    term: lit(value),
     pred: pTrue,
     conf: "exact",
   };
@@ -244,8 +244,16 @@ export function isExactLit(a: Abs): boolean {
   return a.conf === "exact" && a.term?.op === "lit";
 }
 
-export function litValue(a: Abs): LiteralValue | undefined {
+/**
+ * tagged result：把「无字面量」与「字面量 undefined」分开。
+ * 判定是否是字面量必须看 `ok`，禁止用 `value !== undefined` / `(litValue(...).ok ? litValue(...).value : undefined) !== undefined`。
+ */
+export type LitValueResult =
+  | { ok: true; value: LiteralValue }
+  | { ok: false };
+
+export function litValue(a: Abs): LitValueResult {
   // DEC-006 B/C：绑定层可能漏出 JS undefined（缺参/spread 未展开）——
-  // fail-closed 折 undefined，禁止宿主 TypeError 冒进 internal
-  return a?.term?.op === "lit" ? a.term.value : undefined;
+  // fail-closed 视为无字面量，禁止宿主 TypeError 冒进 internal
+  return a?.term?.op === "lit" ? { ok: true, value: a.term.value } : { ok: false };
 }

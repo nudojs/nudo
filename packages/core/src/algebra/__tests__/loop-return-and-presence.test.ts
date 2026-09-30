@@ -49,7 +49,7 @@ export function pick() {
 }
 `;
     const r = call(src, "pick");
-    expect(litValue(r.result)).toBe(1);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 1 });
   });
 
   it("for-of early return is the function result", () => {
@@ -63,7 +63,7 @@ export function findFirst(arr) {
 `;
     const arr = $arr([$lit(1), $lit(2), $lit(4), $lit(5)]);
     const r = callWith(src, "findFirst", [arr]);
-    expect(litValue(r.result)).toBe(4);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 4 });
   });
 
   it("nested callback return inside loop is NOT the outer function result", () => {
@@ -97,7 +97,7 @@ export function untilThree() {
 }
 `;
     const r = call(src, "untilThree");
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 });
 
@@ -140,9 +140,9 @@ describe("C1.3 missing-key presence includes undefined", () => {
     const missKey = strLit("zzz");
     const g = mapGetEntry(m, missKey);
     const h = mapHasEntry(m, missKey);
-    expect(litValue(g)).toBeUndefined();
+    expect(litValue(g)).toEqual({ ok: true, value: undefined });
     expect(formatAbs(g)).toContain("undefined");
-    expect(litValue(h)).toBe(false);
+    expect(litValue(h)).toEqual({ ok: true, value: false });
   });
 
   it("Map.get program-level: unknown key cannot look exact-number", () => {

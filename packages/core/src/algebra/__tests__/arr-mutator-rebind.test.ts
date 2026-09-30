@@ -85,7 +85,7 @@ export function f() {
 `,
       "f",
     );
-    expect(litValue(r.result)).toBe(1);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 1 });
   });
 
   it("a.push still appends to receiver container", () => {
@@ -99,7 +99,7 @@ export function f() {
 `,
       "f",
     );
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 
   it("expression-position pop returns last element value", () => {
@@ -113,7 +113,7 @@ export function f() {
 `,
       "f",
     );
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 
   it("expression-position pop also rebinds container (P1)", () => {
@@ -144,7 +144,7 @@ export function f() {
 `,
       "f",
     );
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 
   it("return-position pop rebinds container after taking value (P1)", () => {
@@ -157,7 +157,7 @@ export function f() {
 `,
       "f",
     );
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 });
 
@@ -180,7 +180,7 @@ export function f(xs) {
       $arr([$lit(1), $lit(3)]),
     );
     // concrete [1,3]: early-return 3 must win; must NOT become catch brand/-99/-1 only
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 });
 

@@ -14,33 +14,33 @@ function call(src: string, fnName = "f") {
 describe("evaluator expression-body arrow side effects", () => {
   it("postfix update writes back", () => {
     const r = call(`export function f() { let n = 5; const g = () => n++; g(); return n; }`);
-    expect(litValue(r.result)).toBe(6);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 6 });
     const r2 = call(`export function f() { let n = 5; const g = () => n++; g(); g(); return n; }`);
-    expect(litValue(r2.result)).toBe(7);
+    expect(litValue(r2.result)).toEqual({ ok: true, value: 7 });
   });
 
   it("prefix update writes back", () => {
     const r = call(`export function f() { let n = 5; const g = () => ++n; g(); return n; }`);
-    expect(litValue(r.result)).toBe(6);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 6 });
   });
 
   it("array mutator in expression body writes back", () => {
     const r = call(`export function f() { const a = [1]; const g = () => a.push(2); g(); return a.length; }`);
-    expect(litValue(r.result)).toBe(2);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
   });
 
   it("member postfix update writes back", () => {
     const r = call(`export function f() { const o = { n: 1 }; const g = () => o.n++; g(); return o.n; }`);
-    expect(litValue(r.result)).toBe(2);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
   });
 
   it("regression: block body still works", () => {
     const r = call(`export function f() { let n = 5; const g = () => { n++; }; g(); return n; }`);
-    expect(litValue(r.result)).toBe(6);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 6 });
   });
 
   it("regression: pure expression body unaffected", () => {
     const r = call(`export function f() { const g = (x) => x + 1; return g(1); }`);
-    expect(litValue(r.result)).toBe(2);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
   });
 });

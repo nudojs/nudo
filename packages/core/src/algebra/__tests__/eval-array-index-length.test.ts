@@ -51,14 +51,14 @@ describe("evaluator invalid array length assignment throws RangeError", () => {
     const r = call(
       `export function f() { let a=[1,2,3]; try { a.length=-1; } catch(e) { return 'caught'; } return 'missed'; }`,
     );
-    expect(litValue(r.result)).toBe("caught");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "caught" });
   });
 
   it("valid small length keeps precise truncate/extend", () => {
-    expect(litValue(call(`export function f() { let a=[1,2,3]; a.length=5; return a.length; }`).result)).toBe(5);
-    expect(litValue(call(`export function f() { let a=[1,2,3]; a.length=5; return a[4]; }`).result)).toBe(undefined);
-    expect(litValue(call(`export function f() { let a=[1,2,3]; a.length=5; return 3 in a; }`).result)).toBe(false);
-    expect(litValue(call(`export function f() { let a=[1,2,3]; a.length=1; return a.length; }`).result)).toBe(1);
+    expect(litValue(call(`export function f() { let a=[1,2,3]; a.length=5; return a.length; }`).result)).toEqual({ ok: true, value: 5 });
+    expect(litValue(call(`export function f() { let a=[1,2,3]; a.length=5; return a[4]; }`).result)).toEqual({ ok: true, value: undefined });
+    expect(litValue(call(`export function f() { let a=[1,2,3]; a.length=5; return 3 in a; }`).result)).toEqual({ ok: true, value: false });
+    expect(litValue(call(`export function f() { let a=[1,2,3]; a.length=1; return a.length; }`).result)).toEqual({ ok: true, value: 1 });
   });
 });
 
@@ -67,43 +67,43 @@ describe("evaluator huge array index/length assignment stays bounded", () => {
     // 5000 > cap：原生 length 5001 但分析不物化——完成且不假精确
     const r = call(`export function f() { let a=[1,2,3]; a[5000]=1; return a.length; }`);
     expect(isNever(r.result)).toBe(false);
-    expect(isConcrete(litValue(r.result))).toBe(false);
+    expect(isConcrete(litValue(r.result).ok ? litValue(r.result).value : undefined)).toBe(false);
   });
 
   it("small index write stays precise", () => {
-    expect(litValue(call(`export function f() { let a=[]; a[10]=7; return a[10]; }`).result)).toBe(7);
-    expect(litValue(call(`export function f() { let a=[]; a[10]=7; return a.length; }`).result)).toBe(11);
-    expect(litValue(call(`export function f() { let a=[]; a[10]=7; return 5 in a; }`).result)).toBe(false);
-    expect(litValue(call(`export function f() { let a=[]; a[10]=7; return 10 in a; }`).result)).toBe(true);
+    expect(litValue(call(`export function f() { let a=[]; a[10]=7; return a[10]; }`).result)).toEqual({ ok: true, value: 7 });
+    expect(litValue(call(`export function f() { let a=[]; a[10]=7; return a.length; }`).result)).toEqual({ ok: true, value: 11 });
+    expect(litValue(call(`export function f() { let a=[]; a[10]=7; return 5 in a; }`).result)).toEqual({ ok: true, value: false });
+    expect(litValue(call(`export function f() { let a=[]; a[10]=7; return 10 in a; }`).result)).toEqual({ ok: true, value: true });
   });
 
   it("length assignment beyond cap degrades (no giant tuple)", () => {
     const r = call(`export function f() { let a=[1,2,3]; a.length=5000; return a.length; }`);
     expect(isNever(r.result)).toBe(false);
-    expect(isConcrete(litValue(r.result))).toBe(false);
+    expect(isConcrete(litValue(r.result).ok ? litValue(r.result).value : undefined)).toBe(false);
   });
 
   it("length assignment at native max (2^32-1) stays bounded", () => {
     const r = call(`export function f() { let a=[1,2,3]; a.length=4294967295; return a.length; }`);
     expect(isNever(r.result)).toBe(false);
-    expect(isConcrete(litValue(r.result))).toBe(false);
+    expect(isConcrete(litValue(r.result).ok ? litValue(r.result).value : undefined)).toBe(false);
   });
 
   it("index write at native boundary (2^32-1) is expando, length unchanged but conservative", () => {
     const r = call(`export function f() { let a=[1,2,3]; a[4294967295]=1; return a.length; }`);
     expect(isNever(r.result)).toBe(false);
     // expando 写已降 arr：长度不得假精确折 3，也不得假精确折 4294967296
-    expect(isConcrete(litValue(r.result))).toBe(false);
+    expect(isConcrete(litValue(r.result).ok ? litValue(r.result).value : undefined)).toBe(false);
   });
 
   it("huge valid index write (2^32-2) completes without blowup", () => {
     const r = call(`export function f() { let a=[1,2,3]; a[4294967294]=1; return a.length; }`);
     expect(isNever(r.result)).toBe(false);
-    expect(isConcrete(litValue(r.result))).toBe(false);
+    expect(isConcrete(litValue(r.result).ok ? litValue(r.result).value : undefined)).toBe(false);
   });
 
   it("huge index reads on plain tuples stay exact undefined", () => {
-    expect(litValue(call(`export function f() { let a=[1,2,3]; return a[4294967295]; }`).result)).toBe(undefined);
+    expect(litValue(call(`export function f() { let a=[1,2,3]; return a[4294967295]; }`).result)).toEqual({ ok: true, value: undefined });
   });
 });
 

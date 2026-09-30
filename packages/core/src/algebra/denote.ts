@@ -7,6 +7,7 @@
 
 import type { Abs, Shape } from "./abs.ts";
 import type { Pred } from "./pred.ts";
+import type { LiteralValue } from "./term.ts";
 import { safeMemberAccess } from "./codegen-escape.ts";
 
 /** Abs 上的运行时守卫表达式（JS boolean 布尔串） */
@@ -161,9 +162,10 @@ function predAsJs(p: Pred, v: string, a: Abs): string {
 }
 
 /** 字面量 → JS 表达式串。NaN/±Infinity 经 JSON.stringify 会得 "null"，须专处理。 */
-function jsLit(v: number | string | boolean | null | undefined): string {
+function jsLit(v: LiteralValue): string {
   if (v === undefined) return "undefined";
   if (v === null) return "null";
+  if (typeof v === "bigint") return `${v}n`;
   if (typeof v === "number") {
     if (Number.isNaN(v)) return "NaN";
     if (v === Infinity) return "Infinity";
@@ -174,13 +176,13 @@ function jsLit(v: number | string | boolean | null | undefined): string {
 }
 
 /** 等值守卫：NaN 必须走 Number.isNaN（NaN === NaN 为 false），不能 === 比较 */
-function eqGuard(v: string, lv: number | string | boolean | null | undefined): string {
+function eqGuard(v: string, lv: LiteralValue): string {
   if (typeof lv === "number" && Number.isNaN(lv)) return `Number.isNaN(${v})`;
   return `${v} === ${jsLit(lv)}`;
 }
 
 /** 比较操作数：NaN 在 ===/!== 上同样不能用 ===，其余交给 jsLit 渲染 */
-function cmpOp(v: string, op: string, lit: number | string | boolean | null | undefined): string {
+function cmpOp(v: string, op: string, lit: LiteralValue): string {
   if (typeof lit === "number" && Number.isNaN(lit)) {
     if (op === "===") return `Number.isNaN(${v})`;
     if (op === "!==") return `!Number.isNaN(${v})`;
@@ -189,7 +191,7 @@ function cmpOp(v: string, op: string, lit: number | string | boolean | null | un
 }
 
 /** 反向比较：lit op v（关系算子不对称，须保持字面量在左） */
-function cmpLitValue(lit: number | string | boolean | null | undefined, op: string, v: string): string {
+function cmpLitValue(lit: LiteralValue, op: string, v: string): string {
   if (typeof lit === "number" && Number.isNaN(lit)) {
     if (op === "===") return `Number.isNaN(${v})`;
     if (op === "!==") return `!Number.isNaN(${v})`;

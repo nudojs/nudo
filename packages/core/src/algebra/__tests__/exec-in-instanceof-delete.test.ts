@@ -48,7 +48,7 @@ describe("evaluator `in` operator", () => {
       `export function run(o) { return ('a' in o) * 10 + ('c' in o); }`,
       "run",
     );
-    expect(litValue(run($obj({ a: $lit(1), b: $lit(2) })))).toBe(10); // true*10 + false
+    expect(litValue(run($obj({ a: $lit(1), b: $lit(2) })))).toEqual({ ok: true, value: 10 }); // true*10 + false
   });
 
   it("prototype names count (toString in {})", async () => {
@@ -56,7 +56,7 @@ describe("evaluator `in` operator", () => {
       `export function run(o) { return 'toString' in o; }`,
       "run",
     );
-    expect(litValue(run($obj({ a: $lit(1) })))).toBe(true);
+    expect(litValue(run($obj({ a: $lit(1) })))).toEqual({ ok: true, value: true });
   });
 
   it("array index + length", async () => {
@@ -66,7 +66,7 @@ describe("evaluator `in` operator", () => {
 }`,
       "run",
     );
-    expect(litValue(run($arr([$lit(5), $lit(6)])))).toBe(4 + 0 + 1);
+    expect(litValue(run($arr([$lit(5), $lit(6)])))).toEqual({ ok: true, value: 4 + 0 + 1 });
   });
 
   it("abstract key stays boolean, never exact undefined", async () => {
@@ -76,7 +76,7 @@ describe("evaluator `in` operator", () => {
     );
     const r = run($obj({ a: $lit(1) }), str());
     expect(formatShape(r)).toBe("boolean");
-    expect(litValue(r)).toBeUndefined();
+    expect(litValue(r)).toEqual({ ok: false });
   });
 });
 
@@ -86,7 +86,7 @@ describe("evaluator `instanceof` operator", () => {
       `export function run(a) { return (a instanceof Array) * 2 + (a instanceof Date); }`,
       "run",
     );
-    expect(litValue(run($arr([$lit(1)])))).toBe(2);
+    expect(litValue(run($arr([$lit(1)])))).toEqual({ ok: true, value: 2 });
   });
 
   it("builtin brand: Date true, Object true, Array false", async () => {
@@ -97,7 +97,7 @@ describe("evaluator `instanceof` operator", () => {
 }`,
       "run",
     );
-    expect(litValue(run())).toBe(6);
+    expect(litValue(run())).toEqual({ ok: true, value: 6 });
   });
 
   it("user class extends chain", async () => {
@@ -110,7 +110,7 @@ describe("evaluator `instanceof` operator", () => {
 }`,
       "run",
     );
-    expect(litValue(run())).toBe(7);
+    expect(litValue(run())).toEqual({ ok: true, value: 7 });
   });
 
   it("plain object: Object true, Array false", async () => {
@@ -118,7 +118,7 @@ describe("evaluator `instanceof` operator", () => {
       `export function run(o) { return (o instanceof Object) * 2 + (o instanceof Array); }`,
       "run",
     );
-    expect(litValue(run($obj({ a: $lit(1) })))).toBe(2);
+    expect(litValue(run($obj({ a: $lit(1) })))).toEqual({ ok: true, value: 2 });
   });
 
   it("primitives are never instanceof (no boxing)", async () => {
@@ -126,7 +126,7 @@ describe("evaluator `instanceof` operator", () => {
       `export function run(a) { return a instanceof Number; }`,
       "run",
     );
-    expect(litValue(run($lit(5)))).toBe(false);
+    expect(litValue(run($lit(5)))).toEqual({ ok: true, value: false });
   });
 
   it("error subclass: RangeError is Error, not TypeError", async () => {
@@ -138,7 +138,7 @@ describe("evaluator `instanceof` operator", () => {
 }`,
       "run",
     );
-    expect(litValue(run())).toBe(6);
+    expect(litValue(run())).toEqual({ ok: true, value: 6 });
   });
 
   it("abstract left stays boolean, never exact undefined", async () => {
@@ -148,7 +148,7 @@ describe("evaluator `instanceof` operator", () => {
     );
     const r = run(unknown);
     expect(formatShape(r)).toBe("boolean");
-    expect(litValue(r)).toBeUndefined();
+    expect(litValue(r)).toEqual({ ok: false });
   });
 });
 
@@ -161,7 +161,7 @@ describe("evaluator `delete` operator", () => {
 }`,
       "run",
     );
-    expect(litValue(run($obj({ a: $lit(1), b: $lit(2) })))).toBe(10); // true, then absent
+    expect(litValue(run($obj({ a: $lit(1), b: $lit(2) })))).toEqual({ ok: true, value: 10 }); // true, then absent
   });
 
   it("delete on missing slot still returns true", async () => {
@@ -169,7 +169,7 @@ describe("evaluator `delete` operator", () => {
       `export function run(o) { return delete o.zz; }`,
       "run",
     );
-    expect(litValue(run($obj({ a: $lit(1) })))).toBe(true);
+    expect(litValue(run($obj({ a: $lit(1) })))).toEqual({ ok: true, value: true });
   });
 
   it("delete on array index leaves hole-read as undefined", async () => {
@@ -180,7 +180,7 @@ describe("evaluator `delete` operator", () => {
 }`,
       "run",
     );
-    expect(litValue(run($arr([$lit(1), $lit(2)])))).toBe(undefined);
+    expect(litValue(run($arr([$lit(1), $lit(2)])))).toEqual({ ok: true, value: undefined });
   });
 
   it("delete on abstract object stays boolean, never exact undefined", async () => {

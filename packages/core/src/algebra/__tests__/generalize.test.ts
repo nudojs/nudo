@@ -49,7 +49,7 @@ describe("generalize", () => {
     const g = generalizeFromAst("scale", SRC);
     if (!g) return;
     const r = g.instantiate([numLit(5)]);
-    expect(litValue(r)).toBe(6);
+    expect(litValue(r)).toEqual({ ok: true, value: 6 });
     expect(r.conf).toBe("exact");
   });
 

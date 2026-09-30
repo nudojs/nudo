@@ -266,7 +266,8 @@ function assertScalar(
 
   // int 位
   if (isIntFlag(constraint) && constraint.prim === "number") {
-    const lv = litValue(ret);
+    const lvR = litValue(ret);
+    const lv = lvR.ok ? lvR.value : undefined;
     if (typeof lv === "number" && !Number.isInteger(lv)) {
       return disproved(`return ${lv} ⊭ int`);
     }
@@ -390,7 +391,8 @@ function primOfAbs(
   a: Abs,
 ): "number" | "string" | "boolean" | "bigint" | "symbol" | undefined {
   if (a.shape.k === "prim") return a.shape.type;
-  const lv = litValue(a);
+  const lvR = litValue(a);
+  const lv = lvR.ok ? lvR.value : undefined;
   if (typeof lv === "number") return "number";
   if (typeof lv === "string") return "string";
   if (typeof lv === "boolean") return "boolean";

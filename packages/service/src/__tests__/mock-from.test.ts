@@ -236,7 +236,7 @@ function readPort() {
     const mocks = mockSeedsToAbsMocks(seeds);
     expect(mocks.getPort).toBeDefined();
     expect(mocks.double).toBeDefined();
-    expect(litValue(mocks.getPort as never)).toBeUndefined(); // fn mock, not a bare lit
+    expect(litValue(mocks.getPort as never)).toEqual({ ok: false }); // fn mock, not a bare lit
     expect((mocks.getPort as { shape: { k: string } }).shape.k).toBe("fn");
     expect((mocks.double as { shape: { k: string } }).shape.k).toBe("fn");
   });

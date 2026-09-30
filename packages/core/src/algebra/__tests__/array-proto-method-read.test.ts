@@ -19,7 +19,7 @@ describe("array proto method reads do not hijack $invoke", () => {
       { shape: { k: "tuple", elements: [{ shape: { k: "prim", type: "number" }, conf: "exact" } as never] }, conf: "exact" },
       { shape: { k: "tuple", elements: [{ shape: { k: "prim", type: "number" }, conf: "exact" } as never] }, conf: "exact" },
     ]);
-    expect(litValue(r.result)).toBeUndefined();
+    expect(litValue(r.result)).toEqual({ ok: false });
     expect(r.result.conf).not.toBe("exact");
   });
 
@@ -27,7 +27,7 @@ describe("array proto method reads do not hijack $invoke", () => {
     const r = call(`export function f(arr) { return arr.sort(); }`, [
       { shape: { k: "arr", element: { shape: { k: "prim", type: "number" }, conf: "path" } as never }, conf: "path" },
     ]);
-    expect(litValue(r.result)).toBeUndefined();
+    expect(litValue(r.result)).toEqual({ ok: false });
     expect(formatShape(r.result)).not.toBe("undefined");
     expect(formatShape(r.result)).not.toBe("never");
   });
@@ -44,7 +44,7 @@ describe("array proto method reads do not hijack $invoke", () => {
         conf: "exact",
       },
     ]);
-    expect(litValue(r.result)).toBeUndefined();
+    expect(litValue(r.result)).toEqual({ ok: false });
     expect(formatShape(r.result)).not.toBe("never");
   });
 
@@ -52,6 +52,6 @@ describe("array proto method reads do not hijack $invoke", () => {
     const r = call(`export function f(a) { return typeof a.push; }`, [
       { shape: { k: "tuple", elements: [] }, conf: "exact" },
     ]);
-    expect(litValue(r.result)).toBe("function");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "function" });
   });
 });

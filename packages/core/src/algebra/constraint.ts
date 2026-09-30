@@ -283,7 +283,7 @@ function toPlainConstraint(c: NudoConstraint): NudoConstraint {
 }
 
 /** litC(v)：字面量契约——prim 按 v 类型、eq(self, v) pred 编码（不开新字段） */
-export function litC(v: number | string | boolean | null | undefined): ConstraintBuilder {
+export function litC(v: import("./term.ts").LiteralValue): ConstraintBuilder {
   const prim: PrimName | undefined =
     typeof v === "number" ? "number"
     : typeof v === "string" ? "string"

@@ -58,7 +58,8 @@ export function tryMakeRegexAbs(args: Abs[]): Abs | undefined {
   if (typeof pv === "symbol") throw new NudoThrow(errorTypeAbs("TypeError"));
   const fAbs = args[1];
   if (fAbs && fAbs.term?.op !== "lit") return undefined; // 抽象 flags：保守
-  const fv = fAbs ? litValue(fAbs) : undefined;
+  const fvR = fAbs ? litValue(fAbs) : undefined;
+  const fv = fvR?.ok ? fvR.value : undefined;
   if (typeof fv === "symbol") throw new NudoThrow(errorTypeAbs("TypeError"));
   const flags = fv === undefined ? "" : String(fv);
   try {
@@ -78,9 +79,12 @@ export function evalRegExpMethod(name: string, recv: Abs, args: Abs[]): Abs | un
         ? recv.shape.shape
         : undefined;
     const slots = inner && inner.shape.k === "obj" ? inner.shape.slots : undefined;
-    const pat = slots ? litValue(slots["source"]?.value) : undefined;
-    const flagsV = slots ? litValue(slots["flags"]?.value) : undefined;
-    const subject = args[0] ? litValue(args[0]) : undefined;
+    const patR = slots ? litValue(slots["source"]?.value) : undefined;
+    const pat = patR?.ok ? patR.value : undefined;
+    const flagsVR = slots ? litValue(slots["flags"]?.value) : undefined;
+    const flagsV = flagsVR?.ok ? flagsVR.value : undefined;
+    const subjectR = args[0] ? litValue(args[0]) : undefined;
+    const subject = subjectR?.ok ? subjectR.value : undefined;
     if (typeof pat === "string" && typeof subject === "string") {
       try {
         const re = new RegExp(pat, typeof flagsV === "string" ? flagsV : "");

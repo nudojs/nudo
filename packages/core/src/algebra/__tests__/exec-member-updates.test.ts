@@ -47,7 +47,7 @@ describe("evaluator member compound assignment", () => {
       `export function run(o) { o.n += 5; return o.n; }`,
       "run",
     );
-    expect(litValue(run($obj({ n: $lit(1) })))).toBe(6);
+    expect(litValue(run($obj({ n: $lit(1) })))).toEqual({ ok: true, value: 6 });
   });
 
   it("o.n -= / *= / /= fold like identifiers", async () => {
@@ -61,7 +61,7 @@ describe("evaluator member compound assignment", () => {
       "run",
     );
     // 7-2=5, 3*3=9, 8/4=2 → 5*100+9*10+2 = 592
-    expect(litValue(run($obj({ a: $lit(7), b: $lit(3), c: $lit(8) })))).toBe(592);
+    expect(litValue(run($obj({ a: $lit(7), b: $lit(3), c: $lit(8) })))).toEqual({ ok: true, value: 592 });
   });
 
   it("a.length += 1 extends the array", async () => {
@@ -69,7 +69,7 @@ describe("evaluator member compound assignment", () => {
       `export function run(a) { a.length += 1; return a.length; }`,
       "run",
     );
-    expect(litValue(run($arr([$lit(1)])))).toBe(2);
+    expect(litValue(run($arr([$lit(1)])))).toEqual({ ok: true, value: 2 });
   });
 
   it("compound through accessor: getter + setter chain", async () => {
@@ -86,7 +86,7 @@ describe("evaluator member compound assignment", () => {
 }`,
       "run",
     );
-    expect(litValue(run())).toBe(6);
+    expect(litValue(run())).toEqual({ ok: true, value: 6 });
   });
 });
 
@@ -107,7 +107,7 @@ describe("evaluator compound assignment bitwise/shift/pow operators", () => {
 }`,
       "run",
     );
-    expect(litValue(run())).toBe("3,8,2147483644,1,7,6,1024");
+    expect(litValue(run())).toEqual({ ok: true, value: "3,8,2147483644,1,7,6,1024" });
   });
 
   it("member targets read-modify-write the current slot", async () => {
@@ -116,7 +116,7 @@ describe("evaluator compound assignment bitwise/shift/pow operators", () => {
       "run",
     );
     // 7>>1=3, 2**3=8, 5&3=1 → 381
-    expect(litValue(run($obj({ n: $lit(7), m: $lit(2), k: $lit(5) })))).toBe(381);
+    expect(litValue(run($obj({ n: $lit(7), m: $lit(2), k: $lit(5) })))).toEqual({ ok: true, value: 381 });
   });
 
   it("element targets read-modify-write in place (aliases see it)", async () => {
@@ -124,7 +124,7 @@ describe("evaluator compound assignment bitwise/shift/pow operators", () => {
       `export function run() { let a = [1,2]; const b = a; b[0] |= 4; return a[0] * 10 + a[1]; }`,
       "run",
     );
-    expect(litValue(run())).toBe(52);
+    expect(litValue(run())).toEqual({ ok: true, value: 52 });
   });
 
   it("assignment expression value is the written value", async () => {
@@ -132,7 +132,7 @@ describe("evaluator compound assignment bitwise/shift/pow operators", () => {
       `export function run() { let x = 7; return (x >>= 1); }`,
       "run",
     );
-    expect(litValue(run())).toBe(3);
+    expect(litValue(run())).toEqual({ ok: true, value: 3 });
   });
 });
 
@@ -142,7 +142,7 @@ describe("evaluator member update expressions", () => {
       `export function run(o) { const r = o.n++; return r * 10 + o.n; }`,
       "run",
     );
-    expect(litValue(run($obj({ n: $lit(1) })))).toBe(12);
+    expect(litValue(run($obj({ n: $lit(1) })))).toEqual({ ok: true, value: 12 });
   });
 
   it("++o.n returns new value and writes back", async () => {
@@ -150,7 +150,7 @@ describe("evaluator member update expressions", () => {
       `export function run(o) { return ++o.n; }`,
       "run",
     );
-    expect(litValue(run($obj({ n: $lit(1) })))).toBe(2);
+    expect(litValue(run($obj({ n: $lit(1) })))).toEqual({ ok: true, value: 2 });
   });
 
   it("o.n-- decrements", async () => {
@@ -158,7 +158,7 @@ describe("evaluator member update expressions", () => {
       `export function run(o) { o.n--; return o.n; }`,
       "run",
     );
-    expect(litValue(run($obj({ n: $lit(1) })))).toBe(0);
+    expect(litValue(run($obj({ n: $lit(1) })))).toEqual({ ok: true, value: 0 });
   });
 
   it("class instance member ++ writes back", async () => {
@@ -171,7 +171,7 @@ describe("evaluator member update expressions", () => {
 }`,
       "run",
     );
-    expect(litValue(run())).toBe(2);
+    expect(litValue(run())).toEqual({ ok: true, value: 2 });
   });
 
   it("abstract slot update stays number, never exact undefined", async () => {
@@ -195,25 +195,25 @@ describe("runTranspiled compound assignment bitwise/shift/pow parity", () => {
   it("identifier targets fold", () => {
     expect(
       litValue(callExport(`export function f() { let x = 7; x >>= 1; return x; }`)),
-    ).toBe(3);
+    ).toEqual({ ok: true, value: 3 });
     expect(
       litValue(callExport(`export function f() { let x = 2; x **= 10; return x; }`)),
-    ).toBe(1024);
+    ).toEqual({ ok: true, value: 1024 });
     expect(
       litValue(callExport(`export function f() { let x = -7; x >>>= 1; return x; }`)),
-    ).toBe(2147483644);
+    ).toEqual({ ok: true, value: 2147483644 });
   });
 
   it("member targets fold", () => {
     expect(
       litValue(callExport(`export function f() { const o = {n: 5}; o.n &= 3; return o.n; }`)),
-    ).toBe(1);
+    ).toEqual({ ok: true, value: 1 });
   });
 
   it("assignment expression value is the written value", () => {
     expect(
       litValue(callExport(`export function f() { let x = 7; return (x <<= 2); }`)),
-    ).toBe(28);
+    ).toEqual({ ok: true, value: 28 });
   });
 });
 
@@ -227,7 +227,7 @@ describe("evaluator destructuring assignment", () => {
 }`,
       "run",
     );
-    expect(litValue(run())).toBe(21);
+    expect(litValue(run())).toEqual({ ok: true, value: 21 });
   });
 
   it("({ p: x } = { p: 9 }) writes through", async () => {
@@ -239,7 +239,7 @@ describe("evaluator destructuring assignment", () => {
 }`,
       "run",
     );
-    expect(litValue(run())).toBe(9);
+    expect(litValue(run())).toEqual({ ok: true, value: 9 });
   });
 
   it("[x, y = 5] = [1] fills default", async () => {
@@ -251,7 +251,7 @@ describe("evaluator destructuring assignment", () => {
 }`,
       "run",
     );
-    expect(litValue(run())).toBe(15);
+    expect(litValue(run())).toEqual({ ok: true, value: 15 });
   });
 });
 
@@ -265,7 +265,7 @@ describe("evaluator assignment evaluation order", () => {
 }`,
       "run",
     );
-    expect(litValue(run())).toBe(20);
+    expect(litValue(run())).toEqual({ ok: true, value: 20 });
   });
 
   it("n += n += 1 captures lhs first (1 + 2 = 3)", async () => {
@@ -277,6 +277,6 @@ describe("evaluator assignment evaluation order", () => {
 }`,
       "run",
     );
-    expect(litValue(run())).toBe(3);
+    expect(litValue(run())).toEqual({ ok: true, value: 3 });
   });
 });

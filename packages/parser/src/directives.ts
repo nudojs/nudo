@@ -230,7 +230,7 @@ function flattenPreds(preds: Pred[]): Pred[] {
 function constraintSelfEqLit(
   c: NudoConstraint,
   selfIds: string[],
-): { found: true; value: number | string | boolean | null | undefined } | { found: false } {
+): { found: true; value: import("@nudojs/core").LiteralValue } | { found: false } {
   const leaves = flattenPreds(c.preds);
   const eqs = leaves.filter((p) => p.op === "eq");
   if (eqs.length !== 1) return { found: false };

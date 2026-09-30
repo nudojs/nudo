@@ -45,21 +45,21 @@ describe("review-fix: $in on class prototype members", () => {
     const run = await execTranspiled(
       `export function run(){ class A{ greet(){ return 1; } } const a=new A(); return "greet" in a; }`,
     );
-    expect(litValue(run())).toBe(true);
+    expect(litValue(run())).toEqual({ ok: true, value: true });
   });
 
   it("class accessor key is present (native true)", async () => {
     const run = await execTranspiled(
       `export function run(){ class A{ get x(){ return 5; } } const a=new A(); return "x" in a; }`,
     );
-    expect(litValue(run())).toBe(true);
+    expect(litValue(run())).toEqual({ ok: true, value: true });
   });
 
   it("Date builtin method key is present (native true)", async () => {
     const run = await execTranspiled(
       `export function run(){ const d=new Date(0); return "getTime" in d; }`,
     );
-    expect(litValue(run())).toBe(true);
+    expect(litValue(run())).toEqual({ ok: true, value: true });
   });
 });
 
@@ -70,7 +70,7 @@ describe("review-fix: instanceof non-ident / generator / unknown ctor", () => {
     );
     const r = run();
     expect(formatShape(r)).toBe("boolean");
-    expect(litValue(r)).toBeUndefined();
+    expect(litValue(r)).toEqual({ ok: false });
   });
 
   it("paren ClassExpression RHS stays abstract boolean", async () => {
@@ -79,7 +79,7 @@ describe("review-fix: instanceof non-ident / generator / unknown ctor", () => {
     );
     const r = run();
     expect(formatShape(r)).toBe("boolean");
-    expect(litValue(r)).toBeUndefined();
+    expect(litValue(r)).toEqual({ ok: false });
   });
 
   it("ClassExpression value is fn-shaped, not exact undefined", async () => {
@@ -101,7 +101,7 @@ describe("review-fix: instanceof non-ident / generator / unknown ctor", () => {
       "path",
     ) as Abs;
     const r = $instanceof(gen, "Generator");
-    expect(litValue(r)).toBe(true);
+    expect(litValue(r)).toEqual({ ok: true, value: true });
   });
 
   it("evaluator generator call value is not exact undefined/false for instanceof", async () => {
@@ -113,7 +113,7 @@ describe("review-fix: instanceof non-ident / generator / unknown ctor", () => {
     );
     const r = run();
     expect(formatShape(r)).toBe("boolean");
-    expect(litValue(r)).toBeUndefined();
+    expect(litValue(r)).toEqual({ ok: false });
   });
 
   it("arr instanceof custom name is not exact false", async () => {
@@ -127,7 +127,7 @@ describe("review-fix: instanceof non-ident / generator / unknown ctor", () => {
     );
     const r = $instanceof($arr([$lit(1)]), "MyArr");
     expect(formatShape(r)).toBe("boolean");
-    expect(litValue(r)).toBeUndefined();
+    expect(litValue(r)).toEqual({ ok: false });
   });
 });
 
@@ -136,7 +136,7 @@ describe("review-fix: static accessors", () => {
     const run = await execTranspiled(
       `export function run(){ class A{ static get x(){ return 5; } } return A.x; }`,
     );
-    expect(litValue(run())).toBe(5);
+    expect(litValue(run())).toEqual({ ok: true, value: 5 });
   });
 
   it("static setter write then getter", async () => {
@@ -147,14 +147,14 @@ describe("review-fix: static accessors", () => {
   return A.x;
 }`,
     );
-    expect(litValue(run())).toBe(14);
+    expect(litValue(run())).toEqual({ ok: true, value: 14 });
   });
 
   it("instance read of static-only accessor key is undefined", async () => {
     const run = await execTranspiled(
       `export function run(){ class A{ static get x(){ return 5; } } return new A().x; }`,
     );
-    expect(litValue(run())).toBeUndefined();
+    expect(litValue(run())).toEqual({ ok: true, value: undefined });
   });
 });
 
@@ -167,7 +167,7 @@ describe("review-fix: object-literal accessor delete", () => {
   return o.x;
 }`,
     );
-    expect(litValue(run())).toBeUndefined();
+    expect(litValue(run())).toEqual({ ok: true, value: undefined });
   });
 });
 
@@ -186,7 +186,7 @@ describe("review-fix: own slot wins over prototype accessor", () => {
   return new B().x;
 }`,
     );
-    expect(litValue(run())).toBe(5);
+    expect(litValue(run())).toEqual({ ok: true, value: 5 });
   });
 });
 
@@ -206,12 +206,12 @@ describe("review-fix: classChainNames env fallback (ast-eval path)", () => {
 
   it("RangeError instanceof Error with non-empty env", () => {
     const r = instanceOf(brandAbs("RangeError"), "Error", envWithUser);
-    expect(litValue(r)).toBe(true);
+    expect(litValue(r)).toEqual({ ok: true, value: true });
   });
 
   it("RangeError instanceof Error with empty env", () => {
     const r = instanceOf(brandAbs("RangeError"), "Error", { classes: new Map() } as never);
-    expect(litValue(r)).toBe(true);
+    expect(litValue(r)).toEqual({ ok: true, value: true });
   });
 
   it("user class chain with env", () => {
@@ -221,7 +221,7 @@ describe("review-fix: classChainNames env fallback (ast-eval path)", () => {
         ["B", { name: "B", superClass: "A", methods: new Map(), statics: new Map() }],
       ]),
     } as never;
-    expect(litValue(instanceOf(brandAbs("B"), "A", env))).toBe(true);
-    expect(litValue(instanceOf(brandAbs("B"), "Error", env))).toBe(false);
+    expect(litValue(instanceOf(brandAbs("B"), "A", env))).toEqual({ ok: true, value: true });
+    expect(litValue(instanceOf(brandAbs("B"), "Error", env))).toEqual({ ok: true, value: false });
   });
 });

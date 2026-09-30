@@ -146,18 +146,18 @@ describe("BUG-012: evaluator routes Symbol() ops to THROW", () => {
   for (const expr of cases) {
     it(`${expr} throws TypeError`, () => {
       const r = call(`export function f() { try { return ${expr}; } catch(e) { return 'THROW'; } }`);
-      expect(litValue(r.result)).toBe("THROW");
+      expect(litValue(r.result)).toEqual({ ok: true, value: "THROW" });
     });
   }
 
   it("Symbol() + 1 still throws (baseline add)", () => {
     const r = call(`export function f() { try { return Symbol() + 1; } catch(e) { return 'THROW'; } }`);
-    expect(litValue(r.result)).toBe("THROW");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "THROW" });
   });
 
   it("Symbol() === Symbol() is false, not throw (eq/ne excluded)", () => {
     const r = call(`export function f() { return Symbol() === Symbol(); }`);
-    expect(litValue(r.result)).toBe(false);
+    expect(litValue(r.result)).toEqual({ ok: true, value: false });
   });
 
   it("Symbol() == 1 does not throw (loose eq excluded)", () => {

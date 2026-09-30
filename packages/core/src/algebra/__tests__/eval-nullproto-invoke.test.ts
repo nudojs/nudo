@@ -40,14 +40,14 @@ describe("evaluator null-proto method calls throw", () => {
       "__defineGetter__('x', () => 1)",
     ]) {
       const src = `export function f() { try { Object.create(null).${m}; } catch(e) { return 'caught'; } return 'missed'; }`;
-      expect(litValue(call(src).result), m).toBe("caught");
+      expect(litValue(call(src).result), m).toEqual({ ok: true, value: "caught" });
     }
   });
 
   it("arbitrary missing names throw too (no prototype chain)", () => {
     expect(
       litValue(call(`export function f() { try { Object.create(null).foo(); } catch(e) { return 'caught'; } return 'missed'; }`).result),
-    ).toBe("caught");
+    ).toEqual({ ok: true, value: "caught" });
     const r = call(`export function f() { return Object.create(null).foo(); }`);
     expect(isNever(r.result)).toBe(true);
     expect(throwsTypeError(r.throws)).toBe(true);
@@ -58,21 +58,21 @@ describe("evaluator null-proto method calls throw", () => {
       litValue(
         call(`export function f() { const o = Object.create(null); o.toString = () => 'own'; return o.toString(); }`).result,
       ),
-    ).toBe("own");
+    ).toEqual({ ok: true, value: "own" });
     expect(
       litValue(
         call(`export function f() { const o = Object.create(null); o.hasOwnProperty = () => 'own2'; return o.hasOwnProperty('x'); }`).result,
       ),
-    ).toBe("own2");
+    ).toEqual({ ok: true, value: "own2" });
   });
 
   it("property reads stay undefined (no throw)", () => {
     expect(
       litValue(call(`export function f() { return Object.create(null).toString; }`).result),
-    ).toBe(undefined);
+    ).toEqual({ ok: true, value: undefined });
     expect(
       litValue(call(`export function f() { return Object.create(null).x; }`).result),
-    ).toBe(undefined);
+    ).toEqual({ ok: true, value: undefined });
   });
 });
 
@@ -82,7 +82,7 @@ describe("evaluator definitely-uncallable member calls throw", () => {
       `export function f() { try { ({}).foo(); } catch(e) { return 'caught'; } return 'missed'; }`,
       `export function f() { try { const o = {a: 1}; o.foo(); } catch(e) { return 'caught'; } return 'missed'; }`,
     ]) {
-      expect(litValue(call(src).result), src).toBe("caught");
+      expect(litValue(call(src).result), src).toEqual({ ok: true, value: "caught" });
     }
     const r = call(`export function f() { return ({}).foo(); }`);
     expect(isNever(r.result)).toBe(true);
@@ -96,7 +96,7 @@ describe("evaluator definitely-uncallable member calls throw", () => {
       `export function f() { try { const o = {}; o.toString = undefined; o.toString(); } catch(e) { return 'caught'; } return 'missed'; }`,
       `export function f() { try { const o = Object.create(null); o.f = 'x'; o.f(); } catch(e) { return 'caught'; } return 'missed'; }`,
     ]) {
-      expect(litValue(call(src).result), src).toBe("caught");
+      expect(litValue(call(src).result), src).toEqual({ ok: true, value: "caught" });
     }
   });
 
@@ -104,24 +104,24 @@ describe("evaluator definitely-uncallable member calls throw", () => {
     // OP 名已建模：({}).toString() → "[object Object]"
     expect(
       litValue(call(`export function f() { return ({}).toString(); }`).result),
-    ).toBe("[object Object]");
+    ).toEqual({ ok: true, value: "[object Object]" });
     // spread 产物 open 对象：运行时可能有方法 → 保守
     expect(
       litValue(call(`export function f() { const o = {...{x: 1}}; return o.foo(); }`).result),
-    ).toBe(undefined);
+    ).toEqual({ ok: false });
     // create(proto) 动态原型不建模（path conf）→ 保守
     expect(
       litValue(call(`export function f() { const p = {greet() { return 'hi'; }}; return Object.create(p).greet(); }`).result),
-    ).toBe(undefined);
+    ).toEqual({ ok: false });
   });
 
   it("existing methods unaffected", () => {
     expect(
       litValue(call(`export function f() { const o = {m() { return 7; }}; return o.m(); }`).result),
-    ).toBe(7);
+    ).toEqual({ ok: true, value: 7 });
     expect(
       litValue(call(`export function f() { const o = Object.assign({}, {foo() { return 3; }}); return o.foo(); }`).result),
-    ).toBe(3);
+    ).toEqual({ ok: true, value: 3 });
   });
 });
 

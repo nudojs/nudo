@@ -86,7 +86,7 @@ describe("evaluator soft may-throw rethrow", () => {
     );
     const full = callTranspiledExportFull(run, "f", []);
     expect((full.throws as { shape?: { name?: string } }).shape?.name).toBe("Error");
-    expect(litValue(full.result)).toBeUndefined(); // never
+    expect(litValue(full.result)).toEqual({ ok: false }); // never
   });
 
   it("plain may-throw without try still reports (collector path)", () => {

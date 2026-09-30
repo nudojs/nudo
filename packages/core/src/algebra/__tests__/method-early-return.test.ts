@@ -21,9 +21,9 @@ describe("method early-return if (object / class / fn-val property)", () => {
   const o = { d(n) { if (n <= 0) { return 0; } return 1; } };
   return o.d(n);
 }`;
-    expect(litValue(call(src, "f", [n0()]).result)).toBe(0);
-    expect(litValue(call(src, "f", [nNeg()]).result)).toBe(0);
-    expect(litValue(call(src, "f", [n5()]).result)).toBe(1);
+    expect(litValue(call(src, "f", [n0()]).result)).toEqual({ ok: true, value: 0 });
+    expect(litValue(call(src, "f", [nNeg()]).result)).toEqual({ ok: true, value: 0 });
+    expect(litValue(call(src, "f", [n5()]).result)).toEqual({ ok: true, value: 1 });
   });
 
   it("class instance method: early return", () => {
@@ -31,8 +31,8 @@ describe("method early-return if (object / class / fn-val property)", () => {
   d(n) { if (n <= 0) { return 0; } return 1; }
 }
 export function f(n) { return new C().d(n); }`;
-    expect(litValue(call(src, "f", [n0()]).result)).toBe(0);
-    expect(litValue(call(src, "f", [n5()]).result)).toBe(1);
+    expect(litValue(call(src, "f", [n0()]).result)).toEqual({ ok: true, value: 0 });
+    expect(litValue(call(src, "f", [n5()]).result)).toEqual({ ok: true, value: 1 });
   });
 
   it("class static method: early return", () => {
@@ -40,8 +40,8 @@ export function f(n) { return new C().d(n); }`;
   static d(n) { if (n <= 0) { return 0; } return 1; }
 }
 export function f(n) { return C.d(n); }`;
-    expect(litValue(call(src, "f", [n0()]).result)).toBe(0);
-    expect(litValue(call(src, "f", [n5()]).result)).toBe(1);
+    expect(litValue(call(src, "f", [n0()]).result)).toEqual({ ok: true, value: 0 });
+    expect(litValue(call(src, "f", [n5()]).result)).toEqual({ ok: true, value: 1 });
   });
 
   it("property FunctionExpression: early return", () => {
@@ -49,8 +49,8 @@ export function f(n) { return C.d(n); }`;
   const o = { d: function (n) { if (n <= 0) { return 0; } return 1; } };
   return o.d(n);
 }`;
-    expect(litValue(call(src, "f", [n0()]).result)).toBe(0);
-    expect(litValue(call(src, "f", [n5()]).result)).toBe(1);
+    expect(litValue(call(src, "f", [n0()]).result)).toEqual({ ok: true, value: 0 });
+    expect(litValue(call(src, "f", [n5()]).result)).toEqual({ ok: true, value: 1 });
   });
 
   it("chained guards (compareVersions pattern)", () => {
@@ -64,9 +64,9 @@ export function f(n) { return C.d(n); }`;
   };
   return o.cmp(a, b);
 }`;
-    expect(litValue(call(src, "f", [$lit(2), $lit(1)]).result)).toBe(1);
-    expect(litValue(call(src, "f", [$lit(1), $lit(2)]).result)).toBe(-1);
-    expect(litValue(call(src, "f", [$lit(1), $lit(1)]).result)).toBe(0);
+    expect(litValue(call(src, "f", [$lit(2), $lit(1)]).result)).toEqual({ ok: true, value: 1 });
+    expect(litValue(call(src, "f", [$lit(1), $lit(2)]).result)).toEqual({ ok: true, value: -1 });
+    expect(litValue(call(src, "f", [$lit(1), $lit(1)]).result)).toEqual({ ok: true, value: 0 });
   });
 
   it("recursive object method with base case", () => {
@@ -74,8 +74,8 @@ export function f(n) { return C.d(n); }`;
   const o = { d(n) { if (n <= 0) { return 0; } return this.d(n - 1); } };
   return o.d(n);
 }`;
-    expect(litValue(call(src, "f", [n0()]).result)).toBe(0);
-    expect(litValue(call(src, "f", [$lit(3)]).result)).toBe(0);
+    expect(litValue(call(src, "f", [n0()]).result)).toEqual({ ok: true, value: 0 });
+    expect(litValue(call(src, "f", [$lit(3)]).result)).toEqual({ ok: true, value: 0 });
   });
 
   it("object method transpile folds early-return into return $fork", () => {
@@ -97,7 +97,7 @@ export function f(n) { return C.d(n); }`;
       `const o = { d(n) { if (n <= 0) { return 0; } return 1; } }; return o.d(n);`,
     ) as (n: number) => number;
     for (const v of [0, -1, 5]) {
-      expect(litValue(call(src, "f", [$lit(v)]).result)).toBe(native(v));
+      expect(litValue(call(src, "f", [$lit(v)]).result)).toEqual({ ok: true, value: native(v) });
     }
   });
 });

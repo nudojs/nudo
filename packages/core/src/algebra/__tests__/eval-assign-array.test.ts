@@ -29,41 +29,41 @@ function throwsError(t: unknown, name: string): boolean {
 
 describe("evaluator Object.assign to array target", () => {
   it("numeric keys write indices and extend length", () => {
-    expect(litValue(call(`export function f() { return Object.assign([], {0:'a'}).length; }`).result)).toBe(1);
-    expect(litValue(call(`export function f() { return Object.assign([], {0:'a'})[0]; }`).result)).toBe("a");
-    expect(litValue(call(`export function f() { return Object.assign([], {5:'x'}).length; }`).result)).toBe(6);
-    expect(litValue(call(`export function f() { return Object.assign([], {5:'x'})[5]; }`).result)).toBe("x");
-    expect(litValue(call(`export function f() { return Object.assign([], {'2':'a'}).length; }`).result)).toBe(3);
-    expect(litValue(call(`export function f() { return Object.assign([1,2,3], {1:'y'})[1]; }`).result)).toBe("y");
-    expect(litValue(call(`export function f() { return Object.assign([1,2,3], {1:'y'}).length; }`).result)).toBe(3);
+    expect(litValue(call(`export function f() { return Object.assign([], {0:'a'}).length; }`).result)).toEqual({ ok: true, value: 1 });
+    expect(litValue(call(`export function f() { return Object.assign([], {0:'a'})[0]; }`).result)).toEqual({ ok: true, value: "a" });
+    expect(litValue(call(`export function f() { return Object.assign([], {5:'x'}).length; }`).result)).toEqual({ ok: true, value: 6 });
+    expect(litValue(call(`export function f() { return Object.assign([], {5:'x'})[5]; }`).result)).toEqual({ ok: true, value: "x" });
+    expect(litValue(call(`export function f() { return Object.assign([], {'2':'a'}).length; }`).result)).toEqual({ ok: true, value: 3 });
+    expect(litValue(call(`export function f() { return Object.assign([1,2,3], {1:'y'})[1]; }`).result)).toEqual({ ok: true, value: "y" });
+    expect(litValue(call(`export function f() { return Object.assign([1,2,3], {1:'y'}).length; }`).result)).toEqual({ ok: true, value: 3 });
   });
 
   it("non-canonical numeric keys are expandos (no length effect)", () => {
-    expect(litValue(call(`export function f() { return Object.assign([], {2.5:'a'}).length; }`).result)).toBe(0);
-    expect(litValue(call(`export function f() { return Object.assign([], {'01':'x'}).length; }`).result)).toBe(0);
-    expect(litValue(call(`export function f() { return Object.assign([], {'4294967295':'x'}).length; }`).result)).toBe(0);
+    expect(litValue(call(`export function f() { return Object.assign([], {2.5:'a'}).length; }`).result)).toEqual({ ok: true, value: 0 });
+    expect(litValue(call(`export function f() { return Object.assign([], {'01':'x'}).length; }`).result)).toEqual({ ok: true, value: 0 });
+    expect(litValue(call(`export function f() { return Object.assign([], {'4294967295':'x'}).length; }`).result)).toEqual({ ok: true, value: 0 });
   });
 
   it("length key truncates and extends (extended segment is holes)", () => {
-    expect(litValue(call(`export function f() { return Object.assign([1,2,3], {length: 0}).length; }`).result)).toBe(0);
-    expect(litValue(call(`export function f() { return Object.assign([1,2,3], {length: 1}).length; }`).result)).toBe(1);
-    expect(litValue(call(`export function f() { return Object.assign([1,2,3], {length: 1})[0]; }`).result)).toBe(1);
-    expect(litValue(call(`export function f() { return Object.assign([1,2], {length: 5}).length; }`).result)).toBe(5);
-    expect(litValue(call(`export function f() { return 2 in Object.assign([1,2], {length: 5}); }`).result)).toBe(false);
+    expect(litValue(call(`export function f() { return Object.assign([1,2,3], {length: 0}).length; }`).result)).toEqual({ ok: true, value: 0 });
+    expect(litValue(call(`export function f() { return Object.assign([1,2,3], {length: 1}).length; }`).result)).toEqual({ ok: true, value: 1 });
+    expect(litValue(call(`export function f() { return Object.assign([1,2,3], {length: 1})[0]; }`).result)).toEqual({ ok: true, value: 1 });
+    expect(litValue(call(`export function f() { return Object.assign([1,2], {length: 5}).length; }`).result)).toEqual({ ok: true, value: 5 });
+    expect(litValue(call(`export function f() { return 2 in Object.assign([1,2], {length: 5}); }`).result)).toEqual({ ok: true, value: false });
   });
 
   it("source key order matters (idx then length truncates the write)", () => {
-    expect(litValue(call(`export function f() { return Object.assign([1,2,3], {0:'z', length: 0}).length; }`).result)).toBe(0);
-    expect(litValue(call(`export function f() { return 3 in Object.assign([1,2], {3:'x', length: 2}); }`).result)).toBe(false);
+    expect(litValue(call(`export function f() { return Object.assign([1,2,3], {0:'z', length: 0}).length; }`).result)).toEqual({ ok: true, value: 0 });
+    expect(litValue(call(`export function f() { return 3 in Object.assign([1,2], {3:'x', length: 2}); }`).result)).toEqual({ ok: true, value: false });
   });
 
   it("getter source keys are invoked", () => {
     expect(
       litValue(call(`export function f() { return Object.assign([], {get 0(){ return 9; }})[0]; }`).result),
-    ).toBe(9);
+    ).toEqual({ ok: true, value: 9 });
     expect(
       litValue(call(`export function f() { return Object.assign([], {get 0(){ return 9; }}).length; }`).result),
-    ).toBe(1);
+    ).toEqual({ ok: true, value: 1 });
   });
 
   it("invalid length throws RangeError (catchable)", () => {
@@ -72,7 +72,7 @@ describe("evaluator Object.assign to array target", () => {
       `export function f() { try { Object.assign([1], {length: 2.5}); } catch(e) { return 'caught'; } return 'missed'; }`,
       `export function f() { try { Object.assign([1], {length: NaN}); } catch(e) { return 'caught'; } return 'missed'; }`,
     ]) {
-      expect(litValue(call(src).result), src).toBe("caught");
+      expect(litValue(call(src).result), src).toEqual({ ok: true, value: "caught" });
     }
     const r = call(`export function f() { return Object.assign([1], {length: -1}); }`);
     expect(isNever(r.result)).toBe(true);
@@ -86,63 +86,63 @@ describe("evaluator Object.assign to array target", () => {
           `export function f() { try { const a = Object.freeze([1]); Object.assign(a, {1: 2}); } catch(e) { return 'caught'; } return 'missed'; }`,
         ).result,
       ),
-    ).toBe("caught");
+    ).toEqual({ ok: true, value: "caught" });
     expect(
       litValue(
         call(
           `export function f() { try { const a = Object.seal([1]); Object.assign(a, {1: 2}); } catch(e) { return 'caught'; } return 'missed'; }`,
         ).result,
       ),
-    ).toBe("caught");
+    ).toEqual({ ok: true, value: "caught" });
     // sealed 已有下标照常写
     expect(
       litValue(call(`export function f() { const a = Object.seal([1,2]); return Object.assign(a, {1: 9})[1]; }`).result),
-    ).toBe(9);
+    ).toEqual({ ok: true, value: 9 });
   });
 });
 
 describe("evaluator Object.assign non-object sources (string/array prims)", () => {
   it("string literal source projects code-unit index props", () => {
     // 原生：Object.assign({}, 'ab') === {'0':'a','1':'b'}——按码元（非码点）逐位
-    expect(litValue(call(`export function f() { return Object.assign({}, 'ab')['0']; }`).result)).toBe("a");
-    expect(litValue(call(`export function f() { return Object.assign({}, 'ab')['1']; }`).result)).toBe("b");
+    expect(litValue(call(`export function f() { return Object.assign({}, 'ab')['0']; }`).result)).toEqual({ ok: true, value: "a" });
+    expect(litValue(call(`export function f() { return Object.assign({}, 'ab')['1']; }`).result)).toEqual({ ok: true, value: "b" });
     expect(
       litValue(call(`export function f() { return Object.keys(Object.assign({}, 'ab')).length; }`).result),
-    ).toBe(2);
+    ).toEqual({ ok: true, value: 2 });
     // 代理对拆两个码元键（spread 按码点合并，assign 按 [[OwnPropertyKeys]] 码元——勿混用）
     expect(
       litValue(call(`export function f() { return Object.assign({}, '\uD83D\uDE00')['0'] === '\uD83D'; }`).result),
-    ).toBe(true);
+    ).toEqual({ ok: true, value: true });
     expect(
       litValue(call(`export function f() { return Object.keys(Object.assign({}, '\uD83D\uDE00')).length; }`).result),
-    ).toBe(2);
+    ).toEqual({ ok: true, value: 2 });
   });
 
   it("array source projects numeric keys and skips holes", () => {
-    expect(litValue(call(`export function f() { return Object.assign({}, [7,,9])['0']; }`).result)).toBe(7);
-    expect(litValue(call(`export function f() { return Object.assign({}, [7,,9])['2']; }`).result)).toBe(9);
+    expect(litValue(call(`export function f() { return Object.assign({}, [7,,9])['0']; }`).result)).toEqual({ ok: true, value: 7 });
+    expect(litValue(call(`export function f() { return Object.assign({}, [7,,9])['2']; }`).result)).toEqual({ ok: true, value: 9 });
     expect(
       litValue(call(`export function f() { return Object.keys(Object.assign({}, [7,,9])).length; }`).result),
-    ).toBe(2);
-    expect(litValue(call(`export function f() { return Object.assign({x: 0}, 'xy', {x: 2})['0']; }`).result)).toBe("x");
+    ).toEqual({ ok: true, value: 2 });
+    expect(litValue(call(`export function f() { return Object.assign({x: 0}, 'xy', {x: 2})['0']; }`).result)).toEqual({ ok: true, value: "x" });
   });
 
   it("array target × string/array source writes indices", () => {
-    expect(litValue(call(`export function f() { return Object.assign([1,2,3], 'a')[0]; }`).result)).toBe("a");
-    expect(litValue(call(`export function f() { return Object.assign([1,2,3], 'a')[1]; }`).result)).toBe(2);
-    expect(litValue(call(`export function f() { return Object.assign([9,9], 'xy')[1]; }`).result)).toBe("y");
-    expect(litValue(call(`export function f() { return Object.assign([1,2,3], [9])[0]; }`).result)).toBe(9);
-    expect(litValue(call(`export function f() { return Object.assign([1,2,3], [9]).length; }`).result)).toBe(3);
-    expect(litValue(call(`export function f() { return Object.assign([1,2], [7,,9])[2]; }`).result)).toBe(9);
-    expect(litValue(call(`export function f() { return Object.assign([1,2], [7,,9]).length; }`).result)).toBe(3);
+    expect(litValue(call(`export function f() { return Object.assign([1,2,3], 'a')[0]; }`).result)).toEqual({ ok: true, value: "a" });
+    expect(litValue(call(`export function f() { return Object.assign([1,2,3], 'a')[1]; }`).result)).toEqual({ ok: true, value: 2 });
+    expect(litValue(call(`export function f() { return Object.assign([9,9], 'xy')[1]; }`).result)).toEqual({ ok: true, value: "y" });
+    expect(litValue(call(`export function f() { return Object.assign([1,2,3], [9])[0]; }`).result)).toEqual({ ok: true, value: 9 });
+    expect(litValue(call(`export function f() { return Object.assign([1,2,3], [9]).length; }`).result)).toEqual({ ok: true, value: 3 });
+    expect(litValue(call(`export function f() { return Object.assign([1,2], [7,,9])[2]; }`).result)).toEqual({ ok: true, value: 9 });
+    expect(litValue(call(`export function f() { return Object.assign([1,2], [7,,9]).length; }`).result)).toEqual({ ok: true, value: 3 });
   });
 
   it("nullish / number / boolean sources are ignored (no throw, no props)", () => {
-    expect(litValue(call(`export function f() { return Object.assign({a: 1}, null).a; }`).result)).toBe(1);
-    expect(litValue(call(`export function f() { return Object.assign({a: 1}, undefined, null, 5, true).a; }`).result)).toBe(1);
+    expect(litValue(call(`export function f() { return Object.assign({a: 1}, null).a; }`).result)).toEqual({ ok: true, value: 1 });
+    expect(litValue(call(`export function f() { return Object.assign({a: 1}, undefined, null, 5, true).a; }`).result)).toEqual({ ok: true, value: 1 });
     expect(
       litValue(call(`export function f() { return Object.keys(Object.assign({a: 1}, null, 5)).length; }`).result),
-    ).toBe(1);
+    ).toEqual({ ok: true, value: 1 });
   });
 });
 
@@ -152,38 +152,38 @@ describe("evaluator Object.assign statement position", () => {
   it("writes through on obj target", () => {
     expect(
       litValue(call(`export function f() { const t = {a: 1}; Object.assign(t, {b: 2}); return t.b; }`).result),
-    ).toBe(2);
+    ).toEqual({ ok: true, value: 2 });
   });
 
   it("writes through with string/array sources", () => {
     expect(
       litValue(call(`export function f() { const t = {a: 1}; Object.assign(t, 'bc'); return t['0'] + t['1'] + t.a; }`).result),
-    ).toBe("bc1");
+    ).toEqual({ ok: true, value: "bc1" });
     expect(
       litValue(call(`export function f() { const t = [9,9]; Object.assign(t, 'xy'); return t[0] + t[1] + t.length; }`).result),
-    ).toBe("xy2");
+    ).toEqual({ ok: true, value: "xy2" });
     expect(
       litValue(call(`export function f() { const t = [9,9]; Object.assign(t, [7]); return t[0] * 10 + t[1]; }`).result),
-    ).toBe(79);
+    ).toEqual({ ok: true, value: 79 });
   });
 
   it("preserves aliasing (reference semantics)", () => {
     expect(
       litValue(call(`export function f() { const t = {a: 1}; const u = t; Object.assign(t, {b: 2}); return u.b; }`).result),
-    ).toBe(2);
+    ).toEqual({ ok: true, value: 2 });
   });
 
   it("length key on array target writes through", () => {
     expect(
       litValue(call(`export function f() { const t = [1,2,3]; Object.assign(t, {length: 0}); return t.length; }`).result),
-    ).toBe(0);
+    ).toEqual({ ok: true, value: 0 });
   });
 
   it("expression position still returns the merged value", () => {
     expect(
       litValue(call(`export function f() { const t = {a: 1}; return Object.assign(t, {b: 2}).b; }`).result),
-    ).toBe(2);
-    expect(litValue(call(`export function f() { const t = {a: 1}; return t.b; }`).result)).toBeUndefined();
+    ).toEqual({ ok: true, value: 2 });
+    expect(litValue(call(`export function f() { const t = {a: 1}; return t.b; }`).result)).toEqual({ ok: true, value: undefined });
   });
 });
 

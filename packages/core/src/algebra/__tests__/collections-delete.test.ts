@@ -23,21 +23,21 @@ describe("Map/Set delete/clear unit (collections API)", () => {
     const m = makeMapAbs();
     mapSetEntry(m, strLit("a"), numLit(1));
     mapClearEntries(m);
-    expect(litValue(mapSizeAbs(m))).toBe(0);
+    expect(litValue(mapSizeAbs(m))).toEqual({ ok: true, value: 0 });
   });
 
   it("setDeleteEntry lit removes membership exactly", () => {
     const s = makeSetAbs();
     setAddEntry(s, numLit(1));
     setDeleteEntry(s, numLit(1));
-    expect(litValue(setHasEntry(s, numLit(1)))).toBe(false);
+    expect(litValue(setHasEntry(s, numLit(1)))).toEqual({ ok: true, value: false });
   });
 
   it("setClearEntries empties set", () => {
     const s = makeSetAbs();
     setAddEntry(s, numLit(2));
     setClearEntries(s);
-    expect(litValue(setHasEntry(s, numLit(2)))).toBe(false);
+    expect(litValue(setHasEntry(s, numLit(2)))).toEqual({ ok: true, value: false });
   });
 
   it("abstract if + map.delete: get joins value|undefined", () => {

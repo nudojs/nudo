@@ -70,7 +70,7 @@ export function hasAlice() {
 }
 `;
     const r = call(src, "hasAlice");
-    expect(litValue(r.result)).toBe(true);
+    expect(litValue(r.result)).toEqual({ ok: true, value: true });
   });
 
   it("has on missing literal key folds false and get is undefined", () => {
@@ -264,6 +264,6 @@ export function sumFor(arr) {
     const exports = runTranspiled(src, { mode: "analyze" });
     const arr = $arr([$lit(1), $lit(2), $lit(3), $lit(4)]);
     const r = callTranspiledExportFull(exports, "sumFor", [arr]);
-    expect(litValue(r.result)).toBe(10);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 10 });
   });
 });

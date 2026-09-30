@@ -39,7 +39,7 @@ describe("evaluator new RegExp invalid args throw", () => {
       `export function f() { try { new RegExp('a', null); } catch(e) { return 'caught'; } return 'missed'; }`,
       `export function f() { try { new RegExp('a', true); } catch(e) { return 'caught'; } return 'missed'; }`,
     ]) {
-      expect(litValue(call(src).result), src).toBe("caught");
+      expect(litValue(call(src).result), src).toEqual({ ok: true, value: "caught" });
     }
   });
 
@@ -52,25 +52,25 @@ describe("evaluator new RegExp invalid args throw", () => {
 
 describe("evaluator new RegExp literal folding", () => {
   it("folds no-arg / number / string patterns", () => {
-    expect(litValue(call(`export function f() { return new RegExp().test('x'); }`).result)).toBe(true);
-    expect(litValue(call(`export function f() { return new RegExp().source; }`).result)).toBe("(?:)");
-    expect(litValue(call(`export function f() { return new RegExp(5).test('a5b'); }`).result)).toBe(true);
-    expect(litValue(call(`export function f() { return new RegExp(5).source; }`).result)).toBe("5");
-    expect(litValue(call(`export function f() { return new RegExp('a', 'g').flags; }`).result)).toBe("g");
-    expect(litValue(call(`export function f() { return new RegExp('', 'g').source; }`).result)).toBe("(?:)");
-    expect(litValue(call(`export function f() { return new RegExp('a', undefined).flags; }`).result)).toBe("");
+    expect(litValue(call(`export function f() { return new RegExp().test('x'); }`).result)).toEqual({ ok: true, value: true });
+    expect(litValue(call(`export function f() { return new RegExp().source; }`).result)).toEqual({ ok: true, value: "(?:)" });
+    expect(litValue(call(`export function f() { return new RegExp(5).test('a5b'); }`).result)).toEqual({ ok: true, value: true });
+    expect(litValue(call(`export function f() { return new RegExp(5).source; }`).result)).toEqual({ ok: true, value: "5" });
+    expect(litValue(call(`export function f() { return new RegExp('a', 'g').flags; }`).result)).toEqual({ ok: true, value: "g" });
+    expect(litValue(call(`export function f() { return new RegExp('', 'g').source; }`).result)).toEqual({ ok: true, value: "(?:)" });
+    expect(litValue(call(`export function f() { return new RegExp('a', undefined).flags; }`).result)).toEqual({ ok: true, value: "" });
   });
 
   it("folds exec/test against literal subjects", () => {
-    expect(litValue(call(`export function f() { return new RegExp('ab+').test('abb'); }`).result)).toBe(true);
-    expect(litValue(call(`export function f() { const m = new RegExp('(a)(b)').exec('ab'); return m[1] + m[2]; }`).result)).toBe("ab");
+    expect(litValue(call(`export function f() { return new RegExp('ab+').test('abb'); }`).result)).toEqual({ ok: true, value: true });
+    expect(litValue(call(`export function f() { const m = new RegExp('(a)(b)').exec('ab'); return m[1] + m[2]; }`).result)).toEqual({ ok: true, value: "ab" });
   });
 
   it("abstract pattern stays conservative", () => {
     const src = `export function f(p) { return new RegExp(p).test('a'); }`;
     const exports = runTranspiled(src, { mode: "analyze" });
     const p = { shape: { k: "prim", type: "string" }, conf: "path" } as never;
-    expect(litValue(callTranspiledExportFull(exports, "f", [p]).result)).toBe(undefined);
+    expect(litValue(callTranspiledExportFull(exports, "f", [p]).result)).toEqual({ ok: false });
   });
 });
 

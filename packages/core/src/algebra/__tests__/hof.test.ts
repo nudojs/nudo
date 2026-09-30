@@ -34,7 +34,7 @@ describe("HOF map/reduce from real source", () => {
     expect(r.shape.k).toBe("arr");
     if (r.shape.k !== "arr") return;
     // x=1, x*2=2
-    expect(litValue(r.shape.element)).toBe(2);
+    expect(litValue(r.shape.element)).toEqual({ ok: true, value: 2 });
   });
 
   it("map on symbolic element: Arr(number) map x=>x+1 under Φ elem>0", () => {

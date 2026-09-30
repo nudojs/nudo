@@ -25,46 +25,46 @@ function str(src: string) {
 function splitOf(src: string) {
   const r = call(src, "run").result;
   if (r.shape.k !== "tuple") return undefined;
-  return r.shape.elements.map((e) => litValue(e));
+  return r.shape.elements.map((e) => { const r = litValue(e); return r.ok ? r.value : undefined; });
 }
 
 describe("evaluator string method positional args", () => {
   it("includes with fromIndex", () => {
-    expect(str(`export function run() { return "hello".includes("ell", 2); }`)).toBe(false);
-    expect(str(`export function run() { return "hello".includes("ell", 1); }`)).toBe(true);
-    expect(str(`export function run() { return "hello".includes("ell", 3); }`)).toBe(false);
+    expect(str(`export function run() { return "hello".includes("ell", 2); }`)).toEqual({ ok: true, value: false });
+    expect(str(`export function run() { return "hello".includes("ell", 1); }`)).toEqual({ ok: true, value: true });
+    expect(str(`export function run() { return "hello".includes("ell", 3); }`)).toEqual({ ok: true, value: false });
   });
 
   it("includes negative fromIndex counts from 0", () => {
-    expect(str(`export function run() { return "hello".includes("ell", -1); }`)).toBe(true);
-    expect(str(`export function run() { return "hello".includes("hello", -100); }`)).toBe(true);
+    expect(str(`export function run() { return "hello".includes("ell", -1); }`)).toEqual({ ok: true, value: true });
+    expect(str(`export function run() { return "hello".includes("hello", -100); }`)).toEqual({ ok: true, value: true });
   });
 
   it("startsWith with position", () => {
-    expect(str(`export function run() { return "hello".startsWith("he", 1); }`)).toBe(false);
-    expect(str(`export function run() { return "hello".startsWith("ell", 1); }`)).toBe(true);
-    expect(str(`export function run() { return "hello".startsWith("ell", 2); }`)).toBe(false);
+    expect(str(`export function run() { return "hello".startsWith("he", 1); }`)).toEqual({ ok: true, value: false });
+    expect(str(`export function run() { return "hello".startsWith("ell", 1); }`)).toEqual({ ok: true, value: true });
+    expect(str(`export function run() { return "hello".startsWith("ell", 2); }`)).toEqual({ ok: true, value: false });
   });
 
   it("endsWith with length", () => {
-    expect(str(`export function run() { return "hello".endsWith("lo", 4); }`)).toBe(false);
-    expect(str(`export function run() { return "hello".endsWith("he", 2); }`)).toBe(true);
-    expect(str(`export function run() { return "hello".endsWith("hell", 4); }`)).toBe(true);
+    expect(str(`export function run() { return "hello".endsWith("lo", 4); }`)).toEqual({ ok: true, value: false });
+    expect(str(`export function run() { return "hello".endsWith("he", 2); }`)).toEqual({ ok: true, value: true });
+    expect(str(`export function run() { return "hello".endsWith("hell", 4); }`)).toEqual({ ok: true, value: true });
   });
 
   it("endsWith length clamps at string length", () => {
-    expect(str(`export function run() { return "hello".endsWith("lo", 100); }`)).toBe(true);
+    expect(str(`export function run() { return "hello".endsWith("lo", 100); }`)).toEqual({ ok: true, value: true });
   });
 
   it("positional NaN behaves like 0", () => {
-    expect(str(`export function run() { return "hello".startsWith("hell", NaN); }`)).toBe(true);
-    expect(str(`export function run() { return "hello".includes("hell", NaN); }`)).toBe(true);
-    expect(str(`export function run() { return "hello".endsWith("lo", NaN); }`)).toBe(false);
+    expect(str(`export function run() { return "hello".startsWith("hell", NaN); }`)).toEqual({ ok: true, value: true });
+    expect(str(`export function run() { return "hello".includes("hell", NaN); }`)).toEqual({ ok: true, value: true });
+    expect(str(`export function run() { return "hello".endsWith("lo", NaN); }`)).toEqual({ ok: true, value: false });
   });
 
   it("explicit undefined positional arg equals omission", () => {
-    expect(str(`export function run() { return "hello".includes("ell", undefined); }`)).toBe(true);
-    expect(str(`export function run() { return "hello".startsWith("he", undefined); }`)).toBe(true);
+    expect(str(`export function run() { return "hello".includes("ell", undefined); }`)).toEqual({ ok: true, value: true });
+    expect(str(`export function run() { return "hello".startsWith("he", undefined); }`)).toEqual({ ok: true, value: true });
   });
 
   it("split with limit", () => {
@@ -99,7 +99,7 @@ describe("evaluator string method positional args", () => {
   });
 
   it("no second arg keeps previous behavior", () => {
-    expect(str(`export function run() { return "hello".includes("ell"); }`)).toBe(true);
+    expect(str(`export function run() { return "hello".includes("ell"); }`)).toEqual({ ok: true, value: true });
     expect(splitOf(`export function run() { return "a,b,c".split(","); }`)).toEqual(["a", "b", "c"]);
   });
 });

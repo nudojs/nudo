@@ -16,32 +16,32 @@ describe("evaluator labeled block break", () => {
     const r = call(
       `export function f() { let s = 0; foo: { s += 1; break foo; s += 10; } return s; }`,
     );
-    expect(litValue(r.result)).toBe(1);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 1 });
   });
 
   it("labeled block without break runs fully", () => {
     const r = call(`export function f() { let s = 0; foo: { s += 1; s += 2; } return s; }`);
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 
   it("inner labeled block break does not exit outer", () => {
     const r = call(
       `export function f() { let s = 0; foo: { bar: { s += 1; break bar; s += 100; } s += 10; break foo; s += 1000; } return s; }`,
     );
-    expect(litValue(r.result)).toBe(11);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 11 });
   });
 
   it("break outer from nested inner block", () => {
     const r = call(
       `export function f() { let s = 0; foo: { bar: { s += 1; break foo; s += 100; } s += 1000; } return s; }`,
     );
-    expect(litValue(r.result)).toBe(1);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 1 });
   });
 
   it("labeled break still works on loops", () => {
     const r = call(
       `export function f() { let s = 0; outer: for (let i = 0; i < 3; i++) { for (let j = 0; j < 3; j++) { if (j === 1) break outer; s++; } } return s; }`,
     );
-    expect(litValue(r.result)).toBe(1);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 1 });
   });
 });

@@ -40,57 +40,55 @@ function shape(src: string) {
 
 describe("String.prototype.at ToIntegerOrInfinity", () => {
   it("at() defaults to index 0", () => {
-    expect(val(`export function f() { return 'hello'.at(); }`)).toBe("h");
-    expect(val(`export function f() { return 'hello'.at(undefined); }`)).toBe(
-      "h",
-    );
-    expect(val(`export function f() { return 'hello'.at(null); }`)).toBe("h");
+    expect(val(`export function f() { return 'hello'.at(); }`)).toEqual({ ok: true, value: "h" });
+    expect(val(`export function f() { return 'hello'.at(undefined); }`)).toEqual({ ok: true, value: "h", });
+    expect(val(`export function f() { return 'hello'.at(null); }`)).toEqual({ ok: true, value: "h" });
   });
 
   it("at coerces numeric strings / bools / truncated floats", () => {
-    expect(val(`export function f() { return 'hello'.at(0); }`)).toBe("h");
-    expect(val(`export function f() { return 'hello'.at('1'); }`)).toBe("e");
-    expect(val(`export function f() { return 'hello'.at(true); }`)).toBe("e");
-    expect(val(`export function f() { return 'hello'.at(1.9); }`)).toBe("e");
+    expect(val(`export function f() { return 'hello'.at(0); }`)).toEqual({ ok: true, value: "h" });
+    expect(val(`export function f() { return 'hello'.at('1'); }`)).toEqual({ ok: true, value: "e" });
+    expect(val(`export function f() { return 'hello'.at(true); }`)).toEqual({ ok: true, value: "e" });
+    expect(val(`export function f() { return 'hello'.at(1.9); }`)).toEqual({ ok: true, value: "e" });
   });
 
   it("at supports negative indices and out-of-range", () => {
-    expect(val(`export function f() { return 'hello'.at(-1); }`)).toBe("o");
-    expect(val(`export function f() { return 'hello'.at(-2); }`)).toBe("l");
-    expect(val(`export function f() { return 'hello'.at(10); }`)).toBeUndefined();
-    expect(val(`export function f() { return 'hello'.at(-10); }`)).toBeUndefined();
-    expect(val(`export function f() { return 'hello'.at(Infinity); }`)).toBeUndefined();
-    expect(val(`export function f() { return 'hello'.at(NaN); }`)).toBe("h");
+    expect(val(`export function f() { return 'hello'.at(-1); }`)).toEqual({ ok: true, value: "o" });
+    expect(val(`export function f() { return 'hello'.at(-2); }`)).toEqual({ ok: true, value: "l" });
+    expect(val(`export function f() { return 'hello'.at(10); }`)).toEqual({ ok: true, value: undefined });
+    expect(val(`export function f() { return 'hello'.at(-10); }`)).toEqual({ ok: true, value: undefined });
+    expect(val(`export function f() { return 'hello'.at(Infinity); }`)).toEqual({ ok: true, value: undefined });
+    expect(val(`export function f() { return 'hello'.at(NaN); }`)).toEqual({ ok: true, value: "h" });
   });
 });
 
 describe("Array.prototype.at ToIntegerOrInfinity", () => {
   it("at() / at(undefined) / at(null) default to index 0", () => {
-    expect(val(`export function f() { return [1,2,3].at(); }`)).toBe(1);
-    expect(val(`export function f() { return [1,2,3].at(undefined); }`)).toBe(1);
-    expect(val(`export function f() { return [1,2,3].at(null); }`)).toBe(1);
-    expect(val(`export function f() { return [1,2,3].at(NaN); }`)).toBe(1);
+    expect(val(`export function f() { return [1,2,3].at(); }`)).toEqual({ ok: true, value: 1 });
+    expect(val(`export function f() { return [1,2,3].at(undefined); }`)).toEqual({ ok: true, value: 1 });
+    expect(val(`export function f() { return [1,2,3].at(null); }`)).toEqual({ ok: true, value: 1 });
+    expect(val(`export function f() { return [1,2,3].at(NaN); }`)).toEqual({ ok: true, value: 1 });
   });
 
   it("at coerces numeric strings / bools / truncated floats", () => {
-    expect(val(`export function f() { return [1,2,3].at('1'); }`)).toBe(2);
-    expect(val(`export function f() { return [1,2,3].at(true); }`)).toBe(2);
-    expect(val(`export function f() { return [1,2,3].at(false); }`)).toBe(1);
-    expect(val(`export function f() { return [1,2,3].at(1.9); }`)).toBe(2);
-    expect(val(`export function f() { return [1,2,3].at(-1.5); }`)).toBe(3);
+    expect(val(`export function f() { return [1,2,3].at('1'); }`)).toEqual({ ok: true, value: 2 });
+    expect(val(`export function f() { return [1,2,3].at(true); }`)).toEqual({ ok: true, value: 2 });
+    expect(val(`export function f() { return [1,2,3].at(false); }`)).toEqual({ ok: true, value: 1 });
+    expect(val(`export function f() { return [1,2,3].at(1.9); }`)).toEqual({ ok: true, value: 2 });
+    expect(val(`export function f() { return [1,2,3].at(-1.5); }`)).toEqual({ ok: true, value: 3 });
   });
 
   it("at keeps negative index and OOB undefined", () => {
-    expect(val(`export function f() { return [1,2,3].at(-1); }`)).toBe(3);
-    expect(val(`export function f() { return [1,2,3].at(10); }`)).toBeUndefined();
-    expect(val(`export function f() { return [1,2,3].at(-10); }`)).toBeUndefined();
-    expect(val(`export function f() { return [1,2,3].at(Infinity); }`)).toBeUndefined();
+    expect(val(`export function f() { return [1,2,3].at(-1); }`)).toEqual({ ok: true, value: 3 });
+    expect(val(`export function f() { return [1,2,3].at(10); }`)).toEqual({ ok: true, value: undefined });
+    expect(val(`export function f() { return [1,2,3].at(-10); }`)).toEqual({ ok: true, value: undefined });
+    expect(val(`export function f() { return [1,2,3].at(Infinity); }`)).toEqual({ ok: true, value: undefined });
   });
 
   it("abstract index does not pin a single element", () => {
     // 缺省实参 i ≡ undefined → at(0) 是 1；显式抽象下标不得钉成字面量
     const s = shape(`export function f(i) { return [1,2,3].at(i + 0); }`);
-    expect(val(`export function f(i) { return [1,2,3].at(i + 0); }`)).toBeUndefined();
+    expect(val(`export function f(i) { return [1,2,3].at(i + 0); }`)).toEqual({ ok: false });
     expect(s === "1" || s === "2" || s === "3").toBe(false);
   });
 });

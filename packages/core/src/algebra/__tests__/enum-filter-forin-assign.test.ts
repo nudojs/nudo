@@ -36,7 +36,7 @@ describe("enumerable filter: for-in and Object.assign", () => {
       for (const k in s) ks.push(k);
       return ks.length === 1 && ks[0] === "shown";
     }`;
-    expect(val(src)).toBe(true);
+    expect(val(src)).toEqual({ ok: true, value: true });
   });
 
   it("for-in on plain object still lists enumerable keys", () => {
@@ -47,7 +47,7 @@ describe("enumerable filter: for-in and Object.assign", () => {
         for (const k in o) n++;
         return n;
       }`),
-    ).toBe(2);
+    ).toEqual({ ok: true, value: 2 });
   });
 
   it("Object.assign copies only enumerable own keys", () => {
@@ -56,7 +56,7 @@ describe("enumerable filter: for-in and Object.assign", () => {
       const t = Object.assign({}, s);
       return t.shown === 2 && !("hidden" in t) && Object.keys(t).length === 1;
     }`;
-    expect(val(src)).toBe(true);
+    expect(val(src)).toEqual({ ok: true, value: true });
   });
 
   it("Object.assign still copies enumerable values", () => {
@@ -64,7 +64,7 @@ describe("enumerable filter: for-in and Object.assign", () => {
       val(`export function f() {
         return Object.assign({}, { a: 1, b: 2 }).a + Object.assign({}, { a: 1, b: 2 }).b;
       }`),
-    ).toBe(3);
+    ).toEqual({ ok: true, value: 3 });
   });
 
   it("Object.keys already filters (sibling must stay consistent)", () => {
@@ -72,6 +72,6 @@ describe("enumerable filter: for-in and Object.assign", () => {
       ${setup}
       return Object.keys(s).length === 1 && Object.keys(s)[0] === "shown";
     }`;
-    expect(val(src)).toBe(true);
+    expect(val(src)).toEqual({ ok: true, value: true });
   });
 });

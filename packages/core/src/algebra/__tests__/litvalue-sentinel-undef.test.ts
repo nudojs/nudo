@@ -52,7 +52,7 @@ describe("litValue sentinel: abstract pos arg / undefined Set key", () => {
   it("omitted position on a pure template still decides true", () => {
     // 纯字面量接收者走 string 分支；模板缺省位置不得被抽象参判定污染
     const r = call(`export function f() { return "hello".startsWith("hello"); }`);
-    expect(litValue(r.result)).toBe(true);
+    expect(litValue(r.result)).toEqual({ ok: true, value: true });
     const r2 = call(`export function f(x) { return ("h" + x).startsWith("h"); }`);
     // 至少不得因缺省位置误折 exact false
     const a = r2.result as { term?: { op?: string; value?: unknown }; conf?: string };
@@ -64,32 +64,32 @@ describe("litValue sentinel: abstract pos arg / undefined Set key", () => {
     const r = call(
       `export function f() { const s = new Set(); s.add(undefined); s.add(undefined); return s.size; }`,
     );
-    expect(litValue(r.result)).toBe(1);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 1 });
   });
 
   it("new Set([undefined, undefined]).size is 1", () => {
     const r = call(
       `export function f() { return new Set([undefined, undefined]).size; }`,
     );
-    expect(litValue(r.result)).toBe(1);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 1 });
   });
 
   it("Set.has(undefined) after add(undefined) is true", () => {
     const r = call(
       `export function f() { const s = new Set(); s.add(undefined); return s.has(undefined); }`,
     );
-    expect(litValue(r.result)).toBe(true);
+    expect(litValue(r.result)).toEqual({ ok: true, value: true });
   });
 
   it("Map.set(undefined, v) then get(undefined) returns v", () => {
     const r = call(
       `export function f() { const m = new Map(); m.set(undefined, 42); return m.get(undefined); }`,
     );
-    expect(litValue(r.result)).toBe(42);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 42 });
   });
 
   it("new Set([1, 2]).size still 2 (regression)", () => {
     const r = call(`export function f() { return new Set([1, 2]).size; }`);
-    expect(litValue(r.result)).toBe(2);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
   });
 });

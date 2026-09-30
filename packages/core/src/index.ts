@@ -54,7 +54,7 @@ export {
   type GitlabCodeQualityIssue, type HofCollectCtx, type HofSite,
   type ImplicationOracle, type InterfaceDiag, type InterfaceSource,
   type InterfaceTierInfo, type InterfaceTierOpts, type LeqResult,
-  type LiteralValue, MAX_EVAL_CALL_DEPTH, MAX_EVAL_TOTAL_CALLS, type NamedImport,
+  type LiteralValue, type LitValueResult, MAX_EVAL_CALL_DEPTH, MAX_EVAL_TOTAL_CALLS, type NamedImport,
   type NudoConstraint, type NudoField, type NudoFnConstraint,
   NudoLoopSignal, NudoReturn, NudoSidecarError, type NudoSig, NudoThrow,
   NudoUnsupportedError, OBJECT_PROTO_METHOD_NAMES, type ObjShape, type Phi,

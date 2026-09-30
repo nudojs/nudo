@@ -47,7 +47,7 @@ describe("evaluator class accessors", () => {
 }`,
       "run",
     );
-    expect(litValue(run())).toBe(5);
+    expect(litValue(run())).toEqual({ ok: true, value: 5 });
   });
 
   it("class setter invoked on write, getter reads back", async () => {
@@ -63,7 +63,7 @@ describe("evaluator class accessors", () => {
 }`,
       "run",
     );
-    expect(litValue(run($lit(7)))).toBe(14);
+    expect(litValue(run($lit(7)))).toEqual({ ok: true, value: 14 });
   });
 
   it("getter body reads other instance fields (this = receiver)", async () => {
@@ -77,7 +77,7 @@ describe("evaluator class accessors", () => {
 }`,
       "run",
     );
-    expect(litValue(run())).toBe(20);
+    expect(litValue(run())).toEqual({ ok: true, value: 20 });
   });
 
   it("inherited getter from base class", async () => {
@@ -89,7 +89,7 @@ describe("evaluator class accessors", () => {
 }`,
       "run",
     );
-    expect(litValue(run())).toBe("a");
+    expect(litValue(run())).toEqual({ ok: true, value: "a" });
   });
 });
 
@@ -102,7 +102,7 @@ describe("evaluator object-literal accessors", () => {
 }`,
       "run",
     );
-    expect(litValue(run())).toBe(5);
+    expect(litValue(run())).toEqual({ ok: true, value: 5 });
   });
 
   it("getter sees sibling data slot via this", async () => {
@@ -113,7 +113,7 @@ describe("evaluator object-literal accessors", () => {
 }`,
       "run",
     );
-    expect(litValue(run())).toBe(4);
+    expect(litValue(run())).toEqual({ ok: true, value: 4 });
   });
 
   it("setter invoked on write, getter reads back", async () => {
@@ -128,7 +128,7 @@ describe("evaluator object-literal accessors", () => {
 }`,
       "run",
     );
-    expect(litValue(run($lit(7)))).toBe(14);
+    expect(litValue(run($lit(7)))).toEqual({ ok: true, value: 14 });
   });
 
   it("spread invokes getter (native: { ...o }.x evaluates)", async () => {
@@ -139,7 +139,7 @@ describe("evaluator object-literal accessors", () => {
 }`,
       "run",
     );
-    expect(litValue(run())).toBe(5);
+    expect(litValue(run())).toEqual({ ok: true, value: 5 });
   });
 
   it("Object.assign invokes source getter", async () => {
@@ -151,7 +151,7 @@ describe("evaluator object-literal accessors", () => {
 }`,
       "run",
     );
-    expect(litValue(run())).toBe(5);
+    expect(litValue(run())).toEqual({ ok: true, value: 5 });
   });
 
   it("abstract object: accessor keys do not fabricate exact claims", async () => {

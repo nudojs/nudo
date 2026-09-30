@@ -8,7 +8,7 @@ import { abs, litValue, confJoin, num, numLit, bool, boolLit, strLit, bigintLit,
 import { classNameOfValue } from "./class-mark.ts";
 import { builtinCtorNameOf, hostBuiltinCtorName } from "./builtins.ts";
 import { symbolIdOf, isSymbolAbs as isSym } from "./symbol-id.ts";
-import type { Term } from "./term.ts";
+import type { LiteralValue, Term } from "./term.ts";
 import { lit, simplifyTerm, app } from "./term.ts";
 import type { Pred } from "./pred.ts";
 import {
@@ -27,7 +27,7 @@ import { errorTypeAbs, recordMayThrow } from "./exec/may-throw.ts";
 // --- 位运算 / 移位 / 幂 / ToNumber（evaluator $bitand 等运算符路由） ---
 
 /** 数值可被 JS ToNumber/ToNumeric 折叠的字面量；undefined 字面量不在此列（+undefined → unknown/NaN 不折） */
-function coercibleNumberLit(v: ReturnType<typeof litValue>): v is number | string | boolean | null {
+function coercibleNumberLit(v: LiteralValue): v is number | string | boolean | null {
   return (
     typeof v === "number" ||
     typeof v === "string" ||
@@ -44,7 +44,8 @@ function unknownPartial(): Abs {
  * 已知非 bigint 的数值面（number/bool/null/undefined 字面量或 prim）——与 bigint 混型恒 TypeError。
  */
 function isKnownNonBigintNumeric(a: Abs): boolean {
-  const va = litValue(a);
+  const vaR = litValue(a);
+  const va = vaR.ok ? vaR.value : undefined;
   if (typeof va === "number" || typeof va === "boolean" || va === null) return true;
   if (a.term?.op === "lit" && a.term.value === undefined) return true;
   return a.shape.k === "prim" && (a.shape.type === "number" || a.shape.type === "boolean");
@@ -80,8 +81,10 @@ function foldNumericBinOp(
   if (isSym(a) || isSym(b)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
-  const va = litValue(a);
-  const vb = litValue(b);
+  const ra = litValue(a);
+  const rb = litValue(b);
+  const va = ra.ok ? ra.value : undefined;
+  const vb = rb.ok ? rb.value : undefined;
   // 无 bigint 重载的算子（>>>）：任一侧是 bigint（字面量或抽象 prim）即恒 TypeError
   if (!bigOp && (typeof va === "bigint" || typeof vb === "bigint" || isBigPrim(a) || isBigPrim(b))) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
@@ -93,7 +96,7 @@ function foldNumericBinOp(
       try {
         return abs(
           { k: "prim", type: "bigint" },
-          lit(op(va, vb) as never),
+          lit(op(va, vb)),
           pTrue,
           "exact",
         );
@@ -121,10 +124,10 @@ function foldNumericBinOp(
     }
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
-  if (coercibleNumberLit(va) && coercibleNumberLit(vb)) {
+  if (ra.ok && rb.ok && coercibleNumberLit(ra.value) && coercibleNumberLit(rb.value)) {
     return abs(
       { k: "prim", type: "number" },
-      lit(numOp(Number(va), Number(vb))),
+      lit(numOp(Number(ra.value), Number(rb.value))),
       pTrue,
       "exact",
     );
@@ -142,19 +145,20 @@ function foldNumericUnOp(
   if (isSym(a)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
-  const v = litValue(a);
+  const r = litValue(a);
+  const v = r.ok ? r.value : undefined;
   if (typeof v === "bigint") {
     // bigint 上无此一元算子（如 unary +）→ TypeError；折叠失败同口径硬抛
     if (!bigOp) throw new NudoThrow(errorTypeAbs("TypeError"));
     try {
-      return abs({ k: "prim", type: "bigint" }, lit(bigOp(v) as never), pTrue, "exact");
+      return abs({ k: "prim", type: "bigint" }, lit(bigOp(v)), pTrue, "exact");
     } catch (e) {
       if (e instanceof RangeError) throw new NudoThrow(errorTypeAbs("RangeError"));
       throw new NudoThrow(errorTypeAbs("TypeError"));
     }
   }
-  if (coercibleNumberLit(v)) {
-    return abs({ k: "prim", type: "number" }, lit(numOp(Number(v))), pTrue, "exact");
+  if (r.ok && coercibleNumberLit(r.value)) {
+    return abs({ k: "prim", type: "number" }, lit(numOp(Number(r.value))), pTrue, "exact");
   }
   return undefined;
 }
@@ -252,7 +256,8 @@ export function powAbs(a: Abs, b: Abs): Abs {
  * 结果域恒为 number|bigint——unknown 是推断失败，不得当作 ToNumeric 结果。
  */
 export function toNumericAbs(a: Abs): Abs {
-  const v = litValue(a);
+  const vR = litValue(a);
+  const v = vR.ok ? vR.value : undefined;
   if (typeof v === "bigint") return bigintLit(v);
   if (isBigPrim(a)) return a;
   // lit(undefined)：litValue 哨兵吞成「无 lit」，必须看 term
@@ -292,8 +297,10 @@ export function updateSubAbs(a: Abs): Abs {
 
 /** numeric 面加法（调用方保证无 string 拼接臂）：lit 折叠，否则 number|bigint prim */
 function addNumeric(a: Abs, b: Abs): Abs {
-  const va = litValue(a) as number | bigint | undefined;
-  const vb = litValue(b) as number | bigint | undefined;
+  const ra = litValue(a);
+  const rb = litValue(b);
+  const va = ra.ok ? (ra.value as number | bigint | undefined) : undefined;
+  const vb = rb.ok ? (rb.value as number | bigint | undefined) : undefined;
   if (typeof va === "bigint" && typeof vb === "bigint") return bigintLit(va + vb);
   if (typeof va === "number" && typeof vb === "number") return numLit(va + vb);
   const big = (a.shape.k === "prim" && a.shape.type === "bigint") || typeof va === "bigint";
@@ -306,8 +313,10 @@ function addNumeric(a: Abs, b: Abs): Abs {
 }
 
 function subNumeric(a: Abs, b: Abs): Abs {
-  const va = litValue(a) as number | bigint | undefined;
-  const vb = litValue(b) as number | bigint | undefined;
+  const ra = litValue(a);
+  const rb = litValue(b);
+  const va = ra.ok ? (ra.value as number | bigint | undefined) : undefined;
+  const vb = rb.ok ? (rb.value as number | bigint | undefined) : undefined;
   if (typeof va === "bigint" && typeof vb === "bigint") return bigintLit(va - vb);
   if (typeof va === "number" && typeof vb === "number") return numLit(va - vb);
   const big = (a.shape.k === "prim" && a.shape.type === "bigint") || typeof va === "bigint";
@@ -325,13 +334,14 @@ export function toNumberAbs(a: Abs): Abs {
   if (isSym(a)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
-  const v = litValue(a);
+  const r = litValue(a);
+  const v = r.ok ? r.value : undefined;
   if (typeof v === "bigint" || isBigPrim(a)) {
     // +5n / +bigPrim 原生抛 TypeError（catch 可吸收），不得静默 unknown
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
-  if (coercibleNumberLit(v)) {
-    return abs({ k: "prim", type: "number" }, lit(Number(v)), pTrue, "exact");
+  if (r.ok && coercibleNumberLit(r.value)) {
+    return abs({ k: "prim", type: "number" }, lit(Number(r.value)), pTrue, "exact");
   }
   if (a.shape.k === "prim") {
     if (a.shape.type === "number") return a;
@@ -353,7 +363,8 @@ export function typeofAbs(a: Abs): Abs {
   if (!a || typeof a !== "object" || !("shape" in (a as object))) {
     return abs({ k: "prim", type: "string" }, undefined, undefined, "partial");
   }
-  const v = litValue(a);
+  const vR = litValue(a);
+  const v = vR.ok ? vR.value : undefined;
   if (v === null) return strLit("object");
   // lit(undefined) 与「无 lit」在 litValue 上都是 undefined，须看 term
   if (a.term?.op === "lit" && a.term.value === undefined) {
@@ -410,7 +421,8 @@ export function negAbs(a: Abs, _phi: Phi = pTrue): Abs {
   if (isSym(a)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
-  const v = litValue(a);
+  const vR = litValue(a);
+  const v = vR.ok ? vR.value : undefined;
   if (typeof v === "number") return numLitAbs(-v);
   if (typeof v === "bigint") return bigintLit(-(v as bigint));
   // ToNumber 强制（与 unary + / ~ 的 coercibleNumberLit 同族）：
@@ -579,8 +591,10 @@ export function strictEqAbs(a: Abs, b: Abs): boolean | undefined {
     if (ia !== undefined && ib !== undefined) return ia === ib;
     return undefined;
   }
-  const va = litValue(a);
-  const vb = litValue(b);
+  const vaR = litValue(a);
+  const va = vaR.ok ? vaR.value : undefined;
+  const vbR = litValue(b);
+  const vb = vbR.ok ? vbR.value : undefined;
   if (va !== undefined && vb !== undefined) return va === vb;
   const aNullish = va === null || (a.term?.op === "lit" && a.term.value === undefined);
   const evalNullish = vb === null || (b.term?.op === "lit" && b.term.value === undefined);

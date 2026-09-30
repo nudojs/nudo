@@ -28,6 +28,6 @@ describe("evalRunCache key", () => {
     // 语义正确性：src求值引擎的求值必须看到 f() = 2，而非 srcA 的陈旧 1
     const out = tryEvalCall(srcB, "/test/cache-key.js", "f", []);
     if (!out) throw new Error("expected f to resolve via eval path");
-    expect(litValue(out)).toBe(2);
+    expect(litValue(out)).toEqual({ ok: true, value: 2 });
   });
 });

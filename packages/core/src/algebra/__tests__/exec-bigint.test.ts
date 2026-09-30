@@ -34,22 +34,22 @@ async function execTranspiled(source: string, exportName: string) {
 describe("evaluator BigInt literals", () => {
   it("typeof 5n is \"bigint\"", async () => {
     const run = await execTranspiled(`export function run() { return typeof 5n; }`, "run");
-    expect(litValue(run())).toBe("bigint");
+    expect(litValue(run())).toEqual({ ok: true, value: "bigint" });
   });
 
   it("(5n).toString() folds \"5\" without a throw claim", async () => {
     const run = await execTranspiled(`export function run() { return (5n).toString(); }`, "run");
-    expect(litValue(run())).toBe("5");
+    expect(litValue(run())).toEqual({ ok: true, value: "5" });
   });
 
   it("5n == 5 loose equality across number/bigint", async () => {
     const run = await execTranspiled(`export function run() { return 5n == 5; }`, "run");
-    expect(litValue(run())).toBe(true);
+    expect(litValue(run())).toEqual({ ok: true, value: true });
   });
 
   it("5n == 5.5 is false (mathematical value compare)", async () => {
     const run = await execTranspiled(`export function run() { return 5n == 5.5; }`, "run");
-    expect(litValue(run())).toBe(false);
+    expect(litValue(run())).toEqual({ ok: true, value: false });
   });
 
   it("bigint arithmetic folds", async () => {
@@ -58,7 +58,7 @@ describe("evaluator BigInt literals", () => {
       "run",
     );
     // 70n + 4n + 1n = 75n
-    expect(litValue(run())).toBe(75n);
+    expect(litValue(run())).toEqual({ ok: true, value: 75n });
   });
 
   it("bigint shift and power fold", async () => {
@@ -67,12 +67,12 @@ describe("evaluator BigInt literals", () => {
       "run",
     );
     // 8n + 1024n = 1032n
-    expect(litValue(run())).toBe(1032n);
+    expect(litValue(run())).toEqual({ ok: true, value: 1032n });
   });
 
   it("bigint bitwise folds", async () => {
     const run = await execTranspiled(`export function run() { return 5n & 3n; }`, "run");
-    expect(litValue(run())).toBe(1n);
+    expect(litValue(run())).toEqual({ ok: true, value: 1n });
   });
 
   it("abstract bigint stays bigint, never exact undefined", async () => {
@@ -84,6 +84,6 @@ describe("evaluator BigInt literals", () => {
     const r = run(big);
     expect(r.shape.k).toBe("prim");
     if (r.shape.k === "prim") expect(r.shape.type).toBe("bigint");
-    expect(litValue(r)).toBeUndefined();
+    expect(litValue(r)).toEqual({ ok: false });
   });
 });

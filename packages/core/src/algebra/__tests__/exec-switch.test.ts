@@ -23,9 +23,9 @@ export function go(n) {
 }
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
-    expect(litValue(callTranspiledExportFull(exports, "go", [$lit(1)]).result)).toBe("one");
-    expect(litValue(callTranspiledExportFull(exports, "go", [$lit(2)]).result)).toBe("two");
-    expect(litValue(callTranspiledExportFull(exports, "go", [$lit(9)]).result)).toBe("other");
+    expect(litValue(callTranspiledExportFull(exports, "go", [$lit(1)]).result)).toEqual({ ok: true, value: "one" });
+    expect(litValue(callTranspiledExportFull(exports, "go", [$lit(2)]).result)).toEqual({ ok: true, value: "two" });
+    expect(litValue(callTranspiledExportFull(exports, "go", [$lit(9)]).result)).toEqual({ ok: true, value: "other" });
   });
 
   it("handles fall-through", () => {
@@ -43,9 +43,9 @@ export function go(n) {
 }
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
-    expect(litValue(callTranspiledExportFull(exports, "go", [$lit(1)]).result)).toBe("small");
-    expect(litValue(callTranspiledExportFull(exports, "go", [$lit(2)]).result)).toBe("small");
-    expect(litValue(callTranspiledExportFull(exports, "go", [$lit(3)]).result)).toBe("three");
+    expect(litValue(callTranspiledExportFull(exports, "go", [$lit(1)]).result)).toEqual({ ok: true, value: "small" });
+    expect(litValue(callTranspiledExportFull(exports, "go", [$lit(2)]).result)).toEqual({ ok: true, value: "small" });
+    expect(litValue(callTranspiledExportFull(exports, "go", [$lit(3)]).result)).toEqual({ ok: true, value: "three" });
   });
 
   it("abstract disc joins branches", () => {
@@ -86,7 +86,7 @@ export function go(n) {
     }`,
       $lit(NaN),
     );
-    expect(litValue(r.result)).toBe("dflt");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "dflt" });
   });
 
   it("0 matches -0 case and vice versa (strict equality)", () => {
@@ -94,13 +94,13 @@ export function go(n) {
       switch (n) { case -0: return "negzero"; default: return "dflt"; }
     }`;
     const exports = runTranspiled(src, { mode: "analyze" });
-    expect(litValue(callTranspiledExportFull(exports, "go", [$lit(0)]).result)).toBe("negzero");
-    expect(litValue(callTranspiledExportFull(exports, "go", [$lit(-0)]).result)).toBe("negzero");
+    expect(litValue(callTranspiledExportFull(exports, "go", [$lit(0)]).result)).toEqual({ ok: true, value: "negzero" });
+    expect(litValue(callTranspiledExportFull(exports, "go", [$lit(-0)]).result)).toEqual({ ok: true, value: "negzero" });
     const src2 = `export function go(n) {
       switch (n) { case 0: return "zero"; default: return "dflt"; }
     }`;
     const exports2 = runTranspiled(src2, { mode: "analyze" });
-    expect(litValue(callTranspiledExportFull(exports2, "go", [$lit(-0)]).result)).toBe("zero");
+    expect(litValue(callTranspiledExportFull(exports2, "go", [$lit(-0)]).result)).toEqual({ ok: true, value: "zero" });
   });
 
   it("NaN case does not match NaN expression (0/0)", () => {
@@ -110,7 +110,7 @@ export function go(n) {
     }`,
       $lit(0),
     );
-    expect(litValue(r.result)).toBe("dflt");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "dflt" });
   });
 
   it("string case matching is strict (no cross-type coercion)", () => {
@@ -120,6 +120,6 @@ export function go(n) {
     }`,
       { mode: "analyze" },
     );
-    expect(litValue(callTranspiledExportFull(exports, "go", [$lit(1)]).result)).toBe("dflt");
+    expect(litValue(callTranspiledExportFull(exports, "go", [$lit(1)]).result)).toEqual({ ok: true, value: "dflt" });
   });
 });

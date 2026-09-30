@@ -32,29 +32,29 @@ describe("x === x must not fold true when x may be NaN", () => {
     if (v === true) {
       expect(r.result.conf).not.toBe("exact");
     } else {
-      expect(v).toBeUndefined();
+      expect(v.ok ? v.value : undefined).toBeUndefined();
     }
   });
 
   it("NaN literal arg already folds false (control)", () => {
     const r = call(`export function f(x) { return x === x; }`, "f", [numLit(NaN)]);
-    expect(litValue(r.result)).toBe(false);
+    expect(litValue(r.result)).toEqual({ ok: true, value: false });
   });
 
   it("finite literal arg folds true (control)", () => {
     const r = call(`export function f(x) { return x === x; }`, "f", [numLit(1)]);
-    expect(litValue(r.result)).toBe(true);
+    expect(litValue(r.result)).toEqual({ ok: true, value: true });
   });
 
   it("undefined arg folds true (control: undefined === undefined)", () => {
     const r = call(`export function f(x) { return x === x; }`, "f", []);
-    expect(litValue(r.result)).toBe(true);
+    expect(litValue(r.result)).toEqual({ ok: true, value: true });
   });
 
   it("object arg: x === x stays true (reference identity)", () => {
     const src = `export function f() { const o = {}; return o === o; }`;
     const r = call(src, "f", []);
-    expect(litValue(r.result)).toBe(true);
+    expect(litValue(r.result)).toEqual({ ok: true, value: true });
   });
 
   it("x != x must not fold false when x may be NaN", () => {
@@ -66,7 +66,7 @@ describe("x === x must not fold true when x may be NaN", () => {
     if (v === false) {
       expect(r.result.conf).not.toBe("exact");
     } else {
-      expect(v).toBeUndefined();
+      expect(v.ok ? v.value : undefined).toBeUndefined();
     }
   });
 });

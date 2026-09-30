@@ -13,13 +13,13 @@ function tup() {
 
 describe("tuple index reads use canonical array index", () => {
   it("numeric index projects the slot", () => {
-    expect(litValue($idx(tup(), $lit(0)))).toBe(10);
-    expect(litValue($idx(tup(), $lit(2)))).toBe(30);
-    expect(litValue($idx(tup(), $lit(3)))).toBeUndefined();
+    expect(litValue($idx(tup(), $lit(0)))).toEqual({ ok: true, value: 10 });
+    expect(litValue($idx(tup(), $lit(2)))).toEqual({ ok: true, value: 30 });
+    expect(litValue($idx(tup(), $lit(3)))).toEqual({ ok: true, value: undefined });
   });
 
   it('string "0" is index 0, not join-of-all', () => {
-    expect(litValue($idx(tup(), $lit("0")))).toBe(10);
+    expect(litValue($idx(tup(), $lit("0")))).toEqual({ ok: true, value: 10 });
   });
 
   it("non-index key is undefined, not join-of-all", () => {
@@ -30,14 +30,14 @@ describe("tuple index reads use canonical array index", () => {
   });
 
   it("$get on tuple with index string projects the slot", () => {
-    expect(litValue($get(tup(), "0"))).toBe(10);
-    expect(litValue($get(tup(), "2"))).toBe(30);
+    expect(litValue($get(tup(), "0"))).toEqual({ ok: true, value: 10 });
+    expect(litValue($get(tup(), "2"))).toEqual({ ok: true, value: 30 });
   });
 
   it("$get on tuple with non-index key is undefined", () => {
     const r = $get(tup(), "foo");
     expect(r.term?.op === "lit" && r.term.value === undefined).toBe(true);
-    expect(litValue($get(tup(), "1"))).toBe(20);
+    expect(litValue($get(tup(), "1"))).toEqual({ ok: true, value: 20 });
   });
 
   it("empty tuple non-index read is undefined (not unknown join)", () => {

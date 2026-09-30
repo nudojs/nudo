@@ -365,7 +365,7 @@ describe("P1b: map recognizes relation callbacks", () => {
     expect(r.shape.k).toBe("arr");
     if (r.shape.k !== "arr") return;
     // body: 3*2 = 6，不是 string
-    expect(litValue(r.shape.element)).toBe(6);
+    expect(litValue(r.shape.element)).toEqual({ ok: true, value: 6 });
   });
 
   it("map on tuple keeps precision with inline arrow", () => {
@@ -383,8 +383,8 @@ describe("P1b: map recognizes relation callbacks", () => {
     const r = analyzeExport(src, "doubleAll", [tup]);
     expect(r.shape.k).toBe("tuple");
     if (r.shape.k !== "tuple") return;
-    expect(litValue(r.shape.elements[0]!)).toBe(2);
-    expect(litValue(r.shape.elements[1]!)).toBe(4);
+    expect(litValue(r.shape.elements[0]!)).toEqual({ ok: true, value: 2 });
+    expect(litValue(r.shape.elements[1]!)).toEqual({ ok: true, value: 4 });
   });
 
   it("map bare fn without returnType stays unknown", () => {

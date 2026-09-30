@@ -112,7 +112,7 @@ function pair(a, b) {
     const g = generalizeFromAst("scale", SRC_SCALE)!;
     const r1 = g.instantiate([numLit(5)]);
     const r2 = g.instantiate([numLit(5)]);
-    expect(litValue(r1)).toBe(6);
+    expect(litValue(r1)).toEqual({ ok: true, value: 6 });
     expect(r2).toBe(r1);
   });
 
@@ -120,8 +120,8 @@ function pair(a, b) {
     const g = generalizeFromAst("scale", SRC_SCALE)!;
     const r1 = g.instantiate([numLit(5)]);
     const r2 = g.instantiate([numLit(7)]);
-    expect(litValue(r1)).toBe(6);
-    expect(litValue(r2)).toBe(8);
+    expect(litValue(r1)).toEqual({ ok: true, value: 6 });
+    expect(litValue(r2)).toEqual({ ok: true, value: 8 });
     expect(r2).not.toBe(r1);
   });
 
@@ -180,7 +180,7 @@ function pair(a, b) {
     const g2 = generalizeFromAst("scale", SRC_SCALE)!;
     expect(g2).not.toBe(g1);
     const r2 = g2.instantiate([numLit(5)]);
-    expect(litValue(r2)).toBe(6);
+    expect(litValue(r2)).toEqual({ ok: true, value: 6 });
     expect(r2).not.toBe(r1);
   });
 });

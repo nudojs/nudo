@@ -77,8 +77,8 @@ describe("web env load + Fetch/URL/DOM faces", () => {
     const folded = impl.apply!([strLit("https://example.com/a?b=1")]);
     expect(folded).toBeTruthy();
     // literal fold: href carries the concrete URL string
-    expect(litValue(walk(folded, "href")!)).toBe("https://example.com/a?b=1");
-    expect(litValue(walk(folded, "origin")!)).toBe("https://example.com");
+    expect(litValue(walk(folded, "href")!)).toEqual({ ok: true, value: "https://example.com/a?b=1" });
+    expect(litValue(walk(folded, "origin")!)).toEqual({ ok: true, value: "https://example.com" });
     expect(shapeOf(walk(folded, "searchParams"), "URL.searchParams")).toBeTruthy();
     expect(shapeOf(walk(folded, "toString"), "URL.toString")).toContain("=>");
 
@@ -160,11 +160,11 @@ describe("web env load + Fetch/URL/DOM faces", () => {
     const btoaFn = globalOf(env, "btoa");
     const impl = getFnImpl(btoaFn)!;
     const folded = impl.apply!([strLit("hi")]);
-    expect(litValue(folded!)).toBe(Buffer.from("hi").toString("base64"));
+    expect(litValue(folded!)).toEqual({ ok: true, value: Buffer.from("hi").toString("base64") });
     const atobFn = globalOf(env, "atob");
     const aImpl = getFnImpl(atobFn)!;
     const decoded = aImpl.apply!([strLit(Buffer.from("hi").toString("base64"))]);
-    expect(litValue(decoded!)).toBe("hi");
+    expect(litValue(decoded!)).toEqual({ ok: true, value: "hi" });
   });
 
   it("TextEncoder / TextDecoder / structuredClone are typed", () => {

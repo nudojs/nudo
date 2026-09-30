@@ -32,7 +32,8 @@ export type { EnvDefinition };
 
 function absStr(a: Abs | undefined): string | undefined {
   if (!a) return undefined;
-  const v = litValue(a);
+  const vR = litValue(a);
+  const v = vR.ok ? vR.value : undefined;
   return typeof v === "string" ? v : undefined;
 }
 

@@ -30,55 +30,35 @@ function val(src: string) {
 
 describe("JSON.stringify number space is min(10, ToIntegerOrInfinity(space))", () => {
   it("Infinity space pretty-prints with 10 spaces (not compact)", () => {
-    expect(val(`export function f() { return JSON.stringify({a:1}, null, Infinity); }`)).toBe(
-      '{\n          "a": 1\n}',
-    );
+    expect(val(`export function f() { return JSON.stringify({a:1}, null, Infinity); }`)).toEqual({ ok: true, value: '{\n          "a": 1\n}', });
   });
 
   it("-Infinity stays compact (min(10, -Inf) unused → empty gap)", () => {
-    expect(val(`export function f() { return JSON.stringify({a:1}, null, -Infinity); }`)).toBe(
-      '{"a":1}',
-    );
+    expect(val(`export function f() { return JSON.stringify({a:1}, null, -Infinity); }`)).toEqual({ ok: true, value: '{"a":1}', });
   });
 
   it("positive fraction in (0,1) pretty-prints with empty indent", () => {
     // ToIntegerOrInfinity(0.1)=0，但原 space>0 仍走 pretty（换行、indent=""）
-    expect(val(`export function f() { return JSON.stringify({a:1}, null, 0.1); }`)).toBe(
-      '{\n"a": 1\n}',
-    );
-    expect(val(`export function f() { return JSON.stringify({a:1}, null, 5e-324); }`)).toBe(
-      '{\n"a": 1\n}',
-    );
+    expect(val(`export function f() { return JSON.stringify({a:1}, null, 0.1); }`)).toEqual({ ok: true, value: '{\n"a": 1\n}', });
+    expect(val(`export function f() { return JSON.stringify({a:1}, null, 5e-324); }`)).toEqual({ ok: true, value: '{\n"a": 1\n}', });
   });
 
   it("0 / -0 / negatives stay compact", () => {
-    expect(val(`export function f() { return JSON.stringify({a:1}, null, 0); }`)).toBe('{"a":1}');
-    expect(val(`export function f() { return JSON.stringify({a:1}, null, -0); }`)).toBe('{"a":1}');
-    expect(val(`export function f() { return JSON.stringify({a:1}, null, -3); }`)).toBe('{"a":1}');
-    expect(val(`export function f() { return JSON.stringify({a:1}, null, -0.5); }`)).toBe('{"a":1}');
+    expect(val(`export function f() { return JSON.stringify({a:1}, null, 0); }`)).toEqual({ ok: true, value: '{"a":1}' });
+    expect(val(`export function f() { return JSON.stringify({a:1}, null, -0); }`)).toEqual({ ok: true, value: '{"a":1}' });
+    expect(val(`export function f() { return JSON.stringify({a:1}, null, -3); }`)).toEqual({ ok: true, value: '{"a":1}' });
+    expect(val(`export function f() { return JSON.stringify({a:1}, null, -0.5); }`)).toEqual({ ok: true, value: '{"a":1}' });
   });
 
   it("finite ints and fractions above 1 still clamp / floor correctly", () => {
-    expect(val(`export function f() { return JSON.stringify({a:1}, null, 2); }`)).toBe(
-      '{\n  "a": 1\n}',
-    );
-    expect(val(`export function f() { return JSON.stringify({a:1}, null, 2.7); }`)).toBe(
-      '{\n  "a": 1\n}',
-    );
-    expect(val(`export function f() { return JSON.stringify({a:1}, null, 100); }`)).toBe(
-      '{\n          "a": 1\n}',
-    );
-    expect(val(`export function f() { return JSON.stringify({a:1}, null, 10.9); }`)).toBe(
-      '{\n          "a": 1\n}',
-    );
+    expect(val(`export function f() { return JSON.stringify({a:1}, null, 2); }`)).toEqual({ ok: true, value: '{\n  "a": 1\n}', });
+    expect(val(`export function f() { return JSON.stringify({a:1}, null, 2.7); }`)).toEqual({ ok: true, value: '{\n  "a": 1\n}', });
+    expect(val(`export function f() { return JSON.stringify({a:1}, null, 100); }`)).toEqual({ ok: true, value: '{\n          "a": 1\n}', });
+    expect(val(`export function f() { return JSON.stringify({a:1}, null, 10.9); }`)).toEqual({ ok: true, value: '{\n          "a": 1\n}', });
   });
 
   it("string space still takes the first 10 code units (host handles it)", () => {
-    expect(val(`export function f() { return JSON.stringify({a:1}, null, '1234567890123'); }`)).toBe(
-      '{\n1234567890"a": 1\n}',
-    );
-    expect(val(`export function f() { return JSON.stringify({a:1}, null, '\\t'); }`)).toBe(
-      '{\n\t"a": 1\n}',
-    );
+    expect(val(`export function f() { return JSON.stringify({a:1}, null, '1234567890123'); }`)).toEqual({ ok: true, value: '{\n1234567890"a": 1\n}', });
+    expect(val(`export function f() { return JSON.stringify({a:1}, null, '\\t'); }`)).toEqual({ ok: true, value: '{\n\t"a": 1\n}', });
   });
 });

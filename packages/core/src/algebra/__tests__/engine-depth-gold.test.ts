@@ -95,7 +95,7 @@ export function sum(xs) {
       "sum",
       [1, 2, 3, 4, 5],
     );
-    expect(litValue(r.result)).toBe(15);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 15 });
     expect(formatAbs(r.result)).toBe("15  #exact");
   });
 
@@ -111,7 +111,7 @@ export function sum(xs) {
       "sum",
       [1, 2, 3, 4, 5],
     );
-    expect(litValue(r.result)).toBe(15);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 15 });
   });
 
   it("inline array literal for-of folds to 15", () => {
@@ -125,7 +125,7 @@ export function sum() {
 `,
       "sum",
     );
-    expect(litValue(r.result)).toBe(15);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 15 });
   });
 
   it("reduce on concrete tuple folds to 15", () => {
@@ -138,7 +138,7 @@ export function sum(xs) {
       "sum",
       [1, 2, 3, 4, 5],
     );
-    expect(litValue(r.result)).toBe(15);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 15 });
   });
 
   it("string compound concat stays exact on literals", () => {
@@ -152,7 +152,7 @@ export function join() {
 `,
       "join",
     );
-    expect(litValue(r.result)).toBe("abc");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "abc" });
   });
 });
 
@@ -245,6 +245,6 @@ export function sum(xs) {
       "sum",
       $lit([1, 2, 3, 4, 5]),
     );
-    expect(litValue(r.result)).toBe(15);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 15 });
   });
 });

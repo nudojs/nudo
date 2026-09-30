@@ -43,6 +43,6 @@ describe("simplifyTerm algebra identities", () => {
   it("mul(x, 1) on a number var still keeps the var identity", () => {
     const r = mul(numVar("x"), numLit(1));
     expect(r.term).toEqual(v("x"));
-    expect(litValue(r)).toBeUndefined();
+    expect(litValue(r)).toEqual({ ok: false });
   });
 });
