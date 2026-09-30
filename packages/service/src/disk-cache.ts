@@ -62,13 +62,86 @@ export function sha256Hex(data: string | Buffer): string {
   return createHash("sha256").update(data).digest("hex");
 }
 
-/** 相对化路径，避免绝对路径进磁盘键；树外路径用稳定内容 hash */
+/** 路径段归一为 `/`（仅键构造；不触盘） */
+function toPosix(p: string): string {
+  return p.split(sep).join("/");
+}
+
+/**
+ * `node_modules/<pkg>/…` 逻辑段。取**最后一个**有效包位：
+ * 跳过 `.pnpm` / `.bin` 等隐藏目录；scoped 包吃两段（`@scope/name`）。
+ * pnpm 虚拟树 `node_modules/.pnpm/foo@1/node_modules/foo/x.js` 归一为
+ * `node_modules/foo/x.js` —— 跨 store/checkout 稳定。
+ */
+function nodeModulesLogicalPath(posixPath: string): string | undefined {
+  const parts = posixPath.split("/");
+  for (let i = parts.length - 1; i >= 0; i--) {
+    if (parts[i] !== "node_modules") continue;
+    const next = parts[i + 1];
+    if (!next || next.startsWith(".")) continue;
+    if (next.startsWith("@")) {
+      const name = parts[i + 2];
+      if (!name || name.startsWith(".")) continue;
+    }
+    return parts.slice(i).join("/");
+  }
+  return undefined;
+}
+
+/**
+ * 自文件所在目录向上找 monorepo 根。
+ * 优先**最近**的确定性标记（`pnpm-workspace.yaml` / `lerna.json`）——
+ * 即 clone 根，相对段不含 checkout 目录名，跨机稳定。
+ * 无确定性标记时退回最近的 `package.json#workspaces`。
+ */
+function monorepoLogicalPath(posixPath: string): string | undefined {
+  let dir = dirname(posixPath);
+  let workspacesRoot: string | undefined;
+  for (;;) {
+    if (existsSync(join(dir, "pnpm-workspace.yaml")) || existsSync(join(dir, "lerna.json"))) {
+      return toPosix(relative(dir, posixPath)) || undefined;
+    }
+    if (!workspacesRoot) {
+      try {
+        const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as {
+          workspaces?: unknown;
+        };
+        if (pkg?.workspaces != null) workspacesRoot = dir;
+      } catch {
+        /* keep walking */
+      }
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  if (!workspacesRoot) return undefined;
+  const r = toPosix(relative(workspacesRoot, posixPath));
+  if (!r || r.startsWith("..") || isAbsolute(r)) return undefined;
+  return r;
+}
+
+/**
+ * 稳定逻辑根相对化（磁盘缓存路径维）：树内相对 `root`，树外取
+ * `node_modules/<pkg>` 段或 monorepo root；绝对路径明文绝不进 key。
+ *
+ * 同一逻辑文件在不同 checkout / 机器 / CI runner 上必须得到**同一**键段；
+ * 无 `root` 时同样禁止绝对路径明文。
+ *
+ * 解析序：
+ * 1. 落在 `root` 内 → 相对 `root`（同包布局下已稳定）
+ * 2. `node_modules/<pkg>` 逻辑段（含 pnpm 虚拟树归一）
+ * 3. monorepo root 相对化（`pnpm-workspace.yaml` / `lerna.json` / `package.json#workspaces`）
+ * 4. 仍无稳定根 → `ext:` + 路径 sha（只保证不明文；跨机仍可能 miss，不产生错命中）
+ */
 export function relativizePath(p: string, root?: string): string {
-  const norm = p.split(sep).join("/");
-  if (!root) return norm;
-  const r = relative(root, p).split(sep).join("/");
-  if (!r.startsWith("..") && !isAbsolute(r)) return r;
-  // 树外依赖：hash 而非机器绝对路径，保证跨 checkout/CI 键稳定
+  const norm = toPosix(p);
+  if (root) {
+    const r = toPosix(relative(root, p));
+    if (!r.startsWith("..") && !isAbsolute(r)) return r;
+  }
+  const logical = nodeModulesLogicalPath(norm) ?? monorepoLogicalPath(norm);
+  if (logical) return logical;
   return `ext:${createHash("sha256").update(norm).digest("hex").slice(0, 16)}`;
 }
 

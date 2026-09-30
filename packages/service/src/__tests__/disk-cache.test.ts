@@ -1,7 +1,15 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { mkdtempSync, rmSync, readFileSync, readdirSync, existsSync } from "node:fs";
+import {
+  mkdtempSync,
+  rmSync,
+  readFileSync,
+  readdirSync,
+  existsSync,
+  mkdirSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import {
   DiskCache,
   checkCacheKey,
@@ -328,5 +336,130 @@ describe("B3/B4 config", () => {
       depContents: [{ path: "/p/std.nudo.js", content: "export const positive = 2;\n" }],
     });
     expect(a).not.toBe(b);
+  });
+});
+
+describe("B3 path key portability (F-6 / FIX-D3)", () => {
+  /** 两台不同 checkout 根：同逻辑布局 → 同 key；内容变 → miss */
+  function makeCheckout(layout: "node_modules" | "monorepo" | "pnpm"): {
+    root: string;
+    projectDir: string;
+    filePath: string;
+    depPath: string;
+  } {
+    const root = mkdtempSync(join(tmpdir(), "nudo-checkout-"));
+    const projectDir = join(root, "packages", "pkg");
+    const filePath = join(projectDir, "src", "a.js");
+    mkdirSync(join(projectDir, "src"), { recursive: true });
+    writeFileSync(filePath, "export const x = 1;\n");
+
+    if (layout === "node_modules") {
+      const depDir = join(root, "node_modules", "foo");
+      mkdirSync(depDir, { recursive: true });
+      const depPath = join(depDir, "lib.js");
+      writeFileSync(depPath, "export const positive = 1;\n");
+      return { root, projectDir, filePath, depPath };
+    }
+    if (layout === "pnpm") {
+      const depDir = join(root, "node_modules", ".pnpm", "foo@1.0.0", "node_modules", "foo");
+      mkdirSync(depDir, { recursive: true });
+      const depPath = join(depDir, "lib.js");
+      writeFileSync(depPath, "export const positive = 1;\n");
+      return { root, projectDir, filePath, depPath };
+    }
+    // monorepo：树内 packages/pkg + 树外 shared/（hoisted 非 node_modules）
+    writeFileSync(join(root, "pnpm-workspace.yaml"), "packages:\n  - packages/*\n");
+    mkdirSync(join(root, "shared"), { recursive: true });
+    const depPath = join(root, "shared", "util.js");
+    writeFileSync(depPath, "export const positive = 1;\n");
+    return { root, projectDir, filePath, depPath };
+  }
+
+  const keyFor = (
+    c: { projectDir: string; filePath: string; depPath: string },
+    depContent: string,
+  ) =>
+    checkCacheKey(c.filePath, "export const x = 1;\n", {
+      autoBind: true,
+      projectDir: c.projectDir,
+      depContents: [{ path: c.depPath, content: depContent }],
+    });
+
+  it("node_modules dep: same key across different checkout roots", () => {
+    const a = makeCheckout("node_modules");
+    const b = makeCheckout("node_modules");
+    try {
+      expect(a.root).not.toBe(b.root);
+      expect(keyFor(a, "export const positive = 1;\n")).toBe(
+        keyFor(b, "export const positive = 1;\n"),
+      );
+    } finally {
+      rmSync(a.root, { recursive: true, force: true });
+      rmSync(b.root, { recursive: true, force: true });
+    }
+  });
+
+  it("pnpm virtual-store dep: logical node_modules/<pkg> segment is portable", () => {
+    const a = makeCheckout("pnpm");
+    const b = makeCheckout("pnpm");
+    try {
+      expect(relativizePath(a.depPath, a.projectDir)).toBe("node_modules/foo/lib.js");
+      expect(relativizePath(b.depPath, b.projectDir)).toBe("node_modules/foo/lib.js");
+      expect(keyFor(a, "export const positive = 1;\n")).toBe(
+        keyFor(b, "export const positive = 1;\n"),
+      );
+    } finally {
+      rmSync(a.root, { recursive: true, force: true });
+      rmSync(b.root, { recursive: true, force: true });
+    }
+  });
+
+  it("monorepo out-of-tree dep: root-relative under workspace root is portable", () => {
+    const a = makeCheckout("monorepo");
+    const b = makeCheckout("monorepo");
+    try {
+      expect(relativizePath(a.depPath, a.projectDir)).toBe("shared/util.js");
+      expect(relativizePath(b.depPath, b.projectDir)).toBe("shared/util.js");
+      expect(keyFor(a, "export const positive = 1;\n")).toBe(
+        keyFor(b, "export const positive = 1;\n"),
+      );
+    } finally {
+      rmSync(a.root, { recursive: true, force: true });
+      rmSync(b.root, { recursive: true, force: true });
+    }
+  });
+
+  it("dep content change → key miss (even with portable path segment)", () => {
+    const a = makeCheckout("node_modules");
+    try {
+      expect(keyFor(a, "export const positive = 1;\n")).not.toBe(
+        keyFor(a, "export const positive = 2;\n"),
+      );
+    } finally {
+      rmSync(a.root, { recursive: true, force: true });
+    }
+  });
+
+  it("no projectDir: absolute path never enters the key in the clear", () => {
+    const a = makeCheckout("node_modules");
+    try {
+      const abs = a.depPath.split(sep).join("/");
+      const rel = relativizePath(a.depPath);
+      expect(rel).toBe("node_modules/foo/lib.js");
+      expect(rel).not.toBe(abs);
+      expect(rel.startsWith("/")).toBe(false);
+
+      // 无任何稳定逻辑根：仍禁止绝对路径明文进 key
+      const orphan = join(a.root, "elsewhere", "unique-orphan-file.js");
+      mkdirSync(join(a.root, "elsewhere"), { recursive: true });
+      writeFileSync(orphan, "x\n");
+      const orphanAbs = orphan.split(sep).join("/");
+      const fallback = relativizePath(orphan);
+      expect(fallback).not.toBe(orphanAbs);
+      expect(fallback.startsWith("/")).toBe(false);
+      expect(fallback).not.toContain(orphanAbs);
+    } finally {
+      rmSync(a.root, { recursive: true, force: true });
+    }
   });
 });
