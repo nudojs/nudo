@@ -27,7 +27,7 @@ import {
   type InterfaceTierOpts,
 } from "@nudojs/core";
 import { sourceHasRequireCall } from "@nudojs/core/internal";
-import { parse, extractDirectives, extractFileDirectives } from "@nudojs/parser";
+import { parse, extractDirectives, extractDirectivesQuiet, extractFileDirectives } from "@nudojs/parser";
 import type { FunctionWithDirectives } from "@nudojs/parser";
 import {
   loadEnvs,
@@ -55,7 +55,7 @@ export type CaseInfo = {
 
 export function getCasesForFile(filePath: string, source: string): { functionName: string; cases: { name: string; index: number }[]; loc: SourceLocation }[] {
   const ast = parse(source);
-  const functions = extractDirectives(ast);
+  const functions = extractDirectivesQuiet(ast);
   return functions.map((fn) => {
     const cases = fn.directives
       .filter((d) => d.kind === "case")
@@ -101,7 +101,7 @@ function positionInsideCaseFunction(
   line: number,
 ): boolean {
   try {
-    const enclosing = findEnclosingFunction(extractDirectives(ast), line);
+    const enclosing = findEnclosingFunction(extractDirectivesQuiet(ast), line);
     return !!enclosing && enclosing.directives.some((d) => d.kind === "case");
   } catch {
     return false;
@@ -125,7 +125,7 @@ function absFromEval(
   // fail-closed：节点级 Abs 收集（collectAbsNodeTypes/evalProgramAbs）已删；
   // 仅标识符绑定面（evalAbsModuleGraph 的 collectAbsBindingsFromGraph）
   try {
-    const seeds = mockDirectivesToAbsSeeds(extractDirectives(ast), { fromFile: filePath });
+    const seeds = mockDirectivesToAbsSeeds(extractDirectivesQuiet(ast), { fromFile: filePath });
     const ident = findIdentNameAtPosition(source, line, column, ast);
     if (ident) {
       const binds = collectAbsBindingsFromGraph(source, filePath, {
@@ -339,7 +339,7 @@ export function getHoverAtPosition(
     try {
       // 经模块图（相对 + 裸包）求 Abs 绑定
       if (isEvalCapable(source, []) || !sourceHasRequireCall(source)) {
-        const seeds = mockDirectivesToAbsSeeds(extractDirectives(file ?? parse(source)), {
+        const seeds = mockDirectivesToAbsSeeds(extractDirectivesQuiet(file ?? parse(source)), {
           fromFile: filePath,
         });
         const absBinds = collectAbsBindingsFromGraph(source, filePath, {
@@ -501,7 +501,7 @@ export function getCompletionsAtPosition(
   // Abs 接收者优先：模块图绑定无损，不经 TypeValue evaluateProgram。
   // 空结果（unknown/never/fn 无属性）再落 TypeValue 兜底。
   try {
-    const seeds = mockDirectivesToAbsSeeds(extractDirectives(ast), { fromFile: filePath });
+    const seeds = mockDirectivesToAbsSeeds(extractDirectivesQuiet(ast), { fromFile: filePath });
     const binds = collectAbsBindingsFromGraph(source, filePath, {
       seedVars: seeds.seedVars,
       seedFns: seeds.seedFns as never,
@@ -534,7 +534,7 @@ function getVariableCompletions(filePath: string, source: string): CompletionIte
 
   // Abs 模块图绑定优先（无损；detail 经外延桥保持既有文案）
   try {
-    const seeds = mockDirectivesToAbsSeeds(extractDirectives(ast), { fromFile: filePath });
+    const seeds = mockDirectivesToAbsSeeds(extractDirectivesQuiet(ast), { fromFile: filePath });
     const binds = collectAbsBindingsFromGraph(source, filePath, {
       seedVars: seeds.seedVars,
       seedFns: seeds.seedFns as never,

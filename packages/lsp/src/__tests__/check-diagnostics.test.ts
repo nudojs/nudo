@@ -90,4 +90,56 @@ function f(x) { return x; }
     // drain 后 buffer 不得残留（不得被在途 validate 窃取）
     expect(takeDirectiveDiags()).toHaveLength(0);
   });
+
+  it("checkToLspDiagnostics 不窃取在途其他 extract 的指令诊断（R2B-003）", async () => {
+    const { takeDirectiveDiags, extractDirectives, parse, directiveDiagCount } =
+      await import("@nudojs/parser");
+    takeDirectiveDiags(); // 清空
+    const badB = `
+/**
+ * @nudo:case 'b' (1)
+ */
+function g(x) { return x; }
+`;
+    const badA = `
+/**
+ * @nudo:case 'a' (1)
+ */
+function f(x) { return x; }
+`;
+    // 文件 B 的 hover 探测：extract 后不 drain（模拟纯查询路径污染 buffer）
+    extractDirectives(parse(badB));
+    const before = directiveDiagCount();
+    const diags = checkToLspDiagnostics("/t/fileA.js", badA);
+    // A 的结果只含 A 自己的指令诊断，不得混入 B 的
+    const dirDiags = diags.filter((d) => d.code === "nudo:directive-syntax");
+    expect(dirDiags.length).toBeGreaterThan(0);
+    expect(dirDiags.some((d) => d.message.includes("'b'"))).toBe(false);
+    expect(dirDiags.some((d) => d.message.includes("'a'"))).toBe(true);
+    // B 的诊断仍在 buffer（不得被 checkToLspDiagnostics 全量 take 偷走）
+    const leftover = takeDirectiveDiags();
+    expect(leftover.some((d) => d.message.includes("'b'"))).toBe(true);
+  });
+
+  it("checkToLspDiagnostics catch 不再静默 return []（R2B-003）", () => {
+    // 传入会让 checkSource 抛错的输入：用 Proxy 让 source 访问即抛
+    const evilSource = new Proxy(
+      {},
+      {
+        get(_t, prop) {
+          if (prop === "toString" || prop === Symbol.toPrimitive || prop === "valueOf") {
+            return () => " ";
+          }
+          throw new Error("boom");
+        },
+        has() {
+          return true;
+        },
+      },
+    ) as unknown as string;
+    const diags = checkToLspDiagnostics("/t/evil.js", evilSource);
+    // 失败必须留错误面（Analysis/Check error），不得 [] 把门禁通道整段丢掉
+    expect(diags.length).toBeGreaterThan(0);
+    expect(diags.some((d) => /error/i.test(d.message))).toBe(true);
+  });
 });

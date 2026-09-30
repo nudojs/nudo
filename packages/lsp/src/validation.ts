@@ -34,7 +34,7 @@ import {
 
 export { filterDiagnosticsByLevel, diagnosticsLevelForFile };
 import { checkSource, pTrue, evictGeneralizeMemoForPaths, evictCheckSourceMemoForPaths, extractNudoImports, isNodeModulesPath, sidecarPathOf } from "@nudojs/core";
-import { parse, extractDirectives, takeDirectiveDiags } from "@nudojs/parser";
+import { parse, extractDirectives, takeDirectiveDiagsSince, directiveDiagCount } from "@nudojs/parser";
 import { extractAllLoadSpecs, resolveDepPath, sidecarSpecsOf, stripStringsKeepComments } from "@nudojs/core/internal";
 import { createHash } from "node:crypto";
 
@@ -570,10 +570,11 @@ export function checkToLspDiagnostics(
     });
     const issues = [...report.issues];
     // D1: 指令文法诊断（nudo:directive-syntax）——与 check CLI 同口径：
-    // extractDirectives 产出 + takeDirectiveDiags 排干。未接会把诊断饿死在
-    // 全局 buffer（或被在途 validate / lens 探测窃取，对齐 agent-tools 注释）。
+    // extractDirectives 产出 + since 锚只排干自身增量（对齐 takeInterfaceDiagsSince）。
+    // 全量 take 会在 await 窗口窃取在途 validate / lens 探测待收的诊断（跨文件错报）。
+    const dirDiagSince = directiveDiagCount();
     extractDirectives(parse(source));
-    for (const d of takeDirectiveDiags()) {
+    for (const d of takeDirectiveDiagsSince(dirDiagSince)) {
       issues.push({
         severity: "warning",
         code: d.code,
@@ -612,8 +613,18 @@ export function checkToLspDiagnostics(
           },
         } satisfies LspDiagnostic;
       });
-  } catch {
-    return [];
+  } catch (err) {
+    // 不得静默 `return []` 把门禁通道整段丢掉（constraint-violated 等会无端消失）——
+    // 失败本身变成一条 Error 诊断，与 push 的 Analysis error 同口径
+    return [
+      {
+        severity: DiagnosticSeverity.Error,
+        range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
+        message: `Check error: ${(err as Error).message}`,
+        source: "nudo-check",
+        code: "nudo:internal",
+      },
+    ];
   }
 }
 

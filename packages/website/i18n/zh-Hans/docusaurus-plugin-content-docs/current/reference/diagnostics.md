@@ -339,6 +339,16 @@ Case 路径可能抛（test / 线索）。L2 升格的是**入口** throws。
 
 Context: [L2 —— 入口 throws](../guides/check.md#l2--entry-throws) · [@nudo:throws](../concepts/directives.md#nudothrows--declare-intentional-throws)
 
+### `nudo:internal` {#nudo-internal}
+
+```text
+Check error: <message>
+```
+
+内部分析/校验失败以诊断形式浮出（check 门禁未能完整跑完）。**Error** —— check 通道不得静默消失；请修复底层失败或上报 bug。
+
+Context: [nudo check](../guides/check.md#what-it-checks)
+
 ## 模块图
 
 Abs 模块求值（`evalAbsModuleGraph`）遇到装载问题时上报。`cycle` / `depth` 为 warning；`missing` / `missing-export` 为 error。

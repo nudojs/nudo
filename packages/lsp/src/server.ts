@@ -9,6 +9,7 @@ import {
   type InitializeResult,
   CodeLensRefreshRequest,
   DiagnosticRefreshRequest,
+  DiagnosticSeverity,
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import { readFileSync, existsSync, realpathSync } from "node:fs";
@@ -106,6 +107,13 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
   });
 
   const activeCases = new Map<string, Map<string, number>>();
+
+  /**
+   * Pull 诊断成功面缓存（R2-2-pull-diagnostics-error-clears-all）：
+   * 外层 catch 不得 `items: []` 把瞬时分析失败当「文件干净」——保留上次已发布
+   * 诊断，无上次则标单条 Analysis error（与 push 的 validateText catch 同口径）。
+   */
+  const lastPullItems = new Map<string, ReturnType<typeof toLspDiagnostic>[]>();
 
   function getActiveCasesForUri(uri: string): Map<string, number> {
     const existing = activeCases.get(uri);
@@ -224,6 +232,7 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
     if (timer) clearTimeout(timer);
     debounceTimers.delete(event.document.uri);
     nudoFileCache.delete(event.document.uri);
+    lastPullItems.delete(event.document.uri);
     const filePath = uriToFilePath(event.document.uri);
     analysisCache.delete(filePath);
     activeCases.delete(event.document.uri);
@@ -516,9 +525,22 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
         if (seen.has(`${ld.code ?? ""}\0${ld.message}`)) continue;
         items.push(ld);
       }
+      lastPullItems.set(params.textDocument.uri, items);
       return { kind: "full", items, version: document.version };
-    } catch {
-      return { kind: "full", items: [], version: document?.version };
+    } catch (err) {
+      // 不得 items:[] 把瞬时失败当「文件干净」——保留上次已发布面，或标 Analysis error
+      connection.console.error(
+        `nudo pull diagnostics failed for ${params.textDocument.uri}: ${(err as Error).message}`,
+      );
+      const last = lastPullItems.get(params.textDocument.uri);
+      const errDiag = {
+        severity: DiagnosticSeverity.Error,
+        range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
+        message: `Analysis error: ${(err as Error).message}`,
+        source: "nudo",
+      } as ReturnType<typeof toLspDiagnostic>;
+      const items = last && last.length > 0 ? last : [errDiag];
+      return { kind: "full", items, version: document?.version };
     }
   });
 

@@ -144,7 +144,8 @@ export type FunctionWithDirectives = {
 export type DirectiveDiag = { code: string; message: string };
 
 let directiveDiagCollector: ((d: DirectiveDiag) => void) | null = null;
-const directiveDiags: DirectiveDiag[] = [];
+let directiveDiagSeq = 0;
+const directiveDiags: Array<{ seq: number; d: DirectiveDiag }> = [];
 const MAX_DIRECTIVE_DIAGS = 1024;
 const directiveDiagSeen = new Set<string>();
 
@@ -152,10 +153,32 @@ export function setDirectiveDiagCollector(fn: ((d: DirectiveDiag) => void) | nul
   directiveDiagCollector = fn;
 }
 
+/** 当前诊断累计序号（since 锚：消费方只排干自身 extract 产生的增量） */
+export function directiveDiagCount(): number {
+  return directiveDiagSeq;
+}
+
+/** 取走已收集的诊断（全量排干 + 清空 seen）——CLI/测试整批消费 */
 export function takeDirectiveDiags(): DirectiveDiag[] {
-  const out = [...directiveDiags];
+  const out = directiveDiags.map((e) => e.d);
   directiveDiags.length = 0;
   directiveDiagSeen.clear();
+  return out;
+}
+
+/**
+ * 只取走 seq > since 的诊断（清空仅限增量）——对齐 takeInterfaceDiagsSince。
+ * LSP 长驻进程里 analyze/check/lens 用它排干**自身 extract** 产生的诊断，
+ * 不窃取在途其他消费方待收的指令文法诊断（全量 take 曾在 await 窗口偷走跨文件诊断）。
+ */
+export function takeDirectiveDiagsSince(since: number): DirectiveDiag[] {
+  const out: DirectiveDiag[] = [];
+  let kept = 0;
+  for (const e of directiveDiags) {
+    if (e.seq > since) out.push(e.d);
+    else directiveDiags[kept++] = e;
+  }
+  directiveDiags.length = kept;
   return out;
 }
 
@@ -168,8 +191,17 @@ function emitDirectiveDiag(d: DirectiveDiag): void {
     // seen 集合与 buffer 不同步会漏报不同消息；简单清空重来
     directiveDiagSeen.clear();
   }
-  directiveDiags.push(d);
+  directiveDiags.push({ seq: ++directiveDiagSeq, d });
   directiveDiagCollector?.(d);
+}
+
+/**
+ * 每次 extract 自成一炉：seen 只在**单次调用内**去重（同文件同文案不双报）。
+ * 跨调用全局 seen 会同消息跨文件吞报（B 先 extract 后 A 丢报），也会让
+ * take 之后的同源再 extract 无法重新 emit（重分析饿死）。
+ */
+function resetDirectiveDiagSeen(): void {
+  directiveDiagSeen.clear();
 }
 
 // 指令标签只在「注释行首」匹配（可选 `*` / `//` 已由 comment.value 剥掉）：
@@ -1063,6 +1095,7 @@ function getFunctionName(node: Node): string {
  * case 与 contract 对同一函数集合同时可见。
  */
 export function extractDirectives(ast: Node): FunctionWithDirectives[] {
+  resetDirectiveDiagSeen();
   const results: FunctionWithDirectives[] = [];
   if (ast.type !== "File") return results;
 
@@ -1080,12 +1113,25 @@ export function extractDirectives(ast: Node): FunctionWithDirectives[] {
   return results;
 }
 
+/**
+ * 纯查询 extract：排干自身产生的指令文法诊断增量并丢弃——
+ * hover/completion/collectSkipReturns 等探测路径不得把诊断留在全局 buffer
+ * 供在途 validate/check 误窃，也不得自己背走别人的在途诊断。
+ */
+export function extractDirectivesQuiet(ast: Node): FunctionWithDirectives[] {
+  const since = directiveDiagCount();
+  const out = extractDirectives(ast);
+  takeDirectiveDiagsSince(since);
+  return out;
+}
+
 const AS_REGEX = /^\s*@nudo:as\s+(.+)/;
 const REPLACE_REGEX = /^\s*@nudo:replace\s+(.+)/;
 /** `@nudo:as` 尾注释探测：类型表达式后跟 `//` 或 `/*` 残留 */
 const AS_TRAILING_COMMENT_RE = /\s+(?:\/\/|\/\*)/;
 
 export function extractInlineDirectives(node: Node): InlineDirective[] {
+  resetDirectiveDiagSeen();
   const comments = (node as any).leadingComments as Comment[] | undefined;
   if (!comments) return [];
 

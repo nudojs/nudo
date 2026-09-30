@@ -255,6 +255,74 @@ describe("createNudoServer — error paths", () => {
     expect(result).toEqual({ kind: "full", items: [] });
   });
 
+  it("pull diagnostics catch 不得 items:[] — 标 Analysis error（R2B-003）", async () => {
+    const mock = startServer();
+    // 打开一个会让 analyzeFile 抛错的文档：带 @nudo 指令（过 isNudoFile gate）+ 语法错误
+    const uri = "file:///t/syntax-err.js";
+    const openHandler = mock.notifications.get("textDocument/didOpen");
+    expect(openHandler).toBeTruthy();
+    openHandler!({
+      textDocument: {
+        uri,
+        languageId: "javascript",
+        version: 1,
+        text: `/**
+ * @nudo:case 't' (1)
+ */
+function (`,
+      },
+    });
+    const result = await handler(mock, "textDocument/diagnostic")({
+      textDocument: { uri },
+    });
+    // 不得 items:[] 把瞬时失败当「文件干净」——必须留错误面
+    expect(result.items.length).toBeGreaterThan(0);
+    expect(result.items.some((d: { message: string }) => /Analysis error|Check error/.test(d.message))).toBe(true);
+  });
+
+  it("pull diagnostics catch 保留上次已发布诊断（R2B-003）", async () => {
+    const mock = startServer();
+    const uri = "file:///t/preserve-last.js";
+    const openHandler = mock.notifications.get("textDocument/didOpen")!;
+    // 先开一个能成功分析的文档（带指令文法诊断 → items 非空）
+    openHandler({
+      textDocument: {
+        uri,
+        languageId: "javascript",
+        version: 1,
+        text: `/**
+ * @nudo:case 't' (1)
+ */
+function f(x) { return x; }`,
+      },
+    });
+    const okResult = await handler(mock, "textDocument/diagnostic")({
+      textDocument: { uri },
+    });
+    expect(okResult.items.length).toBeGreaterThan(0);
+
+    // 再换成带 @nudo 指令的语法错误源并 bump version → 分析抛错，应保留上次 items
+    openHandler({
+      textDocument: {
+        uri,
+        languageId: "javascript",
+        version: 2,
+        text: `/**
+ * @nudo:case 't' (1)
+ */
+function (`,
+      },
+    });
+    const errResult = await handler(mock, "textDocument/diagnostic")({
+      textDocument: { uri },
+    });
+    expect(errResult.items.length).toBeGreaterThan(0);
+    // 上次成功的诊断面仍在（不得被 catch 清空）
+    expect(
+      errResult.items.some((d: { code?: string }) => d.code === "nudo:directive-syntax"),
+    ).toBe(true);
+  });
+
   it("listen() is the only transport start — safe to call explicitly", () => {
     const mock = createMockConnection();
     const handle = createNudoServer(mock as unknown as Connection);

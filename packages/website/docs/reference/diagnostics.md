@@ -339,6 +339,16 @@ Case-path may throw (test / clue). L2 elevates **entry** throws.
 
 Context: [L2 — entry throws](../guides/check.md#l2--entry-throws) · [@nudo:throws](../concepts/directives.md#nudothrows--declare-intentional-throws)
 
+### `nudo:internal` {#nudo-internal}
+
+```text
+Check error: <message>
+```
+
+Internal analysis/check failure surfaced as a diagnostic (check gate could not run to completion). **Error** — the check channel must not silently disappear; fix the underlying failure or report the bug.
+
+Context: [nudo check](../guides/check.md#what-it-checks)
+
 ## Module graph
 
 Reported when Abs module evaluation (`evalAbsModuleGraph`) hits a load problem. `cycle`/`depth` are warnings; `missing` / `missing-export` are errors.

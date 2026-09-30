@@ -9,9 +9,12 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { parse } from "../parse.ts";
 import {
   extractDirectives,
+  extractDirectivesQuiet,
   extractInlineDirectives,
   parseCaseArgExpr,
   takeDirectiveDiags,
+  takeDirectiveDiagsSince,
+  directiveDiagCount,
   setDirectiveDiagCollector,
 } from "../directives.ts";
 import type { CaseDirective, MockDirective, SkipDirective, AsDirective } from "../directives.ts";
@@ -311,5 +314,58 @@ function f(x) { return x; }`);
 function f(x) { return x; }`);
     // extractWithDiags 已 take 过
     expect(takeDirectiveDiags()).toHaveLength(0);
+  });
+});
+
+describe("takeDirectiveDiagsSince watermark（R2B-003：对齐 takeInterfaceDiagsSince）", () => {
+  const BAD = `/**
+ * @nudo:case 't' (1)
+ */
+function f(x) { return x; }`;
+
+  it("只排本次增量，既有诊断保留", () => {
+    takeDirectiveDiags();
+    // 第一条诊断（在途验证待消费）
+    extractDirectives(parse(BAD));
+    const since = directiveDiagCount(); // 锚：既有诊断保留
+    // 第二条诊断（工具自身探测）——同源再 extract 会重新 emit
+    extractDirectives(parse(BAD));
+    expect(takeDirectiveDiagsSince(since).length).toBe(1);
+    // 既有诊断仍在队列，全量 take 才取走
+    expect(takeDirectiveDiags().length).toBe(1);
+  });
+
+  it("不窃取在途其他消费方的诊断（跨文件错报回归）", () => {
+    takeDirectiveDiags();
+    const badB = `/**
+ * @nudo:case 'b' (1)
+ */
+function g(x) { return x; }`;
+    // 文件 B 的 hover 探测 emit 后不 drain（模拟纯查询路径）
+    extractDirectives(parse(badB));
+    const before = directiveDiagCount();
+    // 文件 A 的分析：锚定自身增量后 extract + take
+    extractDirectives(parse(BAD));
+    const mine = takeDirectiveDiagsSince(before);
+    expect(mine.some((d) => d.message.includes("single-quoted"))).toBe(true);
+    // B 的诊断不得混入 A 的结果，也不得被偷走
+    expect(mine.some((d) => d.message.includes("'b'"))).toBe(false);
+    const leftover = takeDirectiveDiags();
+    expect(leftover.some((d) => d.message.includes("'b'"))).toBe(true);
+  });
+
+  it("extractDirectivesQuiet 排干自身增量并丢弃，不污染 buffer", () => {
+    takeDirectiveDiags();
+    extractDirectivesQuiet(parse(BAD));
+    expect(takeDirectiveDiags()).toHaveLength(0);
+  });
+
+  it("take 之后同源再 extract 可重新 emit（重分析不丢报）", () => {
+    takeDirectiveDiags();
+    extractDirectives(parse(BAD));
+    expect(takeDirectiveDiags().length).toBe(1);
+    // 全量 take 清 seen → 再 extract 重新 emit
+    extractDirectives(parse(BAD));
+    expect(takeDirectiveDiags().length).toBe(1);
   });
 });

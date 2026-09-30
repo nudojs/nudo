@@ -189,6 +189,9 @@ async function runCheck(
     cachedJson = cached;
     algebraReport = reportFromCachedJson(cached) as Awaited<ReturnType<typeof checkSource>>;
   } else {
+    // since 锚：只排干本次 check 自己 extract 产生的指令文法增量（对齐 takeInterfaceDiagsSince）
+    const { directiveDiagCount, takeDirectiveDiagsSince } = await import("@nudojs/parser");
+    const dirDiagSince = directiveDiagCount();
     // eval 注入包（模块图 + mocks + env 全局 + replace/as）——同文件内复用同一
     // 对象（checkSource/generalize memo 键按对象身份）
     let inject: import("@nudojs/core").RunTranspiledOptions | undefined;
@@ -257,8 +260,7 @@ async function runCheck(
     });
     // D1: 指令文法诊断（nudo:directive-syntax）并入 check 报告
     {
-      const { takeDirectiveDiags } = await import("@nudojs/parser");
-      const dirDiags = takeDirectiveDiags();
+      const dirDiags = takeDirectiveDiagsSince(dirDiagSince);
       if (dirDiags.length > 0) {
         const { directiveDiagIssues } = await import("../check-json-map.ts");
         algebraReport = mergeCheckIssues(

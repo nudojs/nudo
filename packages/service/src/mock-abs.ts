@@ -5,7 +5,7 @@
  */
 
 import type { Node } from "@babel/types";
-import { extractDirectives, type FunctionWithDirectives } from "@nudojs/parser";
+import { extractDirectivesQuiet, type FunctionWithDirectives } from "@nudojs/parser";
 import { parse, parseCaseArgExpr } from "@nudojs/parser";
 import type { MockHelper } from "@nudojs/core";
 import {
@@ -419,6 +419,6 @@ export function mockSeedsForSource(
   source: string,
   opts?: { fromFile?: string; loadModule?: LoadModule },
 ): Record<string, Abs> {
-  const fns = extractDirectives(parse(source));
+  const fns = extractDirectivesQuiet(parse(source));
   return mockSeedsToAbsMocks(mockDirectivesToAbsSeeds(fns, opts));
 }

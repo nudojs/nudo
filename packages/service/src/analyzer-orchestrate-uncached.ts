@@ -39,7 +39,7 @@ import {
   hashSource,
   setAbsTruncationCollector,
 } from "@nudojs/core/internal";
-import { parse, extractDirectives, extractFileDirectives, takeDirectiveDiags } from "@nudojs/parser";
+import { parse, extractDirectives, extractFileDirectives, takeDirectiveDiagsSince, directiveDiagCount } from "@nudojs/parser";
 import {
   collapseAbsLits,
   isLeakedCallRecord,
@@ -153,11 +153,14 @@ export function analyzeFileUncachedInner(
   loadModule?: AnalyzeLoadModule,
   caseMode: DirectiveCaseMode = "all",
 ): AnalysisResult {
+  // since 锚：只排干本次 extract 产生的增量——全量 take 会在 await 窗口窃取
+  // 在途其他消费方（validate/hover/check）待收的指令文法诊断（对齐 takeInterfaceDiagsSince）
+  const dirDiagSince = directiveDiagCount();
   const ast = parse(source);
   const functions = extractDirectives(ast);
   const diagnostics: Diagnostic[] = [];
   // F-3 / D1: 指令文法诊断（nudo:directive-syntax）不再静默——并入 analysis diagnostics
-  for (const d of takeDirectiveDiags()) {
+  for (const d of takeDirectiveDiagsSince(dirDiagSince)) {
     diagnostics.push({
       range: { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } },
       severity: "warning",
