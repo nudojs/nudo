@@ -17,23 +17,17 @@ import {
   numLit,
   absToString,
   getFnImpl,
-  isAbsApplyResult,
+  absOnly,
   relationFn,
   num,
   str,
   abs,
   formatShape,
   type Abs,
-  type AbsApplyReturn,
 } from "@nudojs/core";
 
 const dirs: string[] = [];
 let pkgRoot: string;
-
-/** AbsFnImpl.apply 返回 Abs | AbsApplyResult（D7 throws 通道）；测试面只取 abs。 */
-function absOfApply(r: AbsApplyReturn): Abs {
-  return isAbsApplyResult(r) ? r.abs : r;
-}
 
 beforeAll(() => {
   // node_modules/@types/demo-lib + node_modules/demo-lib
@@ -76,7 +70,7 @@ describe("harvest → Abs", () => {
     expect(a.shape.k).toBe("fn");
     expect(a.conf).toBe("mock");
     expect(getFnImpl(a)?.apply).toBeTypeOf("function");
-    const r = absOfApply(getFnImpl(a)!.apply!([numLit(1)]));
+    const r = absOnly(getFnImpl(a)!.apply!([numLit(1)]));
     expect(absToString(r)).toContain("string");
   }, 30_000);
 
@@ -118,7 +112,7 @@ export function go(x) { return chunk(x, 2); }
       undefined,
       "exact",
     );
-    const out = absOfApply(impl!.apply!([numArr]));
+    const out = absOnly(impl!.apply!([numArr]));
     expect(formatShape(out)).toBe("number[]");
     expect(out.shape.k).toBe("arr");
     if (out.shape.k === "arr") {

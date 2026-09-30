@@ -14,6 +14,19 @@ import type { AstEnv } from "./hof-types.ts";
 export type AbsSigImpl = (args: Abs[], thisVal?: Abs) => Abs | undefined;
 
 /**
+ * 已知不抛的 apply 返回面（裸 Abs，无 throws 通道）。
+ * 等价 `Abs`，仅作意图标注：impl 作者写死「本 apply 不抛」时用它收窄签名，
+ * 调用侧仍应经 `absOnly` / `isAbsApplyResult` 取 abs（`AbsFnImpl.apply` 静态面是宽的）。
+ */
+export type AbsApplyNoThrow = Abs;
+
+/**
+ * 已知不抛的 apply 实现签名（`AbsSigImpl` 的 apply 对偶）。
+ * 返回裸 `Abs` = 不抛；需要 throws 面时改用 `AbsFnImpl["apply"]`（`AbsApplyReturn`）。
+ */
+export type AbsApplyNoThrowFn = (args: Abs[], thisVal?: Abs) => AbsApplyNoThrow;
+
+/**
  * apply 契约返回的 throws 通道（H1 / DESIGN-003）。
  * `throws` 必填：不抛传 `never`。$call 统一路由——
  * always-throw（abs=never）→ NudoThrow 由调用边界收成 throws；
@@ -38,6 +51,14 @@ export function isAbsApplyResult(v: AbsApplyReturn): v is AbsApplyResult {
     "throws" in (v as object) &&
     !("shape" in (v as object))
   );
+}
+
+/**
+ * apply 返回值取 abs 面（已知不抛 / 测试面只想看结果时用）。
+ * 丢弃 throws 通道——若 impl 可能抛，必须走 `$call` 统一路由，不得用本函数吞 throws。
+ */
+export function absOnly(r: AbsApplyReturn): AbsApplyNoThrow {
+  return isAbsApplyResult(r) ? r.abs : r;
 }
 
 export type AbsFnImpl = {

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { defineEnv } from "../web.ts";
-import { formatShape, litValue, getFnImpl, isAbsApplyResult, strLit } from "@nudojs/core";
-import type { Abs, AbsApplyReturn } from "@nudojs/core";
+import { formatShape, litValue, getFnImpl, absOnly, strLit } from "@nudojs/core";
+import type { Abs } from "@nudojs/core";
 
 /**
  * Web env face (packages/env/src/web.ts) — ES globals + Fetch/URL/DOM.
@@ -9,11 +9,6 @@ import type { Abs, AbsApplyReturn } from "@nudojs/core";
  */
 
 type Env = ReturnType<typeof defineEnv>;
-
-/** AbsFnImpl.apply 返回 Abs | AbsApplyResult（D7 throws 通道）；测试面只取 abs。 */
-function absOfApply(r: AbsApplyReturn): Abs {
-  return isAbsApplyResult(r) ? r.abs : r;
-}
 
 function shapeOf(a: Abs | undefined, label: string): string {
   expect(a, `expected Abs at ${label}`).toBeTruthy();
@@ -79,7 +74,7 @@ describe("web env load + Fetch/URL/DOM faces", () => {
   it("URL / URLSearchParams have typed members and literal-fold", () => {
     const URLFn = globalOf(env, "URL");
     const impl = getFnImpl(URLFn)!;
-    const folded = absOfApply(impl.apply!([strLit("https://example.com/a?b=1")]));
+    const folded = absOnly(impl.apply!([strLit("https://example.com/a?b=1")]));
     expect(folded).toBeTruthy();
     // literal fold: href carries the concrete URL string
     expect(litValue(walk(folded, "href")!)).toEqual({ ok: true, value: "https://example.com/a?b=1" });
@@ -164,11 +159,11 @@ describe("web env load + Fetch/URL/DOM faces", () => {
   it("atob / btoa fold on literals", () => {
     const btoaFn = globalOf(env, "btoa");
     const impl = getFnImpl(btoaFn)!;
-    const folded = absOfApply(impl.apply!([strLit("hi")]));
+    const folded = absOnly(impl.apply!([strLit("hi")]));
     expect(litValue(folded)).toEqual({ ok: true, value: Buffer.from("hi").toString("base64") });
     const atobFn = globalOf(env, "atob");
     const aImpl = getFnImpl(atobFn)!;
-    const decoded = absOfApply(aImpl.apply!([strLit(Buffer.from("hi").toString("base64"))]));
+    const decoded = absOnly(aImpl.apply!([strLit(Buffer.from("hi").toString("base64"))]));
     expect(litValue(decoded)).toEqual({ ok: true, value: "hi" });
   });
 

@@ -134,6 +134,7 @@
       "TYPEOF_NAMES",
       "abs",
       "absFunction",
+      "absOnly",
       "absShapeKey",
       "absToConstraint",
       "absToString",
@@ -513,6 +514,8 @@
     ],
     "types": [
       "Abs",
+      "AbsApplyNoThrow",
+      "AbsApplyNoThrowFn",
       "AbsApplyResult",
       "AbsApplyReturn",
       "AbsAssignRecord",
@@ -709,6 +712,7 @@
       "TYPEOF_NAMES",
       "abs",
       "absFunction",
+      "absOnly",
       "absShapeKey",
       "absToConstraint",
       "absToString",
@@ -1086,6 +1090,8 @@
     ],
     "types": [
       "Abs",
+      "AbsApplyNoThrow",
+      "AbsApplyNoThrowFn",
       "AbsApplyResult",
       "AbsApplyReturn",
       "AbsAssignRecord",

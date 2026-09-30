@@ -63,6 +63,7 @@ changing the signature of any row below is **major**.
 | `listFnDirectiveScopes`, `findFnDirectiveScope`, `fnDirectiveCommentLines`, `FnDirectiveScope` | value/type | G2 directive scope binding (nearest AST Function, incl. nested / class method) | **public** |
 | `extractFileEnvNames`, `extractMockModuleRecords`, `extractNudoImportRecords`, `scanCaseTags`, `scanContractSegments`, `scanThrowsDecl`, `scanBudgetDecl`, `parseEnvPayload`, `parseMockModulePayload`, `parseNudoImportPayload`, `CaseTag`, `MockModuleRecord`, `NudoImportRecord` | value/type | single-source `@nudo:` directive grammar (see `docs/design/directive-scope.md`) | **public** |
 | `runTranspiled`, `callTranspiledExport`, `callTranspiledExportFull`, `callTranspiledExportApply`, `TranspiledCallResult`, `AbsApplyResult`, `isAbsApplyResult` | value/type | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1) | **public** |
+| `AbsApplyNoThrow`, `AbsApplyNoThrowFn`, `absOnly` | value/type | no-throw apply face: narrow signature for impls that return bare `Abs`; `absOnly` peels the abs facet off `AbsApplyReturn` (test/host convenience, drops throws) | **public** |
 | `evalExprAbs` | value | Abs-native expression eval | **public** |
 
 ### 2.2 Exec runtime (`./exec` = `src/algebra/exec/index.ts`, also re-exported from `.`)

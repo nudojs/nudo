@@ -4,13 +4,13 @@ import {
   formatShape,
   litValue,
   getFnImpl,
-  isAbsApplyResult,
+  absOnly,
   numLit,
   strLit,
   boolLit,
   abs,
 } from "@nudojs/core";
-import type { Abs, AbsApplyReturn } from "@nudojs/core";
+import type { Abs } from "@nudojs/core";
 
 /**
  * ES env face (packages/env/src/es.ts) — load + high-frequency builtins.
@@ -19,11 +19,6 @@ import type { Abs, AbsApplyReturn } from "@nudojs/core";
  */
 
 type Env = ReturnType<typeof defineEnv>;
-
-/** AbsFnImpl.apply 返回 Abs | AbsApplyResult（D7 throws 通道）；测试面只取 abs。 */
-function absOfApply(r: AbsApplyReturn): Abs {
-  return isAbsApplyResult(r) ? r.abs : r;
-}
 
 function shapeOf(a: Abs | undefined, label: string): string {
   expect(a, `expected Abs at ${label}`).toBeTruthy();
@@ -109,7 +104,7 @@ describe("es env load + key builtins", () => {
     // literal folding: Math.floor(3.7) → 3
     const floor = walk(Math_, "floor")!;
     const impl = getFnImpl(floor)!;
-    const folded = absOfApply(impl.apply!([numLit(3.7)]));
+    const folded = absOnly(impl.apply!([numLit(3.7)]));
     expect(litValue(folded)).toEqual({ ok: true, value: 3 });
   });
 
@@ -124,11 +119,11 @@ describe("es env load + key builtins", () => {
       // 签名：required 为空 + 一个 rest 槽（形状里出现 "..."）
       expect(shapeOf(fn, `Math.${name}`)).toContain("...");
       const impl = getFnImpl(fn)!;
-      const folded = absOfApply(impl.apply!(args.map((n) => numLit(n))));
+      const folded = absOnly(impl.apply!(args.map((n) => numLit(n))));
       expect(litValue(folded), `Math.${name}(${args.join(", ")})`).toEqual({ ok: true, value: expected });
       // 抽象实参：结果仍是 number（不再因 arity 不匹配落 unknown）
       const abstractNum = abs({ k: "prim", type: "number" }, undefined, undefined, "path");
-      const abstract = absOfApply(impl.apply!([abstractNum, abstractNum, abstractNum]));
+      const abstract = absOnly(impl.apply!([abstractNum, abstractNum, abstractNum]));
       expect(shapeOf(abstract, `Math.${name} abstract`)).toContain("number");
     }
   });
@@ -146,7 +141,7 @@ describe("es env load + key builtins", () => {
     for (const [name, args, expected] of cases) {
       const fn = walk(Math_, name)!;
       const impl = getFnImpl(fn)!;
-      const folded = absOfApply(impl.apply!(args.map((n) => numLit(n))));
+      const folded = absOnly(impl.apply!(args.map((n) => numLit(n))));
       expect(litValue(folded), `Math.${name}(${args.join(", ")})`).toEqual({ ok: true, value: expected });
     }
   });
@@ -235,17 +230,17 @@ describe("es env load + key builtins", () => {
   it("Boolean/String coercions fold on literals", () => {
     const booleanFn = globalOf(env, "Boolean");
     const impl = getFnImpl(booleanFn)!;
-    expect(litValue(absOfApply(impl.apply!([strLit("x")])))).toEqual({ ok: true, value: true });
+    expect(litValue(absOnly(impl.apply!([strLit("x")])))).toEqual({ ok: true, value: true });
     const stringFn = globalOf(env, "String");
     const sImpl = getFnImpl(stringFn)!;
-    expect(litValue(absOfApply(sImpl.apply!([boolLit(false)])))).toEqual({ ok: true, value: "false" });
+    expect(litValue(absOnly(sImpl.apply!([boolLit(false)])))).toEqual({ ok: true, value: "false" });
   });
 
   it("parseInt folds ToInt32 radix / auto-detect 0", () => {
     const parseIntFn = globalOf(env, "parseInt");
     const impl = getFnImpl(parseIntFn)!;
     const fold = (s: string, radix?: number) =>
-      litValue(absOfApply(impl.apply!(radix !== undefined ? [strLit(s), numLit(radix)] : [strLit(s)])));
+      litValue(absOnly(impl.apply!(radix !== undefined ? [strLit(s), numLit(radix)] : [strLit(s)])));
 
     // ToInt32 截断小数
     expect(fold("10", 2.5)).toEqual({ ok: true, value: 2 });
@@ -268,7 +263,7 @@ describe("es env load + key builtins", () => {
     const parseIntFn = walk(Number_, "parseInt")!;
     const impl = getFnImpl(parseIntFn)!;
     const fold = (s: string, radix?: number) =>
-      litValue(absOfApply(impl.apply!(radix !== undefined ? [strLit(s), numLit(radix)] : [strLit(s)])));
+      litValue(absOnly(impl.apply!(radix !== undefined ? [strLit(s), numLit(radix)] : [strLit(s)])));
     expect(fold("10", 2.5)).toEqual({ ok: true, value: 2 });
     expect(fold("0x10", 0)).toEqual({ ok: true, value: 16 });
     // 签名面：radix 为可选参
@@ -282,7 +277,7 @@ describe("es env load + key builtins", () => {
     expect(numberFn.shape.k).toBe("fn");
     expect(getFnImpl(numberFn)?.apply).toBeTruthy();
     // Number("42") → 42
-    expect(litValue(absOfApply(getFnImpl(numberFn)!.apply!([strLit("42")])))).toEqual({ ok: true, value: 42 });
+    expect(litValue(absOnly(getFnImpl(numberFn)!.apply!([strLit("42")])))).toEqual({ ok: true, value: 42 });
     expect(shapeOf(walk(numberFn, "isFinite"), "Number.isFinite")).toContain("=>");
     expect(shapeOf(walk(numberFn, "MAX_SAFE_INTEGER"), "Number.MAX_SAFE_INTEGER")).toContain(
       "number",
@@ -292,7 +287,7 @@ describe("es env load + key builtins", () => {
     expect(arrayFn.shape.k).toBe("fn");
     const arrImpl = getFnImpl(arrayFn)!;
     // Array(3) → 3 元空洞 tuple
-    const a3 = absOfApply(arrImpl.apply!([numLit(3)]));
+    const a3 = absOnly(arrImpl.apply!([numLit(3)]));
     expect(a3.shape.k).toBe("tuple");
     expect(shapeOf(walk(arrayFn, "isArray"), "Array.isArray")).toContain("=>");
   });

@@ -10,14 +10,19 @@
 import { describe, it, expect } from "vitest";
 import {
   absFunction,
+  absOnly,
+  getFnImpl,
   isAbsApplyResult,
   runTranspiled,
   callTranspiledExportFull,
   callTranspiledExportApply,
   numLit,
+  litValue,
   never as neverAbs,
   unknown as absUnknown,
   type Abs,
+  type AbsApplyNoThrow,
+  type AbsApplyNoThrowFn,
   type AbsApplyResult,
 } from "../index.ts";
 import { $call } from "../exec/call.ts";
@@ -31,6 +36,22 @@ describe("AbsApplyResult contract", () => {
     const full: AbsApplyResult = { abs: numLit(1), throws: neverAbs };
     expect(isAbsApplyResult(bare)).toBe(false);
     expect(isAbsApplyResult(full)).toBe(true);
+  });
+
+  it("absOnly peels the abs facet from either return form", () => {
+    const bare: AbsApplyNoThrow = numLit(7);
+    const full: AbsApplyResult = { abs: numLit(7), throws: neverAbs };
+    expect(absOnly(bare)).toBe(bare);
+    expect(absOnly(full)).toBe(full.abs);
+  });
+
+  it("AbsApplyNoThrowFn is assignable to AbsFnImpl.apply (no-throw face)", () => {
+    const apply: AbsApplyNoThrowFn = (args) => args[0] ?? numLit(0);
+    const fn = absFunction(["x"], { apply });
+    const impl = getFnImpl(fn);
+    expect(impl?.apply).toBeTypeOf("function");
+    const out = absOnly(impl!.apply!([numLit(3)]));
+    expect(litValue(out)).toEqual({ ok: true, value: 3 });
   });
 });
 
