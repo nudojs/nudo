@@ -11,19 +11,51 @@ slug: /releases-history
 
 | 包 | 当前版本 |
 |----|----------|
-| `@nudojs/core` | 1.4.0 |
-| `@nudojs/service` | 1.3.0 |
-| `nudojs (CLI)` | 1.1.0 |
-| `@nudojs/parser` | 1.2.0 |
-| `@nudojs/lsp` | 1.1.10 |
-| `@nudojs/env` | 0.4.12 |
-| `@nudojs/harvester` | 0.2.18 |
-| `vite-plugin-nudo` | 0.4.13 |
-| `nudo-vscode` | 0.3.17 |
+| `@nudojs/core` | 1.5.0 |
+| `@nudojs/service` | 1.4.0 |
+| `nudojs (CLI)` | 1.2.0 |
+| `@nudojs/parser` | 1.2.1 |
+| `@nudojs/lsp` | 1.2.0 |
+| `@nudojs/env` | 0.4.13 |
+| `@nudojs/harvester` | 0.2.19 |
+| `vite-plugin-nudo` | 0.4.14 |
+| `nudo-vscode` | 0.3.18 |
 
 **按包跳转:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.4.0 {#pkg-core}
+## @nudojs/core 1.5.0 {#pkg-core}
+
+## 1.5.0
+
+### Minor Changes
+
+- 64ca356: feat: clamp bounds + scalar-over-sum + action-map quickfixes (#68 #69)
+  
+  ## #68 inference
+  
+  - `Math.min` / `Math.max` / `Math.round` (and floor/ceil/trunc) propagate
+    operand numeric bounds: `max(0, min(100, n))` derives `[0, 100]`.
+  - NaN is explicit (option 1): a possibly-NaN operand yields `NaN | number@bounds`,
+    so clamp contracts stay honest; `if (Number.isNaN(n)) return …` narrows the
+    false arm (`ne(n, NaN)`) and the guarded clamp is provable.
+  - Scalar return contracts now distribute over sum arms like shape/array
+    (`nullable(c)` + multi-return `null | number` is provable). Gold-FP
+    protection kept: any-widened bare-prim arms downgrade siblings to
+    `unproven-return` warnings instead of errors.
+  
+  ## #69 DX
+  
+  - `actionsForIssue` kinds are materialized as LSP quickfixes with
+    `[fix]` / `[silence]` / `[review]` / `[adjust]` / `[scaffold]` titles.
+  - `nudo check --fix [--only <code>] [--write]` reuses the same edit layer
+    (default dry-run prints unified diffs).
+  - Body-read fields auto-fill types from usage (`node.type === "x"` →
+    `string()`, arith → `number()`, no evidence → `any()`); never emit empty
+    `shape({})`.
+  - L2 `entry-may-throw` suggestions include a copyable sidecar clause.
+
+<details>
+<summary>历史版本 (21)</summary>
 
 ## 1.4.0
 
@@ -61,9 +93,6 @@ slug: /releases-history
   - `gen-llms` confines slug writes under build root (path-escape fix)
   - gate-major: 2.x / major jumps / first 1.0.0 need `confirm_major`; 1.x train auto-publishes
   - release: quoted secrets, tag whitelist + semver precedence incl. prerelease, pinned website actions
-
-<details>
-<summary>历史版本 (20)</summary>
 
 ## 1.3.1
 
@@ -657,7 +686,47 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/service 1.3.0 {#pkg-service}
+## @nudojs/service 1.4.0 {#pkg-service}
+
+## 1.4.0
+
+### Minor Changes
+
+- 64ca356: feat: clamp bounds + scalar-over-sum + action-map quickfixes (#68 #69)
+  
+  ## #68 inference
+  
+  - `Math.min` / `Math.max` / `Math.round` (and floor/ceil/trunc) propagate
+    operand numeric bounds: `max(0, min(100, n))` derives `[0, 100]`.
+  - NaN is explicit (option 1): a possibly-NaN operand yields `NaN | number@bounds`,
+    so clamp contracts stay honest; `if (Number.isNaN(n)) return …` narrows the
+    false arm (`ne(n, NaN)`) and the guarded clamp is provable.
+  - Scalar return contracts now distribute over sum arms like shape/array
+    (`nullable(c)` + multi-return `null | number` is provable). Gold-FP
+    protection kept: any-widened bare-prim arms downgrade siblings to
+    `unproven-return` warnings instead of errors.
+  
+  ## #69 DX
+  
+  - `actionsForIssue` kinds are materialized as LSP quickfixes with
+    `[fix]` / `[silence]` / `[review]` / `[adjust]` / `[scaffold]` titles.
+  - `nudo check --fix [--only <code>] [--write]` reuses the same edit layer
+    (default dry-run prints unified diffs).
+  - Body-read fields auto-fill types from usage (`node.type === "x"` →
+    `string()`, arith → `number()`, no evidence → `any()`); never emit empty
+    `shape({})`.
+  - L2 `entry-may-throw` suggestions include a copyable sidecar clause.
+
+### Patch Changes
+
+- Updated dependencies [64ca356]
+  - @nudojs/core@1.5.0
+  - @nudojs/env@0.4.13
+  - @nudojs/harvester@0.2.19
+  - @nudojs/parser@1.2.1
+
+<details>
+<summary>历史版本 (23)</summary>
 
 ## 1.3.0
 
@@ -703,9 +772,6 @@ slug: /releases-history
   - @nudojs/parser@1.2.0
   - @nudojs/env@0.4.12
   - @nudojs/harvester@0.2.18
-
-<details>
-<summary>历史版本 (22)</summary>
 
 ## 1.2.4
 
@@ -1213,7 +1279,47 @@ slug: /releases-history
 
 </details>
 
-## nudojs (CLI) 1.1.0 {#pkg-nudojs}
+## nudojs (CLI) 1.2.0 {#pkg-nudojs}
+
+## 1.2.0
+
+### Minor Changes
+
+- 64ca356: feat: clamp bounds + scalar-over-sum + action-map quickfixes (#68 #69)
+  
+  ## #68 inference
+  
+  - `Math.min` / `Math.max` / `Math.round` (and floor/ceil/trunc) propagate
+    operand numeric bounds: `max(0, min(100, n))` derives `[0, 100]`.
+  - NaN is explicit (option 1): a possibly-NaN operand yields `NaN | number@bounds`,
+    so clamp contracts stay honest; `if (Number.isNaN(n)) return …` narrows the
+    false arm (`ne(n, NaN)`) and the guarded clamp is provable.
+  - Scalar return contracts now distribute over sum arms like shape/array
+    (`nullable(c)` + multi-return `null | number` is provable). Gold-FP
+    protection kept: any-widened bare-prim arms downgrade siblings to
+    `unproven-return` warnings instead of errors.
+  
+  ## #69 DX
+  
+  - `actionsForIssue` kinds are materialized as LSP quickfixes with
+    `[fix]` / `[silence]` / `[review]` / `[adjust]` / `[scaffold]` titles.
+  - `nudo check --fix [--only <code>] [--write]` reuses the same edit layer
+    (default dry-run prints unified diffs).
+  - Body-read fields auto-fill types from usage (`node.type === "x"` →
+    `string()`, arith → `number()`, no evidence → `any()`); never emit empty
+    `shape({})`.
+  - L2 `entry-may-throw` suggestions include a copyable sidecar clause.
+
+### Patch Changes
+
+- Updated dependencies [64ca356]
+  - @nudojs/core@1.5.0
+  - @nudojs/service@1.4.0
+  - @nudojs/harvester@0.2.19
+  - @nudojs/parser@1.2.1
+
+<details>
+<summary>历史版本 (20)</summary>
 
 ## 1.1.0
 
@@ -1259,9 +1365,6 @@ slug: /releases-history
   - @nudojs/parser@1.2.0
   - @nudojs/service@1.3.0
   - @nudojs/harvester@0.2.18
-
-<details>
-<summary>历史版本 (19)</summary>
 
 ## 1.0.9
 
@@ -1531,7 +1634,17 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/parser 1.2.0 {#pkg-parser}
+## @nudojs/parser 1.2.1 {#pkg-parser}
+
+## 1.2.1
+
+### Patch Changes
+
+- Updated dependencies [64ca356]
+  - @nudojs/core@1.5.0
+
+<details>
+<summary>历史版本 (21)</summary>
 
 ## 1.2.0
 
@@ -1574,9 +1687,6 @@ slug: /releases-history
 
 - Updated dependencies [f10066d]
   - @nudojs/core@1.4.0
-
-<details>
-<summary>历史版本 (20)</summary>
 
 ## 1.1.9
 
@@ -1830,7 +1940,46 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/lsp 1.1.10 {#pkg-lsp}
+## @nudojs/lsp 1.2.0 {#pkg-lsp}
+
+## 1.2.0
+
+### Minor Changes
+
+- 64ca356: feat: clamp bounds + scalar-over-sum + action-map quickfixes (#68 #69)
+  
+  ## #68 inference
+  
+  - `Math.min` / `Math.max` / `Math.round` (and floor/ceil/trunc) propagate
+    operand numeric bounds: `max(0, min(100, n))` derives `[0, 100]`.
+  - NaN is explicit (option 1): a possibly-NaN operand yields `NaN | number@bounds`,
+    so clamp contracts stay honest; `if (Number.isNaN(n)) return …` narrows the
+    false arm (`ne(n, NaN)`) and the guarded clamp is provable.
+  - Scalar return contracts now distribute over sum arms like shape/array
+    (`nullable(c)` + multi-return `null | number` is provable). Gold-FP
+    protection kept: any-widened bare-prim arms downgrade siblings to
+    `unproven-return` warnings instead of errors.
+  
+  ## #69 DX
+  
+  - `actionsForIssue` kinds are materialized as LSP quickfixes with
+    `[fix]` / `[silence]` / `[review]` / `[adjust]` / `[scaffold]` titles.
+  - `nudo check --fix [--only <code>] [--write]` reuses the same edit layer
+    (default dry-run prints unified diffs).
+  - Body-read fields auto-fill types from usage (`node.type === "x"` →
+    `string()`, arith → `number()`, no evidence → `any()`); never emit empty
+    `shape({})`.
+  - L2 `entry-may-throw` suggestions include a copyable sidecar clause.
+
+### Patch Changes
+
+- Updated dependencies [64ca356]
+  - @nudojs/core@1.5.0
+  - @nudojs/service@1.4.0
+  - @nudojs/parser@1.2.1
+
+<details>
+<summary>历史版本 (24)</summary>
 
 ## 1.1.10
 
@@ -1872,9 +2021,6 @@ slug: /releases-history
   - @nudojs/core@1.4.0
   - @nudojs/parser@1.2.0
   - @nudojs/service@1.3.0
-
-<details>
-<summary>历史版本 (23)</summary>
 
 ## 1.1.9
 
@@ -2311,7 +2457,17 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/env 0.4.12 {#pkg-env}
+## @nudojs/env 0.4.13 {#pkg-env}
+
+## 0.4.13
+
+### Patch Changes
+
+- Updated dependencies [64ca356]
+  - @nudojs/core@1.5.0
+
+<details>
+<summary>历史版本 (20)</summary>
 
 ## 0.4.12
 
@@ -2351,9 +2507,6 @@ slug: /releases-history
   - release: quoted secrets, tag whitelist + semver precedence incl. prerelease, pinned website actions
 - Updated dependencies [f10066d]
   - @nudojs/core@1.4.0
-
-<details>
-<summary>历史版本 (19)</summary>
 
 ## 0.4.11
 
@@ -2587,7 +2740,19 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/harvester 0.2.18 {#pkg-harvester}
+## @nudojs/harvester 0.2.19 {#pkg-harvester}
+
+## 0.2.19
+
+### Patch Changes
+
+- Updated dependencies [64ca356]
+  - @nudojs/core@1.5.0
+  - @nudojs/env@0.4.13
+  - @nudojs/parser@1.2.1
+
+<details>
+<summary>历史版本 (20)</summary>
 
 ## 0.2.18
 
@@ -2629,9 +2794,6 @@ slug: /releases-history
   - @nudojs/core@1.4.0
   - @nudojs/parser@1.2.0
   - @nudojs/env@0.4.12
-
-<details>
-<summary>历史版本 (19)</summary>
 
 ## 0.2.17
 
@@ -2843,7 +3005,18 @@ slug: /releases-history
 
 </details>
 
-## vite-plugin-nudo 0.4.13 {#pkg-vite-plugin}
+## vite-plugin-nudo 0.4.14 {#pkg-vite-plugin}
+
+## 0.4.14
+
+### Patch Changes
+
+- Updated dependencies [64ca356]
+  - @nudojs/core@1.5.0
+  - @nudojs/service@1.4.0
+
+<details>
+<summary>历史版本 (23)</summary>
 
 ## 0.4.13
 
@@ -2884,9 +3057,6 @@ slug: /releases-history
 - Updated dependencies [f10066d]
   - @nudojs/core@1.4.0
   - @nudojs/service@1.3.0
-
-<details>
-<summary>历史版本 (22)</summary>
 
 ## 0.4.12
 
