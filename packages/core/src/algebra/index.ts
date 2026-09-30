@@ -29,7 +29,7 @@ export {
 export {
   type AbsApplyNoThrow, type AbsApplyNoThrowFn,
   type AbsApplyResult, type AbsApplyReturn, type AbsFnImpl, type AbsSigImpl,
-  absFunction, absOnly, attachFnImpl, getFnImpl, isAbsApplyResult,
+  absFunction, absOnly, attachFnImpl, getFnImpl, isAbsApplyResult, makeAbsApplyResult,
   markPureFn, pureFnNameOf, relationFingerprint, relationFn, shapeOnlyFn
 } from "./abs-fn.ts";
 

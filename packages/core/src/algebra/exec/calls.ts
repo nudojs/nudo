@@ -10,7 +10,7 @@ import { evalGlobalFn, hostBuiltinCtorName } from "../builtins.ts";
 import { $call, routeApplyThrows, clearPureMemo } from "./call.ts";
 import { callAtFunctionBoundary, $copy } from "./runtime.ts";
 import { throwPayloadOf } from "./may-throw.ts";
-import { pureFnNameOf, type AbsApplyResult } from "../abs-fn.ts";
+import { pureFnNameOf, makeAbsApplyResult, type AbsApplyResult } from "../abs-fn.ts";
 import { noteAbsTruncation, callBudgetKey, resetEvalForkBudget, noteHostEffectBlocked } from "../call-budget.ts";
 import {
   tagAbsOrigin,
@@ -442,7 +442,7 @@ export function $callNamed(
       }
       // 捕获本帧新增 throws 面（body/apply 路径的 pushThrowExit 已入帧）；
       // 命中时 routeApplyThrows 重放（只缓存 abs 会在命中时假「不抛」）。
-      m.set(pk, { abs: result, throws: joinThrowsSince(throwMark) });
+      m.set(pk, makeAbsApplyResult(result, joinThrowsSince(throwMark)));
     }
     if (evalCallCollector) {
       try {

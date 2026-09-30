@@ -1,6 +1,6 @@
-// R2-4 / FIX-J4：gate-major 政策对齐。
-// 1. --for-publish：任何未 CONFIRM_MAJOR 的 major 上升（含 0→1）拒绝；
-//    手改 0.x → 1.0.0 不得零确认发布。
+// R2-4 / FIX-J4 / PR#71 review：gate-major 政策对齐。
+// 1. --for-publish：拒绝未确认的 major 上升（2.x 天花板、相对 baseline 的跳变、
+//    无 baseline 时的首版 1.0.0）；1.x 火车（1.0.1+）必须可自动发。
 // 2. --check-baseline：失败保留 baseline（重跑仍能看到 jumps）；仅成功/confirm 时删除。
 import { describe, it, expect, afterEach } from "vitest";
 import {
@@ -25,7 +25,10 @@ const helpers = (await import(GATE_MAJOR)) as unknown as {
     packages: Array<{ name: string; version: string }>,
     baseline: Array<{ name: string; version: string }>,
   ) => string[];
-  elevatedForPublish: (packages: Array<{ name: string; version: string }>) => string[];
+  elevatedForPublish: (
+    packages: Array<{ name: string; version: string }>,
+    baseline?: Array<{ name: string; version: string }>,
+  ) => string[];
   MAJOR_CEILING: number;
 };
 
@@ -112,14 +115,16 @@ describe("majorOf / elevatedForPublish — pure helpers", () => {
     expect(helpers.majorOf("not-a-version")).toBe(0);
   });
 
-  it("elevatedForPublish flags any major >= 1 (incl. 0→1 result)", () => {
+  it("elevatedForPublish flags 2.x and first-major 1.0.0, not the 1.x train", () => {
     const elevated = helpers.elevatedForPublish([
       { name: "a", version: "0.4.10" },
       { name: "b", version: "1.0.0" },
+      { name: "core", version: "1.3.0" },
+      { name: "cli", version: "1.0.8" },
       { name: "c", version: "2.1.0" },
     ]);
     expect(elevated).toEqual(["b@1.0.0", "c@2.1.0"]);
-    expect(helpers.MAJOR_CEILING).toBe(1);
+    expect(helpers.MAJOR_CEILING).toBe(2);
   });
 
   it("elevatedForPublish leaves the 0.x line alone", () => {
@@ -128,6 +133,37 @@ describe("majorOf / elevatedForPublish — pure helpers", () => {
         { name: "env", version: "0.4.10" },
         { name: "hv", version: "0.2.16" },
       ]),
+    ).toEqual([]);
+  });
+
+  it("elevatedForPublish flags baseline major jumps (0→1 and 1→2)", () => {
+    const elevated = helpers.elevatedForPublish(
+      [
+        { name: "env", version: "1.0.0" },
+        { name: "core", version: "2.0.0" },
+        { name: "svc", version: "1.2.4" },
+      ],
+      [
+        { name: "env", version: "0.4.10" },
+        { name: "core", version: "1.3.0" },
+        { name: "svc", version: "1.2.3" },
+      ],
+    );
+    expect(elevated).toEqual(["env@1.0.0", "core@2.0.0"]);
+  });
+
+  it("elevatedForPublish allows 1.x train patches when already on major 1", () => {
+    expect(
+      helpers.elevatedForPublish(
+        [
+          { name: "core", version: "1.3.1" },
+          { name: "nudojs", version: "1.1.0" },
+        ],
+        [
+          { name: "core", version: "1.3.0" },
+          { name: "nudojs", version: "1.0.8" },
+        ],
+      ),
     ).toEqual([]);
   });
 });
@@ -157,7 +193,7 @@ describe("majorJumps — baseline rise detection", () => {
 });
 
 describe("--for-publish: hand-edited 0.x → 1.0.0 (R2-4 regression)", () => {
-  it("blocks the elevation without CONFIRM_MAJOR", () => {
+  it("blocks first-major 1.0.0 without CONFIRM_MAJOR", () => {
     const root = makeFixture([
       { dir: "env", name: "test-env", version: "1.0.0" },
     ]);
@@ -167,7 +203,7 @@ describe("--for-publish: hand-edited 0.x → 1.0.0 (R2-4 regression)", () => {
     expect(r.stderr).toContain("CONFIRM_MAJOR");
   });
 
-  it("allows the elevation with CONFIRM_MAJOR=1", () => {
+  it("allows the first-major elevation with CONFIRM_MAJOR=1", () => {
     const root = makeFixture([
       { dir: "env", name: "test-env", version: "1.0.0" },
     ]);
@@ -187,11 +223,30 @@ describe("--for-publish: hand-edited 0.x → 1.0.0 (R2-4 regression)", () => {
     expect(r.stdout).toContain("ok");
   });
 
-  it("still blocks 2.x without CONFIRM_MAJOR (prior ceiling preserved)", () => {
+  it("allows the 1.x train without confirmation (packages already at major=1)", () => {
+    const root = makeFixture([
+      { dir: "core", name: "test-core", version: "1.3.0" },
+      { dir: "cli", name: "test-cli", version: "1.0.8" },
+      { dir: "njs", name: "test-nudojs", version: "1.1.0" },
+    ]);
+    const r = runGate(root, ["--for-publish"]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("ok");
+  });
+
+  it("still blocks 2.x without CONFIRM_MAJOR", () => {
     const root = makeFixture([{ dir: "core", name: "test-core", version: "2.0.1" }]);
     const r = runGate(root, ["--for-publish"]);
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("test-core@2.0.1");
+  });
+
+  it("blocks a baseline 0→1 jump at publish even when version is not 1.0.0", () => {
+    const root = makeFixture([{ dir: "env", name: "test-env", version: "1.1.0" }]);
+    writeBaseline(root, [{ name: "test-env", version: "0.4.10" }]);
+    const r = runGate(root, ["--for-publish"]);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("test-env@1.1.0");
   });
 
   it("private packages are not in the publish set", () => {

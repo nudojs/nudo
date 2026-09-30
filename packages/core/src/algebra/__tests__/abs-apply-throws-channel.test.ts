@@ -13,6 +13,7 @@ import {
   absOnly,
   getFnImpl,
   isAbsApplyResult,
+  makeAbsApplyResult,
   runTranspiled,
   callTranspiledExportFull,
   callTranspiledExportApply,
@@ -33,14 +34,14 @@ import { runWithLoopExits, takeThrowExits } from "../exec/runtime/state.ts";
 describe("AbsApplyResult contract", () => {
   it("isAbsApplyResult discriminates object form from bare Abs", () => {
     const bare: Abs = numLit(1);
-    const full: AbsApplyResult = { abs: numLit(1), throws: neverAbs };
+    const full: AbsApplyResult = makeAbsApplyResult(numLit(1), neverAbs);
     expect(isAbsApplyResult(bare)).toBe(false);
     expect(isAbsApplyResult(full)).toBe(true);
   });
 
   it("absOnly peels the abs facet from either return form", () => {
     const bare: AbsApplyNoThrow = numLit(7);
-    const full: AbsApplyResult = { abs: numLit(7), throws: neverAbs };
+    const full: AbsApplyResult = makeAbsApplyResult(numLit(7), neverAbs);
     expect(absOnly(bare)).toBe(bare);
     expect(absOnly(full)).toBe(full.abs);
   });
@@ -59,7 +60,7 @@ describe("$call routes apply throws channel (H1)", () => {
   it("always-throw AbsApplyResult → NudoThrow from $call", () => {
     const throws = errorTypeAbs("TypeError");
     const fn = absFunction([], {
-      apply: () => ({ abs: neverAbs, throws }),
+      apply: () => makeAbsApplyResult(neverAbs, throws),
     });
     let caught: unknown;
     try {
@@ -75,7 +76,7 @@ describe("$call routes apply throws channel (H1)", () => {
     const throws = errorTypeAbs("RangeError");
     const ok = numLit(42);
     const fn = absFunction([], {
-      apply: () => ({ abs: ok, throws }),
+      apply: () => makeAbsApplyResult(ok, throws),
     });
     const r = runWithLoopExits(() => {
       const v = $call(fn, []);
@@ -89,7 +90,7 @@ describe("$call routes apply throws channel (H1)", () => {
   it("never throws face routes as pure return (no throw exit)", () => {
     const ok = numLit(7);
     const fn = absFunction([], {
-      apply: () => ({ abs: ok, throws: neverAbs }),
+      apply: () => makeAbsApplyResult(ok, neverAbs),
     });
     const r = runWithLoopExits(() => {
       const v = $call(fn, []);
@@ -117,7 +118,7 @@ describe("$call routes apply throws channel (H1)", () => {
     const fn = absFunction([], {
       apply: () => {
         calls += 1;
-        return { abs: ok, throws };
+        return makeAbsApplyResult(ok, throws);
       },
       pureName: "memoThrows",
     });

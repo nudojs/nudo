@@ -16,6 +16,7 @@ import {
   absFunction,
   pureFnNameOf,
   isAbsApplyResult,
+  makeAbsApplyResult,
   type AbsApplyResult,
 } from "../abs-fn.ts";
 import { compiledBodyOf } from "./body-fn.ts";
@@ -62,7 +63,7 @@ export function routeApplyThrows(r: Abs, throws: Abs | undefined): Abs {
 }
 
 function normalizeApplyReturn(raw: Abs | AbsApplyResult): AbsApplyResult {
-  return isAbsApplyResult(raw) ? raw : { abs: raw, throws: neverAbs };
+  return isAbsApplyResult(raw) ? raw : makeAbsApplyResult(raw, neverAbs);
 }
 
 /** 把 mark 之后的 throwExits 合成 throws 面（pure memo 捕获） */
@@ -148,7 +149,7 @@ export function $call(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
           pureMemo.set(fnObj, m);
         }
         // always-throw 在异常前不缓存；may-throw 捕获 throws 面入缓存。
-        m.set(pk, { abs: r, throws: joinThrowsSince(throwMark) });
+        m.set(pk, makeAbsApplyResult(r, joinThrowsSince(throwMark)));
       }
       return r;
     } finally {

@@ -18,7 +18,7 @@ import { withExecPhi, $copy } from "./runtime.ts";
 import type { Abs } from "../abs.ts";
 import type { Phi } from "../pred.ts";
 import { never, unknown } from "../abs.ts";
-import type { AbsApplyResult } from "../abs-fn.ts";
+import { makeAbsApplyResult, type AbsApplyResult } from "../abs-fn.ts";
 import { joinAbs } from "../objects.ts";
 import { type AbsModuleExports, namespaceAbsOf } from "../abs-modules.ts";
 import { formatAbs } from "../format.ts";
@@ -781,6 +781,6 @@ export function callTranspiledExportApply(
   const resolve = typeof exports === "function" ? exports : () => exports;
   return (args: Abs[]) => {
     const full = callTranspiledExportFull(resolve(), name, args);
-    return { abs: full.result, throws: full.throws };
+    return makeAbsApplyResult(full.result, full.throws);
   };
 }

@@ -21,7 +21,7 @@ import { $call, clearPureMemo } from "../exec/call.ts";
 import { $callNamed, clearPureCallMemo, resetEvalCallBudget } from "../exec/calls.ts";
 import { runWithLoopExits, takeThrowExits } from "../exec/runtime/state.ts";
 import { errorTypeAbs } from "../exec/may-throw.ts";
-import { markPureFn } from "../abs-fn.ts";
+import { markPureFn, makeAbsApplyResult } from "../abs-fn.ts";
 import { BoundedLruMap } from "../lru-map.ts";
 
 beforeEach(() => {
@@ -41,7 +41,7 @@ describe("body-path pure memo re-routes may-throw on cache hit (R2B-001)", () =>
       // 此处用 apply 模拟：返回 {abs, throws} 与 body 路径捕获后同构
       apply: () => {
         calls += 1;
-        return { abs: ok, throws };
+        return makeAbsApplyResult(ok, throws);
       },
       pureName: "bodyMaybe",
     });
@@ -69,7 +69,7 @@ describe("body-path pure memo re-routes may-throw on cache hit (R2B-001)", () =>
     const maybeFn = absFunction(["x"], {
       apply: (args) => {
         const full = callTranspiledExportFull(run, "maybe", args);
-        return { abs: full.result, throws: full.throws };
+        return makeAbsApplyResult(full.result, full.throws);
       },
       pureName: "realBodyMaybe",
     });
@@ -95,7 +95,7 @@ describe("$callNamed pure hit does not drop throws face (R2B-001)", () => {
     const fn = absFunction([], {
       apply: () => {
         calls += 1;
-        return { abs: ok, throws };
+        return makeAbsApplyResult(ok, throws);
       },
     });
     markPureFn(fn as object, "hostMaybe");
@@ -128,7 +128,7 @@ describe("$callNamed pure hit does not drop throws face (R2B-001)", () => {
     const fn = absFunction([], {
       apply: () => {
         calls += 1;
-        return { abs: ok, throws };
+        return makeAbsApplyResult(ok, throws);
       },
     });
     markPureFn(fn as object, "hostPure");
@@ -155,7 +155,7 @@ describe("$callNamed pure hit does not drop throws face (R2B-001)", () => {
     const maybeFn = absFunction(["x"], {
       apply: (args) => {
         const full = callTranspiledExportFull(runMaybe, "maybe", args);
-        return { abs: full.result, throws: full.throws };
+        return makeAbsApplyResult(full.result, full.throws);
       },
       pureName: "l2Maybe",
     });
@@ -204,7 +204,7 @@ describe("pure memo inner Map bounded (R2B-001)", () => {
   it("pure memo respects cap (many distinct args)", () => {
     // 用不同实参调 pure 函数，验证内层 Map 不无界增长
     const fn = absFunction(["x"], {
-      apply: (args) => ({ abs: args[0] ?? numLit(0), throws: neverAbs }),
+      apply: (args) => makeAbsApplyResult(args[0] ?? numLit(0), neverAbs),
       pureName: "capped",
     });
     // 调 300 次不同实参（cap=256）
@@ -231,7 +231,7 @@ describe("pure memo cleanup paths (R2B-001)", () => {
     const fn = absFunction([], {
       apply: () => {
         calls += 1;
-        return { abs: ok, throws };
+        return makeAbsApplyResult(ok, throws);
       },
       pureName: "cleanupTest",
     });
@@ -253,7 +253,7 @@ describe("pure memo cleanup paths (R2B-001)", () => {
     const fn = absFunction([], {
       apply: () => {
         calls += 1;
-        return { abs: ok, throws };
+        return makeAbsApplyResult(ok, throws);
       },
     });
     markPureFn(fn as object, "cleanupNamed");
@@ -277,7 +277,7 @@ describe("pure memo cleanup paths (R2B-001)", () => {
     const fn = absFunction([], {
       apply: () => {
         calls += 1;
-        return { abs: ok, throws };
+        return makeAbsApplyResult(ok, throws);
       },
       pureName: "budgetReset",
     });

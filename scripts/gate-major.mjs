@@ -20,11 +20,14 @@
  *     version keeps its evidence for re-diagnosis.
  *
  *   node scripts/gate-major.mjs --for-publish
- *     Fail if any publishable package sits at major >= 1 without CONFIRM_MAJOR.
- *     Any unconfirmed major elevation (including 0→1) is refused — consistent
- *     with "never auto-publish a major". Safety net for "No pending
- *     changesets — publish current package.json" and for hand-edited versions
- *     that never went through `changeset version`.
+ *     Fail if the publish set contains an unconfirmed major elevation:
+ *     - major >= MAJOR_CEILING (2): never auto-publish 2.x+
+ *     - major jump vs .changeset/.major-baseline.json (0→1, 1→2, …)
+ *     - exact 1.0.0 with no baseline row: first-major candidate (0→1 shape)
+ *     Same-major 1.x patches/minors (1.0.1, 1.3.0, …) auto-publish — packages
+ *     already on the 1.x train must not be locked out by an absolute ceiling.
+ *     Safety net for "No pending changesets — publish current package.json"
+ *     and for hand-edited versions that never went through `changeset version`.
  *
  * Test fixtures: GATE_MAJOR_ROOT points at a pseudo-repo root whose
  * packages/<name>/package.json files define the publish set.
@@ -33,7 +36,8 @@ import { readdirSync, readFileSync, writeFileSync, existsSync, rmSync } from 'no
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-export const MAJOR_CEILING = 1;
+/** Absolute publish ceiling: major >= 2 is never automatic. 1.x train is not gated. */
+export const MAJOR_CEILING = 2;
 
 function repoRoot() {
   return process.env.GATE_MAJOR_ROOT
@@ -148,14 +152,39 @@ export function majorJumps(packages, baseline) {
 }
 
 /**
- * Publish-time ceiling: any package at major >= MAJOR_CEILING (1) is an
- * unconfirmed major elevation (including the 0→1 class) and must not auto-publish.
+ * Publish-time gate: packages that must not auto-publish without CONFIRM_MAJOR.
+ *
+ * Flags:
+ * - major >= MAJOR_CEILING (2) — absolute ceiling
+ * - major jump vs baseline (0→1 / 1→2 / …) — the hand-edit hole
+ * - exact `1.0.0` with no baseline row — first-major candidate (0→1 shape)
+ *
+ * Does NOT flag same-major 1.x train versions (1.0.1, 1.3.0, …): those are
+ * already published as major=1 and must keep auto-publishing.
+ *
+ * @param {Array<{name: string, version: string}>} packages
+ * @param {Array<{name: string, version: string}>} [baseline]
  * @returns {string[]}
  */
-export function elevatedForPublish(packages) {
-  return packages
-    .filter((p) => majorOf(p.version) >= MAJOR_CEILING)
-    .map((p) => `${p.name}@${p.version}`);
+export function elevatedForPublish(packages, baseline = []) {
+  const byName = new Map(baseline.map((b) => [b.name, b.version]));
+  const out = [];
+  for (const p of packages) {
+    const maj = majorOf(p.version);
+    if (maj >= MAJOR_CEILING) {
+      out.push(`${p.name}@${p.version}`);
+      continue;
+    }
+    const prev = byName.get(p.name);
+    if (prev !== undefined) {
+      if (majorOf(prev) < maj) out.push(`${p.name}@${p.version}`);
+      continue;
+    }
+    // No baseline row: refuse the classic hand-edit shape `1.0.0` (first major).
+    // 1.0.1+ is already on the 1.x train and may auto-publish.
+    if (p.version === '1.0.0') out.push(`${p.name}@${p.version}`);
+  }
+  return out;
 }
 
 function main() {
@@ -221,23 +250,31 @@ function main() {
     }
   }
 
-  // ---- publish-time ceiling: major >= 1 is never automatic ----
-  // Any unconfirmed major elevation (including 0→1) is refused, matching
-  // "never auto-publish a major". Previously the ceiling was major >= 2,
-  // which silently let a hand-edited 0.x → 1.0.0 publish with zero confirmation.
+  // ---- publish-time gate: major jumps + 2.x ceiling + first-major 1.0.0 ----
+  // 1.x train (1.0.1+) is NOT gated: packages already at major=1 must auto-publish.
+  // Baseline (kept by a failed --check-baseline) is the jump evidence for 0→1.
   if (forPublish) {
-    const elevated = elevatedForPublish(publishablePackageJsons(root));
+    /** @type {Array<{name: string, version: string}>} */
+    let baseline = [];
+    if (existsSync(baselinePath)) {
+      try {
+        baseline = JSON.parse(readFileSync(baselinePath, 'utf8'));
+      } catch {
+        baseline = [];
+      }
+    }
+    const elevated = elevatedForPublish(publishablePackageJsons(root), baseline);
     if (elevated.length > 0 && !confirmed) {
       fail([
-        `Refusing to publish packages at major >= ${MAJOR_CEILING} without CONFIRM_MAJOR.`,
+        'Refusing to publish unconfirmed major elevations (2.x, major jumps, first 1.0.0).',
         ...elevated.map((e) => `  - ${e}`),
       ]);
     }
     if (elevated.length > 0 && confirmed) {
-      console.log(`[gate-major] CONFIRM_MAJOR=1 — allowing publish at major >= ${MAJOR_CEILING}:`);
+      console.log('[gate-major] CONFIRM_MAJOR=1 — allowing major elevations:');
       for (const e of elevated) console.log(`  - ${e}`);
     } else {
-      console.log(`[gate-major] ok — no major >= ${MAJOR_CEILING} in publish set`);
+      console.log('[gate-major] ok — no unconfirmed major elevations in publish set');
     }
   }
 

@@ -33,23 +33,31 @@ export type AbsApplyNoThrowFn = (args: Abs[], thisVal?: Abs) => AbsApplyNoThrow;
  * may-throw → pushThrowExit 记入调用方 throwExits（try/catch 可吸收）。
  * 包装 `callTranspiledExportFull` 必须走 `callTranspiledExportApply`，
  * 不得手拆 `.result`（会静默丢 throws 面）。
+ *
+ * 构造只经 `makeAbsApplyResult`（打上 brand）；`isAbsApplyResult` 只认 brand，
+ * 避免裸对象靠 `!shape` 误判成 apply 结果、吞掉 throws 面。
  */
 export type AbsApplyResult = {
   abs: Abs;
   throws: Abs;
+  /** Discriminator stamped by makeAbsApplyResult. */
+  readonly applyResult: true;
 };
 
 /** apply 可返回裸 Abs（无 throws）或带 throws 通道的 AbsApplyResult */
 export type AbsApplyReturn = Abs | AbsApplyResult;
 
-/** AbsApplyResult 判别：顶层无 shape、有 abs+throws */
+/** 唯一构造入口：打上 applyResult brand。 */
+export function makeAbsApplyResult(abs: Abs, throws: Abs): AbsApplyResult {
+  return { abs, throws, applyResult: true };
+}
+
+/** AbsApplyResult 判别：只认 brand（不靠 !shape 结构猜）。 */
 export function isAbsApplyResult(v: AbsApplyReturn): v is AbsApplyResult {
   return (
     !!v &&
     typeof v === "object" &&
-    "abs" in (v as object) &&
-    "throws" in (v as object) &&
-    !("shape" in (v as object))
+    (v as { applyResult?: unknown }).applyResult === true
   );
 }
 
