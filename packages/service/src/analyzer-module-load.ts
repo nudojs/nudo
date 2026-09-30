@@ -5,9 +5,12 @@
 import { readFileSync, existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { parse } from "@nudojs/parser";
+import { stablePathKey, stablePathKeyGraph } from "@nudojs/core/internal";
 import { resolveNpmNudo } from "./evaluator/resolve-npm.ts";
 import { MODULE_RESOLVE_EXTS, resolveModuleFile } from "./load-module.ts";
 import { collectDependencySpecs } from "./static-imports.ts";
+
+export { stablePathKey, stablePathKeyGraph };
 
 export function resolveModule(source: string, fromDir: string): { ast: ReturnType<typeof parse>; filePath: string; json?: unknown } | null {
   const extensions = [...MODULE_RESOLVE_EXTS];
@@ -134,50 +137,73 @@ function extractImportEdges(file: string): string[] {
   return edges;
 }
 
-/** changed plus its transitive dependents (reverse-edge BFS); cycle-safe via visited. */
+/**
+ * changed plus its transitive dependents (reverse-edge BFS); cycle-safe via visited.
+ *
+ * Graph keys / values and `changedFile` are compared under `stablePathKey` so
+ * fs-native edge targets (`c:\a.js` from resolveModuleFile) hit cacheKey-form
+ * queries (`c:/a.js`) — otherwise Windows dirty-propagation drops edges
+ * (FIX-RESIDUAL-3). Returned nodes are `stablePathKey` form (canonical).
+ */
 export function computeDirtySet(dependents: Map<string, Set<string>>, changedFile: string): string[] {
+  const norm = stablePathKeyGraph(dependents);
   const dirty: string[] = [];
   const visited = new Set<string>();
-  const queue = [changedFile];
+  const queue = [stablePathKey(changedFile)];
   while (queue.length > 0) {
     const file = queue.shift()!;
     if (visited.has(file)) continue;
     visited.add(file);
     dirty.push(file);
-    for (const dep of dependents.get(file) ?? []) {
+    for (const dep of norm.get(file) ?? []) {
       if (!visited.has(dep)) queue.push(dep);
     }
   }
   return dirty;
 }
 
-/** Topological order with dependencies before dependents (only imports edges internal to dirty; cycles tolerated — remaining files appended in arbitrary order). */
+/**
+ * Topological order with dependencies before dependents (only imports edges
+ * internal to dirty; cycles tolerated — remaining files appended in arbitrary
+ * order). Lookups normalize through `stablePathKey` (same as computeDirtySet).
+ * Returned paths keep the caller's `dirty` spelling.
+ */
 export function topoSortDirty(imports: Map<string, Set<string>>, dirty: string[]): string[] {
-  const inSet = new Set(dirty);
-  const pending = new Map<string, number>();
+  const g = stablePathKeyGraph(imports);
+  const keyToOrig = new Map<string, string>();
+  const keys: string[] = [];
   for (const file of dirty) {
+    const kf = stablePathKey(file);
+    if (!keyToOrig.has(kf)) {
+      keyToOrig.set(kf, file);
+      keys.push(kf);
+    }
+  }
+  const inSet = new Set(keys);
+  const pending = new Map<string, number>();
+  for (const kf of keys) {
     let count = 0;
-    for (const dep of imports.get(file) ?? []) {
+    for (const dep of g.get(kf) ?? []) {
       if (inSet.has(dep)) count++;
     }
-    pending.set(file, count);
+    pending.set(kf, count);
   }
-  const ordered: string[] = [];
-  const ready = dirty.filter((f) => pending.get(f) === 0);
+  const orderedKeys: string[] = [];
+  const ready = keys.filter((kf) => pending.get(kf) === 0);
   while (ready.length > 0) {
     const file = ready.shift()!;
-    ordered.push(file);
-    for (const other of dirty) {
+    orderedKeys.push(file);
+    for (const other of keys) {
       if (pending.get(other) === undefined) continue;
-      if ((imports.get(other) ?? new Set<string>()).has(file)) {
+      if ((g.get(other) ?? new Set<string>()).has(file)) {
         const next = pending.get(other)! - 1;
         pending.set(other, next);
         if (next === 0) ready.push(other);
       }
     }
   }
-  for (const file of dirty) {
-    if (pending.has(file) && pending.get(file)! > 0) ordered.push(file);
+  for (const kf of keys) {
+    if (pending.has(kf) && pending.get(kf)! > 0) orderedKeys.push(kf);
   }
-  return ordered;
+  return orderedKeys.map((kf) => keyToOrig.get(kf) ?? kf);
 }

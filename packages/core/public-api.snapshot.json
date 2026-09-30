@@ -1294,6 +1294,8 @@
       "sourceHasRequireCall",
       "stableAnalyzeKeySource",
       "stableCallId",
+      "stablePathKey",
+      "stablePathKeyGraph",
       "stripCommentsAndStrings",
       "stripStringsKeepComments",
       "superNameOf",

@@ -37,6 +37,8 @@ export {
   type DirectiveCaseMode,
   computeDirtySet,
   topoSortDirty,
+  stablePathKey,
+  stablePathKeyGraph,
   analysisFileCacheKey,
   resolveModule,
   locFromNode,

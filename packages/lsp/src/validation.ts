@@ -35,7 +35,7 @@ import {
 export { filterDiagnosticsByLevel, diagnosticsLevelForFile };
 import { checkSource, pTrue, evictGeneralizeMemoForPaths, evictCheckSourceMemoForPaths, extractNudoImports, isNodeModulesPath, sidecarPathOf } from "@nudojs/core";
 import { parse, extractDirectives, takeDirectiveDiagsSince, directiveDiagCount } from "@nudojs/parser";
-import { extractAllLoadSpecs, resolveDepPath, sidecarSpecsOf, stripStringsKeepComments } from "@nudojs/core/internal";
+import { extractAllLoadSpecs, resolveDepPath, sidecarSpecsOf, stablePathKey, stripStringsKeepComments } from "@nudojs/core/internal";
 import { createHash } from "node:crypto";
 
 function sourceFingerprint(s: string): string {
@@ -179,17 +179,20 @@ function normPath(p: string): string {
  * nudoDepParents / validateGeneration). Accepts a URI or a file path.
  *
  * Unifies Windows drive forms: `file:///c:/x` → `/c:/x` (uriToFilePath) and
- * `c:\x` / `c:/x` (fs-resolved) all collapse to `c:/x`. Without the leading-slash
- * strip, `path.resolve('/c:/x')` stays `\c:\x` even on Windows and delete/lookup
- * misses the entry written under the URI-derived key.
+ * `c:\x` / `c:/x` / `C:/x` (fs-resolved) all collapse to `c:/x`. Without the
+ * leading-slash strip, `path.resolve('/c:/x')` stays `\c:\x` even on Windows
+ * and delete/lookup misses the entry written under the URI-derived key.
+ *
+ * Drive-form unification is `stablePathKey`（core 单源）——L0 memo 依赖索引与
+ * 本键必须同形态，否则 Windows 上定向逐出 miss（FIX-RESIDUAL-3）。
  */
 export function cacheKey(p: string): string {
   let fp = uriToFilePath(p);
   const drive = /^\/([A-Za-z]:)(.*)$/.exec(fp);
   if (drive) fp = `${drive[1]}${drive[2]}`;
-  // Drive-absolute: path.resolve on POSIX would treat it as relative.
-  if (/^[A-Za-z]:[\\/]/.test(fp)) return normPath(fp);
-  return normPath(resolvePath(fp));
+  // Drive-absolute: skip resolvePath (POSIX would treat c:/x as relative).
+  if (/^[A-Za-z]:[\\/]/.test(fp)) return stablePathKey(fp);
+  return stablePathKey(resolvePath(fp));
 }
 
 /**

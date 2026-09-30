@@ -10,10 +10,10 @@ import {
   extractMockModuleRecords,
 } from "./directive-scan.ts";
 import { hashSource } from "./hash-source.ts";
-import { normPath, resolveDepPath, sidecarPathOf } from "./sidecar-path.ts";
+import { normPath, resolveDepPath, sidecarPathOf, stablePathKey, stablePathKeyGraph } from "./sidecar-path.ts";
 
 // 单一定义在 sidecar-path.ts（leaf）；此处 re-export 维持公共导出面稳定
-export { normPath, resolveDepPath };
+export { normPath, resolveDepPath, stablePathKey, stablePathKeyGraph };
 
 export type LoadDepsFingerprint = {
   fp: string;

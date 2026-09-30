@@ -52,7 +52,7 @@ export {
 } from "./algebra/fn-fp.ts";
 export {
   type LoadDepsFingerprint, extractAllLoadSpecs, loadModuleDepsFingerprint,
-  normPath, resolveDepPath, sidecarSpecsOf
+  normPath, resolveDepPath, sidecarSpecsOf, stablePathKey, stablePathKeyGraph
 } from "./algebra/load-deps-fp.ts";
 
 // derivation sessions + rendering experiments

@@ -23,6 +23,7 @@ import {
   envPathDependents,
   isEnvTemplatePath,
   getAnalysisSession,
+  stablePathKey,
   type CallRecord,
   type AnalysisResult,
 } from "@nudojs/service";
@@ -173,6 +174,8 @@ export function startWatch(paths: string[], runOne: WatchRunner, label: string):
   const isDir = resolvedList.some((p) => existsSync(p) && statSync(p).isDirectory());
   const primary = resolvedList[0]!;
 
+  // 路径身份统一 stablePathKey：watch 事件 / collectNudoFiles / buildModuleGraph 边
+  // 各有 fs 原生形态，跨形态查 tracked / computeDirtySet 在 Windows 会 miss。
   const getFiles = (): string[] => {
     const out: string[] = [];
     for (const p of resolvedList) {
@@ -180,7 +183,7 @@ export function startWatch(paths: string[], runOne: WatchRunner, label: string):
       if (statSync(p).isDirectory()) out.push(...collectNudoFiles(p));
       else out.push(p);
     }
-    return out;
+    return out.map(stablePathKey);
   };
 
   let graph = buildModuleGraph(getFiles());
@@ -204,9 +207,11 @@ export function startWatch(paths: string[], runOne: WatchRunner, label: string):
     const tracked = new Set(files);
     const dirtyUnion = new Set<string>();
     let forceFull = false;
-    for (const cf of changedFiles) {
+    for (const rawCf of changedFiles) {
+      // watch 事件路径是 join() fs 原生形态；与 tracked / 图键同走 stablePathKey
+      const cf = stablePathKey(rawCf);
       if (isNudoTargetPath(cf)) {
-        for (const d of computeDirtySet(graph.dependents, cf)) dirtyUnion.add(d);
+        for (const d of computeDirtySet(graph.dependents, cf)) dirtyUnion.add(stablePathKey(d));
         continue;
       }
       getAnalysisSession().clear();
@@ -217,9 +222,10 @@ export function startWatch(paths: string[], runOne: WatchRunner, label: string):
       if (isEnvTemplatePath(cf) || !isSidecarPath(cf)) {
         const envDeps = envPathDependents(cf);
         if (envDeps.length > 0) {
-          for (const src of envDeps) {
+          for (const srcRaw of envDeps) {
+            const src = stablePathKey(srcRaw);
             if (tracked.has(src)) dirtyUnion.add(src);
-            for (const d of computeDirtySet(graph.dependents, src)) dirtyUnion.add(d);
+            for (const d of computeDirtySet(graph.dependents, src)) dirtyUnion.add(stablePathKey(d));
           }
         } else if (isEnvTemplatePath(cf)) {
           forceFull = true;
@@ -227,11 +233,12 @@ export function startWatch(paths: string[], runOne: WatchRunner, label: string):
         }
       }
       if (isSidecarPath(cf)) {
-        for (const src of ambientSourcesOfSidecar(cf)) {
+        for (const srcRaw of ambientSourcesOfSidecar(cf)) {
+          const src = stablePathKey(srcRaw);
           if (tracked.has(src)) dirtyUnion.add(src);
-          for (const d of computeDirtySet(graph.dependents, src)) dirtyUnion.add(d);
+          for (const d of computeDirtySet(graph.dependents, src)) dirtyUnion.add(stablePathKey(d));
         }
-        for (const d of computeDirtySet(graph.dependents, cf)) dirtyUnion.add(d);
+        for (const d of computeDirtySet(graph.dependents, cf)) dirtyUnion.add(stablePathKey(d));
         if (![...dirtyUnion].some((f) => tracked.has(f))) forceFull = true;
       }
     }

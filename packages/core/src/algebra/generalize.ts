@@ -39,7 +39,7 @@ import { formalParamsFromNodes, formalParamDisplayNames, locateContractParam, ty
 import { resetHashSourceCache } from "./hash-source.ts";
 import {
   loadModuleDepsFingerprint,
-  normPath,
+  stablePathKey,
   type LoadDepsFingerprint,
 } from "./load-deps-fp.ts";
 import { snapshotAbs, type RelSource, type HofSite } from "./hof.ts";
@@ -169,12 +169,12 @@ function unindexMemoKey(key: string): void {
 
 /**
  * LSP/宿主：`*.nudo.js` 变更后按路径定向逐出依赖它的 L0 条目。
- * 返回删除的条目数。路径需与 generalize 时 resolveDepPath 形态一致（建议先 norm）。
+ * 返回删除的条目数。查找与索引同走 stablePathKey——跨 Windows 盘符形态命中。
  */
 export function evictGeneralizeMemoForPaths(paths: string[]): number {
   let n = 0;
   for (const raw of paths) {
-    const p = normPath(raw);
+    const p = stablePathKey(raw);
     const keys = memoDepIndex.get(p);
     if (!keys) continue;
     for (const key of [...keys]) {
@@ -253,7 +253,7 @@ function generalizeMemoKey(
     (r?.loadModule && r.fromFile ? sidecarClosureFingerprint(r.fromFile, r) : undefined);
   const scPath =
     sc !== undefined && !sc.startsWith("trunc:") && r?.fromFile
-      ? normPath(sidecarPathOf(r.fromFile))
+      ? sidecarPathOf(r.fromFile)
       : undefined;
   // AST 可用时用 per-function 指纹：改未引用的兄弟函数不 invalidate 本函数
   const srcPart = generalizeSourceKeyPart(source, fnName, opts.file);
@@ -298,8 +298,11 @@ function generalizeMemoSet(
   }
   generalizeMemo.set(key, value);
   if (depPaths.length > 0) {
-    memoKeyDeps.set(key, depPaths);
-    for (const p of depPaths) {
+    // 索引与逐出同走 stablePathKey：deps.paths / scPath 形态由 fromFile 决定，
+    // 混形态会让 evictGeneralizeMemoForPaths 跨形态 miss（FIX-RESIDUAL-3）
+    const normDeps = [...new Set(depPaths.map(stablePathKey))];
+    memoKeyDeps.set(key, normDeps);
+    for (const p of normDeps) {
       let set = memoDepIndex.get(p);
       if (!set) {
         set = new Set();
