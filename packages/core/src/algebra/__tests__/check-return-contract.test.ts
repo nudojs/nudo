@@ -355,3 +355,72 @@ const s = sumTo(10);
     expect(warns.length).toBeGreaterThanOrEqual(0);
   });
 });
+
+describe("sum 源 × array 契约：逐成员分发（元组并 ⊑ array）", () => {
+  it("ok: `[] | [1]` 满足 positives（每个成员单独都满足）", () => {
+    const errs = errorsOf(`
+/**
+ * @nudo:contract return positives
+ */
+function pick(n) {
+  const out = [];
+  if (n > 0) out.push(n);
+  return out;
+}
+`);
+    expect(errs).toEqual([]);
+  });
+
+  it("ok: `[] | [{ severity: high }]` 满足 findings", () => {
+    const errs = errorsOf(`
+/**
+ * @nudo:contract return findings
+ */
+function keep(list) {
+  const out = [];
+  for (const f of list) out.push({ severity: f.severity });
+  return out;
+}
+`);
+    expect(errs).toEqual([]);
+  });
+
+  it("ok: 多 return 路径的元组并满足 positives", () => {
+    const errs = errorsOf(`
+/**
+ * @nudo:contract return positives
+ */
+function pick(n) {
+  if (n > 0) return [n];
+  return [];
+}
+`);
+    expect(errs).toEqual([]);
+  });
+
+  it("error: 非数组成员仍报（分发不放行非法成员）", () => {
+    const errs = errorsOf(`
+/**
+ * @nudo:contract return positives
+ */
+function bad(n) {
+  if (n > 0) return 1;
+  return [];
+}
+`);
+    expect(errs.length).toBeGreaterThan(0);
+    expect(errs[0]!.expected).toContain("array(...)");
+  });
+
+  it("control: 单一元组（非 sum）本就满足 positives", () => {
+    const errs = errorsOf(`
+/**
+ * @nudo:contract return positives
+ */
+function one() {
+  return [1];
+}
+`);
+    expect(errs).toEqual([]);
+  });
+});
