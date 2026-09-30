@@ -11,186 +11,143 @@ This page keeps each package’s **current** notes only. Full history: [Full rel
 
 | Package | Current version |
 |----------|-----------------|
-| `@nudojs/core` | 1.3.0 |
-| `@nudojs/service` | 1.2.3 |
-| `nudojs (CLI)` | 1.0.8 |
-| `@nudojs/parser` | 1.1.8 |
-| `@nudojs/lsp` | 1.1.8 |
-| `@nudojs/env` | 0.4.10 |
-| `@nudojs/harvester` | 0.2.16 |
-| `vite-plugin-nudo` | 0.4.11 |
-| `nudo-vscode` | 0.3.15 |
+| `@nudojs/core` | 1.3.1 |
+| `@nudojs/service` | 1.2.4 |
+| `nudojs (CLI)` | 1.0.9 |
+| `@nudojs/parser` | 1.1.9 |
+| `@nudojs/lsp` | 1.1.9 |
+| `@nudojs/env` | 0.4.11 |
+| `@nudojs/harvester` | 0.2.17 |
+| `vite-plugin-nudo` | 0.4.12 |
+| `nudo-vscode` | 0.3.16 |
 
 **Jump to package:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.3.0 {#pkg-core}
+## @nudojs/core 1.3.1 {#pkg-core}
 
-## 1.3.0
-
-### Minor Changes
-
-- c717017: fix(dx): sidecar load failure reported once (#64) + contract/DX improvements
-  
-  1. **Sidecar load failure dedup** (defect): a broken `*.nudo.js` no longer
-     reports the same `nudo:interface-load` once per source export. Unrelated
-     exports are filtered by the sidecar's export names before exec; module-level
-     failures dedup by (path, reason) with one message and `(affects N bindings)`
-     — wording no longer says `for 'X'` (reads like X itself is broken).
-  
-  2. **L2 entry-may-throw actions**: the most honest fix (sidecar `fn({ … })`
-     param contract) is now the first suggested action, ahead of `@nudo:throws`.
-  
-  3. **Destructured param contracts render**: `decide({ grade, findings })` with
-     a sidecar field contract shows `{ grade, findings }: { grade: string, … }`
-     instead of `decide(_p0: any)`.
-  
-  4. **`@nudo:budget` function-level budget knob**:
-     `@nudo:budget forks=20000` / `calls=… depth=…` raises the call/fork budget
-     for that function's evaluation only (restored after). Truncation
-     suggestions point at this knob instead of only global `maxForks`.
+## 1.3.1
 
 ### Patch Changes
 
-- 6bc08c7: fix(env): env globals no longer shadow the host `undefined` / `NaN` / `Infinity`
+- 8df9215: fix(contract): array return contracts distribute over sum arms
   
-  `runTranspiled` injects every `@nudo:env` global as a module-scope
-  `const <name> = __nudoEnv["<name>"]`, which shadows the host global for the
-  whole transpiled body. `@nudojs/env/es` declares `undefined: undef()`, and
-  `web` / `node` imply `es` — so any `nudo.env` declaration shadowed `undefined`:
+  `assertImplies` distributed **shape** contracts (`constraint.fields`) over the
+  members of a `sum` return value, but the **array** branch was reached with the
+  sum still intact and rejected it outright:
   
-  - the transpiler's own bare `undefined` text (`stmt` missing `else` arm,
-    implicit return) and `$lit(undefined)` received an **Abs object**;
-  - effect: a conditional `return` inside a loop joined to `unknown`, so
-    `for (const s of list) { if (s === "high") return "l1"; } return "l0";`
-    folded to `unknown` instead of `"l0" | "l1"`;
-  - `NaN` bound as `prim.num()` degraded `0 === NaN` from the definite `false`
-    of native semantics to `boolean`.
+  ```
+  return shape sum ⊭ array(...)
+  ```
   
-  Injection now skips `undefined` / `NaN` / `Infinity`: the transpiler already
-  hardcodes those identifiers as `$lit(...)`, so the consts had no upside and
-  only shadowed the host.
+  Any function built from the idiomatic "start empty, push conditionally" shape
+  therefore reported a false `nudo:constraint-violated`:
   
-  Measured on a consumer project (npm-safe) with `nudo.env = ["es","node","web"]`:
-  `nudo test` went 39/39 → 23 passed / 10 failed; with this fix it is 33 + 6
-  planned cases green again, plus `opaque-result` 34 → 28, `unknown-inference`
-  9 → 6, `host-effect-blocked` 1 → 0 (env-declared builtins now fold instead of
-  failing closed).
-- d925692: fix(core): transpile emissions no longer depend on host `undefined` / `NaN` / `Infinity` identifier identity
+  ```js
+  export function pick(n) {
+    const out = [];
+    if (n > 0) out.push(n);
+    return out;          // [] | [n]  ⊭  array(number().gt(0))
+  }
+  ```
   
-  Follow-up hardening after the env-injection skip fix:
+  Each arm is an array on its own (`[]` and `[n]` both satisfy the contract), so
+  the sum is too. Array contracts are structural like shape contracts, so they
+  now distribute over sum members the same way (`any`-derived members are still
+  skipped, keeping the existing gold-FP protection). Non-array arms still report.
   
-  - emit `$lit(void 0)` / `$lit(0/0)` / `$lit(1/0)` instead of `$lit(undefined)` /
-    `$lit(NaN)` / `$lit(Infinity)` so generated code never reads those identifiers;
-  - omit `$fork`'s third argument when there is no `else` arm (previously emitted a
-    bare `undefined` sentinel that broke if the name was shadowed);
-  - share one `HOST_INTRINSIC_NAMES` table between transpile folding and the env
-    inject skip set, so the two lists cannot drift;
-  - free-assignment / fork-binding filters exclude all three intrinsics, not just
-    `undefined`.
+  Measured on a consumer project (npm-safe): `vetoFindings` / `decide` return
+  contracts went from `nudo:constraint-violated` errors to clean, with no other
+  diagnostic movement.
 
-Older versions (18) → [Full release history](./releases-history.md#pkg-core)
+Older versions (19) → [Full release history](./releases-history.md#pkg-core)
 
-## @nudojs/service 1.2.3 {#pkg-service}
+## @nudojs/service 1.2.4 {#pkg-service}
 
-## 1.2.3
+## 1.2.4
 
 ### Patch Changes
 
-- Updated dependencies [6bc08c7]
-- Updated dependencies [d925692]
-- Updated dependencies [c717017]
-  - @nudojs/core@1.3.0
-  - @nudojs/env@0.4.10
-  - @nudojs/harvester@0.2.16
-  - @nudojs/parser@1.1.8
+- Updated dependencies [8df9215]
+  - @nudojs/core@1.3.1
+  - @nudojs/env@0.4.11
+  - @nudojs/harvester@0.2.17
+  - @nudojs/parser@1.1.9
 
-Older versions (20) → [Full release history](./releases-history.md#pkg-service)
+Older versions (21) → [Full release history](./releases-history.md#pkg-service)
 
-## nudojs (CLI) 1.0.8 {#pkg-nudojs}
+## nudojs (CLI) 1.0.9 {#pkg-nudojs}
 
-## 1.0.8
+## 1.0.9
 
 ### Patch Changes
 
-- Updated dependencies [6bc08c7]
-- Updated dependencies [d925692]
-- Updated dependencies [c717017]
-  - @nudojs/core@1.3.0
-  - @nudojs/harvester@0.2.16
-  - @nudojs/parser@1.1.8
-  - @nudojs/service@1.2.3
+- Updated dependencies [8df9215]
+  - @nudojs/core@1.3.1
+  - @nudojs/harvester@0.2.17
+  - @nudojs/parser@1.1.9
+  - @nudojs/service@1.2.4
 
-Older versions (17) → [Full release history](./releases-history.md#pkg-nudojs)
+Older versions (18) → [Full release history](./releases-history.md#pkg-nudojs)
 
-## @nudojs/parser 1.1.8 {#pkg-parser}
+## @nudojs/parser 1.1.9 {#pkg-parser}
 
-## 1.1.8
+## 1.1.9
 
 ### Patch Changes
 
-- Updated dependencies [6bc08c7]
-- Updated dependencies [d925692]
-- Updated dependencies [c717017]
-  - @nudojs/core@1.3.0
+- Updated dependencies [8df9215]
+  - @nudojs/core@1.3.1
 
-Older versions (18) → [Full release history](./releases-history.md#pkg-parser)
+Older versions (19) → [Full release history](./releases-history.md#pkg-parser)
 
-## @nudojs/lsp 1.1.8 {#pkg-lsp}
+## @nudojs/lsp 1.1.9 {#pkg-lsp}
 
-## 1.1.8
+## 1.1.9
 
 ### Patch Changes
 
-- Updated dependencies [6bc08c7]
-- Updated dependencies [d925692]
-- Updated dependencies [c717017]
-  - @nudojs/core@1.3.0
-  - @nudojs/parser@1.1.8
-  - @nudojs/service@1.2.3
+- Updated dependencies [8df9215]
+  - @nudojs/core@1.3.1
+  - @nudojs/parser@1.1.9
+  - @nudojs/service@1.2.4
 
-Older versions (21) → [Full release history](./releases-history.md#pkg-lsp)
+Older versions (22) → [Full release history](./releases-history.md#pkg-lsp)
 
-## @nudojs/env 0.4.10 {#pkg-env}
-
-## 0.4.10
-
-### Patch Changes
-
-- Updated dependencies [6bc08c7]
-- Updated dependencies [d925692]
-- Updated dependencies [c717017]
-  - @nudojs/core@1.3.0
-
-Older versions (17) → [Full release history](./releases-history.md#pkg-env)
-
-## @nudojs/harvester 0.2.16 {#pkg-harvester}
-
-## 0.2.16
-
-### Patch Changes
-
-- Updated dependencies [6bc08c7]
-- Updated dependencies [d925692]
-- Updated dependencies [c717017]
-  - @nudojs/core@1.3.0
-  - @nudojs/env@0.4.10
-  - @nudojs/parser@1.1.8
-
-Older versions (17) → [Full release history](./releases-history.md#pkg-harvester)
-
-## vite-plugin-nudo 0.4.11 {#pkg-vite-plugin}
+## @nudojs/env 0.4.11 {#pkg-env}
 
 ## 0.4.11
 
 ### Patch Changes
 
-- Updated dependencies [6bc08c7]
-- Updated dependencies [d925692]
-- Updated dependencies [c717017]
-  - @nudojs/core@1.3.0
-  - @nudojs/service@1.2.3
+- Updated dependencies [8df9215]
+  - @nudojs/core@1.3.1
 
-Older versions (20) → [Full release history](./releases-history.md#pkg-vite-plugin)
+Older versions (18) → [Full release history](./releases-history.md#pkg-env)
+
+## @nudojs/harvester 0.2.17 {#pkg-harvester}
+
+## 0.2.17
+
+### Patch Changes
+
+- Updated dependencies [8df9215]
+  - @nudojs/core@1.3.1
+  - @nudojs/env@0.4.11
+  - @nudojs/parser@1.1.9
+
+Older versions (18) → [Full release history](./releases-history.md#pkg-harvester)
+
+## vite-plugin-nudo 0.4.12 {#pkg-vite-plugin}
+
+## 0.4.12
+
+### Patch Changes
+
+- Updated dependencies [8df9215]
+  - @nudojs/core@1.3.1
+  - @nudojs/service@1.2.4
+
+Older versions (21) → [Full release history](./releases-history.md#pkg-vite-plugin)
 
 ## nudo-vscode 0.3.7 {#pkg-vscode}
 

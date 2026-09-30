@@ -1,5 +1,12 @@
 # @nudojs/parser
 
+## 1.1.9
+
+### Patch Changes
+
+- Updated dependencies [8df9215]
+  - @nudojs/core@1.3.1
+
 ## 1.1.8
 
 ### Patch Changes
