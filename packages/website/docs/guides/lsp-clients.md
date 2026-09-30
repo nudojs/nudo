@@ -63,7 +63,7 @@ Legend: **Y** = works with stock client + this server · **C** = needs a setting
 
 | Capability | VS Code (`nudo-vscode`) | Zed (`nudo-zed`) | Neovim (nvim-lspconfig) | Helix | Generic stdio LSP |
 |------------|:-----------------------:|:----------------:|:-----------------------:|:-----:|:-----------------:|
-| Launch | Bundled `server.js` over IPC | `nudo-lsp` / project `node_modules` / Zed npm | `cmd = nudo-lsp` | `command = nudo-lsp` | Spawn `nudo-lsp` or `node dist/server.js` |
+| Launch | Bundled `server.js` over IPC | Zed managed npm (`@nudojs/lsp` → `node …/server.js --stdio`) | `cmd = nudo-lsp` | `command = nudo-lsp` | Spawn `nudo-lsp` or `node dist/server.js` |
 | Diagnostics | Y | Y | Y | Y | Y |
 | Hover (Abs + interface tier) | Y | Y | Y | Y | Y |
 | Completion | Y | Y | Y | C (`.` via auto-pairs) | Y |
@@ -90,9 +90,8 @@ Install `wmzy.nudo-vscode`. The extension bundles the server and registers `nudo
 
 ### Zed — minimal
 
-1. Install [nudojs/nudo-zed](https://github.com/nudojs/nudo-zed) as a dev/extension install, **or** point at a local server binary.
-2. Project `package.json`: `"devDependencies": { "@nudojs/lsp": "^1.0.0" }`.
-3. `~/.config/zed/settings.json` (or project `.zed/settings.json`):
+1. Install [nudojs/nudo-zed](https://github.com/nudojs/nudo-zed) from the extensions registry (or as a dev extension). The extension installs `@nudojs/lsp` via Zed's managed npm — no `package.json` pin required.
+2. `~/.config/zed/settings.json` (or project `.zed/settings.json`):
 
 ```json
 {
@@ -104,20 +103,12 @@ Install `wmzy.nudo-vscode`. The extension bundles the server and registers `nudo
       "language_servers": ["vtsls", "nudo", "..."]
     }
   },
-  "lsp": {
-    "nudo": {
-      "binary": {
-        "path": "npx",
-        "arguments": ["--yes", "@nudojs/lsp"]
-      }
-    }
-  },
   "code_lens": "on",
   "inlay_hints": { "enabled": true }
 }
 ```
 
-If `nudo-lsp` is already on `PATH`, prefer `"binary": { "path": "nudo-lsp", "arguments": [] }`. Semantic tokens: set `"semantic_tokens": "combined"`. See [Zed Extension](./zed.md).
+Optional binary override (skip the managed install): `"lsp": { "nudo": { "binary": { "path": "nudo-lsp", "arguments": [] } } }`. Semantic tokens: set `"semantic_tokens": "combined"`. See [Zed Extension](./zed.md).
 
 ### Neovim — minimal
 
