@@ -17,6 +17,7 @@ import {
   execNudoModule,
   isNudoConstraint,
   constraintToEntryAbs,
+  CONSTRAINT_BUILDER_NAMES,
   CONSTRAINT_EXPR_RE,
   SELF,
   listFnDirectiveScopes,
@@ -231,10 +232,102 @@ const SAMPLE_NUM_RE = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/;
  * CONSTRAINT_BUILDER_NAMES 生成，本文件不再手维护一份。
  */
 
+/**
+ * BUG-013：链式方法白名单（须与 core makeBuilder / ConstraintBuilder 同步）。
+ * 约束表达式只允许这些方法出现在 `builder(...).method(...)` 链上。
+ */
+const TYPE_EXPR_CHAIN_METHODS = new Set([
+  "gt", "ge", "lt", "le", "int", "min", "max", "length", "shift", "optional",
+]);
+
+/**
+ * BUG-013：类型表达式 AST 白名单——进入 execNudoModule / new Function 前的门禁。
+ * 仅允许：构建器名调用、白名单链式方法、字面量、Object/Array 字面量、
+ * 一元负号数字、`undefined` 标识符。出现 AssignmentExpression /
+ * SequenceExpression / 任意非白名单 CallExpression / 计算属性 / spread /
+ * 可选链 / new / 模板串等一律拒绝。
+ */
+function isSafeTypeExprNode(node: Node): boolean {
+  switch (node.type) {
+    case "NumericLiteral":
+    case "StringLiteral":
+    case "BooleanLiteral":
+    case "NullLiteral":
+      return true;
+    case "Identifier":
+      return node.name === "undefined";
+    case "UnaryExpression":
+      return node.operator === "-" && node.argument.type === "NumericLiteral";
+    case "ArrayExpression":
+      return node.elements.every(
+        (el) => el !== null && el.type !== "SpreadElement" && isSafeTypeExprNode(el),
+      );
+    case "ObjectExpression":
+      return node.properties.every((prop) => {
+        if (prop.type !== "ObjectProperty") return false;
+        if (prop.computed) return false;
+        const key = prop.key;
+        if (key.type !== "Identifier" && key.type !== "StringLiteral") return false;
+        return isSafeTypeExprNode(prop.value);
+      });
+    case "CallExpression": {
+      // Babel 8：可选链是独立的 OptionalCallExpression / OptionalMemberExpression
+      // 节点，不进本分支（default 拒绝）。
+      const argsOk = node.arguments.every(
+        (arg) =>
+          arg.type !== "SpreadElement" &&
+          arg.type !== "ArgumentPlaceholder" &&
+          isSafeTypeExprNode(arg),
+      );
+      if (!argsOk) return false;
+      return isSafeTypeExprCallee(node.callee);
+    }
+    default:
+      return false;
+  }
+}
+
+function isSafeTypeExprCallee(node: Node): boolean {
+  if (node.type === "Identifier") {
+    return (CONSTRAINT_BUILDER_NAMES as readonly string[]).includes(node.name);
+  }
+  if (node.type === "MemberExpression") {
+    if (node.computed) return false;
+    if (node.property.type !== "Identifier") return false;
+    if (!TYPE_EXPR_CHAIN_METHODS.has(node.property.name)) return false;
+    return isSafeTypeExprNode(node.object);
+  }
+  return false;
+}
+
+/** 整条类型表达式过白名单。解析失败 / 多语句 / 非表达式根一律拒绝（fail-closed）。 */
+function isSafeTypeExprSource(s: string): boolean {
+  try {
+    // 用 `(${s});` 包成单表达式语句：多语句拼接（`number()); process.exit(1); //`）
+    // 会变成 body.length > 1，SequenceExpression 形态会被白名单拒绝。
+    const ast = babelParse(`(${s});`);
+    if (ast.program.body.length !== 1) return false;
+    const stmt = ast.program.body[0];
+    if (stmt.type !== "ExpressionStatement") return false;
+    return isSafeTypeExprNode(stmt.expression);
+  } catch {
+    return false;
+  }
+}
+
 /** 约束表达式 → NudoConstraint；非约束文法或执行失败 → undefined */
 function tryParseConstraint(expr: string): NudoConstraint | undefined {
   const s = expr.trim();
   if (!CONSTRAINT_EXPR_RE.test(s)) return undefined;
+  // BUG-013：CONSTRAINT_EXPR_RE 只是前缀预筛，不是安全门禁。进 new Function 前
+  // 必须过 AST 白名单，否则 `number(), process.exit(1)` 可借前缀执行任意 JS。
+  if (!isSafeTypeExprSource(s)) {
+    emitDirectiveDiag({
+      code: "nudo:directive-syntax",
+      message: `Unsafe constraint expression rejected: ${s.slice(0, 80)} (only builder calls, chain methods, and literals are allowed)`,
+    });
+    return undefined;
+  }
   try {
     // 受控执行：注入构建器，不碰用户 node_modules（与侧车同一路径）
     const src = `export const __nudo_case_arg = (${s});`;
