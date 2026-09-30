@@ -2,7 +2,11 @@
  * 代码动作（quickfix / refactor）：自 server.ts 机械拆出；语义未改。
  */
 import { readFileSync } from "node:fs";
-import { sidecarPathOf } from "@nudojs/core";
+import { sidecarPathOf, actionsForIssue, type CheckAction } from "@nudojs/core";
+import {
+  materializeAction,
+  type QuickfixPlan,
+} from "@nudojs/service/emit";
 import type { Connection, CodeAction } from "vscode-languageserver/node";
 import type { TextDocument } from "vscode-languageserver-textdocument";
 import { findFnContractInsertPos } from "./sidecar-insert.ts";
@@ -258,6 +262,150 @@ connection.onCodeAction((params) => {
           }
         }
       }
+    }
+  }
+
+  // #69：action-map 物化 — kind → quickfix（标题区分 fix/silence/review）
+  for (const diag of params.context.diagnostics) {
+    const code = String(diag.code ?? "");
+    if (!code.startsWith("nudo")) continue;
+    const data = (diag.data ?? {}) as {
+      fn?: string;
+      expected?: string;
+      actual?: string;
+      suggestion?: string;
+      actions?: CheckAction[];
+    };
+    const fn = data.fn;
+    const acts =
+      data.actions ??
+      actionsForIssue({
+        code,
+        fn,
+        expected: data.expected,
+        suggestion: data.suggestion,
+      });
+    const sidecarPath = sidecarPathOf(filePath);
+    const sidecarText = (() => {
+      try {
+        return (
+          agentToolDeps.getOpenText?.(sidecarPath)?.text ??
+          readFileSync(sidecarPath, "utf-8")
+        );
+      } catch {
+        return undefined;
+      }
+    })();
+    // entry-may-throw 的 throws 类型
+    const throwsKind =
+      data.suggestion?.match(/@nudo:throws\s+(\w+)/)?.[1] ??
+      data.actual?.match(/throws\s+([A-Za-z]+)/)?.[1];
+
+    for (const action of acts) {
+      if (action.kind === "info") continue;
+      let plan: QuickfixPlan | undefined;
+      try {
+        plan = materializeAction({
+          code,
+          fn,
+          file: filePath,
+          source,
+          sidecarText,
+          sidecarPath,
+          action,
+          throwsKind,
+          expected: data.expected,
+          suggestion: data.suggestion,
+        });
+      } catch {
+        continue;
+      }
+      if (!plan) continue;
+
+      // unproven-return relax：补 a6-relax 的实际文本改写（review）
+      if (
+        code === "nudo:unproven-return" &&
+        action.kind === "relax" &&
+        fn &&
+        sidecarText !== undefined
+      ) {
+        const relaxed = relaxSidecarConstraint(sidecarText, fn, undefined, data.expected);
+        if (relaxed && relaxed !== sidecarText) {
+          const scUri = filePathToUri(sidecarPath);
+          const scLines = sidecarText.split("\n");
+          const last = scLines.length - 1;
+          actions.push({
+            title: plan.title,
+            kind: "quickfix",
+            diagnostics: [diag],
+            edit: {
+              changes: {
+                [scUri]: [
+                  {
+                    range: {
+                      start: { line: 0, character: 0 },
+                      end: { line: last, character: scLines[last]?.length ?? 0 },
+                    },
+                    newText: relaxed,
+                  },
+                ],
+              },
+            },
+          });
+        }
+        continue;
+      }
+
+      const changes: Record<string, Array<{
+        range: { start: { line: number; character: number }; end: { line: number; character: number } };
+        newText: string;
+      }>> = {};
+
+      for (const e of plan.edits) {
+        const uri = params.textDocument.uri;
+        (changes[uri] ??= []).push({
+          range: {
+            start: { line: e.startLine, character: e.startCol },
+            end: { line: e.endLine, character: e.endCol },
+          },
+          newText: e.newText,
+        });
+      }
+      if (plan.sidecar) {
+        const scUri = filePathToUri(plan.sidecar.path);
+        let scSource = sidecarText ?? "";
+        const scLines = scSource.split("\n");
+        const last = Math.max(0, scLines.length - 1);
+        (changes[scUri] ??= []).push({
+          range: {
+            start: { line: 0, character: 0 },
+            end: { line: last, character: scLines[last]?.length ?? 0 },
+          },
+          newText: plan.sidecar.newText,
+        });
+      }
+
+      if (Object.keys(changes).length === 0 && action.command) {
+        actions.push({
+          title: plan.title,
+          kind: "quickfix",
+          diagnostics: [diag],
+          command: {
+            title: plan.title,
+            command: "nudo.contract.draft",
+            arguments: [params.textDocument.uri],
+          },
+        });
+        continue;
+      }
+      if (Object.keys(changes).length === 0) continue;
+
+      actions.push({
+        title: plan.title,
+        kind: "quickfix",
+        diagnostics: [diag],
+        edit: { changes },
+      });
     }
   }
 

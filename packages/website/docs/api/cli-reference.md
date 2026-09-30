@@ -66,6 +66,10 @@ nudo check <paths...> [options]
 | `--profile adoption\|strict` | Gate profile (default `strict`). `adoption` = L2 entry may-throw demoted to warning; L1 stays error. An explicit `--entry-throws` value overrides the profile |
 | `--what-if <binding...>` | AI3: assume `name:type` bindings and report `--target` (same semantics as LSP `nudo.whatIf`) |
 | `--target <name>` | With `--what-if`: binding whose inferred type to print |
+| `--fix` | Materialize one fix/adjust edit per issue (default dry-run: print unified diff). Silence/review actions are never auto-applied |
+| `--only <codes…>` | With `--fix`: only these diagnostic codes (e.g. `nudo:entry-may-throw`) |
+| `--write` | With `--fix`: apply edits to disk (default dry-run) |
+| `--dry-run` | With `--fix`: print diffs only (default; kept for explicitness) |
 
 **Configuration (`package.json`):**
 

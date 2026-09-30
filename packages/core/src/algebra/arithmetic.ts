@@ -383,7 +383,7 @@ function addPred(a: Abs, b: Abs, sumTerm: Term, phi: Phi): Pred | undefined {
   return and(...facts);
 }
 
-type NumBounds = {
+export type NumBounds = {
   lo?: { value: number; strict: boolean };
   hi?: { value: number; strict: boolean };
 };
@@ -392,7 +392,7 @@ type NumBounds = {
  * 提取 Abs 上相对 term 的数值界。
  * 优先用自身 pred；否则查 Φ（针对 var id）。
  */
-function numericBounds(a: Abs, phi: Phi = pTrue): NumBounds | undefined {
+export function numericBounds(a: Abs, phi: Phi = pTrue): NumBounds | undefined {
   if (!isNumPrim(a)) return undefined;
   const result: NumBounds = {};
 

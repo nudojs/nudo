@@ -35,6 +35,11 @@ import type { Node } from "@babel/types";
 import { analyzeFileAsync, type FunctionAnalysis } from "../analyzer.ts";
 import type { CallRecord } from "../evaluator/call-record.ts";
 import { defaultLoadModule, type LoadModule } from "../load-module.ts";
+import {
+  collectParamBodyReadTypes,
+  shapeDslFromFields,
+  type BodyReadField,
+} from "./body-read-types.ts";
 
 /**
  * DraftEvidence `body` = 仅来自函数体对形参的成员读取（草稿建议，非义务）。
@@ -53,6 +58,8 @@ export type InterfaceDraftEntry = {
     projected: boolean;
     /** 函数体读到的字段名（草稿建议；与 projected 无关） */
     bodyAccesses?: string[];
+    /** body-read 字段 + 用法推断类型（自动填类型；无证据为 any()） */
+    bodyReadFields?: BodyReadField[];
   }>;
   returns?: { constraint?: NudoConstraint; display: string; projected: boolean };
   paramEvidence: DraftEvidence;
@@ -365,6 +372,7 @@ function projectDraftParams(
   paramCases: FunctionAnalysis["cases"],
   bodyByParam?: Map<string, Set<string>>,
   formals?: FunctionAnalysis["formals"],
+  bodyReadByParam?: Map<string, BodyReadField[]>,
 ): InterfaceDraftEntry["params"] {
   const bodyFor = (name: string, index: number): Set<string> | undefined => {
     if (!bodyByParam) return undefined;
@@ -380,10 +388,29 @@ function projectDraftParams(
     }
     return bodyByParam.get(`_p${index}`);
   };
+  const fieldsFor = (name: string, index: number): BodyReadField[] | undefined => {
+    if (!bodyReadByParam) return undefined;
+    const hit = bodyReadByParam.get(name);
+    if (hit && hit.length > 0) return hit;
+    const formal = formals?.[index];
+    if (formal && formal.kind === "pattern") {
+      for (const b of formal.bound) {
+        const boundHit = bodyReadByParam.get(b);
+        if (boundHit && boundHit.length > 0) return boundHit;
+      }
+    }
+    return bodyReadByParam.get(`_p${index}`);
+  };
   return fn.paramNames.map((name, i) => {
     const bodyAccesses = bodyFor(name, i)
       ? [...bodyFor(name, i)!].sort()
       : undefined;
+    const bodyReadFields = fieldsFor(name, i);
+    const bodyExtra = bodyReadFields
+      ? { bodyAccesses: bodyReadFields.map((f) => f.field), bodyReadFields }
+      : bodyAccesses
+        ? { bodyAccesses }
+        : {};
     const argAbs: Abs[] = [];
     for (const c of paramCases) {
       const a = c.argAbs[i];
@@ -391,11 +418,14 @@ function projectDraftParams(
     }
     if (argAbs.length === 0) {
       if (bodyAccesses && bodyAccesses.length > 0) {
+        const shapeText = bodyReadFields
+          ? shapeDslFromFields(bodyReadFields)
+          : `shape({ ${bodyAccesses.map((k) => `${k}: any()`).join(", ")} })`;
         return {
           name,
-          display: `/* body-read { ${bodyAccesses.join(", ")} } — fill types when accepting */`,
+          display: `/* body-read ${shapeText} */`,
           projected: false,
-          bodyAccesses,
+          ...bodyExtra,
         };
       }
       return { name, display: "/* no evidence — tighten */", projected: false };
@@ -406,7 +436,7 @@ function projectDraftParams(
         name,
         display: `/* not projectable: ${argAbs.map((a) => formatShape(a)).join(" | ")} */`,
         projected: false,
-        ...(bodyAccesses ? { bodyAccesses } : {}),
+        ...bodyExtra,
       };
     }
     // DSL 义务位：widen 字面量观测，避免单点 callsite 成为硬契约
@@ -417,7 +447,7 @@ function projectDraftParams(
         name,
         display: `/* observed: ${observed} — widen/confirm before accepting */`,
         projected: false,
-        ...(bodyAccesses ? { bodyAccesses } : {}),
+        ...bodyExtra,
       };
     }
     let display = formatConstraint(constraint);
@@ -425,7 +455,9 @@ function projectDraftParams(
     if (observed !== display) {
       display += `  /* observed: ${observed} */`;
     }
-    if (bodyAccesses && bodyAccesses.length > 0) {
+    if (bodyReadFields && bodyReadFields.length > 0) {
+      display += `  /* body also reads: ${shapeDslFromFields(bodyReadFields)} */`;
+    } else if (bodyAccesses && bodyAccesses.length > 0) {
       display += `  /* body also reads: ${bodyAccesses.join(", ")} */`;
     }
     return {
@@ -433,7 +465,7 @@ function projectDraftParams(
       constraint,
       display,
       projected: true,
-      ...(bodyAccesses ? { bodyAccesses } : {}),
+      ...bodyExtra,
     };
   });
 }
@@ -544,13 +576,15 @@ function draftDsl(entry: Pick<InterfaceDraftEntry, "params" | "returns">): strin
   return ret === undefined || ret === "" ? `fn(${obj})` : `fn(${obj}, ${ret})`;
 }
 
-/** 草稿建议 DSL（注释用，不写入 export 行）：body 字段占位 */
+/** 草稿建议 DSL（注释用，不写入 export 行）：body 字段自动填类型 */
 function suggestedBodyDsl(fnName: string, params: InterfaceDraftEntry["params"]): string | undefined {
   const withBody = params.filter((p) => p.bodyAccesses && p.bodyAccesses.length > 0 && !p.projected);
   if (withBody.length === 0) return undefined;
   const parts = withBody.map((p) => {
-    const fields = p.bodyAccesses!.map((k) => `${k}: /* TODO */`).join(", ");
-    return `${p.name}: shape({ ${fields} })`;
+    const shapeText = p.bodyReadFields
+      ? shapeDslFromFields(p.bodyReadFields)
+      : `shape({ ${p.bodyAccesses!.map((k) => `${k}: any()`).join(", ")} })`;
+    return `${p.name}: ${shapeText}`;
   });
   return `//   suggested (body-read, not a contract): ${sanitizeCommentText(
     `${fnName} = fn({ ${parts.join(", ")} })`,
@@ -578,6 +612,7 @@ export async function draftInterface(
   const selected =
     opts.fnNames && opts.fnNames.length > 0 ? new Set(opts.fnNames) : exported;
   const bodyMap = wantBody ? collectParamBodyAccesses(source) : new Map();
+  const bodyReadTypes = wantBody ? collectParamBodyReadTypes(source) : new Map();
 
   const entries: InterfaceDraftEntry[] = [];
   for (const fn of analysis.functions) {
@@ -634,7 +669,8 @@ export async function draftInterface(
 
     const { paramCases, returnCases, paramEvidence, rawReturnEvidence } = caseEvidence(fn);
     const bodyByParam = bodyMap.get(fn.name);
-    const params = projectDraftParams(fn, paramCases, bodyByParam, fn.formals);
+    const bodyReadByParam = bodyReadTypes.get(fn.name);
+    const params = projectDraftParams(fn, paramCases, bodyByParam, fn.formals, bodyReadByParam);
     const ret = projectDraftReturn(fn, returnCases, source, rawReturnEvidence, loadModule, filePath);
     const { evidence: returnEvidence, ...returns } = ret;
 

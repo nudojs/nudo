@@ -261,6 +261,12 @@ export function joinValues(a: Abs, b: Abs): Abs {
       }
       return makeSum(a, b);
     }
+    // 同 prim 但带 pred 证据（min/max 界等）：收成 bare path 会丢界，
+    // 条件返回 `return 0; return clamp(n)` 证不出后置。保留 sum 逐臂对账。
+    const hasPred = (x: Abs): boolean => !!x.pred && x.pred.op !== "true";
+    if (hasPred(a) || hasPred(b)) {
+      return makeSum(a, b);
+    }
     return abs(a.shape, undefined, undefined, confJoin(confJoin(a.conf, b.conf), "path"));
   }
 

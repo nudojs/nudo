@@ -61,4 +61,15 @@ describe("AI1 structured actions in CheckJson", () => {
     expect(acts.map((a) => a.kind)).toContain("mock");
     expect(acts.map((a) => a.kind)).toContain("assume");
   });
+
+  it("unproven-return: fn 不得覆盖 hint（expected）", () => {
+    const acts = actionsForIssue({
+      code: "nudo:unproven-return",
+      fn: "clamp100",
+      expected: "percent",
+    });
+    const relax = acts.find((a) => a.kind === "relax")!;
+    expect(relax.hint).toBe("percent");
+    expect(relax.label).toContain("clamp100");
+  });
 });

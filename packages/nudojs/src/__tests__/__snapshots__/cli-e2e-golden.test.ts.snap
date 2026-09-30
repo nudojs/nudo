@@ -12,7 +12,7 @@ issues
   [ERROR L1 boom] boom (export): may throw TypeError  (nudo:entry-may-throw)
       actual:   boom() => never    throws TypeError
       expected: entry total, or @nudo:throws / try-catch
-      → throw TypeError → @nudo:throws TypeError / sidecar fn({ … }) contract / refine / guard / try-catch
+      → throw TypeError → @nudo:throws TypeError  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch
       fix:  nudo contract --draft  (emit a sidecar draft you can edit)
 
 docs

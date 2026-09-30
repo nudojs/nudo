@@ -399,6 +399,134 @@ async function runCheck(
   }
 }
 
+// ---------------------------------------------------------------------------
+// #69：`nudo check --fix` — 复用物化层；默认 dry-run 打 unified diff
+// ---------------------------------------------------------------------------
+
+async function runCheckFix(opts: {
+  targets: string[];
+  only?: string[];
+  write: boolean;
+  ignoreThrows?: string[];
+  entryThrows?: "error" | "warning" | "off";
+  profile?: GateProfile;
+}): Promise<void> {
+  const core = await import("@nudojs/core");
+  const { checkSource, pTrue, sidecarPathOf, actionsForIssue } = core;
+  type CheckAction = import("@nudojs/core").CheckAction;
+  const { collectSkipReturns, defaultLoadModule } = await import("@nudojs/service");
+  const {
+    materializeAction,
+    applyTextEdits,
+    unifiedDiff,
+  } = await import("@nudojs/service/emit");
+  const { writeFileSync, readFileSync, existsSync } = await import("node:fs");
+
+  const only = opts.only && opts.only.length > 0 ? new Set(opts.only) : undefined;
+  let planned = 0;
+  let written = 0;
+
+  for (const file of opts.targets) {
+    let source: string;
+    try {
+      source = readFileSync(file, "utf-8");
+    } catch {
+      continue;
+    }
+    const report = checkSource(file, source, pTrue, {
+      loadModule: defaultLoadModule,
+      fromFile: file,
+      ...(opts.ignoreThrows ? { ignoreThrows: opts.ignoreThrows } : {}),
+      ...(opts.entryThrows ? { entryThrows: opts.entryThrows } : {}),
+      skips: collectSkipReturns(source),
+    });
+    const sidecar = sidecarPathOf(file);
+    let sidecarText: string | undefined;
+    try {
+      sidecarText = existsSync(sidecar) ? readFileSync(sidecar, "utf-8") : undefined;
+    } catch {
+      sidecarText = undefined;
+    }
+
+    for (const issue of report.issues) {
+      if (only && !only.has(issue.code)) continue;
+      const acts: CheckAction[] = issue.actions ?? actionsForIssue(issue);
+      const throwsKind =
+        issue.suggestion?.match(/@nudo:throws\s+(\w+)/)?.[1] ??
+        issue.actual?.match(/throws\s+([A-Za-z]+)/)?.[1];
+
+      // 每个 issue 只落一条修复（fix 优先，其次 adjust）。
+      // silence / review / scaffold 不是修复——默认不进 --fix 落盘，
+      // 避免 entry-may-throw 同时写侧车收窄和 @nudo:throws（语义相反）。
+      type Plan = NonNullable<Awaited<ReturnType<typeof materializeAction>>>;
+      const rank = (k: Plan["titleKind"]): number =>
+        k === "fix" ? 0 : k === "adjust" ? 1 : 2;
+      const plans: Plan[] = [];
+      for (const action of acts) {
+        if (action.kind === "info") continue;
+        const plan = materializeAction({
+          code: issue.code,
+          fn: issue.fn,
+          file,
+          source,
+          sidecarText,
+          sidecarPath: sidecar,
+          action,
+          throwsKind,
+          expected: issue.expected,
+          suggestion: issue.suggestion,
+        });
+        if (plan) plans.push(plan);
+      }
+      plans.sort((a, b) => rank(a.titleKind) - rank(b.titleKind));
+      const plan = plans.find((p) => rank(p.titleKind) <= 1);
+      if (!plan) continue;
+
+      // 源码编辑
+      if (plan.edits.length > 0) {
+        const next = applyTextEdits(source, plan.edits);
+        if (next !== source) {
+          planned++;
+          console.log(`\n--- ${file}`);
+          console.log(`+++ ${file}  (${plan.title})`);
+          console.log(unifiedDiff(source, next, file) || "(no line diff)");
+          if (opts.write) {
+            writeFileSync(file, next, "utf-8");
+            source = next;
+            written++;
+          }
+        }
+      }
+      // 侧车编辑
+      if (plan.sidecar) {
+        const cur = sidecarText ?? "";
+        const next = plan.sidecar.newText;
+        if (next !== cur) {
+          planned++;
+          console.log(`\n--- ${plan.sidecar.path}`);
+          console.log(`+++ ${plan.sidecar.path}  (${plan.title})`);
+          console.log(unifiedDiff(cur, next, plan.sidecar.path) || "(new file)");
+          if (opts.write) {
+            writeFileSync(plan.sidecar.path, next, "utf-8");
+            sidecarText = next;
+            written++;
+          }
+        }
+      }
+    }
+  }
+
+  const mode = opts.write ? "written" : "planned (dry-run)";
+  console.log(
+    `\ncheck --fix: ${planned} edit(s) ${mode}${opts.write ? `, ${written} applied` : " — pass --write to apply"}`,
+  );
+  if (!opts.write && planned > 0) {
+    console.log(
+      "hint: only [fix]/[adjust] are auto-applied; [silence]/[review] need a human (or LSP quickfix)",
+    );
+  }
+}
+
 export function registerCheckCommand(program: Command): void {
   program
     .command("check")
@@ -434,6 +562,10 @@ export function registerCheckCommand(program: Command): void {
       "AI3: assume `name:type` bindings (e.g. raw:string) and report --target",
     )
     .option("--target <name>", "With --what-if: binding name whose inferred type to print")
+    .option("--fix", "Materialize one fix/adjust edit per issue (default --dry-run: print unified diff)")
+    .option("--only <codes...>", "With --fix: only these diagnostic codes (e.g. nudo:entry-may-throw)")
+    .option("--write", "With --fix: apply edits to disk (default dry-run)")
+    .option("--dry-run", "With --fix: print diffs only (default; kept for explicitness)")
     .action(
       async (
         paths: string[],
@@ -453,6 +585,10 @@ export function registerCheckCommand(program: Command): void {
           profile?: string;
           whatIf?: string[];
           target?: string;
+          fix?: boolean;
+          only?: string[];
+          write?: boolean;
+          dryRun?: boolean;
         },
       ) => {
         // AI3：what-if 与门禁分离——只回答「假设下 target 是什么」
@@ -517,6 +653,19 @@ export function registerCheckCommand(program: Command): void {
           ? opts.entryThrows
           : undefined;
         const profile = isGateProfile(opts.profile) ? opts.profile : undefined;
+
+        // #69：`check --fix` 批量物化（默认 dry-run 打 diff；--write 落盘）
+        if (opts.fix) {
+          await runCheckFix({
+            targets,
+            only: opts.only,
+            write: opts.write === true,
+            ignoreThrows,
+            entryThrows,
+            profile,
+          });
+          return;
+        }
 
         const shared: {
           from?: CallRecord[];

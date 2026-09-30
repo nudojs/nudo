@@ -183,6 +183,20 @@ export function actionsForIssue(i: {
           label: "migration switch: ignore this throw class on L2",
         },
       ];
+    case "nudo:unproven-return":
+      return [
+        {
+          kind: "relax",
+          label: `relax the return contract${i.fn ? ` of ${i.fn}` : ""} to the inferred surface (review the diff — not a silent green)`,
+          ...(i.expected ? { hint: i.expected } : {}),
+        },
+        draft,
+        {
+          kind: "info",
+          label:
+            "or narrow the return expression / add a precondition so the bound is implied",
+        },
+      ];
     case "nudo:unknown-inference":
     case "nudo:opaque-result":
       return [

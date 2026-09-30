@@ -423,10 +423,10 @@ function checkSourceInner(
             actual: `${name}(…)    throws ${gateDisplay}`,
             expected: "entry total, or @nudo:throws / try-catch",
             suggestion: first.cause
-              ? `${first.cause} → ${first.kind === "ReferenceError" ? "re-export `export { x } from` 不是局部绑定——改 `import { x }` / @nudo:throws ReferenceError" : `@nudo:throws ${first.kind} / sidecar fn({ … }) contract / refine / guard / try-catch`}`
+              ? `${first.cause} → ${first.kind === "ReferenceError" ? "re-export `export { x } from` 不是局部绑定——改 `import { x }` / @nudo:throws ReferenceError" : `@nudo:throws ${first.kind}  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch`}`
               : first.kind === "ReferenceError"
                 ? "re-export `export { x } from` 不是局部绑定——改 `import { x }` / @nudo:throws ReferenceError"
-                : `@nudo:throws ${first.kind} / sidecar fn({ … }) contract / refine / guard / try-catch`,
+                : `@nudo:throws ${first.kind}  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch`,
             fn: name,
             ...(loc.line !== undefined ? { line: loc.line } : {}),
             ...(loc.column !== undefined ? { column: loc.column } : {}),
@@ -482,10 +482,10 @@ function checkSourceInner(
           actual: `${formatEntrySigLine(name, g, gateDisplay)}`,
           expected: "entry total, or @nudo:throws / try-catch",
           suggestion: first.cause
-            ? `${first.cause} → ${first.kind === "ReferenceError" ? "re-export `export { x } from` 不是局部绑定——改 `import { x }` / @nudo:throws ReferenceError" : `@nudo:throws ${first.kind} / sidecar fn({ … }) contract / refine / guard / try-catch`}`
+            ? `${first.cause} → ${first.kind === "ReferenceError" ? "re-export `export { x } from` 不是局部绑定——改 `import { x }` / @nudo:throws ReferenceError" : `@nudo:throws ${first.kind}  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch`}`
             : first.kind === "ReferenceError"
               ? "re-export `export { x } from` 不是局部绑定——改 `import { x }` / @nudo:throws ReferenceError"
-              : `@nudo:throws ${first.kind} / sidecar fn({ … }) contract / refine / guard / try-catch`,
+              : `@nudo:throws ${first.kind}  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch`,
           fn: name,
           ...(loc.line !== undefined ? { line: loc.line } : {}),
           ...(loc.column !== undefined ? { column: loc.column } : {}),

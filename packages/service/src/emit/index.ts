@@ -111,3 +111,27 @@ export {
   type EmitSkipReason,
   type EmitResult,
 } from "./case-emitter.ts";
+
+// ─── Quickfix 物化（#69：action-map → 文本编辑；LSP + `check --fix` 共用） ─
+export {
+  materializeAction,
+  applyTextEdits,
+  addThrowsAnnotation,
+  addBudgetAnnotation,
+  wrapReturnNullable,
+  titleKindFor,
+  findFnDeclStart,
+  type MaterializeInput,
+  type QuickfixPlan,
+  type QuickfixTitleKind,
+  type TextEdit,
+} from "./quickfix-edits.ts";
+
+// ─── body-read 字段类型推断（草稿 / quickfix 自动填类型） ─
+export {
+  collectParamBodyReadTypes,
+  bodyReadFieldsFor,
+  shapeDslFromFields,
+  type BodyReadField,
+  type BodyReadTypes,
+} from "./body-read-types.ts";

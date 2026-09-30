@@ -87,8 +87,8 @@ import { fn, number, shape } from "@nudojs/core";
 export const lineTotal = fn({ qty: number(), price: number() }, number());
 
 // greet — param: body, return: symbolic
-//   user: /* body-read { name } — fill types when accepting */
-//   suggested (body-read, not a contract): greet = fn({ user: shape({ name: /* TODO */ }) })
+//   user: /* body-read shape({ name: string() }) */
+//   suggested (body-read, not a contract): greet = fn({ user: shape({ name: string() }) })
 //   returns: /* symbolic: string — greet: (user: A1) => string */
 export const greet = fn({});
 
