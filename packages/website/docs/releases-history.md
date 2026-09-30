@@ -11,19 +11,56 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 | Package | Current version |
 |----------|-----------------|
-| `@nudojs/core` | 1.3.0 |
-| `@nudojs/service` | 1.2.3 |
-| `nudojs (CLI)` | 1.0.8 |
-| `@nudojs/parser` | 1.1.8 |
-| `@nudojs/lsp` | 1.1.8 |
-| `@nudojs/env` | 0.4.10 |
-| `@nudojs/harvester` | 0.2.16 |
-| `vite-plugin-nudo` | 0.4.11 |
-| `nudo-vscode` | 0.3.15 |
+| `@nudojs/core` | 1.3.1 |
+| `@nudojs/service` | 1.2.4 |
+| `nudojs (CLI)` | 1.0.9 |
+| `@nudojs/parser` | 1.1.9 |
+| `@nudojs/lsp` | 1.1.9 |
+| `@nudojs/env` | 0.4.11 |
+| `@nudojs/harvester` | 0.2.17 |
+| `vite-plugin-nudo` | 0.4.12 |
+| `nudo-vscode` | 0.3.16 |
 
 **Jump to package:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.3.0 {#pkg-core}
+## @nudojs/core 1.3.1 {#pkg-core}
+
+## 1.3.1
+
+### Patch Changes
+
+- 8df9215: fix(contract): array return contracts distribute over sum arms
+  
+  `assertImplies` distributed **shape** contracts (`constraint.fields`) over the
+  members of a `sum` return value, but the **array** branch was reached with the
+  sum still intact and rejected it outright:
+  
+  ```
+  return shape sum ⊭ array(...)
+  ```
+  
+  Any function built from the idiomatic "start empty, push conditionally" shape
+  therefore reported a false `nudo:constraint-violated`:
+  
+  ```js
+  export function pick(n) {
+    const out = [];
+    if (n > 0) out.push(n);
+    return out;          // [] | [n]  ⊭  array(number().gt(0))
+  }
+  ```
+  
+  Each arm is an array on its own (`[]` and `[n]` both satisfy the contract), so
+  the sum is too. Array contracts are structural like shape contracts, so they
+  now distribute over sum members the same way (`any`-derived members are still
+  skipped, keeping the existing gold-FP protection). Non-array arms still report.
+  
+  Measured on a consumer project (npm-safe): `vetoFindings` / `decide` return
+  contracts went from `nudo:constraint-violated` errors to clean, with no other
+  diagnostic movement.
+
+<details>
+<summary>Version history (19)</summary>
 
 ## 1.3.0
 
@@ -87,9 +124,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
     inject skip set, so the two lists cannot drift;
   - free-assignment / fork-binding filters exclude all three intrinsics, not just
     `undefined`.
-
-<details>
-<summary>Version history (18)</summary>
 
 ## 1.2.2
 
@@ -586,7 +620,20 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/service 1.2.3 {#pkg-service}
+## @nudojs/service 1.2.4 {#pkg-service}
+
+## 1.2.4
+
+### Patch Changes
+
+- Updated dependencies [8df9215]
+  - @nudojs/core@1.3.1
+  - @nudojs/env@0.4.11
+  - @nudojs/harvester@0.2.17
+  - @nudojs/parser@1.1.9
+
+<details>
+<summary>Version history (21)</summary>
 
 ## 1.2.3
 
@@ -599,9 +646,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/env@0.4.10
   - @nudojs/harvester@0.2.16
   - @nudojs/parser@1.1.8
-
-<details>
-<summary>Version history (20)</summary>
 
 ## 1.2.2
 
@@ -1087,7 +1131,20 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## nudojs (CLI) 1.0.8 {#pkg-nudojs}
+## nudojs (CLI) 1.0.9 {#pkg-nudojs}
+
+## 1.0.9
+
+### Patch Changes
+
+- Updated dependencies [8df9215]
+  - @nudojs/core@1.3.1
+  - @nudojs/harvester@0.2.17
+  - @nudojs/parser@1.1.9
+  - @nudojs/service@1.2.4
+
+<details>
+<summary>Version history (18)</summary>
 
 ## 1.0.8
 
@@ -1100,9 +1157,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/harvester@0.2.16
   - @nudojs/parser@1.1.8
   - @nudojs/service@1.2.3
-
-<details>
-<summary>Version history (17)</summary>
 
 ## 1.0.7
 
@@ -1350,7 +1404,17 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/parser 1.1.8 {#pkg-parser}
+## @nudojs/parser 1.1.9 {#pkg-parser}
+
+## 1.1.9
+
+### Patch Changes
+
+- Updated dependencies [8df9215]
+  - @nudojs/core@1.3.1
+
+<details>
+<summary>Version history (19)</summary>
 
 ## 1.1.8
 
@@ -1360,9 +1424,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 - Updated dependencies [d925692]
 - Updated dependencies [c717017]
   - @nudojs/core@1.3.0
-
-<details>
-<summary>Version history (18)</summary>
 
 ## 1.1.7
 
@@ -1600,7 +1661,19 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/lsp 1.1.8 {#pkg-lsp}
+## @nudojs/lsp 1.1.9 {#pkg-lsp}
+
+## 1.1.9
+
+### Patch Changes
+
+- Updated dependencies [8df9215]
+  - @nudojs/core@1.3.1
+  - @nudojs/parser@1.1.9
+  - @nudojs/service@1.2.4
+
+<details>
+<summary>Version history (22)</summary>
 
 ## 1.1.8
 
@@ -1612,9 +1685,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/core@1.3.0
   - @nudojs/parser@1.1.8
   - @nudojs/service@1.2.3
-
-<details>
-<summary>Version history (21)</summary>
 
 ## 1.1.7
 
@@ -2031,7 +2101,17 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/env 0.4.10 {#pkg-env}
+## @nudojs/env 0.4.11 {#pkg-env}
+
+## 0.4.11
+
+### Patch Changes
+
+- Updated dependencies [8df9215]
+  - @nudojs/core@1.3.1
+
+<details>
+<summary>Version history (18)</summary>
 
 ## 0.4.10
 
@@ -2041,9 +2121,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 - Updated dependencies [d925692]
 - Updated dependencies [c717017]
   - @nudojs/core@1.3.0
-
-<details>
-<summary>Version history (17)</summary>
 
 ## 0.4.9
 
@@ -2261,7 +2338,19 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/harvester 0.2.16 {#pkg-harvester}
+## @nudojs/harvester 0.2.17 {#pkg-harvester}
+
+## 0.2.17
+
+### Patch Changes
+
+- Updated dependencies [8df9215]
+  - @nudojs/core@1.3.1
+  - @nudojs/env@0.4.11
+  - @nudojs/parser@1.1.9
+
+<details>
+<summary>Version history (18)</summary>
 
 ## 0.2.16
 
@@ -2273,9 +2362,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/core@1.3.0
   - @nudojs/env@0.4.10
   - @nudojs/parser@1.1.8
-
-<details>
-<summary>Version history (17)</summary>
 
 ## 0.2.15
 
@@ -2467,7 +2553,18 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## vite-plugin-nudo 0.4.11 {#pkg-vite-plugin}
+## vite-plugin-nudo 0.4.12 {#pkg-vite-plugin}
+
+## 0.4.12
+
+### Patch Changes
+
+- Updated dependencies [8df9215]
+  - @nudojs/core@1.3.1
+  - @nudojs/service@1.2.4
+
+<details>
+<summary>Version history (21)</summary>
 
 ## 0.4.11
 
@@ -2478,9 +2575,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 - Updated dependencies [c717017]
   - @nudojs/core@1.3.0
   - @nudojs/service@1.2.3
-
-<details>
-<summary>Version history (20)</summary>
 
 ## 0.4.10
 
