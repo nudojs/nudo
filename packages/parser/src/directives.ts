@@ -455,6 +455,27 @@ function extractBalancedParens(text: string, startIdx: number): string | null {
   return null;
 }
 
+/**
+ * `)` 之后的 `=> expected` 表达式文本。允许 `=>` 出现在续行（与多行实参
+ * 同构，剥块注释续行 ` * ` 前缀）；扫描到下一指令标签或注释结束。
+ * 不吞下一个 `@nudo:`（清洗后行首才算指令标签）。期望取 `=>` 所在行的
+ * 同行剩余——与旧行为一致，散文/后续行不会被并进表达式。
+ */
+function extractCaseExpectedExpr(text: string, afterParen: number): string | undefined {
+  const lines = text.slice(afterParen).split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i]!;
+    if (i > 0) line = line.replace(/^\s*\*\s?/, "");
+    // 下一指令标签：不吞
+    if (/^\s*@nudo:/.test(line)) return undefined;
+    const arrow = line.match(/^\s*=>\s*(\S.*)$/);
+    if (arrow) return arrow[1]!.trim();
+    // 非空且非 `=>`：保持旧行为（同行散文/`!! throws` 不落成 expected）
+    if (line.trim() !== "") return undefined;
+  }
+  return undefined;
+}
+
 function parseArrowFunctionExpr(expr: string): { params: string[]; body: Node; paramPatterns: Node[] } | null {
   // Try to parse as an arrow function expression
   try {
@@ -815,9 +836,8 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
         .join("\n");
       const argsAbs = splitTopLevelArgs(cleaned).map(parseCaseArgExpr);
 
-      const restLine = text.slice(afterParen).split("\n")[0].trim();
-      const arrowMatch = restLine.match(/^=>\s*(.+)/);
-      const expected = arrowMatch ? parseCaseArgExpr(arrowMatch[1].trim()) : undefined;
+      const expectedExpr = extractCaseExpectedExpr(text, afterParen);
+      const expected = expectedExpr !== undefined ? parseCaseArgExpr(expectedExpr) : undefined;
 
       // match.index 可能落在行首前缀（`\n * `）上；commentLine 按标签实际位置计行
       const tagOffset = match.index + match[0].indexOf("@nudo:case");

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { parse } from "../parse.ts";
-import { extractDirectives, parseCaseArgExpr } from "../directives.ts";
+import { extractDirectives, parseCaseArgExpr, type CaseDirective } from "../directives.ts";
 import { litValue, num, str, bool, getFnImpl } from "@nudojs/core";
 
 describe("parseCaseArgExpr", () => {
@@ -208,6 +208,116 @@ function use(opts) { return opts; }
       const fn = d.argsAbs[0]!.shape.slots.fn?.value;
       expect(fn?.shape.k).toBe("fn");
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// `=> expected` 允许写在续行（与多行实参同构）；不吞下一个 `@nudo:`。
+// 回归：F-3 跨行 `=>` 被静默丢弃 → nudo test 不断言。
+// ---------------------------------------------------------------------------
+
+describe("case => expected on continuation lines", () => {
+  function caseDirs(src: string) {
+    return extractDirectives(parse(src)).flatMap((f) =>
+      f.directives.filter((d): d is CaseDirective => d.kind === "case"),
+    );
+  }
+
+  it("=> expected on the next comment line is honored", () => {
+    const cases = caseDirs(`
+/**
+ * @nudo:case "t" (1)
+ * => 2
+ */
+function f(x) { return x; }
+`);
+    expect(cases).toHaveLength(1);
+    expect(cases[0]!.expected).toBeDefined();
+    expect(litValue(cases[0]!.expected!)).toBe(2);
+    expect(litValue(cases[0]!.argsAbs[0]!)).toBe(1);
+  });
+
+  it("single-line => expected still works (control)", () => {
+    const cases = caseDirs(`
+/**
+ * @nudo:case "t" (1) => 2
+ */
+function f(x) { return x; }
+`);
+    expect(cases).toHaveLength(1);
+    expect(cases[0]!.expected).toBeDefined();
+    expect(litValue(cases[0]!.expected!)).toBe(2);
+  });
+
+  it("multi-line args + expected on a later line", () => {
+    const cases = caseDirs(`
+/**
+ * @nudo:case "t" (
+ *   1,
+ *   2
+ * )
+ * => 3
+ */
+function f(a, b) { return a + b; }
+`);
+    expect(cases).toHaveLength(1);
+    expect(cases[0]!.argsAbs).toHaveLength(2);
+    expect(litValue(cases[0]!.argsAbs[0]!)).toBe(1);
+    expect(litValue(cases[0]!.argsAbs[1]!)).toBe(2);
+    expect(cases[0]!.expected).toBeDefined();
+    expect(litValue(cases[0]!.expected!)).toBe(3);
+  });
+
+  it("does not swallow the next @nudo:case directive", () => {
+    const cases = caseDirs(`
+/**
+ * @nudo:case "t" (1)
+ * => 2
+ * @nudo:case "u" (3) => 4
+ */
+function f(x) { return x; }
+`);
+    expect(cases).toHaveLength(2);
+    expect(cases[0]!.name).toBe("t");
+    expect(litValue(cases[0]!.expected!)).toBe(2);
+    expect(cases[1]!.name).toBe("u");
+    expect(litValue(cases[1]!.expected!)).toBe(4);
+  });
+
+  it("same-line non-arrow content keeps no expected (old behavior)", () => {
+    const cases = caseDirs(`
+/**
+ * @nudo:case "t" (1) note: witness only
+ * => 2
+ */
+function f(x) { return x; }
+`);
+    expect(cases).toHaveLength(1);
+    expect(cases[0]!.expected).toBeUndefined();
+  });
+
+  it("same-line expected is not polluted by later prose lines", () => {
+    const cases = caseDirs(`
+/**
+ * @nudo:case "t" (1) => 2
+ * trailing prose must not enter the expression
+ */
+function f(x) { return x; }
+`);
+    expect(cases).toHaveLength(1);
+    expect(litValue(cases[0]!.expected!)).toBe(2);
+  });
+
+  it("next-line !! throws without => does not invent an expected", () => {
+    const cases = caseDirs(`
+/**
+ * @nudo:case "neg" (0)
+ * !! throws Error
+ */
+function f(x) { return x; }
+`);
+    expect(cases).toHaveLength(1);
+    expect(cases[0]!.expected).toBeUndefined();
   });
 });
 
