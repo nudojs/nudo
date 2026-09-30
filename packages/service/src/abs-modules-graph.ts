@@ -21,6 +21,7 @@ import {
 } from "@nudojs/core";
 import type { Node } from "@babel/types";
 import { bareSpecToAbsModules } from "@nudojs/harvester";
+import { stablePathKey } from "@nudojs/core/internal";
 import { resolveNpmJsEntryDetailed } from "./evaluator/resolve-npm.ts";
 import { moduleResolveCandidates } from "./load-module.ts";
 import { BoundedLruMap } from "./lru-map.ts";
@@ -246,8 +247,9 @@ export function clearAbsModuleCache(): void {
   absModuleCache.clear();
 }
 
+/** 键身份统一 stablePathKey（FIX-RESIDUAL-4）：跨盘符形态删除/命中一致 */
 export function evictAbsModuleCacheFiles(paths: string[]): void {
-  for (const p of paths) absModuleCache.delete(p);
+  for (const p of paths) absModuleCache.delete(stablePathKey(p));
 }
 
 function moduleLabel(p: string): string {
@@ -450,7 +452,11 @@ export function evalAbsModuleGraph(
     issues.push({ kind, label, reason });
   };
 
-  function evalDep(absPath: string, spec: string, fromFile: string, depth: number): AbsModuleExports {
+  function evalDep(absPathRaw: string, spec: string, fromFile: string, depth: number): AbsModuleExports {
+    // 键/图节点统一 stablePathKey（FIX-RESIDUAL-4）：resolve 输出是 fs 原生
+    // 形态（Windows `c:\x`），逐出方可能传 `c:/x` / `/c:/x`——同键才命中。
+    // fs 调用（stat/read）接受 `/` 形态，无需保留原拼写。
+    const absPath = stablePathKey(absPathRaw);
     const cycleIndex = loading.indexOf(absPath);
     if (cycleIndex !== -1) {
       const chain = [...loading.slice(cycleIndex), absPath];

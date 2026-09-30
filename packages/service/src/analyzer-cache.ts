@@ -2,7 +2,7 @@
  * cache 背面：整文件 memo 键（含 dep 指纹）+ 结果克隆/行号平移。
  * 自 analyzer.ts 机械拆出；语义未改。
  */
-import { loadModuleDepsFingerprint, hashSource, stableAnalyzeKeySource } from "@nudojs/core/internal";
+import { loadModuleDepsFingerprint, hashSource, stableAnalyzeKeySource, stablePathKey } from "@nudojs/core/internal";
 import { defaultLoadModule } from "./load-module.ts";
 import { absStructureKey, type CallRecord } from "./evaluator/call-record.ts";
 import type {
@@ -97,7 +97,9 @@ export function analysisFileCacheKey(
     depSeg = "fperr";
   }
   return {
-    filePath,
+    // 键身份统一 stablePathKey：`/c:/x` 与 `c:/x` 同键（FIX-RESIDUAL-4）。
+    // 加载/指纹仍用调用方原 filePath；本字段只作 memo 键。
+    filePath: stablePathKey(filePath),
     // 尾部无 @nudo 注释/空行不进键：comment-only 编辑命中 AnalysisResult
     source: stableAnalyzeKeySource(source),
     auxKey: `${cases}\0${ext}\0${cfg}\0${lm}\0${envSeg}\0${abSeg}\0${depSeg}\0cm=${caseMode}`,

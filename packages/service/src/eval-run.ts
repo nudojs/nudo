@@ -6,7 +6,7 @@
  */
 
 import { runTranspiled, callTranspiledExport, callTranspiledExportFull, setEvalCallCollector, createEnvironment, noteEvalFallback, type EvalCallRecord, type TranspiledCallResult, type Abs, type AbsModuleExports, type Phi, formatAbs, getFnImpl } from "@nudojs/core";
-import { setMemberDiagCollector, setAbsTruncationCollector, type EvalMemberDiag, stableAnalyzeKeySource, hashSource, loadModuleDepsFingerprint } from "@nudojs/core/internal";
+import { setMemberDiagCollector, setAbsTruncationCollector, type EvalMemberDiag, stableAnalyzeKeySource, hashSource, loadModuleDepsFingerprint, stablePathKey } from "@nudojs/core/internal";
 import { parse, extractInlineDirectives } from "@nudojs/parser";
 import { loadEnvs } from "./evaluator/evaluator-api.ts";
 import { evalAbsModuleGraph } from "./abs-modules-graph.ts";
@@ -371,11 +371,11 @@ export function getEvalCacheSize(): number {
   return evalRunByFile.size;
 }
 
-/** 依赖文件变更后：逐出以这些文件为入口的 evaluator 缓存 */
+/** 依赖文件变更后：逐出以这些文件为入口的 evaluator 缓存（键走 stablePathKey） */
 export function evictEvalCacheForFiles(files: string[]): number {
   let n = 0;
   for (const f of files) {
-    if (evalRunByFile.delete(f)) n++;
+    if (evalRunByFile.delete(stablePathKey(f))) n++;
   }
   return n;
 }
@@ -391,12 +391,13 @@ function evalCacheSet(
 ): void {
   const max = getSessionCacheLimits().maxEvalRuns;
   if (max <= 0) return;
-  while (evalRunByFile.size >= max && !evalRunByFile.has(filePath)) {
+  const key = stablePathKey(filePath);
+  while (evalRunByFile.size >= max && !evalRunByFile.has(key)) {
     const oldest = evalRunByFile.keys().next().value;
     if (oldest === undefined) break;
     evalRunByFile.delete(oldest);
   }
-  evalRunByFile.set(filePath, { stableSource, mode, envKey, mockKey, depKey, value });
+  evalRunByFile.set(key, { stableSource, mode, envKey, mockKey, depKey, value });
 }
 
 /** 立刻压到当前 maxEvalRuns（调低上限时收内存） */
@@ -434,7 +435,8 @@ export function tryRunEval(
   // 指纹截断/异常 → 禁止读写 memo（fail-closed）
   const canCache = depKey !== null;
   if (canCache) {
-    const cached = evalRunByFile.get(filePath);
+    const cacheKey = stablePathKey(filePath);
+    const cached = evalRunByFile.get(cacheKey);
     if (
       cached &&
       cached.stableSource === stable &&
@@ -444,8 +446,8 @@ export function tryRunEval(
       cached.depKey === depKey
     ) {
       // LRU：命中移到队尾
-      evalRunByFile.delete(filePath);
-      evalRunByFile.set(filePath, cached);
+      evalRunByFile.delete(cacheKey);
+      evalRunByFile.set(cacheKey, cached);
       return cached.value;
     }
   }

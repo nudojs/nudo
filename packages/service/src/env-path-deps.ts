@@ -2,7 +2,7 @@
  * path-based `@nudo:env` / `@nudo:mock-module` 反向依赖（watch 失效）。
  * named env（es/node/web）不进此表——它们不随工作区文件变更。
  */
-import { extractAllLoadSpecs } from "@nudojs/core/internal";
+import { extractAllLoadSpecs, stablePathKey } from "@nudojs/core/internal";
 import { resolveModuleFile } from "./load-module.ts";
 import { BoundedLruMap } from "./lru-map.ts";
 
@@ -23,10 +23,6 @@ export function getEnvPathDepsSize(): number {
   return envDependents.size;
 }
 
-function norm(p: string): string {
-  return p.replace(/\\/g, "/");
-}
-
 /** 相对/绝对 spec → 磁盘绝对路径（与 defaultLoadModule 同扩展名表） */
 export function resolveLoadSpecPath(spec: string, fromFile: string): string | undefined {
   if (!spec.startsWith(".") && !spec.startsWith("/")) return undefined;
@@ -39,7 +35,8 @@ export function resolveLoadSpecPath(spec: string, fromFile: string): string | un
 
 /** 源码里的 path-based load specs 解析为绝对路径后登记反向边 */
 export function noteEnvPathDeps(sourcePath: string, source: string): void {
-  const src = norm(sourcePath);
+  // 键统一 stablePathKey（FIX-RESIDUAL-4）：跨盘符形态查找/登记一致
+  const src = stablePathKey(sourcePath);
   // 先清掉该源文件旧登记，避免 stale reverse edges
   for (const set of envDependents.values()) set.delete(src);
   let specs: string[] = [];
@@ -52,7 +49,7 @@ export function noteEnvPathDeps(sourcePath: string, source: string): void {
     if (!spec.startsWith(".") && !spec.startsWith("/")) continue;
     const abs = resolveLoadSpecPath(spec, sourcePath);
     if (!abs) continue;
-    const key = norm(abs);
+    const key = stablePathKey(abs);
     let set = envDependents.get(key);
     if (!set) {
       set = new Set();
@@ -69,7 +66,7 @@ export function noteEnvPathDeps(sourcePath: string, source: string): void {
 
 /** 依赖该 env 模板的源文件列表 */
 export function envPathDependents(envPath: string): string[] {
-  return [...(envDependents.peek(norm(envPath)) ?? [])];
+  return [...(envDependents.peek(stablePathKey(envPath)) ?? [])];
 }
 
 export function clearEnvPathDeps(): void {
@@ -78,7 +75,7 @@ export function clearEnvPathDeps(): void {
 
 /** watch 门禁：env 模板变更必须可被接收（即便扩展名不进 isNudoTargetPath） */
 export function isEnvTemplatePath(path: string): boolean {
-  const lower = norm(path).toLowerCase();
+  const lower = stablePathKey(path).toLowerCase();
   return (
     lower.endsWith(".env.js") ||
     lower.endsWith(".env.mjs") ||

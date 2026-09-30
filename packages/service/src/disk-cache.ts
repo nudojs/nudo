@@ -23,6 +23,7 @@ import {
   unlinkSync,
 } from "node:fs";
 import { join, dirname, relative, sep, isAbsolute } from "node:path";
+import { stablePathKey } from "@nudojs/core/internal";
 import { diskCacheRoot } from "./evaluator/config.ts";
 
 /** 分析 ABI：语义变更时抬版本，整层 miss（含缓存键维度扩展） */
@@ -151,11 +152,14 @@ function pnpmStoreLogicalPath(posixPath: string): string | undefined {
  * 3. monorepo root 相对化（`pnpm-workspace.yaml` / `lerna.json` / `package.json#workspaces`）
  * 4. pnpm store 内容寻址段（realpath 穿出 node_modules 的典型落点）
  * 5. 仍无稳定根 → `ext:` + 路径 sha（只保证不明文；跨机仍可能 miss，不产生错命中）
+ *
+ * 入参先过 `stablePathKey`：`/c:/x` 与 `c:/x` 同键段（FIX-RESIDUAL-4）。
  */
 export function relativizePath(p: string, root?: string): string {
-  const norm = toPosix(p);
+  const key = stablePathKey(p);
+  const norm = toPosix(key);
   if (root) {
-    const r = toPosix(relative(root, p));
+    const r = toPosix(relative(stablePathKey(root), key));
     if (!r.startsWith("..") && !isAbsolute(r)) return r;
   }
   const logical =

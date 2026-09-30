@@ -259,3 +259,47 @@ describe("source gate — new wrap points cannot drop throws (FIX-D7)", () => {
     expect(offenders, `hand-unwrapped callTranspiledExportFull(...).result in apply: ${offenders.join(", ")}`).toEqual([]);
   });
 });
+
+/**
+ * FIX-RESIDUAL-4 项 3：absOnly 误用门禁。
+ *
+ * `absOnly` 丢 throws 通道（测试/宿主便利）。产品内 `$call` / `$callNamed`
+ * 统一路由必须消费 `AbsApplyResult`（normalizeApplyReturn + routeApplyThrows）——
+ * 一旦路由点改用 `absOnly`，may-throw 会静默吞成「不抛」。源码门禁钉住。
+ */
+describe("source gate — $call routing never peels throws via absOnly (FIX-RESIDUAL-4)", () => {
+  it("production call.ts / calls.ts routing path does not call absOnly", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join, dirname } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const here = dirname(fileURLToPath(import.meta.url));
+    const execDir = join(here, "..", "exec");
+    const targets = [join(execDir, "call.ts"), join(execDir, "calls.ts")];
+    const offenders: string[] = [];
+    for (const p of targets) {
+      const text = readFileSync(p, "utf-8");
+      // 排除 import/注释/JSDoc 里的提及；只要真实调用 `absOnly(`
+      const withoutComments = text
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/(^|[^:])\/\/.*$/gm, "$1");
+      if (/\babsOnly\s*\(/.test(withoutComments)) offenders.push(p);
+    }
+    expect(
+      offenders,
+      `absOnly() must not appear in $call routing (drops throws channel): ${offenders.join(", ")}`,
+    ).toEqual([]);
+  });
+
+  it("production routing consumes AbsApplyResult via normalizeApplyReturn / routeApplyThrows", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join, dirname } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const here = dirname(fileURLToPath(import.meta.url));
+    const callSrc = readFileSync(join(here, "..", "exec", "call.ts"), "utf-8");
+    // 结构钉：路由点必须经 normalizeApplyReturn 收成 AbsApplyResult，
+    // 再经 routeApplyThrows 单点路由 throws 面（H1）。
+    expect(callSrc).toMatch(/function normalizeApplyReturn\b/);
+    expect(callSrc).toMatch(/export function routeApplyThrows\b/);
+    expect(callSrc).toMatch(/routeApplyThrows\s*\(\s*full\.abs\s*,\s*full\.throws\s*\)/);
+  });
+});
