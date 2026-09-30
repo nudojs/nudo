@@ -624,22 +624,72 @@ export function extractMockModuleRecords(source: string): MockModuleRecord[] {
   return out;
 }
 
+/**
+ * 指令只认**注释行首**（`//` / `///` / 块注释 `*` 续行清洗后以 `@nudo:` 开头）。
+ * 句中散文提及（「无 @nudo:import 同名约束时…」）不是指令。
+ * 字符串正文里的同形文本不是指令（scanSource 已遮罩）。
+ * 返回清洗后的注释行（文档序）。
+ */
+function directiveCommentLinesRaw(source: string): string[] {
+  const src = stripStringsKeepComments(source);
+  const out: string[] = [];
+  // 行注释（// 或 ///；排除 ////——Babel 值以 // 开头时 cleanDirectiveLine 不剥）
+  const lineRe = /(?:^|[^/:])\/\/\/?([^\n]*)/g;
+  let m: RegExpExecArray | null;
+  while ((m = lineRe.exec(src))) {
+    out.push(cleanDirectiveLine(m[1]!, "line"));
+  }
+  // 块注释（含 JSDoc）
+  const blockRe = /\/\*([\s\S]*?)\*\//g;
+  while ((m = blockRe.exec(src))) {
+    out.push(...commentTextToLines(m[1]!, "block"));
+  }
+  return out;
+}
+
+/**
+ * `@nudo:import` 载荷行（行首锚定 + 多行 `{ … }` 续行拼接）。
+ * 散文句中提及不产出；续行只拼「未闭合 `{` 之后的同批注释行」。
+ */
+function nudoImportPayloads(source: string): string[] {
+  const lines = directiveCommentLinesRaw(source);
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (!/^@nudo:import\s/.test(line)) continue;
+    let payload = line.replace(/^@nudo:import\s+/, "");
+    // 多行 named：`{` 未闭合时拼后续注释行（直到 `}` / from "path"）
+    if (payload.startsWith("{")) {
+      let depth = 0;
+      for (const ch of payload) {
+        if (ch === "{") depth++;
+        else if (ch === "}") depth--;
+      }
+      while (depth > 0 && i + 1 < lines.length) {
+        i += 1;
+        const cont = lines[i]!;
+        if (/^@nudo:/.test(cont)) {
+          i -= 1;
+          break;
+        }
+        payload += `\n${cont}`;
+        for (const ch of cont) {
+          if (ch === "{") depth++;
+          else if (ch === "}") depth--;
+        }
+      }
+    }
+    out.push(payload);
+  }
+  return out;
+}
+
 /** `@nudo:import` 命名/namespace 记录（refine 与 load-deps 共用单源） */
 export function extractNudoImportRecords(source: string): NudoImportRecord[] {
   const out: NudoImportRecord[] = [];
-  const src = stripStringsKeepComments(source);
-  const named = /@nudo:import\s*\{([^}]+)\}\s*from\s*["']([^"']+)["']/g;
-  let m: RegExpExecArray | null;
-  const matchedRanges: [number, number][] = [];
-  while ((m = named.exec(src))) {
-    matchedRanges.push([m.index, m.index + m[0].length]);
-    const rec = parseNudoImportPayload(`{${m[1]}} from "${m[2]}"`);
+  for (const payload of nudoImportPayloads(source)) {
+    const rec = parseNudoImportPayload(payload);
     if (rec && rec !== "malformed" && rec !== "malformed-default") out.push(rec);
-  }
-  const ns = /@nudo:import\s+\*\s+as\s+(\w+)\s+from\s*["']([^"']+)["']/g;
-  while ((m = ns.exec(src))) {
-    matchedRanges.push([m.index, m.index + m[0].length]);
-    out.push({ names: [`*${m[1]}`], spec: m[2]! });
   }
   return out;
 }
@@ -648,23 +698,9 @@ export function extractNudoImportRecords(source: string): NudoImportRecord[] {
 export function scanMalformedNudoImports(
   source: string,
 ): Array<"malformed-default" | "malformed"> {
-  const src = stripStringsKeepComments(source);
   const out: Array<"malformed-default" | "malformed"> = [];
-  const named = /@nudo:import\s*\{([^}]+)\}\s*from\s*["']([^"']+)["']/g;
-  let m: RegExpExecArray | null;
-  const matchedRanges: [number, number][] = [];
-  while ((m = named.exec(src))) {
-    matchedRanges.push([m.index, m.index + m[0].length]);
-  }
-  const ns = /@nudo:import\s+\*\s+as\s+(\w+)\s+from\s*["']([^"']+)["']/g;
-  while ((m = ns.exec(src))) {
-    matchedRanges.push([m.index, m.index + m[0].length]);
-  }
-  const anyImport = /@nudo:import\s+([^\n]+)/g;
-  while ((m = anyImport.exec(src))) {
-    const already = matchedRanges.some(([s, e]) => m!.index >= s && m!.index < e);
-    if (already) continue;
-    const rec = parseNudoImportPayload(m[1]!);
+  for (const payload of nudoImportPayloads(source)) {
+    const rec = parseNudoImportPayload(payload);
     if (rec === "malformed-default" || rec === "malformed") out.push(rec);
   }
   return out;
@@ -800,7 +836,8 @@ export function scanMalformedCaseTagRests(
 export function scanContractSegments(lines: string[]): string[] {
   const reqs: string[] = [];
   for (const line of lines) {
-    const m = line.match(/@nudo:contract\s+(.+)$/);
+    // 行首锚定：句中散文「声明 @nudo:contract p xy 后…」不是指令
+    const m = line.match(/^@nudo:contract\s+(.+)$/);
     if (m) reqs.push(m[1]!.trim().replace(/\*\/$/, "").trim());
   }
   return reqs;
@@ -814,7 +851,7 @@ export function scanThrowsDecl(lines: string[]): string | undefined {
   const kinds = new Set<string>();
   let any = false;
   for (const line of lines) {
-    const th = line.match(/@nudo:throws\s+(.+)$/i);
+    const th = line.match(/^@nudo:throws\s+(.+)$/i);
     if (th) {
       const spec = th[1]!.trim();
       if (spec === "*") any = true;
@@ -848,7 +885,7 @@ export function scanBudgetDecl(
 ): { forks?: number; calls?: number; depth?: number } | undefined {
   const out: { forks?: number; calls?: number; depth?: number } = {};
   for (const line of lines) {
-    const bd = line.match(/@nudo:budget\s+(.+)$/i);
+    const bd = line.match(/^@nudo:budget\s+(.+)$/i);
     if (!bd) continue;
     for (const part of bd[1]!.split(/[,\s|]+/).map((s) => s.trim()).filter(Boolean)) {
       const kv = part.match(/^(forks|calls|depth)\s*=\s*(\d+)$/i);

@@ -131,16 +131,17 @@ function add(a, b) {
 
 ```text
 @nudo:skip
-@nudo:skip returnsExpr
+@nudo:skip => returnsExpr
+@nudo:skip (returnsExpr)
 ```
 
-- **returnsExpr**（可选）— 用作返回类型的类型值表达式。
+- **returnsExpr**（可选）— 用作返回类型的类型值表达式。须写成 `=> expr` 或整段 `(…)` 包裹；`@nudo:skip` 后的裸散文会被忽略（不是类型）。
 
 ### 范围
 
 - **不求值函数体。** 声明的类型（或 `any`）成为签名返回值；被跳过的函数体不参与入口 may-throw（L2）求值。
 - **形参义务保留。** `@nudo:contract` 前置条件仍会门禁调用点，形参展示仍来自手写契约——对带 `@nudo:contract x positive` 的被跳过函数 `needsPositive`，`nudo check` 报告 `needsPositive(x: number) => any`。
-- **返回契约仍被检查。** `@nudo:contract return positive` 之下的 `@nudo:skip lit(0)` 会报告 `nudo:constraint-violated`。
+- **返回契约仍被检查。** `@nudo:contract return positive` 之下的 `@nudo:skip => lit(0)` 会报告 `nudo:constraint-violated`。
 
 ### 示例
 
@@ -163,7 +164,7 @@ function heavyComputation(data) {
 
 ```javascript verify
 /**
- * @nudo:skip number()
+ * @nudo:skip => number()
  */
 function unannotatedHeavy(x) {
   // Explicit return type via the directive
@@ -614,7 +615,7 @@ const result = a + b;
 | `@nudo:case` | `"name" (args...)` 或 `"name" (args) => type` | 调试 / `nudo test` 见证（不是契约产品） |
 | `@nudo:mock` | `name = expr` 或 `name from "path"` | Mock 外部依赖 |
 | `@nudo:pure` | （无参数） | 标记纯函数 —— 求值器按实参记忆化调用结果 |
-| `@nudo:skip` | `[returnsExpr]` | 跳过求值，使用已有类型信息 |
+| `@nudo:skip` | `[=> returnsExpr]` / `[(returnsExpr)]` | 跳过求值，使用已有类型信息 |
 | `@nudo:sample` | `N` | 保留的无效果指令（已解析，未消费） |
 | `@nudo:contract` | `param constraint` / `return constraint` | 源码内契约（主路径是 `*.nudo.js` 侧车自动绑定） |
 | `@nudo:throws` | `Error, TypeError` 或 `*` | 申报有意抛错 —— 按申报种类解除 L2 `nudo:entry-may-throw` |
