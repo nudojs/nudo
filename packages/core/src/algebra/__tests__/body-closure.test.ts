@@ -24,7 +24,7 @@ describe("compiled body closure injection (件 C)", () => {
     const env = emptyEnv();
     env.vars.set("k", numLit(2));
     const f = absFunction(["x"], { body: decl.body, env });
-    expect(litValue($call(f, [numLit(5)]))).toBe(7);
+    expect(litValue($call(f, [numLit(5)]))).toEqual({ ok: true, value: 7 });
   });
 
   it("sibling function captured from impl.env.fns (interpreted inside)", () => {
@@ -34,7 +34,7 @@ describe("compiled body closure injection (件 C)", () => {
     const env = emptyEnv();
     env.fns.set("helper", { params: ["n"], body: helperDecl.body, async: false });
     const f = absFunction(["x"], { body: decl.body, env });
-    expect(litValue($call(f, [numLit(5)]))).toBe(11);
+    expect(litValue($call(f, [numLit(5)]))).toEqual({ ok: true, value: 11 });
   });
 
   it("nested arrow closure capturing outer param compiles", () => {
@@ -44,7 +44,7 @@ describe("compiled body closure injection (件 C)", () => {
     const env = emptyEnv();
     env.vars.set("x", numLit(10));
     const g = absFunction([], { body: inner, env });
-    expect(litValue($call(g, []))).toBe(11);
+    expect(litValue($call(g, []))).toEqual({ ok: true, value: 11 });
   });
 
   it("unresolvable free name compiles and throws ReferenceError (native parity)", () => {
@@ -65,7 +65,7 @@ describe("compiled body closure injection (件 C)", () => {
     const env = emptyEnv();
     env.fns.set("fac", { params: ["n"], body: decl.body, async: false });
     const f = absFunction(["n"], { body: decl.body, env });
-    expect(litValue($call(f, [numLit(5)]))).toBe(120);
+    expect(litValue($call(f, [numLit(5)]))).toEqual({ ok: true, value: 120 });
     // 无界自递归：cycle 键命中 → opaque，不爆栈
     const file2 = parseSource(`function forever(f) { f(); return forever(f); }`);
     const decl2 = (file2.program.body as Array<{ type: string; params: Array<{ name?: string }>; body: never }>)[0]!;

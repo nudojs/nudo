@@ -16,45 +16,45 @@ function call(src: string, fnName = "f") {
 describe("evaluator Array.from mapFn", () => {
   it("invokes mapFn once per tuple element with index", () => {
     const r = call(`export function f() { let t = 0; Array.from([1,2,3], (x) => { t++; return x; }); return t; }`);
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
     const r2 = call(`export function f() { let t = 0; Array.from([1,2,3], (x, i) => { t += i; return x; }); return t; }`);
-    expect(litValue(r2.result)).toBe(3);
+    expect(litValue(r2.result)).toEqual({ ok: true, value: 3 });
   });
 
   it("visits holes as undefined (iterator Get semantics)", () => {
     const r = call(`export function f() { let t = 0; Array.from([1,,3], (x) => { t++; return x; }); return t; }`);
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
     const r2 = call(`export function f() { let t = 0; Array.from([1,,3], (x, i) => { if (x === undefined) t += i; return x; }); return t; }`);
-    expect(litValue(r2.result)).toBe(1);
+    expect(litValue(r2.result)).toEqual({ ok: true, value: 1 });
   });
 
   it("string source iterates code points", () => {
     const r = call(`export function f() { let t = 0; Array.from("ab", (c) => { t++; return c; }); return t; }`);
-    expect(litValue(r.result)).toBe(2);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
     const r2 = call(`export function f() { let t = 0; Array.from("𠮷", (c) => { t++; return c; }); return t; }`);
-    expect(litValue(r2.result)).toBe(1);
+    expect(litValue(r2.result)).toEqual({ ok: true, value: 1 });
   });
 
   it("Set/Map source invokes mapFn per entry", () => {
     const r = call(`export function f() { let t = 0; Array.from(new Set([1,2,3]), (x) => { t++; return x; }); return t; }`);
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
     const r2 = call(`export function f() { let t = 0; Array.from(new Map([["a",1],["b",2]]), (e) => { t++; return e; }); return t; }`);
-    expect(litValue(r2.result)).toBe(2);
+    expect(litValue(r2.result)).toEqual({ ok: true, value: 2 });
   });
 
   it("array-like length source invokes mapFn with undefined elements", () => {
     const r = call(`export function f() { let t = 0; Array.from({length: 3}, (x, i) => { t += i; return x; }); return t; }`);
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 
   it("without mapFn tuple keeps element union (regression)", () => {
     const r = call(`export function f() { const a = Array.from([1,2,3]); return a.length; }`);
     // 无 mapFn 时结果保持 arr 元素联合（非具体长度），不得假精确
-    expect(litValue(r.result)).toBeUndefined();
+    expect(litValue(r.result)).toEqual({ ok: false });
   });
 
   it("regression: Array.from of empty tuple stays abstract", () => {
     const r = call(`export function f() { let t = 0; Array.from([], (x) => { t++; return x; }); return t; }`);
-    expect(litValue(r.result)).toBe(0);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 0 });
   });
 });

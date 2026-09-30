@@ -23,11 +23,12 @@ import {
   formatAbsMultiline,
   formatShape,
   interfaceTierOf,
+  listFnDirectiveScopes,
   type InterfaceSource,
   type InterfaceTierOpts,
 } from "@nudojs/core";
 import { sourceHasRequireCall } from "@nudojs/core/internal";
-import { parse, extractDirectives, extractFileDirectives } from "@nudojs/parser";
+import { parse, extractDirectives, extractDirectivesQuiet, extractFileDirectives } from "@nudojs/parser";
 import type { FunctionWithDirectives } from "@nudojs/parser";
 import {
   loadEnvs,
@@ -55,7 +56,7 @@ export type CaseInfo = {
 
 export function getCasesForFile(filePath: string, source: string): { functionName: string; cases: { name: string; index: number }[]; loc: SourceLocation }[] {
   const ast = parse(source);
-  const functions = extractDirectives(ast);
+  const functions = extractDirectivesQuiet(ast);
   return functions.map((fn) => {
     const cases = fn.directives
       .filter((d) => d.kind === "case")
@@ -101,7 +102,7 @@ function positionInsideCaseFunction(
   line: number,
 ): boolean {
   try {
-    const enclosing = findEnclosingFunction(extractDirectives(ast), line);
+    const enclosing = findEnclosingFunction(extractDirectivesQuiet(ast), line);
     return !!enclosing && enclosing.directives.some((d) => d.kind === "case");
   } catch {
     return false;
@@ -125,7 +126,7 @@ function absFromEval(
   // fail-closed：节点级 Abs 收集（collectAbsNodeTypes/evalProgramAbs）已删；
   // 仅标识符绑定面（evalAbsModuleGraph 的 collectAbsBindingsFromGraph）
   try {
-    const seeds = mockDirectivesToAbsSeeds(extractDirectives(ast), { fromFile: filePath });
+    const seeds = mockDirectivesToAbsSeeds(extractDirectivesQuiet(ast), { fromFile: filePath });
     const ident = findIdentNameAtPosition(source, line, column, ast);
     if (ident) {
       const binds = collectAbsBindingsFromGraph(source, filePath, {
@@ -339,7 +340,7 @@ export function getHoverAtPosition(
     try {
       // 经模块图（相对 + 裸包）求 Abs 绑定
       if (isEvalCapable(source, []) || !sourceHasRequireCall(source)) {
-        const seeds = mockDirectivesToAbsSeeds(extractDirectives(file ?? parse(source)), {
+        const seeds = mockDirectivesToAbsSeeds(extractDirectivesQuiet(file ?? parse(source)), {
           fromFile: filePath,
         });
         const absBinds = collectAbsBindingsFromGraph(source, filePath, {
@@ -361,8 +362,9 @@ export function getHoverAtPosition(
   // fail-closed：Abs 节点表（collectAbsNodeTypes）已删——任意表达式
   // 光标 Abs 由标识符绑定面（absFromEval）与 interface 档覆盖
 
-  // 无类型结果时仍附 interface 档（函数名 hover 的同源保证）
-  if (tier && gDisplay) {
+  // 无类型结果时仍返回 intension（函数名 hover 的同源保证）；
+  // tier 可缺（nested / 非导出），gDisplay 有就给出
+  if (gDisplay) {
     return withTier({
       typeText: gDisplay,
       intension: gDisplay,
@@ -398,7 +400,11 @@ function findIdentNameAtPosition(
   }
 }
 
-/** 光标处标识符是否是顶层/导出函数名 */
+/**
+ * 光标处标识符是否是函数名位置。
+ * 与 listFnDirectiveScopes 绑定名同口径：裸名（f / inner / helper）、
+ * `C.m` / `owner.key`（ClassMethod / ObjectMethod key）。
+ */
 function findFunctionNameAtPosition(
   source: string,
   line: number,
@@ -408,24 +414,69 @@ function findFunctionNameAtPosition(
   try {
     const ast = fileAst ?? parse(source);
     let found: string | undefined;
+    // G2 绑定名（C.m / owner.key）——与 listFnDirectiveScopes 同口径
+    let scopes: ReturnType<typeof listFnDirectiveScopes> | undefined;
+    const scopeNameOf = (node: unknown): string | undefined => {
+      scopes ??= listFnDirectiveScopes(ast as never);
+      const hit = scopes.find((s) => s.node === node);
+      return hit && hit.name !== "<anonymous>" ? hit.name : undefined;
+    };
     traverse(ast, {
       Identifier(path) {
         const loc = path.node.loc;
         if (!loc) return;
         if (loc.start.line !== line) return;
         if (column < loc.start.column || column > loc.end.column) return;
-        // 仅函数声明 id / 调用 callee；const x = 1 的 id 归绑定路径
         const parent = path.parent;
+        // 函数声明 id
+        if (parent.type === "FunctionDeclaration" && parent.id === path.node) {
+          found = path.node.name;
+          return;
+        }
+        // 调用 callee
+        if (parent.type === "CallExpression" && parent.callee === path.node) {
+          found = path.node.name;
+          return;
+        }
+        // ClassMethod / ObjectMethod key → G2 绑定名（C.m / owner.key）
         if (
-          parent.type === "FunctionDeclaration" &&
-          parent.id === path.node
+          (parent.type === "ClassMethod" ||
+            parent.type === "ClassPrivateMethod" ||
+            parent.type === "ObjectMethod") &&
+          (parent as { key?: unknown }).key === path.node
         ) {
-          found = path.node.name;
-        } else if (
-          parent.type === "CallExpression" &&
-          parent.callee === path.node
+          found = scopeNameOf(parent) ?? path.node.name;
+          return;
+        }
+        // 变量声明的函数初始化：const helper = (n) => … / const f = function () {}
+        if (parent.type === "VariableDeclarator" && parent.id === path.node) {
+          const init = (parent as { init?: { type?: string } | null }).init;
+          if (
+            init &&
+            (init.type === "ArrowFunctionExpression" ||
+              init.type === "FunctionExpression")
+          ) {
+            found = path.node.name;
+            return;
+          }
+        }
+        // 对象/类属性键上的函数值：{ get: function () {} } / { get: () => {} }
+        if (
+          (parent.type === "ObjectProperty" ||
+            parent.type === "ClassProperty" ||
+            parent.type === "ClassPrivateProperty") &&
+          (parent as { key?: unknown }).key === path.node
         ) {
-          found = path.node.name;
+          const val = (parent as { value?: { type?: string } | null; init?: { type?: string } | null }).value ??
+            (parent as { init?: { type?: string } | null }).init;
+          if (
+            val &&
+            (val.type === "ArrowFunctionExpression" ||
+              val.type === "FunctionExpression")
+          ) {
+            found = scopeNameOf(parent) ?? path.node.name;
+            return;
+          }
         }
       },
     });
@@ -501,7 +552,7 @@ export function getCompletionsAtPosition(
   // Abs 接收者优先：模块图绑定无损，不经 TypeValue evaluateProgram。
   // 空结果（unknown/never/fn 无属性）再落 TypeValue 兜底。
   try {
-    const seeds = mockDirectivesToAbsSeeds(extractDirectives(ast), { fromFile: filePath });
+    const seeds = mockDirectivesToAbsSeeds(extractDirectivesQuiet(ast), { fromFile: filePath });
     const binds = collectAbsBindingsFromGraph(source, filePath, {
       seedVars: seeds.seedVars,
       seedFns: seeds.seedFns as never,
@@ -534,7 +585,7 @@ function getVariableCompletions(filePath: string, source: string): CompletionIte
 
   // Abs 模块图绑定优先（无损；detail 经外延桥保持既有文案）
   try {
-    const seeds = mockDirectivesToAbsSeeds(extractDirectives(ast), { fromFile: filePath });
+    const seeds = mockDirectivesToAbsSeeds(extractDirectivesQuiet(ast), { fromFile: filePath });
     const binds = collectAbsBindingsFromGraph(source, filePath, {
       seedVars: seeds.seedVars,
       seedFns: seeds.seedFns as never,

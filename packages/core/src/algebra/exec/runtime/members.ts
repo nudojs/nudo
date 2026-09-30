@@ -126,7 +126,9 @@ export function findAccessor(
  */
 export function $in(key: Abs, o: Abs): Abs {
   if (o.shape.k === "sum") {
-    return o.shape.members.map((m) => $in(key, m)).reduce((a, b) => joinAbs(a, b));
+    // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce
+    const parts = o.shape.members.map((m) => $in(key, m));
+    return parts.length ? parts.reduce((a, b) => joinAbs(a, b)) : unknown;
   }
   // 原生：prim/nullish 接收者抛 TypeError（'a' in 5 → TypeError）
   if (o.shape.k === "prim" || o.shape.k === "never" || isNullishLitAbs(o)) {
@@ -270,9 +272,10 @@ export function $instanceof(left: Abs, rightName: string, rightVal?: Abs): Abs {
         }
         // 与 $invoke bindThis 同口径：receiver 注入首参（impl 首参是 __this）
         const r = $call(slot.value, [rv, left]);
-        const bv = litValue(r);
-        // 原生把返回值 ToBoolean（return 0 → false、'yes' → true）
-        if (bv !== undefined) return boolLit(Boolean(bv));
+        const bvR = litValue(r);
+        // 原生把返回值 ToBoolean（return 0 → false、'yes' → true、undefined → false）。
+        // 「是否字面量」看 ok：lit(undefined) 的 ToBoolean 是 false，不是「无字面量」。
+        if (bvR.ok) return boolLit(Boolean(bvR.value));
         return bool();
       }
     }
@@ -322,7 +325,8 @@ export function $instanceof(left: Abs, rightName: string, rightVal?: Abs): Abs {
       let decided: boolean | undefined;
       let undecided = false;
       for (const p of parts) {
-        const pv = litValue(p);
+        const pvR = litValue(p);
+        const pv = pvR.ok ? pvR.value : undefined;
         if (typeof pv !== "boolean") {
           undecided = true;
           continue;
@@ -364,10 +368,13 @@ export function $delRes(o: Abs, _key: Abs): Abs {
     return unknown;
   }
   if (o.shape.k === "sum") {
-    return o.shape.members.map((m) => $delRes(m, _key)).reduce((a, b) => joinAbs(a, b));
+    // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce
+    const parts = o.shape.members.map((m) => $delRes(m, _key));
+    return parts.length ? parts.reduce((a, b) => joinAbs(a, b)) : unknown;
   }
   const st = extStateOf(o);
-  const kv = litValue(_key);
+  const kvR = litValue(_key);
+  const kv = kvR.ok ? kvR.value : undefined;
   const flags =
     kv !== undefined ? getPropFlags(o)?.get(String(kv)) : undefined;
   // strict：frozen/sealed/non-configurable 删除 TypeError（表达式与语句同口径）

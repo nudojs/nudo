@@ -23,7 +23,7 @@ describe("evaluator class instance state", () => {
         return a.inc();
       }`,
     );
-    expect(litValue(r.result)).toBe(2);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
   });
 
   it("plain field write is visible to later calls", () => {
@@ -35,7 +35,7 @@ describe("evaluator class instance state", () => {
         return a.get();
       }`,
     );
-    expect(litValue(r.result)).toBe(9);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 9 });
   });
 
   it("compound field assignment reads current value", () => {
@@ -47,19 +47,19 @@ describe("evaluator class instance state", () => {
         return a.add(1);
       }`,
     );
-    expect(litValue(r.result)).toBe(6);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 6 });
   });
 
   it("typeof instance method is function", () => {
     const r = call(`export function f() { class A { m() { return "a"; } } return typeof new A().m; }`);
-    expect(litValue(r.result)).toBe("function");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "function" });
   });
 
   it("typeof inherited method is function", () => {
     const r = call(
       `export function f() { class A { m() { return "base"; } } class B extends A {} return typeof new B().m; }`,
     );
-    expect(litValue(r.result)).toBe("function");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "function" });
   });
 
   it("field write on frozen instance throws TypeError", () => {
@@ -86,11 +86,11 @@ describe("evaluator class instance state", () => {
         return b.inc();
       }`,
     );
-    expect(litValue(r.result)).toBe(11);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 11 });
   });
 
   it("regression: class value still reads static side undefined for instance keys", () => {
     const r = call(`export function f() { class A { m() { return 1; } } return typeof A.m; }`);
-    expect(litValue(r.result)).toBe("undefined");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "undefined" });
   });
 });

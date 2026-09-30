@@ -109,12 +109,14 @@ function formatReturnDisplay(g: PolyFn): string {
       const t = stripParens(renameTypeVars(termToString(m.term), varMap));
       return { key: `app:${t}`, text: t };
     }
-    const lv = litValue(m);
-    if (typeof lv === "number" && !Number.isFinite(lv)) {
-      return { key: `lit:${String(lv)}`, text: String(lv) };
-    }
-    if (lv !== undefined) {
-      return { key: `lit:${String(lv)}`, text: JSON.stringify(lv) };
+    const lvR = litValue(m);
+    // 「是否字面量」看 ok：lit(undefined) 也是字面量，不得用 value !== undefined 门闩。
+    if (lvR.ok) {
+      const lv = lvR.value;
+      if (typeof lv === "number" && !Number.isFinite(lv)) {
+        return { key: `lit:${String(lv)}`, text: String(lv) };
+      }
+      return { key: `lit:${String(lv)}`, text: JSON.stringify(lv) ?? "undefined" };
     }
     return { key: `shape:${formatShape(m)}`, text: formatShape(m) };
   };

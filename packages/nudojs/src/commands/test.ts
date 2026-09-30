@@ -14,11 +14,13 @@ import { analyzeFileAsync, type CallRecord } from "@nudojs/service";
 import { buildTestReport, formatTestReport } from "../run-test.ts";
 import {
   collectExternalRecords,
-  resolveTargets,
+  reportPathErrors,
+  resolveTargetsCollect,
   startWatch,
   reemitUpdate,
   runAbsView,
   type EmitCasesOptions,
+  type PathError,
 } from "./shared.ts";
 
 // ---------------------------------------------------------------------------
@@ -32,6 +34,8 @@ async function runTest(
     freeze?: EmitCasesOptions;
     json?: boolean;
     abs?: boolean;
+    /** --json 面：路径错误并入 CaseJson（ok↔exit 同源的 test 面） */
+    pathErrors?: PathError[];
   } = {},
 ): Promise<void> {
   const filePath = resolve(file);
@@ -63,8 +67,18 @@ async function runTest(
       failed: report.failed,
       unchecked: report.unchecked,
     };
+    const pathErrors = opts.pathErrors ?? [];
+    if (pathErrors.length > 0) {
+      json.pathErrors = pathErrors.map((e) => ({
+        path: e.path,
+        code: e.code,
+        message: e.message,
+        suggestion: e.suggestion,
+      }));
+    }
     console.log(JSON.stringify(json, null, 2));
-    if (report.failed > 0) process.exitCode = 1;
+    if (report.failed > 0 || pathErrors.length > 0) process.exitCode = 1;
+    else process.exitCode = 0;
   } else if (opts.abs) {
     // 观察面仍走 abs，但声明断言失败必须可见 + 挡 exit（design §1.3 / §0）
     const report = buildTestReport(filePath, result);
@@ -139,14 +153,57 @@ export function registerTestCommand(program: Command): void {
         },
       ) => {
         const targets: string[] = [];
-        for (const p of paths) targets.push(...resolveTargets(p));
-        if (targets.length === 0) return;
+        const pathErrors: PathError[] = [];
+        for (const p of paths) {
+          const r = resolveTargetsCollect(p);
+          targets.push(...r.targets);
+          pathErrors.push(...r.errors);
+        }
+        if (!opts.json) {
+          reportPathErrors(pathErrors);
+          if (targets.length === 0) return;
+        }
         if (opts.json && targets.length > 1) {
           console.error("--json requires a single file");
           process.exitCode = 1;
           return;
         }
-        const externalRecords = opts.from?.length ? collectExternalRecords(opts.from) : undefined;
+        const fromErrors: PathError[] = [];
+        const externalRecords = opts.from?.length
+          ? collectExternalRecords(opts.from, opts.json ? fromErrors : undefined)
+          : undefined;
+        const allPathErrors = [...pathErrors, ...fromErrors];
+        if (opts.json && targets.length === 0) {
+          // 路径错误也必须有 JSON body（绝不空 stdout + exit 1）
+          const file = allPathErrors[0]?.path ?? paths[0] ?? "";
+          console.log(
+            JSON.stringify(
+              {
+                version: 1,
+                file,
+                summary: {
+                  functions: 0,
+                  externalFunctions: 0,
+                  cases: 0,
+                  diagnostics: 0,
+                },
+                functions: [],
+                diagnostics: [],
+                assertions: { passed: 0, failed: 0, unchecked: 0 },
+                pathErrors: allPathErrors.map((e) => ({
+                  path: e.path,
+                  code: e.code,
+                  message: e.message,
+                  suggestion: e.suggestion,
+                })),
+              },
+              null,
+              2,
+            ),
+          );
+          process.exitCode = 1;
+          return;
+        }
 
         let freeze: EmitCasesOptions | undefined;
         if (opts.freeze !== undefined) {
@@ -177,6 +234,7 @@ export function registerTestCommand(program: Command): void {
             ...(freeze ? { freeze } : {}),
             json: opts.json,
             abs: opts.abs,
+            ...(opts.json && allPathErrors.length > 0 ? { pathErrors: allPathErrors } : {}),
           });
         };
 

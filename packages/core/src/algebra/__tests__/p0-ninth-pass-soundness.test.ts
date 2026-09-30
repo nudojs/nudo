@@ -31,8 +31,8 @@ const absNum = { shape: { k: "prim", type: "number" }, conf: "path" } as never;
 describe("P0 ordinary binding fork isolation (evaluator)", () => {
   it("if/else assign then read enumerates both arms", () => {
     const src = `export function f(flag) { let x = 0; if (flag) { x = 1; } else { x = 2; } return x; }`;
-    expect(litValue(call(src, "f", true).result)).toBe(1);
-    expect(litValue(call(src, "f", false).result)).toBe(2);
+    expect(litValue(call(src, "f", true).result)).toEqual({ ok: true, value: 1 });
+    expect(litValue(call(src, "f", false).result)).toEqual({ ok: true, value: 2 });
     const r = callAbs(src, "f", [absBool]);
     expect(r.result.shape.k).toBe("sum");
     const s = formatAbs(r.result);
@@ -44,8 +44,8 @@ describe("P0 ordinary binding fork isolation (evaluator)", () => {
 
   it("if/else side effects on x do not accumulate across arms", () => {
     const src = `export function f(flag) { let x = 0; if (flag) { x = x + 1; } else { x = x + 2; } return x; }`;
-    expect(litValue(call(src, "f", true).result)).toBe(1);
-    expect(litValue(call(src, "f", false).result)).toBe(2);
+    expect(litValue(call(src, "f", true).result)).toEqual({ ok: true, value: 1 });
+    expect(litValue(call(src, "f", false).result)).toEqual({ ok: true, value: 2 });
     const r = callAbs(src, "f", [absBool]);
     expect(formatShape(r.result)).not.toBe("3");
     expect(r.result.shape.k).toBe("sum");
@@ -53,8 +53,8 @@ describe("P0 ordinary binding fork isolation (evaluator)", () => {
 
   it("if without else keeps fall-through binding", () => {
     const src = `export function f(flag) { let x = 0; if (flag) { x = 1; } return x; }`;
-    expect(litValue(call(src, "f", false).result)).toBe(0);
-    expect(litValue(call(src, "f", true).result)).toBe(1);
+    expect(litValue(call(src, "f", false).result)).toEqual({ ok: true, value: 0 });
+    expect(litValue(call(src, "f", true).result)).toEqual({ ok: true, value: 1 });
     const r = callAbs(src, "f", [absBool]);
     expect(r.result.shape.k).toBe("sum");
     expect(formatShape(r.result)).not.toBe("1");
@@ -62,7 +62,7 @@ describe("P0 ordinary binding fork isolation (evaluator)", () => {
 
   it("object slot write joins both arms", () => {
     const src = `export function f(flag) { const o = { x: 0 }; if (flag) { o.x = 1; } else { o.x = 2; } return o.x; }`;
-    expect(litValue(call(src, "f", true).result)).toBe(1);
+    expect(litValue(call(src, "f", true).result)).toEqual({ ok: true, value: 1 });
     const r = callAbs(src, "f", [absBool]);
     expect(formatShape(r.result)).not.toBe("2");
   });
@@ -84,8 +84,8 @@ describe("P0 nullish ?? and ??=", () => {
 
   it("concrete nullish and non-nullish still correct", () => {
     const src = `export function f(a, b) { return a ?? b; }`;
-    expect(litValue(call(src, "f", null, 7).result)).toBe(7);
-    expect(litValue(call(src, "f", 3, 7).result)).toBe(3);
+    expect(litValue(call(src, "f", null, 7).result)).toEqual({ ok: true, value: 7 });
+    expect(litValue(call(src, "f", 3, 7).result)).toEqual({ ok: true, value: 3 });
   });
 });
 
@@ -117,15 +117,15 @@ export function outer(x) {
     const rt = call(src, "outer", true);
     expect(formatAbs(rt.throws)).toContain("pre");
     const rf = call(src, "outer", false);
-    expect(litValue(rf.result)).toBe("done");
+    expect(litValue(rf.result)).toEqual({ ok: true, value: "done" });
   });
 });
 
 describe("P0 no-default switch mutator join includes fall-through", () => {
   it("abstract length is not exact mutated-only", () => {
     const src = `export function f(n) { const a=[1,2,3]; switch(n){ case 1: a.pop(); break; } return a.length; }`;
-    expect(litValue(call(src, "f", 1).result)).toBe(2);
-    expect(litValue(call(src, "f", 2).result)).toBe(3);
+    expect(litValue(call(src, "f", 1).result)).toEqual({ ok: true, value: 2 });
+    expect(litValue(call(src, "f", 2).result)).toEqual({ ok: true, value: 3 });
     const r = callAbs(src, "f", [absNum]);
     expect(formatShape(r.result)).not.toBe("2");
     expect(r.result.conf).not.toBe("exact");
@@ -135,10 +135,10 @@ describe("P0 no-default switch mutator join includes fall-through", () => {
 describe("P0 switch non-break fall-through", () => {
   it("concrete case1 falls into case3 side effects", () => {
     const src = `export function f(n) { let x=0; switch(n){ case 1: case 2: x=1; case 3: x=x+1; break; default: x=99; } return x; }`;
-    expect(litValue(call(src, "f", 1).result)).toBe(2);
-    expect(litValue(call(src, "f", 2).result)).toBe(2);
-    expect(litValue(call(src, "f", 3).result)).toBe(1);
-    expect(litValue(call(src, "f", 4).result)).toBe(99);
+    expect(litValue(call(src, "f", 1).result)).toEqual({ ok: true, value: 2 });
+    expect(litValue(call(src, "f", 2).result)).toEqual({ ok: true, value: 2 });
+    expect(litValue(call(src, "f", 3).result)).toEqual({ ok: true, value: 1 });
+    expect(litValue(call(src, "f", 4).result)).toEqual({ ok: true, value: 99 });
   });
 
   it("abstract is not exact last/default only", () => {
@@ -151,7 +151,7 @@ describe("P0 switch non-break fall-through", () => {
 describe("P0 loop accumulator abstract not exact maxIters", () => {
   it("for-loop sum under abstract n is not exact 8", () => {
     const src = `export function f(n) { let s=0; for(let i=0;i<n;i=i+1){s=s+1;} return s; }`;
-    expect(litValue(call(src, "f", 3).result)).toBe(3);
+    expect(litValue(call(src, "f", 3).result)).toEqual({ ok: true, value: 3 });
     const r = callAbs(src, "f", [absNum]);
     expect(formatShape(r.result)).not.toBe("8");
     expect(r.result.shape.k).toBe("sum");

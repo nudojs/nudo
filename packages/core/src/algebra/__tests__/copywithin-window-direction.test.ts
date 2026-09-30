@@ -18,18 +18,18 @@ function json(src: string) {
 
 describe("copyWithin direction uses resolved window indices", () => {
   it("copyWithin(1,-3) on [0..4] → [0,2,3,4,4] (forward, from=2>to=1)", () => {
-    expect(json(`(()=>{ const a=[0,1,2,3,4]; a.copyWithin(1,-3); return a; })()`)).toBe("[0,2,3,4,4]");
+    expect(json(`(()=>{ const a=[0,1,2,3,4]; a.copyWithin(1,-3); return a; })()`)).toEqual({ ok: true, value: "[0,2,3,4,4]" });
   });
 
   it("copyWithin(-3,1) on [0..4] → [0,1,1,2,3] (backwards overlap)", () => {
-    expect(json(`(()=>{ const a=[0,1,2,3,4]; a.copyWithin(-3,1); return a; })()`)).toBe("[0,1,1,2,3]");
+    expect(json(`(()=>{ const a=[0,1,2,3,4]; a.copyWithin(-3,1); return a; })()`)).toEqual({ ok: true, value: "[0,1,1,2,3]" });
   });
 
   it("copyWithin(0,2) forward non-overlap", () => {
-    expect(json(`(()=>{ const a=[0,1,2,3,4]; a.copyWithin(0,2); return a; })()`)).toBe("[2,3,4,3,4]");
+    expect(json(`(()=>{ const a=[0,1,2,3,4]; a.copyWithin(0,2); return a; })()`)).toEqual({ ok: true, value: "[2,3,4,3,4]" });
   });
 
   it("copyWithin(2,0,2) backwards overlap", () => {
-    expect(json(`(()=>{ const a=[0,1,2,3,4]; a.copyWithin(2,0,2); return a; })()`)).toBe("[0,1,0,1,4]");
+    expect(json(`(()=>{ const a=[0,1,2,3,4]; a.copyWithin(2,0,2); return a; })()`)).toEqual({ ok: true, value: "[0,1,0,1,4]" });
   });
 });

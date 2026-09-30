@@ -17,56 +17,56 @@ describe("evaluator for-in", () => {
     const r = call(
       `export function f() { let s = ""; for (const x in { a: 1, b: 2 }) s += x; return s; }`,
     );
-    expect(litValue(r.result)).toBe("ab");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "ab" });
   });
 
   it("integer keys come first in ascending order", () => {
     const r = call(
       `export function f() { let s = ""; for (const x in { 10: "a", 2: "b" }) s += x; return s; }`,
     );
-    expect(litValue(r.result)).toBe("210");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "210" });
   });
 
   it("iterates array indices as strings", () => {
     const r = call(`export function f() { let s = ""; for (const x in [9, 8]) s += x; return s; }`);
-    expect(litValue(r.result)).toBe("01");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "01" });
   });
 
   it("iterates string indices", () => {
     const r = call(`export function f() { let s = ""; for (const x in "abc") s += x; return s; }`);
-    expect(litValue(r.result)).toBe("012");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "012" });
   });
 
   it("reads values through the loop key", () => {
     const r = call(
       `export function f() { let s = 0; const o = { a: 1, b: 2 }; for (const k in o) s += o[k]; return s; }`,
     );
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 
   it("break exits for-in", () => {
     const r = call(
       `export function f() { let s = 0; const o = { a: 1, b: 2, c: 3 }; for (const k in o) { if (k === "b") break; s += o[k]; } return s; }`,
     );
-    expect(litValue(r.result)).toBe(1);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 1 });
   });
 
   it("continue skips in for-in", () => {
     const r = call(
       `export function f() { let s = 0; const o = { a: 1, b: 2, c: 3 }; for (const k in o) { if (k === "b") continue; s += o[k]; } return s; }`,
     );
-    expect(litValue(r.result)).toBe(4);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 4 });
   });
 
   it("empty object iterates zero times", () => {
     const r = call(`export function f() { let n = 0; for (const k in {}) n++; return n; }`);
-    expect(litValue(r.result)).toBe(0);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 0 });
   });
 
   it("deleted array slot does not appear", () => {
     const r = call(
       `export function f() { let s = ""; const a = [1, 2, 3]; delete a[1]; for (const x in a) s += x; return s; }`,
     );
-    expect(litValue(r.result)).toBe("02");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "02" });
   });
 });

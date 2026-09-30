@@ -148,7 +148,7 @@ describe("export * as ns via runTranspiled modules table (re-export slot)", () =
       modules: { "./m.js": mA },
     });
     expect(r.b).toBeDefined();
-    expect(litValue(r.b as never)).toBe(42);
+    expect(litValue(r.b as never)).toEqual({ ok: true, value: 42 });
     const ns = r.ns as { shape: { k: string; open?: boolean; slots: Record<string, { value: unknown }> } };
     expect(ns.shape.k).toBe("obj");
     expect(ns.shape.open).toBe(true);

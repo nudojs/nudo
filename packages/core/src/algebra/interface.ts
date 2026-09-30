@@ -554,7 +554,22 @@ function loadSidecarBinding(
   if (!sidecarAutoBindAllowed(sidecarPath, autoBind, projectDir)) return { ok: false };
   if (!localNamedExports(source).has(fnName)) return { ok: false };
   const spec = `./${sidecarPath.slice(sidecarPath.lastIndexOf("/") + 1)}`;
-  const sidecarSrc = loadModule(spec, fromFile);
+  // 读失败（EACCES/EMFILE/…）≠「无侧车」：前者必须报 nudo:interface-load，
+  // 否则约束静默回落 any；后者（undefined）是 auto-bind 的常态，保持静默。
+  let sidecarSrc: string | undefined;
+  try {
+    sidecarSrc = loadModule(spec, fromFile);
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
+    if (noteSidecarLoadFailure(sidecarPath, reason)) {
+      collectDiag({
+        code: "nudo:interface-load",
+        message: `sidecar '${spec}' failed to load: ${reason}`,
+        file: sidecarPath,
+      });
+    }
+    return { ok: false };
+  }
   if (sidecarSrc === undefined) return { ok: false };
   // 自加载守卫：host loader 误把源文件/自身内容当作侧车返回时不当侧车 exec
   // （CJS 源含 module.exports 时会变成 "module is not defined" 假诊断）
@@ -947,7 +962,12 @@ export function sidecarClosureFingerprint(
   const sidecarPath = sidecarPathOf(fromFile);
   if (!sidecarAutoBindAllowed(sidecarPath, autoBind, projectDir)) return undefined;
   const spec = `./${sidecarPath.slice(sidecarPath.lastIndexOf("/") + 1)}`;
-  const sidecarSrc = loadModule(spec, fromFile);
+  let sidecarSrc: string | undefined;
+  try {
+    sidecarSrc = loadModule(spec, fromFile);
+  } catch {
+    return undefined; // 读失败：无指纹即可（调用方 fail-open）
+  }
   if (sidecarSrc === undefined) return undefined;
 
   const parts: string[] = [];
@@ -962,7 +982,12 @@ export function sidecarClosureFingerprint(
     }
     const { spec: s, from } = queue.shift()!;
     const depPath = resolveDepPath(from, s);
-    const depSrc = loadModule(s, from);
+    let depSrc: string | undefined;
+    try {
+      depSrc = loadModule(s, from);
+    } catch {
+      depSrc = undefined; // 读失败当 miss
+    }
     parts.push(`${depPath}=${depSrc === undefined ? "miss" : hashSource(depSrc)}`);
     if (depSrc !== undefined) enqueueSidecarDeps(depSrc, depPath, seen, queue);
   }

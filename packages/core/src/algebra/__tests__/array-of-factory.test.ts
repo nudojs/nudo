@@ -37,46 +37,38 @@ function shape(src: string) {
 describe("Array.of packs args into a tuple", () => {
   it("Array.of() is the empty tuple", () => {
     expect(shape(`export function f() { return Array.of(); }`)).toBe("[]");
-    expect(val(`export function f() { return Array.of().length; }`)).toBe(0);
+    expect(val(`export function f() { return Array.of().length; }`)).toEqual({ ok: true, value: 0 });
   });
 
   it("Array.of(n) is a one-element tuple, not arr of n", () => {
     expect(shape(`export function f() { return Array.of(7); }`)).toBe("[7]");
-    expect(val(`export function f() { return Array.of(7).length; }`)).toBe(1);
-    expect(val(`export function f() { return Array.of(7)[0]; }`)).toBe(7);
+    expect(val(`export function f() { return Array.of(7).length; }`)).toEqual({ ok: true, value: 1 });
+    expect(val(`export function f() { return Array.of(7)[0]; }`)).toEqual({ ok: true, value: 7 });
   });
 
   it("Array.of(1,2,3) keeps every argument", () => {
     expect(shape(`export function f() { return Array.of(1, 2, 3); }`)).toBe(
       "[1, 2, 3]",
     );
-    expect(val(`export function f() { return Array.of(1, 2, 3).length; }`)).toBe(
-      3,
-    );
-    expect(val(`export function f() { return Array.of(1, 2, 3)[1]; }`)).toBe(2);
-    expect(val(`export function f() { return Array.of(1, 2, 3).toString(); }`)).toBe(
-      "1,2,3",
-    );
+    expect(val(`export function f() { return Array.of(1, 2, 3).length; }`)).toEqual({ ok: true, value: 3, });
+    expect(val(`export function f() { return Array.of(1, 2, 3)[1]; }`)).toEqual({ ok: true, value: 2 });
+    expect(val(`export function f() { return Array.of(1, 2, 3).toString(); }`)).toEqual({ ok: true, value: "1,2,3", });
   });
 
   it("Array.of packs heterogeneous and non-number args", () => {
     expect(shape(`export function f() { return Array.of('a', 'b'); }`)).toBe(
       '["a", "b"]',
     );
-    expect(val(`export function f() { return Array.of('a', 'b').toString(); }`)).toBe(
-      "a,b",
-    );
-    expect(val(`export function f() { return Array.of(null).length; }`)).toBe(1);
-    expect(val(`export function f() { return Array.of(true, 1).length; }`)).toBe(
-      2,
-    );
+    expect(val(`export function f() { return Array.of('a', 'b').toString(); }`)).toEqual({ ok: true, value: "a,b", });
+    expect(val(`export function f() { return Array.of(null).length; }`)).toEqual({ ok: true, value: 1 });
+    expect(val(`export function f() { return Array.of(true, 1).length; }`)).toEqual({ ok: true, value: 2, });
   });
 
   it("Array.of does not share Array(n) hole semantics", () => {
     // Array(3) 是长度 3 的空洞数组；Array.of(3) 是 [3]
-    expect(val(`export function f() { return Array(3).length; }`)).toBe(3);
-    expect(val(`export function f() { return Array.of(3).length; }`)).toBe(1);
-    expect(val(`export function f() { return Array.of(3)[0]; }`)).toBe(3);
-    expect(val(`export function f() { return Array.of(3)[1]; }`)).toBeUndefined();
+    expect(val(`export function f() { return Array(3).length; }`)).toEqual({ ok: true, value: 3 });
+    expect(val(`export function f() { return Array.of(3).length; }`)).toEqual({ ok: true, value: 1 });
+    expect(val(`export function f() { return Array.of(3)[0]; }`)).toEqual({ ok: true, value: 3 });
+    expect(val(`export function f() { return Array.of(3)[1]; }`)).toEqual({ ok: true, value: undefined });
   });
 });

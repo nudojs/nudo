@@ -29,4 +29,27 @@ describe("checkCacheKey project config dimensions", () => {
     expect(a).not.toBe(b);
     expect(a).not.toBe(c);
   });
+
+  it("maxForks flips the key (fork-budget change must not stale-cache)", () => {
+    const a = checkCacheKey("/p/a.js", src, {
+      ...base,
+      analysisCfg: { mode: "directives", evalMissingSlot: "off", callSiteBudget: 3, maxForks: 5000 },
+    });
+    const b = checkCacheKey("/p/a.js", src, {
+      ...base,
+      analysisCfg: { mode: "directives", evalMissingSlot: "off", callSiteBudget: 3, maxForks: 20000 },
+    });
+    const c = checkCacheKey("/p/a.js", src, {
+      ...base,
+      analysisCfg: { mode: "directives", evalMissingSlot: "off", callSiteBudget: 3, maxForks: 7 },
+    });
+    const same = checkCacheKey("/p/a.js", src, {
+      ...base,
+      analysisCfg: { mode: "directives", evalMissingSlot: "off", callSiteBudget: 3, maxForks: 5000 },
+    });
+    expect(a).not.toBe(b);
+    expect(a).not.toBe(c);
+    expect(b).not.toBe(c);
+    expect(a).toBe(same);
+  });
 });

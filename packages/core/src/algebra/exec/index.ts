@@ -31,7 +31,7 @@ export {
 } from "./transpile.ts";
 
 export {
-  $call
+  $call, clearPureMemo, routeApplyThrows
 } from "./call.ts";
 
 export {
@@ -42,7 +42,8 @@ export {
 
 export {
   $assignRecord, $callNamed, $recordBinding, type EvalAbsAssignRecord,
-  type EvalCallRecord, MAX_EVAL_CALL_DEPTH, MAX_EVAL_TOTAL_CALLS, getEvalCallBudgetState,
+  type EvalCallRecord, MAX_EVAL_CALL_DEPTH, MAX_EVAL_TOTAL_CALLS, clearPureCallMemo,
+  getEvalCallBudgetState,
   getEvalCallCollector, enterEvalCallBudgetSession, exitEvalCallBudgetSession,
   noteEvalCallRecord, resetEvalCallBudget, setEvalAssignCollector, setEvalBindingSink,
   setEvalCallCollector, withEvalBudgetOverride
@@ -51,7 +52,7 @@ export {
 export {
   type EvalFallback, type EvalFallbackStats, RUNTIME_IMPORT_RE, type RunTranspiledOptions,
   type TranspiledCallResult, bindingsOf, callTranspiledExport,
-  callTranspiledExportFull, evalExprAbs, getEvalFallbackStats, noteEvalFallback,
+  callTranspiledExportApply, callTranspiledExportFull, evalExprAbs, getEvalFallbackStats, noteEvalFallback,
   resetEvalFallbackStats, runTranspiled,
   runTranspiledOptionsMemoKey, setEvalFallbackCollector, tryRunTranspiled
 } from "./run.ts";

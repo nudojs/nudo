@@ -121,6 +121,27 @@ export function getName(user) {
     await transformOf(plugin).call(ctx, source, "/test/fail.js");
     expect(errorFn).toHaveBeenCalled();
   });
+
+  it("failOnError actually aborts even though this.error throws", async () => {
+    const plugin = nudoPlugin({ failOnError: true });
+    const warnFn = vi.fn();
+    // 真实 Rollup/Vite 语义：this.error 抛出 RollupError
+    const errorFn = vi.fn((m: string) => {
+      throw new Error(m);
+    });
+    const ctx = { warn: warnFn, error: errorFn };
+
+    const source = `
+export function getName(user) {
+  return user.name;
+}
+`;
+    // this.error 的 throw 不得被 catch 吞掉降级成 warn
+    await expect(
+      transformOf(plugin).call(ctx, source, "/test/fail.js"),
+    ).rejects.toThrow(/entry-may-throw|name/);
+    expect(errorFn).toHaveBeenCalled();
+  });
 });
 
 describe("vite-plugin-nudo glob matching", () => {

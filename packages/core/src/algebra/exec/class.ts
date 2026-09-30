@@ -201,7 +201,8 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
     // 同口径）——此前通用空箱 branch 折 new String('ab')['0'] === undefined、
     // .length === undefined、Object.assign({}, boxed) === {} 假精确。
     if (clsName === "String") {
-      const a0 = args[0] ? litValue(args[0]) : undefined;
+      const a0R = args[0] ? litValue(args[0]) : undefined;
+      const a0 = a0R?.ok ? a0R.value : undefined;
       if (typeof a0 === "string") {
         const slots: Record<string, { value: Abs }> = {
           length: { value: numLit(a0.length) },
@@ -605,13 +606,15 @@ export function $invoke(
   // bigint 字面量：toString(radix)/valueOf 精确折叠——字面量实参真执行，
   // 非法 radix 原生 RangeError / 符号实参 TypeError 硬抛（catch 可吸收）
   if (thisVal.shape.k === "prim" && thisVal.shape.type === "bigint") {
-    const bv = litValue(thisVal) as bigint | undefined;
+    const bvR = litValue(thisVal);
+    const bv = bvR.ok ? (bvR.value as bigint | undefined) : undefined;
     if (typeof bv === "bigint") {
       if (method === "valueOf") return thisVal;
       if (method === "toString") {
         const argAbs = args[0];
         if (argAbs !== undefined && argAbs.term?.op !== "lit") return unknown;
-        const av = argAbs === undefined ? undefined : litValue(argAbs);
+        const avR = argAbs === undefined ? undefined : litValue(argAbs);
+        const av = avR?.ok ? avR.value : undefined;
         try {
           return strLit(bv.toString(av as never));
         } catch (e) {
@@ -630,13 +633,15 @@ export function $invoke(
   if (thisVal.shape.k === "prim" && thisVal.shape.type === "number") {
     if (method === "valueOf") return thisVal;
     if (method === "toString" || method === "toLocaleString") {
-      const nv = litValue(thisVal);
+      const nvR = litValue(thisVal);
+      const nv = nvR.ok ? nvR.value : undefined;
       if (typeof nv !== "number") return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
       const argAbs = args[0];
       if (argAbs !== undefined && argAbs.term?.op !== "lit") {
         return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
       }
-      const av = argAbs === undefined ? undefined : litValue(argAbs);
+      const avR = argAbs === undefined ? undefined : litValue(argAbs);
+      const av = avR?.ok ? avR.value : undefined;
       try {
         const impl = Number.prototype as unknown as Record<string, (...a: unknown[]) => string>;
         return strLit(impl[method === "toLocaleString" ? "toString" : method]!.call(nv, av));
@@ -651,13 +656,15 @@ export function $invoke(
       method === "toExponential" ||
       method === "toPrecision"
     ) {
-      const nv = litValue(thisVal);
+      const nvR = litValue(thisVal);
+      const nv = nvR.ok ? nvR.value : undefined;
       if (typeof nv !== "number") return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
       const argAbs = args[0];
       if (argAbs !== undefined && argAbs.term?.op !== "lit") {
         return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
       }
-      const av = argAbs === undefined ? undefined : litValue(argAbs);
+      const avR = argAbs === undefined ? undefined : litValue(argAbs);
+      const av = avR?.ok ? avR.value : undefined;
       try {
         const impl = Number.prototype as unknown as Record<string, (...a: unknown[]) => string>;
         return strLit(impl[method]!.call(nv, av));
@@ -672,7 +679,8 @@ export function $invoke(
   if (thisVal.shape.k === "prim" && thisVal.shape.type === "boolean") {
     if (method === "valueOf") return thisVal;
     if (method === "toString" || method === "toLocaleString") {
-      const bv = litValue(thisVal);
+      const bvR = litValue(thisVal);
+      const bv = bvR.ok ? bvR.value : undefined;
       if (typeof bv === "boolean") return strLit(String(bv));
       return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
     }
@@ -788,7 +796,8 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
   /** 回调结果具体 truthy：true / falsy / undefined=非具体（按 JS ToBoolean） */
   const callbackTruth = (r: Abs): boolean | undefined => {
     if (r.term?.op !== "lit") return undefined;
-    const v = litValue(r);
+    const vR = litValue(r);
+    const v = vR.ok ? vR.value : undefined;
     if (v === undefined || v === null || v === false || v === "" || (v as unknown) === 0n) return false;
     if (typeof v === "number" && (v === 0 || Number.isNaN(v))) return false;
     return true;
@@ -1178,8 +1187,9 @@ export function $orDefault(v: Abs, dflt: () => Abs): Abs {
 function isDefinitelyUndefinedAbs(v: Abs | undefined): boolean {
   if (!v) return false;
   if (v.term?.op === "lit" && v.term.value === undefined) return true;
-  // unknown + lit(undefined) 的历史折叠形
-  if (v.shape.k === "unknown" && v.term?.op === "lit" && litValue(v) === undefined) return true;
+  // unknown + lit(undefined) 的历史折叠形（tagged：.ok 且 value===undefined 才是 lit(undefined)）
+  const r = litValue(v);
+  if (v.shape.k === "unknown" && r.ok && r.value === undefined) return true;
   return false;
 }
 
@@ -1195,7 +1205,7 @@ export function $optionalGet(o: Abs, key: string): Abs {
   if (isNullishAbs(o)) {
     return abs(
       { k: "unknown" },
-      { op: "lit", value: undefined as never },
+      { op: "lit", value: undefined },
       undefined,
       "exact",
     );
@@ -1208,7 +1218,7 @@ export function $optionalInvoke(thisVal: Abs, method: string, args: Abs[]): Abs 
   if (isNullishAbs(thisVal)) {
     return abs(
       { k: "unknown" },
-      { op: "lit", value: undefined as never },
+      { op: "lit", value: undefined },
       undefined,
       "exact",
     );

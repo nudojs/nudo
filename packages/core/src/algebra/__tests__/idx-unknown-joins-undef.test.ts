@@ -40,7 +40,7 @@ describe("unknown index read joins undefined", () => {
 
   it("known in-range index stays exact", () => {
     const r = call(`export function f() { return [10, 20, 30][1]; }`);
-    expect(litValue(r.result)).toBe(20);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 20 });
   });
 
   it("known out-of-range index is undefined", () => {

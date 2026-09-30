@@ -242,6 +242,16 @@ export type CheckJsonMulti = {
   ok: boolean;
   summary: CheckReport["summary"] & { files: number; budgetTruncated?: boolean };
   budget?: CheckReport["budget"];
+  /**
+   * 路径/IO 错误（additive）。`pathErrors` 非空 ⇒ `ok: false` ⇒ CLI exit 1。
+   * ok↔exit 单一来源：CLI 在 --json 路径只按信封 ok 设 exit。
+   */
+  pathErrors?: Array<{
+    path: string;
+    code: string;
+    message: string;
+    suggestion?: string;
+  }>;
   reports: CheckJson[];
 };
 

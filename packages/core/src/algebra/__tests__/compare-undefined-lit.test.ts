@@ -26,37 +26,37 @@ function val(src: string) {
 
 describe("relational compare folds lit(undefined) to false", () => {
   it("undefined on either side of < > <= >=", () => {
-    expect(val(`export function f() { return undefined < 1; }`)).toBe(false);
-    expect(val(`export function f() { return undefined > 1; }`)).toBe(false);
-    expect(val(`export function f() { return undefined <= 1; }`)).toBe(false);
-    expect(val(`export function f() { return undefined >= 1; }`)).toBe(false);
-    expect(val(`export function f() { return 1 < undefined; }`)).toBe(false);
-    expect(val(`export function f() { return 1 > undefined; }`)).toBe(false);
-    expect(val(`export function f() { return 1 <= undefined; }`)).toBe(false);
-    expect(val(`export function f() { return 1 >= undefined; }`)).toBe(false);
+    expect(val(`export function f() { return undefined < 1; }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return undefined > 1; }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return undefined <= 1; }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return undefined >= 1; }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return 1 < undefined; }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return 1 > undefined; }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return 1 <= undefined; }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return 1 >= undefined; }`)).toEqual({ ok: true, value: false });
   });
 
   it("undefined vs undefined / null vs undefined", () => {
-    expect(val(`export function f() { return undefined < undefined; }`)).toBe(false);
-    expect(val(`export function f() { return undefined > undefined; }`)).toBe(false);
-    expect(val(`export function f() { return undefined <= undefined; }`)).toBe(false);
-    expect(val(`export function f() { return undefined >= undefined; }`)).toBe(false);
-    expect(val(`export function f() { return null < undefined; }`)).toBe(false);
-    expect(val(`export function f() { return null > undefined; }`)).toBe(false);
+    expect(val(`export function f() { return undefined < undefined; }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return undefined > undefined; }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return undefined <= undefined; }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return undefined >= undefined; }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return null < undefined; }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return null > undefined; }`)).toEqual({ ok: true, value: false });
   });
 
   it("null relational compare already correct (control)", () => {
-    expect(val(`export function f() { return null < 1; }`)).toBe(true);
-    expect(val(`export function f() { return null > 1; }`)).toBe(false);
-    expect(val(`export function f() { return null <= 0; }`)).toBe(true);
-    expect(val(`export function f() { return null >= 0; }`)).toBe(true);
+    expect(val(`export function f() { return null < 1; }`)).toEqual({ ok: true, value: true });
+    expect(val(`export function f() { return null > 1; }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return null <= 0; }`)).toEqual({ ok: true, value: true });
+    expect(val(`export function f() { return null >= 0; }`)).toEqual({ ok: true, value: true });
   });
 
   it("string/bool/NaN relational compare already correct (control)", () => {
-    expect(val(`export function f() { return 'a' < 1; }`)).toBe(false);
-    expect(val(`export function f() { return '' < 1; }`)).toBe(true);
-    expect(val(`export function f() { return true < 2; }`)).toBe(true);
-    expect(val(`export function f() { return NaN < 1; }`)).toBe(false);
-    expect(val(`export function f() { return NaN > 1; }`)).toBe(false);
+    expect(val(`export function f() { return 'a' < 1; }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return '' < 1; }`)).toEqual({ ok: true, value: true });
+    expect(val(`export function f() { return true < 2; }`)).toEqual({ ok: true, value: true });
+    expect(val(`export function f() { return NaN < 1; }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { return NaN > 1; }`)).toEqual({ ok: true, value: false });
   });
 });

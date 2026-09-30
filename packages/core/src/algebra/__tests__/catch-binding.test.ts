@@ -24,7 +24,7 @@ export function caught() {
 }
 `;
     const r = inferCall(src, "caught");
-    expect(litValue(r.result)).toBe("boom");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "boom" });
   });
 
   it("exposes err.name from Error brand", () => {
@@ -38,7 +38,7 @@ export function caught() {
 }
 `;
     const r = inferCall(src, "caught");
-    expect(litValue(r.result)).toBe("TypeError");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "TypeError" });
   });
 
   it("still binds thrown non-Error values", () => {
@@ -52,7 +52,7 @@ export function go() {
 }
 `;
     const r = inferCall(src, "go");
-    expect(litValue(r.result)).toBe(42);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 42 });
   });
 
   it("catch of host Error (non-NudoThrow) still yields message slot", () => {
@@ -66,6 +66,6 @@ export function go() {
 }
 `;
     const r = inferCall(src, "go");
-    expect(litValue(r.result)).toBe("oob");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "oob" });
   });
 });

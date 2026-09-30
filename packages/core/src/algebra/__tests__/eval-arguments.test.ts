@@ -24,9 +24,9 @@ function lit(n: number | string | boolean | undefined | null) {
 describe("evaluator arguments object (strict/ESM)", () => {
   it("arguments.length is the actual argument count", () => {
     const r = call(`export function f() { return arguments.length }`, "f", [lit(1), lit(2), lit(3)]);
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
     const r0 = call(`export function f() { return arguments.length }`, "f", []);
-    expect(litValue(r0.result)).toBe(0);
+    expect(litValue(r0.result)).toEqual({ ok: true, value: 0 });
   });
 
   it("function expression arguments.length sees actual args (not formal count)", () => {
@@ -35,20 +35,20 @@ describe("evaluator arguments object (strict/ESM)", () => {
       "f",
       [],
     );
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 
   it("arguments[i] projects the i-th actual argument; OOB is undefined", () => {
     const r = call(`export function f() { return arguments[0] }`, "f", [lit(9)]);
-    expect(litValue(r.result)).toBe(9);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 9 });
     const r2 = call(`export function f() { return arguments[5] }`, "f", [lit(1)]);
-    expect(litValue(r2.result)).toBeUndefined();
+    expect(litValue(r2.result)).toEqual({ ok: true, value: undefined });
     expect(formatShape(r2.result)).toBe("undefined");
   });
 
   it("typeof arguments is \"object\"", () => {
     const r = call(`export function f() { return typeof arguments }`, "f", [lit(1)]);
-    expect(litValue(r.result)).toBe("object");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "object" });
   });
 
   it("strict: writing arguments[i] does NOT write the formal parameter", () => {
@@ -59,7 +59,7 @@ describe("evaluator arguments object (strict/ESM)", () => {
       "f",
       [lit(1), lit(2)],
     );
-    expect(litValue(r.result)).toBe(1);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 1 });
   });
 
   it("strict: writing the formal does NOT write arguments[i]", () => {
@@ -69,21 +69,21 @@ describe("evaluator arguments object (strict/ESM)", () => {
       "f",
       [lit(3)],
     );
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 
   it("strict: arguments[0]=7 then return a keeps a (h(3) → 3)", () => {
     const r = call(`export function h(a){ arguments[0]=7; return a }`, "h", [lit(3)]);
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 
   it("spread [...arguments] expands the actual argument list", () => {
     const r = call(`export function f() { const a = [...arguments]; return a.length }`, "f", [lit(1), lit(2), lit(3)]);
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
     const r0 = call(`export function f() { const a = [...arguments]; return a[0] }`, "f", [lit(7), lit(8)]);
-    expect(litValue(r0.result)).toBe(7);
+    expect(litValue(r0.result)).toEqual({ ok: true, value: 7 });
     const r1 = call(`export function f() { const a = [...arguments]; return a[1] }`, "f", [lit(7), lit(8)]);
-    expect(litValue(r1.result)).toBe(8);
+    expect(litValue(r1.result)).toEqual({ ok: true, value: 8 });
   });
 
   it("Array.from(arguments, mapFn) visits each actual argument", () => {
@@ -92,7 +92,7 @@ describe("evaluator arguments object (strict/ESM)", () => {
       "f",
       [lit(1), lit(2), lit(3)],
     );
-    expect(litValue(r.result)).toBe(6);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 6 });
   });
 
   it("Array.from(arguments).join expands (result is a string; join folding stays abstract)", () => {
@@ -109,21 +109,21 @@ describe("evaluator arguments object (strict/ESM)", () => {
   it("default parameter does not inflate arguments.length", () => {
     // f() → length 0（不是默认参个数 1）
     const r = call(`export function f(a=1){ return arguments.length }`, "f", []);
-    expect(litValue(r.result)).toBe(0);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 0 });
     const r2 = call(`export function f(a=1){ return arguments.length }`, "f", [lit(5)]);
-    expect(litValue(r2.result)).toBe(1);
+    expect(litValue(r2.result)).toEqual({ ok: true, value: 1 });
   });
 
   it("rest parameter arguments.length is the actual argument count", () => {
     const r = call(`export function f(...r){ return arguments.length }`, "f", [lit(1), lit(2)]);
-    expect(litValue(r.result)).toBe(2);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
   });
 
   it("rest binding still collects extras (rest path unbroken)", () => {
     const r = call(`export function f(...r){ return r.length }`, "f", [lit(1), lit(2)]);
-    expect(litValue(r.result)).toBe(2);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
     const r2 = call(`export function f(a, ...r){ return r.length }`, "f", [lit(1), lit(2), lit(3)]);
-    expect(litValue(r2.result)).toBe(2);
+    expect(litValue(r2.result)).toEqual({ ok: true, value: 2 });
   });
 
   it("arrow has no own arguments: honest unknown when outer slot is absent", () => {
@@ -140,23 +140,23 @@ describe("evaluator arguments object (strict/ESM)", () => {
       [lit(10)],
     );
     // x=10, g sees f's arguments.length=1 (f was called with one arg) → 11
-    expect(litValue(r.result)).toBe(11);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 11 });
   });
 
   it("call/apply feed actual arguments", () => {
     const r = call(
       `export function f() { const g = function(){ return arguments.length }; return g.call(null,1,2,3); }`,
     );
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
     const r2 = call(
       `export function f() { const g = function(){ return arguments.length }; return g.apply(null,[1,2]); }`,
     );
-    expect(litValue(r2.result)).toBe(2);
+    expect(litValue(r2.result)).toEqual({ ok: true, value: 2 });
   });
 
   it("typeof arguments on zero args is still object", () => {
     const r = call(`export function f() { return typeof arguments }`, "f", []);
-    expect(litValue(r.result)).toBe("object");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "object" });
   });
 
   it("arguments is independent per invocation (no cross-call bleed)", () => {
@@ -168,6 +168,6 @@ describe("evaluator arguments object (strict/ESM)", () => {
         return a + b;
       }`,
     );
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 });

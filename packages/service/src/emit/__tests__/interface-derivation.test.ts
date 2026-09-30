@@ -122,6 +122,56 @@ describe("deriveFromRoot", () => {
     const r = deriveFromRoot(join(dir, "lib.js"), { fnNames: ["add2"] });
     expect(r.derived.map((d) => d.fn)).toEqual(["add2"]);
   });
+
+  it("module-graph missing dep is fail-closed: graphError, no empty-import derivation (BUG-017/I3)", () => {
+    writeFileSync(join(dir, "std.nudo.js"), STD);
+    // 入口 import 指向不存在的依赖 → evalAbsModuleGraph 记 missing issue
+    writeFileSync(
+      join(dir, "lib.js"),
+      `import { add2 } from "./missing-dep.js";
+export function add4(x) { return add2(x + 1) + 1; }
+`,
+    );
+    writeFileSync(join(dir, "lib.nudo.js"), LIB_NUDO);
+    const r = deriveFromRoot(join(dir, "lib.js"), { fnNames: ["add2"] });
+    expect(r.hasRoot).toBe(true);
+    expect(r.roots).toEqual(["add4"]);
+    expect(r.graphError).toContain("failed to resolve dependencies");
+    expect(r.derived).toEqual([]);
+  });
+
+  it("module-graph throw is fail-closed: graphError, not silent modules={} (BUG-017/I3)", () => {
+    writeFixture();
+    const r = deriveFromRoot(join(dir, "lib.js"), {
+      fnNames: ["add2"],
+      loadModule: (spec, from) => {
+        if (spec.includes("add.js")) throw new Error("injected loader boom");
+        return defaultLoadModule(spec, from);
+      },
+    });
+    expect(r.hasRoot).toBe(true);
+    expect(r.graphError).toContain("injected loader boom");
+    expect(r.derived).toEqual([]);
+  });
+
+  it("emitDerivedFromRoot surfaces graphError and writes nothing (BUG-017/I3)", () => {
+    writeFileSync(join(dir, "std.nudo.js"), STD);
+    writeFileSync(
+      join(dir, "lib.js"),
+      `import { add2 } from "./missing-dep.js";
+export function add4(x) { return add2(x + 1) + 1; }
+`,
+    );
+    writeFileSync(join(dir, "lib.nudo.js"), LIB_NUDO);
+    const r = emitDerivedFromRoot(join(dir, "lib.js"), {
+      fnNames: ["add2"],
+      mode: "update",
+    });
+    expect(r.hasRoot).toBe(true);
+    expect(r.sidecars).toEqual([]);
+    expect(r.issues?.some((i) => i.severity === "error" && i.message.includes("failed to resolve"))).toBe(true);
+    expect(existsSync(join(dir, "add.nudo.js"))).toBe(false);
+  });
 });
 
 describe("emitDerivedFromRoot", () => {

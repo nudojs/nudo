@@ -27,12 +27,14 @@ import {
 } from "./abs-helpers.ts";
 import { type EnvDefinition, defineEnv as defineEsEnv } from "./es.ts";
 import nodePath from "node:path";
+import { fileURLToPath as nodeFileURLToPath, pathToFileURL as nodePathToFileURL } from "node:url";
 
 export type { EnvDefinition };
 
 function absStr(a: Abs | undefined): string | undefined {
   if (!a) return undefined;
-  const v = litValue(a);
+  const vR = litValue(a);
+  const v = vR.ok ? vR.value : undefined;
   return typeof v === "string" ? v : undefined;
 }
 
@@ -716,13 +718,16 @@ export function defineEnv(): EnvDefinition {
       undefined,
       { params: ["init?"] },
     ),
-    fileURLToPath: envFn([prim.str()], prim.str(), strImpl1Abs((s) => {
+    fileURLToPath: envFn([prim.str()], prim.str(), (args) => {
+      const s = absStr(args[0]);
+      if (s === undefined) return undefined;
       try {
-        return new URL(s).pathname;
+        return strLit(nodeFileURLToPath(s));
       } catch {
-        return s;
+        // 非法 URL 不折（保留 returnType/throws 面），不伪装成成功路径
+        return undefined;
       }
-    })),
+    }),
     pathToFileURL: envFn(
       [prim.str()],
       objAbs({ href: prim.str() }),
@@ -730,8 +735,7 @@ export function defineEnv(): EnvDefinition {
         const p = absStr(args[0]);
         if (p === undefined) return undefined;
         try {
-          const href = `file://${p.startsWith("/") ? "" : "/"}${p}`;
-          return objAbs({ href: strLit(href) });
+          return objAbs({ href: strLit(nodePathToFileURL(p).href) });
         } catch {
           return undefined;
         }

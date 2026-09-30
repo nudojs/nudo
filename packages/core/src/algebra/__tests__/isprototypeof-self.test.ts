@@ -17,7 +17,7 @@ describe("Object.prototype.isPrototypeOf self is false", () => {
       val(`export function f() {
         return Object.prototype.isPrototypeOf(Object.prototype);
       }`),
-    ).toBe(false);
+    ).toEqual({ ok: true, value: false });
   });
 
   it("Object.prototype.isPrototypeOf({}) === true", () => {
@@ -25,6 +25,6 @@ describe("Object.prototype.isPrototypeOf self is false", () => {
       val(`export function f() {
         return Object.prototype.isPrototypeOf({});
       }`),
-    ).toBe(true);
+    ).toEqual({ ok: true, value: true });
   });
 });

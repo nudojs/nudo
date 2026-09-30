@@ -16,7 +16,9 @@ import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { abs, num } from "../abs.ts";
 import { v } from "../term.ts";
-import type { AbsModuleExports } from "../abs-modules.ts";
+import { parseSource } from "../parse-source.ts";
+import { emptyEnv } from "../ast-env.ts";
+import { collectAbsExports, type AbsModuleExports } from "../abs-modules.ts";
 
 const dirs: string[] = [];
 function mktmp(): string {
@@ -45,19 +47,19 @@ describe("evaluator export surface: default forms", () => {
   it("export default function folds and is callable", () => {
     const r = run(`export default function f() { return 1; }`);
     expect(Object.keys(r)).toContain("default");
-    expect(litValue(callTranspiledExportFull(r, "default", []).result)).toBe(1);
+    expect(litValue(callTranspiledExportFull(r, "default", []).result)).toEqual({ ok: true, value: 1 });
   });
 
   it("export default <identifier/literal/arrow> folds", () => {
-    expect(litValue(run(`const a = 5; export default a;`).default as never)).toBe(5);
-    expect(litValue(run(`export default 42;`).default as never)).toBe(42);
+    expect(litValue(run(`const a = 5; export default a;`).default as never)).toEqual({ ok: true, value: 5 });
+    expect(litValue(run(`export default 42;`).default as never)).toEqual({ ok: true, value: 42 });
     const arrow = run(`export default (x) => x + 1;`);
-    expect(litValue(callTranspiledExportFull(arrow, "default", [numLit(5)]).result)).toBe(6);
+    expect(litValue(callTranspiledExportFull(arrow, "default", [numLit(5)]).result)).toEqual({ ok: true, value: 6 });
   });
 
   it("anonymous default function/class get synthesized names", () => {
     const fn = run(`export default function() { return 7; }`);
-    expect(litValue(callTranspiledExportFull(fn, "default", []).result)).toBe(7);
+    expect(litValue(callTranspiledExportFull(fn, "default", []).result)).toEqual({ ok: true, value: 7 });
     const cls = run(`export default class { m() { return 3; } }`);
     expect(Object.keys(cls)).toContain("default");
   });
@@ -72,8 +74,8 @@ describe("evaluator export surface: default forms", () => {
 describe("evaluator export surface: specifiers and re-exports", () => {
   it("bare specifiers collect renamed bindings", () => {
     const r = run(`const a = 1; const b = 2; export { a, b as c };`);
-    expect(litValue(r.a as never)).toBe(1);
-    expect(litValue(r.c as never)).toBe(2);
+    expect(litValue(r.a as never)).toEqual({ ok: true, value: 1 });
+    expect(litValue(r.c as never)).toEqual({ ok: true, value: 2 });
     expect(r.b).toBeUndefined();
   });
 
@@ -96,7 +98,7 @@ describe("evaluator export surface: specifiers and re-exports", () => {
     expect(r.a).toBe(mA.named.a);
     expect(r.b).not.toBe(mA.named.b); // 显式导出压过 star（ESM 语义）
     expect(r.default).toBeUndefined(); // star 不含 default
-    expect(litValue(r.b as never)).toBe(42);
+    expect(litValue(r.b as never)).toEqual({ ok: true, value: 42 });
   });
 
   it("star vs star last wins (collectAbsExports 顺序口径)", () => {
@@ -104,6 +106,23 @@ describe("evaluator export surface: specifiers and re-exports", () => {
     const m2: AbsModuleExports = { named: { k: abs(num().shape, v("z"), undefined, "path") } };
     const r = run(`export * from "./m1.js"; export * from "./m2.js";`, { "./m1.js": m1, "./m2.js": m2 });
     expect(r.k).toBe(m2.named.k);
+  });
+
+  it("explicit re-export wins over later export * (R2B-007)", () => {
+    const mA: AbsModuleExports = { named: { x: abs(num().shape, v("a"), undefined, "exact") } };
+    const mB: AbsModuleExports = { named: { x: abs(num().shape, v("b"), undefined, "exact"), y: abs(num().shape, v("b"), undefined, "exact") } };
+    // explicit re-export 在前、star 在后：x 必须仍是 a.x（不得被 star 覆盖）
+    const r = run(`export { x } from "./a.js"; export * from "./b.js";`, { "./a.js": mA, "./b.js": mB });
+    expect(r.x).toBe(mA.named.x);
+    // star 仍填未显式导出的名
+    expect(r.y).toBe(mB.named.y);
+  });
+
+  it("explicit re-export wins over earlier export * (R2B-007)", () => {
+    const mA: AbsModuleExports = { named: { x: abs(num().shape, v("a"), undefined, "exact") } };
+    const mB: AbsModuleExports = { named: { x: abs(num().shape, v("b"), undefined, "exact") } };
+    const r = run(`export * from "./b.js"; export { x } from "./a.js";`, { "./a.js": mA, "./b.js": mB });
+    expect(r.x).toBe(mA.named.x);
   });
 
   it("export default from re-export specifier", () => {
@@ -119,5 +138,41 @@ describe("evaluator export surface: real ESM consumer unchanged", () => {
   it("specifiers + star remain importable", async () => {
     const mod = await importTranspiled(`const a = 1; export { a as b };`);
     expect((mod as { b?: { shape?: { k: string } } }).b).toBeDefined();
+  });
+});
+
+describe("collectAbsExports: export * vs explicit precedence (R2B-007)", () => {
+  it("explicit re-export wins over later export *", () => {
+    const mA: AbsModuleExports = { named: { x: abs(num().shape, v("a"), undefined, "exact") } };
+    const mB: AbsModuleExports = { named: { x: abs(num().shape, v("b"), undefined, "exact"), y: abs(num().shape, v("b"), undefined, "exact") } };
+    const out = collectAbsExports(
+      parseSource(`export { x } from "./a.js"; export * from "./b.js";`),
+      emptyEnv(),
+      { "./a.js": mA, "./b.js": mB },
+    );
+    expect(out.named.x).toBe(mA.named.x);
+    expect(out.named.y).toBe(mB.named.y);
+  });
+
+  it("explicit re-export wins over earlier export *", () => {
+    const mA: AbsModuleExports = { named: { x: abs(num().shape, v("a"), undefined, "exact") } };
+    const mB: AbsModuleExports = { named: { x: abs(num().shape, v("b"), undefined, "exact") } };
+    const out = collectAbsExports(
+      parseSource(`export * from "./b.js"; export { x } from "./a.js";`),
+      emptyEnv(),
+      { "./a.js": mA, "./b.js": mB },
+    );
+    expect(out.named.x).toBe(mA.named.x);
+  });
+
+  it("local declaration wins over later export *", () => {
+    const mB: AbsModuleExports = { named: { x: abs(num().shape, v("b"), undefined, "exact") } };
+    const out = collectAbsExports(
+      parseSource(`export const x = 42; export * from "./b.js";`),
+      emptyEnv(),
+      { "./b.js": mB },
+    );
+    expect(out.named.x).toBeDefined();
+    expect(out.named.x).not.toBe(mB.named.x);
   });
 });

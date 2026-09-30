@@ -37,6 +37,8 @@ export {
   buildModuleGraph,
   computeDirtySet,
   topoSortDirty,
+  stablePathKey,
+  stablePathKeyGraph,
 } from "./analyzer-module-load.ts";
 
 export {

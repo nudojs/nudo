@@ -29,7 +29,7 @@ describe("collectCallRecords: B exec + test callback expansion", () => {
       const records = collectCallRecords(test, readFileSync(test, "utf-8"));
       const d = records.filter((r) => r.targetExport === "double");
       expect(d.length).toBeGreaterThan(0);
-      expect(d.some((r) => String(litValue(r.resultAbs)) === "42")).toBe(true);
+      expect(d.some((r) => { const lr = litValue(r.resultAbs); return lr.ok && String(lr.value) === "42"; })).toBe(true);
     });
   });
 
@@ -44,7 +44,7 @@ describe("collectCallRecords: B exec + test callback expansion", () => {
       );
       const records = collectCallRecords(test, readFileSync(test, "utf-8"));
       const d = records.filter((r) => r.targetExport === "double");
-      expect(d.some((r) => String(litValue(r.resultAbs)) === "10")).toBe(true);
+      expect(d.some((r) => { const lr = litValue(r.resultAbs); return lr.ok && String(lr.value) === "10"; })).toBe(true);
     });
   });
 
@@ -57,7 +57,8 @@ describe("collectCallRecords: B exec + test callback expansion", () => {
       const records = collectCallRecords(test, readFileSync(test, "utf-8"));
       const d = records.find((r) => r.targetExport === "double");
       expect(d).toBeDefined();
-      expect(String(litValue(d!.resultAbs))).toBe("42");
+      const dlr = litValue(d!.resultAbs);
+      expect(dlr.ok && String(dlr.value)).toBe("42");
     });
   });
 

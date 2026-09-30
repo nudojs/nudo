@@ -124,3 +124,60 @@ function scale(x) {
     expect(ret0).toBeNull();
   });
 });
+
+// R2B-004：G2 作用域下 nested / class method / object method hover 不再 null
+describe("getHoverAtPosition G2 scope (nested / class / object method)", () => {
+  it("hover on class method name shows intension (Calculator.add)", () => {
+    const source = `export class Calculator {\n  add(a, b) {\n    return a + b;\n  }\n}\n`;
+    // `add` at line 2, col 2
+    const hover = getHoverAtPosition("/t/cls.js", source, 2, 2);
+    expect(hover).not.toBeNull();
+    expect(hover!.intension ?? hover!.typeText).toBeDefined();
+    expect(hover!.intension ?? hover!.typeText).toContain("add");
+  });
+
+  it("hover on nested function name shows intension (inner)", () => {
+    const source = `export function outer() {\n  function inner(x) {\n    return x + 1;\n  }\n  return inner(1);\n}\n`;
+    // `inner` at line 2, col 11
+    const hover = getHoverAtPosition("/t/nested.js", source, 2, 11);
+    expect(hover).not.toBeNull();
+    expect(hover!.intension ?? hover!.typeText).toBeDefined();
+    expect(hover!.intension ?? hover!.typeText).toContain("inner");
+  });
+
+  it("hover on object method name shows intension (api.get)", () => {
+    const source = `export const api = {\n  get(id) {\n    return id;\n  }\n};\n`;
+    // `get` at line 2, col 2
+    const hover = getHoverAtPosition("/t/obj.js", source, 2, 2);
+    expect(hover).not.toBeNull();
+    expect(hover!.intension ?? hover!.typeText).toBeDefined();
+    expect(hover!.intension ?? hover!.typeText).toContain("get");
+  });
+
+  it("hover on nested class method name shows intension (Inner.m)", () => {
+    const source = `export function make() {\n  class Inner {\n    m(n) {\n      return n;\n    }\n  }\n  return new Inner();\n}\n`;
+    // `m` at line 3, col 4
+    const hover = getHoverAtPosition("/t/nested-cls.js", source, 3, 4);
+    expect(hover).not.toBeNull();
+    expect(hover!.intension ?? hover!.typeText).toBeDefined();
+    expect(hover!.intension ?? hover!.typeText).toContain("m");
+  });
+
+  it("hover on class method name with @nudo:case still shows intension", () => {
+    const source = `export class Calculator {\n  // @nudo:case "t" (1, 2)\n  add(a, b) {\n    return a + b;\n  }\n}\n`;
+    // `add` at line 3, col 2
+    const hover = getHoverAtPosition("/t/cls-case.js", source, 3, 2);
+    expect(hover).not.toBeNull();
+    expect(hover!.intension ?? hover!.typeText).toBeDefined();
+    expect(hover!.intension ?? hover!.typeText).toContain("add");
+  });
+
+  it("hover on nested const arrow name shows intension (helper)", () => {
+    const source = `export function outer() {\n  const helper = (n) => n * 2;\n  return helper(1);\n}\n`;
+    // `helper` at line 2, col 8 (const helper)
+    const hover = getHoverAtPosition("/t/nested-arrow.js", source, 2, 8);
+    expect(hover).not.toBeNull();
+    expect(hover!.intension ?? hover!.typeText).toBeDefined();
+    expect(hover!.intension ?? hover!.typeText).toContain("helper");
+  });
+});

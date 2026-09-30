@@ -26,51 +26,31 @@ function val(src: string) {
 
 describe("String.prototype.substring end arg null vs undefined", () => {
   it("null end is ToIntegerOrInfinity 0, not omitted", () => {
-    expect(val(`export function f() { return 'hello'.substring(0, null); }`)).toBe(
-      "",
-    );
+    expect(val(`export function f() { return 'hello'.substring(0, null); }`)).toEqual({ ok: true, value: "", });
     // start=3, end=0 → 规范交换 → substring(0, 3)
-    expect(val(`export function f() { return 'hello'.substring(3, null); }`)).toBe(
-      "hel",
-    );
+    expect(val(`export function f() { return 'hello'.substring(3, null); }`)).toEqual({ ok: true, value: "hel", });
   });
 
   it("undefined / omitted end still means string length", () => {
     expect(
       val(`export function f() { return 'hello'.substring(0, undefined); }`),
-    ).toBe("hello");
-    expect(val(`export function f() { return 'hello'.substring(0); }`)).toBe(
-      "hello",
-    );
-    expect(val(`export function f() { return 'hello'.substring(1, undefined); }`)).toBe(
-      "ello",
-    );
+    ).toEqual({ ok: true, value: "hello" });
+    expect(val(`export function f() { return 'hello'.substring(0); }`)).toEqual({ ok: true, value: "hello", });
+    expect(val(`export function f() { return 'hello'.substring(1, undefined); }`)).toEqual({ ok: true, value: "ello", });
   });
 
   it("null start is 0 (ToIntegerOrInfinity)", () => {
-    expect(val(`export function f() { return 'hello'.substring(null, 3); }`)).toBe(
-      "hel",
-    );
-    expect(val(`export function f() { return 'hello'.substring(null, null); }`)).toBe(
-      "",
-    );
+    expect(val(`export function f() { return 'hello'.substring(null, 3); }`)).toEqual({ ok: true, value: "hel", });
+    expect(val(`export function f() { return 'hello'.substring(null, null); }`)).toEqual({ ok: true, value: "", });
   });
 
   it("false end is 0 (ToNumber false), true end is 1", () => {
-    expect(val(`export function f() { return 'hello'.substring(0, false); }`)).toBe(
-      "",
-    );
-    expect(val(`export function f() { return 'hello'.substring(0, true); }`)).toBe(
-      "h",
-    );
+    expect(val(`export function f() { return 'hello'.substring(0, false); }`)).toEqual({ ok: true, value: "", });
+    expect(val(`export function f() { return 'hello'.substring(0, true); }`)).toEqual({ ok: true, value: "h", });
   });
 
   it("slice already honors null end via native ToIntegerOrInfinity", () => {
-    expect(val(`export function f() { return 'hello'.slice(0, null); }`)).toBe(
-      "",
-    );
-    expect(val(`export function f() { return 'hello'.slice(0, undefined); }`)).toBe(
-      "hello",
-    );
+    expect(val(`export function f() { return 'hello'.slice(0, null); }`)).toEqual({ ok: true, value: "", });
+    expect(val(`export function f() { return 'hello'.slice(0, undefined); }`)).toEqual({ ok: true, value: "hello", });
   });
 });

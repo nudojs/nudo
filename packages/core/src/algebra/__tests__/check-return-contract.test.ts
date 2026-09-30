@@ -317,6 +317,113 @@ function f(flag) {
   });
 });
 
+describe("BUG-002: 裸 prim 契约对非 prim 返回（obj/arr/fn）必须 disproved", () => {
+  it("error: object return ⊭ string()", () => {
+    const r = issuesOf(`
+/**
+ * @nudo:contract return nonEmpty
+ */
+function f() { return { a: 1 }; }
+`);
+    const retIssues = r.issues.filter((i) => i.message.includes("@nudo:contract return"));
+    expect(retIssues.length).toBeGreaterThan(0);
+    expect(retIssues[0]!.severity).toBe("error");
+    expect(retIssues[0]!.code).toBe("nudo:constraint-violated");
+  });
+
+  it("error: array return ⊭ string()", () => {
+    const r = issuesOf(`
+/**
+ * @nudo:contract return nonEmpty
+ */
+function f() { return [1]; }
+`);
+    const retIssues = r.issues.filter((i) => i.message.includes("@nudo:contract return"));
+    expect(retIssues.length).toBeGreaterThan(0);
+    expect(retIssues[0]!.severity).toBe("error");
+    expect(retIssues[0]!.code).toBe("nudo:constraint-violated");
+  });
+
+  it("error: fn return ⊭ string()", () => {
+    const r = issuesOf(`
+/**
+ * @nudo:contract return nonEmpty
+ */
+function f() { return () => {}; }
+`);
+    const retIssues = r.issues.filter((i) => i.message.includes("@nudo:contract return"));
+    expect(retIssues.length).toBeGreaterThan(0);
+    expect(retIssues[0]!.severity).toBe("error");
+    expect(retIssues[0]!.code).toBe("nudo:constraint-violated");
+  });
+
+  it("error: object return ⊭ number()", () => {
+    const r = issuesOf(`
+/**
+ * @nudo:contract return positive
+ */
+function f() { return { a: 1 }; }
+`);
+    // positive = number().gt(0)：prim 门应直接 disproved（非 unprovable warning）
+    const retIssues = r.issues.filter((i) => i.message.includes("@nudo:contract return"));
+    expect(retIssues.length).toBeGreaterThan(0);
+    expect(retIssues[0]!.severity).toBe("error");
+    expect(retIssues[0]!.code).toBe("nudo:constraint-violated");
+  });
+
+  it("error: array return ⊭ number()", () => {
+    const r = issuesOf(`
+/**
+ * @nudo:contract return positive
+ */
+function f() { return [1]; }
+`);
+    const retIssues = r.issues.filter((i) => i.message.includes("@nudo:contract return"));
+    expect(retIssues.length).toBeGreaterThan(0);
+    expect(retIssues[0]!.severity).toBe("error");
+  });
+
+  it("对照：number return ⊭ nonEmpty 仍报 error（双方都有 prim）", () => {
+    const r = issuesOf(`
+/**
+ * @nudo:contract return nonEmpty
+ */
+function f() { return 1; }
+`);
+    const retIssues = r.issues.filter((i) => i.message.includes("@nudo:contract return"));
+    expect(retIssues.length).toBeGreaterThan(0);
+    expect(retIssues[0]!.severity).toBe("error");
+    expect(retIssues[0]!.expected).toContain("string");
+  });
+
+  it("error: shape 字段 object ⊭ string()（字段递归同源）", () => {
+    const r = issuesOf(`
+/**
+ * @nudo:contract return userShape
+ */
+function f() { return { id: 1, name: { a: 1 } }; }
+`);
+    const retIssues = r.issues.filter((i) => i.message.includes("@nudo:contract return"));
+    expect(retIssues.length).toBeGreaterThan(0);
+    expect(retIssues[0]!.severity).toBe("error");
+    expect(retIssues[0]!.expected).toContain("name");
+  });
+
+  it("ok: sum 保持 FP 保护（any 派生并集不误报）", () => {
+    const r = issuesOf(`
+/**
+ * @nudo:contract return nonEmpty
+ */
+function f(x) { return x + 1; }
+`);
+    // x:any → x+1 派生 number|string（any 参与运算符）→ 不得报 error
+    const errs = r.issues.filter(
+      (i) => i.severity === "error" && i.message.includes("@nudo:contract return"),
+    );
+    expect(errs).toEqual([]);
+  });
+});
+
 describe("DEC-001: any/unknown 策略（不得伪装成功）", () => {
   it("warning: any 返回对有界契约报 warning（非 error、非静默）", () => {
     const r = issuesOf(`

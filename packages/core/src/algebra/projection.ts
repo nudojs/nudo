@@ -43,7 +43,7 @@ const ARR_FALLBACK_CONF: ReadonlySet<Confidence> = new Set([
 ]);
 
 type CmpOp = "gt" | "ge" | "lt" | "le";
-type LitVal = number | string | boolean;
+type LitVal = number | string | boolean | bigint;
 
 /** Abs → 契约；不可表达 → undefined */
 export function absToConstraint(a: Abs): NudoConstraint | undefined {
@@ -94,7 +94,7 @@ export function joinThenProject(absList: Abs[]): NudoConstraint | undefined {
       // lit 契约的 eq 字面量值做去重 + 排序（typeof 敏感：1 与 "1" 不合并；
       // number 数值序 < string 字典序 < boolean）——成员序与证据顺序无关，
       // emit 幂等比较稳定
-      const byKey = new Map<string, { v: number | string | boolean; c: NudoConstraint }>();
+      const byKey = new Map<string, { v: LitVal; c: NudoConstraint }>();
       for (const c of litCs as NudoConstraint[]) {
         const eq = c.preds[0]!;
         if (eq.op !== "eq") continue; // 不可达（absLitConstraint 只产 lit 形态）

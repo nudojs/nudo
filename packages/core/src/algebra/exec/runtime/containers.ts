@@ -111,7 +111,8 @@ export function isArrMutator(name: string): boolean {
 /** ToIntegerOrInfinity（±Infinity 保持）；返回：数字=可折叠 / null=实参不可判定 / undefined=缺省或显式 undefined（取默认值） */
 export function toIOI(v: Abs | undefined): number | null | undefined {
   if (v === undefined) return undefined; // 实参缺省（数组越界）
-  const lv = litValue(v);
+  const lvR = litValue(v);
+  const lv = lvR.ok ? lvR.value : undefined;
   if (lv === undefined) {
     // 显式 undefined 字面量 → 按缺省（copyWithin/fill 规范：undefined end 取 len）
     return v.term?.op === "lit" ? undefined : null;
@@ -493,7 +494,9 @@ export function $idx(a: Abs, i: Abs): Abs {
     return a.shape.element;
   }
   if (a.shape.k === "sum") {
-    return a.shape.members.map((m) => $idx(m, i)).reduce((x, y) => joinAbs(x, y));
+    // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce
+    const parts = a.shape.members.map((m) => $idx(m, i));
+    return parts.length ? parts.reduce((x, y) => joinAbs(x, y)) : unknown;
   }
   // C1.3：对象 + key 投影；闭 shape miss / 未知 key 必须并入 undefined
   if (a.shape.k === "obj" || (a.shape.k === "brand" && a.shape.shape.shape.k === "obj")) {
@@ -519,7 +522,8 @@ export function $idx(a: Abs, i: Abs): Abs {
   // 字符串下标：s[i] → 第 i 个字符（字面量精确）。
   // 与元组同口径走 canonicalArrayIndex：s["1"] ≡ s[1]；s["foo"]/s[1.5]/s["01"]
   // 为缺失属性 → undefined（不得 unknown 掩掉）。
-  const sv = litValue(a);
+  const svR = litValue(a);
+  const sv = svR.ok && typeof svR.value === "string" ? svR.value : undefined;
   if (typeof sv === "string") {
     if (i.term?.op !== "lit") return unknown;
     const idx = canonicalArrayIndex(i.term.value);
@@ -659,12 +663,16 @@ export function $len(a: Abs): Abs {
     // 否则 number（成员长度可能不同）
     const lens = a.shape.members.map((m) => $len(m));
     const lits = lens.map(litValue);
-    if (lits.length > 0 && lits.every((v) => v !== undefined && v === lits[0])) {
+    if (
+      lits.length > 0 &&
+      lits.every((v) => v.ok && lits[0]!.ok && Object.is(v.value, lits[0]!.value))
+    ) {
       return lens[0]!;
     }
     return abs({ k: "prim", type: "number" }, undefined, undefined, "path");
   }
-  const sv = litValue(a);
+  const svR = litValue(a);
+  const sv = svR.ok && typeof svR.value === "string" ? svR.value : undefined;
   if (typeof sv === "string") {
     return abs(
       { k: "prim", type: "number" },
@@ -758,9 +766,9 @@ export function $spread(a: Abs, b: Abs): Abs {
 export function $objRest(o: Abs, keys: string[]): Abs {
   o = asAbsVal(o);
   if (o.shape.k === "sum") {
-    return o.shape.members
-      .map((m) => $objRest(m, keys))
-      .reduce((a, b) => joinAbs(a, b));
+    // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce
+    const parts = o.shape.members.map((m) => $objRest(m, keys));
+    return parts.length ? parts.reduce((a, b) => joinAbs(a, b)) : unknown;
   }
   if (!isObj(o)) {
     // any 解构 rest：无约束对象面（open），不是 unknown
@@ -789,7 +797,9 @@ export function $objRest(o: Abs, keys: string[]): Abs {
 export function $arrRest(a: Abs, start: number): Abs {
   a = asAbsVal(a);
   if (a.shape.k === "sum") {
-    return a.shape.members.map((m) => $arrRest(m, start)).reduce((x, y) => joinAbs(x, y));
+    // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce
+    const parts = a.shape.members.map((m) => $arrRest(m, start));
+    return parts.length ? parts.reduce((x, y) => joinAbs(x, y)) : unknown;
   }
   if (a.shape.k === "tuple") {
     return tupleOrWiden(a.shape.elements.slice(start), a.conf);
@@ -804,11 +814,13 @@ export function $concat(a: Abs, b: Abs): Abs {
   a = asAbsVal(a);
   b = asAbsVal(b);
   // 字符串 spread：按 code points 拆（surrogate pair 合并；原生迭代语义）
-  const av = litValue(a);
+  const avR = litValue(a);
+  const av = avR.ok ? avR.value : undefined;
   if (typeof av === "string") {
     return $concat($arr([...av].map((c) => $lit(c))), b);
   }
-  const bv = litValue(b);
+  const bvR = litValue(b);
+  const bv = bvR.ok ? bvR.value : undefined;
   if (typeof bv === "string") {
     return $concat(a, $arr([...bv].map((c) => $lit(c))));
   }
@@ -882,7 +894,12 @@ export function $concat(a: Abs, b: Abs): Abs {
   }
   // 双侧皆非精确容器：元素 join（any → any；空 tuple 不贡献元素）
   const sideEl = (x: Abs, expanded: Abs[] | null): Abs => {
-    if (expanded) return expanded.reduce((u, y) => joinAbs(u, y));
+    // DEC-006：空 Set/Map/match-iter 展开无元素——不得裸 reduce
+    if (expanded) {
+      return expanded.length
+        ? expanded.reduce((u, y) => joinAbs(u, y))
+        : abs({ k: "never" }, undefined, undefined, "exact");
+    }
     if (x?.shape?.k === "any") return anyMemberResult();
     if (x?.shape?.k === "tuple") {
       const els = x.shape.elements;
@@ -908,7 +925,8 @@ export function $elems(a: Abs): Abs[] {
   if (isMapAbs(a)) return mapEntriesAbs(a);
   const mi = matchIterElements(a);
   if (mi) return mi;
-  const sv = litValue(a);
+  const svR = litValue(a);
+  const sv = svR.ok ? svR.value : undefined;
   if (typeof sv === "string") return [...sv].map((c) => $lit(c));
   return [unknown];
 }
@@ -926,8 +944,9 @@ export function $elems(a: Abs): Abs[] {
 export function $forInKeys(o: Abs): Abs {
   const shape = o.shape;
   if (shape.k === "sum") {
+    // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce
     const members = shape.members.map((m) => $forInKeys(m));
-    return members.reduce((a, b) => joinAbs(a, b));
+    return members.length ? members.reduce((a, b) => joinAbs(a, b)) : unknown;
   }
   const isArrayIndexKey = (k: string): boolean => {
     const n = Number(k);
@@ -959,7 +978,8 @@ export function $forInKeys(o: Abs): Abs {
     // 抽象数组：索引域未知，单代表元素迭代（与 $forOf 抽象近似同口径）
     return abs({ k: "arr", element: $lit("0") }, undefined, undefined, "partial");
   }
-  const sv = litValue(o);
+  const svR = litValue(o);
+  const sv = svR.ok && typeof svR.value === "string" ? svR.value : undefined;
   if (typeof sv === "string") {
     return $arr(Array.from({ length: sv.length }, (_, i) => $lit(String(i))));
   }
@@ -992,7 +1012,8 @@ export function $forOf(
 
   const shape = iterable.shape;
   const items = $elems(iterable);
-  const sv = litValue(iterable);
+  const svR = litValue(iterable);
+  const sv = svR.ok ? svR.value : undefined;
   // tuple / 确切 Set·Map 条目数 / 字符串字面量 code points → 有界展开；
   // 抽象 arr 与 maybeAbsent 仍 0..max join
   const knownLen =
@@ -1222,7 +1243,8 @@ export function $get(
   // （与元组同口径 canonicalArrayIndex；length/原型方法继续走下方投影）
   if (o.shape.k === "prim" && o.shape.type === "string") {
     const idx = canonicalArrayIndex(key);
-    const sv = litValue(o);
+    const svR = litValue(o);
+    const sv = svR.ok && typeof svR.value === "string" ? svR.value : undefined;
     if (idx !== undefined) {
       if (typeof sv === "string") return idx < sv.length ? $lit(sv[idx]!) : undef();
       return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
@@ -1280,8 +1302,9 @@ export function $get(
     return undef();
   }
   if (o.shape.k === "sum") {
+    // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce
     const parts = o.shape.members.map((m) => $get(m, key, opts));
-    return parts.reduce((a, b) => joinAbs(a, b));
+    return parts.length ? parts.reduce((a, b) => joinAbs(a, b)) : unknown;
   }
   // prim / tuple / arr / fn / eff 的原型 constructor（上文未命中自有槽）
   if (key === "constructor") {
@@ -1393,7 +1416,8 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
   // 抽象值按 sound 回退：元素与 undefined 取并、长度未知
   if (o.shape.k === "tuple" && key === "length") {
     if (extStateOf(o) === "frozen") throwStrictWrite();
-    const v = litValue(value);
+    const vR = litValue(value);
+    const v = vR.ok ? vR.value : undefined;
     if (typeof v === "number") {
       // 负数/小数/NaN/Infinity/≥2^32：原生 hard RangeError（catch 可吸收）
       if (!Number.isInteger(v) || v < 0 || v > 4294967295) {
@@ -1431,7 +1455,8 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
     return o;
   }
   if (o.shape.k === "arr" && key === "length") {
-    const v = litValue(value);
+    const vR = litValue(value);
+    const v = vR.ok ? vR.value : undefined;
     // 抽象数组也是数组：非法 length 字面量同样原生 RangeError
     if (typeof v === "number" && (!Number.isInteger(v) || v < 0 || v > 4294967295)) {
       throw new NudoThrow(errorTypeAbs("RangeError"));

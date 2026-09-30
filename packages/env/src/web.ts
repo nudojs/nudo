@@ -19,7 +19,8 @@ export type { EnvDefinition };
 
 function absStr(a: Abs | undefined): string | undefined {
   if (!a) return undefined;
-  const v = litValue(a);
+  const vR = litValue(a);
+  const v = vR.ok ? vR.value : undefined;
   return typeof v === "string" ? v : undefined;
 }
 
@@ -158,7 +159,8 @@ export function defineEnv(): EnvDefinition {
   });
 
   const atobImpl: AbsSigImpl = (args) => {
-    const v = args[0] ? litValue(args[0]) : undefined;
+    const vR = args[0] ? litValue(args[0]) : undefined;
+    const v = vR?.ok ? vR.value : undefined;
     if (typeof v !== "string") return undefined;
     try {
       return strLit(atob(v));
@@ -167,7 +169,8 @@ export function defineEnv(): EnvDefinition {
     }
   };
   const btoaImpl: AbsSigImpl = (args) => {
-    const v = args[0] ? litValue(args[0]) : undefined;
+    const vR = args[0] ? litValue(args[0]) : undefined;
+    const v = vR?.ok ? vR.value : undefined;
     if (typeof v !== "string") return undefined;
     try {
       return strLit(btoa(v));

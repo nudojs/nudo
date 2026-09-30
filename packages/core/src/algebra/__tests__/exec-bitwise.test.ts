@@ -46,7 +46,7 @@ describe("evaluator bitwise / shift / exponent / unary-plus", () => {
       "run",
     );
     // 5 & 1 = 1, 5 | 1 = 5, 5 ^ 1 = 4 → 1 + 50 + 400 = 451
-    expect(litValue(run($lit(5), $lit(1)))).toBe(451);
+    expect(litValue(run($lit(5), $lit(1)))).toEqual({ ok: true, value: 451 });
   });
 
   it("~ folds (ToInt32)", async () => {
@@ -54,8 +54,8 @@ describe("evaluator bitwise / shift / exponent / unary-plus", () => {
       `export function run(a) { return ~a; }`,
       "run",
     );
-    expect(litValue(run($lit(5)))).toBe(-6);
-    expect(litValue(run($lit(-6)))).toBe(5);
+    expect(litValue(run($lit(5)))).toEqual({ ok: true, value: -6 });
+    expect(litValue(run($lit(-6)))).toEqual({ ok: true, value: 5 });
   });
 
   it("<< >> >>> fold (ToInt32 lhs, ToUint32&31 rhs)", async () => {
@@ -67,7 +67,7 @@ describe("evaluator bitwise / shift / exponent / unary-plus", () => {
     );
     // -5 << 1 = -10, -5 >> 1 = -3, -5 >>> 1 = 2147483645
     const r = run($lit(-5), $lit(1));
-    expect(litValue(r)).toBe(-10 + -3 * 100 + 2147483645 * 10000);
+    expect(litValue(r)).toEqual({ ok: true, value: -10 + -3 * 100 + 2147483645 * 10000 });
   });
 
   it(">>> of -1 is 2147483647 (uint32 wrap)", async () => {
@@ -75,7 +75,7 @@ describe("evaluator bitwise / shift / exponent / unary-plus", () => {
       `export function run(a) { return a >>> 1; }`,
       "run",
     );
-    expect(litValue(run($lit(-1)))).toBe(2147483647);
+    expect(litValue(run($lit(-1)))).toEqual({ ok: true, value: 2147483647 });
   });
 
   it("** folds with right associativity", async () => {
@@ -84,9 +84,9 @@ describe("evaluator bitwise / shift / exponent / unary-plus", () => {
       "run",
     );
     // 2 ** 3 ** 2 = 2 ** 9 = 512
-    expect(litValue(run($lit(2), $lit(3), $lit(2)))).toBe(512);
+    expect(litValue(run($lit(2), $lit(3), $lit(2)))).toEqual({ ok: true, value: 512 });
     // (-3) ** 2 = 9
-    expect(litValue(run($lit(-3), $lit(2), $lit(1)))).toBe(9);
+    expect(litValue(run($lit(-3), $lit(2), $lit(1)))).toEqual({ ok: true, value: 9 });
   });
 
   it("unary + coerces to number (ToNumber)", async () => {
@@ -94,9 +94,10 @@ describe("evaluator bitwise / shift / exponent / unary-plus", () => {
       `export function run(a, b) { return +(a) + +(b); }`,
       "run",
     );
-    expect(litValue(run($lit("42"), $lit("")))).toBe(42);
-    expect(litValue(run($lit(true), $lit(null)))).toBe(1);
-    expect(Number.isNaN(litValue(run($lit("abc"), $lit(0))))).toBe(true);
+    expect(litValue(run($lit("42"), $lit("")))).toEqual({ ok: true, value: 42 });
+    expect(litValue(run($lit(true), $lit(null)))).toEqual({ ok: true, value: 1 });
+    const nanR = litValue(run($lit("abc"), $lit(0)));
+    expect(nanR.ok && Number.isNaN(nanR.value as number)).toBe(true);
   });
 
   it("abstract operands stay sound number, never exact undefined", async () => {
@@ -106,6 +107,6 @@ describe("evaluator bitwise / shift / exponent / unary-plus", () => {
     );
     const r = run(num(), num());
     expect(formatShape(r)).toBe("number");
-    expect(litValue(r)).toBeUndefined();
+    expect(litValue(r)).toEqual({ ok: false });
   });
 });

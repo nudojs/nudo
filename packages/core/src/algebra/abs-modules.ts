@@ -87,6 +87,9 @@ export function collectAbsExports(
 ): AbsModuleExports {
   const named: Record<string, Abs> = {};
   let defaultExport: Abs | undefined;
+  // ESM：显式导出（decl / specifier / 显式 re-export）恒压过 export *。
+  // star 只填「从未显式导出」的名；star×star 仍按源序后者覆盖（已知偏差）。
+  const explicitNames = new Set<string>();
 
   for (const stmt of file.program.body) {
     if (stmt.type === "ExportNamedDeclaration") {
@@ -99,6 +102,7 @@ export function collectAbsExports(
               const exported =
                 spec.exported.type === "Identifier" ? spec.exported.name : spec.exported.value;
               named[exported] = namespaceAbsOf(mod);
+              explicitNames.add(exported);
               continue;
             }
             if (spec.type !== "ExportSpecifier") continue;
@@ -109,7 +113,10 @@ export function collectAbsExports(
             // 缺名：留 unknown 槽而非 continue 丢槽（消费方 import 还能拿到 unknown）
             const slot = v ?? unknown;
             if (exported === "default") defaultExport = slot;
-            else named[exported] = slot;
+            else {
+              named[exported] = slot;
+              explicitNames.add(exported);
+            }
           }
         }
         continue;
@@ -119,12 +126,15 @@ export function collectAbsExports(
         if (decl.type === "FunctionDeclaration" && decl.id) {
           // 声明即导出名：lookup 缺值也留槽（与「从未导出」可区分）
           named[decl.id.name] = lookupExport(env, decl.id.name) ?? unknown;
+          explicitNames.add(decl.id.name);
         } else if (decl.type === "ClassDeclaration" && decl.id) {
           named[decl.id.name] = lookupExport(env, decl.id.name) ?? unknown;
+          explicitNames.add(decl.id.name);
         } else if (decl.type === "VariableDeclaration") {
           for (const d of decl.declarations) {
             if (d.id.type === "Identifier") {
               named[d.id.name] = lookupExport(env, d.id.name) ?? unknown;
+              explicitNames.add(d.id.name);
             }
           }
         }
@@ -135,6 +145,7 @@ export function collectAbsExports(
           const exported =
             spec.exported.type === "Identifier" ? spec.exported.name : spec.exported.value;
           named[exported] ??= unknown;
+          explicitNames.add(exported);
           continue;
         }
         if (spec.type !== "ExportSpecifier") continue;
@@ -143,14 +154,20 @@ export function collectAbsExports(
           spec.exported.type === "Identifier" ? spec.exported.name : spec.exported.value;
         const v = lookupExport(env, local) ?? unknown;
         if (exported === "default") defaultExport = v;
-        else named[exported] = v;
+        else {
+          named[exported] = v;
+          explicitNames.add(exported);
+        }
       }
     } else if (stmt.type === "ExportAllDeclaration" && stmt.source && modules) {
-      // export * from "mod"：并入 named（不含 default，与 ESM 一致）
+      // export * from "mod"：并入 named（不含 default，与 ESM 一致）；
+      // 不得覆盖显式导出（explicit wins）。star×star 仍按源序后者覆盖。
       // （Babel 8：`export * as ns` 走 ExportNamedDeclaration + ExportNamespaceSpecifier）
       const mod = modules[stmt.source.value];
       if (mod?.named) {
-        for (const [k, v] of Object.entries(mod.named)) named[k] = v;
+        for (const [k, v] of Object.entries(mod.named)) {
+          if (!explicitNames.has(k)) named[k] = v;
+        }
       }
     } else if (stmt.type === "ExportDefaultDeclaration") {
       const d = stmt.declaration;

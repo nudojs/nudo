@@ -34,7 +34,8 @@ import {
 
 export { filterDiagnosticsByLevel, diagnosticsLevelForFile };
 import { checkSource, pTrue, evictGeneralizeMemoForPaths, evictCheckSourceMemoForPaths, extractNudoImports, isNodeModulesPath, sidecarPathOf } from "@nudojs/core";
-import { extractAllLoadSpecs, resolveDepPath, sidecarSpecsOf, stripStringsKeepComments } from "@nudojs/core/internal";
+import { parse, extractDirectives, takeDirectiveDiagsSince, directiveDiagCount } from "@nudojs/parser";
+import { extractAllLoadSpecs, resolveDepPath, sidecarSpecsOf, stablePathKey, stripStringsKeepComments } from "@nudojs/core/internal";
 import { createHash } from "node:crypto";
 
 function sourceFingerprint(s: string): string {
@@ -119,8 +120,9 @@ export const validateGeneration = new Map<string, number>();
  * results for a closed/superseded document are discarded.
  */
 export function bumpValidateGeneration(filePath: string): number {
-  const gen = (validateGeneration.get(filePath) ?? 0) + 1;
-  validateGeneration.set(filePath, gen);
+  const key = cacheKey(filePath);
+  const gen = (validateGeneration.get(key) ?? 0) + 1;
+  validateGeneration.set(key, gen);
   return gen;
 }
 
@@ -172,24 +174,68 @@ function normPath(p: string): string {
   return p.replace(/\\/g, "/");
 }
 
+/**
+ * Canonical key for session path-keyed maps (analysisCache / knownFiles /
+ * nudoDepParents / validateGeneration). Accepts a URI or a file path.
+ *
+ * Unifies Windows drive forms: `file:///c:/x` → `/c:/x` (uriToFilePath) and
+ * `c:\x` / `c:/x` / `C:/x` (fs-resolved) all collapse to `c:/x`. Without the
+ * leading-slash strip, `path.resolve('/c:/x')` stays `\c:\x` even on Windows
+ * and delete/lookup misses the entry written under the URI-derived key.
+ *
+ * Drive-form unification is `stablePathKey`（core 单源）——L0 memo 依赖索引与
+ * 本键必须同形态，否则 Windows 上定向逐出 miss（FIX-RESIDUAL-3）。
+ */
+export function cacheKey(p: string): string {
+  let fp = uriToFilePath(p);
+  const drive = /^\/([A-Za-z]:)(.*)$/.exec(fp);
+  if (drive) fp = `${drive[1]}${drive[2]}`;
+  // Drive-absolute: skip resolvePath (POSIX would treat c:/x as relative).
+  if (/^[A-Za-z]:[\\/]/.test(fp)) return stablePathKey(fp);
+  return stablePathKey(resolvePath(fp));
+}
+
+/**
+ * Re-key a `buildModuleGraph` imports/dependents map through cacheKey. The
+ * graph's edge targets come from `resolveModuleFile` (fs-native form, e.g.
+ * Windows `c:\a.js`) while its `from` nodes come from `knownFiles` (cacheKey
+ * form, `c:/a.js`) — so `computeDirtySet` lookups cross forms and drop edges on
+ * Windows. Normalizing keys and values to cacheKey makes lookups hit (FIX-J1).
+ */
+export function cacheKeyGraph(m: Map<string, Set<string>>): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  for (const [k, vs] of m) {
+    const key = cacheKey(k);
+    let set = out.get(key);
+    if (!set) {
+      set = new Set<string>();
+      out.set(key, set);
+    }
+    for (const v of vs) set.add(cacheKey(v));
+  }
+  return out;
+}
+
 /** 每次 validate 后刷新：parent 的全部 @nudo:import 边 + autoBind 隐式侧车边
  *  （自身侧车 + 每个依赖文件的侧车——跨文件被调按定义文件路径绑定，
  *   依赖侧车变更同样须重检 parent；与 loadModuleDepsFingerprint 同口径） */
 export function registerNudoImportDeps(filePath: string, source: string): void {
-  const parent = normPath(resolvePath(filePath));
+  // accept URI or path — dirname/resolve below need a real path shape
+  const fp = uriToFilePath(filePath);
+  const parent = cacheKey(fp);
   for (const set of nudoDepParents.values()) {
     set.delete(parent);
   }
   const imports = extractNudoImports(source);
   for (const imp of imports) {
     if (!imp.spec.startsWith(".") && !imp.spec.startsWith("/")) continue;
-    const dep = normPath(resolvePath(dirname(filePath), imp.spec));
+    const dep = normPath(resolvePath(dirname(fp), imp.spec));
     addNudoDepParent(dep, parent);
   }
-  registerSidecarClosureFor(parent, parent);
+  registerSidecarClosureFor(normPath(resolvePath(fp)), parent);
   for (const spec of extractAllLoadSpecs(source)) {
     if (!spec.startsWith(".") && !spec.startsWith("/")) continue;
-    const dep = normPath(resolvePath(dirname(filePath), spec));
+    const dep = normPath(resolvePath(dirname(fp), spec));
     // 相对 load-module 本身也是分析依赖：变更必须触发 parent 重检
     // （只登记其侧车不够——实现文件内容进 dep 指纹）
     if (!isNodeModulesPath(dep)) addNudoDepParent(dep, parent);
@@ -198,12 +244,13 @@ export function registerNudoImportDeps(filePath: string, source: string): void {
 }
 
 function addNudoDepParent(dep: string, parent: string): void {
-  let set = nudoDepParents.get(dep);
+  const key = cacheKey(dep);
+  let set = nudoDepParents.get(key);
   if (!set) {
     set = new Set();
-    nudoDepParents.set(dep, set);
+    nudoDepParents.set(key, set);
   }
-  set.add(parent);
+  set.add(cacheKey(parent));
 }
 
 /** 隐式侧车登记的闭包节点上限（防病态侧车图；与 loadModuleDepsFingerprint 同量级） */
@@ -258,7 +305,7 @@ export async function handleNudoDepFileChanged(
   nudoPath: string,
   deps: ValidateTextDeps,
 ): Promise<void> {
-  const p = normPath(resolvePath(nudoPath));
+  const p = cacheKey(nudoPath);
   evictGeneralizeMemoForPaths([p]);
   evictCheckSourceMemoForPaths([p]);
   deps.onProjectConfigChanged?.();
@@ -289,8 +336,10 @@ export async function handleNudoDepFileChanged(
   if (isNudoTargetPath(p)) {
     try {
       const { dependents } = buildModuleGraph([...knownFiles], moduleGraphCache);
-      for (const d of computeDirtySet(dependents, p)) {
-        parentSet.add(normPath(resolvePath(d)));
+      // 边目标是 resolveModuleFile 的 fs 原生形态，与 knownFiles 的 cacheKey 形态
+      // 跨形态查找会漏边（Windows）——统一过 cacheKey 再算脏集（FIX-J1）
+      for (const d of computeDirtySet(cacheKeyGraph(dependents), cacheKey(p))) {
+        parentSet.add(cacheKey(d));
       }
     } catch {
       /* graph rebuild failure → fall back to nudoDepParents only */
@@ -340,11 +389,12 @@ export function clearValidationState(): void {
  * 仅关闭（文件仍在磁盘上）不走这里，关闭文件仍可作为依赖图节点参与脏传播。
  */
 export function forgetValidatedFile(filePath: string): void {
-  const parent = normPath(resolvePath(filePath));
-  knownFiles.delete(filePath);
-  analysisCache.delete(filePath);
+  const key = cacheKey(filePath);
+  knownFiles.delete(key);
+  analysisCache.delete(key);
+  validateGeneration.delete(key);
   for (const set of nudoDepParents.values()) {
-    set.delete(parent);
+    set.delete(key);
   }
 }
 
@@ -358,7 +408,7 @@ export function forgetValidatedFile(filePath: string): void {
  */
 export function evictModuleGraphCacheEntries(uris: string[]): void {
   const paths = uris.map(uriToFilePath);
-  for (const p of paths) moduleGraphCache.delete(p);
+  for (const p of paths) moduleGraphCache.delete(cacheKey(p));
   evictAbsModuleCacheFiles(paths);
 }
 
@@ -389,7 +439,8 @@ export function getCachedOrAnalyze(
   activeCases?: Map<string, number>,
   loadModule?: (spec: string, fromFile: string) => string | undefined,
 ): AnalysisResult {
-  const cached = analysisCache.get(filePath);
+  const key = cacheKey(filePath);
+  const cached = analysisCache.get(key);
   // 版本 + activeCases 指纹同时命中才复用：case 切换不 bump 文档 version，
   // 漏掉 casesHash 会把上一 case 的分析结果/lens 原样吐回（B2）
   const casesHash = casesFingerprint(activeCases);
@@ -409,7 +460,7 @@ export function getCachedOrAnalyze(
   const caseMode =
     activeCases && activeCases.size > 0 ? ("selected" as const) : ("none" as const);
   const result = analyzeFile(filePath, source, activeCases, undefined, loadModule, caseMode);
-  analysisCache.set(filePath, {
+  analysisCache.set(key, {
     version,
     result,
     sourceHash: sourceFingerprint(source),
@@ -567,7 +618,21 @@ export function checkToLspDiagnostics(
       ...(cCfg.ignoreThrows.length > 0 ? { ignoreThrows: cCfg.ignoreThrows } : {}),
       skips: collectSkipReturns(source),
     });
-    return report.issues
+    const issues = [...report.issues];
+    // D1: 指令文法诊断（nudo:directive-syntax）——与 check CLI 同口径：
+    // extractDirectives 产出 + since 锚只排干自身增量（对齐 takeInterfaceDiagsSince）。
+    // 全量 take 会在 await 窗口窃取在途 validate / lens 探测待收的诊断（跨文件错报）。
+    const dirDiagSince = directiveDiagCount();
+    extractDirectives(parse(source));
+    for (const d of takeDirectiveDiagsSince(dirDiagSince)) {
+      issues.push({
+        severity: "warning",
+        code: d.code,
+        message: d.message,
+        suggestion: "Fix the directive syntax (see docs/reference/diagnostics.md)",
+      });
+    }
+    return issues
       .filter((i) => i.severity === "error" || i.severity === "warning")
       .map((i) => {
         const line = (i.line ?? 1) - 1;
@@ -598,8 +663,18 @@ export function checkToLspDiagnostics(
           },
         } satisfies LspDiagnostic;
       });
-  } catch {
-    return [];
+  } catch (err) {
+    // 不得静默 `return []` 把门禁通道整段丢掉（constraint-violated 等会无端消失）——
+    // 失败本身变成一条 Error 诊断，与 push 的 Analysis error 同口径
+    return [
+      {
+        severity: DiagnosticSeverity.Error,
+        range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
+        message: `Check error: ${(err as Error).message}`,
+        source: "nudo-check",
+        code: "nudo:internal",
+      },
+    ];
   }
 }
 
@@ -620,8 +695,9 @@ export async function validateText(
   force = false,
 ): Promise<void> {
   // A8：编辑风暴取消——同文件新一轮 validate 启动后，旧 await 不得发布陈旧诊断
-  const gen = bumpValidateGeneration(filePath);
-  const stillCurrent = (): boolean => validateGeneration.get(filePath) === gen;
+  const key = cacheKey(filePath);
+  const gen = bumpValidateGeneration(key);
+  const stillCurrent = (): boolean => validateGeneration.get(key) === gen;
 
   // 零注解文件 gate 放行例外：磁盘上存在同名侧车（interface 档主场景——
   // emit 后的 generated 段 + drift/domain-exceeds 诊断都以侧车为契约源）。
@@ -646,7 +722,7 @@ export async function validateText(
   const fp = sourceFingerprint(text);
   const cfgHash = projectConfigFingerprint(filePath);
   const depHash = depsFingerprint(filePath, deps.loadModule);
-  const prev = analysisCache.get(filePath);
+  const prev = analysisCache.get(key);
   let result: AnalysisResult;
   if (
     !force &&
@@ -688,7 +764,7 @@ export async function validateText(
   // await 期间有更新一轮 validate → 本轮作废（防抖已合并；不发布陈旧结果）
   if (!stillCurrent()) return;
 
-  analysisCache.set(filePath, {
+  analysisCache.set(key, {
     version,
     result,
     sourceHash: fp,
@@ -696,7 +772,7 @@ export async function validateText(
     depsHash: depHash,
     cfgHash,
   });
-  knownFiles.add(filePath);
+  knownFiles.add(key);
   registerNudoImportDeps(filePath, text);
 
   // Abs check 主通道 + evaluator 诊断（A3：按 analysis.diagnostics 档过滤）
@@ -710,12 +786,17 @@ export async function validateText(
   );
   const evalJs = filterDiagnosticsByLevel(result.diagnostics, level);
   const evalDiags = evalJs.map((d) => toLspDiagnostic(d, uri));
+  // 指令文法诊断可能同时出现在 check 通道（takeDirectiveDiags）与 analyzer
+  // 通道（analyzeFileUncachedInner drain）——按 code+message 去重，避免双报
+  const seenCheck = new Set(checkDiags.map((d) => `${d.code ?? ""}\0${d.message}`));
+  const dedupedEval = evalDiags.filter((d) => !seenCheck.has(`${d.code ?? ""}\0${d.message}`));
   // P2：发布前再确认 generation，避免 check 路径上的 await 竞态覆盖更新 push
   if (!stillCurrent()) return;
-  deps.sendDiagnostics({ uri, diagnostics: [...checkDiags, ...evalDiags] });
+  deps.sendDiagnostics({ uri, diagnostics: [...checkDiags, ...dedupedEval] });
 
   if (!propagate || !deps.getOpenDocumentByPath) return;
 
+  const selfKey = cacheKey(filePath);
   let dependents: Map<string, Set<string>>;
   try {
     // 传入会话级 moduleGraphCache：未变文件仅 stat 比对即复用边集，跳过重读重解析
@@ -723,8 +804,10 @@ export async function validateText(
   } catch {
     return;
   }
-  for (const dirtyPath of computeDirtySet(dependents, filePath)) {
-    if (dirtyPath === filePath) continue;
+  // 边目标（resolveModuleFile fs 原生形态）与 knownFiles（cacheKey 形态）跨形态
+  // 查找会漏边（Windows）——统一过 cacheKey 再算脏集，并用同一 selfKey 跳过自身。
+  for (const dirtyPath of computeDirtySet(cacheKeyGraph(dependents), selfKey)) {
+    if (dirtyPath === selfKey) continue;
     const doc = deps.getOpenDocumentByPath(dirtyPath);
     if (!doc) continue;
     // 依赖内容变了但父文件源码未变：整文件 AnalysisResult / evaluator / fn-cache 键不含 dep 指纹

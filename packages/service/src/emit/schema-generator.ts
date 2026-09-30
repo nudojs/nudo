@@ -19,7 +19,7 @@ export type SchemaRefinement =
   | { kind: "strMax"; n: number };
 
 export type SchemaNode =
-  | { k: "lit"; value: string | number | boolean | null | undefined }
+  | { k: "lit"; value: import("@nudojs/core").LiteralValue }
   | { k: "prim"; type: "number" | "string" | "boolean" | "bigint" | "symbol"; refinements: SchemaRefinement[] }
   | { k: "obj"; slots: Array<{ key: string; node: SchemaNode; optional?: boolean }> }
   | { k: "arr"; element: SchemaNode }
@@ -81,19 +81,26 @@ function isLengthSelf(t: Term | undefined, self?: Term): boolean {
   return false;
 }
 
-function litOf(t: Term | undefined): string | number | boolean | null | undefined {
-  return t && t.op === "lit" ? t.value : undefined;
+type LitOfResult =
+  | { ok: true; value: import("@nudojs/core").LiteralValue }
+  | { ok: false };
+
+/** tagged：把「无字面量」与「字面量 undefined」分开（同 core litValue）。 */
+function litOf(t: Term | undefined): LitOfResult {
+  return t && t.op === "lit" ? { ok: true, value: t.value } : { ok: false };
 }
 
-/** eq 的字面量端（任一侧为 lit 即可）；锚定要求另一侧是 var 或 length(var) 等简单项 */
-function eqLitValue(p: Pred, self?: Term): string | number | boolean | null | undefined | "unanchored" {
+/** eq 的字面量端（任一侧为 lit 即可）；锚定要求另一侧是 self var（与 core anchoredEqLit 同口径）。
+ *  裸 app（length(other)、get(self,"x") 等）不是 self 锚定——length(self) 约束应走 length 路径，
+ *  否则 eq(length(s),5) 会错投影成 z.literal(5)。 */
+function eqLitValue(p: Pred, self?: Term): import("@nudojs/core").LiteralValue | "unanchored" {
   if (p.op !== "eq") return "unanchored";
   const aLit = litOf(p.a);
   const evalLit = litOf(p.b);
-  if (aLit !== undefined && (isSelfVar(p.b, self) || p.b.op === "app")) return aLit;
-  if (evalLit !== undefined && (isSelfVar(p.a, self) || p.a.op === "app")) return evalLit;
+  if (aLit.ok && isSelfVar(p.b, self)) return aLit.value;
+  if (evalLit.ok && isSelfVar(p.a, self)) return evalLit.value;
   // 允许 eq(lit, lit) 不常见形态
-  if (aLit !== undefined && evalLit !== undefined) return aLit === evalLit ? aLit : "unanchored";
+  if (aLit.ok && evalLit.ok) return aLit.value === evalLit.value ? aLit.value : "unanchored";
   return "unanchored";
 }
 
@@ -107,13 +114,14 @@ function isIntModOne(p: Pred, self?: Term): boolean {
     t.args.length === 2 &&
     t.args[1]?.op === "lit" &&
     t.args[1].value === 1 &&
-    (isSelfVar(t.args[0], self) || t.args[0]!.op === "app");
+    isSelfVar(t.args[0], self);
   return (isModOne(p.a) && zero(p.b)) || (isModOne(p.b) && zero(p.a));
 }
 
 function numericBound(p: Pred, self: Term | undefined, allowSelfVar: boolean): { op: "gt" | "ge" | "lt" | "le"; n: number } | "skip" | "drop" {
   if (p.op !== "gt" && p.op !== "ge" && p.op !== "lt" && p.op !== "le") return "drop";
-  const n = litOf(p.b);
+  const nR = litOf(p.b);
+  const n = nR.ok ? nR.value : undefined;
   if (typeof n !== "number") return "drop";
   if (p.a.op === "app" && p.a.fn === "length") return "skip"; // 交给长度路径
   if (allowSelfVar && isSelfVar(p.a, self)) return { op: p.op, n };
@@ -125,7 +133,8 @@ function lengthBound(p: Pred, self?: Term): { dir: "min" | "max"; n: number } | 
   if (p.op !== "gt" && p.op !== "ge" && p.op !== "lt" && p.op !== "le") return undefined;
   if (p.a.op !== "app" || p.a.fn !== "length") return undefined;
   if (!isLengthSelf(p.a.args[0], self)) return undefined;
-  const n = litOf(p.b);
+  const nR = litOf(p.b);
+  const n = nR.ok ? nR.value : undefined;
   if (typeof n !== "number") return undefined;
   if (p.op === "ge") return { dir: "min", n: Math.ceil(n) };
   if (p.op === "gt") return { dir: "min", n: Math.floor(n) + 1 };
@@ -143,11 +152,12 @@ function primOfType(type: string): SchemaNode["k"] extends never ? never : Extra
 function refinementsFromPreds(
   preds: readonly Pred[],
   opts: { kind: "number" | "string" | "boolean" | "other"; self?: Term },
-): { refinements: SchemaRefinement[]; eqLit?: string | number | boolean | null | undefined; dropped: string[] } {
+): { refinements: SchemaRefinement[]; eqLit?: import("@nudojs/core").LiteralValue; dropped: string[] } {
   const refinements: SchemaRefinement[] = [];
   const dropped: string[] = [];
   const self = opts.self;
-  let eqLit: string | number | boolean | null | undefined;
+  let eqLit: import("@nudojs/core").LiteralValue | undefined = undefined;
+  let hasEqLit = false;
   for (const p of preds) {
     if (p.op === "typeof") continue;
     if (p.op === "eq") {
@@ -164,11 +174,12 @@ function refinementsFromPreds(
         dropped.push(`pred not projected (NaN): ${predToString(p)}`);
         continue;
       }
-      if (eqLit !== undefined && eqLit !== v) {
+      if (hasEqLit && !Object.is(eqLit, v)) {
         dropped.push(`conflicting eq preds: ${predToString(p)}`);
         continue;
       }
       eqLit = v;
+      hasEqLit = true;
       continue;
     }
     if (p.op === "gt" || p.op === "ge" || p.op === "lt" || p.op === "le") {
@@ -379,7 +390,14 @@ export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] }
       return { node: { k: "arr", element: sub.node }, dropped };
     }
     case "tuple": {
-      const elements = s.elements.map((e) => {
+      // hole 槽（`in` 为 false）≠ 显式 undefined 槽。zod tuple 无空槽概念，
+      // 映射 z.unknown() 而非 z.undefined()，并把洞记入 dropped（有损投影台账）。
+      const holes = s.holes ?? [];
+      const elements = s.elements.map((e, i) => {
+        if (holes.includes(i)) {
+          dropped.push(`tuple hole at ${i} not projected (slot absent ≠ undefined)`);
+          return { k: "unknown" } as const;
+        }
         const sub = absToSchemaNode(e);
         dropped.push(...sub.dropped);
         return sub.node;

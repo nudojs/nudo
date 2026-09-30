@@ -6,7 +6,7 @@
  * 对 skip 的口径一致：不评估 body、退出 L1/L2 门禁。
  */
 import type { Abs } from "@nudojs/core";
-import { extractDirectives, parse } from "@nudojs/parser";
+import { extractDirectivesQuiet, parse } from "@nudojs/parser";
 
 /**
  * 每个带 `@nudo:skip` 的顶层函数 → 声明的返回 Abs；`null` = 未声明返回类型。
@@ -20,7 +20,8 @@ export function collectSkipReturns(source: string): Map<string, Abs | null> {
   } catch {
     return out;
   }
-  for (const fn of extractDirectives(ast)) {
+  // Quiet extract：纯查询不得把指令文法诊断留在全局 buffer（在途 validate 会误窃）
+  for (const fn of extractDirectivesQuiet(ast)) {
     const skip = fn.directives.find((d) => d.kind === "skip");
     if (skip && skip.kind === "skip") out.set(fn.name, skip.returns ?? null);
   }

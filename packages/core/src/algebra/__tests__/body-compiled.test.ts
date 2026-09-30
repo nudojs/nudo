@@ -24,18 +24,18 @@ function fnOf(src: string, name = "f") {
 describe("body compiled execution ($call, 迁移件 4)", () => {
   it("self-contained arithmetic body compiles and executes", () => {
     const f = fnOf("return x + 1;");
-    expect(litValue($call(f, [numLit(5)]))).toBe(6);
+    expect(litValue($call(f, [numLit(5)]))).toEqual({ ok: true, value: 6 });
   });
 
   it("conditional body (if/fork) executes compiled", () => {
     const f = fnOf("if (x > 0) { return x; } return -x;");
-    expect(litValue($call(f, [numLit(5)]))).toBe(5);
-    expect(litValue($call(f, [numLit(-3)]))).toBe(3);
+    expect(litValue($call(f, [numLit(5)]))).toEqual({ ok: true, value: 5 });
+    expect(litValue($call(f, [numLit(-3)]))).toEqual({ ok: true, value: 3 });
   });
 
   it("loop body executes compiled", () => {
     const f = fnOf("let s = 0; for (let i = 0; i < 3; i++) { s += i; } return s;");
-    expect(litValue($call(f, [numLit(0)]))).toBe(3);
+    expect(litValue($call(f, [numLit(0)]))).toEqual({ ok: true, value: 3 });
   });
 
   it("unresolvable free name compiles and throws ReferenceError (native parity)", () => {
@@ -62,7 +62,7 @@ describe("body compiled execution ($call, 迁移件 4)", () => {
     env.fns.set("fac", { params: ["n"], body: decl.body, async: false });
     const f = absFunction(["n"], { body: decl.body, env });
     const r = $call(f, [numLit(5)]);
-    expect(litValue(r)).toBe(120);
+    expect(litValue(r)).toEqual({ ok: true, value: 120 });
   });
 
   it("apply-hooked impl keeps apply priority", () => {
@@ -70,6 +70,6 @@ describe("body compiled execution ($call, 迁移件 4)", () => {
       apply: () => numLit(42),
       body: parseSource(`function g(x) { return x + 1; }`).program.body[0] as never,
     });
-    expect(litValue($call(f, [numLit(0)]))).toBe(42);
+    expect(litValue($call(f, [numLit(0)]))).toEqual({ ok: true, value: 42 });
   });
 });

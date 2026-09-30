@@ -9,8 +9,9 @@
 
 import { parseSource as parse } from "./parse-source.ts";
 import { stripStringsKeepComments } from "./code-text.ts";
+import { listFnDirectiveScopes, scanCaseTags } from "./directive-scan.ts";
 import type { Abs } from "./abs.ts";
-import { abs, numLit, litValue } from "./abs.ts";
+import { abs, numLit } from "./abs.ts";
 import type { Pred } from "./pred.ts";
 import { predToString } from "./pred.ts";
 import { formatAbs } from "./format.ts";
@@ -215,10 +216,13 @@ export function scanCaseInconsistency(
         }
         arg = projected;
       }
-      const lv = litValue(arg);
+      // litValue 哨兵：lit(undefined)/lit(null) 也是字面量证据，须看 term
+      // 后走完整域隶属（与 domain-membership / scan 同口径）。
+      const argLit = arg.term?.op === "lit" ? arg.term.value : undefined;
+      const argIsLit = arg.term?.op === "lit";
       if (
-        lv === undefined ||
-        (typeof lv !== "number" && typeof lv !== "string" && typeof lv !== "boolean")
+        !argIsLit ||
+        (typeof argLit !== "number" && typeof argLit !== "string" && typeof argLit !== "boolean" && argLit !== null && argLit !== undefined)
       ) {
         continue;
       }
@@ -226,7 +230,7 @@ export function scanCaseInconsistency(
         (entry.constraint.members?.length ?? 0) > 0 ||
         entry.constraint.preds.some((p) => p.op === "eq");
       if (hasEqOr) {
-        if (!literalMeetsConstraint(lv, entry.constraint)) {
+        if (!literalMeetsConstraint(argLit, entry.constraint)) {
           const paramName = entry.param || paramNames[idx] || `arg${idx}`;
           out.push({
             severity: "error",
@@ -241,7 +245,7 @@ export function scanCaseInconsistency(
         }
         continue;
       }
-      if (typeof lv !== "number") continue;
+      if (typeof argLit !== "number") continue;
       const flatten = (p: Pred): Pred[] => (p.op === "and" ? p.args.flatMap(flatten) : p.op === "true" ? [] : [p]);
       for (const p of flatten(entry.pred)) {
         if (
@@ -251,10 +255,10 @@ export function scanCaseInconsistency(
         ) {
           const n = p.b.value;
           let ok = true;
-          if (p.op === "gt") ok = lv > n;
-          if (p.op === "ge") ok = lv >= n;
-          if (p.op === "lt") ok = lv < n;
-          if (p.op === "le") ok = lv <= n;
+          if (p.op === "gt") ok = argLit > n;
+          if (p.op === "ge") ok = argLit >= n;
+          if (p.op === "lt") ok = argLit < n;
+          if (p.op === "le") ok = argLit <= n;
           if (!ok) {
             const paramName = entry.param || paramNames[idx] || `arg${idx}`;
             out.push({
@@ -273,52 +277,19 @@ export function scanCaseInconsistency(
     }
   };
 
-  const visit = (n: unknown): void => {
-    if (!n || typeof n !== "object") return;
-    const obj = n as Record<string, unknown> & {
-      type?: string;
-      leadingComments?: Array<{ value: string; loc?: { start: { line: number } } }>;
-      loc?: { start: { line: number } };
-    };
-    // 顶层函数声明上的 leading comments
-    let decl: Record<string, unknown> | undefined = obj;
-    if (obj.type === "ExportNamedDeclaration" || obj.type === "ExportDefaultDeclaration") {
-      decl = obj.declaration as Record<string, unknown> | undefined;
-    }
-    if (
-      decl &&
-      (decl.type === "FunctionDeclaration" ||
-        (decl.type === "VariableDeclaration" &&
-          ((decl as { declarations?: Array<Record<string, unknown>> }).declarations ?? [])[0]?.init &&
-          ["ArrowFunctionExpression", "FunctionExpression"].includes(
-            String(
-              ((decl as { declarations: Array<Record<string, unknown>> }).declarations[0]!.init as { type?: string })
-                .type,
-            ),
-          )))
-    ) {
-      const id =
-        decl.type === "FunctionDeclaration"
-          ? (decl.id as { name?: string } | undefined)?.name
-          : ((decl as { declarations: Array<{ id?: { name?: string } }> }).declarations[0]?.id as
-              | { name?: string }
-              | undefined)?.name;
-      if (id && knownFns.includes(id)) {
-        for (const c of obj.leadingComments ?? []) {
-          const caseArgs = parseCaseArgs(c.value);
-          if (!caseArgs) continue;
-          const caseName = /@nudo:case\s+"([^"]+)"/.exec(c.value)?.[1] ?? "?";
-          checkCaseAgainstReqs(id, caseName, caseArgs, c.loc?.start.line);
-        }
+  // D6=G2 + D5=F1：case 标签与 parser 同源（directive-scan scope 绑定 + scanCaseTags），
+  // nested function / class method 上的见证同样可见。
+  for (const scope of listFnDirectiveScopes(file)) {
+    if (!knownFns.includes(scope.name)) continue;
+    for (let ci = 0; ci < scope.commentTexts.length; ci++) {
+      const text = scope.commentTexts[ci]!;
+      const startLine = scope.commentStartLines[ci] ?? 0;
+      for (const tag of scanCaseTags(text)) {
+        const caseArgs = parseCaseArgs(`@nudo:case "${tag.name}" (${tag.argsText})`);
+        if (!caseArgs) continue;
+        checkCaseAgainstReqs(scope.name, tag.name, caseArgs, startLine);
       }
     }
-    for (const key of Object.keys(obj)) {
-      if (key === "loc" || key === "start" || key === "end" || key === "leadingComments") continue;
-      const val = obj[key];
-      if (Array.isArray(val)) val.forEach(visit);
-      else if (val && typeof val === "object") visit(val);
-    }
-  };
-  visit(file);
+  }
   return out;
 }

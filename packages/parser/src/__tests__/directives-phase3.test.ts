@@ -39,10 +39,10 @@ describe("@nudo:skip directive", () => {
     }
   });
 
-  it("parses @nudo:skip with return type", () => {
+  it("parses @nudo:skip => number() (explicit arrow form)", () => {
     const fns = getDirectives(`
       /**
-       * @nudo:skip number()
+       * @nudo:skip => number()
        */
       function external() {}
     `);
@@ -54,6 +54,56 @@ describe("@nudo:skip directive", () => {
       if (skip.returns?.shape.k === "prim") {
         expect(skip.returns.shape.type).toBe("number");
       }
+    }
+  });
+
+  it("parses @nudo:skip (number()) (explicit paren form)", () => {
+    const fns = getDirectives(`
+      /**
+       * @nudo:skip (number())
+       */
+      function external() {}
+    `);
+    expect(fns.length).toBe(1);
+    const skip = fns[0].directives.find((d) => d.kind === "skip");
+    expect(skip).toBeDefined();
+    if (skip && skip.kind === "skip") {
+      expect(skip.returns?.shape.k).toBe("prim");
+      if (skip.returns?.shape.k === "prim") {
+        expect(skip.returns.shape.type).toBe("number");
+      }
+    }
+  });
+
+  it("skip prose does not pollute returns (D1=A1 grammar)", () => {
+    const fns = getDirectives(`
+      /**
+       * @nudo:skip this function is flaky
+       */
+      function external() {}
+    `);
+    expect(fns.length).toBe(1);
+    const skip = fns[0].directives.find((d) => d.kind === "skip");
+    expect(skip).toBeDefined();
+    if (skip && skip.kind === "skip") {
+      // 散文不是类型表达式：returns 不得是 unknown #partial
+      expect(skip.returns).toBeUndefined();
+    }
+  });
+
+  it("skip bare type without => or parens is prose, not a type", () => {
+    const fns = getDirectives(`
+      /**
+       * @nudo:skip number()
+       */
+      function external() {}
+    `);
+    expect(fns.length).toBe(1);
+    const skip = fns[0].directives.find((d) => d.kind === "skip");
+    expect(skip).toBeDefined();
+    if (skip && skip.kind === "skip") {
+      // D1=A1：类型须 `=>` 或括号显式形式；裸 number() 是散文
+      expect(skip.returns).toBeUndefined();
     }
   });
 });
@@ -72,6 +122,34 @@ describe("@nudo:sample directive", () => {
     expect(sample).toBeDefined();
     if (sample && sample.kind === "sample") {
       expect(sample.count).toBe(5);
+    }
+  });
+
+  it("parses decimal count without truncation (3.5 stays 3.5)", () => {
+    const fns = getDirectives(`
+      /**
+       * @nudo:sample 3.5
+       */
+      function loop(n) { return n; }
+    `);
+    const sample = fns[0]?.directives.find((d) => d.kind === "sample");
+    expect(sample).toBeDefined();
+    if (sample && sample.kind === "sample") {
+      expect(sample.count).toBe(3.5);
+    }
+  });
+
+  it("parses negative count (-2 is matched, not silently dropped)", () => {
+    const fns = getDirectives(`
+      /**
+       * @nudo:sample -2
+       */
+      function loop(n) { return n; }
+    `);
+    const sample = fns[0]?.directives.find((d) => d.kind === "sample");
+    expect(sample).toBeDefined();
+    if (sample && sample.kind === "sample") {
+      expect(sample.count).toBe(-2);
     }
   });
 });

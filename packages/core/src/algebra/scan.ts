@@ -327,7 +327,8 @@ export function scanLiteralCalls(
         }
         arg = projected;
       }
-      const lv = litValue(arg);
+      const lvR = litValue(arg);
+      const lv = lvR.ok ? lvR.value : undefined;
       const isStr = arg.shape.k === "prim" && (arg.shape as { type: string }).type === "string";
       const strLen = typeof lv === "string" ? lv.length : undefined;
       // 确定 undefined：不进 positive/nonEmpty 等 typed 域（any 仍放行）
@@ -602,7 +603,8 @@ export function scanLiteralCalls(
 
     // int：字面量必须是整数（builder 上 .int 是方法，标志须经 isIntFlag 读）
     if (isIntFlag(constraint)) {
-      const iv = litValue(fieldAbs);
+      const ivR = litValue(fieldAbs);
+      const iv = ivR.ok ? ivR.value : undefined;
       if (typeof iv === "number" && !Number.isInteger(iv)) {
         out.push({
           severity: "error",
@@ -650,7 +652,8 @@ export function scanLiteralCalls(
     }
 
     // 数值界 + 长度界（preds 里可能含 length(t) 比较）
-    const lv = litValue(fieldAbs);
+    const lvR = litValue(fieldAbs);
+    const lv = lvR.ok ? lvR.value : undefined;
     const sv = typeof lv === "string" ? lv.length : undefined;
     const isStr = fieldAbs.shape.k === "prim" && (fieldAbs.shape as { type: string }).type === "string";
     for (const p of constraint.preds) {
@@ -711,13 +714,17 @@ export function scanLiteralCalls(
     }
 
     // eq / union 域（lit()/union() 字段契约）：bounds 分支判不了——域隶属
-    // 判定（domain-membership 语义复用）；仅 eq/union 形态触发，防双报
+    // 判定（domain-membership 语义复用）；仅 eq/union 形态触发，防双报。
+    // litValue 哨兵：lit(undefined)/lit(null) 也是字面量证据，须看 term
+    // 后走完整域隶属（与 leq / domain-membership 同口径）。
+    const fieldLit = fieldAbs.term?.op === "lit" ? fieldAbs.term.value : undefined;
+    const fieldIsLit = fieldAbs.term?.op === "lit";
     if (
-      lv !== undefined &&
-      (typeof lv === "number" || typeof lv === "string" || typeof lv === "boolean") &&
+      fieldIsLit &&
+      (typeof fieldLit === "number" || typeof fieldLit === "string" || typeof fieldLit === "boolean" || fieldLit === null || fieldLit === undefined) &&
       ((constraint.members?.length ?? 0) > 0 ||
         constraint.preds.some((p) => p.op === "eq")) &&
-      !literalMeetsConstraint(lv, constraint)
+      !literalMeetsConstraint(fieldLit, constraint)
     ) {
       out.push({
         severity: "error",
@@ -819,7 +826,8 @@ export function scanLiteralCalls(
       }
       // 顶层 int（builder 上 .int 是方法，标志须经 isIntFlag 读）
       if (isIntFlag(c)) {
-        const iv = litValue(arg);
+        const ivR = litValue(arg);
+        const iv = ivR.ok ? ivR.value : undefined;
         if (typeof iv === "number" && !Number.isInteger(iv)) {
           out.push({
             severity: "error",

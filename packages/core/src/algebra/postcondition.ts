@@ -253,15 +253,21 @@ function assertScalar(
     if (retPrim && retPrim !== constraint.prim) {
       return disproved(`typeof return = "${retPrim}" ⊭ "${constraint.prim}"`);
     }
-    // ret 无 prim（如 nullish 已在上游处理）但契约要求 prim：shape 不匹配
-    if (!retPrim && ret.shape.k !== "sum" && ret.shape.k !== "never") {
-      // 值域已知但无 prim（如 unknown+term）——交给 pred 通道
+    // ret 无 prim 但契约要求 prim：结构性形状（obj/arr/tuple/fn/brand/eff）
+    // 与 prim 域不相交 → 直接 disproved（勿落到 empty-preds proved）。
+    // sum / unknown+term 保持现行为（sum 是 gold FP 保护；unknown+term 走 pred 通道）。
+    if (!retPrim) {
+      const k = ret.shape.k;
+      if (k === "obj" || k === "arr" || k === "tuple" || k === "fn" || k === "brand" || k === "eff") {
+        return disproved(`return shape ${k} ⊭ prim "${constraint.prim}"`);
+      }
     }
   }
 
   // int 位
   if (isIntFlag(constraint) && constraint.prim === "number") {
-    const lv = litValue(ret);
+    const lvR = litValue(ret);
+    const lv = lvR.ok ? lvR.value : undefined;
     if (typeof lv === "number" && !Number.isInteger(lv)) {
       return disproved(`return ${lv} ⊭ int`);
     }
@@ -301,23 +307,22 @@ function assertScalar(
     }
   }
 
-  // 字面量域隶属（与前置 scan.ts 同口径）：eq / length / int / union 字面量集
-  const lv = litValue(ret);
-  if (lv !== undefined && (typeof lv === "number" || typeof lv === "string" || typeof lv === "boolean" || lv === null)) {
-    if (literalMeetsConstraint(lv as number | string | boolean | null, constraint)) {
-      return proved();
+  // 字面量域隶属（与前置 scan.ts 同口径）：eq / length / int / union 字面量集。
+  // litValue 哨兵对 lit(undefined) 折成 undefined，须直接看 term。
+  if (ret.term?.op === "lit") {
+    const lv = ret.term.value;
+    if (typeof lv === "number" || typeof lv === "string" || typeof lv === "boolean" || lv === null || lv === undefined) {
+      if (literalMeetsConstraint(lv, constraint)) {
+        return proved();
+      }
+      // lit(undefined)：契约含 undefined 成员（union 分发后）已在上方 proved；
+      // 走到这里说明域隶属判 false → 按字面量违约收口（与其它字面量同口径）
+      // 字面量确定不满足 → disproved（界类显示运算符，与旧口径对齐）
+      const boundDesc = describeBoundViolation(lv, constraint);
+      return disproved(
+        boundDesc ?? `return ${JSON.stringify(lv)} ⊭ ${formatConstraint(constraint)}`,
+      );
     }
-    // 字面量确定不满足 → disproved（界类显示运算符，与旧口径对齐）
-    const boundDesc = describeBoundViolation(lv, constraint);
-    return disproved(
-      boundDesc ?? `return ${JSON.stringify(lv)} ⊭ ${formatConstraint(constraint)}`,
-    );
-  }
-
-  // lit(undefined)：litValue 哨兵与「无字面量」混同，直接看 term
-  if (ret.term?.op === "lit" && ret.term.value === undefined) {
-    // nullish 已在上游处理；走到这里说明契约含 undefined 成员（union 分发后）
-    return proved();
   }
 
   // 非字面量：pred 蕴含失败但值域已知且有 pred 证据 → 后置证不出 = 违约（fail-closed）
@@ -386,7 +391,8 @@ function primOfAbs(
   a: Abs,
 ): "number" | "string" | "boolean" | "bigint" | "symbol" | undefined {
   if (a.shape.k === "prim") return a.shape.type;
-  const lv = litValue(a);
+  const lvR = litValue(a);
+  const lv = lvR.ok ? lvR.value : undefined;
   if (typeof lv === "number") return "number";
   if (typeof lv === "string") return "string";
   if (typeof lv === "boolean") return "boolean";
@@ -396,7 +402,7 @@ function primOfAbs(
 
 /** 字面量界违约的人类可读描述（`return > 0` / `return 0 ⊭ ≥ 1` 等） */
 function describeBoundViolation(
-  lv: number | string | boolean | null,
+  lv: number | string | boolean | null | undefined,
   constraint: NudoConstraint,
 ): string | undefined {
   const opSym: Record<string, string> = { gt: ">", ge: "≥", lt: "<", le: "≤" };

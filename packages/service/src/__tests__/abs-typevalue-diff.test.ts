@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { analyzeFile } from "../analyzer.ts";
-import { formatShape } from "@nudojs/core";
+import { formatShape, litValue, $call, $lit, undefAbs, type Abs } from "@nudojs/core";
+import { mockDirectivesToAbsSeeds, mockSeedsToAbsMocks } from "../mock-abs.ts";
 
 /**
  * Service 层 Abs ↔ TypeValue 差分门禁。
@@ -82,6 +83,80 @@ describe("Abs vs TypeValue service differential", () => {
     const run = result.functions.find((f) => f.name === "run");
     const call = run!.cases.find((c) => c.source === "callsite");
     expect(formatShape(call!.abs)).toBe("unknown");
+  });
+
+  // R2B-002：litValue 哨兵——withArgs(undefined) 声明 lit(undefined)，
+  // 实参 lit(undefined) 必须命中；旧写法 dv !== undefined 会永远判不中。
+  it("withArgs(undefined) matches call-site undefined (litValue .ok gate)", () => {
+    const source = `
+      // @nudo:mock id = stub().withArgs(undefined).returns("hit")
+      function run() { return id(undefined); }
+      const r = run();
+    `;
+    const result = analyzeFile("/t/withargs-undef-hit.js", source);
+    const run = result.functions.find((f) => f.name === "run");
+    const call = run!.cases.find((c) => c.source === "callsite");
+    expect(formatShape(call!.abs)).toBe('"hit"');
+  });
+
+  it("withArgs(undefined) does not match other literals", () => {
+    const source = `
+      // @nudo:mock id = stub().withArgs(undefined).returns("hit")
+      function run() { return id(1); }
+      const r = run();
+    `;
+    const result = analyzeFile("/t/withargs-undef-miss.js", source);
+    const run = result.functions.find((f) => f.name === "run");
+    const call = run!.cases.find((c) => c.source === "callsite");
+    expect(formatShape(call!.abs)).toBe("unknown");
+  });
+
+  it("withArgs(null|0|false|\"\") still match (not swallowed by the undef fix)", () => {
+    for (const [arg, label] of [
+      ["null", "null"],
+      ["0", "zero"],
+      ["false", "false"],
+      ['""', "empty"],
+    ] as const) {
+      const source = `
+        // @nudo:mock id = stub().withArgs(${arg}).returns("hit")
+        function run() { return id(${arg}); }
+        const r = run();
+      `;
+      const result = analyzeFile(`/t/withargs-${label}.js`, source);
+      const run = result.functions.find((f) => f.name === "run");
+      const call = run!.cases.find((c) => c.source === "callsite");
+      expect(formatShape(call!.abs), `withArgs(${arg})`).toBe('"hit"');
+    }
+  });
+
+  it("dispatch layer: withArgs(undefined) matches undefAbs arg via $call", () => {
+    // 程序化 mock 路径（mock-helpers stub.withArgs）与指令路径共用 absArgMatches
+    const seeds = mockDirectivesToAbsSeeds([
+      {
+        directives: [
+          {
+            kind: "mock",
+            name: "id",
+            nudoMock: {
+              kind: "mock-helper",
+              withArgsCases: [
+                {
+                  args: [undefAbs()],
+                  returnValue: $lit("hit") as Abs,
+                },
+              ],
+            },
+          } as never,
+        ],
+      },
+    ]);
+    const mocks = mockSeedsToAbsMocks(seeds);
+    const r = $call(mocks.id!, [undefAbs()]);
+    expect(litValue(r)).toEqual({ ok: true, value: "hit" });
+    // 未命中：默认 unknown
+    const miss = $call(mocks.id!, [$lit(1)]);
+    expect(litValue(miss)).toEqual({ ok: false });
   });
 
   it("mock onFirstCall without returns is default value", () => {

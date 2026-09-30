@@ -33,26 +33,26 @@ describe("evaluator spread of abstract iterables", () => {
   it("spread of abstract param does not concretize length to 1", () => {
     const r = call(`export function f(x) { return [...x].length; }`, "f", [unknown]);
     expect(isNever(r.result)).toBe(false);
-    expect(litValue(r.result)).toBe(undefined);
+    expect(litValue(r.result)).toEqual({ ok: false });
   });
 
   it("spread of abstract param mixed with literals stays unbounded", () => {
     const r = call(`export function f(x) { return [...x, 1].length; }`, "f", [unknown]);
     expect(isNever(r.result)).toBe(false);
-    expect(litValue(r.result)).toBe(undefined);
+    expect(litValue(r.result)).toEqual({ ok: false });
   });
 });
 
 describe("evaluator spread of Set/Map entries", () => {
   it("Set spread yields every element", () => {
-    expect(litValue(call(`export function f() { return [...new Set([1,2])].length; }`).result)).toBe(2);
-    expect(litValue(call(`export function f() { return [...new Set([1,2])][0]; }`).result)).toBe(1);
+    expect(litValue(call(`export function f() { return [...new Set([1,2])].length; }`).result)).toEqual({ ok: true, value: 2 });
+    expect(litValue(call(`export function f() { return [...new Set([1,2])][0]; }`).result)).toEqual({ ok: true, value: 1 });
   });
 
   it("Map spread yields every entry tuple", () => {
-    expect(litValue(call(`export function f() { return [...new Map([[1,'a'],[2,'b']])].length; }`).result)).toBe(2);
+    expect(litValue(call(`export function f() { return [...new Map([[1,'a'],[2,'b']])].length; }`).result)).toEqual({ ok: true, value: 2 });
     const r = call(`export function f() { const e = [...new Map([[1,'a'],[2,'b']])][0]; return e[0] + ':' + e[1]; }`);
-    expect(litValue(r.result)).toBe("1:a");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "1:a" });
   });
 });
 
@@ -65,19 +65,19 @@ describe("evaluator spread of non-iterables", () => {
 
   it("throw is catchable", () => {
     const r = call(`export function f() { try { [...5]; } catch(e) { return 'caught'; } return 'missed'; }`);
-    expect(litValue(r.result)).toBe("caught");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "caught" });
   });
 });
 
 describe("evaluator spread of concrete containers (regression)", () => {
   it("tuple + tuple", () => {
-    expect(litValue(call(`export function f() { return [...[1], ...[2,3]].length; }`).result)).toBe(3);
+    expect(litValue(call(`export function f() { return [...[1], ...[2,3]].length; }`).result)).toEqual({ ok: true, value: 3 });
   });
   it("plain element after spread", () => {
-    expect(litValue(call(`export function f() { return [...[1,2], 9][2]; }`).result)).toBe(9);
+    expect(litValue(call(`export function f() { return [...[1,2], 9][2]; }`).result)).toEqual({ ok: true, value: 9 });
   });
   it("string spread", () => {
-    expect(litValue(call(`export function f() { return [...'ab', 'c'][1]; }`).result)).toBe("b");
+    expect(litValue(call(`export function f() { return [...'ab', 'c'][1]; }`).result)).toEqual({ ok: true, value: "b" });
   });
   // DEC-006：空 tuple 元素 join 无单位元，$concat 不得裸 reduce 抛
   it("spread of Array.from(...).keys() does not crash $concat on empty tuple", () => {

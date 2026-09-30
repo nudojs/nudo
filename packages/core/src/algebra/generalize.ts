@@ -10,6 +10,7 @@
 
 import { parseSource as babelParse } from "./parse-source.ts";
 import { stripStringsKeepComments } from "./code-text.ts";
+import { listFnDirectiveScopes } from "./directive-scan.ts";
 import type { Node } from "@babel/types";
 import type { Term } from "./term.ts";
 import { v as termVar } from "./term.ts";
@@ -38,7 +39,7 @@ import { formalParamsFromNodes, formalParamDisplayNames, locateContractParam, ty
 import { resetHashSourceCache } from "./hash-source.ts";
 import {
   loadModuleDepsFingerprint,
-  normPath,
+  stablePathKey,
   type LoadDepsFingerprint,
 } from "./load-deps-fp.ts";
 import { snapshotAbs, type RelSource, type HofSite } from "./hof.ts";
@@ -168,12 +169,12 @@ function unindexMemoKey(key: string): void {
 
 /**
  * LSP/宿主：`*.nudo.js` 变更后按路径定向逐出依赖它的 L0 条目。
- * 返回删除的条目数。路径需与 generalize 时 resolveDepPath 形态一致（建议先 norm）。
+ * 返回删除的条目数。查找与索引同走 stablePathKey——跨 Windows 盘符形态命中。
  */
 export function evictGeneralizeMemoForPaths(paths: string[]): number {
   let n = 0;
   for (const raw of paths) {
-    const p = normPath(raw);
+    const p = stablePathKey(raw);
     const keys = memoDepIndex.get(p);
     if (!keys) continue;
     for (const key of [...keys]) {
@@ -252,7 +253,7 @@ function generalizeMemoKey(
     (r?.loadModule && r.fromFile ? sidecarClosureFingerprint(r.fromFile, r) : undefined);
   const scPath =
     sc !== undefined && !sc.startsWith("trunc:") && r?.fromFile
-      ? normPath(sidecarPathOf(r.fromFile))
+      ? sidecarPathOf(r.fromFile)
       : undefined;
   // AST 可用时用 per-function 指纹：改未引用的兄弟函数不 invalidate 本函数
   const srcPart = generalizeSourceKeyPart(source, fnName, opts.file);
@@ -297,8 +298,11 @@ function generalizeMemoSet(
   }
   generalizeMemo.set(key, value);
   if (depPaths.length > 0) {
-    memoKeyDeps.set(key, depPaths);
-    for (const p of depPaths) {
+    // 索引与逐出同走 stablePathKey：deps.paths / scPath 形态由 fromFile 决定，
+    // 混形态会让 evictGeneralizeMemoForPaths 跨形态 miss（FIX-RESIDUAL-3）
+    const normDeps = [...new Set(depPaths.map(stablePathKey))];
+    memoKeyDeps.set(key, normDeps);
+    for (const p of normDeps) {
       let set = memoDepIndex.get(p);
       if (!set) {
         set = new Set();
@@ -615,6 +619,45 @@ export function extractFn(
       env.fns.set(exp, target);
       formalsByName.set(exp, formalsByName.get(localName) ?? []);
     }
+  }
+
+  // G2：nested function / class method / object method——与 listFnDirectiveScopes
+  // 绑定名同口径（裸名 / C.m / owner.key）。顶层已登记的优先；anonymous 不进表；
+  // class/object method 仍只收 method kind（ctor/get/set 不进 fn 表，与旧顶层口径一致）。
+  for (const scope of listFnDirectiveScopes(file)) {
+    if (env.fns.has(scope.name)) continue;
+    if (scope.name === "<anonymous>") continue;
+    const n = scope.node as {
+      type?: string;
+      kind?: string;
+      params?: unknown[];
+      body?: Node;
+      async?: boolean;
+    };
+    const isFnLike =
+      n.type === "FunctionDeclaration" ||
+      n.type === "FunctionExpression" ||
+      n.type === "ArrowFunctionExpression" ||
+      n.type === "ClassMethod" ||
+      n.type === "ClassPrivateMethod" ||
+      n.type === "ObjectMethod";
+    if (!isFnLike || !n.body) continue;
+    if (
+      (n.type === "ClassMethod" ||
+        n.type === "ClassPrivateMethod" ||
+        n.type === "ObjectMethod") &&
+      n.kind &&
+      n.kind !== "method"
+    ) {
+      continue;
+    }
+    const formals = formalParamsFromNodes((n.params ?? []) as never);
+    env.fns.set(scope.name, {
+      params: formalParamDisplayNames(formals),
+      body: n.body,
+      async: n.async === true,
+    });
+    formalsByName.set(scope.name, formals);
   }
 
   const fn = env.fns.get(fnName);

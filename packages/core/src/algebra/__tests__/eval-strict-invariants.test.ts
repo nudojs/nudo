@@ -56,20 +56,20 @@ describe("evaluator strict writes to frozen objects", () => {
   });
 
   it("read after freeze still works", () => {
-    expect(litValue(call(`export function f() { let o={a:1}; Object.freeze(o); return o.a; }`).result)).toBe(1);
+    expect(litValue(call(`export function f() { let o={a:1}; Object.freeze(o); return o.a; }`).result)).toEqual({ ok: true, value: 1 });
   });
 
   it("try/catch absorbs the throw", () => {
     const r = call(`export function f() { let o={a:1}; Object.freeze(o); try { o.a=2; } catch(e) { return 'caught'; } return o.a; }`);
-    expect(litValue(r.result)).toBe("caught");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "caught" });
     const r2 = call(`export function f() { let o={a:1}; Object.freeze(o); try { o.a=2; } catch(e) {} return o.a; }`);
-    expect(litValue(r2.result)).toBe(1);
+    expect(litValue(r2.result)).toEqual({ ok: true, value: 1 });
   });
 });
 
 describe("evaluator strict writes to sealed/nonextensible objects", () => {
   it("seal existing-slot write ok", () => {
-    expect(litValue(call(`export function f() { let o={a:1}; Object.seal(o); o.a=2; return o.a; }`).result)).toBe(2);
+    expect(litValue(call(`export function f() { let o={a:1}; Object.seal(o); o.a=2; return o.a; }`).result)).toEqual({ ok: true, value: 2 });
   });
 
   it("seal new-slot write throws", () => {
@@ -84,8 +84,8 @@ describe("evaluator strict writes to sealed/nonextensible objects", () => {
   });
 
   it("preventExtensions existing write and delete ok", () => {
-    expect(litValue(call(`export function f() { let o={a:1}; Object.preventExtensions(o); o.a=2; return o.a; }`).result)).toBe(2);
-    expect(litValue(call(`export function f() { let o={a:1}; Object.preventExtensions(o); return delete o.a; }`).result)).toBe(true);
+    expect(litValue(call(`export function f() { let o={a:1}; Object.preventExtensions(o); o.a=2; return o.a; }`).result)).toEqual({ ok: true, value: 2 });
+    expect(litValue(call(`export function f() { let o={a:1}; Object.preventExtensions(o); return delete o.a; }`).result)).toEqual({ ok: true, value: true });
   });
 });
 

@@ -329,11 +329,30 @@ export function deriveFromRoot(
     return { roots: [], derived: [], hasRoot: false };
   }
 
-  let modules: Record<string, import("@nudojs/core").AbsModuleExports> = {};
+  let modules: Record<string, import("@nudojs/core").AbsModuleExports>;
   try {
-    modules = evalAbsModuleGraph(source, abs, { loadModule }).modules;
-  } catch {
-    modules = {};
+    const graph = evalAbsModuleGraph(source, abs, { loadModule });
+    // 依赖解析失败（缺文件）≠ 软降级：不得带着空/缺 import 表继续推导
+    // （与 mock 管道 BUG-017 fail-closed 同口径）。
+    const missing = graph.issues.filter((i) => i.kind === "missing");
+    if (missing.length > 0) {
+      takeInterfaceDiagsSince(since);
+      return {
+        roots,
+        derived: [],
+        hasRoot: true,
+        graphError: `failed to resolve dependencies: ${missing.map((i) => i.reason).join("; ")}`,
+      };
+    }
+    modules = graph.modules;
+  } catch (e) {
+    takeInterfaceDiagsSince(since);
+    return {
+      roots,
+      derived: [],
+      hasRoot: true,
+      graphError: `failed to resolve dependencies: ${e instanceof Error ? e.message : String(e)}`,
+    };
   }
   const importLocals = importLocalMap(source, abs);
   const wanted =

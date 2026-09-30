@@ -19,13 +19,13 @@ describe("evaluator instanceof sum + @@hasInstance", () => {
     const r = callFork(
       `export function f(x) { const v = x ? 1 : 2; const o = { [Symbol.hasInstance]() { return true; } }; return v instanceof o; }`,
     );
-    expect(litValue(r.result)).toBe(true);
+    expect(litValue(r.result)).toEqual({ ok: true, value: true });
   });
 
   it("sum left hasInstance returning false", () => {
     const r = callFork(
       `export function f(x) { const v = x ? 1 : 2; const o = { [Symbol.hasInstance]() { return false; } }; return v instanceof o; }`,
     );
-    expect(litValue(r.result)).toBe(false);
+    expect(litValue(r.result)).toEqual({ ok: true, value: false });
   });
 });

@@ -45,16 +45,16 @@ function isNever(r: unknown): boolean {
 
 describe("BigInt(x) ToBigInt conversion (K2)", () => {
   it("exact literal conversions", () => {
-    expect(litValue(call(`export function f() { return BigInt(5); }`).result)).toBe(5n);
-    expect(litValue(call(`export function f() { return BigInt("10"); }`).result)).toBe(10n);
-    expect(litValue(call(`export function f() { return BigInt(5n); }`).result)).toBe(5n);
-    expect(litValue(call(`export function f() { return BigInt('0x10'); }`).result)).toBe(16n);
-    expect(litValue(call(`export function f() { return BigInt('0b101'); }`).result)).toBe(5n);
-    expect(litValue(call(`export function f() { return BigInt(true); }`).result)).toBe(1n);
-    expect(litValue(call(`export function f() { return BigInt(false); }`).result)).toBe(0n);
+    expect(litValue(call(`export function f() { return BigInt(5); }`).result)).toEqual({ ok: true, value: 5n });
+    expect(litValue(call(`export function f() { return BigInt("10"); }`).result)).toEqual({ ok: true, value: 10n });
+    expect(litValue(call(`export function f() { return BigInt(5n); }`).result)).toEqual({ ok: true, value: 5n });
+    expect(litValue(call(`export function f() { return BigInt('0x10'); }`).result)).toEqual({ ok: true, value: 16n });
+    expect(litValue(call(`export function f() { return BigInt('0b101'); }`).result)).toEqual({ ok: true, value: 5n });
+    expect(litValue(call(`export function f() { return BigInt(true); }`).result)).toEqual({ ok: true, value: 1n });
+    expect(litValue(call(`export function f() { return BigInt(false); }`).result)).toEqual({ ok: true, value: 0n });
     expect(
       litValue(call(`export function f() { return BigInt('9007199254740993'); }`).result),
-    ).toBe(9007199254740993n);
+    ).toEqual({ ok: true, value: 9007199254740993n });
   });
 
   it("non-integer number → RangeError", () => {
@@ -110,23 +110,21 @@ describe("BigInt(x) ToBigInt conversion (K2)", () => {
 
 describe("Error family without new (K3)", () => {
   it("Error('x').message ≡ new Error('x').message", () => {
-    expect(litValue(call(`export function f() { return Error('x').message; }`).result)).toBe("x");
-    expect(litValue(call(`export function f() { return new Error('x').message; }`).result)).toBe("x");
+    expect(litValue(call(`export function f() { return Error('x').message; }`).result)).toEqual({ ok: true, value: "x" });
+    expect(litValue(call(`export function f() { return new Error('x').message; }`).result)).toEqual({ ok: true, value: "x" });
   });
 
   it("TypeError('x').name ≡ new TypeError('x').name", () => {
-    expect(litValue(call(`export function f() { return TypeError('x').name; }`).result)).toBe(
-      "TypeError",
-    );
+    expect(litValue(call(`export function f() { return TypeError('x').name; }`).result)).toEqual({ ok: true, value: "TypeError", });
   });
 
   it("AggregateError([],'x').message ≡ new AggregateError([],'x').message", () => {
     expect(
       litValue(call(`export function f() { return AggregateError([],'x').message; }`).result),
-    ).toBe("x");
+    ).toEqual({ ok: true, value: "x" });
     expect(
       litValue(call(`export function f() { return AggregateError(['e1'],'x').errors[0]; }`).result),
-    ).toBe("e1");
+    ).toEqual({ ok: true, value: "e1" });
   });
 
   it("no internal fallback on Error-family call-without-new", () => {
@@ -161,24 +159,12 @@ describe("constructors requiring new throw TypeError (no internal)", () => {
 
 describe("BigInt.asIntN / BigInt.asUintN", () => {
   it("exact conversions", () => {
-    expect(litValue(call(`export function f() { return BigInt.asIntN(8, 255n); }`).result)).toBe(
-      -1n,
-    );
-    expect(litValue(call(`export function f() { return BigInt.asIntN(8, 127n); }`).result)).toBe(
-      127n,
-    );
-    expect(litValue(call(`export function f() { return BigInt.asUintN(8, 255n); }`).result)).toBe(
-      255n,
-    );
-    expect(litValue(call(`export function f() { return BigInt.asUintN(8, -1n); }`).result)).toBe(
-      255n,
-    );
-    expect(litValue(call(`export function f() { return BigInt.asIntN(8, 300n); }`).result)).toBe(
-      44n,
-    );
-    expect(litValue(call(`export function f() { return BigInt.asUintN(8, 300n); }`).result)).toBe(
-      44n,
-    );
+    expect(litValue(call(`export function f() { return BigInt.asIntN(8, 255n); }`).result)).toEqual({ ok: true, value: -1n, });
+    expect(litValue(call(`export function f() { return BigInt.asIntN(8, 127n); }`).result)).toEqual({ ok: true, value: 127n, });
+    expect(litValue(call(`export function f() { return BigInt.asUintN(8, 255n); }`).result)).toEqual({ ok: true, value: 255n, });
+    expect(litValue(call(`export function f() { return BigInt.asUintN(8, -1n); }`).result)).toEqual({ ok: true, value: 255n, });
+    expect(litValue(call(`export function f() { return BigInt.asIntN(8, 300n); }`).result)).toEqual({ ok: true, value: 44n, });
+    expect(litValue(call(`export function f() { return BigInt.asUintN(8, 300n); }`).result)).toEqual({ ok: true, value: 44n, });
   });
 
   it("invalid bits → RangeError", () => {
@@ -191,7 +177,7 @@ describe("BigInt.asIntN / BigInt.asUintN", () => {
     const { result: r, fallbacks } = withFallbacks(() =>
       call(`export function f() { const B = BigInt; return B(5); }`),
     );
-    expect(litValue(r.result)).toBe(5n);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 5n });
     expect(fallbacks.filter((f) => f.reason === "internal")).toEqual([]);
   });
 });

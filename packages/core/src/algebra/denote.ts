@@ -6,16 +6,16 @@
  */
 
 import type { Abs, Shape } from "./abs.ts";
-import { litValue } from "./abs.ts";
 import type { Pred } from "./pred.ts";
+import type { LiteralValue } from "./term.ts";
 import { safeMemberAccess } from "./codegen-escape.ts";
 
 /** Abs 上的运行时守卫表达式（JS boolean 布尔串） */
 export function denoteGuard(a: Abs, v: string): string {
-  // 字面量：等值已蕴含 typeof，短路
-  const lv = litValue(a);
-  if (lv !== undefined && (!a.pred || a.pred.op === "true")) {
-    return eqGuard(v, lv);
+  // 字面量：等值已蕴含 typeof，短路。litValue 哨兵对 lit(undefined) 也是
+  // undefined，必须直接看 term（同 format.ts / leq.ts）。
+  if (a.term?.op === "lit" && (!a.pred || a.pred.op === "true")) {
+    return eqGuard(v, a.term.value);
   }
   const shape = denoteShape(a.shape, v);
   const pred = denotePred(a, v);
@@ -64,11 +64,21 @@ function denoteShape(s: Shape, v: string): string {
     case "tuple": {
       const checks = [`Array.isArray(${v})`];
       const minLen = s.elements.length;
+      const holes = new Set(s.holes ?? []);
       checks.push(s.rest ? `${v}.length >= ${minLen}` : `${v}.length === ${minLen}`);
       s.elements.forEach((el, i) => {
+        // hole 槽是下标缺席（`i in v` 为 false），不得检成 `v[i] === undefined`
+        // （后者对显式 undefined 元素同样成立，会把稀疏位抹平）。
+        if (holes.has(i)) {
+          checks.push(`!(${i} in ${v})`);
+          return;
+        }
         const inner = denoteGuard(el, `${v}[${i}]`);
         if (inner !== "true") checks.push(inner);
       });
+      for (const i of holes) {
+        if (i >= minLen) checks.push(`!(${i} in ${v})`);
+      }
       if (s.rest) {
         // rest 槽：长度超出部分统一检查
         const rest = denoteGuard(s.rest, "item");
@@ -100,9 +110,8 @@ function denoteShape(s: Shape, v: string): string {
 function denotePred(a: Abs, v: string): string {
   const p = a.pred;
   if (!p || p.op === "true") {
-    // 无 pred：字面量 term 直接等值
-    const lv = litValue(a);
-    if (lv !== undefined) return eqGuard(v, lv);
+    // 无 pred：字面量 term 直接等值（term 判定，不用 litValue 哨兵）
+    if (a.term?.op === "lit") return eqGuard(v, a.term.value);
     return "true";
   }
   return predAsJs(p, v, a);
@@ -128,21 +137,22 @@ function predAsJs(p: Pred, v: string, a: Abs): string {
     case "le":
     case "eq":
     case "ne": {
-      // 仅支持 term 侧为值本身（var/lit 与 Abs.term 一致）或字面量比较
+      // 仅支持 term 侧为值本身（var/lit 与 Abs.term 一致）或字面量比较。
+      // lit 判定须看 t.op==="lit"：litValue 哨兵对 lit(undefined) 折成 undefined。
       const op = { gt: ">", ge: ">=", lt: "<", le: "<=", eq: "===", ne: "!==" }[p.op];
       const leftIsValue = termIsValue(p.a, a);
-      const rightLit = litOfTerm(p.b);
-      if (leftIsValue && rightLit !== undefined) {
-        return cmpOp(v, op, rightLit);
+      const rightLitTerm = p.b.op === "lit" ? p.b : undefined;
+      if (leftIsValue && rightLitTerm) {
+        return cmpOp(v, op, rightLitTerm.value);
       }
-      const leftLit = litOfTerm(p.a);
+      const leftLitTerm = p.a.op === "lit" ? p.a : undefined;
       const rightIsValue = termIsValue(p.b, a);
-      if (rightIsValue && leftLit !== undefined) {
-        return cmpLitValue(leftLit, op, v);
+      if (rightIsValue && leftLitTerm) {
+        return cmpLitValue(leftLitTerm.value, op, v);
       }
       // 双字面量：可判定
-      if (leftLit !== undefined && rightLit !== undefined) {
-        return `${jsLit(leftLit)} ${op} ${jsLit(rightLit)}`;
+      if (leftLitTerm && rightLitTerm) {
+        return `${jsLit(leftLitTerm.value)} ${op} ${jsLit(rightLitTerm.value)}`;
       }
       return "true";
     }
@@ -151,14 +161,11 @@ function predAsJs(p: Pred, v: string, a: Abs): string {
   }
 }
 
-function litOfTerm(t: import("./term.ts").Term): string | number | boolean | null | undefined {
-  return t.op === "lit" ? t.value : undefined;
-}
-
 /** 字面量 → JS 表达式串。NaN/±Infinity 经 JSON.stringify 会得 "null"，须专处理。 */
-function jsLit(v: number | string | boolean | null | undefined): string {
+function jsLit(v: LiteralValue): string {
   if (v === undefined) return "undefined";
   if (v === null) return "null";
+  if (typeof v === "bigint") return `${v}n`;
   if (typeof v === "number") {
     if (Number.isNaN(v)) return "NaN";
     if (v === Infinity) return "Infinity";
@@ -169,13 +176,13 @@ function jsLit(v: number | string | boolean | null | undefined): string {
 }
 
 /** 等值守卫：NaN 必须走 Number.isNaN（NaN === NaN 为 false），不能 === 比较 */
-function eqGuard(v: string, lv: number | string | boolean | null): string {
+function eqGuard(v: string, lv: LiteralValue): string {
   if (typeof lv === "number" && Number.isNaN(lv)) return `Number.isNaN(${v})`;
   return `${v} === ${jsLit(lv)}`;
 }
 
 /** 比较操作数：NaN 在 ===/!== 上同样不能用 ===，其余交给 jsLit 渲染 */
-function cmpOp(v: string, op: string, lit: number | string | boolean | null): string {
+function cmpOp(v: string, op: string, lit: LiteralValue): string {
   if (typeof lit === "number" && Number.isNaN(lit)) {
     if (op === "===") return `Number.isNaN(${v})`;
     if (op === "!==") return `!Number.isNaN(${v})`;
@@ -184,7 +191,7 @@ function cmpOp(v: string, op: string, lit: number | string | boolean | null): st
 }
 
 /** 反向比较：lit op v（关系算子不对称，须保持字面量在左） */
-function cmpLitValue(lit: number | string | boolean | null, op: string, v: string): string {
+function cmpLitValue(lit: LiteralValue, op: string, v: string): string {
   if (typeof lit === "number" && Number.isNaN(lit)) {
     if (op === "===") return `Number.isNaN(${v})`;
     if (op === "!==") return `!Number.isNaN(${v})`;
@@ -196,8 +203,8 @@ function cmpLitValue(lit: number | string | boolean | null, op: string, v: strin
 function termIsValue(t: import("./term.ts").Term, a: Abs): boolean {
   if (t.op === "var") return true;
   if (t.op === "lit") {
-    const lv = litValue(a);
-    return lv !== undefined && Object.is(lv, t.value);
+    // litValue 哨兵对 lit(undefined) 折成 undefined，须直接看 term + Object.is
+    return a.term?.op === "lit" && Object.is(a.term.value, t.value);
   }
   // app 等复合项：保守不绑到 v
   return false;

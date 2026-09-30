@@ -29,32 +29,32 @@ describe("x === x must not fold true when x may be NaN", () => {
     const r = callTranspiledExportFull(exports, "f", [absNum]);
     // 不健全时会折 true #exact；健全结果不得是 exact true
     const v = litValue(r.result);
-    if (v === true) {
+    if (v.ok && v.value === true) {
       expect(r.result.conf).not.toBe("exact");
     } else {
-      expect(v).toBeUndefined();
+      expect(v.ok ? v.value : undefined).toBeUndefined();
     }
   });
 
   it("NaN literal arg already folds false (control)", () => {
     const r = call(`export function f(x) { return x === x; }`, "f", [numLit(NaN)]);
-    expect(litValue(r.result)).toBe(false);
+    expect(litValue(r.result)).toEqual({ ok: true, value: false });
   });
 
   it("finite literal arg folds true (control)", () => {
     const r = call(`export function f(x) { return x === x; }`, "f", [numLit(1)]);
-    expect(litValue(r.result)).toBe(true);
+    expect(litValue(r.result)).toEqual({ ok: true, value: true });
   });
 
   it("undefined arg folds true (control: undefined === undefined)", () => {
     const r = call(`export function f(x) { return x === x; }`, "f", []);
-    expect(litValue(r.result)).toBe(true);
+    expect(litValue(r.result)).toEqual({ ok: true, value: true });
   });
 
   it("object arg: x === x stays true (reference identity)", () => {
     const src = `export function f() { const o = {}; return o === o; }`;
     const r = call(src, "f", []);
-    expect(litValue(r.result)).toBe(true);
+    expect(litValue(r.result)).toEqual({ ok: true, value: true });
   });
 
   it("x != x must not fold false when x may be NaN", () => {
@@ -63,10 +63,10 @@ describe("x === x must not fold true when x may be NaN", () => {
     const absNum = abs({ k: "prim", type: "number" }, undefined, undefined, "partial");
     const r = callTranspiledExportFull(exports, "f", [absNum]);
     const v = litValue(r.result);
-    if (v === false) {
+    if (v.ok && v.value === false) {
       expect(r.result.conf).not.toBe("exact");
     } else {
-      expect(v).toBeUndefined();
+      expect(v.ok ? v.value : undefined).toBeUndefined();
     }
   });
 });

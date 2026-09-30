@@ -12,6 +12,7 @@ import {
   readFileSync,
   readdirSync,
   renameSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -32,6 +33,8 @@ export type MigrateStatusRow = {
   nudoScripts: string[];
   nudoConfig: boolean;
   retired: boolean;
+  /** 半完成：`migrate-retiring.json` 在而 `migrate-retired.json` 不在（可重跑 recover） */
+  retiring: boolean;
   blockers: string[];
 };
 
@@ -74,8 +77,95 @@ function readJson(path: string): Record<string, unknown> | undefined {
   }
 }
 
+/**
+ * tmp + rename 原子写：避免半截文件。rename 同目录，崩溃时目标要么旧要么新。
+ */
+function writeFileAtomic(path: string, data: string): void {
+  const dir = dirname(path);
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  const tmp = `${path}.tmp-${process.pid}-${Date.now()}`;
+  try {
+    writeFileSync(tmp, data, "utf-8");
+    renameSync(tmp, path);
+  } catch (e) {
+    try {
+      rmSync(tmp, { force: true });
+    } catch {
+      /* best-effort tmp cleanup */
+    }
+    throw e;
+  }
+}
+
 function writeJson(path: string, value: unknown): void {
-  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, "utf-8");
+  writeFileAtomic(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+type FileSnapshot =
+  | { path: string; kind: "missing" }
+  | { path: string; kind: "file"; content: string }
+  /** 目标不是普通文件（目录等）：回滚时不碰它 */
+  | { path: string; kind: "other" };
+
+function snapshotFile(path: string): FileSnapshot {
+  if (!existsSync(path)) return { path, kind: "missing" };
+  try {
+    if (statSync(path).isFile()) {
+      return { path, kind: "file", content: readFileSync(path, "utf-8") };
+    }
+    return { path, kind: "other" };
+  } catch {
+    return { path, kind: "other" };
+  }
+}
+
+function restoreSnapshot(snap: FileSnapshot): void {
+  if (snap.kind === "missing") {
+    if (existsSync(snap.path)) rmSync(snap.path, { force: true });
+    return;
+  }
+  if (snap.kind === "file") writeFileAtomic(snap.path, snap.content);
+}
+
+/**
+ * 提交一组写入（调用方保证顺序：package.json → workflows → marker 最后）。
+ * 任一步失败：只回滚「已成功写入」的文件（writeFileAtomic 失败时目标未动，无需回滚）。
+ * 回滚也失败：留下 `.nudo/migrate-retiring.json`（status 可见，可重跑）。
+ */
+function commitWriteSet(
+  root: string,
+  ops: Array<{ path: string; text: string }>,
+): void {
+  const snaps: FileSnapshot[] = [];
+  try {
+    for (const op of ops) {
+      const snap = snapshotFile(op.path);
+      writeFileAtomic(op.path, op.text);
+      // 仅记录已成功写入的：失败的那次目标未动（tmp+rename），回滚反而可能再炸
+      snaps.push(snap);
+    }
+  } catch (err) {
+    let rollbackFailed = false;
+    for (let i = snaps.length - 1; i >= 0; i--) {
+      try {
+        restoreSnapshot(snaps[i]!);
+      } catch {
+        rollbackFailed = true;
+      }
+    }
+    if (rollbackFailed) {
+      try {
+        writeJson(join(root, ".nudo", "migrate-retiring.json"), {
+          retiringAt: new Date().toISOString(),
+          error: (err as Error).message ?? String(err),
+          note: "partial migrate retire — re-run `nudo migrate retire` to recover",
+        });
+      } catch {
+        /* best-effort: 半完成标记写不上就只抛原错 */
+      }
+    }
+    throw err;
+  }
 }
 
 function listFiles(dir: string, out: string[] = [], depth = 0): string[] {
@@ -442,6 +532,14 @@ function consumeTscArgv(cmd: string, start: number): number {
 }
 
 /**
+ * 单引号 shell 安全引用：内部 `'` 以 `'\''` 闭合再拼。
+ * 禁止「仅空白才加引号」/JSON.stringify——那会让 $()/`/glob 在重写后被展开。
+ */
+function shellQuote(s: string): string {
+  return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
  * 以「命令短语」为单位改写 tsc：前缀白名单 + tsc + argv。
  * 字符串/注释里的 tsc 是文本，不是编译器调用。
  */
@@ -473,10 +571,9 @@ function rewriteTscPhrases(cmd: string): string {
     if (m) {
       const argvStart = i + m[0].length;
       const projectPath = projectPathFromTscArgv(cmd, argvStart);
-      const target = projectPath === "." ? "." : projectPath;
-      // 路径含空格时加引号，避免拆词
-      const quoted = /\s/.test(target) ? JSON.stringify(target) : target;
-      out += (m[0] === "tsc" ? "nudo check " : "npx nudojs check ") + quoted;
+      // 统一单引号包裹（`.` 保持裸写，稳定快照）；路径一律按字面量落盘
+      const target = projectPath === "." ? "." : shellQuote(projectPath);
+      out += (m[0] === "tsc" ? "nudo check " : "npx nudojs check ") + target;
       i = consumeTscArgv(cmd, argvStart);
       continue;
     }
@@ -554,29 +651,54 @@ export function listWorkflowTscLines(from: string): Array<{ file: string; line: 
   return out;
 }
 
-export function rewriteWorkflowsNear(
-  from: string,
-  opts: { dryRun?: boolean } = {},
-): WorkflowRewrite[] {
+/** workflow 改写计划（只读，不写盘）——供 retire 提交阶段按序落盘 */
+export type PlannedWorkflowWrite = {
+  path: string;
+  file: string;
+  text: string;
+  changes: Array<{ from: string; to: string }>;
+};
+
+export function planWorkflowRewrites(from: string): PlannedWorkflowWrite[] {
   const wf = findWorkflowDir(from);
   if (!wf) return [];
-  const out: WorkflowRewrite[] = [];
+  const out: PlannedWorkflowWrite[] = [];
   for (const name of readdirSync(wf)) {
     if (!/\.ya?ml$/i.test(name)) continue;
     const p = join(wf, name);
     const text = readFileSync(p, "utf-8");
     const { text: next, changes } = rewriteWorkflowText(text);
     if (changes.length === 0) continue;
-    if (!opts.dryRun) writeFileSync(p, next, "utf-8");
-    out.push({ file: relative(process.cwd(), p), changes });
+    out.push({ path: p, file: relative(process.cwd(), p), text: next, changes });
   }
   return out;
 }
 
-export function migrateStatus(rootDir: string): MigrateStatusRow[] {
+export function rewriteWorkflowsNear(
+  from: string,
+  opts: { dryRun?: boolean } = {},
+): WorkflowRewrite[] {
+  const planned = planWorkflowRewrites(from);
+  if (!opts.dryRun) {
+    for (const w of planned) writeFileAtomic(w.path, w.text);
+  }
+  return planned.map((w) => ({ file: w.file, changes: w.changes }));
+}
+
+/**
+ * migrate 根解析：已存在目录原样；已存在文件（package.json / 源文件）取所在目录。
+ * 路径不存在必须报错——禁止 silent `dirname` 回退到真实 package 根（误改父目录）。
+ */
+function resolveMigrateRoot(rootDir: string): string {
   const raw = resolve(rootDir);
-  // 允许传 package.json / 源文件：取所在目录
-  const root = existsSync(raw) && statSync(raw).isDirectory() ? raw : dirname(raw);
+  if (!existsSync(raw)) {
+    throw new Error(`not found: ${rootDir}`);
+  }
+  return statSync(raw).isDirectory() ? raw : dirname(raw);
+}
+
+export function migrateStatus(rootDir: string): MigrateStatusRow[] {
+  const root = resolveMigrateRoot(rootDir);
   const roots = packageRoots(root);
   const workflowHits = listWorkflowTscLines(root);
   const rows: MigrateStatusRow[] = [];
@@ -599,8 +721,18 @@ export function migrateStatus(rootDir: string): MigrateStatusRow[] {
       ...((pkg?.dependencies ?? {}) as Record<string, string>),
       ...((pkg?.devDependencies ?? {}) as Record<string, string>),
     };
-    const retired = existsSync(join(r, ".nudo", "migrate-retired.json"));
+    // 占位目录不算 retired——marker 必须是普通文件
+    const markerPath = join(r, ".nudo", "migrate-retired.json");
+    const retired = existsSync(markerPath) && statSync(markerPath).isFile();
+    const retiringPath = join(r, ".nudo", "migrate-retiring.json");
+    const retiring =
+      !retired && existsSync(retiringPath) && statSync(retiringPath).isFile();
     const blockers: string[] = [];
+    if (retiring) {
+      blockers.push(
+        "partial migrate retire (migrate-retiring.json) — re-run nudo migrate retire",
+      );
+    }
     if (tsxFiles > 0) blockers.push(`${tsxFiles} .tsx (JSX migrate is manual/later)`);
     if (tsFiles > 0 && tscScripts.length > 0) blockers.push("tsc still in scripts");
     if (tsFiles > 0 && !nudoScripts.some((s) => /check|test/.test(s))) {
@@ -624,6 +756,7 @@ export function migrateStatus(rootDir: string): MigrateStatusRow[] {
       nudoScripts,
       nudoConfig: pkg?.nudo !== undefined,
       retired,
+      retiring,
       blockers,
     });
   }
@@ -750,6 +883,9 @@ export async function migrateVerify(
   const files: string[] = [];
   for (const p of paths) {
     const abs = resolve(p);
+    if (!existsSync(abs)) {
+      throw new Error(`not found: ${p}`);
+    }
     if (statSync(abs).isDirectory()) {
       for (const f of listFiles(abs)) {
         const e = extname(f).toLowerCase();
@@ -802,8 +938,7 @@ export function migrateRetire(
   rootDir: string,
   opts: { dryRun?: boolean; workflows?: boolean } = {},
 ): RetireResult {
-  const raw = resolve(rootDir);
-  const root = existsSync(raw) && statSync(raw).isDirectory() ? raw : dirname(raw);
+  const root = resolveMigrateRoot(rootDir);
   const pkgPath = join(root, "package.json");
   const pkg = readJson(pkgPath);
   if (!pkg) throw new Error(`no package.json under ${rootDir}`);
@@ -836,8 +971,9 @@ export function migrateRetire(
   }
 
   // A1：CI workflow 里的 tsc 一并退役（默认开；--no-workflows 关）
-  const rewrittenWorkflows =
-    opts.workflows === false ? [] : rewriteWorkflowsNear(root, { dryRun: opts.dryRun === true });
+  // 先只规划不落盘——commit 顺序：package.json → workflows → marker（marker 最后 = 提交点）
+  const plannedWorkflows =
+    opts.workflows === false ? [] : planWorkflowRewrites(root);
 
   const markerDir = join(root, ".nudo");
   const marker = join(markerDir, "migrate-retired.json");
@@ -845,20 +981,27 @@ export function migrateRetire(
     retiredAt: new Date().toISOString(),
     removedDeps,
     rewrittenScripts,
-    rewrittenWorkflows: rewrittenWorkflows.map((w) => w.file),
+    rewrittenWorkflows: plannedWorkflows.map((w) => w.file),
   };
 
   if (!opts.dryRun) {
-    writeJson(pkgPath, pkg);
+    const ops: Array<{ path: string; text: string }> = [
+      { path: pkgPath, text: `${JSON.stringify(pkg, null, 2)}\n` },
+      ...plannedWorkflows.map((w) => ({ path: w.path, text: w.text })),
+      { path: marker, text: `${JSON.stringify(payload, null, 2)}\n` },
+    ];
     mkdirSync(markerDir, { recursive: true });
-    writeJson(marker, payload);
+    commitWriteSet(root, ops);
+    // 提交成功：清掉可能残留的 in-progress 标记
+    const retiring = join(markerDir, "migrate-retiring.json");
+    if (existsSync(retiring)) rmSync(retiring, { force: true });
   }
 
   return {
     root: relative(process.cwd(), root) || ".",
     removedDeps,
     rewrittenScripts,
-    rewrittenWorkflows: rewrittenWorkflows.flatMap((w) =>
+    rewrittenWorkflows: plannedWorkflows.flatMap((w) =>
       w.changes.map((c) => ({ file: w.file, from: c.from, to: c.to })),
     ),
     marker: relative(process.cwd(), marker),
@@ -870,8 +1013,7 @@ export function migrateRetireAll(
   rootDir: string,
   opts: { dryRun?: boolean; workflows?: boolean } = {},
 ): RetireResult[] {
-  const raw = resolve(rootDir);
-  const root = existsSync(raw) && statSync(raw).isDirectory() ? raw : dirname(raw);
+  const root = resolveMigrateRoot(rootDir);
   const roots = packageRoots(root);
   const results: RetireResult[] = [];
   let workflowsDone = false;
@@ -904,7 +1046,9 @@ export function formatStatusTable(rows: MigrateStatusRow[]): string {
   lines.push("migrate status");
   lines.push("");
   for (const r of rows) {
-    lines.push(`  ${r.root}${r.retired ? "  [retired]" : ""}`);
+    lines.push(
+      `  ${r.root}${r.retired ? "  [retired]" : r.retiring ? "  [retiring: partial]" : ""}`,
+    );
     lines.push(
       `    ts files: ${r.tsFiles}  tsx: ${r.tsxFiles}  tsconfig: ${r.tsconfig ? "yes" : "no"}  typescript dep: ${r.typescriptDep ? "yes" : "no"}`,
     );

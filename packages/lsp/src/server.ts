@@ -9,6 +9,7 @@ import {
   type InitializeResult,
   CodeLensRefreshRequest,
   DiagnosticRefreshRequest,
+  DiagnosticSeverity,
 } from "vscode-languageserver/node";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import { readFileSync, existsSync, realpathSync } from "node:fs";
@@ -24,6 +25,7 @@ import {
 import {
   analysisCache,
   knownFiles,
+  cacheKey,
   evictModuleGraphCacheEntries,
   forgetValidatedFile,
   getCachedOrAnalyze,
@@ -101,11 +103,19 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
   const documents = new TextDocuments(TextDocument);
 
   const activeLoadModule = makeBufferAwareLoadModule((filePath: string) => {
-    const doc = documents.all().find((d) => uriToFilePath(d.uri) === filePath);
+    // cacheKey 比较：open doc 的 uri 形态与 buffer 解析出的 fs 路径形态统一（FIX-J1）
+    const doc = documents.all().find((d) => cacheKey(d.uri) === cacheKey(filePath));
     return doc?.getText();
   });
 
   const activeCases = new Map<string, Map<string, number>>();
+
+  /**
+   * Pull 诊断成功面缓存（R2-2-pull-diagnostics-error-clears-all）：
+   * 外层 catch 不得 `items: []` 把瞬时分析失败当「文件干净」——保留上次已发布
+   * 诊断，无上次则标单条 Analysis error（与 push 的 validateText catch 同口径）。
+   */
+  const lastPullItems = new Map<string, ReturnType<typeof toLspDiagnostic>[]>();
 
   function getActiveCasesForUri(uri: string): Map<string, number> {
     const existing = activeCases.get(uri);
@@ -224,12 +234,13 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
     if (timer) clearTimeout(timer);
     debounceTimers.delete(event.document.uri);
     nudoFileCache.delete(event.document.uri);
-    const filePath = uriToFilePath(event.document.uri);
-    analysisCache.delete(filePath);
+    lastPullItems.delete(event.document.uri);
+    const key = cacheKey(event.document.uri);
+    analysisCache.delete(key);
     activeCases.delete(event.document.uri);
     // P2：关闭即 bump validateGeneration——在途 validate 的 stillCurrent 门
     // 失效，陈旧结果不会在文件已关闭后再 publish
-    bumpValidateGeneration(filePath);
+    bumpValidateGeneration(key);
     connection.sendDiagnostics({ uri: event.document.uri, diagnostics: [] });
   });
 
@@ -272,7 +283,7 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
       isNudoUri: (uri) => isNudoFile(uri),
       getActiveCases: (uri) => getActiveCasesForUri(uri),
       getOpenDocumentByPath: (filePath) =>
-        documents.all().find((doc) => uriToFilePath(doc.uri) === filePath),
+        documents.all().find((doc) => cacheKey(doc.uri) === cacheKey(filePath)),
       listOpenDocuments: () => documents.all().map((doc) => ({
         uri: doc.uri,
         version: doc.version,
@@ -357,7 +368,8 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
 
   const agentToolDeps: AgentToolDeps = {
     getOpenText: (filePath) => {
-      const doc = documents.all().find((d) => uriToFilePath(d.uri) === filePath);
+      // cacheKey 比较：与 getOpenDocumentByPath 同口径，跨 uri/路径形态命中（FIX-J1）
+      const doc = documents.all().find((d) => cacheKey(d.uri) === cacheKey(filePath));
       return doc ? { text: doc.getText() } : undefined;
     },
     // E5：与 validate/hover 同一 buffer-aware 侧车装载，未保存 *.nudo.js 对 agent 可见
@@ -490,11 +502,13 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
       const text = document.getText();
       const level = diagnosticsLevelForFile(filePath);
       const items: ReturnType<typeof toLspDiagnostic>[] = [];
+      const seen = new Set<string>();
       // Abs check 通道（与 push checkToLspDiagnostics 同源）
       try {
         const checkDiags = checkToLspDiagnostics(filePath, text, validationDeps().loadModule);
         // P2：与 push（validateText）同一档过滤 helper，避免 pull/push 诊断面不一致
         for (const d of filterCheckLspByLevel(checkDiags, level)) {
+          seen.add(`${d.code ?? ""}\0${d.message}`);
           items.push(d);
         }
       } catch {
@@ -509,11 +523,27 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
       );
       const filtered = filterDiagnosticsByLevel(result.diagnostics, level);
       for (const d of filtered) {
-        items.push(toLspDiagnostic(d, document.uri));
+        const ld = toLspDiagnostic(d, document.uri);
+        // 指令文法诊断双通道（check takeDirectiveDiags / analyzer drain）去重
+        if (seen.has(`${ld.code ?? ""}\0${ld.message}`)) continue;
+        items.push(ld);
       }
+      lastPullItems.set(params.textDocument.uri, items);
       return { kind: "full", items, version: document.version };
-    } catch {
-      return { kind: "full", items: [], version: document?.version };
+    } catch (err) {
+      // 不得 items:[] 把瞬时失败当「文件干净」——保留上次已发布面，或标 Analysis error
+      connection.console.error(
+        `nudo pull diagnostics failed for ${params.textDocument.uri}: ${(err as Error).message}`,
+      );
+      const last = lastPullItems.get(params.textDocument.uri);
+      const errDiag = {
+        severity: DiagnosticSeverity.Error,
+        range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
+        message: `Analysis error: ${(err as Error).message}`,
+        source: "nudo",
+      } as ReturnType<typeof toLspDiagnostic>;
+      const items = last && last.length > 0 ? last : [errDiag];
+      return { kind: "full", items, version: document?.version };
     }
   });
 

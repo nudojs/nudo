@@ -88,20 +88,20 @@ describe("invalid bigint ops throw (no silent unknown)", () => {
           `export function f() { try { 1n + 1; } catch(e) { return 'caught'; } return 'missed'; }`,
         ).result,
       ),
-    ).toBe("caught");
+    ).toEqual({ ok: true, value: "caught" });
   });
 
   it("same-type bigint ops and string concat still fold (regression guard)", () => {
-    expect(litValue(call(`export function f() { return 1n + 1n; }`).result)).toBe(2n);
-    expect(litValue(call(`export function f() { return 2n * 3n; }`).result)).toBe(6n);
-    expect(litValue(call(`export function f() { return 1n | 2n; }`).result)).toBe(3n);
-    expect(litValue(call(`export function f() { return 1n < 2; }`).result)).toBe(true);
-    expect(litValue(call(`export function f() { return 1n == 1; }`).result)).toBe(true);
-    expect(litValue(call(`export function f() { return -1n; }`).result)).toBe(-1n);
-    expect(litValue(call(`export function f() { return ~1n; }`).result)).toBe(-2n);
+    expect(litValue(call(`export function f() { return 1n + 1n; }`).result)).toEqual({ ok: true, value: 2n });
+    expect(litValue(call(`export function f() { return 2n * 3n; }`).result)).toEqual({ ok: true, value: 6n });
+    expect(litValue(call(`export function f() { return 1n | 2n; }`).result)).toEqual({ ok: true, value: 3n });
+    expect(litValue(call(`export function f() { return 1n < 2; }`).result)).toEqual({ ok: true, value: true });
+    expect(litValue(call(`export function f() { return 1n == 1; }`).result)).toEqual({ ok: true, value: true });
+    expect(litValue(call(`export function f() { return -1n; }`).result)).toEqual({ ok: true, value: -1n });
+    expect(litValue(call(`export function f() { return ~1n; }`).result)).toEqual({ ok: true, value: -2n });
     // + 的 string 臂可 ToString(bigint)：不是混型 TypeError
-    expect(litValue(call(`export function f() { return 'a' + 1n; }`).result)).toBe("a1");
-    expect(litValue(call(`export function f() { return 10n + ''; }`).result)).toBe("10");
-    expect(litValue(call(`export function f() { return '' + 10n; }`).result)).toBe("10");
+    expect(litValue(call(`export function f() { return 'a' + 1n; }`).result)).toEqual({ ok: true, value: "a1" });
+    expect(litValue(call(`export function f() { return 10n + ''; }`).result)).toEqual({ ok: true, value: "10" });
+    expect(litValue(call(`export function f() { return '' + 10n; }`).result)).toEqual({ ok: true, value: "10" });
   });
 });

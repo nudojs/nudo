@@ -28,41 +28,35 @@ function val(src: string) {
 
 describe("postfix ++/-- side effects sequence within expressions", () => {
   it("x++ then read x in the same +", () => {
-    expect(val(`export function f() { let x=5; return x++ + x; }`)).toBe(11);
-    expect(val(`export function f() { let x=5; return x++ + ':' + x; }`)).toBe(
-      "5:6",
-    );
-    expect(val(`export function f() { let x=5; return (x++) + x; }`)).toBe(11);
+    expect(val(`export function f() { let x=5; return x++ + x; }`)).toEqual({ ok: true, value: 11 });
+    expect(val(`export function f() { let x=5; return x++ + ':' + x; }`)).toEqual({ ok: true, value: "5:6", });
+    expect(val(`export function f() { let x=5; return (x++) + x; }`)).toEqual({ ok: true, value: 11 });
   });
 
   it("x-- then read x in the same +", () => {
-    expect(val(`export function f() { let x=5; return x-- + x; }`)).toBe(9);
-    expect(val(`export function f() { let x=5; return x-- + ':' + x; }`)).toBe(
-      "5:4",
-    );
+    expect(val(`export function f() { let x=5; return x-- + x; }`)).toEqual({ ok: true, value: 9 });
+    expect(val(`export function f() { let x=5; return x-- + ':' + x; }`)).toEqual({ ok: true, value: "5:4", });
   });
 
   it("chained postfix uses successive values", () => {
-    expect(val(`export function f() { let x=5; return x++ + x++; }`)).toBe(11);
-    expect(val(`export function f() { let x=5; return x-- + x--; }`)).toBe(9);
+    expect(val(`export function f() { let x=5; return x++ + x++; }`)).toEqual({ ok: true, value: 11 });
+    expect(val(`export function f() { let x=5; return x-- + x--; }`)).toEqual({ ok: true, value: 9 });
   });
 
   it("postfix alone still yields the old value and mutates", () => {
-    expect(val(`export function f() { let x=5; return x++; }`)).toBe(5);
-    expect(val(`export function f() { let x=5; x++; return x; }`)).toBe(6);
-    expect(val(`export function f() { let x=5; return x--; }`)).toBe(5);
-    expect(val(`export function f() { let x=5; x--; return x; }`)).toBe(4);
+    expect(val(`export function f() { let x=5; return x++; }`)).toEqual({ ok: true, value: 5 });
+    expect(val(`export function f() { let x=5; x++; return x; }`)).toEqual({ ok: true, value: 6 });
+    expect(val(`export function f() { let x=5; return x--; }`)).toEqual({ ok: true, value: 5 });
+    expect(val(`export function f() { let x=5; x--; return x; }`)).toEqual({ ok: true, value: 4 });
   });
 
   it("prefix remains correct", () => {
-    expect(val(`export function f() { let x=5; return --x + x; }`)).toBe(8);
-    expect(val(`export function f() { let x=5; return ++x + x; }`)).toBe(12);
-    expect(val(`export function f() { let x=5; return ++x; }`)).toBe(6);
+    expect(val(`export function f() { let x=5; return --x + x; }`)).toEqual({ ok: true, value: 8 });
+    expect(val(`export function f() { let x=5; return ++x + x; }`)).toEqual({ ok: true, value: 12 });
+    expect(val(`export function f() { let x=5; return ++x; }`)).toEqual({ ok: true, value: 6 });
   });
 
   it("void postfix keeps sequencing", () => {
-    expect(val(`export function f() { let x=5; return void x++ + ':' + x; }`)).toBe(
-      "undefined:6",
-    );
+    expect(val(`export function f() { let x=5; return void x++ + ':' + x; }`)).toEqual({ ok: true, value: "undefined:6", });
   });
 });

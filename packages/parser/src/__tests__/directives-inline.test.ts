@@ -96,12 +96,16 @@ const x = 1 + 2;
     expect(directives).toHaveLength(0);
   });
 
-  it("ignores block comments", () => {
+  it("accepts block comments for @nudo:as (F-3 #10)", () => {
     const source = `
 /* @nudo:as number() */
 const x = 1;
 `;
     const directives = getFirstStmtDirectives(source);
-    expect(directives).toHaveLength(0);
+    expect(directives).toHaveLength(1);
+    expect(directives[0].kind).toBe("as");
+    if (directives[0].kind === "as") {
+      expect(directives[0].typeAbs.shape.k).toBe("prim");
+    }
   });
 });

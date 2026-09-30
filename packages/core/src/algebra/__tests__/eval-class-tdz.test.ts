@@ -25,7 +25,7 @@ describe("evaluator class declaration TDZ", () => {
     const r = call(
       `export function f() { class A { m() { return "base"; } } class B extends A {} return new B().m(); }`,
     );
-    expect(litValue(r.result)).toBe("base");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "base" });
   });
 
   it("extending a host global ctor does not throw", () => {
@@ -48,6 +48,6 @@ describe("evaluator class declaration TDZ", () => {
         return out;
       }`,
     );
-    expect(litValue(r.result)).toBe("tdz");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "tdz" });
   });
 });

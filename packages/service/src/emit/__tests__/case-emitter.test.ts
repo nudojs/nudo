@@ -82,7 +82,12 @@ function absPrim(type: "number" | "string" | "boolean" | "bigint" | "symbol"): A
 }
 
 function structurallyEqual(a: Abs, b: Abs): boolean {
-  return formatShape(a) === formatShape(b) && Object.is(litValue(a), litValue(b));
+  if (formatShape(a) !== formatShape(b)) return false;
+  const ra = litValue(a);
+  const rb = litValue(b);
+  if (ra.ok !== rb.ok) return false;
+  if (ra.ok && rb.ok) return Object.is(ra.value, rb.value);
+  return true;
 }
 
 function dummyFn(): Abs {
@@ -558,7 +563,7 @@ b2("s");
     const caseDirs = fwd.directives.filter((d): d is CaseDirective => d.kind === "case");
     expect(caseDirs.map((d) => d.name)).toEqual(["call@L1"]);
     expect(caseDirs[0].argsAbs).toHaveLength(2);
-    expect(litValue(caseDirs[0].argsAbs[0]!)).toBe(1);
+    expect(litValue(caseDirs[0].argsAbs[0]!)).toEqual({ ok: true, value: 1 });
     expect(caseDirs[0].argsAbs[1]!.shape.k).toBe("obj");
   });
 });
@@ -587,10 +592,10 @@ function unused(u) {
     const fwd = extractDirectives(parse(result.source)).find((f) => f.name === "add")!;
     const caseDirs = fwd.directives.filter((d): d is CaseDirective => d.kind === "case");
     expect(caseDirs.map((c) => c.name)).toEqual(["call@L4", "call@L5"]);
-    expect(litValue(caseDirs[0].argsAbs[0]!)).toBe(1);
-    expect(litValue(caseDirs[0].argsAbs[1]!)).toBe(2);
-    expect(litValue(caseDirs[1].argsAbs[0]!)).toBe("x");
-    expect(litValue(caseDirs[1].argsAbs[1]!)).toBe("y");
+    expect(litValue(caseDirs[0].argsAbs[0]!)).toEqual({ ok: true, value: 1 });
+    expect(litValue(caseDirs[0].argsAbs[1]!)).toEqual({ ok: true, value: 2 });
+    expect(litValue(caseDirs[1].argsAbs[0]!)).toEqual({ ok: true, value: "x" });
+    expect(litValue(caseDirs[1].argsAbs[1]!)).toEqual({ ok: true, value: "y" });
   });
 
   it("strip(insert(x)) recovers the original source", () => {

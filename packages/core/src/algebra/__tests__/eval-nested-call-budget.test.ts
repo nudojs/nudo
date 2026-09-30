@@ -10,6 +10,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import {
   runTranspiled,
   callTranspiledExportFull,
+  callTranspiledExportApply,
   numLit,
   litValue,
   formatAbs,
@@ -28,14 +29,14 @@ afterEach(() => {
   setAbsTruncationCollector(null);
 });
 
-/** 模拟 abs-modules-graph 导出桥：JS 导出包成 Abs fn，apply 回 callTranspiledExportFull */
+/** 模拟 abs-modules-graph 导出桥：JS 导出包成 Abs fn，apply 走 callTranspiledExportApply（throws 面保留） */
 function bridgeExport(
   run: Record<string, unknown>,
   name: string,
   fingerprint: string,
 ): Abs {
   return absFunction(["n"], {
-    apply: (args: Abs[]) => callTranspiledExportFull(run, name, args).result,
+    apply: callTranspiledExportApply(run, name),
     kind: "eval-export",
     fingerprint,
   });
@@ -81,7 +82,7 @@ describe("BUG-013 nested call budget session", () => {
     });
 
     const r = callTranspiledExportFull(runA, "g", [numLit(7)]);
-    expect(litValue(r.result)).toBe(7);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 7 });
     expect(midState).not.toBeNull();
     expect(midState!.sessionDepth).toBeGreaterThanOrEqual(1);
     expect(midState!.depth).toBeGreaterThanOrEqual(1);
@@ -99,7 +100,7 @@ describe("BUG-013 nested call budget session", () => {
     // 从 0/1 重新数 → 原生栈溢出被吞成 unknown；新代码深度跨桥累计 → 截断。
     let runA: Record<string, unknown> | undefined;
     const fBridge = absFunction(["n"], {
-      apply: (args: Abs[]) => callTranspiledExportFull(runA!, "f", args).result,
+      apply: callTranspiledExportApply(() => runA!, "f"),
       kind: "eval-export",
       fingerprint: "eval:a#f",
     });
@@ -118,8 +119,7 @@ describe("BUG-013 nested call budget session", () => {
           "./b.js": {
             named: {
               g: absFunction(["n"], {
-                apply: (args: Abs[]) =>
-                  callTranspiledExportFull(runB, "g", args).result,
+                apply: callTranspiledExportApply(runB, "g"),
                 kind: "eval-export",
                 fingerprint: "eval:b#g",
               }),
@@ -153,7 +153,7 @@ describe("BUG-013 nested call budget session", () => {
     // 再跑深递归——必须仍能按 MAX_EVAL_CALL_DEPTH 截断。
     const { runA } = setupCrossModule({ src: `export function f(n) { return n; }` });
     const ok = callTranspiledExportFull(runA, "g", [numLit(3)]);
-    expect(litValue(ok.result)).toBe(3);
+    expect(litValue(ok.result)).toEqual({ ok: true, value: 3 });
     expect(getEvalCallBudgetState().depth).toBe(0);
 
     const deep = runTranspiled(
@@ -170,7 +170,7 @@ describe("BUG-013 nested call budget session", () => {
     const src = `export function down(n) { if (n <= 0) { return 0; } return down(n - 1); }`;
     const run = runTranspiled(src, { mode: "analyze" });
     const a = callTranspiledExportFull(run, "down", [numLit(10)]);
-    expect(litValue(a.result)).toBe(0);
+    expect(litValue(a.result)).toEqual({ ok: true, value: 0 });
     expect(getEvalCallBudgetState()).toMatchObject({
       depth: 0,
       activeKeys: 0,
@@ -178,7 +178,7 @@ describe("BUG-013 nested call budget session", () => {
     });
 
     const b = callTranspiledExportFull(run, "down", [numLit(10)]);
-    expect(litValue(b.result)).toBe(0);
+    expect(litValue(b.result)).toEqual({ ok: true, value: 0 });
     expect(getEvalCallBudgetState()).toMatchObject({
       depth: 0,
       activeKeys: 0,

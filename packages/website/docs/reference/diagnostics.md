@@ -299,6 +299,18 @@ A `@nudo:mock` expression could not be parsed as a known pattern (stub/spy/mock 
 
 Context: [Mocking syntax](../concepts/mocking.md#syntax) · [@nudo:mock](../concepts/directives.md#nudo--mock-external-dependencies)
 
+### `nudo:directive-syntax` {#nudo-directive-syntax}
+
+Malformed `@nudo:case` / `@nudo:mock` / `@nudo:as` / `@nudo:skip` directive syntax (bad name, trailing comment, unrecognized type expression). **Warning** — the directive is ignored; fix the form.
+
+Context: [Directive syntax](../concepts/directives.md) · [Skip grammar](../concepts/directives.md#nudo--skip-evaluation)
+
+### `nudo:contract-syntax` {#nudo-contract-syntax}
+
+Malformed `@nudo:contract` segment or `@nudo:import` form (e.g. `x > 0` instead of `x positive`, default import). **Warning** — the segment is ignored; use `<param> <constraintName>` or `return <constraintName>`.
+
+Context: [Contracts](../concepts/directives.md#nudo--constraint-templates) · [Contract gate (L1)](../guides/check.md#l1--explicit-contracts)
+
 ### `nudo:env-harvest-conflict` {#nudo-env-harvest-conflict}
 
 ```text
@@ -326,6 +338,16 @@ Context: [nudo check](../guides/check.md#what-it-checks)
 Case-path may throw (test / clue). L2 elevates **entry** throws.
 
 Context: [L2 — entry throws](../guides/check.md#l2--entry-throws) · [@nudo:throws](../concepts/directives.md#nudothrows--declare-intentional-throws)
+
+### `nudo:internal` {#nudo-internal}
+
+```text
+Check error: <message>
+```
+
+Internal analysis/check failure surfaced as a diagnostic (check gate could not run to completion). **Error** — the check channel must not silently disappear; fix the underlying failure or report the bug.
+
+Context: [nudo check](../guides/check.md#what-it-checks)
 
 ## Module graph
 
@@ -416,6 +438,50 @@ assertions
 **Fix:** correct the witness expectation or the function body.
 
 Context: [Declared assertions](../guides/test.md#declared-assertions) · [@nudo:case](../concepts/directives.md#nudocase--debug-witnesses)
+
+## CLI path resolution
+
+Path errors from CLI target / `--from` resolution — collected in the `--json` envelope's `pathErrors[]` (`{ path, code, message, suggestion? }`), or printed as a one-line reason + `fix:` hint on the human face. Non-empty `pathErrors` ⇒ `ok: false` ⇒ exit `1`. Usage errors before analysis starts — not Abs diagnostics.
+
+### `nudo:path-not-found` {#nudo-path-not-found}
+
+```text
+Not found: /abs/path
+```
+
+The requested path does not exist. **Error** (usage) — check the path; it must be an existing `.js`/`.mjs`/`.ts` file or a directory containing them.
+
+Context: [nudo check](../api/cli-reference.md#nudo-check) · [What it checks](../guides/check.md#what-it-checks)
+
+### `nudo:path-empty-dir` {#nudo-path-empty-dir}
+
+```text
+No nudo files found in directory: /abs/dir
+```
+
+The directory exists but holds no analysis targets. **Error** (usage) — add `.js`/`.mjs`/`.ts` sources (or point at a directory that has them); sidecar/decl/JSX are skipped.
+
+Context: [nudo check](../api/cli-reference.md#nudo-check) · [What it checks](../guides/check.md#what-it-checks)
+
+### `nudo:path-not-target` {#nudo-path-not-target}
+
+```text
+Not an analysis target (need .js/.mjs/.ts, not sidecar/decl/JSX): /abs/file.nudo.js
+```
+
+The file exists but is not an analysis target (`.nudo.js` sidecars, `.d.ts` decls, and `.jsx`/`.tsx` are excluded). **Error** (usage) — pass a `.js`/`.mjs`/`.ts` analysis file.
+
+Context: [nudo check](../api/cli-reference.md#nudo-check) · [What it checks](../guides/check.md#what-it-checks)
+
+### `nudo:path-missing-callsite` {#nudo-path-missing-callsite}
+
+```text
+Callsite file not found: /abs/tests
+```
+
+A `--from` usage-site path does not exist. **Error** (usage) — pass `--from <file-or-dir>` that exists; it supplies `call@` records for generation.
+
+Context: [Usage sites (`--from`)](../guides/test.md#usage-sites---from) · [nudo check](../api/cli-reference.md#nudo-check)
 
 ## Reading `actual ⊭ expected`
 

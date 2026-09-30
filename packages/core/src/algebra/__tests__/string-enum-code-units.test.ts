@@ -41,8 +41,8 @@ describe("string object enumeration uses code units", () => {
   it("Object.keys and Object.values agree on length", () => {
     const k = run(`return Object.keys("😀").length;`);
     const v = run(`return Object.values("😀").length;`);
-    expect(litValue(k)).toBe(2);
-    expect(litValue(v)).toBe(2);
+    expect(litValue(k)).toEqual({ ok: true, value: 2 });
+    expect(litValue(v)).toEqual({ ok: true, value: 2 });
   });
 
   it("BMP string is unchanged (one key per char)", () => {

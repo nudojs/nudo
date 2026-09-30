@@ -16,11 +16,15 @@ import {
   collectEnvModules,
   type CallRecord,
 } from "@nudojs/service";
+import { extractFileEnvNames } from "@nudojs/core";
 import {
   collectExternalRecords,
+  reportPathErrors,
   resolveTargets,
+  resolveTargetsCollect,
   startWatch,
   runAbsView,
+  type PathError,
 } from "./shared.ts";
 import {
   checkGateFromConfig,
@@ -38,6 +42,7 @@ import {
   docsDiagnosticCodes,
   domainIssuesFromDiagnostics,
   dualEntryIssue,
+  attachPathErrors,
   mergeCheckIssues,
   mergeJsonIssues,
   mockFromErrorIssues,
@@ -76,6 +81,15 @@ function printDocsLinks(issues: Array<{ code?: string }>): void {
   for (const code of codes) {
     console.log(`  ${code} → ${DOCS_DIAGNOSTICS}#${code.replaceAll(":", "-")}`);
   }
+}
+
+/**
+ * 文件级 `@nudo:env` 命名 env 抽取（D5=F1：文法在 core directive-scan 单源）。
+ * `//` 与 `///` 等价；字符串/块注释里的同形文本不是指令；
+ * env 名 token 只收 `\w+` 或 path-like。
+ */
+export function fileEnvNamesFromText(source: string): string[] {
+  return extractFileEnvNames(source);
 }
 
 async function runCheck(
@@ -124,9 +138,7 @@ async function runCheck(
   // 符号面必须与 test 同口径注入，否则 @nudo:env 文件整体退化 unknown。
   // path 型 @nudo:env（./custom.env.ts）由 preloadPathEnvs 在 test 路径
   // 预载；check 同步路径只收命名 env（collectEnvGlobals 对未知名安全跳过）。
-  const fileEnvNames = [...source.matchAll(/@nudo:env\s+([^\n*]+)/g)].flatMap(
-    (m) => m[1]!.split(",").map((s) => s.trim().replace(/^['"]|['"]$/g, "")).filter(Boolean),
-  );
+  const fileEnvNames = fileEnvNamesFromText(source);
   const allEnvNames = [...new Set([...projectEnvNames, ...fileEnvNames])];
   const cacheRoot = diskCacheRoot(proj?.config, proj?.projectDir);
   const disk = new DiskCache({ root: cacheRoot, namespace: "check" });
@@ -165,17 +177,21 @@ async function runCheck(
             callSiteBudget: aCfg.callSiteBudget,
             entryThrows,
             ignoreThrows: ignoreThrows.join(","),
+            maxForks: aCfg.maxForks,
           },
         })
     : undefined;
   const cached = cacheKey ? disk.get<ReturnType<typeof serializeCheckJson>>(cacheKey) : undefined;
   let cachedJson: ReturnType<typeof serializeCheckJson> | undefined;
   let algebraReport;
-  let mockFromErrors: Array<{ name: string; fromPath: string; message: string }> = [];
+  let mockFromErrors: Array<{ name: string; fromPath: string; message: string; code?: string }> = [];
   if (cached) {
     cachedJson = cached;
     algebraReport = reportFromCachedJson(cached) as Awaited<ReturnType<typeof checkSource>>;
   } else {
+    // since 锚：只排干本次 check 自己 extract 产生的指令文法增量（对齐 takeInterfaceDiagsSince）
+    const { directiveDiagCount, takeDirectiveDiagsSince } = await import("@nudojs/parser");
+    const dirDiagSince = directiveDiagCount();
     // eval 注入包（模块图 + mocks + env 全局 + replace/as）——同文件内复用同一
     // 对象（checkSource/generalize memo 键按对象身份）
     let inject: import("@nudojs/core").RunTranspiledOptions | undefined;
@@ -207,7 +223,12 @@ async function runCheck(
       mergedMods = mm.modules;
       mockFromErrors = [
         ...mockFromErrors,
-        ...mm.errors.map((e) => ({ name: e.name, fromPath: e.fromPath, message: e.message })),
+        ...mm.errors.map((e) => ({
+          name: e.name,
+          fromPath: e.fromPath,
+          message: e.message,
+          ...(e.code !== undefined ? { code: e.code } : {}),
+        })),
       ];
       inject = {
         ...(hasCycle
@@ -237,6 +258,17 @@ async function runCheck(
         : {}),
       skips: collectSkipReturns(source),
     });
+    // D1: 指令文法诊断（nudo:directive-syntax）并入 check 报告
+    {
+      const dirDiags = takeDirectiveDiagsSince(dirDiagSince);
+      if (dirDiags.length > 0) {
+        const { directiveDiagIssues } = await import("../check-json-map.ts");
+        algebraReport = mergeCheckIssues(
+          algebraReport,
+          directiveDiagIssues(dirDiags),
+        ) as typeof algebraReport;
+      }
+    }
   }
 
   // @nudo:mock name from "path" 解析失败 → check 明确报错（缺文件/缺绑定/求值失败）
@@ -359,7 +391,10 @@ async function runCheck(
     }
   }
 
-  if (!opts.jsonCollect && !algebraReport.ok) {
+  // --json 单文件：exit 与打印出的 ok 同源（路径错误在 action 层已并入信封）
+  if (opts.json && !opts.jsonCollect) {
+    process.exitCode = checkJson.ok ? 0 : 1;
+  } else if (!opts.jsonCollect && !algebraReport.ok) {
     process.exitCode = 1;
   }
 }
@@ -450,14 +485,27 @@ export function registerCheckCommand(program: Command): void {
           return;
         }
         const targets: string[] = [];
-        for (const p of paths) targets.push(...resolveTargets(p));
-        if (targets.length === 0) return;
+        const pathErrors: PathError[] = [];
+        for (const p of paths) {
+          const r = resolveTargetsCollect(p);
+          targets.push(...r.targets);
+          pathErrors.push(...r.errors);
+        }
         if (opts.json && opts.abs) {
           console.error("error: --json cannot be combined with --abs");
           process.exitCode = 1;
           return;
         }
-        const externalRecords = opts.from?.length ? collectExternalRecords(opts.from) : undefined;
+        // 非 --json：路径错误走 usageError+exit（历史行为）
+        if (!opts.json) {
+          reportPathErrors(pathErrors);
+          if (targets.length === 0) return;
+        }
+        const fromErrors: PathError[] = [];
+        const externalRecords = opts.from?.length
+          ? collectExternalRecords(opts.from, opts.json ? fromErrors : undefined)
+          : undefined;
+        const allPathErrors = [...pathErrors, ...fromErrors];
         const ignoreThrows = parseIgnoreThrows(opts.ignoreThrows);
         const gateErr = validateGateFlags(opts);
         if (gateErr) {
@@ -500,15 +548,26 @@ export function registerCheckCommand(program: Command): void {
           ...(profile ? { profile } : {}),
         };
 
-        if (opts.json && targets.length > 1) {
-          const collected: Array<import("@nudojs/core").CheckJson> = [];
-          for (const t of targets) {
-            await runCheck(t, { ...shared, json: true, jsonCollect: collected });
+        if (opts.json) {
+          // --json：路径错误纳入信封；exit 与 ok 单一来源（绝不 ok:true + exit≠0）
+          const wantMulti = targets.length > 1 || allPathErrors.length > 0;
+          if (wantMulti) {
+            const collected: Array<import("@nudojs/core").CheckJson> = [];
+            for (const t of targets) {
+              await runCheck(t, { ...shared, json: true, jsonCollect: collected });
+            }
+            const { serializeCheckJsonMulti: multi } = await import("@nudojs/core");
+            const envelope = attachPathErrors(multi(collected), allPathErrors);
+            console.log(JSON.stringify(envelope, null, 2));
+            process.exitCode = envelope.ok ? 0 : 1;
+            return;
           }
-          const { serializeCheckJsonMulti: multi } = await import("@nudojs/core");
-          const envelope = multi(collected);
-          console.log(JSON.stringify(envelope, null, 2));
-          if (!envelope.ok) process.exitCode = 1;
+          if (targets.length === 1) {
+            await runCheck(targets[0]!, { ...shared, json: true });
+            return;
+          }
+          // 0 targets 且无路径错误：paths 必有值，每个路径要么出目标要么出错误
+          process.exitCode = allPathErrors.length > 0 ? 1 : 0;
           return;
         }
 

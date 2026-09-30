@@ -12,7 +12,8 @@ afterAll(() => {
 });
 
 const arrOf = (element: Abs): Abs => abs({ k: "arr", element }, undefined, undefined, "exact");
-const tupleOf = (elements: Abs[]): Abs => abs({ k: "tuple", elements }, undefined, undefined, "exact");
+const tupleOf = (elements: Abs[], rest?: Abs): Abs =>
+  abs({ k: "tuple", elements, rest }, undefined, undefined, "exact");
 const promiseOf = (inner: Abs): Abs => abs({ k: "eff", eff: "promise", inner }, undefined, undefined, "exact");
 const unionOf = (...members: Abs[]): Abs => abs({ k: "sum", members }, undefined, undefined, "exact");
 const fnAbs = (
@@ -121,6 +122,49 @@ describe("absToTSType legality (E1)", () => {
   it("keeps heterogeneous tuples legal", () => {
     const ts = absToTSType(tupleOf([num(), unionOf(str(), bool()), fnAbs([], num())]));
     const check = tscNoEmit(`export type T = ${ts};`);
+    expect(check.ok, check.stderr).toBe(true);
+  });
+
+  it("wraps union/fn types in tuple rest element position (BUG-005)", () => {
+    const unionRest = absToTSType(tupleOf([str()], unionOf(num(), str())));
+    // bare `...number | string[]` parses as rest of `number | string[]`
+    expect(unionRest).toBe("[string, ...(number | string)[]]");
+    const c1 = tscNoEmit(`export type T = ${unionRest};`);
+    expect(c1.ok, c1.stderr).toBe(true);
+
+    const fnRest = absToTSType(tupleOf([str()], fnAbs(["x"], num(), [num()])));
+    // bare `...(x: number) => number[]` is a function-typed rest (invalid)
+    expect(fnRest).toBe("[string, ...((x: number) => number)[]]");
+    const c2 = tscNoEmit(`export type T = ${fnRest};`);
+    expect(c2.ok, c2.stderr).toBe(true);
+  });
+
+  it("keeps arr-shaped tuple rest unchanged (BUG-005)", () => {
+    const ts = absToTSType(tupleOf([str()], arrOf(unionOf(num(), str()))));
+    expect(ts).toBe("[string, ...(number | string)[]]");
+    const check = tscNoEmit(`export type T = ${ts};`);
+    expect(check.ok, check.stderr).toBe(true);
+  });
+
+  it("hole-marked tuples stay tsc-clean and distinct from undefined slots (BUG-020)", () => {
+    const undefLit = (): Abs =>
+      abs({ k: "unknown" }, { op: "lit", value: undefined }, undefined, "exact");
+    const sparse = abs(
+      { k: "tuple", elements: [numLit(1), undefLit(), numLit(3)], holes: [1] },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const dense = abs(
+      { k: "tuple", elements: [numLit(1), undefLit(), numLit(3)] },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const sparseTs = absToTSType(sparse);
+    const denseTs = absToTSType(dense);
+    expect(sparseTs).not.toBe(denseTs);
+    const check = tscNoEmit(`export type S = ${sparseTs};\nexport type D = ${denseTs};`);
     expect(check.ok, check.stderr).toBe(true);
   });
 

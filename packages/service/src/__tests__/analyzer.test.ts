@@ -512,8 +512,9 @@ module.exports = { formatName, shout };
       const records = collectCallRecords(testPath, readFileSync(testPath, "utf-8"));
       const double = records.find((r) => r.targetExport === "double");
       expect(double).toBeDefined();
-      expect(double!.argAbs.map((a) => String(litValue(a)))).toEqual(["21"]);
-      expect(String(litValue(double!.resultAbs))).toBe("42");
+      expect(double!.argAbs.map((a) => { const lr = litValue(a); return lr.ok ? String(lr.value) : undefined; })).toEqual(["21"]);
+      const rlr = litValue(double!.resultAbs);
+      expect(rlr.ok && String(rlr.value)).toBe("42");
 
       // 注入后 double 从 entry-only 升级为真实调用形态
       const result = analyzeFile(libPath, readFileSync(libPath, "utf-8"), undefined, records);

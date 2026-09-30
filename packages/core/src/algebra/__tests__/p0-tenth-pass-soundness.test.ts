@@ -33,8 +33,8 @@ const absNum = { shape: { k: "prim", type: "number" }, conf: "path" } as never;
 describe("P0 fork isolation vs nested shadow names (evaluator)", () => {
   it("outer let write + nested function param same name still joins", () => {
     const src = `export function f(flag) { let x = 0; if (flag) { x = 1; function g(x) { return x; } } return x; }`;
-    expect(litValue(call(src, "f", true).result)).toBe(1);
-    expect(litValue(call(src, "f", false).result)).toBe(0);
+    expect(litValue(call(src, "f", true).result)).toEqual({ ok: true, value: 1 });
+    expect(litValue(call(src, "f", false).result)).toEqual({ ok: true, value: 0 });
     const r = callAbs(src, "f", [absBool]);
     const shown = formatAbs(r.result);
     expect(shown).toContain("1");
@@ -60,7 +60,7 @@ describe("P0 fork isolation vs nested shadow names (evaluator)", () => {
 describe("P0 for-of empty / abstract accumulators", () => {
   it("empty tuple for-of does not expand to maxIters", () => {
     const src = `export function f() { let s = 0; for (const x of []) { s = s + 1; } return s; }`;
-    expect(litValue(call(src, "f").result)).toBe(0);
+    expect(litValue(call(src, "f").result)).toEqual({ ok: true, value: 0 });
   });
 
   it("abstract iterable joins 0..n exits", () => {
@@ -74,7 +74,7 @@ describe("P0 for-of empty / abstract accumulators", () => {
 
   it("concrete tuple for-of still counts exactly", () => {
     const src = `export function f() { let s = 0; for (const x of [1,2]) { s = s + 1; } return s; }`;
-    expect(litValue(call(src, "f").result)).toBe(2);
+    expect(litValue(call(src, "f").result)).toEqual({ ok: true, value: 2 });
   });
 });
 
@@ -95,7 +95,7 @@ describe("P0 check-path compound / logical assignment", () => {
 
   it("export call ??= writes RHS when left null", () => {
     const r = callAbs(`export function f(a) { let x = null; x ??= a; return x; }`, "f", [$lit(7)]).result;
-    expect(litValue(r)).toBe(7);
+    expect(litValue(r)).toEqual({ ok: true, value: 7 });
   });
 
   it("export call ?? keeps non-nullish domain", () => {
@@ -108,7 +108,7 @@ describe("P0 check-path compound / logical assignment", () => {
 describe("P0 do-while dual path", () => {
   it("evaluator runs do-while body at least once", () => {
     const src = `export function f() { let s = 0; do { s = s + 1; } while (false); return s; }`;
-    expect(litValue(call(src, "f").result)).toBe(1);
+    expect(litValue(call(src, "f").result)).toEqual({ ok: true, value: 1 });
   });
 
   it("export-call do-while agrees", () => {

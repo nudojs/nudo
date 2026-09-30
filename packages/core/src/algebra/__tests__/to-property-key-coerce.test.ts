@@ -27,56 +27,56 @@ function fmt(src: string) {
 
 describe("ToPropertyKey for null/undefined/boolean computed keys", () => {
   it("o[null] reads key 'null'", () => {
-    expect(val(`export function f() { const o = { null: 1 }; return o[null]; }`)).toBe(1);
-    expect(val(`export function f() { const o = { a: 1 }; return o[null]; }`)).toBeUndefined();
+    expect(val(`export function f() { const o = { null: 1 }; return o[null]; }`)).toEqual({ ok: true, value: 1 });
+    expect(val(`export function f() { const o = { a: 1 }; return o[null]; }`)).toEqual({ ok: true, value: undefined });
   });
 
   it("o[undefined] reads key 'undefined' (not join-all)", () => {
-    expect(val(`export function f() { const o = { undefined: 1 }; return o[undefined]; }`)).toBe(1);
-    expect(val(`export function f() { const o = { a: 1 }; return o[undefined]; }`)).toBeUndefined();
+    expect(val(`export function f() { const o = { undefined: 1 }; return o[undefined]; }`)).toEqual({ ok: true, value: 1 });
+    expect(val(`export function f() { const o = { a: 1 }; return o[undefined]; }`)).toEqual({ ok: true, value: undefined });
   });
 
   it("array a[undefined] is a[\"undefined\"] → undefined, not join of elements", () => {
-    expect(val(`export function f() { const a = [1,2,3]; return a[undefined]; }`)).toBeUndefined();
-    expect(val(`export function f() { const a = [1,2,3]; return a[null]; }`)).toBeUndefined();
+    expect(val(`export function f() { const a = [1,2,3]; return a[undefined]; }`)).toEqual({ ok: true, value: undefined });
+    expect(val(`export function f() { const a = [1,2,3]; return a[null]; }`)).toEqual({ ok: true, value: undefined });
   });
 
   it("null / undefined / boolean in operator uses ToPropertyKey", () => {
-    expect(val(`export function f() { const o = { null: 1 }; return null in o; }`)).toBe(true);
-    expect(val(`export function f() { const o = { undefined: 1 }; return undefined in o; }`)).toBe(true);
-    expect(val(`export function f() { const o = { true: 1 }; return true in o; }`)).toBe(true);
-    expect(val(`export function f() { const o = { a: 1 }; return null in o; }`)).toBe(false);
-    expect(val(`export function f() { const o = { a: 1 }; return undefined in o; }`)).toBe(false);
-    expect(val(`export function f() { const a = [1,2]; return undefined in a; }`)).toBe(false);
+    expect(val(`export function f() { const o = { null: 1 }; return null in o; }`)).toEqual({ ok: true, value: true });
+    expect(val(`export function f() { const o = { undefined: 1 }; return undefined in o; }`)).toEqual({ ok: true, value: true });
+    expect(val(`export function f() { const o = { true: 1 }; return true in o; }`)).toEqual({ ok: true, value: true });
+    expect(val(`export function f() { const o = { a: 1 }; return null in o; }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { const o = { a: 1 }; return undefined in o; }`)).toEqual({ ok: true, value: false });
+    expect(val(`export function f() { const a = [1,2]; return undefined in a; }`)).toEqual({ ok: true, value: false });
   });
 
   it("delete o[null|undefined|true] removes the string key", () => {
     expect(val(`export function f() {
       const o = { null: 1 }; delete o[null]; return o["null"];
-    }`)).toBeUndefined();
+    }`)).toEqual({ ok: true, value: undefined });
     expect(val(`export function f() {
       const o = { undefined: 1 }; delete o[undefined]; return o["undefined"];
-    }`)).toBeUndefined();
+    }`)).toEqual({ ok: true, value: undefined });
     expect(val(`export function f() {
       const o = { true: 1 }; delete o[true]; return o["true"];
-    }`)).toBeUndefined();
+    }`)).toEqual({ ok: true, value: undefined });
   });
 
   it("o[undefined]=v writes key 'undefined'", () => {
     expect(val(`export function f() {
       const o = {}; o[undefined] = 5; return o["undefined"];
-    }`)).toBe(5);
+    }`)).toEqual({ ok: true, value: 5 });
     expect(val(`export function f() {
       const o = {}; o[null] = 5; return o["null"];
-    }`)).toBe(5);
+    }`)).toEqual({ ok: true, value: 5 });
     expect(val(`export function f() {
       const o = {}; o[true] = 5; return o["true"];
-    }`)).toBe(5);
+    }`)).toEqual({ ok: true, value: 5 });
   });
 
   it("string s[undefined] is s['undefined'] → undefined", () => {
-    expect(val(`export function f() { const s = "abc"; return s[undefined]; }`)).toBeUndefined();
-    expect(val(`export function f() { const s = "abc"; return s[null]; }`)).toBeUndefined();
-    expect(val(`export function f() { const s = "abc"; return s[true]; }`)).toBeUndefined();
+    expect(val(`export function f() { const s = "abc"; return s[undefined]; }`)).toEqual({ ok: true, value: undefined });
+    expect(val(`export function f() { const s = "abc"; return s[null]; }`)).toEqual({ ok: true, value: undefined });
+    expect(val(`export function f() { const s = "abc"; return s[true]; }`)).toEqual({ ok: true, value: undefined });
   });
 });

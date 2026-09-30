@@ -29,65 +29,59 @@ function val(src: string) {
 
 describe("UpdateExpression uses ToNumeric + numeric ± 1", () => {
   it("string numeric: x++ writes 6, not '51'", () => {
-    expect(val(`export function f() { let x = "5"; x++; return x; }`)).toBe(6);
+    expect(val(`export function f() { let x = "5"; x++; return x; }`)).toEqual({ ok: true, value: 6 });
   });
 
   it("string numeric: postfix expression value is old ToNumeric", () => {
-    expect(val(`export function f() { let x = "5"; return x++; }`)).toBe(5);
+    expect(val(`export function f() { let x = "5"; return x++; }`)).toEqual({ ok: true, value: 5 });
   });
 
   it("string numeric: x-- writes 4, postfix returns 5", () => {
-    expect(val(`export function f() { let x = "5"; x--; return x; }`)).toBe(4);
-    expect(val(`export function f() { let x = "5"; return x--; }`)).toBe(5);
+    expect(val(`export function f() { let x = "5"; x--; return x; }`)).toEqual({ ok: true, value: 4 });
+    expect(val(`export function f() { let x = "5"; return x--; }`)).toEqual({ ok: true, value: 5 });
   });
 
   it("prefix ++ on string numeric returns new value 6", () => {
-    expect(val(`export function f() { let x = "5"; return ++x; }`)).toBe(6);
+    expect(val(`export function f() { let x = "5"; return ++x; }`)).toEqual({ ok: true, value: 6 });
   });
 
   it("non-numeric string: x++ → NaN (ToNumber), not concat", () => {
     const v = val(`export function f() { let x = "a"; x++; return x; }`);
-    expect(typeof v).toBe("number");
-    expect(Number.isNaN(v as number)).toBe(true);
+    expect(v.ok && typeof v.value).toBe("number");
+    expect(Number.isNaN(v.ok ? v.value : undefined)).toBe(true);
   });
 
   it("boolean/null: ToNumeric folds like native", () => {
-    expect(val(`export function f() { let x = true; x++; return x; }`)).toBe(2);
-    expect(val(`export function f() { let x = false; x++; return x; }`)).toBe(1);
-    expect(val(`export function f() { let x = null; x++; return x; }`)).toBe(1);
+    expect(val(`export function f() { let x = true; x++; return x; }`)).toEqual({ ok: true, value: 2 });
+    expect(val(`export function f() { let x = false; x++; return x; }`)).toEqual({ ok: true, value: 1 });
+    expect(val(`export function f() { let x = null; x++; return x; }`)).toEqual({ ok: true, value: 1 });
   });
 
   it("bigint: x++ stays bigint (1n+1n), not mixed TypeError / number", () => {
-    expect(val(`export function f() { let x = 1n; x++; return x; }`)).toBe(2n);
-    expect(val(`export function f() { let x = 1n; return x++; }`)).toBe(1n);
-    expect(val(`export function f() { let x = 1n; return ++x; }`)).toBe(2n);
+    expect(val(`export function f() { let x = 1n; x++; return x; }`)).toEqual({ ok: true, value: 2n });
+    expect(val(`export function f() { let x = 1n; return x++; }`)).toEqual({ ok: true, value: 1n });
+    expect(val(`export function f() { let x = 1n; return ++x; }`)).toEqual({ ok: true, value: 2n });
   });
 
   it("number path unchanged", () => {
-    expect(val(`export function f() { let x = 5; x++; return x; }`)).toBe(6);
-    expect(val(`export function f() { let x = 5; return x++; }`)).toBe(5);
-    expect(val(`export function f() { let x = 5; return ++x; }`)).toBe(6);
-    expect(val(`export function f() { let x = 5; x--; return x; }`)).toBe(4);
+    expect(val(`export function f() { let x = 5; x++; return x; }`)).toEqual({ ok: true, value: 6 });
+    expect(val(`export function f() { let x = 5; return x++; }`)).toEqual({ ok: true, value: 5 });
+    expect(val(`export function f() { let x = 5; return ++x; }`)).toEqual({ ok: true, value: 6 });
+    expect(val(`export function f() { let x = 5; x--; return x; }`)).toEqual({ ok: true, value: 4 });
   });
 
   it("same-expression later read sees updated value (x++ + x === 11)", () => {
-    expect(val(`export function f() { let x = 5; return x++ + x; }`)).toBe(11);
-    expect(val(`export function f() { let x = 5; return ++x + x; }`)).toBe(12);
+    expect(val(`export function f() { let x = 5; return x++ + x; }`)).toEqual({ ok: true, value: 11 });
+    expect(val(`export function f() { let x = 5; return ++x + x; }`)).toEqual({ ok: true, value: 12 });
   });
 
   it("postfix at 2^53 returns old value, not (new-1)", () => {
     // 2^53+1 rounds back to 2^53；undo 不能用 new-1
-    expect(val(`export function f() { let x = 9007199254740992; return x++; }`)).toBe(
-      9007199254740992,
-    );
-    expect(val(`export function f() { let x = 9007199254740992; x++; return x; }`)).toBe(
-      9007199254740992,
-    );
+    expect(val(`export function f() { let x = 9007199254740992; return x++; }`)).toEqual({ ok: true, value: 9007199254740992, });
+    expect(val(`export function f() { let x = 9007199254740992; x++; return x; }`)).toEqual({ ok: true, value: 9007199254740992, });
   });
 
   it("postfix at -2^53 similar IEEE boundary", () => {
-    expect(val(`export function f() { let x = -9007199254740992; return x--; }`)).toBe(
-      -9007199254740992,
-    );
+    expect(val(`export function f() { let x = -9007199254740992; return x--; }`)).toEqual({ ok: true, value: -9007199254740992, });
   });
 });

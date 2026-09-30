@@ -11,10 +11,19 @@
  * harvest/abs-module/path-env）。
  */
 
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
-import { mkdirSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
+import {
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  rmSync,
+  renameSync,
+  unlinkSync,
+} from "node:fs";
 import { join, dirname, relative, sep, isAbsolute } from "node:path";
+import { stablePathKey } from "@nudojs/core/internal";
 import { diskCacheRoot } from "./evaluator/config.ts";
 
 /** 分析 ABI：语义变更时抬版本，整层 miss（含缓存键维度扩展） */
@@ -54,13 +63,108 @@ export function sha256Hex(data: string | Buffer): string {
   return createHash("sha256").update(data).digest("hex");
 }
 
-/** 相对化路径，避免绝对路径进磁盘键；树外路径用稳定内容 hash */
+/** 路径段归一为 `/`（仅键构造；不触盘） */
+function toPosix(p: string): string {
+  return p.split(sep).join("/");
+}
+
+/**
+ * `node_modules/<pkg>/…` 逻辑段。取**最后一个**有效包位：
+ * 跳过 `.pnpm` / `.bin` 等隐藏目录；scoped 包吃两段（`@scope/name`）。
+ * pnpm 虚拟树 `node_modules/.pnpm/foo@1/node_modules/foo/x.js` 归一为
+ * `node_modules/foo/x.js` —— 跨 store/checkout 稳定。
+ */
+function nodeModulesLogicalPath(posixPath: string): string | undefined {
+  const parts = posixPath.split("/");
+  for (let i = parts.length - 1; i >= 0; i--) {
+    if (parts[i] !== "node_modules") continue;
+    const next = parts[i + 1];
+    if (!next || next.startsWith(".")) continue;
+    if (next.startsWith("@")) {
+      const name = parts[i + 2];
+      if (!name || name.startsWith(".")) continue;
+    }
+    return parts.slice(i).join("/");
+  }
+  return undefined;
+}
+
+/**
+ * 自文件所在目录向上找 monorepo 根。
+ * 优先**最近**的确定性标记（`pnpm-workspace.yaml` / `lerna.json`）——
+ * 即 clone 根，相对段不含 checkout 目录名，跨机稳定。
+ * 无确定性标记时退回最近的 `package.json#workspaces`。
+ */
+function monorepoLogicalPath(posixPath: string): string | undefined {
+  let dir = dirname(posixPath);
+  let workspacesRoot: string | undefined;
+  for (;;) {
+    if (existsSync(join(dir, "pnpm-workspace.yaml")) || existsSync(join(dir, "lerna.json"))) {
+      return toPosix(relative(dir, posixPath)) || undefined;
+    }
+    if (!workspacesRoot) {
+      try {
+        const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as {
+          workspaces?: unknown;
+        };
+        if (pkg?.workspaces != null) workspacesRoot = dir;
+      } catch {
+        /* keep walking */
+      }
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  if (!workspacesRoot) return undefined;
+  const r = toPosix(relative(workspacesRoot, posixPath));
+  if (!r || r.startsWith("..") || isAbsolute(r)) return undefined;
+  return r;
+}
+
+/**
+ * pnpm store 内容寻址布局（`~/.pnpm-store/vN/files/xx/hash`、
+ * `~/Library/pnpm/store/vN/files/…`、`~/.local/share/pnpm/store/…`）。
+ * realpath 穿出 `node_modules` 后没有包名段，但文件名本身就是内容哈希——
+ * 取该哈希做逻辑段，跨 store 根/机器稳定（内容寻址，不是路径身份）。
+ */
+function pnpmStoreLogicalPath(posixPath: string): string | undefined {
+  const m =
+    /(?:^|\/)(?:\.pnpm-store|pnpm\/store)\/v\d+\/files\/([0-9a-f]{2})\/([0-9a-f]+)$/i.exec(
+      posixPath,
+    ) ?? /(?:^|\/)(?:\.pnpm-store|pnpm\/store)\/v\d+\/files\/([0-9a-f]+)$/i.exec(posixPath);
+  if (!m) return undefined;
+  const hash = m.length === 3 ? `${m[1]}${m[2]}` : m[1]!;
+  return `pnpm-store:${hash}`;
+}
+
+/**
+ * 稳定逻辑根相对化（磁盘缓存路径维）：树内相对 `root`，树外取
+ * `node_modules/<pkg>` 段、monorepo root 或 pnpm store 内容哈希；
+ * 绝对路径明文绝不进 key。
+ *
+ * 同一逻辑文件在不同 checkout / 机器 / CI runner 上必须得到**同一**键段；
+ * 无 `root` 时同样禁止绝对路径明文。
+ *
+ * 解析序：
+ * 1. 落在 `root` 内 → 相对 `root`（同包布局下已稳定）
+ * 2. `node_modules/<pkg>` 逻辑段（含 pnpm 虚拟树归一）
+ * 3. monorepo root 相对化（`pnpm-workspace.yaml` / `lerna.json` / `package.json#workspaces`）
+ * 4. pnpm store 内容寻址段（realpath 穿出 node_modules 的典型落点）
+ * 5. 仍无稳定根 → `ext:` + 路径 sha（只保证不明文；跨机仍可能 miss，不产生错命中）
+ *
+ * 入参先过 `stablePathKey`：`/c:/x` 与 `c:/x` 同键段（FIX-RESIDUAL-4）。
+ */
 export function relativizePath(p: string, root?: string): string {
-  const norm = p.split(sep).join("/");
-  if (!root) return norm;
-  const r = relative(root, p).split(sep).join("/");
-  if (!r.startsWith("..") && !isAbsolute(r)) return r;
-  // 树外依赖：hash 而非机器绝对路径，保证跨 checkout/CI 键稳定
+  const key = stablePathKey(p);
+  const norm = toPosix(key);
+  if (root) {
+    const r = toPosix(relative(stablePathKey(root), key));
+    if (!r.startsWith("..") && !isAbsolute(r)) return r;
+  }
+  const logical =
+    nodeModulesLogicalPath(norm) ?? monorepoLogicalPath(norm) ?? pnpmStoreLogicalPath(norm);
+  if (logical) return logical;
   return `ext:${createHash("sha256").update(norm).digest("hex").slice(0, 16)}`;
 }
 
@@ -107,12 +211,25 @@ export class DiskCache {
 
   set(key: string, value: unknown): void {
     if (!this.enabled || !this.root) return;
+    let tmp: string | undefined;
     try {
       const p = this.pathFor(key);
       mkdirSync(dirname(p), { recursive: true });
-      writeFileSync(p, JSON.stringify({ abi: ANALYSIS_ABI, value }), "utf8");
+      // 同目录 temp + rename：崩溃/磁盘满时缓存条目不会变成半截 JSON。
+      // 随机后缀防可预测 tmp 路径被预置符号链接劫持。
+      tmp = `${p}.tmp-${process.pid}-${randomBytes(4).toString("hex")}`;
+      writeFileSync(tmp, JSON.stringify({ abi: ANALYSIS_ABI, value }), "utf8");
+      renameSync(tmp, p);
+      tmp = undefined;
     } catch {
-      // fail-open：写失败不影响分析
+      // fail-open：写失败不影响分析；清理孤儿 tmp
+      if (tmp) {
+        try {
+          if (existsSync(tmp)) unlinkSync(tmp);
+        } catch {
+          /* best-effort */
+        }
+      }
     }
   }
 
@@ -124,6 +241,19 @@ export class DiskCache {
       /* ignore */
     }
   }
+}
+
+/**
+ * 缓存键路径维：优先稳定逻辑段；无逻辑根且内容已知时用**内容指纹**
+ * （`cnt:<sha>`）替代 `ext:` 路径 sha——路径 sha 绑机器绝对路径，跨机 miss-only。
+ * 内容未知仍回落 `ext:`（只保证不明文、不脏命中）。
+ */
+function cachePathIdentity(p: string, root: string | undefined, content?: string | null): string {
+  const rel = relativizePath(p, root);
+  if (rel.startsWith("ext:") && content != null) {
+    return `cnt:${sha256Hex(content).slice(0, 16)}`;
+  }
+  return rel;
 }
 
 /**
@@ -149,22 +279,24 @@ export function checkCacheKey(
       callSiteBudget?: number;
       entryThrows?: string;
       ignoreThrows?: string;
+      /** fork 预算（NUDO_MAX_FORKS / nudo.analysis.maxForks）——截断会 widen 结果 */
+      maxForks?: number;
     };
   },
 ): string {
-  const rel = relativizePath(filePath, opts.projectDir);
+  const rel = cachePathIdentity(filePath, opts.projectDir, source);
   const sidecarSha = opts.sidecarContent != null ? sha256Hex(opts.sidecarContent) : "nosidecar";
   const depSeg = (opts.depContents ?? [])
     .map(
       (d) =>
-        `${relativizePath(d.path, opts.projectDir)}\0${d.content != null ? sha256Hex(d.content) : "miss"}`,
+        `${cachePathIdentity(d.path, opts.projectDir, d.content)}\0${d.content != null ? sha256Hex(d.content) : "miss"}`,
     )
     .join("\n");
   const envSeg = (opts.projectEnvNames ?? []).length > 0
     ? [...(opts.projectEnvNames ?? [])].sort().join(",")
     : "-";
   const cfgSeg = opts.analysisCfg
-    ? `${opts.analysisCfg.mode ?? "-"}|${opts.analysisCfg.evalMissingSlot ?? "-"}|${opts.analysisCfg.callSiteBudget ?? "-"}|${opts.analysisCfg.entryThrows ?? "-"}|${opts.analysisCfg.ignoreThrows ?? "-"}`
+    ? `${opts.analysisCfg.mode ?? "-"}|${opts.analysisCfg.evalMissingSlot ?? "-"}|${opts.analysisCfg.callSiteBudget ?? "-"}|${opts.analysisCfg.entryThrows ?? "-"}|${opts.analysisCfg.ignoreThrows ?? "-"}|${opts.analysisCfg.maxForks ?? "-"}`
     : "-";
   return sha256Hex(
     [
@@ -198,7 +330,7 @@ export function ifaceCacheKey(
     projectEnvNames?: string[];
   },
 ): string {
-  const rel = relativizePath(filePath, opts.projectDir);
+  const rel = cachePathIdentity(filePath, opts.projectDir, source);
   const sidecarSeg =
     opts.autoBind && opts.sidecarSource !== undefined
       ? `sc:${sha256Hex(opts.sidecarSource)}`
@@ -206,7 +338,7 @@ export function ifaceCacheKey(
   const depSeg = (opts.depContents ?? [])
     .map(
       (d) =>
-        `${relativizePath(d.path, opts.projectDir)}\0${d.content != null ? sha256Hex(d.content) : "miss"}`,
+        `${cachePathIdentity(d.path, opts.projectDir, d.content)}\0${d.content != null ? sha256Hex(d.content) : "miss"}`,
     )
     .join("\n");
   const envSeg = (opts.projectEnvNames ?? []).length > 0

@@ -53,7 +53,9 @@ export function outer(arr) {
     const s = formatAbs(r.result);
     // 100+10 或 -1+10；绝不是裸 100（callee return 冒泡）
     expect(s).not.toBe("100");
-    expect(litValue(r.result) === 110 || litValue(r.result) === 9 || s.includes("110") || s.includes("9")).toBe(true);
+    const lv = litValue(r.result);
+    const v = lv.ok ? lv.value : undefined;
+    expect(v === 110 || v === 9 || s.includes("110") || s.includes("9")).toBe(true);
   });
 
   it("nested function declaration does not emit export (evaluator can run)", () => {
@@ -82,7 +84,7 @@ export function outer(arr) {
 }
 `;
     const r = callOuter(src, [tupleAbs()]);
-    expect(litValue(r.result)).toBe(4);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 4 });
   });
 });
 

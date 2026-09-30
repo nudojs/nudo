@@ -164,7 +164,7 @@ const key = buildKey("docs", "readme");
 
 | 名称 | 种类 | 说明 | 签名 |
 |------|------|------|------|
-| <a id="abstoharvestsig"></a>`absToHarvestSig` | fn | Abs → 签名投影（丢 pred/conf；fn 只留参数名+类型面；保留泛型 α） | `absToHarvestSig(a: Abs): HarvestSig` |
+| <a id="abstoharvestsig"></a>`absToHarvestSig` | fn | Abs → 签名投影（丢 pred/conf；fn 只留参数名+类型面；保留泛型 α 与 lit term） | `absToHarvestSig(a: Abs): HarvestSig` |
 | <a id="autoharvestmodules"></a>`autoHarvestModules` | fn | 自动 harvest 源码中全部裸包（有 @types 或包内 dts 时）。 | `autoHarvestModules( source: string, fromDir: string, ): Record` |
 | <a id="barepackagename"></a>`barePackageName` | fn | 裸说明符 → 包名（含 scope）；相对/绝对/node: 与裸 Node 内建返回 undefined | `barePackageName(spec: string): string \| undefined` |
 | <a id="barespectoabsmodules"></a>`bareSpecToAbsModules` | fn | 裸说明符 → Abs 导出表（走 harvest 缓存） | `bareSpecToAbsModules( spec: string, fromFile: string, ): AbsModuleExports \| undefined` |
@@ -196,7 +196,7 @@ const key = buildKey("docs", "readme");
 | <a id="harvestpackage"></a>`harvestPackage` | fn | harvest 一个 npm 包（或 @types 包） | `harvestPackage( pkg: string, fromDir?: string, maxFiles = 24, ): PackageHarvest` |
 | <a id="harvestpackagecached"></a>`harvestPackageCached` | fn | — | `harvestPackageCached(pkg: string, fromDir: string): PackageHarvest \| null` |
 | <a id="harvestpackagewithdisk"></a>`harvestPackageWithDisk` | fn | L2 + L0：**磁盘优先**（跳过 harvestDts 解析），miss 再 harvest 并写盘。 | `harvestPackageWithDisk( pkg: string, fromDir: string, maxFiles = 24, ): PackageHarvest \| null` |
-| <a id="harvestsig"></a>`HarvestSig` | type | 签名投影节点（可 JSON 化；足够 mock Abs 的 shape 面） | `HarvestSig = \| { k: "prim"; type: string } \| { k: "unknown" } \| { k: "any" } \| { k: "never" } \| { k: "lit"; value: number \| string \| bool...` |
+| <a id="harvestsig"></a>`HarvestSig` | type | 签名投影节点（可 JSON 化；足够 mock Abs 的 shape 面）。 | `HarvestSig = \| { k: "prim"; type: string } \| { k: "unknown" } \| { k: "any" } \| { k: "never" } \| { k: "lit"; value: number \| string \| bool...` |
 | <a id="harvestsigtoabs"></a>`harvestSigToAbs` | fn | 签名投影 → mock Abs（conf 合 mock） | `harvestSigToAbs(sig: HarvestSig): Abs` |
 | <a id="harvesttoabsmodules"></a>`harvestToAbsModules` | fn | 把 harvest 的 modules/globals 合成 AbsModuleExports。 | `harvestToAbsModules( pkg: string, fromDir: string, ): Record<string, AbsModuleExports>` |
 | <a id="isharvestnodedisabled"></a>`isHarvestNodeDisabled` | fn | — | `isHarvestNodeDisabled(env: NodeJS.ProcessEnv = process.env): boolean` |

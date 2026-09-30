@@ -75,6 +75,45 @@ describe("schema-generator", () => {
     expect(absToSchemaSource(nullLit())).toBe("z.null()");
     expect(absToSchemaSource(undefLit())).toBe("z.undefined()");
   });
+
+  it("projects tuple holes as z.unknown() and records them in dropped (BUG-020)", () => {
+    // hole 槽 ≠ 显式 undefined 槽：zod tuple 无空槽概念，
+    // 洞映射 z.unknown() 并计入 dropped，不得写成 z.undefined()
+    const sparse = abs(
+      { k: "tuple", elements: [numLit(1), undefLit(), numLit(3)], holes: [1] },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const dense = abs(
+      { k: "tuple", elements: [numLit(1), undefLit(), numLit(3)] },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const sparseP = projectAbsToSchema(sparse);
+    const denseP = projectAbsToSchema(dense);
+    expect(sparseP.source).toBe("z.tuple([z.literal(1), z.unknown(), z.literal(3)])");
+    expect(denseP.source).toBe("z.tuple([z.literal(1), z.undefined(), z.literal(3)])");
+    expect(sparseP.source).not.toBe(denseP.source);
+    expect(sparseP.dropped.some((d) => d.includes("hole") && d.includes("1"))).toBe(true);
+    expect(denseP.dropped.some((d) => d.includes("hole"))).toBe(false);
+  });
+
+  it("projects leading/multi tuple holes and counts each in dropped (BUG-020)", () => {
+    const multi = abs(
+      { k: "tuple", elements: [undefLit(), numLit(1), undefLit()], holes: [0, 2] },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const p = projectAbsToSchema(multi);
+    expect(p.source).toBe("z.tuple([z.unknown(), z.literal(1), z.unknown()])");
+    const holeNotes = p.dropped.filter((d) => d.includes("hole"));
+    expect(holeNotes).toHaveLength(2);
+    expect(holeNotes.some((d) => d.includes("0"))).toBe(true);
+    expect(holeNotes.some((d) => d.includes("2"))).toBe(true);
+  });
 });
 
 describe("pred → zod refinements", () => {

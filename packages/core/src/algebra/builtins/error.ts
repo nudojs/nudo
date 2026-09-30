@@ -188,7 +188,8 @@ export function evalBuiltinNew(className: string, args: Abs[]): Abs | undefined 
       );
     case "String": {
       // new String(prim)：包装箱带 length/下标槽（与 evalGlobalFn Object 装箱同口径）
-      const a0 = args[0] ? litValue(args[0]) : undefined;
+      const a0R = args[0] ? litValue(args[0]) : undefined;
+      const a0 = a0R?.ok && typeof a0R.value === "string" ? a0R.value : undefined;
       if (typeof a0 === "string") {
         const slots: Record<string, { value: Abs }> = {
           length: { value: numLit(a0.length) },

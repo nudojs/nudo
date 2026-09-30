@@ -22,7 +22,7 @@ describe("S5 closure cross-call state (evaluator)", () => {
       "f",
       [],
     );
-    expect(litValue(r.result)).toBe(1);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 1 });
   });
 
   it("two increments then getCount sees 2", () => {
@@ -46,7 +46,7 @@ describe("S5 closure cross-call state (evaluator)", () => {
       "f",
       [],
     );
-    expect(litValue(r.result)).toBe(2);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
   });
 
   it("check signature of use() is not unknown", () => {

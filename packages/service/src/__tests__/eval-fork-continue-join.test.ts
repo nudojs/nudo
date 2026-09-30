@@ -33,7 +33,7 @@ export { pick };
       { shape: { k: "prim", type: "boolean" }, term: { op: "lit", value: false }, conf: "exact" } as never,
     ]);
     expect(r).toBeTruthy();
-    expect(litValue(r!)).toBe(0);
+    expect(litValue(r!)).toEqual({ ok: true, value: 0 });
   });
 
   it("literal-false still returns 2 when both arms write then return", () => {
@@ -49,6 +49,6 @@ export { both };
       { shape: { k: "prim", type: "boolean" }, term: { op: "lit", value: false }, conf: "exact" } as never,
     ]);
     expect(r).toBeTruthy();
-    expect(litValue(r!)).toBe(4);
+    expect(litValue(r!)).toEqual({ ok: true, value: 4 });
   });
 });

@@ -22,7 +22,7 @@ export async function go(n) {
     const r = callTranspiledExportFull(exports, "go", [$lit(1)]);
     // go 是 async → 外层 promise
     expect(absToString(r.result)).toContain("promise");
-    expect(litValue($await(r.result))).toBe(2);
+    expect(litValue($await(r.result))).toEqual({ ok: true, value: 2 });
   });
 
   it("async wraps return as promise", () => {
@@ -34,7 +34,7 @@ export async function f() {
     const exports = runTranspiled(src, { mode: "analyze" });
     const r = callTranspiledExportFull(exports, "f", []);
     expect(absToString(r.result)).toContain("promise");
-    expect(litValue($await(r.result))).toBe(42);
+    expect(litValue($await(r.result))).toEqual({ ok: true, value: 42 });
   });
 
   it("transpiles async and await", async () => {

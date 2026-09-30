@@ -5,11 +5,15 @@
  * fail-open（不得写入/读取 memo）。
  */
 import { extractNudoImports } from "./refine.ts";
+import {
+  extractFileEnvNames,
+  extractMockModuleRecords,
+} from "./directive-scan.ts";
 import { hashSource } from "./hash-source.ts";
-import { normPath, resolveDepPath, sidecarPathOf } from "./sidecar-path.ts";
+import { normPath, resolveDepPath, sidecarPathOf, stablePathKey, stablePathKeyGraph } from "./sidecar-path.ts";
 
 // 单一定义在 sidecar-path.ts（leaf）；此处 re-export 维持公共导出面稳定
-export { normPath, resolveDepPath };
+export { normPath, resolveDepPath, stablePathKey, stablePathKeyGraph };
 
 export type LoadDepsFingerprint = {
   fp: string;
@@ -38,23 +42,18 @@ export function extractAllLoadSpecs(source: string): string[] {
   // @nudo:env 路径模板（/// @nudo:env ./custom.env.ts）与
   // @nudo:mock-module "mod" from "./mock.js" 的 from 路径会改变分析结果。
   // 命名 env（es/node/web）不是 loadModule 可解析文件，只收 path-like。
+  // D5=F1：env / mock-module 文法在 directive-scan 单源，此处只消费。
   const isPathLikeSpec = (spec: string): boolean =>
     spec.startsWith("./") ||
     spec.startsWith("../") ||
     spec.startsWith("/") ||
     /\.(ts|js|mjs|cjs|tsx|jsx)$/.test(spec);
-  const envRe = /@nudo:env\s+([^\n*]+)/g;
-  let envM: RegExpExecArray | null;
-  while ((envM = envRe.exec(source))) {
-    for (const part of envM[1]!.split(",")) {
-      const spec = part.trim().replace(/^['"]|['"]$/g, "");
-      if (spec && isPathLikeSpec(spec)) specs.add(spec);
-    }
+  for (const name of extractFileEnvNames(source)) {
+    if (isPathLikeSpec(name)) specs.add(name);
   }
-  const mockFromRe =
-    /@nudo:mock-module\s+"[^"]+"\s+(?:\{[^}]*\}\s+)?from\s+["']([^"']+)["']/g;
-  let mockM: RegExpExecArray | null;
-  while ((mockM = mockFromRe.exec(source))) specs.add(mockM[1]!);
+  for (const rec of extractMockModuleRecords(source)) {
+    if (rec.fromPath) specs.add(rec.fromPath);
+  }
   const patterns = [
     /\bfrom\s*['"]([^'"]+)['"]/g,
     /\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
@@ -77,6 +76,19 @@ export function sidecarSpecsOf(source: string): string[] {
       (spec.startsWith(".") || spec.startsWith("/")) &&
       (spec.endsWith(".nudo.js") || spec.endsWith(".nudo.ts")),
   );
+}
+
+/** 指纹遍历对 load I/O 错误 fail-safe：读失败当 miss（过近似，绝不陈旧命中）。 */
+function loadOrMiss(
+  loadModule: (spec: string, fromFile: string) => string | undefined,
+  spec: string,
+  from: string,
+): string | undefined {
+  try {
+    return loadModule(spec, from);
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -120,7 +132,7 @@ export function loadModuleDepsFingerprint(
     const sidecarPath = sidecarPathOf(entryFile);
     if (seen.has(sidecarPath)) return;
     const sidecarSpec = `./${sidecarPath.slice(sidecarPath.lastIndexOf("/") + 1)}`;
-    const sidecarSrc = loadModule(sidecarSpec, entryFile);
+    const sidecarSrc = loadOrMiss(loadModule, sidecarSpec, entryFile);
     if (sidecarSrc === undefined) return; // 无侧车文件：零回归
     if (n >= MAX_LOAD_DEP_NODES) {
       truncated = true;
@@ -144,7 +156,7 @@ export function loadModuleDepsFingerprint(
       if (seen.has(path)) continue;
       seen.add(path);
       n++;
-      const src = loadModule(cur.spec, cur.from);
+      const src = loadOrMiss(loadModule, cur.spec, cur.from);
       parts.push(`sidecar:${path}=${src === undefined ? "miss" : hashSource(src)}`);
       paths.push(path);
       contents.push({ path, content: src ?? null });
@@ -166,7 +178,7 @@ export function loadModuleDepsFingerprint(
     if (seen.has(path)) continue;
     seen.add(path);
     n++;
-    const src = loadModule(cur.spec, cur.from);
+    const src = loadOrMiss(loadModule, cur.spec, cur.from);
     parts.push(`${path}=${src === undefined ? "miss" : hashSource(src)}`);
     paths.push(path);
     contents.push({ path, content: src ?? null });

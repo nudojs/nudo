@@ -147,7 +147,7 @@ export function f() {
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
     const r = callTranspiledExportFull(exports, "f", []);
-    expect(litValue(r.result)).toBe(5);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 5 });
     expect(formatAbs(r.result)).toContain("5");
   });
 
@@ -162,7 +162,7 @@ export function f() {
     const exports = runTranspiled(src, { mode: "analyze" });
     const r = callTranspiledExportFull(exports, "f", []);
     // this.base=10 + x=5 → 15；若 this 未注入会 unknown 或仅 5
-    expect(litValue(r.result)).toBe(15);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 15 });
   });
 });
 
@@ -250,7 +250,7 @@ export function f() {
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
     const r = callTranspiledExportFull(exports, "f", []);
-    expect(lv(r.result)).toBe(5);
+    expect(lv(r.result)).toEqual({ ok: true, value: 5 });
   });
 
   it("method via variable still binds receiver", async () => {
@@ -265,7 +265,7 @@ export function f() {
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
     const r = callTranspiledExportFull(exports, "f", []);
-    expect(lv(r.result)).toBe(7);
+    expect(lv(r.result)).toEqual({ ok: true, value: 7 });
   });
 });
 

@@ -192,6 +192,7 @@ export default function nudoPlugin(options: NudoPluginOptions = {}): Plugin {
       // 不再用硬编码 @nudo 正则挡掉无指令文件。
       if (!shouldAnalyzeFile(id, code)) return null;
 
+      let fatal: string | undefined;
       try {
         // async 以便 path 型 @nudo:env 预加载（与 LSP analyzeFileAsync 对齐）
         const result = await analyzeFileAsync(id, code, undefined, undefined, undefined, "none");
@@ -212,7 +213,8 @@ export default function nudoPlugin(options: NudoPluginOptions = {}): Plugin {
 
           if (diag.severity === "error") {
             if (failOnError) {
-              this.error(msg);
+              // 先收集，try 外再抛——this.error 会 throw，不能被 catch 吞
+              fatal = fatal ?? msg;
             } else {
               this.warn(msg);
             }
@@ -223,6 +225,8 @@ export default function nudoPlugin(options: NudoPluginOptions = {}): Plugin {
       } catch (err) {
         this.warn(`[nudo] Failed to analyze ${id}: ${(err as Error).message}`);
       }
+      // try 外抛：Rollup/Vite 的 this.error 会 throw，不能被上面的 catch 吞掉
+      if (fatal) this.error(fatal);
 
       return null;
     },

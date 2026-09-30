@@ -39,7 +39,7 @@ import {
   hashSource,
   setAbsTruncationCollector,
 } from "@nudojs/core/internal";
-import { parse, extractDirectives, extractFileDirectives } from "@nudojs/parser";
+import { parse, extractDirectives, extractFileDirectives, takeDirectiveDiagsSince, directiveDiagCount } from "@nudojs/parser";
 import {
   collapseAbsLits,
   isLeakedCallRecord,
@@ -153,9 +153,21 @@ export function analyzeFileUncachedInner(
   loadModule?: AnalyzeLoadModule,
   caseMode: DirectiveCaseMode = "all",
 ): AnalysisResult {
+  // since 锚：只排干本次 extract 产生的增量——全量 take 会在 await 窗口窃取
+  // 在途其他消费方（validate/hover/check）待收的指令文法诊断（对齐 takeInterfaceDiagsSince）
+  const dirDiagSince = directiveDiagCount();
   const ast = parse(source);
   const functions = extractDirectives(ast);
   const diagnostics: Diagnostic[] = [];
+  // F-3 / D1: 指令文法诊断（nudo:directive-syntax）不再静默——并入 analysis diagnostics
+  for (const d of takeDirectiveDiagsSince(dirDiagSince)) {
+    diagnostics.push({
+      range: { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } },
+      severity: "warning",
+      message: d.message,
+      code: d.code,
+    });
+  }
   const bindings = new Map<string, BindingInfo>();
   const nodeAbsMap = new Map<Node, Abs>();
   const functionResults: FunctionAnalysis[] = [];
@@ -293,16 +305,24 @@ export function analyzeFileUncachedInner(
     ...(loadModule ? { loadModule } : {}),
   });
   // @nudo:mock name from "path" 解析失败 → 明确诊断（缺文件/缺绑定/求值失败），不静默丢弃
+  // 内联表达式解析失败 → nudo:mock-invalid
   for (const fe of seeds.fromErrors ?? []) {
+    const isExpr = fe.code === "nudo:mock-invalid";
     diagnostics.push({
       range: { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } },
       severity: "error",
       message: fe.message,
-      code: "nudo:module-missing",
-      suggestions: [
-        `Create the mock file or fix the path in @nudo:mock ${fe.name} from "${fe.fromPath}"`,
-        "The mock module must define a binding with the same name as the mock",
-      ],
+      code: fe.code ?? "nudo:module-missing",
+      suggestions: isExpr
+        ? [
+            "Supported formats: stub(), stub().returns(value), spy(), mock()",
+            "Arrow functions: (args) => expression or (args) => { statements; return value; }",
+            "Type expressions: number(), string(), shape({...}), union(...), or concrete literals",
+          ]
+        : [
+            `Create the mock file or fix the path in @nudo:mock ${fe.name} from "${fe.fromPath}"`,
+            "The mock module must define a binding with the same name as the mock",
+          ],
     });
   }
   let absCallRecords: CallRecord[] = [];
@@ -483,6 +503,23 @@ export function analyzeFileUncachedInner(
   }
   const envKeyFn = envNames.join(",");
   const mockKeyFn = mockSeedFingerprint(seeds.seedVars, seeds.seedFns);
+  // dep 内容进 fn 键（default 与 custom loader 同口径），避免入口文本未变时旧诊断命中。
+  // (source, filePath, loader) 循环不变：全图 BFS 一次，逐函数复用（否则 F 个函数 = F 次读盘）。
+  // truncated / fingerprint 失败：与整文件 noCache 同口径 fail-closed
+  let fnDepSeg: string | null = "-";
+  let fnDepFailClosed = false;
+  try {
+    const dfp = loadModuleDepsFingerprint(source, loadModule ?? defaultLoadModule, filePath);
+    if (dfp.truncated) {
+      fnDepFailClosed = true;
+      fnDepSeg = null;
+    } else {
+      fnDepSeg = hashSource(dfp.fp);
+    }
+  } catch {
+    fnDepFailClosed = true;
+    fnDepSeg = null;
+  }
 
   for (const fn of functions) {
     const isPure = fn.directives.some((d) => d.kind === "pure");
@@ -530,24 +567,8 @@ export function analyzeFileUncachedInner(
     // the fingerprint). Case-directive results are self-contained.
     const fp = fnFpMap?.get(fn.name);
     // analysis 配置维度进 fn 键：evalMissingSlot / budget 等变更必须 miss
-    // （整文件键已含，fn 键不加会陈旧命中 C0.5 诊断）
-    const analysisFnKey = `m=${analysisCfg.mode}|e=${analysisCfg.evalMissingSlot}|b=${analysisCfg.callSiteBudget}`;
-    // dep 内容进 fn 键（default 与 custom loader 同口径），避免入口文本未变时旧诊断命中
-    // truncated / fingerprint 失败：与整文件 noCache 同口径 fail-closed
-    let fnDepSeg: string | null = "-";
-    let fnDepFailClosed = false;
-    try {
-      const dfp = loadModuleDepsFingerprint(source, loadModule ?? defaultLoadModule, filePath);
-      if (dfp.truncated) {
-        fnDepFailClosed = true;
-        fnDepSeg = null;
-      } else {
-        fnDepSeg = hashSource(dfp.fp);
-      }
-    } catch {
-      fnDepFailClosed = true;
-      fnDepSeg = null;
-    }
+    // （整文件键已含，fn 键不加会陈旧命中 C0.5 诊断；maxForks 截断同理）
+    const analysisFnKey = `m=${analysisCfg.mode}|e=${analysisCfg.evalMissingSlot}|b=${analysisCfg.callSiteBudget}|f=${analysisCfg.maxForks}`;
     const fnCacheKey =
       !fnDepFailClosed && fp && caseDirectives.length > 0
         ? [

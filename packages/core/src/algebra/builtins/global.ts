@@ -59,7 +59,9 @@ function toBigIntAbs(args: Abs[]): Abs {
 }
 
 export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
-  const a0 = args[0] ? litValue(args[0]) : undefined;
+  const a0R = args[0] ? litValue(args[0]) : undefined;
+  // 仅取字面量值做 typeof 分派；是否是字面量看 a0Lit / a0R.ok，不用 !==undefined 哨兵
+  const a0 = a0R?.ok ? a0R.value : undefined;
   const a0Lit = litTermOf(args[0]);
   switch (name) {
     case "eval":

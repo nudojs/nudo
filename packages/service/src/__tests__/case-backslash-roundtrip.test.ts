@@ -12,7 +12,7 @@ describe("case string round-trip with backslash", () => {
     const s = serializeCaseArg(strLit("foo\\"));
     expect(s).not.toBeNull();
     const back = parseCaseArgExpr(s!);
-    expect(litValue(back)).toBe("foo\\");
+    expect(litValue(back)).toEqual({ ok: true, value: "foo\\" });
   });
 
   it("buildCaseDirective with trailing backslash re-parses", () => {
@@ -21,8 +21,8 @@ describe("case string round-trip with backslash", () => {
     const m = line!.match(/\((.*)\)$/);
     expect(m).toBeTruthy();
     const args = m![1]!.split(",").map((p) => parseCaseArgExpr(p.trim()));
-    expect(litValue(args[0]!)).toBe("C:\\");
-    expect(litValue(args[1]!)).toBe(1);
+    expect(litValue(args[0]!)).toEqual({ ok: true, value: "C:\\" });
+    expect(litValue(args[1]!)).toEqual({ ok: true, value: 1 });
   });
 
   it("directive with backslash value is extracted", () => {
@@ -37,6 +37,6 @@ export function f(a) { return a; }
     const cases = found.flatMap((f) => f.directives.filter((d) => d.kind === "case"));
     expect(cases.length).toBe(1);
     const argsAbs = (cases[0] as { argsAbs: { term?: { value?: unknown } }[] }).argsAbs;
-    expect(litValue(argsAbs[0]! as never)).toBe("foo\\");
+    expect(litValue(argsAbs[0]! as never)).toEqual({ ok: true, value: "foo\\" });
   });
 });

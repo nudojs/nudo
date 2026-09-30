@@ -49,7 +49,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa  # v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1  # v4
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
@@ -113,7 +113,9 @@ jobs:
           env.VSCODE_MARKETPLACE_TOKEN != ''
         # Marketplace PATs expire; do not block Open VSX / GitHub Release.
         continue-on-error: true
-        run: npx @vscode/vsce publish --packagePath dist/nudo-vscode.vsix -p ${{ secrets.VSCODE_MARKETPLACE_TOKEN }}
+        # Secret is already exposed via job-level env: — quote it as a shell
+        # word. Never expand ${{ secrets.* }} into run: (shell injection face).
+        run: npx @vscode/vsce publish --packagePath dist/nudo-vscode.vsix -p "$VSCODE_MARKETPLACE_TOKEN"
 
       # keep continue-on-error above (marketplace flake must not block npm / GH Release),
       # but never fail silently — shout in the step summary + job annotation.
@@ -140,7 +142,8 @@ jobs:
           steps.changesets.outputs.published-packages != '[]' &&
           env.OVSX_MARKETPLACE_TOKEN != ''
         continue-on-error: true
-        run: npx ovsx publish dist/nudo-vscode.vsix -p ${{ secrets.OVSX_MARKETPLACE_TOKEN }}
+        # Same contract as vsce: job-level env: + quoted "$VAR", no ${{ }} in run:.
+        run: npx ovsx publish dist/nudo-vscode.vsix -p "$OVSX_MARKETPLACE_TOKEN"
 
       - name: Surface Open VSX failure
         if: steps.ovsx-publish.outcome == 'failure'
@@ -169,17 +172,58 @@ jobs:
         run: |
           tag=$(node -e '
             const pkgs = JSON.parse(process.env.PUBLISHED);
-            const parse = (v) => v.replace(/^v/, "").split(".").map((n) => parseInt(n, 10) || 0);
+            // Semver precedence (not just major.minor.patch): no prerelease >
+            // prerelease; prerelease identifiers compare numeric-then-ASCII
+            // with numeric < alphanumeric; build metadata ignored. Without
+            // this, 1.0.0-beta.1 tied with 1.0.0 and sort().pop() picked by
+            // array order.
+            const parse = (v) => {
+              const s = String(v).replace(/^v/, "").split("+")[0];
+              const dash = s.indexOf("-");
+              const core = (dash === -1 ? s : s.slice(0, dash)).split(".");
+              return {
+                maj: parseInt(core[0], 10) || 0,
+                min: parseInt(core[1], 10) || 0,
+                pat: parseInt(core[2], 10) || 0,
+                pre: dash === -1 ? null : s.slice(dash + 1).split("."),
+              };
+            };
+            const cmpId = (x, y) => {
+              const xn = /^[0-9]+$/.test(x), yn = /^[0-9]+$/.test(y);
+              if (xn && yn) return parseInt(x, 10) - parseInt(y, 10);
+              if (xn !== yn) return xn ? -1 : 1;
+              return x < y ? -1 : x > y ? 1 : 0;
+            };
             const cmp = (a, b) => {
               const pa = parse(a), pb = parse(b);
-              for (let i = 0; i < 3; i++) {
-                const d = (pa[i] || 0) - (pb[i] || 0);
+              if (pa.maj !== pb.maj) return pa.maj - pb.maj;
+              if (pa.min !== pb.min) return pa.min - pb.min;
+              if (pa.pat !== pb.pat) return pa.pat - pb.pat;
+              if (pa.pre === null && pb.pre === null) return 0;
+              if (pa.pre === null) return 1;
+              if (pb.pre === null) return -1;
+              const n = pa.pre.length < pb.pre.length ? pa.pre.length : pb.pre.length;
+              for (let i = 0; i < n; i++) {
+                const d = cmpId(pa.pre[i], pb.pre[i]);
                 if (d !== 0) return d;
               }
-              return 0;
+              return pa.pre.length - pb.pre.length;
             };
             const versions = pkgs.map((p) => p.version);
-            process.stdout.write("v" + versions.slice().sort(cmp).pop());
+            const tag = "v" + versions.slice().sort(cmp).pop();
+            // Whitelist BEFORE GITHUB_OUTPUT: vMAJOR.MINOR.PATCH with optional
+            // semver prerelease (-pre) and build metadata (+meta). Explicit gate
+            // rejects whitespace / newlines / "=" (GITHUB_OUTPUT line injection
+            // face) and ".." (empty pre/build identifiers); the structural
+            // regex is closed-charset. Prerelease so a stable-train publish of
+            // 1.2.3-beta.1 still resolves a GitHub Release tag instead of
+            // failing closed after npm publish.
+            if (/[\s=]|\.\./.test(tag) ||
+                !/^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(tag)) {
+              console.error("Resolved release tag failed whitelist: " + JSON.stringify(tag));
+              process.exit(1);
+            }
+            process.stdout.write(tag);
           ')
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
         env:
@@ -204,16 +248,24 @@ jobs:
           steps.changesets.outputs.has-changesets == 'false' &&
           steps.changesets.outputs.published-packages != '' &&
           steps.changesets.outputs.published-packages != '[]'
+        # Pass values via env: and quote "$VAR" — never splice ${{ steps.* }} into
+        # run: (published-packages / tag are data, and a single quote or newline
+        # would break out of the script text).
+        env:
+          RELEASE_TAG: ${{ steps.release-tag.outputs.tag }}
+          PUBLISHED_PACKAGES: ${{ steps.changesets.outputs.published-packages }}
+          SERVER_URL: ${{ github.server_url }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           {
-            echo "## Released ${{ steps.release-tag.outputs.tag }}"
+            echo "## Released ${RELEASE_TAG}"
             echo ""
             echo "Published packages:"
             echo '```json'
-            echo '${{ steps.changesets.outputs.published-packages }}'
+            printf '%s\n' "${PUBLISHED_PACKAGES}"
             echo '```'
             echo ""
-            echo "GitHub Release: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.release-tag.outputs.tag }}"
+            echo "GitHub Release: ${SERVER_URL}/${REPOSITORY}/releases/tag/${RELEASE_TAG}"
           } >> "$GITHUB_STEP_SUMMARY"
 
   # Beta train — same workflow file so npm Trusted Publishing authorizes us.
@@ -237,7 +289,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa  # v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1  # v4
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
@@ -299,7 +351,8 @@ jobs:
         if: steps.pre.outputs.active == 'true'
         run: |
           set -euo pipefail
-          # Same ceiling as stable: major >= 2 needs confirm_major=true.
+          # Same gate as stable: 2.x / major jumps / first 1.0.0 need confirm_major=true.
+          # The 1.x train (1.0.1+) auto-publishes.
           node scripts/gate-major.mjs --for-publish
           # setup-node writes _authToken=${NODE_AUTH_TOKEN} into .npmrc, which
           # blocks npm's OIDC trusted-publisher exchange when no real token exists.

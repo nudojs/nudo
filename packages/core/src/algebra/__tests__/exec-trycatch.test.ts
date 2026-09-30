@@ -25,11 +25,11 @@ export function go(n) {
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
     const ok = callTranspiledExportFull(exports, "go", [$lit(3)]);
-    expect(litValue(ok.result)).toBe(3);
+    expect(litValue(ok.result)).toEqual({ ok: true, value: 3 });
     expect(ok.throws.shape.k).toBe("never");
 
     const bad = callTranspiledExportFull(exports, "go", [$lit(-1)]);
-    expect(litValue(bad.result)).toBe("neg");
+    expect(litValue(bad.result)).toEqual({ ok: true, value: "neg" });
   });
 
   it("finally runs after catch", () => {
@@ -48,7 +48,7 @@ export function go() {
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
     const r = callTranspiledExportFull(exports, "go", []);
-    expect(litValue(r.result)).toBe(11);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 11 });
   });
 
   it("uncaught throw still reports throws", () => {

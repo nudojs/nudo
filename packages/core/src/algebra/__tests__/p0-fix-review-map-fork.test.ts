@@ -33,7 +33,7 @@ describe("P0 Map fork merge preserves maybeAbsent", () => {
     expect(lv).not.toBe(1);
     expect(formatAbs(v)).toMatch(/undefined|unknown|\|/);
     const has = mapHasEntry(after, strLit("a"));
-    expect(litValue(has)).not.toBe(true);
+    expect(litValue(has)).not.toEqual({ ok: true, value: true });
   });
 
   it("literal delete on one arm still marks maybeAbsent via key count", () => {
@@ -45,6 +45,6 @@ describe("P0 Map fork merge preserves maybeAbsent", () => {
       return m;
     }, () => m);
     const v = mapGetEntry(after, strLit("a"));
-    expect(litValue(v)).not.toBe(1);
+    expect(litValue(v)).not.toEqual({ ok: true, value: 1 });
   });
 });

@@ -17,17 +17,17 @@ function isUndef(r: Abs): boolean {
 
 describe("string index reads use canonical array index", () => {
   it("numeric index projects the character", () => {
-    expect(litValue($idx($lit("hello"), $lit(0)))).toBe("h");
-    expect(litValue($idx($lit("hello"), $lit(1)))).toBe("e");
-    expect(litValue($idx($lit("hello"), $lit(4)))).toBe("o");
+    expect(litValue($idx($lit("hello"), $lit(0)))).toEqual({ ok: true, value: "h" });
+    expect(litValue($idx($lit("hello"), $lit(1)))).toEqual({ ok: true, value: "e" });
+    expect(litValue($idx($lit("hello"), $lit(4)))).toEqual({ ok: true, value: "o" });
     expect(isUndef($idx($lit("hello"), $lit(5)))).toBe(true);
     expect(isUndef($idx($lit("hello"), $lit(-1)))).toBe(true);
   });
 
   it('string "1" is index 1, not unknown', () => {
-    expect(litValue($idx($lit("hello"), $lit("1")))).toBe("e");
-    expect(litValue($idx($lit("hello"), $lit("0")))).toBe("h");
-    expect(litValue($idx($lit("hello"), $lit("4")))).toBe("o");
+    expect(litValue($idx($lit("hello"), $lit("1")))).toEqual({ ok: true, value: "e" });
+    expect(litValue($idx($lit("hello"), $lit("0")))).toEqual({ ok: true, value: "h" });
+    expect(litValue($idx($lit("hello"), $lit("4")))).toEqual({ ok: true, value: "o" });
     expect(isUndef($idx($lit("hello"), $lit("5")))).toBe(true);
   });
 
@@ -40,8 +40,8 @@ describe("string index reads use canonical array index", () => {
   });
 
   it("$get on string prim with index key projects the character", () => {
-    expect(litValue($get($lit("hello"), "1"))).toBe("e");
-    expect(litValue($get($lit("hello"), "0"))).toBe("h");
+    expect(litValue($get($lit("hello"), "1"))).toEqual({ ok: true, value: "e" });
+    expect(litValue($get($lit("hello"), "0"))).toEqual({ ok: true, value: "h" });
     expect(isUndef($get($lit("hello"), "5"))).toBe(true);
     expect(isUndef($get($lit("hello"), "foo"))).toBe(true);
     expect(isUndef($get($lit("hello"), "01"))).toBe(true);

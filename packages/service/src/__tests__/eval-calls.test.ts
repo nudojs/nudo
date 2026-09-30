@@ -28,7 +28,7 @@ export function caller(n) { return helper(n); }
     writeFileSync(p, src, "utf-8");
     const full = tryEvalCallFull(src, p, "caller", [$lit(4)], { collectCalls: true });
     expect(full).toBeDefined();
-    expect(litValue(full!.result)).toBe(5);
+    expect(litValue(full!.result)).toEqual({ ok: true, value: 5 });
     expect(full!.calls?.length).toBeGreaterThanOrEqual(1);
     expect(full!.calls!.map((c) => c.fnName)).toContain("helper");
   });

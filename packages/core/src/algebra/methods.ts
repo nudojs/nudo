@@ -137,7 +137,9 @@ export function callAbsMethod(
 ): Abs | undefined {
   if (!isStrRecv(recv)) return undefined;
 
-  const a0 = args[0] ? litValue(args[0]) : undefined;
+  const a0R = args[0] ? litValue(args[0]) : undefined;
+
+  const a0 = a0R?.ok ? a0R.value : undefined;
   const a0Str = toStringArg(args[0]);
   const lit = recv.term?.op === "lit" && typeof recv.term.value === "string"
     ? (recv.term.value as string)
@@ -193,7 +195,8 @@ export function callAbsMethod(
       // number 字面量或缺省（undefined）→ 按原生折叠；非字面量 → boolPrim
       // searchString 走 ToString：缺省 ≡ undefined → "undefined"
       const a1Abs = args[1];
-      const a1 = a1Abs ? litValue(a1Abs) : undefined;
+      const a1R = a1Abs ? litValue(a1Abs) : undefined;
+      const a1 = a1R?.ok ? a1R.value : undefined;
       const a1Unknown = a1Abs !== undefined && a1Abs.term?.op !== "lit";
       if (a1Unknown) return boolPrim();
       if (lit !== undefined && a0Str !== undefined) {
@@ -215,7 +218,8 @@ export function callAbsMethod(
         // 位置参数走 ToIntegerOrInfinity：number/string/bool/null/缺省/undefined 可折叠；
         // Symbol/抽象实参原生 THROW（Cannot convert a symbol to a number）→ 保守
         if (!isFoldableIndexArg(args[0]) || !isFoldableIndexArg(args[1])) return strPrim("path");
-        const a1 = args[1] ? litValue(args[1]) : undefined;
+        const a1R = args[1] ? litValue(args[1]) : undefined;
+        const a1 = a1R?.ok ? a1R.value : undefined;
         if (name === "slice") {
           return strLit(lit.slice(a0 as number | undefined, a1 as number | undefined));
         }
@@ -268,7 +272,8 @@ export function callAbsMethod(
       const search = toStringArg(args[0]);
       if (search === undefined) return numPrim("path");
       if (!isFoldableIndexArg(args[1])) return numPrim("path");
-      const from = args[1] ? litValue(args[1]) : undefined;
+      const fromR = args[1] ? litValue(args[1]) : undefined;
+      const from = fromR?.ok ? fromR.value : undefined;
       return numLit(
         name === "indexOf"
           ? lit.indexOf(search, from as number | undefined)
@@ -284,7 +289,8 @@ export function callAbsMethod(
       if (lit !== undefined) {
         // limit：number 字面量或缺省按原生截断；非字面量 → 元素数未知，保守 arr<string>
         const limAbs = args[1];
-        const lim = limAbs ? litValue(limAbs) : undefined;
+        const limR = limAbs ? litValue(limAbs) : undefined;
+        const lim = limR?.ok ? limR.value : undefined;
         if (limAbs !== undefined && limAbs.term?.op !== "lit") return strArr("path");
         // ES 特判：separator 为 undefined（含缺省）→ 不 ToString(separator)，
         // 直接返回 [ToString(O)] 再按 limit 截断。toStringArg 会误折成 "undefined" 分隔。
@@ -329,8 +335,10 @@ export function callAbsMethod(
           } else if (patAbs.shape.k === "brand" && patAbs.shape.name === "RegExp") {
             const inner = patAbs.shape.shape;
             const slots = inner.shape.k === "obj" ? inner.shape.slots : undefined;
-            const src = slots ? litValue(slots["source"]?.value) : undefined;
-            const flags = slots ? litValue(slots["flags"]?.value) : undefined;
+            const srcR = slots ? litValue(slots["source"]?.value) : undefined;
+            const src = srcR?.ok ? srcR.value : undefined;
+            const flagsR = slots ? litValue(slots["flags"]?.value) : undefined;
+            const flags = flagsR?.ok ? flagsR.value : undefined;
             if (typeof src === "string" && (flags === undefined || typeof flags === "string")) {
               try {
                 patRe = new RegExp(src, flags ?? "");
@@ -386,12 +394,12 @@ export function callAbsMethod(
                 typeof whole === "string" ? strLit(whole) : unknown,
               ];
               const r = applyCallbackAbs(repAbs, callArgs, callbackEnv(), pTrue, defaultLeakBudget);
-              const lv = litValue(r);
-              if (lv === undefined) {
+              // litValue 哨兵：lit(undefined) 折成 undefined，须看 term
+              if (r.term?.op !== "lit") {
                 anyUnknown = true;
                 return "";
               }
-              return String(lv); // ToString：99→"99"、null→"null"
+              return String(r.term.value); // ToString：99→"99"、null→"null"、undefined→"undefined"
             };
             try {
               const out =
@@ -416,8 +424,10 @@ export function callAbsMethod(
       const a1Abs = args[1];
       if (a0Abs !== undefined && a0Abs.term?.op !== "lit") return strPrim("path");
       if (a1Abs !== undefined && a1Abs.term?.op !== "lit") return strPrim("path");
-      const a0 = a0Abs === undefined ? undefined : litValue(a0Abs);
-      const a1 = a1Abs === undefined ? " " : litValue(a1Abs);
+      const a0R = a0Abs === undefined ? undefined : litValue(a0Abs);
+      const a0 = a0R?.ok ? a0R.value : undefined;
+      const a1R = a1Abs === undefined ? undefined : litValue(a1Abs);
+      const a1 = a1Abs === undefined ? " " : a1R?.ok ? a1R.value : undefined;
       try {
         const impl = String.prototype as unknown as Record<string, (...a: unknown[]) => string>;
         return strLit(impl[name]!.call(lit, a0, a1));

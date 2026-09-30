@@ -23,7 +23,7 @@ export function go() {
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
     const r = callTranspiledExportFull(exports, "go", []);
-    expect(litValue(r.result)).toBe(6);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 6 });
   });
 
   it("for-of over generator", () => {
@@ -42,7 +42,7 @@ export function sum() {
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
     const r = callTranspiledExportFull(exports, "sum", []);
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 
   it("transpiles generator to $gen/$yield", () => {

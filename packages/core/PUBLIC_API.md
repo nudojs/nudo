@@ -43,10 +43,10 @@ changing the signature of any row below is **major**.
 
 | Symbol | Kind | Role | Stability |
 |--------|------|------|-----------|
-| `Abs`, `Shape`, `Term`, `Pred`, `Phi`, `Confidence`, `ObjShape`, `Slot` | type | Abs = shape × term × pred × conf | **public** |
+| `Abs`, `Shape`, `Term`, `Pred`, `Phi`, `Confidence`, `ObjShape`, `Slot`, `LiteralValue`, `LitValueResult` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | **public** |
 | `abs`, `unknown`, `never`, `num`, `str`, `bool`, `any`, `anyAbs`, `anyVar` | value | Abs constructors / faces | **public** |
 | `lit`, `v`, `app`, `fn`, `fnOf`, `obj`, `array`, `union`, `makeSum`, `shape` | value | term / shape builders | **public** |
-| `numLit`, `strLit`, `boolLit`, `bigintLit`, `litValue`, `isExactLit` | value | literal Abs | **public** |
+| `numLit`, `strLit`, `boolLit`, `bigintLit`, `litValue`, `isExactLit` | value | literal Abs; `litValue` → `LitValueResult` tagged (`{ok:true,value}\|{ok:false}`) | **public** |
 | `leqAbs`, `joinAbs`, `joinValues`, `confJoin` | value | assignability / join | **public** |
 | `formatAbs`, `formatShape`, `formatConstraint`, `formatCheckReport` | value | extensional rendering (one-way) | **public** |
 | `absToTSType`, `absToSchemaSource`, `projectAbsToSchema` | value | one-way projections | **public** |
@@ -60,7 +60,10 @@ changing the signature of any row below is **major**.
 | `NudoConstraint`, `instantiateConstraint`, `checkArg`, `checkCall` | value/type | contract checking | **public** |
 | `interfaceTierOf`, `effectiveInterface`, `EffectiveInterface`, `InterfaceTierInfo` | value/type | interface tiers | **public** |
 | `refineAbsForRelTrue`, `extractRefinesFromSource` | value | refinement gate | **public** |
-| `runTranspiled`, `callTranspiledExport`, `callTranspiledExportFull`, `TranspiledCallResult` | value/type | evaluator execution (analyze mode) | **public** |
+| `listFnDirectiveScopes`, `findFnDirectiveScope`, `fnDirectiveCommentLines`, `FnDirectiveScope` | value/type | G2 directive scope binding (nearest AST Function, incl. nested / class method) | **public** |
+| `extractFileEnvNames`, `extractMockModuleRecords`, `extractNudoImportRecords`, `scanCaseTags`, `scanContractSegments`, `scanThrowsDecl`, `scanBudgetDecl`, `parseEnvPayload`, `parseMockModulePayload`, `parseNudoImportPayload`, `CaseTag`, `MockModuleRecord`, `NudoImportRecord` | value/type | single-source `@nudo:` directive grammar (see `docs/design/directive-scope.md`) | **public** |
+| `runTranspiled`, `callTranspiledExport`, `callTranspiledExportFull`, `callTranspiledExportApply`, `TranspiledCallResult`, `AbsApplyResult`, `makeAbsApplyResult`, `isAbsApplyResult` | value/type | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | **public** |
+| `AbsApplyNoThrow`, `AbsApplyNoThrowFn`, `absOnly` | value/type | no-throw apply face: narrow signature for impls that return bare `Abs`; `absOnly` peels the abs facet off `AbsApplyReturn` (test/host convenience, drops throws) | **public** |
 | `evalExprAbs` | value | Abs-native expression eval | **public** |
 
 ### 2.2 Exec runtime (`./exec` = `src/algebra/exec/index.ts`, also re-exported from `.`)

@@ -34,7 +34,7 @@ function throwsError(t: unknown, name: string): boolean {
 function tupleEls(r: unknown): unknown[] | undefined {
   const a = r as { shape?: { k?: string; elements?: unknown[] } };
   if (!a || typeof a !== "object" || a.shape?.k !== "tuple") return undefined;
-  const els = a.shape.elements!.map((e) => litValue(e as never));
+  const els = a.shape.elements!.map((e) => { const r = litValue(e as never); return r.ok ? r.value : undefined; });
   if (els.some((e) => e === undefined)) return undefined;
   return els as unknown[];
 }
@@ -47,7 +47,7 @@ describe("evaluator Object.keys/values/entries", () => {
       shape?: { elements?: Array<{ shape?: { elements?: unknown[] } }> };
     };
     const e0 = er.shape?.elements?.[0]?.shape?.elements;
-    expect([litValue(e0?.[0] as never), litValue(e0?.[1] as never)]).toEqual(["a", 1]);
+    expect([litValue(e0?.[0] as never), litValue(e0?.[1] as never)]).toEqual([{ ok: true, value: "a" }, { ok: true, value: 1 }]);
   });
 
   it("folds string target index keys", () => {
@@ -77,16 +77,16 @@ describe("evaluator Object.keys/values/entries", () => {
       `export function f() { try { Object.values(null); } catch(e) { return 'caught'; } return 'missed'; }`,
       `export function f() { try { Object.entries(undefined); } catch(e) { return 'caught'; } return 'missed'; }`,
     ]) {
-      expect(litValue(call(src).result), src).toBe("caught");
+      expect(litValue(call(src).result), src).toEqual({ ok: true, value: "caught" });
     }
   });
 });
 
 describe("evaluator Object.hasOwn", () => {
   it("folds own-key presence", () => {
-    expect(litValue(call(`export function f() { return Object.hasOwn({a:1}, 'a'); }`).result)).toBe(true);
-    expect(litValue(call(`export function f() { return Object.hasOwn({a:1}, 'b'); }`).result)).toBe(false);
-    expect(litValue(call(`export function f() { return Object.hasOwn(Object.create(null), 'a'); }`).result)).toBe(false);
+    expect(litValue(call(`export function f() { return Object.hasOwn({a:1}, 'a'); }`).result)).toEqual({ ok: true, value: true });
+    expect(litValue(call(`export function f() { return Object.hasOwn({a:1}, 'b'); }`).result)).toEqual({ ok: true, value: false });
+    expect(litValue(call(`export function f() { return Object.hasOwn(Object.create(null), 'a'); }`).result)).toEqual({ ok: true, value: false });
   });
 
   it("null target throws TypeError", () => {
@@ -98,7 +98,7 @@ describe("evaluator Object.hasOwn", () => {
   it("null target caught by try/catch", () => {
     expect(
       litValue(call(`export function f() { try { Object.hasOwn(null, 'a'); } catch(e) { return 'caught'; } return 'missed'; }`).result),
-    ).toBe("caught");
+    ).toEqual({ ok: true, value: "caught" });
   });
 });
 
@@ -117,7 +117,7 @@ describe("evaluator Object.getPrototypeOf", () => {
   it("non-nullish stays sound (unknown)", () => {
     const r = call(`export function f() { return Object.getPrototypeOf(5); }`);
     expect(isNever(r.result)).toBe(false);
-    expect(litValue(r.result)).toBeUndefined();
+    expect(litValue(r.result)).toEqual({ ok: false });
   });
 });
 
@@ -164,7 +164,7 @@ describe("evaluator Object.create/assign/defineProperty nullish hard throw", () 
       `export function f() { try { Object.assign(null, {a: 1}); } catch(e) { return 'caught'; } return 'missed'; }`,
       `export function f() { try { Object.defineProperty(null, "a", {value: 1}); } catch(e) { return 'caught'; } return 'missed'; }`,
     ]) {
-      expect(litValue(call(src).result), src).toBe("caught");
+      expect(litValue(call(src).result), src).toEqual({ ok: true, value: "caught" });
     }
   });
 
@@ -172,9 +172,9 @@ describe("evaluator Object.create/assign/defineProperty nullish hard throw", () 
     const r = call(`export function f() { return Object.create(null); }`);
     expect(isNever(r.result)).toBe(false);
     const r2 = call(`export function f() { return Object.assign({}, {a: 1}); }`);
-    expect(litValue((r2.result as { shape?: { slots?: Record<string, { value: unknown }> } }).shape?.slots?.a?.value as never)).toBe(1);
+    expect(litValue((r2.result as { shape?: { slots?: Record<string, { value: unknown }> } }).shape?.slots?.a?.value as never)).toEqual({ ok: true, value: 1 });
     const r3 = call(`export function f() { return Object.defineProperty({}, "a", {value: 1}); }`);
-    expect(litValue((r3.result as { shape?: { slots?: Record<string, { value: unknown }> } }).shape?.slots?.a?.value as never)).toBe(1);
+    expect(litValue((r3.result as { shape?: { slots?: Record<string, { value: unknown }> } }).shape?.slots?.a?.value as never)).toEqual({ ok: true, value: 1 });
   });
 });
 

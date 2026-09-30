@@ -1,5 +1,14 @@
 import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync, readFileSync, existsSync, mkdirSync } from "node:fs";
+import {
+  mkdtempSync,
+  writeFileSync,
+  rmSync,
+  readFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  chmodSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -415,27 +424,49 @@ describe("nudo migrate", () => {
   });
 
   it("rewriteTscCommand: -p/--project scope is preserved (monorepo)", () => {
-    // tsconfig 文件 → 所在目录
+    // tsconfig 文件 → 所在目录（非 "." 一律单引号字面量）
     expect(rewriteTscCommand("tsc -p packages/foo/tsconfig.json").cmd).toBe(
-      "nudo check packages/foo",
+      "nudo check 'packages/foo'",
     );
     expect(rewriteTscCommand("tsc --project packages/foo/tsconfig.json --noEmit").cmd).toBe(
-      "nudo check packages/foo",
+      "nudo check 'packages/foo'",
     );
     // 目录原样
-    expect(rewriteTscCommand("tsc -p packages/foo").cmd).toBe("nudo check packages/foo");
-    expect(rewriteTscCommand("tsc --project=packages/bar").cmd).toBe("nudo check packages/bar");
+    expect(rewriteTscCommand("tsc -p packages/foo").cmd).toBe("nudo check 'packages/foo'");
+    expect(rewriteTscCommand("tsc --project=packages/bar").cmd).toBe("nudo check 'packages/bar'");
     // -b 带路径同样保留
-    expect(rewriteTscCommand("tsc -b packages/foo").cmd).toBe("nudo check packages/foo");
+    expect(rewriteTscCommand("tsc -b packages/foo").cmd).toBe("nudo check 'packages/foo'");
     expect(rewriteTscCommand("tsc --build apps/web/tsconfig.json").cmd).toBe(
-      "nudo check apps/web",
+      "nudo check 'apps/web'",
     );
     // 裸 -b / 无 -p 仍是 cwd
     expect(rewriteTscCommand("tsc -b").cmd).toBe("nudo check .");
     // runner 前缀 + 项目路径
     expect(rewriteTscCommand("pnpm exec tsc -p packages/foo/tsconfig.json").cmd).toBe(
-      "npx nudojs check packages/foo",
+      "npx nudojs check 'packages/foo'",
     );
+  });
+
+  // BUG-019 / F-4：重写后的路径必须是安全字面量，不得引入 shell 注入面
+  it("rewriteTscCommand: path with shell metacharacters stays a safe literal", () => {
+    // 原先单引号字面量被去壳后裸写 → $( ) 在 CI 展开
+    expect(rewriteTscCommand("tsc -p 'x$(id)'").cmd).toBe("nudo check 'x$(id)'");
+    // .json 会折叠到 dirname：元字符须在目录段才存活
+    expect(rewriteTscCommand("tsc -p 'tsconfig.$(echo pwned)/tsconfig.json'").cmd).toBe(
+      "nudo check 'tsconfig.$(echo pwned)'",
+    );
+    // backtick / glob 同理（非 .json 路径原样保留）
+    expect(rewriteTscCommand("tsc -p 'src/`id`.ts'").cmd).toBe("nudo check 'src/`id`.ts'");
+    expect(rewriteTscCommand("tsc -p 'foo*'").cmd).toBe("nudo check 'foo*'");
+    // 含空白 + 元字符：旧 JSON.stringify 双引号内 $() 仍会展开
+    expect(rewriteTscCommand("tsc -p 'dir with space/$(id)'").cmd).toBe(
+      "nudo check 'dir with space/$(id)'",
+    );
+    // 路径内单引号按 '\'' 转义，整体仍是单引号字面量
+    expect(rewriteTscCommand(`tsc -p "a'b$(id)"`).cmd).toBe(`nudo check 'a'\\''b$(id)'`);
+    // 空格路径也不得回退到双引号；tsconfig 文件 → 目录为 "." 时保持裸写
+    expect(rewriteTscCommand("tsc -p 'my tsconfig.json'").cmd).toBe("nudo check .");
+    expect(rewriteTscCommand("tsc -p 'dir with space'").cmd).toBe("nudo check 'dir with space'");
   });
 
   it("tsc inside shell strings / comments is not rewritten", () => {
@@ -515,5 +546,161 @@ describe("nudo migrate", () => {
     // command should parse (status 0) and emit JSON rows
     expect(r.status).toBe(0);
     expect(r.stdout).toContain('"packageJson"');
+  });
+
+  // BUG-009 / F-4: 不存在路径禁止 silent dirname 回退到真实 package 根
+  it("missing path is rejected by status/retire/retireAll (never falls back to parent root)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-missing-"));
+    dirs.push(dir);
+    const pkgBefore = JSON.stringify({
+      name: "real-root",
+      scripts: { typecheck: "tsc --noEmit" },
+      devDependencies: { typescript: "^5.0.0" },
+    });
+    writeFileSync(join(dir, "package.json"), pkgBefore, "utf-8");
+    const missing = join(dir, "typo-does-not-exist");
+
+    expect(() => migrateStatus(missing)).toThrow(/not found/);
+    expect(() => migrateRetire(missing, { workflows: false })).toThrow(/not found/);
+    expect(() => migrateRetireAll(missing, { workflows: false })).toThrow(/not found/);
+
+    // 零写入：父 package.json 原样，无 retire 标记
+    expect(readFileSync(join(dir, "package.json"), "utf-8")).toBe(pkgBefore);
+    expect(existsSync(join(dir, ".nudo", "migrate-retired.json"))).toBe(false);
+  });
+
+  it("missing path is rejected by strip/verify with zero writes", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-missing-io-"));
+    dirs.push(dir);
+    const pkgBefore = JSON.stringify({ name: "real-root" });
+    writeFileSync(join(dir, "package.json"), pkgBefore, "utf-8");
+    const missing = join(dir, "typo-does-not-exist");
+
+    await expect(migrateStrip([missing], { write: true })).rejects.toThrow(/not found/);
+    await expect(migrateVerify([missing])).rejects.toThrow(/not found/);
+
+    expect(readFileSync(join(dir, "package.json"), "utf-8")).toBe(pkgBefore);
+    expect(existsSync(join(dir, ".nudo", "migrate-retired.json"))).toBe(false);
+    expect(readdirSync(dir).filter((f) => f.endsWith(".js"))).toHaveLength(0);
+  });
+
+  it("existing package.json / source file still resolves to its directory", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-file-root-"));
+    dirs.push(dir);
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({
+        name: "demo",
+        scripts: { typecheck: "tsc --noEmit" },
+        devDependencies: { typescript: "^5.0.0" },
+      }),
+      "utf-8",
+    );
+    mkdirSync(join(dir, "src"));
+    writeFileSync(join(dir, "src", "a.ts"), `export const x: number = 1;\n`, "utf-8");
+
+    // 传 package.json 文件本身 → 仍取所在目录（保留既有契约）
+    const rows = migrateStatus(join(dir, "package.json"));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.typescriptDep).toBe(true);
+    expect(rows[0]!.tsFiles).toBe(1);
+
+    const result = migrateRetire(join(dir, "package.json"), { workflows: false });
+    expect(result.removedDeps).toContain("devDependencies");
+    expect(existsSync(join(dir, ".nudo", "migrate-retired.json"))).toBe(true);
+  });
+
+  // BUG-010 / F-4: retire 持久化必须原子——注入写失败时树一致或可恢复
+  function setupRetireFixture(name: string): {
+    dir: string;
+    pkgPath: string;
+    wfPath: string;
+    pkgBefore: string;
+    wfBefore: string;
+  } {
+    const dir = mkdtempSync(join(tmpdir(), `nudo-migrate-${name}-`));
+    dirs.push(dir);
+    const pkgBefore = JSON.stringify(
+      {
+        name: "demo",
+        scripts: { typecheck: "tsc --noEmit" },
+        devDependencies: { typescript: "^5.0.0" },
+      },
+      null,
+      2,
+    );
+    const pkgPath = join(dir, "package.json");
+    writeFileSync(pkgPath, pkgBefore, "utf-8");
+    const wfDir = join(dir, ".github", "workflows");
+    mkdirSync(wfDir, { recursive: true });
+    const wfPath = join(wfDir, "ci.yml");
+    const wfBefore = "name: CI\njobs:\n  check:\n    steps:\n      - run: npx tsc --noEmit\n";
+    writeFileSync(wfPath, wfBefore, "utf-8");
+    return { dir, pkgPath, wfPath, pkgBefore, wfBefore };
+  }
+
+  it("BUG-010: package.json write failure leaves tree unchanged (zero half-state)", () => {
+    const { dir, pkgPath, wfPath, pkgBefore, wfBefore } = setupRetireFixture("retire-fail-pkg");
+    // 整包目录只读 → package.json（第一个写）即失败
+    chmodSync(dir, 0o555);
+    try {
+      expect(() => migrateRetire(dir)).toThrow();
+    } finally {
+      chmodSync(dir, 0o755);
+    }
+    expect(readFileSync(pkgPath, "utf-8")).toBe(pkgBefore);
+    expect(readFileSync(wfPath, "utf-8")).toBe(wfBefore);
+    expect(existsSync(join(dir, ".nudo", "migrate-retired.json"))).toBe(false);
+    expect(existsSync(join(dir, ".nudo", "migrate-retiring.json"))).toBe(false);
+  });
+
+  it("BUG-010: workflow write failure rolls back package.json (no nudo-pkg + tsc-CI mix)", () => {
+    const { dir, pkgPath, wfPath, pkgBefore, wfBefore } = setupRetireFixture("retire-fail-wf");
+    const wfDir = join(dir, ".github", "workflows");
+    // workflow 目录只读：package.json 先写成功，workflow 写失败 → 必须回滚 package.json
+    chmodSync(wfDir, 0o555);
+    try {
+      expect(() => migrateRetire(dir)).toThrow();
+    } finally {
+      chmodSync(wfDir, 0o755);
+    }
+    // 一致：全旧（不能出现 package.json 已 nudo 而 workflow 仍 tsc）
+    expect(readFileSync(pkgPath, "utf-8")).toBe(pkgBefore);
+    expect(readFileSync(wfPath, "utf-8")).toBe(wfBefore);
+    expect(existsSync(join(dir, ".nudo", "migrate-retired.json"))).toBe(false);
+    expect(existsSync(join(dir, ".nudo", "migrate-retiring.json"))).toBe(false);
+    // status 不得报 retired
+    const rows = migrateStatus(dir);
+    expect(rows[0]!.retired).toBe(false);
+    expect(rows[0]!.retiring).toBe(false);
+  });
+
+  it("BUG-010: marker write failure rolls back package.json + workflows", () => {
+    const { dir, pkgPath, wfPath, pkgBefore, wfBefore } = setupRetireFixture("retire-fail-marker");
+    // marker 路径被目录占住 → rename 到目标失败（package.json + workflows 已写）
+    mkdirSync(join(dir, ".nudo", "migrate-retired.json"), { recursive: true });
+    expect(() => migrateRetire(dir)).toThrow();
+    expect(readFileSync(pkgPath, "utf-8")).toBe(pkgBefore);
+    expect(readFileSync(wfPath, "utf-8")).toBe(wfBefore);
+    // 成功标记不存在（占位目录不算 retired）
+    const rows = migrateStatus(dir);
+    expect(rows[0]!.retired).toBe(false);
+  });
+
+  it("BUG-010: retire is recoverable after a failed attempt (re-run completes)", () => {
+    const { dir, pkgPath, wfPath } = setupRetireFixture("retire-recover");
+    mkdirSync(join(dir, ".nudo", "migrate-retired.json"), { recursive: true });
+    expect(() => migrateRetire(dir)).toThrow();
+    // 清掉故障注入后重跑 → 完整 retired
+    rmSync(join(dir, ".nudo", "migrate-retired.json"), { recursive: true, force: true });
+    const result = migrateRetire(dir);
+    expect(result.removedDeps).toContain("devDependencies");
+    expect(existsSync(join(dir, ".nudo", "migrate-retired.json"))).toBe(true);
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+    expect(pkg.devDependencies?.typescript).toBeUndefined();
+    expect(readFileSync(wfPath, "utf-8")).toContain("npx nudojs check .");
+    const rows = migrateStatus(dir);
+    expect(rows[0]!.retired).toBe(true);
+    expect(rows[0]!.retiring).toBe(false);
   });
 });

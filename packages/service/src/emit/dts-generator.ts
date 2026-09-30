@@ -114,7 +114,8 @@ export function absToTSType(a: Abs, typeVars?: Map<string, string>): string {
     const parts = templatePartsOf(a);
     const inner = parts
       .map((p) => {
-        const lv = litValue(p);
+        const lvR = litValue(p);
+        const lv = lvR.ok ? lvR.value : undefined;
         // 固定段是嵌入语言：`\` `` ` `` `$` 必须转义，否则 `${` 变成类型插值
         if (typeof lv === "string") return escapeTemplateTypeFixed(lv);
         return `\${${absToTSType(p, typeVars)}}`;
@@ -147,13 +148,21 @@ export function absToTSType(a: Abs, typeVars?: Map<string, string>): string {
     case "arr":
       return `${wrapComplexAbs(a.shape.element, typeVars)}[]`;
     case "tuple": {
-      const parts = a.shape.elements.map((e) => absToTSType(e, typeVars));
+      // hole 槽（`1 in a` 为 false）不得伪装成显式 undefined 元素。
+      // TS 元组类型无空槽语法，用 labeled element `hole: T` 标出稀疏位。
+      const holes = a.shape.holes ?? [];
+      const parts = a.shape.elements.map((e, i) => {
+        const ts = absToTSType(e, typeVars);
+        return holes.includes(i) ? `hole: ${ts}` : ts;
+      });
       if (a.shape.rest) {
         const rest = a.shape.rest;
+        // rest 元素类型位与 arr 元素位同口径：union/fn 必须括号，
+        // 否则 `...number | string[]` / `...(x) => T[]` 语义不同或非法
         const restTs =
           rest.shape.k === "arr"
             ? absToTSType(rest, typeVars)
-            : `${absToTSType(rest, typeVars)}[]`;
+            : `${wrapComplexAbs(rest, typeVars)}[]`;
         parts.push(`...${restTs}`);
       }
       return `[${parts.join(", ")}]`;
@@ -222,15 +231,24 @@ function widenParamAbs(a: Abs): Abs {
       return makeAbs(s, undefined, undefined, "exact");
     case "tuple": {
       const widened = s.elements.map(widenParamAbs);
+      const holes = s.holes;
       const first = widened[0];
+      // holes 必须透传：洞/显式 undefined 是可观察不同的（`in` / Object.keys），
+      // 同构退化成 array 会把稀疏位抹平成稠密元素。
       if (
+        !holes?.length &&
         first &&
         widened.length > 0 &&
         widened.every((el) => absToTSType(el) === absToTSType(first))
       ) {
         return makeAbs({ k: "arr", element: first }, undefined, undefined, "exact");
       }
-      return makeAbs({ k: "tuple", elements: widened }, undefined, undefined, "exact");
+      return makeAbs(
+        { k: "tuple", elements: widened, ...(holes?.length ? { holes: [...holes] } : {}) },
+        undefined,
+        undefined,
+        "exact",
+      );
     }
     case "arr":
       return makeAbs({ k: "arr", element: widenParamAbs(s.element) }, undefined, undefined, "exact");

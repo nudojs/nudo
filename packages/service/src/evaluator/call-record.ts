@@ -41,7 +41,8 @@ export function absStructureKey(a: Abs): string {
     typeof v === "number" && Object.is(v, -0)
       ? `L:number:-0`
       : `L:${typeof v}:${String(v)}`;
-  const v = litValue(a);
+  const vR = litValue(a);
+  const v = vR.ok ? vR.value : undefined;
   if (v !== undefined) return keyOfLit(v);
   if (a.term?.op === "lit") return keyOfLit(a.term.value);
   try {

@@ -50,8 +50,8 @@ function ser(x: unknown): string {
 
 function concrete(a: any): unknown {
   if (!a || typeof a !== "object") return a;
-  const lv = litValue(a);
-  if (lv !== undefined) return lv;
+  const lvR = litValue(a);
+  if (lvR.ok) return lvR.value;
   const k = a.shape?.k;
   if (k === "tuple") {
     const els = a.shape.elements.map(concrete);

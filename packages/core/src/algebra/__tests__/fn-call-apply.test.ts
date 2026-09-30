@@ -27,7 +27,7 @@ export function f() { return g.call(null, 41); }
 `,
       "f",
     );
-    expect(litValue(r.result)).toBe(42);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 42 });
   });
 
   it("g.apply(null, [41]) expands args array", () => {
@@ -38,7 +38,7 @@ export function f() { return g.apply(null, [21]); }
 `,
       "f",
     );
-    expect(litValue(r.result)).toBe(42);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 42 });
   });
 
   it("g.bind works; evaluator params fall back to arity names not _rest", () => {
@@ -49,7 +49,7 @@ export function f() { const h = g.bind(null, 1); return h(41); }
 `,
       "f",
     );
-    expect(litValue(r.result)).toBe(42);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 42 });
     const exports = runTranspiled(
       `
 export function g(x, y) { return x + y; }

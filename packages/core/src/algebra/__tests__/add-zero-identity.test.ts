@@ -59,7 +59,7 @@ describe("x+0 identity is unsound", () => {
 
   it("evaluator (x+0)===(x) must not fold true (string concat / -0)", () => {
     const r = call(`export function f(x) { return (x + 0) === x; }`);
-    expect(litValue(r.result)).not.toBe(true);
+    expect(litValue(r.result)).not.toEqual({ ok: true, value: true });
   });
 });
 

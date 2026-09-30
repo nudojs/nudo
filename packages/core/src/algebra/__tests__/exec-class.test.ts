@@ -26,7 +26,7 @@ export function go() {
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
     const r = callTranspiledExportFull(exports, "go", []);
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
     expect(absToString(r.result)).toContain("3");
   });
 
@@ -42,7 +42,7 @@ export function get() {
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
     const r = callTranspiledExportFull(exports, "get", []);
-    expect(litValue(r.result)).toBe(9);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 9 });
   });
 
   it("transpiles class to $class", async () => {

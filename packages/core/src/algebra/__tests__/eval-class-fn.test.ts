@@ -22,37 +22,37 @@ function call(src: string, fnName = "f") {
 
 describe("evaluator class value is a function", () => {
   it("typeof class declaration is function", () => {
-    expect(litValue(call(`export function f() { class A {} return typeof A; }`).result)).toBe("function");
+    expect(litValue(call(`export function f() { class A {} return typeof A; }`).result)).toEqual({ ok: true, value: "function" });
   });
 
   it("class is instanceof Function and Object", () => {
-    expect(litValue(call(`export function f() { class A {} return A instanceof Function; }`).result)).toBe(true);
-    expect(litValue(call(`export function f() { class A {} return A instanceof Object; }`).result)).toBe(true);
+    expect(litValue(call(`export function f() { class A {} return A instanceof Function; }`).result)).toEqual({ ok: true, value: true });
+    expect(litValue(call(`export function f() { class A {} return A instanceof Object; }`).result)).toEqual({ ok: true, value: true });
   });
 
   it("typeof class expression stays function", () => {
-    expect(litValue(call(`export function f() { let B = class {}; return typeof B; }`).result)).toBe("function");
-    expect(litValue(call(`export function f() { let B = class {}; return B instanceof Function; }`).result)).toBe(true);
+    expect(litValue(call(`export function f() { let B = class {}; return typeof B; }`).result)).toEqual({ ok: true, value: "function" });
+    expect(litValue(call(`export function f() { let B = class {}; return B instanceof Function; }`).result)).toEqual({ ok: true, value: true });
   });
 
   it("A.prototype is an object (not undefined)", () => {
-    expect(litValue(call(`export function f() { class A {} return typeof A.prototype; }`).result)).toBe("object");
+    expect(litValue(call(`export function f() { class A {} return typeof A.prototype; }`).result)).toEqual({ ok: true, value: "object" });
   });
 
   it("static method first-class read is a function", () => {
-    expect(litValue(call(`export function f() { class A { static m() { return 1; } } return typeof A.m; }`).result)).toBe("function");
+    expect(litValue(call(`export function f() { class A { static m() { return 1; } } return typeof A.m; }`).result)).toEqual({ ok: true, value: "function" });
     // 调用路径不受影响
-    expect(litValue(call(`export function f() { class A { static m() { return 1; } } return A.m(); }`).result)).toBe(1);
+    expect(litValue(call(`export function f() { class A { static m() { return 1; } } return A.m(); }`).result)).toEqual({ ok: true, value: 1 });
   });
 
   it("Function.prototype members exist on class value", () => {
-    expect(litValue(call(`export function f() { class A {} return typeof A.call; }`).result)).toBe("function");
-    expect(litValue(call(`export function f() { class A {} return typeof A.apply; }`).result)).toBe("function");
-    expect(litValue(call(`export function f() { class A {} return typeof A.bind; }`).result)).toBe("function");
+    expect(litValue(call(`export function f() { class A {} return typeof A.call; }`).result)).toEqual({ ok: true, value: "function" });
+    expect(litValue(call(`export function f() { class A {} return typeof A.apply; }`).result)).toEqual({ ok: true, value: "function" });
+    expect(litValue(call(`export function f() { class A {} return typeof A.bind; }`).result)).toEqual({ ok: true, value: "function" });
   });
 
   it("class name property reads the name", () => {
-    expect(litValue(call(`export function f() { class Widget {} return Widget.name; }`).result)).toBe("Widget");
+    expect(litValue(call(`export function f() { class Widget {} return Widget.name; }`).result)).toEqual({ ok: true, value: "Widget" });
   });
 
   it("static method still calls and sees statics", () => {
@@ -62,13 +62,13 @@ describe("evaluator class value is a function", () => {
           `export function f() { class A { static x = 5; static m() { return A.x + 1; } } return A.m(); }`,
         ).result,
       ),
-    ).toBe(6);
+    ).toEqual({ ok: true, value: 6 });
   });
 
   it("instances stay objects (not functions)", () => {
-    expect(litValue(call(`export function f() { class A {} return typeof new A(); }`).result)).toBe("object");
-    expect(litValue(call(`export function f() { class A {} return new A() instanceof Function; }`).result)).toBe(false);
-    expect(litValue(call(`export function f() { class A {} return new A() instanceof A; }`).result)).toBe(true);
+    expect(litValue(call(`export function f() { class A {} return typeof new A(); }`).result)).toEqual({ ok: true, value: "object" });
+    expect(litValue(call(`export function f() { class A {} return new A() instanceof Function; }`).result)).toEqual({ ok: true, value: false });
+    expect(litValue(call(`export function f() { class A {} return new A() instanceof A; }`).result)).toEqual({ ok: true, value: true });
   });
 
   it("subclass chain instanceof still resolves", () => {
@@ -78,13 +78,13 @@ describe("evaluator class value is a function", () => {
           `export function f() { class A { m() { return 1; } } class B extends A {} return new B() instanceof A; }`,
         ).result,
       ),
-    ).toBe(true);
+    ).toEqual({ ok: true, value: true });
     expect(
       litValue(
         call(
           `export function f() { class A { m() { return 1; } } class B extends A {} return new A() instanceof B; }`,
         ).result,
       ),
-    ).toBe(false);
+    ).toEqual({ ok: true, value: false });
   });
 });

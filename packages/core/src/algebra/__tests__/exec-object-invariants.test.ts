@@ -53,29 +53,29 @@ describe("evaluator object invariants", () => {
   });
 
   it("isFrozen reflects freeze", () => {
-    expect(str(`export function run() { let o = {a: 1}; Object.freeze(o); return Object.isFrozen(o); }`)).toBe(true);
-    expect(str(`export function run() { let o = {a: 1}; return Object.isFrozen(o); }`)).toBe(false);
+    expect(str(`export function run() { let o = {a: 1}; Object.freeze(o); return Object.isFrozen(o); }`)).toEqual({ ok: true, value: true });
+    expect(str(`export function run() { let o = {a: 1}; return Object.isFrozen(o); }`)).toEqual({ ok: true, value: false });
   });
 
   it("seal allows existing-slot writes; new slots and delete throw", () => {
-    expect(str(`export function run() { let o = {a: 1}; Object.seal(o); o.a = 2; return o.a; }`)).toBe(2);
+    expect(str(`export function run() { let o = {a: 1}; Object.seal(o); o.a = 2; return o.a; }`)).toEqual({ ok: true, value: 2 });
     expect(isNever(call(`export function run() { let o = {a: 1}; Object.seal(o); o.b = 2; return o.b; }`, "run").result)).toBe(true);
     expect(isNever(call(`export function run() { let o = {a: 1}; Object.seal(o); return delete o.a; }`, "run").result)).toBe(true);
-    expect(str(`export function run() { let o = {a: 1}; Object.seal(o); return Object.isSealed(o); }`)).toBe(true);
+    expect(str(`export function run() { let o = {a: 1}; Object.seal(o); return Object.isSealed(o); }`)).toEqual({ ok: true, value: true });
   });
 
   it("preventExtensions new slots throw; existing writes and delete ok", () => {
     expect(isNever(call(`export function run() { let o = {a: 1}; Object.preventExtensions(o); o.b = 2; return o.b; }`, "run").result)).toBe(true);
-    expect(str(`export function run() { let o = {a: 1}; Object.preventExtensions(o); o.a = 2; return o.a; }`)).toBe(2);
-    expect(str(`export function run() { let o = {a: 1}; Object.preventExtensions(o); return delete o.a; }`)).toBe(true);
-    expect(str(`export function run() { let o = {a: 1}; Object.preventExtensions(o); return Object.isExtensible(o); }`)).toBe(false);
-    expect(str(`export function run() { let o = {a: 1}; return Object.isExtensible(o); }`)).toBe(true);
+    expect(str(`export function run() { let o = {a: 1}; Object.preventExtensions(o); o.a = 2; return o.a; }`)).toEqual({ ok: true, value: 2 });
+    expect(str(`export function run() { let o = {a: 1}; Object.preventExtensions(o); return delete o.a; }`)).toEqual({ ok: true, value: true });
+    expect(str(`export function run() { let o = {a: 1}; Object.preventExtensions(o); return Object.isExtensible(o); }`)).toEqual({ ok: true, value: false });
+    expect(str(`export function run() { let o = {a: 1}; return Object.isExtensible(o); }`)).toEqual({ ok: true, value: true });
   });
 
   it("defineProperty default writable:false writes throw TypeError", () => {
     expect(isNever(call(`export function run() { let o = {}; Object.defineProperty(o, "p", {value: 1}); o.p = 2; return o.p; }`, "run").result)).toBe(true);
-    expect(str(`export function run() { let o = {}; Object.defineProperty(o, "p", {value: 1}); return o.p; }`)).toBe(1);
-    expect(str(`export function run() { let o = {}; Object.defineProperty(o, "p", {value: 1, writable: true}); o.p = 2; return o.p; }`)).toBe(2);
+    expect(str(`export function run() { let o = {}; Object.defineProperty(o, "p", {value: 1}); return o.p; }`)).toEqual({ ok: true, value: 1 });
+    expect(str(`export function run() { let o = {}; Object.defineProperty(o, "p", {value: 1, writable: true}); o.p = 2; return o.p; }`)).toEqual({ ok: true, value: 2 });
   });
 
   it("defineProperty non-enumerable keys are hidden from Object.keys", () => {
@@ -85,7 +85,7 @@ describe("evaluator object invariants", () => {
     ).result;
     expect(r.shape.k).toBe("tuple");
     if (r.shape.k === "tuple") {
-      expect(r.shape.elements.map((e) => litValue(e))).toEqual(["a"]);
+      expect(r.shape.elements.map((e) => { const r = litValue(e); return r.ok ? r.value : undefined; })).toEqual(["a"]);
     }
   });
 
@@ -93,7 +93,7 @@ describe("evaluator object invariants", () => {
     const r = call(`export function run() { let a = [1, 2]; Object.freeze(a); a[0] = 9; return a; }`, "run");
     expect(isNever(r.result)).toBe(true);
     expect(throwsTypeError(r.throws)).toBe(true);
-    expect(str(`export function run() { let a = [1, 2]; Object.freeze(a); return Object.isFrozen(a); }`)).toBe(true);
+    expect(str(`export function run() { let a = [1, 2]; Object.freeze(a); return Object.isFrozen(a); }`)).toEqual({ ok: true, value: true });
   });
 
   it("freeze does not change Object.keys or reads", () => {
@@ -103,52 +103,52 @@ describe("evaluator object invariants", () => {
     ).result;
     expect(r.shape.k).toBe("tuple");
     if (r.shape.k === "tuple") {
-      expect(r.shape.elements.map((e) => litValue(e))).toEqual(["a"]);
+      expect(r.shape.elements.map((e) => { const r = litValue(e); return r.ok ? r.value : undefined; })).toEqual(["a"]);
     }
-    expect(str(`export function run() { let o = {a: 1}; Object.freeze(o); return o.a; }`)).toBe(1);
+    expect(str(`export function run() { let o = {a: 1}; Object.freeze(o); return o.a; }`)).toEqual({ ok: true, value: 1 });
   });
 
   it("unfrozen objects keep previous mutability", () => {
-    expect(str(`export function run() { let o = {a: 1}; o.a = 2; return o.a; }`)).toBe(2);
-    expect(str(`export function run() { let o = {a: 1}; o.b = 2; return o.b; }`)).toBe(2);
-    expect(str(`export function run() { let o = {a: 1}; return delete o.a; }`)).toBe(true);
+    expect(str(`export function run() { let o = {a: 1}; o.a = 2; return o.a; }`)).toEqual({ ok: true, value: 2 });
+    expect(str(`export function run() { let o = {a: 1}; o.b = 2; return o.b; }`)).toEqual({ ok: true, value: 2 });
+    expect(str(`export function run() { let o = {a: 1}; return delete o.a; }`)).toEqual({ ok: true, value: true });
   });
 
   // ES 规范：非对象（prim/null/undefined）恒 frozen/sealed、不可扩展（不抛）。
   it("primitives are always frozen/sealed and not extensible", () => {
-    expect(str(`export function run() { return Object.isFrozen(5); }`)).toBe(true);
-    expect(str(`export function run() { return Object.isSealed(5); }`)).toBe(true);
-    expect(str(`export function run() { return Object.isExtensible(5); }`)).toBe(false);
-    expect(str(`export function run() { return Object.isFrozen('s'); }`)).toBe(true);
-    expect(str(`export function run() { return Object.isSealed(true); }`)).toBe(true);
-    expect(str(`export function run() { return Object.isExtensible(false); }`)).toBe(false);
+    expect(str(`export function run() { return Object.isFrozen(5); }`)).toEqual({ ok: true, value: true });
+    expect(str(`export function run() { return Object.isSealed(5); }`)).toEqual({ ok: true, value: true });
+    expect(str(`export function run() { return Object.isExtensible(5); }`)).toEqual({ ok: true, value: false });
+    expect(str(`export function run() { return Object.isFrozen('s'); }`)).toEqual({ ok: true, value: true });
+    expect(str(`export function run() { return Object.isSealed(true); }`)).toEqual({ ok: true, value: true });
+    expect(str(`export function run() { return Object.isExtensible(false); }`)).toEqual({ ok: true, value: false });
   });
 
   it("null/undefined are frozen/sealed and not extensible (no throw)", () => {
-    expect(str(`export function run() { return Object.isFrozen(null); }`)).toBe(true);
-    expect(str(`export function run() { return Object.isSealed(null); }`)).toBe(true);
-    expect(str(`export function run() { return Object.isExtensible(null); }`)).toBe(false);
-    expect(str(`export function run() { return Object.isFrozen(undefined); }`)).toBe(true);
-    expect(str(`export function run() { return Object.isSealed(undefined); }`)).toBe(true);
-    expect(str(`export function run() { return Object.isExtensible(undefined); }`)).toBe(false);
+    expect(str(`export function run() { return Object.isFrozen(null); }`)).toEqual({ ok: true, value: true });
+    expect(str(`export function run() { return Object.isSealed(null); }`)).toEqual({ ok: true, value: true });
+    expect(str(`export function run() { return Object.isExtensible(null); }`)).toEqual({ ok: true, value: false });
+    expect(str(`export function run() { return Object.isFrozen(undefined); }`)).toEqual({ ok: true, value: true });
+    expect(str(`export function run() { return Object.isSealed(undefined); }`)).toEqual({ ok: true, value: true });
+    expect(str(`export function run() { return Object.isExtensible(undefined); }`)).toEqual({ ok: true, value: false });
   });
 
   it("freeze/seal/preventExtensions on primitives return the primitive", () => {
-    expect(str(`export function run() { return Object.freeze(5); }`)).toBe(5);
-    expect(str(`export function run() { return Object.seal('s'); }`)).toBe("s");
-    expect(str(`export function run() { return Object.preventExtensions(true); }`)).toBe(true);
-    expect(str(`export function run() { return Object.freeze(null); }`)).toBe(null);
-    expect(str(`export function run() { return Object.preventExtensions(undefined); }`)).toBe(undefined);
+    expect(str(`export function run() { return Object.freeze(5); }`)).toEqual({ ok: true, value: 5 });
+    expect(str(`export function run() { return Object.seal('s'); }`)).toEqual({ ok: true, value: "s" });
+    expect(str(`export function run() { return Object.preventExtensions(true); }`)).toEqual({ ok: true, value: true });
+    expect(str(`export function run() { return Object.freeze(null); }`)).toEqual({ ok: true, value: null });
+    expect(str(`export function run() { return Object.preventExtensions(undefined); }`)).toEqual({ ok: true, value: undefined });
   });
 
   // {...frozen} 是**新对象**，不携带 frozen 不变性（原生 identity 也不共享）。
   it("spread of a frozen object produces an unfrozen copy", () => {
     expect(
       str(`export function run() { let o = Object.freeze({a: 1}); return Object.isFrozen({...o}); }`),
-    ).toBe(false);
+    ).toEqual({ ok: true, value: false });
     expect(
       str(`export function run() { let o = Object.freeze({a: 1}); let c = {...o}; return Object.isFrozen(c); }`),
-    ).toBe(false);
+    ).toEqual({ ok: true, value: false });
   });
 
   it("spread copy is independent (writes do not mutate the source)", () => {
@@ -156,11 +156,11 @@ describe("evaluator object invariants", () => {
       str(
         `export function run() { let o = {a: 1}; let c = {...o}; c.a = 9; return o.a; }`,
       ),
-    ).toBe(1);
+    ).toEqual({ ok: true, value: 1 });
   });
 
   it("spread still copies slots and preserves later overrides", () => {
-    expect(str(`export function run() { let o = {a: 1, b: 2}; let c = {...o, b: 3}; return c.a + ':' + c.b; }`)).toBe("1:3");
-    expect(str(`export function run() { let o = {a: 1}; return ({...o}).a; }`)).toBe(1);
+    expect(str(`export function run() { let o = {a: 1, b: 2}; let c = {...o, b: 3}; return c.a + ':' + c.b; }`)).toEqual({ ok: true, value: "1:3" });
+    expect(str(`export function run() { let o = {a: 1}; return ({...o}).a; }`)).toEqual({ ok: true, value: 1 });
   });
 });

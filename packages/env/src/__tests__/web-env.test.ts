@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { defineEnv } from "../web.ts";
-import { formatShape, litValue, getFnImpl, strLit } from "@nudojs/core";
+import { formatShape, litValue, getFnImpl, absOnly, strLit } from "@nudojs/core";
 import type { Abs } from "@nudojs/core";
 
 /**
@@ -74,11 +74,11 @@ describe("web env load + Fetch/URL/DOM faces", () => {
   it("URL / URLSearchParams have typed members and literal-fold", () => {
     const URLFn = globalOf(env, "URL");
     const impl = getFnImpl(URLFn)!;
-    const folded = impl.apply!([strLit("https://example.com/a?b=1")]);
+    const folded = absOnly(impl.apply!([strLit("https://example.com/a?b=1")]));
     expect(folded).toBeTruthy();
     // literal fold: href carries the concrete URL string
-    expect(litValue(walk(folded, "href")!)).toBe("https://example.com/a?b=1");
-    expect(litValue(walk(folded, "origin")!)).toBe("https://example.com");
+    expect(litValue(walk(folded, "href")!)).toEqual({ ok: true, value: "https://example.com/a?b=1" });
+    expect(litValue(walk(folded, "origin")!)).toEqual({ ok: true, value: "https://example.com" });
     expect(shapeOf(walk(folded, "searchParams"), "URL.searchParams")).toBeTruthy();
     expect(shapeOf(walk(folded, "toString"), "URL.toString")).toContain("=>");
 
@@ -159,12 +159,12 @@ describe("web env load + Fetch/URL/DOM faces", () => {
   it("atob / btoa fold on literals", () => {
     const btoaFn = globalOf(env, "btoa");
     const impl = getFnImpl(btoaFn)!;
-    const folded = impl.apply!([strLit("hi")]);
-    expect(litValue(folded!)).toBe(Buffer.from("hi").toString("base64"));
+    const folded = absOnly(impl.apply!([strLit("hi")]));
+    expect(litValue(folded)).toEqual({ ok: true, value: Buffer.from("hi").toString("base64") });
     const atobFn = globalOf(env, "atob");
     const aImpl = getFnImpl(atobFn)!;
-    const decoded = aImpl.apply!([strLit(Buffer.from("hi").toString("base64"))]);
-    expect(litValue(decoded!)).toBe("hi");
+    const decoded = absOnly(aImpl.apply!([strLit(Buffer.from("hi").toString("base64"))]));
+    expect(litValue(decoded)).toEqual({ ok: true, value: "hi" });
   });
 
   it("TextEncoder / TextDecoder / structuredClone are typed", () => {

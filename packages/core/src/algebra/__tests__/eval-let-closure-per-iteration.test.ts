@@ -25,7 +25,7 @@ describe("evaluator per-iteration let closures", () => {
       }
       return fns[0]() + fns[1]() + fns[2]();
     }`);
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 
   it("each for-let closure sees its own index", () => {
@@ -36,7 +36,7 @@ describe("evaluator per-iteration let closures", () => {
       }
       return fns[0]();
     }`);
-    expect(litValue(r0.result)).toBe(0);
+    expect(litValue(r0.result)).toEqual({ ok: true, value: 0 });
     const r1 = call(`export function f() {
       const fns = [];
       for (let i = 0; i < 3; i++) {
@@ -44,7 +44,7 @@ describe("evaluator per-iteration let closures", () => {
       }
       return fns[1]();
     }`);
-    expect(litValue(r1.result)).toBe(1);
+    expect(litValue(r1.result)).toEqual({ ok: true, value: 1 });
     const r2 = call(`export function f() {
       const fns = [];
       for (let i = 0; i < 3; i++) {
@@ -52,7 +52,7 @@ describe("evaluator per-iteration let closures", () => {
       }
       return fns[2]();
     }`);
-    expect(litValue(r2.result)).toBe(2);
+    expect(litValue(r2.result)).toEqual({ ok: true, value: 2 });
   });
 
   it("for-let: later-iteration mutation does not leak into earlier closures", () => {
@@ -66,7 +66,7 @@ describe("evaluator per-iteration let closures", () => {
       }
       return fns[0]();
     }`);
-    expect(litValue(r.result)).toBe(0);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 0 });
     const r1 = call(`export function f() {
       const fns = [];
       for (let i = 0; i < 3; i++) {
@@ -76,7 +76,7 @@ describe("evaluator per-iteration let closures", () => {
       return fns[1]();
     }`);
     // 本轮捕获 i=1，随后 i=100 写到同一绑定（JS 语义）
-    expect(litValue(r1.result)).toBe(100);
+    expect(litValue(r1.result)).toEqual({ ok: true, value: 100 });
   });
 
   it("for-var closures share the binding (all see the final value)", () => {
@@ -87,7 +87,7 @@ describe("evaluator per-iteration let closures", () => {
       }
       return fns[0]();
     }`);
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
     const r1 = call(`export function f() {
       const fns = [];
       for (var i = 0; i < 3; i++) {
@@ -95,7 +95,7 @@ describe("evaluator per-iteration let closures", () => {
       }
       return fns[1]();
     }`);
-    expect(litValue(r1.result)).toBe(3);
+    expect(litValue(r1.result)).toEqual({ ok: true, value: 3 });
     const rEq = call(`export function f() {
       const fns = [];
       for (var i = 0; i < 3; i++) {
@@ -103,7 +103,7 @@ describe("evaluator per-iteration let closures", () => {
       }
       return fns[0]() === fns[1]() && fns[1]() === fns[2]();
     }`);
-    expect(litValue(rEq.result)).toBe(true);
+    expect(litValue(rEq.result)).toEqual({ ok: true, value: true });
   });
 
   it("for-var: the binding remains visible after the loop", () => {
@@ -111,7 +111,7 @@ describe("evaluator per-iteration let closures", () => {
       for (var i = 0; i < 3; i++) {}
       return i;
     }`);
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 
   it("for-let: the binding is not visible after the loop (block-scoped)", () => {
@@ -121,7 +121,7 @@ describe("evaluator per-iteration let closures", () => {
       for (let i = 0; i < 3; i++) { out += i; }
       return out;
     }`);
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 
   it("forEach callback param is per-callback (existing semantics kept)", () => {
@@ -130,7 +130,7 @@ describe("evaluator per-iteration let closures", () => {
       [10,20,30].forEach((x) => { seen.push(() => x); });
       return seen[0]() + seen[1]() + seen[2]();
     }`);
-    expect(litValue(r.result)).toBe(60);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 60 });
   });
 
   it("for-let with early continue still captures per-iteration values", () => {
@@ -143,7 +143,7 @@ describe("evaluator per-iteration let closures", () => {
       return fns[0]() + fns[1]();
     }`);
     // i=1 和 i=3
-    expect(litValue(r.result)).toBe(4);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 4 });
   });
 
   it("nested for-let captures the inner binding", () => {
@@ -157,6 +157,6 @@ describe("evaluator per-iteration let closures", () => {
       return fns[0]() + fns[1]() + fns[2]() + fns[3]();
     }`);
     // 0+1+10+11 = 22
-    expect(litValue(r.result)).toBe(22);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 22 });
   });
 });

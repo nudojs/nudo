@@ -5,7 +5,7 @@
  */
 
 import type { Node } from "@babel/types";
-import { extractDirectives, type FunctionWithDirectives } from "@nudojs/parser";
+import { extractDirectivesQuiet, type FunctionWithDirectives } from "@nudojs/parser";
 import { parse, parseCaseArgExpr } from "@nudojs/parser";
 import type { MockHelper } from "@nudojs/core";
 import {
@@ -15,12 +15,14 @@ import {
   abs as makeAbs,
   confJoin,
   unknown as absUnknown,
+  undefAbs,
   litValue,
   formatAbs,
   getFnImpl,
   tryRunTranspiled,
   bindingsOf,
-  callTranspiledExportFull,
+  callTranspiledExportApply,
+  CONSTRAINT_EXPR_RE,
 } from "@nudojs/core";
 import { defaultLoadModule, type LoadModule } from "./load-module.ts";
 import { evalMockFileWithDeps } from "./mock-file.ts";
@@ -110,16 +112,18 @@ function constantMockFn(result: Abs): Abs {
  */
 function absArgMatches(declared: Abs, actual: Abs | undefined): boolean {
   if (!actual) return false;
-  const av = litValue(actual);
-  const dv = litValue(declared);
-  if (dv !== undefined) {
-    return av !== undefined && Object.is(av, dv);
+  const avR = litValue(actual);
+  const dvR = litValue(declared);
+  // 「是否字面量」必须看 ok：lit(undefined) 的 value 就是 undefined，
+  // 用 value !== undefined 当门闩会把 withArgs(undefined) 永远判不中。
+  if (dvR.ok) {
+    return avR.ok && Object.is(avR.value, dvR.value);
   }
   // declared 是 prim（如 number()）：接受同源字面量或同 prim
   if (declared.shape.k === "prim") {
     if (actual.shape.k === "prim") return actual.shape.type === declared.shape.type;
-    if (av !== undefined) {
-      const t = typeof av;
+    if (avR.ok) {
+      const t = typeof avR.value;
       return (
         (declared.shape.type === "number" && t === "number") ||
         (declared.shape.type === "string" && t === "string") ||
@@ -241,6 +245,8 @@ export type FromMockError = {
   name: string;
   fromPath: string;
   message: string;
+  /** 缺省 nudo:module-missing；表达式解析失败 = nudo:mock-invalid */
+  code?: string;
 };
 
 function isAbsVal(v: unknown): v is Abs {
@@ -263,30 +269,45 @@ function loadFromMockBinding(
   const evaled = evalMockFileWithDeps(fromPath, base, loadModule);
   if (!evaled.ok) {
     return {
-      error: evaled.error.includes("not found")
-        ? `Mock file not found for '${name}' (from "${fromPath}")`
-        : evaled.error,
+      error:
+        evaled.kind === "not-found"
+          ? `Mock file not found for '${name}' (from "${fromPath}")`
+          : evaled.error,
     };
   }
   const run = evaled.run;
-  let val: unknown = run[name];
-  if (val === undefined) {
+  // 「名存在但值 undefined」≠「从未绑定」：用 in / Map.has 判存在，
+  // 与 evalExportsToModuleExports 保留 undefined 槽位同口径
+  let val: unknown;
+  let found = false;
+  if (name in run) {
+    val = run[name];
+    found = true;
+  } else {
     const binds = bindingsOf(run);
-    val = binds?.get(name);
+    if (binds?.has(name)) {
+      val = binds.get(name);
+      found = true;
+    }
   }
-  if (val === undefined) {
+  if (!found) {
     return {
       error: `Mock file "${fromPath}" does not define a binding named '${name}'`,
     };
   }
   let absVal: Abs;
-  if (isAbsVal(val)) {
+  if (val === undefined) {
+    // 名存在但值 undefined：保留槽位为 undefAbs（与 evalExportsToModuleExports 同口径）
+    absVal = undefAbs();
+  } else if (isAbsVal(val)) {
     absVal = val;
   } else if (typeof val === "function") {
     const fn = val as { length?: number };
     const params = Array.from({ length: fn.length ?? 0 }, (_, i) => `arg${i}`);
     absVal = absFunction(params, {
-      apply: (args: Abs[]): Abs => callTranspiledExportFull(run!, name, args).result,
+      // H1：throws 面经 apply 返回值通道保留（callTranspiledExportApply），
+      // $call 统一路由——mock 桥与导出桥同一通道（BUG-006 根治）。
+      apply: callTranspiledExportApply(run!, name),
       kind: "eval-export",
       fingerprint: `from-mock=${fromPath}#${name}`,
     });
@@ -355,10 +376,37 @@ export function mockDirectivesToAbsSeeds(
         // `= T.number` 等类型值 mock：此前只进 TypeValue env（applyMocks），
         // 求值引擎注入只吃 seed → 被当 unknown 全局（nudo:builtin-unknown）。
         // 桥进 seedVars 后两条路径口径一致。
+        // fail-closed：解析失败不得静默 absUnknown——否则无法区分
+        // 「mock 故意 unknown」与「表达式没解析出来」。
+        const expr = d.expression.trim();
+        const intentionalUnknown =
+          expr === "unknown" ||
+          expr === "any" ||
+          /^T(\.|$)/.test(expr) ||
+          CONSTRAINT_EXPR_RE.test(expr);
         try {
-          seedVars[d.name] = parseCaseArgExpr(d.expression);
-        } catch {
-          seedVars[d.name] = absUnknown;
+          const abs = parseCaseArgExpr(d.expression);
+          const silentFallback =
+            abs.shape.k === "unknown" && !abs.term && !intentionalUnknown;
+          if (silentFallback) {
+            fromErrors.push({
+              name: d.name,
+              fromPath: "(inline)",
+              message: `Failed to parse mock expression for '${d.name}': ${d.expression}`,
+              code: "nudo:mock-invalid",
+            });
+          } else {
+            seedVars[d.name] = abs;
+          }
+        } catch (e) {
+          fromErrors.push({
+            name: d.name,
+            fromPath: "(inline)",
+            message: `Failed to parse mock expression for '${d.name}': ${
+              e instanceof Error ? e.message : String(e)
+            }`,
+            code: "nudo:mock-invalid",
+          });
         }
       }
     }
@@ -371,6 +419,6 @@ export function mockSeedsForSource(
   source: string,
   opts?: { fromFile?: string; loadModule?: LoadModule },
 ): Record<string, Abs> {
-  const fns = extractDirectives(parse(source));
+  const fns = extractDirectivesQuiet(parse(source));
   return mockSeedsToAbsMocks(mockDirectivesToAbsSeeds(fns, opts));
 }

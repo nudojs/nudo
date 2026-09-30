@@ -22,7 +22,7 @@ export function go() {
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
     const r = callTranspiledExportFull(exports, "go", []);
-    expect(litValue(r.result)).toBe(13); // 1+9+3
+    expect(litValue(r.result)).toEqual({ ok: true, value: 13 }); // 1+9+3
   });
 
   it("array spread concatenates", () => {
@@ -36,7 +36,7 @@ export function go() {
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
     const r = callTranspiledExportFull(exports, "go", []);
-    expect(litValue(r.result)).toBe(6);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 6 });
   });
 
   it("transpiles spread", () => {
@@ -59,7 +59,7 @@ export function go() {
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
     const r = callTranspiledExportFull(exports, "go", []);
-    expect(litValue(r.result)).toBe(6);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 6 });
   });
 
   it("for-of with object destructure", () => {
@@ -75,7 +75,7 @@ export function go() {
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
     const r = callTranspiledExportFull(exports, "go", []);
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 
   it("transpiles for-of", () => {

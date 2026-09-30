@@ -16,21 +16,21 @@ function call(src: string, fnName = "f") {
 describe("evaluator Map/Set forEach and iteration", () => {
   it("typeof m.forEach is function", () => {
     const r = call(`export function f() { const m = new Map([["a", 1]]); return typeof m.forEach; }`);
-    expect(litValue(r.result)).toBe("function");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "function" });
   });
 
   it("Map forEach visits every literal entry", () => {
     const r = call(
       `export function f() { const m = new Map([["a", 1], ["b", 2]]); let s = 0; m.forEach((v) => s += v); return s; }`,
     );
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 
   it("Map forEach passes key as second arg", () => {
     const r = call(
       `export function f() { const m = new Map([["a", 1], ["b", 2]]); let s = 0; m.forEach((v, k) => s += k.length); return s; }`,
     );
-    expect(litValue(r.result)).toBe(2);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
   });
 
   it("Map forEach returns undefined", () => {
@@ -40,51 +40,51 @@ describe("evaluator Map/Set forEach and iteration", () => {
 
   it("Map forEach on empty map iterates zero times", () => {
     const r = call(`export function f() { const m = new Map(); let n = 0; m.forEach(() => n++); return n; }`);
-    expect(litValue(r.result)).toBe(0);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 0 });
   });
 
   it("typeof m[Symbol.iterator] is function", () => {
     const r = call(
       `export function f() { const m = new Map([["a", 1]]); return typeof m[Symbol.iterator]; }`,
     );
-    expect(litValue(r.result)).toBe("function");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "function" });
   });
 
   it("Set forEach visits every element", () => {
     const r = call(
       `export function f() { const s = new Set([1, 2, 3]); let a = 0; s.forEach((v) => a += v); return a; }`,
     );
-    expect(litValue(r.result)).toBe(6);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 6 });
   });
 
   it("typeof s.forEach and s[Symbol.iterator] are function", () => {
     const r = call(`export function f() { const s = new Set([1, 2]); return typeof s.forEach; }`);
-    expect(litValue(r.result)).toBe("function");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "function" });
     const r2 = call(
       `export function f() { const s = new Set([1, 2]); return typeof s[Symbol.iterator]; }`,
     );
-    expect(litValue(r2.result)).toBe("function");
+    expect(litValue(r2.result)).toEqual({ ok: true, value: "function" });
   });
 
   it("Set has NaN matches SameValueZero", () => {
     const r = call(`export function f() { const s = new Set([NaN]); return s.has(NaN); }`);
-    expect(litValue(r.result)).toBe(true);
+    expect(litValue(r.result)).toEqual({ ok: true, value: true });
   });
 
   it("Set add NaN dedupes SameValueZero", () => {
     const r = call(`export function f() { const s = new Set(); s.add(NaN); s.add(NaN); return s.size; }`);
-    expect(litValue(r.result)).toBe(1);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 1 });
   });
 
   it("Set delete NaN removes the entry", () => {
     const r = call(
       `export function f() { const s = new Set([NaN]); s.delete(NaN); return s.size; }`,
     );
-    expect(litValue(r.result)).toBe(0);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 0 });
   });
 
   it("regression: duplicate literal add still dedupes", () => {
     const r = call(`export function f() { const s = new Set(); s.add(1); s.add(1); return s.size; }`);
-    expect(litValue(r.result)).toBe(1);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 1 });
   });
 });

@@ -133,16 +133,17 @@ Skip abstract interpretation of the function body: the engine does not evaluate 
 
 ```text
 @nudo:skip
-@nudo:skip returnsExpr
+@nudo:skip => returnsExpr
+@nudo:skip (returnsExpr)
 ```
 
-- **returnsExpr** (optional) — A constraint-builder / concrete expression used as the return type.
+- **returnsExpr** (optional) — A constraint-builder / concrete expression used as the return type. Must be written as `=> expr` or fully wrapped in `(…)`; bare prose after `@nudo:skip` is ignored (it is not a type).
 
 ### Scope
 
 - **No body evaluation.** The declared type (or `any`) becomes the signature return; entry may-throw (L2) is not evaluated for a skipped body.
 - **Parameter obligations stay.** `@nudo:contract` preconditions still gate call sites, and the parameter display still comes from the handwritten contract — `nudo check` reports `needsPositive(x: number) => any` for a skipped `needsPositive` with `@nudo:contract x positive`.
-- **Return contracts still checked.** `@nudo:skip lit(0)` under `@nudo:contract return positive` reports `nudo:constraint-violated`.
+- **Return contracts still checked.** `@nudo:skip => lit(0)` under `@nudo:contract return positive` reports `nudo:constraint-violated`.
 
 ### Examples
 
@@ -165,7 +166,7 @@ function heavyComputation(data) {
 
 ```javascript verify
 /**
- * @nudo:skip number()
+ * @nudo:skip => number()
  */
 function unannotatedHeavy(x) {
   // Explicit return type via the directive
@@ -615,7 +616,7 @@ const result = a + b;
 | `@nudo:case` | `"name" (args...)` or `"name" (args) => type` | Debug / `nudo test` witnesses (not the contract product) |
 | `@nudo:mock` | `name = expr` or `name from "path"` | Mock external dependencies |
 | `@nudo:pure` | (no args) | Mark function pure — evaluator memoizes call results by args |
-| `@nudo:skip` | `[returnsExpr]` | Skip evaluation, use existing type info |
+| `@nudo:skip` | `[=> returnsExpr]` / `[(returnsExpr)]` | Skip evaluation, use existing type info |
 | `@nudo:sample` | `N` | Reserved no-op (parsed, not consumed) |
 | `@nudo:contract` | `param constraint` / `return constraint` | In-source contract (main path is the `*.nudo.js` sidecar auto-binding) |
 | `@nudo:throws` | `Error, TypeError` or `*` | Declare intentional throws — discharges L2 `nudo:entry-may-throw` for the declared kinds |

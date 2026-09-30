@@ -14,7 +14,7 @@ function call(src: string, fnName = "f") {
 describe("evaluator void operator", () => {
   it("void (n = 9) evaluates the assignment", () => {
     const r = call(`export function f() { let n = 5; void (n = 9); return n; }`);
-    expect(litValue(r.result)).toBe(9);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 9 });
   });
 
   it("void f() invokes the function", () => {
@@ -26,12 +26,12 @@ describe("evaluator void operator", () => {
         return calls;
       }`,
     );
-    expect(litValue(r.result)).toBe(1);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 1 });
   });
 
   it("void (o.x = 1) writes the member", () => {
     const r = call(`export function f() { const o = {}; void (o.x = 1); return o.x; }`);
-    expect(litValue(r.result)).toBe(1);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 1 });
   });
 
   it("void expression value is always undefined", () => {
@@ -46,6 +46,6 @@ describe("evaluator void operator", () => {
 
   it("void on postfix increment still updates the binding", () => {
     const r = call(`export function f() { let n = 1; void (n++); return n; }`);
-    expect(litValue(r.result)).toBe(2);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
   });
 });

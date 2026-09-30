@@ -16,85 +16,85 @@ function call(src: string, fnName = "f") {
 describe("evaluator Object.create(null)", () => {
   it("prototype members are absent", () => {
     const r = call(`export function f() { const o = Object.create(null); return "toString" in o; }`);
-    expect(litValue(r.result)).toBe(false);
+    expect(litValue(r.result)).toEqual({ ok: true, value: false });
   });
 
   it("unknown keys are absent", () => {
     const r = call(`export function f() { const o = Object.create(null); return "x" in o; }`);
-    expect(litValue(r.result)).toBe(false);
+    expect(litValue(r.result)).toEqual({ ok: true, value: false });
   });
 
   it("own slot after write is present", () => {
     const r = call(
       `export function f() { const o = Object.create(null); o.x = 1; return "x" in o; }`,
     );
-    expect(litValue(r.result)).toBe(true);
+    expect(litValue(r.result)).toEqual({ ok: true, value: true });
   });
 
   it("prototype members stay absent after write", () => {
     const r = call(
       `export function f() { const o = Object.create(null); o.x = 1; return "toString" in o; }`,
     );
-    expect(litValue(r.result)).toBe(false);
+    expect(litValue(r.result)).toEqual({ ok: true, value: false });
   });
 
   it("prototype members stay absent after delete", () => {
     const r = call(
       `export function f() { const o = Object.create(null); o.x = 1; delete o.x; return "toString" in o; }`,
     );
-    expect(litValue(r.result)).toBe(false);
+    expect(litValue(r.result)).toEqual({ ok: true, value: false });
   });
 
   it("own slot after delete is absent", () => {
     const r = call(
       `export function f() { const o = Object.create(null); o.x = 1; delete o.x; return "x" in o; }`,
     );
-    expect(litValue(r.result)).toBe(false);
+    expect(litValue(r.result)).toEqual({ ok: true, value: false });
   });
 
   it("regression: plain object keeps prototype members", () => {
     const r = call(`export function f() { const o = {}; return "toString" in o; }`);
-    expect(litValue(r.result)).toBe(true);
+    expect(litValue(r.result)).toEqual({ ok: true, value: true });
   });
 });
 
 describe("evaluator Object.create(null) instanceof", () => {
   it("instanceof Object is false (null-terminated chain)", () => {
     const r = call(`export function f() { const o = Object.create(null); return o instanceof Object; }`);
-    expect(litValue(r.result)).toBe(false);
+    expect(litValue(r.result)).toEqual({ ok: true, value: false });
   });
 
   it("instanceof builtin ctors is false", () => {
     const r = call(`export function f() { const o = Object.create(null); return o instanceof Array; }`);
-    expect(litValue(r.result)).toBe(false);
+    expect(litValue(r.result)).toEqual({ ok: true, value: false });
     const r2 = call(`export function f() { const o = Object.create(null); return o instanceof Date; }`);
-    expect(litValue(r2.result)).toBe(false);
+    expect(litValue(r2.result)).toEqual({ ok: true, value: false });
   });
 
   it("instanceof user class is false", () => {
     const r = call(
       `export function f() { class C {} const o = Object.create(null); return o instanceof C; }`,
     );
-    expect(litValue(r.result)).toBe(false);
+    expect(litValue(r.result)).toEqual({ ok: true, value: false });
   });
 
   it("stays false after writes migrate the nullProto mark", () => {
     const r = call(
       `export function f() { const o = Object.create(null); o.x = 1; return o instanceof Object; }`,
     );
-    expect(litValue(r.result)).toBe(false);
+    expect(litValue(r.result)).toEqual({ ok: true, value: false });
   });
 
   it("stays false after delete", () => {
     const r = call(
       `export function f() { const o = Object.create(null); o.x = 1; delete o.x; return o instanceof Object; }`,
     );
-    expect(litValue(r.result)).toBe(false);
+    expect(litValue(r.result)).toEqual({ ok: true, value: false });
   });
 
   it("regression: plain object is instanceof Object", () => {
     const r = call(`export function f() { const o = {}; return o instanceof Object; }`);
-    expect(litValue(r.result)).toBe(true);
+    expect(litValue(r.result)).toEqual({ ok: true, value: true });
   });
 
   it("regression: Object.create(C.prototype) is not falsely decided", () => {
@@ -102,6 +102,7 @@ describe("evaluator Object.create(null) instanceof", () => {
       `export function f() { class C {} const o = Object.create(C.prototype); return o instanceof Object; }`,
     );
     // 对象原型实参不建模（保守 unknown 路径）：不得折成 false
-    expect([true, undefined]).toContain(litValue(r.result));
+    const r0 = litValue(r.result);
+    expect(!r0.ok || r0.value === true || r0.value === undefined).toBe(true);
   });
 });

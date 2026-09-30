@@ -19,9 +19,9 @@ export function go(o) {
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
     const ok = callTranspiledExportFull(exports, "go", [$obj({ id: $lit(7) })]);
-    expect(litValue(ok.result)).toBe(7);
+    expect(litValue(ok.result)).toEqual({ ok: true, value: 7 });
     const nil = callTranspiledExportFull(exports, "go", [$lit(null)]);
-    expect(litValue(nil.result)).toBeUndefined();
+    expect(litValue(nil.result)).toEqual({ ok: true, value: undefined });
   });
 
   it("a?.b.c chains", () => {
@@ -34,9 +34,9 @@ export function go(o) {
     const ok = callTranspiledExportFull(exports, "go", [
       $obj({ user: $obj({ name: $lit("Ada") }) }),
     ]);
-    expect(litValue(ok.result)).toBe("Ada");
+    expect(litValue(ok.result)).toEqual({ ok: true, value: "Ada" });
     const nil = callTranspiledExportFull(exports, "go", [$lit(null)]);
-    expect(litValue(nil.result)).toBeUndefined();
+    expect(litValue(nil.result)).toEqual({ ok: true, value: undefined });
   });
 
   it("transpiles optional member", () => {
@@ -58,7 +58,7 @@ export function go() {
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
     const r = callTranspiledExportFull(exports, "go", []);
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 
   it("nested with default", () => {
@@ -71,7 +71,7 @@ export function go() {
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
     const r = callTranspiledExportFull(exports, "go", []);
-    expect(litValue(r.result)).toBe(9);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 9 });
   });
 
   it("array of objects", () => {
@@ -84,6 +84,6 @@ export function go() {
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
     const r = callTranspiledExportFull(exports, "go", []);
-    expect(litValue(r.result)).toBe(4);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 4 });
   });
 });

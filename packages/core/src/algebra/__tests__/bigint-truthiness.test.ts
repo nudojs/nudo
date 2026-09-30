@@ -40,12 +40,12 @@ describe("bigint ToBoolean (0n is falsy)", () => {
   it("!abstractBigint is unknown boolean, not exact false", () => {
     const r = notAbs(bigPrim());
     expect(r.shape).toEqual({ k: "prim", type: "boolean" });
-    expect(litValue(r)).toBeUndefined();
+    expect(litValue(r)).toEqual({ ok: false });
   });
 
   it("!0n is true; !5n is false", () => {
-    expect(litValue(notAbs(bigLit(0n)))).toBe(true);
-    expect(litValue(notAbs(bigLit(5n)))).toBe(false);
+    expect(litValue(notAbs(bigLit(0n)))).toEqual({ ok: true, value: true });
+    expect(litValue(notAbs(bigLit(5n)))).toEqual({ ok: true, value: false });
   });
 
   it("symbol remains always-truthy (0n-like hole does not exist)", () => {
@@ -54,7 +54,7 @@ describe("bigint ToBoolean (0n is falsy)", () => {
   });
 
   it("number prim stays unknown (0 is falsy)", () => {
-    expect(litValue(notAbs(numLit(0)))).toBe(true);
+    expect(litValue(notAbs(numLit(0)))).toEqual({ ok: true, value: true });
     expect(litTruth(bigintLit(0n))).toBe(false);
     expect(litTruth(boolLit(false))).toBe(false);
   });

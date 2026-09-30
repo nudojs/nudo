@@ -22,7 +22,7 @@ import {
   buildRenameEdits,
   type DocumentSymbolItem,
 } from "./symbols.ts";
-import { uriToFilePath } from "./validation.ts";
+import { cacheKey, uriToFilePath } from "./validation.ts";
 
 export type NavigationDeps = {
   connection: Connection;
@@ -43,8 +43,10 @@ export function filePathToUri(filePath: string): string {
 
 /** 打开文档 + 会话 knownFiles，供跨文件 references 扫描 */
 export function collectNavigationExtraFiles(currentPath: string, deps: NavigationDeps): string[] {
-  const open = deps.listDocuments().map((d) => uriToFilePath(d.uri));
-  const all = new Set<string>([...open, ...deps.knownFiles, currentPath]);
+  // 三源统一 cacheKey 形态去重：open doc 是 uri 形态、knownFiles 是 cacheKey、
+  // currentPath 是裸路径——混形态会把同一文件扫两遍（FIX-J1）
+  const open = deps.listDocuments().map((d) => cacheKey(d.uri));
+  const all = new Set<string>([...open, ...[...deps.knownFiles].map(cacheKey), cacheKey(currentPath)]);
   return [...all];
 }
 
@@ -84,10 +86,12 @@ connection.onDocumentSymbol((params) => {
 connection.onWorkspaceSymbol((params) => {
   const query = params.query.toLowerCase();
   const out: SymbolInformation[] = [];
-  const files = new Set<string>([...deps.knownFiles]);
-  for (const d of documents.all()) files.add(uriToFilePath(d.uri));
+  // 统一 cacheKey 形态：knownFiles 是 cacheKey 键，open doc 是 uri 形态——混形态会
+  // 漏掉打开中的 buffer，或同一文件被扫两遍（FIX-J1）
+  const files = new Set<string>([...deps.knownFiles].map(cacheKey));
+  for (const d of documents.all()) files.add(cacheKey(d.uri));
   for (const filePath of files) {
-    const doc = documents.all().find((d) => uriToFilePath(d.uri) === filePath);
+    const doc = documents.all().find((d) => cacheKey(d.uri) === cacheKey(filePath));
     let source: string | undefined;
     if (doc) {
       source = doc.getText();

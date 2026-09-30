@@ -129,7 +129,7 @@ describe("evaluator require runtime", () => {
       "go",
     );
     expect(r).toBeDefined();
-    expect(litValue(r!)).toBe("from-a");
+    expect(litValue(r!)).toEqual({ ok: true, value: "from-a" });
   });
 
   it("dynamic require returns unknown and does not throw", () => {
@@ -151,7 +151,7 @@ describe("evaluator require runtime", () => {
       }`,
       "go",
     );
-    expect(litValue(r1!)).toBe("from-a");
+    expect(litValue(r1!)).toEqual({ ok: true, value: "from-a" });
 
     const r2 = run(
       `export function go() {
@@ -161,7 +161,7 @@ describe("evaluator require runtime", () => {
       }`,
       "go",
     );
-    expect(litValue(r2!)).toBe("from-b");
+    expect(litValue(r2!)).toEqual({ ok: true, value: "from-b" });
   });
 
   it("optional require neither side resolves → unknown (honest)", () => {
@@ -179,7 +179,7 @@ describe("evaluator require runtime", () => {
 
   it("require.resolve(lit) evaluates to the static specifier", () => {
     const r = run(`export function go() { return require.resolve("./a.js"); }`, "go");
-    expect(litValue(r!)).toBe("./a.js");
+    expect(litValue(r!)).toEqual({ ok: true, value: "./a.js" });
   });
 
   it("require.resolve(dynamic) evaluates to unknown", () => {

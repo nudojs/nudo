@@ -13,7 +13,7 @@ import { hashSource, resetHashSourceCache } from "./hash-source.ts";
 import { resetSidecarLoadFailureCache } from "./interface.ts";
 import {
   loadModuleDepsFingerprint,
-  normPath,
+  stablePathKey,
   type LoadDepsFingerprint,
 } from "./load-deps-fp.ts";
 import { runTranspiledOptionsMemoKey } from "./exec/run.ts";
@@ -68,11 +68,11 @@ function unindexCheckKey(key: string): void {
   checkKeyDeps.delete(key);
 }
 
-/** `*.nudo.js` 变更后定向逐出依赖它的整文件 check 缓存 */
+/** `*.nudo.js` 变更后定向逐出依赖它的整文件 check 缓存。查找与索引同走 stablePathKey */
 export function evictCheckSourceMemoForPaths(paths: string[]): number {
   let n = 0;
   for (const raw of paths) {
-    const p = normPath(raw);
+    const p = stablePathKey(raw);
     const keys = checkDepIndex.get(p);
     if (!keys) continue;
     for (const key of [...keys]) {
@@ -168,8 +168,10 @@ export function checkMemoSet(key: string, value: CheckReport, depPaths: string[]
   }
   checkReportMemo.set(key, value);
   if (depPaths.length > 0) {
-    checkKeyDeps.set(key, depPaths);
-    for (const p of depPaths) {
+    // 索引与逐出同走 stablePathKey：deps.paths / 侧车路径形态由 fromFile 决定
+    const normDeps = [...new Set(depPaths.map(stablePathKey))];
+    checkKeyDeps.set(key, normDeps);
+    for (const p of normDeps) {
       let set = checkDepIndex.get(p);
       if (!set) {
         set = new Set();

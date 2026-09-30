@@ -30,17 +30,17 @@ function throwsError(t: unknown, name: string): boolean {
 function tupleEls(r: unknown): unknown[] | undefined {
   const a = r as { shape?: { k?: string; elements?: unknown[] } };
   if (!a || typeof a !== "object" || a.shape?.k !== "tuple") return undefined;
-  const els = a.shape.elements!.map((e) => litValue(e as never));
+  const els = a.shape.elements!.map((e) => { const r = litValue(e as never); return r.ok ? r.value : undefined; });
   if (els.some((e) => e === undefined)) return undefined;
   return els as unknown[];
 }
 
 describe("evaluator Array constructor folding", () => {
   it("new Array(n) is an n-length holey tuple", () => {
-    expect(litValue(call(`export function f() { return new Array(3).length; }`).result)).toBe(3);
-    expect(litValue(call(`export function f() { return new Array(0).length; }`).result)).toBe(0);
-    expect(litValue(call(`export function f() { return new Array(3)[0]; }`).result)).toBeUndefined();
-    expect(litValue(call(`export function f() { return 1 in new Array(3); }`).result)).toBe(false);
+    expect(litValue(call(`export function f() { return new Array(3).length; }`).result)).toEqual({ ok: true, value: 3 });
+    expect(litValue(call(`export function f() { return new Array(0).length; }`).result)).toEqual({ ok: true, value: 0 });
+    expect(litValue(call(`export function f() { return new Array(3)[0]; }`).result)).toEqual({ ok: true, value: undefined });
+    expect(litValue(call(`export function f() { return 1 in new Array(3); }`).result)).toEqual({ ok: true, value: false });
   });
 
   it("single non-number arg folds single-element tuple", () => {
@@ -83,7 +83,7 @@ describe("evaluator Array constructor invalid length throws RangeError", () => {
       `export function f() { try { new Array(1.5); } catch(e) { return 'caught'; } return 'missed'; }`,
       `export function f() { try { Array(-1); } catch(e) { return 'caught'; } return 'missed'; }`,
     ]) {
-      expect(litValue(call(src).result), src).toBe("caught");
+      expect(litValue(call(src).result), src).toEqual({ ok: true, value: "caught" });
     }
   });
 });

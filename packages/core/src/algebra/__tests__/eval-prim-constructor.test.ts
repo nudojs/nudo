@@ -15,60 +15,60 @@ function call(src: string, fnName = "f") {
 
 describe("prim .constructor === builtin", () => {
   it("number", () => {
-    expect(litValue(call(`export function f() { return (42).constructor === Number; }`).result)).toBe(true);
-    expect(litValue(call(`export function f() { return Number === (42).constructor; }`).result)).toBe(true);
-    expect(litValue(call(`export function f() { return (42).constructor.name; }`).result)).toBe("Number");
-    expect(litValue(call(`export function f() { return (42).constructor === String; }`).result)).toBe(false);
+    expect(litValue(call(`export function f() { return (42).constructor === Number; }`).result)).toEqual({ ok: true, value: true });
+    expect(litValue(call(`export function f() { return Number === (42).constructor; }`).result)).toEqual({ ok: true, value: true });
+    expect(litValue(call(`export function f() { return (42).constructor.name; }`).result)).toEqual({ ok: true, value: "Number" });
+    expect(litValue(call(`export function f() { return (42).constructor === String; }`).result)).toEqual({ ok: true, value: false });
   });
 
   it("string", () => {
-    expect(litValue(call(`export function f() { return "s".constructor === String; }`).result)).toBe(true);
-    expect(litValue(call(`export function f() { return "nudo".constructor.name; }`).result)).toBe("String");
+    expect(litValue(call(`export function f() { return "s".constructor === String; }`).result)).toEqual({ ok: true, value: true });
+    expect(litValue(call(`export function f() { return "nudo".constructor.name; }`).result)).toEqual({ ok: true, value: "String" });
   });
 
   it("boolean", () => {
-    expect(litValue(call(`export function f() { return true.constructor === Boolean; }`).result)).toBe(true);
-    expect(litValue(call(`export function f() { return true.constructor.name; }`).result)).toBe("Boolean");
+    expect(litValue(call(`export function f() { return true.constructor === Boolean; }`).result)).toEqual({ ok: true, value: true });
+    expect(litValue(call(`export function f() { return true.constructor.name; }`).result)).toEqual({ ok: true, value: "Boolean" });
   });
 
   it("bigint", () => {
-    expect(litValue(call(`export function f() { return 1n.constructor === BigInt; }`).result)).toBe(true);
-    expect(litValue(call(`export function f() { return 1n.constructor.name; }`).result)).toBe("BigInt");
+    expect(litValue(call(`export function f() { return 1n.constructor === BigInt; }`).result)).toEqual({ ok: true, value: true });
+    expect(litValue(call(`export function f() { return 1n.constructor.name; }`).result)).toEqual({ ok: true, value: "BigInt" });
   });
 
   it("symbol", () => {
-    expect(litValue(call(`export function f() { return Symbol().constructor === Symbol; }`).result)).toBe(true);
-    expect(litValue(call(`export function f() { return Symbol("d").constructor.name; }`).result)).toBe("Symbol");
+    expect(litValue(call(`export function f() { return Symbol().constructor === Symbol; }`).result)).toEqual({ ok: true, value: true });
+    expect(litValue(call(`export function f() { return Symbol("d").constructor.name; }`).result)).toEqual({ ok: true, value: "Symbol" });
   });
 });
 
 describe("array / object / error / promise .constructor", () => {
   it("array", () => {
-    expect(litValue(call(`export function f() { return [1,2,3].constructor === Array; }`).result)).toBe(true);
-    expect(litValue(call(`export function f() { return [1,2,3].constructor.name; }`).result)).toBe("Array");
-    expect(litValue(call(`export function f() { return [].constructor.name; }`).result)).toBe("Array");
+    expect(litValue(call(`export function f() { return [1,2,3].constructor === Array; }`).result)).toEqual({ ok: true, value: true });
+    expect(litValue(call(`export function f() { return [1,2,3].constructor.name; }`).result)).toEqual({ ok: true, value: "Array" });
+    expect(litValue(call(`export function f() { return [].constructor.name; }`).result)).toEqual({ ok: true, value: "Array" });
   });
 
   it("object", () => {
-    expect(litValue(call(`export function f() { return ({}).constructor === Object; }`).result)).toBe(true);
-    expect(litValue(call(`export function f() { return ({}).constructor.name; }`).result)).toBe("Object");
-    expect(litValue(call(`export function f() { return ({a:1}).constructor.name; }`).result)).toBe("Object");
+    expect(litValue(call(`export function f() { return ({}).constructor === Object; }`).result)).toEqual({ ok: true, value: true });
+    expect(litValue(call(`export function f() { return ({}).constructor.name; }`).result)).toEqual({ ok: true, value: "Object" });
+    expect(litValue(call(`export function f() { return ({a:1}).constructor.name; }`).result)).toEqual({ ok: true, value: "Object" });
   });
 
   it("error brands", () => {
-    expect(litValue(call(`export function f() { return new RangeError('r').constructor.name; }`).result)).toBe("RangeError");
-    expect(litValue(call(`export function f() { return new TypeError('t').constructor.name; }`).result)).toBe("TypeError");
-    expect(litValue(call(`export function f() { return new Error('e').constructor === Error; }`).result)).toBe(true);
+    expect(litValue(call(`export function f() { return new RangeError('r').constructor.name; }`).result)).toEqual({ ok: true, value: "RangeError" });
+    expect(litValue(call(`export function f() { return new TypeError('t').constructor.name; }`).result)).toEqual({ ok: true, value: "TypeError" });
+    expect(litValue(call(`export function f() { return new Error('e').constructor === Error; }`).result)).toEqual({ ok: true, value: true });
   });
 
   it("catch binding .constructor.name", () => {
     expect(
       litValue(call(`export function f() { try { undefined.x; } catch (e) { return e.constructor.name; } }`).result),
-    ).toBe("TypeError");
+    ).toEqual({ ok: true, value: "TypeError" });
   });
 
   it("promise", () => {
-    expect(litValue(call(`export function f() { return Promise.resolve(1).constructor.name; }`).result)).toBe("Promise");
+    expect(litValue(call(`export function f() { return Promise.resolve(1).constructor.name; }`).result)).toEqual({ ok: true, value: "Promise" });
   });
 });
 
@@ -76,31 +76,31 @@ describe("Object.getPrototypeOf(...).constructor chain", () => {
   it("array proto constructor.name", () => {
     expect(
       litValue(call(`export function f() { return Object.getPrototypeOf([]).constructor.name; }`).result),
-    ).toBe("Array");
+    ).toEqual({ ok: true, value: "Array" });
   });
 
   it("object proto constructor", () => {
     expect(
       litValue(call(`export function f() { return Object.getPrototypeOf({}).constructor === Object; }`).result),
-    ).toBe(true);
+    ).toEqual({ ok: true, value: true });
   });
 
   it("prim proto constructor.name", () => {
     expect(
       litValue(call(`export function f() { return Object.getPrototypeOf(5).constructor.name; }`).result),
-    ).toBe("Number");
+    ).toEqual({ ok: true, value: "Number" });
   });
 });
 
 describe("constructor is not a fake callable Function", () => {
   it("typeof (42).constructor is function (class-value mark)", () => {
-    expect(litValue(call(`export function f() { return typeof (42).constructor; }`).result)).toBe("function");
+    expect(litValue(call(`export function f() { return typeof (42).constructor; }`).result)).toEqual({ ok: true, value: "function" });
   });
 
   it("constructor.name on abstract number stays Number (not unknown)", () => {
     const r = call(`export function f(n) { return n.constructor.name; }`);
     // 入口无约束 → any；any.constructor 不得折假精确字面量
     const lv = litValue(r.result);
-    expect(lv === undefined || lv === "Number").toBe(true);
+    expect(!lv.ok || lv.value === "Number").toBe(true);
   });
 });

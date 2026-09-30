@@ -20,14 +20,16 @@ export {
 } from "./phi.ts";
 
 export {
-  type Abs, type Confidence, type Shape, abs, absToString, anyAbs, anyVar,
+  type Abs, type Confidence, type LitValueResult, type Shape, abs, absToString, anyAbs, anyVar,
   bigintLit, bool, boolLit, confJoin, isBigPrim, isExactLit, isNumPrim,
   isStrPrim, litValue, never, num, numLit, numVar, obj, shapeOfTerm,
   shapeToString, str, strLit, unknown
 } from "./abs.ts";
 
 export {
-  type AbsFnImpl, type AbsSigImpl, absFunction, attachFnImpl, getFnImpl,
+  type AbsApplyNoThrow, type AbsApplyNoThrowFn,
+  type AbsApplyResult, type AbsApplyReturn, type AbsFnImpl, type AbsSigImpl,
+  absFunction, absOnly, attachFnImpl, getFnImpl, isAbsApplyResult, makeAbsApplyResult,
   markPureFn, pureFnNameOf, relationFingerprint, relationFn, shapeOnlyFn
 } from "./abs-fn.ts";
 
@@ -149,8 +151,19 @@ export {
 } from "./refine.ts";
 
 export {
+  type CaseTag, type FnDirectiveScope, type MockModuleRecord, type NudoImportRecord,
+  cleanDirectiveLine, commentTextToLines, extractBalancedParens, extractFileEnvNames,
+  extractMockModuleRecords, extractNudoImportRecords, findFnDirectiveScope,
+  fnDirectiveCommentLines, listFnDirectiveScopes, parseEnvPayload,
+  parseMockModulePayload, parseNudoImportPayload, scanBudgetDecl, scanCaseArgSpans,
+  scanCaseTags, scanContractSegments, scanMalformedCaseTagRests, scanMalformedNudoImports,
+  scanThrowsDecl
+} from "./directive-scan.ts";
+
+export {
   type ConstraintBuilder, type NudoConstraint, type NudoField,
-  type NudoFnConstraint, SELF, andC, any, array, boolean,
+  type NudoFnConstraint, CONSTRAINT_BUILDERS, CONSTRAINT_BUILDER_NAMES,
+  CONSTRAINT_EXPR_RE, SELF, andC, any, array, boolean,
   constraintAdmitsNullish, constraintToEntryAbs, fn, fnConstraintToEntryReqs, getTerm,
   instantiateConstraint, isIntFlag, isNudoConstraint, lenTerm, litC,
   nullable, number, omit, partial, pick, shape, string, throwConstraintToKinds,
@@ -188,7 +201,7 @@ export {
   NudoLoopSignal, NudoReturn, NudoThrow, NudoUnsupportedError,
   RUNTIME_IMPORT_RE, type RunTranspiledOptions, type TranspileOptions,
   type TranspiledCallResult, asAbsVal, bindingsOf, callAtFunctionBoundary,
-  callTranspiledExport, callTranspiledExportFull, clearBClasses,
+  callTranspiledExport, callTranspiledExportApply, callTranspiledExportFull, clearBClasses,
   clearStaleTermPred, currentExecPhi, evalExprAbs, fillTuple,
   foldRequireSpecArg, foldStaticStringExpr, getEvalCallCollector, getEvalClass,
   isArrMutator, isDefinitelyFalse, isDefinitelyTrue, isNudoBreak,

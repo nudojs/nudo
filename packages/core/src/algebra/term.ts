@@ -1,6 +1,6 @@
 /** 项（Term）：抽象值的身份。字面量是项的特例。 */
 
-export type LiteralValue = string | number | boolean | null | undefined;
+export type LiteralValue = string | number | boolean | bigint | null | undefined;
 
 export type Term =
   | { op: "lit"; value: LiteralValue }

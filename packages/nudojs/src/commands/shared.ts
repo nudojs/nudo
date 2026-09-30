@@ -23,6 +23,7 @@ import {
   envPathDependents,
   isEnvTemplatePath,
   getAnalysisSession,
+  stablePathKey,
   type CallRecord,
   type AnalysisResult,
 } from "@nudojs/service";
@@ -33,6 +34,20 @@ export type EmitCasesOptions = { mode: "add" | "update"; dryRun: boolean; exitOn
 function usageError(message: string, fix: string): void {
   console.error(message);
   console.error(`fix:  ${fix}`);
+}
+
+/** CLI 路径解析错误（--json 信封的 pathErrors 面；非 JSON 面走 usageError）。 */
+export type PathError = {
+  path: string;
+  code: "nudo:path-not-found" | "nudo:path-empty-dir" | "nudo:path-not-target" | "nudo:path-missing-callsite";
+  message: string;
+  suggestion: string;
+};
+
+/** 非 --json 面：打印 usageError 并挡 exit（历史行为）。 */
+export function reportPathErrors(errors: PathError[]): void {
+  for (const e of errors) usageError(e.message, e.suggestion);
+  if (errors.length > 0) process.exitCode = 1;
 }
 
 export async function reemitUpdate(
@@ -53,17 +68,23 @@ export async function reemitUpdate(
   return { result, emitOut, removed: stripped.removed };
 }
 
-/** --from 公共采集 */
-export function collectExternalRecords(sites: string[]): CallRecord[] | undefined {
+/** --from 公共采集。`errorSink` 提供时路径错误进 sink（不设 exit），否则保持 usageError+exit。 */
+export function collectExternalRecords(
+  sites: string[],
+  errorSink?: PathError[],
+): CallRecord[] | undefined {
   const records: CallRecord[] = [];
   for (const site of sites) {
     const sitePath = resolve(site);
     if (!existsSync(sitePath)) {
-      usageError(
-        `Callsite file not found: ${sitePath}`,
-        `pass --from <file-or-dir> that exists; it supplies call@ records for generation`,
-      );
-      process.exitCode = 1;
+      const err: PathError = {
+        path: sitePath,
+        code: "nudo:path-missing-callsite",
+        message: `Callsite file not found: ${sitePath}`,
+        suggestion: `pass --from <file-or-dir> that exists; it supplies call@ records for generation`,
+      };
+      if (errorSink) errorSink.push(err);
+      else reportPathErrors([err]);
       continue;
     }
     const siteFiles = statSync(sitePath).isDirectory() ? collectNudoFiles(sitePath) : [sitePath];
@@ -87,36 +108,59 @@ export function collectNudoFiles(dir: string): string[] {
   return results;
 }
 
-export function resolveTargets(path: string): string[] {
+/** 路径解析（无副作用）：返回可分析目标 + 路径错误，由调用方决定 exit/JSON 面。 */
+export function resolveTargetsCollect(path: string): { targets: string[]; errors: PathError[] } {
   const resolved = resolve(path);
   if (!existsSync(resolved)) {
-    usageError(
-      `Not found: ${resolved}`,
-      `check the path; it must be an existing .js/.mjs/.ts file or a directory containing them`,
-    );
-    process.exitCode = 1;
-    return [];
+    return {
+      targets: [],
+      errors: [
+        {
+          path: resolved,
+          code: "nudo:path-not-found",
+          message: `Not found: ${resolved}`,
+          suggestion: `check the path; it must be an existing .js/.mjs/.ts file or a directory containing them`,
+        },
+      ],
+    };
   }
   if (statSync(resolved).isDirectory()) {
     const files = collectNudoFiles(resolved);
     if (files.length === 0) {
-      usageError(
-        `No nudo files found in directory: ${resolved}`,
-        `add .js/.mjs/.ts sources (or point at a directory that has them); sidecar/decl/JSX are skipped`,
-      );
-      process.exitCode = 1;
+      return {
+        targets: [],
+        errors: [
+          {
+            path: resolved,
+            code: "nudo:path-empty-dir",
+            message: `No nudo files found in directory: ${resolved}`,
+            suggestion: `add .js/.mjs/.ts sources (or point at a directory that has them); sidecar/decl/JSX are skipped`,
+          },
+        ],
+      };
     }
-    return files;
+    return { targets: files, errors: [] };
   }
   if (!isNudoTargetPath(resolved)) {
-    usageError(
-      `Not an analysis target (need .js/.mjs/.ts, not sidecar/decl/JSX): ${resolved}`,
-      `pass a .js/.mjs/.ts analysis file (not .nudo.js sidecars, .d.ts decls, or .jsx/.tsx)`,
-    );
-    process.exitCode = 1;
-    return [];
+    return {
+      targets: [],
+      errors: [
+        {
+          path: resolved,
+          code: "nudo:path-not-target",
+          message: `Not an analysis target (need .js/.mjs/.ts, not sidecar/decl/JSX): ${resolved}`,
+          suggestion: `pass a .js/.mjs/.ts analysis file (not .nudo.js sidecars, .d.ts decls, or .jsx/.tsx)`,
+        },
+      ],
+    };
   }
-  return [resolved];
+  return { targets: [resolved], errors: [] };
+}
+
+export function resolveTargets(path: string): string[] {
+  const { targets, errors } = resolveTargetsCollect(path);
+  reportPathErrors(errors);
+  return targets;
 }
 
 // ---------------------------------------------------------------------------
@@ -130,6 +174,8 @@ export function startWatch(paths: string[], runOne: WatchRunner, label: string):
   const isDir = resolvedList.some((p) => existsSync(p) && statSync(p).isDirectory());
   const primary = resolvedList[0]!;
 
+  // 路径身份统一 stablePathKey：watch 事件 / collectNudoFiles / buildModuleGraph 边
+  // 各有 fs 原生形态，跨形态查 tracked / computeDirtySet 在 Windows 会 miss。
   const getFiles = (): string[] => {
     const out: string[] = [];
     for (const p of resolvedList) {
@@ -137,7 +183,7 @@ export function startWatch(paths: string[], runOne: WatchRunner, label: string):
       if (statSync(p).isDirectory()) out.push(...collectNudoFiles(p));
       else out.push(p);
     }
-    return out;
+    return out.map(stablePathKey);
   };
 
   let graph = buildModuleGraph(getFiles());
@@ -161,9 +207,11 @@ export function startWatch(paths: string[], runOne: WatchRunner, label: string):
     const tracked = new Set(files);
     const dirtyUnion = new Set<string>();
     let forceFull = false;
-    for (const cf of changedFiles) {
+    for (const rawCf of changedFiles) {
+      // watch 事件路径是 join() fs 原生形态；与 tracked / 图键同走 stablePathKey
+      const cf = stablePathKey(rawCf);
       if (isNudoTargetPath(cf)) {
-        for (const d of computeDirtySet(graph.dependents, cf)) dirtyUnion.add(d);
+        for (const d of computeDirtySet(graph.dependents, cf)) dirtyUnion.add(stablePathKey(d));
         continue;
       }
       getAnalysisSession().clear();
@@ -174,9 +222,10 @@ export function startWatch(paths: string[], runOne: WatchRunner, label: string):
       if (isEnvTemplatePath(cf) || !isSidecarPath(cf)) {
         const envDeps = envPathDependents(cf);
         if (envDeps.length > 0) {
-          for (const src of envDeps) {
+          for (const srcRaw of envDeps) {
+            const src = stablePathKey(srcRaw);
             if (tracked.has(src)) dirtyUnion.add(src);
-            for (const d of computeDirtySet(graph.dependents, src)) dirtyUnion.add(d);
+            for (const d of computeDirtySet(graph.dependents, src)) dirtyUnion.add(stablePathKey(d));
           }
         } else if (isEnvTemplatePath(cf)) {
           forceFull = true;
@@ -184,11 +233,12 @@ export function startWatch(paths: string[], runOne: WatchRunner, label: string):
         }
       }
       if (isSidecarPath(cf)) {
-        for (const src of ambientSourcesOfSidecar(cf)) {
+        for (const srcRaw of ambientSourcesOfSidecar(cf)) {
+          const src = stablePathKey(srcRaw);
           if (tracked.has(src)) dirtyUnion.add(src);
-          for (const d of computeDirtySet(graph.dependents, src)) dirtyUnion.add(d);
+          for (const d of computeDirtySet(graph.dependents, src)) dirtyUnion.add(stablePathKey(d));
         }
-        for (const d of computeDirtySet(graph.dependents, cf)) dirtyUnion.add(d);
+        for (const d of computeDirtySet(graph.dependents, cf)) dirtyUnion.add(stablePathKey(d));
         if (![...dirtyUnion].some((f) => tracked.has(f))) forceFull = true;
       }
     }

@@ -14,13 +14,16 @@ import {
 } from "@nudojs/core";
 import type { HarvestedEnv } from "./harvest-dts.ts";
 
-/** 签名投影节点（可 JSON 化；足够 mock Abs 的 shape 面） */
+/**
+ * 签名投影节点（可 JSON 化；足够 mock Abs 的 shape 面）。
+ * lit.value 含 undefined：JSON 往返靠「键缺省」区分 null（显式存）与 undefined（键省略）。
+ */
 export type HarvestSig =
   | { k: "prim"; type: string }
   | { k: "unknown" }
   | { k: "any" }
   | { k: "never" }
-  | { k: "lit"; value: number | string | boolean | null }
+  | { k: "lit"; value: number | string | boolean | null | undefined }
   | { k: "arr"; element: HarvestSig }
   | { k: "tuple"; elements: HarvestSig[] }
   | { k: "obj"; slots: Record<string, { v: HarvestSig; opt?: boolean }> }
@@ -36,7 +39,7 @@ export type HarvestSig =
  * 磁盘 ABI / harvest 物化版本。**改动 Abs 投影或 interface 合并语义时必须 +1**，
  * 否则旧缓存会把提升前的空导出表当命中（lodash 场景）。
  */
-export const HARVEST_DISK_ABI = "nudo-harvest-disk-v7";
+export const HARVEST_DISK_ABI = "nudo-harvest-disk-v8";
 
 export type HarvestJson = {
   v: 1;
@@ -55,10 +58,18 @@ export function sha256Hex(data: string): string {
   return createHash("sha256").update(data).digest("hex");
 }
 
-/** Abs → 签名投影（丢 pred/conf；fn 只留参数名+类型面；保留泛型 α） */
+/** Abs → 签名投影（丢 pred/conf；fn 只留参数名+类型面；保留泛型 α 与 lit term） */
 export function absToHarvestSig(a: Abs): HarvestSig {
   if (a.term?.op === "var") {
     return { k: "tvar", name: a.term.id };
+  }
+  // lit term 优先：保留字面量值（bigint 按 prim 降级，不进 JSON）
+  if (a.term?.op === "lit") {
+    const v = a.term.value;
+    if (v === null || v === undefined) return { k: "lit", value: v };
+    if (typeof v === "number" || typeof v === "string" || typeof v === "boolean") {
+      return { k: "lit", value: v };
+    }
   }
   const s = a.shape;
   switch (s.k) {
@@ -147,13 +158,13 @@ export function harvestSigToAbs(sig: HarvestSig): Abs {
                 : null;
       if (sig.value === null || t === null) {
         return mark(
-          abs({ k: "unknown" }, { op: "lit", value: sig.value as never }, undefined, "mock"),
+          abs({ k: "unknown" }, { op: "lit", value: sig.value }, undefined, "mock"),
         );
       }
       return mark(
         abs(
           { k: "prim", type: t as "number" | "string" | "boolean" | "bigint" },
-          { op: "lit", value: sig.value as never },
+          { op: "lit", value: sig.value },
           undefined,
           "mock",
         ),

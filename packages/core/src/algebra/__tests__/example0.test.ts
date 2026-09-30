@@ -26,7 +26,7 @@ import {
 describe("Example 0: add is the computation itself", () => {
   it("add(1, 3) evaluates to literal 4 #exact", () => {
     const r = add(numLit(1), numLit(3));
-    expect(litValue(r)).toBe(4);
+    expect(litValue(r)).toEqual({ ok: true, value: 4 });
     expect(r.conf).toBe("exact");
     expect(r.term?.op).toBe("lit");
     expect(r.shape).toEqual({ k: "prim", type: "number" });
@@ -92,12 +92,12 @@ describe("comparison implies under Φ", () => {
     const x = numVar("x", gtNum(v("x"), 0));
     const sum = add(x, numLit(1), phi);
     const c = cmp("gt", sum, numLit(1), phi);
-    expect(litValue(c)).toBe(true);
+    expect(litValue(c)).toEqual({ ok: true, value: true });
   });
 
   it("string concat keeps string shape", () => {
     const r = add(strLit("a"), strLit("b"));
-    expect(litValue(r)).toBe("ab");
+    expect(litValue(r)).toEqual({ ok: true, value: "ab" });
     expect(r.shape).toEqual({ k: "prim", type: "string" });
   });
 });

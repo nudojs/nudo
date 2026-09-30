@@ -147,7 +147,8 @@ function extractLiteralEvidence(
   const absArg = rec.argAbs?.[idx];
   if (!absArg) return undefined;
   if (absArg.conf !== "exact" && absArg.conf !== "path") return undefined;
-  const lv = litValue(absArg);
+  const lvR = litValue(absArg);
+  const lv = lvR.ok ? lvR.value : undefined;
   if (typeof lv === "number" || typeof lv === "string" || typeof lv === "boolean") {
     return lv;
   }

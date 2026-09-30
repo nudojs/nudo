@@ -33,7 +33,8 @@ export function makeArrayCtorAbs(args: Abs[]): Abs {
   if (a0.term?.op !== "lit") {
     return abs({ k: "arr", element: unknown }, undefined, undefined, "partial");
   }
-  const n = litValue(a0);
+  const nR = litValue(a0);
+  const n = nR.ok ? nR.value : undefined;
   if (typeof n === "number") {
     if (!Number.isInteger(n) || n < 0 || n > 4294967295) {
       throw new NudoThrow(errorTypeAbs("RangeError"));
@@ -125,8 +126,9 @@ export function evalArrayStatic(name: string, args: Abs[]): Abs | undefined {
         return abs({ k: "arr", element: el }, undefined, undefined, "path");
       }
       if (k === "prim" && (a0.shape as { type: string }).type === "string") {
-        const sv = litValue(a0);
-        if (typeof sv === "string" && hasMapFn && sv.length > 0) {
+        const svR = litValue(a0);
+        const sv = svR.ok && typeof svR.value === "string" ? svR.value : undefined;
+        if (sv !== undefined && hasMapFn && sv.length > 0) {
           const cps = [...sv]; // code points（surrogate pair 合并）
           let el = mapOne(strLit(cps[0]!), numLit(0));
           for (let i = 1; i < cps.length; i++) el = joinAbs(el, mapOne(strLit(cps[i]!), numLit(i)));
@@ -143,7 +145,8 @@ export function evalArrayStatic(name: string, args: Abs[]): Abs | undefined {
         // array-like：length 槽字面量 n → 逐位调（Get 缺失槽 = undefined）
         const slots = (a0.shape as { slots?: Record<string, { value: Abs }> }).slots ?? {};
         const lenSlot = slots["length"]?.value;
-        const n = lenSlot ? litValue(lenSlot) : undefined;
+        const nR = lenSlot ? litValue(lenSlot) : undefined;
+        const n = nR?.ok ? nR.value : undefined;
         if (typeof n === "number" && Number.isInteger(n) && n >= 0 && n <= 4096) {
           if (n === 0) return abs({ k: "arr", element: unknown }, undefined, undefined, "path");
           let el = mapOne(undefAbs(), numLit(0));

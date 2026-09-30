@@ -17,7 +17,7 @@ describe("B call budget (recursion)", () => {
   it("bounded self-recursion computes exactly (fac(5) = 120)", () => {
     const src = `export function fac(n) { if (n <= 1) { return 1; } return n * fac(n - 1); }`;
     const r = callFn(src, "fac", [$lit(5)]);
-    expect(litValue(r.result)).toBe(120);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 120 });
     expect(r.result.conf).toBe("exact");
   });
 
@@ -51,7 +51,7 @@ describe("B call budget (recursion)", () => {
     const r = callFn(src, "down", [$lit(100)]);
     expect(r.result.conf).toBe("opaque");
     const ok = callFn(src, "down", [$lit(10)]);
-    expect(litValue(ok.result)).toBe(0);
+    expect(litValue(ok.result)).toEqual({ ok: true, value: 0 });
   });
 
   it("abstract-arg recursion truncates without hanging", () => {

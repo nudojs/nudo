@@ -33,7 +33,7 @@ describe("evaluator e2e (transpile + Node import)", () => {
       "add",
     );
     const r = add($lit(2), $lit(40)) as ReturnType<typeof $lit>;
-    expect(litValue(r)).toBe(42);
+    expect(litValue(r)).toEqual({ ok: true, value: 42 });
   });
 
   it("array literal + index + length", async () => {
@@ -47,7 +47,7 @@ describe("evaluator e2e (transpile + Node import)", () => {
       "run",
     );
     const r = run() as ReturnType<typeof $lit>;
-    expect(litValue(r)).toBe(5); // 2 + 3
+    expect(litValue(r)).toEqual({ ok: true, value: 5 }); // 2 + 3
   });
 
   it("object destructure + member", async () => {
@@ -61,7 +61,7 @@ describe("evaluator e2e (transpile + Node import)", () => {
     );
     const r = run() as ReturnType<typeof $lit>;
     expect(absToString(r)).toContain("string"); // 10 + "a" → "10a"
-    expect(litValue(r)).toBe("10a");
+    expect(litValue(r)).toEqual({ ok: true, value: "10a" });
   });
 
   it("array destructure", async () => {
@@ -74,7 +74,7 @@ describe("evaluator e2e (transpile + Node import)", () => {
       "run",
     );
     const r = run() as ReturnType<typeof $lit>;
-    expect(litValue(r)).toBe(12);
+    expect(litValue(r)).toEqual({ ok: true, value: 12 });
   });
 
   it("local function call + if/else", async () => {
@@ -84,14 +84,14 @@ describe("evaluator e2e (transpile + Node import)", () => {
 }`,
       "go",
     );
-    expect(litValue(go($lit(1)) as never)).toBe(2);
-    expect(litValue(go($lit(-1)) as never)).toBe(0);
+    expect(litValue(go($lit(1)) as never)).toEqual({ ok: true, value: 2 });
+    expect(litValue(go($lit(-1)) as never)).toEqual({ ok: true, value: 0 });
   });
 
   it("runtime array helpers", () => {
     const a = $arr([$lit(1), $lit(2)]);
-    expect(litValue($idx(a, $lit(0)))).toBe(1);
-    expect(litValue($len(a))).toBe(2);
-    expect(litValue($get($obj({ k: $lit(1) }), "k"))).toBe(1);
+    expect(litValue($idx(a, $lit(0)))).toEqual({ ok: true, value: 1 });
+    expect(litValue($len(a))).toEqual({ ok: true, value: 2 });
+    expect(litValue($get($obj({ k: $lit(1) }), "k"))).toEqual({ ok: true, value: 1 });
   });
 });

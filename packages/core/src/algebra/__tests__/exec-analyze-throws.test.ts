@@ -18,7 +18,7 @@ export function id(x) { return x; }
     const exports = runTranspiled(src, { mode: "analyze" });
     expect(typeof exports.id).toBe("function");
     const r = callTranspiledExportFull(exports, "id", [$lit(7)]);
-    expect(litValue(r.result)).toBe(7);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 7 });
   });
 
   it("keeps function definitions that call other locals", () => {
@@ -28,7 +28,7 @@ export function go(n) { return helper(n); }
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
     const r = callTranspiledExportFull(exports, "go", [$lit(1)]);
-    expect(litValue(r.result)).toBe(2);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
     expect(r.throws).toBe(never);
   });
 });
@@ -49,7 +49,7 @@ export function fail(n) {
     void src;
     const exports = runTranspiled(src2, { mode: "analyze" });
     const ok = callTranspiledExportFull(exports, "fail", [$lit(1)]);
-    expect(litValue(ok.result)).toBe(1);
+    expect(litValue(ok.result)).toEqual({ ok: true, value: 1 });
     expect(ok.throws).toBe(never);
 
     const bad = callTranspiledExportFull(exports, "fail", [$lit(-1)]);

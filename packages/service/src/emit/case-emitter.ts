@@ -1,5 +1,5 @@
 import { type Abs } from "@nudojs/core";
-import { parse, extractDirectives } from "@nudojs/parser";
+import { parse, extractDirectivesQuiet } from "@nudojs/parser";
 import type { CaseDirective } from "@nudojs/parser";
 import type { AnalysisResult } from "../analyzer.ts";
 
@@ -225,7 +225,7 @@ function collectExistingCases(source: string): Map<string, CaseDirective[]> {
   } catch {
     return byName; // 源码解析失败时按"无已有指令"处理（analysis 本就来自同一份源码）
   }
-  for (const { name, directives } of extractDirectives(ast)) {
+  for (const { name, directives } of extractDirectivesQuiet(ast)) {
     for (const d of directives) {
       if (d.kind !== "case") continue;
       const list = byName.get(name);

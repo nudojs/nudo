@@ -2,7 +2,9 @@
 // API docs skeleton generator — marker-based injection into website api/* pages.
 // Pattern matches scripts/gen-releases.mjs: hand-written prose stays; only the
 // block between <!-- NUDO-API-SKELETON:BEGIN --> and <!-- NUDO-API-SKELETON:END -->
-// is (re)written. Missing markers → append under `## Export inventory`.
+// is (re)written. Markers must form exactly one well-ordered pair; missing,
+// inverted, or duplicated markers throw (fail-closed, no append) so a corrupt
+// page can never be silently double-marked and later wiped.
 //
 // Sources (no new deps; simple TS/Markdown scanning):
 //   - packages/core/PUBLIC_API.md §2 + packages/core/src/index.ts
@@ -13,12 +15,11 @@
 // 运行：pnpm run docs:gen:api  (or `node scripts/gen-api-docs.mjs`)
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const BEGIN = "<!-- NUDO-API-SKELETON:BEGIN -->";
 const END = "<!-- NUDO-API-SKELETON:END -->";
-const HEADING = "## Export inventory";
 
 const EN_DOCS = "packages/website/docs/api";
 const ZH_DOCS = "packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/api";
@@ -622,42 +623,50 @@ const PAGES = [
 
 // ─── marker injection ────────────────────────────────────────────────────────
 
-function injectOrAppend(path, block) {
+/**
+ * Fail-closed marker injection, aligned with scripts/gen-releases.mjs `inject`.
+ * Throws on missing, inverted, or duplicated BEGIN/END markers — never appends
+ * a second pair (which would let a later run wipe hand-written content).
+ * Writes only when exactly one well-ordered pair is present.
+ */
+export function inject(path, block) {
   const src = readFileSync(path, "utf8");
   const start = src.indexOf(BEGIN);
   const stop = src.indexOf(END);
-  if (start !== -1 && stop !== -1 && stop > start) {
-    const next = `${src.slice(0, start)}${BEGIN}\n${block}\n${src.slice(stop)}`;
-    writeFileSync(path, next);
-    return "injected";
+  const beginCount = src.split(BEGIN).length - 1;
+  const endCount = src.split(END).length - 1;
+  if (beginCount !== 1 || endCount !== 1 || stop <= start) {
+    throw new Error(`markers not found in ${path}`);
   }
-  let base = src.replace(/\s*$/, "\n");
-  if (!new RegExp(`^${escRe(HEADING)}\\s*$`, "m").test(base)) {
-    base = `${base}\n${HEADING}\n`;
-  }
-  const next = `${base}\n${BEGIN}\n${block}\n${END}\n`;
+  const next = `${src.slice(0, start)}${BEGIN}\n${block}\n${src.slice(stop)}`;
   writeFileSync(path, next);
-  return "appended";
+  return "injected";
 }
 
 // ─── main ────────────────────────────────────────────────────────────────────
 
-let wrote = 0;
-for (const page of PAGES) {
-  const { rows, count, noteEn, noteZh, trailerEn, trailerZh, blockEn, blockZh } = page.build();
-  const enPath = join(root, EN_DOCS, `${page.id}.md`);
-  const zhPath = join(root, ZH_DOCS, `${page.id}.md`);
-  if (!existsSync(enPath)) {
-    console.warn(`skip ${page.id}: missing ${EN_DOCS}/${page.id}.md`);
-    continue;
+function main() {
+  let wrote = 0;
+  for (const page of PAGES) {
+    const { rows, count, noteEn, noteZh, trailerEn, trailerZh, blockEn, blockZh } = page.build();
+    const enPath = join(root, EN_DOCS, `${page.id}.md`);
+    const zhPath = join(root, ZH_DOCS, `${page.id}.md`);
+    if (!existsSync(enPath)) {
+      console.warn(`skip ${page.id}: missing ${EN_DOCS}/${page.id}.md`);
+      continue;
+    }
+    // Pages with custom structure (e.g. grouped core tables) provide ready blocks.
+    const enBlock = blockEn ?? [buildBlock("en", rows, noteEn), trailerEn].filter(Boolean).join("\n\n");
+    const zhBlock = blockZh ?? [buildBlock("zh", rows, noteZh), trailerZh].filter(Boolean).join("\n\n");
+    const enMode = inject(enPath, enBlock);
+    const zhMode = existsSync(zhPath) ? inject(zhPath, zhBlock) : "missing-zh";
+    wrote++;
+    console.log(`api/${page.id}.md  (${rows ? rows.length : count} symbols)  en=${enMode} zh=${zhMode}`);
   }
-  // Pages with custom structure (e.g. grouped core tables) provide ready blocks.
-  const enBlock = blockEn ?? [buildBlock("en", rows, noteEn), trailerEn].filter(Boolean).join("\n\n");
-  const zhBlock = blockZh ?? [buildBlock("zh", rows, noteZh), trailerZh].filter(Boolean).join("\n\n");
-  const enMode = injectOrAppend(enPath, enBlock);
-  const zhMode = existsSync(zhPath) ? injectOrAppend(zhPath, zhBlock) : "missing-zh";
-  wrote++;
-  console.log(`api/${page.id}.md  (${rows ? rows.length : count} symbols)  en=${enMode} zh=${zhMode}`);
+
+  console.log(`gen-api-docs refreshed ${wrote} api page(s) (en+zh skeleton blocks)`);
 }
 
-console.log(`gen-api-docs refreshed ${wrote} api page(s) (en+zh skeleton blocks)`);
+const isMain =
+  process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+if (isMain) main();

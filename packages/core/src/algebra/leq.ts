@@ -241,11 +241,11 @@ function leqShape(
       }
       // 结构槽位：同 prim 字面量视为可赋（mutable let 拓宽；契约走 pred）。
       // gold assign-compatible/wider 依赖该口径——精确 lit 不等仍放行于对象槽。
-      const ssv = litValue(srcSlot.value);
-      const stv = litValue(slot.value);
+      const ssvR = litValue(srcSlot.value);
+      const stvR = litValue(slot.value);
       if (
-        ssv !== undefined &&
-        stv !== undefined &&
+        ssvR.ok &&
+        stvR.ok &&
         primOf(srcSlot.value) !== undefined &&
         primOf(srcSlot.value) === primOf(slot.value)
       ) {
@@ -345,7 +345,8 @@ function leqShape(
 
 function primOf(a: Abs): "number" | "string" | "boolean" | "bigint" | "symbol" | undefined {
   if (a.shape.k === "prim") return a.shape.type;
-  const lv = litValue(a);
+  const lvR = litValue(a);
+  const lv = lvR.ok ? lvR.value : undefined;
   if (typeof lv === "number") return "number";
   if (typeof lv === "string") return "string";
   if (typeof lv === "boolean") return "boolean";

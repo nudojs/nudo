@@ -1,8 +1,13 @@
 /**
  * Per-function FunctionAnalysis cache (body-edit: recompute only dirty fns).
  * Cleared together with evaluator / whole-file analysis caches.
+ *
+ * Keys are `filePath\0…`; the filePath segment is normalized through
+ * `stablePathKey` so `/c:/x` / `c:\x` / `file:///c:/x` share one entry with
+ * `c:/x` (FIX-RESIDUAL-4 — same identity as analysis-file-cache / L0 memo).
  */
 import type { Abs } from "@nudojs/core";
+import { stablePathKey } from "@nudojs/core/internal";
 import { getSessionCacheLimits } from "./session-cache-limits.ts";
 
 // Structural types — avoid importing analyzer (cycle).
@@ -80,6 +85,14 @@ export type CachedFnAnalysis = {
 
 const fnAnalysisCache = new Map<string, CachedFnAnalysis>();
 
+/** 键首段（filePath）过 stablePathKey：跨盘符形态命中/逐出一致 */
+function normalizeFnCacheKey(key: string): string {
+  const i = key.indexOf("\0");
+  const filePath = i < 0 ? key : key.slice(0, i);
+  const rest = i < 0 ? "" : key.slice(i);
+  return stablePathKey(filePath) + rest;
+}
+
 /** 测试/诊断：当前条目数（≤ getSessionCacheLimits().maxFns） */
 export function getFnAnalysisCacheSize(): number {
   return fnAnalysisCache.size;
@@ -100,10 +113,11 @@ export function trimFnAnalysisCache(): void {
 }
 
 export function fnAnalysisCacheGet(key: string): CachedFnAnalysis | undefined {
-  const hit = fnAnalysisCache.get(key);
+  const k = normalizeFnCacheKey(key);
+  const hit = fnAnalysisCache.get(k);
   if (hit !== undefined) {
-    fnAnalysisCache.delete(key);
-    fnAnalysisCache.set(key, hit);
+    fnAnalysisCache.delete(k);
+    fnAnalysisCache.set(k, hit);
   }
   return hit;
 }
@@ -111,22 +125,24 @@ export function fnAnalysisCacheGet(key: string): CachedFnAnalysis | undefined {
 export function fnAnalysisCacheSet(key: string, value: CachedFnAnalysis): void {
   const max = getSessionCacheLimits().maxFns;
   if (max <= 0) return;
+  const k = normalizeFnCacheKey(key);
   // Only evict when inserting a new key; overwrite of an existing key keeps LRU size
-  while (fnAnalysisCache.size >= max && !fnAnalysisCache.has(key)) {
+  while (fnAnalysisCache.size >= max && !fnAnalysisCache.has(k)) {
     const oldest = fnAnalysisCache.keys().next().value;
     if (oldest === undefined) break;
     fnAnalysisCache.delete(oldest);
   }
-  fnAnalysisCache.set(key, value);
+  fnAnalysisCache.set(k, value);
 }
 
 /**
  * Dependency content changed: drop every per-fn entry for these entry files.
  * Keys are `filePath\0...`, so a prefix scan is sound and cheap at LRU size.
+ * Prefixes go through `stablePathKey` — same identity as get/set.
  */
 export function evictFnAnalysisCacheForFiles(files: string[]): number {
   if (files.length === 0 || fnAnalysisCache.size === 0) return 0;
-  const prefixes = files.map((f) => `${f}\0`);
+  const prefixes = files.map((f) => `${stablePathKey(f)}\0`);
   let n = 0;
   for (const key of [...fnAnalysisCache.keys()]) {
     if (prefixes.some((p) => key.startsWith(p))) {

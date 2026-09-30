@@ -66,7 +66,8 @@ function radixLitArg(a: Abs | undefined): { ok: true; v: number | string | boole
 /** Number.isInteger / isNaN / parseFloat 等 */
 export function evalNumberStatic(name: string, args: Abs[]): Abs | undefined {
   const a0Arg = args[0];
-  const a0 = a0Arg ? litValue(a0Arg) : undefined;
+  const a0R = a0Arg ? litValue(a0Arg) : undefined;
+  const a0 = a0R?.ok ? a0R.value : undefined;
   /**
    * Number.isInteger / Number.isNaN / Number.isFinite 不做 ToNumber：
    * 非 number（含缺省实参、undefined/null/bool/string/bigint）恒 false。

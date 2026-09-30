@@ -630,7 +630,7 @@ type SymbolTable = {
 | <a id="analysis_abi"></a>`ANALYSIS_ABI` | const | 带包版本：升级 @nudojs/* 后旧 CheckJson 不得继续命中。 | `const ANALYSIS_ABI` |
 | <a id="analysisconfig"></a>`analysisConfig` | fn | 归一化 `nudo.analysis`。默认 mode=exports（A1：无指令但有 export/侧车的文件 进 IDE 分析；`all` / `directives` 需显式配置）。 | `analysisConfig(config: NudoConfig \| null \| undefined): AnalysisConfig` |
 | <a id="analysisconfig"></a>`AnalysisConfig` | type | — | `AnalysisConfig = { include: string[]; exclude: string[]; mode: AnalysisMode; diagnostics: DiagnosticsLevel; callSiteBudget: number; evalM...` |
-| <a id="analysisfilecachekey"></a>`analysisFileCacheKey` | fn | — | `analysisFileCacheKey( filePath: string, source: string, activeCases?: Map<string, number>, externalCallRecords?: CallRecord[], analysisCfg?: { mode: string; evalMissingSlot: string; callSiteBudget: number; diagnostics: string }, loadModule?: AnalyzeLoadModule, projectEnvNames?: string[], autoBind?: boolean, caseMode: DirectiveCaseMode = "all", )` |
+| <a id="analysisfilecachekey"></a>`analysisFileCacheKey` | fn | — | `analysisFileCacheKey( filePath: string, source: string, activeCases?: Map<string, number>, externalCallRecords?: CallRecord[], analysisCfg?: { mode: string; evalMissingSlot: string; callSiteBudget: number; diagnostics: string; maxForks?: number; }, loadModule?: AnalyzeLoadModule, projectEnvNames?: string[], autoBind?: boolean, caseMode: DirectiveCaseMode = "all", )` |
 | <a id="analysismode"></a>`AnalysisMode` | type | — | `AnalysisMode = "directives" \| "exports" \| "all"` |
 | <a id="analysisresult"></a>`AnalysisResult` | type | — | `AnalysisResult = { functions: FunctionAnalysis[]; diagnostics: Diagnostic[]; bindings: Map<string, BindingInfo>; nodeAbsMap: Map<Node, Ab...` |
 | <a id="analysissession"></a>`AnalysisSession` | type | — | `AnalysisSession = { evictForDependents(files: string[]): void; clear(): void; reset(): void; analyze( filePath: string, source: string, a...` |
@@ -650,7 +650,7 @@ type SymbolTable = {
 | <a id="casejsoncase"></a>`CaseJsonCase` | type | — | `CaseJsonCase = { name: string; args: string[]; result: string; throws: string \| null; source: string \| null; aggregatedFrom?: number; arg...` |
 | <a id="casejsonfunction"></a>`CaseJsonFunction` | type | — | `CaseJsonFunction = { name: string; loc: SourceLocation; entryOnly: boolean; noDeclaration?: boolean; cases: CaseJsonCase[]; combined?: st...` |
 | <a id="caseresult"></a>`CaseResult` | type | — | `CaseResult = { name: string; argAbs: Abs[]; abs: Abs; throwsAbs: Abs; throwLoc?: SourceLocation; source?: "directive" \| "callsite"; expec...` |
-| <a id="checkcachekey"></a>`checkCacheKey` | fn | check 报告键：abi + 相对路径 + 源码 sha + autoBind + **侧车 sha** + **@nudo:import / 传递契约依赖内容 sha**（依赖变更必须 miss）。 | `checkCacheKey( filePath: string, source: string, opts: { autoBind: boolean; projectDir?: string; sidecarContent?: string \| null; depContents?: Array<{ path: string; content: string \| null }>; projectEnvNames?: string[]; analysisCfg?: { mode?: string; evalMissingSlot?: string; callSiteBudget?: number; entryThrows?: string; ignoreThrows?: string; }; }, ): string` |
+| <a id="checkcachekey"></a>`checkCacheKey` | fn | check 报告键：abi + 相对路径 + 源码 sha + autoBind + **侧车 sha** + **@nudo:import / 传递契约依赖内容 sha**（依赖变更必须 miss）。 | `checkCacheKey( filePath: string, source: string, opts: { autoBind: boolean; projectDir?: string; sidecarContent?: string \| null; depContents?: Array<{ path: string; content: string \| null }>; projectEnvNames?: string[]; analysisCfg?: { mode?: string; evalMissingSlot?: string; callSiteBudget?: number; entryThrows?: string; ignoreThrows?: string; maxForks?: number; }; }, ): string` |
 | <a id="checkconfig"></a>`checkConfig` | fn | package.json#nudo.check → 执法选项 | `checkConfig(config: NudoConfig \| null \| undefined): CheckConfig` |
 | <a id="checkconfig"></a>`CheckConfig` | type | — | `CheckConfig = { entryThrows: "error" \| "warning" \| "off"; ignoreThrows: string[]; }` |
 | <a id="clearabsmodulecache"></a>`clearAbsModuleCache` | fn | — | `clearAbsModuleCache(): void` |
@@ -681,7 +681,7 @@ type SymbolTable = {
 | <a id="default_analysis_mode"></a>`DEFAULT_ANALYSIS_MODE` | const | ", ]; /** A1 产品默认：exports — 普通带导出的 .js 进 IDE；directives/all 需显式 | `const DEFAULT_ANALYSIS_MODE` |
 | <a id="default_session_cache_limits"></a>`DEFAULT_SESSION_CACHE_LIMITS` | const | 保守默认：多项目共存时不悄悄吃内存（大仓请显式调高） | `const DEFAULT_SESSION_CACHE_LIMITS` |
 | <a id="defaultabsloadmodule"></a>`defaultAbsLoadModule` | fn | 相对说明符 → 源码（与 defaultLoadModule 同一扩展名/入口候选表） | `defaultAbsLoadModule(spec: string, fromFile: string): string \| undefined` |
-| <a id="defaultloadmodule"></a>`defaultLoadModule` | fn | 默认 loadModule：支持 .js/.mjs/.ts 与 index 入口 | `defaultLoadModule(spec: string, fromFile: string): string \| undefined` |
+| <a id="defaultloadmodule"></a>`defaultLoadModule` | fn | 默认 loadModule：支持 .js/.mjs/.ts 与 index 入口。 | `defaultLoadModule(spec: string, fromFile: string): string \| undefined` |
 | <a id="depcontent"></a>`DepContent` | type | — | `DepContent = { path: string; content: string \| null }` |
 | <a id="derivedexport"></a>`DerivedExport` | type | — | `DerivedExport = { file: string; fn: string; paramNames: string[]; params: DerivedParam[]; returns?: { constraint: NudoConstraint; dsl: st...` |
 | <a id="derivedparam"></a>`DerivedParam` | type | — | `DerivedParam = { name: string; constraint: NudoConstraint; dsl: string; prelude: string[]; imports: Array<{ name: string; from: string }>...` |
@@ -719,10 +719,10 @@ type SymbolTable = {
 | <a id="evaldiagnostics"></a>`EvalDiagnostics` | type | — | `EvalDiagnostics = { unreachable: EvalUnreachable[]; builtinUnknown: EvalBuiltinUnknown[]; }` |
 | <a id="evalrunresult"></a>`EvalRunResult` | type | — | `EvalRunResult = { exports: Record<string, unknown>; modules: Record<string, AbsModuleExports>; memberDiags?: EvalMemberDiag[]; moduleIssu...` |
 | <a id="evalunreachable"></a>`EvalUnreachable` | type | — | `EvalUnreachable = { range: EvalLoc }` |
-| <a id="evictabsmodulecachefiles"></a>`evictAbsModuleCacheFiles` | fn | — | `evictAbsModuleCacheFiles(paths: string[]): void` |
+| <a id="evictabsmodulecachefiles"></a>`evictAbsModuleCacheFiles` | fn | 键身份统一 stablePathKey（FIX-RESIDUAL-4）：跨盘符形态删除/命中一致 | `evictAbsModuleCacheFiles(paths: string[]): void` |
 | <a id="evictanalysiscachesforfiles"></a>`evictAnalysisCachesForFiles` | fn | 依赖内容变更后：按入口文件定向逐出 service 层缓存。 | `evictAnalysisCachesForFiles(files: string[]): void` |
-| <a id="evictanalysisfilecacheforfiles"></a>`evictAnalysisFileCacheForFiles` | fn | 依赖变更后：按入口文件逐出 | `evictAnalysisFileCacheForFiles(files: string[]): number` |
-| <a id="evictevalcacheforfiles"></a>`evictEvalCacheForFiles` | fn | 依赖文件变更后：逐出以这些文件为入口的 evaluator 缓存 | `evictEvalCacheForFiles(files: string[]): number` |
+| <a id="evictanalysisfilecacheforfiles"></a>`evictAnalysisFileCacheForFiles` | fn | 依赖变更后：按入口文件逐出（查找与写入同走 stablePathKey） | `evictAnalysisFileCacheForFiles(files: string[]): number` |
+| <a id="evictevalcacheforfiles"></a>`evictEvalCacheForFiles` | fn | 依赖文件变更后：逐出以这些文件为入口的 evaluator 缓存（键走 stablePathKey） | `evictEvalCacheForFiles(files: string[]): number` |
 | <a id="evictfnanalysiscacheforfiles"></a>`evictFnAnalysisCacheForFiles` | fn | Dependency content changed: drop every per-fn entry for these entry files. | `evictFnAnalysisCacheForFiles(files: string[]): number` |
 | <a id="extractfnconstraintsources"></a>`extractFnConstraintSources` | fn | — | `extractFnConstraintSources( sidecarSrc: string, fnName: string, )` |
 | <a id="extractnudoimportspecs"></a>`extractNudoImportSpecs` | fn | 从源码提取 `@nudo:import` / `@nudo:import * as` 的 specifier | `extractNudoImportSpecs(source: string): string[]` |
@@ -777,18 +777,20 @@ type SymbolTable = {
 | <a id="mockseedstoabsmocks"></a>`mockSeedsToAbsMocks` | fn | 求值引擎注入用：seedVars + seedFns 统一为 Abs 函数绑定。 | `mockSeedsToAbsMocks(seeds: AbsMockSeeds): Record<string, Abs>` |
 | <a id="moduleexports"></a>`ModuleExports` | type | — | `ModuleExports = { path: string; named: Map<string, string>; defaultExport?: string; source: string; poly: Map<string, PolyFn>; }` |
 | <a id="modulegraphcache"></a>`ModuleGraphCache` | type | mtime 边缓存：key 为文件路径，edges 为已抽取的相对 import 边（与 buildModuleGraph 返回语义一致）。 | `ModuleGraphCache = Map<string, { mtimeMs: number; size: number; edges: string[] }>` |
+| <a id="modulereaderror"></a>`ModuleReadError` | fn | 文件已解析但读失败（EACCES / EMFILE / EISDIR-race …）。 | `ModuleReadError extends Error { readonly code: string; readonly path: string; constructor(path: string, cause: unknown) { const code = (c...` |
 | <a id="noteenvpathdeps"></a>`noteEnvPathDeps` | fn | 源码里的 path-based load specs 解析为绝对路径后登记反向边 | `noteEnvPathDeps(sourcePath: string, source: string): void` |
 | <a id="nudoconfig"></a>`NudoConfig` | type | — | `NudoConfig = { env?: string[]; mocks?: Record<string, string>; contract?: { autoBind?: boolean; emit?: string[] \| string; }; analysis?: {...` |
 | <a id="projectabstoschema"></a>`projectAbsToSchema` | fn | — | `projectAbsToSchema(a: Abs, opts?: { dialect?: SchemaDialect }): SchemaProjection` |
 | <a id="referenceinfo"></a>`ReferenceInfo` | type | — | `ReferenceInfo = { name: string; loc: SourceLocation; uri?: string; }` |
-| <a id="relativizepath"></a>`relativizePath` | fn | 相对化路径，避免绝对路径进磁盘键；树外路径用稳定内容 hash | `relativizePath(p: string, root?: string): string` |
+| <a id="relativizepath"></a>`relativizePath` | fn | 稳定逻辑根相对化（磁盘缓存路径维）：树内相对 `root`，树外取 `node_modules/<pkg>` 段、monorepo root 或 pnpm store 内容哈希； 绝对路径明文绝不进 key。 | `relativizePath(p: string, root?: string): string` |
 | <a id="resetallanalysiscaches"></a>`resetAllAnalysisCaches` | fn | 比 clearAnalysisSessionCaches 更彻底：再丢 AST LRU（测试 / 进程复用场景） | `resetAllAnalysisCaches(): void` |
 | <a id="resetsessioncachelimitstate"></a>`resetSessionCacheLimitState` | fn | 测试：丢弃 env 惰性缓存，重新读 process.env | `resetSessionCacheLimitState(): void` |
 | <a id="resolvemodule"></a>`resolveModule` | fn | — | `resolveModule(source: string, fromDir: string)` |
 | <a id="rootderiveopts"></a>`RootDeriveOpts` | type | — | `RootDeriveOpts = { loadModule?: LoadModule; autoBind?: boolean; fnNames?: string[]; refreshExistingOnly?: boolean; }` |
-| <a id="rootderiveresult"></a>`RootDeriveResult` | type | — | `RootDeriveResult = { roots: string[]; derived: DerivedExport[]; hasRoot: boolean; }` |
+| <a id="rootderiveresult"></a>`RootDeriveResult` | type | — | `RootDeriveResult = { roots: string[]; derived: DerivedExport[]; hasRoot: boolean; graphError?: string; }` |
+| <a id="safeloadmodule"></a>`safeLoadModule` | fn | loadModule 容错包装：读失败当 miss，避免 I/O 错误炸穿指纹/图遍历。 | `safeLoadModule( loadModule: (spec: string, fromFile: string) => string \| undefined, spec: string, fromFile: string, ): string \| undefined` |
 | <a id="schemadialect"></a>`SchemaDialect` | type | — | `SchemaDialect = "zod"` |
-| <a id="schemanode"></a>`SchemaNode` | type | — | `SchemaNode = \| { k: "lit"; value: string \| number \| boolean \| null \| undefined } \| { k: "prim"; type: "number" \| "string" \| "boolean" \| "...` |
+| <a id="schemanode"></a>`SchemaNode` | type | — | `SchemaNode = \| { k: "lit"; value: import("@nudojs/core").LiteralValue } \| { k: "prim"; type: "number" \| "string" \| "boolean" \| "bigint" \|...` |
 | <a id="schemanodetozod"></a>`schemaNodeToZod` | fn | — | `schemaNodeToZod(node: SchemaNode): string` |
 | <a id="schemaprojection"></a>`SchemaProjection` | type | — | `SchemaProjection = { source: string; dialect: SchemaDialect; dropped: string[]; }` |
 | <a id="schemarefinement"></a>`SchemaRefinement` | type | — | `SchemaRefinement = \| { kind: "numBound"; op: "gt" \| "ge" \| "lt" \| "le"; n: number } \| { kind: "int" } \| { kind: "strMin"; n: number } \| {...` |
@@ -804,6 +806,8 @@ type SymbolTable = {
 | <a id="sidecardraftpath"></a>`sidecarDraftPath` | fn | `lib.js\|ts` → `lib.nudo.draft.js\|ts`（不进 ambient sidecar 表） | `sidecarDraftPath(filePath: string): string` |
 | <a id="sourcehasnudodirectives"></a>`sourceHasNudoDirectives` | fn | — | `hasNudoDirectives(source: string): boolean` |
 | <a id="sourcelocation"></a>`SourceLocation` | type | — | `SourceLocation = { start: { line: number; column: number }; end: { line: number; column: number }; }` |
+| <a id="stablepathkey"></a>`stablePathKey` | const | — | — |
+| <a id="stablepathkeygraph"></a>`stablePathKeyGraph` | const | — | — |
 | <a id="standardschemaissue"></a>`StandardSchemaIssue` | type | — | `StandardSchemaIssue = { message: string; path?: ReadonlyArray<PropertyKey>; }` |
 | <a id="standardschemamoduleprojection"></a>`StandardSchemaModuleProjection` | type | — | `StandardSchemaModuleProjection = { source: string; dropped: string[]; }` |
 | <a id="standardschemaresult"></a>`StandardSchemaResult` | type | — | `StandardSchemaResult = \| { value: unknown; issues?: undefined } \| { issues: ReadonlyArray<StandardSchemaIssue>; value?: undefined }` |

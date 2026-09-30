@@ -15,48 +15,48 @@ function call(src: string, fnName = "f") {
 describe("evaluator string code point iteration", () => {
   it("spread of astral char yields one code point", () => {
     const r = call(`export function f() { return [..."𠮷"].length; }`);
-    expect(litValue(r.result)).toBe(1);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 1 });
   });
 
   it("spread of astral char keeps the char value", () => {
     const r = call(`export function f() { return [..."𠮷"][0]; }`);
-    expect(litValue(r.result)).toBe("𠮷");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "𠮷" });
   });
 
   it("spread of ascii keeps per-char split", () => {
     const r = call(`export function f() { return [..."abc"].length; }`);
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 
   it("mixed literal spread merges string code points", () => {
     const r = call(`export function f() { const a = [...[1, 2], ..."ab"]; return a.length; }`);
-    expect(litValue(r.result)).toBe(4);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 4 });
     const r2 = call(`export function f() { const a = [...[1, 2], ..."ab"]; return a[3]; }`);
-    expect(litValue(r2.result)).toBe("b");
+    expect(litValue(r2.result)).toEqual({ ok: true, value: "b" });
   });
 
   it("for-of over astral string iterates code points", () => {
     const r = call(`export function f() { let n = 0; for (const c of "𠮷") n++; return n; }`);
-    expect(litValue(r.result)).toBe(1);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 1 });
   });
 
   it("for-of over ascii accumulates chars", () => {
     const r = call(`export function f() { let s = ""; for (const c of "abc") s += c; return s; }`);
-    expect(litValue(r.result)).toBe("abc");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "abc" });
   });
 
   it("array destructure of string yields code points", () => {
     const r = call(`export function f() { const [a, b] = "xy"; return a + b; }`);
-    expect(litValue(r.result)).toBe("xy");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "xy" });
   });
 
   it("regression: spread of tuple unchanged", () => {
     const r = call(`export function f() { return [...[1, 2, 3]].length; }`);
-    expect(litValue(r.result)).toBe(3);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 
   it("regression: string length stays code units", () => {
     const r = call(`export function f() { return "𠮷".length; }`);
-    expect(litValue(r.result)).toBe(2);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
   });
 });

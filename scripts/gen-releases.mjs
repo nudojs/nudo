@@ -6,8 +6,8 @@
 //
 // 运行：pnpm run docs:gen
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 
@@ -155,22 +155,24 @@ function buildReleases(lang, mode /* "current" | "history" */) {
   return parts.join("\n");
 }
 
-writeFileSync(
-  join(root, "packages/website/docs/releases.md"),
-  buildReleases("en", "current"),
-);
-writeFileSync(
-  join(root, "packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/releases.md"),
-  buildReleases("zh", "current"),
-);
-writeFileSync(
-  join(root, "packages/website/docs/releases-history.md"),
-  buildReleases("en", "history"),
-);
-writeFileSync(
-  join(root, "packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/releases-history.md"),
-  buildReleases("zh", "history"),
-);
+function writeReleases() {
+  writeFileSync(
+    join(root, "packages/website/docs/releases.md"),
+    buildReleases("en", "current"),
+  );
+  writeFileSync(
+    join(root, "packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/releases.md"),
+    buildReleases("zh", "current"),
+  );
+  writeFileSync(
+    join(root, "packages/website/docs/releases-history.md"),
+    buildReleases("en", "history"),
+  );
+  writeFileSync(
+    join(root, "packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/releases-history.md"),
+    buildReleases("zh", "history"),
+  );
+}
 
 // ---------------- versioning.md 版本表注入 ----------------
 
@@ -226,11 +228,19 @@ const ECOSYSTEM_ZH = `| 包 | 当前 | 锁定方式 | 说明 |
 | \`@nudojs/env\` | ${versionOf("env")}（pre-1.0） | workspace / IDE·CI 稳定可锁 \`~0.4.0\` | 新 Abs 模块（如 \`events\` / \`stream\` / \`querystring\`）以 **minor** 发布；签名展示可能变化。手写 env 在重叠模块/导出上 **wins**。 |
 | \`@nudojs/harvester\` | ${versionOf("harvester")}（pre-1.0） | workspace / \`~${versionOf("harvester")}\` | Harvest 是**旁路信道**，不是类型系统真理源。预算默认：\`maxFiles=12\`、\`maxMs=2500\`，\`NUDO_HARVEST_NODE=off\` 显式关闭。 |`;
 
-function inject(path, begin, end, content) {
+/**
+ * Fail-closed marker injection. Throws on missing, inverted, or duplicated
+ * BEGIN/END markers — never appends a second pair (which would let a later run
+ * wipe hand-written content). Writes only when exactly one well-ordered pair is
+ * present. Aligned with scripts/gen-api-docs.mjs `inject`.
+ */
+export function inject(path, begin, end, content) {
   const src = readFileSync(path, "utf8");
   const start = src.indexOf(begin);
   const stop = src.indexOf(end);
-  if (start === -1 || stop === -1 || stop <= start) {
+  const beginCount = src.split(begin).length - 1;
+  const endCount = src.split(end).length - 1;
+  if (beginCount !== 1 || endCount !== 1 || stop <= start) {
     throw new Error(`markers not found in ${path}`);
   }
   const next = `${src.slice(0, start)}${begin}\n${content}\n${src.slice(stop)}`;
@@ -245,19 +255,26 @@ const ZH_VERSIONING = join(
 const B = "<!-- NUDO-VERSIONS:BEGIN -->";
 const E = "<!-- NUDO-VERSIONS:END -->";
 
-inject(EN_VERSIONING, B, E, versionTable("en"));
-inject(ZH_VERSIONING, B, E, versionTable("zh"));
-inject(
-  EN_VERSIONING,
-  "<!-- NUDO-ECOSYSTEM:BEGIN -->",
-  "<!-- NUDO-ECOSYSTEM:END -->",
-  ECOSYSTEM_EN,
-);
-inject(
-  ZH_VERSIONING,
-  "<!-- NUDO-ECOSYSTEM:BEGIN -->",
-  "<!-- NUDO-ECOSYSTEM:END -->",
-  ECOSYSTEM_ZH,
-);
+function main() {
+  writeReleases();
+  inject(EN_VERSIONING, B, E, versionTable("en"));
+  inject(ZH_VERSIONING, B, E, versionTable("zh"));
+  inject(
+    EN_VERSIONING,
+    "<!-- NUDO-ECOSYSTEM:BEGIN -->",
+    "<!-- NUDO-ECOSYSTEM:END -->",
+    ECOSYSTEM_EN,
+  );
+  inject(
+    ZH_VERSIONING,
+    "<!-- NUDO-ECOSYSTEM:BEGIN -->",
+    "<!-- NUDO-ECOSYSTEM:END -->",
+    ECOSYSTEM_ZH,
+  );
 
-console.log("docs:gen wrote releases.md + releases-history.md (en+zh) and refreshed versioning.md tables");
+  console.log("docs:gen wrote releases.md + releases-history.md (en+zh) and refreshed versioning.md tables");
+}
+
+const isMain =
+  process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+if (isMain) main();

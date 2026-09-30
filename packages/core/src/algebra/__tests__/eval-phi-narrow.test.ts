@@ -91,6 +91,6 @@ describe("Φ-native B: scope isolation", () => {
 
   it("literal test still folds without Φ", () => {
     const src = `export function g() { if (1 > 2) return 1; return 2; }`;
-    expect(litValue(call(src, "g", []))).toBe(2);
+    expect(litValue(call(src, "g", []))).toEqual({ ok: true, value: 2 });
   });
 });

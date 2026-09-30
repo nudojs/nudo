@@ -23,7 +23,7 @@ describe("evaluator instanceof @@hasInstance", () => {
           `export function f() { let o = {[Symbol.hasInstance](v){ return true; }}; return 5 instanceof o; }`,
         ).result,
       ),
-    ).toBe(true);
+    ).toEqual({ ok: true, value: true });
   });
 
   it("custom Symbol.hasInstance returning false", () => {
@@ -33,7 +33,7 @@ describe("evaluator instanceof @@hasInstance", () => {
           `export function f() { let o = {[Symbol.hasInstance](v){ return false; }}; return 5 instanceof o; }`,
         ).result,
       ),
-    ).toBe(false);
+    ).toEqual({ ok: true, value: false });
   });
 
   it("hasInstance receives the left operand", () => {
@@ -43,7 +43,7 @@ describe("evaluator instanceof @@hasInstance", () => {
           `export function f() { let got = null; let o = {[Symbol.hasInstance](v){ got = v; return true; }}; 5 instanceof o; return got; }`,
         ).result,
       ),
-    ).toBe(5);
+    ).toEqual({ ok: true, value: 5 });
   });
 
   it("hasInstance can discriminate values", () => {
@@ -52,24 +52,24 @@ describe("evaluator instanceof @@hasInstance", () => {
     const abstractNum = { shape: { k: "prim", type: "number" }, conf: "exact" } as never;
     const r = callTranspiledExportFull(exports, "f", [abstractNum]);
     // 抽象 n：v===5 无法判定 → 结果保持抽象 boolean（非具体，不折真/假）
-    expect(litValue(r.result)).toBe(undefined);
+    expect(litValue(r.result)).toEqual({ ok: false });
   });
 
   it("object without hasInstance falls back to prototype chain", () => {
     expect(
       litValue(call(`export function f() { let o = {}; return 5 instanceof o; }`).result),
-    ).toBe(false);
+    ).toEqual({ ok: true, value: false });
     expect(
       litValue(call(`export function f() { let o = {}; return o instanceof Object; }`).result),
-    ).toBe(true);
+    ).toEqual({ ok: true, value: true });
   });
 
   it("builtin and class instanceof unaffected", () => {
-    expect(litValue(call(`export function f() { return [] instanceof Array; }`).result)).toBe(true);
-    expect(litValue(call(`export function f() { return 's' instanceof String; }`).result)).toBe(false);
+    expect(litValue(call(`export function f() { return [] instanceof Array; }`).result)).toEqual({ ok: true, value: true });
+    expect(litValue(call(`export function f() { return 's' instanceof String; }`).result)).toEqual({ ok: true, value: false });
     expect(
       litValue(call(`export function f() { class A {} return new A() instanceof A; }`).result),
-    ).toBe(true);
+    ).toEqual({ ok: true, value: true });
   });
 
   it("hasInstance returning non-boolean is coerced", () => {
@@ -79,13 +79,13 @@ describe("evaluator instanceof @@hasInstance", () => {
           `export function f() { let o = {[Symbol.hasInstance](v){ return 0; }}; return 5 instanceof o; }`,
         ).result,
       ),
-    ).toBe(false);
+    ).toEqual({ ok: true, value: false });
     expect(
       litValue(
         call(
           `export function f() { let o = {[Symbol.hasInstance](v){ return 'yes'; }}; return 5 instanceof o; }`,
         ).result,
       ),
-    ).toBe(true);
+    ).toEqual({ ok: true, value: true });
   });
 });

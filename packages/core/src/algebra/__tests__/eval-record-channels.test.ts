@@ -22,15 +22,15 @@ describe("evaluator binding table (varAbs channel)", () => {
     const r = run(`const a = 1; let b = 'x'; const c = a + 1; export const d = 9;`);
     const binds = bindingsOf(r);
     expect(binds).toBeDefined();
-    expect(litValue(binds!.get("a") as never)).toBe(1);
-    expect(litValue(binds!.get("b") as never)).toBe("x");
-    expect(litValue(binds!.get("c") as never)).toBe(2);
-    expect(litValue(binds!.get("d") as never)).toBe(9);
+    expect(litValue(binds!.get("a") as never)).toEqual({ ok: true, value: 1 });
+    expect(litValue(binds!.get("b") as never)).toEqual({ ok: true, value: "x" });
+    expect(litValue(binds!.get("c") as never)).toEqual({ ok: true, value: 2 });
+    expect(litValue(binds!.get("d") as never)).toEqual({ ok: true, value: 9 });
   });
 
   it("reassigned binding keeps final value", () => {
     const r = run(`let n = 1; n = 2;`);
-    expect(litValue(bindingsOf(r)!.get("n") as never)).toBe(2);
+    expect(litValue(bindingsOf(r)!.get("n") as never)).toEqual({ ok: true, value: 2 });
   });
 
   it("nested declarations are not top-level bindings", () => {
@@ -52,8 +52,8 @@ describe("evaluator assign records (assign-mismatch channel)", () => {
     }
     expect(records.length).toBe(1);
     expect(records[0]!.name).toBe("n");
-    expect(litValue(records[0]!.prev as never)).toBe(1);
-    expect(litValue(records[0]!.next as never)).toBe("str");
+    expect(litValue(records[0]!.prev as never)).toEqual({ ok: true, value: 1 });
+    expect(litValue(records[0]!.next as never)).toEqual({ ok: true, value: "str" });
     expect(records[0]!.conditional).toBe(false);
   });
 
@@ -90,12 +90,12 @@ describe("evaluator assign records (assign-mismatch channel)", () => {
     } finally {
       setEvalAssignCollector(null);
     }
-    expect(litValue(records[0]!.prev as never)).toBe(7);
-    expect(litValue(records[0]!.next as never)).toBe(3);
+    expect(litValue(records[0]!.prev as never)).toEqual({ ok: true, value: 7 });
+    expect(litValue(records[0]!.next as never)).toEqual({ ok: true, value: 3 });
   });
 
   it("no collector → no crash (no-op channel)", () => {
     const r = run(`export let n = 1; n = 2;`);
-    expect(litValue(r.n as never)).toBe(2);
+    expect(litValue(r.n as never)).toEqual({ ok: true, value: 2 });
   });
 });

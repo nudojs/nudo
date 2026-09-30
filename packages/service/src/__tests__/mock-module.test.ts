@@ -108,4 +108,23 @@ describe("applyMockModuleDirectivesFromSource", () => {
     const applied = $call(fn, []);
     expect(formatAbs(applied)).toContain("3000");
   });
+
+  it("missing relative import inside the mock-module file is fail-closed", () => {
+    write(
+      "mocks/api.js",
+      `import { helper } from "./missing-dep.js";\nexport function readConfig() { return helper(); }\n`,
+    );
+    const src = `/// @nudo:mock-module "axios" from "./mocks/api.js"\nimport axios from "axios";\nexport function go() { return axios.readConfig(); }\n`;
+    const base: Record<string, AbsModuleExports> = {
+      axios: { named: { get: { shape: { k: "unknown" }, conf: "opaque" } as never } },
+    };
+    const r = applyMockModuleDirectivesFromSource(src, base, {
+      fromFile: join(dir, "app.js"),
+    });
+    expect(r.applied).toBe(false);
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0]!.message).toContain("failed to resolve dependencies");
+    // original left intact — no silent degraded mock
+    expect(r.modules.axios!.named.get).toBe(base.axios!.named.get);
+  });
 });

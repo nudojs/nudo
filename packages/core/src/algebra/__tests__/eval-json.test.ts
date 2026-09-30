@@ -32,14 +32,14 @@ function throwsError(t: unknown, name: string): boolean {
 
 describe("evaluator JSON.parse folding", () => {
   it("folds literal object/array/primitive results", () => {
-    expect(litValue(call(`export function f() { return JSON.parse('{"a":1}').a; }`).result)).toBe(1);
-    expect(litValue(call(`export function f() { return JSON.parse('[1,2,3]').length; }`).result)).toBe(3);
-    expect(litValue(call(`export function f() { return JSON.parse('[1,2,3]')[1]; }`).result)).toBe(2);
-    expect(litValue(call(`export function f() { return JSON.parse('42'); }`).result)).toBe(42);
-    expect(litValue(call(`export function f() { return JSON.parse('"hi"'); }`).result)).toBe("hi");
-    expect(litValue(call(`export function f() { return JSON.parse('true'); }`).result)).toBe(true);
-    expect(litValue(call(`export function f() { return JSON.parse('null'); }`).result)).toBe(null);
-    expect(litValue(call(`export function f() { return JSON.parse('{"a":[1,{"b":2}]}').a[1].b; }`).result)).toBe(2);
+    expect(litValue(call(`export function f() { return JSON.parse('{"a":1}').a; }`).result)).toEqual({ ok: true, value: 1 });
+    expect(litValue(call(`export function f() { return JSON.parse('[1,2,3]').length; }`).result)).toEqual({ ok: true, value: 3 });
+    expect(litValue(call(`export function f() { return JSON.parse('[1,2,3]')[1]; }`).result)).toEqual({ ok: true, value: 2 });
+    expect(litValue(call(`export function f() { return JSON.parse('42'); }`).result)).toEqual({ ok: true, value: 42 });
+    expect(litValue(call(`export function f() { return JSON.parse('"hi"'); }`).result)).toEqual({ ok: true, value: "hi" });
+    expect(litValue(call(`export function f() { return JSON.parse('true'); }`).result)).toEqual({ ok: true, value: true });
+    expect(litValue(call(`export function f() { return JSON.parse('null'); }`).result)).toEqual({ ok: true, value: null });
+    expect(litValue(call(`export function f() { return JSON.parse('{"a":[1,{"b":2}]}').a[1].b; }`).result)).toEqual({ ok: true, value: 2 });
   });
 
   it("__proto__ key is an own data property, not prototype pollution", () => {
@@ -49,12 +49,12 @@ describe("evaluator JSON.parse folding", () => {
           `export function f() { const o = JSON.parse('{"__proto__":{"p":1}}'); return o.p === undefined && "toString" in o; }`,
         ).result,
       ),
-    ).toBe(true);
+    ).toEqual({ ok: true, value: true });
   });
 
   it("ToStrings non-string literal args (JSON.parse(42) ≡ 42)", () => {
-    expect(litValue(call(`export function f() { return JSON.parse(42); }`).result)).toBe(42);
-    expect(litValue(call(`export function f() { return JSON.parse(true); }`).result)).toBe(true);
+    expect(litValue(call(`export function f() { return JSON.parse(42); }`).result)).toEqual({ ok: true, value: 42 });
+    expect(litValue(call(`export function f() { return JSON.parse(true); }`).result)).toEqual({ ok: true, value: true });
   });
 });
 
@@ -68,7 +68,7 @@ describe("evaluator JSON.parse invalid input throws SyntaxError", () => {
       `export function f() { try { JSON.parse(); } catch(e) { return 'caught'; } return 'missed'; }`,
       `export function f() { try { JSON.parse(undefined); } catch(e) { return 'caught'; } return 'missed'; }`,
     ]) {
-      expect(litValue(call(src).result), src).toBe("caught");
+      expect(litValue(call(src).result), src).toEqual({ ok: true, value: "caught" });
     }
   });
 
@@ -81,37 +81,23 @@ describe("evaluator JSON.parse invalid input throws SyntaxError", () => {
 
 describe("evaluator JSON.stringify folding", () => {
   it("folds literal values", () => {
-    expect(litValue(call(`export function f() { return JSON.stringify({a:1}); }`).result)).toBe(
-      '{"a":1}',
-    );
-    expect(litValue(call(`export function f() { return JSON.stringify([1,2]); }`).result)).toBe(
-      "[1,2]",
-    );
-    expect(litValue(call(`export function f() { return JSON.stringify(null); }`).result)).toBe("null");
-    expect(litValue(call(`export function f() { return JSON.stringify(42); }`).result)).toBe("42");
-    expect(litValue(call(`export function f() { return JSON.stringify('x'); }`).result)).toBe('"x"');
-    expect(litValue(call(`export function f() { return JSON.stringify(true); }`).result)).toBe("true");
+    expect(litValue(call(`export function f() { return JSON.stringify({a:1}); }`).result)).toEqual({ ok: true, value: '{"a":1}', });
+    expect(litValue(call(`export function f() { return JSON.stringify([1,2]); }`).result)).toEqual({ ok: true, value: "[1,2]", });
+    expect(litValue(call(`export function f() { return JSON.stringify(null); }`).result)).toEqual({ ok: true, value: "null" });
+    expect(litValue(call(`export function f() { return JSON.stringify(42); }`).result)).toEqual({ ok: true, value: "42" });
+    expect(litValue(call(`export function f() { return JSON.stringify('x'); }`).result)).toEqual({ ok: true, value: '"x"' });
+    expect(litValue(call(`export function f() { return JSON.stringify(true); }`).result)).toEqual({ ok: true, value: "true" });
   });
 
   it("NaN/Infinity serialize as null; sparse holes too", () => {
-    expect(litValue(call(`export function f() { return JSON.stringify({a:NaN}); }`).result)).toBe(
-      '{"a":null}',
-    );
-    expect(litValue(call(`export function f() { return JSON.stringify({a:Infinity}); }`).result)).toBe(
-      '{"a":null}',
-    );
-    expect(litValue(call(`export function f() { return JSON.stringify([1,,3]); }`).result)).toBe(
-      "[1,null,3]",
-    );
+    expect(litValue(call(`export function f() { return JSON.stringify({a:NaN}); }`).result)).toEqual({ ok: true, value: '{"a":null}', });
+    expect(litValue(call(`export function f() { return JSON.stringify({a:Infinity}); }`).result)).toEqual({ ok: true, value: '{"a":null}', });
+    expect(litValue(call(`export function f() { return JSON.stringify([1,,3]); }`).result)).toEqual({ ok: true, value: "[1,null,3]", });
   });
 
   it("undefined/function slots are skipped; top-level undefined stays undefined", () => {
-    expect(litValue(call(`export function f() { return JSON.stringify({a:undefined,b:1}); }`).result)).toBe(
-      '{"b":1}',
-    );
-    expect(litValue(call(`export function f() { return JSON.stringify([undefined,null,1]); }`).result)).toBe(
-      "[null,null,1]",
-    );
+    expect(litValue(call(`export function f() { return JSON.stringify({a:undefined,b:1}); }`).result)).toEqual({ ok: true, value: '{"b":1}', });
+    expect(litValue(call(`export function f() { return JSON.stringify([undefined,null,1]); }`).result)).toEqual({ ok: true, value: "[null,null,1]", });
     const r = call(`export function f() { return JSON.stringify(undefined); }`);
     const t = r.result as unknown as { term?: { op: string; value: unknown } };
     expect(t.term?.op).toBe("lit");
@@ -119,22 +105,12 @@ describe("evaluator JSON.stringify folding", () => {
   });
 
   it("respects literal space/replacer args", () => {
-    expect(litValue(call(`export function f() { return JSON.stringify({x:1},null,2); }`).result)).toBe(
-      '{\n  "x": 1\n}',
-    );
-    expect(litValue(call(`export function f() { return JSON.stringify({a:1,b:2},['a']); }`).result)).toBe(
-      '{"a":1}',
-    );
-    expect(litValue(call(`export function f() { return JSON.stringify({a:1},null,'\\t'); }`).result)).toBe(
-      '{\n\t"a": 1\n}',
-    );
+    expect(litValue(call(`export function f() { return JSON.stringify({x:1},null,2); }`).result)).toEqual({ ok: true, value: '{\n  "x": 1\n}', });
+    expect(litValue(call(`export function f() { return JSON.stringify({a:1,b:2},['a']); }`).result)).toEqual({ ok: true, value: '{"a":1}', });
+    expect(litValue(call(`export function f() { return JSON.stringify({a:1},null,'\\t'); }`).result)).toEqual({ ok: true, value: '{\n\t"a": 1\n}', });
     // 非数组非函数的 replacer 原生忽略（照常序列化）
-    expect(litValue(call(`export function f() { return JSON.stringify({a:1},5); }`).result)).toBe(
-      '{"a":1}',
-    );
-    expect(litValue(call(`export function f() { return JSON.stringify({a:1},null); }`).result)).toBe(
-      '{"a":1}',
-    );
+    expect(litValue(call(`export function f() { return JSON.stringify({a:1},5); }`).result)).toEqual({ ok: true, value: '{"a":1}', });
+    expect(litValue(call(`export function f() { return JSON.stringify({a:1},null); }`).result)).toEqual({ ok: true, value: '{"a":1}', });
   });
 
   it("reviver arg stays conservative (per-key transform unmodeled)", () => {
@@ -144,10 +120,10 @@ describe("evaluator JSON.stringify folding", () => {
           `export function f() { return JSON.parse('{"a":1}', (k,v) => k === 'a' ? 9 : v).a; }`,
         ).result,
       ),
-    ).toBe(undefined);
+    ).toEqual({ ok: false });
     expect(
       litValue(call(`export function f() { return JSON.parse('5', (k,v) => v + 1); }`).result),
-    ).toBe(undefined);
+    ).toEqual({ ok: false });
   });
 
   it("skips non-enumerable slots (defineProperty descriptor honored)", () => {
@@ -157,20 +133,20 @@ describe("evaluator JSON.stringify folding", () => {
           `export function f() { const o = {}; Object.defineProperty(o, 'x', {value: 1, enumerable: false}); return JSON.stringify(o); }`,
         ).result,
       ),
-    ).toBe("{}");
+    ).toEqual({ ok: true, value: "{}" });
     expect(
       litValue(
         call(
           `export function f() { const o = {}; Object.defineProperty(o, 'x', {value: 1, enumerable: false}); o.y = 2; return JSON.stringify(o); }`,
         ).result,
       ),
-    ).toBe('{"y":2}');
+    ).toEqual({ ok: true, value: '{"y":2}' });
   });
 
   it("stringify bigint throws TypeError (catchable)", () => {
     expect(
       litValue(call(`export function f() { try { JSON.stringify(1n); } catch(e) { return 'caught'; } return 'missed'; }`).result),
-    ).toBe("caught");
+    ).toEqual({ ok: true, value: "caught" });
     const r = call(`export function f() { return JSON.stringify(1n); }`);
     expect(isNever(r.result)).toBe(true);
     expect(throwsError(r.throws, "TypeError")).toBe(true);
@@ -180,7 +156,7 @@ describe("evaluator JSON.stringify folding", () => {
     const src = `export function f(x) { return JSON.parse(x); }`;
     const exports = runTranspiled(src, { mode: "analyze" });
     const x = { shape: { k: "prim", type: "string" }, conf: "path" } as never;
-    expect(litValue(callTranspiledExportFull(exports, "f", [x]).result)).toBe(undefined);
+    expect(litValue(callTranspiledExportFull(exports, "f", [x]).result)).toEqual({ ok: false });
   });
 });
 

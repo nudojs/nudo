@@ -198,7 +198,8 @@ export function instanceOf(
   env?: AstEnv,
 ): Abs {
   // null/undefined instanceof X：原生抛 TypeError（litValue 无 lit 的抽象值不得误判）
-  if (litValue(left) === null || isNullishLitAbs(left)) {
+  const leftLit = litValue(left);
+  if ((leftLit.ok ? leftLit.value : undefined) === null || isNullishLitAbs(left)) {
     return { shape: { k: "prim", type: "boolean" }, conf: "partial" };
   }
   const t = (v: boolean): Abs => ({

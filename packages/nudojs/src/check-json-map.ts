@@ -54,13 +54,30 @@ export function docsDiagnosticCodes(issues: Array<{ code?: string }>): string[] 
 }
 
 export function mockFromErrorIssues(
-  mockFromErrors: Array<{ name: string; fromPath: string; message: string }>,
+  mockFromErrors: Array<{ name: string; fromPath: string; message: string; code?: string }>,
 ): CheckIssue[] {
-  return mockFromErrors.map((fe) => ({
-    severity: "error" as const,
-    code: "nudo:module-missing" as const,
-    message: fe.message,
-    suggestion: `Create the mock file or fix the path in @nudo:mock ${fe.name} from "${fe.fromPath}"`,
+  return mockFromErrors.map((fe) => {
+    const isExpr = fe.code === "nudo:mock-invalid";
+    return {
+      severity: "error" as const,
+      code: (fe.code ?? "nudo:module-missing") as string,
+      message: fe.message,
+      suggestion: isExpr
+        ? "Fix the @nudo:mock expression (constraint builders, literals, or arrow functions)"
+        : `Create the mock file or fix the path in @nudo:mock ${fe.name} from "${fe.fromPath}"`,
+    };
+  });
+}
+
+/** D1: 指令文法诊断（nudo:directive-syntax）→ CheckIssue（warning，不挡 exit） */
+export function directiveDiagIssues(
+  diags: Array<{ code: string; message: string }>,
+): CheckIssue[] {
+  return diags.map((d) => ({
+    severity: "warning" as const,
+    code: d.code,
+    message: d.message,
+    suggestion: "Fix the directive syntax (see docs/reference/diagnostics.md)",
   }));
 }
 
@@ -155,5 +172,44 @@ export function mergeJsonIssues<T extends JsonSummarized>(
       warnings: json.summary.warnings + warnings,
       infos: json.summary.infos + infos,
     },
+  };
+}
+
+type PathErrorLike = {
+  path: string;
+  code: string;
+  message: string;
+  suggestion?: string;
+};
+
+type MultiEnvelope = {
+  ok: boolean;
+  summary: { errors: number; warnings: number; infos: number; functions: number; files: number; budgetTruncated?: boolean };
+  pathErrors?: PathErrorLike[];
+  reports: unknown[];
+};
+
+/**
+ * 路径错误纳入 CheckJsonMulti 信封：ok:false + pathErrors，并计入 summary.errors。
+ * ok↔exit 单一来源：CLI 在 --json 路径只按信封 ok 设 exit。
+ */
+export function attachPathErrors<T extends MultiEnvelope>(
+  envelope: T,
+  errors: PathErrorLike[],
+): T {
+  if (errors.length === 0) return envelope;
+  return {
+    ...envelope,
+    ok: false,
+    summary: {
+      ...envelope.summary,
+      errors: envelope.summary.errors + errors.length,
+    },
+    pathErrors: errors.map((e) => ({
+      path: e.path,
+      code: e.code,
+      message: e.message,
+      ...(e.suggestion !== undefined ? { suggestion: e.suggestion } : {}),
+    })),
   };
 }

@@ -23,7 +23,7 @@ function expectExactUndefined(src: string) {
   const r = run(src);
   expect(r.throws?.shape?.k, `throws for: ${src}`).toBe("never");
   expect(formatAbs(r.result), `result for: ${src}`).toContain("undefined");
-  expect(litValue(r.result), `lit for: ${src}`).toBeUndefined();
+  expect(litValue(r.result), `lit for: ${src}`).toEqual({ ok: true, value: undefined });
 }
 
 /** 原生语义：非可选后续访问打在 null 上必须抛 TypeError */
@@ -53,9 +53,7 @@ describe("optional chain short-circuits the remaining chain", () => {
   });
 
   it("o?.user.name on {user:{name:'x'}} still reads through", () => {
-    expect(val(`export function f() { const o = { user: { name: "x" } }; return o?.user.name; }`)).toBe(
-      "x",
-    );
+    expect(val(`export function f() { const o = { user: { name: "x" } }; return o?.user.name; }`)).toEqual({ ok: true, value: "x", });
   });
 
   it("o?.user?.name on null still undefined (all-optional)", () => {
@@ -83,7 +81,7 @@ describe("optional chain short-circuits the remaining chain", () => {
   });
 
   it("call: g?.(1) on function still calls", () => {
-    expect(val(`export function f() { const g = (x) => x + 1; return g?.(1); }`)).toBe(2);
+    expect(val(`export function f() { const g = (x) => x + 1; return g?.(1); }`)).toEqual({ ok: true, value: 2 });
   });
 
   it("obj.method?.() on missing method → undefined", () => {
@@ -99,6 +97,6 @@ describe("optional chain short-circuits the remaining chain", () => {
   });
 
   it("a?.b.c on {b:{c:1}} reads through", () => {
-    expect(val(`export function f() { const a = { b: { c: 1 } }; return a?.b.c; }`)).toBe(1);
+    expect(val(`export function f() { const a = { b: { c: 1 } }; return a?.b.c; }`)).toEqual({ ok: true, value: 1 });
   });
 });

@@ -5,10 +5,10 @@
  * - 内联 mock 不回归
  */
 import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { formatAbs, litValue } from "@nudojs/core";
+import { join, dirname } from "node:path";
+import { formatAbs, litValue, unknown as absUnknown } from "@nudojs/core";
 import { mockDirectivesToAbsSeeds, mockSeedsToAbsMocks } from "../mock-abs.ts";
 import { parse, extractDirectives } from "@nudojs/parser";
 import { tryEvalCallFull } from "../eval-run.ts";
@@ -136,6 +136,88 @@ function readConfig(path) {
   });
 });
 
+describe("undefined export is not confused with missing binding", () => {
+  it("mock file exporting undefined binding is accepted (undefAbs slot, not 'not defined')", () => {
+    const dir = tmpProject({
+      "mocks/stub.js": `export const stub = undefined;\n`,
+    });
+    const entry = join(dir, "app.js");
+    const source = `/**
+ * @nudo:mock stub from "./mocks/stub.js"
+ * @nudo:case "default" ()
+ */
+function f() {
+  return stub;
+}
+`;
+    const seeds = seedsOf(source, entry);
+    expect(seeds.fromErrors).toBeUndefined();
+    expect(seeds.seedVars.stub).toBeDefined();
+    // 「名存在但值 undefined」：undefAbs 槽位，不是 missing
+    expect(seeds.seedVars.stub!.term).toEqual({ op: "lit", value: undefined });
+  });
+
+  it("mock file with export let (undefined initial) is accepted", () => {
+    const dir = tmpProject({
+      "mocks/stub.js": `export let stub;\n`,
+    });
+    const entry = join(dir, "app.js");
+    const source = `/**
+ * @nudo:mock stub from "./mocks/stub.js"
+ * @nudo:case "default" ()
+ */
+function f() {
+  return stub;
+}
+`;
+    const seeds = seedsOf(source, entry);
+    expect(seeds.fromErrors).toBeUndefined();
+    expect(seeds.seedVars.stub).toBeDefined();
+    expect(seeds.seedVars.stub!.term).toEqual({ op: "lit", value: undefined });
+  });
+
+  it("mock file without the binding still errors (missing ≠ undefined)", () => {
+    const dir = tmpProject({
+      "mocks/other.js": `export const other = 1;\n`,
+    });
+    const entry = join(dir, "app.js");
+    const source = `/**
+ * @nudo:mock stub from "./mocks/other.js"
+ * @nudo:case "default" ()
+ */
+function f() {
+  return stub;
+}
+`;
+    const seeds = seedsOf(source, entry);
+    expect(seeds.seedVars.stub).toBeUndefined();
+    expect(seeds.fromErrors).toHaveLength(1);
+    expect(seeds.fromErrors![0]!.message).toContain("does not define a binding named 'stub'");
+  });
+
+  it("undefined export seeds inject and do not fall through to real host", () => {
+    const dir = tmpProject({
+      "mocks/fetch.js": `export const fetchStub = undefined;\n`,
+    });
+    const entry = join(dir, "app.js");
+    const source = `/**
+ * @nudo:mock fetchStub from "./mocks/fetch.js"
+ * @nudo:case "go" ()
+ */
+function go() {
+  return fetchStub;
+}
+`;
+    const seeds = seedsOf(source, entry);
+    expect(seeds.fromErrors).toBeUndefined();
+    const mocks = mockSeedsToAbsMocks(seeds);
+    expect(mocks.fetchStub).toBeDefined();
+    const r = tryEvalCallFull(source, entry, "go", [], { mocks, envNames: [] });
+    expect(r).toBeDefined();
+    expect(r!.result.term).toEqual({ op: "lit", value: undefined });
+  });
+});
+
 describe("inline mocks do not regress", () => {
   it("arrow / stub inline mocks still seed", () => {
     const source = `/**
@@ -154,7 +236,7 @@ function readPort() {
     const mocks = mockSeedsToAbsMocks(seeds);
     expect(mocks.getPort).toBeDefined();
     expect(mocks.double).toBeDefined();
-    expect(litValue(mocks.getPort as never)).toBeUndefined(); // fn mock, not a bare lit
+    expect(litValue(mocks.getPort as never)).toEqual({ ok: false }); // fn mock, not a bare lit
     expect((mocks.getPort as { shape: { k: string } }).shape.k).toBe("fn");
     expect((mocks.double as { shape: { k: string } }).shape.k).toBe("fn");
   });
@@ -199,5 +281,171 @@ export function load() { return readConfig(); }
     );
     expect(r).toBeDefined();
     expect(formatAbs(r!.result)).toContain("3000");
+  });
+});
+
+describe("mock dependency-graph failure is fail-closed", () => {
+  it("missing relative import inside the mock file is reported, not silent unknown", () => {
+    const dir = tmpProject({
+      "mocks/stub.js": `import { helper } from "./missing-dep.js";\nexport const stub = () => helper();\n`,
+    });
+    const entry = join(dir, "app.js");
+    const source = `/**
+ * @nudo:mock stub from "./mocks/stub.js"
+ * @nudo:case "default" ()
+ */
+function f() {
+  return stub();
+}
+`;
+    const seeds = seedsOf(source, entry);
+    expect(seeds.seedVars.stub).toBeUndefined();
+    expect(seeds.fromErrors).toHaveLength(1);
+    expect(seeds.fromErrors![0]!.message).toContain("failed to resolve dependencies");
+    expect(seeds.fromErrors![0]!.message).toContain("missing-dep.js");
+
+    const result = analyzeFile(entry, source);
+    const missing = result.diagnostics.filter((d) => d.code === "nudo:module-missing");
+    expect(missing.length).toBeGreaterThanOrEqual(1);
+    expect(missing[0]!.message).toContain("failed to resolve dependencies");
+  });
+
+  it("graph throw (loader failure on a resolved dep) is reported, not silent empty modules", () => {
+    const dir = tmpProject({
+      "lib/dep.js": `export function helper() { return "ok"; }\n`,
+      "mocks/stub.js": `import { helper } from "../lib/dep.js";\nexport const stub = () => helper();\n`,
+    });
+    const entry = join(dir, "app.js");
+    const source = `/**
+ * @nudo:mock stub from "./mocks/stub.js"
+ * @nudo:case "default" ()
+ */
+function f() {
+  return stub();
+}
+`;
+    // inject graph failure: loader throws while resolving the mock's dep
+    const loadModule = (spec: string, fromFile: string): string | undefined => {
+      if (spec.includes("dep.js")) throw new Error("injected loader boom");
+      const abs = spec.startsWith(".") ? join(dirname(fromFile), spec) : spec;
+      try {
+        return readFileSync(abs, "utf-8");
+      } catch {
+        return undefined;
+      }
+    };
+    const fns = extractDirectives(parse(source));
+    const seeds = mockDirectivesToAbsSeeds(fns, { fromFile: entry, loadModule });
+    expect(seeds.seedVars.stub).toBeUndefined();
+    expect(seeds.fromErrors).toHaveLength(1);
+    expect(seeds.fromErrors![0]!.message).toContain("failed to resolve dependencies");
+    expect(seeds.fromErrors![0]!.message).toContain("injected loader boom");
+  });
+});
+
+describe("unparseable mock expression is fail-closed", () => {
+  it("surfaces in fromErrors instead of silently seeding absUnknown", () => {
+    const source = `/**
+ * @nudo:mock foo = @@@invalid@@@
+ * @nudo:case "default" ()
+ */
+function f() {
+  return foo;
+}
+`;
+    const seeds = seedsOf(source, "/tmp/inline.js");
+    expect(seeds.seedVars.foo).toBeUndefined();
+    expect(seeds.fromErrors).toHaveLength(1);
+    expect(seeds.fromErrors![0]!.name).toBe("foo");
+    expect(seeds.fromErrors![0]!.code).toBe("nudo:mock-invalid");
+    expect(seeds.fromErrors![0]!.message).toContain("Failed to parse mock expression");
+  });
+
+  it("analyzeFile reports nudo:mock-invalid for garbage mock RHS", () => {
+    const source = `/**
+ * @nudo:mock foo = @@@invalid@@@
+ * @nudo:case "default" ()
+ */
+function f() {
+  return foo;
+}
+`;
+    const result = analyzeFile("/tmp/inline.js", source);
+    const diags = result.diagnostics.filter((d) => d.code === "nudo:mock-invalid");
+    expect(diags.length).toBeGreaterThanOrEqual(1);
+    expect(diags[0]!.message).toContain("foo");
+  });
+
+  it("intentional unknown mock expressions still seed without error", () => {
+    const source = `/**
+ * @nudo:mock a = unknown
+ * @nudo:mock b = any
+ * @nudo:mock c = T.number
+ * @nudo:mock d = number()
+ * @nudo:case "default" ()
+ */
+function f() {
+  return [a, b, c, d];
+}
+`;
+    const seeds = seedsOf(source, "/tmp/inline.js");
+    expect(seeds.fromErrors).toBeUndefined();
+    expect(seeds.seedVars.a).toBeDefined();
+    expect(seeds.seedVars.b).toBeDefined();
+    expect(seeds.seedVars.c).toBeDefined();
+    expect(seeds.seedVars.d).toBeDefined();
+    expect(seeds.seedVars.d!.shape.k).toBe("prim");
+  });
+});
+
+describe("from-mock bridge preserves throws channel (FIX-D7 / BUG-006)", () => {
+  it("mock fn that always throws surfaces throws non-never in caller", () => {
+    const dir = tmpProject({
+      "mocks/boom.js": `export function boomStub() { throw new TypeError("mock-boom"); }\n`,
+    });
+    const entry = join(dir, "app.js");
+    const source = `/**
+ * @nudo:mock boomStub from "./mocks/boom.js"
+ * @nudo:case "go" ()
+ */
+function go() {
+  return boomStub();
+}
+`;
+    const seeds = seedsOf(source, entry);
+    expect(seeds.fromErrors).toBeUndefined();
+    expect(seeds.seedVars.boomStub).toBeDefined();
+    const run = tryEvalCallFull(source, entry, "go", [], {
+      mocks: mockSeedsToAbsMocks(seeds),
+      envNames: [],
+    });
+    expect(run).toBeDefined();
+    // always-throw：result=never，throws 必须非 never（mock 桥不得丢 throws 面）
+    expect(run!.result.shape.k).toBe("never");
+    expect(run!.throws.shape.k).not.toBe("never");
+  });
+
+  it("mock fn that may throws surfaces throws non-never in caller", () => {
+    const dir = tmpProject({
+      "mocks/maybe.js": `export function maybeStub(x) { if (x) throw new TypeError("mock-maybe"); return 1; }\n`,
+    });
+    const entry = join(dir, "app.js");
+    const source = `/**
+ * @nudo:mock maybeStub from "./mocks/maybe.js"
+ * @nudo:case "go" (any())
+ */
+function go(x) {
+  return maybeStub(x);
+}
+`;
+    const seeds = seedsOf(source, entry);
+    expect(seeds.fromErrors).toBeUndefined();
+    const run = tryEvalCallFull(source, entry, "go", [absUnknown], {
+      mocks: mockSeedsToAbsMocks(seeds),
+      envNames: [],
+    });
+    expect(run).toBeDefined();
+    // may-throw：throws 面必须非 never（mock 桥不得丢 throws）
+    expect(run!.throws.shape.k).not.toBe("never");
   });
 });

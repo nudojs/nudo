@@ -38,68 +38,56 @@ function shape(src: string) {
 
 describe("array ToPrimitive in +", () => {
   it("[] + [] is empty string join", () => {
-    expect(val(`export function f() { return [] + []; }`)).toBe("");
+    expect(val(`export function f() { return [] + []; }`)).toEqual({ ok: true, value: "" });
   });
 
   it("array + string / string + array uses join", () => {
-    expect(val(`export function f() { return [1,2] + ''; }`)).toBe("1,2");
-    expect(val(`export function f() { return '' + [1,2]; }`)).toBe("1,2");
-    expect(val(`export function f() { return 'x' + []; }`)).toBe("x");
-    expect(val(`export function f() { return 'x' + [1,2]; }`)).toBe("x1,2");
+    expect(val(`export function f() { return [1,2] + ''; }`)).toEqual({ ok: true, value: "1,2" });
+    expect(val(`export function f() { return '' + [1,2]; }`)).toEqual({ ok: true, value: "1,2" });
+    expect(val(`export function f() { return 'x' + []; }`)).toEqual({ ok: true, value: "x" });
+    expect(val(`export function f() { return 'x' + [1,2]; }`)).toEqual({ ok: true, value: "x1,2" });
   });
 
   it("array + number / number + array is string (ToPrimitive prefers string)", () => {
-    expect(val(`export function f() { return [1] + 1; }`)).toBe("11");
-    expect(val(`export function f() { return 1 + [1]; }`)).toBe("11");
-    expect(val(`export function f() { return [1,2] + 3; }`)).toBe("1,23");
+    expect(val(`export function f() { return [1] + 1; }`)).toEqual({ ok: true, value: "11" });
+    expect(val(`export function f() { return 1 + [1]; }`)).toEqual({ ok: true, value: "11" });
+    expect(val(`export function f() { return [1,2] + 3; }`)).toEqual({ ok: true, value: "1,23" });
   });
 
   it("array + array concatenates join results", () => {
-    expect(val(`export function f() { return [1] + [2]; }`)).toBe("12");
+    expect(val(`export function f() { return [1] + [2]; }`)).toEqual({ ok: true, value: "12" });
   });
 
   it("null/undefined elements in array join to empty", () => {
-    expect(val(`export function f() { return [null] + ''; }`)).toBe("");
-    expect(val(`export function f() { return [undefined] + ''; }`)).toBe("");
+    expect(val(`export function f() { return [null] + ''; }`)).toEqual({ ok: true, value: "" });
+    expect(val(`export function f() { return [undefined] + ''; }`)).toEqual({ ok: true, value: "" });
   });
 });
 
 describe("object / undefined ToString in +", () => {
   it("plain object + string is [object Object]", () => {
-    expect(val(`export function f() { return {a:1} + ''; }`)).toBe(
-      "[object Object]",
-    );
-    expect(val(`export function f() { return '' + {a:1}; }`)).toBe(
-      "[object Object]",
-    );
+    expect(val(`export function f() { return {a:1} + ''; }`)).toEqual({ ok: true, value: "[object Object]", });
+    expect(val(`export function f() { return '' + {a:1}; }`)).toEqual({ ok: true, value: "[object Object]", });
   });
 
   it("undefined + string folds ToString(undefined)", () => {
-    expect(val(`export function f() { return undefined + 'x'; }`)).toBe(
-      "undefinedx",
-    );
-    expect(val(`export function f() { return 'x' + undefined; }`)).toBe(
-      "xundefined",
-    );
-    expect(val(`export function f() { return undefined + ''; }`)).toBe(
-      "undefined",
-    );
-    expect(val(`export function f() { return '' + undefined; }`)).toBe(
-      "undefined",
-    );
+    expect(val(`export function f() { return undefined + 'x'; }`)).toEqual({ ok: true, value: "undefinedx", });
+    expect(val(`export function f() { return 'x' + undefined; }`)).toEqual({ ok: true, value: "xundefined", });
+    expect(val(`export function f() { return undefined + ''; }`)).toEqual({ ok: true, value: "undefined", });
+    expect(val(`export function f() { return '' + undefined; }`)).toEqual({ ok: true, value: "undefined", });
   });
 
   it("true + array still joins (ToPrimitive array first)", () => {
-    expect(val(`export function f() { return true + []; }`)).toBe("true");
+    expect(val(`export function f() { return true + []; }`)).toEqual({ ok: true, value: "true" });
   });
 });
 
 describe("known-good neighbors stay exact", () => {
   it("null / bigint / boolean string concat still folds", () => {
-    expect(val(`export function f() { return null + ''; }`)).toBe("null");
-    expect(val(`export function f() { return 10n + ''; }`)).toBe("10");
-    expect(val(`export function f() { return true + 'x'; }`)).toBe("truex");
-    expect(val(`export function f() { return 1 + 2; }`)).toBe(3);
+    expect(val(`export function f() { return null + ''; }`)).toEqual({ ok: true, value: "null" });
+    expect(val(`export function f() { return 10n + ''; }`)).toEqual({ ok: true, value: "10" });
+    expect(val(`export function f() { return true + 'x'; }`)).toEqual({ ok: true, value: "truex" });
+    expect(val(`export function f() { return 1 + 2; }`)).toEqual({ ok: true, value: 3 });
     expect(shape(`export function f() { return 'a' + 'b'; }`)).toBe('"ab"');
   });
 });

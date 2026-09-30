@@ -254,18 +254,28 @@ parseCaseArgExpr(expr: string): Abs
 | <a id="asmemberexpression"></a>`asMemberExpression` | fn | — | `asMemberExpression( node: Node \| null \| undefined, ): MemberExpression \| undefined` |
 | <a id="asprogram"></a>`asProgram` | fn | File → its Program; Program → itself. | `asProgram(ast: Node \| File \| Program \| null \| undefined): Program \| undefined` |
 | <a id="casedirective"></a>`CaseDirective` | type | — | `CaseDirective = { kind: "case"; name: string; argsAbs: Abs[]; expected?: Abs; commentLine?: number; }` |
+| <a id="casetag"></a>`CaseTag` | type | — | — |
 | <a id="classidname"></a>`classIdName` | fn | ClassDeclaration/ClassExpression `id?.name`. | `classIdName(node: Node \| null \| undefined): string \| undefined` |
 | <a id="classinstancemethods"></a>`classInstanceMethods` | fn | Instance methods of a class-like node. | `classInstanceMethods(node: Node \| null \| undefined): InstanceMethod[]` |
 | <a id="classmemberkey"></a>`classMemberKey` | fn | Key node of a class member (for range selection). | `classMemberKey(member: Node \| null \| undefined): Node \| undefined` |
 | <a id="classmemberkeyname"></a>`classMemberKeyName` | fn | `key.name ?? key.value` on a class/object member key. | `classMemberKeyName(member: Node \| null \| undefined): string \| number \| undefined` |
 | <a id="directive"></a>`Directive` | type | — | `Directive = CaseDirective \| MockDirective \| PureDirective \| SkipDirective \| SampleDirective` |
+| <a id="directivediag"></a>`DirectiveDiag` | type | — | `DirectiveDiag = { code: string; message: string }` |
+| <a id="directivediagcount"></a>`directiveDiagCount` | fn | 当前诊断累计序号（since 锚：消费方只排干自身 extract 产生的增量） | `directiveDiagCount(): number` |
 | <a id="envdirective"></a>`EnvDirective` | type | — | `EnvDirective = { kind: "env"; envs: string[]; }` |
 | <a id="exportspecifierexportedname"></a>`exportSpecifierExportedName` | fn | ExportSpecifier exported name (`exported.name ?? exported.value`). | `exportSpecifierExportedName( spec: Node \| null \| undefined, ): string \| number \| undefined` |
 | <a id="exportspecifierlocalname"></a>`exportSpecifierLocalName` | fn | ExportSpecifier local name — Identifier only (matches `local.name`). | `exportSpecifierLocalName(spec: Node \| null \| undefined): string \| undefined` |
-| <a id="extractdirectives"></a>`extractDirectives` | fn | — | `extractDirectives(ast: Node): FunctionWithDirectives[]` |
+| <a id="extractdirectives"></a>`extractDirectives` | fn | D6=G2：指令绑定 AST 最近 Function（含 nested function、class method）。 | `extractDirectives(ast: Node): FunctionWithDirectives[]` |
+| <a id="extractdirectivesquiet"></a>`extractDirectivesQuiet` | fn | 纯查询 extract：排干自身产生的指令文法诊断增量并丢弃—— hover/completion/collectSkipReturns 等探测路径不得把诊断留在全局 buffer 供在途 validate/check 误窃，也不得自己背走别人的在途诊断。 | `extractDirectivesQuiet(ast: Node): FunctionWithDirectives[]` |
 | <a id="extractfiledirectives"></a>`extractFileDirectives` | fn | — | `extractFileDirectives(ast: Node): FileDirective[]` |
+| <a id="extractfileenvnames"></a>`extractFileEnvNames` | const | — | — |
 | <a id="extractinlinedirectives"></a>`extractInlineDirectives` | fn | — | `extractInlineDirectives(node: Node): InlineDirective[]` |
+| <a id="extractmockmodulerecords"></a>`extractMockModuleRecords` | const | — | — |
+| <a id="extractnudoimportrecords"></a>`extractNudoImportRecords` | const | — | — |
 | <a id="filedirective"></a>`FileDirective` | type | — | `FileDirective = EnvDirective \| MockModuleDirective` |
+| <a id="findfndirectivescope"></a>`findFnDirectiveScope` | const | — | — |
+| <a id="fndirectivecommentlines"></a>`fnDirectiveCommentLines` | const | — | — |
+| <a id="fndirectivescope"></a>`FnDirectiveScope` | type | — | — |
 | <a id="fnorclassidloc"></a>`fnOrClassIdLoc` | fn | `id.loc` of a named function/class (undefined when anonymous or unlocated). | `fnOrClassIdLoc(node: Node \| null \| undefined): Node` |
 | <a id="fnorclassidname"></a>`fnOrClassIdName` | fn | Function/Class declaration or expression `id?.name`. | `fnOrClassIdName(node: Node \| null \| undefined): string \| undefined` |
 | <a id="functionwithdirectives"></a>`FunctionWithDirectives` | type | — | `FunctionWithDirectives = { node: Node; name: string; directives: Directive[]; }` |
@@ -281,24 +291,37 @@ parseCaseArgExpr(expr: string): Abs
 | <a id="inlinedirective"></a>`InlineDirective` | type | — | `InlineDirective = AsDirective \| ReplaceDirective` |
 | <a id="instancemethod"></a>`InstanceMethod` | type | — | `InstanceMethod = { name: string; node: Node }` |
 | <a id="ismoduleexportsmember"></a>`isModuleExportsMember` | fn | `module.exports` / `module["exports"]` is rejected here: computed keys return false. | `isModuleExportsMember(member: Node \| null \| undefined): boolean` |
+| <a id="listfndirectivescopes"></a>`listFnDirectiveScopes` | const | — | — |
 | <a id="memberobjectname"></a>`memberObjectName` | fn | Identifier name of a non-computed member's object (e.g. | `memberObjectName(member: Node \| null \| undefined): string \| undefined` |
 | <a id="memberpropertykey"></a>`memberPropertyKey` | fn | Non-computed member property key text (Identifier.name or StringLiteral.value). | `memberPropertyKey(member: Node \| null \| undefined): string \| null` |
 | <a id="memberpropertyname"></a>`memberPropertyName` | fn | Identifier name of a non-computed member's property (e.g. | `memberPropertyName(member: Node \| null \| undefined): string \| undefined` |
 | <a id="methodfunctionnode"></a>`methodFunctionNode` | fn | Class/TSDeclare method function node (ESTree MethodDefinition → its `value`). | `methodFunctionNode(member: Node \| null \| undefined): Node \| undefined` |
 | <a id="mockdirective"></a>`MockDirective` | type | — | `MockDirective = { kind: "mock"; name: string; expression?: string; fromPath?: string; arrowFn?: { params: string[]; body: Node; paramPatt...` |
 | <a id="mockmoduledirective"></a>`MockModuleDirective` | type | — | `MockModuleDirective = { kind: "mock-module"; source: string; names?: string[]; fromPath: string; }` |
+| <a id="mockmodulerecord"></a>`MockModuleRecord` | type | — | — |
 | <a id="nameorstringvalue"></a>`nameOrStringValue` | fn | Identifier.name, else StringLiteral.value (module string export names). | `nameOrStringValue(node: Node \| null \| undefined): string \| undefined` |
+| <a id="nudoimportrecord"></a>`NudoImportRecord` | type | — | — |
 | <a id="paramdisplayname"></a>`paramDisplayName` | fn | Parameter display label: `name`, `...rest`, or `_`. | `paramDisplayName(param: Node \| null \| undefined): string` |
 | <a id="paramname"></a>`paramName` | fn | RestElement argument name, else plain Identifier name. | `paramName(param: Node \| null \| undefined): string \| undefined` |
 | <a id="parse"></a>`parse` | fn | 所有权：Babel 解析与 TS 剥除的**实现**在 `@nudojs/core` （`algebra/parse-source.ts` / `strip-types.ts`）—— core 代数层 （check/scan/generalize）需要 AST 且不能反向依赖本包。本包职责是 `@nudo:` 指令抽取与 AST 卫兵；`parse()` 是宿主入口，委托 core 同一实现与 AST LRU。 | `parse(source: string, opts?: { errorRecovery?: boolean }): File` |
 | <a id="parsecaseargexpr"></a>`parseCaseArgExpr` | fn | case 实参 / 指令类型表达式唯一文法：约束构建器优先，其余为具体字面量、 结构字面量与箭头函数。`T.*` 文法已物理删除。 | `parseCaseArgExpr(expr: string): Abs` |
+| <a id="parseenvpayload"></a>`parseEnvPayload` | const | — | — |
+| <a id="parsemockmodulepayload"></a>`parseMockModulePayload` | const | — | — |
+| <a id="parsenudoimportpayload"></a>`parseNudoImportPayload` | const | — | — |
 | <a id="programbody"></a>`programBody` | fn | Top-level statements of a File/Program (empty when neither). | `programBody(ast: Node \| File \| Program \| null \| undefined): Statement[]` |
 | <a id="puredirective"></a>`PureDirective` | type | — | `PureDirective = { kind: "pure"; }` |
 | <a id="replacedirective"></a>`ReplaceDirective` | type | — | `ReplaceDirective = { kind: "replace"; targetSource: string; typeAbs: Abs; }` |
 | <a id="sampledirective"></a>`SampleDirective` | type | — | `SampleDirective = { kind: "sample"; count: number; }` |
+| <a id="scanbudgetdecl"></a>`scanBudgetDecl` | const | — | — |
+| <a id="scancasetags"></a>`scanCaseTags` | const | — | — |
+| <a id="scancontractsegments"></a>`scanContractSegments` | const | — | — |
+| <a id="scanthrowsdecl"></a>`scanThrowsDecl` | const | — | — |
+| <a id="setdirectivediagcollector"></a>`setDirectiveDiagCollector` | fn | — | `setDirectiveDiagCollector(fn: ((d: DirectiveDiag) => void) \| null): void` |
 | <a id="sinonexpression"></a>`SinonExpression` | type | — | `SinonExpression = { type: "stub" \| "spy" \| "mock"; returnValue?: Abs; resolvedValue?: Abs; rejectedValue?: Abs; }` |
 | <a id="skipdirective"></a>`SkipDirective` | type | — | `SkipDirective = { kind: "skip"; returns?: Abs; }` |
 | <a id="striptypes"></a>`stripTypes` | const | — | — |
+| <a id="takedirectivediags"></a>`takeDirectiveDiags` | fn | 取走已收集的诊断（全量排干 + 清空 seen）——CLI/测试整批消费 | `takeDirectiveDiags(): DirectiveDiag[]` |
+| <a id="takedirectivediagssince"></a>`takeDirectiveDiagsSince` | fn | 只取走 seq &gt; since 的诊断（清空仅限增量）——对齐 takeInterfaceDiagsSince。 | `takeDirectiveDiagsSince(since: number): DirectiveDiag[]` |
 | <a id="unwrapdefaultexport"></a>`unwrapDefaultExport` | fn | CJS/ESM default interop: callable module or `{ default }` wrapper. | `unwrapDefaultExport<T>(mod: T \| { default: T }): T` |
 | <a id="unwrapexport"></a>`unwrapExport` | fn | Unwrap an export form: named/default exports yield their inner declaration with `exported: true`; any other statement is returned as-is with `exported: false`. | `unwrapExport(node: Node \| null \| undefined)` |
 <!-- NUDO-API-SKELETON:END -->

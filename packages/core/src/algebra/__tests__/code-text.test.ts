@@ -6,6 +6,7 @@
 import { describe, it, expect } from "vitest";
 import {
   maskCommentsAndStrings,
+  maskStringsKeepComments,
   scanStringLiterals,
   sourceHasCjsExports,
   sourceHasModuleDependency,
@@ -147,6 +148,16 @@ describe("mask/scan stay consistent with interpolation + regex", () => {
     expect(m).toHaveLength(s.length);
     expect(m).toContain("a");
     expect(m).not.toContain("import");
+  });
+
+  it("maskStringsKeepComments blanks strings but keeps comments and indices", () => {
+    const s = `const code = "function foo() {}";\n/** @nudo:contract */\nexport function foo() {}`;
+    const m = maskStringsKeepComments(s);
+    expect(m).toHaveLength(s.length);
+    // 字符串里的 `function foo` 被抹掉，真声明仍在
+    expect(m.match(/function foo/g)?.length).toBe(1);
+    expect(m).toContain("@nudo:contract");
+    expect(m).toContain("export function foo");
   });
 
   it("scanStringLiterals skips interpolated templates and regex", () => {

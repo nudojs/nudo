@@ -75,16 +75,31 @@ export function asAbsVal(v: unknown): Abs {
 /**
  * 函数调用边界：callee 的 loop/early-return 不得冒泡成 caller 结果。
  * 每个 求值引擎调用帧独立 ALS；NudoReturn 收成该调用的返回值。
+ *
+ * throws 面（H1）：嵌套帧的 may-throw（pushThrowExit）必须上浮到调用方帧，
+ * 不得在边界丢弃——否则跨 callAtFunctionBoundary 的 apply 桥 may-throw
+ * 静默消失（与 BUG-006 同类丢失，但发生在帧边界而非桥内）。
+ * always-throw 走 NudoThrow 异常原样 rethrow（不经此转发）。
  */
 export function callAtFunctionBoundary<T>(body: () => T): T {
-  return runWithLoopExits(() => {
-    try {
-      return body();
-    } catch (e) {
-      if (isNudoReturn(e)) return e.absValue as unknown as T;
-      throw e;
-    }
-  });
+  let forwarded: Abs[] = [];
+  try {
+    return runWithLoopExits(() => {
+      try {
+        const r = body();
+        forwarded = takeThrowExits();
+        return r;
+      } catch (e) {
+        forwarded = takeThrowExits();
+        if (isNudoReturn(e)) return e.absValue as unknown as T;
+        throw e;
+      }
+    });
+  } finally {
+    // finally：NudoThrow 冒泡时也先转发兄弟 may-throw（全臂 throw 时
+    // 兄弟 throws 与硬抛载荷一并由外层 joinThrowExits 考虑）。
+    for (const x of forwarded) pushThrowExit(x);
+  }
 }
 
 /** 函数表达式 → 一等 fn Abs（transpile 侧带真实参数名；异步 body 包 $async）
@@ -298,6 +313,18 @@ export function $tryTakeSince(mark: number): Abs[] {
   const store = throwExitsAls.getStore();
   if (!store) return [];
   return store.splice(Math.min(mark, store.length));
+}
+
+/** 窥视 mark 之后新记录的 throw（不摘除——pure memo 捕获用） */
+export function peekThrowExitsSince(mark: number): Abs[] {
+  const store = throwExitsAls.getStore();
+  if (!store) return [];
+  return store.slice(Math.min(mark, store.length));
+}
+
+/** 当前 throwExits 帧长度（pure memo 捕获的 mark 基线） */
+export function throwExitsMark(): number {
+  return throwExitsAls.getStore()?.length ?? 0;
 }
 
 /** catch 入口消化 try 内 soft may-throw（幂等；design §3.3） */

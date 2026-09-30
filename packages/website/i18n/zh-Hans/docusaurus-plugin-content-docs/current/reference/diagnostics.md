@@ -299,6 +299,18 @@ Context: [求值器缺口](../concepts/limits.md#求值器缺口摘要)
 
 Context: [Mock 语法](../concepts/mocking.md#语法) · [@nudo:mock](../concepts/directives.md#nudo--mock-外部依赖)
 
+### `nudo:directive-syntax` {#nudo-directive-syntax}
+
+`@nudo:case` / `@nudo:mock` / `@nudo:as` / `@nudo:skip` 指令文法非法（名称非法、尾注释残留、类型表达式不可识别）。**Warning** —— 该指令被忽略；修正写法。
+
+Context: [指令文法](../concepts/directives.md) · [Skip 文法](../concepts/directives.md#nudo--跳过求值)
+
+### `nudo:contract-syntax` {#nudo-contract-syntax}
+
+`@nudo:contract` 段或 `@nudo:import` 形态非法（如 `x > 0` 而非 `x positive`、default import）。**Warning** —— 该段被忽略；使用 `<param> <约束名>` 或 `return <约束名>`。
+
+Context: [约束模板](../concepts/directives.md#nudo--约束模板引入) · [契约门禁（L1）](../guides/check.md#l1--显式契约)
+
 ### `nudo:env-harvest-conflict` {#nudo-env-harvest-conflict}
 
 ```text
@@ -326,6 +338,16 @@ Context: [nudo check](../guides/check.md#what-it-checks)
 Case 路径可能抛（test / 线索）。L2 升格的是**入口** throws。
 
 Context: [L2 —— 入口 throws](../guides/check.md#l2--entry-throws) · [@nudo:throws](../concepts/directives.md#nudothrows--declare-intentional-throws)
+
+### `nudo:internal` {#nudo-internal}
+
+```text
+Check error: <message>
+```
+
+内部分析/校验失败以诊断形式浮出（check 门禁未能完整跑完）。**Error** —— check 通道不得静默消失；请修复底层失败或上报 bug。
+
+Context: [nudo check](../guides/check.md#what-it-checks)
 
 ## 模块图
 
@@ -416,6 +438,50 @@ assertions
 **修复：** 改正见证期望或函数体。
 
 Context: [声明断言](../guides/test.md#声明断言) · [@nudo:case](../concepts/directives.md#nudocase--debug-witnesses)
+
+## CLI 路径解析
+
+CLI 目标 / `--from` 路径解析错误 —— 收集在 `--json` 信封的 `pathErrors[]`（`{ path, code, message, suggestion? }`）中；人类可读面打印一行原因 + `fix:` 提示。`pathErrors` 非空 ⇒ `ok: false` ⇒ exit `1`。分析开始前的用法错误 —— 不是 Abs 诊断。
+
+### `nudo:path-not-found` {#nudo-path-not-found}
+
+```text
+Not found: /abs/path
+```
+
+请求的路径不存在。**Error**（usage）—— 检查路径；它必须是已存在的 `.js`/`.mjs`/`.ts` 文件，或包含这类文件的目录。
+
+Context: [nudo check](../api/cli-reference.md#nudo-check) · [检查内容](../guides/check.md#what-it-checks)
+
+### `nudo:path-empty-dir` {#nudo-path-empty-dir}
+
+```text
+No nudo files found in directory: /abs/dir
+```
+
+目录存在但没有分析目标。**Error**（usage）—— 补上 `.js`/`.mjs`/`.ts` 源码（或指向有这类文件的目录）；sidecar/decl/JSX 会被跳过。
+
+Context: [nudo check](../api/cli-reference.md#nudo-check) · [检查内容](../guides/check.md#what-it-checks)
+
+### `nudo:path-not-target` {#nudo-path-not-target}
+
+```text
+Not an analysis target (need .js/.mjs/.ts, not sidecar/decl/JSX): /abs/file.nudo.js
+```
+
+文件存在但不是分析目标（`.nudo.js` 侧车、`.d.ts` 声明、`.jsx`/`.tsx` 被排除）。**Error**（usage）—— 传入 `.js`/`.mjs`/`.ts` 分析文件。
+
+Context: [nudo check](../api/cli-reference.md#nudo-check) · [检查内容](../guides/check.md#what-it-checks)
+
+### `nudo:path-missing-callsite` {#nudo-path-missing-callsite}
+
+```text
+Callsite file not found: /abs/tests
+```
+
+`--from` 使用处路径不存在。**Error**（usage）—— 传入已存在的 `--from <file-or-dir>`；它为生成提供 `call@` 记录。
+
+Context: [使用处（`--from`）](../guides/test.md#使用处--from) · [nudo check](../api/cli-reference.md#nudo-check)
 
 ## 读懂 `actual ⊭ expected`
 

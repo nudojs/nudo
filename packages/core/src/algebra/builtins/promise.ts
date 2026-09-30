@@ -51,7 +51,7 @@ function unwrapThenable(v: Abs): Abs {
 function litFromJs(value: unknown): Abs {
   if (value === undefined) return undefAbs();
   if (value === null) {
-    return abs({ k: "unknown" }, { op: "lit", value: null as never }, pTrue, "exact");
+    return abs({ k: "unknown" }, { op: "lit", value: null }, pTrue, "exact");
   }
   if (typeof value === "number") return numLit(value);
   if (typeof value === "string") return strLit(value);

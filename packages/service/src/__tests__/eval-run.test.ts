@@ -28,7 +28,7 @@ export function run(n) { return double(n); }`,
       { modules: { "./math.js": dep as never } },
     );
     const r = callTranspiledExport(main, "run", [$lit(21)]);
-    expect(litValue(r)).toBe(42);
+    expect(litValue(r)).toEqual({ ok: true, value: 42 });
   });
 
   it("tryEvalCall via module graph (Abs absFunction dep)", () => {
@@ -40,7 +40,7 @@ export function run(n) { return double(n); }
     );
     const r = tryEvalCall(main, mainPath, "run", [$lit(21)]);
     expect(r).toBeDefined();
-    expect(litValue(r!)).toBe(42);
+    expect(litValue(r!)).toEqual({ ok: true, value: 42 });
   });
 
   it("analyzeFile case polish uses eval path for relative import", () => {

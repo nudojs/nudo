@@ -37,6 +37,8 @@ export {
   type DirectiveCaseMode,
   computeDirtySet,
   topoSortDirty,
+  stablePathKey,
+  stablePathKeyGraph,
   analysisFileCacheKey,
   resolveModule,
   locFromNode,
@@ -75,7 +77,12 @@ export {
   typeExprToDirective,
   type TypeBinding,
 } from "./what-if.ts";
-export { defaultLoadModule, type LoadModule } from "./load-module.ts";
+export {
+  defaultLoadModule,
+  safeLoadModule,
+  ModuleReadError,
+  type LoadModule,
+} from "./load-module.ts";
 export { collectLoadDepContents, type DepContent } from "./dep-contents.ts";
 
 // ─── Evaluator（Abs-native evaluator：evalAbsModuleGraph / runTranspiled） ─

@@ -37,7 +37,7 @@ const absNum = { shape: { k: "prim", type: "number" }, conf: "path" } as never;
 describe("P0-1 no-default switch is not terminating", () => {
   const src = `export function f(n) { switch (n) { case 1: return "one"; } return "after"; }`;
   it("concrete no-match continues after switch", () => {
-    expect(litValue(call(src, "f", 2).result)).toBe("after");
+    expect(litValue(call(src, "f", 2).result)).toEqual({ ok: true, value: "after" });
   });
   it("abstract keeps after path", () => {
     const r = callAbs(src, "f", [absNum]);
@@ -52,7 +52,7 @@ describe("P0-2 $switch implicit fall-through arm", () => {
   const src = `export function f(n) { switch (n) { case 1: return 1; case 2: return 2; } }`;
   it("concrete no-match is undefined not dropped", () => {
     const r = call(src, "f", 3);
-    expect(litValue(r.result)).toBeUndefined();
+    expect(litValue(r.result)).toEqual({ ok: true, value: undefined });
   });
   it("abstract includes fall-through, not exact 1|2 only", () => {
     const r = callAbs(src, "f", [absNum]);
@@ -68,8 +68,8 @@ describe("P0-2 $switch implicit fall-through arm", () => {
 describe("P0-3 switch array mutator arm isolation", () => {
   const src = `export function f(n) { const a=[1,2,3]; switch(n){ case 1: a.pop(); break; default: break; } return a.length; }`;
   it("concrete arms stay correct", () => {
-    expect(litValue(call(src, "f", 1).result)).toBe(2);
-    expect(litValue(call(src, "f", 9).result)).toBe(3);
+    expect(litValue(call(src, "f", 1).result)).toEqual({ ok: true, value: 2 });
+    expect(litValue(call(src, "f", 9).result)).toEqual({ ok: true, value: 3 });
   });
   it("abstract length is not exact 2", () => {
     const r = callAbs(src, "f", [absNum]);
@@ -90,7 +90,7 @@ describe("P0-4 fork throw does not abort sibling arm", () => {
 describe("P0-5 logical assignment short-circuit", () => {
   it("x &&= a.pop() when x is null does not pop", () => {
     const src = `export function f() { let x = null; const a=[1,2,3]; x &&= a.pop(); return a.length; }`;
-    expect(litValue(call(src, "f").result)).toBe(3);
+    expect(litValue(call(src, "f").result)).toEqual({ ok: true, value: 3 });
   });
   it("x ||= a.pop() under abstract flag is not exact 2", () => {
     const src = `export function f(flag) { let x = flag; const a=[1,2,3]; x ||= a.pop(); return a.length; }`;

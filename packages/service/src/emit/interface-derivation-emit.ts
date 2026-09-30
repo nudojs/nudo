@@ -41,6 +41,8 @@ export type EmitDerivedResult = {
   roots: string[];
   /** 根在别处 / 无契约根且无已存在生成段 → info */
   entryOnly?: boolean;
+  /** 整体失败（如模块图 fail-closed）：无 sidecar 可写时的顶层诊断 */
+  issues?: Array<{ code: string; severity: "error" | "warning" | "info"; message: string }>;
 };
 
 const DERIVED_HEADER =
@@ -125,6 +127,22 @@ export function emitDerivedFromRoot(
 
   if (!derive.hasRoot) {
     return { sidecars: [], hasRoot: false, roots: [], entryOnly: true };
+  }
+
+  // 模块图 fail-closed（BUG-017 同径）：不带空 import 表推导，emit 也不写垃圾
+  if (derive.graphError) {
+    return {
+      sidecars: [],
+      hasRoot: true,
+      roots: derive.roots,
+      issues: [
+        {
+          code: "nudo:module-missing",
+          severity: "error",
+          message: `derivation aborted: ${derive.graphError}`,
+        },
+      ],
+    };
   }
 
   // package.json#nudo.contract.emit 白名单（Phase 3 §7.3）

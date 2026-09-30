@@ -237,8 +237,9 @@ export function checkSource(
 }
 
 /**
- * refine/interface 侧车诊断 → CheckIssue（全部 error；code+message 去重，
+ * refine/interface 侧车诊断 → CheckIssue（code+message 去重，
  * 同一失败侧车会在 generalize / 返回后置 / case 对账多处被重复探测）。
+ * severity 按 code 定档：interface-load/cycle = error；contract-syntax = warning。
  */
 // ---------------------------------------------------------------------------
 // 门禁编排（sidecar 诊断收集 + checkSourceInner：L0 签名 / L1 契约 / L2 throws）
@@ -253,7 +254,11 @@ function sidecarDiagIssues(
     const k = `${d.code}\0${d.message}`;
     if (seen.has(k)) continue;
     seen.add(k);
-    out.push({ severity: "error", code: d.code, message: d.message });
+    const severity =
+      d.code === "nudo:contract-syntax" || d.code === "nudo:directive-syntax"
+        ? ("warning" as const)
+        : ("error" as const);
+    out.push({ severity, code: d.code, message: d.message });
   }
   return out;
 }

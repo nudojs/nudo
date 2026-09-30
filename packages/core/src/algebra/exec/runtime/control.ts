@@ -359,11 +359,15 @@ export function $for(
     }
 
     if (i > 0) {
-      const nv = litValue(next);
-      const sv = litValue(state);
+      const nvR = litValue(next);
+      const svR = litValue(state);
+      // 「是否字面量」看 ok（LitValueResult 契约）；值比较用 ===（与 JS 一致，NaN 不等）。
+      // 双字面量等值 / 双方均无「有定义值字面量」时的 leq 回退，与旧哨兵写法等价。
       const stuck =
-        (nv !== undefined && sv !== undefined && nv === sv) ||
-        (nv === undefined && sv === undefined && leqAbs(next, state).ok);
+        (nvR.ok && svR.ok && nvR.value === svR.value) ||
+        ((!nvR.ok || nvR.value === undefined) &&
+          (!svR.ok || svR.value === undefined) &&
+          leqAbs(next, state).ok);
       if (stuck) {
         state = next;
         snapCounter();
@@ -405,11 +409,14 @@ export function $while(
     }
     const next = step(state);
     if (i > 0) {
-      const nv = litValue(next);
-      const sv = litValue(state);
+      const nvR = litValue(next);
+      const svR = litValue(state);
+      // 同上：.ok 判字面量，禁止 value !== undefined 哨兵。
       const stuck =
-        (nv !== undefined && sv !== undefined && nv === sv) ||
-        (nv === undefined && sv === undefined && leqAbs(next, state).ok);
+        (nvR.ok && svR.ok && nvR.value === svR.value) ||
+        ((!nvR.ok || nvR.value === undefined) &&
+          (!svR.ok || svR.value === undefined) &&
+          leqAbs(next, state).ok);
       if (stuck) {
         return exitJoin ? joinAbs(exitJoin, next) : next;
       }
@@ -480,13 +487,15 @@ export function $switch(
   cases: Array<{ test: Abs; run: () => Abs }>,
   dflt?: () => Abs,
 ): Abs {
-  const dv = litValue(disc);
-  if (dv !== undefined) {
+  const dvR = litValue(disc);
+  // 「是否字面量」必须看 ok：lit(undefined) 的 value 就是 undefined，
+  // 用 value !== undefined 当门闩会让 case undefined 永不精确命中。
+  if (dvR.ok) {
     for (const c of cases) {
-      const tv = litValue(c.test);
+      const tvR = litValue(c.test);
       // switch case 匹配是严格相等（===）：NaN 不匹配 NaN case；0 与 -0 互配。
       // Object.is 是 SameValue（NaN 相等），会假匹配 NaN case（假精确）。
-      if (tv !== undefined && tv === dv) return asAbsVal(c.run());
+      if (tvR.ok && tvR.value === dvR.value) return asAbsVal(c.run());
     }
     return dflt ? asAbsVal(dflt()) : undef();
   }

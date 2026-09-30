@@ -18,27 +18,27 @@ describe("evaluator replace named capture groups", () => {
       `export function f() { return 'abc'.replace(/(?<b>b)/, (m, g, off) => String(off)); }`,
     );
     // 命中 'b' @1 → 替换为 "1" → "a1c"
-    expect(litValue(r.result)).toBe("a1c");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "a1c" });
   });
 
   it("positional capture still works", () => {
     const r = call(
       `export function f() { return 'abc'.replace(/(b)/, (m, g, off) => g + ':' + off); }`,
     );
-    expect(litValue(r.result)).toBe("ab:1c");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "ab:1c" });
   });
 
   it("string pattern callback still gets offset", () => {
     const r = call(
       `export function f() { return 'abc'.replace('b', (m, off) => String(off)); }`,
     );
-    expect(litValue(r.result)).toBe("a1c");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "a1c" });
   });
 
   it("named group capture value is still delivered as positional", () => {
     const r = call(
       `export function f() { return 'abc'.replace(/(?<b>b)/, (m, g) => '[' + g + ']'); }`,
     );
-    expect(litValue(r.result)).toBe("a[b]c");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "a[b]c" });
   });
 });

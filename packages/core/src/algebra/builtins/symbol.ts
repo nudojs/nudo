@@ -10,7 +10,7 @@ import { pTrue } from "../pred.ts";
 import { numPrim, str, boolPrim } from "./shared.ts";
 
 function undefLit(): Abs {
-  return abs({ k: "unknown" }, { op: "lit", value: undefined as never }, pTrue, "exact");
+  return abs({ k: "unknown" }, { op: "lit", value: undefined }, pTrue, "exact");
 }
 
 /**
@@ -45,7 +45,8 @@ export { symbolIdOf, symbolDescriptionAbs };
 
 function symbolDescriptiveString(a: Abs): string {
   const d = symbolDescriptionAbs(a);
-  const dv = d ? litValue(d) : undefined;
+  const dvR = d ? litValue(d) : undefined;
+  const dv = dvR?.ok ? dvR.value : undefined;
   if (typeof dv === "string") return dv.length > 0 ? `Symbol(${dv})` : "Symbol()";
   return "Symbol()";
 }

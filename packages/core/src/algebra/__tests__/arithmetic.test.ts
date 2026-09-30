@@ -119,14 +119,14 @@ describe("add monotonicity", () => {
 
   it("literal 2+3 = 5 exact", () => {
     const r = add(numLit(2), numLit(3));
-    expect(litValue(r)).toBe(5);
+    expect(litValue(r)).toEqual({ ok: true, value: 5 });
     expect(r.conf).toBe("exact");
   });
 });
 
 describe("sub / mul", () => {
   it("5-2 = 3", () => {
-    expect(litValue(sub(numLit(5), numLit(2)))).toBe(3);
+    expect(litValue(sub(numLit(5), numLit(2)))).toEqual({ ok: true, value: 3 });
   });
   it("x>0 - 1 ⇒ (x-1)>-1? x>0 ⇒ x-1 > -1", () => {
     const phi = gtNum(v("x"), 0);
@@ -138,22 +138,22 @@ describe("sub / mul", () => {
     }
   });
   it("3*4 = 12", () => {
-    expect(litValue(mul(numLit(3), numLit(4)))).toBe(12);
+    expect(litValue(mul(numLit(3), numLit(4)))).toEqual({ ok: true, value: 12 });
   });
   it('JS ToNumber: "a"*2 → NaN, "3"*2 → 6, true*2 → 2', () => {
-    expect(litValue(mul(strLit("a"), numLit(2)))).toBeNaN();
-    expect(litValue(mul(strLit("3"), numLit(2)))).toBe(6);
-    expect(litValue(mul(boolLit(true), numLit(2)))).toBe(2);
+    expect(litValue(mul(strLit("a"), numLit(2)))).toEqual({ ok: true, value: NaN });
+    expect(litValue(mul(strLit("3"), numLit(2)))).toEqual({ ok: true, value: 6 });
+    expect(litValue(mul(boolLit(true), numLit(2)))).toEqual({ ok: true, value: 2 });
     expect(mul(strLit("a"), numLit(2)).shape).toEqual({
       k: "prim",
       type: "number",
     });
   });
   it('JS relational: "a">3 → false, "10"<9 → false, true>0 → true', () => {
-    expect(litValue(cmp("gt", strLit("a"), numLit(3)))).toBe(false);
-    expect(litValue(cmp("lt", strLit("10"), numLit(9)))).toBe(false);
-    expect(litValue(cmp("gt", boolLit(true), numLit(0)))).toBe(true);
-    expect(litValue(cmp("gt", strLit("hello"), numLit(3)))).toBe(false);
+    expect(litValue(cmp("gt", strLit("a"), numLit(3)))).toEqual({ ok: true, value: false });
+    expect(litValue(cmp("lt", strLit("10"), numLit(9)))).toEqual({ ok: true, value: false });
+    expect(litValue(cmp("gt", boolLit(true), numLit(0)))).toEqual({ ok: true, value: true });
+    expect(litValue(cmp("gt", strLit("hello"), numLit(3)))).toEqual({ ok: true, value: false });
   });
 
   it("refineAbsForRelTrue: any > 3 → number>3 | string", () => {
@@ -214,10 +214,10 @@ describe("cmp under phi", () => {
   it("x>0, cmp(x, 0, >) → true", () => {
     const phi = gtNum(v("x"), 0);
     const r = cmp("gt", numVar("x"), numLit(0), phi);
-    expect(litValue(r)).toBe(true);
+    expect(litValue(r)).toEqual({ ok: true, value: true });
   });
   it("1<3 → true", () => {
-    expect(litValue(cmp("lt", numLit(1), numLit(3)))).toBe(true);
+    expect(litValue(cmp("lt", numLit(1), numLit(3)))).toEqual({ ok: true, value: true });
   });
 });
 

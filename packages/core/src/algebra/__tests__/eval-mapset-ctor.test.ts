@@ -30,23 +30,23 @@ function throwsTypeError(t: unknown): boolean {
 
 describe("evaluator Set/Map constructors", () => {
   it("new Set(string) iterates code points", () => {
-    expect(litValue(call(`export function f() { return new Set('aab').size; }`).result)).toBe(2);
-    expect(litValue(call(`export function f() { return [...new Set('aab')].length; }`).result)).toBe(2);
-    expect(litValue(call(`export function f() { return [...new Set('aab')][0]; }`).result)).toBe("a");
-    expect(litValue(call(`export function f() { return [...new Set('aab')][1]; }`).result)).toBe("b");
-    expect(litValue(call(`export function f() { return new Set('').size; }`).result)).toBe(0);
-    expect(litValue(call(`export function f() { return new Set('😀😀').size; }`).result)).toBe(1);
+    expect(litValue(call(`export function f() { return new Set('aab').size; }`).result)).toEqual({ ok: true, value: 2 });
+    expect(litValue(call(`export function f() { return [...new Set('aab')].length; }`).result)).toEqual({ ok: true, value: 2 });
+    expect(litValue(call(`export function f() { return [...new Set('aab')][0]; }`).result)).toEqual({ ok: true, value: "a" });
+    expect(litValue(call(`export function f() { return [...new Set('aab')][1]; }`).result)).toEqual({ ok: true, value: "b" });
+    expect(litValue(call(`export function f() { return new Set('').size; }`).result)).toEqual({ ok: true, value: 0 });
+    expect(litValue(call(`export function f() { return new Set('😀😀').size; }`).result)).toEqual({ ok: true, value: 1 });
   });
 
   it("new Set(set) copies entries", () => {
-    expect(litValue(call(`export function f() { return new Set(new Set([1,2,2])).size; }`).result)).toBe(2);
-    expect(litValue(call(`export function f() { return [...new Set(new Set([3,1]))][0]; }`).result)).toBe(3);
-    expect(litValue(call(`export function f() { return [...new Set(new Set([3,1]))][1]; }`).result)).toBe(1);
+    expect(litValue(call(`export function f() { return new Set(new Set([1,2,2])).size; }`).result)).toEqual({ ok: true, value: 2 });
+    expect(litValue(call(`export function f() { return [...new Set(new Set([3,1]))][0]; }`).result)).toEqual({ ok: true, value: 3 });
+    expect(litValue(call(`export function f() { return [...new Set(new Set([3,1]))][1]; }`).result)).toEqual({ ok: true, value: 1 });
   });
 
   it("new Map(map) copies entries", () => {
-    expect(litValue(call(`export function f() { return new Map(new Map([[1,'a']])).size; }`).result)).toBe(1);
-    expect(litValue(call(`export function f() { return new Map(new Map([[1,'a']])).get(1); }`).result)).toBe("a");
+    expect(litValue(call(`export function f() { return new Map(new Map([[1,'a']])).size; }`).result)).toEqual({ ok: true, value: 1 });
+    expect(litValue(call(`export function f() { return new Map(new Map([[1,'a']])).get(1); }`).result)).toEqual({ ok: true, value: "a" });
   });
 
   it("Map with primitive entries throws TypeError", () => {
@@ -69,7 +69,7 @@ describe("evaluator Set/Map constructors", () => {
           `export function f() { try { new Map([1]); } catch(e) { return 'caught'; } return 'missed'; }`,
         ).result,
       ),
-    ).toBe("caught");
+    ).toEqual({ ok: true, value: "caught" });
   });
 
   it("non-iterable Set args throw TypeError", () => {
@@ -85,17 +85,17 @@ describe("evaluator Set/Map constructors", () => {
   });
 
   it("empty-string Map is valid (zero items)", () => {
-    expect(litValue(call(`export function f() { return new Map('').size; }`).result)).toBe(0);
+    expect(litValue(call(`export function f() { return new Map('').size; }`).result)).toEqual({ ok: true, value: 0 });
   });
 
   it("null/undefined iterable stay empty containers", () => {
-    expect(litValue(call(`export function f() { return new Set(null).size; }`).result)).toBe(0);
-    expect(litValue(call(`export function f() { return new Map(undefined).size; }`).result)).toBe(0);
+    expect(litValue(call(`export function f() { return new Set(null).size; }`).result)).toEqual({ ok: true, value: 0 });
+    expect(litValue(call(`export function f() { return new Map(undefined).size; }`).result)).toEqual({ ok: true, value: 0 });
   });
 
   it("entry tuple shapes still fill literal maps (regression)", () => {
-    expect(litValue(call(`export function f() { return new Map([[1,2],[1,3]]).get(1); }`).result)).toBe(3);
-    expect(litValue(call(`export function f() { return new Map([[1,2],[1,3]]).size; }`).result)).toBe(1);
-    expect(litValue(call(`export function f() { return new Map([['a',1]]).get('a'); }`).result)).toBe(1);
+    expect(litValue(call(`export function f() { return new Map([[1,2],[1,3]]).get(1); }`).result)).toEqual({ ok: true, value: 3 });
+    expect(litValue(call(`export function f() { return new Map([[1,2],[1,3]]).size; }`).result)).toEqual({ ok: true, value: 1 });
+    expect(litValue(call(`export function f() { return new Map([['a',1]]).get('a'); }`).result)).toEqual({ ok: true, value: 1 });
   });
 });

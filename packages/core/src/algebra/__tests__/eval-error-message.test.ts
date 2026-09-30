@@ -23,65 +23,65 @@ function call(src: string, fnName = "f") {
 
 describe("evaluator Error message slot is always a string", () => {
   it("string message passthrough", () => {
-    expect(litValue(call(`export function f() { return new Error('hello').message; }`).result)).toBe("hello");
+    expect(litValue(call(`export function f() { return new Error('hello').message; }`).result)).toEqual({ ok: true, value: "hello" });
   });
 
   it("number message is stringified", () => {
-    expect(litValue(call(`export function f() { return new Error(5).message; }`).result)).toBe("5");
+    expect(litValue(call(`export function f() { return new Error(5).message; }`).result)).toEqual({ ok: true, value: "5" });
   });
 
   it("boolean message is stringified", () => {
-    expect(litValue(call(`export function f() { return new Error(true).message; }`).result)).toBe("true");
+    expect(litValue(call(`export function f() { return new Error(true).message; }`).result)).toEqual({ ok: true, value: "true" });
   });
 
   it("null message is stringified", () => {
-    expect(litValue(call(`export function f() { return new Error(null).message; }`).result)).toBe("null");
+    expect(litValue(call(`export function f() { return new Error(null).message; }`).result)).toEqual({ ok: true, value: "null" });
   });
 
   it("absent message is empty string", () => {
-    expect(litValue(call(`export function f() { return new Error().message; }`).result)).toBe("");
+    expect(litValue(call(`export function f() { return new Error().message; }`).result)).toEqual({ ok: true, value: "" });
   });
 
   it("explicit undefined message is empty string", () => {
-    expect(litValue(call(`export function f() { return new Error(undefined).message; }`).result)).toBe("");
+    expect(litValue(call(`export function f() { return new Error(undefined).message; }`).result)).toEqual({ ok: true, value: "" });
   });
 
   it("error subclasses share the stringification", () => {
-    expect(litValue(call(`export function f() { return new TypeError(5).message; }`).result)).toBe("5");
-    expect(litValue(call(`export function f() { return new RangeError(5).message; }`).result)).toBe("5");
+    expect(litValue(call(`export function f() { return new TypeError(5).message; }`).result)).toEqual({ ok: true, value: "5" });
+    expect(litValue(call(`export function f() { return new RangeError(5).message; }`).result)).toEqual({ ok: true, value: "5" });
   });
 
   it("name slot unaffected", () => {
-    expect(litValue(call(`export function f() { return new TypeError('t').name; }`).result)).toBe("TypeError");
+    expect(litValue(call(`export function f() { return new TypeError('t').name; }`).result)).toEqual({ ok: true, value: "TypeError" });
   });
 });
 
 describe("evaluator AggregateError argument order", () => {
   it("message is the second argument", () => {
-    expect(litValue(call(`export function f() { return new AggregateError([], 'x').message; }`).result)).toBe("x");
-    expect(litValue(call(`export function f() { return new AggregateError(['e1'], 'x').message; }`).result)).toBe("x");
+    expect(litValue(call(`export function f() { return new AggregateError([], 'x').message; }`).result)).toEqual({ ok: true, value: "x" });
+    expect(litValue(call(`export function f() { return new AggregateError(['e1'], 'x').message; }`).result)).toEqual({ ok: true, value: "x" });
   });
 
   it("errors is the first argument", () => {
-    expect(litValue(call(`export function f() { return new AggregateError(['e1'], 'x').errors[0]; }`).result)).toBe("e1");
-    expect(litValue(call(`export function f() { return new AggregateError([], 'x').errors.length; }`).result)).toBe(0);
+    expect(litValue(call(`export function f() { return new AggregateError(['e1'], 'x').errors[0]; }`).result)).toEqual({ ok: true, value: "e1" });
+    expect(litValue(call(`export function f() { return new AggregateError([], 'x').errors.length; }`).result)).toEqual({ ok: true, value: 0 });
   });
 
   it("name slot unaffected", () => {
-    expect(litValue(call(`export function f() { return new AggregateError([], 'x').name; }`).result)).toBe("AggregateError");
+    expect(litValue(call(`export function f() { return new AggregateError([], 'x').name; }`).result)).toEqual({ ok: true, value: "AggregateError" });
   });
 });
 
 describe("evaluator Error options.cause", () => {
   it("cause is projected from options", () => {
-    expect(litValue(call(`export function f() { return new Error('x', {cause: 7}).cause; }`).result)).toBe(7);
+    expect(litValue(call(`export function f() { return new Error('x', {cause: 7}).cause; }`).result)).toEqual({ ok: true, value: 7 });
   });
 
   it("missing cause stays undefined", () => {
-    expect(litValue(call(`export function f() { return new Error('x', {}).cause; }`).result)).toBe(undefined);
+    expect(litValue(call(`export function f() { return new Error('x', {}).cause; }`).result)).toEqual({ ok: true, value: undefined });
   });
 
   it("AggregateError takes options as third argument", () => {
-    expect(litValue(call(`export function f() { return new AggregateError([], 'x', {cause: 1}).cause; }`).result)).toBe(1);
+    expect(litValue(call(`export function f() { return new AggregateError([], 'x', {cause: 1}).cause; }`).result)).toEqual({ ok: true, value: 1 });
   });
 });

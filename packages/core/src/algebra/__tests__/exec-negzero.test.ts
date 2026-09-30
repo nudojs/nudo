@@ -24,76 +24,85 @@ function isNegZero(v: unknown): boolean {
 describe("evaluator negative zero", () => {
   it("unary minus on zero keeps -0", () => {
     const r = call(`export function run() { return -0; }`, "run");
-    expect(isNegZero(litValue(r.result))).toBe(true);
+    const lv = litValue(r.result);
+    expect(isNegZero(lv.ok ? lv.value : undefined)).toBe(true);
   });
 
   it("0 * -1 folds to -0", () => {
     const r = call(`export function run() { return 0 * -1; }`, "run");
-    expect(isNegZero(litValue(r.result))).toBe(true);
+    const lv = litValue(r.result);
+    expect(isNegZero(lv.ok ? lv.value : undefined)).toBe(true);
   });
 
   it("0 / -1 folds to -0", () => {
     const r = call(`export function run() { return 0 / -1; }`, "run");
-    expect(isNegZero(litValue(r.result))).toBe(true);
+    const lv = litValue(r.result);
+    expect(isNegZero(lv.ok ? lv.value : undefined)).toBe(true);
   });
 
   it("1 / -0 folds to -Infinity", () => {
     const r = call(`export function run() { return 1 / -0; }`, "run");
-    expect(litValue(r.result)).toBe(-Infinity);
+    expect(litValue(r.result)).toEqual({ ok: true, value: -Infinity });
   });
 
   it("1 / 0 stays +Infinity", () => {
     const r = call(`export function run() { return 1 / 0; }`, "run");
-    expect(litValue(r.result)).toBe(Infinity);
+    expect(litValue(r.result)).toEqual({ ok: true, value: Infinity });
   });
 
   it("Math.sign(-0) is -0", () => {
     const r = call(`export function run() { return Math.sign(-0); }`, "run");
-    expect(isNegZero(litValue(r.result))).toBe(true);
+    const lv = litValue(r.result);
+    expect(isNegZero(lv.ok ? lv.value : undefined)).toBe(true);
   });
 
   it("Math.min(-0, 0) is -0", () => {
     const r = call(`export function run() { return Math.min(-0, 0); }`, "run");
-    expect(isNegZero(litValue(r.result))).toBe(true);
+    const lv = litValue(r.result);
+    expect(isNegZero(lv.ok ? lv.value : undefined)).toBe(true);
   });
 
   it("Math.min(0, -0) is -0", () => {
     const r = call(`export function run() { return Math.min(0, -0); }`, "run");
-    expect(isNegZero(litValue(r.result))).toBe(true);
+    const lv = litValue(r.result);
+    expect(isNegZero(lv.ok ? lv.value : undefined)).toBe(true);
   });
 
   it("Math.round(-0.5) is -0", () => {
     const r = call(`export function run() { return Math.round(-0.5); }`, "run");
-    expect(isNegZero(litValue(r.result))).toBe(true);
+    const lv = litValue(r.result);
+    expect(isNegZero(lv.ok ? lv.value : undefined)).toBe(true);
   });
 
   it("Math.ceil(-0.1) is -0", () => {
     const r = call(`export function run() { return Math.ceil(-0.1); }`, "run");
-    expect(isNegZero(litValue(r.result))).toBe(true);
+    const lv = litValue(r.result);
+    expect(isNegZero(lv.ok ? lv.value : undefined)).toBe(true);
   });
 
   it("Math.atan2(-0, 1) is -0", () => {
     const r = call(`export function run() { return Math.atan2(-0, 1); }`, "run");
-    expect(isNegZero(litValue(r.result))).toBe(true);
+    const lv = litValue(r.result);
+    expect(isNegZero(lv.ok ? lv.value : undefined)).toBe(true);
   });
 
   it("Math.atan2(0, -1) is +PI (0 stays +0)", () => {
     const r = call(`export function run() { return Math.atan2(0, -1); }`, "run");
-    expect(litValue(r.result)).toBe(Math.PI);
+    expect(litValue(r.result)).toEqual({ ok: true, value: Math.PI });
   });
 
   it("-0 === 0 is true (equality unaffected)", () => {
     const r = call(`export function run() { return -0 === 0; }`, "run");
-    expect(litValue(r.result)).toBe(true);
+    expect(litValue(r.result)).toEqual({ ok: true, value: true });
   });
 
   it("Object.is(-0, 0) is false", () => {
     const r = call(`export function run() { return Object.is(-0, 0); }`, "run");
-    expect(litValue(r.result)).toBe(false);
+    expect(litValue(r.result)).toEqual({ ok: true, value: false });
   });
 
   it("String(-0) is \"0\" (display unaffected)", () => {
     const r = call(`export function run() { return String(-0); }`, "run");
-    expect(litValue(r.result)).toBe("0");
+    expect(litValue(r.result)).toEqual({ ok: true, value: "0" });
   });
 });

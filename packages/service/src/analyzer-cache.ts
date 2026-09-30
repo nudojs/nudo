@@ -2,9 +2,9 @@
  * cache 背面：整文件 memo 键（含 dep 指纹）+ 结果克隆/行号平移。
  * 自 analyzer.ts 机械拆出；语义未改。
  */
-import { loadModuleDepsFingerprint, hashSource, stableAnalyzeKeySource } from "@nudojs/core/internal";
+import { loadModuleDepsFingerprint, hashSource, stableAnalyzeKeySource, stablePathKey } from "@nudojs/core/internal";
 import { defaultLoadModule } from "./load-module.ts";
-import type { CallRecord } from "./evaluator/call-record.ts";
+import { absStructureKey, type CallRecord } from "./evaluator/call-record.ts";
 import type {
   AnalysisResult,
   AnalyzeLoadModule,
@@ -16,16 +16,41 @@ import type {
 
 // --- 整文件 AnalysisResult memo（warm analyzeFile / LSP 重复文档） ---
 
-const externalRecordIds = new WeakMap<object, number>();
-let nextExternalRecordId = 1;
-
+/**
+ * externalCallRecords 内容指纹（与 dep contents 同类：内容变 → miss）。
+ * 不用数组身份：CLI `--from` 每次重建数组会让身份键永不命中；
+ * 同数组原地改写元素又会让身份键陈旧命中。
+ */
+function externalRecordsFingerprint(records: CallRecord[]): string {
+  const parts = records.map((r) =>
+    [
+      r.fnName,
+      r.targetModule ?? "",
+      r.targetExport ?? "",
+      (r.targetAliases ?? []).join(","),
+      r.fnModule ?? "",
+      r.callLoc ? `${r.callLoc.line}:${r.callLoc.column}` : "",
+      r.argAbs.map(absStructureKey).join(","),
+      absStructureKey(r.resultAbs),
+      absStructureKey(r.throwsAbs),
+    ].join("\u0001"),
+  );
+  return hashSource(parts.join("\u0002"));
+}
 
 export function analysisFileCacheKey(
   filePath: string,
   source: string,
   activeCases?: Map<string, number>,
   externalCallRecords?: CallRecord[],
-  analysisCfg?: { mode: string; evalMissingSlot: string; callSiteBudget: number; diagnostics: string },
+  analysisCfg?: {
+    mode: string;
+    evalMissingSlot: string;
+    callSiteBudget: number;
+    diagnostics: string;
+    /** fork 预算——截断 widen 结果，变更必须 miss */
+    maxForks?: number;
+  },
   loadModule?: AnalyzeLoadModule,
   projectEnvNames?: string[],
   /** ambient 侧车绑定：变更必须 miss（dep 指纹故意不编码 autoBind） */
@@ -41,16 +66,11 @@ export function analysisFileCacheKey(
   }
   let ext = "-";
   if (externalCallRecords && externalCallRecords.length > 0) {
-    let id = externalRecordIds.get(externalCallRecords);
-    if (id === undefined) {
-      id = nextExternalRecordId++;
-      externalRecordIds.set(externalCallRecords, id);
-    }
-    ext = `n${externalCallRecords.length}#id${id}`;
+    ext = `n${externalCallRecords.length}#${externalRecordsFingerprint(externalCallRecords)}`;
   }
   // analysisConfig 维度进键：package.json#nudo.analysis 变更必须 miss
   const cfg = analysisCfg
-    ? `m=${analysisCfg.mode}|e=${analysisCfg.evalMissingSlot}|b=${analysisCfg.callSiteBudget}|d=${analysisCfg.diagnostics}`
+    ? `m=${analysisCfg.mode}|e=${analysisCfg.evalMissingSlot}|b=${analysisCfg.callSiteBudget}|d=${analysisCfg.diagnostics}|f=${analysisCfg.maxForks ?? "-"}`
     : "-";
   // custom loadModule (e.g. LSP buffer-aware) can produce different analysis
   // than the default disk loader — distinguish in the memo key
@@ -77,7 +97,9 @@ export function analysisFileCacheKey(
     depSeg = "fperr";
   }
   return {
-    filePath,
+    // 键身份统一 stablePathKey：`/c:/x` 与 `c:/x` 同键（FIX-RESIDUAL-4）。
+    // 加载/指纹仍用调用方原 filePath；本字段只作 memo 键。
+    filePath: stablePathKey(filePath),
     // 尾部无 @nudo 注释/空行不进键：comment-only 编辑命中 AnalysisResult
     source: stableAnalyzeKeySource(source),
     auxKey: `${cases}\0${ext}\0${cfg}\0${lm}\0${envSeg}\0${abSeg}\0${depSeg}\0cm=${caseMode}`,

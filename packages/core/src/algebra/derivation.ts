@@ -136,8 +136,10 @@ export function derivationChain(node: DerivationNode): DerivationNode[] {
  */
 export function noteDerivationAdd(a: Abs, b: Abs, result: Abs): void {
   if (!sessionNodes) return;
-  const vb = litValue(b);
-  const va = litValue(a);
+  const vbR = litValue(b);
+  const vb = vbR.ok ? vbR.value : undefined;
+  const vaR = litValue(a);
+  const va = vaR.ok ? vaR.value : undefined;
   let parent: DerivationNode | undefined;
   let offset: number | undefined;
   if (typeof vb === "number" && Number.isFinite(vb)) {

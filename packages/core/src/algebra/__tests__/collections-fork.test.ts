@@ -108,10 +108,10 @@ describe("Map table fork isolation", () => {
     mapSetEntry(m, strLit("a"), numLit(1));
     const hit = mapHasEntry(m, strLit("a"));
     expect(hit.conf).toBe("exact");
-    expect(litValue(hit)).toBe(true);
+    expect(litValue(hit)).toEqual({ ok: true, value: true });
     const miss = mapHasEntry(m, strLit("z"));
     expect(miss.conf).toBe("exact");
-    expect(litValue(miss)).toBe(false);
+    expect(litValue(miss)).toEqual({ ok: true, value: false });
   });
 });
 
@@ -151,8 +151,8 @@ describe("Set fork soundness", () => {
     setAddEntry(s, numLit(1));
     const size = setSizeAbs(s);
     expect(size.conf).toBe("exact");
-    expect(litValue(size)).toBe(1);
+    expect(litValue(size)).toEqual({ ok: true, value: 1 });
     expect(setHasEntry(s, numLit(1)).conf).toBe("exact");
-    expect(litValue(setHasEntry(s, numLit(1)))).toBe(true);
+    expect(litValue(setHasEntry(s, numLit(1)))).toEqual({ ok: true, value: true });
   });
 });

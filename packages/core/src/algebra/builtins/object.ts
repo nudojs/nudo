@@ -67,7 +67,8 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       if (a0 === undefined || (a0.term?.op === "lit" && a0.term.value === undefined)) {
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }
-      const protoV = litValue(a0);
+      const protoVR = litValue(a0);
+      const protoV = protoVR.ok ? protoVR.value : undefined;
       if (protoV === null) return markNullProtoObj(abs({ k: "obj", slots: {} }, undefined, undefined, "exact"));
       if (typeof protoV === "object") {
         return abs({ k: "obj", slots: {} }, undefined, undefined, "path");
@@ -198,7 +199,8 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       if (a0.term?.op === "lit" && (a0.term.value === null || a0.term.value === undefined)) {
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }
-      const key = args[1] ? litValue(args[1]) : undefined;
+      const keyR = args[1] ? litValue(args[1]) : undefined;
+      const key = keyR?.ok ? keyR.value : undefined;
       if (typeof key !== "string") return boolPrim();
       if (a0.shape.k === "obj") {
         const shape = a0.shape as { slots: Record<string, unknown>; open?: boolean };
@@ -230,7 +232,8 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       if (!t0 || !p0) {
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }
-      const pv = litValue(p0);
+      const pvR = litValue(p0);
+      const pv = pvR.ok ? pvR.value : undefined;
       if (p0.term?.op === "lit" && (pv === undefined || (pv !== null && typeof pv !== "object"))) {
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }
@@ -390,7 +393,8 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       return boolLit(extStateOf(t!) === undefined);
     }
     case "defineProperty": {
-      const kv = args[1] ? litValue(args[1]) : undefined;
+      const kvR = args[1] ? litValue(args[1]) : undefined;
+      const kv = kvR?.ok ? kvR.value : undefined;
       if (!a0 || (typeof kv !== "string" && typeof kv !== "number")) return a0;
       // prim/null 字面量 target：原生 TypeError 硬抛（Properties can only be
       // defined on Objects）
@@ -408,9 +412,8 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       const field = (k: string): { present: boolean; v: unknown } => {
         const s = dslots[k]?.value;
         if (!s) return { present: false, v: undefined };
-        const lv = litValue(s);
-        if (lv !== undefined) return { present: true, v: lv };
-        if (s.term?.op === "lit" && s.term.value === undefined) return { present: true, v: undefined };
+        const lvR = litValue(s);
+        if (lvR.ok) return { present: true, v: lvR.value };
         return { present: true, v: "fn-or-abstract" };
       };
       const getF = field("get");
@@ -426,7 +429,9 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       if (accessorPresent && valueF.present && valueF.v !== undefined) return unknown;
       const dv = (k: string): unknown => {
         const s = dslots[k]?.value;
-        return s ? litValue(s) : undefined;
+        if (!s) return undefined;
+        const r = litValue(s);
+        return r.ok ? r.value : undefined;
       };
       const value = dv("value");
       /** ToBoolean：非 undefined 描述符值按 truthiness（writable: 5 → true）；
@@ -464,7 +469,7 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         if (typeof v === "number") return numLit(v);
         if (typeof v === "string") return strLit(v);
         if (typeof v === "boolean") return boolLit(v);
-        if (v === null) return abs({ k: "unknown" }, { op: "lit", value: null as never }, undefined, "exact");
+        if (v === null) return abs({ k: "unknown" }, { op: "lit", value: null }, undefined, "exact");
         return undefined;
       };
       let out = a0;

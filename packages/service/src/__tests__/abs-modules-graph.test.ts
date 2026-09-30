@@ -51,10 +51,10 @@ export function run(n) { return double(n); }
     const { modules } = evalAbsModuleGraph(mainSrc, join(dir, "main.js"));
     expect(modules["./math.js"]).toBeDefined();
     expect(modules["./math.js"]!.named.double).toBeDefined();
-    expect(litValue(modules["./math.js"]!.named.answer!)).toBe(42);
+    expect(litValue(modules["./math.js"]!.named.answer!)).toEqual({ ok: true, value: 42 });
 
     const r = analyzeExportWithModules(mainSrc, "run", [numLit(21)], modules);
-    expect(litValue(r)).toBe(42);
+    expect(litValue(r)).toEqual({ ok: true, value: 42 });
   });
 
   it("chained relative imports resolve", () => {
@@ -74,7 +74,7 @@ export function go(x) { return twice(x); }
 `;
     const { modules } = evalAbsModuleGraph(mainSrc, join(dir, "main.js"));
     const result = analyzeExportWithModules(mainSrc, "go", [numLit(0)], modules);
-    expect(litValue(result)).toBe(2);
+    expect(litValue(result)).toEqual({ ok: true, value: 2 });
   });
 
   it("default export flows through the graph (evaluator bridge)", () => {
@@ -91,7 +91,7 @@ export function go(x) { return inc(inc(x)); }
     const { modules } = evalAbsModuleGraph(mainSrc, join(dir, "main.js"));
     expect(modules["./inc.js"]!.default).toBeDefined();
     const result = analyzeExportWithModules(mainSrc, "go", [numLit(0)], modules);
-    expect(litValue(result)).toBe(2);
+    expect(litValue(result)).toEqual({ ok: true, value: 2 });
   });
 
   it("barrel re-exports (export * + default re-export) resolve", () => {
@@ -115,7 +115,7 @@ export function go(x) { return inc(dec(x)); }
     expect(modules["./barrel.js"]!.default).toBeDefined();
     const result = analyzeExportWithModules(mainSrc, "go", [numLit(5)], modules);
     // dec(5)=4, inc(4)=5
-    expect(litValue(result)).toBe(5);
+    expect(litValue(result)).toEqual({ ok: true, value: 5 });
   });
 
   it("cycle does not hang and backfills in-cycle bindings (BUG-005)", () => {
@@ -173,7 +173,7 @@ export function go(x) { return ns.inc(x); }
     expect(slots.k).toBeDefined();
 
     const result = analyzeExportWithModules(mainSrc, "go", [numLit(10)], modules);
-    expect(litValue(result)).toBe(11);
+    expect(litValue(result)).toEqual({ ok: true, value: 11 });
   });
 
   it("import * as ns missing member does not false-throw TypeError (BUG-004)", () => {
@@ -201,5 +201,42 @@ export function go() { return ns.notThere(); }
         expect(m.shape?.name).not.toBe("TypeError");
       }
     }
+  });
+
+  it("imported always-throw fn surfaces throws non-never in caller (BUG-006)", () => {
+    const dir = tmpProject({
+      "a.js": `export function boom() { throw new TypeError("x"); }`,
+      "b.js": `
+import { boom } from "./a.js";
+export function f() { return boom(); }
+`,
+    });
+    const mainSrc = `import { boom } from "./a.js";
+export function f() { return boom(); }
+`;
+    const { modules } = evalAbsModuleGraph(mainSrc, join(dir, "b.js"));
+    const run = runTranspiled(mainSrc, { mode: "analyze", modules });
+    const res = callTranspiledExportFull(run, "f", []);
+    // always-throw：result=never，throws 必须非 never（不得假「不抛」）
+    expect(res.result.shape.k).toBe("never");
+    expect(res.throws.shape.k).not.toBe("never");
+  });
+
+  it("imported may-throw fn surfaces throws non-never in caller (BUG-006)", () => {
+    const dir = tmpProject({
+      "a.js": `export function maybe(x) { if (x) throw new TypeError("x"); return 1; }`,
+      "b.js": `
+import { maybe } from "./a.js";
+export function f(x) { return maybe(x); }
+`,
+    });
+    const mainSrc = `import { maybe } from "./a.js";
+export function f(x) { return maybe(x); }
+`;
+    const { modules } = evalAbsModuleGraph(mainSrc, join(dir, "b.js"));
+    const run = runTranspiled(mainSrc, { mode: "analyze", modules });
+    const res = callTranspiledExportFull(run, "f", [numLit(1)]);
+    // may-throw：throws 面必须非 never（不得丢弃）
+    expect(res.throws.shape.k).not.toBe("never");
   });
 });
