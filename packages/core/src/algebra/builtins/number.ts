@@ -2,7 +2,7 @@
  * Number.* 静态方法 + parseInt/parseFloat 折叠
  */
 import type { Abs } from "../abs.ts";
-import { litValue, numLit, boolLit } from "../abs.ts";
+import { abs, litValue, numLit, boolLit } from "../abs.ts";
 import { numPrim, str, boolPrim } from "./shared.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs } from "../exec/may-throw.ts";
@@ -84,8 +84,21 @@ export function evalNumberStatic(name: string, args: Abs[]): Abs | undefined {
   switch (name) {
     case "isInteger":
       return foldStrictNumberPred(Number.isInteger) ?? boolPrim();
-    case "isNaN":
-      return foldStrictNumberPred(Number.isNaN) ?? boolPrim();
+    case "isNaN": {
+      const folded = foldStrictNumberPred(Number.isNaN);
+      if (folded) return folded;
+      // 抽象实参：挂 eq(term, NaN) —— $fork 真臂进 Φ，假臂 negate 成 ne(term, NaN)
+      // （min/max 据此排除 NaN 臂，见 #68 clamp 证明）
+      if (a0Arg?.term) {
+        return abs(
+          { k: "prim", type: "boolean" },
+          undefined,
+          { op: "eq", a: a0Arg.term, b: { op: "lit", value: NaN } },
+          "path",
+        );
+      }
+      return boolPrim();
+    }
     case "isFinite":
       return foldStrictNumberPred(Number.isFinite) ?? boolPrim();
     case "parseInt": {

@@ -197,10 +197,12 @@ describe("draftInterface", () => {
     const entry = r.entries.find((e) => e.fn === "greet");
     expect(entry!.paramEvidence).toBe("body");
     expect(entry!.params[0]!.bodyAccesses).toEqual(["name"]);
-    // DSL 不发明 shape({ name }) 义务，仅注释建议
+    expect(entry!.params[0]!.bodyReadFields?.[0]?.type).toBe("string()");
+    // DSL 不发明 shape({ name }) 义务，仅注释建议（类型已自动填）
     expect(entry!.dsl).toBe("fn({})");
-    expect(r.draftSource).toContain("body-read { name }");
+    expect(r.draftSource).toContain("body-read shape({ name: string() })");
     expect(r.draftSource).toContain("suggested (body-read, not a contract)");
+    expect(r.draftSource).toContain("greet = fn({ user: shape({ name: string() }) })");
     expect(r.draftSource).toContain("export const greet = fn({});");
   });
 

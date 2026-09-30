@@ -278,6 +278,67 @@ function f() {
     expect(errs).toEqual([]);
   });
 
+  it("ok: nullable(positive) 证明条件返回 null | number（scalar-over-sum）", () => {
+    // #68：官方建议修法 nullable(c) 对多 return 路径必须可证
+    const r = issuesOf(`
+/**
+ * @nudo:contract return maybePositive
+ */
+function f(flag) {
+  if (flag) return null;
+  return 7;
+}
+`);
+    const retIssues = r.issues.filter((i) => i.message.includes("@nudo:contract return"));
+    expect(retIssues).toEqual([]);
+  });
+
+  it("ok: nullable(number()) 证明条件返回 null | n（符号数）", () => {
+    const r = issuesOf(`
+/**
+ * @nudo:contract return maybePositive
+ */
+function f(flag, n) {
+  if (flag) return null;
+  return n;
+}
+`);
+    // n 为 unconstrained any → 臂 unprovable，但不得 error
+    // 契约是 maybePositive = nullable(positive=gt0)，n 无界 → warning
+    const errs = r.issues.filter(
+      (i) => i.severity === "error" && i.message.includes("@nudo:contract return"),
+    );
+    expect(errs).toEqual([]);
+  });
+
+  it("ok: nullable(positive) 证明 x>0 路径上的 null | x", () => {
+    const errs = errorsOf(`
+/**
+ * @nudo:contract x positive
+ * @nudo:contract return maybePositive
+ */
+function f(flag, x) {
+  if (flag) return null;
+  return x;
+}
+`);
+    expect(errs).toEqual([]);
+  });
+
+  it("error: 条件返回 null | 0 对 nullable(positive) 仍报 0 ⊭ gt(0)", () => {
+    const errs = errorsOf(`
+/**
+ * @nudo:contract return maybePositive
+ */
+function f(flag) {
+  if (flag) return null;
+  return 0;
+}
+`);
+    expect(errs.length).toBeGreaterThan(0);
+    expect(errs[0]!.code).toBe("nudo:constraint-violated");
+  });
+
   it("ok: union(positive, lit(null)) 允许 return null", () => {
     const errs = errorsOf(`
 /**

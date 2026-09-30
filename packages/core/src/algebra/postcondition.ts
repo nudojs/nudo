@@ -91,9 +91,37 @@ function isBoundedEvidenceMissing(ret: Abs, constraint: NudoConstraint): boolean
   return true;
 }
 
+/** 扁平化 sum 臂（嵌套 sum 一并拆开）；非 sum 返回自身 */
+function flattenSumArms(ret: Abs): Abs[] {
+  if (ret.shape.k !== "sum") return [ret];
+  const out: Abs[] = [];
+  for (const m of (ret.shape as { members: Abs[] }).members) {
+    if (m.shape.k === "sum") out.push(...flattenSumArms(m));
+    else out.push(m);
+  }
+  return out;
+}
+
+/**
+ * any 参与运算符派生的 sum 臂（`any+any → number|string`）：
+ * parent conf=partial 且成员是无 term/pred 的裸 prim。报则假阳性
+ * （gold 门禁口径）；proof 侧当 unprovable，不得当 proved/disproved。
+ */
+function isWidenedSumArm(m: Abs, parent: Abs): boolean {
+  return (
+    parent.conf === "partial" &&
+    m.shape.k === "prim" &&
+    !m.term &&
+    (!m.pred || m.pred.op === "true")
+  );
+}
+
 /**
  * 统一后置证明：返回 Abs 的值域是否蕴含契约。
  * phi：路径前提（可选，与前置同一 Phi 通道）。
+ *
+ * DEC-001 + scalar-over-sum：sum 返回按成员分发（shape/array/scalar 同口径），
+ * nullish 臂走契约显式化；union/nullable 对「每个臂 ∃ 契约成员」对账。
  */
 export function assertImplies(
   ret: Abs,
@@ -108,28 +136,7 @@ export function assertImplies(
   // any() 契约：无义务
   if (isAnyConstraint(constraint)) return proved();
 
-  // --- nullish 显式化 ---
-  const nullishOk = constraintAdmitsNullish(constraint);
-  if (isNullishLitAbs(ret)) {
-    return nullishOk
-      ? proved()
-      : disproved(`nullish return ⊭ ${formatConstraint(constraint)}`);
-  }
-
-  // sum 含 nullish 成员：未声明 nullish 则违约（每个 nullish 臂都是逃逸）
-  let sumMembers: Abs[] | undefined;
-  if (ret.shape.k === "sum") {
-    const members = (ret.shape as { members: Abs[] }).members;
-    const nullishMembers = members.filter((m) => isNullishLitAbs(m));
-    if (nullishMembers.length > 0 && !nullishOk) {
-      return disproved(
-        `nullish return arm ⊭ ${formatConstraint(constraint)} (contract does not admit nullish)`,
-      );
-    }
-    sumMembers = members.filter((m) => !isNullishLitAbs(m));
-  }
-
-  // --- 值域未知：any / true unknown / opaque ---
+  // --- 值域未知（整段）：any / true unknown / opaque/widened/mock ---
   if (isValueSetUnknown(ret)) {
     return unprovable(
       ret.shape.k === "any"
@@ -138,11 +145,87 @@ export function assertImplies(
     );
   }
 
-  // --- union 契约：任一成员蕴含即 proved ---
+  const arms = flattenSumArms(ret);
+
+  // 多臂返回：逐成员对账（条件赋值 / 多 return 路径）。
+  // scalar 同样分发——`nullable(c)` 与多 return 的 `null | number` 才能被证明。
+  if (arms.length > 1) {
+    return assertSumArms(arms, ret, constraint, opts, phi);
+  }
+
+  return assertImpliesSingle(arms[0]!, constraint, opts, phi);
+}
+
+function assertSumArms(
+  arms: Abs[],
+  parent: Abs,
+  constraint: NudoConstraint,
+  opts: { phi?: Phi } | undefined,
+  phi: Phi,
+): PostProof {
+  // gold FP 保护：任一 any 派生 / 运算符拓宽臂存在时，不得对兄弟臂报
+  // disproved（`0 | number|string` 的 `0` 不得因拓宽污染变成 error）。
+  const hasWidenedArm = arms.some(
+    (a) => isValueSetUnknown(a) || isWidenedSumArm(a, parent),
+  );
+  let sawUnprovable = false;
+  for (const arm of arms) {
+    // nullish 臂：契约须显式承认 nullish（nullable / union(..., lit(null))）。
+    // nullish 逃逸是确定违约，不受拓宽臂降级影响。
+    if (isNullishLitAbs(arm)) {
+      if (!constraintAdmitsNullish(constraint)) {
+        return disproved(
+          `nullish return arm ⊭ ${formatConstraint(constraint)} (contract does not admit nullish)`,
+        );
+      }
+      continue;
+    }
+    if (isValueSetUnknown(arm) || isWidenedSumArm(arm, parent)) {
+      sawUnprovable = true;
+      continue;
+    }
+    const r = assertImpliesSingle(arm, constraint, opts, phi);
+    if (r.status === "disproved") {
+      if (hasWidenedArm) {
+        sawUnprovable = true;
+        continue;
+      }
+      return r;
+    }
+    if (r.status === "unprovable") sawUnprovable = true;
+  }
+  return sawUnprovable
+    ? unprovable("sum: some arms unprovable")
+    : proved();
+}
+
+function assertImpliesSingle(
+  arm: Abs,
+  constraint: NudoConstraint,
+  opts: { phi?: Phi } | undefined,
+  phi: Phi,
+): PostProof {
+  // --- nullish 显式化 ---
+  if (isNullishLitAbs(arm)) {
+    return constraintAdmitsNullish(constraint)
+      ? proved()
+      : disproved(`nullish return ⊭ ${formatConstraint(constraint)}`);
+  }
+
+  // --- 值域未知：any / true unknown / opaque ---
+  if (isValueSetUnknown(arm)) {
+    return unprovable(
+      arm.shape.k === "any"
+        ? "any does not establish the return contract"
+        : "inference failure (unknown/opaque) — cannot prove the return contract",
+    );
+  }
+
+  // --- union 契约（含 nullable）：本臂任一成员蕴含即 proved ---
   if (constraint.members && constraint.members.length > 0) {
     let sawUnprovable = false;
     for (const m of constraint.members) {
-      const r = assertImplies(ret, m, opts);
+      const r = assertImplies(arm, m, opts);
       if (r.status === "proved") return proved();
       if (r.status === "unprovable") sawUnprovable = true;
     }
@@ -151,34 +234,15 @@ export function assertImplies(
       : disproved(`return ⊭ union(${constraint.members.map((m) => formatConstraint(m)).join(", ")})`);
   }
 
-  // --- sum 分发：形状/数组契约逐成员对账（条件赋值 / 多 return 路径）。
-  // scalar 契约不向 sum 成员分发——成员可能是 any 参与运算符派生的
-  // 并集（any+any → number|string），报则假阳性（gold 门禁口径）。
-  // array 契约同为结构契约：`[] | [x]` 的每个成员单独都是数组，不得因
-  // 「sum 既不是 arr 也不是 tuple」判违规（此前落下方 element 分支 →
-  // 消费方 `const out = []; if (…) out.push(x); return out;` 全数假阳性）。
-  if (sumMembers && (constraint.fields || constraint.element)) {
-    let sawUnprovable = false;
-    for (const m of sumMembers) {
-      if (isValueSetUnknown(m)) continue; // gold FP 保护：any 派生成员
-      const r = assertImplies(m, constraint, opts);
-      if (r.status === "disproved") return r;
-      if (r.status === "unprovable") sawUnprovable = true;
-    }
-    return sawUnprovable
-      ? unprovable("sum: some arms unprovable")
-      : proved();
-  }
-
   // --- shape 契约：结构字段对账 ---
   if (constraint.fields) {
-    return assertShapeFields(ret, constraint, opts);
+    return assertShapeFields(arm, constraint, opts);
   }
 
   // --- array 契约 ---
   if (constraint.element) {
-    if (ret.shape.k !== "arr" && ret.shape.k !== "tuple") {
-      return disproved(`return shape ${ret.shape.k} ⊭ array(...)`);
+    if (arm.shape.k !== "arr" && arm.shape.k !== "tuple") {
+      return disproved(`return shape ${arm.shape.k} ⊭ array(...)`);
     }
     // 元素级：整体 arr 存在即 shape 合格（元素级后置是嵌套缺口，不在此扩面）
     return proved();
@@ -188,7 +252,7 @@ export function assertImplies(
   if (constraint.fn) return proved();
 
   // --- 标量：prim + Pred 蕴含（统一证明通道）---
-  return assertScalar(ret, constraint, phi);
+  return assertScalar(arm, constraint, phi);
 }
 
 /** any()：无 prim / preds / shape / members / fn */

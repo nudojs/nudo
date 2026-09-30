@@ -659,7 +659,9 @@ export function checkToLspDiagnostics(
             actual: i.actual,
             expected: i.expected,
             fn: i.fn,
+            suggestion: i.suggestion,
             suggestions: i.suggestion ? [i.suggestion] : [],
+            actions: i.actions,
           },
         } satisfies LspDiagnostic;
       });
