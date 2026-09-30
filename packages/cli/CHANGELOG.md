@@ -1,5 +1,12 @@
 # nudo
 
+## 1.1.10
+
+### Patch Changes
+
+- Updated dependencies [f10066d]
+  - nudojs@1.1.0
+
 ## 1.1.9
 
 ### Patch Changes

@@ -11,19 +11,59 @@ slug: /releases-history
 
 | 包 | 当前版本 |
 |----|----------|
-| `@nudojs/core` | 1.3.1 |
-| `@nudojs/service` | 1.2.4 |
-| `nudojs (CLI)` | 1.0.9 |
-| `@nudojs/parser` | 1.1.9 |
-| `@nudojs/lsp` | 1.1.9 |
-| `@nudojs/env` | 0.4.11 |
-| `@nudojs/harvester` | 0.2.17 |
-| `vite-plugin-nudo` | 0.4.12 |
-| `nudo-vscode` | 0.3.16 |
+| `@nudojs/core` | 1.4.0 |
+| `@nudojs/service` | 1.3.0 |
+| `nudojs (CLI)` | 1.1.0 |
+| `@nudojs/parser` | 1.2.0 |
+| `@nudojs/lsp` | 1.1.10 |
+| `@nudojs/env` | 0.4.12 |
+| `@nudojs/harvester` | 0.2.18 |
+| `vite-plugin-nudo` | 0.4.13 |
+| `nudo-vscode` | 0.3.17 |
 
 **按包跳转:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.3.1 {#pkg-core}
+## @nudojs/core 1.4.0 {#pkg-core}
+
+## 1.4.0
+
+### Minor Changes
+
+- f10066d: fix: repository-scale bug hunt — algebra, CLI, IDE, cache, release hardening
+  
+  Correctness (core algebra / check):
+  - `Symbol() < 1` now TypeError (cmp relational ops); `eq`/`ne` unchanged
+  - bare prim contracts reject obj/arr/tuple/fn/brand/eff returns
+  - `lit(undefined)` is a real literal (`LitValueResult {ok,value}` tagged path)
+  - empty-sum reduce guards (DEC-006); explicit re-exports win over `export *`
+  - projection fidelity: tuple holes, tuple-rest parens, schema eq-app anchoring
+  
+  Design refactors (additive public API):
+  - `LitValueResult` + bigint in `LiteralValue`
+  - `AbsApplyResult {abs,throws}` + `callTranspiledExportApply` (sole wrap point) + `$call` throws routing
+  - `directive-scan` single-source extractors; directives bind AST nearest Function (nested/class/object methods)
+  - `stablePathKey` / `stablePathKeyGraph` for L0/LSP/CLI/disk path identity
+  
+  Product / CLI / migrate:
+  - `check --json` path errors enter the CheckJson envelope (`pathErrors`, `ok:false`); ok↔exit single source
+  - migrate: missing paths error (no parent `package.json` fallthrough); retire is atomic with rollback; rewritten paths are single-quoted
+  - malformed directives warn instead of silent drop; `@nudo:skip` requires explicit types
+  
+  Service / cache:
+  - disk-cache atomic write + portable path keys (incl. maxForks in cache key)
+  - pure memo replays may-throw; bounded memo maps; sidecar EACCES ≠ missing
+  
+  IDE / extension:
+  - LSP path-key unify (Windows drive forms); directive diag watermark; hover follows G2 scope
+  - VS Code client catches start/sendRequest; selectCase rollback
+  
+  Release / CI supply chain:
+  - `gen-llms` confines slug writes under build root (path-escape fix)
+  - gate-major: 2.x / major jumps / first 1.0.0 need `confirm_major`; 1.x train auto-publishes
+  - release: quoted secrets, tag whitelist + semver precedence incl. prerelease, pinned website actions
+
+<details>
+<summary>历史版本 (20)</summary>
 
 ## 1.3.1
 
@@ -58,9 +98,6 @@ slug: /releases-history
   Measured on a consumer project (npm-safe): `vetoFindings` / `decide` return
   contracts went from `nudo:constraint-violated` errors to clean, with no other
   diagnostic movement.
-
-<details>
-<summary>历史版本 (19)</summary>
 
 ## 1.3.0
 
@@ -620,7 +657,55 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/service 1.2.4 {#pkg-service}
+## @nudojs/service 1.3.0 {#pkg-service}
+
+## 1.3.0
+
+### Minor Changes
+
+- f10066d: fix: repository-scale bug hunt — algebra, CLI, IDE, cache, release hardening
+  
+  Correctness (core algebra / check):
+  - `Symbol() < 1` now TypeError (cmp relational ops); `eq`/`ne` unchanged
+  - bare prim contracts reject obj/arr/tuple/fn/brand/eff returns
+  - `lit(undefined)` is a real literal (`LitValueResult {ok,value}` tagged path)
+  - empty-sum reduce guards (DEC-006); explicit re-exports win over `export *`
+  - projection fidelity: tuple holes, tuple-rest parens, schema eq-app anchoring
+  
+  Design refactors (additive public API):
+  - `LitValueResult` + bigint in `LiteralValue`
+  - `AbsApplyResult {abs,throws}` + `callTranspiledExportApply` (sole wrap point) + `$call` throws routing
+  - `directive-scan` single-source extractors; directives bind AST nearest Function (nested/class/object methods)
+  - `stablePathKey` / `stablePathKeyGraph` for L0/LSP/CLI/disk path identity
+  
+  Product / CLI / migrate:
+  - `check --json` path errors enter the CheckJson envelope (`pathErrors`, `ok:false`); ok↔exit single source
+  - migrate: missing paths error (no parent `package.json` fallthrough); retire is atomic with rollback; rewritten paths are single-quoted
+  - malformed directives warn instead of silent drop; `@nudo:skip` requires explicit types
+  
+  Service / cache:
+  - disk-cache atomic write + portable path keys (incl. maxForks in cache key)
+  - pure memo replays may-throw; bounded memo maps; sidecar EACCES ≠ missing
+  
+  IDE / extension:
+  - LSP path-key unify (Windows drive forms); directive diag watermark; hover follows G2 scope
+  - VS Code client catches start/sendRequest; selectCase rollback
+  
+  Release / CI supply chain:
+  - `gen-llms` confines slug writes under build root (path-escape fix)
+  - gate-major: 2.x / major jumps / first 1.0.0 need `confirm_major`; 1.x train auto-publishes
+  - release: quoted secrets, tag whitelist + semver precedence incl. prerelease, pinned website actions
+
+### Patch Changes
+
+- Updated dependencies [f10066d]
+  - @nudojs/core@1.4.0
+  - @nudojs/parser@1.2.0
+  - @nudojs/env@0.4.12
+  - @nudojs/harvester@0.2.18
+
+<details>
+<summary>历史版本 (22)</summary>
 
 ## 1.2.4
 
@@ -631,9 +716,6 @@ slug: /releases-history
   - @nudojs/env@0.4.11
   - @nudojs/harvester@0.2.17
   - @nudojs/parser@1.1.9
-
-<details>
-<summary>历史版本 (21)</summary>
 
 ## 1.2.3
 
@@ -1131,7 +1213,55 @@ slug: /releases-history
 
 </details>
 
-## nudojs (CLI) 1.0.9 {#pkg-nudojs}
+## nudojs (CLI) 1.1.0 {#pkg-nudojs}
+
+## 1.1.0
+
+### Minor Changes
+
+- f10066d: fix: repository-scale bug hunt — algebra, CLI, IDE, cache, release hardening
+  
+  Correctness (core algebra / check):
+  - `Symbol() < 1` now TypeError (cmp relational ops); `eq`/`ne` unchanged
+  - bare prim contracts reject obj/arr/tuple/fn/brand/eff returns
+  - `lit(undefined)` is a real literal (`LitValueResult {ok,value}` tagged path)
+  - empty-sum reduce guards (DEC-006); explicit re-exports win over `export *`
+  - projection fidelity: tuple holes, tuple-rest parens, schema eq-app anchoring
+  
+  Design refactors (additive public API):
+  - `LitValueResult` + bigint in `LiteralValue`
+  - `AbsApplyResult {abs,throws}` + `callTranspiledExportApply` (sole wrap point) + `$call` throws routing
+  - `directive-scan` single-source extractors; directives bind AST nearest Function (nested/class/object methods)
+  - `stablePathKey` / `stablePathKeyGraph` for L0/LSP/CLI/disk path identity
+  
+  Product / CLI / migrate:
+  - `check --json` path errors enter the CheckJson envelope (`pathErrors`, `ok:false`); ok↔exit single source
+  - migrate: missing paths error (no parent `package.json` fallthrough); retire is atomic with rollback; rewritten paths are single-quoted
+  - malformed directives warn instead of silent drop; `@nudo:skip` requires explicit types
+  
+  Service / cache:
+  - disk-cache atomic write + portable path keys (incl. maxForks in cache key)
+  - pure memo replays may-throw; bounded memo maps; sidecar EACCES ≠ missing
+  
+  IDE / extension:
+  - LSP path-key unify (Windows drive forms); directive diag watermark; hover follows G2 scope
+  - VS Code client catches start/sendRequest; selectCase rollback
+  
+  Release / CI supply chain:
+  - `gen-llms` confines slug writes under build root (path-escape fix)
+  - gate-major: 2.x / major jumps / first 1.0.0 need `confirm_major`; 1.x train auto-publishes
+  - release: quoted secrets, tag whitelist + semver precedence incl. prerelease, pinned website actions
+
+### Patch Changes
+
+- Updated dependencies [f10066d]
+  - @nudojs/core@1.4.0
+  - @nudojs/parser@1.2.0
+  - @nudojs/service@1.3.0
+  - @nudojs/harvester@0.2.18
+
+<details>
+<summary>历史版本 (19)</summary>
 
 ## 1.0.9
 
@@ -1142,9 +1272,6 @@ slug: /releases-history
   - @nudojs/harvester@0.2.17
   - @nudojs/parser@1.1.9
   - @nudojs/service@1.2.4
-
-<details>
-<summary>历史版本 (18)</summary>
 
 ## 1.0.8
 
@@ -1404,7 +1531,52 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/parser 1.1.9 {#pkg-parser}
+## @nudojs/parser 1.2.0 {#pkg-parser}
+
+## 1.2.0
+
+### Minor Changes
+
+- f10066d: fix: repository-scale bug hunt — algebra, CLI, IDE, cache, release hardening
+  
+  Correctness (core algebra / check):
+  - `Symbol() < 1` now TypeError (cmp relational ops); `eq`/`ne` unchanged
+  - bare prim contracts reject obj/arr/tuple/fn/brand/eff returns
+  - `lit(undefined)` is a real literal (`LitValueResult {ok,value}` tagged path)
+  - empty-sum reduce guards (DEC-006); explicit re-exports win over `export *`
+  - projection fidelity: tuple holes, tuple-rest parens, schema eq-app anchoring
+  
+  Design refactors (additive public API):
+  - `LitValueResult` + bigint in `LiteralValue`
+  - `AbsApplyResult {abs,throws}` + `callTranspiledExportApply` (sole wrap point) + `$call` throws routing
+  - `directive-scan` single-source extractors; directives bind AST nearest Function (nested/class/object methods)
+  - `stablePathKey` / `stablePathKeyGraph` for L0/LSP/CLI/disk path identity
+  
+  Product / CLI / migrate:
+  - `check --json` path errors enter the CheckJson envelope (`pathErrors`, `ok:false`); ok↔exit single source
+  - migrate: missing paths error (no parent `package.json` fallthrough); retire is atomic with rollback; rewritten paths are single-quoted
+  - malformed directives warn instead of silent drop; `@nudo:skip` requires explicit types
+  
+  Service / cache:
+  - disk-cache atomic write + portable path keys (incl. maxForks in cache key)
+  - pure memo replays may-throw; bounded memo maps; sidecar EACCES ≠ missing
+  
+  IDE / extension:
+  - LSP path-key unify (Windows drive forms); directive diag watermark; hover follows G2 scope
+  - VS Code client catches start/sendRequest; selectCase rollback
+  
+  Release / CI supply chain:
+  - `gen-llms` confines slug writes under build root (path-escape fix)
+  - gate-major: 2.x / major jumps / first 1.0.0 need `confirm_major`; 1.x train auto-publishes
+  - release: quoted secrets, tag whitelist + semver precedence incl. prerelease, pinned website actions
+
+### Patch Changes
+
+- Updated dependencies [f10066d]
+  - @nudojs/core@1.4.0
+
+<details>
+<summary>历史版本 (20)</summary>
 
 ## 1.1.9
 
@@ -1412,9 +1584,6 @@ slug: /releases-history
 
 - Updated dependencies [8df9215]
   - @nudojs/core@1.3.1
-
-<details>
-<summary>历史版本 (19)</summary>
 
 ## 1.1.8
 
@@ -1661,7 +1830,51 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/lsp 1.1.9 {#pkg-lsp}
+## @nudojs/lsp 1.1.10 {#pkg-lsp}
+
+## 1.1.10
+
+### Patch Changes
+
+- f10066d: fix: repository-scale bug hunt — algebra, CLI, IDE, cache, release hardening
+  
+  Correctness (core algebra / check):
+  - `Symbol() < 1` now TypeError (cmp relational ops); `eq`/`ne` unchanged
+  - bare prim contracts reject obj/arr/tuple/fn/brand/eff returns
+  - `lit(undefined)` is a real literal (`LitValueResult {ok,value}` tagged path)
+  - empty-sum reduce guards (DEC-006); explicit re-exports win over `export *`
+  - projection fidelity: tuple holes, tuple-rest parens, schema eq-app anchoring
+  
+  Design refactors (additive public API):
+  - `LitValueResult` + bigint in `LiteralValue`
+  - `AbsApplyResult {abs,throws}` + `callTranspiledExportApply` (sole wrap point) + `$call` throws routing
+  - `directive-scan` single-source extractors; directives bind AST nearest Function (nested/class/object methods)
+  - `stablePathKey` / `stablePathKeyGraph` for L0/LSP/CLI/disk path identity
+  
+  Product / CLI / migrate:
+  - `check --json` path errors enter the CheckJson envelope (`pathErrors`, `ok:false`); ok↔exit single source
+  - migrate: missing paths error (no parent `package.json` fallthrough); retire is atomic with rollback; rewritten paths are single-quoted
+  - malformed directives warn instead of silent drop; `@nudo:skip` requires explicit types
+  
+  Service / cache:
+  - disk-cache atomic write + portable path keys (incl. maxForks in cache key)
+  - pure memo replays may-throw; bounded memo maps; sidecar EACCES ≠ missing
+  
+  IDE / extension:
+  - LSP path-key unify (Windows drive forms); directive diag watermark; hover follows G2 scope
+  - VS Code client catches start/sendRequest; selectCase rollback
+  
+  Release / CI supply chain:
+  - `gen-llms` confines slug writes under build root (path-escape fix)
+  - gate-major: 2.x / major jumps / first 1.0.0 need `confirm_major`; 1.x train auto-publishes
+  - release: quoted secrets, tag whitelist + semver precedence incl. prerelease, pinned website actions
+- Updated dependencies [f10066d]
+  - @nudojs/core@1.4.0
+  - @nudojs/parser@1.2.0
+  - @nudojs/service@1.3.0
+
+<details>
+<summary>历史版本 (23)</summary>
 
 ## 1.1.9
 
@@ -1671,9 +1884,6 @@ slug: /releases-history
   - @nudojs/core@1.3.1
   - @nudojs/parser@1.1.9
   - @nudojs/service@1.2.4
-
-<details>
-<summary>历史版本 (22)</summary>
 
 ## 1.1.8
 
@@ -2101,7 +2311,49 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/env 0.4.11 {#pkg-env}
+## @nudojs/env 0.4.12 {#pkg-env}
+
+## 0.4.12
+
+### Patch Changes
+
+- f10066d: fix: repository-scale bug hunt — algebra, CLI, IDE, cache, release hardening
+  
+  Correctness (core algebra / check):
+  - `Symbol() < 1` now TypeError (cmp relational ops); `eq`/`ne` unchanged
+  - bare prim contracts reject obj/arr/tuple/fn/brand/eff returns
+  - `lit(undefined)` is a real literal (`LitValueResult {ok,value}` tagged path)
+  - empty-sum reduce guards (DEC-006); explicit re-exports win over `export *`
+  - projection fidelity: tuple holes, tuple-rest parens, schema eq-app anchoring
+  
+  Design refactors (additive public API):
+  - `LitValueResult` + bigint in `LiteralValue`
+  - `AbsApplyResult {abs,throws}` + `callTranspiledExportApply` (sole wrap point) + `$call` throws routing
+  - `directive-scan` single-source extractors; directives bind AST nearest Function (nested/class/object methods)
+  - `stablePathKey` / `stablePathKeyGraph` for L0/LSP/CLI/disk path identity
+  
+  Product / CLI / migrate:
+  - `check --json` path errors enter the CheckJson envelope (`pathErrors`, `ok:false`); ok↔exit single source
+  - migrate: missing paths error (no parent `package.json` fallthrough); retire is atomic with rollback; rewritten paths are single-quoted
+  - malformed directives warn instead of silent drop; `@nudo:skip` requires explicit types
+  
+  Service / cache:
+  - disk-cache atomic write + portable path keys (incl. maxForks in cache key)
+  - pure memo replays may-throw; bounded memo maps; sidecar EACCES ≠ missing
+  
+  IDE / extension:
+  - LSP path-key unify (Windows drive forms); directive diag watermark; hover follows G2 scope
+  - VS Code client catches start/sendRequest; selectCase rollback
+  
+  Release / CI supply chain:
+  - `gen-llms` confines slug writes under build root (path-escape fix)
+  - gate-major: 2.x / major jumps / first 1.0.0 need `confirm_major`; 1.x train auto-publishes
+  - release: quoted secrets, tag whitelist + semver precedence incl. prerelease, pinned website actions
+- Updated dependencies [f10066d]
+  - @nudojs/core@1.4.0
+
+<details>
+<summary>历史版本 (19)</summary>
 
 ## 0.4.11
 
@@ -2109,9 +2361,6 @@ slug: /releases-history
 
 - Updated dependencies [8df9215]
   - @nudojs/core@1.3.1
-
-<details>
-<summary>历史版本 (18)</summary>
 
 ## 0.4.10
 
@@ -2338,7 +2587,51 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/harvester 0.2.17 {#pkg-harvester}
+## @nudojs/harvester 0.2.18 {#pkg-harvester}
+
+## 0.2.18
+
+### Patch Changes
+
+- f10066d: fix: repository-scale bug hunt — algebra, CLI, IDE, cache, release hardening
+  
+  Correctness (core algebra / check):
+  - `Symbol() < 1` now TypeError (cmp relational ops); `eq`/`ne` unchanged
+  - bare prim contracts reject obj/arr/tuple/fn/brand/eff returns
+  - `lit(undefined)` is a real literal (`LitValueResult {ok,value}` tagged path)
+  - empty-sum reduce guards (DEC-006); explicit re-exports win over `export *`
+  - projection fidelity: tuple holes, tuple-rest parens, schema eq-app anchoring
+  
+  Design refactors (additive public API):
+  - `LitValueResult` + bigint in `LiteralValue`
+  - `AbsApplyResult {abs,throws}` + `callTranspiledExportApply` (sole wrap point) + `$call` throws routing
+  - `directive-scan` single-source extractors; directives bind AST nearest Function (nested/class/object methods)
+  - `stablePathKey` / `stablePathKeyGraph` for L0/LSP/CLI/disk path identity
+  
+  Product / CLI / migrate:
+  - `check --json` path errors enter the CheckJson envelope (`pathErrors`, `ok:false`); ok↔exit single source
+  - migrate: missing paths error (no parent `package.json` fallthrough); retire is atomic with rollback; rewritten paths are single-quoted
+  - malformed directives warn instead of silent drop; `@nudo:skip` requires explicit types
+  
+  Service / cache:
+  - disk-cache atomic write + portable path keys (incl. maxForks in cache key)
+  - pure memo replays may-throw; bounded memo maps; sidecar EACCES ≠ missing
+  
+  IDE / extension:
+  - LSP path-key unify (Windows drive forms); directive diag watermark; hover follows G2 scope
+  - VS Code client catches start/sendRequest; selectCase rollback
+  
+  Release / CI supply chain:
+  - `gen-llms` confines slug writes under build root (path-escape fix)
+  - gate-major: 2.x / major jumps / first 1.0.0 need `confirm_major`; 1.x train auto-publishes
+  - release: quoted secrets, tag whitelist + semver precedence incl. prerelease, pinned website actions
+- Updated dependencies [f10066d]
+  - @nudojs/core@1.4.0
+  - @nudojs/parser@1.2.0
+  - @nudojs/env@0.4.12
+
+<details>
+<summary>历史版本 (19)</summary>
 
 ## 0.2.17
 
@@ -2348,9 +2641,6 @@ slug: /releases-history
   - @nudojs/core@1.3.1
   - @nudojs/env@0.4.11
   - @nudojs/parser@1.1.9
-
-<details>
-<summary>历史版本 (18)</summary>
 
 ## 0.2.16
 
@@ -2553,7 +2843,50 @@ slug: /releases-history
 
 </details>
 
-## vite-plugin-nudo 0.4.12 {#pkg-vite-plugin}
+## vite-plugin-nudo 0.4.13 {#pkg-vite-plugin}
+
+## 0.4.13
+
+### Patch Changes
+
+- f10066d: fix: repository-scale bug hunt — algebra, CLI, IDE, cache, release hardening
+  
+  Correctness (core algebra / check):
+  - `Symbol() < 1` now TypeError (cmp relational ops); `eq`/`ne` unchanged
+  - bare prim contracts reject obj/arr/tuple/fn/brand/eff returns
+  - `lit(undefined)` is a real literal (`LitValueResult {ok,value}` tagged path)
+  - empty-sum reduce guards (DEC-006); explicit re-exports win over `export *`
+  - projection fidelity: tuple holes, tuple-rest parens, schema eq-app anchoring
+  
+  Design refactors (additive public API):
+  - `LitValueResult` + bigint in `LiteralValue`
+  - `AbsApplyResult {abs,throws}` + `callTranspiledExportApply` (sole wrap point) + `$call` throws routing
+  - `directive-scan` single-source extractors; directives bind AST nearest Function (nested/class/object methods)
+  - `stablePathKey` / `stablePathKeyGraph` for L0/LSP/CLI/disk path identity
+  
+  Product / CLI / migrate:
+  - `check --json` path errors enter the CheckJson envelope (`pathErrors`, `ok:false`); ok↔exit single source
+  - migrate: missing paths error (no parent `package.json` fallthrough); retire is atomic with rollback; rewritten paths are single-quoted
+  - malformed directives warn instead of silent drop; `@nudo:skip` requires explicit types
+  
+  Service / cache:
+  - disk-cache atomic write + portable path keys (incl. maxForks in cache key)
+  - pure memo replays may-throw; bounded memo maps; sidecar EACCES ≠ missing
+  
+  IDE / extension:
+  - LSP path-key unify (Windows drive forms); directive diag watermark; hover follows G2 scope
+  - VS Code client catches start/sendRequest; selectCase rollback
+  
+  Release / CI supply chain:
+  - `gen-llms` confines slug writes under build root (path-escape fix)
+  - gate-major: 2.x / major jumps / first 1.0.0 need `confirm_major`; 1.x train auto-publishes
+  - release: quoted secrets, tag whitelist + semver precedence incl. prerelease, pinned website actions
+- Updated dependencies [f10066d]
+  - @nudojs/core@1.4.0
+  - @nudojs/service@1.3.0
+
+<details>
+<summary>历史版本 (22)</summary>
 
 ## 0.4.12
 
@@ -2562,9 +2895,6 @@ slug: /releases-history
 - Updated dependencies [8df9215]
   - @nudojs/core@1.3.1
   - @nudojs/service@1.2.4
-
-<details>
-<summary>历史版本 (21)</summary>
 
 ## 0.4.11
 
