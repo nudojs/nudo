@@ -63,11 +63,21 @@ function denoteShape(s: Shape, v: string): string {
     case "tuple": {
       const checks = [`Array.isArray(${v})`];
       const minLen = s.elements.length;
+      const holes = new Set(s.holes ?? []);
       checks.push(s.rest ? `${v}.length >= ${minLen}` : `${v}.length === ${minLen}`);
       s.elements.forEach((el, i) => {
+        // hole 槽是下标缺席（`i in v` 为 false），不得检成 `v[i] === undefined`
+        // （后者对显式 undefined 元素同样成立，会把稀疏位抹平）。
+        if (holes.has(i)) {
+          checks.push(`!(${i} in ${v})`);
+          return;
+        }
         const inner = denoteGuard(el, `${v}[${i}]`);
         if (inner !== "true") checks.push(inner);
       });
+      for (const i of holes) {
+        if (i >= minLen) checks.push(`!(${i} in ${v})`);
+      }
       if (s.rest) {
         // rest 槽：长度超出部分统一检查
         const rest = denoteGuard(s.rest, "item");

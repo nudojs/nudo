@@ -96,4 +96,52 @@ describe("denoteGuard", () => {
     expect(g).toContain("data.x === undefined");
     expect(g).toContain("data.y === 1");
   });
+
+  it("tuple hole slot guards with `!(i in v)`, not v[i]===undefined (BUG-020/I1)", () => {
+    const undefLit = makeAbs({ k: "unknown" }, lit(undefined), undefined, "exact");
+    // [1, , 3]：index 1 是 hole（下标缺席），与 [1, undefined, 3] 可观察不同
+    const sparse = makeAbs(
+      { k: "tuple", elements: [numLit(1), undefLit, numLit(3)], holes: [1] },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const g = denoteGuard(sparse, "a");
+    expect(g).toContain("!(1 in a)");
+    // hole 槽不得再检读值 undefined（那会把显式 undefined 元素也放行）
+    expect(g).not.toContain("a[1] === undefined");
+    expect(g).toContain("a[0] === 1");
+    expect(g).toContain("a[2] === 3");
+
+    // 运行时：稀疏位通过、显式 undefined 位失败
+    const check = new Function("a", `return ${g};`);
+    expect(check([1, , 3])).toBe(true);
+    expect(check([1, undefined, 3])).toBe(false);
+  });
+
+  it("leading/multi tuple holes each guard `!(i in v)` (BUG-020/I1)", () => {
+    const undefLit = makeAbs({ k: "unknown" }, lit(undefined), undefined, "exact");
+    const leading = makeAbs(
+      { k: "tuple", elements: [undefLit, numLit(1)], holes: [0] },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const g0 = denoteGuard(leading, "a");
+    expect(g0).toContain("!(0 in a)");
+    expect(g0).not.toContain("a[0] === undefined");
+
+    const multi = makeAbs(
+      { k: "tuple", elements: [undefLit, numLit(1), undefLit], holes: [0, 2] },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const g2 = denoteGuard(multi, "a");
+    expect(g2).toContain("!(0 in a)");
+    expect(g2).toContain("!(2 in a)");
+    const check2 = new Function("a", `return ${g2};`);
+    expect(check2([, 1, ,])).toBe(true);
+    expect(check2([undefined, 1, undefined])).toBe(false);
+  });
 });

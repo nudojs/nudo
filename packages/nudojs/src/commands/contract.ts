@@ -265,6 +265,9 @@ async function runContractEmit(
     ...(!(fnNames || opts.all) ? { refreshExistingOnly: true } : {}),
   });
   if (derived.hasRoot) {
+    for (const i of derived.issues ?? []) {
+      console.log(`  [${i.severity}] ${i.code}: ${i.message}`);
+    }
     for (const sc of derived.sidecars) {
       const scRel = relative(process.cwd(), sc.sidecarPath) || sc.sidecarPath;
       if (sc.changed && opts.dryRun) {

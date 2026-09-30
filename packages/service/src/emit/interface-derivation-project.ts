@@ -56,6 +56,8 @@ export type RootDeriveResult = {
   roots: string[];
   derived: DerivedExport[];
   hasRoot: boolean;
+  /** 模块图求值失败（fail-closed，BUG-017 同径）：不推导、不带空 import 表继续 */
+  graphError?: string;
 };
 
 export function projectParamSlot(
