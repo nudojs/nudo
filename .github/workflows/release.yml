@@ -299,7 +299,7 @@ jobs:
         if: steps.pre.outputs.active == 'true'
         run: |
           set -euo pipefail
-          # Same ceiling as stable: major >= 2 needs confirm_major=true.
+          # Same ceiling as stable: any major >= 1 (incl. 0→1) needs confirm_major=true.
           node scripts/gate-major.mjs --for-publish
           # setup-node writes _authToken=${NODE_AUTH_TOKEN} into .npmrc, which
           # blocks npm's OIDC trusted-publisher exchange when no real token exists.
