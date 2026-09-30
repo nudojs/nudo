@@ -10,6 +10,7 @@
 
 import { parseSource as babelParse } from "./parse-source.ts";
 import { stripStringsKeepComments } from "./code-text.ts";
+import { listFnDirectiveScopes } from "./directive-scan.ts";
 import type { Node } from "@babel/types";
 import type { Term } from "./term.ts";
 import { v as termVar } from "./term.ts";
@@ -615,6 +616,45 @@ export function extractFn(
       env.fns.set(exp, target);
       formalsByName.set(exp, formalsByName.get(localName) ?? []);
     }
+  }
+
+  // G2：nested function / class method / object method——与 listFnDirectiveScopes
+  // 绑定名同口径（裸名 / C.m / owner.key）。顶层已登记的优先；anonymous 不进表；
+  // class/object method 仍只收 method kind（ctor/get/set 不进 fn 表，与旧顶层口径一致）。
+  for (const scope of listFnDirectiveScopes(file)) {
+    if (env.fns.has(scope.name)) continue;
+    if (scope.name === "<anonymous>") continue;
+    const n = scope.node as {
+      type?: string;
+      kind?: string;
+      params?: unknown[];
+      body?: Node;
+      async?: boolean;
+    };
+    const isFnLike =
+      n.type === "FunctionDeclaration" ||
+      n.type === "FunctionExpression" ||
+      n.type === "ArrowFunctionExpression" ||
+      n.type === "ClassMethod" ||
+      n.type === "ClassPrivateMethod" ||
+      n.type === "ObjectMethod";
+    if (!isFnLike || !n.body) continue;
+    if (
+      (n.type === "ClassMethod" ||
+        n.type === "ClassPrivateMethod" ||
+        n.type === "ObjectMethod") &&
+      n.kind &&
+      n.kind !== "method"
+    ) {
+      continue;
+    }
+    const formals = formalParamsFromNodes((n.params ?? []) as never);
+    env.fns.set(scope.name, {
+      params: formalParamDisplayNames(formals),
+      body: n.body,
+      async: n.async === true,
+    });
+    formalsByName.set(scope.name, formals);
   }
 
   const fn = env.fns.get(fnName);
