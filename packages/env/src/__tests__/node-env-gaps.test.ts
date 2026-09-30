@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { defineEnv } from "../node.ts";
-import { formatShape } from "@nudojs/core";
+import { formatShape, getFnImpl, litValue, strLit } from "@nudojs/core";
 import { requiredFnArity } from "@nudojs/core";
 import type { Abs } from "@nudojs/core";
 
@@ -297,5 +297,38 @@ describe("node env high-frequency gaps (B3)", () => {
     // stream.promises.pipeline 存在
     const promises = walk(stream.promises!, "pipeline");
     expect(shapeOf(promises)).toContain("=>");
+  });
+
+  it("fileURLToPath decodes percent-encoding", () => {
+    const url = lookupModule(env, "url");
+    const fn = url.fileURLToPath!;
+    const impl = getFnImpl(fn)!;
+    const fold = (s: string) => litValue(impl.apply!([strLit(s)])!);
+    expect(fold("file:///tmp/foo%20bar")).toEqual({ ok: true, value: "/tmp/foo bar" });
+    expect(fold("file:///tmp/caf%C3%A9")).toEqual({ ok: true, value: "/tmp/café" });
+  });
+
+  it("pathToFileURL encodes spaces and special chars", () => {
+    const url = lookupModule(env, "url");
+    const fn = url.pathToFileURL!;
+    const impl = getFnImpl(fn)!;
+    const result = impl.apply!([strLit("/tmp/foo bar")]);
+    expect(result).toBeTruthy();
+    const hrefSlot = (result!.shape as { slots: Record<string, { value: Abs }> }).slots.href;
+    expect(hrefSlot).toBeTruthy();
+    expect(litValue(hrefSlot.value)).toEqual({ ok: true, value: "file:///tmp/foo%20bar" });
+  });
+
+  it("invalid URL does not fold to input string", () => {
+    const url = lookupModule(env, "url");
+    const fn = url.fileURLToPath!;
+    const impl = getFnImpl(fn)!;
+    // 非法输入不折成输入串字面量（旧 bug：catch 里 return s）；
+    // impl 返回 undefined → envFn 替换成 returnType（抽象 string），无 lit
+    const result = impl.apply!([strLit("not-a-url")]);
+    expect(result).toBeTruthy();
+    const lv = litValue(result!);
+    // 不得折出 "not-a-url" 字面量；正确行为是无 lit（returnType 兜底）
+    expect(lv.ok).toBe(false);
   });
 });

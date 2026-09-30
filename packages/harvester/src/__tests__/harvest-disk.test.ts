@@ -5,7 +5,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { abs, num, str, relationFn, formatShape } from "@nudojs/core";
+import { abs, num, str, relationFn, formatShape, strLit, numLit, boolLit, litValue } from "@nudojs/core";
 import {
   absToHarvestSig,
   harvestSigToAbs,
@@ -53,6 +53,60 @@ describe("HarvestJson round-trip", () => {
     expect(back.conf).toBe("mock");
     // 展示面仍可读
     expect(formatShape(back)).toContain("id");
+  });
+
+  it("literal Abs survive signature projection", () => {
+    for (const lit of [strLit("GET"), numLit(404), boolLit(true)]) {
+      const back = harvestSigToAbs(absToHarvestSig(lit));
+      expect(back.term?.op).toBe("lit");
+      const orig = litValue(lit);
+      const round = litValue(back);
+      expect(orig.ok && round.ok && round.value).toBe(orig.ok && orig.value);
+    }
+  });
+
+  it("null vs undefined vs unknown stay distinguishable", () => {
+    const nullAbs = abs({ k: "unknown" }, { op: "lit", value: null }, undefined, "exact");
+    const undefAbs = abs({ k: "unknown" }, { op: "lit", value: undefined }, undefined, "exact");
+    const unknownAbs = abs({ k: "unknown" }, undefined, undefined, "exact");
+
+    const nullBack = harvestSigToAbs(absToHarvestSig(nullAbs));
+    expect(nullBack.term?.op).toBe("lit");
+    expect(nullBack.term?.value).toBe(null);
+
+    const undefBack = harvestSigToAbs(absToHarvestSig(undefAbs));
+    expect(undefBack.term?.op).toBe("lit");
+    expect(undefBack.term?.value).toBe(undefined);
+
+    const unknownBack = harvestSigToAbs(absToHarvestSig(unknownAbs));
+    expect(unknownBack.term?.op).toBeUndefined();
+  });
+
+  it("literal round-trips through JSON serialization", () => {
+    const env = {
+      globals: {
+        GET: strLit("GET"),
+        notFound: numLit(404),
+        flag: boolLit(false),
+        nothing: abs({ k: "unknown" }, { op: "lit", value: null }, undefined, "exact"),
+        missing: abs({ k: "unknown" }, { op: "lit", value: undefined }, undefined, "exact"),
+      },
+      modules: {},
+      stats: { files: 0, symbols: 5, skipped: 0 },
+    };
+    const json = serializeHarvestJson("test", env, { dtsHash: "h", maxFiles: 1 });
+    // JSON 序列化 → 反序列化 → materialize
+    const parsed = JSON.parse(JSON.stringify(json));
+    const back = materializeHarvestJson(parsed);
+    expect(back).not.toBeNull();
+    const g = back!.globals;
+    expect(g.GET!.term?.op).toBe("lit");
+    expect(g.GET!.term?.value).toBe("GET");
+    expect(g.notFound!.term?.value).toBe(404);
+    expect(g.flag!.term?.value).toBe(false);
+    expect(g.nothing!.term?.value).toBe(null);
+    expect(g.missing!.term?.op).toBe("lit");
+    expect(g.missing!.term?.value).toBe(undefined);
   });
 
   it("serialize + materialize keeps module table", () => {

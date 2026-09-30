@@ -130,10 +130,16 @@ export function defineEnv(): EnvDefinition {
     if (s === undefined) return undefined;
     // 无 radix：遵循 0x/0o/0b 前缀（与 core foldParseInt / 真 JS 对齐，不可默认 10）
     if (args[1] === undefined) return numLit(parseInt(s));
+    // radix 为 lit undefined ≡ 未提供（ES ToInt32(undefined)===0 → 自动进制）
+    const radixRaw = litValue(args[1]);
+    if (radixRaw.ok && radixRaw.value === undefined) return numLit(parseInt(s));
     const radix = absNumLit(args[1]);
     if (radix === undefined) return undefined;
-    if (!Number.isInteger(radix) || radix < 2 || radix > 36) return numLit(NaN);
-    return numLit(parseInt(s, radix));
+    // ES 对 radix 做 ToInt32：截断小数、NaN/0 → 自动进制、大整数环绕
+    const r32 = radix | 0;
+    if (r32 === 0) return numLit(parseInt(s));
+    if (r32 < 2 || r32 > 36) return numLit(NaN);
+    return numLit(parseInt(s, r32));
   };
 
   const parseFloatImplAbs: AbsSigImpl = (args) => {
@@ -290,7 +296,9 @@ export function defineEnv(): EnvDefinition {
           isNaN: envFn([prim.unknown], prim.bool(), isNaNImplAbs),
           isSafeInteger: envFn([prim.unknown], prim.bool(), isSafeIntegerImplAbs),
           parseFloat: envFn([prim.str()], prim.num(), parseFloatImplAbs),
-          parseInt: envFn([prim.str()], prim.num(), parseIntImplAbs),
+          parseInt: envFn([prim.str(), prim.num()], prim.num(), parseIntImplAbs, {
+            params: ["string", "radix?"],
+          }),
           MAX_SAFE_INTEGER: prim.num(),
           MIN_SAFE_INTEGER: prim.num(),
           MAX_VALUE: prim.num(),
@@ -323,7 +331,9 @@ export function defineEnv(): EnvDefinition {
 
       console: objAbs(consoleSlots),
 
-      parseInt: envFn([prim.str(), prim.num()], prim.num(), parseIntImplAbs),
+      parseInt: envFn([prim.str(), prim.num()], prim.num(), parseIntImplAbs, {
+        params: ["string", "radix?"],
+      }),
       parseFloat: envFn([prim.str()], prim.num(), parseFloatImplAbs),
       isNaN: envFn([prim.unknown], prim.bool(), isNaNImplAbs),
       isFinite: envFn([prim.unknown], prim.bool(), isFiniteImplAbs),

@@ -235,6 +235,40 @@ describe("es env load + key builtins", () => {
     expect(litValue(sImpl.apply!([boolLit(false)])!)).toEqual({ ok: true, value: "false" });
   });
 
+  it("parseInt folds ToInt32 radix / auto-detect 0", () => {
+    const parseIntFn = globalOf(env, "parseInt");
+    const impl = getFnImpl(parseIntFn)!;
+    const fold = (s: string, radix?: number) =>
+      litValue(impl.apply!(radix !== undefined ? [strLit(s), numLit(radix)] : [strLit(s)])!);
+
+    // ToInt32 截断小数
+    expect(fold("10", 2.5)).toEqual({ ok: true, value: 2 });
+    expect(fold("10", 2.9)).toEqual({ ok: true, value: 2 });
+    // 0 / NaN → 自动进制
+    expect(fold("10", 0)).toEqual({ ok: true, value: 10 });
+    expect(fold("0x10", 0)).toEqual({ ok: true, value: 16 });
+    expect(fold("10", NaN)).toEqual({ ok: true, value: 10 });
+    // ToInt32 环绕
+    expect(fold("10", 4294967298)).toEqual({ ok: true, value: 2 });
+    // 越界仍 NaN
+    expect(fold("10", 37)).toEqual({ ok: true, value: NaN });
+    expect(fold("10", 1)).toEqual({ ok: true, value: NaN });
+    // 无 radix：0x 前缀
+    expect(fold("0x10")).toEqual({ ok: true, value: 16 });
+  });
+
+  it("Number.parseInt shares ToInt32 radix fold and declares radix?", () => {
+    const Number_ = globalOf(env, "Number");
+    const parseIntFn = walk(Number_, "parseInt")!;
+    const impl = getFnImpl(parseIntFn)!;
+    const fold = (s: string, radix?: number) =>
+      litValue(impl.apply!(radix !== undefined ? [strLit(s), numLit(radix)] : [strLit(s)])!);
+    expect(fold("10", 2.5)).toEqual({ ok: true, value: 2 });
+    expect(fold("0x10", 0)).toEqual({ ok: true, value: 16 });
+    // 签名面：radix 为可选参
+    expect(shapeOf(parseIntFn, "Number.parseInt")).toContain("radix?");
+  });
+
   // issue #58：dual-facet 全局（Number/Array）既可调用/构造，又带静态槽。
   // 此前 objAbs 遮蔽宿主全局后 $call/$new 折 unknown。
   it("Number/Array are dual-facet: callable + static slots", () => {
