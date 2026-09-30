@@ -192,6 +192,27 @@ export function cacheKey(p: string): string {
   return normPath(resolvePath(fp));
 }
 
+/**
+ * Re-key a `buildModuleGraph` imports/dependents map through cacheKey. The
+ * graph's edge targets come from `resolveModuleFile` (fs-native form, e.g.
+ * Windows `c:\a.js`) while its `from` nodes come from `knownFiles` (cacheKey
+ * form, `c:/a.js`) — so `computeDirtySet` lookups cross forms and drop edges on
+ * Windows. Normalizing keys and values to cacheKey makes lookups hit (FIX-J1).
+ */
+export function cacheKeyGraph(m: Map<string, Set<string>>): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  for (const [k, vs] of m) {
+    const key = cacheKey(k);
+    let set = out.get(key);
+    if (!set) {
+      set = new Set<string>();
+      out.set(key, set);
+    }
+    for (const v of vs) set.add(cacheKey(v));
+  }
+  return out;
+}
+
 /** 每次 validate 后刷新：parent 的全部 @nudo:import 边 + autoBind 隐式侧车边
  *  （自身侧车 + 每个依赖文件的侧车——跨文件被调按定义文件路径绑定，
  *   依赖侧车变更同样须重检 parent；与 loadModuleDepsFingerprint 同口径） */
@@ -312,7 +333,9 @@ export async function handleNudoDepFileChanged(
   if (isNudoTargetPath(p)) {
     try {
       const { dependents } = buildModuleGraph([...knownFiles], moduleGraphCache);
-      for (const d of computeDirtySet(dependents, p)) {
+      // 边目标是 resolveModuleFile 的 fs 原生形态，与 knownFiles 的 cacheKey 形态
+      // 跨形态查找会漏边（Windows）——统一过 cacheKey 再算脏集（FIX-J1）
+      for (const d of computeDirtySet(cacheKeyGraph(dependents), cacheKey(p))) {
         parentSet.add(cacheKey(d));
       }
     } catch {
@@ -770,6 +793,7 @@ export async function validateText(
 
   if (!propagate || !deps.getOpenDocumentByPath) return;
 
+  const selfKey = cacheKey(filePath);
   let dependents: Map<string, Set<string>>;
   try {
     // 传入会话级 moduleGraphCache：未变文件仅 stat 比对即复用边集，跳过重读重解析
@@ -777,8 +801,10 @@ export async function validateText(
   } catch {
     return;
   }
-  for (const dirtyPath of computeDirtySet(dependents, filePath)) {
-    if (dirtyPath === filePath) continue;
+  // 边目标（resolveModuleFile fs 原生形态）与 knownFiles（cacheKey 形态）跨形态
+  // 查找会漏边（Windows）——统一过 cacheKey 再算脏集，并用同一 selfKey 跳过自身。
+  for (const dirtyPath of computeDirtySet(cacheKeyGraph(dependents), selfKey)) {
+    if (dirtyPath === selfKey) continue;
     const doc = deps.getOpenDocumentByPath(dirtyPath);
     if (!doc) continue;
     // 依赖内容变了但父文件源码未变：整文件 AnalysisResult / evaluator / fn-cache 键不含 dep 指纹

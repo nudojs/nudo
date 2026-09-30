@@ -103,7 +103,8 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
   const documents = new TextDocuments(TextDocument);
 
   const activeLoadModule = makeBufferAwareLoadModule((filePath: string) => {
-    const doc = documents.all().find((d) => uriToFilePath(d.uri) === filePath);
+    // cacheKey 比较：open doc 的 uri 形态与 buffer 解析出的 fs 路径形态统一（FIX-J1）
+    const doc = documents.all().find((d) => cacheKey(d.uri) === cacheKey(filePath));
     return doc?.getText();
   });
 
@@ -367,7 +368,8 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
 
   const agentToolDeps: AgentToolDeps = {
     getOpenText: (filePath) => {
-      const doc = documents.all().find((d) => uriToFilePath(d.uri) === filePath);
+      // cacheKey 比较：与 getOpenDocumentByPath 同口径，跨 uri/路径形态命中（FIX-J1）
+      const doc = documents.all().find((d) => cacheKey(d.uri) === cacheKey(filePath));
       return doc ? { text: doc.getText() } : undefined;
     },
     // E5：与 validate/hover 同一 buffer-aware 侧车装载，未保存 *.nudo.js 对 agent 可见

@@ -44,9 +44,11 @@ export function uriForFileOrUri(
   deps: CommandDeps,
 ): string {
   if (params.uri) return params.uri;
-  const filePath = normalizeFilePath(params.file ?? "");
-  const doc = deps.listDocuments().find((d) => uriToFilePath(d.uri) === filePath);
-  return doc ? doc.uri : `file://${filePath}`;
+  const raw = params.file ?? "";
+  // 比较走 cacheKey（自身统一 uri/盘符形态）且不经 normalizeFilePath：resolve 是
+  // 平台相关的，POSIX 会把 c:\ 当相对路径打散（FIX-J1）。fallback 才需要真实路径。
+  const doc = deps.listDocuments().find((d) => cacheKey(d.uri) === cacheKey(raw));
+  return doc ? doc.uri : `file://${normalizeFilePath(raw)}`;
 }
 
 export function makeHandleSelectCase(deps: CommandDeps) {
