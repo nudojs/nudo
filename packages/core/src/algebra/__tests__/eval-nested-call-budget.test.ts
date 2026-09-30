@@ -10,6 +10,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import {
   runTranspiled,
   callTranspiledExportFull,
+  callTranspiledExportApply,
   numLit,
   litValue,
   formatAbs,
@@ -28,14 +29,14 @@ afterEach(() => {
   setAbsTruncationCollector(null);
 });
 
-/** 模拟 abs-modules-graph 导出桥：JS 导出包成 Abs fn，apply 回 callTranspiledExportFull */
+/** 模拟 abs-modules-graph 导出桥：JS 导出包成 Abs fn，apply 走 callTranspiledExportApply（throws 面保留） */
 function bridgeExport(
   run: Record<string, unknown>,
   name: string,
   fingerprint: string,
 ): Abs {
   return absFunction(["n"], {
-    apply: (args: Abs[]) => callTranspiledExportFull(run, name, args).result,
+    apply: callTranspiledExportApply(run, name),
     kind: "eval-export",
     fingerprint,
   });
@@ -99,7 +100,7 @@ describe("BUG-013 nested call budget session", () => {
     // 从 0/1 重新数 → 原生栈溢出被吞成 unknown；新代码深度跨桥累计 → 截断。
     let runA: Record<string, unknown> | undefined;
     const fBridge = absFunction(["n"], {
-      apply: (args: Abs[]) => callTranspiledExportFull(runA!, "f", args).result,
+      apply: callTranspiledExportApply(() => runA!, "f"),
       kind: "eval-export",
       fingerprint: "eval:a#f",
     });
@@ -118,8 +119,7 @@ describe("BUG-013 nested call budget session", () => {
           "./b.js": {
             named: {
               g: absFunction(["n"], {
-                apply: (args: Abs[]) =>
-                  callTranspiledExportFull(runB, "g", args).result,
+                apply: callTranspiledExportApply(runB, "g"),
                 kind: "eval-export",
                 fingerprint: "eval:b#g",
               }),

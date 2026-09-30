@@ -10,12 +10,20 @@
  */
 
 import type { Abs } from "../abs.ts";
-import { unknown } from "../abs.ts";
-import { getFnImpl, absFunction, pureFnNameOf } from "../abs-fn.ts";
+import { never as neverAbs, unknown } from "../abs.ts";
+import {
+  getFnImpl,
+  absFunction,
+  pureFnNameOf,
+  isAbsApplyResult,
+  type AbsApplyResult,
+} from "../abs-fn.ts";
 import { compiledBodyOf } from "./body-fn.ts";
 import { joinAbs } from "../objects.ts";
 import { instantiateReturn, isRelFn, setApplyCallbackHost } from "../hof.ts";
 import type { AstEnv } from "../ast-env.ts";
+import { NudoThrow } from "./nudo-throw.ts";
+import { pushThrowExit } from "./runtime/state.ts";
 import {
   callBudgetKey,
   enterCall,
@@ -24,11 +32,28 @@ import {
   stableCallId,
 } from "../call-budget.ts";
 
-/** @nudo:pure 调用结果缓存（fn 对象身份 → args key → result） */
-const pureMemo = new WeakMap<object, Map<string, Abs>>();
+/** @nudo:pure 调用结果缓存（fn 对象身份 → args key → {abs, throws}） */
+const pureMemo = new WeakMap<object, Map<string, AbsApplyResult>>();
 
 function pureMemoKey(args: Abs[]): string {
   return callBudgetKey("pure", "", args);
+}
+
+/**
+ * apply 返回的 throws 面 → 调用方控制流通道（H1 单点路由）。
+ * always-throw（abs=never）→ NudoThrow，由调用边界收成 throws；
+ * may-throw → pushThrowExit 记入调用方 throwExits（try/catch 可吸收）。
+ */
+function routeApplyThrows(r: Abs, throws: Abs | undefined): Abs {
+  if (throws && throws.shape.k !== "never") {
+    if (r.shape.k === "never") throw new NudoThrow(throws);
+    pushThrowExit(throws);
+  }
+  return r;
+}
+
+function normalizeApplyReturn(raw: Abs | AbsApplyResult): AbsApplyResult {
+  return isAbsApplyResult(raw) ? raw : { abs: raw, throws: neverAbs };
 }
 
 export function $call(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
@@ -38,13 +63,14 @@ export function $call(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
     if (results.every((r) => r.shape.k === "unknown")) return unknown;
     return results.reduce((a, b) => joinAbs(a, b));
   }
-  // @nudo:pure：同实参直接命中缓存（无副作用契约）
+  // @nudo:pure：同实参直接命中缓存（无副作用契约）。缓存 {abs, throws} 双面——
+  // 只缓存 abs 会在命中时丢掉 throws 通道（may-throw 假「不抛」）。
   const pureName = pureFnNameOf(fn);
   const fnObj = fn && typeof fn === "object" ? (fn as object) : undefined;
   const pk = pureName && fnObj ? pureMemoKey(args) : undefined;
   if (fnObj && pk !== undefined) {
     const hit = pureMemo.get(fnObj)?.get(pk);
-    if (hit !== undefined) return hit;
+    if (hit !== undefined) return routeApplyThrows(hit.abs, hit.throws);
   }
   const impl = getFnImpl(fn);
   // 关系面（relation/isRelFn）：无 body 无 apply → 实例化返回位
@@ -60,16 +86,17 @@ export function $call(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
     if (!enterCall(key, label)) return truncatedAbs();
     try {
       try {
-        const r = impl.apply(args, thisVal);
+        const full = normalizeApplyReturn(impl.apply(args, thisVal));
         if (fnObj && pk !== undefined) {
           let m = pureMemo.get(fnObj);
           if (!m) {
             m = new Map();
             pureMemo.set(fnObj, m);
           }
-          m.set(pk, r);
+          m.set(pk, full);
         }
-        return r;
+        // H1：throws 面经返回值通道统一路由（不再由各桥自行 re-throw / pushThrowExit）
+        return routeApplyThrows(full.abs, full.throws);
       } catch (e) {
         if (e && typeof e === "object" && (e as { name?: string }).name === "NudoReturn") {
           return (e as { absValue: Abs }).absValue;
@@ -99,7 +126,9 @@ export function $call(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
           m = new Map();
           pureMemo.set(fnObj, m);
         }
-        m.set(pk, r);
+        // body 路径 throws 走 NudoThrow / pushThrowExit（非返回值通道）；
+        // 缓存仅记 abs 面（throws=never）。always-throw 在异常前不缓存。
+        m.set(pk, { abs: r, throws: neverAbs });
       }
       return r;
     } finally {

@@ -21,9 +21,7 @@ import {
   getFnImpl,
   tryRunTranspiled,
   bindingsOf,
-  callTranspiledExportFull,
-  NudoThrow,
-  pushThrowExit,
+  callTranspiledExportApply,
   CONSTRAINT_EXPR_RE,
 } from "@nudojs/core";
 import { defaultLoadModule, type LoadModule } from "./load-module.ts";
@@ -307,15 +305,9 @@ function loadFromMockBinding(
     const fn = val as { length?: number };
     const params = Array.from({ length: fn.length ?? 0 }, (_, i) => `arg${i}`);
     absVal = absFunction(params, {
-      apply: (args: Abs[]): Abs => {
-        const full = callTranspiledExportFull(run!, name, args);
-        // throws 面不得在 mock 桥丢弃（BUG-006）：与导出桥同径
-        if (full.throws.shape.k !== "never") {
-          if (full.result.shape.k === "never") throw new NudoThrow(full.throws);
-          pushThrowExit(full.throws);
-        }
-        return full.result;
-      },
+      // H1：throws 面经 apply 返回值通道保留（callTranspiledExportApply），
+      // $call 统一路由——mock 桥与导出桥同一通道（BUG-006 根治）。
+      apply: callTranspiledExportApply(run!, name),
       kind: "eval-export",
       fingerprint: `from-mock=${fromPath}#${name}`,
     });

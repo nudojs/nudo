@@ -8,7 +8,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
-import { formatAbs, litValue } from "@nudojs/core";
+import { formatAbs, litValue, unknown as absUnknown } from "@nudojs/core";
 import { mockDirectivesToAbsSeeds, mockSeedsToAbsMocks } from "../mock-abs.ts";
 import { parse, extractDirectives } from "@nudojs/parser";
 import { tryEvalCallFull } from "../eval-run.ts";
@@ -395,5 +395,57 @@ function f() {
     expect(seeds.seedVars.c).toBeDefined();
     expect(seeds.seedVars.d).toBeDefined();
     expect(seeds.seedVars.d!.shape.k).toBe("prim");
+  });
+});
+
+describe("from-mock bridge preserves throws channel (FIX-D7 / BUG-006)", () => {
+  it("mock fn that always throws surfaces throws non-never in caller", () => {
+    const dir = tmpProject({
+      "mocks/boom.js": `export function boomStub() { throw new TypeError("mock-boom"); }\n`,
+    });
+    const entry = join(dir, "app.js");
+    const source = `/**
+ * @nudo:mock boomStub from "./mocks/boom.js"
+ * @nudo:case "go" ()
+ */
+function go() {
+  return boomStub();
+}
+`;
+    const seeds = seedsOf(source, entry);
+    expect(seeds.fromErrors).toBeUndefined();
+    expect(seeds.seedVars.boomStub).toBeDefined();
+    const run = tryEvalCallFull(source, entry, "go", [], {
+      mocks: mockSeedsToAbsMocks(seeds),
+      envNames: [],
+    });
+    expect(run).toBeDefined();
+    // always-throw：result=never，throws 必须非 never（mock 桥不得丢 throws 面）
+    expect(run!.result.shape.k).toBe("never");
+    expect(run!.throws.shape.k).not.toBe("never");
+  });
+
+  it("mock fn that may throws surfaces throws non-never in caller", () => {
+    const dir = tmpProject({
+      "mocks/maybe.js": `export function maybeStub(x) { if (x) throw new TypeError("mock-maybe"); return 1; }\n`,
+    });
+    const entry = join(dir, "app.js");
+    const source = `/**
+ * @nudo:mock maybeStub from "./mocks/maybe.js"
+ * @nudo:case "go" (any())
+ */
+function go(x) {
+  return maybeStub(x);
+}
+`;
+    const seeds = seedsOf(source, entry);
+    expect(seeds.fromErrors).toBeUndefined();
+    const run = tryEvalCallFull(source, entry, "go", [absUnknown], {
+      mocks: mockSeedsToAbsMocks(seeds),
+      envNames: [],
+    });
+    expect(run).toBeDefined();
+    // may-throw：throws 面必须非 never（mock 桥不得丢 throws）
+    expect(run!.throws.shape.k).not.toBe("never");
   });
 });

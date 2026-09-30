@@ -13,6 +13,33 @@ import type { AstEnv } from "./hof-types.ts";
 /** Abs 原生 env/builtin 实现（evaluator 优先） */
 export type AbsSigImpl = (args: Abs[], thisVal?: Abs) => Abs | undefined;
 
+/**
+ * apply 契约返回的 throws 通道（H1 / DESIGN-003）。
+ * `throws` 必填：不抛传 `never`。$call 统一路由——
+ * always-throw（abs=never）→ NudoThrow 由调用边界收成 throws；
+ * may-throw → pushThrowExit 记入调用方 throwExits（try/catch 可吸收）。
+ * 包装 `callTranspiledExportFull` 必须走 `callTranspiledExportApply`，
+ * 不得手拆 `.result`（会静默丢 throws 面）。
+ */
+export type AbsApplyResult = {
+  abs: Abs;
+  throws: Abs;
+};
+
+/** apply 可返回裸 Abs（无 throws）或带 throws 通道的 AbsApplyResult */
+export type AbsApplyReturn = Abs | AbsApplyResult;
+
+/** AbsApplyResult 判别：顶层无 shape、有 abs+throws */
+export function isAbsApplyResult(v: AbsApplyReturn): v is AbsApplyResult {
+  return (
+    !!v &&
+    typeof v === "object" &&
+    "abs" in (v as object) &&
+    "throws" in (v as object) &&
+    !("shape" in (v as object))
+  );
+}
+
 export type AbsFnImpl = {
   params: string[];
   /** 可选：无 body 时走 relation（纯关系 fn） */
@@ -21,8 +48,12 @@ export type AbsFnImpl = {
   /** 声明时捕获的环境（闭包） */
   env?: AstEnv;
   kind?: string;
-  /** 调用时直接派发（mock withArgs 等），优先于 body */
-  apply?: (args: Abs[], thisVal?: Abs) => Abs;
+  /**
+   * 调用时直接派发（mock withArgs 等），优先于 body。
+   * 返回裸 Abs = 不抛；返回 AbsApplyResult 时 throws 面经 $call 统一路由，
+   * 不得在 apply 内自行 re-throw / pushThrowExit（会与 $call 路由叠算）。
+   */
+  apply?: (args: Abs[], thisVal?: Abs) => AbsApplyReturn;
   /**
    * 对象方法（ObjectMethod / 方法型 FunctionExpression）：$invoke 时把
    * receiver 作为 apply 的**首参**注入。shape.params 仍是用户可见形参

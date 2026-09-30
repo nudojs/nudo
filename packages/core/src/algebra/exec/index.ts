@@ -51,7 +51,7 @@ export {
 export {
   type EvalFallback, type EvalFallbackStats, RUNTIME_IMPORT_RE, type RunTranspiledOptions,
   type TranspiledCallResult, bindingsOf, callTranspiledExport,
-  callTranspiledExportFull, evalExprAbs, getEvalFallbackStats, noteEvalFallback,
+  callTranspiledExportApply, callTranspiledExportFull, evalExprAbs, getEvalFallbackStats, noteEvalFallback,
   resetEvalFallbackStats, runTranspiled,
   runTranspiledOptionsMemoKey, setEvalFallbackCollector, tryRunTranspiled
 } from "./run.ts";

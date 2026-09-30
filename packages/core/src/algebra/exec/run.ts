@@ -18,6 +18,7 @@ import { withExecPhi, $copy } from "./runtime.ts";
 import type { Abs } from "../abs.ts";
 import type { Phi } from "../pred.ts";
 import { never, unknown } from "../abs.ts";
+import type { AbsApplyResult } from "../abs-fn.ts";
 import { joinAbs } from "../objects.ts";
 import { type AbsModuleExports, namespaceAbsOf } from "../abs-modules.ts";
 import { formatAbs } from "../format.ts";
@@ -756,4 +757,23 @@ export function callTranspiledExport(
   args: Abs[],
 ): Abs {
   return callTranspiledExportFull(exports, name, args).result;
+}
+
+/**
+ * 包装 runTranspiled 导出为 Abs apply 钩子——throws 面经返回值通道强制保留
+ * （H1 / DESIGN-003）。这是包装 `callTranspiledExportFull` 的**唯一入口**：
+ * 返回 AbsApplyResult（`{abs, throws}`），$call 统一路由 throws。
+ * 手拆 `.result` 会静默丢 throws 面（BUG-006 根因）。
+ *
+ * `exports` 可传惰性 getter（互递归模块桥：导出表在桥创建后才赋值）。
+ */
+export function callTranspiledExportApply(
+  exports: Record<string, unknown> | (() => Record<string, unknown>),
+  name: string,
+): (args: Abs[], thisVal?: Abs) => AbsApplyResult {
+  const resolve = typeof exports === "function" ? exports : () => exports;
+  return (args: Abs[]) => {
+    const full = callTranspiledExportFull(resolve(), name, args);
+    return { abs: full.result, throws: full.throws };
+  };
 }

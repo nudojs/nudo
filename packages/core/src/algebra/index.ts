@@ -27,7 +27,8 @@ export {
 } from "./abs.ts";
 
 export {
-  type AbsFnImpl, type AbsSigImpl, absFunction, attachFnImpl, getFnImpl,
+  type AbsApplyResult, type AbsApplyReturn, type AbsFnImpl, type AbsSigImpl,
+  absFunction, attachFnImpl, getFnImpl, isAbsApplyResult,
   markPureFn, pureFnNameOf, relationFingerprint, relationFn, shapeOnlyFn
 } from "./abs-fn.ts";
 
@@ -199,7 +200,7 @@ export {
   NudoLoopSignal, NudoReturn, NudoThrow, NudoUnsupportedError,
   RUNTIME_IMPORT_RE, type RunTranspiledOptions, type TranspileOptions,
   type TranspiledCallResult, asAbsVal, bindingsOf, callAtFunctionBoundary,
-  callTranspiledExport, callTranspiledExportFull, clearBClasses,
+  callTranspiledExport, callTranspiledExportApply, callTranspiledExportFull, clearBClasses,
   clearStaleTermPred, currentExecPhi, evalExprAbs, fillTuple,
   foldRequireSpecArg, foldStaticStringExpr, getEvalCallCollector, getEvalClass,
   isArrMutator, isDefinitelyFalse, isDefinitelyTrue, isNudoBreak,
