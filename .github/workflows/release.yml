@@ -113,7 +113,9 @@ jobs:
           env.VSCODE_MARKETPLACE_TOKEN != ''
         # Marketplace PATs expire; do not block Open VSX / GitHub Release.
         continue-on-error: true
-        run: npx @vscode/vsce publish --packagePath dist/nudo-vscode.vsix -p ${{ secrets.VSCODE_MARKETPLACE_TOKEN }}
+        # Secret is already exposed via job-level env: — quote it as a shell
+        # word. Never expand ${{ secrets.* }} into run: (shell injection face).
+        run: npx @vscode/vsce publish --packagePath dist/nudo-vscode.vsix -p "$VSCODE_MARKETPLACE_TOKEN"
 
       # keep continue-on-error above (marketplace flake must not block npm / GH Release),
       # but never fail silently — shout in the step summary + job annotation.
@@ -140,7 +142,8 @@ jobs:
           steps.changesets.outputs.published-packages != '[]' &&
           env.OVSX_MARKETPLACE_TOKEN != ''
         continue-on-error: true
-        run: npx ovsx publish dist/nudo-vscode.vsix -p ${{ secrets.OVSX_MARKETPLACE_TOKEN }}
+        # Same contract as vsce: job-level env: + quoted "$VAR", no ${{ }} in run:.
+        run: npx ovsx publish dist/nudo-vscode.vsix -p "$OVSX_MARKETPLACE_TOKEN"
 
       - name: Surface Open VSX failure
         if: steps.ovsx-publish.outcome == 'failure'
@@ -179,7 +182,14 @@ jobs:
               return 0;
             };
             const versions = pkgs.map((p) => p.version);
-            process.stdout.write("v" + versions.slice().sort(cmp).pop());
+            const tag = "v" + versions.slice().sort(cmp).pop();
+            // Whitelist BEFORE GITHUB_OUTPUT: plain vX.Y.Z only. A version with a
+            // newline / extra "=" would otherwise inject additional output lines.
+            if (!/^v[0-9]+\.[0-9]+\.[0-9]+$/.test(tag)) {
+              console.error("Resolved release tag failed whitelist: " + JSON.stringify(tag));
+              process.exit(1);
+            }
+            process.stdout.write(tag);
           ')
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
         env:
@@ -204,16 +214,24 @@ jobs:
           steps.changesets.outputs.has-changesets == 'false' &&
           steps.changesets.outputs.published-packages != '' &&
           steps.changesets.outputs.published-packages != '[]'
+        # Pass values via env: and quote "$VAR" — never splice ${{ steps.* }} into
+        # run: (published-packages / tag are data, and a single quote or newline
+        # would break out of the script text).
+        env:
+          RELEASE_TAG: ${{ steps.release-tag.outputs.tag }}
+          PUBLISHED_PACKAGES: ${{ steps.changesets.outputs.published-packages }}
+          SERVER_URL: ${{ github.server_url }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           {
-            echo "## Released ${{ steps.release-tag.outputs.tag }}"
+            echo "## Released ${RELEASE_TAG}"
             echo ""
             echo "Published packages:"
             echo '```json'
-            echo '${{ steps.changesets.outputs.published-packages }}'
+            printf '%s\n' "${PUBLISHED_PACKAGES}"
             echo '```'
             echo ""
-            echo "GitHub Release: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.release-tag.outputs.tag }}"
+            echo "GitHub Release: ${SERVER_URL}/${REPOSITORY}/releases/tag/${RELEASE_TAG}"
           } >> "$GITHUB_STEP_SUMMARY"
 
   # Beta train — same workflow file so npm Trusted Publishing authorizes us.
