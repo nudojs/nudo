@@ -78,6 +78,19 @@ export function sidecarSpecsOf(source: string): string[] {
   );
 }
 
+/** 指纹遍历对 load I/O 错误 fail-safe：读失败当 miss（过近似，绝不陈旧命中）。 */
+function loadOrMiss(
+  loadModule: (spec: string, fromFile: string) => string | undefined,
+  spec: string,
+  from: string,
+): string | undefined {
+  try {
+    return loadModule(spec, from);
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Fingerprint every loadModule-reachable dep (not only `*.nudo.js`), including
  * one hop of transitive specs from each dep source — plus the autoBind 侧车
@@ -119,7 +132,7 @@ export function loadModuleDepsFingerprint(
     const sidecarPath = sidecarPathOf(entryFile);
     if (seen.has(sidecarPath)) return;
     const sidecarSpec = `./${sidecarPath.slice(sidecarPath.lastIndexOf("/") + 1)}`;
-    const sidecarSrc = loadModule(sidecarSpec, entryFile);
+    const sidecarSrc = loadOrMiss(loadModule, sidecarSpec, entryFile);
     if (sidecarSrc === undefined) return; // 无侧车文件：零回归
     if (n >= MAX_LOAD_DEP_NODES) {
       truncated = true;
@@ -143,7 +156,7 @@ export function loadModuleDepsFingerprint(
       if (seen.has(path)) continue;
       seen.add(path);
       n++;
-      const src = loadModule(cur.spec, cur.from);
+      const src = loadOrMiss(loadModule, cur.spec, cur.from);
       parts.push(`sidecar:${path}=${src === undefined ? "miss" : hashSource(src)}`);
       paths.push(path);
       contents.push({ path, content: src ?? null });
@@ -165,7 +178,7 @@ export function loadModuleDepsFingerprint(
     if (seen.has(path)) continue;
     seen.add(path);
     n++;
-    const src = loadModule(cur.spec, cur.from);
+    const src = loadOrMiss(loadModule, cur.spec, cur.from);
     parts.push(`${path}=${src === undefined ? "miss" : hashSource(src)}`);
     paths.push(path);
     contents.push({ path, content: src ?? null });

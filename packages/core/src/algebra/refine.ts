@@ -646,7 +646,12 @@ function sidecarDepClosure(
     if (!isSidecarSpec(spec)) continue;
     const canonical = resolveDepPath(fromFile, spec);
     if (out.has(canonical)) continue;
-    const depSrc = loadModule(spec, fromFile);
+    let depSrc: string | undefined;
+    try {
+      depSrc = loadModule(spec, fromFile);
+    } catch {
+      depSrc = undefined; // 读失败当 miss：闭包指纹过近似安全
+    }
     out.set(canonical, depSrc);
     if (depSrc === undefined) continue;
     const r = sidecarDepClosure(depSrc, canonical, loadModule, out);
@@ -738,7 +743,17 @@ function collectConstraints(
       });
       continue;
     }
-    const src = opts.loadModule(imp.spec, opts.fromFile);
+    let src: string | undefined;
+    try {
+      src = opts.loadModule(imp.spec, opts.fromFile);
+    } catch (e) {
+      collectDiag({
+        code: "nudo:interface-load",
+        message: `sidecar '${imp.spec}' failed to load from '${opts.fromFile}': ${e instanceof Error ? e.message : String(e)}`,
+        file: opts.fromFile,
+      });
+      continue;
+    }
     if (src === undefined) {
       collectDiag({
         code: "nudo:interface-load",

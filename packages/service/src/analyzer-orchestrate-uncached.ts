@@ -503,6 +503,23 @@ export function analyzeFileUncachedInner(
   }
   const envKeyFn = envNames.join(",");
   const mockKeyFn = mockSeedFingerprint(seeds.seedVars, seeds.seedFns);
+  // dep 内容进 fn 键（default 与 custom loader 同口径），避免入口文本未变时旧诊断命中。
+  // (source, filePath, loader) 循环不变：全图 BFS 一次，逐函数复用（否则 F 个函数 = F 次读盘）。
+  // truncated / fingerprint 失败：与整文件 noCache 同口径 fail-closed
+  let fnDepSeg: string | null = "-";
+  let fnDepFailClosed = false;
+  try {
+    const dfp = loadModuleDepsFingerprint(source, loadModule ?? defaultLoadModule, filePath);
+    if (dfp.truncated) {
+      fnDepFailClosed = true;
+      fnDepSeg = null;
+    } else {
+      fnDepSeg = hashSource(dfp.fp);
+    }
+  } catch {
+    fnDepFailClosed = true;
+    fnDepSeg = null;
+  }
 
   for (const fn of functions) {
     const isPure = fn.directives.some((d) => d.kind === "pure");
@@ -552,22 +569,6 @@ export function analyzeFileUncachedInner(
     // analysis 配置维度进 fn 键：evalMissingSlot / budget 等变更必须 miss
     // （整文件键已含，fn 键不加会陈旧命中 C0.5 诊断；maxForks 截断同理）
     const analysisFnKey = `m=${analysisCfg.mode}|e=${analysisCfg.evalMissingSlot}|b=${analysisCfg.callSiteBudget}|f=${analysisCfg.maxForks}`;
-    // dep 内容进 fn 键（default 与 custom loader 同口径），避免入口文本未变时旧诊断命中
-    // truncated / fingerprint 失败：与整文件 noCache 同口径 fail-closed
-    let fnDepSeg: string | null = "-";
-    let fnDepFailClosed = false;
-    try {
-      const dfp = loadModuleDepsFingerprint(source, loadModule ?? defaultLoadModule, filePath);
-      if (dfp.truncated) {
-        fnDepFailClosed = true;
-        fnDepSeg = null;
-      } else {
-        fnDepSeg = hashSource(dfp.fp);
-      }
-    } catch {
-      fnDepFailClosed = true;
-      fnDepSeg = null;
-    }
     const fnCacheKey =
       !fnDepFailClosed && fp && caseDirectives.length > 0
         ? [

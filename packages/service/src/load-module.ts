@@ -32,12 +32,54 @@ export function resolveModuleFile(spec: string, fromFile: string): string | unde
   return undefined;
 }
 
-/** 默认 loadModule：支持 .js/.mjs/.ts 与 index 入口 */
+/**
+ * 文件已解析但读失败（EACCES / EMFILE / EISDIR-race …）。
+ * 与「无此文件」（loadModule 返回 undefined）必须区分：侧车 auto-bind 在
+ * 读失败时静默失效会让约束回落 any，且没有任何 nudo:interface-load。
+ */
+export class ModuleReadError extends Error {
+  readonly code: string;
+  readonly path: string;
+  constructor(path: string, cause: unknown) {
+    const code = (cause as { code?: string } | undefined)?.code ?? "EREAD";
+    super(`cannot read module '${path}': ${cause instanceof Error ? cause.message : String(cause)}`);
+    this.name = "ModuleReadError";
+    this.code = code;
+    this.path = path;
+  }
+}
+
+/**
+ * 默认 loadModule：支持 .js/.mjs/.ts 与 index 入口。
+ * 契约：无候选文件 → undefined；文件存在但读失败 → 抛 ModuleReadError
+ * （调用方可据此区分「无侧车」与「侧车不可读」）。
+ */
 export function defaultLoadModule(spec: string, fromFile: string): string | undefined {
   if (!spec.startsWith(".") && !spec.startsWith("/")) return undefined;
+  let cand: string | undefined;
   try {
-    const cand = resolveModuleFile(spec, fromFile);
-    return cand ? readFileSync(cand, "utf-8") : undefined;
+    cand = resolveModuleFile(spec, fromFile);
+  } catch {
+    return undefined;
+  }
+  if (!cand) return undefined;
+  try {
+    return readFileSync(cand, "utf-8");
+  } catch (e) {
+    // ENOENT：resolve 与 read 之间的竞态删文件，按「无此文件」处理
+    if ((e as { code?: string } | undefined)?.code === "ENOENT") return undefined;
+    throw new ModuleReadError(cand, e);
+  }
+}
+
+/** loadModule 容错包装：读失败当 miss，避免 I/O 错误炸穿指纹/图遍历。 */
+export function safeLoadModule(
+  loadModule: (spec: string, fromFile: string) => string | undefined,
+  spec: string,
+  fromFile: string,
+): string | undefined {
+  try {
+    return loadModule(spec, fromFile);
   } catch {
     return undefined;
   }
