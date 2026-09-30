@@ -98,26 +98,37 @@ function hintFromUse(
     if (prop && NUMBER_METHODS.has(prop)) {
       return { type: "number()", via: `.${prop}()` };
     }
-    if (prop === "length" || prop === "size") {
-      return { type: "string()", via: ".length" };
+    if (prop === "length") {
+      // string 与 array 都有 .length —— 不武断收成 string()
+      return { type: "union(string(), array(any()))", via: ".length" };
+    }
+    if (prop === "size") {
+      // Set/Map/TypedArray —— 无进一步证据不收成 string()
+      return { type: "any()", via: ".size (Set/Map)" };
     }
     if (prop && ARRAY_METHODS.has(prop)) {
-      return { type: "array(any())", via: `.${prop}()` };
-    }
-    if (prop === "push" || prop === "pop" || prop === "shift" || prop === "unshift") {
       return { type: "array(any())", via: `.${prop}()` };
     }
     return undefined;
   }
 
-  // String(param.field) / Number(...) / Boolean(...)
+  // String(param.field) / Number(...) / Boolean(...) / Array.isArray(...)
   if (t === "CallExpression" || t === "OptionalCallExpression") {
     const callee = parent.callee as Node | undefined;
     const cname = callee?.type === "Identifier" ? (callee as { name: string }).name : undefined;
     if (cname === "String") return { type: "string()", via: "String()" };
     if (cname === "Number") return { type: "number()", via: "Number()" };
     if (cname === "Boolean") return { type: "boolean()", via: "Boolean()" };
-    if (cname === "Array.isArray") return { type: "array(any())", via: "Array.isArray" };
+    // Array.isArray 是 MemberExpression callee，不是 Identifier
+    if (
+      callee?.type === "MemberExpression" &&
+      (callee as { object?: Node }).object?.type === "Identifier" &&
+      ((callee as { object: { name: string } }).object.name === "Array") &&
+      (callee as { property?: Node }).property?.type === "Identifier" &&
+      ((callee as { property: { name: string } }).property.name === "isArray")
+    ) {
+      return { type: "array(any())", via: "Array.isArray" };
+    }
     return undefined;
   }
 
@@ -371,17 +382,40 @@ function mergeHints(hints: UseHint[]): { type: string; via: string } {
   }
   // any 派生让位给具体类型
   const concrete = types.filter((t) => t !== "any()");
+  if (concrete.length === 0) return { type: "any()", via: hints[0]!.via };
   if (concrete.length === 1) {
     const h = hints.find((x) => x.type === concrete[0])!;
     return { type: concrete[0]!, via: h.via };
   }
-  if (concrete.length > 1) {
+  // 非 union 的具体证据强于 union 模糊证据（Array.isArray 的 array 压过 .length 的 string|array）
+  const specific = concrete.filter((t) => !t.startsWith("union("));
+  if (specific.length === 1) {
+    const h = hints.find((x) => x.type === specific[0])!;
+    return { type: specific[0]!, via: h.via };
+  }
+  if (specific.length > 1) {
     return {
-      type: `union(${concrete.join(", ")})`,
-      via: hints.map((h) => h.via).join(" + "),
+      type: `union(${specific.join(", ")})`,
+      via: hints
+        .filter((h) => specific.includes(h.type))
+        .map((h) => h.via)
+        .join(" + "),
     };
   }
-  return { type: "any()", via: hints[0]!.via };
+  // 全是 union：展平去重，避免嵌套 union
+  const flat = new Set<string>();
+  for (const t of concrete) {
+    if (t.startsWith("union(") && t.endsWith(")")) {
+      for (const part of t.slice(6, -1).split(",")) flat.add(part.trim());
+    } else {
+      flat.add(t);
+    }
+  }
+  const parts = [...flat];
+  return {
+    type: parts.length === 1 ? parts[0]! : `union(${parts.join(", ")})`,
+    via: hints.map((h) => h.via).join(" + "),
+  };
 }
 
 /** 某函数某形参的 body-read 字段类型（供 draft / quickfix） */

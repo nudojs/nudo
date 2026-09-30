@@ -380,7 +380,7 @@ pin 'pnpm run contract --draft docs/examples/interface-draft/greet.js' \
   'double  [draft callsite/' \
   'greet  [draft body/' \
   'export const double = ' \
-  'body-read { name }' \
+  'body-read shape({ name: string() })' \
   'suggested (body-read, not a contract)' \
   'export const greet = fn({});'
 

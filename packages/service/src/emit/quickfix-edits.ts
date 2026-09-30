@@ -95,10 +95,28 @@ export function addThrowsAnnotation(
   for (let i = Math.max(0, start - 15); i < Math.min(lines.length, start + 3); i++) {
     if (lines[i]!.includes(`@nudo:throws ${kindSafe}`)) return { edits: [] };
   }
-  // 已有 JSDoc：在 `*/` 行之前插入 tag 行
+  // 已有 JSDoc：单行 `/** … */` 先展开；多行在 `*/` 行之前插入 tag
   for (let i = start; i < Math.min(lines.length, start + 30); i++) {
     const t = lines[i]!;
-    if (t.includes("*/")) {
+    const closeIdx = t.indexOf("*/");
+    const openIdx = t.indexOf("/**");
+    if (openIdx !== -1 && closeIdx > openIdx) {
+      // 单行 JSDoc：展开成块，避免 tag 被插到 `/**` 之前
+      const inner = t.slice(openIdx + 3, closeIdx).trim();
+      const innerLine = inner ? ` * ${inner}\n` : "";
+      return {
+        edits: [
+          {
+            startLine: i,
+            startCol: 0,
+            endLine: i,
+            endCol: t.length,
+            newText: `/**\n${innerLine}${tag}\n */`,
+          },
+        ],
+      };
+    }
+    if (closeIdx !== -1) {
       return {
         edits: [
           {

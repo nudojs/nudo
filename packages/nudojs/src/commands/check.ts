@@ -455,9 +455,15 @@ async function runCheckFix(opts: {
         issue.suggestion?.match(/@nudo:throws\s+(\w+)/)?.[1] ??
         issue.actual?.match(/throws\s+([A-Za-z]+)/)?.[1];
 
+      // 每个 issue 只落一条修复（fix 优先，其次 adjust）。
+      // silence / review / scaffold 不是修复——默认不进 --fix 落盘，
+      // 避免 entry-may-throw 同时写侧车收窄和 @nudo:throws（语义相反）。
+      type Plan = NonNullable<Awaited<ReturnType<typeof materializeAction>>>;
+      const rank = (k: Plan["titleKind"]): number =>
+        k === "fix" ? 0 : k === "adjust" ? 1 : 2;
+      const plans: Plan[] = [];
       for (const action of acts) {
         if (action.kind === "info") continue;
-        // fix 通道默认只落 fix/silence/adjust；review 需人工看 diff——仍打印
         const plan = materializeAction({
           code: issue.code,
           fn: issue.fn,
@@ -470,37 +476,40 @@ async function runCheckFix(opts: {
           expected: issue.expected,
           suggestion: issue.suggestion,
         });
-        if (!plan) continue;
+        if (plan) plans.push(plan);
+      }
+      plans.sort((a, b) => rank(a.titleKind) - rank(b.titleKind));
+      const plan = plans.find((p) => rank(p.titleKind) <= 1);
+      if (!plan) continue;
 
-        // 源码编辑
-        if (plan.edits.length > 0) {
-          const next = applyTextEdits(source, plan.edits);
-          if (next !== source) {
-            planned++;
-            console.log(`\n--- ${file}`);
-            console.log(`+++ ${file}  (${plan.title})`);
-            console.log(unifiedDiff(source, next, file) || "(no line diff)");
-            if (opts.write) {
-              writeFileSync(file, next, "utf-8");
-              source = next;
-              written++;
-            }
+      // 源码编辑
+      if (plan.edits.length > 0) {
+        const next = applyTextEdits(source, plan.edits);
+        if (next !== source) {
+          planned++;
+          console.log(`\n--- ${file}`);
+          console.log(`+++ ${file}  (${plan.title})`);
+          console.log(unifiedDiff(source, next, file) || "(no line diff)");
+          if (opts.write) {
+            writeFileSync(file, next, "utf-8");
+            source = next;
+            written++;
           }
         }
-        // 侧车编辑
-        if (plan.sidecar) {
-          const cur = sidecarText ?? "";
-          const next = plan.sidecar.newText;
-          if (next !== cur) {
-            planned++;
-            console.log(`\n--- ${plan.sidecar.path}`);
-            console.log(`+++ ${plan.sidecar.path}  (${plan.title})`);
-            console.log(unifiedDiff(cur, next, plan.sidecar.path) || "(new file)");
-            if (opts.write) {
-              writeFileSync(plan.sidecar.path, next, "utf-8");
-              sidecarText = next;
-              written++;
-            }
+      }
+      // 侧车编辑
+      if (plan.sidecar) {
+        const cur = sidecarText ?? "";
+        const next = plan.sidecar.newText;
+        if (next !== cur) {
+          planned++;
+          console.log(`\n--- ${plan.sidecar.path}`);
+          console.log(`+++ ${plan.sidecar.path}  (${plan.title})`);
+          console.log(unifiedDiff(cur, next, plan.sidecar.path) || "(new file)");
+          if (opts.write) {
+            writeFileSync(plan.sidecar.path, next, "utf-8");
+            sidecarText = next;
+            written++;
           }
         }
       }
@@ -512,7 +521,9 @@ async function runCheckFix(opts: {
     `\ncheck --fix: ${planned} edit(s) ${mode}${opts.write ? `, ${written} applied` : " — pass --write to apply"}`,
   );
   if (!opts.write && planned > 0) {
-    console.log("hint: titles mark [fix] vs [silence] — Fix-all should not treat silence as repair");
+    console.log(
+      "hint: only [fix]/[adjust] are auto-applied; [silence]/[review] need a human (or LSP quickfix)",
+    );
   }
 }
 
@@ -551,7 +562,7 @@ export function registerCheckCommand(program: Command): void {
       "AI3: assume `name:type` bindings (e.g. raw:string) and report --target",
     )
     .option("--target <name>", "With --what-if: binding name whose inferred type to print")
-    .option("--fix", "Materialize action-map kinds as edits (default --dry-run: print unified diff)")
+    .option("--fix", "Materialize one fix/adjust edit per issue (default --dry-run: print unified diff)")
     .option("--only <codes...>", "With --fix: only these diagnostic codes (e.g. nudo:entry-may-throw)")
     .option("--write", "With --fix: apply edits to disk (default dry-run)")
     .option("--dry-run", "With --fix: print diffs only (default; kept for explicitness)")

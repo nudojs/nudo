@@ -54,6 +54,28 @@ export function h(node) {
     expect(fields?.find((f) => f.field === "type")?.type).toBe("any()");
   });
 
+  it(".length → union(string, array); .size → any()（不武断 string）", () => {
+    const map = collectParamBodyReadTypes(`
+export function k(o) {
+  if (o.name.length > 0) return o.tags.size;
+  return 0;
+}
+`);
+    const fields = map.get("k")?.get("o");
+    expect(fields?.find((f) => f.field === "name")?.type).toBe("union(string(), array(any()))");
+    expect(fields?.find((f) => f.field === "tags")?.type).toBe("any()");
+  });
+
+  it("Array.isArray(param.field) → array(any())", () => {
+    const map = collectParamBodyReadTypes(`
+export function a(o) {
+  return Array.isArray(o.items) ? o.items.length : 0;
+}
+`);
+    const fields = map.get("a")?.get("o");
+    expect(fields?.find((f) => f.field === "items")?.type).toBe("array(any())");
+  });
+
   it("shapeDslFromFields fills types", () => {
     const dsl = shapeDslFromFields([
       { field: "type", type: "string()", via: "compare string lit" },

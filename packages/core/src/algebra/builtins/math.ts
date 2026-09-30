@@ -55,7 +55,8 @@ function isNonNaN(a: Abs, phi: Phi): boolean {
     if (!p) return false;
     if (p.op === "and") return p.args.some(hasNonNaNFact);
     if (p.op === "assumeFinite") {
-      return a.term ? termEquals(p.t, a.term) : true;
+      // termless Abs 无法对齐具体 assumeFinite —— 不得采信
+      return !!a.term && termEquals(p.t, a.term);
     }
     if (p.op === "ne") {
       // ne(t, NaN) ≡ t 不是 NaN

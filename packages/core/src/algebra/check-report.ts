@@ -187,10 +187,8 @@ export function actionsForIssue(i: {
       return [
         {
           kind: "relax",
-          label:
-            "relax the return contract to the inferred surface (review the diff — not a silent green)",
+          label: `relax the return contract${i.fn ? ` of ${i.fn}` : ""} to the inferred surface (review the diff — not a silent green)`,
           ...(i.expected ? { hint: i.expected } : {}),
-          ...(i.fn ? { hint: i.fn } : {}),
         },
         draft,
         {

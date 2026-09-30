@@ -40,6 +40,18 @@ export function f(n) {
     expect(next).toContain("@nudo:throws TypeError");
   });
 
+  it("addThrowsAnnotation expands single-line JSDoc instead of prepending", () => {
+    const src = `/** helper */\nexport function f(n) { return n.x; }\n`;
+    const r = addThrowsAnnotation(src, "f", "TypeError");
+    expect(r).toBeDefined();
+    const next = applyTextEdits(src, r!.edits);
+    expect(next).toContain("@nudo:throws TypeError");
+    expect(next).toContain("helper");
+    // 不得把 tag 插到 `/**` 之前
+    expect(next.trimStart().startsWith("/**")).toBe(true);
+    expect(next).toContain("*/");
+  });
+
   it("wrapReturnNullable wraps the return clause", () => {
     const sc = `export const parseMajor = fn({ range: string() }, number());\n`;
     const next = wrapReturnNullable(sc, "parseMajor");
