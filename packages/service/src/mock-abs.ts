@@ -113,17 +113,17 @@ function constantMockFn(result: Abs): Abs {
 function absArgMatches(declared: Abs, actual: Abs | undefined): boolean {
   if (!actual) return false;
   const avR = litValue(actual);
-  const av = avR.ok ? avR.value : undefined;
   const dvR = litValue(declared);
-  const dv = dvR.ok ? dvR.value : undefined;
-  if (dv !== undefined) {
-    return av !== undefined && Object.is(av, dv);
+  // 「是否字面量」必须看 ok：lit(undefined) 的 value 就是 undefined，
+  // 用 value !== undefined 当门闩会把 withArgs(undefined) 永远判不中。
+  if (dvR.ok) {
+    return avR.ok && Object.is(avR.value, dvR.value);
   }
   // declared 是 prim（如 number()）：接受同源字面量或同 prim
   if (declared.shape.k === "prim") {
     if (actual.shape.k === "prim") return actual.shape.type === declared.shape.type;
-    if (av !== undefined) {
-      const t = typeof av;
+    if (avR.ok) {
+      const t = typeof avR.value;
       return (
         (declared.shape.type === "number" && t === "number") ||
         (declared.shape.type === "string" && t === "string") ||

@@ -592,12 +592,12 @@ export function strictEqAbs(a: Abs, b: Abs): boolean | undefined {
     return undefined;
   }
   const vaR = litValue(a);
-  const va = vaR.ok ? vaR.value : undefined;
   const vbR = litValue(b);
-  const vb = vbR.ok ? vbR.value : undefined;
-  if (va !== undefined && vb !== undefined) return va === vb;
-  const aNullish = va === null || (a.term?.op === "lit" && a.term.value === undefined);
-  const evalNullish = vb === null || (b.term?.op === "lit" && b.term.value === undefined);
+  // 「是否字面量」必须看 ok（abs.ts LitValueResult 契约）：
+  // lit(undefined) 的 value 就是 undefined，不得用 value !== undefined 当门闩。
+  if (vaR.ok && vbR.ok) return vaR.value === vbR.value;
+  const aNullish = vaR.ok && (vaR.value === null || vaR.value === undefined);
+  const evalNullish = vbR.ok && (vbR.value === null || vbR.value === undefined);
   if (evalNullish && definitelyNotNullishShape(a.shape)) return false;
   if (aNullish && definitelyNotNullishShape(b.shape)) return false;
   // 同 var 恒等：number/any/unknown 可能是 NaN，x === x 对 NaN 为 false

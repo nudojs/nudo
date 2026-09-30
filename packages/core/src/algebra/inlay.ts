@@ -110,12 +110,13 @@ function formatReturnDisplay(g: PolyFn): string {
       return { key: `app:${t}`, text: t };
     }
     const lvR = litValue(m);
-    const lv = lvR.ok ? lvR.value : undefined;
-    if (typeof lv === "number" && !Number.isFinite(lv)) {
-      return { key: `lit:${String(lv)}`, text: String(lv) };
-    }
-    if (lv !== undefined) {
-      return { key: `lit:${String(lv)}`, text: JSON.stringify(lv) };
+    // 「是否字面量」看 ok：lit(undefined) 也是字面量，不得用 value !== undefined 门闩。
+    if (lvR.ok) {
+      const lv = lvR.value;
+      if (typeof lv === "number" && !Number.isFinite(lv)) {
+        return { key: `lit:${String(lv)}`, text: String(lv) };
+      }
+      return { key: `lit:${String(lv)}`, text: JSON.stringify(lv) ?? "undefined" };
     }
     return { key: `shape:${formatShape(m)}`, text: formatShape(m) };
   };

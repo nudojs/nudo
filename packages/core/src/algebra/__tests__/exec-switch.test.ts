@@ -122,4 +122,30 @@ export function go(n) {
     );
     expect(litValue(callTranspiledExportFull(exports, "go", [$lit(1)]).result)).toEqual({ ok: true, value: "dflt" });
   });
+
+  // R2B-002：litValue 哨兵——lit(undefined) 必须进精确匹配路径，
+  // 且 case undefined 用 === 命中；旧写法 dv !== undefined 会落入 fork 近似。
+  it("case undefined matches undefined discriminant exactly (not fork-join)", () => {
+    const src = `export function go(n) {
+      switch (n) { case 1: return 1; case undefined: return 2; default: return 3; }
+    }`;
+    const exports = runTranspiled(src, { mode: "analyze" });
+    expect(litValue(callTranspiledExportFull(exports, "go", [$lit(undefined)]).result)).toEqual({
+      ok: true,
+      value: 2,
+    });
+  });
+
+  it("case undefined does not match other discriminants", () => {
+    const src = `export function go(n) {
+      switch (n) { case undefined: return 2; default: return 3; }
+    }`;
+    const exports = runTranspiled(src, { mode: "analyze" });
+    expect(litValue(callTranspiledExportFull(exports, "go", [$lit(1)]).result)).toEqual({ ok: true, value: 3 });
+    expect(litValue(callTranspiledExportFull(exports, "go", [$lit(null)]).result)).toEqual({ ok: true, value: 3 });
+    expect(litValue(callTranspiledExportFull(exports, "go", [$lit(undefined)]).result)).toEqual({
+      ok: true,
+      value: 2,
+    });
+  });
 });

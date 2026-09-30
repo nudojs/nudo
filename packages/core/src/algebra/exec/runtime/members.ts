@@ -273,9 +273,9 @@ export function $instanceof(left: Abs, rightName: string, rightVal?: Abs): Abs {
         // 与 $invoke bindThis 同口径：receiver 注入首参（impl 首参是 __this）
         const r = $call(slot.value, [rv, left]);
         const bvR = litValue(r);
-        const bv = bvR.ok ? bvR.value : undefined;
-        // 原生把返回值 ToBoolean（return 0 → false、'yes' → true）
-        if (bv !== undefined) return boolLit(Boolean(bv));
+        // 原生把返回值 ToBoolean（return 0 → false、'yes' → true、undefined → false）。
+        // 「是否字面量」看 ok：lit(undefined) 的 ToBoolean 是 false，不是「无字面量」。
+        if (bvR.ok) return boolLit(Boolean(bvR.value));
         return bool();
       }
     }
