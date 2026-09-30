@@ -40,7 +40,7 @@ describe("new Promise executor resolve", () => {
     const inner = promiseInner(r.result);
     const lv = litValue(inner as never);
     const k = innerShape(inner);
-    expect(lv === 42 || (k === "prim" && (inner as { shape?: { type?: string } }).shape?.type === "number")).toBe(true);
+    expect((lv.ok && lv.value === 42) || (k === "prim" && (inner as { shape?: { type?: string } }).shape?.type === "number")).toBe(true);
   });
 
   it("resolve('a') → promise with string inner", () => {
@@ -62,7 +62,7 @@ describe("new Promise executor resolve", () => {
     const inner = promiseInner(r.result);
     // 无 fork：first-wins → "a"；若实现退化为 join 也可，但不得只剩 "b"
     const lv = litValue(inner as never);
-    if (lv !== undefined) {
+    if (lv.ok) {
       expect(lv).toEqual({ ok: true, value: "a" });
     } else {
       // join 拓宽：shape 至少是 string
@@ -91,7 +91,8 @@ describe("new Promise executor resolve", () => {
   it("arrow expression body resolve", () => {
     const r = call(`export function f() { return new Promise((r) => r(7)); }`);
     const inner = promiseInner(r.result);
-    expect((((litValue(inner as never)).ok ? (litValue(inner as never)).value : undefined).ok ? ((litValue(inner as never)).ok ? (litValue(inner as never)).value : undefined).value : undefined) === 7 || innerShape(inner) === "prim").toBe(true);
+    const lv = litValue(inner as never);
+    expect((lv.ok && lv.value === 7) || innerShape(inner) === "prim").toBe(true);
   });
 });
 
@@ -147,13 +148,15 @@ describe("promise .then mapping", () => {
   it("Promise.resolve(1).then(() => 5) → promise number/5", () => {
     const r = call(`export function f() { return Promise.resolve(1).then(() => 5); }`);
     const inner = promiseInner(r.result);
-    expect(((litValue(inner as never)).ok ? (litValue(inner as never)).value : undefined) === 5 || innerShape(inner) === "prim").toBe(true);
+    const lv = litValue(inner as never);
+    expect((lv.ok && lv.value === 5) || innerShape(inner) === "prim").toBe(true);
   });
 
   it("then maps inner through callback param", () => {
     const r = call(`export function f() { return Promise.resolve(2).then((v) => v * 10); }`);
     const inner = promiseInner(r.result);
-    expect(((litValue(inner as never)).ok ? (litValue(inner as never)).value : undefined) === 20 || innerShape(inner) === "prim").toBe(true);
+    const lv = litValue(inner as never);
+    expect((lv.ok && lv.value === 20) || innerShape(inner) === "prim").toBe(true);
   });
 
   it("then without callback passes inner through", () => {
@@ -167,7 +170,7 @@ describe("promise .then mapping", () => {
     const inner = promiseInner(r.result);
     // any 参数可调用也可不——结果不得假精确折 1
     const lv = litValue(inner as never);
-    expect(lv === 1 ? innerShape(inner) !== undefined : true).toBe(true);
+    expect(lv.ok && lv.value === 1 ? innerShape(inner) !== undefined : true).toBe(true);
   });
 });
 

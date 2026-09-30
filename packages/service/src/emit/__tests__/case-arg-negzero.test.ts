@@ -25,14 +25,16 @@ describe("serializeCaseArg keeps -0", () => {
   it("round-trips -0 through parseCaseArgExpr", () => {
     const s = serializeCaseArg(numLit(-0))!;
     const back = parseCaseArgExpr(s);
-    expect(isNegZero((litValue(back)).ok ? (litValue(back)).value : undefined)).toBe(true);
+    const lv = litValue(back);
+    expect(isNegZero(lv.ok ? lv.value : undefined)).toBe(true);
   });
 
   it("round-trips +0 through parseCaseArgExpr", () => {
     const s = serializeCaseArg(numLit(0))!;
     const back = parseCaseArgExpr(s);
     expect(litValue(back)).toEqual({ ok: true, value: 0 });
-    expect(isNegZero((litValue(back)).ok ? (litValue(back)).value : undefined)).toBe(false);
+    const lv = litValue(back);
+    expect(isNegZero(lv.ok ? lv.value : undefined)).toBe(false);
   });
 
   it("buildCaseDirective round-trips -0 arg", () => {
@@ -43,7 +45,8 @@ describe("serializeCaseArg keeps -0", () => {
     const m = line!.match(/\((.*)\)$/);
     expect(m).toBeTruthy();
     const args = m![1]!.split(",").map((s) => parseCaseArgExpr(s.trim()));
-    expect(isNegZero((litValue(args[0]!)).ok ? (litValue(args[0]!)).value : undefined)).toBe(true);
+    const lv0 = litValue(args[0]!);
+    expect(isNegZero(lv0.ok ? lv0.value : undefined)).toBe(true);
     expect(litValue(args[1]!)).toEqual({ ok: true, value: 0 });
   });
 

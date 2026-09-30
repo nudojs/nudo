@@ -78,9 +78,12 @@ describe("parseInt / parseFloat first arg ToString then parse", () => {
     expect(Number.isNaN((u).ok ? (u).value : undefined)).toBe(true);
     expect(val(`export function f() { return parseInt(5n); }`)).toEqual({ ok: true, value: 5 });
 
-    expect(Number.isNaN((val(`export function f() { return parseFloat(true); }`)).ok ? (val(`export function f() { return parseFloat(true); }`)).value : undefined)).toBe(true);
-    expect(Number.isNaN((val(`export function f() { return parseFloat(null); }`)).ok ? (val(`export function f() { return parseFloat(null); }`)).value : undefined)).toBe(true);
-    expect(Number.isNaN((val(`export function f() { return parseFloat(undefined); }`)).ok ? (val(`export function f() { return parseFloat(undefined); }`)).value : undefined)).toBe(true);
+    const pt = val(`export function f() { return parseFloat(true); }`);
+    expect(Number.isNaN(pt.ok ? pt.value : undefined)).toBe(true);
+    const pn = val(`export function f() { return parseFloat(null); }`);
+    expect(Number.isNaN(pn.ok ? pn.value : undefined)).toBe(true);
+    const pu = val(`export function f() { return parseFloat(undefined); }`);
+    expect(Number.isNaN(pu.ok ? pu.value : undefined)).toBe(true);
     expect(val(`export function f() { return parseFloat(5n); }`)).toEqual({ ok: true, value: 5 });
   });
 

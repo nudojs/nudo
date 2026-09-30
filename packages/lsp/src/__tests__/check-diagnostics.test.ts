@@ -7,6 +7,11 @@ import {
 } from "../validation.ts";
 import { DiagnosticSeverity } from "vscode-languageserver/node";
 
+/** LSP 3.18 Diagnostic.message 为 string | MarkupContent；本产品始终写纯字符串。 */
+function msgText(m: string | { value: string }): string {
+  return typeof m === "string" ? m : m.value;
+}
+
 const STD = `
 export const positive = number().gt(0);
 `;
@@ -114,8 +119,8 @@ function f(x) { return x; }
     // A 的结果只含 A 自己的指令诊断，不得混入 B 的
     const dirDiags = diags.filter((d) => d.code === "nudo:directive-syntax");
     expect(dirDiags.length).toBeGreaterThan(0);
-    expect(dirDiags.some((d) => d.message.includes("'b'"))).toBe(false);
-    expect(dirDiags.some((d) => d.message.includes("'a'"))).toBe(true);
+    expect(dirDiags.some((d) => msgText(d.message).includes("'b'"))).toBe(false);
+    expect(dirDiags.some((d) => msgText(d.message).includes("'a'"))).toBe(true);
     // B 的诊断仍在 buffer（不得被 checkToLspDiagnostics 全量 take 偷走）
     const leftover = takeDirectiveDiags();
     expect(leftover.some((d) => d.message.includes("'b'"))).toBe(true);
@@ -140,6 +145,6 @@ function f(x) { return x; }
     const diags = checkToLspDiagnostics("/t/evil.js", evilSource);
     // 失败必须留错误面（Analysis/Check error），不得 [] 把门禁通道整段丢掉
     expect(diags.length).toBeGreaterThan(0);
-    expect(diags.some((d) => /error/i.test(d.message))).toBe(true);
+    expect(diags.some((d) => /error/i.test(msgText(d.message)))).toBe(true);
   });
 });

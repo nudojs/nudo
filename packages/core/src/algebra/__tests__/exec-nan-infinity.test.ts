@@ -35,8 +35,10 @@ describe("evaluator NaN / Infinity global literals", () => {
   });
 
   it("arithmetic with NaN folds to NaN", () => {
-    expect(Number.isNaN((str(`export function run() { return 1 + NaN; }`)).ok ? (str(`export function run() { return 1 + NaN; }`)).value : undefined)).toBe(true);
-    expect(Number.isNaN((str(`export function run() { return 1 * NaN; }`)).ok ? (str(`export function run() { return 1 * NaN; }`)).value : undefined)).toBe(true);
+    const a = str(`export function run() { return 1 + NaN; }`);
+    expect(Number.isNaN(a.ok ? a.value : undefined)).toBe(true);
+    const b = str(`export function run() { return 1 * NaN; }`);
+    expect(Number.isNaN(b.ok ? b.value : undefined)).toBe(true);
   });
 
   it("Number.isNaN(NaN) is true", () => {
@@ -45,7 +47,8 @@ describe("evaluator NaN / Infinity global literals", () => {
   });
 
   it("Math.min/max with NaN and Infinity", () => {
-    expect(Number.isNaN((str(`export function run() { return Math.min(NaN, 1); }`)).ok ? (str(`export function run() { return Math.min(NaN, 1); }`)).value : undefined)).toBe(true);
+    const mn = str(`export function run() { return Math.min(NaN, 1); }`);
+    expect(Number.isNaN(mn.ok ? mn.value : undefined)).toBe(true);
     expect(str(`export function run() { return Math.max(1, Infinity); }`)).toEqual({ ok: true, value: Infinity });
     expect(str(`export function run() { return Math.min(1, Infinity); }`)).toEqual({ ok: true, value: 1 });
   });
@@ -62,8 +65,10 @@ describe("evaluator NaN / Infinity global literals", () => {
   });
 
   it("NaN inside array/object literal folds", () => {
-    expect(Number.isNaN((str(`export function run() { return [NaN][0]; }`)).ok ? (str(`export function run() { return [NaN][0]; }`)).value : undefined)).toBe(true);
-    expect(Number.isNaN((str(`export function run() { return { n: NaN }.n; }`)).ok ? (str(`export function run() { return { n: NaN }.n; }`)).value : undefined)).toBe(true);
+    const arr = str(`export function run() { return [NaN][0]; }`);
+    expect(Number.isNaN(arr.ok ? arr.value : undefined)).toBe(true);
+    const obj = str(`export function run() { return { n: NaN }.n; }`);
+    expect(Number.isNaN(obj.ok ? obj.value : undefined)).toBe(true);
   });
 
   it("comparisons with NaN / Infinity", () => {

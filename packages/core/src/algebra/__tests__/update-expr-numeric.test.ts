@@ -48,7 +48,7 @@ describe("UpdateExpression uses ToNumeric + numeric ± 1", () => {
   it("non-numeric string: x++ → NaN (ToNumber), not concat", () => {
     const v = val(`export function f() { let x = "a"; x++; return x; }`);
     expect(v.ok && typeof v.value).toBe("number");
-    expect(Number.isNaN((v as number).ok ? (v as number).value : undefined)).toBe(true);
+    expect(Number.isNaN(v.ok ? v.value : undefined)).toBe(true);
   });
 
   it("boolean/null: ToNumeric folds like native", () => {

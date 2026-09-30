@@ -72,11 +72,11 @@ describe("HarvestJson round-trip", () => {
 
     const nullBack = harvestSigToAbs(absToHarvestSig(nullAbs));
     expect(nullBack.term?.op).toBe("lit");
-    expect(nullBack.term?.value).toBe(null);
+    expect(litValue(nullBack)).toEqual({ ok: true, value: null });
 
     const undefBack = harvestSigToAbs(absToHarvestSig(undefAbs));
     expect(undefBack.term?.op).toBe("lit");
-    expect(undefBack.term?.value).toBe(undefined);
+    expect(litValue(undefBack)).toEqual({ ok: true, value: undefined });
 
     const unknownBack = harvestSigToAbs(absToHarvestSig(unknownAbs));
     expect(unknownBack.term?.op).toBeUndefined();
@@ -101,12 +101,12 @@ describe("HarvestJson round-trip", () => {
     expect(back).not.toBeNull();
     const g = back!.globals;
     expect(g.GET!.term?.op).toBe("lit");
-    expect(g.GET!.term?.value).toBe("GET");
-    expect(g.notFound!.term?.value).toBe(404);
-    expect(g.flag!.term?.value).toBe(false);
-    expect(g.nothing!.term?.value).toBe(null);
+    expect(litValue(g.GET!)).toEqual({ ok: true, value: "GET" });
+    expect(litValue(g.notFound!)).toEqual({ ok: true, value: 404 });
+    expect(litValue(g.flag!)).toEqual({ ok: true, value: false });
+    expect(litValue(g.nothing!)).toEqual({ ok: true, value: null });
     expect(g.missing!.term?.op).toBe("lit");
-    expect(g.missing!.term?.value).toBe(undefined);
+    expect(litValue(g.missing!)).toEqual({ ok: true, value: undefined });
   });
 
   it("serialize + materialize keeps module table", () => {

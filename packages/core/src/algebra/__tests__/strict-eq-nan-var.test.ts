@@ -29,7 +29,7 @@ describe("x === x must not fold true when x may be NaN", () => {
     const r = callTranspiledExportFull(exports, "f", [absNum]);
     // 不健全时会折 true #exact；健全结果不得是 exact true
     const v = litValue(r.result);
-    if (v === true) {
+    if (v.ok && v.value === true) {
       expect(r.result.conf).not.toBe("exact");
     } else {
       expect(v.ok ? v.value : undefined).toBeUndefined();
@@ -63,7 +63,7 @@ describe("x === x must not fold true when x may be NaN", () => {
     const absNum = abs({ k: "prim", type: "number" }, undefined, undefined, "partial");
     const r = callTranspiledExportFull(exports, "f", [absNum]);
     const v = litValue(r.result);
-    if (v === false) {
+    if (v.ok && v.value === false) {
       expect(r.result.conf).not.toBe("exact");
     } else {
       expect(v.ok ? v.value : undefined).toBeUndefined();

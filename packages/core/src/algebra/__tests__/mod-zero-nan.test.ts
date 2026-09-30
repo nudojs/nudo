@@ -25,26 +25,30 @@ function call(src: string, fnName = "f") {
 describe("mod by zero folds to exact NaN", () => {
   it("5 % 0 is exact NaN", () => {
     const r = mod(numLit(5), numLit(0));
-    expect(Number.isNaN((litValue(r)).ok ? (litValue(r)).value : undefined)).toBe(true);
+    const lv = litValue(r);
+    expect(Number.isNaN(lv.ok ? lv.value : undefined)).toBe(true);
     expect(r.conf).toBe("exact");
   });
 
   it("0 % 0 / -3 % 0 / NaN % 0 / Infinity % 0 are exact NaN", () => {
     for (const a of [0, -3, NaN, Infinity, -Infinity]) {
       const r = mod(numLit(a), numLit(0));
-      expect(Number.isNaN((litValue(r)).ok ? (litValue(r)).value : undefined), String(a)).toBe(true);
+      const lv = litValue(r);
+      expect(Number.isNaN(lv.ok ? lv.value : undefined), String(a)).toBe(true);
     }
   });
 
   it("evaluator 5 % 0 folds to NaN", () => {
     const r = call(`export function f() { return 5 % 0; }`).result;
-    expect(Number.isNaN((litValue(r)).ok ? (litValue(r)).value : undefined)).toBe(true);
+    const lv = litValue(r);
+    expect(Number.isNaN(lv.ok ? lv.value : undefined)).toBe(true);
     expect(r.conf).toBe("exact");
   });
 
   it("x % 0 for numeric var is exact NaN (any number % 0)", () => {
     const r = mod(numVar("x"), numLit(0));
-    expect(Number.isNaN((litValue(r)).ok ? (litValue(r)).value : undefined)).toBe(true);
+    const lv = litValue(r);
+    expect(Number.isNaN(lv.ok ? lv.value : undefined)).toBe(true);
     expect(r.conf).toBe("exact");
   });
 });
@@ -78,6 +82,7 @@ describe("x % k bounds must not exclude NaN", () => {
 
   it("evaluator Infinity % 5 is NaN (native parity)", () => {
     const r = call(`export function f() { return Infinity % 5; }`).result;
-    expect(Number.isNaN((litValue(r)).ok ? (litValue(r)).value : undefined)).toBe(true);
+    const lv = litValue(r);
+    expect(Number.isNaN(lv.ok ? lv.value : undefined)).toBe(true);
   });
 });
