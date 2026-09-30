@@ -303,7 +303,7 @@ Context: [Mocking syntax](../concepts/mocking.md#syntax) · [@nudo:mock](../conc
 
 Malformed `@nudo:case` / `@nudo:mock` / `@nudo:as` / `@nudo:skip` directive syntax (bad name, trailing comment, unrecognized type expression). **Warning** — the directive is ignored; fix the form.
 
-Context: [Directive syntax](../concepts/directives.md) · [Skip grammar](../concepts/directives.md#nudoskip--skip-evaluation)
+Context: [Directive syntax](../concepts/directives.md) · [Skip grammar](../concepts/directives.md#nudo--skip-evaluation)
 
 ### `nudo:contract-syntax` {#nudo-contract-syntax}
 

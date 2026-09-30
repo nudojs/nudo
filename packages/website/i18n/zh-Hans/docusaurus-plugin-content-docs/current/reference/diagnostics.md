@@ -303,7 +303,7 @@ Context: [Mock 语法](../concepts/mocking.md#语法) · [@nudo:mock](../concept
 
 `@nudo:case` / `@nudo:mock` / `@nudo:as` / `@nudo:skip` 指令文法非法（名称非法、尾注释残留、类型表达式不可识别）。**Warning** —— 该指令被忽略；修正写法。
 
-Context: [指令文法](../concepts/directives.md) · [Skip 文法](../concepts/directives.md#nudoskip--退出推断)
+Context: [指令文法](../concepts/directives.md) · [Skip 文法](../concepts/directives.md#nudo--跳过求值)
 
 ### `nudo:contract-syntax` {#nudo-contract-syntax}
 
