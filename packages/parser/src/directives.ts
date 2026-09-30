@@ -127,12 +127,57 @@ export type FunctionWithDirectives = {
   directives: Directive[];
 };
 
+// ---------------------------------------------------------------------------
+// 指令文法诊断（side-channel，镜像 core 的 RefineDiag 机制）
+//
+// 非法/边界形态的 case、mock、as、skip 输入不再静默丢弃：发 nudo:directive-syntax
+// 显式诊断。产品原则与侧车加载一致（refine.ts:75-78）：「执行失败/导出形式不识别
+// 不再静默吞错」——文法层同等对待。
+// ---------------------------------------------------------------------------
+
+export type DirectiveDiag = { code: string; message: string };
+
+let directiveDiagCollector: ((d: DirectiveDiag) => void) | null = null;
+const directiveDiags: DirectiveDiag[] = [];
+const MAX_DIRECTIVE_DIAGS = 1024;
+const directiveDiagSeen = new Set<string>();
+
+export function setDirectiveDiagCollector(fn: ((d: DirectiveDiag) => void) | null): void {
+  directiveDiagCollector = fn;
+}
+
+export function takeDirectiveDiags(): DirectiveDiag[] {
+  const out = [...directiveDiags];
+  directiveDiags.length = 0;
+  directiveDiagSeen.clear();
+  return out;
+}
+
+function emitDirectiveDiag(d: DirectiveDiag): void {
+  const key = `${d.code}\0${d.message}`;
+  if (directiveDiagSeen.has(key)) return;
+  directiveDiagSeen.add(key);
+  if (directiveDiags.length >= MAX_DIRECTIVE_DIAGS) {
+    directiveDiags.shift();
+    // seen 集合与 buffer 不同步会漏报不同消息；简单清空重来
+    directiveDiagSeen.clear();
+  }
+  directiveDiags.push(d);
+  directiveDiagCollector?.(d);
+}
+
 // 指令标签只在「注释行首」匹配（可选 `*` / `//` 已由 comment.value 剥掉）：
 // 不得命中 case 参数字符串或文档散文里的 `@nudo:skip` / `@nudo:case` / `@nudo:mock` 字样。
 // `\b` 防 `@nudo:skipped` / `@nudo:cases` 误命中。
 const CASE_NAME_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:case\s+"([^"]+)"\s*\(/g;
-const MOCK_INLINE_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:mock\s+(\w+)\s*=\s*(.+)/g;
-const MOCK_FROM_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:mock\s+(\w+)\s+from\s+"([^"]+)"/g;
+/** 宽松捕获 @nudo:case 标签后的整段文本，用于检测非法名形态 */
+const CASE_TAG_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:case\s+([^\n]+)/g;
+/** JS 标识符（Unicode 感知）：mock 名文法 */
+const JS_IDENT_RE = /^[\p{L}$_][\p{L}\p{N}$_]*$/u;
+const MOCK_INLINE_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:mock\s+([^\s=]+)\s*=\s*(.+)/g;
+const MOCK_FROM_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:mock\s+([^\s]+)\s+from\s+"([^"]+)"/g;
+/** 宽松捕获 @nudo:mock 标签，用于检测非法名形态 */
+const MOCK_TAG_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:mock\s+([^\n]+)/g;
 const PURE_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:pure\b/g;
 const SKIP_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:skip\b(?:[ \t]+(\S[^\n]*))?/g;
 const SAMPLE_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:sample[ \t]+(\d+)/g;
@@ -515,9 +560,68 @@ function parseArrowFunctionExpr(expr: string): { params: string[]; body: Node; p
   }
 }
 
+/** 显式 unknown 形态：`unknown` / `any` / `any()`——合法的 unknown，不是解析失败 */
+function isExplicitUnknownExpr(expr: string): boolean {
+  const s = expr.trim();
+  return s === "unknown" || s === "any" || s === "any()";
+}
+
 /** 实参/期望/mock 返回值文法 → Abs（约束构建器 / 具体字面量） */
 function parseAbsExpr(expr: string): Abs {
   return parseCaseArgExpr(expr);
+}
+
+/**
+ * 解析表达式并在静默 fallback 到 unknown 时发诊断（I2）。
+ * 显式 `unknown`/`any`/`any()` 不算 fallback；`T.*` 等不可识别形态发 nudo:directive-syntax。
+ */
+function parseAbsExprDiag(expr: string, context: string): Abs {
+  const abs = parseCaseArgExpr(expr);
+  if (abs.shape.k === "unknown" && !abs.term && !isExplicitUnknownExpr(expr)) {
+    emitDirectiveDiag({
+      code: "nudo:directive-syntax",
+      message: `Unrecognized type expression in ${context}: ${expr.trim()} (use constraint builders, literals, or structure syntax)`,
+    });
+  }
+  return abs;
+}
+
+/**
+ * `@nudo:skip` 返回类型显式文法（D1=A1 产品文法变更）：
+ *   `@nudo:skip`              → returns = null（不声明）
+ *   `@nudo:skip => <expr>`    → 显式类型（箭头前缀）
+ *   `@nudo:skip (<expr>)`     → 显式类型（括号包裹，整段包完才算）
+ *   `@nudo:skip <散文>`       → returns = null（散文不得当类型表达式）
+ */
+function parseSkipReturnsExpr(rest: string | undefined): Abs | undefined {
+  if (rest === undefined) return undefined;
+  const s = rest.trim();
+  if (s === "") return undefined;
+
+  // `=> <expr>` 显式类型
+  if (s.startsWith("=>")) {
+    const expr = s.slice(2).trim();
+    if (expr === "") {
+      emitDirectiveDiag({
+        code: "nudo:directive-syntax",
+        message: `@nudo:skip => requires a type expression (e.g. @nudo:skip => number())`,
+      });
+      return undefined;
+    }
+    return parseAbsExprDiag(expr, "@nudo:skip =>");
+  }
+
+  // `(<expr>)` 显式类型：外层括号必须包完整段
+  if (s.startsWith("(")) {
+    const inner = extractBalancedParens(s, 0);
+    if (inner !== null && s.slice(inner.length + 2).trim() === "") {
+      return parseAbsExprDiag(inner, "@nudo:skip (...)");
+    }
+    // 括号不完整或后有残留：不按显式类型处理，落到散文分支
+  }
+
+  // 散文：不解析为类型，returns = null
+  return undefined;
 }
 
 function parseSinonExpr(expr: string): SinonExpression | null {
@@ -777,18 +881,27 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
       caseArgSpans.push([caseMatch.index, afterParen]);
       caseMatches.push({ match: caseMatch, argsStr, afterParen });
     }
+
+    // case 名非法形态（单引号/空/转义/缺实参括号）→ nudo:directive-syntax
+    scanMalformedCaseNames(text, caseArgSpans);
+
     const inCaseArgs = (idx: number): boolean =>
       caseArgSpans.some(([s, e]) => idx >= s && idx < e);
     const commentStartLine = comment.loc?.start.line ?? 0;
+
+    // mock 名非法形态（非标识符）→ nudo:directive-syntax
+    scanMalformedMockNames(text, caseArgSpans);
 
     MOCK_FROM_REGEX.lastIndex = 0;
     let mockFromMatch: RegExpExecArray | null;
     const mockFromRanges: [number, number][] = [];
     while ((mockFromMatch = MOCK_FROM_REGEX.exec(text)) !== null) {
       if (inCaseArgs(mockFromMatch.index)) continue;
+      const name = mockFromMatch[1]!;
+      if (!JS_IDENT_RE.test(name)) continue; // 已由 scanMalformedMockNames 报诊断
       directives.push({
         kind: "mock",
-        name: mockFromMatch[1],
+        name,
         fromPath: mockFromMatch[2],
       });
       mockFromRanges.push([mockFromMatch.index, mockFromMatch.index + mockFromMatch[0].length]);
@@ -801,6 +914,9 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
         ([s, e]) => mockMatch!.index >= s && mockMatch!.index < e,
       );
       if (inFromRange || inCaseArgs(mockMatch.index)) continue;
+
+      const mockName = mockMatch[1]!;
+      if (!JS_IDENT_RE.test(mockName)) continue; // 已由 scanMalformedMockNames 报诊断
 
       const expr = mockMatch[2].trim();
       let arrowFn = parseArrowFunctionExpr(expr);
@@ -819,7 +935,7 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
 
       directives.push({
         kind: "mock",
-        name: mockMatch[1],
+        name: mockName,
         expression: expr,
         arrowFn: arrowFn ?? undefined,
         sinonExpr: sinonExpr ?? undefined,
@@ -834,10 +950,14 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
         .split("\n")
         .map((line) => line.replace(/^\s*\*\s?/, ""))
         .join("\n");
-      const argsAbs = splitTopLevelArgs(cleaned).map(parseCaseArgExpr);
+      const rawArgs = splitTopLevelArgs(cleaned);
+      const argsAbs = rawArgs.map((a) => parseAbsExprDiag(a, `@nudo:case "${name}" argument`));
 
       const expectedExpr = extractCaseExpectedExpr(text, afterParen);
-      const expected = expectedExpr !== undefined ? parseCaseArgExpr(expectedExpr) : undefined;
+      const expected =
+        expectedExpr !== undefined
+          ? parseAbsExprDiag(expectedExpr, `@nudo:case "${name}" => expected`)
+          : undefined;
 
       // match.index 可能落在行首前缀（`\n * `）上；commentLine 按标签实际位置计行
       const tagOffset = match.index + match[0].indexOf("@nudo:case");
@@ -865,10 +985,11 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
     let skipMatch: RegExpExecArray | null;
     while ((skipMatch = SKIP_REGEX.exec(text)) !== null) {
       if (inCaseArgs(skipMatch.index)) continue;
-      const returnsExpr = skipMatch[1]?.trim();
+      // D1=A1：散文不得当类型表达式；类型须 `=>` 或括号显式形式
+      const returns = parseSkipReturnsExpr(skipMatch[1]);
       directives.push({
         kind: "skip",
-        returns: returnsExpr ? parseAbsExpr(returnsExpr) : undefined,
+        returns,
       });
     }
 
@@ -880,6 +1001,72 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
     }
   }
   return directives;
+}
+
+/**
+ * 检测非法 case 名形态（F-3 #1-3）：单引号名、空名、名内转义引号、缺实参括号。
+ * 合法形态 `@nudo:case "name" (…)` 已由 CASE_NAME_REGEX 吸走；这里扫剩下的标签。
+ */
+function scanMalformedCaseNames(text: string, caseArgSpans: [number, number][]): void {
+  const inCaseArgs = (idx: number): boolean =>
+    caseArgSpans.some(([s, e]) => idx >= s && idx < e);
+  CASE_TAG_REGEX.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = CASE_TAG_REGEX.exec(text)) !== null) {
+    if (inCaseArgs(m.index)) continue;
+    const rest = m[1]!.trim();
+    // 合法形态：非空双引号名 + 实参括号
+    if (/^"[^"]+"\s*\(/.test(rest)) continue;
+    // 已被 CASE_NAME_REGEX 吸走的不重复报
+    if (/^"[^"]+"\s*\(/.test(rest)) continue;
+    let reason: string;
+    if (rest.startsWith("'")) {
+      reason = `single-quoted name (use double quotes: @nudo:case "name" (…))`;
+    } else if (rest.startsWith('""')) {
+      reason = `empty name (name must be non-empty)`;
+    } else if (/^"[^"]*\\/.test(rest)) {
+      reason = `escaped quote in name (avoid embedded double quotes)`;
+    } else if (rest.startsWith('"')) {
+      reason = `malformed name or missing argument list (expected @nudo:case "name" (…))`;
+    } else {
+      reason = `missing quoted name (expected @nudo:case "name" (…))`;
+    }
+    emitDirectiveDiag({
+      code: "nudo:directive-syntax",
+      message: `Malformed @nudo:case: ${reason} — got: @nudo:case ${rest.slice(0, 60)}`,
+    });
+  }
+}
+
+/**
+ * 检测非法 mock 名形态（F-3 #4）：非 JS 标识符。
+ * `变量` / `café` 等 Unicode 标识符合法；`foo-bar` / `123abc` 等发诊断。
+ */
+function scanMalformedMockNames(text: string, caseArgSpans: [number, number][]): void {
+  const inCaseArgs = (idx: number): boolean =>
+    caseArgSpans.some(([s, e]) => idx >= s && idx < e);
+  MOCK_TAG_REGEX.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = MOCK_TAG_REGEX.exec(text)) !== null) {
+    if (inCaseArgs(m.index)) continue;
+    const rest = m[1]!.trim();
+    // 提取名部分：到 `=` 或 `from` 之前
+    const nameMatch = rest.match(/^([^\s=]+)(?:\s*=|\s+from\b)/);
+    if (!nameMatch) {
+      emitDirectiveDiag({
+        code: "nudo:directive-syntax",
+        message: `Malformed @nudo:mock: cannot parse name (expected @nudo:mock <ident> = <expr> or @nudo:mock <ident> from "path") — got: ${rest.slice(0, 60)}`,
+      });
+      continue;
+    }
+    const name = nameMatch[1]!;
+    if (!JS_IDENT_RE.test(name)) {
+      emitDirectiveDiag({
+        code: "nudo:directive-syntax",
+        message: `Malformed @nudo:mock name '${name}': not a valid identifier (use letters, digits, _, $; Unicode letters allowed)`,
+      });
+    }
+  }
 }
 
 function getFunctionName(node: Node): string {
@@ -920,6 +1107,8 @@ export function extractDirectives(ast: Node): FunctionWithDirectives[] {
 
 const AS_REGEX = /^\s*@nudo:as\s+(.+)/;
 const REPLACE_REGEX = /^\s*@nudo:replace\s+(.+)/;
+/** `@nudo:as` 尾注释探测：类型表达式后跟 `//` 或 `/*` 残留 */
+const AS_TRAILING_COMMENT_RE = /\s+(?:\/\/|\/\*)/;
 
 export function extractInlineDirectives(node: Node): InlineDirective[] {
   const comments = (node as any).leadingComments as Comment[] | undefined;
@@ -927,12 +1116,25 @@ export function extractInlineDirectives(node: Node): InlineDirective[] {
 
   const results: InlineDirective[] = [];
   for (const comment of comments) {
-    if (comment.type !== "CommentLine") continue;
+    // CommentLine（`//`）与 CommentBlock（`/* */`）都认（F-3 #10）
+    if (comment.type !== "CommentLine" && comment.type !== "CommentBlock") continue;
     const text = comment.value;
 
     const asMatch = text.match(AS_REGEX);
     if (asMatch) {
-      results.push({ kind: "as", typeAbs: parseAbsExpr(asMatch[1].trim()) });
+      const rawExpr = asMatch[1].trim();
+      // 尾注释残留（F-3 #9）：类型表达式后跟 `//` 或 `/*` → 不静默吞成 unknown
+      const trailing = rawExpr.match(AS_TRAILING_COMMENT_RE);
+      if (trailing) {
+        const typePart = rawExpr.slice(0, trailing.index).trim();
+        emitDirectiveDiag({
+          code: "nudo:directive-syntax",
+          message: `Trailing comment in @nudo:as type expression: '${rawExpr}' (remove the comment; the type must be a clean expression)`,
+        });
+        results.push({ kind: "as", typeAbs: typePart ? parseAbsExprDiag(typePart, "@nudo:as") : absUnknown() });
+        continue;
+      }
+      results.push({ kind: "as", typeAbs: parseAbsExprDiag(rawExpr, "@nudo:as") });
       continue;
     }
 
@@ -946,7 +1148,12 @@ export function extractInlineDirectives(node: Node): InlineDirective[] {
         results.push({
           kind: "replace",
           targetSource,
-          typeAbs: parseAbsExpr(typeExprStr),
+          typeAbs: parseAbsExprDiag(typeExprStr, "@nudo:replace"),
+        });
+      } else {
+        emitDirectiveDiag({
+          code: "nudo:directive-syntax",
+          message: `Malformed @nudo:replace: cannot separate target from type (expected @nudo:replace <target> <typeExpr>) — got: ${raw.slice(0, 60)}`,
         });
       }
     }

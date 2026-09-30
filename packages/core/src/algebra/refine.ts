@@ -48,7 +48,9 @@ export function extractNudoImports(source: string): NamedImport[] {
   // named: import { a, b as c } from "..."
   const named = /@nudo:import\s*\{([^}]+)\}\s*from\s*["']([^"']+)["']/g;
   let m: RegExpExecArray | null;
+  const matchedRanges: [number, number][] = [];
   while ((m = named.exec(src))) {
+    matchedRanges.push([m.index, m.index + m[0].length]);
     // 多行 /// / // 续行前缀不是名字的一部分
     const names = m[1]!
       .split("\n")
@@ -63,7 +65,30 @@ export function extractNudoImports(source: string): NamedImport[] {
   // 兼容 namespace（仍支持）
   const ns = /@nudo:import\s+\*\s+as\s+(\w+)\s+from\s*["']([^"']+)["']/g;
   while ((m = ns.exec(src))) {
+    matchedRanges.push([m.index, m.index + m[0].length]);
     out.push({ names: [`*${m[1]}`], spec: m[2]! });
+  }
+  // 未识别的 @nudo:import 形态（default import 等）→ nudo:contract-syntax
+  // 不再静默丢弃（F-3 #11：`@nudo:import d from "./x.nudo.js"` 无 NamedImport）
+  const anyImport = /@nudo:import\s+([^\n]+)/g;
+  while ((m = anyImport.exec(src))) {
+    const alreadyMatched = matchedRanges.some(([s, e]) => m!.index >= s && m!.index < e);
+    if (alreadyMatched) continue;
+    const rest = m[1]!.trim();
+    // default 形态：`ident from "…"` 或 `ident, { … } from "…"`
+    if (/^[\w$]+\s+from\b/.test(rest) || /^[\w$]+\s*,/.test(rest)) {
+      collectDiag({
+        code: "nudo:contract-syntax",
+        message: `Default @nudo:import is not supported (use named { a, b } or namespace * as ns): @nudo:import ${rest.slice(0, 60)}`,
+      });
+      continue;
+    }
+    if (rest.length > 0) {
+      collectDiag({
+        code: "nudo:contract-syntax",
+        message: `Unrecognized @nudo:import form (expected { names } from "path" or * as ns from "path"): @nudo:import ${rest.slice(0, 60)}`,
+      });
+    }
   }
   return out;
 }
@@ -849,7 +874,16 @@ export function extractRefinesFromSource(
     for (const part of parts) {
       // 约束名支持 `ns.foo` 命名空间展开（@nudo:import * as ns）
       const m = part.match(/^(\w+)\s+([\w.]+)$/);
-      if (!m) continue;
+      if (!m) {
+        // 非法契约段（F-3 #6-8：`x > 0` / `x number()` / `x` 单独）→ 不再静默 continue
+        // return 段由 extractRefineReturnFromSource 处理，这里不报
+        if (/^return\b/.test(part)) continue;
+        collectDiag({
+          code: "nudo:contract-syntax",
+          message: `Malformed @nudo:contract segment '${part}' (expected <param> <constraintName> or return <constraintName>; e.g. @nudo:contract x positive)`,
+        });
+        continue;
+      }
       const [, param, cName] = m;
       // return 是后置目标，不进参数契约
       if (param === "return") continue;
@@ -896,7 +930,16 @@ export function extractRefineReturnFromSource(
     const parts = line.split(/&&|,/).map((s) => s.trim()).filter(Boolean);
     for (const part of parts) {
       const m = part.match(/^return\s+([\w.]+)$/);
-      if (!m) continue;
+      if (!m) {
+        // return 段形态非法（如 `return > 0`）→ 诊断
+        if (/^return\b/.test(part) && !/^return\s+[\w.]+$/.test(part)) {
+          collectDiag({
+            code: "nudo:contract-syntax",
+            message: `Malformed @nudo:contract return segment '${part}' (expected return <constraintName>)`,
+          });
+        }
+        continue;
+      }
       const cName = m[1]!;
       const c = constraints.get(cName);
       if (!c) continue;

@@ -55,14 +55,21 @@ describe("nudo test — case as test", () => {
       function bare(a) { return a; }
 
       /**
-       * @nudo:skip number()
+       * @nudo:skip => number()
        */
       function declared(a) { return a; }
+
+      /**
+       * @nudo:skip this function is flaky
+       */
+      function prose(a) { return a; }
     `;
     const result = analyzeFile("/t/skip.js", source);
     const text = formatTestReport(buildTestReport("/t/skip.js", result));
     expect(text).toContain("skipped (no return type declared)");
     expect(text).toContain("skipped (declared): number");
+    // D1=A1：散文不得当类型表达式
+    expect(text).toContain("skipped (no return type declared)");
   });
 
   it("prints synthetic entry@/call@ cases by default (observation)", async () => {

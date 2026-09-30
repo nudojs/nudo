@@ -53,8 +53,11 @@ export {
   type MockModuleDirective,
   type FunctionWithDirectives,
   type SinonExpression,
+  type DirectiveDiag,
   extractDirectives,
   extractFileDirectives,
   extractInlineDirectives,
   parseCaseArgExpr,
+  setDirectiveDiagCollector,
+  takeDirectiveDiags,
 } from "./directives.ts";

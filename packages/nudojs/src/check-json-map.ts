@@ -69,6 +69,18 @@ export function mockFromErrorIssues(
   });
 }
 
+/** D1: 指令文法诊断（nudo:directive-syntax）→ CheckIssue（warning，不挡 exit） */
+export function directiveDiagIssues(
+  diags: Array<{ code: string; message: string }>,
+): CheckIssue[] {
+  return diags.map((d) => ({
+    severity: "warning" as const,
+    code: d.code,
+    message: d.message,
+    suggestion: "Fix the directive syntax (see docs/reference/diagnostics.md)",
+  }));
+}
+
 export type DomainDiagnosticLike = {
   code?: string;
   severity: string;

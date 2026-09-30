@@ -299,6 +299,18 @@ A `@nudo:mock` expression could not be parsed as a known pattern (stub/spy/mock 
 
 Context: [Mocking syntax](../concepts/mocking.md#syntax) · [@nudo:mock](../concepts/directives.md#nudo--mock-external-dependencies)
 
+### `nudo:directive-syntax` {#nudo-directive-syntax}
+
+Malformed `@nudo:case` / `@nudo:mock` / `@nudo:as` / `@nudo:skip` directive syntax (bad name, trailing comment, unrecognized type expression). **Warning** — the directive is ignored; fix the form.
+
+Context: [Directive syntax](../concepts/directives.md) · [Skip grammar](../concepts/directives.md#nudoskip--opt-out)
+
+### `nudo:contract-syntax` {#nudo-contract-syntax}
+
+Malformed `@nudo:contract` segment or `@nudo:import` form (e.g. `x > 0` instead of `x positive`, default import). **Warning** — the segment is ignored; use `<param> <constraintName>` or `return <constraintName>`.
+
+Context: [Contracts](../concepts/directives.md#nudo--constraint-templates) · [Contract gate (L1)](../guides/check.md#l1--explicit-contracts)
+
 ### `nudo:env-harvest-conflict` {#nudo-env-harvest-conflict}
 
 ```text

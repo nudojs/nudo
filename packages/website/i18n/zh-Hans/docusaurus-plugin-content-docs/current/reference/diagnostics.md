@@ -299,6 +299,18 @@ Context: [求值器缺口](../concepts/limits.md#求值器缺口摘要)
 
 Context: [Mock 语法](../concepts/mocking.md#语法) · [@nudo:mock](../concepts/directives.md#nudo--mock-外部依赖)
 
+### `nudo:directive-syntax` {#nudo-directive-syntax}
+
+`@nudo:case` / `@nudo:mock` / `@nudo:as` / `@nudo:skip` 指令文法非法（名称非法、尾注释残留、类型表达式不可识别）。**Warning** —— 该指令被忽略；修正写法。
+
+Context: [指令文法](../concepts/directives.md) · [Skip 文法](../concepts/directives.md#nudoskip--退出推断)
+
+### `nudo:contract-syntax` {#nudo-contract-syntax}
+
+`@nudo:contract` 段或 `@nudo:import` 形态非法（如 `x > 0` 而非 `x positive`、default import）。**Warning** —— 该段被忽略；使用 `<param> <约束名>` 或 `return <约束名>`。
+
+Context: [约束模板](../concepts/directives.md#nudo--约束模板引入) · [契约门禁（L1）](../guides/check.md#l1--显式契约)
+
 ### `nudo:env-harvest-conflict` {#nudo-env-harvest-conflict}
 
 ```text

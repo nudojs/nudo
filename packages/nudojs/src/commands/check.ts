@@ -273,6 +273,18 @@ async function runCheck(
         : {}),
       skips: collectSkipReturns(source),
     });
+    // D1: 指令文法诊断（nudo:directive-syntax）并入 check 报告
+    {
+      const { takeDirectiveDiags } = await import("@nudojs/parser");
+      const dirDiags = takeDirectiveDiags();
+      if (dirDiags.length > 0) {
+        const { directiveDiagIssues } = await import("../check-json-map.ts");
+        algebraReport = mergeCheckIssues(
+          algebraReport,
+          directiveDiagIssues(dirDiags),
+        ) as typeof algebraReport;
+      }
+    }
   }
 
   // @nudo:mock name from "path" 解析失败 → check 明确报错（缺文件/缺绑定/求值失败）

@@ -39,7 +39,7 @@ import {
   hashSource,
   setAbsTruncationCollector,
 } from "@nudojs/core/internal";
-import { parse, extractDirectives, extractFileDirectives } from "@nudojs/parser";
+import { parse, extractDirectives, extractFileDirectives, takeDirectiveDiags } from "@nudojs/parser";
 import {
   collapseAbsLits,
   isLeakedCallRecord,
@@ -156,6 +156,15 @@ export function analyzeFileUncachedInner(
   const ast = parse(source);
   const functions = extractDirectives(ast);
   const diagnostics: Diagnostic[] = [];
+  // F-3 / D1: 指令文法诊断（nudo:directive-syntax）不再静默——并入 analysis diagnostics
+  for (const d of takeDirectiveDiags()) {
+    diagnostics.push({
+      range: { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } },
+      severity: "warning",
+      message: d.message,
+      code: d.code,
+    });
+  }
   const bindings = new Map<string, BindingInfo>();
   const nodeAbsMap = new Map<Node, Abs>();
   const functionResults: FunctionAnalysis[] = [];
