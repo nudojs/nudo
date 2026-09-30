@@ -183,9 +183,15 @@ jobs:
             };
             const versions = pkgs.map((p) => p.version);
             const tag = "v" + versions.slice().sort(cmp).pop();
-            // Whitelist BEFORE GITHUB_OUTPUT: plain vX.Y.Z only. A version with a
-            // newline / extra "=" would otherwise inject additional output lines.
-            if (!/^v[0-9]+\.[0-9]+\.[0-9]+$/.test(tag)) {
+            // Whitelist BEFORE GITHUB_OUTPUT: vMAJOR.MINOR.PATCH with optional
+            // semver prerelease (-pre) and build metadata (+meta). Explicit gate
+            // rejects whitespace / newlines / "=" (GITHUB_OUTPUT line injection
+            // face) and ".." (empty pre/build identifiers); the structural
+            // regex is closed-charset. Prerelease so a stable-train publish of
+            // 1.2.3-beta.1 still resolves a GitHub Release tag instead of
+            // failing closed after npm publish.
+            if (/[\s=]|\.\./.test(tag) ||
+                !/^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(tag)) {
               console.error("Resolved release tag failed whitelist: " + JSON.stringify(tag));
               process.exit(1);
             }
