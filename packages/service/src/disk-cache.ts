@@ -122,8 +122,25 @@ function monorepoLogicalPath(posixPath: string): string | undefined {
 }
 
 /**
+ * pnpm store 内容寻址布局（`~/.pnpm-store/vN/files/xx/hash`、
+ * `~/Library/pnpm/store/vN/files/…`、`~/.local/share/pnpm/store/…`）。
+ * realpath 穿出 `node_modules` 后没有包名段，但文件名本身就是内容哈希——
+ * 取该哈希做逻辑段，跨 store 根/机器稳定（内容寻址，不是路径身份）。
+ */
+function pnpmStoreLogicalPath(posixPath: string): string | undefined {
+  const m =
+    /(?:^|\/)(?:\.pnpm-store|pnpm\/store)\/v\d+\/files\/([0-9a-f]{2})\/([0-9a-f]+)$/i.exec(
+      posixPath,
+    ) ?? /(?:^|\/)(?:\.pnpm-store|pnpm\/store)\/v\d+\/files\/([0-9a-f]+)$/i.exec(posixPath);
+  if (!m) return undefined;
+  const hash = m.length === 3 ? `${m[1]}${m[2]}` : m[1]!;
+  return `pnpm-store:${hash}`;
+}
+
+/**
  * 稳定逻辑根相对化（磁盘缓存路径维）：树内相对 `root`，树外取
- * `node_modules/<pkg>` 段或 monorepo root；绝对路径明文绝不进 key。
+ * `node_modules/<pkg>` 段、monorepo root 或 pnpm store 内容哈希；
+ * 绝对路径明文绝不进 key。
  *
  * 同一逻辑文件在不同 checkout / 机器 / CI runner 上必须得到**同一**键段；
  * 无 `root` 时同样禁止绝对路径明文。
@@ -132,7 +149,8 @@ function monorepoLogicalPath(posixPath: string): string | undefined {
  * 1. 落在 `root` 内 → 相对 `root`（同包布局下已稳定）
  * 2. `node_modules/<pkg>` 逻辑段（含 pnpm 虚拟树归一）
  * 3. monorepo root 相对化（`pnpm-workspace.yaml` / `lerna.json` / `package.json#workspaces`）
- * 4. 仍无稳定根 → `ext:` + 路径 sha（只保证不明文；跨机仍可能 miss，不产生错命中）
+ * 4. pnpm store 内容寻址段（realpath 穿出 node_modules 的典型落点）
+ * 5. 仍无稳定根 → `ext:` + 路径 sha（只保证不明文；跨机仍可能 miss，不产生错命中）
  */
 export function relativizePath(p: string, root?: string): string {
   const norm = toPosix(p);
@@ -140,7 +158,8 @@ export function relativizePath(p: string, root?: string): string {
     const r = toPosix(relative(root, p));
     if (!r.startsWith("..") && !isAbsolute(r)) return r;
   }
-  const logical = nodeModulesLogicalPath(norm) ?? monorepoLogicalPath(norm);
+  const logical =
+    nodeModulesLogicalPath(norm) ?? monorepoLogicalPath(norm) ?? pnpmStoreLogicalPath(norm);
   if (logical) return logical;
   return `ext:${createHash("sha256").update(norm).digest("hex").slice(0, 16)}`;
 }
@@ -221,6 +240,19 @@ export class DiskCache {
 }
 
 /**
+ * 缓存键路径维：优先稳定逻辑段；无逻辑根且内容已知时用**内容指纹**
+ * （`cnt:<sha>`）替代 `ext:` 路径 sha——路径 sha 绑机器绝对路径，跨机 miss-only。
+ * 内容未知仍回落 `ext:`（只保证不明文、不脏命中）。
+ */
+function cachePathIdentity(p: string, root: string | undefined, content?: string | null): string {
+  const rel = relativizePath(p, root);
+  if (rel.startsWith("ext:") && content != null) {
+    return `cnt:${sha256Hex(content).slice(0, 16)}`;
+  }
+  return rel;
+}
+
+/**
  * check 报告键：abi + 相对路径 + 源码 sha + autoBind + **侧车 sha** +
  * **@nudo:import / 传递契约依赖内容 sha**（依赖变更必须 miss）。
  * dep 路径同样相对化（`relativizePath`）：绝对路径进键会让同内容在不同
@@ -248,12 +280,12 @@ export function checkCacheKey(
     };
   },
 ): string {
-  const rel = relativizePath(filePath, opts.projectDir);
+  const rel = cachePathIdentity(filePath, opts.projectDir, source);
   const sidecarSha = opts.sidecarContent != null ? sha256Hex(opts.sidecarContent) : "nosidecar";
   const depSeg = (opts.depContents ?? [])
     .map(
       (d) =>
-        `${relativizePath(d.path, opts.projectDir)}\0${d.content != null ? sha256Hex(d.content) : "miss"}`,
+        `${cachePathIdentity(d.path, opts.projectDir, d.content)}\0${d.content != null ? sha256Hex(d.content) : "miss"}`,
     )
     .join("\n");
   const envSeg = (opts.projectEnvNames ?? []).length > 0
@@ -294,7 +326,7 @@ export function ifaceCacheKey(
     projectEnvNames?: string[];
   },
 ): string {
-  const rel = relativizePath(filePath, opts.projectDir);
+  const rel = cachePathIdentity(filePath, opts.projectDir, source);
   const sidecarSeg =
     opts.autoBind && opts.sidecarSource !== undefined
       ? `sc:${sha256Hex(opts.sidecarSource)}`
@@ -302,7 +334,7 @@ export function ifaceCacheKey(
   const depSeg = (opts.depContents ?? [])
     .map(
       (d) =>
-        `${relativizePath(d.path, opts.projectDir)}\0${d.content != null ? sha256Hex(d.content) : "miss"}`,
+        `${cachePathIdentity(d.path, opts.projectDir, d.content)}\0${d.content != null ? sha256Hex(d.content) : "miss"}`,
     )
     .join("\n");
   const envSeg = (opts.projectEnvNames ?? []).length > 0

@@ -124,4 +124,32 @@ describe("@nudo:sample directive", () => {
       expect(sample.count).toBe(5);
     }
   });
+
+  it("parses decimal count without truncation (3.5 stays 3.5)", () => {
+    const fns = getDirectives(`
+      /**
+       * @nudo:sample 3.5
+       */
+      function loop(n) { return n; }
+    `);
+    const sample = fns[0]?.directives.find((d) => d.kind === "sample");
+    expect(sample).toBeDefined();
+    if (sample && sample.kind === "sample") {
+      expect(sample.count).toBe(3.5);
+    }
+  });
+
+  it("parses negative count (-2 is matched, not silently dropped)", () => {
+    const fns = getDirectives(`
+      /**
+       * @nudo:sample -2
+       */
+      function loop(n) { return n; }
+    `);
+    const sample = fns[0]?.directives.find((d) => d.kind === "sample");
+    expect(sample).toBeDefined();
+    if (sample && sample.kind === "sample") {
+      expect(sample.count).toBe(-2);
+    }
+  });
 });

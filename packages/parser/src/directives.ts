@@ -185,7 +185,10 @@ const MOCK_FROM_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:mock\s+([^\s]+)\s+from
 const MOCK_TAG_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:mock\s+([^\n]+)/g;
 const PURE_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:pure\b/g;
 const SKIP_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:skip\b(?:[ \t]+(\S[^\n]*))?/g;
-const SAMPLE_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:sample[ \t]+(\d+)/g;
+/** 宽松捕获 @nudo:sample 后的整段 token（数字文法在下方校验，不再静默截断） */
+const SAMPLE_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:sample\b(?:[ \t]+(\S+))?/g;
+/** 完整数字 token：整数 / 小数 / 负数 / 科学计数；禁止 `3.5` 截成 `3` */
+const SAMPLE_NUM_RE = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/;
 
 /**
  * 约束表达式（design-refine-derivation：case 实参主文法）。
@@ -957,7 +960,16 @@ function parseDirectivesFromCommentTexts(
     let sampleMatch: RegExpExecArray | null;
     while ((sampleMatch = SAMPLE_REGEX.exec(text)) !== null) {
       if (inCaseArgs(sampleMatch.index)) continue;
-      directives.push({ kind: "sample", count: Number(sampleMatch[1]) });
+      const raw = sampleMatch[1];
+      // 无数字 / 非完整数字 token：显式 nudo:directive-syntax，不再静默忽略或截断
+      if (raw === undefined || !SAMPLE_NUM_RE.test(raw)) {
+        emitDirectiveDiag({
+          code: "nudo:directive-syntax",
+          message: `Malformed @nudo:sample: expected a numeric count (integer, decimal, or negative) — got: @nudo:sample ${raw ?? "(missing count)"}`,
+        });
+        continue;
+      }
+      directives.push({ kind: "sample", count: Number(raw) });
     }
   }
   return directives;

@@ -34,6 +34,7 @@ import {
 
 export { filterDiagnosticsByLevel, diagnosticsLevelForFile };
 import { checkSource, pTrue, evictGeneralizeMemoForPaths, evictCheckSourceMemoForPaths, extractNudoImports, isNodeModulesPath, sidecarPathOf } from "@nudojs/core";
+import { parse, extractDirectives, takeDirectiveDiags } from "@nudojs/parser";
 import { extractAllLoadSpecs, resolveDepPath, sidecarSpecsOf, stripStringsKeepComments } from "@nudojs/core/internal";
 import { createHash } from "node:crypto";
 
@@ -567,7 +568,20 @@ export function checkToLspDiagnostics(
       ...(cCfg.ignoreThrows.length > 0 ? { ignoreThrows: cCfg.ignoreThrows } : {}),
       skips: collectSkipReturns(source),
     });
-    return report.issues
+    const issues = [...report.issues];
+    // D1: 指令文法诊断（nudo:directive-syntax）——与 check CLI 同口径：
+    // extractDirectives 产出 + takeDirectiveDiags 排干。未接会把诊断饿死在
+    // 全局 buffer（或被在途 validate / lens 探测窃取，对齐 agent-tools 注释）。
+    extractDirectives(parse(source));
+    for (const d of takeDirectiveDiags()) {
+      issues.push({
+        severity: "warning",
+        code: d.code,
+        message: d.message,
+        suggestion: "Fix the directive syntax (see docs/reference/diagnostics.md)",
+      });
+    }
+    return issues
       .filter((i) => i.severity === "error" || i.severity === "warning")
       .map((i) => {
         const line = (i.line ?? 1) - 1;
@@ -710,9 +724,13 @@ export async function validateText(
   );
   const evalJs = filterDiagnosticsByLevel(result.diagnostics, level);
   const evalDiags = evalJs.map((d) => toLspDiagnostic(d, uri));
+  // 指令文法诊断可能同时出现在 check 通道（takeDirectiveDiags）与 analyzer
+  // 通道（analyzeFileUncachedInner drain）——按 code+message 去重，避免双报
+  const seenCheck = new Set(checkDiags.map((d) => `${d.code ?? ""}\0${d.message}`));
+  const dedupedEval = evalDiags.filter((d) => !seenCheck.has(`${d.code ?? ""}\0${d.message}`));
   // P2：发布前再确认 generation，避免 check 路径上的 await 竞态覆盖更新 push
   if (!stillCurrent()) return;
-  deps.sendDiagnostics({ uri, diagnostics: [...checkDiags, ...evalDiags] });
+  deps.sendDiagnostics({ uri, diagnostics: [...checkDiags, ...dedupedEval] });
 
   if (!propagate || !deps.getOpenDocumentByPath) return;
 

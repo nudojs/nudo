@@ -269,6 +269,9 @@ export function joinValues(a: Abs, b: Abs): Abs {
 
 export function makeSum(a: Abs, b: Abs): Abs {
   const members = flattenSum([a, b]);
+  // 构造器不变量：sum 不得空 members。双空（或 flatten 后为空）折 never
+  //——下游分发 helper 对 members.map(...).reduce 无初值会抛宿主 TypeError。
+  if (members.length === 0) return never;
   if (members.length === 1) return members[0]!;
   // 过长同 prim 字面量枚举收成 path，避免 sum 成员爆炸（循环 unroll / reduce）
   if (members.length > 16) {

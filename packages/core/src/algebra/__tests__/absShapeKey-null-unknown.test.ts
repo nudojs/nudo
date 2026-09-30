@@ -14,6 +14,7 @@ import {
   makeSum,
   unknown,
   numLit,
+  type Abs,
 } from "../index.ts";
 
 function nullLit() {
@@ -136,5 +137,26 @@ describe("absShapeKey: non-lit term on unknown shape", () => {
     if (j.shape.k === "sum") {
       expect(j.shape.members).toHaveLength(2);
     }
+  });
+});
+
+describe("makeSum: empty members fold to never (constructor invariant)", () => {
+  it("double empty sum → never", () => {
+    const emptyA: Abs = { shape: { k: "sum", members: [] }, conf: "exact" };
+    const emptyB: Abs = { shape: { k: "sum", members: [] }, conf: "path" };
+    const j = makeSum(emptyA, emptyB);
+    expect(j.shape.k).toBe("never");
+  });
+
+  it("empty sum + never → never", () => {
+    const empty: Abs = { shape: { k: "sum", members: [] }, conf: "exact" };
+    const j = makeSum(empty, { shape: { k: "never" }, conf: "exact" });
+    expect(j.shape.k).toBe("never");
+  });
+
+  it("empty sum + value → value (empty is join-absorbing for members)", () => {
+    const empty: Abs = { shape: { k: "sum", members: [] }, conf: "exact" };
+    const j = makeSum(empty, numLit(1));
+    expect(j.shape.k).toBe("prim");
   });
 });

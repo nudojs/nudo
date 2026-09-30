@@ -75,4 +75,19 @@ describe("Abs check as LSP diagnostics", () => {
     expect(filterCheckLspByLevel(diags, "default")).toHaveLength(2);
     expect(filterCheckLspByLevel(diags, "verbose")).toHaveLength(3);
   });
+
+  it("checkToLspDiagnostics drains takeDirectiveDiags (FIX-RESIDUAL #1)", async () => {
+    const { takeDirectiveDiags } = await import("@nudojs/parser");
+    takeDirectiveDiags(); // 清空
+    const bad = `
+/**
+ * @nudo:case 't' (1)
+ */
+function f(x) { return x; }
+`;
+    const diags = checkToLspDiagnostics("/t/dir.js", bad);
+    expect(diags.some((d) => d.code === "nudo:directive-syntax")).toBe(true);
+    // drain 后 buffer 不得残留（不得被在途 validate 窃取）
+    expect(takeDirectiveDiags()).toHaveLength(0);
+  });
 });

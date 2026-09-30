@@ -490,11 +490,13 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
       const text = document.getText();
       const level = diagnosticsLevelForFile(filePath);
       const items: ReturnType<typeof toLspDiagnostic>[] = [];
+      const seen = new Set<string>();
       // Abs check 通道（与 push checkToLspDiagnostics 同源）
       try {
         const checkDiags = checkToLspDiagnostics(filePath, text, validationDeps().loadModule);
         // P2：与 push（validateText）同一档过滤 helper，避免 pull/push 诊断面不一致
         for (const d of filterCheckLspByLevel(checkDiags, level)) {
+          seen.add(`${d.code ?? ""}\0${d.message}`);
           items.push(d);
         }
       } catch {
@@ -509,7 +511,10 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
       );
       const filtered = filterDiagnosticsByLevel(result.diagnostics, level);
       for (const d of filtered) {
-        items.push(toLspDiagnostic(d, document.uri));
+        const ld = toLspDiagnostic(d, document.uri);
+        // 指令文法诊断双通道（check takeDirectiveDiags / analyzer drain）去重
+        if (seen.has(`${ld.code ?? ""}\0${ld.message}`)) continue;
+        items.push(ld);
       }
       return { kind: "full", items, version: document.version };
     } catch {

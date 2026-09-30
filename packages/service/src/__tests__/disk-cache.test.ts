@@ -462,4 +462,47 @@ describe("B3 path key portability (F-6 / FIX-D3)", () => {
       rmSync(a.root, { recursive: true, force: true });
     }
   });
+
+  it("pnpm store realpath (no node_modules segment): content-addressed logical segment is portable", () => {
+    // realpath 穿出 node_modules 后的 pnpm store 落点：文件名即内容哈希
+    const hash = "a".repeat(62);
+    const p1 = `/Users/alice/Library/pnpm/store/v3/files/aa/${hash}`;
+    const p2 = `/home/ci/.local/share/pnpm/store/v3/files/aa/${hash}`;
+    expect(relativizePath(p1)).toBe(`pnpm-store:aa${hash}`);
+    expect(relativizePath(p2)).toBe(`pnpm-store:aa${hash}`);
+    expect(relativizePath(p1)).toBe(relativizePath(p2));
+    // 绝对路径明文绝不进 key
+    expect(relativizePath(p1)).not.toContain("/Users/alice");
+  });
+
+  it("pnpm store single-segment hash layout is also portable", () => {
+    const hash = "b".repeat(64);
+    const p1 = `/Users/alice/.pnpm-store/v10/files/${hash}`;
+    const p2 = `/home/ci/.pnpm-store/v10/files/${hash}`;
+    expect(relativizePath(p1)).toBe(`pnpm-store:${hash}`);
+    expect(relativizePath(p2)).toBe(relativizePath(p1));
+  });
+
+  it("orphan dep with known content: content fingerprint replaces ext: path hash", () => {
+    const content = "export const positive = 1;\n";
+    const a = checkCacheKey("/p/a.js", "export const x = 1;\n", {
+      autoBind: true,
+      projectDir: "/p",
+      depContents: [{ path: "/Users/alice/store/orphan.js", content }],
+    });
+    const b = checkCacheKey("/p/a.js", "export const x = 1;\n", {
+      autoBind: true,
+      projectDir: "/p",
+      depContents: [{ path: "/home/ci/store/orphan.js", content }],
+    });
+    // 同内容、不同机器绝对路径 → 同 key（内容指纹，不是路径 hash）
+    expect(a).toBe(b);
+    // 内容变 → miss
+    const c = checkCacheKey("/p/a.js", "export const x = 1;\n", {
+      autoBind: true,
+      projectDir: "/p",
+      depContents: [{ path: "/Users/alice/store/orphan.js", content: content + "//x\n" }],
+    });
+    expect(c).not.toBe(a);
+  });
 });

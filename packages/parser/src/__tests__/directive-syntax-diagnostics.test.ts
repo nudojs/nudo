@@ -246,6 +246,51 @@ function f(x) { return x; }`);
   });
 });
 
+describe("@nudo:sample count grammar (FIX-RESIDUAL #4)", () => {
+  it("missing count → explicit diagnostic, no silent ignore", () => {
+    const { fns, diags } = extractWithDiags(`/**
+ * @nudo:sample
+ */
+function f(x) { return x; }`);
+    const sample = fns.flatMap((f) => f.directives).find((d) => d.kind === "sample");
+    expect(sample).toBeUndefined();
+    expect(
+      diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("@nudo:sample")),
+    ).toBe(true);
+  });
+
+  it("non-numeric token → explicit diagnostic", () => {
+    const { fns, diags } = extractWithDiags(`/**
+ * @nudo:sample abc
+ */
+function f(x) { return x; }`);
+    const sample = fns.flatMap((f) => f.directives).find((d) => d.kind === "sample");
+    expect(sample).toBeUndefined();
+    expect(
+      diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("@nudo:sample")),
+    ).toBe(true);
+  });
+
+  it("decimal / negative / scientific notation parse without truncation", () => {
+    for (const [raw, count] of [
+      ["3.5", 3.5],
+      ["-2", -2],
+      ["1e2", 100],
+    ] as const) {
+      const { fns, diags } = extractWithDiags(`/**
+ * @nudo:sample ${raw}
+ */
+function f(x) { return x; }`);
+      const sample = fns.flatMap((f) => f.directives).find((d) => d.kind === "sample");
+      expect(sample, raw).toBeDefined();
+      if (sample && sample.kind === "sample") {
+        expect(sample.count, raw).toBe(count);
+      }
+      expect(diags.filter((d) => d.code === "nudo:directive-syntax"), raw).toHaveLength(0);
+    }
+  });
+});
+
 describe("collector API", () => {
   it("setDirectiveDiagCollector receives diags", () => {
     const seen: Array<{ code: string; message: string }> = [];
