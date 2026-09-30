@@ -172,14 +172,42 @@ jobs:
         run: |
           tag=$(node -e '
             const pkgs = JSON.parse(process.env.PUBLISHED);
-            const parse = (v) => v.replace(/^v/, "").split(".").map((n) => parseInt(n, 10) || 0);
+            // Semver precedence (not just major.minor.patch): no prerelease >
+            // prerelease; prerelease identifiers compare numeric-then-ASCII
+            // with numeric < alphanumeric; build metadata ignored. Without
+            // this, 1.0.0-beta.1 tied with 1.0.0 and sort().pop() picked by
+            // array order.
+            const parse = (v) => {
+              const s = String(v).replace(/^v/, "").split("+")[0];
+              const dash = s.indexOf("-");
+              const core = (dash === -1 ? s : s.slice(0, dash)).split(".");
+              return {
+                maj: parseInt(core[0], 10) || 0,
+                min: parseInt(core[1], 10) || 0,
+                pat: parseInt(core[2], 10) || 0,
+                pre: dash === -1 ? null : s.slice(dash + 1).split("."),
+              };
+            };
+            const cmpId = (x, y) => {
+              const xn = /^[0-9]+$/.test(x), yn = /^[0-9]+$/.test(y);
+              if (xn && yn) return parseInt(x, 10) - parseInt(y, 10);
+              if (xn !== yn) return xn ? -1 : 1;
+              return x < y ? -1 : x > y ? 1 : 0;
+            };
             const cmp = (a, b) => {
               const pa = parse(a), pb = parse(b);
-              for (let i = 0; i < 3; i++) {
-                const d = (pa[i] || 0) - (pb[i] || 0);
+              if (pa.maj !== pb.maj) return pa.maj - pb.maj;
+              if (pa.min !== pb.min) return pa.min - pb.min;
+              if (pa.pat !== pb.pat) return pa.pat - pb.pat;
+              if (pa.pre === null && pb.pre === null) return 0;
+              if (pa.pre === null) return 1;
+              if (pb.pre === null) return -1;
+              const n = pa.pre.length < pb.pre.length ? pa.pre.length : pb.pre.length;
+              for (let i = 0; i < n; i++) {
+                const d = cmpId(pa.pre[i], pb.pre[i]);
                 if (d !== 0) return d;
               }
-              return 0;
+              return pa.pre.length - pb.pre.length;
             };
             const versions = pkgs.map((p) => p.version);
             const tag = "v" + versions.slice().sort(cmp).pop();

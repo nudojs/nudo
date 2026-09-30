@@ -100,6 +100,198 @@ describe("release-tag whitelist — accept stable + prerelease + build metadata"
   });
 });
 
+// FIX-RESIDUAL-4 项 2：cmp 必须按 semver 优先级（含 prerelease），不能只比
+// major.minor.patch——否则 1.0.0-beta.1 与 1.0.0 同序，sort().pop() 看数组顺序。
+describe("release-tag semver precedence (cmp is prerelease-aware)", () => {
+  it("stable beats prerelease at the same core version, both array orders", () => {
+    expectTag(
+      [
+        { name: "a", version: "1.0.0" },
+        { name: "b", version: "1.0.0-beta.1" },
+      ],
+      "v1.0.0",
+    );
+    expectTag(
+      [
+        { name: "b", version: "1.0.0-beta.1" },
+        { name: "a", version: "1.0.0" },
+      ],
+      "v1.0.0",
+    );
+    expectTag(
+      [
+        { name: "a", version: "2.0.0-rc.1" },
+        { name: "b", version: "2.0.0" },
+        { name: "c", version: "1.9.9" },
+      ],
+      "v2.0.0",
+    );
+  });
+
+  it("semver.org prerelease chain: alpha < alpha.1 < alpha.beta < beta < beta.2 < beta.11 < rc.1 < stable", () => {
+    expectTag(
+      [
+        { name: "a", version: "1.0.0-alpha" },
+        { name: "b", version: "1.0.0-alpha.1" },
+      ],
+      "v1.0.0-alpha.1",
+    );
+    expectTag(
+      [
+        { name: "a", version: "1.0.0-alpha.1" },
+        { name: "b", version: "1.0.0-alpha.beta" },
+      ],
+      "v1.0.0-alpha.beta",
+    );
+    expectTag(
+      [
+        { name: "a", version: "1.0.0-alpha.beta" },
+        { name: "b", version: "1.0.0-beta" },
+      ],
+      "v1.0.0-beta",
+    );
+    expectTag(
+      [
+        { name: "a", version: "1.0.0-beta" },
+        { name: "b", version: "1.0.0-beta.2" },
+      ],
+      "v1.0.0-beta.2",
+    );
+    expectTag(
+      [
+        { name: "a", version: "1.0.0-beta.2" },
+        { name: "b", version: "1.0.0-beta.11" },
+      ],
+      "v1.0.0-beta.11",
+    );
+    expectTag(
+      [
+        { name: "a", version: "1.0.0-beta.11" },
+        { name: "b", version: "1.0.0-rc.1" },
+      ],
+      "v1.0.0-rc.1",
+    );
+    expectTag(
+      [
+        { name: "a", version: "1.0.0-rc.1" },
+        { name: "b", version: "1.0.0" },
+      ],
+      "v1.0.0",
+    );
+    // shuffled chain still resolves to stable
+    expectTag(
+      [
+        { name: "a", version: "1.0.0-beta.11" },
+        { name: "b", version: "1.0.0" },
+        { name: "c", version: "1.0.0-alpha" },
+        { name: "d", version: "1.0.0-beta.2" },
+        { name: "e", version: "1.0.0-rc.1" },
+        { name: "f", version: "1.0.0-alpha.beta" },
+      ],
+      "v1.0.0",
+    );
+  });
+
+  it("prerelease identifiers: numeric segments compare numerically; numeric < alphanumeric; longer wins on prefix ties", () => {
+    // numeric, not lexicographic: 2 < 11
+    expectTag(
+      [
+        { name: "a", version: "1.0.0-beta.2" },
+        { name: "b", version: "1.0.0-beta.11" },
+      ],
+      "v1.0.0-beta.11",
+    );
+    expectTag(
+      [
+        { name: "a", version: "1.0.0-2" },
+        { name: "b", version: "1.0.0-11" },
+      ],
+      "v1.0.0-11",
+    );
+    // numeric identifiers have lower precedence than alphanumeric
+    expectTag(
+      [
+        { name: "a", version: "1.0.0-1" },
+        { name: "b", version: "1.0.0-alpha" },
+      ],
+      "v1.0.0-alpha",
+    );
+    expectTag(
+      [
+        { name: "a", version: "1.0.0-999" },
+        { name: "b", version: "1.0.0-0" },
+      ],
+      "v1.0.0-999",
+    );
+    // larger identifier set wins when all preceding are equal
+    expectTag(
+      [
+        { name: "a", version: "1.0.0-alpha" },
+        { name: "b", version: "1.0.0-alpha.1" },
+      ],
+      "v1.0.0-alpha.1",
+    );
+    // ASCII lexicographic on alphanumeric identifiers
+    expectTag(
+      [
+        { name: "a", version: "1.0.0-alpha" },
+        { name: "b", version: "1.0.0-beta" },
+      ],
+      "v1.0.0-beta",
+    );
+  });
+
+  it("core version still dominates prerelease depth", () => {
+    expectTag(
+      [
+        { name: "a", version: "1.2.3-beta.9" },
+        { name: "b", version: "1.2.4-0" },
+      ],
+      "v1.2.4-0",
+    );
+    expectTag(
+      [
+        { name: "a", version: "1.2.3" },
+        { name: "b", version: "1.3.0-rc.1" },
+      ],
+      "v1.3.0-rc.1",
+    );
+    expectTag(
+      [
+        { name: "a", version: "2.0.0-beta" },
+        { name: "b", version: "1.9.9" },
+      ],
+      "v2.0.0-beta",
+    );
+  });
+
+  it("build metadata is ignored for precedence", () => {
+    // same core, build metadata does not promote a prerelease over stable
+    expectTag(
+      [
+        { name: "a", version: "1.0.0-beta.1+aaa" },
+        { name: "b", version: "1.0.0+bbb" },
+      ],
+      "v1.0.0+bbb",
+    );
+    expectTag(
+      [
+        { name: "a", version: "1.0.0-rc.1+exp.sha.5114f85" },
+        { name: "b", version: "1.0.0+20130313144700" },
+      ],
+      "v1.0.0+20130313144700",
+    );
+    // build metadata must not beat a higher core version
+    expectTag(
+      [
+        { name: "a", version: "1.0.0+9999" },
+        { name: "b", version: "1.0.1-beta.1" },
+      ],
+      "v1.0.1-beta.1",
+    );
+  });
+});
+
 describe("release-tag whitelist — reject injection / structural garbage", () => {
   it("rejects newlines (GITHUB_OUTPUT line injection)", () => {
     expectReject([{ name: "a", version: "1.0.0\ntag=evil" }]);
