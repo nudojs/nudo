@@ -8,7 +8,7 @@
 
 import type { Abs, NudoConstraint, Pred, Term } from "@nudojs/core";
 import { absToConstraint, isIntFlag, predToString } from "@nudojs/core";
-import { formatObjectKey, sanitizeCommentText } from "@nudojs/core/internal";
+import { formatObjectKey, sanitizeCommentText, toJsBindingIdent } from "@nudojs/core/internal";
 
 export type SchemaDialect = "zod";
 
@@ -522,10 +522,8 @@ export type ZodModuleProjection = {
   dropped: string[];
 };
 
-function zodExportIdent(name: string): string {
-  if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name)) return name;
-  const cleaned = name.replace(/[^A-Za-z0-9_$]/g, "_");
-  return /^[A-Za-z_$]/.test(cleaned) ? cleaned : `_${cleaned}`;
+function zodExportIdent(name: string, used?: Set<string>): string {
+  return toJsBindingIdent(name, used);
 }
 
 /** JS 对象字面量键：ident / 规范数字键可裸写，其余 JSON 引号（与 dts formatPropKey 同口径） */
@@ -533,9 +531,12 @@ export function formatJsObjectKey(k: string): string {
   return formatObjectKey(k);
 }
 
-/** 生成代码里的 export/function 名：合法 ident 原样，否则清洗 */
-export function safeExportIdent(name: string): string {
-  return zodExportIdent(name);
+/**
+ * 生成代码里的 export/function 名：合法绑定标识符（含 Unicode）原样；
+ * 保留字加 `_` 前缀；其余清洗。传入 `used` 时模块内去重（`a_b` / `a_b_2`）。
+ */
+export function safeExportIdent(name: string, used?: Set<string>): string {
+  return zodExportIdent(name, used);
 }
 
 /**
@@ -548,10 +549,11 @@ export function absToZodSchemaModule(
 ): ZodModuleProjection {
   const dropped: string[] = [];
   const decls: string[] = [];
+  const used = new Set<string>();
   for (const [name, abs] of Object.entries(exports)) {
     const p = projectAbsToSchema(abs, { dialect: "zod" });
     dropped.push(...p.dropped.map((n) => `${name}: ${n}`));
-    decls.push(`export const ${zodExportIdent(name)} = ${p.source};`);
+    decls.push(`export const ${zodExportIdent(name, used)} = ${p.source};`);
   }
   const banner =
     opts?.banner ??

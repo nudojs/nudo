@@ -5,6 +5,7 @@ import {
   templatePartsOf,
   escapeTemplateTypeFixed,
   formatObjectKey,
+  isJsBindingIdent,
   sanitizeCommentText,
 } from "@nudojs/core/internal";
 import type { AnalysisResult, CaseResult, FunctionAnalysis } from "../analyzer.ts";
@@ -42,28 +43,14 @@ function wrapUnionMember(a: Abs, typeVars?: Map<string, string>): string {
   return ts;
 }
 
-const TS_PARAM_RESERVED = new Set([
-  "break", "case", "catch", "class", "const", "continue", "debugger",
-  "default", "delete", "do", "else", "enum", "export", "extends", "false",
-  "finally", "for", "function", "if", "import", "in", "instanceof", "new",
-  "null", "return", "super", "switch", "this", "throw", "true", "try",
-  "typeof", "var", "void", "while", "with", "yield", "let", "static",
-  "await", "implements", "interface", "package", "private", "protected",
-  "public", "arguments", "eval", "constructor",
-]);
-
-function isTsIdent(name: string): boolean {
-  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) && !TS_PARAM_RESERVED.has(name);
-}
-
 /** 成员声明里不能用保留字/非法标识符；空名与非 ident 落到 argN。 */
 function sanitizeParamName(name: string, index: number): string {
   if (name.startsWith("...")) {
     const rest = name.slice(3);
-    if (isTsIdent(rest)) return name;
+    if (isJsBindingIdent(rest)) return name;
     return `...arg${index}`;
   }
-  if (isTsIdent(name)) return name;
+  if (isJsBindingIdent(name)) return name;
   return `arg${index}`;
 }
 
@@ -187,7 +174,7 @@ export function absToTSType(a: Abs, typeVars?: Map<string, string>): string {
       return `(${params}) => ${ret}`;
     }
     case "brand":
-      return isTsIdent(a.shape.name) || /^[A-Z][A-Za-z0-9_$]*$/.test(a.shape.name)
+      return isJsBindingIdent(a.shape.name) || /^[A-Z][A-Za-z0-9_$]*$/.test(a.shape.name)
         ? a.shape.name
         : "unknown";
     case "eff":
@@ -409,7 +396,7 @@ function computeMainSignature(fn: FunctionAnalysis): MainSignature {
     let name = getParamName(fn, i);
     const isRest = name.startsWith("...");
     const bare = isRest ? name.slice(3) : name;
-    if (!isTsIdent(bare)) {
+    if (!isJsBindingIdent(bare)) {
       name = isRest ? `...arg${i}` : `arg${i}`;
     }
     if (usedNames.has(name)) {
@@ -530,7 +517,7 @@ function computeHofSignature(
   const typeParams: string[] = [];
   for (const id of [...free].sort()) {
     let n = tsTypeParamName(id);
-    if (used.has(n) || TS_PARAM_RESERVED.has(n)) {
+    if (used.has(n) || !isJsBindingIdent(n)) {
       let i = 2;
       while (used.has(`${n}${i}`)) i++;
       n = `${n}${i}`;

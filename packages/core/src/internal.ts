@@ -79,8 +79,8 @@ export {
   denoteGuard
 } from "./algebra/denote.ts";
 export {
-  escapeTemplateTypeFixed, formatObjectKey, isJsIdent, safeMemberAccess,
-  sanitizeCommentText
+  escapeTemplateTypeFixed, formatObjectKey, isJsBindingIdent, isJsIdent,
+  safeMemberAccess, sanitizeCommentText, toJsBindingIdent
 } from "./algebra/codegen-escape.ts";
 export {
   type ClassDef, type MethodDef, awaitAbs, classChainNames,

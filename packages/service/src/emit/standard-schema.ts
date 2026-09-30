@@ -288,13 +288,18 @@ function __nudoCheck(node, value, path, issues) {
 }
 `.trim();
 
-function makeStandardSchemaSource(exportName: string, node: SchemaNode, dropped: string[]): string {
+function makeStandardSchemaSource(
+  exportName: string,
+  node: SchemaNode,
+  dropped: string[],
+  used: Set<string>,
+): string {
   const json = JSON.stringify(node);
   const notes =
     dropped.length > 0
       ? dropped.map((d) => `//   ${sanitizeCommentText(d)}`).join("\n") + "\n"
       : "";
-  return `${notes}export const ${safeExportIdent(exportName)} = {
+  return `${notes}export const ${safeExportIdent(exportName, used)} = {
   "~standard": {
     version: 1,
     vendor: "nudo",
@@ -322,10 +327,11 @@ export function absToStandardSchemaModule(
 ): StandardSchemaModuleProjection {
   const dropped: string[] = [];
   const bodies: string[] = [];
+  const used = new Set<string>();
   for (const [name, abs] of Object.entries(exports)) {
     const { node, dropped: d } = absToSchemaNode(abs);
     dropped.push(...d.map((n) => `${name}: ${n}`));
-    bodies.push(makeStandardSchemaSource(name, node, d.map((n) => `${name}: ${n}`)));
+    bodies.push(makeStandardSchemaSource(name, node, d.map((n) => `${name}: ${n}`), used));
   }
   const banner =
     opts?.banner ??
