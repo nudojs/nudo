@@ -5,18 +5,21 @@
  */
 
 import type { Abs } from "../abs.ts";
-import { abs, unknown } from "../abs.ts";
+import { abs, never as neverAbs, unknown } from "../abs.ts";
 import { evalGlobalFn, hostBuiltinCtorName } from "../builtins.ts";
-import { $call } from "./call.ts";
+import { $call, routeApplyThrows, clearPureMemo } from "./call.ts";
 import { callAtFunctionBoundary, $copy } from "./runtime.ts";
 import { throwPayloadOf } from "./may-throw.ts";
-import { pureFnNameOf } from "../abs-fn.ts";
+import { pureFnNameOf, type AbsApplyResult } from "../abs-fn.ts";
 import { noteAbsTruncation, callBudgetKey, resetEvalForkBudget, noteHostEffectBlocked } from "../call-budget.ts";
 import {
   tagAbsOrigin,
   pushCallLoc,
   popCallLoc,
 } from "./member-diag.ts";
+import { peekThrowExitsSince, throwExitsMark } from "./runtime/state.ts";
+import { joinAbs } from "../objects.ts";
+import { BoundedLruMap } from "../lru-map.ts";
 
 export type EvalCallRecord = {
   fnName: string;
@@ -26,8 +29,24 @@ export type EvalCallRecord = {
   threw?: boolean;
 };
 
-/** @nudo:pure 宿主调用结果缓存（fn 对象身份 → args key → result） */
-const pureCallMemo = new WeakMap<object, Map<string, Abs>>();
+/** pureCallMemo 内层 Map 上界（与 pureMemo 同口径） */
+const PURE_CALL_MEMO_MAX = 256;
+
+/** @nudo:pure 宿主调用结果缓存（fn 对象身份 → args key → {abs, throws}） */
+let pureCallMemo = new WeakMap<object, BoundedLruMap<AbsApplyResult>>();
+
+/** 清空 pureCallMemo（宿主入口 / 会话缓存失效） */
+export function clearPureCallMemo(): void {
+  pureCallMemo = new WeakMap();
+}
+
+/** 把 mark 之后的 throwExits 合成 throws 面（pure memo 捕获） */
+function joinThrowsSince(mark: number): Abs {
+  const items = peekThrowExitsSince(mark);
+  if (items.length === 0) return neverAbs;
+  if (items.length === 1) return items[0]!;
+  return items.reduce((a, b) => joinAbs(a, b));
+}
 
 let evalCallCollector: ((r: EvalCallRecord) => void) | null = null;
 
@@ -231,6 +250,9 @@ export function resetEvalCallBudget(): void {
   evalTotalCallsLimit = MAX_EVAL_TOTAL_CALLS;
   // fork 总次数与调用预算同轮生命周期（不跨宿主入口累积）
   resetEvalForkBudget();
+  // pure memo 同轮生命周期（宿主入口清零，防长驻进程无界膨胀）
+  clearPureMemo();
+  clearPureCallMemo();
 }
 
 /** @nudo:budget：在 run 期间抬高 B 路径 depth/calls 上限；finally 恢复 */
@@ -339,10 +361,12 @@ export function $callNamed(
   const pk = pureName && fnObj ? callBudgetKey("pure", "", args) : undefined;
   if (fnObj && pk !== undefined) {
     const hit = pureCallMemo.get(fnObj)?.get(pk);
-    if (hit !== undefined) return hit;
+    if (hit !== undefined) return routeApplyThrows(hit.abs, hit.throws);
   }
   let result: Abs = unknown;
   let threw = false;
+  // pure memo 捕获 mark：本帧新增 throwExits 即本调用的 throws 面
+  const throwMark = throwExitsMark();
   if (argLocs) {
     for (let i = 0; i < args.length; i++) {
       const al = argLocs[i];
@@ -413,10 +437,12 @@ export function $callNamed(
     if (fnObj && pk !== undefined && !threw) {
       let m = pureCallMemo.get(fnObj);
       if (!m) {
-        m = new Map();
+        m = new BoundedLruMap<AbsApplyResult>(PURE_CALL_MEMO_MAX);
         pureCallMemo.set(fnObj, m);
       }
-      m.set(pk, result);
+      // 捕获本帧新增 throws 面（body/apply 路径的 pushThrowExit 已入帧）；
+      // 命中时 routeApplyThrows 重放（只缓存 abs 会在命中时假「不抛」）。
+      m.set(pk, { abs: result, throws: joinThrowsSince(throwMark) });
     }
     if (evalCallCollector) {
       try {

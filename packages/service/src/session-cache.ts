@@ -13,6 +13,7 @@ import {
   resetNudoModuleExecCache,
   resetParseSourceCache,
 } from "@nudojs/core";
+import { clearPureCallMemo, clearPureMemo } from "@nudojs/core/internal";
 import { clearAbsModuleCache, evictAbsModuleCacheFiles } from "./abs-modules-graph.ts";
 import { clearEvalCache, evictEvalCacheForFiles, trimEvalCache } from "./eval-run.ts";
 import {
@@ -65,6 +66,9 @@ export function clearAnalysisSessionCaches(): void {
   resetGeneralizeMemo();
   resetCheckSourceMemo();
   resetNudoModuleExecCache();
+  // pure memo 同会话生命周期（防 LSP 长会话无界膨胀）
+  clearPureMemo();
+  clearPureCallMemo();
 }
 
 /**

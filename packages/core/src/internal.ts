@@ -33,9 +33,13 @@ export {
   MAX_PROMISE_MICROS, getPromiseMicrosLength
 } from "./algebra/builtins/promise.ts";
 export {
+  clearPureCallMemo,
   enterEvalCallBudgetSession, exitEvalCallBudgetSession, getEvalCallBudgetState,
   withEvalBudgetOverride
 } from "./algebra/exec/calls.ts";
+export {
+  clearPureMemo
+} from "./algebra/exec/call.ts";
 export {
   hashSource, resetHashSourceCache
 } from "./algebra/hash-source.ts";

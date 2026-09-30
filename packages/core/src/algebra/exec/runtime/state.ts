@@ -315,6 +315,18 @@ export function $tryTakeSince(mark: number): Abs[] {
   return store.splice(Math.min(mark, store.length));
 }
 
+/** 窥视 mark 之后新记录的 throw（不摘除——pure memo 捕获用） */
+export function peekThrowExitsSince(mark: number): Abs[] {
+  const store = throwExitsAls.getStore();
+  if (!store) return [];
+  return store.slice(Math.min(mark, store.length));
+}
+
+/** 当前 throwExits 帧长度（pure memo 捕获的 mark 基线） */
+export function throwExitsMark(): number {
+  return throwExitsAls.getStore()?.length ?? 0;
+}
+
 /** catch 入口消化 try 内 soft may-throw（幂等；design §3.3） */
 export function $tryDigestSoftCatch(): void {
   const soft = softFrameActiveAls.getStore();

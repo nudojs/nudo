@@ -23,7 +23,7 @@ import { joinAbs } from "../objects.ts";
 import { instantiateReturn, isRelFn, setApplyCallbackHost } from "../hof.ts";
 import type { AstEnv } from "../ast-env.ts";
 import { NudoThrow } from "./nudo-throw.ts";
-import { pushThrowExit } from "./runtime/state.ts";
+import { pushThrowExit, peekThrowExitsSince, throwExitsMark } from "./runtime/state.ts";
 import {
   callBudgetKey,
   enterCall,
@@ -31,9 +31,18 @@ import {
   truncatedAbs,
   stableCallId,
 } from "../call-budget.ts";
+import { BoundedLruMap } from "../lru-map.ts";
+
+/** pure memo 内层 Map 上界（防 LSP 长会话无界膨胀；与 session-cache-limits 口径对齐） */
+const PURE_MEMO_MAX = 256;
 
 /** @nudo:pure 调用结果缓存（fn 对象身份 → args key → {abs, throws}） */
-const pureMemo = new WeakMap<object, Map<string, AbsApplyResult>>();
+let pureMemo = new WeakMap<object, BoundedLruMap<AbsApplyResult>>();
+
+/** 清空 pure memo（宿主入口 / 会话缓存失效） */
+export function clearPureMemo(): void {
+  pureMemo = new WeakMap();
+}
 
 function pureMemoKey(args: Abs[]): string {
   return callBudgetKey("pure", "", args);
@@ -44,7 +53,7 @@ function pureMemoKey(args: Abs[]): string {
  * always-throw（abs=never）→ NudoThrow，由调用边界收成 throws；
  * may-throw → pushThrowExit 记入调用方 throwExits（try/catch 可吸收）。
  */
-function routeApplyThrows(r: Abs, throws: Abs | undefined): Abs {
+export function routeApplyThrows(r: Abs, throws: Abs | undefined): Abs {
   if (throws && throws.shape.k !== "never") {
     if (r.shape.k === "never") throw new NudoThrow(throws);
     pushThrowExit(throws);
@@ -54,6 +63,14 @@ function routeApplyThrows(r: Abs, throws: Abs | undefined): Abs {
 
 function normalizeApplyReturn(raw: Abs | AbsApplyResult): AbsApplyResult {
   return isAbsApplyResult(raw) ? raw : { abs: raw, throws: neverAbs };
+}
+
+/** 把 mark 之后的 throwExits 合成 throws 面（pure memo 捕获） */
+function joinThrowsSince(mark: number): Abs {
+  const items = peekThrowExitsSince(mark);
+  if (items.length === 0) return neverAbs;
+  if (items.length === 1) return items[0]!;
+  return items.reduce((a, b) => joinAbs(a, b));
 }
 
 export function $call(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
@@ -90,7 +107,7 @@ export function $call(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
         if (fnObj && pk !== undefined) {
           let m = pureMemo.get(fnObj);
           if (!m) {
-            m = new Map();
+            m = new BoundedLruMap<AbsApplyResult>(PURE_MEMO_MAX);
             pureMemo.set(fnObj, m);
           }
           m.set(pk, full);
@@ -119,16 +136,19 @@ export function $call(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
     // 决定吸收。此前吞成 pushThrowExit+return never，调用点 record 落成
     // never+never 被 isLeakedCallRecord 判「泄漏」丢弃，抛出 case 从 call@ 消失。
     try {
+      // body may-throw 走 pushThrowExit 侧信道（runForkArm catch NudoThrow →
+      // pushThrowExit）。缓存前捕获本帧新增 throws 面——命中时 routeApplyThrows
+      // 重放（只缓存 abs 会在命中时假「不抛」）。
+      const throwMark = throwExitsMark();
       const r = compiled(args);
       if (fnObj && pk !== undefined) {
         let m = pureMemo.get(fnObj);
         if (!m) {
-          m = new Map();
+          m = new BoundedLruMap<AbsApplyResult>(PURE_MEMO_MAX);
           pureMemo.set(fnObj, m);
         }
-        // body 路径 throws 走 NudoThrow / pushThrowExit（非返回值通道）；
-        // 缓存仅记 abs 面（throws=never）。always-throw 在异常前不缓存。
-        m.set(pk, { abs: r, throws: neverAbs });
+        // always-throw 在异常前不缓存；may-throw 捕获 throws 面入缓存。
+        m.set(pk, { abs: r, throws: joinThrowsSince(throwMark) });
       }
       return r;
     } finally {

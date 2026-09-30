@@ -1182,6 +1182,8 @@
       "checkInjectedDomainEvidence",
       "classChainNames",
       "classFromMethods",
+      "clearPureCallMemo",
+      "clearPureMemo",
       "coerceAsyncReturn",
       "collectAbsInlays",
       "concatString",
