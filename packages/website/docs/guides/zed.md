@@ -8,11 +8,9 @@ The **nudo** Zed extension attaches Nudo's language server to JavaScript and Typ
 
 ## Prerequisites
 
-- Node.js on `PATH` (or Zed's bundled Node runtime for the npm fallback)
-- [`@nudojs/lsp` ≥ 0.5.0](https://www.npmjs.com/package/@nudojs/lsp) available as one of:
-  - project-local `node_modules/@nudojs/lsp` (`npm i @nudojs/lsp`)
-  - global install providing the `nudo-lsp` bin (`npm i -g @nudojs/lsp`)
-  - Zed-managed npm install (automatic, if neither of the above is found)
+- Zed's bundled Node runtime (used to launch the server)
+- [`@nudojs/lsp` ≥ 0.5.0](https://www.npmjs.com/package/@nudojs/lsp) — the
+  extension installs it automatically via Zed's managed npm (no manual install)
 
 0.5.0+ ships `dist/server.js` with a `nudo-lsp` shebang entry and defaults to stdio when no transport flag is passed.
 
@@ -55,7 +53,8 @@ In Zed: **Extensions → Install Dev Extension…** → select the cloned `nudo-
 
 ### Binary override
 
-Skip discovery and point Zed at a specific server:
+Skip the managed install and point Zed at a specific server (same surface as
+other Zed LSP extensions):
 
 ```json
 {
@@ -82,13 +81,20 @@ Or, if `nudo-lsp` is on `PATH`:
 }
 ```
 
+### LSP settings passthrough
+
+`lsp.nudo.settings` and `lsp.nudo.initialization_options` are forwarded to the
+language server (same idea as VS Code LSP settings). Project analysis config
+(`analysis.mode` / `include` / `exclude`) still lives in `package.json#nudo` or
+`nudo.json`.
+
 ## How the server is resolved
 
-The extension's `language_server_command` tries, in order:
-
-1. `nudo-lsp` on `PATH`
-2. `<worktree>/node_modules/@nudojs/lsp/dist/server.js` (via `node`)
-3. Zed-managed `npm install @nudojs/lsp`, resolved with `require.resolve`
+The extension installs `@nudojs/lsp` via Zed's managed npm
+(`npm_install_package`) and launches
+`<node_binary_path>/node_modules/@nudojs/lsp/dist/server.js --stdio` —
+the same pattern as other Zed language-server extensions. A user
+`lsp.nudo.binary` override, when set, is used instead.
 
 ## Features in Zed
 
@@ -100,8 +106,9 @@ The extension's `language_server_command` tries, in order:
 | Inlay hints | Enable `inlay_hints.enabled`; implicit exports mark `derived` |
 | CodeLens | Enable `code_lens: "on"` — **interface tier first** (`● interface`, persist/update, `⚡ draft interface`), case lenses behind |
 | Semantic tokens | Default off; set `semantic_tokens: "combined"` — includes `contract`/`generated`/`derived` modifiers |
-| Code actions / Signature help | Standard LSP quickfix + signature help |
+| Code actions / Signature help | Standard LSP quickfix + signature help (real `paramTypes` / return, same as VS Code) |
 | Agent commands (`nudo.check` / `nudo.contract.draft` / …) | Reachable via any LSP client or Zed agent tooling |
+| JSX / TSX buffers | Attached (`JavaScript React` / `TypeScript React`), same document face as VS Code |
 
 CodeLens `⚡ draft interface` runs the same code-first draft path as CLI `nudo contract --draft` (writes `*.nudo.draft.js` only when the client requests `write: true`). Migration walkthrough: [Migrating existing JS](./migrating-js.md).
 

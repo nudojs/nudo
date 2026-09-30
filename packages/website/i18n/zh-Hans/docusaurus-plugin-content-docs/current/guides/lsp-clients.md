@@ -61,7 +61,7 @@ Nudo 只交付**一个**语言服务器（`@nudojs/lsp`）。编辑器差异仅�
 
 | 能力 | VS Code（`nudo-vscode`） | Zed（`nudo-zed`） | Neovim（nvim-lspconfig） | Helix | 通用 stdio LSP |
 |------|:-------------------------:|:-----------------:|:------------------------:|:-----:|:--------------:|
-| 启动 | 扩展捆绑 `server.js`（IPC） | `nudo-lsp` / 项目 `node_modules` / Zed npm | `cmd = nudo-lsp` | `command = nudo-lsp` | 启动 `nudo-lsp` 或 `node dist/server.js` |
+| 启动 | 扩展捆绑 `server.js`（IPC） | Zed 托管 npm（`@nudojs/lsp` → `node …/server.js --stdio`） | `cmd = nudo-lsp` | `command = nudo-lsp` | 启动 `nudo-lsp` 或 `node dist/server.js` |
 | Diagnostics | Y | Y | Y | Y | Y |
 | Hover（Abs + interface 档） | Y | Y | Y | Y | Y |
 | 补全 | Y | Y | Y | C | Y |
@@ -86,9 +86,8 @@ Nudo 只交付**一个**语言服务器（`@nudojs/lsp`）。编辑器差异仅�
 
 ### Zed — 最小配置
 
-1. 安装 [nudojs/nudo-zed](https://github.com/nudojs/nudo-zed)，或直接指定本地 server 二进制。
-2. 项目 `package.json`：`"devDependencies": { "@nudojs/lsp": "^1.0.0" }`。
-3. `~/.config/zed/settings.json`（或项目 `.zed/settings.json`）：
+1. 从扩展市场安装 [nudojs/nudo-zed](https://github.com/nudojs/nudo-zed)（或以 dev extension 安装）。扩展会通过 Zed 托管 npm 自动安装 `@nudojs/lsp`，无需在 `package.json` 里固定版本。
+2. `~/.config/zed/settings.json`（或项目 `.zed/settings.json`）：
 
 ```json
 {
@@ -100,20 +99,12 @@ Nudo 只交付**一个**语言服务器（`@nudojs/lsp`）。编辑器差异仅�
       "language_servers": ["vtsls", "nudo", "..."]
     }
   },
-  "lsp": {
-    "nudo": {
-      "binary": {
-        "path": "npx",
-        "arguments": ["--yes", "@nudojs/lsp"]
-      }
-    }
-  },
   "code_lens": "on",
   "inlay_hints": { "enabled": true }
 }
 ```
 
-若 `nudo-lsp` 已在 `PATH`，优先 `"binary": { "path": "nudo-lsp", "arguments": [] }`。Semantic tokens：`"semantic_tokens": "combined"`。详见 [Zed 扩展](./zed.md)。
+可选 binary 覆盖（跳过托管安装）：`"lsp": { "nudo": { "binary": { "path": "nudo-lsp", "arguments": [] } } }`。Semantic tokens：`"semantic_tokens": "combined"`。详见 [Zed 扩展](./zed.md)。
 
 ### Neovim — 最小配置
 

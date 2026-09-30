@@ -8,11 +8,8 @@ description: "在 Zed 中安装 Nudo 语言服务器：hover 类型、诊断、C
 
 ## 前置条件
 
-- `PATH` 上有 Node.js（或使用 Zed 内置 Node 做 npm 回退）
-- [`@nudojs/lsp` ≥ 0.5.0](https://www.npmjs.com/package/@nudojs/lsp) 可通过下列任一方式使用：
-  - 项目本地 `node_modules/@nudojs/lsp`（`npm i @nudojs/lsp`）
-  - 全局安装并提供 `nudo-lsp` bin（`npm i -g @nudojs/lsp`）
-  - Zed 托管的 npm 安装（前两者都找不到时自动触发）
+- Zed 内置 Node 运行时（用于启动服务器）
+- [`@nudojs/lsp` ≥ 0.5.0](https://www.npmjs.com/package/@nudojs/lsp)——扩展会通过 Zed 托管 npm 自动安装，无需手动准备
 
 0.5.0+ 自带 `dist/server.js` 与 `nudo-lsp` shebang 入口，并在未传 transport 参数时默认走 stdio。
 
@@ -55,7 +52,7 @@ git clone https://github.com/nudojs/nudo-zed
 
 ### 覆盖二进制路径
 
-跳过自动发现，直接指定服务器：
+跳过托管安装，直接指定服务器（与其它 Zed LSP 扩展同一配置面）：
 
 ```json
 {
@@ -82,13 +79,20 @@ git clone https://github.com/nudojs/nudo-zed
 }
 ```
 
-## 服务器解析顺序
+### LSP 设置透传
 
-扩展的 `language_server_command` 依次尝试：
+`lsp.nudo.settings` 与 `lsp.nudo.initialization_options` 会转发给语言服务器
+（与 VS Code 的 LSP 设置面一致）。项目分析配置（`analysis.mode` / `include` /
+`exclude`）仍在 `package.json#nudo` 或 `nudo.json`。
 
-1. `PATH` 上的 `nudo-lsp`
-2. `<worktree>/node_modules/@nudojs/lsp/dist/server.js`（经 `node` 启动）
-3. Zed 托管的 `npm install @nudojs/lsp`，用 `require.resolve` 解析路径
+## 服务器解析
+
+扩展通过 Zed 托管 npm 安装 `@nudojs/lsp`（`npm_install_package`），并以
+
+`<node_binary_path>/node_modules/@nudojs/lsp/dist/server.js --stdio`
+
+启动——与其它 Zed language-server 扩展同一模式。若用户配置了
+`lsp.nudo.binary`，则优先使用该覆盖路径。
 
 ## Zed 中的能力
 
@@ -100,8 +104,9 @@ git clone https://github.com/nudojs/nudo-zed
 | Inlay hints | 需打开 `inlay_hints.enabled`；implicit 导出标 `derived` |
 | CodeLens | 需打开 `code_lens: "on"`——**interface 档在前**（`● interface`、persist/update、`⚡ draft interface`），case 副层在后 |
 | Semantic tokens | 默认关闭，设 `semantic_tokens: "combined"`——含 `contract`/`generated`/`derived` modifier |
-| Code actions / Signature help | 标准 LSP quickfix 与 signature help |
+| Code actions / Signature help | 标准 LSP quickfix 与 signature help（真实 `paramTypes` / 返回类型，与 VS Code 同源） |
 | Agent 命令（`nudo.check` / `nudo.contract.draft` / …） | 经任意 LSP 客户端或 Zed agent 工具可达 |
+| JSX / TSX buffer | 已挂接（`JavaScript React` / `TypeScript React`），与 VS Code 同文档面 |
 
 CodeLens `⚡ draft interface` 与 CLI `nudo contract --draft` 同源（仅客户端显式 `write: true` 时写 `*.nudo.draft.js`）。迁移步骤：[迁移已有 JS](./migrating-js.md)。
 
