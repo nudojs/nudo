@@ -18,6 +18,7 @@ import {
 } from "./agent-tools.ts";
 import {
   analysisCache,
+  cacheKey,
   handleNudoDepFileChanged,
   registerNudoImportDeps,
   uriToFilePath,
@@ -131,7 +132,7 @@ export function makeHandleContractEmit(deps: CommandDeps) {
     // 侧车写盘/新建后的缓存失效与重验证（agent 面按路径调用时文件可能未打开）
     let invalidateError: string | undefined;
     try {
-      const openDoc = deps.listDocuments().find((d) => uriToFilePath(d.uri) === filePath);
+      const openDoc = deps.listDocuments().find((d) => cacheKey(d.uri) === cacheKey(filePath));
       registerNudoImportDeps(
         filePath,
         openDoc ? openDoc.getText() : readFileSync(filePath, "utf-8"),
@@ -139,7 +140,7 @@ export function makeHandleContractEmit(deps: CommandDeps) {
       await handleNudoDepFileChanged(sidecarPathOf(filePath), deps.validationDeps());
       deps.refreshPullDiagnostics();
       if (openDoc) {
-        analysisCache.delete(filePath); // version 键未变，逐出防 getCachedOrAnalyze 命中陈旧结果
+        analysisCache.delete(cacheKey(filePath)); // version 键未变，逐出防 getCachedOrAnalyze 命中陈旧结果
         await deps.validateDocument(openDoc);
       }
     } catch (e) {

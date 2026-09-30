@@ -120,8 +120,9 @@ export const validateGeneration = new Map<string, number>();
  * results for a closed/superseded document are discarded.
  */
 export function bumpValidateGeneration(filePath: string): number {
-  const gen = (validateGeneration.get(filePath) ?? 0) + 1;
-  validateGeneration.set(filePath, gen);
+  const key = cacheKey(filePath);
+  const gen = (validateGeneration.get(key) ?? 0) + 1;
+  validateGeneration.set(key, gen);
   return gen;
 }
 
@@ -173,24 +174,44 @@ function normPath(p: string): string {
   return p.replace(/\\/g, "/");
 }
 
+/**
+ * Canonical key for session path-keyed maps (analysisCache / knownFiles /
+ * nudoDepParents / validateGeneration). Accepts a URI or a file path.
+ *
+ * Unifies Windows drive forms: `file:///c:/x` → `/c:/x` (uriToFilePath) and
+ * `c:\x` / `c:/x` (fs-resolved) all collapse to `c:/x`. Without the leading-slash
+ * strip, `path.resolve('/c:/x')` stays `\c:\x` even on Windows and delete/lookup
+ * misses the entry written under the URI-derived key.
+ */
+export function cacheKey(p: string): string {
+  let fp = uriToFilePath(p);
+  const drive = /^\/([A-Za-z]:)(.*)$/.exec(fp);
+  if (drive) fp = `${drive[1]}${drive[2]}`;
+  // Drive-absolute: path.resolve on POSIX would treat it as relative.
+  if (/^[A-Za-z]:[\\/]/.test(fp)) return normPath(fp);
+  return normPath(resolvePath(fp));
+}
+
 /** 每次 validate 后刷新：parent 的全部 @nudo:import 边 + autoBind 隐式侧车边
  *  （自身侧车 + 每个依赖文件的侧车——跨文件被调按定义文件路径绑定，
  *   依赖侧车变更同样须重检 parent；与 loadModuleDepsFingerprint 同口径） */
 export function registerNudoImportDeps(filePath: string, source: string): void {
-  const parent = normPath(resolvePath(filePath));
+  // accept URI or path — dirname/resolve below need a real path shape
+  const fp = uriToFilePath(filePath);
+  const parent = cacheKey(fp);
   for (const set of nudoDepParents.values()) {
     set.delete(parent);
   }
   const imports = extractNudoImports(source);
   for (const imp of imports) {
     if (!imp.spec.startsWith(".") && !imp.spec.startsWith("/")) continue;
-    const dep = normPath(resolvePath(dirname(filePath), imp.spec));
+    const dep = normPath(resolvePath(dirname(fp), imp.spec));
     addNudoDepParent(dep, parent);
   }
-  registerSidecarClosureFor(parent, parent);
+  registerSidecarClosureFor(normPath(resolvePath(fp)), parent);
   for (const spec of extractAllLoadSpecs(source)) {
     if (!spec.startsWith(".") && !spec.startsWith("/")) continue;
-    const dep = normPath(resolvePath(dirname(filePath), spec));
+    const dep = normPath(resolvePath(dirname(fp), spec));
     // 相对 load-module 本身也是分析依赖：变更必须触发 parent 重检
     // （只登记其侧车不够——实现文件内容进 dep 指纹）
     if (!isNodeModulesPath(dep)) addNudoDepParent(dep, parent);
@@ -199,12 +220,13 @@ export function registerNudoImportDeps(filePath: string, source: string): void {
 }
 
 function addNudoDepParent(dep: string, parent: string): void {
-  let set = nudoDepParents.get(dep);
+  const key = cacheKey(dep);
+  let set = nudoDepParents.get(key);
   if (!set) {
     set = new Set();
-    nudoDepParents.set(dep, set);
+    nudoDepParents.set(key, set);
   }
-  set.add(parent);
+  set.add(cacheKey(parent));
 }
 
 /** 隐式侧车登记的闭包节点上限（防病态侧车图；与 loadModuleDepsFingerprint 同量级） */
@@ -259,7 +281,7 @@ export async function handleNudoDepFileChanged(
   nudoPath: string,
   deps: ValidateTextDeps,
 ): Promise<void> {
-  const p = normPath(resolvePath(nudoPath));
+  const p = cacheKey(nudoPath);
   evictGeneralizeMemoForPaths([p]);
   evictCheckSourceMemoForPaths([p]);
   deps.onProjectConfigChanged?.();
@@ -291,7 +313,7 @@ export async function handleNudoDepFileChanged(
     try {
       const { dependents } = buildModuleGraph([...knownFiles], moduleGraphCache);
       for (const d of computeDirtySet(dependents, p)) {
-        parentSet.add(normPath(resolvePath(d)));
+        parentSet.add(cacheKey(d));
       }
     } catch {
       /* graph rebuild failure → fall back to nudoDepParents only */
@@ -341,11 +363,12 @@ export function clearValidationState(): void {
  * 仅关闭（文件仍在磁盘上）不走这里，关闭文件仍可作为依赖图节点参与脏传播。
  */
 export function forgetValidatedFile(filePath: string): void {
-  const parent = normPath(resolvePath(filePath));
-  knownFiles.delete(filePath);
-  analysisCache.delete(filePath);
+  const key = cacheKey(filePath);
+  knownFiles.delete(key);
+  analysisCache.delete(key);
+  validateGeneration.delete(key);
   for (const set of nudoDepParents.values()) {
-    set.delete(parent);
+    set.delete(key);
   }
 }
 
@@ -359,7 +382,7 @@ export function forgetValidatedFile(filePath: string): void {
  */
 export function evictModuleGraphCacheEntries(uris: string[]): void {
   const paths = uris.map(uriToFilePath);
-  for (const p of paths) moduleGraphCache.delete(p);
+  for (const p of paths) moduleGraphCache.delete(cacheKey(p));
   evictAbsModuleCacheFiles(paths);
 }
 
@@ -390,7 +413,8 @@ export function getCachedOrAnalyze(
   activeCases?: Map<string, number>,
   loadModule?: (spec: string, fromFile: string) => string | undefined,
 ): AnalysisResult {
-  const cached = analysisCache.get(filePath);
+  const key = cacheKey(filePath);
+  const cached = analysisCache.get(key);
   // 版本 + activeCases 指纹同时命中才复用：case 切换不 bump 文档 version，
   // 漏掉 casesHash 会把上一 case 的分析结果/lens 原样吐回（B2）
   const casesHash = casesFingerprint(activeCases);
@@ -410,7 +434,7 @@ export function getCachedOrAnalyze(
   const caseMode =
     activeCases && activeCases.size > 0 ? ("selected" as const) : ("none" as const);
   const result = analyzeFile(filePath, source, activeCases, undefined, loadModule, caseMode);
-  analysisCache.set(filePath, {
+  analysisCache.set(key, {
     version,
     result,
     sourceHash: sourceFingerprint(source),
@@ -645,8 +669,9 @@ export async function validateText(
   force = false,
 ): Promise<void> {
   // A8：编辑风暴取消——同文件新一轮 validate 启动后，旧 await 不得发布陈旧诊断
-  const gen = bumpValidateGeneration(filePath);
-  const stillCurrent = (): boolean => validateGeneration.get(filePath) === gen;
+  const key = cacheKey(filePath);
+  const gen = bumpValidateGeneration(key);
+  const stillCurrent = (): boolean => validateGeneration.get(key) === gen;
 
   // 零注解文件 gate 放行例外：磁盘上存在同名侧车（interface 档主场景——
   // emit 后的 generated 段 + drift/domain-exceeds 诊断都以侧车为契约源）。
@@ -671,7 +696,7 @@ export async function validateText(
   const fp = sourceFingerprint(text);
   const cfgHash = projectConfigFingerprint(filePath);
   const depHash = depsFingerprint(filePath, deps.loadModule);
-  const prev = analysisCache.get(filePath);
+  const prev = analysisCache.get(key);
   let result: AnalysisResult;
   if (
     !force &&
@@ -713,7 +738,7 @@ export async function validateText(
   // await 期间有更新一轮 validate → 本轮作废（防抖已合并；不发布陈旧结果）
   if (!stillCurrent()) return;
 
-  analysisCache.set(filePath, {
+  analysisCache.set(key, {
     version,
     result,
     sourceHash: fp,
@@ -721,7 +746,7 @@ export async function validateText(
     depsHash: depHash,
     cfgHash,
   });
-  knownFiles.add(filePath);
+  knownFiles.add(key);
   registerNudoImportDeps(filePath, text);
 
   // Abs check 主通道 + evaluator 诊断（A3：按 analysis.diagnostics 档过滤）

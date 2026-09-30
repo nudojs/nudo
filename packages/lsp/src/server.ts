@@ -25,6 +25,7 @@ import {
 import {
   analysisCache,
   knownFiles,
+  cacheKey,
   evictModuleGraphCacheEntries,
   forgetValidatedFile,
   getCachedOrAnalyze,
@@ -233,12 +234,12 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
     debounceTimers.delete(event.document.uri);
     nudoFileCache.delete(event.document.uri);
     lastPullItems.delete(event.document.uri);
-    const filePath = uriToFilePath(event.document.uri);
-    analysisCache.delete(filePath);
+    const key = cacheKey(event.document.uri);
+    analysisCache.delete(key);
     activeCases.delete(event.document.uri);
     // P2：关闭即 bump validateGeneration——在途 validate 的 stillCurrent 门
     // 失效，陈旧结果不会在文件已关闭后再 publish
-    bumpValidateGeneration(filePath);
+    bumpValidateGeneration(key);
     connection.sendDiagnostics({ uri: event.document.uri, diagnostics: [] });
   });
 
@@ -281,7 +282,7 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
       isNudoUri: (uri) => isNudoFile(uri),
       getActiveCases: (uri) => getActiveCasesForUri(uri),
       getOpenDocumentByPath: (filePath) =>
-        documents.all().find((doc) => uriToFilePath(doc.uri) === filePath),
+        documents.all().find((doc) => cacheKey(doc.uri) === cacheKey(filePath)),
       listOpenDocuments: () => documents.all().map((doc) => ({
         uri: doc.uri,
         version: doc.version,
