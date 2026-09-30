@@ -53,3 +53,39 @@ describe("fileEnvNamesFromText prefix contract", () => {
     expect(fileEnvNamesFromText(src)).toEqual([]);
   });
 });
+
+/**
+ * D5=F1：parser / core / nudojs 对同一源码指令集合一致（单源抽取）。
+ * nudojs fileEnvNamesFromText = core extractFileEnvNames 的消费口；
+ * parser extractFileDirectives 走同一 parseEnvPayload 文法。
+ */
+describe("F1 three-way agreement: parser / core / nudojs", () => {
+  it("env sets agree on the same source", async () => {
+    const { extractFileEnvNames, extractFileDirectives, parse } = await import("@nudojs/parser");
+    const src = [
+      `// @nudo:env node, es`,
+      `// @nudo:mock-module "fs" { readFileSync } from "./mock-fs.js"`,
+      `const s = "// @nudo:env web";`,
+      `export function f() {}`,
+    ].join("\n");
+    const fromNudojs = fileEnvNamesFromText(src);
+    const fromCore = extractFileEnvNames(src);
+    const fromParser = extractFileDirectives(parse(src))
+      .filter((d) => d.kind === "env")
+      .flatMap((d) => (d.kind === "env" ? d.envs : []));
+    expect(fromNudojs).toEqual(["node", "es"]);
+    expect(fromCore).toEqual(fromNudojs);
+    expect(fromParser).toEqual(fromNudojs);
+  });
+
+  it("mock-module records agree on the same source", async () => {
+    const { extractMockModuleRecords, extractFileDirectives, parse } = await import("@nudojs/parser");
+    const src = `// @nudo:mock-module "fs" { readFileSync } from "./mock-fs.js"\nexport function f() {}`;
+    const fromCore = extractMockModuleRecords(src);
+    const fromParser = extractFileDirectives(parse(src)).filter((d) => d.kind === "mock-module");
+    expect(fromCore).toEqual([{ source: "fs", names: ["readFileSync"], fromPath: "./mock-fs.js" }]);
+    expect(fromParser).toEqual([
+      { kind: "mock-module", source: "fs", names: ["readFileSync"], fromPath: "./mock-fs.js" },
+    ]);
+  });
+});

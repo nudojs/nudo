@@ -16,7 +16,7 @@ import {
   collectEnvModules,
   type CallRecord,
 } from "@nudojs/service";
-import { stripStringsKeepComments } from "@nudojs/core/internal";
+import { extractFileEnvNames } from "@nudojs/core";
 import {
   collectExternalRecords,
   reportPathErrors,
@@ -84,30 +84,12 @@ function printDocsLinks(issues: Array<{ code?: string }>): void {
 }
 
 /**
- * 文件级 `@nudo:env` 命名 env 抽取。与 parser `extractFileDirectives` 同契约：
- * 只认 `//` / `///` 行注释前缀，先剥字符串（字符串里的同形文本不是指令），
- * env 名 token 只收 `\w+` 或 path-like（拒绝 `node";` 这类字符串截断捕获）。
+ * 文件级 `@nudo:env` 命名 env 抽取（D5=F1：文法在 core directive-scan 单源）。
+ * `//` 与 `///` 等价；字符串/块注释里的同形文本不是指令；
+ * env 名 token 只收 `\w+` 或 path-like。
  */
 export function fileEnvNamesFromText(source: string): string[] {
-  // 剥字符串 + 块注释：只留 `//` / `///` 行注释可见（`/* // @nudo:env */` 不算）。
-  const directiveSrc = stripStringsKeepComments(source).replace(/\/\*[\s\S]*?\*\//g, " ");
-  // `[^/:]` 排除 `http://` 伪注释起点与 `////` 多余斜杠；`\/\/\/?` 只认 `//` / `///`。
-  const envRe = /(?:^|[^/:])\/\/\/?\s*@nudo:env\s+([^\n*]+)/g;
-  const isPathLike = (s: string): boolean =>
-    /^[^\s]+$/.test(s) &&
-    (s.startsWith("./") ||
-      s.startsWith("../") ||
-      s.startsWith("/") ||
-      /\.(ts|js|mjs|cjs|tsx|jsx)$/.test(s));
-  const out: string[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = envRe.exec(directiveSrc))) {
-    for (const part of m[1]!.split(",")) {
-      const name = part.trim().replace(/^['"]|['"]$/g, "");
-      if (name && (/^\w+$/.test(name) || isPathLike(name))) out.push(name);
-    }
-  }
-  return out;
+  return extractFileEnvNames(source);
 }
 
 async function runCheck(

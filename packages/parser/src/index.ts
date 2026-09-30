@@ -61,3 +61,25 @@ export {
   setDirectiveDiagCollector,
   takeDirectiveDiags,
 } from "./directives.ts";
+
+// D5=F1：指令抽取单源 API 的产品面 re-export（实现住 core directive-scan，
+// parser 依赖 core，反向会成包环）。core/nudojs 只消费这些 API。
+export {
+  type CaseTag,
+  type FnDirectiveScope,
+  type MockModuleRecord,
+  type NudoImportRecord,
+  extractFileEnvNames,
+  extractMockModuleRecords,
+  extractNudoImportRecords,
+  findFnDirectiveScope,
+  fnDirectiveCommentLines,
+  listFnDirectiveScopes,
+  parseEnvPayload,
+  parseMockModulePayload,
+  parseNudoImportPayload,
+  scanBudgetDecl,
+  scanCaseTags,
+  scanContractSegments,
+  scanThrowsDecl,
+} from "@nudojs/core";

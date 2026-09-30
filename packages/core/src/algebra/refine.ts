@@ -22,14 +22,19 @@ import type { Pred } from "./pred.ts";
 import { v as termVar } from "./term.ts";
 import { parseSource } from "./parse-source.ts";
 import { hashSource } from "./hash-source.ts";
-import {
-  identBoundaryRegex,
-  maskStringsKeepComments,
-  stripStringsKeepComments,
-} from "./code-text.ts";
+import { stripStringsKeepComments } from "./code-text.ts";
 // leaf 模块：load-deps-fp.ts 已 import 本文件（extractNudoImports），
 // 反向 import 会成环——路径函数从 sidecar-path.ts 单源取用
 import { isNodeModulesPath, resolveDepPath } from "./sidecar-path.ts";
+// D5=F1：指令抽取单源在 directive-scan.ts（G2 作用域 + 文法），本文件只消费
+import {
+  extractNudoImportRecords,
+  fnDirectiveCommentLines,
+  scanBudgetDecl,
+  scanContractSegments,
+  scanMalformedNudoImports,
+  scanThrowsDecl,
+} from "./directive-scan.ts";
 import type { ImportDeclaration } from "@babel/types";
 import {
   type NudoConstraint,
@@ -41,52 +46,25 @@ import {
 /** `/// @nudo:import { delay, percent } from "./delay.nudo.js"` */
 export type NamedImport = { names: string[]; spec: string };
 
+/**
+ * `@nudo:import` 命名/namespace 导入（D5=F1：文法在 directive-scan 单源）。
+ * default 等未识别形态发 nudo:contract-syntax，不再静默丢弃。
+ */
 export function extractNudoImports(source: string): NamedImport[] {
   const out: NamedImport[] = [];
-  // 指令住注释；字符串/模板里的同形文本不是 import（code-text.ts 不变量）
-  const src = stripStringsKeepComments(source);
-  // named: import { a, b as c } from "..."
-  const named = /@nudo:import\s*\{([^}]+)\}\s*from\s*["']([^"']+)["']/g;
-  let m: RegExpExecArray | null;
-  const matchedRanges: [number, number][] = [];
-  while ((m = named.exec(src))) {
-    matchedRanges.push([m.index, m.index + m[0].length]);
-    // 多行 /// / // 续行前缀不是名字的一部分
-    const names = m[1]!
-      .split("\n")
-      .map((line) => line.replace(/^\s*\/\/\/?\s?/, "").trim())
-      .join("\n")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .map((s) => s.split(/\s+as\s+/).pop()!.trim());
-    out.push({ names, spec: m[2]! });
+  for (const rec of extractNudoImportRecords(source)) {
+    out.push({ names: rec.names, spec: rec.spec });
   }
-  // 兼容 namespace（仍支持）
-  const ns = /@nudo:import\s+\*\s+as\s+(\w+)\s+from\s*["']([^"']+)["']/g;
-  while ((m = ns.exec(src))) {
-    matchedRanges.push([m.index, m.index + m[0].length]);
-    out.push({ names: [`*${m[1]}`], spec: m[2]! });
-  }
-  // 未识别的 @nudo:import 形态（default import 等）→ nudo:contract-syntax
-  // 不再静默丢弃（F-3 #11：`@nudo:import d from "./x.nudo.js"` 无 NamedImport）
-  const anyImport = /@nudo:import\s+([^\n]+)/g;
-  while ((m = anyImport.exec(src))) {
-    const alreadyMatched = matchedRanges.some(([s, e]) => m!.index >= s && m!.index < e);
-    if (alreadyMatched) continue;
-    const rest = m[1]!.trim();
-    // default 形态：`ident from "…"` 或 `ident, { … } from "…"`
-    if (/^[\w$]+\s+from\b/.test(rest) || /^[\w$]+\s*,/.test(rest)) {
+  for (const bad of scanMalformedNudoImports(source)) {
+    if (bad === "malformed-default") {
       collectDiag({
         code: "nudo:contract-syntax",
-        message: `Default @nudo:import is not supported (use named { a, b } or namespace * as ns): @nudo:import ${rest.slice(0, 60)}`,
+        message: `Default @nudo:import is not supported (use named { a, b } or namespace * as ns)`,
       });
-      continue;
-    }
-    if (rest.length > 0) {
+    } else {
       collectDiag({
         code: "nudo:contract-syntax",
-        message: `Unrecognized @nudo:import form (expected { names } from "path" or * as ns from "path"): @nudo:import ${rest.slice(0, 60)}`,
+        message: `Unrecognized @nudo:import form (expected { names } from "path" or * as ns from "path")`,
       });
     }
   }
@@ -818,34 +796,14 @@ function collectConstraints(
   return map;
 }
 
-/** 从源码抽函数上的 @nudo:contract 行 */
+/**
+ * 从源码抽函数上的 @nudo:contract 行（D6=G2：作用域 = AST 最近 Function）。
+ * 注释块来自 directive-scan 的 scope 绑定——与 @nudo:case 同一函数集合
+ * （nested function、class method 同时可见）。
+ */
 function extractRefineLines(source: string, fnName: string): string[] {
-  // `export function f` / `export async function f` / `export const f =`
-  // 前缀必须一并匹配：否则 match 落在行中，before 以 `export …` 结尾，
-  // 反向注释扫描立即 break，@nudo:contract 整体丢失（导出函数的契约
-  // 全部静默失效）。
-  const escaped = identBoundaryRegex(fnName);
-  const fnRe = new RegExp(
-    `(?:export\\s+(?:default\\s+)?)?(?:async\\s+)?(?:function\\s+${escaped}|const\\s+${escaped}\\s*=)`,
-  );
-  // 先剥字符串再定位：字符串里的 `function foo` 不是声明（注释必须保留——
-  // `export default /** 契约 */ function f` 的注释若变空白会被导出前缀吞掉）
-  const m = maskStringsKeepComments(source).match(fnRe);
-  if (!m || m.index === undefined) return [];
-  const before = source.slice(0, m.index);
-  const lines = before.split("\n");
-  const reqs: string[] = [];
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i]!.trim();
-    if (line === "" || line === "*/") continue;
-    if (line.startsWith("*") || line.startsWith("/*") || line.startsWith("//")) {
-      const rm = line.match(/@nudo:contract\s+(.+)$/);
-      if (rm) reqs.unshift(rm[1]!.trim().replace(/\*\/$/, "").trim());
-      continue;
-    }
-    break;
-  }
-  return reqs;
+  const lines = fnDirectiveCommentLines(source, fnName);
+  return scanContractSegments(lines);
 }
 
 /**
@@ -957,8 +915,8 @@ export function extractRefineReturnFromSource(
  *   @nudo:case "neg" (0) !! throws          → 申报任意 throw
  *   @nudo:case "neg" (0) !! throws Error    → 申报 Error
  *
- * 与 refine 同扫函数前注释块。返回 `*` = 申报任意；数组 = 按名申报；
- * undefined = 无申报（L2 照常执法）。
+ * 与 refine 同扫函数前注释块（D6=G2 同一 scope 绑定）。
+ * 返回 `*` = 申报任意；数组 = 按名申报；undefined = 无申报（L2 照常执法）。
  */
 export function extractDeclaredThrows(
   source: string,
@@ -968,60 +926,11 @@ export function extractDeclaredThrows(
   if (!directiveSrc.includes("@nudo:throws") && !directiveSrc.includes("!! throws")) {
     return undefined;
   }
-  const kinds = new Set<string>();
-  let any = false;
-  // 与 extractRefineLines 同路径扫函数前注释块（throws/case 不在 refine 行文法里）
-  const escaped = identBoundaryRegex(fnName);
-  const fnRe = new RegExp(
-    `(?:export\\s+(?:default\\s+)?)?(?:async\\s+)?(?:function\\s+${escaped}|const\\s+${escaped}\\s*=)`,
-  );
-  // 先剥字符串再定位：字符串里的 `function foo` 不是声明（注释必须保留——
-  // `export default /** 契约 */ function f` 的注释若变空白会被导出前缀吞掉）
-  const m = maskStringsKeepComments(source).match(fnRe);
-  if (!m || m.index === undefined) return undefined;
-  const before = source.slice(0, m.index);
-  const lines = before.split("\n");
-  let seenComment = false;
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i]!.trim();
-    // 先吃 export 前的尾部空行；一旦进入注释块，再遇空行 = 块边界
-    if (line === "") {
-      if (seenComment) break;
-      continue;
-    }
-    if (line === "*/") continue;
-    if (line.startsWith("*") || line.startsWith("/*") || line.startsWith("//")) {
-      seenComment = true;
-      const body = line.replace(/^[*/\s]+/, "").replace(/\*\/$/, "").trim();
-      const th = body.match(/@nudo:throws\s+(.+)$/i);
-      if (th) {
-        const spec = th[1]!.trim();
-        if (spec === "*") any = true;
-        else {
-          for (const k of spec.split(/[,\s|]+/).map((s) => s.trim()).filter(Boolean)) {
-            if (k === "*") any = true;
-            else kinds.add(k);
-          }
-        }
-      }
-      const cs = body.match(/!!\s*throws(?:\s+([A-Za-z*][\w*|,\s]*))?/i);
-      if (cs) {
-        const spec = (cs[1] ?? "*").trim();
-        if (spec === "" || spec === "*") any = true;
-        else {
-          for (const k of spec.split(/[,\s|]+/).map((s) => s.trim()).filter(Boolean)) {
-            if (k === "*") any = true;
-            else kinds.add(k);
-          }
-        }
-      }
-      continue;
-    }
-    break;
-  }
-  if (any) return "*";
-  if (kinds.size > 0) return [...kinds];
-  return undefined;
+  const lines = fnDirectiveCommentLines(source, fnName);
+  const spec = scanThrowsDecl(lines);
+  if (spec === undefined) return undefined;
+  if (spec === "*") return "*";
+  return spec.split(",").filter(Boolean);
 }
 
 /**
@@ -1030,8 +939,8 @@ export function extractDeclaredThrows(
  *   @nudo:budget calls=50000 depth=128
  *   @nudo:budget forks=20000, calls=50000
  *
- * 与 @nudo:throws 同路径扫函数前注释块。只抬高预算（不降低全局默认）；
- * 未声明的维度沿用全局。非法值忽略。
+ * 与 @nudo:throws 同路径扫函数前注释块（D6=G2 同一 scope 绑定）。
+ * 只抬高预算（不降低全局默认）；未声明的维度沿用全局。非法值忽略。
  */
 export function extractFnBudget(
   source: string,
@@ -1039,44 +948,6 @@ export function extractFnBudget(
 ): { forks?: number; calls?: number; depth?: number } | undefined {
   const directiveSrc = stripStringsKeepComments(source);
   if (!directiveSrc.includes("@nudo:budget")) return undefined;
-  const escaped = identBoundaryRegex(fnName);
-  const fnRe = new RegExp(
-    `(?:export\\s+(?:default\\s+)?)?(?:async\\s+)?(?:function\\s+${escaped}|const\\s+${escaped}\\s*=)`,
-  );
-  // 先剥字符串再定位：字符串里的 `function foo` 不是声明（注释必须保留——
-  // `export default /** 契约 */ function f` 的注释若变空白会被导出前缀吞掉）
-  const m = maskStringsKeepComments(source).match(fnRe);
-  if (!m || m.index === undefined) return undefined;
-  const before = source.slice(0, m.index);
-  const lines = before.split("\n");
-  let seenComment = false;
-  const out: { forks?: number; calls?: number; depth?: number } = {};
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i]!.trim();
-    if (line === "") {
-      if (seenComment) break;
-      continue;
-    }
-    if (line === "*/") continue;
-    if (line.startsWith("*") || line.startsWith("/*") || line.startsWith("//")) {
-      seenComment = true;
-      const body = line.replace(/^[*/\s]+/, "").replace(/\*\/$/, "").trim();
-      const bd = body.match(/@nudo:budget\s+(.+)$/i);
-      if (bd) {
-        for (const part of bd[1]!.split(/[,\s|]+/).map((s) => s.trim()).filter(Boolean)) {
-          const kv = part.match(/^(forks|calls|depth)\s*=\s*(\d+)$/i);
-          if (kv) {
-            const n = Number(kv[2]);
-            if (Number.isFinite(n) && n >= 1) {
-              const key = kv[1]!.toLowerCase() as "forks" | "calls" | "depth";
-              out[key] = Math.floor(n);
-            }
-          }
-        }
-      }
-      continue;
-    }
-    break;
-  }
-  return Object.keys(out).length > 0 ? out : undefined;
+  const lines = fnDirectiveCommentLines(source, fnName);
+  return scanBudgetDecl(lines);
 }

@@ -95,6 +95,12 @@ export {
   formatDiagnostics, formatEffectiveInterfaceDisplay,
   formatGithubAnnotations, formatGitlabCodeQuality,
   formatInterfaceTierLine, formatShape, formatShapeSlot, ge, geNum,
+  // D5=F1 / D6=G2：指令抽取单源 + 作用域绑定（directive-scan）
+  extractFileEnvNames, extractMockModuleRecords, extractNudoImportRecords,
+  extractBalancedParens, findFnDirectiveScope, fnDirectiveCommentLines, listFnDirectiveScopes,
+  parseEnvPayload, parseMockModulePayload, parseNudoImportPayload,
+  scanBudgetDecl, scanCaseArgSpans, scanCaseTags, scanContractSegments, scanThrowsDecl,
+  type CaseTag, type FnDirectiveScope, type MockModuleRecord, type NudoImportRecord,
   generalizeAll, generalizeFromAst, generatedExportNames, getAbsProperty,
   getEvalCallCollector, getEvalClass, getFnImpl, getGeneralizeMemoSize,
   getImplicationOracle, getPropFlags, getSlot,

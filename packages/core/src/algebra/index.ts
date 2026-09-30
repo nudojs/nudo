@@ -149,6 +149,16 @@ export {
 } from "./refine.ts";
 
 export {
+  type CaseTag, type FnDirectiveScope, type MockModuleRecord, type NudoImportRecord,
+  cleanDirectiveLine, commentTextToLines, extractBalancedParens, extractFileEnvNames,
+  extractMockModuleRecords, extractNudoImportRecords, findFnDirectiveScope,
+  fnDirectiveCommentLines, listFnDirectiveScopes, parseEnvPayload,
+  parseMockModulePayload, parseNudoImportPayload, scanBudgetDecl, scanCaseArgSpans,
+  scanCaseTags, scanContractSegments, scanMalformedCaseTagRests, scanMalformedNudoImports,
+  scanThrowsDecl
+} from "./directive-scan.ts";
+
+export {
   type ConstraintBuilder, type NudoConstraint, type NudoField,
   type NudoFnConstraint, CONSTRAINT_BUILDERS, CONSTRAINT_BUILDER_NAMES,
   CONSTRAINT_EXPR_RE, SELF, andC, any, array, boolean,

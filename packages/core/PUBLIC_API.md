@@ -60,6 +60,8 @@ changing the signature of any row below is **major**.
 | `NudoConstraint`, `instantiateConstraint`, `checkArg`, `checkCall` | value/type | contract checking | **public** |
 | `interfaceTierOf`, `effectiveInterface`, `EffectiveInterface`, `InterfaceTierInfo` | value/type | interface tiers | **public** |
 | `refineAbsForRelTrue`, `extractRefinesFromSource` | value | refinement gate | **public** |
+| `listFnDirectiveScopes`, `findFnDirectiveScope`, `fnDirectiveCommentLines`, `FnDirectiveScope` | value/type | G2 directive scope binding (nearest AST Function, incl. nested / class method) | **public** |
+| `extractFileEnvNames`, `extractMockModuleRecords`, `extractNudoImportRecords`, `scanCaseTags`, `scanContractSegments`, `scanThrowsDecl`, `scanBudgetDecl`, `parseEnvPayload`, `parseMockModulePayload`, `parseNudoImportPayload`, `CaseTag`, `MockModuleRecord`, `NudoImportRecord` | value/type | single-source `@nudo:` directive grammar (see `docs/design/directive-scope.md`) | **public** |
 | `runTranspiled`, `callTranspiledExport`, `callTranspiledExportFull`, `TranspiledCallResult` | value/type | evaluator execution (analyze mode) | **public** |
 | `evalExprAbs` | value | Abs-native expression eval | **public** |
 

@@ -1,4 +1,4 @@
-import type { Node, Comment } from "@babel/types";
+import type { Node, Comment, File } from "@babel/types";
 import {
   type Abs,
   type MockHelper,
@@ -19,6 +19,12 @@ import {
   constraintToEntryAbs,
   CONSTRAINT_EXPR_RE,
   SELF,
+  listFnDirectiveScopes,
+  parseEnvPayload,
+  parseMockModulePayload,
+  scanCaseArgSpans,
+  scanCaseTags,
+  extractBalancedParens,
 } from "@nudojs/core";
 import { parse as babelParse } from "./parse.ts";
 
@@ -169,7 +175,6 @@ function emitDirectiveDiag(d: DirectiveDiag): void {
 // 指令标签只在「注释行首」匹配（可选 `*` / `//` 已由 comment.value 剥掉）：
 // 不得命中 case 参数字符串或文档散文里的 `@nudo:skip` / `@nudo:case` / `@nudo:mock` 字样。
 // `\b` 防 `@nudo:skipped` / `@nudo:cases` 误命中。
-const CASE_NAME_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:case\s+"([^"]+)"\s*\(/g;
 /** 宽松捕获 @nudo:case 标签后的整段文本，用于检测非法名形态 */
 const CASE_TAG_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:case\s+([^\n]+)/g;
 /** JS 标识符（Unicode 感知）：mock 名文法 */
@@ -476,49 +481,6 @@ function findTopLevelArrow(s: string): number {
     else if (depth === 0 && ch === "=" && s[i + 1] === ">") return i;
   }
   return -1;
-}
-
-function extractBalancedParens(text: string, startIdx: number): string | null {
-  if (text[startIdx] !== "(") return null;
-  let depth = 0;
-  let inString: string | null = null;
-  for (let i = startIdx; i < text.length; i++) {
-    const ch = text[i]!;
-    if (inString) {
-      // 原样 slice：`\` 不是转义
-      if (ch === inString) inString = null;
-      continue;
-    }
-    if (ch === '"' || ch === "'") {
-      inString = ch;
-      continue;
-    }
-    if (ch === "(") depth++;
-    if (ch === ")") depth--;
-    if (depth === 0) return text.slice(startIdx + 1, i);
-  }
-  return null;
-}
-
-/**
- * `)` 之后的 `=> expected` 表达式文本。允许 `=>` 出现在续行（与多行实参
- * 同构，剥块注释续行 ` * ` 前缀）；扫描到下一指令标签或注释结束。
- * 不吞下一个 `@nudo:`（清洗后行首才算指令标签）。期望取 `=>` 所在行的
- * 同行剩余——与旧行为一致，散文/后续行不会被并进表达式。
- */
-function extractCaseExpectedExpr(text: string, afterParen: number): string | undefined {
-  const lines = text.slice(afterParen).split("\n");
-  for (let i = 0; i < lines.length; i++) {
-    let line = lines[i]!;
-    if (i > 0) line = line.replace(/^\s*\*\s?/, "");
-    // 下一指令标签：不吞
-    if (/^\s*@nudo:/.test(line)) return undefined;
-    const arrow = line.match(/^\s*=>\s*(\S.*)$/);
-    if (arrow) return arrow[1]!.trim();
-    // 非空且非 `=>`：保持旧行为（同行散文/`!! throws` 不落成 expected）
-    if (line.trim() !== "") return undefined;
-  }
-  return undefined;
 }
 
 function parseArrowFunctionExpr(expr: string): { params: string[]; body: Node; paramPatterns: Node[] } | null {
@@ -859,35 +821,35 @@ function parseNudoMockExpr(expr: string): MockHelper | null {
 }
 
 function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] {
-  const directives: Directive[] = [];
-  for (const comment of comments) {
-    const text = comment.value;
+  return parseDirectivesFromCommentTexts(
+    comments.map((c) => ({
+      text: c.value,
+      startLine: c.loc?.start.line ?? 0,
+    })),
+  );
+}
 
-    // 先收集 case 的括号实参区间：多行实参里的 `@nudo:*` 字样是数据不是指令。
-    // 行首锚定挡不住续行（` * ` 前缀被剥掉后实参行就是「注释行首」），故必须
-    // 在 PURE/SKIP/MOCK/SAMPLE/CASE 扫描前遮罩实参区间。
-    const caseArgSpans: [number, number][] = [];
-    const caseMatches: { match: RegExpExecArray; argsStr: string; afterParen: number }[] = [];
-    CASE_NAME_REGEX.lastIndex = 0;
-    let caseMatch: RegExpExecArray | null;
-    while ((caseMatch = CASE_NAME_REGEX.exec(text)) !== null) {
-      const parenStart = caseMatch.index + caseMatch[0].length - 1;
-      const argsStr = extractBalancedParens(text, parenStart);
-      if (argsStr === null) continue;
-      const afterParen = parenStart + argsStr.length + 2;
-      // 嵌套 case：标签落在已有实参区间内 → 数据，不产出指令
-      const nested = caseArgSpans.some(([s, e]) => caseMatch!.index >= s && caseMatch!.index < e);
-      if (nested) continue;
-      caseArgSpans.push([caseMatch.index, afterParen]);
-      caseMatches.push({ match: caseMatch, argsStr, afterParen });
-    }
+/**
+ * 从注释块文本抽函数级指令（case/mock/pure/skip/sample）。
+ * D6=G2：文本来自 core directive-scan 的 scope 绑定，与 contract 同一函数集合。
+ */
+function parseDirectivesFromCommentTexts(
+  comments: Array<{ text: string; startLine: number }>,
+): Directive[] {
+  const directives: Directive[] = [];
+  for (const { text, startLine: commentStartLine } of comments) {
+
+    // D5=F1：case 标签文法（平衡括号 / 多行实参 / => expected / 实参遮罩）在
+    // core directive-scan 单源。多行实参里的 `@nudo:*` 字样是数据不是指令——
+    // PURE/SKIP/MOCK/SAMPLE 扫描前必须按实参区间遮罩。
+    const caseArgSpans: [number, number][] = scanCaseArgSpans(text);
+    const caseTags = scanCaseTags(text);
 
     // case 名非法形态（单引号/空/转义/缺实参括号）→ nudo:directive-syntax
     scanMalformedCaseNames(text, caseArgSpans);
 
     const inCaseArgs = (idx: number): boolean =>
-      caseArgSpans.some(([s, e]) => idx >= s && idx < e);
-    const commentStartLine = comment.loc?.start.line ?? 0;
+      caseArgSpans.some(([s, e]: [number, number]) => idx >= s && idx < e);
 
     // mock 名非法形态（非标识符）→ nudo:directive-syntax
     scanMalformedMockNames(text, caseArgSpans);
@@ -943,25 +905,23 @@ function parseDirectivesFromComments(comments: readonly Comment[]): Directive[] 
       });
     }
 
-    for (const { match, argsStr, afterParen } of caseMatches) {
-      const name = match[1];
+    for (const tag of caseTags) {
+      const name = tag.name;
       // 块注释续行的 ` * ` 前缀不属于实参文本（键名会被污染成 "* supplyChain"）
-      const cleaned = argsStr
+      const cleaned = tag.argsText
         .split("\n")
         .map((line) => line.replace(/^\s*\*\s?/, ""))
         .join("\n");
       const rawArgs = splitTopLevelArgs(cleaned);
       const argsAbs = rawArgs.map((a) => parseAbsExprDiag(a, `@nudo:case "${name}" argument`));
 
-      const expectedExpr = extractCaseExpectedExpr(text, afterParen);
       const expected =
-        expectedExpr !== undefined
-          ? parseAbsExprDiag(expectedExpr, `@nudo:case "${name}" => expected`)
+        tag.expectedText !== undefined
+          ? parseAbsExprDiag(tag.expectedText, `@nudo:case "${name}" => expected`)
           : undefined;
 
-      // match.index 可能落在行首前缀（`\n * `）上；commentLine 按标签实际位置计行
-      const tagOffset = match.index + match[0].indexOf("@nudo:case");
-      const linesBeforeMatch = text.slice(0, tagOffset).split("\n").length - 1;
+      // tagOffset 可能落在行首前缀（`\n * `）上；commentLine 按标签实际位置计行
+      const linesBeforeMatch = text.slice(0, tag.tagOffset).split("\n").length - 1;
       const commentLine = commentStartLine + linesBeforeMatch;
 
       directives.push({
@@ -1085,23 +1045,26 @@ function getFunctionName(node: Node): string {
   return "<anonymous>";
 }
 
+/**
+ * D6=G2：指令绑定 AST 最近 Function（含 nested function、class method）。
+ * 作用域清单与 refine 的 @nudo:contract 同源（core directive-scan），
+ * case 与 contract 对同一函数集合同时可见。
+ */
 export function extractDirectives(ast: Node): FunctionWithDirectives[] {
   const results: FunctionWithDirectives[] = [];
-
   if (ast.type !== "File") return results;
-  const body = ast.program.body;
 
-  for (const stmt of body) {
-    const leadingComments = stmt.leadingComments;
-    if (!leadingComments || leadingComments.length === 0) continue;
-
-    const directives = parseDirectivesFromComments(leadingComments);
+  const scopes = listFnDirectiveScopes(ast as File);
+  for (const scope of scopes) {
+    const directives = parseDirectivesFromCommentTexts(
+      scope.commentTexts.map((text, i) => ({
+        text,
+        startLine: scope.commentStartLines[i] ?? 0,
+      })),
+    );
     if (directives.length === 0) continue;
-
-    const name = getFunctionName(stmt);
-    results.push({ node: stmt, name, directives });
+    results.push({ node: scope.node, name: scope.name, directives });
   }
-
   return results;
 }
 
@@ -1201,12 +1164,11 @@ function findReplaceSeparator(raw: string): number {
   return -1;
 }
 
-// 文件级指令前缀契约：`//` 与 `///` 等价（comment.value 已剥掉首个 `//`，
+// 文件级指令前缀契约（D5=F1）：`//` 与 `///` 等价（comment.value 已剥掉首个 `//`，
 // `///` 形态残留一个 `/`，`//` 形态是空白/原文）。只认 CommentLine 行注释，
-// 块注释与字符串里的同形文本不算。check / load-deps 侧同契约，三套抽取器不合并。
+// 块注释与字符串里的同形文本不算。载荷文法在 core directive-scan 单源。
 const ENV_REGEX = /^\/?\s*@nudo:env\s+(.+)/;
-const MOCK_MODULE_REGEX = /^\/?\s*@nudo:mock-module\s+"([^"]+)"\s+from\s+"([^"]+)"/;
-const MOCK_MODULE_PARTIAL_REGEX = /^\/?\s*@nudo:mock-module\s+"([^"]+)"\s*\{([^}]+)\}\s*from\s+"([^"]+)"/;
+const MOCK_MODULE_REGEX = /^\/?\s*@nudo:mock-module\s+(.+)/;
 
 export function extractFileDirectives(ast: Node): FileDirective[] {
   const results: FileDirective[] = [];
@@ -1217,42 +1179,23 @@ export function extractFileDirectives(ast: Node): FileDirective[] {
     if (comment.type !== "CommentLine") continue;
     const text = comment.value;
 
-    const partialMatch = text.match(MOCK_MODULE_PARTIAL_REGEX);
-    if (partialMatch) {
-      const names = partialMatch[2].split(",").map((n) => n.trim()).filter(Boolean);
-      results.push({
-        kind: "mock-module",
-        source: partialMatch[1],
-        names,
-        fromPath: partialMatch[3],
-      });
-      continue;
-    }
-
     const mockModuleMatch = text.match(MOCK_MODULE_REGEX);
     if (mockModuleMatch) {
-      results.push({
-        kind: "mock-module",
-        source: mockModuleMatch[1],
-        fromPath: mockModuleMatch[2],
-      });
-      continue;
+      const rec = parseMockModulePayload(mockModuleMatch[1]!);
+      if (rec) {
+        results.push({
+          kind: "mock-module",
+          source: rec.source,
+          ...(rec.names ? { names: rec.names } : {}),
+          fromPath: rec.fromPath,
+        });
+        continue;
+      }
     }
 
     const envMatch = text.match(ENV_REGEX);
     if (envMatch) {
-      // env 名 token 只收 `\w+` 或 path-like——拒绝 `node";` 这类截断捕获，
-      // 与 check 的 fileEnvNamesFromText 同口径（不合并抽取器，只统一识别面）。
-      const isPathLikeEnv = (s: string): boolean =>
-        /^[^\s]+$/.test(s) &&
-        (s.startsWith("./") ||
-          s.startsWith("../") ||
-          s.startsWith("/") ||
-          /\.(ts|js|mjs|cjs|tsx|jsx)$/.test(s));
-      const envs = envMatch[1]!
-        .split(",")
-        .map((e) => e.trim().replace(/^['"]|['"]$/g, ""))
-        .filter((e) => e && (/^\w+$/.test(e) || isPathLikeEnv(e)));
+      const envs = parseEnvPayload(envMatch[1]!);
       if (envs.length > 0) results.push({ kind: "env", envs });
     }
   }
