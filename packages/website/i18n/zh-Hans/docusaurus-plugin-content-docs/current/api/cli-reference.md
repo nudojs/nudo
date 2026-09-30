@@ -66,6 +66,10 @@ nudo check <paths...> [options]
 | `--profile adoption\|strict` | 门禁 profile（默认 `strict`）。`adoption` = L2 入口 may-throw 降为 warning；L1 仍为 error。显式 `--entry-throws` 值覆盖 profile |
 | `--what-if <binding...>` | AI3：假设 `name:type` 绑定并报告 `--target`（与 LSP `nudo.whatIf` 同语义） |
 | `--target <name>` | 搭配 `--what-if`：要打印其推导类型的绑定名 |
+| `--fix` | 每个 issue 物化一条 fix/adjust 编辑（默认 dry-run：打印 unified diff）。silence/review 不会自动落地 |
+| `--only <codes…>` | 搭配 `--fix`：仅处理这些诊断码（如 `nudo:entry-may-throw`） |
+| `--write` | 搭配 `--fix`：把编辑写回磁盘（默认 dry-run） |
+| `--dry-run` | 搭配 `--fix`：只打印 diff（默认；保留以便显式声明） |
 
 **配置（`package.json`）：**
 
