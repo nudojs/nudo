@@ -626,6 +626,8 @@ type SymbolTable = {
 | <a id="abstostandardschemamodule"></a>`absToStandardSchemaModule` | fn | Abs → Standard Schema v1 模块源码。 | `absToStandardSchemaModule( exports: Record<string, Abs>, opts?: { banner?: string }, ): StandardSchemaModuleProjection` |
 | <a id="abstotstype"></a>`absToTSType` | fn | Abs → TS 类型串。有损：pred / 非 lit term 落到 shape 基类型。 | `absToTSType(a: Abs, typeVars?: Map<string, string>): string` |
 | <a id="abstozodschemamodule"></a>`absToZodSchemaModule` | fn | Abs 导出表 → 可 import 的 zod JS 模块源码。 | `absToZodSchemaModule( exports: Record<string, Abs>, opts?: { banner?: string }, ): ZodModuleProjection` |
+| <a id="addbudgetannotation"></a>`addBudgetAnnotation` | fn | `@nudo:budget forks=N` 注解 | `addBudgetAnnotation( source: string, fnName: string, forks = 64, )` |
+| <a id="addthrowsannotation"></a>`addThrowsAnnotation` | fn | ") \|\| lines[j]!.trim().startsWith("//")) return j; j--; &#125; return i; &#125; &#125; return -1; &#125; /** 在函数 JSDoc 里插入一行 `* @nudo:throws <Kind>`（已存在则不重复） | `addThrowsAnnotation( source: string, fnName: string, kind: string, )` |
 | <a id="ambientsourcesofsidecar"></a>`ambientSourcesOfSidecar` | fn | `lib.nudo.js\|ts` → candidate ambient sources next to it | `ambientSourcesOfSidecar(sidecarPath: string): string[]` |
 | <a id="analysis_abi"></a>`ANALYSIS_ABI` | const | 带包版本：升级 @nudojs/* 后旧 CheckJson 不得继续命中。 | `const ANALYSIS_ABI` |
 | <a id="analysisconfig"></a>`analysisConfig` | fn | 归一化 `nudo.analysis`。默认 mode=exports（A1：无指令但有 export/侧车的文件 进 IDE 分析；`all` / `directives` 需显式配置）。 | `analysisConfig(config: NudoConfig \| null \| undefined): AnalysisConfig` |
@@ -641,7 +643,11 @@ type SymbolTable = {
 | <a id="applymockmoduledirectives"></a>`applyMockModuleDirectives` | fn | Overlay `@nudo:mock-module` directives onto a modules map. | `applyMockModuleDirectives( base: Record<string, AbsModuleExports>, fileDirectives: FileDirective[], opts: { fromFile: string; loadModule?: LoadModule }, ): MockModuleApplyResult` |
 | <a id="applymockmoduledirectivesfromsource"></a>`applyMockModuleDirectivesFromSource` | fn | Source string → apply mock-module (CLI / one-shot hosts). | `applyMockModuleDirectivesFromSource( source: string, base: Record<string, AbsModuleExports>, opts: { fromFile: string; loadModule?: LoadModule }, ): MockModuleApplyResult` |
 | <a id="applysessioncacheconfig"></a>`applySessionCacheConfig` | fn | 接线 package.json#nudo.sessionCache（进程内 LRU 上限）并立刻 trim。 | `applySessionCacheConfig(config: NudoConfig \| null \| undefined): SessionCacheLimits` |
+| <a id="applytextedits"></a>`applyTextEdits` | fn | 把 edits 应用到源码（按 start 从后往前） | `applyTextEdits(source: string, edits: TextEdit[]): string` |
 | <a id="bindinginfo"></a>`BindingInfo` | type | — | `BindingInfo = { abs: Abs; loc?: SourceLocation; }` |
+| <a id="bodyreadfield"></a>`BodyReadField` | type | — | `BodyReadField = { field: string; type: string; via: string; }` |
+| <a id="bodyreadfieldsfor"></a>`bodyReadFieldsFor` | fn | 某函数某形参的 body-read 字段类型（供 draft / quickfix） | `bodyReadFieldsFor( map: BodyReadTypes, fnName: string, paramName: string, ): BodyReadField[] \| undefined` |
+| <a id="bodyreadtypes"></a>`BodyReadTypes` | type | — | `BodyReadTypes = Map<string, Map<string, BodyReadField[]>>` |
 | <a id="buildcasedirective"></a>`buildCaseDirective` | fn | 组装单行 ` * @nudo:case "name" (a, b)` 指令文本（无尾换行）。 | `buildCaseDirective(name: string, argsAbs: Abs[]): string \| null` |
 | <a id="buildmodulegraph"></a>`buildModuleGraph` | fn | Statically extract each file's relative import edges (extension resolution identical to CLI resolveModule: ''/'.js'/'.ts'/'.mjs'; bare npm specifiers skipped). | `buildModuleGraph( files: string[], cache?: ModuleGraphCache, )` |
 | <a id="callrecord"></a>`CallRecord` | type | — | — |
@@ -671,6 +677,7 @@ type SymbolTable = {
 | <a id="collectloaddepcontents"></a>`collectLoadDepContents` | fn | — | `collectLoadDepContents( filePath: string, source: string, loadModule: (spec: string, fromFile: string) => string \| undefined, )` |
 | <a id="collectmissingexportissues"></a>`collectMissingExportIssues` | fn | named import / re-export 缺名 → missing-export issue。 | `collectMissingExportIssues( source: string, modules: Record<string, AbsModuleExports>, fromFile: string, ): AbsModuleLoadIssue[]` |
 | <a id="collectparambodyaccesses"></a>`collectParamBodyAccesses` | fn | Draft-only：收集每个顶层函数形参上的成员读取键（`user.name` → name）。 | `collectParamBodyAccesses( source: string, ): Map` |
+| <a id="collectparambodyreadtypes"></a>`collectParamBodyReadTypes` | fn | 收集每个函数形参成员读取 + 用法推断类型。 | `collectParamBodyReadTypes(source: string): BodyReadTypes` |
 | <a id="collectskipreturns"></a>`collectSkipReturns` | fn | 每个带 `@nudo:skip` 的顶层函数 → 声明的返回 Abs；`null` = 未声明返回类型。 | `collectSkipReturns(source: string): Map<string, Abs \| null>` |
 | <a id="collectstaticimports"></a>`collectStaticImports` | fn | 从入口文件沿静态相对 import/require 收集（仅类型事实，不是运行时加载器）。 | `collectStaticImports( entryFile: string, maxDepth = 8, ): Map<string, ModuleExports>` |
 | <a id="completionitem"></a>`CompletionItem` | type | — | `CompletionItem = { label: string; kind: "property" \| "method" \| "variable"; detail?: string; }` |
@@ -727,6 +734,7 @@ type SymbolTable = {
 | <a id="extractfnconstraintsources"></a>`extractFnConstraintSources` | fn | — | `extractFnConstraintSources( sidecarSrc: string, fnName: string, )` |
 | <a id="extractnudoimportspecs"></a>`extractNudoImportSpecs` | fn | 从源码提取 `@nudo:import` / `@nudo:import * as` 的 specifier | `extractNudoImportSpecs(source: string): string[]` |
 | <a id="filterdiagnosticsbylevel"></a>`filterDiagnosticsByLevel` | fn | 按 analysis.diagnostics 档过滤 evaluator/check **显示路径**诊断。 | `filterDiagnosticsByLevel<T extends { severity: string; code?: string }>( diags: T[], level: DiagnosticsLevel, ): T[]` |
+| <a id="findfndeclstart"></a>`findFnDeclStart` | fn | 在源码中找 `function <fn>` / `export function <fn>` / `const <fn> =` 的 JSDoc/声明行 | `findFnDeclStart(lines: string[], fnName: string): number` |
 | <a id="findowningpackage"></a>`findOwningPackage` | fn | Nearest package.json walking up from the file's directory. | `findOwningPackage( fromFile: string, )` |
 | <a id="findprojectconfig"></a>`findProjectConfig` | fn | — | `findProjectConfig( startDir: string, )` |
 | <a id="formatderivedsection"></a>`formatDerivedSection` | fn | 组装生成段（组合式 + import + prelude）。 | `formatDerivedSection( row: DerivedExport, opts: { rootSidecarDir: string; targetSidecarDir: string; takenNames?: Iterable<string>; }, )` |
@@ -769,6 +777,8 @@ type SymbolTable = {
 | <a id="loadmodule"></a>`LoadModule` | type | — | `LoadModule = (spec: string, fromFile: string) => string \| undefined` |
 | <a id="locfromnode"></a>`locFromNode` | fn | — | `locFromNode(node: Node): SourceLocation` |
 | <a id="matchesemitallowlist"></a>`matchesEmitAllowlist` | fn | 极简 glob（`**` / `*` / `?`）：相对 projectDir 匹配**源文件**绝对路径 （不是侧车路径；侧车随源文件同目录写出）。无白名单 → true。 | `matchesEmitAllowlist( absPath: string, projectDir: string \| undefined, patterns: string[], ): boolean` |
+| <a id="materializeaction"></a>`materializeAction` | fn | kind → WorkspaceEdit 物化。返回 undefined = 该 action 只读（info）或缺证据。 | `materializeAction(input: MaterializeInput): QuickfixPlan \| undefined` |
+| <a id="materializeinput"></a>`MaterializeInput` | type | — | `MaterializeInput = { code: string; fn?: string; file: string; source: string; sidecarText?: string; sidecarPath: string; action: CheckAct...` |
 | <a id="mergeharvestoptions"></a>`MergeHarvestOptions` | type | — | `MergeHarvestOptions = { onConflict?: (c: EnvHarvestConflict) => void; }` |
 | <a id="mergeharvestunderenv"></a>`mergeHarvestUnderEnv` | fn | Handwritten `@nudojs/env` wins over harvest / graph modules on overlapping module keys and overlapping export names (docs/versioning.md B8 + website harvester API). | `mergeHarvestUnderEnv( harvestModules: Record<string, AbsModuleExports>, envModules: Record<string, AbsModuleExports>, opts?: MergeHarvestOptions, ): Record<string, AbsModuleExports>` |
 | <a id="mockdirectivestoabsseeds"></a>`mockDirectivesToAbsSeeds` | fn | 从函数上的 @nudo:mock 指令收集 Abs seed | `mockDirectivesToAbsSeeds( functions: Array<{ directives: FunctionWithDirectives["directives"] }>, opts?: { fromFile?: string; loadModule?: LoadModule; }, ): AbsMockSeeds` |
@@ -781,6 +791,8 @@ type SymbolTable = {
 | <a id="noteenvpathdeps"></a>`noteEnvPathDeps` | fn | 源码里的 path-based load specs 解析为绝对路径后登记反向边 | `noteEnvPathDeps(sourcePath: string, source: string): void` |
 | <a id="nudoconfig"></a>`NudoConfig` | type | — | `NudoConfig = { env?: string[]; mocks?: Record<string, string>; contract?: { autoBind?: boolean; emit?: string[] \| string; }; analysis?: {...` |
 | <a id="projectabstoschema"></a>`projectAbsToSchema` | fn | — | `projectAbsToSchema(a: Abs, opts?: { dialect?: SchemaDialect }): SchemaProjection` |
+| <a id="quickfixplan"></a>`QuickfixPlan` | type | — | `QuickfixPlan = { titleKind: QuickfixTitleKind; title: string; edits: TextEdit[]; sidecar?: { path: string; newText: string }; openPath?: ...` |
+| <a id="quickfixtitlekind"></a>`QuickfixTitleKind` | type | — | `QuickfixTitleKind = "fix" \| "silence" \| "review" \| "adjust" \| "scaffold"` |
 | <a id="referenceinfo"></a>`ReferenceInfo` | type | — | `ReferenceInfo = { name: string; loc: SourceLocation; uri?: string; }` |
 | <a id="relativizepath"></a>`relativizePath` | fn | 稳定逻辑根相对化（磁盘缓存路径维）：树内相对 `root`，树外取 `node_modules/<pkg>` 段、monorepo root 或 pnpm store 内容哈希； 绝对路径明文绝不进 key。 | `relativizePath(p: string, root?: string): string` |
 | <a id="resetallanalysiscaches"></a>`resetAllAnalysisCaches` | fn | 比 clearAnalysisSessionCaches 更彻底：再丢 AST LRU（测试 / 进程复用场景） | `resetAllAnalysisCaches(): void` |
@@ -802,6 +814,7 @@ type SymbolTable = {
 | <a id="setsessioncachefromproject"></a>`setSessionCacheFromProject` | fn | package.json#nudo.sessionCache 层（findProjectConfig / 宿主接线） | `setSessionCacheFromProject(partial: PartialLimits \| null \| undefined): void` |
 | <a id="setsessioncachelimits"></a>`setSessionCacheLimits` | fn | 显式覆盖（宿主 / 测试）。传 null 清除显式层 | `setSessionCacheLimits(partial: PartialLimits \| null): SessionCacheLimits` |
 | <a id="sha256hex"></a>`sha256Hex` | fn | — | `sha256Hex(data: string \| Buffer): string` |
+| <a id="shapedslfromfields"></a>`shapeDslFromFields` | fn | `shape({ type: string(), name: string() })` 文本 | `shapeDslFromFields(fields: BodyReadField[]): string` |
 | <a id="shouldanalyzefile"></a>`shouldAnalyzeFile` | fn | 是否应对该文件跑分析（自动路径，如 LSP validate）。 | `shouldAnalyzeFile( filePath: string, source: string \| undefined, config?: AnalysisConfig, ): boolean` |
 | <a id="sidecardraftpath"></a>`sidecarDraftPath` | fn | `lib.js\|ts` → `lib.nudo.draft.js\|ts`（不进 ambient sidecar 表） | `sidecarDraftPath(filePath: string): string` |
 | <a id="sourcehasnudodirectives"></a>`sourceHasNudoDirectives` | fn | — | `hasNudoDirectives(source: string): boolean` |
@@ -814,6 +827,8 @@ type SymbolTable = {
 | <a id="stripgeneratedcasedirectives"></a>`stripGeneratedCaseDirectives` | fn | 从源码剥离所有本模块生成的 @nudo:case 指令（名字以 call@ 开头，整行删除）。 | `stripGeneratedCaseDirectives(source: string)` |
 | <a id="symbolinfo"></a>`SymbolInfo` | type | — | `SymbolInfo = { name: string; kind: "function" \| "variable" \| "class" \| "parameter"; loc: SourceLocation; uri?: string; }` |
 | <a id="symboltable"></a>`SymbolTable` | type | — | `SymbolTable = { definitions: Map<string, SymbolInfo>; references: ReferenceInfo[]; }` |
+| <a id="textedit"></a>`TextEdit` | type | — | `TextEdit = { startLine: number; startCol: number; endLine: number; endCol: number; newText: string; }` |
+| <a id="titlekindfor"></a>`titleKindFor` | fn | kind → 标注（Fix all 不得把 silence 当修复） | `titleKindFor(code: string, action: CheckAction): QuickfixTitleKind` |
 | <a id="toposortdirty"></a>`topoSortDirty` | fn | Topological order with dependencies before dependents (only imports edges internal to dirty; cycles tolerated — remaining files appended in arbitrary order). | `topoSortDirty(imports: Map<string, Set<string>>, dirty: string[]): string[]` |
 | <a id="trimanalysisfilecache"></a>`trimAnalysisFileCache` | fn | 立刻压到当前 maxFiles（调低上限时收内存） | `trimAnalysisFileCache(): void` |
 | <a id="trimevalcache"></a>`trimEvalCache` | fn | 立刻压到当前 maxEvalRuns（调低上限时收内存） | `trimEvalCache(): void` |
@@ -825,6 +840,7 @@ type SymbolTable = {
 | <a id="typeexprtodirective"></a>`typeExprToDirective` | fn | agent 面类型表达式 → `@nudo:as` 文法 | `typeExprToDirective(expr: string): string` |
 | <a id="unifieddiff"></a>`unifiedDiff` | fn | 行级 unified diff：`--- a/path` 头 + `@@` hunk + 上下文 3 行；相同返回 "" | `unifiedDiff(a: string, b: string, path: string): string` |
 | <a id="validateschemanode"></a>`validateSchemaNode` | fn | SchemaNode 同步校验（生成模块与测试共用语义）。 | `validateSchemaNode(node: SchemaNode, value: unknown): StandardSchemaResult` |
+| <a id="wrapreturnnullable"></a>`wrapReturnNullable` | fn | 侧车 return 契约包一层 `nullable(...)`（nullish 臂违例的机械修法）。 | `wrapReturnNullable( sidecarSource: string, fnName: string, ): string \| undefined` |
 | <a id="writedraftresult"></a>`WriteDraftResult` | type | — | `WriteDraftResult = { draftPath: string; written: boolean; changed: boolean; draftable: boolean; draftSource: string; }` |
 | <a id="writeinterfacedraft"></a>`writeInterfaceDraft` | fn | 写入 `*.nudo.draft.js`（覆盖草稿文件本身；不碰正式 `*.nudo.js`）。 | `writeInterfaceDraft( filePath: string, draftSource: string, opts: { dryRun?: boolean; projectDir?: string; entries?: ReadonlyArray<Pick<InterfaceDraftEntry, "dsl" \| "skipped">>; draftable?: boolean; } = {}, ): WriteDraftResult` |
 | <a id="zodmoduleprojection"></a>`ZodModuleProjection` | type | — | `ZodModuleProjection = { source: string; dialect: SchemaDialect; dropped: string[]; }` |
