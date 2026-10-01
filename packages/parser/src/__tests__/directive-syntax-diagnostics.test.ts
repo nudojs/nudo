@@ -17,7 +17,7 @@ import {
   directiveDiagCount,
   setDirectiveDiagCollector,
 } from "../directives.ts";
-import type { CaseDirective, MockDirective, SkipDirective, AsDirective } from "../directives.ts";
+import type { CaseDirective, MockDirective, SkipDirective, AsDirective, ReplaceDirective } from "../directives.ts";
 
 function extractWithDiags(source: string) {
   takeDirectiveDiags(); // 清空
@@ -367,5 +367,233 @@ function g(x) { return x; }`;
     // 全量 take 清 seen → 再 extract 重新 emit
     extractDirectives(parse(BAD));
     expect(takeDirectiveDiags().length).toBe(1);
+  });
+});
+
+describe("BUG-015 S4-003: unclosed argument list no longer silently dropped", () => {
+  it(`/* @nudo:case "a" (1 */ → zero cases + unclosed diagnostic`, () => {
+    const { fns, diags } = extractWithDiags(`/* @nudo:case "a" (1 */
+function f(x) { return x; }`);
+    const cases = fns.flatMap((f) => f.directives.filter((d) => d.kind === "case"));
+    expect(cases).toHaveLength(0);
+    expect(
+      diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("unclosed argument list")),
+    ).toBe(true);
+  });
+
+  it(`inner closed / outer unclosed ("a" ((1)) variant) → diagnostic`, () => {
+    const { fns, diags } = extractWithDiags(`/**
+ * @nudo:case "a" ((1)
+ */
+function f(x) { return x; }`);
+    const cases = fns.flatMap((f) => f.directives.filter((d) => d.kind === "case"));
+    expect(cases).toHaveLength(0);
+    expect(
+      diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("unclosed argument list")),
+    ).toBe(true);
+  });
+
+  it("multi-line unclosed argument list → diagnostic", () => {
+    const { fns, diags } = extractWithDiags(`/**
+ * @nudo:case "a" (
+ *   1
+ */
+function f(x) { return x; }`);
+    const cases = fns.flatMap((f) => f.directives.filter((d) => d.kind === "case"));
+    expect(cases).toHaveLength(0);
+    expect(
+      diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("unclosed argument list")),
+    ).toBe(true);
+  });
+
+  it("balanced same-line case stays silent (regression guard)", () => {
+    const { fns, diags } = extractWithDiags(`/**
+ * @nudo:case "ok" (1)
+ */
+function f(x) { return x; }`);
+    expect(fns.flatMap((f) => f.directives.filter((d) => d.kind === "case"))).toHaveLength(1);
+    expect(diags).toHaveLength(0);
+  });
+
+  it("@nudo:skip (number() unclosed parenthesis → diagnostic, returns undefined", () => {
+    const { fns, diags } = extractWithDiags(`/**
+ * @nudo:skip (number()
+ */
+function f(x) { return x; }`);
+    const skips = fns.flatMap((f) => f.directives.filter((d) => d.kind === "skip")) as SkipDirective[];
+    expect(skips[0]!.returns).toBeUndefined();
+    expect(
+      diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("unclosed parenthesis")),
+    ).toBe(true);
+  });
+
+  it("@nudo:skip (number()) balanced still parses without diagnostic", () => {
+    const { fns, diags } = extractWithDiags(`/**
+ * @nudo:skip (number())
+ */
+function f(x) { return x; }`);
+    const skips = fns.flatMap((f) => f.directives.filter((d) => d.kind === "skip")) as SkipDirective[];
+    expect(skips[0]!.returns?.shape.k).toBe("prim");
+    expect(diags.filter((d) => d.code === "nudo:directive-syntax")).toHaveLength(0);
+  });
+});
+
+describe("BUG-015 S4-004: tag/payload separation stays on one line", () => {
+  it("empty @nudo:case tag does not glue the next line into a case", () => {
+    const { fns, diags } = extractWithDiags(`/*
+@nudo:case
+"evil" (1)
+*/
+function f(x) { return x; }`);
+    const cases = fns.flatMap((f) => f.directives.filter((d) => d.kind === "case")) as CaseDirective[];
+    expect(cases.map((c) => c.name)).not.toContain("evil");
+    expect(cases).toHaveLength(0);
+    // 空标签可见：一条 missing-quoted-name 诊断，且不含下一行内容
+    expect(diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("missing quoted name"))).toBe(true);
+    expect(diags.some((d) => d.message.includes("evil"))).toBe(false);
+  });
+
+  it("empty tag + real tag on next line → real case + attributed diagnostic", () => {
+    const { fns, diags } = extractWithDiags(`/**
+ * @nudo:case
+ * @nudo:case "real" (1)
+ */
+function f(x) { return x; }`);
+    const cases = fns.flatMap((f) => f.directives.filter((d) => d.kind === "case")) as CaseDirective[];
+    expect(cases.map((c) => c.name)).toEqual(["real"]);
+    expect(diags).toHaveLength(1);
+    // 诊断文案不得把下一行的真标签吞进 got
+    expect(diags[0]!.message.includes("real")).toBe(false);
+  });
+
+  it("prose line after empty tag is not reported as the tag payload", () => {
+    const { fns, diags } = extractWithDiags(`/**
+ * @nudo:case
+ * see docs for "x" (1)
+ */
+function f(x) { return x; }`);
+    expect(fns.flatMap((f) => f.directives.filter((d) => d.kind === "case"))).toHaveLength(0);
+    expect(diags.some((d) => d.code === "nudo:directive-syntax")).toBe(true);
+    expect(diags.some((d) => d.message.includes("see docs"))).toBe(false);
+  });
+
+  it("multi-line case arguments still parse (paren closed on later line)", () => {
+    const { fns, diags } = extractWithDiags(`/**
+ * @nudo:case "a" (
+ *   1,
+ *   2
+ * )
+ */
+function f(x) { return x; }`);
+    const cases = fns.flatMap((f) => f.directives.filter((d) => d.kind === "case")) as CaseDirective[];
+    expect(cases.map((c) => c.name)).toEqual(["a"]);
+    expect(diags).toHaveLength(0);
+  });
+
+  it("empty @nudo:mock tag does not glue the next line", () => {
+    const { fns, diags } = extractWithDiags(`/*
+@nudo:mock
+foo = 1
+*/
+function f(x) { return x; }`);
+    const mocks = fns.flatMap((f) => f.directives.filter((d) => d.kind === "mock")) as MockDirective[];
+    expect(mocks.map((m) => m.name)).not.toContain("foo");
+    expect(diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("@nudo:mock"))).toBe(true);
+    expect(diags.some((d) => d.message.includes("foo"))).toBe(false);
+  });
+
+  it("@nudo:mock from with unclosed path quote → diagnostic, no mock", () => {
+    const { fns, diags } = extractWithDiags(`/**
+ * @nudo:mock x from "src
+ */
+function f(x) { return x; }`);
+    const mocks = fns.flatMap((f) => f.directives.filter((d) => d.kind === "mock")) as MockDirective[];
+    expect(mocks).toHaveLength(0);
+    expect(
+      diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("unclosed quote in path")),
+    ).toBe(true);
+  });
+
+  it("/// line-comment directive form is recognized (aligned with core prefix)", () => {
+    const { fns, diags } = extractWithDiags(`/// @nudo:case "d" (1)
+/// @nudo:mock m = 2
+function f(x) { return x; }`);
+    const cases = fns.flatMap((f) => f.directives.filter((d) => d.kind === "case")) as CaseDirective[];
+    const mocks = fns.flatMap((f) => f.directives.filter((d) => d.kind === "mock")) as MockDirective[];
+    expect(cases.map((c) => c.name)).toEqual(["d"]);
+    expect(mocks.map((m) => m.name)).toEqual(["m"]);
+    expect(diags).toHaveLength(0);
+  });
+});
+
+describe("BUG-015 S4-006: inline directives accept JSDoc `* ` continuation lines", () => {
+  it("/**\\n * @nudo:as number()\\n */ → one as, prim type, no diagnostics", () => {
+    const { dirs, diags } = extractInlineWithDiags(`/**
+ * @nudo:as number()
+ */
+const a = 1;`);
+    expect(dirs).toHaveLength(1);
+    const asDir = dirs.find((d) => d.kind === "as") as AsDirective;
+    expect(asDir.typeAbs.shape.k).toBe("prim");
+    expect(diags).toHaveLength(0);
+  });
+
+  it("/**\\n * @nudo:replace a number()\\n */ → one replace targeting a", () => {
+    const { dirs, diags } = extractInlineWithDiags(`/**
+ * @nudo:replace a number()
+ */
+const a = 1;`);
+    expect(dirs).toHaveLength(1);
+    const rep = dirs.find((d) => d.kind === "replace") as ReplaceDirective;
+    expect(rep.targetSource).toBe("a");
+    expect(rep.typeAbs.shape.k).toBe("prim");
+    expect(diags).toHaveLength(0);
+  });
+
+  it("multiple inline directives in one block are each extracted", () => {
+    const { dirs, diags } = extractInlineWithDiags(`/**
+ * @nudo:replace a number()
+ * @nudo:replace b string()
+ */
+const a = (b) => b;`);
+    const reps = dirs.filter((d) => d.kind === "replace") as ReplaceDirective[];
+    expect(reps.map((r) => r.targetSource).sort()).toEqual(["a", "b"]);
+    expect(diags).toHaveLength(0);
+  });
+
+  it("/// line-comment form is recognized", () => {
+    const { dirs, diags } = extractInlineWithDiags(`/// @nudo:as number()
+const a = 1;`);
+    expect(dirs.filter((d) => d.kind === "as")).toHaveLength(1);
+    expect(diags).toHaveLength(0);
+  });
+
+  it("bare @nudo:as / @nudo:replace lines → explicit diagnostics, no directive", () => {
+    const { dirs, diags } = extractInlineWithDiags(`/**
+ * @nudo:as
+ * @nudo:replace
+ */
+const a = 1;`);
+    expect(dirs).toHaveLength(0);
+    expect(diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("@nudo:as requires"))).toBe(true);
+    expect(diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("@nudo:replace requires"))).toBe(true);
+  });
+
+  it("string contents are not mistaken for trailing comments", () => {
+    for (const expr of [`lit("http://x")`, `lit("see // docs")`, `shape({ note: lit("a /* b") })`]) {
+      const { dirs, diags } = extractInlineWithDiags(`// @nudo:as ${expr}
+const a = 1;`);
+      expect(dirs.filter((d) => d.kind === "as"), expr).toHaveLength(1);
+      expect(diags.some((d) => d.message.includes("Trailing comment")), expr).toBe(false);
+    }
+  });
+
+  it("real trailing comment after the expression still diagnosed", () => {
+    const { dirs, diags } = extractInlineWithDiags(`/**
+ * @nudo:as number() // why
+ */
+const x = 1;`);
+    expect(dirs.filter((d) => d.kind === "as")).toHaveLength(1);
+    expect(diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("Trailing comment"))).toBe(true);
   });
 });

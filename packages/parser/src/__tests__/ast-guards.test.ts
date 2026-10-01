@@ -301,4 +301,11 @@ describe("unwrapDefaultExport", () => {
     expect(unwrapDefaultExport(fn)).toBe(fn);
     expect(unwrapDefaultExport({ default: fn })).toBe(fn);
   });
+
+  // S4-006：null/undefined 在声明输入域边界——返回 undefined（fail-closed），
+  // 不打宿主 TypeError（公开 re-export，宿主直接传 null 曾即崩）
+  it("returns undefined for null/undefined instead of throwing", () => {
+    expect(unwrapDefaultExport(null as never)).toBeUndefined();
+    expect(unwrapDefaultExport(undefined as never)).toBeUndefined();
+  });
 });

@@ -600,7 +600,9 @@ function fileDirectiveVisibleText(source: string): string {
 
 export function extractFileEnvNames(source: string): string[] {
   const text = fileDirectiveVisibleText(source);
-  const re = new RegExp(`${LINE_COMMENT_PREFIX}\\s*@nudo:env\\s+([^\\n*]+)`, "g");
+  // S4-004 同族：标签/载荷同行分隔——`\s*`/`\s+` 跨行会把非注释行的
+  // `@nudo:env` 或下一行载荷粘进上一条行注释
+  const re = new RegExp(`${LINE_COMMENT_PREFIX}[ \\t]*@nudo:env[ \\t]+([^\\n*]+)`, "g");
   const out: string[] = [];
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
@@ -612,7 +614,7 @@ export function extractFileEnvNames(source: string): string[] {
 export function extractMockModuleRecords(source: string): MockModuleRecord[] {
   const text = fileDirectiveVisibleText(source);
   const re = new RegExp(
-    `${LINE_COMMENT_PREFIX}\\s*@nudo:mock-module\\s+([^\\n]+)`,
+    `${LINE_COMMENT_PREFIX}[ \\t]*@nudo:mock-module[ \\t]+([^\\n]+)`,
     "g",
   );
   const out: MockModuleRecord[] = [];
@@ -745,8 +747,17 @@ export type CaseTag = {
   tagOffset: number;
 };
 
-const CASE_NAME_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*|\/\/\/?\s*)?@nudo:case\s+"([^"]+)"\s*\(/g;
-const CASE_TAG_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*|\/\/\/?\s*)?@nudo:case\s+([^\n]+)/g;
+// S4-004：标签与载荷只允许同行分隔（`[ \t]`，不跨行）。`\s+` 会把下一行内容
+// 粘进上一标签（空 `@nudo:case` 吞下一行的 `"evil" (1)` 成合法 case）。
+// 多行实参由 extractBalancedParens 单独处理，不需要正则跨行。
+// 名字 `"([^"\n]+)"` 禁跨行：未闭合名引号曾把下一行粘进名字（错误归因）。
+// 前缀镜像 cleanDirectiveLine：块 `*` 续行 / 行注释 `///` 残留的**单个** `/`
+// （旧 `\/\/\/?` 要两个斜杠——只匹配 `////` 残留，既漏 `///` 又违反
+// 「//// 不是指令前缀」契约）。
+const CASE_NAME_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*|\/[ \t]*)?@nudo:case[ \t]+"([^"\n]+)"[ \t]*\(/g;
+// `\b` 防 `@nudo:cases`；`[ \t]*([^\n]*)` 让空标签（行尾无载荷）也可被
+// 消费方诊断，不再静默漏过。
+const CASE_TAG_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*|\/[ \t]*)?@nudo:case\b[ \t]*([^\n]*)/g;
 
 /**
  * `)` 之后的 `=> expected` 表达式文本。允许 `=>` 出现在续行（剥块注释续行
