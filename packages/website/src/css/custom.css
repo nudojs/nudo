@@ -1465,6 +1465,21 @@
   color: var(--nudo-haze-lit);
 }
 
+.proof-strip-source,
+.cost-stat-source {
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--ifm-color-emphasis-600);
+  text-decoration: underline dotted;
+}
+
+.proof-strip-source:hover,
+.cost-stat-source:hover {
+  color: var(--ifm-color-primary);
+}
+
 .proof-strip-link {
   font-family: var(--ifm-font-family-monospace);
   font-size: 0.82rem;
@@ -2835,6 +2850,12 @@ main .cs-playground,
 }
 
 .doc-agent-hint {
+  color: var(--ifm-color-emphasis-600);
+  font-size: 0.75rem;
+}
+
+/* Per-page provenance: engine version + build commit the docs were verified against */
+.doc-provenance {
   color: var(--ifm-color-emphasis-600);
   font-size: 0.75rem;
 }

@@ -85,7 +85,7 @@ signatures
 
 issues
   [WARNING L9 applyCoupon] applyCoupon (export): may throw RangeError  (nudo:entry-may-throw)
-      → throw RangeError → @nudo:throws RangeError / refine / guard / try-catch
+      → throw RangeError → @nudo:throws RangeError / sidecar fn({ … }) contract / refine / guard / try-catch
       fix:  nudo contract --draft  (emit a sidecar draft you can edit)
 ```
 
@@ -167,7 +167,7 @@ Post-retire check face (example-scale; native `ms()` is not fully harvested here
 
 ```text
 signatures
-  formatAge(durationMs: number) => unknown | string
+  formatAge(durationMs: number) => string
   parseAge(text: string) => undefined
 
 issues

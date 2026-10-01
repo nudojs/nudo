@@ -317,33 +317,66 @@ export const adoptSteps: AdoptStep[] = [
   },
 ];
 
-export type TrialStat = { value: string; labelId: string; labelDefault: string };
+/**
+ * 首页实测数字的溯源：每条 claim 都必须在 `path` 指向的文档页里逐字存在。
+ * tests/home-stats.test.ts 会核对（数字改了、文档没改 → 门禁红）。
+ */
+export type StatSource = {
+  /** 相对 packages/website/docs 的路径。 */
+  path: string;
+  /** 必须在该页出现的逐字引用（含数字本身）。 */
+  claims: string[];
+};
+
+export type TrialStat = {
+  value: string;
+  labelId: string;
+  labelDefault: string;
+  source: StatSource;
+  /** 定性陈述（如「你写的类型注解：0」）——没有数字可钉，只核 claims。 */
+  qualitative?: boolean;
+};
 
 export const trialStats: TrialStat[] = [
   {
     value: "98.6%",
     labelId: "homepage.trial.stat1",
     labelDefault: "precise signatures on @hapi/hoek",
+    source: { path: "guides/callsite-discovery.md", claims: ["98.6%"] },
   },
   {
     value: "0",
     labelId: "homepage.trial.stat2",
     labelDefault: "type annotations you write",
+    source: {
+      path: "intro.md",
+      claims: ["Annotations are never required"],
+    },
+    qualitative: true,
   },
   {
     value: "291 → 0",
     labelId: "homepage.trial.stat3",
     labelDefault: "contract check failures cleared",
+    source: { path: "guides/callsite-discovery.md", claims: ["98.6%", "291 → **0**"] },
   },
   {
-    value: "0.2 ms",
+    // 与 guides/vs-typescript.md 的微基准行同源（analyzeFile median）。
+    value: "0.19 ms",
     labelId: "homepage.trial.stat4",
     labelDefault: "median file-edit re-analyze",
+    source: { path: "guides/vs-typescript.md", claims: ["0.19 ms"] },
   },
 ];
 
 /** Cost narrative for AI coding — measured baselines, not a closed benchmark. */
-export type CostStat = { value: string; compare: string; labelId: string; labelDefault: string };
+export type CostStat = {
+  value: string;
+  compare: string;
+  labelId: string;
+  labelDefault: string;
+  source: StatSource;
+};
 
 export const costStats: CostStat[] = [
   {
@@ -351,18 +384,30 @@ export const costStats: CostStat[] = [
     compare: "vs 993k",
     labelId: "homepage.cost.token",
     labelDefault: "agent tokens to green (OSS historical-bug slice)",
+    source: {
+      path: "guides/ai-native-dx.md",
+      claims: ["**569k**", "993k (**+75%**)"],
+    },
   },
   {
     value: "45",
     compare: "vs 63",
     labelId: "homepage.cost.rounds",
     labelDefault: "gate rounds on the documented fix path",
+    source: {
+      path: "guides/ai-native-dx.md",
+      claims: ["**45 / 16**", "63 / 21"],
+    },
   },
   {
     value: "0.19 ms",
     compare: "vs 10 ms+",
     labelId: "homepage.cost.edit",
     labelDefault: "median single-file analyze (vs tsc.LS in micro probe)",
+    source: {
+      path: "guides/vs-typescript.md",
+      claims: ["**0.19 ms**", "**10 ms+**"],
+    },
   },
 ];
 

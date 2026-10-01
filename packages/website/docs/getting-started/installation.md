@@ -68,16 +68,21 @@ Details: [Coexistence with TypeScript](../guides/coexistence.md) · [Recipes —
 
 Install the **nudo-vscode** extension for inline type hints and diagnostics:
 
-1. Open VS Code
-2. Go to **Extensions** (Ctrl+Shift+X / Cmd+Shift+X)
-3. Search for **nudo-vscode** (or "Nudo")
-4. Click **Install**
-
-Published on the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=wmzy.nudo-vscode) and on Open VSX. You can also install from the command line:
+1. Download `nudo-vscode.vsix` from the [latest GitHub release](https://github.com/nudojs/nudo/releases)
+2. In VS Code: **Extensions** (Ctrl+Shift+X / Cmd+Shift+X) → `…` menu → **Install from VSIX…**
+3. Pick the downloaded file
 
 ```bash
-code --install-extension wmzy.nudo-vscode
+code --install-extension nudo-vscode.vsix
 ```
+
+The extension is also published to the VS Code Marketplace and Open VSX (`wmzy.nudo-vscode`) — if your editor finds it in the extension view, installing from there is equivalent:
+
+```bash
+code --install-extension wmzy.nudo-vscode   # when the listing is reachable
+```
+
+Listings are release artifacts, not a promise: the `.vsix` on GitHub Releases is the source of truth, and the marketplace tokens can lapse (the release job warns instead of failing). Building from source is always available: `pnpm --filter nudo-vscode run build && pnpm --filter nudo-vscode run package`.
 
 The vsix is self-contained: it bundles the language server, so you do not need a separate `@nudojs/lsp` install for the extension to start. Activation is `onLanguage:javascript` / `onLanguage:typescript`; whether a buffer is *analyzed* is the `nudo.analysis.mode` gate. Full surface: [VS Code guide](../guides/vscode.md).
 

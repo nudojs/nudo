@@ -1,14 +1,25 @@
 import React, {useState, type ReactNode} from 'react';
 import clsx from 'clsx';
 import useIsBrowser from '@docusaurus/useIsBrowser';
+import Head from '@docusaurus/Head';
+import Link from '@docusaurus/Link';
+import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import {ThemeClassNames} from '@docusaurus/theme-common';
 import {useDoc} from '@docusaurus/plugin-content-docs/client';
 import Translate from '@docusaurus/Translate';
 import TagsListInline from '@theme/TagsListInline';
 
 import EditMetaRow from '@theme/EditMetaRow';
+import {buildTechArticleJsonLd, ogImageAlt} from '../../../seo/jsonld.ts';
 
 const FEEDBACK_KEY = 'nudo-doc-feedback';
+
+// DefinePlugin（docusaurus.config.ts）在构建期注入；typeof 守卫让未注入的
+// 环境（例如将来其它打包路径）退化为不显示，而不是 ReferenceError。
+const ENGINE_VERSION: string =
+  typeof __NUDO_ENGINE_VERSION__ === 'string' ? __NUDO_ENGINE_VERSION__ : '';
+const DOCS_COMMIT: string =
+  typeof __NUDO_DOCS_COMMIT__ === 'string' ? __NUDO_DOCS_COMMIT__ : '';
 
 // 反馈按页存储：全局键会让投一票就全站致谢（pathname 含 locale 前缀，各语言页独立计）
 const feedbackStorageKey = () => `${FEEDBACK_KEY}:${window.location.pathname}`;
@@ -142,9 +153,20 @@ function FeedbackRow({issueUrl, praiseUrl}: {issueUrl: string; praiseUrl: string
 export default function DocItemFooter(): ReactNode {
   const {metadata} = useDoc();
   const {editUrl, lastUpdatedAt, lastUpdatedBy, tags} = metadata;
+  const {i18n} = useDocusaurusContext();
 
   const canDisplayTagsRow = tags.length > 0;
   const canDisplayEditMetaRow = !!(editUrl || lastUpdatedAt || lastUpdatedBy);
+
+  // 逐页结构化数据 + 社交卡片替代文本（站点级图在 docusaurus.config.ts）。
+  const articleJsonLd = buildTechArticleJsonLd({
+    title: metadata.title,
+    description: metadata.description,
+    permalink: metadata.permalink,
+    locale: i18n.currentLocale,
+    lastUpdatedAt: lastUpdatedAt ?? undefined,
+  });
+  const imageAlt = ogImageAlt(metadata.title);
 
   // 「No」不再跳编辑页：预填 issue（带页面路径与 locale），反馈能真正被收集。
   const issueUrl = `https://github.com/nudojs/nudo/issues/new?title=${encodeURIComponent(
@@ -158,6 +180,12 @@ export default function DocItemFooter(): ReactNode {
   return (
     <footer
       className={clsx(ThemeClassNames.docs.docFooter, 'docusaurus-mt-lg')}>
+      <Head>
+        <meta property="og:type" content="article" />
+        <meta property="og:image:alt" content={imageAlt} />
+        <meta name="twitter:image:alt" content={imageAlt} />
+        <script type="application/ld+json">{JSON.stringify(articleJsonLd)}</script>
+      </Head>
       {canDisplayTagsRow && (
         <div
           className={clsx(
@@ -171,6 +199,18 @@ export default function DocItemFooter(): ReactNode {
       )}
       <AgentActions permalink={metadata.permalink} title={metadata.title} />
       <FeedbackRow issueUrl={issueUrl} praiseUrl={praiseUrl} />
+      {ENGINE_VERSION && (
+        <div className={clsx('doc-provenance', 'margin-top--sm')}>
+          <Translate
+            id="theme.DocItem.footer.provenance"
+            values={{version: ENGINE_VERSION}}>
+            {'Docs built against nudojs@{version}'}
+          </Translate>
+          {DOCS_COMMIT && <span>{` · main@${DOCS_COMMIT}`}</span>}
+          {' · '}
+          <Link to="/docs/releases">Releases</Link>
+        </div>
+      )}
       {canDisplayEditMetaRow && (
         <EditMetaRow
           className={clsx(

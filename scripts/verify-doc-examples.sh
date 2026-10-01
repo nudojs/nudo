@@ -131,6 +131,145 @@ verify_export_standard() {
   pin "$label" "$mod" "$@"
 }
 
+# verify_scenario <label> <page> <slug> <mode:check|test> <pin>...
+# 同一页面里前后的示例互不相邻（各自独立成文件、行号各自从 1 起）时用场景围栏：
+# `verify#<slug>` 是主码、`verify-sidecar#<slug>` 是配套侧车，按 slug 单独成文件、
+# 单独跑一次。页面所有场景文件彼此独立，因此示例里的 `call@L5` / `entry@L1`
+# 这类行号断言可以逐字钉住。
+verify_scenario() {
+  local label="$1" page="$2" slug="$3" mode="$4"
+  shift 4
+  local stem out
+  stem=$(basename "$page" .md)
+  out="$tmp/$stem-$slug.out"
+  fences "$page" "verify#$slug" "$tmp/$stem-$slug.js"
+  fences "$page" "verify-sidecar#$slug" "$tmp/$stem-$slug.nudo.js"
+  [ -s "$tmp/$stem-$slug.nudo.js" ] || rm -f "$tmp/$stem-$slug.nudo.js"
+  if [ ! -s "$tmp/$stem-$slug.js" ]; then
+    fail=$((fail + 1))
+    echo "FAIL [$label] no \`verify#$slug\` fence found in $page"
+    return
+  fi
+  cli "$mode" "$tmp/$stem-$slug.js" > "$out" 2>&1
+  pin "$label" "$out" "$@"
+}
+
+# quote_pins <label> <page> <source-file> <pin>... — 引用页的每条摘录必须真的
+# 出现在源输出（<source-file>）里，同时出现在引用页正文里。引用页与运行结果
+# 不允许各自漂移：这是「别页转录」的公共检查。
+quote_pins() {
+  local label="$1" page="$2" src="$3"
+  shift 3
+  pin "$label" "$src" "$@"
+  local s
+  for s in "$@"; do
+    if grep -Fq -- "$s" "$page"; then
+      pass=$((pass + 1))
+    else
+      fail=$((fail + 1))
+      echo "FAIL [$label] $page does not quote: $s"
+    fi
+  done
+}
+
+# verify_quote_from_page <label> <page> <source-page> <mode> <pin>...
+# <page> 转录了 <source-page> 里 verify 围栏的真实运行输出（例如 api/cli-reference
+# 摘录 guides/test 的 transcript）。先跑源页拿到真输出，再要求同一条串在引用页里
+# 逐字存在。
+verify_quote_from_page() {
+  local label="$1" page="$2" source_page="$3" mode="$4"
+  shift 4
+  local stem out
+  stem=$(basename "$source_page" .md)
+  out="$tmp/$stem.quoted.out"
+  fences "$source_page" verify "$tmp/$stem.js"
+  fences "$source_page" verify-sidecar "$tmp/$stem.nudo.js"
+  [ -s "$tmp/$stem.nudo.js" ] || rm -f "$tmp/$stem.nudo.js"
+  if [ ! -s "$tmp/$stem.js" ]; then
+    fail=$((fail + 1))
+    echo "FAIL [$label] quote source $source_page has no verify fence"
+    return
+  fi
+  cli "$mode" "$tmp/$stem.js" > "$out" 2>&1
+  quote_pins "$label" "$page" "$out" "$@"
+}
+
+# verify_example_quote <label> <page> <mode> <target-file> <pin>...
+# <page> 转录 docs/examples/ 下真实文件的运行输出（那些文件由 verify:examples
+# 门禁）。同一条串必须同时出现在真实运行与引用页里。
+verify_example_quote() {
+  local label="$1" page="$2" mode="$3" target="$4"
+  shift 4
+  local out
+  out="$tmp/example-quote.out"
+  cli "$mode" "$target" > "$out" 2>&1
+  quote_pins "$label" "$page" "$out" "$@"
+}
+
+# verify_scenario_quote <label> <page> <source-page> <slug> <mode> <pin>...
+# 同 verify_quote_from_page，但源是「场景围栏」（`verify#<slug>`）：多场景源页
+# 的某一段被别页转录时用这条。
+verify_scenario_quote() {
+  local label="$1" page="$2" source_page="$3" slug="$4" mode="$5"
+  shift 5
+  local stem out
+  stem=$(basename "$source_page" .md)
+  out="$tmp/$stem-$slug.quoted.out"
+  fences "$source_page" "verify#$slug" "$tmp/$stem-$slug.js"
+  if [ ! -s "$tmp/$stem-$slug.js" ]; then
+    fail=$((fail + 1))
+    echo "FAIL [$label] quote source $source_page has no \`verify#$slug\` fence"
+    return
+  fi
+  cli "$mode" "$tmp/$stem-$slug.js" > "$out" 2>&1
+  quote_pins "$label" "$page" "$out" "$@"
+}
+
+# test: three independent scenarios on one page (subtract report / entry-only
+# fallback / failing declared assertion). Each keeps its own file so the page's
+# line-number claims (`call@L5`, `entry@L1`) are pinned verbatim.
+verify_scenario test-math packages/website/docs/guides/test.md math test \
+  'call@L5  (5, 3) => 2' \
+  'call@L6  (1, 10) => -9' \
+  '2 synthetic case(s) printed above'
+verify_scenario test-entry packages/website/docs/guides/test.md entry test \
+  'entry@L1  (any) => any   throws TypeError'
+verify_scenario test-dbl packages/website/docs/guides/test.md dbl test \
+  'debug "double"  (2) => 4' \
+  'debug "bad"  (3) => 6' \
+  '✗ 1 passed · 1 failed · 0 unchecked' \
+  'expected: 7' \
+  'actual:   6' \
+  'nudo:case-expected'
+
+# cli-reference transcribes the gated runs above (check heads from guides/check,
+# test reports from guides/test) — every quoted line must still match the run.
+verify_scenario_quote cli-reference-test-quotes packages/website/docs/api/cli-reference.md packages/website/docs/guides/test.md math test \
+  'call@L5  (5, 3) => 2' \
+  'call@L6  (1, 10) => -9'
+verify_scenario_quote cli-reference-entry-quotes packages/website/docs/api/cli-reference.md packages/website/docs/guides/test.md entry test \
+  '(any) => any   throws TypeError'
+verify_quote_from_page cli-reference-check-quotes packages/website/docs/api/cli-reference.md packages/website/docs/guides/check.md check \
+  'getName(user: any) => any  throws TypeError' \
+  'subtract(a: any, b: any) => number'
+
+# troubleshooting shows the Day-0 face (no contract yet) as its own scenario —
+# the quoted block and the FAQ's explanation are the same run.
+verify_scenario troubleshooting-day0 packages/website/docs/getting-started/troubleshooting.md day0 check \
+  'scale(x: any) => number | string' \
+  '0 error · 0 warning · 0 info · 2 fn'
+
+# case-study-retire quotes real retire examples (files gated by verify:examples).
+verify_example_quote case-study-quotes-migrate packages/website/docs/guides/case-study-retire.md check docs/examples/migrate/after/src/math.js \
+  'OK' \
+  'signatures'
+verify_example_quote case-study-quotes-retire-real packages/website/docs/guides/case-study-retire.md check docs/examples/retire-real/after/src/age.js \
+  'formatAge(durationMs: number) => string' \
+  'parseAge(text: string) => undefined' \
+  'nudo:unknown-inference'
+verify_example_quote case-study-quotes-retire-debug packages/website/docs/guides/case-study-retire.md check docs/examples/retire-debug/after/src/logger.js \
+  'createLogger(namespace: any) => unknown'
+
 # --- verified pages (pins mirror the output blocks on each page) ---------------
 
 # quick-start: sidecar auto-binds, the violating call gates, signatures print.
@@ -382,6 +521,24 @@ for flag in $cli_flags; do
   fi
 done
 
+# 反向审计：文档里写出的每个长 flag 必须是真注册过的产品开关——防止文档
+# 发明一个从未实现的 flag（或漏删已删除的 flag）。guides/cli.md 的命令行
+# 用法串同口径。
+# `--no` 只是 `--no-draft` / `--no-workflows` 的书写前缀，不是 flag 本身。
+for flag in $(grep -ohE '\--[a-z][a-z-]+' \
+  packages/website/docs/api/cli-reference.md packages/website/docs/guides/cli.md \
+  | sort -u); do
+  case "$flag" in
+    --no) continue ;;
+  esac
+  if printf '%s\n' "$cli_flags" | grep -qxF -- "$flag"; then
+    pass=$((pass + 1))
+  else
+    printf 'FAIL cli-docs: docs document flag `%s`, not registered in packages/nudojs\n' "$flag"
+    fail=$((fail + 1))
+  fi
+done
+
 # zh ↔ en fence parity: tagged code blocks are language-independent — the zh
 # translation may only translate prose. Any byte drift in a `verify` /
 # `verify-sidecar` fence (en page vs zh mirror) is a doc bug and goes red here,
@@ -397,7 +554,7 @@ for page in $(find packages/website/docs -name '*.md' | sort); do
     fail=$((fail + 1))
     continue
   fi
-  for tag in verify verify-sidecar; do
+  for tag in verify verify-sidecar $(grep -oE '^```(js|javascript) verify(-sidecar)?#[a-z0-9-]+' "$page" | sed 's/^```[a-z]* //' | sort -u); do
     fences "$page" "$tag" "$tmp/par-en.js"
     fences "$zh_page" "$tag" "$tmp/par-zh.js"
     if [ -s "$tmp/par-en.js" ] || [ -s "$tmp/par-zh.js" ]; then
@@ -440,7 +597,7 @@ if [ "$REPORT_MODE" -eq 1 ]; then
           ;;
       esac
       case "$line" in
-        '```js verify'|'```javascript verify'|'```js verify-sidecar'|'```javascript verify-sidecar')
+        '```js verify'|'```javascript verify'|'```js verify-sidecar'|'```javascript verify-sidecar'|'```js verify#'*|'```javascript verify#'*|'```js verify-sidecar#'*|'```javascript verify-sidecar#'*)
           has_verify=1
           verified_js=$((verified_js + 1))
           ;;

@@ -75,9 +75,8 @@ jobs:
       - name: Build docs
         run: pnpm run docs:build
 
-      # agent 面：每页 .md + llms-full.txt（写入 build 产物目录）
-      - name: Generate agent markdown
-        run: node scripts/gen-llms.mjs
+      # agent 面（每页 .md + llms-full.txt）由 website 的 `postbuild` 生成——
+      # 与本地 `pnpm run docs:build` 同一条链路，CI 无需重复执行。
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0

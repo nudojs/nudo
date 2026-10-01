@@ -3,13 +3,31 @@ import type { Config, Plugin } from "@docusaurus/types";
 import type { Configuration } from "webpack";
 import { DefinePlugin, NormalModuleReplacementPlugin } from "webpack";
 import type * as Preset from "@docusaurus/preset-classic";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { readFileSync } from "node:fs";
 import { remarkPairSidecarPlayground } from "./src/plugins/remark-pair-sidecar";
+import { buildSiteGraph } from "./src/seo/jsonld.ts";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const websiteRoot = resolve(dirname(fileURLToPath(import.meta.url)));
+
+// 每页 provenance：文档构建所用的引擎版本（读包版本，永不手改）+ 构建提交。
+// CI 有 GITHUB_SHA；本地回退到 git rev-parse（无 git 时留空，页面只显示版本）。
+const docsCommit = ((): string => {
+  const env = process.env.GITHUB_SHA;
+  if (env && env.length > 0) return env.slice(0, 7);
+  try {
+    return execFileSync("git", ["rev-parse", "--short", "HEAD"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return "";
+  }
+})();
 
 // 与 config.baseUrl 保持一致；announcementBar 是原始 HTML，链接需自带 baseUrl
 const baseUrl = "/nudo/";
@@ -57,6 +75,16 @@ const config: Config = {
   organizationName: "nudojs",
   projectName: "nudo",
 
+  // 全站结构化数据（site-level JSON-LD）。逐页 TechArticle 由
+  // src/theme/DocItem/Footer 注入——两者都不与 Docusaurus 默认 meta 冲突。
+  headTags: [
+    {
+      tagName: "script",
+      attributes: { type: "application/ld+json" },
+      innerHTML: JSON.stringify(buildSiteGraph(pkgVersion("nudojs"))),
+    },
+  ],
+
   onBrokenLinks: "throw",
   onBrokenAnchors: "throw",
 
@@ -84,10 +112,14 @@ const config: Config = {
           // （hProperties → CodeBlock playgroundMain prop），让契约围栏
           // 也能拿到双栏 Playground 链接。
           remarkPlugins: [remarkPairSidecarPlayground],
+          // zh 页的「Edit this page」必须落到 zh 镜像文件（i18n/zh-Hans/…），
+          // 不是英文源——插件该选项默认 false，会把两种语言都指到 en。
+          editLocalizedFiles: true,
         },
         blog: {
           showReadingTime: true,
           editUrl: "https://github.com/nudojs/nudo/tree/main/packages/website/",
+          editLocalizedFiles: true,
         },
         theme: {
           customCss: "./src/css/custom.css",
@@ -284,6 +316,10 @@ const config: Config = {
             plugins: [
               // Exact free-variable replacements for Babel/webpack env probes.
               new DefinePlugin({
+                // 每页 provenance（DocItem/Footer 渲染）：构建时的引擎版本 + 提交。
+                // 读包版本/ git，永不手改；本地缺 git 时 commit 为空串。
+                __NUDO_ENGINE_VERSION__: JSON.stringify(pkgVersion("nudojs")),
+                __NUDO_DOCS_COMMIT__: JSON.stringify(docsCommit),
                 "process.env.NODE_ENV": JSON.stringify(
                   process.env.NODE_ENV ?? "development",
                 ),
