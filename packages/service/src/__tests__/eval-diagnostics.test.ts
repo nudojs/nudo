@@ -100,4 +100,54 @@ function f(name) {
     const d = collectEvalDiagnostics(src);
     expect(d.builtinUnknown.map((b) => b.name)).toContain("require");
   });
+
+  it("does not flag rest / default / destructured bindings", () => {
+    const src = `
+export function f(x = 1, {a, b = 2}, [c, ...rest]) {
+  const {p, ...others} = a;
+  return x + b + c + rest + others + p;
+}
+`;
+    const d = collectEvalDiagnostics(src);
+    expect(d.builtinUnknown).toHaveLength(0);
+  });
+
+  it("does not flag named function / class expression self-references", () => {
+    const src = `
+const g = function named(n) { return n < 2 ? 1 : n * named(n - 1); };
+const K = class Klass { static make() { return Klass; } };
+export function f(n) { return g(n) + K.make(); }
+`;
+    const d = collectEvalDiagnostics(src);
+    expect(d.builtinUnknown).toHaveLength(0);
+  });
+
+  it("flags free identifiers in computed keys / computed members", () => {
+    const src = `
+export class C {
+  [computedKey]() { return 1; }
+}
+export function f(o) {
+  const a = {[missing]: 1};
+  const b = o[alsoMissing];
+  return a + b + new C()[computedKey]();
+}
+`;
+    const names = collectEvalDiagnostics(src).builtinUnknown.map((b) => b.name);
+    expect(names).toContain("missing");
+    expect(names).toContain("alsoMissing");
+    expect(names).toContain("computedKey");
+  });
+
+  it("non-computed property / member names stay name positions", () => {
+    const src = `
+export function f(o) {
+  const a = {key: 1};
+  const {key} = a;
+  return a.key + o.name + key;
+}
+`;
+    const d = collectEvalDiagnostics(src);
+    expect(d.builtinUnknown).toHaveLength(0);
+  });
 });
