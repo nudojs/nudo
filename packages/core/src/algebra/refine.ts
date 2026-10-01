@@ -258,6 +258,25 @@ function rewriteSidecarSource(
         cuts.push({ start: stmt.start, end: decl.start, text: "" });
         continue;
       }
+      // export { local as exported }（DESIGN-003 别名段，无 from）：身份=导出
+      // 名，绑定=本地 const（声明本体留在 code）——登记 key=导出名 expr=local，
+      // 子句整体切除。re-export（export {…} from "…"）仍整体拒绝。
+      if (!stmt.source) {
+        let aliasPairs = false;
+        for (const spec of stmt.specifiers) {
+          if (spec.type !== "ExportSpecifier") continue;
+          if (spec.local.type !== "Identifier") continue;
+          const key =
+            spec.exported.type === "Identifier" ? spec.exported.name : spec.exported.value;
+          if (key === undefined) continue;
+          exportPairs.push({ key, expr: spec.local.name });
+          aliasPairs = true;
+        }
+        if (aliasPairs) {
+          cuts.push({ start: stmt.start!, end: stmt.end!, text: "" });
+          continue;
+        }
+      }
       // export { … } / export { … } from "…"：无声明形式，整体移除
       badExport("'export { … }' (list / re-export)");
       if (stmt.start != null && stmt.end != null) {

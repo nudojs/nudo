@@ -187,8 +187,11 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           if (!stmt.source) return `${pad}/* export * as without source skipped */`;
           return nsSpecs
             .map((s) => {
+              // string 导出名（export * as "a-b" from）重发射必须保引号
               const exported =
-                s.exported.type === "Identifier" ? s.exported.name : s.exported.value;
+                s.exported.type === "Identifier"
+                  ? s.exported.name
+                  : JSON.stringify(s.exported.value);
               return `${pad}export * as ${exported} from ${JSON.stringify(stmt.source!.value)};`;
             })
             .join("\n");
@@ -201,9 +204,15 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
             } => "local" in s,
           )
           .map((s) => {
-            const local = s.local.type === "Identifier" ? s.local.name : s.local.value;
+            // DESIGN-003：别名导出段 `export { _nudo_1 as class }` /
+            // string 导出名 `export { _nudo_1 as "a-b" }` 重发射——保留字
+            // 导出名合法（IdentifierName），string 名必须保引号
+            const local =
+              s.local.type === "Identifier" ? s.local.name : JSON.stringify(s.local.value);
             const exported =
-              s.exported.type === "Identifier" ? s.exported.name : s.exported.value;
+              s.exported.type === "Identifier"
+                ? s.exported.name
+                : JSON.stringify(s.exported.value);
             return local === exported ? local : `${local} as ${exported}`;
           })
           .join(", ");

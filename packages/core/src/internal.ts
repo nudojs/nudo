@@ -57,6 +57,11 @@ export {
   type LoadDepsFingerprint, extractAllLoadSpecs, loadModuleDepsFingerprint,
   normPath, resolveDepPath, sidecarSpecsOf, stablePathKey, stablePathKeyGraph
 } from "./algebra/load-deps-fp.ts";
+export {
+  // DESIGN-003：sidecar 契约身份=导出名；emit 层据此把 `export { _c as class }`
+  // 的本地名归一到导出名（engine machinery——产品面走 localNamedExports）
+  exportedNameOfLocal
+} from "./algebra/interface.ts";
 
 // derivation sessions + rendering experiments
 export {

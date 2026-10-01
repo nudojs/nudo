@@ -1,8 +1,9 @@
 /**
  * 生成段标识符改写与 formatDerivedSection。
- * 自 interface-derivation.ts 机械拆出；语义未改。
+ * 自 interface-derivation.ts 机械拆出；语义未改（DESIGN-003 增绑定别名发射）。
  */
 import { relative, resolve } from "node:path";
+import { allocNudoBinding, directBindingOk, exportNameRepr } from "./export-binding.ts";
 import type { DerivedExport } from "./interface-derivation-project.ts";
 
 function resolveRelImport(fromSpec: string, fromDir: string, targetDir: string): string {
@@ -17,6 +18,10 @@ class NameAllocator {
   private readonly taken: Set<string>;
   constructor(initial?: Iterable<string>) {
     this.taken = new Set(initial ?? []);
+  }
+  /** 名字是否已被占用（绑定别名分配用） */
+  has(preferred: string): boolean {
+    return this.taken.has(preferred);
   }
   claim(preferred: string): string {
     if (!this.taken.has(preferred)) {
@@ -104,8 +109,12 @@ export function formatDerivedSection(
   }
 
   // ---- 名字分配：先占 export 名，再 import local，再 prelude local ----
+  // DESIGN-003：身份=导出名 row.fn。绑定名不安全（保留字 / 非 ident / 已被
+  // 占用——含同文件 import local 抢名）时以 `_nudo_<n>` 别名绑定发射
+  // `const <alias> = …; export { <alias> as <row.fn> };`，导出面保身份。
   const namer = new NameAllocator(opts.takenNames);
-  namer.claim(row.fn);
+  const directBinding = directBindingOk(row.fn, (n) => namer.has(n));
+  const binding = directBinding ? namer.claim(row.fn) : namer.claim(allocNudoBinding((n) => namer.has(n)));
   const renames = new Map<string, string>();
   const importLocals: Array<{ original: string; local: string; from: string }> = [];
   for (const [name, from] of [...importMap.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
@@ -143,11 +152,15 @@ export function formatDerivedSection(
     })
     .sort((a, b) => a.localeCompare(b));
 
+  const exportStmt = directBinding
+    ? `export const ${binding} = fn({ ${paramParts.join(", ")} }${retPart});`
+    : `const ${binding} = fn({ ${paramParts.join(", ")} }${retPart});\nexport { ${binding} as ${exportNameRepr(row.fn)} };`;
+
   const lines = [
     ...importLineTexts,
     ...(importLineTexts.length > 0 && renamedPreludes.length > 0 ? [""] : []),
     ...renamedPreludes,
-    `export const ${row.fn} = fn({ ${paramParts.join(", ")} }${retPart});`,
+    exportStmt,
   ];
 
   const usedNames = new Set<string>();
@@ -156,7 +169,7 @@ export function formatDerivedSection(
     const n = preludeLocalName(line);
     if (n) usedNames.add(n);
   }
-  usedNames.add(row.fn);
+  usedNames.add(binding);
 
   return { text: lines.join("\n"), usedNames: [...usedNames] };
 }

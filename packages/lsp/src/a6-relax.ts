@@ -2,6 +2,8 @@
  * A6：把侧车里 fn/param 上的数值谓词放宽为基类型（保守文本改写）。
  * 只在目标 fn 导出绑定附近改写，避免污染其它导出。
  */
+import { matchSidecarFnDecl } from "@nudojs/service/emit";
+
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -21,20 +23,18 @@ function stripNumericPredsKeepStructural(chain: string): string {
     .replace(/\.int\b/g, "");
 }
 
-/** 定位 `export const <fn> = … fn( … )` / `<fn> = fn( … )` 的平衡括号区域 */
+/** 定位 `export const <fn> = … fn( … )` / `<fn> = fn( … )` 的平衡括号区域。
+ *  DESIGN-003：定位键=导出名身份（别名段 `const _nudo_1 = fn(…); export
+ *  { _nudo_1 as class }` 经 matchSidecarFnDecl 解析绑定）。 */
 function replaceInFnRegion(
   src: string,
   fnName: string,
   replacer: (region: string) => string | undefined,
 ): string | undefined {
-  const fn = escapeRegExp(fnName);
-  const startRe = new RegExp(
-    `(?:export\\s+const\\s+${fn}\\s*=\\s*|(?<![\\w$])${fn}\\s*=\\s*)fn\\s*\\(`,
-  );
-  const m = src.match(startRe);
-  if (!m || m.index === undefined) return undefined;
-  const start = m.index;
-  const open = start + m[0].lastIndexOf("(");
+  const located = matchSidecarFnDecl(src, fnName);
+  if (located === undefined) return undefined;
+  const start = located.start;
+  const open = located.openParen;
   let depth = 0;
   let end = -1;
   for (let i = open; i < src.length; i++) {

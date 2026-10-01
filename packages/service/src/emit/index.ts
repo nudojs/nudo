@@ -119,6 +119,8 @@ export {
   addThrowsAnnotation,
   addBudgetAnnotation,
   wrapReturnNullable,
+  matchSidecarFnDecl,
+  sidecarBindingFor,
   titleKindFor,
   findFnDeclStart,
   type MaterializeInput,

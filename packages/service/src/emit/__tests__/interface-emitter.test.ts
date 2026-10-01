@@ -251,3 +251,101 @@ describe("emitInterface", () => {
     expect(second.skipped).toContainEqual({ fn: "scale", reason: "not-projectable" });
   });
 });
+
+describe("DESIGN-003 reserved-word exports (identity = exported name)", () => {
+  /** 保留字导出：本地名 _c，导出名 class —— 身份恒为 class。 */
+  const CLS_JS = `function _c(x) { return x + 1; }\n_c(2);\nexport { _c as class };\n`;
+  /** 两个保留字导出（class / let）→ 两个不同别名绑定。 */
+  const TWO_JS =
+    `function _c(x) { return x + 1; }\n_c(2);\nexport { _c as class };\n` +
+    `function _d(x) { return x + 2; }\n_d(2);\nexport { _d as let };\n`;
+  const loadModule = (spec: string, from: string): string | undefined => {
+    if (!spec.startsWith(".")) return undefined;
+    const parts = from.split("/").slice(0, -1);
+    for (const seg of spec.split("/")) {
+      if (seg === "" || seg === ".") continue;
+      if (seg === "..") parts.pop();
+      else parts.push(seg);
+    }
+    try {
+      return readFileSync(parts.join("/"), "utf-8");
+    } catch {
+      return undefined;
+    }
+  };
+
+  it("emits alias form `const _nudo_1 = fn(…); export { _nudo_1 as class };`", async () => {
+    const file = join(dir, "cls.js");
+    writeFileSync(file, CLS_JS);
+    const r = await emitInterface(file, { fnNames: ["class"], mode: "add" });
+    expect(r.written).toEqual(["class"]);
+    expect(r.issues).toEqual([]);
+    const sidecar = readFileSync(join(dir, "cls.nudo.js"), "utf-8");
+    expect(sidecar).toContain("const _nudo_1 = fn(");
+    expect(sidecar).toContain("export { _nudo_1 as class };");
+    // 身份不是别名：不得出现 export const class（非法 JS）
+    expect(sidecar).not.toContain("export const class");
+  });
+
+  it("emitted alias sidecar reads back via effectiveInterface (source=generated)", async () => {
+    const file = join(dir, "cls.js");
+    writeFileSync(file, CLS_JS);
+    const r = await emitInterface(file, { fnNames: ["class"], mode: "add" });
+    expect(r.written).toEqual(["class"]);
+    const eff = effectiveInterface(CLS_JS, "class", { loadModule, fromFile: file });
+    expect(eff).toBeDefined();
+    expect(eff!.source).toBe("generated");
+    expect(eff!.params.map((p) => p.param)).toEqual(["x"]);
+  });
+
+  it("update mode over alias sections is idempotent", async () => {
+    const file = join(dir, "cls.js");
+    writeFileSync(file, CLS_JS);
+    const first = await emitInterface(file, { fnNames: ["class"], mode: "update" });
+    expect(first.written).toEqual(["class"]);
+    const before = readFileSync(join(dir, "cls.nudo.js"), "utf-8");
+    const second = await emitInterface(file, { mode: "update" });
+    expect(second.changed).toBe(false);
+    expect(readFileSync(join(dir, "cls.nudo.js"), "utf-8")).toBe(before);
+  });
+
+  it("two reserved-word exports get distinct alias bindings", async () => {
+    const file = join(dir, "two.js");
+    writeFileSync(file, TWO_JS);
+    const r = await emitInterface(file, { fnNames: ["class", "let"], mode: "add" });
+    expect(r.written).toEqual(["class", "let"]);
+    const sidecar = readFileSync(join(dir, "two.nudo.js"), "utf-8");
+    expect(sidecar).toContain("const _nudo_1 = fn(");
+    expect(sidecar).toContain("export { _nudo_1 as class };");
+    expect(sidecar).toContain("const _nudo_2 = fn(");
+    expect(sidecar).toContain("export { _nudo_2 as let };");
+  });
+
+  it("handwritten _nudo_1 binding pushes emission to _nudo_2", async () => {
+    const file = join(dir, "cls.js");
+    writeFileSync(file, CLS_JS);
+    const sidecar = join(dir, "cls.nudo.js");
+    // 手写绑定 _nudo_1（无生成标记）——别名分配必须避让
+    writeFileSync(sidecar, `const _nudo_1 = fn({ x: number() }, number());\n`);
+    const r = await emitInterface(file, { fnNames: ["class"], mode: "add" });
+    expect(r.written).toEqual(["class"]);
+    const after = readFileSync(sidecar, "utf-8");
+    expect(after).toContain("const _nudo_2 = fn(");
+    expect(after).toContain("export { _nudo_2 as class };");
+    // 手写段原样保留
+    expect(after).toContain("const _nudo_1 = fn({ x: number() }, number());");
+  });
+
+  it("string export name emits quoted alias clause and reads back", async () => {
+    const src = `function _ab(x) { return x + 1; }\n_ab(2);\nexport { _ab as "a-b" };\n`;
+    const file = join(dir, "str.js");
+    writeFileSync(file, src);
+    const r = await emitInterface(file, { fnNames: ["a-b"], mode: "add" });
+    expect(r.written).toEqual(["a-b"]);
+    const sidecar = readFileSync(join(dir, "str.nudo.js"), "utf-8");
+    expect(sidecar).toContain('export { _nudo_1 as "a-b" };');
+    const eff = effectiveInterface(src, "a-b", { loadModule, fromFile: file });
+    expect(eff).toBeDefined();
+    expect(eff!.source).toBe("generated");
+  });
+});
