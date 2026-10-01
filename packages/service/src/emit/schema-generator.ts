@@ -8,7 +8,7 @@
 
 import type { Abs, NudoConstraint, Pred, Term } from "@nudojs/core";
 import { absToConstraint, isIntFlag, predToString } from "@nudojs/core";
-import { formatObjectKey, sanitizeCommentText, toJsBindingIdent } from "@nudojs/core/internal";
+import { formatObjectKey, sanitizeCommentText, toJsBindingIdent, ProjectionBudget } from "@nudojs/core/internal";
 
 export type SchemaDialect = "zod";
 
@@ -302,6 +302,10 @@ function constraintDropped(c: NudoConstraint, prefix = ""): string[] {
 
 /** Abs → SchemaNode + dropped（优先 core absToConstraint；失败则 shape 尽力） */
 export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] } {
+  return absToSchemaNodeB(a, new ProjectionBudget());
+}
+
+function absToSchemaNodeB(a: Abs, budget: ProjectionBudget): { node: SchemaNode; dropped: string[] } {
   const dropped: string[] = [];
 
   // lit term 优先（与 projection 一致；NaN 不产 lit）
@@ -327,8 +331,10 @@ export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] }
   const conf = a.conf;
   const lowConf = conf !== "exact" && conf !== "path";
 
-  // 主路径：core 契约投影（eq-lit / or-lit union / bounds / shape 字段）
-  const projected = absToConstraint(a);
+  // 主路径：core 契约投影（eq-lit / or-lit union / bounds / shape 字段）。
+  // 共享预算（DESIGN-001）：absToConstraint 自管 enter/exit——环 / 超深返回
+  // undefined（不可表达），落到下方 shape 尽力路径。
+  const projected = absToConstraint(a, budget);
   if (projected) {
     const node = constraintToSchemaNode(projected);
     dropped.push(...constraintDropped(projected));
@@ -339,7 +345,20 @@ export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] }
     dropped.push(`conf=${conf}: contract projection skipped; shape-only fallback`);
   }
 
-  // fallback：shape 尽力 + pred 提取
+  // fallback：shape 尽力 + pred 提取；预算在此接管（环 / 超深 → unknown + 台账）
+  const stop = budget.enter(a);
+  if (stop) {
+    dropped.push(`shape truncated (${stop}) projected as unknown`);
+    return { node: { k: "unknown" }, dropped };
+  }
+  try {
+    return absToSchemaShape(a, budget, dropped);
+  } finally {
+    budget.exit();
+  }
+}
+
+function absToSchemaShape(a: Abs, budget: ProjectionBudget, dropped: string[]): { node: SchemaNode; dropped: string[] } {
   const s = a.shape;
   switch (s.k) {
     case "never":
@@ -375,7 +394,7 @@ export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] }
       }
       const slots: Array<{ key: string; node: SchemaNode; optional?: boolean }> = [];
       for (const [key, slot] of Object.entries(s.slots)) {
-        const sub = absToSchemaNode(slot.value);
+        const sub = absToSchemaNodeB(slot.value, budget);
         dropped.push(...sub.dropped.map((n) => `${key}: ${n}`));
         slots.push({ key, node: sub.node, ...(slot.optional ? { optional: true } : {}) });
       }
@@ -385,7 +404,7 @@ export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] }
       if (a.pred && a.pred.op !== "true") {
         dropped.push(`arr pred not projected: ${predToString(a.pred)}`);
       }
-      const sub = absToSchemaNode(s.element);
+      const sub = absToSchemaNodeB(s.element, budget);
       dropped.push(...sub.dropped);
       return { node: { k: "arr", element: sub.node }, dropped };
     }
@@ -398,7 +417,7 @@ export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] }
           dropped.push(`tuple hole at ${i} not projected (slot absent ≠ undefined)`);
           return { k: "unknown" } as const;
         }
-        const sub = absToSchemaNode(e);
+        const sub = absToSchemaNodeB(e, budget);
         dropped.push(...sub.dropped);
         return sub.node;
       });
@@ -406,7 +425,7 @@ export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] }
       // zod 渲染 `.rest(...)`——不得静默丢弃（有损投影必须可观测）
       let rest: SchemaNode | undefined;
       if (s.rest) {
-        const sub = absToSchemaNode(s.rest);
+        const sub = absToSchemaNodeB(s.rest, budget);
         dropped.push(...sub.dropped);
         rest = sub.node;
       }
@@ -414,7 +433,7 @@ export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] }
     }
     case "sum": {
       const members = s.members.map((m) => {
-        const sub = absToSchemaNode(m);
+        const sub = absToSchemaNodeB(m, budget);
         dropped.push(...sub.dropped);
         return sub.node;
       });
@@ -423,7 +442,7 @@ export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] }
     case "fn":
       return { node: { k: "fn" }, dropped };
     case "eff": {
-      const inner = absToSchemaNode(s.inner);
+      const inner = absToSchemaNodeB(s.inner, budget);
       dropped.push(...inner.dropped);
       return {
         node: s.eff === "promise" ? { k: "promise", inner: inner.node } : inner.node,

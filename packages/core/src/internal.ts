@@ -21,6 +21,9 @@ export {
   maybeLeak, resetLeakCounter, termDepth, termNodes
 } from "./algebra/leak.ts";
 export {
+  type ProjectionStopReason, PROJECTION_MAX_DEPTH, ProjectionBudget,
+} from "./algebra/projection-budget.ts";
+export {
   type AbsBudgetStats, FORK_TRUNCATION_LABEL, HOST_EFFECT_LABEL_PREFIX, MAX_EVAL_TOTAL_FORKS,
   MAX_CALL_DEPTH, MAX_TOTAL_CALLS, PROMISE_MICRO_ERROR_LABEL, PROMISE_MICRO_OVERFLOW_LABEL,
   bumpEvalForkBudget, callBudgetKey,

@@ -8,6 +8,7 @@ import type { Term } from "./term.ts";
 import { termToString } from "./term.ts";
 import type { Pred } from "./pred.ts";
 import { predToString } from "./pred.ts";
+import { ProjectionBudget } from "./projection-budget.ts";
 
 export type FormatOptions = {
   /** 是否显示 term= */
@@ -40,7 +41,11 @@ export function formatAbs(a: Abs, opts: FormatOptions = {}): string {
 
 /** fn/arr 槽位：shape + 非 lit term（禁止在 format 里内联复制 term 逻辑） */
 export function formatShapeSlot(a: Abs): string {
-  const base = formatShape(a);
+  return formatShapeSlotB(a, new ProjectionBudget());
+}
+
+function formatShapeSlotB(a: Abs, budget: ProjectionBudget): string {
+  const base = formatShapeB(a, budget);
   if (!a.term || a.term.op === "lit") return base;
   // 关系在 paramTypes/returnType 或 element 里，外层 term 是形参 α 身份，不重复展示
   // （否则 items: arr(A1) 会变成 arr(A1) = A1）
@@ -50,7 +55,27 @@ export function formatShapeSlot(a: Abs): string {
   return `${base} = ${termToString(a.term)}`;
 }
 
+/** 环 / 超深 shape 的截断标记（format 无 dropped 台账——标记本身即观测） */
+const FORMAT_TRUNC = { cycle: "…cycle", depth: "…" } as const;
+
 export function formatShape(a: Abs): string {
+  return formatShapeB(a, new ProjectionBudget());
+}
+
+function formatShapeB(a: Abs, budget: ProjectionBudget): string {
+  // DESIGN-001：Abs 可环可深（`a.self = a` 在 evaluator 下是真环），
+  // 展示层必须有界；截断渲染显式标记而非栈溢出。
+  const stop = budget.enter(a);
+  if (stop === "cycle") return FORMAT_TRUNC.cycle;
+  if (stop === "depth") return FORMAT_TRUNC.depth;
+  try {
+    return formatShapeInner(a, budget);
+  } finally {
+    budget.exit();
+  }
+}
+
+function formatShapeInner(a: Abs, budget: ProjectionBudget): string {
   const s = a.shape;
   switch (s.k) {
     case "never":
@@ -84,31 +109,31 @@ export function formatShape(a: Abs): string {
         const opt = slot.optional ? "?" : "";
         // 非标识符键 JSON 引号，避免展示串本身不可解析（`a, b: 1`）
         const key = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(k) ? k : JSON.stringify(k);
-        return `${key}${opt}: ${formatShape(slot.value)}`;
+        return `${key}${opt}: ${formatShapeB(slot.value, budget)}`;
       });
       return `{ ${entries.join(", ")} }`;
     }
     case "arr": {
       // any+var 元素 → arr(A1)（展示关系）；否则 element[]
       if (s.element.shape.k === "any" && s.element.term?.op === "var") {
-        return `arr(${formatShapeSlot(s.element)})`;
+        return `arr(${formatShapeSlotB(s.element, budget)})`;
       }
-      return `${formatShape(s.element)}[]`;
+      return `${formatShapeB(s.element, budget)}[]`;
     }
     case "tuple": {
       // hole 槽是稀疏空位（`1 in a` 为 false），不得渲染成 undefined 槽
       const holes = s.holes ?? [];
       const parts = s.elements.map((el, i) =>
-        holes.includes(i) ? "" : formatShape(el),
+        holes.includes(i) ? "" : formatShapeB(el, budget),
       );
       if (s.rest) {
-        parts.push(`...${formatShape(s.rest)}`);
+        parts.push(`...${formatShapeB(s.rest, budget)}`);
       }
       return `[${parts.join(", ")}]`;
     }
     case "fn": {
       const ret =
-        s.returnType !== undefined ? formatShapeSlot(s.returnType) : "?";
+        s.returnType !== undefined ? formatShapeSlotB(s.returnType, budget) : "?";
       const labels = s.params ?? [];
       const paramTypes = s.paramTypes;
       const hasMarkers = labels.some(
@@ -123,7 +148,7 @@ export function formatShape(a: Abs): string {
         for (let i = 0; i < n; i++) {
           const label = labels[i];
           const type = paramTypes?.[i];
-          const typeText = type !== undefined ? formatShapeSlot(type) : undefined;
+          const typeText = type !== undefined ? formatShapeSlotB(type, budget) : undefined;
           if (label?.startsWith("...")) {
             ps.push(typeText ? `...${label.slice(3)}: ${typeText}` : label);
           } else if (label?.endsWith("?")) {
@@ -141,7 +166,7 @@ export function formatShape(a: Abs): string {
         return `(${renderLabeled().join(", ")}) => ${ret}`;
       }
       if (paramTypes && paramTypes.length > 0) {
-        const ps = paramTypes.map((p) => formatShapeSlot(p));
+        const ps = paramTypes.map((p) => formatShapeSlotB(p, budget));
         return `(${ps.join(", ")}) => ${ret}`;
       }
       return `(${labels.join(", ")}) => ${ret}`;
@@ -153,7 +178,7 @@ export function formatShape(a: Abs): string {
       if (slots) {
         const arg = (key: string): string | undefined => {
           const sl = slots[key];
-          return sl ? formatShapeSlot(sl.value) : undefined;
+          return sl ? formatShapeSlotB(sl.value, budget) : undefined;
         };
         if (s.name === "Map" || s.name === "ReadonlyMap" || s.name === "WeakMap") {
           const k = arg("__key");
@@ -168,7 +193,7 @@ export function formatShape(a: Abs): string {
       return `${s.name}`;
     }
     case "eff":
-      return `${s.eff}<${formatShape(s.inner)}>`;
+      return `${s.eff}<${formatShapeB(s.inner, budget)}>`;
     case "sum": {
       // 渲染去重：不同 term/pred 的成员可能渲染成同一形状（例如两条 number
       // 路径）——formatShape 是有损外延视图，重复文本只留一次；formatAbs
@@ -176,7 +201,7 @@ export function formatShape(a: Abs): string {
       const seen = new Set<string>();
       const parts: string[] = [];
       for (const m of s.members) {
-        const t = formatShape(m);
+        const t = formatShapeB(m, budget);
         if (seen.has(t)) continue;
         seen.add(t);
         parts.push(t);
