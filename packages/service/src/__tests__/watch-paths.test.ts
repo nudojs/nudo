@@ -39,4 +39,22 @@ describe("watch path gates", () => {
     expect(ambientSourcesOfSidecar("/a/lib.nudo.ts")).toEqual(["/a/lib.ts", "/a/lib.mts"]);
     expect(ambientSourcesOfSidecar("/a/lib.nudo.draft.js")).toEqual([]);
   });
+
+  it("maps .nudo.mjs sidecar back to candidate sources (BUG-011 watch invalidation)", () => {
+    // watch 增量：isSidecarPath 接受 lib.nudo.mjs → runIncremental 用
+    // ambientSourcesOfSidecar 反查 ambient 源；漏配则 lib.js/lib.mjs 永不脏
+    expect(isSidecarPath("/a/lib.nudo.mjs")).toBe(true);
+    expect(ambientSourcesOfSidecar("/a/lib.nudo.mjs")).toEqual(["/a/lib.js", "/a/lib.mjs"]);
+    expect(ambientSourcesOfSidecar("/a/lib.nudo.draft.mjs")).toEqual([]);
+  });
+
+  it("every suffix accepted by isSidecarPath yields ambient sources; others agree on []", () => {
+    for (const s of ["lib.nudo.js", "lib.nudo.mjs", "lib.nudo.ts"] as const) {
+      expect(isSidecarPath(`/a/${s}`)).toBe(true);
+      expect(ambientSourcesOfSidecar(`/a/${s}`).length).toBeGreaterThan(0);
+    }
+    // 约定外后缀两谓词一致拒绝（.nudo.mts 不是正式侧车）
+    expect(isSidecarPath("/a/lib.nudo.mts")).toBe(false);
+    expect(ambientSourcesOfSidecar("/a/lib.nudo.mts")).toEqual([]);
+  });
 });
