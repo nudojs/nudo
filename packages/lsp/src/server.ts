@@ -543,7 +543,10 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
         source: "nudo",
       } as ReturnType<typeof toLspDiagnostic>;
       const items = last && last.length > 0 ? last : [errDiag];
-      return { kind: "full", items, version: document?.version };
+      // BUG-021/S5-003：stale 回放（上次成功 items / 错误兜底）
+      // 不得标当前 version——宿主据此无法分辨新旧。留空表示
+      // 「新鲜度未知」；成功路径才带 document.version。
+      return { kind: "full", items, version: undefined };
     }
   });
 
