@@ -5,7 +5,7 @@
  * throws 经 callTranspiledExportFull 捕获 $throw。
  */
 
-import { runTranspiled, callTranspiledExport, callTranspiledExportFull, setEvalCallCollector, createEnvironment, noteEvalFallback, type EvalCallRecord, type TranspiledCallResult, type Abs, type AbsModuleExports, type Phi, formatAbs, getFnImpl } from "@nudojs/core";
+import { runTranspiled, callTranspiledExport, callTranspiledExportFull, setEvalCallCollector, createEnvironment, noteEvalFallback, isAbsVal, type EvalCallRecord, type TranspiledCallResult, type Abs, type AbsModuleExports, type Phi, formatAbs, getFnImpl } from "@nudojs/core";
 import { setMemberDiagCollector, setAbsTruncationCollector, type EvalMemberDiag, stableAnalyzeKeySource, hashSource, loadModuleDepsFingerprint, stablePathKey } from "@nudojs/core/internal";
 import { parse, extractInlineDirectives } from "@nudojs/parser";
 import { loadEnvs } from "./evaluator/evaluator-api.ts";
@@ -591,7 +591,18 @@ export function tryEvalCall(
   const full = tryEvalCallFull(source, filePath, fnName, args, opts);
   if (!full) return undefined;
   const r = full.result;
-  if (!r) return undefined;
+  // BUG-028：类型级 result 必填，但运行时不变量
+  // 可能被破坏（producer 缺陷）——显式 isAbsVal
+  // 守卫 + 回落观测（旧实现 !r 死检查：缺 result
+  // 的记录静默 undefined，原因不可观测）
+  if (!isAbsVal(r)) {
+    noteEvalFallback(
+      new Error(
+        `tryEvalCall: '${fnName}' result is not an Abs value (producer contract violation)`,
+      ),
+    );
+    return undefined;
+  }
   if (r.shape.k === "never" && full.throws.shape.k !== "never") {
     return undefined;
   }

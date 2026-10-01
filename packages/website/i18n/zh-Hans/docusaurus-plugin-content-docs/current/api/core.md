@@ -366,7 +366,7 @@ createEnvironment(parent?, bindings?)
 | <a id="$whileseq"></a>`$whileSeq` | fn | control-flow lowering | `$whileSeq( test: () => Abs, body: () => void, maxIters: number = DEFAULT_MAX_LOOP_ITERS, opts?: { pack?: () => Abs; unpack?: (s: Abs) => void; label?: string; }, ): void` |
 | <a id="$yield"></a>`$yield` | fn | async / generator | `$yield(v: Abs): Abs` |
 | <a id="asabsval"></a>`asAbsVal` | fn | value / class runtime | `asAbsVal(v: unknown): Abs` |
-| <a id="evalcallrecord"></a>`EvalCallRecord` | type | call-site recording for analyze | `EvalCallRecord = { fnName: string; args: Abs[]; result: Abs; callLoc?: { line: number; column: number }; threw?: boolean; }` |
+| <a id="evalcallrecord"></a>`EvalCallRecord` | type | call-site recording for analyze | `EvalCallRecord = { fnName: string; args: Abs[]; result: Abs; callLoc?: { line: number; column: number }; threw: boolean; }` |
 | <a id="filltuple"></a>`fillTuple` | fn | array runtime | `fillTuple( shape: { k: "tuple"; elements: Abs[]; holes?: number[] } \| { k: "arr"; element: Abs }, vals: Abs[], arr: Abs, ): Abs` |
 | <a id="foldrequirespecarg"></a>`foldRequireSpecArg` | fn | static folding helpers | `foldRequireSpecArg(arg: unknown): string \| undefined` |
 | <a id="foldstaticstringexpr"></a>`foldStaticStringExpr` | fn | static folding helpers | `foldStaticStringExpr(node: unknown): string \| undefined` |
@@ -384,7 +384,7 @@ createEnvironment(parent?, bindings?)
 | <a id="transpilesource"></a>`transpileSource` | fn | JS AST → `$op` program | `transpileSource(source: string, opts: TranspileOptions = {}): string` |
 
 <details>
-<summary>src/index.ts 其余导出（340）</summary>
+<summary>src/index.ts 其余导出（341）</summary>
 
 | 名称 | 种类 | 说明 | 签名 |
 |------|------|------|------|
@@ -396,7 +396,7 @@ createEnvironment(parent?, bindings?)
 | <a id="absmoduleexports"></a>`AbsModuleExports` | type | — | `AbsModuleExports = { named: Record<string, Abs>; default?: Abs; evaluated?: boolean; }` |
 | <a id="absshapekey"></a>`absShapeKey` | fn | — | `absShapeKey(a: Abs, seen: Set<object> = new Set()): string` |
 | <a id="abssigimpl"></a>`AbsSigImpl` | type | Abs 原生 env/builtin 实现（evaluator 优先） | `AbsSigImpl = (args: Abs[], thisVal?: Abs) => Abs \| undefined` |
-| <a id="abstoconstraint"></a>`absToConstraint` | fn | Abs → 契约；不可表达 → undefined | `absToConstraint(a: Abs): NudoConstraint \| undefined` |
+| <a id="abstoconstraint"></a>`absToConstraint` | fn | Abs → 契约；不可表达 → undefined。 | `absToConstraint( a: Abs, budget: ProjectionBudget = new ProjectionBudget(), ): NudoConstraint \| undefined` |
 | <a id="abstostring"></a>`absToString` | fn | — | `absToString(a: Abs): string` |
 | <a id="actionsforissue"></a>`actionsForIssue` | fn | 诊断码 → 结构化动作（AI1）；未知码给 info 提示 | `actionsForIssue(i: { code: string; expected?: string; suggestion?: string; fn?: string; }): CheckAction[]` |
 | <a id="add"></a>`add` | fn | 抽象加法：eval(a + b) —— 跟真实 JS，不无根据地假定 number。 | `add(a: Abs, b: Abs, phi: Phi = pTrue): Abs` |
@@ -533,6 +533,7 @@ createEnvironment(parent?, bindings?)
 | <a id="interfacesource"></a>`InterfaceSource` | type | 有效契约来源：手写（源码 refine ∪ 侧车手写绑定）&gt; 生成段 &gt; 隐式 | `InterfaceSource = "handwritten" \| "generated" \| "implicit"` |
 | <a id="interfacesourceof"></a>`interfaceSourceOf` | fn | interfaceTierOf 的来源投影；非导出 → undefined | `interfaceSourceOf( source: string, fnName: string, fromFile: string, opts: InterfaceTierOpts = {}, ): InterfaceSource \| undefined` |
 | <a id="interfacetieropts"></a>`InterfaceTierOpts` | type | — | `InterfaceTierOpts = EffectiveInterfaceOpts` |
+| <a id="isabsval"></a>`isAbsVal` | fn | — | `isAbsVal(v: unknown): v` |
 | <a id="isbigprim"></a>`isBigPrim` | fn | — | `isBigPrim(a: Abs): boolean` |
 | <a id="isdefinitelyfalse"></a>`isDefinitelyFalse` | fn | — | `isDefinitelyFalse(a: Abs): boolean` |
 | <a id="isdefinitelytrue"></a>`isDefinitelyTrue` | fn | — | `isDefinitelyTrue(a: Abs): boolean` |
@@ -611,7 +612,7 @@ createEnvironment(parent?, bindings?)
 | <a id="nudofnconstraint"></a>`NudoFnConstraint` | type | fn(params, returns?, &#123; throws? | `NudoFnConstraint = { params: Record<string, NudoConstraint>; returns?: NudoConstraint; throws?: NudoConstraint; }` |
 | <a id="nudosidecarerror"></a>`NudoSidecarError` | fn | 侧车模块错误：code ∈ nudo:interface-cycle \| nudo:interface-load | `NudoSidecarError extends Error { readonly code: string; constructor(code: string, message: string) { super(message); this.name = "NudoSid...` |
 | <a id="nudosig"></a>`NudoSig` | type | 无损函数签名（类型即计算） | `NudoSig = { name: string; params: string[]; paramTypes?: string[]; abs: Abs; display: string; detail: string; conf: Confidence; throws?: ...` |
-| <a id="nudounsupportederror"></a>`NudoUnsupportedError` | fn | 转译器无法正确 lowering 的构造：抛此错误（替代静默降级注释）。 | `NudoUnsupportedError extends Error { readonly reason: string; readonly loc?: { line: number; column: number }; constructor(reason: string...` |
+| <a id="nudounsupportederror"></a>`NudoUnsupportedError` | fn | 转译器无法正确 lowering 的构造：抛此错误（替代静默降级注释）。 | `NudoUnsupportedError extends Error { readonly reason: string; readonly loc?: { line: number; column: number }; constructor( reason: strin...` |
 | <a id="nullable"></a>`nullable` | fn | nullable(c)：允许 null / undefined 的约束（nullish 显式化）。 | `nullable( c: NudoConstraint \| ConstraintBuilder \| number \| string \| boolean, ): ConstraintBuilder` |
 | <a id="numvar"></a>`numVar` | fn | 带项的符号数，例如参数 x | `numVar(id: string, pred?: Pred, conf: Confidence = "path"): Abs` |
 | <a id="object_proto_method_names"></a>`OBJECT_PROTO_METHOD_NAMES` | const | — | `const OBJECT_PROTO_METHOD_NAMES` |

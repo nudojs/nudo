@@ -204,7 +204,7 @@ export {
   callTranspiledExport, callTranspiledExportApply, callTranspiledExportFull, clearBClasses,
   clearStaleTermPred, currentExecPhi, evalExprAbs, fillTuple,
   foldRequireSpecArg, foldStaticStringExpr, getEvalCallCollector, getEvalClass,
-  isArrMutator, isDefinitelyFalse, isDefinitelyTrue, isNudoBreak,
+  isAbsVal, isArrMutator, isDefinitelyFalse, isDefinitelyTrue, isNudoBreak,
   isNudoContinue, isNudoReturn, isNudoThrow, litTruth, lookupObjAccessor,
   namespaceNameOf, noteEvalCallRecord, noteEvalFallback, pushLoopExit,
   pushThrowExit, registerEvalClass, resetEvalCallBudget, runTranspiled,

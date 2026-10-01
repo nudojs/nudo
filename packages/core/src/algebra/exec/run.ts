@@ -651,7 +651,7 @@ export type TranspiledCallResult = {
   throws: Abs;
 };
 
-function isAbsVal(v: unknown): v is Abs {
+export function isAbsVal(v: unknown): v is Abs {
   return !!v && typeof v === "object" && "shape" in (v as object) && "conf" in (v as object);
 }
 
