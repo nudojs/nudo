@@ -100,6 +100,7 @@ assertions
 |------|--------|
 | `export` / `contract`（只读） | 仅用法 / IO 错误 |
 | `check`（含 `--abs` / `--json`） | 任一 error 级诊断（L1 或未 ignore 的 L2）；`--abs` 是观察面，**不是**关 CI 的旁路；路径/IO 错误也 exit 1（`--json` 下并入 `pathErrors` 且 `ok:false`） |
+| `check --fix[ --write]` | 物化后**残余** error 级诊断 > 0（物化前的 error 不直接挡 exit——能被 [fix]/[adjust] 吃掉的已落盘/dry-run 计划；dry-run 反映「应用这些编辑后」的剩余）。`--fix` 与 `--json` / `--abs` / `--gha` / `--gitlab` / `--watch` / `--verbose` / `--what-if` 组合为 usage error（物化面不与观察/机器面组合） |
 | `test`（含 `--json` / `--abs`） | 任一**声明断言**失败（合成 case / entry@ 不挡 exit） |
 | `health` | drift 或 analysis error |
 | `migrate verify` | 任一文件 `nudo check` 不 ok（tsc 基线仅对照，不单独挡 exit） |

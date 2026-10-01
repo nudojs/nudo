@@ -33,6 +33,7 @@ import {
   mergeIgnoreThrows,
   parseIgnoreThrows,
   parseWhatIfBindings,
+  profileEntryThrows,
   resolveEntryThrows,
   validateGateFlags,
   type EntryThrowsMode,
@@ -410,7 +411,7 @@ async function runCheckFix(opts: {
   ignoreThrows?: string[];
   entryThrows?: "error" | "warning" | "off";
   profile?: GateProfile;
-}): Promise<void> {
+}): Promise<{ planned: number; written: number; residualErrors: number }> {
   const core = await import("@nudojs/core");
   const { checkSource, pTrue, sidecarPathOf, actionsForIssue } = core;
   type CheckAction = import("@nudojs/core").CheckAction;
@@ -423,8 +424,19 @@ async function runCheckFix(opts: {
   const { writeFileSync, readFileSync, existsSync } = await import("node:fs");
 
   const only = opts.only && opts.only.length > 0 ? new Set(opts.only) : undefined;
+  // BUG-022/S5-004：profile 是 L2 预设（adoption→warning /
+  // strict→error），显式 --entry-throws 优先——与 runCheck 的
+  // resolveEntryThrows 同口径（本路径不读项目配置，CLI 层
+  // 已解析 entryThrows；checkSource 只认 entryThrows）。
+  const entryThrowsResolved =
+    opts.entryThrows ??
+    (opts.profile ? profileEntryThrows(opts.profile) : undefined);
   let planned = 0;
   let written = 0;
+  // BUG-022/S5-004：门禁语义——物化后残余 error 级诊断
+  // 计数（对物化后的源码重跑 checkSource；dry-run 时反映
+  // 「应用这些编辑后」仍剩多少 error）。--fix 不再绕过门禁。
+  let residualErrors = 0;
 
   for (const file of opts.targets) {
     let source: string;
@@ -437,7 +449,7 @@ async function runCheckFix(opts: {
       loadModule: defaultLoadModule,
       fromFile: file,
       ...(opts.ignoreThrows ? { ignoreThrows: opts.ignoreThrows } : {}),
-      ...(opts.entryThrows ? { entryThrows: opts.entryThrows } : {}),
+      ...(entryThrowsResolved ? { entryThrows: entryThrowsResolved } : {}),
       skips: collectSkipReturns(source),
     });
     const sidecar = sidecarPathOf(file);
@@ -514,6 +526,21 @@ async function runCheckFix(opts: {
         }
       }
     }
+
+    // BUG-022/S5-004：门禁语义——本文件有 error 级诊断时，
+    // 对物化后的源码重跑 checkSource 计残余 error（dry-run
+    // 反映「应用这些编辑后」的剩余；侧车编辑未写盘时以磁盘
+    // 侧车为准）。残余 > 0 → --fix 末尾 exit 1，与 check 同契约。
+    if (report.issues.some((i) => i.severity === "error")) {
+      const post = checkSource(file, source, pTrue, {
+        loadModule: defaultLoadModule,
+        fromFile: file,
+        ...(opts.ignoreThrows ? { ignoreThrows: opts.ignoreThrows } : {}),
+        ...(entryThrowsResolved ? { entryThrows: entryThrowsResolved } : {}),
+        skips: collectSkipReturns(source),
+      });
+      residualErrors += post.issues.filter((i) => i.severity === "error").length;
+    }
   }
 
   const mode = opts.write ? "written" : "planned (dry-run)";
@@ -525,6 +552,10 @@ async function runCheckFix(opts: {
       "hint: only [fix]/[adjust] are auto-applied; [silence]/[review] need a human (or LSP quickfix)",
     );
   }
+  if (residualErrors > 0) {
+    console.log(`check --fix: ${residualErrors} residual error(s) remain — gate stays red`);
+  }
+  return { planned, written, residualErrors };
 }
 
 export function registerCheckCommand(program: Command): void {
@@ -591,6 +622,27 @@ export function registerCheckCommand(program: Command): void {
           dryRun?: boolean;
         },
       ) => {
+        // BUG-022/S5-004：--fix 是物化工具面（#69），不得与观察/机器面
+        // 旗标静默组合——旧实现早退在门禁 exit 逻辑前，--json/--abs/
+        // --watch 等被静默忽略（机器面 stdout 不是 CheckJson）。
+        // 方案 A：--fix 保持门禁语义（残余 error 仍 exit 1），
+        // 组合旗标显式 usage error。
+        if (
+          opts.fix &&
+          (opts.json ||
+            opts.abs ||
+            opts.gha ||
+            opts.gitlab ||
+            opts.watch ||
+            opts.verbose ||
+            (opts.whatIf && opts.whatIf.length > 0))
+        ) {
+          console.error(
+            "error: --fix cannot be combined with --json/--abs/--gha/--gitlab/--watch/--verbose/--what-if (materialization face; the CI gate is plain `nudo check`)",
+          );
+          process.exitCode = 1;
+          return;
+        }
         // AI3：what-if 与门禁分离——只回答「假设下 target 是什么」
         if (opts.whatIf && opts.whatIf.length > 0) {
           const targets: string[] = [];
@@ -656,7 +708,9 @@ export function registerCheckCommand(program: Command): void {
 
         // #69：`check --fix` 批量物化（默认 dry-run 打 diff；--write 落盘）
         if (opts.fix) {
-          await runCheckFix({
+          // BUG-022/S5-004：门禁语义——--fix 不再是旁路：
+          // 残余 error 诊断按 check 同契约 exit 1
+          const fix = await runCheckFix({
             targets,
             only: opts.only,
             write: opts.write === true,
@@ -664,6 +718,9 @@ export function registerCheckCommand(program: Command): void {
             entryThrows,
             profile,
           });
+          if (fix.residualErrors > 0) {
+            process.exitCode = 1;
+          }
           return;
         }
 
