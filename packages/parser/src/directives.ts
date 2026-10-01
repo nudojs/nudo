@@ -378,10 +378,12 @@ function constraintSelfEqLit(
  * union 成员递归再拼 sum（同 prim 双 lit 不经 joinValues 急切塌缩）；
  * array/shape 递归展开 element/fields 以保留嵌套字面量身份；
  * 其余走 constraintToEntryAbs（var 项 + pred）。
+ * 递归深度与 parseCaseArgExpr 同一上限（BUG-014：不靠 try/catch 兜栈溢出）。
  */
-function constraintToCaseArgAbs(c: NudoConstraint): Abs {
+function constraintToCaseArgAbs(c: NudoConstraint, depth: number): Abs {
+  if (depth > MAX_CASE_ARG_DEPTH) return depthCapDiag(constraintPreview(c));
   if (c.members && c.members.length > 0) {
-    const parts = c.members.map((m) => constraintToCaseArgAbs(m));
+    const parts = c.members.map((m) => constraintToCaseArgAbs(m, depth + 1));
     if (parts.length === 1) return parts[0]!;
     return { shape: { k: "sum", members: parts }, conf: "path" };
   }
@@ -396,12 +398,12 @@ function constraintToCaseArgAbs(c: NudoConstraint): Abs {
     return absUndefLit();
   }
   if (c.element) {
-    return absExact({ k: "arr", element: constraintToCaseArgAbs(c.element) });
+    return absExact({ k: "arr", element: constraintToCaseArgAbs(c.element, depth + 1) });
   }
   if (c.fields) {
     const slots: Record<string, { value: Abs }> = {};
     for (const [key, field] of Object.entries(c.fields)) {
-      slots[key] = { value: constraintToCaseArgAbs(field.constraint) };
+      slots[key] = { value: constraintToCaseArgAbs(field.constraint, depth + 1) };
     }
     return absExact({ k: "obj", slots });
   }
@@ -420,23 +422,51 @@ function constraintToCaseArgAbs(c: NudoConstraint): Abs {
 }
 
 /**
+ * BUG-014：case 实参结构递归深度上限。`[`×5000 一类超深嵌套曾以
+ * RangeError 打穿 extractDirectives（宿主进程崩溃）——文法边界走
+ * nudo:directive-syntax 诊断 + unknown 折叠，不把宿主栈深当隐式限制。
+ * 合法用例（测试/文档所见最深 ~4 层）远低于 32。
+ */
+const MAX_CASE_ARG_DEPTH = 32;
+
+/** 深度超限统一诊断：截断预览，防止恶意超长实参借诊断报文膨胀缓冲 */
+function depthCapDiag(expr: string): Abs {
+  emitDirectiveDiag({
+    code: "nudo:directive-syntax",
+    message: `Type expression nesting exceeds depth ${MAX_CASE_ARG_DEPTH}: ${expr.trim().slice(0, 40)} … (deeper structure collapses to unknown)`,
+  });
+  return absUnknown();
+}
+
+/** 约束树无原文可引：只标注形态（不再递归展开，否则又是一条无界递归） */
+function constraintPreview(c: NudoConstraint): string {
+  if (c.element) return "array(…)";
+  if (c.members) return "union(…)";
+  if (c.fields) return "shape({ … })";
+  if (c.fn) return "fn(…)";
+  return c.prim ? `${c.prim}()` : "constraint";
+}
+
+/**
  * case 实参 / 指令类型表达式唯一文法：约束构建器优先，其余为具体字面量、
  * 结构字面量与箭头函数。`T.*` 文法已物理删除。
+ * depth 按包含关系逐层 +1 线程化传递（兄弟共享父深度，不用共享可变计数器）。
  */
-export function parseCaseArgExpr(expr: string): Abs {
+export function parseCaseArgExpr(expr: string, depth = 0): Abs {
+  if (depth > MAX_CASE_ARG_DEPTH) return depthCapDiag(expr);
   const constraint = tryParseConstraint(expr);
   if (constraint) {
     try {
-      return constraintToCaseArgAbs(constraint);
+      return constraintToCaseArgAbs(constraint, depth);
     } catch {
       return absUnknown();
     }
   }
-  return parseLiteralOrStructure(expr);
+  return parseLiteralOrStructure(expr, depth);
 }
 
 /** 具体字面量 / 对象数组字面量 / 箭头函数 → Abs；无法识别 → unknown */
-function parseLiteralOrStructure(expr: string): Abs {
+function parseLiteralOrStructure(expr: string, depth: number): Abs {
   const s = expr.trim();
 
   if (s === "true") return absLit(true);
@@ -461,21 +491,24 @@ function parseLiteralOrStructure(expr: string): Abs {
   }
 
   if (s.startsWith("{") && s.endsWith("}")) {
-    return parseObjectLiteral(s.slice(1, -1).trim());
+    return parseObjectLiteral(s.slice(1, -1).trim(), depth);
   }
 
   if (s.startsWith("[") && s.endsWith("]")) {
     const content = s.slice(1, -1).trim();
     if (!content) return absExact({ k: "tuple", elements: [] });
     const elements = splitTopLevelArgs(content);
-    return absExact({ k: "tuple", elements: elements.map((e) => parseCaseArgExpr(e)) });
+    return absExact({
+      k: "tuple",
+      elements: elements.map((e) => parseCaseArgExpr(e, depth + 1)),
+    });
   }
 
   // `T.*` 及其它未知标识符：明确不再解析
   return absUnknown();
 }
 
-function parseObjectLiteral(content: string): Abs {
+function parseObjectLiteral(content: string, depth: number): Abs {
   if (!content) return absExact({ k: "obj", slots: {} });
   const entries = splitTopLevelArgs(content);
   const slots: Record<string, { value: Abs }> = {};
@@ -484,7 +517,7 @@ function parseObjectLiteral(content: string): Abs {
     if (colonIdx === -1) continue;
     const key = entry.slice(0, colonIdx).trim().replace(/^["']|["']$/g, "");
     const val = entry.slice(colonIdx + 1).trim();
-    slots[key] = { value: parseCaseArgExpr(val) };
+    slots[key] = { value: parseCaseArgExpr(val, depth + 1) };
   }
   return absExact({ k: "obj", slots });
 }
@@ -834,7 +867,12 @@ function parseSinonExpr(expr: string): SinonExpression | null {
 }
 
 function parseNudoMockExpr(expr: string): MockHelper | null {
-  const s = expr.trim();
+  // BUG-014 同族：sinon 前缀剥离改迭代。原尾递归对 `sinon.`×N 实参每层一帧，
+  // 恶意超长前缀以 RangeError 打穿 extractDirectives。顶部一次性剥净等价：
+  // 下方所有分支锚定 `^stub\(` / `^spy\(` / `^mock\(` 或精确匹配，无一能匹配
+  // `sinon.` 开头的串，先剥后试与逐层剥试结果一致。
+  let s = expr.trim();
+  while (s.startsWith("sinon.")) s = s.slice("sinon.".length);
 
   // Match stub().returns(value).onFirstCall()
   const stubReturnsOnFirstMatch = s.match(/^stub\(\)\.returns\((.+)\)\.onFirstCall\(\)$/);
@@ -937,12 +975,6 @@ function parseNudoMockExpr(expr: string): MockHelper | null {
   // Match mock()
   if (s === "mock()") {
     return mock();
-  }
-
-  // sinon 前缀链统一为同一 MockHelper 形态：strip 前缀后复用裸 stub 解析。
-  // 解析不出的 sinon 链仍回落 sinonExpr 路径（parseSinonExpr 自己的分支）。
-  if (s.startsWith("sinon.")) {
-    return parseNudoMockExpr(s.slice("sinon.".length));
   }
 
   return null;
