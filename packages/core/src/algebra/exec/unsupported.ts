@@ -8,8 +8,17 @@ export class NudoUnsupportedError extends Error {
   readonly reason: string;
   readonly loc?: { line: number; column: number };
 
-  constructor(reason: string, loc?: { line: number; column: number }) {
-    super(`nudo:unsupported ${reason}`);
+  constructor(
+    reason: string,
+    loc?: { line: number; column: number },
+    /** BUG-026：附加辨析面（如 class 碰撞的双方特征）——进 message 随回落观测 */
+    detail?: string,
+  ) {
+    super(
+      detail
+        ? `nudo:unsupported ${reason} (${detail})`
+        : `nudo:unsupported ${reason}`,
+    );
     this.name = "NudoUnsupportedError";
     this.reason = reason;
     this.loc = loc;
