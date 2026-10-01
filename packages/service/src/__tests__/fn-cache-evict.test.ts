@@ -1,11 +1,16 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   evictFnAnalysisCacheForFiles,
   clearFnAnalysisCache,
   fnAnalysisCacheSet,
   fnAnalysisCacheGet,
+  getFnAnalysisCacheSize,
   type CachedFnAnalysis,
 } from "../fn-analysis-cache.ts";
+import {
+  setSessionCacheLimits,
+  resetSessionCacheLimitState,
+} from "../session-cache-limits.ts";
 
 function entry(name: string): CachedFnAnalysis {
   return {
@@ -52,5 +57,40 @@ describe("evictFnAnalysisCacheForFiles", () => {
     evictFnAnalysisCacheForFiles(["/t/a.js"]);
     expect(fnAnalysisCacheGet(keyA)).toBeUndefined();
     expect(fnAnalysisCacheGet(keyBak)).toBeDefined();
+  });
+});
+
+describe("fn analysis cache LRU order (BUG-012)", () => {
+  beforeEach(() => {
+    resetSessionCacheLimitState();
+    clearFnAnalysisCache();
+  });
+  afterEach(() => {
+    resetSessionCacheLimitState();
+    clearFnAnalysisCache();
+  });
+
+  it("overwriting an existing key refreshes its LRU position", () => {
+    setSessionCacheLimits({ maxFns: 2 });
+    const keyA = `/t/a.js${SEP}o${SEP}d${SEP}0`;
+    const keyB = `/t/b.js${SEP}o${SEP}d${SEP}0`;
+    const keyC = `/t/c.js${SEP}o${SEP}d${SEP}0`;
+    fnAnalysisCacheSet(keyA, entry("a1"));
+    fnAnalysisCacheSet(keyB, entry("b"));
+    fnAnalysisCacheSet(keyA, entry("a2")); // 覆盖写：刷新为最近使用（与 BoundedLruMap.set 一致）
+    fnAnalysisCacheSet(keyC, entry("c")); // 容量 2：逐出 keyB，而不是刚写过的 keyA
+    expect(fnAnalysisCacheGet(keyA)?.analysis.name).toBe("a2");
+    expect(fnAnalysisCacheGet(keyB)).toBeUndefined();
+    expect(getFnAnalysisCacheSize()).toBe(2);
+  });
+
+  it("maxFns=0 disables reads too — pre-existing entries stop serving", () => {
+    setSessionCacheLimits({ maxFns: 2 });
+    const keyA = `/t/a.js${SEP}o${SEP}d${SEP}0`;
+    fnAnalysisCacheSet(keyA, entry("a"));
+    setSessionCacheLimits({ maxFns: 0 });
+    expect(fnAnalysisCacheGet(keyA)).toBeUndefined(); // 读 miss，不再陈旧命中
+    fnAnalysisCacheSet(`/t/z.js${SEP}o${SEP}d${SEP}0`, entry("z")); // 写丢弃（set 语义不变）
+    expect(getFnAnalysisCacheSize()).toBe(1);
   });
 });

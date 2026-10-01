@@ -86,6 +86,25 @@ describe("session cache limits", () => {
     expect(analysisCacheGet("/d", "s4", "k")).toBeUndefined();
   });
 
+  it("overwriting an existing key refreshes its LRU position (BUG-012)", () => {
+    setSessionCacheLimits({ maxFiles: 2 });
+    analysisCacheSet("/a", "s1", "k", 1);
+    analysisCacheSet("/b", "s1", "k", 2);
+    // 编辑后重算 /a：覆盖写必须刷新为最近使用（与 BoundedLruMap.set 一致）
+    analysisCacheSet("/a", "s2", "k", 3);
+    analysisCacheSet("/c", "s1", "k", 4); // 容量 2：逐出 /b，而不是刚写过的 /a
+    expect(analysisCacheGet("/a", "s2", "k")).toBe(3);
+    expect(analysisCacheGet("/b", "s1", "k")).toBeUndefined();
+    expect(getAnalysisFileCacheSize()).toBe(2);
+  });
+
+  it("maxFiles=0 disables reads too — pre-existing entries stop serving (BUG-012)", () => {
+    setSessionCacheLimits({ maxFiles: 2 });
+    analysisCacheSet("/a", "s1", "k", 1);
+    setSessionCacheLimits({ maxFiles: 0 });
+    expect(analysisCacheGet("/a", "s1", "k")).toBeUndefined();
+  });
+
   it("trim drops entries when limit shrinks", () => {
     setSessionCacheLimits({ maxFiles: 8 });
     for (let i = 0; i < 8; i++) analysisCacheSet(`/f${i}`, `s${i}`, "k", i);

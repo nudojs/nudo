@@ -102,6 +102,18 @@ describe("BoundedLruMap hard cap", () => {
     expect(m.get("a")).toBeUndefined();
   });
 
+  it("overwriting an existing key refreshes its position (reference semantics, BUG-012)", () => {
+    const m = new BoundedLruMap<number>(2);
+    m.set("a", 1);
+    m.set("b", 2);
+    m.set("a", 10); // 覆盖写：刷新为最近使用，不挤掉别人
+    expect(m.size).toBe(2);
+    m.set("c", 3); // 逐出 b（最旧），保留刚写过的 a
+    expect(m.get("a")).toBe(10);
+    expect(m.has("b")).toBe(false);
+    expect(m.has("c")).toBe(true);
+  });
+
   it("trim() drops down to max when tightened", () => {
     const m = new BoundedLruMap<number>(8);
     for (let i = 0; i < 8; i++) m.set(`k${i}`, i);

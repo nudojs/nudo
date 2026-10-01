@@ -397,6 +397,8 @@ function evalCacheSet(
     if (oldest === undefined) break;
     evalRunByFile.delete(oldest);
   }
+  // 覆盖已有键先 delete 再 set：刷新为最近使用（与 BoundedLruMap.set 一致）
+  evalRunByFile.delete(key);
   evalRunByFile.set(key, { stableSource, mode, envKey, mockKey, depKey, value });
 }
 
@@ -432,9 +434,10 @@ export function tryRunEval(
   // 同 source 引用时 stable 快路径返回原串 → 下方 === 为 O(1)。
   const stable = stableAnalyzeKeySource(source);
   const depKey = evalDepKey(source, filePath);
-  // 指纹截断/异常 → 禁止读写 memo（fail-closed）
+  // 指纹截断/异常 → 禁止读写 memo（fail-closed）；0 = 关闭：读路径也 miss
+  //（与 BoundedLruMap max<=0 口径一致）
   const canCache = depKey !== null;
-  if (canCache) {
+  if (canCache && getSessionCacheLimits().maxEvalRuns > 0) {
     const cacheKey = stablePathKey(filePath);
     const cached = evalRunByFile.get(cacheKey);
     if (

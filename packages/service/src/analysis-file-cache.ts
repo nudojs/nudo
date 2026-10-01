@@ -40,6 +40,8 @@ export function trimAnalysisFileCache(): void {
 }
 
 export function analysisCacheGet<T>(filePath: string, source: string, auxKey: string): T | undefined {
+  // 0 = 关闭：读路径也 miss（与 BoundedLruMap max<=0 口径一致）
+  if (getSessionCacheLimits().maxFiles <= 0) return undefined;
   const key = stablePathKey(filePath);
   const e = analysisByFile.get(key);
   if (!e) return undefined;
@@ -59,6 +61,8 @@ export function analysisCacheSet(filePath: string, source: string, auxKey: strin
     if (oldest === undefined) break;
     analysisByFile.delete(oldest);
   }
+  // 覆盖已有键先 delete 再 set：刷新为最近使用（与 BoundedLruMap.set 一致）
+  analysisByFile.delete(key);
   analysisByFile.set(key, { source, auxKey, value });
 }
 
