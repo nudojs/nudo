@@ -103,6 +103,9 @@ export function serializeCaseArg(a: Abs): string | null {
       return el === null ? null : `array(${el})`;
     }
     case "tuple": {
+      // rest 槽指令文法不可表达（与 fn/eff/brand 同口径）→ 整体不可序列化，
+      // 不得静默截断成固定位前缀
+      if (s.rest) return null;
       const parts: string[] = [];
       for (const el of s.elements) {
         const ser = serializeCaseArg(el);

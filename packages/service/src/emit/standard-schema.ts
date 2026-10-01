@@ -154,6 +154,13 @@ function checkNode(
       node.elements.forEach((el, i) => {
         checkNode(el, value[i], [...path, i], issues);
       });
+      // rest 槽：超长元素按 rest 校验（`[1, ...number]` 拒绝 `[1, "x"]`）。
+      // 无 rest 时维持现状：不设长度上限（zod 方言靠 z.tuple 定长语义）。
+      if (node.rest) {
+        for (let i = node.elements.length; i < value.length; i++) {
+          checkNode(node.rest, value[i], [...path, i], issues);
+        }
+      }
       return;
     }
     case "union": {
@@ -270,6 +277,13 @@ function __nudoCheck(node, value, path, issues) {
         path.push(i);
         __nudoCheck(node.elements[i], value[i], path, issues);
         path.pop();
+      }
+      if (node.rest) {
+        for (var ri = node.elements.length; ri < value.length; ri++) {
+          path.push(ri);
+          __nudoCheck(node.rest, value[ri], path, issues);
+          path.pop();
+        }
       }
       return;
     }

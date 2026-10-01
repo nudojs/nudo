@@ -27,12 +27,10 @@ export function widenForAssign(a: Abs): Abs {
   if (s.k === "tuple") {
     const holes = new Set(s.holes ?? []);
     const els = s.elements.filter((_, i) => !holes.has(i));
-    let el: Abs = anyAbs;
-    if (els.length > 0) {
-      el = els.map(widenForAssign).reduce((x, y) => joinAbs(x, y));
-    } else if (s.rest) {
-      el = widenForAssign(s.rest);
-    }
+    // rest 槽与固定位同口径并入元素 join：`[1, ...string]` 拓宽不得丢 string 臂
+    const parts = els.map(widenForAssign);
+    if (s.rest) parts.push(widenForAssign(s.rest));
+    const el: Abs = parts.length > 0 ? parts.reduce((x, y) => joinAbs(x, y)) : anyAbs;
     return abs({ k: "arr", element: el }, undefined, undefined, a.conf);
   }
   if (s.k === "obj") {

@@ -20,6 +20,8 @@ function absToJsonNative(a: Abs, seen: Set<object>): unknown | typeof NOT_LITERA
   if (t?.op === "lit") return t.value; // 含 bigint/symbol/undefined/null
   const s = a.shape;
   if (s.k === "tuple") {
+    // rest 槽有 0..n 个未知额外元素：折叠固定位会产出缺尾数组（非字面量）
+    if ((a.shape as { rest?: Abs }).rest) return NOT_LITERAL;
     seen.add(a as object);
     const holes = (a.shape as { holes?: number[] }).holes ?? [];
     const out: unknown[] = [];

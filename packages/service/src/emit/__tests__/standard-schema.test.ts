@@ -78,6 +78,51 @@ describe("validateSchemaNode", () => {
       expect(r.value).toBe(thenable);
     }
   });
+
+  it("validates overlong tuple elements against rest (BUG-002)", () => {
+    // [1, ...number]：超长元素必须满足 rest——合法放行、非法拒绝
+    const withRest = abs(
+      { k: "tuple", elements: [numLit(1)], rest: num() },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const { node } = absToSchemaNode(withRest);
+    expect(validateSchemaNode(node, [1])).toEqual({ value: [1] });
+    expect(validateSchemaNode(node, [1, 2, 3])).toEqual({ value: [1, 2, 3] });
+    const bad = validateSchemaNode(node, [1, "x"]);
+    expect(bad.issues).toBeDefined();
+    expect(bad.issues![0]!.path).toEqual([1]);
+    expect(bad.issues![0]!.message).toContain("number");
+  });
+
+  it("fixed tuple without rest keeps no-length-limit behavior (BUG-002)", () => {
+    const fixed = abs({ k: "tuple", elements: [numLit(1)] }, undefined, undefined, "exact");
+    const { node } = absToSchemaNode(fixed);
+    // 现状语义：standard 面不设长度上限（zod 方言靠 z.tuple 定长）——锁住不回归
+    expect(validateSchemaNode(node, [1, 2])).toEqual({ value: [1, 2] });
+  });
+
+  it("generated module inline __nudoCheck enforces rest on overlong elements (BUG-002)", () => {
+    // 真执行生成模块（内嵌 CHECK_FN_SOURCE），不是只比对 validateSchemaNode
+    const withRest = abs(
+      { k: "tuple", elements: [numLit(1)], rest: num() },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const { source } = absToStandardSchema(withRest, { name: "t" });
+    const js = source
+      .replace(/export const (\w+)/g, "var $1")
+      .replace(/} as const;/, "};");
+    const mod = new Function(`${js}\nreturn t;`)() as {
+      "~standard": { validate(value: unknown): unknown };
+    };
+    expect(mod["~standard"].validate([1, 2, 3])).toEqual({ value: [1, 2, 3] });
+    const bad = mod["~standard"].validate([1, "x"]) as { issues: Array<{ path: PropertyKey[] }> };
+    expect(bad.issues).toBeDefined();
+    expect(bad.issues[0]!.path).toEqual([1]);
+  });
 });
 
 describe("absToStandardSchemaModule", () => {

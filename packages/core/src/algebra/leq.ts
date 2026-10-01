@@ -263,9 +263,10 @@ function leqShape(
       return leqWithPred(s.element, t.element, phi, env, depth + 1);
     }
     if (s.k === "tuple") {
-      return s.elements.every((el) => leqWithPred(el, t.element, phi, env, depth + 1).ok)
-        ? ok()
-        : fail("tuple ⊭ arr");
+      // rest 槽元素同样必须满足目标元素位：`[1, ...string] ⊭ number[]`
+      const elsOk = s.elements.every((el) => leqWithPred(el, t.element, phi, env, depth + 1).ok);
+      const restOk = !s.rest || leqWithPred(s.rest, t.element, phi, env, depth + 1).ok;
+      return elsOk && restOk ? ok() : fail("tuple ⊭ arr");
     }
     return fail(`shape ${s.k} ⊭ arr`);
   }
@@ -273,18 +274,39 @@ function leqShape(
   // 元组
   if (t.k === "tuple") {
     if (s.k !== "tuple") return fail(`shape ${s.k} ⊭ tuple`);
-    if (s.elements.length !== t.elements.length) {
+    // rest 槽（TS `...R` 语义：0..n 个额外元素，最小长度 = elements.length）：
+    // 定长目标 → 长度必须相等；带 rest 目标 → 源必须覆盖全部固定位
+    //（源 rest 不补位：`[1, ...number] ⊭ [1, number, ...number]`，源可能只有 1 个元素）
+    if (!t.rest && s.elements.length !== t.elements.length) {
       return fail(`tuple arity ${s.elements.length} ⊭ ${t.elements.length}`);
     }
-    // hole 槽 ≠ 显式 undefined 槽（`1 in a` 可观察）：稀疏/稠密不得互赋
+    if (t.rest && s.elements.length < t.elements.length) {
+      return fail(`tuple arity ${s.elements.length} ⊭ ${t.elements.length} (target requires ${t.elements.length})`);
+    }
+    // 源可携带额外元素而目标定长 → 不可赋（`[1, ...number] ⊭ [1]`）
+    if (s.rest && !t.rest) {
+      return fail(`tuple rest ⊭ fixed arity ${t.elements.length}`);
+    }
+    // hole 槽 ≠ 显式 undefined 槽（`1 in a` 可观察）：稀疏/稠密不得互赋。
+    // 目标带 rest 时长度可不同，只比重叠前缀。
     const sHoles = s.holes ?? [];
     const tHoles = t.holes ?? [];
-    if (sHoles.length !== tHoles.length || sHoles.some((h, i) => h !== tHoles[i])) {
-      return fail(`tuple holes [${sHoles.join(",")}] ⊭ [${tHoles.join(",")}]`);
+    const overlap = Math.min(s.elements.length, t.elements.length);
+    for (let i = 0; i < overlap; i++) {
+      if (sHoles.includes(i) !== tHoles.includes(i)) {
+        return fail(`tuple holes [${sHoles.join(",")}] ⊭ [${tHoles.join(",")}]`);
+      }
     }
-    for (let i = 0; i < t.elements.length; i++) {
-      const r = leqWithPred(s.elements[i]!, t.elements[i]!, phi, env, depth + 1);
+    for (let i = 0; i < s.elements.length; i++) {
+      // 源超长元素落目标 rest 位（`[1, 2] ≤ [1, ...number]`）
+      const tgt = i < t.elements.length ? t.elements[i]! : t.rest!;
+      const r = leqWithPred(s.elements[i]!, tgt, phi, env, depth + 1);
       if (!r.ok) return fail(`tuple[${i}]: ${r.reason}`);
+    }
+    // 源 rest ≤ 目标 rest（rest 元素类型协变：`[1, ...string] ⊭ [1, ...number]`）
+    if (s.rest && t.rest) {
+      const r = leqWithPred(s.rest, t.rest, phi, env, depth + 1);
+      if (!r.ok) return fail(`tuple rest: ${r.reason}`);
     }
     return ok();
   }

@@ -14,6 +14,7 @@ import {
 import { and, eq, ge, gt, le, ptypeof } from "@nudojs/core";
 import { app, lit, v } from "@nudojs/core";
 import {
+  absToSchemaNode,
   absToSchemaSource,
   absToZodSchemaModule,
   projectAbsToSchema,
@@ -113,6 +114,40 @@ describe("schema-generator", () => {
     expect(holeNotes).toHaveLength(2);
     expect(holeNotes.some((d) => d.includes("0"))).toBe(true);
     expect(holeNotes.some((d) => d.includes("2"))).toBe(true);
+  });
+
+  it("projects tuple rest as z.tuple(...).rest(...) without dropped note (BUG-002)", () => {
+    // rest 槽不得静默丢弃：zod 3/4 均支持 .rest()；无投影损失则无 dropped 记录
+    const withRest = abs(
+      { k: "tuple", elements: [numLit(1)], rest: num() },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const p = projectAbsToSchema(withRest);
+    expect(p.source).toBe("z.tuple([z.literal(1)]).rest(z.number())");
+    expect(p.dropped).toEqual([]);
+    // 固定元组渲染保持不变
+    const fixed = abs({ k: "tuple", elements: [numLit(1)] }, undefined, undefined, "exact");
+    expect(projectAbsToSchema(fixed).source).toBe("z.tuple([z.literal(1)])");
+  });
+
+  it("absToSchemaNode carries rest slot with its refinements (BUG-002)", () => {
+    const withRest = abs(
+      { k: "tuple", elements: [numLit(1)], rest: numVar("x", and(gt(v("x"), lit(0)), ptypeof(v("x"), "number")), "exact") },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const { node, dropped } = absToSchemaNode(withRest);
+    if (node.k !== "tuple") throw new Error("expected tuple node");
+    // rest 槽照常走 prim 投影（含 refinement），不再整槽丢弃
+    expect(node.rest).toEqual({
+      k: "prim",
+      type: "number",
+      refinements: [{ kind: "numBound", op: "gt", n: 0 }],
+    });
+    expect(dropped).toEqual([]);
   });
 });
 

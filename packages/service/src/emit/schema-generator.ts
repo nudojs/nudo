@@ -23,7 +23,7 @@ export type SchemaNode =
   | { k: "prim"; type: "number" | "string" | "boolean" | "bigint" | "symbol"; refinements: SchemaRefinement[] }
   | { k: "obj"; slots: Array<{ key: string; node: SchemaNode; optional?: boolean }> }
   | { k: "arr"; element: SchemaNode }
-  | { k: "tuple"; elements: SchemaNode[] }
+  | { k: "tuple"; elements: SchemaNode[]; rest?: SchemaNode }
   | { k: "union"; members: SchemaNode[] }
   | { k: "fn" }
   | { k: "promise"; inner: SchemaNode }
@@ -402,7 +402,15 @@ export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] }
         dropped.push(...sub.dropped);
         return sub.node;
       });
-      return { node: { k: "tuple", elements }, dropped };
+      // rest 槽（`[1, ...number]`）：SchemaNode 携带（standard-schema 据此校验超长元素），
+      // zod 渲染 `.rest(...)`——不得静默丢弃（有损投影必须可观测）
+      let rest: SchemaNode | undefined;
+      if (s.rest) {
+        const sub = absToSchemaNode(s.rest);
+        dropped.push(...sub.dropped);
+        rest = sub.node;
+      }
+      return { node: { k: "tuple", elements, ...(rest ? { rest } : {}) }, dropped };
     }
     case "sum": {
       const members = s.members.map((m) => {
@@ -481,8 +489,11 @@ export function schemaNodeToZod(node: SchemaNode): string {
     }
     case "arr":
       return `z.array(${schemaNodeToZod(node.element)})`;
-    case "tuple":
-      return `z.tuple([${node.elements.map(schemaNodeToZod).join(", ")}])`;
+    case "tuple": {
+      const base = `z.tuple([${node.elements.map(schemaNodeToZod).join(", ")}])`;
+      // rest：zod 3/4 均支持 `.rest()`（`[1, ...number]` → z.tuple([z.literal(1)]).rest(z.number())）
+      return node.rest ? `${base}.rest(${schemaNodeToZod(node.rest)})` : base;
+    }
     case "union":
       return `z.union([${node.members.map(schemaNodeToZod).join(", ")}])`;
     case "fn":

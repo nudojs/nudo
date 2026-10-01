@@ -218,20 +218,29 @@ function widenParamAbs(a: Abs): Abs {
       return makeAbs(s, undefined, undefined, "exact");
     case "tuple": {
       const widened = s.elements.map(widenParamAbs);
+      // rest 槽必须透传/并入：`[1, ...string]` 不得塌成 `number[]`（拒绝合法值）
+      const widenedRest = s.rest ? widenParamAbs(s.rest) : undefined;
       const holes = s.holes;
       const first = widened[0];
       // holes 必须透传：洞/显式 undefined 是可观察不同的（`in` / Object.keys），
       // 同构退化成 array 会把稀疏位抹平成稠密元素。
+      // rest 参与同构判定：只有 rest 元素与固定位同型时才退化（`[1, ...number]` → number[]）。
       if (
         !holes?.length &&
         first &&
         widened.length > 0 &&
-        widened.every((el) => absToTSType(el) === absToTSType(first))
+        widened.every((el) => absToTSType(el) === absToTSType(first)) &&
+        (!widenedRest || absToTSType(widenedRest) === absToTSType(first))
       ) {
         return makeAbs({ k: "arr", element: first }, undefined, undefined, "exact");
       }
       return makeAbs(
-        { k: "tuple", elements: widened, ...(holes?.length ? { holes: [...holes] } : {}) },
+        {
+          k: "tuple",
+          elements: widened,
+          ...(widenedRest ? { rest: widenedRest } : {}),
+          ...(holes?.length ? { holes: [...holes] } : {}),
+        },
         undefined,
         undefined,
         "exact",

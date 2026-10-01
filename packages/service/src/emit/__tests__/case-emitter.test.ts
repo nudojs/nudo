@@ -199,6 +199,11 @@ describe("serializeCaseArg", () => {
       { label: "object with bigint", value: absObj({ n: absPrim("bigint") }) },
       { label: "union with symbol", value: absUnion([num(), absPrim("symbol")]) },
       { label: "object with function value", value: absObj({ cb: dummyFn() }) },
+      // BUG-002：rest 槽指令文法不可表达 → 不得静默截断成固定位前缀
+      {
+        label: "tuple with rest slot",
+        value: absExact({ k: "tuple", elements: [absLit(1)], rest: num() }),
+      },
     ];
     for (const { label, value } of nulls) {
       expect(serializeCaseArg(value), label).toBeNull();

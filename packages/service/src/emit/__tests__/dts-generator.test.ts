@@ -10,7 +10,7 @@ import {
   objOf,
   type Abs,
 } from "@nudojs/core";
-import { absToTSType, generateDts } from "../dts-generator.ts";
+import { absToTSType, generateDts, generateFunctionDtsLines } from "../dts-generator.ts";
 import { analyzeFile } from "@nudojs/service";
 
 const arrOf = (element: Abs): Abs => abs({ k: "arr", element }, undefined, undefined, "exact");
@@ -85,6 +85,22 @@ describe("absToTSType", () => {
     expect(absToTSType(tupleOf([str()], arrOf(unionOf(num(), str()))))).toBe(
       "[string, ...(number | string)[]]",
     );
+  });
+
+  it("param widen keeps tuple rest slot instead of collapsing to wrong array (BUG-002)", () => {
+    // [1, ...string] 拓宽不得塌成 number[]（拒绝合法值）；rest 与固定位同型才退化 array
+    const heterogeneous = {
+      name: "f",
+      cases: [{ name: "c", argAbs: [tupleOf([numLit(1)], str())], args: [], abs: num() }],
+    } as never as Parameters<typeof generateFunctionDtsLines>[0];
+    expect(generateFunctionDtsLines(heterogeneous).join("\n")).toContain(
+      "arg0: [number, ...string[]]",
+    );
+    const homogeneous = {
+      name: "f",
+      cases: [{ name: "c", argAbs: [tupleOf([numLit(1), numLit(2)], num())], args: [], abs: num() }],
+    } as never as Parameters<typeof generateFunctionDtsLines>[0];
+    expect(generateFunctionDtsLines(homogeneous).join("\n")).toContain("arg0: number[]");
   });
 
   it("renders tuple holes distinctly from explicit undefined (BUG-020)", () => {

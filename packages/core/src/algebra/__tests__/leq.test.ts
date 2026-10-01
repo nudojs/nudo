@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { leqAbs, requiredFnArity } from "../leq.ts";
-import { abs, numLit, strLit, boolLit, num, str, unknown, never } from "../abs.ts";
+import { abs, numLit, strLit, boolLit, num, str, unknown, never, type Abs } from "../abs.ts";
 import { v, lit } from "../term.ts";
 import { gt, ge, lt, le, pTrue } from "../pred.ts";
 
@@ -196,6 +196,77 @@ describe("leqAbs structural assignability", () => {
       // (x0, ...paths) required=1 ⊑ (path) required=1
       expect(leqAbs(fn(["x0", "...paths"]), fn(["path"])).ok).toBe(true);
       expect(leqAbs(fn(["path"]), fn(["x0", "...paths"])).ok).toBe(true);
+    });
+  });
+
+  describe("tuple rest slot (BUG-002)", () => {
+    // TS 元组语义（tsc 验证）：rest = 0..n 个额外元素，最小长度 = elements.length
+    const tup = (elements: Abs[], rest?: Abs): Abs =>
+      abs({ k: "tuple", elements, ...(rest ? { rest } : {}) }, undefined, undefined, "exact");
+    const arr = (element: Abs): Abs =>
+      abs({ k: "arr", element }, undefined, undefined, "exact");
+
+    it("source rest ⊭ fixed-arity target (extra elements unaccepted)", () => {
+      // [1, ...number] ⊭ [1] — [1,2,3] 属源不属目标（此前误判 ok：BUG-002 主案）
+      expect(leqAbs(tup([numLit(1)], num()), tup([numLit(1)])).ok).toBe(false);
+      expect(leqAbs(tup([numLit(1)]), tup([numLit(1)])).ok).toBe(true);
+    });
+
+    it("fixed source ≤ rest target (tail may be empty)", () => {
+      expect(leqAbs(tup([numLit(1)]), tup([numLit(1)], num())).ok).toBe(true);
+      // 源更短且无 rest → 目标固定位缺元素
+      expect(leqAbs(tup([numLit(1)]), tup([numLit(1), num()], num())).ok).toBe(false);
+    });
+
+    it("source rest ≤ target rest covariantly", () => {
+      expect(leqAbs(tup([numLit(1)], str()), tup([numLit(1)], num())).ok).toBe(false);
+      expect(leqAbs(tup([numLit(1)], num()), tup([numLit(1)], num())).ok).toBe(true);
+    });
+
+    it("overlong fixed source elements must satisfy target rest", () => {
+      expect(leqAbs(tup([numLit(1), numLit(2)]), tup([numLit(1)], num())).ok).toBe(true);
+      expect(leqAbs(tup([numLit(1), numLit(2)]), tup([numLit(1)], str())).ok).toBe(false);
+    });
+
+    it("source rest does not fill target required fixed slots", () => {
+      // [1, ...number] ⊭ [1, number, ...number] — 源可能只有 1 个元素（tsc 同判）
+      expect(leqAbs(tup([numLit(1)], num()), tup([numLit(1), num()], num())).ok).toBe(false);
+    });
+
+    it("tuple rest must satisfy array element position", () => {
+      expect(leqAbs(tup([numLit(1)], num()), arr(num())).ok).toBe(true);
+      expect(leqAbs(tup([numLit(1)], str()), arr(num())).ok).toBe(false);
+    });
+
+    it("holes still compared within rest-target overlap", () => {
+      const undefLit = abs(
+        { k: "unknown" },
+        { op: "lit", value: undefined },
+        undefined,
+        "exact",
+      );
+      const sparse = abs(
+        { k: "tuple", elements: [numLit(1), undefLit], holes: [1] },
+        undefined,
+        undefined,
+        "exact",
+      );
+      // 稀疏源 ⊭ 稠密 rest 目标（下标 1 洞 ≠ 显式 undefined 元素）
+      const denseTgt = abs(
+        { k: "tuple", elements: [numLit(1), undefLit], rest: num() },
+        undefined,
+        undefined,
+        "exact",
+      );
+      expect(leqAbs(sparse, denseTgt).ok).toBe(false);
+      // 同洞分布 + rest 目标 → 可赋
+      const sparseTgt = abs(
+        { k: "tuple", elements: [numLit(1), undefLit], holes: [1], rest: num() },
+        undefined,
+        undefined,
+        "exact",
+      );
+      expect(leqAbs(sparse, sparseTgt).ok).toBe(true);
     });
   });
 });
