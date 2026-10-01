@@ -301,3 +301,36 @@ describe("check --json ok↔exit single source (BUG-008)", () => {
     expect(r.status).toBe(1);
   });
 });
+
+describe("health --json ok↔exit single source (BUG-004)", () => {
+  it("bad --from path: ok:false + pathErrors, exit 1 (never ok:true + exit 1)", () => {
+    const a = write("health-good.js", "export function id(x){ return x; }\n");
+    const r = runCli(["health", a, "--json", "--from", "/no/such/file.js"]);
+    expect(r.stdout.length, `stdout empty; stderr=${r.stderr}`).toBeGreaterThan(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.ok).toBe(false);
+    expect(parsed.pathErrors?.length).toBe(1);
+    expect(parsed.pathErrors[0].path).toContain("no/such/file.js");
+    // ok ⇔ exit 0/1 — 单一来源
+    expect(r.status).toBe(parsed.ok ? 0 : 1);
+    expect(r.status).toBe(1);
+  });
+
+  it("healthy dir with good --from: ok:true ⇔ exit 0", () => {
+    const a = write("health-solo.js", "export function id(x){ return x; }\n");
+    const from = write("health-solo-from.js", "export function use(){ return id(1); }\nfunction id(x){ return x; }\n");
+    const r = runCli(["health", a, "--json", "--from", from]);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.ok).toBe(true);
+    expect(parsed.pathErrors).toBeUndefined();
+    expect(r.status).toBe(0);
+  });
+
+  it("non-json face with bad --from never prints 'Result: OK'", () => {
+    const a = write("health-plain.js", "export function id(x){ return x; }\n");
+    const r = runCli(["health", a, "--from", "/no/such/file.js"]);
+    expect(r.stdout).not.toContain("Result: OK");
+    expect(r.stdout).toContain("Result: FAIL");
+    expect(r.status).toBe(1);
+  });
+});

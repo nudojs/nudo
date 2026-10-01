@@ -11,6 +11,7 @@ import {
   collectNudoFiles,
   reemitUpdate,
   startWatch,
+  type PathError,
 } from "./shared.ts";
 
 // ---------------------------------------------------------------------------
@@ -134,7 +135,11 @@ async function countInterfaceDrift(filePath: string): Promise<{ count: number; e
 
 async function runHealth(paths: string[], opts: { from?: string[]; json?: boolean }): Promise<void> {
   const targetPaths = paths.length > 0 ? paths : ["."];
-  const externalRecords = opts.from?.length ? collectExternalRecords(opts.from) : undefined;
+  // --from 路径错误进 sink（不直接设 exit），ok↔exit 单一来源；check/test 同规。
+  const fromErrors: PathError[] = [];
+  const externalRecords = opts.from?.length
+    ? collectExternalRecords(opts.from, fromErrors)
+    : undefined;
 
   const files: string[] = [];
   const reports: HealthReport[] = [];
@@ -155,12 +160,26 @@ async function runHealth(paths: string[], opts: { from?: string[]; json?: boolea
   const errorCount = reports.filter((r) => r.error).length;
   const uncoveredTotal = reports.reduce((n, r) => n + r.uncovered.length, 0);
   const failed = driftCount > 0 || ifaceDriftCount > 0 || errorCount > 0;
+  // ok↔exit 单一来源：pathErrors 非空 ⇒ ok:false（绝不 ok:true + 非零 exit）
+  const ok = !failed && fromErrors.length === 0;
+  // exit 只由 ok 决定（单一来源）；--json / 非 JSON 共用
+  process.exitCode = ok ? 0 : 1;
 
   if (opts.json) {
     console.log(
       JSON.stringify(
         {
-          ok: !failed,
+          ok,
+          ...(fromErrors.length > 0
+            ? {
+                pathErrors: fromErrors.map((e) => ({
+                  path: e.path,
+                  code: e.code,
+                  message: e.message,
+                  suggestion: e.suggestion,
+                })),
+              }
+            : {}),
           files: reports.map((r) => ({
             file: r.file,
             functions: r.functions,
@@ -175,7 +194,7 @@ async function runHealth(paths: string[], opts: { from?: string[]; json?: boolea
             files: reports.length,
             drift: driftCount,
             interfaceDrift: ifaceDriftCount,
-            errors: errorCount,
+            errors: errorCount + fromErrors.length,
             uncovered: uncoveredTotal,
             internal_fallbacks: reports.reduce((n, r) => n + (r.internalFallbacks ?? 0), 0),
           },
@@ -185,8 +204,17 @@ async function runHealth(paths: string[], opts: { from?: string[]; json?: boolea
       ),
     );
   } else {
+    // --from 路径错误上屏（usage face，与 check/test 一致）；ok:false 已在上方挡 exit
+    for (const e of fromErrors) {
+      console.error(e.message);
+      console.error(`fix:  ${e.suggestion}`);
+    }
     if (reports.length === 0) {
-      console.log("No files to check.");
+      if (fromErrors.length > 0) {
+        console.log("Result: FAIL (path errors found)");
+      } else {
+        console.log("No files to check.");
+      }
       return;
     }
     for (const r of reports) {
@@ -227,10 +255,15 @@ async function runHealth(paths: string[], opts: { from?: string[]; json?: boolea
       `\nSummary: ${reports.length} file(s) · ${driftCount} case drift · ${ifaceDriftCount} contract drift · ${errorCount} error(s) · ${uncoveredTotal} uncovered function(s)` +
         (internalTotal > 0 ? ` · ${internalTotal} internal_fallback(s)` : ""),
     );
-    console.log(failed ? "Result: FAIL (drift or errors found)" : "Result: OK (uncovered function(s) are informational only)");
+    // ok↔exit 单一来源：pathErrors / drift / errors 任一存在都不得报 OK
+    console.log(
+      ok
+        ? "Result: OK (uncovered function(s) are informational only)"
+        : fromErrors.length > 0 && !failed
+          ? "Result: FAIL (path errors found)"
+          : "Result: FAIL (drift or errors found)",
+    );
   }
-
-  if (failed) process.exitCode = 1;
 }
 
 export function registerHealthCommand(program: Command): void {
