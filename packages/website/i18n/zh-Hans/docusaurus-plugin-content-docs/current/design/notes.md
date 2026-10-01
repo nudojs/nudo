@@ -14,6 +14,7 @@ description: "仓库设计笔记索引——产品页背后的架构真源（Abs
 |---|---|---|
 | [`kernel-merge.md`](https://github.com/nudojs/nudo/blob/main/docs/design/kernel-merge.md) | 类型系统：`Abs = shape × term × pred × conf` 单轨制（`@nudojs/core/src/algebra`） | 真源 |
 | [`cli-semantics.md`](https://github.com/nudojs/nudo/blob/main/docs/design/cli-semantics.md) | CLI 产品面、L1/L2 门禁、`any` 与 `unknown`、`test` 用例报告、check JSON | 真源 |
+| [`directive-scope.md`](https://github.com/nudojs/nudo/blob/main/docs/design/directive-scope.md) | 指令作用域：函数级指令绑定 AST 最近 Function；抽取单源契约（parser） | 契约 |
 | [`evaluation.md`](https://github.com/nudojs/nudo/blob/main/docs/design/evaluation.md) | 单求值引擎（transpile → exec）、集合语义、fail-closed 行为 | 已落地 |
 | [`refine-derivation.md`](https://github.com/nudojs/nudo/blob/main/docs/design/refine-derivation.md) | 三层有效契约：手写 → 生成 → 隐式；侧车绑定；drift 诊断码 | 已落地 |
 | [`hof-relations.md`](https://github.com/nudojs/nudo/blob/main/docs/design/hof-relations.md) | HOF 关系（`fnRels` / `entryShapes`），不造泛型语言 | 已实施（P3 暂缓） |

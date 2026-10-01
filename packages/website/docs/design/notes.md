@@ -14,6 +14,7 @@ Architecture truth lives in the repository, not on this site: [`docs/design/`](h
 |---|---|---|
 | [`kernel-merge.md`](https://github.com/nudojs/nudo/blob/main/docs/design/kernel-merge.md) | The type system: `Abs = shape × term × pred × conf` as the single track (`@nudojs/core/src/algebra`) | Truth source |
 | [`cli-semantics.md`](https://github.com/nudojs/nudo/blob/main/docs/design/cli-semantics.md) | CLI product face, L1/L2 gates, `any` vs `unknown`, `test` case reports, check JSON | Truth source |
+| [`directive-scope.md`](https://github.com/nudojs/nudo/blob/main/docs/design/directive-scope.md) | Directive scoping: function-level directives bind the nearest AST Function; single-source extraction contract (parser) | Contract |
 | [`evaluation.md`](https://github.com/nudojs/nudo/blob/main/docs/design/evaluation.md) | Single evaluation engine (transpile → exec), set semantics, fail-closed behavior | Landed |
 | [`refine-derivation.md`](https://github.com/nudojs/nudo/blob/main/docs/design/refine-derivation.md) | Three-tier effective interface: handwritten → generated → implicit; sidecar binding; drift codes | Landed |
 | [`hof-relations.md`](https://github.com/nudojs/nudo/blob/main/docs/design/hof-relations.md) | HOF relations (`fnRels` / `entryShapes`) instead of a generic language | Implemented (P3 deferred) |
