@@ -273,7 +273,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="mockmodulerecord"></a>`MockModuleRecord` | type | single-source `@nudo:` directive grammar (see `docs/design/directive-scope.md`) | `MockModuleRecord = { source: string; names?: string[]; fromPath: string; }` |
 | <a id="never"></a>`never` | const | Abs constructors / faces | `const never` |
 | <a id="nudoconstraint"></a>`NudoConstraint` | type | contract checking | `NudoConstraint = { readonly __nudoConstraint: true; readonly prim?: PrimName; readonly preds: Pred[]; readonly fields?: Record<string, Nu...` |
-| <a id="nudoimportrecord"></a>`NudoImportRecord` | type | single-source `@nudo:` directive grammar (see `docs/design/directive-scope.md`) | `NudoImportRecord = { names: string[]; spec: string; }` |
+| <a id="nudoimportrecord"></a>`NudoImportRecord` | type | single-source `@nudo:` directive grammar (see `docs/design/directive-scope.md`) | `NudoImportRecord = { names: string[]; importedOfLocal: Record<string, string>; spec: string; }` |
 | <a id="num"></a>`num` | fn | Abs constructors / faces | `num(): Abs` |
 | <a id="number"></a>`number` | fn | `@nudo:contract` builder grammar | `number(): ConstraintBuilder` |
 | <a id="numlit"></a>`numLit` | fn | literal Abs; `litValue` → `LitValueResult` tagged (`&#123;ok:true,value&#125;\ | `numLit(value: number): Abs` |

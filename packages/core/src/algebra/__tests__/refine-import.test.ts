@@ -10,6 +10,7 @@ import {
   extractRefinesFromSource,
   extractRefineReturnFromSource,
   refineToIndexedFull,
+  takeRefineDiags,
 } from "../refine.ts";
 import { checkSource, pTrue } from "../index.ts";
 import { predToString } from "../pred.ts";
@@ -165,5 +166,148 @@ function setDelay(ms) {
     });
     expect(ret?.name).toBe("shapes.percent");
     expect(isNudoConstraint(ret!.constraint)).toBe(true);
+  });
+});
+
+describe("@nudo:import { a as b } alias binding (BUG-016)", () => {
+  it("alias import binds local name to the sidecar's original export", () => {
+    const src = `
+/// @nudo:import { delay as pos } from "./x.nudo.js"
+/**
+ * @nudo:contract x pos
+ */
+function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+`;
+    takeRefineDiags();
+    const reqs = extractRefinesFromSource(src, "needsPositive", {
+      loadModule,
+      fromFile: "/t/alias.js",
+    });
+    expect(reqs.length).toBe(1);
+    expect(reqs[0]!.param).toBe("x");
+    expect(predToString(reqs[0]!.pred)).toBe("x > 0");
+    expect(takeRefineDiags()).toEqual([]);
+  });
+
+  it("mixed { a as b, c } resolves both aliased and plain names", () => {
+    const src = `
+/// @nudo:import { delay as ms, percent } from "./x.nudo.js"
+/**
+ * @nudo:contract ms ms && n percent
+ */
+function f(ms, n) {
+  return ms + n;
+}
+`;
+    takeRefineDiags();
+    const reqs = extractRefinesFromSource(src, "f", {
+      loadModule,
+      fromFile: "/t/mix.js",
+    });
+    expect(reqs.map((r) => r.param)).toEqual(["ms", "n"]);
+    expect(predToString(reqs[0]!.pred)).toBe("ms > 0");
+    expect(takeRefineDiags()).toEqual([]);
+  });
+
+  it("alias import makes the contract enforced end-to-end (checkSource)", () => {
+    const src = `
+/// @nudo:import { delay as pos } from "./x.nudo.js"
+/**
+ * @nudo:contract x pos
+ */
+function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+needsPositive(-1);
+`;
+    const r = checkSource("/t/alias.js", src, pTrue, {
+      loadModule,
+      fromFile: "/t/alias.js",
+    });
+    expect(r.issues.some((i) => i.code === "nudo:constraint-violated")).toBe(true);
+  });
+
+  it("return contract resolves through an alias", () => {
+    const src = `
+/// @nudo:import { percent as pct } from "./x.nudo.js"
+/**
+ * @nudo:contract return pct
+ */
+function big() {
+  return 150;
+}
+`;
+    takeRefineDiags();
+    const ret = extractRefineReturnFromSource(src, "big", {
+      loadModule,
+      fromFile: "/t/ret-alias.js",
+    });
+    expect(ret?.name).toBe("pct");
+    expect(isNudoConstraint(ret!.constraint)).toBe(true);
+    expect(takeRefineDiags()).toEqual([]);
+  });
+
+  it("alias to a nonexistent export names the original export, not the alias", () => {
+    const src = `
+/// @nudo:import { nope as pos } from "./x.nudo.js"
+/**
+ * @nudo:contract x pos
+ */
+function f(x) {
+  return x;
+}
+`;
+    takeRefineDiags();
+    const reqs = extractRefinesFromSource(src, "f", {
+      loadModule,
+      fromFile: "/t/miss.js",
+    });
+    expect(reqs).toHaveLength(0);
+    const diags = takeRefineDiags();
+    // 查表按导出名报缺（修复前误报 has no export 'pos'）
+    expect(
+      diags.some(
+        (d) =>
+          d.code === "nudo:interface-load" &&
+          d.message.includes("has no export 'nope'"),
+      ),
+    ).toBe(true);
+    // 契约引用的本地名查 miss 也不再静默
+    expect(
+      diags.some(
+        (d) =>
+          d.code === "nudo:contract-syntax" &&
+          d.message.includes("'pos'"),
+      ),
+    ).toBe(true);
+  });
+
+  it("typo'd constraint name (no alias) → contract-syntax diagnostic, not silence", () => {
+    const src = `
+/// @nudo:import { positive } from "./x.nudo.js"
+/**
+ * @nudo:contract x positve
+ */
+function f(x) {
+  return x;
+}
+`;
+    takeRefineDiags();
+    const reqs = extractRefinesFromSource(src, "f", {
+      loadModule,
+      fromFile: "/t/typo.js",
+    });
+    expect(reqs).toHaveLength(0);
+    expect(
+      takeRefineDiags().some(
+        (d) =>
+          d.code === "nudo:contract-syntax" &&
+          d.message.includes("'positve'"),
+      ),
+    ).toBe(true);
   });
 });

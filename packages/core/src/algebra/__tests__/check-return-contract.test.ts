@@ -48,7 +48,7 @@ function bad() {
     expect(err!.expected).toContain(">");
   });
 
-  it("error: 返回类型 ⊭ string", () => {
+  it("unknown return constraint name → no false violation, but a visible warning (BUG-016)", () => {
     const r = issuesOf(`
 /**
  * @nudo:contract return notAString
@@ -57,8 +57,14 @@ function n() {
   return 1;
 }
 `);
-    // notAString 不在 std 里 → 无契约可查，不报
-    expect(r.issues.filter((i) => i.message.includes("@nudo:contract return"))).toEqual([]);
+    // notAString 不在 std 里 → 无契约可查，不报违例（false positive = 0）
+    expect(r.issues.filter((i) => i.message.includes("@nudo:contract return") && i.severity === "error")).toEqual([]);
+    // 但静默失效不允许：未知约束名 → nudo:contract-syntax warning
+    expect(
+      r.issues.filter(
+        (i) => i.code === "nudo:contract-syntax" && i.message.includes("notAString"),
+      ),
+    ).toHaveLength(1);
   });
 
   it("ok: 无 @nudo:contract return 不猜后置", () => {

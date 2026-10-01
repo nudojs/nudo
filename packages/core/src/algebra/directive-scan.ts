@@ -553,13 +553,18 @@ export function parseMockModulePayload(payload: string): MockModuleRecord | unde
 }
 
 export type NudoImportRecord = {
+  /** 本地绑定名（`a as b` 的 `b`，@nudo:contract 的引用名）；namespace 记 `*ns` */
   names: string[];
+  /** local → 侧车原始导出名（`a as b` 的 `a`）；未写别名的名字不进表 */
+  importedOfLocal: Record<string, string>;
   spec: string;
 };
 
 /**
  * `@nudo:import` 载荷：named `{ a, b as c }` / namespace `* as ns`。
  * default 等未识别形态返回 `malformed`（由消费方发诊断）。
+ * import 绑定语义 local ← imported：`a as b` 两个名字都保留——只留 local
+ * 会让查表用错名字（`exports[b]` miss，BUG-016）。
  */
 export function parseNudoImportPayload(
   payload: string,
@@ -568,19 +573,25 @@ export function parseNudoImportPayload(
   if (s === "") return undefined;
   const named = s.match(/^\{([^}]+)\}\s*from\s*["']([^"']+)["']$/);
   if (named) {
-    const names = named[1]!
+    const names: string[] = [];
+    const importedOfLocal: Record<string, string> = {};
+    for (const x of named[1]!
       .split("\n")
       .map((line) => line.replace(/^\s*\/\/\/?\s?/, "").trim())
       .join("\n")
       .split(",")
       .map((x) => x.trim())
-      .filter(Boolean)
-      .map((x) => x.split(/\s+as\s+/).pop()!.trim());
-    return { names, spec: named[2]! };
+      .filter(Boolean)) {
+      const seg = x.split(/\s+as\s+/);
+      const local = seg[seg.length - 1]!.trim();
+      names.push(local);
+      if (seg.length > 1) importedOfLocal[local] = seg[0]!.trim();
+    }
+    return { names, importedOfLocal, spec: named[2]! };
   }
   const ns = s.match(/^\*\s+as\s+(\w+)\s+from\s*["']([^"']+)["']$/);
   if (ns) {
-    return { names: [`*${ns[1]}`], spec: ns[2]! };
+    return { names: [`*${ns[1]}`], importedOfLocal: {}, spec: ns[2]! };
   }
   if (/^[\w$]+\s+from\b/.test(s) || /^[\w$]+\s*,/.test(s)) return "malformed-default";
   return "malformed";
