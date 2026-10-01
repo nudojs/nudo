@@ -134,4 +134,68 @@ describe("findProjectConfig with contract key", () => {
     expect(found?.projectDir).toBe(root);
     expect(interfaceConfig(found?.config)).toEqual({ autoBind: false, emit: [] });
   });
+
+  it("BUG-027: corrupted child package.json stops the walk with a diagnosis (no silent root inheritance)", () => {
+    const root = mkdtempSync(join(tmpdir(), "nudo-cfg-corrupt-"));
+    dirs.push(root);
+    writeFileSync(
+      join(root, "package.json"),
+      JSON.stringify({
+        name: "mono-root",
+        nudo: { contract: { autoBind: false } },
+      }),
+    );
+    const child = join(root, "packages", "lib");
+    mkdirSync(child, { recursive: true });
+    // 损坏 / 写入中的 package.json
+    writeFileSync(join(child, "package.json"), "{ not valid json");
+    const src = join(child, "src");
+    mkdirSync(src);
+
+    const warnings: string[] = [];
+    const origWrite = process.stderr?.write?.bind(process.stderr);
+    // 捕获诊断（checkConfig 同款 stderr 面）
+    if (process.stderr) {
+      process.stderr.write = ((s: string) => {
+        warnings.push(s);
+        return true;
+      }) as typeof process.stderr.write;
+    }
+    try {
+      const found = findProjectConfig(src);
+      // fail-closed：损坏处停，不静默继承根配置
+      expect(found).toBeNull();
+      expect(
+        warnings.some((w) => w.includes("package.json parse failed")),
+      ).toBe(true);
+      expect(warnings.some((w) => w.includes(join(child, "package.json")))).toBe(
+        true,
+      );
+    } finally {
+      if (origWrite && process.stderr) {
+        process.stderr.write = origWrite;
+      }
+    }
+  });
+
+  it("BUG-027: non-object package.json (JSON null) does not crash (old: TypeError swallowed)", () => {
+    const root = mkdtempSync(join(tmpdir(), "nudo-cfg-null-"));
+    dirs.push(root);
+    writeFileSync(
+      join(root, "package.json"),
+      JSON.stringify({ name: "mono-root", nudo: { contract: { autoBind: false } } }),
+    );
+    const child = join(root, "packages", "lib");
+    mkdirSync(child, { recursive: true });
+    writeFileSync(join(child, "package.json"), "null");
+    const src = join(child, "src");
+    mkdirSync(src);
+
+    // 旧实现：null.nudo 抛 TypeError 被同一 catch 吞掉 →
+    // 效果等同「无 nudo 键」继续向上。修复后显式守卫
+    // （不靠异常吞掉）：可解析但无 nudo 键 → 继续向上，
+    // 与 keyless package.json 同义
+    const found = findProjectConfig(src);
+    expect(found?.projectDir).toBe(root);
+  });
 });

@@ -302,18 +302,34 @@ export function findProjectConfig(
   while (dir !== root) {
     const pkgPath = resolve(dir, "package.json");
     if (existsSync(pkgPath)) {
+      // BUG-027：区分「无 nudo 键（继续向上）」与
+      // 「读 / 解析失败」——旧实现 catch 吞掉后继续
+      // 向上，子包 package.json 损坏 / 写入中时静默
+      // 继承 monorepo 根配置（或无配置），per-package
+      // 策略（entryThrows / maxForks / sessionCache）
+      // 静默失效，IDE 与 CLI 口径漂移。解析失败 →
+      // 诊断 + 停（fail-closed：无项目配置走默认 +
+      // env 层，不猜根配置）。
+      let pkg: unknown;
       try {
-        const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
-        if (pkg.nudo) {
-          const nudo = pkg.nudo as NudoConfig;
-          // 会话 LRU 上限随项目配置接线（显式 set > env > 此层；见 session-cache-limits）
-          setSessionCacheFromProject(nudo.sessionCache);
-          // fork 总次数预算：env NUDO_MAX_FORKS > nudo.analysis.maxForks > 默认
-          applyBForkBudgetFromConfig(nudo);
-          return { config: nudo, projectDir: dir };
-        }
-      } catch {
-        // ignore parse errors
+        pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+      } catch (err) {
+        process.stderr?.write?.(
+          `nudo: package.json parse failed at ${pkgPath} (${err instanceof Error ? err.message : String(err)}); project config disabled for this subtree (defaults + env apply)\n`,
+        );
+        applyBForkBudgetFromConfig(null);
+        return null;
+      }
+      const nudo =
+        pkg && typeof pkg === "object"
+          ? (pkg as { nudo?: NudoConfig }).nudo
+          : undefined;
+      if (nudo) {
+        // 会话 LRU 上限随项目配置接线（显式 set > env > 此层；见 session-cache-limits）
+        setSessionCacheFromProject(nudo.sessionCache);
+        // fork 总次数预算：env NUDO_MAX_FORKS > nudo.analysis.maxForks > 默认
+        applyBForkBudgetFromConfig(nudo);
+        return { config: nudo, projectDir: dir };
       }
     }
     const parent = dirname(dir);
