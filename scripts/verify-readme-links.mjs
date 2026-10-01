@@ -4,7 +4,7 @@
 // 不会因为"尚未部署"误红，也不会漏掉"部署后必然 404"的链接。
 //
 // 运行：node scripts/verify-readme-links.mjs（挂 pnpm run verify:links）
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, lstatSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -12,9 +12,25 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 
 const SITE = "https://nudojs.github.io/nudo";
 
+/** 遍历时剪枝：依赖/产物目录既不是文档面，也常含符号链接环。 */
+const SKIP_DIRS = new Set([
+  "node_modules",
+  ".git",
+  "dist",
+  "build",
+  ".docusaurus",
+  "coverage",
+  ".turbo",
+  ".next",
+]);
+
 function walk(dir, out = []) {
   for (const e of readdirSync(dir)) {
     const p = join(dir, e);
+    if (SKIP_DIRS.has(e)) continue;
+    // lstat：不跟随符号链接目录——pnpm 的 alias 链
+    // (packages/cli/node_modules/nudojs → … → packages/cli) 会形成无限递归。
+    if (lstatSync(p).isSymbolicLink()) continue;
     if (statSync(p).isDirectory()) walk(p, out);
     else out.push(p);
   }

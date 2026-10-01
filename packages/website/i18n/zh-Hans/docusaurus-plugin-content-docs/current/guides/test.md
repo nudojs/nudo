@@ -21,7 +21,7 @@ nudo test <path> [--watch|-w] [--from paths…] [--freeze[=mode]] [--dry-run] [-
 
 ## 默认输出
 
-```js
+```js verify#math
 export function subtract(a, b) {
   return a - b;
 }
@@ -57,7 +57,7 @@ assertions
 
 无人调用时的 entry-only fallback：
 
-```js
+```js verify#entry
 export function getName(user) {
   return user.name;
 }
@@ -81,7 +81,7 @@ export function getName(user) {
 
 `@nudo:case "name" (args) => expected` 声明一个期望。Nudo 执行该 case 并用实际结果对照期望 Abs 检查（`leqAbs`）：
 
-```js
+```js verify#dbl
 /**
  * @nudo:case "double" (2) => 4
  * @nudo:case "bad" (3) => 7

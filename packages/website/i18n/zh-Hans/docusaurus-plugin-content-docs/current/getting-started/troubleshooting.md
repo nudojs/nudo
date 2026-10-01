@@ -17,6 +17,21 @@ description: "第一个小时的常见问题：any 与 unknown、number | string
 
 ## 为什么 `+` 返回 `number | string`？
 
+```js verify#day0
+export function scale(x) {
+  return x + 1;
+}
+
+export function formatName(first, last) {
+  return first + " " + last;
+}
+
+scale(5);
+formatName("Ada", "Lovelace");
+```
+
+用 `nudo check` 跑一遍，signatures 段是：
+
 ```text
 scale(x: any) => number | string
 ```

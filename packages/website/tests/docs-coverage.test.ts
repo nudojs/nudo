@@ -18,6 +18,11 @@
 // 14. 手写文档页（排除生成物 releases*/versioning/api）zh 与 en 结构新鲜：``` 围栏行数一致，
 //     围栏外 http(s) 外链 URL 集合一致（zh 漏译段落/陈旧外链会被抓住；allowlist 见注释）。
 // 15. en 文档禁止站内绝对链接（](/docs/… / ](/blog/… 形态；https:// 外链不管）——统一相对 .md 路径。
+// 16. guides/examples.md 的派生表（目录集合 + Expected exit）必须与 docs/examples/README.md
+//     的命令矩阵一致（矩阵才是 verify:examples 的真值）。
+// 17. 仓库 docs/design/*.md 每篇都必须在 design/notes.md 索引页被登记（且链接指向真实文件）。
+// 18. static/llms.txt 的索引段条目必须是 `- [Title](url): summary`，Title 与页面 H1 一致 —— 裸 URL
+//     只能告诉 agent「有哪些页」，不能告诉它「该读哪页」。
 import { describe, it, expect } from "vitest";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join, relative } from "node:path";
@@ -70,8 +75,11 @@ const HARVEST_ALLOWLIST = [
 ];
 const HARVEST_VERB_RE = /nudo(\s+--)?\s+harvest\b|Primary verbs:[^\n]*\bharvest\b/;
 // ```js / ```javascript 开启行：语言后只允许这几种 meta（或无 meta）。
+// `verify#<slug>` / `verify-sidecar#<slug>` 是「同页多场景」围栏（scripts/verify-doc-examples.sh
+// 的 verify_scenario：每个 slug 单独成文件、单独跑），slug 限小写字母/数字/连字符。
 const FENCE_OPEN_RE = /^```(?:js|javascript)(?![\w-])[ \t]*(.*)$/;
-const FENCE_META_OK = new Set(["", "verify", "verify-sidecar", "noplayground"]);
+const FENCE_META_OK =
+  /^(?:verify(?:-sidecar)?(?:#[a-z0-9-]+)?|noplayground)?$/;
 // 相对 markdown 链接目标（](./x) / ](../x)）：必须以 .md 结尾（#anchor 允许）。
 const REL_LINK_RE = /\]\((\.{1,2}\/[^)\s]*)\)/g;
 // sidebar 文档 id（字符串项）形态：小写字母/数字/连字符/斜杠；label/type/description 等
@@ -371,7 +379,7 @@ describe("code fence meta gates", () => {
         readFileSync(f, "utf8").split("\n").forEach((line, i) => {
           const m = FENCE_OPEN_RE.exec(line);
           const meta = m?.[1].trim();
-          if (meta !== undefined && !FENCE_META_OK.has(meta)) {
+          if (meta !== undefined && !FENCE_META_OK.test(meta)) {
             bad.push(`${label}/${rel}:${i + 1} meta "${meta}"`);
           }
         });
@@ -599,6 +607,181 @@ describe("absolute in-site link gates (rule 15)", () => {
     expect(
       bad,
       `absolute in-site links (rewrite as relative .md paths, or extend ABS_LINK_ALLOWLIST with justification): ${bad.join(", ")}`,
+    ).toEqual([]);
+  });
+});
+
+describe("design notes index covers docs/design (rule 17)", () => {
+  // 站内只暴露 design-doc（叙述页）与 design/notes（索引）。仓库 docs/design/*.md
+  // 是架构真源：新增一篇而不在索引页登记 = 读者永远找不到它。
+  const designDir = join(repoRoot, "docs/design");
+  const indexPage = readFileSync(join(EN_DOCS, "design/notes.md"), "utf8");
+
+  const designFiles = readdirSync(designDir)
+    .filter((f) => f.endsWith(".md"))
+    .sort();
+
+  it("the repository actually has the expected design notes", () => {
+    expect(designFiles.length).toBeGreaterThan(5);
+    expect(designFiles).toContain("kernel-merge.md");
+    expect(designFiles).toContain("cli-semantics.md");
+  });
+
+  it("every docs/design note is listed in design/notes.md", () => {
+    const missing = designFiles.filter((f) => !indexPage.includes(`design/${f}`));
+    expect(
+      missing,
+      `design notes missing from the index page (add a row in docs/design/notes.md): ${missing.join(", ")}`,
+    ).toEqual([]);
+  });
+
+  it("links to design files resolve on disk", () => {
+    const stale: string[] = [];
+    for (const m of indexPage.matchAll(
+      /https:\/\/github\.com\/nudojs\/nudo\/blob\/main\/docs\/design\/([a-z0-9-]+\.md)/g,
+    )) {
+      if (!existsSync(join(designDir, m[1]))) stale.push(m[1]);
+    }
+    expect(stale, `design/notes.md links a missing file: ${stale.join(", ")}`).toEqual([]);
+  });
+});
+
+describe("llms.txt index entries carry title + summary (rule 18)", () => {
+  // 索引段（`## Docs (HTML)` 与 `## Blog (short slugs)`）的每个条目必须是
+  // `- [Title](url): summary`：裸 URL 只能告诉 agent「有哪些页」，不能告诉它
+  // 「该读哪页」。Title 必须等于页面 H1（blog 取 frontmatter title），summary 非空。
+  const llms = readFileSync(LLMS_TXT, "utf8");
+  const section = (start: string, end: string): string => {
+    const i = llms.indexOf(start);
+    const j = llms.indexOf(end, i);
+    return llms.slice(i + start.length, j);
+  };
+  const docsIndex = section("## Docs (HTML)", "## Blog (short slugs)");
+  const blogIndex = section("## Blog (short slugs)", "## Per-page markdown");
+  const ENTRY_RE = /^-\s+\[(.+?)\]\((https:\/\/nudojs\.github\.io\/nudo\/[^)]+)\):\s*(.+)$/;
+
+  const h1Of = (file: string): string | null => {
+    const m = /^#\s+(.+)$/m.exec(readFileSync(file, "utf8"));
+    return m ? m[1].trim() : null;
+  };
+  // route → en 文件路径（frontmatter slug 优先）
+  const docFileByRoute = new Map<string, string>();
+  for (const f of walk(EN_DOCS).filter((f) => f.endsWith(".md"))) {
+    const route = (frontmatterSlug(readFileSync(f, "utf8")) ??
+      relative(EN_DOCS, f).replace(/\.md$/, "")).replace(/^\//, "");
+    docFileByRoute.set(route, f);
+  }
+
+  it("every docs index line is a titled, summarized entry", () => {
+    const bad: string[] = [];
+    for (const line of docsIndex.split("\n").filter((l) => l.trim().startsWith("- "))) {
+      const m = ENTRY_RE.exec(line);
+      if (!m) {
+        bad.push(`bare entry (add title + summary): ${line.trim()}`);
+        continue;
+      }
+      const route = m[2].slice("https://nudojs.github.io/nudo/docs/".length);
+      const file = docFileByRoute.get(route);
+      if (!file) bad.push(`${route}: entry has no page on disk`);
+      else {
+        const h1 = h1Of(file);
+        if (h1 !== m[1]) bad.push(`${route}: title "${m[1]}" ≠ H1 "${h1}"`);
+      }
+      if (!m[3].trim()) bad.push(`${route}: empty summary`);
+    }
+    expect(bad, `llms.txt docs index malformed: ${bad.join("; ")}`).toEqual([]);
+  });
+
+  it("every blog index line is a titled, summarized entry", () => {
+    const bad: string[] = [];
+    for (const line of blogIndex.split("\n").filter((l) => l.trim().startsWith("- "))) {
+      const m = ENTRY_RE.exec(line);
+      if (!m) {
+        bad.push(`bare entry (add title + summary): ${line.trim()}`);
+        continue;
+      }
+      const slug = m[2].slice("https://nudojs.github.io/nudo/blog/".length);
+      const file = readdirSync(EN_BLOG).find((n) => {
+        const s = frontmatterSlug(readFileSync(join(EN_BLOG, n), "utf8"));
+        return s !== null && s.replace(/^\//, "") === slug;
+      });
+      if (!file) bad.push(`${slug}: entry has no blog post with that slug`);
+      if (!m[3].trim()) bad.push(`${slug}: empty summary`);
+    }
+    expect(bad, `llms.txt blog index malformed: ${bad.join("; ")}`).toEqual([]);
+  });
+
+  it("entries stay single-line (a wrapped summary breaks plain-text consumers)", () => {
+    const wrapped = [...docsIndex.split("\n"), ...blogIndex.split("\n")].filter((l) => {
+      const t = l.trim();
+      return t.length > 0 && !t.startsWith("- ") && !t.startsWith("#") && !t.startsWith("Base:");
+    });
+    expect(wrapped, `wrapped llms.txt lines: ${wrapped.join(" | ")}`).toEqual([]);
+  });
+});
+
+describe("examples guide table ↔ docs/examples matrix (rule 16)", () => {
+  // guides/examples.md 的「Topic directory / Expected exit」表是从
+  // docs/examples/README.md（verify:examples 的真值矩阵）派生出来的摘要。
+  // 派生表最容易静默过期：目录集合、以及每条「Expected exit」声称的退出码，
+  // 都必须与 README 矩阵里该目录命令行的退出码一致。
+  const readme = readFileSync(join(repoRoot, "docs/examples/README.md"), "utf8");
+  const guide = readFileSync(join(EN_DOCS, "guides/examples.md"), "utf8");
+
+  // README 场景表：`| [`constraints/`](./constraints/) | …`
+  const readmeDirs = [
+    ...readme.matchAll(/^\|\s*\[`([^`]+)`\]\(\.\/([^)]*)\)/gm),
+  ].map((m) => m[1]);
+
+  // README 命令矩阵：`| `pnpm run check docs/examples/x/y.js` | **1** | …`
+  const matrixRows = [...readme.matchAll(/^\|\s*`([^`]+)`\s*\|\s*\*?\*?(\d)\*?\*?\s*\|/gm)];
+  const exitsByDir = new Map<string, Set<string>>();
+  for (const [, cmd, exit] of matrixRows) {
+    const m = /docs\/examples\/([a-z-]+)\//.exec(cmd);
+    if (!m) continue; // root-level fixtures (l2-export-any.js) are not topic dirs
+    const set = exitsByDir.get(m[1]) ?? new Set<string>();
+    set.add(exit);
+    exitsByDir.set(m[1], set);
+  }
+
+  // 网站派生表：`| [`constraints/`](https://github.com/…/docs/examples/constraints) | … | `1` … |`
+  const webRows = [
+    ...guide.matchAll(
+      /^\|\s*\[`([^`]+)`\]\(https:\/\/github\.com\/nudojs\/nudo\/tree\/main\/docs\/examples\/([^)]*)\)(.*)$/gm,
+    ),
+  ];
+
+  it("parsers see both tables (guard against a silently empty gate)", () => {
+    expect(readmeDirs.length).toBeGreaterThan(5);
+    expect(matrixRows.length).toBeGreaterThan(20);
+    expect(webRows.length).toBeGreaterThan(5);
+  });
+
+  it("topic directory sets are identical", () => {
+    const webDirs = webRows.map((r) => r[1]).sort();
+    expect(webDirs, "guides/examples.md rows vs docs/examples/README.md dirs").toEqual(
+      [...readmeDirs].sort(),
+    );
+  });
+
+  it("every Expected-exit code on the guide is a real matrix exit for that directory", () => {
+    const bad: string[] = [];
+    for (const [, label, dir, rest] of webRows) {
+      const claimed = new Set([...rest.matchAll(/`(\d)`/g)].map((m) => m[1]));
+      const real = exitsByDir.get(dir) ?? new Set<string>();
+      if (claimed.size === 0) {
+        bad.push(`${label}: no exit code in the Expected exit cell`);
+        continue;
+      }
+      for (const code of claimed) {
+        if (!real.has(code)) {
+          bad.push(`${label}: claims exit ${code}, matrix has [${[...real].sort().join(",")}]`);
+        }
+      }
+    }
+    expect(
+      bad,
+      `guides/examples.md exit claims drifted from docs/examples/README.md: ${bad.join("; ")}`,
     ).toEqual([]);
   });
 });

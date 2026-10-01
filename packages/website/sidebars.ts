@@ -142,7 +142,7 @@ const sidebars: SidebarsConfig = {
     {
       type: "category",
       label: "Project",
-      items: ["guides/competitive-landscape", "design/design-doc", "contributing"],
+      items: ["guides/competitive-landscape", "design/design-doc", "design/notes", "contributing"],
     },
   ],
 };

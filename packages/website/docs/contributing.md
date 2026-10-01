@@ -125,6 +125,55 @@ Operator semantics live in the algebra, not a separate `Ops` layer:
 
 ---
 
+## Docs maintenance {#docs-maintenance}
+
+The site (`packages/website`) is gated like code. A docs PR runs the same CI as an engine PR, so know the toolbox before you edit prose.
+
+### Gate toolbox
+
+| Command | What it enforces |
+|---|---|
+| `pnpm run verify:docs [-- --report]` | Executes every tagged code block through the real CLI and greps the printed output for the page's promised lines; also audits CLI verbs/flags both ways (`docs` ↔ `packages/nudojs/src/commands`), checks zh fence parity byte-for-byte, and (with `--report`) the verified-page coverage floor. Needs `pnpm run build` first. |
+| `pnpm run verify:examples` | The `docs/examples/` matrix (`docs/examples/README.md`) — commands × expected exit codes + output pins. |
+| `pnpm run verify:links` | Offline route check for absolute `nudojs.github.io/nudo/...` links in READMEs and site sources. |
+| `pnpm vitest run packages/website/tests` | The docs-as-code rules: i18n mirror parity, fence metadata, sidebar↔page pairing, `llms.txt`↔route↔title sync, glossary anchors, examples-table↔matrix consistency, design-notes index coverage, homepage stat sourcing, playground presets. |
+| `pnpm run docs:gen` + `git diff --exit-code -- packages/website/docs/{releases*,api}` | Generated pages (`releases*`, `guides/versioning`, `api/*` skeleton) must match their sources. Never hand-edit them. |
+| `pnpm --filter website run build` | Docusaurus build: broken links and broken anchors throw. |
+| `pnpm run docs:build` | The full local production build — runs the site build **and** the `postbuild` step that writes per-page `.md` sidecars + `llms-full.txt`. |
+
+A weekly scheduled job (`docs-links.yml`) checks external links; it never blocks a PR.
+
+### Code fence tags
+
+Code blocks are documentation until they are tagged. The site's fenced blocks are the input of `verify:docs`:
+
+| Opening fence | Meaning |
+|---|---|
+| ```` ```js ```` / ```` ```javascript ```` | Documentation only. Gets a Playground button unless `noplayground`. |
+| ```` ```js verify ```` | Appended (in page order) to `<page>.js` and executed with `nudo check` / `nudo test`. |
+| ```` ```js verify-sidecar ```` | Appended to `<page>.nudo.js` — the auto-binding sidecar for the page's main file. |
+| ```` ```js verify#<slug> ```` | A **scenario file**: `<page>-<slug>.js`, executed on its own. Use it when a page shows several independent examples whose line numbers (`call@L5`, `entry@L1`) must stay truthful. |
+| ```` ```js verify-sidecar#<slug> ```` | Sidecar for that scenario. |
+| ```` ```js noplayground ```` | Hides the Playground button (keeps the block runnable). |
+
+Rules of thumb:
+
+- Pin **only** strings the CLI actually prints — never invent golden output.
+- A page that teaches CLI output should carry at least one `verify` block; quoting another page is allowed, but `verify:docs` will require the quoted line to still exist in the real run.
+- zh mirrors carry the **same** fences byte-for-byte (only prose is translated). `verify:docs` fails on any byte drift.
+
+### Page conventions
+
+- Every page needs frontmatter `description` (search, `llms.txt`, JSON-LD).
+- New pages land as a **pair**: `docs/<path>.md` + `i18n/zh-Hans/docusaurus-plugin-content-docs/current/<path>.md`, registered in `sidebars.ts`, with an entry in `static/llms.txt` in the form `- [<page H1>](<url>): <one-line summary>`.
+- Keep English pages free of CJK text (the `en` tree is the source language).
+- Docs in the repository (`docs/design/*.md`, `docs/reports/*.md`, `docs/examples/`) are linked with full GitHub URLs; new design notes must be listed in [Design notes](./design/notes.md).
+- Do not hand-edit generated pages: `releases.md`, `releases-history.md`, `guides/versioning.md`, `api/*` skeleton blocks.
+- Page-level provenance (engine version + build commit) and the JSON-LD/OG metadata are generated at build time — no manual version bookkeeping.
+- Static social cards live in `packages/website/static/img/` (`nudo-og.jpg`); the site is one OG image by design (per-page cards would need a rasterizer in CI).
+
+---
+
 ## Releases (VS Code extension)
 
 Full checklist: [`packages/vscode/RELEASE_CHECKLIST.md`](https://github.com/nudojs/nudo/blob/main/packages/vscode/RELEASE_CHECKLIST.md) in the monorepo. Summary of what every Marketplace / Open VS X release must cover:

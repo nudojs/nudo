@@ -10,88 +10,87 @@ Base: https://nudojs.github.io/nudo
 
 ### Getting started
 
-- https://nudojs.github.io/nudo/docs/intro
-- https://nudojs.github.io/nudo/docs/why-nudo
-- https://nudojs.github.io/nudo/docs/getting-started/installation
-- https://nudojs.github.io/nudo/docs/getting-started/mental-model
-- https://nudojs.github.io/nudo/docs/getting-started/quick-start
-- https://nudojs.github.io/nudo/docs/getting-started/troubleshooting
+- [Introduction](https://nudojs.github.io/nudo/docs/intro): Nudo lets developers see variables close to runtime inside the source — per-variable precise derivations, not broad type names; contracts sharper than types; logic stays JavaScript.
+- [Why Nudo](https://nudojs.github.io/nudo/docs/why-nudo): Why Nudo — per-variable precise derivations for code understanding; contracts sharper than type systems for robustness; logic and contracts stay JavaScript with no second type language.
+- [Installation](https://nudojs.github.io/nudo/docs/getting-started/installation): Install the Nudo CLI, VS Code extension, and Vite plugin via npm, pnpm, or yarn — published packages require Node.js >= 20.
+- [Mental model](https://nudojs.github.io/nudo/docs/getting-started/mental-model): Nudo mental model — execute JS on abstract values, see runtime-adjacent variables in source; observation and contracts; call sites are evidence.
+- [Quick Start](https://nudojs.github.io/nudo/docs/getting-started/quick-start): Gate signatures and cases on a plain JavaScript file — npx nudojs check / test.
+- [Troubleshooting](https://nudojs.github.io/nudo/docs/getting-started/troubleshooting): First-hour FAQ: any vs unknown, number | string unions, silent editors, nudo test vs vitest, entry-may-throw, removed verbs, signatures on success.
 
 ### How-to (guides)
 
-- https://nudojs.github.io/nudo/docs/guides/check
-- https://nudojs.github.io/nudo/docs/guides/test
-- https://nudojs.github.io/nudo/docs/guides/performance
-- https://nudojs.github.io/nudo/docs/guides/contract
-- https://nudojs.github.io/nudo/docs/guides/cli
-- https://nudojs.github.io/nudo/docs/guides/recipes
-- https://nudojs.github.io/nudo/docs/guides/examples
-- https://nudojs.github.io/nudo/docs/guides/error-faces
-- https://nudojs.github.io/nudo/docs/guides/errors-vs-typescript
-- https://nudojs.github.io/nudo/docs/guides/export-ecosystem
-- https://nudojs.github.io/nudo/docs/guides/health
-- https://nudojs.github.io/nudo/docs/guides/env-harvest
-- https://nudojs.github.io/nudo/docs/guides/callsite-discovery
-- https://nudojs.github.io/nudo/docs/guides/migrating-js
-- https://nudojs.github.io/nudo/docs/guides/migrating-from-typescript
-- https://nudojs.github.io/nudo/docs/guides/coexistence
-- https://nudojs.github.io/nudo/docs/guides/case-study-retire
-- https://nudojs.github.io/nudo/docs/guides/versioning
-- https://nudojs.github.io/nudo/docs/guides/competitive-landscape
-- https://nudojs.github.io/nudo/docs/guides/vs-typescript
-- https://nudojs.github.io/nudo/docs/guides/ai-native-dx
-- https://nudojs.github.io/nudo/docs/guides/agent-integration
-- https://nudojs.github.io/nudo/docs/guides/lsp-clients
-- https://nudojs.github.io/nudo/docs/guides/vscode
-- https://nudojs.github.io/nudo/docs/guides/zed
-- https://nudojs.github.io/nudo/docs/guides/vite-plugin
+- [nudo check](https://nudojs.github.io/nudo/docs/guides/check): nudo check — L1 refinement gate + L2 entry throws on Abs; prints signatures; CI command.
+- [nudo test](https://nudojs.github.io/nudo/docs/guides/test): nudo test — per-case call-site ground truth on Abs; synthetic call@/entry@ cases print by default; declared @nudo:case assertions drive the exit code; --from, --freeze, --json, --abs.
+- [Performance: budgets & the analysis cache](https://nudojs.github.io/nudo/docs/guides/performance): Nudo analysis performance — budgets (forks, calls, call sites), truncation diagnostics and fixes, the .nudo/cache disk cache, and what CI should (not) restore.
+- [nudo contract](https://nudojs.github.io/nudo/docs/guides/contract): nudo contract — print / draft / emit / reverse TypeScript into sidecar contracts. The Day 1 product face beside nudo check.
+- [CLI Usage](https://nudojs.github.io/nudo/docs/guides/cli): Drive Nudo from the terminal — task-oriented workflows for the product verbs (check / test / contract / export / health / migrate).
+- [Recipes](https://nudojs.github.io/nudo/docs/guides/recipes): Task recipes — CI gate, gradual contracts, monorepo, export, agents.
+- [Examples](https://nudojs.github.io/nudo/docs/guides/examples): Practical Nudo examples — call-site observation, sidecar contracts, strings, loops, unions, env/mocks — with real check/test output.
+- [Error faces: Nudo vs TypeScript](https://nudojs.github.io/nudo/docs/guides/error-faces): Top Nudo error faces next to TypeScript — actual values, Preds, and a fix line. Runnable, CI-pinned samples.
+- [Error catalog: Nudo vs tsc](https://nudojs.github.io/nudo/docs/guides/errors-vs-typescript): Ten real error scenarios, one file — what tsc reports (or stays silent about), what Nudo reports (value + Pred), and the fix path. Runnable, CI-pinned.
+- [Export: bridge to the ecosystem](https://nudojs.github.io/nudo/docs/guides/export-ecosystem): Bridge Abs to the ecosystem with nudo export — .d.ts, zero-dependency guards, Zod dialect schemas, Standard Schema validators; a full walkthrough with verified examples, and where Nudo ends and schema libraries begin.
+- [nudo health](https://nudojs.github.io/nudo/docs/guides/health): nudo health — analysis errors and solidification drift in CI.
+- [Dependency types](https://nudojs.github.io/nudo/docs/guides/env-harvest): Where dependency types come from — fixed es/web/node envs, silent @types auto-fill, and when to mock.
+- [Call-Site Discovery](https://nudojs.github.io/nudo/docs/guides/callsite-discovery): Harvest real argument shapes from your tests and apps with --from, synthesize call@L cases from them, and freeze them as directives with test --freeze.
+- [Migrating existing JS](https://nudojs.github.io/nudo/docs/guides/migrating-js): Migrate an existing JavaScript package to Nudo: draft contracts from code, review, persist, then gate with check/health.
+- [Migrating from TypeScript](https://nudojs.github.io/nudo/docs/guides/migrating-from-typescript): Retire tsc with nudo migrate — status → strip → verify → retire. Coexistence is a migration tactic, not the end state.
+- [Coexistence with TypeScript](https://nudojs.github.io/nudo/docs/guides/coexistence): Short-lived dual gates while you migrate package by package — the exit is nudo migrate retire.
+- [Case study: retire tsc](https://nudojs.github.io/nudo/docs/guides/case-study-retire): Public retire-tsc case studies — checkout-demo, real packages ms and debug. One-way door, no dual-run endgame.
+- [Versioning & Releases](https://nudojs.github.io/nudo/docs/guides/versioning): How Nudo packages are versioned: 0.x vs 1.x SemVer, what counts as breaking, changeset workflow, and migration notes.
+- [Competitive Landscape](https://nudojs.github.io/nudo/docs/guides/competitive-landscape): Where Nudo sits against TypeScript, Flow, Hegel, schema libraries, and refinement types — the division of labor, not a feature checklist.
+- [Nudo vs TypeScript](https://nudojs.github.io/nudo/docs/guides/vs-typescript): Nudo vs TypeScript — where the replacement happens (DX and fact quality), how declaration and inference differ, and the scope bounds of “replace.”
+- [AI-native DX](https://nudojs.github.io/nudo/docs/guides/ai-native-dx): AI-native DX — why agents close red→green with less noise on Nudo than on TypeScript. Structured actions, honest unknown, and measurable evals.
+- [Agent Integration Guide](https://nudojs.github.io/nudo/docs/guides/agent-integration): Connect AI coding agents to Nudo's language server: LSP→MCP bridges, native LSP clients, agent commands (check/test/contract/hover/whatIf/…), and pull diagnostics.
+- [LSP Client Matrix](https://nudojs.github.io/nudo/docs/guides/lsp-clients): Capability matrix for Nudo's language server across VS Code, Zed, Neovim, Helix, and generic LSP clients — plus known gaps.
+- [VS Code Extension](https://nudojs.github.io/nudo/docs/guides/vscode): Install the nudo-vscode extension for hover types, completions, case-switching CodeLens, inlay hints, and diagnostics powered by Nudo's language server.
+- [Zed Extension](https://nudojs.github.io/nudo/docs/guides/zed): Install the Nudo language server in Zed: hover types, diagnostics, CodeLens case switching, inlay hints.
+- [Vite Plugin](https://nudojs.github.io/nudo/docs/guides/vite-plugin): Analyze @nudo: type-inference directives during Vite builds with vite-plugin-nudo: configurable include/exclude globs, build warnings, and failOnError.
 
 ### Concepts
 
-- https://nudojs.github.io/nudo/docs/concepts/abs
-- https://nudojs.github.io/nudo/docs/concepts/hof-relations
-- https://nudojs.github.io/nudo/docs/concepts/abstract-interpretation
-- https://nudojs.github.io/nudo/docs/concepts/semantics
-- https://nudojs.github.io/nudo/docs/concepts/directives
-- https://nudojs.github.io/nudo/docs/concepts/control-flow-narrowing
-- https://nudojs.github.io/nudo/docs/concepts/mocking
-- https://nudojs.github.io/nudo/docs/concepts/layers
-- https://nudojs.github.io/nudo/docs/concepts/limits
+- [Abs — the type system](https://nudojs.github.io/nudo/docs/concepts/abs): Abs — how Nudo represents a variable close to runtime (shape × term × pred × conf): computable values with constraints that participate in algebra.
+- [HOF relations](https://nudojs.github.io/nudo/docs/concepts/hof-relations): HOF relations — how Nudo derives the return shape of map(xs, f) style higher-order functions without a generics language (fnRels / entryShapes / hofSites), plus relationFn() for env authors.
+- [Abstract Interpretation](https://nudojs.github.io/nudo/docs/concepts/abstract-interpretation): How Nudo computes runtime-adjacent variables in the source — abstract interpretation: executing code on Abs so intermediates carry values, shapes, and constraints.
+- [Language Semantics](https://nudojs.github.io/nudo/docs/concepts/semantics): Learn the JavaScript semantics Nudo's evaluator models precisely today — string methods, for-of, break, Object.keys, recursion — and the constructs that still degrade to unknown.
+- [Directives](https://nudojs.github.io/nudo/docs/concepts/directives): Syntax reference for all @nudo: directives — case, mock, pure, skip, sample, contract, throws, import, env, mock-module, as, replace — with constraints and examples.
+- [Control Flow Narrowing](https://nudojs.github.io/nudo/docs/concepts/control-flow-narrowing): See how Nudo narrows types per call site — equality guards, discriminated object shapes, typeof, Array.isArray, switch, and literal truthiness — plus the current limits of unknown-condition branches, in, and ?./??.
+- [Mocking External Dependencies](https://nudojs.github.io/nudo/docs/concepts/mocking): Mock external dependencies during evaluation — five @nudo:mock forms (arrow functions, stub helpers, builders, from-module), the single-line rule, and evaluator caveats.
+- [Concept Layers](https://nudojs.github.io/nudo/docs/concepts/layers): How Nudo layers the goal of runtime-adjacent variables — Observation (Day 0), Contracts (Day 1), advanced Abs.
+- [Limits & non-goals](https://nudojs.github.io/nudo/docs/concepts/limits): Limits and non-goals — what Nudo does not claim, call-site ceilings, evaluator gaps, and the TypeScript type-language boundary.
 
 ### Reference
 
-- https://nudojs.github.io/nudo/docs/reference/diagnostics
-- https://nudojs.github.io/nudo/docs/glossary
-- https://nudojs.github.io/nudo/docs/reference/agents
-- https://nudojs.github.io/nudo/docs/reference/config
+- [Diagnostics glossary](https://nudojs.github.io/nudo/docs/reference/diagnostics): Stable Nudo diagnostic codes — meaning, minimal repro, Abs view, and fixes.
+- [Glossary](https://nudojs.github.io/nudo/docs/glossary): Glossary — Abs (name and parts), conf grades, evaluator, fail-closed, any vs unknown, L1/L2, contracts, call sites.
+- [Agents](https://nudojs.github.io/nudo/docs/reference/agents): Nudo for AI coding agents — product rules, Observation commands, machine-readable diagnostics, MCP/LSP pointers.
+- [Configuration reference](https://nudojs.github.io/nudo/docs/reference/config): Every package.json#nudo key and NUDO_* environment variable — values, defaults, precedence, and where each is enforced.
 
 ### API
 
-- https://nudojs.github.io/nudo/docs/api/cli-reference
-- https://nudojs.github.io/nudo/docs/api/core
-- https://nudojs.github.io/nudo/docs/api/parser
-- https://nudojs.github.io/nudo/docs/api/service
-- https://nudojs.github.io/nudo/docs/api/harvester
-- https://nudojs.github.io/nudo/docs/api/lsp
-- https://nudojs.github.io/nudo/docs/api/agent
+- [CLI Reference](https://nudojs.github.io/nudo/docs/api/cli-reference): Reference every nudo CLI command — check, test, contract, export, health, migrate — with arguments, options, output formats, and exit codes.
+- [@nudojs/core](https://nudojs.github.io/nudo/docs/api/core): @nudojs/core API — the Abs type system (shape × term × pred × conf), constructors, assignability and formatting, operator semantics, template strings, mock helpers, and Environment.
+- [@nudojs/parser](https://nudojs.github.io/nudo/docs/api/parser): @nudojs/parser API — parse() with TypeScript stripping, stripTypes, function/file/inline directive extraction, and directive type definitions.
+- [@nudojs/service](https://nudojs.github.io/nudo/docs/api/service): @nudojs/service API — analyzeFile/analyzeFileAsync, call-record collection, module graph and dirty set, semantic tokens, d.ts/zod/guard generation, case emission.
+- [@nudojs/harvester](https://nudojs.github.io/nudo/docs/api/harvester): @nudojs/harvester API — harvestDts and emitEnvModule: convert @types .d.ts declarations into Nudo env definitions with Abs constructors.
+- [@nudojs/lsp](https://nudojs.github.io/nudo/docs/api/lsp): @nudojs/lsp API — the language server over @nudojs/service: validation pipeline and caches, symbols, semantic tokens, agent tools, capabilities.
+- [Agent API](https://nudojs.github.io/nudo/docs/api/agent): Agent API — nudo.* commands: check (Abs gate), test, contract, hover, whatIf, suggestCase, trace, selectCase, getActiveCases.
 
 ### Design & meta
 
-- https://nudojs.github.io/nudo/docs/design/design-doc
-- https://nudojs.github.io/nudo/docs/contributing
-- https://nudojs.github.io/nudo/docs/releases
-- https://nudojs.github.io/nudo/docs/releases-history
+- [Design Document](https://nudojs.github.io/nudo/docs/design/design-doc): Nudo by design: Abs = shape × term × pred × conf as the single type system, extensional projection for display, directives, and what executing code computes that a separate type language cannot.
+- [Design notes (repo)](https://nudojs.github.io/nudo/docs/design/notes): Index of the repository design notes — architecture truth sources (Abs, CLI semantics, evaluation, interface derivation, caches, limitations) behind the product pages.
+- [Contributing](https://nudojs.github.io/nudo/docs/contributing): Set up the Nudo monorepo and contribute — project structure, development workflow, operator semantics, directives, and docs.
+- [Releases](https://nudojs.github.io/nudo/docs/releases): Current per-package release notes — generated from changesets CHANGELOGs; breaking changes carry migration notes.
+- [Full release history](https://nudojs.github.io/nudo/docs/releases-history): Full per-package release history — generated from changesets CHANGELOGs; large page, excluded from search.
 
 ### Blog (short slugs)
 
-- https://nudojs.github.io/nudo/blog/day0-observe
-- https://nudojs.github.io/nudo/blog/day1-contracts
-- https://nudojs.github.io/nudo/blog/vs-typescript
-- https://nudojs.github.io/nudo/blog/attribution-gate
-- https://nudojs.github.io/nudo/blog/agents-docs
-- https://nudojs.github.io/nudo/blog/retiring-typescript-in-practice
-
-## Per-page markdown (same route + `.md`)
+- [Day 0 — observe JavaScript without rewriting it](https://nudojs.github.io/nudo/blog/day0-observe): Welcome back to JavaScript. Nudo does not ask you to rewrite a JS package in another language surface before you can see types or gate obligations.
+- [Contracts are JS — Day 1 with sidecar *.nudo.js](https://nudojs.github.io/nudo/blog/day1-contracts): Nudo’s contract product is not a second type language. Contracts are ordinary JavaScript modules: sidecar .nudo.js files that auto-bind to same-name exports, or in-source @nudo:contract.
+- [Nudo vs TypeScript — when a JS-first gate is the right tool](https://nudojs.github.io/nudo/blog/vs-typescript): Honest positioning: Nudo is built to replace TypeScript as the day-to-day type gate for JavaScript-first codebases — not to reimplement the TypeScript compiler.
+- [The 22-file smear: how call-site attribution almost shipped fake precision](https://nudojs.github.io/nudo/blog/attribution-gate): Call-site discovery (nudo test lib/ --from test/) harvests real argument shapes from usage sites and synthesizes call@L… cases from them. The promise is precision for free: no directives, no annotations, just the arguments your code is actually called with.
+- [Nudo for coding agents — agents.md, agent integration, stable diagnostics](https://nudojs.github.io/nudo/blog/agents-docs): Nudo’s observation output is already structured. Agents need a stable product contract too.
+- [We retired tsc on our JavaScript packages — and the gate got sharper](https://nudojs.github.io/nudo/blog/retiring-typescript-in-practice): Most teams keep tsc --noEmit around not because they enjoy writing annotations, but because there was no other CI gate to reach for. Nudo's answer is not "write a second type language". It is three commitments:## Per-page markdown (same route + `.md`)
 
 Every docs page and blog post also ships as raw markdown — append `.md` to the URL. Examples:
 

@@ -10,15 +10,17 @@ description: "安装 nudo-vscode 扩展：悬停类型、补全、用例切换 C
 
 ## 安装
 
-1. 打开扩展视图（`Cmd+Shift+X` / `Ctrl+Shift+X`）
-2. 搜索 **nudo-vscode** 或 "Nudo"
-3. 点击 **安装**
+1. 从[最新 GitHub Release](https://github.com/nudojs/nudo/releases)下载 `nudo-vscode.vsix`
+2. VS Code → 扩展视图（`Cmd+Shift+X` / `Ctrl+Shift+X`）→ `…` 菜单 → **从 VSIX 安装…**
+3. 选择刚下载的文件
 
 或从命令行安装：
 
 ```bash
-code --install-extension wmzy.nudo-vscode
+code --install-extension nudo-vscode.vsix
 ```
+
+市场列表（VS Code Marketplace 与 Open VSX 上的 `wmzy.nudo-vscode`）是发布产物——搜得到时可直接从扩展视图安装，也可以从源码构建（`pnpm --filter nudo-vscode run build && pnpm --filter nudo-vscode run package`）。GitHub Release 上的 `.vsix` 才是真源。
 
 ## 激活
 

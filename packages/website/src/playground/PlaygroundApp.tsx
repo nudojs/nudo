@@ -21,9 +21,8 @@ import {
   GROUP_BASIC,
   GROUP_CALLSITE,
   GROUP_SEMANTICS,
-  tGroup,
-  tPresetName,
 } from './presets';
+import { tGroup, tPresetName } from './preset-labels';
 import { discoverCallsites } from './callsites';
 import {
   PLAYGROUND_FILE,
