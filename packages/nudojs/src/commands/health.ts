@@ -119,13 +119,18 @@ async function countInterfaceDrift(filePath: string): Promise<{ count: number; e
   }
   if (!/@generated/.test(scSrc)) return { count: 0 };
   try {
-    const { findProjectConfig, interfaceConfig } = await import("@nudojs/service");
+    const { collectSkipReturns, findProjectConfig, interfaceConfig } = await import(
+      "@nudojs/service"
+    );
     const proj = findProjectConfig(dirname(abs));
     const autoBind = interfaceConfig(proj?.config).autoBind;
-    const r = checkSource(abs, rf(abs, "utf-8"), pTrue, {
+    const source = rf(abs, "utf-8");
+    const r = checkSource(abs, source, pTrue, {
       loadModule: defaultLoadModule,
       fromFile: abs,
       ...(autoBind === false ? { autoBind: false } : {}),
+      // 与 nudo check 同源：@nudo:skip 的函数不评估 body，不产出 drift 候选
+      skips: collectSkipReturns(source),
     });
     return { count: r.issues.filter((i) => i.code === "nudo:interface-drift").length };
   } catch (e) {
