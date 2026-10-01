@@ -96,11 +96,12 @@ export function $toNumeric(a: Abs): Abs {
 }
 /** UpdateExpression `old+1`：ToNumeric 后按 numeric type 加 1（无 string concat） */
 export function $updateAdd(a: Abs): Abs {
-  return updateAddAbs(a);
+  // 与 $add 同口径：分支 Φ 中的界（if (x>0) 内 x++）参与约束传播
+  return updateAddAbs(a, currentExecPhi());
 }
 /** UpdateExpression `old-1` */
 export function $updateSub(a: Abs): Abs {
-  return updateSubAbs(a);
+  return updateSubAbs(a, currentExecPhi());
 }
 
 export function $neg(a: Abs): Abs {
