@@ -15,6 +15,7 @@ import { TextDocument } from "vscode-languageserver-textdocument";
 import { readFileSync, existsSync, realpathSync } from "node:fs";
 import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
+import { sanitizeErrorMessage } from "./sanitize.ts";
 import { sidecarPathOf } from "@nudojs/core";
 import {
   isNudoTargetPath,
@@ -539,7 +540,7 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
       const errDiag = {
         severity: DiagnosticSeverity.Error,
         range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
-        message: `Analysis error: ${(err as Error).message}`,
+        message: `Analysis error: ${sanitizeErrorMessage((err as Error).message)}`,
         source: "nudo",
       } as ReturnType<typeof toLspDiagnostic>;
       const items = last && last.length > 0 ? last : [errDiag];

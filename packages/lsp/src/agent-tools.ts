@@ -27,6 +27,7 @@ import {
   type EmitInterfaceResult,
 } from "@nudojs/service/emit";
 import { getHoverAtPosition, getCasesForFile } from "./lsp-surface.ts";
+import { sanitizeErrorMessage } from "./sanitize.ts";
 import {
   analyzeFile,
   findProjectConfig,
@@ -187,8 +188,11 @@ export function readSource(filePath: string, deps: AgentToolDeps = {}): string {
 }
 
 function analysisError(err: unknown): AgentToolResult {
+  // BUG-023：agent 工具结果回传远端 LLM 会话——
+  // 原始 message 的绝对路径等于回传工作区布局，
+  // 脱敏后再出（根前缀 → 占位）
   return {
-    content: [{ type: "text", text: `Error: ${(err as Error).message}` }],
+    content: [{ type: "text", text: `Error: ${sanitizeErrorMessage((err as Error).message)}` }],
     isError: true,
   };
 }

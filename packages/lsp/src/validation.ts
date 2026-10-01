@@ -6,6 +6,7 @@
  */
 import { readFileSync, existsSync, statSync } from "node:fs";
 import { dirname, resolve as resolvePath, join } from "node:path";
+import { sanitizeErrorMessage } from "./sanitize.ts";
 import {
   analyzeFile,
   analyzeFileAsync,
@@ -678,7 +679,7 @@ export function checkToLspDiagnostics(
       {
         severity: DiagnosticSeverity.Error,
         range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
-        message: `Check error: ${(err as Error).message}`,
+        message: `Check error: ${sanitizeErrorMessage((err as Error).message)}`,
         source: "nudo-check",
         code: "nudo:internal",
       },
@@ -770,7 +771,7 @@ export async function validateText(
         diagnostics: [{
           severity: DiagnosticSeverity.Error,
           range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
-          message: `Analysis error: ${(err as Error).message}`,
+          message: `Analysis error: ${sanitizeErrorMessage((err as Error).message)}`,
           source: "nudo",
         }],
       });

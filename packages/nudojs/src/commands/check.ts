@@ -244,8 +244,15 @@ async function runCheck(
           ? { asOverrides: reps.asValues, asOverrideTargets: reps.asTargets }
           : {}),
       };
-    } catch {
-      /* optional: injection setup failed — skip injection (fail-closed) */
+    } catch (err) {
+      // BUG-023：注入装配失败不得静默跳过——无注入的分析
+      // 会把未 mock 的模块图当作事实（假绿：签名看似通过
+      // 实则基于错误依赖）。上屏并挡 exit（门禁为红），
+      // 分析仍跑（观察面完整）。
+      console.error(
+        `error: eval injection setup failed: ${(err as Error).message}`,
+      );
+      process.exitCode = 1;
     }
     algebraReport = checkSource(filePath, source, pTrue, {
       loadModule,

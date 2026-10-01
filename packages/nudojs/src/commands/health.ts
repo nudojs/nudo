@@ -11,6 +11,7 @@ import {
   collectNudoFiles,
   reemitUpdate,
   startWatch,
+  displayPathOf,
   type PathError,
 } from "./shared.ts";
 
@@ -40,13 +41,8 @@ type HealthReport = {
   error?: string;
 };
 
-const displayPath = (p: string): string => {
-  const rel = relative(process.cwd(), p);
-  return rel === "" || rel.startsWith("..") ? p : rel;
-};
-
 async function healthFile(filePath: string, records?: CallRecord[]): Promise<HealthReport> {
-  const report: HealthReport = { file: displayPath(filePath), functions: 0, entryOnly: 0, uncovered: [] };
+  const report: HealthReport = { file: displayPathOf(filePath), functions: 0, entryOnly: 0, uncovered: [] };
   let source: string;
   try {
     source = readFileSync(filePath, "utf-8");
@@ -151,7 +147,7 @@ async function runHealth(paths: string[], opts: { from?: string[]; json?: boolea
   for (const p of targetPaths) {
     const abs = resolve(p);
     if (!existsSync(abs)) {
-      reports.push({ file: displayPath(abs), functions: 0, entryOnly: 0, uncovered: [], error: `File not found: ${abs}` });
+      reports.push({ file: displayPathOf(abs), functions: 0, entryOnly: 0, uncovered: [], error: `File not found: ${displayPathOf(abs)}` });
       continue;
     }
     files.push(...(statSync(abs).isDirectory() ? collectNudoFiles(abs) : [abs]));

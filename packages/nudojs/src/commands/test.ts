@@ -19,6 +19,7 @@ import {
   startWatch,
   reemitUpdate,
   runAbsView,
+  displayPathOf,
   type EmitCasesOptions,
   type PathError,
 } from "./shared.ts";
@@ -81,13 +82,13 @@ async function runTest(
     else process.exitCode = 0;
   } else if (opts.abs) {
     // 观察面仍走 abs，但声明断言失败必须可见 + 挡 exit（design §1.3 / §0）
-    const report = buildTestReport(filePath, result);
+    const report = buildTestReport(displayPathOf(filePath), result);
     await runAbsView(filePath, {});
     console.log("");
     console.log(formatTestReport(report));
     if (report.failed > 0) process.exitCode = 1;
   } else {
-    const report = buildTestReport(filePath, result);
+    const report = buildTestReport(displayPathOf(filePath), result);
     console.log(formatTestReport(report));
     if (report.failed > 0) process.exitCode = 1;
   }
