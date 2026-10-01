@@ -52,7 +52,9 @@ export function bindImports(
       env.vars.set(s.local.name, mod.default ?? unknown);
     } else if (s.type === "ImportSpecifier") {
       const imported = s.imported.type === "Identifier" ? s.imported.name : String(s.imported);
-      env.vars.set(s.local.name, mod.named[imported] ?? unknown);
+      // 自有属性读：依赖未导出 toString 等名时裸读会把 Object.prototype 方法漏进 Abs 域
+      const named = Object.hasOwn(mod.named, imported) ? mod.named[imported] : undefined;
+      env.vars.set(s.local.name, named ?? unknown);
     } else if (s.type === "ImportNamespaceSpecifier") {
       env.vars.set(s.local.name, namespaceAbsOf(mod));
     }
@@ -109,7 +111,13 @@ export function collectAbsExports(
             const local = spec.local.type === "Identifier" ? spec.local.name : spec.local.value;
             const exported =
               spec.exported.type === "Identifier" ? spec.exported.name : spec.exported.value;
-            const v = local === "default" ? mod.default : mod.named[local];
+            // 自有属性读（同 bindImports：原型名不得当 re-export 源）
+            const v =
+              local === "default"
+                ? mod.default
+                : Object.hasOwn(mod.named, local)
+                  ? mod.named[local]
+                  : undefined;
             // 缺名：留 unknown 槽而非 continue 丢槽（消费方 import 还能拿到 unknown）
             const slot = v ?? unknown;
             if (exported === "default") defaultExport = slot;

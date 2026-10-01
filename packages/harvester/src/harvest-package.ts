@@ -197,8 +197,14 @@ export function lookupHarvested(
   moduleName: string,
   exportName: string,
 ): string | undefined {
-  const mod = h.env.modules[moduleName];
-  const a = mod?.[exportName] ?? h.env.globals[exportName];
+  // 自有属性读：toString/constructor 等键裸读会踩 Object.prototype 原型链，
+  // 把原型成员当 harvest 模块/导出喂给 formatShape
+  const mod = Object.hasOwn(h.env.modules, moduleName)
+    ? h.env.modules[moduleName]
+    : undefined;
+  const a =
+    (mod !== undefined && Object.hasOwn(mod, exportName) ? mod[exportName] : undefined) ??
+    (Object.hasOwn(h.env.globals, exportName) ? h.env.globals[exportName] : undefined);
   if (!a) return undefined;
   return formatShape(a);
 }

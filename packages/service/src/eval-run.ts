@@ -539,7 +539,8 @@ export function tryEvalCallFull(
 }) | undefined {
   const run = tryRunEval(source, filePath, { envNames: opts.envNames, mocks: opts.mocks });
   if (!run) return undefined;
-  if (!(fnName in run.exports)) return undefined;
+  // own-property：`in` 走原型链，toString/constructor 等继承名会被当模块导出调用
+  if (!Object.hasOwn(run.exports, fnName)) return undefined;
   const collected: EvalCallRecord[] = [];
   const memberDiags: EvalMemberDiag[] = [];
   const prevCall = opts.collectCalls

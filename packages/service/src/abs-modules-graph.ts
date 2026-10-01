@@ -387,7 +387,8 @@ export function collectMissingExportIssues(
     const mod = modules[spec];
     // 仅成功求值的导出表才可作缺名判定（zero-FP）
     if (!mod?.evaluated) return;
-    const has = name === "default" ? mod.default !== undefined : name in mod.named;
+    // own-property：`in` 走原型链，toString 等继承名会漏报缺名
+    const has = name === "default" ? mod.default !== undefined : Object.hasOwn(mod.named, name);
     if (!has) push(spec, name, kind);
   };
 
@@ -629,7 +630,13 @@ function importLocalBindings(
         const imported =
           sp.imported?.type === "StringLiteral" ? sp.imported.value : sp.imported?.name;
         if (imported === undefined) continue;
-        const absVal = imported === "default" ? mod.default : mod.named[imported];
+        // 自有属性读：依赖未导出 toString 等名时裸读会把 Object.prototype 方法漏进 Abs 域
+        const absVal =
+          imported === "default"
+            ? mod.default
+            : Object.hasOwn(mod.named, imported)
+              ? mod.named[imported]
+              : undefined;
         out.set(local, absVal ?? unknown);
       }
     }

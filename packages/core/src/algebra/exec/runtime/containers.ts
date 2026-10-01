@@ -506,7 +506,8 @@ export function $idx(a: Abs, i: Abs): Abs {
     const joinSlotsWithUndef = (): Abs =>
       joinAbs(slots.reduce((x, y) => joinAbs(x, y)), undef());
     if (typeof iv === "string" || typeof iv === "number" || typeof iv === "boolean") {
-      const slot = objShape.slots[String(iv)];
+      // getSlot：字面量键为 toString 等 Object.prototype 名时裸读踩原型链
+      const slot = getSlot(objShape.slots, String(iv));
       if (slot) return slot.value;
       if (objShape.open) return unknown;
       // 闭 shape 字面量 key miss：键确定不存在 → 仅 undefined（与 $get / Map miss 一致）

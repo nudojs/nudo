@@ -607,28 +607,31 @@ function loadSidecarBinding(
     }
     return { ok: false };
   }
-  // C4.2 绑定键解析：
+  // C4.2 绑定键解析（全部按自有属性读：toString/constructor 等键裸读会踩
+  // Object.prototype 原型链，把原型成员当侧车导出）：
   // 1. 平铺 `Class.method` / `Class_method`
   // 2. 嵌套对象 `export const Class = { method: fn(…) }`
   // 3. C4.4：`export { local as default }` + 侧车 `export default`
-  let binding: unknown = exports[fnName];
+  let binding: unknown = Object.hasOwn(exports, fnName) ? exports[fnName] : undefined;
   if (binding === undefined && exports.default !== undefined && isDefaultExportLocal(source, fnName)) {
     binding = exports.default;
   }
   if (binding === undefined && fnName.includes(".")) {
     const [cls, method] = fnName.split(".", 2);
-    binding = exports[`${cls}_${method}`];
+    binding = Object.hasOwn(exports, `${cls}_${method}`)
+      ? exports[`${cls}_${method}`]
+      : undefined;
     if (binding === undefined) {
-      const bag = exports[cls!] as Record<string, unknown> | undefined;
+      const bag = Object.hasOwn(exports, cls!) ? (exports[cls!] as Record<string, unknown> | undefined) : undefined;
       if (bag && typeof bag === "object" && !isNudoConstraint(bag)) {
-        binding = (bag as Record<string, unknown>)[method!];
+        binding = Object.hasOwn(bag, method!) ? bag[method!] : undefined;
       }
     }
     // 侧车键近失配：只有裸 `method` 而目标是 `Class.method`——报而非静默不绑
     if (
       binding === undefined &&
       method !== undefined &&
-      exports[method] !== undefined
+      Object.hasOwn(exports, method)
     ) {
       collectDiag({
         code: "nudo:interface-load",

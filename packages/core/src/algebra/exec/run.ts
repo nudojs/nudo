@@ -660,7 +660,9 @@ function callTranspiledExportFullInner(
   args: Abs[],
   opts?: { phi?: Phi },
 ): TranspiledCallResult {
-  const fn = exports[name];
+  // own-property：name 为 toString/constructor 等 Object.prototype 成员且模块
+  // 无同名自有导出时，裸读会把原型方法当导出调用（constructor 曾原样返回实参）
+  const fn = Object.hasOwn(exports, name) ? exports[name] : undefined;
   if (typeof fn === "function") {
     // D1：重跑/导入调用用副本——mutator 不得把入参态污染回调用方/记录
     const callArgs = args.map((a) =>

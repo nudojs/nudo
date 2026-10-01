@@ -790,7 +790,8 @@ function collectConstraints(
         }
         continue;
       }
-      const v = exports[name];
+      // 自有属性读：toString 等键裸读踩原型链，把原型成员当侧车导出
+      const v = Object.hasOwn(exports, name) ? exports[name] : undefined;
       if (isNudoConstraint(v)) {
         map.set(name, v);
       } else if (v === undefined) {
