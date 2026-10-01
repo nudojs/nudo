@@ -63,14 +63,25 @@ function tsTplSafe(ts: string): string {
   return ts;
 }
 
-/** 成员声明里不能用保留字/非法标识符；空名与非 ident 落到 argN。 */
+/**
+ * 成员声明里不能用保留字/非法标识符；空名与非 ident 落到 argN。
+ * optional 标签（`options?`）先剥下再判 ident、保留 `?` 输出
+ * （与 formatShape 的 `label?` 口径一致，BUG-020/S6-005：
+ * 旧实现整名换 argN，`?` 语义丢失变必填）。
+ */
 function sanitizeParamName(name: string, index: number): string {
-  if (name.startsWith("...")) {
-    const rest = name.slice(3);
-    if (isJsBindingIdent(rest)) return name;
+  let optional = false;
+  let base = name;
+  if (base.endsWith("?")) {
+    optional = true;
+    base = base.slice(0, -1);
+  }
+  if (base.startsWith("...")) {
+    const rest = base.slice(3);
+    if (isJsBindingIdent(rest)) return `...${rest}${optional ? "?" : ""}`;
     return `...arg${index}`;
   }
-  if (isJsBindingIdent(name)) return name;
+  if (isJsBindingIdent(base)) return `${base}${optional ? "?" : ""}`;
   return `arg${index}`;
 }
 
@@ -198,8 +209,20 @@ function absToTSTypeInner(a: Abs, typeVars: Map<string, string> | undefined, bud
           const name = sanitizeParamName(p, i);
           const pt = paramTypes?.[i];
           let typeStr: string;
-          if (pt) typeStr = absToTSTypeB(pt, typeVars, budget);
-          else if (isRest) typeStr = "unknown[]";
+          if (pt) {
+            if (isRest) {
+              // rest 位必须是数组类型（TS：A rest parameter must be of an
+              // array type）——非 arr（sum/tuple/fn/prim…）提升为 (T)[]，
+              // 与 tuple rest 位同口径（BUG-020/S6-005：旧实现直接拼接，
+              // `...args: number | string` 非法 TS）
+              typeStr =
+                pt.shape.k === "arr"
+                  ? absToTSTypeB(pt, typeVars, budget)
+                  : `${wrapComplexAbs(pt, typeVars, budget)}[]`;
+            } else {
+              typeStr = absToTSTypeB(pt, typeVars, budget);
+            }
+          } else if (isRest) typeStr = "unknown[]";
           else typeStr = "unknown";
           return `${name}: ${typeStr}`;
         })
