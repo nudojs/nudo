@@ -7,6 +7,7 @@ import type { Node } from "@babel/types";
 import type { Abs, Confidence, Shape } from "./abs.ts";
 import { abs } from "./abs.ts";
 import type { Term } from "./term.ts";
+import { litKeyString } from "./term.ts";
 import type { Pred } from "./pred.ts";
 import type { AstEnv } from "./hof-types.ts";
 
@@ -169,7 +170,8 @@ export function absFunction(
 // --- stable key（relationFn fingerprint）---
 
 function termKey(t: Term): string {
-  if (t.op === "lit") return `L:${typeof t.value}:${String(t.value)}`;
+  // -0/0 身份不同：键走 litKeyString（String(-0)==="0" 会折叠）
+  if (t.op === "lit") return `L:${typeof t.value}:${litKeyString(t.value)}`;
   if (t.op === "var") return `V:${t.id}`;
   return `A:${t.fn}(${t.args.map(termKey).join(",")})`;
 }

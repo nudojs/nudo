@@ -37,11 +37,21 @@ export function termEquals(a: Term, b: Term): boolean {
   return false;
 }
 
+/**
+ * 键通道字面量序列化：-0 与 0 身份不同（Object.is / 1/x 可观察差异），
+ * String(-0)==="0" 会抹掉符号。NaN→"NaN" 已天然区分，bigint 靠 typeof 前缀分开。
+ * 仅用于 dedup / map / cache / 指纹键；展示面走 formatShape（自身已特判 -0）。
+ */
+export function litKeyString(v: LiteralValue): string {
+  if (typeof v === "number" && Object.is(v, -0)) return "-0";
+  return String(v);
+}
+
 export function termToString(t: Term): string {
   if (t.op === "lit") {
     if (typeof t.value === "string") return JSON.stringify(t.value);
-    // -0 与 0 可观察不同（Object.is / 1/x）；String(-0)==="0" 会抹掉
-    if (typeof t.value === "number" && Object.is(t.value, -0)) return "-0";
+    // -0 与 0 可观察不同（Object.is / 1/x）；键化口径见 litKeyString
+    if (typeof t.value === "number") return litKeyString(t.value);
     return String(t.value);
   }
   if (t.op === "var") return t.id;
