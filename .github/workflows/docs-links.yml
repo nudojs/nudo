@@ -1,12 +1,18 @@
 name: Docs external links
 
 # 定时外链体检（不进 PR 门禁）：外站抖动/限流不该阻塞合并，但死链需要每周被发现。
-# 手动触发：Actions → "Docs external links" → Run workflow（可加 --strict-network 变体）。
+# 手动触发：Actions → "Docs external links" → Run workflow
+#（strict_network 输入 = --strict-network：网络层失败也算硬失败）。
 on:
   schedule:
     # 每周一 06:17 UTC（避开整点高峰）
     - cron: '17 6 * * 1'
   workflow_dispatch:
+    inputs:
+      strict_network:
+        description: "Treat network-layer failures as hard failures (default: soft)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -30,5 +36,6 @@ jobs:
 
       # 纯 Node + curl（runner 自带），无依赖安装。
       # 404/410 = 硬失败；403/429/503 与网络层失败算软失败（限流/出网抖动会重跑）。
+      # strict_network=true 时网络层失败也硬失败（受控 CI 的严格变体）。
       - name: Check external links
-        run: node scripts/check-external-links.mjs
+        run: node scripts/check-external-links.mjs ${{ inputs.strict_network && '--strict-network' || '' }}

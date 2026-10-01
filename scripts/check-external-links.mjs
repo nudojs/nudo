@@ -86,7 +86,9 @@ function collect() {
     const rel = relative(root, file);
     const src = stripFences(readFileSync(file, "utf8"));
     for (const m of src.matchAll(/https?:\/\/[^\s)\]"'<＞》」』]+/g)) {
-      const url = m[0].replace(/[.,;:!?，。；：！？]+$/, "");
+      // 尾部 * 和 ` 是 markdown 强调/代码号粘连（URL 紧贴 *emphasis*），
+      // 不剥掉会把它们探进 URL 造成假 404 硬失败。
+      const url = m[0].replace(/[.,;:!?，。；：！？*`]+$/, "");
       if (IGNORE.some((re) => re.test(url))) continue;
       const list = map.get(url) ?? [];
       if (!list.includes(rel)) list.push(rel);
