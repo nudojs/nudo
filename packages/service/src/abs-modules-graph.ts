@@ -21,7 +21,7 @@ import {
 } from "@nudojs/core";
 import type { Node } from "@babel/types";
 import { bareSpecToAbsModules } from "@nudojs/harvester";
-import { stablePathKey } from "@nudojs/core/internal";
+import { hashSource, stablePathKey } from "@nudojs/core/internal";
 import { resolveNpmJsEntryDetailed } from "./evaluator/resolve-npm.ts";
 import { moduleResolveCandidates } from "./load-module.ts";
 import { BoundedLruMap } from "./lru-map.ts";
@@ -140,7 +140,9 @@ function collectRequireSpecs(node: unknown, out: string[]): void {
   visit(node);
 }
 
-/** 把当前文件的全部 import（相对 + 裸包）编成 modules 表 */
+/** 把当前文件的全部 import（相对 + 裸包）编成 modules 表。
+ * localDepsOut（可选）：收集本文件 evalDep 过的解析路径（stablePathKey 形态，
+ * 相对依赖 + 裸包入口 JS）——供调用方组合子树内容指纹（DESIGN-002）。 */
 function buildModulesForFile(
   source: string,
   fromFile: string,
@@ -149,6 +151,7 @@ function buildModulesForFile(
   depth: number,
   maxDepth: number,
   onIssue: (kind: AbsModuleLoadIssue["kind"], label: string, reason: string) => void,
+  localDepsOut?: string[],
 ): Record<string, AbsModuleExports> {
   const modules: Record<string, AbsModuleExports> = {};
   for (const spec of importSpecs(source)) {
@@ -159,6 +162,7 @@ function buildModulesForFile(
         continue;
       }
       modules[spec] = evalDep(childPath, spec, fromFile, depth + 1);
+      localDepsOut?.push(stablePathKey(childPath));
     } else if (!spec.startsWith("node:")) {
       // A3：优先执行包入口 JS（ms/debug 等纯 JS 包返回面可折叠）；
       // 无入口或求值失败再 harvest stub。
@@ -172,6 +176,7 @@ function buildModulesForFile(
       }
       if (resolved.path) {
         const executed = evalDep(resolved.path, spec, fromFile, depth + 1);
+        localDepsOut?.push(stablePathKey(resolved.path));
         if (executed && (executed.default !== undefined || Object.keys(executed.named ?? {}).length > 0)) {
           modules[spec] = executed;
           continue;
@@ -210,10 +215,28 @@ export type AbsGraphOptions = {
   maxDepth?: number;
 };
 
-/** 会话级依赖模块缓存条目：stat 指纹 + 导出 + 子树装载 issue。 */
+/** 单条本地依赖的内容指纹：解析后稳定路径 + 求值时源码的 hashSource
+ * （与 loadModuleDepsFingerprint 同一 hash 口径，DESIGN-002 不另起第二套）。 */
+export type AbsModuleDepFingerprint = { path: string; hash: string };
+
+/** 会话级依赖模块缓存条目：自身 stat 指纹 + 子树内容指纹 + 导出 + 子树装载 issue。 */
 export type AbsModuleCacheEntry = {
   mtimeMs: number;
   size: number;
+  /**
+   * 插入时实际求值源码（loadModule 返回或磁盘回读）的内容 hash。
+   * 条目自身的命中校验仍按 stat；此值供父模块组合子树指纹复用——
+   * 父模块插入时对已命中的子依赖不再做第二次磁盘读。
+   */
+  contentHash: string;
+  /**
+   * 传递本地依赖闭包（自身除外）的 path → 内容 hash（DESIGN-002）。
+   * 命中时逐项 readFileSync + hashSource 复核：任一翻转或读失败 → miss
+   * 重求值——任何下游文件内容变更（含 stat 不可见的同 size 编辑）都会
+   * 翻转中间模块条目。子树不可追踪（环进行中 / depth 截断 / 依赖缺失）
+   * 的模块不进会话缓存（fail-closed）。
+   */
+  depFingerprints: AbsModuleDepFingerprint[];
   exports: AbsModuleExports;
   /** 该模块子树首次求值时记录的 cycle/depth/missing；命中时重放。 */
   issues: AbsModuleLoadIssue[];
@@ -222,9 +245,11 @@ export type AbsModuleCacheEntry = {
 /**
  * 跨入口复用的依赖模块缓存（LSP 脏传播重验 N 个入口、共享同一依赖树时，
  * 避免每个入口重复 parse + 抽象求值全部依赖）。键为解析后的绝对路径，
- * 命中条件 mtimeMs+size 严格相等（与 ModuleGraphCache 边缓存同口径）；
- * 内容变更由指纹自然失效，删除经 evictAbsModuleCacheFiles / clearAbsModuleCache 逐出
- * （删除即使不逐出也自愈：stat 抛错走 miss）。
+ * 命中条件 = 自身 stat（mtimeMs+size）严格相等 **且** 子树内容指纹逐项复核
+ * 通过（DESIGN-002）——传递依赖内容变更由指纹自然失效，宿主无需逐出中间模块；
+ * 条目自身的「同 size + 同 mtime」编辑仍是残余缺口（见设计文档 §3.1），
+ * 删除经 evictAbsModuleCacheFiles / clearAbsModuleCache 逐出
+ * （删除即使不逐出也自愈：stat / 指纹读抛错走 miss）。
  *
  * 命中时重放子树首次求值的 cycle/depth/missing issue，保持「每个入口文件
  * 都报告其依赖树装载问题」的诊断口径；method-missing / recursion-truncated
@@ -250,6 +275,26 @@ export function clearAbsModuleCache(): void {
 /** 键身份统一 stablePathKey（FIX-RESIDUAL-4）：跨盘符形态删除/命中一致 */
 export function evictAbsModuleCacheFiles(paths: string[]): void {
   for (const p of paths) absModuleCache.delete(stablePathKey(p));
+}
+
+/**
+ * 子树内容指纹复核（DESIGN-002）：对条目记录的每个传递依赖读当前磁盘内容
+ * 并 hashSource 比对。成本与已追踪的依赖闭包成正比——每文件一次 read+hash，
+ * 无重解析 / 无重求值 / 无图遍历。读失败（依赖被删）或 hash 翻转 → false
+ * （miss 重求值：删除场景重求值会重新报 missing，而不是重放旧 issue）。
+ * 自定义 loader 返回虚拟内容时与磁盘不一致 → 永久 miss（fail-closed 安全方向）。
+ */
+function depFingerprintCurrent(deps: AbsModuleDepFingerprint[]): boolean {
+  for (const d of deps) {
+    let src: string;
+    try {
+      src = readFileSync(d.path, "utf-8");
+    } catch {
+      return false;
+    }
+    if (hashSource(src) !== d.hash) return false;
+  }
+  return true;
 }
 
 function moduleLabel(p: string): string {
@@ -450,6 +495,14 @@ export function evalAbsModuleGraph(
   // 兄弟模块共享同一 issue（两个模块 import 同一缺失文件）时，后到兄弟的
   // 切片被饿死为空，缓存命中重放丢失该子树装载诊断（BUG-010）。
   const issueFlow: AbsModuleLoadIssue[] = [];
+  // 本轮求值内各依赖模块的子树指纹元数据（DESIGN-002）：命中条目从缓存条目
+  // 回填，新求值模块组合自直接本地依赖（已含各依赖的传递闭包）——父模块
+  // 组合零额外 I/O。null = 子树不可追踪（环进行中 / depth 截断 / 依赖缺失），
+  // 向上传播 fail-closed：不可追踪的模块不进会话缓存（宁冷勿陈旧）。
+  const depMeta = new Map<
+    string,
+    { contentHash: string; depFingerprints: AbsModuleDepFingerprint[] } | null
+  >();
 
   const pushIssue = (kind: AbsModuleLoadIssue["kind"], label: string, reason: string) => {
     const iss: AbsModuleLoadIssue = { kind, label, reason };
@@ -476,14 +529,24 @@ export function evalAbsModuleGraph(
       return cache.get(absPath) ?? { named: {} };
     }
 
-    // 会话缓存命中（指纹严格相等）：跳过重读重解析；byPath 也回填完整导出。
+    // 会话缓存命中（自身 stat 严格相等 + 子树内容指纹逐项复核）：跳过重读
+    // 重解析；byPath 也回填完整导出。指纹翻转（任何传递依赖内容变更）→
+    // 删条目走 miss 重求值（DESIGN-002）。
     const shared = absModuleCache.get(absPath);
     if (shared) {
       try {
         const st = statSync(absPath);
-        if (st.mtimeMs === shared.mtimeMs && st.size === shared.size) {
+        if (
+          st.mtimeMs === shared.mtimeMs &&
+          st.size === shared.size &&
+          depFingerprintCurrent(shared.depFingerprints)
+        ) {
           for (const iss of shared.issues) pushIssue(iss.kind, iss.label, iss.reason);
           cache.set(absPath, shared.exports);
+          depMeta.set(absPath, {
+            contentHash: shared.contentHash,
+            depFingerprints: shared.depFingerprints,
+          });
           return shared.exports;
         }
       } catch {
@@ -530,6 +593,7 @@ export function evalAbsModuleGraph(
     // 子树 issue 切片起点：本模块自身（含其依赖）产生的装载问题。
     // 锚定 issueFlow（未去重）——切片必须与兄弟模块是否先报过同一 issue 无关。
     const issueStart = issueFlow.length;
+    const localDeps: string[] = [];
     const modules = buildModulesForFile(
       source,
       absPath,
@@ -540,6 +604,7 @@ export function evalAbsModuleGraph(
       (kind, label, reason) => {
         pushIssue(kind, label, reason);
       },
+      localDeps,
     );
     let exports: AbsModuleExports;
     const evalRun = tryRunTranspiled(source, { mode: "analyze", modules });
@@ -564,6 +629,32 @@ export function evalAbsModuleGraph(
     if (exports.evaluated) placeholder.evaluated = true;
     cache.set(absPath, placeholder);
 
+    // 子树内容指纹组合（DESIGN-002）：直接本地依赖的 contentHash + 各依赖
+    // 已记录的传递闭包，全部来自本轮已追踪的元数据——组合零额外 I/O。
+    // 任一子依赖元数据缺失（环进行中 / depth 截断 / 缺文件早退）→ 子树不可
+    // 追踪：记 null 向上传播，本模块不入会话缓存（fail-closed，宁冷勿陈旧）。
+    const depFingerprints: AbsModuleDepFingerprint[] = [];
+    const seenDep = new Set<string>();
+    let untrackable = false;
+    for (const depPath of localDeps) {
+      const meta = depMeta.get(depPath);
+      if (!meta) {
+        untrackable = true;
+        break;
+      }
+      if (!seenDep.has(depPath)) {
+        seenDep.add(depPath);
+        depFingerprints.push({ path: depPath, hash: meta.contentHash });
+      }
+      for (const e of meta.depFingerprints) {
+        if (seenDep.has(e.path)) continue;
+        seenDep.add(e.path);
+        depFingerprints.push(e);
+      }
+    }
+    const subtree = untrackable ? null : { contentHash: hashSource(source), depFingerprints };
+    depMeta.set(absPath, subtree);
+
     let fingerprint: { mtimeMs: number; size: number } | undefined;
     try {
       const st = statSync(absPath);
@@ -571,9 +662,11 @@ export function evalAbsModuleGraph(
     } catch {
       /* 无指纹（如自定义 loader 的虚拟文件）→ 不入会话缓存 */
     }
-    if (fingerprint) {
+    if (fingerprint && subtree) {
       absModuleCache.set(absPath, {
         ...fingerprint,
+        contentHash: subtree.contentHash,
+        depFingerprints: subtree.depFingerprints,
         exports: placeholder,
         issues: issueFlow.slice(issueStart),
       });

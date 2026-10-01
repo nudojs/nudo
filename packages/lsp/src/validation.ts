@@ -816,7 +816,9 @@ export async function validateText(
     evictEvalCacheForFiles([dirtyPath]);
     evictAnalysisFileCacheForFiles([dirtyPath]);
     evictFnAnalysisCacheForFiles([dirtyPath]);
-    // path-env 全局工厂 + abs-module mtime/size 孔：见 docs/design/cache-invalidation.md
+    // path-env 全局工厂须清（防投毒）；abs-module 中间模块条目的正确性由其
+    // 子树内容指纹复核兜住（DESIGN-002，docs/design/cache-invalidation.md）——
+    // 这里只逐出变更文件自身的条目（内存回收 + 同 size/同 mtime 残余缺口）。
     clearPathEnvCaches();
     evictAbsModuleCacheFiles([filePath]);
     await validateText(dirtyPath, doc.uri, doc.getText(), doc.version, deps, false, true);

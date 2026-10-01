@@ -10,8 +10,12 @@ import {
   analyzeFile,
   analyzeFileAsync,
   clearAnalysisSessionCaches,
+  clearPathEnvCaches,
   evictAnalysisCachesForFiles,
   evictAbsModuleCacheFiles,
+  evictAnalysisFileCacheForFiles,
+  evictEvalCacheForFiles,
+  evictFnAnalysisCacheForFiles,
   getPathEnvCacheSizes,
   getAnalysisSession,
   type AnalysisResult,
@@ -41,6 +45,24 @@ function go(n) {
 }
 `;
 
+/** 2 层图（DESIGN-002）：entry e.js → mid m.js → leaf z.js */
+const MID = `
+const z = require("./z.js");
+export function wrap(x) {
+  return z.base(x);
+}
+`;
+
+const ENTRY2 = `
+const m = require("./m.js");
+/**
+ * @nudo:case "t" (1)
+ */
+function go(n) {
+  return m.wrap(n);
+}
+`;
+
 function tmpGraph(): { dir: string; depPath: string; mainPath: string; tSec: number } {
   const dir = mkdtempSync(join(tmpdir(), "nudo-cic-"));
   dirs.push(dir);
@@ -64,6 +86,19 @@ function editDepPinned(depPath: string, tSec: number, to: number): void {
   expect(after.size).toBe(before.size);
 }
 
+/** 2 层依赖图：e.js → m.js → z.js（叶子内容可编辑；m 是会话缓存的中间模块） */
+function tmpGraph2(): { dir: string; zPath: string; mPath: string; ePath: string } {
+  const dir = mkdtempSync(join(tmpdir(), "nudo-cic2-"));
+  dirs.push(dir);
+  const zPath = join(dir, "z.js");
+  const mPath = join(dir, "m.js");
+  const ePath = join(dir, "e.js");
+  writeFileSync(zPath, `export function base(x) { return x + 1; }\n`);
+  writeFileSync(mPath, MID);
+  writeFileSync(ePath, ENTRY2);
+  return { dir, zPath, mPath, ePath };
+}
+
 describe("host cache-invalidation contract", () => {
   it("C1: size-changing dep edit is a natural miss without host eviction", () => {
     clearAnalysisSessionCaches();
@@ -73,13 +108,15 @@ describe("host cache-invalidation contract", () => {
     expect(caseResultOf(analyzeFile(mainPath, MAIN), "go", "t")).toBe("100");
   });
 
-  it("C2: evictAnalysisCachesForFiles refreshes after dep change", () => {
+  it("C2: evictAnalysisCachesForFiles refreshes after transitive dep change (2-layer)", () => {
     clearAnalysisSessionCaches();
-    const { depPath, mainPath } = tmpGraph();
-    expect(caseResultOf(analyzeFile(mainPath, MAIN), "go", "t")).toBe("2");
-    writeFileSync(depPath, `export function inc(x) { return x + 99; }\n`);
-    evictAnalysisCachesForFiles([mainPath]);
-    expect(caseResultOf(analyzeFile(mainPath, MAIN), "go", "t")).toBe("100");
+    const { zPath, ePath } = tmpGraph2();
+    expect(caseResultOf(analyzeFile(ePath, ENTRY2), "go", "t")).toBe("2");
+    writeFileSync(zPath, `export function base(x) { return x + 99; }\n`);
+    // 宿主契约只报入口（dependents-only）：中间模块 m.js 的 abs-module 条目
+    // 不被逐出，其子树内容指纹必须自行翻转（DESIGN-002；改前此处陈旧命中 "2"）。
+    evictAnalysisCachesForFiles([ePath]);
+    expect(caseResultOf(analyzeFile(ePath, ENTRY2), "go", "t")).toBe("100");
   });
 
   it("C3: same-size pinned-mtime dep edit is stale under dependents-only eviction", () => {
@@ -148,13 +185,13 @@ function getMagic() {
     expect(sizes.baseDirs).toBe(0);
   });
 
-  it("C7: AnalysisSession.evictForDependents is the same host contract", () => {
+  it("C7: AnalysisSession.evictForDependents is the same host contract (2-layer)", () => {
     clearAnalysisSessionCaches();
-    const { depPath, mainPath } = tmpGraph();
-    expect(caseResultOf(analyzeFile(mainPath, MAIN), "go", "t")).toBe("2");
-    writeFileSync(depPath, `export function inc(x) { return x + 99; }\n`);
-    getAnalysisSession().evictForDependents([mainPath]);
-    expect(caseResultOf(analyzeFile(mainPath, MAIN), "go", "t")).toBe("100");
+    const { zPath, ePath } = tmpGraph2();
+    expect(caseResultOf(analyzeFile(ePath, ENTRY2), "go", "t")).toBe("2");
+    writeFileSync(zPath, `export function base(x) { return x + 99; }\n`);
+    getAnalysisSession().evictForDependents([ePath]);
+    expect(caseResultOf(analyzeFile(ePath, ENTRY2), "go", "t")).toBe("100");
   });
 
   it("C8: clearAnalysisSessionCaches refreshes after dep change", () => {
@@ -164,5 +201,20 @@ function getMagic() {
     writeFileSync(depPath, `export function inc(x) { return x + 5; }\n`);
     clearAnalysisSessionCaches();
     expect(caseResultOf(analyzeFile(mainPath, MAIN), "go", "t")).toBe("6");
+  });
+
+  it("C9: LSP-style dirty loop (changed-file abs-module eviction only) is fresh on 2-layer graphs", () => {
+    clearAnalysisSessionCaches();
+    const { zPath, ePath } = tmpGraph2();
+    expect(caseResultOf(analyzeFile(ePath, ENTRY2), "go", "t")).toBe("2");
+    writeFileSync(zPath, `export function base(x) { return x + 99; }\n`);
+    // 镜像 lsp/src/validation.ts 脏传播循环：dependent 只清 file/fn/eval 缓存，
+    // abs-module 只逐出变更文件 z 自身——m.js 条目靠子树内容指纹翻转（DESIGN-002）。
+    evictEvalCacheForFiles([ePath]);
+    evictAnalysisFileCacheForFiles([ePath]);
+    evictFnAnalysisCacheForFiles([ePath]);
+    clearPathEnvCaches();
+    evictAbsModuleCacheFiles([zPath]);
+    expect(caseResultOf(analyzeFile(ePath, ENTRY2), "go", "t")).toBe("100");
   });
 });
