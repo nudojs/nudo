@@ -105,6 +105,32 @@ describe("abs module session cache", () => {
     expect(g2.issues.some((i) => i.kind === "missing" && i.label === "./gone.js")).toBe(true);
   });
 
+  it("keeps each sibling's missing slice when siblings share one missing dep (BUG-010)", () => {
+    const dir = setup({
+      "util.js": `import { gone } from "./gone.js";\nexport const y = gone;\n`,
+      "helper.js": `import { gone } from "./gone.js";\nexport const z = gone;\n`,
+    });
+    const e1 = `import { y } from "./util.js";\nimport { z } from "./helper.js";\nexport function go() { return y + z; }`;
+    const e2 = `import { z } from "./helper.js";\nexport function go() { return z; }`;
+    const hasMissing = (g: { issues: { kind: string; label: string }[] }) =>
+      g.issues.some((i) => i.kind === "missing" && i.label === "./gone.js");
+
+    // 冷分析 e1：两个兄弟各自指向同一缺失文件；flat 列表按 kind:label 去重只报一次
+    const g1 = evalAbsModuleGraph(e1, join(dir, "e1.js"));
+    expect(g1.issues.filter((i) => i.kind === "missing" && i.label === "./gone.js")).toHaveLength(1);
+
+    // 暖分析 e2：helper.js 命中缓存——后到兄弟的子树切片不得被全局去重饿死为空
+    const g2 = evalAbsModuleGraph(e2, join(dir, "e2.js"));
+    expect(hasMissing(g2)).toBe(true);
+
+    // 顺序无关：清缓存后先 e2（冷）再 e1（暖），各入口的 missing 诊断与上面一致
+    clearAbsModuleCache();
+    const g2cold = evalAbsModuleGraph(e2, join(dir, "e2.js"));
+    expect(hasMissing(g2cold)).toBe(true);
+    const g1warm = evalAbsModuleGraph(e1, join(dir, "e1.js"));
+    expect(g1warm.issues.filter((i) => i.kind === "missing" && i.label === "./gone.js")).toHaveLength(1);
+  });
+
   it("replays cycle issues on cache hit", () => {
     const dir = setup({
       "a.js": `import { b } from "./b.js";\nexport const a = 1;\n`,

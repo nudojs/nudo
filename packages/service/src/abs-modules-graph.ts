@@ -445,12 +445,19 @@ export function evalAbsModuleGraph(
   const loading: string[] = [];
   const issues: AbsModuleLoadIssue[] = [];
   const seenIssue = new Set<string>();
+  // 未去重的全量 issue 流水：缓存条目的子树切片从这里截取，保证自包含。
+  // seenIssue 只服务入口 flat 列表的展示去重；若切片也从去重后的 issues 截取，
+  // 兄弟模块共享同一 issue（两个模块 import 同一缺失文件）时，后到兄弟的
+  // 切片被饿死为空，缓存命中重放丢失该子树装载诊断（BUG-010）。
+  const issueFlow: AbsModuleLoadIssue[] = [];
 
   const pushIssue = (kind: AbsModuleLoadIssue["kind"], label: string, reason: string) => {
+    const iss: AbsModuleLoadIssue = { kind, label, reason };
+    issueFlow.push(iss);
     const key = `${kind}:${label}`;
     if (seenIssue.has(key)) return;
     seenIssue.add(key);
-    issues.push({ kind, label, reason });
+    issues.push(iss);
   };
 
   function evalDep(absPathRaw: string, spec: string, fromFile: string, depth: number): AbsModuleExports {
@@ -521,7 +528,8 @@ export function evalAbsModuleGraph(
     }
 
     // 子树 issue 切片起点：本模块自身（含其依赖）产生的装载问题。
-    const issueStart = issues.length;
+    // 锚定 issueFlow（未去重）——切片必须与兄弟模块是否先报过同一 issue 无关。
+    const issueStart = issueFlow.length;
     const modules = buildModulesForFile(
       source,
       absPath,
@@ -567,7 +575,7 @@ export function evalAbsModuleGraph(
       absModuleCache.set(absPath, {
         ...fingerprint,
         exports: placeholder,
-        issues: issues.slice(issueStart),
+        issues: issueFlow.slice(issueStart),
       });
     }
     return placeholder;
