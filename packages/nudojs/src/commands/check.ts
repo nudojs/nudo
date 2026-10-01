@@ -24,6 +24,7 @@ import {
   resolveTargetsCollect,
   startWatch,
   runAbsView,
+  variadicSwallowError,
   type PathError,
 } from "./shared.ts";
 import {
@@ -569,7 +570,7 @@ export function registerCheckCommand(program: Command): void {
   program
     .command("check")
     .description("Gate contracts + entry throws; print signatures (CI). Day 0 observation lives here.")
-    .argument("<paths...>", "File(s) or directory(s) to check")
+    .argument("[paths...]", "File(s) or directory(s) to check")
     .option("--watch, -w", "Watch files and re-run check on change")
     .option("--json", "Emit stable CheckJson (1 file) or CheckJsonMulti envelope (N files) for CI / Agent")
     .option("--gha", "GitHub Actions inline annotations (::error/::warning). Auto when GITHUB_ACTIONS=true")
@@ -629,6 +630,25 @@ export function registerCheckCommand(program: Command): void {
           dryRun?: boolean;
         },
       ) => {
+        // BUG-024：variadic 旗标（--from/--assume/--what-if/--only）
+        // 吞噬其后的位置参数——paths 空且任一 variadic 非空时
+        // 定向 usage error（直指旗标 + `--` 终止符解法；
+        // commander 原生 "missing required argument" 不指向原因）
+        if (paths.length === 0) {
+          const swallowed = [
+            ...(opts.from?.length ? ["--from"] : []),
+            ...(opts.assume?.length ? ["--assume"] : []),
+            ...(opts.whatIf?.length ? ["--what-if"] : []),
+            ...(opts.only?.length ? ["--only"] : []),
+          ];
+          if (swallowed.length > 0) {
+            variadicSwallowError("check", swallowed);
+            return;
+          }
+          console.error("Usage error: `nudo check` needs at least one path.");
+          process.exitCode = 1;
+          return;
+        }
         // BUG-022/S5-004：--fix 是物化工具面（#69），不得与观察/机器面
         // 旗标静默组合——旧实现早退在门禁 exit 逻辑前，--json/--abs/
         // --watch 等被静默忽略（机器面 stdout 不是 CheckJson）。

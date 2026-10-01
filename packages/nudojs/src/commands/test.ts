@@ -20,6 +20,7 @@ import {
   reemitUpdate,
   runAbsView,
   displayPathOf,
+  variadicSwallowError,
   type EmitCasesOptions,
   type PathError,
 } from "./shared.ts";
@@ -132,7 +133,7 @@ export function registerTestCommand(program: Command): void {
   program
     .command("test")
     .description("Report every inferred case (call@/entry@ + debug witnesses); assert declared expectations")
-    .argument("<paths...>", "File(s) or directory(s)")
+    .argument("[paths...]", "File(s) or directory(s)")
     .option("--watch, -w", "Watch files and re-run test on change")
     .option("--from <paths...>", "Usage-site files whose calls become synthesized cases")
     .option("--freeze [mode]", "Solidify call-site witnesses as @nudo:case (mode: update | add; add is the default when the value is omitted)")
@@ -153,6 +154,18 @@ export function registerTestCommand(program: Command): void {
           abs?: boolean;
         },
       ) => {
+        // BUG-024：--from variadic 吞噬其后的位置参数——
+        // paths 空且 --from 非空时定向 usage error
+        // （直指旗标 + `--` 终止符解法）
+        if (paths.length === 0) {
+          if (opts.from?.length) {
+            variadicSwallowError("test", ["--from"]);
+            return;
+          }
+          console.error("Usage error: `nudo test` needs at least one path.");
+          process.exitCode = 1;
+          return;
+        }
         const targets: string[] = [];
         const pathErrors: PathError[] = [];
         for (const p of paths) {

@@ -47,7 +47,7 @@ nudo — JavaScript types, computed
 |------------|--------|
 | 入口签名 / any / unknown / throws | `nudo check <path>`（默认打印 signatures） |
 | 逐调用点真值 / 窄化结果 | `nudo test <path>`（打印全部 case，含合成 `call@`/`entry@`） |
-| 使用处实参形态 | `nudo test/check/contract --from <paths…>` |
+| 使用处实参形态 | `nudo test/check/contract --from <paths…>`（variadic——与路径混写用 `--` 终止符或路径在前，见 §1.4） |
 | 代数面 term/pred/conf | `nudo check --abs`（或 `test --abs`） |
 | 机器可读 | `nudo check --json` / `nudo test --json` |
 | 交互 | IDE hover / inlay |
@@ -121,7 +121,7 @@ CI 门禁只认 `check`（及 `test` 的声明断言、`health` 的 drift）。
 | `--verbose` | 展开 Abs 签名（term/pred/conf） |
 | `--abs` | 代数 term/pred/conf 观察 + L1/L2 门禁 |
 | `--fn` / `--assume` / `--generalize` | 与 `--abs` 配合的观察过滤 |
-| `--from <paths…>` | 使用处调用记录 |
+| `--from <paths…>` | 使用处调用记录。**variadic**：吞噬其后的位置参数——与路径混写时用 `--` 终止符分隔（`nudo check --from a.js -- b.js`）或把路径写在旗标前；paths 空且 variadic 非空 → 定向 usage error（BUG-024） |
 | `--ignore-throws <names>` | L2：忽略这些入口 may-throw 类型名（`TypeError,RangeError`） |
 | `--entry-throws <mode>` | L2：`error` \| `warning` \| `off`（默认 `error`；**显式值压过** `--profile`） |
 | `--profile <adoption\|strict>` | 门禁**命名档**（默认 `strict`）。`adoption` ≡ L2 `entryThrows: warning`（迁移档）；`strict` ≡ 今日默认。**不吞 L1**：契约违例始终 error |

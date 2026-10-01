@@ -12,6 +12,7 @@ import {
   reemitUpdate,
   startWatch,
   displayPathOf,
+  variadicSwallowError,
   type PathError,
 } from "./shared.ts";
 
@@ -276,6 +277,13 @@ export function registerHealthCommand(program: Command): void {
     .option("--from <paths...>", "Usage-site files for freeze-drift detection")
     .option("--json", "Output as JSON")
     .action(async (paths: string[], opts: { watch?: boolean; from?: string[]; json?: boolean }) => {
+      // BUG-024：--from variadic 吞噬其后的位置参数——
+      // paths 空且 --from 非空时定向 usage error
+      // （否则静默退化为扫描 cwd，范围错误）
+      if (paths.length === 0 && opts.from?.length) {
+        variadicSwallowError("health", ["--from"]);
+        return;
+      }
       const fromPaths = opts.from;
       const runOneDir = async (): Promise<void> => {
         await runHealth(paths, { ...(fromPaths ? { from: fromPaths } : {}), json: opts.json });

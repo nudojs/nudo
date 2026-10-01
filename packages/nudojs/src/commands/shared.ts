@@ -56,6 +56,27 @@ export function displayPathOf(p: string): string {
   return rel === "" || rel.startsWith("..") ? p : rel;
 }
 
+/**
+ * BUG-024：variadic 旗标（`--from <paths...>` 等）吞噬
+ * 其后的位置参数后，paths 为空——commander 原生的
+ * "missing required argument" 不指向真实原因，这里给
+ * 定向 usage error（直指旗标 + `--` 终止符解法）。
+ */
+export function variadicSwallowError(
+  command: string,
+  flags: string[],
+): void {
+  const list = flags.join(", ");
+  const first = flags[0] ?? "--from";
+  console.error(
+    `error: \`nudo ${command}\` received no paths — variadic flag(s) ${list} consumed the following arguments`,
+  );
+  console.error(
+    `fix:  separate variadic flags from paths with \`--\` (e.g. \`nudo ${command} ${first} a.js -- b.js\`) or list paths before the flags`,
+  );
+  process.exitCode = 1;
+}
+
 /** 非 --json 面：打印 usageError 并挡 exit（历史行为）。 */
 export function reportPathErrors(errors: PathError[]): void {
   for (const e of errors) usageError(e.message, e.suggestion);
