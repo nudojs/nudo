@@ -796,7 +796,7 @@ type SymbolTable = {
 | <a id="referenceinfo"></a>`ReferenceInfo` | type | — | `ReferenceInfo = { name: string; loc: SourceLocation; uri?: string; }` |
 | <a id="relativizepath"></a>`relativizePath` | fn | 稳定逻辑根相对化（磁盘缓存路径维）：树内相对 `root`，树外取 `node_modules/<pkg>` 段、monorepo root 或 pnpm store 内容哈希； 绝对路径明文绝不进 key。 | `relativizePath(p: string, root?: string): string` |
 | <a id="resetallanalysiscaches"></a>`resetAllAnalysisCaches` | fn | 比 clearAnalysisSessionCaches 更彻底：再丢 AST LRU（测试 / 进程复用场景） | `resetAllAnalysisCaches(): void` |
-| <a id="resetsessioncachelimitstate"></a>`resetSessionCacheLimitState` | fn | 测试：丢弃 env 惰性缓存，重新读 process.env | `resetSessionCacheLimitState(): void` |
+| <a id="resetsessioncachelimitstate"></a>`resetSessionCacheLimitState` | fn | 测试：清空显式 / package.json 层（env 每次调用现读，无需重置） | `resetSessionCacheLimitState(): void` |
 | <a id="resolvemodule"></a>`resolveModule` | fn | — | `resolveModule(source: string, fromDir: string)` |
 | <a id="rootderiveopts"></a>`RootDeriveOpts` | type | — | `RootDeriveOpts = { loadModule?: LoadModule; autoBind?: boolean; fnNames?: string[]; refreshExistingOnly?: boolean; }` |
 | <a id="rootderiveresult"></a>`RootDeriveResult` | type | — | `RootDeriveResult = { roots: string[]; derived: DerivedExport[]; hasRoot: boolean; graphError?: string; }` |

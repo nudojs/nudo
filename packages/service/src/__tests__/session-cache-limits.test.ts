@@ -1,5 +1,5 @@
 /**
- * 会话 LRU 上限参数化：env > 显式 set > package.json 层 > 默认。
+ * 会话 LRU 上限参数化：显式 set > env > package.json 层 > 默认。
  * 多项目内存封顶 / 单大仓调高。
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -41,16 +41,27 @@ describe("session cache limits", () => {
     expect(l.maxFiles).toBe(32);
   });
 
-  it("explicit set wins over env", () => {
+  it("explicit set wins over env (real conflict); env fills unset keys", () => {
     setSessionCacheLimits({ maxFiles: 8 });
     const l = getSessionCacheLimits({
       NUDO_CACHE_MAX_FILES: "32",
+      NUDO_CACHE_MAX_FNS: "7",
     } as NodeJS.ProcessEnv);
-    // env 惰性缓存：reset 后再读 env；显式层仍优先
-    expect(getSessionCacheLimits({ NUDO_CACHE_MAX_FILES: "32" } as NodeJS.ProcessEnv).maxFiles).toBe(
-      8,
+    expect(l.maxFiles).toBe(8); // 显式层压过同键 env
+    expect(l.maxFns).toBe(7); // 未显式设置的键仍由 env 提供
+  });
+
+  it("env argument is honoured on every call, not only the first", () => {
+    expect(getSessionCacheLimits({} as NodeJS.ProcessEnv).maxFiles).toBe(
+      DEFAULT_SESSION_CACHE_LIMITS.maxFiles,
     );
-    void l;
+    expect(getSessionCacheLimits({ NUDO_CACHE_MAX_FILES: "0" } as NodeJS.ProcessEnv).maxFiles).toBe(0);
+    expect(getSessionCacheLimits({ NUDO_CACHE_MAX_FILES: "off" } as NodeJS.ProcessEnv).maxFiles).toBe(
+      0,
+    );
+    expect(getSessionCacheLimits({} as NodeJS.ProcessEnv).maxFiles).toBe(
+      DEFAULT_SESSION_CACHE_LIMITS.maxFiles,
+    );
   });
 
   it("NUDO_CACHE_MAX_FILES=off disables file cache", () => {

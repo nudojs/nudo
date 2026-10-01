@@ -73,7 +73,8 @@ export function clearAnalysisSessionCaches(): void {
 
 /**
  * 接线 package.json#nudo.sessionCache（进程内 LRU 上限）并立刻 trim。
- * env `NUDO_CACHE_MAX_FILES|FNS|BRUNS` 仍优先（多项目内存封顶）。
+ * 优先级：显式 setSessionCacheLimits > env `NUDO_CACHE_MAX_FILES|FNS|EVALRUNS`
+ * > 此层 > 默认（见 session-cache-limits）。
  */
 export function applySessionCacheConfig(config: NudoConfig | null | undefined): SessionCacheLimits {
   setSessionCacheFromProject(config?.sessionCache);

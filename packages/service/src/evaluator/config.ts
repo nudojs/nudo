@@ -37,7 +37,8 @@ export type NudoConfig = {
   cache?: boolean | string;
   /**
    * 进程内会话 LRU 上限（内存/速度权衡）。多项目开 IDE 时调低封顶；
-   * 单大仓 warm 命中可调高。0 = 关闭该层。env `NUDO_CACHE_MAX_*` 优先。
+   * 单大仓 warm 命中可调高。0 = 关闭该层。
+   * 优先级：显式 setSessionCacheLimits > env `NUDO_CACHE_MAX_*` > 此键。
    */
   sessionCache?: {
     maxFiles?: number;
@@ -305,7 +306,7 @@ export function findProjectConfig(
         const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
         if (pkg.nudo) {
           const nudo = pkg.nudo as NudoConfig;
-          // 会话 LRU 上限随项目配置接线（env 仍优先；见 session-cache-limits）
+          // 会话 LRU 上限随项目配置接线（显式 set > env > 此层；见 session-cache-limits）
           setSessionCacheFromProject(nudo.sessionCache);
           // fork 总次数预算：env NUDO_MAX_FORKS > nudo.analysis.maxForks > 默认
           applyBForkBudgetFromConfig(nudo);
