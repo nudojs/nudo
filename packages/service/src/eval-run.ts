@@ -260,8 +260,19 @@ export function collectEvalReplacements(source: string): {
       }
     };
     visitStmts(file.program.body);
-  } catch {
-    /* ignore */
+  } catch (err) {
+    // BUG-025：半张注入表比无注入更糟——@nudo:replace/
+    // @nudo:as 前几条生效、后几条静默消失，应 exact
+    // 的 Abs 变 unknown/真执行。已收集任何 directive
+    // 时 rethrow（外层 catch → 整跑 fail-closed：
+    // eval-run 返回 undefined / check 注入面报错）；
+    // 零收集时 fail-closed 空 maps + noteEvalFallback
+    // 记录（无可注入项，throw 前的 parse/访问失败
+    // 不影响正确性）。
+    if (targets.length > 0 || asTargets.length > 0) {
+      throw err;
+    }
+    noteEvalFallback(err);
   }
   return { targets, values, asTargets, asValues };
 }
