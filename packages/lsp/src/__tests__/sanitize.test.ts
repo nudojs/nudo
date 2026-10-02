@@ -9,12 +9,9 @@ import { homedir, tmpdir } from "node:os";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { sanitizeErrorMessage } from "../sanitize.ts";
-import {
-  checkToLspDiagnostics,
-  validateText,
-  type ValidateTextDeps,
-} from "../validation.ts";
+import { checkToLspDiagnostics, validateText, type ValidateTextDeps } from "../validation.ts";
 import { checkTool, type AgentToolDeps } from "../agent-tools.ts";
+import type { MarkupContent } from "vscode-languageserver/node";
 
 describe("sanitizeErrorMessage (BUG-023)", () => {
   it("replaces home-directory prefix with ~", () => {
@@ -80,6 +77,8 @@ describe("sanitizeErrorMessage (BUG-023)", () => {
  */
 describe("G7: production error faces use injected workspaceRoots", () => {
   const ROOT = "/wsl/repo";
+  const asText = (m: string | MarkupContent): string =>
+    typeof m === "string" ? m : m.value;
 
   function boomLoad(spec: string, fromFile: string): string | undefined {
     throw new Error(`cannot load ${resolve(dirname(fromFile), spec)}`);
@@ -89,7 +88,7 @@ describe("G7: production error faces use injected workspaceRoots", () => {
 
   it("checkToLspDiagnostics sanitizes Check error with passed roots", () => {
     const diags = checkToLspDiagnostics(`${ROOT}/a.js`, SRC, boomLoad, [ROOT]);
-    const msg = diags.find((d) => d.message.startsWith("Check error:"))?.message;
+    const msg = diags.map((d) => asText(d.message)).find((m) => m.startsWith("Check error:"));
     expect(msg).toBeDefined();
     expect(msg).not.toContain(ROOT);
     expect(msg).toContain("cannot load ./");
@@ -98,7 +97,7 @@ describe("G7: production error faces use injected workspaceRoots", () => {
   it("validateText forwards deps.workspaceRoots to the check error face", async () => {
     const published: string[] = [];
     const deps: ValidateTextDeps = {
-      sendDiagnostics: (p) => published.push(...p.diagnostics.map((d) => d.message)),
+      sendDiagnostics: (p) => published.push(...p.diagnostics.map((d) => asText(d.message))),
       loadModule: boomLoad,
       workspaceRoots: [ROOT],
     };
@@ -110,7 +109,7 @@ describe("G7: production error faces use injected workspaceRoots", () => {
     // 同输入不注入 roots → 泄漏（cwd ≠ /wsl/repo）——钉住注入才是生效来源
     const leaked: string[] = [];
     await validateText(`${ROOT}/vt2.js`, `file://${ROOT}/vt2.js`, SRC, 2, {
-      sendDiagnostics: (p) => leaked.push(...p.diagnostics.map((d) => d.message)),
+      sendDiagnostics: (p) => leaked.push(...p.diagnostics.map((d) => asText(d.message))),
       loadModule: boomLoad,
     }, false, true);
     const leakedErr = leaked.find((m) => m.startsWith("Check error:"));
