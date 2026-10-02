@@ -506,15 +506,18 @@ function execSidecar(
           });
           prologue.push(`var ${n.local} = __nudoInjects;`);
         } else if (n.imported !== undefined) {
-          if (!(n.imported in sidecarInjects)) {
+          // 自有属性判定：`in` 会命中 Object.prototype（toString 等）——
+          // 诊断被吞 + __nudoInjects 裸读把原生函数绑进侧车执行域
+          const hasOwnInject = Object.hasOwn(sidecarInjects, n.imported);
+          if (!hasOwnInject) {
             collectDiag({
               code: "nudo:interface-load",
               message: `sidecar import '{ ${n.imported} }' from '${imp.spec}' is not an injected builder`,
               file: fromFile,
             });
-          }
-          if (n.local !== n.imported || !(n.imported in sidecarInjects)) {
-            // 同名注入名由函数参数绑定；alias / 未知名走 __nudoInjects（未知 → undefined）
+            prologue.push(`var ${n.local} = undefined;`);
+          } else if (n.local !== n.imported) {
+            // 同名注入名由函数参数绑定；alias 走 __nudoInjects（hasOwn 已证自有键）
             prologue.push(`var ${n.local} = __nudoInjects[${JSON.stringify(n.imported)}];`);
           }
         } else {
@@ -584,14 +587,17 @@ function execSidecar(
       if (n.ns) {
         deps[n.local] = depExports;
       } else if (n.imported !== undefined) {
-        if (!(n.imported in depExports)) {
+        // 自有属性判定（同注入分支）：原型名不得当侧车导出，miss 绑 undefined
+        if (Object.hasOwn(depExports, n.imported)) {
+          deps[n.local] = depExports[n.imported];
+        } else {
           collectDiag({
             code: "nudo:interface-load",
             message: `sidecar '${imp.spec}' has no export '${n.imported}'`,
             file: fromFile,
           });
+          deps[n.local] = undefined;
         }
-        deps[n.local] = depExports[n.imported];
       } else {
         // 相对侧车 default import：侧车只收集 named export，default 恒空
         collectDiag({
@@ -599,7 +605,7 @@ function execSidecar(
           message: `sidecar default import '${n.local}' from '${imp.spec}' has no default export (sidecars export named constraints only)`,
           file: fromFile,
         });
-        deps[n.local] = depExports.default;
+        deps[n.local] = Object.hasOwn(depExports, "default") ? depExports.default : undefined;
       }
     }
   }

@@ -27,6 +27,8 @@ import {
 } from "../index.ts";
 import { evalThrowsOf } from "../check-may-throw.ts";
 import { emptyEnv } from "../ast-env.ts";
+import { collectAbsExports } from "../abs-modules.ts";
+import { parseSource } from "../parse-source.ts";
 
 function isUndef(r: Abs): boolean {
   return r.term?.op === "lit" && r.term.value === undefined;
@@ -153,5 +155,27 @@ describe("bindImports: 依赖模块缺 toString 导出 → unknown，不绑宿�
     // 修复前：named["toString"] → Object.prototype.toString 漏进 Abs 域
     expect(env.vars.get("ts")?.shape.k).toBe("unknown");
     expect(litValue(env.vars.get("real")!)).toEqual({ ok: true, value: 1 });
+  });
+});
+
+// --- abs-modules.ts modules 表：宿主模块表按自有属性读取（PR #80 F5）---
+
+describe("abs-modules: modules 表原型名 spec → miss 分支 fail-closed", () => {
+  it('bindImports: import { a } from "toString" 不抛宿主 TypeError，绑定折叠 unknown', () => {
+    // 触发机制：modules 是宿主普通对象，modules["toString"] 裸读命中
+    // Object.prototype.toString（truthy）→ mod.named undefined →
+    // Object.hasOwn(mod.named, "a") 抛 TypeError；修复后走 miss 分支绑 unknown
+    const file = parseSource(`import { a } from "toString";`);
+    const env = emptyEnv();
+    expect(() => bindImports(file.program.body[0] as never, env, {})).not.toThrow();
+    expect(env.vars.get("a")?.shape.k).toBe("unknown");
+  });
+
+  it('collectAbsExports: export { x } from "toString" 不抛，与缺失模块同口径（槽丢弃）', () => {
+    // 触发机制：re-export 同族——modules["toString"] truthy → mod.named
+    // undefined → hasOwn(mod.named, "x") 抛 TypeError；修复后与表内无此模块
+    // （如 "./missing.js"）行为一致：re-export 整体跳过
+    const out = collectAbsExports(parseSource(`export { x } from "toString";`), emptyEnv(), {});
+    expect(out.named.x).toBeUndefined();
   });
 });

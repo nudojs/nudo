@@ -188,13 +188,17 @@ describe("abs module session cache", () => {
     expect(getAbsModuleCacheSize()).toBe(0);
   });
 
-  it("replays cycle issues on cache hit", () => {
+  it("re-reports cycle issues on re-evaluation (untrackable subtrees are never cached)", () => {
     const dir = setup({
       "a.js": `import { b } from "./b.js";\nexport const a = 1;\n`,
       "b.js": `import { a } from "./a.js";\nexport const b = 2;\n`,
     });
     const entry = (f: string) => `import { a } from "./a.js";\nexport function go() { return a; }`;
 
+    // DESIGN-002：环子树不可追踪 → 不进会话缓存（上一用例已钉
+    // getAbsModuleCacheSize() === 0），第二次 evalAbsModuleGraph 是冷重
+    // 求值而非缓存重放——本用例钉住重分析仍会报出 cycle issue（不因
+    // 前次已报而吞掉）。
     const g1 = evalAbsModuleGraph(entry("e1.js"), join(dir, "e1.js"));
     expect(g1.issues.some((i) => i.kind === "cycle")).toBe(true);
 

@@ -8,7 +8,7 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { emitInterface } from "../interface-emitter.ts";
-import { effectiveInterface, numLit, strLit, abs as makeAbs } from "@nudojs/core";
+import { effectiveInterface, numLit, strLit, abs as makeAbs, parseSource } from "@nudojs/core";
 
 let dir: string;
 
@@ -347,5 +347,26 @@ describe("DESIGN-003 reserved-word exports (identity = exported name)", () => {
     const eff = effectiveInterface(src, "a-b", { loadModule, fromFile: file });
     expect(eff).toBeDefined();
     expect(eff!.source).toBe("generated");
+  });
+
+  it("--all dedupes colliding identities: alias export name === another local fn name (F1)", async () => {
+    // 触发机制：`export { _a as b }` 让非导出函数 _a 的身份是 b，与另一个本地
+    // 函数 b 的身份撞名 → 修复前 fileExportOrder 无去重出现两个 "b"：
+    // bindingOf("b") 被第二次分配覆盖成 _nudo_1，同一段文本双追加 →
+    // `const _nudo_1 = …; export { _nudo_1 as b };` ×2 的侧车不可解析，
+    // 文件全部契约丢失。
+    const src =
+      `function _a(x) { return x + 1; }\n_a(1);\nexport { _a as b };\n` +
+      `function b(y) { return y + 2; }\nb(2);\n`;
+    const file = join(dir, "dup.js");
+    writeFileSync(file, src);
+    const r = await emitInterface(file, { mode: "update", all: true });
+    // 修复前 written = ["b", "b"]（身份重复处理）
+    expect(r.written).toEqual(["b"]);
+    const sidecar = readFileSync(join(dir, "dup.nudo.js"), "utf-8");
+    // 生成段仅一份（@generated 头计数；修复前为 2）
+    expect(sidecar.split("@generated").length - 1).toBe(1);
+    // 侧车必须可解析（修复前重复声明/重复导出 → SyntaxError）
+    expect(() => parseSource(sidecar)).not.toThrow();
   });
 });

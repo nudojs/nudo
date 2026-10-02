@@ -149,27 +149,72 @@ export function addThrowsAnnotation(
 }
 
 /**
+ * 枚举侧车里全部 `export { … }` 子句的逐 specifier 文本（已 trim）。
+ * 逐字符扫描而非正则/朴素 split：写出面 exportNameRepr 对非标识符导出名
+ * 发射 JSON 引号串（`export { _nudo_1 as "a,b" }` 是合法产物）——字符串
+ * 字面量内的 `}` / `,` 不是定界符，正则 `\{([^}]*)\}` 提前截断、
+ * split(",") 切进引号会让该形态静默解析失败（quickfix no-op）。
+ */
+function* exportSpecifierParts(src: string): Generator<string> {
+  const re = /\bexport\s*\{/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src)) !== null) {
+    const parts: string[] = [];
+    let cur = "";
+    let quote: '"' | "'" | undefined;
+    let close = -1;
+    for (let i = m.index + m[0].length; i < src.length; i++) {
+      const ch = src[i]!;
+      if (quote !== undefined) {
+        cur += ch;
+        if (ch === "\\") {
+          if (i + 1 < src.length) cur += src[i + 1]!;
+          i++;
+        } else if (ch === quote) {
+          quote = undefined;
+        }
+        continue;
+      }
+      if (ch === '"' || ch === "'") {
+        quote = ch;
+        cur += ch;
+      } else if (ch === ",") {
+        parts.push(cur);
+        cur = "";
+      } else if (ch === "}") {
+        parts.push(cur);
+        cur = "";
+        close = i;
+        break;
+      } else {
+        cur += ch;
+      }
+    }
+    if (close === -1) break; // 未闭合子句不产出（与旧正则 `[^}]*\}` 同口径）
+    re.lastIndex = close + 1; // 越过已消费的 `}`，子句内（含字符串里的）不重扫
+    for (const p of parts) yield p.trim();
+  }
+}
+
+/**
  * 侧车里导出名 → 模块绑定名（DESIGN-003 别名段：`export { _nudo_1 as class }`）。
  * 查找键恒为**导出名**（身份）；直接同名 / 非别名形态 → undefined。
  */
 export function sidecarBindingFor(sidecarSource: string, exportName: string): string | undefined {
-  for (const m of sidecarSource.matchAll(/\bexport\s*\{([^}]*)\}/g)) {
-    for (const part of m[1]!.split(",")) {
-      const t = part.trim();
-      if (!t) continue;
-      const asMatch = /^([\w$]+)\s+as\s+(.+)$/.exec(t);
-      if (!asMatch) continue;
-      const local = asMatch[1]!;
-      let exported = asMatch[2]!.trim();
-      if (exported.startsWith('"') || exported.startsWith("'")) {
-        try {
-          exported = JSON.parse(exported.replace(/^'|'$/g, '"')) as string;
-        } catch {
-          continue;
-        }
+  for (const t of exportSpecifierParts(sidecarSource)) {
+    if (!t) continue;
+    const asMatch = /^([\w$]+)\s+as\s+(.+)$/.exec(t);
+    if (!asMatch) continue;
+    const local = asMatch[1]!;
+    let exported = asMatch[2]!.trim();
+    if (exported.startsWith('"') || exported.startsWith("'")) {
+      try {
+        exported = JSON.parse(exported.replace(/^'|'$/g, '"')) as string;
+      } catch {
+        continue;
       }
-      if (exported === exportName) return local;
     }
+    if (exported === exportName) return local;
   }
   return undefined;
 }

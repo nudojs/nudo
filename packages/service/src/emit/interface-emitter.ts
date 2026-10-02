@@ -190,9 +190,17 @@ export async function emitInterface(
     identityOfFn.set(f.name, identity);
     if (!localOf.has(identity)) localOf.set(identity, f.name);
   }
-  const fileExportOrder = analysis.functions
-    .map((f) => identityOfFn.get(f.name)!)
-    .filter((n) => exported.has(n));
+  // 去重（首现优先，与 localOf 同口径）：非导出本地函数的别名导出可与另一
+  // 函数本地名撞同一身份（`function _a…; export { _a as b }; function b…` →
+  // 两个 "b"）——重复会让 --all/默认 update 双次处理：bindingOf 被第二次
+  // 分配覆盖成 _nudo_<n>，同段文本双追加 → 侧车不可解析、契约全丢
+  const fileExportOrder = [
+    ...new Set(
+      analysis.functions
+        .map((f) => identityOfFn.get(f.name)!)
+        .filter((n) => exported.has(n)),
+    ),
+  ];
 
   // ---- 目标过滤（§7.3）：白名单 > --all > 默认刷新已有生成段 ----
   // 白名单按身份匹配：CLI/诊断给导出名（class），lens/分析通道给本地名（_c）

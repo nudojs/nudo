@@ -311,3 +311,43 @@ function f(x) {
     ).toBe(true);
   });
 });
+
+describe("@nudo:import 原型链名（PR #80 F2）", () => {
+  it("相对侧车依赖缺 toString 导出 → 诊断可见，原生函数不绑进侧车域", () => {
+    // 触发机制：depExports 是普通对象字面量，`"toString" in depExports` 与
+    // depExports["toString"] 裸读命中 Object.prototype → 修复前诊断被吞且
+    // Object.prototype.toString 原生函数被绑给 t（y 导出成原生函数）
+    const dep = `export const delay = number().gt(0);`;
+    const sidecar = `import { toString as t } from "./dep.nudo.js"\nexport const y = t;`;
+    takeRefineDiags();
+    const exp = execNudoModule(sidecar, {
+      loadModule: () => dep,
+      fromFile: "/t/main.nudo.js",
+    });
+    expect(
+      takeRefineDiags().some(
+        (d) =>
+          d.code === "nudo:interface-load" &&
+          d.message.includes("has no export 'toString'"),
+      ),
+    ).toBe(true);
+    expect(exp.y).toBeUndefined();
+  });
+
+  it('裸包名 import { toString as t } → not-an-injected-builder 诊断 + 绑定 undefined', () => {
+    // 触发机制：sidecarInjects 是普通对象，`"toString" in sidecarInjects` 命中
+    // Object.prototype → 修复前诊断被吞且 prologue __nudoInjects["toString"]
+    // 把原生函数绑进侧车执行域
+    const sidecar = `import { toString as t } from "@nudojs/core"\nexport const y = t;`;
+    takeRefineDiags();
+    const exp = execNudoModule(sidecar);
+    expect(
+      takeRefineDiags().some(
+        (d) =>
+          d.code === "nudo:interface-load" &&
+          d.message.includes("is not an injected builder"),
+      ),
+    ).toBe(true);
+    expect(exp.y).toBeUndefined();
+  });
+});

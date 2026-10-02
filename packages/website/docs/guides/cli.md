@@ -210,7 +210,7 @@ Project health: analysis errors and solidification drift.
 nudo health [paths…] [--watch] [--from paths…] [--json]
 ```
 
-Exit `1` on drift or analysis errors. Uncovered functions are informational only.
+Exit `1` on drift, analysis errors, or missing `--from` paths. Under `--json`, `--from` path errors land in top-level `pathErrors[]` and force `ok: false`. Uncovered functions are informational only.
 
 ```bash
 nudo health src/ --from tests/
