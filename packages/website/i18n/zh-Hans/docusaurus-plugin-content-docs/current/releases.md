@@ -11,125 +11,115 @@ slug: /releases
 
 | 包 | 当前版本 |
 |----|----------|
-| `@nudojs/core` | 1.7.0 |
-| `@nudojs/service` | 1.6.0 |
-| `nudojs (CLI)` | 1.3.1 |
-| `@nudojs/parser` | 1.3.1 |
-| `@nudojs/lsp` | 1.3.1 |
-| `@nudojs/env` | 0.4.15 |
-| `@nudojs/harvester` | 0.3.1 |
-| `vite-plugin-nudo` | 0.4.16 |
-| `nudo-vscode` | 0.3.20 |
+| `@nudojs/core` | 1.7.1 |
+| `@nudojs/service` | 1.6.1 |
+| `nudojs (CLI)` | 1.3.2 |
+| `@nudojs/parser` | 1.3.2 |
+| `@nudojs/lsp` | 1.3.2 |
+| `@nudojs/env` | 0.4.16 |
+| `@nudojs/harvester` | 0.3.2 |
+| `vite-plugin-nudo` | 0.4.17 |
+| `nudo-vscode` | 0.3.21 |
 
 **按包跳转:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.7.0 {#pkg-core}
+## @nudojs/core 1.7.1 {#pkg-core}
 
-## 1.7.0
-
-### Minor Changes
-
-- f6ec0e8: fix #76 (quickfix self-defeating `any()` + false-positive call-site errors):
-  
-  - service/body-read-types: collect full member-read **paths** (`node.loc.start.line`), not just first-level keys. Dereferenced intermediate fields materialize as **nested shapes** (`loc: shape({ start: shape({ line: any() }) })`) instead of `any()` — an `any()` slot value keeps its member reads counted as may-throw, so the generated contract could not clear the L2 it targeted (issue: 1/7 warnings cleared; now the nested-read cases clear too). Method accesses (`.toLowerCase()`) still type the field directly and stop the chain. `BodyReadField` gains optional `fields?: BodyReadField[]`; `shapeDslFromFields` recurses.
-  - core/scan: `any` actuals against a shape precondition are no longer `nudo:constraint-violated` errors — no info, don't guess, matching the scalar-pred channel ("any ≤ 任意目标") and the same function's `unknown` handling. Determined non-object and missing-field actuals still violate (controls pinned).
-
-更早版本（23）→ [完整发布历史](./releases-history.md#pkg-core)
-
-## @nudojs/service 1.6.0 {#pkg-service}
-
-## 1.6.0
-
-### Minor Changes
-
-- f6ec0e8: fix #76 (quickfix self-defeating `any()` + false-positive call-site errors):
-  
-  - service/body-read-types: collect full member-read **paths** (`node.loc.start.line`), not just first-level keys. Dereferenced intermediate fields materialize as **nested shapes** (`loc: shape({ start: shape({ line: any() }) })`) instead of `any()` — an `any()` slot value keeps its member reads counted as may-throw, so the generated contract could not clear the L2 it targeted (issue: 1/7 warnings cleared; now the nested-read cases clear too). Method accesses (`.toLowerCase()`) still type the field directly and stop the chain. `BodyReadField` gains optional `fields?: BodyReadField[]`; `shapeDslFromFields` recurses.
-  - core/scan: `any` actuals against a shape precondition are no longer `nudo:constraint-violated` errors — no info, don't guess, matching the scalar-pred channel ("any ≤ 任意目标") and the same function's `unknown` handling. Determined non-object and missing-field actuals still violate (controls pinned).
+## 1.7.1
 
 ### Patch Changes
 
-- Updated dependencies [f6ec0e8]
-  - @nudojs/core@1.7.0
-  - @nudojs/env@0.4.15
-  - @nudojs/harvester@0.3.1
-  - @nudojs/parser@1.3.1
+- ef514a8: fix(core): handle fork-joined sum args in arithmetic, bounds, and non-NaN
 
-更早版本（25）→ [完整发布历史](./releases-history.md#pkg-service)
+更早版本（24）→ [完整发布历史](./releases-history.md#pkg-core)
 
-## nudojs (CLI) 1.3.1 {#pkg-nudojs}
+## @nudojs/service 1.6.1 {#pkg-service}
 
-## 1.3.1
+## 1.6.1
 
 ### Patch Changes
 
-- Updated dependencies [f6ec0e8]
-  - @nudojs/core@1.7.0
-  - @nudojs/service@1.6.0
-  - @nudojs/harvester@0.3.1
-  - @nudojs/parser@1.3.1
+- Updated dependencies [ef514a8]
+  - @nudojs/core@1.7.1
+  - @nudojs/env@0.4.16
+  - @nudojs/harvester@0.3.2
+  - @nudojs/parser@1.3.2
 
-更早版本（22）→ [完整发布历史](./releases-history.md#pkg-nudojs)
+更早版本（26）→ [完整发布历史](./releases-history.md#pkg-service)
 
-## @nudojs/parser 1.3.1 {#pkg-parser}
+## nudojs (CLI) 1.3.2 {#pkg-nudojs}
 
-## 1.3.1
-
-### Patch Changes
-
-- Updated dependencies [f6ec0e8]
-  - @nudojs/core@1.7.0
-
-更早版本（23）→ [完整发布历史](./releases-history.md#pkg-parser)
-
-## @nudojs/lsp 1.3.1 {#pkg-lsp}
-
-## 1.3.1
+## 1.3.2
 
 ### Patch Changes
 
-- Updated dependencies [f6ec0e8]
-  - @nudojs/core@1.7.0
-  - @nudojs/service@1.6.0
-  - @nudojs/parser@1.3.1
+- Updated dependencies [ef514a8]
+  - @nudojs/core@1.7.1
+  - @nudojs/harvester@0.3.2
+  - @nudojs/parser@1.3.2
+  - @nudojs/service@1.6.1
 
-更早版本（26）→ [完整发布历史](./releases-history.md#pkg-lsp)
+更早版本（23）→ [完整发布历史](./releases-history.md#pkg-nudojs)
 
-## @nudojs/env 0.4.15 {#pkg-env}
+## @nudojs/parser 1.3.2 {#pkg-parser}
 
-## 0.4.15
-
-### Patch Changes
-
-- Updated dependencies [f6ec0e8]
-  - @nudojs/core@1.7.0
-
-更早版本（22）→ [完整发布历史](./releases-history.md#pkg-env)
-
-## @nudojs/harvester 0.3.1 {#pkg-harvester}
-
-## 0.3.1
+## 1.3.2
 
 ### Patch Changes
 
-- Updated dependencies [f6ec0e8]
-  - @nudojs/core@1.7.0
-  - @nudojs/env@0.4.15
-  - @nudojs/parser@1.3.1
+- Updated dependencies [ef514a8]
+  - @nudojs/core@1.7.1
 
-更早版本（22）→ [完整发布历史](./releases-history.md#pkg-harvester)
+更早版本（24）→ [完整发布历史](./releases-history.md#pkg-parser)
 
-## vite-plugin-nudo 0.4.16 {#pkg-vite-plugin}
+## @nudojs/lsp 1.3.2 {#pkg-lsp}
+
+## 1.3.2
+
+### Patch Changes
+
+- Updated dependencies [ef514a8]
+  - @nudojs/core@1.7.1
+  - @nudojs/parser@1.3.2
+  - @nudojs/service@1.6.1
+
+更早版本（27）→ [完整发布历史](./releases-history.md#pkg-lsp)
+
+## @nudojs/env 0.4.16 {#pkg-env}
 
 ## 0.4.16
 
 ### Patch Changes
 
-- Updated dependencies [f6ec0e8]
-  - @nudojs/core@1.7.0
-  - @nudojs/service@1.6.0
+- Updated dependencies [ef514a8]
+  - @nudojs/core@1.7.1
 
-更早版本（25）→ [完整发布历史](./releases-history.md#pkg-vite-plugin)
+更早版本（23）→ [完整发布历史](./releases-history.md#pkg-env)
+
+## @nudojs/harvester 0.3.2 {#pkg-harvester}
+
+## 0.3.2
+
+### Patch Changes
+
+- Updated dependencies [ef514a8]
+  - @nudojs/core@1.7.1
+  - @nudojs/env@0.4.16
+  - @nudojs/parser@1.3.2
+
+更早版本（23）→ [完整发布历史](./releases-history.md#pkg-harvester)
+
+## vite-plugin-nudo 0.4.17 {#pkg-vite-plugin}
+
+## 0.4.17
+
+### Patch Changes
+
+- Updated dependencies [ef514a8]
+  - @nudojs/core@1.7.1
+  - @nudojs/service@1.6.1
+
+更早版本（26）→ [完整发布历史](./releases-history.md#pkg-vite-plugin)
 
 ## nudo-vscode 0.3.7 {#pkg-vscode}
 

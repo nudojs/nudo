@@ -1,5 +1,11 @@
 # @nudojs/core
 
+## 1.7.1
+
+### Patch Changes
+
+- ef514a8: fix(core): handle fork-joined sum args in arithmetic, bounds, and non-NaN
+
 ## 1.7.0
 
 ### Minor Changes
