@@ -377,6 +377,10 @@ function ProofStrip() {
             <span className="proof-strip-value">{stat.value}</span>
             <span className="proof-strip-label">
               <Translate id={stat.labelId}>{stat.labelDefault}</Translate>
+              {" "}
+              <Link className="proof-strip-source" to={`/docs/${stat.source.path.replace(/\.md$/, "")}`}>
+                <Translate id="homepage.stat.source">source</Translate>
+              </Link>
             </span>
           </div>
         ))}
@@ -532,6 +536,10 @@ function CostSection() {
               </div>
               <p className="cost-stat-label">
                 <Translate id={stat.labelId}>{stat.labelDefault}</Translate>
+                {" "}
+                <Link className="cost-stat-source" to={`/docs/${stat.source.path.replace(/\.md$/, "")}`}>
+                  <Translate id="homepage.stat.source">source</Translate>
+                </Link>
               </p>
             </article>
           ))}

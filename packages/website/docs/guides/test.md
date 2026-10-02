@@ -21,7 +21,7 @@ nudo test <path> [--watch|-w] [--from paths…] [--freeze[=mode]] [--dry-run] [-
 
 ## Default output
 
-```js
+```js verify#math
 export function subtract(a, b) {
   return a - b;
 }
@@ -57,7 +57,7 @@ Nobody wrote those cases. Nudo executed `subtract` with the arguments each call 
 
 The entry-only fallback, on a function with no call sites anywhere:
 
-```js
+```js verify#entry
 export function getName(user) {
   return user.name;
 }
@@ -81,7 +81,7 @@ The `assertions` block counts **declared cases only** — synthetic `call@` / `e
 
 `@nudo:case "name" (args) => expected` declares an expectation. Nudo executes the case and checks the actual result against the expected Abs (`leqAbs`):
 
-```js
+```js verify#dbl
 /**
  * @nudo:case "double" (2) => 4
  * @nudo:case "bad" (3) => 7

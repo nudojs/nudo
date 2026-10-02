@@ -26,6 +26,7 @@
     "migrate-demo": "bash scripts/migrate-demo.sh",
     "verify:examples": "bash scripts/verify-examples.sh",
     "verify:links": "node scripts/verify-readme-links.mjs",
+    "verify:links:external": "node scripts/check-external-links.mjs",
     "docs:gen": "node scripts/gen-releases.mjs && node scripts/gen-api-docs.mjs",
     "docs:gen:api": "node scripts/gen-api-docs.mjs",
     "learning-cost": "node scripts/learning-cost.mjs",

@@ -1,4 +1,3 @@
-import { translate } from '@docusaurus/Translate';
 import type { Preset } from './types';
 
 export const GROUP_CONTRACTS = 'Contracts & Observe';
@@ -6,24 +5,8 @@ export const GROUP_BASIC = 'Basic Examples';
 export const GROUP_CALLSITE = 'Call-Site Discovery';
 export const GROUP_SEMANTICS = 'Language Semantics';
 
-// 预设分组名 → 翻译 id（optgroup label 用）
-const GROUP_LABEL_IDS: Record<string, string> = {
-  [GROUP_CONTRACTS]: 'playground.group.contracts',
-  [GROUP_BASIC]: 'playground.group.basic',
-  [GROUP_CALLSITE]: 'playground.group.callsite',
-  [GROUP_SEMANTICS]: 'playground.group.semantics',
-};
-export function tGroup(group: string): string {
-  const id = GROUP_LABEL_IDS[group];
-  return id
-    ? translate({ id, message: group })
-    : group;
-}
-
-// 预设名 → 翻译 id（下拉 option 文案用；英文名即回退默认值）
-export function tPresetName(preset: Preset): string {
-  return translate({ id: `playground.preset.${preset.id}.name`, message: preset.name });
-}
+// 预设名/分组名的 i18n 文案在 preset-labels.ts（那才是唯一依赖 @docusaurus/Translate
+// 的地方）——本模块保持纯数据，测试与别处可无框架导入。
 
 export const presets: Preset[] = [
   {

@@ -10,15 +10,17 @@ The **nudo-vscode** extension brings Nudo's type inference into your editor with
 
 ## Installation
 
-1. Open the Extensions view (`Cmd+Shift+X` / `Ctrl+Shift+X`)
-2. Search for **nudo-vscode** or "Nudo"
-3. Click **Install**
+1. Download `nudo-vscode.vsix` from the [latest GitHub release](https://github.com/nudojs/nudo/releases)
+2. In VS Code: **Extensions** view (`Cmd+Shift+X` / `Ctrl+Shift+X`) → `…` menu → **Install from VSIX…**
+3. Pick the downloaded file
 
-Or install from the command line:
+Or from the command line:
 
 ```bash
-code --install-extension wmzy.nudo-vscode
+code --install-extension nudo-vscode.vsix
 ```
+
+Marketplace listings (`wmzy.nudo-vscode` on the VS Code Marketplace and Open VSX) are release artifacts — install from the extension view when it is reachable, or build from source (`pnpm --filter nudo-vscode run build && pnpm --filter nudo-vscode run package`). The GitHub release `.vsix` is the source of truth.
 
 ## Activation
 

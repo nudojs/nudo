@@ -68,16 +68,21 @@ npx nudojs test path/to/file.js    # 调用点 case 报告
 
 安装 **nudo-vscode** 扩展可获得内联类型提示和诊断信息：
 
-1. 打开 VS Code
-2. 进入 **扩展**（Ctrl+Shift+X / Cmd+Shift+X）
-3. 搜索 **nudo-vscode**（或「Nudo」）
-4. 点击 **安装**
-
-发布在 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=wmzy.nudo-vscode) 与 Open VSX。也可以通过命令行安装：
+1. 从 [最新 GitHub Release](https://github.com/nudojs/nudo/releases) 下载 `nudo-vscode.vsix`
+2. VS Code → **扩展**（Ctrl+Shift+X / Cmd+Shift+X）→ `…` 菜单 → **从 VSIX 安装…**
+3. 选择刚下载的文件
 
 ```bash
-code --install-extension wmzy.nudo-vscode
+code --install-extension nudo-vscode.vsix
 ```
+
+扩展同时发布到 VS Code Marketplace 与 Open VSX（`wmzy.nudo-vscode`）——如果你的编辑器能在扩展视图里搜到它，直接安装等价：
+
+```bash
+code --install-extension wmzy.nudo-vscode   # 列表可达时可用
+```
+
+上架是发布产物而非承诺：GitHub Release 上的 `.vsix` 才是真源，市场 token 可能过期（发布任务只警告、不失败）。也可以随时从源码构建：`pnpm --filter nudo-vscode run build && pnpm --filter nudo-vscode run package`。
 
 vsix 自包含：扩展捆绑了语言服务器，无需另装 `@nudojs/lsp` 扩展即可启动。激活事件是 `onLanguage:javascript` / `onLanguage:typescript`；缓冲区是否*被分析*由 `nudo.analysis.mode` 门禁决定。完整面：[VS Code 指南](../guides/vscode.md)。
 

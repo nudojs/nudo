@@ -922,5 +922,11 @@
   },
   "playground.preset.in-brand-check.name": {
     "message": "in 运算符品牌校验"
+  },
+  "theme.DocItem.footer.provenance": {
+    "message": "文档构建所用引擎版本 nudojs@{version}"
+  },
+  "homepage.stat.source": {
+    "message": "出处"
   }
 }

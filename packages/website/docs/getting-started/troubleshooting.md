@@ -17,6 +17,21 @@ The questions that come up most in the first hour with Nudo — each answered in
 
 ## Why does `+` return `number | string`?
 
+```js verify#day0
+export function scale(x) {
+  return x + 1;
+}
+
+export function formatName(first, last) {
+  return first + " " + last;
+}
+
+scale(5);
+formatName("Ada", "Lovelace");
+```
+
+Run it with `nudo check` and the signatures block reads:
+
 ```text
 scale(x: any) => number | string
 ```
