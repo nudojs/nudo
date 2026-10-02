@@ -59,6 +59,9 @@ const LLMS_TXT = join(repoRoot, "packages/website/static/llms.txt");
 // en 页允许残留 CJK 的白名单，数组便于后续扩充。
 const EN_CJK_ALLOWLIST = [
   "releases-history.md",
+  // releases.md（docs:gen 从 changeset 聚合生成）：changeset 引用的中文
+  // 术语（如 "any ≤ 任意目标"）随生成进入 en 页，与 history 页同类。
+  "releases.md",
   // api/* 生成页（gen-api-docs.mjs）：en 表 Summary 回退显示源 JSDoc 的中文首句——
   // 比空 `—` 有信息量，zh 镜像本就显示同一摘要。仅收录实际含 CJK 的页。
   "api/core.md",

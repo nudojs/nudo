@@ -4,6 +4,29 @@ import { vitestAlias } from "./scripts/workspace-aliases.mjs";
 export default defineConfig({
   test: {
     include: ["packages/*/src/**/*.test.ts", "packages/*/tests/**/*.test.ts"],
+    // CI 的 --changed <base> 走模块图选测试；下图不可见的读取面
+    // （fs 读 fixture / 文档 / 工作流、运行时动态 import）必须在此
+    // 列为强制全量触发器，否则那些 PR 会假绿。覆盖默认值
+    // （['**/package.json', '**/{vitest,vite}.config.*']），故显式保留。
+    // 注意：vitest 把 git diff 输出 resolve 成绝对路径后再做
+    // picomatch 匹配——所有 glob 必须以 **/ 开头，否则相对
+    // 模式永远匹配不上（默认值即此形态）。
+    //   **/pnpm-lock.yaml      依赖变 → real-package 扫描测试失效
+    //   **/docs/examples/**    check-mini-repo 等经 readFileSync 读金标
+    //   **/packages/website/** docs-coverage / home-stats / seo 等读 md/json
+    //   **/scripts/**          gate-major 等经 execFileSync 调脚本
+    //   **/.github/workflows/** release-tag-whitelist 读 release.yml
+    // 模块图已覆盖：包源码（env-loader 静态 import @nudojs/env/*）、
+    // differential 语料（静态 import corpus/batch*.ts）。
+    forceRerunTriggers: [
+      "**/package.json",
+      "**/{vitest,vite}.config.*",
+      "**/pnpm-lock.yaml",
+      "**/docs/examples/**",
+      "**/packages/website/**",
+      "**/scripts/**",
+      "**/.github/workflows/**",
+    ],
     // lodash harvest + relationFn 图会顶爆默认 isolate 堆
     pool: "forks",
     maxWorkers: 4,
