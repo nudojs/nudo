@@ -534,15 +534,23 @@ function runTranspiledInner(
     // 失败（不同形 spec 同名注册）排进回落观测面，
     // 不再静默 clobber（查找侧无法消歧：brand 名
     // 即查找键；同形重注册是重评估语义，不在面）
-    for (const c of drainClassCollisions()) {
-      noteEvalFallback(
-        new NudoUnsupportedError(
-          "class-collision",
-          undefined,
-          `class '${c.name}' registered again with a different shape (${c.previous} -> ${c.next}); name-keyed lookup may resolve to either definition`,
-        ),
-      );
-    }
+    noteDrainedClassCollisions();
+  }
+}
+
+/** BUG-026/G3：排空同名类碰撞缓冲进回落观测面。run 顶层出口与
+ *  入口调用出口（callTranspiledExportFull）共用——碰撞记录不得
+ *  滞留缓冲到下一个无关宿主入口（NudoUnsupportedError 无 path/loc，
+ *  滞留即误归属错文件；进程内再无 run 则永不现）。 */
+function noteDrainedClassCollisions(): void {
+  for (const c of drainClassCollisions()) {
+    noteEvalFallback(
+      new NudoUnsupportedError(
+        "class-collision",
+        undefined,
+        `class '${c.name}' registered again with a different shape (${c.previous} -> ${c.next}); name-keyed lookup may resolve to either definition`,
+      ),
+    );
   }
 }
 
@@ -665,10 +673,18 @@ export function callTranspiledExportFull(
   opts?: { phi?: Phi },
 ): TranspiledCallResult {
   enterEvalCallBudgetSession();
+  // G3（BUG-026 epoch 作用域）：入口调用阶段自成求值单元——函数体内
+  // 块级同名类正是在此注册（不在 runTranspiled 顶层）。开新 epoch：
+  // ① 缓存命中（tryRunEval 不重跑 run）后的重执行不得与无关文件
+  // 刚完成 fresh run 的同名类共享陈旧 epoch（跨文件同名类按设计走
+  // last-wins 静默）；② 出口排水使碰撞在本次分析即可观测，不再滞留
+  // 缓冲误归属到下一个无关 run。last-wins 解析语义不变（观测面修复）。
+  beginClassEpoch();
   try {
     return callTranspiledExportFullInner(exports, name, args, opts);
   } finally {
     exitEvalCallBudgetSession();
+    noteDrainedClassCollisions();
   }
 }
 

@@ -272,17 +272,33 @@ export function registerHealthCommand(program: Command): void {
   program
     .command("health")
     .description("Project health & drift: uncovered functions, witness drift, contract drift, analysis errors")
-    .argument("[paths...]", "File(s) or directory(s) (default: current directory)")
+    .argument("[paths...]", "File(s) or directory(s) (default: current directory; with --from, pass paths explicitly — e.g. `nudo health . --from usage.js`)")
     .option("--watch, -w", "Watch and re-run health on change")
     .option("--from <paths...>", "Usage-site files for freeze-drift detection")
     .option("--json", "Output as JSON")
     .action(async (paths: string[], opts: { watch?: boolean; from?: string[]; json?: boolean }) => {
-      // BUG-024：--from variadic 吞噬其后的位置参数——
-      // paths 空且 --from 非空时定向 usage error
-      // （否则静默退化为扫描 cwd，范围错误）
-      if (paths.length === 0 && opts.from?.length) {
-        variadicSwallowError("health", ["--from"]);
-        return;
+      // BUG-024：--from variadic 吞噬其后的位置参数。
+      // G6 修正（BUG-024 后续，P3）：
+      // - from 收到 ≥2 个值：其后裸 token 与「多 from 文件」不可区分
+      //   （真歧义，无论 paths 是否已给出——extra.js 被静默当 from 文件
+      //   是范围错误），保持 BUG-024 定向错误。
+      // - from 只收到自身的一个值且 paths 为空：没有任何参数被吞
+      //   （不得声称 consumed）；但 --from 下静默默认扫 cwd 会把
+      //   freeze-drift 检测范围扩到整个 cwd——定向 usage error，文案如实。
+      if (opts.from?.length) {
+        if (opts.from.length > 1) {
+          variadicSwallowError("health", ["--from"]);
+          return;
+        }
+        if (paths.length === 0) {
+          console.error(
+            "error: `nudo health` --from requires explicit paths when used without positional paths " +
+              "(previously defaulted to cwd scan)",
+          );
+          console.error("fix:  use: `nudo health . --from usage.js`");
+          process.exitCode = 1;
+          return;
+        }
       }
       const fromPaths = opts.from;
       const runOneDir = async (): Promise<void> => {

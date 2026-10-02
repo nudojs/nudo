@@ -17,6 +17,7 @@ import {
   getEvalClass,
 } from "../exec/class-registry.ts";
 import {
+  callTranspiledExportFull,
   runTranspiled,
   setEvalFallbackCollector,
   type EvalFallback,
@@ -124,6 +125,74 @@ describe("BUG-026: class registry 同名碰撞", () => {
       expect(
         seen.filter((f) => f.reason === "unsupported:class-collision"),
       ).toEqual([]);
+    } finally {
+      setEvalFallbackCollector(null);
+      clearBClasses();
+    }
+  });
+
+  it("G3: call-stage (function-body block) same-name class collision is observable at the call exit", () => {
+    clearBClasses();
+    const seen: EvalFallback[] = [];
+    setEvalFallbackCollector((f) => seen.push(f));
+    try {
+      // 类在导出函数体内（块级作用域）——$class 注册发生在入口调用
+      // 阶段（callTranspiledExportFull），不在 runTranspiled 顶层
+      const exports = runTranspiled(
+        [
+          "export function f() {",
+          "  { class Box { a() { return 1; } } new Box(); }",
+          "  { class Box { b() { return 2; } } new Box(); }",
+          "  return 1;",
+          "}",
+        ].join("\n"),
+        { mode: "analyze" },
+      );
+      // run 出口无碰撞（顶层没有类）
+      expect(
+        seen.filter((f) => f.reason === "unsupported:class-collision"),
+      ).toEqual([]);
+      // 调用阶段：同一函数体内两个同名不同形 Box → 碰撞必须
+      // 在本次调用的出口即可观测（不滞留缓冲等下一个无关 run）
+      callTranspiledExportFull(exports, "f", []);
+      const hits = seen.filter(
+        (f) => f.reason === "unsupported:class-collision",
+      );
+      expect(hits.length).toBe(1);
+      expect(hits[0]!.message).toContain("Box");
+      expect(hits[0]!.message).toContain("different shape");
+      // 排水是一次性的（缓冲已清空）
+      expect(drainClassCollisions()).toEqual([]);
+    } finally {
+      setEvalFallbackCollector(null);
+      clearBClasses();
+    }
+  });
+
+  it("G3: call stage re-execution after another file's fresh run is silent (no cross-file collision)", () => {
+    clearBClasses();
+    const seen: EvalFallback[] = [];
+    setEvalFallbackCollector((f) => seen.push(f));
+    try {
+      // 文件 A：类在函数体内——run 时不注册，调用阶段（缓存命中后
+      // 重执行编译体）才注册
+      const exportsA = runTranspiled(
+        "export function make() { class Box { a() { return 1; } } return new Box(); }",
+        { mode: "analyze" },
+      );
+      // 文件 B：fresh run，顶层同名不同形类——跨 run 重注册是
+      // 设计内 last-wins（静默）
+      runTranspiled("class Box { b() { return 2; } } export const y = 1;", {
+        mode: "analyze",
+      });
+      // A 的 run 缓存命中（tryRunEval 不重跑 runTranspiled）：入口
+      // 调用重执行 A 的编译体——不得与 B 刚注册的 Box 判同 epoch
+      callTranspiledExportFull(exportsA, "make", []);
+      expect(
+        seen.filter((f) => f.reason === "unsupported:class-collision"),
+      ).toEqual([]);
+      // 缓冲同样不留滞留记录
+      expect(drainClassCollisions()).toEqual([]);
     } finally {
       setEvalFallbackCollector(null);
       clearBClasses();

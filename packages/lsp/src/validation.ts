@@ -518,6 +518,12 @@ export type ValidateTextDeps = {
   listOpenDocuments?: () => OpenDocumentLike[];
   /** 项目配置变更后宿主侧清理（如 nudoFileCache） */
   onProjectConfigChanged?: () => void;
+  /**
+   * G7：错误脱敏根（server 注入 InitializeParams 的 workspaceFolders）。
+   * 扩展宿主 fork 的 server cwd ≠ 工作区根，多根工作区更无单一 cwd——
+   * 缺省回落 sanitizeErrorMessage 的 [process.cwd()] 默认。
+   */
+  workspaceRoots?: string[];
 };
 
 const severityMap: Record<JsDiagSeverity, DiagnosticSeverity> = {
@@ -609,6 +615,8 @@ export function checkToLspDiagnostics(
   filePath: string,
   source: string,
   loadModule?: (spec: string, fromFile: string) => string | undefined,
+  /** G7：错误脱敏根（LSP server 注入 workspaceRoots；缺省回落 cwd） */
+  workspaceRoots?: string[],
 ): LspDiagnostic[] {
   try {
     // package.json#nudo.contract.autoBind 与 nudo.check（L2）覆盖 LSP 执法路径
@@ -679,7 +687,7 @@ export function checkToLspDiagnostics(
       {
         severity: DiagnosticSeverity.Error,
         range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
-        message: `Check error: ${sanitizeErrorMessage((err as Error).message)}`,
+        message: `Check error: ${sanitizeErrorMessage((err as Error).message, workspaceRoots)}`,
         source: "nudo-check",
         code: "nudo:internal",
       },
@@ -771,7 +779,7 @@ export async function validateText(
         diagnostics: [{
           severity: DiagnosticSeverity.Error,
           range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
-          message: `Analysis error: ${sanitizeErrorMessage((err as Error).message)}`,
+          message: `Analysis error: ${sanitizeErrorMessage((err as Error).message, deps.workspaceRoots)}`,
           source: "nudo",
         }],
       });
@@ -798,7 +806,7 @@ export async function validateText(
   const level = diagnosticsLevelForFile(filePath);
   // P2：与 pull（server.languages.diagnostics）共用同一 helper
   const checkDiags = filterCheckLspByLevel(
-    checkToLspDiagnostics(filePath, text, deps.loadModule),
+    checkToLspDiagnostics(filePath, text, deps.loadModule, deps.workspaceRoots),
     level,
   );
   const evalJs = filterDiagnosticsByLevel(result.diagnostics, level);

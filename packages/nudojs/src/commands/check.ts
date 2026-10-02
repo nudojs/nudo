@@ -34,7 +34,6 @@ import {
   mergeIgnoreThrows,
   parseIgnoreThrows,
   parseWhatIfBindings,
-  profileEntryThrows,
   resolveEntryThrows,
   validateGateFlags,
   type EntryThrowsMode,
@@ -112,6 +111,12 @@ async function runCheck(
     gha?: boolean;
     /** GitLab Code Quality JSON（数组） */
     gitlab?: boolean;
+    /**
+     * 多文件 --json：注入装配失败跨文件聚合——降级分析可能零诊断
+     * （CheckJson ok:true），失败态必须经共享对象带到信封 exit，
+     * 否则 `envelope.ok ? 0 : 1` 覆盖成假绿。
+     */
+    gateFlags?: { injectionSetupFailed?: boolean };
   } = {},
 ): Promise<void> {
   const filePath = resolve(file);
@@ -187,6 +192,8 @@ async function runCheck(
   let cachedJson: ReturnType<typeof serializeCheckJson> | undefined;
   let algebraReport;
   let mockFromErrors: Array<{ name: string; fromPath: string; message: string; code?: string }> = [];
+  // 注入装配失败（BUG-023）：降级分析仍跑，但门禁必须红且缓存不回写
+  let injectionSetupFailed = false;
   if (cached) {
     cachedJson = cached;
     algebraReport = reportFromCachedJson(cached) as Awaited<ReturnType<typeof checkSource>>;
@@ -248,12 +255,16 @@ async function runCheck(
     } catch (err) {
       // BUG-023：注入装配失败不得静默跳过——无注入的分析
       // 会把未 mock 的模块图当作事实（假绿：签名看似通过
-      // 实则基于错误依赖）。上屏并挡 exit（门禁为红），
-      // 分析仍跑（观察面完整）。
+      // 实则基于错误依赖）。上屏 + 失败态标记，分析仍跑
+      // （观察面完整）；exit 由末段统一判定（不在此中途赋值：
+      // --json 信封 / 缓存判定在其后，中途赋值会被
+      // `ok ? 0 : 1` 覆盖回假绿），降级产物也不得写磁盘缓存
+      // （否则下次 check 命中缓存整体跳过注入装配 → 静默转绿）。
       console.error(
         `error: eval injection setup failed: ${(err as Error).message}`,
       );
-      process.exitCode = 1;
+      injectionSetupFailed = true;
+      if (opts.gateFlags) opts.gateFlags.injectionSetupFailed = true;
     }
     algebraReport = checkSource(filePath, source, pTrue, {
       loadModule,
@@ -392,7 +403,9 @@ async function runCheck(
     printDocsLinks(algebraReport.issues);
   }
 
-  if (useDisk && cacheKey && !cached && !opts.abs) {
+  // 降级产物不回写：注入装配失败时的分析缺注入面（无模块/mock），
+  // 回写会让下次 check 命中缓存整体跳过注入装配 → 静默转绿
+  if (useDisk && cacheKey && !cached && !opts.abs && !injectionSetupFailed) {
     try {
       disk.set(cacheKey, serializeCheckJson(algebraReport));
     } catch {
@@ -400,10 +413,11 @@ async function runCheck(
     }
   }
 
-  // --json 单文件：exit 与打印出的 ok 同源（路径错误在 action 层已并入信封）
+  // --json 单文件：exit 与打印出的 ok 同源（路径错误在 action 层已并入信封）；
+  // 注入装配失败独立于 ok 挡红（降级分析可能零诊断 ok:true）
   if (opts.json && !opts.jsonCollect) {
-    process.exitCode = checkJson.ok ? 0 : 1;
-  } else if (!opts.jsonCollect && !algebraReport.ok) {
+    process.exitCode = checkJson.ok && !injectionSetupFailed ? 0 : 1;
+  } else if (!opts.jsonCollect && (!algebraReport.ok || injectionSetupFailed)) {
     process.exitCode = 1;
   }
 }
@@ -423,7 +437,8 @@ async function runCheckFix(opts: {
   const core = await import("@nudojs/core");
   const { checkSource, pTrue, sidecarPathOf, actionsForIssue } = core;
   type CheckAction = import("@nudojs/core").CheckAction;
-  const { collectSkipReturns, defaultLoadModule } = await import("@nudojs/service");
+  const { collectSkipReturns, defaultLoadModule, findProjectConfig, checkConfig } =
+    await import("@nudojs/service");
   const {
     materializeAction,
     applyTextEdits,
@@ -434,16 +449,17 @@ async function runCheckFix(opts: {
   const only = opts.only && opts.only.length > 0 ? new Set(opts.only) : undefined;
   // BUG-022/S5-004：profile 是 L2 预设（adoption→warning /
   // strict→error），显式 --entry-throws 优先——与 runCheck 的
-  // resolveEntryThrows 同口径（本路径不读项目配置，CLI 层
-  // 已解析 entryThrows；checkSource 只认 entryThrows）。
-  const entryThrowsResolved =
-    opts.entryThrows ??
-    (opts.profile ? profileEntryThrows(opts.profile) : undefined);
+  // resolveEntryThrows 同口径（CLI 层已解析 entryThrows/profile）。
+  // G4：项目配置（package.json#nudo.check.profile/entryThrows/
+  // ignoreThrows）必须与 plain check 同链解析——否则 adoption 档
+  // 项目 plain check 绿而 --fix 红（门禁分叉）。config 按文件解析
+  // （targets 可跨项目）。
   let planned = 0;
   let written = 0;
-  // BUG-022/S5-004：门禁语义——物化后残余 error 级诊断
-  // 计数（对物化后的源码重跑 checkSource；dry-run 时反映
-  // 「应用这些编辑后」仍剩多少 error）。--fix 不再绕过门禁。
+  // BUG-022/S5-004：门禁语义——error 级诊断在物化循环后复检：
+  // --write 对应用后的源码复检（剩余真实残余）；dry-run 磁盘未变，
+  // 复检跑的就是磁盘现状的真实门禁状态（所以 dry-run 门禁仍红）。
+  // --fix 不再绕过门禁。
   let residualErrors = 0;
 
   for (const file of opts.targets) {
@@ -453,11 +469,23 @@ async function runCheckFix(opts: {
     } catch {
       continue;
     }
+    // 与 plain check（runCheck）同链：checkGateFromConfig + checkConfig
+    // → resolveEntryThrows（CLI 显式 > CLI profile > pkg entryThrows >
+    // pkg profile > 默认 error）+ mergeIgnoreThrows（加法合并）
+    const proj = findProjectConfig(dirname(file));
+    const cCfg = checkConfig(proj?.config);
+    const gate = checkGateFromConfig(proj?.config);
+    const entryThrows = resolveEntryThrows(
+      { entryThrows: opts.entryThrows, profile: opts.profile },
+      gate,
+      cCfg.entryThrows,
+    );
+    const ignoreThrows = mergeIgnoreThrows(opts.ignoreThrows, cCfg.ignoreThrows);
     const report = checkSource(file, source, pTrue, {
       loadModule: defaultLoadModule,
       fromFile: file,
-      ...(opts.ignoreThrows ? { ignoreThrows: opts.ignoreThrows } : {}),
-      ...(entryThrowsResolved ? { entryThrows: entryThrowsResolved } : {}),
+      ...(ignoreThrows.length > 0 ? { ignoreThrows } : {}),
+      entryThrows,
       skips: collectSkipReturns(source),
     });
     const sidecar = sidecarPathOf(file);
@@ -535,16 +563,18 @@ async function runCheckFix(opts: {
       }
     }
 
-    // BUG-022/S5-004：门禁语义——本文件有 error 级诊断时，
-    // 对物化后的源码重跑 checkSource 计残余 error（dry-run
-    // 反映「应用这些编辑后」的剩余；侧车编辑未写盘时以磁盘
-    // 侧车为准）。残余 > 0 → --fix 末尾 exit 1，与 check 同契约。
+    // BUG-022/S5-004：门禁语义——本文件有 error 级诊断时重跑
+    // checkSource 计残余 error：--write 时 source/侧车已更新为
+    // 应用后状态（剩余 = 真实残余）；dry-run 磁盘未变，source
+    // 仍是读入原文（复检 = 磁盘现状的真实门禁状态，dry-run 保持
+    // 红）。门禁解析与首次 checkSource 同一 per-file 值。
+    // 残余 > 0 → --fix 末尾 exit 1，与 check 同契约。
     if (report.issues.some((i) => i.severity === "error")) {
       const post = checkSource(file, source, pTrue, {
         loadModule: defaultLoadModule,
         fromFile: file,
-        ...(opts.ignoreThrows ? { ignoreThrows: opts.ignoreThrows } : {}),
-        ...(entryThrowsResolved ? { entryThrows: entryThrowsResolved } : {}),
+        ...(ignoreThrows.length > 0 ? { ignoreThrows } : {}),
+        entryThrows,
         skips: collectSkipReturns(source),
       });
       residualErrors += post.issues.filter((i) => i.severity === "error").length;
@@ -662,10 +692,13 @@ export function registerCheckCommand(program: Command): void {
             opts.gitlab ||
             opts.watch ||
             opts.verbose ||
+            (opts.from && opts.from.length > 0) ||
             (opts.whatIf && opts.whatIf.length > 0))
         ) {
+          // G5：--from 也进拒绝表——旧实现静默丢使用处证据并以
+          // 弱分析（无调用记录注入）落盘契约
           console.error(
-            "error: --fix cannot be combined with --json/--abs/--gha/--gitlab/--watch/--verbose/--what-if (materialization face; the CI gate is plain `nudo check`)",
+            "error: --fix cannot be combined with --json/--abs/--gha/--gitlab/--watch/--verbose/--from/--what-if (materialization face; the CI gate is plain `nudo check`)",
           );
           process.exitCode = 1;
           return;
@@ -786,13 +819,16 @@ export function registerCheckCommand(program: Command): void {
           const wantMulti = targets.length > 1 || allPathErrors.length > 0;
           if (wantMulti) {
             const collected: Array<import("@nudojs/core").CheckJson> = [];
+            // 注入装配失败跨文件聚合（单文件 ok:true 的降级分析 + 失败态
+            // 必须让信封 exit 红，不能被 envelope.ok 覆盖成假绿）
+            const gateFlags: { injectionSetupFailed?: boolean } = {};
             for (const t of targets) {
-              await runCheck(t, { ...shared, json: true, jsonCollect: collected });
+              await runCheck(t, { ...shared, json: true, jsonCollect: collected, gateFlags });
             }
             const { serializeCheckJsonMulti: multi } = await import("@nudojs/core");
             const envelope = attachPathErrors(multi(collected), allPathErrors);
             console.log(JSON.stringify(envelope, null, 2));
-            process.exitCode = envelope.ok ? 0 : 1;
+            process.exitCode = envelope.ok && !gateFlags.injectionSetupFailed ? 0 : 1;
             return;
           }
           if (targets.length === 1) {

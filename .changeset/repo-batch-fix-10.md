@@ -2,6 +2,7 @@
 "@nudojs/core": minor
 "@nudojs/service": minor
 "@nudojs/parser": minor
+"@nudojs/harvester": minor
 "nudojs": minor
 "@nudojs/lsp": minor
 ---

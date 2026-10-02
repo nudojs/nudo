@@ -295,6 +295,9 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
         nudoFileCache.clear();
       },
       loadModule: activeLoadModule,
+      // G7：错误脱敏用客户端真实工作区根（onInitialize 已捕获），
+      // 不落 sanitize 的 cwd 默认——扩展宿主 fork 的 cwd ≠ 工作区根
+      workspaceRoots,
     };
   }
 
@@ -506,7 +509,7 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
       const seen = new Set<string>();
       // Abs check 通道（与 push checkToLspDiagnostics 同源）
       try {
-        const checkDiags = checkToLspDiagnostics(filePath, text, validationDeps().loadModule);
+        const checkDiags = checkToLspDiagnostics(filePath, text, validationDeps().loadModule, workspaceRoots);
         // P2：与 push（validateText）同一档过滤 helper，避免 pull/push 诊断面不一致
         for (const d of filterCheckLspByLevel(checkDiags, level)) {
           seen.add(`${d.code ?? ""}\0${d.message}`);
@@ -540,7 +543,7 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
       const errDiag = {
         severity: DiagnosticSeverity.Error,
         range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
-        message: `Analysis error: ${sanitizeErrorMessage((err as Error).message)}`,
+        message: `Analysis error: ${sanitizeErrorMessage((err as Error).message, workspaceRoots)}`,
         source: "nudo",
       } as ReturnType<typeof toLspDiagnostic>;
       const items = last && last.length > 0 ? last : [errDiag];
