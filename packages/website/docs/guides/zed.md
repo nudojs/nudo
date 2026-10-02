@@ -106,7 +106,7 @@ the same pattern as other Zed language-server extensions. A user
 | Inlay hints | Enable `inlay_hints.enabled`; implicit exports mark `derived` |
 | CodeLens | Enable `code_lens: "on"` — **interface tier first** (`● interface`, persist/update, `⚡ draft interface`), case lenses behind |
 | Semantic tokens | Default off; set `semantic_tokens: "combined"` — includes `contract`/`generated`/`derived` modifiers |
-| Code actions / Signature help | Standard LSP quickfix + signature help (real `paramTypes` / return, same as VS Code) |
+| Code actions / Signature help | Standard LSP quickfix + signature help (real `paramTypes` / return). Includes action-map quickfixes (`[fix]` / `[silence]` / `[review]` / `[adjust]` / `[scaffold]`) |
 | Agent commands (`nudo.check` / `nudo.contract.draft` / …) | Reachable via any LSP client or Zed agent tooling |
 | JSX / TSX buffers | Attached (`JavaScript React` / `TypeScript React`), same document face as VS Code |
 
