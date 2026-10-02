@@ -104,5 +104,5 @@ Product CLI lives in `packages/nudojs` (published as `nudojs`, bin `nudo`). `pac
 
 ## CI
 
-- **CI** (`.github/workflows/ci.yml`): lint → build → test on push to main/develop and PRs
+- **CI** (`.github/workflows/ci.yml`): build once, dist shared via `nudo-dist` artifact. Matrix: push main → lint/test:coverage/benchmark; push dev|ci + PRs → lint/build/test (2 vitest shards); nightly schedule → test:coverage/benchmark
 - **Release** (`.github/workflows/release.yml`): changeset version → publish → deploy docs → package VS Code extension → publish to Marketplace/Open VSX
