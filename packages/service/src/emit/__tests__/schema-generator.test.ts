@@ -250,3 +250,48 @@ describe("absToZodSchemaModule", () => {
     expect(source).toContain("export const weird_name = z.number();");
   });
 });
+
+describe("BUG-019: eqLit 通道 tagged 化 + 非有限界不投影（S6-004）", () => {
+  it("eq(x, lit(undefined)) 投影为 z.undefined() 而非静默丢弃", () => {
+    const a = numWith(eq(v("x"), lit(undefined)));
+    const { node, dropped } = absToSchemaNode(a);
+    expect(node).toEqual({ k: "lit", value: undefined });
+    expect(dropped).toEqual([]);
+    expect(absToSchemaSource(a)).toBe("z.undefined()");
+  });
+
+  it("双 eq(x, lit(undefined)) 不误报 conflicting", () => {
+    const a = numWith(and(eq(v("x"), lit(undefined)), eq(v("x"), lit(undefined))));
+    const { node, dropped } = absToSchemaNode(a);
+    expect(node).toEqual({ k: "lit", value: undefined });
+    expect(dropped.some((d) => d.includes("conflicting"))).toBe(false);
+  });
+
+  it("eq(x,5) 与 eq(x, lit(undefined)) 记 conflicting", () => {
+    const a = numWith(and(eq(v("x"), lit(5)), eq(v("x"), lit(undefined))));
+    const { dropped } = absToSchemaNode(a);
+    expect(dropped.some((d) => d.includes("conflicting"))).toBe(true);
+  });
+
+  it("gt(x, lit(NaN)) 记 dropped 且不生成 .gt(NaN)", () => {
+    const a = numWith(gt(v("x"), lit(NaN)));
+    const { node, dropped } = absToSchemaNode(a);
+    expect(dropped.some((d) => d.includes("not projected"))).toBe(true);
+    expect(absToSchemaSource(a)).not.toContain("NaN");
+    expect(node).toEqual({ k: "prim", type: "number", refinements: [] });
+  });
+
+  it("gt(x, lit(Infinity)) 不生成 .gt(Infinity)", () => {
+    const a = numWith(gt(v("x"), lit(Infinity)));
+    const { dropped } = absToSchemaNode(a);
+    expect(dropped.some((d) => d.includes("not projected"))).toBe(true);
+    expect(absToSchemaSource(a)).not.toContain("Infinity");
+  });
+
+  it("constraint 路径：eq(undefined) 同样产 lit(undefined) 节点", () => {
+    // absToSchemaNode 优先走 core absToConstraint → constraintToSchemaNode
+    const a = numWith(eq(v("x"), lit(undefined)));
+    const { source } = absToZodSchemaModule({ out: a });
+    expect(source).toContain("z.undefined()");
+  });
+});

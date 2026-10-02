@@ -128,10 +128,15 @@ function checkNode(
       const rec = value as Record<string, unknown>;
       for (const slot of node.slots) {
         const key = slot.key;
-        if (!(key in rec) || rec[key] === undefined) {
+        // 缺键判定只用自有属性（BUG-018/S6-003：缺键 ≠ 显式 undefined；
+        // `in` 还会命中 Object.prototype 继承键）
+        if (!Object.hasOwn(rec, key)) {
           if (!slot.optional) pushIssue(issues, [...path, key], "required");
           continue;
         }
+        // 键在场：optional 槽显式 undefined 合法（zod .optional() 口径）；
+        // 其余显式 undefined 交给 node 裁决（lit undefined / union undefined 臂）
+        if (rec[key] === undefined && slot.optional) continue;
         checkNode(slot.node, rec[key], [...path, key], issues);
       }
       return;
@@ -252,10 +257,12 @@ function __nudoCheck(node, value, path, issues) {
       }
       for (const slot of node.slots) {
         const key = slot.key;
-        if (!(key in value) || value[key] === undefined) {
+        // 缺键判定只用自有属性（BUG-018/S6-003；两份实现须同口径）
+        if (!Object.hasOwn(value, key)) {
           if (!slot.optional) { path.push(key); push("required"); path.pop(); }
           continue;
         }
+        if (value[key] === undefined && slot.optional) continue;
         path.push(key);
         __nudoCheck(slot.node, value[key], path, issues);
         path.pop();

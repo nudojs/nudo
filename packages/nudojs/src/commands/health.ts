@@ -11,6 +11,8 @@ import {
   collectNudoFiles,
   reemitUpdate,
   startWatch,
+  displayPathOf,
+  variadicSwallowError,
   type PathError,
 } from "./shared.ts";
 
@@ -40,13 +42,8 @@ type HealthReport = {
   error?: string;
 };
 
-const displayPath = (p: string): string => {
-  const rel = relative(process.cwd(), p);
-  return rel === "" || rel.startsWith("..") ? p : rel;
-};
-
 async function healthFile(filePath: string, records?: CallRecord[]): Promise<HealthReport> {
-  const report: HealthReport = { file: displayPath(filePath), functions: 0, entryOnly: 0, uncovered: [] };
+  const report: HealthReport = { file: displayPathOf(filePath), functions: 0, entryOnly: 0, uncovered: [] };
   let source: string;
   try {
     source = readFileSync(filePath, "utf-8");
@@ -151,7 +148,7 @@ async function runHealth(paths: string[], opts: { from?: string[]; json?: boolea
   for (const p of targetPaths) {
     const abs = resolve(p);
     if (!existsSync(abs)) {
-      reports.push({ file: displayPath(abs), functions: 0, entryOnly: 0, uncovered: [], error: `File not found: ${abs}` });
+      reports.push({ file: displayPathOf(abs), functions: 0, entryOnly: 0, uncovered: [], error: `File not found: ${displayPathOf(abs)}` });
       continue;
     }
     files.push(...(statSync(abs).isDirectory() ? collectNudoFiles(abs) : [abs]));
@@ -280,6 +277,13 @@ export function registerHealthCommand(program: Command): void {
     .option("--from <paths...>", "Usage-site files for freeze-drift detection")
     .option("--json", "Output as JSON")
     .action(async (paths: string[], opts: { watch?: boolean; from?: string[]; json?: boolean }) => {
+      // BUG-024：--from variadic 吞噬其后的位置参数——
+      // paths 空且 --from 非空时定向 usage error
+      // （否则静默退化为扫描 cwd，范围错误）
+      if (paths.length === 0 && opts.from?.length) {
+        variadicSwallowError("health", ["--from"]);
+        return;
+      }
       const fromPaths = opts.from;
       const runOneDir = async (): Promise<void> => {
         await runHealth(paths, { ...(fromPaths ? { from: fromPaths } : {}), json: opts.json });

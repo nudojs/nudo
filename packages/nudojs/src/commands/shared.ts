@@ -39,10 +39,43 @@ function usageError(message: string, fix: string): void {
 /** CLI 路径解析错误（--json 信封的 pathErrors 面；非 JSON 面走 usageError）。 */
 export type PathError = {
   path: string;
-  code: "nudo:path-not-found" | "nudo:path-empty-dir" | "nudo:path-not-target" | "nudo:path-missing-callsite";
+  code:
+    | "nudo:path-not-found"
+    | "nudo:path-empty-dir"
+    | "nudo:path-not-target"
+    | "nudo:path-missing-callsite"
+    /** BUG-023：--out 等 IO 失败（mkdir/write）——原始 errno 不进产品面 */
+    | "nudo:path-io";
   message: string;
   suggestion: string;
 };
+
+/** 产品路径面：相对 cwd 的展示路径（逃出根时回落原值）。 */
+export function displayPathOf(p: string): string {
+  const rel = relative(process.cwd(), p);
+  return rel === "" || rel.startsWith("..") ? p : rel;
+}
+
+/**
+ * BUG-024：variadic 旗标（`--from <paths...>` 等）吞噬
+ * 其后的位置参数后，paths 为空——commander 原生的
+ * "missing required argument" 不指向真实原因，这里给
+ * 定向 usage error（直指旗标 + `--` 终止符解法）。
+ */
+export function variadicSwallowError(
+  command: string,
+  flags: string[],
+): void {
+  const list = flags.join(", ");
+  const first = flags[0] ?? "--from";
+  console.error(
+    `error: \`nudo ${command}\` received no paths — variadic flag(s) ${list} consumed the following arguments`,
+  );
+  console.error(
+    `fix:  separate variadic flags from paths with \`--\` (e.g. \`nudo ${command} ${first} a.js -- b.js\`) or list paths before the flags`,
+  );
+  process.exitCode = 1;
+}
 
 /** 非 --json 面：打印 usageError 并挡 exit（历史行为）。 */
 export function reportPathErrors(errors: PathError[]): void {
@@ -259,7 +292,11 @@ export function startWatch(paths: string[], runOne: WatchRunner, label: string):
     graph = buildModuleGraph(getFiles());
   };
 
-  runAll().catch(() => {});
+  runAll().catch((err) => {
+    // BUG-023：首跑失败不得静默吞掉——否则 watch 起不来
+    // 且无任何上屏（用户只看到空输出）
+    console.error(`nudo ${label} failed to start: ${(err as Error).message}`);
+  });
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   const watchTarget = isDir ? primary : dirname(primary);

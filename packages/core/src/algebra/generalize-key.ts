@@ -135,6 +135,9 @@ export function collectPredVars(p: Pred, acc: Set<string>): void {
     case "typeof":
       collectTermVars(p.t, acc);
       return;
+    case "assumeFinite":
+      collectTermVars(p.t, acc);
+      return;
   }
 }
 

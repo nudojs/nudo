@@ -25,6 +25,7 @@ import { formatAbs } from "../format.ts";
 import { transpile, transpileExpression, runtimeImportOf } from "./transpile.ts";
 import { HOST_INTRINSIC_SET } from "./transpile/intrinsics.ts";
 import { NudoUnsupportedError } from "./unsupported.ts";
+import { drainClassCollisions, beginClassEpoch } from "./class-registry.ts";
 import { stripStaticExportDecls } from "./export-names.ts";
 import { errorTypeAbs, throwPayloadOf } from "./may-throw.ts";
 import { drainPromiseMicros } from "../builtins.ts";
@@ -517,6 +518,10 @@ function runTranspiledInner(
   const ret = `return { ...__nudoExports, ...${cjsMerge}, ${names.join(", ")} };`;
   const fn = new Function(...argNames, `${js}\n${ret}`);
   setEvalBindingSink(bindings);
+  // BUG-026：开新求值 epoch——同名类碰撞只在
+  // 本 run 内判定（跨 run 重注册是常态，
+  // last-wins 覆盖语义见 class-registry.ts）
+  beginClassEpoch();
   try {
     const result = fn(...args) as Record<string, unknown>;
     runBindings.set(result, bindings);
@@ -525,6 +530,19 @@ function runTranspiledInner(
     setEvalBindingSink(null);
     // 每次求值出口排空微队列：模块级 Promise.then 不得窜到后续文件的调用窗口
     drainPromiseMicros();
+    // BUG-026：同名类碰撞观测——裸名键注册表消歧
+    // 失败（不同形 spec 同名注册）排进回落观测面，
+    // 不再静默 clobber（查找侧无法消歧：brand 名
+    // 即查找键；同形重注册是重评估语义，不在面）
+    for (const c of drainClassCollisions()) {
+      noteEvalFallback(
+        new NudoUnsupportedError(
+          "class-collision",
+          undefined,
+          `class '${c.name}' registered again with a different shape (${c.previous} -> ${c.next}); name-keyed lookup may resolve to either definition`,
+        ),
+      );
+    }
   }
 }
 
@@ -633,7 +651,7 @@ export type TranspiledCallResult = {
   throws: Abs;
 };
 
-function isAbsVal(v: unknown): v is Abs {
+export function isAbsVal(v: unknown): v is Abs {
   return !!v && typeof v === "object" && "shape" in (v as object) && "conf" in (v as object);
 }
 

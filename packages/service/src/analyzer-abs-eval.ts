@@ -313,18 +313,31 @@ export function callRecordFromAbsCall(
     args: Abs[];
     result: Abs;
     callLoc?: { line: number; column: number };
+    /** BUG-028：省略 = producer 缺陷——fail-closed
+     * （throwsAbs=unknown，不当干净成功；类型级
+     * 执法见 EvalCallRecord.threw 必填） */
     threw?: boolean;
   },
   impMap?: Map<string, { modulePath: string; exportName: string }>,
 ): CallRecord {
   const argAbs = r.args.map(safeAbsOrUnknown);
-  const threw = !!r.threw;
+  const threw = r.threw === true;
+  // threw 省略：无法区分成功 / 异常——throws 域
+  // 升 unknown（may-throw anything），不把 payload
+  // 当干净成功结果（isLeakedCallRecord 只查
+  // never+never，拦不住「payload 作 result +
+  // never 作 throws」的组合）
+  const threwUnknown = r.threw === undefined;
   const thrownOrResult = safeAbsOrUnknown(r.result);
   const rec: CallRecord = {
     fnName: r.fnName,
     argAbs,
     resultAbs: threw ? neverAbs : thrownOrResult,
-    throwsAbs: threw ? thrownOrResult : neverAbs,
+    throwsAbs: threw
+      ? thrownOrResult
+      : threwUnknown
+        ? absUnknown
+        : neverAbs,
     callLoc: r.callLoc,
   };
   const imp =

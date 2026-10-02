@@ -19,6 +19,8 @@ import {
   startWatch,
   reemitUpdate,
   runAbsView,
+  displayPathOf,
+  variadicSwallowError,
   type EmitCasesOptions,
   type PathError,
 } from "./shared.ts";
@@ -81,13 +83,13 @@ async function runTest(
     else process.exitCode = 0;
   } else if (opts.abs) {
     // 观察面仍走 abs，但声明断言失败必须可见 + 挡 exit（design §1.3 / §0）
-    const report = buildTestReport(filePath, result);
+    const report = buildTestReport(displayPathOf(filePath), result);
     await runAbsView(filePath, {});
     console.log("");
     console.log(formatTestReport(report));
     if (report.failed > 0) process.exitCode = 1;
   } else {
-    const report = buildTestReport(filePath, result);
+    const report = buildTestReport(displayPathOf(filePath), result);
     console.log(formatTestReport(report));
     if (report.failed > 0) process.exitCode = 1;
   }
@@ -131,7 +133,7 @@ export function registerTestCommand(program: Command): void {
   program
     .command("test")
     .description("Report every inferred case (call@/entry@ + debug witnesses); assert declared expectations")
-    .argument("<paths...>", "File(s) or directory(s)")
+    .argument("[paths...]", "File(s) or directory(s)")
     .option("--watch, -w", "Watch files and re-run test on change")
     .option("--from <paths...>", "Usage-site files whose calls become synthesized cases")
     .option("--freeze [mode]", "Solidify call-site witnesses as @nudo:case (mode: update | add; add is the default when the value is omitted)")
@@ -152,6 +154,18 @@ export function registerTestCommand(program: Command): void {
           abs?: boolean;
         },
       ) => {
+        // BUG-024：--from variadic 吞噬其后的位置参数——
+        // paths 空且 --from 非空时定向 usage error
+        // （直指旗标 + `--` 终止符解法）
+        if (paths.length === 0) {
+          if (opts.from?.length) {
+            variadicSwallowError("test", ["--from"]);
+            return;
+          }
+          console.error("Usage error: `nudo test` needs at least one path.");
+          process.exitCode = 1;
+          return;
+        }
         const targets: string[] = [];
         const pathErrors: PathError[] = [];
         for (const p of paths) {

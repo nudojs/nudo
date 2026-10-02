@@ -6,6 +6,7 @@
  */
 import { readFileSync, existsSync, statSync } from "node:fs";
 import { dirname, resolve as resolvePath, join } from "node:path";
+import { sanitizeErrorMessage } from "./sanitize.ts";
 import {
   analyzeFile,
   analyzeFileAsync,
@@ -499,7 +500,13 @@ export type OpenDocumentLike = {
 export type { LspDiagnostic };
 
 export type ValidateTextDeps = {
-  sendDiagnostics: (params: { uri: string; diagnostics: LspDiagnostic[] }) => void;
+  /**
+   * 发布诊断。version = 本次 validate 启动时的文档版本（LSP
+   * PublishDiagnosticsParams.version，3.15+ 可选）：宿主客户端
+   * 据此丢弃陈旧发布（BUG-021/S5-003——慢分析 + 防抖窗口内
+   * 旧文本诊断不得挂到新 buffer）。
+   */
+  sendDiagnostics: (params: { uri: string; diagnostics: LspDiagnostic[]; version?: number }) => void;
   /** Nudo-file gate; when omitted every uri is validated. */
   isNudoUri?: (uri: string) => boolean;
   getActiveCases?: (uri: string) => Map<string, number>;
@@ -672,7 +679,7 @@ export function checkToLspDiagnostics(
       {
         severity: DiagnosticSeverity.Error,
         range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
-        message: `Check error: ${(err as Error).message}`,
+        message: `Check error: ${sanitizeErrorMessage((err as Error).message)}`,
         source: "nudo-check",
         code: "nudo:internal",
       },
@@ -699,7 +706,14 @@ export async function validateText(
   // A8：编辑风暴取消——同文件新一轮 validate 启动后，旧 await 不得发布陈旧诊断
   const key = cacheKey(filePath);
   const gen = bumpValidateGeneration(key);
-  const stillCurrent = (): boolean => validateGeneration.get(key) === gen;
+  // BUG-021/S5-003：generation 只在 validate 启动 / didClose 时 bump，
+  // 文档内容变更（didChange）不 bump——慢分析 + 防抖窗口内旧结果会
+  // 发布到已更新的 buffer（squiggle 错位 / 幽灵报错）。补文档
+  // version 门：打开中的文档当前 version 必须等于本次启动时的
+  // version（宿主未提供文档跟踪时回落 generation-only 旧口径）。
+  const stillCurrent = (): boolean =>
+    validateGeneration.get(key) === gen &&
+    (deps.getOpenDocumentByPath?.(key)?.version ?? version) === version;
 
   // 零注解文件 gate 放行例外：磁盘上存在同名侧车（interface 档主场景——
   // emit 后的 generated 段 + drift/domain-exceeds 诊断都以侧车为契约源）。
@@ -710,7 +724,7 @@ export async function validateText(
     !isNodeModulesPath(sidecarPath) &&
     existsSync(sidecarPath);
   if (deps.isNudoUri && !deps.isNudoUri(uri) && !hasSidecar) {
-    if (stillCurrent()) deps.sendDiagnostics({ uri, diagnostics: [] });
+    if (stillCurrent()) deps.sendDiagnostics({ uri, diagnostics: [], version });
     return;
   }
 
@@ -753,10 +767,11 @@ export async function validateText(
       if (!stillCurrent()) return;
       deps.sendDiagnostics({
         uri,
+        version,
         diagnostics: [{
           severity: DiagnosticSeverity.Error,
           range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
-          message: `Analysis error: ${(err as Error).message}`,
+          message: `Analysis error: ${sanitizeErrorMessage((err as Error).message)}`,
           source: "nudo",
         }],
       });
@@ -792,9 +807,10 @@ export async function validateText(
   // 通道（analyzeFileUncachedInner drain）——按 code+message 去重，避免双报
   const seenCheck = new Set(checkDiags.map((d) => `${d.code ?? ""}\0${d.message}`));
   const dedupedEval = evalDiags.filter((d) => !seenCheck.has(`${d.code ?? ""}\0${d.message}`));
-  // P2：发布前再确认 generation，避免 check 路径上的 await 竞态覆盖更新 push
+  // 发布前再确认 generation + 文档 version，避免 check 路径上的
+  // await 竞态覆盖更新 push（BUG-021/S5-003）
   if (!stillCurrent()) return;
-  deps.sendDiagnostics({ uri, diagnostics: [...checkDiags, ...dedupedEval] });
+  deps.sendDiagnostics({ uri, version, diagnostics: [...checkDiags, ...dedupedEval] });
 
   if (!propagate || !deps.getOpenDocumentByPath) return;
 

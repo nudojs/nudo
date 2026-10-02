@@ -246,6 +246,9 @@ function foo(x) {
         // b changes (buffer + disk, so a's import resolution sees the new body)
         evalText = bV2;
         bVersion = 2;
+        // 宿主 didChange 会先更新文档跟踪器 version 再触发重验——
+        // fake 同步建模（否则 validateText 的 version 门判定陈旧）
+        openDocs.set(bPath, { uri: uriOf(bPath), version: bVersion, getText: () => evalText });
         writeFileSync(bPath, bV2);
         await validateText(bPath, uriOf(bPath), evalText, bVersion, deps, true);
 
@@ -361,6 +364,7 @@ function foo(x) {
         // 依赖边携带者变磁盘不可读（chmod 不改 mtime/size → 缓存条目仍命中），b 内容换版
         chmodSync(aPath, 0o000);
         evalText = bV2;
+        openDocs.set(bPath, { uri: uriOf(bPath), version: 2, getText: () => evalText });
         writeFileSync(bPath, bV2);
         await validateText(bPath, uriOf(bPath), evalText, 2, deps, true);
 
@@ -429,6 +433,7 @@ function foo(x) {
 
         // 磁盘 + 缓冲同步改写 a（size 变化）→ 失效重读，缓存边集换成 a→[c]
         aText = aV2;
+        openDocs.set(aPath, { uri: uriOf(aPath), version: 2, getText: () => aText });
         writeFileSync(aPath, aV2);
         await validateText(aPath, uriOf(aPath), aV2, 2, deps, true);
         expect(new Set(moduleGraphCache.get(aPath)!.edges)).toEqual(new Set([cPath]));
@@ -442,6 +447,7 @@ function foo(x) {
 
         // 新依赖 c 变化：传播沿新边 a→c 重验 a，抓到 h(42) 的 no-method
         cText = cV2;
+        openDocs.set(cPath, { uri: uriOf(cPath), version: 2, getText: () => cText });
         writeFileSync(cPath, cV2);
         await validateText(cPath, uriOf(cPath), cText, 2, deps, true);
         expect(publishes.get(uriOf(aPath)) ?? 0).toBe(aPublishesBefore + 1);

@@ -24,6 +24,7 @@ import {
   resolveTargetsCollect,
   startWatch,
   runAbsView,
+  variadicSwallowError,
   type PathError,
 } from "./shared.ts";
 import {
@@ -33,6 +34,7 @@ import {
   mergeIgnoreThrows,
   parseIgnoreThrows,
   parseWhatIfBindings,
+  profileEntryThrows,
   resolveEntryThrows,
   validateGateFlags,
   type EntryThrowsMode,
@@ -243,8 +245,15 @@ async function runCheck(
           ? { asOverrides: reps.asValues, asOverrideTargets: reps.asTargets }
           : {}),
       };
-    } catch {
-      /* optional: injection setup failed — skip injection (fail-closed) */
+    } catch (err) {
+      // BUG-023：注入装配失败不得静默跳过——无注入的分析
+      // 会把未 mock 的模块图当作事实（假绿：签名看似通过
+      // 实则基于错误依赖）。上屏并挡 exit（门禁为红），
+      // 分析仍跑（观察面完整）。
+      console.error(
+        `error: eval injection setup failed: ${(err as Error).message}`,
+      );
+      process.exitCode = 1;
     }
     algebraReport = checkSource(filePath, source, pTrue, {
       loadModule,
@@ -410,7 +419,7 @@ async function runCheckFix(opts: {
   ignoreThrows?: string[];
   entryThrows?: "error" | "warning" | "off";
   profile?: GateProfile;
-}): Promise<void> {
+}): Promise<{ planned: number; written: number; residualErrors: number }> {
   const core = await import("@nudojs/core");
   const { checkSource, pTrue, sidecarPathOf, actionsForIssue } = core;
   type CheckAction = import("@nudojs/core").CheckAction;
@@ -423,8 +432,19 @@ async function runCheckFix(opts: {
   const { writeFileSync, readFileSync, existsSync } = await import("node:fs");
 
   const only = opts.only && opts.only.length > 0 ? new Set(opts.only) : undefined;
+  // BUG-022/S5-004：profile 是 L2 预设（adoption→warning /
+  // strict→error），显式 --entry-throws 优先——与 runCheck 的
+  // resolveEntryThrows 同口径（本路径不读项目配置，CLI 层
+  // 已解析 entryThrows；checkSource 只认 entryThrows）。
+  const entryThrowsResolved =
+    opts.entryThrows ??
+    (opts.profile ? profileEntryThrows(opts.profile) : undefined);
   let planned = 0;
   let written = 0;
+  // BUG-022/S5-004：门禁语义——物化后残余 error 级诊断
+  // 计数（对物化后的源码重跑 checkSource；dry-run 时反映
+  // 「应用这些编辑后」仍剩多少 error）。--fix 不再绕过门禁。
+  let residualErrors = 0;
 
   for (const file of opts.targets) {
     let source: string;
@@ -437,7 +457,7 @@ async function runCheckFix(opts: {
       loadModule: defaultLoadModule,
       fromFile: file,
       ...(opts.ignoreThrows ? { ignoreThrows: opts.ignoreThrows } : {}),
-      ...(opts.entryThrows ? { entryThrows: opts.entryThrows } : {}),
+      ...(entryThrowsResolved ? { entryThrows: entryThrowsResolved } : {}),
       skips: collectSkipReturns(source),
     });
     const sidecar = sidecarPathOf(file);
@@ -514,6 +534,21 @@ async function runCheckFix(opts: {
         }
       }
     }
+
+    // BUG-022/S5-004：门禁语义——本文件有 error 级诊断时，
+    // 对物化后的源码重跑 checkSource 计残余 error（dry-run
+    // 反映「应用这些编辑后」的剩余；侧车编辑未写盘时以磁盘
+    // 侧车为准）。残余 > 0 → --fix 末尾 exit 1，与 check 同契约。
+    if (report.issues.some((i) => i.severity === "error")) {
+      const post = checkSource(file, source, pTrue, {
+        loadModule: defaultLoadModule,
+        fromFile: file,
+        ...(opts.ignoreThrows ? { ignoreThrows: opts.ignoreThrows } : {}),
+        ...(entryThrowsResolved ? { entryThrows: entryThrowsResolved } : {}),
+        skips: collectSkipReturns(source),
+      });
+      residualErrors += post.issues.filter((i) => i.severity === "error").length;
+    }
   }
 
   const mode = opts.write ? "written" : "planned (dry-run)";
@@ -525,13 +560,17 @@ async function runCheckFix(opts: {
       "hint: only [fix]/[adjust] are auto-applied; [silence]/[review] need a human (or LSP quickfix)",
     );
   }
+  if (residualErrors > 0) {
+    console.log(`check --fix: ${residualErrors} residual error(s) remain — gate stays red`);
+  }
+  return { planned, written, residualErrors };
 }
 
 export function registerCheckCommand(program: Command): void {
   program
     .command("check")
     .description("Gate contracts + entry throws; print signatures (CI). Day 0 observation lives here.")
-    .argument("<paths...>", "File(s) or directory(s) to check")
+    .argument("[paths...]", "File(s) or directory(s) to check")
     .option("--watch, -w", "Watch files and re-run check on change")
     .option("--json", "Emit stable CheckJson (1 file) or CheckJsonMulti envelope (N files) for CI / Agent")
     .option("--gha", "GitHub Actions inline annotations (::error/::warning). Auto when GITHUB_ACTIONS=true")
@@ -591,6 +630,46 @@ export function registerCheckCommand(program: Command): void {
           dryRun?: boolean;
         },
       ) => {
+        // BUG-024：variadic 旗标（--from/--assume/--what-if/--only）
+        // 吞噬其后的位置参数——paths 空且任一 variadic 非空时
+        // 定向 usage error（直指旗标 + `--` 终止符解法；
+        // commander 原生 "missing required argument" 不指向原因）
+        if (paths.length === 0) {
+          const swallowed = [
+            ...(opts.from?.length ? ["--from"] : []),
+            ...(opts.assume?.length ? ["--assume"] : []),
+            ...(opts.whatIf?.length ? ["--what-if"] : []),
+            ...(opts.only?.length ? ["--only"] : []),
+          ];
+          if (swallowed.length > 0) {
+            variadicSwallowError("check", swallowed);
+            return;
+          }
+          console.error("Usage error: `nudo check` needs at least one path.");
+          process.exitCode = 1;
+          return;
+        }
+        // BUG-022/S5-004：--fix 是物化工具面（#69），不得与观察/机器面
+        // 旗标静默组合——旧实现早退在门禁 exit 逻辑前，--json/--abs/
+        // --watch 等被静默忽略（机器面 stdout 不是 CheckJson）。
+        // 方案 A：--fix 保持门禁语义（残余 error 仍 exit 1），
+        // 组合旗标显式 usage error。
+        if (
+          opts.fix &&
+          (opts.json ||
+            opts.abs ||
+            opts.gha ||
+            opts.gitlab ||
+            opts.watch ||
+            opts.verbose ||
+            (opts.whatIf && opts.whatIf.length > 0))
+        ) {
+          console.error(
+            "error: --fix cannot be combined with --json/--abs/--gha/--gitlab/--watch/--verbose/--what-if (materialization face; the CI gate is plain `nudo check`)",
+          );
+          process.exitCode = 1;
+          return;
+        }
         // AI3：what-if 与门禁分离——只回答「假设下 target 是什么」
         if (opts.whatIf && opts.whatIf.length > 0) {
           const targets: string[] = [];
@@ -656,7 +735,9 @@ export function registerCheckCommand(program: Command): void {
 
         // #69：`check --fix` 批量物化（默认 dry-run 打 diff；--write 落盘）
         if (opts.fix) {
-          await runCheckFix({
+          // BUG-022/S5-004：门禁语义——--fix 不再是旁路：
+          // 残余 error 诊断按 check 同契约 exit 1
+          const fix = await runCheckFix({
             targets,
             only: opts.only,
             write: opts.write === true,
@@ -664,6 +745,9 @@ export function registerCheckCommand(program: Command): void {
             entryThrows,
             profile,
           });
+          if (fix.residualErrors > 0) {
+            process.exitCode = 1;
+          }
           return;
         }
 

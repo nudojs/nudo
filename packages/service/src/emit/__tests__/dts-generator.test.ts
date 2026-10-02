@@ -161,6 +161,37 @@ describe("absToTSType", () => {
     expect(absToTSType(neverAbs())).toBe("never");
     expect(absToTSType(unknownAbs())).toBe("unknown");
   });
+
+  it("fn 非数组 rest 参数提升为 (T)[]（合法 TS，BUG-020）", () => {
+    const f = fnAbs(["...args"], num(), [unionOf(num(), str())]);
+    expect(absToTSType(f)).toBe("(...args: (number | string)[]) => number");
+  });
+
+  it("fn tuple rest 参数数组化（合法 TS，BUG-020）", () => {
+    const f = fnAbs(["...args"], num(), [tupleOf([num()])]);
+    // 元组类型在数组元素位无需额外括号（sum/fn 才需要，wrapComplexAbs 口径）
+    expect(absToTSType(f)).toBe("(...args: [number][]) => number");
+  });
+
+  it("fn prim rest 参数产 number[]（无冗余括号，BUG-020）", () => {
+    const f = fnAbs(["...args"], num(), [num()]);
+    expect(absToTSType(f)).toBe("(...args: number[]) => number");
+  });
+
+  it("fn 缺 paramTypes 的 rest 保持 unknown[]（BUG-020 回归）", () => {
+    const f = fnAbs(["...args"], num());
+    expect(absToTSType(f)).toBe("(...args: unknown[]) => number");
+  });
+
+  it("optional 形参标签保留 ?（BUG-020）", () => {
+    const f = fnAbs(["x", "options?"], num(), [num(), objOf({})]);
+    expect(absToTSType(f)).toBe("(x: number, options?: {}) => number");
+  });
+
+  it("非法 optional 名仍落 argN（BUG-020 回归）", () => {
+    const f = fnAbs(["a-b?"], num(), [num()]);
+    expect(absToTSType(f)).toBe("(arg0: number) => number");
+  });
 });
 
 describe("generateDts", () => {

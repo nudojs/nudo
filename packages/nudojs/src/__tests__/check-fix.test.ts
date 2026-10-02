@@ -99,3 +99,53 @@ describe("check --fix", () => {
     expect(sc).not.toContain("shape({ })");
   });
 });
+
+describe("BUG-022: check --fix 门禁语义（S5-004 方案A）", () => {
+  const FIXTURE = `export function staticName(node) {
+  return node.type;
+}
+`;
+
+  it("dry-run keeps the gate red: residual error exits 1", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-fix-gate-"));
+    const file = join(dir, "helper.js");
+    writeFileSync(file, FIXTURE, "utf-8");
+    // dry-run 不落盘 → 磁盘仍红 → 残余 error → exit 1
+    const r = runCli(["check", file, "--fix"], dir);
+    expect(r.code).toBe(1);
+    const out = r.stdout + r.stderr;
+    expect(out).toContain("residual error");
+  });
+
+  it("--write turns the gate green when the fix resolves the error", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-fix-gatew-"));
+    const file = join(dir, "helper.js");
+    writeFileSync(file, FIXTURE, "utf-8");
+    const r = runCli(["check", file, "--fix", "--write"], dir);
+    const out = r.stdout + r.stderr;
+    expect(out).toContain("check --fix");
+    // 侧车物化后复检无 error → exit 0（门禁转绿）
+    expect(r.code).toBe(0);
+  });
+
+  it("--fix with --json is a usage error (face separation)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-fix-gatej-"));
+    const file = join(dir, "helper.js");
+    writeFileSync(file, FIXTURE, "utf-8");
+    const r = runCli(["check", file, "--fix", "--json"], dir);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("cannot be combined");
+  });
+
+  it("--profile adoption downgrades L2 to warning: dry-run exits 0", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-fix-gatep-"));
+    const file = join(dir, "helper.js");
+    writeFileSync(file, FIXTURE, "utf-8");
+    // adoption = L2 entry-may-throw → warning：无 error 级
+    // 诊断 → 残余 0 → exit 0（profile 必须流入 fix 路径）
+    const r = runCli(["check", file, "--fix", "--profile", "adoption"], dir);
+    const out = r.stdout + r.stderr;
+    expect(out).toContain("check --fix");
+    expect(r.code).toBe(0);
+  });
+});

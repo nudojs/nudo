@@ -26,7 +26,10 @@ export type EvalCallRecord = {
   args: Abs[];
   result: Abs;
   callLoc?: { line: number; column: number };
-  threw?: boolean;
+  /** BUG-028：必填——漏设时异常 payload 会被当成功结果
+   * （resultAbs=payload、throwsAbs=never，isLeakedCallRecord
+   * 的 never+never 拦不住）。5 处 emitter 均已显式设置。 */
+  threw: boolean;
 };
 
 /** pureCallMemo 内层 Map 上界（与 pureMemo 同口径） */

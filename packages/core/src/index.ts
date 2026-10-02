@@ -109,7 +109,7 @@ export {
   getImplicationOracle, getPropFlags, getSlot,
   getTerm, gt, gtNum, hostBuiltinCtorName, implies, instantiateConstraint,
   instantiateReturn, interfaceDiagCount, interfaceSourceOf,
-  interfaceTierOf, isAbsApplyResult, isArrMutator, isBigPrim, isDefinitelyFalse, makeAbsApplyResult,
+  interfaceTierOf, isAbsApplyResult, isAbsVal, isArrMutator, isBigPrim, isDefinitelyFalse, makeAbsApplyResult,
   isDefinitelyTrue, isErrorCtorName, isExactLit, isIntFlag, isMapAbs,
   isNodeModulesPath, isNudoBreak, isNudoConstraint, isNudoContinue,
   isNudoReturn, isNudoThrow, isNullProtoObj, isNullishLitAbs, isNumPrim,
