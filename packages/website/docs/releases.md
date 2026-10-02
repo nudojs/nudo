@@ -11,219 +11,423 @@ This page keeps each package’s **current** notes only. Full history: [Full rel
 
 | Package | Current version |
 |----------|-----------------|
-| `@nudojs/core` | 1.5.0 |
-| `@nudojs/service` | 1.4.0 |
-| `nudojs (CLI)` | 1.2.0 |
-| `@nudojs/parser` | 1.2.1 |
-| `@nudojs/lsp` | 1.2.0 |
-| `@nudojs/env` | 0.4.13 |
-| `@nudojs/harvester` | 0.2.19 |
-| `vite-plugin-nudo` | 0.4.14 |
-| `nudo-vscode` | 0.3.18 |
+| `@nudojs/core` | 1.6.0 |
+| `@nudojs/service` | 1.5.0 |
+| `nudojs (CLI)` | 1.3.0 |
+| `@nudojs/parser` | 1.3.0 |
+| `@nudojs/lsp` | 1.3.0 |
+| `@nudojs/env` | 0.4.14 |
+| `@nudojs/harvester` | 0.3.0 |
+| `vite-plugin-nudo` | 0.4.15 |
+| `nudo-vscode` | 0.3.19 |
 
 **Jump to package:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.5.0 {#pkg-core}
+## @nudojs/core 1.6.0 {#pkg-core}
+
+## 1.6.0
+
+### Minor Changes
+
+- 2f9717b: 仓库级正确性批次（fix-10，19 项修复 + 3 项设计缺陷修复）
+  
+  安全与正确性：
+  - 类型表达式 AST 白名单，阻断 @nudo:case/@nudo:as RCE（P0）
+  - export/绑定名统一消毒（保留字/撞名）
+  - 槽位/导出表全部改自有属性读，挡 Object.prototype 成员
+  
+  类型系统：
+  - tuple rest 槽在 leq/widen/运行时/schema/dts 全链路生效
+  - x++/x-- 与 +=/-= 同源传播 term/pred/Φ 约束
+  - 键通道字面量区分 -0/0（litKeyString）
+  - 投影/格式出口统一 ProjectionBudget：环与超深截断可观测
+  
+  CLI 门禁与契约：
+  - health --from 路径错误并入 pathErrors，ok↔exit 单一来源
+  - migrate verify 与 health 传 skips，与 nudo check 判定同源
+  - 畸形 JSDoc 指令不再静默丢弃/吞行/抛宿主异常
+  - case 实参递归深度上限 32（DoS 防护）
+  
+  服务层：
+  - 缓存上限改为显式>env>project，env 形参每次生效
+  - 会话 LRU 与 BoundedLruMap 对齐（覆盖写刷新位序，max=0 读 miss）
+  - 模块缓存条目携带子树内容指纹，传递失效内聚（DESIGN-002）
+  - sidecar 契约身份=导出名、绑定名可别名，保留字/string 导出安全发射（DESIGN-003）
+  - @nudo:import 别名查导出表用原始名，miss 出诊断
+  
+  解析与诊断：
+  - eval 诊断补 rest/默认值/具名表达式声明与计算键引用
+  - ambient 侧车反查含 .nudo.mjs，后缀集合单一事实源
+  
+  S2/S5/S6 跟踪批次（BUG-017–028，主会话直修）：
+  - 类型推断：collectPredVars 收 assumeFinite 约束；eqLit
+    通道 tagged 化（eq(x, lit(undefined)) 可投影）；
+    非有限界（NaN/±Infinity）不投影；fn rest 非数组类型
+    提升为 (T)[]；可选参数名保留 `?`
+  - 门禁与 CLI：check --fix 保持门禁语义（残余 error
+    exit 1，旗标组合 usage error）；variadic 旗标吞位置
+    参数 → 定向 usage error + `--` 终止符；export 走
+    PathError 面（nudo:path-* + nudo:path-io）；
+    findProjectConfig 解析失败诊断 + 停步
+  - 求值引擎：注入表收集异常 fail-closed（绝不半张表）；
+    同名类碰撞 epoch 检测 + 回落观测；EvalCallRecord.threw
+    必填 + 桥接 fail-closed（threw 省略 → throwsAbs
+    unknown）；tryEvalCall 显式 isAbsVal 守卫
+  - LSP / 错误面：validateText 文档 version 门（陈旧
+    分析不发布）；诊断 / agent 错误 message 绝对路径
+    脱敏（家目录→~、根→.）；注入装配失败上屏挡 exit
+  - 观察面：standard-schema 缺键 / 显式 undefined 区分；
+    dts 投影可选参数名、fn rest TS 合法性
+
+Older versions (22) → [Full release history](./releases-history.md#pkg-core)
+
+## @nudojs/service 1.5.0 {#pkg-service}
 
 ## 1.5.0
 
 ### Minor Changes
 
-- 64ca356: feat: clamp bounds + scalar-over-sum + action-map quickfixes (#68 #69)
+- 2f9717b: 仓库级正确性批次（fix-10，19 项修复 + 3 项设计缺陷修复）
   
-  ## #68 inference
+  安全与正确性：
+  - 类型表达式 AST 白名单，阻断 @nudo:case/@nudo:as RCE（P0）
+  - export/绑定名统一消毒（保留字/撞名）
+  - 槽位/导出表全部改自有属性读，挡 Object.prototype 成员
   
-  - `Math.min` / `Math.max` / `Math.round` (and floor/ceil/trunc) propagate
-    operand numeric bounds: `max(0, min(100, n))` derives `[0, 100]`.
-  - NaN is explicit (option 1): a possibly-NaN operand yields `NaN | number@bounds`,
-    so clamp contracts stay honest; `if (Number.isNaN(n)) return …` narrows the
-    false arm (`ne(n, NaN)`) and the guarded clamp is provable.
-  - Scalar return contracts now distribute over sum arms like shape/array
-    (`nullable(c)` + multi-return `null | number` is provable). Gold-FP
-    protection kept: any-widened bare-prim arms downgrade siblings to
-    `unproven-return` warnings instead of errors.
+  类型系统：
+  - tuple rest 槽在 leq/widen/运行时/schema/dts 全链路生效
+  - x++/x-- 与 +=/-= 同源传播 term/pred/Φ 约束
+  - 键通道字面量区分 -0/0（litKeyString）
+  - 投影/格式出口统一 ProjectionBudget：环与超深截断可观测
   
-  ## #69 DX
+  CLI 门禁与契约：
+  - health --from 路径错误并入 pathErrors，ok↔exit 单一来源
+  - migrate verify 与 health 传 skips，与 nudo check 判定同源
+  - 畸形 JSDoc 指令不再静默丢弃/吞行/抛宿主异常
+  - case 实参递归深度上限 32（DoS 防护）
   
-  - `actionsForIssue` kinds are materialized as LSP quickfixes with
-    `[fix]` / `[silence]` / `[review]` / `[adjust]` / `[scaffold]` titles.
-  - `nudo check --fix [--only <code>] [--write]` reuses the same edit layer
-    (default dry-run prints unified diffs).
-  - Body-read fields auto-fill types from usage (`node.type === "x"` →
-    `string()`, arith → `number()`, no evidence → `any()`); never emit empty
-    `shape({})`.
-  - L2 `entry-may-throw` suggestions include a copyable sidecar clause.
+  服务层：
+  - 缓存上限改为显式>env>project，env 形参每次生效
+  - 会话 LRU 与 BoundedLruMap 对齐（覆盖写刷新位序，max=0 读 miss）
+  - 模块缓存条目携带子树内容指纹，传递失效内聚（DESIGN-002）
+  - sidecar 契约身份=导出名、绑定名可别名，保留字/string 导出安全发射（DESIGN-003）
+  - @nudo:import 别名查导出表用原始名，miss 出诊断
+  
+  解析与诊断：
+  - eval 诊断补 rest/默认值/具名表达式声明与计算键引用
+  - ambient 侧车反查含 .nudo.mjs，后缀集合单一事实源
+  
+  S2/S5/S6 跟踪批次（BUG-017–028，主会话直修）：
+  - 类型推断：collectPredVars 收 assumeFinite 约束；eqLit
+    通道 tagged 化（eq(x, lit(undefined)) 可投影）；
+    非有限界（NaN/±Infinity）不投影；fn rest 非数组类型
+    提升为 (T)[]；可选参数名保留 `?`
+  - 门禁与 CLI：check --fix 保持门禁语义（残余 error
+    exit 1，旗标组合 usage error）；variadic 旗标吞位置
+    参数 → 定向 usage error + `--` 终止符；export 走
+    PathError 面（nudo:path-* + nudo:path-io）；
+    findProjectConfig 解析失败诊断 + 停步
+  - 求值引擎：注入表收集异常 fail-closed（绝不半张表）；
+    同名类碰撞 epoch 检测 + 回落观测；EvalCallRecord.threw
+    必填 + 桥接 fail-closed（threw 省略 → throwsAbs
+    unknown）；tryEvalCall 显式 isAbsVal 守卫
+  - LSP / 错误面：validateText 文档 version 门（陈旧
+    分析不发布）；诊断 / agent 错误 message 绝对路径
+    脱敏（家目录→~、根→.）；注入装配失败上屏挡 exit
+  - 观察面：standard-schema 缺键 / 显式 undefined 区分；
+    dts 投影可选参数名、fn rest TS 合法性
 
-Older versions (21) → [Full release history](./releases-history.md#pkg-core)
+### Patch Changes
 
-## @nudojs/service 1.4.0 {#pkg-service}
+- Updated dependencies [2f9717b]
+  - @nudojs/core@1.6.0
+  - @nudojs/parser@1.3.0
+  - @nudojs/harvester@0.3.0
+  - @nudojs/env@0.4.14
 
-## 1.4.0
+Older versions (24) → [Full release history](./releases-history.md#pkg-service)
+
+## nudojs (CLI) 1.3.0 {#pkg-nudojs}
+
+## 1.3.0
 
 ### Minor Changes
 
-- 64ca356: feat: clamp bounds + scalar-over-sum + action-map quickfixes (#68 #69)
+- 2f9717b: 仓库级正确性批次（fix-10，19 项修复 + 3 项设计缺陷修复）
   
-  ## #68 inference
+  安全与正确性：
+  - 类型表达式 AST 白名单，阻断 @nudo:case/@nudo:as RCE（P0）
+  - export/绑定名统一消毒（保留字/撞名）
+  - 槽位/导出表全部改自有属性读，挡 Object.prototype 成员
   
-  - `Math.min` / `Math.max` / `Math.round` (and floor/ceil/trunc) propagate
-    operand numeric bounds: `max(0, min(100, n))` derives `[0, 100]`.
-  - NaN is explicit (option 1): a possibly-NaN operand yields `NaN | number@bounds`,
-    so clamp contracts stay honest; `if (Number.isNaN(n)) return …` narrows the
-    false arm (`ne(n, NaN)`) and the guarded clamp is provable.
-  - Scalar return contracts now distribute over sum arms like shape/array
-    (`nullable(c)` + multi-return `null | number` is provable). Gold-FP
-    protection kept: any-widened bare-prim arms downgrade siblings to
-    `unproven-return` warnings instead of errors.
+  类型系统：
+  - tuple rest 槽在 leq/widen/运行时/schema/dts 全链路生效
+  - x++/x-- 与 +=/-= 同源传播 term/pred/Φ 约束
+  - 键通道字面量区分 -0/0（litKeyString）
+  - 投影/格式出口统一 ProjectionBudget：环与超深截断可观测
   
-  ## #69 DX
+  CLI 门禁与契约：
+  - health --from 路径错误并入 pathErrors，ok↔exit 单一来源
+  - migrate verify 与 health 传 skips，与 nudo check 判定同源
+  - 畸形 JSDoc 指令不再静默丢弃/吞行/抛宿主异常
+  - case 实参递归深度上限 32（DoS 防护）
   
-  - `actionsForIssue` kinds are materialized as LSP quickfixes with
-    `[fix]` / `[silence]` / `[review]` / `[adjust]` / `[scaffold]` titles.
-  - `nudo check --fix [--only <code>] [--write]` reuses the same edit layer
-    (default dry-run prints unified diffs).
-  - Body-read fields auto-fill types from usage (`node.type === "x"` →
-    `string()`, arith → `number()`, no evidence → `any()`); never emit empty
-    `shape({})`.
-  - L2 `entry-may-throw` suggestions include a copyable sidecar clause.
+  服务层：
+  - 缓存上限改为显式>env>project，env 形参每次生效
+  - 会话 LRU 与 BoundedLruMap 对齐（覆盖写刷新位序，max=0 读 miss）
+  - 模块缓存条目携带子树内容指纹，传递失效内聚（DESIGN-002）
+  - sidecar 契约身份=导出名、绑定名可别名，保留字/string 导出安全发射（DESIGN-003）
+  - @nudo:import 别名查导出表用原始名，miss 出诊断
+  
+  解析与诊断：
+  - eval 诊断补 rest/默认值/具名表达式声明与计算键引用
+  - ambient 侧车反查含 .nudo.mjs，后缀集合单一事实源
+  
+  S2/S5/S6 跟踪批次（BUG-017–028，主会话直修）：
+  - 类型推断：collectPredVars 收 assumeFinite 约束；eqLit
+    通道 tagged 化（eq(x, lit(undefined)) 可投影）；
+    非有限界（NaN/±Infinity）不投影；fn rest 非数组类型
+    提升为 (T)[]；可选参数名保留 `?`
+  - 门禁与 CLI：check --fix 保持门禁语义（残余 error
+    exit 1，旗标组合 usage error）；variadic 旗标吞位置
+    参数 → 定向 usage error + `--` 终止符；export 走
+    PathError 面（nudo:path-* + nudo:path-io）；
+    findProjectConfig 解析失败诊断 + 停步
+  - 求值引擎：注入表收集异常 fail-closed（绝不半张表）；
+    同名类碰撞 epoch 检测 + 回落观测；EvalCallRecord.threw
+    必填 + 桥接 fail-closed（threw 省略 → throwsAbs
+    unknown）；tryEvalCall 显式 isAbsVal 守卫
+  - LSP / 错误面：validateText 文档 version 门（陈旧
+    分析不发布）；诊断 / agent 错误 message 绝对路径
+    脱敏（家目录→~、根→.）；注入装配失败上屏挡 exit
+  - 观察面：standard-schema 缺键 / 显式 undefined 区分；
+    dts 投影可选参数名、fn rest TS 合法性
 
 ### Patch Changes
 
-- Updated dependencies [64ca356]
-  - @nudojs/core@1.5.0
-  - @nudojs/env@0.4.13
-  - @nudojs/harvester@0.2.19
-  - @nudojs/parser@1.2.1
+- Updated dependencies [2f9717b]
+  - @nudojs/core@1.6.0
+  - @nudojs/service@1.5.0
+  - @nudojs/parser@1.3.0
+  - @nudojs/harvester@0.3.0
 
-Older versions (23) → [Full release history](./releases-history.md#pkg-service)
+Older versions (21) → [Full release history](./releases-history.md#pkg-nudojs)
 
-## nudojs (CLI) 1.2.0 {#pkg-nudojs}
+## @nudojs/parser 1.3.0 {#pkg-parser}
 
-## 1.2.0
+## 1.3.0
 
 ### Minor Changes
 
-- 64ca356: feat: clamp bounds + scalar-over-sum + action-map quickfixes (#68 #69)
+- 2f9717b: 仓库级正确性批次（fix-10，19 项修复 + 3 项设计缺陷修复）
   
-  ## #68 inference
+  安全与正确性：
+  - 类型表达式 AST 白名单，阻断 @nudo:case/@nudo:as RCE（P0）
+  - export/绑定名统一消毒（保留字/撞名）
+  - 槽位/导出表全部改自有属性读，挡 Object.prototype 成员
   
-  - `Math.min` / `Math.max` / `Math.round` (and floor/ceil/trunc) propagate
-    operand numeric bounds: `max(0, min(100, n))` derives `[0, 100]`.
-  - NaN is explicit (option 1): a possibly-NaN operand yields `NaN | number@bounds`,
-    so clamp contracts stay honest; `if (Number.isNaN(n)) return …` narrows the
-    false arm (`ne(n, NaN)`) and the guarded clamp is provable.
-  - Scalar return contracts now distribute over sum arms like shape/array
-    (`nullable(c)` + multi-return `null | number` is provable). Gold-FP
-    protection kept: any-widened bare-prim arms downgrade siblings to
-    `unproven-return` warnings instead of errors.
+  类型系统：
+  - tuple rest 槽在 leq/widen/运行时/schema/dts 全链路生效
+  - x++/x-- 与 +=/-= 同源传播 term/pred/Φ 约束
+  - 键通道字面量区分 -0/0（litKeyString）
+  - 投影/格式出口统一 ProjectionBudget：环与超深截断可观测
   
-  ## #69 DX
+  CLI 门禁与契约：
+  - health --from 路径错误并入 pathErrors，ok↔exit 单一来源
+  - migrate verify 与 health 传 skips，与 nudo check 判定同源
+  - 畸形 JSDoc 指令不再静默丢弃/吞行/抛宿主异常
+  - case 实参递归深度上限 32（DoS 防护）
   
-  - `actionsForIssue` kinds are materialized as LSP quickfixes with
-    `[fix]` / `[silence]` / `[review]` / `[adjust]` / `[scaffold]` titles.
-  - `nudo check --fix [--only <code>] [--write]` reuses the same edit layer
-    (default dry-run prints unified diffs).
-  - Body-read fields auto-fill types from usage (`node.type === "x"` →
-    `string()`, arith → `number()`, no evidence → `any()`); never emit empty
-    `shape({})`.
-  - L2 `entry-may-throw` suggestions include a copyable sidecar clause.
+  服务层：
+  - 缓存上限改为显式>env>project，env 形参每次生效
+  - 会话 LRU 与 BoundedLruMap 对齐（覆盖写刷新位序，max=0 读 miss）
+  - 模块缓存条目携带子树内容指纹，传递失效内聚（DESIGN-002）
+  - sidecar 契约身份=导出名、绑定名可别名，保留字/string 导出安全发射（DESIGN-003）
+  - @nudo:import 别名查导出表用原始名，miss 出诊断
+  
+  解析与诊断：
+  - eval 诊断补 rest/默认值/具名表达式声明与计算键引用
+  - ambient 侧车反查含 .nudo.mjs，后缀集合单一事实源
+  
+  S2/S5/S6 跟踪批次（BUG-017–028，主会话直修）：
+  - 类型推断：collectPredVars 收 assumeFinite 约束；eqLit
+    通道 tagged 化（eq(x, lit(undefined)) 可投影）；
+    非有限界（NaN/±Infinity）不投影；fn rest 非数组类型
+    提升为 (T)[]；可选参数名保留 `?`
+  - 门禁与 CLI：check --fix 保持门禁语义（残余 error
+    exit 1，旗标组合 usage error）；variadic 旗标吞位置
+    参数 → 定向 usage error + `--` 终止符；export 走
+    PathError 面（nudo:path-* + nudo:path-io）；
+    findProjectConfig 解析失败诊断 + 停步
+  - 求值引擎：注入表收集异常 fail-closed（绝不半张表）；
+    同名类碰撞 epoch 检测 + 回落观测；EvalCallRecord.threw
+    必填 + 桥接 fail-closed（threw 省略 → throwsAbs
+    unknown）；tryEvalCall 显式 isAbsVal 守卫
+  - LSP / 错误面：validateText 文档 version 门（陈旧
+    分析不发布）；诊断 / agent 错误 message 绝对路径
+    脱敏（家目录→~、根→.）；注入装配失败上屏挡 exit
+  - 观察面：standard-schema 缺键 / 显式 undefined 区分；
+    dts 投影可选参数名、fn rest TS 合法性
 
 ### Patch Changes
 
-- Updated dependencies [64ca356]
-  - @nudojs/core@1.5.0
-  - @nudojs/service@1.4.0
-  - @nudojs/harvester@0.2.19
-  - @nudojs/parser@1.2.1
+- Updated dependencies [2f9717b]
+  - @nudojs/core@1.6.0
 
-Older versions (20) → [Full release history](./releases-history.md#pkg-nudojs)
+Older versions (22) → [Full release history](./releases-history.md#pkg-parser)
 
-## @nudojs/parser 1.2.1 {#pkg-parser}
+## @nudojs/lsp 1.3.0 {#pkg-lsp}
 
-## 1.2.1
-
-### Patch Changes
-
-- Updated dependencies [64ca356]
-  - @nudojs/core@1.5.0
-
-Older versions (21) → [Full release history](./releases-history.md#pkg-parser)
-
-## @nudojs/lsp 1.2.0 {#pkg-lsp}
-
-## 1.2.0
+## 1.3.0
 
 ### Minor Changes
 
-- 64ca356: feat: clamp bounds + scalar-over-sum + action-map quickfixes (#68 #69)
+- 2f9717b: 仓库级正确性批次（fix-10，19 项修复 + 3 项设计缺陷修复）
   
-  ## #68 inference
+  安全与正确性：
+  - 类型表达式 AST 白名单，阻断 @nudo:case/@nudo:as RCE（P0）
+  - export/绑定名统一消毒（保留字/撞名）
+  - 槽位/导出表全部改自有属性读，挡 Object.prototype 成员
   
-  - `Math.min` / `Math.max` / `Math.round` (and floor/ceil/trunc) propagate
-    operand numeric bounds: `max(0, min(100, n))` derives `[0, 100]`.
-  - NaN is explicit (option 1): a possibly-NaN operand yields `NaN | number@bounds`,
-    so clamp contracts stay honest; `if (Number.isNaN(n)) return …` narrows the
-    false arm (`ne(n, NaN)`) and the guarded clamp is provable.
-  - Scalar return contracts now distribute over sum arms like shape/array
-    (`nullable(c)` + multi-return `null | number` is provable). Gold-FP
-    protection kept: any-widened bare-prim arms downgrade siblings to
-    `unproven-return` warnings instead of errors.
+  类型系统：
+  - tuple rest 槽在 leq/widen/运行时/schema/dts 全链路生效
+  - x++/x-- 与 +=/-= 同源传播 term/pred/Φ 约束
+  - 键通道字面量区分 -0/0（litKeyString）
+  - 投影/格式出口统一 ProjectionBudget：环与超深截断可观测
   
-  ## #69 DX
+  CLI 门禁与契约：
+  - health --from 路径错误并入 pathErrors，ok↔exit 单一来源
+  - migrate verify 与 health 传 skips，与 nudo check 判定同源
+  - 畸形 JSDoc 指令不再静默丢弃/吞行/抛宿主异常
+  - case 实参递归深度上限 32（DoS 防护）
   
-  - `actionsForIssue` kinds are materialized as LSP quickfixes with
-    `[fix]` / `[silence]` / `[review]` / `[adjust]` / `[scaffold]` titles.
-  - `nudo check --fix [--only <code>] [--write]` reuses the same edit layer
-    (default dry-run prints unified diffs).
-  - Body-read fields auto-fill types from usage (`node.type === "x"` →
-    `string()`, arith → `number()`, no evidence → `any()`); never emit empty
-    `shape({})`.
-  - L2 `entry-may-throw` suggestions include a copyable sidecar clause.
+  服务层：
+  - 缓存上限改为显式>env>project，env 形参每次生效
+  - 会话 LRU 与 BoundedLruMap 对齐（覆盖写刷新位序，max=0 读 miss）
+  - 模块缓存条目携带子树内容指纹，传递失效内聚（DESIGN-002）
+  - sidecar 契约身份=导出名、绑定名可别名，保留字/string 导出安全发射（DESIGN-003）
+  - @nudo:import 别名查导出表用原始名，miss 出诊断
+  
+  解析与诊断：
+  - eval 诊断补 rest/默认值/具名表达式声明与计算键引用
+  - ambient 侧车反查含 .nudo.mjs，后缀集合单一事实源
+  
+  S2/S5/S6 跟踪批次（BUG-017–028，主会话直修）：
+  - 类型推断：collectPredVars 收 assumeFinite 约束；eqLit
+    通道 tagged 化（eq(x, lit(undefined)) 可投影）；
+    非有限界（NaN/±Infinity）不投影；fn rest 非数组类型
+    提升为 (T)[]；可选参数名保留 `?`
+  - 门禁与 CLI：check --fix 保持门禁语义（残余 error
+    exit 1，旗标组合 usage error）；variadic 旗标吞位置
+    参数 → 定向 usage error + `--` 终止符；export 走
+    PathError 面（nudo:path-* + nudo:path-io）；
+    findProjectConfig 解析失败诊断 + 停步
+  - 求值引擎：注入表收集异常 fail-closed（绝不半张表）；
+    同名类碰撞 epoch 检测 + 回落观测；EvalCallRecord.threw
+    必填 + 桥接 fail-closed（threw 省略 → throwsAbs
+    unknown）；tryEvalCall 显式 isAbsVal 守卫
+  - LSP / 错误面：validateText 文档 version 门（陈旧
+    分析不发布）；诊断 / agent 错误 message 绝对路径
+    脱敏（家目录→~、根→.）；注入装配失败上屏挡 exit
+  - 观察面：standard-schema 缺键 / 显式 undefined 区分；
+    dts 投影可选参数名、fn rest TS 合法性
 
 ### Patch Changes
 
-- Updated dependencies [64ca356]
-  - @nudojs/core@1.5.0
-  - @nudojs/service@1.4.0
-  - @nudojs/parser@1.2.1
+- Updated dependencies [2f9717b]
+  - @nudojs/core@1.6.0
+  - @nudojs/service@1.5.0
+  - @nudojs/parser@1.3.0
 
-Older versions (24) → [Full release history](./releases-history.md#pkg-lsp)
+Older versions (25) → [Full release history](./releases-history.md#pkg-lsp)
 
-## @nudojs/env 0.4.13 {#pkg-env}
-
-## 0.4.13
-
-### Patch Changes
-
-- Updated dependencies [64ca356]
-  - @nudojs/core@1.5.0
-
-Older versions (20) → [Full release history](./releases-history.md#pkg-env)
-
-## @nudojs/harvester 0.2.19 {#pkg-harvester}
-
-## 0.2.19
-
-### Patch Changes
-
-- Updated dependencies [64ca356]
-  - @nudojs/core@1.5.0
-  - @nudojs/env@0.4.13
-  - @nudojs/parser@1.2.1
-
-Older versions (20) → [Full release history](./releases-history.md#pkg-harvester)
-
-## vite-plugin-nudo 0.4.14 {#pkg-vite-plugin}
+## @nudojs/env 0.4.14 {#pkg-env}
 
 ## 0.4.14
 
 ### Patch Changes
 
-- Updated dependencies [64ca356]
-  - @nudojs/core@1.5.0
-  - @nudojs/service@1.4.0
+- Updated dependencies [2f9717b]
+  - @nudojs/core@1.6.0
 
-Older versions (23) → [Full release history](./releases-history.md#pkg-vite-plugin)
+Older versions (21) → [Full release history](./releases-history.md#pkg-env)
+
+## @nudojs/harvester 0.3.0 {#pkg-harvester}
+
+## 0.3.0
+
+### Minor Changes
+
+- 2f9717b: 仓库级正确性批次（fix-10，19 项修复 + 3 项设计缺陷修复）
+  
+  安全与正确性：
+  - 类型表达式 AST 白名单，阻断 @nudo:case/@nudo:as RCE（P0）
+  - export/绑定名统一消毒（保留字/撞名）
+  - 槽位/导出表全部改自有属性读，挡 Object.prototype 成员
+  
+  类型系统：
+  - tuple rest 槽在 leq/widen/运行时/schema/dts 全链路生效
+  - x++/x-- 与 +=/-= 同源传播 term/pred/Φ 约束
+  - 键通道字面量区分 -0/0（litKeyString）
+  - 投影/格式出口统一 ProjectionBudget：环与超深截断可观测
+  
+  CLI 门禁与契约：
+  - health --from 路径错误并入 pathErrors，ok↔exit 单一来源
+  - migrate verify 与 health 传 skips，与 nudo check 判定同源
+  - 畸形 JSDoc 指令不再静默丢弃/吞行/抛宿主异常
+  - case 实参递归深度上限 32（DoS 防护）
+  
+  服务层：
+  - 缓存上限改为显式>env>project，env 形参每次生效
+  - 会话 LRU 与 BoundedLruMap 对齐（覆盖写刷新位序，max=0 读 miss）
+  - 模块缓存条目携带子树内容指纹，传递失效内聚（DESIGN-002）
+  - sidecar 契约身份=导出名、绑定名可别名，保留字/string 导出安全发射（DESIGN-003）
+  - @nudo:import 别名查导出表用原始名，miss 出诊断
+  
+  解析与诊断：
+  - eval 诊断补 rest/默认值/具名表达式声明与计算键引用
+  - ambient 侧车反查含 .nudo.mjs，后缀集合单一事实源
+  
+  S2/S5/S6 跟踪批次（BUG-017–028，主会话直修）：
+  - 类型推断：collectPredVars 收 assumeFinite 约束；eqLit
+    通道 tagged 化（eq(x, lit(undefined)) 可投影）；
+    非有限界（NaN/±Infinity）不投影；fn rest 非数组类型
+    提升为 (T)[]；可选参数名保留 `?`
+  - 门禁与 CLI：check --fix 保持门禁语义（残余 error
+    exit 1，旗标组合 usage error）；variadic 旗标吞位置
+    参数 → 定向 usage error + `--` 终止符；export 走
+    PathError 面（nudo:path-* + nudo:path-io）；
+    findProjectConfig 解析失败诊断 + 停步
+  - 求值引擎：注入表收集异常 fail-closed（绝不半张表）；
+    同名类碰撞 epoch 检测 + 回落观测；EvalCallRecord.threw
+    必填 + 桥接 fail-closed（threw 省略 → throwsAbs
+    unknown）；tryEvalCall 显式 isAbsVal 守卫
+  - LSP / 错误面：validateText 文档 version 门（陈旧
+    分析不发布）；诊断 / agent 错误 message 绝对路径
+    脱敏（家目录→~、根→.）；注入装配失败上屏挡 exit
+  - 观察面：standard-schema 缺键 / 显式 undefined 区分；
+    dts 投影可选参数名、fn rest TS 合法性
+
+### Patch Changes
+
+- Updated dependencies [2f9717b]
+  - @nudojs/core@1.6.0
+  - @nudojs/parser@1.3.0
+  - @nudojs/env@0.4.14
+
+Older versions (21) → [Full release history](./releases-history.md#pkg-harvester)
+
+## vite-plugin-nudo 0.4.15 {#pkg-vite-plugin}
+
+## 0.4.15
+
+### Patch Changes
+
+- Updated dependencies [2f9717b]
+  - @nudojs/core@1.6.0
+  - @nudojs/service@1.5.0
+
+Older versions (24) → [Full release history](./releases-history.md#pkg-vite-plugin)
 
 ## nudo-vscode 0.3.7 {#pkg-vscode}
 
