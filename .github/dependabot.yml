@@ -16,6 +16,11 @@ updates:
       # Major bumps land deliberately, not via dependabot.
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+      # @types/vscode must stay aligned with packages/vscode engines.vscode
+      # (^1.85.0): vsce rejects packaging when the types version exceeds
+      # the engine floor (validateVSCodeTypesCompatibility compares
+      # major/minor). Bump both together deliberately.
+      - dependency-name: "@types/vscode"
 
   - package-ecosystem: "github-actions"
     directory: "/"

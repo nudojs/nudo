@@ -1,16 +1,16 @@
 {
-  "generatedAt": "2026-09-24T19:49:47.730Z",
-  "node": "v24.19.0",
+  "generatedAt": "2026-10-02T09:33:58.997Z",
+  "node": "v26.10.0",
   "kind": "oss-real-packages",
   "totals": {
     "packages": 3,
     "files": 79,
-    "bytes": 361224,
+    "bytes": 362545,
     "fpCount": 0,
     "scanned": 79,
-    "coldAnalyzeMs": 2275.14,
-    "checkAllMs": 610.69,
-    "tscTotalMs": 653.75
+    "coldAnalyzeMs": 5623.12,
+    "checkAllMs": 1662.54,
+    "tscTotalMs": 1357.03
   },
   "packages": [
     {
@@ -22,27 +22,27 @@
       "scanErrors": [],
       "falsePositives": [],
       "fpCount": 0,
-      "coldAnalyzeMs": 766.46,
+      "coldAnalyzeMs": 1735.52,
       "warmAnalyzeMs": {
         "n": 5,
-        "median": 5.6,
-        "min": 5.13,
-        "max": 6.11
+        "median": 10.3,
+        "min": 9.86,
+        "max": 16.48
       },
-      "checkAllMs": 178.88,
+      "checkAllMs": 570.12,
       "tsc": {
-        "createProgramMs": 133.93,
-        "diagnosticsMs": 136.65,
-        "totalMs": 270.58,
-        "diagnostics": 30,
+        "createProgramMs": 208.02,
+        "diagnosticsMs": 287.24,
+        "totalMs": 495.26,
+        "diagnostics": 223,
         "note": "UNANNOTATED JS — tsc is in weak checkJs mode. Tooling-load reference only, NOT a Nudo-vs-TS product comparison."
       },
       "hub": {
         "file": "commander/lib/error.js",
         "dependents": 4,
         "dirtyCount": 6,
-        "dirtyMedianMs": 700.88,
-        "ideAnalyzeMedianMs": 0.19
+        "dirtyMedianMs": 1331.84,
+        "ideAnalyzeMedianMs": 0.15
       },
       "leaf": {
         "file": "commander/index.js",
@@ -53,33 +53,33 @@
     {
       "name": "yargs",
       "files": 23,
-      "bytes": 162591,
+      "bytes": 163912,
       "importEdges": 48,
       "scanned": 23,
       "scanErrors": [],
       "falsePositives": [],
       "fpCount": 0,
-      "coldAnalyzeMs": 1239.24,
+      "coldAnalyzeMs": 2737.22,
       "warmAnalyzeMs": {
         "n": 5,
-        "median": 12.9,
-        "min": 12.8,
-        "max": 13.58
+        "median": 20.74,
+        "min": 20.46,
+        "max": 21.92
       },
-      "checkAllMs": 259.54,
+      "checkAllMs": 765.18,
       "tsc": {
-        "createProgramMs": 96.51,
-        "diagnosticsMs": 147.1,
-        "totalMs": 243.61,
-        "diagnostics": 41,
+        "createProgramMs": 180.03,
+        "diagnosticsMs": 345.96,
+        "totalMs": 525.99,
+        "diagnostics": 1222,
         "note": "UNANNOTATED JS — tsc is in weak checkJs mode. Tooling-load reference only, NOT a Nudo-vs-TS product comparison."
       },
       "hub": {
         "file": "yargs/build/lib/utils/is-promise.js",
         "dependents": 5,
         "dirtyCount": 8,
-        "dirtyMedianMs": 983.77,
-        "ideAnalyzeMedianMs": 0.1
+        "dirtyMedianMs": 2061.61,
+        "ideAnalyzeMedianMs": 0.14
       },
       "leaf": {
         "file": "yargs/browser.mjs",
@@ -91,35 +91,35 @@
       "name": "semver",
       "files": 49,
       "bytes": 72268,
-      "importEdges": 0,
+      "importEdges": 129,
       "scanned": 49,
       "scanErrors": [],
       "falsePositives": [],
       "fpCount": 0,
-      "coldAnalyzeMs": 269.44,
+      "coldAnalyzeMs": 1150.38,
       "warmAnalyzeMs": {
         "n": 5,
-        "median": 36.52,
-        "min": 34.42,
-        "max": 41.31
+        "median": 52.41,
+        "min": 51.95,
+        "max": 55.18
       },
-      "checkAllMs": 172.27,
+      "checkAllMs": 327.24,
       "tsc": {
-        "createProgramMs": 70.17,
-        "diagnosticsMs": 69.39,
-        "totalMs": 139.56,
-        "diagnostics": 16,
+        "createProgramMs": 155.5,
+        "diagnosticsMs": 180.28,
+        "totalMs": 335.78,
+        "diagnostics": 420,
         "note": "UNANNOTATED JS — tsc is in weak checkJs mode. Tooling-load reference only, NOT a Nudo-vs-TS product comparison."
       },
       "hub": {
-        "file": "semver/bin/semver.js",
-        "dependents": 0,
-        "dirtyCount": 1,
-        "dirtyMedianMs": 22.88,
-        "ideAnalyzeMedianMs": 1.04
+        "file": "semver/classes/semver.js",
+        "dependents": 17,
+        "dirtyCount": 43,
+        "dirtyMedianMs": 1033.29,
+        "ideAnalyzeMedianMs": 0.65
       },
       "leaf": {
-        "file": "semver/classes/comparator.js",
+        "file": "semver/bin/semver.js",
         "dependents": 0,
         "dirtyCount": 1
       }

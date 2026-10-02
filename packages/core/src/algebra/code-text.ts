@@ -15,6 +15,32 @@
  *   目标是探测器正确，不做完整 JS 词法。
  */
 
+import { BoundedLruMap } from "./lru-map.ts";
+
+/**
+ * 源级扫描结果 memo（三个包装器各一个）。
+ *
+ * 分析期同一源被多个抽取器反复整文件词法扫描：directive-scan 的
+ * env / mock-module / import / malformed 各 extractor、refine /
+ * check / generalize 的 `@nudo:contract` 存在性探针、load-deps
+ * 依赖指纹——都是纯函数，同源同输出。memo 把「源字节数 × 调用
+ * 次数」的 lexer 成本折成每唯一源一次（实测 semver hub-edit 路径
+ * 每文件分析 ~245 次整文件扫描 → 每唯一源 1 次）。
+ *
+ * 有界（条数 LRU）：LSP 长驻留会话下防内存膨胀；未命中只退回
+ * 全量扫描，无正确性影响。
+ */
+const SOURCE_SCAN_CACHE_MAX = 256;
+const stripCommentsAndStringsCache = new BoundedLruMap<string>(
+  SOURCE_SCAN_CACHE_MAX,
+);
+const stripStringsKeepCommentsCache = new BoundedLruMap<string>(
+  SOURCE_SCAN_CACHE_MAX,
+);
+const maskCommentsAndStringsCache = new BoundedLruMap<string>(
+  SOURCE_SCAN_CACHE_MAX,
+);
+
 type TextSpan = { kind: "code" | "comment" | "string"; text: string };
 
 export type StringLiteralSpan = {
@@ -292,12 +318,15 @@ function scanSource(source: string): ScanResult {
 }
 
 export function stripCommentsAndStrings(source: string): string {
+  const hit = stripCommentsAndStringsCache.get(source);
+  if (hit !== undefined) return hit;
   let out = "";
   for (const span of scanSource(source).spans) {
     if (span.kind === "code") out += span.text;
     else if (span.kind === "comment") out += " ";
     else out += '""';
   }
+  stripCommentsAndStringsCache.set(source, out);
   return out;
 }
 
@@ -308,10 +337,13 @@ export function stripCommentsAndStrings(source: string): string {
  * 模板插值 `${…}` 是代码，保留。
  */
 export function stripStringsKeepComments(source: string): string {
+  const hit = stripStringsKeepCommentsCache.get(source);
+  if (hit !== undefined) return hit;
   let out = "";
   for (const span of scanSource(source).spans) {
     out += span.kind === "string" ? '""' : span.text;
   }
+  stripStringsKeepCommentsCache.set(source, out);
   return out;
 }
 
@@ -321,11 +353,14 @@ export function stripStringsKeepComments(source: string): string {
  * 供定位/改写在**代码区**进行。
  */
 export function maskCommentsAndStrings(source: string): string {
+  const hit = maskCommentsAndStringsCache.get(source);
+  if (hit !== undefined) return hit;
   let out = "";
   for (const span of scanSource(source).spans) {
     if (span.kind === "code") out += span.text;
     else out += span.text.replace(/[^\n]/g, " ");
   }
+  maskCommentsAndStringsCache.set(source, out);
   return out;
 }
 
