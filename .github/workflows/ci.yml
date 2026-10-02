@@ -19,11 +19,17 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
-# 矩阵（build 只跑一次，dist 经 nudo-dist artifact 共享）：
+# 矩阵（build 只跑一次，dist 经 nudo-dist artifact 共享；构建产物另
+# 经 actions/cache 跨 run 复用——源码未变的 PR 直接命中缓存跳过 tsup）：
 #   push main         → lint / build / test:coverage / benchmark（全量门禁）
-#   push dev|ci       → lint / build / test×2 shard（快速通道：无插桩、无计时）
-#   pull_request      → lint / build / test×2 shard
+#   push dev|ci       → lint / build / test×2 shard（--changed 快速通道）
+#   pull_request      → lint / build / test×2 shard（--changed 快速通道）
 #   schedule/dispatch → build / test:coverage / benchmark（夜间复测）
+# 快速通道细节：test job 按 git diff <since>...HEAD 选测试
+# （vitest --changed，模块图 + forceRerunTriggers 安全网，见
+# vitest.config.ts）；lint job 在无 .ts/.tsx/tsconfig/lockfile
+# 变更时跳过三个 tsc；verify:examples / docs:gen 等内容门禁
+# 不受影响，始终全量跑。
 # test 依赖 dist：@nudo:env 动态 import 经 package.json exports 解析
 # @nudojs/* → dist；lint:website 与 verify:* 脚本的 @nudojs/* 解析同样需要 dist。
 # test 分 2 shard 并发（vitest --shard 按文件切分，pool: forks 下文件
@@ -38,7 +44,29 @@ jobs:
     steps:
       - name: Checkout
         # v7（SHA 钉住：supply-chain；升级时更新 pin 与注释）
+        # fetch-depth: 0 — TS 变更检测要 diff base.sha
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      # 纯文档 PR（无 .ts/.tsx/tsconfig/lockfile 变更）跳过三个 tsc
+      # ——tsc 输入只有这些；verify:examples/docs:gen 等下游步骤不受影响，
+      # 仍全量跑（它们消费文档与示例内容）。
+      - name: Detect TS-affecting changes
+        id: ts
+        run: |
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+            echo "ts_changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only "$base" HEAD -- \
+              ':(glob)**/*.ts' ':(glob)**/*.tsx' \
+              ':(glob)**/tsconfig*.json' ':(glob)pnpm-lock.yaml' | grep -q .; then
+            echo "ts_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ts_changed=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Setup pnpm
         # v4
@@ -62,12 +90,15 @@ jobs:
           name: nudo-dist
 
       - name: Lint
+        if: steps.ts.outputs.ts_changed == 'true'
         run: npm run lint
 
       - name: Lint website
+        if: steps.ts.outputs.ts_changed == 'true'
         run: npm run lint:website
 
       - name: Lint tests
+        if: steps.ts.outputs.ts_changed == 'true'
         run: npm run lint:tests
 
       - name: Verify docs examples
@@ -135,7 +166,36 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # 构建输入哈希：非测试源码 + 包/构建配置 + 锁文件。
+      # 命中时跳过 tsup（dist ~37MB，缓存传输远快于重跑构建）；
+      # 冒烟步骤仍跑，顺带验证缓存产物可用。测试文件不入哈希
+      # （vitest 走 src 别名，测试变更不影响 dist）。
+      - name: Compute dist cache key
+        id: distkey
+        run: |
+          hash=$(git ls-files \
+              'packages/*/src/*' \
+              'packages/*/package.json' \
+              'packages/*/tsconfig*.json' \
+              'packages/*/tsup.config.*' \
+              'package.json' \
+              'tsconfig*.json' \
+              'pnpm-lock.yaml' |
+            grep -v '/__tests__/' | grep -v '\.test\.ts$' |
+            xargs sha256sum | sha256sum | cut -d' ' -f1)
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
+
+      - name: Restore dist cache
+        id: dist-cache
+        # v6.1.0（SHA 钉住：supply-chain；升级时更新 pin 与注释）
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            packages/*/dist
+          key: dist-${{ runner.os }}-${{ steps.distkey.outputs.hash }}
+
       - name: Build
+        if: steps.dist-cache.outputs.cache-hit != 'true'
         run: npm run build
 
       # 薄壳 bin 冒烟：走 workspace 链接 → @nudojs/cli dist。用户唯一入口，
@@ -169,7 +229,26 @@ jobs:
     steps:
       - name: Checkout
         # v7（SHA 钉住：supply-chain；升级时更新 pin 与注释）
+        # fetch-depth: 0 — --changed 要 diff base.sha（须在本地存在）
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      # PR → base.sha；push → before（新分支 push 的 before 为零值
+      # → 空 since → 全量跑）。vitest --changed 即
+      # git diff --name-only <since>...HEAD（三点式）；
+      # 零命中时正常空跑退出（vitest 源码显式处理）。
+      - name: Resolve changed-since base
+        id: changed
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "since=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            before="${{ github.event.before }}"
+            if [ -n "$before" ] && [ "$before" != "0000000000000000000000000000000000000000" ]; then
+              echo "since=$before" >> "$GITHUB_OUTPUT"
+            fi
+          fi
 
       - name: Setup pnpm
         # v4
@@ -185,6 +264,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # vitest 转换缓存（内容寻址，陈旧条目自动失效；
+      # 实测 pnpm install 不清 node_modules/.vite）
+      - name: Restore vitest transform cache
+        id: vitest-cache
+        # v6.1.0（SHA 钉住：supply-chain；升级时更新 pin 与注释）
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: node_modules/.vite/vitest
+          key: vitest-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('vitest.config.ts') }}
+
       - name: Download built dist
         # v8.0.1（SHA 钉住：supply-chain；升级时更新 pin 与注释）
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -192,11 +281,18 @@ jobs:
           name: nudo-dist
 
       - name: Test
-        run: npm run test -- --shard=${{ matrix.shard }}/2
+        run: |
+          if [ -n "${{ steps.changed.outputs.since }}" ]; then
+            npm run test -- --changed "${{ steps.changed.outputs.since }}" --shard=${{ matrix.shard }}/2
+          else
+            npm run test -- --shard=${{ matrix.shard }}/2
+          fi
 
   test-coverage:
     name: Test & Coverage
-    # 仅 main push 与夜间复测：v8 插桩 + 阈值聚合比裸跑慢 30–60%
+    # 仅 main push 与夜间复测：v8 插桩 + 阈值聚合比裸跑慢 30–60%。
+    # 不分片（阈值按全量聚合）、不用 --changed（main 是发布门禁，
+    # 必须全量）；仅共享转换缓存。
     if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     needs: build
     runs-on: ubuntu-latest
@@ -218,6 +314,15 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # vitest 转换缓存（内容寻址，陈旧条目自动失效）
+      - name: Restore vitest transform cache
+        id: vitest-cache
+        # v6.1.0（SHA 钉住：supply-chain；升级时更新 pin 与注释）
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: node_modules/.vite/vitest
+          key: vitest-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('vitest.config.ts') }}
 
       - name: Download built dist
         # v8.0.1（SHA 钉住：supply-chain；升级时更新 pin 与注释）
