@@ -646,7 +646,7 @@ type SymbolTable = {
 | <a id="applysessioncacheconfig"></a>`applySessionCacheConfig` | fn | 接线 package.json#nudo.sessionCache（进程内 LRU 上限）并立刻 trim。 | `applySessionCacheConfig(config: NudoConfig \| null \| undefined): SessionCacheLimits` |
 | <a id="applytextedits"></a>`applyTextEdits` | fn | 把 edits 应用到源码（按 start 从后往前） | `applyTextEdits(source: string, edits: TextEdit[]): string` |
 | <a id="bindinginfo"></a>`BindingInfo` | type | — | `BindingInfo = { abs: Abs; loc?: SourceLocation; }` |
-| <a id="bodyreadfield"></a>`BodyReadField` | type | — | `BodyReadField = { field: string; type: string; via: string; }` |
+| <a id="bodyreadfield"></a>`BodyReadField` | type | — | `BodyReadField = { field: string; type: string; via: string; fields?: BodyReadField[]; }` |
 | <a id="bodyreadfieldsfor"></a>`bodyReadFieldsFor` | fn | 某函数某形参的 body-read 字段类型（供 draft / quickfix） | `bodyReadFieldsFor( map: BodyReadTypes, fnName: string, paramName: string, ): BodyReadField[] \| undefined` |
 | <a id="bodyreadtypes"></a>`BodyReadTypes` | type | — | `BodyReadTypes = Map<string, Map<string, BodyReadField[]>>` |
 | <a id="buildcasedirective"></a>`buildCaseDirective` | fn | 组装单行 ` * @nudo:case "name" (a, b)` 指令文本（无尾换行）。 | `buildCaseDirective(name: string, argsAbs: Abs[]): string \| null` |

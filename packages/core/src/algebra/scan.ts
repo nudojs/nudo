@@ -529,8 +529,15 @@ export function scanLiteralCalls(
         : undefined;
 
     if (!slots) {
-      // 有形状信息但不是 object
-      if (absArg.shape.k !== "unknown" && absArg.shape.k !== "never") {
+      // 有形状信息但不是 object。
+      // unknown/any 实参：无信息，不猜（与标量 pred 通道「any ≤ 任意目标」
+      // 同口径——check-recall-gold any-assign-to-number-ok；any 值上的
+      // shape 违例不可证，报 error 是假阳性，#76 缺口 B）
+      if (
+        absArg.shape.k !== "unknown" &&
+        absArg.shape.k !== "never" &&
+        absArg.shape.k !== "any"
+      ) {
         out.push({
           severity: "error",
           code: "nudo:constraint-violated",

@@ -124,6 +124,36 @@ export function f(n) {
     });
     expect(plan?.sidecar?.newText).toContain("type: any()");
   });
+
+  // #76 缺口 A/C：嵌套成员读取 → 生成嵌套 shape。
+  // 中间环写 any() 会让"读它的属性"继续记 may-throw（动作自废），
+  // 且重复请求应给出覆盖嵌套路径的文本（而非同一条扁平 any()）。
+  it("nested member reads materialize as nested shapes (intermediates never any())", () => {
+    const src = `export function locLine(node) {
+  return node.loc.start.line;
+}
+export function propType(node) {
+  return node.property.type;
+}
+`;
+    for (const [fn, expected] of [
+      ["locLine", "shape({ loc: shape({ start: shape({ line: any() }) }) })"],
+      ["propType", "shape({ property: shape({ type: any() }) })"],
+    ] as const) {
+      const plan = materializeAction({
+        code: "nudo:entry-may-throw",
+        fn,
+        file: "/t/a.js",
+        source: src,
+        sidecarPath: "/t/a.nudo.js",
+        action: { kind: "draft", label: "x" },
+      });
+      expect(plan?.sidecar?.newText).toContain(expected);
+      // 中间环不得写 any()（loc/property 是对象，不是无约束值）
+      expect(plan?.sidecar?.newText).not.toContain("loc: any()");
+      expect(plan?.sidecar?.newText).not.toContain("property: any()");
+    }
+  });
 });
 
 describe("DESIGN-003 alias-form sidecar (identity = exported name)", () => {

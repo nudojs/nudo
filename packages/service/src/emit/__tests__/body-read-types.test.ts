@@ -83,4 +83,97 @@ export function a(o) {
     ]);
     expect(dsl).toBe("shape({ type: string(), id: number() })");
   });
+
+  // #76：嵌套成员路径 → 中间环生成为嵌套 shape（不得写 any()——
+  // any 值上的成员读取仍记 may-throw，动作自废）
+  it("nested member chain → intermediate fields are nested shapes", () => {
+    const map = collectParamBodyReadTypes(`
+export function locLine(node) {
+  return node.loc.start.line;
+}
+`);
+    const fields = map.get("locLine")?.get("node");
+    const loc = fields?.find((f) => f.field === "loc");
+    // 中间环：嵌套 shape 占位 + 子字段
+    expect(loc?.type).toBe("shape({ … })");
+    expect(loc?.fields?.find((f) => f.field === "start")?.type).toBe("shape({ … })");
+    expect(
+      loc?.fields?.find((f) => f.field === "start")?.fields?.find(
+        (f) => f.field === "line",
+      )?.type,
+    ).toBe("any()");
+    expect(shapeDslFromFields(fields ?? [])).toBe(
+      "shape({ loc: shape({ start: shape({ line: any() }) }) })",
+    );
+  });
+
+  it("method access on nested field types the leaf, chain stops there", () => {
+    // node.a.b.toLowerCase()：b 是叶子（string()），a 是中间环
+    const map = collectParamBodyReadTypes(`
+export function lower(node) {
+  return node.a.b.toLowerCase();
+}
+`);
+    const fields = map.get("lower")?.get("node");
+    const a = fields?.find((f) => f.field === "a");
+    expect(a?.type).toBe("shape({ … })");
+    expect(a?.fields?.find((f) => f.field === "b")?.type).toBe("string()");
+    expect(shapeDslFromFields(fields ?? [])).toBe(
+      "shape({ a: shape({ b: string() }) })",
+    );
+  });
+
+  it("method access on first-level field stays flat (no phantom path)", () => {
+    // node.label.toLowerCase()：label 直接是 string()，不生成
+    // shape({ toLowerCase: … }) 幽灵路径
+    const map = collectParamBodyReadTypes(`
+export function f(o) {
+  return o.label.toLowerCase();
+}
+`);
+    const fields = map.get("f")?.get("o");
+    expect(fields?.length).toBe(1);
+    expect(fields?.[0]?.field).toBe("label");
+    expect(fields?.[0]?.type).toBe("string()");
+  });
+
+  it("typeof on nested chain types the whole path", () => {
+    const map = collectParamBodyReadTypes(`
+export function g(node) {
+  if (typeof node.a.b === "string") return node.a.b;
+  return "";
+}
+`);
+    const fields = map.get("g")?.get("node");
+    const a = fields?.find((f) => f.field === "a");
+    expect(a?.type).toBe("shape({ … })");
+    expect(a?.fields?.find((f) => f.field === "b")?.type).toBe("string()");
+  });
+
+  it("standalone read + dereference of same field: nested shape wins", () => {
+    const map = collectParamBodyReadTypes(`
+export function f(node) {
+  const tag = node.a;
+  return node.a.b;
+}
+`);
+    const fields = map.get("f")?.get("node");
+    const a = fields?.find((f) => f.field === "a");
+    expect(a?.type).toBe("shape({ … })");
+    expect(a?.fields?.find((f) => f.field === "b")?.type).toBe("any()");
+  });
+
+  it("optional chain collects the same path", () => {
+    const map = collectParamBodyReadTypes(`
+export function opt(node) {
+  return node?.loc?.start?.line;
+}
+`);
+    const fields = map.get("opt")?.get("node");
+    expect(
+      fields?.find((f) => f.field === "loc")?.fields?.find(
+        (f) => f.field === "start",
+      )?.fields?.find((f) => f.field === "line")?.type,
+    ).toBe("any()");
+  });
 });

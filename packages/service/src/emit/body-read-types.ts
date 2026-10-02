@@ -1,19 +1,29 @@
 /**
  * body-read 字段类型推断（草稿 / quickfix 自动填类型）。
  *
- * 证据只来自函数体对形参成员的用法（`node.type === "x"` → string()），
+ * 证据只来自函数体对形参成员的用法（`node.type === "x" → string()`），
  * **不进 check**——与 DraftEvidence body 档同口径。无用法证据 → any()，
  * 不得发明空 shape 或武断 string()。
+ *
+ * 收集的是**完整成员路径**（`node.loc.start.line` → ["loc","start","line"]）：
+ * 被继续解引用的中间环生成为嵌套 shape（`loc: shape({ start: … })`），
+ * 只有叶子环才携带用法推断类型。中间环写 any() 会让"读它的属性"继续
+ * counted 为 may-throw——动作自废（见 #76）。
  */
 import { parse } from "@nudojs/parser";
 import type { Node } from "@babel/types";
 
 export type BodyReadField = {
   field: string;
-  /** constraint-builder DSL：string() / number() / boolean() / any() */
+  /** constraint-builder DSL：string() / number() / boolean() / any()；
+   *  中间环（字段被继续解引用）为占位 "shape({ … })"，真实文本由
+   *  shapeDslFromFields 经 fields 递归生成 */
   type: string;
   /** 推断依据（调试/草稿注释） */
   via: string;
+  /** 继续解引用的子字段（该字段值是对象）；叶子无此键。
+   *  中间环不得写 any()——any 值上的成员读取仍记 may-throw（L2 不清） */
+  fields?: BodyReadField[];
 };
 
 export type BodyReadTypes = Map<string, Map<string, BodyReadField[]>>;
@@ -185,14 +195,62 @@ export function collectParamBodyReadTypes(source: string): BodyReadTypes {
 
   const visitFn = (fnName: string, fnNode: Node, paramNames: Set<string>): void => {
     if (paramNames.size === 0) return;
-    /** param → field → hints[] */
-    const byParam = new Map<string, Map<string, UseHint[]>>();
-    const add = (pname: string, field: string, hint: UseHint | undefined): void => {
-      if (!byParam.has(pname)) byParam.set(pname, new Map());
-      const fields = byParam.get(pname)!;
-      if (!fields.has(field)) fields.set(field, []);
-      if (hint) fields.get(field)!.push(hint);
+    /** param → JSON 路径键 → { 路径, hints[] } */
+    const byParam = new Map<
+      string,
+      Map<string, { path: string[]; hints: UseHint[] }>
+    >();
+    const add = (
+      pname: string,
+      path: string[],
+      hint: UseHint | undefined,
+    ): void => {
+      if (path.length === 0) return;
+      let m = byParam.get(pname);
+      if (!m) byParam.set(pname, (m = new Map()));
+      const k = JSON.stringify(path);
+      let e = m.get(k);
+      if (!e) m.set(k, (e = { path, hints: [] }));
+      if (hint) e.hints.push(hint);
     };
+
+    /**
+     * 从最外层成员表达式向下收集静态键路径，链底须为标识符。
+     * `node.a.b`（最外层）→ { path: ["a","b"], param: "node" }。
+     * 计算成员（`node.a[b]`）或链底非标识符（`foo().bar`）→ undefined。
+     */
+    const downChainPath = (
+      mem: Record<string, unknown>,
+    ): { path: string[]; param: string } | undefined => {
+      const keys: string[] = [];
+      let cur: Record<string, unknown> | undefined = mem;
+      let param: string | undefined;
+      while (cur) {
+        if (
+          (cur.type !== "MemberExpression" &&
+            cur.type !== "OptionalMemberExpression") ||
+          cur.computed === true
+        ) {
+          return undefined;
+        }
+        const key = keyOf(cur.property as Node | undefined);
+        if (key === undefined) return undefined;
+        keys.unshift(key);
+        const obj = cur.object as Node | undefined;
+        if (!obj) return undefined;
+        if (obj.type === "Identifier") {
+          param = obj.name;
+          break;
+        }
+        cur = obj as unknown as Record<string, unknown>;
+      }
+      if (param === undefined) return undefined;
+      return { path: keys, param };
+    };
+
+    /** 合成「下一环成员访问」父节点：hintFromUse 只读 type/property */
+    const synthMemberParent = (prop: string): Record<string, unknown> =>
+      ({ type: "MemberExpression", property: { type: "Identifier", name: prop } });
 
     const walk = (
       node: unknown,
@@ -210,48 +268,57 @@ export function collectParamBodyReadTypes(source: string): BodyReadTypes {
         if (paramNames.has(id)) shadowed = new Set(shadowed).add(id);
       }
 
-      // typeof param.field === "string"
+      // typeof param.a.b === "string"（链：整条路径取同一 typeof 证据）
       if (n.type === "UnaryExpression" && n.operator === "typeof") {
         const arg = n.argument as Node | undefined;
         const mem = arg as Record<string, unknown> | undefined;
         if (mem && (mem.type === "MemberExpression" || mem.type === "OptionalMemberExpression")) {
-          const obj = mem.object as Node | undefined;
-          const prop = mem.property as Node | undefined;
+          const chain = downChainPath(mem);
           if (
-            obj?.type === "Identifier" &&
-            paramNames.has((obj as { name: string }).name) &&
-            !shadowed.has((obj as { name: string }).name) &&
-            prop &&
-            mem.computed !== true
+            chain &&
+            paramNames.has(chain.param) &&
+            !shadowed.has(chain.param)
           ) {
-            const key = keyOf(prop);
-            const pname = (obj as { name: string }).name;
-            if (key !== undefined) {
-              // parent is UnaryExpression; grandparent is BinaryExpression
-              const gp = parent;
-              add(pname, key, hintFromTypeof(n, gp));
-            }
+            // parent is UnaryExpression; grandparent is BinaryExpression
+            const gp = parent;
+            add(chain.param, chain.path, hintFromTypeof(n, gp));
           }
         }
       }
 
       if (n.type === "MemberExpression" || n.type === "OptionalMemberExpression") {
-        const obj = n.object as Node | undefined;
-        const prop = n.property as Node | undefined;
-        const computed = n.computed === true;
-        if (
-          obj?.type === "Identifier" &&
-          paramNames.has((obj as { name: string }).name) &&
-          !shadowed.has((obj as { name: string }).name) &&
-          prop &&
-          !computed
-        ) {
-          const key = keyOf(prop);
-          const pname = (obj as { name: string }).name;
-          if (key !== undefined) {
-            const hint = hintFromUse(parent, (parentKey as "left") ?? "object");
-            add(pname, key, hint);
+        // 链内环节（父节点是以本节点为 object 的非计算成员访问）跳过——
+        // 由链最外层统一收集整条路径（每条链只记一次）
+        const innerLink =
+          !!parent &&
+          (parent.type === "MemberExpression" ||
+            parent.type === "OptionalMemberExpression") &&
+          parentKey === "object" &&
+          (parent as Record<string, unknown>).computed !== true;
+        if (innerLink) return;
+
+        // 最外层：向下收集静态键路径，链底须为（未遮蔽的）形参
+        const chain = downChainPath(n);
+        if (chain && paramNames.has(chain.param) && !shadowed.has(chain.param)) {
+          // 逐环判定叶子：下一环的访问若能给出类型证据（方法调用 /
+          // .length / …），该环即叶子（链不延伸）；否则为中间环，
+          // 生成为嵌套 shape（中间环写 any() 会让 L2 残留——#76）
+          const rev = chain.path;
+          let leafLen = rev.length;
+          let leafHint: UseHint | undefined;
+          for (let i = 0; i < rev.length; i++) {
+            const nextProp = i + 1 < rev.length ? rev[i + 1]! : undefined;
+            const h =
+              nextProp !== undefined
+                ? hintFromUse(synthMemberParent(nextProp), "object")
+                : hintFromUse(parent, (parentKey as "left") ?? "object");
+            if (h) {
+              leafLen = i + 1;
+              leafHint = h;
+              break;
+            }
           }
+          add(chain.param, rev.slice(0, leafLen), leafHint);
         }
       }
 
@@ -269,13 +336,22 @@ export function collectParamBodyReadTypes(source: string): BodyReadTypes {
 
     if (byParam.size === 0) return;
     const fieldsOf = new Map<string, BodyReadField[]>();
-    for (const [pname, fieldMap] of byParam) {
-      const list: BodyReadField[] = [];
-      for (const [field, hints] of fieldMap) {
-        list.push({ field, ...mergeHints(hints) });
+    for (const [pname, pathMap] of byParam) {
+      // 路径 → trie：有子环的字段是中间环（值为对象 → 嵌套 shape），
+      // 叶子环携带用法推断类型
+      const root: TrieNode = { hints: [], children: new Map() };
+      for (const { path, hints } of pathMap.values()) {
+        let node = root;
+        for (const seg of path) {
+          let child = node.children.get(seg);
+          if (!child) {
+            node.children.set(seg, (child = { hints: [], children: new Map() }));
+          }
+          node = child;
+        }
+        node.hints.push(...hints);
       }
-      list.sort((a, b) => (a.field < b.field ? -1 : 1));
-      fieldsOf.set(pname, list);
+      fieldsOf.set(pname, emitFields(root));
     }
     out.set(fnName, fieldsOf);
   };
@@ -374,6 +450,29 @@ export function collectParamBodyReadTypes(source: string): BodyReadTypes {
   return out;
 }
 
+/** 路径 trie 节点：hints 为叶子环用法证据，children 为继续解引用 */
+type TrieNode = { hints: UseHint[]; children: Map<string, TrieNode> };
+
+/** trie → 排序字段表；有子环的字段是中间环（嵌套 shape，占位 type） */
+function emitFields(trie: TrieNode): BodyReadField[] {
+  const list: BodyReadField[] = [];
+  for (const [name, child] of [...trie.children.entries()].sort((a, b) =>
+    a[0] < b[0] ? -1 : 1,
+  )) {
+    if (child.children.size > 0) {
+      list.push({
+        field: name,
+        type: "shape({ … })",
+        via: "dereferenced member read (nested shape)",
+        fields: emitFields(child),
+      });
+    } else {
+      list.push({ field: name, ...mergeHints(child.hints) });
+    }
+  }
+  return list;
+}
+
 function mergeHints(hints: UseHint[]): { type: string; via: string } {
   if (hints.length === 0) return { type: "any()", via: "read (no type evidence)" };
   const types = [...new Set(hints.map((h) => h.type))];
@@ -427,9 +526,17 @@ export function bodyReadFieldsFor(
   return map.get(fnName)?.get(paramName);
 }
 
-/** `shape({ type: string(), name: string() })` 文本 */
+/**
+ * `shape({ type: string(), loc: shape({ start: … }) })` 文本。
+ * 中间环（有子字段）递归生成嵌套 shape——中间环是 any() 会让
+ * 其上的成员读取继续记 may-throw（#76）。
+ */
 export function shapeDslFromFields(fields: BodyReadField[]): string {
   if (fields.length === 0) return "shape({})";
-  const parts = fields.map((f) => `${f.field}: ${f.type}`);
+  const parts = fields.map((f) =>
+    f.fields && f.fields.length > 0
+      ? `${f.field}: ${shapeDslFromFields(f.fields)}`
+      : `${f.field}: ${f.type}`,
+  );
   return `shape({ ${parts.join(", ")} })`;
 }

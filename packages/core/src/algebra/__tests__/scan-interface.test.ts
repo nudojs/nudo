@@ -397,3 +397,98 @@ describe("re-export 跳转相对中间模块解析", () => {
   });
 });
 
+// #76 缺口 B：shape 契约通道遇到 any 实参 → 无信息，不猜（不报
+// constraint-violated）。与标量 pred 通道「any ≤ 任意目标」
+// （check-recall-gold any-assign-to-number-ok）同口径——此前 shape
+// 通道对 any 报 error 是假阳性：纯 JS 消费方形参天然 any，逐函数
+// 采纳契约会把所有传 any 的调用点变成 error。
+describe("#76：any 实参对 shape 契约不构成违例", () => {
+  const sidecar = `export const literalString = fn({ node: shape({ type: string(), value: string() }) });`;
+
+  const loadWith = (files: Record<string, string>) => {
+    const { loadModule } = makeFiles(files);
+    return { loadModule, fromFile: "/t/app.js" };
+  };
+
+  it("any 实参（成员读取透传）→ 无 constraint-violated", () => {
+    const source = `
+export function literalString(node) {
+  return node.type === "StringLiteral" ? node.value : "";
+}
+export function literalArg(node, i) {
+  return literalString(node.arguments[i]);
+}
+`;
+    const report = checkSource(
+      "/t/app.js",
+      source,
+      pTrue,
+      loadWith({ "/t/app.nudo.js": sidecar }),
+    );
+    expect(
+      report.issues.filter((i) => i.code === "nudo:constraint-violated"),
+    ).toEqual([]);
+  });
+
+  it("嵌套字段值为 any 同样不猜（{ loc: any } 对 shape({ loc: shape(…) })）", () => {
+    const nestedSidecar = `export const locLine = fn({ node: shape({ loc: shape({ start: shape({ line: number() }) }) }) });`;
+    const source = `
+export function locLine(node) {
+  return node.loc.start.line;
+}
+export function wrapper(node) {
+  return locLine({ loc: { start: { line: node.v } } });
+}
+`;
+    const report = checkSource(
+      "/t/app.js",
+      source,
+      pTrue,
+      loadWith({ "/t/app.nudo.js": nestedSidecar }),
+    );
+    expect(
+      report.issues.filter((i) => i.code === "nudo:constraint-violated"),
+    ).toEqual([]);
+  });
+
+  it("确定非 object 实参（prim 字面量）仍违例（对照）", () => {
+    const source = `
+export function literalString(node) {
+  return node.type === "StringLiteral" ? node.value : "";
+}
+const r = literalString(42);
+`;
+    const report = checkSource(
+      "/t/app.js",
+      source,
+      pTrue,
+      loadWith({ "/t/app.nudo.js": sidecar }),
+    );
+    const violated = report.issues.filter(
+      (i) => i.code === "nudo:constraint-violated",
+    );
+    expect(violated.length).toBe(1);
+    expect(violated[0]!.expected).toContain("object shape");
+  });
+
+  it("缺字段实参仍违例（对照）", () => {
+    const source = `
+export function literalString(node) {
+  return node.type === "StringLiteral" ? node.value : "";
+}
+const r = literalString({ type: "StringLiteral" });
+`;
+    const report = checkSource(
+      "/t/app.js",
+      source,
+      pTrue,
+      loadWith({ "/t/app.nudo.js": sidecar }),
+    );
+    const violated = report.issues.filter(
+      (i) => i.code === "nudo:constraint-violated",
+    );
+    expect(violated.length).toBe(1);
+    expect(violated[0]!.expected).toContain("missing field");
+  });
+});
+
