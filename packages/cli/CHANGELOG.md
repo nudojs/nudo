@@ -1,5 +1,11 @@
 # nudo
 
+## 1.1.13
+
+### Patch Changes
+
+- nudojs@1.3.1
+
 ## 1.1.12
 
 ### Patch Changes

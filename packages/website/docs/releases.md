@@ -11,363 +11,125 @@ This page keeps each package’s **current** notes only. Full history: [Full rel
 
 | Package | Current version |
 |----------|-----------------|
-| `@nudojs/core` | 1.6.0 |
-| `@nudojs/service` | 1.5.0 |
-| `nudojs (CLI)` | 1.3.0 |
-| `@nudojs/parser` | 1.3.0 |
-| `@nudojs/lsp` | 1.3.0 |
-| `@nudojs/env` | 0.4.14 |
-| `@nudojs/harvester` | 0.3.0 |
-| `vite-plugin-nudo` | 0.4.15 |
-| `nudo-vscode` | 0.3.19 |
+| `@nudojs/core` | 1.7.0 |
+| `@nudojs/service` | 1.6.0 |
+| `nudojs (CLI)` | 1.3.1 |
+| `@nudojs/parser` | 1.3.1 |
+| `@nudojs/lsp` | 1.3.1 |
+| `@nudojs/env` | 0.4.15 |
+| `@nudojs/harvester` | 0.3.1 |
+| `vite-plugin-nudo` | 0.4.16 |
+| `nudo-vscode` | 0.3.20 |
 
 **Jump to package:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.6.0 {#pkg-core}
+## @nudojs/core 1.7.0 {#pkg-core}
+
+## 1.7.0
+
+### Minor Changes
+
+- f6ec0e8: fix #76 (quickfix self-defeating `any()` + false-positive call-site errors):
+  
+  - service/body-read-types: collect full member-read **paths** (`node.loc.start.line`), not just first-level keys. Dereferenced intermediate fields materialize as **nested shapes** (`loc: shape({ start: shape({ line: any() }) })`) instead of `any()` — an `any()` slot value keeps its member reads counted as may-throw, so the generated contract could not clear the L2 it targeted (issue: 1/7 warnings cleared; now the nested-read cases clear too). Method accesses (`.toLowerCase()`) still type the field directly and stop the chain. `BodyReadField` gains optional `fields?: BodyReadField[]`; `shapeDslFromFields` recurses.
+  - core/scan: `any` actuals against a shape precondition are no longer `nudo:constraint-violated` errors — no info, don't guess, matching the scalar-pred channel ("any ≤ 任意目标") and the same function's `unknown` handling. Determined non-object and missing-field actuals still violate (controls pinned).
+
+Older versions (23) → [Full release history](./releases-history.md#pkg-core)
+
+## @nudojs/service 1.6.0 {#pkg-service}
 
 ## 1.6.0
 
 ### Minor Changes
 
-- 2f9717b: repo-wide correctness batch (fix-10: 19 fixes + 3 design-defect fixes)
-
-  Security & correctness:
-  - type-expression AST whitelist blocks @nudo:case/@nudo:as RCE (P0)
-  - unified export/binding-name sanitization (reserved words / collisions)
-  - slot & export tables read via own-property, blocking Object.prototype members
-
-  Type system:
-  - tuple rest slot effective across leq / widen / runtime / schema / dts
-  - x++/x-- propagate term/pred/Φ constraints from the same source as +=/-=
-  - key-channel literals distinguish -0/0 (litKeyString)
-  - projection/format exits unified under ProjectionBudget: cycle & depth truncation observable
-
-  CLI gates & contracts:
-  - health --from path errors fold into pathErrors; ok↔exit single source
-  - migrate verify/health pass skips, judged same as nudo check
-  - malformed JSDoc directives no longer silently dropped / line-swallowed / host-throwing
-  - case-arg recursion depth cap 32 (DoS protection)
-
-  Service layer:
-  - cache-limit precedence explicit > env > project; env params take effect per call
-  - session LRUs aligned with BoundedLruMap (overwrite refreshes position; max=0 read miss)
-  - module-cache entries carry subtree content fingerprints; transitive invalidation cohesive (DESIGN-002)
-  - sidecar contract identity = export name, binding name aliasable; reserved-word / string exports emitted safely (DESIGN-003)
-  - @nudo:import alias lookup uses the original export name; miss reports a diagnostic
-
-  Parsing & diagnostics:
-  - eval diagnostics cover rest / default-value / named-expression declarations and computed-key references
-  - ambient sidecar lookup includes .nudo.mjs; suffix set single source of truth
-
-  S2/S5/S6 tracking batch (BUG-017–028):
-  - type inference: collectPredVars collects assumeFinite constraints; eqLit channel tagged (eq(x, lit(undefined)) projectable); non-finite bounds (NaN/±Infinity) not projected; fn rest non-array types promoted to (T)[]; optional param names keep `?`
-  - gates & CLI: check --fix preserves gate semantics (residual errors exit 1; flag combos are usage errors); variadic flags swallowing positional args → targeted usage error + `--` terminator; export on the PathError face (nudo:path-* + nudo:path-io); findProjectConfig parse-failure diagnostic + stop
-  - eval engine: injection-table collection exceptions fail-closed (never a half table); same-name class collision epoch detection + fallback observation; EvalCallRecord.threw required + bridge fail-closed (omitted threw → throwsAbs unknown); tryEvalCall explicit isAbsVal guard
-  - LSP / error face: validateText document version gate (stale analysis never published); diagnostic / agent error message absolute-path redaction (home→~, root→.); injection setup failure surfaces and blocks exit
-  - observation face: standard-schema missing-key vs explicit-undefined distinction; dts projection optional param names, fn rest TS validity
-
-  PR #80 review batches (merge 7e6051ae):
-  - own-property reads across sidecar import/export tables and the modules table; emit-identity dedup; quote-aware sidecar binding scan; check injection-failure gate (no fake-green --json exit, no degraded cache write); class-collision epoch scoped to the entry-call phase; LSP error redaction with real workspace roots; health --from requires explicit paths
-
-Older versions (22) → [Full release history](./releases-history.md#pkg-core)
-
-## @nudojs/service 1.5.0 {#pkg-service}
-
-## 1.5.0
-
-### Minor Changes
-
-- 2f9717b: repo-wide correctness batch (fix-10: 19 fixes + 3 design-defect fixes)
-
-  Security & correctness:
-  - type-expression AST whitelist blocks @nudo:case/@nudo:as RCE (P0)
-  - unified export/binding-name sanitization (reserved words / collisions)
-  - slot & export tables read via own-property, blocking Object.prototype members
-
-  Type system:
-  - tuple rest slot effective across leq / widen / runtime / schema / dts
-  - x++/x-- propagate term/pred/Φ constraints from the same source as +=/-=
-  - key-channel literals distinguish -0/0 (litKeyString)
-  - projection/format exits unified under ProjectionBudget: cycle & depth truncation observable
-
-  CLI gates & contracts:
-  - health --from path errors fold into pathErrors; ok↔exit single source
-  - migrate verify/health pass skips, judged same as nudo check
-  - malformed JSDoc directives no longer silently dropped / line-swallowed / host-throwing
-  - case-arg recursion depth cap 32 (DoS protection)
-
-  Service layer:
-  - cache-limit precedence explicit > env > project; env params take effect per call
-  - session LRUs aligned with BoundedLruMap (overwrite refreshes position; max=0 read miss)
-  - module-cache entries carry subtree content fingerprints; transitive invalidation cohesive (DESIGN-002)
-  - sidecar contract identity = export name, binding name aliasable; reserved-word / string exports emitted safely (DESIGN-003)
-  - @nudo:import alias lookup uses the original export name; miss reports a diagnostic
-
-  Parsing & diagnostics:
-  - eval diagnostics cover rest / default-value / named-expression declarations and computed-key references
-  - ambient sidecar lookup includes .nudo.mjs; suffix set single source of truth
-
-  S2/S5/S6 tracking batch (BUG-017–028):
-  - type inference: collectPredVars collects assumeFinite constraints; eqLit channel tagged (eq(x, lit(undefined)) projectable); non-finite bounds (NaN/±Infinity) not projected; fn rest non-array types promoted to (T)[]; optional param names keep `?`
-  - gates & CLI: check --fix preserves gate semantics (residual errors exit 1; flag combos are usage errors); variadic flags swallowing positional args → targeted usage error + `--` terminator; export on the PathError face (nudo:path-* + nudo:path-io); findProjectConfig parse-failure diagnostic + stop
-  - eval engine: injection-table collection exceptions fail-closed (never a half table); same-name class collision epoch detection + fallback observation; EvalCallRecord.threw required + bridge fail-closed (omitted threw → throwsAbs unknown); tryEvalCall explicit isAbsVal guard
-  - LSP / error face: validateText document version gate (stale analysis never published); diagnostic / agent error message absolute-path redaction (home→~, root→.); injection setup failure surfaces and blocks exit
-  - observation face: standard-schema missing-key vs explicit-undefined distinction; dts projection optional param names, fn rest TS validity
-
-  PR #80 review batches (merge 7e6051ae):
-  - own-property reads across sidecar import/export tables and the modules table; emit-identity dedup; quote-aware sidecar binding scan; check injection-failure gate (no fake-green --json exit, no degraded cache write); class-collision epoch scoped to the entry-call phase; LSP error redaction with real workspace roots; health --from requires explicit paths
+- f6ec0e8: fix #76 (quickfix self-defeating `any()` + false-positive call-site errors):
+  
+  - service/body-read-types: collect full member-read **paths** (`node.loc.start.line`), not just first-level keys. Dereferenced intermediate fields materialize as **nested shapes** (`loc: shape({ start: shape({ line: any() }) })`) instead of `any()` — an `any()` slot value keeps its member reads counted as may-throw, so the generated contract could not clear the L2 it targeted (issue: 1/7 warnings cleared; now the nested-read cases clear too). Method accesses (`.toLowerCase()`) still type the field directly and stop the chain. `BodyReadField` gains optional `fields?: BodyReadField[]`; `shapeDslFromFields` recurses.
+  - core/scan: `any` actuals against a shape precondition are no longer `nudo:constraint-violated` errors — no info, don't guess, matching the scalar-pred channel ("any ≤ 任意目标") and the same function's `unknown` handling. Determined non-object and missing-field actuals still violate (controls pinned).
 
 ### Patch Changes
 
-- Updated dependencies [2f9717b]
-  - @nudojs/core@1.6.0
-  - @nudojs/parser@1.3.0
-  - @nudojs/harvester@0.3.0
-  - @nudojs/env@0.4.14
+- Updated dependencies [f6ec0e8]
+  - @nudojs/core@1.7.0
+  - @nudojs/env@0.4.15
+  - @nudojs/harvester@0.3.1
+  - @nudojs/parser@1.3.1
 
-Older versions (24) → [Full release history](./releases-history.md#pkg-service)
+Older versions (25) → [Full release history](./releases-history.md#pkg-service)
 
-## nudojs (CLI) 1.3.0 {#pkg-nudojs}
+## nudojs (CLI) 1.3.1 {#pkg-nudojs}
 
-## 1.3.0
-
-### Minor Changes
-
-- 2f9717b: repo-wide correctness batch (fix-10: 19 fixes + 3 design-defect fixes)
-
-  Security & correctness:
-  - type-expression AST whitelist blocks @nudo:case/@nudo:as RCE (P0)
-  - unified export/binding-name sanitization (reserved words / collisions)
-  - slot & export tables read via own-property, blocking Object.prototype members
-
-  Type system:
-  - tuple rest slot effective across leq / widen / runtime / schema / dts
-  - x++/x-- propagate term/pred/Φ constraints from the same source as +=/-=
-  - key-channel literals distinguish -0/0 (litKeyString)
-  - projection/format exits unified under ProjectionBudget: cycle & depth truncation observable
-
-  CLI gates & contracts:
-  - health --from path errors fold into pathErrors; ok↔exit single source
-  - migrate verify/health pass skips, judged same as nudo check
-  - malformed JSDoc directives no longer silently dropped / line-swallowed / host-throwing
-  - case-arg recursion depth cap 32 (DoS protection)
-
-  Service layer:
-  - cache-limit precedence explicit > env > project; env params take effect per call
-  - session LRUs aligned with BoundedLruMap (overwrite refreshes position; max=0 read miss)
-  - module-cache entries carry subtree content fingerprints; transitive invalidation cohesive (DESIGN-002)
-  - sidecar contract identity = export name, binding name aliasable; reserved-word / string exports emitted safely (DESIGN-003)
-  - @nudo:import alias lookup uses the original export name; miss reports a diagnostic
-
-  Parsing & diagnostics:
-  - eval diagnostics cover rest / default-value / named-expression declarations and computed-key references
-  - ambient sidecar lookup includes .nudo.mjs; suffix set single source of truth
-
-  S2/S5/S6 tracking batch (BUG-017–028):
-  - type inference: collectPredVars collects assumeFinite constraints; eqLit channel tagged (eq(x, lit(undefined)) projectable); non-finite bounds (NaN/±Infinity) not projected; fn rest non-array types promoted to (T)[]; optional param names keep `?`
-  - gates & CLI: check --fix preserves gate semantics (residual errors exit 1; flag combos are usage errors); variadic flags swallowing positional args → targeted usage error + `--` terminator; export on the PathError face (nudo:path-* + nudo:path-io); findProjectConfig parse-failure diagnostic + stop
-  - eval engine: injection-table collection exceptions fail-closed (never a half table); same-name class collision epoch detection + fallback observation; EvalCallRecord.threw required + bridge fail-closed (omitted threw → throwsAbs unknown); tryEvalCall explicit isAbsVal guard
-  - LSP / error face: validateText document version gate (stale analysis never published); diagnostic / agent error message absolute-path redaction (home→~, root→.); injection setup failure surfaces and blocks exit
-  - observation face: standard-schema missing-key vs explicit-undefined distinction; dts projection optional param names, fn rest TS validity
-
-  PR #80 review batches (merge 7e6051ae):
-  - own-property reads across sidecar import/export tables and the modules table; emit-identity dedup; quote-aware sidecar binding scan; check injection-failure gate (no fake-green --json exit, no degraded cache write); class-collision epoch scoped to the entry-call phase; LSP error redaction with real workspace roots; health --from requires explicit paths
+## 1.3.1
 
 ### Patch Changes
 
-- Updated dependencies [2f9717b]
-  - @nudojs/core@1.6.0
-  - @nudojs/service@1.5.0
-  - @nudojs/parser@1.3.0
-  - @nudojs/harvester@0.3.0
+- Updated dependencies [f6ec0e8]
+  - @nudojs/core@1.7.0
+  - @nudojs/service@1.6.0
+  - @nudojs/harvester@0.3.1
+  - @nudojs/parser@1.3.1
 
-Older versions (21) → [Full release history](./releases-history.md#pkg-nudojs)
+Older versions (22) → [Full release history](./releases-history.md#pkg-nudojs)
 
-## @nudojs/parser 1.3.0 {#pkg-parser}
+## @nudojs/parser 1.3.1 {#pkg-parser}
 
-## 1.3.0
-
-### Minor Changes
-
-- 2f9717b: repo-wide correctness batch (fix-10: 19 fixes + 3 design-defect fixes)
-
-  Security & correctness:
-  - type-expression AST whitelist blocks @nudo:case/@nudo:as RCE (P0)
-  - unified export/binding-name sanitization (reserved words / collisions)
-  - slot & export tables read via own-property, blocking Object.prototype members
-
-  Type system:
-  - tuple rest slot effective across leq / widen / runtime / schema / dts
-  - x++/x-- propagate term/pred/Φ constraints from the same source as +=/-=
-  - key-channel literals distinguish -0/0 (litKeyString)
-  - projection/format exits unified under ProjectionBudget: cycle & depth truncation observable
-
-  CLI gates & contracts:
-  - health --from path errors fold into pathErrors; ok↔exit single source
-  - migrate verify/health pass skips, judged same as nudo check
-  - malformed JSDoc directives no longer silently dropped / line-swallowed / host-throwing
-  - case-arg recursion depth cap 32 (DoS protection)
-
-  Service layer:
-  - cache-limit precedence explicit > env > project; env params take effect per call
-  - session LRUs aligned with BoundedLruMap (overwrite refreshes position; max=0 read miss)
-  - module-cache entries carry subtree content fingerprints; transitive invalidation cohesive (DESIGN-002)
-  - sidecar contract identity = export name, binding name aliasable; reserved-word / string exports emitted safely (DESIGN-003)
-  - @nudo:import alias lookup uses the original export name; miss reports a diagnostic
-
-  Parsing & diagnostics:
-  - eval diagnostics cover rest / default-value / named-expression declarations and computed-key references
-  - ambient sidecar lookup includes .nudo.mjs; suffix set single source of truth
-
-  S2/S5/S6 tracking batch (BUG-017–028):
-  - type inference: collectPredVars collects assumeFinite constraints; eqLit channel tagged (eq(x, lit(undefined)) projectable); non-finite bounds (NaN/±Infinity) not projected; fn rest non-array types promoted to (T)[]; optional param names keep `?`
-  - gates & CLI: check --fix preserves gate semantics (residual errors exit 1; flag combos are usage errors); variadic flags swallowing positional args → targeted usage error + `--` terminator; export on the PathError face (nudo:path-* + nudo:path-io); findProjectConfig parse-failure diagnostic + stop
-  - eval engine: injection-table collection exceptions fail-closed (never a half table); same-name class collision epoch detection + fallback observation; EvalCallRecord.threw required + bridge fail-closed (omitted threw → throwsAbs unknown); tryEvalCall explicit isAbsVal guard
-  - LSP / error face: validateText document version gate (stale analysis never published); diagnostic / agent error message absolute-path redaction (home→~, root→.); injection setup failure surfaces and blocks exit
-  - observation face: standard-schema missing-key vs explicit-undefined distinction; dts projection optional param names, fn rest TS validity
-
-  PR #80 review batches (merge 7e6051ae):
-  - own-property reads across sidecar import/export tables and the modules table; emit-identity dedup; quote-aware sidecar binding scan; check injection-failure gate (no fake-green --json exit, no degraded cache write); class-collision epoch scoped to the entry-call phase; LSP error redaction with real workspace roots; health --from requires explicit paths
+## 1.3.1
 
 ### Patch Changes
 
-- Updated dependencies [2f9717b]
-  - @nudojs/core@1.6.0
+- Updated dependencies [f6ec0e8]
+  - @nudojs/core@1.7.0
 
-Older versions (22) → [Full release history](./releases-history.md#pkg-parser)
+Older versions (23) → [Full release history](./releases-history.md#pkg-parser)
 
-## @nudojs/lsp 1.3.0 {#pkg-lsp}
+## @nudojs/lsp 1.3.1 {#pkg-lsp}
 
-## 1.3.0
-
-### Minor Changes
-
-- 2f9717b: repo-wide correctness batch (fix-10: 19 fixes + 3 design-defect fixes)
-
-  Security & correctness:
-  - type-expression AST whitelist blocks @nudo:case/@nudo:as RCE (P0)
-  - unified export/binding-name sanitization (reserved words / collisions)
-  - slot & export tables read via own-property, blocking Object.prototype members
-
-  Type system:
-  - tuple rest slot effective across leq / widen / runtime / schema / dts
-  - x++/x-- propagate term/pred/Φ constraints from the same source as +=/-=
-  - key-channel literals distinguish -0/0 (litKeyString)
-  - projection/format exits unified under ProjectionBudget: cycle & depth truncation observable
-
-  CLI gates & contracts:
-  - health --from path errors fold into pathErrors; ok↔exit single source
-  - migrate verify/health pass skips, judged same as nudo check
-  - malformed JSDoc directives no longer silently dropped / line-swallowed / host-throwing
-  - case-arg recursion depth cap 32 (DoS protection)
-
-  Service layer:
-  - cache-limit precedence explicit > env > project; env params take effect per call
-  - session LRUs aligned with BoundedLruMap (overwrite refreshes position; max=0 read miss)
-  - module-cache entries carry subtree content fingerprints; transitive invalidation cohesive (DESIGN-002)
-  - sidecar contract identity = export name, binding name aliasable; reserved-word / string exports emitted safely (DESIGN-003)
-  - @nudo:import alias lookup uses the original export name; miss reports a diagnostic
-
-  Parsing & diagnostics:
-  - eval diagnostics cover rest / default-value / named-expression declarations and computed-key references
-  - ambient sidecar lookup includes .nudo.mjs; suffix set single source of truth
-
-  S2/S5/S6 tracking batch (BUG-017–028):
-  - type inference: collectPredVars collects assumeFinite constraints; eqLit channel tagged (eq(x, lit(undefined)) projectable); non-finite bounds (NaN/±Infinity) not projected; fn rest non-array types promoted to (T)[]; optional param names keep `?`
-  - gates & CLI: check --fix preserves gate semantics (residual errors exit 1; flag combos are usage errors); variadic flags swallowing positional args → targeted usage error + `--` terminator; export on the PathError face (nudo:path-* + nudo:path-io); findProjectConfig parse-failure diagnostic + stop
-  - eval engine: injection-table collection exceptions fail-closed (never a half table); same-name class collision epoch detection + fallback observation; EvalCallRecord.threw required + bridge fail-closed (omitted threw → throwsAbs unknown); tryEvalCall explicit isAbsVal guard
-  - LSP / error face: validateText document version gate (stale analysis never published); diagnostic / agent error message absolute-path redaction (home→~, root→.); injection setup failure surfaces and blocks exit
-  - observation face: standard-schema missing-key vs explicit-undefined distinction; dts projection optional param names, fn rest TS validity
-
-  PR #80 review batches (merge 7e6051ae):
-  - own-property reads across sidecar import/export tables and the modules table; emit-identity dedup; quote-aware sidecar binding scan; check injection-failure gate (no fake-green --json exit, no degraded cache write); class-collision epoch scoped to the entry-call phase; LSP error redaction with real workspace roots; health --from requires explicit paths
+## 1.3.1
 
 ### Patch Changes
 
-- Updated dependencies [2f9717b]
-  - @nudojs/core@1.6.0
-  - @nudojs/service@1.5.0
-  - @nudojs/parser@1.3.0
+- Updated dependencies [f6ec0e8]
+  - @nudojs/core@1.7.0
+  - @nudojs/service@1.6.0
+  - @nudojs/parser@1.3.1
 
-Older versions (25) → [Full release history](./releases-history.md#pkg-lsp)
+Older versions (26) → [Full release history](./releases-history.md#pkg-lsp)
 
-## @nudojs/env 0.4.14 {#pkg-env}
-
-## 0.4.14
-
-### Patch Changes
-
-- Updated dependencies [2f9717b]
-  - @nudojs/core@1.6.0
-
-Older versions (21) → [Full release history](./releases-history.md#pkg-env)
-
-## @nudojs/harvester 0.3.0 {#pkg-harvester}
-
-## 0.3.0
-
-### Minor Changes
-
-- 2f9717b: repo-wide correctness batch (fix-10: 19 fixes + 3 design-defect fixes)
-
-  Security & correctness:
-  - type-expression AST whitelist blocks @nudo:case/@nudo:as RCE (P0)
-  - unified export/binding-name sanitization (reserved words / collisions)
-  - slot & export tables read via own-property, blocking Object.prototype members
-
-  Type system:
-  - tuple rest slot effective across leq / widen / runtime / schema / dts
-  - x++/x-- propagate term/pred/Φ constraints from the same source as +=/-=
-  - key-channel literals distinguish -0/0 (litKeyString)
-  - projection/format exits unified under ProjectionBudget: cycle & depth truncation observable
-
-  CLI gates & contracts:
-  - health --from path errors fold into pathErrors; ok↔exit single source
-  - migrate verify/health pass skips, judged same as nudo check
-  - malformed JSDoc directives no longer silently dropped / line-swallowed / host-throwing
-  - case-arg recursion depth cap 32 (DoS protection)
-
-  Service layer:
-  - cache-limit precedence explicit > env > project; env params take effect per call
-  - session LRUs aligned with BoundedLruMap (overwrite refreshes position; max=0 read miss)
-  - module-cache entries carry subtree content fingerprints; transitive invalidation cohesive (DESIGN-002)
-  - sidecar contract identity = export name, binding name aliasable; reserved-word / string exports emitted safely (DESIGN-003)
-  - @nudo:import alias lookup uses the original export name; miss reports a diagnostic
-
-  Parsing & diagnostics:
-  - eval diagnostics cover rest / default-value / named-expression declarations and computed-key references
-  - ambient sidecar lookup includes .nudo.mjs; suffix set single source of truth
-
-  S2/S5/S6 tracking batch (BUG-017–028):
-  - type inference: collectPredVars collects assumeFinite constraints; eqLit channel tagged (eq(x, lit(undefined)) projectable); non-finite bounds (NaN/±Infinity) not projected; fn rest non-array types promoted to (T)[]; optional param names keep `?`
-  - gates & CLI: check --fix preserves gate semantics (residual errors exit 1; flag combos are usage errors); variadic flags swallowing positional args → targeted usage error + `--` terminator; export on the PathError face (nudo:path-* + nudo:path-io); findProjectConfig parse-failure diagnostic + stop
-  - eval engine: injection-table collection exceptions fail-closed (never a half table); same-name class collision epoch detection + fallback observation; EvalCallRecord.threw required + bridge fail-closed (omitted threw → throwsAbs unknown); tryEvalCall explicit isAbsVal guard
-  - LSP / error face: validateText document version gate (stale analysis never published); diagnostic / agent error message absolute-path redaction (home→~, root→.); injection setup failure surfaces and blocks exit
-  - observation face: standard-schema missing-key vs explicit-undefined distinction; dts projection optional param names, fn rest TS validity
-
-  PR #80 review batches (merge 7e6051ae):
-  - own-property reads across sidecar import/export tables and the modules table; emit-identity dedup; quote-aware sidecar binding scan; check injection-failure gate (no fake-green --json exit, no degraded cache write); class-collision epoch scoped to the entry-call phase; LSP error redaction with real workspace roots; health --from requires explicit paths
-
-### Patch Changes
-
-- Updated dependencies [2f9717b]
-  - @nudojs/core@1.6.0
-  - @nudojs/parser@1.3.0
-  - @nudojs/env@0.4.14
-
-Older versions (21) → [Full release history](./releases-history.md#pkg-harvester)
-
-## vite-plugin-nudo 0.4.15 {#pkg-vite-plugin}
+## @nudojs/env 0.4.15 {#pkg-env}
 
 ## 0.4.15
 
 ### Patch Changes
 
-- Updated dependencies [2f9717b]
-  - @nudojs/core@1.6.0
-  - @nudojs/service@1.5.0
+- Updated dependencies [f6ec0e8]
+  - @nudojs/core@1.7.0
 
-Older versions (24) → [Full release history](./releases-history.md#pkg-vite-plugin)
+Older versions (22) → [Full release history](./releases-history.md#pkg-env)
+
+## @nudojs/harvester 0.3.1 {#pkg-harvester}
+
+## 0.3.1
+
+### Patch Changes
+
+- Updated dependencies [f6ec0e8]
+  - @nudojs/core@1.7.0
+  - @nudojs/env@0.4.15
+  - @nudojs/parser@1.3.1
+
+Older versions (22) → [Full release history](./releases-history.md#pkg-harvester)
+
+## vite-plugin-nudo 0.4.16 {#pkg-vite-plugin}
+
+## 0.4.16
+
+### Patch Changes
+
+- Updated dependencies [f6ec0e8]
+  - @nudojs/core@1.7.0
+  - @nudojs/service@1.6.0
+
+Older versions (25) → [Full release history](./releases-history.md#pkg-vite-plugin)
 
 ## nudo-vscode 0.3.7 {#pkg-vscode}
 
