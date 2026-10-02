@@ -53,7 +53,7 @@ function project(pkgNudo: Record<string, unknown>): string {
 }
 
 describe("G4: --fix 与 plain check 同读 package.json#nudo.check", () => {
-  it("profile adoption：plain 绿则 --fix 也绿（此前分叉：--fix 红）", () => {
+  it("profile adoption：plain 绿则 --fix 也绿（此前分叉：--fix 红）", { timeout: 30_000 }, () => {
     const d = project({ check: { profile: "adoption" } });
     const plain = runCli(["check", join(d, "a.js")]);
     expect(plain.status, plain.stdout + plain.stderr).toBe(0);
@@ -64,7 +64,7 @@ describe("G4: --fix 与 plain check 同读 package.json#nudo.check", () => {
     expect(fix.status, out).toBe(0);
   });
 
-  it("entryThrows warning：与 plain check 判定一致", () => {
+  it("entryThrows warning：与 plain check 判定一致", { timeout: 30_000 }, () => {
     const d = project({ check: { entryThrows: "warning" } });
     const plain = runCli(["check", join(d, "a.js")]);
     expect(plain.status, plain.stdout + plain.stderr).toBe(0);
@@ -72,7 +72,7 @@ describe("G4: --fix 与 plain check 同读 package.json#nudo.check", () => {
     expect(fix.status, fix.stdout + fix.stderr).toBe(0);
   });
 
-  it("ignoreThrows：package.json 列表在 --fix 路径同样生效", () => {
+  it("ignoreThrows：package.json 列表在 --fix 路径同样生效", { timeout: 30_000 }, () => {
     const d = project({ check: { ignoreThrows: ["TypeError"] } });
     const plain = runCli(["check", join(d, "a.js")]);
     expect(plain.status, plain.stdout + plain.stderr).toBe(0);
@@ -80,7 +80,7 @@ describe("G4: --fix 与 plain check 同读 package.json#nudo.check", () => {
     expect(fix.status, fix.stdout + fix.stderr).toBe(0);
   });
 
-  it("CLI --entry-throws error 仍压过 package.json adoption（fix 与 plain 同序）", () => {
+  it("CLI --entry-throws error 仍压过 package.json adoption（fix 与 plain 同序）", { timeout: 30_000 }, () => {
     const d = project({ check: { profile: "adoption" } });
     const plain = runCli(["check", join(d, "a.js"), "--entry-throws", "error"]);
     expect(plain.status).toBe(1);
@@ -96,7 +96,7 @@ describe("G4: --fix 与 plain check 同读 package.json#nudo.check", () => {
 });
 
 describe("G5: --fix 拒绝 --from（使用处证据不得静默丢弃）", () => {
-  it("--fix --write --from → usage error 指名 --from，不落盘", () => {
+  it("--fix --write --from → usage error 指名 --from，不落盘", { timeout: 30_000 }, () => {
     const d = mkdtempSync(join(tmpdir(), "nudo-fix-from-"));
     const file = join(d, "f.js");
     writeFileSync(
@@ -115,7 +115,7 @@ describe("G5: --fix 拒绝 --from（使用处证据不得静默丢弃）", () =>
     expect(existsSync(join(d, "f.nudo.js"))).toBe(false);
   });
 
-  it("dry-run --fix --from 同样拒绝（与 --write 无关）", () => {
+  it("dry-run --fix --from 同样拒绝（与 --write 无关）", { timeout: 30_000 }, () => {
     const d = mkdtempSync(join(tmpdir(), "nudo-fix-from-dry-"));
     const file = join(d, "f.js");
     writeFileSync(

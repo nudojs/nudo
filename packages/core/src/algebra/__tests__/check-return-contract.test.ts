@@ -597,4 +597,168 @@ function one() {
 `);
     expect(errs).toEqual([]);
   });
+
+  it("ok: fork 合并的字面量臂经 Math.min/max 保区间（sum 成员界并集）", () => {
+    // s = flag ? 20 : 55 —— B 路径 fork 合并为 sum（成员为字面量）。
+    // sum 的 numericBounds 取成员界并集、isNonNaN 逐成员可证 ⇒
+    // Math.min/max 不得挂 NaN 臂/无界臂（此前误报 ⊭ percent）。
+    const errs = errorsOf(`
+/**
+ * @nudo:contract return percent
+ */
+function pick(flag) {
+  const s = flag ? 20 : 55;
+  return Math.max(0, Math.min(100, s));
+}
+`);
+    expect(errs).toEqual([]);
+  });
+
+  it("ok: Number.isNaN 守卫对合并值仍排除 NaN 臂", () => {
+    const errs = errorsOf(`
+/**
+ * @nudo:contract return percent
+ */
+function pick(flag) {
+  const s = flag ? 20 : 55;
+  if (Number.isNaN(s)) return 0;
+  return Math.min(100, s);
+}
+`);
+    expect(errs).toEqual([]);
+  });
+
+  it("ok: 条件累积分（+= 分支合并）经 clamp 满足区间", () => {
+    const errs = errorsOf(`
+/**
+ * @nudo:contract return percent
+ */
+function supplyChainScore(attestation) {
+  let score = 0;
+  if (attestation?.gitCommit) score += 35;
+  if (attestation?.workflowFingerprint) score += 25;
+  score += 20;
+  if (Number.isNaN(score)) return 0;
+  return Math.max(0, Math.min(100, score));
+}
+`);
+    expect(errs).toEqual([]);
+  });
+
+  it("ok: 字面量减 fork 合并值保区间（sub sum 分发）", () => {
+    // 此前 sub 遇 sum 操作数整体落 unknown → clamp 内 Math.min/max
+    // 挂 NaN 臂 → 区间契约误报。
+    const errs = errorsOf(`
+/**
+ * @nudo:contract return percent
+ */
+function pick(flag) {
+  const s = flag ? 20 : 55;
+  return 100 - s;
+}
+`);
+    expect(errs).toEqual([]);
+    // 断言分发精度：100 - (20 | 55) 推断为 45 | 80，不得退化成 unknown
+    const violated = issuesOf(`
+/**
+ * @nudo:contract return small
+ */
+function pickSmall(flag) {
+  const s = flag ? 20 : 55;
+  return 100 - s;
+}
+`);
+    const err = violated.issues.find((i) => i.message.includes("@nudo:contract return"));
+    expect(err).toBeDefined();
+    expect(err!.actual).toContain("45");
+    expect(err!.actual).toContain("80");
+    expect(err!.actual).not.toContain("unknown");
+  });
+
+  it("ok: 加权求和（mul/add sum 分发）保区间", () => {
+    const errs = errorsOf(`
+/**
+ * @nudo:contract return percent
+ */
+function weighted(flag) {
+  const a = flag ? 20 : 55;
+  const b = flag ? 10 : 40;
+  return 0.3 * a + 0.7 * b;
+}
+`);
+    expect(errs).toEqual([]);
+    // 断言分发精度：0.3*a + 0.7*b 推断为四个字面量臂，不得退化成 unknown
+    const violated = issuesOf(`
+/**
+ * @nudo:contract return small
+ */
+function weightedSmall(flag) {
+  const a = flag ? 20 : 55;
+  const b = flag ? 10 : 40;
+  return 0.3 * a + 0.7 * b;
+}
+`);
+    const err = violated.issues.find((i) => i.message.includes("@nudo:contract return"));
+    expect(err).toBeDefined();
+    expect(err!.actual).toContain("13");
+    expect(err!.actual).toContain("44.5");
+    expect(err!.actual).not.toContain("unknown");
+  });
+
+  it("ok: 评分卡维度（解构形参 + filter/reduce + clamp）满足区间契约", () => {
+    // npm-safe scanner computeScorecard 的真实形态：reduce 逐成员
+    // 精确（penalty 枚举），100 - reduce 经 sub 分发保持字面量臂，
+    // clamp100 的 Math.min/max 凭成员界/非 NaN 性不再挂 NaN 臂。
+    // 形参契约（侧车 fn 签名）与返回契约同时挂载——同 npm-safe 侧车。
+    const errs = errorsOf(`
+function penaltyFor(severity) {
+  if (severity === 'critical') return 45;
+  if (severity === 'high') return 25;
+  if (severity === 'medium') return 12;
+  if (severity === 'low') return 6;
+  return 0;
+}
+function clamp100(n) {
+  if (Number.isNaN(n)) return 0;
+  return Math.max(0, Math.min(100, n));
+}
+/**
+ * @nudo:contract findings scorecardFindings
+ * @nudo:contract return scorecard
+ */
+function computeScorecard({ findings }) {
+  const codeBehavior = 100 - findings
+    .filter((f) => f.category === 'code')
+    .reduce((acc, f) => acc + penaltyFor(f.severity), 0);
+  return { codeBehavior: clamp100(codeBehavior) };
+}
+`);
+    expect(errs).toEqual([]);
+  });
+
+  it("ok: 加权总分（Math.round ∘ clamp100 ∘ 加权和）满足区间契约", () => {
+    // npm-safe scanner totalScore 形态：钳位惯用法经 Math.round 收尾。
+    // roundingAbs 此前对无 term 实参（sum）丢界 → 返回纯 number →
+    // 区间契约 unproven-return（warning）。
+    const r = issuesOf(`
+function clamp100(n) {
+  if (Number.isNaN(n)) return 0;
+  return Math.max(0, Math.min(100, n));
+}
+/**
+ * @nudo:contract dims dimensionScores
+ * @nudo:contract return percent
+ */
+function totalScore(dims) {
+  const raw =
+    0.25 * dims.supplyChain +
+    0.3 * dims.codeBehavior +
+    0.15 * dims.dependencyHealth +
+    0.15 * dims.maintainerHistory +
+    0.15 * dims.metadataTrust;
+  return Math.round(clamp100(raw));
+}
+`);
+    expect(r.issues.filter((i) => i.severity !== "info")).toEqual([]);
+  });
 });
