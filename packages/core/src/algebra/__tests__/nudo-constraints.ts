@@ -29,6 +29,15 @@ export const orderShape = shape({
   tags: array(string().min(1)),
 });
 export const status = union(lit(0), lit(1));
+export const scorecard = shape({ codeBehavior: percent });
+export const scorecardFindings = array(shape({ category: string(), severity: string() }));
+export const dimensionScores = shape({
+  supplyChain: percent,
+  codeBehavior: percent,
+  dependencyHealth: percent,
+  maintainerHistory: percent,
+  metadataTrust: percent,
+});
 export const mapper = fn({ x: number() }, number());
 export const maybePositive = nullable(number().gt(0));
 export const posOrNull = union(number().gt(0), lit(null));
@@ -37,7 +46,7 @@ export const posOrNull = union(number().gt(0), lit(null));
 /** 给无 import 的测试源补上标准 import 行 */
 export function withStdImport(source: string): string {
   if (source.includes("@nudo:import")) return source;
-  return `/// @nudo:import { positive, delay, nonNeg, percent, port, small, atLeast1, max100, intId, shortName, nonEmpty, positives, findings, userShape, configShape, orderShape, status, mapper, maybePositive, posOrNull } from "./std.nudo.js"\n${source}`;
+  return `/// @nudo:import { positive, delay, nonNeg, percent, port, small, atLeast1, max100, intId, shortName, nonEmpty, positives, findings, userShape, configShape, orderShape, status, mapper, maybePositive, posOrNull, scorecard, scorecardFindings, dimensionScores } from "./std.nudo.js"\n${source}`;
 }
 
 /** checkSource 用的 loadModule */

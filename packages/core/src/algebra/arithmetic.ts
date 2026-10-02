@@ -44,6 +44,45 @@ import { NudoThrow } from "./exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "./exec/may-throw.ts";
 
 /**
+ * 二元算子对 sum 操作数的分发（add/sub/mul/div/mod 同口径）：
+ * 笛卡尔成员组合后去重；结果为空折 unknown，单成员收成成员自身。
+ * 成员非 sum（flattenSum 不变量）→ 递归至多一层。
+ * 此前仅 add 分发：sub/mul/div/mod 遇 sum 操作数整体落
+ * unknown —— `100 - (cond ? 20 : 55)` 推断成 unknown，
+ * 下游 clamp/区间契约误报。
+ */
+function distributeSumBinOp(
+  op: "+" | "-" | "*" | "/" | "%",
+  a: Abs,
+  b: Abs,
+  phi: Phi,
+  eval2: (x: Abs, y: Abs, phi: Phi) => Abs,
+): Abs | undefined {
+  if (a.shape.k !== "sum" && b.shape.k !== "sum") return undefined;
+  const parts: Abs[] = [];
+  const as = a.shape.k === "sum" ? a.shape.members : [a];
+  const bs = b.shape.k === "sum" ? b.shape.members : [b];
+  for (const x of as) {
+    for (const y of bs) {
+      const r = eval2(x, y, phi);
+      if (r.shape.k === "never") continue;
+      if (r.shape.k === "sum") parts.push(...r.shape.members);
+      else parts.push(r);
+    }
+  }
+  const uniq = dedupAbsMembers(parts);
+  const term =
+    a.term && b.term ? simplifyTerm(app(op, [a.term, b.term])) : undefined;
+  if (uniq.length === 0) {
+    return abs({ k: "unknown" }, term, undefined, "partial");
+  }
+  if (uniq.length === 1) {
+    return abs(uniq[0]!.shape, term, uniq[0]!.pred, confJoin(a.conf, b.conf));
+  }
+  return abs({ k: "sum", members: uniq }, term, undefined, "partial");
+}
+
+/**
  * 抽象加法：eval(a + b) —— 跟真实 JS，不无根据地假定 number。
  * 1. 双方字面量 → 直接求值
  * 2. 双方 number prim → term + 单调性 pred，shape=number
@@ -137,29 +176,8 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   }
 
   // sum 分发：对每个成员做 +，再 join（(x+1)+1 在 any 上仍是 number|string）
-  if (a.shape.k === "sum" || b.shape.k === "sum") {
-    const parts: Abs[] = [];
-    const as = a.shape.k === "sum" ? a.shape.members : [a];
-    const bs = b.shape.k === "sum" ? b.shape.members : [b];
-    for (const x of as) {
-      for (const y of bs) {
-        const r = add(x, y, phi);
-        if (r.shape.k === "never") continue;
-        if (r.shape.k === "sum") parts.push(...r.shape.members);
-        else parts.push(r);
-      }
-    }
-    const uniq = dedupAbsMembers(parts);
-    const term =
-      a.term && b.term ? simplifyTerm(app("+", [a.term, b.term])) : undefined;
-    if (uniq.length === 0) {
-      return abs({ k: "unknown" }, term, undefined, "partial");
-    }
-    if (uniq.length === 1) {
-      return abs(uniq[0]!.shape, term, uniq[0]!.pred, confJoin(a.conf, b.conf));
-    }
-    return abs({ k: "sum", members: uniq }, term, undefined, "partial");
-  }
+  const distributed = distributeSumBinOp("+", a, b, phi, add);
+  if (distributed) return distributed;
 
   // 混合/无法判定：JS + 经 ToPrimitive 可能 number 或 string
   // （obj/unknown/fn 与 number 拼接等）——诚实并集，不折纯 unknown
@@ -393,6 +411,49 @@ export type NumBounds = {
  * 优先用自身 pred；否则查 Φ（针对 var id）。
  */
 export function numericBounds(a: Abs, phi: Phi = pTrue): NumBounds | undefined {
+  // sum（fork 合并臂）：成员界的并集。lo 取各成员 lo 的最小值
+  // （同值取较弱者：非 strict），hi 对偶；任一成员该侧无界 ⇒
+  // 整体该侧无界；成员完全无界信息 ⇒ 整体无界。
+  // 此前 sum 直接落 isNumPrim 外的 undefined —— 合并后的字面量臂
+  // （如 `s = cond ? 20 : 55`）丢掉全部界信息，下游 min/max 只能
+  // 挂 NaN 臂 + 无界臂，对区间契约构成误报。
+  if (a.shape.k === "sum") {
+    const members = (a.shape as { k: "sum"; members: Abs[] }).members;
+    let lo: NumBounds["lo"];
+    let hi: NumBounds["hi"];
+    let loOpen = false;
+    let hiOpen = false;
+    for (const m of members) {
+      const mb = numericBounds(m, phi);
+      if (!mb) return undefined;
+      if (mb.lo === undefined) {
+        loOpen = true;
+      } else if (!loOpen) {
+        if (
+          lo === undefined ||
+          mb.lo.value < lo.value ||
+          (mb.lo.value === lo.value && !mb.lo.strict && lo.strict)
+        ) {
+          lo = mb.lo;
+        }
+      }
+      if (mb.hi === undefined) {
+        hiOpen = true;
+      } else if (!hiOpen) {
+        if (
+          hi === undefined ||
+          mb.hi.value > hi.value ||
+          (mb.hi.value === hi.value && !mb.hi.strict && hi.strict)
+        ) {
+          hi = mb.hi;
+        }
+      }
+    }
+    if (loOpen) lo = undefined;
+    if (hiOpen) hi = undefined;
+    if (lo === undefined && hi === undefined) return undefined;
+    return { lo, hi };
+  }
   if (!isNumPrim(a)) return undefined;
   const result: NumBounds = {};
 
@@ -525,6 +586,9 @@ export function sub(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   if (isAnyLike(a) || isAnyLike(b)) {
     return toNumberResult(a, b, "-");
   }
+  // sum 分发（与 add 同口径）：100 - (cond ? 20 : 55) → 45 | 80
+  const distributed = distributeSumBinOp("-", a, b, phi, sub);
+  if (distributed) return distributed;
   return abs({ k: "unknown" }, undefined, undefined, "partial");
 }
 
@@ -604,6 +668,9 @@ export function mul(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   if (isAnyLike(a) || isAnyLike(b)) {
     return toNumberResult(a, b, "*");
   }
+  // sum 分发（与 add 同口径）：2 * (cond ? 20 : 55) → 40 | 110
+  const distributed = distributeSumBinOp("*", a, b, phi, mul);
+  if (distributed) return distributed;
   return abs({ k: "unknown" }, undefined, undefined, "partial");
 }
 
@@ -677,6 +744,9 @@ export function div(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   if (isAnyLike(a) || isAnyLike(b)) {
     return toNumberResult(a, b, "/");
   }
+  // sum 分发（与 add 同口径）
+  const distributed = distributeSumBinOp("/", a, b, phi, div);
+  if (distributed) return distributed;
   return abs({ k: "unknown" }, undefined, undefined, "partial");
 }
 
@@ -741,6 +811,9 @@ export function mod(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   if (isAnyLike(a) || isAnyLike(b)) {
     return toNumberResult(a, b, "%");
   }
+  // sum 分发（与 add 同口径）
+  const distributed = distributeSumBinOp("%", a, b, phi, mod);
+  if (distributed) return distributed;
   return abs({ k: "unknown" }, undefined, undefined, "partial");
 }
 

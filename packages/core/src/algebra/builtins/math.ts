@@ -51,6 +51,14 @@ function isNonNaN(a: Abs, phi: Phi): boolean {
   if (a.term?.op === "lit") {
     return typeof a.term.value === "number" && !Number.isNaN(a.term.value);
   }
+  // sum（fork 合并臂）：所有成员均可证非 NaN ⇒ 整体非 NaN。
+  // 此前 sum 落到 term/pred 检查全失败 ⇒ mayNaN ⇒ min/max 误挂
+  // NaN 臂，区间契约（number().ge(0).le(100)）被误报违反。
+  if (a.shape.k === "sum") {
+    return (a.shape as { k: "sum"; members: Abs[] }).members.every((m) =>
+      isNonNaN(m, phi),
+    );
+  }
   const hasNonNaNFact = (p: Pred | undefined): boolean => {
     if (!p) return false;
     if (p.op === "and") return p.args.some(hasNonNaNFact);
@@ -219,7 +227,12 @@ function roundingAbs(
           : Math.trunc;
   const b = numericBounds(arg, phi);
   const mayNaN = !isNonNaN(arg, phi);
-  const term = arg.term ? simplifyTerm(termApp(`Math.${name}`, [arg.term])) : undefined;
+  // 结果项恒构造（无 term 实参用占位，同 minMaxAbs），否则 pred 无锚点
+  // → 界算出却挂不上（sum 实参无 term，Math.round(clamp100(sum)) 退化成
+  // 纯 number，区间契约 unproven）。
+  const term = simplifyTerm(
+    termApp(`Math.${name}`, [arg.term ?? termApp("arg0", [])]),
+  );
 
   let out: NumBounds = {};
   if (b) {
@@ -232,7 +245,7 @@ function roundingAbs(
       out.hi = Number.isNaN(v) ? undefined : { value: v, strict: false };
     }
   }
-  const pred = term ? boundsToPred(term, out) : undefined;
+  const pred = boundsToPred(term, out);
   const bounded = abs({ k: "prim", type: "number" }, term, pred, "path");
   if (!mayNaN) return bounded;
   return makeSum(numLit(NaN), bounded);
