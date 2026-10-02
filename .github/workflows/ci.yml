@@ -210,8 +210,20 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: nudo-dist
+          # upload-artifact v4+ 以全部匹配文件的最近公共祖先（LCA）为
+          # artifact 根目录：单独 `packages/*/dist` 的 LCA 是 packages/，
+          # 条目存成 `core/dist/…`、`nudojs/dist/…`，下载后落在
+          # <workspace>/core/dist 而非 packages/core/dist——run #325/#326
+          # 的 lint:website TS2307（@nudojs/* 经 package.json exports
+          # 解析到 dist）与 check-fix spawn MODULE_NOT_FOUND 的根因。
+          # 加入根级 package.json 把 LCA 钉在仓库根，条目即以
+          # `packages/*/dist/…` 存储，下载后还原到正确位置。
+          # 代价：if-no-files-found 无法再兜底空构建（package.json 恒
+          # 匹配），但 dist 缺失会在下游以 TS2307 / MODULE_NOT_FOUND
+          # 响亮失败，同样可定位。
           path: |
             packages/*/dist
+            package.json
           if-no-files-found: error
           retention-days: 1
 
