@@ -5,7 +5,7 @@
  * throws 经 callTranspiledExportFull 捕获 $throw。
  */
 
-import { runTranspiled, callTranspiledExport, callTranspiledExportFull, setEvalCallCollector, createEnvironment, noteEvalFallback, type EvalCallRecord, type TranspiledCallResult, type Abs, type AbsModuleExports, type Phi, formatAbs, getFnImpl } from "@nudojs/core";
+import { runTranspiled, callTranspiledExport, callTranspiledExportFull, setEvalCallCollector, createEnvironment, noteEvalFallback, isAbsVal, type EvalCallRecord, type TranspiledCallResult, type Abs, type AbsModuleExports, type Phi, formatAbs, getFnImpl } from "@nudojs/core";
 import { setMemberDiagCollector, setAbsTruncationCollector, type EvalMemberDiag, stableAnalyzeKeySource, hashSource, loadModuleDepsFingerprint, stablePathKey } from "@nudojs/core/internal";
 import { parse, extractInlineDirectives } from "@nudojs/parser";
 import { loadEnvs } from "./evaluator/evaluator-api.ts";
@@ -260,8 +260,19 @@ export function collectEvalReplacements(source: string): {
       }
     };
     visitStmts(file.program.body);
-  } catch {
-    /* ignore */
+  } catch (err) {
+    // BUG-025：半张注入表比无注入更糟——@nudo:replace/
+    // @nudo:as 前几条生效、后几条静默消失，应 exact
+    // 的 Abs 变 unknown/真执行。已收集任何 directive
+    // 时 rethrow（外层 catch → 整跑 fail-closed：
+    // eval-run 返回 undefined / check 注入面报错）；
+    // 零收集时 fail-closed 空 maps + noteEvalFallback
+    // 记录（无可注入项，throw 前的 parse/访问失败
+    // 不影响正确性）。
+    if (targets.length > 0 || asTargets.length > 0) {
+      throw err;
+    }
+    noteEvalFallback(err);
   }
   return { targets, values, asTargets, asValues };
 }
@@ -397,6 +408,8 @@ function evalCacheSet(
     if (oldest === undefined) break;
     evalRunByFile.delete(oldest);
   }
+  // 覆盖已有键先 delete 再 set：刷新为最近使用（与 BoundedLruMap.set 一致）
+  evalRunByFile.delete(key);
   evalRunByFile.set(key, { stableSource, mode, envKey, mockKey, depKey, value });
 }
 
@@ -432,9 +445,10 @@ export function tryRunEval(
   // 同 source 引用时 stable 快路径返回原串 → 下方 === 为 O(1)。
   const stable = stableAnalyzeKeySource(source);
   const depKey = evalDepKey(source, filePath);
-  // 指纹截断/异常 → 禁止读写 memo（fail-closed）
+  // 指纹截断/异常 → 禁止读写 memo（fail-closed）；0 = 关闭：读路径也 miss
+  //（与 BoundedLruMap max<=0 口径一致）
   const canCache = depKey !== null;
-  if (canCache) {
+  if (canCache && getSessionCacheLimits().maxEvalRuns > 0) {
     const cacheKey = stablePathKey(filePath);
     const cached = evalRunByFile.get(cacheKey);
     if (
@@ -539,7 +553,8 @@ export function tryEvalCallFull(
 }) | undefined {
   const run = tryRunEval(source, filePath, { envNames: opts.envNames, mocks: opts.mocks });
   if (!run) return undefined;
-  if (!(fnName in run.exports)) return undefined;
+  // own-property：`in` 走原型链，toString/constructor 等继承名会被当模块导出调用
+  if (!Object.hasOwn(run.exports, fnName)) return undefined;
   const collected: EvalCallRecord[] = [];
   const memberDiags: EvalMemberDiag[] = [];
   const prevCall = opts.collectCalls
@@ -576,7 +591,18 @@ export function tryEvalCall(
   const full = tryEvalCallFull(source, filePath, fnName, args, opts);
   if (!full) return undefined;
   const r = full.result;
-  if (!r) return undefined;
+  // BUG-028：类型级 result 必填，但运行时不变量
+  // 可能被破坏（producer 缺陷）——显式 isAbsVal
+  // 守卫 + 回落观测（旧实现 !r 死检查：缺 result
+  // 的记录静默 undefined，原因不可观测）
+  if (!isAbsVal(r)) {
+    noteEvalFallback(
+      new Error(
+        `tryEvalCall: '${fnName}' result is not an Abs value (producer contract violation)`,
+      ),
+    );
+    return undefined;
+  }
   if (r.shape.k === "never" && full.throws.shape.k !== "never") {
     return undefined;
   }

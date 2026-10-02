@@ -1,5 +1,5 @@
 /**
- * 会话 LRU 上限参数化：env > 显式 set > package.json 层 > 默认。
+ * 会话 LRU 上限参数化：显式 set > env > package.json 层 > 默认。
  * 多项目内存封顶 / 单大仓调高。
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -41,16 +41,27 @@ describe("session cache limits", () => {
     expect(l.maxFiles).toBe(32);
   });
 
-  it("explicit set wins over env", () => {
+  it("explicit set wins over env (real conflict); env fills unset keys", () => {
     setSessionCacheLimits({ maxFiles: 8 });
     const l = getSessionCacheLimits({
       NUDO_CACHE_MAX_FILES: "32",
+      NUDO_CACHE_MAX_FNS: "7",
     } as NodeJS.ProcessEnv);
-    // env 惰性缓存：reset 后再读 env；显式层仍优先
-    expect(getSessionCacheLimits({ NUDO_CACHE_MAX_FILES: "32" } as NodeJS.ProcessEnv).maxFiles).toBe(
-      8,
+    expect(l.maxFiles).toBe(8); // 显式层压过同键 env
+    expect(l.maxFns).toBe(7); // 未显式设置的键仍由 env 提供
+  });
+
+  it("env argument is honoured on every call, not only the first", () => {
+    expect(getSessionCacheLimits({} as NodeJS.ProcessEnv).maxFiles).toBe(
+      DEFAULT_SESSION_CACHE_LIMITS.maxFiles,
     );
-    void l;
+    expect(getSessionCacheLimits({ NUDO_CACHE_MAX_FILES: "0" } as NodeJS.ProcessEnv).maxFiles).toBe(0);
+    expect(getSessionCacheLimits({ NUDO_CACHE_MAX_FILES: "off" } as NodeJS.ProcessEnv).maxFiles).toBe(
+      0,
+    );
+    expect(getSessionCacheLimits({} as NodeJS.ProcessEnv).maxFiles).toBe(
+      DEFAULT_SESSION_CACHE_LIMITS.maxFiles,
+    );
   });
 
   it("NUDO_CACHE_MAX_FILES=off disables file cache", () => {
@@ -73,6 +84,25 @@ describe("session cache limits", () => {
     setSessionCacheLimits({ maxFiles: 0 });
     analysisCacheSet("/d", "s4", "k", 4);
     expect(analysisCacheGet("/d", "s4", "k")).toBeUndefined();
+  });
+
+  it("overwriting an existing key refreshes its LRU position (BUG-012)", () => {
+    setSessionCacheLimits({ maxFiles: 2 });
+    analysisCacheSet("/a", "s1", "k", 1);
+    analysisCacheSet("/b", "s1", "k", 2);
+    // 编辑后重算 /a：覆盖写必须刷新为最近使用（与 BoundedLruMap.set 一致）
+    analysisCacheSet("/a", "s2", "k", 3);
+    analysisCacheSet("/c", "s1", "k", 4); // 容量 2：逐出 /b，而不是刚写过的 /a
+    expect(analysisCacheGet("/a", "s2", "k")).toBe(3);
+    expect(analysisCacheGet("/b", "s1", "k")).toBeUndefined();
+    expect(getAnalysisFileCacheSize()).toBe(2);
+  });
+
+  it("maxFiles=0 disables reads too — pre-existing entries stop serving (BUG-012)", () => {
+    setSessionCacheLimits({ maxFiles: 2 });
+    analysisCacheSet("/a", "s1", "k", 1);
+    setSessionCacheLimits({ maxFiles: 0 });
+    expect(analysisCacheGet("/a", "s1", "k")).toBeUndefined();
   });
 
   it("trim drops entries when limit shrinks", () => {

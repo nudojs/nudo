@@ -9,22 +9,35 @@ import type { Abs, Shape } from "./abs.ts";
 import type { Pred } from "./pred.ts";
 import type { LiteralValue } from "./term.ts";
 import { safeMemberAccess } from "./codegen-escape.ts";
+import { ProjectionBudget } from "./projection-budget.ts";
 
 /** Abs 上的运行时守卫表达式（JS boolean 布尔串） */
 export function denoteGuard(a: Abs, v: string): string {
-  // 字面量：等值已蕴含 typeof，短路。litValue 哨兵对 lit(undefined) 也是
-  // undefined，必须直接看 term（同 format.ts / leq.ts）。
-  if (a.term?.op === "lit" && (!a.pred || a.pred.op === "true")) {
-    return eqGuard(v, a.term.value);
-  }
-  const shape = denoteShape(a.shape, v);
-  const pred = denotePred(a, v);
-  if (shape === "true") return pred;
-  if (pred === "true") return shape;
-  return `(${shape}) && (${pred})`;
+  return denoteGuardB(a, v, new ProjectionBudget());
 }
 
-function denoteShape(s: Shape, v: string): string {
+function denoteGuardB(a: Abs, v: string, budget: ProjectionBudget): string {
+  // DESIGN-001：环 / 超深 shape 截断。与 denotePred 的不可判定同口径——
+  // true 保守不撒谎；`/* nudo:truncated */` 注释让截断在生成源码里可观测。
+  const stop = budget.enter(a);
+  if (stop) return `/* nudo:truncated:${stop} */ true`;
+  try {
+    // 字面量：等值已蕴含 typeof，短路。litValue 哨兵对 lit(undefined) 也是
+    // undefined，必须直接看 term（同 format.ts / leq.ts）。
+    if (a.term?.op === "lit" && (!a.pred || a.pred.op === "true")) {
+      return eqGuard(v, a.term.value);
+    }
+    const shape = denoteShape(a.shape, v, budget);
+    const pred = denotePred(a, v);
+    if (shape === "true") return pred;
+    if (pred === "true") return shape;
+    return `(${shape}) && (${pred})`;
+  } finally {
+    budget.exit();
+  }
+}
+
+function denoteShape(s: Shape, v: string, budget: ProjectionBudget): string {
   switch (s.k) {
     case "never":
       return "false";
@@ -50,7 +63,7 @@ function denoteShape(s: Shape, v: string): string {
       const checks = [`typeof ${v} === "object"`, `${v} !== null`];
       for (const [key, slot] of Object.entries(s.slots)) {
         const access = safeMemberAccess(v, key);
-        const inner = denoteGuard(slot.value, access);
+        const inner = denoteGuardB(slot.value, access, budget);
         if (slot.optional) {
           if (inner !== "true") checks.push(`(${access} === undefined || ${inner})`);
         } else {
@@ -60,7 +73,7 @@ function denoteShape(s: Shape, v: string): string {
       return checks.join(" && ");
     }
     case "arr":
-      return `Array.isArray(${v}) && ${v}.every((item) => ${denoteGuard(s.element, "item")})`;
+      return `Array.isArray(${v}) && ${v}.every((item) => ${denoteGuardB(s.element, "item", budget)})`;
     case "tuple": {
       const checks = [`Array.isArray(${v})`];
       const minLen = s.elements.length;
@@ -73,7 +86,7 @@ function denoteShape(s: Shape, v: string): string {
           checks.push(`!(${i} in ${v})`);
           return;
         }
-        const inner = denoteGuard(el, `${v}[${i}]`);
+        const inner = denoteGuardB(el, `${v}[${i}]`, budget);
         if (inner !== "true") checks.push(inner);
       });
       for (const i of holes) {
@@ -81,7 +94,7 @@ function denoteShape(s: Shape, v: string): string {
       }
       if (s.rest) {
         // rest 槽：长度超出部分统一检查
-        const rest = denoteGuard(s.rest, "item");
+        const rest = denoteGuardB(s.rest, "item", budget);
         if (rest !== "true") {
           checks.push(`${v}.slice(${minLen}).every((item) => ${rest})`);
         }
@@ -94,10 +107,10 @@ function denoteShape(s: Shape, v: string): string {
       if (s.eff === "promise") return `${v} instanceof Promise`;
       return "true";
     case "brand":
-      return denoteShape(s.shape.shape, v);
+      return denoteShape(s.shape.shape, v, budget);
     case "sum": {
       if (s.members.length === 0) return "false";
-      const parts = s.members.map((m) => denoteGuard(m, v));
+      const parts = s.members.map((m) => denoteGuardB(m, v, budget));
       return `(${parts.join(" || ")})`;
     }
   }

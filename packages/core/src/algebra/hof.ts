@@ -10,7 +10,7 @@ import { simplifyTerm, v as termVar, termToString } from "./term.ts";
 import type { Pred } from "./pred.ts";
 import { and, pTrue, pFalse, substPred } from "./pred.ts";
 import { getFnImpl } from "./abs-fn.ts";
-import { joinAbs } from "./objects.ts";
+import { getSlot, joinAbs } from "./objects.ts";
 import type { AstEnv, HofCollectCtx, HofSite, RelSource } from "./hof-types.ts";
 
 // --- P2 types（定义在 hof-types.ts，重导出保持稳定导入路径）---
@@ -701,7 +701,8 @@ function bindTypeVars(
   }
   if (ps.k === "obj" && as.k === "obj") {
     for (const [key, slot] of Object.entries(ps.slots)) {
-      const aSlot = as.slots[key];
+      // getSlot：pattern 槽键是跨来源 key（toString 等）时裸读会踩 Object.prototype
+      const aSlot = getSlot(as.slots, key);
       if (aSlot) bindTypeVars(slot.value, aSlot.value, map, depth + 1);
     }
     return;

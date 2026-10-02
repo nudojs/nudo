@@ -47,7 +47,7 @@ nudo — JavaScript types, computed
 |------------|--------|
 | 入口签名 / any / unknown / throws | `nudo check <path>`（默认打印 signatures） |
 | 逐调用点真值 / 窄化结果 | `nudo test <path>`（打印全部 case，含合成 `call@`/`entry@`） |
-| 使用处实参形态 | `nudo test/check/contract --from <paths…>` |
+| 使用处实参形态 | `nudo test/check/contract --from <paths…>`（variadic——与路径混写用 `--` 终止符或路径在前，见 §1.4） |
 | 代数面 term/pred/conf | `nudo check --abs`（或 `test --abs`） |
 | 机器可读 | `nudo check --json` / `nudo test --json` |
 | 交互 | IDE hover / inlay |
@@ -89,7 +89,7 @@ assertions
 | `nudo test` | case 报告 + 声明断言；`--from` 注入使用处；`--freeze` 固化见证 |
 | `nudo contract` | 打印 / `--draft` / `--emit` 侧车接口；`--from` 供域证据；**`--from-dts`** 逆向 `.d.ts`/TS 注解 → `@nudo:draft`（**不执法**，审阅后复制进 `*.nudo.js` 才是 L1） |
 | `nudo export` | 一次性投影：`dts` / `guard` / `schema`（`--dialect zod`）/ `standard` / `all`；`--out` 写出目录 |
-| `nudo health` | 分析错误 + 固化漂移；`--watch` 可选 |
+| `nudo health` | 分析错误 + 固化漂移（`--from` 再固化使用处证据并报 drift；`--from` 需显式 paths——不再默认扫 cwd，无 paths 时为 usage error）；`--watch` 可选 |
 | `nudo migrate` | **替代 TS 单向门**：`status` 审计 / `strip` 剥注解 + draft 侧车 / `verify`（唯一允许双跑 tsc）/ `retire` 从 package.json 摘除 tsc 并写 `.nudo/migrate-retired.json` |
 
 **migrate 纪律**：产品终局是 `retire tsc`。`verify --with-tsc` 是迁移期对照，不得写成产品共存终态；`strip` 用 Nudo TS 剥除语义（enum 有风险，见 `strip-types` 注释）。
@@ -100,8 +100,9 @@ assertions
 |------|--------|
 | `export` / `contract`（只读） | 仅用法 / IO 错误 |
 | `check`（含 `--abs` / `--json`） | 任一 error 级诊断（L1 或未 ignore 的 L2）；`--abs` 是观察面，**不是**关 CI 的旁路；路径/IO 错误也 exit 1（`--json` 下并入 `pathErrors` 且 `ok:false`） |
+| `check --fix[ --write]` | 物化后**残余** error 级诊断 > 0（物化前的 error 不直接挡 exit——能被 [fix]/[adjust] 吃掉的已落盘计划）。**dry-run 反映磁盘未变的真实门禁状态**（计划中尚未应用的 error 仍计入残余，CI 门禁不因「可修」转绿）；`--write` 反映应用后剩余。`--fix` 与 `--json` / `--abs` / `--gha` / `--gitlab` / `--watch` / `--verbose` / `--from` / `--what-if` 组合为 usage error（物化面不与观察/机器面组合） |
 | `test`（含 `--json` / `--abs`） | 任一**声明断言**失败（合成 case / entry@ 不挡 exit） |
-| `health` | drift 或 analysis error |
+| `health` | drift 或 analysis error；`--from` 路径错误（缺文件）也 exit 1（`--json` 下并入 `pathErrors[]` 且 `ok:false`） |
 | `migrate verify` | 任一文件 `nudo check` 不 ok（tsc 基线仅对照，不单独挡 exit） |
 | `migrate strip|retire` | 用法 / IO 错误（`retire --dry-run` 不写盘） |
 | `contract --emit --exit-on-diff` | 将写盘且有 diff（须同时 `--dry-run`；无 dry-run 时为 usage error） |
@@ -120,7 +121,7 @@ CI 门禁只认 `check`（及 `test` 的声明断言、`health` 的 drift）。
 | `--verbose` | 展开 Abs 签名（term/pred/conf） |
 | `--abs` | 代数 term/pred/conf 观察 + L1/L2 门禁 |
 | `--fn` / `--assume` / `--generalize` | 与 `--abs` 配合的观察过滤 |
-| `--from <paths…>` | 使用处调用记录 |
+| `--from <paths…>` | 使用处调用记录。**variadic**：吞噬其后的位置参数——与路径混写时用 `--` 终止符分隔（`nudo check --from a.js -- b.js`）或把路径写在旗标前；paths 空且 variadic 非空 → 定向 usage error（BUG-024） |
 | `--ignore-throws <names>` | L2：忽略这些入口 may-throw 类型名（`TypeError,RangeError`） |
 | `--entry-throws <mode>` | L2：`error` \| `warning` \| `off`（默认 `error`；**显式值压过** `--profile`） |
 | `--profile <adoption\|strict>` | 门禁**命名档**（默认 `strict`）。`adoption` ≡ L2 `entryThrows: warning`（迁移档）；`strict` ≡ 今日默认。**不吞 L1**：契约违例始终 error |

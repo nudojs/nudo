@@ -290,6 +290,9 @@ export function paramName(param: Node | null | undefined): string | undefined {
 
 /** CJS/ESM default interop: callable module or `{ default }` wrapper. */
 export function unwrapDefaultExport<T>(mod: T | { default: T }): T {
+  // S4-006：null/undefined 是声明输入域边界——与同文件卫兵（asProgram 等）
+  // 同口径返回 undefined（fail-closed），不打宿主 TypeError
+  if (mod == null) return undefined as T;
   if (typeof mod === "function") return mod as T;
   return (mod as { default: T }).default;
 }

@@ -619,7 +619,8 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 |------|------|------|------|
 | <a id="absgraphoptions"></a>`AbsGraphOptions` | type | — | `AbsGraphOptions = { loadModule?: AbsLoadModule; seedVars?: Record<string, Abs>; seedFns?: Record<string, { params: string[]; body: Node; ...` |
 | <a id="absmockseeds"></a>`AbsMockSeeds` | type | — | `AbsMockSeeds = { seedVars: Record<string, Abs>; seedFns: Record<string, { params: string[]; body: Node; async?: boolean; fingerprint?: st...` |
-| <a id="absmodulecacheentry"></a>`AbsModuleCacheEntry` | type | 会话级依赖模块缓存条目：stat 指纹 + 导出 + 子树装载 issue。 | `AbsModuleCacheEntry = { mtimeMs: number; size: number; exports: AbsModuleExports; issues: AbsModuleLoadIssue[]; }` |
+| <a id="absmodulecacheentry"></a>`AbsModuleCacheEntry` | type | 会话级依赖模块缓存条目：自身 stat 指纹 + 子树内容指纹 + 导出 + 子树装载 issue。 | `AbsModuleCacheEntry = { mtimeMs: number; size: number; contentHash: string; depFingerprints: AbsModuleDepFingerprint[]; exports: AbsModul...` |
+| <a id="absmoduledepfingerprint"></a>`AbsModuleDepFingerprint` | type | 单条本地依赖的内容指纹：解析后稳定路径 + 求值时源码的 hashSource （与 loadModuleDepsFingerprint 同一 hash 口径，DESIGN-002 不另起第二套）。 | `AbsModuleDepFingerprint = { path: string; hash: string }` |
 | <a id="absmodulegraphresult"></a>`AbsModuleGraphResult` | type | — | `AbsModuleGraphResult = { modules: Record<string, AbsModuleExports>; byPath: Map<string, AbsModuleExports>; issues: AbsModuleLoadIssue[]; }` |
 | <a id="absmoduleloadissue"></a>`AbsModuleLoadIssue` | type | 模块加载守卫：与 TypeValue loadModuleEnv 口径对齐，供 analyzer 映射诊断 | `AbsModuleLoadIssue = { kind: "cycle" \| "depth" \| "missing" \| "missing-export" \| "exports-unresolved"; label: string; reason: string; }` |
 | <a id="abstoschemanode"></a>`absToSchemaNode` | fn | Abs → SchemaNode + dropped（优先 core absToConstraint；失败则 shape 尽力） | `absToSchemaNode(a: Abs)` |
@@ -630,7 +631,7 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="abstozodschemamodule"></a>`absToZodSchemaModule` | fn | Abs 导出表 → 可 import 的 zod JS 模块源码。 | `absToZodSchemaModule( exports: Record<string, Abs>, opts?: { banner?: string }, ): ZodModuleProjection` |
 | <a id="addbudgetannotation"></a>`addBudgetAnnotation` | fn | `@nudo:budget forks=N` 注解 | `addBudgetAnnotation( source: string, fnName: string, forks = 64, )` |
 | <a id="addthrowsannotation"></a>`addThrowsAnnotation` | fn | ") \|\| lines[j]!.trim().startsWith("//")) return j; j--; &#125; return i; &#125; &#125; return -1; &#125; /** 在函数 JSDoc 里插入一行 `* @nudo:throws <Kind>`（已存在则不重复） | `addThrowsAnnotation( source: string, fnName: string, kind: string, )` |
-| <a id="ambientsourcesofsidecar"></a>`ambientSourcesOfSidecar` | fn | `lib.nudo.js\|ts` → candidate ambient sources next to it | `ambientSourcesOfSidecar(sidecarPath: string): string[]` |
+| <a id="ambientsourcesofsidecar"></a>`ambientSourcesOfSidecar` | fn | `lib.nudo.{js,mjs,ts}` → candidate ambient sources next to it | `ambientSourcesOfSidecar(sidecarPath: string): string[]` |
 | <a id="analysis_abi"></a>`ANALYSIS_ABI` | const | 带包版本：升级 @nudojs/* 后旧 CheckJson 不得继续命中。 | `const ANALYSIS_ABI` |
 | <a id="analysisconfig"></a>`analysisConfig` | fn | 归一化 `nudo.analysis`。默认 mode=exports（A1：无指令但有 export/侧车的文件 进 IDE 分析；`all` / `directives` 需显式配置）。 | `analysisConfig(config: NudoConfig \| null \| undefined): AnalysisConfig` |
 | <a id="analysisconfig"></a>`AnalysisConfig` | type | — | `AnalysisConfig = { include: string[]; exclude: string[]; mode: AnalysisMode; diagnostics: DiagnosticsLevel; callSiteBudget: number; evalM...` |
@@ -779,6 +780,7 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="loadmodule"></a>`LoadModule` | type | — | `LoadModule = (spec: string, fromFile: string) => string \| undefined` |
 | <a id="locfromnode"></a>`locFromNode` | fn | — | `locFromNode(node: Node): SourceLocation` |
 | <a id="matchesemitallowlist"></a>`matchesEmitAllowlist` | fn | 极简 glob（`**` / `*` / `?`）：相对 projectDir 匹配**源文件**绝对路径 （不是侧车路径；侧车随源文件同目录写出）。无白名单 → true。 | `matchesEmitAllowlist( absPath: string, projectDir: string \| undefined, patterns: string[], ): boolean` |
+| <a id="matchsidecarfndecl"></a>`matchSidecarFnDecl` | fn | 定位侧车里目标契约的声明起点：`export const <name> = fn(` / `<name> = fn(`。 | `matchSidecarFnDecl( sidecarSource: string, exportName: string, )` |
 | <a id="materializeaction"></a>`materializeAction` | fn | kind → WorkspaceEdit 物化。返回 undefined = 该 action 只读（info）或缺证据。 | `materializeAction(input: MaterializeInput): QuickfixPlan \| undefined` |
 | <a id="materializeinput"></a>`MaterializeInput` | type | — | `MaterializeInput = { code: string; fn?: string; file: string; source: string; sidecarText?: string; sidecarPath: string; action: CheckAct...` |
 | <a id="mergeharvestoptions"></a>`MergeHarvestOptions` | type | — | `MergeHarvestOptions = { onConflict?: (c: EnvHarvestConflict) => void; }` |
@@ -798,7 +800,7 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="referenceinfo"></a>`ReferenceInfo` | type | — | `ReferenceInfo = { name: string; loc: SourceLocation; uri?: string; }` |
 | <a id="relativizepath"></a>`relativizePath` | fn | 稳定逻辑根相对化（磁盘缓存路径维）：树内相对 `root`，树外取 `node_modules/<pkg>` 段、monorepo root 或 pnpm store 内容哈希； 绝对路径明文绝不进 key。 | `relativizePath(p: string, root?: string): string` |
 | <a id="resetallanalysiscaches"></a>`resetAllAnalysisCaches` | fn | 比 clearAnalysisSessionCaches 更彻底：再丢 AST LRU（测试 / 进程复用场景） | `resetAllAnalysisCaches(): void` |
-| <a id="resetsessioncachelimitstate"></a>`resetSessionCacheLimitState` | fn | 测试：丢弃 env 惰性缓存，重新读 process.env | `resetSessionCacheLimitState(): void` |
+| <a id="resetsessioncachelimitstate"></a>`resetSessionCacheLimitState` | fn | 测试：清空显式 / package.json 层（env 每次调用现读，无需重置） | `resetSessionCacheLimitState(): void` |
 | <a id="resolvemodule"></a>`resolveModule` | fn | — | `resolveModule(source: string, fromDir: string)` |
 | <a id="rootderiveopts"></a>`RootDeriveOpts` | type | — | `RootDeriveOpts = { loadModule?: LoadModule; autoBind?: boolean; fnNames?: string[]; refreshExistingOnly?: boolean; }` |
 | <a id="rootderiveresult"></a>`RootDeriveResult` | type | — | `RootDeriveResult = { roots: string[]; derived: DerivedExport[]; hasRoot: boolean; graphError?: string; }` |
@@ -818,6 +820,7 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="sha256hex"></a>`sha256Hex` | fn | — | `sha256Hex(data: string \| Buffer): string` |
 | <a id="shapedslfromfields"></a>`shapeDslFromFields` | fn | `shape({ type: string(), name: string() })` 文本 | `shapeDslFromFields(fields: BodyReadField[]): string` |
 | <a id="shouldanalyzefile"></a>`shouldAnalyzeFile` | fn | 是否应对该文件跑分析（自动路径，如 LSP validate）。 | `shouldAnalyzeFile( filePath: string, source: string \| undefined, config?: AnalysisConfig, ): boolean` |
+| <a id="sidecarbindingfor"></a>`sidecarBindingFor` | fn | 侧车里导出名 → 模块绑定名（DESIGN-003 别名段：`export { _nudo_1 as class }`）。 | `sidecarBindingFor(sidecarSource: string, exportName: string): string \| undefined` |
 | <a id="sidecardraftpath"></a>`sidecarDraftPath` | fn | `lib.js\|ts` → `lib.nudo.draft.js\|ts`（不进 ambient sidecar 表） | `sidecarDraftPath(filePath: string): string` |
 | <a id="sourcehasnudodirectives"></a>`sourceHasNudoDirectives` | fn | — | `hasNudoDirectives(source: string): boolean` |
 | <a id="sourcelocation"></a>`SourceLocation` | type | — | `SourceLocation = { start: { line: number; column: number }; end: { line: number; column: number }; }` |

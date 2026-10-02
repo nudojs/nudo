@@ -3,7 +3,7 @@
  */
 import type { Abs, Shape } from "./abs.ts";
 import type { Term } from "./term.ts";
-import { v as termVar } from "./term.ts";
+import { v as termVar, litKeyString } from "./term.ts";
 import type { Pred, Phi } from "./pred.ts";
 
 export type VarRename = ReadonlyMap<string, string>;
@@ -11,7 +11,8 @@ export type VarRename = ReadonlyMap<string, string>;
 export function termKey(t: Term, rename?: VarRename): string {
   switch (t.op) {
     case "lit":
-      return `L:${typeof t.value}:${String(t.value)}`;
+      // -0/0 身份不同：键走 litKeyString（String(-0)==="0" 会折叠）
+      return `L:${typeof t.value}:${litKeyString(t.value)}`;
     case "var":
       return `V:${rename?.get(t.id) ?? t.id}`;
     case "app":
@@ -132,6 +133,9 @@ export function collectPredVars(p: Pred, acc: Set<string>): void {
       collectPredVars(p.arg, acc);
       return;
     case "typeof":
+      collectTermVars(p.t, acc);
+      return;
+    case "assumeFinite":
       collectTermVars(p.t, acc);
       return;
   }

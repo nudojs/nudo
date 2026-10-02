@@ -30,6 +30,7 @@ import { joinAbs } from "./objects.ts";
 import type { Pred, PrimName } from "./pred.ts";
 import { termEquals, v as termVar, type Term, type LiteralValue } from "./term.ts";
 import { app as termApp } from "./term.ts";
+import { ProjectionBudget } from "./projection-budget.ts";
 
 /** 投影置信门槛：widened/partial/opaque/mock 不投影 */
 const PROJECTABLE_CONF: ReadonlySet<Confidence> = new Set(["exact", "path"]);
@@ -45,9 +46,24 @@ const ARR_FALLBACK_CONF: ReadonlySet<Confidence> = new Set([
 type CmpOp = "gt" | "ge" | "lt" | "le";
 type LitVal = number | string | boolean | bigint;
 
-/** Abs → 契约；不可表达 → undefined */
-export function absToConstraint(a: Abs): NudoConstraint | undefined {
+/** Abs → 契约；不可表达 → undefined。
+ *  `budget`：共享遍历预算（DESIGN-001）——环 / 超深 shape 返回 undefined
+ *  （不可表达），调用方走既有 fallback；schema 投影传入与自身共享的实例。 */
+export function absToConstraint(
+  a: Abs,
+  budget: ProjectionBudget = new ProjectionBudget(),
+): NudoConstraint | undefined {
   if (!PROJECTABLE_CONF.has(a.conf)) return undefined;
+  const stop = budget.enter(a);
+  if (stop) return undefined; // 有界投影：环 / 超 deep → 不可表达
+  try {
+    return absToConstraintInner(a, budget);
+  } finally {
+    budget.exit();
+  }
+}
+
+function absToConstraintInner(a: Abs, budget: ProjectionBudget): NudoConstraint | undefined {
   const s = a.shape;
   switch (s.k) {
     case "prim":
@@ -67,9 +83,9 @@ export function absToConstraint(a: Abs): NudoConstraint | undefined {
       // any 只有 or-pred 字面量集携带可表达信息
       return a.pred?.op === "or" ? projectOrLiterals(a) : undefined;
     case "obj":
-      return projectObj(s.slots, s.index, s.open);
+      return projectObj(s.slots, s.index, s.open, budget);
     case "arr":
-      return projectArr(s.element);
+      return projectArr(s.element, budget);
     case "sum":
       return projectSum(s.members);
     default:
@@ -288,20 +304,21 @@ function projectObj(
   slots: Record<string, { value: Abs; optional?: boolean }>,
   index: { key: Abs; value: Abs } | undefined,
   open: boolean | undefined,
+  budget: ProjectionBudget,
 ): NudoConstraint | undefined {
   // 动态键 / open 对象不是定长形状
   if (index || open) return undefined;
   const fields: Record<string, NudoField> = {};
   for (const [k, slot] of Object.entries(slots)) {
-    const fc = absToConstraint(slot.value);
+    const fc = absToConstraint(slot.value, budget);
     if (!fc) return undefined; // Phase 1 保守：任一字段不可投影 → 整体放弃
     fields[k] = { constraint: fc, ...(slot.optional ? { optional: true } : {}) };
   }
   return { __nudoConstraint: true, preds: [], fields };
 }
 
-function projectArr(element: Abs): NudoConstraint | undefined {
-  const ec = absToConstraint(element);
+function projectArr(element: Abs, budget: ProjectionBudget): NudoConstraint | undefined {
+  const ec = absToConstraint(element, budget);
   if (ec) return array(ec);
   // 退化：元素 prim 均匀且无 preds → array(number()) 之类
   if (
@@ -315,7 +332,8 @@ function projectArr(element: Abs): NudoConstraint | undefined {
   return undefined;
 }
 
-/** sum：全员可投影为字面量 → union(lit…)；never 成员是空域不贡献 */
+/** sum：全员可投影为字面量 → union(lit…)；never 成员是空域不贡献。
+ *  成员只走 absLitConstraint（标量、非结构递归），无需预算。 */
 function projectSum(members: Abs[]): NudoConstraint | undefined {
   const lits: NudoConstraint[] = [];
   for (const m of members) {

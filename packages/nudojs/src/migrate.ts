@@ -877,9 +877,8 @@ export async function migrateVerify(
   opts: { withTsc?: boolean; root?: string } = {},
 ): Promise<VerifyResult[]> {
   const { checkSource, formatCheckReport, pTrue } = await import("@nudojs/core");
-  const { defaultLoadModule, findProjectConfig, interfaceConfig, checkConfig } = await import(
-    "@nudojs/service"
-  );
+  const { collectSkipReturns, defaultLoadModule, findProjectConfig, interfaceConfig, checkConfig } =
+    await import("@nudojs/service");
   const files: string[] = [];
   for (const p of paths) {
     const abs = resolve(p);
@@ -912,6 +911,8 @@ export async function migrateVerify(
       ...(cCfg.ignoreThrows && cCfg.ignoreThrows.length > 0
         ? { ignoreThrows: cCfg.ignoreThrows }
         : {}),
+      // 与 nudo check 同源：@nudo:skip 的函数不评估 body（verify 的 ok 必须等于 check）
+      skips: collectSkipReturns(source),
     });
     const summary = `${report.summary.errors} error · ${report.summary.warnings} warning · ${report.summary.functions} fn`;
     const row: VerifyResult = {

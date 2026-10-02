@@ -14,6 +14,7 @@ import {
 import { and, eq, ge, gt, le, ptypeof } from "@nudojs/core";
 import { app, lit, v } from "@nudojs/core";
 import {
+  absToSchemaNode,
   absToSchemaSource,
   absToZodSchemaModule,
   projectAbsToSchema,
@@ -114,6 +115,40 @@ describe("schema-generator", () => {
     expect(holeNotes.some((d) => d.includes("0"))).toBe(true);
     expect(holeNotes.some((d) => d.includes("2"))).toBe(true);
   });
+
+  it("projects tuple rest as z.tuple(...).rest(...) without dropped note (BUG-002)", () => {
+    // rest 槽不得静默丢弃：zod 3/4 均支持 .rest()；无投影损失则无 dropped 记录
+    const withRest = abs(
+      { k: "tuple", elements: [numLit(1)], rest: num() },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const p = projectAbsToSchema(withRest);
+    expect(p.source).toBe("z.tuple([z.literal(1)]).rest(z.number())");
+    expect(p.dropped).toEqual([]);
+    // 固定元组渲染保持不变
+    const fixed = abs({ k: "tuple", elements: [numLit(1)] }, undefined, undefined, "exact");
+    expect(projectAbsToSchema(fixed).source).toBe("z.tuple([z.literal(1)])");
+  });
+
+  it("absToSchemaNode carries rest slot with its refinements (BUG-002)", () => {
+    const withRest = abs(
+      { k: "tuple", elements: [numLit(1)], rest: numVar("x", and(gt(v("x"), lit(0)), ptypeof(v("x"), "number")), "exact") },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const { node, dropped } = absToSchemaNode(withRest);
+    if (node.k !== "tuple") throw new Error("expected tuple node");
+    // rest 槽照常走 prim 投影（含 refinement），不再整槽丢弃
+    expect(node.rest).toEqual({
+      k: "prim",
+      type: "number",
+      refinements: [{ kind: "numBound", op: "gt", n: 0 }],
+    });
+    expect(dropped).toEqual([]);
+  });
 });
 
 describe("pred → zod refinements", () => {
@@ -213,5 +248,50 @@ describe("absToZodSchemaModule", () => {
   it("sanitizes non-identifier export names", () => {
     const { source } = absToZodSchemaModule({ "weird name": num() });
     expect(source).toContain("export const weird_name = z.number();");
+  });
+});
+
+describe("BUG-019: eqLit 通道 tagged 化 + 非有限界不投影（S6-004）", () => {
+  it("eq(x, lit(undefined)) 投影为 z.undefined() 而非静默丢弃", () => {
+    const a = numWith(eq(v("x"), lit(undefined)));
+    const { node, dropped } = absToSchemaNode(a);
+    expect(node).toEqual({ k: "lit", value: undefined });
+    expect(dropped).toEqual([]);
+    expect(absToSchemaSource(a)).toBe("z.undefined()");
+  });
+
+  it("双 eq(x, lit(undefined)) 不误报 conflicting", () => {
+    const a = numWith(and(eq(v("x"), lit(undefined)), eq(v("x"), lit(undefined))));
+    const { node, dropped } = absToSchemaNode(a);
+    expect(node).toEqual({ k: "lit", value: undefined });
+    expect(dropped.some((d) => d.includes("conflicting"))).toBe(false);
+  });
+
+  it("eq(x,5) 与 eq(x, lit(undefined)) 记 conflicting", () => {
+    const a = numWith(and(eq(v("x"), lit(5)), eq(v("x"), lit(undefined))));
+    const { dropped } = absToSchemaNode(a);
+    expect(dropped.some((d) => d.includes("conflicting"))).toBe(true);
+  });
+
+  it("gt(x, lit(NaN)) 记 dropped 且不生成 .gt(NaN)", () => {
+    const a = numWith(gt(v("x"), lit(NaN)));
+    const { node, dropped } = absToSchemaNode(a);
+    expect(dropped.some((d) => d.includes("not projected"))).toBe(true);
+    expect(absToSchemaSource(a)).not.toContain("NaN");
+    expect(node).toEqual({ k: "prim", type: "number", refinements: [] });
+  });
+
+  it("gt(x, lit(Infinity)) 不生成 .gt(Infinity)", () => {
+    const a = numWith(gt(v("x"), lit(Infinity)));
+    const { dropped } = absToSchemaNode(a);
+    expect(dropped.some((d) => d.includes("not projected"))).toBe(true);
+    expect(absToSchemaSource(a)).not.toContain("Infinity");
+  });
+
+  it("constraint 路径：eq(undefined) 同样产 lit(undefined) 节点", () => {
+    // absToSchemaNode 优先走 core absToConstraint → constraintToSchemaNode
+    const a = numWith(eq(v("x"), lit(undefined)));
+    const { source } = absToZodSchemaModule({ out: a });
+    expect(source).toContain("z.undefined()");
   });
 });

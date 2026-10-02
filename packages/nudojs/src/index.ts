@@ -20,8 +20,15 @@ import { registerMigrateCommand } from "./commands/migrate.ts";
 
 const program = new Command();
 
-// pnpm run nudo -- <args> 会把 `--` 传进 argv；commander 会把其后旗标当位置参数
-const argv = process.argv.filter((a, i) => !(i >= 2 && a === "--"));
+// pnpm run nudo -- <args> 在 argv[2] 注入 `--`（commander
+// 会把其后旗标当位置参数）——只滤这一个。用户显式
+// `--` 终止符（variadic 旗标与位置参数的分界，BUG-024）
+// 必须保留：旧实现滤掉所有 `--`，使 `nudo check --from
+// a.js -- b.js` 退化为吞噬写法。
+const argv =
+  process.argv[2] === "--"
+    ? [process.argv[0], process.argv[1], ...process.argv.slice(3)]
+    : process.argv;
 
 program
   .name("nudo")

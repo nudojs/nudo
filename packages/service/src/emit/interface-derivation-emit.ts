@@ -348,7 +348,11 @@ export function emitDerivedFromRoot(
 
 // --- 侧车段工具（与 interface-emitter 同口径，独立实现避免循环依赖）---
 
-type RawSection = { names: string[]; start: number; end: number; text: string };
+/**
+ * 单个生成段：`names` = 身份（导出名），`bindings` = 段在模块作用域引入的
+ * 绑定标识符（别名段 `_nudo_<n>`，直发段与身份同名）。
+ */
+type RawSection = { names: string[]; bindings: string[]; start: number; end: number; text: string };
 
 function collectGeneratedSectionsRaw(src: string): RawSection[] {
   if (src.trim() === "") return [];
@@ -361,25 +365,45 @@ function collectGeneratedSectionsRaw(src: string): RawSection[] {
   const stmts = ast.program.body;
   const out: RawSection[] = [];
   // 从 @generated 注释行起，到其后第一个顶层 export 止——中间允许
-  // import / prelude const（组合式 §5.3 形态）。
+  // import / prelude const（组合式 §5.3 形态）/ 别名段的 const（DESIGN-003：
+  // `const _nudo_1 = …; export { _nudo_1 as class };` 两句都在段内）。
   for (const headerPos of findGeneratedHeaderOffsets(src)) {
     for (let i = 0; i < stmts.length; i++) {
       const stmt = stmts[i]!;
       if (stmt.type !== "ExportNamedDeclaration" || stmt.source) continue;
       if (stmt.start == null || stmt.end == null || stmt.start < headerPos) continue;
       const d = stmt.declaration;
-      if (!d) continue;
       const names: string[] = [];
-      if (d.type === "VariableDeclaration") {
-        for (const decl of d.declarations) {
-          if (decl.id.type === "Identifier") names.push(decl.id.name);
+      const bindings: string[] = [];
+      if (d) {
+        if (d.type === "VariableDeclaration") {
+          for (const decl of d.declarations) {
+            if (decl.id.type === "Identifier") {
+              names.push(decl.id.name);
+              bindings.push(decl.id.name);
+            }
+          }
+        } else if (d.type === "FunctionDeclaration" || d.type === "ClassDeclaration") {
+          if (d.id) {
+            names.push(d.id.name);
+            bindings.push(d.id.name);
+          }
         }
-      } else if (d.type === "FunctionDeclaration" || d.type === "ClassDeclaration") {
-        if (d.id) names.push(d.id.name);
+      } else {
+        // 别名段尾（DESIGN-003）：export 子句无声明——身份=导出名（含 string
+        // 名），绑定=specifier local（const 在 header 与子句之间，已入切片）
+        for (const spec of stmt.specifiers) {
+          if (spec.type !== "ExportSpecifier") continue;
+          names.push(
+            spec.exported.type === "Identifier" ? spec.exported.name : spec.exported.value,
+          );
+          if (spec.local.type === "Identifier") bindings.push(spec.local.name);
+        }
       }
       if (names.length === 0) continue;
       out.push({
         names,
+        bindings,
         start: headerPos,
         end: stmt.end,
         text: src.slice(headerPos, stmt.end),
@@ -405,10 +429,6 @@ function findGeneratedHeaderOffsets(src: string): number[] {
     pos += line.length + 1;
   }
   return out;
-}
-
-function generatedSectionNames(src: string): Set<string> {
-  return new Set(collectGeneratedSectionsRaw(src).flatMap((s) => s.names));
 }
 
 function handwrittenNames(src: string): Set<string> {
@@ -443,8 +463,12 @@ function handwrittenNames(src: string): Set<string> {
       collect(stmt);
     }
   }
-  // 生成段名不算手写
-  for (const n of generatedSectionNames(src)) names.delete(n);
+  // 生成段不算手写（DESIGN-003：身份名与别名绑定都扣除——别名段的
+  // `const _nudo_1` / 导出面不是手写）
+  for (const s of collectGeneratedSectionsRaw(src)) {
+    for (const n of s.names) names.delete(n);
+    for (const b of s.bindings) names.delete(b);
+  }
   return names;
 }
 

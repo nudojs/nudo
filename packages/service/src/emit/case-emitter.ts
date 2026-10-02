@@ -1,4 +1,5 @@
 import { type Abs } from "@nudojs/core";
+import { ProjectionBudget } from "@nudojs/core/internal";
 import { parse, extractDirectivesQuiet } from "@nudojs/parser";
 import type { CaseDirective } from "@nudojs/parser";
 import type { AnalysisResult } from "../analyzer.ts";
@@ -62,6 +63,22 @@ function serializeObjectKey(key: string): string | null {
 
 /** 单个 Abs → parseCaseArgExpr 可解析回去的表达式文本；不可表达返回 null */
 export function serializeCaseArg(a: Abs): string | null {
+  return serializeCaseArgB(a, new ProjectionBudget());
+}
+
+function serializeCaseArgB(a: Abs, budget: ProjectionBudget): string | null {
+  // DESIGN-001：环 / 超深 → 不可表达（null）。case 文法无截断标记，null 是
+  // 既有「不可序列化」信号（buildCaseDirective 随之整体放弃，不静默截断）。
+  const stop = budget.enter(a);
+  if (stop) return null;
+  try {
+    return serializeCaseArgInner(a, budget);
+  } finally {
+    budget.exit();
+  }
+}
+
+function serializeCaseArgInner(a: Abs, budget: ProjectionBudget): string | null {
   const s = a.shape;
   if (a.term?.op === "lit") {
     const v = a.term.value;
@@ -92,20 +109,23 @@ export function serializeCaseArg(a: Abs): string | null {
     case "sum": {
       const parts: string[] = [];
       for (const member of s.members) {
-        const ser = serializeCaseArg(member);
+        const ser = serializeCaseArgB(member, budget);
         if (ser === null) return null;
         parts.push(ser);
       }
       return `union(${parts.join(", ")})`;
     }
     case "arr": {
-      const el = serializeCaseArg(s.element);
+      const el = serializeCaseArgB(s.element, budget);
       return el === null ? null : `array(${el})`;
     }
     case "tuple": {
+      // rest 槽指令文法不可表达（与 fn/eff/brand 同口径）→ 整体不可序列化，
+      // 不得静默截断成固定位前缀
+      if (s.rest) return null;
       const parts: string[] = [];
       for (const el of s.elements) {
-        const ser = serializeCaseArg(el);
+        const ser = serializeCaseArgB(el, budget);
         if (ser === null) return null;
         parts.push(ser);
       }
@@ -114,7 +134,7 @@ export function serializeCaseArg(a: Abs): string | null {
     case "obj": {
       const parts: string[] = [];
       for (const [key, slot] of Object.entries(s.slots)) {
-        const vs = serializeCaseArg(slot.value);
+        const vs = serializeCaseArgB(slot.value, budget);
         if (vs === null) return null;
         const ks = serializeObjectKey(key);
         if (ks === null) return null;

@@ -500,6 +500,11 @@ export const CONSTRAINT_BUILDER_NAMES: readonly string[] = Object.keys(
 /**
  * 约束表达式头：`name(` 形态。由 CONSTRAINT_BUILDER_NAMES 生成——
  * 名单只在 CONSTRAINT_BUILDERS 一处维护。
+ *
+ * 注意：这只是**前缀预筛**（快速判定「像不像构建器调用」），不是安全门禁。
+ * 整条表达式在进入 execNudoModule/new Function 前必须过 AST 白名单
+ * （parser 的 isSafeTypeExprSource）——否则 `number(), process.exit(1)`
+ * 这类拼接可以借前缀骗过本正则并执行任意 JS。
  */
 export const CONSTRAINT_EXPR_RE: RegExp = new RegExp(
   `^(${CONSTRAINT_BUILDER_NAMES.join("|")})\\s*\\(`,

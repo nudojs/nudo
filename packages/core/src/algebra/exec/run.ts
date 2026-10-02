@@ -25,6 +25,7 @@ import { formatAbs } from "../format.ts";
 import { transpile, transpileExpression, runtimeImportOf } from "./transpile.ts";
 import { HOST_INTRINSIC_SET } from "./transpile/intrinsics.ts";
 import { NudoUnsupportedError } from "./unsupported.ts";
+import { drainClassCollisions, beginClassEpoch } from "./class-registry.ts";
 import { stripStaticExportDecls } from "./export-names.ts";
 import { errorTypeAbs, throwPayloadOf } from "./may-throw.ts";
 import { drainPromiseMicros } from "../builtins.ts";
@@ -517,6 +518,10 @@ function runTranspiledInner(
   const ret = `return { ...__nudoExports, ...${cjsMerge}, ${names.join(", ")} };`;
   const fn = new Function(...argNames, `${js}\n${ret}`);
   setEvalBindingSink(bindings);
+  // BUG-026：开新求值 epoch——同名类碰撞只在
+  // 本 run 内判定（跨 run 重注册是常态，
+  // last-wins 覆盖语义见 class-registry.ts）
+  beginClassEpoch();
   try {
     const result = fn(...args) as Record<string, unknown>;
     runBindings.set(result, bindings);
@@ -525,6 +530,27 @@ function runTranspiledInner(
     setEvalBindingSink(null);
     // 每次求值出口排空微队列：模块级 Promise.then 不得窜到后续文件的调用窗口
     drainPromiseMicros();
+    // BUG-026：同名类碰撞观测——裸名键注册表消歧
+    // 失败（不同形 spec 同名注册）排进回落观测面，
+    // 不再静默 clobber（查找侧无法消歧：brand 名
+    // 即查找键；同形重注册是重评估语义，不在面）
+    noteDrainedClassCollisions();
+  }
+}
+
+/** BUG-026/G3：排空同名类碰撞缓冲进回落观测面。run 顶层出口与
+ *  入口调用出口（callTranspiledExportFull）共用——碰撞记录不得
+ *  滞留缓冲到下一个无关宿主入口（NudoUnsupportedError 无 path/loc，
+ *  滞留即误归属错文件；进程内再无 run 则永不现）。 */
+function noteDrainedClassCollisions(): void {
+  for (const c of drainClassCollisions()) {
+    noteEvalFallback(
+      new NudoUnsupportedError(
+        "class-collision",
+        undefined,
+        `class '${c.name}' registered again with a different shape (${c.previous} -> ${c.next}); name-keyed lookup may resolve to either definition`,
+      ),
+    );
   }
 }
 
@@ -633,7 +659,7 @@ export type TranspiledCallResult = {
   throws: Abs;
 };
 
-function isAbsVal(v: unknown): v is Abs {
+export function isAbsVal(v: unknown): v is Abs {
   return !!v && typeof v === "object" && "shape" in (v as object) && "conf" in (v as object);
 }
 
@@ -647,10 +673,18 @@ export function callTranspiledExportFull(
   opts?: { phi?: Phi },
 ): TranspiledCallResult {
   enterEvalCallBudgetSession();
+  // G3（BUG-026 epoch 作用域）：入口调用阶段自成求值单元——函数体内
+  // 块级同名类正是在此注册（不在 runTranspiled 顶层）。开新 epoch：
+  // ① 缓存命中（tryRunEval 不重跑 run）后的重执行不得与无关文件
+  // 刚完成 fresh run 的同名类共享陈旧 epoch（跨文件同名类按设计走
+  // last-wins 静默）；② 出口排水使碰撞在本次分析即可观测，不再滞留
+  // 缓冲误归属到下一个无关 run。last-wins 解析语义不变（观测面修复）。
+  beginClassEpoch();
   try {
     return callTranspiledExportFullInner(exports, name, args, opts);
   } finally {
     exitEvalCallBudgetSession();
+    noteDrainedClassCollisions();
   }
 }
 
@@ -660,7 +694,9 @@ function callTranspiledExportFullInner(
   args: Abs[],
   opts?: { phi?: Phi },
 ): TranspiledCallResult {
-  const fn = exports[name];
+  // own-property：name 为 toString/constructor 等 Object.prototype 成员且模块
+  // 无同名自有导出时，裸读会把原型方法当导出调用（constructor 曾原样返回实参）
+  const fn = Object.hasOwn(exports, name) ? exports[name] : undefined;
   if (typeof fn === "function") {
     // D1：重跑/导入调用用副本——mutator 不得把入参态污染回调用方/记录
     const callArgs = args.map((a) =>

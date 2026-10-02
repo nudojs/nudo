@@ -4,7 +4,7 @@
  */
 
 import type { Term } from "./term.ts";
-import { termToString } from "./term.ts";
+import { termToString, litKeyString } from "./term.ts";
 import type { Pred } from "./pred.ts";
 import { pTrue, predToString } from "./pred.ts";
 import type { Abs, Shape, Confidence } from "./abs.ts";
@@ -327,8 +327,9 @@ export function absShapeKey(a: Abs, seen: Set<object> = new Set()): string {
     const s = a.shape;
     // prim 按 term/pred 区分：`number=A1>3` 与 `number=A1*2` 是不同路径，不能按 shape 去重
     if (s.k === "prim") {
-      // litValue 哨兵对 lit(undefined) 折成 undefined，须看 term
-      if (a.term?.op === "lit") return `prim:${s.type}:${String(a.term.value)}`;
+      // litValue 哨兵对 lit(undefined) 折成 undefined，须看 term。
+      // -0/0 身份不同（joinValues 用 Object.is），键走 litKeyString 防 String 折叠
+      if (a.term?.op === "lit") return `prim:${s.type}:${litKeyString(a.term.value)}`;
       const t = a.term ? termToString(a.term) : "";
       const p = a.pred && a.pred.op !== "true" ? predToString(a.pred) : "";
       return `prim:${s.type}:${t}:${p}`;
@@ -342,7 +343,7 @@ export function absShapeKey(a: Abs, seen: Set<object> = new Set()): string {
         const v = a.term.value;
         if (v === undefined) return "unknown:undefined";
         if (v === null) return "unknown:null";
-        return `unknown:lit:${typeof v}:${String(v)}`;
+        return `unknown:lit:${typeof v}:${litKeyString(v)}`;
       }
       // 非字面量 term（var/app）不得与真 unknown 同键
       if (a.term) return `unknown:${termToString(a.term)}`;

@@ -483,6 +483,16 @@ Callsite file not found: /abs/tests
 
 Context: [使用处（`--from`）](../guides/test.md#使用处--from) · [nudo check](../api/cli-reference.md#nudo-check)
 
+### `nudo:path-io` {#nudo-path-io}
+
+```text
+export --out mkdir failed: out/dir
+```
+
+`--out` 输出目录 IO 操作失败（`mkdir` / `write`）。**Error**（usage）——原始 `errno` 不进产品面；检查 `--out <dir>` 可写且为目录路径后重跑。（BUG-023：使 `nudo export` 与 `check` / `test` 同具 PathError 面。）
+
+Context: [nudo export](../api/cli-reference.md#nudo-export)
+
 ## 读懂 `actual ⊭ expected`
 
 ```text

@@ -274,6 +274,8 @@ export function $copy(a: Abs): Abs {
       {
         k: "tuple",
         elements: s.elements.map($copy),
+        // rest 槽必须随快照迁移（与 hof snapshotAbs 同口径），否则副本丢尾段
+        ...(s.rest ? { rest: $copy(s.rest) } : {}),
         holes: s.holes ? [...s.holes] : undefined,
       },
       a.term,
@@ -506,7 +508,8 @@ export function $idx(a: Abs, i: Abs): Abs {
     const joinSlotsWithUndef = (): Abs =>
       joinAbs(slots.reduce((x, y) => joinAbs(x, y)), undef());
     if (typeof iv === "string" || typeof iv === "number" || typeof iv === "boolean") {
-      const slot = objShape.slots[String(iv)];
+      // getSlot：字面量键为 toString 等 Object.prototype 名时裸读踩原型链
+      const slot = getSlot(objShape.slots, String(iv));
       if (slot) return slot.value;
       if (objShape.open) return unknown;
       // 闭 shape 字面量 key miss：键确定不存在 → 仅 undefined（与 $get / Map miss 一致）
@@ -802,6 +805,22 @@ export function $arrRest(a: Abs, start: number): Abs {
     return parts.length ? parts.reduce((x, y) => joinAbs(x, y)) : unknown;
   }
   if (a.shape.k === "tuple") {
+    // 源带 rest 槽：尾段含 rest 的未知长度元素，不得只切固定位前缀
+    if (a.shape.rest) {
+      const sliced = a.shape.elements.slice(start);
+      if (start < a.shape.elements.length && !shouldWidenArrayLiteral(sliced.length + 1)) {
+        return abs(
+          { k: "tuple", elements: sliced, rest: a.shape.rest },
+          undefined,
+          undefined,
+          a.conf,
+        );
+      }
+      // 起点落在 rest 段 / 切片超 cap：尾段退化为 rest 元素数组（join 固定前缀）
+      const restEl = a.shape.rest.shape.k === "arr" ? a.shape.rest.shape.element : a.shape.rest;
+      const el = sliced.reduce((x, y) => joinAbs(x, y), restEl);
+      return abs({ k: "arr", element: el }, undefined, undefined, a.conf);
+    }
     return tupleOrWiden(a.shape.elements.slice(start), a.conf);
   }
   if (a.shape.k === "arr") return a;

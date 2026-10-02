@@ -158,6 +158,26 @@ describe("nudo migrate", () => {
     expect(okRows[0]!.nudoOk).toBe(true);
   });
 
+  // BUG-005: verify 的 ok 必须与 nudo check 同源——@nudo:skip 由 host 下传
+  // （skips: collectSkipReturns），verify 漏传会把 check 认为干净的文件判红。
+  it("verify agrees with nudo check on @nudo:skip (both gates green)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-verify-skip-"));
+    dirs.push(dir);
+    // 与上一用例的 bad.js 同形（L2 entry may-throw），但声明 @nudo:skip：
+    // check 门禁尊重 skip → ok；verify 的 nudoOk 必须同绿。
+    const f = join(dir, "skip.js");
+    writeFileSync(
+      f,
+      `/**\n * @nudo:skip\n */\nexport function getName(user) {\n  return user.name;\n}\n`,
+      "utf-8",
+    );
+    const rows = await migrateVerify([f]);
+    expect(rows[0]!.nudoOk).toBe(true);
+    // 对拍：同一文件走真实 check 门禁（exit 0 = ok）——两门禁判定一致
+    const r = cli(["check", f]);
+    expect(r.status).toBe(0);
+  });
+
   it("retire removes typescript dep and rewrites tsc scripts", async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-retire-"));
     dirs.push(dir);

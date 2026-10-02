@@ -11,7 +11,7 @@ import {
   unifiedDiff,
 } from "@nudojs/service/emit";
 import { isNudoTargetPath, type CallRecord } from "@nudojs/service";
-import { collectExternalRecords, reportPathErrors, resolveTargetsCollect, type PathError } from "./shared.ts";
+import { collectExternalRecords, reportPathErrors, resolveTargetsCollect, variadicSwallowError, type PathError } from "./shared.ts";
 
 // ---------------------------------------------------------------------------
 // contract — 契约：打印 / draft / emit
@@ -385,6 +385,12 @@ export function registerContractCommand(program: Command): void {
           return;
         }
         if (paths.length === 0) {
+          // BUG-024：--from variadic 吞噬其后的位置参数——
+          // 定向 usage error（直指旗标 + `--` 终止符解法）
+          if (opts.from?.length) {
+            variadicSwallowError("contract", ["--from"]);
+            return;
+          }
           console.error(
             "Usage error: `nudo contract` needs at least one path. " +
               (opts.emit

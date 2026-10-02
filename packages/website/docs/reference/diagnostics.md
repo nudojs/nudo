@@ -483,6 +483,16 @@ A `--from` usage-site path does not exist. **Error** (usage) — pass `--from <f
 
 Context: [Usage sites (`--from`)](../guides/test.md#usage-sites---from) · [nudo check](../api/cli-reference.md#nudo-check)
 
+### `nudo:path-io` {#nudo-path-io}
+
+```text
+export --out mkdir failed: out/dir
+```
+
+A `--out` output-directory IO operation failed (`mkdir` / `write`). **Error** (usage) — the raw `errno` never reaches the product face; check that `--out <dir>` is writable and is a directory path, then re-run. (BUG-023: added so `nudo export` carries the same PathError face as `check` / `test`.)
+
+Context: [nudo export](../api/cli-reference.md#nudo-export)
+
 ## Reading `actual ⊭ expected`
 
 ```text

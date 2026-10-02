@@ -94,6 +94,7 @@ face. Renames / signature changes / removals are **minor**, not major.
 |------|---------|-------|
 | Leak accounting | `leak.ts` | internal budget |
 | Call / fork budgets | `call-budget.ts` | `MAX_*` / collectors / truncation |
+| Projection budget | `projection-budget.ts` | `ProjectionBudget` / `PROJECTION_MAX_DEPTH` — shared cycle+depth guard for format / emit exits (DESIGN-001) |
 | Hash / fingerprint | `hash-source.ts`, `stable-source-key.ts`, `fn-fp.ts`, `load-deps-fp.ts` | memo keys |
 | Derivation sessions | `derivation.ts` | intension / dsl projection |
 | Inlay helpers | `inlay.ts` | IDE experimental wording |

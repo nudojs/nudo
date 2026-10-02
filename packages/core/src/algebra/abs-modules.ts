@@ -40,7 +40,11 @@ export function bindImports(
   env: AstEnv,
   modules: Record<string, AbsModuleExports>,
 ): void {
-  const mod = modules[node.source.value];
+  // 自有属性读：modules 表裸读会在 toString 等原型名上命中原生函数
+  // （truthy）→ mod.named undefined → 下游 hasOwn 抛宿主 TypeError
+  const mod = Object.hasOwn(modules, node.source.value)
+    ? modules[node.source.value]
+    : undefined;
   if (!mod) {
     for (const s of node.specifiers) {
       env.vars.set(s.local.name, unknown);
@@ -52,7 +56,9 @@ export function bindImports(
       env.vars.set(s.local.name, mod.default ?? unknown);
     } else if (s.type === "ImportSpecifier") {
       const imported = s.imported.type === "Identifier" ? s.imported.name : String(s.imported);
-      env.vars.set(s.local.name, mod.named[imported] ?? unknown);
+      // 自有属性读：依赖未导出 toString 等名时裸读会把 Object.prototype 方法漏进 Abs 域
+      const named = Object.hasOwn(mod.named, imported) ? mod.named[imported] : undefined;
+      env.vars.set(s.local.name, named ?? unknown);
     } else if (s.type === "ImportNamespaceSpecifier") {
       env.vars.set(s.local.name, namespaceAbsOf(mod));
     }
@@ -95,7 +101,10 @@ export function collectAbsExports(
     if (stmt.type === "ExportNamedDeclaration") {
       // re-export：`export { a, b as c } from "mod"` / `export * as ns from "mod"`
       if (stmt.source && modules) {
-        const mod = modules[stmt.source.value];
+        // 自有属性读（同 bindImports）：原型名 spec 走 miss 分支
+        const mod = Object.hasOwn(modules, stmt.source.value)
+          ? modules[stmt.source.value]
+          : undefined;
         if (mod) {
           for (const spec of stmt.specifiers) {
             if (spec.type === "ExportNamespaceSpecifier") {
@@ -109,7 +118,13 @@ export function collectAbsExports(
             const local = spec.local.type === "Identifier" ? spec.local.name : spec.local.value;
             const exported =
               spec.exported.type === "Identifier" ? spec.exported.name : spec.exported.value;
-            const v = local === "default" ? mod.default : mod.named[local];
+            // 自有属性读（同 bindImports：原型名不得当 re-export 源）
+            const v =
+              local === "default"
+                ? mod.default
+                : Object.hasOwn(mod.named, local)
+                  ? mod.named[local]
+                  : undefined;
             // 缺名：留 unknown 槽而非 continue 丢槽（消费方 import 还能拿到 unknown）
             const slot = v ?? unknown;
             if (exported === "default") defaultExport = slot;
@@ -163,7 +178,9 @@ export function collectAbsExports(
       // export * from "mod"：并入 named（不含 default，与 ESM 一致）；
       // 不得覆盖显式导出（explicit wins）。star×star 仍按源序后者覆盖。
       // （Babel 8：`export * as ns` 走 ExportNamedDeclaration + ExportNamespaceSpecifier）
-      const mod = modules[stmt.source.value];
+      const mod = Object.hasOwn(modules, stmt.source.value)
+        ? modules[stmt.source.value]
+        : undefined;
       if (mod?.named) {
         for (const [k, v] of Object.entries(mod.named)) {
           if (!explicitNames.has(k)) named[k] = v;

@@ -17,6 +17,7 @@ import {
   execNudoModule,
   isNudoConstraint,
   constraintToEntryAbs,
+  CONSTRAINT_BUILDER_NAMES,
   CONSTRAINT_EXPR_RE,
   SELF,
   listFnDirectiveScopes,
@@ -207,18 +208,21 @@ function resetDirectiveDiagSeen(): void {
 // 指令标签只在「注释行首」匹配（可选 `*` / `//` 已由 comment.value 剥掉）：
 // 不得命中 case 参数字符串或文档散文里的 `@nudo:skip` / `@nudo:case` / `@nudo:mock` 字样。
 // `\b` 防 `@nudo:skipped` / `@nudo:cases` 误命中。
-/** 宽松捕获 @nudo:case 标签后的整段文本，用于检测非法名形态 */
-const CASE_TAG_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:case\s+([^\n]+)/g;
+/** 宽松捕获 @nudo:case 标签后的整行文本，用于检测非法名形态（含空标签）。
+ * S4-004：`\s+` 跨行会把下一行粘进本标签（诊断错误归因/吞下一个标签），
+ * 改同行分隔 `[ \t]`；`[^\n]*` 让空标签也可见。前缀镜像 core
+ * directive-scan 的 CASE_NAME_REGEX（块 `*` 续行 / `///` 残留单 `/`）。 */
+const CASE_TAG_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*|\/[ \t]*)?@nudo:case\b[ \t]*([^\n]*)/g;
 /** JS 标识符（Unicode 感知）：mock 名文法 */
 const JS_IDENT_RE = /^[\p{L}$_][\p{L}\p{N}$_]*$/u;
-const MOCK_INLINE_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:mock\s+([^\s=]+)\s*=\s*(.+)/g;
-const MOCK_FROM_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:mock\s+([^\s]+)\s+from\s+"([^"]+)"/g;
-/** 宽松捕获 @nudo:mock 标签，用于检测非法名形态 */
-const MOCK_TAG_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:mock\s+([^\n]+)/g;
-const PURE_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:pure\b/g;
-const SKIP_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:skip\b(?:[ \t]+(\S[^\n]*))?/g;
+const MOCK_INLINE_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*|\/[ \t]*)?@nudo:mock\b[ \t]+([^\s=]+)[ \t]*=[ \t]*(.+)/g;
+const MOCK_FROM_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*|\/[ \t]*)?@nudo:mock\b[ \t]+([^\s]+)[ \t]+from[ \t]+"([^"\n]+)"/g;
+/** 宽松捕获 @nudo:mock 标签后的整行文本（含空标签），用于检测非法名形态 */
+const MOCK_TAG_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*|\/[ \t]*)?@nudo:mock\b[ \t]*([^\n]*)/g;
+const PURE_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*|\/[ \t]*)?@nudo:pure\b/g;
+const SKIP_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*|\/[ \t]*)?@nudo:skip\b(?:[ \t]+(\S[^\n]*))?/g;
 /** 宽松捕获 @nudo:sample 后的整段 token（数字文法在下方校验，不再静默截断） */
-const SAMPLE_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*)?@nudo:sample\b(?:[ \t]+(\S+))?/g;
+const SAMPLE_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*|\/[ \t]*)?@nudo:sample\b(?:[ \t]+(\S+))?/g;
 /** 完整数字 token：整数 / 小数 / 负数 / 科学计数；禁止 `3.5` 截成 `3` */
 const SAMPLE_NUM_RE = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/;
 
@@ -231,10 +235,102 @@ const SAMPLE_NUM_RE = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/;
  * CONSTRAINT_BUILDER_NAMES 生成，本文件不再手维护一份。
  */
 
+/**
+ * BUG-013：链式方法白名单（须与 core makeBuilder / ConstraintBuilder 同步）。
+ * 约束表达式只允许这些方法出现在 `builder(...).method(...)` 链上。
+ */
+const TYPE_EXPR_CHAIN_METHODS = new Set([
+  "gt", "ge", "lt", "le", "int", "min", "max", "length", "shift", "optional",
+]);
+
+/**
+ * BUG-013：类型表达式 AST 白名单——进入 execNudoModule / new Function 前的门禁。
+ * 仅允许：构建器名调用、白名单链式方法、字面量、Object/Array 字面量、
+ * 一元负号数字、`undefined` 标识符。出现 AssignmentExpression /
+ * SequenceExpression / 任意非白名单 CallExpression / 计算属性 / spread /
+ * 可选链 / new / 模板串等一律拒绝。
+ */
+function isSafeTypeExprNode(node: Node): boolean {
+  switch (node.type) {
+    case "NumericLiteral":
+    case "StringLiteral":
+    case "BooleanLiteral":
+    case "NullLiteral":
+      return true;
+    case "Identifier":
+      return node.name === "undefined";
+    case "UnaryExpression":
+      return node.operator === "-" && node.argument.type === "NumericLiteral";
+    case "ArrayExpression":
+      return node.elements.every(
+        (el) => el !== null && el.type !== "SpreadElement" && isSafeTypeExprNode(el),
+      );
+    case "ObjectExpression":
+      return node.properties.every((prop) => {
+        if (prop.type !== "ObjectProperty") return false;
+        if (prop.computed) return false;
+        const key = prop.key;
+        if (key.type !== "Identifier" && key.type !== "StringLiteral") return false;
+        return isSafeTypeExprNode(prop.value);
+      });
+    case "CallExpression": {
+      // Babel 8：可选链是独立的 OptionalCallExpression / OptionalMemberExpression
+      // 节点，不进本分支（default 拒绝）。
+      const argsOk = node.arguments.every(
+        (arg) =>
+          arg.type !== "SpreadElement" &&
+          arg.type !== "ArgumentPlaceholder" &&
+          isSafeTypeExprNode(arg),
+      );
+      if (!argsOk) return false;
+      return isSafeTypeExprCallee(node.callee);
+    }
+    default:
+      return false;
+  }
+}
+
+function isSafeTypeExprCallee(node: Node): boolean {
+  if (node.type === "Identifier") {
+    return (CONSTRAINT_BUILDER_NAMES as readonly string[]).includes(node.name);
+  }
+  if (node.type === "MemberExpression") {
+    if (node.computed) return false;
+    if (node.property.type !== "Identifier") return false;
+    if (!TYPE_EXPR_CHAIN_METHODS.has(node.property.name)) return false;
+    return isSafeTypeExprNode(node.object);
+  }
+  return false;
+}
+
+/** 整条类型表达式过白名单。解析失败 / 多语句 / 非表达式根一律拒绝（fail-closed）。 */
+function isSafeTypeExprSource(s: string): boolean {
+  try {
+    // 用 `(${s});` 包成单表达式语句：多语句拼接（`number()); process.exit(1); //`）
+    // 会变成 body.length > 1，SequenceExpression 形态会被白名单拒绝。
+    const ast = babelParse(`(${s});`);
+    if (ast.program.body.length !== 1) return false;
+    const stmt = ast.program.body[0];
+    if (stmt.type !== "ExpressionStatement") return false;
+    return isSafeTypeExprNode(stmt.expression);
+  } catch {
+    return false;
+  }
+}
+
 /** 约束表达式 → NudoConstraint；非约束文法或执行失败 → undefined */
 function tryParseConstraint(expr: string): NudoConstraint | undefined {
   const s = expr.trim();
   if (!CONSTRAINT_EXPR_RE.test(s)) return undefined;
+  // BUG-013：CONSTRAINT_EXPR_RE 只是前缀预筛，不是安全门禁。进 new Function 前
+  // 必须过 AST 白名单，否则 `number(), process.exit(1)` 可借前缀执行任意 JS。
+  if (!isSafeTypeExprSource(s)) {
+    emitDirectiveDiag({
+      code: "nudo:directive-syntax",
+      message: `Unsafe constraint expression rejected: ${s.slice(0, 80)} (only builder calls, chain methods, and literals are allowed)`,
+    });
+    return undefined;
+  }
   try {
     // 受控执行：注入构建器，不碰用户 node_modules（与侧车同一路径）
     const src = `export const __nudo_case_arg = (${s});`;
@@ -285,10 +381,12 @@ function constraintSelfEqLit(
  * union 成员递归再拼 sum（同 prim 双 lit 不经 joinValues 急切塌缩）；
  * array/shape 递归展开 element/fields 以保留嵌套字面量身份；
  * 其余走 constraintToEntryAbs（var 项 + pred）。
+ * 递归深度与 parseCaseArgExpr 同一上限（BUG-014：不靠 try/catch 兜栈溢出）。
  */
-function constraintToCaseArgAbs(c: NudoConstraint): Abs {
+function constraintToCaseArgAbs(c: NudoConstraint, depth: number): Abs {
+  if (depth > MAX_CASE_ARG_DEPTH) return depthCapDiag(constraintPreview(c));
   if (c.members && c.members.length > 0) {
-    const parts = c.members.map((m) => constraintToCaseArgAbs(m));
+    const parts = c.members.map((m) => constraintToCaseArgAbs(m, depth + 1));
     if (parts.length === 1) return parts[0]!;
     return { shape: { k: "sum", members: parts }, conf: "path" };
   }
@@ -303,12 +401,12 @@ function constraintToCaseArgAbs(c: NudoConstraint): Abs {
     return absUndefLit();
   }
   if (c.element) {
-    return absExact({ k: "arr", element: constraintToCaseArgAbs(c.element) });
+    return absExact({ k: "arr", element: constraintToCaseArgAbs(c.element, depth + 1) });
   }
   if (c.fields) {
     const slots: Record<string, { value: Abs }> = {};
     for (const [key, field] of Object.entries(c.fields)) {
-      slots[key] = { value: constraintToCaseArgAbs(field.constraint) };
+      slots[key] = { value: constraintToCaseArgAbs(field.constraint, depth + 1) };
     }
     return absExact({ k: "obj", slots });
   }
@@ -327,23 +425,51 @@ function constraintToCaseArgAbs(c: NudoConstraint): Abs {
 }
 
 /**
+ * BUG-014：case 实参结构递归深度上限。`[`×5000 一类超深嵌套曾以
+ * RangeError 打穿 extractDirectives（宿主进程崩溃）——文法边界走
+ * nudo:directive-syntax 诊断 + unknown 折叠，不把宿主栈深当隐式限制。
+ * 合法用例（测试/文档所见最深 ~4 层）远低于 32。
+ */
+const MAX_CASE_ARG_DEPTH = 32;
+
+/** 深度超限统一诊断：截断预览，防止恶意超长实参借诊断报文膨胀缓冲 */
+function depthCapDiag(expr: string): Abs {
+  emitDirectiveDiag({
+    code: "nudo:directive-syntax",
+    message: `Type expression nesting exceeds depth ${MAX_CASE_ARG_DEPTH}: ${expr.trim().slice(0, 40)} … (deeper structure collapses to unknown)`,
+  });
+  return absUnknown();
+}
+
+/** 约束树无原文可引：只标注形态（不再递归展开，否则又是一条无界递归） */
+function constraintPreview(c: NudoConstraint): string {
+  if (c.element) return "array(…)";
+  if (c.members) return "union(…)";
+  if (c.fields) return "shape({ … })";
+  if (c.fn) return "fn(…)";
+  return c.prim ? `${c.prim}()` : "constraint";
+}
+
+/**
  * case 实参 / 指令类型表达式唯一文法：约束构建器优先，其余为具体字面量、
  * 结构字面量与箭头函数。`T.*` 文法已物理删除。
+ * depth 按包含关系逐层 +1 线程化传递（兄弟共享父深度，不用共享可变计数器）。
  */
-export function parseCaseArgExpr(expr: string): Abs {
+export function parseCaseArgExpr(expr: string, depth = 0): Abs {
+  if (depth > MAX_CASE_ARG_DEPTH) return depthCapDiag(expr);
   const constraint = tryParseConstraint(expr);
   if (constraint) {
     try {
-      return constraintToCaseArgAbs(constraint);
+      return constraintToCaseArgAbs(constraint, depth);
     } catch {
       return absUnknown();
     }
   }
-  return parseLiteralOrStructure(expr);
+  return parseLiteralOrStructure(expr, depth);
 }
 
 /** 具体字面量 / 对象数组字面量 / 箭头函数 → Abs；无法识别 → unknown */
-function parseLiteralOrStructure(expr: string): Abs {
+function parseLiteralOrStructure(expr: string, depth: number): Abs {
   const s = expr.trim();
 
   if (s === "true") return absLit(true);
@@ -368,21 +494,24 @@ function parseLiteralOrStructure(expr: string): Abs {
   }
 
   if (s.startsWith("{") && s.endsWith("}")) {
-    return parseObjectLiteral(s.slice(1, -1).trim());
+    return parseObjectLiteral(s.slice(1, -1).trim(), depth);
   }
 
   if (s.startsWith("[") && s.endsWith("]")) {
     const content = s.slice(1, -1).trim();
     if (!content) return absExact({ k: "tuple", elements: [] });
     const elements = splitTopLevelArgs(content);
-    return absExact({ k: "tuple", elements: elements.map((e) => parseCaseArgExpr(e)) });
+    return absExact({
+      k: "tuple",
+      elements: elements.map((e) => parseCaseArgExpr(e, depth + 1)),
+    });
   }
 
   // `T.*` 及其它未知标识符：明确不再解析
   return absUnknown();
 }
 
-function parseObjectLiteral(content: string): Abs {
+function parseObjectLiteral(content: string, depth: number): Abs {
   if (!content) return absExact({ k: "obj", slots: {} });
   const entries = splitTopLevelArgs(content);
   const slots: Record<string, { value: Abs }> = {};
@@ -391,7 +520,7 @@ function parseObjectLiteral(content: string): Abs {
     if (colonIdx === -1) continue;
     const key = entry.slice(0, colonIdx).trim().replace(/^["']|["']$/g, "");
     const val = entry.slice(colonIdx + 1).trim();
-    slots[key] = { value: parseCaseArgExpr(val) };
+    slots[key] = { value: parseCaseArgExpr(val, depth + 1) };
   }
   return absExact({ k: "obj", slots });
 }
@@ -614,7 +743,15 @@ function parseSkipReturnsExpr(rest: string | undefined): Abs | undefined {
     if (inner !== null && s.slice(inner.length + 2).trim() === "") {
       return parseAbsExprDiag(inner, "@nudo:skip (...)");
     }
-    // 括号不完整或后有残留：不按显式类型处理，落到散文分支
+    if (inner === null) {
+      // S4-003 同族：`@nudo:skip (number()` 括号未闭合不再静默落回散文分支
+      emitDirectiveDiag({
+        code: "nudo:directive-syntax",
+        message: `@nudo:skip type expression has unclosed parenthesis (expected @nudo:skip (<typeExpr>)) — got: ${s.slice(0, 60)}`,
+      });
+      return undefined;
+    }
+    // 括号后有残留：不按显式类型处理，落到散文分支
   }
 
   // 散文：不解析为类型，returns = null
@@ -741,7 +878,12 @@ function parseSinonExpr(expr: string): SinonExpression | null {
 }
 
 function parseNudoMockExpr(expr: string): MockHelper | null {
-  const s = expr.trim();
+  // BUG-014 同族：sinon 前缀剥离改迭代。原尾递归对 `sinon.`×N 实参每层一帧，
+  // 恶意超长前缀以 RangeError 打穿 extractDirectives。顶部一次性剥净等价：
+  // 下方所有分支锚定 `^stub\(` / `^spy\(` / `^mock\(` 或精确匹配，无一能匹配
+  // `sinon.` 开头的串，先剥后试与逐层剥试结果一致。
+  let s = expr.trim();
+  while (s.startsWith("sinon.")) s = s.slice("sinon.".length);
 
   // Match stub().returns(value).onFirstCall()
   const stubReturnsOnFirstMatch = s.match(/^stub\(\)\.returns\((.+)\)\.onFirstCall\(\)$/);
@@ -844,12 +986,6 @@ function parseNudoMockExpr(expr: string): MockHelper | null {
   // Match mock()
   if (s === "mock()") {
     return mock();
-  }
-
-  // sinon 前缀链统一为同一 MockHelper 形态：strip 前缀后复用裸 stub 解析。
-  // 解析不出的 sinon 链仍回落 sinonExpr 路径（parseSinonExpr 自己的分支）。
-  if (s.startsWith("sinon.")) {
-    return parseNudoMockExpr(s.slice("sinon.".length));
   }
 
   return null;
@@ -1019,10 +1155,20 @@ function scanMalformedCaseNames(text: string, caseArgSpans: [number, number][]):
   while ((m = CASE_TAG_REGEX.exec(text)) !== null) {
     if (inCaseArgs(m.index)) continue;
     const rest = m[1]!.trim();
-    // 合法形态：非空双引号名 + 实参括号
-    if (/^"[^"]+"\s*\(/.test(rest)) continue;
-    // 已被 CASE_NAME_REGEX 吸走的不重复报
-    if (/^"[^"]+"\s*\(/.test(rest)) continue;
+    // 合法形态前缀：非空双引号名 + 同行实参括号（已被 CASE_NAME_REGEX 吸走的不重复报）
+    const legal = rest.match(/^("[^"]+")[ \t]*\(/);
+    if (legal) {
+      // S4-003：合法形态判定必须真的平衡——此前 `"a" (1`（未闭合）既有形似
+      // 前缀又不进 caseArgSpans，被静默丢弃且零诊断。跨行未闭合同样在此暴露。
+      const parenIdx = m.index + m[0].length - m[1]!.length + legal[0].length - 1;
+      if (extractBalancedParens(text, parenIdx) === null) {
+        emitDirectiveDiag({
+          code: "nudo:directive-syntax",
+          message: `Malformed @nudo:case: unclosed argument list (missing closing ")") — got: @nudo:case ${rest.slice(0, 60)}`,
+        });
+      }
+      continue;
+    }
     let reason: string;
     if (rest.startsWith("'")) {
       reason = `single-quoted name (use double quotes: @nudo:case "name" (…))`;
@@ -1068,6 +1214,16 @@ function scanMalformedMockNames(text: string, caseArgSpans: [number, number][]):
       emitDirectiveDiag({
         code: "nudo:directive-syntax",
         message: `Malformed @nudo:mock name '${name}': not a valid identifier (use letters, digits, _, $; Unicode letters allowed)`,
+      });
+      continue;
+    }
+    // S4-004 同族：from 路径必须同行闭引号——此前 `"([^"]+)` 跨行把下一行
+    // 粘进 fromPath（错误归因）；收紧后引号未闭合不再静默丢弃
+    const afterName = rest.slice(name.length);
+    if (/^[ \t]+from[ \t]+"[^"\n]*$/.test(afterName)) {
+      emitDirectiveDiag({
+        code: "nudo:directive-syntax",
+        message: `Malformed @nudo:mock from: unclosed quote in path (expected @nudo:mock ${name} from "path") — got: @nudo:mock ${rest.slice(0, 60)}`,
       });
     }
   }
@@ -1125,10 +1281,44 @@ export function extractDirectivesQuiet(ast: Node): FunctionWithDirectives[] {
   return out;
 }
 
-const AS_REGEX = /^\s*@nudo:as\s+(.+)/;
-const REPLACE_REGEX = /^\s*@nudo:replace\s+(.+)/;
-/** `@nudo:as` 尾注释探测：类型表达式后跟 `//` 或 `/*` 残留 */
-const AS_TRAILING_COMMENT_RE = /\s+(?:\/\/|\/\*)/;
+/**
+ * S4-006：行内指令行前缀剥离——镜像 core cleanDirectiveLine（块注释 `* ` 续行 /
+ * 行注释 `///` 残留的单个 `/`）。此前 `^\s*@nudo:as` 对 JSDoc 块整体匹配，
+ * `*` 前缀挡在标签前导致整条静默丢失。
+ */
+function stripInlineCommentPrefix(line: string, kind: "line" | "block"): string {
+  const s = kind === "block" ? line.replace(/^\s*\*\s?/, "") : line.replace(/^\//, "");
+  return s.trim();
+}
+
+const AS_LINE_REGEX = /^@nudo:as[ \t]+(.+)$/;
+const REPLACE_LINE_REGEX = /^@nudo:replace[ \t]+(.+)$/;
+const AS_BARE_RE = /^@nudo:as[ \t]*$/;
+const REPLACE_BARE_RE = /^@nudo:replace[ \t]*$/;
+
+/**
+ * S4-006 同族：尾注释探测改字符串感知——`lit("a /* b")` 里的 `//` / `/*`
+ * 不再误判为尾注释（与 scanWithStrings 同口径：`\` 不是转义）。
+ * 返回尾注释起点下标；无 → -1。
+ */
+function findTrailingCommentStart(expr: string): number {
+  let inString: string | null = null;
+  for (let i = 0; i < expr.length; i++) {
+    const ch = expr[i]!;
+    if (inString) {
+      if (ch === inString) inString = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      inString = ch;
+      continue;
+    }
+    if ((ch === " " || ch === "\t") && /^[ \t]+(?:\/\/|\/\*)/.test(expr.slice(i))) {
+      return i;
+    }
+  }
+  return -1;
+}
 
 export function extractInlineDirectives(node: Node): InlineDirective[] {
   resetDirectiveDiagSeen();
@@ -1139,42 +1329,62 @@ export function extractInlineDirectives(node: Node): InlineDirective[] {
   for (const comment of comments) {
     // CommentLine（`//`）与 CommentBlock（`/* */`）都认（F-3 #10）
     if (comment.type !== "CommentLine" && comment.type !== "CommentBlock") continue;
-    const text = comment.value;
+    // S4-006：先剥 `* ` / `///` 前缀再逐行扫——多行块注释里的指令此前
+    // 只取首个匹配且对 JSDoc 星号续行整体失明；一个块内多条指令各自生效
+    const kind = comment.type === "CommentLine" ? "line" : "block";
+    for (const rawLine of comment.value.split("\n")) {
+      const line = stripInlineCommentPrefix(rawLine, kind);
 
-    const asMatch = text.match(AS_REGEX);
-    if (asMatch) {
-      const rawExpr = asMatch[1].trim();
-      // 尾注释残留（F-3 #9）：类型表达式后跟 `//` 或 `/*` → 不静默吞成 unknown
-      const trailing = rawExpr.match(AS_TRAILING_COMMENT_RE);
-      if (trailing) {
-        const typePart = rawExpr.slice(0, trailing.index).trim();
-        emitDirectiveDiag({
-          code: "nudo:directive-syntax",
-          message: `Trailing comment in @nudo:as type expression: '${rawExpr}' (remove the comment; the type must be a clean expression)`,
-        });
-        results.push({ kind: "as", typeAbs: typePart ? parseAbsExprDiag(typePart, "@nudo:as") : absUnknown() });
+      const asMatch = line.match(AS_LINE_REGEX);
+      if (asMatch) {
+        const rawExpr = asMatch[1].trim();
+        // 尾注释残留（F-3 #9）：类型表达式后跟 `//` 或 `/*` → 不静默吞成 unknown
+        const trailingIdx = findTrailingCommentStart(rawExpr);
+        if (trailingIdx !== -1) {
+          const typePart = rawExpr.slice(0, trailingIdx).trim();
+          emitDirectiveDiag({
+            code: "nudo:directive-syntax",
+            message: `Trailing comment in @nudo:as type expression: '${rawExpr}' (remove the comment; the type must be a clean expression)`,
+          });
+          results.push({ kind: "as", typeAbs: typePart ? parseAbsExprDiag(typePart, "@nudo:as") : absUnknown() });
+          continue;
+        }
+        results.push({ kind: "as", typeAbs: parseAbsExprDiag(rawExpr, "@nudo:as") });
         continue;
       }
-      results.push({ kind: "as", typeAbs: parseAbsExprDiag(rawExpr, "@nudo:as") });
-      continue;
-    }
-
-    const replaceMatch = text.match(REPLACE_REGEX);
-    if (replaceMatch) {
-      const raw = replaceMatch[1].trim();
-      const sepIdx = findReplaceSeparator(raw);
-      if (sepIdx !== -1) {
-        const targetSource = raw.slice(0, sepIdx).trim();
-        const typeExprStr = raw.slice(sepIdx + 1).trim();
-        results.push({
-          kind: "replace",
-          targetSource,
-          typeAbs: parseAbsExprDiag(typeExprStr, "@nudo:replace"),
-        });
-      } else {
+      if (AS_BARE_RE.test(line)) {
+        // 空载荷不再静默：`@nudo:as` 单独成行发显式诊断
         emitDirectiveDiag({
           code: "nudo:directive-syntax",
-          message: `Malformed @nudo:replace: cannot separate target from type (expected @nudo:replace <target> <typeExpr>) — got: ${raw.slice(0, 60)}`,
+          message: `@nudo:as requires a type expression (e.g. @nudo:as number())`,
+        });
+        continue;
+      }
+
+      const replaceMatch = line.match(REPLACE_LINE_REGEX);
+      if (replaceMatch) {
+        const raw = replaceMatch[1].trim();
+        const sepIdx = findReplaceSeparator(raw);
+        if (sepIdx !== -1) {
+          const targetSource = raw.slice(0, sepIdx).trim();
+          const typeExprStr = raw.slice(sepIdx + 1).trim();
+          results.push({
+            kind: "replace",
+            targetSource,
+            typeAbs: parseAbsExprDiag(typeExprStr, "@nudo:replace"),
+          });
+        } else {
+          emitDirectiveDiag({
+            code: "nudo:directive-syntax",
+            message: `Malformed @nudo:replace: cannot separate target from type (expected @nudo:replace <target> <typeExpr>) — got: ${raw.slice(0, 60)}`,
+          });
+        }
+        continue;
+      }
+      if (REPLACE_BARE_RE.test(line)) {
+        emitDirectiveDiag({
+          code: "nudo:directive-syntax",
+          message: `@nudo:replace requires a target and type expression (expected @nudo:replace <target> <typeExpr>)`,
         });
       }
     }

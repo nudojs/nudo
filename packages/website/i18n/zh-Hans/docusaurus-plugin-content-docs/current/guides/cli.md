@@ -214,7 +214,7 @@ nudo export src/user.js --format all --out dist
 nudo health [paths…] [--watch] [--from paths…] [--json]
 ```
 
-漂移或分析错误时退出 `1`。uncovered 函数仅为信息级。
+漂移、分析错误或 `--from` 缺文件时退出 `1`；`--json` 下路径错误进顶层 `pathErrors[]` 并强制 `ok: false`。uncovered 函数仅为信息级。
 
 ```bash
 nudo health src/ --from tests/

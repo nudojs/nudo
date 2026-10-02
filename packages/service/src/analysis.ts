@@ -46,6 +46,7 @@ export {
   type AbsGraphOptions,
   type AbsModuleLoadIssue,
   type AbsModuleCacheEntry,
+  type AbsModuleDepFingerprint,
 } from "./abs-modules-graph.ts";
 
 export {

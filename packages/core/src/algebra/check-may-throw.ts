@@ -133,7 +133,8 @@ export function evalThrowsOf(
     }
   };
   try {
-    if (fnName in exports) return call(fnName, args);
+    // own-property：`in` 走原型链，toString/constructor 等继承名会被当真实导出
+    if (Object.hasOwn(exports, fnName)) return call(fnName, args);
     // 类静态方法桥（A.m → $staticInvoke 类值）
     if (fnName.includes(".")) {
       const [clsName, methodName] = fnName.split(".", 2);

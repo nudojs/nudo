@@ -156,7 +156,14 @@ export function localNamedExports(source: string): Set<string> {
   const identName = (n: NodeLike | undefined): string | undefined => {
     if (!n) return undefined;
     if (n.type === "Identifier" && typeof n.name === "string") return n.name;
-    if (n.type === "Literal" && typeof n.value === "string") return n.value;
+    // string 导出名（`export { x as "a-b" }`）：Babel 是 StringLiteral（不是
+    // estree 的 Literal）——DESIGN-003 身份=导出名必须认得串名
+    if (
+      (n.type === "StringLiteral" || n.type === "Literal") &&
+      typeof n.value === "string"
+    ) {
+      return n.value;
+    }
     return undefined;
   };
   /** P1：本地 ClassDeclaration 表（export { Foo } / export default Foo 解析用） */
@@ -347,10 +354,42 @@ export function localNamedExports(source: string): Set<string> {
 }
 
 /**
+ * `export { local as exported }`（含 string 导出名 `export { x as "a-b" }`）
+ * 的本地声明名 → 导出名查询（DESIGN-003：契约身份=导出名）。声明形态
+ * （exported === local）与 default 形态不进表——default 走 C4.4 的
+ * 本地名/default 双键绑定，身份保持本地名。解析失败 / 无别名子句 →
+ * undefined。
+ */
+export function exportedNameOfLocal(source: string, localName: string): string | undefined {
+  let ast: ReturnType<typeof parseSource>;
+  try {
+    ast = parseSource(source, { errorRecovery: true });
+  } catch {
+    return undefined;
+  }
+  for (const stmt of ast.program.body) {
+    if (stmt.type !== "ExportNamedDeclaration" || stmt.source) continue;
+    for (const spec of stmt.specifiers) {
+      if (spec.type !== "ExportSpecifier") continue;
+      if (spec.local.type !== "Identifier" || spec.local.name !== localName) continue;
+      const name =
+        spec.exported.type === "Identifier" ? spec.exported.name : spec.exported.value;
+      if (name === undefined || name === localName || name === "default") continue;
+      return name;
+    }
+  }
+  return undefined;
+}
+
+/**
  * 侧车源码的生成段导出名：export 之前（跳过紧邻的 import/const 链）的注释
  * 行含 `@generated` → 该名为 generated。组合式下行段（§5.3）形态为
  * `import` + `@generated 头` + prelude + export；callsite 段则是头紧贴
  * export。隔了其他代码行 / 无标记 / re-export 列表均不算。
+ *
+ * DESIGN-003 别名段：导出名不是合法绑定名（保留字 / 非 ident）时发射为
+ * `const _nudo_1 = …; export { _nudo_1 as class };` —— 身份恒为**导出名**
+ * （`class` / string 名），不是绑定别名。
  */
 export function generatedExportNames(sidecarSrc: string): Set<string> {
   const out = new Set<string>();
@@ -365,8 +404,21 @@ export function generatedExportNames(sidecarSrc: string): Set<string> {
     const stmt = stmts[i]!;
     if (stmt.type !== "ExportNamedDeclaration") continue;
     if (stmt.source) continue;
+    if (stmt.start == null) continue;
     const d = stmt.declaration;
-    if (!d || stmt.start == null) continue;
+    if (!d) {
+      // 别名段尾（export 子句无声明）：region 回扫跳过紧邻 import/const 链
+      // 找 @generated 头；身份 = specifier 的导出名（含 string 名）
+      if (regionHasGeneratedMarker(stmts, i, sidecarSrc)) {
+        for (const spec of stmt.specifiers) {
+          if (spec.type !== "ExportSpecifier") continue;
+          const name =
+            spec.exported.type === "Identifier" ? spec.exported.name : spec.exported.value;
+          if (name !== undefined) out.add(name);
+        }
+      }
+      continue;
+    }
     const names: string[] = [];
     if (d.type === "VariableDeclaration") {
       for (const decl of d.declarations) {
@@ -516,6 +568,10 @@ function sidecarMayBind(
   if (!sidecarNames) return true; // 未知导出面：保守尝试
   if (sidecarNames.size === 0) return true; // 解析空表：可能是坏源，让 exec 报
   if (sidecarNames.has(fnName)) return true;
+  // DESIGN-003：`export { _c as class }` 的函数身份是本地名 _c，侧车身份是
+  // 导出名 class（绑定名可能是别名 _nudo_1）——本地名查询按导出名桥接
+  const aliasExport = exportedNameOfLocal(source, fnName);
+  if (aliasExport !== undefined && sidecarNames.has(aliasExport)) return true;
   if (sidecarNames.has("default") && isDefaultExportLocal(source, fnName)) return true;
   if (fnName.includes(".")) {
     const [cls, method] = fnName.split(".", 2);
@@ -607,28 +663,40 @@ function loadSidecarBinding(
     }
     return { ok: false };
   }
-  // C4.2 绑定键解析：
+  // C4.2 绑定键解析（全部按自有属性读：toString/constructor 等键裸读会踩
+  // Object.prototype 原型链，把原型成员当侧车导出）：
   // 1. 平铺 `Class.method` / `Class_method`
   // 2. 嵌套对象 `export const Class = { method: fn(…) }`
   // 3. C4.4：`export { local as default }` + 侧车 `export default`
-  let binding: unknown = exports[fnName];
+  let binding: unknown = Object.hasOwn(exports, fnName) ? exports[fnName] : undefined;
+  // DESIGN-003：别名导出（`export { _c as class }`）的源码函数身份是本地名
+  // _c，侧车契约身份是导出名 class——本地名查询按导出名桥接（旧侧车按本地
+  // 名发射的形态仍走上方同名直查，两代侧车都可绑定）
+  if (binding === undefined) {
+    const aliasExport = exportedNameOfLocal(source, fnName);
+    if (aliasExport !== undefined && Object.hasOwn(exports, aliasExport)) {
+      binding = exports[aliasExport];
+    }
+  }
   if (binding === undefined && exports.default !== undefined && isDefaultExportLocal(source, fnName)) {
     binding = exports.default;
   }
   if (binding === undefined && fnName.includes(".")) {
     const [cls, method] = fnName.split(".", 2);
-    binding = exports[`${cls}_${method}`];
+    binding = Object.hasOwn(exports, `${cls}_${method}`)
+      ? exports[`${cls}_${method}`]
+      : undefined;
     if (binding === undefined) {
-      const bag = exports[cls!] as Record<string, unknown> | undefined;
+      const bag = Object.hasOwn(exports, cls!) ? (exports[cls!] as Record<string, unknown> | undefined) : undefined;
       if (bag && typeof bag === "object" && !isNudoConstraint(bag)) {
-        binding = (bag as Record<string, unknown>)[method!];
+        binding = Object.hasOwn(bag, method!) ? bag[method!] : undefined;
       }
     }
     // 侧车键近失配：只有裸 `method` 而目标是 `Class.method`——报而非静默不绑
     if (
       binding === undefined &&
       method !== undefined &&
-      exports[method] !== undefined
+      Object.hasOwn(exports, method)
     ) {
       collectDiag({
         code: "nudo:interface-load",
@@ -655,10 +723,13 @@ function loadSidecarBinding(
     });
     return { ok: false };
   }
-  // generated 判定与绑定键解析同构：`Class.method` / `Class_method` / 嵌套对象
+  // generated 判定与绑定键解析同构：`Class.method` / `Class_method` / 嵌套对象；
+  // DESIGN-003：别名导出的本地名查询按导出名桥接（生成段身份=导出名）
   const generatedNames = generatedExportNames(sidecarSrc);
+  const aliasExport = exportedNameOfLocal(source, fnName);
   const isGenerated =
     generatedNames.has(fnName) ||
+    (aliasExport !== undefined ? generatedNames.has(aliasExport) : false) ||
     (fnName.includes(".")
       ? (() => {
           const [cls, method] = fnName.split(".", 2);

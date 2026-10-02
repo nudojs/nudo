@@ -43,7 +43,6 @@ type PartialLimits = Partial<SessionCacheLimits>;
 
 let explicit: PartialLimits = {};
 let fromProject: PartialLimits = {};
-let envCache: PartialLimits | null = null;
 
 function envLimits(env: NodeJS.ProcessEnv): PartialLimits {
   return {
@@ -58,10 +57,10 @@ function pick(
   env: PartialLimits,
   fallback: number,
 ): number {
-  const e = env[key];
-  if (typeof e === "number" && Number.isFinite(e)) return e;
   const x = explicit[key];
   if (typeof x === "number" && Number.isFinite(x)) return clampEntries(x, fallback);
+  const e = env[key];
+  if (typeof e === "number" && Number.isFinite(e)) return e;
   const p = fromProject[key];
   if (typeof p === "number" && Number.isFinite(p)) return clampEntries(p, fallback);
   return fallback;
@@ -70,11 +69,11 @@ function pick(
 export function getSessionCacheLimits(
   env: NodeJS.ProcessEnv = process.env,
 ): SessionCacheLimits {
-  if (envCache === null) envCache = envLimits(env);
+  const fromEnv = envLimits(env);
   return {
-    maxFiles: pick("maxFiles", envCache, DEFAULT_SESSION_CACHE_LIMITS.maxFiles),
-    maxFns: pick("maxFns", envCache, DEFAULT_SESSION_CACHE_LIMITS.maxFns),
-    maxEvalRuns: pick("maxEvalRuns", envCache, DEFAULT_SESSION_CACHE_LIMITS.maxEvalRuns),
+    maxFiles: pick("maxFiles", fromEnv, DEFAULT_SESSION_CACHE_LIMITS.maxFiles),
+    maxFns: pick("maxFns", fromEnv, DEFAULT_SESSION_CACHE_LIMITS.maxFns),
+    maxEvalRuns: pick("maxEvalRuns", fromEnv, DEFAULT_SESSION_CACHE_LIMITS.maxEvalRuns),
   };
 }
 
@@ -89,9 +88,8 @@ export function setSessionCacheFromProject(partial: PartialLimits | null | undef
   fromProject = partial ? { ...partial } : {};
 }
 
-/** 测试：丢弃 env 惰性缓存，重新读 process.env */
+/** 测试：清空显式 / package.json 层（env 每次调用现读，无需重置） */
 export function resetSessionCacheLimitState(): void {
   explicit = {};
   fromProject = {};
-  envCache = null;
 }

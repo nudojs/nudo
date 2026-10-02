@@ -78,6 +78,51 @@ describe("validateSchemaNode", () => {
       expect(r.value).toBe(thenable);
     }
   });
+
+  it("validates overlong tuple elements against rest (BUG-002)", () => {
+    // [1, ...number]：超长元素必须满足 rest——合法放行、非法拒绝
+    const withRest = abs(
+      { k: "tuple", elements: [numLit(1)], rest: num() },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const { node } = absToSchemaNode(withRest);
+    expect(validateSchemaNode(node, [1])).toEqual({ value: [1] });
+    expect(validateSchemaNode(node, [1, 2, 3])).toEqual({ value: [1, 2, 3] });
+    const bad = validateSchemaNode(node, [1, "x"]);
+    expect(bad.issues).toBeDefined();
+    expect(bad.issues![0]!.path).toEqual([1]);
+    expect(bad.issues![0]!.message).toContain("number");
+  });
+
+  it("fixed tuple without rest keeps no-length-limit behavior (BUG-002)", () => {
+    const fixed = abs({ k: "tuple", elements: [numLit(1)] }, undefined, undefined, "exact");
+    const { node } = absToSchemaNode(fixed);
+    // 现状语义：standard 面不设长度上限（zod 方言靠 z.tuple 定长）——锁住不回归
+    expect(validateSchemaNode(node, [1, 2])).toEqual({ value: [1, 2] });
+  });
+
+  it("generated module inline __nudoCheck enforces rest on overlong elements (BUG-002)", () => {
+    // 真执行生成模块（内嵌 CHECK_FN_SOURCE），不是只比对 validateSchemaNode
+    const withRest = abs(
+      { k: "tuple", elements: [numLit(1)], rest: num() },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const { source } = absToStandardSchema(withRest, { name: "t" });
+    const js = source
+      .replace(/export const (\w+)/g, "var $1")
+      .replace(/} as const;/, "};");
+    const mod = new Function(`${js}\nreturn t;`)() as {
+      "~standard": { validate(value: unknown): unknown };
+    };
+    expect(mod["~standard"].validate([1, 2, 3])).toEqual({ value: [1, 2, 3] });
+    const bad = mod["~standard"].validate([1, "x"]) as { issues: Array<{ path: PropertyKey[] }> };
+    expect(bad.issues).toBeDefined();
+    expect(bad.issues[0]!.path).toEqual([1]);
+  });
 });
 
 describe("absToStandardSchemaModule", () => {
@@ -122,5 +167,69 @@ describe("absToStandardSchemaModule", () => {
     expect(source).toContain("export const scaleOutput");
     expect(source).toContain("export const scaleArg0");
     expect(Array.isArray(dropped)).toBe(true);
+  });
+});
+
+describe("BUG-018: 缺键 ≠ 显式 undefined（S6-003 第 5 次同族）", () => {
+  /** lit(undefined) 的 Abs：schema 投影为 { k: "lit", value: undefined }。 */
+  const undefLitAbs = (): Abs =>
+    abs({ k: "prim", type: "number" }, { op: "lit", value: undefined }, undefined, "exact");
+
+  it("required slot typed undefined: 在场 undefined 通过，缺键报 required", () => {
+    const o = obj({ a: { value: undefLitAbs() } });
+    const { node } = absToSchemaNode(o);
+    expect(validateSchemaNode(node, { a: undefined })).toEqual({ value: { a: undefined } });
+    const missing = validateSchemaNode(node, {});
+    expect(missing.issues?.[0]?.message).toBe("required");
+    expect(missing.issues?.[0]?.path).toEqual(["a"]);
+  });
+
+  it("required slot T|undefined: 显式 undefined 走 union 的 undefined 臂", () => {
+    const unionAbs = abs(
+      { k: "sum", members: [num(), undefLitAbs()] },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const o = obj({ a: { value: unionAbs } });
+    const { node } = absToSchemaNode(o);
+    expect(validateSchemaNode(node, { a: undefined })).toEqual({ value: { a: undefined } });
+    expect(validateSchemaNode(node, { a: 1 })).toEqual({ value: { a: 1 } });
+    const bad = validateSchemaNode(node, { a: "x" });
+    expect(bad.issues).toBeDefined();
+  });
+
+  it("required number 槽对 undefined 报类型错而非 required", () => {
+    const o = obj({ a: { value: num() } });
+    const { node } = absToSchemaNode(o);
+    const r = validateSchemaNode(node, { a: undefined });
+    expect(r.issues?.[0]?.message).toContain("expected number");
+    expect(r.issues?.[0]?.message).not.toBe("required");
+  });
+
+  it("optional 槽：缺键与显式 undefined 皆合法，在场值仍校验", () => {
+    const o = obj({ a: { value: num(), optional: true } });
+    const { node } = absToSchemaNode(o);
+    expect(validateSchemaNode(node, {})).toEqual({ value: {} });
+    expect(validateSchemaNode(node, { a: undefined })).toEqual({ value: { a: undefined } });
+    expect(validateSchemaNode(node, { a: 1 })).toEqual({ value: { a: 1 } });
+    expect(validateSchemaNode(node, { a: "x" }).issues).toBeDefined();
+  });
+
+  it("内联校验源（CHECK_FN_SOURCE 副本）与 checkNode 同口径", () => {
+    const o = obj({ a: { value: undefLitAbs() } });
+    const { source } = absToStandardSchema(o, { name: "t" });
+    const js = source
+      .replace(/export const (\w+)/g, "var $1")
+      .replace(/} as const;/, "};");
+    const mod = new Function(`${js}\nreturn t;`)() as {
+      "~standard": { validate(value: unknown): unknown };
+    };
+    expect(mod["~standard"].validate({ a: undefined })).toEqual({ value: { a: undefined } });
+    const missing = mod["~standard"].validate({}) as {
+      issues: Array<{ message: string; path: PropertyKey[] }>;
+    };
+    expect(missing.issues?.[0]?.message).toBe("required");
+    expect(missing.issues?.[0]?.path).toEqual(["a"]);
   });
 });

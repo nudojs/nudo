@@ -5,7 +5,9 @@ import {
   templatePartsOf,
   escapeTemplateTypeFixed,
   formatObjectKey,
+  isJsBindingIdent,
   sanitizeCommentText,
+  ProjectionBudget,
 } from "@nudojs/core/internal";
 import type { AnalysisResult, CaseResult, FunctionAnalysis } from "../analyzer.ts";
 
@@ -29,41 +31,57 @@ function tsTypeParamName(id: string): string {
 }
 
 /** 函数类型 / 并集在数组元素、`| undefined` 等位置必须加括号（TS 优先级）。 */
-function wrapComplexAbs(a: Abs, typeVars?: Map<string, string>): string {
-  const ts = absToTSType(a, typeVars);
+function wrapComplexAbs(a: Abs, typeVars: Map<string, string> | undefined, budget: ProjectionBudget): string {
+  const ts = absToTSTypeB(a, typeVars, budget);
   if (a.shape.k === "sum" || a.shape.k === "fn") return `(${ts})`;
   return ts;
 }
 
 /** 并集成员：函数类型必须括号，否则 `number | (x) => T` 非法（TS1385）。 */
-function wrapUnionMember(a: Abs, typeVars?: Map<string, string>): string {
-  const ts = absToTSType(a, typeVars);
+function wrapUnionMember(a: Abs, typeVars: Map<string, string> | undefined, budget: ProjectionBudget): string {
+  const ts = absToTSTypeB(a, typeVars, budget);
   if (a.shape.k === "fn") return `(${ts})`;
   return ts;
 }
 
-const TS_PARAM_RESERVED = new Set([
-  "break", "case", "catch", "class", "const", "continue", "debugger",
-  "default", "delete", "do", "else", "enum", "export", "extends", "false",
-  "finally", "for", "function", "if", "import", "in", "instanceof", "new",
-  "null", "return", "super", "switch", "this", "throw", "true", "try",
-  "typeof", "var", "void", "while", "with", "yield", "let", "static",
-  "await", "implements", "interface", "package", "private", "protected",
-  "public", "arguments", "eval", "constructor",
-]);
+/**
+ * 截断标记（DESIGN-001）：注释 + 基类型，任何类型位都是合法 TS 且可观测。
+ * 模板插值位 unknown 不可插值（TS2322）→ string 变体；两个常量串不会与
+ * 合法投影混淆（类型名不可能含 `/*`）。dts 无 dropped 台账——标记即观测。
+ */
+const TS_TRUNC = {
+  cycle: "/* nudo:truncated:cycle */ unknown",
+  depth: "/* nudo:truncated:depth */ unknown",
+  cycleTpl: "/* nudo:truncated:cycle */ string",
+  depthTpl: "/* nudo:truncated:depth */ string",
+} as const;
 
-function isTsIdent(name: string): boolean {
-  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) && !TS_PARAM_RESERVED.has(name);
+/** 模板插值位换合法变体（unknown 不是可插值类型） */
+function tsTplSafe(ts: string): string {
+  if (ts === TS_TRUNC.cycle) return TS_TRUNC.cycleTpl;
+  if (ts === TS_TRUNC.depth) return TS_TRUNC.depthTpl;
+  return ts;
 }
 
-/** 成员声明里不能用保留字/非法标识符；空名与非 ident 落到 argN。 */
+/**
+ * 成员声明里不能用保留字/非法标识符；空名与非 ident 落到 argN。
+ * optional 标签（`options?`）先剥下再判 ident、保留 `?` 输出
+ * （与 formatShape 的 `label?` 口径一致，BUG-020/S6-005：
+ * 旧实现整名换 argN，`?` 语义丢失变必填）。
+ */
 function sanitizeParamName(name: string, index: number): string {
-  if (name.startsWith("...")) {
-    const rest = name.slice(3);
-    if (isTsIdent(rest)) return name;
+  let optional = false;
+  let base = name;
+  if (base.endsWith("?")) {
+    optional = true;
+    base = base.slice(0, -1);
+  }
+  if (base.startsWith("...")) {
+    const rest = base.slice(3);
+    if (isJsBindingIdent(rest)) return `...${rest}${optional ? "?" : ""}`;
     return `...arg${index}`;
   }
-  if (isTsIdent(name)) return name;
+  if (isJsBindingIdent(base)) return `${base}${optional ? "?" : ""}`;
   return `arg${index}`;
 }
 
@@ -78,6 +96,22 @@ function formatPropKey(k: string): string {
  * `any`+var 在此映射下渲染为该参数名，否则 `unknown`）。
  */
 export function absToTSType(a: Abs, typeVars?: Map<string, string>): string {
+  return absToTSTypeB(a, typeVars, new ProjectionBudget());
+}
+
+function absToTSTypeB(a: Abs, typeVars: Map<string, string> | undefined, budget: ProjectionBudget): string {
+  // DESIGN-001：环 / 超深 shape 截断为显式标记（合法 TS，tsc 门可过）
+  const stop = budget.enter(a);
+  if (stop === "cycle") return TS_TRUNC.cycle;
+  if (stop === "depth") return TS_TRUNC.depth;
+  try {
+    return absToTSTypeInner(a, typeVars, budget);
+  } finally {
+    budget.exit();
+  }
+}
+
+function absToTSTypeInner(a: Abs, typeVars: Map<string, string> | undefined, budget: ProjectionBudget): string {
   // 类型变量：shape any + term var（α / B:param）
   if (a.shape.k === "any" && a.term?.op === "var" && typeVars) {
     const mapped = typeVars.get(a.term.id);
@@ -118,7 +152,7 @@ export function absToTSType(a: Abs, typeVars?: Map<string, string>): string {
         const lv = lvR.ok ? lvR.value : undefined;
         // 固定段是嵌入语言：`\` `` ` `` `$` 必须转义，否则 `${` 变成类型插值
         if (typeof lv === "string") return escapeTemplateTypeFixed(lv);
-        return `\${${absToTSType(p, typeVars)}}`;
+        return `\${${tsTplSafe(absToTSTypeB(p, typeVars, budget))}}`;
       })
       .join("");
     return `\`${inner}\``;
@@ -135,9 +169,9 @@ export function absToTSType(a: Abs, typeVars?: Map<string, string>): string {
     case "obj": {
       const entries = Object.entries(a.shape.slots).map(([k, slot]) => {
         // optional 槽与 TypeValue 桥接出口径一致：`k: T | undefined`，不用 `k?:`
-        const inner = absToTSType(slot.value, typeVars);
+        const inner = absToTSTypeB(slot.value, typeVars, budget);
         if (slot.optional) {
-          const t = wrapComplexAbs(slot.value, typeVars);
+          const t = wrapComplexAbs(slot.value, typeVars, budget);
           return `${formatPropKey(k)}: ${t} | undefined`;
         }
         return `${formatPropKey(k)}: ${inner}`;
@@ -146,13 +180,13 @@ export function absToTSType(a: Abs, typeVars?: Map<string, string>): string {
       return `{ ${entries.join("; ")} }`;
     }
     case "arr":
-      return `${wrapComplexAbs(a.shape.element, typeVars)}[]`;
+      return `${wrapComplexAbs(a.shape.element, typeVars, budget)}[]`;
     case "tuple": {
       // hole 槽（`1 in a` 为 false）不得伪装成显式 undefined 元素。
       // TS 元组类型无空槽语法，用 labeled element `hole: T` 标出稀疏位。
       const holes = a.shape.holes ?? [];
       const parts = a.shape.elements.map((e, i) => {
-        const ts = absToTSType(e, typeVars);
+        const ts = absToTSTypeB(e, typeVars, budget);
         return holes.includes(i) ? `hole: ${ts}` : ts;
       });
       if (a.shape.rest) {
@@ -161,8 +195,8 @@ export function absToTSType(a: Abs, typeVars?: Map<string, string>): string {
         // 否则 `...number | string[]` / `...(x) => T[]` 语义不同或非法
         const restTs =
           rest.shape.k === "arr"
-            ? absToTSType(rest, typeVars)
-            : `${wrapComplexAbs(rest, typeVars)}[]`;
+            ? absToTSTypeB(rest, typeVars, budget)
+            : `${wrapComplexAbs(rest, typeVars, budget)}[]`;
         parts.push(`...${restTs}`);
       }
       return `[${parts.join(", ")}]`;
@@ -175,30 +209,42 @@ export function absToTSType(a: Abs, typeVars?: Map<string, string>): string {
           const name = sanitizeParamName(p, i);
           const pt = paramTypes?.[i];
           let typeStr: string;
-          if (pt) typeStr = absToTSType(pt, typeVars);
-          else if (isRest) typeStr = "unknown[]";
+          if (pt) {
+            if (isRest) {
+              // rest 位必须是数组类型（TS：A rest parameter must be of an
+              // array type）——非 arr（sum/tuple/fn/prim…）提升为 (T)[]，
+              // 与 tuple rest 位同口径（BUG-020/S6-005：旧实现直接拼接，
+              // `...args: number | string` 非法 TS）
+              typeStr =
+                pt.shape.k === "arr"
+                  ? absToTSTypeB(pt, typeVars, budget)
+                  : `${wrapComplexAbs(pt, typeVars, budget)}[]`;
+            } else {
+              typeStr = absToTSTypeB(pt, typeVars, budget);
+            }
+          } else if (isRest) typeStr = "unknown[]";
           else typeStr = "unknown";
           return `${name}: ${typeStr}`;
         })
         .join(", ");
       const ret = a.shape.returnType
-        ? absToTSType(a.shape.returnType, typeVars)
+        ? absToTSTypeB(a.shape.returnType, typeVars, budget)
         : "unknown";
       return `(${params}) => ${ret}`;
     }
     case "brand":
-      return isTsIdent(a.shape.name) || /^[A-Z][A-Za-z0-9_$]*$/.test(a.shape.name)
+      return isJsBindingIdent(a.shape.name) || /^[A-Z][A-Za-z0-9_$]*$/.test(a.shape.name)
         ? a.shape.name
         : "unknown";
     case "eff":
       if (a.shape.eff === "promise")
-        return `Promise<${absToTSType(a.shape.inner, typeVars)}>`;
-      return absToTSType(a.shape.inner, typeVars);
+        return `Promise<${absToTSTypeB(a.shape.inner, typeVars, budget)}>`;
+      return absToTSTypeB(a.shape.inner, typeVars, budget);
     case "sum": {
       // 并集成员按渲染串去重：widen 后可能出现 number | number；
       // never 是 join 单位元，对 .d.ts 返回位无意义。
       const parts = a.shape.members
-        .map((m) => wrapUnionMember(m, typeVars))
+        .map((m) => wrapUnionMember(m, typeVars, budget))
         .filter((p) => p !== "never");
       const uniq = [...new Set(parts)];
       if (uniq.length === 0) return "never";
@@ -224,39 +270,60 @@ function caseResultAbs(c: CaseResult): Abs {
  * 参数位（逆变）递归 widen：字面量/收窄 pred → 基类型，结构递归。
  * 同构元组 → array；null/undefined/never/unknown/fn 保持。
  */
-function widenParamAbs(a: Abs): Abs {
+function widenParamAbs(a: Abs, budget: ProjectionBudget = new ProjectionBudget()): Abs {
+  // DESIGN-001：环 / 超深时原样返回（widen 是尽力精度剥离，不是正确性必需）；
+  // 渲染侧 absToTSType 的预算会在同位置给出显式截断标记。
+  const stop = budget.enter(a);
+  if (stop) return a;
+  try {
+    return widenParamAbsInner(a, budget);
+  } finally {
+    budget.exit();
+  }
+}
+
+function widenParamAbsInner(a: Abs, budget: ProjectionBudget): Abs {
   const s = a.shape;
   switch (s.k) {
     case "prim":
       return makeAbs(s, undefined, undefined, "exact");
     case "tuple": {
-      const widened = s.elements.map(widenParamAbs);
+      const widened = s.elements.map((el) => widenParamAbs(el, budget));
+      // rest 槽必须透传/并入：`[1, ...string]` 不得塌成 `number[]`（拒绝合法值）
+      const widenedRest = s.rest ? widenParamAbs(s.rest, budget) : undefined;
       const holes = s.holes;
       const first = widened[0];
       // holes 必须透传：洞/显式 undefined 是可观察不同的（`in` / Object.keys），
       // 同构退化成 array 会把稀疏位抹平成稠密元素。
+      // rest 参与同构判定：只有 rest 元素与固定位同型时才退化（`[1, ...number]` → number[]）。
       if (
         !holes?.length &&
         first &&
         widened.length > 0 &&
-        widened.every((el) => absToTSType(el) === absToTSType(first))
+        widened.every((el) => absToTSType(el) === absToTSType(first)) &&
+        (!widenedRest || absToTSType(widenedRest) === absToTSType(first))
       ) {
         return makeAbs({ k: "arr", element: first }, undefined, undefined, "exact");
       }
       return makeAbs(
-        { k: "tuple", elements: widened, ...(holes?.length ? { holes: [...holes] } : {}) },
+        {
+          k: "tuple",
+          elements: widened,
+          ...(widenedRest ? { rest: widenedRest } : {}),
+          ...(holes?.length ? { holes: [...holes] } : {}),
+        },
         undefined,
         undefined,
         "exact",
       );
     }
     case "arr":
-      return makeAbs({ k: "arr", element: widenParamAbs(s.element) }, undefined, undefined, "exact");
+      return makeAbs({ k: "arr", element: widenParamAbs(s.element, budget) }, undefined, undefined, "exact");
     case "obj": {
       const slots: Record<string, { value: Abs; optional?: boolean }> = {};
       for (const [k, slot] of Object.entries(s.slots)) {
         slots[k] = {
-          value: widenParamAbs(slot.value),
+          value: widenParamAbs(slot.value, budget),
           ...(slot.optional ? { optional: true } : {}),
         };
       }
@@ -264,21 +331,21 @@ function widenParamAbs(a: Abs): Abs {
     }
     case "eff":
       return makeAbs(
-        { k: "eff", eff: s.eff, inner: widenParamAbs(s.inner) },
+        { k: "eff", eff: s.eff, inner: widenParamAbs(s.inner, budget) },
         undefined,
         undefined,
         "exact",
       );
     case "brand":
       return makeAbs(
-        { k: "brand", name: s.name, shape: widenParamAbs(s.shape) },
+        { k: "brand", name: s.name, shape: widenParamAbs(s.shape, budget) },
         undefined,
         undefined,
         "exact",
       );
     case "sum":
       return makeAbs(
-        { k: "sum", members: s.members.map(widenParamAbs) },
+        { k: "sum", members: s.members.map((m) => widenParamAbs(m, budget)) },
         undefined,
         undefined,
         "exact",
@@ -409,7 +476,7 @@ function computeMainSignature(fn: FunctionAnalysis): MainSignature {
     let name = getParamName(fn, i);
     const isRest = name.startsWith("...");
     const bare = isRest ? name.slice(3) : name;
-    if (!isTsIdent(bare)) {
+    if (!isJsBindingIdent(bare)) {
       name = isRest ? `...arg${i}` : `arg${i}`;
     }
     if (usedNames.has(name)) {
@@ -530,7 +597,7 @@ function computeHofSignature(
   const typeParams: string[] = [];
   for (const id of [...free].sort()) {
     let n = tsTypeParamName(id);
-    if (used.has(n) || TS_PARAM_RESERVED.has(n)) {
+    if (used.has(n) || !isJsBindingIdent(n)) {
       let i = 2;
       while (used.has(`${n}${i}`)) i++;
       n = `${n}${i}`;

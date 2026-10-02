@@ -128,10 +128,15 @@ function checkNode(
       const rec = value as Record<string, unknown>;
       for (const slot of node.slots) {
         const key = slot.key;
-        if (!(key in rec) || rec[key] === undefined) {
+        // 缺键判定只用自有属性（BUG-018/S6-003：缺键 ≠ 显式 undefined；
+        // `in` 还会命中 Object.prototype 继承键）
+        if (!Object.hasOwn(rec, key)) {
           if (!slot.optional) pushIssue(issues, [...path, key], "required");
           continue;
         }
+        // 键在场：optional 槽显式 undefined 合法（zod .optional() 口径）；
+        // 其余显式 undefined 交给 node 裁决（lit undefined / union undefined 臂）
+        if (rec[key] === undefined && slot.optional) continue;
         checkNode(slot.node, rec[key], [...path, key], issues);
       }
       return;
@@ -154,6 +159,13 @@ function checkNode(
       node.elements.forEach((el, i) => {
         checkNode(el, value[i], [...path, i], issues);
       });
+      // rest 槽：超长元素按 rest 校验（`[1, ...number]` 拒绝 `[1, "x"]`）。
+      // 无 rest 时维持现状：不设长度上限（zod 方言靠 z.tuple 定长语义）。
+      if (node.rest) {
+        for (let i = node.elements.length; i < value.length; i++) {
+          checkNode(node.rest, value[i], [...path, i], issues);
+        }
+      }
       return;
     }
     case "union": {
@@ -245,10 +257,12 @@ function __nudoCheck(node, value, path, issues) {
       }
       for (const slot of node.slots) {
         const key = slot.key;
-        if (!(key in value) || value[key] === undefined) {
+        // 缺键判定只用自有属性（BUG-018/S6-003；两份实现须同口径）
+        if (!Object.hasOwn(value, key)) {
           if (!slot.optional) { path.push(key); push("required"); path.pop(); }
           continue;
         }
+        if (value[key] === undefined && slot.optional) continue;
         path.push(key);
         __nudoCheck(slot.node, value[key], path, issues);
         path.pop();
@@ -271,6 +285,13 @@ function __nudoCheck(node, value, path, issues) {
         __nudoCheck(node.elements[i], value[i], path, issues);
         path.pop();
       }
+      if (node.rest) {
+        for (var ri = node.elements.length; ri < value.length; ri++) {
+          path.push(ri);
+          __nudoCheck(node.rest, value[ri], path, issues);
+          path.pop();
+        }
+      }
       return;
     }
     case "union": {
@@ -288,13 +309,18 @@ function __nudoCheck(node, value, path, issues) {
 }
 `.trim();
 
-function makeStandardSchemaSource(exportName: string, node: SchemaNode, dropped: string[]): string {
+function makeStandardSchemaSource(
+  exportName: string,
+  node: SchemaNode,
+  dropped: string[],
+  used: Set<string>,
+): string {
   const json = JSON.stringify(node);
   const notes =
     dropped.length > 0
       ? dropped.map((d) => `//   ${sanitizeCommentText(d)}`).join("\n") + "\n"
       : "";
-  return `${notes}export const ${safeExportIdent(exportName)} = {
+  return `${notes}export const ${safeExportIdent(exportName, used)} = {
   "~standard": {
     version: 1,
     vendor: "nudo",
@@ -322,10 +348,11 @@ export function absToStandardSchemaModule(
 ): StandardSchemaModuleProjection {
   const dropped: string[] = [];
   const bodies: string[] = [];
+  const used = new Set<string>();
   for (const [name, abs] of Object.entries(exports)) {
     const { node, dropped: d } = absToSchemaNode(abs);
     dropped.push(...d.map((n) => `${name}: ${n}`));
-    bodies.push(makeStandardSchemaSource(name, node, d.map((n) => `${name}: ${n}`)));
+    bodies.push(makeStandardSchemaSource(name, node, d.map((n) => `${name}: ${n}`), used));
   }
   const banner =
     opts?.banner ??

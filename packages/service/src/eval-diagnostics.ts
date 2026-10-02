@@ -111,20 +111,27 @@ function collectDeclared(file: File): Set<string> {
     if (!id) return;
     if (id.type === "Identifier") names.add((id as Identifier).name);
     if (id.type === "ObjectPattern") {
-      for (const p of (id as { properties: Array<{ value?: Node }> }).properties) {
-        addId(p.value);
+      for (const p of (id as { properties: Array<Node & { value?: Node }> }).properties) {
+        // 对象 rest（{...rest}）直接作为 property 出现，绑定在 argument
+        addId(p.type === "RestElement" ? (p as { argument?: Node }).argument : p.value);
       }
     }
     if (id.type === "ArrayPattern") {
       for (const el of (id as { elements: Array<Node | null> }).elements) addId(el);
     }
+    // 默认值（b = 1）绑定在 left；rest（[...r]）绑定在 argument
+    if (id.type === "AssignmentPattern") addId((id as { left?: Node }).left);
+    if (id.type === "RestElement") addId((id as { argument?: Node }).argument);
   };
   const visit = (node: unknown) => {
     if (!node || typeof node !== "object") return;
     const o = node as { type?: string; [k: string]: unknown };
     switch (o.type) {
       case "FunctionDeclaration":
+      case "FunctionExpression":
       case "ClassDeclaration":
+      case "ClassExpression":
+        // 具名函数/类表达式的名字是自身作用域内的绑定
         addId((o as { id?: Node }).id);
         break;
       case "VariableDeclarator":
@@ -223,12 +230,13 @@ function walkBuiltinUnknown(
   out: EvalBuiltinUnknown[],
   seen: Set<string>,
   known: Set<string>,
-  parentKey?: string,
+  namePosition = false,
 ): void {
   const n = node as {
     type?: string;
     callee?: Node;
     name?: string;
+    computed?: boolean;
     [k: string]: unknown;
   };
   const flag = (idNode: Node, name: string) => {
@@ -264,26 +272,31 @@ function walkBuiltinUnknown(
     n.type === "Identifier" &&
     typeof n.name === "string" &&
     n.name !== "require" &&
-    parentKey !== "key" &&
-    parentKey !== "property" &&
-    parentKey !== "local" &&
-    parentKey !== "id"
+    !namePosition
   ) {
-    // 裸标识符引用（如 return WeakRef）；require 由 CallExpression 分支专管
+    // 裸标识符引用（如 return WeakRef）；require 由 CallExpression 分支专管。
+    // 命名位置（非计算的 key/property、import local、声明 id）不是引用。
     flag(node as Node, n.name);
   }
 
   for (const key of Object.keys(n)) {
     if (key === "loc" || key === "start" || key === "end") continue;
+    // 非计算的 key/property 是命名位置；计算 key（{[foo]: 1}、o[foo]、
+    // class {[m]() {}}）会被求值 → 其中的标识符是活引用。
+    // local（import 绑定）/ id（声明位置）始终是命名位置。
+    const childIsName =
+      ((key === "key" || key === "property") && n.computed !== true) ||
+      key === "local" ||
+      key === "id";
     const v = n[key];
     if (Array.isArray(v)) {
       v.forEach((x) => {
         if (x && typeof x === "object" && "type" in (x as object)) {
-          walkBuiltinUnknown(x as Node, declared, out, seen, known, key);
+          walkBuiltinUnknown(x as Node, declared, out, seen, known, childIsName);
         }
       });
     } else if (v && typeof v === "object" && "type" in (v as object)) {
-      walkBuiltinUnknown(v as Node, declared, out, seen, known, key);
+      walkBuiltinUnknown(v as Node, declared, out, seen, known, childIsName);
     }
   }
 }

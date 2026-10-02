@@ -233,3 +233,102 @@ describe("numeric object keys keep quotes when not canonical", () => {
 function absToSchemaSourceForTest(a: Abs): string {
   return projectAbsToSchema(a).source;
 }
+
+describe("export binding names: reserved words and post-clean collisions", () => {
+  /** `new Function` 不能直接吃模块 `export`；剥掉关键字只验绑定名可解析。 */
+  const asScript = (src: string) =>
+    src
+      .replace(/^[\s\S]*?import \{ z \} from "zod";\n/, "")
+      .replace(/\bexport const\b/g, "const")
+      .replace(/\bexport function\b/g, "function")
+      .replace(/as const;?/g, ";");
+
+  it("prefixes reserved words in zod module export names", () => {
+    const { source } = absToZodSchemaModule({ class: num(), default: str(), let: num() });
+    expect(source).not.toMatch(/export const class\b/);
+    expect(source).not.toMatch(/export const default\b/);
+    expect(source).not.toMatch(/export const let\b/);
+    expect(source).toContain("export const _class = ");
+    expect(source).toContain("export const _default = ");
+    expect(source).toContain("export const _let = ");
+  });
+
+  it("prefixes reserved words in standard-schema and guard export names", () => {
+    const a = num();
+    const mod = absToStandardSchemaModule({ class: a, default: a });
+    expect(mod.source).not.toMatch(/export const class\b/);
+    expect(mod.source).not.toMatch(/export const default\b/);
+    expect(mod.source).toContain("export const _class = ");
+    expect(mod.source).toContain("export const _default = ");
+    const g = generateGuardFunctionFromAbs("class", a);
+    expect(g).not.toMatch(/export function class\b/);
+    expect(g).toContain("export function _class(");
+  });
+
+  it("dedupes names that collide after cleaning (a-b / a_b)", () => {
+    const { source } = absToZodSchemaModule({ "a-b": num(), a_b: num() });
+    const idents = [...source.matchAll(/export const ([A-Za-z0-9_$]+) =/g)].map((m) => m[1]);
+    expect(idents).toHaveLength(2);
+    expect(new Set(idents).size).toBe(2);
+    expect(idents).toContain("a_b");
+    const body = asScript(source).replace(/z\.number\(\)/g, "1");
+    expect(() => new Function(body)).not.toThrow();
+  });
+
+  it("dedupes names that collide after leading-char fix (1x / _1x)", () => {
+    const { source } = absToZodSchemaModule({ "1x": num(), _1x: num() });
+    const idents = [...source.matchAll(/export const ([A-Za-z0-9_$]+) =/g)].map((m) => m[1]);
+    expect(idents).toHaveLength(2);
+    expect(new Set(idents).size).toBe(2);
+    expect(idents.some((n) => n.startsWith("_1x"))).toBe(true);
+  });
+
+  it("emits parseable modules for awkward export names", () => {
+    const names = ["class", "default", "let", "a-b", "a_b", "1x", "_1x", "", "计算", "foo*/bar"];
+    const exports: Record<string, Abs> = {};
+    for (const n of names) exports[n] = num();
+    const mod = absToZodSchemaModule(exports);
+    const body = asScript(mod.source).replace(/z\.number\(\)/g, "1");
+    expect(() => new Function(body)).not.toThrow();
+    const ss = absToStandardSchemaModule(exports);
+    expect(() => new Function(asScript(ss.source))).not.toThrow();
+  });
+
+  it("keeps legal Unicode binding names unchanged", () => {
+    const { source } = absToZodSchemaModule({ 计算: num() });
+    expect(source).toContain("export const 计算 = ");
+    const g = generateGuardFunctionFromAbs("计算", num());
+    expect(g).toContain("export function 计算(");
+  });
+
+  it("guards with cleaned colliding names stay distinct declarations", () => {
+    const a = num();
+    const g1 = generateGuardFunctionFromAbs("a-b", a);
+    const g2 = generateGuardFunctionFromAbs("a_b", a);
+    // each call is a separate snippet; both must be valid bindings
+    expect(g1).toMatch(/export function a_b\(/);
+    expect(g2).toMatch(/export function a_b\(/);
+    expect(() => new Function(asScript(g1))).not.toThrow();
+    expect(() => new Function(asScript(g2))).not.toThrow();
+  });
+});
+
+describe("dts param names share the reserved-word gate", () => {
+  it("renames reserved param names", () => {
+    const c: CaseResult = {
+      name: "n",
+      argAbs: [numLit(1), numLit(2)],
+      abs: numLit(1),
+      throwsAbs: abs({ k: "never" }, undefined, undefined, "exact"),
+    };
+    const lines = generateFunctionDtsLines(
+      fnAnalysis({ cases: [c], paramNames: ["class", "let"] }),
+    );
+    const decl = lines.find((l) => l.includes("=>") || l.includes("number"));
+    expect(decl).toBeTruthy();
+    expect(decl).not.toMatch(/\bclass\s*[?:]/);
+    expect(decl).not.toMatch(/\blet\s*[?:]/);
+    expect(decl).toMatch(/arg0/);
+    expect(decl).toMatch(/arg1/);
+  });
+});

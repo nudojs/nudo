@@ -46,15 +46,8 @@ import {
 /** `/// @nudo:import { delay, percent } from "./delay.nudo.js"` */
 export type NamedImport = { names: string[]; spec: string };
 
-/**
- * `@nudo:import` 命名/namespace 导入（D5=F1：文法在 directive-scan 单源）。
- * default 等未识别形态发 nudo:contract-syntax，不再静默丢弃。
- */
-export function extractNudoImports(source: string): NamedImport[] {
-  const out: NamedImport[] = [];
-  for (const rec of extractNudoImportRecords(source)) {
-    out.push({ names: rec.names, spec: rec.spec });
-  }
+/** default / 未识别 `@nudo:import` 形态 → nudo:contract-syntax（不再静默丢弃） */
+function diagnoseMalformedNudoImports(source: string): void {
   for (const bad of scanMalformedNudoImports(source)) {
     if (bad === "malformed-default") {
       collectDiag({
@@ -68,7 +61,19 @@ export function extractNudoImports(source: string): NamedImport[] {
       });
     }
   }
-  return out;
+}
+
+/**
+ * `@nudo:import` 命名/namespace 导入（D5=F1：文法在 directive-scan 单源）。
+ * `names` 是本地绑定名（契约引用名）；别名→导出名的映射留在
+ * `NudoImportRecord.importedOfLocal`（查表口 collectConstraints 消费）。
+ */
+export function extractNudoImports(source: string): NamedImport[] {
+  diagnoseMalformedNudoImports(source);
+  return extractNudoImportRecords(source).map((rec) => ({
+    names: rec.names,
+    spec: rec.spec,
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -252,6 +257,25 @@ function rewriteSidecarSource(
         // （recognized form 只有 export const / export default）
         cuts.push({ start: stmt.start, end: decl.start, text: "" });
         continue;
+      }
+      // export { local as exported }（DESIGN-003 别名段，无 from）：身份=导出
+      // 名，绑定=本地 const（声明本体留在 code）——登记 key=导出名 expr=local，
+      // 子句整体切除。re-export（export {…} from "…"）仍整体拒绝。
+      if (!stmt.source) {
+        let aliasPairs = false;
+        for (const spec of stmt.specifiers) {
+          if (spec.type !== "ExportSpecifier") continue;
+          if (spec.local.type !== "Identifier") continue;
+          const key =
+            spec.exported.type === "Identifier" ? spec.exported.name : spec.exported.value;
+          if (key === undefined) continue;
+          exportPairs.push({ key, expr: spec.local.name });
+          aliasPairs = true;
+        }
+        if (aliasPairs) {
+          cuts.push({ start: stmt.start!, end: stmt.end!, text: "" });
+          continue;
+        }
       }
       // export { … } / export { … } from "…"：无声明形式，整体移除
       badExport("'export { … }' (list / re-export)");
@@ -482,15 +506,18 @@ function execSidecar(
           });
           prologue.push(`var ${n.local} = __nudoInjects;`);
         } else if (n.imported !== undefined) {
-          if (!(n.imported in sidecarInjects)) {
+          // 自有属性判定：`in` 会命中 Object.prototype（toString 等）——
+          // 诊断被吞 + __nudoInjects 裸读把原生函数绑进侧车执行域
+          const hasOwnInject = Object.hasOwn(sidecarInjects, n.imported);
+          if (!hasOwnInject) {
             collectDiag({
               code: "nudo:interface-load",
               message: `sidecar import '{ ${n.imported} }' from '${imp.spec}' is not an injected builder`,
               file: fromFile,
             });
-          }
-          if (n.local !== n.imported || !(n.imported in sidecarInjects)) {
-            // 同名注入名由函数参数绑定；alias / 未知名走 __nudoInjects（未知 → undefined）
+            prologue.push(`var ${n.local} = undefined;`);
+          } else if (n.local !== n.imported) {
+            // 同名注入名由函数参数绑定；alias 走 __nudoInjects（hasOwn 已证自有键）
             prologue.push(`var ${n.local} = __nudoInjects[${JSON.stringify(n.imported)}];`);
           }
         } else {
@@ -560,14 +587,17 @@ function execSidecar(
       if (n.ns) {
         deps[n.local] = depExports;
       } else if (n.imported !== undefined) {
-        if (!(n.imported in depExports)) {
+        // 自有属性判定（同注入分支）：原型名不得当侧车导出，miss 绑 undefined
+        if (Object.hasOwn(depExports, n.imported)) {
+          deps[n.local] = depExports[n.imported];
+        } else {
           collectDiag({
             code: "nudo:interface-load",
             message: `sidecar '${imp.spec}' has no export '${n.imported}'`,
             file: fromFile,
           });
+          deps[n.local] = undefined;
         }
-        deps[n.local] = depExports[n.imported];
       } else {
         // 相对侧车 default import：侧车只收集 named export，default 恒空
         collectDiag({
@@ -575,7 +605,7 @@ function execSidecar(
           message: `sidecar default import '${n.local}' from '${imp.spec}' has no default export (sidecars export named constraints only)`,
           file: fromFile,
         });
-        deps[n.local] = depExports.default;
+        deps[n.local] = Object.hasOwn(depExports, "default") ? depExports.default : undefined;
       }
     }
   }
@@ -732,7 +762,8 @@ function collectConstraints(
   opts: RefineResolveOpts,
 ): Map<string, NudoConstraint> {
   const map = new Map<string, NudoConstraint>();
-  const imports = extractNudoImports(source);
+  diagnoseMalformedNudoImports(source);
+  const imports = extractNudoImportRecords(source);
   for (const imp of imports) {
     if (!opts.loadModule || !opts.fromFile) {
       // host 忘传 loader：约束会静默失效——必须报，否则 refine 无声消失
@@ -790,19 +821,23 @@ function collectConstraints(
         }
         continue;
       }
-      const v = exports[name];
+      // `a as b`：查导出表用原始导出名 a，绑定用本地名 b（import 绑定语义
+      // local ← imported；BUG-016 修复前用 b 查表 → 契约静默失效）
+      const imported = imp.importedOfLocal[name] ?? name;
+      // 自有属性读：toString 等键裸读踩原型链，把原型成员当侧车导出
+      const v = Object.hasOwn(exports, imported) ? exports[imported] : undefined;
       if (isNudoConstraint(v)) {
         map.set(name, v);
       } else if (v === undefined) {
         collectDiag({
           code: "nudo:interface-load",
-          message: `sidecar '${imp.spec}' has no export '${name}'`,
+          message: `sidecar '${imp.spec}' has no export '${imported}'`,
           file: opts.fromFile,
         });
       } else {
         collectDiag({
           code: "nudo:interface-load",
-          message: `sidecar '${imp.spec}' export '${name}' is not a Nudo constraint`,
+          message: `sidecar '${imp.spec}' export '${imported}' is not a Nudo constraint`,
           file: opts.fromFile,
         });
       }
@@ -861,7 +896,15 @@ export function extractRefinesFromSource(
       // return 是后置目标，不进参数契约
       if (param === "return") continue;
       const c = constraints.get(cName!);
-      if (!c) continue;
+      if (!c) {
+        // 约束名 miss（别名错绑已修，剩拼写错/侧车缺名）：不再静默 continue，
+        // 否则契约无声失效会被误读为「推断不精确」（BUG-016）
+        collectDiag({
+          code: "nudo:contract-syntax",
+          message: `Unknown constraint name '${cName!}' in @nudo:contract (expected a name bound by @nudo:import)`,
+        });
+        continue;
+      }
       out.push({
         param: param!,
         pred: instantiateConstraint(c, param!),
@@ -915,7 +958,14 @@ export function extractRefineReturnFromSource(
       }
       const cName = m[1]!;
       const c = constraints.get(cName);
-      if (!c) continue;
+      if (!c) {
+        // 同参数契约：约束名 miss 不再静默（BUG-016）
+        collectDiag({
+          code: "nudo:contract-syntax",
+          message: `Unknown constraint name '${cName}' in @nudo:contract return (expected a name bound by @nudo:import)`,
+        });
+        continue;
+      }
       return { name: cName, constraint: c };
     }
   }

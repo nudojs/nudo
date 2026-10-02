@@ -2,9 +2,10 @@
  * 会话缓存失效入口（宿主契约的唯一接线点）。
  * 契约文档：docs/design/cache-invalidation.md；测试锚 cache-invalidation-contract.test.ts。
  *
- * 内容指纹已进 analysisFileCacheKey / eval depKey / fnDepSeg（常规编辑自然 miss）；
- * 宿主主动逐出仍是义务——path-env 进程全局须清、abs-module 的 mtime+size 指纹
- * 盖不住「同 size + 同 mtime」编辑、自定义 loader / 截断指纹需要安全网。
+ * 内容指纹已进 analysisFileCacheKey / eval depKey / fnDepSeg / abs-module 子树
+ * 指纹（常规编辑——含传递依赖——自然 miss，DESIGN-002）；宿主主动逐出仍是义务
+ * ——path-env 进程全局须清、abs-module 条目**自身**的 mtime+size 指纹盖不住
+ * 「同 size + 同 mtime」编辑、自定义 loader / 截断指纹需要安全网。
  * LSP 走定向逐出；CLI watch / vite-plugin 走这里。
  */
 import {
@@ -37,8 +38,10 @@ import type { NudoConfig } from "./evaluator/config.ts";
 /**
  * 依赖内容变更后：按入口文件定向逐出 service 层缓存。
  * 调用方应传「以这些文件为入口」的路径（脏集里的 dependents），
- * 而不是变更的 dep 文件本身——dep 自己 source 变了会自然 miss。
- * 残余缺口：absModuleCache 按 dep 路径 + mtime/size 键控；「同 size + 同 mtime」
+ * 而不是变更的 dep 文件本身——dep 自己 source 变了会自然 miss；
+ * 中间模块的传递依赖变更由 absModuleCache 条目自带的子树内容指纹
+ * 复核兜住（DESIGN-002），宿主无需逐出中间模块。
+ * 残余缺口：absModuleCache 条目自身仍按 mtime/size 键控——「同 size + 同 mtime」
  * 编辑需再 evictAbsModuleCacheFiles([depPath]) 或 clearAnalysisSessionCaches。
  */
 export function evictAnalysisCachesForFiles(files: string[]): void {
@@ -73,7 +76,8 @@ export function clearAnalysisSessionCaches(): void {
 
 /**
  * 接线 package.json#nudo.sessionCache（进程内 LRU 上限）并立刻 trim。
- * env `NUDO_CACHE_MAX_FILES|FNS|BRUNS` 仍优先（多项目内存封顶）。
+ * 优先级：显式 setSessionCacheLimits > env `NUDO_CACHE_MAX_FILES|FNS|EVALRUNS`
+ * > 此层 > 默认（见 session-cache-limits）。
  */
 export function applySessionCacheConfig(config: NudoConfig | null | undefined): SessionCacheLimits {
   setSessionCacheFromProject(config?.sessionCache);

@@ -21,6 +21,7 @@ import {
   type Phi,
 } from "./pred.ts";
 import { implies } from "./pred.ts";
+import { add, sub } from "./arithmetic.ts";
 import { NudoThrow } from "./exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "./exec/may-throw.ts";
 
@@ -273,59 +274,21 @@ export function toNumericAbs(a: Abs): Abs {
 
 /**
  * UpdateExpression 的 `oldValue + 1`：ToNumeric 后按 numeric type 加 1
- * （bigint→1n，number→1）。不得走 `$add` 的字符串拼接臂。
+ * （bigint→1n，number→1）。走 arithmetic.add——与 `x += 1`（$add）同一
+ * 约束传播路径（`x>0 ⇒ x+1>1` 两条语法同权）。toNumericAbs 后操作数恒为
+ * number|bigint 面，add 不会进 string 拼接臂。
  */
-export function updateAddAbs(a: Abs): Abs {
+export function updateAddAbs(a: Abs, phi: Phi = pTrue): Abs {
   const n = toNumericAbs(a);
   const one = n.shape.k === "prim" && n.shape.type === "bigint" ? bigintLit(1n) : numLit(1);
-  if (n.shape.k === "prim" && n.shape.type === "bigint" && !n.term) {
-    return abs({ k: "prim", type: "bigint" }, undefined, undefined, confJoin(n.conf, "exact"));
-  }
-  // 双方已是 numeric 面：add 的 number/bigint 臂（无 string concat）
-  return addNumeric(n, one);
+  return add(n, one, phi);
 }
 
-/** UpdateExpression 的 `oldValue - 1`（与 updateAddAbs 同口径） */
-export function updateSubAbs(a: Abs): Abs {
+/** UpdateExpression 的 `oldValue - 1`（与 updateAddAbs 同口径，走 arithmetic.sub） */
+export function updateSubAbs(a: Abs, phi: Phi = pTrue): Abs {
   const n = toNumericAbs(a);
   const one = n.shape.k === "prim" && n.shape.type === "bigint" ? bigintLit(1n) : numLit(1);
-  if (n.shape.k === "prim" && n.shape.type === "bigint" && !n.term) {
-    return abs({ k: "prim", type: "bigint" }, undefined, undefined, confJoin(n.conf, "exact"));
-  }
-  return subNumeric(n, one);
-}
-
-/** numeric 面加法（调用方保证无 string 拼接臂）：lit 折叠，否则 number|bigint prim */
-function addNumeric(a: Abs, b: Abs): Abs {
-  const ra = litValue(a);
-  const rb = litValue(b);
-  const va = ra.ok ? (ra.value as number | bigint | undefined) : undefined;
-  const vb = rb.ok ? (rb.value as number | bigint | undefined) : undefined;
-  if (typeof va === "bigint" && typeof vb === "bigint") return bigintLit(va + vb);
-  if (typeof va === "number" && typeof vb === "number") return numLit(va + vb);
-  const big = (a.shape.k === "prim" && a.shape.type === "bigint") || typeof va === "bigint";
-  return abs(
-    { k: "prim", type: big ? "bigint" : "number" },
-    undefined,
-    undefined,
-    confJoin(confJoin(a.conf, b.conf), "path"),
-  );
-}
-
-function subNumeric(a: Abs, b: Abs): Abs {
-  const ra = litValue(a);
-  const rb = litValue(b);
-  const va = ra.ok ? (ra.value as number | bigint | undefined) : undefined;
-  const vb = rb.ok ? (rb.value as number | bigint | undefined) : undefined;
-  if (typeof va === "bigint" && typeof vb === "bigint") return bigintLit(va - vb);
-  if (typeof va === "number" && typeof vb === "number") return numLit(va - vb);
-  const big = (a.shape.k === "prim" && a.shape.type === "bigint") || typeof va === "bigint";
-  return abs(
-    { k: "prim", type: big ? "bigint" : "number" },
-    undefined,
-    undefined,
-    confJoin(confJoin(a.conf, b.conf), "path"),
-  );
+  return sub(n, one, phi);
 }
 
 /** 一元 + —— ToNumber 折叠；bigint（含抽象 prim）原生恒抛 TypeError → 硬抛 */

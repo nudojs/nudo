@@ -10,7 +10,7 @@ import {
   objOf,
   type Abs,
 } from "@nudojs/core";
-import { absToTSType, generateDts } from "../dts-generator.ts";
+import { absToTSType, generateDts, generateFunctionDtsLines } from "../dts-generator.ts";
 import { analyzeFile } from "@nudojs/service";
 
 const arrOf = (element: Abs): Abs => abs({ k: "arr", element }, undefined, undefined, "exact");
@@ -87,6 +87,22 @@ describe("absToTSType", () => {
     );
   });
 
+  it("param widen keeps tuple rest slot instead of collapsing to wrong array (BUG-002)", () => {
+    // [1, ...string] 拓宽不得塌成 number[]（拒绝合法值）；rest 与固定位同型才退化 array
+    const heterogeneous = {
+      name: "f",
+      cases: [{ name: "c", argAbs: [tupleOf([numLit(1)], str())], args: [], abs: num() }],
+    } as never as Parameters<typeof generateFunctionDtsLines>[0];
+    expect(generateFunctionDtsLines(heterogeneous).join("\n")).toContain(
+      "arg0: [number, ...string[]]",
+    );
+    const homogeneous = {
+      name: "f",
+      cases: [{ name: "c", argAbs: [tupleOf([numLit(1), numLit(2)], num())], args: [], abs: num() }],
+    } as never as Parameters<typeof generateFunctionDtsLines>[0];
+    expect(generateFunctionDtsLines(homogeneous).join("\n")).toContain("arg0: number[]");
+  });
+
   it("renders tuple holes distinctly from explicit undefined (BUG-020)", () => {
     // hole 槽（`1 in a` 为 false）不得伪装成显式 undefined 元素
     const sparse = abs(
@@ -144,6 +160,37 @@ describe("absToTSType", () => {
   it("converts never and unknown", () => {
     expect(absToTSType(neverAbs())).toBe("never");
     expect(absToTSType(unknownAbs())).toBe("unknown");
+  });
+
+  it("fn 非数组 rest 参数提升为 (T)[]（合法 TS，BUG-020）", () => {
+    const f = fnAbs(["...args"], num(), [unionOf(num(), str())]);
+    expect(absToTSType(f)).toBe("(...args: (number | string)[]) => number");
+  });
+
+  it("fn tuple rest 参数数组化（合法 TS，BUG-020）", () => {
+    const f = fnAbs(["...args"], num(), [tupleOf([num()])]);
+    // 元组类型在数组元素位无需额外括号（sum/fn 才需要，wrapComplexAbs 口径）
+    expect(absToTSType(f)).toBe("(...args: [number][]) => number");
+  });
+
+  it("fn prim rest 参数产 number[]（无冗余括号，BUG-020）", () => {
+    const f = fnAbs(["...args"], num(), [num()]);
+    expect(absToTSType(f)).toBe("(...args: number[]) => number");
+  });
+
+  it("fn 缺 paramTypes 的 rest 保持 unknown[]（BUG-020 回归）", () => {
+    const f = fnAbs(["...args"], num());
+    expect(absToTSType(f)).toBe("(...args: unknown[]) => number");
+  });
+
+  it("optional 形参标签保留 ?（BUG-020）", () => {
+    const f = fnAbs(["x", "options?"], num(), [num(), objOf({})]);
+    expect(absToTSType(f)).toBe("(x: number, options?: {}) => number");
+  });
+
+  it("非法 optional 名仍落 argN（BUG-020 回归）", () => {
+    const f = fnAbs(["a-b?"], num(), [num()]);
+    expect(absToTSType(f)).toBe("(arg0: number) => number");
   });
 });
 

@@ -8,7 +8,7 @@
 
 import type { Abs, NudoConstraint, Pred, Term } from "@nudojs/core";
 import { absToConstraint, isIntFlag, predToString } from "@nudojs/core";
-import { formatObjectKey, sanitizeCommentText } from "@nudojs/core/internal";
+import { formatObjectKey, sanitizeCommentText, toJsBindingIdent, ProjectionBudget } from "@nudojs/core/internal";
 
 export type SchemaDialect = "zod";
 
@@ -23,7 +23,7 @@ export type SchemaNode =
   | { k: "prim"; type: "number" | "string" | "boolean" | "bigint" | "symbol"; refinements: SchemaRefinement[] }
   | { k: "obj"; slots: Array<{ key: string; node: SchemaNode; optional?: boolean }> }
   | { k: "arr"; element: SchemaNode }
-  | { k: "tuple"; elements: SchemaNode[] }
+  | { k: "tuple"; elements: SchemaNode[]; rest?: SchemaNode }
   | { k: "union"; members: SchemaNode[] }
   | { k: "fn" }
   | { k: "promise"; inner: SchemaNode }
@@ -123,6 +123,9 @@ function numericBound(p: Pred, self: Term | undefined, allowSelfVar: boolean): {
   const nR = litOf(p.b);
   const n = nR.ok ? nR.value : undefined;
   if (typeof n !== "number") return "drop";
+  // 非有限界（NaN/±Infinity）不进生成源（.gt(NaN) 恒假且不可表达）——
+  // 与 eq 通道 NaN 处理对称：drop 即调用方记 "pred not projected"
+  if (!Number.isFinite(n)) return "drop";
   if (p.a.op === "app" && p.a.fn === "length") return "skip"; // 交给长度路径
   if (allowSelfVar && isSelfVar(p.a, self)) return { op: p.op, n };
   if (p.a.op === "app" && (p.a.fn === "get" || p.a.fn === "length")) return "skip";
@@ -136,6 +139,7 @@ function lengthBound(p: Pred, self?: Term): { dir: "min" | "max"; n: number } | 
   const nR = litOf(p.b);
   const n = nR.ok ? nR.value : undefined;
   if (typeof n !== "number") return undefined;
+  if (!Number.isFinite(n)) return undefined; // 非有限界不进 strMin/strMax
   if (p.op === "ge") return { dir: "min", n: Math.ceil(n) };
   if (p.op === "gt") return { dir: "min", n: Math.floor(n) + 1 };
   if (p.op === "le") return { dir: "max", n: Math.floor(n) };
@@ -152,7 +156,7 @@ function primOfType(type: string): SchemaNode["k"] extends never ? never : Extra
 function refinementsFromPreds(
   preds: readonly Pred[],
   opts: { kind: "number" | "string" | "boolean" | "other"; self?: Term },
-): { refinements: SchemaRefinement[]; eqLit?: import("@nudojs/core").LiteralValue; dropped: string[] } {
+): { refinements: SchemaRefinement[]; eqLit?: import("@nudojs/core").LiteralValue; hasEqLit: boolean; dropped: string[] } {
   const refinements: SchemaRefinement[] = [];
   const dropped: string[] = [];
   const self = opts.self;
@@ -207,7 +211,10 @@ function refinementsFromPreds(
     }
     dropped.push(`pred not projected: ${predToString(p)}`);
   }
-  return { refinements, ...(eqLit !== undefined ? { eqLit } : {}), dropped };
+  // hasEqLit 是「有 eq」的 tagged 判据（BUG-019/S6-004）：eqLit 值域含
+  // undefined，`eqLit !== undefined` 哨兵会把 eq(x, lit(undefined)) 静默
+  // 吞掉——历史 litValue tagged 化修过 4 次，本通道是汇总残留。
+  return { refinements, ...(hasEqLit ? { eqLit } : {}), hasEqLit, dropped };
 }
 
 /** NudoConstraint → SchemaNode（与 absToConstraint 投影语义对齐） */
@@ -242,12 +249,13 @@ export function constraintToSchemaNode(c: NudoConstraint): SchemaNode {
             ? "other"
             : "other";
 
-  const { refinements, eqLit, dropped } = refinementsFromPreds(preds, {
+  const { refinements, eqLit, hasEqLit, dropped } = refinementsFromPreds(preds, {
     kind: kind as "number" | "string" | "boolean" | "other",
     // constraint 路径：absToConstraint 已把 self 改写成 __nudo_self__
   });
-  // eq 主导 → lit 节点（与 core projectNumber/projectString 一致）
-  if (eqLit !== undefined && (kind === "number" || kind === "string" || kind === "boolean" || !c.prim)) {
+  // eq 主导 → lit 节点（与 core projectNumber/projectString 一致；
+  // hasEqLit 为 tagged 判据——eq(x, lit(undefined)) → z.undefined()）
+  if (hasEqLit && (kind === "number" || kind === "string" || kind === "boolean" || !c.prim)) {
     return { k: "lit", value: eqLit };
   }
   if (isIntFlag(c) && !refinements.some((r) => r.kind === "int")) {
@@ -288,13 +296,10 @@ function constraintDropped(c: NudoConstraint, prefix = ""): string[] {
     if (n.fn) return;
     const kind =
       n.prim === "number" ? "number" : n.prim === "string" ? "string" : n.prim === "boolean" ? "boolean" : "other";
-    const { eqLit, dropped } = refinementsFromPreds(n.preds ?? [], {
+    const { dropped } = refinementsFromPreds(n.preds ?? [], {
       kind: kind as "number" | "string" | "boolean" | "other",
     });
     for (const d of dropped) out.push(path ? `${path}: ${d}` : d);
-    if (eqLit === undefined && n.preds?.some((p) => p.op === "eq") && !isIntFlag(n)) {
-      // eq 已在 refinementsFromPreds 处理
-    }
   };
   visit(c, prefix);
   return out;
@@ -302,6 +307,10 @@ function constraintDropped(c: NudoConstraint, prefix = ""): string[] {
 
 /** Abs → SchemaNode + dropped（优先 core absToConstraint；失败则 shape 尽力） */
 export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] } {
+  return absToSchemaNodeB(a, new ProjectionBudget());
+}
+
+function absToSchemaNodeB(a: Abs, budget: ProjectionBudget): { node: SchemaNode; dropped: string[] } {
   const dropped: string[] = [];
 
   // lit term 优先（与 projection 一致；NaN 不产 lit）
@@ -327,8 +336,10 @@ export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] }
   const conf = a.conf;
   const lowConf = conf !== "exact" && conf !== "path";
 
-  // 主路径：core 契约投影（eq-lit / or-lit union / bounds / shape 字段）
-  const projected = absToConstraint(a);
+  // 主路径：core 契约投影（eq-lit / or-lit union / bounds / shape 字段）。
+  // 共享预算（DESIGN-001）：absToConstraint 自管 enter/exit——环 / 超深返回
+  // undefined（不可表达），落到下方 shape 尽力路径。
+  const projected = absToConstraint(a, budget);
   if (projected) {
     const node = constraintToSchemaNode(projected);
     dropped.push(...constraintDropped(projected));
@@ -339,7 +350,20 @@ export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] }
     dropped.push(`conf=${conf}: contract projection skipped; shape-only fallback`);
   }
 
-  // fallback：shape 尽力 + pred 提取
+  // fallback：shape 尽力 + pred 提取；预算在此接管（环 / 超深 → unknown + 台账）
+  const stop = budget.enter(a);
+  if (stop) {
+    dropped.push(`shape truncated (${stop}) projected as unknown`);
+    return { node: { k: "unknown" }, dropped };
+  }
+  try {
+    return absToSchemaShape(a, budget, dropped);
+  } finally {
+    budget.exit();
+  }
+}
+
+function absToSchemaShape(a: Abs, budget: ProjectionBudget, dropped: string[]): { node: SchemaNode; dropped: string[] } {
   const s = a.shape;
   switch (s.k) {
     case "never":
@@ -356,12 +380,14 @@ export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] }
         }
         return { node: { k: "prim", type: s.type, refinements: [] }, dropped };
       }
-      const { refinements, eqLit, dropped: d } = refinementsFromPreds(leaves, {
+      const { refinements, eqLit, hasEqLit, dropped: d } = refinementsFromPreds(leaves, {
         kind: kind as "number" | "string" | "boolean" | "other",
         self: a.term,
       });
       dropped.push(...d);
-      if (eqLit !== undefined && !Number.isNaN(eqLit as number)) {
+      // hasEqLit 为 tagged 判据（BUG-019）；NaN eq 已在通道内 drop 记录，
+      // 防御性 !isNaN 只挡 NaN（不再误挡 undefined）
+      if (hasEqLit && (eqLit === undefined || !Number.isNaN(eqLit as number))) {
         return { node: { k: "lit", value: eqLit }, dropped };
       }
       return { node: { k: "prim", type: s.type, refinements }, dropped };
@@ -375,7 +401,7 @@ export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] }
       }
       const slots: Array<{ key: string; node: SchemaNode; optional?: boolean }> = [];
       for (const [key, slot] of Object.entries(s.slots)) {
-        const sub = absToSchemaNode(slot.value);
+        const sub = absToSchemaNodeB(slot.value, budget);
         dropped.push(...sub.dropped.map((n) => `${key}: ${n}`));
         slots.push({ key, node: sub.node, ...(slot.optional ? { optional: true } : {}) });
       }
@@ -385,7 +411,7 @@ export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] }
       if (a.pred && a.pred.op !== "true") {
         dropped.push(`arr pred not projected: ${predToString(a.pred)}`);
       }
-      const sub = absToSchemaNode(s.element);
+      const sub = absToSchemaNodeB(s.element, budget);
       dropped.push(...sub.dropped);
       return { node: { k: "arr", element: sub.node }, dropped };
     }
@@ -398,15 +424,23 @@ export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] }
           dropped.push(`tuple hole at ${i} not projected (slot absent ≠ undefined)`);
           return { k: "unknown" } as const;
         }
-        const sub = absToSchemaNode(e);
+        const sub = absToSchemaNodeB(e, budget);
         dropped.push(...sub.dropped);
         return sub.node;
       });
-      return { node: { k: "tuple", elements }, dropped };
+      // rest 槽（`[1, ...number]`）：SchemaNode 携带（standard-schema 据此校验超长元素），
+      // zod 渲染 `.rest(...)`——不得静默丢弃（有损投影必须可观测）
+      let rest: SchemaNode | undefined;
+      if (s.rest) {
+        const sub = absToSchemaNodeB(s.rest, budget);
+        dropped.push(...sub.dropped);
+        rest = sub.node;
+      }
+      return { node: { k: "tuple", elements, ...(rest ? { rest } : {}) }, dropped };
     }
     case "sum": {
       const members = s.members.map((m) => {
-        const sub = absToSchemaNode(m);
+        const sub = absToSchemaNodeB(m, budget);
         dropped.push(...sub.dropped);
         return sub.node;
       });
@@ -415,7 +449,7 @@ export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] }
     case "fn":
       return { node: { k: "fn" }, dropped };
     case "eff": {
-      const inner = absToSchemaNode(s.inner);
+      const inner = absToSchemaNodeB(s.inner, budget);
       dropped.push(...inner.dropped);
       return {
         node: s.eff === "promise" ? { k: "promise", inner: inner.node } : inner.node,
@@ -481,8 +515,11 @@ export function schemaNodeToZod(node: SchemaNode): string {
     }
     case "arr":
       return `z.array(${schemaNodeToZod(node.element)})`;
-    case "tuple":
-      return `z.tuple([${node.elements.map(schemaNodeToZod).join(", ")}])`;
+    case "tuple": {
+      const base = `z.tuple([${node.elements.map(schemaNodeToZod).join(", ")}])`;
+      // rest：zod 3/4 均支持 `.rest()`（`[1, ...number]` → z.tuple([z.literal(1)]).rest(z.number())）
+      return node.rest ? `${base}.rest(${schemaNodeToZod(node.rest)})` : base;
+    }
     case "union":
       return `z.union([${node.members.map(schemaNodeToZod).join(", ")}])`;
     case "fn":
@@ -522,10 +559,8 @@ export type ZodModuleProjection = {
   dropped: string[];
 };
 
-function zodExportIdent(name: string): string {
-  if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name)) return name;
-  const cleaned = name.replace(/[^A-Za-z0-9_$]/g, "_");
-  return /^[A-Za-z_$]/.test(cleaned) ? cleaned : `_${cleaned}`;
+function zodExportIdent(name: string, used?: Set<string>): string {
+  return toJsBindingIdent(name, used);
 }
 
 /** JS 对象字面量键：ident / 规范数字键可裸写，其余 JSON 引号（与 dts formatPropKey 同口径） */
@@ -533,9 +568,12 @@ export function formatJsObjectKey(k: string): string {
   return formatObjectKey(k);
 }
 
-/** 生成代码里的 export/function 名：合法 ident 原样，否则清洗 */
-export function safeExportIdent(name: string): string {
-  return zodExportIdent(name);
+/**
+ * 生成代码里的 export/function 名：合法绑定标识符（含 Unicode）原样；
+ * 保留字加 `_` 前缀；其余清洗。传入 `used` 时模块内去重（`a_b` / `a_b_2`）。
+ */
+export function safeExportIdent(name: string, used?: Set<string>): string {
+  return zodExportIdent(name, used);
 }
 
 /**
@@ -548,10 +586,11 @@ export function absToZodSchemaModule(
 ): ZodModuleProjection {
   const dropped: string[] = [];
   const decls: string[] = [];
+  const used = new Set<string>();
   for (const [name, abs] of Object.entries(exports)) {
     const p = projectAbsToSchema(abs, { dialect: "zod" });
     dropped.push(...p.dropped.map((n) => `${name}: ${n}`));
-    decls.push(`export const ${zodExportIdent(name)} = ${p.source};`);
+    decls.push(`export const ${zodExportIdent(name, used)} = ${p.source};`);
   }
   const banner =
     opts?.banner ??

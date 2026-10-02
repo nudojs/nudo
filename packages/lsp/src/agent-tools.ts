@@ -27,6 +27,7 @@ import {
   type EmitInterfaceResult,
 } from "@nudojs/service/emit";
 import { getHoverAtPosition, getCasesForFile } from "./lsp-surface.ts";
+import { sanitizeErrorMessage } from "./sanitize.ts";
 import {
   analyzeFile,
   findProjectConfig,
@@ -186,9 +187,16 @@ export function readSource(filePath: string, deps: AgentToolDeps = {}): string {
   return (deps.readFile ?? ((p: string) => readFileSync(p, "utf-8")))(filePath);
 }
 
-function analysisError(err: unknown): AgentToolResult {
+function analysisError(err: unknown, deps?: AgentToolDeps): AgentToolResult {
+  // BUG-023：agent 工具结果回传远端 LLM 会话——
+  // 原始 message 的绝对路径等于回传工作区布局，
+  // 脱敏后再出（根前缀 → 占位）。G7：roots 用 server 注入的
+  // workspaceRoots（扩展宿主 fork 的 cwd ≠ 工作区根，多根更无单一
+  // cwd）；未注入（CLI/测试）回落 sanitize 的 [process.cwd()] 默认
   return {
-    content: [{ type: "text", text: `Error: ${(err as Error).message}` }],
+    content: [
+      { type: "text", text: `Error: ${sanitizeErrorMessage((err as Error).message, deps?.workspaceRoots)}` },
+    ],
     isError: true,
   };
 }
@@ -308,7 +316,7 @@ export function checkTool(
     lines.push(JSON.stringify(json, null, 2));
     return textResult(lines.join("\n"));
   } catch (err) {
-    return analysisError(err);
+    return analysisError(err, deps);
   }
 }
 
@@ -373,7 +381,7 @@ export function hoverTool(
     }
     return textResult(JSON.stringify(payload, null, 2));
   } catch (err) {
-    return analysisError(err);
+    return analysisError(err, deps);
   }
 }
 
@@ -444,7 +452,7 @@ export function testTool(
     lines.push(JSON.stringify(json, null, 2));
     return textResult(lines.join("\n"));
   } catch (err) {
-    return analysisError(err);
+    return analysisError(err, deps);
   }
 }
 
@@ -490,7 +498,7 @@ export function whatIf(params: WhatIfParams, deps: AgentToolDeps = {}): AgentToo
       `Type of "${params.target}": ${typeStr}${notes.length > 0 ? `\n${notes.join("\n")}` : ""}`,
     );
   } catch (err) {
-    return analysisError(err);
+    return analysisError(err, deps);
   }
 }
 
@@ -551,7 +559,7 @@ export function suggestCase(params: FunctionToolParams, deps: AgentToolDeps = {}
 
     return textResult(`Suggested: /** @nudo:case */\nfunction ${params.functionName}(...) { ... }`);
   } catch (err) {
-    return analysisError(err);
+    return analysisError(err, deps);
   }
 }
 
@@ -585,7 +593,7 @@ export function trace(params: FunctionToolParams, deps: AgentToolDeps = {}): Age
 
     return textResult(traces);
   } catch (err) {
-    return analysisError(err);
+    return analysisError(err, deps);
   }
 }
 
@@ -686,7 +694,7 @@ export async function contractTool(
     lines.push(JSON.stringify(selected, null, 2));
     return textResult(lines.join("\n"));
   } catch (err) {
-    return analysisError(err);
+    return analysisError(err, _deps);
   }
 }
 
@@ -751,7 +759,7 @@ export async function contractDraftTool(
         : formatDraftSummary(filePath, draftRel, result);
     return textResult(lines.join("\n"));
   } catch (err) {
-    return analysisError(err);
+    return analysisError(err, deps);
   }
 }
 
@@ -847,7 +855,7 @@ export async function contractEmitTool(
     });
     return textResult(formatEmitResult(filePath, result, dryRun));
   } catch (err) {
-    return analysisError(err);
+    return analysisError(err, deps);
   }
 }
 

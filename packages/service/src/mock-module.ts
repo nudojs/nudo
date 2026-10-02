@@ -59,7 +59,8 @@ function pickNamed(
       if (mock.default) def = mock.default;
       continue;
     }
-    const v = mock.named[n];
+    // 自有属性读：mock 未导出 toString 等名时裸读会把 Object.prototype 方法叠成 mock 导出
+    const v = Object.hasOwn(mock.named, n) ? mock.named[n] : undefined;
     if (v !== undefined) named[n] = v;
   }
   return def !== undefined ? { named, default: def } : { named };

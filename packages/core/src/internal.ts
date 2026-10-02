@@ -21,6 +21,9 @@ export {
   maybeLeak, resetLeakCounter, termDepth, termNodes
 } from "./algebra/leak.ts";
 export {
+  type ProjectionStopReason, PROJECTION_MAX_DEPTH, ProjectionBudget,
+} from "./algebra/projection-budget.ts";
+export {
   type AbsBudgetStats, FORK_TRUNCATION_LABEL, HOST_EFFECT_LABEL_PREFIX, MAX_EVAL_TOTAL_FORKS,
   MAX_CALL_DEPTH, MAX_TOTAL_CALLS, PROMISE_MICRO_ERROR_LABEL, PROMISE_MICRO_OVERFLOW_LABEL,
   bumpEvalForkBudget, callBudgetKey,
@@ -54,6 +57,11 @@ export {
   type LoadDepsFingerprint, extractAllLoadSpecs, loadModuleDepsFingerprint,
   normPath, resolveDepPath, sidecarSpecsOf, stablePathKey, stablePathKeyGraph
 } from "./algebra/load-deps-fp.ts";
+export {
+  // DESIGN-003：sidecar 契约身份=导出名；emit 层据此把 `export { _c as class }`
+  // 的本地名归一到导出名（engine machinery——产品面走 localNamedExports）
+  exportedNameOfLocal
+} from "./algebra/interface.ts";
 
 // derivation sessions + rendering experiments
 export {
@@ -79,8 +87,8 @@ export {
   denoteGuard
 } from "./algebra/denote.ts";
 export {
-  escapeTemplateTypeFixed, formatObjectKey, isJsIdent, safeMemberAccess,
-  sanitizeCommentText
+  escapeTemplateTypeFixed, formatObjectKey, isJsBindingIdent, isJsIdent,
+  safeMemberAccess, sanitizeCommentText, toJsBindingIdent
 } from "./algebra/codegen-escape.ts";
 export {
   type ClassDef, type MethodDef, awaitAbs, classChainNames,

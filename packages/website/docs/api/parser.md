@@ -304,7 +304,7 @@ Parses a directive type expression into an Abs — the product grammar is constr
 | <a id="paramdisplayname"></a>`paramDisplayName` | fn | Parameter display label: `name`, `...rest`, or `_`. | `paramDisplayName(param: Node \| null \| undefined): string` |
 | <a id="paramname"></a>`paramName` | fn | RestElement argument name, else plain Identifier name. | `paramName(param: Node \| null \| undefined): string \| undefined` |
 | <a id="parse"></a>`parse` | fn | 所有权：Babel 解析与 TS 剥除的**实现**在 `@nudojs/core` （`algebra/parse-source.ts` / `strip-types.ts`）—— core 代数层 （check/scan/generalize）需要 AST 且不能反向依赖本包。本包职责是 `@nudo:` 指令抽取与 AST 卫兵；`parse()` 是宿主入口，委托 core 同一实现与 AST LRU。 | `parse(source: string, opts?: { errorRecovery?: boolean }): File` |
-| <a id="parsecaseargexpr"></a>`parseCaseArgExpr` | fn | case 实参 / 指令类型表达式唯一文法：约束构建器优先，其余为具体字面量、 结构字面量与箭头函数。`T.*` 文法已物理删除。 | `parseCaseArgExpr(expr: string): Abs` |
+| <a id="parsecaseargexpr"></a>`parseCaseArgExpr` | fn | case 实参 / 指令类型表达式唯一文法：约束构建器优先，其余为具体字面量、 结构字面量与箭头函数。`T.*` 文法已物理删除。 | `parseCaseArgExpr(expr: string, depth = 0): Abs` |
 | <a id="parseenvpayload"></a>`parseEnvPayload` | const | — | — |
 | <a id="parsemockmodulepayload"></a>`parseMockModulePayload` | const | — | — |
 | <a id="parsenudoimportpayload"></a>`parseNudoImportPayload` | const | — | — |

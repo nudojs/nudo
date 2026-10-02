@@ -14,6 +14,7 @@ import {
   implies,
   type Phi,
 } from "./pred.ts";
+import { ProjectionBudget } from "./projection-budget.ts";
 
 export type Confidence = "exact" | "path" | "widened" | "mock" | "partial" | "opaque";
 
@@ -158,14 +159,41 @@ export function confJoin(a: Confidence, b: Confidence): Confidence {
 }
 
 export function absToString(a: Abs): string {
-  const parts: string[] = [shapeToString(a.shape)];
-  if (a.term) parts.push(`term=${termToString(a.term)}`);
-  if (a.pred && a.pred.op !== "true") parts.push(predToString(a.pred));
-  parts.push(`#${a.conf}`);
-  return parts.join(" ");
+  return absToStringB(a, new ProjectionBudget());
+}
+
+function absToStringB(a: Abs, budget: ProjectionBudget): string {
+  // DESIGN-001：环 / 超深截断标记（与 formatShape 同口径）
+  const stop = budget.enter(a);
+  if (stop) return stop === "cycle" ? "…cycle" : "…";
+  try {
+    const parts: string[] = [shapeToStringB(a.shape, budget)];
+    if (a.term) parts.push(`term=${termToString(a.term)}`);
+    if (a.pred && a.pred.op !== "true") parts.push(predToString(a.pred));
+    parts.push(`#${a.conf}`);
+    return parts.join(" ");
+  } finally {
+    budget.exit();
+  }
 }
 
 export function shapeToString(s: Shape): string {
+  return shapeToStringB(s, new ProjectionBudget());
+}
+
+function shapeToStringB(s: Shape, budget: ProjectionBudget): string {
+  // shape 级递归（arr element / tuple element / eff inner 直接下钻 .shape）
+  // 也入预算：环可能只出现在 shape 对象层面（enter 接受任意 object）。
+  const stop = budget.enter(s);
+  if (stop) return stop === "cycle" ? "…cycle" : "…";
+  try {
+    return shapeToStringInner(s, budget);
+  } finally {
+    budget.exit();
+  }
+}
+
+function shapeToStringInner(s: Shape, budget: ProjectionBudget): string {
   switch (s.k) {
     case "never":
       return "never";
@@ -178,22 +206,22 @@ export function shapeToString(s: Shape): string {
     case "obj": {
       const entries = Object.entries(s.slots).map(
         ([k, slot]) =>
-          `${k}${slot.optional ? "?" : ""}: ${absToString(slot.value)}`,
+          `${k}${slot.optional ? "?" : ""}: ${absToStringB(slot.value, budget)}`,
       );
       return `{ ${entries.join(", ")} }`;
     }
     case "arr":
-      return `${shapeToString(s.element.shape)}[]`;
+      return `${shapeToStringB(s.element.shape, budget)}[]`;
     case "tuple":
-      return `[${s.elements.map((e) => shapeToString(e.shape)).join(", ")}]`;
+      return `[${s.elements.map((e) => shapeToStringB(e.shape, budget)).join(", ")}]`;
     case "fn":
       return `fn(${s.params.join(", ")})${s.name ? ` ${s.name}` : ""}`;
     case "brand":
       return s.name;
     case "eff":
-      return `${s.eff}<${shapeToString(s.inner.shape)}>`;
+      return `${s.eff}<${shapeToStringB(s.inner.shape, budget)}>`;
     case "sum":
-      return s.members.map(absToString).join(" | ");
+      return s.members.map((m) => absToStringB(m, budget)).join(" | ");
     default:
       return "·";
   }

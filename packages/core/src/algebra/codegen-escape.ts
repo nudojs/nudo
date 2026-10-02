@@ -6,15 +6,81 @@
  * - member access: `recv.key` for idents, `recv["key"]` otherwise
  * - template literal type fixed segments: escape `\` `` ` `` `$`
  * - comment bodies: neutralize block-comment close, line breaks, control chars
+ * - binding names (`export const/function`, params): ident + non-reserved
  */
 
 const JS_IDENT = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+
+/**
+ * Unicode-aware IdentifierStart / IdentifierPart (ES2015+).
+ * Binding names may be full Unicode (`计算` is legal); object-key quoting
+ * still uses the ASCII `JS_IDENT` and falls back to JSON quotes.
+ */
+const JS_BINDING_IDENT =
+  /^(?:[$_\p{ID_Start}])(?:[$\u200C\u200D\p{ID_Continue}])*$/u;
+
+/**
+ * Words that cannot appear as a binding name in module / strict code:
+ * keywords, future-reserved, strict-mode reserved, and the two
+ * never-legal strict bindings (`eval`, `arguments`).
+ */
+const JS_BINDING_RESERVED = new Set([
+  // ECMA-262 keywords
+  "break", "case", "catch", "class", "const", "continue", "debugger",
+  "default", "delete", "do", "else", "enum", "export", "extends", "false",
+  "finally", "for", "function", "if", "import", "in", "instanceof", "new",
+  "null", "return", "super", "switch", "this", "throw", "true", "try",
+  "typeof", "var", "void", "while", "with", "yield",
+  // strict mode / module-code reserved
+  "let", "static", "await",
+  "implements", "interface", "package", "private", "protected", "public",
+  // never legal bindings in strict / module code
+  "eval", "arguments",
+]);
 
 /** ES NumericLiteral without legacy-octal / leading-zero forms (0, 123; not 01). */
 const JS_CANONICAL_INT = /^(?:0|[1-9]\d*)$/;
 
 export function isJsIdent(name: string): boolean {
   return JS_IDENT.test(name);
+}
+
+/**
+ * True when `name` is legal as a `const` / `function` / `class` binding
+ * (or a `.d.ts` param / type-param name): IdentifierName shape and not
+ * a reserved word. Unlike `isJsIdent`, accepts Unicode identifiers and
+ * rejects `class` / `default` / `let` / `eval` / …
+ */
+export function isJsBindingIdent(name: string): boolean {
+  return JS_BINDING_IDENT.test(name) && !JS_BINDING_RESERVED.has(name);
+}
+
+/**
+ * Binding name for a generated `export const` / `export function` slot.
+ *
+ * - already a legal binding → unchanged (Unicode names preserved)
+ * - reserved word → `_` prefix (`class` → `_class`)
+ * - otherwise sanitize: non-ident chars → `_`, leading non-start → `_` prefix
+ * - `used` (when given) de-duplicates within one generated module
+ *   (`a_b`, `a_b_2`, …) so cleaned names cannot collide
+ */
+export function toJsBindingIdent(name: string, used?: Set<string>): string {
+  let base = name;
+  if (!JS_BINDING_IDENT.test(base)) {
+    base = base.replace(/[^\p{ID_Continue}$\u200C\u200D]/gu, "_");
+    if (base.length === 0) base = "_";
+    else if (!/^[$_\p{ID_Start}]/u.test(base)) base = `_${base}`;
+  }
+  if (JS_BINDING_RESERVED.has(base)) base = `_${base}`;
+  if (!used) return base;
+  let n = base;
+  let i = 2;
+  while (used.has(n)) {
+    n = `${base}_${i}`;
+    i++;
+  }
+  used.add(n);
+  return n;
 }
 
 /**

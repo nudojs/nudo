@@ -11,7 +11,7 @@ description: nudo health — analysis errors and solidification drift in CI.
 npx nudojs health [paths…] [--watch] [--from paths…] [--json]
 ```
 
-Exit `1` on drift or analysis errors. Uncovered functions are informational only.
+Exit `1` on drift, analysis errors, or missing `--from` paths. Under `--json`, `--from` path errors land in top-level `pathErrors[]` and force `ok: false`. Uncovered functions are informational only.
 
 ## What health watches vs what check gates
 
@@ -101,8 +101,8 @@ jobs:
 
 | Code | Meaning |
 |---|---|
-| `0` | No drift, no analysis errors |
-| `1` | Drift or analysis errors (uncovered functions are informational only) |
+| `0` | No drift, no analysis errors, no `--from` path errors |
+| `1` | Drift, analysis errors, or `--from` path errors (uncovered functions are informational only) |
 
 Same exit surface as `check` for CI purposes — a non-zero run blocks the pipeline.
 

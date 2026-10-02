@@ -8,7 +8,7 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { emitInterface } from "../interface-emitter.ts";
-import { effectiveInterface, numLit, strLit, abs as makeAbs } from "@nudojs/core";
+import { effectiveInterface, numLit, strLit, abs as makeAbs, parseSource } from "@nudojs/core";
 
 let dir: string;
 
@@ -249,5 +249,124 @@ describe("emitInterface", () => {
     expect(second.changed).toBe(false);
     expect(readFileSync(join(dir, "mixed.nudo.js"), "utf-8")).toBe(before);
     expect(second.skipped).toContainEqual({ fn: "scale", reason: "not-projectable" });
+  });
+});
+
+describe("DESIGN-003 reserved-word exports (identity = exported name)", () => {
+  /** 保留字导出：本地名 _c，导出名 class —— 身份恒为 class。 */
+  const CLS_JS = `function _c(x) { return x + 1; }\n_c(2);\nexport { _c as class };\n`;
+  /** 两个保留字导出（class / let）→ 两个不同别名绑定。 */
+  const TWO_JS =
+    `function _c(x) { return x + 1; }\n_c(2);\nexport { _c as class };\n` +
+    `function _d(x) { return x + 2; }\n_d(2);\nexport { _d as let };\n`;
+  const loadModule = (spec: string, from: string): string | undefined => {
+    if (!spec.startsWith(".")) return undefined;
+    const parts = from.split("/").slice(0, -1);
+    for (const seg of spec.split("/")) {
+      if (seg === "" || seg === ".") continue;
+      if (seg === "..") parts.pop();
+      else parts.push(seg);
+    }
+    try {
+      return readFileSync(parts.join("/"), "utf-8");
+    } catch {
+      return undefined;
+    }
+  };
+
+  it("emits alias form `const _nudo_1 = fn(…); export { _nudo_1 as class };`", async () => {
+    const file = join(dir, "cls.js");
+    writeFileSync(file, CLS_JS);
+    const r = await emitInterface(file, { fnNames: ["class"], mode: "add" });
+    expect(r.written).toEqual(["class"]);
+    expect(r.issues).toEqual([]);
+    const sidecar = readFileSync(join(dir, "cls.nudo.js"), "utf-8");
+    expect(sidecar).toContain("const _nudo_1 = fn(");
+    expect(sidecar).toContain("export { _nudo_1 as class };");
+    // 身份不是别名：不得出现 export const class（非法 JS）
+    expect(sidecar).not.toContain("export const class");
+  });
+
+  it("emitted alias sidecar reads back via effectiveInterface (source=generated)", async () => {
+    const file = join(dir, "cls.js");
+    writeFileSync(file, CLS_JS);
+    const r = await emitInterface(file, { fnNames: ["class"], mode: "add" });
+    expect(r.written).toEqual(["class"]);
+    const eff = effectiveInterface(CLS_JS, "class", { loadModule, fromFile: file });
+    expect(eff).toBeDefined();
+    expect(eff!.source).toBe("generated");
+    expect(eff!.params.map((p) => p.param)).toEqual(["x"]);
+  });
+
+  it("update mode over alias sections is idempotent", async () => {
+    const file = join(dir, "cls.js");
+    writeFileSync(file, CLS_JS);
+    const first = await emitInterface(file, { fnNames: ["class"], mode: "update" });
+    expect(first.written).toEqual(["class"]);
+    const before = readFileSync(join(dir, "cls.nudo.js"), "utf-8");
+    const second = await emitInterface(file, { mode: "update" });
+    expect(second.changed).toBe(false);
+    expect(readFileSync(join(dir, "cls.nudo.js"), "utf-8")).toBe(before);
+  });
+
+  it("two reserved-word exports get distinct alias bindings", async () => {
+    const file = join(dir, "two.js");
+    writeFileSync(file, TWO_JS);
+    const r = await emitInterface(file, { fnNames: ["class", "let"], mode: "add" });
+    expect(r.written).toEqual(["class", "let"]);
+    const sidecar = readFileSync(join(dir, "two.nudo.js"), "utf-8");
+    expect(sidecar).toContain("const _nudo_1 = fn(");
+    expect(sidecar).toContain("export { _nudo_1 as class };");
+    expect(sidecar).toContain("const _nudo_2 = fn(");
+    expect(sidecar).toContain("export { _nudo_2 as let };");
+  });
+
+  it("handwritten _nudo_1 binding pushes emission to _nudo_2", async () => {
+    const file = join(dir, "cls.js");
+    writeFileSync(file, CLS_JS);
+    const sidecar = join(dir, "cls.nudo.js");
+    // 手写绑定 _nudo_1（无生成标记）——别名分配必须避让
+    writeFileSync(sidecar, `const _nudo_1 = fn({ x: number() }, number());\n`);
+    const r = await emitInterface(file, { fnNames: ["class"], mode: "add" });
+    expect(r.written).toEqual(["class"]);
+    const after = readFileSync(sidecar, "utf-8");
+    expect(after).toContain("const _nudo_2 = fn(");
+    expect(after).toContain("export { _nudo_2 as class };");
+    // 手写段原样保留
+    expect(after).toContain("const _nudo_1 = fn({ x: number() }, number());");
+  });
+
+  it("string export name emits quoted alias clause and reads back", async () => {
+    const src = `function _ab(x) { return x + 1; }\n_ab(2);\nexport { _ab as "a-b" };\n`;
+    const file = join(dir, "str.js");
+    writeFileSync(file, src);
+    const r = await emitInterface(file, { fnNames: ["a-b"], mode: "add" });
+    expect(r.written).toEqual(["a-b"]);
+    const sidecar = readFileSync(join(dir, "str.nudo.js"), "utf-8");
+    expect(sidecar).toContain('export { _nudo_1 as "a-b" };');
+    const eff = effectiveInterface(src, "a-b", { loadModule, fromFile: file });
+    expect(eff).toBeDefined();
+    expect(eff!.source).toBe("generated");
+  });
+
+  it("--all dedupes colliding identities: alias export name === another local fn name (F1)", async () => {
+    // 触发机制：`export { _a as b }` 让非导出函数 _a 的身份是 b，与另一个本地
+    // 函数 b 的身份撞名 → 修复前 fileExportOrder 无去重出现两个 "b"：
+    // bindingOf("b") 被第二次分配覆盖成 _nudo_1，同一段文本双追加 →
+    // `const _nudo_1 = …; export { _nudo_1 as b };` ×2 的侧车不可解析，
+    // 文件全部契约丢失。
+    const src =
+      `function _a(x) { return x + 1; }\n_a(1);\nexport { _a as b };\n` +
+      `function b(y) { return y + 2; }\nb(2);\n`;
+    const file = join(dir, "dup.js");
+    writeFileSync(file, src);
+    const r = await emitInterface(file, { mode: "update", all: true });
+    // 修复前 written = ["b", "b"]（身份重复处理）
+    expect(r.written).toEqual(["b"]);
+    const sidecar = readFileSync(join(dir, "dup.nudo.js"), "utf-8");
+    // 生成段仅一份（@generated 头计数；修复前为 2）
+    expect(sidecar.split("@generated").length - 1).toBe(1);
+    // 侧车必须可解析（修复前重复声明/重复导出 → SyntaxError）
+    expect(() => parseSource(sidecar)).not.toThrow();
   });
 });

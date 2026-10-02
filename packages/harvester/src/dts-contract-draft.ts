@@ -12,6 +12,7 @@
 import { readFileSync, existsSync, statSync, readdirSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import ts from "typescript";
+import { toJsBindingIdent } from "@nudojs/core/internal";
 
 export type DtsExportDraft = {
   name: string;
@@ -281,8 +282,8 @@ function collectExports(
   return out;
 }
 
-function draftExportName(name: string): string {
-  return name.includes(".") ? name.replace(/\./g, "_") : name;
+function draftExportName(name: string, used?: Set<string>): string {
+  return toJsBindingIdent(name.includes(".") ? name.replace(/\./g, "_") : name, used);
 }
 
 /** 组装 `@nudo:draft` 模块（与 formatDraftModule 同纪律：不 ambient 绑定）。 */
@@ -301,6 +302,7 @@ export function formatDtsContractDraft(
   // any() 也要
   if (draftable.some((e) => /\bany\s*\(/.test(e.dsl!))) used.add("any");
   const importList = BUILDERS.filter((b) => used.has(b)).join(", ");
+  const exportUsed = new Set<string>();
 
   const lines: string[] = [
     "// @nudo:draft",
@@ -330,7 +332,7 @@ export function formatDtsContractDraft(
     }
     if (e.note) lines.push(`// ${e.name} — ${e.note}`);
     else lines.push(`// ${e.name} — from TypeScript`);
-    lines.push(`export const ${draftExportName(e.name)} = ${e.dsl};`);
+    lines.push(`export const ${draftExportName(e.name, exportUsed)} = ${e.dsl};`);
     if (e.name.includes(".")) {
       lines.push(`//   sidecar key may also be written as \`${e.name}\``);
     }

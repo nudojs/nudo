@@ -113,6 +113,8 @@ export function trimFnAnalysisCache(): void {
 }
 
 export function fnAnalysisCacheGet(key: string): CachedFnAnalysis | undefined {
+  // 0 = 关闭：读路径也 miss（与 BoundedLruMap max<=0 口径一致）
+  if (getSessionCacheLimits().maxFns <= 0) return undefined;
   const k = normalizeFnCacheKey(key);
   const hit = fnAnalysisCache.get(k);
   if (hit !== undefined) {
@@ -132,6 +134,8 @@ export function fnAnalysisCacheSet(key: string, value: CachedFnAnalysis): void {
     if (oldest === undefined) break;
     fnAnalysisCache.delete(oldest);
   }
+  // 覆盖已有键先 delete 再 set：刷新为最近使用（与 BoundedLruMap.set 一致）
+  fnAnalysisCache.delete(k);
   fnAnalysisCache.set(k, value);
 }
 
