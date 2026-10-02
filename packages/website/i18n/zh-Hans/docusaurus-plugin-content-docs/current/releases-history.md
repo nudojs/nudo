@@ -29,55 +29,45 @@ slug: /releases-history
 
 ### Minor Changes
 
-- 2f9717b: 仓库级正确性批次（fix-10，19 项修复 + 3 项设计缺陷修复）
-  
-  安全与正确性：
-  - 类型表达式 AST 白名单，阻断 @nudo:case/@nudo:as RCE（P0）
-  - export/绑定名统一消毒（保留字/撞名）
-  - 槽位/导出表全部改自有属性读，挡 Object.prototype 成员
-  
-  类型系统：
-  - tuple rest 槽在 leq/widen/运行时/schema/dts 全链路生效
-  - x++/x-- 与 +=/-= 同源传播 term/pred/Φ 约束
-  - 键通道字面量区分 -0/0（litKeyString）
-  - 投影/格式出口统一 ProjectionBudget：环与超深截断可观测
-  
-  CLI 门禁与契约：
-  - health --from 路径错误并入 pathErrors，ok↔exit 单一来源
-  - migrate verify 与 health 传 skips，与 nudo check 判定同源
-  - 畸形 JSDoc 指令不再静默丢弃/吞行/抛宿主异常
-  - case 实参递归深度上限 32（DoS 防护）
-  
-  服务层：
-  - 缓存上限改为显式>env>project，env 形参每次生效
-  - 会话 LRU 与 BoundedLruMap 对齐（覆盖写刷新位序，max=0 读 miss）
-  - 模块缓存条目携带子树内容指纹，传递失效内聚（DESIGN-002）
-  - sidecar 契约身份=导出名、绑定名可别名，保留字/string 导出安全发射（DESIGN-003）
-  - @nudo:import 别名查导出表用原始名，miss 出诊断
-  
-  解析与诊断：
-  - eval 诊断补 rest/默认值/具名表达式声明与计算键引用
-  - ambient 侧车反查含 .nudo.mjs，后缀集合单一事实源
-  
-  S2/S5/S6 跟踪批次（BUG-017–028，主会话直修）：
-  - 类型推断：collectPredVars 收 assumeFinite 约束；eqLit
-    通道 tagged 化（eq(x, lit(undefined)) 可投影）；
-    非有限界（NaN/±Infinity）不投影；fn rest 非数组类型
-    提升为 (T)[]；可选参数名保留 `?`
-  - 门禁与 CLI：check --fix 保持门禁语义（残余 error
-    exit 1，旗标组合 usage error）；variadic 旗标吞位置
-    参数 → 定向 usage error + `--` 终止符；export 走
-    PathError 面（nudo:path-* + nudo:path-io）；
-    findProjectConfig 解析失败诊断 + 停步
-  - 求值引擎：注入表收集异常 fail-closed（绝不半张表）；
-    同名类碰撞 epoch 检测 + 回落观测；EvalCallRecord.threw
-    必填 + 桥接 fail-closed（threw 省略 → throwsAbs
-    unknown）；tryEvalCall 显式 isAbsVal 守卫
-  - LSP / 错误面：validateText 文档 version 门（陈旧
-    分析不发布）；诊断 / agent 错误 message 绝对路径
-    脱敏（家目录→~、根→.）；注入装配失败上屏挡 exit
-  - 观察面：standard-schema 缺键 / 显式 undefined 区分；
-    dts 投影可选参数名、fn rest TS 合法性
+- 2f9717b: repo-wide correctness batch (fix-10: 19 fixes + 3 design-defect fixes)
+
+  Security & correctness:
+  - type-expression AST whitelist blocks @nudo:case/@nudo:as RCE (P0)
+  - unified export/binding-name sanitization (reserved words / collisions)
+  - slot & export tables read via own-property, blocking Object.prototype members
+
+  Type system:
+  - tuple rest slot effective across leq / widen / runtime / schema / dts
+  - x++/x-- propagate term/pred/Φ constraints from the same source as +=/-=
+  - key-channel literals distinguish -0/0 (litKeyString)
+  - projection/format exits unified under ProjectionBudget: cycle & depth truncation observable
+
+  CLI gates & contracts:
+  - health --from path errors fold into pathErrors; ok↔exit single source
+  - migrate verify/health pass skips, judged same as nudo check
+  - malformed JSDoc directives no longer silently dropped / line-swallowed / host-throwing
+  - case-arg recursion depth cap 32 (DoS protection)
+
+  Service layer:
+  - cache-limit precedence explicit > env > project; env params take effect per call
+  - session LRUs aligned with BoundedLruMap (overwrite refreshes position; max=0 read miss)
+  - module-cache entries carry subtree content fingerprints; transitive invalidation cohesive (DESIGN-002)
+  - sidecar contract identity = export name, binding name aliasable; reserved-word / string exports emitted safely (DESIGN-003)
+  - @nudo:import alias lookup uses the original export name; miss reports a diagnostic
+
+  Parsing & diagnostics:
+  - eval diagnostics cover rest / default-value / named-expression declarations and computed-key references
+  - ambient sidecar lookup includes .nudo.mjs; suffix set single source of truth
+
+  S2/S5/S6 tracking batch (BUG-017–028):
+  - type inference: collectPredVars collects assumeFinite constraints; eqLit channel tagged (eq(x, lit(undefined)) projectable); non-finite bounds (NaN/±Infinity) not projected; fn rest non-array types promoted to (T)[]; optional param names keep `?`
+  - gates & CLI: check --fix preserves gate semantics (residual errors exit 1; flag combos are usage errors); variadic flags swallowing positional args → targeted usage error + `--` terminator; export on the PathError face (nudo:path-* + nudo:path-io); findProjectConfig parse-failure diagnostic + stop
+  - eval engine: injection-table collection exceptions fail-closed (never a half table); same-name class collision epoch detection + fallback observation; EvalCallRecord.threw required + bridge fail-closed (omitted threw → throwsAbs unknown); tryEvalCall explicit isAbsVal guard
+  - LSP / error face: validateText document version gate (stale analysis never published); diagnostic / agent error message absolute-path redaction (home→~, root→.); injection setup failure surfaces and blocks exit
+  - observation face: standard-schema missing-key vs explicit-undefined distinction; dts projection optional param names, fn rest TS validity
+
+  PR #80 review batches (merge 7e6051ae):
+  - own-property reads across sidecar import/export tables and the modules table; emit-identity dedup; quote-aware sidecar binding scan; check injection-failure gate (no fake-green --json exit, no degraded cache write); class-collision epoch scoped to the entry-call phase; LSP error redaction with real workspace roots; health --from requires explicit paths
 
 <details>
 <summary>历史版本 (22)</summary>
@@ -746,55 +736,45 @@ slug: /releases-history
 
 ### Minor Changes
 
-- 2f9717b: 仓库级正确性批次（fix-10，19 项修复 + 3 项设计缺陷修复）
-  
-  安全与正确性：
-  - 类型表达式 AST 白名单，阻断 @nudo:case/@nudo:as RCE（P0）
-  - export/绑定名统一消毒（保留字/撞名）
-  - 槽位/导出表全部改自有属性读，挡 Object.prototype 成员
-  
-  类型系统：
-  - tuple rest 槽在 leq/widen/运行时/schema/dts 全链路生效
-  - x++/x-- 与 +=/-= 同源传播 term/pred/Φ 约束
-  - 键通道字面量区分 -0/0（litKeyString）
-  - 投影/格式出口统一 ProjectionBudget：环与超深截断可观测
-  
-  CLI 门禁与契约：
-  - health --from 路径错误并入 pathErrors，ok↔exit 单一来源
-  - migrate verify 与 health 传 skips，与 nudo check 判定同源
-  - 畸形 JSDoc 指令不再静默丢弃/吞行/抛宿主异常
-  - case 实参递归深度上限 32（DoS 防护）
-  
-  服务层：
-  - 缓存上限改为显式>env>project，env 形参每次生效
-  - 会话 LRU 与 BoundedLruMap 对齐（覆盖写刷新位序，max=0 读 miss）
-  - 模块缓存条目携带子树内容指纹，传递失效内聚（DESIGN-002）
-  - sidecar 契约身份=导出名、绑定名可别名，保留字/string 导出安全发射（DESIGN-003）
-  - @nudo:import 别名查导出表用原始名，miss 出诊断
-  
-  解析与诊断：
-  - eval 诊断补 rest/默认值/具名表达式声明与计算键引用
-  - ambient 侧车反查含 .nudo.mjs，后缀集合单一事实源
-  
-  S2/S5/S6 跟踪批次（BUG-017–028，主会话直修）：
-  - 类型推断：collectPredVars 收 assumeFinite 约束；eqLit
-    通道 tagged 化（eq(x, lit(undefined)) 可投影）；
-    非有限界（NaN/±Infinity）不投影；fn rest 非数组类型
-    提升为 (T)[]；可选参数名保留 `?`
-  - 门禁与 CLI：check --fix 保持门禁语义（残余 error
-    exit 1，旗标组合 usage error）；variadic 旗标吞位置
-    参数 → 定向 usage error + `--` 终止符；export 走
-    PathError 面（nudo:path-* + nudo:path-io）；
-    findProjectConfig 解析失败诊断 + 停步
-  - 求值引擎：注入表收集异常 fail-closed（绝不半张表）；
-    同名类碰撞 epoch 检测 + 回落观测；EvalCallRecord.threw
-    必填 + 桥接 fail-closed（threw 省略 → throwsAbs
-    unknown）；tryEvalCall 显式 isAbsVal 守卫
-  - LSP / 错误面：validateText 文档 version 门（陈旧
-    分析不发布）；诊断 / agent 错误 message 绝对路径
-    脱敏（家目录→~、根→.）；注入装配失败上屏挡 exit
-  - 观察面：standard-schema 缺键 / 显式 undefined 区分；
-    dts 投影可选参数名、fn rest TS 合法性
+- 2f9717b: repo-wide correctness batch (fix-10: 19 fixes + 3 design-defect fixes)
+
+  Security & correctness:
+  - type-expression AST whitelist blocks @nudo:case/@nudo:as RCE (P0)
+  - unified export/binding-name sanitization (reserved words / collisions)
+  - slot & export tables read via own-property, blocking Object.prototype members
+
+  Type system:
+  - tuple rest slot effective across leq / widen / runtime / schema / dts
+  - x++/x-- propagate term/pred/Φ constraints from the same source as +=/-=
+  - key-channel literals distinguish -0/0 (litKeyString)
+  - projection/format exits unified under ProjectionBudget: cycle & depth truncation observable
+
+  CLI gates & contracts:
+  - health --from path errors fold into pathErrors; ok↔exit single source
+  - migrate verify/health pass skips, judged same as nudo check
+  - malformed JSDoc directives no longer silently dropped / line-swallowed / host-throwing
+  - case-arg recursion depth cap 32 (DoS protection)
+
+  Service layer:
+  - cache-limit precedence explicit > env > project; env params take effect per call
+  - session LRUs aligned with BoundedLruMap (overwrite refreshes position; max=0 read miss)
+  - module-cache entries carry subtree content fingerprints; transitive invalidation cohesive (DESIGN-002)
+  - sidecar contract identity = export name, binding name aliasable; reserved-word / string exports emitted safely (DESIGN-003)
+  - @nudo:import alias lookup uses the original export name; miss reports a diagnostic
+
+  Parsing & diagnostics:
+  - eval diagnostics cover rest / default-value / named-expression declarations and computed-key references
+  - ambient sidecar lookup includes .nudo.mjs; suffix set single source of truth
+
+  S2/S5/S6 tracking batch (BUG-017–028):
+  - type inference: collectPredVars collects assumeFinite constraints; eqLit channel tagged (eq(x, lit(undefined)) projectable); non-finite bounds (NaN/±Infinity) not projected; fn rest non-array types promoted to (T)[]; optional param names keep `?`
+  - gates & CLI: check --fix preserves gate semantics (residual errors exit 1; flag combos are usage errors); variadic flags swallowing positional args → targeted usage error + `--` terminator; export on the PathError face (nudo:path-* + nudo:path-io); findProjectConfig parse-failure diagnostic + stop
+  - eval engine: injection-table collection exceptions fail-closed (never a half table); same-name class collision epoch detection + fallback observation; EvalCallRecord.threw required + bridge fail-closed (omitted threw → throwsAbs unknown); tryEvalCall explicit isAbsVal guard
+  - LSP / error face: validateText document version gate (stale analysis never published); diagnostic / agent error message absolute-path redaction (home→~, root→.); injection setup failure surfaces and blocks exit
+  - observation face: standard-schema missing-key vs explicit-undefined distinction; dts projection optional param names, fn rest TS validity
+
+  PR #80 review batches (merge 7e6051ae):
+  - own-property reads across sidecar import/export tables and the modules table; emit-identity dedup; quote-aware sidecar binding scan; check injection-failure gate (no fake-green --json exit, no degraded cache write); class-collision epoch scoped to the entry-call phase; LSP error redaction with real workspace roots; health --from requires explicit paths
 
 ### Patch Changes
 
@@ -1401,55 +1381,45 @@ slug: /releases-history
 
 ### Minor Changes
 
-- 2f9717b: 仓库级正确性批次（fix-10，19 项修复 + 3 项设计缺陷修复）
-  
-  安全与正确性：
-  - 类型表达式 AST 白名单，阻断 @nudo:case/@nudo:as RCE（P0）
-  - export/绑定名统一消毒（保留字/撞名）
-  - 槽位/导出表全部改自有属性读，挡 Object.prototype 成员
-  
-  类型系统：
-  - tuple rest 槽在 leq/widen/运行时/schema/dts 全链路生效
-  - x++/x-- 与 +=/-= 同源传播 term/pred/Φ 约束
-  - 键通道字面量区分 -0/0（litKeyString）
-  - 投影/格式出口统一 ProjectionBudget：环与超深截断可观测
-  
-  CLI 门禁与契约：
-  - health --from 路径错误并入 pathErrors，ok↔exit 单一来源
-  - migrate verify 与 health 传 skips，与 nudo check 判定同源
-  - 畸形 JSDoc 指令不再静默丢弃/吞行/抛宿主异常
-  - case 实参递归深度上限 32（DoS 防护）
-  
-  服务层：
-  - 缓存上限改为显式>env>project，env 形参每次生效
-  - 会话 LRU 与 BoundedLruMap 对齐（覆盖写刷新位序，max=0 读 miss）
-  - 模块缓存条目携带子树内容指纹，传递失效内聚（DESIGN-002）
-  - sidecar 契约身份=导出名、绑定名可别名，保留字/string 导出安全发射（DESIGN-003）
-  - @nudo:import 别名查导出表用原始名，miss 出诊断
-  
-  解析与诊断：
-  - eval 诊断补 rest/默认值/具名表达式声明与计算键引用
-  - ambient 侧车反查含 .nudo.mjs，后缀集合单一事实源
-  
-  S2/S5/S6 跟踪批次（BUG-017–028，主会话直修）：
-  - 类型推断：collectPredVars 收 assumeFinite 约束；eqLit
-    通道 tagged 化（eq(x, lit(undefined)) 可投影）；
-    非有限界（NaN/±Infinity）不投影；fn rest 非数组类型
-    提升为 (T)[]；可选参数名保留 `?`
-  - 门禁与 CLI：check --fix 保持门禁语义（残余 error
-    exit 1，旗标组合 usage error）；variadic 旗标吞位置
-    参数 → 定向 usage error + `--` 终止符；export 走
-    PathError 面（nudo:path-* + nudo:path-io）；
-    findProjectConfig 解析失败诊断 + 停步
-  - 求值引擎：注入表收集异常 fail-closed（绝不半张表）；
-    同名类碰撞 epoch 检测 + 回落观测；EvalCallRecord.threw
-    必填 + 桥接 fail-closed（threw 省略 → throwsAbs
-    unknown）；tryEvalCall 显式 isAbsVal 守卫
-  - LSP / 错误面：validateText 文档 version 门（陈旧
-    分析不发布）；诊断 / agent 错误 message 绝对路径
-    脱敏（家目录→~、根→.）；注入装配失败上屏挡 exit
-  - 观察面：standard-schema 缺键 / 显式 undefined 区分；
-    dts 投影可选参数名、fn rest TS 合法性
+- 2f9717b: repo-wide correctness batch (fix-10: 19 fixes + 3 design-defect fixes)
+
+  Security & correctness:
+  - type-expression AST whitelist blocks @nudo:case/@nudo:as RCE (P0)
+  - unified export/binding-name sanitization (reserved words / collisions)
+  - slot & export tables read via own-property, blocking Object.prototype members
+
+  Type system:
+  - tuple rest slot effective across leq / widen / runtime / schema / dts
+  - x++/x-- propagate term/pred/Φ constraints from the same source as +=/-=
+  - key-channel literals distinguish -0/0 (litKeyString)
+  - projection/format exits unified under ProjectionBudget: cycle & depth truncation observable
+
+  CLI gates & contracts:
+  - health --from path errors fold into pathErrors; ok↔exit single source
+  - migrate verify/health pass skips, judged same as nudo check
+  - malformed JSDoc directives no longer silently dropped / line-swallowed / host-throwing
+  - case-arg recursion depth cap 32 (DoS protection)
+
+  Service layer:
+  - cache-limit precedence explicit > env > project; env params take effect per call
+  - session LRUs aligned with BoundedLruMap (overwrite refreshes position; max=0 read miss)
+  - module-cache entries carry subtree content fingerprints; transitive invalidation cohesive (DESIGN-002)
+  - sidecar contract identity = export name, binding name aliasable; reserved-word / string exports emitted safely (DESIGN-003)
+  - @nudo:import alias lookup uses the original export name; miss reports a diagnostic
+
+  Parsing & diagnostics:
+  - eval diagnostics cover rest / default-value / named-expression declarations and computed-key references
+  - ambient sidecar lookup includes .nudo.mjs; suffix set single source of truth
+
+  S2/S5/S6 tracking batch (BUG-017–028):
+  - type inference: collectPredVars collects assumeFinite constraints; eqLit channel tagged (eq(x, lit(undefined)) projectable); non-finite bounds (NaN/±Infinity) not projected; fn rest non-array types promoted to (T)[]; optional param names keep `?`
+  - gates & CLI: check --fix preserves gate semantics (residual errors exit 1; flag combos are usage errors); variadic flags swallowing positional args → targeted usage error + `--` terminator; export on the PathError face (nudo:path-* + nudo:path-io); findProjectConfig parse-failure diagnostic + stop
+  - eval engine: injection-table collection exceptions fail-closed (never a half table); same-name class collision epoch detection + fallback observation; EvalCallRecord.threw required + bridge fail-closed (omitted threw → throwsAbs unknown); tryEvalCall explicit isAbsVal guard
+  - LSP / error face: validateText document version gate (stale analysis never published); diagnostic / agent error message absolute-path redaction (home→~, root→.); injection setup failure surfaces and blocks exit
+  - observation face: standard-schema missing-key vs explicit-undefined distinction; dts projection optional param names, fn rest TS validity
+
+  PR #80 review batches (merge 7e6051ae):
+  - own-property reads across sidecar import/export tables and the modules table; emit-identity dedup; quote-aware sidecar binding scan; check injection-failure gate (no fake-green --json exit, no degraded cache write); class-collision epoch scoped to the entry-call phase; LSP error redaction with real workspace roots; health --from requires explicit paths
 
 ### Patch Changes
 
@@ -1818,55 +1788,45 @@ slug: /releases-history
 
 ### Minor Changes
 
-- 2f9717b: 仓库级正确性批次（fix-10，19 项修复 + 3 项设计缺陷修复）
-  
-  安全与正确性：
-  - 类型表达式 AST 白名单，阻断 @nudo:case/@nudo:as RCE（P0）
-  - export/绑定名统一消毒（保留字/撞名）
-  - 槽位/导出表全部改自有属性读，挡 Object.prototype 成员
-  
-  类型系统：
-  - tuple rest 槽在 leq/widen/运行时/schema/dts 全链路生效
-  - x++/x-- 与 +=/-= 同源传播 term/pred/Φ 约束
-  - 键通道字面量区分 -0/0（litKeyString）
-  - 投影/格式出口统一 ProjectionBudget：环与超深截断可观测
-  
-  CLI 门禁与契约：
-  - health --from 路径错误并入 pathErrors，ok↔exit 单一来源
-  - migrate verify 与 health 传 skips，与 nudo check 判定同源
-  - 畸形 JSDoc 指令不再静默丢弃/吞行/抛宿主异常
-  - case 实参递归深度上限 32（DoS 防护）
-  
-  服务层：
-  - 缓存上限改为显式>env>project，env 形参每次生效
-  - 会话 LRU 与 BoundedLruMap 对齐（覆盖写刷新位序，max=0 读 miss）
-  - 模块缓存条目携带子树内容指纹，传递失效内聚（DESIGN-002）
-  - sidecar 契约身份=导出名、绑定名可别名，保留字/string 导出安全发射（DESIGN-003）
-  - @nudo:import 别名查导出表用原始名，miss 出诊断
-  
-  解析与诊断：
-  - eval 诊断补 rest/默认值/具名表达式声明与计算键引用
-  - ambient 侧车反查含 .nudo.mjs，后缀集合单一事实源
-  
-  S2/S5/S6 跟踪批次（BUG-017–028，主会话直修）：
-  - 类型推断：collectPredVars 收 assumeFinite 约束；eqLit
-    通道 tagged 化（eq(x, lit(undefined)) 可投影）；
-    非有限界（NaN/±Infinity）不投影；fn rest 非数组类型
-    提升为 (T)[]；可选参数名保留 `?`
-  - 门禁与 CLI：check --fix 保持门禁语义（残余 error
-    exit 1，旗标组合 usage error）；variadic 旗标吞位置
-    参数 → 定向 usage error + `--` 终止符；export 走
-    PathError 面（nudo:path-* + nudo:path-io）；
-    findProjectConfig 解析失败诊断 + 停步
-  - 求值引擎：注入表收集异常 fail-closed（绝不半张表）；
-    同名类碰撞 epoch 检测 + 回落观测；EvalCallRecord.threw
-    必填 + 桥接 fail-closed（threw 省略 → throwsAbs
-    unknown）；tryEvalCall 显式 isAbsVal 守卫
-  - LSP / 错误面：validateText 文档 version 门（陈旧
-    分析不发布）；诊断 / agent 错误 message 绝对路径
-    脱敏（家目录→~、根→.）；注入装配失败上屏挡 exit
-  - 观察面：standard-schema 缺键 / 显式 undefined 区分；
-    dts 投影可选参数名、fn rest TS 合法性
+- 2f9717b: repo-wide correctness batch (fix-10: 19 fixes + 3 design-defect fixes)
+
+  Security & correctness:
+  - type-expression AST whitelist blocks @nudo:case/@nudo:as RCE (P0)
+  - unified export/binding-name sanitization (reserved words / collisions)
+  - slot & export tables read via own-property, blocking Object.prototype members
+
+  Type system:
+  - tuple rest slot effective across leq / widen / runtime / schema / dts
+  - x++/x-- propagate term/pred/Φ constraints from the same source as +=/-=
+  - key-channel literals distinguish -0/0 (litKeyString)
+  - projection/format exits unified under ProjectionBudget: cycle & depth truncation observable
+
+  CLI gates & contracts:
+  - health --from path errors fold into pathErrors; ok↔exit single source
+  - migrate verify/health pass skips, judged same as nudo check
+  - malformed JSDoc directives no longer silently dropped / line-swallowed / host-throwing
+  - case-arg recursion depth cap 32 (DoS protection)
+
+  Service layer:
+  - cache-limit precedence explicit > env > project; env params take effect per call
+  - session LRUs aligned with BoundedLruMap (overwrite refreshes position; max=0 read miss)
+  - module-cache entries carry subtree content fingerprints; transitive invalidation cohesive (DESIGN-002)
+  - sidecar contract identity = export name, binding name aliasable; reserved-word / string exports emitted safely (DESIGN-003)
+  - @nudo:import alias lookup uses the original export name; miss reports a diagnostic
+
+  Parsing & diagnostics:
+  - eval diagnostics cover rest / default-value / named-expression declarations and computed-key references
+  - ambient sidecar lookup includes .nudo.mjs; suffix set single source of truth
+
+  S2/S5/S6 tracking batch (BUG-017–028):
+  - type inference: collectPredVars collects assumeFinite constraints; eqLit channel tagged (eq(x, lit(undefined)) projectable); non-finite bounds (NaN/±Infinity) not projected; fn rest non-array types promoted to (T)[]; optional param names keep `?`
+  - gates & CLI: check --fix preserves gate semantics (residual errors exit 1; flag combos are usage errors); variadic flags swallowing positional args → targeted usage error + `--` terminator; export on the PathError face (nudo:path-* + nudo:path-io); findProjectConfig parse-failure diagnostic + stop
+  - eval engine: injection-table collection exceptions fail-closed (never a half table); same-name class collision epoch detection + fallback observation; EvalCallRecord.threw required + bridge fail-closed (omitted threw → throwsAbs unknown); tryEvalCall explicit isAbsVal guard
+  - LSP / error face: validateText document version gate (stale analysis never published); diagnostic / agent error message absolute-path redaction (home→~, root→.); injection setup failure surfaces and blocks exit
+  - observation face: standard-schema missing-key vs explicit-undefined distinction; dts projection optional param names, fn rest TS validity
+
+  PR #80 review batches (merge 7e6051ae):
+  - own-property reads across sidecar import/export tables and the modules table; emit-identity dedup; quote-aware sidecar binding scan; check injection-failure gate (no fake-green --json exit, no degraded cache write); class-collision epoch scoped to the entry-call phase; LSP error redaction with real workspace roots; health --from requires explicit paths
 
 ### Patch Changes
 
@@ -2183,55 +2143,45 @@ slug: /releases-history
 
 ### Minor Changes
 
-- 2f9717b: 仓库级正确性批次（fix-10，19 项修复 + 3 项设计缺陷修复）
-  
-  安全与正确性：
-  - 类型表达式 AST 白名单，阻断 @nudo:case/@nudo:as RCE（P0）
-  - export/绑定名统一消毒（保留字/撞名）
-  - 槽位/导出表全部改自有属性读，挡 Object.prototype 成员
-  
-  类型系统：
-  - tuple rest 槽在 leq/widen/运行时/schema/dts 全链路生效
-  - x++/x-- 与 +=/-= 同源传播 term/pred/Φ 约束
-  - 键通道字面量区分 -0/0（litKeyString）
-  - 投影/格式出口统一 ProjectionBudget：环与超深截断可观测
-  
-  CLI 门禁与契约：
-  - health --from 路径错误并入 pathErrors，ok↔exit 单一来源
-  - migrate verify 与 health 传 skips，与 nudo check 判定同源
-  - 畸形 JSDoc 指令不再静默丢弃/吞行/抛宿主异常
-  - case 实参递归深度上限 32（DoS 防护）
-  
-  服务层：
-  - 缓存上限改为显式>env>project，env 形参每次生效
-  - 会话 LRU 与 BoundedLruMap 对齐（覆盖写刷新位序，max=0 读 miss）
-  - 模块缓存条目携带子树内容指纹，传递失效内聚（DESIGN-002）
-  - sidecar 契约身份=导出名、绑定名可别名，保留字/string 导出安全发射（DESIGN-003）
-  - @nudo:import 别名查导出表用原始名，miss 出诊断
-  
-  解析与诊断：
-  - eval 诊断补 rest/默认值/具名表达式声明与计算键引用
-  - ambient 侧车反查含 .nudo.mjs，后缀集合单一事实源
-  
-  S2/S5/S6 跟踪批次（BUG-017–028，主会话直修）：
-  - 类型推断：collectPredVars 收 assumeFinite 约束；eqLit
-    通道 tagged 化（eq(x, lit(undefined)) 可投影）；
-    非有限界（NaN/±Infinity）不投影；fn rest 非数组类型
-    提升为 (T)[]；可选参数名保留 `?`
-  - 门禁与 CLI：check --fix 保持门禁语义（残余 error
-    exit 1，旗标组合 usage error）；variadic 旗标吞位置
-    参数 → 定向 usage error + `--` 终止符；export 走
-    PathError 面（nudo:path-* + nudo:path-io）；
-    findProjectConfig 解析失败诊断 + 停步
-  - 求值引擎：注入表收集异常 fail-closed（绝不半张表）；
-    同名类碰撞 epoch 检测 + 回落观测；EvalCallRecord.threw
-    必填 + 桥接 fail-closed（threw 省略 → throwsAbs
-    unknown）；tryEvalCall 显式 isAbsVal 守卫
-  - LSP / 错误面：validateText 文档 version 门（陈旧
-    分析不发布）；诊断 / agent 错误 message 绝对路径
-    脱敏（家目录→~、根→.）；注入装配失败上屏挡 exit
-  - 观察面：standard-schema 缺键 / 显式 undefined 区分；
-    dts 投影可选参数名、fn rest TS 合法性
+- 2f9717b: repo-wide correctness batch (fix-10: 19 fixes + 3 design-defect fixes)
+
+  Security & correctness:
+  - type-expression AST whitelist blocks @nudo:case/@nudo:as RCE (P0)
+  - unified export/binding-name sanitization (reserved words / collisions)
+  - slot & export tables read via own-property, blocking Object.prototype members
+
+  Type system:
+  - tuple rest slot effective across leq / widen / runtime / schema / dts
+  - x++/x-- propagate term/pred/Φ constraints from the same source as +=/-=
+  - key-channel literals distinguish -0/0 (litKeyString)
+  - projection/format exits unified under ProjectionBudget: cycle & depth truncation observable
+
+  CLI gates & contracts:
+  - health --from path errors fold into pathErrors; ok↔exit single source
+  - migrate verify/health pass skips, judged same as nudo check
+  - malformed JSDoc directives no longer silently dropped / line-swallowed / host-throwing
+  - case-arg recursion depth cap 32 (DoS protection)
+
+  Service layer:
+  - cache-limit precedence explicit > env > project; env params take effect per call
+  - session LRUs aligned with BoundedLruMap (overwrite refreshes position; max=0 read miss)
+  - module-cache entries carry subtree content fingerprints; transitive invalidation cohesive (DESIGN-002)
+  - sidecar contract identity = export name, binding name aliasable; reserved-word / string exports emitted safely (DESIGN-003)
+  - @nudo:import alias lookup uses the original export name; miss reports a diagnostic
+
+  Parsing & diagnostics:
+  - eval diagnostics cover rest / default-value / named-expression declarations and computed-key references
+  - ambient sidecar lookup includes .nudo.mjs; suffix set single source of truth
+
+  S2/S5/S6 tracking batch (BUG-017–028):
+  - type inference: collectPredVars collects assumeFinite constraints; eqLit channel tagged (eq(x, lit(undefined)) projectable); non-finite bounds (NaN/±Infinity) not projected; fn rest non-array types promoted to (T)[]; optional param names keep `?`
+  - gates & CLI: check --fix preserves gate semantics (residual errors exit 1; flag combos are usage errors); variadic flags swallowing positional args → targeted usage error + `--` terminator; export on the PathError face (nudo:path-* + nudo:path-io); findProjectConfig parse-failure diagnostic + stop
+  - eval engine: injection-table collection exceptions fail-closed (never a half table); same-name class collision epoch detection + fallback observation; EvalCallRecord.threw required + bridge fail-closed (omitted threw → throwsAbs unknown); tryEvalCall explicit isAbsVal guard
+  - LSP / error face: validateText document version gate (stale analysis never published); diagnostic / agent error message absolute-path redaction (home→~, root→.); injection setup failure surfaces and blocks exit
+  - observation face: standard-schema missing-key vs explicit-undefined distinction; dts projection optional param names, fn rest TS validity
+
+  PR #80 review batches (merge 7e6051ae):
+  - own-property reads across sidecar import/export tables and the modules table; emit-identity dedup; quote-aware sidecar binding scan; check injection-failure gate (no fake-green --json exit, no degraded cache write); class-collision epoch scoped to the entry-call phase; LSP error redaction with real workspace roots; health --from requires explicit paths
 
 ### Patch Changes
 
@@ -3051,55 +3001,45 @@ slug: /releases-history
 
 ### Minor Changes
 
-- 2f9717b: 仓库级正确性批次（fix-10，19 项修复 + 3 项设计缺陷修复）
-  
-  安全与正确性：
-  - 类型表达式 AST 白名单，阻断 @nudo:case/@nudo:as RCE（P0）
-  - export/绑定名统一消毒（保留字/撞名）
-  - 槽位/导出表全部改自有属性读，挡 Object.prototype 成员
-  
-  类型系统：
-  - tuple rest 槽在 leq/widen/运行时/schema/dts 全链路生效
-  - x++/x-- 与 +=/-= 同源传播 term/pred/Φ 约束
-  - 键通道字面量区分 -0/0（litKeyString）
-  - 投影/格式出口统一 ProjectionBudget：环与超深截断可观测
-  
-  CLI 门禁与契约：
-  - health --from 路径错误并入 pathErrors，ok↔exit 单一来源
-  - migrate verify 与 health 传 skips，与 nudo check 判定同源
-  - 畸形 JSDoc 指令不再静默丢弃/吞行/抛宿主异常
-  - case 实参递归深度上限 32（DoS 防护）
-  
-  服务层：
-  - 缓存上限改为显式>env>project，env 形参每次生效
-  - 会话 LRU 与 BoundedLruMap 对齐（覆盖写刷新位序，max=0 读 miss）
-  - 模块缓存条目携带子树内容指纹，传递失效内聚（DESIGN-002）
-  - sidecar 契约身份=导出名、绑定名可别名，保留字/string 导出安全发射（DESIGN-003）
-  - @nudo:import 别名查导出表用原始名，miss 出诊断
-  
-  解析与诊断：
-  - eval 诊断补 rest/默认值/具名表达式声明与计算键引用
-  - ambient 侧车反查含 .nudo.mjs，后缀集合单一事实源
-  
-  S2/S5/S6 跟踪批次（BUG-017–028，主会话直修）：
-  - 类型推断：collectPredVars 收 assumeFinite 约束；eqLit
-    通道 tagged 化（eq(x, lit(undefined)) 可投影）；
-    非有限界（NaN/±Infinity）不投影；fn rest 非数组类型
-    提升为 (T)[]；可选参数名保留 `?`
-  - 门禁与 CLI：check --fix 保持门禁语义（残余 error
-    exit 1，旗标组合 usage error）；variadic 旗标吞位置
-    参数 → 定向 usage error + `--` 终止符；export 走
-    PathError 面（nudo:path-* + nudo:path-io）；
-    findProjectConfig 解析失败诊断 + 停步
-  - 求值引擎：注入表收集异常 fail-closed（绝不半张表）；
-    同名类碰撞 epoch 检测 + 回落观测；EvalCallRecord.threw
-    必填 + 桥接 fail-closed（threw 省略 → throwsAbs
-    unknown）；tryEvalCall 显式 isAbsVal 守卫
-  - LSP / 错误面：validateText 文档 version 门（陈旧
-    分析不发布）；诊断 / agent 错误 message 绝对路径
-    脱敏（家目录→~、根→.）；注入装配失败上屏挡 exit
-  - 观察面：standard-schema 缺键 / 显式 undefined 区分；
-    dts 投影可选参数名、fn rest TS 合法性
+- 2f9717b: repo-wide correctness batch (fix-10: 19 fixes + 3 design-defect fixes)
+
+  Security & correctness:
+  - type-expression AST whitelist blocks @nudo:case/@nudo:as RCE (P0)
+  - unified export/binding-name sanitization (reserved words / collisions)
+  - slot & export tables read via own-property, blocking Object.prototype members
+
+  Type system:
+  - tuple rest slot effective across leq / widen / runtime / schema / dts
+  - x++/x-- propagate term/pred/Φ constraints from the same source as +=/-=
+  - key-channel literals distinguish -0/0 (litKeyString)
+  - projection/format exits unified under ProjectionBudget: cycle & depth truncation observable
+
+  CLI gates & contracts:
+  - health --from path errors fold into pathErrors; ok↔exit single source
+  - migrate verify/health pass skips, judged same as nudo check
+  - malformed JSDoc directives no longer silently dropped / line-swallowed / host-throwing
+  - case-arg recursion depth cap 32 (DoS protection)
+
+  Service layer:
+  - cache-limit precedence explicit > env > project; env params take effect per call
+  - session LRUs aligned with BoundedLruMap (overwrite refreshes position; max=0 read miss)
+  - module-cache entries carry subtree content fingerprints; transitive invalidation cohesive (DESIGN-002)
+  - sidecar contract identity = export name, binding name aliasable; reserved-word / string exports emitted safely (DESIGN-003)
+  - @nudo:import alias lookup uses the original export name; miss reports a diagnostic
+
+  Parsing & diagnostics:
+  - eval diagnostics cover rest / default-value / named-expression declarations and computed-key references
+  - ambient sidecar lookup includes .nudo.mjs; suffix set single source of truth
+
+  S2/S5/S6 tracking batch (BUG-017–028):
+  - type inference: collectPredVars collects assumeFinite constraints; eqLit channel tagged (eq(x, lit(undefined)) projectable); non-finite bounds (NaN/±Infinity) not projected; fn rest non-array types promoted to (T)[]; optional param names keep `?`
+  - gates & CLI: check --fix preserves gate semantics (residual errors exit 1; flag combos are usage errors); variadic flags swallowing positional args → targeted usage error + `--` terminator; export on the PathError face (nudo:path-* + nudo:path-io); findProjectConfig parse-failure diagnostic + stop
+  - eval engine: injection-table collection exceptions fail-closed (never a half table); same-name class collision epoch detection + fallback observation; EvalCallRecord.threw required + bridge fail-closed (omitted threw → throwsAbs unknown); tryEvalCall explicit isAbsVal guard
+  - LSP / error face: validateText document version gate (stale analysis never published); diagnostic / agent error message absolute-path redaction (home→~, root→.); injection setup failure surfaces and blocks exit
+  - observation face: standard-schema missing-key vs explicit-undefined distinction; dts projection optional param names, fn rest TS validity
+
+  PR #80 review batches (merge 7e6051ae):
+  - own-property reads across sidecar import/export tables and the modules table; emit-identity dedup; quote-aware sidecar binding scan; check injection-failure gate (no fake-green --json exit, no degraded cache write); class-collision epoch scoped to the entry-call phase; LSP error redaction with real workspace roots; health --from requires explicit paths
 
 ### Patch Changes
 

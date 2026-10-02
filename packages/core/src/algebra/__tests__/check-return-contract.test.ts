@@ -527,7 +527,7 @@ const s = sumTo(10);
     );
     // 可能有 warning（unproven），但绝无 error
     expect(warns.length).toBeGreaterThanOrEqual(0);
-  });
+  }, 30000); // 递归契约检查在 CI 16-worker 并行（大量 nudojs 子进程测试）下实测 >5s；本地 ~1s。断言不变
 });
 
 describe("sum 源 × array 契约：逐成员分发（元组并 ⊑ array）", () => {
