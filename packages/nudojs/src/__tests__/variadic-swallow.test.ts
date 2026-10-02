@@ -64,7 +64,7 @@ describe("BUG-024: variadic 旗标吞噬位置参数", () => {
       expect(r.stderr).toContain(`\`nudo ${cmd}\` received no paths`);
       expect(r.stderr).toContain("fix:");
     }
-  });
+  }, 30000); // 3 个顺序 CLI 子进程；默认 5s 在 CI 并行负载下会超时（实测 6.3s）
 
   it("check with no args → plain usage error", () => {
     const r = runCli(["check"]);
