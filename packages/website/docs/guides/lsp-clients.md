@@ -47,7 +47,7 @@ Declared on `initialize` (see [@nudojs/lsp API](../api/lsp.md)):
 | Definition / References / Rename | standard LSP | Sidecar binding names included (A5) |
 | Document / workspace symbols | standard LSP | |
 | Signature help | `onSignatureHelp` | Triggers `(`, `,`; projects real `paramTypes` / return via `formatShape` (G7) |
-| Code actions (`quickfix`) | `onCodeAction` | Unreachable cleanup; contract/param fixes (A6) |
+| Code actions (`quickfix`) | `onCodeAction` | Unreachable cleanup; contract/param fixes (A6); action-map quickfixes (`[fix]` / `[silence]` / `[review]` / `[adjust]` / `[scaffold]`) |
 | Semantic tokens (full) | `languages.semanticTokens` | Legend includes `contract` / `generated` / `derived` interface modifiers (A7) |
 | Execute command | `nudo.*` | `selectCase`, `contract`, `contract.draft`, `contract.emit`, agent tools |
 | Custom requests | `nudo/…` | Same handlers as commands (E5); slash-form is the protocol contract |

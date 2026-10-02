@@ -47,7 +47,7 @@ Nudo 只交付**一个**语言服务器（`@nudojs/lsp`）。编辑器差异仅�
 | 跳转定义 / 引用 / 重命名 | 标准 LSP | 含侧车绑定名（A5） |
 | 文档 / 工作区符号 | 标准 LSP | |
 | Signature help | `onSignatureHelp` | 触发 `(`、`,`；投影真实 `paramTypes` / 返回（G7） |
-| Code actions（`quickfix`） | `onCodeAction` | 不可达代码清理；契约/参数修复（A6） |
+| Code actions（`quickfix`） | `onCodeAction` | 不可达代码清理；契约/参数修复（A6）；action-map quickfix（`[fix]` / `[silence]` / `[review]` / `[adjust]` / `[scaffold]`） |
 | Semantic tokens（full） | `languages.semanticTokens` | 图例含 `contract` / `generated` / `derived` interface modifier（A7） |
 | Execute command | `nudo.*` | `selectCase`、`contract`、`contract.draft`、`contract.emit`、agent 工具 |
 | Custom request | `nudo/…` | 与 command 同一 handler（E5）；协议契约用 slash 形式 |
