@@ -3,14 +3,15 @@
  * 从 index.ts 原样迁出，行为不变。
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import { resolve, relative } from "node:path";
+import { resolve, relative, dirname } from "node:path";
 import type { Command } from "commander";
 import {
   insertGeneratedCaseDirectives,
   unifiedDiff,
   type EmitResult,
 } from "@nudojs/service/emit";
-import { analyzeFileAsync, type CallRecord } from "@nudojs/service";
+import { analyzeFileAsync, getPathEnvLoadErrors, type CallRecord } from "@nudojs/service";
+import { ENV_UNRESOLVED_CODE } from "../check-json-map.ts";
 import { buildTestReport, formatTestReport } from "../run-test.ts";
 import {
   collectExternalRecords,
@@ -38,6 +39,8 @@ async function runTest(
     abs?: boolean;
     /** --json 面：路径错误并入 CaseJson（ok↔exit 同源的 test 面） */
     pathErrors?: PathError[];
+    /** env-unresolved 告警去重表（同 baseDir 多文件只报一次；批轮/watch 轮由调用方持有） */
+    envErrorSeen?: Set<string>;
   } = {},
 ): Promise<void> {
   const filePath = resolve(file);
@@ -92,6 +95,26 @@ async function runTest(
     const report = buildTestReport(displayPathOf(filePath), result);
     console.log(formatTestReport(report));
     if (report.failed > 0) process.exitCode = 1;
+  }
+
+  // path env 加载失败必须可见（issue #88 原始复现面）：与 check 同格式告警，
+  // 仅告警——不改退出码、不改 case 输出结构（--json 面走 stderr，stdout
+  // 保持机器契约）。preload 点在 analyzeFileAsync 内部（baseDir=dirname），
+  // 此处按同 baseDir 过滤；seen 表跨文件去重（同 baseDir 多文件只报一次）。
+  {
+    const seen = opts.envErrorSeen ?? new Set<string>();
+    const envLoadErrors = getPathEnvLoadErrors(dirname(filePath)).filter(
+      (e) => !seen.has(`${e.baseDir}\0${e.path}\0${e.error}`),
+    );
+    if (envLoadErrors.length > 0) {
+      const emit = opts.json ? console.error : console.log;
+      emit("");
+      emit("env warnings");
+      for (const e of envLoadErrors) {
+        seen.add(`${e.baseDir}\0${e.path}\0${e.error}`);
+        emit(`  [WARNING] path env failed to load: ${e.path} — ${e.error}  (${ENV_UNRESOLVED_CODE})`);
+      }
+    }
   }
 
   // diagnostics：分析错误上屏（不挡 test exit，除非无结果）
@@ -242,18 +265,22 @@ export function registerTestCommand(program: Command): void {
           freeze = { mode, dryRun: opts.dryRun === true, exitOnDiff: opts.exitOnDiff === true };
         }
 
+        // env-unresolved 告警去重表：单次批跑共享（同 baseDir 多文件只报
+        // 一次）；watch 每轮开跑前清空（console.clear 后告警需重印）
+        const envErrorSeen = new Set<string>();
         const runOne = async (t: string): Promise<void> => {
           await runTest(t, {
             ...(externalRecords ? { from: externalRecords } : {}),
             ...(freeze ? { freeze } : {}),
             json: opts.json,
             abs: opts.abs,
+            envErrorSeen,
             ...(opts.json && allPathErrors.length > 0 ? { pathErrors: allPathErrors } : {}),
           });
         };
 
         if (opts.watch) {
-          startWatch(paths, runOne, "test");
+          startWatch(paths, runOne, "test", () => envErrorSeen.clear());
           return;
         }
         for (const t of targets) await runOne(t);

@@ -23,6 +23,8 @@ import {
   interfaceConfig,
   checkConfig,
   collectSkipReturns,
+  collectEnvNames,
+  getPathEnvLoadErrors,
   filterDiagnosticsByLevel,
   diagnosticsLevelForFile,
   getSessionCacheLimits,
@@ -33,6 +35,7 @@ import {
   type DiagnosticSeverity as JsDiagSeverity,
   type ModuleGraphCache,
 } from "@nudojs/service";
+import { preloadPathEnvs } from "@nudojs/service/evaluator";
 
 export { filterDiagnosticsByLevel, diagnosticsLevelForFile };
 import { checkSource, pTrue, evictGeneralizeMemoForPaths, evictCheckSourceMemoForPaths, extractNudoImports, isNodeModulesPath, sidecarPathOf } from "@nudojs/core";
@@ -821,6 +824,43 @@ export function checkToLspDiagnostics(
 }
 
 /**
+ * path env 加载失败（import 失败或文件缺失）→ `nudo:env-unresolved` warning。
+ * 与 CLI check/test 同源：service `getPathEnvLoadErrors`，消息格式
+ * `path env failed to load: <path> — <error>`，从不影响其它诊断。
+ *
+ * live 瞬态：每轮 validate 现场收集、不随 analysisCache 缓存——分析缓存命中轮
+ * analyzeFileAsync 不再 preload，这里显式补一轮（幂等：ESM import 有模块缓存，
+ * 常态开销仅 statSync）。只报本轮 env 名单解析出的路径：env 项从配置移除后，
+ * 进程级错误表里的陈旧条目不得继续误报。
+ */
+async function envUnresolvedDiags(filePath: string, source: string): Promise<LspDiagnostic[]> {
+  let envNames: string[];
+  try {
+    envNames = collectEnvNames(filePath, source, true);
+  } catch {
+    return [];
+  }
+  if (envNames.length === 0) return [];
+  const baseDir = dirname(filePath);
+  try {
+    await preloadPathEnvs(envNames, baseDir);
+  } catch {
+    /* preload 自身抛出（stat 竞态等）不拖垮诊断发布 */
+  }
+  // preloadPathEnvs 记录的 path = resolvePath(baseDir, name)——同式过滤陈旧条目
+  const candidates = new Set(envNames.map((n) => resolvePath(baseDir, n)));
+  return getPathEnvLoadErrors(baseDir)
+    .filter((e) => candidates.has(e.path))
+    .map((e) => ({
+      severity: DiagnosticSeverity.Warning,
+      range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
+      message: `path env failed to load: ${e.path} — ${e.error}`,
+      source: "nudo-check",
+      code: "nudo:env-unresolved",
+    }));
+}
+
+/**
  * Analyze one document (async so path-based `@nudo:env` files preload),
  * publish diagnostics, refresh the analysis cache, and — when `propagate` —
  * revalidate open dependents of the changed file once. Propagation-triggered
@@ -945,15 +985,20 @@ export async function validateText(
     const level = diagnosticsLevelForFile(filePath);
     const evalJs = filterDiagnosticsByLevel(result.diagnostics, level);
     const evalDiags = evalJs.map((d) => toLspDiagnostic(d, uri));
+    // path env 加载失败/缺失：live 瞬态 warning（与 CLI check/test 同源），走
+    // check 通道口径（source=nudo-check）并按 analysis.diagnostics 档过滤
+    const envDiags = filterCheckLspByLevel(await envUnresolvedDiags(filePath, text), level);
     // 指令文法诊断可能同时出现在 check 通道（checkToLspDiagnostics 显式
     // extract）与 analyzer 通道（analyzeFileUncachedInner drain）——按
-    // code+message 去重，避免双报
-    const seenCheck = new Set(checkDiags.map((d) => `${d.code ?? ""}\0${d.message}`));
+    // code+message 去重，避免双报（env 告警并入同一去重键空间）
+    const seenCheck = new Set(
+      [...checkDiags, ...envDiags].map((d) => `${d.code ?? ""}\0${d.message}`),
+    );
     const dedupedEval = evalDiags.filter((d) => !seenCheck.has(`${d.code ?? ""}\0${d.message}`));
     // 发布前再确认 generation + 文档 version，避免 check 路径上的
     // await 竞态覆盖更新 push（BUG-021/S5-003）
     if (!stillCurrent()) return;
-    deps.sendDiagnostics({ uri, version, diagnostics: [...checkDiags, ...dedupedEval] });
+    deps.sendDiagnostics({ uri, version, diagnostics: [...checkDiags, ...envDiags, ...dedupedEval] });
 
     if (!propagate || !deps.getOpenDocumentByPath) return;
 

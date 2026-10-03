@@ -1,7 +1,23 @@
 /**
  * check 报告/JSON 映射（纯）：缓存重建、诊断码、issue 注入与 summary 聚合。
  */
-import type { CheckIssue, CheckJson, CheckReport, NudoSig } from "@nudojs/core";
+import {
+  formatCheckReport,
+  serializeCheckJson,
+  type CheckIssue,
+  type CheckJson,
+  type CheckReport,
+  type NudoSig,
+} from "@nudojs/core";
+
+/**
+ * 磁盘缓存私有的签名注记（additive；写盘加、读回消费后剥除，
+ * 不进 `--json` 契约面）：`ret` = miss 轮 formatCheckReport 渲染出的
+ * 返回段（formatShape 口径，无 `= term` / `where pred` / `#conf` 注记）。
+ * CheckJson.signatures 只存 formatAbs 全量串（含 term 注记），直接回填
+ * display 会让命中轮签名行多出 term 注记（miss/hit 两轮渲染不对称）。
+ */
+export type CachedCheckSig = CheckJson["signatures"][number] & { ret?: string };
 
 export function issueFromCachedJson(i: CheckJson["issues"][number]): CheckIssue {
   return {
@@ -17,14 +33,22 @@ export function issueFromCachedJson(i: CheckJson["issues"][number]): CheckIssue 
   };
 }
 
-export function signatureFromCachedJson(s: CheckJson["signatures"][number]): NudoSig {
+export function signatureFromCachedJson(s: CachedCheckSig): NudoSig {
+  // ret 存在（新缓存条目）：display 直接给 miss 轮渲染出的返回段，
+  // abs.shape 留空让 formatCheckReport 走 display 回退分支 → 命中轮
+  // 签名行与 miss 轮字节一致。display 本体是 formatAbs 全量串，
+  // 含 `= term` 注记，不能直接用（会多渲染 term 注记）。
+  // 无 ret（ret 落地前的旧缓存条目）：fake-any 占位回退（旧口径）。
+  const hasRet = s.ret !== undefined;
   return {
     name: s.name,
     params: s.params,
     ...(s.paramTypes ? { paramTypes: s.paramTypes } : {}),
     // CheckJson abs 是 formatAbs 字符串；重建时不要伪造成 unknown（§2）
-    abs: { shape: { k: "any" as const }, conf: s.conf as never },
-    display: s.display,
+    abs: (hasRet
+      ? { shape: undefined, conf: s.conf }
+      : { shape: { k: "any" }, conf: s.conf }) as never,
+    display: s.ret ?? s.display,
     detail: s.detail,
     conf: s.conf as never,
     ...(s.throws ? { throws: s.throws } : {}),
@@ -37,8 +61,75 @@ export function reportFromCachedJson(cached: CheckJson): CheckReport {
     file: cached.file,
     issues: cached.issues.map(issueFromCachedJson),
     ok: cached.ok,
-    signatures: cached.signatures.map(signatureFromCachedJson),
+    signatures: cached.signatures.map((s) => signatureFromCachedJson(s)),
     summary: { ...cached.summary },
+    // budget 截断上屏块随缓存往返（缺失时命中轮会静默吞掉 budget 段）
+    ...(cached.budget ? { budget: { ...cached.budget } } : {}),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 磁盘缓存签名保真：miss 轮渲染产物（ret）写盘 / 读回 / 剥除
+// ---------------------------------------------------------------------------
+
+/**
+ * miss 轮 formatCheckReport 渲染出的签名返回段（`=> ` 之后、`throws` 之前）。
+ * 从已渲染的签名行切已知前缀提取 —— 与 live 渲染同源零逻辑分叉，
+ * core 改渲染也不会漂移。行面不符（name/params 前缀对不上）→ undefined，
+ * 该签名不落 ret（读回走旧回退，宁可旧口径也不猜）。
+ */
+function signatureRetsFromReport(r: CheckReport): Array<string | undefined> {
+  if (r.signatures.length === 0) return [];
+  const lines = formatCheckReport(r, { verbose: false }).split("\n");
+  const start = lines.indexOf("signatures");
+  if (start < 0) return r.signatures.map(() => undefined);
+  let i = start + 1;
+  return r.signatures.map((s) => {
+    const paramStr =
+      s.paramTypes && s.paramTypes.length > 0
+        ? s.params.map((p, k) => `${p}: ${s.paramTypes![k] ?? "any"}`).join(", ")
+        : s.params.join(", ");
+    const prefix = `  ${s.name}(${paramStr}) => `;
+    const line = lines[i++];
+    if (typeof line !== "string" || !line.startsWith(prefix)) return undefined;
+    let ret = line.slice(prefix.length);
+    if (s.throws) {
+      const suffix = `  throws ${s.throws}`;
+      if (ret.endsWith(suffix)) ret = ret.slice(0, ret.length - suffix.length);
+    }
+    return ret;
+  });
+}
+
+/** 写盘值：serializeCheckJson + 缓存私有 `ret`（命中轮签名渲染保真） */
+export function serializeCheckJsonForCache(r: CheckReport): CheckJson {
+  const json = serializeCheckJson(r);
+  const rets = signatureRetsFromReport(r);
+  if (rets.every((x) => x === undefined)) return json;
+  return {
+    ...json,
+    signatures: json.signatures.map((s, k) => {
+      const ret = rets[k];
+      return ret === undefined ? s : ({ ...s, ret } satisfies CachedCheckSig);
+    }),
+  };
+}
+
+/**
+ * 剥除缓存私有 `ret`（读回消费完 reportFromCachedJson 后立即调用）：
+ * `--json` / jsonCollect / mergeJsonIssues 面必须是纯 CheckJson 契约，
+ * miss 轮与命中轮的机器面字节一致。无 ret 时原样返回（幂等）。
+ */
+export function stripCachedSigRets(j: CheckJson): CheckJson {
+  if (!j.signatures.some((s) => (s as CachedCheckSig).ret !== undefined)) return j;
+  return {
+    ...j,
+    signatures: j.signatures.map((s) => {
+      const { ret, ...rest } = s as CachedCheckSig;
+      return ret === undefined
+        ? s
+        : (rest as CheckJson["signatures"][number]);
+    }),
   };
 }
 
@@ -171,6 +262,35 @@ export function mergeJsonIssues<T extends JsonSummarized>(
       errors: json.summary.errors + errors,
       warnings: json.summary.warnings + warnings,
       infos: json.summary.infos + infos,
+    },
+  };
+}
+
+/** path env 加载失败告警码（live 瞬态：每轮 preloadPathEnvs 现场收集） */
+export const ENV_UNRESOLVED_CODE = "nudo:env-unresolved";
+
+type StripSummaryLike = {
+  issues: Array<{ severity?: string; code?: string }>;
+  summary: { errors: number; warnings: number; infos: number; functions: number };
+};
+
+/**
+ * 剔除 nudo:env-unresolved（live 瞬态告警，不持久化进磁盘缓存）：
+ * 写缓存前调用（瞬态不落盘），读回旧缓存条目时也调用（兼容已持久化
+ * 条目——命中轮 live merge 会重新注入，不剔除则重复；无需 bump ABI）。
+ * summary 计数按剩余 issues 的 severity 重算（与 checkSource 口径一致）。
+ */
+export function stripEnvUnresolvedIssues<T extends StripSummaryLike>(x: T): T {
+  if (!x.issues.some((i) => i.code === ENV_UNRESOLVED_CODE)) return x;
+  const issues = x.issues.filter((i) => i.code !== ENV_UNRESOLVED_CODE);
+  return {
+    ...x,
+    issues,
+    summary: {
+      ...x.summary,
+      errors: issues.filter((i) => i.severity === "error").length,
+      warnings: issues.filter((i) => i.severity === "warning").length,
+      infos: issues.filter((i) => i.severity === "info").length,
     },
   };
 }

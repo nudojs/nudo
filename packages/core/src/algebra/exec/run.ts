@@ -24,21 +24,14 @@ import { joinAbs } from "../objects.ts";
 import { type AbsModuleExports, namespaceAbsOf } from "../abs-modules.ts";
 import { formatAbs } from "../format.ts";
 import { transpile, transpileExpression, runtimeImportOf } from "./transpile.ts";
-import { HOST_INTRINSIC_SET } from "./transpile/intrinsics.ts";
+import { ENV_SHADOW_SKIP_GLOBALS, HOST_INTRINSIC_SET } from "./transpile/intrinsics.ts";
 import { NudoUnsupportedError } from "./unsupported.ts";
 import { drainClassCollisions, beginClassEpoch } from "./class-registry.ts";
 import { stripStaticExportDecls } from "./export-names.ts";
 import { errorTypeAbs, throwPayloadOf } from "./may-throw.ts";
 import { drainPromiseMicros } from "../builtins.ts";
 import { sourceHasCjsExports } from "../code-text.ts";
-import {
-  isNudoThrow,
-  isNudoReturn,
-  $isForkExit,
-  runWithLoopExits,
-  takeLoopExits,
-  takeThrowExits,
-} from "./runtime.ts";
+import { isNudoThrow, isNudoReturn, $isForkExit, runWithLoopExits, takeLoopExits, takeThrowExits, asAbsVal } from "./runtime.ts";
 import { $call } from "./call.ts";
 import {
   runWithCollectorScope,
@@ -444,8 +437,11 @@ const runBindings = new WeakMap<object, Map<string, unknown>>();
  * NaN 字面量身份，`0 === NaN` 从恒 false 退化成 boolean。
  *
  * 转译器已自行处理这三个名字，注入 const 无收益 → 跳过（等同未声明）。
+ *
+ * 宿主命名空间名（Math/JSON/…）若注入会遮蔽 namespaceNameOf 的对象身份路由
+ * → 区间透传/内建语义回退（issue #87）→ 一并跳过（ENV_SHADOW_SKIP_GLOBALS）。
  */
-const ENV_SHADOW_SKIP = HOST_INTRINSIC_SET;
+const ENV_SHADOW_SKIP = ENV_SHADOW_SKIP_GLOBALS;
 
 export function bindingsOf(run: Record<string, unknown>): Map<string, unknown> | undefined {
   return runBindings.get(run);
@@ -782,9 +778,14 @@ function callTranspiledExportFullInner(
   // 无同名自有导出时，裸读会把原型方法当导出调用（constructor 曾原样返回实参）
   const fn = Object.hasOwn(exports, name) ? exports[name] : undefined;
   if (typeof fn === "function") {
-    // D1：重跑/导入调用用副本——mutator 不得把入参态污染回调用方/记录
+    // D1：重跑/导入调用用副本——mutator 不得把入参态污染回调用方/记录。
+    // 宿主裸值（raw string/array/number…）先经 asAbsVal 收成 Abs（与 $fork
+    // 对缺参/宿主裸值同口径）：否则裸值流进代数算子（$not/$forOf/…）读
+    // .shape.k 直接 TypeError，被记成 internal 回落 + throws TypeError
+    // （症状 B：raw 数组实参 → `Cannot read properties of undefined
+    // (reading 'k')`）。raw 字面量收成 exact lit，具体实参照常精确求值。
     const callArgs = args.map((a) =>
-      a && typeof a === "object" && "shape" in (a as object) ? $copy(a) : a,
+      a && typeof a === "object" && "shape" in (a as object) ? $copy(a) : asAbsVal(a),
     );
     return runWithLoopExits(() => {
       try {
