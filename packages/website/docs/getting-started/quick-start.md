@@ -8,6 +8,16 @@ description: "Gate signatures and cases on a plain JavaScript file — npx nudoj
 
 Prefer the browser? Open the [Playground](/playground).
 
+:::tip 30 seconds, no repo yet
+Paste this against any existing JavaScript file (a util you already trust):
+
+```bash
+npx nudojs check /path/to/your/util.js
+```
+
+You should immediately see **signatures** (e.g. `scale(x: any) => number | string`), followed by either `(no issues)` or a list of L1/L2 findings. Entry params display as `any`, not `unknown` — unconstrained means unconstrained, not inference failure. The rest of this page explains what you just saw.
+:::
+
 > **Trust boundary.** Nudo analyzes by **executing** the target code (Abs semantics, in-process evaluation). Do not run `nudo check` / `nudo test` on untrusted code; in CI this is the same trust as running the project's tests.
 
 ## 1. Write plain JavaScript

@@ -33,7 +33,7 @@ scale(5)          => 6  #exact             // call site is runtime truth
 scale(0)          ⊭ x > 0                  // actual 0 · expected x > 0
 ```
 
-`nudo check` provides the same observation face on the command line (signatures print even on success). When obligations are needed, declare them as sidecar contracts (`*.nudo.js` / `@nudo:contract`); violations report **values and predicates**, not type names.
+`nudo check` provides the same observation face on the command line (signatures print even on success). When obligations are needed, declare them as sidecar contracts (`*.nudo.js` / `@nudo:contract`); violations report **values and predicates**, not type names. For per-call-site scenario debugging, `nudo test` is a separate case reporter, not the gate.
 
 ```text
 signatures

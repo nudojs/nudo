@@ -3,6 +3,7 @@ packages:
 allowBuilds:
   esbuild: true
   core-js: true
+  "@swc/core": true
 minimumReleaseAgeExclude:
   - '@vitest/coverage-v8@5.0.2'
   - '@vitest/mocker@5.0.2'

@@ -39,6 +39,9 @@ import {
   setPlaygroundSidecar,
 } from './engine';
 import { registerNudoJsLanguage } from './monaco-lang';
+// 自托管 monaco（jsdelivr CDN → 本地 chunk）；必须先于首个 <Editor> 挂载。
+// 本文件本身只在 /playground 路由 chunk 内被加载。
+import './monaco-local';
 
 const MonacoEditor = lazy(() => import('@monaco-editor/react'));
 

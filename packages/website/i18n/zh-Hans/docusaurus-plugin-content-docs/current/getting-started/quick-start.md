@@ -8,6 +8,16 @@ description: "在普通 JavaScript 上门禁签名与用例——npx nudojs chec
 
 更想在浏览器里试？打开 [Playground](/playground)。
 
+:::tip 30 秒，不开仓库
+直接对任何一份**你信任的** JavaScript 文件粘贴：
+
+```bash
+npx nudojs check /path/to/your/util.js
+```
+
+应立刻看到**签名**（如 `scale(x: any) => number | string`)，然后要么 `(no issues)`，要么一行 L1/L2 发现。入口参数显示为 `any` 而不是 `unknown`——未约束就是未约束，不是推断失败。后文逐项解释你刚看到的东西。
+:::
+
 > **信任边界。** Nudo 通过**执行**目标代码来分析（Abs 语义，进程内求值）。不要对不可信代码运行 `nudo check` / `nudo test`；在 CI 里这与跑项目测试是同一信任级别。
 
 ## 1. 写普通 JavaScript

@@ -26,7 +26,7 @@ code --install-extension nudo-vscode.vsix
 
 打开 JavaScript 文件时扩展会激活。它使用 `@nudojs/lsp` 包运行 Language Server Protocol（LSP）服务器，提供所有编辑器功能。
 
-**文件检测**：语言服务器分析 `.js`、`.ts` 与 `.mjs` 文件。出厂默认 `nudo.analysis.mode = "exports"`（含 export / 侧车 / 指令）；可设 `"all"` 或 `"directives"`。契约写在 `*.nudo.js` 侧车与源内 `@nudo:contract`；`@nudo:case` 是调试 / 可选 `nudo test` 子层。完整语法见[指令参考](../concepts/directives.md)。跨编辑器能力对比：[LSP 客户端矩阵](./lsp-clients.md)。
+**文件检测**：语言服务器分析 `.js`、`.ts` 与 `.mjs` 文件。出厂默认 `nudo.analysis.mode = "exports"`（export / 侧车 / 指令）；模式语义见[与 TypeScript 共存](./coexistence.md#何时用-modedirectives-vs-modeexports)。契约写在 `*.nudo.js` 侧车与源内 `@nudo:contract`；`@nudo:case` 是调试 / 可选 `nudo test` 子层。完整语法见[指令参考](../concepts/directives.md)。跨编辑器能力对比：[LSP 客户端矩阵](./lsp-clients.md)。
 
 **激活 vs 分析门**：`activationEvents`（`onLanguage:javascript` / `onLanguage:typescript`）只负责*启动*客户端。缓冲区是否*被分析*由服务端 `shouldAnalyzeFile` 门决定（目标路径 + `nudo.analysis.mode`）。JSX/tsx 可激活扩展，但不是 Nudo 分析目标。
 
@@ -39,6 +39,14 @@ code --install-extension nudo-vscode.vsix
 ### 悬停类型
 
 将鼠标悬停在表达式上可查看其推断类型。扩展通过 `getTypeAtPosition` 计算光标处的类型，并在悬停工具提示中显示。
+
+### 活动 Case 装饰（LSP-G1）
+
+通过 CodeLens 选中某个 `@nudo:case` 会高亮**整个函数体**加上该 case 注释行（不只是注释）。服务端签名帮助也会投影真实的 `paramTypes` / 返回 shape。
+
+### 与 tsserver 共存（LSP-G4）
+
+命令面板 → **Nudo: Apply coexistence settings (vs tsserver)** 会在确认后（绝不静默）向工作区写入 `javascript.validate.enable=false`。完整配方：[与 TypeScript 共存](./coexistence.md)。
 
 ```javascript verify
 /**
