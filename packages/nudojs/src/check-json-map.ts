@@ -175,6 +175,35 @@ export function mergeJsonIssues<T extends JsonSummarized>(
   };
 }
 
+/** path env 加载失败告警码（live 瞬态：每轮 preloadPathEnvs 现场收集） */
+export const ENV_UNRESOLVED_CODE = "nudo:env-unresolved";
+
+type StripSummaryLike = {
+  issues: Array<{ severity?: string; code?: string }>;
+  summary: { errors: number; warnings: number; infos: number; functions: number };
+};
+
+/**
+ * 剔除 nudo:env-unresolved（live 瞬态告警，不持久化进磁盘缓存）：
+ * 写缓存前调用（瞬态不落盘），读回旧缓存条目时也调用（兼容已持久化
+ * 条目——命中轮 live merge 会重新注入，不剔除则重复；无需 bump ABI）。
+ * summary 计数按剩余 issues 的 severity 重算（与 checkSource 口径一致）。
+ */
+export function stripEnvUnresolvedIssues<T extends StripSummaryLike>(x: T): T {
+  if (!x.issues.some((i) => i.code === ENV_UNRESOLVED_CODE)) return x;
+  const issues = x.issues.filter((i) => i.code !== ENV_UNRESOLVED_CODE);
+  return {
+    ...x,
+    issues,
+    summary: {
+      ...x.summary,
+      errors: issues.filter((i) => i.severity === "error").length,
+      warnings: issues.filter((i) => i.severity === "warning").length,
+      infos: issues.filter((i) => i.severity === "info").length,
+    },
+  };
+}
+
 type PathErrorLike = {
   path: string;
   code: string;

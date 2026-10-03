@@ -376,6 +376,29 @@ export function collectLexicalDeclNames(node: unknown, acc: Set<string>): void {
 }
 
 /**
+ * 循环 pack/unpack 剔除名单：只收循环体**顶层**语句的词法声明名
+ * （let/const/class/function；var 是函数作用域不收）。
+ * 体顶层声明对整个循环体 shadow 外层绑定，而 pack/unpack 闭包发射在体
+ * 作用域之外——引用的是外层绑定，外层无绑定则 ReferenceError（#91：
+ * 正则状态重绑 `re = $reStateCall(re, …)` 使声明名进 assigned）——必须剔除。
+ * 嵌套块/嵌套函数体内的声明只 shadow 内层作用域，对 unpack 的外层绑定
+ * 赋值是合法 JS shadowing，不得剔除（否则跨迭代状态丢失 → 非健全精确）。
+ * body 非块（单语句体）→ 空集：原生语法禁止单语句体的词法声明。
+ */
+export function collectLoopBodyTopLevelDeclNames(body: unknown, acc: Set<string>): void {
+  const n = body as { type?: string; body?: unknown } | null | undefined;
+  if (!n || n.type !== "BlockStatement" || !Array.isArray(n.body)) return;
+  for (const s of n.body as unknown[]) {
+    const stmt = s as { type?: string; kind?: string; id?: unknown; declarations?: Array<{ id?: unknown }> };
+    if (stmt.type === "VariableDeclaration" && stmt.kind !== "var") {
+      for (const d of stmt.declarations ?? []) collectPatternNames(d.id, acc);
+    } else if (stmt.type === "FunctionDeclaration" || stmt.type === "ClassDeclaration") {
+      collectPatternNames(stmt.id, acc);
+    }
+  }
+}
+
+/**
  * 计算语句列表层的可见 const 绑定名：
  * childConsts = (parentConsts − 本层 let/var 遮蔽) ∪ 本层 const。
  * 不进入嵌套块/函数体（那些作用域各自计算）。

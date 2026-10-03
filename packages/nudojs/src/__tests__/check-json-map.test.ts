@@ -3,16 +3,19 @@
  */
 import { describe, it, expect } from "vitest";
 import type { CheckIssue, CheckJson, CheckReport } from "@nudojs/core";
+import { serializeCheckJson } from "@nudojs/core";
 import {
   docsDiagnosticCodes,
   domainIssuesFromDiagnostics,
   dualEntryIssue,
+  ENV_UNRESOLVED_CODE,
   issueFromCachedJson,
   mergeCheckIssues,
   mergeJsonIssues,
   mockFromErrorIssues,
   reportFromCachedJson,
   signatureFromCachedJson,
+  stripEnvUnresolvedIssues,
   type DomainDiagnosticLike,
 } from "../check-json-map.ts";
 
@@ -347,5 +350,91 @@ describe("mergeJsonIssues", () => {
     ]);
     expect(out.ok).toBe(true);
     expect(out.summary.errors).toBe(1);
+  });
+});
+
+describe("stripEnvUnresolvedIssues", () => {
+  const envIssue: CheckIssue = {
+    severity: "warning",
+    code: ENV_UNRESOLVED_CODE,
+    message: "path env failed to load: ./env.mjs — boom",
+  };
+
+  it("removes env-unresolved entries and recomputes summary from remaining issues", () => {
+    const r = stripEnvUnresolvedIssues(
+      reportOf([
+        { severity: "error", code: "nudo:constraint-violated", message: "e" },
+        envIssue,
+        envIssue,
+      ]),
+    );
+    expect(r.issues).toHaveLength(1);
+    expect(r.issues[0]!.code).toBe("nudo:constraint-violated");
+    expect(r.summary).toEqual({ errors: 1, warnings: 0, infos: 0, functions: 2 });
+  });
+
+  it("no env-unresolved → unchanged (identity)", () => {
+    const src = reportOf([{ severity: "warning", code: "nudo:other", message: "m" }]);
+    expect(stripEnvUnresolvedIssues(src)).toBe(src);
+  });
+
+  it("works on the CheckJson face", () => {
+    const stale: CheckJson = {
+      version: 1,
+      file: "a.js",
+      ok: true,
+      summary: { errors: 0, warnings: 1, infos: 0, functions: 2 },
+      signatures: [],
+      issues: [envIssue],
+    };
+    const out = stripEnvUnresolvedIssues(stale);
+    expect(out.issues).toHaveLength(0);
+    expect(out.summary).toEqual({ errors: 0, warnings: 0, infos: 0, functions: 2 });
+  });
+});
+
+describe("env-unresolved disk-cache round trip", () => {
+  const envIssue: CheckIssue = {
+    severity: "warning",
+    code: ENV_UNRESOLVED_CODE,
+    message: "path env failed to load: ./env.mjs — boom",
+  };
+
+  it("write path strips the transient issue; cache hit re-merges exactly one (report + json faces)", () => {
+    // 首跑：live 收集的 env-unresolved 已 merge 进报告
+    const fresh = mergeCheckIssues(reportOf([]), [envIssue]);
+    expect(fresh.issues).toHaveLength(1);
+
+    // 写缓存前剔除瞬态条目（不持久化）
+    const cached = serializeCheckJson(stripEnvUnresolvedIssues(fresh));
+    expect(cached.issues.filter((i) => i.code === ENV_UNRESOLVED_CODE)).toHaveLength(0);
+    expect(cached.summary.warnings).toBe(0);
+
+    // 命中轮：读回（含旧缓存兼容剔除）→ live merge 同一条
+    const readBack = stripEnvUnresolvedIssues(cached);
+    const report = mergeCheckIssues(reportFromCachedJson(readBack), [envIssue]);
+    const jsonFace = mergeJsonIssues(readBack, [envIssue]);
+    expect(report.issues.filter((i) => i.code === ENV_UNRESOLVED_CODE)).toHaveLength(1);
+    expect(report.summary.warnings).toBe(1);
+    expect(jsonFace.issues.filter((i) => i.code === ENV_UNRESOLVED_CODE)).toHaveLength(1);
+    expect(jsonFace.summary.warnings).toBe(1);
+  });
+
+  it("stale cache entry (pre-fix: persisted env-unresolved) re-merges without duplication", () => {
+    // 修复前已写入磁盘的缓存条目含 env-unresolved（无 ABI bump，读回时剔除）
+    const stale: CheckJson = {
+      version: 1,
+      file: "a.js",
+      ok: true,
+      summary: { errors: 0, warnings: 1, infos: 0, functions: 2 },
+      signatures: [],
+      issues: [envIssue],
+    };
+    const report = mergeCheckIssues(
+      reportFromCachedJson(stripEnvUnresolvedIssues(stale)),
+      [envIssue],
+    );
+    expect(report.issues.filter((i) => i.code === ENV_UNRESOLVED_CODE)).toHaveLength(1);
+    expect(report.summary.warnings).toBe(1);
   });
 });

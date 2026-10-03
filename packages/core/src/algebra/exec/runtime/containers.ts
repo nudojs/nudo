@@ -1088,18 +1088,29 @@ export function $forOf(
 /**
  * 命名空间身份表：transpile 后 `Math.max(0, x)` 的接收者是宿主 JS 全局对象
  * （非 Abs）。按对象身份识别命名空间，路由到 Abs builtin 表。
+ *
+ * 表内名字与 transpile/intrinsics.ts 的 ENV_SHADOW_SKIP_GLOBALS（去
+ * HOST_INTRINSIC_NAMES 后）1:1 手工同步：路由名必须 env-skip（否则注入遮蔽
+ * 身份路由，issue #87），skip 名必须有路由收益（否则用户代码退化）。
+ * parity 由 __tests__/env-shadow-parity.test.ts 钉住。
  */
+export const NAMESPACE_GLOBALS: ReadonlyArray<readonly [string, unknown]> = [
+  ["Math", Math],
+  ["Number", Number],
+  ["JSON", JSON],
+  ["Object", Object],
+  ["Array", Array],
+  ["String", String],
+  ["Date", Date],
+  ["Promise", Promise],
+  ["BigInt", BigInt],
+];
+
 export function namespaceNameOf(v: unknown): string | undefined {
   if (typeof v !== "object" && typeof v !== "function") return undefined;
-  if (v === Math) return "Math";
-  if (v === Number) return "Number";
-  if (v === JSON) return "JSON";
-  if (v === Object) return "Object";
-  if (v === Array) return "Array";
-  if (v === String) return "String";
-  if (v === Date) return "Date";
-  if (v === Promise) return "Promise";
-  if (v === BigInt) return "BigInt";
+  for (const [name, host] of NAMESPACE_GLOBALS) {
+    if (v === host) return name;
+  }
   return undefined;
 }
 

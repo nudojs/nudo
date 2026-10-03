@@ -323,7 +323,11 @@ Context: [Contracts](../concepts/directives.md#nudo--constraint-templates) · [C
 path env failed to load: ./nudo-env.mjs — Cannot find package '@nudojs/env'
 ```
 
-A **path-type** env entry (`package.json#nudo.env` path item, or `/// @nudo:env <path>`) failed to import — either the direct `import()` or the bare-specifier rewrite fallback failed. **Warning** — the env falls back to "env off" semantics for that entry, so CI behavior can diverge from `nudo test` / LSP if it is treated as benign. Fix the import specifiers inside the env file, make sure `@nudojs/env` (and `@nudojs/core`) are resolvable from the project, or drop the entry.
+A **path-type** env entry (`package.json#nudo.env` path item, or `/// @nudo:env <path>`) failed to import — either the direct `import()` or the bare-specifier rewrite fallback failed. **Warning** — the env falls back to "env off" semantics for that entry, so the analysis silently loses those bindings (a run where the env loads can infer more); do not treat the warning as benign.
+
+**Emitted by:** the CLI — `nudo check` (issues section) and `nudo test` (env warnings section, identical line format; with `--json` the warning goes to stderr so stdout stays a single JSON document). The LSP does not emit this diagnostic yet (limitation). It never gates the exit code.
+
+**Fix:** check that the `package.json#nudo.env` path (or `/// @nudo:env <path>`) points at the intended file and that its imports resolve — fix the import specifiers inside the env file, make sure `@nudojs/env` (and `@nudojs/core`) are resolvable from the project, or drop the entry.
 
 Context: [Env & harvest](../guides/env-harvest.md)
 

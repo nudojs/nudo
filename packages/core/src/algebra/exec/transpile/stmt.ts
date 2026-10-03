@@ -14,7 +14,7 @@ import {
   collectFreeAssignedNames,
   collectForkBindingNames,
   collectAssignedIds,
-  collectLexicalDeclNames,
+  collectLoopBodyTopLevelDeclNames,
   collectArrMutatorReceivers,
   staticKeyOf,
   symbolKeyOf,
@@ -606,7 +606,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         collectAssignedIds(stmt.update, assigned);
         collectArrMutatorReceivers(stmt.body, assigned);
         const bodyLocalDecls = new Set<string>();
-        collectLexicalDeclNames(stmt.body, bodyLocalDecls);
+        collectLoopBodyTopLevelDeclNames(stmt.body, bodyLocalDecls);
         const names = [...assigned].filter((n) => !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n));
         const packSrc =
           names.length === 0
@@ -675,7 +675,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       collectAssignedIds(stmt.update, assigned);
       collectArrMutatorReceivers(stmt.body, assigned);
       const bodyLocalDecls = new Set<string>();
-      collectLexicalDeclNames(stmt.body, bodyLocalDecls);
+      collectLoopBodyTopLevelDeclNames(stmt.body, bodyLocalDecls);
       const names = [...assigned].filter((n) => n !== initName && !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n));
       const packSrc =
         names.length === 0
@@ -1068,7 +1068,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       collectAssignedIds(stmt.body, assigned);
       collectArrMutatorReceivers(stmt.body, assigned);
       const bodyLocalDecls = new Set<string>();
-      collectLexicalDeclNames(stmt.body, bodyLocalDecls);
+      collectLoopBodyTopLevelDeclNames(stmt.body, bodyLocalDecls);
       const names = [...assigned].filter((n) => n !== bindName && !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n));
       const loopOpts = opts.loopLabel ? `label: ${JSON.stringify(opts.loopLabel)}` : "";
       const optsSrc =
@@ -1101,8 +1101,8 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       collectAssignedIds(stmt.body, assigned);
       collectAssignedIds(stmt.test, assigned);
       const bodyLocalDecls = new Set<string>();
-        collectLexicalDeclNames(stmt.body, bodyLocalDecls);
-        const names = [...assigned].filter((n) => !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n));
+      collectLoopBodyTopLevelDeclNames(stmt.body, bodyLocalDecls);
+      const names = [...assigned].filter((n) => !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n));
       const loopOpts = opts.loopLabel ? `label: ${JSON.stringify(opts.loopLabel)}` : "";
       if (names.length === 0) {
         return [
@@ -1139,7 +1139,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       collectAssignedIds(stmt.test, assigned);
       collectArrMutatorReceivers(stmt.body, assigned);
       const bodyLocalDecls = new Set<string>();
-      collectLexicalDeclNames(stmt.body, bodyLocalDecls);
+      collectLoopBodyTopLevelDeclNames(stmt.body, bodyLocalDecls);
       const names = [...assigned].filter((n) => !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n));
       const packSrc =
         names.length === 0

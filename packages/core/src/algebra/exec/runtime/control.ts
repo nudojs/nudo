@@ -481,7 +481,12 @@ export function $whileSeq(
   applyExitJoin();
 }
 
-// $switch（fork 臂隔离）
+/**
+ * switch：具体 disc 选中匹配 case；抽象 disc 并所有分支。
+ * 抽象路径与 $fork 同构：集合 side-table 按臂 overlay，共享 body 只跑一次；
+ * 臂内 NudoReturn/NudoThrow 不冒泡污染兄弟臂。
+ * **无 default 时必须隐式 fall-through 臂（undef）**，否则无匹配路径被丢掉（P0-2）。
+ */
 export function $switch(
   disc: Abs,
   cases: Array<{ test: Abs; run: () => Abs }>,

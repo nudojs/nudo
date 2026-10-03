@@ -88,10 +88,12 @@ import {
   domainIssuesFromDiagnostics,
   dualEntryIssue,
   attachPathErrors,
+  ENV_UNRESOLVED_CODE,
   mergeCheckIssues,
   mergeJsonIssues,
   mockFromErrorIssues,
   reportFromCachedJson,
+  stripEnvUnresolvedIssues,
 } from "../check-json-map.ts";
 import {
   shouldComputeCacheKey,
@@ -252,9 +254,12 @@ async function loadCheckCache(
   }
   // path 型 env（nudo.env / /// @nudo:env <path>）在 check 门禁下必须
   // 与 test/LSP 同口径 preload——否则自定义 env 静默退化 env-关（issue #89）
-  await preloadPathEnvs(allEnvNames, dirname(filePath));
-  // path env 文件内容纳入磁盘缓存指纹（mtime→content sha 变更即 cache miss）
-  const envDepContents = getPathEnvDepContents();
+  const envBaseDir = dirname(filePath);
+  await preloadPathEnvs(allEnvNames, envBaseDir);
+  // path env 文件内容纳入磁盘缓存指纹（mtime→content sha 变更即 cache miss）；
+  // 按本文件 preload 目录过滤——批量 check 时其它项目的 env 内容折进
+  // 缓存键会造成误 miss（进程级注册表无归属，见 getPathEnvDepContents）
+  const envDepContents = getPathEnvDepContents(envBaseDir);
   const depContentsForKey = [...(dep.depContents ?? []), ...envDepContents];
   const cacheKey = shouldComputeCacheKey({
     useDisk,
@@ -480,7 +485,9 @@ async function emitCheckReport(
   // 回写会让下次 check 命中缓存整体跳过注入装配 → 静默转绿
   if (cache.useDisk && cache.cacheKey && !cache.cached && !opts.abs && !injectionSetupFailed) {
     try {
-      cache.disk.set(cache.cacheKey, serializeCheckJson(report));
+      // env-unresolved 是 live 瞬态（每轮现场收集），不持久化——
+      // 否则命中轮 live merge 再追加会重复告警
+      cache.disk.set(cache.cacheKey, serializeCheckJson(stripEnvUnresolvedIssues(report)));
     } catch {
       /* optional: disk cache write failed — check result still valid */
     }
@@ -507,6 +514,9 @@ async function runCheck(file: string, opts: RunCheckOptions = {}): Promise<void>
   // 注入装配失败（BUG-023）：降级分析仍跑，但门禁必须红且缓存不回写
   let injectionSetupFailed = false;
   if (cache.cachedJson) {
+    // env-unresolved 是 live 瞬态：旧缓存可能已持久化该条目（命中轮 live
+    // merge 会再追加 → 重复告警），读回时剔除，由下方 live merge 单一来源注入
+    cache.cachedJson = stripEnvUnresolvedIssues(cache.cachedJson);
     report = reportFromCachedJson(cache.cachedJson);
   } else {
     // D1: 指令文法诊断（nudo:directive-syntax）显式通道——buildCheckInjection
@@ -555,17 +565,22 @@ async function runCheck(file: string, opts: RunCheckOptions = {}): Promise<void>
     report = mergeCheckIssues(report, mockFromErrorIssues(mockFromErrors));
   }
 
-  // path env 加载失败必须可见（issue #88）：warning，不让 silent 降级为 env-关
-  const envLoadErrors = getPathEnvLoadErrors();
+  // path env 加载失败必须可见（issue #88）：warning，不让 silent 降级为 env-关。
+  // live 瞬态：每轮现场注入（report + 命中轮的 cachedJson——--json 面缓存
+  // 命中走 cachedJson 而非 report 序列化，不同口径注入会首跑/命中不一致）。
+  // 按本文件 preload 目录过滤：批量 check 时其它项目（如 R1）的 env 加载
+  // 失败不得泄进本项目（R2）文件报告
+  const envLoadErrors = getPathEnvLoadErrors(dirname(filePath));
   if (envLoadErrors.length > 0) {
-    report = mergeCheckIssues(
-      report,
-      envLoadErrors.map((e) => ({
-        severity: "warning" as const,
-        code: "nudo:env-unresolved",
-        message: `path env failed to load: ${e.path} — ${e.error}`,
-      })),
-    );
+    const envIssues = envLoadErrors.map((e) => ({
+      severity: "warning" as const,
+      code: ENV_UNRESOLVED_CODE,
+      message: `path env failed to load: ${e.path} — ${e.error}`,
+    }));
+    report = mergeCheckIssues(report, envIssues);
+    if (cache.cachedJson) {
+      cache.cachedJson = mergeJsonIssues(cache.cachedJson, envIssues);
+    }
   }
 
   if (opts.from && opts.from.length > 0) {
