@@ -31,14 +31,7 @@ import { stripStaticExportDecls } from "./export-names.ts";
 import { errorTypeAbs, throwPayloadOf } from "./may-throw.ts";
 import { drainPromiseMicros } from "../builtins.ts";
 import { sourceHasCjsExports } from "../code-text.ts";
-import {
-  isNudoThrow,
-  isNudoReturn,
-  $isForkExit,
-  runWithLoopExits,
-  takeLoopExits,
-  takeThrowExits,
-} from "./runtime.ts";
+import { isNudoThrow, isNudoReturn, $isForkExit, runWithLoopExits, takeLoopExits, takeThrowExits, asAbsVal } from "./runtime.ts";
 import { $call } from "./call.ts";
 import {
   runWithCollectorScope,
@@ -785,9 +778,14 @@ function callTranspiledExportFullInner(
   // 无同名自有导出时，裸读会把原型方法当导出调用（constructor 曾原样返回实参）
   const fn = Object.hasOwn(exports, name) ? exports[name] : undefined;
   if (typeof fn === "function") {
-    // D1：重跑/导入调用用副本——mutator 不得把入参态污染回调用方/记录
+    // D1：重跑/导入调用用副本——mutator 不得把入参态污染回调用方/记录。
+    // 宿主裸值（raw string/array/number…）先经 asAbsVal 收成 Abs（与 $fork
+    // 对缺参/宿主裸值同口径）：否则裸值流进代数算子（$not/$forOf/…）读
+    // .shape.k 直接 TypeError，被记成 internal 回落 + throws TypeError
+    // （症状 B：raw 数组实参 → `Cannot read properties of undefined
+    // (reading 'k')`）。raw 字面量收成 exact lit，具体实参照常精确求值。
     const callArgs = args.map((a) =>
-      a && typeof a === "object" && "shape" in (a as object) ? $copy(a) : a,
+      a && typeof a === "object" && "shape" in (a as object) ? $copy(a) : asAbsVal(a),
     );
     return runWithLoopExits(() => {
       try {

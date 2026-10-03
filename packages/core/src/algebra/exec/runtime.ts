@@ -34,6 +34,7 @@ export {
   asAbsVal,
   callAtFunctionBoundary,
   clearStaleTermPred,
+  confPartial,
   currentExecPhi,
   isDefinitelyFalse,
   isDefinitelyTrue,
@@ -104,6 +105,8 @@ export {
   $while,
   $whileSeq,
   DEFAULT_MAX_LOOP_ITERS,
+  MAX_CONCRETE_LOOP_ITERS,
+  LOOP_TRUNCATION_LABEL,
 } from "./runtime/control.ts";
 export {
   $arguments,

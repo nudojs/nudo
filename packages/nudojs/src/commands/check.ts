@@ -93,6 +93,8 @@ import {
   mergeJsonIssues,
   mockFromErrorIssues,
   reportFromCachedJson,
+  serializeCheckJsonForCache,
+  stripCachedSigRets,
   stripEnvUnresolvedIssues,
 } from "../check-json-map.ts";
 import {
@@ -487,7 +489,9 @@ async function emitCheckReport(
     try {
       // env-unresolved 是 live 瞬态（每轮现场收集），不持久化——
       // 否则命中轮 live merge 再追加会重复告警
-      cache.disk.set(cache.cacheKey, serializeCheckJson(stripEnvUnresolvedIssues(report)));
+      // serializeCheckJsonForCache：签名附带缓存私有 ret（miss 轮渲染出的
+      // 返回段）——命中轮 reportFromCachedJson 消费它保持签名行字节一致
+      cache.disk.set(cache.cacheKey, serializeCheckJsonForCache(stripEnvUnresolvedIssues(report)));
     } catch {
       /* optional: disk cache write failed — check result still valid */
     }
@@ -518,6 +522,9 @@ async function runCheck(file: string, opts: RunCheckOptions = {}): Promise<void>
     // merge 会再追加 → 重复告警），读回时剔除，由下方 live merge 单一来源注入
     cache.cachedJson = stripEnvUnresolvedIssues(cache.cachedJson);
     report = reportFromCachedJson(cache.cachedJson);
+    // 缓存私有 ret 已被上面消费：--json / jsonCollect / mergeJsonIssues
+    // 面必须是纯 CheckJson 契约（与 miss 轮 serializeCheckJson 字节一致）
+    cache.cachedJson = stripCachedSigRets(cache.cachedJson);
   } else {
     // D1: 指令文法诊断（nudo:directive-syntax）显式通道——buildCheckInjection
     // 内的发射源同步落 dirDiags（无模块级 buffer、无 seq 锚）

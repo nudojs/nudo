@@ -3,7 +3,7 @@
  */
 import { describe, it, expect } from "vitest";
 import type { CheckIssue, CheckJson, CheckReport } from "@nudojs/core";
-import { serializeCheckJson } from "@nudojs/core";
+import { checkSource, formatCheckReport, pTrue, serializeCheckJson } from "@nudojs/core";
 import {
   docsDiagnosticCodes,
   domainIssuesFromDiagnostics,
@@ -14,8 +14,11 @@ import {
   mergeJsonIssues,
   mockFromErrorIssues,
   reportFromCachedJson,
+  serializeCheckJsonForCache,
   signatureFromCachedJson,
+  stripCachedSigRets,
   stripEnvUnresolvedIssues,
+  type CachedCheckSig,
   type DomainDiagnosticLike,
 } from "../check-json-map.ts";
 
@@ -436,5 +439,72 @@ describe("env-unresolved disk-cache round trip", () => {
     );
     expect(report.issues.filter((i) => i.code === ENV_UNRESOLVED_CODE)).toHaveLength(1);
     expect(report.summary.warnings).toBe(1);
+  });
+});
+
+describe("disk-cache signature round trip (term fidelity)", () => {
+  // term 注记载体：无约束形参的算术返回（display 含 `= (A1 + A2)`）
+  const SRC = `export function add(a, b) { return a + b; }
+export function scale(x) { return x * 2 + 1; }
+`;
+  const live = checkSource("/t/term.js", SRC, pTrue);
+
+  /** 真实缓存往返：JSON.stringify/parse 模拟磁盘落盘 */
+  const roundTrip = (r: CheckReport): CheckJson =>
+    JSON.parse(JSON.stringify(serializeCheckJsonForCache(r))) as CheckJson;
+
+  it("miss/hit rounds render byte-identical signatures (default + verbose)", () => {
+    expect(live.signatures.length).toBe(2);
+    const cached = roundTrip(live);
+    const hitReport = reportFromCachedJson(cached);
+    expect(formatCheckReport(hitReport)).toBe(formatCheckReport(live));
+    expect(formatCheckReport(hitReport, { verbose: true })).toBe(
+      formatCheckReport(live, { verbose: true }),
+    );
+  });
+
+  it("ret is the rendered return segment (formatShape face, no term note)", () => {
+    const cached = roundTrip(live);
+    const add = cached.signatures.find((s) => s.name === "add") as CachedCheckSig;
+    const scale = cached.signatures.find((s) => s.name === "scale") as CachedCheckSig;
+    expect(add.ret).toBe("number | string");
+    expect(scale.ret).toBe("number");
+    // display 本体仍含 term 注记（formatAbs 契约面不变）
+    expect(add.display).toContain("= (A1 + A2)");
+  });
+
+  it("ret consumes through signatureFromCachedJson (display=ret, empty shape)", () => {
+    const cached = roundTrip(live);
+    const s = signatureFromCachedJson(cached.signatures[0]!);
+    expect(s.display).toBe("number | string");
+    expect(s.abs.shape).toBeUndefined();
+    // 旧条目（无 ret）：fake-any 占位回退保持
+    const legacy = signatureFromCachedJson(serializeCheckJson(live).signatures[0]!);
+    expect(legacy.abs).toEqual({ shape: { k: "any" }, conf: legacy.conf });
+  });
+
+  it("stripCachedSigRets restores the pure CheckJson contract face (idempotent)", () => {
+    const cached = roundTrip(live);
+    const stripped = stripCachedSigRets(cached);
+    expect(JSON.stringify(stripped)).toBe(JSON.stringify(serializeCheckJson(live)));
+    expect(stripCachedSigRets(stripped)).toBe(stripped);
+    // 无 ret 的输入原样返回（identity）
+    const pure = serializeCheckJson(live);
+    expect(stripCachedSigRets(pure)).toBe(pure);
+  });
+
+  it("throws / entry / budget survive the round trip", () => {
+    const src = `export function boom(o) { return o.x.y; }
+`;
+    const r = checkSource("/t/boom.js", src, pTrue);
+    const boom = r.signatures.find((s) => s.name === "boom")!;
+    expect(boom.throws).toBeDefined();
+    expect(r.budget).toBeDefined();
+    const cached = roundTrip(r);
+    const hit = reportFromCachedJson(cached);
+    expect(formatCheckReport(hit)).toBe(formatCheckReport(r));
+    const hitBoom = hit.signatures.find((s) => s.name === "boom")!;
+    expect(hitBoom.throws).toBe(boom.throws);
+    expect(hit.budget).toEqual(r.budget);
   });
 });

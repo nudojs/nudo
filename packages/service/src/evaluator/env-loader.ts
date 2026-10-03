@@ -264,7 +264,15 @@ export async function preloadPathEnvs(envNames: string[], baseDir: string): Prom
   for (const name of envNames) {
     if (!isPathEnvName(name, baseDir)) continue;
     const resolved = resolvePath(baseDir, name);
-    if (!existsSync(resolved)) continue; // silent skip, matching registry behavior
+    if (!existsSync(resolved)) {
+      // 缺失文件必须可见（此前静默跳过 → env-关降级无任何诊断）：与 import
+      // 失败同表同码（nudo:env-unresolved，check/test/LSP 三面消费）。不进
+      // pathEnvFiles 依赖表——缺失文件无内容可折入缓存指纹；文件后来被创建
+      // 时成功 preload 会把它加入指纹表，缓存键随之变化自然失效（mtime 语义
+      // 不变：缺失期间表里本就没有它的条目，不存在永不失效的陈旧 mtime）。
+      recordPathEnvError(resolved, baseDir, new Error(`path env not found: ${resolved}`));
+      continue;
+    }
     try {
       const { mtimeMs } = statSync(resolved);
       await importPathEnv(resolved, mtimeMs, baseDir);

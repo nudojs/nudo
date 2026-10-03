@@ -321,13 +321,14 @@ Context: [约束模板](../concepts/directives.md#nudo--约束模板引入) · [
 
 ```text
 path env failed to load: ./nudo-env.mjs — Cannot find package '@nudojs/env'
+path env failed to load: ./nope.mjs — path env not found: <resolved-path>
 ```
 
-**路径型** env 项（`package.json#nudo.env` 的路径项或 `/// @nudo:env <path>`）导入失败——直连 `import()` 与重写回退均失败。**Warning**——该 env 项退化为「env 关」语义，分析会静默丢失这些绑定（env 正常加载的运行能推断得更多）；不要把该告警当 benign 处理。
+**路径型** env 项（`package.json#nudo.env` 的路径项或 `/// @nudo:env <path>`）加载失败——直连 `import()` 与重写回退均失败，或指向的文件不存在。**Warning**——该 env 项退化为「env 关」语义，分析会静默丢失这些绑定（env 正常加载的运行能推断得更多）；不要把该告警当 benign 处理。
 
-**发射面：** CLI——`nudo check`（issues 段）与 `nudo test`（env warnings 段，告警行格式完全一致；`--json` 面告警走 stderr，stdout 保持单一 JSON 文档）。LSP 暂不发射此诊断（限制）。它从不影响退出码。
+**发射面：** `nudo check`（issues 段）、`nudo test`（env warnings 段，告警行格式完全一致；`--json` 面告警走 stderr，stdout 保持单一 JSON 文档）与 LSP（warning 诊断，code 同名，消息格式同源）。它从不影响退出码。
 
-**修复：** 检查 `package.json#nudo.env` 路径（或 `/// @nudo:env <path>`）是否指向预期文件、其 import 是否可解析——修复 env 文件内的 import specifier，确保 `@nudojs/env`（与 `@nudojs/core`）可从项目解析，或移除该项。
+**修复：** 检查 `package.json#nudo.env` 路径（或 `/// @nudo:env <path>`）是否指向存在且预期的文件、其 import 是否可解析——修复 env 文件内的 import specifier，确保 `@nudojs/env`（与 `@nudojs/core`）可从项目解析，或移除该项。
 
 Context: [Env & harvest](../guides/env-harvest.md)
 

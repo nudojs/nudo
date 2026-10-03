@@ -93,25 +93,27 @@ describe("evalRunCache dimension keys: lenientGlobals / maxLoopIters 不得互�
   });
 
   it("different maxLoopIters must not cross-hit (budget changes the result)", () => {
-    // 50 次循环：默认预算(8)截断得 8；预算 60 得精确 50
+    // 1500 次具体循环：具体条件循环不再按 maxIters 截断（假精确修复），
+    // 默认预算在硬上限 MAX_CONCRETE_LOOP_ITERS=1024 截断得 1024（conf 降级）；
+    // 显式更大预算（2000 > 硬上限，调用方为准）得精确 1500。
     const src = `let s = 0;
-for (let i = 0; i < 50; i++) { s = s + 1; }
+for (let i = 0; i < 1500; i++) { s = s + 1; }
 export function f() { return s; }
 `;
     const file = "/test/dim-iters.js";
-    const big = tryRunEval(src, file, { mode: "exec", maxLoopIters: 60 });
+    const big = tryRunEval(src, file, { mode: "exec", maxLoopIters: 2000 });
     expect(big).toBeDefined();
     expect(litValue(callTranspiledExport(big!.exports, "f", []))).toEqual({
       ok: true,
-      value: 50,
+      value: 1500,
     });
-    // 默认预算：必须重算（得 8），而非命中预算 60 的条目（陈旧 50）
+    // 默认预算：必须重算（硬上限截断得 1024），而非命中预算 2000 的条目（陈旧 1500）
     const def = tryRunEval(src, file, { mode: "exec" });
     expect(def).toBeDefined();
     expect(def).not.toBe(big);
     expect(litValue(callTranspiledExport(def!.exports, "f", []))).toEqual({
       ok: true,
-      value: 8,
+      value: 1024,
     });
   });
 });

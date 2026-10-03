@@ -36,11 +36,12 @@ import { classNameOfValue, markClassValue } from "../../class-mark.ts";
 import {
   NudoThrow, undef, throwStrictWrite, writeInPlace, clearStaleTermPred,
   asAbsVal, $lit, litTruth, isDefinitelyTrue, isDefinitelyFalse, currentExecPhi,
-  isNudoReturn, isNudoBreak, isNudoContinue, $fnVal, $rawThis, noBody,
+  isNudoReturn, isNudoBreak, isNudoContinue, $fnVal, $rawThis, noBody, confPartialPacked,
 } from "./state.ts";
 import { $unknown, $toNumber, $eq, $ne, $typeof, $add, $sub } from "./ops.ts";
 import { lookupObjAccessor, migrateAccessors, $objAccessor, findClassAccessor, findStaticClassAccessor, $in, $instanceof, $del, accessorTable, BUILTIN_BRAND_METHODS, evalClassChain } from "./members.ts";
-import { DEFAULT_MAX_LOOP_ITERS } from "./loop-budget.ts";
+import { DEFAULT_MAX_LOOP_ITERS, MAX_CONCRETE_LOOP_ITERS, LOOP_TRUNCATION_LABEL } from "./loop-budget.ts";
+import { noteAbsTruncation } from "../../call-budget.ts";
 import { isNudoThrow, callAtFunctionBoundary } from "./state.ts";
 import { $call } from "../call.ts";
 
@@ -1048,12 +1049,20 @@ export function $forOf(
 
   if (unbounded) snapExit();
 
+  // 具体迭代空间（tuple / 字符串 code points / Set·Map 精确条目数）：展开到
+  // 具体硬上限——maxIters 截断具体迭代会产出错误 #exact（countChars 对
+  // 12 字符串只跑 8 轮得 8 #exact，原生是 12）。超硬上限 → 截断观测 +
+  // 绑定 conf 降级（有界、可观测）。调用方显式给更大预算时以其为准
+  // （maxLoopIters 是对外契约）。抽象 arr（maybeAbsent / 长度未知）仍走
+  // maxIters 单代表元素 + 出口 join（抽象预算语义不变）。
+  const concreteCap = Math.max(maxIters, MAX_CONCRETE_LOOP_ITERS);
   const n =
     knownLen !== undefined
-      ? Math.min(knownLen, maxIters)
+      ? Math.min(knownLen, concreteCap)
       : items.length > 0
         ? 1
         : 0;
+  const concreteOverrun = knownLen !== undefined && knownLen > concreteCap;
 
   for (let i = 0; i < n; i++) {
     const item =
@@ -1082,6 +1091,11 @@ export function $forOf(
     if (unbounded) snapExit();
   }
   if (unbounded && n === 0) snapExit();
+  if (concreteOverrun) {
+    noteAbsTruncation(LOOP_TRUNCATION_LABEL);
+    if (pack && unpack) unpack(confPartialPacked(pack()));
+    return;
+  }
   applyExitJoin();
 }
 

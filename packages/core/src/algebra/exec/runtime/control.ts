@@ -2,7 +2,7 @@
  * 控制流：loop/try 退出栈、$fork/$for/$while、$throw。
  */
 import { AsyncLocalStorage } from "node:async_hooks";
-import { bumpEvalForkBudget } from "../../call-budget.ts";
+import { bumpEvalForkBudget, noteAbsTruncation } from "../../call-budget.ts";
 import type { Abs } from "../../abs.ts";
 import { abs, bool, boolLit, confJoin, litValue, numLit, unknown, type Confidence } from "../../abs.ts";
 import { lit } from "../../term.ts";
@@ -22,7 +22,7 @@ import {
 import {
   NudoThrow, isNudoThrow, noBody, undef, writeInPlace, clearStaleTermPred,
   asAbsVal, callAtFunctionBoundary, $lit, litTruth, isDefinitelyTrue, isDefinitelyFalse,
-  currentExecPhi, withExecPhi, isNudoReturn, isNudoBreak, isNudoContinue,
+  currentExecPhi, withExecPhi, isNudoReturn, isNudoBreak, isNudoContinue, confPartial, confPartialPacked,
   NudoReturn, NudoLoopSignal, loopExitsAls, throwExitsAls, tryMarksAls, softFrameActiveAls,
   runWithLoopExits, takeLoopExits, takeThrowExits, pushLoopExit, pushThrowExit, $pushLoopExit,
 } from "./state.ts";
@@ -243,8 +243,8 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
   return settleForkArms(a, b, exits);
 }
 
-export { DEFAULT_MAX_LOOP_ITERS } from "./loop-budget.ts";
-import { DEFAULT_MAX_LOOP_ITERS } from "./loop-budget.ts";
+export { DEFAULT_MAX_LOOP_ITERS, MAX_CONCRETE_LOOP_ITERS, LOOP_TRUNCATION_LABEL } from "./loop-budget.ts";
+import { DEFAULT_MAX_LOOP_ITERS, MAX_CONCRETE_LOOP_ITERS, LOOP_TRUNCATION_LABEL } from "./loop-budget.ts";
 
 /**
  * for 的惰性展开：生成器只负责「按上限吐状态」。
@@ -314,7 +314,16 @@ export function $for(
     unpack(joinAbs(extJoin, pack()));
   };
 
-  for (let i = 0; i < maxIters; i++) {
+  // 具体延展（两段预算）：maxIters 是**抽象**展开预算；预算边界上条件仍
+  // definitely-true 时迭代空间具体可判定（原生语义确定），截断会产出错误
+  // 的 #exact（globToRegex 对 12 字符串只跑 8 轮拼出 `^lib\/debu$` 还声明
+  // exact）——延展到 MAX_CONCRETE_LOOP_ITERS。硬上限仍未终止 → 截断观测
+  // （noteAbsTruncation）+ conf 降级（有界、可观测，与 fork/call 预算同
+  // posture）。延展相里条件退化为抽象即停（回到耗尽口径，不越抽象预算）。
+  let limit = maxIters;
+  let extended = false;
+  let concreteExhausted = false;
+  for (let i = 0; i < limit; i++) {
     const t = test(state);
     if (isDefinitelyFalse(t)) {
       snapCounter();
@@ -325,6 +334,7 @@ export function $for(
 
     const abstractTest = !isDefinitelyTrue(t);
     if (abstractTest) {
+      if (extended) break;
       snapCounter();
       snapExt();
     }
@@ -377,10 +387,25 @@ export function $for(
       }
     }
     state = next;
+
+    // 边界门：本轮结束后到达预算/硬上限，且下一轮条件仍具体真
+    if (i + 1 === limit && isDefinitelyTrue(test(state))) {
+      if (limit < MAX_CONCRETE_LOOP_ITERS) {
+        limit = MAX_CONCRETE_LOOP_ITERS;
+        extended = true;
+      } else {
+        concreteExhausted = true;
+      }
+    }
   }
 
   snapCounter();
   snapExt();
+  if (concreteExhausted) {
+    noteAbsTruncation(LOOP_TRUNCATION_LABEL);
+    if (extJoin && pack && unpack) unpack(confPartialPacked(joinAbs(extJoin, pack())));
+    return confPartial(exitJoin ?? state);
+  }
   applyExtJoin();
   return exitJoin ?? state;
 }
@@ -398,13 +423,20 @@ export function $while(
 ): Abs {
   let state = init;
   let exitJoin: Abs | undefined;
+  // 具体延展：与 $for 同口径（见其注释）——预算边界条件仍具体真时延展到
+  // 硬上限；硬上限仍具体真 → 截断观测 + conf 降级。
+  let limit = maxIters;
+  let extended = false;
+  let concreteExhausted = false;
 
-  for (let i = 0; i < maxIters; i++) {
+  for (let i = 0; i < limit; i++) {
     const t = test(state);
     if (isDefinitelyFalse(t)) {
       return exitJoin ? joinAbs(exitJoin, state) : state;
     }
-    if (!isDefinitelyTrue(t)) {
+    const abstractTest = !isDefinitelyTrue(t);
+    if (abstractTest) {
+      if (extended) break;
       exitJoin = exitJoin ? joinAbs(exitJoin, state) : state;
     }
     const next = step(state);
@@ -422,6 +454,18 @@ export function $while(
       }
     }
     state = next;
+    if (i + 1 === limit && isDefinitelyTrue(test(state))) {
+      if (limit < MAX_CONCRETE_LOOP_ITERS) {
+        limit = MAX_CONCRETE_LOOP_ITERS;
+        extended = true;
+      } else {
+        concreteExhausted = true;
+      }
+    }
+  }
+  if (concreteExhausted) {
+    noteAbsTruncation(LOOP_TRUNCATION_LABEL);
+    return confPartial(exitJoin ? joinAbs(exitJoin, state) : state);
   }
   return exitJoin ? joinAbs(exitJoin, state) : state;
 }
@@ -456,14 +500,34 @@ export function $whileSeq(
     if (!exitJoin || !pack || !unpack) return;
     unpack(joinAbs(exitJoin, pack()));
   };
-  for (let i = 0; i < maxIters; i++) {
+  // 具体延展：与 $for 同口径（见其注释）——预算边界条件仍具体真时延展到
+  // 硬上限；硬上限仍具体真 → 截断观测 + 绑定 conf 降级。
+  let limit = maxIters;
+  let extended = false;
+  let concreteExhausted = false;
+  // 边界门：本轮结束后到达预算/硬上限，且下一轮条件仍具体真。continue
+  // 吸收后同样要过门（下一轮仍从 test 开始，边界判定不得跳过）。
+  const boundaryGate = (i: number): void => {
+    if (i + 1 !== limit || !isDefinitelyTrue(test())) return;
+    if (limit < MAX_CONCRETE_LOOP_ITERS) {
+      limit = MAX_CONCRETE_LOOP_ITERS;
+      extended = true;
+    } else {
+      concreteExhausted = true;
+    }
+  };
+  for (let i = 0; i < limit; i++) {
     const t = test();
     if (isDefinitelyFalse(t)) {
       applyExitJoin();
       return;
     }
-    // 抽象条件：当前绑定是合法出口之一，先 snapshot 再进 body
-    if (!isDefinitelyTrue(t)) snapExit();
+    // 抽象条件：当前绑定是合法出口之一，先 snapshot 再进 body；
+    // 延展相只接受具体真——条件退化抽象即停（不越抽象预算）
+    if (!isDefinitelyTrue(t)) {
+      if (extended) break;
+      snapExit();
+    }
     try {
       body();
     } catch (e) {
@@ -471,13 +535,22 @@ export function $whileSeq(
         applyExitJoin();
         return;
       }
-      if (isNudoContinue(e, opts?.label)) continue; // 体提前结束，副作用已在绑定
+      if (isNudoContinue(e, opts?.label)) {
+        boundaryGate(i); // 体提前结束，副作用已在绑定
+        continue;
+      }
       if (isNudoReturn(e) || isNudoThrow(e)) throw e;
       throw e;
     }
+    boundaryGate(i);
   }
   // 预算耗尽：最后一轮条件仍可能为真 → 当前态也是出口
   snapExit();
+  if (concreteExhausted) {
+    noteAbsTruncation(LOOP_TRUNCATION_LABEL);
+    if (exitJoin && pack && unpack) unpack(confPartialPacked(joinAbs(exitJoin, pack())));
+    return;
+  }
   applyExitJoin();
 }
 
