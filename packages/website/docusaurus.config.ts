@@ -1,7 +1,7 @@
 import { themes as prismThemes } from "prism-react-renderer";
 import type { Config, Plugin } from "@docusaurus/types";
 import type { Configuration } from "webpack";
-import { DefinePlugin, NormalModuleReplacementPlugin } from "webpack";
+import { DefinePlugin, NormalModuleReplacementPlugin, ProvidePlugin } from "webpack";
 import type * as Preset from "@docusaurus/preset-classic";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -63,6 +63,20 @@ function localeAlternates(absUrl: string): Array<{ lang: string; url: string }> 
 }
 
 const config: Config = {
+  // 构建提速:SWC loader/minifier + lightningcss + MDX 跨编译缓存。
+  // rspackBundler 暂不开 —— configureWebpack 里的 DefinePlugin /
+  // NormalModuleReplacementPlugin / splitChunks 需要在 Rspack 下逐项验证。
+  future: {
+    faster: {
+      swcJsLoader: true,
+      swcJsMinimizer: true,
+      swcHtmlMinimizer: true,
+      lightningCssMinimizer: true,
+      mdxCrossCompilerCache: true,
+      // ssgWorkerThreads 需要 future.v4.removeLegacyPostBuildHeadAttribute ——
+      // 不引入整串 v4 flag 前保持关闭
+    },
+  },
   title: "Nudo",
   tagline:
     "Welcome back to JavaScript — Your JS stays JS: observe intermediates, enforce contracts sharper than types.",
@@ -129,6 +143,7 @@ const config: Config = {
         sitemap: {
           changefreq: "weekly",
           priority: 0.5,
+          // 分区 priority:docs 是产品面,blog 是时效内容。在 map 里按路径分档。
           // Route paths include baseUrl; cover both the page and any children.
           ignorePatterns: [
             "**/search",
@@ -147,6 +162,12 @@ const config: Config = {
             const items = await defaultCreateSitemapItems({ routes, siteConfig });
             return items.map((item) => ({
               ...item,
+              // 分档:docs 0.7(产品接口面),blog 0.4(时效),其余走默认 0.5
+              priority: item.url.includes(`${baseUrl}docs/`)
+                ? 0.7
+                : item.url.includes(`${baseUrl}blog`)
+                  ? 0.4
+                  : item.priority,
               // Underlying `sitemap` lib emits <xhtml:link rel="alternate" hreflang=…>
               links: localeAlternates(item.url),
             })) as typeof items;
@@ -191,6 +212,48 @@ const config: Config = {
           { to: "/blog/vs-typescript", from: "/blog/2026/09/21/vs-typescript" },
         ],
       },
+    ],
+    // PWA:离线 app shell + 预缓存(Monaco 已自托管,Playground 随包离线)。
+    // 默认激活策略(appInstalled / queryString):不向普通访客全量预缓存。
+    [
+      "@docusaurus/plugin-pwa",
+      {
+        debug: false,
+        // 默认 2MB 上限会把 monaco / nudo-engine 大 chunk 踢出预缓存,
+        // 离线 Playground 随之失效。抬到 10MB(仅 installed/queryString
+        // 激活时才注册 SW,普通访客不付下载成本)。
+        injectManifestConfig: {
+          maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
+        },
+        pwaHead: [
+          {
+            tagName: "link",
+            attributes: { rel: "manifest", href: `${baseUrl}manifest.json` },
+          },
+          {
+            tagName: "meta",
+            attributes: { name: "theme-color", content: "#5b4bd4" },
+          },
+          {
+            tagName: "link",
+            attributes: {
+              rel: "apple-touch-icon",
+              href: `${baseUrl}img/icons/icon-180.png`,
+            },
+          },
+          {
+            tagName: "meta",
+            attributes: { name: "mobile-web-app-capable", content: "yes" },
+          },
+          {
+            tagName: "meta",
+            attributes: {
+              name: "apple-mobile-web-app-status-bar-style",
+              content: "default",
+            },
+          },
+        ],
+      } satisfies Partial<import("@docusaurus/plugin-pwa").PluginOptions>,
     ],
     // 离线全文搜索（中英分词，无 Algolia 外部依赖）
     [
@@ -314,6 +377,13 @@ const config: Config = {
               },
             },
             plugins: [
+              // 裸全局 `process` 引用（@babel/types / monaco / service 内不
+              // 走 import 的自由标识符）落到 polyfill —— DefinePlugin 只替换
+              // 匹配到的 `process.env.X` 表达式,兜不住裸 `process`。
+              new ProvidePlugin({
+                // ESM 模块:显式取 default 导出(否则得到模块命名空间对象)
+                process: [resolve(websiteRoot, "src/polyfills/process.ts"), "default"],
+              }),
               // Exact free-variable replacements for Babel/webpack env probes.
               new DefinePlugin({
                 // 每页 provenance（DocItem/Footer 渲染）：构建时的引擎版本 + 提交。
@@ -348,7 +418,9 @@ const config: Config = {
     // og:image 已由上面的 image 覆盖，这里只补 Twitter 卡片类型（不造 handle）
     metadata: [{ name: "twitter:card", content: "summary_large_image" }],
     announcementBar: {
-      id: "docs-track",
+      // id 带版本号：内容随包版本自动推进，固定 id 会让关闭过一次的老用户
+      // 永远看不到后续版本公告（dismissal 按 id 记忆）。
+      id: `docs-track-${pkgVersion("nudojs")}`,
       content: DOCS_TRACK,
       isCloseable: true,
     },
