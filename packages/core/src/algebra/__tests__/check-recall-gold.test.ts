@@ -31,6 +31,11 @@ type Gold = {
    * 禁止把标注改成 ok 来凑绿。
    */
   knownFn?: boolean;
+  /**
+   * 慢用例的 it 超时（ms）。refine 契约 × 递归 join 的 prover 在 CI runner
+   * 上常跑 ~5s，默认 5s 在负载下擦边（4819ms 过 / 5356ms 红）——显式放宽。
+   */
+  timeout?: number;
 };
 
 /** 真实库惯用法金标（人工标注） */
@@ -632,6 +637,7 @@ const e = isEven(4);
   {
     id: "recursion-with-refine-ok",
     origin: "递归·有 return 契约",
+    timeout: 30_000,
     source: `
 /**
  * @nudo:contract return positive
@@ -2613,7 +2619,7 @@ describe("check gold recall (human-labeled)", () => {
       } else {
         expect(r.ok, `false positive: ${r.issues.map((i) => i.message).join("; ")}`).toBe(true);
       }
-    });
+    }, g.timeout);
   }
 
   it("recall = 1.0 and precision = 1.0 on this gold set (known FN excluded from gate)", () => {
