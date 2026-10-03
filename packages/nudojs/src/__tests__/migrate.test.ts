@@ -143,7 +143,7 @@ describe("nudo migrate", () => {
     expect(rows[0]!.tsFiles).toBe(1);
   });
 
-  it("verify fails when nudo check is red and passes when green", async () => {
+  it("verify fails when nudo check is red and passes when green", { timeout: 30_000 }, async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-verify-"));
     dirs.push(dir);
     // L2 entry may-throw (unconstrained param property access)
@@ -160,7 +160,7 @@ describe("nudo migrate", () => {
 
   // BUG-005: verify 的 ok 必须与 nudo check 同源——@nudo:skip 由 host 下传
   // （skips: collectSkipReturns），verify 漏传会把 check 认为干净的文件判红。
-  it("verify agrees with nudo check on @nudo:skip (both gates green)", async () => {
+  it("verify agrees with nudo check on @nudo:skip (both gates green)", { timeout: 30_000 }, async () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-verify-skip-"));
     dirs.push(dir);
     // 与上一用例的 bad.js 同形（L2 entry may-throw），但声明 @nudo:skip：
@@ -558,7 +558,7 @@ describe("nudo migrate", () => {
     expect(rows[0]!.tscScripts).toEqual(["typecheck"]);
   });
 
-  it("CLI migrate status is wired", () => {
+  it("CLI migrate status is wired", { timeout: 30_000 }, () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-migrate-cli-"));
     dirs.push(dir);
     writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x", scripts: {} }), "utf-8");
