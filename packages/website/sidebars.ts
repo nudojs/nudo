@@ -25,8 +25,6 @@ const sidebars: SidebarsConfig = {
         "concepts/semantics",
         "concepts/control-flow-narrowing",
         "concepts/mocking",
-        "concepts/limits",
-        "glossary",
       ],
     },
     {

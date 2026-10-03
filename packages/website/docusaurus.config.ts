@@ -162,12 +162,17 @@ const config: Config = {
             const items = await defaultCreateSitemapItems({ routes, siteConfig });
             return items.map((item) => ({
               ...item,
-              // 分档:docs 0.7(产品接口面),blog 0.4(时效),其余走默认 0.5
-              priority: item.url.includes(`${baseUrl}docs/`)
-                ? 0.7
-                : item.url.includes(`${baseUrl}blog`)
-                  ? 0.4
-                  : item.priority,
+              // 分档:docs 0.7(产品接口面),blog 0.4(时效),其余走默认 0.5。
+              // 按 URL 路径段匹配而非 `${baseUrl}docs/` —— locale 路由
+              // (如 /nudo/zh-Hans/docs/…) 不含后者,会被漏到默认档。
+              priority: (() => {
+                const { pathname } = new URL(item.url);
+                return pathname.includes("/docs/")
+                  ? 0.7
+                  : pathname.includes("/blog")
+                    ? 0.4
+                    : item.priority;
+              })(),
               // Underlying `sitemap` lib emits <xhtml:link rel="alternate" hreflang=…>
               links: localeAlternates(item.url),
             })) as typeof items;
@@ -222,35 +227,30 @@ const config: Config = {
         // 默认 2MB 上限会把 monaco / nudo-engine 大 chunk 踢出预缓存,
         // 离线 Playground 随之失效。抬到 10MB(仅 installed/queryString
         // 激活时才注册 SW,普通访客不付下载成本)。
+        // 插件内部补全 swSrc/swDest/globDirectory(标注不可覆盖),
+        // 此处仅透传 workbox 选项,断言掉必填字段(类型经
+        // plugin-pwa 间接引用 —— workbox-build 非本站直接依赖)。
         injectManifestConfig: {
           maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
-        },
+        } as import("@docusaurus/plugin-pwa").PluginOptions["injectManifestConfig"],
+        // plugin-pwa 按 `{ tagName, ...attributes }` 解构:
+        // 属性必须平铺,嵌套 `attributes` 会渲染成
+        // `<link attributes="[object Object]">`(rel/href 全部丢失)。
+        // href 传相对路径即可 —— 插件会按当前 locale 的 baseUrl
+        // 自动补前缀(自带 `${baseUrl}` 反而会被双重拼接)。
         pwaHead: [
+          { tagName: "link", rel: "manifest", href: "manifest.json" },
+          { tagName: "meta", name: "theme-color", content: "#5b4bd4" },
           {
             tagName: "link",
-            attributes: { rel: "manifest", href: `${baseUrl}manifest.json` },
+            rel: "apple-touch-icon",
+            href: "img/icons/icon-180.png",
           },
+          { tagName: "meta", name: "mobile-web-app-capable", content: "yes" },
           {
             tagName: "meta",
-            attributes: { name: "theme-color", content: "#5b4bd4" },
-          },
-          {
-            tagName: "link",
-            attributes: {
-              rel: "apple-touch-icon",
-              href: `${baseUrl}img/icons/icon-180.png`,
-            },
-          },
-          {
-            tagName: "meta",
-            attributes: { name: "mobile-web-app-capable", content: "yes" },
-          },
-          {
-            tagName: "meta",
-            attributes: {
-              name: "apple-mobile-web-app-status-bar-style",
-              content: "default",
-            },
+            name: "apple-mobile-web-app-status-bar-style",
+            content: "default",
           },
         ],
       } satisfies Partial<import("@docusaurus/plugin-pwa").PluginOptions>,

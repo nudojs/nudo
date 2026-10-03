@@ -51,10 +51,6 @@
     "message": "CLI 与诊断",
     "description": "The label for category CLI & diagnostics in sidebar docsSidebar"
   },
-  "sidebar.docsSidebar.category.CLI & Diagnostics": {
-    "message": "CLI 与诊断",
-    "description": "The label for category CLI & Diagnostics in sidebar docsSidebar"
-  },
   "sidebar.docsSidebar.category.Comparison with TypeScript": {
     "message": "与 TypeScript 的比较",
     "description": "The label for category Comparison with TypeScript in sidebar docsSidebar"
