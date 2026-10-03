@@ -91,8 +91,12 @@ function runGate(
   env: Record<string, string> = {},
 ): { status: number; stdout: string; stderr: string } {
   try {
+    // 刻意剥掉继承的 CONFIRM_MAJOR：Release 的 workflow_dispatch(confirm_major)
+    // 作业级 env 带 CONFIRM_MAJOR=1，不剥会漏进所有「未确认必须拦截」断言
+    // （dispatch 确认路径的 test:coverage 从未绿过）。确认路径用 env 参数显式注入。
+    const { CONFIRM_MAJOR: _inherited, ...scrubbedEnv } = process.env;
     const stdout = execFileSync(process.execPath, [GATE_MAJOR, ...args], {
-      env: { ...process.env, GATE_MAJOR_ROOT: root, ...env },
+      env: { ...scrubbedEnv, GATE_MAJOR_ROOT: root, ...env },
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
     });
