@@ -40,8 +40,8 @@ import { concatString, isTemplateLike } from "./template.ts";
 import { makeSum, absShapeKey } from "./objects.ts";
 import { noteDerivationAdd } from "./derivation.ts";
 import { isSymbolAbs as isSym } from "./symbol-id.ts";
-import { NudoThrow } from "./exec/nudo-throw.ts";
-import { errorTypeAbs, recordMayThrow } from "./exec/may-throw.ts";
+import { NudoThrow } from "./nudo-throw.ts";
+import { errorTypeAbs, recordMayThrow } from "./may-throw.ts";
 
 /**
  * 二元算子对 sum 操作数的分发（add/sub/mul/div/mod 同口径）：

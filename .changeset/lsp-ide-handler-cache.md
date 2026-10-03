@@ -1,0 +1,5 @@
+---
+"@nudojs/lsp": patch
+---
+
+fix(lsp): 高频 IDE 入口零缓存与会话 Map 无界增长修复。hover / completion / signatureHelp 现先过 `getCachedOrAnalyze`（同一未变文件连续触发只跑一次全量分析），lsp-surface 复用传入的 `result.bindings` + 条目 AST（`cachedAstFor`，随条目同指纹失效）——不再每次 transpile + new Function 整文件求值，`getHoverAtPosition` 内部重复 parse（自身一次 + `file ?? parse(source)` 兜底）删除。Abs-check 主通道诊断挂进 analysisCache 条目（`getCachedCheckDiags`；source/deps/cfg 指纹同键，与 evaluator 诊断同口径失效），push 防抖与 pull 诊断不再每次全量 checkSource + extractDirectives。`depsFingerprint` 从「只 hash 自身侧车」改走 core `loadModuleDepsFingerprint`（覆盖 `@nudo:import` 全部 .nudo.js / require / 动态 import / 侧车闭包）——被 import 侧车内容变更（无 watcher 事件）不再命中陈旧缓存；截断走 fail-visible 唯一指纹。analysisCache / knownFiles / nudoDepParents 套与 service `getSessionCacheLimits` 同源的 LRU 上限（maxFiles / 4×maxFiles，0 = 关闭该层）。IDE 处理器（hover/completion/codeLens/inlayHint/semanticTokens/signatureHelp）catch 不再静默——统一 `connection.console.error` 留痕，返回语义不变。signatureHelp 的 `findEnclosingCall` 手写递归 visitor 改 @babel/traverse：区间判定含列（旧实现只比行号），参数下标按完整区间计算（跨行参数不再被「start 在前 → +1」误判，尾逗号 → arity）。

@@ -15,6 +15,7 @@ import {
   evalPromiseCtor,
   evalDateCtor,
 } from "@nudojs/core";
+import { absNumLit, absStrLit } from "@nudojs/core/internal";
 import {
   arrOf,
   brandOf,
@@ -34,20 +35,6 @@ export type EnvDefinition = {
   globals: Record<string, Abs>;
   modules?: Record<string, Record<string, Abs>>;
 };
-
-function absNumLit(a: Abs | undefined): number | undefined {
-  if (!a) return undefined;
-  const vR = litValue(a);
-  const v = vR.ok ? vR.value : undefined;
-  return typeof v === "number" ? v : undefined;
-}
-
-function absStrLit(a: Abs | undefined): string | undefined {
-  if (!a) return undefined;
-  const vR = litValue(a);
-  const v = vR.ok ? vR.value : undefined;
-  return typeof v === "string" ? v : undefined;
-}
 
 function numImpl1Abs(fn: (a: number) => number): AbsSigImpl {
   return (args) => {

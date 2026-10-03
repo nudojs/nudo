@@ -91,6 +91,11 @@ describe("shouldPrintDocsLinks", () => {
     expect(shouldPrintDocsLinks({ ...base, json: true })).toBe(false);
   });
 
+  it("gitlab suppresses (stdout must be a single Code Quality array)", () => {
+    expect(shouldPrintDocsLinks({ ...base, gitlab: true })).toBe(false);
+    expect(shouldPrintDocsLinks({ ...base, json: true, gitlab: true })).toBe(false);
+  });
+
   it("no issues suppresses", () => {
     expect(shouldPrintDocsLinks({ issueCount: 0, reportOk: false })).toBe(false);
   });

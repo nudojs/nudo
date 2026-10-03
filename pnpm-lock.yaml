@@ -239,6 +239,9 @@ importers:
 
   packages/vscode:
     dependencies:
+      '@nudojs/parser':
+        specifier: workspace:*
+        version: link:../parser
       vscode-languageclient:
         specifier: ^10.1.2
         version: 10.1.2

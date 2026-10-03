@@ -28,8 +28,17 @@ export type NudoPluginOptions = {
   failOnError?: boolean;
 };
 
+/**
+ * checkSource 面结果：`diagnostics` = 契约门禁诊断（L1 actual ⊭ expected /
+ * L2 entry-may-throw，与 evaluator 诊断同管道进 vite warn/error）；
+ * `failure` = check 管线自身崩溃（装配/注入失败）。二者互斥：崩溃时不
+ * 产出诊断，由宿主按 failOnError 档 warn / error（BUG-023：注入/装配
+ * 失败必须可见，不得吞成空诊断让 `nudo check` 红、`vite build` 绿）。
+ */
+type CheckProjection = { diagnostics: Diagnostic[]; failure?: string };
+
 /** Abs check issues → service Diagnostic（与 evaluator 诊断同管道进 vite warn/error） */
-function checkIssuesToDiagnostics(id: string, code: string): Diagnostic[] {
+function checkIssuesToDiagnostics(id: string, code: string): CheckProjection {
   try {
     // 与 CLI/LSP/agent 同源：package.json#nudo.contract.autoBind=false 时
     // 不得强制 ambient 手写契约（避免构建期误报）。
@@ -40,28 +49,36 @@ function checkIssuesToDiagnostics(id: string, code: string): Diagnostic[] {
       ...(autoBind === false ? { autoBind: false } : {}),
       skips: collectSkipReturns(code),
     });
-    return report.issues
-      .filter((i) => i.severity === "error" || i.severity === "warning")
-      .map((i) => {
-        const line = i.line ?? 1;
-        const column = i.column ?? 0;
-        const parts = [i.message];
-        if (i.actual) parts.push(`actual: ${i.actual}`);
-        if (i.expected) parts.push(`expected: ${i.expected}`);
-        if (i.suggestion) parts.push(i.suggestion);
-        if (i.code) parts.push(`(${i.code})`);
-        return {
-          severity: i.severity === "error" ? ("error" as const) : ("warning" as const),
-          message: parts.join(" · "),
-          code: i.code,
-          range: {
-            start: { line, column },
-            end: { line, column: column + 1 },
-          },
-        };
-      });
-  } catch {
-    return [];
+    return {
+      diagnostics: report.issues
+        .filter((i) => i.severity === "error" || i.severity === "warning")
+        .map((i) => {
+          const line = i.line ?? 1;
+          const column = i.column ?? 0;
+          const parts = [i.message];
+          if (i.actual) parts.push(`actual: ${i.actual}`);
+          if (i.expected) parts.push(`expected: ${i.expected}`);
+          if (i.suggestion) parts.push(i.suggestion);
+          if (i.code) parts.push(`(${i.code})`);
+          return {
+            severity: i.severity === "error" ? ("error" as const) : ("warning" as const),
+            message: parts.join(" · "),
+            code: i.code,
+            range: {
+              start: { line, column },
+              end: { line, column: column + 1 },
+            },
+          };
+        }),
+    };
+  } catch (err) {
+    // 不静默：崩溃以 failure 上抛给宿主（默认 this.warn，failOnError 时
+    // this.error），且不进 viteDiagnosticsLevel 过滤——管线故障不是源码
+    // 诊断，diagnostics 档位（off/errors/…）无权把它抹掉。
+    return {
+      diagnostics: [],
+      failure: `check failed for ${id}: ${(err as Error).message}`,
+    };
   }
 }
 
@@ -170,11 +187,22 @@ export default function nudoPlugin(options: NudoPluginOptions = {}): Plugin {
   // buildEnd 汇总统计用（诊断计数）；分析复用走 service 会话缓存，不读本表
   const analysisCache = new Map<string, AnalysisResult>();
 
+  // checkSource 面的会话缓存：check 诊断无法从 analyzeFileAsync 的
+  // AnalysisResult 投影（其 diagnostics 是 evaluator 面，不含 L1
+  // constraint-violated / L2 entry-may-throw 门禁 issue），checkSource 链
+  // 必须保留；本缓存按 (id, source 内容) 恒等命中，消除同一 build 会话内
+  // 对未变文件的重复 check 推断（如 client/SSR 双环境各 transform 一遍）。
+  // 失效与 analysisCache 同生命周期：任一文件变更（watchChange）或全新
+  // 构建（buildStart）即整表丢弃——check 诊断是 (id, code, 磁盘侧车/依赖)
+  // 的纯函数，磁盘变化必然先过 watchChange。
+  const checkOutcomeCache = new Map<string, { source: string; outcome: CheckProjection }>();
+
   return {
     name: "vite-plugin-nudo",
 
     buildStart() {
       analysisCache.clear();
+      checkOutcomeCache.clear();
       // 全新构建：丢掉上一轮会话 memo，避免跨 build 陈旧命中
       clearAnalysisSessionCaches();
     },
@@ -182,6 +210,7 @@ export default function nudoPlugin(options: NudoPluginOptions = {}): Plugin {
     /** 任一文件变更后，未改 source 的 importer 再 transform 时可能命中陈旧会话缓存 */
     watchChange() {
       analysisCache.clear();
+      checkOutcomeCache.clear();
       clearAnalysisSessionCaches();
     },
 
@@ -196,7 +225,12 @@ export default function nudoPlugin(options: NudoPluginOptions = {}): Plugin {
       try {
         // async 以便 path 型 @nudo:env 预加载（与 LSP analyzeFileAsync 对齐）
         const result = await analyzeFileAsync(id, code, undefined, undefined, undefined, "none");
-        const checkDiags = checkIssuesToDiagnostics(id, code);
+        let check = checkOutcomeCache.get(id);
+        if (!check || check.source !== code) {
+          check = { source: code, outcome: checkIssuesToDiagnostics(id, code) };
+          checkOutcomeCache.set(id, check);
+        }
+        const checkDiags = check.outcome.diagnostics;
         const level = viteDiagnosticsLevel(id);
         const merged = {
           ...result,
@@ -220,6 +254,16 @@ export default function nudoPlugin(options: NudoPluginOptions = {}): Plugin {
             }
           } else if (diag.severity === "warning") {
             this.warn(msg);
+          }
+        }
+        // check 管线崩溃：默认 warn（不静默、不 fail 构建）；failOnError
+        // 时收集到 fatal 走 this.error（与源诊断同一档位语义）
+        if (check.outcome.failure) {
+          const crashMsg = `[nudo] ${check.outcome.failure}`;
+          if (failOnError) {
+            fatal = fatal ?? crashMsg;
+          } else {
+            this.warn(crashMsg);
           }
         }
       } catch (err) {

@@ -202,7 +202,14 @@ export function resolveTargets(path: string): string[] {
 
 export type WatchRunner = (file: string) => Promise<void>;
 
-export function startWatch(paths: string[], runOne: WatchRunner, label: string): void {
+/**
+ * watch 循环（check / test 共用）。返回关闭句柄（停掉 fs watcher 与
+ * 去抖计时器；CLI 面常驻不用，测试/宿主用于确定性清理）。
+ *
+ * 退出码语义 = 最近一轮的门禁状态：每轮开跑前复位 `process.exitCode`。
+ * 不复位则首轮红置 1 后永久粘滞——后续绿轮也以 1 退出（假红）。
+ */
+export function startWatch(paths: string[], runOne: WatchRunner, label: string): () => void {
   const resolvedList = paths.map((p) => resolve(p));
   const isDir = resolvedList.some((p) => existsSync(p) && statSync(p).isDirectory());
   const primary = resolvedList[0]!;
@@ -224,6 +231,7 @@ export function startWatch(paths: string[], runOne: WatchRunner, label: string):
   const runAll = async () => {
     console.clear();
     console.log(`[${new Date().toLocaleTimeString()}] nudo ${label}...\n`);
+    process.exitCode = 0;
     for (const f of getFiles()) {
       try {
         await runOne(f);
@@ -280,6 +288,7 @@ export function startWatch(paths: string[], runOne: WatchRunner, label: string):
     const ordered = topoSortDirty(graph.imports, dirty);
     console.clear();
     console.log(`[${new Date().toLocaleTimeString()}] nudo ${label} (incremental)...\n`);
+    process.exitCode = 0;
     getAnalysisSession().evictForDependents(ordered);
     for (const f of ordered) {
       try {
@@ -302,7 +311,7 @@ export function startWatch(paths: string[], runOne: WatchRunner, label: string):
   const watchTarget = isDir ? primary : dirname(primary);
   const pendingChanged = new Set<string>();
 
-  watch(watchTarget, { recursive: isDir }, (_event, filename) => {
+  const watcher = watch(watchTarget, { recursive: isDir }, (_event, filename) => {
     if (!filename) return;
     const fullPath = isDir ? join(watchTarget, filename) : primary;
     if (!isWatchRelevantPath(fullPath)) return;
@@ -315,6 +324,12 @@ export function startWatch(paths: string[], runOne: WatchRunner, label: string):
       runIncremental(changedFiles).catch(() => {});
     }, 200);
   });
+
+  // 关闭句柄：停 fs watcher + 去抖计时器（watch 是常驻面，CLI 不调用）
+  return () => {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    watcher.close();
+  };
 }
 
 /** check --abs：代数 term/pred/conf 观察 */

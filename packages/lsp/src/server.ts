@@ -22,6 +22,9 @@ import {
   shouldAnalyzeFile,
   findProjectConfig,
   interfaceConfig,
+  analysisConfig,
+  type AnalysisConfig,
+  type AnalysisMode,
 } from "@nudojs/service";
 import {
   analysisCache,
@@ -38,7 +41,7 @@ import {
   validateText,
   filterDiagnosticsByLevel,
   diagnosticsLevelForFile,
-  checkToLspDiagnostics,
+  getCachedCheckDiags,
   filterCheckLspByLevel,
   bumpValidateGeneration,
   type ValidateTextDeps,
@@ -129,6 +132,13 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
   /** LSP client workspace folders（emit 路径边界用） */
   let workspaceRoots: string[] = [];
 
+  /**
+   * 宿主设置（VS Code `nudo.analysis.mode` 等）提供的默认 analysis.mode。
+   * 优先级：项目 package.json#nudo.analysis.mode 显式值赢；此值只在项目
+   * 未显式设置该键时作为默认（与 extension 配置 description 同口径）。
+   */
+  let clientDefaultAnalysisMode: AnalysisMode | undefined;
+
   let debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   connection.onInitialize((params: InitializeParams): InitializeResult => {
@@ -139,6 +149,12 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
       const root = uriToFilePath(params.rootUri);
       if (root) workspaceRoots = [root];
     }
+    // initializationOptions（vscode 扩展等宿主转发的工作区设置）：
+    // { analysis: { mode } }。作为项目配置缺失时的默认 mode（项目显式值优先）。
+    clientDefaultAnalysisMode = parseAnalysisMode(
+      (params.initializationOptions as { analysis?: { mode?: unknown } } | undefined)
+        ?.analysis?.mode,
+    );
     return {
     capabilities: {
       textDocumentSync: TextDocumentSyncKind.Full,
@@ -247,6 +263,26 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
 
   const nudoFileCache = new Map<string, boolean>();
 
+  /** analysis.mode 归一化：非法/缺失 → undefined（回落产品默认 exports）。 */
+  function parseAnalysisMode(raw: unknown): AnalysisMode | undefined {
+    return raw === "exports" || raw === "directives" || raw === "all" ? raw : undefined;
+  }
+
+  /**
+   * 文件级 AnalysisConfig：项目 package.json#nudo.analysis.mode 显式值优先；
+   * 项目未设置该键时用宿主设置（initializationOptions / didChangeConfiguration
+   * 转发的 VS Code `nudo.analysis.mode`）作默认 mode。
+   */
+  function analysisConfigForFile(filePath: string): AnalysisConfig {
+    const proj = findProjectConfig(dirname(filePath));
+    const cfg = analysisConfig(proj?.config);
+    const projectMode = parseAnalysisMode(proj?.config?.analysis?.mode);
+    if (projectMode === undefined && clientDefaultAnalysisMode !== undefined) {
+      return { ...cfg, mode: clientDefaultAnalysisMode };
+    }
+    return cfg;
+  }
+
   function isNudoFile(uri: string): boolean {
     // 路径目标 + analysis.mode（design-cli-semantics §7）：directives=今日行为；
     // exports/all 由 package.json#nudo.analysis 打开无指令分析
@@ -256,10 +292,27 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
     if (cached !== undefined) return cached;
     const doc = documents.get(uri);
     if (!doc) return false;
-    const result = shouldAnalyzeFile(filePath, doc.getText());
+    const result = shouldAnalyzeFile(filePath, doc.getText(), analysisConfigForFile(filePath));
     nudoFileCache.set(uri, result);
     return result;
   }
+
+  connection.onDidChangeConfiguration((params) => {
+    const next = parseAnalysisMode(
+      (params.settings as { nudo?: { analysis?: { mode?: unknown } } } | undefined)
+        ?.nudo?.analysis?.mode,
+    );
+    if (next === clientDefaultAnalysisMode) return;
+    clientDefaultAnalysisMode = next;
+    // gate 结果失效：重检打开文档（新纳入 → 出诊断；新排除 → 清诊断）
+    nudoFileCache.clear();
+    for (const doc of documents.all()) {
+      const fp = uriToFilePath(doc.uri);
+      if (!fp || !isNudoTargetPath(fp)) continue;
+      void validateText(fp, doc.uri, doc.getText(), doc.version, validationDeps());
+    }
+    refreshPullDiagnostics();
+  });
 
   const watchDeps: WatchDeps = {
     sendDiagnostics: (params) => connection.sendDiagnostics(params),
@@ -507,9 +560,23 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
       const level = diagnosticsLevelForFile(filePath);
       const items: ReturnType<typeof toLspDiagnostic>[] = [];
       const seen = new Set<string>();
+      // 先建/命中 analysisCache 条目（与 push validateText 同源），check 通道
+      // 才能走条目内 checkDiags 缓存——pull 不再每次全量 checkSource
+      const result = getCachedOrAnalyze(
+        filePath,
+        text,
+        document.version,
+        getActiveCasesForUri(document.uri),
+        validationDeps().loadModule,
+      );
       // Abs check 通道（与 push checkToLspDiagnostics 同源）
       try {
-        const checkDiags = checkToLspDiagnostics(filePath, text, validationDeps().loadModule, workspaceRoots);
+        const checkDiags = getCachedCheckDiags(
+          filePath,
+          text,
+          validationDeps().loadModule,
+          workspaceRoots,
+        );
         // P2：与 push（validateText）同一档过滤 helper，避免 pull/push 诊断面不一致
         for (const d of filterCheckLspByLevel(checkDiags, level)) {
           seen.add(`${d.code ?? ""}\0${d.message}`);
@@ -518,13 +585,6 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
       } catch {
         /* check 通道失败不影响 evaluator 面 */
       }
-      const result = getCachedOrAnalyze(
-        filePath,
-        text,
-        document.version,
-        getActiveCasesForUri(document.uri),
-        validationDeps().loadModule,
-      );
       const filtered = filterDiagnosticsByLevel(result.diagnostics, level);
       for (const d of filtered) {
         const ld = toLspDiagnostic(d, document.uri);

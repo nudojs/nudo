@@ -28,6 +28,7 @@ import {
   trimFnAnalysisCache,
 } from "./fn-analysis-cache.ts";
 import { clearPathEnvCaches } from "./evaluator/env-loader.ts";
+import { evictProjectConfigMemo } from "./evaluator/config.ts";
 import {
   getSessionCacheLimits,
   setSessionCacheFromProject,
@@ -66,6 +67,8 @@ export function clearAnalysisSessionCaches(): void {
   clearEvalCache(); // cascades analysis-file + fn-analysis
   clearAbsModuleCache();
   clearPathEnvCaches();
+  // findProjectConfig 目录链 memo（mtime 自校验；显式清覆盖「同 size+同 mtime」写入）
+  evictProjectConfigMemo();
   resetGeneralizeMemo();
   resetCheckSourceMemo();
   resetNudoModuleExecCache();

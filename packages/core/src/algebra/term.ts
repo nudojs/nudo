@@ -91,6 +91,8 @@ export function simplifyTerm(t: Term): Term {
   // （"a"+0="a0"）。与已删除的 x*0=0 同族——恒等式在全值域上不成立。
   // x * 1 = x, 1 * x = x（仅 number 路径；非 number 字面量走 ToNumber 折值）
   // （不可用 x*0=0：NaN*0 与 Infinity*0 皆为 NaN；x*1 对 number 含 -0/NaN/Inf 仍成立）
+  // bigint 例外：`5n * 1` 原生混型 TypeError 而非 NaN——不折，保留原项，
+  // 交算术核 foldBigintBinOp 的混型 TypeError 路径接管。
   if (fn === "*" && args.length === 2) {
     const [a, b] = args as [Term, Term];
     const one = (t: Term): boolean => t.op === "lit" && t.value === 1;
@@ -102,6 +104,8 @@ export function simplifyTerm(t: Term): Term {
       if (typeof v === "boolean") return lit(v ? 1 : 0);
       if (v === null) return lit(0);
       if (typeof v === "string") return lit(Number(v));
+      // bigint：ToNumeric 保型，混型即 TypeError——返回原 app 不化简
+      if (typeof v === "bigint") return app(fn, args);
       return lit(NaN);
     };
     if (one(b)) return surviveMulOne(a);

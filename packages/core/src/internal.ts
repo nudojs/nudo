@@ -44,6 +44,14 @@ export {
   clearPureMemo
 } from "./algebra/exec/call.ts";
 export {
+  type CollectorScopeParticipant, type ScopedSlot,
+  createScopedSlot, registerCollectorScopeParticipant, runWithCollectorScope,
+} from "./algebra/collector-scope.ts";
+export {
+  type DiagChannel, type ScopedDiagChannel,
+  createDiagChannel, createScopedDiagChannel,
+} from "./algebra/diag-channel.ts";
+export {
   hashSource, resetHashSourceCache
 } from "./algebra/hash-source.ts";
 export {
@@ -126,3 +134,7 @@ export {
   runWithEvalMissingSlot, setEvalMissingSlotEnabled,
   setMemberDiagCollector, tagAbsOrigin
 } from "./algebra/exec/member-diag.ts";
+export {
+  // 字面量助手：env 声明（es/node/web 内建折叠）+ harvester .d.ts 物化共享
+  absLit, absNumLit, absStrLit, allAbsStr
+} from "./algebra/abs.ts";

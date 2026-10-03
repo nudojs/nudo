@@ -6,15 +6,15 @@
  */
 
 import { runTranspiled, callTranspiledExport, callTranspiledExportFull, setEvalCallCollector, createEnvironment, noteEvalFallback, isAbsVal, type EvalCallRecord, type TranspiledCallResult, type Abs, type AbsModuleExports, type Phi, formatAbs, getFnImpl } from "@nudojs/core";
-import { setMemberDiagCollector, setAbsTruncationCollector, type EvalMemberDiag, stableAnalyzeKeySource, hashSource, loadModuleDepsFingerprint, stablePathKey } from "@nudojs/core/internal";
-import { parse, extractInlineDirectives } from "@nudojs/parser";
+import { setMemberDiagCollector, setAbsTruncationCollector, createScopedSlot, registerCollectorScopeParticipant, runWithCollectorScope, type EvalMemberDiag, stableAnalyzeKeySource, hashSource, loadModuleDepsFingerprint, stablePathKey } from "@nudojs/core/internal";
+import { parse, extractInlineDirectives, type FileDirective } from "@nudojs/parser";
 import { loadEnvs } from "./evaluator/evaluator-api.ts";
-import { evalAbsModuleGraph } from "./abs-modules-graph.ts";
-import { applyMockModuleDirectivesFromSource } from "./mock-module.ts";
+import { evalAbsModuleGraph, type AbsGraphOptions, type AbsModuleLoadIssue } from "./abs-modules-graph.ts";
+import { applyMockModuleDirectives, applyMockModuleDirectivesFromSource } from "./mock-module.ts";
 import { clearAnalysisFileCache } from "./analysis-file-cache.ts";
 import { getSessionCacheLimits } from "./session-cache-limits.ts";
 import { clearFnAnalysisCache } from "./fn-analysis-cache.ts";
-import { defaultLoadModule } from "./load-module.ts";
+import { defaultLoadModule, type LoadModule } from "./load-module.ts";
 
 /** Content part for one Abs mock seed. */
 function absSeedPart(a: Abs): string {
@@ -108,19 +108,23 @@ export type EnvHarvestConflict = {
   defaultOverwritten: boolean;
 };
 
-let envHarvestConflictCollector:
-  | ((c: EnvHarvestConflict) => void)
-  | null = null;
+/** 冲突 collector（作用域化：runWithCollectorScope 内各分析互不串台；
+ *  无作用域 = fallback 模块级单变量，行为同今日） */
+const envHarvestConflictCollectorSlot = createScopedSlot<
+  ((c: EnvHarvestConflict) => void) | null
+>(() => null);
+registerCollectorScopeParticipant((body) => envHarvestConflictCollectorSlot.runScoped(body));
 
 /**
  * Install conflict collector; returns the previous one so nested/concurrent
- * analyzeFile callers can save/restore (module-global is not re-entrant).
+ * analyzeFile callers can save/restore (scoped fallback: inside
+ * runWithCollectorScope each analysis gets its own slot, no cross-talk).
  */
 export function setEnvHarvestConflictCollector(
   collector: ((c: EnvHarvestConflict) => void) | null,
 ): ((c: EnvHarvestConflict) => void) | null {
-  const prev = envHarvestConflictCollector;
-  envHarvestConflictCollector = collector;
+  const prev = envHarvestConflictCollectorSlot.get();
+  envHarvestConflictCollectorSlot.set(collector);
   return prev;
 }
 
@@ -128,7 +132,7 @@ export function setEnvHarvestConflictCollector(
 export function getEnvHarvestConflictCollector():
   | ((c: EnvHarvestConflict) => void)
   | null {
-  return envHarvestConflictCollector;
+  return envHarvestConflictCollectorSlot.get();
 }
 
 export type MergeHarvestOptions = {
@@ -155,7 +159,7 @@ export function mergeHarvestUnderEnv(
     const named = { ...exports.named };
     out[mod] = exports.default !== undefined ? { named, default: exports.default } : { named };
   }
-  const notify = opts?.onConflict ?? envHarvestConflictCollector;
+  const notify = opts?.onConflict ?? envHarvestConflictCollectorSlot.get();
   for (const [mod, envExports] of Object.entries(envModules)) {
     const existing = out[mod];
     if (!existing) {
@@ -277,62 +281,6 @@ export function collectEvalReplacements(source: string): {
   return { targets, values, asTargets, asValues };
 }
 
-/**
- * 可走 transpile+exec 的快速预判（env 经 loadEnvs 内置 + 已 preload 的路径型）。
- * 注意：正确性不依赖本函数——未 lowering 的构造在转译点 fail-closed
- * （unknown / 空导出），tryRunTranspiled 捕获后记录；本函数仅是廉价前置闸。
- * 顶层 this 已按 ESM 托管，不再关 求值引擎。
- */
-export function isEvalCapable(source: string, envNames: string[] = []): boolean {
-  void envNames;
-  void source;
-  // 顶层 this 已按 ESM 语义托管（this === undefined；写经 strict 写路径抛
-  // TypeError）——不再关整文件 求值引擎。函数/方法体内 this 由 transpile 处理。
-  return true;
-}
-
-/** 函数/方法边界：其体内 this 由 transpile 处理（thisParam 注入 / $lit(undefined) 降级） */
-const FN_BOUNDARY_TYPES = new Set([
-  "FunctionDeclaration",
-  "FunctionExpression",
-  "ArrowFunctionExpression",
-  "ObjectMethod",
-  "ClassMethod",
-  "ClassPrivateMethod",
-]);
-
-/** 顶层语句作用域是否出现裸 this（不下探函数体/类体） */
-function hasTopLevelThis(ast: { program?: { body?: unknown[] } }): boolean {
-  const scan = (node: unknown): boolean => {
-    if (!node || typeof node !== "object") return false;
-    const n = node as { type?: string };
-    if (FN_BOUNDARY_TYPES.has(n.type ?? "")) return false;
-    if (n.type === "ClassDeclaration" || n.type === "ClassExpression") return false;
-    if (n.type === "ThisExpression") return true;
-    for (const key of Object.keys(node)) {
-      if (
-        key === "loc" ||
-        key === "start" ||
-        key === "end" ||
-        key === "range" ||
-        key === "comments" ||
-        key === "tokens" ||
-        key === "errors"
-      ) {
-        continue;
-      }
-      const child = (node as Record<string, unknown>)[key];
-      if (Array.isArray(child)) {
-        if (child.some((c) => scan(c))) return true;
-      } else if (child && typeof child === "object" && scan(child)) {
-        return true;
-      }
-    }
-    return false;
-  };
-  return (ast.program?.body ?? []).some((s) => scan(s));
-}
-
 export type EvalRunResult = {
   exports: Record<string, unknown>;
   modules: Record<string, AbsModuleExports>;
@@ -346,22 +294,81 @@ export type EvalRunResult = {
   calls?: EvalCallRecord[];
 };
 
-/** 按入口文件键控：同文件同源 O(1) 身份比较（case 循环 400 次不再重哈希） */
+/**
+ * 模块图组装的共享产物：analyzer 与 tryRunEval 走同一序列
+ * （evalAbsModuleGraph → collectEnvModules → mergeHarvestUnderEnv →
+ * applyMockModule*），单一事实源，不再各自漂移。
+ */
+export type ComposedEvalModules = {
+  modules: Record<string, AbsModuleExports>;
+  /** 模块图 cycle/depth/missing/missing-export（eval 权威） */
+  issues: AbsModuleLoadIssue[];
+  /** @nudo:mock-module 应用失败（analyzer 映射 nudo:module-missing 诊断） */
+  mockErrors: string[];
+};
+
+/**
+ * 模块图组装单一入口：相对/harvest 模块图 → @nudo:env modules 并入
+ * （手写 env wins，B8）→ @nudo:mock-module 覆盖。
+ * `fileDirectives`：调用方已抽取的文件指令（省一次 parse）；缺省从 source 解析。
+ */
+export function composeEvalModules(
+  source: string,
+  filePath: string,
+  opts: {
+    envNames?: string[];
+    seedVars?: Record<string, Abs>;
+    seedFns?: AbsGraphOptions["seedFns"];
+    /** 宿主模块加载器（虚拟 FS / 侧车）；缺省 defaultAbsLoadModule */
+    loadModule?: LoadModule;
+    fileDirectives?: FileDirective[];
+  } = {},
+): ComposedEvalModules {
+  const g = evalAbsModuleGraph(source, filePath, {
+    ...(opts.seedVars ? { seedVars: opts.seedVars } : {}),
+    ...(opts.seedFns ? { seedFns: opts.seedFns } : {}),
+    ...(opts.loadModule ? { loadModule: opts.loadModule } : {}),
+  });
+  // env modules 必须并入图：@nudo:env 的 node:* / 裸包由 loadEnvs 提供，
+  // 模块图只处理相对 import 与 harvest 裸包（跳过 node: 前缀）。
+  let modules = mergeHarvestUnderEnv(g.modules, collectEnvModules(opts.envNames ?? []));
+  const mockOpts = {
+    fromFile: filePath,
+    ...(opts.loadModule ? { loadModule: opts.loadModule } : {}),
+  };
+  const mm = opts.fileDirectives
+    ? applyMockModuleDirectives(modules, opts.fileDirectives, mockOpts)
+    : applyMockModuleDirectivesFromSource(source, modules, mockOpts);
+  modules = mm.modules;
+  return { modules, issues: g.issues, mockErrors: mm.errors.map((e) => e.message) };
+}
+
+/** 缓存键维度：lenientGlobals / maxLoopIters 透传 runTranspiled，必须参与命中判定 */
 type EvalCacheEntry = {
   stableSource: string;
-  mode: string;
   envKey: string;
   mockKey: string;
   depKey: string;
+  /** lenientGlobals（"1"/"0"）——exec 调用点发现与 analyze 口径不同 */
+  lenientKey: string;
+  /** maxLoopIters（""=引擎默认）——循环预算改变求值结果 */
+  itersKey: string;
   /** 只缓存成功求值；失败结果禁止入 memo（瞬时失败不得固化为空导出） */
   value: EvalRunResult;
 };
+
+/** 按「入口文件 × mode」键控多槽：analyze / exec 互不逐出（exec 采集不再踢掉分析结果） */
+function evalCacheSlotKey(filePath: string, mode: string): string {
+  return `${stablePathKey(filePath)}\0${mode}`;
+}
+
 const evalRunByFile = new Map<string, EvalCacheEntry>();
 
 /** disk dep fingerprint — null = fail-closed（截断/异常时禁止 evaluator memo） */
-function evalDepKey(source: string, filePath: string): string | null {
+function evalDepKey(source: string, filePath: string, loadModule?: LoadModule): string | null {
   try {
-    const fp = loadModuleDepsFingerprint(source, defaultLoadModule, filePath);
+    // 指纹经同一 loadModule 采集：自定义 loader（虚拟 FS）的内容变更同样翻转键
+    const fp = loadModuleDepsFingerprint(source, loadModule ?? defaultLoadModule, filePath);
     // fingerprint is path=hash,… — hash whole blob so long abs paths still flip
     if (fp.truncated) return null;
     return hashSource(fp.fp);
@@ -382,27 +389,25 @@ export function getEvalCacheSize(): number {
   return evalRunByFile.size;
 }
 
-/** 依赖文件变更后：逐出以这些文件为入口的 evaluator 缓存（键走 stablePathKey） */
+/** 依赖文件变更后：逐出以这些文件为入口的 evaluator 缓存（键走 stablePathKey；两种 mode 槽一并清） */
 export function evictEvalCacheForFiles(files: string[]): number {
   let n = 0;
   for (const f of files) {
-    if (evalRunByFile.delete(stablePathKey(f))) n++;
+    for (const mode of ["analyze", "exec"] as const) {
+      if (evalRunByFile.delete(evalCacheSlotKey(f, mode))) n++;
+    }
   }
   return n;
 }
 
 function evalCacheSet(
   filePath: string,
-  stableSource: string,
   mode: string,
-  envKey: string,
-  mockKey: string,
-  depKey: string,
-  value: EvalRunResult,
+  entry: EvalCacheEntry,
 ): void {
   const max = getSessionCacheLimits().maxEvalRuns;
   if (max <= 0) return;
-  const key = stablePathKey(filePath);
+  const key = evalCacheSlotKey(filePath, mode);
   while (evalRunByFile.size >= max && !evalRunByFile.has(key)) {
     const oldest = evalRunByFile.keys().next().value;
     if (oldest === undefined) break;
@@ -410,7 +415,7 @@ function evalCacheSet(
   }
   // 覆盖已有键先 delete 再 set：刷新为最近使用（与 BoundedLruMap.set 一致）
   evalRunByFile.delete(key);
-  evalRunByFile.set(key, { stableSource, mode, envKey, mockKey, depKey, value });
+  evalRunByFile.set(key, entry);
 }
 
 /** 立刻压到当前 maxEvalRuns（调低上限时收内存） */
@@ -435,91 +440,116 @@ export function tryRunEval(
     mocks?: Record<string, Abs>;
     /** 宽松全局（调用点发现 exec 采集） */
     lenientGlobals?: boolean;
+    /** 宿主模块加载器（虚拟 FS / 侧车）；透传图组装与 depKey，缺省 defaultLoadModule */
+    loadModule?: LoadModule;
+    /**
+     * 宿主已计算的依赖指纹（hashSource(loadModuleDepsFingerprint(src, loader, path).fp)）。
+     * 提供时跳过重算（per-fn 循环复用宿主一次 BFS，R2-5）；null = fail-closed 禁缓存。
+     */
+    depKey?: string | null;
+    /** 宿主已组装的模块图（analyzer 一次分析内复用，消除重复 parse/eval） */
+    composed?: ComposedEvalModules;
   } = {},
 ): EvalRunResult | undefined {
-  if (!isEvalCapable(source, opts.envNames ?? [])) return undefined;
-  const mode = opts.mode ?? "analyze";
-  const envKey = (opts.envNames ?? []).join(",");
-  const mockKey = mockSeedFingerprint(opts.mocks);
-  // 尾部无 @nudo 注释不参与：comment-only 编辑命中 evaluator。
-  // 同 source 引用时 stable 快路径返回原串 → 下方 === 为 O(1)。
-  const stable = stableAnalyzeKeySource(source);
-  const depKey = evalDepKey(source, filePath);
-  // 指纹截断/异常 → 禁止读写 memo（fail-closed）；0 = 关闭：读路径也 miss
-  //（与 BoundedLruMap max<=0 口径一致）
-  const canCache = depKey !== null;
-  if (canCache && getSessionCacheLimits().maxEvalRuns > 0) {
-    const cacheKey = stablePathKey(filePath);
-    const cached = evalRunByFile.get(cacheKey);
-    if (
-      cached &&
-      cached.stableSource === stable &&
-      cached.mode === mode &&
-      cached.envKey === envKey &&
-      cached.mockKey === mockKey &&
-      cached.depKey === depKey
-    ) {
-      // LRU：命中移到队尾
-      evalRunByFile.delete(cacheKey);
-      evalRunByFile.set(cacheKey, cached);
-      return cached.value;
+  // collector 作用域（幂等）：本入口安装 collector，先开作用域再装才能隔离；
+  // 嵌套（checkSource / 宿主外层已开）零开销复用外层 store。
+  return runWithCollectorScope(() => {
+    const mode = opts.mode ?? "analyze";
+    const envKey = (opts.envNames ?? []).join(",");
+    const mockKey = mockSeedFingerprint(opts.mocks);
+    const lenientKey = opts.lenientGlobals === true ? "1" : "0";
+    const itersKey = opts.maxLoopIters === undefined ? "" : String(opts.maxLoopIters);
+    // 尾部无 @nudo 注释不参与：comment-only 编辑命中 evaluator。
+    // 同 source 引用时 stable 快路径返回原串 → 下方 === 为 O(1)。
+    const stable = stableAnalyzeKeySource(source);
+    // 指纹截断/异常 → 禁止读写 memo（fail-closed）；0 = 关闭：读路径也 miss
+    //（与 BoundedLruMap max<=0 口径一致）
+    const depKey = opts.depKey !== undefined ? opts.depKey : evalDepKey(source, filePath, opts.loadModule);
+    const canCache = depKey !== null;
+    if (canCache && getSessionCacheLimits().maxEvalRuns > 0) {
+      const cacheKey = evalCacheSlotKey(filePath, mode);
+      const cached = evalRunByFile.get(cacheKey);
+      if (
+        cached &&
+        cached.stableSource === stable &&
+        cached.envKey === envKey &&
+        cached.mockKey === mockKey &&
+        cached.depKey === depKey &&
+        cached.lenientKey === lenientKey &&
+        cached.itersKey === itersKey
+      ) {
+        // LRU：命中移到队尾
+        evalRunByFile.delete(cacheKey);
+        evalRunByFile.set(cacheKey, cached);
+        return cached.value;
+      }
     }
-  }
-  let out: EvalRunResult | null = null;
-  try {
-    const memberDiags: EvalMemberDiag[] = [];
-    const truncated = new Set<string>();
-    const topCalls: EvalCallRecord[] = [];
-    // collector 先于模块图：import 函数体在 evalAbsModuleGraph 内的 method-missing 也要收
-    const prevMember = setMemberDiagCollector((d) => memberDiags.push(d));
-    const prevTrunc = setAbsTruncationCollector((label) => truncated.add(label));
-    const prevCall = setEvalCallCollector((r) => topCalls.push(r));
+    let out: EvalRunResult | null = null;
     try {
-      const { modules: graphMods, issues } = evalAbsModuleGraph(source, filePath);
-      const envMods = collectEnvModules(opts.envNames ?? []);
-      let modules = mergeHarvestUnderEnv(graphMods, envMods);
-      // @nudo:mock-module 覆盖（与 analyzer 同口径）
-      const mm = applyMockModuleDirectivesFromSource(source, modules, { fromFile: filePath });
-      modules = mm.modules;
-      const { targets, values, asTargets, asValues } = collectEvalReplacements(source);
-      const envGlobals = {
-        ...collectEnvGlobals(opts.envNames ?? []),
-        ...(opts.mocks ?? {}),
-      };
-      const exports = runTranspiled(source, {
-        modules: modules as never,
-        maxLoopIters: opts.maxLoopIters,
-        mode: opts.mode ?? "analyze",
-        replacementTargets: targets.length ? targets : undefined,
-        replacements: targets.length ? values : undefined,
-        asOverrideTargets: asTargets.length ? asTargets : undefined,
-        asOverrides: asTargets.length ? asValues : undefined,
-        envGlobals: Object.keys(envGlobals).length ? envGlobals : undefined,
-        lenientGlobals: opts.lenientGlobals,
-      });
-      out = {
-        exports,
-        modules,
-        memberDiags: memberDiags.length ? memberDiags : undefined,
-        moduleIssues: issues.length ? issues : undefined,
-        truncatedFns: truncated.size ? [...truncated] : undefined,
-        calls: topCalls.length ? topCalls : undefined,
-      };
-    } finally {
-      setMemberDiagCollector(prevMember);
-      setAbsTruncationCollector(prevTrunc);
-      setEvalCallCollector(prevCall);
+      const memberDiags: EvalMemberDiag[] = [];
+      const truncated = new Set<string>();
+      const topCalls: EvalCallRecord[] = [];
+      // collector 先于模块图：import 函数体在 evalAbsModuleGraph 内的 method-missing 也要收
+      const prevMember = setMemberDiagCollector((d) => memberDiags.push(d));
+      const prevTrunc = setAbsTruncationCollector((label) => truncated.add(label));
+      const prevCall = setEvalCallCollector((r) => topCalls.push(r));
+      try {
+        // 单一组装入口（与 analyzer 共用）；宿主已组装时直接复用
+        const composed =
+          opts.composed ??
+          composeEvalModules(source, filePath, {
+            envNames: opts.envNames,
+            loadModule: opts.loadModule,
+          });
+        const modules = composed.modules;
+        const { targets, values, asTargets, asValues } = collectEvalReplacements(source);
+        const envGlobals = {
+          ...collectEnvGlobals(opts.envNames ?? []),
+          ...(opts.mocks ?? {}),
+        };
+        const exports = runTranspiled(source, {
+          modules: modules as never,
+          maxLoopIters: opts.maxLoopIters,
+          mode,
+          replacementTargets: targets.length ? targets : undefined,
+          replacements: targets.length ? values : undefined,
+          asOverrideTargets: asTargets.length ? asTargets : undefined,
+          asOverrides: asTargets.length ? asValues : undefined,
+          envGlobals: Object.keys(envGlobals).length ? envGlobals : undefined,
+          lenientGlobals: opts.lenientGlobals,
+        });
+        out = {
+          exports,
+          modules,
+          memberDiags: memberDiags.length ? memberDiags : undefined,
+          moduleIssues: composed.issues.length ? composed.issues : undefined,
+          truncatedFns: truncated.size ? [...truncated] : undefined,
+          calls: topCalls.length ? topCalls : undefined,
+        };
+      } finally {
+        setMemberDiagCollector(prevMember);
+        setAbsTruncationCollector(prevTrunc);
+        setEvalCallCollector(prevCall);
+      }
+    } catch (e) {
+      // 与 tryRunTranspiled 同口径：失败可观测，且不得写入 memo
+      // （瞬时失败入缓存会把该 source 固化成永久空导出）
+      noteEvalFallback(e);
+      out = null;
     }
-  } catch (e) {
-    // 与 tryRunTranspiled 同口径：失败可观测，且不得写入 memo
-    // （瞬时失败入缓存会把该 source 固化成永久空导出）
-    noteEvalFallback(e);
-    out = null;
-  }
-  if (out !== null && canCache && depKey !== null) {
-    evalCacheSet(filePath, stable, mode, envKey, mockKey, depKey, out);
-  }
-  return out ?? undefined;
+    if (out !== null && canCache) {
+      evalCacheSet(filePath, mode, {
+        stableSource: stable,
+        envKey,
+        mockKey,
+        depKey: depKey!,
+        lenientKey,
+        itersKey,
+        value: out,
+      });
+    }
+    return out ?? undefined;
+  });
 }
 
 /**
@@ -544,6 +574,10 @@ export function tryEvalCallFull(
     mocks?: Record<string, Abs>;
     /** 入口 Φ 种子（assume 约束——eval 侧路径条件收窄） */
     phi?: Phi;
+    /** 宿主模块加载器；透传 tryRunEval（图组装 + depKey 同口径） */
+    loadModule?: LoadModule;
+    /** 宿主已计算的依赖指纹（跳过重算）；null = fail-closed 禁缓存 */
+    depKey?: string | null;
   } = {},
 ): (TranspiledCallResult & {
   calls?: EvalCallRecord[];
@@ -551,33 +585,48 @@ export function tryEvalCallFull(
   moduleIssues?: import("./abs-modules-graph.ts").AbsModuleLoadIssue[];
   truncatedFns?: string[];
 }) | undefined {
-  const run = tryRunEval(source, filePath, { envNames: opts.envNames, mocks: opts.mocks });
-  if (!run) return undefined;
-  // own-property：`in` 走原型链，toString/constructor 等继承名会被当模块导出调用
-  if (!Object.hasOwn(run.exports, fnName)) return undefined;
-  const collected: EvalCallRecord[] = [];
-  const memberDiags: EvalMemberDiag[] = [];
-  const prevCall = opts.collectCalls
-    ? setEvalCallCollector((r) => collected.push(r))
-    : undefined;
-  const wantMember = opts.collectMemberDiags ?? true;
-  const prevMember = wantMember
-    ? setMemberDiagCollector((d) => memberDiags.push(d))
-    : undefined;
-  try {
-    const full = callTranspiledExportFull(run.exports, fnName, args, opts.phi ? { phi: opts.phi } : undefined);
-    const all = [...(run.memberDiags ?? []), ...memberDiags];
-    return {
-      ...full,
-      calls: opts.collectCalls ? collected : undefined,
-      memberDiags: all.length ? all : undefined,
-      moduleIssues: run.moduleIssues,
-      truncatedFns: run.truncatedFns,
-    };
-  } finally {
-    if (opts.collectCalls) setEvalCallCollector(prevCall ?? null);
-    if (wantMember) setMemberDiagCollector(prevMember ?? null);
-  }
+  // collector 作用域（幂等）：同 tryRunEval——先开作用域再装 collector。
+  return runWithCollectorScope(() => {
+    const run = tryRunEval(source, filePath, {
+      envNames: opts.envNames,
+      mocks: opts.mocks,
+      ...(opts.loadModule ? { loadModule: opts.loadModule } : {}),
+      ...(opts.depKey !== undefined ? { depKey: opts.depKey } : {}),
+    });
+    if (!run) return undefined;
+    // own-property：`in` 走原型链，toString/constructor 等继承名会被当模块导出调用
+    if (!Object.hasOwn(run.exports, fnName)) return undefined;
+    const collected: EvalCallRecord[] = [];
+    const memberDiags: EvalMemberDiag[] = [];
+    // undefined = 本次未安装（finally 不动全局）；null = 之前就是空
+    const prevCall:
+      | ((r: EvalCallRecord) => void)
+      | null
+      | undefined = opts.collectCalls
+        ? setEvalCallCollector((r) => collected.push(r))
+        : undefined;
+    const wantMember = opts.collectMemberDiags ?? true;
+    const prevMember:
+      | ((d: EvalMemberDiag) => void)
+      | null
+      | undefined = wantMember
+        ? setMemberDiagCollector((d) => memberDiags.push(d))
+        : undefined;
+    try {
+      const full = callTranspiledExportFull(run.exports, fnName, args, opts.phi ? { phi: opts.phi } : undefined);
+      const all = [...(run.memberDiags ?? []), ...memberDiags];
+      return {
+        ...full,
+        calls: opts.collectCalls ? collected : undefined,
+        memberDiags: all.length ? all : undefined,
+        moduleIssues: run.moduleIssues,
+        truncatedFns: run.truncatedFns,
+      };
+    } finally {
+      if (prevCall !== undefined) setEvalCallCollector(prevCall);
+      if (prevMember !== undefined) setMemberDiagCollector(prevMember);
+    }
+  });
 }
 
 /** 求值引擎求值具名导出（仅成功结果） */
@@ -586,28 +635,39 @@ export function tryEvalCall(
   filePath: string,
   fnName: string,
   args: Abs[],
-  opts: { envNames?: string[]; mocks?: Record<string, Abs>; phi?: Phi } = {},
+  opts: {
+    envNames?: string[];
+    mocks?: Record<string, Abs>;
+    phi?: Phi;
+    /** 宿主模块加载器；透传 tryRunEval（图组装 + depKey 同口径） */
+    loadModule?: LoadModule;
+    /** 宿主已计算的依赖指纹（跳过重算）；null = fail-closed 禁缓存 */
+    depKey?: string | null;
+  } = {},
 ): Abs | undefined {
-  const full = tryEvalCallFull(source, filePath, fnName, args, opts);
-  if (!full) return undefined;
-  const r = full.result;
-  // BUG-028：类型级 result 必填，但运行时不变量
-  // 可能被破坏（producer 缺陷）——显式 isAbsVal
-  // 守卫 + 回落观测（旧实现 !r 死检查：缺 result
-  // 的记录静默 undefined，原因不可观测）
-  if (!isAbsVal(r)) {
-    noteEvalFallback(
-      new Error(
-        `tryEvalCall: '${fnName}' result is not an Abs value (producer contract violation)`,
-      ),
-    );
-    return undefined;
-  }
-  if (r.shape.k === "never" && full.throws.shape.k !== "never") {
-    return undefined;
-  }
-  if (r.shape.k === "unknown" && !r.term) return undefined;
-  return r;
+  // collector 作用域（幂等）：透传 tryEvalCallFull（已开），此处兜底独立入口。
+  return runWithCollectorScope(() => {
+    const full = tryEvalCallFull(source, filePath, fnName, args, opts);
+    if (!full) return undefined;
+    const r = full.result;
+    // BUG-028：类型级 result 必填，但运行时不变量
+    // 可能被破坏（producer 缺陷）——显式 isAbsVal
+    // 守卫 + 回落观测（旧实现 !r 死检查：缺 result
+    // 的记录静默 undefined，原因不可观测）
+    if (!isAbsVal(r)) {
+      noteEvalFallback(
+        new Error(
+          `tryEvalCall: '${fnName}' result is not an Abs value (producer contract violation)`,
+        ),
+      );
+      return undefined;
+    }
+    if (r.shape.k === "never" && full.throws.shape.k !== "never") {
+      return undefined;
+    }
+    if (r.shape.k === "unknown" && !r.term) return undefined;
+    return r;
+  });
 }
 
 export { callTranspiledExport, callTranspiledExportFull };

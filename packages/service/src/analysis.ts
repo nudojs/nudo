@@ -50,14 +50,15 @@ export {
 } from "./abs-modules-graph.ts";
 
 export {
-  isEvalCapable,
   tryRunEval,
   tryEvalCall,
   tryEvalCallFull,
+  composeEvalModules,
   clearEvalCache,
   evictEvalCacheForFiles,
   trimEvalCache,
   getEvalCacheSize,
+  type ComposedEvalModules,
   type EvalRunResult,
 } from "./eval-run.ts";
 

@@ -25,6 +25,7 @@ import {
   collectSkipReturns,
   filterDiagnosticsByLevel,
   diagnosticsLevelForFile,
+  getSessionCacheLimits,
   isProjectConfigPath,
   isNudoTargetPath,
   type AnalysisResult,
@@ -35,8 +36,9 @@ import {
 
 export { filterDiagnosticsByLevel, diagnosticsLevelForFile };
 import { checkSource, pTrue, evictGeneralizeMemoForPaths, evictCheckSourceMemoForPaths, extractNudoImports, isNodeModulesPath, sidecarPathOf } from "@nudojs/core";
-import { parse, extractDirectives, takeDirectiveDiagsSince, directiveDiagCount } from "@nudojs/parser";
-import { extractAllLoadSpecs, resolveDepPath, sidecarSpecsOf, stablePathKey, stripStringsKeepComments } from "@nudojs/core/internal";
+import { parse, extractDirectives, type DirectiveDiag } from "@nudojs/parser";
+import { extractAllLoadSpecs, resolveDepPath, sidecarSpecsOf, stablePathKey, stripStringsKeepComments, loadModuleDepsFingerprint, hashSource, runWithCollectorScope } from "@nudojs/core/internal";
+import type { File } from "@babel/types";
 import { createHash } from "node:crypto";
 
 function sourceFingerprint(s: string): string {
@@ -73,6 +75,11 @@ import {
  * Per-file analysis cache; version comes from TextDocument.version.
  * casesHash joins the key so CodeLens case switches invalidate without a
  * document version bump (B2: activeCases must be part of the fingerprint).
+ *
+ * 条目同时携带 lazy 附属产物（同一指纹口径失效）：
+ * - `ast`：hover/completion/signatureHelp 复用的 parse 结果（cachedAstFor）；
+ * - `checkDiags`：Abs-check 主通道诊断（getCachedCheckDiags；source/deps/cfg
+ *   指纹与 result 同键，侧车/依赖/项目配置变更随条目整体失效）。
  */
 export const analysisCache = new Map<
   string,
@@ -83,6 +90,10 @@ export const analysisCache = new Map<
     casesHash?: string;
     depsHash?: string;
     cfgHash?: string;
+    /** 与 sourceHash 同源内容的文件 AST（cachedAstFor 惰性填） */
+    ast?: File;
+    /** checkToLspDiagnostics（已按 analysis.diagnostics 档过滤；getCachedCheckDiags 惰性填） */
+    checkDiags?: LspDiagnostic[];
   }
 >();
 
@@ -92,6 +103,51 @@ function casesFingerprint(cases?: Map<string, number>): string {
     .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
     .map(([k, v]) => `${k}=${v}`)
     .join(",");
+}
+
+// ---------------------------------------------------------------------------
+// 会话 Map 上限（与 service getSessionCacheLimits 同源；长 IDE 会话不无界膨胀）
+// ---------------------------------------------------------------------------
+
+/** analysisCache / knownFiles 上限 = maxFiles（0 = 关闭该层缓存，读路径 miss） */
+function fileCap(): number {
+  return getSessionCacheLimits().maxFiles;
+}
+
+/** nudoDepParents 键是依赖路径（含侧车闭包），条目数天然多于文件数——4× 口径 */
+function depParentCap(): number {
+  return getSessionCacheLimits().maxFiles * 4;
+}
+
+/** LRU 命中刷新：delete+set 把键移到队尾（Map 迭代序 = 插入序） */
+function lruRefresh<K, V>(m: Map<K, V>, key: K): V | undefined {
+  const hit = m.get(key);
+  if (hit === undefined) return undefined;
+  m.delete(key);
+  m.set(key, hit);
+  return hit;
+}
+
+/** 超上限淘汰最旧键；0 = 关闭（set 侧调用方跳过写入） */
+function lruTrim<K, V>(m: Map<K, V>, cap: number): void {
+  while (m.size > cap) {
+    const oldest = m.keys().next().value;
+    if (oldest === undefined) break;
+    m.delete(oldest);
+  }
+}
+
+/** knownFiles 有界登记：重插刷新到队尾，超上限丢最旧（脏传播覆盖面收窄，不陈旧） */
+function knownFilesAdd(key: string): void {
+  const cap = fileCap();
+  if (cap <= 0) return;
+  knownFiles.delete(key);
+  knownFiles.add(key);
+  while (knownFiles.size > cap) {
+    const oldest = knownFiles.values().next().value;
+    if (oldest === undefined) break;
+    knownFiles.delete(oldest);
+  }
 }
 
 /** Every file analyzed successfully in this session (import-graph nodes for dirty propagation). */
@@ -249,6 +305,13 @@ function addNudoDepParent(dep: string, parent: string): void {
   let set = nudoDepParents.get(key);
   if (!set) {
     set = new Set();
+    if (depParentCap() > 0) {
+      nudoDepParents.set(key, set);
+      lruTrim(nudoDepParents, depParentCap());
+    }
+  } else {
+    // LRU 刷新：delete+set 移到队尾
+    nudoDepParents.delete(key);
     nudoDepParents.set(key, set);
   }
   set.add(cacheKey(parent));
@@ -330,7 +393,7 @@ export async function handleNudoDepFileChanged(
     }
     return;
   }
-  const parents = nudoDepParents.get(p);
+  const parents = lruRefresh(nudoDepParents, p);
   const parentSet = new Set<string>(parents ?? []);
   // 普通 import/实现文件：从 module graph 取 transitive dependents
   // （外部编辑 utils.js 时打开中的 parent 必须失效）
@@ -441,12 +504,15 @@ export function getCachedOrAnalyze(
   loadModule?: (spec: string, fromFile: string) => string | undefined,
 ): AnalysisResult {
   const key = cacheKey(filePath);
-  const cached = analysisCache.get(key);
   // 版本 + activeCases 指纹同时命中才复用：case 切换不 bump 文档 version，
   // 漏掉 casesHash 会把上一 case 的分析结果/lens 原样吐回（B2）
   const casesHash = casesFingerprint(activeCases);
-  const depsHash = depsFingerprint(filePath, loadModule);
+  const depsHash = depsFingerprint(filePath, source, loadModule);
   const cfgHash = projectConfigFingerprint(filePath);
+  const cached =
+    fileCap() > 0
+      ? lruRefresh(analysisCache, key)
+      : undefined;
   if (
     cached &&
     cached.version === version &&
@@ -461,34 +527,94 @@ export function getCachedOrAnalyze(
   const caseMode =
     activeCases && activeCases.size > 0 ? ("selected" as const) : ("none" as const);
   const result = analyzeFile(filePath, source, activeCases, undefined, loadModule, caseMode);
-  analysisCache.set(key, {
-    version,
-    result,
-    sourceHash: sourceFingerprint(source),
-    casesHash,
-    depsHash,
-    cfgHash,
-  });
+  if (fileCap() > 0) {
+    analysisCache.set(key, {
+      version,
+      result,
+      sourceHash: sourceFingerprint(source),
+      casesHash,
+      depsHash,
+      cfgHash,
+    });
+    lruTrim(analysisCache, fileCap());
+  }
   return result;
 }
 
-/** 侧车/依赖内容指纹：loadModule 可见的 sidecar 文本 hash */
+/** 依赖内容截断（fail-visible）：计数 + 单调序号使每次调用指纹必变 → 永不陈旧命中 */
+let truncDepsSeq = 0;
+
+/**
+ * 侧车 + 全部 import 依赖内容指纹（P1/depsFingerprint 窄修复）：走 core
+ * `loadModuleDepsFingerprint`（与 service evaluator 同一 BFS/口径）——覆盖
+ * ESM from / require / dynamic import / `@nudo:import` / autoBind 侧车闭包，
+ * 不只 `sidecarPathOf(filePath)` 一条。`@nudo:import ./other.nudo.js` 的
+ * 内容变更必须 miss analysisCache（旧口径只 hash 自身侧车 → 陈旧命中）。
+ * loadModule 未提供时用 defaultLoadModule（与 analyzeFile 同源）。
+ * truncated → 唯一指纹（永不命中，对齐 service noCache fail-closed）。
+ */
 function depsFingerprint(
   filePath: string,
+  source: string,
   loadModule?: (spec: string, fromFile: string) => string | undefined,
 ): string {
-  if (!loadModule) return "-";
   try {
-    const sp = sidecarPathOf(filePath);
-    const base = normPath(filePath).replace(/\\/g, "/");
-    const dir = base.slice(0, base.lastIndexOf("/"));
-    const leaf = sp.slice(sp.lastIndexOf("/") + 1);
-    const spec = `./${leaf}`;
-    const text = loadModule(spec, filePath) ?? loadModule(spec, `${dir}/`);
-    return sourceFingerprint(text ?? "");
+    const fp = loadModuleDepsFingerprint(source, loadModule ?? lspLoadModule, filePath);
+    if (fp.truncated) return `trunc:${fp.paths.length}#${truncDepsSeq++}`;
+    return hashSource(fp.fp);
   } catch {
     return "-";
   }
+}
+
+/**
+ * hover/completion/signatureHelp 的 AST 复用：取 analysisCache 条目上与
+ * sourceHash 同源的惰性 parse 结果；条目在而 ast 未填时 parse 一次并回填。
+ * 调用方应先经 getCachedOrAnalyze / validateText 建条目（本函数不建条目）。
+ */
+export function cachedAstFor(filePath: string, source: string): File | undefined {
+  const key = cacheKey(filePath);
+  const entry = lruRefresh(analysisCache, key);
+  if (!entry) return undefined;
+  const fp = sourceFingerprint(source);
+  if (entry.sourceHash !== undefined && entry.sourceHash !== fp) return undefined;
+  if (entry.ast) return entry.ast;
+  let ast: File | undefined;
+  try {
+    ast = parse(source);
+  } catch {
+    return undefined; // 解析失败不缓存：下一次重试（与旧行为同正确性）
+  }
+  entry.ast = ast;
+  return ast;
+}
+
+/**
+ * Abs-check 主通道诊断的缓存读：条目已有 checkDiags 且 sourceHash 同源 → 直接
+ * 复用；否则全量 checkToLspDiagnostics + 按档过滤后回填条目。与 evalDiags 同条目
+ * 同口径失效（source/deps/cfg 指纹；侧车/依赖/项目配置变更时条目整体被删），
+ * push 防抖与 pull 诊断共用，避免每次全量 checkSource+extractDirectives。
+ * 前置：调用方在本 tick 已跑过 getCachedOrAnalyze / validateText（条目新鲜）。
+ */
+export function getCachedCheckDiags(
+  filePath: string,
+  source: string,
+  loadModule?: (spec: string, fromFile: string) => string | undefined,
+  /** G7：错误脱敏根（LSP server 注入 workspaceRoots） */
+  workspaceRoots?: string[],
+): LspDiagnostic[] {
+  const key = cacheKey(filePath);
+  const entry = lruRefresh(analysisCache, key);
+  const fp = sourceFingerprint(source);
+  if (entry?.checkDiags && entry.sourceHash === fp) {
+    return entry.checkDiags;
+  }
+  const diags = filterCheckLspByLevel(
+    checkToLspDiagnostics(filePath, source, loadModule, workspaceRoots),
+    diagnosticsLevelForFile(filePath),
+  );
+  if (entry && entry.sourceHash === fp) entry.checkDiags = diags;
+  return diags;
 }
 
 export type OpenDocumentLike = {
@@ -634,12 +760,11 @@ export function checkToLspDiagnostics(
       skips: collectSkipReturns(source),
     });
     const issues = [...report.issues];
-    // D1: 指令文法诊断（nudo:directive-syntax）——与 check CLI 同口径：
-    // extractDirectives 产出 + since 锚只排干自身增量（对齐 takeInterfaceDiagsSince）。
-    // 全量 take 会在 await 窗口窃取在途 validate / lens 探测待收的诊断（跨文件错报）。
-    const dirDiagSince = directiveDiagCount();
-    extractDirectives(parse(source));
-    for (const d of takeDirectiveDiagsSince(dirDiagSince)) {
+    // D1: 指令文法诊断（nudo:directive-syntax）——与 check CLI 同口径。
+    // 显式通道：诊断直接落局部数组（不碰模块级 buffer，无 seq 锚 / 在途窃取窗口）。
+    const dirDiags: DirectiveDiag[] = [];
+    extractDirectives(parse(source), { diags: dirDiags });
+    for (const d of dirDiags) {
       issues.push({
         severity: "warning",
         code: d.code,
@@ -711,140 +836,150 @@ export async function validateText(
   /** 脏传播：源码未变但依赖变了，必须重算，不可用源码指纹短路 */
   force = false,
 ): Promise<void> {
-  // A8：编辑风暴取消——同文件新一轮 validate 启动后，旧 await 不得发布陈旧诊断
-  const key = cacheKey(filePath);
-  const gen = bumpValidateGeneration(key);
-  // BUG-021/S5-003：generation 只在 validate 启动 / didClose 时 bump，
-  // 文档内容变更（didChange）不 bump——慢分析 + 防抖窗口内旧结果会
-  // 发布到已更新的 buffer（squiggle 错位 / 幽灵报错）。补文档
-  // version 门：打开中的文档当前 version 必须等于本次启动时的
-  // version（宿主未提供文档跟踪时回落 generation-only 旧口径）。
-  const stillCurrent = (): boolean =>
-    validateGeneration.get(key) === gen &&
-    (deps.getOpenDocumentByPath?.(key)?.version ?? version) === version;
+  // collector 作用域（幂等）：一次 validate 的完整生命周期（含 analyzeFileAsync
+  // 的 preload await 与发布前检查）——交错 validate 各开各的 store，
+  // await 窗口不再互相偷诊断/collector（runWithCollectorScope 见 core）。
+  return runWithCollectorScope(async () => {
+    // A8：编辑风暴取消——同文件新一轮 validate 启动后，旧 await 不得发布陈旧诊断
+    const key = cacheKey(filePath);
+    const gen = bumpValidateGeneration(key);
+    // BUG-021/S5-003：generation 只在 validate 启动 / didClose 时 bump，
+    // 文档内容变更（didChange）不 bump——慢分析 + 防抖窗口内旧结果会
+    // 发布到已更新的 buffer（squiggle 错位 / 幽灵报错）。补文档
+    // version 门：打开中的文档当前 version 必须等于本次启动时的
+    // version（宿主未提供文档跟踪时回落 generation-only 旧口径）。
+    const stillCurrent = (): boolean =>
+      validateGeneration.get(key) === gen &&
+      (deps.getOpenDocumentByPath?.(key)?.version ?? version) === version;
 
-  // 零注解文件 gate 放行例外：磁盘上存在同名侧车（interface 档主场景——
-  // emit 后的 generated 段 + drift/domain-exceeds 诊断都以侧车为契约源）。
-  // autoBind=false 或 node_modules 下不例外（侧车 ambient 整体停用）。
-  const sidecarPath = sidecarPathOf(filePath);
-  const hasSidecar =
-    interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind &&
-    !isNodeModulesPath(sidecarPath) &&
-    existsSync(sidecarPath);
-  if (deps.isNudoUri && !deps.isNudoUri(uri) && !hasSidecar) {
-    if (stillCurrent()) deps.sendDiagnostics({ uri, diagnostics: [], version });
-    return;
-  }
-
-  // B2：内容未变（undo/redo）且非脏传播 → 复用上次 AnalysisResult。
-  // activeCases 必须进指纹：selectCase 不 bump 文档 version，只比 sourceHash
-  // 会复用上一 case 的诊断/lens。
-  // depsHash / 项目配置维：与 getCachedOrAnalyze 同口径，避免 source 未变时
-  // 吃陈旧 autoBind/env/diagnostics 结果。
-  const activeCases = deps.getActiveCases?.(uri);
-  const casesHash = casesFingerprint(activeCases);
-  const fp = sourceFingerprint(text);
-  const cfgHash = projectConfigFingerprint(filePath);
-  const depHash = depsFingerprint(filePath, deps.loadModule);
-  const prev = analysisCache.get(key);
-  let result: AnalysisResult;
-  if (
-    !force &&
-    prev?.sourceHash === fp &&
-    prev.casesHash === casesHash &&
-    prev.depsHash === depHash &&
-    prev.cfgHash === cfgHash &&
-    prev.result
-  ) {
-    result = prev.result;
-  } else {
-    try {
-      // E5：deps.loadModule（buffer-aware）传入 analyzeFileAsync——未保存
-      // 侧车与 validate/hover/check 同源可见。惰性 case：默认 none / selectCase 后 selected
-      const caseMode =
-        activeCases && activeCases.size > 0 ? ("selected" as const) : ("none" as const);
-      result = await analyzeFileAsync(
-        filePath,
-        text,
-        activeCases,
-        undefined,
-        deps.loadModule,
-        caseMode,
-      );
-    } catch (err) {
-      if (!stillCurrent()) return;
-      deps.sendDiagnostics({
-        uri,
-        version,
-        diagnostics: [{
-          severity: DiagnosticSeverity.Error,
-          range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
-          message: `Analysis error: ${sanitizeErrorMessage((err as Error).message, deps.workspaceRoots)}`,
-          source: "nudo",
-        }],
-      });
+    // 零注解文件 gate 放行例外：磁盘上存在同名侧车（interface 档主场景——
+    // emit 后的 generated 段 + drift/domain-exceeds 诊断都以侧车为契约源）。
+    // autoBind=false 或 node_modules 下不例外（侧车 ambient 整体停用）。
+    const sidecarPath = sidecarPathOf(filePath);
+    const hasSidecar =
+      interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind &&
+      !isNodeModulesPath(sidecarPath) &&
+      existsSync(sidecarPath);
+    if (deps.isNudoUri && !deps.isNudoUri(uri) && !hasSidecar) {
+      if (stillCurrent()) deps.sendDiagnostics({ uri, diagnostics: [], version });
       return;
     }
-  }
-  // await 期间有更新一轮 validate → 本轮作废（防抖已合并；不发布陈旧结果）
-  if (!stillCurrent()) return;
 
-  analysisCache.set(key, {
-    version,
-    result,
-    sourceHash: fp,
-    casesHash,
-    depsHash: depHash,
-    cfgHash,
+    // B2：内容未变（undo/redo）且非脏传播 → 复用上次 AnalysisResult。
+    // activeCases 必须进指纹：selectCase 不 bump 文档 version，只比 sourceHash
+    // 会复用上一 case 的诊断/lens。
+    // depsHash / 项目配置维：与 getCachedOrAnalyze 同口径，避免 source 未变时
+    // 吃陈旧 autoBind/env/diagnostics 结果。
+    const activeCases = deps.getActiveCases?.(uri);
+    const casesHash = casesFingerprint(activeCases);
+    const fp = sourceFingerprint(text);
+    const cfgHash = projectConfigFingerprint(filePath);
+    const depHash = depsFingerprint(filePath, text, deps.loadModule);
+    const prev = analysisCache.get(key);
+    /** 指纹全中：条目的 lazy 附属产物（checkDiags）仍有效，跨 set 保留 */
+    const prevFingerprintHit =
+      prev?.sourceHash === fp &&
+      prev.casesHash === casesHash &&
+      prev.depsHash === depHash &&
+      prev.cfgHash === cfgHash;
+    let result: AnalysisResult;
+    if (
+      !force &&
+      prevFingerprintHit &&
+      prev.result
+    ) {
+      result = prev.result;
+    } else {
+      try {
+        // E5：deps.loadModule（buffer-aware）传入 analyzeFileAsync——未保存
+        // 侧车与 validate/hover/check 同源可见。惰性 case：默认 none / selectCase 后 selected
+        const caseMode =
+          activeCases && activeCases.size > 0 ? ("selected" as const) : ("none" as const);
+        result = await analyzeFileAsync(
+          filePath,
+          text,
+          activeCases,
+          undefined,
+          deps.loadModule,
+          caseMode,
+        );
+      } catch (err) {
+        if (!stillCurrent()) return;
+        deps.sendDiagnostics({
+          uri,
+          version,
+          diagnostics: [{
+            severity: DiagnosticSeverity.Error,
+            range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
+            message: `Analysis error: ${sanitizeErrorMessage((err as Error).message, deps.workspaceRoots)}`,
+            source: "nudo",
+          }],
+        });
+        return;
+      }
+    }
+    // await 期间有更新一轮 validate → 本轮作废（防抖已合并；不发布陈旧结果）
+    if (!stillCurrent()) return;
+
+    if (fileCap() > 0) {
+      analysisCache.set(key, {
+        version,
+        result,
+        sourceHash: fp,
+        casesHash,
+        depsHash: depHash,
+        cfgHash,
+        ...(prevFingerprintHit && prev?.checkDiags ? { checkDiags: prev.checkDiags } : {}),
+      });
+      lruTrim(analysisCache, fileCap());
+    }
+    knownFilesAdd(key);
+    registerNudoImportDeps(filePath, text);
+
+    // Abs check 主通道 + evaluator 诊断（A3：按 analysis.diagnostics 档过滤）
+    // off：显示路径全静音（与 errors 档区分）。check 门禁 CLI `nudo check` /
+    // checkSource 独立，不受 off 影响。
+    // P2：与 pull（server.languages.diagnostics）共用同一 helper；经条目缓存
+    // （getCachedCheckDiags）——防抖重复 push 不再每次全量 checkSource。
+    const checkDiags = getCachedCheckDiags(filePath, text, deps.loadModule, deps.workspaceRoots);
+    const level = diagnosticsLevelForFile(filePath);
+    const evalJs = filterDiagnosticsByLevel(result.diagnostics, level);
+    const evalDiags = evalJs.map((d) => toLspDiagnostic(d, uri));
+    // 指令文法诊断可能同时出现在 check 通道（takeDirectiveDiags）与 analyzer
+    // 通道（analyzeFileUncachedInner drain）——按 code+message 去重，避免双报
+    const seenCheck = new Set(checkDiags.map((d) => `${d.code ?? ""}\0${d.message}`));
+    const dedupedEval = evalDiags.filter((d) => !seenCheck.has(`${d.code ?? ""}\0${d.message}`));
+    // 发布前再确认 generation + 文档 version，避免 check 路径上的
+    // await 竞态覆盖更新 push（BUG-021/S5-003）
+    if (!stillCurrent()) return;
+    deps.sendDiagnostics({ uri, version, diagnostics: [...checkDiags, ...dedupedEval] });
+
+    if (!propagate || !deps.getOpenDocumentByPath) return;
+
+    const selfKey = cacheKey(filePath);
+    let dependents: Map<string, Set<string>>;
+    try {
+      // 传入会话级 moduleGraphCache：未变文件仅 stat 比对即复用边集，跳过重读重解析
+      ({ dependents } = buildModuleGraph([...knownFiles], moduleGraphCache));
+    } catch {
+      return;
+    }
+    // 边目标（resolveModuleFile fs 原生形态）与 knownFiles（cacheKey 形态）跨形态
+    // 查找会漏边（Windows）——统一过 cacheKey 再算脏集，并用同一 selfKey 跳过自身。
+    for (const dirtyPath of computeDirtySet(cacheKeyGraph(dependents), selfKey)) {
+      if (dirtyPath === selfKey) continue;
+      const doc = deps.getOpenDocumentByPath(dirtyPath);
+      if (!doc) continue;
+      // 依赖内容变了但父文件源码未变：整文件 AnalysisResult / evaluator / fn-cache 键不含 dep 指纹
+      evictEvalCacheForFiles([dirtyPath]);
+      evictAnalysisFileCacheForFiles([dirtyPath]);
+      evictFnAnalysisCacheForFiles([dirtyPath]);
+      // path-env 全局工厂须清（防投毒）；abs-module 中间模块条目的正确性由其
+      // 子树内容指纹复核兜住（DESIGN-002，docs/design/cache-invalidation.md）——
+      // 这里只逐出变更文件自身的条目（内存回收 + 同 size/同 mtime 残余缺口）。
+      clearPathEnvCaches();
+      evictAbsModuleCacheFiles([filePath]);
+      await validateText(dirtyPath, doc.uri, doc.getText(), doc.version, deps, false, true);
+    }
   });
-  knownFiles.add(key);
-  registerNudoImportDeps(filePath, text);
-
-  // Abs check 主通道 + evaluator 诊断（A3：按 analysis.diagnostics 档过滤）
-  // off：显示路径全静音（与 errors 档区分）。check 门禁 CLI `nudo check` /
-  // checkSource 独立，不受 off 影响。
-  const level = diagnosticsLevelForFile(filePath);
-  // P2：与 pull（server.languages.diagnostics）共用同一 helper
-  const checkDiags = filterCheckLspByLevel(
-    checkToLspDiagnostics(filePath, text, deps.loadModule, deps.workspaceRoots),
-    level,
-  );
-  const evalJs = filterDiagnosticsByLevel(result.diagnostics, level);
-  const evalDiags = evalJs.map((d) => toLspDiagnostic(d, uri));
-  // 指令文法诊断可能同时出现在 check 通道（takeDirectiveDiags）与 analyzer
-  // 通道（analyzeFileUncachedInner drain）——按 code+message 去重，避免双报
-  const seenCheck = new Set(checkDiags.map((d) => `${d.code ?? ""}\0${d.message}`));
-  const dedupedEval = evalDiags.filter((d) => !seenCheck.has(`${d.code ?? ""}\0${d.message}`));
-  // 发布前再确认 generation + 文档 version，避免 check 路径上的
-  // await 竞态覆盖更新 push（BUG-021/S5-003）
-  if (!stillCurrent()) return;
-  deps.sendDiagnostics({ uri, version, diagnostics: [...checkDiags, ...dedupedEval] });
-
-  if (!propagate || !deps.getOpenDocumentByPath) return;
-
-  const selfKey = cacheKey(filePath);
-  let dependents: Map<string, Set<string>>;
-  try {
-    // 传入会话级 moduleGraphCache：未变文件仅 stat 比对即复用边集，跳过重读重解析
-    ({ dependents } = buildModuleGraph([...knownFiles], moduleGraphCache));
-  } catch {
-    return;
-  }
-  // 边目标（resolveModuleFile fs 原生形态）与 knownFiles（cacheKey 形态）跨形态
-  // 查找会漏边（Windows）——统一过 cacheKey 再算脏集，并用同一 selfKey 跳过自身。
-  for (const dirtyPath of computeDirtySet(cacheKeyGraph(dependents), selfKey)) {
-    if (dirtyPath === selfKey) continue;
-    const doc = deps.getOpenDocumentByPath(dirtyPath);
-    if (!doc) continue;
-    // 依赖内容变了但父文件源码未变：整文件 AnalysisResult / evaluator / fn-cache 键不含 dep 指纹
-    evictEvalCacheForFiles([dirtyPath]);
-    evictAnalysisFileCacheForFiles([dirtyPath]);
-    evictFnAnalysisCacheForFiles([dirtyPath]);
-    // path-env 全局工厂须清（防投毒）；abs-module 中间模块条目的正确性由其
-    // 子树内容指纹复核兜住（DESIGN-002，docs/design/cache-invalidation.md）——
-    // 这里只逐出变更文件自身的条目（内存回收 + 同 size/同 mtime 残余缺口）。
-    clearPathEnvCaches();
-    evictAbsModuleCacheFiles([filePath]);
-    await validateText(dirtyPath, doc.uri, doc.getText(), doc.version, deps, false, true);
-  }
 }

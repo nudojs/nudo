@@ -21,7 +21,13 @@ import {
   type LanguageClientOptions,
   type ServerOptions,
   TransportKind,
+  DidChangeConfigurationNotification,
 } from "vscode-languageclient/node";
+import {
+  toInitializationOptions,
+  toDidChangeConfigurationParams,
+} from "./extension-config.ts";
+import { computeCaseDecorationSpans } from "./case-decorations.ts";
 
 let client: LanguageClient | undefined;
 let output: OutputChannel | undefined;
@@ -122,6 +128,13 @@ function createSourceFileWatcher(pattern: string): FileSystemWatcher {
   };
 }
 
+function openCoexistenceGuide(): void {
+  void commands.executeCommand(
+    "vscode.open",
+    "https://nudojs.github.io/nudo/docs/guides/coexistence",
+  );
+}
+
 export async function activate(context: ExtensionContext): Promise<void> {
   // Bundled by scripts/bundle-server.mjs from @nudojs/lsp dist (self-contained vsix).
   const serverModule = context.asAbsolutePath(path.join("server", "server.js"));
@@ -156,6 +169,9 @@ export async function activate(context: ExtensionContext): Promise<void> {
       // 源码 + 侧车 + 项目配置：package.json#nudo.* / nudo.json 变更也要进 LSP
       fileEvents,
     },
+    // VS Code `nudo.*` 设置 → 服务端默认值（项目 package.json#nudo.* 显式值优先；
+    // 优先级同时写在 package.json 配置 description 里）
+    initializationOptions: toInitializationOptions(workspace.getConfiguration("nudo")),
   };
 
   client = new LanguageClient(
@@ -305,9 +321,22 @@ export async function activate(context: ExtensionContext): Promise<void> {
     window.onDidChangeActiveTextEditor(() => updateHighlights()),
   );
 
-  // LSP-G4：共存配方一键写入 workspace settings（不静默改用户配置）
+  // LSP-G4：共存配方一键写入 workspace settings（不静默改用户配置）。
+  // suggestMuteTsValidation=false（扩展侧消费，不进 server）：不再弹 tsserver
+  // 静音建议，只留指南入口。
   context.subscriptions.push(
     commands.registerCommand("nudo.coexistence.apply", async () => {
+      const suggestMute = workspace
+        .getConfiguration("nudo.coexistence")
+        .get<boolean>("suggestMuteTsValidation", true);
+      if (!suggestMute) {
+        const guide = await window.showInformationMessage(
+          "Nudo: tsserver mute suggestions are disabled (nudo.coexistence.suggestMuteTsValidation).",
+          "Open coexistence guide",
+        );
+        if (guide === "Open coexistence guide") openCoexistenceGuide();
+        return;
+      }
       const pick = await window.showInformationMessage(
         "Nudo coexistence: mute built-in JS validation on nudo-managed workspaces to avoid stacked tsserver diagnostics?",
         "Apply to workspace",
@@ -325,11 +354,22 @@ export async function activate(context: ExtensionContext): Promise<void> {
           "Nudo: javascript.validate.enable=false (workspace). Re-enable if you still want tsserver on plain JS.",
         );
       } else if (pick === "Open coexistence guide") {
-        void commands.executeCommand(
-          "vscode.open",
-          "https://nudojs.github.io/nudo/docs/guides/coexistence",
-        );
+        openCoexistenceGuide();
       }
+    }),
+  );
+
+  // 设置转发：nudo.* 变更 → workspace/didChangeConfiguration（其余段不推，
+  // 避免噪声）。服务端把 settings.nudo 当项目配置缺失时的默认值。
+  context.subscriptions.push(
+    workspace.onDidChangeConfiguration((event) => {
+      if (!event.affectsConfiguration("nudo")) return;
+      const c = client;
+      if (!c) return;
+      void c.sendNotification(
+        DidChangeConfigurationNotification.type,
+        toDidChangeConfigurationParams(workspace.getConfiguration("nudo")),
+      );
     }),
   );
 
@@ -398,87 +438,14 @@ function findCaseCommentDecorations(
   text: string,
   fileState: Map<string, { caseIndex: number; caseName: string }>,
 ): DecorationOptions[] {
-  const lines = text.split("\n");
-  const decorations: DecorationOptions[] = [];
-
-  type FnBlock = {
-    functionName: string;
-    caseLines: { name: string; lineIndex: number }[];
-    bodyStart: number;
-    bodyEnd: number;
-  };
-  const fnBlocks: FnBlock[] = [];
-  let pendingCases: { name: string; lineIndex: number }[] = [];
-
-  const fnHeader = (line: string): string | undefined => {
-    let m = line.match(/(?:export\s+)?(?:async\s+)?function\s+(\w+)/);
-    if (m) return m[1];
-    m = line.match(/(?:export\s+)?const\s+(\w+)\s*=\s*(?:async\s*)?(?:function\s*\(|\([^)]*\)\s*=>|[A-Za-z_]\w*\s*=>)/);
-    if (m) return m[1];
-    m = line.match(/(?:export\s+)?const\s+(\w+)\s*=\s*(?:async\s+)?function\b/);
-    return m?.[1];
-  };
-
-  /** 从函数声明行找 body 的 [start, end]（支持 `{}` 与 `=> {`） */
-  const findBodyRange = (start: number): { bodyStart: number; bodyEnd: number } => {
-    let depth = 0;
-    let seen = false;
-    for (let i = start; i < lines.length; i++) {
-      for (const ch of lines[i] ?? "") {
-        if (ch === "{") {
-          depth++;
-          seen = true;
-        } else if (ch === "}") {
-          depth--;
-          if (seen && depth === 0) return { bodyStart: start, bodyEnd: i };
-        }
-      }
-    }
-    return { bodyStart: start, bodyEnd: lines.length - 1 };
-  };
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? "";
-    const caseMatch = line.match(/@nudo:case\s+"([^"]+)"/);
-    if (caseMatch) {
-      pendingCases.push({ name: caseMatch[1]!, lineIndex: i });
-      continue;
-    }
-
-    const name = fnHeader(line);
-    if (name && pendingCases.length > 0) {
-      const { bodyStart, bodyEnd } = findBodyRange(i);
-      fnBlocks.push({ functionName: name, caseLines: pendingCases, bodyStart, bodyEnd });
-      pendingCases = [];
-    } else if (!line.match(/^\s*\*/) && !line.match(/^\s*\/\//) && line.trim() !== "") {
-      pendingCases = [];
-    }
-  }
-
-  for (const block of fnBlocks) {
-    const state = fileState.get(block.functionName);
-    if (!state) continue;
-
-    // G1：选中 case → 高亮整个函数体（含签名到 `}`），case 注释行加亮
-    const endLine = lines[block.bodyEnd] ?? "";
-    decorations.push({
-      range: new Range(
-        new Position(block.bodyStart, 0),
-        new Position(block.bodyEnd, endLine.length),
-      ),
-    });
-
-    for (const cl of block.caseLines) {
-      if (cl.name === state.caseName) {
-        const line = lines[cl.lineIndex] ?? "";
-        decorations.push({
-          range: new Range(new Position(cl.lineIndex, 0), new Position(cl.lineIndex, line.length)),
-        });
-      }
-    }
-  }
-
-  return decorations;
+  // 解析主体单源 @nudojs/parser（与服务端同一 @nudo:case 文法）；此处只做
+  // 纯数据 → vscode.Range 的薄映射。
+  return computeCaseDecorationSpans(text, fileState).map((span) => ({
+    range: new Range(
+      new Position(span.startLine, span.startChar),
+      new Position(span.endLine, span.endChar),
+    ),
+  }));
 }
 
 export function deactivate(): Promise<void> | undefined {

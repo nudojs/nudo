@@ -5,10 +5,10 @@
 import {
   type Abs,
   type AbsSigImpl,
-  litValue,
   strLit,
   boolLit,
 } from "@nudojs/core";
+import { absStrLit, allAbsStr } from "@nudojs/core/internal";
 import {
   arrOf,
   brandOf,
@@ -30,23 +30,6 @@ import nodePath from "node:path";
 import { fileURLToPath as nodeFileURLToPath, pathToFileURL as nodePathToFileURL } from "node:url";
 
 export type { EnvDefinition };
-
-function absStr(a: Abs | undefined): string | undefined {
-  if (!a) return undefined;
-  const vR = litValue(a);
-  const v = vR.ok ? vR.value : undefined;
-  return typeof v === "string" ? v : undefined;
-}
-
-function allAbsStr(args: Abs[]): string[] | undefined {
-  const result: string[] = [];
-  for (const a of args) {
-    const s = absStr(a);
-    if (s === undefined) return undefined;
-    result.push(s);
-  }
-  return result;
-}
 
 export function defineEnv(): EnvDefinition {
   const esEnv = defineEsEnv();
@@ -519,7 +502,7 @@ export function defineEnv(): EnvDefinition {
   };
 
   const strImpl1Abs = (fn: (a: string) => string): AbsSigImpl => (args) => {
-    const a = absStr(args[0]);
+    const a = absStrLit(args[0]);
     return a !== undefined ? strLit(fn(a)) : undefined;
   };
 
@@ -532,20 +515,20 @@ export function defineEnv(): EnvDefinition {
     return strs ? strLit(nodePath.resolve(...strs)) : undefined;
   };
   const pathBasenameAbs: AbsSigImpl = (args) => {
-    const p = absStr(args[0]);
+    const p = absStrLit(args[0]);
     if (p === undefined) return undefined;
-    const ext = args[1] !== undefined ? absStr(args[1]) : undefined;
+    const ext = args[1] !== undefined ? absStrLit(args[1]) : undefined;
     return strLit(ext !== undefined ? nodePath.basename(p, ext) : nodePath.basename(p));
   };
   const pathRelativeAbs: AbsSigImpl = (args) => {
-    const from = absStr(args[0]);
-    const to = absStr(args[1]);
+    const from = absStrLit(args[0]);
+    const to = absStrLit(args[1]);
     return from !== undefined && to !== undefined
       ? strLit(nodePath.relative(from, to))
       : undefined;
   };
   const pathIsAbsoluteAbs: AbsSigImpl = (args) => {
-    const p = absStr(args[0]);
+    const p = absStrLit(args[0]);
     return p !== undefined ? boolLit(nodePath.isAbsolute(p)) : undefined;
   };
 
@@ -579,7 +562,7 @@ export function defineEnv(): EnvDefinition {
         name: prim.str(),
       }),
       (args) => {
-        const p = absStr(args[0]);
+        const p = absStrLit(args[0]);
         if (p === undefined) return undefined;
         const parsed = nodePath.parse(p);
         return objAbs({
@@ -673,8 +656,8 @@ export function defineEnv(): EnvDefinition {
       [prim.str(), prim.str()],
       nodeUrlObj,
       (args) => {
-        const href = absStr(args[0]);
-        const base = args[1] !== undefined ? absStr(args[1]) : undefined;
+        const href = absStrLit(args[0]);
+        const base = args[1] !== undefined ? absStrLit(args[1]) : undefined;
         if (href === undefined) return undefined;
         try {
           const url = base !== undefined ? new URL(href, base) : new URL(href);
@@ -719,7 +702,7 @@ export function defineEnv(): EnvDefinition {
       { params: ["init?"] },
     ),
     fileURLToPath: envFn([prim.str()], prim.str(), (args) => {
-      const s = absStr(args[0]);
+      const s = absStrLit(args[0]);
       if (s === undefined) return undefined;
       try {
         return strLit(nodeFileURLToPath(s));
@@ -732,7 +715,7 @@ export function defineEnv(): EnvDefinition {
       [prim.str()],
       objAbs({ href: prim.str() }),
       (args) => {
-        const p = absStr(args[0]);
+        const p = absStrLit(args[0]);
         if (p === undefined) return undefined;
         try {
           return objAbs({ href: strLit(nodePathToFileURL(p).href) });

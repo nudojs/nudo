@@ -20,6 +20,10 @@ import {
 import { peekThrowExitsSince, throwExitsMark } from "./runtime/state.ts";
 import { joinAbs } from "../objects.ts";
 import { BoundedLruMap } from "../lru-map.ts";
+import {
+  createScopedSlot,
+  registerCollectorScopeParticipant,
+} from "../collector-scope.ts";
 
 export type EvalCallRecord = {
   fnName: string;
@@ -51,7 +55,12 @@ function joinThrowsSince(mark: number): Abs {
   return items.reduce((a, b) => joinAbs(a, b));
 }
 
-let evalCallCollector: ((r: EvalCallRecord) => void) | null = null;
+/** 调用点 collector（作用域化：runWithCollectorScope 内各分析互不串台；
+ *  无作用域 = fallback 模块级单变量，行为同今日） */
+const evalCallCollectorSlot = createScopedSlot<
+  ((r: EvalCallRecord) => void) | null
+>(() => null);
+registerCollectorScopeParticipant((body) => evalCallCollectorSlot.runScoped(body));
 
 /** B 赋值记录（与 ast-records.ts AbsAssignRecord 同形；structuralAssignIssues 消费） */
 export type EvalAbsAssignRecord = {
@@ -63,14 +72,18 @@ export type EvalAbsAssignRecord = {
   conditional?: boolean;
 };
 
-let evalAssignCollector: ((r: EvalAbsAssignRecord) => void) | null = null;
+/** 赋值记录 collector（作用域化，同 evalCallCollectorSlot） */
+const evalAssignCollectorSlot = createScopedSlot<
+  ((r: EvalAbsAssignRecord) => void) | null
+>(() => null);
+registerCollectorScopeParticipant((body) => evalAssignCollectorSlot.runScoped(body));
 
 /** 返回先前 collector，便于嵌套调用 save/restore（禁止 finally 置 null 砸外层） */
 export function setEvalAssignCollector(
   collector: ((r: EvalAbsAssignRecord) => void) | null,
 ): ((r: EvalAbsAssignRecord) => void) | null {
-  const prev = evalAssignCollector;
-  evalAssignCollector = collector;
+  const prev = evalAssignCollectorSlot.get();
+  evalAssignCollectorSlot.set(collector);
   return prev;
 }
 
@@ -83,6 +96,7 @@ export function $assignRecord(
   column: number,
   conditional: boolean,
 ): void {
+  const evalAssignCollector = evalAssignCollectorSlot.get();
   if (!evalAssignCollector) return;
   try {
     evalAssignCollector({
@@ -98,15 +112,18 @@ export function $assignRecord(
   }
 }
 
-/** 顶层绑定表收集 sink（run.ts 每次执行时安装；真实 ESM 路径 no-op） */
-let bindingSink: Map<string, unknown> | null = null;
+/** 顶层绑定表收集 sink（run.ts 每次执行时安装；真实 ESM 路径 no-op；
+ *  作用域化，同 evalCallCollectorSlot） */
+const bindingSinkSlot = createScopedSlot<Map<string, unknown> | null>(() => null);
+registerCollectorScopeParticipant((body) => bindingSinkSlot.runScoped(body));
 
 export function setEvalBindingSink(sink: Map<string, unknown> | null): void {
-  bindingSink = sink;
+  bindingSinkSlot.set(sink);
 }
 
 /** 顶层绑定记录（transpile 插桩调用） */
 export function $recordBinding(name: string, value: unknown): void {
+  const bindingSink = bindingSinkSlot.get();
   if (bindingSink) bindingSink.set(name, value);
 }
 
@@ -186,6 +203,7 @@ export function blockHostSideEffect(fn: unknown): Abs | null {
 /** 返回先前 collector，便于嵌套调用 save/restore（禁止 finally 置 null 砸外层） */
 /** 成员/方法调用点打点（$invoke 等；无收集器时 no-op）。不进 $callNamed 预算。 */
 export function noteEvalCallRecord(r: EvalCallRecord): void {
+  const evalCallCollector = evalCallCollectorSlot.get();
   if (!evalCallCollector) return;
   try {
     evalCallCollector(r);
@@ -197,13 +215,13 @@ export function noteEvalCallRecord(r: EvalCallRecord): void {
 export function setEvalCallCollector(
   collector: ((r: EvalCallRecord) => void) | null,
 ): ((r: EvalCallRecord) => void) | null {
-  const prev = evalCallCollector;
-  evalCallCollector = collector;
+  const prev = evalCallCollectorSlot.get();
+  evalCallCollectorSlot.set(collector);
   return prev;
 }
 
 export function getEvalCallCollector(): ((r: EvalCallRecord) => void) | null {
-  return evalCallCollector;
+  return evalCallCollectorSlot.get();
 }
 
 /**
@@ -447,6 +465,7 @@ export function $callNamed(
       // 命中时 routeApplyThrows 重放（只缓存 abs 会在命中时假「不抛」）。
       m.set(pk, makeAbsApplyResult(result, joinThrowsSince(throwMark)));
     }
+    const evalCallCollector = evalCallCollectorSlot.get();
     if (evalCallCollector) {
       try {
         evalCallCollector({

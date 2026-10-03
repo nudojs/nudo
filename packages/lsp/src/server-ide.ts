@@ -28,9 +28,12 @@ import {
 import type { LoadModule } from "@nudojs/service";
 import { collectAbsInlays } from "@nudojs/core/internal";
 import { parse } from "@nudojs/parser";
+import traverse from "@babel/traverse";
+import type { CallExpression, Node } from "@babel/types";
 import { buildSignatureHelp } from "./signature-help.ts";
 import {
   getCachedOrAnalyze,
+  cachedAstFor,
   uriToFilePath,
   type ValidateTextDeps,
 } from "./validation.ts";
@@ -71,11 +74,25 @@ export function attachHover(deps: IdeDeps): void {
     const autoBind = interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
 
     try {
+      // P-IDE1：先过 getCachedOrAnalyze——同一未变文件的连续 hover 只跑一次
+      // 全量分析；lsp-surface 直接复用 result.bindings + 条目 AST，
+      // 不再每次 transpile + new Function 整文件求值。
+      const result = getCachedOrAnalyze(
+        filePath,
+        source,
+        document.version,
+        cases,
+        activeLoadModule,
+      );
+      const ast = cachedAstFor(filePath, source);
       // A7：interface 档与 CodeLens 同源——default 走 symbolic + entryReqs；
       // 选 case 时 body 仍走 activeCases 重放，interface 标注不变
       const hover = getHoverAtPosition(filePath, source, line, column, cases, {
         loadModule: activeLoadModule,
         ...(autoBind === false ? { autoBind: false } : {}),
+      }, {
+        ...(ast !== undefined ? { ast } : {}),
+        result,
       });
       if (!hover) return null;
 
@@ -109,7 +126,10 @@ export function attachHover(deps: IdeDeps): void {
           value: lines.join("\n"),
         },
       };
-    } catch {
+    } catch (err) {
+      connection.console.error(
+        `nudo hover failed for ${params.textDocument.uri}: ${(err as Error).message}`,
+      );
       return null;
     }
   });
@@ -119,6 +139,7 @@ export function attachCompletion(deps: IdeDeps): void {
   const connection = deps.connection;
   const documents = { get: deps.getDocument };
   const isNudoFile = deps.isNudoFile;
+  const activeLoadModule = deps.activeLoadModule;
 
   const NUDO_DIRECTIVE_COMPLETIONS: Array<{ label: string; detail: string; insert?: string }> = [
     { label: "@nudo:contract", detail: "L1 contract — param / return obligation", insert: "@nudo:contract " },
@@ -160,7 +181,16 @@ export function attachCompletion(deps: IdeDeps): void {
     }
 
     try {
-      const items = getCompletionsAtPosition(filePath, source, line, column);
+      // P-IDE1：completion 走同源 analysisCache——接收者/变量绑定直接读
+      // result.bindings，不再每次整文件求值
+      const result = getCachedOrAnalyze(
+        filePath,
+        source,
+        document.version,
+        undefined,
+        activeLoadModule,
+      );
+      const items = getCompletionsAtPosition(filePath, source, line, column, { result });
       return items.map((item): LspCompletionItem => ({
         label: item.label,
         kind: item.kind === "method"
@@ -170,7 +200,10 @@ export function attachCompletion(deps: IdeDeps): void {
             : CompletionItemKind.Variable,
         detail: item.detail,
       }));
-    } catch {
+    } catch (err) {
+      connection.console.error(
+        `nudo completion failed for ${params.textDocument.uri}: ${(err as Error).message}`,
+      );
       return [];
     }
   });
@@ -274,7 +307,10 @@ export function attachCodeLens(deps: IdeDeps): void {
       }
 
       return lenses;
-    } catch {
+    } catch (err) {
+      connection.console.error(
+        `nudo codeLens failed for ${params.textDocument.uri}: ${(err as Error).message}`,
+      );
       return [];
     }
   });
@@ -341,8 +377,11 @@ export function attachInlayHint(deps: IdeDeps): void {
             paddingLeft: true,
           });
         }
-      } catch {
-        // Abs inlay 失败不影响 caseHints
+      } catch (err) {
+        // Abs inlay 失败不影响 caseHints（但必须可观测，不静默吞）
+        connection.console.error(
+          `nudo abs inlay failed for ${document.uri}: ${(err as Error).message}`,
+        );
       }
 
       // LSP-G2：CodeLens 不可见的客户端（Helix 等）用 inlay 投影同源 interface 档
@@ -364,12 +403,18 @@ export function attachInlayHint(deps: IdeDeps): void {
             paddingLeft: true,
           });
         }
-      } catch {
-        // interface inlay 失败不影响 case/Abs inlay
+      } catch (err) {
+        // interface inlay 失败不影响 case/Abs inlay（但必须可观测，不静默吞）
+        connection.console.error(
+          `nudo interface inlay failed for ${document.uri}: ${(err as Error).message}`,
+        );
       }
 
       return hints;
-    } catch {
+    } catch (err) {
+      connection.console.error(
+        `nudo inlayHint failed for ${params.textDocument.uri}: ${(err as Error).message}`,
+      );
       return [];
     }
   });
@@ -380,6 +425,7 @@ export function attachSignatureHelp(deps: IdeDeps): void {
   const documents = { get: deps.getDocument };
   const isNudoFile = deps.isNudoFile;
   const getActiveCasesForUri = deps.getActiveCases;
+  const activeLoadModule = deps.activeLoadModule;
 
   connection.onSignatureHelp((params) => {
     const document = documents.get(params.textDocument.uri);
@@ -393,62 +439,98 @@ export function attachSignatureHelp(deps: IdeDeps): void {
     const cases = getActiveCasesForUri(params.textDocument.uri);
 
     try {
-      const ast = parse(source);
+      // P-IDE1：callee 类型查询走同源 analysisCache（result.bindings + 条目 AST）
+      const result = getCachedOrAnalyze(
+        filePath,
+        source,
+        document.version,
+        cases,
+        activeLoadModule,
+      );
+      const ast = cachedAstFor(filePath, source) ?? parse(source);
       const callInfo = findEnclosingCall(ast, line, column);
       if (!callInfo) return null;
 
-      const fnAbs = getTypeAtPosition(filePath, source, callInfo.calleeLine, callInfo.calleeCol, cases);
+      const fnAbs = getTypeAtPosition(
+        filePath,
+        source,
+        callInfo.calleeLine,
+        callInfo.calleeCol,
+        cases,
+        { result, ast },
+      );
       return fnAbs ? buildSignatureHelp(fnAbs, callInfo.currentParamIndex) : null;
-    } catch {
+    } catch (err) {
+      connection.console.error(
+        `nudo signatureHelp failed for ${params.textDocument.uri}: ${(err as Error).message}`,
+      );
       return null;
     }
   });
+}
 
-  function findEnclosingCall(ast: any, line: number, column: number): { calleeLine: number; calleeCol: number; currentParamIndex: number } | null {
-    let result: any = null;
-
-    function visit(node: any): void {
-      if (!node || result) return;
-
-      if (node.type === "CallExpression") {
+/**
+ * 光标所在的（最外层）调用表达式 + 当前参数下标。
+ * Babel traverse 实现（P-IDE7）：区间判定含列（旧手写 visitor 只比行号），
+ * 参数下标看完整区间（cursor 落在参数 i 内 → i；在其结尾/逗号后 → i+1），
+ * 跨行参数不再被「start 在前 → +1」误判。
+ * 导出供测试（monorepo 内部面，非 npm 公共契约）。
+ */
+export function findEnclosingCall(
+  ast: Node,
+  line: number,
+  column: number,
+): { calleeLine: number; calleeCol: number; currentParamIndex: number } | null {
+  const raw = (
+    typeof traverse === "function" ? traverse : (traverse as unknown as { default?: typeof traverse }).default
+  );
+  if (typeof raw !== "function") return null;
+  const traverseFn = raw;
+  let result: { calleeLine: number; calleeCol: number; currentParamIndex: number } | null = null;
+  try {
+    traverseFn(ast, {
+      CallExpression(path) {
+        if (result) return;
+        const node = path.node;
         const loc = node.loc;
-        if (loc && loc.start.line <= line && loc.end.line >= line) {
-          const calleeLoc = node.callee.loc;
-          if (calleeLoc) {
-            let paramIndex = 0;
-            for (let i = 0; i < node.arguments.length; i++) {
-              const argLoc = node.arguments[i].loc;
-              if (argLoc) {
-                if (argLoc.start.line < line || (argLoc.start.line === line && argLoc.start.column <= column)) {
-                  paramIndex = i + 1;
-                }
-              }
-            }
-            result = {
-              calleeLine: calleeLoc.start.line,
-              calleeCol: calleeLoc.start.column,
-              currentParamIndex: Math.min(paramIndex, node.arguments.length),
-            };
-          }
-        }
-      }
-
-      for (const key of Object.keys(node)) {
-        if (key === "type" || key === "loc" || key === "start" || key === "end") continue;
-        const child = node[key];
-        if (Array.isArray(child)) {
-          for (const item of child) {
-            if (item && typeof item === "object" && item.type) visit(item);
-          }
-        } else if (child && typeof child === "object" && child.type) {
-          visit(child);
-        }
-      }
-    }
-
-    visit(ast);
-    return result;
+        const calleeLoc = node.callee?.loc;
+        if (!loc || !calleeLoc) return;
+        // 完整区间包含（行列）；旧实现只比行号，同行调用尾/换行处会误命中
+        const contains =
+          (loc.start.line < line || (loc.start.line === line && loc.start.column <= column)) &&
+          (loc.end.line > line || (loc.end.line === line && loc.end.column >= column));
+        if (!contains) return;
+        result = {
+          calleeLine: calleeLoc.start.line,
+          calleeCol: calleeLoc.start.column,
+          currentParamIndex: currentParamIndexOf(node, line, column),
+        };
+        // 命中后不下降（与旧手写 visitor 的首个命中即停同语义：外层调用优先）
+        path.skip();
+      },
+    });
+  } catch {
+    return null;
   }
+  return result;
+}
+
+/** 参数下标：cursor 在参数 i 区间内 → i；在第 i 个参数结尾（含其后逗号）→ i+1 */
+function currentParamIndexOf(node: CallExpression, line: number, column: number): number {
+  let idx = 0;
+  for (let i = 0; i < node.arguments.length; i++) {
+    const argLoc = node.arguments[i]!.loc;
+    if (!argLoc) continue;
+    const beforeStart =
+      line < argLoc.start.line ||
+      (line === argLoc.start.line && column < argLoc.start.column);
+    const atOrAfterEnd =
+      line > argLoc.end.line ||
+      (line === argLoc.end.line && column >= argLoc.end.column);
+    if (!beforeStart && !atOrAfterEnd) return i;
+    if (atOrAfterEnd) idx = i + 1;
+  }
+  return Math.min(idx, node.arguments.length);
 }
 
 export function attachSemanticTokens(deps: IdeDeps): void {
@@ -472,7 +554,10 @@ export function attachSemanticTokens(deps: IdeDeps): void {
           ...(autoBind === false ? { autoBind: false } : {}),
         }),
       };
-    } catch {
+    } catch (err) {
+      connection.console.error(
+        `nudo semanticTokens failed for ${document.uri}: ${(err as Error).message}`,
+      );
       return { data: [] };
     }
   });

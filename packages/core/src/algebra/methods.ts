@@ -8,8 +8,8 @@
 import type { Abs } from "./abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, unknown } from "./abs.ts";
 import { applyCallbackAbs, undefAbs } from "./hof.ts";
-import { NudoThrow } from "./exec/nudo-throw.ts";
-import { errorTypeAbs } from "./exec/may-throw.ts";
+import { NudoThrow } from "./nudo-throw.ts";
+import { errorTypeAbs } from "./may-throw.ts";
 import { pTrue } from "./pred.ts";
 import { defaultLeakBudget } from "./leak.ts";
 import {

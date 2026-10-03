@@ -682,6 +682,8 @@ type SymbolTable = {
 | <a id="collectskipreturns"></a>`collectSkipReturns` | fn | 每个带 `@nudo:skip` 的顶层函数 → 声明的返回 Abs；`null` = 未声明返回类型。 | `collectSkipReturns(source: string): Map<string, Abs \| null>` |
 | <a id="collectstaticimports"></a>`collectStaticImports` | fn | 从入口文件沿静态相对 import/require 收集（仅类型事实，不是运行时加载器）。 | `collectStaticImports( entryFile: string, maxDepth = 8, ): Map<string, ModuleExports>` |
 | <a id="completionitem"></a>`CompletionItem` | type | — | `CompletionItem = { label: string; kind: "property" \| "method" \| "variable"; detail?: string; }` |
+| <a id="composedevalmodules"></a>`ComposedEvalModules` | type | 模块图组装的共享产物：analyzer 与 tryRunEval 走同一序列 （evalAbsModuleGraph → collectEnvModules → mergeHarvestUnderEnv → applyMockModule*），单一事实源，不再各自漂移。 | `ComposedEvalModules = { modules: Record<string, AbsModuleExports>; issues: AbsModuleLoadIssue[]; mockErrors: string[]; }` |
+| <a id="composeevalmodules"></a>`composeEvalModules` | fn | 模块图组装单一入口：相对/harvest 模块图 → @nudo:env modules 并入 （手写 env wins，B8）→ @nudo:mock-module 覆盖。 | `composeEvalModules( source: string, filePath: string, opts: { envNames?: string[]; seedVars?: Record<string, Abs>; seedFns?: AbsGraphOptions["seedFns"]; loadModule?: LoadModule; fileDirectives?: FileDirective[]; } = {}, ): ComposedEvalModules` |
 | <a id="computedirtyset"></a>`computeDirtySet` | fn | changed plus its transitive dependents (reverse-edge BFS); cycle-safe via visited. | `computeDirtySet(dependents: Map<string, Set<string>>, changedFile: string): string[]` |
 | <a id="constraintsourceexpr"></a>`ConstraintSourceExpr` | type | — | `ConstraintSourceExpr = { expr: string; importFrom?: string; importName?: string; }` |
 | <a id="constrainttoschemanode"></a>`constraintToSchemaNode` | fn | NudoConstraint → SchemaNode（与 absToConstraint 投影语义对齐） | `constraintToSchemaNode(c: NudoConstraint): SchemaNode` |
@@ -730,8 +732,9 @@ type SymbolTable = {
 | <a id="evictabsmodulecachefiles"></a>`evictAbsModuleCacheFiles` | fn | 键身份统一 stablePathKey（FIX-RESIDUAL-4）：跨盘符形态删除/命中一致 | `evictAbsModuleCacheFiles(paths: string[]): void` |
 | <a id="evictanalysiscachesforfiles"></a>`evictAnalysisCachesForFiles` | fn | 依赖内容变更后：按入口文件定向逐出 service 层缓存。 | `evictAnalysisCachesForFiles(files: string[]): void` |
 | <a id="evictanalysisfilecacheforfiles"></a>`evictAnalysisFileCacheForFiles` | fn | 依赖变更后：按入口文件逐出（查找与写入同走 stablePathKey） | `evictAnalysisFileCacheForFiles(files: string[]): number` |
-| <a id="evictevalcacheforfiles"></a>`evictEvalCacheForFiles` | fn | 依赖文件变更后：逐出以这些文件为入口的 evaluator 缓存（键走 stablePathKey） | `evictEvalCacheForFiles(files: string[]): number` |
+| <a id="evictevalcacheforfiles"></a>`evictEvalCacheForFiles` | fn | 依赖文件变更后：逐出以这些文件为入口的 evaluator 缓存（键走 stablePathKey；两种 mode 槽一并清） | `evictEvalCacheForFiles(files: string[]): number` |
 | <a id="evictfnanalysiscacheforfiles"></a>`evictFnAnalysisCacheForFiles` | fn | Dependency content changed: drop every per-fn entry for these entry files. | `evictFnAnalysisCacheForFiles(files: string[]): number` |
+| <a id="evictprojectconfigmemo"></a>`evictProjectConfigMemo` | fn | 清空 findProjectConfig 目录链 memo（项目配置 watch 通道 / 测试隔离） | `evictProjectConfigMemo(): void` |
 | <a id="extractfnconstraintsources"></a>`extractFnConstraintSources` | fn | — | `extractFnConstraintSources( sidecarSrc: string, fnName: string, )` |
 | <a id="extractnudoimportspecs"></a>`extractNudoImportSpecs` | fn | 从源码提取 `@nudo:import` / `@nudo:import * as` 的 specifier | `extractNudoImportSpecs(source: string): string[]` |
 | <a id="filterdiagnosticsbylevel"></a>`filterDiagnosticsByLevel` | fn | 按 analysis.diagnostics 档过滤 evaluator/check **显示路径**诊断。 | `filterDiagnosticsByLevel<T extends { severity: string; code?: string }>( diags: T[], level: DiagnosticsLevel, ): T[]` |
@@ -770,7 +773,6 @@ type SymbolTable = {
 | <a id="interfacesurfaceopts"></a>`InterfaceSurfaceOpts` | type | — | `InterfaceSurfaceOpts = { autoBind?: boolean; loadModule?: LoadModule; records?: CallRecord[]; source?: string; }` |
 | <a id="isdraftableentry"></a>`isDraftableEntry` | fn | Parse-layer draftable: at least one entry has generated DSL and was not skipped | `isDraftableEntry(entries: ReadonlyArray<Pick<InterfaceDraftEntry, "dsl" \| "skipped">>): boolean` |
 | <a id="isenvtemplatepath"></a>`isEnvTemplatePath` | fn | watch 门禁：env 模板变更必须可被接收（即便扩展名不进 isNudoTargetPath） | `isEnvTemplatePath(path: string): boolean` |
-| <a id="isevalcapable"></a>`isEvalCapable` | fn | 可走 transpile+exec 的快速预判（env 经 loadEnvs 内置 + 已 preload 的路径型）。 | `isEvalCapable(source: string, envNames: string[] = []): boolean` |
 | <a id="isnudotargetpath"></a>`isNudoTargetPath` | fn | nudo 推断目标文件判定（纯扩展名规则，路径无需存在）。 | `isNudoTargetPath(path: string): boolean` |
 | <a id="isprojectconfigpath"></a>`isProjectConfigPath` | fn | — | `isProjectConfigPath(path: string): boolean` |
 | <a id="issidecarpath"></a>`isSidecarPath` | fn | Formal sidecar contracts only — drafts never ambient-bind and need not reanalyze | `isSidecarPath(path: string): boolean` |
@@ -793,6 +795,7 @@ type SymbolTable = {
 | <a id="noteenvpathdeps"></a>`noteEnvPathDeps` | fn | 源码里的 path-based load specs 解析为绝对路径后登记反向边 | `noteEnvPathDeps(sourcePath: string, source: string): void` |
 | <a id="nudoconfig"></a>`NudoConfig` | type | — | `NudoConfig = { env?: string[]; mocks?: Record<string, string>; contract?: { autoBind?: boolean; emit?: string[] \| string; }; analysis?: {...` |
 | <a id="projectabstoschema"></a>`projectAbsToSchema` | fn | — | `projectAbsToSchema(a: Abs, opts?: { dialect?: SchemaDialect }): SchemaProjection` |
+| <a id="projectconfigmemostats"></a>`projectConfigMemoStats` | fn | 诊断/测试：memo 条目数 + 实际读盘（readFileSync+JSON.parse）次数 | `projectConfigMemoStats()` |
 | <a id="quickfixplan"></a>`QuickfixPlan` | type | — | `QuickfixPlan = { titleKind: QuickfixTitleKind; title: string; edits: TextEdit[]; sidecar?: { path: string; newText: string }; openPath?: ...` |
 | <a id="quickfixtitlekind"></a>`QuickfixTitleKind` | type | — | `QuickfixTitleKind = "fix" \| "silence" \| "review" \| "adjust" \| "scaffold"` |
 | <a id="referenceinfo"></a>`ReferenceInfo` | type | — | `ReferenceInfo = { name: string; loc: SourceLocation; uri?: string; }` |
@@ -812,7 +815,7 @@ type SymbolTable = {
 | <a id="serializecasejson"></a>`serializeCaseJson` | fn | — | `serializeCaseJson( result: AnalysisResult, file: string, ): CaseJson` |
 | <a id="sessioncachelimits"></a>`SessionCacheLimits` | type | 会话级内存 LRU 上限（进程内，非磁盘 cache）。 | `SessionCacheLimits = { maxFiles: number; maxFns: number; maxEvalRuns: number; }` |
 | <a id="setanalysissession"></a>`setAnalysisSession` | fn | 测试：替换默认 session（返回旧值以便恢复） | `setAnalysisSession(session: AnalysisSession \| undefined): AnalysisSession \| undefined` |
-| <a id="setenvharvestconflictcollector"></a>`setEnvHarvestConflictCollector` | fn | Install conflict collector; returns the previous one so nested/concurrent analyzeFile callers can save/restore (module-global is not re-entrant). | `setEnvHarvestConflictCollector( collector: ((c: EnvHarvestConflict) => void) \| null, )` |
+| <a id="setenvharvestconflictcollector"></a>`setEnvHarvestConflictCollector` | fn | Install conflict collector; returns the previous one so nested/concurrent analyzeFile callers can save/restore (scoped fallback: inside runWithCollectorScope each analysis gets its own slot, no cross-talk). | `setEnvHarvestConflictCollector( collector: ((c: EnvHarvestConflict) => void) \| null, )` |
 | <a id="setsessioncachefromproject"></a>`setSessionCacheFromProject` | fn | package.json#nudo.sessionCache 层（findProjectConfig / 宿主接线） | `setSessionCacheFromProject(partial: PartialLimits \| null \| undefined): void` |
 | <a id="setsessioncachelimits"></a>`setSessionCacheLimits` | fn | 显式覆盖（宿主 / 测试）。传 null 清除显式层 | `setSessionCacheLimits(partial: PartialLimits \| null): SessionCacheLimits` |
 | <a id="sha256hex"></a>`sha256Hex` | fn | — | `sha256Hex(data: string \| Buffer): string` |
@@ -836,9 +839,9 @@ type SymbolTable = {
 | <a id="trimanalysisfilecache"></a>`trimAnalysisFileCache` | fn | 立刻压到当前 maxFiles（调低上限时收内存） | `trimAnalysisFileCache(): void` |
 | <a id="trimevalcache"></a>`trimEvalCache` | fn | 立刻压到当前 maxEvalRuns（调低上限时收内存） | `trimEvalCache(): void` |
 | <a id="trimfnanalysiscache"></a>`trimFnAnalysisCache` | fn | 立刻压到当前 maxFns（调低上限时收内存） | `trimFnAnalysisCache(): void` |
-| <a id="tryevalcall"></a>`tryEvalCall` | fn | 求值引擎求值具名导出（仅成功结果） | `tryEvalCall( source: string, filePath: string, fnName: string, args: Abs[], opts: { envNames?: string[]; mocks?: Record<string, Abs>; phi?: Phi } = {}, ): Abs \| undefined` |
-| <a id="tryevalcallfull"></a>`tryEvalCallFull` | fn | 求值引擎求值具名导出（结果 + throws）；opts.collectCalls 时附带调用点记录。 | `tryEvalCallFull( source: string, filePath: string, fnName: string, args: Abs[], opts: { collectCalls?: boolean; collectMemberDiags?: boolean; envNames?: string[]; mocks?: Record<string, Abs>; phi?: Phi; } = {}, )` |
-| <a id="tryruneval"></a>`tryRunEval` | fn | 模块图 + runTranspiled（默认 analyze 模式） | `tryRunEval( source: string, filePath: string, opts: { maxLoopIters?: number; mode?: "exec" \| "analyze"; envNames?: string[]; mocks?: Record<string, Abs>; lenientGlobals?: boolean; } = {}, ): EvalRunResult \| undefined` |
+| <a id="tryevalcall"></a>`tryEvalCall` | fn | 求值引擎求值具名导出（仅成功结果） | `tryEvalCall( source: string, filePath: string, fnName: string, args: Abs[], opts: { envNames?: string[]; mocks?: Record<string, Abs>; phi?: Phi; loadModule?: LoadModule; depKey?: string \| null; } = {}, ): Abs \| undefined` |
+| <a id="tryevalcallfull"></a>`tryEvalCallFull` | fn | 求值引擎求值具名导出（结果 + throws）；opts.collectCalls 时附带调用点记录。 | `tryEvalCallFull( source: string, filePath: string, fnName: string, args: Abs[], opts: { collectCalls?: boolean; collectMemberDiags?: boolean; envNames?: string[]; mocks?: Record<string, Abs>; phi?: Phi; loadModule?: LoadModule; depKey?: string \| null; } = {}, )` |
+| <a id="tryruneval"></a>`tryRunEval` | fn | 模块图 + runTranspiled（默认 analyze 模式） | `tryRunEval( source: string, filePath: string, opts: { maxLoopIters?: number; mode?: "exec" \| "analyze"; envNames?: string[]; mocks?: Record<string, Abs>; lenientGlobals?: boolean; loadModule?: LoadModule; depKey?: string \| null; composed?: ComposedEvalModules; } = {}, ): EvalRunResult \| undefined` |
 | <a id="typebinding"></a>`TypeBinding` | type | — | `TypeBinding = { name: string; type: string }` |
 | <a id="typeexprtodirective"></a>`typeExprToDirective` | fn | agent 面类型表达式 → `@nudo:as` 文法 | `typeExprToDirective(expr: string): string` |
 | <a id="unifieddiff"></a>`unifiedDiff` | fn | 行级 unified diff：`--- a/path` 头 + `@@` hunk + 上下文 3 行；相同返回 "" | `unifiedDiff(a: string, b: string, path: string): string` |

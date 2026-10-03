@@ -2,7 +2,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { analyzeFile, tryEvalCall, isEvalCapable, clearEvalCache } from "@nudojs/service";
+import { analyzeFile, tryEvalCall, clearEvalCache } from "@nudojs/service";
 import { formatShape, $lit, absToString } from "@nudojs/core";
 
 const dirs: string[] = [];
@@ -11,11 +11,6 @@ afterAll(() => {
 });
 
 describe("evaluator @nudo:env", () => {
-  it("isEvalCapable allows builtin and path env", () => {
-    expect(isEvalCapable("function f() { return 1; }", ["es"])).toBe(true);
-    expect(isEvalCapable("function f() { return 1; }", ["./custom.ts"])).toBe(true);
-  });
-
   it("JSON.parse via @nudo:env es", () => {
     clearEvalCache();
     const dir = mkdtempSync(join(tmpdir(), "nudo-env-"));

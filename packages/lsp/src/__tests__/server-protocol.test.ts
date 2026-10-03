@@ -7,9 +7,9 @@
  * custom-request dispatch (slash + dot forms), and fail-closed error paths.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import type { Connection } from "vscode-languageserver/node";
 import { createNudoServer } from "../server.ts";
 import {
@@ -54,6 +54,8 @@ function createMockConnection() {
     onWorkspaceSymbol: (h: AnyHandler) => byName("workspace/symbol", h),
     onDidChangeWatchedFiles: (h: AnyHandler) =>
       register(notifications)("workspace/didChangeWatchedFiles", h),
+    onDidChangeConfiguration: (h: AnyHandler) =>
+      register(notifications)("workspace/didChangeConfiguration", h),
     // TextDocuments.listen requires the singular notification names
     onDidOpenTextDocument: (h: AnyHandler) =>
       register(notifications)("textDocument/didOpen", h),
@@ -329,5 +331,123 @@ function (`,
     expect(mock.listened).toBe(false);
     handle.listen();
     expect(mock.listened).toBe(true);
+  });
+});
+
+describe("createNudoServer — client settings (initializationOptions / didChangeConfiguration)", () => {
+  // 无导出、无指令的普通 JS：exports 档静默；all 档纳入。documentSymbol 的
+  // isNudoFile gate 是行为观察面（非 nudo 文件 → []）。
+  const PLAIN_SRC = "function plain(x) {\n  return x;\n}\n";
+
+  let settingsDir: string;
+
+  beforeAll(() => {
+    settingsDir = mkdtempSync(join(tmpdir(), "nudo-lsp-settings-"));
+  });
+
+  afterAll(() => {
+    rmSync(settingsDir, { recursive: true, force: true });
+  });
+
+  function notification(mock: Mock, method: string): AnyHandler {
+    const h = mock.notifications.get(method);
+    expect(h, `notification "${method}" not registered`).toBeTruthy();
+    return h!;
+  }
+
+  function openPlainDoc(mock: Mock, rel: string): string {
+    const filePath = join(settingsDir, rel, "plain.js");
+    mkdirSync(dirname(filePath), { recursive: true });
+    writeFileSync(filePath, PLAIN_SRC, "utf-8");
+    const uri = `file://${filePath}`;
+    notification(mock, "textDocument/didOpen")({
+      textDocument: { uri, languageId: "javascript", version: 1, text: PLAIN_SRC },
+    });
+    return uri;
+  }
+
+  async function symbolsFor(mock: Mock, uri: string): Promise<{ name: string }[]> {
+    return handler(mock, "textDocument/documentSymbol")({ textDocument: { uri } });
+  }
+
+  async function initServer(
+    initializationOptions?: unknown,
+  ): Promise<{ mock: Mock; reconfigure: (mode: unknown) => Promise<void> }> {
+    const mock = startServer();
+    await handler(mock, "initialize")({
+      processId: null,
+      rootUri: null,
+      workspaceFolders: [],
+      capabilities: {},
+      ...(initializationOptions === undefined ? {} : { initializationOptions }),
+    });
+    return {
+      mock,
+      reconfigure: async (mode) => {
+        notification(mock, "workspace/didChangeConfiguration")({
+          settings: { nudo: { analysis: { mode } } },
+        });
+        // revalidate 是 fire-and-forget；让一轮跑完避免悬挂 Promise
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      },
+    };
+  }
+
+  it("plain non-export JS stays quiet without client settings (exports default)", async () => {
+    const { mock } = await initServer();
+    const uri = openPlainDoc(mock, "default");
+    expect(await symbolsFor(mock, uri)).toEqual([]);
+  });
+
+  it("initializationOptions analysis.mode=all widens the gate", async () => {
+    const { mock } = await initServer({ analysis: { mode: "all" } });
+    const uri = openPlainDoc(mock, "all");
+    const symbols = await symbolsFor(mock, uri);
+    expect(symbols.map((s) => s.name)).toContain("plain");
+  });
+
+  it("invalid initializationOptions mode falls back to the product default", async () => {
+    const { mock } = await initServer({ analysis: { mode: "loud" } });
+    const uri = openPlainDoc(mock, "invalid");
+    expect(await symbolsFor(mock, uri)).toEqual([]);
+  });
+
+  it("project package.json#nudo.analysis.mode wins over the client default (directives vs all)", async () => {
+    const projDir = join(settingsDir, "proj-directives");
+    mkdirSync(projDir, { recursive: true });
+    writeFileSync(
+      join(projDir, "package.json"),
+      JSON.stringify({ nudo: { analysis: { mode: "directives" } } }),
+      "utf-8",
+    );
+    const { mock } = await initServer({ analysis: { mode: "all" } });
+    const uri = openPlainDoc(mock, "proj-directives");
+    expect(await symbolsFor(mock, uri)).toEqual([]);
+  });
+
+  it("project package.json#nudo.analysis.mode=all wins over client default directives", async () => {
+    const projDir = join(settingsDir, "proj-all");
+    mkdirSync(projDir, { recursive: true });
+    writeFileSync(
+      join(projDir, "package.json"),
+      JSON.stringify({ nudo: { analysis: { mode: "all" } } }),
+      "utf-8",
+    );
+    const { mock } = await initServer({ analysis: { mode: "directives" } });
+    const uri = openPlainDoc(mock, "proj-all");
+    const symbols = await symbolsFor(mock, uri);
+    expect(symbols.map((s) => s.name)).toContain("plain");
+  });
+
+  it("workspace/didChangeConfiguration re-gates an already-open document", async () => {
+    const { mock, reconfigure } = await initServer();
+    const uri = openPlainDoc(mock, "live");
+    expect(await symbolsFor(mock, uri)).toEqual([]);
+
+    await reconfigure("all");
+    expect((await symbolsFor(mock, uri)).map((s) => s.name)).toContain("plain");
+
+    await reconfigure(undefined);
+    expect(await symbolsFor(mock, uri)).toEqual([]);
   });
 });

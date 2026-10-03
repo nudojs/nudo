@@ -135,10 +135,20 @@ export type FunctionWithDirectives = {
 };
 
 // ---------------------------------------------------------------------------
-// 指令文法诊断（side-channel，镜像 core 的 RefineDiag 机制）
+// 指令文法诊断（两种形态，单一实现）
+//
+// 1. 显式通道（新代码唯一推荐形态）：extractDirectives(ast, { diags }) 传入
+//    调用方自备的累积数组——诊断同步落袋，不碰任何模块级状态（无 seq 锚、
+//    无跨消费方窃取窗口）。目标：新代码不再需要 takeDirectiveDiagsSince
+//    序号锚。
+// 2. 模块级 side-channel（deprecated 兼容层）：不传 diags 时沿用全局缓冲 +
+//    directiveDiagCount()/takeDirectiveDiags(Since) 序号锚排干。注释记录过
+//    两轮并发偷诊断事故（R2B-003：全量 take 在 await 窗口偷走在途诊断），
+//    均源于该全局态。退役路径：剩余消费方（nudojs check 的多发射窗口）迁移
+//    后，删除本段缓冲与 directiveDiagCount/takeDirectiveDiags(Since) 导出。
 //
 // 非法/边界形态的 case、mock、as、skip 输入不再静默丢弃：发 nudo:directive-syntax
-// 显式诊断。产品原则与侧车加载一致（refine.ts:75-78）：「执行失败/导出形式不识别
+// 显式诊断。产品原则与侧车加载一致（refine.ts）：「执行失败/导出形式不识别
 // 不再静默吞错」——文法层同等对待。
 // ---------------------------------------------------------------------------
 
@@ -150,16 +160,39 @@ const directiveDiags: Array<{ seq: number; d: DirectiveDiag }> = [];
 const MAX_DIRECTIVE_DIAGS = 1024;
 const directiveDiagSeen = new Set<string>();
 
+/** 显式诊断通道的调用内状态：单次 extractDirectives 生效（含同文案去重） */
+type DiagSinkState = { list: DirectiveDiag[]; seen: Set<string> };
+let activeDiagSink: DiagSinkState | null = null;
+
+/**
+ * 设置诊断观察者（null 清除）；缓冲照常累积，takeDirectiveDiags 取走
+ *
+ * @deprecated 模块级 side-channel 兼容层。新代码用显式通道
+ * `extractDirectives(ast, { diags })`——诊断直接落调用方数组，无全局态。
+ * 退役路径：与 directiveDiagCount/takeDirectiveDiags(Since) 一同删除
+ * （届时剩余消费方须已迁移显式通道）。
+ */
 export function setDirectiveDiagCollector(fn: ((d: DirectiveDiag) => void) | null): void {
   directiveDiagCollector = fn;
 }
 
-/** 当前诊断累计序号（since 锚：消费方只排干自身 extract 产生的增量） */
+/**
+ * 当前诊断累计序号（since 锚：消费方只排干自身 extract 产生的增量）
+ *
+ * @deprecated 模块级 side-channel 兼容层（仅配合不传 diags 的
+ * extractDirectives + takeDirectiveDiagsSince 使用）。新代码用显式通道
+ * `extractDirectives(ast, { diags })`，无需序号锚。
+ */
 export function directiveDiagCount(): number {
   return directiveDiagSeq;
 }
 
-/** 取走已收集的诊断（全量排干 + 清空 seen）——CLI/测试整批消费 */
+/**
+ * 取走已收集的诊断（全量排干 + 清空 seen）——CLI/测试整批消费
+ *
+ * @deprecated 模块级 side-channel 兼容层。新代码用显式通道
+ * `extractDirectives(ast, { diags })`。
+ */
 export function takeDirectiveDiags(): DirectiveDiag[] {
   const out = directiveDiags.map((e) => e.d);
   directiveDiags.length = 0;
@@ -171,6 +204,11 @@ export function takeDirectiveDiags(): DirectiveDiag[] {
  * 只取走 seq > since 的诊断（清空仅限增量）——对齐 takeInterfaceDiagsSince。
  * LSP 长驻进程里 analyze/check/lens 用它排干**自身 extract** 产生的诊断，
  * 不窃取在途其他消费方待收的指令文法诊断（全量 take 曾在 await 窗口偷走跨文件诊断）。
+ *
+ * @deprecated 模块级 side-channel 兼容层（配 directiveDiagCount 作 since 锚）。
+ * 新代码用显式通道 `extractDirectives(ast, { diags })`——诊断直接落袋，
+ * 不存在排干窗口。nudojs check 的多发射窗口（inline + fn 指令跨多个 helper）
+ * 迁移前仍依赖本 API。
  */
 export function takeDirectiveDiagsSince(since: number): DirectiveDiag[] {
   const out: DirectiveDiag[] = [];
@@ -185,6 +223,14 @@ export function takeDirectiveDiagsSince(since: number): DirectiveDiag[] {
 
 function emitDirectiveDiag(d: DirectiveDiag): void {
   const key = `${d.code}\0${d.message}`;
+  // 显式通道：诊断落调用方数组（同文案单次调用内去重，与模块通道同语义）；
+  // 不写模块缓冲、不触发模块级 collector
+  if (activeDiagSink) {
+    if (activeDiagSink.seen.has(key)) return;
+    activeDiagSink.seen.add(key);
+    activeDiagSink.list.push(d);
+    return;
+  }
   if (directiveDiagSeen.has(key)) return;
   directiveDiagSeen.add(key);
   if (directiveDiags.length >= MAX_DIRECTIVE_DIAGS) {
@@ -216,7 +262,8 @@ const CASE_TAG_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*|\/[ \t]*)?@nudo:case\b[ \t]*([
 /** JS 标识符（Unicode 感知）：mock 名文法 */
 const JS_IDENT_RE = /^[\p{L}$_][\p{L}\p{N}$_]*$/u;
 const MOCK_INLINE_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*|\/[ \t]*)?@nudo:mock\b[ \t]+([^\s=]+)[ \t]*=[ \t]*(.+)/g;
-const MOCK_FROM_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*|\/[ \t]*)?@nudo:mock\b[ \t]+([^\s]+)[ \t]+from[ \t]+"([^"\n]+)"/g;
+/** from 路径单/双引号皆可（`'./x.js'` 此前静默不识别）——`m[2] ?? m[3]` 取路径 */
+const MOCK_FROM_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*|\/[ \t]*)?@nudo:mock\b[ \t]+([^\s]+)[ \t]+from[ \t]+(?:"([^"\n]+)"|'([^'\n]+)')/g;
 /** 宽松捕获 @nudo:mock 标签后的整行文本（含空标签），用于检测非法名形态 */
 const MOCK_TAG_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*|\/[ \t]*)?@nudo:mock\b[ \t]*([^\n]*)/g;
 const PURE_REGEX = /(?:^|\n)[ \t]*(?:\*[ \t]*|\/[ \t]*)?@nudo:pure\b/g;
@@ -1035,7 +1082,7 @@ function parseDirectivesFromCommentTexts(
       directives.push({
         kind: "mock",
         name,
-        fromPath: mockFromMatch[2],
+        fromPath: mockFromMatch[2] ?? mockFromMatch[3],
       });
       mockFromRanges.push([mockFromMatch.index, mockFromMatch.index + mockFromMatch[0].length]);
     }
@@ -1205,7 +1252,7 @@ function scanMalformedMockNames(text: string, caseArgSpans: [number, number][]):
     if (!nameMatch) {
       emitDirectiveDiag({
         code: "nudo:directive-syntax",
-        message: `Malformed @nudo:mock: cannot parse name (expected @nudo:mock <ident> = <expr> or @nudo:mock <ident> from "path") — got: ${rest.slice(0, 60)}`,
+        message: `Malformed @nudo:mock: cannot parse name (expected @nudo:mock <ident> = <expr> or @nudo:mock <ident> from "path" / 'path') — got: ${rest.slice(0, 60)}`,
       });
       continue;
     }
@@ -1218,12 +1265,13 @@ function scanMalformedMockNames(text: string, caseArgSpans: [number, number][]):
       continue;
     }
     // S4-004 同族：from 路径必须同行闭引号——此前 `"([^"]+)` 跨行把下一行
-    // 粘进 fromPath（错误归因）；收紧后引号未闭合不再静默丢弃
+    // 粘进 fromPath（错误归因）；收紧后引号未闭合不再静默丢弃。
+    // 单/双引号独立判闭（`"a'` / `'a"` 都算未闭合）
     const afterName = rest.slice(name.length);
-    if (/^[ \t]+from[ \t]+"[^"\n]*$/.test(afterName)) {
+    if (/^[ \t]+from[ \t]+(?:"[^"\n]*|'[^'\n]*)$/.test(afterName)) {
       emitDirectiveDiag({
         code: "nudo:directive-syntax",
-        message: `Malformed @nudo:mock from: unclosed quote in path (expected @nudo:mock ${name} from "path") — got: @nudo:mock ${rest.slice(0, 60)}`,
+        message: `Malformed @nudo:mock from: unclosed quote in path (expected @nudo:mock ${name} from "path" / 'path') — got: @nudo:mock ${rest.slice(0, 60)}`,
       });
     }
   }
@@ -1246,12 +1294,44 @@ function getFunctionName(node: Node): string {
 }
 
 /**
+ * extractDirectives 显式诊断通道 opts。
+ *
+ * `diags`：调用方自备的诊断累积数组——本次 extract 产生的指令文法诊断
+ * 全部同步落袋，不写模块级 buffer、不触发模块级 collector（无
+ * takeDirectiveDiagsSince 序号锚、无在途窃取窗口）。单次调用内同文案
+ * 去重与模块通道同语义。新代码一律走本通道；模块级 side-channel 仅作
+ * deprecated 兼容层保留。
+ */
+export type ExtractDirectivesOpts = {
+  diags?: DirectiveDiag[];
+};
+
+/**
  * D6=G2：指令绑定 AST 最近 Function（含 nested function、class method）。
  * 作用域清单与 refine 的 @nudo:contract 同源（core directive-scan），
  * case 与 contract 对同一函数集合同时可见。
  */
-export function extractDirectives(ast: Node): FunctionWithDirectives[] {
-  resetDirectiveDiagSeen();
+export function extractDirectives(
+  ast: Node,
+  opts?: ExtractDirectivesOpts,
+): FunctionWithDirectives[] {
+  const sink = opts?.diags;
+  if (!sink) {
+    // 兼容层路径（deprecated）：诊断走模块级 side-channel
+    resetDirectiveDiagSeen();
+    return collectFnDirectives(ast);
+  }
+  // 显式通道：sink 态仅在本次调用内生效（finally 恢复，异常不泄漏）
+  const prev = activeDiagSink;
+  activeDiagSink = { list: sink, seen: new Set() };
+  try {
+    return collectFnDirectives(ast);
+  } finally {
+    activeDiagSink = prev;
+  }
+}
+
+function collectFnDirectives(ast: Node): FunctionWithDirectives[] {
   const results: FunctionWithDirectives[] = [];
   if (ast.type !== "File") return results;
 
@@ -1270,15 +1350,12 @@ export function extractDirectives(ast: Node): FunctionWithDirectives[] {
 }
 
 /**
- * 纯查询 extract：排干自身产生的指令文法诊断增量并丢弃——
- * hover/completion/collectSkipReturns 等探测路径不得把诊断留在全局 buffer
- * 供在途 validate/check 误窃，也不得自己背走别人的在途诊断。
+ * 纯查询 extract：诊断走显式通道丢弃——hover/completion/collectSkipReturns
+ * 等探测路径不碰模块级 buffer（不污染在途 validate/check 待收诊断，也不背走
+ * 别人的在途诊断），也不再需要 takeDirectiveDiagsSince 序号锚排干。
  */
 export function extractDirectivesQuiet(ast: Node): FunctionWithDirectives[] {
-  const since = directiveDiagCount();
-  const out = extractDirectives(ast);
-  takeDirectiveDiagsSince(since);
-  return out;
+  return extractDirectives(ast, { diags: [] });
 }
 
 /**

@@ -40,6 +40,24 @@ describe("simplifyTerm algebra identities", () => {
     expect(t.op === "lit" && t.value === null).toBe(false);
   });
 
+  it("undefined * 1 folds NaN (ToNumber semantics)", () => {
+    const t = simplifyTerm(app("*", [lit(undefined), lit(1)]));
+    expect(t.op === "lit" && typeof t.value === "number" && Number.isNaN(t.value)).toBe(true);
+  });
+
+  it("5n * 1 must NOT fold lit(NaN) (native is mixed TypeError, not NaN)", () => {
+    const t = simplifyTerm(app("*", [lit(5n), lit(1)]));
+    expect(t.op === "lit" && t.value !== t.value).toBe(false); // 不得折 NaN
+    // 保留原 app 不化简：交算术核 foldBigintBinOp 的混型 TypeError 路径
+    expect(t).toEqual(app("*", [lit(5n), lit(1)]));
+  });
+
+  it("1 * 5n likewise stays the app (no ToNumber coercion of bigint)", () => {
+    const t = simplifyTerm(app("*", [lit(1), lit(5n)]));
+    expect(t.op === "lit").toBe(false);
+    expect(t).toEqual(app("*", [lit(1), lit(5n)]));
+  });
+
   it("mul(x, 1) on a number var still keeps the var identity", () => {
     const r = mul(numVar("x"), numLit(1));
     expect(r.term).toEqual(v("x"));

@@ -285,3 +285,48 @@ export function litValue(a: Abs): LitValueResult {
   // fail-closed 视为无字面量，禁止宿主 TypeError 冒进 internal
   return a?.term?.op === "lit" ? { ok: true, value: a.term.value } : { ok: false };
 }
+
+// --- 字面量助手（env 声明 + harvester .d.ts 物化共享，经 /internal 面）---
+// 抽取方向：Abs → JS 值（absNumLit / absStrLit / allAbsStr）；
+// 构造方向：JS 值 → Abs（absLit）。
+
+/** 抽取 number 字面量值；入参缺省 / term 非 lit / 值非 number → undefined */
+export function absNumLit(a: Abs | undefined): number | undefined {
+  if (!a) return undefined;
+  const vR = litValue(a);
+  const v = vR.ok ? vR.value : undefined;
+  return typeof v === "number" ? v : undefined;
+}
+
+/** 抽取 string 字面量值；入参缺省 / term 非 lit / 值非 string → undefined */
+export function absStrLit(a: Abs | undefined): string | undefined {
+  if (!a) return undefined;
+  const vR = litValue(a);
+  const v = vR.ok ? vR.value : undefined;
+  return typeof v === "string" ? v : undefined;
+}
+
+/** 全员 string 字面量才命中（variadic 内建折叠，如 path.join）；任一未命中 → undefined */
+export function allAbsStr(args: Abs[]): string[] | undefined {
+  const result: string[] = [];
+  for (const a of args) {
+    const s = absStrLit(a);
+    if (s === undefined) return undefined;
+    result.push(s);
+  }
+  return result;
+}
+
+/**
+ * 具体值 → 字面量 Abs（.d.ts 字面量类型节点物化）：
+ * num/str/bool → lit 构造；bigint → 无 term 的 exact prim（d.ts 不保数值）；
+ * null/undefined → unknown 叶子（不 brand —— 与 env 显示层的 branded null 区分）。
+ */
+export function absLit(value: string | number | boolean | bigint | null | undefined): Abs {
+  if (typeof value === "number") return numLit(value);
+  if (typeof value === "string") return strLit(value);
+  if (typeof value === "boolean") return boolLit(value);
+  if (typeof value === "bigint") return abs({ k: "prim", type: "bigint" }, undefined, undefined, "exact");
+  if (value === null) return abs({ k: "unknown" }, lit(null), undefined, "exact");
+  return abs({ k: "unknown" }, lit(undefined), undefined, "exact");
+}

@@ -34,12 +34,17 @@ export function shouldComputeCacheKey(opts: {
   return opts.useDisk && !opts.verbose && !opts.abs;
 }
 
-/** 诊断 → 文档深链仅终端面；--json 契约不变。abs 成功时也不打 */
+/**
+ * 诊断 → 文档深链仅终端面。--json / --gitlab 是机器契约面不打——
+ * --gitlab 的 stdout 必须恰好是一个 Code Quality JSON 数组。
+ * abs 成功时也不打。
+ */
 export function shouldPrintDocsLinks(opts: {
   json?: boolean;
+  gitlab?: boolean;
   abs?: boolean;
   issueCount: number;
   reportOk: boolean;
 }): boolean {
-  return !opts.json && opts.issueCount > 0 && (!opts.abs || !opts.reportOk);
+  return !opts.json && !opts.gitlab && opts.issueCount > 0 && (!opts.abs || !opts.reportOk);
 }

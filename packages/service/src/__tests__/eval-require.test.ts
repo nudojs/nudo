@@ -6,7 +6,6 @@ import {
   analyzeFile,
   tryEvalCall,
   tryEvalCallFull,
-  isEvalCapable,
   clearEvalCache,
 } from "@nudojs/service";
 import { formatShape, $lit, litValue } from "@nudojs/core";
@@ -36,7 +35,6 @@ export function go(n) {
 `;
     const p = join(dir, "main.js");
     writeFileSync(p, main, "utf-8");
-    expect(isEvalCapable(main)).toBe(true);
     const r = tryEvalCall(main, p, "go", [$lit(21)]);
     expect(r).toBeDefined();
     expect(litValue(r!)).toEqual({ ok: true, value: 42 });

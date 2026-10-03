@@ -6,6 +6,10 @@
 import type { Abs } from "./abs.ts";
 import { abs } from "./abs.ts";
 import { termToString } from "./term.ts";
+import {
+  createScopedSlot,
+  registerCollectorScopeParticipant,
+} from "./collector-scope.ts";
 
 export const MAX_CALL_DEPTH = 64;
 /** 与 B 命名调用（calls.ts MAX_EVAL_TOTAL_CALLS）同阀：病态展开下 200k 级不可接受 */
@@ -116,19 +120,25 @@ export function callBudgetKey(kind: string, id: string, args: unknown[]): string
   return `${kind}|${id}|${parts.join(",")}`;
 }
 
-let absTruncCollector: ((fnLabel: string) => void) | null = null;
+/** 截断观测 collector（作用域化：runWithCollectorScope 内各分析互不串台；
+ *  无作用域 = fallback 模块级单变量，行为同今日） */
+const absTruncCollectorSlot = createScopedSlot<
+  ((fnLabel: string) => void) | null
+>(() => null);
+registerCollectorScopeParticipant((body) => absTruncCollectorSlot.runScoped(body));
 
 /** 记录被截断的递归（service 可映射为 nudo:recursion-truncated）。
  *  返回先前 collector，便于嵌套 save/restore。 */
 export function setAbsTruncationCollector(
   collector: ((fnLabel: string) => void) | null,
 ): ((fnLabel: string) => void) | null {
-  const prev = absTruncCollector;
-  absTruncCollector = collector;
+  const prev = absTruncCollectorSlot.get();
+  absTruncCollectorSlot.set(collector);
   return prev;
 }
 
 export function noteAbsTruncation(label: string): void {
+  const absTruncCollector = absTruncCollectorSlot.get();
   if (!absTruncCollector) return;
   try {
     absTruncCollector(label);
@@ -201,6 +211,8 @@ export const HOST_EFFECT_LABEL_PREFIX = "#host-effect:";
 export const PROMISE_MICRO_OVERFLOW_LABEL = "#promise-micro-overflow";
 /** promise 微任务 drain 抛错标签（不得静默吞掉） */
 export const PROMISE_MICRO_ERROR_LABEL = "#promise-micro-error";
+/** Math 原生折叠抛错标签（宿主篡改/环境分叉的 Math.*；结果拓宽为 number 不得无观测） */
+export const MATH_FOLD_ERROR_LABEL = "#math-fold-error";
 
 /** 宿主副作用未执行观测（service/LSP 映射 nudo:host-effect-blocked；与调用截断同 collector 管道） */
 export function noteHostEffectBlocked(name: string): void {

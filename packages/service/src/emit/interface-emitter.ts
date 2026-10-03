@@ -35,7 +35,7 @@ import {
   type Abs,
   type NudoConstraint,
 } from "@nudojs/core";
-import { sanitizeCommentText, exportedNameOfLocal } from "@nudojs/core/internal";
+import { sanitizeCommentText, exportedNameOfLocal, runWithCollectorScope } from "@nudojs/core/internal";
 import { randomBytes } from "node:crypto";
 
 import { unifiedDiff } from "./case-emitter.ts";
@@ -113,285 +113,290 @@ export async function emitInterface(
   filePath: string,
   opts: EmitInterfaceOpts,
 ): Promise<EmitInterfaceResult> {
-  const abs = resolve(filePath);
-  if (isNodeModulesPath(abs) || isNodeModulesPath(sidecarPathOf(abs))) {
-    throw new Error(
-      `emit target '${abs}' is inside node_modules; contract sidecars are never written there`,
-    );
-  }
-  // package.json#nudo.contract.emit 白名单（Phase 3 §7.3）：显式动作也尊重包级门禁
-  // （匹配的是**源文件**路径，不是侧车路径）
-  const proj = findProjectConfig(dirname(abs));
-  const allow = interfaceConfig(proj?.config).emit;
-  if (!matchesEmitAllowlist(abs, proj?.projectDir, allow)) {
-    return {
-      written: [],
-      skipped: [{ fn: opts.fnNames?.[0] ?? "*", reason: "emit-denied" }],
-      changed: false,
-      issues: [
-        {
-          code: "nudo:interface-emit-denied",
-          severity: "warning",
-          message: `emit target '${relative(process.cwd(), abs) || abs}' is outside package.json#nudo.contract.emit allowlist`,
-        },
-      ],
-      sidecarPath: sidecarPathOf(abs),
-    };
-  }
-  const source = opts.source ?? readFileSync(abs, "utf-8");
-  // since 锚：emit 只排干自身 round-trip 自检产生的诊断（全量 take 会在 LSP
-  // 长驻进程的 await 窗口窃取在途 validateText 的待消费诊断）
-  const ifaceSince = interfaceDiagCount();
-  const refineSince = refineDiagCount();
-  const sidecarPath = sidecarPathOf(abs);
-  // 侧车 open buffer 与磁盘不一致时由调用方拒绝写盘（防 save 覆盖 emit）；
-  // 此处仍以磁盘为合并基（调用方保证 dirty 时不会走到这里）。
-  const sidecarSrc = existsSync(sidecarPath) ? readFileSync(sidecarPath, "utf-8") : "";
-  // 源路径锚定侧车自身目录（与 cwd 无关）：monorepo 子包/仓库根两处跑 emit
-  // 不再因 `// source:` 行漂移把 no-change 判成 rewrite
-  const srcRel = relative(dirname(sidecarPath), abs) || basename(abs);
+  // collector 作用域（幂等）：since 锚（interfaceDiagCount/refineDiagCount）到
+  // await analyzeFileAsync 的窗口内交错分析的诊断不得混入本 emit 的排干口径
+  // ——作用域先于锚打开，锚即私有（嵌套宿主外层已开时零开销复用）。
+  return runWithCollectorScope(async () => {
+    const abs = resolve(filePath);
+    if (isNodeModulesPath(abs) || isNodeModulesPath(sidecarPathOf(abs))) {
+      throw new Error(
+        `emit target '${abs}' is inside node_modules; contract sidecars are never written there`,
+      );
+    }
+    // package.json#nudo.contract.emit 白名单（Phase 3 §7.3）：显式动作也尊重包级门禁
+    // （匹配的是**源文件**路径，不是侧车路径）
+    const proj = findProjectConfig(dirname(abs));
+    const allow = interfaceConfig(proj?.config).emit;
+    if (!matchesEmitAllowlist(abs, proj?.projectDir, allow)) {
+      return {
+        written: [],
+        skipped: [{ fn: opts.fnNames?.[0] ?? "*", reason: "emit-denied" }],
+        changed: false,
+        issues: [
+          {
+            code: "nudo:interface-emit-denied",
+            severity: "warning",
+            message: `emit target '${relative(process.cwd(), abs) || abs}' is outside package.json#nudo.contract.emit allowlist`,
+          },
+        ],
+        sidecarPath: sidecarPathOf(abs),
+      };
+    }
+    const source = opts.source ?? readFileSync(abs, "utf-8");
+    // since 锚：emit 只排干自身 round-trip 自检产生的诊断（全量 take 会在 LSP
+    // 长驻进程的 await 窗口窃取在途 validateText 的待消费诊断）
+    const ifaceSince = interfaceDiagCount();
+    const refineSince = refineDiagCount();
+    const sidecarPath = sidecarPathOf(abs);
+    // 侧车 open buffer 与磁盘不一致时由调用方拒绝写盘（防 save 覆盖 emit）；
+    // 此处仍以磁盘为合并基（调用方保证 dirty 时不会走到这里）。
+    const sidecarSrc = existsSync(sidecarPath) ? readFileSync(sidecarPath, "utf-8") : "";
+    // 源路径锚定侧车自身目录（与 cwd 无关）：monorepo 子包/仓库根两处跑 emit
+    // 不再因 `// source:` 行漂移把 no-change 判成 rewrite
+    const srcRel = relative(dirname(sidecarPath), abs) || basename(abs);
 
-  const sections = collectGeneratedSections(sidecarSrc);
-  const generatedNames = new Set(sections.flatMap((s) => s.names));
-  const declared = topLevelDeclaredNames(sidecarSrc);
-  if (declared === undefined) {
-    throw new Error(
-      `sidecar '${relative(process.cwd(), sidecarPath) || sidecarPath}' is not parseable; fix it before emitting`,
-    );
-  }
-  // 手写绑定 = 顶层声明 − 生成段占用（身份名与别名绑定都扣除——别名段的
-  // `const _nudo_1` 与 `export {…as class}` 导出面不是手写）
-  for (const s of sections) {
-    for (const n of s.names) declared.delete(n);
-    for (const b of s.bindings) declared.delete(b);
-  }
-
-  // ---- 分析（与 interfaceSurface 同一管道：analyzer 现成 case/abs 推断）----
-  const analysis = await analyzeFileAsync(
-    abs,
-    source,
-    undefined,
-    opts.records,
-    opts.loadModule,
-  );
-  const exported = localNamedExports(source);
-  const fnByName = new Map<string, FunctionAnalysis>();
-  for (const f of analysis.functions) {
-    if (!fnByName.has(f.name)) fnByName.set(f.name, f);
-  }
-  // DESIGN-003：目标/段身份=导出名（`export { _c as class }` 的身份是 class，
-  // 不是分析键 _c）；default 形态保持本地名身份（C4.4 双键绑定约定）
-  const identityOfLocal = (local: string): string => exportedNameOfLocal(source, local) ?? local;
-  const localOf = new Map<string, string>(); // 身份（导出名）→ 本地分析名
-  const identityOfFn = new Map<string, string>(); // 本地分析名 → 身份
-  for (const f of analysis.functions) {
-    if (identityOfFn.has(f.name)) continue;
-    const identity = identityOfLocal(f.name);
-    identityOfFn.set(f.name, identity);
-    if (!localOf.has(identity)) localOf.set(identity, f.name);
-  }
-  // 去重（首现优先，与 localOf 同口径）：非导出本地函数的别名导出可与另一
-  // 函数本地名撞同一身份（`function _a…; export { _a as b }; function b…` →
-  // 两个 "b"）——重复会让 --all/默认 update 双次处理：bindingOf 被第二次
-  // 分配覆盖成 _nudo_<n>，同段文本双追加 → 侧车不可解析、契约全丢
-  const fileExportOrder = [
-    ...new Set(
-      analysis.functions
-        .map((f) => identityOfFn.get(f.name)!)
-        .filter((n) => exported.has(n)),
-    ),
-  ];
-
-  // ---- 目标过滤（§7.3）：白名单 > --all > 默认刷新已有生成段 ----
-  // 白名单按身份匹配：CLI/诊断给导出名（class），lens/分析通道给本地名（_c）
-  // ——两者都归一到身份
-  let targetNames: string[];
-  if (opts.fnNames && opts.fnNames.length > 0) {
-    targetNames = [...new Set(opts.fnNames.map((n) => identityOfFn.get(n) ?? n))];
-  } else if (opts.all) {
-    targetNames = fileExportOrder;
-  } else {
-    targetNames = fileExportOrder.filter((n) => generatedNames.has(n));
-  }
-  const targetSet = new Set(targetNames);
-
-  // ---- 绑定分配（DESIGN-003）：绑定可别名，身份不可 ----
-  // update 剥离全部生成段后重排（别名随段剥离→重新分配得同名，幂等）；
-  // add 只追加（既有别名占用 → 新别名顺次递增）
-  const takenBindings = new Set<string>();
-  const claimFrom = (text: string): void => {
-    for (const n of topLevelDeclaredNames(text) ?? []) takenBindings.add(n);
-  };
-  if (opts.mode === "update") {
-    claimFrom(removeSections(sidecarSrc, sections));
+    const sections = collectGeneratedSections(sidecarSrc);
+    const generatedNames = new Set(sections.flatMap((s) => s.names));
+    const declared = topLevelDeclaredNames(sidecarSrc);
+    if (declared === undefined) {
+      throw new Error(
+        `sidecar '${relative(process.cwd(), sidecarPath) || sidecarPath}' is not parseable; fix it before emitting`,
+      );
+    }
+    // 手写绑定 = 顶层声明 − 生成段占用（身份名与别名绑定都扣除——别名段的
+    // `const _nudo_1` 与 `export {…as class}` 导出面不是手写）
     for (const s of sections) {
-      if (!s.names.some((n) => targetSet.has(n))) claimFrom(s.text); // 保留段照旧占名
+      for (const n of s.names) declared.delete(n);
+      for (const b of s.bindings) declared.delete(b);
     }
-  } else {
-    claimFrom(sidecarSrc);
-  }
-  const bindingOf = new Map<string, string>();
-  for (const name of targetNames) {
-    const binding = directBindingOk(name, (n) => takenBindings.has(n))
-      ? name
-      : allocNudoBinding((n) => takenBindings.has(n));
-    takenBindings.add(binding);
-    bindingOf.set(name, binding);
-  }
 
-  const written: string[] = [];
-  const skipped: Array<{ fn: string; reason: EmitInterfaceSkipReason }> = [];
-  const issues: EmitInterfaceResult["issues"] = [];
-  /** 通过全部检查的段落（名字 → 段文本）与既有段文本（update no-change 判定） */
-  const accepted: Array<{ fn: string; text: string; prevText?: string }> = [];
-
-  /** 逐名投影计划（dsl + round-trip 自检，单次计算复用——段原子判定与主循环同源） */
-  const planCache = new Map<string, { dsl?: string; roundTrip: boolean }>();
-  const planFor = (name: string): { dsl?: string; roundTrip: boolean } => {
-    const hit = planCache.get(name);
-    if (hit) return hit;
-    const fn = fnByName.get(localOf.get(name) ?? name);
-    const dsl = fn === undefined ? undefined : projectFunctionDsl(fn);
-    const roundTrip =
-      dsl !== undefined && roundTrips(sectionText(name, dsl, srcRel, bindingOf.get(name)), name);
-    const rec = { dsl, roundTrip };
-    planCache.set(name, rec);
-    return rec;
-  };
-
-  /**
-   * 多声明符生成段（手工合并形态，collectGeneratedSections 显式支持）按段
-   * 原子处理：段内任一名字不可重写（非目标/无证据/自检失败）→ 整段原样
-   * 保留一次、全部名字跳过重写。按名归位会复制整段文本，与可重写兄弟的
-   * 新段叠加成重复声明 → 侧车不可解析 → 全部契约失联（数据丢失路径）。
-   */
-  const atomicSections = new Set<GeneratedSection>();
-  for (const s of sections) {
-    if (s.names.length <= 1) continue;
-    const everyRewritable = s.names.every(
-      (n) =>
-        targetSet.has(n) &&
-        exported.has(n) &&
-        !declared.has(n) &&
-        planFor(n).dsl !== undefined &&
-        planFor(n).roundTrip,
+    // ---- 分析（与 interfaceSurface 同一管道：analyzer 现成 case/abs 推断）----
+    const analysis = await analyzeFileAsync(
+      abs,
+      source,
+      undefined,
+      opts.records,
+      opts.loadModule,
     );
-    if (!everyRewritable) atomicSections.add(s);
-  }
-  const acceptedAtomic = new Set<GeneratedSection>();
+    const exported = localNamedExports(source);
+    const fnByName = new Map<string, FunctionAnalysis>();
+    for (const f of analysis.functions) {
+      if (!fnByName.has(f.name)) fnByName.set(f.name, f);
+    }
+    // DESIGN-003：目标/段身份=导出名（`export { _c as class }` 的身份是 class，
+    // 不是分析键 _c）；default 形态保持本地名身份（C4.4 双键绑定约定）
+    const identityOfLocal = (local: string): string => exportedNameOfLocal(source, local) ?? local;
+    const localOf = new Map<string, string>(); // 身份（导出名）→ 本地分析名
+    const identityOfFn = new Map<string, string>(); // 本地分析名 → 身份
+    for (const f of analysis.functions) {
+      if (identityOfFn.has(f.name)) continue;
+      const identity = identityOfLocal(f.name);
+      identityOfFn.set(f.name, identity);
+      if (!localOf.has(identity)) localOf.set(identity, f.name);
+    }
+    // 去重（首现优先，与 localOf 同口径）：非导出本地函数的别名导出可与另一
+    // 函数本地名撞同一身份（`function _a…; export { _a as b }; function b…` →
+    // 两个 "b"）——重复会让 --all/默认 update 双次处理：bindingOf 被第二次
+    // 分配覆盖成 _nudo_<n>，同段文本双追加 → 侧车不可解析、契约全丢
+    const fileExportOrder = [
+      ...new Set(
+        analysis.functions
+          .map((f) => identityOfFn.get(f.name)!)
+          .filter((n) => exported.has(n)),
+      ),
+    ];
 
-  for (const name of targetNames) {
-    if (!exported.has(name) || !fnByName.has(localOf.get(name) ?? name)) {
-      skipped.push({
-        fn: name,
-        reason: "not-an-export",
-      });
-      continue;
+    // ---- 目标过滤（§7.3）：白名单 > --all > 默认刷新已有生成段 ----
+    // 白名单按身份匹配：CLI/诊断给导出名（class），lens/分析通道给本地名（_c）
+    // ——两者都归一到身份
+    let targetNames: string[];
+    if (opts.fnNames && opts.fnNames.length > 0) {
+      targetNames = [...new Set(opts.fnNames.map((n) => identityOfFn.get(n) ?? n))];
+    } else if (opts.all) {
+      targetNames = fileExportOrder;
+    } else {
+      targetNames = fileExportOrder.filter((n) => generatedNames.has(n));
     }
-    if (declared.has(name)) {
-      skipped.push({ fn: name, reason: "name-clash" });
-      issues.push({
-        code: "nudo:interface-name-clash",
-        severity: "error",
-        message: `sidecar already has a handwritten binding '${name}' (${srcRel}); handwritten wins — skipping emit for it`,
-      });
-      continue;
+    const targetSet = new Set(targetNames);
+
+    // ---- 绑定分配（DESIGN-003）：绑定可别名，身份不可 ----
+    // update 剥离全部生成段后重排（别名随段剥离→重新分配得同名，幂等）；
+    // add 只追加（既有别名占用 → 新别名顺次递增）
+    const takenBindings = new Set<string>();
+    const claimFrom = (text: string): void => {
+      for (const n of topLevelDeclaredNames(text) ?? []) takenBindings.add(n);
+    };
+    if (opts.mode === "update") {
+      claimFrom(removeSections(sidecarSrc, sections));
+      for (const s of sections) {
+        if (!s.names.some((n) => targetSet.has(n))) claimFrom(s.text); // 保留段照旧占名
+      }
+    } else {
+      claimFrom(sidecarSrc);
     }
-    const prev = sections.find((s) => s.names.includes(name));
-    if (prev !== undefined && atomicSections.has(prev)) {
-      // 段原子保留：整段原样归位一次，段内所有名字跳过（防重复声明）
-      if (!acceptedAtomic.has(prev)) {
-        acceptedAtomic.add(prev);
-        const keptText = normalizeSection(prev.text);
-        accepted.push({ fn: prev.names.join("+"), text: keptText, prevText: keptText });
-        issues.push({
-          code: "nudo:interface-multi-declarator",
-          severity: "warning",
-          message: `generated section '${prev.names.join(", ")}' is a hand-merged multi-declarator form; kept verbatim (split it into one export per section to re-emit)`,
+    const bindingOf = new Map<string, string>();
+    for (const name of targetNames) {
+      const binding = directBindingOk(name, (n) => takenBindings.has(n))
+        ? name
+        : allocNudoBinding((n) => takenBindings.has(n));
+      takenBindings.add(binding);
+      bindingOf.set(name, binding);
+    }
+
+    const written: string[] = [];
+    const skipped: Array<{ fn: string; reason: EmitInterfaceSkipReason }> = [];
+    const issues: EmitInterfaceResult["issues"] = [];
+    /** 通过全部检查的段落（名字 → 段文本）与既有段文本（update no-change 判定） */
+    const accepted: Array<{ fn: string; text: string; prevText?: string }> = [];
+
+    /** 逐名投影计划（dsl + round-trip 自检，单次计算复用——段原子判定与主循环同源） */
+    const planCache = new Map<string, { dsl?: string; roundTrip: boolean }>();
+    const planFor = (name: string): { dsl?: string; roundTrip: boolean } => {
+      const hit = planCache.get(name);
+      if (hit) return hit;
+      const fn = fnByName.get(localOf.get(name) ?? name);
+      const dsl = fn === undefined ? undefined : projectFunctionDsl(fn);
+      const roundTrip =
+        dsl !== undefined && roundTrips(sectionText(name, dsl, srcRel, bindingOf.get(name)), name);
+      const rec = { dsl, roundTrip };
+      planCache.set(name, rec);
+      return rec;
+    };
+
+    /**
+     * 多声明符生成段（手工合并形态，collectGeneratedSections 显式支持）按段
+     * 原子处理：段内任一名字不可重写（非目标/无证据/自检失败）→ 整段原样
+     * 保留一次、全部名字跳过重写。按名归位会复制整段文本，与可重写兄弟的
+     * 新段叠加成重复声明 → 侧车不可解析 → 全部契约失联（数据丢失路径）。
+     */
+    const atomicSections = new Set<GeneratedSection>();
+    for (const s of sections) {
+      if (s.names.length <= 1) continue;
+      const everyRewritable = s.names.every(
+        (n) =>
+          targetSet.has(n) &&
+          exported.has(n) &&
+          !declared.has(n) &&
+          planFor(n).dsl !== undefined &&
+          planFor(n).roundTrip,
+      );
+      if (!everyRewritable) atomicSections.add(s);
+    }
+    const acceptedAtomic = new Set<GeneratedSection>();
+
+    for (const name of targetNames) {
+      if (!exported.has(name) || !fnByName.has(localOf.get(name) ?? name)) {
+        skipped.push({
+          fn: name,
+          reason: "not-an-export",
         });
+        continue;
       }
-      skipped.push({ fn: name, reason: "multi-declarator" });
-      continue;
-    }
-    const prevText = prev === undefined ? undefined : normalizeSection(prev.text);
-    const plan = planFor(name);
-    if (plan.dsl === undefined || !plan.roundTrip) {
-      skipped.push({ fn: name, reason: "not-projectable" });
-      if (prevText !== undefined) {
-        // 既有生成段但今日证据不可得（如 update 未带 --from）：
-        // 保留原段不删（update 剥离后归位原文本），绝不因证据缺失删契约
-        accepted.push({ fn: name, text: prevText, prevText });
+      if (declared.has(name)) {
+        skipped.push({ fn: name, reason: "name-clash" });
+        issues.push({
+          code: "nudo:interface-name-clash",
+          severity: "error",
+          message: `sidecar already has a handwritten binding '${name}' (${srcRel}); handwritten wins — skipping emit for it`,
+        });
+        continue;
       }
-      continue;
+      const prev = sections.find((s) => s.names.includes(name));
+      if (prev !== undefined && atomicSections.has(prev)) {
+        // 段原子保留：整段原样归位一次，段内所有名字跳过（防重复声明）
+        if (!acceptedAtomic.has(prev)) {
+          acceptedAtomic.add(prev);
+          const keptText = normalizeSection(prev.text);
+          accepted.push({ fn: prev.names.join("+"), text: keptText, prevText: keptText });
+          issues.push({
+            code: "nudo:interface-multi-declarator",
+            severity: "warning",
+            message: `generated section '${prev.names.join(", ")}' is a hand-merged multi-declarator form; kept verbatim (split it into one export per section to re-emit)`,
+          });
+        }
+        skipped.push({ fn: name, reason: "multi-declarator" });
+        continue;
+      }
+      const prevText = prev === undefined ? undefined : normalizeSection(prev.text);
+      const plan = planFor(name);
+      if (plan.dsl === undefined || !plan.roundTrip) {
+        skipped.push({ fn: name, reason: "not-projectable" });
+        if (prevText !== undefined) {
+          // 既有生成段但今日证据不可得（如 update 未带 --from）：
+          // 保留原段不删（update 剥离后归位原文本），绝不因证据缺失删契约
+          accepted.push({ fn: name, text: prevText, prevText });
+        }
+        continue;
+      }
+      const text = sectionText(name, plan.dsl, srcRel, bindingOf.get(name));
+      if (opts.mode === "add" && prev !== undefined) {
+        skipped.push({ fn: name, reason: "no-change" });
+        continue;
+      }
+      if (prevText !== undefined && prevText === normalizeSection(text)) {
+        skipped.push({ fn: name, reason: "no-change" });
+        accepted.push({ fn: name, text: prevText, prevText }); // update：内容不变也要归位（已剥离）
+        continue;
+      }
+      written.push(name);
+      accepted.push({ fn: name, text, prevText });
     }
-    const text = sectionText(name, plan.dsl, srcRel, bindingOf.get(name));
-    if (opts.mode === "add" && prev !== undefined) {
-      skipped.push({ fn: name, reason: "no-change" });
-      continue;
-    }
-    if (prevText !== undefined && prevText === normalizeSection(text)) {
-      skipped.push({ fn: name, reason: "no-change" });
-      accepted.push({ fn: name, text: prevText, prevText }); // update：内容不变也要归位（已剥离）
-      continue;
-    }
-    written.push(name);
-    accepted.push({ fn: name, text, prevText });
-  }
 
-  // ---- 组装最终内容 ----
-  let finalContent: string;
-  if (opts.mode === "add") {
-    // add：不动既有内容，仅追加缺失段；空接受集保持原样（防尾空白 trim 误报 changed）
-    finalContent =
-      accepted.length === 0 ? sidecarSrc : joinSections(sidecarSrc, accepted.map((a) => a.text));
-  } else {
-    // update：剥离全部生成段；非目标段原样保留，目标段用新文本重排（幂等）
-    const base = removeSections(sidecarSrc, sections);
-    const preserved = sections
-      .filter((s) => !s.names.some((n) => targetSet.has(n)))
-      .map((s) => normalizeSection(s.text));
-    finalContent = joinSections(base, [...preserved, ...accepted.map((a) => a.text)]);
-  }
+    // ---- 组装最终内容 ----
+    let finalContent: string;
+    if (opts.mode === "add") {
+      // add：不动既有内容，仅追加缺失段；空接受集保持原样（防尾空白 trim 误报 changed）
+      finalContent =
+        accepted.length === 0 ? sidecarSrc : joinSections(sidecarSrc, accepted.map((a) => a.text));
+    } else {
+      // update：剥离全部生成段；非目标段原样保留，目标段用新文本重排（幂等）
+      const base = removeSections(sidecarSrc, sections);
+      const preserved = sections
+        .filter((s) => !s.names.some((n) => targetSet.has(n)))
+        .map((s) => normalizeSection(s.text));
+      finalContent = joinSections(base, [...preserved, ...accepted.map((a) => a.text)]);
+    }
 
-  const changed = finalContent !== sidecarSrc;
-  const diff = changed
-    ? unifiedDiff(sidecarSrc, finalContent, relative(process.cwd(), sidecarPath) || sidecarPath)
-    : undefined;
-  if (changed && !opts.dryRun) {
-    // 同目录 temp + rename：崩溃/磁盘满时侧车不会变成半截文件。
-    // 随机后缀防可预测 tmp 路径被预置符号链接劫持。
-    const tmp = `${sidecarPath}.tmp-${process.pid}-${randomBytes(4).toString("hex")}`;
-    try {
-      writeFileSync(tmp, finalContent, "utf-8");
-      renameSync(tmp, sidecarPath);
-    } catch (e) {
-      // rename 失败清理 tmp，避免长驻会话留下孤儿文件
+    const changed = finalContent !== sidecarSrc;
+    const diff = changed
+      ? unifiedDiff(sidecarSrc, finalContent, relative(process.cwd(), sidecarPath) || sidecarPath)
+      : undefined;
+    if (changed && !opts.dryRun) {
+      // 同目录 temp + rename：崩溃/磁盘满时侧车不会变成半截文件。
+      // 随机后缀防可预测 tmp 路径被预置符号链接劫持。
+      const tmp = `${sidecarPath}.tmp-${process.pid}-${randomBytes(4).toString("hex")}`;
       try {
-        if (existsSync(tmp)) unlinkSync(tmp);
-      } catch {
-        /* best-effort */
+        writeFileSync(tmp, finalContent, "utf-8");
+        renameSync(tmp, sidecarPath);
+      } catch (e) {
+        // rename 失败清理 tmp，避免长驻会话留下孤儿文件
+        try {
+          if (existsSync(tmp)) unlinkSync(tmp);
+        } catch {
+          /* best-effort */
+        }
+        throw e;
       }
-      throw e;
     }
-  }
-  takeRefineDiagsSince(refineSince); // round-trip 自检可能留下 interface-load 诊断——emit 不执法，丢弃
-  takeInterfaceDiagsSince(ifaceSince);
+    takeRefineDiagsSince(refineSince); // round-trip 自检可能留下 interface-load 诊断——emit 不执法，丢弃
+    takeInterfaceDiagsSince(ifaceSince);
 
-  return {
-    written,
-    skipped,
-    changed,
-    ...(diff !== undefined ? { diff } : {}),
-    issues,
-    sidecarPath,
-    ...(opts.fnNames && opts.fnNames.length > 0
-      ? {}
-      : opts.all
+    return {
+      written,
+      skipped,
+      changed,
+      ...(diff !== undefined ? { diff } : {}),
+      issues,
+      sidecarPath,
+      ...(opts.fnNames && opts.fnNames.length > 0
         ? {}
-        : targetNames.length === 0
-          ? { emptyDefaultTargets: true }
-          : {}),
-  };
+        : opts.all
+          ? {}
+          : targetNames.length === 0
+            ? { emptyDefaultTargets: true }
+            : {}),
+    };
+  });
 }
 
 /**

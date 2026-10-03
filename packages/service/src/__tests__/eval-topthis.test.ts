@@ -1,45 +1,18 @@
 /**
- * evaluator 托管判定回归：函数/方法体内的 this. 不得关掉整文件的 求值引擎。
- * 回归背景：isEvalCapable 用正则 `(^|[^.\w$])this\s*\.` 扫全文件——
- * 任意函数内 this.x（transpile 会正确降级为 $lit(undefined) 或注入 thisParam）
- * 都静默把整个文件从 求值引擎降级到 ast-eval（精度整体下降且无诊断）。
- * 只有**顶层语句作用域**的 this（写入目标不可重绑）才应关闭 求值引擎。
+ * evaluator 托管回归：函数/方法体内与顶层的 this. 都不降级整文件求值
+ * （this 已按 ESM 语义托管——读 undefined / 写 TypeError；能力判定闸已删，
+ * 未 lowering 的构造在转译点 fail-closed）。此处回归 analyzeFile 行为面。
  */
 import { describe, it, expect, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { isEvalCapable, analyzeFile, clearEvalCache } from "@nudojs/service";
+import { analyzeFile, clearEvalCache } from "@nudojs/service";
 
 const dirs: string[] = [];
 afterEach(() => {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
   dirs.length = 0;
-});
-
-describe("isEvalCapable: this. scoping", () => {
-  it("plain function this. stays eval-hosted", () => {
-    expect(isEvalCapable("function f() { return this.x; }")).toBe(true);
-  });
-
-  it("arrow body this. stays eval-hosted", () => {
-    expect(isEvalCapable("const f = () => this.x;")).toBe(true);
-  });
-
-  it("object method this. stays eval-hosted", () => {
-    expect(isEvalCapable("const o = { m() { return this.x; } };")).toBe(true);
-  });
-
-  it("class method this. stays eval-hosted (existing exemption)", () => {
-    expect(isEvalCapable("class A { constructor() { this.x = 1; } }")).toBe(true);
-    expect(isEvalCapable("class A { get x() { return this._x; } }")).toBe(true);
-  });
-
-  it("top-level this no longer disables evaluator (ESM semantics: this === undefined)", () => {
-    // this 读 → undefined；this 写经 strict 写路径抛 TypeError（模块装载失败）
-    expect(isEvalCapable("this.x = 1;")).toBe(true);
-    expect(isEvalCapable("const y = this.x + 1;")).toBe(true);
-  });
 });
 
 describe("eval-hosted files with function-internal this", () => {

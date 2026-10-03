@@ -1,5 +1,5 @@
 import { it, expect, describe, afterAll } from "vitest";
-import { analyzeFile, clearEvalCache, isEvalCapable } from "@nudojs/service";
+import { analyzeFile, clearEvalCache } from "@nudojs/service";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -28,8 +28,7 @@ export function scale(x) {
   return x * 2 + 1;
 }
 `;
-    const { result, path } = analyze(src);
-    expect(isEvalCapable(src, [])).toBe(true);
+    const { result } = analyze(src);
     const fn = result.functions.find((f) => f.name === "scale");
     expect(fn?.cases).toHaveLength(1);
     expect(fn?.cases[0]?.abs.shape.k).toBe("prim");

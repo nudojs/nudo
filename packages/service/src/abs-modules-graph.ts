@@ -43,13 +43,16 @@ function seedFnsToMocks(
 
 export type AbsLoadModule = (spec: string, fromFile: string) => string | undefined;
 
-/** 相对说明符 → 源码（与 defaultLoadModule 同一扩展名/入口候选表） */
-export function defaultAbsLoadModule(spec: string, fromFile: string): string | undefined {
+/** 相对/绝对说明符 → 首个可读候选（路径 + 内容一次读出）；无命中 undefined */
+function readFirstRel(
+  spec: string,
+  fromFile: string,
+): { path: string; content: string } | undefined {
   if (!spec.startsWith(".") && !spec.startsWith("/")) return undefined;
   try {
     for (const cand of moduleResolveCandidates(spec, fromFile)) {
       try {
-        return readFileSync(cand, "utf-8");
+        return { path: cand, content: readFileSync(cand, "utf-8") };
       } catch {
         /* next */
       }
@@ -60,17 +63,13 @@ export function defaultAbsLoadModule(spec: string, fromFile: string): string | u
   }
 }
 
+/** 相对说明符 → 源码（与 defaultLoadModule 同一扩展名/入口候选表） */
+export function defaultAbsLoadModule(spec: string, fromFile: string): string | undefined {
+  return readFirstRel(spec, fromFile)?.content;
+}
+
 function resolveRel(spec: string, fromFile: string): string | null {
-  if (!spec.startsWith(".") && !spec.startsWith("/")) return null;
-  for (const cand of moduleResolveCandidates(spec, fromFile)) {
-    try {
-      readFileSync(cand, "utf-8");
-      return cand;
-    } catch {
-      /* next */
-    }
-  }
-  return null;
+  return readFirstRel(spec, fromFile)?.path ?? null;
 }
 
 function importSpecs(source: string): string[] {

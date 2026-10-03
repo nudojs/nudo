@@ -15,6 +15,10 @@ import type { Abs } from "./abs.ts";
 import { litValue } from "./abs.ts";
 import type { Term } from "./term.ts";
 import { termToString } from "./term.ts";
+import {
+  createScopedSlot,
+  registerCollectorScopeParticipant,
+} from "./collector-scope.ts";
 
 /** 推导节点：边带调用位点 / +k / join；root 携带可打印的约束源表达式 */
 export type DerivationNode = {
@@ -41,46 +45,61 @@ export type ArgDerivation = {
 
 type Collector = (node: DerivationNode) => void;
 
-let collector: Collector | null = null;
-let nextId = 1;
+/** 推导会话状态（collector + 会话节点表 + id 序号）。
+ *  作用域化：一次推导会话的生命周期由宿主显式 begin/end 包裹；无作用域
+ *  = fallback 模块级单变量（行为同今日），嵌套作用域继承进入时会话。 */
+type DerivationState = {
+  collector: Collector | null;
+  nextId: number;
+  sessionNodes: Map<number, DerivationNode> | null;
+};
+
+const derivationSlot = createScopedSlot<DerivationState>(() => ({
+  collector: null,
+  nextId: 1,
+  sessionNodes: null,
+}));
+registerCollectorScopeParticipant((body) => derivationSlot.runScoped(body));
 /** Abs 对象身份 → 节点（求值期同一对象引用流经 add/join/call） */
 const byAbs = new WeakMap<Abs, DerivationNode>();
-/** 当前会话全部节点（id → node），end 时取走 */
-let sessionNodes: Map<number, DerivationNode> | null = null;
 
 /** 设置观察者（null 清除）；缓冲照常累积 */
 export function setDerivationCollector(fn: Collector | null): void {
-  collector = fn;
+  derivationSlot.get().collector = fn;
 }
 
 export function hasDerivationSession(): boolean {
-  return sessionNodes !== null;
+  return derivationSlot.get().sessionNodes !== null;
 }
 
 /** 开始一次推导会话（root 驱动下行求值前调用）；与 end/abort 成对 */
 export function beginDerivationSession(): void {
-  sessionNodes = new Map();
-  nextId = 1;
+  const s = derivationSlot.get();
+  s.sessionNodes = new Map();
+  s.nextId = 1;
 }
 
 /** 结束会话并取走全部节点（顺序 = 创建序） */
 export function endDerivationSession(): DerivationNode[] {
-  const nodes = sessionNodes ? [...sessionNodes.values()] : [];
-  sessionNodes = null;
-  collector = null;
+  const s = derivationSlot.get();
+  const nodes = s.sessionNodes ? [...s.sessionNodes.values()] : [];
+  s.sessionNodes = null;
+  s.collector = null;
   return nodes;
 }
 
 /** 丢弃当前会话（求值失败时） */
 export function abortDerivationSession(): void {
-  sessionNodes = null;
-  collector = null;
+  const s = derivationSlot.get();
+  s.sessionNodes = null;
+  s.collector = null;
 }
 
 function note(node: Omit<DerivationNode, "id">): DerivationNode {
-  const full: DerivationNode = { ...node, id: nextId++ };
-  if (sessionNodes) sessionNodes.set(full.id, full);
-  collector?.(full);
+  const s = derivationSlot.get();
+  const full: DerivationNode = { ...node, id: s.nextId++ };
+  if (s.sessionNodes) s.sessionNodes.set(full.id, full);
+  s.collector?.(full);
   return full;
 }
 
@@ -120,6 +139,7 @@ export function derivationChain(node: DerivationNode): DerivationNode[] {
   let cur = node;
   while (cur.kind !== "root" && cur.parents.length > 0) {
     const pid = cur.parents[0]!;
+    const sessionNodes = derivationSlot.get().sessionNodes;
     if (seen.has(pid) || !sessionNodes) break;
     const parent = sessionNodes.get(pid);
     if (!parent) break;
@@ -135,7 +155,7 @@ export function derivationChain(node: DerivationNode): DerivationNode[] {
  * 由 arithmetic.add 在返回前调用；无会话/无父标签时 no-op。
  */
 export function noteDerivationAdd(a: Abs, b: Abs, result: Abs): void {
-  if (!sessionNodes) return;
+  if (!derivationSlot.get().sessionNodes) return;
   const vbR = litValue(b);
   const vb = vbR.ok ? vbR.value : undefined;
   const vaR = litValue(a);
@@ -163,7 +183,7 @@ export function noteDerivationAdd(a: Abs, b: Abs, result: Abs): void {
  * 工件聚合路径会经 join；check 分轨不依赖 join 节点。
  */
 export function noteDerivationJoin(inputs: Abs[], result: Abs): void {
-  if (!sessionNodes) return;
+  if (!derivationSlot.get().sessionNodes) return;
   const parents: number[] = [];
   for (const a of inputs) {
     const n = byAbs.get(a);

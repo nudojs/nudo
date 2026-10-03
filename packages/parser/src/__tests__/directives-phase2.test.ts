@@ -110,6 +110,24 @@ function foo(x) { return x; }
     }
   });
 
+  it("extracts mock from file directive with single-quoted path", () => {
+    const source = `
+/**
+ * @nudo:mock utils from './utils.mock.js'
+ * @nudo:case "test" (1)
+ */
+function foo(x) { return x; }
+`;
+    const ast = parse(source);
+    const results = extractDirectives(ast);
+    const mocks = results[0].directives.filter((d) => d.kind === "mock");
+    expect(mocks).toHaveLength(1);
+    if (mocks[0].kind === "mock") {
+      expect(mocks[0].name).toBe("utils");
+      expect(mocks[0].fromPath).toBe("./utils.mock.js");
+    }
+  });
+
   it("extracts both mock and case directives", () => {
     const source = `
 /**

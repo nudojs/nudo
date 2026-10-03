@@ -16,6 +16,7 @@ import {
   takeDirectiveDiagsSince,
   directiveDiagCount,
   setDirectiveDiagCollector,
+  type DirectiveDiag,
 } from "../directives.ts";
 import type { CaseDirective, MockDirective, SkipDirective, AsDirective, ReplaceDirective } from "../directives.ts";
 
@@ -514,6 +515,18 @@ function f(x) { return x; }`);
     ).toBe(true);
   });
 
+  it("@nudo:mock from with unclosed single-quoted path → diagnostic, no mock", () => {
+    const { fns, diags } = extractWithDiags(`/**
+ * @nudo:mock x from 'src
+ */
+function f(x) { return x; }`);
+    const mocks = fns.flatMap((f) => f.directives.filter((d) => d.kind === "mock")) as MockDirective[];
+    expect(mocks).toHaveLength(0);
+    expect(
+      diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("unclosed quote in path")),
+    ).toBe(true);
+  });
+
   it("/// line-comment directive form is recognized (aligned with core prefix)", () => {
     const { fns, diags } = extractWithDiags(`/// @nudo:case "d" (1)
 /// @nudo:mock m = 2
@@ -595,5 +608,70 @@ const a = 1;`);
 const x = 1;`);
     expect(dirs.filter((d) => d.kind === "as")).toHaveLength(1);
     expect(diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("Trailing comment"))).toBe(true);
+  });
+});
+
+describe("explicit diag channel（extractDirectives opts.diags：新代码不再需要 seq 锚）", () => {
+  const BAD = `/**
+ * @nudo:case 't' (1)
+ */
+function f(x) { return x; }`;
+
+  it("diags 落调用方数组，模块级 buffer 零残留", () => {
+    takeDirectiveDiags(); // 清空
+    const sink: DirectiveDiag[] = [];
+    const fns = extractDirectives(parse(BAD), { diags: sink });
+    expect(fns).toEqual([]); // 非法 case 名 → 无指令产出（诊断已发）
+    expect(sink.length).toBeGreaterThan(0);
+    expect(sink[0]!.code).toBe("nudo:directive-syntax");
+    // sink extract 不污染模块级 buffer——在途其他消费方不受影响
+    expect(takeDirectiveDiags()).toHaveLength(0);
+  });
+
+  it("sink 模式与模块通道同语义：单次调用内同文案去重", () => {
+    takeDirectiveDiags(); // 清空
+    const sink: DirectiveDiag[] = [];
+    // 两个函数各带一条同文案非法 case 名 → 只报一次（与模块通道 seen 语义一致）
+    extractDirectives(
+      parse(`/**
+ * @nudo:case 't' (1)
+ */
+function f(x) { return x; }
+/**
+ * @nudo:case 't' (1)
+ */
+function g(x) { return x; }`),
+      { diags: sink },
+    );
+    expect(sink.length).toBe(1);
+    expect(takeDirectiveDiags()).toHaveLength(0);
+  });
+
+  it("sink 模式不触发模块级 collector", () => {
+    const seen: DirectiveDiag[] = [];
+    setDirectiveDiagCollector((d) => seen.push(d));
+    try {
+      extractDirectives(parse(BAD), { diags: [] });
+    } finally {
+      setDirectiveDiagCollector(null);
+    }
+    expect(seen).toHaveLength(0);
+  });
+
+  it("既有在途模块诊断不被 sink extract 偷走", () => {
+    takeDirectiveDiags(); // 清空
+    extractDirectives(parse(BAD)); // 在途诊断（待其他消费方收取）
+    const sink: DirectiveDiag[] = [];
+    extractDirectives(parse(BAD), { diags: sink });
+    expect(sink.length).toBeGreaterThan(0);
+    const leftover = takeDirectiveDiags();
+    expect(leftover.length).toBe(1); // sink extract 未动模块 buffer
+  });
+
+  it("不传 diags 时行为不变（deprecated 模块通道照常累积）", () => {
+    takeDirectiveDiags(); // 清空
+    const fns = extractDirectives(parse(BAD));
+    expect(fns).toEqual([]); // 非法 case 名 → 无指令产出（诊断已发）
+    expect(takeDirectiveDiags().length).toBe(1);
   });
 });

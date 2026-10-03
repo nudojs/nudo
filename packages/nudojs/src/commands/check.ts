@@ -1,22 +1,60 @@
 /**
  * nudo check — 门禁 + 签名表（Day 0 / CI）。
- * 从 index.ts 原样迁出，行为不变。
+ * runCheck 拆为 loadCache / buildInjection / report+exit 三段；
+ * 依赖（@nudojs/core / service / parser）均为静态依赖，顶部静态引入。
  */
-import { readFileSync, existsSync } from "node:fs";
-import { resolve, dirname, join, basename } from "node:path";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { resolve, dirname, basename } from "node:path";
 import type { Command } from "commander";
 import {
+  actionsForIssue,
+  checkSource,
+  extractFileEnvNames,
+  formatAbs,
+  formatCheckReport,
+  formatGithubAnnotations,
+  formatGitlabCodeQuality,
+  pTrue,
+  serializeCheckJson,
+  serializeCheckJsonMulti,
+  sidecarPathOf,
+  type CheckAction,
+  type CheckJson,
+  type CheckReport,
+  type GitlabCodeQualityIssue,
+  type RunTranspiledOptions,
+} from "@nudojs/core";
+import {
+  analysisConfig,
+  analyzeFile,
   analyzeFileAsync,
-  collectSkipReturns,
+  applyMockModuleDirectivesFromSource,
   checkCacheKey,
   checkConfig,
-  evalAbsModuleGraph,
-  collectEvalReplacements,
   collectEnvGlobals,
   collectEnvModules,
+  collectEvalReplacements,
+  collectLoadDepContents,
+  collectSkipReturns,
+  defaultLoadModule,
+  DiskCache,
+  diskCacheRoot,
+  entryVariantIssueForFile,
+  evalAbsModuleGraph,
+  findProjectConfig,
+  injectBindings,
+  interfaceConfig,
+  mockDirectivesToAbsSeeds,
+  mockSeedsToAbsMocks,
   type CallRecord,
 } from "@nudojs/service";
-import { extractFileEnvNames } from "@nudojs/core";
+import {
+  directiveDiagCount,
+  extractDirectives,
+  parse,
+  takeDirectiveDiagsSince,
+} from "@nudojs/parser";
+import { applyTextEdits, materializeAction, unifiedDiff } from "@nudojs/service/emit";
 import {
   collectExternalRecords,
   reportPathErrors,
@@ -40,6 +78,7 @@ import {
   type GateProfile,
 } from "../check-gate-config.ts";
 import {
+  directiveDiagIssues,
   docsDiagnosticCodes,
   domainIssuesFromDiagnostics,
   dualEntryIssue,
@@ -59,15 +98,6 @@ import {
 // ---------------------------------------------------------------------------
 // check — 门禁 + 签名表（Day 0 / CI）
 // ---------------------------------------------------------------------------
-
-async function collectCheckDepContents(
-  filePath: string,
-  source: string,
-  loadModule: (spec: string, fromFile: string) => string | undefined,
-): Promise<{ depContents: Array<{ path: string; content: string | null }>; truncated: boolean }> {
-  const { collectLoadDepContents } = await import("@nudojs/service");
-  return collectLoadDepContents(filePath, source, loadModule);
-}
 
 // 诊断 → 文档深链：问题码映射到 reference/diagnostics.md 的显式锚点。
 // 锚点 id 规则 = code.replaceAll(":", "-")；诊断码覆盖测试
@@ -93,53 +123,101 @@ export function fileEnvNamesFromText(source: string): string[] {
   return extractFileEnvNames(source);
 }
 
-async function runCheck(
-  file: string,
-  opts: {
-    json?: boolean;
-    /** 多文件 --json：收集 CheckJson，不在本函数内打印 / 设 exit */
-    jsonCollect?: Array<import("@nudojs/core").CheckJson>;
-    from?: CallRecord[];
-    verbose?: boolean;
-    abs?: boolean;
-    absView?: { fn?: string; assume?: string[]; generalize?: boolean };
-    ignoreThrows?: string[];
-    entryThrows?: "error" | "warning" | "off";
-    /** 门禁命名档（CLI --profile）；与 entryThrows 在 runCheck 内组合 */
-    profile?: GateProfile;
-    /** GitHub Actions 行内注解（或 GITHUB_ACTIONS=true 自动） */
-    gha?: boolean;
-    /** GitLab Code Quality JSON（数组） */
-    gitlab?: boolean;
-    /**
-     * 多文件 --json：注入装配失败跨文件聚合——降级分析可能零诊断
-     * （CheckJson ok:true），失败态必须经共享对象带到信封 exit，
-     * 否则 `envelope.ok ? 0 : 1` 覆盖成假绿。
-     */
-    gateFlags?: { injectionSetupFailed?: boolean };
-  } = {},
-): Promise<void> {
-  const filePath = resolve(file);
-  const source = readFileSync(filePath, "utf-8");
+// ---------------------------------------------------------------------------
+// 门禁解析链单源（runCheck / runCheckFix 共用）
+// ---------------------------------------------------------------------------
 
-  const { checkSource, formatCheckReport, serializeCheckJson, formatGithubAnnotations, formatGitlabCodeQuality, pTrue } =
-    await import("@nudojs/core");
-  const {
-    defaultLoadModule: loadModule,
-    findProjectConfig,
-    interfaceConfig,
-    analysisConfig,
-    diskCacheRoot,
-    DiskCache,
-  } = await import("@nudojs/service");
-  const { sidecarPathOf } = await import("@nudojs/core");
+/** CLI 门禁选项形状（--entry-throws / --profile / --ignore-throws） */
+type GateCliOptions = {
+  ignoreThrows?: string[];
+  entryThrows?: EntryThrowsMode;
+  profile?: GateProfile;
+};
+
+/**
+ * 门禁解析链（项目配置已知时的下半段）：
+ * checkGateFromConfig → checkConfig → resolveEntryThrows（CLI 显式 >
+ * CLI profile > pkg entryThrows > pkg profile > 默认 error）→
+ * mergeIgnoreThrows（CLI 与 package.json 加法合并）。
+ * runCheck 与 runCheckFix 共用此单源（G4：adoption 档项目 plain check
+ * 与 --fix 不得一门绿一门红）。
+ */
+function resolveGateForConfig(
+  config: Parameters<typeof checkConfig>[0],
+  cli: GateCliOptions,
+): { entryThrows: EntryThrowsMode; ignoreThrows: string[] } {
+  const cCfg = checkConfig(config);
+  const gate = checkGateFromConfig(config);
+  return {
+    entryThrows: resolveEntryThrows(cli, gate, cCfg.entryThrows),
+    ignoreThrows: mergeIgnoreThrows(cli.ignoreThrows, cCfg.ignoreThrows),
+  };
+}
+
+/** 门禁解析链（按文件解析项目配置）：runCheckFix 等 per-file 调用方使用。 */
+function resolveGateForFile(
+  file: string,
+  cli: GateCliOptions,
+): { entryThrows: EntryThrowsMode; ignoreThrows: string[] } {
+  return resolveGateForConfig(findProjectConfig(dirname(file))?.config, cli);
+}
+
+// ---------------------------------------------------------------------------
+// runCheck 段 1/3 — loadCache：项目/门禁/环境装配 + 磁盘缓存读取
+// ---------------------------------------------------------------------------
+
+/** runCheck 选项（action 层装配；jsonCollect / gitlabRowsCollect / gateFlags 为多文件聚合通道） */
+type RunCheckOptions = {
+  json?: boolean;
+  /** 多文件 --json：收集 CheckJson，不在本函数内打印 / 设 exit */
+  jsonCollect?: CheckJson[];
+  from?: CallRecord[];
+  verbose?: boolean;
+  abs?: boolean;
+  absView?: { fn?: string; assume?: string[]; generalize?: boolean };
+  ignoreThrows?: string[];
+  entryThrows?: EntryThrowsMode;
+  /** 门禁命名档（CLI --profile）；与 entryThrows 在 runCheck 内组合 */
+  profile?: GateProfile;
+  /** GitHub Actions 行内注解（或 GITHUB_ACTIONS=true 自动） */
+  gha?: boolean;
+  /** GitLab Code Quality JSON（数组） */
+  gitlab?: boolean;
+  /** 多文件 --gitlab：收集 Code Quality rows，action 层循环后一次打印单个数组 */
+  gitlabRowsCollect?: GitlabCodeQualityIssue[];
+  /**
+   * 多文件 --json：注入装配失败跨文件聚合——降级分析可能零诊断
+   * （CheckJson ok:true），失败态必须经共享对象带到信封 exit，
+   * 否则 `envelope.ok ? 0 : 1` 覆盖成假绿。
+   */
+  gateFlags?: { injectionSetupFailed?: boolean };
+};
+
+/** 段1产物：缓存命中态 + 缓存键输入（段3 决定是否回写） */
+type CheckCacheState = {
+  proj: ReturnType<typeof findProjectConfig>;
+  autoBind: ReturnType<typeof interfaceConfig>["autoBind"];
+  aCfg: ReturnType<typeof analysisConfig>;
+  allEnvNames: string[];
+  entryThrows: EntryThrowsMode;
+  ignoreThrows: string[];
+  disk: DiskCache;
+  cacheKey: string | undefined;
+  /** 本轮是否命中磁盘缓存（命中则不回写） */
+  cached: boolean;
+  useDisk: boolean;
+  cachedJson: CheckJson | undefined;
+};
+
+function loadCheckCache(
+  filePath: string,
+  source: string,
+  opts: GateCliOptions & { from?: CallRecord[]; verbose?: boolean; abs?: boolean },
+): CheckCacheState {
   const proj = findProjectConfig(dirname(filePath));
+  const { entryThrows, ignoreThrows } = resolveGateForConfig(proj?.config, opts);
   const autoBind = interfaceConfig(proj?.config).autoBind;
   const aCfg = analysisConfig(proj?.config);
-  const cCfg = checkConfig(proj?.config);
-  const gate = checkGateFromConfig(proj?.config);
-  const entryThrows = resolveEntryThrows(opts, gate, cCfg.entryThrows);
-  const ignoreThrows = mergeIgnoreThrows(opts.ignoreThrows, cCfg.ignoreThrows);
   const projectEnvNames = proj?.config.env ?? [];
   // 文件级 @nudo:env 命名 env（es/node/web）与项目配置合并——check 的
   // 符号面必须与 test 同口径注入，否则 @nudo:env 文件整体退化 unknown。
@@ -149,7 +227,7 @@ async function runCheck(
   const allEnvNames = [...new Set([...projectEnvNames, ...fileEnvNames])];
   const cacheRoot = diskCacheRoot(proj?.config, proj?.projectDir);
   const disk = new DiskCache({ root: cacheRoot, namespace: "check" });
-  const dep = await collectCheckDepContents(filePath, source, loadModule);
+  const dep = collectLoadDepContents(filePath, source, defaultLoadModule);
   const hasBareMiss = (dep.depContents ?? []).some((d) => d.content == null);
   const useDisk = shouldUseDiskCache({
     diskEnabled: disk.enabled,
@@ -188,75 +266,242 @@ async function runCheck(
           },
         })
     : undefined;
-  const cached = cacheKey ? disk.get<ReturnType<typeof serializeCheckJson>>(cacheKey) : undefined;
-  let cachedJson: ReturnType<typeof serializeCheckJson> | undefined;
-  let algebraReport;
-  let mockFromErrors: Array<{ name: string; fromPath: string; message: string; code?: string }> = [];
+  const cachedJson = cacheKey ? disk.get<CheckJson>(cacheKey) : undefined;
+  return {
+    proj,
+    autoBind,
+    aCfg,
+    allEnvNames,
+    entryThrows,
+    ignoreThrows,
+    disk,
+    cacheKey,
+    cached: cachedJson !== undefined,
+    useDisk,
+    cachedJson,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// runCheck 段 2/3 — buildInjection：eval 注入包装配
+//（模块图 + mocks + env 全局 + replace/as）
+// ---------------------------------------------------------------------------
+
+/** `@nudo:mock name from "path"` 解析失败（缺文件/缺绑定/求值失败） */
+type MockFromError = { name: string; fromPath: string; message: string; code?: string };
+
+/**
+ * eval 注入包装配。装配失败 throw——由调用方降级处理（BUG-023：
+ * 分析仍跑，但门禁红且缓存不回写）。同文件内复用同一注入对象
+ * （checkSource/generalize memo 键按对象身份）。
+ */
+function buildCheckInjection(
+  filePath: string,
+  source: string,
+  allEnvNames: string[],
+): { inject: RunTranspiledOptions; mockFromErrors: MockFromError[] } {
+  const graph = evalAbsModuleGraph(source, filePath);
+  const reps = collectEvalReplacements(source);
+  const seedPkg = mockDirectivesToAbsSeeds(extractDirectives(parse(source)), {
+    fromFile: filePath,
+  });
+  let mockFromErrors: MockFromError[] = seedPkg.fromErrors ?? [];
+  const mocks = mockSeedsToAbsMocks(seedPkg);
+  const envGlobals = collectEnvGlobals(allEnvNames);
+  const envMods = collectEnvModules(allEnvNames);
+  const hasCycle = graph.issues.some((i) => i.kind === "cycle");
+  // env modules（fs/path/node:*…）并入模块图：与 test 路径
+  // mergeHarvestUnderEnv 同口径，check 的 import/require 才能解析 env 模块
+  let mergedMods = {
+    ...graph.modules,
+    ...(Object.keys(envMods).length > 0 ? envMods : {}),
+  };
+  // @nudo:mock-module：覆盖 import 说明符导出（全量/局部）
+  const mm = applyMockModuleDirectivesFromSource(source, mergedMods, {
+    fromFile: filePath,
+  });
+  mergedMods = mm.modules;
+  mockFromErrors = [
+    ...mockFromErrors,
+    ...mm.errors.map((e) => ({
+      name: e.name,
+      fromPath: e.fromPath,
+      message: e.message,
+      ...(e.code !== undefined ? { code: e.code } : {}),
+    })),
+  ];
+  const inject: RunTranspiledOptions = {
+    ...(hasCycle
+      ? (Object.keys(envMods).length > 0 ? { modules: envMods } : {})
+      : { modules: mergedMods }),
+    ...(Object.keys(mocks).length > 0 ? { mocks } : {}),
+    ...(Object.keys(envGlobals).length > 0 ? { envGlobals } : {}),
+    ...(reps.targets.length > 0
+      ? { replacements: reps.values, replacementTargets: reps.targets }
+      : {}),
+    ...(reps.asTargets.length > 0
+      ? { asOverrides: reps.asValues, asOverrideTargets: reps.asTargets }
+      : {}),
+  };
+  return { inject, mockFromErrors };
+}
+
+// ---------------------------------------------------------------------------
+// runCheck 段 3/3 — report+exit：打印面（终端/JSON/GHA/GitLab）+ 缓存回写 + exit
+// ---------------------------------------------------------------------------
+
+async function emitCheckReport(
+  filePath: string,
+  reportIn: CheckReport,
+  cache: Pick<
+    CheckCacheState,
+    "disk" | "cacheKey" | "cached" | "useDisk" | "cachedJson"
+  >,
+  injectionSetupFailed: boolean,
+  opts: RunCheckOptions,
+): Promise<void> {
+  let report = reportIn;
+  let cachedJson = cache.cachedJson;
+
+  // nudo:dual-entry（T4）：browser/node 双入口变体之一被 check → 观察面只覆盖
+  // 本入口（info，单入口零误报）。在缓存之后注入，保证缓存命中也上屏。
+  {
+    const dual = entryVariantIssueForFile(filePath);
+    if (dual) {
+      const dualIssue = dualEntryIssue(dual);
+      report = mergeCheckIssues(report, [dualIssue]);
+      if (cachedJson) {
+        cachedJson = mergeJsonIssues(cachedJson, [dualIssue]);
+      }
+    }
+  }
+
+  const checkJson = cachedJson ?? serializeCheckJson(report);
+  const wantGha = shouldEmitGha(opts.gha, process.env.GITHUB_ACTIONS);
+  const workspaceRoot = process.env.GITHUB_WORKSPACE ?? process.cwd();
+  const emitCiAnnotations = (): void => {
+    if (opts.gitlab) {
+      const rows = formatGitlabCodeQuality(report, { workspaceRoot });
+      // 多文件 --gitlab：rows 交 action 层聚合成单数组（GitLab Code
+      // Quality 只接受一份 JSON 数组报告），本函数不打印
+      if (opts.gitlabRowsCollect) {
+        opts.gitlabRowsCollect.push(...rows);
+        return;
+      }
+      // 单文件：直接打印；--json 时走 stderr，stdout 保持机器契约
+      if (!opts.json) console.log(JSON.stringify(rows, null, 2));
+      else console.error(JSON.stringify(rows));
+      return;
+    }
+    if (!wantGha) return;
+    const ann = formatGithubAnnotations(report, { workspaceRoot });
+    if (ann.length === 0) return;
+    // --json 时注解走 stderr，stdout 保持机器契约
+    if (opts.json) console.error(ann);
+    else console.log(ann);
+  };
+
+  if (opts.json && opts.jsonCollect) {
+    opts.jsonCollect.push(checkJson);
+    if (wantGha) {
+      const ann = formatGithubAnnotations(report, { workspaceRoot });
+      if (ann) console.error(ann);
+    }
+  } else if (opts.json) {
+    if (opts.abs) {
+      console.error("error: --json cannot be combined with --abs");
+      process.exitCode = 1;
+      return;
+    }
+    console.log(JSON.stringify(checkJson, null, 2));
+    emitCiAnnotations();
+  } else if (opts.gitlab) {
+    emitCiAnnotations();
+    if (!report.ok) {
+      // 仍打印简报，便于日志
+      console.error(formatCheckReport(report, { verbose: false }));
+    }
+  } else if (opts.abs) {
+    // 代数观察面（term/pred/conf）；门禁不因 --abs 关闭：L1/L2 error 仍 exit 1
+    await runAbsView(filePath, opts.absView ?? {});
+    if (!report.ok) {
+      // abs 仍计算 report：错误上屏，避免 exit 1 却无可见诊断
+      console.log("");
+      console.log(formatCheckReport(report, { verbose: false }));
+    } else {
+      console.log("");
+      console.log(`nudo check  ${basename(filePath)}`);
+      console.log("OK");
+      console.log(
+        `  ${report.summary.errors} error · ${report.summary.warnings} warning · ${report.summary.infos} info · ${report.summary.functions} fn`,
+      );
+    }
+    emitCiAnnotations();
+  } else {
+    console.log(formatCheckReport(report, { verbose: opts.verbose === true }));
+    emitCiAnnotations();
+  }
+
+  // 诊断 → 文档深链（仅终端面；--json / --gitlab 机器契约不打——
+  // --gitlab 的 stdout 必须恰好是一个 Code Quality JSON 数组）
+  if (
+    shouldPrintDocsLinks({
+      json: opts.json,
+      gitlab: opts.gitlab,
+      abs: opts.abs,
+      issueCount: report.issues.length,
+      reportOk: report.ok,
+    })
+  ) {
+    printDocsLinks(report.issues);
+  }
+
+  // 降级产物不回写：注入装配失败时的分析缺注入面（无模块/mock），
+  // 回写会让下次 check 命中缓存整体跳过注入装配 → 静默转绿
+  if (cache.useDisk && cache.cacheKey && !cache.cached && !opts.abs && !injectionSetupFailed) {
+    try {
+      cache.disk.set(cache.cacheKey, serializeCheckJson(report));
+    } catch {
+      /* optional: disk cache write failed — check result still valid */
+    }
+  }
+
+  // --json 单文件：exit 与打印出的 ok 同源（路径错误在 action 层已并入信封）；
+  // 注入装配失败独立于 ok 挡红（降级分析可能零诊断 ok:true）
+  if (opts.json && !opts.jsonCollect) {
+    process.exitCode = checkJson.ok && !injectionSetupFailed ? 0 : 1;
+  } else if (!opts.jsonCollect && (!report.ok || injectionSetupFailed)) {
+    process.exitCode = 1;
+  }
+}
+
+async function runCheck(file: string, opts: RunCheckOptions = {}): Promise<void> {
+  const filePath = resolve(file);
+  const source = readFileSync(filePath, "utf-8");
+
+  // 段1 loadCache：项目/门禁/环境装配 + 磁盘缓存读取
+  const cache = loadCheckCache(filePath, source, opts);
+
+  let report: CheckReport;
+  let mockFromErrors: MockFromError[] = [];
   // 注入装配失败（BUG-023）：降级分析仍跑，但门禁必须红且缓存不回写
   let injectionSetupFailed = false;
-  if (cached) {
-    cachedJson = cached;
-    algebraReport = reportFromCachedJson(cached) as Awaited<ReturnType<typeof checkSource>>;
+  if (cache.cachedJson) {
+    report = reportFromCachedJson(cache.cachedJson);
   } else {
     // since 锚：只排干本次 check 自己 extract 产生的指令文法增量（对齐 takeInterfaceDiagsSince）
-    const { directiveDiagCount, takeDirectiveDiagsSince } = await import("@nudojs/parser");
     const dirDiagSince = directiveDiagCount();
-    // eval 注入包（模块图 + mocks + env 全局 + replace/as）——同文件内复用同一
-    // 对象（checkSource/generalize memo 键按对象身份）
-    let inject: import("@nudojs/core").RunTranspiledOptions | undefined;
+    // 段2 buildInjection：eval 注入包（模块图 + mocks + env 全局 + replace/as）
+    let inject: RunTranspiledOptions | undefined;
     try {
-      const graph = evalAbsModuleGraph(source, filePath);
-      const reps = collectEvalReplacements(source);
-      const { mockDirectivesToAbsSeeds, mockSeedsToAbsMocks } = await import("@nudojs/service");
-      const { extractDirectives } = await import("@nudojs/parser");
-      const { parse } = await import("@nudojs/parser");
-      const seedPkg = mockDirectivesToAbsSeeds(extractDirectives(parse(source)), {
-        fromFile: filePath,
-      });
-      mockFromErrors = seedPkg.fromErrors ?? [];
-      const mocks = mockSeedsToAbsMocks(seedPkg);
-      const envGlobals = collectEnvGlobals(allEnvNames);
-      const envMods = collectEnvModules(allEnvNames);
-      const hasCycle = graph.issues.some((i) => i.kind === "cycle");
-      // env modules（fs/path/node:*…）并入模块图：与 test 路径
-      // mergeHarvestUnderEnv 同口径，check 的 import/require 才能解析 env 模块
-      let mergedMods = {
-        ...graph.modules,
-        ...(Object.keys(envMods).length > 0 ? envMods : {}),
-      };
-      // @nudo:mock-module：覆盖 import 说明符导出（全量/局部）
-      const { applyMockModuleDirectivesFromSource } = await import("@nudojs/service");
-      const mm = applyMockModuleDirectivesFromSource(source, mergedMods, {
-        fromFile: filePath,
-      });
-      mergedMods = mm.modules;
-      mockFromErrors = [
-        ...mockFromErrors,
-        ...mm.errors.map((e) => ({
-          name: e.name,
-          fromPath: e.fromPath,
-          message: e.message,
-          ...(e.code !== undefined ? { code: e.code } : {}),
-        })),
-      ];
-      inject = {
-        ...(hasCycle
-          ? (Object.keys(envMods).length > 0 ? { modules: envMods } : {})
-          : { modules: mergedMods }),
-        ...(Object.keys(mocks).length > 0 ? { mocks } : {}),
-        ...(Object.keys(envGlobals).length > 0 ? { envGlobals } : {}),
-        ...(reps.targets.length > 0
-          ? { replacements: reps.values, replacementTargets: reps.targets }
-          : {}),
-        ...(reps.asTargets.length > 0
-          ? { asOverrides: reps.asValues, asOverrideTargets: reps.asTargets }
-          : {}),
-      };
+      const built = buildCheckInjection(filePath, source, cache.allEnvNames);
+      inject = built.inject;
+      mockFromErrors = built.mockFromErrors;
     } catch (err) {
       // BUG-023：注入装配失败不得静默跳过——无注入的分析
       // 会把未 mock 的模块图当作事实（假绿：签名看似通过
       // 实则基于错误依赖）。上屏 + 失败态标记，分析仍跑
-      // （观察面完整）；exit 由末段统一判定（不在此中途赋值：
+      // （观察面完整）；exit 由段3统一判定（不在此中途赋值：
       // --json 信封 / 缓存判定在其后，中途赋值会被
       // `ok ? 0 : 1` 覆盖回假绿），降级产物也不得写磁盘缓存
       // （否则下次 check 命中缓存整体跳过注入装配 → 静默转绿）。
@@ -266,37 +511,28 @@ async function runCheck(
       injectionSetupFailed = true;
       if (opts.gateFlags) opts.gateFlags.injectionSetupFailed = true;
     }
-    algebraReport = checkSource(filePath, source, pTrue, {
-      loadModule,
+    report = checkSource(filePath, source, pTrue, {
+      loadModule: defaultLoadModule,
       fromFile: filePath,
-      ...(autoBind === false ? { autoBind: false } : {}),
-      ...(proj?.projectDir ? { projectDir: proj.projectDir } : {}),
-      entryThrows,
-      ...(ignoreThrows.length > 0 ? { ignoreThrows } : {}),
+      ...(cache.autoBind === false ? { autoBind: false } : {}),
+      ...(cache.proj?.projectDir ? { projectDir: cache.proj.projectDir } : {}),
+      entryThrows: cache.entryThrows,
+      ...(cache.ignoreThrows.length > 0 ? { ignoreThrows: cache.ignoreThrows } : {}),
       ...(inject && Object.keys(inject).length > 0
         ? { modules: inject.modules as never, inject }
         : {}),
       skips: collectSkipReturns(source),
     });
     // D1: 指令文法诊断（nudo:directive-syntax）并入 check 报告
-    {
-      const dirDiags = takeDirectiveDiagsSince(dirDiagSince);
-      if (dirDiags.length > 0) {
-        const { directiveDiagIssues } = await import("../check-json-map.ts");
-        algebraReport = mergeCheckIssues(
-          algebraReport,
-          directiveDiagIssues(dirDiags),
-        ) as typeof algebraReport;
-      }
+    const dirDiags = takeDirectiveDiagsSince(dirDiagSince);
+    if (dirDiags.length > 0) {
+      report = mergeCheckIssues(report, directiveDiagIssues(dirDiags));
     }
   }
 
   // @nudo:mock name from "path" 解析失败 → check 明确报错（缺文件/缺绑定/求值失败）
   if (mockFromErrors.length > 0) {
-    algebraReport = mergeCheckIssues(
-      algebraReport,
-      mockFromErrorIssues(mockFromErrors),
-    ) as typeof algebraReport;
+    report = mergeCheckIssues(report, mockFromErrorIssues(mockFromErrors));
   }
 
   if (opts.from && opts.from.length > 0) {
@@ -310,116 +546,12 @@ async function runCheck(
     );
     const domainIssues = domainIssuesFromDiagnostics(analysis.diagnostics);
     if (domainIssues.length > 0) {
-      algebraReport = mergeCheckIssues(
-        algebraReport,
-        domainIssues,
-      ) as typeof algebraReport;
+      report = mergeCheckIssues(report, domainIssues);
     }
   }
 
-  // nudo:dual-entry（T4）：browser/node 双入口变体之一被 check → 观察面只覆盖
-  // 本入口（info，单入口零误报）。在缓存之后注入，保证缓存命中也上屏。
-  {
-    const { entryVariantIssueForFile } = await import("@nudojs/service");
-    const dual = entryVariantIssueForFile(filePath);
-    if (dual) {
-      const dualIssue = dualEntryIssue(dual);
-      algebraReport = mergeCheckIssues(algebraReport, [dualIssue]) as typeof algebraReport;
-      if (cachedJson) {
-        cachedJson = mergeJsonIssues(cachedJson, [dualIssue]);
-      }
-    }
-  }
-
-  const checkJson = cachedJson ?? serializeCheckJson(algebraReport);
-  const wantGha = shouldEmitGha(opts.gha, process.env.GITHUB_ACTIONS);
-  const workspaceRoot = process.env.GITHUB_WORKSPACE ?? process.cwd();
-  const emitCiAnnotations = (): void => {
-    if (opts.gitlab) {
-      const rows = formatGitlabCodeQuality(algebraReport, { workspaceRoot });
-      // GitLab 需要一份数组报告；单文件时直接打印
-      if (!opts.json) console.log(JSON.stringify(rows, null, 2));
-      else console.error(JSON.stringify(rows));
-      return;
-    }
-    if (!wantGha) return;
-    const ann = formatGithubAnnotations(algebraReport, { workspaceRoot });
-    if (ann.length === 0) return;
-    // --json 时注解走 stderr，stdout 保持机器契约
-    if (opts.json) console.error(ann);
-    else console.log(ann);
-  };
-
-  if (opts.json && opts.jsonCollect) {
-    opts.jsonCollect.push(checkJson);
-    if (wantGha) {
-      const ann = formatGithubAnnotations(algebraReport, { workspaceRoot });
-      if (ann) console.error(ann);
-    }
-  } else if (opts.json) {
-    if (opts.abs) {
-      console.error("error: --json cannot be combined with --abs");
-      process.exitCode = 1;
-      return;
-    }
-    console.log(JSON.stringify(checkJson, null, 2));
-    emitCiAnnotations();
-  } else if (opts.gitlab) {
-    emitCiAnnotations();
-    if (!algebraReport.ok) {
-      // 仍打印简报，便于日志
-      console.error(formatCheckReport(algebraReport, { verbose: false }));
-    }
-  } else if (opts.abs) {
-    // 代数观察面（term/pred/conf）；门禁不因 --abs 关闭：L1/L2 error 仍 exit 1
-    await runAbsView(filePath, opts.absView ?? {});
-    if (!algebraReport.ok) {
-      // abs 仍计算 report：错误上屏，避免 exit 1 却无可见诊断
-      console.log("");
-      console.log(formatCheckReport(algebraReport, { verbose: false }));
-    } else {
-      console.log("");
-      console.log(`nudo check  ${basename(filePath)}`);
-      console.log("OK");
-      console.log(
-        `  ${algebraReport.summary.errors} error · ${algebraReport.summary.warnings} warning · ${algebraReport.summary.infos} info · ${algebraReport.summary.functions} fn`,
-      );
-    }
-    emitCiAnnotations();
-  } else {
-    console.log(formatCheckReport(algebraReport, { verbose: opts.verbose === true }));
-    emitCiAnnotations();
-  }
-
-  // 诊断 → 文档深链（仅终端面；CheckJson 契约不变）
-  if (
-    shouldPrintDocsLinks({
-      json: opts.json,
-      abs: opts.abs,
-      issueCount: algebraReport.issues.length,
-      reportOk: algebraReport.ok,
-    })
-  ) {
-    printDocsLinks(algebraReport.issues);
-  }
-
-  // 降级产物不回写：注入装配失败时的分析缺注入面（无模块/mock），
-  // 回写会让下次 check 命中缓存整体跳过注入装配 → 静默转绿
-  if (useDisk && cacheKey && !cached && !opts.abs && !injectionSetupFailed) {
-    try {
-      disk.set(cacheKey, serializeCheckJson(algebraReport));
-    } catch {
-      /* optional: disk cache write failed — check result still valid */
-    }
-  }
-
-  // --json 单文件：exit 与打印出的 ok 同源（路径错误在 action 层已并入信封）；
-  // 注入装配失败独立于 ok 挡红（降级分析可能零诊断 ok:true）
-  if (opts.json && !opts.jsonCollect) {
-    process.exitCode = checkJson.ok && !injectionSetupFailed ? 0 : 1;
-  } else if (!opts.jsonCollect && (!algebraReport.ok || injectionSetupFailed)) {
-    process.exitCode = 1;
-  }
+  // 段3 report+exit：打印面 + 缓存回写 + exit
+  await emitCheckReport(filePath, report, cache, injectionSetupFailed, opts);
 }
 
 // ---------------------------------------------------------------------------
@@ -431,29 +563,14 @@ async function runCheckFix(opts: {
   only?: string[];
   write: boolean;
   ignoreThrows?: string[];
-  entryThrows?: "error" | "warning" | "off";
+  entryThrows?: EntryThrowsMode;
   profile?: GateProfile;
 }): Promise<{ planned: number; written: number; residualErrors: number }> {
-  const core = await import("@nudojs/core");
-  const { checkSource, pTrue, sidecarPathOf, actionsForIssue } = core;
-  type CheckAction = import("@nudojs/core").CheckAction;
-  const { collectSkipReturns, defaultLoadModule, findProjectConfig, checkConfig } =
-    await import("@nudojs/service");
-  const {
-    materializeAction,
-    applyTextEdits,
-    unifiedDiff,
-  } = await import("@nudojs/service/emit");
-  const { writeFileSync, readFileSync, existsSync } = await import("node:fs");
-
   const only = opts.only && opts.only.length > 0 ? new Set(opts.only) : undefined;
   // BUG-022/S5-004：profile 是 L2 预设（adoption→warning /
-  // strict→error），显式 --entry-throws 优先——与 runCheck 的
-  // resolveEntryThrows 同口径（CLI 层已解析 entryThrows/profile）。
-  // G4：项目配置（package.json#nudo.check.profile/entryThrows/
-  // ignoreThrows）必须与 plain check 同链解析——否则 adoption 档
-  // 项目 plain check 绿而 --fix 红（门禁分叉）。config 按文件解析
-  // （targets 可跨项目）。
+  // strict→error），显式 --entry-throws 优先——门禁解析走
+  // resolveGateForFile 单源（与 plain check 同链，G4 不分叉；
+  // config 按文件解析，targets 可跨项目）。
   let planned = 0;
   let written = 0;
   // BUG-022/S5-004：门禁语义——error 级诊断在物化循环后复检：
@@ -466,21 +583,19 @@ async function runCheckFix(opts: {
     let source: string;
     try {
       source = readFileSync(file, "utf-8");
-    } catch {
+    } catch (err) {
+      // 读文件失败不得静默跳过（否则不可读目标在 --fix 面静默绿）：
+      // 上屏 + 计入残余 error → 末尾按 check 同契约 exit 1
+      console.error(
+        `error: check --fix cannot read ${file}: ${(err as Error).message}`,
+      );
+      residualErrors++;
       continue;
     }
-    // 与 plain check（runCheck）同链：checkGateFromConfig + checkConfig
-    // → resolveEntryThrows（CLI 显式 > CLI profile > pkg entryThrows >
-    // pkg profile > 默认 error）+ mergeIgnoreThrows（加法合并）
-    const proj = findProjectConfig(dirname(file));
-    const cCfg = checkConfig(proj?.config);
-    const gate = checkGateFromConfig(proj?.config);
-    const entryThrows = resolveEntryThrows(
-      { entryThrows: opts.entryThrows, profile: opts.profile },
-      gate,
-      cCfg.entryThrows,
-    );
-    const ignoreThrows = mergeIgnoreThrows(opts.ignoreThrows, cCfg.ignoreThrows);
+    // 与 plain check（runCheck）同链：resolveGateForFile（CLI 显式 >
+    // CLI profile > pkg entryThrows > pkg profile > 默认 error）+
+    // mergeIgnoreThrows（加法合并）
+    const { entryThrows, ignoreThrows } = resolveGateForFile(file, opts);
     const report = checkSource(file, source, pTrue, {
       loadModule: defaultLoadModule,
       fromFile: file,
@@ -713,8 +828,6 @@ export function registerCheckCommand(program: Command): void {
             process.exitCode = 1;
             return;
           }
-          const { injectBindings, analyzeFile, defaultLoadModule } = await import("@nudojs/service");
-          const { formatAbs } = await import("@nudojs/core");
           const bindings = parseWhatIfBindings(opts.whatIf);
           const original = readFileSync(file, "utf-8");
           const { source, applied, unapplied } = injectBindings(original, bindings);
@@ -818,15 +931,14 @@ export function registerCheckCommand(program: Command): void {
           // --json：路径错误纳入信封；exit 与 ok 单一来源（绝不 ok:true + exit≠0）
           const wantMulti = targets.length > 1 || allPathErrors.length > 0;
           if (wantMulti) {
-            const collected: Array<import("@nudojs/core").CheckJson> = [];
+            const collected: CheckJson[] = [];
             // 注入装配失败跨文件聚合（单文件 ok:true 的降级分析 + 失败态
             // 必须让信封 exit 红，不能被 envelope.ok 覆盖成假绿）
             const gateFlags: { injectionSetupFailed?: boolean } = {};
             for (const t of targets) {
               await runCheck(t, { ...shared, json: true, jsonCollect: collected, gateFlags });
             }
-            const { serializeCheckJsonMulti: multi } = await import("@nudojs/core");
-            const envelope = attachPathErrors(multi(collected), allPathErrors);
+            const envelope = attachPathErrors(serializeCheckJsonMulti(collected), allPathErrors);
             console.log(JSON.stringify(envelope, null, 2));
             process.exitCode = envelope.ok && !gateFlags.injectionSetupFailed ? 0 : 1;
             return;
@@ -847,6 +959,18 @@ export function registerCheckCommand(program: Command): void {
 
         if (opts.watch) {
           startWatch(paths, runOne, "check");
+          return;
+        }
+        // GitLab Code Quality 只接受一份 JSON 数组报告：多 target 仿
+        // --json 的 jsonCollect 聚合 rows（runCheck 不打印），循环后
+        // 一次打印；exit 语义不变（runCheck 逐文件按门禁置 1，
+        // 任一文件红即红）。
+        if (opts.gitlab && targets.length > 1) {
+          const rowsCollect: GitlabCodeQualityIssue[] = [];
+          for (const t of targets) {
+            await runCheck(t, { ...shared, gitlabRowsCollect: rowsCollect });
+          }
+          console.log(JSON.stringify(rowsCollect, null, 2));
           return;
         }
         for (const t of targets) await runOne(t);

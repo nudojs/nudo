@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { resolve, dirname, relative, sep } from "node:path";
 import { setSessionCacheFromProject } from "../session-cache-limits.ts";
 import { setEvalForkBudgetLimit, getEvalForkBudgetLimit, MAX_EVAL_TOTAL_FORKS } from "@nudojs/core/internal";
@@ -290,18 +290,78 @@ function globMatch(pattern: string, path: string): boolean {
   return new RegExp(`^${rx}$`).test(path);
 }
 
+/**
+ * findProjectConfig 的目录链 memo：key 为 resolve 后的 startDir，条目记录
+ * 本次向上查找访问过的每个 package.json 的 mtimeMs+size（无文件记 absent）。
+ * 命中时只做链上 stat 比对（不 readFileSync/JSON.parse）；链上任何
+ * package.json 新建/改写/删除（mtime 或 size 翻转，含 absent↔存在）都 miss
+ * 重算——自校验，不依赖 watcher。LSP/宿主侧的显式失效走
+ * evictProjectConfigMemo（clearAnalysisSessionCaches / isProjectConfigPath
+ * 通道），覆盖「同 size+同 mtime」极端写入。
+ */
+type ProjectConfigMemoEntry = {
+  chain: Array<{ pkgPath: string; fp: string | undefined }>;
+  result: { config: NudoConfig; projectDir: string } | null;
+};
+const projectConfigMemo = new Map<string, ProjectConfigMemoEntry>();
+/** 上限同 analysis-file-cache 的量级：per-目录条目很小，防病态深目录树 */
+const MAX_PROJECT_CONFIG_MEMO = 128;
+let projectConfigDiskReads = 0;
+
+function pkgStatFp(pkgPath: string): string | undefined {
+  try {
+    const st = statSync(pkgPath);
+    return `${st.mtimeMs}:${st.size}`;
+  } catch {
+    return undefined;
+  }
+}
+
+function projectConfigMemoHit(entry: ProjectConfigMemoEntry): boolean {
+  for (const { pkgPath, fp } of entry.chain) {
+    if (pkgStatFp(pkgPath) !== fp) return false;
+  }
+  return true;
+}
+
+/** 清空 findProjectConfig 目录链 memo（项目配置 watch 通道 / 测试隔离） */
+export function evictProjectConfigMemo(): void {
+  projectConfigMemo.clear();
+}
+
+/** 诊断/测试：memo 条目数 + 实际读盘（readFileSync+JSON.parse）次数 */
+export function projectConfigMemoStats(): { entries: number; diskReads: number } {
+  return { entries: projectConfigMemo.size, diskReads: projectConfigDiskReads };
+}
+
 export function findProjectConfig(
   startDir: string,
 ): { config: NudoConfig; projectDir: string } | null {
   let dir = resolve(startDir);
   const root = resolve("/");
+  const memoKey = resolve(startDir);
+  const memoEntry: ProjectConfigMemoEntry = { chain: [], result: null };
+  const memoize = (result: { config: NudoConfig; projectDir: string } | null) => {
+    memoEntry.result = result;
+    if (projectConfigMemo.size >= MAX_PROJECT_CONFIG_MEMO && !projectConfigMemo.has(memoKey)) {
+      const oldest = projectConfigMemo.keys().next().value;
+      if (oldest !== undefined) projectConfigMemo.delete(oldest);
+    }
+    projectConfigMemo.set(memoKey, memoEntry);
+    return result;
+  };
+
+  const hit = projectConfigMemo.get(memoKey);
+  if (hit && projectConfigMemoHit(hit)) return hit.result;
 
   // 向上查找带 `nudo` 键的 package.json。子包自有 package.json（monorepo
   // packages/*）时**不**在此停步——否则仓库根的 nudo.contract.autoBind
   // 对该子包完全不可见。
   while (dir !== root) {
     const pkgPath = resolve(dir, "package.json");
-    if (existsSync(pkgPath)) {
+    const statFp = pkgStatFp(pkgPath);
+    memoEntry.chain.push({ pkgPath, fp: statFp });
+    if (statFp !== undefined) {
       // BUG-027：区分「无 nudo 键（继续向上）」与
       // 「读 / 解析失败」——旧实现 catch 吞掉后继续
       // 向上，子包 package.json 损坏 / 写入中时静默
@@ -312,13 +372,14 @@ export function findProjectConfig(
       // env 层，不猜根配置）。
       let pkg: unknown;
       try {
+        projectConfigDiskReads++;
         pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
       } catch (err) {
         process.stderr?.write?.(
           `nudo: package.json parse failed at ${pkgPath} (${err instanceof Error ? err.message : String(err)}); project config disabled for this subtree (defaults + env apply)\n`,
         );
         applyBForkBudgetFromConfig(null);
-        return null;
+        return memoize(null);
       }
       const nudo =
         pkg && typeof pkg === "object"
@@ -329,7 +390,7 @@ export function findProjectConfig(
         setSessionCacheFromProject(nudo.sessionCache);
         // fork 总次数预算：env NUDO_MAX_FORKS > nudo.analysis.maxForks > 默认
         applyBForkBudgetFromConfig(nudo);
-        return { config: nudo, projectDir: dir };
+        return memoize({ config: nudo, projectDir: dir });
       }
     }
     const parent = dirname(dir);
@@ -339,5 +400,5 @@ export function findProjectConfig(
 
   // 无项目 nudo 配置：仍应用 env 层（NUDO_MAX_FORKS）
   applyBForkBudgetFromConfig(null);
-  return null;
+  return memoize(null);
 }

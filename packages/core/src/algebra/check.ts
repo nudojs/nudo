@@ -18,6 +18,7 @@ import {
   getAbsCallBudgetStats,
   FORK_TRUNCATION_LABEL,
   HOST_EFFECT_LABEL_PREFIX,
+  MATH_FOLD_ERROR_LABEL,
   PROMISE_MICRO_OVERFLOW_LABEL,
   PROMISE_MICRO_ERROR_LABEL,
 } from "./call-budget.ts";
@@ -30,6 +31,7 @@ import {
   setRefineDiagCollector,
   takeRefineDiagsSince,
 } from "./refine.ts";
+import { runWithCollectorScope } from "./collector-scope.ts";
 import {
   effectiveInterface,
   formatConstraint,
@@ -125,6 +127,19 @@ export function checkSource(
   source: string,
   phi: Phi = pTrue,
   opts: CheckOptions = {},
+): CheckReport {
+  // collector 作用域（幂等）：一次完整 check 的 collector 生命周期在此收口；
+  // 嵌套调用（analyzeFile 内 / 宿主外层已开作用域）零开销复用外层 store。
+  return runWithCollectorScope(() =>
+    checkSourceInScope(filePath, source, phi, opts),
+  );
+}
+
+function checkSourceInScope(
+  filePath: string,
+  source: string,
+  phi: Phi,
+  opts: CheckOptions,
 ): CheckReport {
   // Per-call loadModule cache: dep fingerprint + scan/refine share one read.
   // Identity for memo keys stays on the caller's raw loadModule — a fresh
@@ -280,11 +295,10 @@ function checkSourceInner(
   // 整文件一次判定，避免 per-function includes 全文扫
   // 指令住注释：字符串里的 `@nudo:contract` 不是契约来源
   const hasRefineDirective = stripStringsKeepComments(source).includes("@nudo:contract");
-  // ambient 侧车存在时预取本地导出表（一次 parse）：侧车同名绑定只落本地 named export
-  const exportedNames =
-    sidecarFp !== undefined ? localNamedExports(source) : undefined;
-  // L2：模块边界入口表（export / default / CJS exports）— 只执法这些函数
+  // L2：模块边界入口表（export / default / CJS exports）— 只执法这些函数；
+  // ambient 侧车同名绑定与入口表同源（localNamedExports），复用同一次 parse
   const entryNames = localNamedExports(source);
+  const exportedNames = sidecarFp !== undefined ? entryNames : undefined;
   const entryThrowsMode = opts.entryThrows ?? "error";
   const ignoreThrows = opts.ignoreThrows;
   // T10a：generated 事实快照的 drift 候选（每函数级，统一在拿到 varAbs 后判定）
@@ -684,6 +698,17 @@ function checkSourceInner(
         code: "nudo:promise-micro-error",
         message: `A promise microtask threw while draining; the error was recorded and did not rewrite the synchronous return value`,
         suggestion: "optional: inspect the then/catch callback for a throw path — non-blocking",
+      });
+      continue;
+    }
+    // Math 原生折叠抛错（宿主篡改/分叉的 Math.*）：拓宽不是递归——专用文案
+    if (label === MATH_FOLD_ERROR_LABEL) {
+      issues.push({
+        severity: "info",
+        code: "nudo:math-fold-error",
+        message: `A Math native fold threw during analysis (host-tampered or divergent Math.*); the result was widened to number`,
+        suggestion:
+          "optional: keep Math.* builtins unmodified in analyzed code, or mock them with @nudo:mock — non-blocking",
       });
       continue;
     }

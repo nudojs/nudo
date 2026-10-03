@@ -54,6 +54,7 @@ export {
   type FunctionWithDirectives,
   type SinonExpression,
   type DirectiveDiag,
+  type ExtractDirectivesOpts,
   extractDirectives,
   extractDirectivesQuiet,
   extractFileDirectives,

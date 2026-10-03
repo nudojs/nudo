@@ -2,6 +2,10 @@
 
 import type { Term } from "./term.ts";
 import { termEquals, termToString, lit } from "./term.ts";
+import {
+  createScopedSlot,
+  registerCollectorScopeParticipant,
+} from "./collector-scope.ts";
 
 export type PrimName = "number" | "string" | "boolean" | "bigint" | "symbol";
 
@@ -319,14 +323,17 @@ export const phiAnd = and;
  */
 export type ImplicationOracle = (phi: Phi, pred: Pred) => boolean | undefined;
 
-let implicationOracle: ImplicationOracle | undefined;
+const implicationOracleSlot = createScopedSlot<ImplicationOracle | undefined>(
+  () => undefined,
+);
+registerCollectorScopeParticipant((body) => implicationOracleSlot.runScoped(body));
 
 export function setImplicationOracle(fn: ImplicationOracle | undefined): void {
-  implicationOracle = fn;
+  implicationOracleSlot.set(fn);
 }
 
 export function getImplicationOracle(): ImplicationOracle | undefined {
-  return implicationOracle;
+  return implicationOracleSlot.get();
 }
 
 /** 简单蕴含：在区间/线性/字面量/typeof 可判定范围内判断 Φ ⊢ pred */
@@ -392,6 +399,7 @@ export function implies(phi: Phi, pred: Pred): boolean {
   if (decideLiteralPred(pred) === true) return true;
 
   // 可选外部 oracle（SMT 等）：内建证不出时最后一问
+  const implicationOracle = implicationOracleSlot.get();
   if (implicationOracle && implicationOracle(phi, pred) === true) return true;
   return false;
 }

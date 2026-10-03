@@ -9,6 +9,7 @@
  */
 
 import { rtAllBindings } from "./rt.ts";
+import { parse as babelParse } from "@babel/parser";
 import {
   enterEvalCallBudgetSession,
   exitEvalCallBudgetSession,
@@ -39,6 +40,11 @@ import {
   takeThrowExits,
 } from "./runtime.ts";
 import { $call } from "./call.ts";
+import {
+  runWithCollectorScope,
+  createScopedSlot,
+  registerCollectorScopeParticipant,
+} from "../collector-scope.ts";
 
 export type RunTranspiledOptions = {
   /** 说明符 → 依赖导出（host 模块图或 runTranspiled 产物） */
@@ -133,99 +139,162 @@ function rewriteUserImports(js: string): string {
   );
 }
 
-/** 分析模式：strip 顶层危险副作用与未知全局调用；保留本地函数调用（诊断依赖） */
+/**
+ * 分析模式：strip 顶层危险副作用与未知全局调用；保留本地函数调用（诊断依赖）。
+ *
+ * 结构化实现：Babel 解析 transpile 产物，按顶层语句节点整条剥除。历史上的
+ * 行级正则 + `endsWith(";")` / 括号计数启发式在多类输入上静默改变程序语义：
+ * - 多行语句（回调体内部行以 `;` / `}` 结尾）提前终止跳过 → 语句尾部悬空
+ *   → `new Function` SyntaxError（与下方 $for 悬空修复同源的问题类）；
+ * - 字符串/模板字面量里的未配对 `(`（如 `"fetch("`）被计入括号平衡 →
+ *   连带误删后续顶层语句（export function 整体消失，导出静默 unknown）；
+ * - 列 0 的 `catch (` 头匹配「未知全局调用」正则 → catch 头被剥 →
+ *   顶层 try/catch 一律悬空 SyntaxError。
+ * 剥除对象不变：transpile + import/export 改写后的 JS（runTranspiledInner 内序）。
+ */
 function stripEffectfulTopLevel(js: string): string {
-  // 本文件内可解析的绑定名（函数/类/const/let/var/import）
-  const declared = new Set<string>();
-  for (const m of js.matchAll(/^(?:export\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)/gm)) {
-    declared.add(m[1]!);
-  }
-  for (const m of js.matchAll(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)/gm)) {
-    declared.add(m[1]!);
-  }
-  for (const m of js.matchAll(/^import\s*\{([^}]+)\}\s*from/gm)) {
-    for (const part of m[1]!.split(",")) {
-      const local = part.split(/\s+as\s+/).pop()?.trim();
-      if (local) declared.add(local);
-    }
-  }
-  for (const m of js.matchAll(/^import\s+\*\s+as\s+([A-Za-z_$][\w$]*)/gm)) {
-    declared.add(m[1]!);
-  }
-  for (const m of js.matchAll(/^import\s+([A-Za-z_$][\w$]*)\s*,/gm)) {
-    declared.add(m[1]!);
+  let body: import("@babel/types").Statement[];
+  try {
+    body = babelParse(js, {
+      sourceType: "module",
+      allowReturnOutsideFunction: true,
+      attachComment: false,
+    }).program.body;
+  } catch {
+    // transpile 产物按构造是可解析 JS；解析失败按「全部保留」降级，
+    // 不让 strip 阶段引入新的失败面
+    return js;
   }
 
-  const lines = js.split("\n");
-  const out: string[] = [];
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i]!;
-    const isTop = /^\S/.test(line) && line.trim().length > 0;
-    const t = line.trim();
-    if (isTop) {
-      // 顶层危险全局：fetch / 定时器 / console
-      if (/^(console\.|fetch\s*\(|setTimeout\s*\(|setInterval\s*\()/.test(t)) {
-        while (i < lines.length && !lines[i]!.trim().endsWith(";") && !lines[i]!.trim().endsWith("}")) i++;
-        i++;
-        continue;
-      }
-      // 顶层调用：$callNamed("localFn", …) 仅当 localFn 已声明时保留
-      //（诊断需要执行本地顶层调用）；未知全局 strip
-      const namedCall = t.match(/^\$callNamed\(\s*"([^"]+)"/);
-      if (namedCall && !declared.has(namedCall[1]!)) {
-        while (i < lines.length && !lines[i]!.trim().endsWith(";") && !lines[i]!.trim().endsWith("}")) i++;
-        i++;
-        continue;
-      }
-      // 其它未知全局调用（未走 $callNamed 的）；__nudoExport/__nudoExportStar/
-      // __nudoRecordBinding/__nudoRecordAssign 是簿记（rewrite/插桩产物），
-      // 非副作用，保留
-      const callMatch = t.match(/^([A-Za-z_$][\w$]*)\s*\(/);
-      if (
-        callMatch &&
-        !callMatch[1]!.startsWith("$") &&
-        callMatch[1] !== "__nudoExport" &&
-        callMatch[1] !== "__nudoExportStar" &&
-        callMatch[1] !== "__nudoRecordBinding" &&
-        callMatch[1] !== "__nudoRecordAssign" &&
-        !declared.has(callMatch[1]!) &&
-        !/^(const|let|var|function|export|import|return|if|for|while|switch|try|throw|class)\b/.test(t)
-      ) {
-        while (i < lines.length && !lines[i]!.trim().endsWith(";") && !lines[i]!.trim().endsWith("}")) i++;
-        i++;
-        continue;
-      }
-      // 顶层控制流
-      if (/^(if\s*\(|for\s*\(|while\s*\(|\$fork\s*\(|\$for\s*\(|\$while)/.test(t)) {
-        i++;
-        if (/^\$/.test(t)) {
-          // 运行时调用形态（$for/$fork/$while）：按括号平衡跳过整条调用
-          // （此前按大括号计数——$for( 首行无 { → 只删首行，参数悬空
-          // SyntaxError，analyze 模式顶层循环静默回落）
-          let depth = (t.match(/\(/g) || []).length - (t.match(/\)/g) || []).length;
-          while (i < lines.length && depth > 0) {
-            const l = lines[i]!;
-            depth += (l.match(/\(/g) || []).length;
-            depth -= (l.match(/\)/g) || []).length;
-            i++;
-          }
-        } else {
-          let depth = t.includes("{") ? 1 : 0;
-          while (i < lines.length && depth > 0) {
-            const l = lines[i]!;
-            depth += (l.match(/\{/g) || []).length;
-            depth -= (l.match(/\}/g) || []).length;
-            i++;
-          }
-        }
-        continue;
-      }
-    }
-    out.push(line);
-    i++;
+  // 本文件内可解析的绑定名（函数/类/const/let/var/import）。先全量收集
+  // 再判定——与旧实现两遍口径一致（顶层调用可先于声明文本出现）
+  const declared = new Set<string>();
+  for (const stmt of body) collectTopLevelDeclared(stmt, declared);
+
+  const cuts: Array<[number, number]> = [];
+  for (const stmt of body) {
+    if (isEffectfulTopLevelStmt(stmt, declared)) cuts.push([stmt.start!, stmt.end!]);
   }
-  return out.join("\n");
+  if (cuts.length === 0) return js;
+
+  // 按源区间整条切除，未动语句保持字节级原文——stripStaticExportDecls 等
+  // 后续行锚定正则依赖行结构
+  let out = "";
+  let pos = 0;
+  for (const [start, end] of cuts) {
+    out += js.slice(pos, start);
+    pos = end;
+    // 吞掉语句残余 `;`；本行仅剩空白时连同换行一起吞（避免空行堆积）
+    while (pos < js.length && js[pos] === ";") pos++;
+    const nl = js.indexOf("\n", pos);
+    const lineRest = js.slice(pos, nl === -1 ? js.length : nl);
+    if (/^\s*$/.test(lineRest)) pos = nl === -1 ? js.length : nl + 1;
+  }
+  return out + js.slice(pos);
+}
+
+/** 顶层声明名收集（export 包裹展开；rewriteUserImports 已把 import 改写成
+ *  let 绑定，ImportDeclaration 分支为未改写形态兜底） */
+function collectTopLevelDeclared(
+  stmt: import("@babel/types").Statement,
+  declared: Set<string>,
+): void {
+  const decl =
+    stmt.type === "ExportNamedDeclaration" || stmt.type === "ExportDefaultDeclaration"
+      ? stmt.declaration
+      : stmt;
+  if (!decl) return;
+  if (
+    (decl.type === "FunctionDeclaration" || decl.type === "ClassDeclaration") &&
+    decl.id
+  ) {
+    declared.add(decl.id.name);
+    return;
+  }
+  if (decl.type === "VariableDeclaration") {
+    for (const d of decl.declarations) {
+      if (d.id.type === "Identifier") declared.add(d.id.name);
+    }
+    return;
+  }
+  if (decl.type === "ImportDeclaration") {
+    for (const spec of decl.specifiers) declared.add(spec.local.name);
+  }
+}
+
+/**
+ * 顶层副作用语句判定（剥除口径与旧行级实现一致）：
+ * - 源形态危险全局：`console.*` 成员调用 / `fetch`·`setTimeout`·`setInterval`
+ *   裸调用（transpile 后均已插桩为 $invoke/$callNamed，此分支为未插桩输入兜底）；
+ * - `$callNamed("X", …)` 且 X 非本文件声明（fetch 等未知全局）→ 剥；
+ * - 其它未知全局裸调用（非 `$` 前缀插桩、非 `__nudo*` 簿记、非本文件声明）→ 剥；
+ * - 插桩控制流 `$for` / `$fork` / `$while*` 与源形态 if/for/while → 剥
+ *   （顶层控制流依赖自由标识符，执行即 ReferenceError）。
+ * 保留：函数/导出声明、本地调用、`$forOf`/`$switch`/`$throw`、赋值 IIFE、
+ * `__nudoExport` 等簿记、try/catch。
+ */
+function isEffectfulTopLevelStmt(
+  stmt: import("@babel/types").Statement,
+  declared: Set<string>,
+): boolean {
+  switch (stmt.type) {
+    case "ExpressionStatement":
+      return isEffectfulTopLevelExpr(stmt.expression, declared);
+    // 源形态控制流（transpile 后不出现，兜底口径与旧正则一致；do-while 旧正则不剥，保持）
+    case "IfStatement":
+    case "ForStatement":
+    case "ForInStatement":
+    case "ForOfStatement":
+    case "WhileStatement":
+      return true;
+    default:
+      return false;
+  }
+}
+
+function isEffectfulTopLevelExpr(
+  expr: import("@babel/types").Expression,
+  declared: Set<string>,
+): boolean {
+  if (expr.type !== "CallExpression") return false;
+  const callee = expr.callee;
+  // 源形态危险全局：console.* （链根为 console 的成员调用）
+  if (
+    callee.type === "MemberExpression" &&
+    memberChainRoot(callee) === "console"
+  ) {
+    return true;
+  }
+  // 方法链/函数值调用（$invoke 包裹等）外层非标识符 → 整条保留
+  if (callee.type !== "Identifier") return false;
+  const name = callee.name;
+  // 源形态危险全局：裸 fetch/setTimeout/setInterval
+  if (name === "fetch" || name === "setTimeout" || name === "setInterval") return true;
+  // 顶层调用：$callNamed("localFn", …) 仅当 localFn 已声明时保留
+  //（诊断需要执行本地顶层调用）；未知全局剥
+  if (name === "$callNamed") {
+    const first = expr.arguments[0];
+    return first?.type === "StringLiteral" && !declared.has(first.value);
+  }
+  // 插桩控制流（$while 前缀含 $whileSeq）
+  if (name === "$for" || name === "$fork" || name.startsWith("$while")) return true;
+  // 其它未知全局裸调用；__nudoExport/__nudoExportStar/__nudoRecordBinding/
+  // __nudoRecordAssign 是簿记（rewrite/插桩产物），非副作用，保留
+  return (
+    !name.startsWith("$") &&
+    name !== "__nudoExport" &&
+    name !== "__nudoExportStar" &&
+    name !== "__nudoRecordBinding" &&
+    name !== "__nudoRecordAssign" &&
+    !declared.has(name)
+  );
+}
+
+/** 成员链最左根标识符名（非标识符根返回 undefined） */
+function memberChainRoot(member: import("@babel/types").MemberExpression): string | undefined {
+  let node: import("@babel/types").Expression | import("@babel/types").Super = member.object;
+  while (node.type === "MemberExpression") node = node.object;
+  return node.type === "Identifier" ? node.name : undefined;
 }
 
 function runtimeArgNames(): string[] {
@@ -389,12 +458,16 @@ export function runTranspiled(
   source: string,
   opts: RunTranspiledOptions = {},
 ): Record<string, unknown> {
-  enterEvalCallBudgetSession(); // 宿主入口：最外层重置；嵌套导出桥继承外层预算
-  try {
-    return runTranspiledInner(source, opts);
-  } finally {
-    exitEvalCallBudgetSession();
-  }
+  // collector 作用域（幂等）：宿主入口包一次；嵌套（checkSource 内 /
+  // 导出桥 re-entry）零开销复用外层 store。无外层宿主时行为 = fallback。
+  return runWithCollectorScope(() => {
+    enterEvalCallBudgetSession(); // 宿主入口：最外层重置；嵌套导出桥继承外层预算
+    try {
+      return runTranspiledInner(source, opts);
+    } finally {
+      exitEvalCallBudgetSession();
+    }
+  });
 }
 
 function runTranspiledInner(
@@ -561,12 +634,18 @@ export type EvalFallback = {
   loc?: { line: number; column: number };
 };
 
-let evalFallbackCollector: ((f: EvalFallback) => void) | null = null;
+/** 回落事件 collector（作用域化：runWithCollectorScope 内各分析互不串台；
+ *  无作用域 = fallback 模块级单变量，行为同今日。
+ *  注意：_fb* 计数器刻意保持进程级累计（health 指标口径，与 collector 无关）。 */
+const evalFallbackCollectorSlot = createScopedSlot<
+  ((f: EvalFallback) => void) | null
+>(() => null);
+registerCollectorScopeParticipant((body) => evalFallbackCollectorSlot.runScoped(body));
 
 export function setEvalFallbackCollector(
   collector: ((f: EvalFallback) => void) | null,
 ): void {
-  evalFallbackCollector = collector;
+  evalFallbackCollectorSlot.set(collector);
 }
 
 /** 表达式级求值（scan 的 case 字面量实参等静态求值面）：编译单表达式经
@@ -628,6 +707,7 @@ export function noteEvalFallback(e: unknown): void {
   if (f.reason === "internal") _fbInternal++;
   else if (f.reason === "module-throw") _fbModuleThrow++;
   else if (f.reason.startsWith("unsupported:")) _fbUnsupported++;
+  const evalFallbackCollector = evalFallbackCollectorSlot.get();
   if (!evalFallbackCollector) return;
   try {
     evalFallbackCollector(f);
@@ -672,20 +752,24 @@ export function callTranspiledExportFull(
   args: Abs[],
   opts?: { phi?: Phi },
 ): TranspiledCallResult {
-  enterEvalCallBudgetSession();
-  // G3（BUG-026 epoch 作用域）：入口调用阶段自成求值单元——函数体内
-  // 块级同名类正是在此注册（不在 runTranspiled 顶层）。开新 epoch：
-  // ① 缓存命中（tryRunEval 不重跑 run）后的重执行不得与无关文件
-  // 刚完成 fresh run 的同名类共享陈旧 epoch（跨文件同名类按设计走
-  // last-wins 静默）；② 出口排水使碰撞在本次分析即可观测，不再滞留
-  // 缓冲误归属到下一个无关 run。last-wins 解析语义不变（观测面修复）。
-  beginClassEpoch();
-  try {
-    return callTranspiledExportFullInner(exports, name, args, opts);
-  } finally {
-    exitEvalCallBudgetSession();
-    noteDrainedClassCollisions();
-  }
+  // collector 作用域（幂等）：同 runTranspiled——最外层宿主入口开 store，
+  // 嵌套（同一次分析内的逐导出调用 / 导出桥）复用外层。
+  return runWithCollectorScope(() => {
+    enterEvalCallBudgetSession();
+    // G3（BUG-026 epoch 作用域）：入口调用阶段自成求值单元——函数体内
+    // 块级同名类正是在此注册（不在 runTranspiled 顶层）。开新 epoch：
+    // ① 缓存命中（tryRunEval 不重跑 run）后的重执行不得与无关文件
+    // 刚完成 fresh run 的同名类共享陈旧 epoch（跨文件同名类按设计走
+    // last-wins 静默）；② 出口排水使碰撞在本次分析即可观测，不再滞留
+    // 缓冲误归属到下一个无关 run。last-wins 解析语义不变（观测面修复）。
+    beginClassEpoch();
+    try {
+      return callTranspiledExportFullInner(exports, name, args, opts);
+    } finally {
+      exitEvalCallBudgetSession();
+      noteDrainedClassCollisions();
+    }
+  });
 }
 
 function callTranspiledExportFullInner(
