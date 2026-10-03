@@ -13,7 +13,7 @@ import {
   extractDirectives,
   extractInlineDirectives,
   parseCaseArgExpr,
-  takeDirectiveDiags,
+  type DirectiveDiag,
 } from "../directives.ts";
 import { parse } from "../parse.ts";
 
@@ -25,6 +25,33 @@ const PAYLOAD_CTOR = "number().constructor('return process.exit(0)')()";
 /** 多语句拼接：借 `(${s});` 包裹逃逸 */
 const PAYLOAD_BREAKOUT = "number()); globalThis.__bug013 = true; //";
 
+function directiveMessages(diags: DirectiveDiag[]): string[] {
+  return diags
+    .filter((d) => d.code === "nudo:directive-syntax")
+    .map((d) => d.message);
+}
+
+/** 函数级指令链（case/mock）的诊断面 */
+function diagsOfExtract(src: string): string[] {
+  const diags: DirectiveDiag[] = [];
+  extractDirectives(parse(src), { diags });
+  return directiveMessages(diags);
+}
+
+/** 行内指令链（as/replace，单表达式容器）的诊断面 */
+function diagsOfInline(src: string): string[] {
+  const ast = parse(src);
+  const stmt = (ast as { program: { body: unknown[] } }).program.body[0];
+  const diags: DirectiveDiag[] = [];
+  extractInlineDirectives(stmt as never, { diags });
+  return directiveMessages(diags);
+}
+
+/** payload 的单表达式容器：`// @nudo:as <payload>` 一整行即一个类型表达式 */
+function asSrc(expr: string): string {
+  return `// @nudo:as ${expr}\nconst x = 1;`;
+}
+
 function clearPayload(): void {
   delete (globalThis as Record<string, unknown>).__bug013;
 }
@@ -33,14 +60,7 @@ function payloadFired(): boolean {
   return (globalThis as Record<string, unknown>).__bug013 === true;
 }
 
-function diagsContaining(needle: string): string[] {
-  return takeDirectiveDiags()
-    .filter((d) => d.code === "nudo:directive-syntax" && d.message.includes(needle))
-    .map((d) => d.message);
-}
-
 beforeEach(() => {
-  takeDirectiveDiags();
   clearPayload();
 });
 
@@ -53,38 +73,38 @@ describe("BUG-013: malicious type expressions must not execute", () => {
     const abs = parseCaseArgExpr(PAYLOAD_SEQ);
     expect(payloadFired()).toBe(false);
     expect(abs.shape.k).toBe("unknown");
-    expect(diagsContaining("Unsafe").length).toBeGreaterThan(0);
+    expect(diagsOfInline(asSrc(PAYLOAD_SEQ)).some((m) => m.includes("Unsafe"))).toBe(true);
   });
 
   it("parseCaseArgExpr: nested assignment payload has no side effect", () => {
     const abs = parseCaseArgExpr(PAYLOAD_NESTED);
     expect(payloadFired()).toBe(false);
     expect(abs.shape.k).toBe("unknown");
-    expect(diagsContaining("Unsafe").length).toBeGreaterThan(0);
+    expect(diagsOfInline(asSrc(PAYLOAD_NESTED)).some((m) => m.includes("Unsafe"))).toBe(true);
   });
 
   it("parseCaseArgExpr: top-level assignment payload has no side effect", () => {
     parseCaseArgExpr(PAYLOAD_ASSIGN);
     expect(payloadFired()).toBe(false);
-    expect(diagsContaining("Unsafe").length).toBeGreaterThan(0);
+    expect(diagsOfInline(asSrc(PAYLOAD_ASSIGN)).some((m) => m.includes("Unsafe"))).toBe(true);
   });
 
   it("parseCaseArgExpr: non-whitelist call payload has no side effect", () => {
     parseCaseArgExpr(PAYLOAD_CALL);
     expect(payloadFired()).toBe(false);
-    expect(diagsContaining("Unsafe").length).toBeGreaterThan(0);
+    expect(diagsOfInline(asSrc(PAYLOAD_CALL)).some((m) => m.includes("Unsafe"))).toBe(true);
   });
 
   it("parseCaseArgExpr: constructor gadget has no side effect", () => {
     parseCaseArgExpr(PAYLOAD_CTOR);
     expect(payloadFired()).toBe(false);
-    expect(diagsContaining("Unsafe").length).toBeGreaterThan(0);
+    expect(diagsOfInline(asSrc(PAYLOAD_CTOR)).some((m) => m.includes("Unsafe"))).toBe(true);
   });
 
   it("parseCaseArgExpr: statement-breakout payload has no side effect", () => {
     parseCaseArgExpr(PAYLOAD_BREAKOUT);
     expect(payloadFired()).toBe(false);
-    expect(diagsContaining("Unsafe").length).toBeGreaterThan(0);
+    expect(diagsOfInline(asSrc(PAYLOAD_BREAKOUT)).some((m) => m.includes("Unsafe"))).toBe(true);
   });
 });
 
@@ -96,29 +116,20 @@ describe("BUG-013: four directive chains reject payload", () => {
  */
 function f(x) { return x; }
 `;
-    extractDirectives(parse(src));
+    expect(diagsOfExtract(src).some((m) => m.includes("Unsafe"))).toBe(true);
     expect(payloadFired()).toBe(false);
-    expect(diagsContaining("Unsafe").length).toBeGreaterThan(0);
   });
 
   it("@nudo:as chain: no side effect + diagnostic", () => {
-    const src = `// @nudo:as ${PAYLOAD_NESTED}
-const x = 1;`;
-    const ast = parse(src);
-    const stmt = (ast as { program: { body: unknown[] } }).program.body[0];
-    extractInlineDirectives(stmt as never);
+    expect(diagsOfInline(`// @nudo:as ${PAYLOAD_NESTED}
+const x = 1;`).some((m) => m.includes("Unsafe"))).toBe(true);
     expect(payloadFired()).toBe(false);
-    expect(diagsContaining("Unsafe").length).toBeGreaterThan(0);
   });
 
   it("@nudo:replace chain: no side effect + diagnostic", () => {
-    const src = `// @nudo:replace a ${PAYLOAD_NESTED}
-const a = 1;`;
-    const ast = parse(src);
-    const stmt = (ast as { program: { body: unknown[] } }).program.body[0];
-    extractInlineDirectives(stmt as never);
+    expect(diagsOfInline(`// @nudo:replace a ${PAYLOAD_NESTED}
+const a = 1;`).some((m) => m.includes("Unsafe"))).toBe(true);
     expect(payloadFired()).toBe(false);
-    expect(diagsContaining("Unsafe").length).toBeGreaterThan(0);
   });
 
   it("@nudo:mock return-value chain: no side effect + diagnostic", () => {
@@ -128,9 +139,8 @@ const a = 1;`;
  */
 function f() { return x; }
 `;
-    extractDirectives(parse(src));
+    expect(diagsOfExtract(src).some((m) => m.includes("Unsafe"))).toBe(true);
     expect(payloadFired()).toBe(false);
-    expect(diagsContaining("Unsafe").length).toBeGreaterThan(0);
   });
 });
 
@@ -174,18 +184,15 @@ describe("BUG-013: legal type expressions still work", () => {
  */
 function f(x) { return x; }
 `;
-    extractDirectives(parse(src));
+    expect(diagsOfExtract(src).some((m) => m.includes("Unsafe"))).toBe(false);
     expect(payloadFired()).toBe(false);
-    expect(diagsContaining("Unsafe")).toHaveLength(0);
   });
 
   it("legal @nudo:as / @nudo:replace / mock emit no Unsafe diagnostic", () => {
     const inline = `// @nudo:as number().gt(0)
 // @nudo:replace a shape({ x: number() })
 const a = 1;`;
-    const ast = parse(inline);
-    const stmt = (ast as { program: { body: unknown[] } }).program.body[0];
-    extractInlineDirectives(stmt as never);
+    expect(diagsOfInline(inline).some((m) => m.includes("Unsafe"))).toBe(false);
 
     const mockSrc = `
 /**
@@ -193,7 +200,6 @@ const a = 1;`;
  */
 function f() { return y; }
 `;
-    extractDirectives(parse(mockSrc));
-    expect(diagsContaining("Unsafe")).toHaveLength(0);
+    expect(diagsOfExtract(mockSrc).some((m) => m.includes("Unsafe"))).toBe(false);
   });
 });

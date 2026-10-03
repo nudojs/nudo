@@ -49,10 +49,10 @@ import {
   type CallRecord,
 } from "@nudojs/service";
 import {
-  directiveDiagCount,
   extractDirectives,
   parse,
-  takeDirectiveDiagsSince,
+  runWithDirectiveDiags,
+  type DirectiveDiag,
 } from "@nudojs/parser";
 import { applyTextEdits, materializeAction, unifiedDiff } from "@nudojs/service/emit";
 import {
@@ -294,17 +294,26 @@ type MockFromError = { name: string; fromPath: string; message: string; code?: s
  * eval 注入包装配。装配失败 throw——由调用方降级处理（BUG-023：
  * 分析仍跑，但门禁红且缓存不回写）。同文件内复用同一注入对象
  * （checkSource/generalize memo 键按对象身份）。
+ *
+ * `dirDiags`：D1 指令文法诊断显式落袋。三个发射源同袋——
+ *  - collectEvalReplacements：行内 @nudo:as/@nudo:replace（语句级独立去重）
+ *  - extractDirectives：函数级 case/mock/skip/sample
+ *  - mockDirectivesToAbsSeeds 对 @nudo:mock 类型值表达式的 parseCaseArgExpr
+ *    复解析（与 extract 共域去重：同文案在 extract 已报则不再双报）
  */
 function buildCheckInjection(
   filePath: string,
   source: string,
   allEnvNames: string[],
+  dirDiags: DirectiveDiag[],
 ): { inject: RunTranspiledOptions; mockFromErrors: MockFromError[] } {
   const graph = evalAbsModuleGraph(source, filePath);
-  const reps = collectEvalReplacements(source);
-  const seedPkg = mockDirectivesToAbsSeeds(extractDirectives(parse(source)), {
-    fromFile: filePath,
-  });
+  const reps = collectEvalReplacements(source, { diags: dirDiags });
+  const seedPkg = runWithDirectiveDiags(dirDiags, () =>
+    mockDirectivesToAbsSeeds(extractDirectives(parse(source)), {
+      fromFile: filePath,
+    }),
+  );
   let mockFromErrors: MockFromError[] = seedPkg.fromErrors ?? [];
   const mocks = mockSeedsToAbsMocks(seedPkg);
   const envGlobals = collectEnvGlobals(allEnvNames);
@@ -489,12 +498,13 @@ async function runCheck(file: string, opts: RunCheckOptions = {}): Promise<void>
   if (cache.cachedJson) {
     report = reportFromCachedJson(cache.cachedJson);
   } else {
-    // since 锚：只排干本次 check 自己 extract 产生的指令文法增量（对齐 takeInterfaceDiagsSince）
-    const dirDiagSince = directiveDiagCount();
+    // D1: 指令文法诊断（nudo:directive-syntax）显式通道——buildCheckInjection
+    // 内的发射源同步落 dirDiags（无模块级 buffer、无 seq 锚）
+    const dirDiags: DirectiveDiag[] = [];
     // 段2 buildInjection：eval 注入包（模块图 + mocks + env 全局 + replace/as）
     let inject: RunTranspiledOptions | undefined;
     try {
-      const built = buildCheckInjection(filePath, source, cache.allEnvNames);
+      const built = buildCheckInjection(filePath, source, cache.allEnvNames, dirDiags);
       inject = built.inject;
       mockFromErrors = built.mockFromErrors;
     } catch (err) {
@@ -524,7 +534,6 @@ async function runCheck(file: string, opts: RunCheckOptions = {}): Promise<void>
       skips: collectSkipReturns(source),
     });
     // D1: 指令文法诊断（nudo:directive-syntax）并入 check 报告
-    const dirDiags = takeDirectiveDiagsSince(dirDiagSince);
     if (dirDiags.length > 0) {
       report = mergeCheckIssues(report, directiveDiagIssues(dirDiags));
     }

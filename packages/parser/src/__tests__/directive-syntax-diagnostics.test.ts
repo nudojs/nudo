@@ -5,42 +5,32 @@
  *
  * 同时覆盖 I2：parseCaseArgExpr 静默 fallback 不再无声。
  */
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { parse } from "../parse.ts";
 import {
   extractDirectives,
   extractDirectivesQuiet,
   extractInlineDirectives,
   parseCaseArgExpr,
-  takeDirectiveDiags,
-  takeDirectiveDiagsSince,
-  directiveDiagCount,
-  setDirectiveDiagCollector,
+  runWithDirectiveDiags,
   type DirectiveDiag,
 } from "../directives.ts";
 import type { CaseDirective, MockDirective, SkipDirective, AsDirective, ReplaceDirective } from "../directives.ts";
 
 function extractWithDiags(source: string) {
-  takeDirectiveDiags(); // 清空
   const ast = parse(source);
-  const fns = extractDirectives(ast);
-  const diags = takeDirectiveDiags();
+  const diags: DirectiveDiag[] = [];
+  const fns = extractDirectives(ast, { diags });
   return { fns, diags };
 }
 
 function extractInlineWithDiags(source: string) {
-  takeDirectiveDiags();
   const ast = parse(source);
   const stmt = (ast as any).program.body[0];
-  const dirs = extractInlineDirectives(stmt);
-  const diags = takeDirectiveDiags();
+  const diags: DirectiveDiag[] = [];
+  const dirs = extractInlineDirectives(stmt, { diags });
   return { dirs, diags };
 }
-
-beforeEach(() => {
-  setDirectiveDiagCollector(null);
-  takeDirectiveDiags();
-});
 
 describe("F-3 #1-3: malformed case names", () => {
   it("#1 single-quoted name → diagnostic, no case", () => {
@@ -180,20 +170,9 @@ function f(x) { return x; }`);
 
 describe("F-3 #9-10: @nudo:as forms", () => {
   it("#9 trailing comment in type → diagnostic", () => {
-    takeDirectiveDiags();
-    // extractInlineDirectives 走 CommentLine；用 parse 的 leadingComments
-    const src = `
-function f() {
-  return 1;
-}
-// @nudo:as number() // why
-`;
-    // 直接测 parseAbsExprDiag 路径：用 extractInlineDirectives 带 CommentLine
-    const ast = parse(`// @nudo:as number() // why
+    // extractInlineDirectives 走 CommentLine；直接测 parseAbsExprDiag 路径
+    const { dirs, diags } = extractInlineWithDiags(`// @nudo:as number() // why
 const x = 1;`);
-    const stmt = (ast as any).program.body[0];
-    const dirs = extractInlineDirectives(stmt);
-    const diags = takeDirectiveDiags();
     expect(diags.some((d) => d.code === "nudo:directive-syntax" && d.message.includes("Trailing comment"))).toBe(true);
     // 仍然产出 as directive（type 取注释前部分）
     expect(dirs.some((d) => d.kind === "as")).toBe(true);
@@ -295,79 +274,62 @@ function f(x) { return x; }`);
   });
 });
 
-describe("collector API", () => {
-  it("setDirectiveDiagCollector receives diags", () => {
-    const seen: Array<{ code: string; message: string }> = [];
-    setDirectiveDiagCollector((d) => seen.push(d));
-    extractWithDiags(`/**
- * @nudo:case 't' (1)
- */
-function f(x) { return x; }`);
-    setDirectiveDiagCollector(null);
-    expect(seen.length).toBeGreaterThan(0);
-    expect(seen[0]!.code).toBe("nudo:directive-syntax");
-  });
-
-  it("takeDirectiveDiags drains the buffer", () => {
-    extractWithDiags(`/**
- * @nudo:case 't' (1)
- */
-function f(x) { return x; }`);
-    // extractWithDiags 已 take 过
-    expect(takeDirectiveDiags()).toHaveLength(0);
-  });
-});
-
-describe("takeDirectiveDiagsSince watermark（R2B-003：对齐 takeInterfaceDiagsSince）", () => {
+describe("diag channel semantics（显式通道：单次调用内去重 / 纯查询丢弃）", () => {
   const BAD = `/**
  * @nudo:case 't' (1)
  */
 function f(x) { return x; }`;
 
-  it("只排本次增量，既有诊断保留", () => {
-    takeDirectiveDiags();
-    // 第一条诊断（在途验证待消费）
-    extractDirectives(parse(BAD));
-    const since = directiveDiagCount(); // 锚：既有诊断保留
-    // 第二条诊断（工具自身探测）——同源再 extract 会重新 emit
-    extractDirectives(parse(BAD));
-    expect(takeDirectiveDiagsSince(since).length).toBe(1);
-    // 既有诊断仍在队列，全量 take 才取走
-    expect(takeDirectiveDiags().length).toBe(1);
+  it("同源再 extract 重新 emit（重分析不丢报）", () => {
+    const first = extractWithDiags(BAD);
+    expect(first.diags).toHaveLength(1);
+    const second = extractWithDiags(BAD);
+    expect(second.diags).toHaveLength(1);
   });
 
-  it("不窃取在途其他消费方的诊断（跨文件错报回归）", () => {
-    takeDirectiveDiags();
-    const badB = `/**
- * @nudo:case 'b' (1)
- */
-function g(x) { return x; }`;
-    // 文件 B 的 hover 探测 emit 后不 drain（模拟纯查询路径）
-    extractDirectives(parse(badB));
-    const before = directiveDiagCount();
-    // 文件 A 的分析：锚定自身增量后 extract + take
-    extractDirectives(parse(BAD));
-    const mine = takeDirectiveDiagsSince(before);
-    expect(mine.some((d) => d.message.includes("single-quoted"))).toBe(true);
-    // B 的诊断不得混入 A 的结果，也不得被偷走
-    expect(mine.some((d) => d.message.includes("'b'"))).toBe(false);
-    const leftover = takeDirectiveDiags();
-    expect(leftover.some((d) => d.message.includes("'b'"))).toBe(true);
+  it("extractDirectivesQuiet 丢弃诊断（纯查询不产诊断）", () => {
+    const fns = extractDirectivesQuiet(parse(BAD));
+    expect(fns).toEqual([]);
+    // 无可观察面可断言残留——不抛、不落任何调用方数组即为契约
   });
 
-  it("extractDirectivesQuiet 排干自身增量并丢弃，不污染 buffer", () => {
-    takeDirectiveDiags();
-    extractDirectivesQuiet(parse(BAD));
-    expect(takeDirectiveDiags()).toHaveLength(0);
+  it("不传 diags 的 extract 在 runWithDirectiveDiags 域内落袋", () => {
+    const diags: DirectiveDiag[] = [];
+    runWithDirectiveDiags(diags, () => {
+      extractDirectives(parse(BAD));
+    });
+    expect(diags).toHaveLength(1);
+    expect(diags[0]!.code).toBe("nudo:directive-syntax");
   });
 
-  it("take 之后同源再 extract 可重新 emit（重分析不丢报）", () => {
-    takeDirectiveDiags();
-    extractDirectives(parse(BAD));
-    expect(takeDirectiveDiags().length).toBe(1);
-    // 全量 take 清 seen → 再 extract 重新 emit
-    extractDirectives(parse(BAD));
-    expect(takeDirectiveDiags().length).toBe(1);
+  it("runWithDirectiveDiags：域内复解析共域去重（nudo check D1 口径）", () => {
+    // 同一 unsafe 表达式在域内复解析两次（extract + mock 种子复解析形态）只报一次
+    const unsafe = "number(), (globalThis.__dedup = 1, 2)";
+    const diags: DirectiveDiag[] = [];
+    runWithDirectiveDiags(diags, () => {
+      parseCaseArgExpr(unsafe);
+      parseCaseArgExpr(unsafe);
+    });
+    expect(diags).toHaveLength(1);
+    expect(diags[0]!.message).toContain("Unsafe");
+    // 新域重新报（重分析不丢报）
+    const again: DirectiveDiag[] = [];
+    runWithDirectiveDiags(again, () => {
+      parseCaseArgExpr(unsafe);
+    });
+    expect(again).toHaveLength(1);
+  });
+
+  it("语句级行内抽取各自独立去重（两条 bare as 各报一次）", () => {
+    const ast = parse(`// @nudo:as
+const a = 1;
+// @nudo:as
+const b = 2;`);
+    const diags: DirectiveDiag[] = [];
+    for (const stmt of (ast as any).program.body) {
+      extractInlineDirectives(stmt, { diags });
+    }
+    expect(diags.filter((d) => d.message.includes("@nudo:as requires"))).toHaveLength(2);
   });
 });
 
@@ -611,27 +573,23 @@ const x = 1;`);
   });
 });
 
-describe("explicit diag channel（extractDirectives opts.diags：新代码不再需要 seq 锚）", () => {
+describe("explicit diag channel（extractDirectives opts.diags：调用方自备数组）", () => {
   const BAD = `/**
  * @nudo:case 't' (1)
  */
 function f(x) { return x; }`;
 
-  it("diags 落调用方数组，模块级 buffer 零残留", () => {
-    takeDirectiveDiags(); // 清空
+  it("diags 落调用方数组", () => {
     const sink: DirectiveDiag[] = [];
     const fns = extractDirectives(parse(BAD), { diags: sink });
     expect(fns).toEqual([]); // 非法 case 名 → 无指令产出（诊断已发）
     expect(sink.length).toBeGreaterThan(0);
     expect(sink[0]!.code).toBe("nudo:directive-syntax");
-    // sink extract 不污染模块级 buffer——在途其他消费方不受影响
-    expect(takeDirectiveDiags()).toHaveLength(0);
   });
 
-  it("sink 模式与模块通道同语义：单次调用内同文案去重", () => {
-    takeDirectiveDiags(); // 清空
+  it("单次调用内同文案去重", () => {
     const sink: DirectiveDiag[] = [];
-    // 两个函数各带一条同文案非法 case 名 → 只报一次（与模块通道 seen 语义一致）
+    // 两个函数各带一条同文案非法 case 名 → 只报一次
     extractDirectives(
       parse(`/**
  * @nudo:case 't' (1)
@@ -644,34 +602,20 @@ function g(x) { return x; }`),
       { diags: sink },
     );
     expect(sink.length).toBe(1);
-    expect(takeDirectiveDiags()).toHaveLength(0);
   });
 
-  it("sink 模式不触发模块级 collector", () => {
-    const seen: DirectiveDiag[] = [];
-    setDirectiveDiagCollector((d) => seen.push(d));
-    try {
-      extractDirectives(parse(BAD), { diags: [] });
-    } finally {
-      setDirectiveDiagCollector(null);
-    }
-    expect(seen).toHaveLength(0);
+  it("sink extract 覆盖外层 runWithDirectiveDiags 域（自成新去重域）", () => {
+    const outer: DirectiveDiag[] = [];
+    const inner: DirectiveDiag[] = [];
+    runWithDirectiveDiags(outer, () => {
+      extractDirectives(parse(BAD), { diags: inner });
+    });
+    expect(inner).toHaveLength(1);
+    expect(outer).toHaveLength(0);
   });
 
-  it("既有在途模块诊断不被 sink extract 偷走", () => {
-    takeDirectiveDiags(); // 清空
-    extractDirectives(parse(BAD)); // 在途诊断（待其他消费方收取）
-    const sink: DirectiveDiag[] = [];
-    extractDirectives(parse(BAD), { diags: sink });
-    expect(sink.length).toBeGreaterThan(0);
-    const leftover = takeDirectiveDiags();
-    expect(leftover.length).toBe(1); // sink extract 未动模块 buffer
-  });
-
-  it("不传 diags 时行为不变（deprecated 模块通道照常累积）", () => {
-    takeDirectiveDiags(); // 清空
+  it("不传 diags 且无外层域 → 诊断丢弃（纯查询形态）", () => {
     const fns = extractDirectives(parse(BAD));
-    expect(fns).toEqual([]); // 非法 case 名 → 无指令产出（诊断已发）
-    expect(takeDirectiveDiags().length).toBe(1);
+    expect(fns).toEqual([]); // 非法 case 名 → 无指令产出（诊断已丢弃）
   });
 });

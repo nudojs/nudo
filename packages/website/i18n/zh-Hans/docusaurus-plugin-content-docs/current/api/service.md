@@ -674,7 +674,7 @@ type SymbolTable = {
 | <a id="collectenvmodules"></a>`collectEnvModules` | fn | — | `collectEnvModules(envNames: string[]): Record<string, AbsModuleExports>` |
 | <a id="collectenvnames"></a>`collectEnvNames` | fn | — | `collectEnvNames(filePath: string, source: string, includeProject: boolean): string[]` |
 | <a id="collectevaldiagnostics"></a>`collectEvalDiagnostics` | fn | 静态收集 求值引擎诊断。 | `collectEvalDiagnostics( source: string, extraKnown?: Iterable<string>, ): EvalDiagnostics` |
-| <a id="collectevalreplacements"></a>`collectEvalReplacements` | fn | 收集 @nudo:replace + @nudo:as → transpile 注入表 | `collectEvalReplacements(source: string)` |
+| <a id="collectevalreplacements"></a>`collectEvalReplacements` | fn | 收集 @nudo:replace + @nudo:as → transpile 注入表。 | `collectEvalReplacements( source: string, opts?: { diags?: DirectiveDiag[] }, )` |
 | <a id="collectloaddepcontents"></a>`collectLoadDepContents` | fn | — | `collectLoadDepContents( filePath: string, source: string, loadModule: (spec: string, fromFile: string) => string \| undefined, )` |
 | <a id="collectmissingexportissues"></a>`collectMissingExportIssues` | fn | named import / re-export 缺名 → missing-export issue。 | `collectMissingExportIssues( source: string, modules: Record<string, AbsModuleExports>, fromFile: string, ): AbsModuleLoadIssue[]` |
 | <a id="collectparambodyaccesses"></a>`collectParamBodyAccesses` | fn | Draft-only：收集每个顶层函数形参上的成员读取键（`user.name` → name）。 | `collectParamBodyAccesses( source: string, ): Map` |

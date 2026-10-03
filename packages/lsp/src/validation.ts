@@ -945,8 +945,9 @@ export async function validateText(
     const level = diagnosticsLevelForFile(filePath);
     const evalJs = filterDiagnosticsByLevel(result.diagnostics, level);
     const evalDiags = evalJs.map((d) => toLspDiagnostic(d, uri));
-    // 指令文法诊断可能同时出现在 check 通道（takeDirectiveDiags）与 analyzer
-    // 通道（analyzeFileUncachedInner drain）——按 code+message 去重，避免双报
+    // 指令文法诊断可能同时出现在 check 通道（checkToLspDiagnostics 显式
+    // extract）与 analyzer 通道（analyzeFileUncachedInner drain）——按
+    // code+message 去重，避免双报
     const seenCheck = new Set(checkDiags.map((d) => `${d.code ?? ""}\0${d.message}`));
     const dedupedEval = evalDiags.filter((d) => !seenCheck.has(`${d.code ?? ""}\0${d.message}`));
     // 发布前再确认 generation + 文档 version，避免 check 路径上的

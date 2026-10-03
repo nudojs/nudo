@@ -588,7 +588,7 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
       const filtered = filterDiagnosticsByLevel(result.diagnostics, level);
       for (const d of filtered) {
         const ld = toLspDiagnostic(d, document.uri);
-        // 指令文法诊断双通道（check takeDirectiveDiags / analyzer drain）去重
+        // 指令文法诊断双通道（check 显式 extract / analyzer drain）去重
         if (seen.has(`${ld.code ?? ""}\0${ld.message}`)) continue;
         items.push(ld);
       }

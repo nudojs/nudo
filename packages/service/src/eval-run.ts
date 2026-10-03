@@ -7,7 +7,7 @@
 
 import { runTranspiled, callTranspiledExport, callTranspiledExportFull, setEvalCallCollector, createEnvironment, noteEvalFallback, isAbsVal, type EvalCallRecord, type TranspiledCallResult, type Abs, type AbsModuleExports, type Phi, formatAbs, getFnImpl } from "@nudojs/core";
 import { setMemberDiagCollector, setAbsTruncationCollector, createScopedSlot, registerCollectorScopeParticipant, runWithCollectorScope, type EvalMemberDiag, stableAnalyzeKeySource, hashSource, loadModuleDepsFingerprint, stablePathKey } from "@nudojs/core/internal";
-import { parse, extractInlineDirectives, type FileDirective } from "@nudojs/parser";
+import { parse, extractInlineDirectives, type FileDirective, type DirectiveDiag } from "@nudojs/parser";
 import { loadEnvs } from "./evaluator/evaluator-api.ts";
 import { evalAbsModuleGraph, type AbsGraphOptions, type AbsModuleLoadIssue } from "./abs-modules-graph.ts";
 import { applyMockModuleDirectives, applyMockModuleDirectivesFromSource } from "./mock-module.ts";
@@ -193,8 +193,15 @@ export function mergeHarvestUnderEnv(
   return out;
 }
 
-/** 收集 @nudo:replace + @nudo:as → transpile 注入表 */
-export function collectEvalReplacements(source: string): {
+/**
+ * 收集 @nudo:replace + @nudo:as → transpile 注入表。
+ * `opts.diags`：行内指令文法诊断（nudo:directive-syntax）显式落袋——
+ * 语句级抽取各自独立去重；不传则丢弃（纯查询形态）。
+ */
+export function collectEvalReplacements(
+  source: string,
+  opts?: { diags?: DirectiveDiag[] },
+): {
   targets: Array<{
     target: string;
     varName: string;
@@ -221,7 +228,10 @@ export function collectEvalReplacements(source: string): {
       for (const stmt of stmts) {
         if (!stmt || typeof stmt !== "object") continue;
         const loc = (stmt as { loc?: { start: { line: number }; end: { line: number } } }).loc;
-        const dirs = extractInlineDirectives(stmt as never);
+        const dirs = extractInlineDirectives(
+          stmt as never,
+          opts?.diags ? { diags: opts.diags } : undefined,
+        );
         for (const d of dirs) {
           if (d.kind === "replace") {
             const varName = `__rep${i++}`;

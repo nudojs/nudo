@@ -113,8 +113,14 @@ parser ──▶ core
 | 状态 | 状态点 | 理由 |
 |---|---|---|
 | 已收敛 | refine / interface 诊断通道；interface 侧车加载失败去重表；evalCall / evalAssign collector；bindingSink；absTruncation collector；memberDiag collector；evalFallback collector；implicationOracle；derivation 会话（collector / 节点表 / id 序号）；envHarvestConflict collector（service） | 跨 await 存活的分析态，必须随作用域隔离 |
-| 保留 | 调用 / fork 预算计数器与 `@nudo:budget` 上限；phi 栈 / armOverlays / forkTouchedStack / yieldStack / genPathSensitive / genJoinOverride；`_fb*` 回落计数器；ID 序号（symbolIdSeq / fnCallIdSeq / moduleMapIdSeq / nextLoadModuleId / leakCounter / classEpoch / truncDepsSeq）；缓存 / memo（check-memo、hash-source、pureMemo / pureCallMemo、objectProtoSingleton）；may-throw.ts；member-diag 的 evalMissingSlot | 预算与各栈是严格同步调用栈生命周期，await 窗口必为空 / 已恢复；`_fb*` 是进程级 health 指标、刻意累计；ID 序号跨分析唯一性是语义；缓存 / memo 按内容键、无害共享；may-throw.ts 与 evalMissingSlot 已有各自 ALS 会话（`runWithMayThrowSession` / `runWithEvalMissingSlot`） |
-| 残留 | parser directiveDiags 缓冲；service analysis-session `defaultSession` / session-cache-limits；lsp truncDepsSeq | parser 自有退役路径（注释已声明目标删除，不得为收敛引入 parser→core 依赖）；`defaultSession` 是进程级配置、非分析态；truncDepsSeq 属 ID 序号 |
+| 保留 | 调用 / fork 预算计数器与 `@nudo:budget` 上限；phi 栈 / armOverlays / forkTouchedStack / yieldStack / genPathSensitive / genJoinOverride；`_fb*` 回落计数器；ID 序号（symbolIdSeq / fnCallIdSeq / moduleMapIdSeq / nextLoadModuleId / leakCounter / classEpoch / truncDepsSeq）；缓存 / memo（check-memo、hash-source、pureMemo / pureCallMemo、objectProtoSingleton）；may-throw.ts；member-diag 的 evalMissingSlot；service analysis-session `defaultSession` / session-cache-limits | 预算与各栈是严格同步调用栈生命周期，await 窗口必为空 / 已恢复；`_fb*` 是进程级 health 指标、刻意累计；ID 序号跨分析唯一性是语义；缓存 / memo 按内容键、无害共享；may-throw.ts 与 evalMissingSlot 已有各自 ALS 会话（`runWithMayThrowSession` / `runWithEvalMissingSlot`）；`defaultSession` 是进程级配置、非分析态（setter 仅测试使用），session-cache-limits 是 env 纯函数读取 |
+
+> 历史残留行已清空：parser `directiveDiags` side-channel 缓冲已删除退役
+> （2026-10，@nudojs/parser major）——诊断通道唯一形态为显式
+> `extractDirectives(ast, { diags })` / `runWithDirectiveDiags(fn)`，仓库内
+> 消费方（nudojs check D1 等）已全部迁移。parser 的字面量助手已并轨
+> `@nudojs/core/internal` 的 `absLit` 单源（parser 本就依赖
+> `@nudojs/core`，见上方分层图，旧「不得引入 parser→core 依赖」表述作废）。
 
 ## 执行模型与信任边界
 
