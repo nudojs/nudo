@@ -14,6 +14,7 @@ import {
   collectFreeAssignedNames,
   collectForkBindingNames,
   collectAssignedIds,
+  collectLexicalDeclNames,
   collectArrMutatorReceivers,
   staticKeyOf,
   symbolKeyOf,
@@ -596,9 +597,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         };
         const bodyStmts =
           stmt.body.type === "BlockStatement"
-            ? stmt.body.body
-                .map((s) => transpileStatement(s, depth + 2, forBodyOpts))
-                .join("\n")
+            ? stmt.body.body.map((s) => transpileStatement(s, depth + 2, forBodyOpts)).join("\n")
             : transpileStatement(stmt.body, depth + 2, forBodyOpts);
         const max = opts.maxLoopIters ?? 8;
         const assigned = new Set<string>();
@@ -606,7 +605,9 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         collectAssignedIds(stmt.test, assigned);
         collectAssignedIds(stmt.update, assigned);
         collectArrMutatorReceivers(stmt.body, assigned);
-        const names = [...assigned].filter((n) => !HOST_INTRINSIC_SET.has(n));
+        const bodyLocalDecls = new Set<string>();
+        collectLexicalDeclNames(stmt.body, bodyLocalDecls);
+        const names = [...assigned].filter((n) => !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n));
         const packSrc =
           names.length === 0
             ? null
@@ -665,9 +666,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       };
       const bodyStmts =
         stmt.body.type === "BlockStatement"
-          ? stmt.body.body
-              .map((s) => transpileStatement(s, depth + 2, forBodyOpts))
-              .join("\n")
+          ? stmt.body.body.map((s) => transpileStatement(s, depth + 2, forBodyOpts)).join("\n")
           : transpileStatement(stmt.body, depth + 2, forBodyOpts);
       const max = opts.maxLoopIters ?? 8;
       const assigned = new Set<string>();
@@ -675,7 +674,9 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       collectAssignedIds(stmt.test, assigned);
       collectAssignedIds(stmt.update, assigned);
       collectArrMutatorReceivers(stmt.body, assigned);
-      const names = [...assigned].filter((n) => n !== initName && !HOST_INTRINSIC_SET.has(n));
+      const bodyLocalDecls = new Set<string>();
+      collectLexicalDeclNames(stmt.body, bodyLocalDecls);
+      const names = [...assigned].filter((n) => n !== initName && !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n));
       const packSrc =
         names.length === 0
           ? null
@@ -1066,7 +1067,9 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const assigned = new Set<string>();
       collectAssignedIds(stmt.body, assigned);
       collectArrMutatorReceivers(stmt.body, assigned);
-      const names = [...assigned].filter((n) => n !== bindName && !HOST_INTRINSIC_SET.has(n));
+      const bodyLocalDecls = new Set<string>();
+      collectLexicalDeclNames(stmt.body, bodyLocalDecls);
+      const names = [...assigned].filter((n) => n !== bindName && !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n));
       const loopOpts = opts.loopLabel ? `label: ${JSON.stringify(opts.loopLabel)}` : "";
       const optsSrc =
         names.length === 0
@@ -1097,7 +1100,9 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const assigned = new Set<string>();
       collectAssignedIds(stmt.body, assigned);
       collectAssignedIds(stmt.test, assigned);
-      const names = [...assigned].filter((n) => !HOST_INTRINSIC_SET.has(n));
+      const bodyLocalDecls = new Set<string>();
+        collectLexicalDeclNames(stmt.body, bodyLocalDecls);
+        const names = [...assigned].filter((n) => !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n));
       const loopOpts = opts.loopLabel ? `label: ${JSON.stringify(opts.loopLabel)}` : "";
       if (names.length === 0) {
         return [
@@ -1133,7 +1138,9 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       collectAssignedIds(stmt.body, assigned);
       collectAssignedIds(stmt.test, assigned);
       collectArrMutatorReceivers(stmt.body, assigned);
-      const names = [...assigned].filter((n) => !HOST_INTRINSIC_SET.has(n));
+      const bodyLocalDecls = new Set<string>();
+      collectLexicalDeclNames(stmt.body, bodyLocalDecls);
+      const names = [...assigned].filter((n) => !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n));
       const packSrc =
         names.length === 0
           ? null

@@ -97,6 +97,28 @@ export function $yield(v: Abs): Abs {
  * 臂内 NudoReturn/NudoThrow 不冒泡污染兄弟臂。
  * **无 default 时必须隐式 fall-through 臂（undef）**，否则无匹配路径被丢掉（P0-2）。
  */
+
+/**
+ * `??` 非 nullish 臂：从左值 Abs 剥离 nullish 部分（$nullishTest 判 true
+ * 的成员）。索引访问 `M[k]` 对抽象键产出 joinAbs(element, undef())，
+ * 左值 sum 保留 undefined 臂；`l ?? fallback` 的 alt（非 nullish 路径）
+ * 必须只取左值的非 nullish 部分——否则 false-positive `nullish return arm`
+ * （issue #90）、`for (const x of o.items ?? [])` 假 may-throw。
+ */
+export function $removeNullish(a: Abs): Abs {
+  if (!a || typeof a !== "object" || !("shape" in (a as object))) return unknown;
+  if (definitelyNotNullishShape(a.shape)) return a;
+  if (isNullishLitAbs(a)) return a;
+  if (a.shape.k === "sum") {
+    const members = (a.shape as { members: Abs[] }).members;
+    const kept = members.filter((m) => !isNullishLitAbs(m));
+    if (kept.length === members.length) return a;
+    if (kept.length === 0) return a;
+    return kept.length === 1 ? kept[0]! : { ...a, shape: { k: "sum" as const, members: kept } };
+  }
+  return a;
+}
+
 /** `??` / `??=` 测试：确定非 nullish → false；lit nullish → true；否则抽象 boolean */
 export function $nullishTest(v: Abs): Abs {
   if (definitelyNotNullishShape(v.shape)) return boolLit(false);

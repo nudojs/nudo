@@ -56,6 +56,11 @@ import {
 } from "@nudojs/parser";
 import { applyTextEdits, materializeAction, unifiedDiff } from "@nudojs/service/emit";
 import {
+  preloadPathEnvs,
+  getPathEnvLoadErrors,
+  getPathEnvDepContents,
+} from "@nudojs/service/evaluator";
+import {
   collectExternalRecords,
   reportPathErrors,
   resolveTargets,
@@ -209,11 +214,11 @@ type CheckCacheState = {
   cachedJson: CheckJson | undefined;
 };
 
-function loadCheckCache(
+async function loadCheckCache(
   filePath: string,
   source: string,
   opts: GateCliOptions & { from?: CallRecord[]; verbose?: boolean; abs?: boolean },
-): CheckCacheState {
+): Promise<CheckCacheState> {
   const proj = findProjectConfig(dirname(filePath));
   const { entryThrows, ignoreThrows } = resolveGateForConfig(proj?.config, opts);
   const autoBind = interfaceConfig(proj?.config).autoBind;
@@ -245,6 +250,12 @@ function loadCheckCache(
       sidecarContent = null;
     }
   }
+  // path 型 env（nudo.env / /// @nudo:env <path>）在 check 门禁下必须
+  // 与 test/LSP 同口径 preload——否则自定义 env 静默退化 env-关（issue #89）
+  await preloadPathEnvs(allEnvNames, dirname(filePath));
+  // path env 文件内容纳入磁盘缓存指纹（mtime→content sha 变更即 cache miss）
+  const envDepContents = getPathEnvDepContents();
+  const depContentsForKey = [...(dep.depContents ?? []), ...envDepContents];
   const cacheKey = shouldComputeCacheKey({
     useDisk,
     verbose: opts.verbose,
@@ -254,7 +265,7 @@ function loadCheckCache(
           autoBind,
           projectDir: proj?.projectDir,
           sidecarContent,
-          depContents: dep.depContents,
+          depContents: depContentsForKey,
           projectEnvNames: allEnvNames,
           analysisCfg: {
             mode: aCfg.mode,
@@ -489,7 +500,7 @@ async function runCheck(file: string, opts: RunCheckOptions = {}): Promise<void>
   const source = readFileSync(filePath, "utf-8");
 
   // 段1 loadCache：项目/门禁/环境装配 + 磁盘缓存读取
-  const cache = loadCheckCache(filePath, source, opts);
+  const cache = await loadCheckCache(filePath, source, opts);
 
   let report: CheckReport;
   let mockFromErrors: MockFromError[] = [];
@@ -542,6 +553,19 @@ async function runCheck(file: string, opts: RunCheckOptions = {}): Promise<void>
   // @nudo:mock name from "path" 解析失败 → check 明确报错（缺文件/缺绑定/求值失败）
   if (mockFromErrors.length > 0) {
     report = mergeCheckIssues(report, mockFromErrorIssues(mockFromErrors));
+  }
+
+  // path env 加载失败必须可见（issue #88）：warning，不让 silent 降级为 env-关
+  const envLoadErrors = getPathEnvLoadErrors();
+  if (envLoadErrors.length > 0) {
+    report = mergeCheckIssues(
+      report,
+      envLoadErrors.map((e) => ({
+        severity: "warning" as const,
+        code: "nudo:env-unresolved",
+        message: `path env failed to load: ${e.path} — ${e.error}`,
+      })),
+    );
   }
 
   if (opts.from && opts.from.length > 0) {

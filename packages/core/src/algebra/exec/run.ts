@@ -24,7 +24,7 @@ import { joinAbs } from "../objects.ts";
 import { type AbsModuleExports, namespaceAbsOf } from "../abs-modules.ts";
 import { formatAbs } from "../format.ts";
 import { transpile, transpileExpression, runtimeImportOf } from "./transpile.ts";
-import { HOST_INTRINSIC_SET } from "./transpile/intrinsics.ts";
+import { ENV_SHADOW_SKIP_GLOBALS, HOST_INTRINSIC_SET } from "./transpile/intrinsics.ts";
 import { NudoUnsupportedError } from "./unsupported.ts";
 import { drainClassCollisions, beginClassEpoch } from "./class-registry.ts";
 import { stripStaticExportDecls } from "./export-names.ts";
@@ -444,8 +444,11 @@ const runBindings = new WeakMap<object, Map<string, unknown>>();
  * NaN 字面量身份，`0 === NaN` 从恒 false 退化成 boolean。
  *
  * 转译器已自行处理这三个名字，注入 const 无收益 → 跳过（等同未声明）。
+ *
+ * 宿主命名空间名（Math/JSON/…）若注入会遮蔽 namespaceNameOf 的对象身份路由
+ * → 区间透传/内建语义回退（issue #87）→ 一并跳过（ENV_SHADOW_SKIP_GLOBALS）。
  */
-const ENV_SHADOW_SKIP = HOST_INTRINSIC_SET;
+const ENV_SHADOW_SKIP = ENV_SHADOW_SKIP_GLOBALS;
 
 export function bindingsOf(run: Record<string, unknown>): Map<string, unknown> | undefined {
   return runBindings.get(run);

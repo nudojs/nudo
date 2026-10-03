@@ -164,7 +164,7 @@ export {
   type DiagnosticsLevel,
 } from "./evaluator/config.ts";
 
-export { clearPathEnvCaches, getPathEnvCacheSizes } from "./evaluator/env-loader.ts";
+export { clearPathEnvCaches, getPathEnvCacheSizes, getPathEnvLoadErrors, getPathEnvDepContents } from "./evaluator/env-loader.ts";
 
 export {
   getAnalysisSession,

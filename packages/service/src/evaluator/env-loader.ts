@@ -94,10 +94,12 @@ function isPathEnvName(name: string, baseDir: string): boolean {
 // packages. When the direct import fails, rewrite those specifiers to absolute
 // file URLs (resolved from this package, which depends on them) and import a
 // cached copy under the OS tmpdir.
-function rewriteBareImports(text: string): string | null {
+ function rewriteBareImports(text: string): string | null {
   const require = createRequire(import.meta.url);
   let rewrote = false;
-  const out = text.replace(/(["'])(@nudojs\/[a-z0-9-]+)\1/g, (_m, quote: string, spec: string) => {
+  // 子路径 specifier（`@nudojs/env/es`、`@nudojs/core/xyz`）也须重写；
+  // 原正则只认裸包名，子路径无法匹配 → env 文件被静默丢弃（issue #88）。
+  const out = text.replace(/(["'])(@nudojs\/[a-z0-9-]+(?:\/[^"']+)*)\1/g, (_m, quote: string, spec: string) => {
     try {
       const entry = require.resolve(spec);
       const url = pathToFileURL(entry).href;
@@ -116,11 +118,13 @@ async function importPathEnv(resolvedPath: string, mtimeMs: number): Promise<voi
   if (pathEnvCache.get(cacheKey)) return;
 
   let mod: { defineEnv?: unknown } | null = null;
+  let directErr: unknown = null;
   try {
     const url = pathToFileURL(resolvedPath).href + `?mtime=${mtimeMs}`;
     mod = (await import(url)) as { defineEnv?: unknown };
-  } catch {
+  } catch (e) {
     // Fall through to the rewritten-copy fallback below.
+    directErr = e;
     mod = null;
   }
 
@@ -128,14 +132,18 @@ async function importPathEnv(resolvedPath: string, mtimeMs: number): Promise<voi
     try {
       const text = readFileSync(resolvedPath, "utf-8");
       const rewritten = rewriteBareImports(text);
-      if (rewritten === null) return; // nothing to fix; the import failure was something else
+      if (rewritten === null) {
+        recordPathEnvError(resolvedPath, directErr); // 无可重写 → import 失败原因上报
+        return;
+      }
       const cacheDir = joinPath(tmpdir(), "nudo-env");
       mkdirSync(cacheDir, { recursive: true });
       const hash = createHash("md5").update(`${resolvedPath}:${mtimeMs}`).digest("hex").slice(0, 16);
       const copyPath = joinPath(cacheDir, `${hash}.ts`);
       writeFileSync(copyPath, rewritten, "utf-8");
       mod = (await import(pathToFileURL(copyPath).href)) as { defineEnv?: unknown };
-    } catch {
+    } catch (e) {
+      recordPathEnvError(resolvedPath, e);
       return;
     }
   }
@@ -146,6 +154,8 @@ async function importPathEnv(resolvedPath: string, mtimeMs: number): Promise<voi
       factory: mod.defineEnv as () => EnvDefinition,
       mtimeMs,
     });
+    pathEnvFiles.set(resolvedPath, mtimeMs);
+    clearPathEnvError(resolvedPath);
   }
 }
 
@@ -178,6 +188,45 @@ export function clearPathEnvCaches(): void {
   pathEnvCache.clear();
   pathEnvByPath.clear();
   pathEnvBaseDirs.clear();
+  pathEnvFiles.clear();
+  pathEnvLoadErrors.length = 0;
+}
+
+// path env 文件级诊断（import 失败必须可见——issue #88）与缓存指纹
+const pathEnvFiles = new Map<string, number>();
+const pathEnvLoadErrors: Array<{ path: string; error: string }> = [];
+
+function recordPathEnvError(path: string, e: unknown): void {
+  const msg = e instanceof Error ? e.message : String(e);
+  // 去重补充：同一 path 保留最新错误
+  const i = pathEnvLoadErrors.findIndex((x) => x.path === path);
+  if (i >= 0) pathEnvLoadErrors[i] = { path, error: msg };
+  else pathEnvLoadErrors.push({ path, error: msg });
+}
+
+function clearPathEnvError(path: string): void {
+  const i = pathEnvLoadErrors.findIndex((x) => x.path === path);
+  if (i >= 0) pathEnvLoadErrors.splice(i, 1);
+}
+
+/** path env 加载失败诊断（check/test 打印 nudo:env-unresolved warning 用） */
+export function getPathEnvLoadErrors(): Array<{ path: string; error: string }> {
+  return [...pathEnvLoadErrors];
+}
+
+/** 已成功预载的 path env 文件（供 check 磁盘缓存指纹纳入 sha） */
+export function getPathEnvDepContents(): Array<{ path: string; content: string | null }> {
+  const out: Array<{ path: string; content: string | null }> = [];
+  for (const p of pathEnvFiles.keys()) {
+    let content: string | null = null;
+    try {
+      content = readFileSync(p, "utf-8");
+    } catch {
+      content = null;
+    }
+    out.push({ path: p, content });
+  }
+  return out;
 }
 
 export async function preloadPathEnvs(envNames: string[], baseDir: string): Promise<void> {
@@ -189,8 +238,8 @@ export async function preloadPathEnvs(envNames: string[], baseDir: string): Prom
     try {
       const { mtimeMs } = statSync(resolved);
       await importPathEnv(resolved, mtimeMs);
-    } catch {
-      // unreadable/unstattable — skip
+    } catch (e) {
+      recordPathEnvError(resolved, e);
     }
   }
 }

@@ -317,6 +317,16 @@ Context: [指令文法](../concepts/directives.md) · [Skip 文法](../concepts/
 
 Context: [约束模板](../concepts/directives.md#nudo--约束模板引入) · [契约门禁（L1）](../guides/check.md#l1--显式契约)
 
+### `nudo:env-unresolved` {#nudo-env-unresolved}
+
+```text
+path env failed to load: ./nudo-env.mjs — Cannot find package '@nudojs/env'
+```
+
+**路径型** env 项（`package.json#nudo.env` 的路径项或 `/// @nudo:env <path>`）导入失败——直连 `import()` 与重写回退均失败。**Warning**——该 env 项退化为「env 关」语义，若当 benign 处理，CI（`nudo check`）与 `nudo test` / LSP 行为会分歧。修复 env 文件内的 import specifier，确保 `@nudojs/env`（与 `@nudojs/core`）可从项目解析，或移除该项。
+
+Context: [Env & harvest](../guides/env-harvest.md)
+
 ### `nudo:env-harvest-conflict` {#nudo-env-harvest-conflict}
 
 ```text

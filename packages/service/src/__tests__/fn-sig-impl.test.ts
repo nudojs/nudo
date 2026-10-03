@@ -20,7 +20,7 @@ function floorIt(x) {
     expect(fn.cases[0].name).toBe("concrete");
     expect(formatShape(fn.cases[0].abs)).toBe("3");
     expect(fn.cases[1].name).toBe("symbolic");
-    expect(formatShape(fn.cases[1].abs)).toBe("number");
+    expect(formatShape(fn.cases[1].abs)).toBe("NaN | number");
   });
 
   it("Math.max with literals returns exact result", () => {

@@ -317,6 +317,16 @@ Malformed `@nudo:contract` segment or `@nudo:import` form (e.g. `x > 0` instead 
 
 Context: [Contracts](../concepts/directives.md#nudo--constraint-templates) · [Contract gate (L1)](../guides/check.md#l1--explicit-contracts)
 
+### `nudo:env-unresolved` {#nudo-env-unresolved}
+
+```text
+path env failed to load: ./nudo-env.mjs — Cannot find package '@nudojs/env'
+```
+
+A **path-type** env entry (`package.json#nudo.env` path item, or `/// @nudo:env <path>`) failed to import — either the direct `import()` or the bare-specifier rewrite fallback failed. **Warning** — the env falls back to "env off" semantics for that entry, so CI behavior can diverge from `nudo test` / LSP if it is treated as benign. Fix the import specifiers inside the env file, make sure `@nudojs/env` (and `@nudojs/core`) are resolvable from the project, or drop the entry.
+
+Context: [Env & harvest](../guides/env-harvest.md)
+
 ### `nudo:env-harvest-conflict` {#nudo-env-harvest-conflict}
 
 ```text

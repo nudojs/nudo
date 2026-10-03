@@ -137,5 +137,6 @@ export {
   $await,
   $gen,
   $nullishTest,
+  $removeNullish,
   $yield,
 } from "./runtime/async.ts";

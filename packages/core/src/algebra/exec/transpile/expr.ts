@@ -393,10 +393,11 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         return transpileShortCircuitExpr(opts, {
           alwaysNodes: [lNode],
           alwaysSrc: l,
-          // 测试用 nullish；返回侧：nullish → right，否则 → left
+          // 测试用 nullish；返回侧：nullish → right，否则 → left 的**非 nullish 部分**
+          // （索引访问/可选字段的左值常携带 undefined 臂，不去则 ?? 的 alt 仍含 undefined）
           consSrc: r,
           consNodes: [rNode],
-          altSrc: l,
+          altSrc: `$removeNullish(${l})`,
           altNodes: [lNode],
           testSrc: `$nullishTest(${l})`,
         });
@@ -863,7 +864,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
             alwaysSrc: targetSrc,
             consSrc: right,
             consNodes: [rNode],
-            altSrc: targetSrc,
+            altSrc: `$removeNullish(${targetSrc})`,
             altNodes: [],
             testSrc: `$nullishTest(${targetSrc})`,
           });
