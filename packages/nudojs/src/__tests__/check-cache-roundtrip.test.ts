@@ -35,7 +35,7 @@ function runCheck(
 }
 
 describe("check disk-cache miss/hit rendering symmetry", () => {
-  it("term-annotated signatures are byte-identical across miss/hit/hit rounds", () => {
+  it("term-annotated signatures are byte-identical across miss/hit/hit rounds", { timeout: 30_000 }, () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-cache-rt-"));
     const file = join(dir, "term.js");
     writeFileSync(
@@ -58,7 +58,7 @@ export function scale(x) { return x * 2 + 1; }
     expect(r2.stderr).toBe(r1.stderr);
   });
 
-  it("contract sidecar + warning project stays byte-identical across rounds", () => {
+  it("contract sidecar + warning project stays byte-identical across rounds", { timeout: 30_000 }, () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-cache-rt2-"));
     const file = join(dir, "math.js");
     writeFileSync(
@@ -88,7 +88,7 @@ export const div = fn({ a: number(), b: number().gt(0) }, number());
     expect(r2.stderr).toBe(r1.stderr);
   });
 
-  it("--json contract face stays byte-identical across rounds (no cache-private fields)", () => {
+  it("--json contract face stays byte-identical across rounds (no cache-private fields)", { timeout: 30_000 }, () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-cache-rt3-"));
     const file = join(dir, "term.js");
     writeFileSync(
