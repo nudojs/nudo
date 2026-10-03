@@ -618,7 +618,7 @@ type SymbolTable = {
 | <a id="absgraphoptions"></a>`AbsGraphOptions` | type | — | `AbsGraphOptions = { loadModule?: AbsLoadModule; seedVars?: Record<string, Abs>; seedFns?: Record<string, { params: string[]; body: Node; ...` |
 | <a id="absmockseeds"></a>`AbsMockSeeds` | type | — | `AbsMockSeeds = { seedVars: Record<string, Abs>; seedFns: Record<string, { params: string[]; body: Node; async?: boolean; fingerprint?: st...` |
 | <a id="absmodulecacheentry"></a>`AbsModuleCacheEntry` | type | 会话级依赖模块缓存条目：自身 stat 指纹 + 子树内容指纹 + 导出 + 子树装载 issue。 | `AbsModuleCacheEntry = { mtimeMs: number; size: number; contentHash: string; depFingerprints: AbsModuleDepFingerprint[]; exports: AbsModul...` |
-| <a id="absmoduledepfingerprint"></a>`AbsModuleDepFingerprint` | type | 单条本地依赖的内容指纹：解析后稳定路径 + 求值时源码的 hashSource （与 loadModuleDepsFingerprint 同一 hash 口径，DESIGN-002 不另起第二套）。 | `AbsModuleDepFingerprint = { path: string; hash: string }` |
+| <a id="absmoduledepfingerprint"></a>`AbsModuleDepFingerprint` | type | 单条本地依赖的内容指纹：解析后稳定路径 + 求值时源码的 hashSource （与 loadModuleDepsFingerprint 同一 hash 口径，DESIGN-002 不另起第二套）。 | `AbsModuleDepFingerprint = { path: string; hash: string; via?: { spec: string; fromFile: string }; }` |
 | <a id="absmodulegraphresult"></a>`AbsModuleGraphResult` | type | — | `AbsModuleGraphResult = { modules: Record<string, AbsModuleExports>; byPath: Map<string, AbsModuleExports>; issues: AbsModuleLoadIssue[]; }` |
 | <a id="absmoduleloadissue"></a>`AbsModuleLoadIssue` | type | 模块加载守卫：与 TypeValue loadModuleEnv 口径对齐，供 analyzer 映射诊断 | `AbsModuleLoadIssue = { kind: "cycle" \| "depth" \| "missing" \| "missing-export" \| "exports-unresolved"; label: string; reason: string; }` |
 | <a id="abstoschemanode"></a>`absToSchemaNode` | fn | Abs → SchemaNode + dropped（优先 core absToConstraint；失败则 shape 尽力） | `absToSchemaNode(a: Abs)` |
@@ -759,6 +759,8 @@ type SymbolTable = {
 | <a id="getevalcachesize"></a>`getEvalCacheSize` | fn | 测试/诊断：当前 evaluator run 缓存条目数（≤ getSessionCacheLimits().maxEvalRuns） | `getEvalCacheSize(): number` |
 | <a id="getfnanalysiscachesize"></a>`getFnAnalysisCacheSize` | fn | 测试/诊断：当前条目数（≤ getSessionCacheLimits().maxFns） | `getFnAnalysisCacheSize(): number` |
 | <a id="getpathenvcachesizes"></a>`getPathEnvCacheSizes` | fn | 测试/诊断：path-env 驻留规模（均 ≤ 对应上限） | `getPathEnvCacheSizes()` |
+| <a id="getpathenvdepcontents"></a>`getPathEnvDepContents` | fn | 已成功预载的 path env 文件（供 check 磁盘缓存指纹纳入 sha）。 | `getPathEnvDepContents(baseDir?: string): Array<{ path: string; content: string \| null }>` |
+| <a id="getpathenvloaderrors"></a>`getPathEnvLoadErrors` | fn | path env 加载失败诊断（check/test 打印 nudo:env-unresolved warning 用）。 | `getPathEnvLoadErrors(baseDir?: string): Array<{ path: string; error: string; baseDir: string }>` |
 | <a id="getsessioncachelimits"></a>`getSessionCacheLimits` | fn | — | `getSessionCacheLimits( env: NodeJS.ProcessEnv = process.env, ): SessionCacheLimits` |
 | <a id="ifacecachekey"></a>`ifaceCacheKey` | fn | effectiveInterface 表键（L1 Phase B，design-persistent-cache）。 | `ifaceCacheKey( filePath: string, source: string, opts: { autoBind: boolean; projectDir?: string; sidecarSource?: string \| undefined; depContents?: Array<{ path: string; content: string \| null }>; projectEnvNames?: string[]; }, ): string` |
 | <a id="injectbindings"></a>`injectBindings` | fn | — | `injectBindings( source: string, bindings: TypeBinding[], )` |

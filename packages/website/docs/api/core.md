@@ -598,7 +598,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="mul"></a>`mul` | fn | 乘法：字面量直接求值；×正数同向缩放；×负数翻转不等式；×0 归零 | `mul(a: Abs, b: Abs, phi: Phi = pTrue): Abs` |
 | <a id="namedimport"></a>`NamedImport` | type | `/// @nudo:import { delay, percent } from "./delay.nudo.js"` | `NamedImport = { names: string[]; spec: string }` |
 | <a id="namespaceabsof"></a>`namespaceAbsOf` | fn | 命名空间 Abs（`import * as ns` / `export * as ns` / CJS require 绑定）： open + path——导出收集可能不全（CJS 收集失败等），缺失成员是分析 视图不完整，不得按「运行时缺失」判定（不可调用判定会假抛 TypeError）。 | `namespaceAbsOf(mod: AbsModuleExports): Abs` |
-| <a id="namespacenameof"></a>`namespaceNameOf` | fn | 命名空间身份表：transpile 后 `Math.max(0, x)` 的接收者是宿主 JS 全局对象 （非 Abs）。按对象身份识别命名空间，路由到 Abs builtin 表。 | `namespaceNameOf(v: unknown): string \| undefined` |
+| <a id="namespacenameof"></a>`namespaceNameOf` | fn | — | `namespaceNameOf(v: unknown): string \| undefined` |
 | <a id="ne"></a>`ne` | const | — | `const ne` |
 | <a id="negabs"></a>`negAbs` | fn | 一元负号：字面量折叠（含 ToNumber 强制）；符号数翻转不等式 | `negAbs(a: Abs, _phi: Phi = pTrue): Abs` |
 | <a id="negatepred"></a>`negatePred` | fn | 逻辑否定（De Morgan）：¬(A∧B)=¬A∨¬B；¬(A∨B)=¬A∧¬B；双重否定消去。 | `negatePred(p: Pred): Pred` |
