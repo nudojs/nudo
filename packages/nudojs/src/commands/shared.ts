@@ -208,8 +208,16 @@ export type WatchRunner = (file: string) => Promise<void>;
  *
  * 退出码语义 = 最近一轮的门禁状态：每轮开跑前复位 `process.exitCode`。
  * 不复位则首轮红置 1 后永久粘滞——后续绿轮也以 1 退出（假红）。
+ *
+ * `onRoundStart`：每轮（全量/增量）开跑前回调——test 面用它清空
+ * env-unresolved 告警去重表（console.clear 后同轮内仍需去重、跨轮需重印）。
  */
-export function startWatch(paths: string[], runOne: WatchRunner, label: string): () => void {
+export function startWatch(
+  paths: string[],
+  runOne: WatchRunner,
+  label: string,
+  onRoundStart?: () => void,
+): () => void {
   const resolvedList = paths.map((p) => resolve(p));
   const isDir = resolvedList.some((p) => existsSync(p) && statSync(p).isDirectory());
   const primary = resolvedList[0]!;
@@ -229,6 +237,7 @@ export function startWatch(paths: string[], runOne: WatchRunner, label: string):
   let graph = buildModuleGraph(getFiles());
 
   const runAll = async () => {
+    onRoundStart?.();
     console.clear();
     console.log(`[${new Date().toLocaleTimeString()}] nudo ${label}...\n`);
     process.exitCode = 0;
@@ -286,6 +295,7 @@ export function startWatch(paths: string[], runOne: WatchRunner, label: string):
     const dirty = forceFull ? files : [...dirtyUnion].filter((f) => tracked.has(f));
     if (dirty.length === 0) return;
     const ordered = topoSortDirty(graph.imports, dirty);
+    onRoundStart?.();
     console.clear();
     console.log(`[${new Date().toLocaleTimeString()}] nudo ${label} (incremental)...\n`);
     process.exitCode = 0;

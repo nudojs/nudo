@@ -317,6 +317,21 @@ Malformed `@nudo:contract` segment or `@nudo:import` form (e.g. `x > 0` instead 
 
 Context: [Contracts](../concepts/directives.md#nudo--constraint-templates) · [Contract gate (L1)](../guides/check.md#l1--explicit-contracts)
 
+### `nudo:env-unresolved` {#nudo-env-unresolved}
+
+```text
+path env failed to load: ./nudo-env.mjs — Cannot find package '@nudojs/env'
+path env failed to load: ./nope.mjs — path env not found: <resolved-path>
+```
+
+A **path-type** env entry (`package.json#nudo.env` path item, or `/// @nudo:env <path>`) failed to load — either the direct `import()` and the bare-specifier rewrite fallback both failed, or the pointed-to file does not exist. **Warning** — the env falls back to "env off" semantics for that entry, so the analysis silently loses those bindings (a run where the env loads can infer more); do not treat the warning as benign.
+
+**Emitted by:** `nudo check` (issues section), `nudo test` (env warnings section, identical line format; with `--json` the warning goes to stderr so stdout stays a single JSON document), and the LSP (warning diagnostic with this code, same message format). It never gates the exit code.
+
+**Fix:** check that the `package.json#nudo.env` path (or `/// @nudo:env <path>`) points at an existing, intended file and that its imports resolve — fix the import specifiers inside the env file, make sure `@nudojs/env` (and `@nudojs/core`) are resolvable from the project, or drop the entry.
+
+Context: [Env & harvest](../guides/env-harvest.md)
+
 ### `nudo:env-harvest-conflict` {#nudo-env-harvest-conflict}
 
 ```text

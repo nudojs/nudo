@@ -33,6 +33,29 @@ export function clearStaleTermPred(v: Abs): void {
 /** 当前路径前提 Φ（transpile 后的 fork 会压栈） */
 export let phi: Phi = pTrue;
 
+/**
+ * 具体循环硬上限截断时的 conf 降级：exact/path → partial。
+ * 截断后的中间态不得继续声明精确（有界分析的诚实标记）；
+ * widened/partial/opaque 本就不声明精确，原样保留。
+ */
+export function confPartial(a: Abs): Abs {
+  return a.conf === "exact" || a.conf === "path" ? { ...a, conf: "partial" } : a;
+}
+
+/**
+ * 循环 pack 状态（$obj({ name: binding })）的截断降级：降**槽位值**的 conf
+ * ——unpack 取的是槽位值（$get(o, name)），只降外层包装对绑定不可见。
+ * pack 由 transpile 发射（$obj + $copy(binding)），形态恒为扁平一层 obj。
+ */
+export function confPartialPacked(a: Abs): Abs {
+  if (a.shape.k !== "obj") return confPartial(a);
+  const slots: Record<string, { value: Abs }> = {};
+  for (const [k, slot] of Object.entries(a.shape.slots)) {
+    slots[k] = { value: confPartial(slot.value) };
+  }
+  return objOf(slots);
+}
+
 export function currentExecPhi(): Phi {
   return phi;
 }

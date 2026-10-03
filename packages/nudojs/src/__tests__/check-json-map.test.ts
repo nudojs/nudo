@@ -3,16 +3,22 @@
  */
 import { describe, it, expect } from "vitest";
 import type { CheckIssue, CheckJson, CheckReport } from "@nudojs/core";
+import { checkSource, formatCheckReport, pTrue, serializeCheckJson } from "@nudojs/core";
 import {
   docsDiagnosticCodes,
   domainIssuesFromDiagnostics,
   dualEntryIssue,
+  ENV_UNRESOLVED_CODE,
   issueFromCachedJson,
   mergeCheckIssues,
   mergeJsonIssues,
   mockFromErrorIssues,
   reportFromCachedJson,
+  serializeCheckJsonForCache,
   signatureFromCachedJson,
+  stripCachedSigRets,
+  stripEnvUnresolvedIssues,
+  type CachedCheckSig,
   type DomainDiagnosticLike,
 } from "../check-json-map.ts";
 
@@ -347,5 +353,158 @@ describe("mergeJsonIssues", () => {
     ]);
     expect(out.ok).toBe(true);
     expect(out.summary.errors).toBe(1);
+  });
+});
+
+describe("stripEnvUnresolvedIssues", () => {
+  const envIssue: CheckIssue = {
+    severity: "warning",
+    code: ENV_UNRESOLVED_CODE,
+    message: "path env failed to load: ./env.mjs — boom",
+  };
+
+  it("removes env-unresolved entries and recomputes summary from remaining issues", () => {
+    const r = stripEnvUnresolvedIssues(
+      reportOf([
+        { severity: "error", code: "nudo:constraint-violated", message: "e" },
+        envIssue,
+        envIssue,
+      ]),
+    );
+    expect(r.issues).toHaveLength(1);
+    expect(r.issues[0]!.code).toBe("nudo:constraint-violated");
+    expect(r.summary).toEqual({ errors: 1, warnings: 0, infos: 0, functions: 2 });
+  });
+
+  it("no env-unresolved → unchanged (identity)", () => {
+    const src = reportOf([{ severity: "warning", code: "nudo:other", message: "m" }]);
+    expect(stripEnvUnresolvedIssues(src)).toBe(src);
+  });
+
+  it("works on the CheckJson face", () => {
+    const stale: CheckJson = {
+      version: 1,
+      file: "a.js",
+      ok: true,
+      summary: { errors: 0, warnings: 1, infos: 0, functions: 2 },
+      signatures: [],
+      issues: [envIssue],
+    };
+    const out = stripEnvUnresolvedIssues(stale);
+    expect(out.issues).toHaveLength(0);
+    expect(out.summary).toEqual({ errors: 0, warnings: 0, infos: 0, functions: 2 });
+  });
+});
+
+describe("env-unresolved disk-cache round trip", () => {
+  const envIssue: CheckIssue = {
+    severity: "warning",
+    code: ENV_UNRESOLVED_CODE,
+    message: "path env failed to load: ./env.mjs — boom",
+  };
+
+  it("write path strips the transient issue; cache hit re-merges exactly one (report + json faces)", () => {
+    // 首跑：live 收集的 env-unresolved 已 merge 进报告
+    const fresh = mergeCheckIssues(reportOf([]), [envIssue]);
+    expect(fresh.issues).toHaveLength(1);
+
+    // 写缓存前剔除瞬态条目（不持久化）
+    const cached = serializeCheckJson(stripEnvUnresolvedIssues(fresh));
+    expect(cached.issues.filter((i) => i.code === ENV_UNRESOLVED_CODE)).toHaveLength(0);
+    expect(cached.summary.warnings).toBe(0);
+
+    // 命中轮：读回（含旧缓存兼容剔除）→ live merge 同一条
+    const readBack = stripEnvUnresolvedIssues(cached);
+    const report = mergeCheckIssues(reportFromCachedJson(readBack), [envIssue]);
+    const jsonFace = mergeJsonIssues(readBack, [envIssue]);
+    expect(report.issues.filter((i) => i.code === ENV_UNRESOLVED_CODE)).toHaveLength(1);
+    expect(report.summary.warnings).toBe(1);
+    expect(jsonFace.issues.filter((i) => i.code === ENV_UNRESOLVED_CODE)).toHaveLength(1);
+    expect(jsonFace.summary.warnings).toBe(1);
+  });
+
+  it("stale cache entry (pre-fix: persisted env-unresolved) re-merges without duplication", () => {
+    // 修复前已写入磁盘的缓存条目含 env-unresolved（无 ABI bump，读回时剔除）
+    const stale: CheckJson = {
+      version: 1,
+      file: "a.js",
+      ok: true,
+      summary: { errors: 0, warnings: 1, infos: 0, functions: 2 },
+      signatures: [],
+      issues: [envIssue],
+    };
+    const report = mergeCheckIssues(
+      reportFromCachedJson(stripEnvUnresolvedIssues(stale)),
+      [envIssue],
+    );
+    expect(report.issues.filter((i) => i.code === ENV_UNRESOLVED_CODE)).toHaveLength(1);
+    expect(report.summary.warnings).toBe(1);
+  });
+});
+
+describe("disk-cache signature round trip (term fidelity)", () => {
+  // term 注记载体：无约束形参的算术返回（display 含 `= (A1 + A2)`）
+  const SRC = `export function add(a, b) { return a + b; }
+export function scale(x) { return x * 2 + 1; }
+`;
+  const live = checkSource("/t/term.js", SRC, pTrue);
+
+  /** 真实缓存往返：JSON.stringify/parse 模拟磁盘落盘 */
+  const roundTrip = (r: CheckReport): CheckJson =>
+    JSON.parse(JSON.stringify(serializeCheckJsonForCache(r))) as CheckJson;
+
+  it("miss/hit rounds render byte-identical signatures (default + verbose)", () => {
+    expect(live.signatures.length).toBe(2);
+    const cached = roundTrip(live);
+    const hitReport = reportFromCachedJson(cached);
+    expect(formatCheckReport(hitReport)).toBe(formatCheckReport(live));
+    expect(formatCheckReport(hitReport, { verbose: true })).toBe(
+      formatCheckReport(live, { verbose: true }),
+    );
+  });
+
+  it("ret is the rendered return segment (formatShape face, no term note)", () => {
+    const cached = roundTrip(live);
+    const add = cached.signatures.find((s) => s.name === "add") as CachedCheckSig;
+    const scale = cached.signatures.find((s) => s.name === "scale") as CachedCheckSig;
+    expect(add.ret).toBe("number | string");
+    expect(scale.ret).toBe("number");
+    // display 本体仍含 term 注记（formatAbs 契约面不变）
+    expect(add.display).toContain("= (A1 + A2)");
+  });
+
+  it("ret consumes through signatureFromCachedJson (display=ret, empty shape)", () => {
+    const cached = roundTrip(live);
+    const s = signatureFromCachedJson(cached.signatures[0]!);
+    expect(s.display).toBe("number | string");
+    expect(s.abs.shape).toBeUndefined();
+    // 旧条目（无 ret）：fake-any 占位回退保持
+    const legacy = signatureFromCachedJson(serializeCheckJson(live).signatures[0]!);
+    expect(legacy.abs).toEqual({ shape: { k: "any" }, conf: legacy.conf });
+  });
+
+  it("stripCachedSigRets restores the pure CheckJson contract face (idempotent)", () => {
+    const cached = roundTrip(live);
+    const stripped = stripCachedSigRets(cached);
+    expect(JSON.stringify(stripped)).toBe(JSON.stringify(serializeCheckJson(live)));
+    expect(stripCachedSigRets(stripped)).toBe(stripped);
+    // 无 ret 的输入原样返回（identity）
+    const pure = serializeCheckJson(live);
+    expect(stripCachedSigRets(pure)).toBe(pure);
+  });
+
+  it("throws / entry / budget survive the round trip", () => {
+    const src = `export function boom(o) { return o.x.y; }
+`;
+    const r = checkSource("/t/boom.js", src, pTrue);
+    const boom = r.signatures.find((s) => s.name === "boom")!;
+    expect(boom.throws).toBeDefined();
+    expect(r.budget).toBeDefined();
+    const cached = roundTrip(r);
+    const hit = reportFromCachedJson(cached);
+    expect(formatCheckReport(hit)).toBe(formatCheckReport(r));
+    const hitBoom = hit.signatures.find((s) => s.name === "boom")!;
+    expect(hitBoom.throws).toBe(boom.throws);
+    expect(hit.budget).toEqual(r.budget);
   });
 });

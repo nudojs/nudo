@@ -9,7 +9,7 @@ export {
   $forIter, $forOf, $fork, $ge, $gen, $get, $gt, $idx, $idxSet,
   $importMeta, $in, $instanceof, $instanceofNonIdent, $isBreakTo,
   $isForkExit, $join, $le, $len, $lit, $loopBreak, $loopContinue,
-  $loopReturn, $lt, $mod, $mul, $ne, $neLoose, $neg, $not, $nullishTest,
+  $loopReturn, $lt, $mod, $mul, $ne, $neLoose, $neg, $not, $nullishTest, $removeNullish,
   $obj, $objAccessor, $objRest, $pow, $pushLoopExit, $rawThis, $regex,
   $rethrowIfNudoReturn, $set, $setProto, $shl, $shr, $spread, $sub, $switch, $throw,
   $toNumber, $toNumeric, $updateAdd, $updateSub, $tryCurrentMark, $tryDetachSoftCatch, $tryDigestSoftCatch,
