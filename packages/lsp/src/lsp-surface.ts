@@ -745,11 +745,11 @@ function getCompletionsForAbs(a: Abs): CompletionItem[] {
     case "sum":
       return getSumCompletions(s.members);
     case "tuple":
-      // 仅 exact 定长元组走 Abs（字面量数组）；path 元组（filter 等仍挂
-      // 定长形状）回退 TypeValue——那里 filter 结果已 widen 成 array，
-      // length 显示 number，避免假精确。
-      if (a.conf === "exact") return getArrayCompletionsAbs(s.elements.length);
-      return [];
+      // Abs 定长元组（含 path conf——map 同长/filter 子集和的臂成员）：length
+      // 就是字面量长度。旧口径只放 exact 元组、path 元组回退 TypeValue 求宽
+      // array——filter 的不确定谓词臂已是精确子序列和（长度集合诚实），
+      // 不再需要按「假精确」熔断。
+      return getArrayCompletionsAbs(s.elements.length);
     case "arr":
       return getArrayCompletionsAbs(undefined);
     case "eff":
@@ -804,7 +804,8 @@ function getSumCompletions(members: Abs[]): CompletionItem[] {
       memberTypes.push(hit.detail ?? hit.label);
     }
     if (allPresent) {
-      common.push({ ...base, detail: memberTypes.join(" | ") });
+      // 臂渲染去重：`[] | [1] | ["a"]` 的 length 臂 0|1|1|2 → 0|1|2
+      common.push({ ...base, detail: [...new Set(memberTypes)].join(" | ") });
     }
   }
   return common;

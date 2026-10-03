@@ -87,14 +87,15 @@ describe("getCompletionsAtPosition", () => {
     expect(completions.find((c) => c.label === "join")?.detail).toBe("(_arg0: string) => string");
     // 字面量 [1,2,3] 求值为 tuple：length 是精确字面量
     expect(completions.find((c) => c.label === "length")?.detail).toBe("3");
-    // 抽象 array（filter 结果）的 length 回到 number
+    // 不确定谓词 filter 的精确子序列和（[] | [1] | ["a"] | [1,"a"]）：
+    // length 是有界字面量并集，不再是旧口径的无界 number
     const widened = getCompletionsAtPosition(
       "/test/arr-wide.js",
       `const arr = [1, "a"].filter(() => Math.random() > 0.5);\narr.m;\n`,
       2,
       4,
     );
-    expect(widened.find((c) => c.label === "length")?.detail).toBe("number");
+    expect(widened.find((c) => c.label === "length")?.detail).toBe("0 | 1 | 2");
   });
 
   it("derives tuple length and string/promise method detail from the evaluator", () => {

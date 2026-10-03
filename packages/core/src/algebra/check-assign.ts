@@ -24,6 +24,22 @@ import type { CheckIssue } from "./check-report.ts";
 
 export function widenForAssign(a: Abs): Abs {
   const s = a.shape;
+  if (s.k === "sum") {
+    // 全数组成员的 sum（tuple/arr）按 tuple 分支同口径拓宽：join 成单个 arr。
+    // 可变绑定曾持数组（长度 0|1 的 push-join 等）后赋任意数组是合法 JS
+    // （`let a = cond ? [] : [x]; a = longerArr`）；sum 不拓宽会让 assign
+    // 对账拿「无界长度的 filter/map 投影」撞「有界 sum」假 mismatch。
+    // 非全数组（obj/prim/brand 混入）保持透传——obj 槽位缺失、标量改型
+    // 仍按成员精确对账。
+    if (s.members.length > 0 && s.members.every((m) => m.shape.k === "tuple" || m.shape.k === "arr")) {
+      // 成员经 tuple/arr 分支拓宽：arr → 取元素；空 tuple → anyAbs（整个并入，
+      // 与 tuple 分支空槽同口径）
+      const els = s.members.map(widenForAssign).map((w) => (w.shape.k === "arr" ? w.shape.element : w));
+      const el = els.reduce((x, y) => joinAbs(x, y));
+      return abs({ k: "arr", element: el }, undefined, undefined, a.conf);
+    }
+    return a;
+  }
   if (s.k === "tuple") {
     const holes = new Set(s.holes ?? []);
     const els = s.elements.filter((_, i) => !holes.has(i));

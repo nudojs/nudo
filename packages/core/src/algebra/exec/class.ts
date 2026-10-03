@@ -899,14 +899,31 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
         kept.push(el);
       });
       if (kept.length === 0) {
-        return abs({ k: "arr", element: unknown }, undefined, undefined, "path");
+        // 每个现存元素的谓词都 definitely-false（空元组平凡成立）→ 结果恒为 []。
+        // 旧口径折 unknown[]（无界长度）既失真又在 assign 对账面制造假
+        // mismatch（OSS 语料 semver/bin/semver.js L109 的 L1 FP）。
+        return abs({ k: "tuple", elements: [] }, undefined, undefined, confJoin(arr.conf, "path"));
       }
       // 谓词全具体 → 精确子序列保留 tuple 字面量精度
       if (!anyUncertain) {
         return abs({ k: "tuple", elements: kept }, undefined, undefined, confJoin(arr.conf, "path"));
       }
+      // 不确定谓词：结果是 kept 的**子序列**（长度 ≤ kept.length，filter 不增元素）。
+      // 小元组枚举子集和（精确且有界）；更大的枚举指数膨胀 → 退回无界 arr
+      // （sound，旧口径，仅长度上界失真）。
+      const conf = confJoin(arr.conf, "path");
+      if (kept.length <= 3) {
+        let acc: Abs | undefined;
+        const total = 1 << kept.length;
+        for (let mask = 0; mask < total; mask++) {
+          const els = kept.filter((_, bit) => (mask & (1 << bit)) !== 0);
+          const sub = abs({ k: "tuple", elements: els }, undefined, undefined, conf);
+          acc = acc === undefined ? sub : joinAbs(acc, sub);
+        }
+        return acc!;
+      }
       const el = kept.reduce((a, b) => joinAbs(a, b));
-      return abs({ k: "arr", element: el }, undefined, undefined, confJoin(arr.conf, "path"));
+      return abs({ k: "arr", element: el }, undefined, undefined, conf);
     }
     // arr：filter 保持元素类型（不传播回调 pred）
     return arr;
