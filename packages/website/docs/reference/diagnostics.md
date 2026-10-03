@@ -275,6 +275,12 @@ A queued promise microtask threw while being drained at an eval exit. **Info.** 
 
 Context: [Analysis budgets](../guides/performance.md#analysis-budgets)
 
+### `nudo:math-fold-error` {#nudo-math-fold-error}
+
+A Math native fold threw during analysis (host-tampered or divergent `Math.*`); the result was widened to `number`. **Info.** Keep `Math.*` builtins unmodified in analyzed code, or mock them with `@nudo:mock` — non-blocking.
+
+Context: [Mocking external dependencies](../concepts/mocking.md)
+
 ### `nudo:host-effect-blocked` {#nudo-host-effect-blocked}
 
 Host side-effect function (`fetch` / `XMLHttpRequest` / `WebSocket` / `EventSource` / `setTimeout` / `setInterval` / `setImmediate` / `queueMicrotask` / `requestAnimationFrame` / `requestIdleCallback`) was not executed during analysis — running it for real would perform network I/O or schedule real timers with Abs arguments. Result widened to `unknown#opaque`. **Info.** Mock it with `@nudo:mock` / `@nudo:env`, or feed the value in from a call site.

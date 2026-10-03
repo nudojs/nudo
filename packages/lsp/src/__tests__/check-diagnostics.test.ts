@@ -81,9 +81,7 @@ describe("Abs check as LSP diagnostics", () => {
     expect(filterCheckLspByLevel(diags, "verbose")).toHaveLength(3);
   });
 
-  it("checkToLspDiagnostics drains takeDirectiveDiags (FIX-RESIDUAL #1)", async () => {
-    const { takeDirectiveDiags } = await import("@nudojs/parser");
-    takeDirectiveDiags(); // 清空
+  it("checkToLspDiagnostics 并入指令文法诊断（FIX-RESIDUAL #1，显式通道）", () => {
     const bad = `
 /**
  * @nudo:case 't' (1)
@@ -92,14 +90,10 @@ function f(x) { return x; }
 `;
     const diags = checkToLspDiagnostics("/t/dir.js", bad);
     expect(diags.some((d) => d.code === "nudo:directive-syntax")).toBe(true);
-    // drain 后 buffer 不得残留（不得被在途 validate 窃取）
-    expect(takeDirectiveDiags()).toHaveLength(0);
   });
 
-  it("checkToLspDiagnostics 不窃取在途其他 extract 的指令诊断（R2B-003）", async () => {
-    const { takeDirectiveDiags, extractDirectives, parse, directiveDiagCount } =
-      await import("@nudojs/parser");
-    takeDirectiveDiags(); // 清空
+  it("checkToLspDiagnostics 只含本文件的指令诊断（R2B-003：无共享缓冲可混入）", async () => {
+    const { extractDirectivesQuiet, parse } = await import("@nudojs/parser");
     const badB = `
 /**
  * @nudo:case 'b' (1)
@@ -112,18 +106,14 @@ function g(x) { return x; }
  */
 function f(x) { return x; }
 `;
-    // 文件 B 的 hover 探测：extract 后不 drain（模拟纯查询路径污染 buffer）
-    extractDirectives(parse(badB));
-    const before = directiveDiagCount();
+    // 文件 B 的 hover 探测（纯查询：诊断丢弃，不产任何可混入面）
+    extractDirectivesQuiet(parse(badB));
     const diags = checkToLspDiagnostics("/t/fileA.js", badA);
     // A 的结果只含 A 自己的指令诊断，不得混入 B 的
     const dirDiags = diags.filter((d) => d.code === "nudo:directive-syntax");
     expect(dirDiags.length).toBeGreaterThan(0);
     expect(dirDiags.some((d) => msgText(d.message).includes("'b'"))).toBe(false);
     expect(dirDiags.some((d) => msgText(d.message).includes("'a'"))).toBe(true);
-    // B 的诊断仍在 buffer（不得被 checkToLspDiagnostics 全量 take 偷走）
-    const leftover = takeDirectiveDiags();
-    expect(leftover.some((d) => d.message.includes("'b'"))).toBe(true);
   });
 
   it("checkToLspDiagnostics catch 不再静默 return []（R2B-003）", () => {

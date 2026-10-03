@@ -1,6 +1,10 @@
 /**
  * 整文件分析（uncached 路径）：analyzeFileUncached / analyzeFileUncachedInner。
  * 自 analyzer-orchestrate.ts 机械拆出；语义未改。
+ *
+ * 职责已按缝拆出（机械搬移，语义未改）：
+ *   - analyzer-orchestrate-uncached-modules.ts  模块图组装（dep 指纹 / 整文件求值 / eval 静态诊断）
+ *   - analyzer-orchestrate-uncached-cases.ts    case 合成 + entry 分析（@nudo:case / call@ / entry@）
  */
 import { realpathSync } from "node:fs";
 import { resolve, dirname } from "node:path";
@@ -8,77 +12,46 @@ import type { Node } from "@babel/types";
 import {
   createEnvironment,
   type Environment,
-  generalizeFromAst,
-  setEvalCallCollector,
-  getEvalCallCollector,
-  getFnImpl,
   markPureFn,
-  $call,
-  unknown as absUnknown,
-  anyAbs,
   formatAbs,
-  formatShape,
-  leqAbs,
-  localNamedExports,
-  effectiveInterface,
-  abs as makeAbsVal,
   formalParamsFromNodes,
   type Abs,
-  type EvalCallRecord,
 } from "@nudojs/core";
 import {
-  setMayThrowCollector,
-  runWithMayThrowSession,
-  mayThrowEffectsToAbs,
-  formatThrowsAbs,
-  type MayThrowEffect,
   checkInjectedDomainEvidence,
   runWithEvalMissingSlot,
   fnFingerprints,
-  loadModuleDepsFingerprint,
-  hashSource,
-  setAbsTruncationCollector,
 } from "@nudojs/core/internal";
-import { parse, extractDirectives, extractFileDirectives, takeDirectiveDiagsSince, directiveDiagCount } from "@nudojs/parser";
+import { parse, extractDirectives, extractFileDirectives, type DirectiveDiag } from "@nudojs/parser";
 import {
   collapseAbsLits,
   isLeakedCallRecord,
-  neverAbs,
-  undefAbs,
-  widenJoinAbs,
   type CallRecord,
 } from "./evaluator/call-record.ts";
 import { findProjectConfig, interfaceConfig, analysisConfig } from "./evaluator/config.ts";
-import { mockDirectivesToAbsSeeds, mockSeedsToAbsMocks } from "./mock-abs.ts";
-import { applyMockModuleDirectives } from "./mock-module.ts";
-import { defaultLoadModule } from "./load-module.ts";
-import { evalAbsModuleGraph, collectAbsBindingsFromGraph } from "./abs-modules-graph.ts";
 import {
-  tryEvalCall,
-  tryEvalCallFull,
+  mockDirectivesToAbsSeeds,
+} from "./mock-abs.ts";
+import { defaultLoadModule } from "./load-module.ts";
+import { collectAbsBindingsFromGraph } from "./abs-modules-graph.ts";
+import {
   tryRunEval,
-  isEvalCapable,
+  composeEvalModules,
   mockSeedFingerprint,
-  collectEnvGlobals,
-  collectEnvModules,
-  mergeHarvestUnderEnv,
   setEnvHarvestConflictCollector,
   type EnvHarvestConflict,
 } from "./eval-run.ts";
-import { collectEvalDiagnostics } from "./eval-diagnostics.ts";
 import { entryVariantForFile, entryVariantMessage, entryVariantSuggestion } from "./entry-variants.ts";
 import {
   fnAnalysisCacheGet,
   fnAnalysisCacheSet,
   caseDirectiveKey,
-  type CachedFnAnalysis,
 } from "./fn-analysis-cache.ts";
 import type {
   AnalysisResult,
   AnalyzeLoadModule,
   BindingInfo,
   CaseHint,
-  CaseResult,
   Diagnostic,
   DirectiveCaseMode,
   FunctionAnalysis,
@@ -99,7 +72,6 @@ import {
   dedupeCallRecords,
   synthesizeExternalFunctions,
   findModuleImportLoc,
-  DEFAULT_CALLSITE_BUDGET,
   COLLAPSE_LITERAL_THRESHOLD,
 } from "./analyzer-diagnose.ts";
 import {
@@ -109,18 +81,21 @@ import {
   shiftCallRecordLines,
 } from "./analyzer-cache.ts";
 import {
-  buildAbsImportLocalMap,
-  callRecordFromAbsCall,
-  tryEvalAbsRaw,
-  tryEvalAbsFull,
-  tryEvalEntryAbs,
-  tryAttachIntension,
   attachHofSnapshot,
-  attachAbsToIntension,
-  absIsBetter,
   isSelfContainedSource,
   absModulesOk,
 } from "./analyzer-abs-eval.ts";
+import {
+  computeFnDepSegment,
+  assembleModuleGraph,
+  pushEvalStaticDiagnostics,
+} from "./analyzer-orchestrate-uncached-modules.ts";
+import {
+  evaluateCaseDirectives,
+  synthesizeCallSiteCases,
+  evaluateEntryCase,
+  type UncachedCaseEnv,
+} from "./analyzer-orchestrate-uncached-cases.ts";
 
 export function analyzeFileUncached(
   filePath: string,
@@ -153,14 +128,13 @@ export function analyzeFileUncachedInner(
   loadModule?: AnalyzeLoadModule,
   caseMode: DirectiveCaseMode = "all",
 ): AnalysisResult {
-  // since 锚：只排干本次 extract 产生的增量——全量 take 会在 await 窗口窃取
-  // 在途其他消费方（validate/hover/check）待收的指令文法诊断（对齐 takeInterfaceDiagsSince）
-  const dirDiagSince = directiveDiagCount();
   const ast = parse(source);
-  const functions = extractDirectives(ast);
+  // F-3 / D1: 指令文法诊断（nudo:directive-syntax）不再静默——并入 analysis diagnostics。
+  // 显式通道：诊断直接落局部数组，不碰模块级 buffer（无 seq 锚 / 在途窃取窗口）
+  const dirDiags: DirectiveDiag[] = [];
+  const functions = extractDirectives(ast, { diags: dirDiags });
   const diagnostics: Diagnostic[] = [];
-  // F-3 / D1: 指令文法诊断（nudo:directive-syntax）不再静默——并入 analysis diagnostics
-  for (const d of takeDirectiveDiagsSince(dirDiagSince)) {
+  for (const d of dirDiags) {
     diagnostics.push({
       range: { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } },
       severity: "warning",
@@ -263,15 +237,9 @@ export function analyzeFileUncachedInner(
   // @nudo:mock 已编译为 Abs seed 注入（mockDirectivesToAbsSeeds）；无 TypeValue applyMocks。
   const selfContained = isSelfContainedSource(source, envNames);
   const canAbsModules = absModulesOk(source, envNames);
-  const evalCapable = isEvalCapable(source, envNames);
 
-  /** B 已上报的模块加载问题种类 + 递归截断函数名（压 TypeValue 叠报） */
+  /** B 已上报的模块加载问题种类（压 TypeValue 叠报） */
   const evalModuleIssueKinds = new Set<"cycle" | "depth" | "missing" | "missing-export" | "exports-unresolved">();
-  const evalTruncatedFns = new Set<string>();
-  /** eval 静态 builtin-unknown 名（压 TypeValue unknown-global 叠报） */
-  const evalBuiltinUnknownNames = new Set<string>();
-  /** B 成功跑通本文件 → TypeValue method/property 诊断整类让位 */
-  let evalHosted = false;
 
   const pushBModuleIssues = (
     issues:
@@ -326,66 +294,26 @@ export function analyzeFileUncachedInner(
     });
   }
   let absCallRecords: CallRecord[] = [];
-  /** eval 顶层 $callNamed 记录（call@ 合成；TypeValue skip 后的主源） */
-  let evalTopCallRecords: CallRecord[] = [];
-  /** 一次 evalAbsModuleGraph（模块图求值）的共享产物（避免 求值引擎 4+ 次重求值） */
-  let absGraphModules: Record<string, import("@nudojs/core").AbsModuleExports> | undefined;
   let absBindsShared: Map<string, Abs> | undefined;
   let absNodesShared: Map<Node, Abs> | undefined;
 
-  // B 模块图：cycle/depth/missing + 顶层 memberDiags（注入 @nudo:mock，
-  // 避免缩进 const 调到真 fetch；$callNamed 实参 loc 提供参数级 provenance）
-  if (evalCapable && filePath) {
-    try {
-      const g = evalAbsModuleGraph(source, filePath, {
-        seedVars: seeds.seedVars,
-        seedFns: seeds.seedFns as never,
-        ...(loadModule ? { loadModule } : {}),
-      });
-      // env modules 必须并入图：@nudo:env 的 node:* / 裸包由 loadEnvs 提供，
-      // 模块图只处理相对 import 与 harvest 裸包（跳过 node: 前缀）。
-      // 手写 env 在重叠模块/导出上 wins（B8）；harvest 只补洞。
-      absGraphModules = mergeHarvestUnderEnv(g.modules, collectEnvModules(envNames));
-      // @nudo:mock-module：覆盖 import 说明符的导出表（全量/局部）
-      const mm = applyMockModuleDirectives(absGraphModules, fileDirectives, {
-        fromFile: filePath,
-        ...(loadModule ? { loadModule } : {}),
-      });
-      absGraphModules = mm.modules;
-      for (const fe of mm.errors) {
-        diagnostics.push({
-          range: { start: { line: 1, column: 0 }, end: { line: 1, column: 0 } },
-          severity: "error",
-          message: fe.message,
-          code: "nudo:module-missing",
-        });
-      }
-      pushBModuleIssues(g.issues);
-    } catch {
-      /* 模块图失败交还 TypeValue */
-    }
-    const evalRun = tryRunEval(source, filePath, {
-      envNames,
-      mocks: mockSeedsToAbsMocks(seeds),
-    });
-    if (evalRun) {
-      evalHosted = true;
-      if (evalRun.memberDiags?.length) {
-        for (const d of evalRun.memberDiags) {
-          pushBMemberDiag(d, 1);
-        }
-      }
-      if (evalRun.truncatedFns) {
-        for (const fn of evalRun.truncatedFns) evalTruncatedFns.add(fn);
-      }
-      if (evalRun.calls?.length) {
-        const impMap = buildAbsImportLocalMap(source, filePath);
-        for (const c of evalRun.calls) {
-          evalTopCallRecords.push(callRecordFromAbsCall(c, impMap));
-        }
-      }
-    }
-  }
+  // dep 内容指纹（整文件与逐函数缓存键共用；fail-closed 语义见 modules 文件）
+  const { fnDepSeg, fnDepFailClosed } = computeFnDepSegment(source, loadModule, filePath);
+
+  // B 模块图：cycle/depth/missing + 顶层 memberDiags（注入 @nudo:mock；
+  // composeEvalModules 单一入口 + tryRunEval 复用）→ modules 文件
+  const { evalHosted, evalTopCallRecords } = assembleModuleGraph({
+    source,
+    filePath,
+    envNames,
+    seeds,
+    ...(loadModule ? { loadModule } : {}),
+    fileDirectives,
+    fnDepSeg,
+    diagnostics,
+    pushModuleIssues: pushBModuleIssues,
+    pushMemberDiag: pushBMemberDiag,
+  });
   // fail-closed：Abs 调用记录通道已删（collectAbsCallRecords）——非 eval-hosted
   // 源的调用点仅来自 eval 顶层记录（evalTopCallRecords）
 
@@ -408,50 +336,26 @@ export function analyzeFileUncachedInner(
     callRecords.push(...evalTopCallRecords);
   }
 
-  const unreachableRanges: SourceLocation[] = [];
-  if (evalCapable) {
-    // 求值引擎静态诊断接管 unreachable + builtin-unknown
-    // env/mock 已覆盖的全局不在 builtin-unknown 之列（eval 注入后不再是裸原生调用）
-    const evalKnownGlobals = new Set<string>([
-      ...Object.keys(collectEnvGlobals(envNames)),
-      ...Object.keys(mockSeedsToAbsMocks(seeds)),
-    ]);
-    const evalDiag = collectEvalDiagnostics(source, evalKnownGlobals);
-    for (const ur of evalDiag.unreachable) {
-      diagnostics.push({
-        range: ur.range,
-        severity: "info",
-        message: "Code after return/throw statement is unreachable",
-        tags: ["unnecessary"],
-        code: "nudo-unreachable",
-        suggestions: ["Remove the unreachable code after the return/throw statement"],
-      });
-    }
-    for (const b of evalDiag.builtinUnknown) {
-      evalBuiltinUnknownNames.add(b.name);
-      diagnostics.push({
-        range: b.range,
-        severity: "warning",
-        message: `Built-in API "${b.name}" is not covered by Nudo's type inference`,
-        code: "nudo:builtin-unknown",
-        suggestions: [
-          `Use @nudo:mock to define the type: @nudo:mock ${b.name} = stub().returns(...)`,
-          `Or use @nudo:contract return <constraint> to declare the return contract`,
-        ],
-      });
-    }
-  } else {
-    for (const ur of unreachableRanges) {
-      diagnostics.push({
-        range: ur,
-        severity: "info",
-        message: "Code after return/throw statement is unreachable",
-        tags: ["unnecessary"],
-        code: "nudo-unreachable",
-        suggestions: ["Remove the unreachable code after the return/throw statement"],
-      });
-    }
-  }
+  // 求值引擎静态诊断接管 unreachable + builtin-unknown（env/mock 已覆盖的
+  // 全局不在 builtin-unknown 之列）→ modules 文件
+  pushEvalStaticDiagnostics({ source, envNames, seeds, diagnostics });
+
+  // case 合成 / entry 分析共享求值环境（模块图产物 + 诊断通道按引用共享）
+  const caseEnv: UncachedCaseEnv = {
+    source,
+    filePath,
+    envNames,
+    seeds,
+    ...(loadModule ? { loadModule } : {}),
+    fnDepSeg,
+    evalHosted,
+    selfContained,
+    canAbsModules,
+    pushMemberDiag: pushBMemberDiag,
+    diagnostics,
+    caseHints,
+    callRecords,
+  };
 
   // Abs 宿主补齐（T15）：B 未成功宿主时仍收集 Abs 绑定/节点表——
   // BindingInfo.abs / nodeAbsMap / hover / completions 不必等 B 成功。
@@ -469,27 +373,25 @@ export function analyzeFileUncachedInner(
 
   // fail-closed：绑定补全仅来自 B run 的绑定表（bindingsOf）；Abs 模块图
   // 宿主已删。B 不可用 → 无补全（显式无信息）。
-  if (isEvalCapable(source, envNames)) {
-    try {
-      // 绑定补全走 B 版 collectAbsBindingsFromGraph：recordBinding 顶层绑定
-      // + 导出桥 + import 局部名（静态解析依赖模块）——单一事实源
-      const absBinds = absBindsShared ?? collectAbsBindingsFromGraph(source, filePath, {
-        seedVars: seeds.seedVars,
-        seedFns: seeds.seedFns as never,
+  try {
+    // 绑定补全走 B 版 collectAbsBindingsFromGraph：recordBinding 顶层绑定
+    // + 导出桥 + import 局部名（静态解析依赖模块）——单一事实源
+    const absBinds = absBindsShared ?? collectAbsBindingsFromGraph(source, filePath, {
+      seedVars: seeds.seedVars,
+      seedFns: seeds.seedFns as never,
+    });
+    if (!absBinds) {
+      /* fail-closed：无绑定补全 */
+    } else for (const [name, absVal0] of absBinds) {
+      const absVal = absVal0 as Abs;
+      const prev = bindings.get(name);
+      bindings.set(name, {
+        abs: absVal,
+        loc: prev?.loc,
       });
-      if (!absBinds) {
-        /* fail-closed：无绑定补全 */
-      } else for (const [name, absVal0] of absBinds) {
-        const absVal = absVal0 as Abs;
-        const prev = bindings.get(name);
-        bindings.set(name, {
-          abs: absVal,
-          loc: prev?.loc,
-        });
-      }
-    } catch {
-      /* keep TypeValue bindings */
     }
+  } catch {
+    /* keep TypeValue bindings */
   }
 
   const synthCandidates: { name: string; node: Node; analysis: FunctionAnalysis; assignedName?: string }[] = [];
@@ -503,23 +405,7 @@ export function analyzeFileUncachedInner(
   }
   const envKeyFn = envNames.join(",");
   const mockKeyFn = mockSeedFingerprint(seeds.seedVars, seeds.seedFns);
-  // dep 内容进 fn 键（default 与 custom loader 同口径），避免入口文本未变时旧诊断命中。
-  // (source, filePath, loader) 循环不变：全图 BFS 一次，逐函数复用（否则 F 个函数 = F 次读盘）。
-  // truncated / fingerprint 失败：与整文件 noCache 同口径 fail-closed
-  let fnDepSeg: string | null = "-";
-  let fnDepFailClosed = false;
-  try {
-    const dfp = loadModuleDepsFingerprint(source, loadModule ?? defaultLoadModule, filePath);
-    if (dfp.truncated) {
-      fnDepFailClosed = true;
-      fnDepSeg = null;
-    } else {
-      fnDepSeg = hashSource(dfp.fp);
-    }
-  } catch {
-    fnDepFailClosed = true;
-    fnDepSeg = null;
-  }
+  // fnDepSeg（dep 内容指纹）已在模块图前一次算好：此处直接复用
 
   for (const fn of functions) {
     const isPure = fn.directives.some((d) => d.kind === "pure");
@@ -636,156 +522,15 @@ export function analyzeFileUncachedInner(
       synthCandidates.push({ name: fn.name, node: fn.node, analysis });
     }
 
-    for (const ci of caseIdxsToRun) {
-      const directive = caseDirectives[ci]!;
-
-      let caseAbs: Abs | undefined;
-      let caseThrowsAbs: Abs | undefined;
-      let caseThrowLoc: SourceLocation | undefined;
-      let caseUnreachable: SourceLocation[] = [];
-
-      const evalCapable = isEvalCapable(source, envNames);
-      const evalPrimary = evalCapable;
-      if (evalCapable && filePath) {
-        const caseArgsAbs = directive.argsAbs;
-        const evalFull = tryEvalCallFull(
-          source,
-          filePath,
-          fn.name,
-          caseArgsAbs,
-          { collectCalls: true, envNames, mocks: mockSeedsToAbsMocks(seeds) },
-        );
-        const res = evalFull?.result;
-        const weakUnknown =
-          !!res &&
-          res.shape.k === "unknown" &&
-          (!res.term || (res.term.op === "lit" && res.term.value === undefined));
-        const evalOk = !!res && (evalHosted || (!weakUnknown && res.conf !== "opaque"));
-        if (evalOk && evalFull && evalPrimary) {
-          caseAbs = evalFull.result;
-          caseThrowsAbs = evalFull.throws;
-          for (const d of evalFull.memberDiags ?? []) {
-            pushBMemberDiag(d, fnLoc.start.line);
-          }
-          if (evalFull.calls?.length) {
-            const impMap = buildAbsImportLocalMap(source, filePath);
-            for (const c of evalFull.calls) {
-              callRecords.push(callRecordFromAbsCall(c, impMap));
-            }
-          }
-        }
-      }
-
-      if (!caseAbs) {
-        if (evalHosted) {
-          caseAbs = absUnknown;
-          caseThrowsAbs = neverAbs;
-        } else {
-          const caseArgsAbs = directive.argsAbs;
-          const absFull = (selfContained || canAbsModules)
-            ? tryEvalAbsFull(
-                source,
-                fn.name,
-                caseArgsAbs,
-                filePath,
-                mockSeedsToAbsMocks(seeds),
-              )
-            : undefined;
-          const weak =
-            !!absFull &&
-            absFull.result.shape.k === "unknown" &&
-            (!absFull.result.term ||
-              (absFull.result.term.op === "lit" && absFull.result.term.value === undefined));
-          const absOk =
-            !!absFull &&
-            !weak &&
-            absFull.result.conf !== "opaque" &&
-            absFull.throws.shape.k === "never";
-          const absThrew =
-            !!absFull &&
-            !weak &&
-            absFull.result.shape.k === "never" &&
-            absFull.throws.shape.k !== "never";
-          if (absOk) {
-            caseAbs = absFull.result;
-            caseThrowsAbs = neverAbs;
-          } else if (absThrew) {
-            caseAbs = absFull!.result; // never
-            caseThrowsAbs = absFull!.throws;
-            const tl = absFull!.throwLoc;
-            if (tl) caseThrowLoc = { start: { ...tl }, end: { ...tl } };
-          } else {
-            caseAbs = absUnknown;
-            caseThrowsAbs = neverAbs;
-          }
-        }
-      }
-      if (!caseThrowsAbs) caseThrowsAbs = neverAbs;
-
-      const caseEntry: CaseResult = {
-        name: directive.name,
-        argAbs: directive.argsAbs,
-        abs: caseAbs,
-        throwsAbs: caseThrowsAbs,
-        throwLoc: caseThrowLoc,
-        expected: directive.expected,
-        source: "directive",
-      };
-      tryAttachIntension(caseEntry, source, fn.name);
-      attachAbsToIntension(caseEntry, caseAbs, fn.name);
-      analysis.cases.push(caseEntry);
-
-      if (directive.commentLine) {
-        const hasThrow = caseThrowsAbs.shape.k !== "never";
-        const resultStr = caseAbs.shape.k !== "never" ? formatShape(caseAbs) : "";
-        const throwStr = hasThrow ? `throws ${formatShape(caseThrowsAbs)}` : "";
-        const label = [resultStr, throwStr].filter(Boolean).join(" ");
-        const hintLabel = `=> ${label}`;
-
-        let ok = true;
-        if (directive.expected) {
-          ok = leqAbs(caseAbs, directive.expected).ok;
-          if (!ok) {
-            diagnostics.push({
-              range: { start: { line: directive.commentLine, column: 0 }, end: { line: directive.commentLine, column: 999 } },
-              severity: "error",
-              message: `debug "${directive.name}": expected ${formatShape(directive.expected)}, got ${formatShape(caseAbs)}. The inferred return type does not match the expected type declared in the @nudo:case witness`,
-              code: "nudo:case-expected",
-            });
-          }
-        }
-
-        caseHints.push({ line: directive.commentLine, label: hintLabel, ok });
-      }
-
-      const isActive = ci === Math.min(activeCaseIdx, caseDirectives.length - 1);
-
-      if (isActive) {
-        if (caseThrowsAbs.shape.k !== "never") {
-          const throwRange = caseThrowLoc ?? fnLoc;
-          diagnostics.push({
-            range: throwRange,
-            severity: "warning",
-            message: `Function "${fn.name}" case "${directive.name}" may throw: ${formatShape(caseThrowsAbs)}. Consider adding a try-catch block or using @nudo:contract return <constraint>`,
-            code: "nudo:may-throw",
-          });
-        }
-
-        // 求值引擎可分析时文件级静态收集已报 unreachable，跳过 case 级
-        if (!isEvalCapable(source, envNames)) {
-          for (const ur of caseUnreachable) {
-            diagnostics.push({
-              range: ur,
-              severity: "info",
-              message: "Code after return/throw statement is unreachable",
-              tags: ["unnecessary"],
-              code: "nudo-unreachable",
-              suggestions: ["Remove the unreachable code after the return/throw statement"],
-            });
-          }
-        }
-      }
-    }
+    // @nudo:case 指令求值（case 落 analysis.cases / caseHints / 诊断）→ cases 文件
+    evaluateCaseDirectives(caseEnv, {
+      name: fn.name,
+      fnLoc,
+      analysis,
+      caseDirectives,
+      caseIdxsToRun,
+      activeCaseIdx,
+    });
 
     if (analysis.cases.length > 0) {
       analysis.combinedAbs = collapseAbsLits(
@@ -953,233 +698,13 @@ export function analyzeFileUncachedInner(
     // T10b：跨文件注入的调用点域证据 ⊄ 手写契约 → nudo:interface-domain-exceeds
     reportInjectedDomainExceeds(candidate.name, candidate.node, candidate.analysis.loc);
     if (records.length > 0) {
-      // 案例选择偏好：结果有信息量的记录优先（精确/字面量/结构化），
-      // unknown 结果的排后——收集顺序里错误路径或 undefined 形态的测试
-      // 常排在前面，slice 截断会把 concrete-precise 记录挤掉（hoek clone
-      // 的 682 条记录曾由 3 条 undefined 形态占满前 3 席）。
-      const informativeness = (r: CallRecord): number => {
-        if (r.resultAbs.shape.k === "unknown") return 2;
-        if (r.resultAbs.shape.k === "never") return 1;
-        return 0;
-      };
-      const ordered = records
-        .map((r, i) => ({ r, i }))
-        .sort((a, b) => informativeness(a.r) - informativeness(b.r) || a.i - b.i)
-        .map(({ r }) => r);
-      const precise = ordered.slice(0, callSiteBudget);
-      for (const rec of precise) {
-        // Abs 重求值仅在更有信息量时覆盖（不破坏 mock/callsite 精确结构）
-        let absRaw: Abs | undefined;
-        let absResult: Abs | undefined;
-        if (rec.resultAbs.shape.k !== "never" && rec.argAbs.length > 0) {
-          absRaw = tryEvalAbsRaw(source, candidate.name, rec.argAbs, filePath, mockSeedsToAbsMocks(seeds));
-          if (absRaw) {
-            if (absIsBetter(absRaw, rec.resultAbs)) {
-              absResult = absRaw;
-            }
-          }
-        }
-        // 记录自带的无损结果 Abs：重求值失败/跳过时作兜底（evaluator 产物）
-        if (!absRaw && rec.resultAbs.shape.k !== "never") {
-          absRaw = rec.resultAbs;
-        }
-        const caseAbs = absResult ?? rec.resultAbs;
-        const caseResult: CaseResult = {
-          name: `call@L${rec.callLoc?.line ?? candidate.analysis.loc.start.line}`,
-          argAbs: [...rec.argAbs],
-          abs: caseAbs,
-          throwsAbs: rec.throwsAbs,
-          source: "callsite",
-        };
-        tryAttachIntension(caseResult, source, candidate.name);
-        if (absRaw) attachAbsToIntension(caseResult, absRaw, candidate.name);
-        candidate.analysis.cases.push(caseResult);
-      }
-      // symbolic 聚合只用全已知实参的记录：含 unknown 分量的记录不可重求值
-      // （unknown 吸收整个 union，一条循环引用 fixture 的记录就能毒化全部
-      // 剩余聚合——clone 704 条中的 53 条 unknown 实参曾拖垮其余 651 条）。
-      // 排除不声明覆盖，sound；全部不可求值时不产 symbolic case（诚实）。
-      const remaining = ordered
-        .slice(callSiteBudget)
-        .filter((rec) => !rec.argAbs.some((a) => a.shape.k === "unknown" && !a.term));
-      if (remaining.length > 0) {
-        const fnNode = resolveFunctionNode(candidate.node);
-        const paramCount = extractParamNames(fnNode).length;
-        const widenedArgsAbs = Array.from({ length: paramCount }, (_, i) =>
-          // 缺参按真实 JS 语义 widen 成 undefined 而非 unknown——可选参守卫
-          // （target || [] 等）对 unknown 全塌，对 undefined 正常走默认分支
-          widenJoinAbs(remaining.map((rec) => rec.argAbs[i] ?? undefAbs)),
-        );
-        // 求值引擎优先（capable）；否则 Abs 优先
-        let symAbs: Abs | undefined;
-        if (isEvalCapable(source, envNames) && filePath) {
-          const evalSym = tryEvalCall(
-            source,
-            filePath,
-            candidate.name,
-            widenedArgsAbs,
-            { envNames, mocks: mockSeedsToAbsMocks(seeds) },
-          );
-          if (evalSym && (evalHosted || !(evalSym.shape.k === "unknown" && !evalSym.term))) {
-            symAbs = evalSym;
-          }
-        }
-        if (!symAbs && !evalHosted) {
-          const absTry = tryEvalAbsRaw(
-            source,
-            candidate.name,
-            widenedArgsAbs,
-            filePath,
-            mockSeedsToAbsMocks(seeds),
-          );
-          const weak =
-            !!absTry &&
-            absTry.shape.k === "unknown" &&
-            (!absTry.term || (absTry.term.op === "lit" && absTry.term.value === undefined));
-          if (absTry && !weak && absTry.shape.k !== "never" && absTry.conf !== "opaque") {
-            symAbs = absTry;
-          }
-        }
-        const symCase: CaseResult = {
-          name: "call@symbolic",
-          argAbs: widenedArgsAbs,
-          // B4：超预算聚合必须 #widened（可解释降级）
-          abs: symAbs
-            ? { ...symAbs, conf: symAbs.conf === "exact" ? "widened" : symAbs.conf }
-            : absUnknown,
-          throwsAbs: neverAbs,
-          source: "callsite",
-          aggregatedFrom: remaining.length,
-        };
-        tryAttachIntension(symCase, source, candidate.name);
-        if (symAbs) attachAbsToIntension(symCase, symAbs, candidate.name);
-        candidate.analysis.cases.push(symCase);
-      }
-      // Combined covers every observed call site (not just the retained
-      // cases), so a large set of same-base literal results collapses to
-      // the widened base type instead of a 20-literal union.
-      candidate.analysis.combinedAbs = collapseAbsLits(
-        records.map((r) => r.resultAbs),
-        COLLAPSE_LITERAL_THRESHOLD,
-      );
+      // 调用点 case 合成（call@ / call@symbolic + combinedAbs）→ cases 文件
+      synthesizeCallSiteCases(caseEnv, candidate, records, callSiteBudget);
       continue;
     }
 
-    const fnNode = resolveFunctionNode(candidate.node);
-    // 入口无约束参数 = any（design-cli-semantics §2）；不是 unknown（推导失败）
-    const argAbsEntry = extractParamNames(fnNode).map(() => anyAbs);
-    // evaluator 唯一求值；失败 fail-closed（entryAbs 保持 undefined）
-    let entryAbs: Abs | undefined;
-    let entryThrowsAbs: Abs = makeAbsVal({ k: "never" }, undefined, undefined, "exact");
-    const entryEffects: MayThrowEffect[] = [];
-    setMayThrowCollector((e) => entryEffects.push(e));
-    try {
-      if (isEvalCapable(source, envNames) && filePath) {
-        const evalEntryFull =
-          tryEvalCallFull(
-            source,
-            filePath,
-            candidate.analysis.name,
-            argAbsEntry,
-            { envNames, mocks: mockSeedsToAbsMocks(seeds), collectMemberDiags: true },
-          ) ??
-          (candidate.assignedName
-            ? tryEvalCallFull(source, filePath, candidate.assignedName, argAbsEntry, {
-                envNames,
-                mocks: mockSeedsToAbsMocks(seeds),
-              })
-            : undefined);
-        if (evalEntryFull?.memberDiags?.length) {
-          for (const d of evalEntryFull.memberDiags) {
-            pushBMemberDiag(d, candidate.analysis.loc.start.line);
-          }
-        }
-        const evalEntry = evalEntryFull?.result;
-        if (evalEntry && (evalHosted || !(evalEntry.shape.k === "unknown" && !evalEntry.term))) {
-          entryAbs = evalEntry;
-          if (evalEntryFull?.throws) entryThrowsAbs = evalEntryFull.throws;
-        }
-      }
-      if (!entryAbs) {
-        if (evalHosted) {
-          entryAbs = absUnknown;
-          entryThrowsAbs = makeAbsVal({ k: "never" }, undefined, undefined, "exact");
-        } else {
-          const absEntry = tryEvalEntryAbs(source, candidate.analysis.name, argAbsEntry, filePath, seeds.seedVars, candidate.assignedName);
-          if (absEntry) {
-            // 任何成功求值（含 any 入参透传）都不回落 unknown（design §2）
-            entryAbs = absEntry;
-            entryThrowsAbs = makeAbsVal({ k: "never" }, undefined, undefined, "exact");
-          } else {
-            // 求值失败才是真 unknown（推导失败），不是入口无约束 any
-            entryAbs = absUnknown;
-            entryThrowsAbs = makeAbsVal({ k: "never" }, undefined, undefined, "exact");
-          }
-        }
-      }
-    } finally {
-      setMayThrowCollector(null);
-    }
-    // throws 域 = hard throw ∪ soft may-throw（any/nullish 成员访问等）
-    const softThrows = mayThrowEffectsToAbs(entryEffects);
-    if (entryThrowsAbs.shape.k === "never" && softThrows.shape.k !== "never") {
-      entryThrowsAbs = softThrows;
-    } else if (entryThrowsAbs.shape.k !== "never" && softThrows.shape.k !== "never") {
-      // 已有 hard throws 时并入 soft（展示层取并集名）
-      const hard = formatThrowsAbs(entryThrowsAbs);
-      const soft = formatThrowsAbs(softThrows);
-      if (hard && soft && hard !== soft) {
-        entryThrowsAbs = makeAbsVal(
-          { k: "sum", members: [entryThrowsAbs, softThrows] },
-          undefined,
-          undefined,
-          "exact",
-        );
-      }
-    }
-    const caseResult: CaseResult = {
-      name: `entry@L${candidate.analysis.loc.start.line}`,
-      argAbs: argAbsEntry,
-      abs: entryAbs,
-      throwsAbs: entryThrowsAbs,
-    };
-    // display 来自 generalize；attachAbs 补无损 abs 字段（后写覆盖 abs/conf）
-    tryAttachIntension(caseResult, source, candidate.analysis.name);
-    attachAbsToIntension(caseResult, entryAbs, candidate.analysis.name);
-    candidate.analysis.cases.push(caseResult);
-    candidate.analysis.entryOnly = true;
-    candidate.analysis.combinedAbs = entryAbs;
-    attachHofSnapshot(candidate.analysis, source);
-    // nudo:interface-entry-only：导出无根且无域（无手写/生成契约 + 无调用点证据）
-    try {
-      const exportNames = localNamedExports(source);
-      const isEntry =
-        exportNames.has(candidate.analysis.name) ||
-        (candidate.assignedName !== undefined && exportNames.has(candidate.assignedName));
-      if (isEntry) {
-        const autoBind = interfaceConfig(
-          findProjectConfig(dirname(filePath))?.config,
-        ).autoBind;
-        const eff = effectiveInterface(source, candidate.analysis.name, {
-          loadModule: loadModule ?? defaultLoadModule,
-          fromFile: filePath,
-          ...(autoBind === false ? { autoBind: false } : {}),
-        });
-        if (!eff) {
-          diagnostics.push({
-            range: {
-              start: candidate.analysis.loc.start,
-              end: candidate.analysis.loc.start,
-            },
-            severity: "info",
-            message: `export '${candidate.analysis.name}' has no contract root and no call-site domain (entry-only)`,
-            code: "nudo:interface-entry-only",
-          });
-        }
-      }
-    } catch {
-      /* 诊断不得打断分析 */
-    }
+    // entry@ 兜底评估（含 may-throw 聚合与 entry-only 诊断）→ cases 文件
+    evaluateEntryCase(caseEnv, candidate);
   }
 
   if (!evalHosted) {

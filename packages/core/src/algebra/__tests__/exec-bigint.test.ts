@@ -10,7 +10,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { transpile, litValue, type Abs } from "@nudojs/core";
+import { transpile, litValue, runTranspiled, callTranspiledExportFull, bigintLit, type Abs } from "@nudojs/core";
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -85,5 +85,41 @@ describe("evaluator BigInt literals", () => {
     expect(r.shape.k).toBe("prim");
     if (r.shape.k === "prim") expect(r.shape.type).toBe("bigint");
     expect(litValue(r)).toEqual({ ok: false });
+  });
+
+  // 原生 ground truth：5n * 1 抛 TypeError: Cannot mix BigInt and other types
+  // （ToNumeric 保型、混型即抛，不是 ToNumber 后的 NaN）。
+  // 回归背景：simplifyTerm 的 x*1 恒等式曾把 bigint 操作数折 lit(NaN)；
+  // term 层不得吞掉混型 TypeError 语义（算术核 foldBigintBinOp 负责抛）。
+  describe("bigint * 1 mixed TypeError", () => {
+    it("5n * 1 evaluates to throws TypeError, result never (not NaN)", () => {
+      const exports = runTranspiled(`export function run() { return 5n * 1; }`, {
+        mode: "analyze",
+      });
+      const r = callTranspiledExportFull(exports, "run", []);
+      expect(r.result.shape.k).toBe("never");
+      expect(r.throws.shape.k).toBe("brand");
+      if (r.throws.shape.k === "brand") expect(r.throws.shape.name).toBe("TypeError");
+    });
+
+    it("1 * 5n likewise throws TypeError", () => {
+      const exports = runTranspiled(`export function run() { return 1 * 5n; }`, {
+        mode: "analyze",
+      });
+      const r = callTranspiledExportFull(exports, "run", []);
+      expect(r.result.shape.k).toBe("never");
+      expect(r.throws.shape.k).toBe("brand");
+      if (r.throws.shape.k === "brand") expect(r.throws.shape.name).toBe("TypeError");
+    });
+
+    it("x * 1 with x bound to 5n still throws TypeError (term substitution path)", () => {
+      const exports = runTranspiled(`export function run(x) { return x * 1; }`, {
+        mode: "analyze",
+      });
+      const r = callTranspiledExportFull(exports, "run", [bigintLit(5n)]);
+      expect(r.result.shape.k).toBe("never");
+      expect(r.throws.shape.k).toBe("brand");
+      if (r.throws.shape.k === "brand") expect(r.throws.shape.name).toBe("TypeError");
+    });
   });
 });

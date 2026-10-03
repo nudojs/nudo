@@ -54,15 +54,13 @@ export {
   type FunctionWithDirectives,
   type SinonExpression,
   type DirectiveDiag,
+  type ExtractDirectivesOpts,
   extractDirectives,
   extractDirectivesQuiet,
   extractFileDirectives,
   extractInlineDirectives,
   parseCaseArgExpr,
-  setDirectiveDiagCollector,
-  takeDirectiveDiags,
-  takeDirectiveDiagsSince,
-  directiveDiagCount,
+  runWithDirectiveDiags,
 } from "./directives.ts";
 
 // D5=F1：指令抽取单源 API 的产品面 re-export（实现住 core directive-scan，

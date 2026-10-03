@@ -100,7 +100,8 @@ face. Renames / signature changes / removals are **minor**, not major.
 | Inlay helpers | `inlay.ts` | IDE experimental wording |
 | Template / denote / language | `template.ts`, `denote.ts`, `language.ts` | experimental rendering |
 | Scan extras | `checkInjectedDomainEvidence`, `listTopFunctions`, … | service analyzer |
-| evaluator collectors | `exec/may-throw.ts`, `exec/member-diag.ts` | host plumbing, not `$op` |
+| evaluator collectors | `exec/may-throw.ts` (re-export face of kernel leaf `algebra/may-throw.ts`), `exec/member-diag.ts` | host plumbing, not `$op` |
+| Collector scope (ALS) | `collector-scope.ts`, `diag-channel.ts` | `runWithCollectorScope` (idempotent analysis-lifetime scope), `createScopedSlot` / `createScopedDiagChannel` + `registerCollectorScopeParticipant` — await-window isolation for module-global collectors / diag channels |
 
 Import rule: hosts use `@nudojs/core/internal`. Do not deep-import `src/*`
 from published packages.

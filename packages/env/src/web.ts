@@ -3,6 +3,7 @@
  */
 
 import { type Abs, type AbsSigImpl, litValue, strLit, numLit } from "@nudojs/core";
+import { absStrLit } from "@nudojs/core/internal";
 import {
   arrOf,
   envFn,
@@ -16,13 +17,6 @@ import {
 import { type EnvDefinition, defineEnv as defineEsEnv } from "./es.ts";
 
 export type { EnvDefinition };
-
-function absStr(a: Abs | undefined): string | undefined {
-  if (!a) return undefined;
-  const vR = litValue(a);
-  const v = vR.ok ? vR.value : undefined;
-  return typeof v === "string" ? v : undefined;
-}
 
 function makeURLObj(url: URL): Abs {
   return objAbs({
@@ -180,8 +174,8 @@ export function defineEnv(): EnvDefinition {
   };
 
   const urlCtorImpl: AbsSigImpl = (args) => {
-    const href = absStr(args[0]);
-    const base = args[1] !== undefined ? absStr(args[1]) : undefined;
+    const href = absStrLit(args[0]);
+    const base = args[1] !== undefined ? absStrLit(args[1]) : undefined;
     if (href === undefined) return undefined;
     try {
       const url = base !== undefined ? new URL(href, base) : new URL(href);

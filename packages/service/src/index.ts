@@ -102,10 +102,10 @@ export {
 } from "./abs-modules-graph.ts";
 
 export {
-  isEvalCapable,
   tryRunEval,
   tryEvalCall,
   tryEvalCallFull,
+  composeEvalModules,
   clearEvalCache,
   evictEvalCacheForFiles,
   trimEvalCache,
@@ -118,6 +118,7 @@ export {
   getEnvHarvestConflictCollector,
   type EnvHarvestConflict,
   type MergeHarvestOptions,
+  type ComposedEvalModules,
   type EvalRunResult,
 } from "./eval-run.ts";
 
@@ -145,6 +146,8 @@ export {
 // check/LSP 执法路径的 autoBind / L2 entry-throws 接线
 export {
   findProjectConfig,
+  evictProjectConfigMemo,
+  projectConfigMemoStats,
   interfaceConfig,
   analysisConfig,
   checkConfig,

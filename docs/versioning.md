@@ -34,7 +34,7 @@ The monorepo root (`nudo-monorepo@0.3.0`) is private and is **not** a publish un
 
 ### `@nudojs/cli` sunset (deprecated forward stub)
 
-`@nudojs/cli` is a **deprecated forward stub** kept only for migration. It forwards the `nudo` bin and module entry to [`nudojs`](https://www.npmjs.com/package/nudojs) and prints a deprecation line on stderr. CHANGELOG already claims it will be unpublished after the first stable 1.0 release train / one beta cycle — the **deadline is explicit and checkable**:
+`@nudojs/cli` is a **deprecated forward stub** kept only for migration. It forwards the `nudo` bin and module entry to [`nudojs`](https://www.npmjs.com/package/nudojs) and prints a deprecation line on stderr — except for version/help probes (`--version` / `-V` / `-v` / `--help` / `-h`, so package-manager bin resolution sees clean stderr) and when `NUDO_SUPPRESS_DEPRECATION=1` is set (scripted migration windows). CHANGELOG already claims it will be unpublished after the first stable 1.0 release train / one beta cycle — the **deadline is explicit and checkable**:
 
 - **Unpublish no later than 30 days after `nudojs@1.0.0` stable** ships on npm `latest`.
 - **Or immediately**, whichever comes first, if npm download data shows only monorepo CI traffic (no third-party installs) — in that case the stub can be removed as soon as the stable train lands.

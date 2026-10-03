@@ -14,7 +14,7 @@
  * buildNodeTypeMap）由 analyzer 显式导出。
  */
 import { dirname } from "node:path";
-import type { Node } from "@babel/types";
+import type { File, Node } from "@babel/types";
 import traverse from "@babel/traverse";
 import {
   type Abs,
@@ -27,8 +27,7 @@ import {
   type InterfaceSource,
   type InterfaceTierOpts,
 } from "@nudojs/core";
-import { sourceHasRequireCall } from "@nudojs/core/internal";
-import { parse, extractDirectives, extractDirectivesQuiet, extractFileDirectives } from "@nudojs/parser";
+import { parse, extractDirectivesQuiet } from "@nudojs/parser";
 import type { FunctionWithDirectives } from "@nudojs/parser";
 import {
   loadEnvs,
@@ -39,14 +38,32 @@ import {
 } from "@nudojs/service/evaluator";
 import { mockDirectivesToAbsSeeds } from "@nudojs/service";
 import { evalAbsModuleGraph, collectAbsBindingsFromGraph } from "@nudojs/service";
-import { isEvalCapable } from "@nudojs/service";
 import {
   resolveModule,
   locFromNode,
   collectEnvNames,
+  type AnalysisResult,
   type CompletionItem,
   type SourceLocation,
 } from "@nudojs/service";
+
+/**
+ * 高频 IDE 入口（hover / completion / signatureHelp）的复用载荷：
+ * - `result`：getCachedOrAnalyze 的 AnalysisResult——提供时绑定查询直接读
+ *   `result.bindings`（analyzeFile 已算过同源 collectAbsBindingsFromGraph），
+ *   不再每次 transpile + new Function 整文件求值；
+ * - `ast`：随条目缓存的文件 AST（cachedAstFor），替代各 helper 内部重复 parse。
+ * 两者都可缺省——缺省时回落旧行为（内部 parse + 全量求值），公共签名不变。
+ */
+export type SurfaceReuse = {
+  result?: AnalysisResult;
+  ast?: File;
+};
+
+/** SurfaceReuse.result.bindings 的单绑定读（缺省安全） */
+function reuseBinding(reuse: SurfaceReuse | undefined, name: string): Abs | undefined {
+  return reuse?.result?.bindings.get(name)?.abs;
+}
 
 export type CaseInfo = {
   functionName: string;
@@ -98,9 +115,10 @@ export async function getAbsAtPositionAsync(
 /** 光标是否落在带 @nudo:case 的函数体内（该区域 hover/inlay 须走 Abs + activeCases）。 */
 function positionInsideCaseFunction(
   source: string,
-  ast: ReturnType<typeof parse>,
+  ast: ReturnType<typeof parse> | undefined,
   line: number,
 ): boolean {
+  if (!ast) return false;
   try {
     const enclosing = findEnclosingFunction(extractDirectivesQuiet(ast), line);
     return !!enclosing && enclosing.directives.some((d) => d.kind === "case");
@@ -112,23 +130,29 @@ function positionInsideCaseFunction(
 /**
  * evaluator 节点表 / 标识符绑定上的无损 Abs（不经 TypeValue）。
  * 用例函数体内返回 null——那里走 case Abs 重放（见 absFromCaseReplay）。
+ * reuse 提供 AnalysisResult 时绑定查询直接读 result.bindings（analyzeFile
+ * 同源产物），跳过 collectAbsBindingsFromGraph 的整文件求值。
  */
 function absFromEval(
   filePath: string,
   source: string,
   line: number,
   column: number,
-  ast: ReturnType<typeof parse>,
-  envNames: string[],
+  ast: ReturnType<typeof parse> | undefined,
+  reuse?: SurfaceReuse,
 ): Abs | null {
-  if (!isEvalCapable(source, envNames)) return null;
-  if (positionInsideCaseFunction(source, ast, line)) return null;
+  if (!ast) return null;
   // fail-closed：节点级 Abs 收集（collectAbsNodeTypes/evalProgramAbs）已删；
   // 仅标识符绑定面（evalAbsModuleGraph 的 collectAbsBindingsFromGraph）
+  if (positionInsideCaseFunction(source, ast, line)) return null;
   try {
-    const seeds = mockDirectivesToAbsSeeds(extractDirectivesQuiet(ast), { fromFile: filePath });
     const ident = findIdentNameAtPosition(source, line, column, ast);
     if (ident) {
+      if (reuse?.result) {
+        // 分析结果同源绑定面：命中即返回；无绑定 = 无信息（不再跑全量求值兜底）
+        return reuseBinding(reuse, ident) ?? null;
+      }
+      const seeds = mockDirectivesToAbsSeeds(extractDirectivesQuiet(ast), { fromFile: filePath });
       const binds = collectAbsBindingsFromGraph(source, filePath, {
         seedVars: seeds.seedVars,
         seedFns: seeds.seedFns as never,
@@ -151,7 +175,7 @@ function absFromCaseReplay(
   _source: string,
   _line: number,
   _column: number,
-  _ast: ReturnType<typeof parse>,
+  _ast?: File,
   _activeCases?: Map<string, number>,
 ): Abs | null {
   return null;
@@ -166,13 +190,11 @@ export function getAbsAtPosition(
   line: number,
   column: number,
   activeCases?: Map<string, number>,
+  reuse?: SurfaceReuse,
 ): Abs | null {
-  const ast = parse(source);
-  const envNames = extractFileDirectives(ast)
-    .filter((d) => d.kind === "env")
-    .flatMap((d) => d.envs);
+  const ast = reuse?.ast ?? parse(source);
 
-  const fromB = absFromEval(filePath, source, line, column, ast, envNames);
+  const fromB = absFromEval(filePath, source, line, column, ast, reuse);
   if (fromB) return fromB;
 
   // 用例函数体：按 activeCases 选中 case 做 Abs 重放
@@ -191,8 +213,9 @@ export function getTypeAtPosition(
   line: number,
   column: number,
   activeCases?: Map<string, number>,
+  reuse?: SurfaceReuse,
 ): Abs | null {
-  return getAbsAtPosition(filePath, source, line, column, activeCases);
+  return getAbsAtPosition(filePath, source, line, column, activeCases, reuse);
 }
 
 export type HoverInfo = {
@@ -233,14 +256,20 @@ export function getHoverAtPosition(
   column: number,
   activeCases?: Map<string, number>,
   opts?: HoverInterfaceOpts,
+  reuse?: SurfaceReuse,
 ): HoverInfo | null {
+  // parse 一次（reuse.ast 优先）；失败 → AST 相关路径全部短路，
+  // 不再 `file ?? parse(source)` 兜底重 parse（确定性失败，纯浪费）
   let file: ReturnType<typeof parse> | undefined;
-  try {
-    file = parse(source);
-  } catch {
-    file = undefined;
+  if (reuse?.ast !== undefined) {
+    file = reuse.ast;
+  } else {
+    try {
+      file = parse(source);
+    } catch {
+      file = undefined;
+    }
   }
-  const envNames = collectEnvNames(filePath, source, false);
   const fnName = findFunctionNameAtPosition(source, line, column, file);
 
   // interface 档（A7）：与 CodeLens 同源；仅导出函数标注
@@ -289,35 +318,17 @@ export function getHoverAtPosition(
 
   // 求值引擎：优先 Abs 节点表 / 标识符绑定，不经 TypeValue evaluateProgram。
   // 用例函数体内：Abs 重放 selected case（activeCases），再 TypeValue 兜底。
-  const insideCaseFn = positionInsideCaseFunction(
-    source,
-    file ?? parse(source),
-    line,
-  );
+  const insideCaseFn = positionInsideCaseFunction(source, file, line);
 
   if (!insideCaseFn) {
-    const fromB = absFromEval(
-      filePath,
-      source,
-      line,
-      column,
-      file ?? parse(source),
-      envNames,
-    );
+    const fromB = absFromEval(filePath, source, line, column, file, reuse);
     if (fromB) {
       const absLine = formatAbs(fromB);
       const absMulti = formatAbsMultiline(fromB, undefined);
       return attachIntension({ typeText: absLine, abs: absLine, absMultiline: absMulti });
     }
   } else {
-    const fromCase = absFromCaseReplay(
-      filePath,
-      source,
-      line,
-      column,
-      file ?? parse(source),
-      activeCases,
-    );
+    const fromCase = absFromCaseReplay(filePath, source, line, column, file, activeCases);
     if (fromCase) {
       const absLine = formatAbs(fromCase);
       const absMulti = formatAbsMultiline(fromCase, undefined);
@@ -325,8 +336,11 @@ export function getHoverAtPosition(
     }
   }
 
-  // Abs 兜底
-  const absFallback = getAbsAtPosition(filePath, source, line, column, activeCases);
+  // Abs 兜底（同源 reuse：不再内部重复 parse + 全量求值）
+  const absFallback = getAbsAtPosition(filePath, source, line, column, activeCases, {
+    ...(reuse?.result !== undefined ? { result: reuse.result } : {}),
+    ...(file !== undefined ? { ast: file } : {}),
+  });
   if (absFallback) {
     const absLine = formatAbs(absFallback);
     const absMulti = formatAbsMultiline(absFallback, undefined);
@@ -337,10 +351,18 @@ export function getHoverAtPosition(
   // evaluator 绑定来自调用点，会盖住 activeCases 重放结果。
   const ident = findIdentNameAtPosition(source, line, column, file);
   if (ident && !fnName && !insideCaseFn) {
-    try {
-      // 经模块图（相对 + 裸包）求 Abs 绑定
-      if (isEvalCapable(source, []) || !sourceHasRequireCall(source)) {
-        const seeds = mockDirectivesToAbsSeeds(extractDirectivesQuiet(file ?? parse(source)), {
+    if (reuse?.result) {
+      // 同源绑定面：分析结果命中即返回；无绑定 = 无信息
+      const absBound = reuseBinding(reuse, ident);
+      if (absBound) {
+        const absLine = formatAbs(absBound);
+        const absMulti = formatAbsMultiline(absBound, ident);
+        return attachIntension({ typeText: absLine, abs: absLine, absMultiline: absMulti });
+      }
+    } else if (file) {
+      try {
+        // 经模块图（相对 + 裸包）求 Abs 绑定
+        const seeds = mockDirectivesToAbsSeeds(extractDirectivesQuiet(file), {
           fromFile: filePath,
         });
         const absBinds = collectAbsBindingsFromGraph(source, filePath, {
@@ -353,9 +375,9 @@ export function getHoverAtPosition(
           const absMulti = formatAbsMultiline(absBound, ident);
           return attachIntension({ typeText: absLine, abs: absLine, absMultiline: absMulti });
         }
+      } catch {
+        // fail-closed：绑定面求值失败 → 不产出 Abs（不拖垮 hover）
       }
-    } catch {
-      // fail-closed：绑定面求值失败 → 不产出 Abs（不拖垮 hover）
     }
   }
 
@@ -529,18 +551,19 @@ export function getCompletionsAtPosition(
   source: string,
   line: number,
   column: number,
+  reuse?: SurfaceReuse,
 ): CompletionItem[] {
   const textBefore = getTextBeforePosition(source, line, column);
   const dotMatch = textBefore.match(/(\w+)\.\s*\w*$/);
-  if (!dotMatch) return getVariableCompletions(filePath, source);
+  if (!dotMatch) return getVariableCompletions(filePath, source, reuse);
 
   const objName = dotMatch[1];
 
-  const safeSource = sanitizeSourceForParsing(source);
-
+  // 成员补全的接收者解析用「尾点消毒」源码（与原 source 内容不同）；
+  // reuse.ast 只对原文成立，这里保持独立 parse（parseSource 自带 LRU）
   let ast;
   try {
-    ast = parse(safeSource);
+    ast = parse(sanitizeSourceForParsing(source));
   } catch {
     try {
       ast = parse(source);
@@ -551,6 +574,15 @@ export function getCompletionsAtPosition(
 
   // Abs 接收者优先：模块图绑定无损，不经 TypeValue evaluateProgram。
   // 空结果（unknown/never/fn 无属性）再落 TypeValue 兜底。
+  if (reuse?.result) {
+    // 同源绑定面：直接读 analyzeFile 的 bindings，不再整文件求值
+    const bound = reuseBinding(reuse, objName);
+    if (bound && bound.shape.k !== "unknown" && bound.shape.k !== "never") {
+      const absCompletions = getCompletionsForAbs(bound);
+      if (absCompletions.length > 0) return absCompletions;
+    }
+    return [];
+  }
   try {
     const seeds = mockDirectivesToAbsSeeds(extractDirectivesQuiet(ast), { fromFile: filePath });
     const binds = collectAbsBindingsFromGraph(source, filePath, {
@@ -580,7 +612,25 @@ function getTextBeforePosition(source: string, line: number, column: number): st
   return lines[line - 1].slice(0, column);
 }
 
-function getVariableCompletions(filePath: string, source: string): CompletionItem[] {
+function getVariableCompletions(
+  filePath: string,
+  source: string,
+  reuse?: SurfaceReuse,
+): CompletionItem[] {
+  if (reuse?.result) {
+    // 同源绑定面（analyzeFile bindings）：不再 parse + 整文件求值
+    const completions: CompletionItem[] = [];
+    for (const [name, info] of reuse.result.bindings) {
+      if (name.startsWith("__export_")) continue;
+      completions.push({
+        label: name,
+        kind: info.abs.shape.k === "fn" ? "method" : "variable",
+        detail: absDetail(info.abs),
+      });
+    }
+    if (completions.length > 0) return completions;
+    return [];
+  }
   const ast = parse(source);
 
   // Abs 模块图绑定优先（无损；detail 经外延桥保持既有文案）

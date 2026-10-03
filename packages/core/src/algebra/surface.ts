@@ -22,8 +22,8 @@ import {
 } from "./pred.ts";
 import { implies } from "./pred.ts";
 import { add, sub } from "./arithmetic.ts";
-import { NudoThrow } from "./exec/nudo-throw.ts";
-import { errorTypeAbs, recordMayThrow } from "./exec/may-throw.ts";
+import { NudoThrow } from "./nudo-throw.ts";
+import { errorTypeAbs, recordMayThrow } from "./may-throw.ts";
 
 // --- 位运算 / 移位 / 幂 / ToNumber（evaluator $bitand 等运算符路由） ---
 

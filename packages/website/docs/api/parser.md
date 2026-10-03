@@ -261,15 +261,15 @@ Parses a directive type expression into an Abs — the product grammar is constr
 | <a id="classmemberkeyname"></a>`classMemberKeyName` | fn | `key.name ?? key.value` on a class/object member key. | `classMemberKeyName(member: Node \| null \| undefined): string \| number \| undefined` |
 | <a id="directive"></a>`Directive` | type | — | `Directive = CaseDirective \| MockDirective \| PureDirective \| SkipDirective \| SampleDirective` |
 | <a id="directivediag"></a>`DirectiveDiag` | type | — | `DirectiveDiag = { code: string; message: string }` |
-| <a id="directivediagcount"></a>`directiveDiagCount` | fn | 当前诊断累计序号（since 锚：消费方只排干自身 extract 产生的增量） | `directiveDiagCount(): number` |
 | <a id="envdirective"></a>`EnvDirective` | type | — | `EnvDirective = { kind: "env"; envs: string[]; }` |
 | <a id="exportspecifierexportedname"></a>`exportSpecifierExportedName` | fn | ExportSpecifier exported name (`exported.name ?? exported.value`). | `exportSpecifierExportedName( spec: Node \| null \| undefined, ): string \| number \| undefined` |
 | <a id="exportspecifierlocalname"></a>`exportSpecifierLocalName` | fn | ExportSpecifier local name — Identifier only (matches `local.name`). | `exportSpecifierLocalName(spec: Node \| null \| undefined): string \| undefined` |
-| <a id="extractdirectives"></a>`extractDirectives` | fn | D6=G2：指令绑定 AST 最近 Function（含 nested function、class method）。 | `extractDirectives(ast: Node): FunctionWithDirectives[]` |
-| <a id="extractdirectivesquiet"></a>`extractDirectivesQuiet` | fn | 纯查询 extract：排干自身产生的指令文法诊断增量并丢弃—— hover/completion/collectSkipReturns 等探测路径不得把诊断留在全局 buffer 供在途 validate/check 误窃，也不得自己背走别人的在途诊断。 | `extractDirectivesQuiet(ast: Node): FunctionWithDirectives[]` |
+| <a id="extractdirectives"></a>`extractDirectives` | fn | D6=G2：指令绑定 AST 最近 Function（含 nested function、class method）。 | `extractDirectives( ast: Node, opts?: ExtractDirectivesOpts, ): FunctionWithDirectives[]` |
+| <a id="extractdirectivesopts"></a>`ExtractDirectivesOpts` | type | extractDirectives 显式诊断通道 opts。 | `ExtractDirectivesOpts = { diags?: DirectiveDiag[]; }` |
+| <a id="extractdirectivesquiet"></a>`extractDirectivesQuiet` | fn | 纯查询 extract：诊断丢弃——hover/completion/collectSkipReturns 等探测 路径不产诊断（不污染消费方待收的诊断，也不背走别人的在途诊断）。 | `extractDirectivesQuiet(ast: Node): FunctionWithDirectives[]` |
 | <a id="extractfiledirectives"></a>`extractFileDirectives` | fn | — | `extractFileDirectives(ast: Node): FileDirective[]` |
 | <a id="extractfileenvnames"></a>`extractFileEnvNames` | const | — | — |
-| <a id="extractinlinedirectives"></a>`extractInlineDirectives` | fn | — | `extractInlineDirectives(node: Node): InlineDirective[]` |
+| <a id="extractinlinedirectives"></a>`extractInlineDirectives` | fn | 行内指令（@nudo:as / @nudo:replace）抽取，源为节点的 leadingComments。 | `extractInlineDirectives( node: Node, opts?: ExtractDirectivesOpts, ): InlineDirective[]` |
 | <a id="extractmockmodulerecords"></a>`extractMockModuleRecords` | const | — | — |
 | <a id="extractnudoimportrecords"></a>`extractNudoImportRecords` | const | — | — |
 | <a id="filedirective"></a>`FileDirective` | type | — | `FileDirective = EnvDirective \| MockModuleDirective` |
@@ -311,17 +311,15 @@ Parses a directive type expression into an Abs — the product grammar is constr
 | <a id="programbody"></a>`programBody` | fn | Top-level statements of a File/Program (empty when neither). | `programBody(ast: Node \| File \| Program \| null \| undefined): Statement[]` |
 | <a id="puredirective"></a>`PureDirective` | type | — | `PureDirective = { kind: "pure"; }` |
 | <a id="replacedirective"></a>`ReplaceDirective` | type | — | `ReplaceDirective = { kind: "replace"; targetSource: string; typeAbs: Abs; }` |
+| <a id="runwithdirectivediags"></a>`runWithDirectiveDiags` | fn | 在指定诊断数组上执行 fn：fn 内所有指令文法诊断（含不传 diags 的 extract 与再解析路径，如 @nudo:mock 表达式的 parseCaseArgExpr 复解析）落袋并共用 同一去重域——用于「extract + 复解析」必须共享 seen 的窗口（nudojs check 的 D1 段）。fn 内显式传 diags 的 extract 自成新去重域。 | `runWithDirectiveDiags<T>(diags: DirectiveDiag[], fn: () => T): T` |
 | <a id="sampledirective"></a>`SampleDirective` | type | — | `SampleDirective = { kind: "sample"; count: number; }` |
 | <a id="scanbudgetdecl"></a>`scanBudgetDecl` | const | — | — |
 | <a id="scancasetags"></a>`scanCaseTags` | const | — | — |
 | <a id="scancontractsegments"></a>`scanContractSegments` | const | — | — |
 | <a id="scanthrowsdecl"></a>`scanThrowsDecl` | const | — | — |
-| <a id="setdirectivediagcollector"></a>`setDirectiveDiagCollector` | fn | — | `setDirectiveDiagCollector(fn: ((d: DirectiveDiag) => void) \| null): void` |
 | <a id="sinonexpression"></a>`SinonExpression` | type | — | `SinonExpression = { type: "stub" \| "spy" \| "mock"; returnValue?: Abs; resolvedValue?: Abs; rejectedValue?: Abs; }` |
 | <a id="skipdirective"></a>`SkipDirective` | type | — | `SkipDirective = { kind: "skip"; returns?: Abs; }` |
 | <a id="striptypes"></a>`stripTypes` | const | — | — |
-| <a id="takedirectivediags"></a>`takeDirectiveDiags` | fn | 取走已收集的诊断（全量排干 + 清空 seen）——CLI/测试整批消费 | `takeDirectiveDiags(): DirectiveDiag[]` |
-| <a id="takedirectivediagssince"></a>`takeDirectiveDiagsSince` | fn | 只取走 seq &gt; since 的诊断（清空仅限增量）——对齐 takeInterfaceDiagsSince。 | `takeDirectiveDiagsSince(since: number): DirectiveDiag[]` |
 | <a id="unwrapdefaultexport"></a>`unwrapDefaultExport` | fn | CJS/ESM default interop: callable module or `{ default }` wrapper. | `unwrapDefaultExport<T>(mod: T \| { default: T }): T` |
 | <a id="unwrapexport"></a>`unwrapExport` | fn | Unwrap an export form: named/default exports yield their inner declaration with `exported: true`; any other statement is returned as-is with `exported: false`. | `unwrapExport(node: Node \| null \| undefined)` |
 <!-- NUDO-API-SKELETON:END -->

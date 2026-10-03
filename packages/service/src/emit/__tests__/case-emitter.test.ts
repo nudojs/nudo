@@ -5,17 +5,16 @@ import { describe, it, expect } from "vitest";
 import {
   type Abs,
   abs as makeAbs,
-  lit as termLit,
   num,
   str,
   bool,
-  numLit,
-  strLit,
   absFunction,
   joinAbs,
   litValue,
   formatShape,
 } from "@nudojs/core";
+// 字面量助手单源：core/internal 的 absLit（env/harvester 同源，见 kernel-merge.md）
+import { absLit } from "@nudojs/core/internal";
 import { parse, extractDirectives, parseCaseArgExpr, type CaseDirective } from "@nudojs/parser";
 import {
   serializeCaseArg,
@@ -32,22 +31,6 @@ function absExact(shape: Abs["shape"]): Abs {
 
 function absUnknown(): Abs {
   return makeAbs({ k: "unknown" }, undefined, undefined, "partial");
-}
-
-function absNullLit(): Abs {
-  return makeAbs({ k: "unknown" }, termLit(null), undefined, "exact");
-}
-
-function absUndefLit(): Abs {
-  return makeAbs({ k: "unknown" }, termLit(undefined), undefined, "exact");
-}
-
-function absLit(v: string | number | boolean | null | undefined): Abs {
-  if (typeof v === "number") return numLit(v);
-  if (typeof v === "string") return strLit(v);
-  if (typeof v === "boolean") return makeAbs({ k: "prim", type: "boolean" }, termLit(v), undefined, "exact");
-  if (v === null) return absNullLit();
-  return absUndefLit();
 }
 
 function absUnion(members: Abs[]): Abs {

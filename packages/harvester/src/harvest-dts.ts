@@ -6,9 +6,6 @@ import {
   abs as makeAbs,
   lit as termLit,
   v as termVar,
-  numLit,
-  strLit,
-  boolLit,
   objOf,
   joinAbs,
   relationFn,
@@ -16,6 +13,7 @@ import {
   substAbs,
   formatShape,
 } from "@nudojs/core";
+import { absLit } from "@nudojs/core/internal";
 
 /**
  * Harvested env：Abs 原生（与 EnvDefinition 同形）。
@@ -114,15 +112,6 @@ function absNullLit(): Abs {
 
 function absUndefLit(): Abs {
   return makeAbs({ k: "unknown" }, termLit(undefined), undefined, "exact");
-}
-
-function absLit(value: string | number | boolean | bigint | null | undefined): Abs {
-  if (typeof value === "number") return numLit(value);
-  if (typeof value === "string") return strLit(value);
-  if (typeof value === "boolean") return boolLit(value);
-  if (typeof value === "bigint") return absPrim("bigint");
-  if (value === null) return absNullLit();
-  return absUndefLit();
 }
 
 function absArr(element: Abs): Abs {

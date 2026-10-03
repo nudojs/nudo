@@ -6,7 +6,6 @@ import {
   $arr,
   litValue,
 } from "@nudojs/core";
-import { isEvalCapable } from "@nudojs/service";
 
 describe("evaluator rest parameters", () => {
   it("collects rest into $arr", () => {
@@ -44,12 +43,5 @@ export function restLen(a, ...rest) {
     expect(litValue(first($lit(9)) as never)).toEqual({ ok: true, value: 9 });
     expect(litValue(restLen($lit(9)) as never)).toEqual({ ok: true, value: 0 });
     expect(litValue(restLen($lit(9), $lit(1), $lit(2)) as never)).toEqual({ ok: true, value: 2 });
-  });
-});
-
-describe("B-primary capable files", () => {
-  it("isEvalCapable allows require now", () => {
-    expect(isEvalCapable("function f(x) { return x + 1; }")).toBe(true);
-    expect(isEvalCapable("const x = require('y');")).toBe(true);
   });
 });

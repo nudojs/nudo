@@ -152,6 +152,11 @@ Escape hatch: `package.json#nudo.analysis.mode` = `"directives"` \| `"all"`.
 Default flips that silence or invent diagnostics are **major** on 1.x (already
 recorded in `docs/versioning.md` fix-2).
 
+Host settings (VS Code `nudo.analysis.mode` via `initializationOptions` /
+`workspace/didChangeConfiguration` `settings.nudo.analysis.mode`) provide the
+default mode **only when the project package.json does not pin it** — the
+project value always wins.
+
 Coverage pins (A8):
 
 - `packages/service/src/__tests__/config-analysis.test.ts` — full `AnalysisConfig`

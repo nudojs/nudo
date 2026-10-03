@@ -43,13 +43,16 @@ function seedFnsToMocks(
 
 export type AbsLoadModule = (spec: string, fromFile: string) => string | undefined;
 
-/** 相对说明符 → 源码（与 defaultLoadModule 同一扩展名/入口候选表） */
-export function defaultAbsLoadModule(spec: string, fromFile: string): string | undefined {
+/** 相对/绝对说明符 → 首个可读候选（路径 + 内容一次读出）；无命中 undefined */
+function readFirstRel(
+  spec: string,
+  fromFile: string,
+): { path: string; content: string } | undefined {
   if (!spec.startsWith(".") && !spec.startsWith("/")) return undefined;
   try {
     for (const cand of moduleResolveCandidates(spec, fromFile)) {
       try {
-        return readFileSync(cand, "utf-8");
+        return { path: cand, content: readFileSync(cand, "utf-8") };
       } catch {
         /* next */
       }
@@ -60,17 +63,13 @@ export function defaultAbsLoadModule(spec: string, fromFile: string): string | u
   }
 }
 
+/** 相对说明符 → 源码（与 defaultLoadModule 同一扩展名/入口候选表） */
+export function defaultAbsLoadModule(spec: string, fromFile: string): string | undefined {
+  return readFirstRel(spec, fromFile)?.content;
+}
+
 function resolveRel(spec: string, fromFile: string): string | null {
-  if (!spec.startsWith(".") && !spec.startsWith("/")) return null;
-  for (const cand of moduleResolveCandidates(spec, fromFile)) {
-    try {
-      readFileSync(cand, "utf-8");
-      return cand;
-    } catch {
-      /* next */
-    }
-  }
-  return null;
+  return readFirstRel(spec, fromFile)?.path ?? null;
 }
 
 function importSpecs(source: string): string[] {
@@ -216,8 +215,19 @@ export type AbsGraphOptions = {
 };
 
 /** 单条本地依赖的内容指纹：解析后稳定路径 + 求值时源码的 hashSource
- * （与 loadModuleDepsFingerprint 同一 hash 口径，DESIGN-002 不另起第二套）。 */
-export type AbsModuleDepFingerprint = { path: string; hash: string };
+ * （与 loadModuleDepsFingerprint 同一 hash 口径，DESIGN-002 不另起第二套）。
+ * via = 装载询问证据（求值装载该依赖所用 spec/fromFile 对，无条件记录——
+ * 该对恒已知，且 fresh 求值同一口径下 loader（若有）会被问同一对）：子树
+ * 复核在当前调用带 custom loader 时按它重问 loader——loader 覆写内容
+ * （LSP 未保存 buffer）对磁盘 stat 不可见，只按磁盘比对既会陈旧（buffer
+ * A→B 磁盘未动 / loader 新近接管）也会永久 miss（虚拟内容 ≠ 磁盘但稳定）。
+ * 条目不存 loader 引用：当前世界由当前调用的 loader 定义。缺省 = 防御性
+ * 兼容（磁盘复核，不问 loader）。 */
+export type AbsModuleDepFingerprint = {
+  path: string;
+  hash: string;
+  via?: { spec: string; fromFile: string };
+};
 
 /** 会话级依赖模块缓存条目：自身 stat 指纹 + 子树内容指纹 + 导出 + 子树装载 issue。 */
 export type AbsModuleCacheEntry = {
@@ -225,14 +235,17 @@ export type AbsModuleCacheEntry = {
   size: number;
   /**
    * 插入时实际求值源码（loadModule 返回或磁盘回读）的内容 hash。
-   * 条目自身的命中校验仍按 stat；此值供父模块组合子树指纹复用——
-   * 父模块插入时对已命中的子依赖不再做第二次磁盘读。
+   * custom loader 接管本路径时，条目自身的命中校验即按此 hash（loader 当前
+   * 内容复核——stat 对 loader 覆写内容磁盘盲）；loader 不接手 / 默认 loader
+   * 仍按 stat。此值亦供父模块组合子树指纹复用——父模块插入时对已命中的
+   * 子依赖不再做第二次磁盘读。
    */
   contentHash: string;
   /**
-   * 传递本地依赖闭包（自身除外）的 path → 内容 hash（DESIGN-002）。
-   * 命中时逐项 readFileSync + hashSource 复核：任一翻转或读失败 → miss
-   * 重求值——任何下游文件内容变更（含 stat 不可见的同 size 编辑）都会
+   * 传递本地依赖闭包（自身除外）的 path → 内容 hash + 装载询问证据
+   * （DESIGN-002，loader 感知复核见 depFingerprintCurrent）。命中时逐项
+   * 取「当前装载内容」比对 hash：任一翻转或取失败 → miss 重求值——任何
+   * 下游文件内容变更（含 stat 不可见的同 size 编辑 / loader 覆写）都会
    * 翻转中间模块条目。子树不可追踪（环进行中 / depth 截断 / 依赖缺失）
    * 的模块不进会话缓存（fail-closed）。
    */
@@ -245,8 +258,16 @@ export type AbsModuleCacheEntry = {
 /**
  * 跨入口复用的依赖模块缓存（LSP 脏传播重验 N 个入口、共享同一依赖树时，
  * 避免每个入口重复 parse + 抽象求值全部依赖）。键为解析后的绝对路径，
- * 命中条件 = 自身 stat（mtimeMs+size）严格相等 **且** 子树内容指纹逐项复核
- * 通过（DESIGN-002）——传递依赖内容变更由指纹自然失效，宿主无需逐出中间模块；
+ * 命中条件 = 自身指纹 **且** 子树内容指纹逐项复核通过（DESIGN-002）：自身
+ * 指纹默认按 stat（mtimeMs+size）严格相等；custom loader（opts.loadModule）
+ * 接管本路径时改按「loader 当前内容 hash == contentHash」——loader 覆写
+ * 内容（LSP 未保存 buffer）磁盘 stat 不可见，stat 命中会陈旧返回旧导出；
+ * loader 不接手（undefined / 抛错）回落 stat。子树指纹同口径 loader 感知：
+ * 依赖条目带装载询问证据（via.spec/fromFile）时按原询问对重问当前 loader
+ * 比对，loader 不接手回落磁盘（depFingerprintCurrent）——loader 覆写传递
+ * 依赖且磁盘未动不再陈旧，虚拟内容稳定也不再永久 miss。custom loader 命中
+ * 因此每依赖多一次 loader 取内容（内存串，成本低；宁冷勿陈旧）。传递依赖
+ * 内容变更由指纹自然失效，宿主无需逐出中间模块；
  * 条目自身的「同 size + 同 mtime」编辑仍是残余缺口（见设计文档 §3.1），
  * 删除经 evictAbsModuleCacheFiles / clearAbsModuleCache 逐出
  * （删除即使不逐出也自愈：stat / 指纹读抛错走 miss）。
@@ -278,21 +299,33 @@ export function evictAbsModuleCacheFiles(paths: string[]): void {
 }
 
 /**
- * 子树内容指纹复核（DESIGN-002）：对条目记录的每个传递依赖读当前磁盘内容
- * 并 hashSource 比对。成本与已追踪的依赖闭包成正比——每文件一次 read+hash，
- * 无重解析 / 无重求值 / 无图遍历。读失败（依赖被删）或 hash 翻转 → false
- * （miss 重求值：删除场景重求值会重新报 missing，而不是重放旧 issue）。
- * 自定义 loader 返回虚拟内容时与磁盘不一致 → 永久 miss（fail-closed 安全方向）。
+ * 子树内容指纹复核（DESIGN-002，loader 感知）：对条目记录的每个传递依赖取
+ * 「当前装载内容」并 hashSource 比对——当前装载内容按求值同一口径取：当前
+ * 调用带 custom loader 且条目带装载询问证据（via.spec/fromFile）→ 先按原
+ * 询问对重问 loader（loader 覆写内容对磁盘 stat 不可见：磁盘比对既会陈旧
+ * ——buffer A→B 磁盘未动，也会永久 miss——虚拟内容 ≠ 磁盘但稳定）；loader
+ * 不接手（undefined）→ 该依赖此刻本就从磁盘装载，回落磁盘读取。无 custom
+ * loader（默认路径）纯磁盘读取——与历史行为逐字节一致，stat 快路径语义
+ * 不动。成本与已追踪的依赖闭包成正比——每文件一次取内容+hash（loader 为
+ * 内存串），无重解析 / 无重求值 / 无图遍历。读失败（依赖被删）/ loader 抛错
+ * / hash 翻转 → false（miss 重求值：删除场景重求值会重新报 missing，而不是
+ * 重放旧 issue；宁冷勿陈旧）。
  */
-function depFingerprintCurrent(deps: AbsModuleDepFingerprint[]): boolean {
+function depFingerprintCurrent(
+  deps: AbsModuleDepFingerprint[],
+  customLoad: AbsLoadModule | undefined,
+): boolean {
   for (const d of deps) {
-    let src: string;
+    let src: string | undefined;
     try {
-      src = readFileSync(d.path, "utf-8");
+      src =
+        customLoad && d.via
+          ? (customLoad(d.via.spec, d.via.fromFile) ?? readFileSync(d.path, "utf-8"))
+          : readFileSync(d.path, "utf-8");
     } catch {
       return false;
     }
-    if (hashSource(src) !== d.hash) return false;
+    if (src === undefined || hashSource(src) !== d.hash) return false;
   }
   return true;
 }
@@ -485,6 +518,10 @@ export function evalAbsModuleGraph(
   opts: AbsGraphOptions = {},
 ): AbsModuleGraphResult {
   const load = opts.loadModule ?? defaultAbsLoadModule;
+  // 命中校验分叉开关：opts.loadModule 存在（custom loader，LSP buffer 等）时
+  // 条目自身按 loader 内容复核；缺省（默认 loader）保持 stat 快路径（见
+  // evalDep 命中段）——注意判据是 opts 而非 load（load 恒为函数）。
+  const customLoad = opts.loadModule;
   const maxDepth = opts.maxDepth ?? 16;
   const cache = new Map<string, AbsModuleExports>();
   const loading: string[] = [];
@@ -497,11 +534,14 @@ export function evalAbsModuleGraph(
   const issueFlow: AbsModuleLoadIssue[] = [];
   // 本轮求值内各依赖模块的子树指纹元数据（DESIGN-002）：命中条目从缓存条目
   // 回填，新求值模块组合自直接本地依赖（已含各依赖的传递闭包）——父模块
-  // 组合零额外 I/O。null = 子树不可追踪（环进行中 / depth 截断 / 依赖缺失），
-  // 向上传播 fail-closed：不可追踪的模块不进会话缓存（宁冷勿陈旧）。
+  // 组合零额外 I/O。via = 本模块自身的装载询问对（无条件记录：fresh 求值
+  // 同一口径下 loader（若有）会被问同一对，含此前未接手的接管方向）。
+  // null = 子树不可追踪（环进行中 / depth 截断 / 依赖缺失），向上传播
+  // fail-closed：不可追踪的模块不进会话缓存（宁冷勿陈旧）。
   const depMeta = new Map<
     string,
-    { contentHash: string; depFingerprints: AbsModuleDepFingerprint[] } | null
+    | { contentHash: string; depFingerprints: AbsModuleDepFingerprint[]; via?: { spec: string; fromFile: string } }
+    | null
   >();
 
   const pushIssue = (kind: AbsModuleLoadIssue["kind"], label: string, reason: string) => {
@@ -529,28 +569,57 @@ export function evalAbsModuleGraph(
       return cache.get(absPath) ?? { named: {} };
     }
 
-    // 会话缓存命中（自身 stat 严格相等 + 子树内容指纹逐项复核）：跳过重读
+    // 会话缓存命中：自身指纹 + 子树内容指纹（DESIGN-002）逐项复核，跳过重读
     // 重解析；byPath 也回填完整导出。指纹翻转（任何传递依赖内容变更）→
-    // 删条目走 miss 重求值（DESIGN-002）。
+    // 删条目走 miss 重求值。自身指纹按 loader 分叉：custom loader（LSP 未保存
+    // buffer 等）对「磁盘存在 + loader 覆写内容」磁盘盲——stat 相等不代表
+    // loader 内容未变，改按「loader 当前内容 hash == 插入时实际求值源码 hash」
+    // 复核（宁冷勿陈旧）；loader 不接手该路径（undefined）→ 求值源码本来自
+    // 磁盘，回落 stat。默认 loader（无 opts.loadModule）保持 stat 快路径，
+    // 不退化为每依赖内容读。
     const shared = absModuleCache.get(absPath);
+    // 命中校验已向 loader 取过的内容：miss 后重装载直接复用（同参同时刻），
+    // 不对同一 loader 二次调用。
+    let preloaded: string | undefined;
     if (shared) {
+      let hit = false;
       try {
-        const st = statSync(absPath);
-        if (
-          st.mtimeMs === shared.mtimeMs &&
-          st.size === shared.size &&
-          depFingerprintCurrent(shared.depFingerprints)
-        ) {
-          for (const iss of shared.issues) pushIssue(iss.kind, iss.label, iss.reason);
-          cache.set(absPath, shared.exports);
-          depMeta.set(absPath, {
-            contentHash: shared.contentHash,
-            depFingerprints: shared.depFingerprints,
-          });
-          return shared.exports;
+        const viaLoader = customLoad?.(spec, fromFile);
+        if (viaLoader !== undefined) {
+          preloaded = viaLoader;
+          hit = hashSource(viaLoader) === shared.contentHash;
+        } else {
+          const st = statSync(absPath);
+          hit = st.mtimeMs === shared.mtimeMs && st.size === shared.size;
+          // custom loader 在场但当前不接管该路径：条目可能是 loader 时期的
+          // 覆写内容（如 LSP buffer 未保存即关闭回退磁盘），stat 只证明磁盘
+          // 未动、不证明条目内容 == 磁盘内容——补内容 hash 复核（宁冷勿陈旧；
+          // 读出的磁盘内容进 preloaded，miss 重装载复用不二次读盘）。
+          // 默认 loader（无 opts.loadModule）插入内容本就来自磁盘，保持纯
+          // stat 快路径（DESIGN-002），不退化为每依赖内容读。
+          if (hit && customLoad) {
+            preloaded = readFileSync(absPath, "utf8");
+            hit = hashSource(preloaded) === shared.contentHash;
+          }
         }
+        // 子树复核同口径 loader 感知：带装载证据的传递依赖按原询问对重问
+        // 当前 loader（depFingerprintCurrent）——loader 覆写传递依赖且磁盘
+        // 未动时，自身指纹双双通过也不得陈旧命中。
+        if (hit) hit = depFingerprintCurrent(shared.depFingerprints, customLoad);
       } catch {
-        /* 文件已删除 → 指纹失效，走 miss 重新装载 */
+        /* 文件已删除 / loader 抛错 → 指纹失效，走 miss 重新装载 */
+      }
+      if (hit) {
+        for (const iss of shared.issues) pushIssue(iss.kind, iss.label, iss.reason);
+        cache.set(absPath, shared.exports);
+        // via 无条件记录（装载询问对）：本轮 loader 未接手不代表后续调用
+        // 的 loader 不接管——父条目复核按当前 loader 重问同一对。
+        depMeta.set(absPath, {
+          contentHash: shared.contentHash,
+          depFingerprints: shared.depFingerprints,
+          via: { spec, fromFile },
+        });
+        return shared.exports;
       }
       absModuleCache.delete(absPath);
     }
@@ -572,14 +641,26 @@ export function evalAbsModuleGraph(
     cache.set(absPath, placeholder);
     loading.push(absPath);
 
-    const source = load(spec, fromFile) ?? (() => {
-      // A3：裸包入口用已解析的绝对路径读源（load 只认 import 说明符）
+    // 装载询问证据（via）：本模块求值装载所用的 spec/fromFile 对——无论内容
+    // 出自 loader 还是磁盘都记录：fresh 求值同一口径下 loader（若有）会被问
+    // 同一对（含此前未接手的接管方向）；条目不存 loader 引用，当前世界由
+    // 当前调用的 loader 定义。customLoad 存在且 load 返回内容 → 内容出自
+    // loader（load === customLoad）；返回 undefined → 磁盘 readFileSync 回落。
+    let source: string | undefined = preloaded;
+    const viaLoadPair: { spec: string; fromFile: string } = { spec, fromFile };
+    if (source === undefined) {
+      const loaded = load(spec, fromFile);
+      if (loaded !== undefined) source = loaded;
+    }
+    if (source === undefined) {
+      // A3：裸包入口用已解析的绝对路径读源（load 只认 import 说明符）；
+      // preloaded = 命中校验已取过的 loader 内容，复用不再二次调用
       try {
-        return readFileSync(absPath, "utf-8");
+        source = readFileSync(absPath, "utf-8");
       } catch {
-        return undefined;
+        source = undefined;
       }
-    })();
+    }
     if (source === undefined) {
       pushIssue(
         "missing",
@@ -644,7 +725,14 @@ export function evalAbsModuleGraph(
       }
       if (!seenDep.has(depPath)) {
         seenDep.add(depPath);
-        depFingerprints.push({ path: depPath, hash: meta.contentHash });
+        // 直接依赖的本体条目：带上子依赖本轮的装载询问证据（via）——复核时
+        // 按原 spec/fromFile 重问 loader；传递闭包条目（下方 for）原样传播，
+        // 其 via 由更深的装载轮次记录。
+        depFingerprints.push(
+          meta.via
+            ? { path: depPath, hash: meta.contentHash, via: meta.via }
+            : { path: depPath, hash: meta.contentHash },
+        );
       }
       for (const e of meta.depFingerprints) {
         if (seenDep.has(e.path)) continue;
@@ -652,7 +740,9 @@ export function evalAbsModuleGraph(
         depFingerprints.push(e);
       }
     }
-    const subtree = untrackable ? null : { contentHash: hashSource(source), depFingerprints };
+    const subtree = untrackable
+      ? null
+      : { contentHash: hashSource(source), depFingerprints, via: viaLoadPair };
     depMeta.set(absPath, subtree);
 
     let fingerprint: { mtimeMs: number; size: number } | undefined;

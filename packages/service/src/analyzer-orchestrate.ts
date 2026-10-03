@@ -7,6 +7,7 @@
  *   - analyzer-orchestrate-uncached.ts  analyzeFileUncached / UncachedInner
  */
 import { dirname } from "node:path";
+import { runWithCollectorScope } from "@nudojs/core/internal";
 import { findProjectConfig, interfaceConfig, analysisConfig } from "./evaluator/config.ts";
 import { noteEnvPathDeps } from "./env-path-deps.ts";
 import { preloadPathEnvs } from "./evaluator/env-loader.ts";
@@ -45,13 +46,17 @@ export async function analyzeFileAsync(
   /** 默认 all（库/测试兼容）；check/IDE 宿主应传 none（惰性 case） */
   caseMode: DirectiveCaseMode = "all",
 ): Promise<AnalysisResult> {
-  const envNames = collectEnvNames(filePath, source, true);
-  // path-based @nudo:env / mock-module 反向边（watch 失效）
-  noteEnvPathDeps(filePath, source);
-  if (envNames.length > 0) {
-    await preloadPathEnvs(envNames, dirname(filePath));
-  }
-  return analyzeFile(filePath, source, activeCases, externalCallRecords, loadModule, caseMode);
+  // collector 作用域须在 await preloadPathEnvs 之前打开：预载触发的诊断/collector
+  // 落进本次分析的 store，不与 await 窗口交错的其它分析串台（幂等：嵌套复用）。
+  return runWithCollectorScope(async () => {
+    const envNames = collectEnvNames(filePath, source, true);
+    // path-based @nudo:env / mock-module 反向边（watch 失效）
+    noteEnvPathDeps(filePath, source);
+    if (envNames.length > 0) {
+      await preloadPathEnvs(envNames, dirname(filePath));
+    }
+    return analyzeFile(filePath, source, activeCases, externalCallRecords, loadModule, caseMode);
+  });
 }
 
 /**
@@ -74,38 +79,42 @@ export function analyzeFile(
   loadModule?: AnalyzeLoadModule,
   caseMode: DirectiveCaseMode = "all",
 ): AnalysisResult {
-  const projectConfig = findProjectConfig(dirname(filePath));
-  const cfg = analysisConfig(projectConfig?.config);
-  const projectEnvNames = projectConfig?.config.env ?? [];
-  const autoBind = interfaceConfig(projectConfig?.config).autoBind;
-  const k = analysisFileCacheKey(
-    filePath,
-    source,
-    activeCases,
-    externalCallRecords,
-    cfg,
-    loadModule,
-    projectEnvNames,
-    autoBind !== false,
-    caseMode,
-  );
-  if (!k.noCache) {
-    const hit = analysisCacheGet<AnalysisResult>(k.filePath, k.source, k.auxKey);
-    if (hit !== undefined) {
-      return cloneAnalysisResult(hit);
+  // collector 作用域（幂等）：分析的 collector 安装点在此内层——同步入口同样
+  // 先开作用域；嵌套（checkSource / analyzeFileAsync 外层）零开销复用。
+  return runWithCollectorScope(() => {
+    const projectConfig = findProjectConfig(dirname(filePath));
+    const cfg = analysisConfig(projectConfig?.config);
+    const projectEnvNames = projectConfig?.config.env ?? [];
+    const autoBind = interfaceConfig(projectConfig?.config).autoBind;
+    const k = analysisFileCacheKey(
+      filePath,
+      source,
+      activeCases,
+      externalCallRecords,
+      cfg,
+      loadModule,
+      projectEnvNames,
+      autoBind !== false,
+      caseMode,
+    );
+    if (!k.noCache) {
+      const hit = analysisCacheGet<AnalysisResult>(k.filePath, k.source, k.auxKey);
+      if (hit !== undefined) {
+        return cloneAnalysisResult(hit);
+      }
     }
-  }
-  const result = analyzeFileUncached(
-    filePath,
-    source,
-    activeCases,
-    externalCallRecords,
-    loadModule,
-    caseMode,
-  );
-  if (!k.noCache) {
-    analysisCacheSet(k.filePath, k.source, k.auxKey, result);
-  }
-  return cloneAnalysisResult(result);
+    const result = analyzeFileUncached(
+      filePath,
+      source,
+      activeCases,
+      externalCallRecords,
+      loadModule,
+      caseMode,
+    );
+    if (!k.noCache) {
+      analysisCacheSet(k.filePath, k.source, k.auxKey, result);
+    }
+    return cloneAnalysisResult(result);
+  });
 }
 

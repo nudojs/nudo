@@ -13,6 +13,10 @@ import type { Abs } from "../abs.ts";
 import { abs } from "../abs.ts";
 import { recordMayThrow } from "./may-throw.ts";
 import { isNullProtoObj } from "../objects.ts";
+import {
+  createScopedSlot,
+  registerCollectorScopeParticipant,
+} from "../collector-scope.ts";
 
 export type EvalMemberDiag = {
   kind: "method" | "property";
@@ -27,7 +31,13 @@ export type EvalMemberDiag = {
   code?: string;
 };
 
-let memberDiagCollector: ((d: EvalMemberDiag) => void) | null = null;
+/** 成员缺失诊断 collector（作用域化：runWithCollectorScope 内各分析互不串台；
+ *  无作用域 = fallback 模块级单变量，行为同今日） */
+const memberDiagCollectorSlot = createScopedSlot<
+  ((d: EvalMemberDiag) => void) | null
+>(() => null);
+registerCollectorScopeParticipant((body) => memberDiagCollectorSlot.runScoped(body));
+
 const callLocStack: Array<{ line: number; column: number }> = [];
 /** 实参 Abs → 字面量源位置（$callNamed 按 argLocs 打标） */
 const absOrigins = new WeakMap<object, { line: number; column: number }>();
@@ -46,8 +56,8 @@ export function getAbsOrigin(a: Abs | undefined): { line: number; column: number
 export function setMemberDiagCollector(
   c: ((d: EvalMemberDiag) => void) | null,
 ): ((d: EvalMemberDiag) => void) | null {
-  const prev = memberDiagCollector;
-  memberDiagCollector = c;
+  const prev = memberDiagCollectorSlot.get();
+  memberDiagCollectorSlot.set(c);
   return prev;
 }
 
@@ -60,6 +70,7 @@ export function popCallLoc(): void {
 }
 
 export function recordMemberDiag(d: EvalMemberDiag): void {
+  const memberDiagCollector = memberDiagCollectorSlot.get();
   if (!memberDiagCollector) return;
   const origin = d.origin ?? callLocStack[callLocStack.length - 1];
   try {

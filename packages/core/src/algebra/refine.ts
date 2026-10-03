@@ -26,6 +26,9 @@ import { stripStringsKeepComments } from "./code-text.ts";
 // leaf 模块：load-deps-fp.ts 已 import 本文件（extractNudoImports），
 // 反向 import 会成环——路径函数从 sidecar-path.ts 单源取用
 import { isNodeModulesPath, resolveDepPath } from "./sidecar-path.ts";
+// 诊断 side-channel 共享原语（与 interface 通道同一实现，leaf 无环）
+import { createScopedDiagChannel } from "./diag-channel.ts";
+import { registerCollectorScopeParticipant } from "./collector-scope.ts";
 // D5=F1：指令抽取单源在 directive-scan.ts（G2 作用域 + 文法），本文件只消费
 import {
   extractNudoImportRecords,
@@ -86,45 +89,36 @@ export function extractNudoImports(source: string): NamedImport[] {
 /** refine 侧车加载诊断（severity 由消费方按 code 定档，形状对齐 Issue 子集） */
 export type RefineDiag = { code: string; message: string; file?: string };
 
-let refineDiagCollector: ((d: RefineDiag) => void) | null = null;
-let refineDiagSeq = 0;
-const refineDiags: Array<{ seq: number; d: RefineDiag }> = [];
 /** 防长会话无界增长；消费方 takeRefineDiags 按批取走 */
 const MAX_REFINE_DIAGS = 1024;
+/** 诊断 side-channel 单一定义：diag-channel.ts 共享原语（seq/since 语义见彼处）。
+ *  作用域化：runWithCollectorScope 内空缓冲/seq 归零——交错分析的条目
+ *  不再混进同一缓冲（await 窗口偷诊断根因）；无作用域 = fallback 全局通道。 */
+const refineDiagChannel = createScopedDiagChannel<RefineDiag>(MAX_REFINE_DIAGS);
+registerCollectorScopeParticipant((body) => refineDiagChannel.runScoped(body));
 
 /** 设置诊断观察者（null 清除）；缓冲照常累积，takeRefineDiags 取走 */
 export function setRefineDiagCollector(fn: ((d: RefineDiag) => void) | null): void {
-  refineDiagCollector = fn;
+  refineDiagChannel.setCollector(fn);
 }
 
 /** 当前诊断累计序号（since 锚） */
 export function refineDiagCount(): number {
-  return refineDiagSeq;
+  return refineDiagChannel.count();
 }
 
 /** 取走已收集的诊断（收集即清空） */
 export function takeRefineDiags(): RefineDiag[] {
-  const out = refineDiags.map((e) => e.d);
-  refineDiags.length = 0;
-  return out;
+  return refineDiagChannel.take();
 }
 
 /** 只取走 seq > since 的增量（工具面防窃取在途诊断；全量 take 的 since 版） */
 export function takeRefineDiagsSince(since: number): RefineDiag[] {
-  const out: RefineDiag[] = [];
-  let kept = 0;
-  for (const e of refineDiags) {
-    if (e.seq > since) out.push(e.d);
-    else refineDiags[kept++] = e;
-  }
-  refineDiags.length = kept;
-  return out;
+  return refineDiagChannel.takeSince(since);
 }
 
 function collectDiag(d: RefineDiag): void {
-  if (refineDiags.length >= MAX_REFINE_DIAGS) refineDiags.shift();
-  refineDiags.push({ seq: ++refineDiagSeq, d });
-  refineDiagCollector?.(d);
+  refineDiagChannel.emit(d);
 }
 
 /** 侧车模块错误：code ∈ nudo:interface-cycle | nudo:interface-load */

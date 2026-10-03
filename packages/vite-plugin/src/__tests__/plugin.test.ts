@@ -1,9 +1,34 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Plugin } from "vite";
 import nudoPlugin, { type NudoPluginOptions } from "../index.ts";
+
+// checkSource 崩溃注入（BUG-023 回归）：vi.hoisted 让 vi.mock 工厂可读写
+// 状态；默认透传真实实现，既有用例行为不变。注意：vite-node 的模块
+// namespace 导出不可枚举（`{...actual}` 会得到空模块），必须按
+// getOwnPropertyNames 逐键拷贝再覆盖 checkSource。
+const checkGate = vi.hoisted(() => ({
+  shouldThrow: false,
+  errorMessage: "injected assembly failure",
+  calls: [] as string[],
+}));
+
+vi.mock("@nudojs/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@nudojs/core")>();
+  const mock: Record<string, unknown> = Object.create(null);
+  const source = actual as unknown as Record<string, unknown>;
+  for (const key of Object.getOwnPropertyNames(source)) {
+    mock[key] = source[key];
+  }
+  mock.checkSource = (...args: Parameters<typeof actual.checkSource>) => {
+    checkGate.calls.push(args[0]);
+    if (checkGate.shouldThrow) throw new Error(checkGate.errorMessage);
+    return actual.checkSource(...args);
+  };
+  return mock;
+});
 
 /** Vite hooks may be fn or ObjectHook{handler}; tests need a direct callable. */
 function hookFn(h: unknown): (...args: never[]) => unknown {
@@ -212,5 +237,72 @@ export function getName(user) {
 
     const excluded = { include: ["**/*.js"], exclude: ["snapshots"] };
     expect(await wasAnalyzed("/src/snapshots/old.js", excluded)).toBe(false);
+  });
+});
+
+describe("vite-plugin-nudo check pipeline failures (BUG-023)", () => {
+  // 稳定进入 check 面（导出入口）；与上方用例同源
+  const entrySource = `
+export function getName(user) {
+  return user.name;
+}
+`;
+
+  beforeEach(() => {
+    checkGate.calls.length = 0;
+    checkGate.shouldThrow = false;
+  });
+
+  it("checkSource 抛错时构建有 warning 且不崩（不静默吞错）", async () => {
+    checkGate.shouldThrow = true;
+    const plugin = nudoPlugin();
+    const warnFn = vi.fn();
+    const errorFn = vi.fn();
+    const ctx = { warn: warnFn, error: errorFn };
+
+    const result = await transformOf(plugin).call(ctx, entrySource, "/test/check-crash.js");
+
+    // 门禁崩溃不得让 transform 崩、也不得静默：插件上下文 warn（非 console）
+    expect(result).toBeNull();
+    const msgs = warnFn.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(msgs).toMatch(/check failed for .*check-crash\.js: injected assembly failure/);
+    // failOnError 默认 false：崩溃降级 warn，不红构建
+    expect(errorFn).not.toHaveBeenCalled();
+  });
+
+  it("checkSource 抛错 + failOnError=true 时用 this.error 红构建", async () => {
+    checkGate.shouldThrow = true;
+    const plugin = nudoPlugin({ failOnError: true });
+    const warnFn = vi.fn();
+    // 真实 Rollup/Vite 语义：this.error 抛出 RollupError
+    const errorFn = vi.fn((m: string) => {
+      throw new Error(m);
+    });
+    const ctx = { warn: warnFn, error: errorFn };
+
+    await expect(
+      transformOf(plugin).call(ctx, entrySource, "/test/check-crash.js"),
+    ).rejects.toThrow(/check failed for .*check-crash\.js/);
+    expect(errorFn).toHaveBeenCalled();
+  });
+
+  it("同一 build 会话内未变文件不重跑 check 推断链（会话缓存）", async () => {
+    const plugin = nudoPlugin();
+    const ctx = { warn: vi.fn(), error: vi.fn() };
+    const transform = transformOf(plugin);
+    const counted = () => checkGate.calls.filter((f) => f === "/test/cache-hit.js").length;
+
+    await transform.call(ctx, entrySource, "/test/cache-hit.js");
+    expect(counted()).toBe(1);
+
+    // 重复 transform 同一 source（如 client/SSR 双环境）：命中缓存不重跑
+    await transform.call(ctx, entrySource, "/test/cache-hit.js");
+    expect(counted()).toBe(1);
+    // 诊断照常回放（缓存只省推断，不省上报）
+    expect((ctx.warn as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(0);
+
+    // source 变更 → 缓存 miss，重新检查
+    await transform.call(ctx, entrySource.replace("user.name", "user.id"), "/test/cache-hit.js");
+    expect(counted()).toBe(2);
   });
 });

@@ -12,8 +12,9 @@
 import type { Abs, Shape } from "./abs.ts";
 import { litValue } from "./abs.ts";
 import type { Phi, Pred } from "./pred.ts";
-import { pTrue, implies } from "./pred.ts";
+import { pTrue, implies, predToString } from "./pred.ts";
 import { termEquals } from "./term.ts";
+import type { Term } from "./term.ts";
 import type { AstEnv } from "./ast-env.ts";
 import { getClassChain } from "./language.ts";
 import { getSlot } from "./objects.ts";
@@ -110,34 +111,23 @@ function leqPred(src: Abs, tgt: Abs, phi: Phi, depth: number): LeqResult {
     // 源无约束但目标有：数值界用 bounds 粗判；否则不蕴含
     // 保守：仅当目标 pred 在 phi 下已被蕴含才 ok
     if (implies(phi, tp)) return ok();
-    return fail(`pred ⊭ ${predBrief(tp)}`);
+    return fail(`pred ⊭ ${predToString(tp)}`);
   }
   const combined: Phi =
     phi.op === "true" ? sp : { op: "and", args: [phi, sp] };
   if (implies(combined, tp)) return ok();
   // 数值界：src 更严可赋给更宽目标（x>5 ≤ x>0）
   if (numericBoundsImply(sp, tp)) return ok();
-  return fail(`pred ⊭ ${predBrief(tp)}`);
+  return fail(`pred ⊭ ${predToString(tp)}`);
 }
 
-function predBrief(p: Pred): string {
-  switch (p.op) {
-    case "gt":
-    case "ge":
-    case "lt":
-    case "le":
-    case "eq":
-    case "ne":
-      return p.op;
-    default:
-      return p.op;
-  }
-}
+/** gt/ge/lt/le 单比较 pred（a/b 两侧均为 Term） */
+type CmpPred = Extract<Pred, { op: "gt" | "ge" | "lt" | "le" }>;
 
 /** 数值界蕴含：src 的界更紧则可赋给更宽 tgt */
 function numericBoundsImply(src: Pred, tgt: Pred): boolean {
   // 单比较：x > n_src ⇒ x > n_tgt 当 n_src ≥ n_tgt（gt）；对称处理 ge
-  const one = (p: Pred): p is Extract<Pred, { op: "gt" | "ge" | "lt" | "le" }> =>
+  const one = (p: Pred): p is CmpPred =>
     p.op === "gt" || p.op === "ge" || p.op === "lt" || p.op === "le";
   if (!one(src) || !one(tgt)) return false;
   if (src.op !== tgt.op) {
@@ -160,26 +150,17 @@ function numericBoundsImply(src: Pred, tgt: Pred): boolean {
   return sb <= tb; // 更小的上界 ⇒ 更大的上界
 }
 
-function sameTermSide(
-  a: { a: { op: string }; b: { op: string } },
-  b: { a: { op: string }; b: { op: string } },
-): boolean {
+function sameTermSide(a: CmpPred, b: CmpPred): boolean {
   // termEquals 走结构比较，避免 sum×sum 场景 JSON.stringify 爆炸
-  return a.a.op === b.a.op && termEquals(a.a as never, b.a as never);
+  return termEquals(a.a, b.a);
 }
 
-function litGE(
-  a: { op: string; value?: unknown },
-  b: { op: string; value?: unknown },
-): boolean {
+function litGE(a: Term, b: Term): boolean {
   if (a.op !== "lit" || b.op !== "lit") return false;
   return typeof a.value === "number" && typeof b.value === "number" && a.value >= b.value;
 }
 
-function litLE(
-  a: { op: string; value?: unknown },
-  b: { op: string; value?: unknown },
-): boolean {
+function litLE(a: Term, b: Term): boolean {
   if (a.op !== "lit" || b.op !== "lit") return false;
   return typeof a.value === "number" && typeof b.value === "number" && a.value <= b.value;
 }

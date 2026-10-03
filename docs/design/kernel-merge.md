@@ -74,6 +74,53 @@ parser ──▶ core
 - **algebra 无 fs/path**：模块解析、harvest、scan 在 service/cli/scripts。
 - **scripts 不进 `packages/*/src`**。
 - **core 不依赖 parser 包**（`parseSource` 用 `@babel/parser` + `stripTypes`）。
+- **内核不 import exec/**：Abs 代数是内核、exec 是引擎消费者——import 图上
+  algebra/*.ts 不得 `from "./exec/…"`。throw 原语定居内核叶子
+  `algebra/nudo-throw.ts`（NudoThrow 载荷）与 `algebra/may-throw.ts`
+  （may-throw 效果收集 / errorTypeAbs / L2 过滤器；依赖仅 `abs.ts` +
+  `node:async_hooks`）；arithmetic / surface / methods / builtins/* 直接消费
+  叶子。`exec/nudo-throw.ts`、`exec/may-throw.ts` 仅作 re-export 面保留
+  （runtime/*、check*、internal.ts 既有路径不断；transpile 协议注入的
+  `$`op 经 `rt.ts` 绑定表解析，与二者无关）。exec/→algebra/ 的正向边
+  （如 `exec/call.ts` import `objects/hof`）是引擎消费内核，保留。
+
+## Collector 作用域（ALS）
+
+- **动机**：collector / 诊断通道曾是模块级单变量 + set→finally→restore 配对；
+  同步路径单线程下正确，但宿主 async 入口存在 await 窗口——LSP
+  `validateText`、`analyzeFileAsync` 的 path-env preload、`emitInterface` 的
+  `await analyzeFileAsync`。两轮「await 窗口偷诊断」事故根因相同：交错分析
+  共享同一缓冲 / collector（since 锚只缓解全量 take 变体）。
+- **机制**（单一定义：`algebra/collector-scope.ts` + `algebra/diag-channel.ts`，
+  把 may-throw.ts / member-diag.ts 的 ALS 先例抽成共享原语，
+  经 `@nudojs/core/internal` 导出）：
+  - `createScopedSlot`：模块级 fallback + ALS store；无作用域时读写
+    fallback（行为与收敛前逐位一致），公共 setter/getter 签名不变；既有
+    save/restore 在作用域内写最内层 store，配对语义继续正确。
+  - `createScopedDiagChannel`：作用域内空缓冲、seq 归零（锚与缓冲是消费方
+    私有），观察者继承。
+  - `runWithCollectorScope`：幂等（ALS 标记）；最外层调用为全部注册参与者
+    开 store，嵌套 / 同异步链调用直接执行 body；async 续体沿 ALS 继承，
+    交错分析各开各的。plain 槽开作用域时继承当前值（嵌套语义 = 今日模块
+    全局）。
+- **入口包裹**（粒度 = 一次完整分析的 collector 生命周期）：core
+  `checkSource` / `runTranspiled` / `callTranspiledExportFull`；service
+  `tryRunEval` / `tryEvalCallFull` / `tryEvalCall` / `analyzeFile` /
+  `analyzeFileAsync`（先于 preload await）/ `emitInterface`；lsp
+  `validateText`。new Function 求值路径（transpile 注入的 runtime 在同步
+  调用链上）继承 ALS 上下文，跨帧读 collector 正确。
+
+| 状态 | 状态点 | 理由 |
+|---|---|---|
+| 已收敛 | refine / interface 诊断通道；interface 侧车加载失败去重表；evalCall / evalAssign collector；bindingSink；absTruncation collector；memberDiag collector；evalFallback collector；implicationOracle；derivation 会话（collector / 节点表 / id 序号）；envHarvestConflict collector（service） | 跨 await 存活的分析态，必须随作用域隔离 |
+| 保留 | 调用 / fork 预算计数器与 `@nudo:budget` 上限；phi 栈 / armOverlays / forkTouchedStack / yieldStack / genPathSensitive / genJoinOverride；`_fb*` 回落计数器；ID 序号（symbolIdSeq / fnCallIdSeq / moduleMapIdSeq / nextLoadModuleId / leakCounter / classEpoch / truncDepsSeq）；缓存 / memo（check-memo、hash-source、pureMemo / pureCallMemo、objectProtoSingleton）；may-throw.ts；member-diag 的 evalMissingSlot；service analysis-session `defaultSession` / session-cache-limits | 预算与各栈是严格同步调用栈生命周期，await 窗口必为空 / 已恢复；`_fb*` 是进程级 health 指标、刻意累计；ID 序号跨分析唯一性是语义；缓存 / memo 按内容键、无害共享；may-throw.ts 与 evalMissingSlot 已有各自 ALS 会话（`runWithMayThrowSession` / `runWithEvalMissingSlot`）；`defaultSession` 是进程级配置、非分析态（setter 仅测试使用），session-cache-limits 是 env 纯函数读取 |
+
+> 历史残留行已清空：parser `directiveDiags` side-channel 缓冲已删除退役
+> （2026-10，@nudojs/parser major）——诊断通道唯一形态为显式
+> `extractDirectives(ast, { diags })` / `runWithDirectiveDiags(fn)`，仓库内
+> 消费方（nudojs check D1 等）已全部迁移。parser 的字面量助手已并轨
+> `@nudojs/core/internal` 的 `absLit` 单源（parser 本就依赖
+> `@nudojs/core`，见上方分层图，旧「不得引入 parser→core 依赖」表述作废）。
 
 ## 执行模型与信任边界
 

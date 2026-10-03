@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runTranspiled, callTranspiledExport, $lit, litValue } from "@nudojs/core";
-import { tryEvalCall, isEvalCapable, analyzeFile } from "@nudojs/service";
+import { tryEvalCall, analyzeFile } from "@nudojs/service";
 import { formatShape } from "@nudojs/core";
 
 const dirs: string[] = [];
@@ -62,13 +62,6 @@ export function run(n) { return triple(n); }
     expect(formatShape(c!.abs)).toBe("12");
     // 求值引擎应挂上 intension
     expect(c!.intension?.abs ?? c!.intension?.display).toBeTruthy();
-  });
-
-  it("isEvalCapable allows class, async, and require; rejects env", () => {
-    expect(isEvalCapable("function f() { return 1; }")).toBe(true);
-    expect(isEvalCapable("class A { constructor() { this.x = 1; } }")).toBe(true);
-    expect(isEvalCapable("async function f() { return 1; }")).toBe(true);
-    expect(isEvalCapable("const x = require('lodash');")).toBe(true);
   });
 
   it("object slots holding functions become first-class Abs fns (no raw JS leak)", () => {

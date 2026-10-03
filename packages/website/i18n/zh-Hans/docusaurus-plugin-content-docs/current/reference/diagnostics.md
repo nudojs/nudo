@@ -275,6 +275,12 @@ Context: [分析预算](../guides/performance.md#分析预算)
 
 Context: [分析预算](../guides/performance.md#分析预算)
 
+### `nudo:math-fold-error` {#nudo-math-fold-error}
+
+分析期某个 Math 原生折叠抛错（宿主篡改或分叉的 `Math.*`）；结果拓宽为 `number`。**info**。保持分析代码中的 `Math.*` 内建不被改写，或用 `@nudo:mock` 打桩——非阻断。
+
+Context: [模拟外部依赖](../concepts/mocking.md)
+
 ### `nudo:host-effect-blocked` {#nudo-host-effect-blocked}
 
 宿主副作用函数（`fetch` / `XMLHttpRequest` / `WebSocket` / `EventSource` / `setTimeout` / `setInterval` / `setImmediate` / `queueMicrotask` / `requestAnimationFrame` / `requestIdleCallback`）在分析期不真实执行——真实执行会以 Abs 实参发起网络 I/O 或排真实定时器。结果拓宽为 `unknown#opaque`。**info**。用 `@nudo:mock` / `@nudo:env` 打桩，或从调用点喂入值。

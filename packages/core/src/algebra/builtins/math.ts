@@ -18,6 +18,7 @@ import { currentExecPhi } from "../exec/runtime/state.ts";
 import { numPrim } from "./shared.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs } from "../exec/may-throw.ts";
+import { noteAbsTruncation, MATH_FOLD_ERROR_LABEL } from "../call-budget.ts";
 
 /**
  * Math 算子实参：ToNumber（clz32/imul 走 ToInt32/ToUint32 由原生完成）。
@@ -271,6 +272,8 @@ export function evalMathMethod(name: string, args: Abs[]): Abs | undefined {
       try {
         return numLit((name === "min" ? Math.min : Math.max)(...nums));
       } catch {
+        // 原生折叠抛错（宿主篡改 Math.* 等）：拓宽为 number 必须可观测
+        noteAbsTruncation(MATH_FOLD_ERROR_LABEL);
         return numPrim();
       }
     }
@@ -297,6 +300,8 @@ export function evalMathMethod(name: string, args: Abs[]): Abs | undefined {
                 : Math.trunc(n),
         );
       } catch {
+        // 原生折叠抛错（宿主篡改 Math.* 等）：拓宽为 number 必须可观测
+        noteAbsTruncation(MATH_FOLD_ERROR_LABEL);
         return numPrim();
       }
     }
@@ -324,6 +329,8 @@ export function evalMathMethod(name: string, args: Abs[]): Abs | undefined {
     // 由原生自身处理，与 ToNumber 语义一致
     return numLit(impl(...nums));
   } catch {
+    // 原生折叠抛错（宿主篡改 Math.* 等）：拓宽为 number 必须可观测
+    noteAbsTruncation(MATH_FOLD_ERROR_LABEL);
     return numPrim();
   }
 }

@@ -7,8 +7,13 @@ import {
   evictEvalCacheForFiles,
   setSessionCacheLimits,
   resetSessionCacheLimitState,
+  clearAbsModuleCache,
 } from "@nudojs/service";
+import { callTranspiledExport } from "../eval-run.ts";
 import { litValue } from "@nudojs/core";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 afterEach(() => clearEvalCache());
 
@@ -69,5 +74,110 @@ describe("evalRunCache LRU order (BUG-012)", () => {
     expect(r2).toBeDefined();
     expect(r2).not.toBe(r1); // 重算（新对象），而非陈旧命中（同一缓存对象）
     expect(getEvalCacheSize()).toBe(1); // 写路径关闭：不新增条目
+  });
+});
+
+describe("evalRunCache dimension keys: lenientGlobals / maxLoopIters 不得互命中", () => {
+  it("different lenientGlobals must not cross-hit the same entry", () => {
+    const src = `export function f() { return 7; }\n`;
+    const file = "/test/dim-lenient.js";
+    const a = tryRunEval(src, file, { mode: "exec", lenientGlobals: true });
+    const b = tryRunEval(src, file, { mode: "exec", lenientGlobals: false });
+    expect(a).toBeDefined();
+    expect(b).toBeDefined();
+    // 非 lenient 调用点发现口径不得命中 lenient 条目（反之亦然）
+    expect(b).not.toBe(a);
+    // 同口径自命中：重算后写入的条目对同参调用生效
+    const b2 = tryRunEval(src, file, { mode: "exec", lenientGlobals: false });
+    expect(b2).toBe(b);
+  });
+
+  it("different maxLoopIters must not cross-hit (budget changes the result)", () => {
+    // 50 次循环：默认预算(8)截断得 8；预算 60 得精确 50
+    const src = `let s = 0;
+for (let i = 0; i < 50; i++) { s = s + 1; }
+export function f() { return s; }
+`;
+    const file = "/test/dim-iters.js";
+    const big = tryRunEval(src, file, { mode: "exec", maxLoopIters: 60 });
+    expect(big).toBeDefined();
+    expect(litValue(callTranspiledExport(big!.exports, "f", []))).toEqual({
+      ok: true,
+      value: 50,
+    });
+    // 默认预算：必须重算（得 8），而非命中预算 60 的条目（陈旧 50）
+    const def = tryRunEval(src, file, { mode: "exec" });
+    expect(def).toBeDefined();
+    expect(def).not.toBe(big);
+    expect(litValue(callTranspiledExport(def!.exports, "f", []))).toEqual({
+      ok: true,
+      value: 8,
+    });
+  });
+});
+
+describe("evalRunCache mode slots: analyze / exec 互不逐出", () => {
+  it("analyze and exec coexist per path; evict clears both slots", () => {
+    const src = `export function f() { return 1; }\n`;
+    const file = "/test/mode-slot.js";
+    const a = tryRunEval(src, file); // analyze（默认）
+    const e = tryRunEval(src, file, { mode: "exec" });
+    expect(a).toBeDefined();
+    expect(e).toBeDefined();
+    expect(e).not.toBe(a);
+    expect(getEvalCacheSize()).toBe(2);
+    // exec 采集（collectCallRecords 口径）不得踢掉 analyze 条目
+    expect(tryRunEval(src, file)).toBe(a);
+    expect(tryRunEval(src, file, { mode: "exec" })).toBe(e);
+    // 依赖逐出：两种 mode 槽一并清
+    expect(evictEvalCacheForFiles([file])).toBe(2);
+    expect(getEvalCacheSize()).toBe(0);
+  });
+});
+
+describe("tryRunEval/tryEvalCall loadModule passthrough", () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const d of dirs) rmSync(d, { recursive: true, force: true });
+    dirs.length = 0;
+    clearEvalCache();
+    clearAbsModuleCache();
+  });
+
+  it("in-memory loader content drives evaluation; depKey separates it from disk content", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-loader-pass-"));
+    dirs.push(dir);
+    writeFileSync(join(dir, "dep.js"), `export const v = 100;\n`);
+    const src = `import { v } from "./dep.js";\nexport function f() { return v + 1; }\n`;
+    const file = join(dir, "main.js");
+    writeFileSync(file, src);
+
+    // 虚拟 loader（如 LSP 未保存 buffer）：同路径返回不同内容
+    const buffer = (v: number) => (spec: string) =>
+      spec === "./dep.js" ? `export const v = ${v};\n` : undefined;
+
+    const runA = tryRunEval(src, file, { loadModule: buffer(41) });
+    expect(runA).toBeDefined();
+    expect(litValue(callTranspiledExport(runA!.exports, "f", []))).toEqual({
+      ok: true,
+      value: 42,
+    });
+    // 同 loader 同内容：缓存命中（同一结果对象）
+    const runA2 = tryRunEval(src, file, { loadModule: buffer(41) });
+    expect(runA2).toBe(runA);
+
+    // tryEvalCall 透传 loader：求值走 loader 内容而非磁盘
+    const r1 = tryEvalCall(src, file, "f", [], { loadModule: buffer(41) });
+    expect(litValue(r1!)).toEqual({ ok: true, value: 42 });
+
+    // 无 loader → depKey 变化（磁盘内容）→ 不得命中 loader 条目
+    clearAbsModuleCache();
+    const runB = tryRunEval(src, file);
+    expect(runB).toBeDefined();
+    expect(runB).not.toBe(runA);
+    expect(litValue(callTranspiledExport(runB!.exports, "f", []))).toEqual({
+      ok: true,
+      value: 101,
+    });
   });
 });
