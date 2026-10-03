@@ -30,7 +30,7 @@ function callFull(
   src: string,
   fnName: string,
   args: unknown[],
-  mode: "run" | "analyze" = "analyze",
+  mode: "exec" | "analyze" = "analyze",
 ) {
   const exports = runTranspiled(src, { mode });
   return callTranspiledExportFull(exports, fnName, args as never[]);
