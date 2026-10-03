@@ -11,28 +11,48 @@ slug: /releases-history
 
 | 包 | 当前版本 |
 |----|----------|
-| `@nudojs/core` | 1.7.1 |
-| `@nudojs/service` | 1.6.1 |
-| `nudojs (CLI)` | 1.3.2 |
-| `@nudojs/parser` | 1.3.2 |
-| `@nudojs/lsp` | 1.3.2 |
-| `@nudojs/env` | 0.4.16 |
-| `@nudojs/harvester` | 0.3.2 |
-| `vite-plugin-nudo` | 0.4.17 |
-| `nudo-vscode` | 0.3.21 |
+| `@nudojs/core` | 1.7.2 |
+| `@nudojs/service` | 1.6.2 |
+| `nudojs (CLI)` | 1.3.3 |
+| `@nudojs/parser` | 2.0.0 |
+| `@nudojs/lsp` | 1.4.0 |
+| `@nudojs/env` | 0.4.17 |
+| `@nudojs/harvester` | 0.3.3 |
+| `vite-plugin-nudo` | 0.4.18 |
+| `nudo-vscode` | 0.3.22 |
 
 **按包跳转:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.7.1 {#pkg-core}
+## @nudojs/core 1.7.2 {#pkg-core}
+
+## 1.7.2
+
+### Patch Changes
+
+- 446914f: fix(core): analyze 模式顶层剥离（stripEffectfulTopLevel）改结构化——Babel 解析 transpile 产物、按顶层语句整条剥除，替代行级正则 + `endsWith(";")`/括号计数启发式。修复三类实证误剥：① 多行语句回调体内行以 `;`/`}` 结尾提前终止跳过 → 语句尾悬空 `new Function` SyntaxError（如顶层 `setTimeout(fn, 100)`，整模块 fail-closed）；② 字符串/模板字面量里的未配对 `(`（如 `"fetch("`）被计入 `$for`/`$fork` 括号平衡 → 连带误删后续顶层 `export function`（导出静默 unknown）；③ 列 0 的 `catch (` 头匹配「未知全局调用」正则 → 顶层 try/catch 一律被剥成悬空块。剥除口径零变更（`$callNamed` 未知全局、`$for`/`$fork`/`$while*` 与源形态 if/for/while 剥；本地调用、for-of、赋值、`$switch`/`$throw`、try/catch、`__nudo*` 簿记保留），35 例新旧差分语料 30 例字节级一致、5 例均为旧实现损坏样本；新增 run-strip-effectful.test.ts 差分护栏，eval-*（64 文件 657 用例）与 core algebra 全量（272 文件 3078 用例）绿。
+- 446914f: fix(core): Math 原生折叠抛错不再静默拓宽为 number——min/max、round/floor/ceil/trunc、通用 impl 三处 catch 补 `noteAbsTruncation`（`#math-fold-error`，check 映射 info 级 `nudo:math-fold-error`，不再误报 recursion-truncated），宿主篡改/环境分叉的 `Math.*` 精度损失可观测。`leqAbs` pred 失败文案改用 `predToString` 渲染（`pred ⊭ x > 5` 替代裸 op 名），`nudo:assign-mismatch` suggestion 直接可读。内部：leq 比较辅助函数改精确 `CmpPred`/`Term` 类型（删除三处 `as never` 与弱结构签名，行为零变更）；checkSource 消除 sidecar 场景对同一 source 的二次完整 parse（`localNamedExports` 复用一次结果）。
+- a00bccc: fix(env+check+eval): env 表不再遮蔽宿主命名空间（Math/Number/JSON/Object/Array/String/Date/Promise/BigInt——issue #87，区间透传恢复）；check 与 test/LSP 同口径 preload path 型 env（issue #89）；rewriteBareImports 支持子路径 specifier + nudojs 依赖 `@nudojs/env` + path env 导入失败发 `nudo:env-unresolved` warning（issue #88）；`??` 左值 nullish 臂过滤（`$removeNullish`，issue #90）；循环 pack/unpack 名单剔除循环体内局部词法声明（issue #91，消除 ReferenceError 误报）
+- 39332ca: fix(core): filter 元组投影保真 + assign 拓宽补全数组 sum（OSS semver L1 FP）
+  
+  - `filter` 空元组结果从 `unknown[]`（无界长度）改为 `[]`；不确定谓词对 ≤3 元组
+    枚举精确子序列和（长度有界——filter 不增元素），更大元组保持无界 arr（sound 旧口径）
+  - `widenForAssign` 补全数组 sum 分支：全 tuple/arr 成员的 sum 按 tuple 分支同口径
+    拓宽为单 arr（可变绑定持数组后赋任意数组是合法 JS）；混入 obj/prim 的 sum 仍精确对账
+  - 复合效果：循环 push-join 绑定（`[] | [unknown]`）重赋 `map(...).filter(...)` 不再
+    假报 `nudo:assign-mismatch`（benchmark/oss 语料 semver/bin/semver.js L109，#91
+    循环 pack 健全化暴露的既有失真）；元素改型等真违例仍报
+  - lsp：补全面放行 path-conf 元组（filter 子集和臂成员的 length 是诚实字面量），
+    sum 臂 detail 渲染去重
+- 446914f: fix(core): simplifyTerm 的 x*1 恒等式不再把 bigint 字面量折成 lit(NaN)（5n*1 原生是混型 TypeError，保留原项交算术核 foldBigintBinOp 处理）
+
+<details>
+<summary>历史版本 (25)</summary>
 
 ## 1.7.1
 
 ### Patch Changes
 
 - ef514a8: fix(core): handle fork-joined sum args in arithmetic, bounds, and non-NaN
-
-<details>
-<summary>历史版本 (24)</summary>
 
 ## 1.7.0
 
@@ -745,7 +765,32 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/service 1.6.1 {#pkg-service}
+## @nudojs/service 1.6.2 {#pkg-service}
+
+## 1.6.2
+
+### Patch Changes
+
+- a00bccc: fix(env+check+eval): env 表不再遮蔽宿主命名空间（Math/Number/JSON/Object/Array/String/Date/Promise/BigInt——issue #87，区间透传恢复）；check 与 test/LSP 同口径 preload path 型 env（issue #89）；rewriteBareImports 支持子路径 specifier + nudojs 依赖 `@nudojs/env` + path env 导入失败发 `nudo:env-unresolved` warning（issue #88）；`??` 左值 nullish 臂过滤（`$removeNullish`，issue #90）；循环 pack/unpack 名单剔除循环体内局部词法声明（issue #91，消除 ReferenceError 误报）
+- 446914f: fix(service): evaluator run 缓存键补齐维度与宿主 loader 透传。`tryRunEval` 缓存条目加入 `lenientGlobals` / `maxLoopIters` 命中维度，并按「入口文件 × mode」分槽——同 source 不同 lenient/迭代预算不再互命中陈旧结果，`collectCallRecords` 的 exec 采集不再踢掉同文件的 analyze 条目（`evictEvalCacheForFiles` 一并清两种 mode 槽）。宿主 `loadModule`（LSP 虚拟 FS / 侧车）现透传到模块图组装与 depKey：analyzer 一次分析内求值不再回落 `defaultLoadModule`，`tryEvalCall` / `tryEvalCallFull` 同口径接受 loader 与宿主预计算 `depKey`（复用 analyzer 一次 BFS，避免 per-fn 线性放大）。模块图组装序列（evalAbsModuleGraph → collectEnvModules → mergeHarvestUnderEnv → applyMockModule*）收敛为 `composeEvalModules` 单一入口（analyzer 与 evaluator 共用，消除一次分析内的重复 parse/eval 与两处漂移）。删除恒真死代码 `isEvalCapable`（公共导出一并移除；能力判定由转译点 fail-closed 承担）与 analyzer 中永不填充的 `unreachableRanges`/不可达 else 分支；`setEvalCallCollector` 恢复改为显式 `undefined` 判定；`defaultAbsLoadModule`/`resolveRel` 候选遍历收敛为单一 `readFirstRel`。
+- 89358f2: fix(service): `absModuleCache` 命中校验不再对宿主 custom loader 磁盘盲。loader 接管的依赖模块（磁盘存在 + loader 覆写内容，LSP 未保存 buffer 的典型形态）自身命中条件从「stat mtime+size 严格相等」改为「loader 当前内容 hash == 插入时实际求值源码 hash」——buffer 内容 A→B 而磁盘未动时不再陈旧返回 A 的旧导出；loader 不接手该路径（undefined）回落 stat，loader 抛错按 miss 重装载（宁冷勿陈旧）；默认 loader（未传 `opts.loadModule`）行为零变更，stat 快路径保留。命中校验取过的 loader 内容在 miss 重装载时复用（同参不二次调用）。当时记录的传递依赖残余（子树指纹仍按磁盘复核）由紧随的 loader 感知子树指纹修复 changeset 补齐。
+- 89358f2: fix(service): `absModuleCache` 子树内容指纹不再对宿主 custom loader 磁盘盲——补齐 loader-aware 命中修复（上一条 changeset）记录的传递依赖残余。依赖指纹条目从只存 `path` 扩展为携带装载询问证据 `via = { spec, fromFile }`（无条件记录：该对恒已知，条目不存 loader 引用）：带 loader 复核时按原询问对重问**当前** loader 比对内容 hash——loader 覆写**传递**依赖（LSP 未保存 buffer）的两个方向都不再陈旧：编辑方向（buffer A→B 磁盘未动）与接管方向（首轮磁盘装载、loader 新近接手）；loader 不接手（undefined）回落磁盘内容比对（该依赖此刻本就从磁盘装载），loader 抛错 / 依赖被删按 miss 重装载（宁冷勿陈旧）；loader 虚拟内容与磁盘不一致但稳定时，子树从「永久 miss」转为正常命中（复核按 loader 当前内容）。默认 loader（未传 `opts.loadModule`）行为与性能零变更：无 loader 时子树复核纯磁盘读取，stat 快路径保留（既有计数护栏钉住）。公共类型 `AbsModuleDepFingerprint` 新增可选字段 `via`（向后兼容，不构成 minor）。
+- 89358f2: fix(service): `absModuleCache` 自身命中的 loader 弃管方向不再陈旧——custom loader 曾覆写某路径（LSP 未保存 buffer）、随后不再接管该路径（buffer 未保存即关闭回退磁盘）时，回落分支此前只比磁盘 `mtimeMs+size`，条目里的 buffer 版导出会在磁盘 stat 未动时被陈旧命中。现在 `opts.loadModule` 在场且 loader 不接手的路径在 stat 相等后再补「磁盘内容 hash == 插入时求值源码 hash」复核（读出的磁盘内容进 preloaded，miss 重装载复用不二次读盘）；默认 loader（未传 `opts.loadModule`）保持纯 stat 快路径零退化。回归：buffer 覆写 v=2 → loader 弃管 → 必回磁盘真值 v=1（修复前红：陈旧返回 2）。
+- 446914f: fix(service): `findProjectConfig` 增加目录链 memo——条目记录向上查找访问过的每个 package.json 的 mtimeMs+size（无文件记 absent），命中只做链上 stat 比对，不再每次 existsSync + readFileSync + JSON.parse（LSP 每次 getCachedOrAnalyze / validateText 都会调它）。链上任何 package.json 新建/改写/删除（含 absent↔存在翻转）自动 miss 重算；`clearAnalysisSessionCaches` 显式清空（`evictProjectConfigMemo`，项目配置 watch 通道），覆盖「同 size + 同 mtime」极端写入。新增诊断导出 `projectConfigMemoStats`（条目数 / 实际读盘次数）。
+- Updated dependencies [446914f]
+- Updated dependencies [446914f]
+- Updated dependencies [a00bccc]
+- Updated dependencies [39332ca]
+- Updated dependencies [446914f]
+- Updated dependencies [446914f]
+- Updated dependencies [446914f]
+  - @nudojs/core@1.7.2
+  - @nudojs/parser@2.0.0
+  - @nudojs/env@0.4.17
+  - @nudojs/harvester@0.3.3
+
+<details>
+<summary>历史版本 (27)</summary>
 
 ## 1.6.1
 
@@ -756,9 +801,6 @@ slug: /releases-history
   - @nudojs/env@0.4.16
   - @nudojs/harvester@0.3.2
   - @nudojs/parser@1.3.2
-
-<details>
-<summary>历史版本 (26)</summary>
 
 ## 1.6.0
 
@@ -1417,7 +1459,34 @@ slug: /releases-history
 
 </details>
 
-## nudojs (CLI) 1.3.2 {#pkg-nudojs}
+## nudojs (CLI) 1.3.3 {#pkg-nudojs}
+
+## 1.3.3
+
+### Patch Changes
+
+- a00bccc: fix(env+check+eval): env 表不再遮蔽宿主命名空间（Math/Number/JSON/Object/Array/String/Date/Promise/BigInt——issue #87，区间透传恢复）；check 与 test/LSP 同口径 preload path 型 env（issue #89）；rewriteBareImports 支持子路径 specifier + nudojs 依赖 `@nudojs/env` + path env 导入失败发 `nudo:env-unresolved` warning（issue #88）；`??` 左值 nullish 臂过滤（`$removeNullish`，issue #90）；循环 pack/unpack 名单剔除循环体内局部词法声明（issue #91，消除 ReferenceError 误报）
+- 446914f: fix(nudojs): `check --gitlab` 多 target 在 action 层聚合成单个 Code Quality JSON 数组（旧实现逐文件各打一个数组，拼接产物无法被 GitLab 解析）；--gitlab 面 stdout 不再混入 docs 深链（机器契约面与终端面分离）。watch（check/test 共用循环）每轮前复位 `process.exitCode`——红轮置 1 后不再粘滞，退出码始终反映最近一轮门禁状态。`check --fix` 读文件失败改为上屏并计入 residualErrors（不再静默跳过导致静默绿）。重构：runCheck 拆为 loadCache / buildInjection / report+exit 三段，门禁解析链抽 `resolveGateForFile` 单源（plain check 与 --fix 同链），静态依赖的 `await import` 提升为顶部静态引入（输出/退出码零漂移，cli-e2e-golden 快照不变）。
+- Updated dependencies [446914f]
+- Updated dependencies [446914f]
+- Updated dependencies [a00bccc]
+- Updated dependencies [446914f]
+- Updated dependencies [39332ca]
+- Updated dependencies [446914f]
+- Updated dependencies [446914f]
+- Updated dependencies [446914f]
+- Updated dependencies [89358f2]
+- Updated dependencies [89358f2]
+- Updated dependencies [89358f2]
+- Updated dependencies [446914f]
+  - @nudojs/core@1.7.2
+  - @nudojs/service@1.6.2
+  - @nudojs/parser@2.0.0
+  - @nudojs/env@0.4.17
+  - @nudojs/harvester@0.3.3
+
+<details>
+<summary>历史版本 (24)</summary>
 
 ## 1.3.2
 
@@ -1428,9 +1497,6 @@ slug: /releases-history
   - @nudojs/harvester@0.3.2
   - @nudojs/parser@1.3.2
   - @nudojs/service@1.6.1
-
-<details>
-<summary>历史版本 (23)</summary>
 
 ## 1.3.1
 
@@ -1844,7 +1910,32 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/parser 1.3.2 {#pkg-parser}
+## @nudojs/parser 2.0.0 {#pkg-parser}
+
+## 2.0.0
+
+### Major Changes
+
+- 446914f: feat(parser)!: 指令文法诊断通道收敛为显式 sink，删除模块级 side-channel
+  
+  - `extractDirectives(ast, { diags })` / `extractInlineDirectives(node, { diags })`：诊断同步落调用方数组，单次调用内同文案去重；不传 `diags` 为纯查询形态（诊断丢弃，等价 `extractDirectivesQuiet`）
+  - 新增 `runWithDirectiveDiags(diags, fn)`：把「extract + 复解析」（如 nudo check D1 段的 `@nudo:mock` 表达式种子复解析）包进同一去重域
+  - **删除（breaking）**：模块级缓冲与 `takeDirectiveDiags` / `takeDirectiveDiagsSince` / `directiveDiagCount` / `setDirectiveDiagCollector`。迁移路径：`directiveDiagCount()` + `takeDirectiveDiagsSince(since)` 锚点对 → `extractDirectives(ast, { diags })` 直接落袋（或 `runWithDirectiveDiags` 包住 extract+复解析窗口）；`takeDirectiveDiags()` 整批排干 → 显式 `diags` 数组
+  - `collectEvalReplacements(source, { diags })`（@nudojs/service，additive）：行内 `@nudo:as`/`@nudo:replace` 文法诊断显式落袋，nudojs check 的 D1 并入面行为零变更（issue code / 合并顺序 / 去重口径保持）
+  - 删除动因：模块级缓冲曾引发两轮跨消费方偷诊断事故（R2B-003：全量 take 在 await 窗口偷走在途诊断）；service analyzer 与 LSP validateText 此前已迁移显式通道
+
+### Patch Changes
+
+- 446914f: fix(parser): `@nudo:mock <name> from './x.js'` 单引号路径此前静默不识别（MOCK_FROM_REGEX 只认双引号），现单/双引号均可解析；from 路径单引号未闭合也发 nudo:directive-syntax 诊断（此前只查双引号）
+- Updated dependencies [446914f]
+- Updated dependencies [446914f]
+- Updated dependencies [a00bccc]
+- Updated dependencies [39332ca]
+- Updated dependencies [446914f]
+  - @nudojs/core@1.7.2
+
+<details>
+<summary>历史版本 (25)</summary>
 
 ## 1.3.2
 
@@ -1852,9 +1943,6 @@ slug: /releases-history
 
 - Updated dependencies [ef514a8]
   - @nudojs/core@1.7.1
-
-<details>
-<summary>历史版本 (24)</summary>
 
 ## 1.3.1
 
@@ -2213,7 +2301,46 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/lsp 1.3.2 {#pkg-lsp}
+## @nudojs/lsp 1.4.0 {#pkg-lsp}
+
+## 1.4.0
+
+### Minor Changes
+
+- 446914f: feat(lsp): server 端接收宿主 analysis.mode 默认值——initialize 的 `initializationOptions.analysis.mode` 与 `workspace/didChangeConfiguration` 的 `settings.nudo.analysis.mode` 在项目 package.json#nudo.analysis.mode 未显式设置时作为默认 gate 档（项目显式值优先），变更时重检打开文档（新纳入出诊断、新排除清诊断）。VS Code 扩展侧此前声明的 `nudo.analysis.mode` 设置由此真正生效。
+
+### Patch Changes
+
+- 39332ca: fix(core): filter 元组投影保真 + assign 拓宽补全数组 sum（OSS semver L1 FP）
+  
+  - `filter` 空元组结果从 `unknown[]`（无界长度）改为 `[]`；不确定谓词对 ≤3 元组
+    枚举精确子序列和（长度有界——filter 不增元素），更大元组保持无界 arr（sound 旧口径）
+  - `widenForAssign` 补全数组 sum 分支：全 tuple/arr 成员的 sum 按 tuple 分支同口径
+    拓宽为单 arr（可变绑定持数组后赋任意数组是合法 JS）；混入 obj/prim 的 sum 仍精确对账
+  - 复合效果：循环 push-join 绑定（`[] | [unknown]`）重赋 `map(...).filter(...)` 不再
+    假报 `nudo:assign-mismatch`（benchmark/oss 语料 semver/bin/semver.js L109，#91
+    循环 pack 健全化暴露的既有失真）；元素改型等真违例仍报
+  - lsp：补全面放行 path-conf 元组（filter 子集和臂成员的 length 是诚实字面量），
+    sum 臂 detail 渲染去重
+- 446914f: fix(lsp): 高频 IDE 入口零缓存与会话 Map 无界增长修复。hover / completion / signatureHelp 现先过 `getCachedOrAnalyze`（同一未变文件连续触发只跑一次全量分析），lsp-surface 复用传入的 `result.bindings` + 条目 AST（`cachedAstFor`，随条目同指纹失效）——不再每次 transpile + new Function 整文件求值，`getHoverAtPosition` 内部重复 parse（自身一次 + `file ?? parse(source)` 兜底）删除。Abs-check 主通道诊断挂进 analysisCache 条目（`getCachedCheckDiags`；source/deps/cfg 指纹同键，与 evaluator 诊断同口径失效），push 防抖与 pull 诊断不再每次全量 checkSource + extractDirectives。`depsFingerprint` 从「只 hash 自身侧车」改走 core `loadModuleDepsFingerprint`（覆盖 `@nudo:import` 全部 .nudo.js / require / 动态 import / 侧车闭包）——被 import 侧车内容变更（无 watcher 事件）不再命中陈旧缓存；截断走 fail-visible 唯一指纹。analysisCache / knownFiles / nudoDepParents 套与 service `getSessionCacheLimits` 同源的 LRU 上限（maxFiles / 4×maxFiles，0 = 关闭该层）。IDE 处理器（hover/completion/codeLens/inlayHint/semanticTokens/signatureHelp）catch 不再静默——统一 `connection.console.error` 留痕，返回语义不变。signatureHelp 的 `findEnclosingCall` 手写递归 visitor 改 @babel/traverse：区间判定含列（旧实现只比行号），参数下标按完整区间计算（跨行参数不再被「start 在前 → +1」误判，尾逗号 → arity）。
+- Updated dependencies [446914f]
+- Updated dependencies [446914f]
+- Updated dependencies [a00bccc]
+- Updated dependencies [446914f]
+- Updated dependencies [39332ca]
+- Updated dependencies [446914f]
+- Updated dependencies [446914f]
+- Updated dependencies [446914f]
+- Updated dependencies [89358f2]
+- Updated dependencies [89358f2]
+- Updated dependencies [89358f2]
+- Updated dependencies [446914f]
+  - @nudojs/core@1.7.2
+  - @nudojs/service@1.6.2
+  - @nudojs/parser@2.0.0
+
+<details>
+<summary>历史版本 (28)</summary>
 
 ## 1.3.2
 
@@ -2223,9 +2350,6 @@ slug: /releases-history
   - @nudojs/core@1.7.1
   - @nudojs/parser@1.3.2
   - @nudojs/service@1.6.1
-
-<details>
-<summary>历史版本 (27)</summary>
 
 ## 1.3.1
 
@@ -2799,7 +2923,21 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/env 0.4.16 {#pkg-env}
+## @nudojs/env 0.4.17 {#pkg-env}
+
+## 0.4.17
+
+### Patch Changes
+
+- Updated dependencies [446914f]
+- Updated dependencies [446914f]
+- Updated dependencies [a00bccc]
+- Updated dependencies [39332ca]
+- Updated dependencies [446914f]
+  - @nudojs/core@1.7.2
+
+<details>
+<summary>历史版本 (24)</summary>
 
 ## 0.4.16
 
@@ -2807,9 +2945,6 @@ slug: /releases-history
 
 - Updated dependencies [ef514a8]
   - @nudojs/core@1.7.1
-
-<details>
-<summary>历史版本 (23)</summary>
 
 ## 0.4.15
 
@@ -3103,7 +3238,25 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/harvester 0.3.2 {#pkg-harvester}
+## @nudojs/harvester 0.3.3 {#pkg-harvester}
+
+## 0.3.3
+
+### Patch Changes
+
+- Updated dependencies [446914f]
+- Updated dependencies [446914f]
+- Updated dependencies [a00bccc]
+- Updated dependencies [39332ca]
+- Updated dependencies [446914f]
+- Updated dependencies [446914f]
+- Updated dependencies [446914f]
+  - @nudojs/core@1.7.2
+  - @nudojs/parser@2.0.0
+  - @nudojs/env@0.4.17
+
+<details>
+<summary>历史版本 (24)</summary>
 
 ## 0.3.2
 
@@ -3113,9 +3266,6 @@ slug: /releases-history
   - @nudojs/core@1.7.1
   - @nudojs/env@0.4.16
   - @nudojs/parser@1.3.2
-
-<details>
-<summary>历史版本 (23)</summary>
 
 ## 0.3.1
 
@@ -3437,7 +3587,28 @@ slug: /releases-history
 
 </details>
 
-## vite-plugin-nudo 0.4.17 {#pkg-vite-plugin}
+## vite-plugin-nudo 0.4.18 {#pkg-vite-plugin}
+
+## 0.4.18
+
+### Patch Changes
+
+- 446914f: fix(vite-plugin): checkSource 崩溃不再静默吞掉——默认 `this.warn("[nudo] check failed for <id>: <msg>")`，`failOnError: true` 时升级 `this.error` 红构建（与 CLI BUG-023「注入/装配失败必须红」同口径）；check 面按 (id, source) 套会话缓存，同一 build 会话内未变文件（如 client/SSR 双环境重复 transform）不重跑 check 推断链。
+- Updated dependencies [446914f]
+- Updated dependencies [446914f]
+- Updated dependencies [a00bccc]
+- Updated dependencies [446914f]
+- Updated dependencies [39332ca]
+- Updated dependencies [446914f]
+- Updated dependencies [89358f2]
+- Updated dependencies [89358f2]
+- Updated dependencies [89358f2]
+- Updated dependencies [446914f]
+  - @nudojs/core@1.7.2
+  - @nudojs/service@1.6.2
+
+<details>
+<summary>历史版本 (27)</summary>
 
 ## 0.4.17
 
@@ -3446,9 +3617,6 @@ slug: /releases-history
 - Updated dependencies [ef514a8]
   - @nudojs/core@1.7.1
   - @nudojs/service@1.6.1
-
-<details>
-<summary>历史版本 (26)</summary>
 
 ## 0.4.16
 

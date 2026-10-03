@@ -1,5 +1,41 @@
 # @nudojs/lsp
 
+## 1.4.0
+
+### Minor Changes
+
+- 446914f: feat(lsp): server 端接收宿主 analysis.mode 默认值——initialize 的 `initializationOptions.analysis.mode` 与 `workspace/didChangeConfiguration` 的 `settings.nudo.analysis.mode` 在项目 package.json#nudo.analysis.mode 未显式设置时作为默认 gate 档（项目显式值优先），变更时重检打开文档（新纳入出诊断、新排除清诊断）。VS Code 扩展侧此前声明的 `nudo.analysis.mode` 设置由此真正生效。
+
+### Patch Changes
+
+- 39332ca: fix(core): filter 元组投影保真 + assign 拓宽补全数组 sum（OSS semver L1 FP）
+  
+  - `filter` 空元组结果从 `unknown[]`（无界长度）改为 `[]`；不确定谓词对 ≤3 元组
+    枚举精确子序列和（长度有界——filter 不增元素），更大元组保持无界 arr（sound 旧口径）
+  - `widenForAssign` 补全数组 sum 分支：全 tuple/arr 成员的 sum 按 tuple 分支同口径
+    拓宽为单 arr（可变绑定持数组后赋任意数组是合法 JS）；混入 obj/prim 的 sum 仍精确对账
+  - 复合效果：循环 push-join 绑定（`[] | [unknown]`）重赋 `map(...).filter(...)` 不再
+    假报 `nudo:assign-mismatch`（benchmark/oss 语料 semver/bin/semver.js L109，#91
+    循环 pack 健全化暴露的既有失真）；元素改型等真违例仍报
+  - lsp：补全面放行 path-conf 元组（filter 子集和臂成员的 length 是诚实字面量），
+    sum 臂 detail 渲染去重
+- 446914f: fix(lsp): 高频 IDE 入口零缓存与会话 Map 无界增长修复。hover / completion / signatureHelp 现先过 `getCachedOrAnalyze`（同一未变文件连续触发只跑一次全量分析），lsp-surface 复用传入的 `result.bindings` + 条目 AST（`cachedAstFor`，随条目同指纹失效）——不再每次 transpile + new Function 整文件求值，`getHoverAtPosition` 内部重复 parse（自身一次 + `file ?? parse(source)` 兜底）删除。Abs-check 主通道诊断挂进 analysisCache 条目（`getCachedCheckDiags`；source/deps/cfg 指纹同键，与 evaluator 诊断同口径失效），push 防抖与 pull 诊断不再每次全量 checkSource + extractDirectives。`depsFingerprint` 从「只 hash 自身侧车」改走 core `loadModuleDepsFingerprint`（覆盖 `@nudo:import` 全部 .nudo.js / require / 动态 import / 侧车闭包）——被 import 侧车内容变更（无 watcher 事件）不再命中陈旧缓存；截断走 fail-visible 唯一指纹。analysisCache / knownFiles / nudoDepParents 套与 service `getSessionCacheLimits` 同源的 LRU 上限（maxFiles / 4×maxFiles，0 = 关闭该层）。IDE 处理器（hover/completion/codeLens/inlayHint/semanticTokens/signatureHelp）catch 不再静默——统一 `connection.console.error` 留痕，返回语义不变。signatureHelp 的 `findEnclosingCall` 手写递归 visitor 改 @babel/traverse：区间判定含列（旧实现只比行号），参数下标按完整区间计算（跨行参数不再被「start 在前 → +1」误判，尾逗号 → arity）。
+- Updated dependencies [446914f]
+- Updated dependencies [446914f]
+- Updated dependencies [a00bccc]
+- Updated dependencies [446914f]
+- Updated dependencies [39332ca]
+- Updated dependencies [446914f]
+- Updated dependencies [446914f]
+- Updated dependencies [446914f]
+- Updated dependencies [89358f2]
+- Updated dependencies [89358f2]
+- Updated dependencies [89358f2]
+- Updated dependencies [446914f]
+  - @nudojs/core@1.7.2
+  - @nudojs/service@1.6.2
+  - @nudojs/parser@2.0.0
+
 ## 1.3.2
 
 ### Patch Changes
