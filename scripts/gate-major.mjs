@@ -23,14 +23,15 @@
  *
  *   node scripts/gate-major.mjs --for-publish
  *     Fail if the publish set contains an unconfirmed major elevation:
- *     - major >= MAJOR_CEILING (2) ENTERING the line: no baseline row, or a
- *       baseline row on a lower major (hand-edit / in-run jump shape)
+ *     - major >= MAJOR_CEILING (2) ENTERING the line: not riding the committed
+ *       major-train registry (.changeset/major-train.json) nor a baseline row
+ *       on the same major (hand-edit / in-run jump shape)
  *     - major jump vs .changeset/.major-baseline.json (0→1, 1→2, …)
  *     - exact 1.0.0 with no baseline row: first-major candidate (0→1 shape)
  *     Same-train versions auto-publish — 1.x patches/minors (1.0.1, 1.3.0, …)
- *     AND 2.x+ whose baseline row proves the run started on that line (the
- *     routine Version PR merge shape); packages already on a train must not
- *     be locked out by an absolute ceiling.
+ *     AND majors whose line is confirmed in major-train.json (written at
+ *     check-baseline confirm time, committed through the Version PR; the
+ *     routine Version Packages merge push publishes without a re-confirm).
  *     Safety net for "No pending changesets — publish current package.json"
  *     and for hand-edited versions that never went through `changeset version`.
  *
@@ -56,6 +57,45 @@ function changesetDirOf(root) {
 
 function baselinePathOf(root) {
   return join(changesetDirOf(root), '.major-baseline.json');
+}
+
+/**
+ * 已确认的 major 火车登记表（**入库提交**，非 sidecar）：
+ * `.changeset/major-train.json` = { "@nudojs/parser": 2, … }。
+ *
+ * 为什么需要入库证据：changesets/action 在无 pending changesets 的 push 上
+ * **跳过 version-script**（连 --save-baseline 都不跑），--for-publish 手里的
+ * run-local baseline 缺席；而「Version PR merge 发布已确认的 2.x」与「手改
+ * package.json 顶到 2.x」在本地无法区分。确认动作（workflow_dispatch
+ * confirm_major=true）发生在 version 阶段——把确认结果**提交进 Version PR**
+ * （check-baseline 确认通过时写入），merge 后它就是持久、防手改的
+ * same-train 证据。
+ */
+function majorTrainPathOf(root) {
+  return join(changesetDirOf(root), 'major-train.json');
+}
+
+/** @returns {Record<string, number>} */
+export function readMajorTrain(root = repoRoot()) {
+  try {
+    const raw = readFileSync(majorTrainPathOf(root), 'utf8');
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') {
+      const out = {};
+      for (const [k, v] of Object.entries(parsed)) {
+        const n = Number(v);
+        if (Number.isFinite(n)) out[k] = n;
+      }
+      return out;
+    }
+  } catch {
+    // missing / unreadable / malformed — treat as empty (conservative)
+  }
+  return {};
+}
+
+function writeMajorTrain(root, train) {
+  writeFileSync(majorTrainPathOf(root), `${JSON.stringify(train, null, 2)}\n`);
 }
 
 function confirmedFromEnv() {
@@ -168,18 +208,19 @@ export function majorJumps(packages, baseline) {
  * - exact `1.0.0` with no baseline row — first-major candidate (0→1 shape)
  *
  * Does NOT flag same-train versions: 1.x patches/minors (1.0.1, 1.3.0, …) AND
- * 2.x+ versions whose baseline row proves the run started on that major line
- * (Version PR merges / routine pushes). The 1.x-train rule was added when 1.x
- * packages got locked out by the absolute ceiling; the same applies to any
- * established train — entering (0/1→2) still needs CONFIRM_MAJOR, riding it
- * does not. Accepted trade-off (same as the pre-existing 1.x one): a hand-edit
- * WITHIN the established train auto-publishes.
+ * majors riding a line confirmed in the committed major-train registry (or a
+ * baseline row proving the run started on that line). Entering a major line —
+ * via pending changesets (version gate), in-run `changeset version` (baseline
+ * jump), or a hand-edit (no registry entry, no baseline row) — still needs
+ * CONFIRM_MAJOR. Accepted trade-off (same as the pre-existing 1.x one): a
+ * hand-edit WITHIN an established train auto-publishes.
  *
  * @param {Array<{name: string, version: string}>} packages
  * @param {Array<{name: string, version: string}>} [baseline]
+ * @param {Record<string, number>} [train] 已确认 major 火车登记表（入库）
  * @returns {string[]}
  */
-export function elevatedForPublish(packages, baseline = []) {
+export function elevatedForPublish(packages, baseline = [], train = {}) {
   const byName = new Map(baseline.map((b) => [b.name, b.version]));
   const out = [];
   for (const p of packages) {
@@ -187,9 +228,11 @@ export function elevatedForPublish(packages, baseline = []) {
     const prev = byName.get(p.name);
     const prevMaj = prev !== undefined ? majorOf(prev) : undefined;
     if (maj >= MAJOR_CEILING) {
-      // 2.x+：只有「进入该 major 线」需要确认；baseline 证明本轮起点就在
-      // 该线上（Version PR merge / 例行 push）则同 1.x 火车规则放行。
-      if (prevMaj === undefined || prevMaj !== maj) out.push(`${p.name}@${p.version}`);
+      // 2.x+： riding a confirmed train (committed registry) or a baseline-proven
+      // same-major start needs no confirm; anything else is an entry → confirm.
+      const trainMaj = train[p.name];
+      const riding = (trainMaj !== undefined && trainMaj >= maj) || prevMaj === maj;
+      if (!riding) out.push(`${p.name}@${p.version}`);
       continue;
     }
     if (prev !== undefined) {
@@ -259,11 +302,21 @@ function main() {
       ]);
     }
     // 成功/确认后**保留** baseline：它随后还要喂同一 job 的 --for-publish
-    // （same-train 证据——Version PR merge 推的 2.x 靠它免 confirm）。下一次
-    // ci:version 的 --save-baseline 会整体覆盖，不会陈旧。
+    // （jump 证据）。下一次 ci:version 的 --save-baseline 会整体覆盖，不会陈旧。
     if (jumps.length > 0 && confirmed) {
       console.log('[gate-major] CONFIRM_MAJOR=1 — allowing major jumps:');
       for (const j of jumps) console.log(`  - ${j}`);
+      // 确认结果登记进**入库**的 major-train.json（changesets/action 会把
+      // version-script 的工作树改动连同版本一起提交进 Version PR）——merge
+      // 后它成为 --for-publish 的持久 same-train 证据（changeset-free push
+      // 上 action 不跑 version-script，run-local baseline 缺席）。
+      const train = readMajorTrain(root);
+      for (const { name, version } of publishablePackageJsons(root)) {
+        const maj = majorOf(version);
+        if ((train[name] ?? 0) < maj) train[name] = maj;
+      }
+      writeMajorTrain(root, train);
+      console.log(`[gate-major] updated ${join('.changeset', 'major-train.json')} (committed evidence)`);
     }
   }
 
@@ -280,7 +333,7 @@ function main() {
         baseline = [];
       }
     }
-    const elevated = elevatedForPublish(publishablePackageJsons(root), baseline);
+    const elevated = elevatedForPublish(publishablePackageJsons(root), baseline, readMajorTrain(root));
     if (elevated.length > 0 && !confirmed) {
       fail([
         'Refusing to publish unconfirmed major elevations (2.x, major jumps, first 1.0.0).',
