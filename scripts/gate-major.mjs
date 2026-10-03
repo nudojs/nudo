@@ -16,27 +16,32 @@
  *   node scripts/gate-major.mjs --check-baseline
  *     After `changeset version`, fail if any package major increased
  *     relative to the snapshot (catches hand-edits / pre-exit jumps too).
- *     Baseline is removed only on success / confirmed runs so a rejected
- *     version keeps its evidence for re-diagnosis.
+ *     Baseline is kept after success / confirmed runs: it is the same-train
+ *     evidence consumed by --for-publish later in the same job (the next
+ *     ci:version --save-baseline overwrites it, so it never goes stale);
+ *     a rejected version also keeps its evidence for re-diagnosis.
  *
  *   node scripts/gate-major.mjs --for-publish
  *     Fail if the publish set contains an unconfirmed major elevation:
- *     - major >= MAJOR_CEILING (2): never auto-publish 2.x+
+ *     - major >= MAJOR_CEILING (2) ENTERING the line: no baseline row, or a
+ *       baseline row on a lower major (hand-edit / in-run jump shape)
  *     - major jump vs .changeset/.major-baseline.json (0→1, 1→2, …)
  *     - exact 1.0.0 with no baseline row: first-major candidate (0→1 shape)
- *     Same-major 1.x patches/minors (1.0.1, 1.3.0, …) auto-publish — packages
- *     already on the 1.x train must not be locked out by an absolute ceiling.
+ *     Same-train versions auto-publish — 1.x patches/minors (1.0.1, 1.3.0, …)
+ *     AND 2.x+ whose baseline row proves the run started on that line (the
+ *     routine Version PR merge shape); packages already on a train must not
+ *     be locked out by an absolute ceiling.
  *     Safety net for "No pending changesets — publish current package.json"
  *     and for hand-edited versions that never went through `changeset version`.
  *
  * Test fixtures: GATE_MAJOR_ROOT points at a pseudo-repo root whose
  * packages/<name>/package.json files define the publish set.
  */
-import { readdirSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-/** Absolute publish ceiling: major >= 2 is never automatic. 1.x train is not gated. */
+/** Publish ceiling line: ENTERING major >= 2 is never automatic (needs CONFIRM_MAJOR). Riding an established train (baseline-proven same major) is not gated. */
 export const MAJOR_CEILING = 2;
 
 function repoRoot() {
@@ -155,12 +160,20 @@ export function majorJumps(packages, baseline) {
  * Publish-time gate: packages that must not auto-publish without CONFIRM_MAJOR.
  *
  * Flags:
- * - major >= MAJOR_CEILING (2) — absolute ceiling
- * - major jump vs baseline (0→1 / 1→2 / …) — the hand-edit hole
+ * - major jump vs baseline (0→1 / 1→2 / …) — entering a major line, whether via
+ *   `changeset version` in-run or a hand-edit (baseline is snapshotted by
+ *   --save-baseline before `changeset version` runs, so in-run jumps are visible)
+ * - major >= MAJOR_CEILING (2) **entering** the line with no same-train baseline
+ *   row (unknown provenance — hand-edit shape)
  * - exact `1.0.0` with no baseline row — first-major candidate (0→1 shape)
  *
- * Does NOT flag same-major 1.x train versions (1.0.1, 1.3.0, …): those are
- * already published as major=1 and must keep auto-publishing.
+ * Does NOT flag same-train versions: 1.x patches/minors (1.0.1, 1.3.0, …) AND
+ * 2.x+ versions whose baseline row proves the run started on that major line
+ * (Version PR merges / routine pushes). The 1.x-train rule was added when 1.x
+ * packages got locked out by the absolute ceiling; the same applies to any
+ * established train — entering (0/1→2) still needs CONFIRM_MAJOR, riding it
+ * does not. Accepted trade-off (same as the pre-existing 1.x one): a hand-edit
+ * WITHIN the established train auto-publishes.
  *
  * @param {Array<{name: string, version: string}>} packages
  * @param {Array<{name: string, version: string}>} [baseline]
@@ -171,13 +184,16 @@ export function elevatedForPublish(packages, baseline = []) {
   const out = [];
   for (const p of packages) {
     const maj = majorOf(p.version);
+    const prev = byName.get(p.name);
+    const prevMaj = prev !== undefined ? majorOf(prev) : undefined;
     if (maj >= MAJOR_CEILING) {
-      out.push(`${p.name}@${p.version}`);
+      // 2.x+：只有「进入该 major 线」需要确认；baseline 证明本轮起点就在
+      // 该线上（Version PR merge / 例行 push）则同 1.x 火车规则放行。
+      if (prevMaj === undefined || prevMaj !== maj) out.push(`${p.name}@${p.version}`);
       continue;
     }
-    const prev = byName.get(p.name);
     if (prev !== undefined) {
-      if (majorOf(prev) < maj) out.push(`${p.name}@${p.version}`);
+      if (prevMaj < maj) out.push(`${p.name}@${p.version}`);
       continue;
     }
     // No baseline row: refuse the classic hand-edit shape `1.0.0` (first major).
@@ -242,8 +258,9 @@ function main() {
         ...jumps.map((j) => `  - ${j}`),
       ]);
     }
-    // Success or confirmed — the snapshot has served its purpose.
-    rmSync(baselinePath, { force: true });
+    // 成功/确认后**保留** baseline：它随后还要喂同一 job 的 --for-publish
+    // （same-train 证据——Version PR merge 推的 2.x 靠它免 confirm）。下一次
+    // ci:version 的 --save-baseline 会整体覆盖，不会陈旧。
     if (jumps.length > 0 && confirmed) {
       console.log('[gate-major] CONFIRM_MAJOR=1 — allowing major jumps:');
       for (const j of jumps) console.log(`  - ${j}`);

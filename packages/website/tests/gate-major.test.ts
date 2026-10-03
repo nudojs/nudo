@@ -238,11 +238,29 @@ describe("--for-publish: hand-edited 0.x → 1.0.0 (R2-4 regression)", () => {
     expect(r.stdout).toContain("ok");
   });
 
-  it("still blocks 2.x without CONFIRM_MAJOR", () => {
+  it("still blocks 2.x without CONFIRM_MAJOR when entering the line (no baseline)", () => {
     const root = makeFixture([{ dir: "core", name: "test-core", version: "2.0.1" }]);
     const r = runGate(root, ["--for-publish"]);
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("test-core@2.0.1");
+  });
+
+  it("still blocks 2.x entering from a lower-major baseline (hand-edit shape)", () => {
+    const root = makeFixture([{ dir: "core", name: "test-core", version: "2.0.1" }]);
+    writeBaseline(root, [{ name: "test-core", version: "1.9.0" }]);
+    const r = runGate(root, ["--for-publish"]);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("test-core@2.0.1");
+  });
+
+  it("allows the 2.x train without confirmation when the baseline proves same-major (Version PR merge shape)", () => {
+    // ci:version --save-baseline 快照的是 merge 后的版本 → publish 集 = baseline
+    // → same-train → 免 confirm 放行（例行的 Version Packages merge push）
+    const root = makeFixture([{ dir: "core", name: "test-core", version: "2.0.1" }]);
+    writeBaseline(root, [{ name: "test-core", version: "2.0.1" }]);
+    const r = runGate(root, ["--for-publish"]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("ok");
   });
 
   it("blocks a baseline 0→1 jump at publish even when version is not 1.0.0", () => {
@@ -292,17 +310,18 @@ describe("--check-baseline: failure keeps the evidence (R2-4 regression)", () =>
     expect(existsSync(baselinePath(root))).toBe(true);
   });
 
-  it("deletes the baseline on success (no jumps)", () => {
-    const root = makeFixture([{ dir: "env", name: "test-env", version: "0.4.10" }]);
+  it("keeps the baseline on success (same-train evidence for --for-publish)", () => {
+    const root = makeFixture([{ dir: "env", name: "test-env", version: "0.4.11" }]);
     writeBaseline(root, [{ name: "test-env", version: "0.4.10" }]);
     setVersion(root, "env", "0.4.11");
 
     const r = runGate(root, ["--check-baseline"]);
     expect(r.status).toBe(0);
-    expect(existsSync(baselinePath(root))).toBe(false);
+    // baseline 保留：同一 job 的 --for-publish 要用它做 same-train 判定
+    expect(existsSync(baselinePath(root))).toBe(true);
   });
 
-  it("deletes the baseline on a confirmed jump", () => {
+  it("keeps the baseline on a confirmed jump (publish gate still sees the entry)", () => {
     const root = makeFixture([{ dir: "env", name: "test-env", version: "0.4.10" }]);
     writeBaseline(root, [{ name: "test-env", version: "0.4.10" }]);
     setVersion(root, "env", "1.0.0");
@@ -310,7 +329,7 @@ describe("--check-baseline: failure keeps the evidence (R2-4 regression)", () =>
     const r = runGate(root, ["--check-baseline"], { CONFIRM_MAJOR: "1" });
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("test-env: 0.4.10 → 1.0.0");
-    expect(existsSync(baselinePath(root))).toBe(false);
+    expect(existsSync(baselinePath(root))).toBe(true);
   });
 
   it("fails closed when the baseline is missing", () => {
@@ -350,15 +369,20 @@ describe("--for-publish + --check-baseline combined (ci:version → publish)", (
     expect(publish.stderr).toContain("test-env@1.0.0");
   });
 
-  it("confirmed hand-edit clears check-baseline and for-publish", () => {
+  it("confirmed hand-edit passes check-baseline; for-publish still sees the entry and needs confirm", () => {
     const root = makeFixture([{ dir: "env", name: "test-env", version: "0.4.10" }]);
     writeBaseline(root, [{ name: "test-env", version: "0.4.10" }]);
     setVersion(root, "env", "1.0.0");
 
     const check = runGate(root, ["--check-baseline"], { CONFIRM_MAJOR: "1" });
     expect(check.status).toBe(0);
-    expect(existsSync(baselinePath(root))).toBe(false);
+    // baseline 保留（--for-publish 的 jump 证据）
+    expect(existsSync(baselinePath(root))).toBe(true);
 
+    // 进入 1.x 的 jump 对 publish 门仍然可见：无 confirm 拦、有 confirm 放
+    const publishBlocked = runGate(root, ["--for-publish"]);
+    expect(publishBlocked.status).toBe(1);
+    expect(publishBlocked.stderr).toContain("test-env@1.0.0");
     const publish = runGate(root, ["--for-publish"], { CONFIRM_MAJOR: "1" });
     expect(publish.status).toBe(0);
   });
