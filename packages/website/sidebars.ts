@@ -26,6 +26,7 @@ const sidebars: SidebarsConfig = {
         "concepts/control-flow-narrowing",
         "concepts/mocking",
         "concepts/limits",
+        "glossary",
       ],
     },
     {
@@ -34,7 +35,7 @@ const sidebars: SidebarsConfig = {
       link: {
         type: "generated-index",
         description:
-          "Task-oriented guides for working with Nudo: run gates and diagnose failures, author contracts and harnesses, integrate with the toolchain, and grab cookbook recipes.",
+          "Task-oriented guides: how to install, gate, and read Nudo in CI. The CI gate is `nudo check`; `nudo test` is an optional debug case reporter, not the gate.",
       },
       items: [
         {
@@ -42,9 +43,8 @@ const sidebars: SidebarsConfig = {
           label: "Gate",
           items: [
             "guides/check",
-            "guides/test",
-            "guides/performance",
             "guides/health",
+            "guides/performance",
             "guides/error-faces",
           ],
         },
@@ -67,7 +67,12 @@ const sidebars: SidebarsConfig = {
         },
         {
           type: "category",
-          label: "Cookbook",
+          label: "Debug & scenarios",
+          items: ["guides/test"],
+        },
+        {
+          type: "category",
+          label: "Recipes",
           items: ["guides/recipes"],
         },
       ],
@@ -86,39 +91,46 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: "category",
-      label: "Migrate off TypeScript",
+      label: "Migrate from TypeScript",
       link: {
         type: "generated-index",
         description:
-          "Replace the tsc gate on JavaScript packages. Coexistence is a short-lived migration tactic — the exit is nudo migrate retire.",
+          "Retire the tsc gate for JS packages. `migrate` is a one-way retirement gate (status|strip|verify|retire), not a primary verb — exit is `nudo migrate retire`.",
       },
       items: [
         "guides/migrating-js",
         "guides/migrating-from-typescript",
         "guides/case-study-retire",
         "guides/coexistence",
-        "guides/errors-vs-typescript",
-        "guides/vs-typescript",
-        "guides/versioning",
       ],
     },
+    "concepts/limits",
     {
       type: "category",
       label: "Reference",
       link: {
         type: "generated-index",
         description:
-          "Authoritative lookups: CLI commands and diagnostics, agent surfaces, and per-package API reference for core, parser, service, agent, lsp, and harvester.",
+          "Authoritative lookups: CLI commands and diagnostics, comparison with TypeScript, agent surfaces, and per-package API reference.",
       },
       items: [
         {
           type: "category",
-          label: "CLI & Diagnostics",
+          label: "CLI & diagnostics",
           items: [
             "guides/cli",
             "api/cli-reference",
             "reference/config",
             "reference/diagnostics",
+          ],
+        },
+        {
+          type: "category",
+          label: "Comparison with TypeScript",
+          items: [
+            "guides/vs-typescript",
+            "guides/errors-vs-typescript",
+            "guides/versioning",
           ],
         },
         "glossary",
@@ -127,12 +139,12 @@ const sidebars: SidebarsConfig = {
           type: "category",
           label: "Package APIs",
           items: [
-            "api/core",
-            "api/parser",
-            "api/service",
             "api/agent",
+            "api/service",
+            "api/core",
             "api/lsp",
             "api/harvester",
+            "api/parser",
           ],
         },
         "reference/agents",

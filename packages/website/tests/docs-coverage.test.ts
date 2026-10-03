@@ -295,7 +295,7 @@ describe("zh docs mirror en docs", () => {
     expect(sidebars).toContain("concepts/abs");
     // Coexistence is a migration tactic — must not be a top-level peer category label.
     expect(sidebars).not.toContain("Migrating & Coexistence");
-    expect(sidebars).toContain("Migrate off TypeScript");
+    expect(sidebars).toContain("Migrate from TypeScript");
     // releases-history 离开 sidebar，但页面仍在 docs 根，入口由 releases.md 文内链接保留。
     expect(sidebars, "sidebar must not list releases-history").not.toContain("releases-history");
     expect(sidebars, "sidebar must keep releases").toContain('"releases"');

@@ -1,9 +1,11 @@
 ---
 slug: /concepts/limits
-description: Limits and non-goals — what Nudo does not claim, call-site ceilings, evaluator gaps, and the TypeScript type-language boundary.
+description: Limits, non-goals, and "not the right tool when…" — engine boundaries, call-site ceilings, evaluator gaps, and the TypeScript type-language boundary.
 ---
 
 # Limits & non-goals
+
+**Read this page first if you are deciding whether Nudo is the right tool.** It collects what Nudo does not claim, where inference intentionally degrades to `unknown` or `any`, and the cases where a different gate belongs on your package.
 
 Boundaries are product discipline, not bugs. This page is the user-facing extract of design limits — full engineering notes live in the monorepo (`docs/design/limitations.md`). Comparison of replacement dimensions: [Nudo vs TypeScript](../guides/vs-typescript.md).
 

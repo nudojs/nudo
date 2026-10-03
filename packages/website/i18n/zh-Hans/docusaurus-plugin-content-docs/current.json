@@ -23,17 +23,21 @@
     "message": "生态",
     "description": "The label for category Ecosystem in sidebar docsSidebar"
   },
-  "sidebar.docsSidebar.category.Cookbook": {
+  "sidebar.docsSidebar.category.Debug & scenarios": {
+    "message": "调试与场景",
+    "description": "The label for category Debug & scenarios in sidebar docsSidebar"
+  },
+  "sidebar.docsSidebar.category.Recipes": {
     "message": "食谱",
-    "description": "The label for category Cookbook in sidebar docsSidebar"
+    "description": "The label for category Recipes in sidebar docsSidebar"
   },
   "sidebar.docsSidebar.category.Editors & Agents": {
     "message": "编辑器与 Agent",
     "description": "The label for category Editors & Agents in sidebar docsSidebar"
   },
-  "sidebar.docsSidebar.category.Migrate off TypeScript": {
-    "message": "迁离 TypeScript",
-    "description": "The label for category Migrate off TypeScript in sidebar docsSidebar"
+  "sidebar.docsSidebar.category.Migrate from TypeScript": {
+    "message": "从 TypeScript 迁移",
+    "description": "The label for category Migrate from TypeScript in sidebar docsSidebar"
   },
   "sidebar.docsSidebar.category.Concepts": {
     "message": "概念",
@@ -43,9 +47,17 @@
     "message": "参考",
     "description": "The label for category Reference in sidebar docsSidebar"
   },
+  "sidebar.docsSidebar.category.CLI & diagnostics": {
+    "message": "CLI 与诊断",
+    "description": "The label for category CLI & diagnostics in sidebar docsSidebar"
+  },
   "sidebar.docsSidebar.category.CLI & Diagnostics": {
     "message": "CLI 与诊断",
     "description": "The label for category CLI & Diagnostics in sidebar docsSidebar"
+  },
+  "sidebar.docsSidebar.category.Comparison with TypeScript": {
+    "message": "与 TypeScript 的比较",
+    "description": "The label for category Comparison with TypeScript in sidebar docsSidebar"
   },
   "sidebar.docsSidebar.category.Package APIs": {
     "message": "包 API",

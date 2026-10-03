@@ -5,6 +5,8 @@ description: nudo test — per-case call-site ground truth on Abs; synthetic cal
 
 # nudo test
 
+`nudo test` is a **debug / scenario reporter, not the CI gate.** The gate is [`nudo check`](./check.md) (L1 contracts + L2 entry throws) — only signatures + constraint violations + throws enter CI. Use `test` to inspect how Nudo executed cases (`call@` / `entry@` / `debug` witnesses), to drive declared `@nudo:case` assertions, or to pin regressions via `--freeze`.
+
 **You'll leave with:** the default case report (`call@` / `entry@` / `debug` witnesses), declared assertions — the only thing that fails the run — witness solidification with `--freeze`, and a clean split between `test` and `check`.
 
 `nudo test` is Nudo's **case report**: per-call-site ground truth computed on Abs. It is the **observation face**, not the CI gate.
