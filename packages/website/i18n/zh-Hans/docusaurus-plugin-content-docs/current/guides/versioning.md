@@ -16,7 +16,7 @@ Nudo 是 pnpm monorepo，经 [changesets](https://github.com/changesets/changese
 | `@nudojs/core` | **1.x**（1.7.2） | SemVer：破坏性 → major |
 | `@nudojs/service` | **1.x**（1.6.2） | SemVer：破坏性 → major |
 | `nudojs` | **1.x**（1.3.3） | SemVer：破坏性 → major |
-| `@nudojs/parser` | **1.x**（1.3.2） | SemVer：破坏性 → major。2.0.0 major 曾被发布后回滚——计划中的破坏性版本将以显式确认的 major 落地（见 Changesets 节的门禁说明） |
+| `@nudojs/parser` | **1.x**（1.3.2） | SemVer：破坏性 → major。2.0.0 曾被误发布并整班撤回——计划中的破坏性版本将以显式确认的 major 落地（见 Changesets 节门禁说明） |
 | `@nudojs/lsp` | **1.x**（1.4.0） | SemVer：破坏性 → major。冻结清单：`packages/lsp/PUBLIC_API.md` |
 | `@nudojs/env` / `@nudojs/harvester` | 0.x（0.4.17 / 0.3.3） | minor 可能破坏；为 IDE/CI 分析稳定可锁 minor。手写 env 在重叠模块/导出上 wins（`mergeHarvestUnderEnv`） |
 | `vite-plugin-nudo` | 0.x（0.4.18） | minor 可能破坏 |

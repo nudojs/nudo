@@ -16,7 +16,7 @@ Nudo is a pnpm monorepo that publishes **per-package** versions via [changesets]
 | `@nudojs/core` | **1.x**(1.7.2) | SemVer: breaking → major |
 | `@nudojs/service` | **1.x**(1.6.2) | SemVer: breaking → major |
 | `nudojs` | **1.x**(1.3.3) | SemVer: breaking → major |
-| `@nudojs/parser` | **1.x**(1.3.2) | SemVer: breaking → major. 2.0.0 was published by mistake and unpublished; the planned breaking release will land as an explicitly confirmed major (see the gate note under Changesets) |
+| `@nudojs/parser` | **1.x**(1.3.2) | SemVer: breaking → major. 2.0.0 was published by mistake and withdrawn; the planned breaking release will land as an explicitly confirmed major (see the gate note under Changesets) |
 | `@nudojs/lsp` | **1.x**(1.4.0) | SemVer: breaking → major. Freeze inventory: `packages/lsp/PUBLIC_API.md` |
 | `@nudojs/env` / `@nudojs/harvester` | 0.x(0.4.17 / 0.3.3) | Minor may break; pin a minor for stable IDE/CI analysis. Handwritten env wins on overlapping modules/exports (`mergeHarvestUnderEnv`) |
 | `vite-plugin-nudo` | 0.x(0.4.18) | Minor may break |

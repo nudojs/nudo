@@ -209,7 +209,7 @@ function versionTable(lang) {
     `| \`@nudojs/core\` | **${lineOf(versionOf("core"))}**${ver(versionOf("core"))} | ${R.stable} |`,
     `| \`@nudojs/service\` | **${lineOf(versionOf("service"))}**${ver(versionOf("service"))} | ${R.stable} |`,
     `| \`nudojs\` | **${lineOf(versionOf("nudojs"))}**${ver(versionOf("nudojs"))} | ${R.stable} |`,
-    `| \`@nudojs/parser\` | **${lineOf(versionOf("parser"))}**${ver(versionOf("parser"))} | ${R.stable} |`,
+    `| \`@nudojs/parser\` | **${lineOf(versionOf("parser"))}**${ver(versionOf("parser"))} | ${R.stable}${lang === "zh" ? "。2.0.0 曾被误发布并整班撤回——计划中的破坏性版本将以显式确认的 major 落地（见 Changesets 节门禁说明）" : ". 2.0.0 was published by mistake and withdrawn; the planned breaking release will land as an explicitly confirmed major (see the gate note under Changesets)"} |`,
     `| \`@nudojs/lsp\` | **${lineOf(versionOf("lsp"))}**${ver(versionOf("lsp"))} | ${R.lsp} |`,
     `| \`@nudojs/env\` / \`@nudojs/harvester\` | 0.x${ver(envVersions)} | ${R.env} |`,
     `| \`vite-plugin-nudo\` | 0.x${ver(versionOf("vite-plugin"))} | ${R.minor} |`,

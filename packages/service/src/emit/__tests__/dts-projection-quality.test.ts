@@ -125,7 +125,9 @@ describe("absToTSType legality (E1)", () => {
     expect(check.ok, check.stderr).toBe(true);
   });
 
-  it("wraps union/fn types in tuple rest element position (BUG-005)", () => {
+  // 3 次 tscNoEmit 子进程（兄弟用例只 1 次）：冷 fs 缓存下名义 ~8s，
+  // 默认 5s 在 Release 单作业满载时结构性不足（2026-10-04 Release Test 红）
+  it("wraps union/fn types in tuple rest element position (BUG-005)", { timeout: 30_000 }, () => {
     const unionRest = absToTSType(tupleOf([str()], unionOf(num(), str())));
     // bare `...number | string[]` parses as rest of `number | string[]`
     expect(unionRest).toBe("[string, ...(number | string)[]]");
