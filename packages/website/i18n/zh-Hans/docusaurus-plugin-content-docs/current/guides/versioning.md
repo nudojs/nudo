@@ -16,7 +16,7 @@ Nudo 是 pnpm monorepo，经 [changesets](https://github.com/changesets/changese
 | `@nudojs/core` | **1.x**（1.7.2） | SemVer：破坏性 → major |
 | `@nudojs/service` | **1.x**（1.6.2） | SemVer：破坏性 → major |
 | `nudojs` | **1.x**（1.3.3） | SemVer：破坏性 → major |
-| `@nudojs/parser` | **2.x**（2.0.0） | SemVer：破坏性 → major |
+| `@nudojs/parser` | **1.x**（1.3.2） | SemVer：破坏性 → major。2.0.0 major 曾被发布后回滚——计划中的破坏性版本将以显式确认的 major 落地（见 Changesets 节的门禁说明） |
 | `@nudojs/lsp` | **1.x**（1.4.0） | SemVer：破坏性 → major。冻结清单：`packages/lsp/PUBLIC_API.md` |
 | `@nudojs/env` / `@nudojs/harvester` | 0.x（0.4.17 / 0.3.3） | minor 可能破坏；为 IDE/CI 分析稳定可锁 minor。手写 env 在重叠模块/导出上 wins（`mergeHarvestUnderEnv`） |
 | `vite-plugin-nudo` | 0.x（0.4.18） | minor 可能破坏 |
@@ -88,6 +88,10 @@ pnpm exec changeset
 ```
 
 选择受影响的包与 bump 类型，写清 **谁会破 / 如何迁**。`main` 上 CI 执行 `changeset version` → 发布 → 文档 / VS Code 打包。
+
+### major 发布 fail-closed
+
+发布**未发布过的 major 版本**（任何 2.x+、major 跳变、首个 `1.0.0`）会被 `scripts/gate-major.mjs` 拦下，直到有人通过 `workflow_dispatch` 携 `confirm_major=true` 重跑 Release。该 dispatch 是**人工决策**——CI、bot、编码 agent 一律不得为了让运行变绿而自行设置 `confirm_major`/`CONFIRM_MAJOR`；此状态下的 Release 红意味着「等待维护者确认」，不是「坏了」。唯一豁免：已存在发布 git tag 的版本（无 changeset 的 push 对已发布版本的重复尝试，no-op）。
 
 | 情形 | Bump |
 |------|------|

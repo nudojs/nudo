@@ -1,7 +1,9 @@
 // R2-4 / FIX-J4 / PR#71 review：gate-major 政策对齐。
-// 1. --for-publish：拒绝未确认的 major 上升（2.x 天花板、相对 baseline 的跳变、
-//    无 baseline 时的首版 1.0.0）；1.x 火车（1.0.1+）必须可自动发。
-// 2. --check-baseline：失败保留 baseline（重跑仍能看到 jumps）；仅成功/confirm 时删除。
+// 1. --for-publish：拒绝未确认的 major 上升（2.x 天花板——唯一豁免是已有
+//    发布 tag 的 no-op 重试、相对 baseline 的跳变、无 baseline 时的首版 1.0.0）；
+//    1.x 火车（1.0.1+）必须可自动发。
+// 2. --check-baseline：失败保留 baseline（重跑仍能看到 jumps）；成功/确认后也保留
+//    （同一 job 的 --for-publish 要它做 jump 证据；下次 --save-baseline 整体覆盖）。
 import { describe, it, expect, afterEach } from "vitest";
 import {
   mkdtempSync,
@@ -18,6 +20,25 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const GATE_MAJOR = join(repoRoot, "scripts/gate-major.mjs");
+
+/** 在 fixture 伪仓里 init git 并打 tag（`git tag` 需要先有一个提交）。 */
+function tagInFixture(root: string, ...tags: string[]) {
+  execFileSync("git", ["-C", root, "init", "--quiet"]);
+  execFileSync("git", [
+    "-C",
+    root,
+    "-c",
+    "user.email=gate@test",
+    "-c",
+    "user.name=gate-test",
+    "commit",
+    "--quiet",
+    "--allow-empty",
+    "-m",
+    "init",
+  ]);
+  for (const t of tags) execFileSync("git", ["-C", root, "tag", t]);
+}
 
 const helpers = (await import(GATE_MAJOR)) as unknown as {
   majorOf: (v: string) => number;
@@ -253,38 +274,32 @@ describe("--for-publish: hand-edited 0.x → 1.0.0 (R2-4 regression)", () => {
     expect(r.stderr).toContain("test-core@2.0.1");
   });
 
-  it("allows the 2.x train without confirmation when the baseline proves same-major (in-run version shape)", () => {
-    // ci:version --save-baseline（changeset version 前）快照同 major 起点
-    // → same-train → 免 confirm 放行
+  it("blocks an unpublished same-major 2.x even with baseline proof (riding the train is not exempt)", () => {
+    // 绝对拦截：baseline 同 major 只证明「上一轮就在 2.x」，不豁免**未发布过**
+    // 的 2.x 版本（2.0.1 也要 CONFIRM_MAJOR）
     const root = makeFixture([{ dir: "core", name: "test-core", version: "2.0.1" }]);
     writeBaseline(root, [{ name: "test-core", version: "2.0.1" }]);
     const r = runGate(root, ["--for-publish"]);
-    expect(r.status).toBe(0);
-    expect(r.stdout).toContain("ok");
-  });
-
-  it("allows the 2.x train via the committed major-train registry (changeset-free merge push shape)", () => {
-    // changesets/action 在无 pending changesets 的 push 上不跑 version-script
-    // → run-local baseline 缺席 → 入库的 major-train.json 是唯一 same-train 证据
-    const root = makeFixture([{ dir: "core", name: "test-core", version: "2.0.1" }]);
-    writeFileSync(
-      join(root, ".changeset", "major-train.json"),
-      JSON.stringify({ "test-core": 2 }),
-    );
-    const r = runGate(root, ["--for-publish"]);
-    expect(r.status).toBe(0);
-    expect(r.stdout).toContain("ok");
-  });
-
-  it("hand-edited 2.x with neither registry entry nor baseline is still blocked", () => {
-    const root = makeFixture([{ dir: "core", name: "test-core", version: "2.0.1" }]);
-    writeFileSync(
-      join(root, ".changeset", "major-train.json"),
-      JSON.stringify({ "other-pkg": 2 }),
-    );
-    const r = runGate(root, ["--for-publish"]);
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("test-core@2.0.1");
+  });
+
+  it("exempts an already-released 2.x (release git tag exists → no-op re-attempt)", () => {
+    // 唯一豁免：该版本已有 `<name>@<version>` 发布 tag（曾成功发布过），
+    // publish 集里的重复尝试是 no-op——changeset-free push 不因此红
+    const root = makeFixture([{ dir: "core", name: "test-core", version: "2.0.1" }]);
+    tagInFixture(root, "test-core@2.0.1");
+    const r = runGate(root, ["--for-publish"]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("ok");
+  });
+
+  it("a tag of a different version does not exempt an unpublished 2.x", () => {
+    const root = makeFixture([{ dir: "core", name: "test-core", version: "2.0.2" }]);
+    tagInFixture(root, "test-core@2.0.1");
+    const r = runGate(root, ["--for-publish"]);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("test-core@2.0.2");
   });
 
   it("blocks a baseline 0→1 jump at publish even when version is not 1.0.0", () => {
@@ -345,7 +360,7 @@ describe("--check-baseline: failure keeps the evidence (R2-4 regression)", () =>
     expect(existsSync(baselinePath(root))).toBe(true);
   });
 
-  it("keeps the baseline on a confirmed jump and registers the confirmed train", () => {
+  it("keeps the baseline on a confirmed jump (publish gate still sees the entry)", () => {
     const root = makeFixture([{ dir: "env", name: "test-env", version: "0.4.10" }]);
     writeBaseline(root, [{ name: "test-env", version: "0.4.10" }]);
     setVersion(root, "env", "1.0.0");
@@ -354,9 +369,6 @@ describe("--check-baseline: failure keeps the evidence (R2-4 regression)", () =>
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("test-env: 0.4.10 → 1.0.0");
     expect(existsSync(baselinePath(root))).toBe(true);
-    // 确认结果写进入库登记表（changesets/action 随 Version PR 提交）
-    const train = JSON.parse(readFileSync(join(root, ".changeset", "major-train.json"), "utf8"));
-    expect(train).toEqual({ "test-env": 1 });
   });
 
   it("fails closed when the baseline is missing", () => {

@@ -16,7 +16,7 @@ Nudo is a pnpm monorepo that publishes **per-package** versions via [changesets]
 | `@nudojs/core` | **1.x**(1.7.2) | SemVer: breaking → major |
 | `@nudojs/service` | **1.x**(1.6.2) | SemVer: breaking → major |
 | `nudojs` | **1.x**(1.3.3) | SemVer: breaking → major |
-| `@nudojs/parser` | **2.x**(2.0.0) | SemVer: breaking → major |
+| `@nudojs/parser` | **1.x**(1.3.2) | SemVer: breaking → major. 2.0.0 was published by mistake and unpublished; the planned breaking release will land as an explicitly confirmed major (see the gate note under Changesets) |
 | `@nudojs/lsp` | **1.x**(1.4.0) | SemVer: breaking → major. Freeze inventory: `packages/lsp/PUBLIC_API.md` |
 | `@nudojs/env` / `@nudojs/harvester` | 0.x(0.4.17 / 0.3.3) | Minor may break; pin a minor for stable IDE/CI analysis. Handwritten env wins on overlapping modules/exports (`mergeHarvestUnderEnv`) |
 | `vite-plugin-nudo` | 0.x(0.4.18) | Minor may break |
@@ -88,6 +88,10 @@ pnpm exec changeset
 ```
 
 Pick packages + bump type, then write a short **who breaks / how to migrate** summary. CI on `main` runs `changeset version` → publish → docs/VS Code packaging.
+
+### Major bumps are fail-closed
+
+Publishing an **unpublished major version** (any 2.x+ version, a major jump, or a first `1.0.0`) is blocked by `scripts/gate-major.mjs` until someone re-runs the Release workflow via `workflow_dispatch` with `confirm_major=true`. That dispatch is a **human decision** — CI, bots, and coding agents must never set `confirm_major`/`CONFIRM_MAJOR` on their own to get a green run; a red Release run in this state means "waiting for a maintainer", not "broken". The only exemption is a version that already has its release git tag (a previously published version re-attempted by a changeset-free push — a no-op).
 
 | Situation | Bump |
 |-----------|------|

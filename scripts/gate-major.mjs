@@ -23,15 +23,16 @@
  *
  *   node scripts/gate-major.mjs --for-publish
  *     Fail if the publish set contains an unconfirmed major elevation:
- *     - major >= MAJOR_CEILING (2) ENTERING the line: not riding the committed
- *       major-train registry (.changeset/major-train.json) nor a baseline row
- *       on the same major (hand-edit / in-run jump shape)
- *     - major jump vs .changeset/.major-baseline.json (0→1, 1→2, …)
+ *     - major >= MAJOR_CEILING (2): NEVER auto-publish — entering the line,
+ *       riding it (2.0.1 patch included), or any unpublished 2.x+ version
+ *       requires CONFIRM_MAJOR
+ *     - major jump vs .changeset/.major-baseline.json (0→1 / 1→2 / …)
  *     - exact 1.0.0 with no baseline row: first-major candidate (0→1 shape)
- *     Same-train versions auto-publish — 1.x patches/minors (1.0.1, 1.3.0, …)
- *     AND majors whose line is confirmed in major-train.json (written at
- *     check-baseline confirm time, committed through the Version PR; the
- *     routine Version Packages merge push publishes without a re-confirm).
+ *     Single exemption: a 2.x+ version that already has its release git tag
+ *     (`<name>@<version>`, created by a previous publish). Re-attempting it is
+ *     a no-op — "No pending changesets — publish current package.json" pushes
+ *     stay green on a train that legitimately reached 2.x, while every
+ *     UNPUBLISHED major version stays fail-closed.
  *     Safety net for "No pending changesets — publish current package.json"
  *     and for hand-edited versions that never went through `changeset version`.
  *
@@ -39,10 +40,11 @@
  * packages/<name>/package.json files define the publish set.
  */
 import { readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-/** Publish ceiling line: ENTERING major >= 2 is never automatic (needs CONFIRM_MAJOR). Riding an established train (baseline-proven same major) is not gated. */
+/** Publish ceiling: major >= 2 is NEVER auto-published (any unpublished 2.x+ version needs CONFIRM_MAJOR). Only already-tagged (previously published) versions are exempt as no-ops. */
 export const MAJOR_CEILING = 2;
 
 function repoRoot() {
@@ -60,42 +62,19 @@ function baselinePathOf(root) {
 }
 
 /**
- * 已确认的 major 火车登记表（**入库提交**，非 sidecar）：
- * `.changeset/major-train.json` = { "@nudojs/parser": 2, … }。
- *
- * 为什么需要入库证据：changesets/action 在无 pending changesets 的 push 上
- * **跳过 version-script**（连 --save-baseline 都不跑），--for-publish 手里的
- * run-local baseline 缺席；而「Version PR merge 发布已确认的 2.x」与「手改
- * package.json 顶到 2.x」在本地无法区分。确认动作（workflow_dispatch
- * confirm_major=true）发生在 version 阶段——把确认结果**提交进 Version PR**
- * （check-baseline 确认通过时写入），merge 后它就是持久、防手改的
- * same-train 证据。
+ * 该版本是否已有发布 tag（`<name>@<version>`，changesets publish 成功时打）。
+ * 用于 --for-publish 的 no-op 豁免：tag 在 = 该版本曾成功发布过，本次 publish
+ * 集里只是重复（no-op）——不需要 CONFIRM_MAJOR。任何**未发布过**的 major
+ * 版本一律拦截。非 git 目录（测试 fixture 未 init）→ 无 tag → 严格拦截。
  */
-function majorTrainPathOf(root) {
-  return join(changesetDirOf(root), 'major-train.json');
-}
-
-/** @returns {Record<string, number>} */
-export function readMajorTrain(root = repoRoot()) {
+function alreadyReleased(root, name, version) {
+  const tag = `${name}@${version}`;
   try {
-    const raw = readFileSync(majorTrainPathOf(root), 'utf8');
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object') {
-      const out = {};
-      for (const [k, v] of Object.entries(parsed)) {
-        const n = Number(v);
-        if (Number.isFinite(n)) out[k] = n;
-      }
-      return out;
-    }
+    const out = execFileSync('git', ['-C', root, 'tag', '-l', tag], { encoding: 'utf8' });
+    return out.trim() === tag;
   } catch {
-    // missing / unreadable / malformed — treat as empty (conservative)
+    return false;
   }
-  return {};
-}
-
-function writeMajorTrain(root, train) {
-  writeFileSync(majorTrainPathOf(root), `${JSON.stringify(train, null, 2)}\n`);
 }
 
 function confirmedFromEnv() {
@@ -200,43 +179,36 @@ export function majorJumps(packages, baseline) {
  * Publish-time gate: packages that must not auto-publish without CONFIRM_MAJOR.
  *
  * Flags:
+ * - major >= MAJOR_CEILING (2): absolute — no unpublished 2.x+ version is ever
+ *   automatic (entering the line, riding it, hand-edit; all the same)
  * - major jump vs baseline (0→1 / 1→2 / …) — entering a major line, whether via
  *   `changeset version` in-run or a hand-edit (baseline is snapshotted by
  *   --save-baseline before `changeset version` runs, so in-run jumps are visible)
- * - major >= MAJOR_CEILING (2) **entering** the line with no same-train baseline
- *   row (unknown provenance — hand-edit shape)
  * - exact `1.0.0` with no baseline row — first-major candidate (0→1 shape)
  *
- * Does NOT flag same-train versions: 1.x patches/minors (1.0.1, 1.3.0, …) AND
- * majors riding a line confirmed in the committed major-train registry (or a
- * baseline row proving the run started on that line). Entering a major line —
- * via pending changesets (version gate), in-run `changeset version` (baseline
- * jump), or a hand-edit (no registry entry, no baseline row) — still needs
- * CONFIRM_MAJOR. Accepted trade-off (same as the pre-existing 1.x one): a
- * hand-edit WITHIN an established train auto-publishes.
+ * Does NOT flag same-major 1.x train versions (1.0.1, 1.3.0, …): those are
+ * already published as major=1 and must keep auto-publishing.
+ *
+ * The 2.x ceiling's only exemption — already-released versions (tagged by a
+ * previous publish, a no-op re-attempt) — is applied by the caller
+ * (--for-publish main block), which has the repo root for the git tag lookup.
  *
  * @param {Array<{name: string, version: string}>} packages
  * @param {Array<{name: string, version: string}>} [baseline]
- * @param {Record<string, number>} [train] 已确认 major 火车登记表（入库）
  * @returns {string[]}
  */
-export function elevatedForPublish(packages, baseline = [], train = {}) {
+export function elevatedForPublish(packages, baseline = []) {
   const byName = new Map(baseline.map((b) => [b.name, b.version]));
   const out = [];
   for (const p of packages) {
     const maj = majorOf(p.version);
-    const prev = byName.get(p.name);
-    const prevMaj = prev !== undefined ? majorOf(prev) : undefined;
     if (maj >= MAJOR_CEILING) {
-      // 2.x+： riding a confirmed train (committed registry) or a baseline-proven
-      // same-major start needs no confirm; anything else is an entry → confirm.
-      const trainMaj = train[p.name];
-      const riding = (trainMaj !== undefined && trainMaj >= maj) || prevMaj === maj;
-      if (!riding) out.push(`${p.name}@${p.version}`);
+      out.push(`${p.name}@${p.version}`);
       continue;
     }
+    const prev = byName.get(p.name);
     if (prev !== undefined) {
-      if (prevMaj < maj) out.push(`${p.name}@${p.version}`);
+      if (majorOf(prev) < maj) out.push(`${p.name}@${p.version}`);
       continue;
     }
     // No baseline row: refuse the classic hand-edit shape `1.0.0` (first major).
@@ -306,23 +278,14 @@ function main() {
     if (jumps.length > 0 && confirmed) {
       console.log('[gate-major] CONFIRM_MAJOR=1 — allowing major jumps:');
       for (const j of jumps) console.log(`  - ${j}`);
-      // 确认结果登记进**入库**的 major-train.json（changesets/action 会把
-      // version-script 的工作树改动连同版本一起提交进 Version PR）——merge
-      // 后它成为 --for-publish 的持久 same-train 证据（changeset-free push
-      // 上 action 不跑 version-script，run-local baseline 缺席）。
-      const train = readMajorTrain(root);
-      for (const { name, version } of publishablePackageJsons(root)) {
-        const maj = majorOf(version);
-        if ((train[name] ?? 0) < maj) train[name] = maj;
-      }
-      writeMajorTrain(root, train);
-      console.log(`[gate-major] updated ${join('.changeset', 'major-train.json')} (committed evidence)`);
     }
   }
 
   // ---- publish-time gate: major jumps + 2.x ceiling + first-major 1.0.0 ----
   // 1.x train (1.0.1+) is NOT gated: packages already at major=1 must auto-publish.
   // Baseline (kept by a failed --check-baseline) is the jump evidence for 0→1.
+  // 2.x+ ceiling's only exemption: already-released versions (release git tag
+  // exists → this publish attempt is a no-op re-attempt).
   if (forPublish) {
     /** @type {Array<{name: string, version: string}>} */
     let baseline = [];
@@ -333,10 +296,16 @@ function main() {
         baseline = [];
       }
     }
-    const elevated = elevatedForPublish(publishablePackageJsons(root), baseline, readMajorTrain(root));
+    const pkgs = publishablePackageJsons(root);
+    // elevatedForPublish 返回 `name@version` 字符串；no-op 豁免按包查 tag 后再投影回字符串
+    const flagged = new Set(elevatedForPublish(pkgs, baseline));
+    const elevated = pkgs
+      .filter((p) => flagged.has(`${p.name}@${p.version}`))
+      .filter((p) => !alreadyReleased(root, p.name, p.version))
+      .map((p) => `${p.name}@${p.version}`);
     if (elevated.length > 0 && !confirmed) {
       fail([
-        'Refusing to publish unconfirmed major elevations (2.x, major jumps, first 1.0.0).',
+        'Refusing to publish unconfirmed major elevations (unpublished 2.x+, major jumps, first 1.0.0).',
         ...elevated.map((e) => `  - ${e}`),
       ]);
     }
