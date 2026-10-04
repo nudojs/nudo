@@ -1,5 +1,22 @@
 # nudojs
 
+## 1.3.4
+
+### Patch Changes
+
+- 50e50f1: fix(env+check+eval): env 表不再遮蔽宿主命名空间（Math/Number/JSON/Object/Array/String/Date/Promise/BigInt——issue #87，区间透传恢复）；check 与 test/LSP 同口径 preload path 型 env（issue #89）；rewriteBareImports 支持子路径 specifier + nudojs 依赖 `@nudojs/env` + path env 导入失败发 `nudo:env-unresolved` warning（issue #88）；`??` 左值 nullish 臂过滤（`$removeNullish`，issue #90）；循环 pack/unpack 名单剔除循环体内局部词法声明（issue #91，消除 ReferenceError 误报）
+- Updated dependencies [50e50f1]
+- Updated dependencies [50e50f1]
+- Updated dependencies [50e50f1]
+- Updated dependencies [50e50f1]
+- Updated dependencies [50e50f1]
+- Updated dependencies [50e50f1]
+  - @nudojs/core@1.7.3
+  - @nudojs/service@1.6.3
+  - @nudojs/parser@1.4.0
+  - @nudojs/env@0.4.18
+  - @nudojs/harvester@0.3.4
+
 ## 1.3.3
 
 ### Patch Changes
