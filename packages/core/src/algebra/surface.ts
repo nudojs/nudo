@@ -626,6 +626,26 @@ export function strictEqAbs(a: Abs, b: Abs): boolean | undefined {
     if (k === "prim" && a.shape.type !== "number") return true;
     return undefined;
   }
+  // 对象面 ⊗ 函数面：对象与函数是两类不同的值，原生永不恒等
+  // （new C() === C → false；此前落 undefined → 调用方折 boolean，
+  // 欠精确）。obj/arr/tuple/brand/eff 与 fn 的跨形态比较直接折 false。
+  {
+    const ak = a.shape.k;
+    const bk = b.shape.k;
+    const aObjLike =
+      ak === "obj" || ak === "arr" || ak === "tuple" || ak === "brand" || ak === "eff";
+    const bObjLike =
+      bk === "obj" || bk === "arr" || bk === "tuple" || bk === "brand" || bk === "eff";
+    if ((aObjLike && bk === "fn") || (ak === "fn" && bObjLike)) return false;
+  }
+  // 实例 brand ⊗ 类值 brand：实例（无 ctor facet）永不是构造器值
+  // （$class 类值带 ctor: true facet）——跨 facet 比较直接折 false
+  // （new C() === C / new D() === C 均原生 false）。
+  if (a.shape.k === "brand" && b.shape.k === "brand") {
+    const aCtor = a.shape.ctor === true;
+    const bCtor = b.shape.ctor === true;
+    if (aCtor !== bCtor) return false;
+  }
   return undefined;
 }
 

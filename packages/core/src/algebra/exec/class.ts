@@ -11,7 +11,7 @@ import { pushCtorFrame, popCtorFrame, withNewTargetReset } from "./runtime/state
 import { $call } from "./call.ts";
 import { getFnImpl, absFunction, hostFnCtorFacet } from "../abs-fn.ts";
 import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, evalBuiltinNew, extStateOf, getPropFlags, isEnumerableView, tryMakeRegexAbs, makeArrayCtorAbs, assignSourceSlots, isSymbolAbs, stringOfSymbol, evalPromiseCtor, evalPromiseMethod, builtinCtorNameOf, makeProxyAbs, makeArrayBufferAbs, makeDataViewAbs, makeUrlAbs, noteBoxedCtorArg, sumHasPrimMember, evalDateCtor } from "../builtins.ts";
-import { arrayJoinToString, validateJoinElements } from "../builtins/array.ts";
+import { arrayJoinToString, arrayJoinWithSep, validateJoinElements } from "../builtins/array.ts";
 import { isMapAbs, isSetAbs, makeMapAbs, makeSetAbs, collectionElementJoin, ctorArgDefinitelyInvalid, makeWeakCollectionAbs } from "../collections.ts";
 import { registerMatchIter } from "./match-iter.ts";
 import { TUPLE_MATERIALIZE_CAP } from "../containers.ts";
@@ -26,7 +26,7 @@ import {
   validateCallableArg,
   validateIndexArg,
 } from "../hof.ts";
-import { toIOI } from "./runtime/containers.ts";
+import { toIOI, privateNameGuard } from "./runtime/containers.ts";
 import { emptyEnv } from "../ast-env.ts";
 import { defaultLeakBudget } from "../leak.ts";
 import { pTrue } from "../pred.ts";
@@ -187,7 +187,10 @@ export function $class(
   // 类值自有 name 属性（原生 Function.name；类表达式/声明均可读）
   setSlot(slots, "name", { value: strLit(name) });
   const val = abs(
-    { k: "brand", name, shape: objOf(slots) },
+    // ctor: true —— 类值 brand facet（构造器值本身）。实例 brand 无此
+    // facet：严格相等可直接判定「实例 ≠ 类值」（new C() === C → false，
+    // 原生两类值永不恒等）。leq/指纹按名义比较，facet 不参与。
+    { k: "brand", name, shape: objOf(slots), ctor: true },
     undefined,
     undefined,
     "exact",
@@ -686,6 +689,9 @@ function $invokeInner(
   args: Abs[],
   loc?: [number, number],
 ): Abs {
+  // 私有方法调用（"#" 键）：foreign-receiver brand check
+  // （原生 PrivateCall：接收者必须是声明类实例）
+  privateNameGuard(thisVal, method);
   // Function.prototype.call/apply/bind：fn Abs **或** 求值引擎 JS 函数（P1）
   if (method === "call" || method === "apply" || method === "bind") {
     // apply 第二参：tuple 精确展开；JS 数组逐项；Abs arr 长度未知 → 单 element
@@ -1427,7 +1433,10 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
   if (method === "join") {
     // Bug 36：join 逐元素 ToString——symbol 元素确定 TypeError（[Symbol()].join()
     // 原生抛）；any/真 unknown 元素 may（validateJoinElements 与一等 join 路径
-    // 共用）。合法路径保持 path-string（不假精确折叠分隔符拼接）。
+    // 共用）。字面量分隔符 + 全字面量元组 → 精确折叠（原生 ToString 语义，
+    // 含 hole→""、nullish 元素→""）；其余合法路径保持 path-string（不假精确）。
+    const folded = arrayJoinWithSep(arr, args[0]);
+    if (folded !== undefined) return folded;
     validateJoinElements(arr);
     return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
   }

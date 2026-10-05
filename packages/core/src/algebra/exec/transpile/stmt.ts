@@ -82,6 +82,30 @@ export function emitFnBlockBody(
   return implicitReturn ? withImplicitReturn(body, stmts, depth) : stmts;
 }
 
+/**
+ * 提升态非构造器标记（Bug 9）：generator/async 函数声明原生
+ * 提升——声明语句之前的 `new g()` 也须见 `__nudoNonCtor`
+ * （此前行内标记在声明处赋值，先用后声明时未执行→$new 误判
+ * 「可构造性未知」may 档 + 假 brand 值域）。标记提升到所在
+ * 语句列表顶部；早退拆分时 head 声明标记在外层、rest 声明
+ * 标记由递归调用在 thunk 内各自提升（声明本身也在 thunk 内）。
+ */
+function hoistNonCtorMarkers(stmts: Statement[], depth: number): string {
+  const names: string[] = [];
+  for (const s of stmts) {
+    if (
+      s.type === "FunctionDeclaration" &&
+      s.id &&
+      (s.generator || s.async)
+    ) {
+      names.push(s.id.name);
+    }
+  }
+  if (names.length === 0) return "";
+  const pad = indent(depth);
+  return names.map((n) => `${pad}${n}.__nudoNonCtor = 1;`).join("\n") + "\n";
+}
+
 export function transpileFnBodyStmts(stmtsIn: Statement[], depth: number, opts: TranspileOptions): string {
   const stmts = completeElseChains(stmtsIn);
   // 本层 const 可见性（含父作用域、扣除本层 let/var 遮蔽）——用户再赋值 TypeError
@@ -147,7 +171,7 @@ export function transpileFnBodyStmts(stmtsIn: Statement[], depth: number, opts: 
           ? `${pad}$loopReturn($fork(${test}, ${cons}, ${alt}));`
           : `${pad}return $fork(${test}, ${cons}, ${alt});`,
       ].join("\n");
-      return head ? `${head}\n${promoted}` : promoted;
+      return hoistNonCtorMarkers(stmts.slice(0, i), depth) + (head ? `${head}\n${promoted}` : promoted);
     }
     const promoted = [
       `${pad}{`,
@@ -160,9 +184,9 @@ export function transpileFnBodyStmts(stmtsIn: Statement[], depth: number, opts: 
         : `${padIn}return __fkR;`,
       `${pad}}`,
     ].join("\n");
-    return head ? `${head}\n${promoted}` : promoted;
+    return hoistNonCtorMarkers(stmts.slice(0, i), depth) + (head ? `${head}\n${promoted}` : promoted);
   }
-  return stmts.map((s) => transpileStatement(s, depth, scopedOpts)).join("\n");
+  return hoistNonCtorMarkers(stmts, depth) + stmts.map((s) => transpileStatement(s, depth, scopedOpts)).join("\n");
 }
 
 
@@ -310,8 +334,8 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         ? `${indent(depth + 1)}const ${rest} = arguments.length > ${named.length} ? $arr(Array.from(arguments).slice(${named.length})) : $arr([]);\n`
         : "";
       // function* → $gen 收集 yield。宿主函数是普通 function（transpile 已去
-      // generator 化）——挂 __nudoNonCtor 标记，$new/$class(extends)/asAbsVal
-      // 经 hostFnCtorFacet 识别（Bug 9：generator 不可 new）
+      // generator 化）——__nudoNonCtor 标记由 hoistNonCtorMarkers
+      // 提升到作用域顶部（先用后声明也可见，Bug 9）
       if (stmt.generator) {
         return [
           `${pad}${exportKw}function ${stmt.id.name}(${named.join(", ")}) {`,
@@ -320,7 +344,6 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           bodyStmts,
           `${indent(depth + 1)}});`,
           `${pad}}`,
-          `${pad}${stmt.id.name}.__nudoNonCtor = 1;`,
         ].join("\n");
       }
       // async 声明同口径：宿主函数是普通 function（body 包 $async）
@@ -332,7 +355,6 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           bodyStmts,
           `${indent(depth + 1)}});`,
           `${pad}}`,
-          `${pad}${stmt.id.name}.__nudoNonCtor = 1;`,
         ].join("\n");
       }
       return [

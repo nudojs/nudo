@@ -49,6 +49,81 @@ import { $call } from "../call.ts";
 // 数组
 // --- 数组 ---
 
+/**
+ * 私有名接收者校验（Bug 78 "#" 混淆键设计）：原生
+ * PrivateFieldGet/Set/PrivateCall 要求接收者是**声明该私有名的
+ * 类**的实例，否则 TypeError。私有名是类作用域——不经继承链
+ * （子类实例不含父类私有名）。
+ * - brand：自有槽（私有字段/静态字段）/ 私有访问器 / 私有方法
+ *   命中即声明类实例；否则确定 foreign receiver → 硬抛。
+ * - prim/eff/fn/tuple/arr：绝非类实例 → 硬抛。
+ * - obj/any/sum：抽象对象可能是声明类实例 → may TypeError。
+ * 公有名零开销（首字符前缀判定）。
+ */
+export function privateNameGuard(o: unknown, key: string): void {
+  if (key.charCodeAt(0) !== 35 /* # */) return;
+  if (!o || typeof o !== "object" || !("shape" in (o as object))) {
+    // 宿主值作私有名接收者：原生 TypeError（私有名语法只可达
+    // 类实例；泄漏宿主值时 fail-closed 硬抛）
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  const s = (o as Abs).shape;
+  if (s.k === "brand") {
+    const inner = s.shape;
+    if (inner?.shape.k === "obj") {
+      const slot = getSlot(inner.shape.slots, key);
+      if (slot && !slot.optional) return; // 声明的私有字段
+    }
+    const spec = getEvalClass(s.name);
+    if (!spec) throw new NudoThrow(errorTypeAbs("TypeError"));
+    if (classNameOfValue(o as object) === s.name) {
+      // 类值接收者：私有静态成员（静态槽/静态访问器/静态方法；
+      // 声明的静态字段——$staticInit 初始化期槽尚未存在）
+      if (
+        spec.staticAccessors?.[key] ||
+        spec.staticMethods?.[key] ||
+        (spec.statics !== undefined && key in spec.statics)
+      ) {
+        return;
+      }
+    } else {
+      // 实例接收者：私有实例成员。私有名沿构造链安装到子类
+      // 实例（InitializeInstanceElements 逐类执行——父类私有
+      // 字段/方法会物化到子类实例）——声明检查沿类链；槽上
+      // 已物化字段在上方命中，此处补覆盖初始化期尚未物化的
+      // 声明字段/访问器/方法（applyInstanceFields 写父类字段
+      // 时接收者品牌是子类名）
+      for (const n of evalClassChain(s.name)) {
+        const sup = getEvalClass(n);
+        if (
+          sup?.accessors?.[key] ||
+          sup?.methods?.[key] ||
+          sup?.instanceFields?.some((f) => f.name === key)
+        ) {
+          return;
+        }
+      }
+    }
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  if (
+    s.k === "prim" ||
+    s.k === "eff" ||
+    s.k === "fn" ||
+    s.k === "tuple" ||
+    s.k === "arr"
+  ) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  if (s.k === "obj" || s.k === "any" || s.k === "sum") {
+    recordMayThrow({
+      kind: "TypeError",
+      cause: `private member ${key} on receiver that may not declare it`,
+    });
+  }
+  // unknown：fail-closed 令牌，不记（与 $call/$in 口径一致）
+}
+
 /** 容器策略单点（containers.ts）：≤cap → tuple；>cap → arr（元素 join，path） */
 export function tupleOrWiden(els: Abs[], conf: Confidence): Abs {
   if (shouldWidenArrayLiteral(els.length)) {
@@ -1465,6 +1540,9 @@ export function $get(
   key: string,
   opts?: { /** 调用方已负责诊断（如 $invoke） */ silent?: boolean },
 ): Abs {
+  // 私有名（"#" 键）：foreign-receiver brand check——原生
+  // PrivateFieldGet 要求接收者是声明类实例，否则 TypeError
+  privateNameGuard(o, key);
   // 宿主 JS 对象（Math/JSON…）：属性按命名空间/真值投影
   if (!o || typeof o !== "object" || !("shape" in (o as object))) {
     // Object.prototype / Object.prototype.X（含 host 身份）
@@ -1718,6 +1796,8 @@ export function $collectionForEach(recv: Abs, cb: unknown): Abs | undefined {
 
 /** 成员写：返回新 obj/brand（不可变更新）；frozen/sealed/只读目标按 sloppy 静默失败 */
 export function $set(o: Abs, key: string, value: Abs): Abs {
+  // 私有名（"#" 键）：foreign-receiver brand check（PrivateFieldSet）
+  privateNameGuard(o, key);
   // DEC-006 B/C：free identifier 可能把宿主值（globalThis…）漏进来——
   // 非 Abs 目标 fail-closed 返回原接收者（调用点 `root = $set(root, …)` 重绑
   // 为自赋值 no-op），禁止读 .shape 炸宿主 TypeError（$get 同口径）

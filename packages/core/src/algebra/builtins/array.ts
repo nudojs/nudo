@@ -263,6 +263,61 @@ export function arrayJoinToString(recv: Abs): Abs {
   return str();
 }
 
+/**
+ * Array.prototype.join(sep)：字面量分隔符 + 全字面量元组 → 精确折叠。
+ * 返回 undefined = 不可折叠（调用方保守 path-string）。分隔符分类按原生
+ * ToString：absent/undefined ≡ ","；null → "null"；string/number/boolean/bigint
+ * 字面量 → String(v)；symbol prim → 确定 TypeError；any → may TypeError
+ * （可能是 Symbol）且不折叠；对象/抽象 → 不折叠。
+ * 元素侧与 arrayJoinToString 同口径（hole → ""，nullish → ""，symbol →
+ * 确定 TypeError，非 lit → 不折叠）。
+ */
+export function arrayJoinWithSep(
+  recv: Abs,
+  sepAbs: Abs | undefined,
+): Abs | undefined {
+  const s = recv.shape;
+  if (s.k !== "tuple") return undefined;
+  let sep: string;
+  if (sepAbs === undefined) {
+    sep = ",";
+  } else if (isSymbolAbs(sepAbs)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  } else if (sepAbs.shape.k === "any") {
+    recordMayThrow({
+      kind: "TypeError",
+      cause: "join separator ToString of abstract operand",
+    });
+    return undefined;
+  } else {
+    const r = litValue(sepAbs);
+    if (!r.ok) return undefined;
+    const v = r.value;
+    if (v === undefined) sep = ",";
+    else if (v === null) sep = "null";
+    else if (typeof v === "object") return undefined;
+    else sep = String(v);
+  }
+  validateJoinElements(recv);
+  const holes = s.holes ?? [];
+  const parts: string[] = [];
+  for (let i = 0; i < s.elements.length; i++) {
+    if (holes.includes(i)) {
+      parts.push("");
+      continue;
+    }
+    const el = s.elements[i]!;
+    if (isSymbolAbs(el)) throw new NudoThrow(errorTypeAbs("TypeError"));
+    const t = el.term;
+    if (t?.op !== "lit") return undefined;
+    const v = t.value;
+    if (v === null || v === undefined) parts.push("");
+    else if (typeof v === "object") return undefined;
+    else parts.push(String(v));
+  }
+  return strLit(parts.join(sep));
+}
+
 /** Array.prototype.toString / toLocaleString / join 一等函数（bindThis 注入 receiver） */
 export function arrayMethodAbs(name: "toString" | "toLocaleString" | "join"): Abs {
   return absFunction(["thisArg"], {
@@ -270,9 +325,12 @@ export function arrayMethodAbs(name: "toString" | "toLocaleString" | "join"): Ab
     bindThis: true,
     apply: (a) => {
       const recv = a[0] ?? undefAbs();
-      // join 带可选分隔符：不假精确折叠，保持 path string（与 $invoke 同口径）。
-      // Bug 36：一等 join 路径同样逐元素校验（symbol 确定 TypeError / 抽象 may）
+      // join 带可选分隔符：字面量分隔符 + 全字面量元组精确折叠，其余
+      // 保守 path string（与 $invoke 同口径）。Bug 36：一等 join 路径
+      // 同样逐元素校验（symbol 确定 TypeError / 抽象 may）
       if (name === "join") {
+        const folded = arrayJoinWithSep(recv, a[1]);
+        if (folded !== undefined) return folded;
         validateJoinElements(recv);
         return str();
       }
