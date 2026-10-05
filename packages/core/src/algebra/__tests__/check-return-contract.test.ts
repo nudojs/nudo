@@ -762,3 +762,77 @@ function totalScore(dims) {
     expect(r.issues.filter((i) => i.severity !== "info")).toEqual([]);
   });
 });
+
+describe("issue #102：OOB marker 臂不 disproved（DP 表返回契约）", () => {
+  // 抽象下标读（d[m]）并入的 oobUndef marker（conf=partial 的合成
+  // undefined）此前作为 nullish 臂走 disproved → 契约 ERROR（gate 红）。
+  // marker 是引擎精度产物（长度事实丢失），非用户域 undefined——降
+  // unprovable（warning），真实臂证据充分时仍照常 disproved。
+  const LEV = `
+export function lev(a, b) {
+  if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+  const m = long.length;
+  const n = short.length;
+  const d = [];
+  for (let i = 0; i <= m; i++) {
+    d[i] = new Array(n + 1).fill(0);
+    d[i][0] = i;
+  }
+  for (let j = 0; j <= n; j++) d[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = long[i - 1] === short[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+      if (i > 1 && j > 1 && long[i - 1] === short[j - 2] && long[i - 2] === short[j - 1]) {
+        d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+      }
+    }
+  }
+  return d[m][n];
+}`;
+
+  it("OSA levenshtein：number() 返回契约不报 error（marker → warning）", () => {
+    const r = issuesOf(
+      `/**\n * @nudo:contract a nonEmpty\n * @nudo:contract b nonEmpty\n * @nudo:contract return num\n */\n${LEV}`,
+    );
+    expect(r.ok).toBe(true);
+    expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
+    const ret = r.issues.filter((i) => i.message.includes("@nudo:contract return"));
+    expect(ret).toHaveLength(1);
+    expect(ret[0]!.severity).toBe("warning");
+    expect(ret[0]!.code).toBe("nudo:unproven-return");
+    // 签名仍诚实显示 OOB 臂（marker 只降级证明通道，不改值域显示）
+    expect(r.signatures.find((s) => s.name === "lev")?.display).toMatch(/undefined/);
+  });
+
+  it("单 marker 臂（空表抽象下标读）同口径：warning 不 error", () => {
+    const r = issuesOf(`
+/**
+ * @nudo:contract return num
+ */
+function miss(i) {
+  const d = [];
+  return d[i];
+}
+`);
+    expect(r.ok).toBe(true);
+    expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
+    expect(r.issues.some((i) => i.code === "nudo:unproven-return")).toBe(true);
+  });
+
+  it("真实 nullish 返回不受 marker 豁免影响（仍 error）", () => {
+    const r = issuesOf(`
+/**
+ * @nudo:contract return num
+ */
+function real() {
+  return undefined;
+}
+`);
+    expect(r.ok).toBe(false);
+    expect(r.issues.some((i) => i.code === "nudo:constraint-violated")).toBe(true);
+  });
+});
