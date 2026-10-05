@@ -19,6 +19,7 @@ import {
   litValue,
   formatAbs,
   getFnImpl,
+  hostFnCtorFacet,
   tryRunTranspiled,
   bindingsOf,
   callTranspiledExportApply,
@@ -304,13 +305,16 @@ function loadFromMockBinding(
   } else if (typeof val === "function") {
     const fn = val as { length?: number };
     const params = Array.from({ length: fn.length ?? 0 }, (_, i) => `arg${i}`);
+    // Bug 9：求值模块的宿主函数导出（函数声明产物）——generator/async 不可
+    // new，普通声明可 new。可构造性 facet 进 shape（$new 校验）。
+    const ctorFacet = hostFnCtorFacet(val as Function);
     absVal = absFunction(params, {
       // H1：throws 面经 apply 返回值通道保留（callTranspiledExportApply），
       // $call 统一路由——mock 桥与导出桥同一通道（BUG-006 根治）。
       apply: callTranspiledExportApply(run!, name),
       kind: "eval-export",
       fingerprint: `from-mock=${fromPath}#${name}`,
-    });
+    }, ctorFacet !== undefined ? { ctor: ctorFacet } : undefined);
   } else {
     absVal = absUnknown;
   }

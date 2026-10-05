@@ -254,6 +254,11 @@ export function emitDestructure(
     return;
   }
   if (pattern.type === "ArrayPattern") {
+    // 原生数组解构 = GetIterator + IteratorNext：非可迭代接收者抛 TypeError。
+    // 逐项 $idx / $arrRest 投影前先过迭代性守卫（Bug 7：`const [x] = 1` /
+    // `= {}` definite，抽象接收者 may）；字符串/元组等可迭代接收者与对象
+    // 模式（$get 路径）不受影响。fromSrc 是临时名/绑定名，重复求值无副作用。
+    out.push(`${pad}$iterCheck(${fromSrc});`);
     let restName: string | undefined;
     let restAt = 0;
     pattern.elements.forEach((el, i) => {

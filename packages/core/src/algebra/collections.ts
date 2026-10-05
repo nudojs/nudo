@@ -7,6 +7,8 @@
 import type { Abs } from "./abs.ts";
 import { abs, litValue, unknown, confJoin, strLit } from "./abs.ts";
 import { objOf, joinAbs } from "./objects.ts";
+import { NudoThrow } from "./nudo-throw.ts";
+import { errorTypeAbs } from "./may-throw.ts";
 
 type LitKey = string | number | boolean | null | undefined;
 /** litKeyOf 无字面量哨兵：lit(undefined) 是合法键，不得与「无字面量」共用 undefined */
@@ -324,13 +326,16 @@ function elementsFrom(iterable: Abs | undefined): Abs[] {
 
 /**
  * 构造器实参**确定**非法（原生 TypeError 域）：
- * - 非可迭代字面量（number/boolean/symbol/bigint、闭对象字面量）→ Set/Map 都抛
- * - Map 条目必须是对象：外层 iterable 出现 lit prim 条目（含字符串实参的
- *   每个字符、tuple/Set 元素）→ TypeError（空串例外：零条目合法）
+ * - 非可迭代字面量（number/boolean/symbol/bigint、闭对象字面量）→ 四个集合构造器都抛
+ * - Map/WeakMap 条目必须是对象：外层 iterable 出现 lit prim 条目（含字符串实参的
+ *   每个字符、tuple/Set 元素）→ TypeError（空串例外：零条目合法）；
+ *   WeakMap 键还必须可弱持有——tuple 条目首元素（键）为 prim → TypeError
+ *   （Map 键可以是 prim，仅 WeakMap 抛 "Invalid value used as weak map key"）
+ * - WeakSet 元素必须可弱持有：prim 元素（含字符串字符）→ TypeError
  * 抽象形态不确定 → false（保守）。
  */
 export function ctorArgDefinitelyInvalid(
-  name: "Map" | "Set",
+  name: "Map" | "Set" | "WeakMap" | "WeakSet",
   iterable: Abs | undefined,
 ): boolean {
   if (!iterable) return false; // null/undefined → 空容器
@@ -348,15 +353,46 @@ export function ctorArgDefinitelyInvalid(
     return false;
   };
   if (nonIterableLit(iterable)) return true;
-  if (name !== "Map") return false;
-  // Map：外层 iterable 的每个条目必须是对象；lit prim 条目（含字符串字符）→ TypeError
+  if (name === "Set") return false;
+  // Map/WeakMap/WeakSet：外层 iterable 的每个条目/元素必须是（可弱持有的）
+  // 对象；lit prim 条目（含字符串字符）→ TypeError
   const primEntry = (a: Abs): boolean => a.shape.k === "prim";
   const svR = litValue(iterable);
   const sv = svR.ok && typeof svR.value === "string" ? svR.value : undefined;
   if (typeof sv === "string") return sv.length > 0;
-  if (iterable.shape.k === "tuple") return iterable.shape.elements.some(primEntry);
+  if (iterable.shape.k === "tuple") {
+    for (const el of iterable.shape.elements) {
+      if (primEntry(el)) return true;
+      // WeakMap 键必须可弱持有：entry 是 ≥2 元 tuple 且键（首元素）为 prim → TypeError
+      if (
+        name === "WeakMap" &&
+        el.shape.k === "tuple" &&
+        el.shape.elements.length >= 2 &&
+        primEntry(el.shape.elements[0]!)
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
   if (isSetAbs(iterable)) return setElementsAbs(iterable).some(primEntry);
   return false;
+}
+
+/**
+ * Bug 15：new WeakMap/WeakSet(iterable) —— Map/Set 同口径的 iterable 实参校验
+ * （非可迭代字面量 / prim 条目·元素 / WeakMap prim 键 → 原生 TypeError，
+ * NudoThrow 由调用边界收成 throws）；缺省/nullish/空串合法 → 空 brand。
+ * 弱持有条目表不建模（key 身份不在分析域）。
+ */
+export function makeWeakCollectionAbs(
+  name: "WeakMap" | "WeakSet",
+  iterable: Abs | undefined,
+): Abs {
+  if (ctorArgDefinitelyInvalid(name, iterable)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  return brandOf(name);
 }
 
 export function makeMapAbs(iterable?: Abs): Abs {

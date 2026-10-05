@@ -128,9 +128,11 @@ function handler(mock: Mock, method: string): AnyHandler {
   return h!;
 }
 
+// Bug 8（wave 3）：`x + y`（any 形参算术）原生 may TypeError → 不再是 clean
+// 样本；本组用例意图是「clean 文件 → ok / 空诊断发布」，改用恒总 identity。
 const CHECK_OK = `
-export function add(x, y) {
-  return x + y;
+export function id(x) {
+  return x;
 }
 `;
 

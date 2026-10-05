@@ -17,6 +17,12 @@ export type EvalClassAccessor = {
 export type EvalClassSpec = {
   name: string;
   superName?: string;
+  /**
+   * Bug 11：`class C extends null`（合法——原型链无 super，但构造受限）。
+   * 隐式 ctor 等价 super(...args)，原生 new C() 抛 TypeError
+   * （Super constructor null … is not a constructor）；显式 super() 同抛（$super）。
+   */
+  superNull?: boolean;
   ctor?: (thisVal: Abs, ...args: Abs[]) => Abs;
   methods?: Record<string, (thisVal: Abs, ...args: Abs[]) => Abs>;
   /** 实例方法形参展示名（AST 形参名；未调用方法槽 `shape.params` 用） */
@@ -25,6 +31,23 @@ export type EvalClassSpec = {
   /** 静态方法形参展示名 */
   staticMethodParams?: Record<string, string[]>;
   statics?: Record<string, Abs>;
+  /**
+   * Bug 59：实例字段——每次 $new 以新实例为 this 按源序求值（原生
+   * InitializeInstanceElements）。name 为字面量键；key 为计算键的
+   * 每次构造求值 thunk（原生计算键逐实例求值）；抽象键不可静态命名
+   * → 跳过（不假精确挂名）。
+   */
+  instanceFields?: Array<{
+    name?: string;
+    key?: (thisVal: Abs) => Abs;
+    init: (thisVal: Abs) => Abs;
+  }>;
+  /**
+   * Bug 60：计算键成员——synth 名 → 键 Abs（定义期求值，求值本身即
+   * 记录 throws）。$class 折叠字面量 string/number 键为真名重挂；
+   * 抽象键（any/symbol/…）不可静态列举 → 成员不挂名（不静默错名）。
+   */
+  computedKeys?: Record<string, unknown>;
   /** 实例 get/set：get 无参返回 Abs；set 收到 (thisVal, v) 返回更新后的 thisVal */
   accessors?: Record<string, EvalClassAccessor>;
   /** 静态 get/set：挂在类构造器上，不在实例原型链 */
@@ -71,7 +94,12 @@ function specShape(spec: EvalClassSpec): string {
   const methods = Object.keys(spec.methods ?? {}).sort().join(",");
   const statics = Object.keys(spec.staticMethods ?? {}).sort().join(",");
   const accessors = Object.keys(spec.accessors ?? {}).sort().join(",");
-  return `${ctorName}[${methods}](${statics}){${accessors}}`;
+  const fields = Object.keys(spec.statics ?? {}).sort().join(",");
+  const instFields = (spec.instanceFields ?? [])
+    .map((f) => f.name ?? "<computed>")
+    .sort()
+    .join(",");
+  return `${ctorName}[${methods}](${statics}){${accessors}}{${fields}}{${instFields}}`;
 }
 
 export function registerEvalClass(spec: EvalClassSpec): void {

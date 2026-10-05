@@ -96,33 +96,45 @@ describe("loop pack/unpack exclusion × shadowing", () => {
   };
 
   it("for-of: nested block `let x` does not evict outer pack var (sound 0 | 1, was unsound 1)", () => {
-    // a=[] 真值 0；`=> 1` 即非健全
-    expect(sig("shadowPack").display).toBe("0 | 1  #exact");
+    // a=[] 真值 0；`=> 1` 即非健全。
+    // throws TypeError：for-of over any 接收者 may TypeError（Bug 6 迭代守卫，原生语义）
+    expect(sig("shadowPack").display).toBe("0 | 1  #exact throws TypeError");
   });
 
   it("for / while: same shadow soundness across loop forms", () => {
-    expect(sig("forShadow").display).toBe("0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8  #exact");
-    expect(sig("whileShadow").display).toBe("0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8  #exact");
+    // forShadow 的 throws：a[i] 计算成员读 any 接收者 may TypeError（$idx 守卫）
+    expect(sig("forShadow").display).toBe("0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8  #exact throws TypeError");
+    // whileShadow 的 throws：`i < a.length`（a.length:any）关系比较 may TypeError
+    //（Bug 31 关系算子守卫，原生语义：a.length 可能为 Symbol）；值域不变
+    expect(sig("whileShadow").display).toBe("0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8  #exact throws TypeError");
   });
 
   it("do-while: body-first semantics preserved (1..9)", () => {
-    expect(sig("doWhileShadow").display).toBe("1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9  #exact");
+    // 同 whileShadow：`while (i < a.length)`（Bug 31，a.length:any may Symbol）
+    expect(sig("doWhileShadow").display).toBe("1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9  #exact throws TypeError");
   });
 
   it("#91: top-level `const re` (regex state rebind) stays excluded — no ReferenceError", () => {
     const rep91 = checkSource("loop-pack-91.js", issue91Src);
     const f4 = rep91.signatures.find((s) => s.name === "f4");
     expect(f4).toBeTruthy();
-    // #91 症状面：entry 不再报 may throw ReferenceError；签名保持 sound 布尔并集
-    expect(f4!.display).toBe("true | false  #exact  join(boolean | boolean|boolean)");
-    expect(f4!.throws).toBeUndefined();
+    // #91 症状面：entry 不再报 may throw ReferenceError；签名保持 sound 布尔并集。
+    // throws TypeError（非 ReferenceError）：for-of over any 接收者（files）may
+    // TypeError（Bug 6 迭代守卫，原生语义）。
+    expect(f4!.display).toBe("true | false  #exact  join(boolean | boolean|boolean) throws TypeError");
+    expect(String(f4!.throws)).toContain("TypeError");
+    expect(String(f4!.throws)).not.toContain("ReferenceError");
     const sel = rep91.signatures.find((s) => s.name === "selectedByFiles");
     expect(sel).toBeTruthy();
-    expect(sel!.display).toBe("true | false  #exact");
-    expect(sel!.throws).toBeUndefined();
+    expect(sel!.display).toBe("true | false  #exact throws TypeError");
+    expect(String(sel!.throws)).toContain("TypeError");
+    expect(String(sel!.throws)).not.toContain("ReferenceError");
     const entryThrows = rep91.issues.filter(
       (i) => i.code === "nudo:entry-may-throw" && (i.fn === "f4" || i.fn === "selectedByFiles"),
     );
-    expect(entryThrows).toEqual([]);
+    // L2 gate 现在因 may TypeError 报错（Bug 6 迭代守卫，原生语义）；
+    // #91 的回归面是 ReferenceError——不得再出现。
+    expect(entryThrows.every((i) => !String(i.message).includes("ReferenceError"))).toBe(true);
+    expect(entryThrows.length).toBeGreaterThan(0);
   });
 });

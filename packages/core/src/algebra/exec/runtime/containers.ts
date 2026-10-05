@@ -2,7 +2,7 @@
  * 数组 / 对象运行时：$arr/$idx/$len/$arrMutContainer 与 $obj/$get/$set/$spread。
  */
 import type { Abs } from "../../abs.ts";
-import { abs, bool, boolLit, confJoin, litValue, numLit, unknown, type Confidence } from "../../abs.ts";
+import { abs, bool, boolLit, confJoin, litValue, numLit, str, unknown, type Confidence } from "../../abs.ts";
 import { lit } from "../../term.ts";
 import type { Phi } from "../../pred.ts";
 import { pTrue, and, predEquals } from "../../pred.ts";
@@ -17,7 +17,7 @@ import {
   mapEntriesAbs, mapSizeAbs, setSizeAbs,
 } from "../../collections.ts";
 import { shouldWidenArrayLiteral, widenedArrayConf, TUPLE_MATERIALIZE_CAP } from "../../containers.ts";
-import { registerMatchIter, matchIterElements } from "../match-iter.ts";
+import { registerMatchIter, registerTplElements, matchIterElements } from "../match-iter.ts";
 import {
   evalNamespaceCall, extStateOf, getPropFlags, migrateInvariants, enumOwnKeys,
   regexBrandAbsFrom, evalObjectProtoMethod, objectProtoMethodAbs,
@@ -26,6 +26,7 @@ import {
   protoBrandAbs, notePromiseExecutorFork,
 } from "../../builtins.ts";
 import { arrayMethodAbs } from "../../builtins/array.ts";
+import { validateCallableArg, validateIndexArg } from "../../hof.ts";
 import {
   noteUnknownMemberMissing, noteObjSlotMissing,
   noteAnyMemberMayThrow, noteNullishMemberThrows, isNullishAbs, anyMemberResult,
@@ -152,6 +153,11 @@ export function copyWithinTuple(
   shape: { k: "tuple"; elements: Abs[]; holes?: number[] } | { k: "arr"; element: Abs },
   vals: Abs[],
 ): Abs {
+  // Bug 56：target/start/end 三个下标位经 ToIntegerOrInfinity——symbol/bigint
+  // 确定 TypeError；抽象 → may（空接收者同样先校验，再进窗口投影）
+  validateIndexArg(vals[0], "copyWithin target may not be convertible to a number");
+  validateIndexArg(vals[1], "copyWithin start may not be convertible to a number");
+  validateIndexArg(vals[2], "copyWithin end may not be convertible to a number");
   const t = toIOI(vals[0]);
   const s = toIOI(vals[1]);
   const e = toIOI(vals[2]);
@@ -219,6 +225,10 @@ export function fillTuple(
   vals: Abs[],
   arr: Abs,
 ): Abs {
+  // Bug 56：start/end 下标位经 ToIntegerOrInfinity 校验；vals[0]（value 实参）
+  // 不校验——原生存储不转换（fill(Symbol()) 合法）
+  validateIndexArg(vals[1], "fill start may not be convertible to a number");
+  validateIndexArg(vals[2], "fill end may not be convertible to a number");
   const v = vals[0] ?? unknown;
   const s = toIOI(vals[1]);
   const e = toIOI(vals[2]);
@@ -409,6 +419,11 @@ export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
     return arr;
   }
   if (method === "splice") {
+    // Bug 56：start/deleteCount 经 ToIntegerOrInfinity——symbol/bigint 下标
+    // 确定 TypeError（空接收者同样先校验）；抽象 → may。values 实参不校验
+    //（原生存储不转换）。此前分支完全不读实参。
+    validateIndexArg(vals[0], "splice start may not be convertible to a number");
+    validateIndexArg(vals[1], "splice deleteCount may not be convertible to a number");
     if (shape.k === "tuple") {
       return writeBack(
         abs(
@@ -446,6 +461,12 @@ export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
     return writeBack(fillTuple(shape, vals, arr));
   }
   if (method === "sort") {
+    // Bug 51：GetSortComparator——缺省/严格 undefined → 默认比较器；
+    // null/prim/非可调用（含 symbol）→ 确定 TypeError；any/抽象 → may
+    //（此前比较器实参完全未读）
+    validateCallableArg(vals[0], "sort comparator may not be callable", {
+      undefinedOk: true,
+    });
     // 顺序未建模：位次不可信，tuple 降为 arr（元素 join），避免 a[0] 假精确
     if (shape.k === "tuple") {
       return writeBack(
@@ -463,13 +484,27 @@ export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
 }
 
 /** 下标读 a[i]；规范数组下标走精确投影，确定非下标键 → undefined，否则并所有元素；string[i] → 单字符 */
-export function $idx(a: Abs, i: Abs): Abs {
+export function $idx(
+  a: Abs,
+  i: Abs,
+  opts?: { /** 调用方已排除 nullish 臂（可选链守卫跳）——不记 may-throw */ silent?: boolean },
+): Abs {
   // DEC-006 B/C：非 Abs 目标 fail-closed unknown（禁止读 .shape 炸宿主 TypeError）
   if (!a || typeof a !== "object" || !("shape" in (a as object))) {
     return unknown;
   }
+  // 计算成员读与 $get 同源的 throws 域守卫（Bug 12）：
+  // nullish 接收者 → 原生 definite TypeError（ToObject）→ hard NudoThrow；
+  // any 接收者 → may TypeError → 结果保持 any。silent 供可选链首跳
+  //（`x?.[k]` 的非 nullish 臂已由 ?. 排除 nullish，访问非 nullish 值不抛）。
+  if (noteNullishMemberThrows(a, "<computed>", "property")) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
   // any 下标：无约束读（any ≠ unknown）
-  if (a?.shape?.k === "any") return anyMemberResult();
+  if (a?.shape?.k === "any") {
+    if (!opts?.silent) noteAnyMemberMayThrow(a, "<computed>", "property");
+    return anyMemberResult();
+  }
   // ToPropertyKey：null/undefined/boolean 字面量 → "null"/"undefined"/"true"…
   //（litValue 哨兵会把 lit(undefined) 吞成「无 lit」，不得走抽象下标）
   const keyStr = propertyKeyOf(i);
@@ -497,8 +532,22 @@ export function $idx(a: Abs, i: Abs): Abs {
     return a.shape.element;
   }
   if (a.shape.k === "sum") {
-    // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce
-    const parts = a.shape.members.map((m) => $idx(m, i));
+    // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce。
+    // sum 含 nullish 成员（exec 的 null|match 等）：整体不是 definite throw
+    //（`if (!m) return` 守卫后的非空臂只读非空侧）→ 该成员折 undefined +
+    // may-throw；silent（?. 守卫跳）不记效果。
+    const parts = a.shape.members.map((m) => {
+      if (isNullishAbs(m)) {
+        if (!opts?.silent) {
+          recordMayThrow({
+            kind: "TypeError",
+            cause: "computed member on nullish (union arm)",
+          });
+        }
+        return undef();
+      }
+      return $idx(m, i, opts);
+    });
     return parts.length ? parts.reduce((x, y) => joinAbs(x, y)) : unknown;
   }
   // C1.3：对象 + key 投影；闭 shape miss / 未知 key 必须并入 undefined
@@ -685,6 +734,12 @@ export function $len(a: Abs): Abs {
       "exact",
     );
   }
+  // obj 自有 length 槽（Bug 34：$tpl 模板对象的 quasis 数；也覆盖
+  // {length: n} 字面量）——成员读取语义，闭槽精确
+  if (a.shape.k === "obj") {
+    const slot = getSlot(a.shape.slots, "length");
+    if (slot && !slot.optional) return slot.value;
+  }
   // 抽象 string prim（含模板串、拼接结果）：内容未知但 .length 恒为 number。
   // 此前落到末尾 unknown —— `String(x).length` / `${x}.length` 被污染成
   // unknown 并误报 nudo:unknown-inference（类型上不可能不是 number）。
@@ -763,12 +818,53 @@ export function $spread(a: Abs, b: Abs): Abs {
   return spreadObj(aa, b0);
 }
 
+/** 对象解构接收者守卫（Bug 32）：原生对象解构 = ToObject(receiver) +
+ *  CopyDataProperties——null/undefined 接收者在任何键读/排除之前就抛
+ *  TypeError（"Cannot destructure 'null' as it is null"）。rest-only 模式
+ *  （`const {...r} = X`）此前只发 $objRest 不发 $get，接收者从不校验。
+ *  - nullish 字面量 → hard NudoThrow（tier 1；键路径经 $get 同口径）
+ *  - any / sum 含 nullish 或 any 臂 → may TypeError（tier 2；值域投影不变）
+ *  - 非 nullish prim（含字符串/number/symbol/bigint）→ 原生 ToObject 装箱，
+ *    CopyDataProperties 全量（node 实测 `const {...r} = "ab"` → {"0":"a","1":"b"}）
+ *  unknown 是引擎 fail-closed 令牌，不记（与 $call 同口径，避免 L2 假报）。 */
+function objRestGuard(o: Abs): void {
+  const arm = (x: Abs): "nullish" | "may" | "total" => {
+    if (isNullishAbs(x)) return "nullish";
+    const k = x.shape.k;
+    if (k === "any") return "may";
+    return "total";
+  };
+  if (o.shape.k === "sum") {
+    let may = false;
+    for (const m of o.shape.members) {
+      const a = arm(m);
+      if (a === "nullish" || a === "may") may = true;
+    }
+    if (may) {
+      recordMayThrow({
+        kind: "TypeError",
+        cause: "object rest destructuring of possibly nullish receiver",
+      });
+    }
+    return;
+  }
+  const a = arm(o);
+  if (a === "nullish") throw new NudoThrow(errorTypeAbs("TypeError"));
+  if (a === "may") {
+    recordMayThrow({
+      kind: "TypeError",
+      cause: "object rest destructuring of possibly nullish receiver",
+    });
+  }
+}
+
 /**
  * 解构 rest：`const { a, ...rest } = o` → rest = o 去掉 named keys。
  * closed obj：剩余槽 closed；open / optional 键：rest 仍 open（可能有未知键）。
  */
 export function $objRest(o: Abs, keys: string[]): Abs {
   o = asAbsVal(o);
+  objRestGuard(o);
   if (o.shape.k === "sum") {
     // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce
     const parts = o.shape.members.map((m) => $objRest(m, keys));
@@ -866,23 +962,14 @@ export function $concat(a: Abs, b: Abs): Abs {
     return abs({ k: "arr", element: joinAbs(ea, eb) }, undefined, undefined, "path");
   }
   // 剩余：至少一侧非 tuple/arr/string 字面量。
-  // 字面量不可迭代值 spread → 原生 TypeError（[...5]/[...null]/[...true]）
-  const throwIfNonIterable = (x: Abs): void => {
-    if (x.term?.op !== "lit") return;
-    const v = x.term.value;
-    if (
-      typeof v === "number" ||
-      typeof v === "boolean" ||
-      typeof v === "bigint" ||
-      typeof v === "symbol" ||
-      v === null ||
-      v === undefined
-    ) {
-      throw new NudoThrow(errorTypeAbs("TypeError"));
-    }
-  };
-  throwIfNonIterable(a);
-  throwIfNonIterable(b);
+  // 迭代性守卫对齐共享分类器（iterabilityKind/guardIterable，与 $elems /
+  // $iterCheck 同口径）：非字符串 prim（字面量或抽象 prim 面）与闭 obj
+  // （无 @@iterator 槽）→ definite TypeError；any/unknown/open obj/brand/
+  // fn → may TypeError。此前 throwIfNonIterable 只查 lit term——`[...x]`
+  // （x:any）静默不记，而 `Math.max(...x)` 经 $elems 记 may，同面不同判
+  // （wave 2 残留）。字符串/元组/Set/Map 等可迭代面与字面量行为不变。
+  guardIterable(a, "spread element");
+  guardIterable(b, "spread element");
   // Set/Map/matchAll 迭代器：条目精确展开（Map 是 entry 元组）；其余非容器
   // （unknown/any/brand/obj/抽象字符串）长度未知——必须 arr join，不得折单元素
   // tuple（[...x].length 假精确 1 的根因）
@@ -936,9 +1023,166 @@ export function $concat(a: Abs, b: Abs): Abs {
   );
 }
 
+/** 迭代消费（原生 GetIterator）的可迭代性分类：
+ *  - total：string prim（任意取值恒可迭代）/ tuple / arr / Set / Map /
+ *    matchAll 迭代器 / generator eff / never —— 原生全量
+ *  - definite：非 string prim（num/bool/bigint/symbol/null/undefined——这些
+ *    prim 的任何取值都没有 @@iterator，含字面量与抽象 prim）与闭 obj
+ *    （无 @@iterator 槽；Object.prototype 原型链亦无）
+ *  - may：any / unknown / open obj（未知键可能含 @@iterator）/ fn / brand /
+ *    promise eff —— 抽象面可能不可迭代
+ *  sum：逐臂归约（全臂 definite → definite；任一臂非 total → may） */
+type IterabilityKind = "total" | "may" | "definite";
+
+function iterabilityKind(a: Abs): IterabilityKind {
+  const s = a.shape;
+  if (s.k === "sum") {
+    let sawNonTotal = false;
+    let allDefinite = true;
+    for (const m of s.members) {
+      const k = iterabilityKind(m);
+      if (k !== "definite") allDefinite = false;
+      if (k !== "total") sawNonTotal = true;
+    }
+    return s.members.length > 0 && allDefinite
+      ? "definite"
+      : sawNonTotal
+        ? "may"
+        : "total";
+  }
+  // lit 字面量精确判定（与 $concat 的 throwIfNonIterable 同口径）：非字符串
+  // prim 字面量恒不可迭代 → definite。nullish lit 的形状是 unknown（无独立
+  // nullish shape），必须先看 term 再看形状。
+  if (a.term?.op === "lit") {
+    const v: unknown = (a.term as { value: unknown }).value;
+    if (
+      v === null ||
+      v === undefined ||
+      typeof v === "number" ||
+      typeof v === "boolean" ||
+      typeof v === "bigint" ||
+      typeof v === "symbol"
+    ) {
+      return "definite";
+    }
+  }
+  if (s.k === "tuple" || s.k === "arr" || s.k === "never") return "total";
+  if (isSetAbs(a) || isMapAbs(a) || matchIterElements(a)) return "total";
+  if (s.k === "eff") return s.eff === "generator" ? "total" : "may";
+  if (s.k === "prim") return s.type === "string" ? "total" : "definite";
+  if (s.k === "obj") {
+    if (s.slots["@@iterator"]) return "total";
+    return s.open ? "may" : "definite";
+  }
+  return "may";
+}
+
+/** for await（GetIterator hint=async）：@@asyncIterator 槽即全量（异步可迭代）；
+ *  其余口径与同步迭代一致（数字等 prim definite、闭 obj 无任何迭代器槽
+ *  definite、any/unknown/open obj may；数组/字符串走同步回退故仍 total）。 */
+function asyncIterabilityKind(a: Abs): IterabilityKind {
+  const s = a.shape;
+  if (s.k === "sum") {
+    let sawNonTotal = false;
+    let allDefinite = true;
+    for (const m of s.members) {
+      const k = asyncIterabilityKind(m);
+      if (k !== "definite") allDefinite = false;
+      if (k !== "total") sawNonTotal = true;
+    }
+    return s.members.length > 0 && allDefinite
+      ? "definite"
+      : sawNonTotal
+        ? "may"
+        : "total";
+  }
+  if (
+    s.k === "obj" &&
+    !s.slots["@@iterator"] &&
+    s.slots["@@asyncIterator"]
+  ) {
+    return "total";
+  }
+  return iterabilityKind(a);
+}
+
+/** 迭代消费守卫：definite 非可迭代 → 原生 TypeError（hard NudoThrow）；
+ *  抽象面可能非可迭代 → recordMayThrow（值域投影不变）。
+ *  $elems（for-of / spread 实参）与 $iterCheck（数组解构）共用。 */
+function guardIterable(a: Abs, ctx: string): void {
+  const kind = iterabilityKind(a);
+  if (kind === "definite") throw new NudoThrow(errorTypeAbs("TypeError"));
+  if (kind === "may") {
+    recordMayThrow({
+      kind: "TypeError",
+      cause: `${ctx} over possibly non-iterable value`,
+    });
+  }
+}
+
+/** 数组解构模式接收者守卫：原生数组解构 = GetIterator + IteratorNext，
+ *  非可迭代接收者抛 TypeError。emitDestructure 的 ArrayPattern 分支在逐项
+ *  $idx / $arrRest 投影前调用；值域投影不变（字符串/元组等可迭代接收者
+ *  不受影响）。 */
+export function $iterCheck(a: unknown): void {
+  guardIterable(asAbsVal(a), "array destructuring");
+}
+
 /** 元素列表（tuple 展开；arr 抽象；C1 Set/Map 逐条目；matchAll 迭代器逐匹配项；
- *  字符串按 code points）。Map 迭代语义是 entry `[key, value]` 元组，不是裸 value。 */
+ *  字符串按 code points）。Map 迭代语义是 entry `[key, value]` 元组，不是裸 value。
+ *  消费前先过可迭代性守卫（Bug 6）：prim 字面量接收者 → 原生 definite
+ *  TypeError；any/unknown → may。$forOf 与 call/new spread 实参路径继承。 */
 export function $elems(a: Abs): Abs[] {
+  guardIterable(a, "iteration");
+  return elemsOf(a);
+}
+
+/** yield* 委托展开（Bug 82）：迭代性守卫与元素列表同 $elems，另报长度
+ *  可知性——tuple / 字符串 prim / Set / Map / match-iter 是全量精确展开
+ *  （元素个数确定）；arr / any / obj / brand / sum 等给单代表元素，
+ *  长度不可判（收集器不得以 exact 元组出货）。 */
+export function $yieldStarElems(a: Abs): { els: Abs[]; lengthKnown: boolean } {
+  // any 接收者的元素域是 any（无约束），不是 unknown（引擎债）——与
+  // $concat sideEl 同口径（`[...x]`（x:any）→ any[]）
+  if (a.shape.k === "any") return { els: [anyMemberResult()], lengthKnown: false };
+  const els = $elems(a);
+  const s = a.shape;
+  const lengthKnown =
+    s.k === "tuple" ||
+    s.k === "never" ||
+    (s.k === "prim" && s.type === "string") ||
+    isSetAbs(a) ||
+    isMapAbs(a) ||
+    matchIterElements(a) !== undefined;
+  return { els, lengthKnown };
+}
+
+/** 模板标签对象（GetTemplateObject，Bug 34）：冻结的类数组 obj——数字槽
+ *  为 cooked 字符串（无效转义序列时 cooked 是 undefined，原生实测）、
+ *  length 精确、.raw 为 raw 字符串数组；@@iterator 槽给函数形状
+ * （`[...s]` / `for..of` / `Symbol.iterator in s` 均按可迭代面判定，
+ *  不得把冻结数组误判 definite 不可迭代）。 */
+export function $tpl(cooked: Array<string | undefined>, raw: string[]): Abs {
+  const slots: Record<string, { value: Abs }> = Object.create(null);
+  const els: Abs[] = [];
+  for (let i = 0; i < cooked.length; i++) {
+    const c = cooked[i]!;
+    const v = typeof c === "string" ? $lit(c) : $lit(undefined);
+    els.push(v);
+    setSlot(slots, String(i), { value: v });
+  }
+  setSlot(slots, "length", { value: numLit(cooked.length) });
+  setSlot(slots, "raw", { value: $arr(raw.map((r) => $lit(r))) });
+  setSlot(slots, "@@iterator", {
+    value: absFunction([], { body: noBody }, { ctor: false }),
+  });
+  const t = abs({ k: "obj", slots }, undefined, undefined, "exact");
+  // 元素侧表：spread / for-of / join 按 cooked 精确展开
+  registerTplElements(t, els);
+  return t;
+}
+
+function elemsOf(a: Abs): Abs[] {
   if (a.shape.k === "tuple") return [...a.shape.elements];
   if (a.shape.k === "arr") return [a.shape.element];
   if (isSetAbs(a)) return setElementsAbs(a);
@@ -1003,6 +1247,35 @@ export function $forInKeys(o: Abs): Abs {
   if (typeof sv === "string") {
     return $arr(Array.from({ length: sv.length }, (_, i) => $lit(String(i))));
   }
+  // 键域未知 ≠ 键域为空（Bug 68）：any/unknown 接收者可能携带任意可枚举键，
+  // 体必须至少跑一次（抽象字符串键），否则体内的 may-throw 丢失、计数器
+  // 折成假精确 0。抽象 string prim 同理（索引键 0..len-1 域未知）。
+  // 例外：nullish lit 的形状就是 unknown（无独立 nullish shape），原生
+  // ToObject 后零可枚举键——先看 term 排除，键域确定为空。
+  const isNullishLit =
+    o.term?.op === "lit" &&
+    ((o.term as { value: unknown }).value === null ||
+      (o.term as { value: unknown }).value === undefined);
+  if (
+    !isNullishLit &&
+    (shape.k === "any" ||
+      shape.k === "unknown" ||
+      (shape.k === "prim" && shape.type === "string"))
+  ) {
+    return abs({ k: "arr", element: str() }, undefined, undefined, "partial");
+  }
+  // brand：内层 obj 槽的可枚举键（类实例字段等）；内建（Date/Map/Promise）
+  // 零自有可枚举键 → 空键序列。
+  if (shape.k === "brand") {
+    const inner = shape.shape;
+    if (inner.shape.k === "obj") {
+      const keys = enumOwnKeys(inner, inner.shape.slots);
+      return $arr(keys.map((k) => $lit(k)));
+    }
+    return $arr([]);
+  }
+  // 其余（num/bool/bigint/symbol/null/undefined prim 字面量或抽象、fn、eff）：
+  // 原生 ToObject 后零可枚举键 → 键域确定为空，体 0 次。
   return $arr([]);
 }
 
@@ -1015,6 +1288,10 @@ export function $forOf(
     unpack?: (s: Abs) => void;
     /** 标签循环：仅吸收同标签 break/continue 信号 */
     label?: string;
+    /** for await：接收者按 GetIterator(hint=async) 校验（@@asyncIterator 槽
+     *  即全量）；仅异步可迭代（无 @@iterator 槽）的接收者不折同步槽位投影，
+     *  元素取抽象 unknown（原生由 next() 链驱动）。 */
+    forAwait?: boolean;
   },
 ): void {
   const pack = opts?.pack;
@@ -1031,7 +1308,33 @@ export function $forOf(
   };
 
   const shape = iterable.shape;
-  const items = $elems(iterable);
+  // for await：异步可迭代性校验 + 元素域。仅异步可迭代接收者（只有
+  // @@asyncIterator 槽）元素取抽象 unknown——不得折同步 $elems 投影
+  //（对象槽位不是迭代产出，Bug 13 值域）；同步可迭代接收者走同步元素
+  //（规范回退：同步迭代器逐项 await，promise 元素解包内层）。
+  const forAwait = opts?.forAwait === true;
+  const asyncOnly =
+    forAwait &&
+    shape.k === "obj" &&
+    !shape.slots["@@iterator"] &&
+    !!shape.slots["@@asyncIterator"];
+  if (forAwait) {
+    const kind = asyncIterabilityKind(iterable);
+    if (kind === "definite") throw new NudoThrow(errorTypeAbs("TypeError"));
+    if (kind === "may") {
+      recordMayThrow({
+        kind: "TypeError",
+        cause: "for-await iteration over possibly non-iterable value",
+      });
+    }
+  }
+  const awaitElem = (x: Abs): Abs =>
+    x.shape.k === "eff" && x.shape.eff === "promise" ? x.shape.inner : x;
+  const items = asyncOnly
+    ? [unknown]
+    : forAwait
+      ? elemsOf(iterable).map(awaitElem)
+      : $elems(iterable);
   const svR = litValue(iterable);
   const sv = svR.ok ? svR.value : undefined;
   // tuple / 确切 Set·Map 条目数 / 字符串字面量 code points → 有界展开；
@@ -1118,6 +1421,10 @@ export const NAMESPACE_GLOBALS: ReadonlyArray<readonly [string, unknown]> = [
   ["Date", Date],
   ["Promise", Promise],
   ["BigInt", BigInt],
+  // Bug 19/43：此前缺项 → Reflect.get(1,"a") / Symbol.for(Symbol()) 折
+  // unknown + throws=never（原生 TypeError 定抛被吞）
+  ["Reflect", Reflect],
+  ["Symbol", Symbol],
 ];
 
 export function namespaceNameOf(v: unknown): string | undefined {
@@ -1139,6 +1446,7 @@ const ARRAY_PROTO_METHOD_NAMES = new Set([
   "findIndex", "findLast", "findLastIndex", "flat", "flatMap", "forEach",
   "includes", "indexOf", "join", "keys", "lastIndexOf", "map", "pop", "push",
   "reduce", "reduceRight", "reverse", "shift", "slice", "some", "sort", "splice",
+  "toSorted", "toReversed", "toSpliced", "with",
   "toLocaleString", "toString", "unshift", "values", "@@iterator",
 ]);
 
@@ -1197,7 +1505,8 @@ export function $get(
   if (o.shape.k === "eff" && o.shape.eff === "promise" && (key === "then" || key === "catch" || key === "finally")) {
     return absFunction([key === "then" ? "onFulfilled" : key === "catch" ? "onRejected" : "onFinally"], {
       body: noBody,
-    });
+      // Bug 9：内建实例方法是内建函数，原生不可 new
+    }, { ctor: false });
   }
   if (o.shape.k === "brand") {
     if (o.shape.name.endsWith(".prototype") && (key === "toString" || key === "toLocaleString" || key === "join")) {
@@ -1210,7 +1519,7 @@ export function $get(
     // （class 声明值同名内建时不误伤：类方法走 registry）
     const builtinM = BUILTIN_BRAND_METHODS[o.shape.name];
     if (builtinM && !isClassVal && (key === "@@iterator" || builtinM.has(key))) {
-      return absFunction([], { body: noBody });
+      return absFunction([], { body: noBody }, { ctor: false });
     }
     // JS Map/Set 的 size 是属性不是方法；brand 内层为空 obj，须在 $get 委托
     if (key === "size" && o.shape.name === "Map") return mapSizeAbs(o);
@@ -1232,7 +1541,7 @@ export function $get(
       for (const n of evalClassChain(o.shape.name)) {
         const spec = getEvalClass(n);
         if (spec?.staticMethods?.[key]) {
-          return absFunction(spec.staticMethodParams?.[key] ?? [], { body: noBody });
+          return absFunction(spec.staticMethodParams?.[key] ?? [], { body: noBody }, { ctor: false });
         }
       }
       // 类值是 constructor 函数：prototype 对象与 Function.prototype 成员
@@ -1240,7 +1549,7 @@ export function $get(
         return abs({ k: "obj", slots: {} }, undefined, undefined, "path");
       }
       if (key === "call" || key === "apply" || key === "bind") {
-        return absFunction([], { body: noBody });
+        return absFunction([], { body: noBody }, { ctor: false });
       }
     } else {
       const acc = findClassAccessor(o.shape.name, key);
@@ -1252,7 +1561,7 @@ export function $get(
       for (const n of evalClassChain(o.shape.name)) {
         const spec = getEvalClass(n);
         if (spec?.methods?.[key]) {
-          return absFunction(spec.methodParams?.[key] ?? [], { body: noBody });
+          return absFunction(spec.methodParams?.[key] ?? [], { body: noBody }, { ctor: false });
         }
       }
     }
@@ -1310,7 +1619,7 @@ export function $get(
     // 把 concat/sort 等未在 invokeArrMethod 接管的方法折成 undefined（假精确）。
     // 无 impl 的 fn shape 仍满足 typeof，调用侧继续走 invokeArrMethod / 保守 unknown。
     if (o.shape.k !== "prim" && (ARRAY_PROTO_METHOD_NAMES.has(key) || key === "@@iterator")) {
-      return { shape: { k: "fn", params: [] }, conf: "path" };
+      return { shape: { k: "fn", params: [], ctor: false }, conf: "path" };
     }
     // string.toString/valueOf 由 callAbsMethod 处理调用；一等读取仍给 OP 函数
     return objectProtoMethodAbs(key);

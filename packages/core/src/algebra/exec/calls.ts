@@ -5,11 +5,14 @@
  */
 
 import type { Abs } from "../abs.ts";
-import { abs, never as neverAbs, unknown } from "../abs.ts";
+import { abs, litValue, never as neverAbs, unknown } from "../abs.ts";
 import { evalGlobalFn, hostBuiltinCtorName } from "../builtins.ts";
+import { mayCoerceThrowOperand } from "../builtins/shared.ts";
+import { isSymbolAbs } from "../builtins/symbol.ts";
 import { $call, routeApplyThrows, clearPureMemo } from "./call.ts";
-import { callAtFunctionBoundary, $copy } from "./runtime.ts";
-import { throwPayloadOf } from "./may-throw.ts";
+import { callAtFunctionBoundary, $copy, asAbsVal } from "./runtime.ts";
+import { throwPayloadOf, recordMayThrow, errorTypeAbs } from "./may-throw.ts";
+import { NudoThrow } from "./nudo-throw.ts";
 import { pureFnNameOf, makeAbsApplyResult, type AbsApplyResult } from "../abs-fn.ts";
 import { noteAbsTruncation, callBudgetKey, resetEvalForkBudget, noteHostEffectBlocked } from "../call-budget.ts";
 import {
@@ -225,6 +228,77 @@ export function getEvalCallCollector(): ((r: EvalCallRecord) => void) | null {
 }
 
 /**
+ * Bug 20：宿主全局函数身份集（globalThis 自有属性中的函数值，惰性构建）。
+ * 未进 GLOBAL_FNS / hostBuiltinCtorName / NEVER_EXEC 名单的宿主全局
+ * （decodeURIComponent / btoa / escape / …）此前落入真调用兜底——Abs 对象
+ * 被 String(absObj) 静默折 "[object Object]"，原生 URIError/TypeError 丢失
+ * （decodeURIComponent("%") 应抛 URIError 却静默返 unknown）。
+ * 按值身份识别（覆盖 `const d = decodeURIComponent` 别名）；模块转译函数
+ * 是全新对象，绝不与宿主全局同一 → 不误伤。
+ */
+let hostGlobalFnIds: Set<unknown> | undefined;
+
+function isHostGlobalFn(fn: unknown): boolean {
+  if (typeof fn !== "function") return false;
+  if (!hostGlobalFnIds) {
+    hostGlobalFnIds = new Set<unknown>();
+    const g = globalThis as Record<string, unknown>;
+    for (const k of Object.getOwnPropertyNames(g)) {
+      const v = g[k];
+      if (typeof v === "function") hostGlobalFnIds.add(v);
+    }
+  }
+  return hostGlobalFnIds.has(fn);
+}
+
+/**
+ * Bug 20：宿主全局的字面量实参守卫执行——
+ * - 全部实参均为 prim 字面量（含 null/undefined/bigint）→ 转真值执行，
+ *   宿主异常（URIError/DOMException/…）折 NudoThrow(throwPayloadOf(e))
+ *   进 throws 域；返回值经 litAbsFromJs 诚实转 Abs
+ * - 任一抽象/对象实参 → 不喂宿主（禁反模式：Abs 直接进真 JS 函数），
+ *   保守 unknown + may TypeError（实参可能是抛异常形态——symbol 载体的
+ *   ToString 定抛；与 parseInt/Number 的抽象臂同口径）
+ * GLOBAL_FNS 的既有折算（evalGlobalFn）不受影响。
+ */
+function callHostGlobalLiteralOnly(
+  name: string,
+  fn: (...a: unknown[]) => unknown,
+  args: Abs[],
+): Abs {
+  const jsArgs: unknown[] = [];
+  for (const a of args) {
+    if (a && typeof a === "object" && "shape" in (a as object)) {
+      // symbol prim（Symbol() 产物，无 lit 项）：一切 ToString/ToNumber 面
+      // 定抛（node 实测 encodeURIComponent/decodeURIComponent/btoa/
+      // escape(Symbol()) → TypeError）→ 硬抛，不落保守 may
+      if (isSymbolAbs(a as Abs)) throw new NudoThrow(errorTypeAbs("TypeError"));
+      const lv = litValue(a as Abs);
+      if (!lv.ok) {
+        // symbol 载体（any/unknown/obj/fn/brand/sum）→ may TypeError；
+        // 抽象 prim（refined string/number）无 symbol 可能 → 不记
+        if (mayCoerceThrowOperand(a as Abs)) {
+          recordMayThrow({
+            kind: "TypeError",
+            cause: `${name}(...) host call with abstract argument may throw (Symbol coercion)`,
+          });
+        }
+        return unknown;
+      }
+      jsArgs.push(lv.value);
+    } else {
+      jsArgs.push(a); // 裸 JS 值（B run 模块函数实参）——真值直传
+    }
+  }
+  try {
+    return asAbsVal(fn(...jsArgs));
+  } catch (e) {
+    // 宿主异常折进 throws 域（不裸冒泡——payload 与 class.ts 同约定）
+    throw new NudoThrow(throwPayloadOf(e));
+  }
+}
+
+/**
  * 按名调用并记录。
  * loc: [line, column]（1-based line，0-based column，与 Babel 一致）
  * argLocs: 与 args 对齐的实参字面量源位置（provenance；无 loc 用 null）
@@ -421,6 +495,10 @@ export function $callNamed(
         result = g;
       } else if (blockedHost !== null) {
         result = blockedHost;
+      } else if (isHostGlobalFn(fn)) {
+        // Bug 20：未进 Abs 表的宿主全局——字面量实参守卫执行（宿主异常折
+        // NudoThrow）；抽象实参保守 unknown + may。见 callHostGlobalLiteralOnly。
+        result = callHostGlobalLiteralOnly(name, fn as (...a: unknown[]) => unknown, args);
       } else {
         const entered = evalEnterCall(name, fn, args);
         if (!entered.ok) {

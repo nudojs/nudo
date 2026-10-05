@@ -150,6 +150,8 @@ export function absFunction(
     returnType?: Abs;
     slots?: Record<string, { value: Abs; optional?: boolean; readonly?: boolean }>;
     conf?: Confidence;
+    /** Bug 9 可构造性 facet：true/false 已知，缺省未知（见 Shape k:"fn".ctor） */
+    ctor?: boolean;
   },
 ): Abs {
   const a: Abs = {
@@ -160,11 +162,36 @@ export function absFunction(
       ...(opts?.paramTypes ? { paramTypes: opts.paramTypes } : {}),
       ...(opts?.returnType ? { returnType: opts.returnType } : {}),
       ...(opts?.slots ? { slots: opts.slots } : {}),
+      ...(opts?.ctor !== undefined ? { ctor: opts.ctor } : {}),
     },
     conf: opts?.conf ?? "exact",
   };
   attachFnImpl(a, { params, ...impl });
   return a;
+}
+
+/**
+ * 宿主 JS 函数的可构造性（Bug 9）：generator/async/async-generator 声明、
+ * 箭头、内建方法（无 .prototype）不可 new；bind 产物取决于目标（未知）。
+ * 函数声明/宿主构造器 → 可构造。求值引擎的函数声明编译成真实宿主函数，
+ * `$new` / `$class(extends)` / 桥接包装按此 stamping。
+ */
+export function hostFnCtorFacet(v: Function): boolean | undefined {
+  // Bug 9 求值引擎标记：transpile 把 generator/async 声明去种类化成普通
+  // function——声明后挂 __nudoNonCtor，运行时按此识别不可 new
+  if ((v as { __nudoNonCtor?: unknown }).__nudoNonCtor === 1) return false;
+  const protoCtor = Object.getPrototypeOf(v)?.constructor?.name;
+  if (
+    protoCtor === "GeneratorFunction" ||
+    protoCtor === "AsyncFunction" ||
+    protoCtor === "AsyncGeneratorFunction"
+  ) {
+    return false;
+  }
+  if (typeof v.name === "string" && v.name.startsWith("bound ")) return undefined;
+  // 箭头与内建方法（Array.prototype.map 等）没有 prototype 属性
+  if (!(v as { prototype?: unknown }).prototype) return false;
+  return true;
 }
 
 // --- stable key（relationFn fingerprint）---

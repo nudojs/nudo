@@ -65,6 +65,16 @@ function isMaybeBigintOperand(a: Abs): boolean {
 }
 
 /**
+ * Bug 8：抽象操作数（any/obj/fn/brand/sum；unknown 是引擎 fail-closed 令牌，
+ * wave 1 口径不记）经 ToNumeric/ToInt32 可能 bigint 混型 / Symbol 强转 →
+ * 位运算/移位/幂原生 may TypeError（`x & 1`、`x ** 2`，x=1n / Symbol()）。
+ * 只补 throws 效果，值域不变。
+ */
+function isMaybeCoercionThrowOperand(a: Abs): boolean {
+  return isMaybeBigintOperand(a) && a.shape.k !== "unknown";
+}
+
+/**
  * 双字面量二元折叠：双方 bigint → bigint 算子；其余走 number 算子
  * （JS 位运算/移位自身完成 ToInt32/ToUint32&31）。
  * 混合 bigint⊗确定非 bigint（number/bool/null/undefined/string）→ 硬抛 TypeError。
@@ -161,11 +171,36 @@ function foldNumericUnOp(
   if (r.ok && coercibleNumberLit(r.value)) {
     return abs({ k: "prim", type: "number" }, lit(numOp(Number(r.value))), pTrue, "exact");
   }
+  // Bug 8：抽象回退（`~x`，x:any / obj…）—— ToNumeric 可能撞 Symbol / bigint
+  // 混型（`~Symbol()` 原生 TypeError）→ may TypeError；bigint prim 不在此列
+  // （`~1n` 合法折叠），值域不变。
+  if (isMaybeCoercionThrowOperand(a)) {
+    recordMayThrow({
+      kind: "TypeError",
+      cause: "ToNumeric coercion of abstract operand (~)",
+    });
+  }
   return undefined;
 }
 
 /** 位运算结果的抽象形状：双方 bigint → bigint；含任一 bigint（混合）→ unknown；否则 number */
 function bitwiseResultShape(a: Abs, b: Abs): Abs {
+  // Bug 8：抽象回退臂（foldNumericBinOp 不可折叠）—— 抽象操作数可能
+  // bigint 混型 / Symbol（`x & 1`、`x ** 2`，x=1n / Symbol() 原生 TypeError）
+  // → may TypeError，值域不变。bigint 字面量面已由 foldNumericBinOp 记过
+  // （`1n & x` 控制组），不重复。
+  const ra = litValue(a);
+  const rb = litValue(b);
+  if (
+    !(ra.ok && typeof ra.value === "bigint") &&
+    !(rb.ok && typeof rb.value === "bigint") &&
+    (isMaybeCoercionThrowOperand(a) || isMaybeCoercionThrowOperand(b))
+  ) {
+    recordMayThrow({
+      kind: "TypeError",
+      cause: "ToNumeric/ToInt32 coercion of abstract operand",
+    });
+  }
   const numLike = (x: Abs): boolean =>
     x.shape.k === "prim" &&
     (x.shape.type === "number" || x.shape.type === "string" || x.shape.type === "boolean");
@@ -312,6 +347,15 @@ export function toNumberAbs(a: Abs): Abs {
       return abs({ k: "prim", type: "number" }, undefined, undefined, confJoin(a.conf, "widened"));
     }
   }
+  // Bug 8：抽象面（any/obj/fn/brand/sum）经 ToNumber 可能撞 Symbol / bigint
+  // （`+x`，x=Symbol() / {valueOf(){return 1n}} 原生 TypeError）→ may TypeError；
+  // arr/tuple 默认 ToPrimitive 恒 string→number，不在此列。值域不变。
+  if (isMaybeCoercionThrowOperand(a)) {
+    recordMayThrow({
+      kind: "TypeError",
+      cause: "ToNumber coercion of abstract operand (Symbol/bigint)",
+    });
+  }
   // obj/arr/tuple/brand：ToPrimitive 后恒为 number（或自定义 valueOf 抛——partial 近似）
   if (a.shape.k === "obj" || a.shape.k === "arr" || a.shape.k === "tuple" || a.shape.k === "brand") {
     return abs({ k: "prim", type: "number" }, undefined, undefined, "partial");
@@ -413,6 +457,15 @@ export function negAbs(a: Abs, _phi: Phi = pTrue): Abs {
       facts.length ? and(...facts) : undefined,
       confJoin(a.conf, "path"),
     );
+  }
+  // Bug 8：抽象回退（`-x`，x:any / obj…）—— ToNumeric 可能撞 Symbol
+  // （`-Symbol()` 原生 TypeError；bigint 取负合法，仅 Symbol 维度）→
+  // may TypeError；bigint prim 值域不变不记。值域 unknown 不变。
+  if (isMaybeCoercionThrowOperand(a)) {
+    recordMayThrow({
+      kind: "TypeError",
+      cause: "ToNumeric coercion of abstract operand (Symbol)",
+    });
   }
   return abs({ k: "unknown" }, undefined, undefined, "partial");
 }

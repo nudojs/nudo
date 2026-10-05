@@ -309,7 +309,9 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const restBind = rest
         ? `${indent(depth + 1)}const ${rest} = arguments.length > ${named.length} ? $arr(Array.from(arguments).slice(${named.length})) : $arr([]);\n`
         : "";
-      // function* → $gen 收集 yield
+      // function* → $gen 收集 yield。宿主函数是普通 function（transpile 已去
+      // generator 化）——挂 __nudoNonCtor 标记，$new/$class(extends)/asAbsVal
+      // 经 hostFnCtorFacet 识别（Bug 9：generator 不可 new）
       if (stmt.generator) {
         return [
           `${pad}${exportKw}function ${stmt.id.name}(${named.join(", ")}) {`,
@@ -318,8 +320,10 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           bodyStmts,
           `${indent(depth + 1)}});`,
           `${pad}}`,
+          `${pad}${stmt.id.name}.__nudoNonCtor = 1;`,
         ].join("\n");
       }
+      // async 声明同口径：宿主函数是普通 function（body 包 $async）
       if (stmt.async) {
         return [
           `${pad}${exportKw}function ${stmt.id.name}(${named.join(", ")}) {`,
@@ -328,6 +332,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           bodyStmts,
           `${indent(depth + 1)}});`,
           `${pad}}`,
+          `${pad}${stmt.id.name}.__nudoNonCtor = 1;`,
         ].join("\n");
       }
       return [
@@ -1003,6 +1008,10 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
     case "ForOfStatement":
     case "ForInStatement": {
       const isIn = stmt.type === "ForInStatement";
+      // Babel 把 `for await (… of …)` 解析为 ForOfStatement + await:true——
+      // 不得丢标志（Bug 13）：否则异步可迭代性永不校验，且仅异步可迭代的
+      // 接收者被同步 $elems 投影（对象槽位折进迭代产出）。
+      const isForAwait = !isIn && (stmt as { await?: boolean }).await === true;
       // for-in：键序列由 $forInKeys 投影（整数键升序/字符串插入序/hole 跳过）
       const iter = isIn
         ? `$forInKeys(${emitTranspileExpression(stmt.right as Expression, opts)})`
@@ -1071,12 +1080,14 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       collectLoopBodyTopLevelDeclNames(stmt.body, bodyLocalDecls);
       const names = [...assigned].filter((n) => n !== bindName && !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n));
       const loopOpts = opts.loopLabel ? `label: ${JSON.stringify(opts.loopLabel)}` : "";
+      const forAwaitOpt = isForAwait ? "forAwait: true" : "";
+      const tailOpts = [loopOpts, forAwaitOpt].filter(Boolean).join(", ");
       const optsSrc =
         names.length === 0
-          ? loopOpts
-            ? `, { ${loopOpts} }`
+          ? tailOpts
+            ? `, { ${tailOpts} }`
             : ""
-          : `, { pack: () => $obj({ ${names.map((n) => `${JSON.stringify(n)}: $copy(${n})`).join(", ")} }), unpack: (__lp) => { ${names.map((n) => `${n} = $get(__lp, ${JSON.stringify(n)});`).join(" ")} }${loopOpts ? `, ${loopOpts}` : ""} }`;
+          : `, { pack: () => $obj({ ${names.map((n) => `${JSON.stringify(n)}: $copy(${n})`).join(", ")} }), unpack: (__lp) => { ${names.map((n) => `${n} = $get(__lp, ${JSON.stringify(n)});`).join(" ")} }${tailOpts ? `, ${tailOpts}` : ""} }`;
       return [
         `${pad}$forOf(${iter}, (${bindName}, _i) => {`,
         ...bodyLines,
@@ -1224,28 +1235,34 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
   }
 }
 
-/** class C extends P { ctor, methods } → $class(...) */
-export function transpileClass(
+/**
+ * 类体成员 → $class spec 片段（类声明与类表达式共用，Bug 80）。
+ * 返回 spec 行（不含 `let C = $class(...)` 包装）与静态块后置语句
+ * （Bug 77：static 块须在类绑定完成后执行——块体内类名可见）。
+ */
+export function classSpecOf(
   stmt: {
     id?: { name: string } | null;
     body: { body: unknown[] };
-    superClass?: { type: string; name?: string } | null;
+    superClass?: unknown;
   },
   depth: number,
   opts: TranspileOptions,
-): string {
-  const pad = indent(depth);
+): { name: string; specLines: string[]; staticInitLines: string[] } {
   const name = stmt.id?.name ?? "AnonymousClass";
-  const superName =
-    stmt.superClass?.type === "Identifier" ? stmt.superClass.name : undefined;
+  // Bug 11：保留 superClass 节点——Identifier 走活引用（TDZ 语义），
+  // 其余表达式（字面量/{}/箭头/…）发 transpile 源码，定义期求值。
+  const superClassNode = stmt.superClass as { type: string; name?: string } | null | undefined;
   const methods = stmt.body.body as Array<{
     type: string;
-    key?: { type: string; name?: string; value?: unknown };
+    key?: unknown;
     params?: unknown[];
     body?: { type: string; body?: unknown[] };
     kind?: string;
     async?: boolean;
+    generator?: boolean;
     static?: boolean;
+    computed?: boolean;
     value?: unknown;
   }>;
 
@@ -1253,11 +1270,51 @@ export function transpileClass(
   const methodParts: string[] = [];
   const staticMethodParts: string[] = [];
   const staticFieldParts: string[] = [];
+  /** Bug 59：实例字段 thunk（每次构造以新实例为 this 按源序求值） */
+  const instanceFieldParts: string[] = [];
+  /** Bug 60：计算键 synth 名 → 键表达式源（定义期求值，$class 折叠真名） */
+  const computedKeyParts: string[] = [];
+  /** Bug 77：静态块 thunk（类绑定后执行；this = 类值） */
+  const staticInitParts: string[] = [];
   /** 方法形参展示名（未调用方法槽 shape.params） */
   const methodParamEntries: Array<[string, string[]]> = [];
   const staticMethodParamEntries: Array<[string, string[]]> = [];
   const accessorDefs = new Map<string, { get?: string; set?: string }>();
   const staticAccessorDefs = new Map<string, { get?: string; set?: string }>();
+  let ckSeq = 0;
+
+  /**
+   * 成员键提取（Bug 60/Bug 78）：
+   * - 非计算键：PrivateName → "#x" 混淆键（公有名不含 "#"，无碰撞；Bug 78）；
+   *   Identifier/String/Numeric → 原名（Numeric 原生 ToPropertyKey 成串）；
+   * - 计算键（含 `[k]()` 的 Identifier 形状——babel 把 computed 标在成员上）：
+   *   发射求值源，$class 折叠真名，不静默挂 "method"。
+   */
+  const keyOf = (
+    key: unknown,
+    computed: boolean,
+  ): { name: string } | { computed: string } | null => {
+    const k = key as
+      | { type?: string; name?: string; value?: unknown; id?: { name?: string } }
+      | undefined;
+    if (!k?.type) return null;
+    if (!computed && k.type === "PrivateName") {
+      const n = k.id?.name ?? k.name;
+      return n ? { name: `#${n}` } : null;
+    }
+    if (!computed && k.type === "Identifier" && k.name) return { name: k.name };
+    if (k.type === "StringLiteral" || k.type === "NumericLiteral") {
+      return { name: String(k.value) };
+    }
+    if (isExpression(k as Node)) {
+      return { computed: emitTranspileExpression(k as Expression, opts) };
+    }
+    return null;
+  };
+
+  /** thunk（单表达式）多行安全包装 */
+  const thunkOf = (src: string, d: number): string =>
+    [`(__this) => {`, `${indent(d + 1)}return ${src};`, `${indent(d)}}`].join("\n");
 
   const paramsOf = (m: { params?: unknown[] }): string[] =>
     (m.params ?? []).map((p) => {
@@ -1275,23 +1332,73 @@ export function transpileClass(
   };
 
   for (const m of methods) {
-    // 静态字段 ClassProperty
+    // Bug 77：静态块——类定义期执行（不静默丢弃）
+    if (m.type === "StaticBlock") {
+      // this = 类值：thisParam 直接指类名绑定（静态块内 this.t = v 的
+      // 不可变更新须重绑类绑定——经 memberPathOf 根可重绑路径落回）
+      const blkOpts: TranspileOptions = { ...methodOptsBase, thisParam: name };
+      // StaticBlock.body 直接是语句数组（无 BlockStatement 包装）
+      const blkBody = Array.isArray(m.body)
+        ? (m.body as Statement[])
+        : ((m.body as { body?: Statement[] })?.body ?? []);
+      const stmts = transpileFnBodyStmts(blkBody, depth + 3, blkOpts);
+      staticInitParts.push(
+        `${indent(depth + 2)}(__this) => {`,
+        stmts,
+        `${indent(depth + 2)}},`,
+      );
+      continue;
+    }
+    // 字段（公有/私有 × 静态/实例）
     if (m.type === "ClassProperty" || m.type === "ClassPrivateProperty") {
-      const fname =
-        m.key?.type === "Identifier" ? m.key.name : m.key?.type === "StringLiteral" ? String(m.key.value) : null;
-      if (fname && m.value) {
-        const vsrc = emitTranspileExpression(m.value as Expression, opts);
-        staticFieldParts.push(`${indent(depth + 2)}${JSON.stringify(fname)}: ${vsrc},`);
+      const keyR = keyOf(m.key, m.computed === true);
+      if (m.static) {
+        // 静态字段：定义期求值挂类值自有槽（this 近似为模块作用域——既有口径）
+        const vsrc = m.value
+          ? emitTranspileExpression(m.value as Expression, opts)
+          : "$lit(void 0)";
+        if (keyR && "name" in keyR) {
+          staticFieldParts.push(`${indent(depth + 2)}${JSON.stringify(keyR.name)}: ${vsrc},`);
+        } else if (keyR && "computed" in keyR) {
+          const synth = `__ck${ckSeq++}`;
+          staticFieldParts.push(`${indent(depth + 2)}${JSON.stringify(synth)}: ${vsrc},`);
+          computedKeyParts.push(`${indent(depth + 2)}${JSON.stringify(synth)}: ${keyR.computed},`);
+        }
+        // 无名键（解析异常）：无表达式可发射，跳过
+        continue;
+      }
+      // Bug 59：实例字段——每次构造以新实例为 this 按源序求值（此前误编为
+      // 静态：定义期跑一次、错误 this、永不落实例）
+      const fieldOpts: TranspileOptions = { ...methodOptsBase };
+      const vsrc = m.value
+        ? emitTranspileExpression(m.value as Expression, fieldOpts)
+        : "$lit(void 0)";
+      const initSrc = thunkOf(vsrc, depth + 2);
+      if (keyR && "name" in keyR) {
+        instanceFieldParts.push(
+          `${indent(depth + 2)}{ name: ${JSON.stringify(keyR.name)}, init: ${initSrc} },`,
+        );
+      } else if (keyR && "computed" in keyR) {
+        // 原生计算键逐实例求值（ClassFieldDefinitionEvaluation 在构造期）
+        instanceFieldParts.push(
+          `${indent(depth + 2)}{ key: ${thunkOf(keyR.computed, depth + 2)}, init: ${initSrc} },`,
+        );
       }
       continue;
     }
-    if (m.type !== "ClassMethod" && m.type !== "ObjectMethod") continue;
+    // Bug 78：私有方法与公有方法同机制（键混淆为 "#m"）
+    if (m.type !== "ClassMethod" && m.type !== "ObjectMethod" && m.type !== "ClassPrivateMethod") {
+      continue;
+    }
+    const keyR = keyOf(m.key, m.computed === true);
     const mname =
-      (m.key?.type === "Identifier"
-        ? m.key.name
-        : m.key?.type === "StringLiteral"
-          ? String(m.key.value)
-          : undefined) ?? "method";
+      keyR && "name" in keyR
+        ? keyR.name
+        : keyR && "computed" in keyR
+          ? `__ck${ckSeq++}`
+          : undefined;
+    if (mname === undefined) continue;
+    const computedKeySrc = keyR && "computed" in keyR ? keyR.computed : undefined;
     const params = paramsOf(m);
     const paramList = params.filter((p) => p !== "_").join(", ");
     // get/set 访问器：实例进 spec.accessors，静态进 spec.staticAccessors
@@ -1310,6 +1417,9 @@ export function transpileClass(
         def.set = `(__this, ${vname}) => {\n${setBody}\n${indent(depth + 4)}return __this;\n${indent(depth + 3)}}`;
       }
       target.set(mname, def);
+      if (computedKeySrc) {
+        computedKeyParts.push(`${indent(depth + 2)}${JSON.stringify(mname)}: ${computedKeySrc},`);
+      }
       continue;
     }
     // ctor 有显式 `return __this`（下方追加）——不得加隐式 return 抢行
@@ -1338,16 +1448,28 @@ export function transpileClass(
         bodyStmts,
       ].join("\n");
     }
+    // Bug 58：generator 方法体不在调用期执行——包 $gen（吞调用期 throws，
+    // yield 收集保持既有 eager 口径）
+    if (m.generator) {
+      bodyStmts = [
+        `${indent(depth + 4)}return $gen(() => {`,
+        bodyStmts,
+        `${indent(depth + 4)}});`,
+      ].join("\n");
+    }
     if (m.static) {
       staticMethodParts.push(
-        `${indent(depth + 3)}${mname}: (${mHasArgs ? "...__margs" : paramList}) => {`,
+        `${indent(depth + 3)}${JSON.stringify(mname)}: (${mHasArgs ? "...__margs" : paramList}) => {`,
         bodyStmts,
         `${indent(depth + 3)}},`,
       );
       staticMethodParamEntries.push([mname, paramDisplayNames(m.params)]);
+      if (computedKeySrc) {
+        computedKeyParts.push(`${indent(depth + 2)}${JSON.stringify(mname)}: ${computedKeySrc},`);
+      }
       continue;
     }
-    if (m.kind === "constructor" || mname === "constructor") {
+    if (isCtor) {
       ctorParts.push(
         `${indent(depth + 2)}ctor: (__this, ${mHasArgs ? "...__margs" : paramList}) => {`,
         bodyStmts,
@@ -1356,7 +1478,7 @@ export function transpileClass(
       );
     } else if (m.async) {
       methodParts.push(
-        `${indent(depth + 3)}${mname}: (__this, ${mHasArgs ? "...__margs" : paramList}) => {`,
+        `${indent(depth + 3)}${JSON.stringify(mname)}: (__this, ${mHasArgs ? "...__margs" : paramList}) => {`,
         `${indent(depth + 4)}return $async(() => {`,
         bodyStmts,
         `${indent(depth + 4)}});`,
@@ -1365,22 +1487,41 @@ export function transpileClass(
       methodParamEntries.push([mname, paramDisplayNames(m.params)]);
     } else {
       methodParts.push(
-        `${indent(depth + 3)}${mname}: (__this, ${mHasArgs ? "...__margs" : paramList}) => {`,
+        `${indent(depth + 3)}${JSON.stringify(mname)}: (__this, ${mHasArgs ? "...__margs" : paramList}) => {`,
         bodyStmts,
         `${indent(depth + 3)}},`,
       );
       methodParamEntries.push([mname, paramDisplayNames(m.params)]);
     }
+    if (computedKeySrc) {
+      computedKeyParts.push(`${indent(depth + 2)}${JSON.stringify(mname)}: ${computedKeySrc},`);
+    }
   }
 
   const specLines: string[] = [];
-  if (superName) {
+  if (superClassNode) {
     // 活引用而非名字字符串：class B extends A {} 在 A 声明前求值时
-    // 触发 let TDZ ReferenceError（原生语义）；宿主全局（extends Map）按名解析
-    specLines.push(`${indent(depth + 2)}extends: ${superName},`);
+    // 触发 let TDZ ReferenceError（原生语义）；宿主全局（extends Map）按名解析。
+    // 非 Identifier 表达式发 transpile 源——原生在类**定义期**求值 extends
+    // 表达式（ClassDefinitionEvaluation），求值顺序保持。hasExtends 标记
+    // 区分 `extends undefined`（babel Identifier → 活引用 raw undefined）与
+    // 无 extends 子句（Bug 11）。
+    const superSrc =
+      superClassNode.type === "Identifier"
+        ? superClassNode.name
+        : emitTranspileExpression(superClassNode as unknown as Expression, opts);
+    specLines.push(`${indent(depth + 2)}hasExtends: true,`);
+    specLines.push(`${indent(depth + 2)}extends: ${superSrc},`);
   }
   if (staticFieldParts.length) {
     specLines.push(`${indent(depth + 2)}statics: {`, ...staticFieldParts, `${indent(depth + 2)}},`);
+  }
+  if (computedKeyParts.length) {
+    specLines.push(
+      `${indent(depth + 2)}computedKeys: {`,
+      ...computedKeyParts,
+      `${indent(depth + 2)}},`,
+    );
   }
   if (staticMethodParts.length) {
     specLines.push(
@@ -1408,6 +1549,13 @@ export function transpileClass(
       specLines.push(`${indent(depth + 3)}${JSON.stringify(k)}: [${names.map((n) => JSON.stringify(n)).join(", ")}],`);
     }
     specLines.push(`${indent(depth + 2)}},`);
+  }
+  if (instanceFieldParts.length) {
+    specLines.push(
+      `${indent(depth + 2)}instanceFields: [`,
+      ...instanceFieldParts,
+      `${indent(depth + 2)}],`,
+    );
   }
   if (accessorDefs.size > 0) {
     const accParts: string[] = [];
@@ -1437,13 +1585,37 @@ export function transpileClass(
       `${indent(depth + 2)}},`,
     );
   }
+  const staticInitLines = staticInitParts.length
+    ? [
+        `${indent(depth)}$staticInit(${name}, [`,
+        ...staticInitParts,
+        `${indent(depth)}]);`,
+      ]
+    : [];
+  return { name, specLines, staticInitLines };
+}
 
-  return [
-    // let：静态成员写 A.x = v 经 $set 不可变更新后需重绑类绑定
+/** class C extends P { ctor, methods } → $class(...) */
+export function transpileClass(
+  stmt: {
+    id?: { name: string } | null;
+    body: { body: unknown[] };
+    superClass?: { type: string; name?: string } | null;
+  },
+  depth: number,
+  opts: TranspileOptions,
+): string {
+  const pad = indent(depth);
+  const { name, specLines, staticInitLines } = classSpecOf(stmt, depth, opts);
+  // let：静态成员写 A.x = v 经 $set 不可变更新后需重绑类绑定
+  const out = [
     `${pad}let ${name} = $class(${JSON.stringify(name)}, {`,
     ...specLines,
     `${pad}});`,
-  ].join("\n");
+  ];
+  // Bug 77：静态块在类绑定完成后执行（块体内类名词法可见，与原生一致）
+  if (staticInitLines.length) out.push(...staticInitLines);
+  return out.join("\n");
 }
 
 export function transpileBlockAsThunk(stmt: Statement, depth: number, opts: TranspileOptions): string {

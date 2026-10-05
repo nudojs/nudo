@@ -24,7 +24,9 @@ import { joinAbs } from "../objects.ts";
 import { instantiateReturn, isRelFn, setApplyCallbackHost } from "../hof.ts";
 import type { AstEnv } from "../ast-env.ts";
 import { NudoThrow } from "./nudo-throw.ts";
-import { pushThrowExit, peekThrowExitsSince, throwExitsMark } from "./runtime/state.ts";
+import { errorTypeAbs, recordMayThrow } from "./may-throw.ts";
+import { isNullishLitAbs } from "../surface.ts";
+import { pushThrowExit, peekThrowExitsSince, throwExitsMark, withNewTargetReset } from "./runtime/state.ts";
 import {
   callBudgetKey,
   enterCall,
@@ -75,6 +77,11 @@ function joinThrowsSince(mark: number): Abs {
 }
 
 export function $call(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
+  // Bug 79：普通函数调用面——调用期间 new.target 读 undefined（构造帧清空）
+  return withNewTargetReset(() => $callInner(fn, args, thisVal));
+}
+
+function $callInner(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
   // 函数 union：对每个 member 同序求值后 join
   if (fn?.shape?.k === "sum") {
     const results = fn.shape.members.map((m) => $call(m, args, thisVal));
@@ -94,6 +101,23 @@ export function $call(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
   // 关系面（relation/isRelFn）：无 body 无 apply → 实例化返回位
   if (!impl?.body && !impl?.apply) {
     if (impl?.relation || isRelFn(fn)) return instantiateReturn(fn, args);
+    // 非函数 callee 的原生 TypeError 不得折成 unknown, throws=never（假「保证不抛」）。
+    // prim（含 nullish 字面量）确定不可调用 → hard NudoThrow（tier 1，
+    // 调用边界收成 throws）；any（无约束值）→ may-throw（tier 2）。
+    // unknown 是引擎 fail-closed 令牌（桥接/契约包裹后的内部值，如 sidecar
+    // 约束下的导入函数）而非「可能非函数」的用户语义——记 may-throw 会把
+    // 引擎债放大成 L2 假报，不记。obj/brand 等其余形状保守：可能经桥接可调。
+    const calleeAbs = fn && typeof fn === "object" ? (fn as Abs) : undefined;
+    const calleeK = calleeAbs?.shape?.k;
+    if (calleeK === "prim" || (calleeAbs !== undefined && isNullishLitAbs(calleeAbs))) {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+    if (calleeK === "any") {
+      recordMayThrow({
+        kind: "TypeError",
+        cause: `call on ${calleeK} callee (not a function)`,
+      });
+    }
     return unknown;
   }
   // apply 钩子（mock withArgs / $fnVal / 桥接导出）：按实参派发。

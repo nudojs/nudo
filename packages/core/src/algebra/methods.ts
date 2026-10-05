@@ -7,11 +7,13 @@
 
 import type { Abs } from "./abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, unknown } from "./abs.ts";
-import { applyCallbackAbs, undefAbs } from "./hof.ts";
+import { applyCallbackAbs, undefAbs, validateIndexArg } from "./hof.ts";
+import { joinAbs } from "./objects.ts";
 import { NudoThrow } from "./nudo-throw.ts";
-import { errorTypeAbs } from "./may-throw.ts";
+import { errorTypeAbs, recordMayThrow } from "./may-throw.ts";
 import { pTrue } from "./pred.ts";
 import { defaultLeakBudget } from "./leak.ts";
+import { isSymbolAbs } from "./symbol-id.ts";
 import {
   isTemplateLike,
   templatePartsOf,
@@ -114,6 +116,35 @@ function isUndefinedArg(x: Abs | undefined): boolean {
 }
 
 /**
+ * ToString 强转实参的 throw 档位（Bug 42/72 共享，shape 先于 lit）：
+ * - symbol-prim（Symbol() 产物，无 lit 项）→ 确定 TypeError（ToString 恒抛）
+ * - 字面量 / 抽象 prim（string/number/bool/bigint）→ ToString 恒 total
+ * - obj/fn/brand/sum/any/unknown/tuple/arr（term 非 lit）→ may：自定义
+ *   toString/valueOf 可能产 Symbol；数组 join 元素可能为 symbol（node 实测
+ *   'a'.concat([Symbol()]) 抛 TypeError）
+ */
+export function toStringArgTier(x: Abs | undefined): "ok" | "throw" | "may" {
+  if (x === undefined) return "ok";
+  if (isSymbolAbs(x)) return "throw";
+  if (x.term?.op === "lit") return "ok";
+  return x.shape.k === "prim" ? "ok" : "may";
+}
+
+/** ToString 档位落地：throw → NudoThrow（catch 层吸收）；may → recordMayThrow */
+export function enforceToStringArg(x: Abs | undefined, what: string): void {
+  const tier = toStringArgTier(x);
+  if (tier === "throw") throw new NudoThrow(errorTypeAbs("TypeError"));
+  if (tier === "may") {
+    recordMayThrow({ kind: "TypeError", cause: `${what} ToString may throw (Symbol)` });
+  }
+}
+
+/** RegExp brand 判定（Bug 69 IsRegExp 守卫 / replace pattern 合法臂共用） */
+function isRegExpBrandAbs(x: Abs | undefined): boolean {
+  return !!x && x.shape.k === "brand" && (x.shape as { name?: string }).name === "RegExp";
+}
+
+/**
  * String.prototype.split 的 limit → ToUint32。
  * NaN/±Infinity/±0 → 0；其余 truncate 向零后 mod 2^32。
  * bigint/symbol（ToNumber 抛 TypeError）→ 返回 undefined 由调用方保守。
@@ -136,6 +167,95 @@ export function callAbsMethod(
   args: Abs[],
 ): Abs | undefined {
   if (!isStrRecv(recv)) return undefined;
+
+  // 实参强转校验（Bug 42/69/72/75）：shape 先于 lit——确定抛 → NudoThrow，
+  // 抽象 may → recordMayThrow；值域折叠逻辑不变（各 case 的保守臂照旧）。
+  // 原生口径（node v26 实测）：searchString/separator/pattern/replacement/
+  // concat 实参/fill/form 走 ToString；position/fromIndex/limit/targetLength/
+  // count 走 ToIntegerOrInfinity；startsWith/endsWith/includes 先 IsRegExp。
+  switch (name) {
+    case "startsWith":
+    case "endsWith":
+    case "includes": {
+      // Bug 69：IsRegExp 守卫先于 ToString——RegExp brand 实参 → 确定
+      // TypeError（node: "First argument to String.prototype.startsWith
+      // must not be a regular expression"，endsWith/includes 同款）
+      if (isRegExpBrandAbs(args[0])) throw new NudoThrow(errorTypeAbs("TypeError"));
+      enforceToStringArg(args[0], "searchString");
+      validateIndexArg(args[1], "position");
+      break;
+    }
+    case "indexOf":
+    case "lastIndexOf":
+      enforceToStringArg(args[0], "searchString");
+      validateIndexArg(args[1], "fromIndex");
+      break;
+    case "concat":
+      for (let i = 0; i < args.length; i++) enforceToStringArg(args[i], "concat operand");
+      break;
+    case "split":
+      // limit 走 ToUint32（ToNumber）——symbol/bigint 确定 TypeError（node 实测
+      // 'a'.split('a', 1n) 抛）；separator 的 undefined 特判在折叠面（不 ToString）
+      validateIndexArg(args[1], "limit");
+      if (!isUndefinedArg(args[0])) enforceToStringArg(args[0], "separator");
+      break;
+    case "replace":
+    case "replaceAll": {
+      // pattern：RegExp brand 合法（折叠面分支）；fn replacement 不 ToString
+      //（回调语义）；其余 ToString 档
+      if (!isRegExpBrandAbs(args[0])) enforceToStringArg(args[0], "replace pattern");
+      if (!(args[1] && args[1].shape.k === "fn")) {
+        enforceToStringArg(args[1], "replace replacement");
+      }
+      break;
+    }
+    case "padStart":
+    case "padEnd":
+      validateIndexArg(args[0], "targetLength");
+      enforceToStringArg(args[1], "fill");
+      break;
+    case "repeat":
+      validateIndexArg(args[0], "count");
+      break;
+    case "slice":
+    case "substring":
+    case "charAt":
+    case "charCodeAt":
+    case "codePointAt":
+    case "at":
+    case "substr":
+      validateIndexArg(args[0], "position");
+      validateIndexArg(args[1], "end");
+      break;
+    case "localeCompare":
+      enforceToStringArg(args[0], "compareString");
+      // 第二参（locales）为 null 字面量 → 确定 TypeError（ToObject；node 实测
+      // 'a'.localeCompare('b', null) 抛）；symbol/undefined 原生 total
+      if (args[1] && args[1].term?.op === "lit" && args[1].term.value === null) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      break;
+    case "normalize": {
+      // form 走 ToString + 合法性校验：symbol → TypeError；抽象 prim string →
+      // may RangeError（form 可能非法）；抽象 prim number/bool/bigint → ToString
+      // 恒非法 form → 确定 RangeError（node 实测 normalize(1n) 抛）；其余抽象 →
+      // may TypeError + may RangeError
+      const f = args[0];
+      if (isSymbolAbs(f)) throw new NudoThrow(errorTypeAbs("TypeError"));
+      if (f !== undefined && f.term?.op !== "lit") {
+        const k = (f.shape as { k?: string; type?: string });
+        if (k.k === "prim" && k.type === "string") {
+          recordMayThrow({ kind: "RangeError", cause: "normalize form may be invalid" });
+        } else if (k.k === "prim") {
+          throw new NudoThrow(errorTypeAbs("RangeError"));
+        } else {
+          recordMayThrow({ kind: "TypeError", cause: "normalize form ToString may throw (Symbol)" });
+          recordMayThrow({ kind: "RangeError", cause: "normalize form may be invalid" });
+        }
+      }
+      break;
+    }
+  }
 
   const a0R = args[0] ? litValue(args[0]) : undefined;
 
@@ -174,7 +294,15 @@ export function callAbsMethod(
       case "toLowerCase":
       case "trim":
       case "slice":
+      case "trimStart":
+      case "trimEnd":
+      case "toLocaleUpperCase":
+      case "toLocaleLowerCase":
+      case "substr":
+      case "normalize":
         return strPrim("path");
+      case "localeCompare":
+        return numPrim("path");
       case "concat": {
         let acc = recv;
         for (const a of args) acc = concatString(acc, a);
@@ -209,9 +337,62 @@ export function callAbsMethod(
     case "toUpperCase":
     case "toLowerCase":
     case "trim":
-      return lit !== undefined ? strLit(
-        name === "toUpperCase" ? lit.toUpperCase() : name === "toLowerCase" ? lit.toLowerCase() : lit.trim(),
-      ) : strPrim("path");
+    case "trimStart":
+    case "trimEnd":
+    case "toLocaleUpperCase":
+    case "toLocaleLowerCase": {
+      // Bug 72：此前未建模 → unknown。实参不参与（locale 实参原生忽略），
+      // 字面量经宿主真执行（同 host 行为一致），模板/抽象保守 strPrim。
+      if (lit === undefined) return strPrim("path");
+      const impl = String.prototype as unknown as Record<string, (...a: unknown[]) => string>;
+      return strLit(impl[name]!.call(lit));
+    }
+    case "substr": {
+      // Bug 72：Annex B 但宿主全有。start/length 走 ToIntegerOrInfinity
+      //（负 start → len+start；length 0 → ""——node 实测 'abc'.substr(1, null) === ""）
+      if (lit === undefined) return strPrim("path");
+      if (!isFoldableIndexArg(args[0]) || !isFoldableIndexArg(args[1])) return strPrim("path");
+      const a1R = args[1] ? litValue(args[1]) : undefined;
+      const a1 = a1R?.ok ? a1R.value : undefined;
+      return strLit(lit.substr(Number(a0 ?? 0), a1 === undefined ? undefined : Number(a1)));
+    }
+    case "normalize": {
+      // Bug 72：缺省/undefined → NFC；非法 form 字面量（含 number/bool/bigint/null
+      // 的 ToString——node 实测 normalize(1n)/normalize(true) 均抛）→ 确定 RangeError
+      if (lit === undefined) return strPrim("path");
+      if (args[0] !== undefined && args[0].term?.op !== "lit") return strPrim("path");
+      try {
+        return strLit(lit.normalize(a0 as string | undefined));
+      } catch {
+        throw new NudoThrow(errorTypeAbs("RangeError"));
+      }
+    }
+    case "localeCompare": {
+      // Bug 72：比较实参 ToString（symbol → TypeError 已在入口硬抛）；
+      // 第二参（locales）原生校验：非法 language tag 字面量 → RangeError
+      // （node 实测 'a'.localeCompare('b','b') 抛）、null → TypeError（ToObject，
+      // 入口已硬抛）；symbol/undefined/number/bigint → total（node 实测跳过校验）。
+      // 字面量经宿主（默认 locale，与 node 同机一致）→ number
+      if (lit === undefined) return numPrim("path");
+      const that = toStringArg(args[0]);
+      if (that === undefined) return numPrim("path");
+      const loc = args[1];
+      if (loc !== undefined && loc.term?.op === "lit") {
+        try {
+          return numLit(lit.localeCompare(that, loc.term.value as never));
+        } catch (e) {
+          if (e instanceof RangeError) throw new NudoThrow(errorTypeAbs("RangeError"));
+          throw new NudoThrow(errorTypeAbs("TypeError"));
+        }
+      }
+      const lk = loc?.shape as { k?: string; type?: string } | undefined;
+      if (!loc || isSymbolAbs(loc) || (lk?.k === "prim" && lk.type !== "string")) {
+        return numLit(lit.localeCompare(that));
+      }
+      // 抽象 string / 数组 / 对象 / any locales：可能含非法 tag → may RangeError
+      recordMayThrow({ kind: "RangeError", cause: "localeCompare locales may be an invalid language tag" });
+      return numPrim("path");
+    }
     case "slice":
     case "substring":
       if (lit !== undefined) {
@@ -236,6 +417,14 @@ export function callAbsMethod(
       if (lit === undefined) return strPrim("path");
       if (!isFoldableIndexArg(args[0])) return strPrim("path");
       return strLit(lit.charAt(Number(a0 ?? 0)));
+    }
+    case "codePointAt": {
+      // Bug 75：此前完全未建模 → unknown。位置走 ToIntegerOrInfinity；
+      // OOB → undefined（与 charAt 的 "" 不同）；非折叠位置 → number | undefined
+      if (lit === undefined) return joinAbs(numPrim("path"), undefAbs());
+      if (!isFoldableIndexArg(args[0])) return joinAbs(numPrim("path"), undefAbs());
+      const cp = lit.codePointAt(Number(a0 ?? 0));
+      return cp === undefined ? undefAbs() : numLit(cp);
     }
     case "at": {
       // String.prototype.at：ToIntegerOrInfinity，支持负索引；OOB → undefined

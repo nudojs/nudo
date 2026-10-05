@@ -6,8 +6,10 @@ import { abs, litValue, boolLit, strLit, numLit, str } from "../abs.ts";
 import { isObj, objOf, joinAbs } from "../objects.ts";
 import { undefAbs } from "../hof.ts";
 import { NudoThrow } from "./runtime.ts";
-import { errorTypeAbs } from "./may-throw.ts";
+import { errorTypeAbs, recordMayThrow } from "./may-throw.ts";
 import { registerMatchIter } from "./match-iter.ts";
+import { isSymbolAbs } from "../symbol-id.ts";
+import { validateRegexSubjectArg } from "../builtins/regexp.ts";
 
 /** RegExp brand 内部 source/flags/lastIndex 提取（exec/test 共用） */
 export function regexParts(re: Abs): { pat: string; flags: string; lastIndex: number } | undefined {
@@ -64,6 +66,8 @@ export function execRegexBrand(re: Abs, method: string, args: Abs[]): Abs | unde
   const parts = regexParts(re);
   if (!parts) return undefined;
   if (method === "toString") return strLit(`/${parts.pat}/${parts.flags}`);
+  // Bug 57：subject ToString 校验（symbol 确定 TypeError；抽象 may）
+  validateRegexSubjectArg(args[0]);
   const subjectR = args[0] ? litValue(args[0]) : undefined;
   const subject = subjectR?.ok ? subjectR.value : undefined;
   if (typeof subject !== "string") {
@@ -95,6 +99,8 @@ export function execRegexBrand(re: Abs, method: string, args: Abs[]): Abs | unde
 export function $reStateCall(re: Abs, method: string, args: Abs[]): Abs {
   const parts = regexParts(re);
   if (!parts || (method !== "test" && method !== "exec")) return re;
+  // Bug 57：subject ToString 校验（语句级状态写回同样要先过 ToString）
+  validateRegexSubjectArg(args[0]);
   const subjectR = args[0] ? litValue(args[0]) : undefined;
   const subject = subjectR?.ok ? subjectR.value : undefined;
   if (typeof subject !== "string") return re; // 抽象 subject：状态不可判定，保守不动
@@ -129,7 +135,20 @@ export function stringRegexMethod(recv: Abs, method: string, args: Abs[]): Abs |
   const pat = patR?.ok ? patR.value : undefined;
   const svR = litValue(recv);
   const sv = svR.ok && typeof svR.value === "string" ? svR.value : undefined;
-  if (typeof pat !== "string" || typeof sv !== "string") return undefined;
+  if (typeof sv !== "string") return undefined; // 非字符串字面量接收者：不接管
+  // Bug 42：pattern 实参 ToString 校验——'a'.match/search/matchAll(Symbol())
+  // 原生均抛（RegExpCreate/GetMethod 路径 ToString；node 实测）。RegExp brand
+  // 合法；抽象 prim ToString total；其余（obj/fn/brand/sum/any/tuple/arr）→ may
+  if (isSymbolAbs(re)) throw new NudoThrow(errorTypeAbs("TypeError"));
+  if (
+    re !== undefined &&
+    re.term?.op !== "lit" &&
+    !reBrand &&
+    re.shape.k !== "prim"
+  ) {
+    recordMayThrow({ kind: "TypeError", cause: "match/search/matchAll pattern ToString may throw (Symbol)" });
+  }
+  if (typeof pat !== "string") return undefined;
   const flagsR = flagsAbs ? litValue(flagsAbs) : undefined;
   const flagsV = flagsR?.ok ? flagsR.value : undefined;
   const flags = typeof flagsV === "string" ? flagsV : "";

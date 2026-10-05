@@ -53,6 +53,13 @@ export type Shape =
        * `$get` reads these before falling back to Function.prototype names.
        */
       slots?: Record<string, { value: Abs; optional?: boolean; readonly?: boolean }>;
+      /**
+       * 可构造性 facet（Bug 9）：true = 可 new（函数声明/表达式、类表达式值）；
+       * false = 不可 new（箭头/方法/generator/async）。缺省 = 未知
+       * （mock/relation/桥接/宿主包装）→ `$new` 记 may-throw。
+       * 与 pathNote 同纪律：展示/非值信息，不进 leq / 指纹 / check 等价。
+       */
+      ctor?: boolean;
     }
   | { k: "brand"; name: string; shape: Abs }
   | { k: "eff"; eff: "promise" | "generator"; inner: Abs }

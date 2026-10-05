@@ -17,7 +17,7 @@ import { predToString } from "./pred.ts";
 import { formatAbs } from "./format.ts";
 import type { CheckIssue } from "./check-report.ts";
 import type { NudoConstraint } from "./constraint.ts";
-import { instantiateConstraint } from "./constraint.ts";
+import { instantiateConstraint, isIntFlag } from "./constraint.ts";
 import { literalMeetsConstraint } from "./domain-membership.ts";
 import { generalizeFromAst } from "./generalize.ts";
 import { effectiveInterface, formatConstraint } from "./interface.ts";
@@ -246,6 +246,23 @@ export function scanCaseInconsistency(
         continue;
       }
       if (typeof argLit !== "number") continue;
+      // Bug 1：纯 bounds 分支此前只查 gt/ge/lt/le，从不读 .int() 标志——
+      // number().int()（无 range 原子）的非整数见证零检查静默通过；hasEqOr
+      // 分支经 literalMeetsConstraint（domain-membership :55-61）已执法。
+      // 此处补同口径判定（isIntFlag 统一读取 builder/纯数据两种形态）。
+      if (isIntFlag(entry.constraint) && !Number.isInteger(argLit)) {
+        const paramName = entry.param || paramNames[idx] || `arg${idx}`;
+        out.push({
+          severity: "error",
+          code: "nudo:case-inconsistency",
+          message: `${fnName} case "${caseName}": witness ⊭ contract`,
+          actual: formatAbs(arg),
+          expected: formatConstraint(entry.constraint),
+          suggestion: `change the case argument, or relax the refine on ${paramName}`,
+          fn: fnName,
+          line,
+        });
+      }
       const flatten = (p: Pred): Pred[] => (p.op === "and" ? p.args.flatMap(flatten) : p.op === "true" ? [] : [p]);
       for (const p of flatten(entry.pred)) {
         if (

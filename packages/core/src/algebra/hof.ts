@@ -11,6 +11,9 @@ import type { Pred } from "./pred.ts";
 import { and, pTrue, pFalse, substPred } from "./pred.ts";
 import { getFnImpl } from "./abs-fn.ts";
 import { getSlot, joinAbs } from "./objects.ts";
+import { NudoThrow } from "./nudo-throw.ts";
+import { errorTypeAbs, recordMayThrow } from "./may-throw.ts";
+import { isSymbolAbs } from "./symbol-id.ts";
 import type { AstEnv, HofCollectCtx, HofSite, RelSource } from "./hof-types.ts";
 
 // --- P2 types（定义在 hof-types.ts，重导出保持稳定导入路径）---
@@ -272,6 +275,7 @@ export function snapshotAbs(a: Abs): Abs {
         if (s.name !== undefined) next.name = s.name;
         if (s.paramTypes) next.paramTypes = s.paramTypes.map(snapshotAbs);
         if (s.returnType) next.returnType = snapshotAbs(s.returnType);
+        if (s.ctor !== undefined) next.ctor = s.ctor; // Bug 9 facet：快照不改可构造性
         return next;
       }
       case "sum":
@@ -576,6 +580,7 @@ function substShape(
       if (s.returnType !== undefined) {
         next.returnType = substAbsInner(s.returnType, map, cache, visiting);
       }
+      if (s.ctor !== undefined) next.ctor = s.ctor; // Bug 9 facet：替换不改可构造性
       return next;
     }
     case "sum":
@@ -875,27 +880,34 @@ export function mapElementFallback(
 /**
  * flatMap 统一结果：展开后的元素 join 成 arr(γ)。
  * JS flatMap 永远返回 Array；双路径共用此投影，禁止一边 tuple 一边 arr。
- * 同 term 元素 first-wins（joinAbs 会丢 β 身份，见 design §5.1）。
+ * 同 lit/var term 元素 first-wins（joinAbs 会丢 β 身份，见 design §5.1）。
  */
 export function projectFlatMapResult(
   arrConf: Confidence,
   mapped: Abs[],
 ): Abs {
   const flatEls: Abs[] = [];
-  let anyUnknown = false;
   for (const m of mapped) {
     if (m.shape.k === "arr") flatEls.push(m.shape.element);
     else if (m.shape.k === "tuple") flatEls.push(...m.shape.elements);
-    else anyUnknown = true;
+    // Bug 84：非数组映射值原生合法（FlattenIntoArray 只展开 IsArray 值，
+    // 其余原样追加）——x => x / () => "ab" 不得折 unknown
+    else flatEls.push(m);
   }
-  if (anyUnknown || flatEls.length === 0) return unknown;
+  // Bug 21：空展开（() => []）是可精确计算的 []，不再折 unknown
+  if (flatEls.length === 0) {
+    return abs({ k: "tuple", elements: [] }, undefined, undefined, confJoin(arrConf, "exact"));
+  }
   const first = flatEls[0]!;
-  const sameIdentity = flatEls.every((e) => {
-    if (e.shape.k !== first.shape.k) return false;
-    if (!e.term && !first.term) return true;
-    if (!e.term || !first.term) return false;
-    return termToString(e.term) === termToString(first.term);
-  });
+  // Bug 21：identity 仅在双方都有 term（lit/var）时由 termToString 判定；
+  // 无 term 的结构元素（tuple/obj…）一律视为互不相同 → joinAbs——
+  // 旧 first-wins 会把 [[v]] 全部元素折成 [1]，静默丢弃 [2]
+  const sameIdentity = flatEls.every(
+    (e) =>
+      !!e.term &&
+      !!first.term &&
+      termToString(e.term) === termToString(first.term),
+  );
   const el = sameIdentity ? first : flatEls.reduce((a, b) => joinAbs(a, b));
   return abs(
     { k: "arr", element: el },
@@ -903,6 +915,80 @@ export function projectFlatMapResult(
     undefined,
     confJoin(arrConf, "path"),
   );
+}
+
+/**
+ * GetMethod/IsCallable 前置校验（Bug 49/51/55/73/74 共享）：
+ * 回调 / 比较器 / mapper 在**迭代前**校验（空接收者也要抛——原生
+ * GetCallback 先于任何元素访问）。
+ * - JS 函数 / fn 形 / 带 fnImpl（body/apply/relation）→ 可调用，放行；
+ * - prim / tuple / arr / 闭 obj / nullish 字面量 / 缺省 → 确定 TypeError
+ *   （hard NudoThrow，catch 层可吸收）；
+ * - any / 真 unknown / open obj / brand / eff / 含不可调用成员的 union →
+ *   recordMayThrow（值域由调用方保守）。
+ * undefinedOk（sort / toSorted / Array.from）：缺省或**严格 undefined** 字面量
+ * 视为无实参（合法）——注意 null 不在豁免之列（sort(null)/from(x,null) 原生
+ * 同抛）；HOF（map/filter/…）不设：undefined 同样不可调用，原生同抛。
+ */
+export function validateCallableArg(
+  arg: unknown,
+  cause: string,
+  opts?: { undefinedOk?: boolean },
+): void {
+  if (opts?.undefinedOk) {
+    if (arg === undefined) return;
+    const pre = asAbs(arg);
+    if (pre?.term?.op === "lit" && pre.term.value === undefined) return;
+  }
+  const isCallable = (v: unknown): boolean => {
+    const a = asAbs(v);
+    return (
+      typeof v === "function" ||
+      (!!a &&
+        ((a.shape as { k?: string }).k === "fn" || getFnImpl(a) !== undefined))
+    );
+  };
+  if (isCallable(arg)) return;
+  const a = asAbs(arg);
+  const k = a ? (a.shape as { k?: string }).k : undefined;
+  const nullishLit =
+    !!a && a.term?.op === "lit" && (a.term.value === null || a.term.value === undefined);
+  const definitelyUncallable =
+    !a ||
+    nullishLit ||
+    k === "prim" ||
+    k === "tuple" ||
+    k === "arr" ||
+    (k === "obj" && (a.shape as { open?: boolean }).open !== true);
+  if (definitelyUncallable) throw new NudoThrow(errorTypeAbs("TypeError"));
+  if (k === "sum") {
+    // union：全员可调用才放行，否则存在不可调用臂 → may
+    const members = (a!.shape as unknown as { members: unknown[] }).members;
+    if (members.length > 0 && members.every(isCallable)) return;
+  }
+  recordMayThrow({ kind: "TypeError", cause });
+}
+
+/**
+ * ToIntegerOrInfinity 下标实参校验（Bug 56/66/67/75 共享）：shape 先于 lit 判定
+ * ——symbol 无 lit 项（makeSymbolAbs 不产 term），bigint 有 lit 项但
+ * ToNumber 恒抛，都必须按 shape 硬抛 TypeError。缺省 / undefined / null /
+ * number / string / bool 字面量 → 可折叠（交给 toIOI / toIntegerOrInfinityLit）；
+ * 抽象 obj/fn/brand/sum/any/unknown/tuple/arr → recordMayThrow（可能为
+ * symbol/bigint 或 coercer 产 symbol——node 实测 charAt({valueOf(){return 1n}}) 抛）；
+ * 抽象 prim（number/string/bool，symbol/bigint 已在上面硬抛）ToNumber 恒
+ * total → 不打 may（wave 10 精化：受约束 number 参数不得假报 may）。
+ */
+export function validateIndexArg(v: Abs | undefined, cause: string): void {
+  if (v === undefined) return;
+  if (isSymbolAbs(v)) throw new NudoThrow(errorTypeAbs("TypeError"));
+  const s = v.shape as { k?: string; type?: string };
+  if (s.k === "prim" && s.type === "bigint") {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  if (s.k === "prim") return;
+  if (v.term?.op === "lit") return;
+  recordMayThrow({ kind: "TypeError", cause });
 }
 
 /** 从 map/filter/reduce 回调实参里取出 Abs（Identifier 已绑定或直接 Abs） */

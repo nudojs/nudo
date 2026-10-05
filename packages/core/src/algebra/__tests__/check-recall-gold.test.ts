@@ -1350,6 +1350,11 @@ mapPos([1, 2], 42);
 `,
     expect: "violation",
     note: "refine 来源 fn 约束：非可调用实参 → arg-structure error",
+    // Bug 2（wave 1）：$call 对非函数字面量 callee 现按原生折 definite
+    // TypeError——顶层 mapPos([1,2], 42) 求值即抛（node 实测同抛 TypeError），
+    // 模块装载失败走 fail-closed opaque，不再产出 refine violation 通道。
+    // 抛/不抛与原生对齐；violation 通道的召回由其余 refine 用例覆盖。
+    knownFn: true,
   },
   {
     id: "hof-callable-arg-ok",
@@ -2645,9 +2650,10 @@ describe("check gold recall (human-labeled)", () => {
     expect(FP, `unexpected FP: ${detail} ${failures.join(" | ")}`).toBe(0);
     expect(rec, `recall < 1: ${detail}`).toBe(1);
     expect(prec, `precision < 1: ${detail}`).toBe(1);
-    // TP floor：GOLD 内 violation 标注 65 条，当前全捕获（TP=65）。
-    // 此 floor 只许上调，不得静默下调。
-    expect(TP, `TP floor (${detail})`).toBeGreaterThanOrEqual(65);
+    // TP floor：防 corpus 缩水。Bug 2（wave 1）把 hof-non-callable-arg 移入
+    // knownFn（非函数回调现按原生抛 TypeError 走 opaque，不再走 violation
+    // 通道）→ TP 65→64；总数仍冻结在 GOLD_CASE_COUNT。
+    expect(TP, `TP floor (${detail})`).toBeGreaterThanOrEqual(64);
     // 金标用例总数冻结：防止 corpus 被静默缩水（或 violation→ok 换标凑绿）。
     // 增删用例必须显式改此常量。
     const GOLD_CASE_COUNT = 144;
@@ -2656,7 +2662,9 @@ describe("check gold recall (human-labeled)", () => {
       `gold case count changed — corpus must not silently shrink: ${detail}`,
     ).toBe(GOLD_CASE_COUNT);
     // 已知漏报必须显式成文，禁止静默丢弃或改标凑绿
-    expect(knownFn, `knownFn count changed — update notes: ${detail}`).toBe(0);
+    // knownFn=1：hof-non-callable-arg（Bug 2 wave 1——非函数回调现按原生抛
+    // TypeError，顶层装载失败走 opaque，不再走 violation 通道；见该条 note）
+    expect(knownFn, `knownFn count changed — update notes: ${detail}`).toBe(1);
   });
 });
 

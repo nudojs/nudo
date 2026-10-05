@@ -261,6 +261,6 @@ export function objectProtoMethodAbs(name: string): Abs {
       const recv = a[0] ?? undefLit();
       return evalObjectProtoMethod(name, recv, a.slice(1)) ?? unknown;
     },
-  });
+  }, { ctor: false }); // Bug 9：内建原型方法不可 new
 }
 

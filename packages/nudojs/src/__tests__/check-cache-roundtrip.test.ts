@@ -49,9 +49,11 @@ export function scale(x) { return x * 2 + 1; }
     const r1 = runCheck(file, cache);
     const r2 = runCheck(file, cache);
     const r3 = runCheck(file, cache);
-    expect(r1.status).toBe(0);
+    // Bug 8（wave 3）：any 形参算术（`a + b`）原生 may TypeError → L2 error，
+    // exit 1 + 签名行带 throws；本用例意图（miss/hit 渲染逐字节对称）不变。
+    expect(r1.status).toBe(1);
     // miss 轮：签名行是 formatShape 口径（无 `= (A1 + A2)` term 注记）
-    expect(r1.stdout).toContain("add(a: any, b: any) => number | string\n");
+    expect(r1.stdout).toContain("add(a: any, b: any) => number | string  throws TypeError\n");
     expect(r1.stdout).not.toContain("A1");
     expect(r2.stdout).toBe(r1.stdout);
     expect(r3.stdout).toBe(r1.stdout);
@@ -100,7 +102,9 @@ export const div = fn({ a: number(), b: number().gt(0) }, number());
     const cache = join(dir, "cache");
     const r1 = runCheck(file, cache, ["--json"]);
     const r2 = runCheck(file, cache, ["--json"]);
-    expect(r1.status).toBe(0);
+    // Bug 8（wave 3）：`a + b`（any 形参）may TypeError → L2 error，exit 1；
+    // 本用例意图（JSON 面 miss/hit 逐字节一致、无缓存私有字段）不变。
+    expect(r1.status).toBe(1);
     expect(r1.stdout).not.toContain('"ret"');
     expect(r2.stdout).toBe(r1.stdout);
   });

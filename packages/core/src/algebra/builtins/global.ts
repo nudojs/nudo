@@ -6,8 +6,8 @@ import type { Abs } from "../abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, bigintLit, unknown, confJoin } from "../abs.ts";
 import { objOf } from "../objects.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
-import { errorTypeAbs } from "../exec/may-throw.ts";
-import { numPrim, str, boolPrim } from "./shared.ts";
+import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
+import { numPrim, str, boolPrim, mayCoerceThrowOperand, isBigintPrimAbs } from "./shared.ts";
 import { foldParseInt, foldParseFloat } from "./number.ts";
 import { makeArrayCtorAbs } from "./array.ts";
 import { makeSymbolAbs, isSymbolAbs, stringOfSymbol } from "./symbol.ts";
@@ -49,6 +49,19 @@ function toBigIntAbs(args: Abs[]): Abs {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
   if (isSymbolAbs(a0)) throw new NudoThrow(errorTypeAbs("TypeError"));
+  // Bug 30：闭 obj 字面量且无自有 toString/valueOf → ToPrimitive 恒得
+  // "[object Object]"，StringToBigInt 恒失败 → 确定 SyntaxError
+  //（node 实测 BigInt({}) / BigInt({a:1}) 抛）；open obj / 带 coercer /
+  // any/fn/brand/sum → may（TypeError: Symbol 载体 / SyntaxError: 不可解析）
+  if (a0.shape.k === "obj") {
+    const so = a0.shape as { slots: Record<string, unknown>; open?: boolean };
+    const hasCoercer = "toString" in so.slots || "valueOf" in so.slots;
+    if (!so.open && !hasCoercer) throw new NudoThrow(errorTypeAbs("SyntaxError"));
+  }
+  if (mayCoerceThrowOperand(a0)) {
+    recordMayThrow({ kind: "TypeError", cause: "BigInt() ToPrimitive may be a Symbol" });
+    recordMayThrow({ kind: "SyntaxError", cause: "BigInt() ToPrimitive result may be unparseable" });
+  }
   // 抽象 prim / 对象：ToPrimitive 后仍可能是任意可转值——保守 bigint 非具体
   return abs(
     { k: "prim", type: "bigint" },
@@ -74,16 +87,31 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
     case "parseInt": {
       // 首参 ToString，radix ToInt32（'2'→2、true→1 越界 NaN、null/false→0）
       // 缺省首参 ≡ undefined → ToString(undefined)="undefined" → NaN。抽象不折。
+      // Bug 26：首参 shape 先于 lit——prim symbol ToString 恒抛 TypeError；
+      // 抽象（any/obj/…）ToPrimitive 可能成 Symbol → may（node 实测
+      // parseInt({toString(){return Symbol()}}) 抛）。bigint ToString 合法。
+      if (args[0] && isSymbolAbs(args[0])) throw new NudoThrow(errorTypeAbs("TypeError"));
       const sVal = a0Lit ? a0Lit.value : undefined;
-      if (a0Lit && typeof sVal === "symbol") throw new NudoThrow(errorTypeAbs("TypeError"));
-      if (!a0Lit && args[0] && args[0].term?.op !== "lit") return numPrim();
+      const firstAbstract = !a0Lit && !!args[0] && args[0].term?.op !== "lit";
+      if (firstAbstract && mayCoerceThrowOperand(args[0])) {
+        recordMayThrow({ kind: "TypeError", cause: "parseInt argument ToString may throw (Symbol)" });
+      }
       const rAbs = args[1];
       let radix: number | string | boolean | null | undefined;
       if (!rAbs) {
         radix = undefined;
       } else if (rAbs.term?.op !== "lit") {
+        // Bug 45：radix ToInt32 → ToNumber——prim symbol/bigint（无 lit 项）
+        // 确定 TypeError；抽象 may（symbol/bigint 载体）。抽象 radix 不折。
+        if (isSymbolAbs(rAbs) || isBigintPrimAbs(rAbs)) {
+          throw new NudoThrow(errorTypeAbs("TypeError"));
+        }
+        if (mayCoerceThrowOperand(rAbs)) {
+          recordMayThrow({ kind: "TypeError", cause: "parseInt radix ToNumber may throw (Symbol/BigInt)" });
+        }
         return numPrim();
       } else if (typeof rAbs.term.value === "symbol") {
+        // 防御：JS 无 symbol 字面量，正常源不可达
         throw new NudoThrow(errorTypeAbs("TypeError"));
       } else {
         const rv = rAbs.term.value;
@@ -91,22 +119,34 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
           ? undefined
           : (rv as number | string | boolean | null);
         if (rv !== undefined && typeof rv !== "number" && typeof rv !== "string" && typeof rv !== "boolean" && rv !== null) {
-          return numPrim();
+          // Bug 45：bigint 字面量 radix——ToNumber(1n) 恒抛 TypeError
+          //（node 实测 parseInt("1", 1n) → TypeError）
+          throw new NudoThrow(errorTypeAbs("TypeError"));
         }
       }
+      if (firstAbstract) return numPrim();
       return foldParseInt(sVal as string | number | boolean | null | bigint | undefined, radix);
     }
     case "parseFloat": {
       // 缺省首参 ≡ undefined → NaN
-      if (!a0Lit && args[0] && args[0].term?.op !== "lit") return numPrim();
-      if (a0Lit && typeof a0Lit.value === "symbol") throw new NudoThrow(errorTypeAbs("TypeError"));
+      // Bug 26：同 parseInt 首参——prim symbol 硬抛；抽象 may
+      if (args[0] && isSymbolAbs(args[0])) throw new NudoThrow(errorTypeAbs("TypeError"));
+      if (!a0Lit && args[0] && args[0].term?.op !== "lit") {
+        if (mayCoerceThrowOperand(args[0])) {
+          recordMayThrow({ kind: "TypeError", cause: "parseFloat argument ToString may throw (Symbol)" });
+        }
+        return numPrim();
+      }
       return foldParseFloat(a0Lit ? a0Lit.value as string | number | boolean | null | bigint | undefined : undefined);
     }
     case "isNaN": {
       // 全局 isNaN：ToNumber 后判 NaN（与 Number.isNaN 不同，会强制转换）
       // isNaN('x')===true、isNaN(true)===false、isNaN(null)===false、
       // isNaN(undefined)===true、isNaN('')===false、isNaN('42')===false
-      if (args[0] && isSymbolAbs(args[0])) throw new NudoThrow(errorTypeAbs("TypeError"));
+      // Bug 81：prim symbol/bigint（无 lit 项）ToNumber 恒抛 TypeError
+      if (args[0] && (isSymbolAbs(args[0]) || isBigintPrimAbs(args[0]))) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
       if (!args[0] || (args[0].term?.op === "lit" && args[0].term.value === undefined)) {
         return boolLit(true);
       }
@@ -114,13 +154,20 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
       if (typeof a0 === "boolean" || a0 === null) return boolLit(false);
       if (typeof a0 === "string") return boolLit(Number.isNaN(Number(a0)));
       if (typeof a0 === "bigint") throw new NudoThrow(errorTypeAbs("TypeError"));
+      // Bug 81：抽象臂（any/obj/…）ToPrimitive 可能成 Symbol/BigInt → may
+      if (mayCoerceThrowOperand(args[0])) {
+        recordMayThrow({ kind: "TypeError", cause: "isNaN coercion may throw (Symbol/BigInt)" });
+      }
       return boolPrim();
     }
     case "isFinite": {
       // 全局 isFinite：ToNumber 后判有限（与 Number.isFinite 不同，会强制转换）
       // isFinite() / isFinite(undefined) → false（ToNumber(undefined)=NaN）
       // 抽象/symbol 实参不得折 false（symbol 原生 ToNumber 抛 TypeError）
-      if (args[0] && isSymbolAbs(args[0])) throw new NudoThrow(errorTypeAbs("TypeError"));
+      // Bug 81：补齐与 isNaN 同口径的 bigint 守卫（isFinite(1n) 原生 TypeError）
+      if (args[0] && (isSymbolAbs(args[0]) || isBigintPrimAbs(args[0]))) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
       if (!args[0] || (args[0].term?.op === "lit" && args[0].term.value === undefined)) {
         return boolLit(false);
       }
@@ -128,11 +175,18 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
       if (typeof a0 === "boolean") return boolLit(true);
       if (typeof a0 === "string") return boolLit(Number.isFinite(Number(a0)));
       if (a0 === null) return boolLit(true);
+      if (typeof a0 === "bigint") throw new NudoThrow(errorTypeAbs("TypeError"));
+      // Bug 81：抽象臂（any/obj/…）ToPrimitive 可能成 Symbol/BigInt → may
+      if (mayCoerceThrowOperand(args[0])) {
+        recordMayThrow({ kind: "TypeError", cause: "isFinite coercion may throw (Symbol/BigInt)" });
+      }
       return boolPrim();
     }
     case "Number":
-      // Number(sym) → TypeError（ToNumber 抛）
+      // Number(sym) → TypeError（ToNumeric 抛）
       // Number() → +0；Number(undefined) → NaN；Number(null) → 0；Number(5n) → 5
+      //（Number 走 ToNumeric：Number(1n) / Number({valueOf(){return 1n}}) 合法折 number，
+      //  node 实测；Math/isNaN 等 ToNumber 面才对 bigint 抛）
       if (args[0] && isSymbolAbs(args[0])) throw new NudoThrow(errorTypeAbs("TypeError"));
       if (!args[0]) return numLit(0);
       if (a0Lit && a0Lit.value === undefined) return numLit(NaN);
@@ -141,6 +195,11 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
       if (typeof a0 === "boolean") return numLit(a0 ? 1 : 0);
       if (a0 === null) return numLit(0);
       if (typeof a0 === "bigint") return numLit(Number(a0));
+      // Bug 50：抽象臂（any/obj/…）ToPrimitive 可能成 Symbol 值 → ToNumeric
+      // may TypeError；bigint prim（BigInt(x) 产物）合法折 number（值域不变）
+      if (mayCoerceThrowOperand(args[0])) {
+        recordMayThrow({ kind: "TypeError", cause: "Number() coercion may throw (Symbol)" });
+      }
       return numPrim();
     case "String":
       // String(sym) → SymbolDescriptiveString（原生不抛）；其余 ToString

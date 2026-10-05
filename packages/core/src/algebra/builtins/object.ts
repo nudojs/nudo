@@ -5,9 +5,12 @@ import type { Abs } from "../abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, bigintLit, unknown, confJoin, isExactLit } from "../abs.ts";
 import { joinAbs, objOf, markNullProtoObj, canonicalArrayIndex, setSlot, setProtoAbs } from "../objects.ts";
 import { TUPLE_MATERIALIZE_CAP } from "../containers.ts";
+import { mapEntriesAbs } from "../collections.ts";
+import { undefAbs } from "../hof.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
-import { errorTypeAbs } from "../exec/may-throw.ts";
-import { boolPrim, numPrim, str, isPrimLike } from "./shared.ts";
+import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
+import { isSymbolAbs } from "./symbol.ts";
+import { boolPrim, numPrim, str, isPrimLike, mayCoerceThrowOperand } from "./shared.ts";
 import { type PropFlags, getPropFlags, markExtState, extStateOf, setPropFlags, migrateInvariants } from "./invariants.ts";
 import { protoOfRecv } from "./ctor.ts";
 
@@ -51,6 +54,27 @@ export function assignSourceSlots(src: Abs): Record<string, { value: Abs }> | un
 export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
   const a0 = args[0];
 
+  /**
+   * 抽象接收者可能 nullish → ToObject/RequireObjectCoercible may TypeError
+   *（Bug 27/35/61：仅补 throws 效果，值域不变；any/unknown/含 nullish 臂
+   * union 才记——prim/obj/tuple/fn/brand 形态原生全定）。
+   */
+  const noteRecvMayNullish = (a: Abs | undefined, cause: string): void => {
+    if (!a) return;
+    const mayNullish = (m: Abs): boolean =>
+      m.shape.k === "any" ||
+      m.shape.k === "unknown" ||
+      (m.term?.op === "lit" && (m.term.value === null || m.term.value === undefined));
+    const k = a.shape.k;
+    if (
+      k === "any" ||
+      k === "unknown" ||
+      (k === "sum" && (a.shape as unknown as { members: Abs[] }).members.some(mayNullish))
+    ) {
+      recordMayThrow({ kind: "TypeError", cause });
+    }
+  };
+
   /** enumerable:false（defineProperty 记录）的键从枚举视图剔除 */
   const enumKeys = (slots: Record<string, unknown>, target: Abs): string[] => {
     const flags = getPropFlags(target);
@@ -77,10 +101,24 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         // number/string/bool/bigint/symbol 字面量 proto：原生 TypeError
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }
-      return undefined; // 抽象实参保守
+      // Bug 33：shape 先于 lit 判定——prim 形态（symbol prim 无 lit 项，
+      // Symbol() 产物；抽象 number/string/bool/bigint prim 同为非对象）→
+      // 原生定抛（Object prototype may only be an Object or null）
+      if (a0.shape.k === "prim") {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      // 抽象 proto（any/unknown/含 prim 臂 union）→ may TypeError；对象形态
+      //（obj/tuple/arr/fn/brand/eff）合法但动态继承不建模——保守 unknown
+      //（闭空对象会假精确：'p' in Object.create({p:1}) 折 false、
+      //  gPo(create({x:1}))===gPo(…) 折 true，differential 实测不健全）
+      if (a0.shape.k === "any" || a0.shape.k === "unknown" || a0.shape.k === "sum") {
+        recordMayThrow({ kind: "TypeError", cause: "Object.create proto must be an object or null" });
+      }
+      return undefined; // 动态原型继承不建模：保守 unknown（值域与前一致）
     }
     case "keys": {
-      if (a0 && a0.term?.op === "lit" && (a0.term.value === null || a0.term.value === undefined)) {
+      // Bug 61：缺省 ≡ undefined → ToObject 定抛；nullish 字面量同（原仅字面量臂）
+      if (!a0 || (a0.term?.op === "lit" && (a0.term.value === null || a0.term.value === undefined))) {
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }
       if (a0?.shape.k === "obj") {
@@ -112,10 +150,13 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       if (a0?.term?.op === "lit" && typeof a0.term.value === "number") {
         return abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
       }
+      // Bug 61：抽象接收者（any/unknown/含 nullish 臂 union）may ToObject 抛——
+      // 仅补 throws 效果，partial 值域不变
+      noteRecvMayNullish(a0, "Object.keys receiver ToObject");
       return abs({ k: "arr", element: str("path") }, undefined, undefined, "partial");
     }
     case "values": {
-      if (a0 && a0.term?.op === "lit" && (a0.term.value === null || a0.term.value === undefined)) {
+      if (!a0 || (a0.term?.op === "lit" && (a0.term.value === null || a0.term.value === undefined))) {
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }
       if (a0?.shape.k === "obj") {
@@ -151,10 +192,12 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       if (a0?.term?.op === "lit" && typeof a0.term.value === "number") {
         return abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
       }
+      // Bug 61：同 keys——抽象接收者 may ToObject 抛
+      noteRecvMayNullish(a0, "Object.values receiver ToObject");
       return abs({ k: "arr", element: unknown }, undefined, undefined, "partial");
     }
     case "entries": {
-      if (a0 && a0.term?.op === "lit" && (a0.term.value === null || a0.term.value === undefined)) {
+      if (!a0 || (a0.term?.op === "lit" && (a0.term.value === null || a0.term.value === undefined))) {
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }
       if (a0?.shape.k === "obj") {
@@ -192,6 +235,8 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       if (a0?.term?.op === "lit" && typeof a0.term.value === "number") {
         return abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
       }
+      // Bug 61：同 keys——抽象接收者 may ToObject 抛
+      noteRecvMayNullish(a0, "Object.entries receiver ToObject");
       return abs({ k: "arr", element: unknown }, undefined, undefined, "partial");
     }
     case "hasOwn": {
@@ -216,6 +261,13 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       if (a0.term?.op === "lit" && (a0.term.value === null || a0.term.value === undefined)) {
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }
+      // Bug 76：symbol prim 接收者（无 lit 项——Symbol() 调用产物）→ 宿主
+      // ToObject 特例定抛（node 实测：Symbol.prototype [ @@toPrimitive ]
+      // requires that 'this' be a Symbol）；number/string/boolean/bigint
+      // 装箱合法（protoOfRecv 投影）
+      if (isSymbolAbs(a0)) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
       // 具体原型带 constructor 槽（.constructor.name 链可解）；不可判保持 unknown
       return protoOfRecv(a0);
     }
@@ -232,10 +284,33 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       if (!t0 || !p0) {
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }
+      // Bug 27：target nullish 字面量 → RequireObjectCoercible 定抛（此前
+      // 只验 proto 侧，null/undefined target 原样返回）。prim target 原生
+      // **合法**（步骤「Type(O) 非 Object → 返回原值」，node 实测
+      // setPrototypeOf(1, {}) → 1）——维持返回 t0。
+      if (t0.term?.op === "lit" && (t0.term.value === null || t0.term.value === undefined)) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      // 抽象 target（any/unknown/含 nullish 臂 union）may nullish → may TypeError
+      noteRecvMayNullish(t0, "Object.setPrototypeOf target may be nullish (RequireObjectCoercible)");
       const pvR = litValue(p0);
       const pv = pvR.ok ? pvR.value : undefined;
       if (p0.term?.op === "lit" && (pv === undefined || (pv !== null && typeof pv !== "object"))) {
         throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      // Bug 27：proto 为 prim 形态（symbol prim 无 lit 项；抽象
+      // number/string/bool/bigint prim 同非对象）→ 定抛（Object prototype
+      // may only be an Object or null）
+      if (p0.shape.k === "prim") {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      // 抽象 proto（any/unknown/sum，无 lit 项——null-lit shape 是 unknown
+      // 但已合法放行）→ may
+      if (
+        p0.term?.op !== "lit" &&
+        (p0.shape.k === "any" || p0.shape.k === "unknown" || p0.shape.k === "sum")
+      ) {
+        recordMayThrow({ kind: "TypeError", cause: "Object.setPrototypeOf proto must be an object or null" });
       }
       return setProtoAbs(t0, p0);
     }
@@ -250,6 +325,16 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         }
         return unknown;
       }
+      // Bug 76：symbol prim target（无 lit 项——Symbol() 调用产物）→ 宿主
+      // ToObject 定抛「Cannot convert a Symbol value to a string」（node
+      // 实测 assign(Symbol()) 无源也抛）；number/string/boolean/bigint
+      // target 装箱合法——维持既有装箱 bail（return unknown）
+      if (isSymbolAbs(t0)) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      // Bug 50：抽象 target（无 lit 项）可能 nullish → ToObject may TypeError
+      //（仅补 throws 效果，值域不变；对象形态 target 原生全定）
+      noteRecvMayNullish(t0, "Object.assign target may be nullish (ToObject throws)");
       let acc = args[0]!;
       for (let i = 1; i < args.length; i++) {
         acc = { ...acc }; // 保持结构；细粒度 spread 在 evalCall 侧
@@ -393,17 +478,57 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       return boolLit(extStateOf(t!) === undefined);
     }
     case "defineProperty": {
+      // Bug 39：target 缺省 / nullish·prim 字面量 → 原生首步 IsObject 定抛
+      //（原实现把 target 守卫放在 key 可判定之后——defineProperty(1, x, {})
+      //  静默折 a0）
+      if (!a0 || a0.term?.op === "lit") {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      // Bug 39：prim 形态 target（无 lit 项——symbol prim / 抽象 refined
+      // prim）同为非对象 → 定抛；any/unknown/sum target → may
+      if (a0.shape.k === "prim") {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      // Bug 39：any/unknown/含 prim 臂 union target → may（IsObject：一切
+      // prim 均抛，不止 nullish——比 ToObject 面宽，不用 nullish 助手）
+      {
+        const mayNonObject = (m: Abs): boolean =>
+          m.shape.k === "prim" ||
+          m.shape.k === "any" ||
+          m.shape.k === "unknown" ||
+          (m.term?.op === "lit" && (m.term.value === null || m.term.value === undefined));
+        const k = a0.shape.k;
+        if (
+          k === "any" ||
+          k === "unknown" ||
+          (k === "sum" && (a0.shape as unknown as { members: Abs[] }).members.some(mayNonObject))
+        ) {
+          recordMayThrow({ kind: "TypeError", cause: "Object.defineProperty target must be an object" });
+        }
+      }
       const kvR = args[1] ? litValue(args[1]) : undefined;
       const kv = kvR?.ok ? kvR.value : undefined;
-      if (!a0 || (typeof kv !== "string" && typeof kv !== "number")) return a0;
-      // prim/null 字面量 target：原生 TypeError 硬抛（Properties can only be
-      // defined on Objects）
-      if (a0.term?.op === "lit") throw new NudoThrow(errorTypeAbs("TypeError"));
-      const key = String(kv);
       const descAbs = args[2];
-      // 缺描述符：原生 TypeError（Property description must be an object）
-      if (!descAbs || descAbs.shape.k !== "obj") return unknown;
-      const dslots = descAbs.shape.slots;
+      // Bug 39：描述符校验（先于 key 保守回退——原生 ToPropertyDescriptor
+      // 对 key 值不敏感，desc 定抛/may 抛都要记）：缺省 / nullish 字面量 /
+      // prim 形态（含 symbol prim）→ 定抛「Property description must be an
+      // object」（node 实测 1/"s"/null/true/Symbol()/缺省全抛；[] 是对象合法）
+      if (
+        !descAbs ||
+        (descAbs.term?.op === "lit" &&
+          (descAbs.term.value === null || descAbs.term.value === undefined)) ||
+        descAbs.shape.k === "prim"
+      ) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      // 抽象描述符（any/unknown/sum）→ may；tuple/arr/fn/brand/eff 是对象
+      //（原生合法）——字段面按空描述符处理
+      if (descAbs.shape.k === "any" || descAbs.shape.k === "unknown" || descAbs.shape.k === "sum") {
+        recordMayThrow({ kind: "TypeError", cause: "Object.defineProperty descriptor must be an object" });
+      }
+      if (typeof kv !== "string" && typeof kv !== "number") return a0;
+      const key = String(kv);
+      const dslots = descAbs.shape.k === "obj" ? descAbs.shape.slots : {};
       /**
        * 描述符字段读取：区分「缺省」「显式 undefined」「字面量值」「函数/抽象」。
        * litValue 看不到函数字段（term 非 lit），但 get/set 字段存在性决定
@@ -493,6 +618,263 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       }
       setPropFlags(out, key, flags);
       return out;
+    }
+    case "getOwnPropertyNames": {
+      // Bug 35：ToObject 接收者校验 + 自有**字符串**键投影（含不可枚举键
+      // 与数组 length；symbol 键不在返回域——node 实测 gOPN([,1]) →
+      // ["1","length"]、gOPN('ab') → ["0","1","length"]、gOPN(1) → []）
+      if (!a0 || (a0.term?.op === "lit" && (a0.term.value === null || a0.term.value === undefined))) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      if (a0.term?.op === "lit" && typeof a0.term.value === "string") {
+        // 字符串装箱：code unit 下标 + length
+        const s = a0.term.value;
+        const names = Array.from({ length: s.length }, (_, i) => String(i));
+        names.push("length");
+        return abs({ k: "tuple", elements: names.map((n) => strLit(n)) }, undefined, undefined, "exact");
+      }
+      if (a0.shape.k === "prim" && (a0.shape as { type?: string }).type !== "string") {
+        // number/boolean/bigint/symbol 装箱：无自有字符串键（装箱 total 不抛）
+        return abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
+      }
+      if (a0.shape.k === "obj") {
+        const os = a0.shape as { slots: Record<string, unknown>; open?: boolean; index?: unknown };
+        if (!os.open && !os.index) {
+          // 含不可枚举（defineProperty enumerable:false）——不过滤
+          return abs(
+            { k: "tuple", elements: Object.keys(os.slots).map((n) => strLit(n)) },
+            undefined,
+            undefined,
+            "exact",
+          );
+        }
+      } else if (a0.shape.k === "tuple") {
+        const holes = (a0.shape as { holes?: number[] }).holes ?? [];
+        const names = a0.shape.elements
+          .map((_, i) => i)
+          .filter((i) => !holes.includes(i))
+          .map(String);
+        names.push("length");
+        return abs({ k: "tuple", elements: names.map((n) => strLit(n)) }, undefined, undefined, "exact");
+      }
+      // 抽象/开放面：may ToObject + 保守 string[]
+      noteRecvMayNullish(a0, "Object.getOwnPropertyNames receiver ToObject");
+      return abs({ k: "arr", element: str("path") }, undefined, undefined, "partial");
+    }
+    case "getOwnPropertySymbols": {
+      // Bug 35：nullish 接收者定抛；symbol 键不在 Abs 槽域——保守 symbol[]
+      //（不假造空精确：源侧 symbol 计算键写不建模，但也不排除）
+      if (!a0 || (a0.term?.op === "lit" && (a0.term.value === null || a0.term.value === undefined))) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      noteRecvMayNullish(a0, "Object.getOwnPropertySymbols receiver ToObject");
+      return abs(
+        { k: "arr", element: abs({ k: "prim", type: "symbol" }, undefined, undefined, "path") },
+        undefined,
+        undefined,
+        "partial",
+      );
+    }
+    case "getOwnPropertyDescriptor": {
+      // Bug 35：nullish 接收者定抛；描述符 obj 或 undefined 投影
+      if (!a0 || (a0.term?.op === "lit" && (a0.term.value === null || a0.term.value === undefined))) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      noteRecvMayNullish(a0, "Object.getOwnPropertyDescriptor receiver ToObject");
+      const kvR = args[1] ? litValue(args[1]) : undefined;
+      const kv = kvR?.ok ? kvR.value : undefined;
+      const key = typeof kv === "string" || typeof kv === "number" ? String(kv) : undefined;
+      const mkDesc = (value: Abs, writable: boolean, enumerable: boolean, configurable: boolean): Abs =>
+        abs(
+          {
+            k: "obj",
+            slots: {
+              value: { value },
+              writable: { value: boolLit(writable) },
+              enumerable: { value: boolLit(enumerable) },
+              configurable: { value: boolLit(configurable) },
+            },
+          },
+          undefined,
+          undefined,
+          "exact",
+        );
+      // 键不可判 / 槽开放：可能有也可能没有 → descriptor | undefined 联合
+      const maybeDesc = (): Abs =>
+        joinAbs(
+          abs(
+            {
+              k: "obj",
+              slots: {
+                value: { value: unknown },
+                writable: { value: boolPrim() },
+                enumerable: { value: boolPrim() },
+                configurable: { value: boolPrim() },
+              },
+              open: true,
+            },
+            undefined,
+            undefined,
+            "partial",
+          ),
+          undefAbs(),
+        );
+      if (a0.shape.k === "obj") {
+        const os = a0.shape as { slots: Record<string, { value: Abs }>; open?: boolean; index?: unknown };
+        if (os.open || os.index || key === undefined) return maybeDesc();
+        if (Object.prototype.hasOwnProperty.call(os.slots, key)) {
+          const flags = getPropFlags(a0)?.get(key);
+          return mkDesc(
+            os.slots[key]!.value,
+            flags?.writable !== false,
+            flags?.enumerable !== false,
+            flags?.configurable !== false,
+          );
+        }
+        if (a0.conf === "exact") return undefAbs();
+        return maybeDesc();
+      }
+      if (a0.shape.k === "tuple" && key !== undefined) {
+        const holes = (a0.shape as { holes?: number[] }).holes ?? [];
+        if (key === "length") {
+          // 数组 length：writable:true、不可枚举、不可配置（node 实测）
+          return mkDesc(numLit(a0.shape.elements.length), true, false, false);
+        }
+        const idx = canonicalArrayIndex(key);
+        if (idx !== undefined) {
+          if (idx < a0.shape.elements.length && !holes.includes(idx)) {
+            return mkDesc(a0.shape.elements[idx]!, true, true, true);
+          }
+          return undefAbs();
+        }
+        return maybeDesc();
+      }
+      if (a0.term?.op === "lit" && typeof a0.term.value === "string" && key !== undefined) {
+        // 字符串装箱下标：writable:false、enumerable:true、configurable:false
+        const s = a0.term.value;
+        if (key === "length") return mkDesc(numLit(s.length), false, false, false);
+        const idx = canonicalArrayIndex(key);
+        if (idx !== undefined && idx < s.length) {
+          return mkDesc(strLit(s[idx]!), false, true, false);
+        }
+        return undefAbs();
+      }
+      if (a0.shape.k === "prim" && (a0.shape as { type?: string }).type !== "string" && key !== undefined) {
+        // number/boolean/bigint/symbol 装箱：无自有键（原型键非自有）
+        return undefAbs();
+      }
+      return maybeDesc();
+    }
+    case "fromEntries": {
+      // Bug 44：可迭代性 + 条目对象校验与投影（node v26 实测）：
+      // - 缺省/nullish/非字符串 prim 接收者 → 定抛（not iterable）
+      // - 字符串接收者可迭代，但条目是字符（非对象）：空串 → {}，非空 →
+      //   定抛「Iterator value … is not an entry object」
+      // - 条目非对象（nullish/prim/hole）→ 定抛；symbol 键**不** ToString
+      //   ——直接作键保留（ES2024+ CreateDataProperty；引擎槽域字符串键
+      //   → 开放对象）
+      if (!a0 || (a0.term?.op === "lit" && (a0.term.value === null || a0.term.value === undefined))) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      const slots: Record<string, { value: Abs }> = {};
+      let open = false;
+      let conf: Abs["conf"] = "exact";
+      const putEntry = (k0: Abs | undefined, v1: Abs | undefined): void => {
+        const value = v1 ?? undefAbs();
+        conf = confJoin(conf, value.conf);
+        if (!k0) {
+          // Get(entry,"0") = undefined → 键 ToString(undefined) = "undefined"
+          slots["undefined"] = { value };
+          return;
+        }
+        const t = k0.term;
+        if (t?.op === "lit") {
+          slots[String(t.value)] = { value };
+          return;
+        }
+        // symbol prim 键保留（不建模）或抽象键 → 键集不完备
+        open = true;
+      };
+      const noteEntry = (el: Abs): void => {
+        const ev = el.term?.op === "lit" ? el.term.value : undefined;
+        if (el.term?.op === "lit" && (ev === null || ev === undefined || typeof ev !== "object")) {
+          throw new NudoThrow(errorTypeAbs("TypeError"));
+        }
+        const es = el.shape;
+        if (es.k === "prim") {
+          // 无 lit 项 prim（symbol/抽象 refined prim/字符串 prim 条目）：非对象
+          throw new NudoThrow(errorTypeAbs("TypeError"));
+        }
+        if (es.k === "never") return;
+        if (es.k === "tuple") {
+          if ((es as { rest?: Abs }).rest) open = true;
+          putEntry(es.elements[0], es.elements[1]);
+          return;
+        }
+        if (es.k === "obj") {
+          const os = es as { slots: Record<string, { value: Abs }>; open?: boolean; index?: unknown };
+          if (os.open || os.index) open = true;
+          putEntry(os.slots["0"]?.value, os.slots["1"]?.value);
+          return;
+        }
+        // any/unknown/sum/fn/brand/eff/arr：条目性不可判 → may
+        recordMayThrow({ kind: "TypeError", cause: "Object.fromEntries entry may not be an object" });
+        open = true;
+      };
+      if (a0.shape.k === "prim") {
+        if ((a0.shape as { type?: string }).type === "string") {
+          const sv = litValue(a0);
+          if (sv.ok) {
+            if (sv.value === "") return abs({ k: "obj", slots: {} }, undefined, undefined, "exact");
+            throw new NudoThrow(errorTypeAbs("TypeError"));
+          }
+          recordMayThrow({
+            kind: "TypeError",
+            cause: "Object.fromEntries string receiver yields non-object entries",
+          });
+          return abs({ k: "obj", slots: {}, open: true }, undefined, undefined, "partial");
+        }
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      if (a0.shape.k === "tuple") {
+        const holes = (a0.shape as { holes?: number[] }).holes ?? [];
+        const rest = (a0.shape as { rest?: Abs }).rest;
+        if (rest) {
+          recordMayThrow({ kind: "TypeError", cause: "Object.fromEntries entries may not be objects" });
+          open = true;
+        }
+        for (let i = 0; i < a0.shape.elements.length; i++) {
+          if (holes.includes(i)) {
+            // hole 迭代产出 undefined 条目 → 原生定抛（node 实测）
+            throw new NudoThrow(errorTypeAbs("TypeError"));
+          }
+          noteEntry(a0.shape.elements[i]!);
+        }
+        return open
+          ? abs({ k: "obj", slots, open: true }, undefined, undefined, "partial")
+          : abs({ k: "obj", slots }, undefined, undefined, conf);
+      }
+      if (a0.shape.k === "brand" && (a0.shape as { name?: string }).name === "Map") {
+        // Map 条目即 [k,v]：键值表投影（shadow 键 → 开放）
+        for (const entry of mapEntriesAbs(a0)) {
+          if (entry.shape.k === "tuple") {
+            putEntry(entry.shape.elements[0], entry.shape.elements[1]);
+          } else {
+            open = true;
+          }
+        }
+        return open
+          ? abs({ k: "obj", slots, open: true }, undefined, undefined, "partial")
+          : abs({ k: "obj", slots }, undefined, undefined, conf);
+      }
+      // arr/obj/fn/brand/eff/any/unknown/sum：迭代性·条目性不可判 →
+      // may + 开放 obj（含 {} —— 原生不可迭代抛，但 symbol 计算键迭代器
+      // 不可见，不硬抛）
+      recordMayThrow({
+        kind: "TypeError",
+        cause: "Object.fromEntries receiver may not be iterable or entries not objects",
+      });
+      return abs({ k: "obj", slots: {}, open: true }, undefined, undefined, "partial");
     }
     default:
       return undefined;

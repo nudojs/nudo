@@ -30,7 +30,9 @@ describe("push diagnostics face (LSP-G6)", () => {
         published.push(p);
       },
     };
-    const src = `export function add(a, b) { return a + b; }\n`;
+    // Bug 8（wave 3）：any 形参算术不再 clean（may TypeError）——clean 样本
+    // 改用恒总 identity，本用例意图（clean 文件 → 空诊断 publish）不变。
+    const src = `export function id(x) { return x; }\n`;
     await validateText("/t/ok.js", "file:///t/ok.js", src, 1, deps, false, true);
     expect(published.length).toBeGreaterThan(0);
     expect(published[published.length - 1]!.diagnostics.length).toBe(0);

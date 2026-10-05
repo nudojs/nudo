@@ -42,6 +42,7 @@ import {
   transpileBlockAsThunk,
   emitFnBlockBody,
   withImplicitReturn,
+  classSpecOf,
 } from "./stmt.ts";
 
 export function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
@@ -187,15 +188,21 @@ function flattenChain(
       // obj.method(args) / obj?.method(args) / obj.method?.() —— $invoke 保 this
       // 字符串字面量计算键 `o["m"]()` 同走 invoke（this 仍绑 o；非链路径 $call 丢 this）
       const callee = cur.callee as typeof cur | undefined;
-      const calleeProp = callee?.property as { type?: string; name?: string; value?: unknown } | undefined;
+      const calleeProp = callee?.property as { type?: string; name?: string; value?: unknown; id?: { name?: string } } | undefined;
       const methodName: string | undefined =
         callee &&
         (callee.type === "MemberExpression" || callee.type === "OptionalMemberExpression")
           ? !callee.computed && calleeProp?.type === "Identifier"
             ? calleeProp.name
-            : callee.computed && calleeProp?.type === "StringLiteral"
-              ? String(calleeProp.value)
-              : undefined
+            : !callee.computed && calleeProp?.type === "PrivateName"
+              // Bug 78：this.#m() → "#m" 混淆键（方法表同键注册）
+              ? `#${calleeProp.id?.name ?? calleeProp.name ?? ""}` || undefined
+              : callee.computed && calleeProp?.type === "StringLiteral"
+                ? String(calleeProp.value)
+                : callee.computed && calleeProp?.type === "NumericLiteral"
+                  // Bug 60：c[1]() → ToPropertyKey("1") 方法名（键串行化注册）
+                  ? String(calleeProp.value)
+                  : undefined
           : undefined;
       if (callee && methodName !== undefined) {
         const recvNode = callee.object as { type?: string; name?: string } | undefined;
@@ -259,12 +266,15 @@ function emitChainFrom(hops: ChainHop[], i: number, valSrc: string): string {
   const rest = (recv: string): string => emitChainFrom(hops, i + 1, recv);
   switch (hop.kind) {
     case "get":
+      // 可选跳的非 nullish 臂：?. 守卫已排除 nullish，对非 nullish 值的属性读
+      // 原生不抛 → silent（不记 any may-throw，Bug 3）。链上后续跳仍走 $get
+      //（x?.a.b 的 .b 保持 may-throw）。
       return hop.optional
-        ? shortCircuitHop(valSrc, `$get($__oc, ${hop.key})`, hops, i)
+        ? shortCircuitHop(valSrc, `$get($__oc, ${hop.key}, { silent: true })`, hops, i)
         : rest(`$get(${valSrc}, ${hop.key})`);
     case "idx":
       return hop.optional
-        ? shortCircuitHop(valSrc, `$idx($__oc, ${hop.keySrc})`, hops, i)
+        ? shortCircuitHop(valSrc, `$idx($__oc, ${hop.keySrc}, { silent: true })`, hops, i)
         : rest(`$idx(${valSrc}, ${hop.keySrc})`);
     case "len":
       return hop.optional
@@ -348,9 +358,36 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       return `$lit(${String((expr as { value: bigint }).value)}n)`;
     case "NullLiteral":
       return `$lit(null)`;
-    case "ClassExpression":
-      // 类表达式值是构造器；类体未建模时给 fn 形状，不得折精确 undefined
-      return `$classExpr()`;
+    case "ClassExpression": {
+      // Bug 80：非空类体走与类声明同一 $class 机制（此前恒 $classExpr() →
+      // 一切构造/方法调用折 unknown）。空类体保持 fn 形状（pinned 行为）。
+      const ce = expr as unknown as {
+        id?: { name: string } | null;
+        superClass?: unknown;
+        body?: { body?: unknown[] };
+      };
+      const members = ce.body?.body ?? [];
+      if (members.length === 0) return "$classExpr()";
+      const depth = 1;
+      const { name, specLines, staticInitLines } = classSpecOf(
+        ce as unknown as Parameters<typeof classSpecOf>[0],
+        depth,
+        opts,
+      );
+      const specSrc = [`$class(${JSON.stringify(name)}, {`, ...specLines, `${indent(depth)}});`].join("\n");
+      if (ce.id || staticInitLines.length) {
+        // 命名类表达式：内部名只作用于类体（词法屏蔽外层同名绑定）；
+        // 静态块须在类值绑定后执行（Bug 77）——IIFE 内 let 绑定让方法体/
+        // 静态块按词法解析到类自身（batch13 口径）
+        const inner = [
+          `let ${name} = ${specSrc};`,
+          ...(staticInitLines.length ? [staticInitLines.join("\n")] : []),
+          `return ${name};`,
+        ].join("\n");
+        return `(() => {\n${inner}\n})()`;
+      }
+      return specSrc;
+    }
     case "Identifier": {
       // 内建标识符折无标识符源（void 0 / 0/0 / 1/0）——不读模块作用域绑定
       const intrinsic = hostIntrinsicLit(expr.name);
@@ -445,11 +482,14 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       if (expr.operator === "instanceof") {
         const l = isExpression(expr.left) ? transpileExpression(expr.left, opts) : "$lit(void 0)";
         if (expr.right.type === "Identifier") {
-          // 第三参传 RHS 值：@@hasInstance 派发需要（类名派发不读第三参）
-          return `$instanceof(${l}, ${JSON.stringify(expr.right.name)}, ${expr.right.name})`;
+          // 第三参传 RHS 值（$absVal 收形）：@@hasInstance 派发 + 原生
+          // 非对象 RHS 校验（null/undefined/prim → definite TypeError）
+          return `$instanceof(${l}, ${JSON.stringify(expr.right.name)}, $absVal(${expr.right.name}))`;
         }
-        // 非标识符右操作数（表达式/成员路径）：构造器值未知 → 抽象 boolean
-        return `$instanceofNonIdent(${l})`;
+        // 非标识符右操作数（表达式/成员路径）：RHS 值一并传入做非对象校验；
+        // 构造器值未知 → 抽象 boolean
+        const r = isExpression(expr.right) ? transpileExpression(expr.right, opts) : "$lit(void 0)";
+        return `$instanceofNonIdent(${l}, ${r})`;
       }
       const fn = BIN_OPS[expr.operator];
       if (!fn) {
@@ -494,7 +534,17 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       const arg = transpileExpression(expr.argument as Expression, opts);
       if (expr.operator === "-") return `$neg(${arg})`;
       if (expr.operator === "!") return `$not(${arg})`;
-      if (expr.operator === "typeof") return `$typeof(${arg})`;
+      // typeof 是唯一豁免 unresolvable reference 的读取上下文：未声明标识符
+      // 原生返回 "undefined" 不抛 ReferenceError（Bug 14）。裸 `$typeof(x)` 会
+      // 先求值实参 → 沙箱 ReferenceError 假 may-throw。用 JS 层 typeof 守卫：
+      // 未声明/值为 undefined → "undefined" 字面量；TDZ（let 后读）仍由沙箱
+      // 抛 ReferenceError（原生 typeof 不豁免 TDZ）。
+      if (expr.operator === "typeof") {
+        if ((expr.argument as Node).type === "Identifier") {
+          return `typeof ${arg} === "undefined" ? $lit("undefined") : $typeof(${arg})`;
+        }
+        return `$typeof(${arg})`;
+      }
       if (expr.operator === "+") return `$toNumber(${arg})`;
       if (expr.operator === "~") return `$bitnot(${arg})`;
       if (expr.operator === "void") return `((${arg}), $lit(void 0))`;
@@ -546,6 +596,12 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       return `$await(${arg})`;
     }
     case "YieldExpression": {
+      // Bug 82：yield* expr ≠ yield expr——读 Babel 的 delegate 标志：
+      // 委托 = GetIterator 校验 + 逐元素 yield（元素，不是整个可迭代值），
+      // 表达式值 = 内层迭代器 return 值（保守 unknown）。yield* 语法必有实参。
+      if (expr.delegate) {
+        return `$yieldStar(${transpileExpression(expr.argument as Expression, opts)})`;
+      }
       const arg = expr.argument
         ? transpileExpression(expr.argument as Expression, opts)
         : "$lit(void 0)";
@@ -566,6 +622,47 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         }
       }
       return acc ?? `$lit("")`;
+    }
+    case "TaggedTemplateExpression": {
+      // Bug 34：标签模板 = 以 (模板对象, ...替换值) 调用标签函数——
+      // tag`a${b}c` ≡ tag(GetTemplateObject(`a${b}c`), b)。模板对象走 $tpl
+      //（cooked 数字槽——无效转义时原生是 undefined、length、.raw 数组、
+      // 迭代器面）；调用按标签形态路由：标识符 → $callNamed（call@ 采集）、
+      // obj.method → $invoke、其余（(fn)`x` / 1`x`）→ $call——非函数字面量
+      // callee 的 definite TypeError 与 any 标签的 may 在 $call/$callNamed
+      // 的 callee 校验（Bug 2 修复位）记录，此前整个表达式 unsupported →
+      // 模块级 opaque 连坐同文件其余签名。
+      const quasis = expr.quasi.quasis;
+      const cookedSrc = `[${quasis
+        .map((q) => (q.value.cooked == null ? "void 0" : JSON.stringify(q.value.cooked)))
+        .join(", ")}]`;
+      const rawSrc = `[${quasis
+        .map((q) => JSON.stringify(q.value.raw ?? q.value.cooked ?? ""))
+        .join(", ")}]`;
+      const args = [
+        `$tpl(${cookedSrc}, ${rawSrc})`,
+        ...expr.quasi.expressions.map((e) => transpileExpression(e as Expression, opts)),
+      ].join(", ");
+      const tag = expr.tag;
+      if (tag.type === "Identifier" && !HOST_INTRINSIC_SET.has(tag.name)) {
+        const loc = expr.loc;
+        const locArg = loc ? `, [${loc.start.line}, ${loc.start.column}]` : "";
+        const calleeRef = opts.lenientGlobals
+          ? `(typeof ${tag.name} !== "undefined" ? ${tag.name} : void 0)`
+          : tag.name;
+        return `$callNamed(${JSON.stringify(tag.name)}, ${calleeRef}, [${args}]${locArg})`;
+      }
+      if (
+        (tag.type === "MemberExpression" || tag.type === "OptionalMemberExpression") &&
+        !(tag as { computed?: boolean }).computed &&
+        tag.property.type === "Identifier"
+      ) {
+        const recv = transpileExpression(tag.object as Expression, opts);
+        return `$invoke(${recv}, ${JSON.stringify(tag.property.name)}, [${args}])`;
+      }
+      // 表达式标签 / 宿主内建名（String.raw`x` 等内建标签走标识符宿主面）：
+      // Abs 一等函数调用走 $call（prim 字面量标签 → definite TypeError）
+      return `$call(${transpileExpression(tag, opts)}, [${args}])`;
     }
     case "SequenceExpression":
       return expr.expressions.map((e) => transpileExpression(e, opts)).join(", ");
@@ -651,7 +748,8 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
             mParams = ["__this", "...__margs"];
           }
           const bodySrc = `{\n${mBodyInner}\n}`;
-          const fnValSrc = `$fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${mParams.join(", ")}) => ${bodySrc}, { bindThis: true })`;
+          // Bug 9：对象方法是方法定义语法，原生不可 new → ctor: false
+          const fnValSrc = `$fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${mParams.join(", ")}) => ${bodySrc}, { bindThis: true, ctor: false })`;
           if (isProtoKey) {
             acc = `$setKey(${acc ?? "$obj({})"}, $lit("__proto__"), ${fnValSrc})`;
           } else {
@@ -717,8 +815,9 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
               mParams = ["__this", "...__margs"];
             }
             const bodySrc = `{\n${mBodyInner}\n}`;
+            // Bug 9：方法型 FunctionExpression 仍是函数表达式——原生可 new（区别于 ObjectMethod）
             props.push(
-              `${key}: $fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${mParams.join(", ")}) => ${bodySrc}, { bindThis: true })`,
+              `${key}: $fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${mParams.join(", ")}) => ${bodySrc}, { bindThis: true, ctor: true })`,
             );
             continue;
           }
@@ -772,10 +871,26 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
         );
       }
+      if (expr.property.type === "PrivateName") {
+        // Bug 78：this.#x / C.#x → "#x" 混淆键槽读写（公有名不含 "#"，
+        // 无碰撞）；不再抛 unsupported 令整模块 fail-closed
+        const recv = transpileExpression(expr.object as Expression, opts);
+        const priv = (expr.property as { id?: { name?: string }; name?: string }).id?.name
+          ?? (expr.property as { name?: string }).name;
+        if (!priv) {
+          throw new NudoUnsupportedError(
+            `member:PrivateName`,
+            expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
+          );
+        }
+        const key = JSON.stringify(`#${priv}`);
+        return optional ? `$optionalGet(${recv}, ${key})` : `$get(${recv}, ${key})`;
+      }
       if (expr.property.type !== "Identifier") {
-        // 非 Identifier 属性（如 PrivateName）：抛 unsupported 交消费方回落
+        // 其余非 Identifier 属性：抛 unsupported 交消费方回落
+        const ptype = (expr.property as { type: string }).type;
         throw new NudoUnsupportedError(
-          `member:${expr.property.type}`,
+          `member:${ptype}`,
           expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
         );
       }
@@ -922,6 +1037,19 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         }
         // 根不可重绑（如 foo().x = v）：保留旧纯表达式形态；
         // 表达式值 = 写入的值（$set/$idxSet 返回容器不是 JS 语义）
+        if (!m.computed && m.property.type === "PrivateName") {
+          // Bug 78：this.#x = v → "#x" 混淆键槽写
+          const obj = transpileExpression(m.object as Expression, opts);
+          const priv = (m.property as { id?: { name?: string }; name?: string }).id?.name
+            ?? (m.property as { name?: string }).name;
+          if (!priv) {
+            throw new NudoUnsupportedError(
+              `assign-target`,
+              expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
+            );
+          }
+          return `((__v) => (($set(${obj}, ${JSON.stringify(`#${priv}`)}, __v)), __v))(${right})`;
+        }
         if (!m.computed && m.property.type === "Identifier") {
           const obj = transpileExpression(m.object as Expression, opts);
           return `((__v) => (($set(${obj}, ${JSON.stringify(m.property.name)}, __v)), __v))(${right})`;
@@ -936,6 +1064,13 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
             return `((__v) => (($set(${obj}, ${JSON.stringify(k.value)}, __v)), __v))(${right})`;
           }
           if (isExpression(k)) {
+            // [Symbol.X] = v → "@@X" 字符串槽写（镜像成员读 / 对象字面量计算键
+            // 的投影口径——`ai[Symbol.asyncIterator] = fn` 必须落成可识别槽，
+            // 否则 for await 的异步可迭代性不可见，Bug 13）
+            const symK = symbolKeyOf(k as unknown as Parameters<typeof symbolKeyOf>[0]);
+            if (symK !== null) {
+              return `((__v) => (($set(${obj}, ${symK}, __v)), __v))(${right})`;
+            }
             return `((__v) => (($idxSet(${obj}, ${transpileExpression(k, opts)}, __v)), __v))(${right})`;
           }
         }
@@ -1033,7 +1168,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       if (
         (callee.type === "MemberExpression" || callee.type === "OptionalMemberExpression") &&
         !callee.computed &&
-        callee.property.type === "Identifier"
+        (callee.property.type === "Identifier" || callee.property.type === "PrivateName")
       ) {
         const recv = transpileExpression(callee.object as Expression, opts);
         const args = expr.arguments
@@ -1043,7 +1178,14 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
               : transpileExpression(a as Expression, opts),
           )
           .join(", ");
-        const name = JSON.stringify(callee.property.name);
+        const propName =
+          callee.property.type === "PrivateName"
+            ? // Bug 78：this.#m() → "#m" 混淆键
+              `#${(callee.property as { id?: { name?: string }; name?: string }).id?.name
+                ?? (callee.property as { name?: string }).name
+                ?? ""}`
+            : (callee.property as { name: string }).name;
+        const name = JSON.stringify(propName);
         const opt = optionalCall || (callee as { optional?: boolean }).optional === true;
         const loc = expr.loc;
         const locArg = loc ? `, [${loc.start.line}, ${loc.start.column}]` : "";
@@ -1052,6 +1194,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         // 本地绑定时内联「求值 + 写回」IIFE；语句级 emit 不再重复写回。
         if (
           !opt &&
+          callee.property.type === "Identifier" &&
           REGEX_STATEFUL_NAMES.has(callee.property.name) &&
           callee.object.type === "Identifier"
         ) {
@@ -1061,6 +1204,36 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         return opt
           ? `$optionalInvoke(${recv}, ${name}, [${args}])`
           : `$invoke(${recv}, ${name}, [${args}]${locArg})`;
+      }
+      // obj["m"](args) / obj[1](args) → $invoke：计算字面量键（Bug 60 数字键
+      // 原生 ToPropertyKey 成串）——this 仍绑 recv；$call($idx(...)) 路径丢
+      // this 且方法在类注册表而非实例槽上
+      {
+        const keyNode = (callee as { computed?: boolean; property?: { type?: string; value?: unknown } })
+          .property as { type?: string; value?: unknown } | undefined;
+        const calleeComputed = (callee as { computed?: boolean }).computed === true;
+        if (
+          (callee.type === "MemberExpression" || callee.type === "OptionalMemberExpression") &&
+          calleeComputed &&
+          callee.object.type !== "Super" &&
+          (keyNode?.type === "StringLiteral" || keyNode?.type === "NumericLiteral")
+        ) {
+          const recv = transpileExpression(callee.object as Expression, opts);
+          const args = expr.arguments
+            .map((a) =>
+              a.type === "SpreadElement"
+                ? `...$elems(${transpileExpression(a.argument as Expression, opts)})`
+                : transpileExpression(a as Expression, opts),
+            )
+            .join(", ");
+          const name = JSON.stringify(String(keyNode.value));
+          const opt = optionalCall || (callee as { optional?: boolean }).optional === true;
+          const loc = expr.loc;
+          const locArg = loc ? `, [${loc.start.line}, ${loc.start.column}]` : "";
+          return opt
+            ? `$optionalInvoke(${recv}, ${name}, [${args}])`
+            : `$invoke(${recv}, ${name}, [${args}]${locArg})`;
+        }
       }
       // 标识符调用 → $callNamed（可采集 call@ + 实参 provenance）
       // 内建名（undefined/NaN/Infinity）不走 callNamed：调用位读的是标识符绑定
@@ -1113,8 +1286,12 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         params: Node[];
         body: Node;
         async?: boolean;
+        generator?: boolean;
       };
       const isArrow = expr.type === "ArrowFunctionExpression";
+      // Bug 9 可构造性：箭头/async/generator 函数不可 new（原生 TypeError）；
+      // 普通函数表达式可 new。facet 进 fn shape，$new 按此判定。
+      const fnCtor = isArrow || !!fn.async || !!fn.generator ? false : true;
       // 函数声明/表达式有独立 this；箭头词法继承外层。仅非箭头且 body 含 this
       // 时注入宿主 this（$rawThis），并用 function 包装替代箭头（宿主 this 动态）
       const hasThis = !isArrow && fnBodyHasThis(fn);
@@ -1160,21 +1337,24 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         ? [...argsSlotPrologue, ...thisPrologue]
         : [...prologue, ...restPrologue, ...thisPrologue, ...argsSlotPrologue];
       if (fn.body.type === "BlockStatement") {
-        const inner = withImplicitReturn(
+        const raw = withImplicitReturn(
           fn.body,
           [...allPrologue, transpileFnBodyStmts((fn.body as { body: Statement[] }).body, 1, fnBodyOpts)].join("\n"),
           1,
         );
+        // Bug 58：generator 函数表达式体不在调用期执行——包 $gen（吞调用期
+        // throws；yield 收集保持既有 eager 口径，与声明路径 stmt.ts 同编）
+        const inner = fn.generator ? `return $gen(() => {\n${raw}\n});` : raw;
         if (hasThis) {
-          const wrap = fn.async
+          const wrap = fn.async && !fn.generator
             ? `function (${argsParamParts.join(", ")}) { return $async(() => {\n${inner}\n}); }`
             : `function (${argsParamParts.join(", ")}) {\n${inner}\n}`;
-          return `$fnVal(${nameList}, ${wrap})`;
+          return `$fnVal(${nameList}, ${wrap}, { ctor: ${fnCtor} })`;
         }
-        if (fn.async) {
-          return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => $async(() => {\n${inner}\n}))`;
+        if (fn.async && !fn.generator) {
+          return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => $async(() => {\n${inner}\n}), { ctor: ${fnCtor} })`;
         }
-        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n})`;
+        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor} })`;
       }
       const bodySrc = transpileExpression(fn.body as Expression, fnBodyOpts);
       if (allPrologue.length > 0 || hasThis) {
@@ -1187,9 +1367,9 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         ].join("\n");
         if (hasThis) {
           const wrap = `function (${argsParamParts.join(", ")}) {\n${inner}\n}`;
-          return `$fnVal(${nameList}, ${wrap})`;
+          return `$fnVal(${nameList}, ${wrap}, { ctor: ${fnCtor} })`;
         }
-        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n})`;
+        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor} })`;
       }
       // 表达式体：块体包裹跑语句级 rebind pass——`()=>n++` / `()=>a.push(1)`
       // 的写回此前静默丢失（表达式上下文无语句级扫描）
@@ -1199,15 +1379,18 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
           ...rebinds.map((l) => `  ${l}`),
           `  return ${fn.async ? `$async(() => ${bodySrc})` : bodySrc};`,
         ].join("\n");
-        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n})`;
+        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor} })`;
       }
       if (fn.async) {
-        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => $async(() => ${bodySrc}))`;
+        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => $async(() => ${bodySrc}), { ctor: ${fnCtor} })`;
       }
-      return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => ${bodySrc})`;
+      return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => ${bodySrc}, { ctor: ${fnCtor} })`;
     }
     case "MetaProperty":
-      // import.meta → { url: string }（宿主 URL 非字面量）
+      // Bug 79：import.meta → { url: string }（宿主 URL 非字面量）；
+      // new.target → $newTarget()（普通调用 undefined；$new 构造帧内为类值）
+      // ——此前两者混编 $importMeta()，new.target 假精确 { url: string }。
+      if ((expr.meta as { name?: string }).name === "new") return "$newTarget()";
       return "$importMeta()";
     case "ImportExpression": {
       // import(spec) → Promise<open module namespace>

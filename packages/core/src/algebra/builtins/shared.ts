@@ -35,3 +35,37 @@ export function isPrimLike(a: Abs | undefined): boolean {
   return false;
 }
 
+/**
+ * prim-bigint Abs（无 lit 项——BigInt(x) / 运算产物）：ToNumber/ToNumeric
+ * 恒抛 TypeError（bigint 字面量有 lit 项，由各 site 的 lit 分支处理）。
+ * 与 isSymbolAbs（symbol-id.ts，prim+type symbol）同族——shape 先于 lit 判定。
+ */
+export function isBigintPrimAbs(a: Abs | undefined): boolean {
+  return (
+    !!a &&
+    a.shape.k === "prim" &&
+    (a.shape as { type?: string }).type === "bigint"
+  );
+}
+
+/**
+ * 强转面「可能抛」判定（Bug 25/26/30/45/50/81 共享）：any/unknown/obj/fn/
+ * brand/sum——ToPrimitive 后可能成 Symbol/BigInt 值（ToNumber/ToString 原生
+ * 抛，node 实测 Math.max({valueOf(){return 1n}}) → TypeError）。prim（含
+ * 抽象 prim——ToString/ToPrimitive 恒等）与 tuple/arr 不在此列：对应强转
+ * 原生全定（Array(Symbol()) → [Symbol()]，node 实测 total）。lit 项恒 false
+ * ——字面量由各 site 的折叠分支处理（lit(undefined) 形如 unknown 但 total）。
+ */
+export function mayCoerceThrowOperand(a: Abs | undefined): boolean {
+  if (!a || a.term?.op === "lit") return false;
+  const k = a.shape.k;
+  return (
+    k === "any" ||
+    k === "unknown" ||
+    k === "obj" ||
+    k === "fn" ||
+    k === "brand" ||
+    k === "sum"
+  );
+}
+
