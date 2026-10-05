@@ -57,6 +57,8 @@ import {
   completeElseChain,
   completeElseChains,
   withImplicitReturn,
+  nullishGuardOf,
+  narrowNullishArmThunk,
 } from "./stmt-predicates.ts";
 
 /**
@@ -537,13 +539,19 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
             conditionalFlow: (opts.conditionalFlow ?? 0) + 1,
           })
         : null;
-      const cons = wrapArm(consRaw, "fk1_");
+      // nullish 守卫臂收窄（issue #97）：`if (p === null) …` 的 else 臂 /
+      // `if (p !== null) …` 的 then 臂内，p 以 $removeNullish 影子重绑——
+      // 后续 p.major 不再记 may-throw。守卫名在 fork 绑定集（臂内写）时跳过。
+      const guard = nullishGuardOf(stmt.test);
+      const consNarrowed = narrowNullishArmThunk(consRaw, guard, "cons", recvSet);
+      const altNarrowed = altRaw === null ? null : narrowNullishArmThunk(altRaw, guard, "alt", recvSet);
+      const cons = wrapArm(consNarrowed, "fk1_");
       // 缺 else：names 空时**省略** $fork 第三参（不得发裸 undefined 哨兵——
       // 那是标识符，被遮蔽后会把 Abs 当 alternate 函数传进去）；有 fork 绑定时
       // 需要真 alternate 参与 join，折 UNDEF_LIT。
       const alt = names.length
-        ? wrapArm(altRaw === null ? `() => ${UNDEF_LIT}` : altRaw, "fk2_")
-        : altRaw;
+        ? wrapArm(altNarrowed === null ? `() => ${UNDEF_LIT}` : altNarrowed, "fk2_")
+        : altNarrowed;
       const altArg = alt === null ? "" : `, ${alt}`;
       const joinLines = names.length
         ? [...testRebinds, ...forkBindingDecls(names, padDecl)]

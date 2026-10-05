@@ -3,9 +3,9 @@
  */
 import type { Abs } from "../../abs.ts";
 import { abs, bool, boolLit, confJoin, litValue, numLit, str, unknown, type Confidence } from "../../abs.ts";
-import { lit } from "../../term.ts";
+import { lit, type Term } from "../../term.ts";
 import type { Phi } from "../../pred.ts";
-import { pTrue, and, predEquals } from "../../pred.ts";
+import { pTrue, and, predEquals, ge } from "../../pred.ts";
 import { absFunction, getFnImpl } from "../../abs-fn.ts";
 import {
   joinAbs, objOf, isObj, spread as spreadObj, type ObjShape, type Slot,
@@ -35,7 +35,7 @@ import { errorTypeAbs, recordMayThrow, type MayThrowEffect } from "../may-throw.
 import { getEvalClass } from "../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../class-mark.ts";
 import {
-  NudoThrow, undef, throwStrictWrite, writeInPlace, clearStaleTermPred,
+  NudoThrow, undef, oobUndef, isOobUndef, throwStrictWrite, writeInPlace, clearStaleTermPred,
   asAbsVal, $lit, litTruth, isDefinitelyTrue, isDefinitelyFalse, currentExecPhi,
   isNudoReturn, isNudoBreak, isNudoContinue, $fnVal, $rawThis, noBody, confPartialPacked,
 } from "./state.ts";
@@ -338,11 +338,18 @@ export function fillTuple(
       "path",
     );
   }
+  // arr（长度未知）：默认窗口 [0, len) 覆盖全数组 → 元素整体替换为 v
+  //（`new Array(n).fill(0)` 的元素是精确 0，不是 unknown|0——DP 表
+  // `d[i-1][j] + 1` 的算术臂不再带 unknown，issue #98）。start 必须显式
+  // 0 或缺省——负 start 是长度相对的（[1,2,3].fill(0,-1) 只写末元素），
+  // 未知长度下无法折整窗（review Blocker 2：负 start 折全替换丢元素域）；
+  // end 非缺省同理保守 join。
+  const coversAll = (s === undefined || s === 0) && e === undefined;
   return abs(
-    { k: "arr", element: joinAbs(shape.element, v) },
+    { k: "arr", element: coversAll ? v : joinAbs(shape.element, v) },
     undefined,
     undefined,
-    confJoin(arr.conf, "path"),
+    confJoin(arr.conf, coversAll ? arr.conf : "path"),
   );
 }
 
@@ -572,6 +579,7 @@ export function $idx(
   // nullish 接收者 → 原生 definite TypeError（ToObject）→ hard NudoThrow；
   // any 接收者 → may TypeError → 结果保持 any。silent 供可选链首跳
   //（`x?.[k]` 的非 nullish 臂已由 ?. 排除 nullish，访问非 nullish 值不抛）。
+  if (isOobUndef(a)) return a; // OOB 合成 undefined：引擎精度产物，不记 may-throw（issue #98）
   if (noteNullishMemberThrows(a, "<computed>", "property")) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
@@ -582,8 +590,11 @@ export function $idx(
   }
   // ToPropertyKey：null/undefined/boolean 字面量 → "null"/"undefined"/"true"…
   //（litValue 哨兵会把 lit(undefined) 吞成「无 lit」，不得走抽象下标）
+  // 非字面量下标（var/app term）：键不可判定 → iv 保持 undefined（走抽象
+  // 下标投影）——此前误用 litValue 的 {ok:false} 包装对象当「确定非下标键」，
+  // 把 d[抽象i] 折成 exact undefined（issue #98 的嵌套读假抛根源）。
   const keyStr = propertyKeyOf(i);
-  const iv = keyStr !== undefined ? keyStr : litValue(i);
+  const iv = keyStr;
   const idx = iv !== undefined ? canonicalArrayIndex(iv) : undefined;
   if (a.shape.k === "tuple") {
     const els = a.shape.elements;
@@ -594,32 +605,43 @@ export function $idx(
       return undef();
     }
     // 抽象下标：可能命中任一元素，也可能越界/非下标 → 必须并入 undefined
-    if (els.length === 0) return undef();
-    return joinAbs(els.reduce((x, y) => joinAbs(x, y)), undef());
+    //（OOB marker——越界是抽象精度产物，下游嵌套读写不记 may-throw）
+    if (els.length === 0) return oobUndef();
+    return joinAbs(els.reduce((x, y) => joinAbs(x, y)), oobUndef());
   }
   if (a.shape.k === "arr") {
     if (iv !== undefined && idx === undefined) return undef();
     // 抽象下标可能 miss → 元素 ∪ undefined（与对象未知键同口径）；
     // 已知规范下标仍按元素投影（split()[0] 等非空序列链不断）
     if (idx === undefined) {
-      return joinAbs(a.shape.element, undef());
+      return joinAbs(a.shape.element, oobUndef());
     }
     return a.shape.element;
   }
   if (a.shape.k === "sum") {
     // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce。
     // sum 含 nullish 成员（exec 的 null|match 等）：整体不是 definite throw
-    //（`if (!m) return` 守卫后的非空臂只读非空侧）→ 该成员折 undefined +
-    // may-throw；silent（?. 守卫跳）不记效果。
+    //（`if (!m) return` 守卫后的非空臂只读非空侧）→ 该成员记 may-throw
+    // 且原样返回；silent（?. 守卫跳）不记效果。OOB marker 臂（抽象下标
+    // 可能 miss 的合成 undefined）不记软记录——透传是有意的召回权衡：
+    // 越界读本身不抛、读到的 undefined 再被计算读原生必抛 TypeError，
+    // 而 marker 无法区分「循环不变量保证在界内」（#98 循环 DP 表，要零
+    // 误报）与「真实无约束下标」（d[i][0] 原生 h(5) 必抛，穿门不报）——
+    // 按类压制换 #98 零误报；理想收窄 = Φ 导出下标在界 pred（issue #98）。
     const parts = a.shape.members.map((m) => {
       if (isNullishAbs(m)) {
-        if (!opts?.silent) {
-          recordMayThrow({
-            kind: "TypeError",
-            cause: "computed member on nullish (union arm)",
-          });
+        if (!isOobUndef(m)) {
+          if (!opts?.silent) {
+            recordMayThrow({
+              kind: "TypeError",
+              cause: "computed member on nullish (union arm)",
+            });
+          }
         }
-        return undef();
+        // 原样返回（原折 undef()）：isOobUndef 臂需透传 marker 供下游嵌套
+        // 读写识别；其余 nullish 臂保持用户域——无守卫 `X|null` 的计算
+        // 访问结果域随之从 …|undefined 变 …|null。
+        return m;
       }
       return $idx(m, i, opts);
     });
@@ -685,12 +707,14 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
   // 数组写走数值 iv（1 / 1n / "1" 都是下标 1）；对象写走字符串键。
   // 不得只用 propertyKeyOf —— 那会把 1 变成 "1"，tuple 数值门失效（洞写丢失）。
   const pk = propertyKeyOf(i);
-  const raw = i.term?.op === "lit" ? i.term.value : litValue(i);
+  const raw = i.term?.op === "lit" ? i.term.value : undefined;
   let numIdx: number | undefined;
   if (typeof raw === "number") numIdx = raw;
   else if (typeof raw === "bigint") numIdx = Number(raw);
   else if (pk !== undefined) numIdx = canonicalArrayIndex(pk);
-  const iv = pk !== undefined ? pk : litValue(i);
+  // 非字面量键（var/app term）→ iv undefined（对象走抽象键 open 路径）；
+  // 此前误用 litValue 的 {ok:false} 包装对象，String(iv) 变 "[object Object]"
+  const iv = pk;
   if (a.shape.k === "tuple" && numIdx !== undefined && Number.isInteger(numIdx) && numIdx >= 0) {
     const st = extStateOf(a);
     if (st === "frozen") throwStrictWrite(); // frozen 数组：下标写 TypeError
@@ -734,6 +758,9 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
   // 非（整数下标 tuple）目标：按目标种类分派（strict/ESM 语义；此前一律
   // `return a` 静默——o[k]=v 计算键写对象假精确 no-op、空值/prim 不抛）
   const sk = a.shape.k;
+  // OOB 合成 undefined 目标（抽象下标可能 miss 后的嵌套写，如 DP 表
+  // `d[i][j] = v`）：越界是引擎精度产物，不据此硬抛 TypeError（issue #98）
+  if (isOobUndef(a)) return a;
   if (sk === "prim" || sk === "never" || isNullishAbs(a)) throwStrictWrite();
   if (sk === "any") {
     noteAnyMemberMayThrow(a, iv === undefined ? "<computed>" : String(iv), "property");
@@ -766,6 +793,21 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
   return a;
 }
 
+/** $len 的非负 term/pred 备忘（同一接收者对象 → 同一 var，跨迭代稳定） */
+const lenTermMemo = new WeakMap<Abs, Term>();
+let lenVarSeq = 0;
+/** 抽象长度：number + var term + pred ≥0（字符串/数组长度恒非负）。
+ *  供 `new Array(len + 1)` 等消费（add 的 addPred 平移界 → ctor 证非负
+ *  不再记 RangeError，issue #98）。 */
+function abstractLen(a: Abs): Abs {
+  let t = lenTermMemo.get(a);
+  if (!t) {
+    t = { op: "var", id: `len#${lenVarSeq++}` };
+    lenTermMemo.set(a, t);
+  }
+  return abs({ k: "prim", type: "number" }, t, ge(t, lit(0)), "path");
+}
+
 /** 数组/字符串长度 */
 export function $len(a: Abs): Abs {
   // DEC-006 B/C：形参/回调可能漏出 JS undefined（rest 未包 $arr、map 缺第 3 参）——
@@ -784,7 +826,7 @@ export function $len(a: Abs): Abs {
     );
   }
   if (a.shape.k === "arr") {
-    return abs({ k: "prim", type: "number" }, undefined, undefined, "path");
+    return abstractLen(a);
   }
   if (a.shape.k === "sum") {
     // 全成员长度同字面量 → 折叠（fork join 后 a.length 常见场景）；
@@ -797,7 +839,7 @@ export function $len(a: Abs): Abs {
     ) {
       return lens[0]!;
     }
-    return abs({ k: "prim", type: "number" }, undefined, undefined, "path");
+    return abstractLen(a);
   }
   const svR = litValue(a);
   const sv = svR.ok && typeof svR.value === "string" ? svR.value : undefined;
@@ -819,7 +861,7 @@ export function $len(a: Abs): Abs {
   // 此前落到末尾 unknown —— `String(x).length` / `${x}.length` 被污染成
   // unknown 并误报 nudo:unknown-inference（类型上不可能不是 number）。
   if (a.shape.k === "prim" && a.shape.type === "string") {
-    return abs({ k: "prim", type: "number" }, undefined, undefined, "path");
+    return abstractLen(a);
   }
   // String 包装对象（Object('ab') / new String）：内层 length 槽
   if (a.shape.k === "brand" && a.shape.name === "String") {
@@ -1702,6 +1744,13 @@ export function $get(
     // string.toString/valueOf 由 callAbsMethod 处理调用；一等读取仍给 OP 函数
     return objectProtoMethodAbs(key);
   }
+  // OOB 合成 undefined 接收者（抽象下标可能 miss 后的成员读）：引擎精度
+  // 产物，不记 may-throw / 不硬抛；marker 透传（issue #98）。透传是有意
+  // 的召回权衡：越界读本身不抛、读到的 undefined 再被成员读原生必抛
+  // TypeError，而 marker 无法区分「循环不变量保证在界内」（#98 循环 DP
+  // 表，要零误报）与「真实无约束下标」（如 d[i][0] 原生 h(5) 必抛，此处
+  // 穿门不报）——按类压制换 #98 零误报；理想收窄 = Φ 导出下标在界 pred。
+  if (isOobUndef(o)) return o;
   // any / nullish：throws 域（design-cli-semantics §3.3）
   if (noteNullishMemberThrows(o, key, "property")) {
     throw new NudoThrow(errorTypeAbs("TypeError"));

@@ -59,13 +59,18 @@ export function isBigintPrimAbs(a: Abs | undefined): boolean {
 export function mayCoerceThrowOperand(a: Abs | undefined): boolean {
   if (!a || a.term?.op === "lit") return false;
   const k = a.shape.k;
+  if (k === "sum") {
+    // sum 只要有臂可能抛才算可能抛——全字面量臂的枚举（1 | NaN 等，
+    // DP 表 `d[i-1][j] + 1` 的典型值域）不会撞 Symbol/BigInt（issue #98）
+    const members = (a.shape as { k: "sum"; members: Abs[] }).members;
+    return members.some((m) => mayCoerceThrowOperand(m));
+  }
   return (
     k === "any" ||
     k === "unknown" ||
     k === "obj" ||
     k === "fn" ||
-    k === "brand" ||
-    k === "sum"
+    k === "brand"
   );
 }
 

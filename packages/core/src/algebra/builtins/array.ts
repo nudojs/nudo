@@ -7,6 +7,7 @@ import { joinAbs } from "../objects.ts";
 import { TUPLE_MATERIALIZE_CAP } from "../containers.ts";
 import { isMapAbs, isSetAbs, setElementsAbs, mapEntriesAbs } from "../collections.ts";
 import { applyCallbackValue, undefAbs, asAbs, validateCallableArg } from "../hof.ts";
+import { numericBounds } from "../arithmetic.ts";
 import { isNullishLitAbs } from "../surface.ts";
 import { recordMayThrow } from "../may-throw.ts";
 import { matchIterElements } from "../exec/match-iter.ts";
@@ -20,6 +21,16 @@ import { numPrim, boolPrim, peelBrand, noBody, str } from "./shared.ts";
 import { isSymbolAbs } from "./symbol.ts";
 
 export function makeArrayCtorAbs(args: Abs[]): Abs {
+  /**
+   * 长度实参已证非负（`b.length + 1` 类：$len 带 pred ≥0，add 的 addPred
+   * 平移界）→ 负数维度排除。非整数维度（抽象 number 无整数性事实）在此
+   * 放行——长度派生算术在真实代码中恒整数，且 1.7.3 前此路径完全不记
+   *（issue #98 的 `new Array(b.length + 1)` DP 表误报）。
+   */
+  const provenNonNegativeLength = (a: Abs): boolean => {
+    const b = numericBounds(a);
+    return b?.lo !== undefined && b.lo.value >= 0;
+  };
   if (args.length === 0) {
     return abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
   }
@@ -42,8 +53,9 @@ export function makeArrayCtorAbs(args: Abs[]): Abs {
       m.shape.k === "unknown" ||
       (m.shape.k === "prim" && (m.shape as { type?: string }).type === "number");
     if (
-      mayBeNumber(a0) ||
-      (a0.shape.k === "sum" && (a0.shape as { members: Abs[] }).members.some(mayBeNumber))
+      (mayBeNumber(a0) ||
+        (a0.shape.k === "sum" && (a0.shape as { members: Abs[] }).members.some(mayBeNumber))) &&
+      !provenNonNegativeLength(a0)
     ) {
       recordMayThrow({
         kind: "RangeError",

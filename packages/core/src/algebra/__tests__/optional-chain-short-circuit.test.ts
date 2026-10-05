@@ -100,3 +100,24 @@ describe("optional chain short-circuits the remaining chain", () => {
     expect(val(`export function f() { const a = { b: { c: 1 } }; return a?.b.c; }`)).toEqual({ ok: true, value: 1 });
   });
 });
+
+describe("nested optional chains in args/computed keys (#97 review blocker 1)", () => {
+  // 嵌套链自建 $__oc IIFE；外层接收者剪枝若走占位符盲替换，会把嵌套 IIFE
+  // 参数位改成 (($removeNullish($__oc)) => …) —— new Function SyntaxError，
+  // 整模块 fail-closed（全部导出 unknown #opaque）。
+  it("a?.b(c?.d) evaluates: outer called with inner result", () => {
+    expect(val(`export function f() { const c = { d: 5 }; return ({ b: (x) => x })?.b(c?.d); }`)).toEqual({ ok: true, value: 5 });
+  });
+
+  it("a?.b(c?.d) on outer null → undefined without corrupting module", () => {
+    expectExactUndefined(`export function f() { const o = null; const c = { d: 5 }; return o?.b(c?.d); }`);
+  });
+
+  it("a?.[b?.c] evaluates: computed key from nested chain", () => {
+    expect(val(`export function f() { const b = { c: "k" }; const o = { k: 7 }; return o?.[b?.c]; }`)).toEqual({ ok: true, value: 7 });
+  });
+
+  it("a?.[b?.c] on key-chain null → undefined (index on undefined short-circuits)", () => {
+    expectExactUndefined(`export function f() { const b = null; const o = { k: 7 }; return o?.[b?.c]; }`);
+  });
+});

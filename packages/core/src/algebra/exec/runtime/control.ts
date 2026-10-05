@@ -20,7 +20,7 @@ import {
   orphanMayThrowEffects, recordMayThrow, type MayThrowEffect,
 } from "../may-throw.ts";
 import {
-  NudoThrow, isNudoThrow, noBody, undef, writeInPlace, clearStaleTermPred,
+  NudoThrow, isNudoThrow, noBody, undef, oobUndef, writeInPlace, clearStaleTermPred,
   asAbsVal, callAtFunctionBoundary, $lit, litTruth, isDefinitelyTrue, isDefinitelyFalse,
   currentExecPhi, withExecPhi, isNudoReturn, isNudoBreak, isNudoContinue, confPartial, confPartialPacked,
   NudoReturn, NudoLoopSignal, loopExitsAls, throwExitsAls, tryMarksAls, softFrameActiveAls,
@@ -403,11 +403,68 @@ export function $for(
   snapExt();
   if (concreteExhausted) {
     noteAbsTruncation(LOOP_TRUNCATION_LABEL);
-    if (extJoin && pack && unpack) unpack(confPartialPacked(joinAbs(extJoin, pack())));
+    if (extJoin && pack && unpack) unpack(confPartialPacked(widenLoopJoin(joinAbs(extJoin, pack()))));
     return confPartial(exitJoin ?? state);
   }
-  applyExtJoin();
+  // 抽象预算耗尽（条件非 definitely-false 仍有剩余迭代空间）：容器型外层
+  // 绑定按「长度未知」widen（sum-of-tuples(不同长度) → arr）——否则第二次
+  // 循环/后续读以具体下标越过已知长度，得到假 undefined 并误报 may-throw
+  //（DP 表双循环 `d[i][1] = d[i-1][1] + 1` 的 never 折叠，issue #98）
+  if (extJoin && pack && unpack) unpack(widenLoopJoin(joinAbs(extJoin, pack())));
   return exitJoin ?? state;
+}
+
+/**
+ * 循环出口 join 的容器 widen：把「不同长度 tuple 的 sum」收成 arr
+ *（元素域 = 全部已知元素 ∪ OOB marker undefined——长度未知 ⇒ 下标可能
+ * miss）。只动顶层与 obj 槽位；非增长形态（等长 tuple / 非容器）原样。
+ */
+function widenLoopJoin(a: Abs): Abs {
+  const widenValue = (v: Abs): Abs => {
+    if (v.shape.k !== "sum") return v;
+    const members = (v.shape as { k: "sum"; members: Abs[] }).members;
+    const els: Abs[] = [];
+    const undefArms: Abs[] = [];
+    const lengths = new Set<number>();
+    let hasArr = false;
+    for (const m of members) {
+      if (m.shape.k === "tuple") {
+        const t = m.shape as { k: "tuple"; elements: Abs[]; holes?: number[] };
+        lengths.add(t.elements.length);
+        els.push(...t.elements);
+        if (t.holes?.length) undefArms.push(oobUndef());
+      } else if (m.shape.k === "arr") {
+        hasArr = true;
+        els.push((m.shape as { k: "arr"; element: Abs }).element);
+      } else {
+        return v; // 非容器成员：不动（保持 join 精度）
+      }
+    }
+    if (!hasArr && lengths.size <= 1) return v; // 等长 tuple join：无增长，不 widen
+    // 长度增长（或已有 arr 臂）→ 长度未知；hole/越界读 undefined → OOB marker
+    const known = els.length ? els.reduce((x, y) => joinAbs(x, y)) : unknown;
+    const element = undefArms.length
+      ? undefArms.reduce((x, y) => joinAbs(x, y), known)
+      : known;
+    return abs(
+      { k: "arr", element: joinAbs(element, oobUndef()) },
+      undefined,
+      undefined,
+      confJoin(v.conf, "widened"),
+    );
+  };
+  const s = a.shape;
+  if (s.k === "obj") {
+    let changed = false;
+    const slots: Record<string, { value: Abs }> = Object.create(null);
+    for (const [k, slot] of Object.entries(s.slots)) {
+      const w = widenValue(slot.value);
+      if (w !== slot.value) changed = true;
+      slots[k] = { value: w };
+    }
+    return changed ? abs({ ...s, slots }, undefined, undefined, a.conf) : a;
+  }
+  return widenValue(a);
 }
 
 // while

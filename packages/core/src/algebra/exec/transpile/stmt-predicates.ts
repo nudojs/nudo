@@ -123,3 +123,67 @@ export function withImplicitReturn(body: Node, bodyStmts: string, depth: number)
   if (stmtReturns(body as unknown as Statement)) return bodyStmts;
   return `${bodyStmts}\n${indent(depth)}return $lit(void 0);`;
 }
+
+// --- nullish 守卫识别（issue #97） -----------------------------------------
+
+export type NullishGuard = {
+  /** 被守卫的标识符 */
+  name: string;
+  /** 该标识符可证非 nullish 的臂 */
+  arm: "cons" | "alt";
+};
+
+const isNullishLitNode = (n: unknown): boolean => {
+  const t = n as { type?: string; name?: string };
+  return t?.type === "NullLiteral" || (t?.type === "Identifier" && t.name === "undefined");
+};
+
+/**
+ * 测试表达式是否是「标识符的 nullish 守卫」，返回非 nullish 事实所属臂：
+ * - `p === null` / `p === undefined` / `p == null` / `p == undefined`
+ *   （及字面量在左的对称形态）→ else（alt）臂 p 非 nullish
+ * - `p !== null` / `p != null` … → then（cons）臂 p 非 nullish
+ * - `!p` → else 臂（¬!p ⇒ p 真值 ⇒ 非 nullish）
+ * - 裸 `p` → then 臂（p 真值 ⇒ 非 nullish）
+ * 守卫变量在该臂内以 $removeNullish 影子重绑（null/undefined 臂剪除），
+ * 成员读写不再记 may-throw（issue #97：`if (p === null) return -1; p.major`）。
+ */
+export function nullishGuardOf(test: unknown): NullishGuard | undefined {
+  const t = test as {
+    type?: string;
+    operator?: string;
+    left?: unknown;
+    right?: unknown;
+    argument?: { type?: string; name?: string };
+    name?: string;
+  };
+  if (t?.type === "UnaryExpression" && t.operator === "!" && t.argument?.type === "Identifier" && t.argument.name) {
+    return { name: t.argument.name, arm: "alt" };
+  }
+  if (t?.type === "Identifier" && t.name) {
+    return { name: t.name, arm: "cons" };
+  }
+  if (t?.type !== "BinaryExpression") return undefined;
+  const op = t.operator;
+  if (op !== "===" && op !== "!==" && op !== "==" && op !== "!=") return undefined;
+  const l = t.left as { type?: string; name?: string };
+  const r = t.right as { type?: string; name?: string };
+  if (l?.type === "Identifier" && l.name && isNullishLitNode(r)) {
+    return { name: l.name, arm: op === "===" || op === "==" ? "alt" : "cons" };
+  }
+  if (r?.type === "Identifier" && r.name && isNullishLitNode(l)) {
+    return { name: r.name, arm: op === "===" || op === "==" ? "alt" : "cons" };
+  }
+  return undefined;
+}
+
+/** 守卫臂 thunk 的 nullish 剪影包装：`((p) => THUNK)($removeNullish(p))`。
+ *  仅当守卫名不在 fork 绑定集（臂内无写/快照重绑）时应用——否则影子参数
+ *  会吞掉臂内写，破坏 forkJoin 的绑定 join。 */
+export function narrowNullishArmThunk(thunk: string, guard: NullishGuard | undefined, arm: "cons" | "alt", forkBindingNames: ReadonlySet<string> | readonly string[]): string {
+  if (!guard || guard.arm !== arm) return thunk;
+  const names =
+    forkBindingNames instanceof Set ? (forkBindingNames as Set<string>) : new Set(forkBindingNames);
+  if (names.has(guard.name)) return thunk;
+  return `((${guard.name}) => ${thunk})($removeNullish(${guard.name}))`;
+}
