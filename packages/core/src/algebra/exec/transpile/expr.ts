@@ -698,7 +698,12 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       return `$call(${transpileExpression(tag, opts)}, [${args}])`;
     }
     case "SequenceExpression":
-      return expr.expressions.map((e) => transpileExpression(e, opts)).join(", ");
+      // 顶层逗号序列必须整体加括号：任何嵌套位（对象属性值 / 数组元素 /
+      // 调用实参 / thunk）裸发射都会撕裂宿主结构——对象字面量里后续项被
+      // 解析成新属性的键 → new Function SyntaxError（TS 降级产物的
+      // [(_A = new WeakMap(), …, "key")] 计算键正是该形态），数组里变成
+      // 额外元素。括号在语句位（(a, b);）与实参位均合法，统一包裹。
+      return `(${expr.expressions.map((e) => transpileExpression(e, opts)).join(", ")})`;
     case "ObjectExpression": {
       // 支持 { ...a, b: 1 } → $spread($spread(a, $obj({b:1})), ...)
       let acc: string | null = null;
