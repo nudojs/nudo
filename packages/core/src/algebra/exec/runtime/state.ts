@@ -323,6 +323,30 @@ export function undef(): Abs {
   return abs({ k: "unknown" }, { op: "lit", value: undefined }, pTrue, "exact");
 }
 
+/**
+ * 越界/未写槽读的合成 undefined（OOB marker）：
+ * 抽象下标可能 miss（`d[i]` 的 i 超出已知元素）时并入的臂。
+ * 值与 undef() 同（读越界原生得 undefined），但 conf=partial 标记
+ * 「这是引擎精度产物，不是用户可观测的确定 undefined」——下游
+ * 成员读写不得据此记 may-throw（DP 表 `d[i-1][j]` 类嵌套读取的
+ * L2 误报来源，issue #98）。用户字面 undefined（契约/可选槽）是
+ * exact conf，仍走 may-throw 口径。
+ */
+export function oobUndef(): Abs {
+  return abs({ k: "unknown" }, { op: "lit", value: undefined }, pTrue, "partial");
+}
+
+/** OOB 合成 undefined 判定（conf=partial 的 lit undefined） */
+export function isOobUndef(a: Abs | undefined): boolean {
+  return (
+    !!a &&
+    a.conf === "partial" &&
+    a.term?.op === "lit" &&
+    a.term.value === undefined &&
+    a.shape.k === "unknown"
+  );
+}
+
 // 退出栈（ALS）+ $try*
 export const loopExitsAls = new AsyncLocalStorage<Abs[]>();
 export const throwExitsAls = new AsyncLocalStorage<Abs[]>();

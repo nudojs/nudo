@@ -135,6 +135,10 @@ describe("check signatures: length assignment", () => {
   });
 
   it("huge valid length stays conservative in the signature", () => {
-    expect(sigOf(`export function f() { const a=[1,2,3]; a.length=5000; return a.length; }`)).toBe("number  #path");
+    // `.length` 读携带非负 pred（issue #98：`new Array(b.length+1)` 的
+    // RangeError note 依此豁免）——巨大长度不折 exact，保持 number + len≥0
+    expect(sigOf(`export function f() { const a=[1,2,3]; a.length=5000; return a.length; }`)).toMatch(
+      /^number\s+= len#\d+\s+where len#\d+ ≥ 0\s+#path$/,
+    );
   });
 });

@@ -3,6 +3,8 @@
  */
 import type { Expression, Node, Statement } from "@babel/types";
 import type { TranspileOptions } from "./types.ts";
+import type { NullishGuard } from "./stmt-predicates.ts";
+import { nullishGuardOf } from "./stmt-predicates.ts";
 import {
   isExpression,
   matchReplacement,
@@ -56,6 +58,8 @@ export function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
   altNodes: Array<Node | null | undefined>;
   /** 覆盖 $fork 测试表达式（?? 用 $nullishTest(left)） */
   testSrc?: string;
+  /** nullish 守卫（issue #97）：指定臂内以 $removeNullish 影子重绑守卫名 */
+  narrowGuard?: NullishGuard;
 }): string {
   const alwaysNames = new Set<string>(collectForkBindingNames(...parts.alwaysNodes));
   const branchNames = new Set<string>(alwaysNames);
@@ -80,8 +84,16 @@ export function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
   if (alwaysNames.size === 0 && branchNames.size === 0) {
     // 无 mutator：保持简单 $fork（__test 槽位回填 alwaysSrc；testSrc 可覆盖）
     const forkTest = parts.testSrc ?? parts.alwaysSrc;
-    const consExpr = parts.consSrc === "__test" ? parts.alwaysSrc : parts.consSrc;
-    const altExpr = parts.altSrc === "__test" ? parts.alwaysSrc : parts.altSrc;
+    let consExpr = parts.consSrc === "__test" ? parts.alwaysSrc : parts.consSrc;
+    let altExpr = parts.altSrc === "__test" ? parts.alwaysSrc : parts.altSrc;
+    if (parts.narrowGuard) {
+      // 守卫名不得是臂内 mutator 绑定（此处无 mutator，只查守卫名自身）
+      if (parts.narrowGuard.arm === "cons") {
+        consExpr = `((${parts.narrowGuard.name}) => (${consExpr}))($removeNullish(${parts.narrowGuard.name}))`;
+      } else {
+        altExpr = `((${parts.narrowGuard.name}) => (${altExpr}))($removeNullish(${parts.narrowGuard.name}))`;
+      }
+    }
     return `$fork(${forkTest}, () => ${consExpr}, () => ${altExpr})`;
   }
 
@@ -99,12 +111,22 @@ export function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
         : [`const __v = (${parts.altSrc});`, ...altRebinds, `return __v;`];
 
   const forkTest = parts.testSrc ?? "__test";
+  const consThunk = forkArmThunk(consLines, "fk1_", names);
+  const altThunk = forkArmThunk(altLines, "fk2_", names);
+  const guard = parts.narrowGuard;
+  // 守卫名在 fork 绑定集（mutator 重绑）时不收窄——影子参数会吞掉臂内写
+  const consFinal = guard?.arm === "cons" && !names.includes(guard.name)
+    ? `((${guard.name}) => ${consThunk})($removeNullish(${guard.name}))`
+    : consThunk;
+  const altFinal = guard?.arm === "alt" && !names.includes(guard.name)
+    ? `((${guard.name}) => ${altThunk})($removeNullish(${guard.name}))`
+    : altThunk;
   return [
     `(() => {`,
     `  const __test = (${parts.alwaysSrc});`,
     ...alwaysRebinds.map((l) => `  ${l}`),
     ...(names.length ? forkBindingDecls(names, "  ") : []),
-    `  const __r = $fork(${forkTest}, ${forkArmThunk(consLines, "fk1_", names)}, ${forkArmThunk(altLines, "fk2_", names)});`,
+    `  const __r = $fork(${forkTest}, ${consFinal}, ${altFinal});`,
     ...forkJoinBindings(names, "  "),
     `  return __r;`,
     `})()`,
@@ -306,14 +328,18 @@ function emitChainFrom(hops: ChainHop[], i: number, valSrc: string): string {
   }
 }
 
-/** 可选跳：valSrc nullish → 剩余链短路 undefined；否则从 apply($__oc) 继续 */
+/** 可选跳：valSrc nullish → 剩余链短路 undefined；否则从 pruned 接收者继续。
+ *  非 nullish 臂的接收者先过 $removeNullish（issue #97）——`p?.major` 的
+ *  假臂里 p 已证非 nullish，sum 的 null/undefined 臂剪除后成员读不再记
+ *  may-throw、不触发 nullish 硬抛。 */
 function shortCircuitHop(
   valSrc: string,
   appliedWithOc: string,
   hops: ChainHop[],
   i: number,
 ): string {
-  return `(($__oc) => $fork($nullishTest($__oc), () => $lit(void 0), () => ${emitChainFrom(hops, i + 1, appliedWithOc)}))(${valSrc})`;
+  const applied = appliedWithOc.split("$__oc").join("$removeNullish($__oc)");
+  return `(($__oc) => $fork($nullishTest($__oc), () => $lit(void 0), () => ${emitChainFrom(hops, i + 1, applied)}))(${valSrc})`;
 }
 
 /** 若 expr 是含 `?.` 的成员/调用脊柱，返回整链短路源码 */
@@ -440,6 +466,10 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         });
       }
       // && : test=left, cons=right, alt=left(已算)  || : test=left, cons=left, alt=right
+      // nullish 守卫（issue #97）：&& 的右侧在 left 真值下求值——left 的
+      // nullish 臂可剪（裸 `p && p.major` / `p !== null && p.major`）；
+      // || 的右侧在 left 假值下求值——仅 `!p || …` 形态可证 p 真值可剪。
+      const andGuard = nullishGuardOf(expr.left);
       return op === "&&"
         ? transpileShortCircuitExpr(opts, {
             alwaysNodes: [lNode],
@@ -448,6 +478,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
             consNodes: [rNode],
             altSrc: "__test",
             altNodes: [],
+            narrowGuard: andGuard?.arm === "cons" ? andGuard : undefined,
           })
         : transpileShortCircuitExpr(opts, {
             alwaysNodes: [lNode],
@@ -456,6 +487,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
             consNodes: [],
             altSrc: r,
             altNodes: [rNode],
+            narrowGuard: andGuard?.arm === "alt" ? andGuard : undefined,
           });
     }
     case "ConditionalExpression": {
@@ -472,6 +504,8 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         consNodes: [consNode],
         altSrc: a,
         altNodes: [altNode],
+        // 三元的 nullish 守卫臂收窄（issue #97：`p === null ? -1 : p.major`）
+        narrowGuard: nullishGuardOf(expr.test),
       });
     }
     case "RegExpLiteral": {
