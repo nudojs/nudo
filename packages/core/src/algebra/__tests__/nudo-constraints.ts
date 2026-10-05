@@ -42,13 +42,14 @@ export const dimensionScores = shape({
 });
 export const mapper = fn({ x: number() }, number());
 export const maybePositive = nullable(number().gt(0));
+export const nullableNum = nullable(number());
 export const posOrNull = union(number().gt(0), lit(null));
 `;
 
 /** 给无 import 的测试源补上标准 import 行 */
 export function withStdImport(source: string): string {
   if (source.includes("@nudo:import")) return source;
-  return `/// @nudo:import { positive, delay, nonNeg, num, percent, port, small, atLeast1, max100, intId, intOnly, shortName, nonEmpty, positives, findings, userShape, configShape, orderShape, status, mapper, maybePositive, posOrNull, scorecard, scorecardFindings, dimensionScores } from "./std.nudo.js"\n${source}`;
+  return `/// @nudo:import { positive, delay, nonNeg, num, percent, port, small, atLeast1, max100, intId, intOnly, shortName, nonEmpty, positives, findings, userShape, configShape, orderShape, status, mapper, maybePositive, nullableNum, posOrNull, scorecard, scorecardFindings, dimensionScores } from "./std.nudo.js"\n${source}`;
 }
 
 /** checkSource 用的 loadModule */

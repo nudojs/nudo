@@ -823,6 +823,30 @@ function miss(i) {
     expect(r.issues.some((i) => i.code === "nudo:unproven-return")).toBe(true);
   });
 
+  it("nullable 契约下多臂 marker discharged（与单臂 proved 对称）", () => {
+    const r = issuesOf(
+      `/**\n * @nudo:contract a nonEmpty\n * @nudo:contract b nonEmpty\n * @nudo:contract return nullableNum\n */\n${LEV}`,
+    );
+    expect(r.ok).toBe(true);
+    // 0 | number | marker：真实臂证毕，marker 的 undefined 可能性被
+    // nullable 域覆盖 → 整体 proved，不再残留 unproven-return warning
+    expect(r.issues.filter((i) => i.message.includes("@nudo:contract return"))).toEqual([]);
+  });
+
+  it("nullable 契约下单 marker 臂 proved", () => {
+    const r = issuesOf(`
+/**
+ * @nudo:contract return nullableNum
+ */
+function miss(i) {
+  const d = [];
+  return d[i];
+}
+`);
+    expect(r.ok).toBe(true);
+    expect(r.issues.filter((i) => i.message.includes("@nudo:contract return"))).toEqual([]);
+  });
+
   it("真实 nullish 返回不受 marker 豁免影响（仍 error）", () => {
     const r = issuesOf(`
 /**
