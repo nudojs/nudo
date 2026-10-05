@@ -104,7 +104,7 @@ The single-line commands in each subdirectory README and example file header are
 | `pnpm run test:cli docs/examples/algebra/sample.js` | **0** | No call sites → `entry@`; params display as **`any`** |
 | `pnpm run check docs/examples/mini-repo/user-service.js` | **1** | Multi-file integration (check) — L2: unconstrained array arg to `sumAges` reports `entry-may-throw` |
 | `pnpm run test:cli docs/examples/mini-repo/user-service.js` | **0** | Multi-file integration (test case report) |
-| `pnpm run check docs/examples/mini-repo/validators.js` | **0** | Support-file signatures: unconstrained entry params = any |
+| `pnpm run check docs/examples/mini-repo/validators.js` | **1** | L2: unconstrained relational ops on `any` params (`isPositive`/`clamp`) report `entry-may-throw` |
 | `pnpm run test:cli docs/examples/mini-repo/validators.js` | **0** | Support file on its own: `entry@` signatures (any) |
 | `pnpm run test:cli docs/examples/mini-repo/store.js` | **0** | Class methods enumerated by the analyzer: no call sites → `entry@` |
 | `pnpm run check docs/examples/interface-derivation/lib.js` | **0** | Root contract (handwritten `lib.nudo.js` add4) loads |

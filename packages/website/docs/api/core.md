@@ -332,14 +332,14 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="$del"></a>`$del` | fn | object / member runtime | `$del(o: Abs, key: Abs): Abs` |
 | <a id="$elems"></a>`$elems` | fn | object / member runtime | `$elems(a: Abs): Abs[]` |
 | <a id="$eq"></a>`$eq` | fn | operator runtime | `$eq(a: Abs, b: Abs): Abs` |
-| <a id="$fnval"></a>`$fnVal` | fn | value / class runtime | `$fnVal( params: string[], impl: (...args: Abs[]) => Abs, opts?: { bindThis?: boolean }, ): Abs` |
+| <a id="$fnval"></a>`$fnVal` | fn | value / class runtime | `$fnVal( params: string[], impl: (...args: Abs[]) => Abs, opts?: { bindThis?: boolean; ctor?: boolean }, ): Abs` |
 | <a id="$for"></a>`$for` | fn | control-flow lowering | `$for( init: Abs, test: (s: Abs) => Abs, step: (s: Abs) => Abs, body: (s: Abs) => Abs, maxIters: number = DEFAULT_MAX_LOOP_ITERS, opts?: { pack?: () => Abs; unpack?: (s: Abs) => void; label?: string; }, ): Abs` |
 | <a id="$foriter"></a>`$forIter` | const | control-flow lowering | — |
 | <a id="$fork"></a>`$fork` | fn | control-flow lowering | `$fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): Abs` |
 | <a id="$ge"></a>`$ge` | fn | operator runtime | `$ge(a: Abs, b: Abs): Abs` |
 | <a id="$gen"></a>`$gen` | fn | async / generator | `$gen(body: () => void): Abs` |
 | <a id="$get"></a>`$get` | fn | object / member runtime | `$get( o: Abs, key: string, opts?: { silent?: boolean }, ): Abs` |
-| <a id="$idx"></a>`$idx` | fn | array runtime | `$idx(a: Abs, i: Abs): Abs` |
+| <a id="$idx"></a>`$idx` | fn | array runtime | `$idx( a: Abs, i: Abs, opts?: { silent?: boolean }, ): Abs` |
 | <a id="$idxset"></a>`$idxSet` | fn | array runtime | `$idxSet(a: Abs, i: Abs, value: Abs): Abs` |
 | <a id="$in"></a>`$in` | fn | value / class runtime | `$in(key: Abs, o: Abs): Abs` |
 | <a id="$instanceof"></a>`$instanceof` | fn | value / class runtime | `$instanceof(left: Abs, rightName: string, rightVal?: Abs): Abs` |
@@ -361,10 +361,12 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="$spread"></a>`$spread` | fn | object / member runtime | `$spread(a: Abs, b: Abs): Abs` |
 | <a id="$switch"></a>`$switch` | fn | control-flow lowering | `$switch( disc: Abs, cases: Array<{ test: Abs; run: () => Abs }>, dflt?: () => Abs, ): Abs` |
 | <a id="$throw"></a>`$throw` | fn | control-signal / throw | `$throw(v: Abs): never` |
+| <a id="$tpl"></a>`$tpl` | const | object / member runtime | — |
 | <a id="$typeof"></a>`$typeof` | fn | operator runtime | `$typeof(a: Abs): Abs` |
 | <a id="$while"></a>`$while` | fn | control-flow lowering | `$while( init: Abs, test: (s: Abs) => Abs, step: (s: Abs) => Abs, maxIters: number = DEFAULT_MAX_LOOP_ITERS, ): Abs` |
 | <a id="$whileseq"></a>`$whileSeq` | fn | control-flow lowering | `$whileSeq( test: () => Abs, body: () => void, maxIters: number = DEFAULT_MAX_LOOP_ITERS, opts?: { pack?: () => Abs; unpack?: (s: Abs) => void; label?: string; }, ): void` |
 | <a id="$yield"></a>`$yield` | fn | async / generator | `$yield(v: Abs): Abs` |
+| <a id="$yieldstar"></a>`$yieldStar` | const | async / generator | — |
 | <a id="asabsval"></a>`asAbsVal` | fn | value / class runtime | `asAbsVal(v: unknown): Abs` |
 | <a id="evalcallrecord"></a>`EvalCallRecord` | type | call-site recording for analyze | `EvalCallRecord = { fnName: string; args: Abs[]; result: Abs; callLoc?: { line: number; column: number }; threw: boolean; }` |
 | <a id="filltuple"></a>`fillTuple` | fn | array runtime | `fillTuple( shape: { k: "tuple"; elements: Abs[]; holes?: number[] } \| { k: "arr"; element: Abs }, vals: Abs[], arr: Abs, ): Abs` |
@@ -384,7 +386,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="transpilesource"></a>`transpileSource` | fn | JS AST → `$op` program | `transpileSource(source: string, opts: TranspileOptions = {}): string` |
 
 <details>
-<summary>Additional exports from src/index.ts (341)</summary>
+<summary>Additional exports from src/index.ts (342)</summary>
 
 | Name | Kind | Summary | Signature |
 |------|------|------|------|
@@ -392,7 +394,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="absassignrecord"></a>`AbsAssignRecord` | type | Abs 域赋值记录（eval 通道 $assignRecord 的同形投影） | `AbsAssignRecord = { name: string; prev?: Abs; next: Abs; line?: number; column?: number; conditional?: boolean; }` |
 | <a id="abscallrecord"></a>`AbsCallRecord` | type | Abs 域调用记录（eval 通道 EvalCallRecord 的同形投影） | `AbsCallRecord = { fnName: string; args: Abs[]; result: Abs; callLoc?: { line: number; column: number }; threw?: boolean; }` |
 | <a id="absfnimpl"></a>`AbsFnImpl` | type | — | `AbsFnImpl = { params: string[]; body?: Node; async?: boolean; env?: AstEnv; kind?: string; apply?: (args: Abs[], thisVal?: Abs) => AbsApp...` |
-| <a id="absfunction"></a>`absFunction` | fn | 造一个带实现的 Abs 函数值 | `absFunction( params: string[], impl: Omit<AbsFnImpl, "params">, opts?: { name?: string; paramTypes?: Abs[]; returnType?: Abs; slots?: Record<string, { value: Abs; optional?: boolean; readonly?: boolean }>; conf?: Confidence; }, ): Abs` |
+| <a id="absfunction"></a>`absFunction` | fn | 造一个带实现的 Abs 函数值 | `absFunction( params: string[], impl: Omit<AbsFnImpl, "params">, opts?: { name?: string; paramTypes?: Abs[]; returnType?: Abs; slots?: Record<string, { value: Abs; optional?: boolean; readonly?: boolean }>; conf?: Confidence; ctor?: boolean; }, ): Abs` |
 | <a id="absmoduleexports"></a>`AbsModuleExports` | type | — | `AbsModuleExports = { named: Record<string, Abs>; default?: Abs; evaluated?: boolean; }` |
 | <a id="absshapekey"></a>`absShapeKey` | fn | — | `absShapeKey(a: Abs, seen: Set<object> = new Set()): string` |
 | <a id="abssigimpl"></a>`AbsSigImpl` | type | Abs 原生 env/builtin 实现（evaluator 优先） | `AbsSigImpl = (args: Abs[], thisVal?: Abs) => Abs \| undefined` |
@@ -441,7 +443,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="constrainttoentryabs"></a>`constraintToEntryAbs` | fn | 契约 → 函数入口 param Abs（infer/hover 用）。 | `constraintToEntryAbs( c: NudoConstraint, paramName: string, ): Abs` |
 | <a id="contractparamnameset"></a>`contractParamNameSet` | fn | 侧车契约可绑定的参数名全集 | `contractParamNameSet(formals: FormalParam[]): Set<string>` |
 | <a id="createhofcollectctx"></a>`createHofCollectCtx` | fn | — | `createHofCollectCtx( paramNames: ReadonlySet<string>, alphaIds: Iterable<string>, ): HofCollectCtx` |
-| <a id="ctorargdefinitelyinvalid"></a>`ctorArgDefinitelyInvalid` | fn | 构造器实参**确定**非法（原生 TypeError 域）： - 非可迭代字面量（number/boolean/symbol/bigint、闭对象字面量）→ Set/Map 都抛 - Map 条目必须是对象：外层 iterable 出现 lit prim 条目（含字符串实参的 每个字符、tuple/Set 元素）→ TypeError（空串例外：零条目合法） 抽象形态不确定 → false（保守）。 | `ctorArgDefinitelyInvalid( name: "Map" \| "Set", iterable: Abs \| undefined, ): boolean` |
+| <a id="ctorargdefinitelyinvalid"></a>`ctorArgDefinitelyInvalid` | fn | 构造器实参**确定**非法（原生 TypeError 域）： - 非可迭代字面量（number/boolean/symbol/bigint、闭对象字面量）→ 四个集合构造器都抛 - Map/WeakMap 条目必须是对象：外层 iterable 出现 lit prim 条目（含字符串实参的 每个字符、tuple/Set 元素）→ TypeError（空串例外：零条目合法）； WeakMap 键还必须可弱持有——tuple 条目首元素（键）为 prim → TypeError （Map 键可以是 prim，仅 WeakMap 抛 "Invalid value used as weak map key"） - WeakSet 元素必须可弱持有：prim 元素（含字符串字符）→ TypeError 抽象形态不确定 → false（保守）。 | `ctorArgDefinitelyInvalid( name: "Map" \| "Set" \| "WeakMap" \| "WeakSet", iterable: Abs \| undefined, ): boolean` |
 | <a id="ctornameofrecv"></a>`ctorNameOfRecv` | fn | 接收者 → 原型链 constructor 名（`.constructor` 折叠）。 | `ctorNameOfRecv(recv: Abs): string \| undefined` |
 | <a id="currentexecphi"></a>`currentExecPhi` | fn | — | `currentExecPhi(): Phi` |
 | <a id="currentphi"></a>`currentPhi` | fn | — | `currentPhi(): Phi` |
@@ -464,7 +466,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="evalbuiltinnew"></a>`evalBuiltinNew` | fn | new X(...) | `evalBuiltinNew(className: string, args: Abs[]): Abs \| undefined` |
 | <a id="evalclassspec"></a>`EvalClassSpec` | type | — | — |
 | <a id="evaldatector"></a>`evalDateCtor` | fn | — | `evalDateCtor(args: Abs[]): Abs` |
-| <a id="evaldatemethod"></a>`evalDateMethod` | fn | — | `evalDateMethod(name: string, _recv: Abs, _args: Abs[]): Abs \| undefined` |
+| <a id="evaldatemethod"></a>`evalDateMethod` | fn | — | `evalDateMethod(name: string, recv: Abs, args: Abs[]): Abs \| undefined` |
 | <a id="evaldatestatic"></a>`evalDateStatic` | fn | — | `evalDateStatic(name: string, _args: Abs[]): Abs \| undefined` |
 | <a id="evalfallback"></a>`EvalFallback` | type | evaluator 回落事件（观测单一埋点；reason: unsupported:* = 能力边界，internal = 引擎自身缺陷） | `EvalFallback = { reason: string; message: string; loc?: { line: number; column: number }; }` |
 | <a id="evalglobalfn"></a>`evalGlobalFn` | fn | — | `evalGlobalFn(name: string, args: Abs[]): Abs \| undefined` |
@@ -479,7 +481,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="evalpromisestatic"></a>`evalPromiseStatic` | fn | — | `evalPromiseStatic(name: string, args: Abs[]): Abs \| undefined` |
 | <a id="evalregexpctor"></a>`evalRegExpCtor` | fn | — | `evalRegExpCtor(args: Abs[]): Abs` |
 | <a id="evalregexpmethod"></a>`evalRegExpMethod` | fn | — | `evalRegExpMethod(name: string, recv: Abs, args: Abs[]): Abs \| undefined` |
-| <a id="evalstringstatic"></a>`evalStringStatic` | fn | String.fromCharCode(...)： - 全部字面量 → 按 ToUint16 折成精确字符串（含越界/非整数/数字字符串） - symbol 字面量 → TypeError（ToNumber 抛） - 任一抽象实参 → 抽象 string（不假精确） | `evalStringStatic(name: string, args: Abs[]): Abs \| undefined` |
+| <a id="evalstringstatic"></a>`evalStringStatic` | fn | String.fromCharCode / String.fromCodePoint： - fromCharCode：全部字面量 → 按 ToUint16 折成精确字符串（含越界/非整数/ 数字字符串）；symbol 字面量 → TypeError（ToNumber 抛）；任一抽象实参 → 抽象 string（不假精确） - fromCodePoint（Bug 38）：字面量过 ToNumber 后 IsValidCodePoint 校验 （node v26 实测：非整数/NaN/±∞/&lt;0/&gt;0x10FFFF → RangeError "Invalid code point"；null/""/false → 0 合法；"65" → 65；surrogate 0xD800 合法）； symbol/bigint 的 ToNumber → TypeError（fromCodePoint(1n) 原生抛，区别 于 fromCharCode 的 ToUint16 面——bigint ToString 合法但 ToNumber 抛）； 抽象实参 → may RangeError（+ symbol 载体 may TypeError）+ str("path") | `evalStringStatic(name: string, args: Abs[]): Abs \| undefined` |
 | <a id="evalsymbolctor"></a>`evalSymbolCtor` | fn | 全局 Symbol([desc])（$callNamed 身份校验后派发） | `evalSymbolCtor(args: Abs[]): Abs` |
 | <a id="evictchecksourcememoforpaths"></a>`evictCheckSourceMemoForPaths` | fn | `*.nudo.js` 变更后定向逐出依赖它的整文件 check 缓存。查找与索引同走 stablePathKey | `evictCheckSourceMemoForPaths(paths: string[]): number` |
 | <a id="evictgeneralizememoforpaths"></a>`evictGeneralizeMemoForPaths` | fn | LSP/宿主：`*.nudo.js` 变更后按路径定向逐出依赖它的 L0 条目。 | `evictGeneralizeMemoForPaths(paths: string[]): number` |
@@ -525,6 +527,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="hofcollectctx"></a>`HofCollectCtx` | type | — | — |
 | <a id="hofsite"></a>`HofSite` | type | — | — |
 | <a id="hostbuiltinctorname"></a>`hostBuiltinCtorName` | fn | 宿主全局构造器身份（Number === (42).constructor 折叠用） | `hostBuiltinCtorName(v: unknown): string \| undefined` |
+| <a id="hostfnctorfacet"></a>`hostFnCtorFacet` | fn | 宿主 JS 函数的可构造性（Bug 9）：generator/async/async-generator 声明、 箭头、内建方法（无 .prototype）不可 new；bind 产物取决于目标（未知）。 | `hostFnCtorFacet(v: Function): boolean \| undefined` |
 | <a id="implicationoracle"></a>`ImplicationOracle` | type | 外部蕴含 oracle（可选 SMT 等）。内建判定证不出时调用。 | `ImplicationOracle = (phi: Phi, pred: Pred) => boolean \| undefined` |
 | <a id="implies"></a>`implies` | fn | 简单蕴含：在区间/线性/字面量/typeof 可判定范围内判断 Φ ⊢ pred | `implies(phi: Phi, pred: Pred): boolean` |
 | <a id="instantiatereturn"></a>`instantiateReturn` | fn | relation-only / isRelFn 的应用：按 paramTypes 做 α 替换得到 returnType。 | `instantiateReturn(fn: Abs, args: Abs[]): Abs` |
@@ -714,7 +717,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="throwconstrainttokinds"></a>`throwConstraintToKinds` | fn | fn(..., &#123; throws &#125;) / throws 约束 → 申报的 throws 类型名。 | `throwConstraintToKinds( c: NudoConstraint \| undefined, ): string[]` |
 | <a id="tonumberabs"></a>`toNumberAbs` | fn | 一元 + —— ToNumber 折叠；bigint（含抽象 prim）原生恒抛 TypeError → 硬抛 | `toNumberAbs(a: Abs): Abs` |
 | <a id="trueconstraint"></a>`trueConstraint` | fn | 从比较结果 Abs 提取「若为真」的额外约束（供 if 使用） | `trueConstraint(c: Abs): Pred \| undefined` |
-| <a id="trymakeregexabs"></a>`tryMakeRegexAbs` | fn | new RegExp(pattern, flags) 字面量真构造验证（$new 与 evalRegExpCtor 共用）： - 无参 → /(?:)/（原生 source 归一） - pattern 非字面量（抽象/RegExp 实例）→ undefined（调用方保守） - symbol pattern / flags → TypeError（ToString 抛） - 非法 pattern / 非法 flags（含 number/null/boolean flags 的 ToString） → SyntaxError；合法 → 精确 brand（source/flags 取真构造结果） | `tryMakeRegexAbs(args: Abs[]): Abs \| undefined` |
+| <a id="trymakeregexabs"></a>`tryMakeRegexAbs` | fn | new RegExp(pattern, flags) 字面量真构造验证（$new 与 evalRegExpCtor 共用）： - 无参 → /(?:)/（原生 source 归一） - symbol pattern/flags → 确定 TypeError（ToString 抛；shape 判定——Symbol() 无 lit 项，原先的 lit 分支内检查是死代码，Bug 29/52） - 非法 pattern / 非法 flags（含 number/null/boolean flags 的 ToString） → SyntaxError；合法 → 精确 brand（source/flags 取真构造结果） - 抽象 pattern/flags → undefined（调用方保守）+ 档位打点（见各分支）： obj/fn/brand/sum/any → may TypeError（自定义 coercer 可能产 Symbol）； 抽象 prim string pattern → ToString total（非法 pattern 的 SyntaxError 面不计）；抽象 prim string flags → may SyntaxError；抽象 prim number/bool/bigint flags → ToString 恒非法 flags → 确定 SyntaxError （node 实测 new RegExp('a', 1n) → SyntaxError） | `tryMakeRegexAbs(args: Abs[]): Abs \| undefined` |
 | <a id="trypromotedirectcall"></a>`tryPromoteDirectCall` | fn | 挂载点②：CallExpression callee = 形参 Identifier 直接调用 p(x) / p(a,b)。 | `tryPromoteDirectCall( env: AstEnv, calleeName: string, args: Abs[], loc?: { line: number; column: number }, ): Abs \| undefined` |
 | <a id="trypromoteforofiteratee"></a>`tryPromoteForOfIteratee` | fn | for-of 迭代对象提升（applyEach 型）：`for (const x of items)`， items 为形参且仍是 any/unknown → arr(自身 var)。不依赖方法名。 | `tryPromoteForOfIteratee( env: AstEnv, iterateeName: string, loc?: { line: number; column: number }, ): Abs \| undefined` |
 | <a id="trypromotehofcallback"></a>`tryPromoteHofCallback` | fn | 挂载点③：HOF 回调实参。回调是 Identifier ∈ paramNames 且尚未有 fn 形状。 | `tryPromoteHofCallback( env: AstEnv, cevalName: string, method: string, argAbses: Abs[], loc?: { line: number; column: number }, ): Abs \| undefined` |

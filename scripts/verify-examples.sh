@@ -355,13 +355,15 @@ pin 'pnpm run test:cli docs/examples/mini-repo/user-service.js' \
   '(7) => promise<{ id: 7, name: "u7" }>' '(4) => 5' \
   '(7, 1, 9999) => 7' '(5, 1, 9999) => 5'
 # support files are matrix rows too: validators.js shows entry signatures
-# with unconstrained params as any; store.js documents class methods without
-# call sites falling back to entry@ cases.
+# with unconstrained params as any — and L2 honesty: `n > 0` / `n < lo`
+# relational ops over any params may TypeError (n=Symbol()), so check
+# exits 1 with isPositive/clamp entry-may-throw (gold: check-mini-repo
+# test pins both findings; same face as user-service.js 的 sumAges).
 pin 'pnpm run check docs/examples/mini-repo/validators.js' \
   'isPositive(n: any) => boolean' \
   'clamp(n: any, lo: any, hi: any) => any'
 pin 'pnpm run test:cli docs/examples/mini-repo/validators.js' \
-  'entry@L5  (any) => boolean   throws TypeError'
+  'entry@L1  (any) => boolean   throws TypeError'
 pin 'pnpm run test:cli docs/examples/mini-repo/store.js' \
   'MemoryStore.set' 'MemoryStore.get' \
   'entry@'
