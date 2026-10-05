@@ -343,7 +343,9 @@ pin 'pnpm run test:cli docs/examples/algebra/sample.js' \
 
 # mini-repo/ — pin the cross-file integration claims.
 # normalizeId may carry nudo:unknown-inference warning (true unknown return);
-# sumAges 无约束 ages 实参 → L2 entry-may-throw（提升是假设、不消除危险）
+# sumAges 无约束 ages 实参 → L2 entry-may-throw（提升是假设、不消除危险）；
+# 其余入口（normalizeId/validateAge/fetchUser/score）已 @nudo:throws TypeError
+# 申报 coercion 抛错（对齐原生语义），L2 豁免。
 pin 'pnpm run check docs/examples/mini-repo/user-service.js' \
   '1 error' \
   'sumAges(ages: any) => number | string  throws TypeError' \
@@ -353,13 +355,15 @@ pin 'pnpm run test:cli docs/examples/mini-repo/user-service.js' \
   '(7) => promise<{ id: 7, name: "u7" }>' '(4) => 5' \
   '(7, 1, 9999) => 7' '(5, 1, 9999) => 5'
 # support files are matrix rows too: validators.js shows entry signatures
-# with unconstrained params as any; store.js documents class methods without
-# call sites falling back to entry@ cases.
+# with unconstrained params as any — and L2 honesty: `n > 0` / `n < lo`
+# relational ops over any params may TypeError (n=Symbol()), so check
+# exits 1 with isPositive/clamp entry-may-throw (gold: check-mini-repo
+# test pins both findings; same face as user-service.js 的 sumAges).
 pin 'pnpm run check docs/examples/mini-repo/validators.js' \
   'isPositive(n: any) => boolean' \
   'clamp(n: any, lo: any, hi: any) => any'
 pin 'pnpm run test:cli docs/examples/mini-repo/validators.js' \
-  'entry@L1  (any) => boolean'
+  'entry@L1  (any) => boolean   throws TypeError'
 pin 'pnpm run test:cli docs/examples/mini-repo/store.js' \
   'MemoryStore.set' 'MemoryStore.get' \
   'entry@'

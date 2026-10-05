@@ -121,6 +121,9 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   // 字符串拼接（含 template parts）—— JS + 优先走 string：
   // `1n + "s" === "1s"`（ToString），不得落进 bigint 混型硬抛。
   if (isStrPrim(a) || isStrPrim(b) || isTemplateLike(a) || isTemplateLike(b)) {
+    // Bug 8：拼接臂的抽象操作数可能为 Symbol（`"" + Symbol()` / `${Symbol()}`
+    // 原生 TypeError；`${1n}` 合法 ToString，bigint 不在此维度）。值域不变。
+    noteCoercionMayThrow(a, b, "ToString coercion of abstract operand (Symbol)");
     return concatString(a, b);
   }
   // boolean/null 字面量与数字混合：ToNumber 折叠（与 sub/mul/div/mod 同口径；
@@ -137,6 +140,8 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   // 数组 ToPrimitive = join(",")，结果恒 string：`[] + []`→""、`[1] + 1`→"11"
   //（不得落进 number|string 并集——数组侧不会产出 number）
   if (a.shape.k === "tuple" || a.shape.k === "arr" || b.shape.k === "tuple" || b.shape.k === "arr") {
+    // 数组侧恒 string，但对面抽象操作数可能为 Symbol（`[] + Symbol()` 原生 TypeError）
+    noteCoercionMayThrow(a, b, "ToString coercion of abstract operand (Symbol)");
     return concatString(a, b);
   }
 
@@ -159,6 +164,9 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   // 一侧是 bigint 面时结果只能是 bigint（对面实为 bigint）或 string（ToString），
   // 不是 number——`1n + 1` 已在上游 TypeError。
   if (isAnyLike(a) || isAnyLike(b)) {
+    // Bug 8：抽象操作数可能为 bigint / Symbol —— `x + 1`（x=1n / Symbol()）
+    // 原生 may TypeError（此前 throws=never，L2 假阴性）。值域 number|string 不变。
+    noteAbstractArithMayThrow(a, b);
     const term =
       a.term && b.term ? simplifyTerm(app("+", [a.term, b.term])) : undefined;
     const bigFace = isBigPrim(a) || isBigPrim(b);
@@ -195,6 +203,9 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
     a.shape.k === "brand" ||
     b.shape.k === "brand"
   ) {
+    // Bug 8：obj/fn/brand 抽象面（valueOf/@@toPrimitive 可能产 bigint/Symbol）
+    // —— `x.a + 1` 类原生 may TypeError；unknown 令牌不记（wave 1 口径）
+    noteAbstractArithMayThrow(a, b);
     return abs({ k: "sum", members: [num(), str()] }, undefined, undefined, "partial");
   }
 
@@ -227,6 +238,38 @@ function isMaybeBigintOperand(a: Abs): boolean {
     a.shape.k === "brand" ||
     a.shape.k === "sum"
   );
+}
+
+/**
+ * 抽象操作数经 ToPrimitive/ToNumeric 可能成 bigint / Symbol —— 与数值面
+ * 协同可能原生 TypeError（`x + 1`，x=1n / Symbol()，node 实测）。只补
+ * throws 效果，值域不变。unknown 是引擎 fail-closed 令牌，不在此列
+ * （wave 1 口径：may-tier 对 any 记、对 unknown 不记，不把引擎债放大成
+ * L2 假报）。
+ */
+function isMaybeCoercionThrowOperand(a: Abs): boolean {
+  return isMaybeBigintOperand(a) && a.shape.k !== "unknown";
+}
+
+/** Bug 8 打点：抽象操作数协同可能原生 TypeError（bigint 混型 / Symbol 强转） */
+function noteCoercionMayThrow(a: Abs, b: Abs, cause: string): void {
+  if (isMaybeCoercionThrowOperand(a) || isMaybeCoercionThrowOperand(b)) {
+    recordMayThrow({ kind: "TypeError", cause });
+  }
+}
+
+/**
+ * Bug 8 算术抽象臂统一打点（add/sub/mul/div/mod 的 any 臂与混合回退臂）。
+ * bigint 字面量面 ⊗ 抽象对面的 may-throw 已由 foldBigintBinOp 记过
+ * （`1n + x` 控制组），此处不重复。
+ */
+function noteAbstractArithMayThrow(a: Abs, b: Abs): void {
+  const ra = litValue(a);
+  const rb = litValue(b);
+  if ((ra.ok && typeof ra.value === "bigint") || (rb.ok && typeof rb.value === "bigint")) {
+    return;
+  }
+  noteCoercionMayThrow(a, b, "ToNumeric/ToNumber coercion of abstract operand");
 }
 
 /** 双方 bigint 字面量折叠；÷0n / 负指数等原生 RangeError、确定混型原生 TypeError——硬抛（catch 可吸收），不得静默 unknown */
@@ -343,6 +386,15 @@ function toNumberResult(
   b: Abs,
   op: "-" | "*" | "/" | "%",
 ): Abs {
+  // Bug 8：any 参与 - * / %：ToNumber 可能撞 Symbol / 与 bigint 混型
+  // （`x - 1`，x=1n / Symbol() 原生 TypeError）→ may TypeError，值域不变。
+  // unknown 令牌不记（wave 1 口径）。
+  if (a.shape.k === "any" || b.shape.k === "any") {
+    recordMayThrow({
+      kind: "TypeError",
+      cause: "ToNumber coercion of abstract operand",
+    });
+  }
   // 不用 simplifyTerm：x*1=x / x-0=x 只对 number 成立；any 参与时 ToNumber
   // 后值已变（"5"*1→5），不得把结果项认成原 any 变量（strictEqAbs 同 var 会折 true）。
   const term = a.term && b.term ? app(op, [a.term, b.term]) : undefined;
@@ -589,6 +641,8 @@ export function sub(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   // sum 分发（与 add 同口径）：100 - (cond ? 20 : 55) → 45 | 80
   const distributed = distributeSumBinOp("-", a, b, phi, sub);
   if (distributed) return distributed;
+  // Bug 8：obj/fn/brand 抽象面回退（`x.a - 1`，valueOf 可能产 bigint/Symbol）→ may TypeError
+  noteAbstractArithMayThrow(a, b);
   return abs({ k: "unknown" }, undefined, undefined, "partial");
 }
 
@@ -671,6 +725,8 @@ export function mul(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   // sum 分发（与 add 同口径）：2 * (cond ? 20 : 55) → 40 | 110
   const distributed = distributeSumBinOp("*", a, b, phi, mul);
   if (distributed) return distributed;
+  // Bug 8：obj/fn/brand 抽象面回退（`x.a * 2`，valueOf 可能产 bigint/Symbol）→ may TypeError
+  noteAbstractArithMayThrow(a, b);
   return abs({ k: "unknown" }, undefined, undefined, "partial");
 }
 
@@ -747,6 +803,8 @@ export function div(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   // sum 分发（与 add 同口径）
   const distributed = distributeSumBinOp("/", a, b, phi, div);
   if (distributed) return distributed;
+  // Bug 8：obj/fn/brand 抽象面回退（`x.a / 2`，valueOf 可能产 bigint/Symbol）→ may TypeError
+  noteAbstractArithMayThrow(a, b);
   return abs({ k: "unknown" }, undefined, undefined, "partial");
 }
 
@@ -814,6 +872,8 @@ export function mod(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   // sum 分发（与 add 同口径）
   const distributed = distributeSumBinOp("%", a, b, phi, mod);
   if (distributed) return distributed;
+  // Bug 8：obj/fn/brand 抽象面回退（`x.a % 2`，valueOf 可能产 bigint/Symbol）→ may TypeError
+  noteAbstractArithMayThrow(a, b);
   return abs({ k: "unknown" }, undefined, undefined, "partial");
 }
 
@@ -847,6 +907,17 @@ export function cmp(
 
   // 符号比较：构造 pred 挂在 boolean 上，供 if 分支消费
   if (a.term && b.term) {
+    // Bug 31：关系比较的抽象操作数（any/obj/fn/brand/sum，可能持有 Symbol）
+    // —— ToPrimitive(x, hint Number) 原生 may TypeError（`x < 1`，x=Symbol()）。
+    // bigint 混型在关系比较中合法（`1n < 2`），只有 Symbol 维度；值域 boolean
+    // 不变；unknown 令牌不记（wave 1 口径）。放在 pred 化简/界判定之前：
+    // 无论值域是否被 Φ 决定，原生先做 ToPrimitive 才可能得值。
+    if (op !== "eq" && op !== "ne" && (isMaybeCoercionThrowOperand(a) || isMaybeCoercionThrowOperand(b))) {
+      recordMayThrow({
+        kind: "TypeError",
+        cause: "ToPrimitive of abstract relational operand (Symbol)",
+      });
+    }
     const pred: Pred =
       op === "lt"
         ? lt(a.term, b.term)
@@ -884,6 +955,14 @@ export function cmp(
     };
   }
 
+  // Bug 31：抽象回退臂（`x < 1`，x:any 无 term）与 both-terms 臂同口径 ——
+  // ToPrimitive 可能撞 Symbol → may TypeError；值域 partial boolean 不变。
+  if (op !== "eq" && op !== "ne" && (isMaybeCoercionThrowOperand(a) || isMaybeCoercionThrowOperand(b))) {
+    recordMayThrow({
+      kind: "TypeError",
+      cause: "ToPrimitive of abstract relational operand (Symbol)",
+    });
+  }
   return abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial");
 }
 

@@ -63,13 +63,21 @@ describe("P0 for-of empty / abstract accumulators", () => {
     expect(litValue(call(src, "f").result)).toEqual({ ok: true, value: 0 });
   });
 
-  it("abstract iterable joins 0..n exits", () => {
+  it("abstract iterable (arr) joins 0..n exits", () => {
     const src = `export function f(a) { let s = 0; for (const x of a) { s = s + 1; } return s; }`;
-    const r = callAbs(src, "f", [absNum]);
+    const absArr = { shape: { k: "arr", element: { shape: { k: "prim", type: "number" }, conf: "path" } }, conf: "path" } as never;
+    const r = callAbs(src, "f", [absArr]);
     const shown = formatAbs(r.result);
     expect(shown).toContain("0");
     expect(formatShape(r.result)).not.toBe("8");
     expect(formatShape(r.result)).not.toBe("1");
+  });
+
+  it("for-of over a number-typed receiver is a definite TypeError (numbers are never iterable)", () => {
+    // 原生：for (const x of 5) → TypeError（Bug 6 迭代守卫；此前静默迭代为错误）
+    const src = `export function f(a) { let s = 0; for (const x of a) { s = s + 1; } return s; }`;
+    const r = callAbs(src, "f", [absNum]);
+    expect(formatAbs(r.throws)).toContain("TypeError");
   });
 
   it("concrete tuple for-of still counts exactly", () => {

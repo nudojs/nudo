@@ -5,20 +5,45 @@ import type { Abs } from "../abs.ts";
 import { abs, numLit, strLit, boolLit, unknown } from "../abs.ts";
 import { getSlot, setSlot } from "../objects.ts";
 import { undefAbs } from "../hof.ts";
+import { getFnImpl } from "../abs-fn.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
-import { errorTypeAbs } from "../exec/may-throw.ts";
+import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
+import { isSymbolAbs } from "../symbol-id.ts";
 import { pTrue } from "../pred.ts";
-import { str } from "./shared.ts";
+import { str, isBigintPrimAbs, mayCoerceThrowOperand } from "./shared.ts";
 import { getPropFlags } from "./invariants.ts";
 
 const NOT_LITERAL = Symbol("nudo:not-literal");
+/** value 模式下 fn/symbol 子树：JSON 值域省略（obj 槽跳过 / 数组槽 null） */
+const OMIT = Symbol("nudo:json-omit");
 
-/** Abs 字面量树 → JS 值（JSON.stringify 折叠输入）；非字面量子树不提取 */
-function absToJsonNative(a: Abs, seen: Set<object>): unknown | typeof NOT_LITERAL {
+/**
+ * Abs 字面量树 → JS 值（JSON.stringify 折叠输入）；非字面量子树不提取。
+ * valueMode（序列化语义，Bug 46）：
+ * - bigint prim（无 lit——BigInt(x)/运算产物）任何位置 → 原生定抛
+ *   「Do not know how to serialize a BigInt」（与字面量宿主抛同面）；
+ * - fn / symbol prim 子树 → OMIT（node 实测 stringify({a:Symbol()}) → "{}"、
+ *   stringify([Symbol()]) → "[null]"——值域省略，不抛）。
+ * extract 模式（replacer 白名单提取）：仅纯字面量折叠，symbol prim 键
+ * ToString 定抛（原生 TypeError），其余非字面量 NOT_LITERAL。
+ */
+function absToJsonNative(
+  a: Abs,
+  seen: Set<object>,
+  valueMode: boolean,
+): unknown | typeof NOT_LITERAL | typeof OMIT {
   if (seen.has(a as object)) return NOT_LITERAL; // 防御自引用（Abs 树理论无环）
   const t = a.term;
   if (t?.op === "lit") return t.value; // 含 bigint/symbol/undefined/null
   const s = a.shape;
+  if (s.k === "prim" && s.type === "symbol") {
+    if (!valueMode) throw new NudoThrow(errorTypeAbs("TypeError"));
+    return OMIT;
+  }
+  if (valueMode && isBigintPrimAbs(a)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  if (valueMode && s.k === "fn") return OMIT;
   if (s.k === "tuple") {
     // rest 槽有 0..n 个未知额外元素：折叠固定位会产出缺尾数组（非字面量）
     if ((a.shape as { rest?: Abs }).rest) return NOT_LITERAL;
@@ -31,9 +56,9 @@ function absToJsonNative(a: Abs, seen: Set<object>): unknown | typeof NOT_LITERA
         out.push(undefined);
         continue;
       }
-      const v = absToJsonNative(s.elements[i]!, seen);
+      const v = absToJsonNative(s.elements[i]!, seen, valueMode);
       if (v === NOT_LITERAL) return NOT_LITERAL;
-      out.push(v);
+      out.push(v === OMIT ? null : v);
     }
     return out;
   }
@@ -46,9 +71,15 @@ function absToJsonNative(a: Abs, seen: Set<object>): unknown | typeof NOT_LITERA
     for (const [k, sv] of Object.entries(s.slots as Record<string, { value: Abs }>)) {
       // enumerable:false（defineProperty 描述符）→ JSON.stringify 跳过
       if (flags?.get(k)?.enumerable === false) continue;
-      const v = absToJsonNative(sv.value, seen);
+      // toJSON 槽：callable（fn 形）/抽象 → 原生先调用再序列化其返回值，
+      // 不可折（{toJSON(){return 'x'}} → "\"x\""，非省略）——保守 NOT_LITERAL
+      if (k === "toJSON") {
+        const ts = sv.value;
+        if (ts.term?.op !== "lit") return NOT_LITERAL;
+      }
+      const v = absToJsonNative(sv.value, seen, valueMode);
       if (v === NOT_LITERAL) return NOT_LITERAL;
-      out[k] = v;
+      if (v !== OMIT) out[k] = v;
     }
     return out;
   }
@@ -87,15 +118,42 @@ export function evalJsonMethod(name: string, args: Abs[]): Abs | undefined {
     // 无实参 ≡ 实参 undefined：原生 ToString(undefined)="undefined" → SyntaxError
     const a0Abs = args[0];
     if (!a0Abs) throw new NudoThrow(errorTypeAbs("SyntaxError"));
-    // reviver 实参：原生逐键变换——Abs 侧不建模，任何存在性都保守 unknown
-    if (args[1]) return unknown;
+    // Bug 40：ToString 强转先于解析——shape 先于 lit 判定，symbol prim
+    //（无 lit 项，Symbol() 产物）定抛「Cannot convert a Symbol value to a
+    // string」（原检查困在 lit 分支内是死代码）
+    if (isSymbolAbs(a0Abs)) throw new NudoThrow(errorTypeAbs("TypeError"));
+    // Bug 48（node v26 实测校正）：reviver 形态面原生**不抛**——非 callable
+    // reviver 直接忽略（parse("{}",1) → {}，「reviver must be callable」不
+    // 存在）；nullish ≡ 缺省。callable reviver 的逐键变换不建模 → 值域保守
+    // unknown（非 throws 面）。判定「确定不可调用」：prim / tuple / never /
+    // 闭 obj；fn / any / unknown / sum / brand / eff / open obj → 保守视为
+    // 可能变换
+    const rev = args[1];
+    const revNullish =
+      !!rev && rev.term?.op === "lit" && (rev.term.value === null || rev.term.value === undefined);
+    const revTransforms =
+      !!rev &&
+      !revNullish &&
+      !(
+        rev.shape.k === "prim" ||
+        rev.shape.k === "tuple" ||
+        rev.shape.k === "never" ||
+        (rev.shape.k === "obj" &&
+          getFnImpl(rev) === undefined &&
+          (rev.shape as { open?: boolean }).open !== true)
+      );
     const t = a0Abs.term;
-    if (t?.op !== "lit") return unknown; // 抽象实参：保守
+    if (t?.op !== "lit") {
+      // Bug 40：抽象文本 may ToString 抛（obj/fn/brand/sum/any——toJSON /
+      // toString 用户面；prim 非符号与 tuple/arr 原生全定）
+      if (mayCoerceThrowOperand(a0Abs)) {
+        recordMayThrow({ kind: "TypeError", cause: "JSON.parse text ToString may throw" });
+      }
+      return unknown; // 抽象实参：保守
+    }
     const v = t.value;
     if (v === undefined) throw new NudoThrow(errorTypeAbs("SyntaxError"));
-    // 原生先 ToString：number/boolean/bigint/null 都走字符串解析；
-    // symbol 的 ToString 原生 TypeError
-    if (typeof v === "symbol") throw new NudoThrow(errorTypeAbs("TypeError"));
+    // 原生先 ToString：number/boolean/bigint/null 都走字符串解析
     const src =
       typeof v === "string"
         ? v
@@ -106,7 +164,10 @@ export function evalJsonMethod(name: string, args: Abs[]): Abs | undefined {
             : undefined;
     if (src === undefined) return unknown;
     try {
-      return jsonValueToAbs(JSON.parse(src));
+      const parsed = jsonValueToAbs(JSON.parse(src));
+      // 解析成功后 reviver 才参与（原生步骤序：parse SyntaxError 先于一切
+      // reviver 行为）；非 callable reviver 原生忽略——保留折叠结果
+      return revTransforms ? unknown : parsed;
     } catch {
       throw new NudoThrow(errorTypeAbs("SyntaxError"));
     }
@@ -115,19 +176,31 @@ export function evalJsonMethod(name: string, args: Abs[]): Abs | undefined {
     // 顶层 undefined / function / symbol → 原生返回 undefined 值（非字符串）
     const a0Abs = args[0];
     if (!a0Abs) return undefAbs();
-    const v = absToJsonNative(a0Abs, new Set());
-    if (v === NOT_LITERAL) {
+    const v = absToJsonNative(a0Abs, new Set(), true);
+    if (v === NOT_LITERAL || v === OMIT) {
       // 顶层 function/symbol：JSON.stringify 返回 undefined，不是 string
       if (isNonJsonTopLevel(a0Abs)) return undefAbs();
+      // Bug 46：抽象/开放面（any/unknown/open obj/rest tuple/brand…）原生
+      // may 抛（BigInt 成员 / 循环引用 / toJSON 用户面）——仅补 throws
+      // 效果，partial 值域不变；symbol/fn 载体成员原生**省略不抛**
+      //（node 实测 stringify({a:Symbol()}) → "{}"），已折 OMIT 不在此臂
+      if (v === NOT_LITERAL) {
+        recordMayThrow({
+          kind: "TypeError",
+          cause: "JSON.stringify receiver may carry BigInt / circular / throwing toJSON",
+        });
+      }
       return str("partial");
     }
     // replacer：数组字面量 → 白名单键；null/非数组非函数 → 原生忽略；
-    // 函数 replacer / 抽象 → 保守（结果串不可判定）
+    // 函数 replacer / 抽象 → 保守（结果串不可判定）。extract 模式提取
+    //（Bug 46：bigint/symbol prim replacer 原生忽略/键 ToString 抛，
+    //  不走 value 模式的 bigint 定抛）
     const replacerArg = args[1];
     let replacer: (string | number)[] | undefined;
     if (replacerArg) {
-      const rv = absToJsonNative(replacerArg, new Set());
-      if (rv === NOT_LITERAL) return str("partial");
+      const rv = absToJsonNative(replacerArg, new Set(), false);
+      if (rv === NOT_LITERAL || rv === OMIT) return str("partial");
       if (Array.isArray(rv)) {
         replacer = rv.filter(
           (x): x is string | number => typeof x === "string" || typeof x === "number",

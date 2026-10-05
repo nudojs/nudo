@@ -99,8 +99,10 @@ Install **nudo-vscode** (or Zed extension). Default analysis mode `"exports"`. S
 ```text
 signatures
   getName(user: any) => any  throws TypeError
+  subtract(a: any, b: any) => number  throws TypeError
 issues
   [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
+  [ERROR L5 subtract] subtract (export): may throw TypeError  (nudo:entry-may-throw)
 ```
 
 `any` = unconstrained entry. `throws` = L2 domain. `L1` in the header is the **line number** (`getName` is declared on line 1 here) — the layer is L2. Codes: [Diagnostics](../reference/diagnostics.md) · full transcript walkthrough: [nudo check](./check.md).

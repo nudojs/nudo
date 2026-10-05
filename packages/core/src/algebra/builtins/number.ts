@@ -3,9 +3,10 @@
  */
 import type { Abs } from "../abs.ts";
 import { abs, litValue, numLit, boolLit } from "../abs.ts";
-import { numPrim, str, boolPrim } from "./shared.ts";
+import { numPrim, str, boolPrim, mayCoerceThrowOperand, isBigintPrimAbs } from "./shared.ts";
+import { isSymbolAbs } from "./symbol.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
-import { errorTypeAbs } from "../exec/may-throw.ts";
+import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
 
 /**
  * parseInt(s[, radix])：首参 ToString，radix ToInt32（截断后 0 视为未提供，越界 NaN）。
@@ -41,6 +42,9 @@ type ToStringLit = string | number | boolean | null | bigint | undefined;
  */
 function toStringLitArg(a: Abs | undefined): { lit: true; v: ToStringLit } | { lit: false } {
   if (!a) return { lit: true, v: undefined };
+  // Bug 26：shape 先于 lit——prim symbol（Symbol() 产物，无 lit 项）ToString
+  // 恒抛 TypeError（lit 分支的 typeof symbol 是防御性死代码）
+  if (isSymbolAbs(a)) throw new NudoThrow(errorTypeAbs("TypeError"));
   if (a.term?.op !== "lit") return { lit: false };
   const v = a.term.value;
   if (typeof v === "symbol") throw new NudoThrow(errorTypeAbs("TypeError"));
@@ -53,6 +57,9 @@ function toStringLitArg(a: Abs | undefined): { lit: true; v: ToStringLit } | { l
  */
 function radixLitArg(a: Abs | undefined): { ok: true; v: number | string | boolean | null | undefined } | { ok: false } {
   if (!a) return { ok: true, v: undefined };
+  // Bug 45：shape 先于 lit——prim symbol/bigint（无 lit 项）ToInt32 前的
+  // ToNumber 恒抛 TypeError；抽象（any/obj/…）由调用方 may 打点
+  if (isSymbolAbs(a) || isBigintPrimAbs(a)) throw new NudoThrow(errorTypeAbs("TypeError"));
   if (a.term?.op !== "lit") return { ok: false };
   const v = a.term.value;
   if (typeof v === "symbol") throw new NudoThrow(errorTypeAbs("TypeError"));
@@ -60,7 +67,9 @@ function radixLitArg(a: Abs | undefined): { ok: true; v: number | string | boole
   if (typeof v === "number" || typeof v === "string" || typeof v === "boolean" || v === null) {
     return { ok: true, v };
   }
-  return { ok: false };
+  // Bug 45：bigint 字面量 radix——ToNumber(1n) 恒抛 TypeError
+  //（node 实测 Number.parseInt("1", 1n) → TypeError）
+  throw new NudoThrow(errorTypeAbs("TypeError"));
 }
 
 /** Number.isInteger / isNaN / parseFloat 等 */
@@ -104,14 +113,32 @@ export function evalNumberStatic(name: string, args: Abs[]): Abs | undefined {
     case "parseInt": {
       // 缺省首参 ≡ undefined：ToString(undefined)="undefined" → NaN
       const s = toStringLitArg(a0Arg);
-      if (!s.lit) return numPrim();
+      if (!s.lit) {
+        // Bug 26：抽象首参（any/obj/…）ToPrimitive 可能成 Symbol → may
+        if (mayCoerceThrowOperand(a0Arg)) {
+          recordMayThrow({ kind: "TypeError", cause: "Number.parseInt argument ToString may throw (Symbol)" });
+        }
+        return numPrim();
+      }
       const radix = radixLitArg(args[1]);
-      if (!radix.ok) return numPrim();
+      if (!radix.ok) {
+        // Bug 45：抽象 radix（any/obj/…）ToNumber may TypeError
+        if (mayCoerceThrowOperand(args[1])) {
+          recordMayThrow({ kind: "TypeError", cause: "Number.parseInt radix ToNumber may throw (Symbol/BigInt)" });
+        }
+        return numPrim();
+      }
       return foldParseInt(s.v, radix.v);
     }
     case "parseFloat": {
       const s = toStringLitArg(a0Arg);
-      if (!s.lit) return numPrim();
+      if (!s.lit) {
+        // Bug 26：抽象首参 ToPrimitive 可能成 Symbol → may
+        if (mayCoerceThrowOperand(a0Arg)) {
+          recordMayThrow({ kind: "TypeError", cause: "Number.parseFloat argument ToString may throw (Symbol)" });
+        }
+        return numPrim();
+      }
       return foldParseFloat(s.v);
     }
     case "MAX_SAFE_INTEGER":

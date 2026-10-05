@@ -163,16 +163,20 @@ export const formatAge = fn({ durationMs: number() }, string());
 export const parseAge = fn({ text: string() }, number());
 ```
 
-退役后的 check 脸（示例级；此处 native `ms()` 未被完整 harvest）：
+退役后的 check 脸（示例级；native `ms()` 内部未被完整 harvest——`parseAge` 折叠为精确 `undefined`，那是值证据而非引擎债（Bug 22）；现存义务是两条 L2 may-throw 警告）：
 
 ```text
 signatures
-  formatAge(durationMs: number) => string
-  parseAge(text: string) => undefined
+  formatAge(durationMs: number) => string  throws Error
+  parseAge(text: string) => undefined  throws Error
 
 issues
-  [WARNING parseAge] parseAge: signature has true unknown (inference failed)  (nudo:unknown-inference)
-      → add @nudo:case / env mock / refine, or confirm the body is algebraically evaluable
+  [WARNING L10 formatAge] formatAge (export): may throw Error  (nudo:entry-may-throw)
+      → ToString coercion of abstract operand (Symbol) → @nudo:throws TypeError  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch
+      fix:  nudo contract --draft  (emit a sidecar draft you can edit)
+  [WARNING L19 parseAge] parseAge (export): may throw Error  (nudo:entry-may-throw)
+      → computed member on nullish (union arm) → @nudo:throws TypeError  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch
+      fix:  nudo contract --draft  (emit a sidecar draft you can edit)
 ```
 
 真实退役后的标记：`.nudo/migrate-retired.json`（`typecheck: tsc --noEmit → nudo check src` 已改写，`typescript` 已移除）。

@@ -46,17 +46,24 @@ nudo check user.js
 ```text
 nudo check  user.js
 FAILED
-  1 error · 0 warning · 0 info · 2 fn
+  2 error · 0 warning · 0 info · 3 fn
 
 signatures
   getName(user: any) => any  throws TypeError
-  subtract(a: any, b: any) => number
+  subtract(a: any, b: any) => number  throws TypeError
+  clamp(n: any, lo: any, hi: any) => any
 
 issues
   [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
       actual:   getName(user: any) => any    throws TypeError
       expected: entry total, or @nudo:throws / try-catch
-      → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
+      → property 'name' on any (unconstrained value) → @nudo:throws TypeError  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch
+      fix:  nudo contract --draft  (emit a sidecar draft you can edit)
+  [ERROR L5 subtract] subtract (export): may throw TypeError  (nudo:entry-may-throw)
+      actual:   subtract(a: any, b: any) => number    throws TypeError
+      expected: entry total, or @nudo:throws / try-catch
+      → ToNumber coercion of abstract operand → @nudo:throws TypeError  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch
+      fix:  nudo contract --draft  (emit a sidecar draft you can edit)
 ```
 
 > `L1` in `[ERROR L1 getName]` is the **line number** (the function is declared on line 1 here) — the layer is L2 (`nudo:entry-may-throw`). `L#` is always a location, never a contract layer.
@@ -166,8 +173,10 @@ Key lines from the report — the full transcript lives in [Default output](./ch
 ```text
 signatures
   getName(user: any) => any  throws TypeError
+  subtract(a: any, b: any) => number  throws TypeError
 issues
   [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
+  [ERROR L5 subtract] subtract (export): may throw TypeError  (nudo:entry-may-throw)
 ```
 
 > Reminder: `L1` in the header is the **line number** — this diagnostic's layer is L2.

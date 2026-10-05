@@ -75,9 +75,9 @@ changing the signature of any row below is **major**.
 | `$add`…`$pow`, `$eq`…`$ge`, `$neg`/`$not`/`$typeof`, `$join` | operator runtime | **public** |
 | `$fork`, `$for`, `$forIter`, `$while`, `$whileSeq`, `$switch`, `$nullishTest` | control-flow lowering | **public** |
 | `$arr`, `$idx`, `$idxSet`, `$len`, `$arrMutContainer`, `$copy`, `fillTuple`, `$arrWithHoles`, `$arguments`, `isArrMutator` | array runtime | **public** |
-| `$obj`, `$get`, `$set`, `$del`, `$spread`, `$objRest`, `$arrRest`, `$concat`, `$elems` | object / member runtime | **public** |
+| `$obj`, `$get`, `$set`, `$del`, `$spread`, `$objRest`, `$arrRest`, `$concat`, `$elems`, `$tpl` | object / member runtime | **public** |
 | `$fnVal`, `$rawThis`, `$lit`, `asAbsVal`, `$classExpr`, `$instanceof`, `$in` | value / class runtime | **public** |
-| `$async`, `$await`, `$asyncReturn`, `$gen`, `$yield` | async / generator | **public** |
+| `$async`, `$await`, `$asyncReturn`, `$gen`, `$yield`, `$yieldStar` | async / generator | **public** |
 | `$throw`, `$catchVal`, `$loopReturn`, `$loopBreak`, `$loopContinue`, `NudoReturn`, `NudoLoopSignal`, `NudoThrow` | control-signal / throw | **public** |
 | `$callNamed`, `$assignRecord`, `$recordBinding`, `EvalCallRecord`, `setEvalCallCollector` | call-site recording for analyze | **public** (additive) |
 | `runTranspiled`, `runtimeImportOf` | execution entry | **public** |

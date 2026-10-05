@@ -6,9 +6,10 @@ import { abs, litValue, numLit, strLit, boolLit, unknown } from "../abs.ts";
 import { objOf } from "../objects.ts";
 import { undefAbs } from "../hof.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
-import { errorTypeAbs } from "../exec/may-throw.ts";
+import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
 import { pTrue } from "../pred.ts";
-import { boolPrim, str } from "./shared.ts";
+import { boolPrim, str, mayCoerceThrowOperand } from "./shared.ts";
+import { isSymbolAbs } from "../symbol-id.ts";
 
 export function evalRegExpCtor(args: Abs[]): Abs {
   // 字面量实参真构造验证（非法 pattern/flags 硬抛）；抽象/RegExp 实例保守
@@ -45,25 +46,61 @@ export function regexBrandAbsFrom(pattern: string, flags: string): Abs {
 /**
  * new RegExp(pattern, flags) 字面量真构造验证（$new 与 evalRegExpCtor 共用）：
  * - 无参 → /(?:)/（原生 source 归一）
- * - pattern 非字面量（抽象/RegExp 实例）→ undefined（调用方保守）
- * - symbol pattern / flags → TypeError（ToString 抛）
+ * - symbol pattern/flags → 确定 TypeError（ToString 抛；shape 判定——Symbol()
+ *   无 lit 项，原先的 lit 分支内检查是死代码，Bug 29/52）
  * - 非法 pattern / 非法 flags（含 number/null/boolean flags 的 ToString）
  *   → SyntaxError；合法 → 精确 brand（source/flags 取真构造结果）
+ * - 抽象 pattern/flags → undefined（调用方保守）+ 档位打点（见各分支）：
+ *   obj/fn/brand/sum/any → may TypeError（自定义 coercer 可能产 Symbol）；
+ *   抽象 prim string pattern → ToString total（非法 pattern 的 SyntaxError
+ *   面不计）；抽象 prim string flags → may SyntaxError；抽象 prim
+ *   number/bool/bigint flags → ToString 恒非法 flags → 确定 SyntaxError
+ *   （node 实测 new RegExp('a', 1n) → SyntaxError）
  */
 export function tryMakeRegexAbs(args: Abs[]): Abs | undefined {
   const a0 = args[0];
   if (!a0) return regexBrandAbsFrom("(?:)", "");
-  if (a0.term?.op !== "lit") return undefined;
-  const pv = a0.term.value;
-  if (typeof pv === "symbol") throw new NudoThrow(errorTypeAbs("TypeError"));
+  // Bug 29：pattern symbol → 确定 TypeError（原生先 ToString pattern）
+  if (isSymbolAbs(a0)) throw new NudoThrow(errorTypeAbs("TypeError"));
   const fAbs = args[1];
-  if (fAbs && fAbs.term?.op !== "lit") return undefined; // 抽象 flags：保守
-  const fvR = fAbs ? litValue(fAbs) : undefined;
-  const fv = fvR?.ok ? fvR.value : undefined;
-  if (typeof fv === "symbol") throw new NudoThrow(errorTypeAbs("TypeError"));
-  const flags = fv === undefined ? "" : String(fv);
+  // Bug 52：flags symbol → 确定 TypeError
+  if (fAbs && isSymbolAbs(fAbs)) throw new NudoThrow(errorTypeAbs("TypeError"));
+  // 字面量 flags 先真构造校验（非法 flags 与 pattern 无关恒抛——抽象 pattern
+  // 也不得吞掉：new RegExp(x, "x") 原生确定 SyntaxError）
+  let litFlags: string | undefined;
+  let flagsAbstract = false;
+  if (fAbs) {
+    if (fAbs.term?.op !== "lit") {
+      flagsAbstract = true;
+    } else {
+      const fvR = litValue(fAbs);
+      const fv = fvR?.ok ? fvR.value : undefined;
+      litFlags = fv === undefined ? "" : String(fv);
+      try {
+        new RegExp("", litFlags);
+      } catch {
+        throw new NudoThrow(errorTypeAbs("SyntaxError"));
+      }
+    }
+  }
+  if (a0.term?.op !== "lit") {
+    // 抽象 pattern：RegExp brand 豁免（原生 species 构造不走 ToString）；
+    // obj/fn/brand/sum/any → may TypeError；抽象 prim ToString total
+    if (!isRegExpBrandAbs(a0)) {
+      if (mayCoerceThrowOperand(a0) || a0.shape.k === "tuple" || a0.shape.k === "arr") {
+        recordMayThrow({ kind: "TypeError", cause: "RegExp pattern ToString may throw (Symbol)" });
+      }
+    }
+    if (flagsAbstract) noteAbstractFlags(fAbs);
+    return undefined;
+  }
+  if (flagsAbstract) {
+    noteAbstractFlags(fAbs);
+    return undefined;
+  }
+  const pv = a0.term.value;
   try {
-    const r = new RegExp(String(pv), flags);
+    const r = new RegExp(String(pv), litFlags ?? "");
     return regexBrandAbsFrom(r.source, r.flags);
   } catch (e) {
     if (e instanceof SyntaxError) throw new NudoThrow(errorTypeAbs("SyntaxError"));
@@ -71,8 +108,49 @@ export function tryMakeRegexAbs(args: Abs[]): Abs | undefined {
   }
 }
 
+/** RegExp brand 判定（species 构造路径不走 ToString） */
+function isRegExpBrandAbs(x: Abs): boolean {
+  return x.shape.k === "brand" && (x.shape as { name?: string }).name === "RegExp";
+}
+
+/** 抽象 flags 档位打点（Bug 52） */
+function noteAbstractFlags(fAbs: Abs | undefined): void {
+  if (!fAbs) return;
+  const k = fAbs.shape as { k?: string; type?: string };
+  if (k.k === "prim") {
+    if (k.type === "string") {
+      recordMayThrow({ kind: "SyntaxError", cause: "RegExp flags may be invalid" });
+    } else {
+      // 抽象 number/bool/bigint：ToString 恒非法 flags → 确定 SyntaxError
+      throw new NudoThrow(errorTypeAbs("SyntaxError"));
+    }
+    return;
+  }
+  if (mayCoerceThrowOperand(fAbs) || k.k === "tuple" || k.k === "arr") {
+    recordMayThrow({ kind: "TypeError", cause: "RegExp flags ToString may throw (Symbol)" });
+  }
+}
+
+/**
+ * Bug 57：test/exec 的 subject ToString 校验（evalRegExpMethod 与 evaluator
+ * execRegexBrand/$reStateCall 三面共用）：
+ * - symbol-prim（无 lit 项）→ 确定 TypeError（node 实测 /a/.test(Symbol()) 抛）
+ * - 字面量 / 抽象 prim（string/number/bool/bigint——1n ToString 合法）→ total
+ * - obj/fn/brand/sum/any/unknown/tuple/arr（term 非 lit）→ may：自定义 coercer
+ *   可能产 Symbol；数组 join 元素可能为 symbol（node 实测 /a/.test([Symbol()]) 抛）
+ */
+export function validateRegexSubjectArg(subject: Abs | undefined): void {
+  if (!subject) return;
+  if (isSymbolAbs(subject)) throw new NudoThrow(errorTypeAbs("TypeError"));
+  if (subject.term?.op === "lit") return;
+  if (subject.shape.k === "prim") return;
+  recordMayThrow({ kind: "TypeError", cause: "RegExp test/exec subject ToString may throw (Symbol)" });
+}
+
 export function evalRegExpMethod(name: string, recv: Abs, args: Abs[]): Abs | undefined {
   if (name === "test" || name === "exec") {
+    // Bug 57：subject ToString 校验（shape 先于 litValue 提取）
+    validateRegexSubjectArg(args[0]);
     // 字面量 brand（source/flags 槽）+ 字面量 subject → 真执行（与 evaluator 同轨）
     const inner =
       recv.shape.k === "brand" && recv.shape.name === "RegExp"

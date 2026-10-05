@@ -6,7 +6,9 @@ import { abs, litValue, numLit, strLit, boolLit, unknown } from "../abs.ts";
 import { joinAbs } from "../objects.ts";
 import { TUPLE_MATERIALIZE_CAP } from "../containers.ts";
 import { isMapAbs, isSetAbs, setElementsAbs, mapEntriesAbs } from "../collections.ts";
-import { applyCallbackValue, undefAbs, asAbs } from "../hof.ts";
+import { applyCallbackValue, undefAbs, asAbs, validateCallableArg } from "../hof.ts";
+import { isNullishLitAbs } from "../surface.ts";
+import { recordMayThrow } from "../may-throw.ts";
 import { matchIterElements } from "../exec/match-iter.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs } from "../exec/may-throw.ts";
@@ -31,6 +33,23 @@ export function makeArrayCtorAbs(args: Abs[]): Abs {
   }
   const a0 = args[0]!;
   if (a0.term?.op !== "lit") {
+    // Bug 50：Array(len) 仅 Number 实参走 length 路径（ToArrayLength——
+    // 负数/非整数/超界 → RangeError）；symbol/bigint/obj/字符串实参原生是
+    // 单元素数组（node 实测 Array(Symbol()) → [Symbol()]，total）。
+    // may 打点仅对「可能是 Number」的形态：any/抽象 prim number/含 number 臂 sum。
+    const mayBeNumber = (m: Abs): boolean =>
+      m.shape.k === "any" ||
+      m.shape.k === "unknown" ||
+      (m.shape.k === "prim" && (m.shape as { type?: string }).type === "number");
+    if (
+      mayBeNumber(a0) ||
+      (a0.shape.k === "sum" && (a0.shape as { members: Abs[] }).members.some(mayBeNumber))
+    ) {
+      recordMayThrow({
+        kind: "RangeError",
+        cause: "Array length may be invalid (negative or non-integer)",
+      });
+    }
     return abs({ k: "arr", element: unknown }, undefined, undefined, "partial");
   }
   const nR = litValue(a0);
@@ -84,6 +103,28 @@ export function evalArrayStatic(name: string, args: Abs[]): Abs | undefined {
       //（那是 Array.of 的语义）。mapFn 逐位应用 (el, i)——副作用必须落地：
       // 数组 hole 位置按迭代器 Get 语义 yield undefined（实槽）、字符串按
       // code point、Set/Map 走条目表、array-like 按 length 槽逐位（元素 undefined）。
+      // Bug 49：? GetMethod(mapFn) 前置校验（规范先于迭代——空接收者也要抛）：
+      // 缺省/严格 undefined → 无 mapper；null/prim/非可调用 → 确定 TypeError；
+      // any/unknown/抽象 → may TypeError
+      validateCallableArg(args[1], "Array.from mapper may not be callable", {
+        undefinedOk: true,
+      });
+      // Bug 28：receiver 经 GetMethod(items, @@iterator) → ToObject——nullish
+      // 字面量/缺省 → 确定 TypeError；any/unknown/含 nullish 臂 union → may
+      if (!a0 || isNullishLitAbs(a0)) throw new NudoThrow(errorTypeAbs("TypeError"));
+      {
+        const rk = a0.shape.k;
+        if (
+          rk === "any" ||
+          rk === "unknown" ||
+          (rk === "sum" && (a0.shape as { members: Abs[] }).members.some((m) => isNullishLitAbs(m)))
+        ) {
+          recordMayThrow({
+            kind: "TypeError",
+            cause: "Array.from receiver may not be iterable",
+          });
+        }
+      }
       const mapFn = args[1];
       const hasMapFn = mapFn !== undefined && mapFn !== null;
       const mapOne = (el: Abs, i: Abs): Abs => {
@@ -162,12 +203,45 @@ export function evalArrayStatic(name: string, args: Abs[]): Abs | undefined {
 }
 
 /**
+ * Bug 36：join/toString 逐元素 ToString 校验（$invoke join 分支与一等 join 共用）：
+ * symbol 元素 → 确定 TypeError（hard）；any/真 unknown/含 symbol 臂 union 元素 →
+ * may TypeError。hole 位跳过（→ ""，ToString 不触发）。合法路径值域不变。
+ */
+export function validateJoinElements(recv: Abs): void {
+  const s = recv.shape;
+  const isTuple = s.k === "tuple";
+  const holes = isTuple ? (s as { holes?: number[] }).holes ?? [] : [];
+  const els = isTuple
+    ? (s as { elements: Abs[] }).elements
+    : s.k === "arr"
+      ? [s.element]
+      : [];
+  for (let i = 0; i < els.length; i++) {
+    if (holes.includes(i)) continue;
+    const el = els[i]!;
+    if (isSymbolAbs(el)) throw new NudoThrow(errorTypeAbs("TypeError"));
+    const k = el.shape.k;
+    if (
+      k === "any" ||
+      (k === "unknown" && el.term?.op !== "lit") ||
+      (k === "sum" && (el.shape as { members: Abs[] }).members.some((m) => isSymbolAbs(m)))
+    ) {
+      recordMayThrow({
+        kind: "TypeError",
+        cause: "array join element may be a symbol (ToString throws)",
+      });
+    }
+  }
+}
+
+/**
  * Array.prototype.toString = join(",")：全字面量元素折叠；含 symbol 元素 TypeError。
  * 与 exec/class.ts $invoke 的 toString 分支同口径（.call 路径共用）。
  */
 export function arrayJoinToString(recv: Abs): Abs {
   const s = recv.shape;
   if (s.k === "tuple") {
+    validateJoinElements(recv);
     const holes = s.holes ?? [];
     const parts: string[] = [];
     for (let i = 0; i < s.elements.length; i++) {
@@ -189,6 +263,61 @@ export function arrayJoinToString(recv: Abs): Abs {
   return str();
 }
 
+/**
+ * Array.prototype.join(sep)：字面量分隔符 + 全字面量元组 → 精确折叠。
+ * 返回 undefined = 不可折叠（调用方保守 path-string）。分隔符分类按原生
+ * ToString：absent/undefined ≡ ","；null → "null"；string/number/boolean/bigint
+ * 字面量 → String(v)；symbol prim → 确定 TypeError；any → may TypeError
+ * （可能是 Symbol）且不折叠；对象/抽象 → 不折叠。
+ * 元素侧与 arrayJoinToString 同口径（hole → ""，nullish → ""，symbol →
+ * 确定 TypeError，非 lit → 不折叠）。
+ */
+export function arrayJoinWithSep(
+  recv: Abs,
+  sepAbs: Abs | undefined,
+): Abs | undefined {
+  const s = recv.shape;
+  if (s.k !== "tuple") return undefined;
+  let sep: string;
+  if (sepAbs === undefined) {
+    sep = ",";
+  } else if (isSymbolAbs(sepAbs)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  } else if (sepAbs.shape.k === "any") {
+    recordMayThrow({
+      kind: "TypeError",
+      cause: "join separator ToString of abstract operand",
+    });
+    return undefined;
+  } else {
+    const r = litValue(sepAbs);
+    if (!r.ok) return undefined;
+    const v = r.value;
+    if (v === undefined) sep = ",";
+    else if (v === null) sep = "null";
+    else if (typeof v === "object") return undefined;
+    else sep = String(v);
+  }
+  validateJoinElements(recv);
+  const holes = s.holes ?? [];
+  const parts: string[] = [];
+  for (let i = 0; i < s.elements.length; i++) {
+    if (holes.includes(i)) {
+      parts.push("");
+      continue;
+    }
+    const el = s.elements[i]!;
+    if (isSymbolAbs(el)) throw new NudoThrow(errorTypeAbs("TypeError"));
+    const t = el.term;
+    if (t?.op !== "lit") return undefined;
+    const v = t.value;
+    if (v === null || v === undefined) parts.push("");
+    else if (typeof v === "object") return undefined;
+    else parts.push(String(v));
+  }
+  return strLit(parts.join(sep));
+}
+
 /** Array.prototype.toString / toLocaleString / join 一等函数（bindThis 注入 receiver） */
 export function arrayMethodAbs(name: "toString" | "toLocaleString" | "join"): Abs {
   return absFunction(["thisArg"], {
@@ -196,9 +325,16 @@ export function arrayMethodAbs(name: "toString" | "toLocaleString" | "join"): Ab
     bindThis: true,
     apply: (a) => {
       const recv = a[0] ?? undefAbs();
-      // join 带可选分隔符：不假精确折叠，保持 path string（与 $invoke 同口径）
-      if (name === "join") return str();
+      // join 带可选分隔符：字面量分隔符 + 全字面量元组精确折叠，其余
+      // 保守 path string（与 $invoke 同口径）。Bug 36：一等 join 路径
+      // 同样逐元素校验（symbol 确定 TypeError / 抽象 may）
+      if (name === "join") {
+        const folded = arrayJoinWithSep(recv, a[1]);
+        if (folded !== undefined) return folded;
+        validateJoinElements(recv);
+        return str();
+      }
       return arrayJoinToString(recv);
     },
-  });
+  }, { ctor: false }); // Bug 9：内建原型方法不可 new
 }

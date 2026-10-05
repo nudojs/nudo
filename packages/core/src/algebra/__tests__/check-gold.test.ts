@@ -83,18 +83,23 @@ const r = add(1, 2);
     expectOk: true,
   },
   {
+    // Bug 8（wave 3）：`x + 1`（x:any）原生 may TypeError（x=1n / Symbol()）
+    // —— L2 现如实报 entry-may-throw；本用例意图（导出函数列入 signatures）不变。
     name: "ESM export function still listed",
     source: `
 export function scale(x) { return x + 1; }
 `,
-    expectOk: true,
+    expectOk: false,
+    expectCode: "nudo:entry-may-throw",
   },
   {
+    // Bug 8（wave 3）：同上——`id + 1`（id:any）may TypeError；listing 意图不变。
     name: "async function listed",
     source: `
 export async function load(id) { return id + 1; }
 `,
-    expectOk: true,
+    expectOk: false,
+    expectCode: "nudo:entry-may-throw",
   },
   {
     name: "class constructor listed",

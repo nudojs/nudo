@@ -163,16 +163,20 @@ export const formatAge = fn({ durationMs: number() }, string());
 export const parseAge = fn({ text: string() }, number());
 ```
 
-Post-retire check face (example-scale; native `ms()` is not fully harvested here):
+Post-retire check face (example-scale; native `ms()` internals are not fully harvested — `parseAge` folds to precise `undefined`, which is value evidence, not engine debt (Bug 22); the live obligations are the two L2 may-throw warnings):
 
 ```text
 signatures
-  formatAge(durationMs: number) => string
-  parseAge(text: string) => undefined
+  formatAge(durationMs: number) => string  throws Error
+  parseAge(text: string) => undefined  throws Error
 
 issues
-  [WARNING parseAge] parseAge: signature has true unknown (inference failed)  (nudo:unknown-inference)
-      → add @nudo:case / env mock / refine, or confirm the body is algebraically evaluable
+  [WARNING L10 formatAge] formatAge (export): may throw Error  (nudo:entry-may-throw)
+      → ToString coercion of abstract operand (Symbol) → @nudo:throws TypeError  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch
+      fix:  nudo contract --draft  (emit a sidecar draft you can edit)
+  [WARNING L19 parseAge] parseAge (export): may throw Error  (nudo:entry-may-throw)
+      → computed member on nullish (union arm) → @nudo:throws TypeError  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch
+      fix:  nudo contract --draft  (emit a sidecar draft you can edit)
 ```
 
 Marker after a real retire: `.nudo/migrate-retired.json` (rewritten `typecheck: tsc --noEmit → nudo check src`, `typescript` removed).

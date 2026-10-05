@@ -66,13 +66,16 @@ describe("compiled body closure injection (件 C)", () => {
     env.fns.set("fac", { params: ["n"], body: decl.body, async: false });
     const f = absFunction(["n"], { body: decl.body, env });
     expect(litValue($call(f, [numLit(5)]))).toEqual({ ok: true, value: 120 });
-    // 无界自递归：cycle 键命中 → opaque，不爆栈
+    // 无界自递归：cycle 键命中 → opaque，不爆栈。
+    // f 实参必须是函数值：wave-1 起 $call 对 prim 字面量 callee 抛
+    // TypeError（原生语义），number 实参会在 f() 处先行抛出、测不到递归预算
     const file2 = parseSource(`function forever(f) { f(); return forever(f); }`);
     const decl2 = (file2.program.body as Array<{ type: string; params: Array<{ name?: string }>; body: never }>)[0]!;
     const env2 = emptyEnv();
     env2.fns.set("forever", { params: ["f"], body: decl2.body, async: false });
     const forever = absFunction(["f"], { body: decl2.body, env: env2 });
-    const r2 = $call(forever, [numLit(1)]);
+    const noop = absFunction([], { body: declOf("return 1;", "noop").body, env: emptyEnv() });
+    const r2 = $call(forever, [noop]);
     expect(r2.conf).toBe("opaque");
   });
 });

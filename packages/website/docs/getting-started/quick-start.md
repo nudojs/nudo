@@ -15,7 +15,7 @@ Paste this against any existing JavaScript file (a util you already trust):
 npx nudojs check /path/to/your/util.js
 ```
 
-You should immediately see **signatures** (e.g. `scale(x: any) => number | string`), followed by either `(no issues)` or a list of L1/L2 findings. Entry params display as `any`, not `unknown` — unconstrained means unconstrained, not inference failure. The rest of this page explains what you just saw.
+You should immediately see **signatures** (e.g. `scale(x: any) => number | string  throws TypeError`), followed by either `(no issues)` or a list of L1/L2 findings. Entry params display as `any`, not `unknown` — unconstrained means unconstrained, not inference failure. The rest of this page explains what you just saw.
 :::
 
 > **Trust boundary.** Nudo analyzes by **executing** the target code (Abs semantics, in-process evaluation). Do not run `nudo check` / `nudo test` on untrusted code; in CI this is the same trust as running the project's tests.
@@ -47,17 +47,21 @@ npx nudojs check calc.js
 
 ```text
 nudo check  calc.js
-OK
-  0 error · 0 warning · 0 info · 2 fn
+FAILED
+  2 error · 0 warning · 0 info · 2 fn
 
 signatures
-  scale(x: any) => number | string
-  formatName(first: any, last: any) => string
+  scale(x: any) => number | string  throws TypeError
+  formatName(first: any, last: any) => string  throws TypeError
 
-(no issues)
+issues
+  [ERROR L1 scale] scale (export): may throw TypeError  (nudo:entry-may-throw)
+  [ERROR L5 formatName] formatName (export): may throw TypeError  (nudo:entry-may-throw)
 ```
 
 That `number | string` is honest JavaScript, not a bug: an unconstrained (`any`) operand to `+` can drive numeric addition *or* string concatenation (`"7" + 1`), so Nudo keeps both branches. Constrain `x` — a sidecar contract or call-site evidence — and the union collapses to `number`. See [Language semantics](../concepts/semantics.md).
+
+The two L2 findings are the honest flip side of the same coin: an unconstrained `+` operand's ToPrimitive can throw `TypeError` (native `Symbol` coercion), so `check` flags both exports until you constrain the params (next section) or declare `@nudo:throws TypeError`.
 
 Optional debug cases (`nudo test` — not the product gate):
 
@@ -79,10 +83,13 @@ Nudo executed the functions with the arguments it actually saw. Unconstrained en
 Create `calc.nudo.js` next to the source:
 
 ```javascript verify-sidecar
-import { number, fn } from "@nudojs/core";
+import { number, string, fn } from "@nudojs/core";
 
 export const scale = fn({ x: number().gt(0) }, number());
+export const formatName = fn({ first: string(), last: string() }, string());
 ```
+
+Both exports are constrained — `formatName`'s `+` operands become `string`, clearing its L2 may-throw finding alongside `scale`'s.
 
 ## 4. Gate with check
 
@@ -105,7 +112,7 @@ FAILED
 
 signatures
   scale(x: number) => number
-  formatName(first: any, last: any) => string
+  formatName(first: string, last: string) => string
 
 issues
   [ERROR L12 scale] scale[x]: argument ⊭ precondition  (nudo:constraint-violated)
@@ -139,7 +146,7 @@ OK
 
 signatures
   scale(x: number) => number
-  formatName(first: any, last: any) => string
+  formatName(first: string, last: string) => string
 
 (no issues)
 ```

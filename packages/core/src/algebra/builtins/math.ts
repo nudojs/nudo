@@ -16,8 +16,10 @@ import { numericBounds, type NumBounds } from "../arithmetic.ts";
 import { makeSum } from "../objects.ts";
 import { currentExecPhi } from "../exec/runtime/state.ts";
 import { numPrim } from "./shared.ts";
+import { isBigintPrimAbs, mayCoerceThrowOperand } from "./shared.ts";
+import { isSymbolAbs as isSymbolPrim } from "./symbol.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
-import { errorTypeAbs } from "../exec/may-throw.ts";
+import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
 import { noteAbsTruncation, MATH_FOLD_ERROR_LABEL } from "../call-budget.ts";
 
 /**
@@ -27,7 +29,12 @@ import { noteAbsTruncation, MATH_FOLD_ERROR_LABEL } from "../call-budget.ts";
  * 空实参（args 为空）由原生 ToNumber(undefined) 处理（min()→+Inf、abs()→NaN）。
  */
 function coerceMathArg(a: Abs | undefined): number | undefined | "throw" {
-  if (!a || a.term?.op !== "lit") return undefined;
+  if (!a || a.term?.op !== "lit") {
+    // Bug 25：shape 先于 lit——prim symbol/bigint（无 lit 项，Symbol()/BigInt(x)
+    // 产物）ToNumber 恒抛 TypeError（node 实测 Math.abs(1n)/Math.floor(Symbol())）
+    if (a && (isSymbolPrim(a) || isBigintPrimAbs(a))) return "throw";
+    return undefined;
+  }
   const v = a.term.value;
   if (typeof v === "number") return v;
   if (typeof v === "string") return Number(v);
@@ -282,6 +289,11 @@ export function evalMathMethod(name: string, args: Abs[]): Abs | undefined {
       const n = coerceMathArg(a);
       if (n === "throw") throw new NudoThrow(errorTypeAbs("TypeError"));
     }
+    // Bug 25：抽象实参（any/obj/…）ToPrimitive 后可能成 Symbol/BigInt 值 →
+    // ToNumber may TypeError（node 实测 Math.max({valueOf(){return 1n}}) 抛）
+    if (args.some((a) => mayCoerceThrowOperand(a))) {
+      recordMayThrow({ kind: "TypeError", cause: "Math operand ToNumber may throw (Symbol/BigInt)" });
+    }
     return minMaxAbs(name, args);
   }
 
@@ -308,6 +320,10 @@ export function evalMathMethod(name: string, args: Abs[]): Abs | undefined {
     if (args[0]) {
       const c2 = coerceMathArg(args[0]);
       if (c2 === "throw") throw new NudoThrow(errorTypeAbs("TypeError"));
+      // Bug 25：抽象操作数 ToNumber may TypeError（同 min/max 口径）
+      if (mayCoerceThrowOperand(args[0])) {
+        recordMayThrow({ kind: "TypeError", cause: "Math operand ToNumber may throw (Symbol/BigInt)" });
+      }
       return roundingAbs(name, args[0]);
     }
     return numPrim();
@@ -319,7 +335,13 @@ export function evalMathMethod(name: string, args: Abs[]): Abs | undefined {
   const nums: number[] = [];
   for (const a of args) {
     const n = coerceMathArg(a);
-    if (n === undefined) return numPrim();
+    if (n === undefined) {
+      // Bug 25：抽象操作数 ToNumber may TypeError（symbol/bigint 载体）
+      if (mayCoerceThrowOperand(a)) {
+        recordMayThrow({ kind: "TypeError", cause: "Math operand ToNumber may throw (Symbol/BigInt)" });
+      }
+      return numPrim();
+    }
     if (n === "throw") throw new NudoThrow(errorTypeAbs("TypeError"));
     nums.push(n);
   }

@@ -31,7 +31,7 @@ import { stripStaticExportDecls } from "./export-names.ts";
 import { errorTypeAbs, throwPayloadOf } from "./may-throw.ts";
 import { drainPromiseMicros } from "../builtins.ts";
 import { sourceHasCjsExports } from "../code-text.ts";
-import { isNudoThrow, isNudoReturn, $isForkExit, runWithLoopExits, takeLoopExits, takeThrowExits, asAbsVal } from "./runtime.ts";
+import { isNudoThrow, isNudoReturn, $isForkExit, runWithLoopExits, takeLoopExits, takeThrowExits, asAbsVal, withNewTargetReset } from "./runtime.ts";
 import { $call } from "./call.ts";
 import {
   runWithCollectorScope,
@@ -304,7 +304,14 @@ function bindImport(
   const absCallable = (v: Abs): unknown => {
     // fn Abs → JS 可调用；class/其它 Abs 原样（供 $new / $get）
     if (v && typeof v === "object" && "shape" in v) {
-      if ((v as Abs).shape.k === "fn") return (...args: Abs[]) => $call(v, args);
+      if ((v as Abs).shape.k === "fn") {
+        // 挂 __nudoAbsFn：$new 收到 wrapper 时回 Abs 派发——否则 wrapper 是
+        // 箭头（hostFnCtorFacet → 不可构造），imported 构造函数被误判
+        // Bug 9 假抛（`new G()` 原生合法）。
+        const w = (...args: Abs[]) => $call(v, args);
+        (w as { __nudoAbsFn?: Abs }).__nudoAbsFn = v;
+        return w;
+      }
       return v;
     }
     return v;
@@ -789,7 +796,8 @@ function callTranspiledExportFullInner(
     );
     return runWithLoopExits(() => {
       try {
-        const invoke = () => (fn as (...a: Abs[]) => unknown)(...callArgs);
+        const invoke = () =>
+          withNewTargetReset(() => (fn as (...a: Abs[]) => unknown)(...callArgs));
         const r = opts?.phi ? withExecPhi(opts.phi, invoke) : invoke();
         // 微任务（then/catch 回调）在同步返回值算完后才跑
         drainPromiseMicros();

@@ -257,16 +257,18 @@ verify_quote_from_page cli-reference-check-quotes packages/website/docs/api/cli-
 # the quoted block and the FAQ's explanation are the same run.
 verify_scenario troubleshooting-day0 packages/website/docs/getting-started/troubleshooting.md day0 check \
   'scale(x: any) => number | string' \
-  '0 error · 0 warning · 0 info · 2 fn'
+  '2 error · 0 warning · 0 info · 2 fn'
 
 # case-study-retire quotes real retire examples (files gated by verify:examples).
 verify_example_quote case-study-quotes-migrate packages/website/docs/guides/case-study-retire.md check docs/examples/migrate/after/src/math.js \
   'OK' \
   'signatures'
+# （2e5aeb35 起：Bug 22 精确 undefined 不再报 unknown-inference；
+#  原生 ms() 未完全 harvested 的面是 L2 entry-may-throw 警告）
 verify_example_quote case-study-quotes-retire-real packages/website/docs/guides/case-study-retire.md check docs/examples/retire-real/after/src/age.js \
   'formatAge(durationMs: number) => string' \
   'parseAge(text: string) => undefined' \
-  'nudo:unknown-inference'
+  'nudo:entry-may-throw'
 verify_example_quote case-study-quotes-retire-debug packages/website/docs/guides/case-study-retire.md check docs/examples/retire-debug/after/src/logger.js \
   'createLogger(namespace: any) => unknown'
 
@@ -277,7 +279,7 @@ verify_check quick-start packages/website/docs/getting-started/quick-start.md \
   'nudo:constraint-violated' \
   'expected: x > 0' \
   'scale(x: number) => number' \
-  'formatName(first: any, last: any) => string'
+  'formatName(first: string, last: string) => string'
 
 # check: L2 entry may-throw gates; subtract body arith yields number.
 verify_check check packages/website/docs/guides/check.md \
@@ -453,9 +455,10 @@ verify_check error-faces packages/website/docs/guides/error-faces.md \
 # sidecar (fn bindings auto-bind by name; builders imported once, in block 1).
 # Pins mirror the per-scenario text blocks — every issue entry on the page is a
 # verbatim slice of this single run. Exit code not asserted: the page teaches
-# failing gates on purpose (11 errors across the ten scenarios).
+# failing gates on purpose (12 errors across the ten scenarios —
+# 2e5aeb35 起场景 6 的无约束 + 亦记 L2 entry-may-throw)。
 verify_check errors-vs-typescript packages/website/docs/guides/errors-vs-typescript.md \
-  '11 error · 0 warning · 0 info · 10 fn' \
+  '12 error · 0 warning · 0 info · 10 fn' \
   'setDelay(ms: number) => number' \
   'greet(u: { id: number, name: string }) => string' \
   'inc(x: any) => number | string' \

@@ -55,6 +55,12 @@ export {
   errorBrandAbs,
   evalBuiltinNew,
   evalBuiltinInstanceMethod,
+  makeProxyAbs,
+  makeArrayBufferAbs,
+  makeDataViewAbs,
+  makeUrlAbs,
+  noteBoxedCtorArg,
+  sumHasPrimMember,
 } from "./builtins/error.ts";
 export { evalStringStatic } from "./builtins/string.ts";
 export {

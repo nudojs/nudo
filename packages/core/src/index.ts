@@ -107,7 +107,7 @@ export {
   generalizeAll, generalizeFromAst, generatedExportNames, getAbsProperty,
   getEvalCallCollector, getEvalClass, getFnImpl, getGeneralizeMemoSize,
   getImplicationOracle, getPropFlags, getSlot,
-  getTerm, gt, gtNum, hostBuiltinCtorName, implies, instantiateConstraint,
+  getTerm, gt, gtNum, hostBuiltinCtorName, hostFnCtorFacet, implies, instantiateConstraint,
   instantiateReturn, interfaceDiagCount, interfaceSourceOf,
   interfaceTierOf, isAbsApplyResult, isAbsVal, isArrMutator, isBigPrim, isDefinitelyFalse, makeAbsApplyResult,
   isDefinitelyTrue, isErrorCtorName, isExactLit, isIntFlag, isMapAbs,

@@ -7,7 +7,7 @@ import { abs, bool, boolLit, confJoin, litValue, numLit, unknown, type Confidenc
 import { lit } from "../../term.ts";
 import type { Phi } from "../../pred.ts";
 import { pTrue, and, predEquals } from "../../pred.ts";
-import { absFunction, getFnImpl } from "../../abs-fn.ts";
+import { absFunction, getFnImpl, hostFnCtorFacet } from "../../abs-fn.ts";
 import { NudoThrow, isNudoThrow } from "../nudo-throw.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { errorTypeAbs, $tryMarkSoft, $tryDigestSoft, $tryReleaseSoft, popMayThrowFrame, orphanMayThrowEffects, type MayThrowEffect } from "../may-throw.ts";
@@ -86,13 +86,25 @@ export function asAbsVal(v: unknown): Abs {
   if (typeof v === "function") {
     const n = Math.max(0, v.length);
     const params = Array.from({ length: n }, (_, i) => `arg${i}`);
-    return absFunction(params, {
-      body: noBody,
-      // 与 $fnVal / $callNamed 同边界：callee 的 NudoReturn 不得冒泡成 caller
-      apply: (args) => callAtFunctionBoundary(() => (v as (...a: Abs[]) => Abs)(...args)),
-    });
+    // Bug 9：宿主 generator/async 函数/箭头不可 new——可构造性 facet 进 shape
+    const ctor = hostFnCtorFacet(v);
+    return absFunction(
+      params,
+      {
+        body: noBody,
+        // 与 $fnVal / $callNamed 同边界：callee 的 NudoReturn 不得冒泡成 caller
+        apply: (args) => callAtFunctionBoundary(() => (v as (...a: Abs[]) => Abs)(...args)),
+      },
+      ctor !== undefined ? { ctor } : undefined,
+    );
   }
   return $lit(v);
+}
+
+/** transpile 侧收形入口（instanceof RHS 值等）：host 裸值 / Abs → Abs。
+ *  `$` 前缀是运行时绑定表（runtimeArgNames）的注入约定。 */
+export function $absVal(v: unknown): Abs {
+  return asAbsVal(v);
 }
 
 /**
@@ -124,23 +136,29 @@ export function callAtFunctionBoundary<T>(body: () => T): T {
     for (const x of forwarded) pushThrowExit(x);
   }
 }
-
-/** 函数表达式 → 一等 fn Abs（transpile 侧带真实参数名；异步 body 包 $async）
- *  opts.bindThis：对象方法——$invoke 会把 receiver 作为 impl 首参注入。 */
+/**
+ * 函数表达式 → 一等 fn Abs（transpile 侧带真实参数名；异步 body 包 $async）
+ *  opts.bindThis：对象方法——$invoke 会把 receiver 作为 impl 的首参注入。
+ *  opts.ctor：Bug 9 可构造性 facet（箭头/方法/async/generator → false；
+ *  函数表达式/类表达式值 → true）。 */
 export function $fnVal(
   params: string[],
   impl: (...args: Abs[]) => Abs,
-  opts?: { bindThis?: boolean },
+  opts?: { bindThis?: boolean; ctor?: boolean },
 ): Abs {
-  return absFunction(params, {
-    body: noBody,
-    // bindThis（对象方法）：receiver 走首参注入，无宿主 this；
-    // 非方法 fn：宿主 this 传递（call/apply/bind 的 thisArg 经 $rawThis 进入函数体）
-    apply: opts?.bindThis
-      ? (args) => callAtFunctionBoundary(() => impl(...args))
-      : (args, thisVal) => callAtFunctionBoundary(() => impl.apply(thisVal as unknown as Parameters<typeof impl>[0], args)),
-    ...(opts?.bindThis ? { bindThis: true } : {}),
-  });
+  return absFunction(
+    params,
+    {
+      body: noBody,
+      // bindThis（对象方法）：receiver 走首参注入，无宿主 this；
+      // 非方法 fn：宿主 this 传递（call/apply/bind 的 thisArg 经 $rawThis 进入函数体）
+      apply: opts?.bindThis
+        ? (args) => callAtFunctionBoundary(() => impl(...args))
+        : (args, thisVal) => callAtFunctionBoundary(() => impl.apply(thisVal as unknown as Parameters<typeof impl>[0], args)),
+      ...(opts?.bindThis ? { bindThis: true } : {}),
+    },
+    opts?.ctor !== undefined ? { ctor: opts.ctor } : undefined,
+  );
 }
 
 /**
@@ -168,6 +186,42 @@ export function throwStrictWrite(): never {
 /** const 绑定再赋值（Assignment to constant variable）→ hard TypeError */
 export function $throwConstAssign(): never {
   throw new NudoThrow(errorTypeAbs("TypeError"));
+}
+
+// --- new.target（Bug 79）---
+// 原生语义：new.target 由「调用方式」决定——普通调用恒 undefined；
+// [[Construct]] 调用（$new）体内为被 new 的构造器自身。用求值侧栈近似：
+// $new 压入被构造的类值，$call/$invoke（普通调用面）在调用期间清空并
+// 恢复——构造器体/实例字段初始化器直接读栈（不经调用面）得类值，
+// 嵌套普通函数读得 undefined，与原生一致。
+const newTargetStack: Abs[] = [];
+
+/** $new 专用：进入构造（构造器体 + 实例字段初始化器期间 new.target = 类值） */
+export function pushCtorFrame(cls: Abs): void {
+  newTargetStack.push(cls);
+}
+
+export function popCtorFrame(): void {
+  newTargetStack.pop();
+}
+
+/** `new.target` 读：栈顶类值；普通调用面已清空 → undefined 字面量 */
+export function $newTarget(): Abs {
+  return newTargetStack[newTargetStack.length - 1] ?? $lit(undefined);
+}
+
+/**
+ * 普通调用面（$call / $invoke / 宿主函数 invoke）包裹：调用期间清空
+ * new.target 栈（嵌套函数原生读 undefined），返回后恢复外层构造帧。
+ */
+export function withNewTargetReset<T>(body: () => T): T {
+  if (newTargetStack.length === 0) return body();
+  const saved = newTargetStack.splice(0, newTargetStack.length);
+  try {
+    return body();
+  } finally {
+    newTargetStack.push(...saved);
+  }
 }
 
 /** 生成代码可用的真值判定（undefined = 无法判定）；与 litTruth 同口径 */

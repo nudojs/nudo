@@ -2,20 +2,20 @@
 // or an explicit list reviewed with PUBLIC_API.md + public-api.snapshot.json.
 
 export {
-  $add, $arguments, $arr, $arrMutContainer, $arrRest, $arrWithHoles,
+  $add, $absVal, $arguments, $arr, $arrMutContainer, $arrRest, $arrWithHoles,
   $async, $asyncReturn, $await, $bitand, $bitnot, $bitor, $bitxor,
   $catchVal, $classExpr, $collectionForEach, $concat, $copy, $del, $delRes,
   $div, $dynamicImport, $elems, $eq, $eqLoose, $fnVal, $for, $forInKeys,
-  $forIter, $forOf, $fork, $ge, $gen, $get, $gt, $idx, $idxSet,
+  $forIter, $forOf, $fork, $ge, $gen, $get, $gt, $idx, $idxSet, $iterCheck,
   $importMeta, $in, $instanceof, $instanceofNonIdent, $isBreakTo,
   $isForkExit, $join, $le, $len, $lit, $loopBreak, $loopContinue,
-  $loopReturn, $lt, $mod, $mul, $ne, $neLoose, $neg, $not, $nullishTest, $removeNullish,
+  $loopReturn, $lt, $mod, $mul, $ne, $neLoose, $neg, $not, $nullishTest, $newTarget, $removeNullish,
   $obj, $objAccessor, $objRest, $pow, $pushLoopExit, $rawThis, $regex,
   $rethrowIfNudoReturn, $set, $setProto, $shl, $shr, $spread, $sub, $switch, $throw,
-  $toNumber, $toNumeric, $updateAdd, $updateSub, $tryCurrentMark, $tryDetachSoftCatch, $tryDigestSoftCatch,
+  $toNumber, $toNumeric, $tpl, $updateAdd, $updateSub, $tryCurrentMark, $tryDetachSoftCatch, $tryDigestSoftCatch,
   $tryDiscardSoft, $tryMark, $tryOrphanSoft, $tryPopMark,
   $tryReleaseSoftCatch, $tryReleaseSoftOut, $tryTakeSince, $typeof,
-  $unknown, $ushr, $while, $whileSeq, $yield, DEFAULT_MAX_LOOP_ITERS,
+  $unknown, $ushr, $while, $whileSeq, $yield, $yieldStar, DEFAULT_MAX_LOOP_ITERS,
   NudoLoopSignal, NudoReturn, NudoThrow, asAbsVal, callAtFunctionBoundary,
   clearStaleTermPred, currentExecPhi, fillTuple, isArrMutator,
   isDefinitelyFalse, isDefinitelyTrue, isNudoBreak, isNudoContinue,
@@ -36,7 +36,7 @@ export {
 
 export {
   $class, $invoke, $invokeSuper, $new, $optionalGet, $optionalInvoke,
-  $orDefault, $reStateCall, $setKey, $staticInvoke, $super, $thisGet,
+  $orDefault, $reStateCall, $setKey, $staticInit, $staticInvoke, $super, $thisGet,
   $thisSet, type EvalClassSpec, clearBClasses, getEvalClass, registerEvalClass
 } from "./class.ts";
 

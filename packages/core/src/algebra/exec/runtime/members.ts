@@ -15,7 +15,7 @@ import {
   isObjectProtoBrand, OBJECT_PROTO_METHOD_NAMES, isSymbolAbs,
   symbolDescriptionAbs, objectProtoBrand, builtinCtorAbs, ctorNameOfRecv,
 } from "../../builtins.ts";
-import { errorTypeAbs, type MayThrowEffect } from "../may-throw.ts";
+import { errorTypeAbs, recordMayThrow, type MayThrowEffect } from "../may-throw.ts";
 import { OBJECT_PROTO_NAMES } from "../member-diag.ts";
 import { $call } from "../call.ts";
 import { getEvalClass } from "../class-registry.ts";
@@ -126,13 +126,26 @@ export function findAccessor(
  */
 export function $in(key: Abs, o: Abs): Abs {
   if (o.shape.k === "sum") {
-    // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce
-    const parts = o.shape.members.map((m) => $in(key, m));
+    // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce。
+    // nullish 成员（null|obj 等 union）：整体只 may 抛（守卫分支只读非空侧）
+    // → 该成员折 boolean + may-throw，不得 definite 硬抛。
+    const parts = o.shape.members.map((m) => {
+      if (isNullishLitAbs(m)) {
+        recordMayThrow({
+          kind: "TypeError",
+          cause: "'in' on nullish (union arm): receiver may be a non-object",
+        });
+        return bool();
+      }
+      return $in(key, m);
+    });
     return parts.length ? parts.reduce((a, b) => joinAbs(a, b)) : unknown;
   }
-  // 原生：prim/nullish 接收者抛 TypeError（'a' in 5 → TypeError）
+  // 原生：prim/nullish 接收者抛 TypeError（'a' in 5 → TypeError）。
+  // 确定非对象 → hard NudoThrow（tier 1，调用边界收成 throws），
+  // 不得折 unknown 假「不抛」。
   if (o.shape.k === "prim" || o.shape.k === "never" || isNullishLitAbs(o)) {
-    return unknown;
+    throw new NudoThrow(errorTypeAbs("TypeError"));
   }
   // null/undefined/boolean 键走 ToPropertyKey（"null"/"undefined"/"true"）——
   // 原生 `undefined in o` / `null in o` 不抛，是普通字符串键查询。
@@ -187,8 +200,17 @@ export function $in(key: Abs, o: Abs): Abs {
     return boolLit(OBJECT_PROTO_NAMES.has(keyStr));
   }
   // unknown/any：无信息，不得按 Object.prototype 成员误判（Object.create 未建模时
-  // "toString" in o 曾折 true）
-  if (o.shape.k === "unknown" || o.shape.k === "any") return bool();
+  // "toString" in o 曾折 true）。any（无约束值）可能是 prim/nullish → may
+  // TypeError；unknown 是引擎 fail-closed 令牌（不进 throws 域，与
+  // member-diag 的 unknown-recv 口径一致）。
+  if (o.shape.k === "any") {
+    recordMayThrow({
+      kind: "TypeError",
+      cause: "'in' on any (unconstrained value): receiver may be a non-object",
+    });
+    return bool();
+  }
+  if (o.shape.k === "unknown") return bool();
   return boolLit(OBJECT_PROTO_NAMES.has(keyStr));
 }
 
@@ -253,12 +275,38 @@ export const BUILTIN_CTOR_NAMES = new Set([
 ]);
 
 /**
+ * instanceof 右操作数校验（原生 GetMethod(C, @@hasInstance) 的 ToObject 步）：
+ * 非对象 RHS（null/undefined/prim 字面量或 prim 形状）→ definite TypeError
+ * （"Right-hand side of 'instanceof' is not an object"）→ hard NudoThrow；
+ * any/unknown RHS → may TypeError。obj/fn/brand 形状不在此校验（可调性 /
+ * constructibility 是另一维度）。
+ */
+function validateInstanceofRhs(rightVal: Abs): void {
+  const k = rightVal.shape?.k;
+  if (k === "prim" || k === "never" || isNullishLitAbs(rightVal)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  // any（无约束值）可能是非对象 → may TypeError；unknown 是引擎 fail-closed
+  // 令牌（桥接/契约包裹后的内部值），不进 throws 域
+  if (k === "any") {
+    recordMayThrow({
+      kind: "TypeError",
+      cause: "instanceof RHS may be a non-object (null/undefined/prim)",
+    });
+  }
+}
+
+/**
  * `x instanceof Right`（Right 为标识符名）：按左值形状精确判定。
- * nullish 左侧原生抛 TypeError → unknown；未知用户构造器名 → boolean（不得 exact false）。
+ * RHS 非对象 → 原生 definite TypeError；nullish 左侧原生**不抛**（无装箱、
+ * OrdinaryHasInstance 恒 false）→ 精确 boolLit(false)；未知用户构造器名 →
+ * boolean（不得 exact false）。
  */
 export function $instanceof(left: Abs, rightName: string, rightVal?: Abs): Abs {
-  // null/undefined instanceof X：原生抛 TypeError
-  if (isNullishLitAbs(left)) return unknown;
+  // 原生先校验 RHS（@@hasInstance 的 ToObject）：非对象 definite / 抽象 may
+  if (rightVal !== undefined) validateInstanceofRhs(asAbsVal(rightVal));
+  // null/undefined instanceof X：原生不抛，恒 false（精确）
+  if (isNullishLitAbs(left)) return boolLit(false);
   // 自定义 @@hasInstance：RHS 值带可调用槽则调用并布尔化结果
   // （v instanceof o ≡ o[Symbol.hasInstance](v)）；槽在但不可调用 → 抽象
   if (rightVal) {
@@ -344,32 +392,54 @@ export function $instanceof(left: Abs, rightName: string, rightVal?: Abs): Abs {
   }
 }
 
-/** instanceof 右操作数非标识符（表达式/成员路径）：构造器值未知 → 抽象 boolean */
-export function $instanceofNonIdent(_left: Abs): Abs {
+/** instanceof 右操作数非标识符（表达式/成员路径）：RHS 值传入时先做原生
+ *  非对象校验（definite / may TypeError）；构造器值未知 → 抽象 boolean */
+export function $instanceofNonIdent(left: Abs, right?: Abs): Abs {
+  if (right !== undefined) validateInstanceofRhs(asAbsVal(right));
   return bool();
 }
 
 /** ClassExpression 值：构造器函数形状，不得折成精确 undefined */
 export function $classExpr(): Abs {
-  return absFunction(["_rest"], {
-    body: noBody,
-    apply: () => unknown,
-  });
+  return absFunction(
+    ["_rest"],
+    {
+      body: noBody,
+      apply: () => unknown,
+    },
+    // Bug 9：类表达式值是构造器，可 new
+    { ctor: true },
+  );
 }
 
 /**
  * `delete obj[key]` 的结果判定（只读，不写回）。
  * frozen/sealed 或 configurable:false 键 → false；preventExtensions 可删；
  * closed 目标恒 true（其余 non-configurable 形态不建模）；
- * prim/nullish 接收者原生抛 TypeError → unknown。
+ * nullish 接收者原生 definite TypeError（ToObject(null) 抛）→ hard NudoThrow；
+ * 非 nullish prim 接收者原生不抛（装箱临时对象上 delete 恒 true，strict 亦然）
+ * → 保持 unknown 折叠；any/unknown 接收者可能 nullish → may TypeError。
  */
 export function $delRes(o: Abs, _key: Abs): Abs {
-  if (o.shape.k === "prim" || o.shape.k === "never" || isNullishLitAbs(o)) {
+  if (isNullishLitAbs(o) || o.shape.k === "never") {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  if (o.shape.k === "prim") {
     return unknown;
   }
   if (o.shape.k === "sum") {
-    // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce
-    const parts = o.shape.members.map((m) => $delRes(m, _key));
+    // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce。
+    // nullish 成员（null|obj union）：整体只 may 抛 → boolean + may-throw。
+    const parts = o.shape.members.map((m) => {
+      if (isNullishLitAbs(m)) {
+        recordMayThrow({
+          kind: "TypeError",
+          cause: "delete on nullish (union arm): receiver may be nullish",
+        });
+        return bool();
+      }
+      return $delRes(m, _key);
+    });
     return parts.length ? parts.reduce((a, b) => joinAbs(a, b)) : unknown;
   }
   const st = extStateOf(o);
@@ -399,6 +469,14 @@ export function $delRes(o: Abs, _key: Abs): Abs {
     o.shape.k === "eff"
   ) {
     return boolLit(true);
+  }
+  // any（无约束值）：接收者可能 nullish → may TypeError（值保持 boolean）；
+  // unknown 是引擎 fail-closed 令牌，不进 throws 域
+  if (o.shape.k === "any") {
+    recordMayThrow({
+      kind: "TypeError",
+      cause: "delete on any (unconstrained value): receiver may be nullish",
+    });
   }
   return bool();
 }

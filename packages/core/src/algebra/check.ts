@@ -540,6 +540,10 @@ function checkSourceInner(
     // 真 unknown = 推导失败（design §2 / §5）：返回位或参数位都要报引擎债。
     // **预算截断不是推导失败**：已有 nudo:recursion-truncated / fork-truncated，
     // 不得再叠 nudo:unknown-inference（否则 agent 会去修不存在的引擎债）。
+    // **精确 undefined 值不是引擎债**（Bug 22）：undefAbs 是 unknown 形状 +
+    // lit(undefined) term——`return undefined` / `void 0` / 缺省 return 都落此，
+    // 带 lit term 即有值证据，须排除（与 check-assign/diagnostics/promise/class
+    // 四处 `!term` 同口径）。
     const unknownParamIdx = g.typeParams.findIndex(
       (t) => t.value && t.value.shape.k === "unknown",
     );
@@ -548,9 +552,11 @@ function checkSourceInner(
       g.symbolic?.conf === "opaque" ||
       (g.symbolic?.shape?.k === "sum" &&
         g.symbolic.shape.members.every((m) => m.shape.k === "unknown" || m.shape.k === "any"));
-    if ((g.symbolic?.shape?.k === "unknown" || unknownParamIdx >= 0) && !budgetExplained) {
+    const symbolicTrueUnknown =
+      g.symbolic?.shape?.k === "unknown" && g.symbolic.term?.op !== "lit";
+    if ((symbolicTrueUnknown || unknownParamIdx >= 0) && !budgetExplained) {
       const where =
-        g.symbolic?.shape?.k === "unknown"
+        symbolicTrueUnknown
           ? `${name} => unknown`
           : `${name} param ${g.params[unknownParamIdx] ?? `#${unknownParamIdx}`}: unknown`;
       issues.push({

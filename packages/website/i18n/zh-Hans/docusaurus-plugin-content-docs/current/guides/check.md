@@ -46,17 +46,24 @@ nudo check user.js
 ```text
 nudo check  user.js
 FAILED
-  1 error · 0 warning · 0 info · 2 fn
+  2 error · 0 warning · 0 info · 3 fn
 
 signatures
   getName(user: any) => any  throws TypeError
-  subtract(a: any, b: any) => number
+  subtract(a: any, b: any) => number  throws TypeError
+  clamp(n: any, lo: any, hi: any) => any
 
 issues
   [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
       actual:   getName(user: any) => any    throws TypeError
       expected: entry total, or @nudo:throws / try-catch
-      → property 'name' on any (unconstrained value) → refine / guard / try-catch / --ignore-throws TypeError
+      → property 'name' on any (unconstrained value) → @nudo:throws TypeError  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch
+      fix:  nudo contract --draft  (emit a sidecar draft you can edit)
+  [ERROR L5 subtract] subtract (export): may throw TypeError  (nudo:entry-may-throw)
+      actual:   subtract(a: any, b: any) => number    throws TypeError
+      expected: entry total, or @nudo:throws / try-catch
+      → ToNumber coercion of abstract operand → @nudo:throws TypeError  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch
+      fix:  nudo contract --draft  (emit a sidecar draft you can edit)
 ```
 
 > `[ERROR L1 getName]` 里的 `L1` 是**行号**（此处函数声明在第 1 行）—— 该诊断的层是 L2（`nudo:entry-may-throw`）。`L#` 永远是位置，不是契约层。
@@ -166,8 +173,10 @@ export function getName(user) {
 ```text
 signatures
   getName(user: any) => any  throws TypeError
+  subtract(a: any, b: any) => number  throws TypeError
 issues
   [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
+  [ERROR L5 subtract] subtract (export): may throw TypeError  (nudo:entry-may-throw)
 ```
 
 > 提醒：报头里的 `L1` 是**行号** —— 该诊断的层是 L2。

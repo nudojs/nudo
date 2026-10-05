@@ -12,7 +12,9 @@ import { isNullishLitAbs, definitelyNotNullishShape } from "../../surface.ts";
 import {
   NudoThrow, isNudoThrow, undef, litTruth, isDefinitelyTrue, isDefinitelyFalse,
   currentExecPhi, $lit, asAbsVal, $fnVal, noBody, writeInPlace, clearStaleTermPred,
+  isNudoReturn, isNudoBreak, isNudoContinue,
 } from "./state.ts";
+import { pushMayThrowFrame, popMayThrowFrame } from "../may-throw.ts";
 import { $unknown, $eq, $ne, $add, $typeof, $not, $lt, $le, $gt, $ge, $join } from "./ops.ts";
 import {
   yieldStack, genPathSensitive, genJoinOverride, mergeArmYields,
@@ -20,7 +22,7 @@ import {
   setGenJoinOverride, bumpGenPathSensitive,
 } from "./control.ts";
 import { beginCollectionFork, endCollectionFork, popCollectionArm, pushCollectionArm } from "../../collections.ts";
-import { $arr } from "./containers.ts";
+import { $arr, $yieldStarElems } from "./containers.ts";
 import { loopExitsAls } from "./state.ts";
 
 export function wrapPromiseAbs(inner: Abs): Abs {
@@ -59,16 +61,28 @@ export function $asyncReturn(v: Abs): Abs {
 // --- 生成器 ---
 // yieldStack / genPathSensitive / genJoinOverride 在文件前部（fork 隔离用）
 
-/** function* 体：收集所有 yield 值为 tuple Abs；抽象分支时降 conf（P0-6） */
+/** function* 体：收集所有 yield 值为 tuple Abs；抽象分支时降 conf（P0-6）
+ *
+ * Bug 58：调用生成器是原生全操作——体只在首个 next() 执行。此前 body()
+ * eager 执行把体内 may-throw（成员读 any）/显式 throw 折进**调用方** throws
+ * 域（每生成器入口假 entry-may-throw）。现以丢弃式 may-throw 帧包裹：
+ * soft 效果进帧后丢弃、NudoThrow/宿主异常吞掉（迭代期语义，调用期不表面）。
+ * yield 收集保持 eager（既有值域建模，注释口径不变）。 */
 export function $gen(body: () => void): Abs {
   const ys: Abs[] = [];
   const marker = genPathSensitive;
   const prevOverride = genJoinOverride;
   setGenJoinOverride(null);
   yieldStack.push(ys);
+  pushMayThrowFrame();
   try {
     body();
+  } catch (e) {
+    // 控制流 token（fork/循环返回）不是迭代期异常——不得吞
+    if (isNudoReturn(e) || isNudoBreak(e) || isNudoContinue(e)) throw e;
+    // 体内 throw 属首个 next() 迭代期——调用期吞掉（throws 域不泄漏）
   } finally {
+    popMayThrowFrame(true);
     yieldStack.pop();
   }
   if (genJoinOverride) {
@@ -88,6 +102,24 @@ export function $gen(body: () => void): Abs {
 export function $yield(v: Abs): Abs {
   const top = yieldStack[yieldStack.length - 1];
   if (top) top.push(v);
+  return unknown;
+}
+
+/** yield* v（Bug 82）：委托迭代 ≠ yield v——GetIterator 校验先行（$elems
+ *  同分类器：非可迭代接收者 definite/may TypeError，生成器体内按 $gen
+ *  迭代期语义由外层帧吸收），**元素**逐个压入收集器（此前把整个可迭代值
+ *  压一次）；表达式值 = 内层迭代器的 return 值（生成器 return / 自定义
+ *  iterator 的 done 值，不可判）→ 保守 unknown。长度不可判的接收者
+ *  （arr/any/…）单代表元素过近似并入 + bumpGenPathSensitive 压 conf
+ *  （mergeArmYields 同口径，禁 exact 元组出货）。 */
+export function $yieldStar(v: unknown): Abs {
+  const a = asAbsVal(v);
+  const { els, lengthKnown } = $yieldStarElems(a);
+  const top = yieldStack[yieldStack.length - 1];
+  if (top) {
+    top.push(...els);
+    if (!lengthKnown) bumpGenPathSensitive();
+  }
   return unknown;
 }
 

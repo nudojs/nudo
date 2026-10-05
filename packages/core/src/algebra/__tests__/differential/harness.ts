@@ -74,7 +74,9 @@ function concrete(a: any): unknown {
 
 function native(body: string): string {
   try {
-    return ser(vm.runInNewContext(`(()=>{'use strict';${body}})()`, {}));
+    // URL：引擎侧自由标识符漏入宿主全局（主 realm）而 vm 新 context 不带
+    // Node 宿主全局——补齐对齐比较面（corpus 有 new URL(...) 值语义行）
+    return ser(vm.runInNewContext(`(()=>{'use strict';${body}})()`, { URL }));
   } catch (e: unknown) {
     return "THROW:" + ((e as Error)?.message ?? String(e));
   }

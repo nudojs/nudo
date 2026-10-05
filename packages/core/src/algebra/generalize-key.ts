@@ -258,6 +258,7 @@ export function renameShape(s: Shape, map: VarRename): Shape {
       if (s.name !== undefined) out.name = s.name;
       if (s.paramTypes) out.paramTypes = s.paramTypes.map((t) => renameAbs(t, map));
       if (s.returnType) out.returnType = renameAbs(s.returnType, map);
+      if (s.ctor !== undefined) out.ctor = s.ctor; // Bug 9 facet：α 改名不改可构造性
       return out;
     }
     case "sum":

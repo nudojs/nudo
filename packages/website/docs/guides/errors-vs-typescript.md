@@ -20,14 +20,14 @@ npx nudojs check errors-vs-typescript.js
 ```text
 nudo check  errors-vs-typescript.js
 FAILED
-  11 error · 0 warning · 0 info · 10 fn
+  12 error · 0 warning · 0 info · 10 fn
 
 signatures
   setDelay(ms: number) => number
   greet(u: { id: number, name: string }) => string
   getName(user: any) => any  throws TypeError
   bad() => 0
-  inc(x: any) => number | string
+  inc(x: any) => number | string  throws TypeError
   incPositive(x: number) => number
   tag(s: string) => string
   arm(ms: number) => number
@@ -172,7 +172,7 @@ export const bad = fn({}, number().gt(0));
 
 **tsc:** usually types `x + 1` as `number` — a lie for the `"7"` call — or forces narrowing on you.
 
-No contract: the face stays honest — `inc(x: any) => number | string` (`inc("7")` is `"71"`, no diagnostic). With the contract, the bad argument is blocked at the call site — you decide where the obligation lives:
+No contract: the face stays honest — `inc(x: any) => number | string` (`inc("7")` is `"71"`), and L2 flags the coercion bomb: an unconstrained `+` may throw `TypeError` (native `Symbol` ToNumeric). With the contract, the bad argument is blocked at the call site — you decide where the obligation lives:
 
 ```javascript verify
 // 6. Real JS `+`: no contract = honest number|string; a contract blocks the call.
@@ -194,6 +194,11 @@ export const incPositive = fn({ x: number().gt(0) }, number());
 ```
 
 ```text
+  [ERROR L31 inc] inc (export): may throw TypeError  (nudo:entry-may-throw)
+      actual:   inc(x: any) => number | string    throws TypeError
+      expected: entry total, or @nudo:throws / try-catch
+      → ToNumeric/ToNumber coercion of abstract operand → @nudo:throws TypeError  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch
+      fix:  nudo contract --draft  (emit a sidecar draft you can edit)
   [ERROR L40 incPositive] incPositive[x]: argument ⊭ precondition  (nudo:constraint-violated)
       actual:   -1  #exact
       expected: x > 0

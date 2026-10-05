@@ -14,8 +14,9 @@ export const HOST_INTRINSIC_SET: ReadonlySet<string> = new Set(HOST_INTRINSIC_NA
 /**
  * env 注入跳过（不遮蔽宿主内建）：
  * - undefined/NaN/Infinity：转译已硬编码折叠为无标识符源，注入无收益且危害已修
- * - Math/Number/JSON/Object/Array/String/Date/Promise/BigInt：这些名字在
- *   namespaceNameOf 里按宿主对象身份路由到 Abs builtin 表（数学/集合/date 等），
+ * - Math/Number/JSON/Object/Array/String/Date/Promise/BigInt/Reflect/Symbol：这些
+ *   名字在 namespaceNameOf 里按宿主对象身份路由到 Abs builtin 表（数学/集合/
+ *   date 等），
  *   env 若注入 `const Math = …` 会把 $get/$invoke 接收者从宿主对象替换成 Abs
  *   表项，路由失效 → 区间透传/语义精度回退（issue #87）。跳过后接收者回到
  *   宿主身份，namespaceNameOf 照常路由，等价于 env 关。
@@ -33,6 +34,9 @@ export const ENV_SHADOW_SKIP_GLOBALS: ReadonlySet<string> = new Set([
   "Date",
   "Promise",
   "BigInt",
+  // Bug 19/43：进 NAMESPACE_GLOBALS 路由表（Reflect.*/Symbol.for 静态分派）
+  "Reflect",
+  "Symbol",
 ]);
 
 /** 生成代码里的 undefined 值源——刻意避开标识符 `undefined` */

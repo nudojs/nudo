@@ -8,12 +8,14 @@
  */
 export {
   $fnVal,
+  $absVal,
   $isBreakTo,
   $lit,
   $loopBreak,
   $loopContinue,
   $loopReturn,
   $pushLoopExit,
+  $newTarget,
   $rawThis,
   $rethrowIfNudoReturn,
   $throwConstAssign,
@@ -49,6 +51,7 @@ export {
   takeLoopExits,
   takeThrowExits,
   withExecPhi,
+  withNewTargetReset,
 } from "./runtime/state.ts";
 export {
   $add,
@@ -123,6 +126,7 @@ export {
   $get,
   $idx,
   $idxSet,
+  $iterCheck,
   $len,
   $obj,
   $objRest,
@@ -130,6 +134,8 @@ export {
   $set,
   $setProto,
   $spread,
+  $tpl,
+  $yieldStarElems,
   fillTuple,
   isArrMutator,
   namespaceNameOf,
@@ -142,4 +148,5 @@ export {
   $nullishTest,
   $removeNullish,
   $yield,
+  $yieldStar,
 } from "./runtime/async.ts";

@@ -248,6 +248,11 @@ function walkBuiltinUnknown(
     }
   };
 
+  if (n.type === "MetaProperty") {
+    // import.meta / new.target：meta/property 是关键字位置（Identifier 形状），
+    // 不是标识符引用——new.target 不得报 builtin-unknown "new"（Bug 79）
+    return;
+  }
   if (n.type === "CallExpression") {
     const callee = n.callee as
       | { type?: string; name?: string; object?: { type?: string; name?: string }; property?: { type?: string; name?: string } }

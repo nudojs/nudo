@@ -80,17 +80,38 @@ export function recordMemberDiag(d: EvalMemberDiag): void {
   }
 }
 
-/** string 上仍可能存在的方法（与 TypeValue completions 对齐） */
+/** string 上仍可能存在的方法（与 TypeValue completions 对齐）。
+ *  必须接近完整 String.prototype 名集：引擎未建模的方法（Bug 72 的
+ *  trimStart/localeCompare/…）也在原型上真实存在，漏列会把合法调用
+ *  误判「确定缺失」→ 假 may-throw。 */
 const STRING_METHODS = new Set([
-  "toUpperCase", "toLowerCase", "trim", "split", "slice", "substring",
+  "toUpperCase", "toLowerCase", "toLocaleUpperCase", "toLocaleLowerCase",
+  "trim", "trimStart", "trimEnd", "split", "slice", "substring", "substr",
   "includes", "indexOf", "lastIndexOf", "startsWith", "endsWith", "charAt",
-  "charCodeAt", "replace", "toString", "valueOf", "repeat", "padStart",
-  "padEnd", "replaceAll", "concat", "match", "search", "at",
+  "charCodeAt", "codePointAt", "replace", "toString", "valueOf", "repeat",
+  "padStart", "padEnd", "replaceAll", "concat", "match", "matchAll",
+  "search", "normalize", "localeCompare", "at", "isWellFormed",
+  "toWellFormed",
+  // Annex B HTML 方法（宿主仍提供，调用合法）
+  "anchor", "big", "blink", "bold", "fixed", "fontcolor", "fontsize",
+  "italics", "link", "small", "strike", "sub", "sup",
 ]);
+
+/** 各 prim 原型自有方法（「确定缺失」判定用；不含 Object.prototype 名） */
+const NUMBER_PROTO_METHODS = new Set([
+  "toString", "toLocaleString", "valueOf", "toFixed", "toPrecision",
+  "toExponential",
+]);
+const BOOLEAN_PROTO_METHODS = new Set(["toString", "valueOf"]);
+const SYMBOL_PROTO_METHODS = new Set(["toString", "valueOf"]);
+const BIGINT_PROTO_METHODS = new Set(["toString", "toLocaleString", "valueOf"]);
 
 /**
  * prim 接收者上的未知成员 → 诊断。
- * 返回 true 表示确定缺失（number 上任意方法；string 上表外方法）。
+ * 返回 true 表示确定缺失（原型方法表外；Object.prototype 名经装箱恒存在，
+ * 不算缺失）。kind === "method" 且确定缺失时，原生调用 undefined 成员是
+ * definite TypeError → 记入 throws 域（Bug 70；soft，与 noteNullishMemberThrows
+ * 同形，catch 可吸收），nudo:no-method 展示诊断保留。
  */
 export function notePrimMemberMissing(
   recv: Abs | undefined,
@@ -101,33 +122,48 @@ export function notePrimMemberMissing(
   const shape = recv?.shape;
   if (!shape || shape.k !== "prim") return false;
   const t = shape.type;
+  // Object.prototype 成员经装箱恒可用（(1).hasOwnProperty / "s".constructor）
+  if (OBJECT_PROTO_NAMES.has(name)) return false;
+  const protoMethods =
+    t === "string"
+      ? STRING_METHODS
+      : t === "number"
+        ? NUMBER_PROTO_METHODS
+        : t === "boolean"
+          ? BOOLEAN_PROTO_METHODS
+          : t === "symbol"
+            ? SYMBOL_PROTO_METHODS
+            : t === "bigint"
+              ? BIGINT_PROTO_METHODS
+              : undefined;
+  if (!protoMethods) return false;
+  // string 属性读不判缺失（下标/任意键）；方法按原型表判定
+  const missing =
+    t === "string" ? kind === "method" && !protoMethods.has(name) : !protoMethods.has(name);
+  if (!missing) return false;
   const argOrigin = getAbsOrigin(recv);
   const origin = argOrigin
     ? { line: argOrigin.line, column: argOrigin.column }
     : undefined;
-  if (t === "number" || t === "boolean" || t === "bigint" || t === "symbol") {
-    recordMemberDiag({
-      kind,
+  recordMemberDiag({
+    kind,
+    name,
+    receiver: t,
+    line: loc?.[0],
+    column: loc?.[1],
+    ...(origin ? { origin } : {}),
+  });
+  if (kind === "method") {
+    recordMayThrow({
+      kind: "TypeError",
+      cause: `method '${name}' missing on ${t} receiver (calling undefined)`,
+      recv: t,
       name,
-      receiver: t,
-      line: loc?.[0],
-      column: loc?.[1],
-      ...(origin ? { origin } : {}),
+      line: loc?.[0] ?? origin?.line,
+      column: loc?.[1] ?? origin?.column,
     });
-    return true;
   }
-  if (t === "string" && kind === "method" && !STRING_METHODS.has(name)) {
-    recordMemberDiag({
-      kind,
-      name,
-      receiver: t,
-      line: loc?.[0],
-      column: loc?.[1],
-      ...(origin ? { origin } : {}),
-    });
-    return true;
-  }
-  return false;
+  return true;
 }
 
 /** null / undefined（term lit null/undefined；shape unknown 兜底） */

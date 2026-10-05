@@ -99,8 +99,10 @@ Contracts are *.nudo.js / @nudo:contract. Do not invent body-AST obligations.
 ```text
 signatures
   getName(user: any) => any  throws TypeError
+  subtract(a: any, b: any) => number  throws TypeError
 issues
   [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
+  [ERROR L5 subtract] subtract (export): may throw TypeError  (nudo:entry-may-throw)
 ```
 
 `any` = 无约束入口。`throws` = L2 域。报头里的 `L1` 是**行号**（此处 `getName` 声明在第 1 行）—— 层是 L2。诊断码：[诊断](../reference/diagnostics.md) · 完整输出走读：[nudo check](./check.md)。

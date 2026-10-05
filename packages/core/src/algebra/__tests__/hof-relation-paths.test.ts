@@ -72,15 +72,20 @@ describe("P1c: filter/reduce/flatMap relation", () => {
     expect(r.shape.element.term).toEqual(v("G1"));
   });
 
-  it("flatMap relation returning non-arr → unknown", () => {
+  it("flatMap relation returning non-arr → appended as element (Bug 84)", () => {
     const src = `
       export function fanout(xs, f) {
         return xs.flatMap(f);
       }
     `;
+    // Bug 84：非数组映射值原生合法（FlattenIntoArray 原样追加）——
+    // x => x 型关系回调不得再把结果折 unknown，元素域 = 回调返回面
     const f = relationFn([a1], num());
     const r = analyzeExport(src, "fanout", [arrA1, f]);
-    expect(r.shape.k).toBe("unknown");
+    expect(r.shape.k).toBe("arr");
+    if (r.shape.k !== "arr") return;
+    expect(r.shape.element.shape.k).toBe("prim");
+    expect((r.shape.element.shape as { type?: string }).type).toBe("number");
   });
 
   it("forEach with relation → undefined", () => {

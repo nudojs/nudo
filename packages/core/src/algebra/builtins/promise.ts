@@ -4,6 +4,7 @@
 import type { Abs } from "../abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, bigintLit, unknown } from "../abs.ts";
 import { joinAbs } from "../objects.ts";
+import { isMapAbs, isSetAbs } from "../collections.ts";
 import { applyCallbackValue, undefAbs, asAbs, instantiateReturn } from "../hof.ts";
 import { absFunction, getFnImpl } from "../abs-fn.ts";
 import { pTrue } from "../pred.ts";
@@ -15,6 +16,8 @@ import {
   PROMISE_MICRO_ERROR_LABEL,
 } from "../call-budget.ts";
 import { numPrim, str, boolPrim, noBody } from "./shared.ts";
+import { NudoThrow } from "../exec/nudo-throw.ts";
+import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
 
 const promiseExecStack: number[] = [];
 
@@ -101,7 +104,38 @@ export function drainPromiseMicros(): void {
  */
 export function evalPromiseCtor(args: Abs[]): Abs {
   const executor = args[0];
-  if (!executor) return promiseUnknown();
+  // Bug 16：原生 IsCallable(executor)（"Promise resolver … is not a function"）。
+  // 必须在 enterPromiseExecutorScope/try 之前校验——下方 catch 会把执行器内
+  // NudoThrow 吞成 rejected promise。缺省 ≡ undefined、prim（原始值恒不可
+  // 调用）、闭对象字面量、tuple/arr → 确定 TypeError（hard）；any/unknown/
+  // open obj/brand/eff/含不可调成员 union → may；fn 形/JS 函数继续。
+  {
+    const a =
+      executor && typeof executor === "object" && "shape" in (executor as object)
+        ? (executor as Abs)
+        : undefined;
+    const callable =
+      typeof executor === "function" ||
+      !!a &&
+        ((a.shape as { k?: string }).k === "fn" || getFnImpl(a) !== undefined);
+    if (!callable) {
+      // nullish 字面量（shape k:"unknown"+lit term）也确定不可调用
+      const nullishLit =
+        !!a && a.term?.op === "lit" && (a.term.value === null || a.term.value === undefined);
+      const definitelyUncallable =
+        !a ||
+        nullishLit ||
+        (a.shape as { k?: string }).k === "prim" ||
+        (a.shape as { k?: string }).k === "tuple" ||
+        (a.shape as { k?: string }).k === "arr" ||
+        ((a.shape as { k?: string }).k === "obj" &&
+          (a.shape as { open?: boolean }).open !== true);
+      if (definitelyUncallable) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      recordMayThrow({ kind: "TypeError", cause: "Promise executor may not be callable" });
+    }
+  }
 
   let hasSettle = false;
   let hasResolve = false;
@@ -130,11 +164,11 @@ export function evalPromiseCtor(args: Abs[]): Abs {
   const resolveAbs = absFunction(["value"], {
     body: noBody,
     apply: (args) => onResolve(args[0]),
-  });
+  }, { ctor: false }); // Bug 9：内建 resolving function 不可 new
   const rejectAbs = absFunction(["reason"], {
     body: noBody,
     apply: (args) => onReject(args[0]),
-  });
+  }, { ctor: false });
 
   enterPromiseExecutorScope();
   try {
@@ -240,6 +274,59 @@ export function evalPromiseMethod(
   }
 }
 
+/**
+ * Bug 47/54：iterable 实参分类（Promise.all/race/allSettled/any 与
+ * AggregateError errors 槽共用）。三档（node v26 实测）：
+ * - "bad"（定非可迭代）：缺省（≡ undefined not iterable）/ nullish 字面量 /
+ *   非 string 的 prim 形态（number/boolean/bigint/symbol——lit 或抽象
+ *   refined 均非可迭代）
+ * - "ok"（合法）：string prim（可迭代）/ tuple / arr / Map·Set brand
+ * - "may"：any/unknown/obj/fn/其余 brand/eff/sum（iterability 不可判）
+ *
+ * 落地口径按调用方分叉（node v26 实测）：AggregateError 的 IterableToList
+ * **同步抛**（enforceIterableStaticArg 硬抛）；Promise 静态的迭代器获取
+ * 全部**折为返回 promise 的 rejection**（不同步抛）——Promise 面只用分类
+ * 定值域（bad → 恒 rejection → promise<unknown>），不记 throws。
+ */
+export function classifyIterableArg(a: Abs | undefined): "bad" | "ok" | "may" {
+  if (!a) return "bad"; // 缺省 → undefined not iterable
+  if (a.term?.op === "lit" && (a.term.value === null || a.term.value === undefined)) {
+    return "bad"; // null/undefined 不可迭代
+  }
+  const k = a.shape.k;
+  if (k === "prim") {
+    return (a.shape as { type: string }).type === "string" ? "ok" : "bad";
+  }
+  if (k === "tuple" || k === "arr") return "ok";
+  if (isMapAbs(a) || isSetAbs(a)) return "ok";
+  return "may";
+}
+
+/** 分类落地：bad → NudoThrow(TypeError)；may → recordMayThrow */
+export function enforceIterableStaticArg(a: Abs | undefined, what: string): void {
+  const c = classifyIterableArg(a);
+  if (c === "bad") throw new NudoThrow(errorTypeAbs("TypeError"));
+  if (c === "may") {
+    recordMayThrow({ kind: "TypeError", cause: `${what} argument may not be iterable` });
+  }
+}
+
+/** race/any 的元素联合（tuple → join；arr → element；string → char）；不可判 → undefined */
+function iterableElementOf(a: Abs | undefined): Abs | undefined {
+  if (!a) return undefined;
+  const k = a.shape.k;
+  if (k === "tuple") {
+    const els = (a.shape as { elements: Abs[] }).elements;
+    if (els.length === 0) return undefined; // race([]) 原生永远 pending
+    return els.reduce((x, y) => joinAbs(x, y));
+  }
+  if (k === "arr") return (a.shape as { element: Abs }).element;
+  if (k === "prim" && (a.shape as { type: string }).type === "string") {
+    return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
+  }
+  return undefined;
+}
+
 export function evalPromiseStatic(name: string, args: Abs[]): Abs | undefined {
   switch (name) {
     case "resolve": {
@@ -251,6 +338,13 @@ export function evalPromiseStatic(name: string, args: Abs[]): Abs | undefined {
     case "reject":
       return promiseUnknown();
     case "all": {
+      // Bug 47（node v26 实测校正）：非可迭代实参**不同步抛**——TypeError
+      // 折为返回 promise 的 rejection（all(1)/all(null)/all()/all(Symbol())
+      // 实测均同步返回 promise、异步 reject；bug 文本「? GetIterator 同步
+      // 定抛」按 node v26 否决，与 race/allSettled/any 同口径）。定非可迭代
+      // → 恒 rejection 永不 resolve → 保守 promise<unknown>；ok/may 走既有
+      // 投影（fast path / promise<unknown[]>）。
+      if (classifyIterableArg(args[0]) === "bad") return promiseUnknown();
       const a0 = args[0];
       if (a0?.shape.k === "arr" && a0.shape.element.shape.k === "eff") {
         return promiseAbs(
@@ -258,9 +352,64 @@ export function evalPromiseStatic(name: string, args: Abs[]): Abs | undefined {
           "path",
         );
       }
+      // 字面量 tuple：逐元素展开 thenable（[Promise.resolve(1), 2] → [1, 2]，
+      // 与 race/any 的元素投影同口径）
+      if (a0?.shape.k === "tuple") {
+        const els = a0.shape.elements.map(unwrapThenable);
+        return promiseAbs(abs({ k: "tuple", elements: els }, undefined, undefined, "path"), "path");
+      }
       return promiseAbs(
         abs({ k: "arr", element: unknown }, undefined, undefined, "partial"),
         "partial",
+      );
+    }
+    case "race":
+    case "any": {
+      // Bug 64：node v26 实测迭代器获取**不同步抛**——TypeError 折为返回
+      // promise 的 rejection（race(1) 同步侧返回正常 promise）。故此处不
+      // 做 throws 记录（与 all 分叉：all 的 GetIterator 在PerformPromiseAll
+      // 同步段），值域按元素联合投影。
+      const el = iterableElementOf(args[0]);
+      if (!el) {
+        // 元素不可判（含非可迭代接收者——原生折为 rejection，非同步抛）
+        return promiseUnknown();
+      }
+      return promiseAbs(el, "path");
+    }
+    case "allSettled": {
+      // Bug 64：同 race/any——同步不抛；值域 arr<{status; value}|{status; reason}>。
+      // 定非可迭代接收者（原生折为 rejection）→ 保守 promise<unknown>。
+      if (classifyIterableArg(args[0]) === "bad") return promiseUnknown();
+      const el = iterableElementOf(args[0]) ?? unknown;
+      const entry = (value: Abs): Abs =>
+        abs(
+          {
+            k: "obj",
+            slots: {
+              status: { value: joinAbs(strLit("fulfilled"), strLit("rejected")) },
+              value: { value },
+            },
+          },
+          undefined,
+          undefined,
+          "path",
+        );
+      const rejected = abs(
+        {
+          k: "obj",
+          slots: {
+            status: { value: strLit("rejected") },
+            reason: { value: unknown },
+          },
+        },
+        undefined,
+        undefined,
+        "path",
+      );
+      const element = joinAbs(entry(el), rejected);
+      return promiseAbs(
+        abs({ k: "arr", element }, undefined, undefined, "path"),
+        "path",
       );
     }
     default:

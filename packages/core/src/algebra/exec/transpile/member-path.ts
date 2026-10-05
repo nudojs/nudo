@@ -5,7 +5,7 @@
 import type { Node, Expression } from "@babel/types";
 import type { TranspileOptions } from "./types.ts";
 import { emitTranspileExpression } from "./transpile-dispatch.ts";
-import { isExpression } from "./helpers.ts";
+import { isExpression, symbolKeyOf } from "./helpers.ts";
 
 export type MemberLayer = { get: (base: string) => string; set: (base: string, v: string) => string };
 export type MemberPath = { rootSrc: string; layers: MemberLayer[] };
@@ -35,11 +35,21 @@ export function memberPathOf(m: { object: Node; property: Node; computed: boolea
           set: (b, v) => `$set(${b}, ${key}, ${v})`,
         });
       } else if (isExpression(k)) {
-        const key = emitTranspileExpression(k, opts);
-        layers.unshift({
-          get: (b) => `$idx(${b}, ${key})`,
-          set: (b, v) => `$idxSet(${b}, ${key}, ${v})`,
-        });
+        // [Symbol.X] 计算键 → "@@X" 字符串槽（镜像成员读 / 对象字面量计算键
+        // 投影——`ai[Symbol.asyncIterator] = fn` 落成可识别槽，Bug 13）
+        const symK = symbolKeyOf(k as unknown as Parameters<typeof symbolKeyOf>[0]);
+        if (symK !== null) {
+          layers.unshift({
+            get: (b) => `$get(${b}, ${symK})`,
+            set: (b, v) => `$set(${b}, ${symK}, ${v})`,
+          });
+        } else {
+          const key = emitTranspileExpression(k, opts);
+          layers.unshift({
+            get: (b) => `$idx(${b}, ${key})`,
+            set: (b, v) => `$idxSet(${b}, ${key}, ${v})`,
+          });
+        }
       } else {
         return null;
       }
