@@ -1,8 +1,11 @@
 name: Website
 
 on:
+  # push main 不触发：docs-deploy.yml 在同样路径上构建并部署同一站点
+  # （其 dist 需求与本 workflow 相同），Website 在 main 上只 build 不部署
+  # ——纯重复冒烟。dev 无 docs-deploy，保留 dev push 冒烟。
   push:
-    branches: [main, dev]
+    branches: [dev]
     paths:
       - 'packages/website/**'
       - 'package.json'

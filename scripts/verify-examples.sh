@@ -43,23 +43,6 @@ outfile() {
   printf '%s/%s.out' "$outdir" "$(printf '%s' "$1" | cksum | cut -d' ' -f1)"
 }
 
-# expect <expected_exit> <command> — run, compare exit code, keep output.
-expect() {
-  expected=$1
-  cmd=$2
-  out=$(sh -c "$cmd" 2>&1)
-  got=$?
-  printf '%s' "$out" > "$(outfile "$cmd")"
-  if [ "$got" -eq "$expected" ]; then
-    pass=$((pass + 1))
-    printf 'OK    %s\n' "$cmd"
-  else
-    fail=$((fail + 1))
-    printf 'FAIL  %s (want exit %s, got %s)\n' "$cmd" "$expected" "$got"
-    printf '%s\n' "$out" | tail -n 12 | sed 's/^/      | /'
-  fi
-}
-
 # pin <command> <fixed-string>... — every string must appear in the output.
 pin() {
   cmd=$1
@@ -119,36 +102,87 @@ pin_file() {
 
 # --- command matrix (parsed from docs/examples/README.md) ---------------------
 # Row format: | `command` | **exit** | description |
+#
+# 并行执行：矩阵行间无共享可变状态——命令全部只读（check / test:cli /
+# migrate dry-run / contract --draft 均不写仓库；analyzer 缓存为进程内
+# Map，无磁盘缓存），outfile 按 cmd 内容寻址，每行独立进程。一行
+# （expect + 目标存在性检查）作为单元并发；行结果落 per-row 日志，
+# 主进程按行序回放——输出与串行版逐字节一致（代价：结果在全部行
+# 跑完后一次性出现，不再逐行滚动）。
 matrix=docs/examples/README.md
 rows=$(grep -c '^| `' "$matrix")
+
+rowdir=$outdir/rows
+mkdir -p "$rowdir"
+jobs=$(nproc 2>/dev/null || echo 4)
+[ "$jobs" -gt 8 ] && jobs=8
+
+# run_row <idx> <expected_exit> <cmd> — one matrix row, run + keep output.
+# 首行 `RESULT <pass> <fail>` 是聚合标记（回放时剥离）；其余行与串行
+# 版逐行同文。target 存在性检查原序保留在 expect 输出之后。
+run_row() {
+  idx=$1
+  expected=$2
+  cmd=$3
+  {
+    out=$(sh -c "$cmd" 2>&1)
+    got=$?
+    printf '%s' "$out" > "$(outfile "$cmd")"
+    if [ "$got" -eq "$expected" ]; then
+      printf 'RESULT 1 0\n'
+      printf 'OK    %s\n' "$cmd"
+    else
+      printf 'RESULT 0 1\n'
+      printf 'FAIL  %s (want exit %s, got %s)\n' "$cmd" "$expected" "$got"
+      printf '%s\n' "$out" | tail -n 12 | sed 's/^/      | /'
+    fi
+    # the row's target file is the first whitespace-delimited token after
+    # docs/examples/ (trailing CLI options like --assume are allowed after it)
+    # and must exist — a typo'd path on a negative-example row (expected
+    # exit 1) would otherwise pass silently.
+    case "$cmd" in
+      *' docs/examples/'*) ;;
+      *)
+        printf 'FAIL  matrix row has no docs/examples target: %s\n' "$cmd"
+        ;;
+    esac
+    path=$(printf '%s' "$cmd" | sed -n 's|.*docs/examples/\([^ ]*\).*|docs/examples/\1|p')
+    if [ -z "$path" ]; then
+      printf 'FAIL  matrix target not extractable: %s\n' "$cmd"
+    elif [ ! -f "$path" ]; then
+      printf 'FAIL  matrix target missing: %s (from: %s)\n' "$path" "$cmd"
+    fi
+  } > "$(printf '%s/%04d.log' "$rowdir" "$idx")" 2>&1
+}
+export -f run_row outfile
+export outdir rowdir
+
+manifest=$outdir/manifest.rows
+: > "$manifest"
 parsed=0
 while read -r code cmd; do
   [ -n "$cmd" ] || continue
+  printf '%s\0%s\0%s\0' "$parsed" "$code" "$cmd" >> "$manifest"
   parsed=$((parsed + 1))
-  expect "$code" "$cmd"
-  # the row's target file is the first whitespace-delimited token after
-  # docs/examples/ (trailing CLI options like --assume are allowed after it)
-  # and must exist — a typo'd path on a negative-example row (expected
-  # exit 1) would otherwise pass silently.
-  case "$cmd" in
-    *' docs/examples/'*) ;;
-    *)
-      fail=$((fail + 1))
-      printf 'FAIL  matrix row has no docs/examples target: %s\n' "$cmd"
-      continue
-      ;;
-  esac
-  path=$(printf '%s' "$cmd" | sed -n 's|.*docs/examples/\([^ ]*\).*|docs/examples/\1|p')
-  if [ -z "$path" ]; then
-    fail=$((fail + 1))
-    printf 'FAIL  matrix target not extractable: %s\n' "$cmd"
-    continue
-  fi
-  if [ ! -f "$path" ]; then
-    fail=$((fail + 1))
-    printf 'FAIL  matrix target missing: %s (from: %s)\n' "$path" "$cmd"
-  fi
 done < <(sed -n 's/^| `\([^`]*\)` | \*\*\([0-9]*\)\*\*.*$/\2 \1/p' "$matrix")
+
+xargs -0 -r -n 3 -P "$jobs" bash -c 'run_row "$1" "$2" "$3"' _ < "$manifest"
+
+# 回放（行序）+ 聚合。行数守卫：worker 崩溃（OOM 等）导致日志缺行时
+# 显式记 FAIL，不静默通过。
+completed=0
+for log in "$rowdir"/[0-9]*.log; do
+  [ -f "$log" ] || continue
+  completed=$((completed + 1))
+  pass=$((pass + $(awk 'NR==1 { print $2 + 0 }' "$log")))
+  fail=$((fail + $(awk 'NR==1 { print $3 + 0 }' "$log")))
+  sed '1d' "$log"
+done
+if [ "$completed" -ne "$parsed" ]; then
+  fail=$((fail + 1))
+  printf 'FAIL  verify-examples internal: %s/%s rows completed (worker crash?)\n' \
+    "$completed" "$parsed"
+fi
 
 if [ "$parsed" -ne "$rows" ]; then
   fail=$((fail + 1))

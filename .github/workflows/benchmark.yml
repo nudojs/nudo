@@ -31,25 +31,44 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # CLI 以 tsx 跑 src，但 workspace package.json exports → dist/；
-      # 先构建保证 `pnpm run infer` 能解析 @nudojs/*。
+      # 构建输入哈希与 ci.yml build job 完全一致（非测试源码 + 构建/包配置 +
+      # 锁文件）：同源 push 的 PR CI build 已按该键存过 dist 时直接命中，
+      # 跳过 tsup；miss 时回退本地构建（CLI 以 tsx 跑 src，但 workspace
+      # package.json exports → dist/，benchmark 仍需 dist 才能解析 @nudojs/*）。
+      # 注意：与 CI build job 同 push 并发启动时常 miss（缓存尚在保存），
+      # 命中主要来自「PR 已跑过同源码」的场景——miss 就老老实实 build。
+      - name: Compute dist cache key
+        id: distkey
+        run: |
+          hash=$(git ls-files \
+              'packages/*/src/*' \
+              'packages/*/package.json' \
+              'packages/*/tsconfig*.json' \
+              'packages/*/tsup.config.*' \
+              'package.json' \
+              'tsconfig*.json' \
+              'pnpm-lock.yaml' |
+            grep -v '/__tests__/' | grep -v '\.test\.ts$' |
+            xargs sha256sum | sha256sum | cut -d' ' -f1)
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
+
+      - name: Restore dist cache
+        id: dist-cache
+        # v6.1.0（SHA 钉住：supply-chain；升级时更新 pin 与注释）
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            packages/*/dist
+          key: dist-${{ runner.os }}-${{ steps.distkey.outputs.hash }}
+
       - name: Build packages
+        if: steps.dist-cache.outputs.cache-hit != 'true'
         run: npm run build
 
-      # 跑分 + 硬门禁：exact/unknown/error 回退或 >3.0x 性能回退即失败（见 benchmark/src/gate.js）。
-      # runner 本身崩溃（引擎回归）同样失败；有意变更走 pnpm run benchmark:baseline。
+      # 本 workflow 只做 OSS 真包语料门禁。标准 benchmark + gate
+      # （benchmark/src/gate.js，3.0x 阈值的取舍见 ci.yml benchmark job 注释）
+      # 由 CI 的 benchmark job 在同一 push（及夜间复测）执行，此处不重复。
       #
-      # 3.0x 阈值（gate.js 硬编码）是有意保留的：baseline 在本地 Apple Silicon 上
-      # 采样（avg 825ms），GitHub ubuntu runner 常年慢 ~2.5–3x（每 case 冷启动
-      # `pnpm run infer`/tsx）。收到 2.0–2.5x 会把 runner 噪声当成回归、CI 变红。
-      # 若要收紧：先在 GH runner 上重跑 `pnpm run benchmark:baseline`（或改成
-      # 相对倍率/固定 perf runner），再改 gate.js 阈值——不要只改数字。
-      - name: Run benchmark
-        run: npm run benchmark
-
-      - name: Gate against baseline
-        run: npm run benchmark:gate
-
       # OSS 真包语料门禁（commander/yargs/semver，离线、无 secret，~20s）。
       # 只挂在 main：envelope（benchmark/oss/baseline.json）是绝对毫秒上限、
       # 机器敏感（约 2.5–2.8x runner 余量）；PR 上每个 commit 跑容易把噪声
@@ -66,5 +85,9 @@ jobs:
         # v7
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: benchmark-results
-          path: benchmark/results
+          # benchmark/results 只有标准 runner 写（现归 CI benchmark job）；
+          # 本 workflow 上传 OSS 语料报告供 gate 失败时人工比对。
+          name: benchmark-oss-results
+          path: |
+            docs/reports/oss-perf-baseline.json
+            docs/reports/oss-perf-baseline.md

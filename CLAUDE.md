@@ -104,5 +104,5 @@ Product CLI lives in `packages/nudojs` (published as `nudojs`, bin `nudo`). `pac
 
 ## CI
 
-- **CI** (`.github/workflows/ci.yml`): build once, dist shared via `nudo-dist` artifact + `actions/cache` (src-hash keyed). Matrix: push main → lint/test:coverage/benchmark; push dev|ci + PRs → lint/build/test (2 shards, `vitest --changed <base>` + `forceRerunTriggers` safety net, tsc skipped on non-TS PRs); nightly schedule → test:coverage/benchmark
-- **Release** (`.github/workflows/release.yml`): changeset version → publish → deploy docs → package VS Code extension → publish to Marketplace/Open VSX
+- **CI** (`.github/workflows/ci.yml`): build once, dist shared via `nudo-dist` artifact + `actions/cache` (src-hash keyed). Matrix: push main → lint/test:coverage/benchmark; push dev|ci + PRs → lint/build/test (2 shards, `vitest --changed <base>` + `forceRerunTriggers` safety net, tsc skipped on non-TS PRs); nightly schedule → test:coverage/benchmark. CI's same-SHA green conclusion is the publish/deploy gate for Release & Docs-deploy (explicit polling, fail-closed — no duplicate inline lint/test).
+- **Release** (`.github/workflows/release.yml`): two routes — pending changesets → version-only Version PR (no build/test); no changesets + unpublished versions → same-SHA CI gate + `nudo-dist` reuse → publish → package VS Code extension → publish to Marketplace/Open VSX. Docs deploy is decoupled (`.github/workflows/docs-deploy.yml`: same-SHA CI gate + dist reuse → GitHub Pages).

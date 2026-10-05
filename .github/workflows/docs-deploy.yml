@@ -19,6 +19,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
   pages: write
   id-token: write
 
@@ -48,29 +49,55 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # verify:docs 经 tsx 跑 CLI；@nudo:env 动态 import 按 package exports
-      # 解析 @nudojs/* → dist。与 CI 一致：先 build 再验文档，否则每个 pin
-      # 都会因 CLI 起不来而变红（假失败）。
-      - name: Build packages
-        run: pnpm run build
-
-      # 部署前必须全绿：文档示例在引擎行为漂移时不出版
-      - name: Verify docs examples
-        run: pnpm run verify:docs -- --report
-
-      # 生成文件（releases*.md / api skeleton / versioning 版本表）与源对齐才可部署
-      - name: Docs generation drift gate
+      # 部署门禁改为「同 SHA CI 结论门禁」：CI 在同一 push 上已跑
+      # verify:docs / verify:examples / docs:gen drift gate（lint job）+
+      # 全量测试 / benchmark——严格超集。原先本 job 内联重跑的
+      # Verify docs examples 与 Docs generation drift gate 是同 SHA 重复，
+      # 已删。fail-closed：CI 未跑/超时/非 success 一律不部署。
+      # （这不同于跨 workflow `needs:`——同 push 触发的 workflow 无法互相
+      # needs；这里是显式轮询同 head_sha 的 CI run，结论确定。）
+      - name: Wait for CI gate (same SHA)
+        id: cigate
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          pnpm run docs:gen
-          git diff --exit-code -- \
-            packages/website/docs/releases.md \
-            packages/website/docs/releases-history.md \
-            packages/website/docs/guides/versioning.md \
-            packages/website/docs/api \
-            packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/releases.md \
-            packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/releases-history.md \
-            packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/guides/versioning.md \
-            packages/website/i18n/zh-Hans/docusaurus-plugin-content-docs/current/api
+          set -euo pipefail
+          deadline=$(( $(date +%s) + 1200 ))
+          while :; do
+            resp=$(gh api \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&event=push" \
+              --jq 'if (.workflow_runs | length) > 0 then .workflow_runs[0] | "\(.id) \(.status) \(.conclusion // "")" else "" end' || true)
+            if [ -n "$resp" ]; then
+              set -- $resp
+              run_id=$1; status=$2; conclusion=${3:-}
+              url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${run_id}"
+              if [ "$status" = "completed" ]; then
+                if [ "$conclusion" = "success" ]; then
+                  echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+                  echo "CI green at ${GITHUB_SHA::7} — $url"
+                  exit 0
+                fi
+                echo "::error::CI run for ${GITHUB_SHA} concluded '${conclusion}' — docs NOT deployed. $url (若被更新的 push cancel，需重跑本 workflow)"
+                exit 1
+              fi
+              echo "CI ${status} — ${url}"
+            fi
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::error::Timed out waiting for CI at ${GITHUB_SHA} — fail closed, docs NOT deployed."
+              exit 1
+            fi
+            sleep 15
+          done
+
+      # 复用 CI 刚构建的 nudo-dist（verify:docs 经 tsx 跑 CLI；@nudo:env 动态
+      # import 按 package exports 解析 @nudojs/* → dist）。artifact 过期
+      # （retention 1 天，如手工 dispatch 旧 SHA）则回退本地构建。
+      - name: Download built dist
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download "${{ steps.cigate.outputs.run_id }}" \
+            --name nudo-dist --repo "${GITHUB_REPOSITORY}" || npm run build
 
       - name: Build docs
         run: pnpm run docs:build
