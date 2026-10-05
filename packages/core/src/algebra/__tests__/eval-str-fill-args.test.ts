@@ -9,7 +9,7 @@
  * runtime 的 fillTuple 精确折叠。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
+import { runTranspiled, callTranspiledExportFull, litValue, formatAbs } from "@nudojs/core";
 
 function call(src: string, fnName = "f") {
   const exports = runTranspiled(src, { mode: "analyze" });
@@ -71,5 +71,34 @@ describe("evaluator array fill start/end", () => {
   it("symbol start stays abstract (native THROW)", () => {
     const r = call(`export function f() { return [1,2,3].fill(9, Symbol()); }`);
     expect(concreteTuple(r.result)).toBeUndefined();
+  });
+});
+
+describe("abstract-length fill window (issue #98 / review blocker 2)", () => {
+  // 未知长度 arr（a.length=5000 触发降级）上的 fill：默认窗口 [0, len) 覆盖
+  // 全数组 → 元素精确替换；start/end 显式给定 → 窗口不保证覆盖 → 元素 join。
+  // 负 start 是长度相对的（[1,2,3].fill(0,-1) 只写末元素）——不得折全替换。
+  function elemOf(src: string): string {
+    const r = call(src);
+    return formatAbs(r.result);
+  }
+
+  it("default window replaces the element exactly", () => {
+    expect(elemOf(`export function f() { const a = [1]; a.length = 5000; const b = a.fill(0); return b[0]; }`)).toContain("0");
+    expect(elemOf(`export function f() { const a = [1]; a.length = 5000; const b = a.fill(0, 0); return b[0]; }`)).toContain("0");
+  });
+
+  it("negative/positive start keeps the element domain (length-relative window)", () => {
+    // 原生 b[0] 仍是 1（窗口只覆盖尾部/跳过头部）——折叠成 0 丢元素域
+    const neg = elemOf(`export function f() { const a = [1]; a.length = 5000; const b = a.fill(0, -1); return b[0]; }`);
+    expect(neg).toContain("1");
+    expect(neg).toContain("0");
+    const pos = elemOf(`export function f() { const a = [1]; a.length = 5000; const b = a.fill(0, 1); return b[0]; }`);
+    expect(pos).toContain("1");
+  });
+
+  it("explicit end keeps the element domain", () => {
+    const r = elemOf(`export function f() { const a = [1]; a.length = 5000; const b = a.fill(0, 0, 5); return b[0]; }`);
+    expect(r).toContain("1");
   });
 });

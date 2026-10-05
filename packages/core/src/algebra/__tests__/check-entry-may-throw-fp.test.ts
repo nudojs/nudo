@@ -116,3 +116,19 @@ export function lev(a, b) {
     expect(r.summary.errors).toBe(0);
   });
 });
+
+describe("#98 已知召回损失：无约束下标的真实 TypeError 穿门（oobUndef 按类压制）", () => {
+  // h(i) 的 d[i] 是真实无约束下标：原生 h(5) 里 d[5] 读到 undefined，
+  // 再读 [0] 必抛 TypeError——main 上此处报 nudo:entry-may-throw。
+  // 本 PR 的 oobUndef 标记（shape unknown + lit undefined + conf partial）
+  // 按类压制：下游对该 marker 的成员读/索引读写一律静默透传不记
+  // may-throw，无法区分「循环不变量保证在界内」（#98 DP 表误报，本 PR
+  // 要消除）与「真实无约束下标」（此处穿门漏报）。这是显式接受的召回
+  // 损失；理想收窄 = Φ 可导出下标在界 pred（如 i < d.length 证据下恢复
+  // may-throw），超出本 PR 范围。
+  it("h(i)：零 L2（真实 TypeError 穿门），签名并入 undefined", () => {
+    const r = check(`export function h(i) { const d = [[1],[2]]; return d[i][0]; }`);
+    expect(l2Count(r)).toBe(0);
+    expect(sigOf(r, "h")).toMatch(/^1 \| 2 \| undefined\b/);
+  });
+});

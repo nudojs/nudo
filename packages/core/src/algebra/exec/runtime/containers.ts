@@ -340,10 +340,11 @@ export function fillTuple(
   }
   // arr（长度未知）：默认窗口 [0, len) 覆盖全数组 → 元素整体替换为 v
   //（`new Array(n).fill(0)` 的元素是精确 0，不是 unknown|0——DP 表
-  // `d[i-1][j] + 1` 的算术臂不再带 unknown，issue #98）；窗口不可判定
-  //（抽象 start/end）→ 保守 join。
-  const coversAll =
-    (s === undefined || (typeof s === "number" && s <= 0)) && e === undefined;
+  // `d[i-1][j] + 1` 的算术臂不再带 unknown，issue #98）。start 必须显式
+  // 0 或缺省——负 start 是长度相对的（[1,2,3].fill(0,-1) 只写末元素），
+  // 未知长度下无法折整窗（review Blocker 2：负 start 折全替换丢元素域）；
+  // end 非缺省同理保守 join。
+  const coversAll = (s === undefined || s === 0) && e === undefined;
   return abs(
     { k: "arr", element: coversAll ? v : joinAbs(shape.element, v) },
     undefined,
@@ -620,9 +621,13 @@ export function $idx(
   if (a.shape.k === "sum") {
     // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce。
     // sum 含 nullish 成员（exec 的 null|match 等）：整体不是 definite throw
-    //（`if (!m) return` 守卫后的非空臂只读非空侧）→ 该成员折 undefined +
-    // may-throw；silent（?. 守卫跳）不记效果。OOB marker 臂（抽象下标
-    // 可能 miss 的合成 undefined）不记——引擎精度产物（issue #98）。
+    //（`if (!m) return` 守卫后的非空臂只读非空侧）→ 该成员记 may-throw
+    // 且原样返回；silent（?. 守卫跳）不记效果。OOB marker 臂（抽象下标
+    // 可能 miss 的合成 undefined）不记软记录——透传是有意的召回权衡：
+    // 越界读本身不抛、读到的 undefined 再被计算读原生必抛 TypeError，
+    // 而 marker 无法区分「循环不变量保证在界内」（#98 循环 DP 表，要零
+    // 误报）与「真实无约束下标」（d[i][0] 原生 h(5) 必抛，穿门不报）——
+    // 按类压制换 #98 零误报；理想收窄 = Φ 导出下标在界 pred（issue #98）。
     const parts = a.shape.members.map((m) => {
       if (isNullishAbs(m)) {
         if (!isOobUndef(m)) {
@@ -633,6 +638,9 @@ export function $idx(
             });
           }
         }
+        // 原样返回（原折 undef()）：isOobUndef 臂需透传 marker 供下游嵌套
+        // 读写识别；其余 nullish 臂保持用户域——无守卫 `X|null` 的计算
+        // 访问结果域随之从 …|undefined 变 …|null。
         return m;
       }
       return $idx(m, i, opts);
@@ -1737,7 +1745,11 @@ export function $get(
     return objectProtoMethodAbs(key);
   }
   // OOB 合成 undefined 接收者（抽象下标可能 miss 后的成员读）：引擎精度
-  // 产物，不记 may-throw / 不硬抛；marker 透传（issue #98）
+  // 产物，不记 may-throw / 不硬抛；marker 透传（issue #98）。透传是有意
+  // 的召回权衡：越界读本身不抛、读到的 undefined 再被成员读原生必抛
+  // TypeError，而 marker 无法区分「循环不变量保证在界内」（#98 循环 DP
+  // 表，要零误报）与「真实无约束下标」（如 d[i][0] 原生 h(5) 必抛，此处
+  // 穿门不报）——按类压制换 #98 零误报；理想收窄 = Φ 导出下标在界 pred。
   if (isOobUndef(o)) return o;
   // any / nullish：throws 域（design-cli-semantics §3.3）
   if (noteNullishMemberThrows(o, key, "property")) {

@@ -4,7 +4,7 @@
 import type { Expression, Node, Statement } from "@babel/types";
 import type { TranspileOptions } from "./types.ts";
 import type { NullishGuard } from "./stmt-predicates.ts";
-import { nullishGuardOf } from "./stmt-predicates.ts";
+import { narrowNullishArmThunk, nullishGuardOf } from "./stmt-predicates.ts";
 import {
   isExpression,
   matchReplacement,
@@ -111,16 +111,11 @@ export function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
         : [`const __v = (${parts.altSrc});`, ...altRebinds, `return __v;`];
 
   const forkTest = parts.testSrc ?? "__test";
-  const consThunk = forkArmThunk(consLines, "fk1_", names);
-  const altThunk = forkArmThunk(altLines, "fk2_", names);
   const guard = parts.narrowGuard;
-  // 守卫名在 fork 绑定集（mutator 重绑）时不收窄——影子参数会吞掉臂内写
-  const consFinal = guard?.arm === "cons" && !names.includes(guard.name)
-    ? `((${guard.name}) => ${consThunk})($removeNullish(${guard.name}))`
-    : consThunk;
-  const altFinal = guard?.arm === "alt" && !names.includes(guard.name)
-    ? `((${guard.name}) => ${altThunk})($removeNullish(${guard.name}))`
-    : altThunk;
+  // nullish 守卫臂剪影与 stmt.ts IfStatement 同源（#97）：守卫名在 fork
+  // 绑定集（mutator 重绑）时不收窄——影子参数会吞掉臂内写
+  const consFinal = narrowNullishArmThunk(forkArmThunk(consLines, "fk1_", names), guard, "cons", names);
+  const altFinal = narrowNullishArmThunk(forkArmThunk(altLines, "fk2_", names), guard, "alt", names);
   return [
     `(() => {`,
     `  const __test = (${parts.alwaysSrc});`,
@@ -292,19 +287,19 @@ function emitChainFrom(hops: ChainHop[], i: number, valSrc: string): string {
       // 原生不抛 → silent（不记 any may-throw，Bug 3）。链上后续跳仍走 $get
       //（x?.a.b 的 .b 保持 may-throw）。
       return hop.optional
-        ? shortCircuitHop(valSrc, `$get($__oc, ${hop.key}, { silent: true })`, hops, i)
+        ? shortCircuitHop(valSrc, (r) => `$get(${r}, ${hop.key}, { silent: true })`, hops, i)
         : rest(`$get(${valSrc}, ${hop.key})`);
     case "idx":
       return hop.optional
-        ? shortCircuitHop(valSrc, `$idx($__oc, ${hop.keySrc}, { silent: true })`, hops, i)
+        ? shortCircuitHop(valSrc, (r) => `$idx(${r}, ${hop.keySrc}, { silent: true })`, hops, i)
         : rest(`$idx(${valSrc}, ${hop.keySrc})`);
     case "len":
       return hop.optional
-        ? shortCircuitHop(valSrc, `$len($__oc)`, hops, i)
+        ? shortCircuitHop(valSrc, (r) => `$len(${r})`, hops, i)
         : rest(`$len(${valSrc})`);
     case "call":
       return hop.optional
-        ? shortCircuitHop(valSrc, `$callNamed("call", $__oc, ${hop.argsSrc}${hop.locArg})`, hops, i)
+        ? shortCircuitHop(valSrc, (r) => `$callNamed("call", ${r}, ${hop.argsSrc}${hop.locArg})`, hops, i)
         : rest(`$callNamed("call", ${valSrc}, ${hop.argsSrc}${hop.locArg})`);
     case "invoke": {
       const invokeOf = (recv: string, fnCheck: boolean): string => {
@@ -321,7 +316,7 @@ function emitChainFrom(hops: ChainHop[], i: number, valSrc: string): string {
         return `(($__fn) => $fork($nullishTest($__fn), () => $lit(void 0), () => ${call}))($get(${recv}, ${hop.method}))`;
       };
       if (hop.recvOptional) {
-        return shortCircuitHop(valSrc, invokeOf("$__oc", hop.fnOptional), hops, i);
+        return shortCircuitHop(valSrc, (r) => invokeOf(r, hop.fnOptional), hops, i);
       }
       return rest(invokeOf(valSrc, hop.fnOptional));
     }
@@ -331,14 +326,18 @@ function emitChainFrom(hops: ChainHop[], i: number, valSrc: string): string {
 /** 可选跳：valSrc nullish → 剩余链短路 undefined；否则从 pruned 接收者继续。
  *  非 nullish 臂的接收者先过 $removeNullish（issue #97）——`p?.major` 的
  *  假臂里 p 已证非 nullish，sum 的 null/undefined 臂剪除后成员读不再记
- *  may-throw、不触发 nullish 硬抛。 */
+ *  may-throw、不触发 nullish 硬抛。
+ *  接收者经构造器注入（非占位符文本替换）——appliedOf 内的实参/计算键
+ *  子表达式可能嵌套自建 `$__oc` 绑定的可选链 IIFE，盲替换会把嵌套 IIFE
+ *  的参数位改成 (($removeNullish($__oc)) => …) 产生非法箭头参数（review
+ *  Blocker 1：`a?.b(c?.d)` 整模块 new Function SyntaxError fail-closed）。 */
 function shortCircuitHop(
   valSrc: string,
-  appliedWithOc: string,
+  appliedOf: (recv: string) => string,
   hops: ChainHop[],
   i: number,
 ): string {
-  const applied = appliedWithOc.split("$__oc").join("$removeNullish($__oc)");
+  const applied = appliedOf("$removeNullish($__oc)");
   return `(($__oc) => $fork($nullishTest($__oc), () => $lit(void 0), () => ${emitChainFrom(hops, i + 1, applied)}))(${valSrc})`;
 }
 
