@@ -223,7 +223,7 @@ Context: [`any` 与 `unknown`](../concepts/limits.md#any-与-unknown) · [依赖
 
 ### `nudo:unproven-return` {#nudo-unproven-return}
 
-Return postcondition could not be proved (any / unknown / opaque / widened face with no pred evidence). **Warning** — inference failed to discharge the obligation; do not treat as success. Distinct from `nudo:constraint-violated` (definite violation).
+Return postcondition could not be proved (any / unknown / opaque / widened face with no pred evidence, or an out-of-bounds marker arm — an abstract index read like `d[m][n]` on a loop-built table joins a synthetic `undefined`; the loop-bound/length relation is lost, so neither proof nor disproof is possible). **Warning** — inference failed to discharge the obligation; do not treat as success. Distinct from `nudo:constraint-violated` (definite violation).
 
 Context: [nudo check](../guides/check.md#what-it-checks)
 

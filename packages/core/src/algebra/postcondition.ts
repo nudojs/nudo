@@ -28,6 +28,7 @@ import {
   instantiateOnTerm,
 } from "./constraint.ts";
 import { isNullishLitAbs } from "./surface.ts";
+import { isOobUndef } from "./exec/runtime/state.ts";
 import { literalMeetsConstraint } from "./domain-membership.ts";
 import { getSlot } from "./objects.ts";
 import { termEquals } from "./term.ts";
@@ -170,6 +171,18 @@ function assertSumArms(
   );
   let sawUnprovable = false;
   for (const arm of arms) {
+    // OOB marker 臂（抽象下标可能 miss 的合成 undefined，conf=partial）：
+    // 引擎精度产物而非用户域 undefined——长度事实已丢失，无法区分「按构造
+    // 在界内」（DP 表 d[m][n]，issue #102）与「真实越界」，不得据以
+    // disproved。契约显式承认 nullish（nullable / union(..., lit(null))）时
+    // marker 的 undefined 可能性已被域覆盖——臂 discharged（与用户 nullish
+    // 臂 continue 同形，亦与单臂 assertImpliesSingle 的 proved 口径对称）；
+    // 否则降 unprovable（与 isWidenedSumArm 污染臂同口径）。其余真实臂
+    // 仍逐臂对账，证据充分时照常 disproved。
+    if (isOobUndef(arm)) {
+      if (!constraintAdmitsNullish(constraint)) sawUnprovable = true;
+      continue;
+    }
     // nullish 臂：契约须显式承认 nullish（nullable / union(..., lit(null))）。
     // nullish 逃逸是确定违约，不受拓宽臂降级影响。
     if (isNullishLitAbs(arm)) {
@@ -205,6 +218,13 @@ function assertImpliesSingle(
   opts: { phi?: Phi } | undefined,
   phi: Phi,
 ): PostProof {
+  // --- OOB marker（issue #102）：引擎精度产物——不可证亦不可反证 ---
+  if (isOobUndef(arm)) {
+    return constraintAdmitsNullish(constraint)
+      ? proved()
+      : unprovable("out-of-bounds marker arm (abstract index may miss) — length fact lost");
+  }
+
   // --- nullish 显式化 ---
   if (isNullishLitAbs(arm)) {
     return constraintAdmitsNullish(constraint)
