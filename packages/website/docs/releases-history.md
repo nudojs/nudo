@@ -11,28 +11,34 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 | Package | Current version |
 |----------|-----------------|
-| `@nudojs/core` | 1.7.5 |
-| `@nudojs/service` | 1.6.5 |
-| `nudojs (CLI)` | 1.3.6 |
-| `@nudojs/parser` | 1.4.2 |
-| `@nudojs/lsp` | 1.4.3 |
-| `@nudojs/env` | 0.4.20 |
-| `@nudojs/harvester` | 0.3.6 |
-| `vite-plugin-nudo` | 0.4.21 |
-| `nudo-vscode` | 0.3.25 |
+| `@nudojs/core` | 1.7.6 |
+| `@nudojs/service` | 1.6.6 |
+| `nudojs (CLI)` | 1.3.7 |
+| `@nudojs/parser` | 1.4.3 |
+| `@nudojs/lsp` | 1.4.4 |
+| `@nudojs/env` | 0.4.21 |
+| `@nudojs/harvester` | 0.3.7 |
+| `vite-plugin-nudo` | 0.4.22 |
+| `nudo-vscode` | 0.3.26 |
 
 **Jump to package:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.7.5 {#pkg-core}
+## @nudojs/core 1.7.6 {#pkg-core}
+
+## 1.7.6
+
+### Patch Changes
+
+- 856d8bf: fix(core): SequenceExpression 发射统一括号包裹 —— 逗号序列裸发射 `a, b` 在任何嵌套位都会撕裂宿主结构：对象字面量属性值/类计算键里后续项被解析成新属性的键 → `new Function` SyntaxError → 整文件 eval-incapable；数组元素位一项静默变多项（长度翻倍）。TS 降级 `#private` 产物 `[(_A = new WeakMap(), …, "k")]` 计算键正是该形态：yargs 全量命中 → 模块图逐依赖求值失败重试（失败不缓存）→ OSS bench yargs hub-edit 4.4x / check-all 2x 回归，CI OSS baseline gate 5 连红。括号在语句位/实参位均合法，统一包裹后语义不变（序列值 = 末项）。
+
+<details>
+<summary>Version history (29)</summary>
 
 ## 1.7.5
 
 ### Patch Changes
 
 - 4c3fafd: fix(core): OOB marker 臂不再把返回契约判成 error（issue #102）—— 抽象下标读（循环建表后的 `d[m][n]`）并入的 `oobUndef` marker（conf=partial 合成 undefined）是引擎精度产物而非用户域 undefined；postcondition 对该臂降级 unprovable（`nudo:unproven-return` warning，gate 不再变红），与 widened 污染臂同口径；契约显式承认 nullish（`nullable(...)` / `union(..., lit(null))`）时 marker 臂 discharged（多臂与单臂 proved 口径对称）。真实 nullish 返回臂仍照常 `nudo:constraint-violated` error；其余真实臂证据充分时仍 disproved。DP / 编辑距离 / 备忘录类「循环建表 + 按构造在界内读取 + number() 返回契约」函数恢复绿门（1.3.4 语义）。已知召回权衡：真实无约束下标越界返回（`return a[i]`）从 error 降为 warning——与 #98 oobUndef 按类压制同族，理想收窄需循环上界×下标关系推理。
-
-<details>
-<summary>Version history (28)</summary>
 
 ## 1.7.4
 
@@ -796,7 +802,20 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/service 1.6.5 {#pkg-service}
+## @nudojs/service 1.6.6 {#pkg-service}
+
+## 1.6.6
+
+### Patch Changes
+
+- Updated dependencies [856d8bf]
+  - @nudojs/core@1.7.6
+  - @nudojs/env@0.4.21
+  - @nudojs/harvester@0.3.7
+  - @nudojs/parser@1.4.3
+
+<details>
+<summary>Version history (31)</summary>
 
 ## 1.6.5
 
@@ -807,9 +826,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/env@0.4.20
   - @nudojs/harvester@0.3.6
   - @nudojs/parser@1.4.2
-
-<details>
-<summary>Version history (30)</summary>
 
 ## 1.6.4
 
@@ -1526,7 +1542,21 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## nudojs (CLI) 1.3.6 {#pkg-nudojs}
+## nudojs (CLI) 1.3.7 {#pkg-nudojs}
+
+## 1.3.7
+
+### Patch Changes
+
+- Updated dependencies [856d8bf]
+  - @nudojs/core@1.7.6
+  - @nudojs/env@0.4.21
+  - @nudojs/harvester@0.3.7
+  - @nudojs/parser@1.4.3
+  - @nudojs/service@1.6.6
+
+<details>
+<summary>Version history (28)</summary>
 
 ## 1.3.6
 
@@ -1538,9 +1568,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/harvester@0.3.6
   - @nudojs/parser@1.4.2
   - @nudojs/service@1.6.5
-
-<details>
-<summary>Version history (27)</summary>
 
 ## 1.3.5
 
@@ -2016,7 +2043,17 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/parser 1.4.2 {#pkg-parser}
+## @nudojs/parser 1.4.3 {#pkg-parser}
+
+## 1.4.3
+
+### Patch Changes
+
+- Updated dependencies [856d8bf]
+  - @nudojs/core@1.7.6
+
+<details>
+<summary>Version history (28)</summary>
 
 ## 1.4.2
 
@@ -2024,9 +2061,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 - Updated dependencies [4c3fafd]
   - @nudojs/core@1.7.5
-
-<details>
-<summary>Version history (27)</summary>
 
 ## 1.4.1
 
@@ -2421,7 +2455,19 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/lsp 1.4.3 {#pkg-lsp}
+## @nudojs/lsp 1.4.4 {#pkg-lsp}
+
+## 1.4.4
+
+### Patch Changes
+
+- Updated dependencies [856d8bf]
+  - @nudojs/core@1.7.6
+  - @nudojs/parser@1.4.3
+  - @nudojs/service@1.6.6
+
+<details>
+<summary>Version history (32)</summary>
 
 ## 1.4.3
 
@@ -2431,9 +2477,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/core@1.7.5
   - @nudojs/parser@1.4.2
   - @nudojs/service@1.6.5
-
-<details>
-<summary>Version history (31)</summary>
 
 ## 1.4.2
 
@@ -3086,7 +3129,17 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/env 0.4.20 {#pkg-env}
+## @nudojs/env 0.4.21 {#pkg-env}
+
+## 0.4.21
+
+### Patch Changes
+
+- Updated dependencies [856d8bf]
+  - @nudojs/core@1.7.6
+
+<details>
+<summary>Version history (28)</summary>
 
 ## 0.4.20
 
@@ -3094,9 +3147,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 - Updated dependencies [4c3fafd]
   - @nudojs/core@1.7.5
-
-<details>
-<summary>Version history (27)</summary>
 
 ## 0.4.19
 
@@ -3425,7 +3475,19 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/harvester 0.3.6 {#pkg-harvester}
+## @nudojs/harvester 0.3.7 {#pkg-harvester}
+
+## 0.3.7
+
+### Patch Changes
+
+- Updated dependencies [856d8bf]
+  - @nudojs/core@1.7.6
+  - @nudojs/env@0.4.21
+  - @nudojs/parser@1.4.3
+
+<details>
+<summary>Version history (28)</summary>
 
 ## 0.3.6
 
@@ -3435,9 +3497,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/core@1.7.5
   - @nudojs/env@0.4.20
   - @nudojs/parser@1.4.2
-
-<details>
-<summary>Version history (27)</summary>
 
 ## 0.3.5
 
@@ -3805,7 +3864,18 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## vite-plugin-nudo 0.4.21 {#pkg-vite-plugin}
+## vite-plugin-nudo 0.4.22 {#pkg-vite-plugin}
+
+## 0.4.22
+
+### Patch Changes
+
+- Updated dependencies [856d8bf]
+  - @nudojs/core@1.7.6
+  - @nudojs/service@1.6.6
+
+<details>
+<summary>Version history (31)</summary>
 
 ## 0.4.21
 
@@ -3814,9 +3884,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 - Updated dependencies [4c3fafd]
   - @nudojs/core@1.7.5
   - @nudojs/service@1.6.5
-
-<details>
-<summary>Version history (30)</summary>
 
 ## 0.4.20
 
