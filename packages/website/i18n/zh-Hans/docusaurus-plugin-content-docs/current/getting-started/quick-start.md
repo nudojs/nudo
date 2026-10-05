@@ -15,7 +15,7 @@ description: "在普通 JavaScript 上门禁签名与用例——npx nudojs chec
 npx nudojs check /path/to/your/util.js
 ```
 
-应立刻看到**签名**（如 `scale(x: any) => number | string`)，然后要么 `(no issues)`，要么一行 L1/L2 发现。入口参数显示为 `any` 而不是 `unknown`——未约束就是未约束，不是推断失败。后文逐项解释你刚看到的东西。
+应立刻看到**签名**（如 `scale(x: any) => number | string  throws TypeError`)，然后要么 `(no issues)`，要么一行 L1/L2 发现。入口参数显示为 `any` 而不是 `unknown`——未约束就是未约束，不是推断失败。后文逐项解释你刚看到的东西。
 :::
 
 > **信任边界。** Nudo 通过**执行**目标代码来分析（Abs 语义，进程内求值）。不要对不可信代码运行 `nudo check` / `nudo test`；在 CI 里这与跑项目测试是同一信任级别。
@@ -47,17 +47,21 @@ npx nudojs check calc.js
 
 ```text
 nudo check  calc.js
-OK
-  0 error · 0 warning · 0 info · 2 fn
+FAILED
+  2 error · 0 warning · 0 info · 2 fn
 
 signatures
-  scale(x: any) => number | string
-  formatName(first: any, last: any) => string
+  scale(x: any) => number | string  throws TypeError
+  formatName(first: any, last: any) => string  throws TypeError
 
-(no issues)
+issues
+  [ERROR L1 scale] scale (export): may throw TypeError  (nudo:entry-may-throw)
+  [ERROR L5 formatName] formatName (export): may throw TypeError  (nudo:entry-may-throw)
 ```
 
 这个 `number | string` 是老实的 JavaScript 语义，不是 bug：`+` 的操作数无约束（`any`）时，既可能走数值相加，也可能走字符串拼接（`"7" + 1`），Nudo 两条分支都保留。给 `x` 加约束——侧车契约或调用点证据——联合就会坍缩为 `number`。见[语言语义](../concepts/semantics.md)。
+
+两个 L2 发现是同一枚硬币的反面：无约束 `+` 操作数的 ToPrimitive 可能抛 `TypeError`（原生 `Symbol` 强制转换），因此在约束参数（下一节）或声明 `@nudo:throws TypeError` 之前，`check` 会标记这两个导出。
 
 可选调试用例（`nudo test` —— 不是产品门禁）：
 
@@ -79,10 +83,13 @@ Nudo 用实际看到的实参执行了这些函数。无约束入口参数显示
 在源码旁创建 `calc.nudo.js`：
 
 ```javascript verify-sidecar
-import { number, fn } from "@nudojs/core";
+import { number, string, fn } from "@nudojs/core";
 
 export const scale = fn({ x: number().gt(0) }, number());
+export const formatName = fn({ first: string(), last: string() }, string());
 ```
+
+两个导出都加了约束——`formatName` 的 `+` 操作数变为 `string`，其 L2 may-throw 发现与 `scale` 的一并清除。
 
 ## 4. 用 check 把关
 
@@ -105,7 +112,7 @@ FAILED
 
 signatures
   scale(x: number) => number
-  formatName(first: any, last: any) => string
+  formatName(first: string, last: string) => string
 
 issues
   [ERROR L12 scale] scale[x]: argument ⊭ precondition  (nudo:constraint-violated)
@@ -139,7 +146,7 @@ OK
 
 signatures
   scale(x: number) => number
-  formatName(first: any, last: any) => string
+  formatName(first: string, last: string) => string
 
 (no issues)
 ```

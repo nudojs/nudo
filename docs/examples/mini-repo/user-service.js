@@ -1,15 +1,27 @@
 import { isPositive, clamp } from "./validators.js";
 import { MemoryStore } from "./store.js";
 
+/**
+ * @nudo:throws TypeError
+ * 关系运算 ToPrimitive：Symbol 操作数原生抛 TypeError（对齐原生语义）。
+ */
 export function normalizeId(id) {
   return clamp(id, 1, 9999);
 }
 
+/**
+ * @nudo:throws TypeError
+ * 关系运算 ToPrimitive：Symbol 操作数原生抛 TypeError（对齐原生语义）。
+ */
 export function validateAge(age) {
   if (age > 0 && age < 150) return true;
   return false;
 }
 
+/**
+ * @nudo:throws TypeError
+ * 体内 normalizeId 的 coercion 抛错沿调用链传播（对齐原生语义）。
+ */
 export async function fetchUser(id) {
   const nid = normalizeId(id);
   return { id: nid, name: "u" + nid };
@@ -32,6 +44,10 @@ export function createService() {
   };
 }
 
+/**
+ * @nudo:throws TypeError
+ * x + 1 的 ToNumeric：Symbol 操作数原生抛 TypeError（对齐原生语义）。
+ */
 export function score(x) {
   return x + 1;
 }

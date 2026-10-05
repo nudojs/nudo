@@ -60,14 +60,17 @@ nudo check user.js
 ```text
 nudo check  user.js
 FAILED
-  1 error · 0 warning · 0 info · 2 fn
+  2 error · 0 warning · 0 info · 3 fn
 
 signatures
   getName(user: any) => any  throws TypeError
-  subtract(a: any, b: any) => number
+  subtract(a: any, b: any) => number  throws TypeError
+  clamp(n: any, lo: any, hi: any) => any
 
 issues
   [ERROR L1 getName] getName (export): may throw TypeError  (nudo:entry-may-throw)
+      …
+  [ERROR L5 subtract] subtract (export): may throw TypeError  (nudo:entry-may-throw)
       …
 ```
 

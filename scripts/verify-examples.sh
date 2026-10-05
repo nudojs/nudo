@@ -343,7 +343,9 @@ pin 'pnpm run test:cli docs/examples/algebra/sample.js' \
 
 # mini-repo/ — pin the cross-file integration claims.
 # normalizeId may carry nudo:unknown-inference warning (true unknown return);
-# sumAges 无约束 ages 实参 → L2 entry-may-throw（提升是假设、不消除危险）
+# sumAges 无约束 ages 实参 → L2 entry-may-throw（提升是假设、不消除危险）；
+# 其余入口（normalizeId/validateAge/fetchUser/score）已 @nudo:throws TypeError
+# 申报 coercion 抛错（对齐原生语义），L2 豁免。
 pin 'pnpm run check docs/examples/mini-repo/user-service.js' \
   '1 error' \
   'sumAges(ages: any) => number | string  throws TypeError' \
@@ -359,7 +361,7 @@ pin 'pnpm run check docs/examples/mini-repo/validators.js' \
   'isPositive(n: any) => boolean' \
   'clamp(n: any, lo: any, hi: any) => any'
 pin 'pnpm run test:cli docs/examples/mini-repo/validators.js' \
-  'entry@L1  (any) => boolean'
+  'entry@L5  (any) => boolean   throws TypeError'
 pin 'pnpm run test:cli docs/examples/mini-repo/store.js' \
   'MemoryStore.set' 'MemoryStore.get' \
   'entry@'

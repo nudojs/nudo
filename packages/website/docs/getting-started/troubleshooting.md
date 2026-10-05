@@ -33,7 +33,7 @@ formatName("Ada", "Lovelace");
 Run it with `nudo check` and the signatures block reads:
 
 ```text
-scale(x: any) => number | string
+scale(x: any) => number | string  throws TypeError
 ```
 
 Honest JavaScript, not a bug: an unconstrained operand to `+` can drive numeric addition *or* string concatenation (`"7" + 1`), so both branches are kept instead of guessing. Constrain `x` — a contract or call-site evidence — and the union collapses to `number` (`scale(x: number) => number`). Full story: [Language semantics](../concepts/semantics.md) · [Quick Start](./quick-start.md).
@@ -83,8 +83,11 @@ No — that is the observation face. `check` prints signatures on success *and* 
 
 ```text
 nudo check  calc.js
-OK
-  0 error · 0 warning · 0 info · 2 fn
+FAILED
+  2 error · 0 warning · 0 info · 2 fn
 signatures
-  scale(x: any) => number | string
+  scale(x: any) => number | string  throws TypeError
+  formatName(first: any, last: any) => string  throws TypeError
 ```
+
+The Day-0 face fails the gate: an unconstrained `+` operand's ToPrimitive can throw `TypeError` (native `Symbol` coercion), so L2 flags both exports — constrain the params (a sidecar contract) or declare `@nudo:throws TypeError`.

@@ -83,8 +83,11 @@ L2 要求入口/导出函数不得携带**未声明、未捕获**的抛出——
 
 ```text
 nudo check  calc.js
-OK
-  0 error · 0 warning · 0 info · 2 fn
+FAILED
+  2 error · 0 warning · 0 info · 2 fn
 signatures
-  scale(x: any) => number | string
+  scale(x: any) => number | string  throws TypeError
+  formatName(first: any, last: any) => string  throws TypeError
 ```
+
+Day-0 面会让门禁失败：无约束 `+` 操作数的 ToPrimitive 可能抛 `TypeError`（原生 `Symbol` 强制转换），因此在约束参数（侧车契约）或声明 `@nudo:throws TypeError` 之前，L2 会标记两个导出。

@@ -12,6 +12,8 @@
 //
 // check 输出（Abs 无损签名）：
 //   add(a, b)   number | string  = (A1 + A2)                #partial
+//     （a + b 的 ToPrimitive 可能抛 TypeError —— @nudo:throws TypeError
+//       申报为有意 fail-fast，L2 entry-may-throw 豁免）
 //   scale(x)    number           = (x + 1)  where (x+1) > 1 #path
 //   twice(x)    number           = ((x + 1) + 1)  where ((x+1)+1) > 2  #path
 //
@@ -19,6 +21,11 @@
 
 /// @nudo:import { positive } from "./positive.nudo.js"
 
+/**
+ * @nudo:throws TypeError
+ * a + b 的 ToPrimitive：Symbol 操作数原生抛 TypeError（对齐原生语义）——
+ * 有意 fail-fast，申报后 L2 entry-may-throw 豁免。
+ */
 const add = (a, b) => a + b;
 
 add(1, 3);
