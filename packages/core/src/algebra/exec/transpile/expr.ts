@@ -747,6 +747,15 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
             ].join("\n");
             mParams = ["__this", "...__margs"];
           }
+          // Bug 58：generator 对象方法体不在调用期执行——包 $gen（吞调用期
+          // throws；yield 收集保持既有 eager 口径，与声明/类方法路径同编）
+          if (prop.generator) {
+            mBodyInner = [
+              `return $gen(() => {`,
+              mBodyInner,
+              `});`,
+            ].join("\n");
+          }
           const bodySrc = `{\n${mBodyInner}\n}`;
           // Bug 9：对象方法是方法定义语法，原生不可 new → ctor: false
           const fnValSrc = `$fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${mParams.join(", ")}) => ${bodySrc}, { bindThis: true, ctor: false })`;

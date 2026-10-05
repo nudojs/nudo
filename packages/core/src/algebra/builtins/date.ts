@@ -8,7 +8,7 @@
  * Bug 62：setter 实参逐个 ToNumber 校验；getter/toString 族值域建模。
  */
 import type { Abs } from "../abs.ts";
-import { abs } from "../abs.ts";
+import { abs, strLit } from "../abs.ts";
 import { numPrim, str, mayCoerceThrowOperand } from "./shared.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
@@ -56,8 +56,39 @@ export function evalDateCtor(args: Abs[]): Abs {
       noteToPrimitiveMayThrow(a, "Date constructor argument ToNumber may throw (Symbol/BigInt)");
     }
   }
+  // time-value facet：全字面量实参 → 原生 Date 构造计算
+  // [[TimeValue]]（范围 clamp / 字符串解析 / Invalid 与原生
+  // 同口径——直接复用宿主构造器）。含非字面量实参或无参
+  // （= 当前时间，非编译期常量）→ 不设（消费方走 may 档）。
+  let tv: number | undefined;
+  if (args.length > 0 && args.every((a) => a.term?.op === "lit")) {
+    const lits = args.map((a) => (a.term as { op: "lit"; value: unknown }).value);
+    if (
+      lits.every(
+        (v) =>
+          v === undefined ||
+          v === null ||
+          typeof v === "number" ||
+          typeof v === "string" ||
+          typeof v === "boolean",
+      )
+    ) {
+      // 单参：null → epoch 0、undefined → NaN（Invalid Date），与原生同口径；
+      // 多参：逐参 ToNumber（原生口径）。Date 构造器是定长签名非 rest，
+      // 展开须元组化（TS2556）。
+      tv =
+        lits.length === 1
+          ? new Date(lits[0] == null ? (lits[0] === null ? 0 : NaN) : (lits[0] as number | string)).getTime()
+          : new Date(...(lits.map(Number) as [number, number, number, number, number, number, number])).getTime();
+    }
+  }
   return abs(
-    { k: "brand", name: "Date", shape: abs({ k: "obj", slots: {} }, undefined, undefined, "exact") },
+    {
+      k: "brand",
+      name: "Date",
+      shape: abs({ k: "obj", slots: {} }, undefined, undefined, "exact"),
+      ...(tv !== undefined ? { tv } : {}),
+    },
     undefined,
     undefined,
     "path",
@@ -97,7 +128,27 @@ const DATE_SETTERS = new Set([
   "setMonth", "setUTCMonth", "setFullYear", "setUTCFullYear",
 ]);
 
-export function evalDateMethod(name: string, _recv: Abs, args: Abs[]): Abs | undefined {
+export function evalDateMethod(name: string, recv: Abs, args: Abs[]): Abs | undefined {
+  // toISOString：time-value facet 已知时精确——Invalid Date
+  // （tv=NaN）确定 RangeError（原生）；valid → ISO 字面量
+  // （确定性折叠）。facet 缺失（抽象 Date）→ may 档。
+  if (name === "toISOString") {
+    const tv =
+      recv.shape.k === "brand" && (recv.shape as { name?: string }).name === "Date"
+        ? (recv.shape as { tv?: number }).tv
+        : undefined;
+    if (tv !== undefined) {
+      if (Number.isNaN(tv)) {
+        throw new NudoThrow(errorTypeAbs("RangeError"));
+      }
+      return strLit(new Date(tv).toISOString());
+    }
+    recordMayThrow({
+      kind: "RangeError",
+      cause: "Date.prototype.toISOString on possibly-Invalid Date",
+    });
+    return str("path");
+  }
   if (DATE_NUMBER_GETTERS.has(name)) return numPrim("path");
   if (DATE_STRING_METHODS.has(name)) return str("path");
   if (DATE_SETTERS.has(name)) {

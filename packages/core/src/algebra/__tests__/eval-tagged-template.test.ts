@@ -130,9 +130,9 @@ export function d() { return iterTag\`mn\${3}\`; }
 export function dl() { return spreadLen\`mn\${3}\`; }
 `;
     const d = evalSrc(src, "d");
-    // join 本身不折字面量（既有引擎面）：string；关键是元素精确后不再
-    // 记 may-symbol join TypeError
-    expect(d.value).toBe("string");
+    // 字面量元组 join 精确折叠（原生 ToString 语义）；
+    // 关键是元素精确后不再记 may-symbol join TypeError
+    expect(d.value).toBe('"mn|"');
     expect(d.throws).not.toContain("TypeError");
     expect(d.effects).not.toContain("TypeError");
     // [...s] 元素 = quasis（"mn"、"")：长度精确 2（原生同）

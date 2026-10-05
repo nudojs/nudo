@@ -116,6 +116,22 @@ export function f() { const it = new C().m(); return it[0] + it[1]; }
     expect(litValue(r.result)).toEqual({ ok: true, value: "xy" });
   });
 
+  it("generator 对象方法同样委托元素（对象方法）", () => {
+    const src = `
+export const o = { *m() { yield* "xy"; } };
+export function f() { const it = o.m(); return it[0] + it[1]; }
+`;
+    const exports = runTranspiled(src, { mode: "analyze" });
+    const r = callTranspiledExportFull(exports, "f", []);
+    expect(litValue(r.result)).toEqual({ ok: true, value: "xy" });
+  });
+
+  it("transpiles object generator method to $gen/$yield", () => {
+    const out = transpile(`export const o = { *g() { yield 1; } };`);
+    expect(out).toContain("$gen(");
+    expect(out).toContain("$yield(");
+  });
+
   it("transpile reads the delegate flag ($yieldStar vs $yield)", () => {
     expect(transpile(`export function* g() { yield* [1]; }`)).toContain("$yieldStar(");
     expect(transpile(`export function* g() { yield 1; }`)).not.toContain("$yieldStar(");

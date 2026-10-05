@@ -61,7 +61,7 @@ export type Shape =
        */
       ctor?: boolean;
     }
-  | { k: "brand"; name: string; shape: Abs; ctor?: true }
+  | { k: "brand"; name: string; shape: Abs; ctor?: true; tv?: number }
   | { k: "eff"; eff: "promise" | "generator"; inner: Abs }
   | { k: "sum"; members: Abs[] };
 

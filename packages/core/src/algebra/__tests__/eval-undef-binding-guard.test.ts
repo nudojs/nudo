@@ -59,8 +59,8 @@ describe("B: binding layer produces Abs (no JS undefined leaks)", () => {
     );
     expect(fallbacks.filter((f) => f.reason === "internal")).toEqual([]);
     // 不炸即过：回调第 3 参是 Abs（arr.length 不再读 undefined.shape）
-    // join 结果可能是 partial string（回调链不折具体值），只要有结果即可
-    expect(result).toContain("string");
+    // 回调链全字面量 → join 精确折叠（原生同值）
+    expect(result).toContain('"3,3,3"');
   });
 
   it("K5 spread args fill params (no JS undefined operands)", () => {

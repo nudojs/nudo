@@ -271,8 +271,9 @@ describe("Bug 36: join symbol-element check", () => {
   });
 
   it("legal elements keep path string (controls)", () => {
+    // 全字面量元素 + 缺省分隔符 → 精确折叠（原生 ToString 语义）
     const r1 = evalSrc(`export function f() { return [1n].join(); }`);
-    expect(r1.value).toBe("string");
+    expect(r1.value).toBe('"1"');
     expect(r1.throws).toBe("never");
     // undefined/null 字面量元素合法（ToString 不抛）
     const r2 = evalSrc(`export function f() { return [undefined, null].join(); }`);
