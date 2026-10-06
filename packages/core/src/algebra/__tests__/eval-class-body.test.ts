@@ -360,7 +360,9 @@ describe("Bug 80: class expressions route through the class machinery", () => {
 describe("Bug 58: generator calls are total (body throws deferred to iteration)", () => {
   it("explicit throw in body does not surface at call time", () => {
     const r = evalSrc(`export function* genThrow() { throw new Error("e"); }`, "genThrow");
-    expect(r.value).toBe("[]");
+    // Bug 22：生成器对象带迭代器协议面（无 yield 元素槽）；体内 throw 仍被
+    // $gen 丢弃式帧吞掉（调用期不表面）
+    expect(r.value).toContain("next");
     expect(r.kinds).toEqual([]);
     expect(r.throws).not.toContain("Error");
   });
@@ -385,7 +387,12 @@ describe("Bug 58: generator calls are total (body throws deferred to iteration)"
   });
 
   it("yield collection stays eager (value domain unchanged)", () => {
-    const r = evalSrc(`export function* genYield() { yield 1; yield 2; }`, "genYield");
+    // Bug 22：生成器对象不再是 yield 元组数组——值域经原生迭代面（spread）
+    // 断言 eager 收集口径不变
+    const r = evalSrc(
+      `export function* genYield() { yield 1; yield 2; }\nexport function spread() { return [...genYield()]; }`,
+      "spread",
+    );
     expect(r.value).toBe("[1, 2]");
   });
 

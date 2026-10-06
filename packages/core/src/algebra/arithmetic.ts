@@ -126,8 +126,8 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
     noteCoercionMayThrow(a, b, "ToString coercion of abstract operand (Symbol)");
     return concatString(a, b);
   }
-  // boolean/null 字面量与数字混合：ToNumber 折叠（与 sub/mul/div/mod 同口径；
-  // native 10 + true = 11、2 + null = 2；undefined 参与恒 NaN 不折）
+  // boolean/null/undefined 字面量与数字混合：ToNumber 折叠（与 sub/mul/div/mod
+  // 同口径；native 10 + true = 11、2 + null = 2、undefined + 1 = NaN——恒 number）
   if (ra.ok && rb.ok && coercibleLit(ra.value) && coercibleLit(rb.value)) {
     return numLit(Number(ra.value) + Number(rb.value));
   }
@@ -158,6 +158,18 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
     // 推导图打点（§14.3#6）：a+k 且 a 带 root/shift 标签 → 结果挂 shift 边
     noteDerivationAdd(a, b, result);
     return result;
+  }
+
+  // lit(undefined) ⊗ 数值面（含抽象 number）：ToNumber(undefined)=NaN，数值
+  // 加法恒 number（Bug 10 同源——string 臂不可能；string 操作数已在前述拼接
+  // 臂拦截）。`x + undefined`（x:number）→ NaN 域，不得落 isAnyLike 并集。
+  if (
+    (ra.ok && ra.value === undefined && isNumPrim(b)) ||
+    (rb.ok && rb.value === undefined && isNumPrim(a))
+  ) {
+    const term =
+      a.term && b.term ? simplifyTerm(app("+", [a.term, b.term])) : undefined;
+    return abs({ k: "prim", type: "number" }, term, undefined, "partial");
   }
 
   // any / type-var：JS + 的并集，不是 unknown，也不是 number。
@@ -230,14 +242,17 @@ function isKnownNonBigintNumeric(a: Abs): boolean {
  * 不得硬抛成 never。
  */
 function isMaybeBigintOperand(a: Abs): boolean {
-  return (
-    a.shape.k === "any" ||
-    a.shape.k === "unknown" ||
-    a.shape.k === "obj" ||
-    a.shape.k === "fn" ||
-    a.shape.k === "brand" ||
-    a.shape.k === "sum"
-  );
+  const k = a.shape.k;
+  if (k === "sum") {
+    // Bug 25：sum 成员感知——prim 成员（number|string union）绝不可能是
+    // bigint/Symbol，不得随 obj/fn/brand/any 成员连坐（否则 `v > "a"`、
+    // `v + "!"` 对纯 prim union 记假 may-throw）。obj/fn/brand/any 成员
+    // 保持原子（对象经 @@toPrimitive 确可返 Symbol/bigint）。空 sum 无
+    // 成员可判（DEC-006 无单位元口径）→ 保守真。
+    const members = (a.shape as { members: Abs[] }).members;
+    return members.length === 0 || members.some((m) => isMaybeBigintOperand(m));
+  }
+  return k === "any" || k === "unknown" || k === "obj" || k === "fn" || k === "brand";
 }
 
 /**
@@ -365,14 +380,17 @@ function isAnyLike(a: Abs): boolean {
  */
 function coercibleLit(
   v: LiteralValue,
-): v is number | string | boolean | null {
-  // 值域判定（调用方已 .ok）：lit(undefined) 是合法字面量，但 + 参与
-  // 恒 NaN 且历史口径不折（见 add 注释）；bigint 走 foldBigintBinOp。
+): v is number | string | boolean | null | undefined {
+  // 值域判定（调用方已 .ok）：lit(undefined) 是合法字面量，
+  // ToNumber(undefined)=NaN → 参与算术恒 NaN（number 值域，Bug 10——
+  // `undefined + 1` 原生恒 NaN，不得落 number|string 并集）；
+  // bigint 走 foldBigintBinOp。
   return (
     typeof v === "number" ||
     typeof v === "string" ||
     typeof v === "boolean" ||
-    v === null
+    v === null ||
+    v === undefined
   );
 }
 

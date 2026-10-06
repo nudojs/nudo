@@ -61,6 +61,8 @@ export function sum() {
     const src = `
 export function* j() { yield* [1, 2]; }
 export function* k() { yield* "ab"; }
+export function spreadJ() { return [...j()]; }
+export function spreadK() { return [...k()]; }
 export function sum() {
   let t = 0;
   for (const v of j()) t += v;
@@ -68,9 +70,11 @@ export function sum() {
 }
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
-    const rj = callTranspiledExportFull(exports, "j", []);
+    // Bug 22：生成器对象是带迭代器协议面的 obj（不再是 yield 元组数组）——
+    // 值域断言经原生迭代面（spread）消费
+    const rj = callTranspiledExportFull(exports, "spreadJ", []);
     expect(formatAbs(rj.result as never)).toContain("[1, 2]");
-    const rk = callTranspiledExportFull(exports, "k", []);
+    const rk = callTranspiledExportFull(exports, "spreadK", []);
     expect(formatAbs(rk.result as never)).toContain('["a", "b"]');
     const rs = callTranspiledExportFull(exports, "sum", []);
     expect(litValue(rs.result)).toEqual({ ok: true, value: 3 });
@@ -80,20 +84,23 @@ export function sum() {
     const src = `
 export function* g() { yield 1; yield* 2; yield 3; }
 export function* i() { yield* null; }
+export function spreadG() { return [...g()]; }
+export function spreadI() { return [...i()]; }
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
-    const rg = callTranspiledExportFull(exports, "g", []);
+    const rg = callTranspiledExportFull(exports, "spreadG", []);
     expect(formatAbs(rg.result as never)).toContain("[1]");
-    const ri = callTranspiledExportFull(exports, "i", []);
+    const ri = callTranspiledExportFull(exports, "spreadI", []);
     expect(formatAbs(ri.result as never)).toContain("[]");
   });
 
   it("yield* any 接收者 → 元素 any（无约束，不是 unknown 引擎债）", () => {
     const exports = runTranspiled(
-      `export function* h(x) { yield* x; }`,
+      `export function* h(x) { yield* x; }
+export function spreadH(x) { return [...h(x)]; }`,
       { mode: "analyze" },
     );
-    const r = callTranspiledExportFull(exports, "h", [anyAbs]);
+    const r = callTranspiledExportFull(exports, "spreadH", [anyAbs]);
     expect(formatAbs(r.result as never)).toContain("[any]");
   });
 

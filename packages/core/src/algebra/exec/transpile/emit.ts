@@ -5,9 +5,71 @@
 import type { Statement, Expression, Node } from "@babel/types";
 import type { TranspileOptions } from "./types.ts";
 import { emitTranspileExpression } from "./transpile-dispatch.ts";
-import { isExpression, foldRequireSpecArg, staticKeyOf, isConstAssignTarget } from "./helpers.ts";
+import { isExpression, foldRequireSpecArg, staticKeyOf, isConstAssignTarget, symbolKeyOf } from "./helpers.ts";
 import { ARR_MUTATOR_NAMES } from "./ops.ts";
 import { memberPathOf, readPathSrc, setPathSrc, readPrefix, setParentPathSrc } from "./member-path.ts";
+import { NudoUnsupportedError } from "../unsupported.ts";
+
+/**
+ * 解构目标是成员表达式（`[o.x] = src` / `({ p: o.x } = src)`）：逐项写回成员。
+ * 可重绑根（标识符 / this 参数）走不可变更新链（与直接成员赋值同口径）；
+ * 根不可重绑（`foo().x`）落 $set/$idxSet 副作用语句——解构表达式的值是 RHS，
+ * 语句位无人消费写入值。此前成员目标被静默跳过（emitDestructure 只认
+ * Identifier），写丢失后 `o.x` 读折 exact undefined（Bug 10 修复把该
+ * imprecision 从 number|string 并集引爆成 exact NaN 后由差分抓到）。
+ */
+function emitMemberTargetAssign(
+  target: Node,
+  valueSrc: string,
+  pad: string,
+  opts: TranspileOptions,
+  out: string[],
+): void {
+  const m = target as unknown as Parameters<typeof memberPathOf>[0] & {
+    loc?: { start: { line: number; column: number } };
+  };
+  const path = memberPathOf(m, opts);
+  if (path) {
+    out.push(`${pad}${path.rootSrc} = ${setPathSrc(path, valueSrc)};`);
+    return;
+  }
+  const obj = emitTranspileExpression(m.object as Expression, opts);
+  if (!m.computed && m.property.type === "PrivateName") {
+    const priv =
+      (m.property as { id?: { name?: string }; name?: string }).id?.name
+      ?? (m.property as { name?: string }).name;
+    if (!priv) {
+      throw new NudoUnsupportedError("assign-target", m.loc ? { line: m.loc.start.line, column: m.loc.start.column } : undefined);
+    }
+    out.push(`${pad}$set(${obj}, ${JSON.stringify(`#${priv}`)}, ${valueSrc});`);
+    return;
+  }
+  if (!m.computed && m.property.type === "Identifier") {
+    out.push(`${pad}$set(${obj}, ${JSON.stringify((m.property as { name: string }).name)}, ${valueSrc});`);
+    return;
+  }
+  if (m.computed) {
+    const k = m.property;
+    if (k.type === "NumericLiteral") {
+      out.push(`${pad}$idxSet(${obj}, $lit(${(k as { value: number }).value}), ${valueSrc});`);
+      return;
+    }
+    if (k.type === "StringLiteral") {
+      out.push(`${pad}$set(${obj}, ${JSON.stringify((k as { value: string }).value)}, ${valueSrc});`);
+      return;
+    }
+    if (isExpression(k)) {
+      const symK = symbolKeyOf(k as Parameters<typeof symbolKeyOf>[0]);
+      if (symK !== null) {
+        out.push(`${pad}$set(${obj}, ${symK}, ${valueSrc});`);
+        return;
+      }
+      out.push(`${pad}$idxSet(${obj}, ${emitTranspileExpression(k, opts)}, ${valueSrc});`);
+      return;
+    }
+  }
+  throw new NudoUnsupportedError("assign-target", m.loc ? { line: m.loc.start.line, column: m.loc.start.column } : undefined);
+}
 
 export function emitArrMutatorRebinds(
   expr: Node | null | undefined,
@@ -240,6 +302,9 @@ export function emitDestructure(
         } else {
           out.push(`${pad}${kw} ${prop.value.name} = $get(${fromSrc}, ${keyLit});`);
         }
+      } else if (prop.value.type === "MemberExpression") {
+        // ({ p: o.x } = src)：成员目标写回（不得静默跳过）
+        emitMemberTargetAssign(prop.value as Node, `$get(${fromSrc}, ${keyLit})`, pad, opts, out);
       }
     }
     if (restName) {
@@ -298,6 +363,9 @@ export function emitDestructure(
         } else {
           out.push(`${pad}${kw} ${el.name} = $idx(${fromSrc}, $lit(${i}));`);
         }
+      } else if (el.type === "MemberExpression") {
+        // [o.x] = src：成员目标写回（不得静默跳过）
+        emitMemberTargetAssign(el as Node, `$idx(${fromSrc}, $lit(${i}))`, pad, opts, out);
       }
     });
     if (restName) {
@@ -336,7 +404,7 @@ export function emitParamBinding(
       }
       const ph = `_rest${i}`;
       rest = ph;
-      emitDestructure(p.argument, ph, "const", pad, opts, prologue, { n: 0 });
+      emitDestructure(p.argument, ph, "const", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
       return;
     }
     const ph = `_p${i}`;
@@ -348,12 +416,12 @@ export function emitParamBinding(
       } else {
         const t = `_pd${i}`;
         prologue.push(`${pad}const ${t} = $orDefault(${ph}, () => ${def});`);
-        emitDestructure(p.left, t, "const", pad, opts, prologue, { n: 0 });
+        emitDestructure(p.left, t, "const", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
       }
       return;
     }
     if (p.type === "ObjectPattern" || p.type === "ArrayPattern") {
-      emitDestructure(p, ph, "const", pad, opts, prologue, { n: 0 });
+      emitDestructure(p, ph, "const", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
     }
   });
   return { sig, rest, prologue };
@@ -380,7 +448,7 @@ export function emitParamBindingFromArgs(
         rest = p.argument.name;
       } else {
         rest = `_rest${i}`;
-        emitDestructure(p.argument, rest, "const", pad, opts, prologue, { n: 0 });
+        emitDestructure(p.argument, rest, "const", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
       }
       return;
     }
@@ -397,12 +465,12 @@ export function emitParamBindingFromArgs(
       } else {
         const t = `_pd${i}`;
         prologue.push(`${pad}let ${t} = $orDefault(${idxSrc}, () => ${def});`);
-        emitDestructure(p.left, t, "const", pad, opts, prologue, { n: 0 });
+        emitDestructure(p.left, t, "const", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
       }
       return;
     }
     if (p.type === "ObjectPattern" || p.type === "ArrayPattern") {
-      emitDestructure(p, idxSrc, "let", pad, opts, prologue, { n: 0 });
+      emitDestructure(p, idxSrc, "let", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
     }
   });
   if (rest) {

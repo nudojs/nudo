@@ -9,6 +9,9 @@ import { mapEntriesAbs } from "../collections.ts";
 import { undefAbs } from "../hof.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
+import { $call } from "../exec/call.ts";
+import { $objAccessor, migrateAccessors } from "../exec/runtime/members.ts";
+import { getFnImpl } from "../abs-fn.ts";
 import { isSymbolAbs } from "./symbol.ts";
 import { boolPrim, numPrim, str, isPrimLike, mayCoerceThrowOperand } from "./shared.ts";
 import { type PropFlags, getPropFlags, markExtState, extStateOf, setPropFlags, migrateInvariants } from "./invariants.ts";
@@ -547,11 +550,50 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       // get/set 非函数且非 undefined → TypeError（Getter must be a function）
       const invalidAccessor = (f: { present: boolean; v: unknown }): boolean =>
         f.present && f.v !== undefined && f.v !== "fn-or-abstract";
-      if (invalidAccessor(getF) || invalidAccessor(setF)) return unknown;
+      // Bug 20：原生 ToPropertyDescriptor 确定 TypeError——硬抛（catch 可
+      // 吸收），不再 return unknown 吞掉 throws 面
+      if (invalidAccessor(getF) || invalidAccessor(setF)) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
       // value 与访问器共存 → TypeError（Invalid property. 'value' present on …）
       const accessorPresent =
         (getF.present && getF.v !== undefined) || (setF.present && setF.v !== undefined);
-      if (accessorPresent && valueF.present && valueF.v !== undefined) return unknown;
+      if (accessorPresent && valueF.present && valueF.v !== undefined) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      // Bug 20：访问器描述符安装（此前只校验不安装——成员读折裸 undefined、
+      // 写按新建数据属性 writable:false 误抛）。get/set 为 fn 形态 → 经
+      // accessorTable 侧表派发（$get/$set 原型语义）；非 fn 抽象形态可调用
+      // 性不可判定 → may TypeError，槽占位 unknown。
+      const getFAbs = dslots["get"]?.value;
+      const setFAbs = dslots["set"]?.value;
+      const getThunk = accessorPresent && getFAbs && getFAbs.shape.k === "fn"
+        ? (getFnImpl(getFAbs)?.bindThis
+            ? (t: Abs) => $call(getFAbs, [t])
+            : (t: Abs) => $call(getFAbs, [], t))
+        : undefined;
+      const setThunk = accessorPresent && setFAbs && setFAbs.shape.k === "fn"
+        ? (getFnImpl(setFAbs)?.bindThis
+            ? (t: Abs, v: Abs): Abs => {
+                $call(setFAbs, [t, v]);
+                return t; // setter 返回值原生丢弃；目标重绑约定同字面量访问器（返 receiver）
+              }
+            : (t: Abs, v: Abs): Abs => {
+                $call(setFAbs, [v], t);
+                return t;
+              })
+        : undefined;
+      if (
+        accessorPresent &&
+        !getThunk &&
+        !setThunk &&
+        ((getF.present && getF.v !== undefined) || (setF.present && setF.v !== undefined))
+      ) {
+        recordMayThrow({
+          kind: "TypeError",
+          cause: "Object.defineProperty accessor must be callable",
+        });
+      }
       const dv = (k: string): unknown => {
         const s = dslots[k]?.value;
         if (!s) return undefined;
@@ -580,11 +622,11 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         Object.prototype.hasOwnProperty.call(innerForExists.shape.slots, key);
       const flags: PropFlags = {};
       if (exists) {
-        if (writable === false) flags.writable = false;
+        if (writable === false && !accessorPresent) flags.writable = false;
         if (enumerable === false) flags.enumerable = false;
         if (configurable === false) flags.configurable = false;
       } else {
-        if (writable !== true) flags.writable = false;
+        if (writable !== true && !accessorPresent) flags.writable = false;
         if (enumerable !== true) flags.enumerable = false;
         if (configurable !== true) flags.configurable = false;
       }
@@ -601,11 +643,26 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       const putSlots = (inner: Abs): Abs => {
         if (inner.shape.k !== "obj") return inner;
         const lit = litOf(value);
-        const slots = lit
-          ? { ...inner.shape.slots, [key]: { value: lit } }
-          : { ...inner.shape.slots };
+        let slots = { ...inner.shape.slots };
+        if (lit) {
+          slots = { ...slots, [key]: { value: lit } };
+        } else if (accessorPresent) {
+          // Bug 20：访问器槽占位——读取经侧表派发折精确值（字面量返回体可
+          // 折），直接槽读面不折裸 undefined；仅 setter（无 getter）原生读
+          // undefined。
+          slots = {
+            ...slots,
+            [key]: { value: getF.present && getF.v !== undefined ? unknown : undefAbs() },
+          };
+        }
         const next = abs({ k: "obj", slots }, undefined, undefined, inner.conf);
         migrateInvariants(inner, next);
+        // Bug 20：不可变更新迁移既有访问器；新访问器描述符注册侧表
+        // （$get/$set 派发——写路径走 setter，不再按 writable:false 误抛）
+        migrateAccessors(inner, next);
+        if (getThunk || setThunk) {
+          $objAccessor(next, key, getThunk ?? null, setThunk ?? null);
+        }
         return next;
       };
       if (out.shape.k === "obj") {

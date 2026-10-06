@@ -95,6 +95,7 @@ export {
   $instanceof,
   $instanceofNonIdent,
   $objAccessor,
+  $objAccessorKey,
   lookupObjAccessor,
 } from "./runtime/members.ts";
 export {
@@ -145,8 +146,11 @@ export {
   $asyncReturn,
   $await,
   $gen,
+  $narrowTypeOf,
   $nullishTest,
+  $removeNull,
   $removeNullish,
+  $removeUndefined,
   $yield,
   $yieldStar,
 } from "./runtime/async.ts";

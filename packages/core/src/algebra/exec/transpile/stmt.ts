@@ -21,6 +21,7 @@ import {
   paramDisplayNames,
   computeConstScope,
   collectPatternNames,
+  collectVarHoistNames,
 } from "./helpers.ts";
 import { BIN_OPS, COMPOUND_OPS, isStatefulMethodName } from "./ops.ts";
 import {
@@ -59,6 +60,8 @@ import {
   withImplicitReturn,
   nullishGuardOf,
   narrowNullishArmThunk,
+  typeGuardOf,
+  narrowTypeArmThunk,
 } from "./stmt-predicates.ts";
 
 /**
@@ -71,7 +74,7 @@ export function emitFnBlockBody(
   body: Node | undefined | null,
   depth: number,
   opts: TranspileOptions,
-  o: { implicitReturn?: boolean } = {},
+  o: { implicitReturn?: boolean; varParams?: ReadonlySet<string> } = {},
 ): string {
   const implicitReturn = o.implicitReturn !== false;
   if (!body) {
@@ -80,7 +83,10 @@ export function emitFnBlockBody(
   if (body.type !== "BlockStatement") {
     return `${indent(depth)}return ${emitTranspileExpression(body as Expression, opts)};`;
   }
-  const stmts = transpileFnBodyStmts(body.body as Statement[], depth, opts);
+  const stmts = transpileFnBodyStmts(body.body as Statement[], depth, opts, {
+    // Bug 21：方法体 var 提升边界（varParams = 方法参数模式名）
+    skip: o.varParams ?? new Set(),
+  });
   return implicitReturn ? withImplicitReturn(body, stmts, depth) : stmts;
 }
 
@@ -92,6 +98,13 @@ export function emitFnBlockBody(
  * 语句列表顶部；早退拆分时 head 声明标记在外层、rest 声明
  * 标记由递归调用在 thunk 内各自提升（声明本身也在 thunk 内）。
  */
+/** 参数模式名集（var 提升边界扣除：宿主签名/prologue 已绑定） */
+function paramNamesOf(params: Node[]): ReadonlySet<string> {
+  const acc = new Set<string>();
+  for (const p of params) collectPatternNames(p, acc);
+  return acc;
+}
+
 function hoistNonCtorMarkers(stmts: Statement[], depth: number): string {
   const names: string[] = [];
   for (const s of stmts) {
@@ -108,12 +121,44 @@ function hoistNonCtorMarkers(stmts: Statement[], depth: number): string {
   return names.map((n) => `${pad}${n}.__nudoNonCtor = 1;`).join("\n") + "\n";
 }
 
-export function transpileFnBodyStmts(stmtsIn: Statement[], depth: number, opts: TranspileOptions): string {
+export function transpileFnBodyStmts(
+  stmtsIn: Statement[],
+  depth: number,
+  opts: TranspileOptions,
+  /** 函数/方法体边界（var 提升层）：skip = 参数模式名（宿主签名/prologue
+   *  已绑定，不得再提升重复声明）。嵌套块（transpileBlockAsThunk）不传——
+   * var 已在函数级提升，块内按 hoistedVarNames 改发赋值（Bug 21）。 */
+  varScope?: { skip: ReadonlySet<string> },
+): string {
   const stmts = completeElseChains(stmtsIn);
+  // Bug 21：函数体级 var 提升——收集体内（含嵌套块）var 名，顶部发射
+  // `let <name> = $lit(void 0);`（声明前置、初始化留原位改发赋值）。
+  const varHoist: string[] = [];
+  let varOpts = opts;
+  if (varScope) {
+    const hoisted = collectVarHoistNames(stmts);
+    // 提升声明扣除参数遮蔽名与顶层函数声明名（宿主签名/prologue/函数声明
+    // 已绑定，let 重声明是 SyntaxError；var 与函数声明原生同一绑定）；
+    // 发射集保留全部名——遮蔽的 `var a = init` 在块内仍改发赋值
+    const skipDecl = new Set<string>(varScope.skip);
+    for (const s of stmts) {
+      if (s.type === "FunctionDeclaration" && s.id) skipDecl.add(s.id.name);
+    }
+    const declNames = [...hoisted].filter((n) => !skipDecl.has(n));
+    if (declNames.length > 0) {
+      const pad = indent(depth);
+      varHoist.push(
+        `${pad}let ${declNames.map((n) => `${n} = $lit(void 0)`).join(", ")};`,
+      );
+    }
+    // 函数体边界：重算提升集；keepVarDecl 只属于模块顶层 export var 的
+    // 直接声明发射，不得泄漏进嵌套函数体（否则块内 var 误发块级 let）
+    varOpts = { ...opts, hoistedVarNames: hoisted, keepVarDecl: undefined };
+  }
   // 本层 const 可见性（含父作用域、扣除本层 let/var 遮蔽）——用户再赋值 TypeError
   const scopedOpts: TranspileOptions = {
-    ...opts,
-    constNames: computeConstScope(stmts, opts.constNames),
+    ...varOpts,
+    constNames: computeConstScope(stmts, varOpts.constNames),
   };
   for (let i = 0; i < stmts.length; i++) {
     const stmt = stmts[i]!;
@@ -163,7 +208,19 @@ export function transpileFnBodyStmts(stmtsIn: Statement[], depth: number, opts: 
     const cons = wrapArm(transpileBlockAsThunk(stmt.consequent, depth, scopedOpts), "fk1_");
     const altBody = transpileFnBodyStmts(rest, depth + 1, { ...scopedOpts, inLoop: opts.inLoop });
     const altThunk = `() => {\n${altBody}\n${pad}}`;
-    const alt = wrapArm(altThunk, "fk2_");
+    // Bug 2：早退提升路径同样做守卫剪影——rest 在测试假值臂内执行，守卫名
+    // 以 $removeNullish/$narrowTypeOf 影子重绑后，`const t = p.major` 类
+    // 非终结尾句不再撞未剪 null/undefined 臂记假 may-throw（与 IfStatement
+    // 路径同源；守卫名在 fork 绑定集时跳过）。
+    const earlyGuard = nullishGuardOf(stmt.test);
+    const earlyTGuard = typeGuardOf(stmt.test);
+    const altNarrowed = narrowTypeArmThunk(
+      narrowNullishArmThunk(altThunk, earlyGuard, "alt", recvSet),
+      earlyTGuard,
+      "alt",
+      recvSet,
+    );
+    const alt = wrapArm(altNarrowed, "fk2_");
     const inCtrl = (opts.inLoop ?? 0) > 0 || (opts.inTry ?? 0) > 0;
     const applyJoin = names.length ? forkJoinBindings(names, pad).join("\n") : "";
     if (names.length === 0) {
@@ -173,7 +230,7 @@ export function transpileFnBodyStmts(stmtsIn: Statement[], depth: number, opts: 
           ? `${pad}$loopReturn($fork(${test}, ${cons}, ${alt}));`
           : `${pad}return $fork(${test}, ${cons}, ${alt});`,
       ].join("\n");
-      return hoistNonCtorMarkers(stmts.slice(0, i), depth) + (head ? `${head}\n${promoted}` : promoted);
+      return (varHoist.length ? varHoist.join("\n") + "\n" : "") + hoistNonCtorMarkers(stmts.slice(0, i), depth) + (head ? `${head}\n${promoted}` : promoted);
     }
     const promoted = [
       `${pad}{`,
@@ -186,9 +243,9 @@ export function transpileFnBodyStmts(stmtsIn: Statement[], depth: number, opts: 
         : `${padIn}return __fkR;`,
       `${pad}}`,
     ].join("\n");
-    return hoistNonCtorMarkers(stmts.slice(0, i), depth) + (head ? `${head}\n${promoted}` : promoted);
+    return (varHoist.length ? varHoist.join("\n") + "\n" : "") + hoistNonCtorMarkers(stmts.slice(0, i), depth) + (head ? `${head}\n${promoted}` : promoted);
   }
-  return hoistNonCtorMarkers(stmts, depth) + stmts.map((s) => transpileStatement(s, depth, scopedOpts)).join("\n");
+  return (varHoist.length ? varHoist.join("\n") + "\n" : "") + hoistNonCtorMarkers(stmts, depth) + stmts.map((s) => transpileStatement(s, depth, scopedOpts)).join("\n");
 }
 
 
@@ -248,7 +305,14 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         }
         return `${pad}export { ${specs} };`;
       }
-      const inner = transpileStatement(decl as Statement, depth, opts);
+      const inner = transpileStatement(decl as Statement, depth, {
+        ...opts,
+        // Bug 21：export var 保持声明面（host ESM export 收集依赖声明语句；
+        // 名字从模块级提升集扣除），init 内嵌套函数体由边界重算不受此标志
+        ...(decl.type === "VariableDeclaration" && decl.kind === "var"
+          ? { keepVarDecl: true }
+          : {}),
+      });
       // 顶层 export const/let/class：保留 export 面（run.ts 收集进 exports，
       // 供 directive case 经 callTranspiledExport 求值；模块图依赖此表）
       if (depth === 0 && (decl.type === "VariableDeclaration" || decl.type === "ClassDeclaration") && !pad) {
@@ -315,8 +379,19 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const named = sig;
       const paramsSig = rest ? [...named, `...${rest}`] : named;
       const params = paramsSig.join(", ");
+      // Bug 7：缺参归一——省略的尾实参以宿主 undefined 绑定宿主签名形参，
+      // 裸值流进 $add 等算子读 .shape 崩溃（假 may-throw），直接 return 时
+      // 经结果通道泄漏裸 undefined。函数边界统一 $absVal 收形：省略 ≡ 显式
+      // 传 undefined（$orDefault 默认参 / $typeof / $get nullish 硬抛均按
+      // lit(undefined) 折叠）。rest 不经宿主绑定（restBind 按 arguments
+      // 切片，长度保持原生），不在归一名单；sloppy arguments 别名只覆盖
+      // i < arguments.length 的槽位，归一不改变 arguments.length。
+      const bindParams = named.map((p) => `${indent(depth + 2)}${p} = $absVal(${p});`);
+      // Bug 16：__this 必须 let——`this.s = v` 的赋值包装发射
+      // `__this = $set(__this, …)` 重绑（构造调用 this 是对象时执行到），
+      // const 重绑宿主 TypeError
       const thisPrologue = hasThis
-        ? `${indent(depth + 2)}const __this = $rawThis(this);\n`
+        ? `${indent(depth + 2)}let __this = $rawThis(this);\n`
         : "";
       // 真实 function 有宿主 arguments → 投成独立 tuple（不破坏下方 restBind）
       const argsPrologue = hasArgs
@@ -326,12 +401,15 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         stmt.body.type === "BlockStatement"
           ? withImplicitReturn(
               stmt.body,
-              [...prologue, thisPrologue, argsPrologue, transpileFnBodyStmts(stmt.body.body, depth + 2, fnOpts)]
+              [...bindParams, ...prologue, thisPrologue, argsPrologue, transpileFnBodyStmts(stmt.body.body, depth + 2, fnOpts, {
+                // Bug 21：函数体 var 提升边界——参数模式名已绑定，不得提升
+                skip: paramNamesOf(stmt.params as Node[]),
+              })]
                 .filter(Boolean)
                 .join("\n"),
               depth + 2,
             )
-          : `${indent(depth + 2)}${thisPrologue.trim()}${argsPrologue.trim()}return ${emitTranspileExpression(stmt.body as unknown as Expression, fnOpts)};`;
+          : `${indent(depth + 2)}${bindParams.map((l) => `${l.trim()} `).join("")}${thisPrologue.trim()}${argsPrologue.trim()}return ${emitTranspileExpression(stmt.body as unknown as Expression, fnOpts)};`;
       const restBind = rest
         ? `${indent(depth + 1)}const ${rest} = arguments.length > ${named.length} ? $arr(Array.from(arguments).slice(${named.length})) : $arr([]);\n`
         : "";
@@ -458,19 +536,48 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
     }
     case "VariableDeclaration": {
       // const → let：成员/下标写经不可变 Abs 更新后需重绑根绑定
+      // Bug 21：var 是函数作用域——名字已提升到函数体顶部（hoistedVarNames）
+      // 时改发赋值（块内 var 不再退化成块级绑定；重声明合法；跨块写共享）。
+      // 未提升的名字（参数遮蔽 / export var 保持声明面 / 无提升层的合成体）
+      // 保持 host `var` 声明（原生重声明/参数共存语义）。
+      const isVar = stmt.kind === "var" && opts.keepVarDecl !== true;
+      const hoistedVar = opts.hoistedVarNames;
       const kw = "let";
       const asVar = matchAsOverride(stmt as Node, opts);
       const lines: string[] = [];
-      let tmpSeq = 0;
+      // Bug 15：跨语句共享计数器（挂 opts）——同行/无 loc 的多条解构不再
+      // 因行号后缀撞车（重复 const → 整模块 SyntaxError）
+      const tmpSeq = opts.destrTmpSeq ?? { n: 0 };
       for (const d of stmt.declarations) {
         if (d.id.type === "Identifier") {
+          if (isVar && hoistedVar?.has(d.id.name)) {
+            // 提升绑定上的赋值：裸 `var x;` 无写跳过（绑定已由顶部 let 提供）
+            if (!d.init) {
+              if (depth === 0) {
+                lines.push(`${pad}$recordBinding(${JSON.stringify(d.id.name)}, ${d.id.name});`);
+              }
+              continue;
+            }
+            const init = asVar
+              ? asVar
+              : emitTranspileExpression(d.init, opts);
+            lines.push(`${pad}${d.id.name} = ${init};`);
+            if (depth === 0) {
+              lines.push(`${pad}$recordBinding(${JSON.stringify(d.id.name)}, ${d.id.name});`);
+            }
+            if (!asVar) {
+              lines.push(...emitArrMutatorRebinds(d.init as Node, opts, pad));
+            }
+            continue;
+          }
           // @nudo:as：覆盖整个声明语句的 init
           const init = asVar
             ? asVar
             : d.init
               ? emitTranspileExpression(d.init, opts)
               : "$lit(void 0)";
-          lines.push(`${pad}${kw} ${d.id.name} = ${init};`);
+          const declKw = isVar ? "var" : kw;
+          lines.push(`${pad}${declKw} ${d.id.name} = ${init};`);
           // 顶层绑定表（checkSource varAbs / scanLiteralCalls 实参解析）
           if (depth === 0) {
             lines.push(`${pad}$recordBinding(${JSON.stringify(d.id.name)}, ${d.id.name});`);
@@ -487,10 +594,18 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           continue;
         }
         const initSrc = emitTranspileExpression(d.init, opts);
-        const tmp = `_d${tmpSeq++}_${stmt.loc?.start.line ?? 0}`;
+        const tmp = `_d${tmpSeq.n++}`;
         lines.push(`${pad}const ${tmp} = ${initSrc};`);
         lines.push(...emitArrMutatorRebinds(d.init as Node, opts, pad));
-        emitDestructure(d.id as Node, tmp, kw, pad, opts, lines, { n: 0 });
+        // var 解构：名字已提升 → kw ""（赋值模式）；未提升（参数遮蔽 /
+        // export var）→ host `var` 声明
+        let destrKw = kw;
+        if (isVar) {
+          const patNames = new Set<string>();
+          collectPatternNames(d.id, patNames);
+          destrKw = [...patNames].some((n) => hoistedVar?.has(n)) ? "" : "var";
+        }
+        emitDestructure(d.id as Node, tmp, destrKw, pad, opts, lines, tmpSeq);
       }
       return lines.join("\n");
     }
@@ -542,9 +657,24 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // nullish 守卫臂收窄（issue #97）：`if (p === null) …` 的 else 臂 /
       // `if (p !== null) …` 的 then 臂内，p 以 $removeNullish 影子重绑——
       // 后续 p.major 不再记 may-throw。守卫名在 fork 绑定集（臂内写）时跳过。
+      // typeof 类型守卫（Bug 23）：事实臂绑匹配成员、对侧臂绑补集。
       const guard = nullishGuardOf(stmt.test);
-      const consNarrowed = narrowNullishArmThunk(consRaw, guard, "cons", recvSet);
-      const altNarrowed = altRaw === null ? null : narrowNullishArmThunk(altRaw, guard, "alt", recvSet);
+      const tguard = typeGuardOf(stmt.test);
+      const consNarrowed = narrowTypeArmThunk(
+        narrowNullishArmThunk(consRaw, guard, "cons", recvSet),
+        tguard,
+        "cons",
+        recvSet,
+      );
+      const altNarrowed =
+        altRaw === null
+          ? null
+          : narrowTypeArmThunk(
+              narrowNullishArmThunk(altRaw, guard, "alt", recvSet),
+              tguard,
+              "alt",
+              recvSet,
+            );
       const cons = wrapArm(consNarrowed, "fk1_");
       // 缺 else：names 空时**省略** $fork 第三参（不得发裸 undefined 哨兵——
       // 那是标识符，被遮蔽后会把 Abs 当 alternate 函数传进去）；有 fork 绑定时
@@ -1312,6 +1442,13 @@ export function classSpecOf(
   const accessorDefs = new Map<string, { get?: string; set?: string }>();
   const staticAccessorDefs = new Map<string, { get?: string; set?: string }>();
   let ckSeq = 0;
+  // Bug 14：父类构造器源前移计算——静态方法体内 super 的接收者
+  // （staticSuperSrc 注入方法体 opts，Super 节点发此源落通用 $get/$invoke）
+  const superSrc = superClassNode
+    ? superClassNode.type === "Identifier"
+      ? superClassNode.name!
+      : emitTranspileExpression(superClassNode as unknown as Expression, opts)
+    : null;
 
   /**
    * 成员键提取（Bug 60/Bug 78）：
@@ -1371,7 +1508,7 @@ export function classSpecOf(
       const blkBody = Array.isArray(m.body)
         ? (m.body as Statement[])
         : ((m.body as { body?: Statement[] })?.body ?? []);
-      const stmts = transpileFnBodyStmts(blkBody, depth + 3, blkOpts);
+      const stmts = transpileFnBodyStmts(blkBody, depth + 3, blkOpts, { skip: new Set() });
       staticInitParts.push(
         `${indent(depth + 2)}(__this) => {`,
         stmts,
@@ -1433,17 +1570,29 @@ export function classSpecOf(
     const paramList = params.filter((p) => p !== "_").join(", ");
     // get/set 访问器：实例进 spec.accessors，静态进 spec.staticAccessors
     if (m.kind === "get" || m.kind === "set") {
-      const accBodyOpts: TranspileOptions = { ...opts, inLoop: 0, inTry: 0, thisParam: "__this" };
+      const accVarParams = paramNamesOf((m.params ?? []) as Node[]);
+      // className：访问器是类方法体——super.p 走类链派发（$getSuper），
+      // 不是对象原型链（Bug 14 连带）
+      const accBodyOpts: TranspileOptions = {
+        ...opts,
+        inLoop: 0,
+        inTry: 0,
+        inFunction: true,
+        thisParam: "__this",
+        className: name,
+        // Bug 14：静态访问器体 super 接收者 = 父类构造器
+        ...(m.static && superSrc !== null ? { staticSuperSrc: superSrc } : {}),
+      };
       const accBody = m.body as Node | undefined;
       const target = m.static ? staticAccessorDefs : accessorDefs;
       const def = target.get(mname) ?? {};
       if (m.kind === "get") {
-        const accBodyStmts = emitFnBlockBody(accBody, depth + 3, accBodyOpts);
+        const accBodyStmts = emitFnBlockBody(accBody, depth + 3, accBodyOpts, { varParams: accVarParams });
         def.get = `(__this) => {\n${accBodyStmts}\n${indent(depth + 3)}}`;
       } else {
         const vname = params.length > 0 && params[0] !== "_" ? params[0]! : "__v";
         // setter 尾部 return __this——implicitReturn 关闭
-        const setBody = emitFnBlockBody(accBody, depth + 3, accBodyOpts, { implicitReturn: false });
+        const setBody = emitFnBlockBody(accBody, depth + 3, accBodyOpts, { implicitReturn: false, varParams: accVarParams });
         def.set = `(__this, ${vname}) => {\n${setBody}\n${indent(depth + 4)}return __this;\n${indent(depth + 3)}}`;
       }
       target.set(mname, def);
@@ -1462,8 +1611,15 @@ export function classSpecOf(
     let bodyStmts = emitFnBlockBody(
       m.body as Node | undefined,
       depth + 3,
-      m.static ? { ...opts, argsBinding: mHasArgs ? "__nudoArgs" : undefined } : methodOpts,
-      { implicitReturn: !isCtor },
+      m.static
+        ? {
+            ...opts,
+            argsBinding: mHasArgs ? "__nudoArgs" : undefined,
+            // Bug 14：静态方法体 super 接收者 = 父类构造器
+            ...(superSrc !== null ? { staticSuperSrc: superSrc } : {}),
+          }
+        : methodOpts,
+      { implicitReturn: !isCtor, varParams: paramNamesOf((m.params ?? []) as Node[]) },
     );
     if (mHasArgs) {
       const bound = emitParamBindingFromArgs(
@@ -1475,6 +1631,18 @@ export function classSpecOf(
       bodyStmts = [
         `${indent(depth + 4)}let __nudoArgs = $arguments(__margs);`,
         ...bound.prologue,
+        bodyStmts,
+      ].join("\n");
+    } else if (paramList) {
+      // Bug 7：方法边界缺参归一（与函数声明同口径）——paramList 形态的
+      // 宿主绑定形参省略时收 undefAbs；`...__margs` 形态（读 arguments）
+      // 经 $arguments/$idx 已折 lit(undefined)，且 arguments.length 不得
+      // 被补齐膨胀，走上一分支。
+      bodyStmts = [
+        ...paramList
+          .split(", ")
+          .filter(Boolean)
+          .map((p) => `${indent(depth + 4)}${p} = $absVal(${p});`),
         bodyStmts,
       ].join("\n");
     }
@@ -1536,10 +1704,6 @@ export function classSpecOf(
     // 表达式（ClassDefinitionEvaluation），求值顺序保持。hasExtends 标记
     // 区分 `extends undefined`（babel Identifier → 活引用 raw undefined）与
     // 无 extends 子句（Bug 11）。
-    const superSrc =
-      superClassNode.type === "Identifier"
-        ? superClassNode.name
-        : emitTranspileExpression(superClassNode as unknown as Expression, opts);
     specLines.push(`${indent(depth + 2)}hasExtends: true,`);
     specLines.push(`${indent(depth + 2)}extends: ${superSrc},`);
   }
@@ -1670,6 +1834,10 @@ export function extractForInitName(init: Statement | Expression | null | undefin
   // `var` 是函数作用域共享绑定——不得走每迭代参数槽（闭包会误做成 per-iteration）。
   // 返回 null 路由到 fallback：init 就地发射，test/update/body 读真实绑定。
   if (init.kind === "var") return null;
+  // 多声明 `let i = 0, j = 10`：主路径只发射 declarations[0]，其余声明（及其
+  // 初始化副作用）被静默丢弃，剩余标识符成自由变量（运行期 ReferenceError）。
+  // 路由 fallback——经 transpileStatement 发射完整多声明 init。
+  if (init.declarations.length !== 1) return null;
   const d = init.declarations[0];
   return d?.id.type === "Identifier" ? d.id.name : null;
 }

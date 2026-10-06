@@ -238,7 +238,9 @@ export function getEvalCallCollector(): ((r: EvalCallRecord) => void) | null {
  */
 let hostGlobalFnIds: Set<unknown> | undefined;
 
-function isHostGlobalFn(fn: unknown): boolean {
+/** 宿主全局函数身份判定（$new 宿主构造器分支共用，Bug 16）：模块转译
+ *  函数是全新对象，绝不与宿主全局同一 → 不误伤。 */
+export function isHostGlobalFn(fn: unknown): boolean {
   if (typeof fn !== "function") return false;
   if (!hostGlobalFnIds) {
     hostGlobalFnIds = new Set<unknown>();
@@ -406,8 +408,9 @@ export function getEvalCallBudgetState(): {
   };
 }
 
-/** 截断结果：unknown#opaque——预算截断，不触发 unknown-inference */
-function evalTruncatedAbs(): Abs {
+/** 截断结果：unknown#opaque——预算截断，不触发 unknown-inference
+ *  （$new 宿主函数 [[Construct]] 共用，Bug 16） */
+export function evalTruncatedAbs(): Abs {
   return abs({ k: "unknown" }, undefined, undefined, "opaque");
 }
 
@@ -418,8 +421,9 @@ function evalCallBudgetKey(name: string, fn: unknown, args: Abs[]): string {
   return callBudgetKey(name, id, args);
 }
 
-/** 进入命名调用：超限/cycle → 不执行，返回 opaque（并上报截断） */
-function evalEnterCall(name: string, fn: unknown, args: Abs[]): { ok: boolean; key?: string } {
+/** 进入命名调用：超限/cycle → 不执行，返回 opaque（并上报截断）。
+ *  $new 的宿主函数 [[Construct]] 体执行共用（Bug 16，递归构造深度守卫）。 */
+export function evalEnterCall(name: string, fn: unknown, args: Abs[]): { ok: boolean; key?: string } {
   const key = evalCallBudgetKey(name, fn, args);
   if (
     evalActiveCallKeys.includes(key) ||
@@ -435,7 +439,7 @@ function evalEnterCall(name: string, fn: unknown, args: Abs[]): { ok: boolean; k
   return { ok: true, key };
 }
 
-function evalExitCall(): void {
+export function evalExitCall(): void {
   // 禁止负数：嵌套 reset 曾把 depth 清零后再 --，守卫从此失效
   if (evalCallDepth > 0) evalCallDepth--;
   if (evalActiveCallKeys.length > 0) evalActiveCallKeys.pop();

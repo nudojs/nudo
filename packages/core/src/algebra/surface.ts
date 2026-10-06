@@ -54,14 +54,14 @@ function isKnownNonBigintNumeric(a: Abs): boolean {
 
 /** 可能经 ToPrimitive 变成 bigint（any/unknown/obj/fn/brand/sum）——不得硬抛成 never */
 function isMaybeBigintOperand(a: Abs): boolean {
-  return (
-    a.shape.k === "any" ||
-    a.shape.k === "unknown" ||
-    a.shape.k === "obj" ||
-    a.shape.k === "fn" ||
-    a.shape.k === "brand" ||
-    a.shape.k === "sum"
-  );
+  const k = a.shape.k;
+  if (k === "sum") {
+    // Bug 25（与 arithmetic.ts 同口径）：sum 成员感知——纯 prim 成员
+    // （number|string）不可能 bigint/Symbol；空 sum 保守真。
+    const members = (a.shape as { members: Abs[] }).members;
+    return members.length === 0 || members.some((m) => isMaybeBigintOperand(m));
+  }
+  return k === "any" || k === "unknown" || k === "obj" || k === "fn" || k === "brand";
 }
 
 /**
@@ -393,7 +393,7 @@ export function typeofAbs(a: Abs): Abs {
   return strLit(typeofName(a.shape));
 }
 
-function typeofName(s: Shape): string {
+export function typeofName(s: Shape): string {
   switch (s.k) {
     case "never":
       return "undefined";

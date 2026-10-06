@@ -12,11 +12,12 @@ import {
   callTranspiledExportFull,
   litValue,
   formatShape,
+  anyAbs,
 } from "../index.ts";
 
-function call(src: string, fnName = "f") {
+function call(src: string, fnName = "f", args: Parameters<typeof callTranspiledExportFull>[2] = []) {
   const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
+  return callTranspiledExportFull(exports, fnName, args);
 }
 
 describe("litValue sentinel: abstract pos arg / undefined Set key", () => {
@@ -24,29 +25,48 @@ describe("litValue sentinel: abstract pos arg / undefined Set key", () => {
     // "hello"+x 的前缀是 "hello"，但 startsWith("hello", n) 在 n>0 时为 false
     const r = call(
       `export function f(x, n) { const s = "hello" + x; return s.startsWith("hello", n); }`,
+      "f",
+      [anyAbs, anyAbs],
     );
     const a = r.result as { shape?: { k?: string }; term?: { op?: string; value?: unknown }; conf?: string };
     // 不得 exact true（n 抽象时可能 false）
     const exactTrue = a?.term?.op === "lit" && a.term.value === true && a.conf === "exact";
     expect(exactTrue).toBe(false);
+    // Bug 7 边界归一：缺省 x/n ≡ undefined → "helloundefined".startsWith
+    // ("hello", 0) 原生确定 true（显式 undefined 实参同面）
+    expect(litValue(call(
+      `export function f(x, n) { const s = "hello" + x; return s.startsWith("hello", n); }`,
+    ).result)).toEqual({ ok: true, value: true });
   });
 
   it("template endsWith with abstract length is undecided", () => {
     const r = call(
       `export function f(x, n) { const s = "a" + x + "bc"; return s.endsWith("bc", n); }`,
+      "f",
+      [anyAbs, anyAbs],
     );
     const a = r.result as { term?: { op?: string; value?: unknown }; conf?: string };
     const exactTrue = a?.term?.op === "lit" && a.term.value === true && a.conf === "exact";
     expect(exactTrue).toBe(false);
+    // Bug 7 边界归一：缺省 n ≡ undefined → endPosition 缺省取串长，原生确定 true
+    expect(litValue(call(
+      `export function f(x, n) { const s = "a" + x + "bc"; return s.endsWith("bc", n); }`,
+    ).result)).toEqual({ ok: true, value: true });
   });
 
   it("template includes with abstract position is undecided", () => {
     const r = call(
       `export function f(x, n) { const s = "a" + x + "b"; return s.includes("a", n); }`,
+      "f",
+      [anyAbs, anyAbs],
     );
     const a = r.result as { term?: { op?: string; value?: unknown }; conf?: string };
     const exactTrue = a?.term?.op === "lit" && a.term.value === true && a.conf === "exact";
     expect(exactTrue).toBe(false);
+    // Bug 7 边界归一：缺省 n ≡ undefined → 位置 0，原生确定 true
+    expect(litValue(call(
+      `export function f(x, n) { const s = "a" + x + "b"; return s.includes("a", n); }`,
+    ).result)).toEqual({ ok: true, value: true });
   });
 
   it("omitted position on a pure template still decides true", () => {

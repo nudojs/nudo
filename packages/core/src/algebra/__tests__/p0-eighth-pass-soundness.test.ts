@@ -106,8 +106,10 @@ describe("P0-6 generator abstract yield is not exact wrong tuple", () => {
     expect(r.result.conf).not.toBe("exact");
   });
   it("concrete true still yields [1]", () => {
-    const src = `export function* g(n) { yield 1; if (n) return 2; yield 3; }`;
-    const r = call(src, "g", true);
+    const src = `export function* g(n) { yield 1; if (n) return 2; yield 3; }
+export function spread(n) { return [...g(n)]; }`;
+    const r = call(src, "spread", true);
+    // Bug 22：生成器对象是迭代器协议 obj——值域经 spread 消费断言
     expect(formatAbs(r.result)).toContain("[1]");
     expect(r.result.conf).toBe("exact");
   });

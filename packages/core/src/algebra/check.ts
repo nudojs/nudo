@@ -545,7 +545,11 @@ function checkSourceInner(
     // 带 lit term 即有值证据，须排除（与 check-assign/diagnostics/promise/class
     // 四处 `!term` 同口径）。
     const unknownParamIdx = g.typeParams.findIndex(
-      (t) => t.value && t.value.shape.k === "unknown",
+      // Bug 22/24 同口径：unknown 形状 + lit term（undefAbs / 契约 lit(null)·
+      // lit(undefined) 成员）是有值证据，不是引擎债——与 symbolicTrueUnknown
+      // 的排除一致。
+      (t) =>
+        t.value && t.value.shape.k === "unknown" && t.value.term?.op !== "lit",
     );
     const budgetExplained =
       truncated.has(name) ||
