@@ -135,8 +135,14 @@ export function litOnly(v) { return v; }
 /** @nudo:contract v numOrNull */
 export function bad(v) { return v + "!"; }
 `);
-    // may-throw 记录不变（unknown 令牌 wave-1 口径，非本 bug 范围）；
-    // 但契约违例执法通道必须仍在。
-    expect(r.issues.filter((i) => i.code === "nudo:entry-may-throw").length).toBe(1);
+    // issue #119：number | null ⊗ string 原生全定（`1 + "!"`→"1!"、
+    // `null + "!"`→"null!"——ToString 对 number/null 恒 total），lit(null)
+    // 成员不再记 Symbol 强转 may-throw（Bug 24 时钉住的 wave-1 口径已修）。
+    // 契约违例执法通道（L1）由 check-recall-gold / check-return-contract
+    // 的 violation 用例守护，此处只钉零假 L2。
+    expect(r.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);
+    const s = r.signatures.find((x) => x.name === "bad")!;
+    expect(s.display).toContain("string");
+    expect(s.display).not.toContain("throws");
   });
 });

@@ -237,11 +237,29 @@ function isKnownNonBigintNumeric(a: Abs): boolean {
 }
 
 /**
+ * lit(null)/lit(undefined) 操作数：字面量项携带 nullish 值（shape 恒
+ * k:"unknown"——null/undefined 无 prim 名可配，见 absShapeKey-null-unknown）。
+ * 与 builtins/shared.ts mayCoerceThrowOperand 的「lit 项恒 total」同原则，
+ * 但只排 nullish 字面量（see isMaybeBigintOperand，issue #119）。
+ */
+function isNullishLitOperand(a: Abs): boolean {
+  const r = litValue(a);
+  return r.ok && (r.value === null || r.value === undefined);
+}
+
+/**
  * 可能经 ToPrimitive 变成 bigint 的操作数（any/unknown/obj/fn/brand/sum）。
  * `1n + x`（x:any）在 x 实为 2n 时得 3n、x 为 "s" 时得 "1s"、x 为 1 时才 TypeError——
  * 不得硬抛成 never。
  */
 function isMaybeBigintOperand(a: Abs): boolean {
+  // issue #119：lit(null)/lit(undefined)（shape k:"unknown" 携带字面量项）
+  // 在一切隐式强转下 total（ToString→"null"/"undefined"、ToNumber→0/NaN），
+  // 绝不可能是 bigint/Symbol。optional()/nullable() 槽读出
+  // joinAbs(slot, undef)——其 nullish 字面量成员不得连坐 may-throw
+  // （`${f.file}` 契约 string|undefined 曾记假 Symbol 强转）。只排 nullish
+  // 字面量：bigint 字面量保持原判定（ToNumeric 混型 TypeError 真实可能）。
+  if (isNullishLitOperand(a)) return false;
   const k = a.shape.k;
   if (k === "sum") {
     // Bug 25：sum 成员感知——prim 成员（number|string union）绝不可能是
