@@ -205,15 +205,28 @@ export function transpileFnBodyStmts(
     const testRebinds = testRecvs.size
       ? emitArrMutatorRebinds(stmt.test as Node, scopedOpts, pad)
       : [];
-    const cons = wrapArm(transpileBlockAsThunk(stmt.consequent, depth, scopedOpts), "fk1_");
-    const altBody = transpileFnBodyStmts(rest, depth + 1, { ...scopedOpts, inLoop: opts.inLoop });
-    const altThunk = `() => {\n${altBody}\n${pad}}`;
     // Bug 2：早退提升路径同样做守卫剪影——rest 在测试假值臂内执行，守卫名
     // 以 $removeNullish/$narrowTypeOf 影子重绑后，`const t = p.major` 类
     // 非终结尾句不再撞未剪 null/undefined 臂记假 may-throw（与 IfStatement
     // 路径同源；守卫名在 fork 绑定集时跳过）。
+    // issue #118：早退体（cons 臂）同样剪影——`if (o.p) return o.p.q` 的
+    // 属性读在测试真值臂内，守卫事实（成员真值）作用于该臂。
     const earlyGuard = nullishGuardOf(stmt.test);
     const earlyTGuard = typeGuardOf(stmt.test);
+    const consNarrowed = narrowTypeArmThunk(
+      narrowNullishArmThunk(
+        transpileBlockAsThunk(stmt.consequent, depth, scopedOpts),
+        earlyGuard,
+        "cons",
+        recvSet,
+      ),
+      earlyTGuard,
+      "cons",
+      recvSet,
+    );
+    const cons = wrapArm(consNarrowed, "fk1_");
+    const altBody = transpileFnBodyStmts(rest, depth + 1, { ...scopedOpts, inLoop: opts.inLoop });
+    const altThunk = `() => {\n${altBody}\n${pad}}`;
     const altNarrowed = narrowTypeArmThunk(
       narrowNullishArmThunk(altThunk, earlyGuard, "alt", recvSet),
       earlyTGuard,

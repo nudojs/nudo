@@ -4,7 +4,7 @@
 import type { Expression, Node, Statement } from "@babel/types";
 import type { TranspileOptions } from "./types.ts";
 import type { NullishGuard, TypeGuard } from "./stmt-predicates.ts";
-import { narrowNullishArmThunk, narrowTypeArmThunk, nullishGuardOf, typeGuardOf } from "./stmt-predicates.ts";
+import { narrowNullishArmThunk, narrowTypeArmThunk, nullishGuardOf, nullishRemoveCallOf, typeGuardOf } from "./stmt-predicates.ts";
 import {
   isExpression,
   matchReplacement,
@@ -91,10 +91,11 @@ export function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
     let altExpr = parts.altSrc === "__test" ? parts.alwaysSrc : parts.altSrc;
     if (parts.narrowGuard) {
       // 守卫名不得是臂内 mutator 绑定（此处无 mutator，只查守卫名自身）
+      // issue #118：成员真值守卫经 nullishRemoveCallOf 分发（$removeMemberNullish）
       if (parts.narrowGuard.arm === "cons") {
-        consExpr = `((${parts.narrowGuard.name}) => (${consExpr}))($removeNullish(${parts.narrowGuard.name}))`;
+        consExpr = `((${parts.narrowGuard.name}) => (${consExpr}))(${nullishRemoveCallOf(parts.narrowGuard)})`;
       } else {
-        altExpr = `((${parts.narrowGuard.name}) => (${altExpr}))($removeNullish(${parts.narrowGuard.name}))`;
+        altExpr = `((${parts.narrowGuard.name}) => (${altExpr}))(${nullishRemoveCallOf(parts.narrowGuard)})`;
       }
     }
     if (parts.typeGuard) {

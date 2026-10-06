@@ -140,6 +140,13 @@ export type NullishGuard = {
    * u 仍可能 null）。
    */
   grain?: "nullish" | "null" | "undefined";
+  /**
+   * 单层成员真值守卫（issue #118）：`o.p` / `o?.p` 真值守卫——真值 ⇒ 基名
+   * 非 nullish（真值访问未抛）且槽 p 的值非 nullish、槽必在场。臂内基名
+   * 重绑为 $removeMemberNullish($removeNullish(o), key)（optional 摘除 +
+   * 槽值剥 nullish）。只做单层；嵌套路径 / 计算键不识别。
+   */
+  memberKey?: string;
 };
 
 const TYPEOF_NAMES = new Set([
@@ -167,6 +174,32 @@ function mergeGrain(a: "null" | "undefined", b: "null" | "undefined"): "nullish"
 }
 
 /**
+ * 成员真值守卫目标（issue #118）：`o.p` / `o?.p`（MemberExpression /
+ * OptionalMemberExpression，后者可能被 ChainExpression 包裹——非表达式
+ * 语句起点不包，if 测试实测为裸 OptionalMemberExpression，双形态兼容）。
+ * 只认非计算键 + Identifier 基名（单层）；property 取 Identifier 名或
+ * StringLiteral 值。
+ */
+const memberGuardTarget = (n: unknown): { name: string; key: string } | undefined => {
+  const t = n as {
+    type?: string;
+    expression?: unknown;
+    object?: { type?: string; name?: string };
+    computed?: boolean;
+    property?: { type?: string; name?: string; value?: unknown };
+  };
+  const m = (t?.type === "ChainExpression" ? t.expression : t) as typeof t;
+  if (m?.type !== "MemberExpression" && m?.type !== "OptionalMemberExpression") return undefined;
+  if (m.computed) return undefined;
+  if (m.object?.type !== "Identifier" || !m.object.name) return undefined;
+  const p = m.property;
+  const key =
+    p?.type === "Identifier" ? p.name : p?.type === "StringLiteral" && typeof p.value === "string" ? p.value : undefined;
+  if (key === undefined) return undefined;
+  return { name: m.object.name, key };
+};
+
+/**
  * 测试表达式是否是「标识符的 nullish 守卫」，返回非 nullish 事实所属臂：
  * - `p === null` / `p === undefined`（严格）→ else（alt）臂剪对应粒度
  *   （严格等价只排除该字面量：`p === null` 假值臂仍可能 undefined）
@@ -180,8 +213,14 @@ function mergeGrain(a: "null" | "undefined", b: "null" | "undefined"): "nullish"
  * - `p === null || p === undefined` → else 臂剪 nullish（两比较同假 ⇒
  *   p 既非 null 也非 undefined）；`p !== null && p !== undefined` → then
  *   臂剪 nullish（同标识符两侧 nullish 比较的确定复合形态）
- * 守卫变量在该臂内以 $removeNullish/$removeNull/$removeUndefined 影子重绑，
- * 成员读写不再记 may-throw（issue #97：`if (p === null) return -1; p.major`）。
+ * - `o.p` 真值守卫（issue #118，非计算键 + Identifier 基名）→ then 臂：
+ *   真值 ⇒ 基名非 nullish（真值访问未抛）且槽 p 值非 nullish、槽必在场；
+ *   `!o.p` → else 臂同事实；`o?.p` / `!o?.p`（可选链，Babel 产
+ *   OptionalMemberExpression，可能 ChainExpression 包裹）同臂位——truthy
+ *   ⇒ 基名非 nullish 且槽值真值
+ * 守卫变量在该臂内以 $removeNullish/$removeNull/$removeUndefined/
+ * $removeMemberNullish 影子重绑，成员读写不再记 may-throw（issue #97：
+ * `if (p === null) return -1; p.major`；#118：`if (o.p) return o.p.q`）。
  */
 export function nullishGuardOf(test: unknown): NullishGuard | undefined {
   const t = test as {
@@ -196,9 +235,17 @@ export function nullishGuardOf(test: unknown): NullishGuard | undefined {
   if (t?.type === "UnaryExpression" && t.operator === "!" && t.argument?.type === "Identifier" && t.argument.name) {
     return { name: t.argument.name, arm: "alt", grain: "nullish" };
   }
+  // `!o.p` / `!o?.p`：测试假值臂 ⇒ 成员真值（issue #118）
+  if (t?.type === "UnaryExpression" && t.operator === "!") {
+    const m = memberGuardTarget(t.argument);
+    if (m) return { name: m.name, arm: "alt", grain: "nullish", memberKey: m.key };
+  }
   if (t?.type === "Identifier" && t.name) {
     return { name: t.name, arm: "cons", grain: "nullish" };
   }
+  // 裸 `o.p` / `o?.p`：测试真值臂 ⇒ 成员真值（issue #118）
+  const bare = memberGuardTarget(t);
+  if (bare) return { name: bare.name, arm: "cons", grain: "nullish", memberKey: bare.key };
   if (t?.type !== "BinaryExpression") return undefined;
   const op = t.operator;
   if (op !== "===" && op !== "!==" && op !== "==" && op !== "!=") return undefined;
@@ -235,22 +282,39 @@ export function nullishGuardOf(test: unknown): NullishGuard | undefined {
   return undefined;
 }
 
-/** LogicalExpression 复合 nullish 守卫：同一 Identifier 两侧 nullish 比较的确定形态 */
+/**
+ * LogicalExpression 复合 nullish 守卫（issue #118 放宽）：
+ * - 同一 Identifier 两侧 nullish 比较的确定形态（既有语义）——`||` 的
+ *   穿透臂 / `&&` 的成立臂合并两侧粒度与成员事实；
+ * - 单侧成立即可：`A || B` 的穿透臂（整体假 = 两侧皆假）里，任一析取项
+ *   自身是「非 nullish 事实臂 = alt」的 nullish 守卫（如 `!doc`）即单独
+ *   成立——另一侧（typeof 守卫 `typeof doc !== 'object'` 或任意谓词）的
+ *   真假不否定该事实；`&&` 同理 cons（整体真 = 两侧皆真，单侧事实独立
+ *   成立）。
+ * - 两侧都是 nullish 守卫但**异名** → 保守 undefined（与既有语义一致：
+ *   只重绑单名的影子机制无法同时表达双事实，宁缺毋假）。
+ */
 function compositeNullishGuardOf(test: unknown): NullishGuard | undefined {
   const t = test as { type?: string; operator?: string; left?: unknown; right?: unknown };
   if (t?.type !== "LogicalExpression" || (t.operator !== "||" && t.operator !== "&&")) return undefined;
+  const wantArm = t.operator === "||" ? "alt" : "cons";
   const l = nullishGuardOf(t.left);
   const r = nullishGuardOf(t.right);
-  if (!l || !r || l.name !== r.name) return undefined;
-  const wantArm = t.operator === "||" ? "alt" : "cons";
-  if (l.arm !== wantArm || r.arm !== wantArm) return undefined;
-  const g1 = l.grain === "null" || l.grain === "undefined" ? l.grain : null;
-  const g2 = r.grain === "null" || r.grain === "undefined" ? r.grain : null;
-  const grain =
-    g1 === null || g2 === null
-      ? "nullish"
-      : mergeGrain(g1, g2);
-  return { name: l.name, arm: wantArm, grain };
+  const lg = l && l.arm === wantArm ? l : undefined;
+  const rg = r && r.arm === wantArm ? r : undefined;
+  if (lg && rg) {
+    if (lg.name !== rg.name) return undefined;
+    const g1 = lg.grain === "null" || lg.grain === "undefined" ? lg.grain : null;
+    const g2 = rg.grain === "null" || rg.grain === "undefined" ? rg.grain : null;
+    const grain =
+      g1 === null || g2 === null
+        ? "nullish"
+        : mergeGrain(g1, g2);
+    // 成员事实取并集可表的部分：不同键只保留第一侧（sound 子集）
+    const memberKey = lg.memberKey ?? rg.memberKey;
+    return { name: lg.name, arm: wantArm, grain, ...(memberKey !== undefined ? { memberKey } : {}) };
+  }
+  return lg ?? rg;
 }
 
 /**
@@ -287,11 +351,16 @@ export function typeGuardOf(test: unknown): TypeGuard | undefined {
   return { name, typeOf: litSide.value, arm: op === "===" || op === "==" ? "cons" : "alt" };
 }
 
-/** nullish 守卫的臂 thunk 剪影运行时助手（按粒度分发） */
-function removeCallOf(grain: "nullish" | "null" | "undefined" | undefined): string {
-  if (grain === "undefined") return "$removeUndefined";
-  if (grain === "null") return "$removeNull";
-  return "$removeNullish";
+/** nullish 守卫的臂 thunk 剪影运行时助手调用串（按粒度/成员形态分发） */
+export function nullishRemoveCallOf(guard: NullishGuard): string {
+  if (guard.memberKey !== undefined) {
+    // 成员真值守卫（issue #118）：真值访问未抛 ⇒ 基名非 nullish（$removeNullish
+    // 先行），槽值再剥 nullish（$removeMemberNullish 同时摘 optional 标记）
+    return `$removeMemberNullish($removeNullish(${guard.name}), ${JSON.stringify(guard.memberKey)})`;
+  }
+  if (guard.grain === "undefined") return `$removeUndefined(${guard.name})`;
+  if (guard.grain === "null") return `$removeNull(${guard.name})`;
+  return `$removeNullish(${guard.name})`;
 }
 
 /** 守卫臂 thunk 的 nullish 剪影包装：`((p) => THUNK)($removeNullish(p))`。
@@ -302,7 +371,7 @@ export function narrowNullishArmThunk(thunk: string, guard: NullishGuard | undef
   const names =
     forkBindingNames instanceof Set ? (forkBindingNames as Set<string>) : new Set(forkBindingNames);
   if (names.has(guard.name)) return thunk;
-  return `((${guard.name}) => ${thunk})(${removeCallOf(guard.grain)}(${guard.name}))`;
+  return `((${guard.name}) => ${thunk})(${nullishRemoveCallOf(guard)})`;
 }
 
 /** typeof 类型守卫臂 thunk 的剪影包装：`((v) => THUNK)($narrowTypeOf(v, T, keep))`。

@@ -148,6 +148,7 @@ export {
   $gen,
   $narrowTypeOf,
   $nullishTest,
+  $removeMemberNullish,
   $removeNull,
   $removeNullish,
   $removeUndefined,

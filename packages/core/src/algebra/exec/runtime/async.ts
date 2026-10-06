@@ -286,6 +286,38 @@ export function $removeUndefined(a: Abs): Abs {
   return a;
 }
 
+/**
+ * 成员真值守卫臂剪影（issue #118）：`if (o.p)` 真值臂 / `if (!o.p)` 假值臂 /
+ * `o?.p` 真值守卫里，槽 p 的值必为真值 ⇒ 非 nullish 且槽必在场——重建 obj
+ * slots：槽值过与 $removeNullish 同款成员剥离，并摘除 optional 标记
+ * （真值 ⇒ 在场；$get 的 join(value, undef) 随之消失）。槽值剥空（纯
+ * nullish）→ 保守原样（臂不可达近似，与 $removeNullish 空集口径一致）；
+ * 键缺席 / 非 obj / 裸宿主值 → 透传（同 $removeNullish 契约）。真值 ⇒ 非
+ * nullish 是 sound 下界：0/''/false 等 falsy-but-not-nullish 成员保留。
+ */
+export function $removeMemberNullish(a: Abs, key: string): Abs {
+  if (!a || typeof a !== "object" || !("shape" in (a as object))) return a;
+  if (a.shape.k !== "obj") return a;
+  const slots = (a.shape as { slots: ObjShape["slots"] }).slots;
+  if (!Object.prototype.hasOwnProperty.call(slots, key)) return a;
+  const slot = slots[key]!;
+  let value = slot.value;
+  let changed = false;
+  if (!definitelyNotNullishShape(value.shape) && value.shape.k === "sum") {
+    const members = (value.shape as { members: Abs[] }).members;
+    const kept = members.filter((m) => !isNullishLitAbs(m));
+    if (kept.length > 0 && kept.length < members.length) {
+      value = kept.length === 1 ? kept[0]! : { ...value, shape: { k: "sum" as const, members: kept } };
+      changed = true;
+    }
+  }
+  if (slot.optional) changed = true;
+  if (!changed) return a;
+  const next: { value: Abs; optional?: boolean; readonly?: boolean } = { ...slot, value };
+  delete next.optional;
+  return { ...a, shape: { ...a.shape, slots: { ...slots, [key]: next } } };
+}
+
 /** 成员 → JS typeof 名；any/unknown（无 nullish lit term）不可判 → undefined */
 function typeofOfMember(m: Abs): string | undefined {
   const t = m.term;

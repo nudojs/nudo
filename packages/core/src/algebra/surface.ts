@@ -52,8 +52,18 @@ function isKnownNonBigintNumeric(a: Abs): boolean {
   return a.shape.k === "prim" && (a.shape.type === "number" || a.shape.type === "boolean");
 }
 
+/** lit(null)/lit(undefined) 操作数：一切隐式强转下 total（ToNumber→0/NaN、ToInt32→0），不可能是 bigint/Symbol（issue #119，与 arithmetic.ts 同口径）。 */
+function isNullishLitOperand(a: Abs): boolean {
+  const r = litValue(a);
+  return r.ok && (r.value === null || r.value === undefined);
+}
+
 /** 可能经 ToPrimitive 变成 bigint（any/unknown/obj/fn/brand/sum）——不得硬抛成 never */
 function isMaybeBigintOperand(a: Abs): boolean {
+  // issue #119：optional()/nullable() 槽读出的 nullish 字面量成员
+  // （shape k:"unknown" 携带 lit 项）不得连坐 may-throw。只排 nullish
+  // 字面量：bigint 字面量保持原判定（混型 TypeError 真实可能）。
+  if (isNullishLitOperand(a)) return false;
   const k = a.shape.k;
   if (k === "sum") {
     // Bug 25（与 arithmetic.ts 同口径）：sum 成员感知——纯 prim 成员
