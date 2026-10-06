@@ -11,19 +11,37 @@ slug: /releases-history
 
 | 包 | 当前版本 |
 |----|----------|
-| `@nudojs/core` | 1.7.7 |
-| `@nudojs/service` | 1.6.7 |
-| `nudojs (CLI)` | 1.3.8 |
-| `@nudojs/parser` | 1.4.4 |
-| `@nudojs/lsp` | 1.4.5 |
-| `@nudojs/env` | 0.4.22 |
-| `@nudojs/harvester` | 0.3.8 |
-| `vite-plugin-nudo` | 0.4.23 |
-| `nudo-vscode` | 0.3.27 |
+| `@nudojs/core` | 1.7.8 |
+| `@nudojs/service` | 1.6.8 |
+| `nudojs (CLI)` | 1.3.9 |
+| `@nudojs/parser` | 1.4.5 |
+| `@nudojs/lsp` | 1.4.6 |
+| `@nudojs/env` | 0.4.23 |
+| `@nudojs/harvester` | 0.3.9 |
+| `vite-plugin-nudo` | 0.4.24 |
+| `nudo-vscode` | 0.3.28 |
 
 **按包跳转:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.7.7 {#pkg-core}
+## @nudojs/core 1.7.8 {#pkg-core}
+
+## 1.7.8
+
+### Patch Changes
+
+- 58b7938: fix(core): class extends Error 的 super(message) 不再静默 no-op——基类构造槽落地（#110）
+  
+  `constructClass` 对无注册 spec 的基类（env/宿主内建构造器）此前原样返回 thisVal，`super(message)` 的 args 被丢弃：派生实例 `e.message` 折假精确 `undefined #exact`（原生为 message 字符串）、`e.name` 同为 `undefined #exact`（原生经原型链为 `"Error"`）。#106 恢复 `class extends Error` 定义期干净后暴露面增大。
+  
+  修复：`!spec` 分支对 Error 家族（isErrorCtorName）按 errorBrandAbs 落 name/message 槽——与 `new Error(...)` 完全同口径：
+  
+  - lit message 保精确、ToString 折叠（number → "5"、缺省 → ""）、AggregateError errors/message/cause 实参序、options.cause 透传；
+  - any message 构造记录 message-ToString may-throw（`new Error(Symbol())` 原生抛 TypeError，L2 同 `new Error(anyMsg)`）；
+  - brand 名保持被构造实例（B extends A extends Error 中间用户类链不换名、方法派发不断链）；name 槽是基类名（原生 Error.prototype.name 经原型链可见），子类自有 name 字段/赋值源序在 super 后照常覆盖；
+  - 用户同名类优先（getEvalClass 命中即不走内建分支）；其余内建基类（Promise/Date/…）维持原样。
+
+<details>
+<summary>历史版本 (31)</summary>
 
 ## 1.7.7
 
@@ -41,9 +59,6 @@ slug: /releases-history
   
   - **#105 typeof 守卫后的 any 不再记假 may-throw**：`$narrowTypeOf` 此前只剪 sum 成员，裸 `any`（无约束入口参数）在守卫事实臂原样保留 → `RegExp.exec/test(v)` 的 subject ToString 档位按 any 记 may-throw。修复：事实臂（keep=true）any 健全窄化为对应 prim（string/number/boolean/bigint/symbol，term/pred/conf 保留；补集臂与 object/function/undefined 不可表示、unknown fail-closed 令牌均保守保留）。npm-safe `parseVersion`（`typeof v !== 'string'` + `if (!m) return null` 双守卫 + 捕获组读）恢复干净。无守卫的 `exec(any)` 仍如实报（原生 `exec(Symbol())` 抛 TypeError，与 check-gold 的 scale(x) 口径一致）。
   - **#106 env 声明构造器不再报 constructibility 假抛**：env 的 Error 族声明为无名 envFn——`$new` 的按名派发（evalBuiltinNew → errorBrandAbs）拿不到名字，落到通用 fn 分支的 unknown-constructibility 门；`$class` 的 extends 门同样只见 ctor:undefined，`class ApiError extends Error` 定义期误报。修复：`envFn` 支持 `ctor` facet 并给 relationFn 路径补 `name` 盖章；Error 族 / Date / Promise / URL / AbortController / EventEmitter / stream 族声明 ctor:true（Symbol 声明 ctor:false——原生非构造器，`new Symbol()` / `extends Symbol` 仍定抛）；`$new` 的 ctor:true-无-impl 路径回落声明 returnType（保实例面精度，AbortController/EventEmitter 不丢方法槽）。`new Error('lit')` / `new TypeError('lit')` / `new ApiError(...)` / `class extends Error` 在 env 下恢复干净；`new Error(anyMsg)` 仍如实报 message ToString may-throw（node 实测 `new Error(Symbol())` 抛 TypeError，与无 env 宿主路径同口径）。
-
-<details>
-<summary>历史版本 (30)</summary>
 
 ## 1.7.6
 
@@ -819,7 +834,20 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/service 1.6.7 {#pkg-service}
+## @nudojs/service 1.6.8 {#pkg-service}
+
+## 1.6.8
+
+### Patch Changes
+
+- Updated dependencies [58b7938]
+  - @nudojs/core@1.7.8
+  - @nudojs/env@0.4.23
+  - @nudojs/harvester@0.3.9
+  - @nudojs/parser@1.4.5
+
+<details>
+<summary>历史版本 (33)</summary>
 
 ## 1.6.7
 
@@ -831,9 +859,6 @@ slug: /releases-history
   - @nudojs/env@0.4.22
   - @nudojs/harvester@0.3.8
   - @nudojs/parser@1.4.4
-
-<details>
-<summary>历史版本 (32)</summary>
 
 ## 1.6.6
 
@@ -1570,7 +1595,21 @@ slug: /releases-history
 
 </details>
 
-## nudojs (CLI) 1.3.8 {#pkg-nudojs}
+## nudojs (CLI) 1.3.9 {#pkg-nudojs}
+
+## 1.3.9
+
+### Patch Changes
+
+- Updated dependencies [58b7938]
+  - @nudojs/core@1.7.8
+  - @nudojs/env@0.4.23
+  - @nudojs/harvester@0.3.9
+  - @nudojs/parser@1.4.5
+  - @nudojs/service@1.6.8
+
+<details>
+<summary>历史版本 (30)</summary>
 
 ## 1.3.8
 
@@ -1589,9 +1628,6 @@ slug: /releases-history
   - @nudojs/harvester@0.3.8
   - @nudojs/parser@1.4.4
   - @nudojs/service@1.6.7
-
-<details>
-<summary>历史版本 (29)</summary>
 
 ## 1.3.7
 
@@ -2089,7 +2125,17 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/parser 1.4.4 {#pkg-parser}
+## @nudojs/parser 1.4.5 {#pkg-parser}
+
+## 1.4.5
+
+### Patch Changes
+
+- Updated dependencies [58b7938]
+  - @nudojs/core@1.7.8
+
+<details>
+<summary>历史版本 (30)</summary>
 
 ## 1.4.4
 
@@ -2098,9 +2144,6 @@ slug: /releases-history
 - Updated dependencies [d6fa067]
 - Updated dependencies [92e6a5f]
   - @nudojs/core@1.7.7
-
-<details>
-<summary>历史版本 (29)</summary>
 
 ## 1.4.3
 
@@ -2509,7 +2552,19 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/lsp 1.4.5 {#pkg-lsp}
+## @nudojs/lsp 1.4.6 {#pkg-lsp}
+
+## 1.4.6
+
+### Patch Changes
+
+- Updated dependencies [58b7938]
+  - @nudojs/core@1.7.8
+  - @nudojs/parser@1.4.5
+  - @nudojs/service@1.6.8
+
+<details>
+<summary>历史版本 (34)</summary>
 
 ## 1.4.5
 
@@ -2520,9 +2575,6 @@ slug: /releases-history
   - @nudojs/core@1.7.7
   - @nudojs/parser@1.4.4
   - @nudojs/service@1.6.7
-
-<details>
-<summary>历史版本 (33)</summary>
 
 ## 1.4.4
 
@@ -3193,7 +3245,17 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/env 0.4.22 {#pkg-env}
+## @nudojs/env 0.4.23 {#pkg-env}
+
+## 0.4.23
+
+### Patch Changes
+
+- Updated dependencies [58b7938]
+  - @nudojs/core@1.7.8
+
+<details>
+<summary>历史版本 (30)</summary>
 
 ## 0.4.22
 
@@ -3206,9 +3268,6 @@ slug: /releases-history
 - Updated dependencies [d6fa067]
 - Updated dependencies [92e6a5f]
   - @nudojs/core@1.7.7
-
-<details>
-<summary>历史版本 (29)</summary>
 
 ## 0.4.21
 
@@ -3551,7 +3610,19 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/harvester 0.3.8 {#pkg-harvester}
+## @nudojs/harvester 0.3.9 {#pkg-harvester}
+
+## 0.3.9
+
+### Patch Changes
+
+- Updated dependencies [58b7938]
+  - @nudojs/core@1.7.8
+  - @nudojs/env@0.4.23
+  - @nudojs/parser@1.4.5
+
+<details>
+<summary>历史版本 (30)</summary>
 
 ## 0.3.8
 
@@ -3562,9 +3633,6 @@ slug: /releases-history
   - @nudojs/core@1.7.7
   - @nudojs/env@0.4.22
   - @nudojs/parser@1.4.4
-
-<details>
-<summary>历史版本 (29)</summary>
 
 ## 0.3.7
 
@@ -3950,7 +4018,18 @@ slug: /releases-history
 
 </details>
 
-## vite-plugin-nudo 0.4.23 {#pkg-vite-plugin}
+## vite-plugin-nudo 0.4.24 {#pkg-vite-plugin}
+
+## 0.4.24
+
+### Patch Changes
+
+- Updated dependencies [58b7938]
+  - @nudojs/core@1.7.8
+  - @nudojs/service@1.6.8
+
+<details>
+<summary>历史版本 (33)</summary>
 
 ## 0.4.23
 
@@ -3960,9 +4039,6 @@ slug: /releases-history
 - Updated dependencies [92e6a5f]
   - @nudojs/core@1.7.7
   - @nudojs/service@1.6.7
-
-<details>
-<summary>历史版本 (32)</summary>
 
 ## 0.4.22
 
