@@ -7,9 +7,9 @@
  * findMethod 实例链同口径），两处共用。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
+import { type Abs, runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
 
-function call(src: string, name: string, args: unknown[] = []) {
+function call(src: string, name: string, args: Abs[] = []) {
   const exports = runTranspiled(src, { mode: "analyze" });
   return callTranspiledExportFull(exports, name, args);
 }

@@ -8,9 +8,9 @@
  * 的 catch 形参路径本就正确）。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue, formatAbs } from "@nudojs/core";
+import { type Abs, runTranspiled, callTranspiledExportFull, litValue, formatAbs, strLit } from "@nudojs/core";
 
-function call(src: string, name: string, args: unknown[] = []) {
+function call(src: string, name: string, args: Abs[] = []) {
   const exports = runTranspiled(src, { mode: "analyze" });
   return callTranspiledExportFull(exports, name, args);
 }
@@ -20,7 +20,7 @@ describe("Bug 6: builtin throw payload catch param has name/message slots", () =
     const r = call(
       `export function f(s) { try { return "a".includes(/a/); } catch (e) { return e.name; } }`,
       "f",
-      ["unused"],
+      [strLit("unused")],
     );
     expect(litValue(r.result)).toEqual({ ok: true, value: "TypeError" });
   });
@@ -29,7 +29,7 @@ describe("Bug 6: builtin throw payload catch param has name/message slots", () =
     const r = call(
       `export function f(s) { try { return "ab".repeat(-1); } catch (e) { return e.name; } }`,
       "f",
-      ["unused"],
+      [strLit("unused")],
     );
     expect(litValue(r.result)).toEqual({ ok: true, value: "RangeError" });
   });
@@ -38,7 +38,7 @@ describe("Bug 6: builtin throw payload catch param has name/message slots", () =
     const r = call(
       `export function g(s) { try { return "ab".repeat(-1); } catch (e) { return e.message; } }`,
       "g",
-      ["unused"],
+      [strLit("unused")],
     );
     expect(formatAbs(r.result)).toContain("string");
   });
@@ -55,7 +55,7 @@ describe("Bug 6: builtin throw payload catch param has name/message slots", () =
     const r = call(
       `export function h(s) { try { throw new TypeError("boom"); } catch (e) { return e.name; } }`,
       "h",
-      ["unused"],
+      [strLit("unused")],
     );
     expect(litValue(r.result)).toEqual({ ok: true, value: "TypeError" });
   });
