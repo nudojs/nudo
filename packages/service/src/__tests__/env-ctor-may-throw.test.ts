@@ -59,9 +59,16 @@ function l2Count(r: ReturnType<typeof check>, fn?: string): number {
 }
 
 describe("#106 env 声明构造器不报 constructibility 假 may-throw", () => {
-  it("class extends Error + super(message) + new ApiError：零 L2（定义期与构造期都合法）", () => {
+  it("class extends Error + super(message) + new ApiError：零 constructibility L2（定义期与构造期都合法）", () => {
     const r = check();
-    expect(l2Count(r, "badRequest")).toBe(0);
+    // #110 起 super(message) 落地 name/message 槽：any message 构造记录
+    // message-ToString may-throw（与 new Error(anyMsg) 同口径，原生如实）。
+    // 本用例只守 #106 的 constructibility 假阳性为零——其余 cause 不应出现。
+    const causes = r.issues
+      .filter((i) => i.code === "nudo:entry-may-throw" && i.fn === "badRequest")
+      .map((i) => i.suggestion?.split("→")[0] ?? "");
+    expect(causes.length).toBeGreaterThan(0);
+    expect(causes.every((c) => c.includes("message ToString"))).toBe(true);
   });
 
   it("new Error('lit') / new TypeError('lit')：零 L2，签名保 Error/TypeError brand", () => {
