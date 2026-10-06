@@ -15,8 +15,14 @@
  *   undefined；OOB 越界读的 undefined 无标记，回写时被当真 undefined 硬抛；
  *   循环 widen 把 tuple-sum 折叠丢失元素域；`new Array(n)` 未知长度记 RangeError。
  *   修复：oobUndef 标记 + widenLoopJoin + `.length` 非负 pred + fill 全窗替换。
- *   契约场景（a/b: string）必须零误报；无契约 any 实参的 may-throw 是既定
- *   policy（入口无约束 = any = 诚实 may-throw），不在本文件钉。
+ * 契约场景（a/b: string）必须零误报；无契约 any 实参的 may-throw 是既定
+ * policy（入口无约束 = any = 诚实 may-throw），不在本文件钉。
+ *
+ * #105：typeof 类型守卫后 builtin（RegExp.exec）调用不再报 may-throw。
+ *   根因：$narrowTypeOf 只剪 sum 成员，裸 any（无约束入口参数）在守卫
+ *   事实臂原样保留 → exec/test 的 subject ToString 档位按 any 记 may。
+ *   修复：事实臂 any 窄化为对应 prim（string 守卫后 subject 全定）。
+ *   无 typeof 守卫的 exec(any) 仍报（原生 exec(Symbol()) 抛，同 scale(x) 口径）。
  */
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue } from "@nudojs/core";
@@ -114,6 +120,49 @@ export function lev(a, b) {
     );
     expect(l2Count(r, "vWrite")).toBe(0);
     expect(r.summary.errors).toBe(0);
+  });
+});
+
+describe("#105 typeof 守卫后 RegExp exec 不报 entry-may-throw", () => {
+  const RE = `const VERSION_RE = /^(\\d+)\\.(\\d+)\\.(\\d+)(?:-([0-9A-Za-z.-]+))?$/;`;
+
+  it("npm-safe parseVersion 形态：typeof 守卫 + !m 守卫 + 捕获组读，零 L2", () => {
+    const r = check(`${RE}
+export function parseVersion(v) {
+  if (typeof v !== 'string') return null;
+  const m = VERSION_RE.exec(v);
+  if (!m) return null;
+  return { major: m[1], minor: m[2], patch: m[3] };
+}`);
+    expect(l2Count(r)).toBe(0);
+    expect(r.summary.errors).toBe(0);
+    expect(sigOf(r, "parseVersion")).toMatch(/^null \| \{ major: string/i);
+  });
+
+  it("正向 typeof 守卫 + m.length 命名读，零 L2", () => {
+    const r = check(`${RE}
+export function lenOf(v) {
+  if (typeof v === 'string') {
+    const m = VERSION_RE.exec(v);
+    if (m === null) return null;
+    return m.length;
+  }
+  return 0;
+}`);
+    expect(l2Count(r)).toBe(0);
+    expect(r.summary.errors).toBe(0);
+  });
+
+  it("守卫剪枝不越界：无 typeof 守卫的 exec(any) 仍报 L2", () => {
+    const r = check(`${RE}
+export function unguarded(v) {
+  const m = VERSION_RE.exec(v);
+  if (!m) return null;
+  return m[0];
+}`);
+    // v:any 可能是 Symbol（原生 exec(Symbol()) 抛 TypeError）——与
+    // check-gold 的 scale(x)（x+1 any 强转 may）同口径，诚实保留。
+    expect(l2Count(r, "unguarded")).toBeGreaterThan(0);
   });
 });
 

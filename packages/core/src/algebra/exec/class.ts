@@ -528,6 +528,15 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
             popCtorFrame();
           }
         }
+        // issue #106：env 声明构造器（ctor:true + 声明 returnType、无 impl）——
+        // 空 brand 会丢声明实例面（EventEmitter/AbortController/stream 的方法槽），
+        // 回落 $call（与下方 env 构造器注释同口径）取声明实例类型。
+        if (!impl || !impl.apply) {
+          const rt = (fs as { returnType?: Abs }).returnType;
+          if (rt && (rt.shape.k === "brand" || rt.shape.k === "obj")) {
+            return $call(cls, args);
+          }
+        }
         return abs(
           { k: "brand", name: instName, shape: objOf({}) },
           undefined,

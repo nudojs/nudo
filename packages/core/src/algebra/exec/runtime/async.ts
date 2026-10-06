@@ -5,7 +5,7 @@ import type { Abs } from "../../abs.ts";
 import { abs, bool, boolLit, confJoin, litValue, numLit, strLit, unknown, type Confidence } from "../../abs.ts";
 import { lit } from "../../term.ts";
 import type { Phi } from "../../pred.ts";
-import { pTrue, and, predEquals } from "../../pred.ts";
+import { pTrue, and, predEquals, type PrimName } from "../../pred.ts";
 import { joinAbs, objOf, type ObjShape } from "../../objects.ts";
 import { absFunction, getFnImpl } from "../../abs-fn.ts";
 import { isNullishLitAbs, definitelyNotNullishShape, typeofName } from "../../surface.ts";
@@ -301,7 +301,8 @@ function typeofOfMember(m: Abs): string | undefined {
  * typeof 类型守卫臂剪影（Bug 23）：`typeof v === "string"` 真臂把 v 重绑为
  * union 中 typeof 匹配的成员（keep=true）/ 假臂绑补集（keep=false）——臂内
  * `+`/关系/迭代/模板串拿到成员类型而非 union，不再记假 may-throw。
- * 不可判成员（any/unknown）两侧都保留（保守，不引假阴性）；全剪空 →
+ * 裸 any 在事实臂窄化为对应 prim（issue #105）；sum 内不可判成员
+ * （any/unknown）两侧都保留（保守，不引假阴性）；全剪空 →
  * 原样返回（臂不可达的保守近似，与 $removeNullish 空集口径一致）。
  */
 export function $narrowTypeOf(a: Abs, typeOf: string, keep: boolean): Abs {
@@ -309,6 +310,16 @@ export function $narrowTypeOf(a: Abs, typeOf: string, keep: boolean): Abs {
   if (a.shape.k !== "sum") {
     // 单形态：判定的 typeof 与守卫一致（或补集臂判不一致但值本就单一）
     // 无可剪；不一致属臂不可达，原样返回（保守）。
+    // issue #105：裸 any（无约束入口参数）在事实臂（keep=true）可健全窄化为
+    // 对应 prim——typeof v === "string" 的真臂里 v 必是 string，exec/test
+    // 等 ToString 强转面不再记假 may-throw。补集臂（keep=false）不可表示
+    // （"非 string" 覆盖其余全域），保留 any；object/function/undefined 无
+    // 单一 Abs 可表（null/数组/函数各有形态），同样保留；unknown 是引擎
+    // fail-closed 令牌，窄化会凭空捏造信息，原样返回。
+    if (keep && a.shape.k === "any") {
+      const p = primShapeOfTypeOf(typeOf);
+      if (p) return abs(p, a.term, a.pred, a.conf);
+    }
     return a;
   }
   const members = (a.shape as { members: Abs[] }).members;
@@ -320,6 +331,20 @@ export function $narrowTypeOf(a: Abs, typeOf: string, keep: boolean): Abs {
   if (kept.length === members.length) return a;
   if (kept.length === 0) return a;
   return kept.length === 1 ? kept[0]! : { ...a, shape: { k: "sum" as const, members: kept } };
+}
+
+/** typeof 结果 → 可健全表示的 prim shape（string/number/boolean/bigint/symbol） */
+function primShapeOfTypeOf(typeOf: string): { k: "prim"; type: PrimName } | undefined {
+  switch (typeOf) {
+    case "string":
+    case "number":
+    case "boolean":
+    case "bigint":
+    case "symbol":
+      return { k: "prim", type: typeOf };
+    default:
+      return undefined;
+  }
 }
 
 /** `??` / `??=` 测试：确定非 nullish → false；lit nullish → true；否则抽象 boolean */

@@ -203,6 +203,7 @@ L2 **只执法入口函数**，不对每个内部 helper 无差别报 may-throw�
 | 接收者 | 成员读 / 危险操作 | Abs / throws |
 |--------|-------------------|--------------|
 | `any`（无约束） | `user.name` 等 | 结果保持信息可得部分；**记录 may-throw**（常为 `TypeError`） |
+| `any` 经 typeof 守卫（`typeof v === 'string'` 等） | 守卫臂内 `v` 窄化为对应 prim（issue #105） | ToString/ToNumber 强转面全定，**不**记录 may-throw；无守卫的 any 强转照记 |
 | `null` / `undefined` 成员 | `x.prop` | **throws `TypeError`** |
 | 对象缺槽 | `obj.missing` | 返回 `undefined`（或 optional），**不**一律 throws |
 | 条件 throw 且条件不可判定 | `if (c) throw …` | case 带 may-throw |

@@ -212,9 +212,16 @@ describe("Bug 23: typeof 类型守卫七面零 L2", () => {
     expect(l2Count(r, "orT")).toBe(0);
   });
 
-  it("假阴性红线：any 入口（无契约）typeof 守卫后仍记 may-throw", () => {
-    // any 不可判（$narrowTypeOf 保守保留）→ `v + "!"` 对 any 操作数诚实 may-throw
+  it("issue #105：any 入口 typeof 守卫臂内不再记 may-throw（窄化为 prim）", () => {
+    // 守卫证明该臂 v 必是 string（v+"!" 全定）；红线移至无守卫形态。
     const r = check(`export function anyAdd(v) { if (typeof v === "string") { return v + "!"; } return 0; }`);
+    expect(l2Count(r, "anyAdd")).toBe(0);
+  });
+
+  it("假阴性红线：any 入口（无守卫）强转仍记 may-throw", () => {
+    // 无 typeof 守卫的 any 操作数：v 可能是 Symbol/1n → 原生 may TypeError，
+    // 与 check-gold 的 scale(x) 用例同口径，不得静默放行。
+    const r = check(`export function anyAdd(v) { return v + "!"; }`);
     expect(l2Count(r, "anyAdd")).toBeGreaterThan(0);
   });
 });
@@ -293,6 +300,15 @@ describe("守卫剪影运行时助手", () => {
     // 单形态（非 sum）原样返回
     const single = numLit(5);
     expect($narrowTypeOf(single, "string", true)).toBe(single);
+    // issue #105：裸 any 事实臂窄化为对应 prim（term/pred/conf 保留）；
+    // 补集臂（keep=false）不可表示 → 保留 any；unknown 是 fail-closed 令牌 → 不窄化
+    expect($narrowTypeOf(anyAbs, "string", true)!.shape).toEqual(str().shape);
+    expect($narrowTypeOf(anyAbs, "number", true)!.shape).toEqual(num().shape);
+    expect($narrowTypeOf(anyAbs, "string", false)).toBe(anyAbs);
+    expect($narrowTypeOf(unknown, "string", true)).toBe(unknown);
+    // object/function/undefined 无单一 Abs 可表（null/数组/函数各有形态）→ 保留
+    expect($narrowTypeOf(anyAbs, "object", true)).toBe(anyAbs);
+    expect($narrowTypeOf(anyAbs, "function", true)).toBe(anyAbs);
   });
 
   it("守卫识别：nullishGuardOf 粒度 / typeGuardOf 臂", () => {

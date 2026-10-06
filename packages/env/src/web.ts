@@ -195,7 +195,12 @@ export function defineEnv(): EnvDefinition {
     }),
     Headers: envFn([prim.unknown], Headers),
 
-    URL: envFn([prim.str(), prim.str()], URLObj, urlCtorImpl),
+    // ctor:true 杀 constructibility 假抛；不带 name——$new 按名派发会改道
+    // evalBuiltinNew/makeUrlAbs，丢 env urlCtorImpl 的字面量精确解析面
+    // （fn-sig-impl 的 URL 用例依赖 impl 路径）。
+    URL: envFn([prim.str(), prim.str()], URLObj, urlCtorImpl, {
+      ctor: true, params: ["input", "base?"],
+    }),
     URLSearchParams: envFn([prim.unknown], URLSearchParams),
 
     setTimeout: envFn([prim.unknown, prim.num()], prim.num()),
@@ -206,7 +211,9 @@ export function defineEnv(): EnvDefinition {
     requestAnimationFrame: envFn([prim.unknown], prim.num()),
     cancelAnimationFrame: envFn([prim.num()], undef()),
 
-    AbortController: envFn([], AbortController),
+    AbortController: envFn([], AbortController, undefined, {
+      name: "AbortController", ctor: true,
+    }),
     AbortSignal: objAbs({
       abort: envFn([], prim.unknown),
       timeout: envFn([prim.num()], prim.unknown),

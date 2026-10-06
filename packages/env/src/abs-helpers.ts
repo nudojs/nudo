@@ -148,6 +148,13 @@ export function envFn(
     name?: string;
     /** dual-facet 静态槽（Number.isFinite / Array.isArray） */
     slots?: Record<string, Abs | Slot>;
+    /**
+     * 构造器标记（issue #106）：JS 内建构造器（Error 族 / URL / EventEmitter /
+     * stream 族…）声明为 true——`new X()` 不再记 unknown-constructibility
+     * 假 may-throw，`class X extends EnvCtor` 定义期合法；非构造器全局
+     * （parseInt 等）不设——`new parseInt()` 仍按不可构造执法。
+     */
+    ctor?: boolean;
   },
 ): Abs {
   const params =
@@ -163,6 +170,14 @@ export function envFn(
     });
     if (staticSlots) {
       a.shape = { ...(a.shape as { k: "fn"; params: string[] }), slots: staticSlots };
+    }
+    // relationFn 不承接 name——$new 的按名派发（evalBuiltinNew）与 $class
+    // 的 super 链键都读 shape.name，此处补盖章（issue #106）
+    if (opts?.name) {
+      a.shape = { ...(a.shape as { k: "fn"; params: string[] }), name: opts.name };
+    }
+    if (opts?.ctor !== undefined) {
+      a.shape = { ...(a.shape as { k: "fn"; params: string[] }), ctor: opts.ctor };
     }
     return a;
   }
@@ -185,6 +200,7 @@ export function envFn(
     returnType,
     ...(opts?.name ? { name: opts.name } : {}),
     ...(staticSlots ? { slots: staticSlots } : {}),
+    ...(opts?.ctor !== undefined ? { ctor: opts.ctor } : {}),
   };
   if (opts?.conf && opts.conf !== "exact") a.conf = opts.conf;
   return a;
