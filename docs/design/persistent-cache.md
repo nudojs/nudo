@@ -158,4 +158,4 @@ L1 check   : prefix + relFile + stableSrcSha256 + diskDepsFp + sidecarFp + autoB
 - packages/core/src/algebra/check.ts
 - packages/core/src/algebra/check-report.ts
 - packages/core/src/algebra/generalize.ts
-- packages/cli/src/index.ts
+- packages/nudojs/src/index.ts

@@ -118,7 +118,7 @@
 - packages/service/src/evaluator/config.ts
 - packages/service/src/case-json.ts
 - packages/service/src/dts-generator.ts
-- packages/cli/src/index.ts
+- packages/nudojs/src/index.ts
 - packages/lsp/src/agent-tools.ts
 - packages/lsp/src/validation.ts
 - docs/examples/interface-derivation/

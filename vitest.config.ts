@@ -45,7 +45,7 @@ export default defineConfig({
       //   harvester  82/78/70/88   floors 75/70/62/80
       //   vite-plugin 86/85/72/81 floors 78/78/65/72
       //   parser     89/85/74/90   floors 80/78/68/82
-      // nudojs / cli 无 src（仅 bin/forward stub），不设 floor。
+      // nudojs 无 per-package floor（走全局阈值）。
       thresholds: {
         lines: 70,
         functions: 70,

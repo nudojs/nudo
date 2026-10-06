@@ -39,7 +39,6 @@ The monorepo uses pnpm workspaces. Key packages:
 | `@nudojs/core` | Type system (Abs algebra), extensional rendering (format), Environment |
 | `@nudojs/parser` | Babel parse, directive extraction, `parseCaseArgExpr` |
 | `nudojs` | The `nudo` CLI (`check` / `test` / `contract` / `export` / `health`, plus the one-way `migrate` TypeScript retirement gate `status` \| `strip` \| `verify` \| `retire`) |
-| `@nudojs/cli` | Deprecated forward stub → `nudojs`, kept only for migration |
 | `@nudojs/service` | Analysis core: analyzer orchestration (`analyzeFile`), Abs-native evaluator, session caches; emit products at `@nudojs/service/emit` (interface/dts/schema/guard/case) |
 | `@nudojs/lsp` | Language Server Protocol implementation — hover/completions (`getTypeAtPosition`, `getCompletionsAtPosition`) and AI-agent `executeCommand`/custom requests (see the [Agent guide](./guides/agent-integration.md)) |
 | `@nudojs/harvester` | Converts `@types/*.d.ts` into Abs env definitions for `@nudojs/env` authoring and analysis auto-fill (not a product CLI verb) |

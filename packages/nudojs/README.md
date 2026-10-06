@@ -21,6 +21,6 @@ nudojs <version>
 @nudojs/core <version>   # when resolvable
 ```
 
-> **Migration:** `@nudojs/cli` is a deprecated stub that forwards here. Install `nudojs` only.
+> **Migration:** the `@nudojs/cli` forward stub has been retired — install `nudojs` only.
 
 Full documentation: <https://nudojs.github.io/nudo/>

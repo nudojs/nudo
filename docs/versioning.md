@@ -26,18 +26,14 @@ How Nudo packages are versioned, what counts as a breaking change, and how to fo
 | `@nudojs/lsp` | stable 1.x+ | SemVer — breaking = **major**. Freeze inventory: [`packages/lsp/PUBLIC_API.md`](../packages/lsp/PUBLIC_API.md) |
 | `@nudojs/env` | pre-1.0 | Minor may break. Policy authority: [Ecosystem packages](#ecosystem-packages-env--harvester) |
 | `@nudojs/harvester` | pre-1.0 | Minor may break. Policy authority: [Ecosystem packages](#ecosystem-packages-env--harvester) |
-| `@nudojs/cli` | deprecated stub | Forwards to `nudojs`; do not depend on it. Prefer `npm i nudojs` / `@nudojs/*` directly. **Sunset:** see [`@nudojs/cli` sunset](#nudojscli-sunset-deprecated-forward-stub) |
 | `vite-plugin-nudo` | pre-1.0 | Minor may break |
 | `nudo-vscode` | private | Marketplace / Open VSX release notes; not npm-semver for consumers. Bundled `@nudojs/lsp` must match the monorepo lsp dist at package time (see `packages/vscode/RELEASE_CHECKLIST.md`) |
 
 The monorepo root (`nudo-monorepo@0.3.0`) is private and is **not** a publish unit. Published versions are per-package.
 
-### `@nudojs/cli` sunset (deprecated forward stub)
+### `@nudojs/cli` — removed (was a deprecated forward stub)
 
-`@nudojs/cli` is a **deprecated forward stub** kept only for migration. It forwards the `nudo` bin and module entry to [`nudojs`](https://www.npmjs.com/package/nudojs) and prints a deprecation line on stderr — except for version/help probes (`--version` / `-V` / `-v` / `--help` / `-h`, so package-manager bin resolution sees clean stderr) and when `NUDO_SUPPRESS_DEPRECATION=1` is set (scripted migration windows). CHANGELOG already claims it will be unpublished after the first stable 1.0 release train / one beta cycle — the **deadline is explicit and checkable**:
-
-- **Unpublish no later than 30 days after `nudojs@1.0.0` stable** ships on npm `latest`.
-- **Or immediately**, whichever comes first, if npm download data shows only monorepo CI traffic (no third-party installs) — in that case the stub can be removed as soon as the stable train lands.
+`@nudojs/cli` was a **deprecated forward stub** kept only for migration. `packages/cli` has been **removed from the monorepo**: the stub is no longer built or published, and `nudo` resolves directly to [`nudojs`](https://www.npmjs.com/package/nudojs). Existing npm versions remain deprecated — do not depend on them.
 
 Consumers should migrate now:
 
@@ -47,7 +43,7 @@ npm i nudojs          # same `nudo` command
 nudo --version        # prints `nudojs <ver>` (+ `@nudojs/core <ver>` when resolvable)
 ```
 
-Do not add new dependencies on `@nudojs/cli`. After the unpublish date, `import "@nudojs/cli"` / `npx @nudojs/cli` will fail; use `nudojs` / `nudo` instead.
+Do not add new dependencies on `@nudojs/cli`; use `nudojs` / `@nudojs/*` directly.
 
 ### 0.x SemVer (pre-1.0 packages)
 

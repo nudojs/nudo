@@ -37,7 +37,7 @@ npx nudojs check math.js
 npx nudojs test math.js
 ```
 
-> **Version heads-up.** `nudojs` is the CLI package (bin `nudo`). Its version may lag the engine packages (`@nudojs/core`, …), which version independently. `@nudojs/cli` is a **deprecated migration stub** that only forwards to `nudojs` — do not depend on it. Run `nudo --version` to see what you actually have. Policy: [`docs/versioning.md`](./docs/versioning.md).
+> **Version heads-up.** `nudojs` is the CLI package (bin `nudo`). Its version may lag the engine packages (`@nudojs/core`, …), which version independently. Run `nudo --version` to see what you actually have. Policy: [`docs/versioning.md`](./docs/versioning.md).
 
 > **Trust boundary.** Nudo analyzes by **executing** the target code (Abs semantics, in-process evaluation). Do not run `nudo check` / `nudo test` on untrusted code — in CI this is the same trust as running the project's tests. Details: [Security](#security).
 
@@ -205,7 +205,6 @@ This is a monorepo managed with [pnpm workspaces](https://pnpm.io/workspaces).
 | [`@nudojs/core`](./packages/core) | Abs type system (`shape × term × pred × conf`) | stable |
 | [`@nudojs/parser`](./packages/parser) | Babel-based parser and directive extraction | stable |
 | [`nudojs`](./packages/nudojs) | Product CLI (bin `nudo`): check / test / contract / export / health / migrate | stable |
-| [`@nudojs/cli`](./packages/cli) | Deprecated migration stub — forwards to `nudojs` | deprecated |
 | [`@nudojs/service`](./packages/service) | Analysis core + emit products (Abs-native analysis, evaluator host API, interface/dts/schema/guard projections, session caches) | stable |
 | [`@nudojs/lsp`](./packages/lsp) | Language Server Protocol server, with AI-agent `executeCommand` support | stable |
 | [`@nudojs/env`](./packages/env) | Built-in API environments (ES globals, Node, Web) loaded by `@nudo:env` | growing |
@@ -228,8 +227,6 @@ service → core, parser, env, harvester
 nudojs  → core, parser, service, harvester (product CLI, bin `nudo`)
 lsp     → service, core, parser
 vite-plugin → core, service
-
-cli → nudojs                               (@nudojs/cli deprecated stub)
 ```
 
 ## Directives

@@ -63,7 +63,6 @@ Because there is no style linter, **reviewers** must watch what the type-checker
 | `packages/parser` | Babel parse + `@nudo:` directive extraction |
 | `packages/service` | Analysis core (analyzer + Abs evaluator + caches) |
 | `packages/nudojs` | Product CLI verbs (bin `nudo`) |
-| `packages/cli` | Deprecated forward stub (`@nudojs/cli` → `nudojs`) |
 | `packages/lsp` | IDE surface + language server |
 | `packages/env` / `packages/harvester` | API environments / `@types` harvest |
 | `docs/design/` | Design sources of truth (not tutorials) |

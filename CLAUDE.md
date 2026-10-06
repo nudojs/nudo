@@ -50,17 +50,14 @@ service → core, parser, env, harvester
 nudojs  → core, parser, service, harvester   (product CLI, bin `nudo`)
 lsp     → service, core, parser
 vite-plugin → core, service
-
-cli → nudojs                               (@nudojs/cli deprecated stub)
 ```
 
-Product CLI lives in `packages/nudojs` (published as `nudojs`, bin `nudo`). `packages/cli` is a **deprecated forward stub** (`@nudojs/cli` → `nudojs`) kept only for migration.
+Product CLI lives in `packages/nudojs` (published as `nudojs`, bin `nudo`). The former `@nudojs/cli` forward stub (`packages/cli`) has been removed — do not reintroduce a shell package.
 
 | Package | Purpose |
 |---|---|
 | `packages/core` | **Type system**: algebra/Abs (term, pred, check, leq, exec/transpile, surface, arithmetic), format (extensional rendering), environment, refinements, interface (sidecar/effectiveInterface/projection) |
 | `packages/parser` | Babel-based parser; extracts function-scoped `@nudo:` directives from JSDoc |
-| `packages/cli` | Deprecated stub for `@nudojs/cli` → forwards to `nudojs` |
 | `packages/service` | Analysis core: analyzer orchestration, Abs-native evaluator, session caches |
 | `packages/service` (…/emit) | Emit products are `@nudojs/service/emit` (interface/dts/schema/guard/case) |
 | `packages/nudojs` | The `nudo` CLI (check/test/contract/export/health/migrate), published as `nudojs` |

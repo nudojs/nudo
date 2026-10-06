@@ -28,8 +28,8 @@ function walk(dir, out = []) {
   for (const e of readdirSync(dir)) {
     const p = join(dir, e);
     if (SKIP_DIRS.has(e)) continue;
-    // lstat：不跟随符号链接目录——pnpm 的 alias 链
-    // (packages/cli/node_modules/nudojs → … → packages/cli) 会形成无限递归。
+    // lstat：不跟随符号链接目录——pnpm workspace 的 node_modules 软链
+    // 可在包之间成环，跟随会无限递归。
     if (lstatSync(p).isSymbolicLink()) continue;
     if (statSync(p).isDirectory()) walk(p, out);
     else out.push(p);

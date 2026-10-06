@@ -58,12 +58,6 @@ importers:
         specifier: ^18.0.0
         version: 18.2.0
 
-  packages/cli:
-    dependencies:
-      nudojs:
-        specifier: workspace:*
-        version: link:../nudojs
-
   packages/core:
     dependencies:
       '@babel/parser':
