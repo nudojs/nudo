@@ -66,7 +66,7 @@ describe("#106 env 声明构造器不报 constructibility 假 may-throw", () => 
     // 本用例只守 #106 的 constructibility 假阳性为零——其余 cause 不应出现。
     const causes = r.issues
       .filter((i) => i.code === "nudo:entry-may-throw" && i.fn === "badRequest")
-      .map((i) => i.suggestion.split("→")[0] ?? "");
+      .map((i) => i.suggestion?.split("→")[0] ?? "");
     expect(causes.length).toBeGreaterThan(0);
     expect(causes.every((c) => c.includes("message ToString"))).toBe(true);
   });
