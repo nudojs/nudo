@@ -79,7 +79,7 @@ jobs:
       - name: Detect pending changesets
         id: csdetect
         run: |
-          if git ls-files '.changeset/*.md' | grep -vqx '.changeset/README.md' | grep -q .; then
+          if git ls-files '.changeset/*.md' | grep -vxF '.changeset/README.md' | grep -q .; then
             echo "has=true"  >> "$GITHUB_OUTPUT"
           else
             echo "has=false" >> "$GITHUB_OUTPUT"
