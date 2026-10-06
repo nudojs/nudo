@@ -118,6 +118,24 @@ function isWidenedSumArm(m: Abs, parent: Abs): boolean {
 }
 
 /**
+ * 无界 prim 契约（裸 `number()` / `string()`：prim + 无显式 pred + 无
+ * int 义务 + 无结构面）只问**域隶属**。裸 prim 臂（term-less partial，
+ * `Number(x) - Number(y)` 派生 / any 参与的运算臂）的域已知——partial
+ * conf 丢的是界/路径证据，不丢 prim 值域 → 域隶属可证（issue #115：
+ * `0 | -1 | 1 | number` 对 `number()` 不得降 unproven-return）。
+ * 带界义务（gt/le/int…）仍不可证；错配 prim 的 disproved FP 保护不动。
+ */
+function provesBarePrimDomain(arm: Abs, constraint: NudoConstraint): boolean {
+  if (!constraint.prim || constraint.preds.length > 0 || isIntFlag(constraint)) {
+    return false;
+  }
+  if (constraint.fields || constraint.element || constraint.members || constraint.fn) {
+    return false;
+  }
+  return arm.shape.k === "prim" && arm.shape.type === constraint.prim;
+}
+
+/**
  * 统一后置证明：返回 Abs 的值域是否蕴含契约。
  * phi：路径前提（可选，与前置同一 Phi 通道）。
  *
@@ -194,6 +212,15 @@ function assertSumArms(
       continue;
     }
     if (isValueSetUnknown(arm) || isWidenedSumArm(arm, parent)) {
+      // 无界 prim 契约的域隶属可证（issue #115）：该臂 discharged，
+      // 不降整体 unprovable。其余（unknown 值域 / 带界义务 / 错配 prim）
+      // 保持 unprovable 口径。
+      if (
+        isWidenedSumArm(arm, parent) &&
+        provesBarePrimDomain(arm, constraint)
+      ) {
+        continue;
+      }
       sawUnprovable = true;
       continue;
     }

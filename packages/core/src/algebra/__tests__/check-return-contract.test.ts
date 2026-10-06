@@ -860,3 +860,57 @@ function real() {
     expect(r.issues.some((i) => i.code === "nudo:constraint-violated")).toBe(true);
   });
 });
+
+describe("issue #115：裸 prim partial 臂对无界 prim 契约域隶属可证", () => {
+  // parseVersion 条件加字段 → pa 是双变体 sum；关系比较块（`<`/`>` on
+  // narrowed string 字段）保持返回臂不合并 → sum `0 | -1 | 1 | number`，
+  // 其中 `pa.major - pb.major` 臂是 term-less partial prim number
+  // （Number() 派生，parent sum conf=partial）。
+  const CMP_SRC = `
+const VERSION_RE = /^(\\d+)\\.(\\d+)\\.(\\d+)(?:-([0-9A-Za-z.-]+))?$/;
+function parseVersion(v) {
+  const m = VERSION_RE.exec(v);
+  if (!m) return null;
+  const parsed = { major: Number(m[1]), minor: Number(m[2]), patch: Number(m[3]) };
+  if (m[4] !== undefined) parsed.prerelease = String(m[4]);
+  return parsed;
+}
+/**
+ * @nudo:contract return num
+ */
+function compareVersions(a, b) {
+  const pa = parseVersion(a);
+  const pb = parseVersion(b);
+  if (pa === null && pb === null) return 0;
+  if (pa === null) return -1;
+  if (pb === null) return 1;
+  if (pa.major !== pb.major) return pa.major - pb.major;
+  if (pa.minor !== pb.minor) return pa.minor - pb.minor;
+  if (pa.patch !== pb.patch) return pa.patch - pb.patch;
+  if (pa.prerelease == null && pb.prerelease != null) return 1;
+  if (pa.prerelease != null && pb.prerelease == null) return -1;
+  if (pa.prerelease != null && pb.prerelease != null) {
+    if (pa.prerelease < pb.prerelease) return -1;
+    if (pa.prerelease > pb.prerelease) return 1;
+  }
+  return 0;
+}
+`;
+
+  it("ok: 0 | -1 | 1 | number（裸 prim partial 臂）对 number() 域隶属可证", () => {
+    const r = issuesOf(CMP_SRC);
+    expect(
+      r.issues.filter((i) => i.message.includes("@nudo:contract return")),
+    ).toEqual([]);
+  });
+
+  it("warning: 同形态对带界契约（positive）仍不可证（gold FP 口径不动）", () => {
+    const r = issuesOf(CMP_SRC.replace("return num", "return positive"));
+    const warns = r.issues.filter(
+      (i) =>
+        i.code === "nudo:unproven-return" &&
+        i.message.includes("@nudo:contract return"),
+    );
+    expect(warns).toHaveLength(1);
+  });
+});
