@@ -8,7 +8,7 @@
  * 依赖面：仅 ./abs.ts 与 node:async_hooks（core 既有依赖，不引入新面）。
  */
 import type { Abs } from "./abs.ts";
-import { abs, unknown } from "./abs.ts";
+import { abs, unknown, strLit, str } from "./abs.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 
 export type MayThrowEffect = {
@@ -143,13 +143,28 @@ export function throwPayloadOf(e: unknown): Abs {
   return unknown;
 }
 
-/** throws 类型名 → Abs（brand Error 形态，formatShape 打出名字） */
+/** throws 类型名 → Abs（brand Error 形态，formatShape 打出名字）。
+ *  内层 obj 带 name/message 槽（Bug 6）：catch 形参 `e.name`/`e.message`
+ *  经 $get brand→inner 槽读取折精确值——name 是品牌名（静态可知），
+ *  message 内容宿主特定 → 保守 string 域（与 builtins/error.ts
+ *  errorBrandAbs 同口径）。 */
 export function errorTypeAbs(name: string): Abs {
   return abs(
     {
       k: "brand",
       name,
-      shape: abs({ k: "obj", slots: {} }, undefined, undefined, "exact"),
+      shape: abs(
+        {
+          k: "obj",
+          slots: {
+            name: { value: strLit(name) },
+            message: { value: str() },
+          },
+        },
+        undefined,
+        undefined,
+        "exact",
+      ),
     },
     undefined,
     undefined,

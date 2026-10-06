@@ -137,15 +137,42 @@ export function callAtFunctionBoundary<T>(body: () => T): T {
   }
 }
 /**
+ * 函数边界缺参归一（Bug 7）：宿主绑定元数内省略的尾实参按「显式传
+ * undefined」语义补 undefAbs——原样透传的宿主 undefined 流进 $add 等
+ * 算子读 .shape 崩溃（被调用边界收成假 may-throw），或经 return 通道
+ * 泄漏裸值（违反 result: Abs 不变量）。impl.length = 宿主绑定元数
+ * （默认参占位 `_p{i}` 计入——$orDefault 对 lit(undefined) 正常取默认；
+ * rest/…收集形参不计——原生省略时收 []）。bindThis 的 receiver 占
+ * impl 首参位，随 args 一并计数。读宿主 arguments 的真实 function 包装
+ * 不得补齐（arguments.length 会膨胀），走 padArgs:false + 体内归一。
+ */
+function padOmittedArgs(
+  impl: (...args: Abs[]) => unknown,
+  args: Abs[],
+): Abs[] {
+  const arity = impl.length;
+  if (args.length >= arity) return args;
+  const padded = args.slice();
+  for (let i = args.length; i < arity; i++) padded.push(undef());
+  return padded;
+}
+
+/**
  * 函数表达式 → 一等 fn Abs（transpile 侧带真实参数名；异步 body 包 $async）
  *  opts.bindThis：对象方法——$invoke 会把 receiver 作为 impl 的首参注入。
  *  opts.ctor：Bug 9 可构造性 facet（箭头/方法/async/generator → false；
- *  函数表达式/类表达式值 → true）。 */
+ *  函数表达式/类表达式值 → true）。
+ *  opts.padArgs：默认 true（Bug 7 缺参归一）；读宿主 arguments 的
+ *  function 包装传 false（arguments.length 不得被补齐膨胀）。 */
 export function $fnVal(
   params: string[],
   impl: (...args: Abs[]) => Abs,
-  opts?: { bindThis?: boolean; ctor?: boolean },
+  opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean },
 ): Abs {
+  const argsOf =
+    opts?.padArgs === false
+      ? (a: Abs[]) => a
+      : (a: Abs[]) => padOmittedArgs(impl, a);
   return absFunction(
     params,
     {
@@ -153,8 +180,14 @@ export function $fnVal(
       // bindThis（对象方法）：receiver 走首参注入，无宿主 this；
       // 非方法 fn：宿主 this 传递（call/apply/bind 的 thisArg 经 $rawThis 进入函数体）
       apply: opts?.bindThis
-        ? (args) => callAtFunctionBoundary(() => impl(...args))
-        : (args, thisVal) => callAtFunctionBoundary(() => impl.apply(thisVal as unknown as Parameters<typeof impl>[0], args)),
+        ? (args) => callAtFunctionBoundary(() => impl(...argsOf(args)))
+        : (args, thisVal) =>
+            callAtFunctionBoundary(() =>
+              impl.apply(
+                thisVal as unknown as Parameters<typeof impl>[0],
+                argsOf(args),
+              ),
+            ),
       ...(opts?.bindThis ? { bindThis: true } : {}),
     },
     opts?.ctor !== undefined ? { ctor: opts.ctor } : undefined,

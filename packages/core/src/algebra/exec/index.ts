@@ -9,9 +9,9 @@ export {
   $forIter, $forOf, $fork, $ge, $gen, $get, $gt, $idx, $idxSet, $iterCheck,
   $importMeta, $in, $instanceof, $instanceofNonIdent, $isBreakTo,
   $isForkExit, $join, $le, $len, $lit, $loopBreak, $loopContinue,
-  $loopReturn, $lt, $mod, $mul, $ne, $neLoose, $neg, $not, $nullishTest, $newTarget, $removeNullish,
-  $obj, $objAccessor, $objRest, $pow, $pushLoopExit, $rawThis, $regex,
-  $rethrowIfNudoReturn, $set, $setProto, $shl, $shr, $spread, $sub, $switch, $throw,
+  $loopReturn, $lt, $mod, $mul, $ne, $neLoose, $neg, $narrowTypeOf, $not, $nullishTest, $newTarget,
+  $obj, $objAccessor, $objAccessorKey, $objRest, $pow, $pushLoopExit, $rawThis, $regex,
+  $removeNull, $removeNullish, $removeUndefined, $rethrowIfNudoReturn, $set, $setProto, $shl, $shr, $spread, $sub, $switch, $throw,
   $toNumber, $toNumeric, $tpl, $updateAdd, $updateSub, $tryCurrentMark, $tryDetachSoftCatch, $tryDigestSoftCatch,
   $tryDiscardSoft, $tryMark, $tryOrphanSoft, $tryPopMark,
   $tryReleaseSoftCatch, $tryReleaseSoftOut, $tryTakeSince, $typeof,
@@ -35,8 +35,9 @@ export {
 } from "./call.ts";
 
 export {
-  $class, $invoke, $invokeSuper, $new, $optionalGet, $optionalInvoke,
-  $orDefault, $reStateCall, $setKey, $staticInit, $staticInvoke, $super, $thisGet,
+  $class, $invoke, $invokeSuper, $invokeSuperObj, $new, $optionalGet, $optionalInvoke,
+  $orDefault, $reStateCall, $setKey, $staticInit, $staticInvoke, $invokeSuperKey, $super, $getSuper,
+  $getSuperObj, $thisGet,
   $thisSet, type EvalClassSpec, clearBClasses, getEvalClass, registerEvalClass
 } from "./class.ts";
 

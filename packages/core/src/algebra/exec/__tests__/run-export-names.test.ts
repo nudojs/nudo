@@ -35,7 +35,8 @@ describe("stripStaticExportDecls：导出名回收（与 transpile 发射格式�
   it("export 解构只回收临时名（历史口径），不回收解构出的 p/q", () => {
     const names = namesOf("export const {p, q} = obj;");
     expect(names).toHaveLength(1);
-    expect(names[0]).toMatch(/^_d0_\d+$/);
+    // Bug 15：解构临时名与源行号解耦（跨语句单调计数 `_d<N>`）
+    expect(names[0]).toMatch(/^_d\d+$/);
   });
 
   it("export class 折成 export let X = $class，回收 X", () => {

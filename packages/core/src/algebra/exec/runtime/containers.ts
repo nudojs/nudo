@@ -565,6 +565,21 @@ export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
   return arr;
 }
 
+/** TypedArray brand 名 → 元素 prim（BigInt64/BigUint64 是 bigint，其余 number） */
+const TYPED_ARRAY_ELEMENT: Record<string, "number" | "bigint"> = {
+  Int8Array: "number",
+  Uint8Array: "number",
+  Uint8ClampedArray: "number",
+  Int16Array: "number",
+  Uint16Array: "number",
+  Int32Array: "number",
+  Uint32Array: "number",
+  Float32Array: "number",
+  Float64Array: "number",
+  BigInt64Array: "bigint",
+  BigUint64Array: "bigint",
+};
+
 /** 下标读 a[i]；规范数组下标走精确投影，确定非下标键 → undefined，否则并所有元素；string[i] → 单字符 */
 export function $idx(
   a: Abs,
@@ -617,6 +632,17 @@ export function $idx(
       return joinAbs(a.shape.element, oobUndef());
     }
     return a.shape.element;
+  }
+  // TypedArray brand：元素域 = 元素 prim ∪ undefined（长度未建模，下标可能
+  // 越界；此前落 brand 内层空 obj → exact undefined，经 + 折 exact NaN）
+  if (a.shape.k === "brand") {
+    const elem = TYPED_ARRAY_ELEMENT[(a.shape as { name?: string }).name ?? ""];
+    if (elem) {
+      return joinAbs(
+        abs({ k: "prim", type: elem }, undefined, undefined, "exact"),
+        undef(),
+      );
+    }
   }
   if (a.shape.k === "sum") {
     // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce。
@@ -1012,6 +1038,17 @@ export function $objRest(o: Abs, keys: string[]): Abs {
 
 /** 数组 rest：`const [a, ...rest] = arr` → rest = 从 start 起的尾段 */
 export function $arrRest(a: Abs, start: number): Abs {
+  // Bug 22：侧表迭代物（生成器对象）rest 解构按元素切片（原 tuple 路径）
+  const mi = matchIterElements(a);
+  if (mi) {
+    const sliced = mi.slice(start);
+    if (sliced.length === 0) return abs({ k: "arr", element: unknown }, undefined, undefined, "path");
+    if (shouldWidenArrayLiteral(sliced.length)) {
+      const element = sliced.reduce((x, y) => joinAbs(x, y));
+      return abs({ k: "arr", element }, undefined, undefined, widenedArrayConf());
+    }
+    return abs({ k: "tuple", elements: sliced }, undefined, undefined, a.conf);
+  }
   a = asAbsVal(a);
   if (a.shape.k === "sum") {
     // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce
@@ -1396,6 +1433,13 @@ export function $forInKeys(o: Abs): Abs {
   return $arr([]);
 }
 
+/** 侧表迭代物（生成器对象 / 模板标签 / matchAll 迭代器，Bug 22）的精确
+ *  长度——matchIterElements 命中即长度已知（for-of 精确展开用）。 */
+function sideIterLen(a: Abs): number | undefined {
+  const mi = matchIterElements(a);
+  return mi ? mi.length : undefined;
+}
+
 export function $forOf(
   iterable: Abs,
   body: (item: Abs, index: Abs) => void,
@@ -1456,12 +1500,14 @@ export function $forOf(
   const sv = svR.ok ? svR.value : undefined;
   // tuple / 确切 Set·Map 条目数 / 字符串字面量 code points → 有界展开；
   // 抽象 arr 与 maybeAbsent 仍 0..max join
+  // Bug 22：生成器对象（obj + 元素侧表）按侧表长度精确展开（原 tuple
+  // 直接读 elements；表示改 obj 后经 matchIterElements 取数）
   const knownLen =
     shape.k === "tuple"
       ? shape.elements.length
       : typeof sv === "string"
         ? [...sv].length
-        : collectionExactLen(iterable);
+        : collectionExactLen(iterable) ?? sideIterLen(iterable);
   // 非具体容器：长度未知（可能空、可能更长）→ 单代表元素只跑一次
   // （同一元素重复 join 幂等，maxIters 次展开只会让索引假精确 + 大数组
   // 反复深拷贝把分析拖死）；0 次出口由下方 snapExit join，保持 sound。

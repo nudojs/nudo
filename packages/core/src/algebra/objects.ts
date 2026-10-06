@@ -91,6 +91,19 @@ export function setSlot<S extends { value: Abs }>(
 }
 
 /**
+ * 原型侧表：setProtoAbs 记录对象原型 Abs（对象原型细节此前不建模——
+ * 对象字面量方法 super 派发（Bug 19）需沿 home object 原型链查找）。
+ * 键为 Abs 对象身份（与 accessorTable 同口径；不可变更新产生新 Abs 时
+ * 不迁移——super 派发只发生在构造后直接调用的接收者上）。
+ */
+const protoTable = new WeakMap<object, Abs>();
+
+/** 读取对象原型 Abs（未设定/非对象原型 → undefined） */
+export function getProtoAbs(o: Abs): Abs | undefined {
+  return protoTable.get(o);
+}
+
+/**
  * 对象字面量非计算 `__proto__: v` / `Object.setPrototypeOf(o, v)` / `o.__proto__ = v`
  * 的原型设定（保守建模）：
  * - v 为 null → null-proto（无 Object.prototype 回退）
@@ -106,6 +119,8 @@ export function setProtoAbs(o: Abs, proto: Abs): Abs {
   }
   if (isObj(o)) {
     (o.shape as { open?: boolean }).open = true;
+    // 记录原型（对象原型）：super 派发 / 原型链查找用（Bug 19）
+    protoTable.set(o, proto);
   }
   return o;
 }

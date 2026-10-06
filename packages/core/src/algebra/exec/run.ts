@@ -420,11 +420,64 @@ function rewriteExportStatements(js: string): string {
         })
         .join("\n"),
   );
-  // export default <expr>;（transpile 保证函数/类默认已展开成命名 + 标识符形态）
-  return js.replace(
-    /^export default (.+);\s*$/gm,
-    (_all, expr: string) => `__nudoExport("default", ${expr});`,
-  );
+  // export default <expr>;（transpile 保证函数/类默认已展开成命名 + 标识符形态）。
+  // 表达式默认值（块体箭头/含方法对象）转译产物跨多行——`.` 不匹配换行的
+  // 单行正则会整条漏改写（default 槽静默丢失）。按语句边界切分：从
+  // `export default ` 起做括号深度扫描（跳过字符串字面量），深度归零且剩余
+  // 仅 `;` 即语句完结。
+  return rewriteExportDefaults(js);
+}
+
+/** export default 语句完结判定：括号深度归零处剩余仅 `;`（+尾随空白）。
+ *  完结时返回去 `;` 的表达式文本，否则 null。 */
+function exportDefaultExprOf(expr: string): string | null {
+  let depth = 0;
+  for (let k = 0; k < expr.length; k++) {
+    const c = expr[k]!;
+    if (c === '"' || c === "'") {
+      const quote = c;
+      k++;
+      while (k < expr.length && expr[k] !== quote) {
+        if (expr[k] === "\\") k++;
+        k++;
+      }
+      continue;
+    }
+    if (c === "(" || c === "[" || c === "{") depth++;
+    else if (c === ")" || c === "]" || c === "}") depth--;
+    else if (c === ";" && depth === 0) {
+      return /^;\s*$/.test(expr.slice(k)) ? expr.slice(0, k) : null;
+    }
+  }
+  return null;
+}
+
+function rewriteExportDefaults(js: string): string {
+  const lines = js.split("\n");
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (!/^export default /.test(line)) {
+      out.push(line);
+      continue;
+    }
+    let expr = line.slice("export default ".length);
+    let done = exportDefaultExprOf(expr);
+    let j = i;
+    while (done === null && j + 1 < lines.length) {
+      j++;
+      expr += "\n" + lines[j]!;
+      done = exportDefaultExprOf(expr);
+    }
+    if (done === null) {
+      // 未完结（不应发生——transpile 产物语句完整）：原样保留
+      out.push(line);
+      continue;
+    }
+    out.push(`__nudoExport("default", ${done});`);
+    i = j;
+  }
+  return out.join("\n");
 }
 
 /** runTranspiled 顶层绑定表（checkSource varAbs 通道；WeakMap 不碰返回面） */

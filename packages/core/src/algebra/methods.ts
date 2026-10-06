@@ -583,6 +583,15 @@ export function callAbsMethod(
                 typeof whole === "string" ? strLit(whole) : unknown,
               ];
               const r = applyCallbackAbs(repAbs, callArgs, callbackEnv(), pTrue, defaultLeakBudget);
+              // Bug 1：GetSubstitution 对回调返回值做 ToString——Symbol 定抛
+              // TypeError（原生 "ab".replace("a", () => Symbol())）。String(sym)
+              // 不抛（显式转换合法），须按隐式 ToString 口径手动抛宿主
+              // TypeError，由下方 catch 折 NudoThrow 进 throws 域。
+              // shape 判定先于 lit 检查——symbol prim 无 lit 项（JS 无
+              // symbol 字面量），lit 分支内检查是死代码。
+              if (isSymbolAbs(r)) {
+                throw new TypeError("Cannot convert a Symbol value to a string");
+              }
               // litValue 哨兵：lit(undefined) 折成 undefined，须看 term
               if (r.term?.op !== "lit") {
                 anyUnknown = true;
@@ -596,7 +605,13 @@ export function callAbsMethod(
                   ? lit.replaceAll(pat as never, replWrapper as never)
                   : lit.replace(pat as never, replWrapper as never);
               return anyUnknown ? strPrim("path") : strLit(out);
-            } catch {
+            } catch (e) {
+              // Bug 1：宿主 TypeError（replacer 返回 Symbol 的隐式 ToString 等）
+              // 是确定抛错面——不得吞成 strPrim("path")，重抛 NudoThrow 进
+              // throws 域（catch 经 $catchVal 吸收）；与 replaceAll 非全局
+              // 正则的硬抛口径一致。
+              if (e instanceof NudoThrow) throw e;
+              if (e instanceof TypeError) throw new NudoThrow(errorTypeAbs("TypeError"));
               return strPrim("path");
             }
           }

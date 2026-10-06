@@ -293,6 +293,17 @@ export function collectAssignedIds(node: unknown, acc: Set<string>, shadowed?: S
   if (n.type === "UpdateExpression" && n.argument?.type === "Identifier" && n.argument.name) {
     if (!sh.has(n.argument.name)) acc.add(n.argument.name);
   }
+  // Bug 21：块内 `var x = init` 经提升改发赋值——函数作用域共享绑定，
+  // 循环 pack/unpack 必须覆盖（裸 `var x;` 无写，不收集）
+  if (n.type === "VariableDeclaration" && n.kind === "var") {
+    const decls = (n.declarations ?? []) as Array<{ id?: unknown; init?: unknown }>;
+    for (const d of decls) {
+      if (!d.init) continue;
+      const names = new Set<string>();
+      collectPatternNames(d.id, names);
+      for (const name of names) if (!sh.has(name)) acc.add(name);
+    }
+  }
   for (const key of Object.keys(n)) {
     if (key === "loc" || key === "start" || key === "end" || key === "range") continue;
     const child = n[key];
@@ -341,6 +352,75 @@ export function collectPatternNames(id: unknown, acc: Set<string>): void {
   } else if (n.type === "ArrayPattern") {
     for (const el of n.elements ?? []) collectPatternNames(el, acc);
   }
+}
+
+/**
+ * var 提升预扫描（Bug 21）：收集函数体（或模块顶层）内全部 `var` 声明名
+ * （含嵌套块/循环/try/switch 臂；含 for-init/left 的 var），**不穿越**
+ * 函数/方法/类体边界（那些绑定属于内层作用域）。export var（模块顶层
+ * 保持声明面）与参数名由调用方从结果中扣除。
+ */
+const VAR_HOIST_STOP_TYPES = new Set([
+  "FunctionDeclaration",
+  "FunctionExpression",
+  "ArrowFunctionExpression",
+  "ObjectMethod",
+  "ClassMethod",
+  "ClassPrivateMethod",
+  "ClassDeclaration",
+  "ClassExpression",
+  "StaticBlock",
+  "ExportNamedDeclaration",
+  "ExportDefaultDeclaration",
+]);
+
+export function collectVarHoistNames(stmts: readonly unknown[]): Set<string> {
+  const acc = new Set<string>();
+  const seen = new Set<unknown>();
+  const walk = (node: unknown): void => {
+    if (!node || typeof node !== "object" || seen.has(node)) return;
+    seen.add(node);
+    const n = node as {
+      type?: string;
+      kind?: string;
+      declarations?: Array<{ id?: unknown }>;
+      [k: string]: unknown;
+    };
+    if (VAR_HOIST_STOP_TYPES.has(n.type as string)) return;
+    if (n.type === "VariableDeclaration") {
+      if (n.kind === "var") {
+        for (const d of n.declarations ?? []) collectPatternNames(d.id, acc);
+      }
+      return; // init 内的函数/类体是独立作用域，不下降
+    }
+    for (const key of Object.keys(node as object)) {
+      if (key === "loc" || key === "start" || key === "end" || key === "range" || key === "comments") continue;
+      const child = (node as Record<string, unknown>)[key];
+      if (Array.isArray(child)) child.forEach(walk);
+      else if (child && typeof child === "object") walk(child);
+    }
+  };
+  for (const s of stmts) walk(s);
+  return acc;
+}
+
+/** 语句列表顶层 export var 声明名（模块级保持声明面，从提升集扣除） */
+export function collectExportVarNames(stmts: readonly unknown[]): Set<string> {
+  const acc = new Set<string>();
+  for (const s of stmts) {
+    const n = s as {
+      type?: string;
+      declaration?: { type?: string; kind?: string; declarations?: Array<{ id?: unknown }> };
+    };
+    if (
+      n?.type === "ExportNamedDeclaration" &&
+      n.declaration?.type === "VariableDeclaration" &&
+      n.declaration.kind === "var"
+    ) {
+      for (const d of n.declaration.declarations ?? []) collectPatternNames(d.id, acc);
+    }
+  }
+  return acc;
 }
 
 /**
@@ -535,6 +615,14 @@ export function collectFreeAssignedNames(...nodes: Array<unknown>): string[] {
         const bound = new Set<string>();
         for (const d of n.declarations ?? []) collectPatternNames(d.id, bound);
         pushShadow(bound);
+      } else {
+        // Bug 21：`var x = init` 是对函数作用域（提升）绑定的写——臂内
+        // var 声明进 fork 协议（snapshot/join）；裸 `var x;` 无写不进
+        const written = new Set<string>();
+        for (const d of (n.declarations ?? []) as Array<{ id?: unknown; init?: unknown }>) {
+          if (d.init) collectPatternNames(d.id, written);
+        }
+        for (const name of written) markFree(name, nextShadowed);
       }
     } else if (n.type === "CatchClause") {
       const bound = new Set<string>();

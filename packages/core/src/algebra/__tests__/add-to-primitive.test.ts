@@ -82,6 +82,30 @@ describe("object / undefined ToString in +", () => {
   });
 });
 
+describe("undefined + non-string literal folds ToNumber (Bug 10)", () => {
+  // native：ToNumber(undefined)=NaN，数值加法恒 NaN（number 值域）——
+  // string 臂不可能，不得折 number|string 并集。string 字面量仍在上方
+  // 走 ToString 拼接臂（"undefined"），不得被 ToNumber 折叠劫走。
+  it("undefined + numeric-ish literals fold exact NaN", () => {
+    expect(val(`export function f() { return undefined + 1; }`)).toEqual({ ok: true, value: NaN });
+    expect(val(`export function f() { return 1 + undefined; }`)).toEqual({ ok: true, value: NaN });
+    expect(val(`export function f() { return undefined + undefined; }`)).toEqual({ ok: true, value: NaN });
+    expect(val(`export function f() { return undefined + null; }`)).toEqual({ ok: true, value: NaN });
+    expect(val(`export function f() { return undefined + true; }`)).toEqual({ ok: true, value: NaN });
+  });
+
+  it("undefined + string literal still concatenates (never NaN)", () => {
+    expect(val(`export function f() { return undefined + 's'; }`)).toEqual({ ok: true, value: "undefineds" });
+  });
+
+  it("undefined - * / stay number (no regression, now exact NaN)", () => {
+    expect(val(`export function f() { return undefined - 1; }`)).toEqual({ ok: true, value: NaN });
+    expect(val(`export function f() { return undefined * 2; }`)).toEqual({ ok: true, value: NaN });
+    expect(val(`export function f() { return undefined / 2; }`)).toEqual({ ok: true, value: NaN });
+    expect(shape(`export function f() { return undefined + 1; }`)).toBe("NaN");
+  });
+});
+
 describe("known-good neighbors stay exact", () => {
   it("null / bigint / boolean string concat still folds", () => {
     expect(val(`export function f() { return null + ''; }`)).toEqual({ ok: true, value: "null" });

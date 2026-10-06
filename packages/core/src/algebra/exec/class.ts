@@ -5,12 +5,14 @@
 
 import type { Abs } from "../abs.ts";
 import { abs, unknown, confJoin, litValue, bool, boolLit, str, strLit, numLit } from "../abs.ts";
-import { objOf, joinAbs, isObj, canonicalArrayIndex, getSlot, setSlot, propertyKeyOf } from "../objects.ts";
+import { objOf, joinAbs, isObj, canonicalArrayIndex, getSlot, setSlot, propertyKeyOf, getProtoAbs } from "../objects.ts";
+import { findClassAccessor } from "./runtime/members.ts";
 import { $get, $set, $lit, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary, lookupObjAccessor, fillTuple, clearStaleTermPred } from "./runtime.ts";
 import { pushCtorFrame, popCtorFrame, withNewTargetReset } from "./runtime/state.ts";
 import { $call } from "./call.ts";
-import { getFnImpl, absFunction, hostFnCtorFacet } from "../abs-fn.ts";
-import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, evalBuiltinNew, extStateOf, getPropFlags, isEnumerableView, tryMakeRegexAbs, makeArrayCtorAbs, assignSourceSlots, isSymbolAbs, stringOfSymbol, evalPromiseCtor, evalPromiseMethod, builtinCtorNameOf, makeProxyAbs, makeArrayBufferAbs, makeDataViewAbs, makeUrlAbs, noteBoxedCtorArg, sumHasPrimMember, evalDateCtor } from "../builtins.ts";
+import { evalEnterCall, evalExitCall, evalTruncatedAbs, isHostGlobalFn } from "./calls.ts";
+import { getFnImpl, absFunction, hostFnCtorFacet, isAbsApplyResult } from "../abs-fn.ts";
+import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, evalBuiltinNew, extStateOf, getPropFlags, isEnumerableView, tryMakeRegexAbs, makeArrayCtorAbs, assignSourceSlots, isSymbolAbs, stringOfSymbol, evalPromiseCtor, evalPromiseMethod, builtinCtorNameOf, hostBuiltinCtorName, makeProxyAbs, makeArrayBufferAbs, makeDataViewAbs, makeUrlAbs, noteBoxedCtorArg, sumHasPrimMember, evalDateCtor } from "../builtins.ts";
 import { arrayJoinToString, arrayJoinWithSep, validateJoinElements } from "../builtins/array.ts";
 import { isMapAbs, isSetAbs, makeMapAbs, makeSetAbs, collectionElementJoin, ctorArgDefinitelyInvalid, makeWeakCollectionAbs } from "../collections.ts";
 import { registerMatchIter } from "./match-iter.ts";
@@ -222,6 +224,24 @@ function findMethod(
   return undefined;
 }
 
+/** 沿继承链找静态方法（Bug 18）：原生静态方法挂构造器 [[Prototype]] 链
+ *  （ClassDefinitionEvaluation 设 B.__proto__ = A）——空派生类
+ *  `class B extends A {}` 的 B.m() 不得断链（与 findMethod 实例链同口径）。 */
+function findStaticMethod(
+  startName: string,
+  method: string,
+): ((...args: Abs[]) => Abs) | undefined {
+  let cur: string | undefined = startName;
+  const seen = new Set<string>();
+  while (cur && !seen.has(cur)) {
+    seen.add(cur);
+    const spec = getEvalClass(cur);
+    if (spec?.staticMethods?.[method]) return spec.staticMethods[method];
+    cur = spec?.superName;
+  }
+  return undefined;
+}
+
 /**
  * Bug 59：实例字段落地——以 thisVal 为 this 按源序求值（原生
  * InitializeInstanceElements：基类 ctor 体前 / super() 返回后）。
@@ -262,6 +282,23 @@ function constructClass(className: string, thisVal: Abs, args: Abs[]): Abs {
     if (!spec.superName && !spec.superNull) tv = applyInstanceFields(spec, tv);
     const after = spec.ctor(tv, ...args);
     if (after && after.shape.k === "brand") return after;
+    // Bug 17：ES [[Construct]] 返回值语义——undefined（宿主 undefined / lit
+    // undefined）→ this；其余原始值（prim 域或字面量；null 折 unknown+
+    // lit(null)）：基类忽略 → this，派生类 TypeError（Derived constructors
+    // may only return object or undefined）。
+    if (after === undefined || after === null) return tv;
+    if (after && typeof after === "object" && "shape" in (after as object)) {
+      if (isDefinitelyUndefinedAbs(after)) return tv;
+      if (
+        after.shape.k === "prim" ||
+        (after.term?.op === "lit" && after.term.value === null)
+      ) {
+        if (spec.superName || spec.superNull) {
+          throw new NudoThrow(errorTypeAbs("TypeError"));
+        }
+        return tv;
+      }
+    }
     return after ?? tv;
   }
   if (spec.superNull) {
@@ -400,6 +437,45 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
         "path",
       );
     }
+    // Bug 16：未识别宿主函数（用户 function 声明/表达式——转译产物是真
+    // JS 函数，体已 $ 助手化、Abs this 经 $rawThis(this) prologue 承接）
+    // 按原生 [[Construct]] 执行：新建空 brand this → 调函数体 → 返回值为
+    // Abs 对象（brand/obj）则用之，否则 this（宿主函数皆基类构造器，
+    // undefined/原始返回值原生忽略）。宿主内建构造器（Object/Function/
+    // Boolean…未进上方派发表）不走体执行——Abs 实参喂真 JS 构造器会产
+    // 宿主原值（静默错值），维持既有空 brand 口径。
+    if (hostBuiltinCtorName(cls) === undefined && !isHostGlobalFn(cls)) {
+      const thisVal = abs(
+        { k: "brand", name: clsName, shape: objOf({}) },
+        undefined,
+        undefined,
+        "path",
+      );
+      // new.target 帧：构造器体内 new.target = 被构造的函数值
+      pushCtorFrame(asAbsVal(cls));
+      const entered = evalEnterCall(clsName, cls, args);
+      if (!entered.ok) {
+        popCtorFrame();
+        return evalTruncatedAbs();
+      }
+      try {
+        const after = callAtFunctionBoundary(() =>
+          (cls as (...a: Abs[]) => Abs).apply(thisVal, args),
+        );
+        if (
+          after &&
+          typeof after === "object" &&
+          "shape" in (after as object) &&
+          (after.shape.k === "brand" || after.shape.k === "obj")
+        ) {
+          return after;
+        }
+        return thisVal;
+      } finally {
+        evalExitCall();
+        popCtorFrame();
+      }
+    }
     const shape = objOf({});
     return abs({ k: "brand", name: clsName, shape }, undefined, undefined, "path");
   }
@@ -418,6 +494,40 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
       }
       if (fs.ctor === true) {
         const instName = fs.name ?? "Anonymous";
+        // Bug 16：可构造 fn Abs（$fnVal 函数表达式值等）按 [[Construct]]
+        // 执行体——apply 钩子承接 Abs thisVal（非 bindThis 的 thisArg 传入），
+        // 返回 Abs 对象优先、undefined/原始值忽略（基类语义）
+        const impl = getFnImpl(cls as Abs);
+        if (impl?.apply) {
+          const thisVal = abs(
+            { k: "brand", name: instName, shape: objOf({}) },
+            undefined,
+            undefined,
+            "path",
+          );
+          pushCtorFrame(cls as Abs);
+          const entered = evalEnterCall(instName, cls, args);
+          if (!entered.ok) {
+            popCtorFrame();
+            return evalTruncatedAbs();
+          }
+          try {
+            const afterR = impl.apply(args, thisVal);
+            const after = isAbsApplyResult(afterR) ? afterR.abs : afterR;
+            if (
+              after &&
+              typeof after === "object" &&
+              "shape" in (after as object) &&
+              (after.shape.k === "brand" || after.shape.k === "obj")
+            ) {
+              return after;
+            }
+            return thisVal;
+          } finally {
+            evalExitCall();
+            popCtorFrame();
+          }
+        }
         return abs(
           { k: "brand", name: instName, shape: objOf({}) },
           undefined,
@@ -871,8 +981,8 @@ function $invokeInner(
         });
       }
     }
-    const spec = getEvalClass(brandName);
-    const sm = spec?.staticMethods?.[method];
+    // Bug 18：静态方法沿 superName 继承链查找（空派生类 B.m() 不断链）
+    const sm = findStaticMethod(brandName, method);
     if (sm) {
       let result: Abs = unknown;
       let threw = false;
@@ -1960,6 +2070,86 @@ export function $invokeSuper(
   });
 }
 
+/** 类实例方法内 super.p / super[k] 属性读（Bug 14）：父类原型链上的
+ *  访问器以 this 调用；实例字段/自有槽不在查找面（super 读的是原型）。
+ *  方法作为值（super.m 未调用）不做 fn Abs 投影——诚实 unknown。 */
+export function $getSuper(thisVal: Abs, childName: string, key: Abs): Abs {
+  const k = propertyKeyOf(key);
+  if (k === undefined) return unknown;
+  const parentName = getEvalClass(childName)?.superName;
+  if (!parentName) return unknown;
+  const acc = findClassAccessor(parentName, k);
+  if (acc?.get) return acc.get(thisVal);
+  return unknown;
+}
+
+/** 类实例方法内 super[k](args) 计算键调用（Bug 14）：ToPropertyKey 后沿父类链派发 */
+export function $invokeSuperKey(
+  thisVal: Abs,
+  childName: string,
+  key: Abs,
+  args: Abs[],
+): Abs {
+  const k = propertyKeyOf(key);
+  if (k === undefined) return unknown;
+  const parentName = getEvalClass(childName)?.superName;
+  if (!parentName) return unknown;
+  const m = findMethod(parentName, k);
+  if (!m) return unknown;
+  return withNewTargetReset(() => m(thisVal, ...args));
+}
+
+/**
+ * 对象字面量方法内 super 派发（Bug 19）：home object 的原型（运行时
+ * 侧表，setProtoAbs 记录）沿链查找方法/访问器（排除自有——否则覆盖方法
+ * 自递归），以接收者 thisVal 调用/求值。链未建模（无显式原型设定 /
+ * Object.prototype 面）→ 诚实 unknown。
+ */
+const SUPER_PROTO_CHAIN_LIMIT = 8;
+
+function superProtoOf(o: Abs): Abs | undefined {
+  return o.shape.k === "obj" ? getProtoAbs(o) : undefined;
+}
+
+/** super.m() / super[k]()：原型链方法查找 + receiver 注入调用 */
+export function $invokeSuperObj(thisVal: Abs, key: Abs, args: Abs[]): Abs {
+  const k = propertyKeyOf(key);
+  if (k === undefined) return unknown;
+  let cur = superProtoOf(thisVal);
+  let hops = 0;
+  while (cur && hops++ < SUPER_PROTO_CHAIN_LIMIT) {
+    if (cur.shape.k === "obj") {
+      const slot = getSlot(cur.shape.slots, k);
+      const impl = slot ? getFnImpl(slot.value) : undefined;
+      if (impl) {
+        return withNewTargetReset(() =>
+          impl.bindThis ? $call(slot!.value, [thisVal, ...args]) : $call(slot!.value, args),
+        );
+      }
+    }
+    cur = superProtoOf(cur);
+  }
+  return unknown;
+}
+
+/** super.v / super[k]：原型链属性读（访问器 getter 以 this 调用；数据槽直读） */
+export function $getSuperObj(thisVal: Abs, key: Abs): Abs {
+  const k = propertyKeyOf(key);
+  if (k === undefined) return unknown;
+  let cur = superProtoOf(thisVal);
+  let hops = 0;
+  while (cur && hops++ < SUPER_PROTO_CHAIN_LIMIT) {
+    if (cur.shape.k === "obj") {
+      const acc = lookupObjAccessor(cur, k);
+      if (acc?.get) return acc.get(thisVal);
+      const slot = getSlot(cur.shape.slots, k);
+      if (slot) return slot.value;
+    }
+    cur = superProtoOf(cur);
+  }
+  return unknown;
+}
+
 export function $thisGet(thisVal: Abs, key: string): Abs {
   if (thisVal.shape.k === "brand") {
     const inner = thisVal.shape.shape;
@@ -2064,9 +2254,10 @@ export function $staticInvoke(cls: Abs, method: string, args: Abs[]): Abs {
   // Bug 79：静态方法调用是普通调用面——new.target 归 undefined
   return withNewTargetReset(() => {
     const spec = specOf(cls);
-    const m = spec?.staticMethods?.[method];
-    if (!m) return unknown;
     const className = spec?.name ?? (cls.shape.k === "brand" ? cls.shape.name : undefined);
+    // Bug 18：静态方法沿 superName 继承链查找（空派生类 B.m() 不断链）
+    const m = className ? findStaticMethod(className, method) : undefined;
+    if (!m) return unknown;
     const recordName = className ? `${className}.${method}` : method;
     let result: Abs = unknown;
     let threw = false;

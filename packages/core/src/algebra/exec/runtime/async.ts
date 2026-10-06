@@ -2,19 +2,20 @@
  * async / await / generator / ??（$nullishTest / $removeNullish）。
  */
 import type { Abs } from "../../abs.ts";
-import { abs, bool, boolLit, confJoin, litValue, numLit, unknown, type Confidence } from "../../abs.ts";
+import { abs, bool, boolLit, confJoin, litValue, numLit, strLit, unknown, type Confidence } from "../../abs.ts";
 import { lit } from "../../term.ts";
 import type { Phi } from "../../pred.ts";
 import { pTrue, and, predEquals } from "../../pred.ts";
-import { joinAbs, type ObjShape } from "../../objects.ts";
+import { joinAbs, objOf, type ObjShape } from "../../objects.ts";
 import { absFunction, getFnImpl } from "../../abs-fn.ts";
-import { isNullishLitAbs, definitelyNotNullishShape } from "../../surface.ts";
+import { isNullishLitAbs, definitelyNotNullishShape, typeofName } from "../../surface.ts";
 import {
   NudoThrow, isNudoThrow, undef, litTruth, isDefinitelyTrue, isDefinitelyFalse,
   currentExecPhi, $lit, asAbsVal, $fnVal, noBody, writeInPlace, clearStaleTermPred,
   isNudoReturn, isNudoBreak, isNudoContinue,
 } from "./state.ts";
 import { pushMayThrowFrame, popMayThrowFrame } from "../may-throw.ts";
+import { registerGenElements } from "../match-iter.ts";
 import { $unknown, $eq, $ne, $add, $typeof, $not, $lt, $le, $gt, $ge, $join } from "./ops.ts";
 import {
   yieldStack, genPathSensitive, genJoinOverride, mergeArmYields,
@@ -61,13 +62,97 @@ export function $asyncReturn(v: Abs): Abs {
 // --- 生成器 ---
 // yieldStack / genPathSensitive / genJoinOverride 在文件前部（fork 隔离用）
 
-/** function* 体：收集所有 yield 值为 tuple Abs；抽象分支时降 conf（P0-6）
+/** GeneratorFunction 构造器 brand（g().constructor）——原生 name 是 "" */
+let generatorCtorCache: Abs | undefined;
+function generatorFunctionCtor(): Abs {
+  if (!generatorCtorCache) {
+    generatorCtorCache = abs(
+      {
+        k: "brand",
+        name: "GeneratorFunction",
+        shape: objOf({ name: { value: strLit("") } }),
+        ctor: true,
+      },
+      undefined,
+      undefined,
+      "exact",
+    );
+  }
+  return generatorCtorCache;
+}
+
+/** 生成器 next()/return() 结果：{value, done} 对象（Bug 22） */
+function genIterResult(value: Abs, done: boolean): Abs {
+  return abs(
+    {
+      k: "obj",
+      slots: {
+        value: { value },
+        done: { value: boolLit(done) },
+      },
+    },
+    undefined,
+    undefined,
+    "exact",
+  );
+}
+
+/**
+ * 生成器对象（Bug 22）：带迭代器协议面的对象 Abs——
+ * - `next`/`return`/`throw` 方法槽（typeof → "function"），next 按调用序
+ *   折 {value, done}（字面量 yield 序列首调用 → {value: y0, done: false}、
+ *   耗尽 → {value: undefined, done: true}）；return(x) → {value: x, done:
+ *   true}；throw(e) → 抛 e。
+ * - `constructor` → GeneratorFunction brand（g().constructor.name → ""）。
+ * - 数字下标槽（"0"…"n-1" = yield 值）+ @@iterator 槽 + 元素侧表——
+ *   for-of / [...g()] / Array.from / yield* / 数组解构经既有迭代路径
+ *   按序精确展开（迭代路径从侧表取出元素域，不回归）。
+ */
+function makeGenObject(els: Abs[], conf: Confidence): Abs {
+  const state = { i: 0, done: false };
+  const next = $fnVal([], (): Abs => {
+    if (state.done || state.i >= els.length) {
+      state.done = true;
+      return genIterResult(undef(), true);
+    }
+    const v = els[state.i]!;
+    state.i++;
+    return genIterResult(v, false);
+  });
+  const ret = $fnVal([], (...args: Abs[]): Abs => {
+    state.done = true;
+    return genIterResult(args.length > 0 ? args[0]! : undef(), true);
+  });
+  const thr = $fnVal([], (...args: Abs[]): Abs => {
+    state.done = true;
+    throw new NudoThrow(args.length > 0 ? args[0]! : undef());
+  });
+  const slots: Record<string, { value: Abs }> = {
+    next: { value: next },
+    return: { value: ret },
+    throw: { value: thr },
+    constructor: { value: generatorFunctionCtor() },
+    "@@iterator": { value: absFunction([], { body: noBody }, { ctor: false }) },
+  };
+  for (let i = 0; i < els.length; i++) {
+    slots[String(i)] = { value: els[i]! };
+  }
+  const g = abs({ k: "obj", slots }, undefined, undefined, conf);
+  registerGenElements(g, els);
+  return g;
+}
+
+/** function* 体：收集所有 yield 值；返回带迭代器协议面的生成器对象 Abs；
+ *  抽象分支时降 conf（P0-6）
  *
  * Bug 58：调用生成器是原生全操作——体只在首个 next() 执行。此前 body()
  * eager 执行把体内 may-throw（成员读 any）/显式 throw 折进**调用方** throws
  * 域（每生成器入口假 entry-may-throw）。现以丢弃式 may-throw 帧包裹：
  * soft 效果进帧后丢弃、NudoThrow/宿主异常吞掉（迭代期语义，调用期不表面）。
- * yield 收集保持 eager（既有值域建模，注释口径不变）。 */
+ * yield 收集保持 eager（既有值域建模，注释口径不变）。
+ * Bug 22：结果从 yield 元组数组改为生成器对象（next/return/throw 方法面 +
+ * constructor 身份）；元素域经侧表保留（$arr 的 ≤cap tuple / >cap arr
+ * widen 策略不变），迭代路径（for-of/spread/Array.from）继续工作。 */
 export function $gen(body: () => void): Abs {
   const ys: Abs[] = [];
   const marker = genPathSensitive;
@@ -88,14 +173,25 @@ export function $gen(body: () => void): Abs {
   if (genJoinOverride) {
     const joined: Abs = genJoinOverride;
     setGenJoinOverride(prevOverride);
-    return { ...joined, conf: joined.conf === "exact" ? ("path" as Confidence) : joined.conf };
+    const js = joined.shape;
+    const els =
+      js.k === "tuple" ? [...js.elements] : js.k === "arr" ? [js.element] : [unknown];
+    return makeGenObject(
+      els,
+      joined.conf === "exact" ? ("path" as Confidence) : joined.conf,
+    );
   }
   setGenJoinOverride(prevOverride);
   const arr = $arr(ys);
+  const as = arr.shape;
+  const els = as.k === "tuple" ? [...as.elements] : as.k === "arr" ? [as.element] : [unknown];
   if (genPathSensitive > marker) {
-    return { ...arr, conf: arr.conf === "exact" ? ("path" as Confidence) : arr.conf };
+    return makeGenObject(
+      els,
+      arr.conf === "exact" ? ("path" as Confidence) : arr.conf,
+    );
   }
-  return arr;
+  return makeGenObject(els, arr.conf);
 }
 
 /** yield v：压入当前生成器收集器；表达式值用 unknown */
@@ -144,6 +240,86 @@ export function $removeNullish(a: Abs): Abs {
     return kept.length === 1 ? kept[0]! : { ...a, shape: { k: "sum" as const, members: kept } };
   }
   return a;
+}
+
+/** 守卫剪除粒度（Bug 3）：null/undefined 成员各自的字面量判定 */
+function isNullLitAbs(a: Abs): boolean {
+  return a.term?.op === "lit" && a.term.value === null;
+}
+function isUndefLitAbs(a: Abs): boolean {
+  return a.term?.op === "lit" && a.term.value === undefined;
+}
+
+/**
+ * 严格 `p === null` 守卫的假值臂剪影：只剥 null 成员（Bug 3 粒度——
+ * `null === undefined` 为 false，假值臂的 p **仍可能是 undefined**，
+ * 不得连 undefined 一起剪，否则 `p.major` 漏报真实 TypeError）。
+ */
+export function $removeNull(a: Abs): Abs {
+  if (!a || typeof a !== "object" || !("shape" in (a as object))) return a;
+  if (isNullLitAbs(a)) return a;
+  if (a.shape.k === "sum") {
+    const members = (a.shape as { members: Abs[] }).members;
+    const kept = members.filter((m) => !isNullLitAbs(m));
+    if (kept.length === members.length) return a;
+    if (kept.length === 0) return a;
+    return kept.length === 1 ? kept[0]! : { ...a, shape: { k: "sum" as const, members: kept } };
+  }
+  return a;
+}
+
+/**
+ * `typeof u === "undefined"` / 严格 `u === undefined` 守卫的假值臂剪影：
+ * 只剥 undefined 成员（`typeof null === "object"`——假值臂的 u 仍可能是
+ * null，`u.v` 对 null 仍原生抛 TypeError，不得剪）。
+ */
+export function $removeUndefined(a: Abs): Abs {
+  if (!a || typeof a !== "object" || !("shape" in (a as object))) return a;
+  if (isUndefLitAbs(a)) return a;
+  if (a.shape.k === "sum") {
+    const members = (a.shape as { members: Abs[] }).members;
+    const kept = members.filter((m) => !isUndefLitAbs(m));
+    if (kept.length === members.length) return a;
+    if (kept.length === 0) return a;
+    return kept.length === 1 ? kept[0]! : { ...a, shape: { k: "sum" as const, members: kept } };
+  }
+  return a;
+}
+
+/** 成员 → JS typeof 名；any/unknown（无 nullish lit term）不可判 → undefined */
+function typeofOfMember(m: Abs): string | undefined {
+  const t = m.term;
+  if (t?.op === "lit") {
+    if (t.value === null) return "object";
+    if (t.value === undefined) return "undefined";
+  }
+  const n = typeofName(m.shape);
+  return n === "unknown" ? undefined : n;
+}
+
+/**
+ * typeof 类型守卫臂剪影（Bug 23）：`typeof v === "string"` 真臂把 v 重绑为
+ * union 中 typeof 匹配的成员（keep=true）/ 假臂绑补集（keep=false）——臂内
+ * `+`/关系/迭代/模板串拿到成员类型而非 union，不再记假 may-throw。
+ * 不可判成员（any/unknown）两侧都保留（保守，不引假阴性）；全剪空 →
+ * 原样返回（臂不可达的保守近似，与 $removeNullish 空集口径一致）。
+ */
+export function $narrowTypeOf(a: Abs, typeOf: string, keep: boolean): Abs {
+  if (!a || typeof a !== "object" || !("shape" in (a as object))) return a;
+  if (a.shape.k !== "sum") {
+    // 单形态：判定的 typeof 与守卫一致（或补集臂判不一致但值本就单一）
+    // 无可剪；不一致属臂不可达，原样返回（保守）。
+    return a;
+  }
+  const members = (a.shape as { members: Abs[] }).members;
+  const kept = members.filter((m) => {
+    const t = typeofOfMember(m);
+    if (t === undefined) return true;
+    return keep ? t === typeOf : t !== typeOf;
+  });
+  if (kept.length === members.length) return a;
+  if (kept.length === 0) return a;
+  return kept.length === 1 ? kept[0]! : { ...a, shape: { k: "sum" as const, members: kept } };
 }
 
 /** `??` / `??=` 测试：确定非 nullish → false；lit nullish → true；否则抽象 boolean */

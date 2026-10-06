@@ -8,11 +8,11 @@
  *    .description 字面量或 undefined；typeof "symbol"；隐式 ToString TypeError。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
+import { runTranspiled, callTranspiledExportFull, litValue, anyAbs } from "@nudojs/core";
 
-function call(src: string, fnName = "f") {
+function call(src: string, fnName = "f", args: Parameters<typeof callTranspiledExportFull>[2] = []) {
   const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
+  return callTranspiledExportFull(exports, fnName, args);
 }
 
 function isNever(r: unknown): boolean {
@@ -43,10 +43,13 @@ describe("A. String.fromCharCode", () => {
   });
 
   it("abstract args widen to abstract string", () => {
-    const r = call(`export function f(n) { return String.fromCharCode(n); }`);
-    expect(litValue(r.result)).toEqual({ ok: false });
-    const r2 = call(`export function f(n) { return String.fromCharCode(65, n); }`);
-    expect(litValue(r2.result)).toEqual({ ok: false });
+    // Bug 7 边界归一：缺省 n ≡ undefined → ToUint16(ToNumber(undefined)=NaN)=0
+    // 折 "\u0000"（原生 String.fromCharCode(undefined) === "\u0000"）
+    expect(litValue(call(`export function f(n) { return String.fromCharCode(n); }`).result)).toEqual({ ok: true, value: "\u0000" });
+    expect(litValue(call(`export function f(n) { return String.fromCharCode(65, n); }`).result)).toEqual({ ok: true, value: "A\u0000" });
+    // 显式抽象实参 widen 到抽象 string
+    expect(litValue(call(`export function f(n) { return String.fromCharCode(n); }`, "f", [anyAbs]).result)).toEqual({ ok: false });
+    expect(litValue(call(`export function f(n) { return String.fromCharCode(65, n); }`, "f", [anyAbs]).result)).toEqual({ ok: false });
   });
 
   it("symbol code throws TypeError", () => {

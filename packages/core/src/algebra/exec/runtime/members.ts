@@ -50,6 +50,19 @@ export function $objAccessor(
   return o;
 }
 
+/** 计算键访问器注册（`{ get [expr]() {} }`）：键为 Abs，ToPropertyKey 后注册。
+ *  非字面量键无法静态定键——保占位槽（键存在性），不注册派发。 */
+export function $objAccessorKey(
+  o: Abs,
+  key: Abs,
+  get: ((t: Abs) => Abs) | null,
+  set: ((t: Abs, v: Abs) => Abs) | null,
+): Abs {
+  const pk = propertyKeyOf(key);
+  if (pk === undefined) return o;
+  return $objAccessor(o, pk, get, set);
+}
+
 /** 对象字面量访问器查询（供 $get/$set/$spread/Object.assign 共用） */
 export function lookupObjAccessor(
   o: Abs,

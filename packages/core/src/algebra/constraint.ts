@@ -787,8 +787,11 @@ function constraintOnTermAbs(c: NudoConstraint, t: Term): Abs {
     return abs({ k: "prim", type: c.prim }, t, predOut, "path");
   }
   // lit(null) / lit(undefined)：无 prim 域（prim 缺失 + eq(self, null/undefined)）
-  // ——unknown 形状挂 eq 谓词，不落 number 回退（typeof null ≠ "number"，
-  // undefined 更不是；否则 leq/契约把 undefined 误报成 number）
+  // ——与对象 union 的 nullish 成员同款编码（Bug 24）：shape unknown +
+  // term lit(null/undefined)，formatShape 渲染 "null"/"undefined"，
+  // $removeNull/$removeNullish/$narrowTypeOf/strictEq 按 term 识别剪枝。
+  // 不落 number 回退（typeof null ≠ "number"，undefined 更不是；否则
+  // leq/契约把 undefined 误报成 number）。
   const allEqNullish =
     c.preds.length > 0 &&
     c.preds.every(
@@ -798,7 +801,21 @@ function constraintOnTermAbs(c: NudoConstraint, t: Term): Abs {
           (p.a.op === "lit" && (p.a.value === null || p.a.value === undefined))),
     );
   if (allEqNullish) {
-    return abs({ k: "unknown" }, t, predOut, "path");
+    let nullish: null | undefined = null;
+    for (const p of c.preds) {
+      if (p.op !== "eq") continue;
+      if (p.b.op === "lit" && (p.b.value === null || p.b.value === undefined)) {
+        nullish = p.b.value as null | undefined;
+        break;
+      }
+      if (p.a.op === "lit" && (p.a.value === null || p.a.value === undefined)) {
+        nullish = p.a.value as null | undefined;
+        break;
+      }
+    }
+    // term 即字面量本身（值域完全确定）；pred eq(参数项, null) 锚定的是 t，
+    // 与 lit term 不一致，不再随行。
+    return abs({ k: "unknown" }, termLit(nullish), undefined, "path");
   }
   // 有界但无 prim：按 number 处理（number().gt(0) 已带 prim）
   if (c.preds.length > 0) {

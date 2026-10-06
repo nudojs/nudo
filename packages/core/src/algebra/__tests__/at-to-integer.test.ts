@@ -23,19 +23,16 @@ import {
   callTranspiledExportFull,
   litValue,
   formatShape,
+  anyAbs,
 } from "../index.ts";
 
-function call(src: string, fnName = "f") {
+function call(src: string, fnName = "f", args: Parameters<typeof callTranspiledExportFull>[2] = []) {
   const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
+  return callTranspiledExportFull(exports, fnName, args);
 }
 
 function val(src: string) {
   return litValue(call(src).result);
-}
-
-function shape(src: string) {
-  return formatShape(call(src).result);
 }
 
 describe("String.prototype.at ToIntegerOrInfinity", () => {
@@ -86,9 +83,13 @@ describe("Array.prototype.at ToIntegerOrInfinity", () => {
   });
 
   it("abstract index does not pin a single element", () => {
-    // 缺省实参 i ≡ undefined → at(0) 是 1；显式抽象下标不得钉成字面量
-    const s = shape(`export function f(i) { return [1,2,3].at(i + 0); }`);
-    expect(val(`export function f(i) { return [1,2,3].at(i + 0); }`)).toEqual({ ok: false });
+    // Bug 7 边界归一：缺省实参 i ≡ undefined → i + 0 折 NaN → at(0) 确定是 1
+    //（原生 [1,2,3].at(undefined + 0) === 1）
+    expect(val(`export function f(i) { return [1,2,3].at(i + 0); }`)).toEqual({ ok: true, value: 1 });
+    // 显式抽象下标不得钉成字面量
+    const r = call(`export function f(i) { return [1,2,3].at(i + 0); }`, "f", [anyAbs]);
+    expect(litValue(r.result)).toEqual({ ok: false });
+    const s = formatShape(r.result);
     expect(s === "1" || s === "2" || s === "3").toBe(false);
   });
 });

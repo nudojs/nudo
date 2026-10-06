@@ -7,10 +7,17 @@ export type TranspileOptions = {
   /** 运行时 import 说明符 */
   runtimeImport?: string;
   maxLoopIters?: number;
-  /** 方法体内 this 的绑定名（transpile class 时注入） */
+  /** 方法/函数体内 this 的绑定名（transpile class 时注入） */
   thisParam?: string;
   /** 当前类名（super 派发用） */
   className?: string;
+  /**
+   * 静态方法体内 super 的接收者源（父类构造器——extends 表达式经
+   * classSpecOf 前移计算注入）。super.x / super.m() / super[k] 落通用
+   * $get/$invoke 路径（Super 节点直接发此源），消除 super 哨兵注释
+   * 逸出（Bug 14）。
+   */
+  staticSuperSrc?: string;
   /** 原始源码（@nudo:replace 按节点文本匹配） */
   source?: string;
   /** 替换表：归一化目标文本 → 注入变量名；可选语句范围 */
@@ -51,8 +58,27 @@ export type TranspileOptions = {
    */
   argsBinding?: string;
   /**
+   * 解构临时名单调计数器（`_d`/`_n`；transpileFile 创建，全模块共享）。
+   * 此前 `_d${seq}_${line}` 依赖源行号唯一化——同一行两条解构（压缩/单行
+   * 风格）重名 → 重复 `const` 声明 → 整模块 SyntaxError fail-closed；
+   * emitDestructure 的 `_n` 嵌套临时每语句重置，同样撞车。计数器与行号
+   * 解耦，跨语句/跨 prologue 单调。
+   */
+  destrTmpSeq?: { n: number };
+  /**
    * 当前词法作用域可见的 const 绑定名（用户层再赋值须 TypeError）。
    * 成员/下标写对根的内部重绑不在用户赋值路径，不走此表。
    */
   constNames?: ReadonlySet<string>;
+  /**
+   * 本作用域已提升到函数体顶部的 var 名（Bug 21）：块内 `var x = init`
+   * 改发赋值 `x = init`（绑定由顶部 `let x = $lit(void 0)` 提供）。
+   * 函数/方法体边界由 transpileFnBodyStmts 重算替换。
+   */
+  hoistedVarNames?: ReadonlySet<string>;
+  /**
+   * `export var x`（模块顶层）：保持声明面（host ESM export 收集依赖
+   * 声明语句），此类名字从提升集扣除、不发改赋值。
+   */
+  keepVarDecl?: boolean;
 };

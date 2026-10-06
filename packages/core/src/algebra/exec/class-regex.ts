@@ -9,7 +9,7 @@ import { NudoThrow } from "./runtime.ts";
 import { errorTypeAbs, recordMayThrow } from "./may-throw.ts";
 import { registerMatchIter } from "./match-iter.ts";
 import { isSymbolAbs } from "../symbol-id.ts";
-import { validateRegexSubjectArg } from "../builtins/regexp.ts";
+import { validateRegexSubjectArg, matchResultAbs } from "../builtins/regexp.ts";
 
 /** RegExp brand 内部 source/flags/lastIndex 提取（exec/test 共用） */
 export function regexParts(re: Abs): { pat: string; flags: string; lastIndex: number } | undefined {
@@ -52,10 +52,11 @@ export function regexExecWithState(
       lastIndex: reReal.lastIndex,
     };
   }
-  // m[i] 按下标可读：tuple；未参与捕获的组是 undefined 字面量（?? 默认值可用）
-  const els: Abs[] = m.map((g) => (g === undefined ? undefAbs() : strLit(g)));
+  // Bug 11：RegExpExecArray 带 index/input/groups 附加属性（matchResultAbs）
+  //——m[i] 下标读与 m.index/m.input/m.groups 均可解；未参与捕获的组是
+  // undefined 字面量（?? 默认值可用）
   return {
-    result: abs({ k: "tuple", elements: els }, undefined, undefined, "exact"),
+    result: matchResultAbs(m),
     lastIndex: reReal.lastIndex,
   };
 }
@@ -175,8 +176,7 @@ export function stringRegexMethod(recv: Abs, method: string, args: Abs[]): Abs |
     if (!m) {
       return abs({ k: "unknown" }, { op: "lit", value: null }, undefined, "exact");
     }
-    const els: Abs[] = m.map((g) => (g === undefined ? undefAbs() : strLit(g)));
-    return abs({ k: "tuple", elements: els }, undefined, undefined, "exact");
+    return matchResultAbs(m);
   }
   // matchAll：非全局正则原生 TypeError（hard throw，catch 可吸收）；
   // 全局（brand /g）→ 真执行迭代，每项 [full, ...groups] 元组

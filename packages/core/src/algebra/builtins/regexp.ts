@@ -147,6 +147,36 @@ export function validateRegexSubjectArg(subject: Abs | undefined): void {
   recordMayThrow({ kind: "TypeError", cause: "RegExp test/exec subject ToString may throw (Symbol)" });
 }
 
+/** RegExpExecArray → Abs（Bug 11）：capture 下标槽（"0"/"1"…）+
+ *  length/index/input/groups 附加属性，合并为带附加属性的对象 Abs。
+ *  `m[0]`/`m[1]` 经 $idx 字面量下标读槽、`m.index`/`m.input`/`m.groups.g`
+ *  经 $get 字符串键读槽；具名组 → groups 对象、无具名组 → undefined。 */
+export function matchResultAbs(m: RegExpExecArray): Abs {
+  const slots: Record<string, { value: Abs }> = {
+    length: { value: numLit(m.length) },
+    index: { value: numLit(m.index) },
+    input: { value: strLit(m.input) },
+  };
+  for (let i = 0; i < m.length; i++) {
+    const g = m[i];
+    slots[String(i)] = { value: g === undefined ? undefAbs() : strLit(g) };
+  }
+  const named = m.groups;
+  slots["groups"] = {
+    value: named
+      ? objOf(
+          Object.fromEntries(
+            Object.entries(named).map(([k, v]) => [
+              k,
+              { value: v === undefined ? undefAbs() : strLit(v) },
+            ]),
+          ),
+        )
+      : undefAbs(),
+  };
+  return abs({ k: "obj", slots }, undefined, undefined, "exact");
+}
+
 export function evalRegExpMethod(name: string, recv: Abs, args: Abs[]): Abs | undefined {
   if (name === "test" || name === "exec") {
     // Bug 57：subject ToString 校验（shape 先于 litValue 提取）
@@ -169,12 +199,7 @@ export function evalRegExpMethod(name: string, recv: Abs, args: Abs[]): Abs | un
         if (name === "test") return boolLit(re.test(subject));
         const m = re.exec(subject);
         if (!m) return abs({ k: "unknown" }, { op: "lit", value: null }, pTrue, "exact");
-        return abs(
-          { k: "tuple", elements: m.map((g) => (g === undefined ? undefAbs() : strLit(g))) },
-          undefined,
-          undefined,
-          "exact",
-        );
+        return matchResultAbs(m);
       } catch {
         return undefined;
       }
