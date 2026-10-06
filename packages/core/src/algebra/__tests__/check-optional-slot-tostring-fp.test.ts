@@ -160,7 +160,7 @@ describe("#119 对照组：may-throw 打点不越界", () => {
         (i) =>
           i.code === "nudo:entry-may-throw" &&
           i.fn === fn &&
-          i.suggestion.includes("ToString coercion of abstract operand"),
+          (i.suggestion ?? "").includes("ToString coercion of abstract operand"),
       ),
     ).toBe(true);
   });
