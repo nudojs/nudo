@@ -11,19 +11,29 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 | Package | Current version |
 |----------|-----------------|
-| `@nudojs/core` | 1.7.9 |
-| `@nudojs/service` | 1.6.9 |
-| `nudojs (CLI)` | 1.3.10 |
-| `@nudojs/parser` | 1.4.6 |
-| `@nudojs/lsp` | 1.4.7 |
-| `@nudojs/env` | 0.4.24 |
-| `@nudojs/harvester` | 0.3.10 |
-| `vite-plugin-nudo` | 0.4.25 |
-| `nudo-vscode` | 0.3.29 |
+| `@nudojs/core` | 1.7.10 |
+| `@nudojs/service` | 1.6.10 |
+| `nudojs (CLI)` | 1.3.11 |
+| `@nudojs/parser` | 1.4.7 |
+| `@nudojs/lsp` | 1.4.8 |
+| `@nudojs/env` | 0.4.25 |
+| `@nudojs/harvester` | 0.3.11 |
+| `vite-plugin-nudo` | 0.4.26 |
+| `nudo-vscode` | 0.3.30 |
 
 **Jump to package:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.7.9 {#pkg-core}
+## @nudojs/core 1.7.10 {#pkg-core}
+
+## 1.7.10
+
+### Patch Changes
+
+- 427da20: Fix false `entry-may-throw` reports under three guard forms over optional slots / nullable params (issue #118): (1) member truthy guards — `if (o.p)` truthy arm / `if (!o.p)` fall-through now rebind the base to `$removeMemberNullish($removeNullish(o), key)`, stripping nullish members of the slot value **and** the `optional` flag (the `$get` join with `undefined` was the FP source for `property 'grade' on undefined`); (2) composite mixed disjunction/conjunction — `!doc || typeof doc !== 'object'` fall-through now narrows `doc` (a single side that is itself a nullish guard suffices; both-sides-different-names stays conservatively un-narrowed); (3) optional-chain truthy guards — `if (!files?.length)` fall-through narrows `files` before `for (const f of files)` (no more `iteration over possibly non-iterable value`). Single-level member paths only (computed keys and nested `o.p.q` guards are not recognized); unguarded reads/iterations still report.
+- 427da20: Fix false `entry-may-throw` ("ToString coercion of abstract operand (Symbol)") on template interpolation of `optional()`/`nullable()` slots (issue #119): `isMaybeBigintOperand` no longer treats `lit(null)`/`lit(undefined)` sum members (shape `unknown` + literal term) as maybe-bigint/Symbol — ToString/ToNumber of nullish literals is total. Value domains unchanged; unconstrained `any` operands and obj/fn/brand union arms still record may-throw.
+
+<details>
+<summary>Version history (33)</summary>
 
 ## 1.7.9
 
@@ -34,9 +44,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - 关系比较块（`x < y` on narrowed string 字段）保持返回 sum 不合并时，`Number(x) - Number(y)` 派生臂是 term-less partial prim number（parent sum conf=partial，`isWidenedSumArm` 按 any 派生污染臂口径整臂跳过）→ 诚实的 `return number()` 契约被误降 `nudo:unproven-return` warning（1.3.9 回归；1.3.6 该臂被 nullish 成员访问整臂丢弃故不可见）。
   - 修法：`provesBarePrimDomain`——契约是无界 prim（裸 `number()`/`string()`：prim + 无显式 pred + 无 int 义务 + 无结构面）时只问域隶属；裸 prim 臂的 partial conf 丢的是界/路径证据，不丢 prim 值域 → 臂 discharged，不降整体 unprovable。
   - 口径不动：带界义务（gt/le/int…）对 term-less 臂仍 unprovable；错配 prim 的 disproved FP 保护（gold `nonEmpty` 面）与 OOB marker / nullish 显式化分支不变。
-
-<details>
-<summary>Version history (32)</summary>
 
 ## 1.7.8
 
@@ -844,7 +851,21 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/service 1.6.9 {#pkg-service}
+## @nudojs/service 1.6.10 {#pkg-service}
+
+## 1.6.10
+
+### Patch Changes
+
+- Updated dependencies [427da20]
+- Updated dependencies [427da20]
+  - @nudojs/core@1.7.10
+  - @nudojs/env@0.4.25
+  - @nudojs/harvester@0.3.11
+  - @nudojs/parser@1.4.7
+
+<details>
+<summary>Version history (35)</summary>
 
 ## 1.6.9
 
@@ -855,9 +876,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/env@0.4.24
   - @nudojs/harvester@0.3.10
   - @nudojs/parser@1.4.6
-
-<details>
-<summary>Version history (34)</summary>
 
 ## 1.6.8
 
@@ -1615,7 +1633,22 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## nudojs (CLI) 1.3.10 {#pkg-nudojs}
+## nudojs (CLI) 1.3.11 {#pkg-nudojs}
+
+## 1.3.11
+
+### Patch Changes
+
+- Updated dependencies [427da20]
+- Updated dependencies [427da20]
+  - @nudojs/core@1.7.10
+  - @nudojs/env@0.4.25
+  - @nudojs/harvester@0.3.11
+  - @nudojs/parser@1.4.7
+  - @nudojs/service@1.6.10
+
+<details>
+<summary>Version history (32)</summary>
 
 ## 1.3.10
 
@@ -1627,9 +1660,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/harvester@0.3.10
   - @nudojs/parser@1.4.6
   - @nudojs/service@1.6.9
-
-<details>
-<summary>Version history (31)</summary>
 
 ## 1.3.9
 
@@ -2156,7 +2186,18 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/parser 1.4.6 {#pkg-parser}
+## @nudojs/parser 1.4.7 {#pkg-parser}
+
+## 1.4.7
+
+### Patch Changes
+
+- Updated dependencies [427da20]
+- Updated dependencies [427da20]
+  - @nudojs/core@1.7.10
+
+<details>
+<summary>Version history (32)</summary>
 
 ## 1.4.6
 
@@ -2164,9 +2205,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 - Updated dependencies [b14ac2d]
   - @nudojs/core@1.7.9
-
-<details>
-<summary>Version history (31)</summary>
 
 ## 1.4.5
 
@@ -2590,7 +2628,20 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/lsp 1.4.7 {#pkg-lsp}
+## @nudojs/lsp 1.4.8 {#pkg-lsp}
+
+## 1.4.8
+
+### Patch Changes
+
+- Updated dependencies [427da20]
+- Updated dependencies [427da20]
+  - @nudojs/core@1.7.10
+  - @nudojs/parser@1.4.7
+  - @nudojs/service@1.6.10
+
+<details>
+<summary>Version history (36)</summary>
 
 ## 1.4.7
 
@@ -2600,9 +2651,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/core@1.7.9
   - @nudojs/parser@1.4.6
   - @nudojs/service@1.6.9
-
-<details>
-<summary>Version history (35)</summary>
 
 ## 1.4.6
 
@@ -3292,7 +3340,18 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/env 0.4.24 {#pkg-env}
+## @nudojs/env 0.4.25 {#pkg-env}
+
+## 0.4.25
+
+### Patch Changes
+
+- Updated dependencies [427da20]
+- Updated dependencies [427da20]
+  - @nudojs/core@1.7.10
+
+<details>
+<summary>Version history (32)</summary>
 
 ## 0.4.24
 
@@ -3300,9 +3359,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 - Updated dependencies [b14ac2d]
   - @nudojs/core@1.7.9
-
-<details>
-<summary>Version history (31)</summary>
 
 ## 0.4.23
 
@@ -3664,7 +3720,20 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/harvester 0.3.10 {#pkg-harvester}
+## @nudojs/harvester 0.3.11 {#pkg-harvester}
+
+## 0.3.11
+
+### Patch Changes
+
+- Updated dependencies [427da20]
+- Updated dependencies [427da20]
+  - @nudojs/core@1.7.10
+  - @nudojs/env@0.4.25
+  - @nudojs/parser@1.4.7
+
+<details>
+<summary>Version history (32)</summary>
 
 ## 0.3.10
 
@@ -3674,9 +3743,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/core@1.7.9
   - @nudojs/env@0.4.24
   - @nudojs/parser@1.4.6
-
-<details>
-<summary>Version history (31)</summary>
 
 ## 0.3.9
 
@@ -4081,7 +4147,19 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## vite-plugin-nudo 0.4.25 {#pkg-vite-plugin}
+## vite-plugin-nudo 0.4.26 {#pkg-vite-plugin}
+
+## 0.4.26
+
+### Patch Changes
+
+- Updated dependencies [427da20]
+- Updated dependencies [427da20]
+  - @nudojs/core@1.7.10
+  - @nudojs/service@1.6.10
+
+<details>
+<summary>Version history (35)</summary>
 
 ## 0.4.25
 
@@ -4090,9 +4168,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 - Updated dependencies [b14ac2d]
   - @nudojs/core@1.7.9
   - @nudojs/service@1.6.9
-
-<details>
-<summary>Version history (34)</summary>
 
 ## 0.4.24
 

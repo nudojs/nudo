@@ -11,120 +11,124 @@ This page keeps each package’s **current** notes only. Full history: [Full rel
 
 | Package | Current version |
 |----------|-----------------|
-| `@nudojs/core` | 1.7.9 |
-| `@nudojs/service` | 1.6.9 |
-| `nudojs (CLI)` | 1.3.10 |
-| `@nudojs/parser` | 1.4.6 |
-| `@nudojs/lsp` | 1.4.7 |
-| `@nudojs/env` | 0.4.24 |
-| `@nudojs/harvester` | 0.3.10 |
-| `vite-plugin-nudo` | 0.4.25 |
-| `nudo-vscode` | 0.3.29 |
+| `@nudojs/core` | 1.7.10 |
+| `@nudojs/service` | 1.6.10 |
+| `nudojs (CLI)` | 1.3.11 |
+| `@nudojs/parser` | 1.4.7 |
+| `@nudojs/lsp` | 1.4.8 |
+| `@nudojs/env` | 0.4.25 |
+| `@nudojs/harvester` | 0.3.11 |
+| `vite-plugin-nudo` | 0.4.26 |
+| `nudo-vscode` | 0.3.30 |
 
 **Jump to package:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.7.9 {#pkg-core}
+## @nudojs/core 1.7.10 {#pkg-core}
 
-## 1.7.9
-
-### Patch Changes
-
-- b14ac2d: fix(core): 无界 prim 契约的域隶属可证——裸 prim partial sum 臂不再误降 unproven-return（issue #115）：
-  
-  - 关系比较块（`x < y` on narrowed string 字段）保持返回 sum 不合并时，`Number(x) - Number(y)` 派生臂是 term-less partial prim number（parent sum conf=partial，`isWidenedSumArm` 按 any 派生污染臂口径整臂跳过）→ 诚实的 `return number()` 契约被误降 `nudo:unproven-return` warning（1.3.9 回归；1.3.6 该臂被 nullish 成员访问整臂丢弃故不可见）。
-  - 修法：`provesBarePrimDomain`——契约是无界 prim（裸 `number()`/`string()`：prim + 无显式 pred + 无 int 义务 + 无结构面）时只问域隶属；裸 prim 臂的 partial conf 丢的是界/路径证据，不丢 prim 值域 → 臂 discharged，不降整体 unprovable。
-  - 口径不动：带界义务（gt/le/int…）对 term-less 臂仍 unprovable；错配 prim 的 disproved FP 保护（gold `nonEmpty` 面）与 OOB marker / nullish 显式化分支不变。
-
-Older versions (32) → [Full release history](./releases-history.md#pkg-core)
-
-## @nudojs/service 1.6.9 {#pkg-service}
-
-## 1.6.9
+## 1.7.10
 
 ### Patch Changes
 
-- Updated dependencies [b14ac2d]
-  - @nudojs/core@1.7.9
-  - @nudojs/env@0.4.24
-  - @nudojs/harvester@0.3.10
-  - @nudojs/parser@1.4.6
+- 427da20: Fix false `entry-may-throw` reports under three guard forms over optional slots / nullable params (issue #118): (1) member truthy guards — `if (o.p)` truthy arm / `if (!o.p)` fall-through now rebind the base to `$removeMemberNullish($removeNullish(o), key)`, stripping nullish members of the slot value **and** the `optional` flag (the `$get` join with `undefined` was the FP source for `property 'grade' on undefined`); (2) composite mixed disjunction/conjunction — `!doc || typeof doc !== 'object'` fall-through now narrows `doc` (a single side that is itself a nullish guard suffices; both-sides-different-names stays conservatively un-narrowed); (3) optional-chain truthy guards — `if (!files?.length)` fall-through narrows `files` before `for (const f of files)` (no more `iteration over possibly non-iterable value`). Single-level member paths only (computed keys and nested `o.p.q` guards are not recognized); unguarded reads/iterations still report.
+- 427da20: Fix false `entry-may-throw` ("ToString coercion of abstract operand (Symbol)") on template interpolation of `optional()`/`nullable()` slots (issue #119): `isMaybeBigintOperand` no longer treats `lit(null)`/`lit(undefined)` sum members (shape `unknown` + literal term) as maybe-bigint/Symbol — ToString/ToNumber of nullish literals is total. Value domains unchanged; unconstrained `any` operands and obj/fn/brand union arms still record may-throw.
 
-Older versions (34) → [Full release history](./releases-history.md#pkg-service)
+Older versions (33) → [Full release history](./releases-history.md#pkg-core)
 
-## nudojs (CLI) 1.3.10 {#pkg-nudojs}
+## @nudojs/service 1.6.10 {#pkg-service}
 
-## 1.3.10
+## 1.6.10
 
 ### Patch Changes
 
-- Updated dependencies [b14ac2d]
-  - @nudojs/core@1.7.9
-  - @nudojs/env@0.4.24
-  - @nudojs/harvester@0.3.10
-  - @nudojs/parser@1.4.6
-  - @nudojs/service@1.6.9
+- Updated dependencies [427da20]
+- Updated dependencies [427da20]
+  - @nudojs/core@1.7.10
+  - @nudojs/env@0.4.25
+  - @nudojs/harvester@0.3.11
+  - @nudojs/parser@1.4.7
 
-Older versions (31) → [Full release history](./releases-history.md#pkg-nudojs)
+Older versions (35) → [Full release history](./releases-history.md#pkg-service)
 
-## @nudojs/parser 1.4.6 {#pkg-parser}
+## nudojs (CLI) 1.3.11 {#pkg-nudojs}
 
-## 1.4.6
+## 1.3.11
 
 ### Patch Changes
 
-- Updated dependencies [b14ac2d]
-  - @nudojs/core@1.7.9
+- Updated dependencies [427da20]
+- Updated dependencies [427da20]
+  - @nudojs/core@1.7.10
+  - @nudojs/env@0.4.25
+  - @nudojs/harvester@0.3.11
+  - @nudojs/parser@1.4.7
+  - @nudojs/service@1.6.10
 
-Older versions (31) → [Full release history](./releases-history.md#pkg-parser)
+Older versions (32) → [Full release history](./releases-history.md#pkg-nudojs)
 
-## @nudojs/lsp 1.4.7 {#pkg-lsp}
+## @nudojs/parser 1.4.7 {#pkg-parser}
 
 ## 1.4.7
 
 ### Patch Changes
 
-- Updated dependencies [b14ac2d]
-  - @nudojs/core@1.7.9
-  - @nudojs/parser@1.4.6
-  - @nudojs/service@1.6.9
+- Updated dependencies [427da20]
+- Updated dependencies [427da20]
+  - @nudojs/core@1.7.10
 
-Older versions (35) → [Full release history](./releases-history.md#pkg-lsp)
+Older versions (32) → [Full release history](./releases-history.md#pkg-parser)
 
-## @nudojs/env 0.4.24 {#pkg-env}
+## @nudojs/lsp 1.4.8 {#pkg-lsp}
 
-## 0.4.24
-
-### Patch Changes
-
-- Updated dependencies [b14ac2d]
-  - @nudojs/core@1.7.9
-
-Older versions (31) → [Full release history](./releases-history.md#pkg-env)
-
-## @nudojs/harvester 0.3.10 {#pkg-harvester}
-
-## 0.3.10
+## 1.4.8
 
 ### Patch Changes
 
-- Updated dependencies [b14ac2d]
-  - @nudojs/core@1.7.9
-  - @nudojs/env@0.4.24
-  - @nudojs/parser@1.4.6
+- Updated dependencies [427da20]
+- Updated dependencies [427da20]
+  - @nudojs/core@1.7.10
+  - @nudojs/parser@1.4.7
+  - @nudojs/service@1.6.10
 
-Older versions (31) → [Full release history](./releases-history.md#pkg-harvester)
+Older versions (36) → [Full release history](./releases-history.md#pkg-lsp)
 
-## vite-plugin-nudo 0.4.25 {#pkg-vite-plugin}
+## @nudojs/env 0.4.25 {#pkg-env}
 
 ## 0.4.25
 
 ### Patch Changes
 
-- Updated dependencies [b14ac2d]
-  - @nudojs/core@1.7.9
-  - @nudojs/service@1.6.9
+- Updated dependencies [427da20]
+- Updated dependencies [427da20]
+  - @nudojs/core@1.7.10
 
-Older versions (34) → [Full release history](./releases-history.md#pkg-vite-plugin)
+Older versions (32) → [Full release history](./releases-history.md#pkg-env)
+
+## @nudojs/harvester 0.3.11 {#pkg-harvester}
+
+## 0.3.11
+
+### Patch Changes
+
+- Updated dependencies [427da20]
+- Updated dependencies [427da20]
+  - @nudojs/core@1.7.10
+  - @nudojs/env@0.4.25
+  - @nudojs/parser@1.4.7
+
+Older versions (32) → [Full release history](./releases-history.md#pkg-harvester)
+
+## vite-plugin-nudo 0.4.26 {#pkg-vite-plugin}
+
+## 0.4.26
+
+### Patch Changes
+
+- Updated dependencies [427da20]
+- Updated dependencies [427da20]
+  - @nudojs/core@1.7.10
+  - @nudojs/service@1.6.10
+
+Older versions (35) → [Full release history](./releases-history.md#pkg-vite-plugin)
 
 ## nudo-vscode 0.3.7 {#pkg-vscode}
 
