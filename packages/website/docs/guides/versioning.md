@@ -13,13 +13,13 @@ Nudo is a pnpm monorepo that publishes **per-package** versions via [changesets]
 <!-- NUDO-VERSIONS:BEGIN -->
 | Package | Line | Upgrade rule |
 |---------|------|----------------|
-| `@nudojs/core` | **1.x**(1.7.9) | SemVer: breaking → major |
-| `@nudojs/service` | **1.x**(1.6.9) | SemVer: breaking → major |
-| `nudojs` | **1.x**(1.3.10) | SemVer: breaking → major |
-| `@nudojs/parser` | **1.x**(1.4.6) | SemVer: breaking → major. 2.0.0 was published by mistake and withdrawn; the planned breaking release will land as an explicitly confirmed major (see the gate note under Changesets) |
-| `@nudojs/lsp` | **1.x**(1.4.7) | SemVer: breaking → major. Freeze inventory: `packages/lsp/PUBLIC_API.md` |
-| `@nudojs/env` / `@nudojs/harvester` | 0.x(0.4.24 / 0.3.10) | Minor may break; pin a minor for stable IDE/CI analysis. Handwritten env wins on overlapping modules/exports (`mergeHarvestUnderEnv`) |
-| `vite-plugin-nudo` | 0.x(0.4.25) | Minor may break |
+| `@nudojs/core` | **1.x**(1.7.10) | SemVer: breaking → major |
+| `@nudojs/service` | **1.x**(1.6.10) | SemVer: breaking → major |
+| `nudojs` | **1.x**(1.3.11) | SemVer: breaking → major |
+| `@nudojs/parser` | **1.x**(1.4.7) | SemVer: breaking → major. 2.0.0 was published by mistake and withdrawn; the planned breaking release will land as an explicitly confirmed major (see the gate note under Changesets) |
+| `@nudojs/lsp` | **1.x**(1.4.8) | SemVer: breaking → major. Freeze inventory: `packages/lsp/PUBLIC_API.md` |
+| `@nudojs/env` / `@nudojs/harvester` | 0.x(0.4.25 / 0.3.11) | Minor may break; pin a minor for stable IDE/CI analysis. Handwritten env wins on overlapping modules/exports (`mergeHarvestUnderEnv`) |
+| `vite-plugin-nudo` | 0.x(0.4.26) | Minor may break |
 | `nudo-vscode` | Marketplace | Follow extension release notes; align bundled lsp before packaging (`packages/vscode/RELEASE_CHECKLIST.md`) |
 <!-- NUDO-VERSIONS:END -->
 
@@ -40,8 +40,8 @@ Full policy (what Nudo treats as breaking): [`docs/versioning.md`](https://githu
 <!-- NUDO-ECOSYSTEM:BEGIN -->
 | Package | Current | Pin style | Notes |
 |---------|---------|-----------|-------|
-| `@nudojs/env` | 0.4.24 (pre-1.0) | workspace / `~0.4.0` for bit-stable IDE/CI analysis | New Abs modules (e.g. `events` / `stream` / `querystring`) ship as **minor**; signature display may change. Handwritten env **wins** over harvest on overlapping modules/exports. |
-| `@nudojs/harvester` | 0.3.10 (pre-1.0) | workspace / `~0.3.10` | Harvest is a **side channel** — not the type-system source of truth. Budget defaults: `maxFiles=12`, `maxMs=2500`, disable via `NUDO_HARVEST_NODE=off`. |
+| `@nudojs/env` | 0.4.25 (pre-1.0) | workspace / `~0.4.0` for bit-stable IDE/CI analysis | New Abs modules (e.g. `events` / `stream` / `querystring`) ship as **minor**; signature display may change. Handwritten env **wins** over harvest on overlapping modules/exports. |
+| `@nudojs/harvester` | 0.3.11 (pre-1.0) | workspace / `~0.3.11` | Harvest is a **side channel** — not the type-system source of truth. Budget defaults: `maxFiles=12`, `maxMs=2500`, disable via `NUDO_HARVEST_NODE=off`. |
 <!-- NUDO-ECOSYSTEM:END -->
 
 Rules:
