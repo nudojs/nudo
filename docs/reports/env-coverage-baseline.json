@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-28T16:06:14.581Z",
+  "generatedAt": "2026-10-06T13:41:17.700Z",
   "note": "Extensional env coverage baseline — resolution rate is NOT a soundness/completeness claim. See design/limitations.md §2 and website semantics mock-boundary section.",
   "budgets": {
     "harvestNodeTypes": {
@@ -987,7 +987,7 @@
           "URL"
         ],
         "status": "resolved",
-        "format": "(string, string) => { href: string, origin: string, protocol: string, username: string, password: string, host: string, hostname: string, port: string, pathname: string, search: string, searchParams: { append: (string, string) => undefined, delete: (string) => undefined, get: (string) => string | null, getAll: (string) => string[], has: (string) => boolean, set: (string, string) => undefined, sort: () => undefined, toString: () => string, entries: () => unknown, keys: () => unknown, values: () => unknown, forEach: (unknown) => undefined, size: number }, hash: string, toString: () => string, toJSON: () => string }",
+        "format": "(string, base?: string) => { href: string, origin: string, protocol: string, username: string, password: string, host: string, hostname: string, port: string, pathname: string, search: string, searchParams: { append: (string, string) => undefined, delete: (string) => undefined, get: (string) => string | null, getAll: (string) => string[], has: (string) => boolean, set: (string, string) => undefined, sort: () => undefined, toString: () => string, entries: () => unknown, keys: () => unknown, values: () => unknown, forEach: (unknown) => undefined, size: number }, hash: string, toString: () => string, toJSON: () => string }",
         "leaf": "mentions-unknown",
         "reason": "present in env; signature-level — format still mentions unknown/any leaves"
       },

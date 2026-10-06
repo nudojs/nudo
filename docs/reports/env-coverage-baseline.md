@@ -7,7 +7,7 @@
 > Categories still recommended for mock are listed below and aligned with
 > `docs/design/limitations.md` §2 (call-site ceiling).
 
-- Generated at: `2026-09-28T16:06:14.581Z`
+- Generated at: `2026-10-06T13:41:17.700Z`
 - Harvest budgets: maxFiles=`12`, maxMs=`2500`, disable=`NUDO_HARVEST_NODE=off`
 
 ## Summary — Node env probes
