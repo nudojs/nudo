@@ -17,7 +17,11 @@ mkdirSync(RESULTS_DIR, { recursive: true });
 function runNudoInference(caseItem) {
   // Create a temporary file with the function and case directive
   const tempFile = `/tmp/nudo-bench-${caseItem.id}.js`;
-  const caseArgs = caseItem.args.map(a => JSON.stringify(a)).join(", ");
+  // JSON.stringify(function) === undefined — 箭头实参会被 join 成空槽，
+  // case 实际以省略参数求值（complex-03 曾因此把「调用 undefined 定抛」
+  // 诚实折成 never）。函数实参按源码文本写入 @nudo:case。
+  const serializeArg = (a) => (typeof a === "function" ? a.toString() : JSON.stringify(a));
+  const caseArgs = caseItem.args.map(serializeArg).join(", ");
   const source = `/**
  * @nudo:case "test" (${caseArgs})
  */
