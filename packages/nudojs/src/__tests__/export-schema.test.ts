@@ -44,7 +44,7 @@ describe("nudo export --format schema", () => {
     expect(r.stdout).toContain("export const scaleInput");
     expect(r.stdout).toContain("export const scaleOutput");
     expect(r.stdout).toContain("z.");
-  });
+  }, 30000); // CLI 子进程（tsx 冷启动）；默认 5s 在 CI 并行负载下会超时（实测 5.0s+）
 
   it("accepts --dialect zod and writes *.nudo.schema.zod.ts as a JS module", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-export-schema-"));
@@ -63,7 +63,7 @@ describe("nudo export --format schema", () => {
     expect(body).toContain('import { z } from "zod"');
     expect(body).toContain("export const scaleInput");
     expect(body).toContain("export const scaleOutput");
-  });
+  }, 30000);
 
   it("emits Standard Schema module with --format standard", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-export-schema-"));
@@ -81,7 +81,7 @@ describe("nudo export --format schema", () => {
     expect(body).toContain('"~standard"');
     expect(body).toContain('vendor: "nudo"');
     expect(body).toContain("scaleOutput");
-  });
+  }, 30000);
 
   it("rejects unknown format and unknown dialect", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-export-schema-"));
@@ -92,5 +92,5 @@ describe("nudo export --format schema", () => {
     const badDialect = runCli(["export", file, "--format", "schema", "--dialect", "valibot"]);
     expect(badDialect.status).toBe(1);
     expect(badDialect.stderr).toContain("Unknown --dialect");
-  });
+  }, 30000); // 2 个顺序 CLI 子进程
 });

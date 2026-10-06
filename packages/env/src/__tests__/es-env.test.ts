@@ -200,6 +200,30 @@ describe("es env load + key builtins", () => {
     }
   });
 
+  it("issue #106：构造器声明带 name+ctor facet（new/extends 执法面）", () => {
+    // Error 族 / Date / Promise：ctor:true（可构造，$new 按名派发 evalBuiltinNew）
+    for (const name of [
+      "Error",
+      "TypeError",
+      "RangeError",
+      "SyntaxError",
+      "ReferenceError",
+      "URIError",
+      "Date",
+      "Promise",
+    ] as const) {
+      const g = globalOf(env, name);
+      expect(g.shape.k, `${name} shape`).toBe("fn");
+      const fs = g.shape as { ctor?: boolean; name?: string };
+      expect(fs.ctor, `${name} ctor`).toBe(true);
+      expect(fs.name, `${name} name`).toBe(name);
+    }
+    // Symbol 原生非构造器（new Symbol() / extends Symbol 定义期 TypeError）
+    const sym = globalOf(env, "Symbol");
+    expect((sym.shape as { ctor?: boolean }).ctor).toBe(false);
+    expect((sym.shape as { name?: string }).name).toBe("Symbol");
+  });
+
   it("Array.isArray + Reflect high-frequency ops resolve", () => {
     const Array_ = globalOf(env, "Array");
     expect(shapeOf(walk(Array_, "isArray"), "Array.isArray")).toContain("=>");

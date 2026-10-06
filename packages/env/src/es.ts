@@ -337,15 +337,31 @@ export function defineEnv(): EnvDefinition {
         strToStrImplAbs(decodeURIComponent),
       ),
 
-      Error: envFn([prim.str()], errorBrandOf("Error")),
-      TypeError: envFn([prim.str()], errorBrandOf("TypeError")),
-      RangeError: envFn([prim.str()], errorBrandOf("RangeError")),
-      SyntaxError: envFn([prim.str()], errorBrandOf("SyntaxError")),
-      ReferenceError: envFn([prim.str()], errorBrandOf("ReferenceError")),
-      URIError: envFn([prim.str()], errorBrandOf("URIError")),
+      // issue #106：Error 族带 name（$new 按名派发 evalBuiltinNew →
+      // errorBrandAbs，message 槽 tiering 与无 env 宿主路径同口径）+
+      // ctor:true（class extends Error 定义期合法，不再记 constructibility 假抛）。
+      Error: envFn([prim.str()], errorBrandOf("Error"), undefined, {
+        name: "Error", ctor: true, params: ["message?"],
+      }),
+      TypeError: envFn([prim.str()], errorBrandOf("TypeError"), undefined, {
+        name: "TypeError", ctor: true, params: ["message?"],
+      }),
+      RangeError: envFn([prim.str()], errorBrandOf("RangeError"), undefined, {
+        name: "RangeError", ctor: true, params: ["message?"],
+      }),
+      SyntaxError: envFn([prim.str()], errorBrandOf("SyntaxError"), undefined, {
+        name: "SyntaxError", ctor: true, params: ["message?"],
+      }),
+      ReferenceError: envFn([prim.str()], errorBrandOf("ReferenceError"), undefined, {
+        name: "ReferenceError", ctor: true, params: ["message?"],
+      }),
+      URIError: envFn([prim.str()], errorBrandOf("URIError"), undefined, {
+        name: "URIError", ctor: true, params: ["message?"],
+      }),
 
       Promise: envFn([prim.unknown], promiseOf(prim.unknown), promiseCtorImplAbs, {
         name: "Promise",
+        ctor: true,
         params: ["executor"],
         slots: {
           resolve: envFn([prim.unknown], promiseOf(prim.unknown), promiseResolveImplAbs),
@@ -362,6 +378,7 @@ export function defineEnv(): EnvDefinition {
 
       Date: envFn([], dateAbs(), dateCtorImplAbs, {
         name: "Date",
+        ctor: true,
         params: ["value"],
         slots: {
           now: envFn([], prim.num()),
@@ -370,7 +387,10 @@ export function defineEnv(): EnvDefinition {
         },
       }),
 
-      Symbol: envFn([prim.str()], brandOf("Symbol")),
+      // Symbol 不是构造器（new Symbol() / class X extends Symbol 原生 TypeError）
+      Symbol: envFn([prim.str()], brandOf("Symbol"), undefined, {
+        name: "Symbol", ctor: false,
+      }),
 
       Reflect: objAbs({
         apply: envFn(

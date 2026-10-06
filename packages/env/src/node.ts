@@ -950,6 +950,8 @@ export function defineEnv(): EnvDefinition {
    */
   const EventEmitterCtor = envFn([eventEmitterOptions], eventEmitterInstance, undefined, {
     params: ["options?"],
+    name: "EventEmitter",
+    ctor: true,
   });
 
   const eventsModule: Record<string, Abs> = {
@@ -988,7 +990,7 @@ export function defineEnv(): EnvDefinition {
       [objAbs({ ...streamBaseSlots, ...streamHooks })],
       brandOf(brandName, objAbs(streamIoMethods)),
       undefined,
-      { params: ["options?"] },
+      { params: ["options?"], name: brandName, ctor: true },
     );
 
   /**
