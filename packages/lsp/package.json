@@ -1,6 +1,6 @@
 {
   "name": "@nudojs/lsp",
-  "version": "1.4.6",
+  "version": "1.4.7",
   "engines": {
     "node": ">=20"
   },

@@ -1,5 +1,12 @@
 # @nudojs/env
 
+## 0.4.24
+
+### Patch Changes
+
+- Updated dependencies [b14ac2d]
+  - @nudojs/core@1.7.9
+
 ## 0.4.23
 
 ### Patch Changes
