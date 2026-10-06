@@ -276,7 +276,28 @@ function applyInstanceFields(spec: EvalClassSpec, thisVal: Abs): Abs {
  */
 function constructClass(className: string, thisVal: Abs, args: Abs[]): Abs {
   const spec = getEvalClass(className);
-  if (!spec) return thisVal;
+  if (!spec) {
+    // issue #110：env/宿主内建构造器作基类（class X extends Error）——此前
+    // 原样返回 thisVal，super(message) 静默 no-op：args 被丢弃，e.message /
+    // e.name 折假精确 undefined（原生为 message 字符串 / 原型链 "Error"）。
+    // Error 家族按 errorBrandAbs 落 name/message 槽（与 new Error(...) 同
+    // 口径：lit message 保精确、symbol ToString 校验、AggregateError
+    // errors/cause）；brand 名保持被构造实例 thisVal（B extends A extends
+    // Error 的中间用户类链不换名）。其余内建（Promise/Date/…）无槽建模，
+    // 维持原样。用户同名类优先（上方 getEvalClass 命中即不走此分支）。
+    if (isErrorCtorName(className)) {
+      const eb = errorBrandAbs(className, args);
+      const instName = thisVal.shape.k === "brand" ? thisVal.shape.name : className;
+      const inner = eb.shape.k === "brand" ? eb.shape.shape : objOf({});
+      return abs(
+        { k: "brand", name: instName, shape: inner },
+        eb.term,
+        eb.pred,
+        eb.conf,
+      );
+    }
+    return thisVal;
+  }
   if (spec.ctor) {
     let tv = thisVal;
     if (!spec.superName && !spec.superNull) tv = applyInstanceFields(spec, tv);
