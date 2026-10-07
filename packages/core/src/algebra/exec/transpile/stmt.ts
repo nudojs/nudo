@@ -63,6 +63,8 @@ import {
   nullishRemoveCallOf,
   typeGuardOf,
   narrowTypeArmThunk,
+  discriminantGuardsOf,
+  narrowDiscriminantArmThunks,
 } from "./stmt-predicates.ts";
 
 /**
@@ -216,23 +218,34 @@ export function transpileFnBodyStmts(
     // 经 nullishGuardsOf 一臂多事实齐用。
     const earlyGuards = nullishGuardsOf(stmt.test);
     const earlyTGuard = typeGuardOf(stmt.test);
-    const consNarrowed = narrowTypeArmThunk(
-      narrowNullishArmThunks(
-        transpileBlockAsThunk(stmt.consequent, depth, scopedOpts),
-        earlyGuards,
+    const earlyDGuards = discriminantGuardsOf(stmt.test);
+    const consNarrowed = narrowDiscriminantArmThunks(
+      narrowTypeArmThunk(
+        narrowNullishArmThunks(
+          transpileBlockAsThunk(stmt.consequent, depth, scopedOpts),
+          earlyGuards,
+          "cons",
+          recvSet,
+        ),
+        earlyTGuard,
         "cons",
         recvSet,
       ),
-      earlyTGuard,
+      earlyDGuards,
       "cons",
       recvSet,
     );
     const cons = wrapArm(consNarrowed, "fk1_");
     const altBody = transpileFnBodyStmts(rest, depth + 1, { ...scopedOpts, inLoop: opts.inLoop });
     const altThunk = `() => {\n${altBody}\n${pad}}`;
-    const altNarrowed = narrowTypeArmThunk(
-      narrowNullishArmThunks(altThunk, earlyGuards, "alt", recvSet),
-      earlyTGuard,
+    const altNarrowed = narrowDiscriminantArmThunks(
+      narrowTypeArmThunk(
+        narrowNullishArmThunks(altThunk, earlyGuards, "alt", recvSet),
+        earlyTGuard,
+        "alt",
+        recvSet,
+      ),
+      earlyDGuards,
       "alt",
       recvSet,
     );
@@ -679,18 +692,29 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // nullishGuardsOf 一臂多事实齐用。
       const guards = nullishGuardsOf(stmt.test);
       const tguard = typeGuardOf(stmt.test);
-      const consNarrowed = narrowTypeArmThunk(
-        narrowNullishArmThunks(consRaw, guards, "cons", recvSet),
-        tguard,
+      const dguards = discriminantGuardsOf(stmt.test);
+      const consNarrowed = narrowDiscriminantArmThunks(
+        narrowTypeArmThunk(
+          narrowNullishArmThunks(consRaw, guards, "cons", recvSet),
+          tguard,
+          "cons",
+          recvSet,
+        ),
+        dguards,
         "cons",
         recvSet,
       );
       const altNarrowed =
         altRaw === null
           ? null
-          : narrowTypeArmThunk(
-              narrowNullishArmThunks(altRaw, guards, "alt", recvSet),
-              tguard,
+          : narrowDiscriminantArmThunks(
+              narrowTypeArmThunk(
+                narrowNullishArmThunks(altRaw, guards, "alt", recvSet),
+                tguard,
+                "alt",
+                recvSet,
+              ),
+              dguards,
               "alt",
               recvSet,
             );

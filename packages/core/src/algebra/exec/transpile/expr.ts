@@ -3,8 +3,8 @@
  */
 import type { Expression, Node, Statement } from "@babel/types";
 import type { TranspileOptions } from "./types.ts";
-import type { NullishGuard, TypeGuard } from "./stmt-predicates.ts";
-import { narrowNullishArmThunks, narrowTypeArmThunk, nullishGuardsOf, nullishRemoveCallOf, typeGuardOf } from "./stmt-predicates.ts";
+import type { DiscriminantGuard, NullishGuard, TypeGuard } from "./stmt-predicates.ts";
+import { narrowNullishArmThunks, narrowTypeArmThunk, nullishGuardsOf, nullishRemoveCallOf, typeGuardOf, discriminantGuardsOf, narrowDiscriminantArmThunks } from "./stmt-predicates.ts";
 import {
   isExpression,
   matchReplacement,
@@ -63,6 +63,8 @@ export function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
   narrowGuards?: readonly NullishGuard[];
   /** typeof 类型守卫（Bug 23）：两臂分别绑匹配成员 / 补集 */
   typeGuard?: TypeGuard;
+  /** 判别等值守卫（issue #126）：事实臂内 $narrowMemberEq 剪 union 成员 */
+  discGuards?: readonly DiscriminantGuard[];
 }): string {
   const alwaysNames = new Set<string>(collectForkBindingNames(...parts.alwaysNodes));
   const branchNames = new Set<string>(alwaysNames);
@@ -108,6 +110,12 @@ export function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
       consExpr = apply(consExpr, "cons");
       altExpr = apply(altExpr, "alt");
     }
+    // 判别等值守卫（issue #126）：事实臂内 union 成员剪影（与 stmt.ts
+    // IfStatement 同源；此路径无 mutator 绑定，只需按臂过滤）
+    const applyDisc = (src: string, arm: "cons" | "alt"): string =>
+      narrowDiscriminantArmThunks(src, parts.discGuards, arm, []);
+    consExpr = applyDisc(consExpr, "cons");
+    altExpr = applyDisc(altExpr, "alt");
     return `$fork(${forkTest}, () => ${consExpr}, () => ${altExpr})`;
   }
 
@@ -129,8 +137,18 @@ export function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
   // nullish 守卫臂剪影与 stmt.ts IfStatement 同源（#97 / #118 v3 多名）：
   // 任一守卫名在 fork 绑定集（mutator 重绑/臂内写）时不收窄——影子参数会
   // 吞掉臂内写（narrowNullishArmThunks 内统一跳过）
-  const consFinal = narrowNullishArmThunks(forkArmThunk(consLines, "fk1_", names), guards, "cons", names);
-  const altFinal = narrowNullishArmThunks(forkArmThunk(altLines, "fk2_", names), guards, "alt", names);
+  const consFinal = narrowDiscriminantArmThunks(
+    narrowNullishArmThunks(forkArmThunk(consLines, "fk1_", names), guards, "cons", names),
+    parts.discGuards,
+    "cons",
+    names,
+  );
+  const altFinal = narrowDiscriminantArmThunks(
+    narrowNullishArmThunks(forkArmThunk(altLines, "fk2_", names), guards, "alt", names),
+    parts.discGuards,
+    "alt",
+    names,
+  );
   return [
     `(() => {`,
     `  const __test = (${parts.alwaysSrc});`,
@@ -498,6 +516,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       // typeof 类型守卫（Bug 23）同口径：右臂按 left 守卫的臂语义绑匹配/补集。
       const leftGuards = nullishGuardsOf(expr.left);
       const andTypeGuard = typeGuardOf(expr.left);
+      const leftDiscGuards = discriminantGuardsOf(expr.left);
       return op === "&&"
         ? transpileShortCircuitExpr(opts, {
             alwaysNodes: [lNode],
@@ -508,6 +527,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
             altNodes: [],
             narrowGuards: leftGuards.filter((g) => g.arm === "cons"),
             typeGuard: andTypeGuard,
+            discGuards: leftDiscGuards.filter((g) => g.arm === "cons"),
           })
         : transpileShortCircuitExpr(opts, {
             alwaysNodes: [lNode],
@@ -518,6 +538,7 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
             altNodes: [rNode],
             narrowGuards: leftGuards.filter((g) => g.arm === "alt"),
             typeGuard: andTypeGuard,
+            discGuards: leftDiscGuards.filter((g) => g.arm === "alt"),
           });
     }
     case "ConditionalExpression": {
@@ -536,9 +557,11 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         altNodes: [altNode],
         // 三元的 nullish/typeof 守卫臂收窄（issue #97：`p === null ? -1 : p.major`；
         // Bug 23：`typeof v === "string" ? v + "!" : 0`；#118 v3/#120：多名复合
-        // `obj == null || node.p == null ? … : node.p.name` 一臂多事实）
+        // `obj == null || node.p == null ? … : node.p.name` 一臂多事实）；
+        // 判别等值守卫（issue #126）：`node.type === 'TL' ? node.quasis[0] : null`
         narrowGuards: nullishGuardsOf(expr.test),
         typeGuard: typeGuardOf(expr.test),
+        discGuards: discriminantGuardsOf(expr.test),
       });
     }
     case "RegExpLiteral": {

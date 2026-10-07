@@ -495,3 +495,110 @@ export function narrowTypeArmThunk(thunk: string, guard: TypeGuard | undefined, 
   const keep = arm === guard.arm;
   return `((${guard.name}) => ${thunk})($narrowTypeOf(${guard.name}, ${JSON.stringify(guard.typeOf)}, ${keep}))`;
 }
+
+// --- 判别等值守卫（issue #126） ---------------------------------------------
+
+/**
+ * 判别等值守卫（issue #126）：`x.key === 'lit'`（或 `!==` 对偶，字面量在
+ * 左对称）——判别事实「x.key === value」成立的臂（`===` → cons、`!==` →
+ * alt）内 x 以 $narrowMemberEq 影子重绑为「key 值域可能等于 value」的
+ * union 成员子集，kind-specific 字段的 index 读（`node.quasis[0]`）不再
+ * 撞其他臂的 undefined 记假 may-throw。只认严格等价（`===`/`!==`——宽松
+ * `==` 有强制转换面）与非计算键单层成员（memberGuardTarget 同形态）；
+ * nullish 字面量归 nullishGuardOf 通道，此处只认 string/number/boolean。
+ */
+export type DiscriminantGuard = {
+  /** 被守卫的标识符（判别基名） */
+  name: string;
+  /** 判别键（非计算成员） */
+  key: string;
+  /** 判别字面量（string/number/boolean） */
+  value: string | number | boolean;
+  /** 「x.key === value」事实成立的臂（`===` → cons / `!==` → alt） */
+  arm: "cons" | "alt";
+};
+
+const isPrimLitNode = (n: unknown): n is { value: string | number | boolean } => {
+  const t = n as { type?: string; value?: unknown };
+  if (t?.type === "StringLiteral") return typeof t.value === "string";
+  if (t?.type === "NumericLiteral") return typeof t.value === "number";
+  if (t?.type === "BooleanLiteral") return typeof t.value === "boolean";
+  return false;
+};
+
+export function discriminantGuardOf(test: unknown): DiscriminantGuard | undefined {
+  const t = test as { type?: string; operator?: string; left?: unknown; right?: unknown };
+  if (t?.type !== "BinaryExpression") return undefined;
+  if (t.operator !== "===" && t.operator !== "!==") return undefined;
+  const lm = memberGuardTarget(t.left);
+  const rm = memberGuardTarget(t.right);
+  const m =
+    lm !== undefined && isPrimLitNode(t.right) ? { target: lm, lit: t.right as { value: string | number | boolean } } :
+    rm !== undefined && isPrimLitNode(t.left) ? { target: rm, lit: t.left as { value: string | number | boolean } } :
+    undefined;
+  if (!m) return undefined;
+  return {
+    name: m.target.name,
+    key: m.target.key,
+    value: m.lit.value,
+    arm: t.operator === "===" ? "cons" : "alt",
+  };
+}
+
+/**
+ * 测试表达式的全部独立判别等值事实（issue #126）：LogicalExpression 同方向
+ * 递归展开——`&&` 收各合取项的成立臂（cons）事实（整体真 = 各项皆真，各项
+ * 判别事实独立成立）；`||` 收各析取项的穿透臂（alt）事实。同名多键互不冲
+ * 突（链式窄化取交集），同名同键同值去重；异方向子式的单侧真假不传播事实。
+ */
+export function discriminantGuardsOf(test: unknown): DiscriminantGuard[] {
+  const t = test as { type?: string; operator?: string; left?: unknown; right?: unknown };
+  if (t?.type === "LogicalExpression" && (t.operator === "&&" || t.operator === "||")) {
+    const wantArm: "cons" | "alt" = t.operator === "&&" ? "cons" : "alt";
+    const out: DiscriminantGuard[] = [];
+    for (const g of [...discriminantGuardsOf(t.left), ...discriminantGuardsOf(t.right)]) {
+      if (g.arm !== wantArm) continue;
+      if (out.some((x) => x.name === g.name && x.key === g.key && x.value === g.value)) continue;
+      out.push(g);
+    }
+    return out;
+  }
+  const g = discriminantGuardOf(test);
+  return g ? [g] : [];
+}
+
+/** 判别等值守卫臂 thunk 的剪影包装（issue #126）：`((x) => THUNK)
+ *  ($narrowMemberEq(x, key, value, true))`——事实臂内按守卫链式窄化（同名
+ *  多键交集），异名各一影子参数。只应用 arm 匹配的守卫；任一匹配守卫名在
+ *  fork 绑定集（臂内写/快照重绑）→ 全部跳过（与 nullish/typeof 剪影同一
+ *  跳过口径，宁缺毋假）。keep 恒 true：守卫 arm 即「key === value」事实臂，
+ *  成员过滤语义（剪 never 成员）由 $narrowMemberEq 内部裁定。 */
+export function narrowDiscriminantArmThunks(
+  thunk: string,
+  guards: readonly DiscriminantGuard[] | undefined | null,
+  arm: "cons" | "alt",
+  forkBindingNames: ReadonlySet<string> | readonly string[],
+): string {
+  if (!guards || guards.length === 0) return thunk;
+  const matching = guards.filter((g) => g.arm === arm);
+  if (matching.length === 0) return thunk;
+  const names =
+    forkBindingNames instanceof Set ? (forkBindingNames as Set<string>) : new Set(forkBindingNames);
+  if (matching.some((g) => names.has(g.name))) return thunk;
+  const byName = new Map<string, DiscriminantGuard[]>();
+  for (const g of matching) {
+    const list = byName.get(g.name) ?? [];
+    if (!list.some((x) => x.key === g.key && x.value === g.value)) list.push(g);
+    byName.set(g.name, list);
+  }
+  const params = [...byName.keys()].join(", ");
+  const args = [...byName.entries()]
+    .map(([name, gs]) =>
+      gs.reduce(
+        (acc, g) => `$narrowMemberEq(${acc}, ${JSON.stringify(g.key)}, ${JSON.stringify(g.value)}, true)`,
+        name,
+      ),
+    )
+    .join(", ");
+  return `((${params}) => ${thunk})(${args})`;
+}
