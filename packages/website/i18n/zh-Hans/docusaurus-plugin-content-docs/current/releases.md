@@ -11,143 +11,116 @@ slug: /releases
 
 | 包 | 当前版本 |
 |----|----------|
-| `@nudojs/core` | 1.8.0 |
-| `@nudojs/service` | 1.6.11 |
-| `nudojs (CLI)` | 1.3.12 |
-| `@nudojs/parser` | 1.4.8 |
-| `@nudojs/lsp` | 1.4.9 |
-| `@nudojs/env` | 0.4.26 |
-| `@nudojs/harvester` | 0.3.12 |
-| `vite-plugin-nudo` | 0.4.27 |
-| `nudo-vscode` | 0.3.31 |
+| `@nudojs/core` | 1.9.0 |
+| `@nudojs/service` | 1.6.12 |
+| `nudojs (CLI)` | 1.3.13 |
+| `@nudojs/parser` | 1.4.9 |
+| `@nudojs/lsp` | 1.4.10 |
+| `@nudojs/env` | 0.4.27 |
+| `@nudojs/harvester` | 0.3.13 |
+| `vite-plugin-nudo` | 0.4.28 |
+| `nudo-vscode` | 0.3.32 |
 
 **按包跳转:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.8.0 {#pkg-core}
+## @nudojs/core 1.9.0 {#pkg-core}
 
-## 1.8.0
+## 1.9.0
 
 ### Minor Changes
 
-- 05c2c8c: Add `lazy(() => tpl)` self-referential constraint-template builder for recursive shapes (issue #120). A sidecar can now declare recursive structures in one line — `export const astNode = shape({ type: string(), object: lazy(() => astNode).optional() })` — instead of hand-nesting finite levels. Consumers expand lazy templates under a fixed depth budget (`LAZY_TEMPLATE_DEPTH = 3`): entry param Abs renders budget-exhausted lazy fields as absent slots (matching manual finite templates, so guarded recursion cuts cleanly at the boundary), `instantiateConstraint`/`instantiateOnTerm` degrade to trivially-true predicates, `constraintAdmitsNullish` / `throwConstraintToKinds` / `literalMeetsConstraint` terminate cycles via thunk-identity seen-sets, `assertImplies` uses a thunk-identity seen-set with per-path copy-on-branch copies (sibling sum/union arms each fully expand shared lazy members; genuine cycles truncate to `unprovable`, i.e. the conservative `nudo:unproven-return` warning rather than a false error), `formatConstraint` renders two expanded levels plus `…`, and `derefConstraint` memoizes one-level derefs by thunk identity. `partial`/`pick`/`omit`/`andC` now deref lazy wrappers before their structure checks. `lazy` is sidecar-injected via `CONSTRAINT_BUILDERS`; the directive grammar still rejects arrow functions, so `@nudo:case`-style use falls back to `unknown` (no security-surface change).
-- 33239da: Adopt declared contract faces at the call boundary (issue #123 fix B): when a callee declares param/return contracts (`*.nudo.js` sidecar `fn(…)` binding or `@nudo:contract`), contracts stop being enforce-only and become a **type face** for callers — same-file and cross-module alike. At `$call`/`$callNamed`, params with no information (unconstrained `any` / non-lit `unknown` args) are bound to the declared faces (`constraintToEntryAbs`), so the callee body re-executes inside the contract domain instead of worst-case `any` — the issue's levenshtein callers (`levenshtein(a,b) <= 1` and const/literal/var variants) no longer inherit the DP body's `ToPrimitive of abstract relational operand (Symbol)` may-throw; call sites passing already-informative args keep their own face (L1 `nudo:constraint-violated` at the scan remains the enforcement domain, arity is never extended). The call result is presented through the declared return face — the #102 DP-OOB marker arm (`undefined`) and widened members no longer leak to callers (`probe(a, b) => number`, not the inferred union), while scalar literals that satisfy the return constraint keep literal precision and `never`/opaque (budget) results are never whitewashed. Return-constraint predicates flow to callers: a callee declared `number().ge(0)` makes caller-side bounds like `d + 1 ≥ 1` / `100 - d ≤ 100` (the issue's `1 - d/max ≤ 1` chain shape) provable. The callee's own check semantics are unchanged — its honest `nudo:unproven-return` warning and inferred signature (marker arm included) stay exactly as before. Faces are attached per `checkSource` run (bridge Abs fns for injected module tables via the dep's ambient sidecar; a scoped name resolver for same-file callees), so nothing is cached into long-lived session state.
+- aeb6f7e: Add discriminated-union narrowing for `x.key === 'lit'` guards (issue #126). In the arm where the equality fact holds (`===` true arm / `!==` false arm), a union parameter is shadow-rebound via the new `$narrowMemberEq` runtime helper to the subset of members whose `key` domain may equal the literal: arms pinned to a different literal, closed shapes without the key, and nullish-literal members are pruned (three-state classification: `only` / `never` / `may` via shape assignability plus `implies` over the slot pred, with a local literal-disequality rule for strings/booleans the prover does not cover). Kind-specific field reads stop recording false `computed member on nullish (union arm)` may-throws. Recognizes strict equality only (`===`/`!==`, literal on either side, string/number/boolean literals, non-computed single-level member), composes across `&&`/`||` tests with the existing nullish/typeof guard channels, and applies to ternaries, `if` statements, the early-return promotion path, and optional-chain guards (`node?.type === 'lit'` also drops the null members). Dual polarity: `!==` early-returns prune the exactly-literal arm in the fall-through. Boundary (honest residual): a lenient catch-all arm like `shape({ type: string() })` admits the discriminant literal, so it is conservatively kept in the fact arm and undeclared index-read fields on it still report one L2 — the parameter domain genuinely admits such values (TypeScript keeps the overlapping arm too and flags the property as missing).
+
+更早版本（35）→ [完整发布历史](./releases-history.md#pkg-core)
+
+## @nudojs/service 1.6.12 {#pkg-service}
+
+## 1.6.12
 
 ### Patch Changes
 
-- 3588ddd: Extend guard narrowing to four previously-unhandled forms (issue #118 v3 / #120): (1) assignment-in-test guards — `while ((m = re.exec(content)))` / `if ((m = f()))` now recognize the truthy test as proof that the assigned variable is non-nullish, so reads like `m[2].trim()` inside the loop body / cons arm no longer report false `entry-may-throw` (`computed member on nullish (union arm)`); the while body is narrowed per iteration via an IIFE inside the body factory, and do-while narrows only the inner `$whileSeq` copy (first run precedes any test evaluation). (2) member loose-equality guards — `o.p == null` / `o.p != null` falsy/truthy arms imply the slot is present and its value non-nullish (loose eq treats a missing slot's `undefined` as null), same facts as truthy-member guards; strict `o.p !== null` stays un-narrowed as a documented boundary (`undefined` remains possible). (3) multi-name composite guards — `obj == null || node.property == null` fall-through now applies both independent facts in one arm (`nullishGuardsOf` + multi-param shadow `((a, b) => …)(rm a, rm b)`); same-name facts merge grains, conflicting member keys keep the first (sound subset). Loop narrowing is skipped whenever the guard name is written inside the loop body (shadow params would swallow writes) or redeclared at body top level; test-side assignment is the canonical idiom and does not skip.
-- c647af8: Preserve `term`/`pred` when `$copy` snapshots obj-shaped Abs values. `objOf` builds values without a term slot, so the obj branch of `$copy` (unlike tuple/arr/sum/eff/brand) silently dropped them; args crossing the export bridge lost their terms, every level of a recursive call collapsed to the same `callBudgetKey` fingerprint, and the cycle guard cut parent/child frames as a false cycle — the truncated `unknown#opaque` result then poisoned signatures and return-contract proofs (surfaced by issue #120's recursive `lazy` templates).
+- Updated dependencies [aeb6f7e]
+  - @nudojs/core@1.9.0
+  - @nudojs/env@0.4.27
+  - @nudojs/harvester@0.3.13
+  - @nudojs/parser@1.4.9
 
-更早版本（34）→ [完整发布历史](./releases-history.md#pkg-core)
+更早版本（37）→ [完整发布历史](./releases-history.md#pkg-service)
 
-## @nudojs/service 1.6.11 {#pkg-service}
+## nudojs (CLI) 1.3.13 {#pkg-nudojs}
 
-## 1.6.11
-
-### Patch Changes
-
-- Updated dependencies [05c2c8c]
-- Updated dependencies [33239da]
-- Updated dependencies [3588ddd]
-- Updated dependencies [c647af8]
-  - @nudojs/core@1.8.0
-  - @nudojs/env@0.4.26
-  - @nudojs/harvester@0.3.12
-  - @nudojs/parser@1.4.8
-
-更早版本（36）→ [完整发布历史](./releases-history.md#pkg-service)
-
-## nudojs (CLI) 1.3.12 {#pkg-nudojs}
-
-## 1.3.12
+## 1.3.13
 
 ### Patch Changes
 
-- Updated dependencies [05c2c8c]
-- Updated dependencies [33239da]
-- Updated dependencies [3588ddd]
-- Updated dependencies [c647af8]
-  - @nudojs/core@1.8.0
-  - @nudojs/env@0.4.26
-  - @nudojs/harvester@0.3.12
-  - @nudojs/parser@1.4.8
-  - @nudojs/service@1.6.11
+- Updated dependencies [aeb6f7e]
+  - @nudojs/core@1.9.0
+  - @nudojs/env@0.4.27
+  - @nudojs/harvester@0.3.13
+  - @nudojs/parser@1.4.9
+  - @nudojs/service@1.6.12
 
-更早版本（33）→ [完整发布历史](./releases-history.md#pkg-nudojs)
+更早版本（34）→ [完整发布历史](./releases-history.md#pkg-nudojs)
 
-## @nudojs/parser 1.4.8 {#pkg-parser}
-
-## 1.4.8
-
-### Patch Changes
-
-- Updated dependencies [05c2c8c]
-- Updated dependencies [33239da]
-- Updated dependencies [3588ddd]
-- Updated dependencies [c647af8]
-  - @nudojs/core@1.8.0
-
-更早版本（33）→ [完整发布历史](./releases-history.md#pkg-parser)
-
-## @nudojs/lsp 1.4.9 {#pkg-lsp}
+## @nudojs/parser 1.4.9 {#pkg-parser}
 
 ## 1.4.9
 
 ### Patch Changes
 
-- Updated dependencies [05c2c8c]
-- Updated dependencies [33239da]
-- Updated dependencies [3588ddd]
-- Updated dependencies [c647af8]
-  - @nudojs/core@1.8.0
-  - @nudojs/parser@1.4.8
-  - @nudojs/service@1.6.11
+- Updated dependencies [aeb6f7e]
+  - @nudojs/core@1.9.0
 
-更早版本（37）→ [完整发布历史](./releases-history.md#pkg-lsp)
+更早版本（34）→ [完整发布历史](./releases-history.md#pkg-parser)
 
-## @nudojs/env 0.4.26 {#pkg-env}
+## @nudojs/lsp 1.4.10 {#pkg-lsp}
 
-## 0.4.26
+## 1.4.10
 
 ### Patch Changes
 
-- Updated dependencies [05c2c8c]
-- Updated dependencies [33239da]
-- Updated dependencies [3588ddd]
-- Updated dependencies [c647af8]
-  - @nudojs/core@1.8.0
+- Updated dependencies [aeb6f7e]
+  - @nudojs/core@1.9.0
+  - @nudojs/parser@1.4.9
+  - @nudojs/service@1.6.12
 
-更早版本（33）→ [完整发布历史](./releases-history.md#pkg-env)
+更早版本（38）→ [完整发布历史](./releases-history.md#pkg-lsp)
 
-## @nudojs/harvester 0.3.12 {#pkg-harvester}
-
-## 0.3.12
-
-### Patch Changes
-
-- Updated dependencies [05c2c8c]
-- Updated dependencies [33239da]
-- Updated dependencies [3588ddd]
-- Updated dependencies [c647af8]
-  - @nudojs/core@1.8.0
-  - @nudojs/env@0.4.26
-  - @nudojs/parser@1.4.8
-
-更早版本（33）→ [完整发布历史](./releases-history.md#pkg-harvester)
-
-## vite-plugin-nudo 0.4.27 {#pkg-vite-plugin}
+## @nudojs/env 0.4.27 {#pkg-env}
 
 ## 0.4.27
 
 ### Patch Changes
 
-- Updated dependencies [05c2c8c]
-- Updated dependencies [33239da]
-- Updated dependencies [3588ddd]
-- Updated dependencies [c647af8]
-  - @nudojs/core@1.8.0
-  - @nudojs/service@1.6.11
+- Updated dependencies [aeb6f7e]
+  - @nudojs/core@1.9.0
 
-更早版本（36）→ [完整发布历史](./releases-history.md#pkg-vite-plugin)
+更早版本（34）→ [完整发布历史](./releases-history.md#pkg-env)
+
+## @nudojs/harvester 0.3.13 {#pkg-harvester}
+
+## 0.3.13
+
+### Patch Changes
+
+- Updated dependencies [aeb6f7e]
+  - @nudojs/core@1.9.0
+  - @nudojs/env@0.4.27
+  - @nudojs/parser@1.4.9
+
+更早版本（34）→ [完整发布历史](./releases-history.md#pkg-harvester)
+
+## vite-plugin-nudo 0.4.28 {#pkg-vite-plugin}
+
+## 0.4.28
+
+### Patch Changes
+
+- Updated dependencies [aeb6f7e]
+  - @nudojs/core@1.9.0
+  - @nudojs/service@1.6.12
+
+更早版本（37）→ [完整发布历史](./releases-history.md#pkg-vite-plugin)
 
 ## nudo-vscode 0.3.7 {#pkg-vscode}
 
