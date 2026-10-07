@@ -1,5 +1,11 @@
 # @nudojs/core
 
+## 1.9.0
+
+### Minor Changes
+
+- aeb6f7e: Add discriminated-union narrowing for `x.key === 'lit'` guards (issue #126). In the arm where the equality fact holds (`===` true arm / `!==` false arm), a union parameter is shadow-rebound via the new `$narrowMemberEq` runtime helper to the subset of members whose `key` domain may equal the literal: arms pinned to a different literal, closed shapes without the key, and nullish-literal members are pruned (three-state classification: `only` / `never` / `may` via shape assignability plus `implies` over the slot pred, with a local literal-disequality rule for strings/booleans the prover does not cover). Kind-specific field reads stop recording false `computed member on nullish (union arm)` may-throws. Recognizes strict equality only (`===`/`!==`, literal on either side, string/number/boolean literals, non-computed single-level member), composes across `&&`/`||` tests with the existing nullish/typeof guard channels, and applies to ternaries, `if` statements, the early-return promotion path, and optional-chain guards (`node?.type === 'lit'` also drops the null members). Dual polarity: `!==` early-returns prune the exactly-literal arm in the fall-through. Boundary (honest residual): a lenient catch-all arm like `shape({ type: string() })` admits the discriminant literal, so it is conservatively kept in the fact arm and undeclared index-read fields on it still report one L2 — the parameter domain genuinely admits such values (TypeScript keeps the overlapping arm too and flags the property as missing).
+
 ## 1.8.0
 
 ### Minor Changes
