@@ -51,6 +51,13 @@ import {
 import { absToConstraint } from "./projection.ts";
 import { assertImplies } from "./postcondition.ts";
 import { extractFn, generalizeFromAst } from "./generalize.ts";
+import {
+  attachContractFaces,
+  contractFacesFromEffectiveInterface,
+  setContractFaceResolver,
+  type FnContractFaces,
+} from "./contract-face.ts";
+import { resolveDepPath } from "./sidecar-path.ts";
 import { contractParamNameSet, formalParamSignatureNames } from "./param-surface.ts";
 import { canSkipLiteralCallScan } from "./fn-fp.ts";
 import { stableAnalyzeKeySource } from "./stable-source-key.ts";
@@ -210,44 +217,177 @@ function checkSourceInScope(
   resetAbsCallBudget();
   const prevTrunc = setAbsTruncationCollector((label) => truncated.add(label));
   try {
-    const report = checkSourceInner(
-      filePath,
-      source,
-      file,
-      phi,
-      callOpts,
-      issues,
-      signatures,
-      names,
-      truncated,
-      opts,
-      depsFp,
-      sidecarFp,
+    // #123 fix B：调用边界契约面——同文件按名 resolver（$callNamed 消费）+
+    // 跨模块桥接 Abs fn 预挂面（$call 消费）。安装在本 check 的动态范围内：
+    // generalize / L2 求值 / 文件级 scan 的 B run 全部生效；memo 命中路径
+    // 不进此处（报告已固化）。
+    const prevFaceResolver = setContractFaceResolver(
+      makeSameFileFaceResolver(callOpts, filePath, source, file),
     );
-    // 侧车诊断 side-channel 收口：nudo:interface-load / interface-cycle 等
-    // 不再静默（同源重复收集按 code+message 去重）。用 since 锚避免窃取
-    // 在途 LSP validateText 的待消费诊断。
-    const diagIssues = sidecarDiagIssues([
-      ...takeRefineDiagsSince(refineSince),
-      ...takeInterfaceDiagsSince(ifaceSince),
-    ]);
-    if (diagIssues.length > 0) {
-      report.issues.push(...diagIssues);
-      const errors = report.issues.filter((i) => i.severity === "error").length;
-      const warnings = report.issues.filter((i) => i.severity === "warning").length;
-      const infos = report.issues.filter((i) => i.severity === "info").length;
-      report.ok = errors === 0;
-      report.summary = {
-        errors,
-        warnings,
-        infos,
-        functions: report.summary.functions,
-      };
+    try {
+      attachCrossModuleContractFaces(callOpts, filePath);
+      const report = checkSourceInner(
+        filePath,
+        source,
+        file,
+        phi,
+        callOpts,
+        issues,
+        signatures,
+        names,
+        truncated,
+        opts,
+        depsFp,
+        sidecarFp,
+      );
+      // 侧车诊断 side-channel 收口：nudo:interface-load / interface-cycle 等
+      // 不再静默（同源重复收集按 code+message 去重）。用 since 锚避免窃取
+      // 在途 LSP validateText 的待消费诊断。
+      const diagIssues = sidecarDiagIssues([
+        ...takeRefineDiagsSince(refineSince),
+        ...takeInterfaceDiagsSince(ifaceSince),
+      ]);
+      if (diagIssues.length > 0) {
+        report.issues.push(...diagIssues);
+        const errors = report.issues.filter((i) => i.severity === "error").length;
+        const warnings = report.issues.filter((i) => i.severity === "warning").length;
+        const infos = report.issues.filter((i) => i.severity === "info").length;
+        report.ok = errors === 0;
+        report.summary = {
+          errors,
+          warnings,
+          infos,
+          functions: report.summary.functions,
+        };
+      }
+      if (memoKey) checkMemoSet(memoKey, report, memoPaths);
+      return cloneCheckReport(report);
+    } finally {
+      setContractFaceResolver(prevFaceResolver);
     }
-    if (memoKey) checkMemoSet(memoKey, report, memoPaths);
-    return cloneCheckReport(report);
   } finally {
     setAbsTruncationCollector(prevTrunc);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// #123 fix B：调用边界契约面的装配（同文件 resolver + 跨模块桥接面）
+// ---------------------------------------------------------------------------
+
+/**
+ * 被分析文件自身的同名契约 → 位置化契约面（按名 memo）。$callNamed 在
+ * 同文件调用点消费（跨模块桥接走 $call 的对象注册面）。仅 handwritten；
+ * effectiveInterface 解析失败 → undefined（面留空 = 今日行为）。
+ */
+function makeSameFileFaceResolver(
+  opts: CheckOptions,
+  filePath: string,
+  source: string,
+  file: ReturnType<typeof parse>,
+): (fnName: string) => FnContractFaces | undefined {
+  const loadModule = opts.loadModule;
+  const fromFile = opts.fromFile ?? filePath;
+  const autoBind = opts.autoBind;
+  const projectDir = opts.projectDir;
+  const memo = new Map<string, FnContractFaces | undefined>();
+  return (fnName: string): FnContractFaces | undefined => {
+    if (memo.has(fnName)) return memo.get(fnName);
+    let faces: FnContractFaces | undefined;
+    try {
+      const eff = effectiveInterface(source, fnName, {
+        ...(loadModule ? { loadModule } : {}),
+        fromFile,
+        ...(autoBind !== undefined ? { autoBind } : {}),
+        ...(projectDir !== undefined ? { projectDir } : {}),
+      });
+      if (eff) {
+        const params = extractFn(source, fnName, file)?.params ?? [];
+        faces = contractFacesFromEffectiveInterface(eff, params);
+      }
+    } catch {
+      faces = undefined;
+    }
+    memo.set(fnName, faces);
+    return faces;
+  };
+}
+
+/**
+ * 跨模块桥接面：注入模块表（opts.modules ∪ opts.inject.modules）里的
+ * fn Abs 逐个按「说明符 → 依赖源码（loadModule）→ 依赖侧车（定义文件
+ * 路径 ambient 绑定）」解析契约并 attach。每次 check 现算现挂（覆盖旧面，
+ * 进程内长会话不滞留）；loadModule miss（表非 fs 装配）→ 该说明符无面。
+ */
+function attachCrossModuleContractFaces(opts: CheckOptions, filePath: string): void {
+  const loadModule = opts.loadModule;
+  const fromFile = opts.fromFile ?? filePath;
+  if (!loadModule) return;
+  const tables: Array<Record<string, unknown>> = [];
+  for (const t of [opts.modules, opts.inject?.modules]) {
+    if (t && typeof t === "object" && !tables.includes(t)) tables.push(t as Record<string, unknown>);
+  }
+  if (tables.length === 0) return;
+  const autoBind = opts.autoBind;
+  const projectDir = opts.projectDir;
+  const facesCache = new Map<string, FnContractFaces | undefined>();
+  const facesFor = (
+    depSource: string,
+    depPath: string,
+    name: string,
+    paramNames: string[],
+  ): FnContractFaces | undefined => {
+    const key = `${depPath}\0${name}`;
+    if (facesCache.has(key)) return facesCache.get(key);
+    let faces: FnContractFaces | undefined;
+    try {
+      const eff = effectiveInterface(depSource, name, {
+        loadModule,
+        fromFile: depPath,
+        ...(autoBind !== undefined ? { autoBind } : {}),
+        ...(projectDir !== undefined ? { projectDir } : {}),
+      });
+      if (eff) faces = contractFacesFromEffectiveInterface(eff, paramNames);
+    } catch {
+      faces = undefined;
+    }
+    facesCache.set(key, faces);
+    return faces;
+  };
+  const attachFnAbs = (v: unknown, depSource: string, depPath: string, name: string): void => {
+    if (!v || typeof v !== "object" || !("shape" in (v as object))) return;
+    const shape = (v as Abs).shape as { k?: string };
+    if (shape.k !== "fn") return;
+    // 形参名从依赖源码解析（extractFn）：桥接 Abs 的 shape.params 对
+    // `export function` 声明回退 argN（topLevelFnParams 的既有行为），
+    // 名锚定契约（a/b）对不上位会静默丢参数面。
+    let paramNames: string[];
+    try {
+      paramNames = extractFn(depSource, name)?.params ?? [];
+    } catch {
+      paramNames = [];
+    }
+    const faces = facesFor(depSource, depPath, name, paramNames);
+    if (faces) attachContractFaces(v as object, faces);
+  };
+  for (const table of tables) {
+    for (const [spec, mod] of Object.entries(table)) {
+      if (!mod || typeof mod !== "object") continue;
+      const named = (mod as { named?: Record<string, unknown> }).named;
+      if (!named) continue;
+      let depSource: string | undefined;
+      try {
+        depSource = loadModule(spec, fromFile);
+      } catch {
+        depSource = undefined;
+      }
+      if (!depSource) continue;
+      const depPath = resolveDepPath(fromFile, spec);
+      for (const [name, v] of Object.entries(named)) {
+        attachFnAbs(v, depSource, depPath, name);
+      }
+      const def = (mod as { default?: unknown }).default;
+      if (def !== undefined) attachFnAbs(def, depSource, depPath, "default");
+    }
   }
 }
 
