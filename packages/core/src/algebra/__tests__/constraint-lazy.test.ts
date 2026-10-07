@@ -10,8 +10,8 @@
  * partial/pick/omit/andC 对 lazy 包装先解一层。
  */
 import { describe, it, expect } from "vitest";
+import { type Abs } from "../abs.ts";
 import {
-  type Abs,
   LAZY_TEMPLATE_DEPTH,
   lazy,
   derefConstraint,
