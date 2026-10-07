@@ -252,7 +252,7 @@ createEnvironment(parent?, bindings?)
 | <a id="generalizeall"></a>`generalizeAll` | fn | symbolic α generalization | `generalizeAll( source: string, opts: { budget?: LeakBudget } = {}, ): PolyFn[]` |
 | <a id="generalizefromast"></a>`generalizeFromAst` | fn | symbolic α generalization | `generalizeFromAst( fnName: string, source: string, opts: { budget?: LeakBudget; label?: string; refine?: EffectiveInterfaceOpts; file?: ReturnType<typeof babelParse>; depsFp?: LoadDepsFingerprint; sidecarFp?: string; modules?: Record<string, AbsModuleExports \| Record<string, unknown>>; inject?: RunTranspiledOptions; } = {}, ): PolyFn \| undefined` |
 | <a id="getparsesourcecachesize"></a>`getParseSourceCacheSize` | fn | Babel parse + memo | `getParseSourceCacheSize(): number` |
-| <a id="instantiateconstraint"></a>`instantiateConstraint` | fn | contract checking | `instantiateConstraint( c: NudoConstraint, paramName: string, ): Pred` |
+| <a id="instantiateconstraint"></a>`instantiateConstraint` | fn | contract checking | `instantiateConstraint( c: NudoConstraint, paramName: string, depth: number = LAZY_TEMPLATE_DEPTH, ): Pred` |
 | <a id="interfacetierinfo"></a>`InterfaceTierInfo` | type | interface tiers | `InterfaceTierInfo = { source: InterfaceSource; display?: string; }` |
 | <a id="interfacetierof"></a>`interfaceTierOf` | fn | interface tiers | `interfaceTierOf( source: string, fnName: string, fromFile: string, opts: InterfaceTierOpts = {}, ): InterfaceTierInfo \| undefined` |
 | <a id="isabsapplyresult"></a>`isAbsApplyResult` | fn | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `isAbsApplyResult(v: AbsApplyReturn): v` |
@@ -386,7 +386,7 @@ createEnvironment(parent?, bindings?)
 | <a id="transpilesource"></a>`transpileSource` | fn | JS AST → `$op` program | `transpileSource(source: string, opts: TranspileOptions = {}): string` |
 
 <details>
-<summary>src/index.ts 其余导出（342）</summary>
+<summary>src/index.ts 其余导出（344）</summary>
 
 | 名称 | 种类 | 说明 | 签名 |
 |------|------|------|------|
@@ -439,8 +439,8 @@ createEnvironment(parent?, bindings?)
 | <a id="constraint_builder_names"></a>`CONSTRAINT_BUILDER_NAMES` | const | 构建器表面名（供文法正则 / 测试枚举；顺序即表定义顺序） | `const CONSTRAINT_BUILDER_NAMES` |
 | <a id="constraint_builders"></a>`CONSTRAINT_BUILDERS` | const | 约束构建器表面名表（单一真源）：case 实参文法、mock 类型表达式识别与 侧车注入共用的名字 → 实现映射。键名是 *.nudo.js / 指令里的用户写法 （`lit`/`and` 而非内部的 litC/andC）。 | `const CONSTRAINT_BUILDERS` |
 | <a id="constraint_expr_re"></a>`CONSTRAINT_EXPR_RE` | const | 约束表达式头：`name(` 形态。由 CONSTRAINT_BUILDER_NAMES 生成—— 名单只在 CONSTRAINT_BUILDERS 一处维护。 | `const CONSTRAINT_EXPR_RE` |
-| <a id="constraintadmitsnullish"></a>`constraintAdmitsNullish` | fn | 契约域是否包含 nullish（null / undefined）。 | `constraintAdmitsNullish(c: NudoConstraint): boolean` |
-| <a id="constrainttoentryabs"></a>`constraintToEntryAbs` | fn | 契约 → 函数入口 param Abs（infer/hover 用）。 | `constraintToEntryAbs( c: NudoConstraint, paramName: string, ): Abs` |
+| <a id="constraintadmitsnullish"></a>`constraintAdmitsNullish` | fn | 契约域是否包含 nullish（null / undefined）。 | `constraintAdmitsNullish( c: NudoConstraint, seen?: Set<object>, ): boolean` |
+| <a id="constrainttoentryabs"></a>`constraintToEntryAbs` | fn | 契约 → 函数入口 param Abs（infer/hover 用）。 | `constraintToEntryAbs( c: NudoConstraint, paramName: string, depth: number = LAZY_TEMPLATE_DEPTH, ): Abs` |
 | <a id="contractparamnameset"></a>`contractParamNameSet` | fn | 侧车契约可绑定的参数名全集 | `contractParamNameSet(formals: FormalParam[]): Set<string>` |
 | <a id="createhofcollectctx"></a>`createHofCollectCtx` | fn | — | `createHofCollectCtx( paramNames: ReadonlySet<string>, alphaIds: Iterable<string>, ): HofCollectCtx` |
 | <a id="ctorargdefinitelyinvalid"></a>`ctorArgDefinitelyInvalid` | fn | 构造器实参**确定**非法（原生 TypeError 域）： - 非可迭代字面量（number/boolean/symbol/bigint、闭对象字面量）→ 四个集合构造器都抛 - Map/WeakMap 条目必须是对象：外层 iterable 出现 lit prim 条目（含字符串实参的 每个字符、tuple/Set 元素）→ TypeError（空串例外：零条目合法）； WeakMap 键还必须可弱持有——tuple 条目首元素（键）为 prim → TypeError （Map 键可以是 prim，仅 WeakMap 抛 "Invalid value used as weak map key"） - WeakSet 元素必须可弱持有：prim 元素（含字符串字符）→ TypeError 抽象形态不确定 → false（保守）。 | `ctorArgDefinitelyInvalid( name: "Map" \| "Set" \| "WeakMap" \| "WeakSet", iterable: Abs \| undefined, ): boolean` |
@@ -449,6 +449,7 @@ createEnvironment(parent?, bindings?)
 | <a id="currentphi"></a>`currentPhi` | fn | — | `currentPhi(): Phi` |
 | <a id="default_max_loop_iters"></a>`DEFAULT_MAX_LOOP_ITERS` | const | 循环展开上限（leaf）—— 从 control.ts 拆出，打断 control ↔ containers 环。 | `const DEFAULT_MAX_LOOP_ITERS` |
 | <a id="definitelynotnullishshape"></a>`definitelyNotNullishShape` | fn | 该 shape 在 JS 上一定不是 null/undefined | `definitelyNotNullishShape(s: Shape): boolean` |
+| <a id="derefconstraint"></a>`derefConstraint` | fn | 解一层 lazy：调用 thunk 一次、校验产物是约束、toPlainConstraint 归一化， 并按 thunk 记忆化（重复 deref 同一闭包 → 同一对象）。 | `derefConstraint(c: NudoConstraint): NudoConstraint` |
 | <a id="describephi"></a>`describePhi` | fn | — | `describePhi(): string` |
 | <a id="diagnostic"></a>`Diagnostic` | type | — | `Diagnostic = { severity: "error" \| "warning" \| "info"; code: string; message: string; suggestion?: string; fn?: string; argIndex?: number; }` |
 | <a id="div"></a>`div` | fn | 除法：字面量折叠；除以正/负常数时按单调性推界。 | `div(a: Abs, b: Abs, phi: Phi = pTrue): Abs` |
@@ -561,13 +562,14 @@ createEnvironment(parent?, bindings?)
 | <a id="joinfunctions"></a>`joinFunctions` | fn | 函数 join：签名并（重载），禁止 (A\|C)→(B\|D)。 | `joinFunctions(a: Abs, b: Abs): Abs` |
 | <a id="joinobjects"></a>`joinObjects` | fn | 对象 join：默认积之和（sum），不自动折 optional。 | `joinObjects(a: Abs, b: Abs): Abs` |
 | <a id="jointhenproject"></a>`joinThenProject` | fn | 工件聚合投影（设计 §4.2：先 Abs join 折叠再投影）。 | `joinThenProject(absList: Abs[]): NudoConstraint \| undefined` |
+| <a id="lazy"></a>`lazy` | fn | lazy(() =&gt; constraint)：自引用约束模板（issue #120）。 | `lazy( thunk: () => NudoConstraint \| ConstraintBuilder, ): ConstraintBuilder` |
 | <a id="le"></a>`le` | const | — | `const le` |
 | <a id="leavepromiseexecutorscope"></a>`leavePromiseExecutorScope` | fn | — | `leavePromiseExecutorScope(): number` |
 | <a id="lenterm"></a>`lenTerm` | fn | 长度项：length(u) | `lenTerm(t: Term): Term` |
 | <a id="lenum"></a>`leNum` | fn | — | `leNum(term: Term, n: number): Pred` |
 | <a id="leqresult"></a>`LeqResult` | type | — | `LeqResult = { ok: boolean; reason?: string; }` |
 | <a id="listfunctionnames"></a>`listFunctionNames` | fn | 列出源码中的顶层函数名。 | `listFunctionNames(source: string): string[]` |
-| <a id="literalmeetsconstraint"></a>`literalMeetsConstraint` | fn | 字面量 lv 是否落在约束 c 表达的域内（保守：判不了 → false）。 | `literalMeetsConstraint( lv: number \| string \| boolean \| null \| undefined, c: NudoConstraint, ): boolean` |
+| <a id="literalmeetsconstraint"></a>`literalMeetsConstraint` | fn | 字面量 lv 是否落在约束 c 表达的域内（保守：判不了 → false）。 | `literalMeetsConstraint( lv: number \| string \| boolean \| null \| undefined, c: NudoConstraint, seen?: Set<object>, ): boolean` |
 | <a id="littruth"></a>`litTruth` | fn | JS 真值：字面量按 Boolean(v)；对象形恒真；不可判 → undefined | `litTruth(a: Abs): boolean \| undefined` |
 | <a id="localnamedexports"></a>`localNamedExports` | fn | 源文件本地导出名表（侧车自动绑定边界）： - ESM：`export function/const/let/var/class` 与本地 `export { x }` / `export { local as exported }`（按**导出名**绑定）； - `export default function add` / `const add = …; export default add`： 按**本地名** `add` 绑定（侧车可 `export const add = fn(…)`）； 同时登记 `"default"`，供侧车 `export default fn(…)` 对齐； - CJS（C4.3）：`module.exports = { a, b }`、`module.exports.a = …`、 `exports.a = …`、`module.exports = localFn`（登记 localFn 名）。 | `localNamedExports(source: string): Set<string>` |
 | <a id="locatecontractparam"></a>`locateContractParam` | fn | 契约参数名 → 形参定位。 | `locateContractParam( formals: FormalParam[], contractName: string, )` |
@@ -622,12 +624,12 @@ createEnvironment(parent?, bindings?)
 | <a id="objectprotobrand"></a>`objectProtoBrand` | fn | Object.prototype 单例（$get(Object, "prototype") 与 host Object.prototype 共用）。 | `objectProtoBrand(): Abs` |
 | <a id="objectprotomethodabs"></a>`objectProtoMethodAbs` | fn | Object.prototype.X 一等函数（bindThis：call/apply 把 receiver 注入首参） | `objectProtoMethodAbs(name: string): Abs` |
 | <a id="objof"></a>`objOf` | fn | — | `objOf( slots: Record<string, Slot>, opts?: { index?: { key: Abs; value: Abs }; open?: boolean }, ): Abs` |
-| <a id="omit"></a>`omit` | fn | omit(c, keys)：shape 去字段；非 shape throw | `omit( c: NudoConstraint \| ConstraintBuilder, keys: string[], ): ConstraintBuilder` |
+| <a id="omit"></a>`omit` | fn | omit(c, keys)：shape 去字段；非 shape throw（lazy 包装先解一层） | `omit( c: NudoConstraint \| ConstraintBuilder, keys: string[], ): ConstraintBuilder` |
 | <a id="or"></a>`or` | fn | — | `or(...preds: Pred[]): Pred` |
-| <a id="partial"></a>`partial` | fn | partial(c)：shape 全字段变可选；非 shape throw | `partial(c: NudoConstraint \| ConstraintBuilder): ConstraintBuilder` |
+| <a id="partial"></a>`partial` | fn | partial(c)：shape 全字段变可选；非 shape throw（lazy 包装先解一层） | `partial(c: NudoConstraint \| ConstraintBuilder): ConstraintBuilder` |
 | <a id="pfalse"></a>`pFalse` | const | — | `const pFalse` |
 | <a id="phiand"></a>`phiAnd` | const | — | `const phiAnd` |
-| <a id="pick"></a>`pick` | fn | pick(c, keys)：shape 子形状（不存在的 key 忽略）；非 shape throw | `pick( c: NudoConstraint \| ConstraintBuilder, keys: string[], ): ConstraintBuilder` |
+| <a id="pick"></a>`pick` | fn | pick(c, keys)：shape 子形状（不存在的 key 忽略）；非 shape throw（lazy 包装先解一层） | `pick( c: NudoConstraint \| ConstraintBuilder, keys: string[], ): ConstraintBuilder` |
 | <a id="polyfn"></a>`PolyFn` | type | — | `PolyFn = { name: string; params: string[]; typeParams: TypeParam[]; instantiate: (args: Abs[], phi?: Phi) => Abs; symbolic: Abs; display:...` |
 | <a id="popcollectionarm"></a>`popCollectionArm` | fn | — | `popCollectionArm(): ArmOverlay \| undefined` |
 | <a id="popphi"></a>`popPhi` | fn | — | `popPhi(): void` |

@@ -259,6 +259,7 @@ Sidecars are real JS modules: they may import builders from `@nudojs/core` and c
 | `.shift(n)` | translate every constant bound by `+n` | `positive.shift(1)` |
 | `and(...cs)` | scalar conjunction (top-level function, not a chained method) | `and(positive, number().lt(10))` |
 | `partial(c)` / `pick(c, keys)` / `omit(c, keys)` | shape utilities | `partial(user)` |
+| `lazy(() => c)` | self-referential template (sidecars only — directive grammar has no arrow functions) | `shape({ object: lazy(() => node).optional() })` |
 
 `shift` is legal only on numeric scalar chains (every bound's right side is a literal); anything else throws. `partial`/`pick`/`omit` accept `shape(...)` constraints.
 

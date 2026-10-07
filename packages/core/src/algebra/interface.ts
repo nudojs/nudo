@@ -46,6 +46,7 @@ import {
   isNudoConstraint,
   fnConstraintToEntryReqs,
   throwConstraintToKinds,
+  derefConstraint,
   andC,
   isIntFlag,
 } from "./constraint.ts";
@@ -792,30 +793,41 @@ function predToChain(p: Pred): string {
   return `{${predToString(p)}}`;
 }
 
-function fmtConstraint(c: NudoConstraint): string {
+/**
+ * lazy 模板显示预算（issue #120）：递归结构展开两层后渲染 `…`——
+ * 自引用模板（astNode）不无限展开。
+ */
+const LAZY_DISPLAY_DEPTH = 2;
+
+function fmtConstraint(c: NudoConstraint, depth: number = LAZY_DISPLAY_DEPTH): string {
+  // lazy(…)：预算内解一层；预算耗尽 → `…`（字面省略号）
+  if (c.lazy) {
+    if (depth <= 0) return "…";
+    return fmtConstraint(derefConstraint(c), depth - 1);
+  }
   // fn({ p: … }, returns, { throws: … })
   if (c.fn) {
     const args = [
       `{ ${Object.entries(c.fn.params)
-        .map(([k, v]) => `${k}: ${fmtConstraint(v)}`)
+        .map(([k, v]) => `${k}: ${fmtConstraint(v, depth)}`)
         .join(", ")} }`,
     ];
-    if (c.fn.returns !== undefined) args.push(fmtConstraint(c.fn.returns));
-    if (c.fn.throws !== undefined) args.push(`{ throws: ${fmtConstraint(c.fn.throws)} }`);
+    if (c.fn.returns !== undefined) args.push(fmtConstraint(c.fn.returns, depth));
+    if (c.fn.throws !== undefined) args.push(`{ throws: ${fmtConstraint(c.fn.throws, depth)} }`);
     return `fn(${args.join(", ")})`;
   }
   // union(m1, m2, …)
-  if (c.members) return `union(${c.members.map(fmtConstraint).join(", ")})`;
+  if (c.members) return `union(${c.members.map((m) => fmtConstraint(m, depth)).join(", ")})`;
   // shape({ x: …, y?: … })（isOptional 字段加 ?）
   if (c.fields) {
     const fs = Object.entries(c.fields).map(([k, f]) => {
       const opt = f.optional || f.constraint.isOptional ? "?" : "";
-      return `${k}${opt}: ${fmtConstraint(f.constraint)}`;
+      return `${k}${opt}: ${fmtConstraint(f.constraint, depth)}`;
     });
     return `shape({ ${fs.join(", ")} })`;
   }
   // array(…)
-  if (c.element) return `array(${fmtConstraint(c.element)})`;
+  if (c.element) return `array(${fmtConstraint(c.element, depth)})`;
   // lit(v)：prim + 单一 eq(self, v)（lit(null) 无 prim 也识别）
   if (
     c.preds.length === 1 &&

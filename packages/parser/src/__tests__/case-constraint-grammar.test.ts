@@ -151,6 +151,10 @@ describe("constraint builder name table stays in sync", () => {
     union: { expr: "union(number(), string())", shapeK: "sum" },
     nullable: { expr: "nullable(number())", shapeK: "sum" },
     fn: { expr: "fn({ x: number() }, number())", shapeK: "fn" },
+    // lazy（issue #120）是侧车专用构建器：指令文法不接受箭头函数
+    // （isSafeTypeExprSource 白名单），parseCaseArgExpr 保守落 unknown #partial
+    // ——安全边界由本条钉住；真实注入走 CONSTRAINT_BUILDERS（execNudoModule）。
+    lazy: { expr: "lazy(() => number())", shapeK: "unknown" },
     and: { expr: "and(number(), number().gt(0))", shapeK: "prim" },
     partial: { expr: "partial(shape({ a: number() }))", shapeK: "obj" },
     pick: { expr: "pick(shape({ a: number(), b: string() }), [\"a\"])", shapeK: "obj" },

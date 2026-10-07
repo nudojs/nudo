@@ -24,6 +24,7 @@ import type { NudoConstraint, NudoField } from "./constraint.ts";
 import {
   SELF,
   constraintAdmitsNullish,
+  derefConstraint,
   isIntFlag,
   instantiateOnTerm,
 } from "./constraint.ts";
@@ -147,6 +148,11 @@ export function assertImplies(
   constraint: NudoConstraint,
   opts?: { phi?: Phi },
 ): PostProof {
+  // lazy 包装（issue #120）：每次递归入口先解一层——包装自身无 prim/preds/
+  // 结构，不 deref 会被 isAnyConstraint 误判成 any()（假证明）或漏进标量分支
+  if (constraint.lazy) {
+    return assertImplies(ret, derefConstraint(constraint), opts);
+  }
   const phi = opts?.phi ?? pTrue;
 
   // never（不可达）：后置空洞成立
@@ -302,7 +308,7 @@ function assertImpliesSingle(
   return assertScalar(arm, constraint, phi);
 }
 
-/** any()：无 prim / preds / shape / members / fn */
+/** any()：无 prim / preds / shape / members / fn（lazy 包装不算——先 deref） */
 function isAnyConstraint(c: NudoConstraint): boolean {
   return (
     !c.prim &&
@@ -311,6 +317,7 @@ function isAnyConstraint(c: NudoConstraint): boolean {
     !c.element &&
     !c.members &&
     !c.fn &&
+    !c.lazy &&
     !isIntFlag(c)
   );
 }

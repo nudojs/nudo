@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-02T09:33:58.997Z",
+  "generatedAt": "2026-10-07T00:27:05.447Z",
   "node": "v26.10.0",
   "kind": "oss-real-packages",
   "totals": {
@@ -8,9 +8,9 @@
     "bytes": 362545,
     "fpCount": 0,
     "scanned": 79,
-    "coldAnalyzeMs": 5623.12,
-    "checkAllMs": 1662.54,
-    "tscTotalMs": 1357.03
+    "coldAnalyzeMs": 5049,
+    "checkAllMs": 2056.2,
+    "tscTotalMs": 1419.07
   },
   "packages": [
     {
@@ -22,18 +22,18 @@
       "scanErrors": [],
       "falsePositives": [],
       "fpCount": 0,
-      "coldAnalyzeMs": 1735.52,
+      "coldAnalyzeMs": 1242.85,
       "warmAnalyzeMs": {
         "n": 5,
-        "median": 10.3,
-        "min": 9.86,
-        "max": 16.48
+        "median": 11.22,
+        "min": 10.73,
+        "max": 12.55
       },
-      "checkAllMs": 570.12,
+      "checkAllMs": 703.76,
       "tsc": {
-        "createProgramMs": 208.02,
-        "diagnosticsMs": 287.24,
-        "totalMs": 495.26,
+        "createProgramMs": 210.48,
+        "diagnosticsMs": 289.8,
+        "totalMs": 500.28,
         "diagnostics": 223,
         "note": "UNANNOTATED JS — tsc is in weak checkJs mode. Tooling-load reference only, NOT a Nudo-vs-TS product comparison."
       },
@@ -41,8 +41,8 @@
         "file": "commander/lib/error.js",
         "dependents": 4,
         "dirtyCount": 6,
-        "dirtyMedianMs": 1331.84,
-        "ideAnalyzeMedianMs": 0.15
+        "dirtyMedianMs": 820.2,
+        "ideAnalyzeMedianMs": 0.23
       },
       "leaf": {
         "file": "commander/index.js",
@@ -59,18 +59,18 @@
       "scanErrors": [],
       "falsePositives": [],
       "fpCount": 0,
-      "coldAnalyzeMs": 2737.22,
+      "coldAnalyzeMs": 2544.79,
       "warmAnalyzeMs": {
         "n": 5,
-        "median": 20.74,
-        "min": 20.46,
-        "max": 21.92
+        "median": 22.29,
+        "min": 22.15,
+        "max": 26.56
       },
-      "checkAllMs": 765.18,
+      "checkAllMs": 927.87,
       "tsc": {
-        "createProgramMs": 180.03,
-        "diagnosticsMs": 345.96,
-        "totalMs": 525.99,
+        "createProgramMs": 207.57,
+        "diagnosticsMs": 367.62,
+        "totalMs": 575.19,
         "diagnostics": 1222,
         "note": "UNANNOTATED JS — tsc is in weak checkJs mode. Tooling-load reference only, NOT a Nudo-vs-TS product comparison."
       },
@@ -78,8 +78,8 @@
         "file": "yargs/build/lib/utils/is-promise.js",
         "dependents": 5,
         "dirtyCount": 8,
-        "dirtyMedianMs": 2061.61,
-        "ideAnalyzeMedianMs": 0.14
+        "dirtyMedianMs": 1712.15,
+        "ideAnalyzeMedianMs": 0.22
       },
       "leaf": {
         "file": "yargs/browser.mjs",
@@ -96,18 +96,18 @@
       "scanErrors": [],
       "falsePositives": [],
       "fpCount": 0,
-      "coldAnalyzeMs": 1150.38,
+      "coldAnalyzeMs": 1261.36,
       "warmAnalyzeMs": {
         "n": 5,
-        "median": 52.41,
-        "min": 51.95,
-        "max": 55.18
+        "median": 54.13,
+        "min": 53.13,
+        "max": 57.97
       },
-      "checkAllMs": 327.24,
+      "checkAllMs": 424.57,
       "tsc": {
-        "createProgramMs": 155.5,
-        "diagnosticsMs": 180.28,
-        "totalMs": 335.78,
+        "createProgramMs": 153.54,
+        "diagnosticsMs": 190.06,
+        "totalMs": 343.6,
         "diagnostics": 420,
         "note": "UNANNOTATED JS — tsc is in weak checkJs mode. Tooling-load reference only, NOT a Nudo-vs-TS product comparison."
       },
@@ -115,8 +115,8 @@
         "file": "semver/classes/semver.js",
         "dependents": 17,
         "dirtyCount": 43,
-        "dirtyMedianMs": 1033.29,
-        "ideAnalyzeMedianMs": 0.65
+        "dirtyMedianMs": 1168.14,
+        "ideAnalyzeMedianMs": 0.75
       },
       "leaf": {
         "file": "semver/bin/semver.js",

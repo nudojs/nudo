@@ -257,6 +257,7 @@ calc.js
 | `.shift(n)` | 每个常数界整体 `+n` 平移 | `positive.shift(1)` |
 | `and(...cs)` | 标量合取（顶层函数，不是链式方法） | `and(positive, number().lt(10))` |
 | `partial(c)` / `pick(c, keys)` / `omit(c, keys)` | 形状工具 | `partial(user)` |
+| `lazy(() => c)` | 自引用模板（仅侧车 —— 指令文法不支持箭头函数） | `shape({ object: lazy(() => node).optional() })` |
 
 `shift` 只对数值标量链合法（每个界的右端是字面量），否则 throw。`partial`/`pick`/`omit` 接受 `shape(...)` 约束。
 
