@@ -36,6 +36,9 @@ import {
 } from "../constraint.ts";
 import { formatConstraint } from "../interface.ts";
 import { literalMeetsConstraint } from "../domain-membership.ts";
+import { assertImplies } from "../postcondition.ts";
+import { absLit } from "../abs.ts";
+import { joinAbs } from "../objects.ts";
 
 /** issue #120 的递归 astNode 模板（侧车形态同款） */
 const astNode = shape({
@@ -191,6 +194,33 @@ describe("环终止（seen / 记忆化）", () => {
     expect(literalMeetsConstraint(null, t)).toBe(true);
     const s = lazy(() => shape({ child: s }));
     expect(literalMeetsConstraint("x", s)).toBe(false);
+  });
+
+  // 环截断答案必须是 unprovable（保守）：checkReturnConstraint 把
+  // unprovable 映射为 nudo:unproven-return warning——既不伪证 proved，
+  // 也不误判 disproved（error）。此前无环保护：纯自环直接
+  // RangeError: Maximum call stack size exceeded。
+  it("assertImplies：纯自环不崩溃，保守 unprovable", () => {
+    const bad = lazy(() => bad);
+    const r = assertImplies(absLit(5), bad);
+    expect(r.status).toBe("unprovable");
+    expect((r as { reason?: string }).reason).toContain("cycle");
+  });
+
+  it("assertImplies：union 穿环，有限成员可证 → proved", () => {
+    const u = union(lazy(() => u), litC(5));
+    expect(assertImplies(absLit(5), u)).toEqual({ status: "proved" });
+  });
+
+  // per-path 副本回归护栏：sum 兄弟臂（3 / 5）各自首访同一 lazy 成员
+  // （deref → number()）都应完整展开。若做成跨兄弟共享的单集合，
+  // 臂 3 消耗 lazy 成员后臂 5 会被环截断成假 unprovable，lit(3) 又
+  // disprove → 整体假 unproven-return warning。per-path 下整体 proved。
+  it("assertImplies：per-path seen-set——兄弟臂互不污染（共享集合假 unprovable 护栏）", () => {
+    const u2 = union(lazy(() => number()), litC(3));
+    expect(assertImplies(joinAbs(absLit(3), absLit(5)), u2)).toEqual({
+      status: "proved",
+    });
   });
 });
 
