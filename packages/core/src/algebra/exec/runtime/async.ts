@@ -3,10 +3,11 @@
  */
 import type { Abs } from "../../abs.ts";
 import { abs, bool, boolLit, confJoin, litValue, numLit, strLit, unknown, type Confidence } from "../../abs.ts";
-import { lit } from "../../term.ts";
-import type { Phi } from "../../pred.ts";
-import { pTrue, and, predEquals, type PrimName } from "../../pred.ts";
+import { lit, termEquals } from "../../term.ts";
+import type { Phi, Pred } from "../../pred.ts";
+import { pTrue, and, implies, predEquals, type PrimName } from "../../pred.ts";
 import { joinAbs, objOf, type ObjShape } from "../../objects.ts";
+import { leqAbs } from "../../leq.ts";
 import { absFunction, getFnImpl } from "../../abs-fn.ts";
 import { isNullishLitAbs, definitelyNotNullishShape, typeofName } from "../../surface.ts";
 import {
@@ -359,6 +360,97 @@ export function $narrowTypeOf(a: Abs, typeOf: string, keep: boolean): Abs {
     const t = typeofOfMember(m);
     if (t === undefined) return true;
     return keep ? t === typeOf : t !== typeOf;
+  });
+  if (kept.length === members.length) return a;
+  if (kept.length === 0) return a;
+  return kept.length === 1 ? kept[0]! : { ...a, shape: { k: "sum" as const, members: kept } };
+}
+
+/**
+ * 判别联合成员分类（issue #126）：成员 m 在「m.key === lit」事实下可判定的
+ * 匹配性。三态：
+ * - "only"：槽值域恰为该字面量（pred ⊢ eq(t, lit)）——事实假臂可剪；
+ * - "never"：槽值域排除该字面量（pred ⊢ ne(t, lit) / eq(t, litV≠lit) /
+ *   形态不容 / 槽缺席（宽容读 undefined ≠ lit））——事实臂可剪；
+ * - "may"：不可判（any/unknown 令牌、typeof-only 域、or 域…）——双侧保守保留。
+ * 非对象成员：lit term（含 nullish 字面量）上自定义键读出 undefined（nullish
+ * 读抛——测试自身记账）→ "never"；其余（prim/tuple/arr/fn/brand/eff 与无
+ * lit term 的 unknown）保守 "may"。
+ */
+type MemberEqClass = "only" | "may" | "never";
+
+/** 同 prim 字面量互斥判定：eq(t, V) 事实下 t === L 为假 ⟺ V ≢ L（NaN ≠ NaN 恒假，同为 never） */
+function litRefutesEq(other: unknown, v: string | number | boolean): boolean {
+  return other !== v;
+}
+
+function memberEqClass(m: Abs, key: string, litAbs: Abs, value: string | number | boolean): MemberEqClass {
+  const sh = m.shape;
+  if (sh.k === "obj") {
+    const slots = (sh as ObjShape).slots;
+    if (!Object.prototype.hasOwnProperty.call(slots, key)) {
+      // 缺席槽宽容读出 undefined ≠ lit；open 形态缺席键读 unknown → 不可判
+      return (sh as ObjShape).open ? "may" : "never";
+    }
+    const slotValue = slots[key]!.value;
+    if (slotValue.shape.k === "any" || slotValue.shape.k === "unknown") return "may";
+    // 形态相容（剥 term/pred 的纯 shape 赋值检查）：lit 形态不在槽值域 → never
+    const shapeOnly = (s: Abs["shape"]): Abs => abs(s, undefined, undefined, "exact");
+    if (!leqAbs(shapeOnly(litAbs.shape), shapeOnly(slotValue.shape)).ok) return "never";
+    const t = slotValue.term;
+    const p = slotValue.pred;
+    if (!t || !p || p.op === "true") return "may";
+    const litTerm = lit(value);
+    if (implies(p, { op: "eq", a: t, b: litTerm })) return "only";
+    if (implies(p, { op: "ne", a: t, b: litTerm })) return "never";
+    // implies 的字符串/布尔 diseq 盲区：eq(t, litV) 合取事实逐字面量排除
+    //（eq(t,'Identifier') ⊢ ne(t,'TemplateLiteral')——跨 prim 亦排除）
+    const conjuncts: Pred[] = [];
+    const visit = (c: Pred): void => {
+      if (c.op === "and") {
+        c.args.forEach(visit);
+        return;
+      }
+      conjuncts.push(c);
+    };
+    visit(p);
+    for (const c of conjuncts) {
+      if (c.op !== "eq") continue;
+      const other =
+        termEquals(c.a, t) && c.b.op === "lit" ? c.b.value :
+        termEquals(c.b, t) && c.a.op === "lit" ? c.a.value :
+        undefined;
+      if (other !== undefined && litRefutesEq(other, value)) return "never";
+    }
+    return "may";
+  }
+  if (m.term?.op === "lit") return "never";
+  return "may";
+}
+
+/**
+ * 判别等值守卫臂剪影（issue #126）：`x.key === lit` 事实臂（keep=true）内把
+ * x 重绑为「key 值域可能等于 lit」的成员子集（剪 "never" 成员）；对偶补集臂
+ * （keep=false）剪 "only" 成员。单形态无可剪原样返回；全剪空 → 原样返回
+ * （臂不可达的保守近似，与 $removeNullish / $narrowTypeOf 同口径）；
+ * 单成员剪余直接返回该成员。
+ */
+export function $narrowMemberEq(
+  a: Abs,
+  key: string,
+  value: string | number | boolean,
+  keep: boolean,
+): Abs {
+  if (!a || typeof a !== "object" || !("shape" in (a as object))) return a;
+  if (a.shape.k !== "sum") return a;
+  const litAbs =
+    typeof value === "string" ? strLit(value) :
+    typeof value === "number" ? numLit(value) :
+    boolLit(value);
+  const members = (a.shape as { members: Abs[] }).members;
+  const kept = members.filter((m) => {
+    const c = memberEqClass(m, key, litAbs, value);
+    return keep ? c !== "never" : c !== "only";
   });
   if (kept.length === members.length) return a;
   if (kept.length === 0) return a;

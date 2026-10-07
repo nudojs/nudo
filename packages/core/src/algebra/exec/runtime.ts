@@ -146,6 +146,7 @@ export {
   $asyncReturn,
   $await,
   $gen,
+  $narrowMemberEq,
   $narrowTypeOf,
   $nullishTest,
   $removeMemberNullish,
