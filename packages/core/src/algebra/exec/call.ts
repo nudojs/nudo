@@ -26,6 +26,11 @@ import type { AstEnv } from "../ast-env.ts";
 import { NudoThrow } from "./nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "./may-throw.ts";
 import { isNullishLitAbs } from "../surface.ts";
+import {
+  adoptCallArgsToFaces,
+  contractFacesOf,
+  presentCallResultFace,
+} from "../contract-face.ts";
 import { pushThrowExit, peekThrowExitsSince, throwExitsMark, withNewTargetReset } from "./runtime/state.ts";
 import {
   callBudgetKey,
@@ -82,12 +87,21 @@ export function $call(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
 }
 
 function $callInner(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
-  // 函数 union：对每个 member 同序求值后 join
+  // 函数 union：对每个 member 同序求值后 join（member 各自走面采用）
   if (fn?.shape?.k === "sum") {
     const results = fn.shape.members.map((m) => $call(m, args, thisVal));
     if (results.every((r) => r.shape.k === "unknown")) return unknown;
     return results.reduce((a, b) => joinAbs(a, b));
   }
+  // #123 fix B：callee 声明契约 → 调用边界采用契约面。参数位仅替换无信息
+  // 实参（any / 非 lit unknown），返回位按 presentCallResultFace 呈现。
+  // 跨模块桥接 Abs fn（模块图注入）在此消费 checkSource 预挂的面。
+  const faces = contractFacesOf(fn);
+  const r = $callDispatch(fn, faces ? adoptCallArgsToFaces(args, faces) : args, thisVal);
+  return faces ? presentCallResultFace(r, faces) : r;
+}
+
+function $callDispatch(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
   // @nudo:pure：同实参直接命中缓存（无副作用契约）。缓存 {abs, throws} 双面——
   // 只缓存 abs 会在命中时丢掉 throws 通道（may-throw 假「不抛」）。
   const pureName = pureFnNameOf(fn);

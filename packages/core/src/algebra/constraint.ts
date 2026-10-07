@@ -74,6 +74,12 @@ export type NudoConstraint = {
   readonly members?: NudoConstraint[];
   /** 一等函数约束（fn() 构建器产出） */
   readonly fn?: NudoFnConstraint;
+  /**
+   * 自引用模板 thunk（issue #120）：侧车以真 JS 执行，thunk 闭包引用的
+   * const 在 derefConstraint 调用时已初始化——递归结构一句声明。
+   * 消费端按 LAZY_TEMPLATE_DEPTH 预算展开；derefConstraint 按 thunk 记忆化。
+   */
+  readonly lazy?: () => NudoConstraint | ConstraintBuilder;
 };
 
 /** fn(params, returns?, { throws? }) 的一等函数约束形态 */
@@ -139,6 +145,7 @@ function makeBuilder(
     optional?: boolean;
     members?: NudoConstraint[];
     fn?: NudoFnConstraint;
+    lazy?: () => NudoConstraint | ConstraintBuilder;
   },
 ): ConstraintBuilder {
   const fields = extra?.fields;
@@ -147,6 +154,7 @@ function makeBuilder(
   const optional = extra?.optional;
   const members = extra?.members;
   const fnSlot = extra?.fn;
+  const lazySlot = extra?.lazy;
   // base 不携带 int 键（methods-last 下会被同名方法覆盖，信息反而丢失）：
   // int 标志经 intFlaggedBuilders WeakSet 承载，归一化时由 isIntFlag 落回数据
   const base: NudoConstraint = {
@@ -158,6 +166,7 @@ function makeBuilder(
     ...(optional ? { isOptional: true } : {}),
     ...(members ? { members } : {}),
     ...(fnSlot ? { fn: fnSlot } : {}),
+    ...(lazySlot ? { lazy: lazySlot } : {}),
   };
   const add = (p: Pred): ConstraintBuilder =>
     makeBuilder(prim, [...preds, p], extra);
@@ -179,7 +188,7 @@ function makeBuilder(
       shift: (n: number) => {
         if (!Number.isFinite(n))
           throw new Error("nudo shift(): offset must be a finite number");
-        if (fields || element || members || fnSlot)
+        if (fields || element || members || fnSlot || lazySlot)
           throw new Error("nudo shift(): only numeric scalar constraint chains are allowed (shape/array/union/fn are not supported)");
         if (prim !== undefined && prim !== "number")
           throw new Error(`nudo shift(): only numeric chains are allowed (prim=${prim})`);
@@ -279,6 +288,7 @@ function toPlainConstraint(c: NudoConstraint): NudoConstraint {
     ...(c.isOptional ? { isOptional: true } : {}),
     ...(c.members ? { members: c.members } : {}),
     ...(c.fn ? { fn: c.fn } : {}),
+    ...(c.lazy ? { lazy: c.lazy } : {}),
   };
 }
 
@@ -342,11 +352,76 @@ export function nullable(
 }
 
 /**
+ * lazy(() => constraint)：自引用约束模板（issue #120）。
+ * 侧车以真 JS 执行——thunk 闭包里引用的 const 在 derefConstraint 调用时
+ * 已初始化，递归结构一句声明：
+ *
+ *   export const astNode = shape({
+ *     type: string(),
+ *     object: lazy(() => astNode).optional(),
+ *   });
+ *
+ * 消费端（instantiate / entry Abs / 显示）按 LAZY_TEMPLATE_DEPTH 预算展开，
+ * 预算耗尽的字段位渲染为「缺席槽」——与手写有限层模板同语义，
+ * 守卫递归（`if (node.object == null) …`）在边界处干净剪枝。
+ */
+export function lazy(
+  thunk: () => NudoConstraint | ConstraintBuilder,
+): ConstraintBuilder {
+  if (typeof thunk !== "function")
+    throw new Error("nudo lazy(): expects a thunk function () => constraint");
+  return makeBuilder(undefined, [], { lazy: thunk });
+}
+
+/**
+ * lazy 模板展开预算（issue #120）：递归层数上限。导出仅供测试钉住语义，
+ * 不经公共入口再导出。
+ */
+export const LAZY_TEMPLATE_DEPTH = 3;
+
+/** derefConstraint 按 thunk 记忆化——同一闭包反复展开得到同一对象身份（leq/缓存稳定） */
+const lazyDerefMemo = new WeakMap<object, NudoConstraint>();
+
+/**
+ * 解一层 lazy：调用 thunk 一次、校验产物是约束、toPlainConstraint 归一化，
+ * 并按 thunk 记忆化（重复 deref 同一闭包 → 同一对象）。
+ * 不递归展开——递归层数由消费端的 depth 预算控制。
+ */
+export function derefConstraint(c: NudoConstraint): NudoConstraint {
+  const thunk = c.lazy;
+  if (!thunk) return c;
+  const memoized = lazyDerefMemo.get(thunk);
+  if (memoized) return memoized;
+  const out = thunk();
+  if (!isConstraint(out))
+    throw new Error(
+      "nudo lazy(): the thunk must return a constraint (number()/string()/shape()/…)",
+    );
+  const normalized = toPlainConstraint(out);
+  lazyDerefMemo.set(thunk, normalized);
+  return normalized;
+}
+
+/**
  * 契约域是否包含 nullish（null / undefined）。
  * union 任一成员含 nullish 即含；lit(null)/lit(undefined) 的 eq 谓词识别。
+ * lazy 包装先 deref；环经 seen（thunk 身份）终止——nullish 只出现在
+ * 有限位置，DFS-with-seen 判定可靠，无需层数预算。
  */
-export function constraintAdmitsNullish(c: NudoConstraint): boolean {
-  if (c.members) return c.members.some((m) => constraintAdmitsNullish(m));
+export function constraintAdmitsNullish(
+  c: NudoConstraint,
+  seen?: Set<object>,
+): boolean {
+  // lazy 包装必须在 any()-形判定之前 deref：lazy 包装自身无 prim/preds/结构，
+  // 会被误判成 any()（接受一切）——对 lazy(() => shape(...)) 是假阳性。
+  if (c.lazy) {
+    const s = seen ?? new Set<object>();
+    if (s.has(c.lazy)) return false;
+    s.add(c.lazy);
+    return constraintAdmitsNullish(derefConstraint(c), s);
+  }
+  if (c.members)
+    return c.members.some((m) => constraintAdmitsNullish(m, seen));
   // any()（无 prim、无 preds、无 shape）接受一切含 nullish
   if (!c.prim && c.preds.length === 0 && !c.fields && !c.element && !c.fn) return true;
   // eq(self, null) / eq(self, undefined) 谓词
@@ -402,9 +477,12 @@ export function andC(
   let isInt = false;
   let allOptional = true;
   const preds: Pred[] = [];
-  for (const c of cs) {
-    if (!isConstraint(c))
+  for (const c0 of cs) {
+    if (!isConstraint(c0))
       throw new Error("nudo: expected a constraint value (number()/string()/… or a combinator)");
+    // lazy 包装先解一层：lazy(() => shape(...)) 与直接 shape 同样 throw，
+    // 不因包装静默并入 preds（issue #120）
+    const c = derefConstraint(c0);
     if (c.fields || c.element || c.members || c.fn)
       throw new Error("nudo and(): Phase 1 supports scalar constraint conjunction only (shape/array/union/fn are not supported)");
     if (c.prim) {
@@ -423,48 +501,57 @@ export function andC(
   });
 }
 
-/** partial(c)：shape 全字段变可选；非 shape throw */
+/** partial(c)：shape 全字段变可选；非 shape throw（lazy 包装先解一层） */
 export function partial(c: NudoConstraint | ConstraintBuilder): ConstraintBuilder {
-  if (!isConstraint(c) || !c.fields)
+  if (!isConstraint(c))
+    throw new Error("nudo partial(): only shape(...) constraints are accepted");
+  const d = derefConstraint(c);
+  if (!d.fields)
     throw new Error("nudo partial(): only shape(...) constraints are accepted");
   const fields: Record<string, NudoField> = {};
-  for (const [k, f] of Object.entries(c.fields)) {
+  for (const [k, f] of Object.entries(d.fields)) {
     fields[k] = {
       constraint: { ...toPlainConstraint(f.constraint), isOptional: true },
       optional: true,
     };
   }
-  return makeBuilder(c.prim, c.preds, { fields });
+  return makeBuilder(d.prim, d.preds, { fields });
 }
 
-/** pick(c, keys)：shape 子形状（不存在的 key 忽略）；非 shape throw */
+/** pick(c, keys)：shape 子形状（不存在的 key 忽略）；非 shape throw（lazy 包装先解一层） */
 export function pick(
   c: NudoConstraint | ConstraintBuilder,
   keys: string[],
 ): ConstraintBuilder {
-  if (!isConstraint(c) || !c.fields)
+  if (!isConstraint(c))
+    throw new Error("nudo pick(): only shape(...) constraints are accepted");
+  const d = derefConstraint(c);
+  if (!d.fields)
     throw new Error("nudo pick(): only shape(...) constraints are accepted");
   const fields: Record<string, NudoField> = {};
   for (const k of keys) {
-    const f = c.fields[k];
+    const f = d.fields[k];
     if (f) fields[k] = f;
   }
-  return makeBuilder(c.prim, c.preds, { fields });
+  return makeBuilder(d.prim, d.preds, { fields });
 }
 
-/** omit(c, keys)：shape 去字段；非 shape throw */
+/** omit(c, keys)：shape 去字段；非 shape throw（lazy 包装先解一层） */
 export function omit(
   c: NudoConstraint | ConstraintBuilder,
   keys: string[],
 ): ConstraintBuilder {
-  if (!isConstraint(c) || !c.fields)
+  if (!isConstraint(c))
+    throw new Error("nudo omit(): only shape(...) constraints are accepted");
+  const d = derefConstraint(c);
+  if (!d.fields)
     throw new Error("nudo omit(): only shape(...) constraints are accepted");
   const drop = new Set(keys);
   const fields: Record<string, NudoField> = {};
-  for (const [k, f] of Object.entries(c.fields)) {
+  for (const [k, f] of Object.entries(d.fields)) {
     if (!drop.has(k)) fields[k] = f;
   }
-  return makeBuilder(c.prim, c.preds, { fields });
+  return makeBuilder(d.prim, d.preds, { fields });
 }
 
 /**
@@ -485,6 +572,7 @@ export const CONSTRAINT_BUILDERS: Record<string, unknown> = {
   lit: litC,
   union,
   nullable,
+  lazy,
   fn,
   and: andC,
   partial,
@@ -540,11 +628,18 @@ function substPred(p: Pred, paramName: string): Pred {
   }
 }
 
-/** 把模板绑定到参数名：self → paramName；shape 展开为字段访问 Pred */
+/** 把模板绑定到参数名：self → paramName；shape 展开为字段访问 Pred（lazy 按 depth 预算展开） */
 export function instantiateConstraint(
   c: NudoConstraint,
   paramName: string,
+  depth: number = LAZY_TEMPLATE_DEPTH,
 ): Pred {
+  // lazy（issue #120）：预算内解一层递归；预算耗尽 → 恒真（宽松——
+  // optional 字段本就不进硬 pred，必选 lazy 字段截断处不误报）
+  if (c.lazy) {
+    if (depth <= 0) return pTrue;
+    return instantiateConstraint(derefConstraint(c), paramName, depth - 1);
+  }
   // shape：展开为 and(字段 preds)。optional 字段不进硬 pred（缺省可接受）——
   // 与 constraintToEntryAbs 的 slot.optional 对齐，避免缺失可选字段误报。
   if (c.fields) {
@@ -552,7 +647,7 @@ export function instantiateConstraint(
     for (const [key, field] of Object.entries(c.fields)) {
       if (field.optional || field.constraint.isOptional) continue;
       const fieldTerm = getTerm(termVar(paramName), key);
-      parts.push(instantiateOnTerm(field.constraint, fieldTerm));
+      parts.push(instantiateOnTerm(field.constraint, fieldTerm, depth));
     }
     if (c.prim) parts.push(ptypeof(termVar(paramName), primToTypeof(c.prim)));
     if (parts.length === 0) return { op: "true" };
@@ -563,7 +658,7 @@ export function instantiateConstraint(
   // 与标量链同口径——有实质谓词时节点 prim 不再补 typeof）
   if (c.members) {
     const disj = or(
-      ...c.members.map((m) => instantiateOnTerm(m, termVar(paramName))),
+      ...c.members.map((m) => instantiateOnTerm(m, termVar(paramName), depth)),
     );
     const own = c.preds.map((p) => substPred(p, paramName));
     return own.length === 0 ? disj : pAnd(...own, disj);
@@ -583,8 +678,17 @@ export function instantiateConstraint(
   return preds.length === 0 ? { op: "true" } : preds.length === 1 ? preds[0]! : pAnd(...preds);
 }
 
-/** 在给定项上实例化约束（shape 字段/union 成员递归用；assertImplies 统一证明通道） */
-export function instantiateOnTerm(c: NudoConstraint, t: Term): Pred {
+/** 在给定项上实例化约束（shape 字段/union 成员递归用；assertImplies 统一证明通道；lazy 按 depth 预算展开） */
+export function instantiateOnTerm(
+  c: NudoConstraint,
+  t: Term,
+  depth: number = LAZY_TEMPLATE_DEPTH,
+): Pred {
+  // lazy（issue #120）：预算内解一层；预算耗尽 → 恒真
+  if (c.lazy) {
+    if (depth <= 0) return pTrue;
+    return instantiateOnTerm(derefConstraint(c), t, depth - 1);
+  }
   const subst = (p: Pred): Pred => {
     switch (p.op) {
       case "gt":
@@ -611,14 +715,14 @@ export function instantiateOnTerm(c: NudoConstraint, t: Term): Pred {
     const parts: Pred[] = [];
     for (const [key, field] of Object.entries(c.fields)) {
       if (field.optional || field.constraint.isOptional) continue;
-      parts.push(instantiateOnTerm(field.constraint, getTerm(t, key)));
+      parts.push(instantiateOnTerm(field.constraint, getTerm(t, key), depth));
     }
     if (parts.length === 0) return { op: "true" };
     return parts.length === 1 ? parts[0]! : pAnd(...parts);
   }
   // union：各成员在该项上实例化后 or 并
   if (c.members) {
-    const disj = or(...c.members.map((m) => instantiateOnTerm(m, t)));
+    const disj = or(...c.members.map((m) => instantiateOnTerm(m, t, depth)));
     const own = c.preds.map(subst);
     return own.length === 0 ? disj : pAnd(...own, disj);
   }
@@ -640,14 +744,18 @@ export function instantiateOnTerm(c: NudoConstraint, t: Term): Pred {
 export function constraintToEntryAbs(
   c: NudoConstraint,
   paramName: string,
+  depth: number = LAZY_TEMPLATE_DEPTH,
 ): Abs {
   const t = termVar(paramName);
   if (c.fields) {
     const slots: Record<string, { value: Abs; optional?: boolean }> = {};
     for (const [key, field] of Object.entries(c.fields)) {
+      // lazy 字段预算耗尽 → 缺席槽（整键不发；不伪造 undefined 值槽）——
+      // 与手写有限层模板同语义：缺席键读出 undefined，守卫递归干净剪枝
+      if (field.constraint.lazy && depth <= 0) continue;
       const fieldTerm = getTerm(t, key);
       slots[key] = {
-        value: constraintOnTermAbs(field.constraint, fieldTerm),
+        value: constraintOnTermAbs(field.constraint, fieldTerm, depth),
         ...(field.optional || field.constraint.isOptional
           ? { optional: true }
           : {}),
@@ -655,7 +763,7 @@ export function constraintToEntryAbs(
     }
     return abs({ k: "obj", slots }, t, undefined, "path");
   }
-  return constraintOnTermAbs(c, t);
+  return constraintOnTermAbs(c, t, depth);
 }
 
 /**
@@ -723,12 +831,20 @@ function samePrimLiteralUnionAbs(
   return abs({ k: "prim", type: prim }, t, disj, "path");
 }
 
-function constraintOnTermAbs(c: NudoConstraint, t: Term): Abs {
+function constraintOnTermAbs(c: NudoConstraint, t: Term, depth: number): Abs {
+  // lazy（issue #120）：预算内解一层递归；值位预算耗尽 → any
+  // （参数项保留，conf=path——守卫可继续收窄）
+  if (c.lazy) {
+    if (depth <= 0) return abs({ k: "any" }, t, undefined, "path");
+    return constraintOnTermAbs(derefConstraint(c), t, depth - 1);
+  }
   if (c.fields) {
     const slots: Record<string, { value: Abs; optional?: boolean }> = {};
     for (const [key, field] of Object.entries(c.fields)) {
+      // lazy 字段预算耗尽 → 缺席槽（同 constraintToEntryAbs）
+      if (field.constraint.lazy && depth <= 0) continue;
       slots[key] = {
-        value: constraintOnTermAbs(field.constraint, getTerm(t, key)),
+        value: constraintOnTermAbs(field.constraint, getTerm(t, key), depth),
         ...(field.optional || field.constraint.isOptional
           ? { optional: true }
           : {}),
@@ -743,7 +859,7 @@ function constraintOnTermAbs(c: NudoConstraint, t: Term): Abs {
     if (litUnion) return litUnion;
     // 混合形态（界 / 跨 prim / shape…）：joinAbs 折叠
     const joined = c.members
-      .map((m) => constraintOnTermAbs(m, t))
+      .map((m) => constraintOnTermAbs(m, t, depth))
       .reduce((a, b) => joinAbs(a, b));
     // 同 prim 非字面量成员经 joinValues 塌缩丢 term/pred——重锚定参数项并补
     // typeof，与裸 prim 链（number()/string()）的 entry Abs 同构（drift 双向
@@ -764,10 +880,10 @@ function constraintOnTermAbs(c: NudoConstraint, t: Term): Abs {
   if (c.fn) {
     const paramNames = Object.keys(c.fn.params);
     const paramTypes = paramNames.map((p, i) =>
-      constraintOnTermAbs(c.fn!.params[p]!, termVar(`x${i}`)),
+      constraintOnTermAbs(c.fn!.params[p]!, termVar(`x${i}`), depth),
     );
     const returnType = c.fn.returns
-      ? constraintOnTermAbs(c.fn.returns, termVar("ret"))
+      ? constraintOnTermAbs(c.fn.returns, termVar("ret"), depth)
       : unknown;
     return abs(
       { k: "fn", params: paramNames, paramTypes, returnType },
@@ -778,10 +894,10 @@ function constraintOnTermAbs(c: NudoConstraint, t: Term): Abs {
   }
   // array(item) → arr(element)；元素项独立，不继承外层 term
   if (c.element) {
-    const elem = constraintOnTermAbs(c.element, termVar("x[]"));
+    const elem = constraintOnTermAbs(c.element, termVar("x[]"), depth);
     return abs({ k: "arr", element: elem }, t, undefined, "path");
   }
-  const pred = instantiateOnTerm(c, t);
+  const pred = instantiateOnTerm(c, t, depth);
   const predOut = pred.op === "true" ? undefined : pred;
   if (c.prim) {
     return abs({ k: "prim", type: c.prim }, t, predOut, "path");
@@ -848,11 +964,19 @@ export function throwConstraintToKinds(
   if (!c) return undefined;
   const out = new Set<string>();
   let any = false;
+  // lazy 环经 thunk 身份 seen 终止（issue #120）：union(lazy(() => self), lit("Error"))
+  const seen = new Set<() => NudoConstraint | ConstraintBuilder>();
   const note = (s: string): void => {
     if (s === "*" || s === "any") any = true;
     else if (s) out.add(s);
   };
   const walk = (x: NudoConstraint): void => {
+    if (x.lazy) {
+      if (seen.has(x.lazy)) return;
+      seen.add(x.lazy);
+      walk(derefConstraint(x));
+      return;
+    }
     if (x.members) {
       for (const m of x.members) walk(m);
       return;

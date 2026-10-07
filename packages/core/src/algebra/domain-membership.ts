@@ -16,7 +16,7 @@
  */
 
 import type { NudoConstraint } from "./constraint.ts";
-import { SELF, isIntFlag } from "./constraint.ts";
+import { SELF, derefConstraint, isIntFlag } from "./constraint.ts";
 import type { Pred, TypeofName } from "./pred.ts";
 import type { Term } from "./term.ts";
 
@@ -33,14 +33,23 @@ type ExtendedConstraint = NudoConstraint & {
 export function literalMeetsConstraint(
   lv: number | string | boolean | null | undefined,
   c: NudoConstraint,
+  seen?: Set<object>,
 ): boolean {
+  // lazy 包装（issue #120）：值驱动下降逐层解一层；环经 thunk 身份 seen
+  // 终止——字面量对递归结构的域判定在有限位置收敛
+  if (c.lazy) {
+    const s = seen ?? new Set<object>();
+    if (s.has(c.lazy)) return false;
+    s.add(c.lazy);
+    return literalMeetsConstraint(lv, derefConstraint(c), s);
+  }
   const ext = c as ExtendedConstraint;
   // 对象 / 数组 / 函数域：Phase 1 不做隶属判定
   if (c.fields || c.element) return false;
   if (ext.fn) return false;
   // union：任一成员满足即可
   if (Array.isArray(ext.members) && ext.members.length > 0) {
-    return ext.members.some((m) => literalMeetsConstraint(lv, m));
+    return ext.members.some((m) => literalMeetsConstraint(lv, m, seen));
   }
   // prim 门：缺失时（lit(null)/lit(undefined)/any() 等）只按 preds 判定——
   // eq(self,null) 能满足 null；any()（无 pred）接受一切字面量。有 prim 则必须类型匹配。

@@ -24,6 +24,7 @@ import type { NudoConstraint, NudoField } from "./constraint.ts";
 import {
   SELF,
   constraintAdmitsNullish,
+  derefConstraint,
   isIntFlag,
   instantiateOnTerm,
 } from "./constraint.ts";
@@ -39,6 +40,12 @@ export type PostProof =
   | { status: "proved" }
   | { status: "disproved"; reason: string }
   | { status: "unprovable"; reason: string };
+
+/**
+ * 证明通道选项：phi = 路径前提；seen = lazy thunk 环保护（per-path 副本，
+ * 见 assertImplies 入口）。内部 helper 透传同一对象。
+ */
+type AssertOpts = { phi?: Phi; seen?: Set<object> };
 
 function proved(): PostProof {
   return { status: "proved" };
@@ -145,8 +152,27 @@ function provesBarePrimDomain(arm: Abs, constraint: NudoConstraint): boolean {
 export function assertImplies(
   ret: Abs,
   constraint: NudoConstraint,
-  opts?: { phi?: Phi },
+  opts?: AssertOpts,
 ): PostProof {
+  // lazy 包装（issue #120）：每次递归入口先解一层——包装自身无 prim/preds/
+  // 结构，不 deref 会被 isAnyConstraint 误判成 any()（假证明）或漏进标量分支。
+  // 环保护（thunk 身份 seen-set，per-path 副本）：自引用模板
+  // lazy(() => bad) 穿 union/shape 字段循环会无限递归；截断时保守
+  // unprovable（checkReturnConstraint 映射 warning，绝不伪证 proved、
+  // 绝不误判 disproved）。副本而非共享：sum 多臂 / union 多成员逐臂
+  // 递归时 ret 各不相同，约束求值对 (ret, constraint) 确定——兄弟臂
+  // 各自首访同一 lazy 成员都应完整展开（共享集合会把「经同一 lazy
+  // 成员可证」的兄弟臂降为假 unprovable）；真环仍被截断（祖先 thunk
+  // 身份经副本继承）。
+  if (constraint.lazy) {
+    const seen = opts?.seen;
+    if (seen?.has(constraint.lazy)) {
+      return unprovable("lazy constraint cycle");
+    }
+    const next = seen ? new Set(seen) : new Set<object>();
+    next.add(constraint.lazy);
+    return assertImplies(ret, derefConstraint(constraint), { ...opts, seen: next });
+  }
   const phi = opts?.phi ?? pTrue;
 
   // never（不可达）：后置空洞成立
@@ -179,7 +205,7 @@ function assertSumArms(
   arms: Abs[],
   parent: Abs,
   constraint: NudoConstraint,
-  opts: { phi?: Phi } | undefined,
+  opts: AssertOpts | undefined,
   phi: Phi,
 ): PostProof {
   // gold FP 保护：任一 any 派生 / 运算符拓宽臂存在时，不得对兄弟臂报
@@ -242,7 +268,7 @@ function assertSumArms(
 function assertImpliesSingle(
   arm: Abs,
   constraint: NudoConstraint,
-  opts: { phi?: Phi } | undefined,
+  opts: AssertOpts | undefined,
   phi: Phi,
 ): PostProof {
   // --- OOB marker（issue #102）：引擎精度产物——不可证亦不可反证 ---
@@ -302,7 +328,7 @@ function assertImpliesSingle(
   return assertScalar(arm, constraint, phi);
 }
 
-/** any()：无 prim / preds / shape / members / fn */
+/** any()：无 prim / preds / shape / members / fn（lazy 包装不算——先 deref） */
 function isAnyConstraint(c: NudoConstraint): boolean {
   return (
     !c.prim &&
@@ -311,6 +337,7 @@ function isAnyConstraint(c: NudoConstraint): boolean {
     !c.element &&
     !c.members &&
     !c.fn &&
+    !c.lazy &&
     !isIntFlag(c)
   );
 }
@@ -318,7 +345,7 @@ function isAnyConstraint(c: NudoConstraint): boolean {
 function assertShapeFields(
   ret: Abs,
   constraint: NudoConstraint,
-  opts?: { phi?: Phi },
+  opts?: AssertOpts,
 ): PostProof {
   type ObjSlots = Record<string, { value: Abs; optional?: boolean }>;
   let slots: ObjSlots | undefined;

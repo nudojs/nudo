@@ -58,8 +58,9 @@ import {
   completeElseChain,
   completeElseChains,
   withImplicitReturn,
-  nullishGuardOf,
-  narrowNullishArmThunk,
+  nullishGuardsOf,
+  narrowNullishArmThunks,
+  nullishRemoveCallOf,
   typeGuardOf,
   narrowTypeArmThunk,
 } from "./stmt-predicates.ts";
@@ -211,12 +212,14 @@ export function transpileFnBodyStmts(
     // 路径同源；守卫名在 fork 绑定集时跳过）。
     // issue #118：早退体（cons 臂）同样剪影——`if (o.p) return o.p.q` 的
     // 属性读在测试真值臂内，守卫事实（成员真值）作用于该臂。
-    const earlyGuard = nullishGuardOf(stmt.test);
+    // issue #118 v3 / #120：多名复合测试（`obj == null || node.p == null`）
+    // 经 nullishGuardsOf 一臂多事实齐用。
+    const earlyGuards = nullishGuardsOf(stmt.test);
     const earlyTGuard = typeGuardOf(stmt.test);
     const consNarrowed = narrowTypeArmThunk(
-      narrowNullishArmThunk(
+      narrowNullishArmThunks(
         transpileBlockAsThunk(stmt.consequent, depth, scopedOpts),
-        earlyGuard,
+        earlyGuards,
         "cons",
         recvSet,
       ),
@@ -228,7 +231,7 @@ export function transpileFnBodyStmts(
     const altBody = transpileFnBodyStmts(rest, depth + 1, { ...scopedOpts, inLoop: opts.inLoop });
     const altThunk = `() => {\n${altBody}\n${pad}}`;
     const altNarrowed = narrowTypeArmThunk(
-      narrowNullishArmThunk(altThunk, earlyGuard, "alt", recvSet),
+      narrowNullishArmThunks(altThunk, earlyGuards, "alt", recvSet),
       earlyTGuard,
       "alt",
       recvSet,
@@ -671,10 +674,13 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // `if (p !== null) …` 的 then 臂内，p 以 $removeNullish 影子重绑——
       // 后续 p.major 不再记 may-throw。守卫名在 fork 绑定集（臂内写）时跳过。
       // typeof 类型守卫（Bug 23）：事实臂绑匹配成员、对侧臂绑补集。
-      const guard = nullishGuardOf(stmt.test);
+      // issue #118 v3 / #120：多名复合测试（`obj == null || node.p == null`
+      // 穿透臂双事实）与赋值即守卫（`if ((m = re.exec(s)))`）经
+      // nullishGuardsOf 一臂多事实齐用。
+      const guards = nullishGuardsOf(stmt.test);
       const tguard = typeGuardOf(stmt.test);
       const consNarrowed = narrowTypeArmThunk(
-        narrowNullishArmThunk(consRaw, guard, "cons", recvSet),
+        narrowNullishArmThunks(consRaw, guards, "cons", recvSet),
         tguard,
         "cons",
         recvSet,
@@ -683,7 +689,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         altRaw === null
           ? null
           : narrowTypeArmThunk(
-              narrowNullishArmThunk(altRaw, guard, "alt", recvSet),
+              narrowNullishArmThunks(altRaw, guards, "alt", recvSet),
               tguard,
               "alt",
               recvSet,
@@ -1286,13 +1292,35 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       collectAssignedIds(stmt.test, assigned);
       const bodyLocalDecls = new Set<string>();
       collectLoopBodyTopLevelDeclNames(stmt.body, bodyLocalDecls);
+      // while 守卫收窄（issue #118 v3）：测试的 cons 臂事实作用于循环体——
+      // `while ((m = re.exec(s)))` 每轮测试真值 ⇒ 该轮体内 m 非 nullish，
+      // `m[2].trim()` 不再撞 null 臂记假 may-throw（#97/#118 臂剪影的循环
+      // 版）。体工厂逐迭代调用，IIFE 在**每次进体**时以当前绑定求 remove
+      // 串（不跨迭代缓存）；$whileSeq 先 test() 后 body()，体内事实成立。
+      // 体侧守卫名有写（含 mutator receiver）/体顶层同名词法声明 → 跳过
+      // 全部（影子参数吞体侧写 / 重复声明 SyntaxError）；测试侧赋值恰是
+      // `(m = …)` 惯用形态，不构成跳过。pack/unpack 名集（体∪测试）不变。
+      const bodyWrites = new Set<string>();
+      collectAssignedIds(stmt.body, bodyWrites);
+      collectArrMutatorReceivers(stmt.body, bodyWrites);
+      const loopGuards = nullishGuardsOf(stmt.test).filter(
+        (g) => g.arm === "cons" && !bodyWrites.has(g.name) && !bodyLocalDecls.has(g.name),
+      );
+      const bodyNarrowed =
+        loopGuards.length === 0
+          ? body
+          : [
+              `${indent(depth + 1)}((${loopGuards.map((g) => g.name).join(", ")}) => {`,
+              body,
+              `${indent(depth + 1)}})(${loopGuards.map((g) => nullishRemoveCallOf(g)).join(", ")});`,
+            ].join("\n");
       const names = [...assigned].filter((n) => !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n));
       const loopOpts = opts.loopLabel ? `label: ${JSON.stringify(opts.loopLabel)}` : "";
       if (names.length === 0) {
         return [
           `${pad}// while → $whileSeq (bounded, max=${max})`,
           `${pad}$whileSeq(() => ${test}, () => {`,
-          body,
+          bodyNarrowed,
           `${pad}}, ${max}${loopOpts ? `, { ${loopOpts} }` : ""});`,
         ].join("\n");
       }
@@ -1301,7 +1329,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       return [
         `${pad}// while → $whileSeq (instrumented bindings: ${names.join(", ")})`,
         `${pad}$whileSeq(() => ${test}, () => {`,
-        body,
+        bodyNarrowed,
         `${pad}}, ${max}, { pack: () => ${packSrc}, unpack: ${unpackSrc}${loopOpts ? `, ${loopOpts}` : ""} });`,
       ].join("\n");
     }
@@ -1324,6 +1352,25 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       collectArrMutatorReceivers(stmt.body, assigned);
       const bodyLocalDecls = new Set<string>();
       collectLoopBodyTopLevelDeclNames(stmt.body, bodyLocalDecls);
+      // do-while 守卫收窄（issue #118 v3）：**只**收窄内层 $whileSeq 的体
+      // 拷贝（第 2 轮起先过测试，cons 臂事实成立）；首次独立拷贝先于任何
+      // 测试求值执行（`do { m[0] } while ((m = f()))` 首轮 m 可能
+      // nullish），保持未收窄（sound）。跳过规则与 while 同口径：体侧守卫
+      // 名有写 / 体顶层同名词法声明 → 全部跳过；测试侧赋值不算。
+      const bodyWrites = new Set<string>();
+      collectAssignedIds(stmt.body, bodyWrites);
+      collectArrMutatorReceivers(stmt.body, bodyWrites);
+      const loopGuards = nullishGuardsOf(stmt.test).filter(
+        (g) => g.arm === "cons" && !bodyWrites.has(g.name) && !bodyLocalDecls.has(g.name),
+      );
+      const innerBody =
+        loopGuards.length === 0
+          ? bodyStmts
+          : [
+              `${indent(depth + 1)}((${loopGuards.map((g) => g.name).join(", ")}) => {`,
+              bodyStmts,
+              `${indent(depth + 1)}})(${loopGuards.map((g) => nullishRemoveCallOf(g)).join(", ")});`,
+            ].join("\n");
       const names = [...assigned].filter((n) => !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n));
       const packSrc =
         names.length === 0
@@ -1345,7 +1392,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         `{`,
         bodyStmts,
         `${indent(depth + 1)}$whileSeq(() => ${test}, () => {`,
-        bodyStmts,
+        innerBody,
         `${indent(depth + 1)}}, ${max}${optsSrc});`,
         `${pad}}`,
       ].join("\n");

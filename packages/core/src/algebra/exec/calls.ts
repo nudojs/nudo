@@ -27,6 +27,13 @@ import {
   createScopedSlot,
   registerCollectorScopeParticipant,
 } from "../collector-scope.ts";
+import {
+  adoptCallArgsToFaces,
+  attachContractFaces,
+  contractFacesOf,
+  presentCallResultFace,
+  resolveContractFacesByName,
+} from "../contract-face.ts";
 
 export type EvalCallRecord = {
   fnName: string;
@@ -452,15 +459,26 @@ export function $callNamed(
   loc?: [number, number],
   argLocs?: Array<[number, number] | null | undefined>,
 ): Abs {
-  // @nudo:pure：宿主 JS 函数 / Abs 上的 `_memoize` 标记 → 同实参命中缓存
-  const pureName = pureFnNameOf(fn);
+  // #123 fix B：同文件 callee 的契约面——按名 resolver（checkSource 安装，
+  // 对被分析文件自身的同名契约）优先（每次分析现解析，不滞留），对象注册
+  // 兜底；命中后回写对象注册，同对象别名调用点（`const g = f`）后续直接命中。
+  // 跨模块桥接走 bindImport wrapper → $call（wrapper 无面，桥接 Abs 在 $call 消费）。
+  const faces = resolveContractFacesByName(name) ?? contractFacesOf(fn);
   const fnObj = fn && (typeof fn === "object" || typeof fn === "function")
     ? (fn as object)
     : undefined;
-  const pk = pureName && fnObj ? callBudgetKey("pure", "", args) : undefined;
+  if (faces && fnObj) attachContractFaces(fnObj, faces);
+  const execArgs = faces ? adoptCallArgsToFaces(args, faces) : args;
+  // @nudo:pure：宿主 JS 函数 / Abs 上的 `_memoize` 标记 → 同实参命中缓存
+  const pureName = pureFnNameOf(fn);
+  // 键取采用后实参（与执行一致）：面存在与否改变执行世界，键随之区分
+  const pk = pureName && fnObj ? callBudgetKey("pure", "", execArgs) : undefined;
   if (fnObj && pk !== undefined) {
     const hit = pureCallMemo.get(fnObj)?.get(pk);
-    if (hit !== undefined) return routeApplyThrows(hit.abs, hit.throws);
+    if (hit !== undefined) {
+      const routed = routeApplyThrows(hit.abs, hit.throws);
+      return faces ? presentCallResultFace(routed, faces) : routed;
+    }
   }
   let result: Abs = unknown;
   let threw = false;
@@ -504,13 +522,14 @@ export function $callNamed(
         // NudoThrow）；抽象实参保守 unknown + may。见 callHostGlobalLiteralOnly。
         result = callHostGlobalLiteralOnly(name, fn as (...a: unknown[]) => unknown, args);
       } else {
-        const entered = evalEnterCall(name, fn, args);
+        const entered = evalEnterCall(name, fn, execArgs);
         if (!entered.ok) {
           result = evalTruncatedAbs();
         } else {
           try {
-            // 嵌套 求值引擎函数：调用边界收 NudoReturn，不得污染 caller
-            result = callAtFunctionBoundary(() => (fn as (...a: Abs[]) => Abs)(...args));
+            // 嵌套 求值引擎函数：调用边界收 NudoReturn，不得污染 caller。
+            // #123：执行实参 = 契约面采用后（仅无信息位被声明面替换）。
+            result = callAtFunctionBoundary(() => (fn as (...a: Abs[]) => Abs)(...execArgs));
           } finally {
             evalExitCall();
           }
@@ -518,12 +537,13 @@ export function $callNamed(
       }
     } else if (fn && typeof fn === "object" && "shape" in (fn as object)) {
       // Abs fn 分支同口径预算（编译递归经 $call 会绕到此处——cycle/深度守卫）
-      const entered = evalEnterCall(name, fn, args);
+      const entered = evalEnterCall(name, fn, execArgs);
       if (!entered.ok) {
         result = evalTruncatedAbs();
       } else {
         try {
-          result = $call(fn as Abs, args);
+          // #123：execArgs 已按名 resolver 采用；$call 内对象面路径幂等
+          result = $call(fn as Abs, execArgs);
         } finally {
           evalExitCall();
         }
@@ -562,5 +582,7 @@ export function $callNamed(
       }
     }
   }
-  return result;
+  // #123：返回位呈现声明面（字面量等已满足契约的推断面保留；threw 路径
+  // 在上方 catch re-throw，不经过此处）
+  return faces ? presentCallResultFace(result, faces) : result;
 }

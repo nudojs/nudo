@@ -170,6 +170,40 @@ needsPositive(-1); // ⊭ x > 0 → nudo:constraint-violated
 
 `@nudo:contract` 是唯一的源内契约指令（历史拼写 `@nudo:refine` / `@nudo:interface` 已移除，没有别名层）。产品名：**contract**。
 
+### 递归模板（`lazy`）
+
+自引用结构 —— AST 节点、链式结构 —— 不再需要手写有限层嵌套。`lazy(() => tpl)` 把引用延迟：侧车以真实 JS 执行，thunk 只在契约被消费时求值，此时 `const` 已完成初始化（[issue #120](https://github.com/nudojs/nudo/issues/120)）：
+
+```javascript verify-sidecar
+// ast.nudo.js — recursive AST template (issue #120)
+// (builders are injected into sidecar execution; import kept in real files)
+export const astNode = shape({
+  type: string(),
+  name: string().optional(),
+  computed: boolean().optional(),
+  object: lazy(() => astNode).optional(),
+  property: lazy(() => astNode).optional(),
+  callee: lazy(() => astNode).optional(),
+  arguments: array(lazy(() => astNode)).optional(),
+});
+export const staticName = fn({ node: nullable(astNode) }, nullable(string()));
+```
+
+`lazy` 模板按固定层数预算展开（顶层之下三层）。预算耗尽的字段成为**缺席槽** —— 与手写有限层模板的产物完全一致 —— 因此守卫递归在边界处照常干净剪枝，而不是退化成 `any`：
+
+```js
+export function deepType(node) {
+  if (node == null) return null;
+  const inner = node.object;
+  if (inner == null) return null;
+  const deep = inner.object;
+  if (deep == null) return null;
+  return deep.type; // 预算内 → null | string
+}
+```
+
+`lazy` 与其他构建器一样是侧车构建器：接收一个 thunk（`() => constraint`），随侧车执行注入。源内指令文法不接受箭头函数，因此 `@nudo:case` / `@nudo:mock` 表达式用不了它（这类实参回落 `unknown`）—— 递归模板住在 `*.nudo.js` 里。
+
 ## 固化生成段
 
 `--emit` 把**观测到的**调用点域固化进侧车 `@generated` 段 —— 关于用法的事实，不是义务。可信用法（演示调用、测试）用它；要执法的 API 面保持手写绑定。一个尚无契约的叶子模块：

@@ -200,6 +200,20 @@ const memberGuardTarget = (n: unknown): { name: string; key: string } | undefine
 };
 
 /**
+ * 赋值即守卫目标（issue #118 v3）：`(m = re.exec(s))` —— `=` + Identifier
+ * 左值（任意右值）。测试真值 ⇒ 赋予该变量的值（= 测试值）非 nullish，
+ * cons（真值）臂内变量可剪影；`!(m = f())` 同理 → alt 臂。复合赋值（+=
+ * 等）的真值不能干净推出非 nullish，不识别。
+ */
+const assignGuardTarget = (n: unknown): string | undefined => {
+  const t = n as { type?: string; operator?: string; left?: { type?: string; name?: string } };
+  if (t?.type === "AssignmentExpression" && t.operator === "=" && t.left?.type === "Identifier" && t.left.name) {
+    return t.left.name;
+  }
+  return undefined;
+};
+
+/**
  * 测试表达式是否是「标识符的 nullish 守卫」，返回非 nullish 事实所属臂：
  * - `p === null` / `p === undefined`（严格）→ else（alt）臂剪对应粒度
  *   （严格等价只排除该字面量：`p === null` 假值臂仍可能 undefined）
@@ -218,6 +232,16 @@ const memberGuardTarget = (n: unknown): { name: string; key: string } | undefine
  *   `!o.p` → else 臂同事实；`o?.p` / `!o?.p`（可选链，Babel 产
  *   OptionalMemberExpression，可能 ChainExpression 包裹）同臂位——truthy
  *   ⇒ 基名非 nullish 且槽值真值
+ * - `o.p == null` / `o.p != null`（宽松，issue #120 静态名形态）→ 宽松
+ *   等价下缺槽读出 undefined 与 null 互通（`undefined == null` 真），比较
+ *   为假（==）/为真（!=）⇒ 槽必在场且槽值非 nullish、基名非 nullish
+ *   （求值未抛），与成员真值守卫同事实。严格 `===`/`!==` 成员形态**不
+ *   识别**：`o.p !== null` 真仍可能 undefined（缺槽/显式 undefined 值），
+ *   双粒度成员剪影（剥槽值 nullish + 摘 optional）不健全——保守放弃
+ *   （文档化边界）。
+ * - `(m = f())` 赋值即守卫（issue #118 v3）：测试真值 ⇒ 赋值结果非
+ *   nullish → cons 臂剪 m；`!(m = f())` → alt 臂。`while ((m = re.exec(s)))`
+ *   / `if ((m = f()))` 即此形态。
  * 守卫变量在该臂内以 $removeNullish/$removeNull/$removeUndefined/
  * $removeMemberNullish 影子重绑，成员读写不再记 may-throw（issue #97：
  * `if (p === null) return -1; p.major`；#118：`if (o.p) return o.p.q`）。
@@ -239,6 +263,9 @@ export function nullishGuardOf(test: unknown): NullishGuard | undefined {
   if (t?.type === "UnaryExpression" && t.operator === "!") {
     const m = memberGuardTarget(t.argument);
     if (m) return { name: m.name, arm: "alt", grain: "nullish", memberKey: m.key };
+    // `!(m = f())`：测试假值臂 ⇒ 赋值结果真值（issue #118 v3）
+    const a = assignGuardTarget(t.argument);
+    if (a) return { name: a, arm: "alt", grain: "nullish" };
   }
   if (t?.type === "Identifier" && t.name) {
     return { name: t.name, arm: "cons", grain: "nullish" };
@@ -246,6 +273,9 @@ export function nullishGuardOf(test: unknown): NullishGuard | undefined {
   // 裸 `o.p` / `o?.p`：测试真值臂 ⇒ 成员真值（issue #118）
   const bare = memberGuardTarget(t);
   if (bare) return { name: bare.name, arm: "cons", grain: "nullish", memberKey: bare.key };
+  // 裸 `(m = f())`：测试真值臂 ⇒ 赋值结果真值（issue #118 v3）
+  const bareAssign = assignGuardTarget(t);
+  if (bareAssign) return { name: bareAssign, arm: "cons", grain: "nullish" };
   if (t?.type !== "BinaryExpression") return undefined;
   const op = t.operator;
   if (op !== "===" && op !== "!==" && op !== "==" && op !== "!=") return undefined;
@@ -278,6 +308,25 @@ export function nullishGuardOf(test: unknown): NullishGuard | undefined {
   if (r?.type === "Identifier" && r.name) {
     const grain = litGrain(l);
     if (grain !== undefined) return { name: r.name, arm: truthyArm, grain };
+  }
+  // 成员宽松等价守卫（issue #120 静态名形态）：`o.p == null` / `o.p != null`
+  // —— 宽松等价下缺槽读出 undefined 与 null 互通（`undefined == null` 真），
+  // 比较为假（==）/为真（!=）⇒ 槽必在场且槽值非 nullish，基名亦非 nullish
+  // （求值未抛），与成员真值守卫（issue #118）同事实。字面量在左对称识别。
+  // 严格 ===/!== 成员形态不在此处理（见上文文档化边界：undefined 仍可能）。
+  if (op === "==" || op === "!=") {
+    const nullishLit = (n: unknown): boolean => {
+      const ln = n as { type?: string; name?: string };
+      return ln?.type === "NullLiteral" || ln?.name === "undefined";
+    };
+    const lm = memberGuardTarget(t.left);
+    const rm = memberGuardTarget(t.right);
+    if (lm && nullishLit(t.right)) {
+      return { name: lm.name, arm: truthyArm, grain: "nullish", memberKey: lm.key };
+    }
+    if (rm && nullishLit(t.left)) {
+      return { name: rm.name, arm: truthyArm, grain: "nullish", memberKey: rm.key };
+    }
   }
   return undefined;
 }
@@ -315,6 +364,47 @@ function compositeNullishGuardOf(test: unknown): NullishGuard | undefined {
     return { name: lg.name, arm: wantArm, grain, ...(memberKey !== undefined ? { memberKey } : {}) };
   }
   return lg ?? rg;
+}
+
+/** 同名守卫事实合并进列表（多名复合，issue #118 v3 / #120）：粒度取并
+ *  （覆盖两粒度 → nullish），成员键缺失侧补齐；键不同只保留第一侧
+ *  （sound 子集，与单守卫 compositeNullishGuardOf 同规则）。 */
+function mergeGuardInto(list: NullishGuard[], g: NullishGuard): void {
+  const prev = list.find((x) => x.name === g.name);
+  if (!prev) {
+    list.push(g);
+    return;
+  }
+  const grainA = prev.grain ?? "nullish";
+  const grainB = g.grain ?? "nullish";
+  if (grainA !== grainB) prev.grain = "nullish";
+  if (prev.memberKey === undefined && g.memberKey !== undefined) prev.memberKey = g.memberKey;
+}
+
+/**
+ * 测试表达式的**全部**独立 nullish 守卫事实（issue #118 v3 / #120 多名
+ * 复合）。单（非复合）测试式 → nullishGuardOf 单守卫；LogicalExpression
+ * 同方向递归展开：`||` 收各析取项的穿透臂（alt）事实——整体假 = 各项皆
+ * 假，各项事实独立成立（`obj == null || node.property == null` 的穿透臂
+ * 里 obj 与 node.property 双双非 nullish）；`&&` 收各合取项的成立臂
+ * （cons）事实。同名同臂合并粒度、异键保首；异方向子式（`||` 内嵌 `&&`）
+ * 的单侧真假不传播事实——递归结果按臂过滤后自然丢弃。单守卫 API
+ * nullishGuardOf 对异名复合仍保守 undefined（历史语义），多名收窄一律
+ * 走本入口。
+ */
+export function nullishGuardsOf(test: unknown): NullishGuard[] {
+  const t = test as { type?: string; operator?: string; left?: unknown; right?: unknown };
+  if (t?.type === "LogicalExpression" && (t.operator === "||" || t.operator === "&&")) {
+    const wantArm: "cons" | "alt" = t.operator === "||" ? "alt" : "cons";
+    const out: NullishGuard[] = [];
+    for (const g of [...nullishGuardsOf(t.left), ...nullishGuardsOf(t.right)]) {
+      if (g.arm !== wantArm) continue;
+      mergeGuardInto(out, g);
+    }
+    return out;
+  }
+  const g = nullishGuardOf(test);
+  return g ? [g] : [];
 }
 
 /**
@@ -365,13 +455,33 @@ export function nullishRemoveCallOf(guard: NullishGuard): string {
 
 /** 守卫臂 thunk 的 nullish 剪影包装：`((p) => THUNK)($removeNullish(p))`。
  *  仅当守卫名不在 fork 绑定集（臂内无写/快照重绑）时应用——否则影子参数
- *  会吞掉臂内写，破坏 forkJoin 的绑定 join。 */
+ *  会吞掉臂内写，破坏 forkJoin 的绑定 join。单守卫入口（多守卫见
+ *  narrowNullishArmThunks）。 */
 export function narrowNullishArmThunk(thunk: string, guard: NullishGuard | undefined, arm: "cons" | "alt", forkBindingNames: ReadonlySet<string> | readonly string[]): string {
-  if (!guard || guard.arm !== arm) return thunk;
+  if (!guard) return thunk;
+  return narrowNullishArmThunks(thunk, [guard], arm, forkBindingNames);
+}
+
+/** 多守卫臂 thunk 剪影包装（issue #118 v3 / #120）：`((a, b) => THUNK)
+ *  (<rm a>, <rm b>)`——一名一影子参数，多个独立事实同臂齐用（`obj == null
+ *  || node.property == null` 穿透臂）。只应用 arm 匹配的守卫；任一匹配
+ *  守卫名在 fork 绑定集（臂内写/快照重绑）→ 全部跳过（宁缺毋假：与单
+ *  守卫同一跳过口径，不做部分应用）。 */
+export function narrowNullishArmThunks(
+  thunk: string,
+  guards: readonly NullishGuard[] | undefined | null,
+  arm: "cons" | "alt",
+  forkBindingNames: ReadonlySet<string> | readonly string[],
+): string {
+  if (!guards || guards.length === 0) return thunk;
+  const matching = guards.filter((g) => g.arm === arm);
+  if (matching.length === 0) return thunk;
   const names =
     forkBindingNames instanceof Set ? (forkBindingNames as Set<string>) : new Set(forkBindingNames);
-  if (names.has(guard.name)) return thunk;
-  return `((${guard.name}) => ${thunk})(${nullishRemoveCallOf(guard)})`;
+  if (matching.some((g) => names.has(g.name))) return thunk;
+  const params = matching.map((g) => g.name).join(", ");
+  const args = matching.map((g) => nullishRemoveCallOf(g)).join(", ");
+  return `((${params}) => ${thunk})(${args})`;
 }
 
 /** typeof 类型守卫臂 thunk 的剪影包装：`((v) => THUNK)($narrowTypeOf(v, T, keep))`。

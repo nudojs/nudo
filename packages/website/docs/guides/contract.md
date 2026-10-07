@@ -170,6 +170,40 @@ Templates referenced by `@nudo:contract` must be imported with `@nudo:import` �
 
 `@nudo:contract` is the only in-source contract directive (the historical `@nudo:refine` / `@nudo:interface` spellings were removed with no alias layer). Product name: **contract**.
 
+### Recursive templates (`lazy`)
+
+Self-referential shapes — AST nodes, linked structures — no longer need hand-nested finite levels. `lazy(() => tpl)` defers the reference: sidecars run as real JS, and the thunk is only evaluated when the contract is consumed, after the `const` has been initialized ([issue #120](https://github.com/nudojs/nudo/issues/120)):
+
+```javascript verify-sidecar
+// ast.nudo.js — recursive AST template (issue #120)
+// (builders are injected into sidecar execution; import kept in real files)
+export const astNode = shape({
+  type: string(),
+  name: string().optional(),
+  computed: boolean().optional(),
+  object: lazy(() => astNode).optional(),
+  property: lazy(() => astNode).optional(),
+  callee: lazy(() => astNode).optional(),
+  arguments: array(lazy(() => astNode)).optional(),
+});
+export const staticName = fn({ node: nullable(astNode) }, nullable(string()));
+```
+
+`lazy` templates expand under a fixed depth budget (three levels below the top). A budget-exhausted field becomes an **absent slot** — exactly what a hand-written finite template produces — so guarded recursion keeps cutting cleanly at the boundary instead of degrading to `any`:
+
+```js
+export function deepType(node) {
+  if (node == null) return null;
+  const inner = node.object;
+  if (inner == null) return null;
+  const deep = inner.object;
+  if (deep == null) return null;
+  return deep.type; // within budget → null | string
+}
+```
+
+`lazy` is a sidecar builder like every other one: it takes a thunk (`() => constraint`) and is injected into sidecar execution. The in-source directive grammar does not accept arrow functions, so `@nudo:case` / `@nudo:mock` expressions cannot use it (such an argument falls back to `unknown`) — recursive templates live in `*.nudo.js`.
+
 ## Emit generated segments
 
 `--emit` freezes **observed** call-site domains into `@generated` sidecar segments — facts about usage, not obligations. Use it for usage you trust (demo calls, tests); keep handwritten bindings for the API surface you want enforced. A leaf module with no contract yet:

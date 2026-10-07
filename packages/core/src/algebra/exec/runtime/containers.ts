@@ -393,6 +393,12 @@ export function $copy(a: Abs): Abs {
       open: s.open,
     });
     next.conf = a.conf;
+    // term/pred 随快照迁移（与 tuple/arr/sum/eff 分支及 snapshotAbs 同口径；
+    // objOf 不带项位——此前 obj 副本丢项，导出桥 $copy 实参后递归各层的
+    // callBudgetKey 指纹全坍缩成同键，父帧/子帧误判 cycle 截断 → unknown
+    // 污染（issue #120 的 lazy 递归模板实测暴露）。
+    next.term = a.term;
+    next.pred = a.pred;
     migrateAccessors(a, next);
     migrateInvariants(a, next);
     migrateNullProto(a, next);
