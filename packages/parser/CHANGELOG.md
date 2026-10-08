@@ -1,6 +1,17 @@
 # @nudojs/parser
 
 
+## 1.4.10
+
+### Patch Changes
+
+- Updated dependencies [bf601e0]
+- Updated dependencies [bf601e0]
+- Updated dependencies [bf601e0]
+- Updated dependencies [bf601e0]
+- Updated dependencies [bf601e0]
+  - @nudojs/core@1.9.1
+
 ## 1.4.9
 
 ### Patch Changes

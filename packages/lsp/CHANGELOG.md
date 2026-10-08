@@ -1,5 +1,18 @@
 # @nudojs/lsp
 
+## 1.4.11
+
+### Patch Changes
+
+- Updated dependencies [bf601e0]
+- Updated dependencies [bf601e0]
+- Updated dependencies [bf601e0]
+- Updated dependencies [bf601e0]
+- Updated dependencies [bf601e0]
+  - @nudojs/core@1.9.1
+  - @nudojs/parser@1.4.10
+  - @nudojs/service@1.6.13
+
 ## 1.4.10
 
 ### Patch Changes
