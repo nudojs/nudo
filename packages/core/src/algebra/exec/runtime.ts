@@ -117,6 +117,7 @@ export {
   $arr,
   $arrMutContainer,
   $arrRest,
+  $restBind,
   $arrWithHoles,
   $collectionForEach,
   $concat,

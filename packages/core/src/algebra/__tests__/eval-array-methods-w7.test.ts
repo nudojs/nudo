@@ -168,7 +168,7 @@ describe("Bug 51: sort comparator GetSortComparator validation", () => {
 
   it("statement sort keeps degraded element-join (pinned semantics)", () => {
     const r = evalSrc(`export function f() { const a = [3,1,2]; a.sort(); return a; }`);
-    expect(r.value).toBe("3 | 1 | 2[]");
+    expect(r.value).toBe("(3 | 1 | 2)[]");
     expect(r.throws).toBe("never");
   });
 
@@ -191,7 +191,7 @@ describe("Bug 21/84: flatMap flatten projection", () => {
   it("flatMap(x => x) keeps non-array mapped values as elements", () => {
     // native: [1,2]
     const r = evalSrc(`export function f() { return [1, 2].flatMap((x) => x); }`);
-    expect(r.value).toBe("1 | 2[]");
+    expect(r.value).toBe("(1 | 2)[]");
     expect(r.throws).toBe("never");
     // native: ["ab"]
     const r2 = evalSrc(`export function f() { return [1].flatMap(() => "ab"); }`);
@@ -201,7 +201,7 @@ describe("Bug 21/84: flatMap flatten projection", () => {
   it("structural elements join instead of first-wins (unsound narrowing fixed)", () => {
     // native: [[1],[2]] — 元素域 [1] | [2]
     const r = evalSrc(`export function f() { return [1, 2].flatMap((v) => [[v]]); }`);
-    expect(r.value).toBe("[1] | [2][]");
+    expect(r.value).toBe("([1] | [2])[]");
     // native: [[1,1],[2,2]]
     const r2 = evalSrc(`export function f() { return [1, 2].flatMap((v) => [[v, v]]); }`);
     expect(r2.value).not.toBe("[1, 1][]");
@@ -214,7 +214,7 @@ describe("Bug 21/84: flatMap flatten projection", () => {
 
   it("array-returning callback control unchanged", () => {
     const r = evalSrc(`export function f() { return [1, 2].flatMap((v) => [v, v]); }`);
-    expect(r.value).toBe("1 | 2[]");
+    expect(r.value).toBe("(1 | 2)[]");
   });
 });
 
@@ -254,7 +254,7 @@ describe("Bug 28/49: Array.from receiver + mapper validation", () => {
     expect(r.value).toBe("string[]");
     expect(r.throws).toBe("never");
     const r2 = evalSrc(`export function f() { return Array.from([1, 2], (x) => x + 1); }`);
-    expect(r2.value).toBe("2 | 3[]");
+    expect(r2.value).toBe("(2 | 3)[]");
     expect(r2.throws).toBe("never");
   });
 });

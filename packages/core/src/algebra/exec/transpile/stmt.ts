@@ -439,8 +439,10 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
               depth + 2,
             )
           : `${indent(depth + 2)}${bindParams.map((l) => `${l.trim()} `).join("")}${thisPrologue.trim()}${argsPrologue.trim()}return ${emitTranspileExpression(stmt.body as unknown as Expression, fnOpts)};`;
+      // Bug 44：rest 绑定经 $restBind——真调用按 arguments 切片包 $arr（长度
+      // 保持原生）；签名符号执行的开放数组哨兵直通（不塌缩固定 1 元组）
       const restBind = rest
-        ? `${indent(depth + 1)}const ${rest} = arguments.length > ${named.length} ? $arr(Array.from(arguments).slice(${named.length})) : $arr([]);\n`
+        ? `${indent(depth + 1)}const ${rest} = $restBind(arguments, ${named.length});\n`
         : "";
       // function* → $gen 收集 yield。宿主函数是普通 function（transpile 已去
       // generator 化）——__nudoNonCtor 标记由 hoistNonCtorMarkers

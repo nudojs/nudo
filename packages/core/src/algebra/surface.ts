@@ -21,7 +21,7 @@ import {
   type Phi,
 } from "./pred.ts";
 import { implies } from "./pred.ts";
-import { add, sub } from "./arithmetic.ts";
+import { add, sub, builtinBrandToPrimitive } from "./arithmetic.ts";
 import { NudoThrow } from "./nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "./may-throw.ts";
 
@@ -290,6 +290,12 @@ export function ushrAbs(a: Abs, b: Abs): Abs {
 
 /** ** —— 幂（右结合由 AST 保证）；负指数 bigint 原生 RangeError → 不可折叠 */
 export function powAbs(a: Abs, b: Abs): Abs {
+  // Bug 25：内建 brand ToPrimitive（hint number）——arithmetic 同口径
+  {
+    const fa = builtinBrandToPrimitive(a, "number");
+    const fb = builtinBrandToPrimitive(b, "number");
+    if (fa || fb) return powAbs(fa ?? a, fb ?? b);
+  }
   return (
     foldNumericBinOp(a, b, (x, y) => x ** y, (x, y) => x ** y) ??
     bitwiseResultShape(a, b)
@@ -338,6 +344,12 @@ export function updateSubAbs(a: Abs, phi: Phi = pTrue): Abs {
 
 /** 一元 + —— ToNumber 折叠；bigint（含抽象 prim）原生恒抛 TypeError → 硬抛 */
 export function toNumberAbs(a: Abs): Abs {
+  // Bug 25：内建 brand ToPrimitive（hint number）——Number(new Date(0)) 等
+  // 经 valueOf/[[PrimitiveValue]]/toString 折 prim 后走既有 ToNumber 臂
+  {
+    const fa = builtinBrandToPrimitive(a, "number");
+    if (fa) return toNumberAbs(fa);
+  }
   // Symbol 参与一元 + / ToNumber：原生 TypeError（与 add 同口径）
   if (isSym(a)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
@@ -434,6 +446,11 @@ export function typeofName(s: Shape): string {
 
 /** 一元负号：字面量折叠（含 ToNumber 强制）；符号数翻转不等式 */
 export function negAbs(a: Abs, _phi: Phi = pTrue): Abs {
+  // Bug 25：内建 brand ToPrimitive（hint number）——-new Date(0) → -tv
+  {
+    const fa = builtinBrandToPrimitive(a, "number");
+    if (fa) return negAbs(fa, _phi);
+  }
   // Symbol 参与一元 -：ToNumber 原生 TypeError（与 add 同口径）
   if (isSym(a)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));

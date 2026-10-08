@@ -2,7 +2,7 @@
  * String.fromCharCode 等静态方法
  */
 import type { Abs } from "../abs.ts";
-import { strLit } from "../abs.ts";
+import { strLit, litValue } from "../abs.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
 import { str, mayCoerceThrowOperand, isBigintPrimAbs } from "./shared.ts";
@@ -27,6 +27,45 @@ function toUint16(n: number): number {
  *   抽象实参 → may RangeError（+ symbol 载体 may TypeError）+ str("path")
  */
 export function evalStringStatic(name: string, args: Abs[]): Abs | undefined {
+  if (name === "raw") {
+    // Bug 12：String.raw`a${x}b` —— transpile 编 args[0] 为 $tpl 模板对象
+    // （raw 槽 = 字符串字面量元组），args[1:] 为 substitutions。
+    // GetTemplateObject 外的手写对象（raw 数组）同语义；quasis+subs 全
+    // 字面量 → 精确拼接（sub 经 ToString，symbol 定抛 TypeError）；
+    // 任一抽象 → str("path")。
+    const tpl = args[0];
+    if (!tpl || tpl.shape.k !== "obj") return undefined;
+    const rawAbs = tpl.shape.slots["raw"]?.value;
+    const raws: string[] = [];
+    if (rawAbs && rawAbs.shape.k === "tuple") {
+      for (const el of rawAbs.shape.elements) {
+        const eR = litValue(el);
+        if (!(eR.ok && typeof eR.value === "string")) return str("path");
+        raws.push(eR.value);
+      }
+    } else {
+      return str("path"); // raw 槽缺失/非字面量数组：保守
+    }
+    let out = "";
+    for (let i = 0; i < raws.length; i++) {
+      out += raws[i]!;
+      // 末尾 raw 片后不再拼接；超出 raw 片数的 sub 原生忽略
+      if (i + 1 >= raws.length) break;
+      if (i >= args.length - 1) continue;
+      const sub = args[i + 1]!;
+      if (isSymbolAbs(sub)) throw new NudoThrow(errorTypeAbs("TypeError"));
+      if (sub.term?.op !== "lit") {
+        if (mayCoerceThrowOperand(sub)) {
+          recordMayThrow({ kind: "TypeError", cause: "String.raw substitution ToString may throw (Symbol)" });
+        }
+        return str("path");
+      }
+      const sv = sub.term.value;
+      if (typeof sv === "symbol") throw new NudoThrow(errorTypeAbs("TypeError"));
+      out += String(sv);
+    }
+    return strLit(out);
+  }
   if (name === "fromCodePoint") {
     if (args.length === 0) return strLit(""); // fromCodePoint() → ""
     const codes: number[] = [];

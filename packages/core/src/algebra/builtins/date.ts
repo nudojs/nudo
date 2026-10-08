@@ -8,7 +8,7 @@
  * Bug 62：setter 实参逐个 ToNumber 校验；getter/toString 族值域建模。
  */
 import type { Abs } from "../abs.ts";
-import { abs, strLit } from "../abs.ts";
+import { abs, strLit, numLit } from "../abs.ts";
 import { numPrim, str, mayCoerceThrowOperand } from "./shared.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
@@ -95,10 +95,44 @@ export function evalDateCtor(args: Abs[]): Abs {
   );
 }
 
-export function evalDateStatic(name: string, _args: Abs[]): Abs | undefined {
+export function evalDateStatic(name: string, args: Abs[]): Abs | undefined {
   // Date.now() 非编译期常量：每次运行值都变，折叠成具体时间戳既不 sound 又
   // 让分析结果不确定（golden/memo 抖动）。返回 number（未知）。
   if (name === "now") return numPrim("path");
+  // Bug 7：parse/UTC——env 声明被硬编码派发表遮蔽，此前落 `?? unknown`。
+  // 值域恒可判定：parse 恒 number（无效输入 NaN 非抛）、UTC 恒 number；
+  // 全字面量实参按宿主折叠到精确时间戳。
+  if (name === "parse") {
+    // 首参 ToString：symbol 定抛；抽象 may（与 Number.parseInt 的口径一致）
+    const a0 = args[0];
+    if (a0 && isSymbolAbs(a0)) throw new NudoThrow(errorTypeAbs("TypeError"));
+    if (a0 && a0.term?.op !== "lit") {
+      if (mayCoerceThrowOperand(a0)) {
+        recordMayThrow({ kind: "TypeError", cause: "Date.parse argument ToString may throw (Symbol)" });
+      }
+      return numPrim("path");
+    }
+    const v = a0 ? (a0.term as { op: "lit"; value: unknown }).value : undefined;
+    return numLit(Date.parse(String(v)));
+  }
+  if (name === "UTC") {
+    // 各实参直接 ToNumber（与 Date 构造器多参形式同口径）：symbol/bigint
+    // （prim 无 lit 项或 bigint 字面量）定抛 TypeError；抽象 may。
+    // 全字面量 → 折叠精确时间戳；任一抽象 → numPrim("path")
+    let allLit = true;
+    for (const a of args) {
+      if (isToNumberThrowAbs(a)) throw new NudoThrow(errorTypeAbs("TypeError"));
+      if (a && a.term?.op !== "lit") {
+        noteToPrimitiveMayThrow(a, "Date.UTC argument ToNumber may throw (Symbol/BigInt)");
+        allLit = false;
+      }
+    }
+    if (allLit) {
+      const lits = args.map((a) => (a!.term as { op: "lit"; value: unknown }).value);
+      return numLit(Date.UTC(...(lits.map(Number) as [number, number, number, number, number, number, number])));
+    }
+    return numPrim("path");
+  }
   return undefined;
 }
 
@@ -110,6 +144,8 @@ const DATE_NUMBER_GETTERS = new Set([
   "getHours", "getUTCHours", "getMinutes", "getUTCMinutes",
   "getSeconds", "getUTCSeconds", "getMilliseconds", "getUTCMilliseconds",
   "getTimezoneOffset",
+  // Bug 39：Annex B 遗留 getter（= getFullYear() - 1900，原生未移除）→ number
+  "getYear",
 ]);
 
 /** toString 族 → string（toISOString 原生对 Invalid Date 抛 RangeError——
@@ -126,6 +162,8 @@ const DATE_SETTERS = new Set([
   "setSeconds", "setUTCSeconds", "setMinutes", "setUTCMinutes",
   "setHours", "setUTCHours", "setDate", "setUTCDate",
   "setMonth", "setUTCMonth", "setFullYear", "setUTCFullYear",
+  // Bug 39：Annex B 遗留 setter（返回新 time value）→ number
+  "setYear",
 ]);
 
 export function evalDateMethod(name: string, recv: Abs, args: Abs[]): Abs | undefined {

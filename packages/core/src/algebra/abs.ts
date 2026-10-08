@@ -62,7 +62,10 @@ export type Shape =
       ctor?: boolean;
     }
   | { k: "brand"; name: string; shape: Abs; ctor?: true; tv?: number }
-  | { k: "eff"; eff: "promise" | "generator"; inner: Abs }
+  // rejected（Bug 36）：promise 的拒绝通道——携带已知拒绝 reason。inner 为
+  // never 时表示确定拒绝（fulfilled 臂不可能）；inner 非 never 时两臂均可能
+  //（executor fork 一臂 resolve 一臂 reject）。generator 不使用该槽。
+  | { k: "eff"; eff: "promise" | "generator"; inner: Abs; rejected?: Abs }
   | { k: "sum"; members: Abs[] };
 
 export type Abs = {

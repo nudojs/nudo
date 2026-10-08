@@ -237,6 +237,9 @@ export const BUILTIN_BRAND_METHODS: Record<string, ReadonlySet<string>> = {
   RegExp: new Set(["test", "exec", "toString"]),
   Map: new Set(["get", "set", "has", "delete", "clear", "forEach", "keys", "values", "entries"]),
   Set: new Set(["has", "add", "delete", "clear", "forEach", "keys", "values", "entries"]),
+  // Bug 56：X.prototype.<method> 值读通道的表源（WeakMap/WeakSet 补齐）
+  WeakMap: new Set(["get", "has", "set", "delete"]),
+  WeakSet: new Set(["add", "has", "delete"]),
   Error: new Set(["toString"]),
   Promise: new Set(["then", "catch", "finally"]),
 };

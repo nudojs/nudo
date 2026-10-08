@@ -134,6 +134,16 @@ export function stringRegexMethod(recv: Abs, method: string, args: Abs[]): Abs |
   const flagsAbs = inner && inner.shape.k === "obj" ? inner.shape.slots["flags"]?.value : undefined;
   const patR = patAbs ? litValue(patAbs) : undefined;
   const pat = patR?.ok ? patR.value : undefined;
+  // Bug 38：字符串 pattern——原生 search/match 第一步 RegExpCreate(ToString(
+  // pattern))，与空 flags 的 RegExp 等价（"abc123".search("c") ≡ search(/c/)）。
+  // 一切非 symbol 字面量（string/number/bool/null/bigint/undefined）经
+  // ToString 折叠；matchAll 的字符串 pattern 恒无 g → 下方 !reBrand 分支
+  // 回落 callAbsMethod 的定抛臂。
+  const litTerm = re && re.term?.op === "lit" ? (re.term as { op: "lit"; value: unknown }) : undefined;
+  const strPat =
+    !reBrand && litTerm && typeof litTerm.value !== "symbol"
+      ? String(litTerm.value)
+      : undefined;
   const svR = litValue(recv);
   const sv = svR.ok && typeof svR.value === "string" ? svR.value : undefined;
   if (typeof sv !== "string") return undefined; // 非字符串字面量接收者：不接管
@@ -149,13 +159,13 @@ export function stringRegexMethod(recv: Abs, method: string, args: Abs[]): Abs |
   ) {
     recordMayThrow({ kind: "TypeError", cause: "match/search/matchAll pattern ToString may throw (Symbol)" });
   }
-  if (typeof pat !== "string") return undefined;
+  if (typeof pat !== "string" && strPat === undefined) return undefined;
   const flagsR = flagsAbs ? litValue(flagsAbs) : undefined;
   const flagsV = flagsR?.ok ? flagsR.value : undefined;
   const flags = typeof flagsV === "string" ? flagsV : "";
   let reReal: RegExp;
   try {
-    reReal = new RegExp(pat, flags);
+    reReal = new RegExp(typeof pat === "string" ? pat : strPat!, flags);
   } catch {
     return undefined;
   }

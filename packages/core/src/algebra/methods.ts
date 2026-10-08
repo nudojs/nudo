@@ -6,14 +6,15 @@
  */
 
 import type { Abs } from "./abs.ts";
-import { abs, litValue, numLit, strLit, boolLit, unknown } from "./abs.ts";
+import { abs, litValue, numLit, strLit, boolLit, unknown, str } from "./abs.ts";
 import { applyCallbackAbs, undefAbs, validateIndexArg } from "./hof.ts";
-import { joinAbs } from "./objects.ts";
+import { joinAbs, objOf } from "./objects.ts";
 import { NudoThrow } from "./nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "./may-throw.ts";
 import { pTrue } from "./pred.ts";
 import { defaultLeakBudget } from "./leak.ts";
 import { isSymbolAbs } from "./symbol-id.ts";
+import { regexParts } from "./exec/class-regex.ts";
 import {
   isTemplateLike,
   templatePartsOf,
@@ -144,6 +145,69 @@ function isRegExpBrandAbs(x: Abs | undefined): boolean {
   return !!x && x.shape.k === "brand" && (x.shape as { name?: string }).name === "RegExp";
 }
 
+/** Bug 2：match 的保守返回域——null | 匹配数组（global → string[]，
+ *  非 global → 捕获可为 undefined），与 execRegexBrand 抽象 subject 臂
+ *  （class-regex.ts）同款保守并。 */
+function matchResultDomain(): Abs {
+  const matchArr = abs(
+    { k: "arr", element: joinAbs(str(), undefAbs()) },
+    undefined,
+    undefined,
+    "path",
+  );
+  const nullAbs = abs({ k: "unknown" }, { op: "lit", value: null }, undefined, "exact");
+  return joinAbs(nullAbs, matchArr);
+}
+
+/**
+ * Bug 2：matchAll 的抽象接收者兜底臂（字面量双折由 stringRegexMethod 先行
+ * 接管）。RegExp brand + 字面量 flags：无 g → 定抛 TypeError；有 g →
+ * RegExpMatchIterator brand（元素不可枚举——不注侧表，spread/for-of 等
+ * 消费端保守展开；与 Bug 23 的迭代器协议面同族的最小面）。非 RegExp
+ * brand 实参经 RegExpCreate 恒无 g → prim/nullish/缺省/tuple/arr 定抛；
+ * obj/fn/any/unknown/sum（可自带 @@matchAll/flags）→ may + 迭代器。
+ */
+function matchAllAbstractArm(args: Abs[]): Abs {
+  const re = args[0];
+  const iter = abs(
+    { k: "brand", name: "RegExpMatchIterator", shape: objOf({}) },
+    undefined,
+    undefined,
+    "path",
+  );
+  if (re && isRegExpBrandAbs(re)) {
+    const parts = regexParts(re);
+    if (parts) {
+      // 字面量 source/flags：无 g 定抛（与字面量路径同口径）
+      if (!parts.flags.includes("g")) throw new NudoThrow(errorTypeAbs("TypeError"));
+      return iter;
+    }
+    // source/flags 抽象：可能带 g → may TypeError
+    recordMayThrow({
+      kind: "TypeError",
+      cause: "matchAll RegExp argument may lack the global flag",
+    });
+    return iter;
+  }
+  const definiteNonRegExp =
+    re === undefined ||
+    re.shape.k === "prim" ||
+    re.shape.k === "tuple" ||
+    re.shape.k === "arr" ||
+    (re.term?.op === "lit" && (re.term.value === null || re.term.value === undefined));
+  if (definiteNonRegExp) {
+    // RegExpCreate(ToString(pattern)) 恒无 g → 确定 TypeError（node 实测
+    // "ab".matchAll("a") / matchAll(1) / matchAll() 全抛）
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  // obj（可带 @@match）/fn/any/unknown/sum：可能为 g 正则形态 → may
+  recordMayThrow({
+    kind: "TypeError",
+    cause: "matchAll RegExp argument may lack the global flag",
+  });
+  return iter;
+}
+
 /**
  * String.prototype.split 的 limit → ToUint32。
  * NaN/±Infinity/±0 → 0；其余 truncate 向零后 mod 2^32。
@@ -196,8 +260,13 @@ export function callAbsMethod(
     case "split":
       // limit 走 ToUint32（ToNumber）——symbol/bigint 确定 TypeError（node 实测
       // 'a'.split('a', 1n) 抛）；separator 的 undefined 特判在折叠面（不 ToString）
+      // Bug 13：RegExp brand 分隔符走 GetMethod(@@split) 委托——从不
+      // ToString(separator)（原生仅无 @@split 回退路径才 ToString），
+      // 与下方 replace 的 isRegExpBrandAbs 豁免同款
       validateIndexArg(args[1], "limit");
-      if (!isUndefinedArg(args[0])) enforceToStringArg(args[0], "separator");
+      if (!isUndefinedArg(args[0]) && !isRegExpBrandAbs(args[0])) {
+        enforceToStringArg(args[0], "separator");
+      }
       break;
     case "replace":
     case "replaceAll": {
@@ -209,6 +278,35 @@ export function callAbsMethod(
       }
       break;
     }
+    case "search":
+    case "match":
+    case "matchAll": {
+      // Bug 2：pattern ToString 校验——stringRegexMethod 只对字面量接收者
+      // 先行校验（抽象接收者在其 sv 检查处提前 return）；抽象接收者路径
+      // 在此补：symbol 定抛；obj/fn/any 载体 may（RegExp/prim 合法）
+      if (isSymbolAbs(args[0])) throw new NudoThrow(errorTypeAbs("TypeError"));
+      const p = args[0];
+      if (
+        p &&
+        p.term?.op !== "lit" &&
+        p.shape.k !== "prim" &&
+        p.shape.k !== "brand"
+      ) {
+        recordMayThrow({
+          kind: "TypeError",
+          cause: "match/search/matchAll pattern ToString may throw (Symbol)",
+        });
+      }
+      break;
+    }
+    case "anchor":
+    case "link":
+    case "fontcolor":
+    case "fontsize":
+      // Bug 55：Annex B 带参方法（name/href/color/size）——实参 ToString：
+      // symbol 定抛；obj/fn/any 载体 may；prim/字面量 total
+      enforceToStringArg(args[0], `${name} argument`);
+      break;
     case "padStart":
     case "padEnd":
       validateIndexArg(args[0], "targetLength");
@@ -296,6 +394,23 @@ export function callAbsMethod(
       case "slice":
       case "trimStart":
       case "trimEnd":
+      // Bug 11：ES2017 别名（≡ trimStart/trimEnd，原生同一内置）
+      case "trimLeft":
+      case "trimRight":
+      // Bug 55：Annex B HTML 方法（模板接收者 → 纯拼接，total）
+      case "anchor":
+      case "big":
+      case "blink":
+      case "bold":
+      case "fixed":
+      case "fontcolor":
+      case "fontsize":
+      case "italics":
+      case "link":
+      case "small":
+      case "strike":
+      case "sub":
+      case "sup":
       case "toLocaleUpperCase":
       case "toLocaleLowerCase":
       case "substr":
@@ -303,6 +418,13 @@ export function callAbsMethod(
         return strPrim("path");
       case "localeCompare":
         return numPrim("path");
+      // Bug 2：模板/抽象接收者的正则族方法——值域与接收者具体性无关
+      case "search":
+        return numPrim("path");
+      case "match":
+        return matchResultDomain();
+      case "matchAll":
+        return matchAllAbstractArm(args);
       case "concat": {
         let acc = recv;
         for (const a of args) acc = concatString(acc, a);
@@ -339,6 +461,9 @@ export function callAbsMethod(
     case "trim":
     case "trimStart":
     case "trimEnd":
+    // Bug 11：ES2017 别名（≡ trimStart/trimEnd）——宿主全有，同臂折
+    case "trimLeft":
+    case "trimRight":
     case "toLocaleUpperCase":
     case "toLocaleLowerCase": {
       // Bug 72：此前未建模 → unknown。实参不参与（locale 实参原生忽略），
@@ -346,6 +471,27 @@ export function callAbsMethod(
       if (lit === undefined) return strPrim("path");
       const impl = String.prototype as unknown as Record<string, (...a: unknown[]) => string>;
       return strLit(impl[name]!.call(lit));
+    }
+    case "anchor":
+    case "big":
+    case "blink":
+    case "bold":
+    case "fixed":
+    case "fontcolor":
+    case "fontsize":
+    case "italics":
+    case "link":
+    case "small":
+    case "strike":
+    case "sub":
+    case "sup": {
+      // Bug 55：Annex B HTML 字符串方法——纯模板拼接（total，无副作用）。
+      // 字面量接收者 + 可 ToString 字面量实参（缺省 ≡ undefined →
+      // name="undefined"）→ 宿主真执行精确折标签串；任一抽象 → strPrim。
+      if (lit === undefined) return strPrim("path");
+      if (args[0] !== undefined && args[0].term?.op !== "lit") return strPrim("path");
+      const impl = String.prototype as unknown as Record<string, (...a: unknown[]) => string>;
+      return strLit(impl[name]!.call(lit, a0));
     }
     case "substr": {
       // Bug 72：Annex B 但宿主全有。start/length 走 ToIntegerOrInfinity
@@ -429,13 +575,25 @@ export function callAbsMethod(
     case "at": {
       // String.prototype.at：ToIntegerOrInfinity，支持负索引；OOB → undefined
       //（charAt 用 "" 表示 OOB，at 是 undefined——不得混用）
-      if (lit === undefined) return strPrim("path");
+      // Bug 50：抽象接收者 / 非折叠位置两臂补 undefAbs()——值域恒
+      // string | undefined（空串 / 越界均产 undefined），与 codePointAt 同款
+      if (lit === undefined) return joinAbs(strPrim("path"), undefAbs());
       const iv = toIntegerOrInfinityLit(args[0]);
-      if (iv === undefined) return strPrim("path");
+      if (iv === undefined) return joinAbs(strPrim("path"), undefAbs());
       const idx = iv < 0 ? lit.length + iv : iv;
       if (idx >= 0 && idx < lit.length) return strLit(lit[idx]!);
       return undefAbs();
     }
+    case "search":
+      // Bug 2：抽象接收者 / 抽象 pattern——search 恒返回 number（下标或
+      // -1）；字面量接收者 + 可折 pattern 已由 stringRegexMethod 先行接管
+      return numPrim("path");
+    case "match":
+      // Bug 2：null | 匹配数组（与模板段/execRegexBrand 抽象臂同域）
+      return matchResultDomain();
+    case "matchAll":
+      // Bug 2：迭代器（字面量双折由 stringRegexMethod 先行接管）
+      return matchAllAbstractArm(args);
     case "toString":
     case "valueOf":
       return lit !== undefined ? strLit(lit) : strPrim("path");

@@ -68,7 +68,8 @@ describe("env-shadow ↔ namespaceNameOf 名单 parity", () => {
       ).toBe(name);
     }
     // 非表内宿主对象（刻意未路由，见 intrinsics.ts 注释）不误命中
-    expect(namespaceNameOf(RegExp)).toBeUndefined();
+    //（RegExp 自 Bug 56 起入路由表——负控制换 ArrayBuffer）
+    expect(namespaceNameOf(ArrayBuffer)).toBeUndefined();
     expect(namespaceNameOf(console)).toBeUndefined();
     expect(namespaceNameOf({})).toBeUndefined();
     expect(namespaceNameOf(42)).toBeUndefined();

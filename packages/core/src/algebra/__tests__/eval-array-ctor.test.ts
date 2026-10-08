@@ -60,6 +60,41 @@ describe("evaluator Array constructor folding", () => {
     const r = call(`export function f(x) { return new Array(x); }`);
     expect(tupleEls(r.result)).toBeUndefined();
   });
+
+  it("Bug 53: abstract number-prim length → 元素域可判定 undefined（不再 unknown[]）", () => {
+    // 单 number prim 实参恒走 length 路径（ToArrayLength；越界已记
+    // may RangeError）→ 稀疏数组，元素全 hole → 读恒 undefined
+    const exports = runTranspiled(`export function f(n) { return new Array(n); }`, { mode: "analyze" });
+    const numAbs = { shape: { k: "prim", type: "number" }, conf: "path" } as never;
+    const r = callTranspiledExportFull(exports, "f", [numAbs]) as { result: unknown };
+    const a = r.result as { shape?: { k?: string; element?: { shape?: { k?: string }; term?: { op?: string; value?: unknown } } } };
+    expect(a.shape?.k).toBe("arr");
+    const el = a.shape?.element;
+    expect(el?.shape?.k).toBe("unknown");
+    expect(el?.term?.op).toBe("lit");
+    expect(el?.term?.value).toBe(undefined);
+    // 级联下标读 → undefined（不再 unknown 污染）
+    const idxExports = runTranspiled(`export function g(n) { return new Array(n)[0]; }`, { mode: "analyze" });
+    const rIdx = callTranspiledExportFull(idxExports, "g", [numAbs]) as { result: unknown };
+    const iLit = litValue(rIdx.result as never);
+    expect(iLit).toEqual({ ok: true, value: undefined });
+    // .length 面：number（不回归）
+    const lenExports = runTranspiled(`export function h(n) { return new Array(n).length; }`, { mode: "analyze" });
+    const rLen = callTranspiledExportFull(lenExports, "h", [numAbs]) as { result: unknown };
+    expect((rLen.result as { shape?: { k?: string; type?: string } }).shape).toMatchObject({
+      k: "prim",
+      type: "number",
+    });
+  });
+
+  it("Bug 53: any 实参保持 unknown[]（字符串 → 单元素数组，真不可判定）", () => {
+    const exports = runTranspiled(`export function f(x) { return new Array(x); }`, { mode: "analyze" });
+    const anyAbs = { shape: { k: "any" }, conf: "path" } as never;
+    const r = callTranspiledExportFull(exports, "f", [anyAbs]) as { result: unknown };
+    const a = r.result as { shape?: { k?: string; element?: { shape?: { k?: string } } } };
+    expect(a.shape?.k).toBe("arr");
+    expect(a.shape?.element?.shape?.k).toBe("unknown");
+  });
 });
 
 describe("evaluator Array constructor invalid length throws RangeError", () => {

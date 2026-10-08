@@ -854,7 +854,10 @@ function callTranspiledExportFullInner(
         const r = opts?.phi ? withExecPhi(opts.phi, invoke) : invoke();
         // 微任务（then/catch 回调）在同步返回值算完后才跑
         drainPromiseMicros();
-        if (!isAbsVal(r)) return joinControlExits(unknown);
+        // Bug 26：宿主裸值（裸全局标识符 return parseInt 等）先经 asAbsVal
+        // 收成 Abs（与上方 D1 入参同口径）——宿主函数折一等 fn Abs，裸
+        // 原始值折字面量，不再弃成 unknown
+        if (!isAbsVal(r)) return joinControlExits(asAbsVal(r));
         // 抽象分支 early-return / throw 记入 exits，与正常出口 join
         return joinControlExits(r);
       } catch (e) {

@@ -13,29 +13,72 @@ import { isSymbolAbs } from "../symbol-id.ts";
 
 export function evalRegExpCtor(args: Abs[]): Abs {
   // 字面量实参真构造验证（非法 pattern/flags 硬抛）；抽象/RegExp 实例保守
-  return tryMakeRegexAbs(args) ?? pathRegExpBrand();
+  // Bug 58：抽象 pattern 也带全槽（source/flags/lastIndex + 7 标志 getter），
+  // 字面量 flags 实参（已由 tryMakeRegexAbs 校验）保留精确折叠
+  return tryMakeRegexAbs(args) ?? pathRegExpBrand(literalFlagsOf(args[1]));
 }
 
-function pathRegExpBrand(): Abs {
+/** 字面量 flags 实参的规范形式（合法性已由 tryMakeRegexAbs 先行校验/抛出；
+ *  抽象/缺省 → undefined）。宿主构造一次取规范序（"ig" → "gi"）。 */
+function literalFlagsOf(fAbs: Abs | undefined): string | undefined {
+  if (!fAbs || fAbs.term?.op !== "lit") return undefined;
+  const vR = litValue(fAbs);
+  const v = vR.ok ? vR.value : undefined;
+  const s = v === undefined ? "" : String(v);
+  try {
+    return new RegExp("", s).flags;
+  } catch {
+    return s;
+  }
+}
+
+/** 7 个标志 getter 槽（Bug 28）：由 flags 字符串折 boolean（原生 getter 同款） */
+const REGEX_FLAG_SLOTS: ReadonlyArray<readonly [string, string]> = [
+  ["global", "g"],
+  ["ignoreCase", "i"],
+  ["multiline", "m"],
+  ["unicode", "u"],
+  ["dotAll", "s"],
+  ["sticky", "y"],
+  ["hasIndices", "d"],
+];
+
+/**
+ * RegExp brand 单一声明式槽构造（Bug 58 根治：字面量/抽象两路径共用）。
+ * source：字面量 pattern → strLit；抽象 pattern → string 域（ToString 文本
+ * 恒为字符串）。flags：字面量 flags → strLit（规范序）；抽象 → string 域。
+ * lastIndex 恒 0（构造时）。7 标志 getter（Bug 28）：字面量 flags → 精确
+ * boolean；抽象 → boolean 域。
+ */
+function regexpBrandSlots(source: Abs, litFlags: string | undefined): Record<string, { value: Abs }> {
+  const slots: Record<string, { value: Abs }> = {
+    source: { value: source },
+    flags: { value: litFlags !== undefined ? strLit(litFlags) : str() },
+    lastIndex: { value: numLit(0) },
+  };
+  for (const [name, ch] of REGEX_FLAG_SLOTS) {
+    slots[name] = { value: litFlags !== undefined ? boolLit(litFlags.includes(ch)) : boolPrim() };
+  }
+  return slots;
+}
+
+function pathRegExpBrand(litFlags?: string): Abs {
   return abs(
-    { k: "brand", name: "RegExp", shape: abs({ k: "obj", slots: {} }, undefined, undefined, "exact") },
+    { k: "brand", name: "RegExp", shape: objOf(regexpBrandSlots(str(), litFlags)) },
     undefined,
     undefined,
     "path",
   );
 }
 
-/** RegExp brand：source/flags/lastIndex 进 slots（evaluator evalRegExpCtor / $regex 共用） */
+/** RegExp brand：source/flags/lastIndex + 7 标志 getter 进 slots
+ *  （evaluator evalRegExpCtor / $regex 共用；槽构造收敛于 regexpBrandSlots） */
 export function regexBrandAbsFrom(pattern: string, flags: string): Abs {
   return abs(
     {
       k: "brand",
       name: "RegExp",
-      shape: objOf({
-        source: { value: strLit(pattern) },
-        flags: { value: strLit(flags) },
-        lastIndex: { value: numLit(0) },
-      }),
+      shape: objOf(regexpBrandSlots(strLit(pattern), flags)),
     },
     undefined,
     undefined,

@@ -9,11 +9,15 @@
  * - Promise.resolve / new Promise 结果一致处对齐
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
+import { runTranspiled, callTranspiledExportFull, litValue, formatAbs } from "@nudojs/core";
 
 function call(src: string, fnName = "f") {
   const exports = runTranspiled(src, { mode: "analyze" });
   return callTranspiledExportFull(exports, fnName, []);
+}
+
+function fmt(a: unknown): string {
+  return formatAbs(a as never)?.replace(/\s+#[a-z]+$/, "") ?? "";
 }
 
 type Eff = { shape?: { k?: string; eff?: string; inner?: unknown } };
@@ -97,12 +101,12 @@ describe("new Promise executor resolve", () => {
 });
 
 describe("new Promise reject / never settle", () => {
-  it("only reject keeps honest unknown inner", () => {
+  it("only reject settles → definite rejection（Bug 36：resolved 域 never + reason 通道）", () => {
     const r = call(
       `export function f() { return new Promise((r, j) => { j(new Error("x")); }); }`,
     );
-    const inner = promiseInner(r.result);
-    expect(isUnknownInner(inner)).toBe(true);
+    // 原生 <rejected> Error("x")——fulfilled 臂不可能（inner never）
+    expect(fmt(r.result)).toBe("promise<never>");
   });
 
   it("empty executor (never settle) stays promise<unknown>", () => {
@@ -121,12 +125,16 @@ describe("new Promise reject / never settle", () => {
     expect(isUnknownInner(inner)).toBe(true);
   });
 
-  it("reject then resolve: first settle wins (reject) → unknown", () => {
+  it("reject then resolve: first settle wins（Bug 36：rejected 1 通道透传）", () => {
     const r = call(
       `export function f() { return new Promise((r, j) => { j(1); r(2); }); }`,
     );
-    const inner = promiseInner(r.result);
-    expect(isUnknownInner(inner)).toBe(true);
+    // 原生 <rejected> 1——后续 resolve 是 no-op（first-wins）
+    expect(fmt(r.result)).toBe("promise<never>");
+    const recovered = call(
+      `export function f() { return new Promise((r, j) => { j(1); r(2); }).catch((e) => e); }`,
+    );
+    expect(fmt(recovered.result)).toBe("promise<1>");
   });
 });
 

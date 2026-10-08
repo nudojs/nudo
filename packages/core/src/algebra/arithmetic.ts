@@ -32,16 +32,18 @@ import {
   num,
   numLit,
   str,
+  strLit,
   bool,
   boolLit,
   never,
 } from "./abs.ts";
 import { concatString, isTemplateLike } from "./template.ts";
-import { makeSum, absShapeKey } from "./objects.ts";
+import { makeSum, absShapeKey, getSlot } from "./objects.ts";
 import { noteDerivationAdd } from "./derivation.ts";
 import { isSymbolAbs as isSym } from "./symbol-id.ts";
 import { NudoThrow } from "./nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "./may-throw.ts";
+import { boxedPrimitiveValue, isErrorCtorName } from "./builtins/error.ts";
 
 /**
  * 二元算子对 sum 操作数的分发（add/sub/mul/div/mod 同口径）：
@@ -92,7 +94,74 @@ function distributeSumBinOp(
  *      bigint/symbol 边角不在默认并集里，由调用点实例化再收窄）
  *    无契约的 score(x){return x+1}：score("x") 合法，不得钉成 number。
  */
+/**
+ * Bug 25：内建 brand 的 ToPrimitive 强转（算术算子前置）。引擎已知的内建
+ * brand（Date/RegExp/Map/Set/WeakMap/WeakSet/Error 家族/URL/ArrayBuffer/
+ * SharedArrayBuffer/DataView/装箱）原型方法表固定——valueOf/toString 恒
+ * total 且永不产 Symbol/bigint；用户 brand / Proxy / 未知名不折（返回
+ * undefined，调用方保持既有保守 may-throw 臂）。
+ * - hint "number"（- * / % ** 一元- < > Number()）：Date → valueOf →
+ *   time value（tv 槽精确 / number 域）；装箱 → [[PrimitiveValue]]；
+ *   其余 → toString → string 面（ToNumber(string) 由数值算子既有折叠接管，
+ *   "/a/" → NaN、numeric string → 精确值）
+ * - hint "default"（+）：Date 的 @@toPrimitive 把 default 视作 string
+ *   （ES 特判：`date + 1` 恒 string）→ string 域（宿主本地化串不折字面量，
+ *   保分析确定性）；其余与 number hint 同面（toString → string）
+ */
+export function builtinBrandToPrimitive(
+  a: Abs,
+  hint: "number" | "default",
+): Abs | undefined {
+  if (a.shape.k !== "brand") return undefined;
+  const name = a.shape.name;
+  // 装箱 brand（new Number(5) / new String("ab") / new Boolean(true)）：
+  // valueOf → [[PrimitiveValue]]（T2 槽，prim 直取）
+  const boxed = boxedPrimitiveValue(a);
+  if (boxed !== undefined) return boxed;
+  if (name === "Date") {
+    if (hint === "number") {
+      const tv = (a.shape as { tv?: number }).tv;
+      return tv !== undefined ? numLit(tv) : num();
+    }
+    return str(); // default hint → toString（本地化串，域 string）
+  }
+  if (name === "RegExp") {
+    // toString ≡ `/${source}/${flags}`（槽可精确则精确折叠）
+    const inner = a.shape.shape;
+    if (inner && inner.shape.k === "obj") {
+      const src = getSlot((inner.shape as { slots: Record<string, { value: Abs }> }).slots, "source")?.value;
+      const flg = getSlot((inner.shape as { slots: Record<string, { value: Abs }> }).slots, "flags")?.value;
+      const sR = src ? litValue(src) : undefined;
+      const fR = flg ? litValue(flg) : undefined;
+      if (sR?.ok && typeof sR.value === "string" && fR?.ok && typeof fR.value === "string") {
+        return strLit(`/${sR.value}/${fR.value}`);
+      }
+    }
+    return str();
+  }
+  if (
+    name === "URL" ||
+    name === "Map" ||
+    name === "Set" ||
+    name === "WeakMap" ||
+    name === "WeakSet" ||
+    name === "ArrayBuffer" ||
+    name === "SharedArrayBuffer" ||
+    name === "DataView" ||
+    isErrorCtorName(name)
+  ) {
+    return str(); // toString 域 string（组件槽不折——Map 条目/URL 查询序不确定面）
+  }
+  return undefined;
+}
+
 export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
+  // Bug 25：内建 brand 操作数先经 ToPrimitive 强转（引擎已知 total——原型
+  // 方法表固定，无用户 valueOf/@@toPrimitive 面）；折成 prim 后走既有
+  // 数值/拼接臂，假 unknown / 错误 number|string 并集 / 假 may-throw 全消
+  const fa = builtinBrandToPrimitive(a, "default");
+  const fb = builtinBrandToPrimitive(b, "default");
+  if (fa || fb) return add(fa ?? a, fb ?? b, phi);
   // Symbol 参与 + / 模板：隐式 ToString 原生 TypeError（String(sym) 走 evalGlobalFn 不抛）
   if (isSym(a) || isSym(b)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
@@ -624,6 +693,13 @@ function collectBoundsFromPhi(phi: Phi, id: string, acc: NumBounds): void {
 
 /** 减法：a - b = a + (-b)，数值上做单调性 */
 export function sub(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
+  // Bug 25：内建 brand ToPrimitive（hint number：Date → time value、
+  // 装箱 → prim、其余 → string 面）——折 prim 后走既有数值臂
+  {
+    const fa = builtinBrandToPrimitive(a, "number");
+    const fb = builtinBrandToPrimitive(b, "number");
+    if (fa || fb) return sub(fa ?? a, fb ?? b, phi);
+  }
   // Symbol 参与算术/位运算：ToNumber/ToNumeric 原生 TypeError（与 add 同口径）
   if (isSym(a) || isSym(b)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
@@ -670,6 +746,12 @@ export function sub(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   if (isNumericLike(a) && isNumericLike(b)) {
     return abs({ k: "prim", type: "number" }, undefined, undefined, "partial");
   }
+  // Bug 25：抽象 string prim ⊗ 数值面（内建 brand ToPrimitive → toString 折
+  // string 域后落此；`new Map() - 1` → ToNumber(string) → number）——恒
+  // total（string prim 不可能是 Symbol/bigint）
+  if (isStrPrim(a) || isStrPrim(b)) {
+    return abs({ k: "prim", type: "number" }, undefined, undefined, "partial");
+  }
   // any：JS ToNumber → number（可能 NaN）
   if (isAnyLike(a) || isAnyLike(b)) {
     return toNumberResult(a, b, "-");
@@ -684,6 +766,12 @@ export function sub(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
 
 /** 乘法：字面量直接求值；×正数同向缩放；×负数翻转不等式；×0 归零 */
 export function mul(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
+  // Bug 25：内建 brand ToPrimitive（hint number）——见 sub 同款注释
+  {
+    const fa = builtinBrandToPrimitive(a, "number");
+    const fb = builtinBrandToPrimitive(b, "number");
+    if (fa || fb) return mul(fa ?? a, fb ?? b, phi);
+  }
   // Symbol 参与算术/位运算：ToNumber/ToNumeric 原生 TypeError（与 add 同口径）
   if (isSym(a) || isSym(b)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
@@ -755,6 +843,12 @@ export function mul(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   if (isNumericLike(a) && isNumericLike(b)) {
     return abs({ k: "prim", type: "number" }, undefined, undefined, "partial");
   }
+  // Bug 25：抽象 string prim ⊗ 数值面（内建 brand ToPrimitive → toString 折
+  // string 域后落此；ToNumber(string) → number）——恒 total（string prim
+  // 不可能是 Symbol/bigint）
+  if (isStrPrim(a) || isStrPrim(b)) {
+    return abs({ k: "prim", type: "number" }, undefined, undefined, "partial");
+  }
   if (isAnyLike(a) || isAnyLike(b)) {
     return toNumberResult(a, b, "*");
   }
@@ -771,6 +865,12 @@ export function mul(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
  * 除以 0：JS 语义为 ±Infinity / NaN，shape 仍 number（不报违例）。
  */
 export function div(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
+  // Bug 25：内建 brand ToPrimitive（hint number）——见 sub 同款注释
+  {
+    const fa = builtinBrandToPrimitive(a, "number");
+    const fb = builtinBrandToPrimitive(b, "number");
+    if (fa || fb) return div(fa ?? a, fb ?? b, phi);
+  }
   // Symbol 参与算术/位运算：ToNumber/ToNumeric 原生 TypeError（与 add 同口径）
   if (isSym(a) || isSym(b)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
@@ -833,6 +933,12 @@ export function div(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   if (isNumericLike(a) && isNumericLike(b)) {
     return abs(num().shape, undefined, undefined, "partial");
   }
+  // Bug 25：抽象 string prim ⊗ 数值面（内建 brand ToPrimitive → toString 折
+  // string 域后落此；ToNumber(string) → number）——恒 total（string prim
+  // 不可能是 Symbol/bigint）
+  if (isStrPrim(a) || isStrPrim(b)) {
+    return abs({ k: "prim", type: "number" }, undefined, undefined, "partial");
+  }
   if (isAnyLike(a) || isAnyLike(b)) {
     return toNumberResult(a, b, "/");
   }
@@ -850,6 +956,12 @@ export function div(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
  * `n % 0` / `x % 0` / `x % NaN` 恒为 NaN（JS）。
  */
 export function mod(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
+  // Bug 25：内建 brand ToPrimitive（hint number）——见 sub 同款注释
+  {
+    const fa = builtinBrandToPrimitive(a, "number");
+    const fb = builtinBrandToPrimitive(b, "number");
+    if (fa || fb) return mod(fa ?? a, fb ?? b, phi);
+  }
   // Symbol 参与算术/位运算：ToNumber/ToNumeric 原生 TypeError（与 add 同口径）
   if (isSym(a) || isSym(b)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
@@ -902,6 +1014,12 @@ export function mod(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   if (isNumericLike(a) && isNumericLike(b)) {
     return abs(num().shape, undefined, undefined, "partial");
   }
+  // Bug 25：抽象 string prim ⊗ 数值面（内建 brand ToPrimitive → toString 折
+  // string 域后落此；ToNumber(string) → number）——恒 total（string prim
+  // 不可能是 Symbol/bigint）
+  if (isStrPrim(a) || isStrPrim(b)) {
+    return abs({ k: "prim", type: "number" }, undefined, undefined, "partial");
+  }
   if (isAnyLike(a) || isAnyLike(b)) {
     return toNumberResult(a, b, "%");
   }
@@ -920,6 +1038,13 @@ export function cmp(
   b: Abs,
   phi: Phi = pTrue,
 ): Abs {
+  // Bug 25：内建 brand ToPrimitive（hint number：关系比较先 valueOf——
+  // `new Date(0) < new Date(1)` → time value 比较，total）
+  {
+    const fa = builtinBrandToPrimitive(a, "number");
+    const fb = builtinBrandToPrimitive(b, "number");
+    if (fa || fb) return cmp(op, fa ?? a, fb ?? b, phi);
+  }
   // Symbol 参与关系比较：ToNumber/ToNumeric 原生 TypeError（与 add 同口径）。
   // eq/ne 不走此守卫：Symbol() === Symbol() 合法，由 strictEqAbs/looseEqAbs 分流。
   if (op !== "eq" && op !== "ne" && (isSym(a) || isSym(b))) {

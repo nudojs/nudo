@@ -2,7 +2,7 @@
  * JSON.parse / JSON.stringify
  */
 import type { Abs } from "../abs.ts";
-import { abs, numLit, strLit, boolLit, unknown } from "../abs.ts";
+import { abs, numLit, strLit, boolLit, unknown, litValue } from "../abs.ts";
 import { getSlot, setSlot } from "../objects.ts";
 import { undefAbs } from "../hof.ts";
 import { getFnImpl } from "../abs-fn.ts";
@@ -12,10 +12,120 @@ import { isSymbolAbs } from "../symbol-id.ts";
 import { pTrue } from "../pred.ts";
 import { str, isBigintPrimAbs, mayCoerceThrowOperand } from "./shared.ts";
 import { getPropFlags } from "./invariants.ts";
+import { readProperty } from "./object.ts";
+import { accessorTable } from "../exec/runtime/members.ts";
 
 const NOT_LITERAL = Symbol("nudo:not-literal");
 /** value 模式下 fn/symbol 子树：JSON 值域省略（obj 槽跳过 / 数组槽 null） */
 const OMIT = Symbol("nudo:json-omit");
+
+/**
+ * Bug 17：闭内建 brand 白名单——toJSON/ToPrimitive 原型面引擎已知（固定
+ * 表、无用户 valueOf/@@toPrimitive）、无枚举自有属性、非循环 → 原生
+ * JSON.stringify 恒 total。Proxy/用户 brand 不豁免（handler 用户面）。
+ * 装箱 Number/String/Boolean 不在此列（经 [[PrimitiveValue]] 折 prim 后
+ * 走通用通道，亦可 total）。
+ */
+const JSON_TOTAL_BRANDS = new Set([
+  "RegExp",
+  "Map",
+  "Set",
+  "WeakMap",
+  "WeakSet",
+  "ArrayBuffer",
+  "SharedArrayBuffer",
+  "DataView",
+]);
+const JSON_TOTAL_ERROR_BRANDS = new Set([
+  "Error",
+  "TypeError",
+  "RangeError",
+  "EvalError",
+  "ReferenceError",
+  "SyntaxError",
+  "URIError",
+  "AggregateError",
+]);
+
+/**
+ * Bug 17：闭内建 brand 的精确折叠。原生值：
+ * - RegExp/Map/Set/WeakMap/WeakSet/ArrayBuffer 族/DataView/Error 族 →
+ *   "{}"（零可枚举自有属性、无 toJSON）
+ * - URL → '"' + href + '"'（URL.prototype.toJSON ≡ href，槽已携带）
+ * - Date → toJSON ≡ toISOString（tv 槽精确折叠；Invalid → "null"）
+ * 无折叠（用户 brand/未知名）→ undefined（调用方保持 may-throw 记账）。
+ */
+function foldJsonTotalBrand(a: Abs): Abs | undefined {
+  if (a.shape.k !== "brand") return undefined;
+  const name = (a.shape as { name: string }).name;
+  const inner = (a.shape as { shape: Abs }).shape;
+  // 用户在 brand 上挂过 toJSON 槽（$set 写入内层）→ 用户面，不折
+  if (
+    inner &&
+    inner.shape.k === "obj" &&
+    getSlot((inner.shape as { slots: Record<string, { value: Abs }> }).slots, "toJSON")
+  ) {
+    return undefined;
+  }
+  if (name === "URL") {
+    const href =
+      inner && inner.shape.k === "obj"
+        ? getSlot((inner.shape as { slots: Record<string, { value: Abs }> }).slots, "href")?.value
+        : undefined;
+    const hv = href ? litValue(href) : undefined;
+    if (hv?.ok && typeof hv.value === "string") return strLit(JSON.stringify(hv.value));
+    return str("path"); // 抽象输入：href 域 string，恒 total
+  }
+  if (name === "Date") {
+    const tv = (a.shape as { tv?: number }).tv;
+    if (tv !== undefined) {
+      // toJSON ≡ toISOString；Invalid Date（NaN）→ null
+      return Number.isNaN(tv) ? strLit("null") : strLit(JSON.stringify(new Date(tv).toISOString()));
+    }
+    return str("path"); // 无 epoch 槽：ISO 串域，恒 total
+  }
+  if (JSON_TOTAL_BRANDS.has(name) || JSON_TOTAL_ERROR_BRANDS.has(name)) {
+    return strLit("{}");
+  }
+  return undefined;
+}
+
+/**
+ * Bug 20：NOT_LITERAL 臂形状准入——三由头（BigInt 成员 / 循环引用 /
+ * 抛错 toJSON）对给定 shape 是否**均不可能**。与 absToJsonNative 的树
+ * 结构对齐：fn/symbol 子树已折 OMIT（值域省略、不抛）→ 视为 total；
+ * bigint prim 无 lit 项已在 absToJsonNative 定抛（不达此判定）；
+ * 其余抽象 prim（number/string/boolean）、闭 obj 全 total 槽、arr
+ * non-bigint 元素 → total。open obj/index 键、rest tuple、访问器
+ * （getter 用户面）、非 lit toJSON 槽 → 不 total。
+ */
+function jsonStringifyTotal(a: Abs): boolean {
+  const s = a.shape;
+  if (a.term?.op === "lit") return true;
+  if (s.k === "fn") return true; // OMIT（值域省略，不抛）
+  if (s.k === "prim") {
+    const t = (s as { type?: string }).type;
+    return t !== "bigint" && t !== "symbol"; // symbol → OMIT；bigint 已定抛
+  }
+  if (s.k === "tuple") {
+    if ((s as { rest?: Abs }).rest) return false;
+    return s.elements.every(jsonStringifyTotal);
+  }
+  if (s.k === "arr") return jsonStringifyTotal((s as { element: Abs }).element);
+  if (s.k === "obj") {
+    const os = s as { open?: boolean; index?: unknown; slots: Record<string, { value: Abs }> };
+    if (os.open || os.index) return false;
+    if (accessorTable.get(a as object)) return false; // getter 用户面（Bug 57 同源）
+    const flags = getPropFlags(a);
+    for (const [k, sv] of Object.entries(os.slots)) {
+      if (flags?.get(k)?.enumerable === false) continue;
+      if (k === "toJSON" && sv.value.term?.op !== "lit") return false;
+      if (!jsonStringifyTotal(sv.value)) return false;
+    }
+    return true;
+  }
+  return false;
+}
 
 /**
  * Abs 字面量树 → JS 值（JSON.stringify 折叠输入）；非字面量子树不提取。
@@ -77,7 +187,10 @@ function absToJsonNative(
         const ts = sv.value;
         if (ts.term?.op !== "lit") return NOT_LITERAL;
       }
-      const v = absToJsonNative(sv.value, seen, valueMode);
+      // Bug 57：[[Get]] 语义——访问器属性经 accessorTable getter 求值
+      //（此前直接序列化占位数据槽 → 字面量 getter 键整个丢失、defineProperty
+      // getter 占位 unknown → 假 may-throw）
+      const v = absToJsonNative(readProperty(a, k), seen, valueMode);
       if (v === NOT_LITERAL) return NOT_LITERAL;
       if (v !== OMIT) out[k] = v;
     }
@@ -185,6 +298,14 @@ export function evalJsonMethod(name: string, args: Abs[]): Abs | undefined {
       // 效果，partial 值域不变；symbol/fn 载体成员原生**省略不抛**
       //（node 实测 stringify({a:Symbol()}) → "{}"），已折 OMIT 不在此臂
       if (v === NOT_LITERAL) {
+        // Bug 17：闭内建 brand（toJSON/ToPrimitive 全定、零枚举自有属性、
+        // 非循环）→ 恒 total，可精确折叠（RegExp/Map/Set/Error 族 → "{}"、
+        // URL → href、Date → ISO 串）
+        const folded = foldJsonTotalBrand(a0Abs);
+        if (folded) return folded;
+        // Bug 20：闭 obj 全 prim 槽 / arr non-bigint 元素——三由头均不可能
+        // → 不记 may-throw（值域仍 partial，不伪装精确）
+        if (jsonStringifyTotal(a0Abs)) return str("partial");
         recordMayThrow({
           kind: "TypeError",
           cause: "JSON.stringify receiver may carry BigInt / circular / throwing toJSON",

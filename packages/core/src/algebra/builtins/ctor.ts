@@ -3,7 +3,7 @@
  */
 import type { Abs } from "../abs.ts";
 import { abs, strLit, unknown } from "../abs.ts";
-import { objOf, isNullProtoObj } from "../objects.ts";
+import { objOf, isNullProtoObj, getProtoAbs } from "../objects.ts";
 import { markClassValue } from "../class-mark.ts";
 import { pTrue } from "../pred.ts";
 import { str } from "./shared.ts";
@@ -162,6 +162,13 @@ export function protoOfRecv(a: Abs): Abs {
   }
   if (s.k === "obj") {
     if (isNullProtoObj(a)) return nullProtoLit;
+    // Bug 41：open obj（Object.create(<obj>) / setProtoAbs 产物）原型不保证
+    // 是 Object.prototype——不得折共享单例（gPo(create({x:1})) ===
+    // gPo(create({x:1})) 会假折 true，differential 语料钉 native=false）。
+    // setProtoAbs 记录过的 protoTable 优先；未记录 → 保守 unknown。
+    if ((s as { open?: boolean }).open) {
+      return getProtoAbs(a) ?? unknown;
+    }
     return objectProtoBrand();
   }
   return unknown;

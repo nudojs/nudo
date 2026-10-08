@@ -780,6 +780,7 @@ type ApplyCallbackHost = (
   env: unknown,
   phi: unknown,
   budget: unknown,
+  thisVal?: Abs,
 ) => Abs;
 
 let applyCallbackHost: ApplyCallbackHost | undefined;
@@ -795,6 +796,19 @@ export function setApplyCallbackHost(fn: ApplyCallbackHost): void {
 }
 
 /**
+ * Bug 26：宿主全局函数回调桥（exec/calls.ts 的 callHostGlobalFn——模块
+ * 加载时注册）。applyCallbackValue 的宿主函数分支此前把 Abs 实参直接喂
+ * 宿主函数（parseInt(absObj) → NaN 裸值被弃成 unknown）；命中宿主全局
+ * 身份时改走被调用位同款桥（evalGlobalFn / 字面量守卫执行）。
+ * 注册方（calls.ts）单向依赖本模块，避免 hof → exec 循环。
+ */
+let hostGlobalCallBridge: ((fn: unknown, args: Abs[]) => Abs | undefined) | undefined;
+
+export function setHostGlobalCallBridge(bridge: (fn: unknown, args: Abs[]) => Abs | undefined): void {
+  hostGlobalCallBridge = bridge;
+}
+
+/**
  * 通用回调实参调用（exec/class invokeArrMethod 与 builtins Array.from 共用）：
  * 原始 JS 函数直调（展开实参）；Abs fn 走 applyCallbackAbs（sum 分发/宿主）。
  * 求值引擎 transpile 的箭头回调是 $fnVal Abs——$fnVal.apply 自带调用边界。
@@ -805,14 +819,20 @@ export function applyCallbackValue(
   env: unknown,
   phi: unknown,
   budget: unknown,
+  thisVal?: Abs,
 ): Abs {
   if (typeof fn === "function") {
-    const r = (fn as (...a: Abs[]) => unknown)(...args);
+    // Bug 26：宿主全局函数值回调（[1,2].map(Number) / map(parseInt)）——
+    // 经桥按被调用位语义分派；非宿主全局（转译函数）保持直调
+    const bridged = hostGlobalCallBridge?.(fn, args);
+    if (bridged !== undefined) return bridged;
+    // thisVal（HOF thisArg，Bug 21）经宿主调用位注入（undefined ≡ 现状）
+    const r = Reflect.apply(fn as (...a: Abs[]) => unknown, thisVal as never, args);
     if (r && typeof r === "object" && "shape" in (r as object)) return r as Abs;
     return unknown;
   }
   const absFn = asAbs(fn);
-  if (absFn) return applyCallbackAbs(absFn, args, env, phi, budget);
+  if (absFn) return applyCallbackAbs(absFn, args, env, phi, budget, thisVal);
   return unknown;
 }
 
@@ -822,6 +842,7 @@ export function applyCallbackAbs(
   env: unknown,
   phi: unknown,
   budget: unknown,
+  thisVal?: Abs,
 ): Abs {
   // sum 实参按成员分发再 join（joinAbs 字面量枚举后 map/filter 元素常为 sum）
   const sumIdx = args.findIndex(
@@ -832,7 +853,7 @@ export function applyCallbackAbs(
     let acc: Abs | undefined;
     for (const m of members) {
       const nextArgs = args.map((a, i) => (i === sumIdx ? m : a));
-      const r = applyCallbackAbs(cb, nextArgs, env, phi, budget);
+      const r = applyCallbackAbs(cb, nextArgs, env, phi, budget, thisVal);
       acc = acc === undefined ? r : joinAbs(acc, r);
     }
     return acc ?? unknown;
@@ -847,7 +868,7 @@ export function applyCallbackAbs(
     }
     return unknown;
   }
-  return applyCallbackHost(cb, args, env, phi, budget);
+  return applyCallbackHost(cb, args, env, phi, budget, thisVal);
 }
 
 // --- 共享结果投影（exec/class 与 hof 共用，禁止各写一套）---

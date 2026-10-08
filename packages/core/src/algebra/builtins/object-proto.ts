@@ -16,6 +16,7 @@ import { absFunction } from "../abs-fn.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs } from "../exec/may-throw.ts";
 import { str, boolPrim, noBody, peelBrand } from "./shared.ts";
+import { isErrorCtorName } from "./error.ts";
 import { getPropFlags, setPropFlags } from "./invariants.ts";
 import { undefLit, isSymbolAbs, stringOfSymbol } from "./symbol.ts";
 import {
@@ -166,6 +167,9 @@ function typeTagOf(recv: Abs): string | undefined {
       }
     }
     if (KNOWN_TAGS.has(s.name) || s.name.endsWith("Error")) {
+      // Bug 10：[[ErrorData]] 内部槽——整个 Error 家族统一 tag "Error"
+      // （原生 Object.prototype.toString.call(new TypeError()) → "[object Error]"）
+      if (isErrorCtorName(s.name)) return "Error";
       return s.name === "Object.prototype" ? "Object" : s.name;
     }
     return undefined;

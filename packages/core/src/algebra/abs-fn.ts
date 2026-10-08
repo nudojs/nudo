@@ -79,6 +79,12 @@ export type AbsFnImpl = {
   env?: AstEnv;
   kind?: string;
   /**
+   * Bug 9：原生 fn.length（首个默认值/rest 形参前的形参数）——静态已知时
+   * 记录（宿主函数 v.length / 全 Identifier 形参的 AST），$len / $get 的
+   * f.length 折 exact；未记录（默认值/嵌套默认模式不可判）→ 保守 number≥0。
+   */
+  length?: number;
+  /**
    * 调用时直接派发（mock withArgs 等），优先于 body。
    * 返回裸 Abs = 不抛；返回 AbsApplyResult 时 throws 面经 $call 统一路由，
    * 不得在 apply 内自行 re-throw / pushThrowExit（会与 $call 路由叠算）。
@@ -152,6 +158,8 @@ export function absFunction(
     conf?: Confidence;
     /** Bug 9 可构造性 facet：true/false 已知，缺省未知（见 Shape k:"fn".ctor） */
     ctor?: boolean;
+    /** Bug 9：原生 fn.length（impl.length 落地，$len 折 exact） */
+    length?: number;
   },
 ): Abs {
   const a: Abs = {
@@ -166,7 +174,11 @@ export function absFunction(
     },
     conf: opts?.conf ?? "exact",
   };
-  attachFnImpl(a, { params, ...impl });
+  attachFnImpl(a, {
+    params,
+    ...impl,
+    ...(opts?.length !== undefined ? { length: opts.length } : {}),
+  });
   return a;
 }
 

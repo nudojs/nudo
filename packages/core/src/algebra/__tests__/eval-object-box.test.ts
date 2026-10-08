@@ -8,7 +8,7 @@
  * 对象形态恒等返回（ToObject 不变式），抽象 prim → open 对象。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
+import { runTranspiled, callTranspiledExportFull, litValue, abs } from "@nudojs/core";
 
 function call(src: string, fnName = "f") {
   const exports = runTranspiled(src, { mode: "analyze" });
@@ -72,7 +72,21 @@ describe("evaluator new String() wrapper slots", () => {
   });
 
   it("non-literal arg stays conservative", () => {
-    const r = call(`export function f(s) { return new String(s).length; }`);
+    // 抽象 string 实参（非字面量）：length 域不可折。注：以 [] 调用时形参
+    // 绑 lit-undefined —— new String(undefined).length 原生即 9（见下）。
+    const exports = runTranspiled(`export function f(s) { return new String(s).length; }`, {
+      mode: "analyze",
+    });
+    const r = callTranspiledExportFull(exports, "f", [
+      abs({ k: "prim", type: "string" }, undefined, undefined, "path"),
+    ]);
     expect(litValue(r.result)).toEqual({ ok: false });
+  });
+
+  it("new String(undefined) wraps \"undefined\" (native)", () => {
+    const r = call(`export function f() { return new String().length; }`);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 9 });
+    const r2 = call(`export function f() { return new String().valueOf(); }`);
+    expect(litValue(r2.result)).toEqual({ ok: true, value: "undefined" });
   });
 });

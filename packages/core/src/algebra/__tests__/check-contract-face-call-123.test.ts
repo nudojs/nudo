@@ -225,9 +225,12 @@ describe("#123 (d) callee 自身 check 不变（distance.js 单独检查）", ()
     expect(sig).toBeDefined();
     // 契约参数面上屏（callee 自身路径的既有行为，不因调用边界面改变）
     expect(sig!.paramTypes).toEqual(["string", "string"]);
-    // 推断返回签名保留：#102 标记臂（undefined）未被返回面洗白
+    // 推断返回签名保留：#102 标记臂（undefined）未被返回面洗白。
+    // 真实臂经 Bug 48 循环携带宽化（DP 表 cell 增长 → 无上界 prim 域），
+    // 字面量枚举（0 | 1..7）折 number——`0` 臂不再单独保留（与
+    // eval-loop-carried-widen 同口径）
     expect(sig!.display).toMatch(/undefined/);
-    expect(sig!.display).toMatch(/0/);
+    expect(sig!.display).toMatch(/number/);
   });
 });
 

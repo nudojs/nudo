@@ -63,12 +63,15 @@ describe("P0 for-of empty / abstract accumulators", () => {
     expect(litValue(call(src, "f").result)).toEqual({ ok: true, value: 0 });
   });
 
-  it("abstract iterable (arr) joins 0..n exits", () => {
+  it("abstract iterable (arr) widens to unbounded domain (0..n exits covered)", () => {
     const src = `export function f(a) { let s = 0; for (const x of a) { s = s + 1; } return s; }`;
     const absArr = { shape: { k: "arr", element: { shape: { k: "prim", type: "number" }, conf: "path" } }, conf: "path" } as never;
     const r = callAbs(src, "f", [absArr]);
+    // Bug 47：单代表迭代 + 增长宽化——计数器域 = 无上界 number（native
+    // a.length 任意，{0,1} 不是超集），0 次出口由 number 域覆盖
     const shown = formatAbs(r.result);
-    expect(shown).toContain("0");
+    expect(shown).toContain("number");
+    expect(shown).toContain("#widened");
     expect(formatShape(r.result)).not.toBe("8");
     expect(formatShape(r.result)).not.toBe("1");
   });

@@ -1,10 +1,10 @@
 /**
  * 差分语料门禁（P0 oracle 收编）：batch14–19——Promise/Date/JSON/RegExp
  * ctor/Map-Set/字符串数字数组边缘 + 第 18 批六类修复的读层金丝雀 +
- * 第 19 批方法体早退 if 回归。
+ * 第 19 批方法体早退 if 回归。新增 skip（skip-baseline.json 基线外）即失败。
  */
 import { describe, it, expect } from "vitest";
-import { runCorpus, sectionsOf } from "./harness.ts";
+import { runCorpus, sectionsOf, newSkippedBodies, unexpectedMismatches } from "./harness.ts";
 import * as b14a from "./corpus/batch14a.ts";
 import * as b14b from "./corpus/batch14b.ts";
 import * as b14c from "./corpus/batch14c.ts";
@@ -51,11 +51,17 @@ describe("differential corpus batch14-18", () => {
   for (const [file, mod] of FILES) {
     for (const [name, corpus] of sectionsOf(mod)) {
       it(`${file}.${name} zero mismatch`, () => {
-        const { compared, mismatches } = runCorpus(corpus);
+        const { compared, mismatches, skipped } = runCorpus(corpus);
         totalCompared += compared;
+        const unexpected = unexpectedMismatches(mismatches);
         expect(
-          mismatches,
-          `${file}.${name} compared=${compared}\n${mismatches.join("\n")}`,
+          unexpected,
+          `${file}.${name} compared=${compared} skipped=${skipped.length} mismatches=${mismatches.length}\n${unexpected.join("\n")}`,
+        ).toEqual([]);
+        const freshSkips = newSkippedBodies(`${file}.${name}`, skipped);
+        expect(
+          freshSkips,
+          `${file}.${name} compared=${compared}: new skipped line(s) outside skip-baseline.json (unknown regression)\n${freshSkips.map((s) => `  [${s.replace(/\n/g, " ").slice(0, 100)}]`).join("\n")}`,
         ).toEqual([]);
       }, 120_000);
     }

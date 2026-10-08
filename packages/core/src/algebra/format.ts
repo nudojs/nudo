@@ -118,7 +118,11 @@ function formatShapeInner(a: Abs, budget: ProjectionBudget): string {
       if (s.element.shape.k === "any" && s.element.term?.op === "var") {
         return `arr(${formatShapeSlotB(s.element, budget)})`;
       }
-      return `${formatShapeB(s.element, budget)}[]`;
+      // Bug 34：union 元素加括号——`3 | 1 | 2[]` 按 TS 解析歧义为
+      // 3 | 1 | (2[])（sort/flatMap 元素 join 的 arr(sum) 面）；单 prim/
+      // lit 元素保持 `X[]` 不加冗余括号
+      const el = formatShapeB(s.element, budget);
+      return s.element.shape.k === "sum" ? `(${el})[]` : `${el}[]`;
     }
     case "tuple": {
       // hole 槽是稀疏空位（`1 in a` 为 false），不得渲染成 undefined 槽

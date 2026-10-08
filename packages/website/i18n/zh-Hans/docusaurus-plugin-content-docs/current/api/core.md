@@ -373,7 +373,7 @@ createEnvironment(parent?, bindings?)
 | <a id="foldrequirespecarg"></a>`foldRequireSpecArg` | fn | static folding helpers | `foldRequireSpecArg(arg: unknown): string \| undefined` |
 | <a id="foldstaticstringexpr"></a>`foldStaticStringExpr` | fn | static folding helpers | `foldStaticStringExpr(node: unknown): string \| undefined` |
 | <a id="isarrmutator"></a>`isArrMutator` | fn | array runtime | `isArrMutator(name: string): boolean` |
-| <a id="nudoloopsignal"></a>`NudoLoopSignal` | type | control-signal / throw | `NudoLoopSignal extends Error { readonly kind: "break" \| "continue"; readonly label: string \| undefined; constructor(kind: "break" \| "cont...` |
+| <a id="nudoloopsignal"></a>`NudoLoopSignal` | type | control-signal / throw | `NudoLoopSignal extends Error { readonly kind: "break" \| "continue"; readonly label: string \| undefined; readonly abstract: boolean; const...` |
 | <a id="nudoreturn"></a>`NudoReturn` | type | control-signal / throw | `NudoReturn extends Error { readonly absValue: Abs; constructor(absValue: Abs) { super("nudo:return"); this.name = "NudoReturn"; this.absV...` |
 | <a id="nudothrow"></a>`NudoThrow` | type | control-signal / throw | — |
 | <a id="runtimeimportof"></a>`runtimeImportOf` | fn | JS AST → `$op` program | `runtimeImportOf(runtime: string): string` |
@@ -393,18 +393,18 @@ createEnvironment(parent?, bindings?)
 | <a id="absapplyreturn"></a>`AbsApplyReturn` | type | apply 可返回裸 Abs（无 throws）或带 throws 通道的 AbsApplyResult | `AbsApplyReturn = Abs \| AbsApplyResult` |
 | <a id="absassignrecord"></a>`AbsAssignRecord` | type | Abs 域赋值记录（eval 通道 $assignRecord 的同形投影） | `AbsAssignRecord = { name: string; prev?: Abs; next: Abs; line?: number; column?: number; conditional?: boolean; }` |
 | <a id="abscallrecord"></a>`AbsCallRecord` | type | Abs 域调用记录（eval 通道 EvalCallRecord 的同形投影） | `AbsCallRecord = { fnName: string; args: Abs[]; result: Abs; callLoc?: { line: number; column: number }; threw?: boolean; }` |
-| <a id="absfnimpl"></a>`AbsFnImpl` | type | — | `AbsFnImpl = { params: string[]; body?: Node; async?: boolean; env?: AstEnv; kind?: string; apply?: (args: Abs[], thisVal?: Abs) => AbsApp...` |
-| <a id="absfunction"></a>`absFunction` | fn | 造一个带实现的 Abs 函数值 | `absFunction( params: string[], impl: Omit<AbsFnImpl, "params">, opts?: { name?: string; paramTypes?: Abs[]; returnType?: Abs; slots?: Record<string, { value: Abs; optional?: boolean; readonly?: boolean }>; conf?: Confidence; ctor?: boolean; }, ): Abs` |
+| <a id="absfnimpl"></a>`AbsFnImpl` | type | — | `AbsFnImpl = { params: string[]; body?: Node; async?: boolean; env?: AstEnv; kind?: string; length?: number; apply?: (args: Abs[], thisVal...` |
+| <a id="absfunction"></a>`absFunction` | fn | 造一个带实现的 Abs 函数值 | `absFunction( params: string[], impl: Omit<AbsFnImpl, "params">, opts?: { name?: string; paramTypes?: Abs[]; returnType?: Abs; slots?: Record<string, { value: Abs; optional?: boolean; readonly?: boolean }>; conf?: Confidence; ctor?: boolean; length?: number; }, ): Abs` |
 | <a id="absmoduleexports"></a>`AbsModuleExports` | type | — | `AbsModuleExports = { named: Record<string, Abs>; default?: Abs; evaluated?: boolean; }` |
 | <a id="absshapekey"></a>`absShapeKey` | fn | — | `absShapeKey(a: Abs, seen: Set<object> = new Set()): string` |
 | <a id="abssigimpl"></a>`AbsSigImpl` | type | Abs 原生 env/builtin 实现（evaluator 优先） | `AbsSigImpl = (args: Abs[], thisVal?: Abs) => Abs \| undefined` |
 | <a id="abstoconstraint"></a>`absToConstraint` | fn | Abs → 契约；不可表达 → undefined。 | `absToConstraint( a: Abs, budget: ProjectionBudget = new ProjectionBudget(), ): NudoConstraint \| undefined` |
 | <a id="abstostring"></a>`absToString` | fn | — | `absToString(a: Abs): string` |
 | <a id="actionsforissue"></a>`actionsForIssue` | fn | 诊断码 → 结构化动作（AI1）；未知码给 info 提示 | `actionsForIssue(i: { code: string; expected?: string; suggestion?: string; fn?: string; }): CheckAction[]` |
-| <a id="add"></a>`add` | fn | 抽象加法：eval(a + b) —— 跟真实 JS，不无根据地假定 number。 | `add(a: Abs, b: Abs, phi: Phi = pTrue): Abs` |
+| <a id="add"></a>`add` | fn | — | `add(a: Abs, b: Abs, phi: Phi = pTrue): Abs` |
 | <a id="alphaof"></a>`alphaOf` | fn | 仅当 term 是 var 且 id ∈ alphaIds（本次 typeParams）时复用；否则 fresh α。 | `alphaOf( absOrTerm: Abs \| Term \| undefined, ctx: HofCollectCtx, ): Term` |
-| <a id="applycallbackabs"></a>`applyCallbackAbs` | fn | — | `applyCallbackAbs( cb: Abs \| { type: string }, args: Abs[], env: unknown, phi: unknown, budget: unknown, ): Abs` |
-| <a id="applycallbackvalue"></a>`applyCallbackValue` | fn | 通用回调实参调用（exec/class invokeArrMethod 与 builtins Array.from 共用）： 原始 JS 函数直调（展开实参）；Abs fn 走 applyCallbackAbs（sum 分发/宿主）。 | `applyCallbackValue( fn: unknown, args: Abs[], env: unknown, phi: unknown, budget: unknown, ): Abs` |
+| <a id="applycallbackabs"></a>`applyCallbackAbs` | fn | — | `applyCallbackAbs( cb: Abs \| { type: string }, args: Abs[], env: unknown, phi: unknown, budget: unknown, thisVal?: Abs, ): Abs` |
+| <a id="applycallbackvalue"></a>`applyCallbackValue` | fn | 通用回调实参调用（exec/class invokeArrMethod 与 builtins Array.from 共用）： 原始 JS 函数直调（展开实参）；Abs fn 走 applyCallbackAbs（sum 分发/宿主）。 | `applyCallbackValue( fn: unknown, args: Abs[], env: unknown, phi: unknown, budget: unknown, thisVal?: Abs, ): Abs` |
 | <a id="asabs"></a>`asAbs` | fn | 从 map/filter/reduce 回调实参里取出 Abs（Identifier 已绑定或直接 Abs） | `asAbs(v: unknown): Abs \| undefined` |
 | <a id="assignsourceslots"></a>`assignSourceSlots` | fn | — | `assignSourceSlots(src: Abs): Record<string, { value: Abs }> \| undefined` |
 | <a id="assumefinite"></a>`assumeFinite` | const | 显式有限证据：t 为有限数（非 NaN/±Inf），开启线性环化简 | `const assumeFinite` |
@@ -463,12 +463,12 @@ createEnvironment(parent?, bindings?)
 | <a id="errorbrandabs"></a>`errorBrandAbs` | fn | Error brand：shape 带 name/message（字面量 message 保精确）。 | `errorBrandAbs(name: string, args: Abs[]): Abs` |
 | <a id="evalabsassignrecord"></a>`EvalAbsAssignRecord` | type | B 赋值记录（与 ast-records.ts AbsAssignRecord 同形；structuralAssignIssues 消费） | `EvalAbsAssignRecord = { name: string; prev: Abs \| undefined; next: Abs; line?: number; column?: number; conditional?: boolean; }` |
 | <a id="evalarraystatic"></a>`evalArrayStatic` | fn | Array.isArray / Array.from / Array.of | `evalArrayStatic(name: string, args: Abs[]): Abs \| undefined` |
-| <a id="evalbuiltininstancemethod"></a>`evalBuiltinInstanceMethod` | fn | brand 实例方法（Date/RegExp/Map/Set） | `evalBuiltinInstanceMethod( brandName: string, method: string, recv: Abs, args: Abs[], ): Abs \| undefined` |
+| <a id="evalbuiltininstancemethod"></a>`evalBuiltinInstanceMethod` | fn | brand 实例方法（Date/RegExp/Map/Set/Error 家族/装箱拆箱后的 prim 面在外层） | `evalBuiltinInstanceMethod( brandName: string, method: string, recv: Abs, args: Abs[], ): Abs \| undefined` |
 | <a id="evalbuiltinnew"></a>`evalBuiltinNew` | fn | new X(...) | `evalBuiltinNew(className: string, args: Abs[]): Abs \| undefined` |
 | <a id="evalclassspec"></a>`EvalClassSpec` | type | — | — |
 | <a id="evaldatector"></a>`evalDateCtor` | fn | — | `evalDateCtor(args: Abs[]): Abs` |
 | <a id="evaldatemethod"></a>`evalDateMethod` | fn | — | `evalDateMethod(name: string, recv: Abs, args: Abs[]): Abs \| undefined` |
-| <a id="evaldatestatic"></a>`evalDateStatic` | fn | — | `evalDateStatic(name: string, _args: Abs[]): Abs \| undefined` |
+| <a id="evaldatestatic"></a>`evalDateStatic` | fn | — | `evalDateStatic(name: string, args: Abs[]): Abs \| undefined` |
 | <a id="evalfallback"></a>`EvalFallback` | type | evaluator 回落事件（观测单一埋点；reason: unsupported:* = 能力边界，internal = 引擎自身缺陷） | `EvalFallback = { reason: string; message: string; loc?: { line: number; column: number }; }` |
 | <a id="evalglobalfn"></a>`evalGlobalFn` | fn | — | `evalGlobalFn(name: string, args: Abs[]): Abs \| undefined` |
 | <a id="evaljsonmethod"></a>`evalJsonMethod` | fn | JSON.parse / stringify：字面量实参真执行折叠；失败硬抛（catch 可吸收） | `evalJsonMethod(name: string, args: Abs[]): Abs \| undefined` |
@@ -545,9 +545,9 @@ createEnvironment(parent?, bindings?)
 | <a id="isintflag"></a>`isIntFlag` | fn | builder 与纯数据形态统一的 int 标志读取：纯数据看 `int === true`， builder（int 是链式方法）查 WeakSet。toPlainConstraint 归一化后只剩前者。 | `isIntFlag(c: NudoConstraint): boolean` |
 | <a id="ismapabs"></a>`isMapAbs` | fn | — | `isMapAbs(a: Abs \| undefined): boolean` |
 | <a id="isnodemodulespath"></a>`isNodeModulesPath` | const | — | — |
-| <a id="isnudobreak"></a>`isNudoBreak` | fn | — | `isNudoBreak(e: unknown, label?: string): boolean` |
+| <a id="isnudobreak"></a>`isNudoBreak` | fn | — | `isNudoBreak(e: unknown, label?: string): e` |
 | <a id="isnudoconstraint"></a>`isNudoConstraint` | fn | — | `isNudoConstraint(x: unknown): x` |
-| <a id="isnudocontinue"></a>`isNudoContinue` | fn | — | `isNudoContinue(e: unknown, label?: string): boolean` |
+| <a id="isnudocontinue"></a>`isNudoContinue` | fn | — | `isNudoContinue(e: unknown, label?: string): e` |
 | <a id="isnudoreturn"></a>`isNudoReturn` | fn | — | `isNudoReturn(e: unknown): e` |
 | <a id="isnudothrow"></a>`isNudoThrow` | const | — | — |
 | <a id="isnullishlitabs"></a>`isNullishLitAbs` | fn | 仅当 term 确为 lit null/undefined 时为 true；非 lit 的 litValue===undefined 不得当 nullish | `isNullishLitAbs(a: Abs): boolean` |
@@ -658,7 +658,7 @@ createEnvironment(parent?, bindings?)
 | <a id="refineentry"></a>`RefineEntry` | type | 解析 `ms delay` / `n percent` → [param, Pred] 多条用 &amp;&amp; 或换行连接。 | `RefineEntry = { param: string; pred: Pred; constraint: NudoConstraint; }` |
 | <a id="refineresolveopts"></a>`RefineResolveOpts` | type | — | `RefineResolveOpts = { loadModule?: (spec: string, fromFile: string) => string \| undefined; fromFile?: string; }` |
 | <a id="refinetoindexedfull"></a>`refineToIndexedFull` | fn | refine 参数 → 带约束模板的下标表（shape 检查用） | `refineToIndexedFull( source: string, fnName: string, paramNames: string[], opts: RefineResolveOpts = {}, ): Array<[number, RefineEntry]>` |
-| <a id="regexbrandabsfrom"></a>`regexBrandAbsFrom` | fn | RegExp brand：source/flags/lastIndex 进 slots（evaluator evalRegExpCtor / $regex 共用） | `regexBrandAbsFrom(pattern: string, flags: string): Abs` |
+| <a id="regexbrandabsfrom"></a>`regexBrandAbsFrom` | fn | RegExp brand：source/flags/lastIndex + 7 标志 getter 进 slots （evaluator evalRegExpCtor / $regex 共用；槽构造收敛于 regexpBrandSlots） | `regexBrandAbsFrom(pattern: string, flags: string): Abs` |
 | <a id="registerevalclass"></a>`registerEvalClass` | fn | — | `registerEvalClass(spec: EvalClassSpec): void` |
 | <a id="relationfingerprint"></a>`relationFingerprint` | fn | relationFn 稳定 fingerprint（同签名共享，见 §3.3 已知限制） | `relationFingerprint( paramTypes: Abs[], returnType: Abs, ): string` |
 | <a id="relationfn"></a>`relationFn` | fn | 无 body、纯关系的 fn Abs。params 仅记 arity。 | `relationFn( paramTypes: Abs[], returnType: Abs, opts?: { params?: string[]; conf?: Confidence; fingerprint?: string; inferFrom?: { fromVar: string; via: "arr" \| "promise"; inferVar: string }; condFallback?: Abs; }, ): Abs` |

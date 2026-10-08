@@ -2,8 +2,8 @@
  * Error 家族 + evalBuiltinNew / evalBuiltinInstanceMethod + namespace 分派
  */
 import type { Abs } from "../abs.ts";
-import { abs, strLit, numLit, litValue, bigintLit, unknown } from "../abs.ts";
-import { objOf } from "../objects.ts";
+import { abs, strLit, numLit, litValue, bigintLit, boolLit, unknown } from "../abs.ts";
+import { objOf, getSlot } from "../objects.ts";
 import {
   makeMapAbs,
   makeSetAbs,
@@ -13,19 +13,25 @@ import {
   mapDeleteEntry,
   mapClearEntries,
   mapSizeAbs,
+  mapEntriesAbs,
+  mapValuesAbs,
   setAddEntry,
   setHasEntry,
   setDeleteEntry,
   setClearEntries,
   setSizeAbs,
+  setElementsAbs,
   ctorArgDefinitelyInvalid,
   makeWeakCollectionAbs,
 } from "../collections.ts";
 import { undefAbs } from "../hof.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
+import { registerGenElements } from "../exec/match-iter.ts";
+import { absFunction } from "../abs-fn.ts";
+import { setPropFlags } from "./invariants.ts";
 import { isSymbolAbs, evalSymbolStatic } from "./symbol.ts";
-import { str, mayCoerceThrowOperand, isBigintPrimAbs } from "./shared.ts";
+import { str, numPrim, boolPrim, noBody, mayCoerceThrowOperand, isBigintPrimAbs } from "./shared.ts";
 import { evalMathMethod } from "./math.ts";
 import { evalObjectMethod } from "./object.ts";
 import { evalJsonMethod } from "./json.ts";
@@ -67,8 +73,57 @@ export function evalNamespaceCall(
     case "Symbol":
       // Bug 43：Symbol.for / Symbol.keyFor（全局注册表）
       return evalSymbolStatic(method, args);
+    case "URL":
+      // Bug 24：URL 静态面（canParse）
+      return evalUrlStatic(method, args);
     default:
       return undefined;
+  }
+}
+
+/**
+ * Bug 24：URL.canParse(url, base?) —— 解析恒 total（Invalid → false 非抛，
+ * 与 new URL 的定抛面正交）。字面量 string（base 缺省/同为字面量）→ 宿主
+ * 真解析折精确 boolean；symbol → ToString 定抛；抽象 prim string →
+ * boolean；对象/any 载体 → may TypeError + boolean。
+ */
+function evalUrlStatic(method: string, args: Abs[]): Abs | undefined {
+  if (method !== "canParse") return undefined;
+  const url = args[0];
+  const base = args[1];
+  if (url && isSymbolAbs(url)) throw new NudoThrow(errorTypeAbs("TypeError"));
+  if (base && isSymbolAbs(base)) throw new NudoThrow(errorTypeAbs("TypeError"));
+  const uR = url ? litValue(url) : undefined;
+  const u = uR?.ok ? uR.value : undefined;
+  const bR = base ? litValue(base) : undefined;
+  const b = bR?.ok ? bR.value : undefined;
+  const baseFoldable =
+    base === undefined ||
+    (base.term?.op === "lit" && base.term.value === undefined) ||
+    typeof b === "string";
+  const argsAbstract =
+    (!!url && url.term?.op !== "lit") || (!!base && base.term?.op !== "lit" && baseFoldable);
+  if (argsAbstract) {
+    // 抽象 prim（string/number/…）ToString total；obj/fn/any/sum 载体 may
+    if (mayCoerceThrowOperand(url) || mayCoerceThrowOperand(base)) {
+      recordMayThrow({ kind: "TypeError", cause: "URL.canParse argument ToString may throw (Symbol)" });
+    }
+    return boolPrim();
+  }
+  if (typeof u !== "string") {
+    // number/bool/bigint/null 字面量：ToString 恒不可解析 → false（不抛）；
+    // 缺省 url 原生折 false（canParse() → false）
+    if (uR?.ok || url === undefined) return boolLit(false);
+    return boolPrim();
+  }
+  if (!baseFoldable) {
+    // 抽象 base：不可判定 → boolean（canParse 恒不抛——base 非法折 false）
+    return boolPrim();
+  }
+  try {
+    return boolLit(URL.canParse(u, b as string | undefined));
+  } catch {
+    return boolPrim();
   }
 }
 
@@ -199,6 +254,9 @@ export function errorBrandAbs(name: string, args: Abs[]): Abs {
   const slots: Record<string, { value: Abs }> = {
     name: { value: strLit(name) },
     message: { value: errorMessageSlot(messageArg) },
+    // Bug 59：stack 恒 string（V8/SpiderMonkey/JSC 堆栈轨迹文本，含调用点
+    // 信息不可精确折叠）；用户写 e.stack = v 经既有 $set 槽写通道覆盖
+    stack: { value: str("path") },
   };
   if (name === "AggregateError") {
     // Bug 54：errors（args[0]）过 IterableToList——非可迭代定抛（node 实测
@@ -326,12 +384,138 @@ function enforceToIndex(a: Abs | undefined, what: string): void {
 }
 
 /**
+ * Bug 15：ToIndex 数值折叠（与 classifyToIndex ok 档同口径的数值面）：
+ * 字面量 prim → trunc(ToNumber(v))；nullish/NaN → 0；抽象/对象形态 →
+ * undefined（域不可折，调用方落 number 域）。type/range 档已由 enforceToIndex
+ * 先行抛出，这里不再重复判定。
+ */
+function toIndexLiteralValue(a: Abs | undefined): number | undefined {
+  if (!a) return 0;
+  // nullish 字面量（shape k:"unknown" + lit term）→ ToNumber → NaN → 0
+  if (a.term?.op === "lit" && (a.term.value === null || a.term.value === undefined)) return 0;
+  const s = a.shape;
+  if (s.k !== "prim") return undefined;
+  if (s.type === "symbol") return undefined;
+  // 直接读 term（litValue 对 lit undefined 返回 not-ok——undefined 是哨兵）
+  if (a.term?.op !== "lit") return undefined;
+  const v = a.term.value;
+  if (v === undefined || v === null) return 0;
+  if (typeof v === "bigint") return undefined;
+  const n = Number(v);
+  if (Number.isNaN(n)) return 0;
+  return Math.trunc(n);
+}
+
+/**
+ * Bug 15 补（review）：options.maxByteLength 三分可判性。
+ * - absent：无 options / nullish 字面量（node v26 实测 `new ArrayBuffer(8, null)`
+ *   同 undefined —— 不抛、非 resizable）/ 闭对象无自有槽 / 槽为字面量
+ *   undefined —— ES2024 `Get(options,"maxByteLength")` 返回 undefined
+ *   （缺省 ≡ 显式 undefined）⇒ 非 resizable，maxByteLength = byteLength
+ *   （native 实测：`new ArrayBuffer(8,{maxByteLength:undefined}).resizable === false`）；
+ * - present：闭对象自有非-undefined 槽 ⇒ resizable，走 ToIndex 校验 + 折叠
+ *   （null 槽值 ≠ undefined：ToIndex(null)=0，0 < byteLength → RangeError）；
+ * - undecidable：open obj / any / unknown / sum —— 运行时可能带任意
+ *   maxByteLength，不得折叠 false（false precision）。
+ */
+type BufferOptionsClass =
+  | { k: "absent" }
+  | { k: "present"; value: Abs }
+  | { k: "undecidable" };
+
+function classifyBufferOptions(options: Abs | undefined): BufferOptionsClass {
+  if (!options) return { k: "absent" };
+  if (options.term?.op === "lit" && (options.term.value === null || options.term.value === undefined)) {
+    return { k: "absent" };
+  }
+  const s = options.shape;
+  if (s.k === "obj" && s.open !== true) {
+    const slot = getSlot(s.slots, "maxByteLength");
+    if (slot === undefined) return { k: "absent" };
+    if (slot.value.term?.op === "lit" && slot.value.term.value === undefined) return { k: "absent" };
+    return { k: "present", value: slot.value };
+  }
+  if (s.k === "any" || s.k === "unknown" || s.k === "sum" || (s.k === "obj" && s.open === true)) {
+    return { k: "undecidable" };
+  }
+  // 其余闭形态（prim/tuple/arr/fn/brand…）：ToObject 后无 maxByteLength 键 → absent
+  return { k: "absent" };
+}
+
+/**
  * Bug 41：new ArrayBuffer(length) —— length 过 ToIndex：负数/±∞/超 2^53-1 →
  * RangeError；symbol/bigint → TypeError（ToNumber）；缺省/NaN → 0 合法。
+ * Bug 15：构造实参存入 brand 槽（字面量 ToIndex 精确折叠、抽象 → number 域）：
+ * byteLength / maxByteLength（options.maxByteLength，缺省 ≡ byteLength）/
+ * resizable（present → true；absent → false；undecidable → boolean 域）。
+ * Review 补：present 且 maxByteLength < byteLength → RangeError（native 实测）；
+ * 任一侧抽象 → 该比较 may-throw。
  */
-export function makeArrayBufferAbs(len: Abs | undefined): Abs {
+export function makeArrayBufferAbs(len: Abs | undefined, options?: Abs | undefined): Abs {
   enforceToIndex(len, "ArrayBuffer length");
-  return abs({ k: "brand", name: "ArrayBuffer", shape: objOf({}) }, undefined, undefined, "path");
+  const oc = classifyBufferOptions(options);
+  const bl = toIndexLiteralValue(len);
+  let maxV: number | undefined;
+  if (oc.k === "present") {
+    enforceToIndex(oc.value, "ArrayBuffer maxByteLength");
+    maxV = toIndexLiteralValue(oc.value);
+    if (maxV !== undefined && bl !== undefined) {
+      if (maxV < bl) throw new NudoThrow(errorTypeAbs("RangeError"));
+    } else {
+      recordMayThrow({ kind: "RangeError", cause: "ArrayBuffer maxByteLength may be less than byteLength" });
+    }
+  } else if (oc.k === "undecidable") {
+    recordMayThrow({ kind: "RangeError", cause: "ArrayBuffer maxByteLength may be negative or invalid (ToIndex)" });
+    recordMayThrow({ kind: "RangeError", cause: "ArrayBuffer maxByteLength may be less than byteLength" });
+  }
+  const slots: Record<string, { value: Abs }> = {
+    byteLength: { value: bl !== undefined ? numLit(bl) : numPrim("path") },
+    maxByteLength: {
+      value:
+        oc.k === "absent"
+          ? bl !== undefined ? numLit(bl) : numPrim("path")
+          : maxV !== undefined ? numLit(maxV) : numPrim("path"),
+    },
+    resizable: { value: oc.k === "absent" ? boolLit(false) : oc.k === "undecidable" ? boolPrim() : boolLit(true) },
+  };
+  return abs({ k: "brand", name: "ArrayBuffer", shape: objOf(slots) }, undefined, undefined, "path");
+}
+
+/**
+ * Bug 15：new SharedArrayBuffer(length, options?) —— ArrayBuffer 同款 ToIndex
+ * 校验 + 槽构造（byteLength/maxByteLength/growable；SAB 是 growable 不是
+ * resizable——原型无 resizable 访问器）。Review 补同 makeArrayBufferAbs：
+ * maxByteLength 缺省/显式 undefined ≡ 非 growable；present 且
+ * maxByteLength < byteLength → RangeError；undecidable → boolean 域不折 false。
+ */
+export function makeSharedArrayBufferAbs(len: Abs | undefined, options?: Abs | undefined): Abs {
+  enforceToIndex(len, "SharedArrayBuffer length");
+  const oc = classifyBufferOptions(options);
+  const bl = toIndexLiteralValue(len);
+  let maxV: number | undefined;
+  if (oc.k === "present") {
+    enforceToIndex(oc.value, "SharedArrayBuffer maxByteLength");
+    maxV = toIndexLiteralValue(oc.value);
+    if (maxV !== undefined && bl !== undefined) {
+      if (maxV < bl) throw new NudoThrow(errorTypeAbs("RangeError"));
+    } else {
+      recordMayThrow({ kind: "RangeError", cause: "SharedArrayBuffer maxByteLength may be less than byteLength" });
+    }
+  } else if (oc.k === "undecidable") {
+    recordMayThrow({ kind: "RangeError", cause: "SharedArrayBuffer maxByteLength may be negative or invalid (ToIndex)" });
+    recordMayThrow({ kind: "RangeError", cause: "SharedArrayBuffer maxByteLength may be less than byteLength" });
+  }
+  const slots: Record<string, { value: Abs }> = {
+    byteLength: { value: bl !== undefined ? numLit(bl) : numPrim("path") },
+    maxByteLength: {
+      value:
+        oc.k === "absent"
+          ? bl !== undefined ? numLit(bl) : numPrim("path")
+          : maxV !== undefined ? numLit(maxV) : numPrim("path"),
+    },
+    growable: { value: oc.k === "absent" ? boolLit(false) : oc.k === "undecidable" ? boolPrim() : boolLit(true) },
+  };
+  return abs({ k: "brand", name: "SharedArrayBuffer", shape: objOf(slots) }, undefined, undefined, "path");
 }
 
 /**
@@ -360,18 +544,49 @@ export function makeDataViewAbs(
   }
   enforceToIndex(off, "DataView byteOffset");
   enforceToIndex(len, "DataView byteLength");
-  return abs({ k: "brand", name: "DataView", shape: objOf({}) }, undefined, undefined, "path");
+  // Bug 15：byteOffset/byteLength 存入 brand 槽（字面量 ToIndex 折叠、抽象 →
+  // number 域）。byteLength 缺省 = buffer 的 byteLength 槽 − byteOffset
+  // （buffer 为 ArrayBuffer/SharedArrayBuffer brand 时可读其槽）。
+  const offV = off !== undefined ? toIndexLiteralValue(off) : 0;
+  const bufBrand = isBufferBrand && buf.shape.k === "brand" ? buf.shape : undefined;
+  const bufInner = bufBrand ? bufBrand.shape : undefined;
+  const bufLenAbs = bufInner && bufInner.shape.k === "obj" ? getSlot(bufInner.shape.slots, "byteLength")?.value : undefined;
+  const bufLenV = bufLenAbs !== undefined ? toIndexLiteralValue(bufLenAbs) : undefined;
+  const lenV =
+    len !== undefined
+      ? toIndexLiteralValue(len)
+      : offV !== undefined && bufLenV !== undefined
+        ? Math.max(0, bufLenV - offV)
+        : undefined;
+  const slots: Record<string, { value: Abs }> = {
+    byteOffset: { value: offV !== undefined ? numLit(offV) : numPrim("path") },
+    byteLength: { value: lenV !== undefined ? numLit(lenV) : numPrim("path") },
+  };
+  return abs({ k: "brand", name: "DataView", shape: objOf(slots) }, undefined, undefined, "path");
 }
 
-/** URL brand：解析成功携带宿主精确 href/origin/protocol 槽 */
+/** URL brand：解析成功携带宿主精确组件槽（Bug 29 补 7 组件——hostname/
+ *  pathname/search/hash/port/username/password，与 href/origin/protocol 同口径）。
+ *  无宿主实例（抽象 input / 抽象 base 的 may-throw 臂）：组件槽取 string 域
+ *  ——解析成功时原生各组件恒为 string（空串也是 string），不得空槽 miss 成
+ *  `undefined`（fn-sig-impl URL symbolic 回归）。 */
 function urlBrandAbs(u?: URL): Abs {
-  const slots: Record<string, { value: Abs }> = u
-    ? {
-        href: { value: strLit(u.href) },
-        origin: { value: strLit(u.origin) },
-        protocol: { value: strLit(u.protocol) },
-      }
-    : {};
+  const componentKeys = [
+    "href",
+    "origin",
+    "protocol",
+    "hostname",
+    "pathname",
+    "search",
+    "hash",
+    "port",
+    "username",
+    "password",
+  ] as const;
+  const slots: Record<string, { value: Abs }> = {};
+  for (const key of componentKeys) {
+    slots[key] = { value: u ? strLit(u[key]) : str("path") };
+  }
   return abs(
     { k: "brand", name: "URL", shape: objOf(slots) },
     undefined,
@@ -440,6 +655,122 @@ export function noteBoxedCtorArg(name: "Number" | "String", arg: Abs | undefined
   }
 }
 
+/** Bug 22：装箱 brand 包装原始值的内部槽键（非原生属性名；用户面不可见） */
+export const BOXED_PRIMITIVE_SLOT = "[[PrimitiveValue]]";
+
+/**
+ * Bug 22：装箱 brand 的包装原始值（字面量精确折叠、抽象 prim 保持、
+ * 其余 → 域）。Number:ToNumber 折叠（null→0/undefined→NaN/字符串数字）；
+ * Boolean:ToBoolean 折叠（对象恒 true、nullish→false）；String:ToString
+ * 折叠（缺省 ≡ undefined → "undefined"）。litValue not-ok（抽象实参）
+ * 不得与「字面量 undefined」混淆——以哨兵区分。
+ */
+const NOT_A_LITERAL = Symbol("not-a-literal");
+
+function boxedPrimitiveOf(name: "String" | "Number" | "Boolean", arg: Abs | undefined): Abs {
+  let v: unknown = NOT_A_LITERAL;
+  if (!arg) {
+    v = undefined; // 缺省 ≡ 字面量 undefined
+  } else {
+    const vR = litValue(arg);
+    if (vR.ok) v = vR.value;
+  }
+  const isLit = v !== NOT_A_LITERAL;
+  if (name === "Number") {
+    if (isLit) {
+      if (typeof v === "number") return numLit(v);
+      if (typeof v === "string" || typeof v === "boolean" || typeof v === "bigint") return numLit(Number(v));
+      if (v === null) return numLit(0);
+      return numLit(NaN); // undefined
+    }
+    if (arg && arg.shape.k === "prim" && arg.shape.type === "number") return arg;
+    return numPrim("path");
+  }
+  if (name === "Boolean") {
+    if (isLit) {
+      if (typeof v === "boolean") return boolLit(v);
+      if (typeof v === "string" || typeof v === "number" || typeof v === "bigint") return boolLit(Boolean(v));
+      return boolLit(false); // null / undefined
+    }
+    if (arg && arg.shape.k === "prim" && arg.shape.type === "boolean") return arg;
+    // 抽象 string/number（"" / 0 可假）→ 域；obj/fn/brand/tuple/arr → ToBoolean 恒 true
+    if (arg && arg.shape.k === "prim") return boolPrim();
+    return boolLit(true);
+  }
+  // String
+  if (isLit) {
+    if (typeof v === "string") return strLit(v);
+    if (typeof v === "number" || typeof v === "boolean" || typeof v === "bigint") return strLit(String(v));
+    if (v === null) return strLit("null");
+    return strLit("undefined"); // new String() → ToString(undefined)
+  }
+  if (arg && arg.shape.k === "prim" && arg.shape.type === "string") return arg;
+  return str("path");
+}
+
+/**
+ * Bug 22：装箱 brand 单一构造 builder（evalBuiltinNew / $new 宿主分支 /
+ * evalGlobalFn Object 装箱共用——收敛此前「字面量带槽 / 抽象空箱」双口径）：
+ * 包装原始值存 [[PrimitiveValue]] 内部槽（valueOf/toString/原型方法经
+ * boxedPrimitiveValue 拆箱派发）；String 字面量箱另带 length/下标槽
+ * （原生可枚举自有属性）；非字面量 String 箱 open（成员读保持非具体）。
+ */
+export function makeBoxedAbs(name: "String" | "Number" | "Boolean", arg: Abs | undefined): Abs {
+  if (name === "Number" || name === "String") noteBoxedCtorArg(name, arg);
+  const prim = boxedPrimitiveOf(name, arg);
+  // [[PrimitiveValue]] 记不可枚举（enumOwnKeys / assign 视图不可见；
+  // 原生装箱箱除 String 下标槽外零可枚举自有属性）
+  const mkInner = (slots: Record<string, { value: Abs }>, opts?: { open?: boolean }) => {
+    const inner = objOf(slots, opts);
+    setPropFlags(inner, BOXED_PRIMITIVE_SLOT, { enumerable: false });
+    return inner;
+  };
+  if (name === "String") {
+    const svR = litValue(prim);
+    const sv = svR.ok && typeof svR.value === "string" ? svR.value : undefined;
+    if (typeof sv === "string") {
+      const slots: Record<string, { value: Abs }> = {
+        length: { value: numLit(sv.length) },
+        [BOXED_PRIMITIVE_SLOT]: { value: prim },
+      };
+      for (let i = 0; i < sv.length; i++) {
+        slots[String(i)] = { value: strLit(sv[i]!) };
+      }
+      return abs(
+        { k: "brand", name: "String", shape: mkInner(slots) },
+        undefined,
+        undefined,
+        "exact",
+      );
+    }
+    return abs(
+      { k: "brand", name: "String", shape: mkInner({ [BOXED_PRIMITIVE_SLOT]: { value: prim } }, { open: true }) },
+      undefined,
+      undefined,
+      "path",
+    );
+  }
+  return abs(
+    { k: "brand", name, shape: mkInner({ [BOXED_PRIMITIVE_SLOT]: { value: prim } }) },
+    undefined,
+    undefined,
+    "path",
+  );
+}
+
+/**
+ * Bug 22：装箱 brand 实例方法派发用——读 [[PrimitiveValue]] 槽拆箱。
+ * 非装箱 brand / 无槽 → undefined（调用方不接管）。
+ */
+export function boxedPrimitiveValue(recv: Abs): Abs | undefined {
+  if (recv.shape.k !== "brand") return undefined;
+  const name = recv.shape.name;
+  if (name !== "String" && name !== "Number" && name !== "Boolean") return undefined;
+  const inner = recv.shape.shape;
+  if (!inner || inner.shape.k !== "obj") return undefined;
+  return getSlot(inner.shape.slots, BOXED_PRIMITIVE_SLOT)?.value;
+}
+
 /** new X(...) */
 export function evalBuiltinNew(className: string, args: Abs[]): Abs | undefined {
   switch (className) {
@@ -450,48 +781,20 @@ export function evalBuiltinNew(className: string, args: Abs[]): Abs | undefined 
     case "Symbol":
       // new Symbol() 原生 TypeError
       throw new NudoThrow(errorTypeAbs("TypeError"));
+    case "BigInt":
+      // Bug 45：BigInt 无 [[Construct]]（.prototype 存在但不可构造）→ 确定
+      // TypeError（与 Symbol 同口径）
+      throw new NudoThrow(errorTypeAbs("TypeError"));
     case "Promise":
       return evalPromiseCtor(args);
     case "Array":
       return makeArrayCtorAbs(args);
     case "Number":
     case "Boolean":
-      // 装箱：与宿主 $new 同口径（空箱 brand；valueOf 可读）
-      // Bug 53：Number 装箱对 symbol 实参 ToNumber → 确定 TypeError；any → may
-      if (className === "Number") noteBoxedCtorArg("Number", args[0]);
-      return abs(
-        { k: "brand", name: className, shape: objOf({}) },
-        undefined,
-        undefined,
-        "path",
-      );
-    case "String": {
-      // Bug 53：String 装箱对 symbol 实参 ToString → 确定 TypeError；any → may
-      noteBoxedCtorArg("String", args[0]);
-      // new String(prim)：包装箱带 length/下标槽（与 evalGlobalFn Object 装箱同口径）
-      const a0R = args[0] ? litValue(args[0]) : undefined;
-      const a0 = a0R?.ok && typeof a0R.value === "string" ? a0R.value : undefined;
-      if (typeof a0 === "string") {
-        const slots: Record<string, { value: Abs }> = {
-          length: { value: numLit(a0.length) },
-        };
-        for (let i = 0; i < a0.length; i++) {
-          slots[String(i)] = { value: strLit(a0[i]!) };
-        }
-        return abs(
-          { k: "brand", name: "String", shape: objOf(slots) },
-          undefined,
-          undefined,
-          "exact",
-        );
-      }
-      return abs(
-        { k: "brand", name: "String", shape: objOf({}, { open: true }) },
-        undefined,
-        undefined,
-        "path",
-      );
-    }
+    case "String":
+      // Bug 22：装箱统一 makeBoxedAbs（[[PrimitiveValue]] 槽 + String 下标槽；
+      // Number symbol 实参 ToNumber 确定 TypeError、any → may——builder 内记）
+      return makeBoxedAbs(className, args[0]);
     case "Map":
       // C1.1：可选 entry 元组列表填充字面量映射；
       // 确定非法实参（prim 条目/非可迭代）→ NudoThrow(TypeError)
@@ -515,7 +818,11 @@ export function evalBuiltinNew(className: string, args: Abs[]): Abs | undefined 
       return makeProxyAbs(args[0], args[1]);
     case "ArrayBuffer":
       // Bug 41：length 过 ToIndex（负/超界 → RangeError；symbol/bigint → TypeError）
-      return makeArrayBufferAbs(args[0]);
+      // Bug 15：options.maxByteLength 同校验；实参存槽
+      return makeArrayBufferAbs(args[0], args[1]);
+    case "SharedArrayBuffer":
+      // Bug 15：SAB 同款 ToIndex 校验 + 槽构造（growable 面）
+      return makeSharedArrayBufferAbs(args[0], args[1]);
     case "DataView":
       // Bug 63：buffer IsArrayBuffer + byteOffset/byteLength ToIndex
       return makeDataViewAbs(args[0], args[1], args[2]);
@@ -531,7 +838,74 @@ export function evalBuiltinNew(className: string, args: Abs[]): Abs | undefined 
   }
 }
 
-/** brand 实例方法（Date/RegExp/Map/Set） */
+/** Bug 23：迭代器结果对象 {value, done}（生成器对象 genIterResult 同款） */
+function iterResultAbs(value: Abs, done: boolean): Abs {
+  return abs(
+    {
+      k: "obj",
+      slots: {
+        value: { value },
+        done: { value: boolLit(done) },
+      },
+    },
+    undefined,
+    undefined,
+    "exact",
+  );
+}
+
+/**
+ * Bug 23：Map/Set keys/values/entries 迭代器对象——生成器对象（Bug 22）
+ * 同款协议面：obj + next 方法槽（按调用序折 {value, done}，耗尽 →
+ * {value: undefined, done: true}）+ @@iterator 槽 + 元素侧表
+ * （registerGenElements）——spread/for-of/Array.from/.next() 链路全求值。
+ */
+function collectionIteratorAbs(els: Abs[]): Abs {
+  const state = { i: 0 };
+  const next = absFunction(
+    [],
+    {
+      body: noBody,
+      apply: (): Abs => {
+        if (state.i >= els.length) return iterResultAbs(undefAbs(), true);
+        const v = els[state.i]!;
+        state.i++;
+        return iterResultAbs(v, false);
+      },
+    },
+    { ctor: false },
+  );
+  const slots: Record<string, { value: Abs }> = {
+    next: { value: next },
+    "@@iterator": { value: absFunction([], { body: noBody }, { ctor: false }) },
+  };
+  const iter = abs(
+    { k: "obj", slots },
+    undefined,
+    undefined,
+    els.every((e) => e.conf === "exact") ? "exact" : "path",
+  );
+  registerGenElements(iter, els);
+  return iter;
+}
+
+/** Bug 23：Map 迭代条目的 key 投影（条目是 [k, v] 元组；非元组臂 → unknown） */
+function mapEntryKey(e: Abs): Abs {
+  if (e.shape.k === "tuple" && e.shape.elements.length >= 1) return e.shape.elements[0]!;
+  return unknown;
+}
+
+/** Bug 23：Set 元素 → [el, el] 条目元组（Set#entries 原生语义） */
+function setEntryTuple(el: Abs): Abs {
+  return abs(
+    { k: "tuple", elements: [el, el] },
+    undefined,
+    undefined,
+    el.conf,
+  );
+}
+
+/** brand 实例方法（Date/RegExp/Map/Set/Error 家族/装箱拆箱后的 prim 面在外层） */
 export function evalBuiltinInstanceMethod(
   brandName: string,
   method: string,
@@ -540,6 +914,44 @@ export function evalBuiltinInstanceMethod(
 ): Abs | undefined {
   if (brandName === "Date") return evalDateMethod(method, recv, args);
   if (brandName === "RegExp") return evalRegExpMethod(method, recv, args);
+  // Bug 42：URL.prototype.toJSON ≡ href（原生恒 string，total——与 Date 的
+  // toJSON 同语义；toString 巧合路径之外补显式面）
+  if (brandName === "URL") {
+    if (method === "toJSON") {
+      const inner = recv.shape.k === "brand" ? recv.shape.shape : undefined;
+      const href =
+        inner && inner.shape.k === "obj"
+          ? getSlot((inner.shape as { slots: Record<string, { value: Abs }> }).slots, "href")?.value
+          : undefined;
+      const hv = href ? litValue(href) : undefined;
+      if (hv?.ok && typeof hv.value === "string") return strLit(hv.value);
+      return str("path");
+    }
+    return undefined;
+  }
+  // Bug 10：Error 家族 toString/toLocaleString = `${name}: ${message}`
+  // （name/message 槽已建模；原生空 message 只返 name）；valueOf 走
+  // Object.prototype 恒等（既有路径，不在此接管）
+  if (isErrorCtorName(brandName)) {
+    switch (method) {
+      case "toString":
+      case "toLocaleString": {
+        const inner = recv.shape.k === "brand" ? recv.shape.shape : undefined;
+        const nameA = inner && inner.shape.k === "obj" ? getSlot(inner.shape.slots, "name")?.value : undefined;
+        const msgA = inner && inner.shape.k === "obj" ? getSlot(inner.shape.slots, "message")?.value : undefined;
+        const nameR = nameA ? litValue(nameA) : undefined;
+        const msgR = msgA ? litValue(msgA) : undefined;
+        const nv = nameR?.ok && typeof nameR.value === "string" ? nameR.value : undefined;
+        const mv = msgR?.ok && typeof msgR.value === "string" ? msgR.value : undefined;
+        if (nv !== undefined && mv !== undefined) {
+          return strLit(mv === "" ? nv : `${nv}: ${mv}`);
+        }
+        return str("path");
+      }
+      default:
+        return undefined;
+    }
+  }
   if (brandName === "Map") {
     switch (method) {
       case "get":
@@ -554,6 +966,13 @@ export function evalBuiltinInstanceMethod(
         return mapClearEntries(recv);
       case "size":
         return mapSizeAbs(recv);
+      // Bug 23：迭代器三件套 → 带协议面的迭代器对象（条目表精确展开）
+      case "keys":
+        return collectionIteratorAbs(mapEntriesAbs(recv).map(mapEntryKey));
+      case "values":
+        return collectionIteratorAbs(mapValuesAbs(recv));
+      case "entries":
+        return collectionIteratorAbs(mapEntriesAbs(recv));
       default:
         return undefined;
     }
@@ -570,6 +989,12 @@ export function evalBuiltinInstanceMethod(
         return setClearEntries(recv);
       case "size":
         return setSizeAbs(recv);
+      // Bug 23：Set keys ≡ values ≡ 元素序列；entries → [el, el] 条目
+      case "keys":
+      case "values":
+        return collectionIteratorAbs(setElementsAbs(recv));
+      case "entries":
+        return collectionIteratorAbs(setElementsAbs(recv).map(setEntryTuple));
       default:
         return undefined;
     }

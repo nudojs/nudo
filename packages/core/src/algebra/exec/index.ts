@@ -2,7 +2,7 @@
 // or an explicit list reviewed with PUBLIC_API.md + public-api.snapshot.json.
 
 export {
-  $add, $absVal, $arguments, $arr, $arrMutContainer, $arrRest, $arrWithHoles,
+  $add, $absVal, $arguments, $arr, $arrMutContainer, $arrRest, $arrWithHoles, $restBind,
   $async, $asyncReturn, $await, $bitand, $bitnot, $bitor, $bitxor,
   $catchVal, $classExpr, $collectionForEach, $concat, $copy, $del, $delRes,
   $div, $dynamicImport, $elems, $eq, $eqLoose, $fnVal, $for, $forInKeys,

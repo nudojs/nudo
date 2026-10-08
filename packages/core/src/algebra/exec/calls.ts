@@ -11,6 +11,8 @@ import { mayCoerceThrowOperand } from "../builtins/shared.ts";
 import { isSymbolAbs } from "../builtins/symbol.ts";
 import { $call, routeApplyThrows, clearPureMemo } from "./call.ts";
 import { callAtFunctionBoundary, $copy, asAbsVal } from "./runtime.ts";
+import { setHostGlobalFnCall } from "./runtime/state.ts";
+import { setHostGlobalCallBridge } from "../hof.ts";
 import { throwPayloadOf, recordMayThrow, errorTypeAbs } from "./may-throw.ts";
 import { NudoThrow } from "./nudo-throw.ts";
 import { pureFnNameOf, makeAbsApplyResult, type AbsApplyResult } from "../abs-fn.ts";
@@ -166,6 +168,17 @@ const GLOBAL_FNS = new Set([
   "WeakMap",
   "WeakSet",
   "Promise",
+  // Bug 5：URI/escape 族——env 声明 prim.str()→prim.str() 此前被
+  // callHostGlobalLiteralOnly 的「抽象实参一律 unknown」兜底遮蔽；登记后
+  // evalGlobalFn 折叠字面量、抽象 prim 按 str + may-throw 面分派
+  "encodeURI",
+  "decodeURI",
+  "encodeURIComponent",
+  "decodeURIComponent",
+  "btoa",
+  "atob",
+  "escape",
+  "unescape",
 ]);
 
 /**
@@ -306,6 +319,37 @@ function callHostGlobalLiteralOnly(
     throw new NudoThrow(throwPayloadOf(e));
   }
 }
+
+/**
+ * Bug 26：宿主全局函数**值**的一等公民调用桥——被调用位（$callNamed 内层
+ * 分派）同款路由，供回调位（callFn / applyCallbackValue）、.call/.apply
+ * 接收者位（$invokeInner）、asAbsVal 的 apply 钩子共用：
+ * GLOBAL_FNS 名字+身份 → evalGlobalFn；宿主内建构造器身份 → evalGlobalFn；
+ * 副作用名单 → fail-closed；其余宿主全局 → callHostGlobalLiteralOnly。
+ * 非宿主全局（模块转译函数等）返回 undefined，调用方走原路径。
+ */
+export function callHostGlobalFn(fn: unknown, args: Abs[]): Abs | undefined {
+  if (typeof fn !== "function" || !isHostGlobalFn(fn)) return undefined;
+  const name = fn.name || "hostGlobal";
+  let g: Abs | undefined;
+  if (GLOBAL_FNS.has(name) && fn === (globalThis as Record<string, unknown>)[name]) {
+    g = evalGlobalFn(name, args);
+  } else {
+    const ctorName = hostBuiltinCtorName(fn);
+    if (ctorName !== undefined) {
+      g = evalGlobalFn(ctorName, args);
+    }
+  }
+  if (g !== undefined) return g;
+  const blocked = blockHostSideEffect(fn);
+  if (blocked !== null) return blocked;
+  return callHostGlobalLiteralOnly(name, fn as (...a: unknown[]) => unknown, args);
+}
+
+// Bug 26：把桥注入 hof.ts（applyCallbackValue 回调位）与 state.ts
+// （asAbsVal 的 apply 钩子）——两文件均为被依赖方，注册式避免反向 import
+setHostGlobalCallBridge(callHostGlobalFn);
+setHostGlobalFnCall(callHostGlobalFn);
 
 /**
  * 按名调用并记录。
