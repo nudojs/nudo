@@ -288,35 +288,95 @@ export function $removeUndefined(a: Abs): Abs {
 }
 
 /**
- * 成员真值守卫臂剪影（issue #118）：`if (o.p)` 真值臂 / `if (!o.p)` 假值臂 /
- * `o?.p` 真值守卫里，槽 p 的值必为真值 ⇒ 非 nullish 且槽必在场——重建 obj
- * slots：槽值过与 $removeNullish 同款成员剥离，并摘除 optional 标记
- * （真值 ⇒ 在场；$get 的 join(value, undef) 随之消失）。槽值剥空（纯
+ * 成员真值守卫臂剪影（issue #118 / #129）：`if (o.p)` 真值臂 / `if (!o.p)`
+ * 假值臂 / `o?.p` 真值守卫里，槽 p 的值必为真值 ⇒ 非 nullish 且槽必在场——
+ * 重建 obj slots：槽值过与 $removeNullish 同款成员剥离，并摘除 optional
+ * 标记（真值 ⇒ 在场；$get 的 join(value, undef) 随之消失）。槽值剥空（纯
  * nullish）→ 保守原样（臂不可达近似，与 $removeNullish 空集口径一致）；
  * 键缺席 / 非 obj / 裸宿主值 → 透传（同 $removeNullish 契约）。真值 ⇒ 非
  * nullish 是 sound 下界：0/''/false 等 falsy-but-not-nullish 成员保留。
+ *
+ * sum 容器（issue #129）：判别窄化后参数常为多臂 union——守卫事实按成员
+ * 分发：key 槽确定 nullish 的成员（闭 shape 槽缺席读 undefined / 槽值整体
+ * nullish）在真值守卫下必走早退 → 剪除；其余成员按 obj 分支同款重建。open
+ * 缺席（读 unknown）/ any / unknown 槽值 / 非对象成员不可判保留（宁缺毋
+ * 假）。全剪空 → 原样；单成员剪余塌缩（与 $narrowMemberEq 同口径）。
  */
 export function $removeMemberNullish(a: Abs, key: string): Abs {
   if (!a || typeof a !== "object" || !("shape" in (a as object))) return a;
+  if (a.shape.k === "sum") {
+    const members = (a.shape as { members: Abs[] }).members;
+    const kept: Abs[] = [];
+    let changed = false;
+    for (const m of members) {
+      const r = memberSlotTruthyRefine(m, key);
+      if (r.kind === "prune") {
+        changed = true;
+        continue;
+      }
+      if (r.kind === "keep") {
+        kept.push(m);
+        continue;
+      }
+      changed = true;
+      const sh = m.shape as ObjShape;
+      kept.push({ ...m, shape: { ...sh, slots: { ...sh.slots, [key]: r.slot } } });
+    }
+    if (!changed || kept.length === 0) return a;
+    return kept.length === 1 ? kept[0]! : { ...a, shape: { k: "sum" as const, members: kept } };
+  }
   if (a.shape.k !== "obj") return a;
-  const slots = (a.shape as { slots: ObjShape["slots"] }).slots;
+  const slots = (a.shape as ObjShape).slots;
   if (!Object.prototype.hasOwnProperty.call(slots, key)) return a;
+  const r = memberSlotTruthyRefine(a, key);
+  // 纯 nullish 槽在单 obj 上无「臂不可达」可表 → 保守原样（与 #118 口径一致）
+  if (r.kind !== "refine") return a;
+  return { ...a, shape: { ...a.shape, slots: { ...slots, [key]: r.slot } } };
+}
+
+/** 槽值整体确定 nullish（nullish lit / 全 nullish-lit 成员的 sum） */
+function definitelyNullishAbs(a: Abs): boolean {
+  if (isNullishLitAbs(a)) return true;
+  if (a.shape.k === "sum") {
+    const members = (a.shape as { members: Abs[] }).members;
+    return members.length > 0 && members.every((m) => isNullishLitAbs(m));
+  }
+  return false;
+}
+
+/** 单成员 key 槽真值守卫分类（issue #129）：
+ * - prune：剪除该成员——闭 shape 槽缺席（宽容读出 undefined）或槽值整体
+ *   确定 nullish（真值守卫下必 falsy，成员在守卫臂内不可达）；
+ * - refine：重建该成员的槽——槽值剥 nullish 成员 + 摘 optional 标记
+ *   （$get 的 join(value, undef) 消失）；
+ * - keep：原样——open 缺席（读 unknown 不可判）/ 槽值非 nullish 且无
+ *   optional / 非 obj 成员（保守，与 memberEqClass 的 may 同口径）。
+ */
+type MemberSlotRefine =
+  | { kind: "prune" }
+  | { kind: "keep" }
+  | { kind: "refine"; slot: { value: Abs; readonly?: boolean } };
+
+function memberSlotTruthyRefine(m: Abs, key: string): MemberSlotRefine {
+  if (m.shape.k !== "obj") return { kind: "keep" };
+  const slots = (m.shape as ObjShape).slots;
+  if (!Object.prototype.hasOwnProperty.call(slots, key)) {
+    return (m.shape as ObjShape).open ? { kind: "keep" } : { kind: "prune" };
+  }
   const slot = slots[key]!;
+  if (definitelyNullishAbs(slot.value)) return { kind: "prune" };
   let value = slot.value;
-  let changed = false;
   if (!definitelyNotNullishShape(value.shape) && value.shape.k === "sum") {
     const members = (value.shape as { members: Abs[] }).members;
-    const kept = members.filter((m) => !isNullishLitAbs(m));
+    const kept = members.filter((x) => !isNullishLitAbs(x));
     if (kept.length > 0 && kept.length < members.length) {
       value = kept.length === 1 ? kept[0]! : { ...value, shape: { k: "sum" as const, members: kept } };
-      changed = true;
     }
   }
-  if (slot.optional) changed = true;
-  if (!changed) return a;
+  if (value === slot.value && !slot.optional) return { kind: "keep" };
   const next: { value: Abs; optional?: boolean; readonly?: boolean } = { ...slot, value };
   delete next.optional;
-  return { ...a, shape: { ...a.shape, slots: { ...slots, [key]: next } } };
+  return { kind: "refine", slot: next };
 }
 
 /** 成员 → JS typeof 名；any/unknown（无 nullish lit term）不可判 → undefined */
