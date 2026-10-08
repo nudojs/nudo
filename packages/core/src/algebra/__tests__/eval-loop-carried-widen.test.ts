@@ -47,7 +47,7 @@ function callWith(
     /* 入口整抛：值域经 throws 面表达 */
   }
   const norm = (a: unknown): string => formatAbs(a as never)?.replace(/\s+#[a-z]+$/, "") ?? "";
-  const l = litValue((result as { result?: unknown }).result);
+  const l = litValue(result.result as never);
   return { value: norm(result.result), throws: norm(result.throws), lit: l };
 }
 

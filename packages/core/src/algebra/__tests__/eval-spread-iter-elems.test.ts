@@ -43,7 +43,7 @@ function callWith(
   return {
     value: norm(result.result),
     throws: norm(result.throws),
-    lit: litValue(result.result),
+    lit: litValue(result.result as never),
   };
 }
 
