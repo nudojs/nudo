@@ -197,9 +197,9 @@ describe("#129 运行时单元：$removeMemberNullish sum 分支", () => {
       derefConstraint(shape({ p: string(), tag: lit("drop") }) as never),
       "x",
     ) as never;
-    const nullLitVal = abs({ k: "prim", type: "object" }, litTerm(null), pTrue, "exact");
+    const nullLitVal = abs({ k: "unknown" }, litTerm(null), pTrue, "exact");
     const dropMember = {
-      ...dropArm,
+      ...(dropArm as Record<string, unknown>),
       shape: { ...asShape(dropArm), slots: { ...asShape(dropArm).slots!, p: { value: nullLitVal } } },
     } as never;
     const keepArm = constraintToEntryAbs(
@@ -221,13 +221,16 @@ describe("#129 运行时单元：$removeMemberNullish sum 分支", () => {
 
   it("open 缺席槽保守保留；无可剪成员原样返回（对象同一性）", () => {
     const closed = constraintToEntryAbs(derefConstraint(shape({ a: string() }) as never), "x") as never;
-    const openMember = { ...closed, shape: { ...asShape(closed), open: true } } as never;
+    const openMember = {
+      ...(closed as Record<string, unknown>),
+      shape: { ...asShape(closed), open: true },
+    } as never;
     const s = constraintToEntryAbs(
       derefConstraint(union(shape({ type: string() }), shape({ b: string() })) as never),
       "x",
     ) as never;
     const withOpen = {
-      ...s,
+      ...(s as Record<string, unknown>),
       shape: { ...asShape(s), members: [openMember, ...asShape(s).members!] },
     } as never;
     // open 成员缺席键读 unknown → 不可判保留；type 臂缺席闭槽剪除；b 臂保留
