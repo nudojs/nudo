@@ -1,5 +1,20 @@
 # nudojs
 
+## 1.3.14
+
+### Patch Changes
+
+- Updated dependencies [bf601e0]
+- Updated dependencies [bf601e0]
+- Updated dependencies [bf601e0]
+- Updated dependencies [bf601e0]
+- Updated dependencies [bf601e0]
+  - @nudojs/core@1.9.1
+  - @nudojs/env@0.4.28
+  - @nudojs/harvester@0.3.14
+  - @nudojs/parser@1.4.10
+  - @nudojs/service@1.6.13
+
 ## 1.3.13
 
 ### Patch Changes
