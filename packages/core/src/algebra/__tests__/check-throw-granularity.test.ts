@@ -177,7 +177,7 @@ describe("Bug 23: typeof 类型守卫七面零 L2", () => {
     ["relStr", `export function relStr(v) { if (typeof v === "string") { return v > "a"; } return false; }`, /^boolean/],
     ["forOfStr", `export function forOfStr(v) { if (typeof v === "string") { let s = ""; for (const c of v) s += c; return s; } return ""; }`, /^string\b/],
     ["spreadStr", `export function spreadStr(v) { if (typeof v === "string") { return [...v].length; } return 0; }`, /^number \| 0\b/],
-    ["destrStr", `export function destrStr(v) { if (typeof v === "string") { const [c] = v; return c; } return 0; }`, /^unknown \| 0\b/],
+    ["destrStr", `export function destrStr(v) { if (typeof v === "string") { const [c] = v; return c; } return 0; }`, /^string \| undefined \| 0\b/],
     ["tmplStr", "export function tmplStr(v) { if (typeof v === \"string\") { return `${v}!`; } return 0; }", /^string \| 0\b/],
     // number 守卫：不可能的 string 臂消失（此前 number | string | 0）
     ["addNum", `export function addNum(v) { if (typeof v === "number") { return v + 1; } return 0; }`, /^number\b/],

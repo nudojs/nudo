@@ -130,13 +130,20 @@ function isWidenedSumArm(m: Abs, parent: Abs): boolean {
  * `Number(x) - Number(y)` 派生 / any 参与的运算臂）的域已知——partial
  * conf 丢的是界/路径证据，不丢 prim 值域 → 域隶属可证（issue #115：
  * `0 | -1 | 1 | number` 对 `number()` 不得降 unproven-return）。
- * 带界义务（gt/le/int…）仍不可证；错配 prim 的 disproved FP 保护不动。
+ * union/nullable 契约按 ∃-成员分解：某成员是无界同型裸 prim 即域隶属
+ * 可证（issue #102 回归：lev DP 表循环增长宽化（Bug 48）注入的 bare
+ * widened number 臂对 `nullable(number())` 不得 unprovable——与
+ * assertImpliesSingle 的 union ∃-member 对账同构）。带界义务（gt/le/
+ * int…）成员仍不可证；错配 prim 的 disproved FP 保护不动。
  */
 function provesBarePrimDomain(arm: Abs, constraint: NudoConstraint): boolean {
+  if (constraint.members) {
+    return constraint.members.some((m) => provesBarePrimDomain(arm, derefConstraint(m)));
+  }
   if (!constraint.prim || constraint.preds.length > 0 || isIntFlag(constraint)) {
     return false;
   }
-  if (constraint.fields || constraint.element || constraint.members || constraint.fn) {
+  if (constraint.fields || constraint.element || constraint.fn) {
     return false;
   }
   return arm.shape.k === "prim" && arm.shape.type === constraint.prim;
@@ -317,8 +324,38 @@ function assertImpliesSingle(
     if (arm.shape.k !== "arr" && arm.shape.k !== "tuple") {
       return disproved(`return shape ${arm.shape.k} ⊭ array(...)`);
     }
-    // 元素级：整体 arr 存在即 shape 合格（元素级后置是嵌套缺口，不在此扩面）
-    return proved();
+    // Bug 30：元素级对账（此前只查形状即 proved——元素 pred/类型违约被
+    // 伪装成成功）。tuple → 逐元素 assertImplies（精确 disproved 定位下标；
+    // unprovable 元素降级整体 unprovable，不伪装成功）；空 tuple 空真保持
+    // proved；带 rest 槽（0..n 未知额外元素）→ 保守 unprovable。arr →
+    // 抽象元素域对账（prim 错配 disproved，其余降级 unprovable）。
+    if (arm.shape.k === "tuple") {
+      const ts = arm.shape as { elements: Abs[]; rest?: Abs };
+      if (ts.rest) return unprovable("array element: rest tail not enumerable");
+      let sawUnprovable = false;
+      for (let i = 0; i < ts.elements.length; i++) {
+        const r = assertImplies(ts.elements[i]!, constraint.element, opts);
+        if (r.status === "disproved") {
+          return disproved(
+            `array element [${i}] ⊭ ${formatConstraint(constraint.element)} (${r.reason})`,
+          );
+        }
+        if (r.status === "unprovable") sawUnprovable = true;
+      }
+      return sawUnprovable
+        ? unprovable("array element: some elements unprovable")
+        : proved();
+    }
+    const el = (arm.shape as { element: Abs }).element;
+    const r = assertImplies(el, constraint.element, opts);
+    if (r.status === "disproved") {
+      return disproved(
+        `array element ⊭ ${formatConstraint(constraint.element)} (${r.reason})`,
+      );
+    }
+    return r.status === "unprovable"
+      ? unprovable(`array element: ${r.reason}`)
+      : proved();
   }
 
   // --- fn 契约：Phase 1 只展示不执法 ---

@@ -2,11 +2,11 @@
  * 数组 / 对象运行时：$arr/$idx/$len/$arrMutContainer 与 $obj/$get/$set/$spread。
  */
 import type { Abs } from "../../abs.ts";
-import { abs, bool, boolLit, confJoin, litValue, numLit, str, unknown, type Confidence } from "../../abs.ts";
+import { abs, bool, boolLit, confJoin, litValue, numLit, str, strLit, unknown, type Confidence } from "../../abs.ts";
 import { lit, type Term } from "../../term.ts";
 import type { Phi } from "../../pred.ts";
 import { pTrue, and, predEquals, ge } from "../../pred.ts";
-import { absFunction, getFnImpl } from "../../abs-fn.ts";
+import { absFunction, getFnImpl, hostFnCtorFacet } from "../../abs-fn.ts";
 import {
   joinAbs, objOf, isObj, spread as spreadObj, type ObjShape, type Slot,
   isNullProtoObj, migrateNullProto, getSlot, setSlot, setProtoAbs,
@@ -30,6 +30,11 @@ import { validateCallableArg, validateIndexArg } from "../../hof.ts";
 import {
   noteUnknownMemberMissing, noteObjSlotMissing,
   noteAnyMemberMayThrow, noteNullishMemberThrows, isNullishAbs, anyMemberResult,
+  STRING_METHODS,
+  NUMBER_PROTO_METHODS,
+  BOOLEAN_PROTO_METHODS,
+  SYMBOL_PROTO_METHODS,
+  BIGINT_PROTO_METHODS,
 } from "../member-diag.ts";
 import { errorTypeAbs, recordMayThrow, type MayThrowEffect } from "../may-throw.ts";
 import { getEvalClass } from "../class-registry.ts";
@@ -42,6 +47,7 @@ import {
 import { $unknown, $toNumber, $eq, $ne, $typeof, $add, $sub } from "./ops.ts";
 import { lookupObjAccessor, migrateAccessors, $objAccessor, findClassAccessor, findStaticClassAccessor, $in, $instanceof, $del, accessorTable, BUILTIN_BRAND_METHODS, evalClassChain } from "./members.ts";
 import { DEFAULT_MAX_LOOP_ITERS, MAX_CONCRETE_LOOP_ITERS, LOOP_TRUNCATION_LABEL } from "./loop-budget.ts";
+import { makeLoopWidener } from "./loop-widen.ts";
 import { noteAbsTruncation } from "../../call-budget.ts";
 import { isNudoThrow, callAtFunctionBoundary } from "./state.ts";
 import { $call } from "../call.ts";
@@ -179,6 +185,47 @@ export const ARR_MUTATORS = new Set([
 
 export function isArrMutator(name: string): boolean {
   return ARR_MUTATORS.has(name);
+}
+
+/**
+ * Bug 44：签名符号执行的 rest 形参注入哨兵。generalize 的零实参符号调用
+ * 对每个形参恰好注入 1 个合成实参——rest 形参会塌缩成固定 1 元组（假
+ * 具体值：`sigLen(...r) => 1`）。签名面注入开放数组 Abs（arr(any)、
+ * 长度无上界），rest 绑定（$restBind）识别哨兵直通；真实调用永不携带
+ * （保留字 var term id——用户面/α 空间（"A1" 标签系）不可构造，且经
+ * $copy 快照存活——Symbol 键标记会被 callTranspiledExportFull 的 D1
+ * 副本剥掉）。
+ */
+const SYMBOLIC_REST_VAR = "Ωnudo-symbolic-restΩ";
+
+export function makeSymbolicRestAbs(): Abs {
+  return abs(
+    { k: "arr", element: abs({ k: "any" }, undefined, undefined, "path") },
+    { op: "var", id: SYMBOLIC_REST_VAR },
+    pTrue,
+    "partial",
+  );
+}
+
+export function isSymbolicRestAbs(a: unknown): boolean {
+  if (!a || typeof a !== "object" || !("shape" in (a as object))) return false;
+  const t = (a as Abs).term;
+  return (
+    (a as Abs).shape.k === "arr" &&
+    t !== undefined &&
+    t.op === "var" &&
+    t.id === SYMBOLIC_REST_VAR
+  );
+}
+
+/**
+ * rest 形参绑定（Bug 44）：收集 namedCount 之后的实参包 $arr（长度保持
+ * 原生——真调用面）；唯一元素是符号注入哨兵时直通开放数组（签名面）。
+ */
+export function $restBind(list: ArrayLike<unknown>, namedCount: number): Abs {
+  const rest = Array.prototype.slice.call(list, namedCount) as unknown[];
+  if (rest.length === 1 && isSymbolicRestAbs(rest[0])) return rest[0] as Abs;
+  return $arr(rest as Abs[]);
 }
 
 /**
@@ -713,6 +760,11 @@ export function $idx(
     if (idx < sv.length) return $lit(sv[idx]!);
     return undef();
   }
+  // Bug 3：抽象字符串接收者——s[n] 值域 = 单字符 | 越界 undefined（与
+  // s.at(n)/s.charAt(n) 同域），此前落末尾 unknown。
+  if (a.shape.k === "prim" && (a.shape as { type?: string }).type === "string") {
+    return joinAbs(str(), undef());
+  }
   return unknown;
 }
 
@@ -845,6 +897,11 @@ export function $len(a: Abs): Abs {
   // DEC-006 B/C：形参/回调可能漏出 JS undefined（rest 未包 $arr、map 缺第 3 参）——
   // 非 Abs 入参 fail-closed unknown，禁止读 .shape 炸宿主 TypeError
   if (!a || typeof a !== "object" || !("shape" in (a as object))) {
+    // Bug 9：transpile 泄漏的宿主函数（函数声明绑定等）——v.length 是宿主
+    // 真值（首个默认值/rest 形参前的形参数），exact 折叠
+    if (typeof a === "function") {
+      return numLit((a as { length: number }).length);
+    }
     return unknown;
   }
   // any 上的 .length：无约束成员（any ≠ unknown——不得报引擎债）
@@ -870,6 +927,16 @@ export function $len(a: Abs): Abs {
       lits.every((v) => v.ok && lits[0]!.ok && Object.is(v.value, lits[0]!.value))
     ) {
       return lens[0]!;
+    }
+    return abstractLen(a);
+  }
+  // Bug 9：函数值 length（f.length = 首个默认值/rest 形参前的形参数）。
+  // impl.length 静态已知（宿主函数 v.length / 全 Identifier 形参）→ exact；
+  // 否则（默认值/嵌套默认模式不可判）保守 number≥0（与抽象数组同口径）。
+  if (a.shape.k === "fn") {
+    const implLen = getFnImpl(a)?.length;
+    if (typeof implLen === "number") {
+      return numLit(implLen);
     }
     return abstractLen(a);
   }
@@ -1108,14 +1175,17 @@ export function $concat(a: Abs, b: Abs): Abs {
   // 一侧是抽象数组（arr）：spread 语义按元素并入（元素 join），
   // 不得整体嵌为单元素——字面量链超 cap 降级为 arr 后继续吸收后续元素也走此分支
   if (as.k === "arr" || bs.k === "arr") {
-    // 空 tuple 元素 join 无单位元——不得裸 reduce（DEC-006: Reduce of empty array）
+    // 空 tuple 元素 join 无单位元——不得裸 reduce（DEC-006: Reduce of empty array）；
+    // 单位元是 bottom（never）而非 unknown（top）——空 tuple spread 不贡献
+    // 元素，join(never, x) = x（与下方 sideEl 同口径，Bug 4：[...xs] 元素域
+    // 被 unknown 污染成 number | unknown 的根因）
     const ea: Abs = as.k === "tuple"
-      ? (as.elements.length ? as.elements.reduce((x, y) => joinAbs(x, y)) : unknown)
+      ? (as.elements.length ? as.elements.reduce((x, y) => joinAbs(x, y)) : abs({ k: "never" }, undefined, undefined, "exact"))
       : as.k === "arr"
         ? as.element
         : a;
     const eb: Abs = bs.k === "tuple"
-      ? (bs.elements.length ? bs.elements.reduce((x, y) => joinAbs(x, y)) : unknown)
+      ? (bs.elements.length ? bs.elements.reduce((x, y) => joinAbs(x, y)) : abs({ k: "never" }, undefined, undefined, "exact"))
       : bs.k === "arr"
         ? bs.element
         : b;
@@ -1172,6 +1242,12 @@ export function $concat(a: Abs, b: Abs): Abs {
       const els = x.shape.elements;
       // 空 tuple spread 不贡献元素 → never；join(never, any) = any
       return els.length ? els.reduce((u, y) => joinAbs(u, y)) : abs({ k: "never" }, undefined, undefined, "exact");
+    }
+    // 抽象字符串按 code point 可迭代是 total 面（iterabilityKind 同口径；
+    // 字面量字符串在 $concat 顶部已特判展开）——元素域恒 string（Bug 4：
+    // [...s] 折 unknown[] 的缺口）
+    if (x?.shape?.k === "prim" && x.shape.type === "string") {
+      return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
     }
     return unknown;
   };
@@ -1351,7 +1427,15 @@ function elemsOf(a: Abs): Abs[] {
   if (mi) return mi;
   const svR = litValue(a);
   const sv = svR.ok ? svR.value : undefined;
+  // 字面量字符串：code points 精确展开（必须先于抽象 prim 臂——lit 也是
+  // prim string shape）
   if (typeof sv === "string") return [...sv].map((c) => $lit(c));
+  // 抽象字符串 prim：code point 迭代，元素域恒 string（Bug 19：for-of /
+  // yield* 循环变量折 unknown → 算术/成员读级联污染）——单代表元素，与
+  // arr 臂 [element] 同口径（长度不可知由 $forOf unbounded 出口 join 承接）
+  if (a.shape.k === "prim" && a.shape.type === "string") {
+    return [abs({ k: "prim", type: "string" }, undefined, undefined, "path")];
+  }
   return [unknown];
 }
 
@@ -1429,7 +1513,11 @@ export function $forInKeys(o: Abs): Abs {
   if (shape.k === "brand") {
     const inner = shape.shape;
     if (inner.shape.k === "obj") {
-      const keys = enumOwnKeys(inner, inner.shape.slots);
+      // boxed String brand（Bug 57 附带，T2 移交）：length 不可枚举——原生
+      // for (k in new String("ab")) 只枚举 ["0","1"]（内部槽已标 enumerable:false）
+      const keys = enumOwnKeys(inner, inner.shape.slots).filter(
+        (k) => !(shape.name === "String" && k === "length"),
+      );
       return $arr(keys.map((k) => $lit(k)));
     }
     return $arr([]);
@@ -1463,15 +1551,21 @@ export function $forOf(
 ): void {
   const pack = opts?.pack;
   const unpack = opts?.unpack;
+  // 循环携带绑定宽化器（Bug 47）：unbounded 单代表迭代的出口 join 是
+  // {0 次, 1 次} 两个打包态——常步长累加器（n++ / n += 2）跨迭代增长，
+  // 1 次代表不能覆盖任意迭代次数（原生 xs.length 任意）；增长槽位宽化
+  // 到无上界域（sound），join-幂等绑定不动（行为不变）
+  const widen = pack ? makeLoopWidener() : undefined;
   let exitJoin: Abs | undefined;
   const snapExit = (): void => {
     if (!pack) return;
     const s = pack();
+    widen?.observe(s);
     exitJoin = exitJoin ? joinAbs(exitJoin, s) : s;
   };
   const applyExitJoin = (): void => {
     if (!exitJoin || !pack || !unpack) return;
-    unpack(joinAbs(exitJoin, pack()));
+    unpack(widen ? widen.widenFinal(joinAbs(exitJoin, pack())) : joinAbs(exitJoin, pack()));
   };
 
   const shape = iterable.shape;
@@ -1553,10 +1647,17 @@ export function $forOf(
       );
     } catch (e) {
       if (isNudoBreak(e, opts?.label)) {
+        // break 打断代表体（fork 的 break 臂冒泡，后续语句丢失）——完整
+        // 迭代效应不可观测，「先跑任意次再 break」的累加器域必须整体宽化
+        if (unbounded && e.abstract) widen?.markInterrupted();
         applyExitJoin();
         return;
       }
-      if (isNudoContinue(e, opts?.label)) continue; // 下一个元素；已发生副作用保留
+      if (isNudoContinue(e, opts?.label)) {
+        // continue 同款：本迭代剩余语句丢失（单代表迭代后循环即结束）
+        if (unbounded && e.abstract) widen?.markInterrupted();
+        continue; // 下一个元素；已发生副作用保留
+      }
       if (isNudoReturn(e) || isNudoThrow(e)) throw e;
       throw e;
     }
@@ -1594,6 +1695,20 @@ export const NAMESPACE_GLOBALS: ReadonlyArray<readonly [string, unknown]> = [
   // unknown + throws=never（原生 TypeError 定抛被吞）
   ["Reflect", Reflect],
   ["Symbol", Symbol],
+  // Bug 24：URL 静态面（canParse）派发——URL.canParse 折 unknown 的根因
+  // 是 URL 不在身份路由表（构造面 new URL 经 clsName 派发不受影响）
+  ["URL", URL],
+  // Bug 56：X.prototype.<method> 值读——Map/Set/WeakMap/WeakSet/Boolean 的
+  // prototype 成员读此前落宿主 unknown（.method 级联假 undefined + .call
+  // 假 TypeError）；入表后 $get(ns, "prototype") → protoBrandAbs，
+  // 原型方法表派发（Map.prototype.has.call(m, k) 等）
+  ["Map", Map],
+  ["Set", Set],
+  ["WeakMap", WeakMap],
+  ["WeakSet", WeakSet],
+  ["Boolean", Boolean],
+  ["RegExp", RegExp],
+  ["Error", Error],
 ];
 
 export function namespaceNameOf(v: unknown): string | undefined {
@@ -1626,6 +1741,73 @@ function isPossiblyProtoMemberKey(key: string): boolean {
     key === "constructor" ||
     key.startsWith("@@")
   );
+}
+
+/** Bug 49/56：prim 原型专有方法表（值读投影用；String 用 STRING_METHODS
+ *  ——与「确定缺失」诊断同源，漏列会误 undef 合法方法值读） */
+const PRIM_PROTO_METHOD_NAMES: Record<string, ReadonlySet<string>> = {
+  string: STRING_METHODS,
+  number: NUMBER_PROTO_METHODS,
+  boolean: BOOLEAN_PROTO_METHODS,
+  symbol: SYMBOL_PROTO_METHODS,
+  bigint: BIGINT_PROTO_METHODS,
+};
+
+/** Bug 56：X.prototype.<method> 值读的构造器→方法表（prim 包装构造器 +
+ *  内建 brand；用户/未知构造器不在此列——保守落内层 miss）。
+ *  brand 臂延迟解析：BUILTIN_BRAND_METHODS 经 members.ts 循环 import，
+ *  模块加载期该绑定可能尚未初始化（首用时已必然就绪）。 */
+const PROTO_PRIM_METHOD_NAMES: Record<string, ReadonlySet<string>> = {
+  Array: ARRAY_PROTO_METHOD_NAMES,
+  String: STRING_METHODS,
+  Number: NUMBER_PROTO_METHODS,
+  Boolean: BOOLEAN_PROTO_METHODS,
+  Symbol: SYMBOL_PROTO_METHODS,
+  BigInt: BIGINT_PROTO_METHODS,
+};
+
+function protoBrandMethodNames(ctorName: string): ReadonlySet<string> | undefined {
+  return (
+    PROTO_PRIM_METHOD_NAMES[ctorName] ??
+    BUILTIN_BRAND_METHODS[ctorName as keyof typeof BUILTIN_BRAND_METHODS]
+  );
+}
+
+/**
+ * Bug 49/56「方法值读」统一通道：原型方法的一等函数值。
+ * - 值面：fn shape（typeof === "function"、=== undefined 折 false）；
+ * - 调用面：apply 钩子把借用调用（v() / v.call(recv, …) / v.apply /
+ *   v.bind）按 home 派发回**既有**方法调用机器（callAbsMethod 的 prim 面 /
+ *   $invoke 的 brand·数组面）——不复制任何派发逻辑。
+ * 与数组臂「不得挂空 body impl」的告诫不冲突：挂的是真 apply（转发派发），
+ * $call 不会把 noBody 折成 undefined。
+ */
+/* var（非 let）：exec/class.ts 模块加载期经循环 import 回调本 setter 时，
+ * let 声明仍在 TDZ（eval-empty-sum-reduce / env-shadow-parity 加载序崩溃）；
+ * var 提升初始化为 undefined，注册先于本模块体完成也安全。 */
+var protoMethodDispatch:
+  | ((home: string, name: string, thisVal: Abs | undefined, args: Abs[]) => Abs)
+  | undefined;
+
+/** exec/class.ts 模块加载时注册（调用派发实现；与 state.ts 的
+ *  setHostGlobalFnCall 桥同款注册式注入，避免 containers↔class import 环） */
+export function setProtoMethodDispatch(
+  d: (home: string, name: string, thisVal: Abs | undefined, args: Abs[]) => Abs,
+): void {
+  protoMethodDispatch = d;
+}
+
+export function protoMethodValueAbs(home: string, name: string): Abs {
+  return absFunction([], {
+    body: noBody,
+    // 内建原型方法是内建函数，原生不可 new（Bug 9 口径）
+    apply: (args, thisVal) =>
+      protoMethodDispatch?.(home, name, thisVal, args) ?? unknown,
+    // kind 标记：$invokeInner 的「属性上的可调用值」回退不得经此再入
+    //（$invoke(recv, m) 未命中派发表时 $get 命中本值，$call 无 receiver
+    // 回环成 $invoke(undefined, m)——copyWithin/splice 等未接管方法假定抛）
+    kind: "protoMethod",
+  }, { ctor: false });
 }
 
 /** 成员读：obj.slots[key]；缺失 → undefined 字面量；brand 解包内层 */
@@ -1663,6 +1845,33 @@ export function $get(
         return unknown;
       }
     }
+    // Bug 9：非命名空间宿主函数（transpile 编译的函数声明绑定等）——
+    // name/length/prototype 是宿主真值（v.name / v.length / v.prototype）；
+    // call/apply/bind 一等读取（$invoke 转发面既有）
+    if (typeof o === "function") {
+      const fn = o as { name?: unknown; length?: unknown; prototype?: unknown };
+      if (key === "name") {
+        return typeof fn.name === "string" && fn.name ? strLit(fn.name) : str();
+      }
+      if (key === "length") {
+        return numLit(typeof fn.length === "number" ? fn.length : 0);
+      }
+      if (key === "prototype") {
+        // 箭头/async/generator（去种类化宿主函数）原生无 prototype → undefined
+        if (fn.prototype === undefined || hostFnCtorFacet(o as never) === false) {
+          return undef();
+        }
+        return abs({ k: "obj", slots: {} }, undefined, undefined, "path");
+      }
+      if (key === "call" || key === "apply" || key === "bind") {
+        return absFunction([], { body: noBody }, { ctor: false });
+      }
+      // Bug 9：Object.prototype 方法（f.toString / f.hasOwnProperty …）——
+      // 宿主函数经原型链恒可用，一等 fn 读取（此前落 unknown）
+      if (OBJECT_PROTO_METHOD_NAMES.has(key)) {
+        return objectProtoMethodAbs(key);
+      }
+    }
     return unknown;
   }
   // Object.prototype 品牌：方法读取
@@ -1681,9 +1890,19 @@ export function $get(
     }, { ctor: false });
   }
   if (o.shape.k === "brand") {
-    if (o.shape.name.endsWith(".prototype") && (key === "toString" || key === "toLocaleString" || key === "join")) {
+    if (o.shape.name.endsWith(".prototype")) {
       const ctorName = o.shape.name.slice(0, -".prototype".length);
-      if (ctorName === "Array") return arrayMethodAbs(key === "join" ? "join" : key);
+      // Array 三键维持既有精确面（arrayMethodAbs：bindThis 注入 receiver）
+      if (ctorName === "Array" && (key === "toString" || key === "toLocaleString" || key === "join")) {
+        return arrayMethodAbs(key === "join" ? "join" : key);
+      }
+      // Bug 56：X.prototype.<method> 值读泛化——按构造器查原型方法表，产
+      // 带 apply 钩子的一等 fn（.call(recv,…) 借用调用转发既有方法派发）；
+      // 表外键沿旧路径（内层仅 constructor 槽 → miss）。
+      const protoMethods = protoBrandMethodNames(ctorName);
+      if (protoMethods?.has(key)) {
+        return protoMethodValueAbs(ctorName, key);
+      }
     }
     const isClassVal = classNameOfValue(o as object) === o.shape.name;
     // 内建 brand 原型方法读取（typeof m.forEach / m[Symbol.iterator]）：
@@ -1752,6 +1971,21 @@ export function $get(
       return slot.value;
     }
   }
+  // Bug 9：函数值属性 name / length / prototype——值域恒可判定
+  //（name：shape.name 声明名（asAbsVal / $fnVal 透传）有则 exact，否则
+  //  string；length：$len 的 fn 分支；prototype：非箭头恒对象 / 箭头 undefined）
+  if (o.shape.k === "fn") {
+    if (key === "name") {
+      const nm = (o.shape as { name?: string }).name;
+      return typeof nm === "string" && nm ? strLit(nm) : str();
+    }
+    if (key === "length") return $len(o);
+    if (key === "prototype") {
+      return o.shape.ctor === false
+        ? undef()
+        : abs({ k: "obj", slots: {} }, undefined, undefined, "path");
+    }
+  }
   // 数组 length：成员路径（a.length += 1 等复合写）与 a.length 读同源
   if ((o.shape.k === "tuple" || o.shape.k === "arr") && key === "length") {
     return $len(o);
@@ -1766,7 +2000,7 @@ export function $get(
   }
   // 字符串下标字符串键（s["1"] ≡ s[1]）；确定非下标自有键 → undefined
   // （与元组同口径 canonicalArrayIndex；length/原型方法继续走下方投影）
-  if (o.shape.k === "prim" && o.shape.type === "string") {
+  if (o.shape.k === "prim" && (o.shape as { type?: string }).type === "string") {
     const idx = canonicalArrayIndex(key);
     const svR = litValue(o);
     const sv = svR.ok && typeof svR.value === "string" ? svR.value : undefined;
@@ -1775,25 +2009,47 @@ export function $get(
       return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
     }
     if (key === "length" && typeof sv === "string") return numLit(sv.length);
-    if (!isPossiblyProtoMemberKey(key) && key !== "length") return undef();
+    // Bug 49：String.prototype 专有方法（trim/charAt/padStart/bold/…）是
+    // 可能的原型成员——不折 undef（否则 typeof "ab".trim === "undefined"
+    // 错误具体值）；其余确定非下标非方法键仍 undefined（原生 s.foo）
+    if (!isPossiblyProtoMemberKey(key) && !STRING_METHODS.has(key) && key !== "length") {
+      return undef();
+    }
   }
-  // 元组/数组/prim 上的 Object.prototype / Array.prototype 方法读取
+  // 元组/数组/prim 上的 Object.prototype / Array.prototype / prim 原型方法读取
+  const primProtoMethods =
+    o.shape.k === "prim"
+      ? PRIM_PROTO_METHOD_NAMES[(o.shape as { type?: string }).type ?? ""]
+      : undefined;
   if (
     (o.shape.k === "tuple" || o.shape.k === "arr" || o.shape.k === "prim") &&
-    (OBJECT_PROTO_METHOD_NAMES.has(key) || (o.shape.k !== "prim" && ARRAY_PROTO_METHOD_NAMES.has(key))) &&
-    !(o.shape.k === "prim" && o.shape.type === "string" && key === "toString")
+    (OBJECT_PROTO_METHOD_NAMES.has(key) ||
+      (o.shape.k !== "prim" && ARRAY_PROTO_METHOD_NAMES.has(key)) ||
+      primProtoMethods?.has(key) === true)
   ) {
     if ((o.shape.k === "tuple" || o.shape.k === "arr") && (key === "toString" || key === "toLocaleString" || key === "join")) {
       return arrayMethodAbs(key === "join" ? "join" : key);
     }
     // Array.prototype 方法 / Symbol.iterator：一等函数（typeof a.push === "function"）。
-    // 不得挂空 body impl：$invoke 会把 getFnImpl 命中的 noBody 当对象方法 $call，
-    // 把 concat/sort 等未在 invokeArrMethod 接管的方法折成 undefined（假精确）。
-    // 无 impl 的 fn shape 仍满足 typeof，调用侧继续走 invokeArrMethod / 保守 unknown。
+    // Bug 56：具名方法升级为方法值读通道（apply 钩子转发借用调用
+    // [].push.call(a, v)；@@iterator 维持无 impl 形状——迭代协议派发另走）。
     if (o.shape.k !== "prim" && (ARRAY_PROTO_METHOD_NAMES.has(key) || key === "@@iterator")) {
+      if (key !== "@@iterator") return protoMethodValueAbs("Array", key);
       return { shape: { k: "fn", params: [], ctor: false }, conf: "path" };
     }
     // string.toString/valueOf 由 callAbsMethod 处理调用；一等读取仍给 OP 函数
+    if (
+      primProtoMethods?.has(key) === true &&
+      (!OBJECT_PROTO_METHOD_NAMES.has(key) ||
+        // 唯一例外：string prim 的 toString（此前被显式排除落 unknown，
+        // Bug 49 值读面）——OP 泛型 toString 会折 "[object String]"，走
+        // prim 通道才有 String.prototype.toString 域
+        ((o.shape as { type?: string }).type === "string" && key === "toString"))
+    ) {
+      // Bug 49：prim 专有原型方法（trim/toFixed/…）——方法值读通道：
+      // apply 钩子转发 callAbsMethod 既有派发
+      return protoMethodValueAbs((o.shape as { type: string }).type, key);
+    }
     return objectProtoMethodAbs(key);
   }
   // OOB 合成 undefined 接收者（抽象下标可能 miss 后的成员读）：引擎精度

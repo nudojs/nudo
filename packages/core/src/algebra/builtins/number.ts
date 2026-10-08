@@ -93,6 +93,10 @@ export function evalNumberStatic(name: string, args: Abs[]): Abs | undefined {
   switch (name) {
     case "isInteger":
       return foldStrictNumberPred(Number.isInteger) ?? boolPrim();
+    // Bug 1：与 isInteger 同族同款（env 声明被硬编码派发表遮蔽）——非
+    // number 实参恒 false，字面量精确折叠，抽象保持 boolPrim
+    case "isSafeInteger":
+      return foldStrictNumberPred(Number.isSafeInteger) ?? boolPrim();
     case "isNaN": {
       const folded = foldStrictNumberPred(Number.isNaN);
       if (folded) return folded;

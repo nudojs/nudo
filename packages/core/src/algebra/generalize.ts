@@ -48,6 +48,7 @@ import { tryRunTranspiled, callTranspiledExportFull, runTranspiledOptionsMemoKey
 import { freeIdentifiers } from "./exec/body-fn.ts";
 import { withExecPhi } from "./exec/runtime.ts";
 import { $new, $invoke } from "./exec/class.ts";
+import { makeSymbolicRestAbs } from "./exec/runtime/containers.ts";
 
 /** generalize 的 evaluator 模块执行缓存（按 source；run 不依赖实参） */
 const evalRunMemo = new Map<string, Record<string, unknown>>();
@@ -970,8 +971,17 @@ function generalizeFromAstUncached(
     return result;
   };
 
+  // Bug 44：rest 形参注入开放数组哨兵（arr(any) partial、长度无上界）——
+  // 签名符号执行对每形参恰注 1 个合成实参，rest 直注会把绑定塌缩成固定
+  // 1 元组（`sigLen(...r) => 1` 错误具体值）；$restBind 识别哨兵直通。
+  // 具名形参保持 any+var 合成实参（α 关系面不变）。
+  const restIdx = formals.findIndex((f) => f.kind === "rest");
+  const symbolicArgs =
+    restIdx === -1
+      ? typeParams.map((t) => t.value)
+      : typeParams.map((t, i) => (i === restIdx ? makeSymbolicRestAbs() : t.value));
   const symbolic = run(
-    typeParams.map((t) => t.value),
+    symbolicArgs,
     // 入口契约进 Φ，让 body 内的单调性可传播
     entryReqs && entryReqs.length > 0
       ? entryReqs.length === 1

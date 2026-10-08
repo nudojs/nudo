@@ -153,8 +153,10 @@ describe("P0 loop accumulator abstract not exact maxIters", () => {
     const src = `export function f(n) { let s=0; for(let i=0;i<n;i=i+1){s=s+1;} return s; }`;
     expect(litValue(call(src, "f", 3).result)).toEqual({ ok: true, value: 3 });
     const r = callAbs(src, "f", [absNum]);
+    // T5 Bug 48 修复后：抽象条件循环携带累加器 growth-widen 为无上界 prim 域
+    //（旧 `0..8` sum 是 Bug 48 的假 exact 上界形状）。
     expect(formatShape(r.result)).not.toBe("8");
-    expect(r.result.shape.k).toBe("sum");
+    expect(formatShape(r.result)).toBe("number");
   });
 });
 

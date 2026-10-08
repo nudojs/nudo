@@ -102,8 +102,11 @@ export function lev(a, b) {
     );
     expect(l2Count(r, "lev")).toBe(0);
     expect(r.summary.errors).toBe(0);
-    // 此前被折成 `never throws TypeError`；widen 后诚实值域 0 | undefined
-    expect(sigOf(r, "lev")).toMatch(/^0 \| undefined\b/);
+    // 此前被折成 `never throws TypeError`；widen 后诚实值域。Bug 48 后
+    // 内层循环对 d 的元素域（fill 0 → min 增长）按增长宽化到无上界
+    // number——比旧 `0 | undefined` 更 sound（native lev("a","b")=1 ∉
+    // {0,undefined}）；OOB undefined 臂保留（抽象下标不可证界内）
+    expect(sigOf(r, "lev")).toMatch(/^number \| undefined\b/);
   });
 
   it("简化 DP（vLoop3）契约下零 L2", () => {

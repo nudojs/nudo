@@ -10,9 +10,9 @@ import { findClassAccessor } from "./runtime/members.ts";
 import { $get, $set, $lit, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary, lookupObjAccessor, fillTuple, clearStaleTermPred } from "./runtime.ts";
 import { pushCtorFrame, popCtorFrame, withNewTargetReset } from "./runtime/state.ts";
 import { $call } from "./call.ts";
-import { evalEnterCall, evalExitCall, evalTruncatedAbs, isHostGlobalFn } from "./calls.ts";
+import { evalEnterCall, evalExitCall, evalTruncatedAbs, isHostGlobalFn, callHostGlobalFn } from "./calls.ts";
 import { getFnImpl, absFunction, hostFnCtorFacet, isAbsApplyResult } from "../abs-fn.ts";
-import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, evalBuiltinNew, extStateOf, getPropFlags, isEnumerableView, tryMakeRegexAbs, makeArrayCtorAbs, assignSourceSlots, isSymbolAbs, stringOfSymbol, evalPromiseCtor, evalPromiseMethod, builtinCtorNameOf, hostBuiltinCtorName, makeProxyAbs, makeArrayBufferAbs, makeDataViewAbs, makeUrlAbs, noteBoxedCtorArg, sumHasPrimMember, evalDateCtor } from "../builtins.ts";
+import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, evalBuiltinNew, extStateOf, getPropFlags, isEnumerableView, makeArrayCtorAbs, assignSourceSlots, isSymbolAbs, stringOfSymbol, evalPromiseCtor, evalPromiseMethod, builtinCtorNameOf, hostBuiltinCtorName, makeProxyAbs, makeArrayBufferAbs, makeSharedArrayBufferAbs, makeDataViewAbs, makeUrlAbs, makeBoxedAbs, boxedPrimitiveValue, evalRegExpCtor, sumHasPrimMember, evalDateCtor, evalArrayStatic } from "../builtins.ts";
 import { arrayJoinToString, arrayJoinWithSep, validateJoinElements } from "../builtins/array.ts";
 import { isMapAbs, isSetAbs, makeMapAbs, makeSetAbs, collectionElementJoin, ctorArgDefinitelyInvalid, makeWeakCollectionAbs } from "../collections.ts";
 import { registerMatchIter } from "./match-iter.ts";
@@ -28,7 +28,7 @@ import {
   validateCallableArg,
   validateIndexArg,
 } from "../hof.ts";
-import { toIOI, privateNameGuard } from "./runtime/containers.ts";
+import { toIOI, privateNameGuard, setProtoMethodDispatch, copyWithinTuple } from "./runtime/containers.ts";
 import { emptyEnv } from "../ast-env.ts";
 import { defaultLeakBudget } from "../leak.ts";
 import { pTrue } from "../pred.ts";
@@ -378,11 +378,11 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
     if (cls === Array) {
       return makeArrayCtorAbs(args);
     }
-    // new RegExp(pattern, flags)：字面量真构造验证——非法 pattern/flags 硬抛
-    // SyntaxError/TypeError；合法折叠精确 brand；抽象/RegExp 实例保守（下方 path brand）
+    // new RegExp(pattern, flags)：字面量真构造验证（evalRegExpCtor 单一
+    // builder——字面量精确 brand / 抽象 pattern 全槽 path brand / 非法实参
+    // 硬抛 SyntaxError/TypeError，与 evalBuiltinNew Abs 面同口径）
     if (cls === RegExp) {
-      const m = tryMakeRegexAbs(args);
-      if (m) return m;
+      return evalRegExpCtor(args);
     }
     // C2.2：Error 家族携带 name/message 槽（catch 形参可读）
     if (isErrorCtorName(clsName)) {
@@ -405,19 +405,26 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
     // Bug 15：WeakMap/WeakSet 与 Map/Set 同口径 iterable 校验；合法 → 空 brand
     if (clsName === "WeakMap") return makeWeakCollectionAbs("WeakMap", args[0]);
     if (clsName === "WeakSet") return makeWeakCollectionAbs("WeakSet", args[0]);
-    // Bug 41：new ArrayBuffer(length) —— ToIndex 校验（负 → RangeError）
-    if (clsName === "ArrayBuffer") return makeArrayBufferAbs(args[0]);
+    // Bug 41/15：new ArrayBuffer(length, options?) —— ToIndex 校验 + 槽构造
+    if (clsName === "ArrayBuffer") return makeArrayBufferAbs(args[0], args[1]);
+    // Bug 15：new SharedArrayBuffer 同款（growable 面）
+    if (clsName === "SharedArrayBuffer") return makeSharedArrayBufferAbs(args[0], args[1]);
     // Bug 63：new DataView(buf, off?, len?) —— IsArrayBuffer + ToIndex 校验
     if (clsName === "DataView") return makeDataViewAbs(args[0], args[1], args[2]);
     // Bug 85：new URL(input, base?) —— ToString + 解析校验（合法带 href 槽）
     if (clsName === "URL") return makeUrlAbs(args[0], args[1]);
-    // Bug 53：new Number/String(symbol) —— ToNumber/ToString 确定 TypeError；
-    // any 实参 → may。Boolean 的 ToBoolean 全定不校验。值域不变（下方装箱）
-    if (clsName === "Number" || clsName === "String") {
-      noteBoxedCtorArg(clsName, args[0]);
+    // Bug 22：装箱统一 makeBoxedAbs（[[PrimitiveValue]] 槽 + String 下标槽；
+    // Number/String symbol 实参确定 TypeError、any → may——builder 内记）
+    if (clsName === "Number" || clsName === "Boolean" || clsName === "String") {
+      return makeBoxedAbs(clsName, args[0]);
     }
     // new Symbol() 原生 TypeError（Symbol 只能当函数调用）
     if (clsName === "Symbol") {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+    // Bug 45：BigInt 无 [[Construct]]（V8 有 .prototype 但 new BigInt() 确定
+    // TypeError "BigInt is not a constructor"）
+    if (clsName === "BigInt") {
       throw new NudoThrow(errorTypeAbs("TypeError"));
     }
     // new Promise(executor)：调用 executor 收集 resolve 实参 → eff(promise)
@@ -429,34 +436,6 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
     // 与 evalBuiltinNew 的 Abs 面同口径（evalDateCtor 返回同款 brand）。
     if (clsName === "Date") {
       return evalDateCtor(args);
-    }
-    // new String(prim)：包装箱带 length/下标槽（与 evalGlobalFn Object 装箱
-    // 同口径）——此前通用空箱 branch 折 new String('ab')['0'] === undefined、
-    // .length === undefined、Object.assign({}, boxed) === {} 假精确。
-    if (clsName === "String") {
-      const a0R = args[0] ? litValue(args[0]) : undefined;
-      const a0 = a0R?.ok ? a0R.value : undefined;
-      if (typeof a0 === "string") {
-        const slots: Record<string, { value: Abs }> = {
-          length: { value: numLit(a0.length) },
-        };
-        for (let i = 0; i < a0.length; i++) {
-          slots[String(i)] = { value: strLit(a0[i]!) };
-        }
-        return abs(
-          { k: "brand", name: "String", shape: objOf(slots) },
-          undefined,
-          undefined,
-          "exact",
-        );
-      }
-      // 非字面量实参：open 空箱保守（成员读非具体，不折假精确 undefined）
-      return abs(
-        { k: "brand", name: "String", shape: objOf({}, { open: true }) },
-        undefined,
-        undefined,
-        "path",
-      );
     }
     // Bug 16：未识别宿主函数（用户 function 声明/表达式——转译产物是真
     // JS 函数，体已 $ 助手化、Abs this 经 $rawThis(this) prologue 承接）
@@ -499,6 +478,13 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
     }
     const shape = objOf({});
     return abs({ k: "brand", name: clsName, shape }, undefined, undefined, "path");
+  }
+  // Bug 46：裸宿主命名空间对象（Math/JSON/Reflect——typeof "object" 且无
+  // shape）作为 $new 接收者：原生 IsConstructor 恒 false → 确定 TypeError
+  // （与 Symbol/BigInt 非构造器同口径；此前直达 specOf 裸解引用 cls.shape.k
+  // 引擎内部崩溃，被 run.ts catch-all 兜底成 unknown + 假 may-throw）
+  if (cls && typeof cls === "object" && !("shape" in (cls as object))) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
   }
   const spec = specOf(cls);
   if (!spec) {
@@ -892,12 +878,19 @@ function $invokeInner(
     };
     if (typeof thisVal === "function") {
       const fn = thisVal as (...a: Abs[]) => Abs;
-      // thisArg（Abs）作为宿主 this 传入；函数体 prologue $rawThis(this) 承接。
-      // 缺 thisArg（call() 无实参）→ 宿主 undefined ≡ strict this undefined。
+      // Bug 26：宿主全局函数接收者（parseInt.call(null, "1") 等）——Abs
+      // 实参直喂宿主函数产 ToPrimitive 假值；经桥按被调用位语义分派
+      //（thisArg 对宿主全局无意义，原生忽略）
       if (method === "call") {
+        const bridged = callHostGlobalFn(thisVal, args.slice(1));
+        if (bridged !== undefined) return bridged;
+        // thisArg（Abs）作为宿主 this 传入；函数体 prologue $rawThis(this) 承接。
+        // 缺 thisArg（call() 无实参）→ 宿主 undefined ≡ strict this undefined。
         return callAtFunctionBoundary(() => fn.apply(args[0] as never, args.slice(1)));
       }
       if (method === "apply") {
+        const bridged = callHostGlobalFn(thisVal, expandApplyArgs(args[1]));
+        if (bridged !== undefined) return bridged;
         return callAtFunctionBoundary(() => fn.apply(args[0] as never, expandApplyArgs(args[1])));
       }
       const boundThis = args[0];
@@ -907,8 +900,12 @@ function $invokeInner(
       return absFunction(
         boundFnParams(thisVal, bound.length),
         {
-          apply: (callArgs) =>
-            callAtFunctionBoundary(() => fn.apply(boundThis as never, [...bound, ...callArgs])),
+          apply: (callArgs) => {
+            // Bug 26：宿主全局 bind 产物同样经桥（boundThis 宿主全局原生忽略）
+            const bridged = callHostGlobalFn(thisVal, [...bound, ...callArgs]);
+            if (bridged !== undefined) return bridged;
+            return callAtFunctionBoundary(() => fn.apply(boundThis as never, [...bound, ...callArgs]));
+          },
         },
         hostFacet !== undefined ? { ctor: hostFacet } : undefined,
       );
@@ -979,7 +976,14 @@ function $invokeInner(
   }
   const brandName = thisVal.shape.k === "brand" ? thisVal.shape.name : undefined;
   if (brandName) {
-    // 内建 brand 实例方法（Date/RegExp/Map/Set）：统一经 builtin 表分派。
+    // Bug 22：装箱 brand（new String/Number/Boolean / Object(prim)）实例方法
+    // → 拆箱 [[PrimitiveValue]] 后走 prim 方法面（charAt/toFixed/… 的字面量
+    // 折叠与抽象臂全复用；valueOf/toString 原生语义即包装原始值的同名方法）
+    const boxedPrim = boxedPrimitiveValue(thisVal);
+    if (boxedPrim) {
+      return $invokeInner(boxedPrim, method, args, loc);
+    }
+    // 内建 brand 实例方法（Date/RegExp/Map/Set/Error 家族）：统一经 builtin 表分派。
     // 此前只对 Map/Set 调 evalBuiltinInstanceMethod，Date.getTime 等落到
     // findMethod 未命中 → 折 lit(undefined)，Number.isNaN(getTime()) 假 false。
     const viaBuiltin = evalBuiltinInstanceMethod(brandName, method, thisVal, args);
@@ -1171,11 +1175,14 @@ function $invokeInner(
     if (viaTable) return viaTable;
   }
   // 属性上的可调用值（require namespace / 对象方法）；method 诊断由下方统一报
+  // Bug 56：protoMethod kind（方法值读通道产物）跳过——$call 不传 receiver，
+  // 回环 dispatch 会在 undefined 接收者上假定抛（copyWithin 假 throw）；
+  // 借用调用走 $invoke 的 call/apply 分支（receiver 传递正确）
   const prop = $get(thisVal, method, { silent: true });
   const impl = prop && typeof prop === "object" && "shape" in (prop as object)
     ? getFnImpl(prop as Abs)
     : undefined;
-  if (impl) {
+  if (impl && impl.kind !== "protoMethod") {
     // 对象方法（ObjectMethod / 方法型 FunctionExpression）：注入 receiver
     const brand = thisVal.shape.k === "brand" ? thisVal.shape.name : undefined;
     // 调用点收集（T5）：`Class.method` / 裸 `method`，供 call@ 合成
@@ -1268,7 +1275,10 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
     return true;
   };
   // 统一委托 applyCallbackAbs（不新增 env.fns）
-  const callFn = (fn: unknown, ...fnArgs: Abs[]): Abs => {
+  // Bug 21：可选 thisVal = HOF 第二实参 thisArg——原生 GetThisBinding 把
+  // 它作为回调调用的宿主 this（字面量对象透传，回调体 $rawThis 原样接到）；
+  // 缺省 undefined ≡ 现状（strict 普通调用的 this）
+  const callFn = (fn: unknown, thisVal: Abs | undefined, ...fnArgs: Abs[]): Abs => {
     const sumIdx = fnArgs.findIndex(
       (a) => a && typeof a === "object" && "shape" in (a as object) && (a as Abs).shape.k === "sum",
     );
@@ -1278,19 +1288,29 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
       let acc: Abs | undefined;
       for (const m of members) {
         const next = fnArgs.map((a, i) => (i === sumIdx ? m : a));
-        const r = callFn(fn, ...next);
+        const r = callFn(fn, thisVal, ...next);
         acc = acc === undefined ? r : joinAbs(acc, r);
       }
       return acc ?? unknown;
     }
     if (typeof fn === "function") {
-      const r = callAtFunctionBoundary(() => (fn as (...a: Abs[]) => unknown)(...fnArgs));
+      // Bug 26：宿主全局函数值回调（[1,2].map(Number) 等）——Abs 实参直喂
+      // 宿主函数会 ToPrimitive 假值再被弃成 unknown；经桥按被调用位语义
+      // 分派（evalGlobalFn 精确折 parseInt(1,0)/Number(2)…）
+      const bridged = callHostGlobalFn(fn, fnArgs);
+      if (bridged !== undefined) return bridged;
+      // thisVal 经宿主调用位注入（transpile 的 function 包装体由
+      // $rawThis(this) 承接；thisVal undefined 时 sloppy this = globalThis
+      // → $rawThis 归一 lit(undefined)，与旧 plain-call 行为一致）
+      const r = callAtFunctionBoundary(() =>
+        Reflect.apply(fn as (...a: Abs[]) => unknown, thisVal as never, fnArgs),
+      );
       if (r && typeof r === "object" && "shape" in (r as object)) return r as Abs;
       return unknown;
     }
     const absFn = asAbs(fn);
     if (absFn) {
-      return applyCallbackAbs(absFn, fnArgs, emptyEnv(), pTrue, defaultLeakBudget);
+      return applyCallbackAbs(absFn, fnArgs, emptyEnv(), pTrue, defaultLeakBudget, thisVal);
     }
     return unknown;
   };
@@ -1306,7 +1326,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
     validateCallableArg(args[0], "map callback may not be callable");
     if (shape.k === "tuple") {
       const mapped = shape.elements.map((el, i) =>
-        isHole(i) ? el : callFn(args[0], el, $lit(i), arr),
+        isHole(i) ? el : callFn(args[0], args[1], el, $lit(i), arr),
       );
       return abs(
         { k: "tuple", elements: mapped, holes: holes.length > 0 ? [...holes] : undefined },
@@ -1315,7 +1335,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
         "path",
       );
     }
-    const out = callFn(args[0], shape.element, unknownIdx(), arr);
+    const out = callFn(args[0], args[1], shape.element, unknownIdx(), arr);
     const el = mapElementFallback(asAbs(args[0]), shape.element, out);
     // fallback 强制 partial，否则 confJoin(arr, out)
     const conf =
@@ -1328,7 +1348,11 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
     validateCallableArg(args[0], "reduce callback may not be callable");
     const fn = args[0]!;
     const noInitial = args.length < 2;
-    let acc = args[1] ?? unknown;
+    // Bug 6：无初值累加器 = 首元素（原生语义）——抽象数组首元素域 =
+    // 元素域（shape.element），不得钉 unknown（回调内 unknown + number →
+    // number | string 凭空多出 `+` 的字符串拼接臂）；tuple 路径的 acc 随
+    // 后按原生语义取首个在场元素覆盖
+    let acc = args[1] ?? (shape.k === "arr" ? shape.element : unknown);
     // Bug 18：抽象数组（长度未知可能为空）无初值 → 原生 may TypeError
     // （Reduce of empty array with no initial value）
     if (noInitial && shape.k === "arr") {
@@ -1351,24 +1375,26 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
         let acc2 = shape.elements[firstIdx]!;
         for (let i = firstIdx + 1; i < shape.elements.length; i++) {
           if (isHole(i)) continue;
-          acc2 = callFn(fn, acc2, shape.elements[i]!, $lit(i), arr);
+          acc2 = callFn(fn, undefined, acc2, shape.elements[i]!, $lit(i), arr);
         }
         return acc2;
       }
       for (let i = 0; i < shape.elements.length; i++) {
         if (isHole(i)) continue;
-        acc = callFn(fn, acc, shape.elements[i]!, $lit(i), arr);
+        acc = callFn(fn, undefined, acc, shape.elements[i]!, $lit(i), arr);
       }
       return acc;
     }
-    return callFn(fn, acc, shape.element, unknownIdx(), arr);
+    return callFn(fn, undefined, acc, shape.element, unknownIdx(), arr);
   }
   if (method === "reduceRight") {
     // Bug 55：GetCallback 前置校验（同 reduce——单元素无初值不调回调也抛）
     validateCallableArg(args[0], "reduceRight callback may not be callable");
     const fn = args[0]!;
     const noInitial = args.length < 2;
-    let acc = args[1] ?? unknown;
+    // Bug 6：同 reduce——无初值累加器 = 尾元素，域 = 元素域（tuple 路径
+    // 随后按原生语义取末个在场元素覆盖）
+    let acc = args[1] ?? (shape.k === "arr" ? shape.element : unknown);
     if (shape.k === "tuple") {
       if (noInitial) {
         // Bug 18：同 reduce（自尾向前）
@@ -1383,13 +1409,13 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
         let acc2 = shape.elements[lastIdx]!;
         for (let i = lastIdx - 1; i >= 0; i--) {
           if (isHole(i)) continue;
-          acc2 = callFn(fn, acc2, shape.elements[i]!, $lit(i), arr);
+          acc2 = callFn(fn, undefined, acc2, shape.elements[i]!, $lit(i), arr);
         }
         return acc2;
       }
       for (let i = shape.elements.length - 1; i >= 0; i--) {
         if (isHole(i)) continue;
-        acc = callFn(fn, acc, shape.elements[i]!, $lit(i), arr);
+        acc = callFn(fn, undefined, acc, shape.elements[i]!, $lit(i), arr);
       }
       return acc;
     }
@@ -1400,7 +1426,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
         cause: "reduceRight of possibly-empty array with no initial value",
       });
     }
-    return callFn(fn, acc, shape.element, unknownIdx(), arr);
+    return callFn(fn, undefined, acc, shape.element, unknownIdx(), arr);
   }
   if (method === "filter") {
     // Bug 55：GetCallback 前置校验（空元组零谓词也要抛）
@@ -1412,7 +1438,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
       let anyUncertain = false;
       shape.elements.forEach((el, i) => {
         if (isHole(i)) return;
-        const p = callFn(args[0], el, $lit(i), arr);
+        const p = callFn(args[0], args[1], el, $lit(i), arr);
         const t = callbackTruth(p);
         if (t === false) return;
         if (t === undefined) anyUncertain = true;
@@ -1453,11 +1479,11 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
     validateCallableArg(args[0], "flatMap callback may not be callable");
     if (shape.k === "tuple") {
       const mapped = shape.elements.map((el, i) =>
-        isHole(i) ? abs({ k: "tuple", elements: [] }, undefined, undefined, "exact") : callFn(args[0], el, $lit(i), arr),
+        isHole(i) ? abs({ k: "tuple", elements: [] }, undefined, undefined, "exact") : callFn(args[0], args[1], el, $lit(i), arr),
       );
       return projectFlatMapResult(arr.conf, mapped);
     }
-    const out = callFn(args[0], shape.element, unknownIdx(), arr);
+    const out = callFn(args[0], args[1], shape.element, unknownIdx(), arr);
     return projectFlatMapResult(arr.conf, [out]);
   }
   if (method === "forEach") {
@@ -1465,10 +1491,10 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
     validateCallableArg(args[0], "forEach callback may not be callable");
     if (shape.k === "tuple") {
       shape.elements.forEach((el, i) => {
-        if (!isHole(i)) callFn(args[0], el, $lit(i), arr);
+        if (!isHole(i)) callFn(args[0], args[1], el, $lit(i), arr);
       });
     } else {
-      callFn(args[0], shape.element, unknownIdx(), arr);
+      callFn(args[0], args[1], shape.element, unknownIdx(), arr);
     }
     return undefAbs();
   }
@@ -1481,7 +1507,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
     if (shape.k === "tuple") {
       for (let i = 0; i < shape.elements.length; i++) {
         if (isHole(i)) continue;
-        const t = callbackTruth(callFn(args[0], shape.elements[i]!, $lit(i), arr));
+        const t = callbackTruth(callFn(args[0], args[1], shape.elements[i]!, $lit(i), arr));
         if (t === undefined) {
           undecided = true;
           continue;
@@ -1490,7 +1516,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
         if (method === "every" && !t) return boolLit(false);
       }
     } else {
-      const t = callbackTruth(callFn(args[0], shape.element, unknownIdx(), arr));
+      const t = callbackTruth(callFn(args[0], args[1], shape.element, unknownIdx(), arr));
       // 抽象 arr 长度未知（可能空）：单代表元素无法下结论
       if (t === undefined) return bool();
       if (method === "some" && t) return boolLit(true);
@@ -1507,7 +1533,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
       let undecided = false;
       for (let i = 0; i < shape.elements.length; i++) {
         const el = shape.elements[i]!;
-        const t = callbackTruth(callFn(args[0], el, $lit(i), arr));
+        const t = callbackTruth(callFn(args[0], args[1], el, $lit(i), arr));
         if (t === true) return el;
         if (t === undefined) undecided = true;
       }
@@ -1518,7 +1544,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
       return undefAbs();
     }
     const el = shape.element;
-    const t = callbackTruth(callFn(args[0], el, unknownIdx(), arr));
+    const t = callbackTruth(callFn(args[0], args[1], el, unknownIdx(), arr));
     if (t === true) return el;
     if (t === false) return undefAbs();
     return joinAbs(el, undefAbs());
@@ -1529,14 +1555,14 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
     if (shape.k === "tuple") {
       let undecided = false;
       for (let i = 0; i < shape.elements.length; i++) {
-        const t = callbackTruth(callFn(args[0], shape.elements[i]!, $lit(i), arr));
+        const t = callbackTruth(callFn(args[0], args[1], shape.elements[i]!, $lit(i), arr));
         if (t === true) return $lit(i);
         if (t === undefined) undecided = true;
       }
       if (undecided) return joinAbs(unknownIdx(), $lit(-1));
       return $lit(-1);
     }
-    const t = callbackTruth(callFn(args[0], shape.element, unknownIdx(), arr));
+    const t = callbackTruth(callFn(args[0], args[1], shape.element, unknownIdx(), arr));
     if (t === true) return unknownIdx();
     if (t === false) return $lit(-1);
     return joinAbs(unknownIdx(), $lit(-1));
@@ -1548,7 +1574,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
     if (shape.k === "tuple") {
       let undecided = false;
       for (let i = shape.elements.length - 1; i >= 0; i--) {
-        const t = callbackTruth(callFn(args[0], shape.elements[i]!, $lit(i), arr));
+        const t = callbackTruth(callFn(args[0], args[1], shape.elements[i]!, $lit(i), arr));
         if (t === true) return wantIndex ? $lit(i) : shape.elements[i]!;
         if (t === undefined) undecided = true;
       }
@@ -1560,7 +1586,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
       }
       return wantIndex ? $lit(-1) : undefAbs();
     }
-    const t = callbackTruth(callFn(args[0], shape.element, unknownIdx(), arr));
+    const t = callbackTruth(callFn(args[0], args[1], shape.element, unknownIdx(), arr));
     if (wantIndex) {
       if (t === true) return unknownIdx();
       if (t === false) return $lit(-1);
@@ -2079,6 +2105,48 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
     }
     if (shape.k === "arr") return joinAbs(shape.element, undefAbs());
   }
+  if (method === "splice") {
+    // Bug 33：表达式位置（语句位走 $arrMutContainer 重绑）——返回被删元素
+    // tuple。start/deleteCount 经 ToIntegerOrInfinity（symbol/bigint 确定
+    // TypeError；抽象 → may——与 $arrMutContainer 同款校验）；items 实参
+    // 不校验（原生存储不转换）。native：缺省 deleteCount（仅 start）→
+    // 删到尾；显式 undefined → 0；start ≥ len → 空删。抽象 arr 接收者 /
+    // 不可判定下标 → 保守 arr（元素域）。
+    validateIndexArg(args[0], "splice start may not be convertible to a number");
+    validateIndexArg(args[1], "splice deleteCount may not be convertible to a number");
+    if (shape.k === "arr") {
+      return abs({ k: "arr", element: shape.element }, undefined, undefined, "partial");
+    }
+    const len = shape.elements.length;
+    const st = toIOI(args[0]);
+    const dc = toIOI(args[1]);
+    if (st === null || dc === null) {
+      const el = len ? shape.elements.reduce((x, y) => joinAbs(x, y)) : unknown;
+      return abs({ k: "arr", element: el }, undefined, undefined, "partial");
+    }
+    const start = st === undefined ? 0 : st < 0 ? Math.max(len + st, 0) : Math.min(st, len);
+    const del =
+      args.length === 1
+        ? len - start
+        : dc === undefined
+          ? 0
+          : Math.min(Math.max(dc, 0), len - start);
+    const removed = shape.elements
+      .slice(start, start + del)
+      .map((el, i) => (isHole(start + i) ? undefAbs() : el));
+    return abs(
+      { k: "tuple", elements: removed },
+      undefined,
+      undefined,
+      confJoin(arr.conf, "path"),
+    );
+  }
+  if (method === "copyWithin") {
+    // Bug 33：表达式位置返回复制后容器（copyWithinTuple 与语句位 $arrMutContainer
+    // 共用实现——窗口 clamp/holes/倒序重叠全一致）；抽象 arr → 元素域保持
+    validateIndexArg(args[0], "copyWithin target may not be convertible to a number");
+    return copyWithinTuple(shape, args);
+  }
   return undefined;
 }
 
@@ -2356,3 +2424,44 @@ export function $setKey(o: Abs, key: Abs, value: Abs): Abs {
   next.conf = confJoin(o.conf, value.conf);
   return next;
 }
+
+// ---------------------------------------------------------------------------
+// Bug 49/56「方法值读」通道的调用派发（containers.protoMethodValueAbs 注册）。
+// home = 值属主（prim 类型名 / 构造器名）；借用调用（v() / v.call(recv,…) /
+// v.apply / v.bind）按接收者走**既有**方法调用机器，不复制派发逻辑：
+// - prim / brand home → $invoke（callAbsMethod 的 prim 面 /
+//   evalBuiltinInstanceMethod·execRegexBrand 的 brand 面；this 缺省按
+//   strict undefined 接收者 → 原生 TypeError 面随 $invoke 记账）；
+// - Array home + array-like 接收者（字符串 / 闭 obj）→ Array.from 物化
+//   （字符 / 索引槽，Bug 51 面）后走数组派发（slice.call('abc') →
+//   ["a","b","c"]）；不可物化形态 → unknown（不折假值）。
+// ---------------------------------------------------------------------------
+setProtoMethodDispatch((home, name, thisVal, args) => {
+  const recv: Abs = thisVal ?? $lit(undefined);
+  if (home === "Array" && recv.shape.k !== "tuple" && recv.shape.k !== "arr") {
+    // 字面量字符串 → code unit 字符 tuple（Array.prototype 借用算法按
+    // length+索引读——code unit，非 code point；slice.call('abc') →
+    // ["a","b","c"]）；其余 array-like（闭 obj）→ Array.from 物化
+    // （Bug 51 索引槽面）后走数组派发；不可物化形态 → unknown（不折假值）
+    const svR = litValue(recv);
+    const sv = svR.ok && typeof svR.value === "string" ? svR.value : undefined;
+    if (sv !== undefined) {
+      const chars = abs(
+        { k: "tuple", elements: Array.from({ length: sv.length }, (_, i) => strLit(sv[i]!)) },
+        undefined,
+        undefined,
+        "exact",
+      );
+      return $invoke(chars, name, args);
+    }
+    const materialized = evalArrayStatic("from", [recv]);
+    if (
+      materialized !== undefined &&
+      (materialized.shape.k === "tuple" || materialized.shape.k === "arr")
+    ) {
+      return $invoke(materialized, name, args);
+    }
+    return unknown;
+  }
+  return $invoke(recv, name, args);
+});

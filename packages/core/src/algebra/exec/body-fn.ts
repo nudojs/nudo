@@ -141,15 +141,17 @@ export function compiledBodyOf(impl: AbsFnImpl): ((args: Abs[]) => Abs) | undefi
     const f = impl.env?.fns.get(name);
     if (f) {
       closureArgs.push(name);
+      // Bug 9：闭包函数值透传声明名（f.name 值读折 exact；env 键即声明名）
+      const fnOpts = { name };
       if (f.body === impl.body) {
         let selfAbs = selfAbsByBody.get(f.body);
         if (selfAbs === undefined) {
-          selfAbs = absFunction(f.params, { body: f.body, async: f.async, env: impl.env });
+          selfAbs = absFunction(f.params, { body: f.body, async: f.async, env: impl.env }, fnOpts);
           selfAbsByBody.set(f.body, selfAbs);
         }
         closureVals.push(selfAbs);
       } else {
-        closureVals.push(absFunction(f.params, { body: f.body, async: f.async, env: impl.env }));
+        closureVals.push(absFunction(f.params, { body: f.body, async: f.async, env: impl.env }, fnOpts));
       }
       continue;
     }

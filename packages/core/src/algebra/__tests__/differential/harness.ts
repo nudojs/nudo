@@ -3,17 +3,22 @@
  * 每条语料是「隐式 return」的语句体，由 __run 包装执行。
  *
  * 比较规则（diff3 同源）：
- * - eval 产非具体 Abs（concrete() 返回 undefined）→ 无法比较，跳过；
+ * - eval 产非具体 Abs 且未抛错（concrete() 返回 undefined）→ 无法比较，
+ *   记入 skipped 台账；其中不在 skip-baseline.json 基线内的新增 skip =
+ *   门禁失败（unknown 回归不得静默漏网——Bug 33/38 机制）；
+ * - eval 抛错 → 走 FALSE-THROW 对账：native 未抛 → FALSE-THROW MISMATCH；
+ *   native 同抛 → 对账相等（THROW 域两侧均钉住，计入 compared）；
  * - native 抛错而 eval 折具体值 → 假精确 MISMATCH；
- * - eval 抛错而 native 不抛 → FALSE-THROW；
  * - 两侧具体值不等 → MISMATCH。
  *
- * concrete() 盲区（open obj / undefined 元素 / 非具体值被跳过）由
- * corpus/batch18-readprobes.ts 的读层折叠探针与各 eval-*.test.ts 的
- * parity describe 互补覆盖——门禁统计 total compared 下限防语料整体退化。
+ * concrete() 盲区（open obj / undefined 元素）是合法 skip，逐条钉在
+ * skip-baseline.json（key = `<batch>.<section>`，如 "batch1.corpus1"）；
+ * 基线收缩只 console.warn 不失败（收紧基线是人工动作）。compared 下限
+ * 门禁照旧防语料整体退化；skip 基线门禁防单行退化（compared 下限看不见）。
  */
 import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
 import { getPropFlags } from "../../builtins.ts";
+import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
 function ser(x: unknown): string {
@@ -96,33 +101,121 @@ function evalAbs(body: string): { res: string | undefined; throws: boolean } {
   }
 }
 
-export function diffBody(body: string): string | null {
-  const n = native(body);
-  const b = evalAbs(body);
-  if (b.throws && !n.startsWith("THROW:")) {
-    return `FALSE-THROW native=${n}  [${body.replace(/\n/g, " ").slice(0, 100)}]`;
+/** 单条对账核心：n = native 串（含 THROW: 前缀域），b = eval 结果。 */
+function compareBody(body: string, n: string, b: { res: string | undefined; throws: boolean }): string | null {
+  const label = `[${body.replace(/\n/g, " ").slice(0, 100)}]`;
+  if (b.throws) {
+    // 引擎实抛：不再静默跳过——native 未抛 = FALSE-THROW；native 同抛 = 相等
+    return n.startsWith("THROW:") ? null : `FALSE-THROW native=${n}  ${label}`;
   }
-  if (b.res === undefined) return null; // 非具体 Abs，无法比较
+  if (b.res === undefined) return null; // 非具体 Abs，无法比较（由 runCorpus 记入 skipped）
   if (n.startsWith("THROW:")) {
-    return `MISMATCH native=${n} eval=${b.res}  [${body.replace(/\n/g, " ").slice(0, 100)}]`;
+    return `MISMATCH native=${n} eval=${b.res}  ${label}`;
   }
   if (n !== b.res) {
-    return `MISMATCH native=${n} eval=${b.res}  [${body.replace(/\n/g, " ").slice(0, 100)}]`;
+    return `MISMATCH native=${n} eval=${b.res}  ${label}`;
   }
   return null;
 }
 
-export function runCorpus(corpus: string[]): { compared: number; mismatches: string[] } {
+export function diffBody(body: string): string | null {
+  return compareBody(body, native(body), evalAbs(body));
+}
+
+export function runCorpus(corpus: string[]): {
+  compared: number;
+  mismatches: string[];
+  skipped: string[];
+} {
   let compared = 0;
   const mismatches: string[] = [];
+  const skipped: string[] = [];
   for (const body of corpus) {
     const b = evalAbs(body);
-    if (b.res === undefined) continue;
-    compared++;
-    const m = diffBody(body); // 内含 native 对照
-    if (m) mismatches.push(m);
+    if (b.throws || b.res !== undefined) {
+      compared++;
+      const m = compareBody(body, native(body), b); // 引擎抛错行也走 FALSE-THROW 对账
+      if (m) mismatches.push(m);
+    } else {
+      skipped.push(body); // 非具体非抛错：concrete() 盲区，进 skip 台账供基线门禁
+    }
   }
-  return { compared, mismatches };
+  return { compared, mismatches, skipped };
+}
+
+// ---- skip 基线门禁 ----------------------------------------------------
+// skip-baseline.json：
+// - skips：key = `<batch>.<section>` → 该节当前合法 skip 的语料体
+//   （concrete() 盲区快照）。新增 skip（不在基线内）= unknown 回归 = 门禁失败；
+//   基线收缩（引擎变精确）只 console.warn，不失败。
+// - knownFalseThrows：引擎假抛（FALSE-THROW）金丝雀体——引擎缺陷未修期间
+//   豁免于门禁（DEC-006 同款：响亮告警，绝不静默吞掉），修复后收紧。
+
+interface SkipBaseline {
+  skips: Record<string, string[]>;
+  knownFalseThrows: string[];
+}
+
+const SKIP_BASELINE_URL = new URL("./skip-baseline.json", import.meta.url);
+let skipBaselineCache: SkipBaseline | undefined;
+
+function loadSkipBaseline(): SkipBaseline {
+  if (skipBaselineCache) return skipBaselineCache;
+  try {
+    const parsed = JSON.parse(readFileSync(SKIP_BASELINE_URL, "utf8")) as Partial<SkipBaseline>;
+    skipBaselineCache = { skips: parsed.skips ?? {}, knownFalseThrows: parsed.knownFalseThrows ?? [] };
+  } catch {
+    skipBaselineCache = { skips: {}, knownFalseThrows: [] }; // 基线缺失 → fail-closed：任何 skip 都是新增
+  }
+  return skipBaselineCache;
+}
+
+/** mismatch 串尾部的 `[body]` 标签（与 compareBody 的 label 同构）。 */
+function labelOf(body: string): string {
+  return `[${body.replace(/\n/g, " ").slice(0, 100)}]`;
+}
+
+/** 新增 skip 检出：返回不在基线内的 skip 体（= 新 unknown 回归）；基线收缩仅告警。 */
+export function newSkippedBodies(key: string, skipped: string[]): string[] {
+  const base = loadSkipBaseline().skips[key];
+  if (!base) return skipped.slice();
+  const known = new Set(base);
+  const fresh = skipped.filter((s) => !known.has(s));
+  const gone = base.filter((s) => !skipped.includes(s));
+  if (gone.length > 0) {
+    console.warn(
+      `[skip-baseline] ${key}: ${gone.length} baseline line(s) no longer skipped — engine got more precise; consider tightening skip-baseline.json`,
+    );
+  }
+  return fresh;
+}
+
+/**
+ * 门禁用 mismatch 过滤：剔除 knownFalseThrows 金丝雀体（引擎假抛缺陷未修，
+ * DEC-006 同款记录并放行）。金丝雀仍在复现 → console.warn；不再复现 → 提示
+ * 收紧基线。返回应让门禁失败的 mismatch。
+ */
+export function unexpectedMismatches(mismatches: string[]): string[] {
+  const pins = new Set(loadSkipBaseline().knownFalseThrows.map(labelOf));
+  const stillPinned: string[] = [];
+  const out: string[] = [];
+  for (const m of mismatches) {
+    const at = m.lastIndexOf("  [");
+    const label = at >= 0 ? m.slice(at + 2) : "";
+    if (pins.has(label)) stillPinned.push(m);
+    else out.push(m);
+  }
+  if (stillPinned.length > 0) {
+    console.warn(
+      `[known-false-throw canary] ${stillPinned.length} pinned FALSE-THROW(s) still reproducing (engine bug tracked in bug-report):\n${stillPinned.join("\n")}`,
+    );
+  }
+  for (const p of loadSkipBaseline().knownFalseThrows) {
+    if (!mismatches.some((m) => m.endsWith(labelOf(p)))) {
+      console.warn(`[known-false-throw canary] no longer reproduces — tighten skip-baseline.json: [${p}]`);
+    }
+  }
+  return out;
 }
 
 /** 语料模块的命名导出数组 → [label, corpus] 对 */

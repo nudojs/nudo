@@ -914,3 +914,102 @@ function compareVersions(a, b) {
     expect(warns).toHaveLength(1);
   });
 });
+
+describe("Bug 30: array 契约元素级执法（[-1] ⊭ array(number().gt(0))）", () => {
+  it("error: 元素 pred 违约——精确到下标（negElem/mixedElem）", () => {
+    const errs = errorsOf(`
+/**
+ * @nudo:contract return positives
+ */
+function negElem() {
+  return [-1];
+}
+`);
+    expect(errs.length).toBeGreaterThan(0);
+    expect(errs[0]!.expected).toContain("array element [0]");
+
+    const mixed = errorsOf(`
+/**
+ * @nudo:contract return positives
+ */
+function mixedElem() {
+  return [1, -1];
+}
+`);
+    expect(mixed.length).toBeGreaterThan(0);
+    expect(mixed[0]!.expected).toContain("array element [1]");
+  });
+
+  it("error: 元素类型错配（[\"a\"] ⊰ number）", () => {
+    const errs = errorsOf(`
+/**
+ * @nudo:contract return positives
+ */
+function strElem() {
+  return ["a"];
+}
+`);
+    expect(errs.length).toBeGreaterThan(0);
+    expect(errs[0]!.expected).toContain('array element [0]');
+  });
+
+  it("ok: 合法元素 / 空 tuple 空真——零 error（不再伪装 proved）", () => {
+    const ok = errorsOf(`
+/**
+ * @nudo:contract return positives
+ */
+function okElem() {
+  return [1, 2];
+}
+`);
+    expect(ok).toEqual([]);
+    const empty = errorsOf(`
+/**
+ * @nudo:contract return positives
+ */
+function none() {
+  return [];
+}
+`);
+    expect(empty).toEqual([]);
+  });
+
+  it("warning: 抽象元素（[n]）不可证 pred → unproven-return（不伪装成功）", () => {
+    const warns = warningsOf(`
+/**
+ * @nudo:contract return positives
+ */
+function absElem(n) {
+  return [n];
+}
+`);
+    const unproven = warns.filter((i) => i.code === "nudo:unproven-return");
+    expect(unproven.length).toBeGreaterThan(0);
+    // any 元素（无约束形参）不可反证 → 同样保守 warning，不伪装 proved
+    const anyWarns = warningsOf(`
+/**
+ * @nudo:contract return positives
+ */
+function absAny(s) {
+  return [s];
+}
+`);
+    const anyUnproven = anyWarns.filter((i) => i.code === "nudo:unproven-return");
+    expect(anyUnproven.length).toBeGreaterThan(0);
+    expect(
+      anyWarns.filter((i) => i.code === "nudo:constraint-violated"),
+    ).toEqual([]);
+  });
+
+  it("arr（抽象元素域）prim 错配 → error；域内 → unprovable 保守", () => {
+    const errs = errorsOf(`
+/**
+ * @nudo:contract return positives
+ */
+function arrBad(xs) {
+  return xs.map((x) => String(x));
+}
+`);
+    expect(errs.length).toBeGreaterThan(0);
+  });
+});

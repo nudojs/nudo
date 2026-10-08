@@ -83,8 +83,9 @@ export function recordMemberDiag(d: EvalMemberDiag): void {
 /** string 上仍可能存在的方法（与 TypeValue completions 对齐）。
  *  必须接近完整 String.prototype 名集：引擎未建模的方法（Bug 72 的
  *  trimStart/localeCompare/…）也在原型上真实存在，漏列会把合法调用
- *  误判「确定缺失」→ 假 may-throw。 */
-const STRING_METHODS = new Set([
+ *  误判「确定缺失」→ 假 may-throw。
+ *  Bug 49：导出供 $get 方法值读通道（prim 接收者一等函数投影）复用。 */
+export const STRING_METHODS = new Set([
   "toUpperCase", "toLowerCase", "toLocaleUpperCase", "toLocaleLowerCase",
   "trim", "trimStart", "trimEnd", "split", "slice", "substring", "substr",
   "includes", "indexOf", "lastIndexOf", "startsWith", "endsWith", "charAt",
@@ -97,14 +98,16 @@ const STRING_METHODS = new Set([
   "italics", "link", "small", "strike", "sub", "sup",
 ]);
 
-/** 各 prim 原型自有方法（「确定缺失」判定用；不含 Object.prototype 名） */
-const NUMBER_PROTO_METHODS = new Set([
+/** 各 prim 原型自有方法（「确定缺失」判定用；不含 Object.prototype 名）。
+ *  Bug 49/56：导出供 $get 方法值读通道（prim 接收者 / X.prototype.<method>
+ *  一等函数投影）复用。 */
+export const NUMBER_PROTO_METHODS = new Set([
   "toString", "toLocaleString", "valueOf", "toFixed", "toPrecision",
   "toExponential",
 ]);
-const BOOLEAN_PROTO_METHODS = new Set(["toString", "valueOf"]);
-const SYMBOL_PROTO_METHODS = new Set(["toString", "valueOf"]);
-const BIGINT_PROTO_METHODS = new Set(["toString", "toLocaleString", "valueOf"]);
+export const BOOLEAN_PROTO_METHODS = new Set(["toString", "valueOf"]);
+export const SYMBOL_PROTO_METHODS = new Set(["toString", "valueOf"]);
+export const BIGINT_PROTO_METHODS = new Set(["toString", "toLocaleString", "valueOf"]);
 
 /**
  * prim 接收者上的未知成员 → 诊断。

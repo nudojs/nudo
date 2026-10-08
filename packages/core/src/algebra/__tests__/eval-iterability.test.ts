@@ -180,11 +180,13 @@ describe("Bug 13: for await honors the await flag", () => {
 // --- Bug 68：for-in 抽象接收者键域 ------------------------------------------
 
 describe("Bug 68: for-in abstract receiver key domain", () => {
-  it("for-in over any：体至少跑一次，计数器 0|1（不再假精确 0）", () => {
+  it("for-in over any：体至少跑一次，计数器无上界域（不再假精确 0）", () => {
     const r = evalSrc(
       `export function f(x) { let s = 0; for (const k in x) { s += 1; } return s; }`,
     );
-    expect(r.value).toContain("1");
+    // Bug 47 宽化：抽象键序列单代表迭代 + 增长计数器 → 无上界 number
+    //（native x 可有任意多键；体不跑则折精确 0——not "0" 仍守住该回归面）
+    expect(r.value).toContain("number");
     expect(r.value).not.toBe("0");
   });
 
@@ -199,7 +201,9 @@ describe("Bug 68: for-in abstract receiver key domain", () => {
     const r = evalSrc(
       `export function f(x) { let t = "none"; for (const k in x) { t = typeof k; } return t; }`,
     );
-    expect(r.value).toContain('"string"');
+    // Bug 47 宽化：t 从 "none" 增长到 "string" 后宽化到无上界 string 域
+    //（仍证明键是 string——不是 number/unknown）
+    expect(r.value.startsWith("string")).toBe(true);
   });
 
   it("nullish / number 字面量接收者：零迭代，精确 0（for-in 头部全量）", () => {

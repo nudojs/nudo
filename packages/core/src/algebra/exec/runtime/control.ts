@@ -23,7 +23,7 @@ import {
   NudoThrow, isNudoThrow, noBody, undef, oobUndef, writeInPlace, clearStaleTermPred,
   asAbsVal, callAtFunctionBoundary, $lit, litTruth, isDefinitelyTrue, isDefinitelyFalse,
   currentExecPhi, withExecPhi, isNudoReturn, isNudoBreak, isNudoContinue, confPartial, confPartialPacked,
-  NudoReturn, NudoLoopSignal, loopExitsAls, throwExitsAls, tryMarksAls, softFrameActiveAls,
+  NudoReturn, NudoLoopSignal, withAbstractForkArm, loopExitsAls, throwExitsAls, tryMarksAls, softFrameActiveAls,
   runWithLoopExits, takeLoopExits, takeThrowExits, pushLoopExit, pushThrowExit, $pushLoopExit,
 } from "./state.ts";
 import { $unknown, $eq, $ne, $lt, $le, $gt, $ge, $add, $sub, $typeof, $not } from "./ops.ts";
@@ -206,8 +206,10 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
   try {
     pushCollectionArm();
     try {
+      // 抽象双臂：臂内 break/continue 信号标记 abstract（兄弟臂未执行，
+      // 循环捕获点据此宽化循环携带绑定，Bug 47/48）
       const r = withExecPhi(phiTrue, () =>
-        withIsolatedYields(() => runForkArm(consequent, exits)),
+        withIsolatedYields(() => withAbstractForkArm(() => runForkArm(consequent, exits))),
       );
       a = r.v;
       armYsList.push(r.ys);
@@ -218,7 +220,7 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
       pushCollectionArm();
       try {
         const r = withExecPhi(falsePhi(), () =>
-          withIsolatedYields(() => runForkArm(alternate, exits)),
+          withIsolatedYields(() => withAbstractForkArm(() => runForkArm(alternate, exits))),
         );
         b = r.v;
         armYsList.push(r.ys);
@@ -245,6 +247,7 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
 
 export { DEFAULT_MAX_LOOP_ITERS, MAX_CONCRETE_LOOP_ITERS, LOOP_TRUNCATION_LABEL } from "./loop-budget.ts";
 import { DEFAULT_MAX_LOOP_ITERS, MAX_CONCRETE_LOOP_ITERS, LOOP_TRUNCATION_LABEL } from "./loop-budget.ts";
+import { makeLoopWidener } from "./loop-widen.ts";
 
 /**
  * for 的惰性展开：生成器只负责「按上限吐状态」。
@@ -301,17 +304,26 @@ export function $for(
   let extJoin: Abs | undefined;
   const pack = opts?.pack;
   const unpack = opts?.unpack;
+  // 循环携带绑定宽化器（Bug 48，与 $while/$forOf 同一机制）：计数器
+  // （state 线程）与外层绑定（extJoin 打包）各一个——抽象条件预算耗尽的
+  // 有界快照 join（{0..8}，conf exact）对任意迭代次数欠近似；增长槽位
+  // 宽化到无上界域（sound），join-幂等绑定不动
+  const counterWiden = makeLoopWidener();
+  const extWiden = pack ? makeLoopWidener() : undefined;
   const snapCounter = (): void => {
+    counterWiden.observe(state);
     exitJoin = exitJoin ? joinAbs(exitJoin, state) : state;
   };
   const snapExt = (): void => {
     if (!pack) return;
     const p = pack();
+    extWiden?.observe(p);
     extJoin = extJoin ? joinAbs(extJoin, p) : p;
   };
-  const applyExtJoin = (): void => {
+  const applyExtJoin = (widened: boolean): void => {
     if (!extJoin || !pack || !unpack) return;
-    unpack(joinAbs(extJoin, pack()));
+    const joined = widenLoopJoin(joinAbs(extJoin, pack()));
+    unpack(widened && extWiden ? extWiden.widenFinal(joined) : joined);
   };
 
   // 具体延展（两段预算）：maxIters 是**抽象**展开预算；预算边界上条件仍
@@ -328,7 +340,7 @@ export function $for(
     if (isDefinitelyFalse(t)) {
       snapCounter();
       snapExt();
-      applyExtJoin();
+      applyExtJoin(false);
       return exitJoin ?? state;
     }
 
@@ -346,14 +358,28 @@ export function $for(
       // break 吸收 → 本轮为最终态后退出；continue 吸收 → 体提前完成，
       // 用 pack 收集已发生的绑定写（continue 前语句的副作用保留）
       if (isNudoBreak(e, opts?.label)) {
+        // break 打断体（抽象 fork 的 break 臂冒泡，本迭代剩余语句丢失）——
+        // 「先跑任意次再 break」的累加器/计数器域不可观测，整体宽化；
+        // definite 分支的 break 是忠实语义（e.abstract=false），不宽化
         snapCounter();
         snapExt();
-        applyExtJoin();
-        return exitJoin ?? state;
+        if (e.abstract) {
+          counterWiden.markInterrupted();
+          extWiden?.markInterrupted();
+        }
+        applyExtJoin(e.abstract);
+        return exitJoin !== undefined
+          ? e.abstract
+            ? counterWiden.widenFinal(exitJoin)
+            : exitJoin
+          : state;
       }
       if (isNudoContinue(e, opts?.label)) {
         // 体未走完 return；循环变量已发生的写无法从调用点闭包读取
-        // （init 以字面量入参，JS 作用域无该绑定）——以 state 近似
+        // （init 以字面量入参，JS 作用域无该绑定）——以 state 近似；
+        // 抽象 continue 臂丢失本迭代外层绑定效应 → 标记打断（耗尽出口
+        // 宽化）；definite continue 忠实
+        if (e.abstract) extWiden?.markInterrupted();
         afterBody = state;
       } else if (isNudoReturn(e) || isNudoThrow(e)) {
         throw e;
@@ -382,7 +408,7 @@ export function $for(
         state = next;
         snapCounter();
         snapExt();
-        applyExtJoin();
+        applyExtJoin(false);
         return exitJoin ?? next;
       }
     }
@@ -409,9 +435,10 @@ export function $for(
   // 抽象预算耗尽（条件非 definitely-false 仍有剩余迭代空间）：容器型外层
   // 绑定按「长度未知」widen（sum-of-tuples(不同长度) → arr）——否则第二次
   // 循环/后续读以具体下标越过已知长度，得到假 undefined 并误报 may-throw
-  //（DP 表双循环 `d[i][1] = d[i-1][1] + 1` 的 never 折叠，issue #98）
-  if (extJoin && pack && unpack) unpack(widenLoopJoin(joinAbs(extJoin, pack())));
-  return exitJoin ?? state;
+  //（DP 表双循环 `d[i][1] = d[i-1][1] + 1` 的 never 折叠，issue #98）；
+  // 增长计数器/累加器宽化到无上界域（Bug 48，sound 超集）
+  if (extJoin && pack && unpack) unpack(extWiden!.widenFinal(widenLoopJoin(joinAbs(extJoin, pack()))));
+  return exitJoin !== undefined ? counterWiden.widenFinal(exitJoin) : state;
 }
 
 /**
@@ -480,6 +507,10 @@ export function $while(
 ): Abs {
   let state = init;
   let exitJoin: Abs | undefined;
+  // 循环携带绑定宽化器（Bug 48）：抽象条件预算耗尽时出口 join 是有界
+  // 快照 {0..8}——常步长计数器对任意迭代次数欠近似（n=100 → 100 ∉
+  // {0..8}）且 conf exact 是硬声称；增长槽位宽化到无上界域（sound）
+  const widen = makeLoopWidener();
   // 具体延展：与 $for 同口径（见其注释）——预算边界条件仍具体真时延展到
   // 硬上限；硬上限仍具体真 → 截断观测 + conf 降级。
   let limit = maxIters;
@@ -494,6 +525,7 @@ export function $while(
     const abstractTest = !isDefinitelyTrue(t);
     if (abstractTest) {
       if (extended) break;
+      widen.observe(state);
       exitJoin = exitJoin ? joinAbs(exitJoin, state) : state;
     }
     const next = step(state);
@@ -524,7 +556,8 @@ export function $while(
     noteAbsTruncation(LOOP_TRUNCATION_LABEL);
     return confPartial(exitJoin ? joinAbs(exitJoin, state) : state);
   }
-  return exitJoin ? joinAbs(exitJoin, state) : state;
+  // 抽象预算耗尽：增长计数器宽化到无上界域（Bug 48；稳定不动点原样）
+  return exitJoin ? widen.widenFinal(joinAbs(exitJoin, state)) : state;
 }
 
 /**
@@ -548,14 +581,20 @@ export function $whileSeq(
   const pack = opts?.pack;
   const unpack = opts?.unpack;
   let exitJoin: Abs | undefined;
+  // 循环携带绑定宽化器（Bug 48，与 $while/$forOf 同一机制）：抽象条件
+  // 预算耗尽的出口 join 是有界快照并集（{0..8}，conf exact）——常步长
+  // 计数器对任意迭代次数欠近似；增长槽位宽化到无上界域（sound）
+  const widen = pack ? makeLoopWidener() : undefined;
   const snapExit = (): void => {
     if (!pack) return;
     const s = pack();
+    widen?.observe(s);
     exitJoin = exitJoin ? joinAbs(exitJoin, s) : s;
   };
-  const applyExitJoin = (): void => {
+  const applyExitJoin = (exhausted: boolean): void => {
     if (!exitJoin || !pack || !unpack) return;
-    unpack(joinAbs(exitJoin, pack()));
+    const joined = joinAbs(exitJoin, pack());
+    unpack(exhausted && widen ? widen.widenFinal(joined) : joined);
   };
   // 具体延展：与 $for 同口径（见其注释）——预算边界条件仍具体真时延展到
   // 硬上限；硬上限仍具体真 → 截断观测 + 绑定 conf 降级。
@@ -576,7 +615,7 @@ export function $whileSeq(
   for (let i = 0; i < limit; i++) {
     const t = test();
     if (isDefinitelyFalse(t)) {
-      applyExitJoin();
+      applyExitJoin(false);
       return;
     }
     // 抽象条件：当前绑定是合法出口之一，先 snapshot 再进 body；
@@ -589,10 +628,16 @@ export function $whileSeq(
       body();
     } catch (e) {
       if (isNudoBreak(e, opts?.label)) {
-        applyExitJoin();
+        // break 打断体（抽象 fork 的 break 臂冒泡，本迭代剩余语句丢失）——
+        // 「先跑任意次再 break」的累加器域不可观测，出口整体宽化；
+        // definite 分支的 break 是忠实语义（e.abstract=false），不宽化
+        if (e.abstract) widen?.markInterrupted();
+        applyExitJoin(e.abstract);
         return;
       }
       if (isNudoContinue(e, opts?.label)) {
+        // continue 同款打断（e.abstract 同口径；definite continue 忠实）
+        if (e.abstract) widen?.markInterrupted();
         boundaryGate(i); // 体提前结束，副作用已在绑定
         continue;
       }
@@ -608,7 +653,8 @@ export function $whileSeq(
     if (exitJoin && pack && unpack) unpack(confPartialPacked(joinAbs(exitJoin, pack())));
     return;
   }
-  applyExitJoin();
+  // 抽象预算耗尽：增长计数器宽化到无上界域（Bug 48；稳定不动点原样）
+  applyExitJoin(true);
 }
 
 /**
@@ -642,7 +688,8 @@ export function $switch(
   const runArm = (fn: () => Abs): ForkArm => {
     pushCollectionArm();
     try {
-      const r = withIsolatedYields(() => runForkArm(fn, exits));
+      // 抽象 disc 臂：臂内 break/continue 信号标记 abstract（同 $fork）
+      const r = withIsolatedYields(() => withAbstractForkArm(() => runForkArm(fn, exits)));
       armYsList.push(r.ys);
       return r.v;
     } finally {

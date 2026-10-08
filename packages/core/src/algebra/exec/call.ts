@@ -200,18 +200,20 @@ function $callDispatch(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
 // 注册到 hof.applyCallbackAbs（数组回调解释宿主）：
 // Abs 回调 → $call（编译/apply/关系面）；Identifier 节点（解释面残留）→
 // env.vars/env.fns 解析后 $call；inline Node 解释面已删 → unknown（fail-closed）。
-setApplyCallbackHost((cb, args, env) => {
+// thisVal（HOF thisArg，Bug 21）透传 $call 第三参——$fnVal 的 apply 钩子
+// 把它注入宿主 this，回调体 $rawThis(this) 原样接到（与 call/apply/bind 同通道）。
+setApplyCallbackHost((cb, args, env, _phi, _budget, thisVal) => {
   if (cb && typeof cb === "object" && "shape" in (cb as object)) {
-    return $call(cb as Abs, args);
+    return $call(cb as Abs, args, thisVal);
   }
   const node = cb as { type?: string; name?: string } | null | undefined;
   if (node && node.type === "Identifier" && node.name) {
     const e = env as AstEnv | undefined;
     const bound = e?.vars?.get(node.name);
-    if (bound) return $call(bound, args);
+    if (bound) return $call(bound, args, thisVal);
     const f = e?.fns?.get(node.name);
     if (f) {
-      return $call(absFunction(f.params, { body: f.body, async: f.async, env: e }), args);
+      return $call(absFunction(f.params, { body: f.body, async: f.async, env: e }), args, thisVal);
     }
     return unknown;
   }

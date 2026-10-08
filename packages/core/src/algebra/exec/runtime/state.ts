@@ -3,11 +3,12 @@
  * 叶子模块——不依赖 runtime 其它文件（tuple/obj 字面量就地构造，避免 state↔containers 环）。
  */
 import type { Abs } from "../../abs.ts";
-import { abs, bool, boolLit, confJoin, litValue, numLit, unknown, type Confidence } from "../../abs.ts";
+import { abs, bool, boolLit, confJoin, litValue, numLit, strLit, unknown, type Confidence } from "../../abs.ts";
 import { lit } from "../../term.ts";
 import type { Phi } from "../../pred.ts";
 import { pTrue, and, predEquals } from "../../pred.ts";
 import { absFunction, getFnImpl, hostFnCtorFacet } from "../../abs-fn.ts";
+import { registerSymbolMeta } from "../../symbol-id.ts";
 import { NudoThrow, isNudoThrow } from "../nudo-throw.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { errorTypeAbs, $tryMarkSoft, $tryDigestSoft, $tryReleaseSoft, popMayThrowFrame, orphanMayThrowEffects, type MayThrowEffect } from "../may-throw.ts";
@@ -75,12 +76,26 @@ type EmptyBlock = { type: "BlockStatement"; body: never[]; directives: never[] }
 export const noBody: EmptyBlock = { type: "BlockStatement", body: [], directives: [] };
 
 /**
+ * Bug 26：宿主全局函数 apply 桥（exec/calls.ts 的 callHostGlobalFn——模块
+ * 加载时注册）。asAbsVal 给宿主函数建的 fn Abs 的 apply 钩子此前直接把
+ * Abs 实参喂宿主函数（容器槽持有的 parseInt 被调用 → ToPrimitive 假值被
+ * 弃成 unknown）；命中宿主全局身份时改走被调用位桥。state.ts 是叶子
+ * 模块（calls.ts 单向依赖本文件），注册式注入避免反向 import 环。
+ */
+let hostGlobalFnCall: ((fn: unknown, args: Abs[]) => Abs | undefined) | undefined;
+
+export function setHostGlobalFnCall(bridge: (fn: unknown, args: Abs[]) => Abs | undefined): void {
+  hostGlobalFnCall = bridge;
+}
+
+/**
  * transpile 泄漏的 JS 函数值 → 一等 fn Abs。
  * 求值引擎把函数声明/表达式编译成真实 JS 函数；它们流进对象槽、
  * 元组、join 等 Abs 结构时不能裸存——下游（bridge/leq/join）读 `.shape`。
  * 参数名无法从运行时函数恢复（用 fn.length → argN，与 analyzer 的
  * extractParamNames 回退口径一致）；带真实参数名走 $fnVal（transpile 侧）。
  */
+
 export function asAbsVal(v: unknown): Abs {
   if (v && typeof v === "object" && "shape" in (v as object)) return v as Abs;
   if (typeof v === "function") {
@@ -88,14 +103,27 @@ export function asAbsVal(v: unknown): Abs {
     const params = Array.from({ length: n }, (_, i) => `arg${i}`);
     // Bug 9：宿主 generator/async 函数/箭头不可 new——可构造性 facet 进 shape
     const ctor = hostFnCtorFacet(v);
+    // Bug 9：声明名 / 原生 fn.length 透传（v.name / v.length 是宿主真值）——
+    // f.name / f.length 折 exact；匿名（name ""）不记 name
+    const fnName = typeof v.name === "string" && v.name ? v.name : undefined;
     return absFunction(
       params,
       {
         body: noBody,
-        // 与 $fnVal / $callNamed 同边界：callee 的 NudoReturn 不得冒泡成 caller
-        apply: (args) => callAtFunctionBoundary(() => (v as (...a: Abs[]) => Abs)(...args)),
+        // 与 $fnVal / $callNamed 同边界：callee 的 NudoReturn 不得冒泡成 caller。
+        // Bug 26：宿主全局函数值经桥分派（evalGlobalFn / 字面量守卫执行），
+        // 非宿主全局（转译泄漏的普通函数）保持 Abs 实参直调。
+        apply: (args) => {
+          const bridged = hostGlobalFnCall?.(v, args);
+          if (bridged !== undefined) return bridged;
+          return callAtFunctionBoundary(() => (v as (...a: Abs[]) => Abs)(...args));
+        },
       },
-      ctor !== undefined ? { ctor } : undefined,
+      {
+        ...(ctor !== undefined ? { ctor } : {}),
+        ...(fnName !== undefined ? { name: fnName } : {}),
+        length: v.length,
+      },
     );
   }
   return $lit(v);
@@ -282,6 +310,20 @@ export function litAbsFromJs(v: unknown, depth = 0): Abs {
       pTrue,
       "exact",
     );
+  }
+  if (t === "symbol") {
+    // Bug 54：宿主 symbol lit（Symbol.iterator 等 well-known 常量读）——
+    // 同一宿主值跨读稳定，exact lit 健全（=== / typeof / String(sym) /
+    // .description 均可折）；meta 侧表注册 description。
+    const sym = abs(
+      { k: "prim", type: "symbol" },
+      { op: "lit", value: v as unknown as import("../../term.ts").LiteralValue },
+      pTrue,
+      "exact",
+    );
+    return registerSymbolMeta(sym, (v as symbol).description === undefined
+      ? abs({ k: "unknown" }, { op: "lit", value: undefined }, pTrue, "exact")
+      : strLit((v as symbol).description!));
   }
   // JS 数组/纯对象字面量 → tuple/obj（与 runtime $arr/$obj 同构，就地构造以保 state 为叶子）；
   // 循环引用/过深/非 plain 对象（Date/Map/Set/RegExp…）诚实 unknown。
@@ -537,15 +579,35 @@ export function $loopReturn(v: Abs): never {
  * break/continue 信号：transpile 在循环体内生成 $loopBreak/$loopContinue，
  * $for/$whileSeq/$forOf 在 body 调用点捕获。带标签信号只被同标签循环吸收，
  * 不匹配继续冒泡到外层循环（`break outer` / `continue outer` 语义）。
+ *
+ * abstract 溯源（Bug 47/48）：信号从**抽象条件 fork 臂**内抛出时，兄弟臂
+ * 未执行、break/continue 之后的语句丢失——循环携带绑定的「完整迭代效应」
+ * 不可观测（捕获点据此宽化）。definite 分支的信号是忠实原生语义
+ * （`if (i === 2) break` 全具体循环不得宽化），abstract = false。
  */
+let loopSignalFromAbstractArm = false;
+
+/** 抽象 fork 臂执行期间置位（$fork 双臂路径 / $switch 抽象 disc 臂） */
+export function withAbstractForkArm<T>(fn: () => T): T {
+  const prev = loopSignalFromAbstractArm;
+  loopSignalFromAbstractArm = true;
+  try {
+    return fn();
+  } finally {
+    loopSignalFromAbstractArm = prev;
+  }
+}
+
 export class NudoLoopSignal extends Error {
   readonly kind: "break" | "continue";
   readonly label: string | undefined;
+  readonly abstract: boolean;
   constructor(kind: "break" | "continue", label?: string) {
     super("nudo:loop");
     this.name = "NudoLoopSignal";
     this.kind = kind;
     this.label = label;
+    this.abstract = loopSignalFromAbstractArm;
   }
 }
 
@@ -562,11 +624,11 @@ export function loopSignalMatches(e: NudoLoopSignal, label: string | undefined):
   return e.label === undefined || e.label === label;
 }
 
-export function isNudoBreak(e: unknown, label?: string): boolean {
+export function isNudoBreak(e: unknown, label?: string): e is NudoLoopSignal {
   return e instanceof NudoLoopSignal && e.kind === "break" && loopSignalMatches(e, label);
 }
 
-export function isNudoContinue(e: unknown, label?: string): boolean {
+export function isNudoContinue(e: unknown, label?: string): e is NudoLoopSignal {
   return e instanceof NudoLoopSignal && e.kind === "continue" && loopSignalMatches(e, label);
 }
 

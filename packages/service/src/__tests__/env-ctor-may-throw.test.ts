@@ -84,10 +84,18 @@ describe("#106 env 声明构造器不报 constructibility 假 may-throw", () => 
     expect(l2Count(r, "newAC")).toBe(0);
   });
 
-  it("对照不受影响：newDate / callNoNew 零 L2", () => {
+  it("对照不受影响：newDate 零 L2；callNoNew 与 new 同口径（message ToString）", () => {
     const r = check();
     expect(l2Count(r, "newDate")).toBe(0);
-    expect(l2Count(r, "callNoNew")).toBe(0);
+    // T 波修复后 Error(s)（无 new，≡ new Error(s)）对抽象 message 记
+    // message-ToString may-throw——node 实测 Error(Symbol()) 抛 TypeError，
+    // 与 mkErrAny / 宿主路径 errorBrandAbs tiering 同口径（旧「零 L2」钉
+    // 的是调用位漏 tiering 的不一致行为）。
+    const causes = r.issues
+      .filter((i) => i.code === "nudo:entry-may-throw" && i.fn === "callNoNew")
+      .map((i) => i.suggestion?.split("→")[0] ?? "");
+    expect(causes.length).toBe(1);
+    expect(causes[0]).toContain("message ToString");
   });
 
   it("边界（原生如实）：new Error(anyMsg) 仍报 may-throw（message ToString，Symbol 可能）", () => {

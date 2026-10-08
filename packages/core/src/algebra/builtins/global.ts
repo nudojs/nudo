@@ -6,12 +6,13 @@ import type { Abs } from "../abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, bigintLit, unknown, confJoin } from "../abs.ts";
 import { objOf } from "../objects.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
-import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
+import { errorTypeAbs, recordMayThrow, throwPayloadOf } from "../exec/may-throw.ts";
 import { numPrim, str, boolPrim, mayCoerceThrowOperand, isBigintPrimAbs } from "./shared.ts";
+import { builtinBrandToPrimitive } from "../arithmetic.ts";
 import { foldParseInt, foldParseFloat } from "./number.ts";
 import { makeArrayCtorAbs } from "./array.ts";
 import { makeSymbolAbs, isSymbolAbs, stringOfSymbol } from "./symbol.ts";
-import { errorBrandAbs, isErrorCtorName } from "./error.ts";
+import { errorBrandAbs, isErrorCtorName, makeBoxedAbs } from "./error.ts";
 
 /** term 确为 lit（含 lit(undefined)）；litValue 无法区分「字面量 undefined」与「无 lit」 */
 function litTermOf(a: Abs | undefined): { value: unknown } | undefined {
@@ -61,6 +62,16 @@ function toBigIntAbs(args: Abs[]): Abs {
   if (mayCoerceThrowOperand(a0)) {
     recordMayThrow({ kind: "TypeError", cause: "BigInt() ToPrimitive may be a Symbol" });
     recordMayThrow({ kind: "SyntaxError", cause: "BigInt() ToPrimitive result may be unparseable" });
+  } else if (a0.shape.k === "prim") {
+    // Bug 40：refined prim 臂漏报——抽象 number 整个值域多半非整数
+    //（NumberToBigInt 非整数 → RangeError）；抽象 string 多半不可解析
+    //（StringToBigInt → SyntaxError）。boolean/bigint prim 恒 total 不记。
+    const t = (a0.shape as { type?: string }).type;
+    if (t === "number") {
+      recordMayThrow({ kind: "RangeError", cause: "BigInt() NumberToBigInt may be non-integer" });
+    } else if (t === "string") {
+      recordMayThrow({ kind: "SyntaxError", cause: "BigInt() StringToBigInt may be unparseable" });
+    }
   }
   // 抽象 prim / 对象：ToPrimitive 后仍可能是任意可转值——保守 bigint 非具体
   return abs(
@@ -187,6 +198,12 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
       // Number() → +0；Number(undefined) → NaN；Number(null) → 0；Number(5n) → 5
       //（Number 走 ToNumeric：Number(1n) / Number({valueOf(){return 1n}}) 合法折 number，
       //  node 实测；Math/isNaN 等 ToNumber 面才对 bigint 抛）
+      // Bug 25：内建 brand（Date/RegExp/装箱…）经 ToPrimitive 折 prim 后
+      // 走既有字面量/prim 臂（假 may-throw 消除；new Date(0) → 0 精确）
+      if (args[0] && args[0].shape.k === "brand") {
+        const folded = builtinBrandToPrimitive(args[0], "number");
+        if (folded) return evalGlobalFn("Number", [folded]);
+      }
       if (args[0] && isSymbolAbs(args[0])) throw new NudoThrow(errorTypeAbs("TypeError"));
       if (!args[0]) return numLit(0);
       if (a0Lit && a0Lit.value === undefined) return numLit(NaN);
@@ -217,9 +234,9 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
       if (a0Lit) return boolLit(Boolean(a0Lit.value));
       return boolPrim();
     case "Object": {
-      // ToObject：prim 字面量装箱为包装 brand（String 箱带 length/下标槽，
-      // 读 .length/[i] 与原生一致）；null/undefined/无参 → 空对象；
-      // 对象形态恒等；抽象 prim → open 对象（成员读保持非具体）。
+      // ToObject：prim 字面量装箱为包装 brand（Bug 22：统一 makeBoxedAbs
+      // ——[[PrimitiveValue]] 槽 + String 箱 length/下标槽，原型方法拆箱派发）；
+      // null/undefined/无参 → 空对象；对象形态恒等。
       const arg = args[0];
       if (!arg) return objOf({});
       if (arg.term?.op === "lit" && (arg.term.value === undefined || arg.term.value === null)) {
@@ -227,28 +244,10 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
       }
       if (arg.shape.k === "prim") {
         const primType = arg.shape.type;
-        if (typeof a0 === "string") {
-          const slots: Record<string, { value: Abs }> = {
-            length: { value: numLit(a0.length) },
-          };
-          for (let i = 0; i < a0.length; i++) {
-            slots[String(i)] = { value: strLit(a0[i]!) };
-          }
-          return abs(
-            { k: "brand", name: "String", shape: objOf(slots) },
-            undefined,
-            undefined,
-            "exact",
-          );
+        if (primType === "string" || primType === "number" || primType === "boolean") {
+          return makeBoxedAbs(primType === "string" ? "String" : primType === "number" ? "Number" : "Boolean", arg);
         }
-        const boxName =
-          primType === "number"
-            ? "Number"
-            : primType === "boolean"
-              ? "Boolean"
-              : primType === "bigint"
-                ? "BigInt"
-                : "Symbol";
+        const boxName = primType === "bigint" ? "BigInt" : "Symbol";
         return abs(
           { k: "brand", name: boxName, shape: objOf({}) },
           undefined,
@@ -261,6 +260,51 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
     }
     case "BigInt":
       return toBigIntAbs(args);
+    case "encodeURI":
+    case "decodeURI":
+    case "encodeURIComponent":
+    case "decodeURIComponent":
+    case "btoa":
+    case "atob":
+    case "escape":
+    case "unescape": {
+      // Bug 5：宿主 URI/escape 族 8 个——env 已声明 prim.str()→prim.str()
+      // 却被硬编码全局兜底（callHostGlobalLiteralOnly 对抽象实参一律
+      // unknown）遮蔽。登记进 GLOBAL_FNS 后在此分派：
+      // - 可 ToString 字面量（含缺省 ≡ undefined）→ 宿主真执行精确折叠
+      //   （异常折 NudoThrow 进 throws 域）；
+      // - symbol prim → ToString 定抛；
+      // - 抽象 prim → 值域恒 string（ToString total），may-throw 面按
+      //   各函数记：decode* → URIError（畸形 % 序列）；btoa/atob →
+      //   InvalidCharacterError（DOMException name）；encode*/escape* total；
+      // - obj/fn/any 载体 → 另记 may TypeError（Symbol coercer）+ string。
+      const a0 = args[0];
+      if (a0 && isSymbolAbs(a0)) throw new NudoThrow(errorTypeAbs("TypeError"));
+      const lvR = a0 ? litValue(a0) : { ok: true as const, value: undefined };
+      if (lvR.ok) {
+        // 缺省 / lit(undefined) ≡ ToString(undefined)="undefined"（原生同款）
+        const v = lvR.value;
+        if (typeof v === "symbol") throw new NudoThrow(errorTypeAbs("TypeError")); // 防御死代码
+        try {
+          const fn = (globalThis as unknown as Record<string, (...a: unknown[]) => string>)[name]!;
+          return strLit(fn(v));
+        } catch (e) {
+          throw new NudoThrow(throwPayloadOf(e));
+        }
+      }
+      if (a0 && a0.term?.op !== "lit") {
+        if (mayCoerceThrowOperand(a0)) {
+          recordMayThrow({ kind: "TypeError", cause: `${name} argument ToString may throw (Symbol)` });
+        }
+        if (name === "decodeURI" || name === "decodeURIComponent") {
+          recordMayThrow({ kind: "URIError", cause: `${name} input may be a malformed URI` });
+        }
+        if (name === "btoa" || name === "atob") {
+          recordMayThrow({ kind: "InvalidCharacterError", cause: `${name} input may be out of range / invalid base64` });
+        }
+      }
+      return str();
+    }
     default: {
       // Error 家族无 `new` 调用 ≡ new Error(...)（原生同语义）→ errorBrandAbs。
       // 此前落到宿主直调：AggregateError(absArr) 走 iterable 协议炸 internal；

@@ -374,6 +374,47 @@ function shortCircuitHop(
   return `(($__oc) => $fork($nullishTest($__oc), () => $lit(void 0), () => ${emitChainFrom(hops, i + 1, applied)}))(${valSrc})`;
 }
 
+/**
+ * Bug 60：可选链 delete 的链式发射（delete o?.a / delete o.a?.b / delete
+ * o?.[k]）。与读链（emitChainFrom）同构，差异两处：
+ * - 任一 optional 跳命中 nullish → 短路臂返回 **true**（delete 表达式值），
+ *   不是 undefined；
+ * - 最后一跳（get/idx）发射 $delRes（删键结果布尔）而非 $get/$idx。
+ * 中缀含 call/invoke/len（不可删除目标的父链）→ undefined（调用方 unsupported）。
+ */
+function emitDeleteChainFrom(hops: ChainHop[], i: number, valSrc: string): string | undefined {
+  if (i >= hops.length) return undefined;
+  const hop = hops[i]!;
+  const isLast = i === hops.length - 1;
+  const delShortCircuit = (recv: string, body: string): string =>
+    `((__oc) => $fork($nullishTest(__oc), () => $lit(true), () => ${body}))(${recv})`;
+  if (hop.kind === "get") {
+    if (isLast) {
+      return hop.optional
+        ? delShortCircuit(valSrc, `$delRes($removeNullish(__oc), ${hop.key})`)
+        : `$delRes(${valSrc}, ${hop.key})`;
+    }
+    if (hop.optional) {
+      const rest = emitDeleteChainFrom(hops, i + 1, `$get($removeNullish(__oc), ${hop.key})`);
+      return rest === undefined ? undefined : delShortCircuit(valSrc, rest);
+    }
+    return emitDeleteChainFrom(hops, i + 1, `$get(${valSrc}, ${hop.key})`);
+  }
+  if (hop.kind === "idx") {
+    if (isLast) {
+      return hop.optional
+        ? delShortCircuit(valSrc, `$delRes($removeNullish(__oc), ${hop.keySrc})`)
+        : `$delRes(${valSrc}, ${hop.keySrc})`;
+    }
+    if (hop.optional) {
+      const rest = emitDeleteChainFrom(hops, i + 1, `$idx($removeNullish(__oc), ${hop.keySrc})`);
+      return rest === undefined ? undefined : delShortCircuit(valSrc, rest);
+    }
+    return emitDeleteChainFrom(hops, i + 1, `$idx(${valSrc}, ${hop.keySrc})`);
+  }
+  return undefined; // call/invoke/len 中缀：delete 目标父链不可发射
+}
+
 /** 若 expr 是含 `?.` 的成员/调用脊柱，返回整链短路源码 */
 function tryTranspileOptionalChain(expr: Expression, opts: TranspileOptions): string | undefined {
   const t = (expr as { type?: string }).type;
@@ -597,7 +638,21 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       if (expr.operator === "delete") {
         // delete 的表达式值是布尔结果；容器写回由语句级 emitDeleteRebinds 负责
         const arg = expr.argument as Expression;
-        if (arg.type === "MemberExpression") {
+        const argType = (arg as { type?: string }).type;
+        if (argType === "MemberExpression" || argType === "OptionalMemberExpression") {
+          // Bug 60：可选链 delete（delete o?.a）——?. 命中 nullish 时短路
+          // 返回 true（剩余链不求值），非 nullish 臂才 $delRes；此前
+          // OptionalMemberExpression 不在处理面 → unsupported 假抛/unknown
+          if (chainNeedsShortCircuit(arg as Node)) {
+            const flat = flattenChain(arg, opts);
+            const delSrc = flat && emitDeleteChainFrom(flat.hops, 0, flat.baseSrc);
+            if (delSrc !== undefined) return delSrc;
+            // 链含 call/invoke 等不可删除中缀 → 维持 unsupported fail-closed
+            throw new NudoUnsupportedError(
+              `delete:${argType}`,
+              expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
+            );
+          }
           const m = arg as unknown as {
             object: Node;
             property: Node;
@@ -1471,10 +1526,11 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
       const useArgsSlot = hasArgs && !hasThis;
       // rest 形参：JS rest 收集的是 Abs[]（裸 JS 数组），必须包 $arr 才是 Abs
       // （DEC-006 K1b：rest.length 直接 $len 炸）。useArgsSlot 路径已由
-      // emitParamBindingFromArgs 的 $arrRest 处理。
+      // emitParamBindingFromArgs 的 $arrRest 处理。Bug 44：经 $restBind——
+      // 签名符号执行的开放数组哨兵直通（不塌缩固定 1 元组）
       const restRaw = rest && !useArgsSlot ? `__rest_raw` : rest;
       const restPrologue = rest && !useArgsSlot && restRaw
-        ? [`  const ${rest} = $arr(${restRaw});`]
+        ? [`  const ${rest} = $restBind(${restRaw}, 0);`]
         : [];
       const paramParts = restRaw ? [...sig, `...${restRaw}`] : sig;
       // 一等 fn Abs：参数名进 shape（bridge/dts 可展示）——用展示名（含 rest/默认参），

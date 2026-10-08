@@ -2,7 +2,7 @@
  * Promise 构造 / then 链 / 静态方法 + micro 队列
  */
 import type { Abs } from "../abs.ts";
-import { abs, litValue, numLit, strLit, boolLit, bigintLit, unknown } from "../abs.ts";
+import { abs, litValue, numLit, strLit, boolLit, bigintLit, unknown, never } from "../abs.ts";
 import { joinAbs } from "../objects.ts";
 import { isMapAbs, isSetAbs } from "../collections.ts";
 import { applyCallbackValue, undefAbs, asAbs, instantiateReturn } from "../hof.ts";
@@ -10,6 +10,7 @@ import { absFunction, getFnImpl } from "../abs-fn.ts";
 import { pTrue } from "../pred.ts";
 import { defaultLeakBudget } from "../leak.ts";
 import { emptyEnv } from "../ast-env.ts";
+import { isNullishLitAbs } from "../surface.ts";
 import {
   noteAbsTruncation,
   PROMISE_MICRO_OVERFLOW_LABEL,
@@ -38,6 +39,21 @@ export function notePromiseExecutorFork(): void {
 
 function promiseAbs(inner: Abs, conf: Abs["conf"] = "path"): Abs {
   return abs({ k: "eff", eff: "promise", inner }, undefined, undefined, conf);
+}
+
+/**
+ * Bug 36：确定拒绝的 promise——resolved 域 never（fulfilled 臂不可能），
+ * rejected 通道携带 reason（catch/两参 then 的 onRejected 实参来源）。
+ * 拒绝透传（nullish handler ≡ Identity）经同款构造保持通道。
+ */
+function promiseRejected(reason: Abs, conf: Abs["conf"] = "path"): Abs {
+  return abs({ k: "eff", eff: "promise", inner: never, rejected: reason }, undefined, undefined, conf);
+}
+
+/** promise 的已知拒绝 reason（无通道 → undefined） */
+function rejectedOf(recv: Abs): Abs | undefined {
+  if (recv.shape.k !== "eff" || recv.shape.eff !== "promise") return undefined;
+  return (recv.shape as { rejected?: Abs }).rejected;
 }
 
 function promiseUnknown(): Abs {
@@ -139,7 +155,9 @@ export function evalPromiseCtor(args: Abs[]): Abs {
 
   let hasSettle = false;
   let hasResolve = false;
+  let hasReject = false;
   const resolveValues: Abs[] = [];
+  const rejectValues: Abs[] = [];
 
   const onResolve = (value?: unknown): Abs => {
     const raw = asAbs(value) ?? litFromJs(value);
@@ -154,8 +172,16 @@ export function evalPromiseCtor(args: Abs[]): Abs {
     }
     return undefAbs();
   };
-  const onReject = (_reason?: unknown): Abs => {
-    if (!hasSettle) hasSettle = true;
+  // Bug 36：reject 通道与 resolve 对称收集（fork 臂 join；first-wins 同款）
+  const onReject = (reason?: unknown): Abs => {
+    const raw = asAbs(reason) ?? litFromJs(reason);
+    if (!hasSettle) {
+      hasSettle = true;
+      hasReject = true;
+      rejectValues.push(raw);
+    } else if (hasReject) {
+      rejectValues.push(raw);
+    }
     return undefAbs();
   };
 
@@ -194,12 +220,29 @@ export function evalPromiseCtor(args: Abs[]): Abs {
   }
   const forks = leavePromiseExecutorScope();
 
+  // Bug 36：确定拒绝（仅 reject 臂 settle）→ resolved 域 never + reason 通道；
+  // 两臂都可能（fork：一臂 resolve 一臂 reject）→ inner 与 rejected 并存
+  //（then/catch 两臂 join 消费）
+  if (!hasResolve && rejectValues.length > 0) {
+    return promiseRejected(
+      rejectValues.length === 1 ? rejectValues[0]! : rejectValues.reduce((a, b) => joinAbs(a, b)),
+    );
+  }
   if (!hasResolve || resolveValues.length === 0) return promiseUnknown();
   // 无 fork：顺序双 resolve 取第一次（原生 no-op）；有 fork：各臂 join
   const inner =
     forks === 0 || resolveValues.length === 1
       ? resolveValues[0]!
       : resolveValues.reduce((a, b) => joinAbs(a, b));
+  if (rejectValues.length > 0) {
+    const rej = rejectValues.length === 1 ? rejectValues[0]! : rejectValues.reduce((a, b) => joinAbs(a, b));
+    return abs(
+      { k: "eff", eff: "promise", inner, rejected: rej },
+      undefined,
+      undefined,
+      "path",
+    );
+  }
   return promiseAbs(inner, "path");
 }
 
@@ -211,15 +254,85 @@ export function evalPromiseMethod(
 ): Abs | undefined {
   if (recv.shape.k !== "eff" || recv.shape.eff !== "promise") return undefined;
   const inner = recv.shape.inner;
+  // Bug 36/37：handler nullish 字面量 ≡ Identity（ES262 PerformPromiseThen
+  // 的 IsCallable 检查）——Abs 恒为真值对象，旧 `!onFulfilled` 判定永不生效
+  const isIdentity = (h: Abs | undefined): boolean => !h || isNullishLitAbs(h);
+  const confOf = (): Abs["conf"] => (recv.conf === "exact" ? "path" : recv.conf);
   switch (name) {
     case "then": {
       const onFulfilled = args[0];
-      if (!onFulfilled) return promiseAbs(inner, recv.conf === "exact" ? "path" : recv.conf);
+      const onRejected = args[1];
+      const rejected = rejectedOf(recv);
+      const definiteRejected = inner.shape.k === "never" && rejected !== undefined;
+      const fulNullish = isIdentity(onFulfilled);
+      const rejNullish = isIdentity(onRejected);
+
+      // Bug 36：确定拒绝——onFulfilled（含 nullish）永不执行
+      if (definiteRejected) {
+        const reason = rejected!;
+        if (rejNullish) {
+          // 拒绝透传：nullish onRejected ≡ Identity
+          return promiseRejected(reason, confOf());
+        }
+        const resultPromise = promiseAbs(unknown, "path");
+        queuePromiseMicro(() => {
+          const recovered = applyCallbackValue(onRejected, [reason], emptyEnv(), pTrue, defaultLeakBudget);
+          const next =
+            !recovered || (recovered.shape.k === "unknown" && recovered.term === undefined)
+              ? unknown
+              : unwrapThenable(recovered);
+          (resultPromise.shape as { inner: Abs }).inner = next;
+        });
+        return resultPromise;
+      }
+
+      // Bug 37：nullish onFulfilled ≡ Identity 透传 settle 值
+      if (fulNullish) {
+        if (rejected === undefined) {
+          // 无拒绝通道信息：then(null) / then(null, null) → 透传 inner
+          //（settle 未知面只在 inner 为 unknown 时两臂 join——onRejected
+          // 可能对未知 reason 跑，join 后仍被 unknown 吸收）
+          if (!rejNullish && inner.shape.k === "unknown" && inner.term === undefined) {
+            const resultPromise = promiseAbs(unknown, "path");
+            queuePromiseMicro(() => {
+              const recovered = applyCallbackValue(onRejected, [unknown], emptyEnv(), pTrue, defaultLeakBudget);
+              const next =
+                !recovered || (recovered.shape.k === "unknown" && recovered.term === undefined)
+                  ? unknown
+                  : unwrapThenable(recovered);
+              (resultPromise.shape as { inner: Abs }).inner = joinAbs(unwrapThenable(inner), next);
+            });
+            return resultPromise;
+          }
+          return promiseAbs(unwrapThenable(inner), confOf());
+        }
+        // 拒绝通道在场但 settle 未定（fork 双臂）：两臂 join——fulfilled 臂
+        // 透传 inner；rejected 臂 g(reason) 或（nullish g）拒绝透传
+        if (rejNullish) {
+          return abs(
+            { k: "eff", eff: "promise", inner: unwrapThenable(inner), rejected },
+            undefined,
+            undefined,
+            confOf(),
+          );
+        }
+        const resultPromise = promiseAbs(unwrapThenable(inner), "path");
+        queuePromiseMicro(() => {
+          const recovered = applyCallbackValue(onRejected, [rejected], emptyEnv(), pTrue, defaultLeakBudget);
+          const next =
+            !recovered || (recovered.shape.k === "unknown" && recovered.term === undefined)
+              ? unknown
+              : unwrapThenable(recovered);
+          (resultPromise.shape as { inner: Abs }).inner = joinAbs(unwrapThenable(inner), next);
+        });
+        return resultPromise;
+      }
+
       // 纯 relation 回调：同步收窄 inner（analyze 路径立刻可读）
       const rel = getFnImpl(onFulfilled)?.relation;
       if (rel && !getFnImpl(onFulfilled)?.body && !getFnImpl(onFulfilled)?.apply) {
         const mapped = instantiateReturn(onFulfilled, [inner]);
-        return promiseAbs(unwrapThenable(mapped), recv.conf === "exact" ? "path" : recv.conf);
+        return promiseAbs(unwrapThenable(mapped), confOf());
       }
       // 先建 promise 占位，回调在微任务里填 inner（原生 then 不同步跑回调）
       const resultPromise = promiseAbs(unknown, "path");
@@ -241,10 +354,54 @@ export function evalPromiseMethod(
       return resultPromise;
     }
     case "catch": {
+      const onRejected = args[0];
+      const rejected = rejectedOf(recv);
+      // Bug 36：确定拒绝——回调实参 = 拒绝 reason；结果只取回调值
+      //（fulfilled 臂不可能，不得 join 原 inner 凭空多臂）
+      if (inner.shape.k === "never" && rejected !== undefined) {
+        if (isIdentity(onRejected)) {
+          // nullish catch handler ≡ 拒绝透传（Identity）
+          return promiseRejected(rejected, confOf());
+        }
+        const resultPromise = promiseAbs(unknown, "path");
+        queuePromiseMicro(() => {
+          const recovered = applyCallbackValue(onRejected, [rejected], emptyEnv(), pTrue, defaultLeakBudget);
+          if (!recovered || (recovered.shape.k === "unknown" && recovered.term === undefined)) {
+            (resultPromise.shape as { inner: Abs }).inner = unknown;
+            return;
+          }
+          (resultPromise.shape as { inner: Abs }).inner = unwrapThenable(recovered);
+        });
+        return resultPromise;
+      }
+      // Bug 37：nullish catch handler ≡ Identity——resolved 透传 / 拒绝透传
+      if (isIdentity(onRejected)) {
+        if (rejected !== undefined) {
+          // settle 未定（fork 双臂）：resolved 透传 inner ∪ 拒绝透传 reason
+          return abs(
+            { k: "eff", eff: "promise", inner: unwrapThenable(inner), rejected },
+            undefined,
+            undefined,
+            confOf(),
+          );
+        }
+        return promiseAbs(inner, confOf());
+      }
+      // 拒绝通道在场但 settle 未定：两臂 join（resolved: inner；rejected: g(R)）
+      if (rejected !== undefined) {
+        const resultPromise = promiseAbs(unwrapThenable(inner), "path");
+        queuePromiseMicro(() => {
+          const recovered = applyCallbackValue(onRejected, [rejected], emptyEnv(), pTrue, defaultLeakBudget);
+          const next =
+            !recovered || (recovered.shape.k === "unknown" && recovered.term === undefined)
+              ? unknown
+              : unwrapThenable(recovered);
+          (resultPromise.shape as { inner: Abs }).inner = joinAbs(unwrapThenable(inner), next);
+        });
+        return resultPromise;
+      }
       // 只建模 resolved 通道：onRejected 映射 reject reason（unknown）→ 可能 resolve
       // 回调同样进微任务，不污染同步返回路径
-      const onRejected = args[0];
-      if (!onRejected) return promiseAbs(inner, recv.conf === "exact" ? "path" : recv.conf);
       const resultPromise = promiseAbs(inner, "path");
       queuePromiseMicro(() => {
         const recovered = applyCallbackValue(
@@ -266,8 +423,17 @@ export function evalPromiseMethod(
       return resultPromise;
     }
     case "finally": {
-      // finally 不改变 settled value（回调返回值丢弃）
-      return promiseAbs(inner, recv.conf === "exact" ? "path" : recv.conf);
+      // finally 不改变 settled value（回调返回值丢弃）；Bug 36：拒绝通道
+      // 透传（Promise.reject(1).finally(g) 仍以 1 拒绝）
+      if (rejectedOf(recv) !== undefined) {
+        return abs(
+          { k: "eff", eff: "promise", inner, rejected: rejectedOf(recv) },
+          undefined,
+          undefined,
+          confOf(),
+        );
+      }
+      return promiseAbs(inner, confOf());
     }
     default:
       return undefined;
@@ -329,6 +495,24 @@ function iterableElementOf(a: Abs | undefined): Abs | undefined {
 
 export function evalPromiseStatic(name: string, args: Abs[]): Abs | undefined {
   switch (name) {
+    case "withResolvers": {
+      // Bug 24：ES2024 Promise.withResolvers() —— 恒返回三槽对象。promise
+      // 槽域 promise<unknown>（resolve 实参未知），resolve/reject 一等函数
+      //（无 body 最小面：调用返回 unknown；this 不敏感）。
+      return abs(
+        {
+          k: "obj",
+          slots: {
+            promise: { value: promiseAbs(unknown, "path") },
+            resolve: { value: absFunction([], { body: noBody }, { ctor: false }) },
+            reject: { value: absFunction([], { body: noBody }, { ctor: false }) },
+          },
+        },
+        undefined,
+        undefined,
+        "path",
+      );
+    }
     case "resolve": {
       const inner = args[0] ?? unknown;
       // Promise.resolve(thenable) 展开
@@ -336,7 +520,8 @@ export function evalPromiseStatic(name: string, args: Abs[]): Abs | undefined {
       return promiseAbs(inner, "path");
     }
     case "reject":
-      return promiseUnknown();
+      // Bug 36：拒绝通道携带 reason（resolved 域 never——fulfilled 臂不可能）
+      return promiseRejected(args[0] ?? undefAbs(), "path");
     case "all": {
       // Bug 47（node v26 实测校正）：非可迭代实参**不同步抛**——TypeError
       // 折为返回 promise 的 rejection（all(1)/all(null)/all()/all(Symbol())
