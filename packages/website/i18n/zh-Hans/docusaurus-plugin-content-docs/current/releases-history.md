@@ -11,19 +11,28 @@ slug: /releases-history
 
 | 包 | 当前版本 |
 |----|----------|
-| `@nudojs/core` | 1.9.1 |
-| `@nudojs/service` | 1.6.13 |
-| `nudojs (CLI)` | 1.3.14 |
-| `@nudojs/parser` | 1.4.10 |
-| `@nudojs/lsp` | 1.4.11 |
-| `@nudojs/env` | 0.4.28 |
-| `@nudojs/harvester` | 0.3.14 |
-| `vite-plugin-nudo` | 0.4.29 |
-| `nudo-vscode` | 0.3.33 |
+| `@nudojs/core` | 1.9.2 |
+| `@nudojs/service` | 1.6.14 |
+| `nudojs (CLI)` | 1.3.15 |
+| `@nudojs/parser` | 1.4.11 |
+| `@nudojs/lsp` | 1.4.12 |
+| `@nudojs/env` | 0.4.29 |
+| `@nudojs/harvester` | 0.3.15 |
+| `vite-plugin-nudo` | 0.4.30 |
+| `nudo-vscode` | 0.3.34 |
 
 **按包跳转:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.9.1 {#pkg-core}
+## @nudojs/core 1.9.2 {#pkg-core}
+
+## 1.9.2
+
+### Patch Changes
+
+- c8e0417: Propagate member truthy-guard facts into union containers (issue #129). `$removeMemberNullish` now classifies sum members per the guarded key: members whose read is definitely nullish — a closed shape without the key whose absent read yields `undefined` (no `open`/index signature, no `Object.prototype`/`constructor` key, no getter), or a getter-free all-nullish slot value — cannot survive the truthy arm and are pruned; members with `T | nullish` slot values or `optional` flags are rebuilt with the nullish members stripped and the flag dropped (same refinement the single-object branch has applied since #118, now also migrating the accessor/invariant/nullProto side tables to the rebuilt identity). `if (!node.property) return` followed by a chained re-read `node.property.type` on a discriminated union with a lenient catch-all arm no longer records a false `property 'type' on undefined` may-throw. Keys whose absent read is unjudgeable — `open`/index shapes, `Object.prototype` method names and `constructor` (proto-chain reads a function), and getter-backed keys (the read returns the getter result, not the placeholder slot) — stay conservatively, as do `any`/`unknown` slot values and non-object members; all-pruned sums pass through unchanged and single-member remainders collapse, matching `$narrowMemberEq` conventions.
+
+<details>
+<summary>历史版本 (37)</summary>
 
 ## 1.9.1
 
@@ -52,9 +61,6 @@ slug: /releases-history
   Reflection mutators: the five `Reflect.set`/`deleteProperty`/`defineProperty`/`setPrototypeOf`/`preventExtensions` now apply their state effect to the receiver (in-place slot write/delete, proto marking, ext-state) while keeping native boolean returns; `Object.create(proto, descriptors)` installs descriptors as own properties (open obj for object protos, null-proto preserved).
   
   Enumeration: `Object.create(<obj>)` no longer poisons the keys family with a false may-throw (keys/values/entries fold `[]`); `Object.keys/values/entries` classify non-string primitives (`[]`) and builtin brands (boxed String → `["0","1"]`, gOPN includes `length`); accessor properties are visible to `Object.entries`/`Object.values`/`Object.getOwnPropertyDescriptor` (accessor descriptors `{get,set,enumerable,configurable}`) and `JSON.stringify` through a single `readProperty` [[Get]] entry point — getter thunks are invoked, the defineProperty+enumerable stringify variant loses its false may-throw, and `for (k in new String(…))` no longer enumerates `length`.
-
-<details>
-<summary>历史版本 (36)</summary>
 
 ## 1.9.0
 
@@ -897,7 +903,20 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/service 1.6.13 {#pkg-service}
+## @nudojs/service 1.6.14 {#pkg-service}
+
+## 1.6.14
+
+### Patch Changes
+
+- Updated dependencies [c8e0417]
+  - @nudojs/core@1.9.2
+  - @nudojs/env@0.4.29
+  - @nudojs/harvester@0.3.15
+  - @nudojs/parser@1.4.11
+
+<details>
+<summary>历史版本 (39)</summary>
 
 ## 1.6.13
 
@@ -912,9 +931,6 @@ slug: /releases-history
   - @nudojs/env@0.4.28
   - @nudojs/harvester@0.3.14
   - @nudojs/parser@1.4.10
-
-<details>
-<summary>历史版本 (38)</summary>
 
 ## 1.6.12
 
@@ -1716,7 +1732,21 @@ slug: /releases-history
 
 </details>
 
-## nudojs (CLI) 1.3.14 {#pkg-nudojs}
+## nudojs (CLI) 1.3.15 {#pkg-nudojs}
+
+## 1.3.15
+
+### Patch Changes
+
+- Updated dependencies [c8e0417]
+  - @nudojs/core@1.9.2
+  - @nudojs/env@0.4.29
+  - @nudojs/harvester@0.3.15
+  - @nudojs/parser@1.4.11
+  - @nudojs/service@1.6.14
+
+<details>
+<summary>历史版本 (36)</summary>
 
 ## 1.3.14
 
@@ -1732,9 +1762,6 @@ slug: /releases-history
   - @nudojs/harvester@0.3.14
   - @nudojs/parser@1.4.10
   - @nudojs/service@1.6.13
-
-<details>
-<summary>历史版本 (35)</summary>
 
 ## 1.3.13
 
@@ -2309,7 +2336,17 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/parser 1.4.10 {#pkg-parser}
+## @nudojs/parser 1.4.11 {#pkg-parser}
+
+## 1.4.11
+
+### Patch Changes
+
+- Updated dependencies [c8e0417]
+  - @nudojs/core@1.9.2
+
+<details>
+<summary>历史版本 (36)</summary>
 
 ## 1.4.10
 
@@ -2321,9 +2358,6 @@ slug: /releases-history
 - Updated dependencies [bf601e0]
 - Updated dependencies [bf601e0]
   - @nudojs/core@1.9.1
-
-<details>
-<summary>历史版本 (35)</summary>
 
 ## 1.4.9
 
@@ -2779,7 +2813,19 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/lsp 1.4.11 {#pkg-lsp}
+## @nudojs/lsp 1.4.12 {#pkg-lsp}
+
+## 1.4.12
+
+### Patch Changes
+
+- Updated dependencies [c8e0417]
+  - @nudojs/core@1.9.2
+  - @nudojs/parser@1.4.11
+  - @nudojs/service@1.6.14
+
+<details>
+<summary>历史版本 (40)</summary>
 
 ## 1.4.11
 
@@ -2793,9 +2839,6 @@ slug: /releases-history
   - @nudojs/core@1.9.1
   - @nudojs/parser@1.4.10
   - @nudojs/service@1.6.13
-
-<details>
-<summary>历史版本 (39)</summary>
 
 ## 1.4.10
 
@@ -3525,7 +3568,17 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/env 0.4.28 {#pkg-env}
+## @nudojs/env 0.4.29 {#pkg-env}
+
+## 0.4.29
+
+### Patch Changes
+
+- Updated dependencies [c8e0417]
+  - @nudojs/core@1.9.2
+
+<details>
+<summary>历史版本 (36)</summary>
 
 ## 0.4.28
 
@@ -3537,9 +3590,6 @@ slug: /releases-history
 - Updated dependencies [bf601e0]
 - Updated dependencies [bf601e0]
   - @nudojs/core@1.9.1
-
-<details>
-<summary>历史版本 (35)</summary>
 
 ## 0.4.27
 
@@ -3933,7 +3983,19 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/harvester 0.3.14 {#pkg-harvester}
+## @nudojs/harvester 0.3.15 {#pkg-harvester}
+
+## 0.3.15
+
+### Patch Changes
+
+- Updated dependencies [c8e0417]
+  - @nudojs/core@1.9.2
+  - @nudojs/env@0.4.29
+  - @nudojs/parser@1.4.11
+
+<details>
+<summary>历史版本 (36)</summary>
 
 ## 0.3.14
 
@@ -3947,9 +4009,6 @@ slug: /releases-history
   - @nudojs/core@1.9.1
   - @nudojs/env@0.4.28
   - @nudojs/parser@1.4.10
-
-<details>
-<summary>历史版本 (35)</summary>
 
 ## 0.3.13
 
@@ -4394,7 +4453,18 @@ slug: /releases-history
 
 </details>
 
-## vite-plugin-nudo 0.4.29 {#pkg-vite-plugin}
+## vite-plugin-nudo 0.4.30 {#pkg-vite-plugin}
+
+## 0.4.30
+
+### Patch Changes
+
+- Updated dependencies [c8e0417]
+  - @nudojs/core@1.9.2
+  - @nudojs/service@1.6.14
+
+<details>
+<summary>历史版本 (39)</summary>
 
 ## 0.4.29
 
@@ -4407,9 +4477,6 @@ slug: /releases-history
 - Updated dependencies [bf601e0]
   - @nudojs/core@1.9.1
   - @nudojs/service@1.6.13
-
-<details>
-<summary>历史版本 (38)</summary>
 
 ## 0.4.28
 
