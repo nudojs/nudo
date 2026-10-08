@@ -18,6 +18,12 @@
  * 控制组（诚实残差）：无守卫链式读仍 1 条 L2（may 态语义正确——尾臂与
  * lit 判别值域重叠，等价 TS 行为）；falsy 臂读不剪（property falsy 仍可
  * 能是 undefined）仍报。
+ *
+ * 评审加固：缺席槽 ≠ 读 undefined——分类与 $get 的 obj 缺席分支同口径
+ * （containers.ts）：open/index 签名（读 unknown）、Object.prototype 方
+ * 法名与 constructor（原型链读出函数，真值守卫必过）、accessorTable
+ * getter（读 getter 结果，真值性不可判）→ 保守保留；refine 重建产生新
+ * Abs 身份时迁移 accessor/propFlags/nullProto 侧表。
  */
 import { describe, it, expect } from "vitest";
 import {
@@ -35,6 +41,7 @@ import {
   derefConstraint,
 } from "@nudojs/core";
 import { $removeMemberNullish, $removeNullish } from "../exec/runtime/async.ts";
+import { $objAccessor } from "../exec/runtime/members.ts";
 import { abs } from "../abs.ts";
 import { lit as litTerm } from "../term.ts";
 
@@ -142,6 +149,126 @@ export function falsyArm(node) {
   return node.property.type;
 }`);
     expect(l2Count(r, "falsyArm")).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("#129 评审加固：缺席槽 ≠ 读 undefined（$get 同口径）", () => {
+  it("toString 守卫键不剪闭缺席臂：原型链读出函数，签名保留 string", () => {
+    const sidecar = `
+import { string, shape, union } from "@nudojs/core";
+export const nodeParam = union(
+  shape({ a: string() }),
+  shape({ toString: string() }),
+);
+`;
+    const r = check(`${CONTRACT}
+export function g(node) {
+  if (!node) return null;
+  if (!node.toString) return null;
+  return node.a;
+}
+`, sidecar);
+    // {a: string} 臂 toString 缺席但原型链读出函数 → 守卫必过 → 臂保留；
+    // 修复前剪臂致 node.a 只剩 undefined（签名丢 string）。display 为返回段
+    expect(l2Count(r, "g")).toBe(0);
+    expect(sigOf(r, "g")).toMatch(/string/);
+    expect(sigOf(r, "g")).not.toMatch(/throws/);
+  });
+
+  it("getter-only 臂在成员真值守卫下保留：链式读 0 L2、签名含 7", () => {
+    const r = check(`
+export function g2(flag) {
+  const o = flag ? { a: 1 } : { get p() { return { z: 7 }; } };
+  if (!o) return null;
+  if (!o.p) return null;
+  return o.p.z;
+}
+`);
+    // getter 臂 p 槽是 undefined-lit 占位（读走 accessorTable getter → {z:7}，
+    // 真值必过守卫）→ 保留；{a:1} 臂 p 缺席闭无访问器 → 剪除塌缩 → o.p.z
+    // = 7 零 L2。修复前 getter 臂按占位槽值剪除 → 全剪透传 → 假 may-throw
+    expect(l2Count(r, "g2")).toBe(0);
+    expect(sigOf(r, "g2")).toMatch(/7/);
+    expect(sigOf(r, "g2")).not.toMatch(/throws/);
+  });
+
+  it("refine 重建迁移访问器侧表：data+getter 混合臂守卫后 getter 读不丢", () => {
+    const r = check(`
+export function g3(flag) {
+  const o = flag
+    ? { p: flag ? null : "s", get q() { return { z: 7 }; } }
+    : { p: "x", q: 0, r: 1 };
+  if (!o.p) return null;
+  return o.q.z;
+}
+`);
+    // 两臂槽键集不同（{p,q} vs {p,q,r}）→ sum 保持成员身份。混合臂 p 槽
+    // refine（剥 null）重建新 Abs 身份——不迁移 accessorTable 则 q 的
+    // getter 丢失（占位 undefined）→ o.q 撞 undefined 记假 may-throw；
+    // 迁移后 o.q = {z:7} | 0（Number 接收者读 .z 不抛）→ 零 L2
+    expect(l2Count(r, "g3")).toBe(0);
+    expect(sigOf(r, "g3")).toMatch(/7/);
+    expect(sigOf(r, "g3")).not.toMatch(/throws/);
+  });
+
+  it("proto 方法名 / constructor 缺席键不剪闭缺席臂（单元）", () => {
+    const u = constraintToEntryAbs(
+      derefConstraint(union(shape({ a: string() }), shape({ b: string() })) as never),
+      "x",
+    ) as never;
+    // 两臂键均缺席——原型链读出函数（守卫必过）→ 全保留，原样返回（对象同一性）
+    expect($removeMemberNullish(u, "toString")).toBe(u);
+    expect($removeMemberNullish(u, "constructor")).toBe(u);
+  });
+
+  it("accessorTable getter 缺席键保守保留（单元）", () => {
+    const accArm = constraintToEntryAbs(derefConstraint(shape({ tag: string() }) as never), "x") as never;
+    const zVal = constraintToEntryAbs(derefConstraint(shape({ z: lit(7) }) as never), "z") as never;
+    $objAccessor(accArm, "p", () => zVal, null);
+    const dropArm = constraintToEntryAbs(derefConstraint(shape({ drop: string() }) as never), "x") as never;
+    const s = abs({ k: "sum", members: [accArm, dropArm] }, undefined, undefined, "exact");
+    // getter 臂 p 读 getter 结果（真值性不可判）→ 保留；无访问器臂 p 缺席闭
+    // → 剪除 → 单成员塌缩为 getter 臂（槽键可区分两臂）
+    const out = $removeMemberNullish(s, "p");
+    expect(asShape(out).k).toBe("obj");
+    expect(Object.keys(asShape(out).slots!)).toEqual(["tag"]);
+  });
+
+  it("getter 占位槽（undefined-lit 槽值）不剪（单元）", () => {
+    const plainArm = constraintToEntryAbs(derefConstraint(shape({ keep: string() }) as never), "x") as never;
+    const getterArm = constraintToEntryAbs(derefConstraint(shape({ drop: string() }) as never), "x") as never;
+    const zVal = constraintToEntryAbs(derefConstraint(shape({ z: lit(7) }) as never), "z") as never;
+    // 覆写 p 槽为 undefined-lit 占位（字面量 getter 的发射形态）
+    const placeholder = {
+      ...(getterArm as Record<string, unknown>),
+      shape: {
+        ...asShape(getterArm),
+        slots: { ...asShape(getterArm).slots!, p: { value: abs({ k: "unknown" }, litTerm(undefined), pTrue, "exact") } },
+      },
+    } as never;
+    // 注册必须挂在最终 Abs 身份上（accessorTable 按对象身份键控）
+    $objAccessor(placeholder, "p", () => zVal, null);
+    const s = abs({ k: "sum", members: [plainArm, placeholder] }, undefined, undefined, "exact");
+    // getter 臂 p 槽值虽 undefined-lit，但读走 getter → 保留（含占位槽，
+    // keep 语义 = 成员原样）；plain 臂 p 缺席闭 → 剪除塌缩为 getter 臂
+    const out = $removeMemberNullish(s, "p");
+    expect(asShape(out).k).toBe("obj");
+    expect(Object.keys(asShape(out).slots!)).toEqual(["drop", "p"]);
+  });
+
+  it("index 签名缺席键保守保留（单元）", () => {
+    const base = constraintToEntryAbs(derefConstraint(shape({ a: string() }) as never), "x") as never;
+    const kVal = constraintToEntryAbs(derefConstraint(string() as never), "k") as never;
+    const idxMember = {
+      ...(base as Record<string, unknown>),
+      shape: { ...asShape(base), index: { key: kVal, value: kVal } },
+    } as never;
+    const dropArm = constraintToEntryAbs(derefConstraint(shape({ c: string() }) as never), "x") as never;
+    const s = abs({ k: "sum", members: [idxMember, dropArm] }, undefined, undefined, "exact");
+    // index 签名臂 b 缺席读不可判 → 保留；闭无签名臂 b 缺席 → 剪除 → 塌缩
+    const out = $removeMemberNullish(s, "b");
+    expect(asShape(out).k).toBe("obj");
+    expect(Object.keys(asShape(out).slots!)).toEqual(["a"]);
   });
 });
 
