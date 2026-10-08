@@ -145,6 +145,56 @@ describe("Bug 15: ArrayBuffer/SharedArrayBuffer/DataView brand slots", () => {
   });
 });
 
+describe("Review: maxByteLength 边界（Bug 15 补，native ground truth: node v26）", () => {
+  it("maxByteLength: undefined ≡ 缺省：非 resizable/growable，max = byteLength", () => {
+    expect(litValue(call(`export function f() { return new ArrayBuffer(8, { maxByteLength: undefined }).resizable; }`).result))
+      .toEqual({ ok: true, value: false });
+    expect(litValue(call(`export function f() { return new ArrayBuffer(8, { maxByteLength: undefined }).maxByteLength; }`).result))
+      .toEqual({ ok: true, value: 8 });
+    expect(litValue(call(`export function f() { return new ArrayBuffer(8, {}).resizable; }`).result))
+      .toEqual({ ok: true, value: false });
+    expect(litValue(call(`export function f() { return new SharedArrayBuffer(8, { maxByteLength: undefined }).growable; }`).result))
+      .toEqual({ ok: true, value: false });
+    expect(litValue(call(`export function f() { return new SharedArrayBuffer(8, { maxByteLength: undefined }).maxByteLength; }`).result))
+      .toEqual({ ok: true, value: 8 });
+  });
+
+  it("maxByteLength < byteLength → RangeError（此前漏报定抛）", () => {
+    for (const src of [
+      `export function f() { return new ArrayBuffer(100, { maxByteLength: 50 }).byteLength; }`,
+      `export function f() { return new SharedArrayBuffer(8, { maxByteLength: 0 }).byteLength; }`,
+      // null ≠ undefined：ToIndex(null)=0 < 8 同抛
+      `export function f() { return new ArrayBuffer(8, { maxByteLength: null }).byteLength; }`,
+    ]) {
+      const r = evalWithArgs(src, []);
+      expect(r.value, src).toBe("never");
+      expect(r.throws, src).toContain("RangeError");
+    }
+    // maxV == bl 合法：resizable 折 true
+    expect(litValue(call(`export function f() { return new ArrayBuffer(0, { maxByteLength: 0 }).resizable; }`).result))
+      .toEqual({ ok: true, value: true });
+  });
+
+  it("options null ≡ 缺省（node v26 实测不抛、非 resizable）；字面量上限折叠不变", () => {
+    expect(litValue(call(`export function f() { return new ArrayBuffer(8, null).byteLength; }`).result))
+      .toEqual({ ok: true, value: 8 });
+    expect(litValue(call(`export function f() { return new ArrayBuffer(8, null).resizable; }`).result))
+      .toEqual({ ok: true, value: false });
+    expect(litValue(call(`export function f() { return new ArrayBuffer(8, { maxByteLength: 16 }).maxByteLength; }`).result))
+      .toEqual({ ok: true, value: 16 });
+  });
+
+  it("抽象 options（open obj）→ 不折 false：boolean/number 域 + may RangeError", () => {
+    const openOpts = abs({ k: "obj", slots: {}, open: true }, undefined, undefined, "path");
+    const r = evalWithArgs(`export function f(o) { return new ArrayBuffer(8, o).resizable; }`, [openOpts]);
+    expect(r.value).toBe("boolean");
+    expect(r.effects).toContain("RangeError");
+    const r2 = evalWithArgs(`export function f(o) { return new SharedArrayBuffer(8, o).maxByteLength; }`, [openOpts]);
+    expect(r2.value).toBe("number");
+    expect(r2.effects).toContain("RangeError");
+  });
+});
+
 describe("Bug 22: boxed brand (new String/Number/Boolean) instance methods", () => {
   it("valueOf 拆箱（原生返回包装原始值）", () => {
     expect(litValue(call(`export function f() { return new Number(5).valueOf(); }`).result))

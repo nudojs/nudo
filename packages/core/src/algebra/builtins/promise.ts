@@ -254,9 +254,19 @@ export function evalPromiseMethod(
 ): Abs | undefined {
   if (recv.shape.k !== "eff" || recv.shape.eff !== "promise") return undefined;
   const inner = recv.shape.inner;
-  // Bug 36/37：handler nullish 字面量 ≡ Identity（ES262 PerformPromiseThen
-  // 的 IsCallable 检查）——Abs 恒为真值对象，旧 `!onFulfilled` 判定永不生效
-  const isIdentity = (h: Abs | undefined): boolean => !h || isNullishLitAbs(h);
+  // Bug 36/37 + review 补：handler ≡ Identity 的 IsCallable 判定（ES262
+  // PerformPromiseThen：非可调用 handler 同 nullish 透传——native
+  // `Promise.reject(42).then(1, 5)` 结果仍拒绝 42）。可判性与 $callDispatch
+  // 同口径：非函数 prim（number/string/boolean/symbol/bigint）确定不可调用
+  // → Identity；fn/any/obj/brand（可能经桥接可调）保守按可调用（结果域
+  // unknown，sound）；sum 需全体成员非可调用才折 Identity。
+  const isIdentity = (h: Abs | undefined): boolean => {
+    if (!h || isNullishLitAbs(h)) return true;
+    const k = h.shape?.k;
+    if (k === "prim") return true;
+    if (k === "sum") return h.shape.members.every(isIdentity);
+    return false;
+  };
   const confOf = (): Abs["conf"] => (recv.conf === "exact" ? "path" : recv.conf);
   switch (name) {
     case "then": {

@@ -13,13 +13,14 @@
  */
 import type { Abs } from "../abs.ts";
 import { abs, litValue, strLit, boolLit, unknown } from "../abs.ts";
-import { joinAbs, setProtoAbs, canonicalArrayIndex, getSlot } from "../objects.ts";
+import { joinAbs, setProtoAbs, canonicalArrayIndex, getSlot, getProtoAbs, isNullProtoObj } from "../objects.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
 import { isNullishLitAbs } from "../surface.ts";
 import { boolPrim } from "./shared.ts";
 import { evalObjectMethod } from "./object.ts";
 import { markExtState, extStateOf, getPropFlags, migrateInvariants } from "./invariants.ts";
+import { objectProtoBrand } from "./ctor.ts";
 import { $del, lookupObjAccessor, migrateAccessors } from "../exec/runtime/members.ts";
 import { $set, $idxSet } from "../exec/runtime/containers.ts";
 import { writeInPlace, undef, callAtFunctionBoundary } from "../exec/runtime/state.ts";
@@ -251,8 +252,21 @@ export function evalReflectMethod(method: string, args: Abs[]): Abs | undefined 
       }
       // Bug 31：应用原型设定（就地：null → nullProto 标记；object → open +
       // protoTable，setProtoAbs 语义）；不可扩展目标原生返 false 不抛。
+      // Review 补：ES2024 OrdinarySetPrototypeOf 的 SameValue(current, V)
+      // 检查先于 extensible 检查——原型未变时原生返 true（node 实测
+      // preventExtensions(o) 后 setPrototypeOf(o, getPrototypeOf(o)) → true）。
+      // 可判同原型：nullProto ↔ lit null；protoTable 同 Abs 身份（同变量）；
+      // 缺省原型（非 nullProto、无表项）↔ Object.prototype 单例。
       const t0 = args[0]!;
-      if (extStateOf(t0) !== undefined) return boolLit(false);
+      if (extStateOf(t0) !== undefined) {
+        const curIsNull = isNullProtoObj(t0);
+        const p0IsNull = p0.term?.op === "lit" && p0.term.value === null;
+        if (curIsNull && p0IsNull) return boolLit(true);
+        if (curIsNull !== p0IsNull) return boolLit(false); // 一侧 null 一侧对象：必不同
+        if (getProtoAbs(t0) === p0) return boolLit(true);
+        if (getProtoAbs(t0) === undefined && p0 === objectProtoBrand()) return boolLit(true);
+        return boolLit(false);
+      }
       setProtoAbs(t0, p0);
       return boolLit(true);
     }

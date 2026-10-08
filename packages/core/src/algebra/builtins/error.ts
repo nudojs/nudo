@@ -407,26 +407,76 @@ function toIndexLiteralValue(a: Abs | undefined): number | undefined {
 }
 
 /**
+ * Bug 15 补（review）：options.maxByteLength 三分可判性。
+ * - absent：无 options / nullish 字面量（node v26 实测 `new ArrayBuffer(8, null)`
+ *   同 undefined —— 不抛、非 resizable）/ 闭对象无自有槽 / 槽为字面量
+ *   undefined —— ES2024 `Get(options,"maxByteLength")` 返回 undefined
+ *   （缺省 ≡ 显式 undefined）⇒ 非 resizable，maxByteLength = byteLength
+ *   （native 实测：`new ArrayBuffer(8,{maxByteLength:undefined}).resizable === false`）；
+ * - present：闭对象自有非-undefined 槽 ⇒ resizable，走 ToIndex 校验 + 折叠
+ *   （null 槽值 ≠ undefined：ToIndex(null)=0，0 < byteLength → RangeError）；
+ * - undecidable：open obj / any / unknown / sum —— 运行时可能带任意
+ *   maxByteLength，不得折叠 false（false precision）。
+ */
+type BufferOptionsClass =
+  | { k: "absent" }
+  | { k: "present"; value: Abs }
+  | { k: "undecidable" };
+
+function classifyBufferOptions(options: Abs | undefined): BufferOptionsClass {
+  if (!options) return { k: "absent" };
+  if (options.term?.op === "lit" && (options.term.value === null || options.term.value === undefined)) {
+    return { k: "absent" };
+  }
+  const s = options.shape;
+  if (s.k === "obj" && s.open !== true) {
+    const slot = getSlot(s.slots, "maxByteLength");
+    if (slot === undefined) return { k: "absent" };
+    if (slot.value.term?.op === "lit" && slot.value.term.value === undefined) return { k: "absent" };
+    return { k: "present", value: slot.value };
+  }
+  if (s.k === "any" || s.k === "unknown" || s.k === "sum" || (s.k === "obj" && s.open === true)) {
+    return { k: "undecidable" };
+  }
+  // 其余闭形态（prim/tuple/arr/fn/brand…）：ToObject 后无 maxByteLength 键 → absent
+  return { k: "absent" };
+}
+
+/**
  * Bug 41：new ArrayBuffer(length) —— length 过 ToIndex：负数/±∞/超 2^53-1 →
  * RangeError；symbol/bigint → TypeError（ToNumber）；缺省/NaN → 0 合法。
  * Bug 15：构造实参存入 brand 槽（字面量 ToIndex 精确折叠、抽象 → number 域）：
  * byteLength / maxByteLength（options.maxByteLength，缺省 ≡ byteLength）/
- * resizable（有 maxByteLength → true）。
+ * resizable（present → true；absent → false；undecidable → boolean 域）。
+ * Review 补：present 且 maxByteLength < byteLength → RangeError（native 实测）；
+ * 任一侧抽象 → 该比较 may-throw。
  */
 export function makeArrayBufferAbs(len: Abs | undefined, options?: Abs | undefined): Abs {
   enforceToIndex(len, "ArrayBuffer length");
-  const maxLit = options?.shape.k === "obj" ? getSlot(options.shape.slots, "maxByteLength")?.value : undefined;
-  if (maxLit) enforceToIndex(maxLit, "ArrayBuffer maxByteLength");
+  const oc = classifyBufferOptions(options);
   const bl = toIndexLiteralValue(len);
-  const maxV = toIndexLiteralValue(maxLit);
+  let maxV: number | undefined;
+  if (oc.k === "present") {
+    enforceToIndex(oc.value, "ArrayBuffer maxByteLength");
+    maxV = toIndexLiteralValue(oc.value);
+    if (maxV !== undefined && bl !== undefined) {
+      if (maxV < bl) throw new NudoThrow(errorTypeAbs("RangeError"));
+    } else {
+      recordMayThrow({ kind: "RangeError", cause: "ArrayBuffer maxByteLength may be less than byteLength" });
+    }
+  } else if (oc.k === "undecidable") {
+    recordMayThrow({ kind: "RangeError", cause: "ArrayBuffer maxByteLength may be negative or invalid (ToIndex)" });
+    recordMayThrow({ kind: "RangeError", cause: "ArrayBuffer maxByteLength may be less than byteLength" });
+  }
   const slots: Record<string, { value: Abs }> = {
     byteLength: { value: bl !== undefined ? numLit(bl) : numPrim("path") },
     maxByteLength: {
-      value: maxLit
-        ? maxV !== undefined ? numLit(maxV) : numPrim("path")
-        : bl !== undefined ? numLit(bl) : numPrim("path"),
+      value:
+        oc.k === "absent"
+          ? bl !== undefined ? numLit(bl) : numPrim("path")
+          : maxV !== undefined ? numLit(maxV) : numPrim("path"),
     },
-    resizable: { value: boolLit(!!maxLit) },
+    resizable: { value: oc.k === "absent" ? boolLit(false) : oc.k === "undecidable" ? boolPrim() : boolLit(true) },
   };
   return abs({ k: "brand", name: "ArrayBuffer", shape: objOf(slots) }, undefined, undefined, "path");
 }
@@ -434,22 +484,36 @@ export function makeArrayBufferAbs(len: Abs | undefined, options?: Abs | undefin
 /**
  * Bug 15：new SharedArrayBuffer(length, options?) —— ArrayBuffer 同款 ToIndex
  * 校验 + 槽构造（byteLength/maxByteLength/growable；SAB 是 growable 不是
- * resizable——原型无 resizable 访问器）。
+ * resizable——原型无 resizable 访问器）。Review 补同 makeArrayBufferAbs：
+ * maxByteLength 缺省/显式 undefined ≡ 非 growable；present 且
+ * maxByteLength < byteLength → RangeError；undecidable → boolean 域不折 false。
  */
 export function makeSharedArrayBufferAbs(len: Abs | undefined, options?: Abs | undefined): Abs {
   enforceToIndex(len, "SharedArrayBuffer length");
-  const maxLit = options?.shape.k === "obj" ? getSlot(options.shape.slots, "maxByteLength")?.value : undefined;
-  if (maxLit) enforceToIndex(maxLit, "SharedArrayBuffer maxByteLength");
+  const oc = classifyBufferOptions(options);
   const bl = toIndexLiteralValue(len);
-  const maxV = toIndexLiteralValue(maxLit);
+  let maxV: number | undefined;
+  if (oc.k === "present") {
+    enforceToIndex(oc.value, "SharedArrayBuffer maxByteLength");
+    maxV = toIndexLiteralValue(oc.value);
+    if (maxV !== undefined && bl !== undefined) {
+      if (maxV < bl) throw new NudoThrow(errorTypeAbs("RangeError"));
+    } else {
+      recordMayThrow({ kind: "RangeError", cause: "SharedArrayBuffer maxByteLength may be less than byteLength" });
+    }
+  } else if (oc.k === "undecidable") {
+    recordMayThrow({ kind: "RangeError", cause: "SharedArrayBuffer maxByteLength may be negative or invalid (ToIndex)" });
+    recordMayThrow({ kind: "RangeError", cause: "SharedArrayBuffer maxByteLength may be less than byteLength" });
+  }
   const slots: Record<string, { value: Abs }> = {
     byteLength: { value: bl !== undefined ? numLit(bl) : numPrim("path") },
     maxByteLength: {
-      value: maxLit
-        ? maxV !== undefined ? numLit(maxV) : numPrim("path")
-        : bl !== undefined ? numLit(bl) : numPrim("path"),
+      value:
+        oc.k === "absent"
+          ? bl !== undefined ? numLit(bl) : numPrim("path")
+          : maxV !== undefined ? numLit(maxV) : numPrim("path"),
     },
-    growable: { value: boolLit(!!maxLit) },
+    growable: { value: oc.k === "absent" ? boolLit(false) : oc.k === "undecidable" ? boolPrim() : boolLit(true) },
   };
   return abs({ k: "brand", name: "SharedArrayBuffer", shape: objOf(slots) }, undefined, undefined, "path");
 }

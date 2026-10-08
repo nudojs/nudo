@@ -285,6 +285,16 @@ describe("Bug 36/37: Promise 拒绝通道 + nullish handler 恒等", () => {
     expect(fmt(call(`export function f() { return Promise.resolve(3).then(); }`).result)).toBe("promise<3>");
   });
 
+  it("review 补：非可调用 handler ≡ Identity（ES262 IsCallable，native then(1,5) 仍拒绝 42）", () => {
+    // onFulfilled/onRejected 为非函数 prim → Identity：resolved 透传 / 拒绝透传
+    expect(fmt(call(`export function f() { return Promise.reject(42).then(1, 5); }`).result)).toBe("promise<never>");
+    expect(fmt(call(`export function f() { return Promise.resolve(3).then("x"); }`).result)).toBe("promise<3>");
+    expect(fmt(call(`export function f() { return Promise.resolve(4).then(2, 9); }`).result)).toBe("promise<4>");
+    expect(fmt(call(`export function f() { return Promise.reject(7).catch("nope"); }`).result)).toBe("promise<never>");
+    // fn handler 控制组（既有映射面不变）
+    expect(fmt(call(`export function f() { return Promise.resolve(3).then((x) => x + 1); }`).result)).toBe("promise<4>");
+  });
+
   it("resolved 通道控制组：then 映射精度不变", () => {
     expect(fmt(call(`export function f() { return Promise.resolve(1).then((x) => x + 1); }`).result)).toBe("promise<2>");
     expect(fmt(call(`export function f() { return new Promise((r) => r(1)); }`).result)).toBe("promise<1>");

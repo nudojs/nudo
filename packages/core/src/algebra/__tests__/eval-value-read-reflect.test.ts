@@ -149,6 +149,21 @@ describe("Bug 31: Reflect 五个 mutator 修改接收者", () => {
     const r = call(`export function f() { const a = [1, 2]; Reflect.set(a, 0, 9); return a[0]; }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: 9 });
   });
+
+  it("review 补：不可扩展目标同原型返 true（SameValue 先于 extensible 检查）", () => {
+    // 缺省原型 ↔ Object.prototype 单例
+    expect(litValue(call(`export function f() { const o = {}; Reflect.preventExtensions(o); return Reflect.setPrototypeOf(o, Object.prototype); }`).result))
+      .toEqual({ ok: true, value: true });
+    // nullProto ↔ lit null
+    expect(litValue(call(`export function f() { const o = Object.create(null); Reflect.preventExtensions(o); return Reflect.setPrototypeOf(o, null); }`).result))
+      .toEqual({ ok: true, value: true });
+    // protoTable 同 Abs 身份（同变量二次设定）
+    expect(litValue(call(`export function f() { const p = { x: 1 }; const o = {}; Object.setPrototypeOf(o, p); Reflect.preventExtensions(o); return Reflect.setPrototypeOf(o, p); }`).result))
+      .toEqual({ ok: true, value: true });
+    // 原型确实改变 → false（native 同）
+    expect(litValue(call(`export function f() { const o = {}; Reflect.preventExtensions(o); return Reflect.setPrototypeOf(o, null); }`).result))
+      .toEqual({ ok: true, value: false });
+  });
 });
 
 describe("Bug 32: Object.create(proto, descriptors)", () => {
