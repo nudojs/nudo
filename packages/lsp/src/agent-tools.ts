@@ -900,9 +900,9 @@ export function formatEmitResult(
 // CodeLens contract 档计算（design-refine-derivation §8）
 // ---------------------------------------------------------------------------
 
-/** 默认层 lens：`● contract / hw|gen|imp`（formatInterfaceTierLine 同源） */
+/** 默认层 lens：`●/○ contract / hw|gen|imp`（观察选择器的契约选项，与各 case 互斥） */
 export type InterfaceLens =
-  | { kind: "interface"; fn: string; line: number; source: InterfaceSource }
+  | { kind: "interface"; fn: string; line: number; source: InterfaceSource; active: boolean }
   /** 固化动作 lens：add=`⚡ persist interface`，update=`↻ update interface` */
   | { kind: "emit"; fn: string; line: number; mode: "add" | "update" }
   /** 代码优先草稿：`⚡ draft interface`（F6；handwritten 不加） */
@@ -1004,7 +1004,8 @@ export function computeInterfaceLenses(
   const pushCaseLenses = (fnName: string, line: number): void => {
     const fc = fnCases.get(fnName);
     if (!fc) return;
-    const activeIdx = deps.activeCases?.get(fnName) ?? 0;
+    // 无显式选择 → -1（全 ○）：契约是默认观察选项（与 contract 选项互斥）
+    const activeIdx = deps.activeCases?.get(fnName) ?? -1;
     for (const c of fc.cases) {
       lenses.push({
         kind: "case",
@@ -1031,7 +1032,9 @@ export function computeInterfaceLenses(
         ...(deps.autoBind === false ? { autoBind: false } : {}),
       });
       const src: InterfaceSource = tier?.source ?? "implicit";
-      lenses.push({ kind: "interface", fn: fn.name, line: fn.line, source: src });
+      // 契约选项激活 ⇔ 该函数无激活 case（观察选择器互斥）
+      const contractActive = !(deps.activeCases?.has(fn.name) ?? false);
+      lenses.push({ kind: "interface", fn: fn.name, line: fn.line, source: src, active: contractActive });
       if (src !== "handwritten") {
         lenses.push({
           kind: "emit",

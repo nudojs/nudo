@@ -42,7 +42,7 @@ Nudo 只交付**一个**语言服务器（`@nudojs/lsp`）。编辑器差异仅�
 | Diagnostics | `validateText`（push） | 自适应防抖 300/400/800 ms；过期 generation 可取消（A8） |
 | Hover | `onHover` | Abs / intension；导出函数名首行 `● contract / hw\|gen\|imp`（A7） |
 | 补全（`.`） | `onCompletion` | 按推断类型给出 property/method |
-| CodeLens | `onCodeLens` | **interface 档在前**：`● contract / hw\|gen\|imp` + persist/update；case 为 debug 副层 |
+| CodeLens | `onCodeLens` | **观察选择器**：`●/○ contract / hw\|gen\|imp`（默认激活）+ persist/update；`●/○ case "…"` 选项跟随（`nudo.selectCase` / `nudo.selectContract`） |
 | Inlay hints | `languages.inlayHint` | case 提示 + Abs 参数/返回（implicit 导出标 `derived`） |
 | 跳转定义 / 引用 / 重命名 | 标准 LSP | 含侧车绑定名（A5） |
 | 文档 / 工作区符号 | 标准 LSP | |

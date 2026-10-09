@@ -70,13 +70,13 @@ function upper(s) {
 }
 ```
 
-### Interface 与 Case 上的 CodeLens
+### CodeLens：观察选择器（contract + 各 case）
 
-CodeLens 面向 **interface 档**（设计 §8）：
+透镜行是一个**观察选择器**——contract 是与各 case 并排的一项，恰好一项激活（`●`）：
 
-- **● contract / hw|gen|imp** —— 每个导出函数的有效契约来源；点击打印与 `nudo contract` 同一表面
+- **● contract / hw|gen|imp** —— 契约选项（handwritten / generated / implicit 档），默认激活。点击切回契约观察（`nudo.selectContract`）；已激活时点击幂等
 - **⚡ persist interface** / **↻ update interface** —— 把调用点域固化进 `*.nudo.js` 侧车
-- **● / ○ case "name"** —— debug 副层；点击选择类型重放的激活 case
+- **● / ○ case "name"** —— 点击选择类型重放的激活 case（`nudo.selectCase`）；契约选项随之转 `○`
 
 悬停导出函数名时，hover 首行与 CodeLens 同源显示 `● contract / hw\|gen\|imp`（A7）。VS Code 中当前激活 case 以不同样式高亮。
 

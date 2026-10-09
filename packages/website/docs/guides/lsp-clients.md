@@ -42,7 +42,7 @@ Declared on `initialize` (see [@nudojs/lsp API](../api/lsp.md)):
 | Diagnostics | `validateText` (push) + `diagnosticProvider` (pull) | Adaptive debounce 300/400/800 ms; cancel-stale generations (A8); pull hits cache only when version + casesHash + depsHash match |
 | Hover | `onHover` | Abs / intension; exported fn name shows `● contract / hw\|gen\|imp` (A7) |
 | Completion (`.`) | `onCompletion` | Inferred property/method members |
-| CodeLens | `onCodeLens` | **Interface tier first**: `● contract / hw\|gen\|imp` + persist/update; case lenses are the debug sub-layer |
+| CodeLens | `onCodeLens` | **Observation selector**: `●/○ contract / hw\|gen\|imp` (default active) + persist/update; `●/○ case "…"` options follow (`nudo.selectCase` / `nudo.selectContract`) |
 | Inlay hints | `languages.inlayHint` | Case hints + Abs param/return (`derived` mark on implicit exports) |
 | Definition / References / Rename | standard LSP | Sidecar binding names included (A5) |
 | Document / workspace symbols | standard LSP | |

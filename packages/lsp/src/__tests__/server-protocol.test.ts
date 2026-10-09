@@ -455,9 +455,9 @@ describe("createNudoServer — client settings (initializationOptions / didChang
   });
 });
 
-describe("createNudoServer — nudo.lens 观察层互斥视图（contract | case）", () => {
-  // 同一文件同时具备契约档元素（export → implicit 档 + persist/draft 动作）
-  // 与观察档元素（指令 case + 未导出函数的字面量调用点合成 call@）
+describe("createNudoServer — 观察选择器（contract 与各 case 互斥选项）", () => {
+  // 同一文件同时具备契约选项（export → implicit 档 + persist/draft 动作）、
+  // 指令 case 与未导出函数的字面量调用点合成 call@
   const LENS_SRC = `/**
  * @nudo:case "five" (2, 3)
  */
@@ -488,14 +488,13 @@ const r = mul(2, 3);
     return h!;
   }
 
-  async function startWithLens(initLens: unknown): Promise<{ mock: Mock; uri: string }> {
+  async function startSelectorSession(): Promise<{ mock: Mock; uri: string }> {
     const mock = startServer();
     await handler(mock, "initialize")({
       processId: null,
       rootUri: null,
       workspaceFolders: [],
       capabilities: {},
-      initializationOptions: initLens === undefined ? {} : { lens: initLens },
     });
     const uri = `file://${join(lensDir, "lens.js")}`;
     notification(mock, "textDocument/didOpen")({
@@ -509,52 +508,56 @@ const r = mul(2, 3);
     return (lenses as { command?: { title?: string } }[]).map((l) => l.command?.title ?? "");
   }
 
-  async function inlayLabels(mock: Mock, uri: string): Promise<string[]> {
+  async function exec(mock: Mock, command: string, args: unknown[]) {
+    return handler(mock, "workspace/executeCommand")({ command, arguments: args });
+  }
+
+  it("默认：契约选项 ●，全部 case ○；动作与观察层照常", async () => {
+    const { mock, uri } = await startSelectorSession();
+    const titles = await lensTitles(mock, uri);
+    expect(titles).toContain("● contract / imp");
+    expect(titles).toContain('○ case "five"');
+    expect(titles.some((t) => t.startsWith("● case"))).toBe(false);
+    expect(titles).toContain("⚡ persist interface");
+    expect(titles).toContain("⚡ draft interface");
+    expect(titles.some((t) => t.startsWith("call@"))).toBe(true);
+  });
+
+  it("selectCase 后契约转 ○、选中 case 转 ●；inlay 档投影同态", async () => {
+    const { mock, uri } = await startSelectorSession();
+    await exec(mock, "nudo.selectCase", [uri, "add", 0, "five"]);
+    const titles = await lensTitles(mock, uri);
+    expect(titles).toContain("○ contract / imp");
+    expect(titles).toContain('● case "five"');
+
     const hints = await handler(mock, "textDocument/inlayHint")({
       textDocument: { uri },
       range: { start: { line: 0, character: 0 }, end: { line: 99, character: 0 } },
     });
-    return ((hints ?? []) as { label?: unknown }[]).map((h) => String(h.label ?? ""));
-  }
+    const labels = ((hints ?? []) as { label?: unknown }[]).map((h) => String(h.label ?? ""));
+    expect(labels.some((l) => l.includes("○ contract / imp"))).toBe(true);
+  });
 
-  it("default (contract)：契约档 lens，case / 观察层不出现", async () => {
-    const { mock, uri } = await startWithLens(undefined);
+  it("selectContract 切回契约（case 全 ○），幂等", async () => {
+    const { mock, uri } = await startSelectorSession();
+    await exec(mock, "nudo.selectCase", [uri, "add", 0, "five"]);
+    expect((await lensTitles(mock, uri)).some((t) => t.startsWith("○ contract"))).toBe(true);
+
+    await exec(mock, "nudo.selectContract", [uri, "add"]);
     const titles = await lensTitles(mock, uri);
     expect(titles).toContain("● contract / imp");
-    expect(titles).toContain("⚡ persist interface");
-    expect(titles).toContain("⚡ draft interface");
-    expect(titles.some((t) => t.includes('case "five"'))).toBe(false);
-    expect(titles.some((t) => t.startsWith("call@"))).toBe(false);
-  });
+    expect(titles).toContain('○ case "five"');
 
-  it("initializationOptions lens=case：观察档 lens，契约档不出现", async () => {
-    const { mock, uri } = await startWithLens("case");
-    const titles = await lensTitles(mock, uri);
-    expect(titles.some((t) => t.includes('case "five"'))).toBe(true);
-    expect(titles.some((t) => t.startsWith("call@"))).toBe(true);
-    expect(titles.some((t) => t.startsWith("● contract"))).toBe(false);
-    expect(titles).not.toContain("⚡ persist interface");
-    expect(titles).not.toContain("⚡ draft interface");
-  });
-
-  it("非法 lens 值回落 contract；didChangeConfiguration 切换后刷新 lens", async () => {
-    const { mock, uri } = await startWithLens("loud");
+    // 无激活 case 时再点契约：幂等保持 ●
+    await exec(mock, "nudo.selectContract", [uri, "add"]);
     expect((await lensTitles(mock, uri)).some((t) => t.startsWith("● contract"))).toBe(true);
-
-    notification(mock, "workspace/didChangeConfiguration")({
-      settings: { nudo: { lens: "case" } },
-    });
-    expect(mock.sentRequests.length).toBeGreaterThan(0);
-    const titles = await lensTitles(mock, uri);
-    expect(titles.some((t) => t.startsWith("call@"))).toBe(true);
-    expect(titles.some((t) => t.startsWith("● contract"))).toBe(false);
   });
 
-  it("inlay 档投影互斥：contract 视图有 `● contract / imp`，case 视图无", async () => {
-    const { mock, uri } = await startWithLens(undefined);
-    expect((await inlayLabels(mock, uri)).some((l) => l.includes("● contract / imp"))).toBe(true);
-
-    const caseView = await startWithLens("case");
-    expect((await inlayLabels(caseView.mock, caseView.uri)).some((l) => l.includes("● contract"))).toBe(false);
+  it("nudo/selectContract 请求别名与命令同效", async () => {
+    const { mock, uri } = await startSelectorSession();
+    await handler(mock, "nudo/selectCase")({ uri, functionName: "add", caseIndex: 0 });
+    await handler(mock, "nudo/selectContract")({ uri, functionName: "add" });
+    const titles = await lensTitles(mock, uri);
+    expect(titles.some((t) => t.startsWith("● contract"))).toBe(true);
   });
 });

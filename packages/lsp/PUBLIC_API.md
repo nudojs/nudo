@@ -70,6 +70,7 @@ types/modifiers may gain entries (**non-breaking**); removals are breaking.
 | `nudo.contract.draft` | code-first `*.nudo.draft.*` |
 | `nudo.contract.emit` | persist `@generated` sidecar |
 | `nudo.selectCase` | switch active case (positional or object args) |
+| `nudo.selectContract` | observation selector: pick the contract option — deactivate the fn's active case (idempotent) |
 | `nudo.getActiveCases` | active case index map |
 
 ## 4. Custom requests `nudo/…` (slash form) — protocol contract
@@ -90,6 +91,7 @@ to the same handlers (`AGENT_TOOL_SOURCES` same-source pin).
 | `nudo/contract.draft` | `nudo.contract.draft` | draft summary |
 | `nudo/contract.emit` | `nudo.contract.emit` | emit summary |
 | `nudo/selectCase` | `nudo.selectCase` | `{ success: true }` — editor-only (slash + executeCommand; no dot-form custom request) |
+| `nudo/selectContract` | `nudo.selectContract` | `{ success: true }` — editor-only (slash + executeCommand; no dot-form custom request) |
 | `nudo/getActiveCases` | `nudo.getActiveCases` | `Record<string, number>` — editor-only (slash + executeCommand; no dot-form custom request) |
 
 **Consistency invariant (A7):** every slash-form request must have a matching

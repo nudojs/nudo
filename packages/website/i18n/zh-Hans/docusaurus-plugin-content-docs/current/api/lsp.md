@@ -174,8 +174,8 @@ encodeSemanticTokens(tokens: SemanticToken[]): number[];
 |------------|---------|----------|
 | 悬停 | `onHover` | 通过 `getTypeAtPosition` 获取光标处推断类型；光标落在导出函数名上时，首行为 `● contract / hw|gen|imp`（与 CodeLens 同源），handwritten/generated 另附有效契约展示 |
 | 补全（触发 `.`） | `onCompletion` | 来自 `getCompletionsAtPosition` 的属性/方法/变量项 |
-| CodeLens | `onCodeLens` | 观察层互斥视图 `nudo.lens`（`"contract"` 默认 / `"case"`；`initializationOptions.lens` 或 `settings.nudo.lens`，非法值回落）。`contract`：档位透镜 `● contract / hw\|gen\|imp`（+ persist/update + 非手写导出上的 `⚡ draft interface`）。`case`：debug 副层——激活 `● case "name"`，其余 `○`，另有合成 `call@` / `entry@` 观察透镜。点击发送 `nudo.selectCase` / `nudo.contract` / `nudo.contract.draft` / `nudo.contract.emit` 并刷新透镜 |
-| 内联提示 | `languages.inlayHint` | Abs 参数/返回 inlay 始终显示；`contract` 视图附档位投影 `● contract / hw\|gen\|imp`（无 CodeLens UI 的客户端），`case` 视图附行尾 case `Type` 提示（`· derived` 见证） |
+| CodeLens | `onCodeLens` | 观察选择器——contract 是与各 case 并排的一项，恰好一项 `●` 激活（`○` 未激活）。默认：`● contract / hw\|gen\|imp`（handwritten / generated / implicit 档），全部 case `○`。点击 case（`nudo.selectCase`）激活该 case 并将契约转 `○`；点击契约选项（`nudo.selectContract`）取消激活 case（幂等）。非手写导出另有 persist/update 固化动作 + `⚡ draft interface`；合成 `call@` / `entry@` 观察透镜钉调用点事实 |
+| 内联提示 | `languages.inlayHint` | Abs 参数/返回 inlay + `●/○ contract / hw\|gen\|imp` 档投影（镜像选择器激活态，供无 CodeLens UI 的客户端）+ 行尾 case `Type` 提示（`· derived` 见证） |
 | 定义 | `onDefinition` | `buildSymbolTable` + `findDefinition`（含侧车绑定名） |
 | 引用 | `onReferences` | `buildSymbolTable` + `findReferences` |
 | 重命名 | `onRenameRequest` | 对定义及全部引用生成 workspace edit |

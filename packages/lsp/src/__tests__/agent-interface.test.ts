@@ -201,7 +201,7 @@ describe("computeInterfaceLenses", () => {
       loadModule: sidecarLoader(HANDWRITTEN_SIDECAR),
     });
     expect(lenses).toEqual([
-      { kind: "interface", fn: "add", line: 2, source: "handwritten" },
+      { kind: "interface", fn: "add", line: 2, source: "handwritten", active: true },
     ]);
   });
 
@@ -210,7 +210,7 @@ describe("computeInterfaceLenses", () => {
       loadModule: sidecarLoader(GENERATED_SIDECAR),
     });
     expect(lenses).toEqual([
-      { kind: "interface", fn: "add", line: 2, source: "generated" },
+      { kind: "interface", fn: "add", line: 2, source: "generated", active: true },
       { kind: "emit", fn: "add", line: 2, mode: "update" },
       { kind: "draft", fn: "add", line: 2 },
     ]);
@@ -235,16 +235,16 @@ function helper(n) {
 `;
     const lenses = computeInterfaceLenses(src, "/t/plain.js");
     expect(lenses).toEqual([
-      { kind: "interface", fn: "withCase", line: 4, source: "implicit" },
+      { kind: "interface", fn: "withCase", line: 4, source: "implicit", active: true },
       { kind: "emit", fn: "withCase", line: 4, mode: "add" },
       { kind: "draft", fn: "withCase", line: 4 },
-      { kind: "case", fn: "withCase", line: 4, caseIndex: 0, caseName: "num", active: true },
+      { kind: "case", fn: "withCase", line: 4, caseIndex: 0, caseName: "num", active: false },
       { kind: "case", fn: "withCase", line: 4, caseIndex: 1, caseName: "str", active: false },
-      { kind: "interface", fn: "plain", line: 8, source: "implicit" },
+      { kind: "interface", fn: "plain", line: 8, source: "implicit", active: true },
       { kind: "emit", fn: "plain", line: 8, mode: "add" },
       { kind: "draft", fn: "plain", line: 8 },
       // 私有函数：不进 interface 档（不绑定不落盘），case 副层原样保留
-      { kind: "case", fn: "helper", line: 13, caseIndex: 0, caseName: "h", active: true },
+      { kind: "case", fn: "helper", line: 13, caseIndex: 0, caseName: "h", active: false },
     ]);
   });
 
@@ -262,7 +262,7 @@ function helper(n) {
     const src = `\nexport const N = 1;\n\nfunction dead(n) {\n  return n;\n}\n\nexport const double = (x) => x * 2;\n`;
     const lenses = computeInterfaceLenses(src, "/t/misc.js");
     expect(lenses).toEqual([
-      { kind: "interface", fn: "double", line: 8, source: "implicit" },
+      { kind: "interface", fn: "double", line: 8, source: "implicit", active: true },
       { kind: "emit", fn: "double", line: 8, mode: "add" },
       { kind: "draft", fn: "double", line: 8 },
     ]);
@@ -272,7 +272,7 @@ function helper(n) {
     const loader = (spec: string) => (spec.endsWith("lib.nudo.js") ? undefined : undefined);
     const lenses = computeInterfaceLenses(LENS_SRC, "/t/lib.js", { loadModule: loader });
     expect(lenses).toEqual([
-      { kind: "interface", fn: "add", line: 2, source: "implicit" },
+      { kind: "interface", fn: "add", line: 2, source: "implicit", active: true },
       { kind: "emit", fn: "add", line: 2, mode: "add" },
       { kind: "draft", fn: "add", line: 2 },
     ]);
@@ -285,7 +285,7 @@ function helper(n) {
       autoBind: false,
     });
     expect(lenses).toEqual([
-      { kind: "interface", fn: "add", line: 2, source: "implicit" },
+      { kind: "interface", fn: "add", line: 2, source: "implicit", active: true },
       { kind: "emit", fn: "add", line: 2, mode: "add" },
       { kind: "draft", fn: "add", line: 2 },
     ]);

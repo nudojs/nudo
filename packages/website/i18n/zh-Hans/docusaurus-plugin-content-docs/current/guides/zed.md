@@ -102,7 +102,7 @@ git clone https://github.com/nudojs/nudo-zed
 | Hover 类型 | 标准 LSP；导出函数名显示 `● contract / hw\|gen\|imp`（与 CodeLens 同源） |
 | 跳转定义 / 引用 / 重命名 | 标准 LSP（含侧车绑定名） |
 | Inlay hints | 需打开 `inlay_hints.enabled`；implicit 导出标 `derived` |
-| CodeLens | 需打开 `code_lens: "on"`——**interface 档在前**（`● contract`、persist/update、`⚡ draft interface`），case 副层在后 |
+| CodeLens | 需打开 `code_lens: "on"`——**观察选择器**：`●/○ contract / hw\|gen\|imp`（默认激活）+ persist/update + `⚡ draft interface`；`●/○ case "…"` 选项跟随 |
 | Semantic tokens | 默认关闭，设 `semantic_tokens: "combined"`——含 `contract`/`generated`/`derived` modifier |
 | Code actions / Signature help | 标准 LSP quickfix 与 signature help（真实 `paramTypes` / 返回类型）。含 action-map quickfix（`[fix]` / `[silence]` / `[review]` / `[adjust]` / `[scaffold]`） |
 | Agent 命令（`nudo.check` / `nudo.contract.draft` / …） | 经任意 LSP 客户端或 Zed agent 工具可达 |
