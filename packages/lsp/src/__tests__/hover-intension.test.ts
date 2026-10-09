@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { getHoverAtPosition, getAbsAtPosition } from "../lsp-surface.ts";
+import { makeBufferAwareLoadModule } from "../validation.ts";
 import { formatAbs } from "@nudojs/core";
 
 describe("getHoverAtPosition lossless Abs", () => {
@@ -179,5 +183,58 @@ describe("getHoverAtPosition G2 scope (nested / class / object method)", () => {
     expect(hover).not.toBeNull();
     expect(hover!.intension ?? hover!.typeText).toBeDefined();
     expect(hover!.intension ?? hover!.typeText).toContain("helper");
+  });
+});
+
+describe("getHoverAtPosition param projection (entryShapes + formals)", () => {
+  // 绑定面只有模块级 import——参数 Abs 唯一权威源是 enclosing fn 的 generalize
+  //（与函数名 hover 同源：契约种子（侧车/refine）+ 提升扫描在这里生效）
+  it("destructured param declaration/usage hovers its slot Abs (sidecar contract)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-param-hover-"));
+    writeFileSync(
+      join(dir, "decide.nudo.js"),
+      `import { fn, string, shape, array } from '@nudojs/core';
+export const decide = fn(
+  { grade: string(), findings: array(shape({ ruleId: string() })) },
+  shape({ ok: string() }),
+);
+`,
+      "utf-8",
+    );
+    const main = `export function decide({ grade, findings }) {
+  return grade + String(findings.length);
+}
+`;
+    const f = join(dir, "decide.js");
+    writeFileSync(f, main, "utf-8");
+    const loadModule = makeBufferAwareLoadModule(() => undefined);
+
+    // line 1 声明处 grade（col 25）与 line 2 体内引用（col 9）
+    const decl = getHoverAtPosition(f, main, 1, 25, undefined, { loadModule });
+    expect(decl).not.toBeNull();
+    expect(decl!.typeText).toContain("string");
+
+    const body = getHoverAtPosition(f, main, 2, 9, undefined, { loadModule });
+    expect(body).not.toBeNull();
+    expect(body!.typeText).toContain("string");
+    expect(body!.abs).toContain("#");
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("promoted direct param hovers entryShapes snapshot", () => {
+    const src = `export function processItems(items) {\n  return items.map((x) => x + 1);\n}\n`;
+    // line 1: items col 26
+    const hover = getHoverAtPosition("/t/param-promote.js", src, 1, 26);
+    expect(hover).not.toBeNull();
+    expect(hover!.abs).toBeDefined();
+  });
+
+  it("unconstrained param / body local stay fail-closed null", () => {
+    const src = `export function scale(x) {\n  return x * 2;\n}\n`;
+    // 无契约、无提升：参数与局部都不产出（诚实 unknown，不冒充 any）
+    expect(getHoverAtPosition("/t/param-null.js", src, 1, 23)).toBeNull();
+    const local = `export function f(n) {\n  const local = n + 1;\n  return local;\n}\n`;
+    expect(getHoverAtPosition("/t/local-null.js", local, 2, 8)).toBeNull();
   });
 });

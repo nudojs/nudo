@@ -172,7 +172,7 @@ encodeSemanticTokens(tokens: SemanticToken[]): number[];
 
 | 能力 | Handler | 行为 |
 |------------|---------|----------|
-| 悬停 | `onHover` | 通过 `getTypeAtPosition` 获取光标处推断类型；光标落在导出函数名上时，首行为 `● contract / hw|gen|imp`（与 CodeLens 同源），handwritten/generated 另附有效契约展示 |
+| 悬停 | `onHover` | 通过 `getTypeAtPosition` 获取光标处推断类型；光标落在导出函数名上时，首行为 `● contract / hw|gen|imp`（与 CodeLens 同源），handwritten/generated 另附有效契约展示；**形参**（含 `{ grade, findings }` 解构属性）从 enclosing 函数的 `PolyFn` 入口面投影——与函数名 hover 同源（契约种子 + 模块图） |
 | 补全（触发 `.`） | `onCompletion` | 来自 `getCompletionsAtPosition` 的属性/方法/变量项 |
 | CodeLens | `onCodeLens` | 观察选择器——contract 是与各 case 并排的一项，恰好一项 `●` 激活（`○` 未激活）。默认：`● contract / hw\|gen\|imp`（handwritten / generated / implicit 档），全部 case `○`。点击 case（`nudo.selectCase`）激活该 case 并将契约转 `○`；点击契约选项（`nudo.selectContract`）取消激活 case（幂等）。非手写导出另有 persist/update 固化动作 + `⚡ draft interface`；合成 `call@` / `entry@` 观察透镜钉调用点事实 |
 | 内联提示 | `languages.inlayHint` | Abs 参数/返回 inlay + `●/○ contract / hw\|gen\|imp` 档投影（镜像选择器激活态，供无 CodeLens UI 的客户端）+ 行尾 case `Type` 提示（`· derived` 见证） |

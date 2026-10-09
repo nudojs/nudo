@@ -27,6 +27,7 @@ import {
   listFnDirectiveScopes,
   type InterfaceSource,
   type InterfaceTierOpts,
+  type PolyFn,
 } from "@nudojs/core";
 import { parse, extractDirectivesQuiet } from "@nudojs/parser";
 import type { FunctionWithDirectives } from "@nudojs/parser";
@@ -398,6 +399,42 @@ export function getHoverAtPosition(
     }
   }
 
+  // 参数面：光标在参数声明（含解构属性）或参数引用上时，从 enclosing 函数的
+  // generalized Abs 投影参数槽位。绑定面（bindings/collectAbsBindingsFromGraph）
+  // 只覆盖模块级 import——参数 Abs 的唯一权威源是 generalize（契约种子 +
+  // 模块图在此生效，与函数名 hover 同源）。用例函数体内同样适用：
+  // case 重放已删（fail-closed），参数投影不受调用点绑定污染。
+  if (!fnName && file && ident) {
+    const encName = findEnclosingFunctionName(file, line, column);
+    if (encName) {
+      try {
+        const g2 = generalizeFromAst(encName, source, {
+          file,
+          refine: {
+            fromFile: filePath,
+            ...(opts?.loadModule ? { loadModule: opts.loadModule } : {}),
+            ...(opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
+          },
+          ...(reuse?.modules ? { modules: reuse.modules } : {}),
+        });
+        if (g2) {
+          const hit = projectParamAbs(g2, ident);
+          if (hit) {
+            const absLine = formatAbs(hit);
+            const absMulti = formatAbsMultiline(hit, ident);
+            return attachIntension({
+              typeText: absLine,
+              abs: absLine,
+              absMultiline: absMulti,
+            });
+          }
+        }
+      } catch {
+        // fail-closed：参数投影失败 → 不产出（不拖垮 hover）
+      }
+    }
+  }
+
   // fail-closed：Abs 节点表（collectAbsNodeTypes）已删——任意表达式
   // 光标 Abs 由标识符绑定面（absFromEval）与 interface 档覆盖
 
@@ -537,6 +574,83 @@ function findEnclosingFunction(
     }
   }
   return null;
+}
+
+/**
+ * 光标最内层 enclosing 函数名（traverse 直查，不依赖指令存在——
+ * extractDirectivesQuiet 只返回带指令的函数）。
+ * 覆盖：函数声明 / const fn = arrow|function / 对象方法 / 类方法。
+ */
+function findEnclosingFunctionName(
+  ast: Node,
+  line: number,
+  column: number,
+): string | undefined {
+  let best: { name: string; startLine: number } | undefined;
+  const traverseFn = (typeof traverse === "function" ? traverse : (traverse as any).default) as typeof traverse;
+  try {
+    traverseFn(ast, {
+      FunctionDeclaration(p) {
+        const loc = p.node.loc;
+        const name = p.node.id?.name;
+        if (!loc || !name) return;
+        if (loc.start.line <= line && loc.end.line >= line) {
+          if (!best || loc.start.line > best.startLine) best = { name, startLine: loc.start.line };
+        }
+      },
+      VariableDeclarator(p) {
+        const init = p.node.init;
+        if (!init || (init.type !== "ArrowFunctionExpression" && init.type !== "FunctionExpression")) return;
+        const loc = init.loc;
+        const name = (p.node.id as { name?: string } | null)?.name;
+        if (!loc || !name) return;
+        if (loc.start.line <= line && loc.end.line >= line) {
+          if (!best || loc.start.line > best.startLine) best = { name, startLine: loc.start.line };
+        }
+      },
+      "ObjectMethod|ClassMethod"(p) {
+        const node = p.node as unknown as {
+          loc?: { start: { line: number }; end: { line: number } };
+          key?: { name?: string };
+        };
+        const name = node.key?.name;
+        if (!node.loc || !name) return;
+        if (node.loc.start.line <= line && node.loc.end.line >= line) {
+          if (!best || node.loc.start.line > best.startLine) best = { name, startLine: node.loc.start.line };
+        }
+      },
+    });
+  } catch {
+    // ignore
+  }
+  return best?.name;
+}
+
+/**
+ * 参数 Abs 投影：光标在参数声明/引用上时，从 enclosing 函数的 PolyFn 面
+ * （entryShapes + formals）解析标识符：
+ * - 直接形参（id/default）→ entryShapes[name]
+ * - 解构形参（pattern）→ bound 名经 propKey 投影到 placeholder 对象 slot
+ * （rename `{a: b}` 时契约可写 a 或 b，Abs 对象只有 slot a）
+ * 与函数名 hover 同源（契约种子 + 模块图在此生效）。
+ */
+function projectParamAbs(g: PolyFn, ident: string): Abs | undefined {
+  const entry = g.entryShapes;
+  if (!entry) return undefined;
+  for (const f of g.formals ?? []) {
+    if ((f.kind === "id" || f.kind === "default") && f.name === ident) {
+      return entry.get(f.name)?.abs;
+    }
+    if (f.kind === "rest" && (f.name === ident || f.display === ident)) {
+      return entry.get(f.name)?.abs ?? entry.get(f.display)?.abs;
+    }
+    if (f.kind === "pattern" && f.bound.includes(ident)) {
+      const abs = entry.get(f.placeholder)?.abs;
+      const key = f.propKey[ident] ?? ident;
+      if (abs?.shape.k === "obj") return abs.shape.slots[key]?.value;
+    }
+  }
+  return undefined;
 }
 
 function findIdentifierAtPosition(ast: Node, line: number, column: number): string | null {
