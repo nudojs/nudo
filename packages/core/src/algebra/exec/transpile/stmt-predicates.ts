@@ -144,7 +144,8 @@ export type NullishGuard = {
    * 单层成员真值守卫（issue #118）：`o.p` / `o?.p` 真值守卫——真值 ⇒ 基名
    * 非 nullish（真值访问未抛）且槽 p 的值非 nullish、槽必在场。臂内基名
    * 重绑为 $removeMemberNullish($removeNullish(o), key)（optional 摘除 +
-   * 槽值剥 nullish）。只做单层；嵌套路径 / 计算键不识别。
+   * 槽值剥 nullish）。只做单层；嵌套路径不识别；计算键仅数值字面量
+   * （issue #136 (b)，`m[1]` 下标槽键即 String(i)）。
    */
   memberKey?: string;
 };
@@ -178,7 +179,9 @@ function mergeGrain(a: "null" | "undefined", b: "null" | "undefined"): "nullish"
  * OptionalMemberExpression，后者可能被 ChainExpression 包裹——非表达式
  * 语句起点不包，if 测试实测为裸 OptionalMemberExpression，双形态兼容）。
  * 只认非计算键 + Identifier 基名（单层）；property 取 Identifier 名或
- * StringLiteral 值。
+ * StringLiteral 值。issue #136 (b)：计算键认数值（NumericLiteral / 数值
+ * 字符串 StringLiteral）——`m[1]` 真值守卫与 `m.p` 同事实（RegExpExecArray
+ * 下标槽键即 String(i)）；非数值字面量 / 字符串模板计算键不识别。
  */
 const memberGuardTarget = (n: unknown): { name: string; key: string } | undefined => {
   const t = n as {
@@ -190,9 +193,18 @@ const memberGuardTarget = (n: unknown): { name: string; key: string } | undefine
   };
   const m = (t?.type === "ChainExpression" ? t.expression : t) as typeof t;
   if (m?.type !== "MemberExpression" && m?.type !== "OptionalMemberExpression") return undefined;
-  if (m.computed) return undefined;
   if (m.object?.type !== "Identifier" || !m.object.name) return undefined;
   const p = m.property;
+  if (m.computed) {
+    // 数值下标：键 = String(value)（"1" / "-1"；非规范数值字符串保守不认）
+    if (p?.type === "NumericLiteral" && typeof p.value === "number") {
+      return { name: m.object.name, key: String(p.value) };
+    }
+    if (p?.type === "StringLiteral" && typeof p.value === "string" && /^-?\d+$/.test(p.value)) {
+      return { name: m.object.name, key: p.value };
+    }
+    return undefined;
+  }
   const key =
     p?.type === "Identifier" ? p.name : p?.type === "StringLiteral" && typeof p.value === "string" ? p.value : undefined;
   if (key === undefined) return undefined;
@@ -381,6 +393,122 @@ function mergeGuardInto(list: NullishGuard[], g: NullishGuard): void {
   if (prev.memberKey === undefined && g.memberKey !== undefined) prev.memberKey = g.memberKey;
 }
 
+/** 方法调用接收者的静态路径（issue #136 (c)）：callee 为普通
+ *  MemberExpression（`x.m(...)`）且接收者（callee.object）是标识符或
+ *  单层静态成员/数值下标（memberGuardTarget 同形态）。OptionalMember /
+ *  ChainExpression（`?.` 链）不识别——可选链短路求值不蕴含接收者非
+ *  nullish；接收者含调用/三元等复杂表达式不提取（宁缺毋假）。 */
+const methodReceiverTarget = (callee: unknown): { name: string; key?: string } | undefined => {
+  const c = callee as { type?: string; object?: unknown };
+  if (c?.type !== "MemberExpression") return undefined;
+  const o = c.object as { type?: string; name?: string };
+  if (o?.type === "Identifier" && o.name) return { name: o.name };
+  if (o?.type === "MemberExpression") return memberGuardTarget(o);
+  return undefined;
+};
+
+/** 接收者事实的臂上下文：both = 无条件求值（双臂成立）；cons/alt = 仅在该
+ *  臂成立；null = 任一臂都不可证（丢弃）。 */
+type ReceiverArmCtx = "both" | "cons" | "alt" | null;
+
+/**
+ * 测试表达式内方法调用接收者的非 nullish 事实收集（issue #136 (c)）：
+ * `x.m(...)` / `x.p.m(...)` / `x[1].m(...)` 的调用子式求值到达 ⇒ 接收者
+ * 非 nullish（nullish 臂在方法名成员读处 throws 分流——undefined.trim()
+ * TypeError；测试取得值即证接收者有值）。臂归属按短路方向：
+ * - 无条件求值位（二元/一元操作数、调用实参、`A && B`/`A || B` 的 A 位、
+ *   三元 test）→ 双臂；
+ * - `A && B` 的 B 位 → 仅 cons（B 求值 ⇒ A 真 ⇒ 整体真，假值臂含 A 假短路
+ *   位不可证）；
+ * - `A || B` 的 B 位 → 仅 alt（B 求值 ⇒ A 假，整体真假随 B——真值臂含 A
+ *   真短路位不可证）；
+ * - `??` 右侧 / 三元分支 / 嵌套反向逻辑（臂交不出单臂）→ 不提取。
+ */
+const collectReceiverFacts = (n: unknown, ctx: ReceiverArmCtx, out: NullishGuard[]): void => {
+  if (ctx === null || !n || typeof n !== "object") return;
+  const t = n as {
+    type?: string;
+    operator?: string;
+    left?: unknown;
+    right?: unknown;
+    test?: unknown;
+    argument?: unknown;
+    callee?: unknown;
+    arguments?: unknown[];
+    object?: unknown;
+    property?: unknown;
+    computed?: boolean;
+  };
+  switch (t.type) {
+    case "LogicalExpression":
+      if (t.operator === "&&" || t.operator === "||") {
+        const rArm: "cons" | "alt" = t.operator === "&&" ? "cons" : "alt";
+        collectReceiverFacts(t.left, ctx, out);
+        // B 位臂位 = 当前臂位 ∩ rArm：both → rArm；同向保持；异向/不确定 → null
+        collectReceiverFacts(
+          t.right,
+          ctx === "both" || ctx === rArm ? rArm : null,
+          out,
+        );
+      } else if (t.operator === "??") {
+        // 右侧仅左 nullish 时求值，与整体真假无确定关系 → 只收左侧
+        collectReceiverFacts(t.left, ctx, out);
+      }
+      return;
+    case "ConditionalExpression":
+      // 三元：test 无条件求值；两分支与整体真假无确定关系 → 分支不提取
+      collectReceiverFacts(t.test, ctx, out);
+      return;
+    case "CallExpression": {
+      const recv = methodReceiverTarget(t.callee);
+      if (recv) {
+        for (const arm of ctx === "both" ? (["cons", "alt"] as const) : [ctx]) {
+          out.push({
+            name: recv.name,
+            arm,
+            grain: "nullish",
+            ...(recv.key !== undefined ? { memberKey: recv.key } : {}),
+          });
+        }
+      }
+      // 实参无条件求值；callee 为嵌套调用（f(x).m() 的 f(x)）时其内部同臂位
+      collectReceiverFacts(t.callee, ctx, out);
+      for (const a of t.arguments ?? []) collectReceiverFacts(a, ctx, out);
+      return;
+    }
+    default:
+      // 二元/一元/赋值等无条件求值位：操作数按当前臂位继续；成员访问的
+      // object 位（`m[1].trim().length` 的调用在 .length 的 object 里）与
+      // 计算键属性位（`a[k.m()]` 的 k.m() 无条件求值）同此
+      collectReceiverFacts(t.left, ctx, out);
+      collectReceiverFacts(t.right, ctx, out);
+      collectReceiverFacts(t.argument, ctx, out);
+      collectReceiverFacts(t.object, ctx, out);
+      if (t.computed) collectReceiverFacts(t.property, ctx, out);
+      return;
+  }
+};
+
+/** 接收者事实并入守卫列表：同名同臂合并（粒度取并、成员键补缺——接收者
+ *  事实自身蕴含基名非 nullish，nullish 粒度并进不放大）；同名异臂并存
+ *  （narrowNullishArmThunks 按臂过滤，不产生重复形参）；已有不同成员键 →
+ *  保留首个（sound 子集，与 mergeGuardInto 同规则）。 */
+function appendReceiverGuards(test: unknown, out: NullishGuard[]): void {
+  const facts: NullishGuard[] = [];
+  collectReceiverFacts(test, "both", facts);
+  for (const f of facts) {
+    const prev = out.find((x) => x.name === f.name && x.arm === f.arm);
+    if (!prev) {
+      out.push(f);
+      continue;
+    }
+    const grainA = prev.grain ?? "nullish";
+    const grainB = f.grain ?? "nullish";
+    if (grainA !== grainB) prev.grain = "nullish";
+    if (prev.memberKey === undefined && f.memberKey !== undefined) prev.memberKey = f.memberKey;
+  }
+}
+
 /**
  * 测试表达式的**全部**独立 nullish 守卫事实（issue #118 v3 / #120 多名
  * 复合）。单（非复合）测试式 → nullishGuardOf 单守卫；LogicalExpression
@@ -390,7 +518,8 @@ function mergeGuardInto(list: NullishGuard[], g: NullishGuard): void {
  * （cons）事实。同名同臂合并粒度、异键保首；异方向子式（`||` 内嵌 `&&`）
  * 的单侧真假不传播事实——递归结果按臂过滤后自然丢弃。单守卫 API
  * nullishGuardOf 对异名复合仍保守 undefined（历史语义），多名收窄一律
- * 走本入口。
+ * 走本入口。issue #136 (c)：非复合测试式额外并入方法调用接收者事实
+ * （collectReceiverFacts，含臂归属的短路方向推理）。
  */
 export function nullishGuardsOf(test: unknown): NullishGuard[] {
   const t = test as { type?: string; operator?: string; left?: unknown; right?: unknown };
@@ -404,7 +533,9 @@ export function nullishGuardsOf(test: unknown): NullishGuard[] {
     return out;
   }
   const g = nullishGuardOf(test);
-  return g ? [g] : [];
+  const out: NullishGuard[] = g ? [g] : [];
+  appendReceiverGuards(test, out);
+  return out;
 }
 
 /**

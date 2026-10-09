@@ -554,7 +554,7 @@ let truncDepsSeq = 0;
  * 不只 `sidecarPathOf(filePath)` 一条。`@nudo:import ./other.nudo.js` 的
  * 内容变更必须 miss analysisCache（旧口径只 hash 自身侧车 → 陈旧命中）。
  * loadModule 未提供时用 defaultLoadModule（与 analyzeFile 同源）。
- * truncated → 唯一指纹（永不命中，对齐 service noCache fail-closed）。
+ * truncated/readerr → 唯一指纹（永不命中，对齐 service noCache fail-closed）。
  */
 function depsFingerprint(
   filePath: string,
@@ -563,7 +563,10 @@ function depsFingerprint(
 ): string {
   try {
     const fp = loadModuleDepsFingerprint(source, loadModule ?? lspLoadModule, filePath);
-    if (fp.truncated) return `trunc:${fp.paths.length}#${truncDepsSeq++}`;
+    // truncated/readerr（#135）：读错误轮键不可信 → 唯一指纹（永不命中）
+    if (fp.truncated || fp.readError) {
+      return `${fp.truncated ? "trunc" : "readerr"}:${fp.paths.length}#${truncDepsSeq++}`;
+    }
     return hashSource(fp.fp);
   } catch {
     return "-";

@@ -205,7 +205,7 @@ type DepFingerprint = { fp: string; paths: string[]; truncated: boolean };
  */
 function refineDepsFingerprint(source: string, refine?: RefineResolveOpts): LoadDepsFingerprint {
   if (!refine?.loadModule || !refine.fromFile) {
-    return { fp: "-", paths: [], contents: [], truncated: false };
+    return { fp: "-", paths: [], contents: [], truncated: false, readError: false };
   }
   return loadModuleDepsFingerprint(source, refine.loadModule, refine.fromFile);
 }
@@ -246,9 +246,9 @@ function generalizeMemoKey(
   const budget = opts.budget ?? defaultLeakBudget;
   const deps =
     opts.depsFp ??
-    (r ? refineDepsFingerprint(source, r) : { fp: "-", paths: [], contents: [], truncated: false });
+    (r ? refineDepsFingerprint(source, r) : { fp: "-", paths: [], contents: [], truncated: false, readError: false });
   // ambient 侧车闭包进键：侧车内容变更 → L0 失效；路径登记供定向逐出。
-  // 截断前缀（trunc:）→ 键不可信，调用方 fail-open。
+  // 截断（trunc:）/ 读错误（readerr:）→ 键不可信，调用方 fail-open。
   const sc =
     opts.sidecarFp ??
     (r?.loadModule && r.fromFile ? sidecarClosureFingerprint(r.fromFile, r) : undefined);
@@ -272,7 +272,8 @@ function generalizeMemoKey(
   return {
     key,
     depPaths: scPath !== undefined ? [...deps.paths, scPath] : deps.paths,
-    truncated: deps.truncated || (sc?.startsWith("trunc:") ?? false),
+    truncated:
+      deps.truncated || deps.readError || (sc?.startsWith("trunc:") ?? false),
   };
 }
 
@@ -688,7 +689,7 @@ export function generalizeFromAst(
   } = {},
 ): PolyFn | undefined {
   const { key, depPaths, truncated } = generalizeMemoKey(fnName, source, opts);
-  // 截断指纹不可信：不读也不写 L0
+  // 截断/读错误指纹不可信：不读也不写 L0
   if (!truncated) {
     const cached = generalizeMemoGet(key);
     if (cached !== null) {
