@@ -371,3 +371,48 @@ export const decide = fn(
     cleanup();
   });
 });
+
+// #138：intension（formatPoly）参数名槽与签名面同口径走
+// formalParamSignatureNames——解构形参渲染 `{ a, b }`，不落求值占位 `_p0`
+describe("getHoverAtPosition intension destructure param names (#138)", () => {
+  const ADD_PAIR = `export function addPair({ a, b }) {\n  return a + b;\n}\n`;
+
+  it("纯解构形参：intension 参数名槽是 { a, b }，无 _p0", () => {
+    // 函数名 addPair（L1 C16 = 名字起始前一格，同 agent-hover-interface-tier 口径）
+    const hover = getHoverAtPosition("/t/addpair-pure.js", ADD_PAIR, 1, 16);
+    expect(hover).not.toBeNull();
+    expect(hover!.intension).toBeDefined();
+    expect(hover!.intension).toContain("({ a, b }:");
+    expect(hover!.intension).not.toContain("_p0");
+  });
+
+  it("契约绑定解构：名字槽 { a, b }，契约面字段类型上屏", () => {
+    // 侧车 fn({a: number(), b: number()}) 绑 addPair（loader(HANDWRITTEN) 式）
+    const SIDE = `
+import { fn, number } from "@nudojs/core";
+
+export const addPair = fn({ a: number(), b: number() }, number());
+`;
+    const loader = (spec: string) =>
+      spec.endsWith("addpair.nudo.js") ? SIDE : undefined;
+    const hover = getHoverAtPosition("/t/addpair.js", ADD_PAIR, 1, 16, undefined, {
+      loadModule: loader,
+    });
+    expect(hover).not.toBeNull();
+    expect(hover!.intension).toBeDefined();
+    // 名字槽是解构形状，不是求值占位
+    expect(hover!.intension).toContain("({ a, b }:");
+    // 契约面：字段类型上屏（term echo 形态不在此断言——合成 obj 的
+    // termVar 命名是另一工作面，见 #138）
+    expect(hover!.intension).toContain("a: number");
+    expect(hover!.intension).toContain("b: number");
+  });
+
+  it("rest 形参渲染不变：intension 仍含 ...args", () => {
+    const src = `export function f(x, ...args) {\n  return args.length;\n}\n`;
+    const hover = getHoverAtPosition("/t/rest-args.js", src, 1, 16);
+    expect(hover).not.toBeNull();
+    expect(hover!.intension).toBeDefined();
+    expect(hover!.intension).toContain("...args");
+  });
+});

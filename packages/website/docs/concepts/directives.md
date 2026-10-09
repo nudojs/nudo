@@ -266,6 +266,22 @@ Sidecars are real JS modules: they may import builders from `@nudojs/core` and c
 **Auto-binding rules:**
 
 - Binds only **same-name local named exports** of the source file (`export function` / `export const`). Re-exports, `export default`, and CJS are out of scope.
+- Inside `fn({ ... })`, keys bind by parameter name: plain identifiers, destructured binding names, or **dot-path keys** for nested destructuring. The outer key of a nested pattern stays bindable as a whole-object `shape(...)`; array elements have no path form. Flat names always win over a dotted key that would spell the same string.
+
+```javascript
+// v.js
+export function nested({ card: { grade } }) {
+  return grade + "#";
+}
+```
+
+```javascript
+// v.nudo.js — 'card.grade' binds the inner field; 'card' binds the whole object
+import { fn, string } from "@nudojs/core";
+
+export const nested = fn({ "card.grade": string() }, string());
+```
+
 - Sidecars under `node_modules/` are never auto-loaded.
 - Same-parameter annotations from source and sidecar are **conjoined**; a contradictory conjunction (e.g. `x > 0` ∧ `x < 0`) reports `nudo:interface-conflict`.
 - A sidecar binding wins over nothing else — merge order is: handwritten (source annotation ∪ sidecar binding) > generated segment > implicit inference. The layer is shown by `nudo contract` (`[handwritten]` / `[generated]` / `[implicit]`).

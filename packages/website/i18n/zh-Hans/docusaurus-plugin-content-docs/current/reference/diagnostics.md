@@ -104,7 +104,7 @@ Context: [@nudo:case](../concepts/directives.md#nudocase--debug-witnesses) · [�
 
 ### `nudo:interface-param-mismatch` {#nudo-interface-param-mismatch}
 
-手写契约参数名不在形式参数面上。（诊断 ID 保留历史 `interface` 词元；产品术语是 **contract**。）
+手写契约参数名不在形式参数面上。（诊断 ID 保留历史 `interface` 词元；产品术语是 **contract**。）合法名：普通参数名、解构绑定名（rename 时用源属性键）、嵌套解构的点路径键（`({ card: { grade } })` 用 `'card.grade'`）——见[侧车自动绑定](../concepts/directives.md#主路径侧车自动绑定)。
 
 Context: [契约优先](../guides/contract.md#契约优先契约层风格) · [接口诊断](../guides/check.md#接口诊断)
 
