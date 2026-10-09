@@ -793,7 +793,7 @@ type SymbolTable = {
 | <a id="mockseedstoabsmocks"></a>`mockSeedsToAbsMocks` | fn | 求值引擎注入用：seedVars + seedFns 统一为 Abs 函数绑定。 | `mockSeedsToAbsMocks(seeds: AbsMockSeeds): Record<string, Abs>` |
 | <a id="moduleexports"></a>`ModuleExports` | type | — | `ModuleExports = { path: string; named: Map<string, string>; defaultExport?: string; source: string; poly: Map<string, PolyFn>; }` |
 | <a id="modulegraphcache"></a>`ModuleGraphCache` | type | mtime 边缓存：key 为文件路径，edges 为已抽取的相对 import 边（与 buildModuleGraph 返回语义一致）。 | `ModuleGraphCache = Map<string, { mtimeMs: number; size: number; edges: string[] }>` |
-| <a id="modulereaderror"></a>`ModuleReadError` | fn | 文件已解析但读失败（EACCES / EMFILE / EISDIR-race …）。 | `ModuleReadError extends Error { readonly code: string; readonly path: string; constructor(path: string, cause: unknown) { const code = (c...` |
+| <a id="modulereaderror"></a>`ModuleReadError` | fn | 路径 stat 或文件读失败（EACCES / EMFILE / ESTALE / EIO …）。 | `ModuleReadError extends Error { readonly code: string; readonly path: string; constructor(path: string, cause: unknown) { const code = (c...` |
 | <a id="noteenvpathdeps"></a>`noteEnvPathDeps` | fn | 源码里的 path-based load specs 解析为绝对路径后登记反向边 | `noteEnvPathDeps(sourcePath: string, source: string): void` |
 | <a id="nudoconfig"></a>`NudoConfig` | type | — | `NudoConfig = { env?: string[]; mocks?: Record<string, string>; contract?: { autoBind?: boolean; emit?: string[] \| string; }; analysis?: {...` |
 | <a id="projectabstoschema"></a>`projectAbsToSchema` | fn | — | `projectAbsToSchema(a: Abs, opts?: { dialect?: SchemaDialect }): SchemaProjection` |

@@ -289,5 +289,6 @@ Library exports from `src/index.ts` and side-effect-free `./public-api` constant
 | <a id="nudo.contract.draft"></a>`nudo.contract.draft` | fn | code-first `*.nudo.draft.*` | — |
 | <a id="nudo.contract.emit"></a>`nudo.contract.emit` | fn | persist `@generated` sidecar | — |
 | <a id="nudo.selectcase"></a>`nudo.selectCase` | fn | switch active case (positional or object args) | — |
+| <a id="nudo.selectcontract"></a>`nudo.selectContract` | fn | observation selector: pick the contract option — deactivate the fn's active case (idempotent) | — |
 | <a id="nudo.getactivecases"></a>`nudo.getActiveCases` | fn | active case index map | — |
 <!-- NUDO-API-SKELETON:END -->
