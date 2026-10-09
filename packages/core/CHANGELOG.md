@@ -1,5 +1,12 @@
 # @nudojs/core
 
+## 1.9.4
+
+### Patch Changes
+
+- 2af4016: fix(core): generalize display (hover intension) renders destructured params as `{ a, b }` via `formalParamSignatureNames` instead of the `_p0` evaluation placeholder, while entryReqs preds and promoted entryShapes/fnRels lookups keep using the placeholder keys (#138)
+- 2af4016: fix(core): sidecar dot-path keys (`fn({ 'card.grade': string() })`) now bind nested destructured params — nestedPaths surface collection, fieldPath-aware projection in check/case scans, and nested obj-Abs synthesis in the refine block; flat binding names keep precedence (#137)
+
 ## 1.9.3
 
 ### Patch Changes
