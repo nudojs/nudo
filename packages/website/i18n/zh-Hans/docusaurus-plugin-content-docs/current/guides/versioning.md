@@ -13,13 +13,13 @@ Nudo 是 pnpm monorepo，经 [changesets](https://github.com/changesets/changese
 <!-- NUDO-VERSIONS:BEGIN -->
 | 包 | 版本线 | 升级规则 |
 |----|--------|----------|
-| `@nudojs/core` | **1.x**（1.9.2） | SemVer：破坏性 → major |
-| `@nudojs/service` | **1.x**（1.6.14） | SemVer：破坏性 → major |
-| `nudojs` | **1.x**（1.3.15） | SemVer：破坏性 → major |
-| `@nudojs/parser` | **1.x**（1.4.11） | SemVer：破坏性 → major。2.0.0 曾被误发布并整班撤回——计划中的破坏性版本将以显式确认的 major 落地（见 Changesets 节门禁说明） |
-| `@nudojs/lsp` | **1.x**（1.4.12） | SemVer：破坏性 → major。冻结清单：`packages/lsp/PUBLIC_API.md` |
-| `@nudojs/env` / `@nudojs/harvester` | 0.x（0.4.29 / 0.3.15） | minor 可能破坏；为 IDE/CI 分析稳定可锁 minor。手写 env 在重叠模块/导出上 wins（`mergeHarvestUnderEnv`） |
-| `vite-plugin-nudo` | 0.x（0.4.30） | minor 可能破坏 |
+| `@nudojs/core` | **1.x**（1.9.3） | SemVer：破坏性 → major |
+| `@nudojs/service` | **1.x**（1.6.15） | SemVer：破坏性 → major |
+| `nudojs` | **1.x**（1.3.16） | SemVer：破坏性 → major |
+| `@nudojs/parser` | **1.x**（1.4.12） | SemVer：破坏性 → major。2.0.0 曾被误发布并整班撤回——计划中的破坏性版本将以显式确认的 major 落地（见 Changesets 节门禁说明） |
+| `@nudojs/lsp` | **1.x**（1.5.0） | SemVer：破坏性 → major。冻结清单：`packages/lsp/PUBLIC_API.md` |
+| `@nudojs/env` / `@nudojs/harvester` | 0.x（0.4.30 / 0.3.16） | minor 可能破坏；为 IDE/CI 分析稳定可锁 minor。手写 env 在重叠模块/导出上 wins（`mergeHarvestUnderEnv`） |
+| `vite-plugin-nudo` | 0.x（0.4.31） | minor 可能破坏 |
 | `nudo-vscode` | Marketplace | 以扩展发行说明为准；打包前对齐 bundled lsp 版本（见 `packages/vscode/RELEASE_CHECKLIST.md`） |
 <!-- NUDO-VERSIONS:END -->
 
@@ -40,8 +40,8 @@ patch 修健全性（结果可能变得*更正确*）；minor 增 API / 诊断�
 <!-- NUDO-ECOSYSTEM:BEGIN -->
 | 包 | 当前 | 锁定方式 | 说明 |
 |----|------|----------|------|
-| `@nudojs/env` | 0.4.29（pre-1.0） | workspace / IDE·CI 稳定可锁 `~0.4.0` | 新 Abs 模块（如 `events` / `stream` / `querystring`）以 **minor** 发布；签名展示可能变化。手写 env 在重叠模块/导出上 **wins**。 |
-| `@nudojs/harvester` | 0.3.15（pre-1.0） | workspace / `~0.3.15` | Harvest 是**旁路信道**，不是类型系统真理源。预算默认：`maxFiles=12`、`maxMs=2500`，`NUDO_HARVEST_NODE=off` 显式关闭。 |
+| `@nudojs/env` | 0.4.30（pre-1.0） | workspace / IDE·CI 稳定可锁 `~0.4.0` | 新 Abs 模块（如 `events` / `stream` / `querystring`）以 **minor** 发布；签名展示可能变化。手写 env 在重叠模块/导出上 **wins**。 |
+| `@nudojs/harvester` | 0.3.16（pre-1.0） | workspace / `~0.3.16` | Harvest 是**旁路信道**，不是类型系统真理源。预算默认：`maxFiles=12`、`maxMs=2500`，`NUDO_HARVEST_NODE=off` 显式关闭。 |
 <!-- NUDO-ECOSYSTEM:END -->
 
 规则：
