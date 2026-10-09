@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { getHoverAtPosition } from "../lsp-surface.ts";
 import { collectAbsInlays } from "@nudojs/core/internal";
 import { formatInterfaceTierLine, INTERFACE_SOURCE_ABBR } from "@nudojs/core";
-import { computeInterfaceLenses, hoverTool } from "../agent-tools.ts";
+import { computeInterfaceLenses, hoverTool, type InterfaceLens } from "../agent-tools.ts";
 
 const HANDWRITTEN = `
 import { fn, number } from "@nudojs/core";
@@ -27,9 +27,12 @@ describe("A7 CodeLens ↔ hover 同源", () => {
     const lenses = computeInterfaceLenses(ADD_SRC, "/t/lib.js", {
       loadModule: loader(HANDWRITTEN),
     });
-    const lens = lenses.find((l) => l.kind === "interface");
+    const lens = lenses.find(
+      (l): l is Extract<InterfaceLens, { kind: "interface" }> =>
+        l.kind === "interface",
+    );
     expect(lens).toBeDefined();
-    const src = lens!.kind === "interface" ? lens!.source : "";
+    const src = lens!.source;
 
     // hover 在函数名 `add`（L1 C16 起）
     const hover = getHoverAtPosition("/t/lib.js", ADD_SRC, 1, 16, undefined, {
