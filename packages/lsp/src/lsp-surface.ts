@@ -18,6 +18,7 @@ import type { File, Node } from "@babel/types";
 import traverse from "@babel/traverse";
 import {
   type Abs,
+  type AbsModuleExports,
   generalizeFromAst,
   formatAbs,
   formatAbsMultiline,
@@ -58,6 +59,12 @@ import {
 export type SurfaceReuse = {
   result?: AnalysisResult;
   ast?: File;
+  /**
+   * eval 模块图（`evalAnalysisModules` 组装）。函数名 hover 的 intension
+   * （generalizeFromAst）必须带图：缺图时跨模块 import 塌缩 unknown，
+   * 求值引擎的精确结果反而被 `(_p0: A1) => unknown` 兜底盖住。
+   */
+  modules?: Record<string, AbsModuleExports | Record<string, unknown>>;
 };
 
 /** SurfaceReuse.result.bindings 的单绑定读（缺省安全） */
@@ -284,7 +291,17 @@ export function getHoverAtPosition(
   let gMulti: string | undefined;
   if (fnName) {
     try {
-      const g = generalizeFromAst(fnName, source, file ? { file } : {});
+      // refine（fromFile/侧车 ambient）与 modules（跨模块图）一并传入：
+      // 缺 refine → 参数无契约种子（A1）；缺 modules → 跨模块调用 unknown
+      const g = generalizeFromAst(fnName, source, {
+        ...(file ? { file } : {}),
+        refine: {
+          fromFile: filePath,
+          ...(opts?.loadModule ? { loadModule: opts.loadModule } : {}),
+          ...(opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
+        },
+        ...(reuse?.modules ? { modules: reuse.modules } : {}),
+      });
       if (g) {
         gDisplay = g.display;
         gAbs = formatAbs(g.symbolic);

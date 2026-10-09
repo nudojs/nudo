@@ -19,6 +19,7 @@ import {
   evictEvalCacheForFiles,
   evictAnalysisFileCacheForFiles,
   evictFnAnalysisCacheForFiles,
+  evalAbsModuleGraph,
   findProjectConfig,
   interfaceConfig,
   checkConfig,
@@ -38,7 +39,7 @@ import {
 import { preloadPathEnvs } from "@nudojs/service/evaluator";
 
 export { filterDiagnosticsByLevel, diagnosticsLevelForFile };
-import { checkSource, pTrue, evictGeneralizeMemoForPaths, evictCheckSourceMemoForPaths, extractNudoImports, isNodeModulesPath, sidecarPathOf } from "@nudojs/core";
+import { checkSource, pTrue, evictGeneralizeMemoForPaths, evictCheckSourceMemoForPaths, extractNudoImports, isNodeModulesPath, sidecarPathOf, type AbsModuleExports } from "@nudojs/core";
 import { parse, extractDirectives, type DirectiveDiag } from "@nudojs/parser";
 import { extractAllLoadSpecs, resolveDepPath, sidecarSpecsOf, stablePathKey, stripStringsKeepComments, loadModuleDepsFingerprint, hashSource, runWithCollectorScope } from "@nudojs/core/internal";
 import type { File } from "@babel/types";
@@ -741,6 +742,28 @@ export function makeBufferAwareLoadModule(
 }
 
 /**
+ * IDE 面 generalize/checkSource 共用的模块图（与 CLI `buildCheckInjection`
+ * 同源）：不传图时跨模块 import 不可解析 → 调用塌缩 unknown
+ * （hover `(_p0: A1) => unknown`、inlay 空、check 假红 unproven-return）。
+ *
+ * `evalAbsModuleGraph` 走 abs-modules-graph 内容缓存（stat 自愈失效），
+ * 同一 (source, deps) 重复调用廉价。cycle → 不注入（fail-closed，
+ * 与 CLI hasCycle 分支同语义：宁缺图不注入环）。
+ */
+export function evalAnalysisModules(
+  filePath: string,
+  source: string,
+): Record<string, AbsModuleExports | Record<string, unknown>> | undefined {
+  try {
+    const graph = evalAbsModuleGraph(source, filePath);
+    if (graph.issues.some((i) => i.kind === "cycle")) return undefined;
+    return graph.modules;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Abs check → LSP diagnostics（主通道：约束蕴含，非 TS assignability）。
  */
 export function checkToLspDiagnostics(
@@ -756,6 +779,8 @@ export function checkToLspDiagnostics(
     const proj = findProjectConfig(dirname(filePath));
     const autoBind = interfaceConfig(proj?.config).autoBind;
     const cCfg = checkConfig(proj?.config);
+    // 模块图：缺图时跨模块调用 unknown → unproven-return 假红（CLI 有图同文件绿）
+    const analysisModules = evalAnalysisModules(filePath, source);
     const report = checkSource(filePath, source, pTrue, {
       loadModule: loadModule ?? lspLoadModule,
       fromFile: filePath,
@@ -764,6 +789,7 @@ export function checkToLspDiagnostics(
       entryThrows: cCfg.entryThrows,
       ...(cCfg.ignoreThrows.length > 0 ? { ignoreThrows: cCfg.ignoreThrows } : {}),
       skips: collectSkipReturns(source),
+      ...(analysisModules ? { modules: analysisModules } : {}),
     });
     const issues = [...report.issues];
     // D1: 指令文法诊断（nudo:directive-syntax）——与 check CLI 同口径。

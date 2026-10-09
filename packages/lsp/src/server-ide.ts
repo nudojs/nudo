@@ -34,6 +34,7 @@ import { buildSignatureHelp } from "./signature-help.ts";
 import {
   getCachedOrAnalyze,
   cachedAstFor,
+  evalAnalysisModules,
   uriToFilePath,
   type ValidateTextDeps,
 } from "./validation.ts";
@@ -85,6 +86,8 @@ export function attachHover(deps: IdeDeps): void {
         activeLoadModule,
       );
       const ast = cachedAstFor(filePath, source);
+      // intension generalize 需要模块图：缺图 → 跨模块调用 unknown
+      const analysisModules = evalAnalysisModules(filePath, source);
       // A7：interface 档与 CodeLens 同源——default 走 symbolic + entryReqs；
       // 选 case 时 body 仍走 activeCases 重放，interface 标注不变
       const hover = getHoverAtPosition(filePath, source, line, column, cases, {
@@ -93,6 +96,7 @@ export function attachHover(deps: IdeDeps): void {
       }, {
         ...(ast !== undefined ? { ast } : {}),
         result,
+        ...(analysisModules ? { modules: analysisModules } : {}),
       });
       if (!hover) return null;
 
@@ -359,11 +363,14 @@ export function attachInlayHint(deps: IdeDeps): void {
 
       // Abs inlay：参数约束 + 返回 term/pred（类型即计算，无损）
       // A7：default 走 symbolic + entryReqs；与 CodeLens interface 档同源
+      // modules：缺图时 generalize 看不到跨模块 import → 调用塌缩 unknown
+      const analysisModules = evalAnalysisModules(filePath, source);
       try {
         for (const abs of collectAbsInlays(source, {
           loadModule: activeLoadModule,
           fromFile: filePath,
           ...(autoBind === false ? { autoBind: false } : {}),
+          ...(analysisModules ? { modules: analysisModules } : {}),
         })) {
           const lineIdx = abs.line - 1;
           if (lineIdx < 0 || lineIdx >= lines.length) continue;

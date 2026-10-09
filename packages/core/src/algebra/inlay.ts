@@ -18,6 +18,7 @@ import { predToString } from "./pred.ts";
 import { termToString } from "./term.ts";
 import { litValue, type Abs } from "./abs.ts";
 import { interfaceTierOf, type InterfaceSource, type InterfaceTierOpts } from "./interface.ts";
+import type { AbsModuleExports } from "./abs-modules.ts";
 
 export type AbsInlay = {
   /** 1-based 行号 */
@@ -35,6 +36,11 @@ export type AbsInlay = {
 export type CollectAbsInlaysOpts = InterfaceTierOpts & {
   loadModule?: (spec: string, fromFile: string) => string | undefined;
   fromFile?: string;
+  /**
+   * eval 模块图（host 组装，如 service `evalAbsModuleGraph`）。缺省时
+   * generalizeFromAst 看不到跨模块 import → 调用塌缩 unknown（inlay 假空）。
+   */
+  modules?: Record<string, AbsModuleExports | Record<string, unknown>>;
 };
 
 function listFunctions(source: string): Array<{ name: string; node: Node }> {
@@ -157,13 +163,17 @@ export function collectAbsInlays(
       ? {
           ...(opts.loadModule ? { loadModule: opts.loadModule } : {}),
           ...(opts.fromFile ? { fromFile: opts.fromFile } : {}),
+          ...(opts.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
         }
       : undefined;
 
   for (const { name, node } of listFunctions(source)) {
     let g: ReturnType<typeof generalizeFromAst>;
     try {
-      g = generalizeFromAst(name, source, refineOpts ? { refine: refineOpts } : {});
+      g = generalizeFromAst(name, source, {
+        ...(refineOpts ? { refine: refineOpts } : {}),
+        ...(opts?.modules ? { modules: opts.modules } : {}),
+      });
     } catch {
       continue;
     }
