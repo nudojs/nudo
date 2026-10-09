@@ -68,7 +68,8 @@ export {
 export {
   // DESIGN-003：sidecar 契约身份=导出名；emit 层据此把 `export { _c as class }`
   // 的本地名归一到导出名（engine machinery——产品面走 localNamedExports）
-  exportedNameOfLocal
+  exportedNameOfLocal,
+  formatInterfaceTierLine,
 } from "./algebra/interface.ts";
 
 // derivation sessions + rendering experiments

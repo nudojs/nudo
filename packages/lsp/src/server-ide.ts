@@ -26,7 +26,7 @@ import {
   interfaceConfig,
 } from "@nudojs/service";
 import type { LoadModule } from "@nudojs/service";
-import { collectAbsInlays } from "@nudojs/core/internal";
+import { collectAbsInlays, formatInterfaceTierLine } from "@nudojs/core/internal";
 import { parse } from "@nudojs/parser";
 import traverse from "@babel/traverse";
 import type { CallExpression, Node } from "@babel/types";
@@ -53,7 +53,17 @@ export type IdeDeps = {
   getActiveCases: (uri: string) => Map<string, number>;
   activeLoadModule: LoadModule;
   agentToolDeps: AgentToolDeps;
+  /** 观察层视图（用户可选，互斥）：contract=契约档（默认），case=调试观察档 */
+  getLensMode: () => LensMode;
 };
+
+/**
+ * 观察层互斥视图（`nudo.lens`）：
+ * - `contract`（默认）：interface 档 lens + 固化/草稿动作 + inlay 档投影
+ * - `case`：case 选择器 lens + call@/entry@ 观察 lens + caseHints inlay
+ * Abs inlay（参数约束/返回 term/pred）与 hover 不受视图影响（推导面）。
+ */
+export type LensMode = "contract" | "case";
 
 export function attachHover(deps: IdeDeps): void {
   const connection = deps.connection;
@@ -103,7 +113,7 @@ export function attachHover(deps: IdeDeps): void {
       const lines: string[] = [];
       // 与 CodeLens `● interface / <source>` 同源首行（A7 验收）
       if (hover.interfaceSource) {
-        lines.push(`● interface / ${hover.interfaceSource}`);
+        lines.push(formatInterfaceTierLine(hover.interfaceSource));
         if (hover.interfaceDisplay && hover.interfaceSource !== "implicit") {
           lines.push("```nudo", hover.interfaceDisplay, "```");
         }
@@ -235,6 +245,8 @@ export function attachCodeLens(deps: IdeDeps): void {
     try {
       // interface 档在前（默认层 + 固化动作），case 降为 debug 副层跟随其后
       // （design-refine-derivation §8）；标题与命令与既有 case lens 零改动。
+      // `nudo.lens` 视图互斥：contract=契约档（默认），case=观察档——同屏只显一层。
+      const lensMode = deps.getLensMode();
       const lenses: CodeLens[] = [];
       const autoBind = interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
       for (const lens of computeInterfaceLenses(source, filePath, {
@@ -242,6 +254,13 @@ export function attachCodeLens(deps: IdeDeps): void {
         activeCases: cases,
         ...(autoBind === false ? { autoBind: false } : {}),
       })) {
+        if (lensMode === "contract" && lens.kind === "case") continue;
+        if (
+          lensMode === "case" &&
+          (lens.kind === "interface" || lens.kind === "emit" || lens.kind === "draft")
+        ) {
+          continue;
+        }
         const range = {
           start: { line: lens.line - 1, character: 0 },
           end: { line: lens.line - 1, character: 0 },
@@ -251,7 +270,7 @@ export function attachCodeLens(deps: IdeDeps): void {
             range,
             // 只读打印当前 contract（点击即 `nudo.contract`，无写盘）
             command: {
-              title: `● interface / ${lens.source}`,
+              title: formatInterfaceTierLine(lens.source),
               command: "nudo.contract",
               arguments: [params.textDocument.uri, lens.fn],
             },
@@ -295,19 +314,21 @@ export function attachCodeLens(deps: IdeDeps): void {
         }
       }
 
-      // 合成 call@ / entry@ 观察层（CLI `nudo test` 的源码内投影）
-      for (const lens of computeObservationLenses(source, filePath)) {
-        lenses.push({
-          range: {
-            start: { line: lens.line - 1, character: 0 },
-            end: { line: lens.line - 1, character: 0 },
-          },
-          command: {
-            title: lens.title,
-            command: "nudo.trace",
-            arguments: [params.textDocument.uri, lens.fn],
-          },
-        });
+      // 合成 call@ / entry@ 观察层（CLI `nudo test` 的源码内投影；仅 case 视图）
+      if (lensMode === "case") {
+        for (const lens of computeObservationLenses(source, filePath)) {
+          lenses.push({
+            range: {
+              start: { line: lens.line - 1, character: 0 },
+              end: { line: lens.line - 1, character: 0 },
+            },
+            command: {
+              title: lens.title,
+              command: "nudo.trace",
+              arguments: [params.textDocument.uri, lens.fn],
+            },
+          });
+        }
       }
 
       return lenses;
@@ -347,18 +368,22 @@ export function attachInlayHint(deps: IdeDeps): void {
         activeLoadModule,
       );
       const hints: InlayHint[] = [];
+      const lensMode = deps.getLensMode();
 
-      for (const hint of result.caseHints) {
-        const lineIdx = hint.line - 1;
-        if (lineIdx < 0 || lineIdx >= lines.length) continue;
-        const lineLen = lines[lineIdx].length;
+      // caseHints（case 派生见证 `: a + b · derived`）：仅 case 视图（与契约档互斥）
+      if (lensMode === "case") {
+        for (const hint of result.caseHints) {
+          const lineIdx = hint.line - 1;
+          if (lineIdx < 0 || lineIdx >= lines.length) continue;
+          const lineLen = lines[lineIdx].length;
 
-        hints.push({
-          position: { line: lineIdx, character: lineLen },
-          label: `  ${hint.label}`,
-          kind: InlayHintKind.Type,
-          paddingLeft: true,
-        });
+          hints.push({
+            position: { line: lineIdx, character: lineLen },
+            label: `  ${hint.label}`,
+            kind: InlayHintKind.Type,
+            paddingLeft: true,
+          });
+        }
       }
 
       // Abs inlay：参数约束 + 返回 term/pred（类型即计算，无损）
@@ -392,29 +417,31 @@ export function attachInlayHint(deps: IdeDeps): void {
       }
 
       // LSP-G2：CodeLens 不可见的客户端（Helix 等）用 inlay 投影同源 interface 档
-      // （`● interface / handwritten|generated|implicit`，与 CodeLens 同 computeInterfaceLenses）
-      try {
-        for (const lens of computeInterfaceLenses(source, filePath, {
-          loadModule: activeLoadModule,
-          activeCases: cases,
-          ...(autoBind === false ? { autoBind: false } : {}),
-        })) {
-          if (lens.kind !== "interface") continue;
-          const lineIdx = lens.line - 1;
-          if (lineIdx < 0 || lineIdx >= lines.length) continue;
-          const lineLen = (lines[lineIdx] ?? "").length;
-          hints.push({
-            position: { line: lineIdx, character: lineLen },
-            label: `  ● interface / ${lens.source}`,
-            kind: InlayHintKind.Type,
-            paddingLeft: true,
-          });
+      // （`● contract / hw|gen|imp`，与 CodeLens 同 computeInterfaceLenses；仅契约视图）
+      if (lensMode === "contract") {
+        try {
+          for (const lens of computeInterfaceLenses(source, filePath, {
+            loadModule: activeLoadModule,
+            activeCases: cases,
+            ...(autoBind === false ? { autoBind: false } : {}),
+          })) {
+            if (lens.kind !== "interface") continue;
+            const lineIdx = lens.line - 1;
+            if (lineIdx < 0 || lineIdx >= lines.length) continue;
+            const lineLen = (lines[lineIdx] ?? "").length;
+            hints.push({
+              position: { line: lineIdx, character: lineLen },
+              label: `  ${formatInterfaceTierLine(lens.source)}`,
+              kind: InlayHintKind.Type,
+              paddingLeft: true,
+            });
+          }
+        } catch (err) {
+          // interface inlay 失败不影响 case/Abs inlay（但必须可观测，不静默吞）
+          connection.console.error(
+            `nudo interface inlay failed for ${document.uri}: ${(err as Error).message}`,
+          );
         }
-      } catch (err) {
-        // interface inlay 失败不影响 case/Abs inlay（但必须可观测，不静默吞）
-        connection.console.error(
-          `nudo interface inlay failed for ${document.uri}: ${(err as Error).message}`,
-        );
       }
 
       return hints;

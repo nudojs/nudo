@@ -165,7 +165,7 @@ findIdentifierAtPosition(ast: Node, line: number, column: number): string | null
 encodeSemanticTokens(tokens: SemanticToken[]): number[];
 ```
 
-Delta-encodes `{ line, char, length, typeIndex, modifierBitmask }` tokens into the flat `number[]` the LSP expects. `TOKEN_TYPES` (`function`, `variable`, `parameter`, `property`, `type`, `keyword`, `string`, `number`, `comment`, `decorator`, `method`) and `TOKEN_MODIFIERS` (`declaration`, `readonly`, `deprecated`, `unreachable`, `contract`, `generated`, `derived`) form the server's declared legend. The server's semanticTokens handler colors declarations from the analysis result — function bindings get the `function` type, other bindings `variable`, parameters `parameter`; top-level named-export functions also carry an interface-tier modifier aligned with CodeLens `● interface` (A7) — via `buildSemanticTokens` from `@nudojs/service`.
+Delta-encodes `{ line, char, length, typeIndex, modifierBitmask }` tokens into the flat `number[]` the LSP expects. `TOKEN_TYPES` (`function`, `variable`, `parameter`, `property`, `type`, `keyword`, `string`, `number`, `comment`, `decorator`, `method`) and `TOKEN_MODIFIERS` (`declaration`, `readonly`, `deprecated`, `unreachable`, `contract`, `generated`, `derived`) form the server's declared legend. The server's semanticTokens handler colors declarations from the analysis result — function bindings get the `function` type, other bindings `variable`, parameters `parameter`; top-level named-export functions also carry an interface-tier modifier aligned with CodeLens `● contract` (A7) — via `buildSemanticTokens` from `@nudojs/service`.
 
 ## Server Capabilities
 
@@ -173,10 +173,10 @@ What the server registers on `connection.onInitialize` (`src/server.ts`):
 
 | Capability | Handler | Behavior |
 |------------|---------|----------|
-| Hover | `onHover` | Inferred type at cursor via `getTypeAtPosition`; when the cursor is on an exported function name, the first line is `● interface / handwritten|generated|implicit` (same source as CodeLens) plus the effective contract display for handwritten/generated |
+| Hover | `onHover` | Inferred type at cursor via `getTypeAtPosition`; when the cursor is on an exported function name, the first line is `● contract / hw\|gen\|imp` (handwritten / generated / implicit — same source as CodeLens) plus the effective contract display for handwritten/generated |
 | Completion (trigger `.`) | `onCompletion` | Property/method/variable items from `getCompletionsAtPosition` |
-| CodeLens | `onCodeLens` | Interface tier first: `● interface / handwritten|generated|implicit` (+ persist/update emit lenses + `⚡ draft interface` for non-handwritten exports); case lenses are the debug sub-layer — `● case "name"` active, `○` otherwise. Clicking sends `nudo.selectCase` / `nudo.contract` / `nudo.contract.draft` / `nudo.contract.emit` and refreshes lenses |
-| Inlay hints | `languages.inlayHint` | End-of-line case `Type` hints + Abs param/return inlays; implicit exports carry `· derived` |
+| CodeLens | `onCodeLens` | Observation layer is mutually exclusive via `nudo.lens` (`"contract"` default / `"case"`; `initializationOptions.lens` or `settings.nudo.lens`, invalid values fall back). `contract`: tier lens `● contract / hw\|gen\|imp` (+ persist/update emit lenses + `⚡ draft interface` for non-handwritten exports). `case`: the debug sub-layer — `● case "name"` active / `○` otherwise, plus synthesized `call@` / `entry@` observation lenses. Clicking sends `nudo.selectCase` / `nudo.contract` / `nudo.contract.draft` / `nudo.contract.emit` and refreshes lenses |
+| Inlay hints | `languages.inlayHint` | Abs param/return inlays always; `contract` view adds the `● contract / hw\|gen\|imp` tier projection for clients without CodeLens UI, `case` view adds end-of-line case `Type` hints (`· derived` witnesses) |
 | Definition | `onDefinition` | `resolveDefinitionLocations` (local + cross-file + sidecar + workspace fallback) |
 | References | `onReferences` | `buildSymbolTable` + `findReferences` |
 | Rename | `onRenameRequest` | Workspace edit over the definition plus all references |

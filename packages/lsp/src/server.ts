@@ -87,6 +87,7 @@ import {
   attachSignatureHelp,
   attachSemanticTokens,
   type IdeDeps,
+  type LensMode,
 } from "./server-ide.ts";
 
 const NUDO_COMMANDS = NUDO_EXECUTE_COMMANDS;
@@ -139,6 +140,13 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
    */
   let clientDefaultAnalysisMode: AnalysisMode | undefined;
 
+  /** 观察层互斥视图（`nudo.lens`）：contract（默认）| case；非法值回落 contract */
+  let clientLensMode: LensMode = "contract";
+
+  function parseLensMode(raw: unknown): LensMode {
+    return raw === "case" ? "case" : "contract";
+  }
+
   let debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   connection.onInitialize((params: InitializeParams): InitializeResult => {
@@ -154,6 +162,10 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
     clientDefaultAnalysisMode = parseAnalysisMode(
       (params.initializationOptions as { analysis?: { mode?: unknown } } | undefined)
         ?.analysis?.mode,
+    );
+    // { lens: "contract" | "case" }——观察层视图（与 analysis.mode 同通道转发）
+    clientLensMode = parseLensMode(
+      (params.initializationOptions as { lens?: unknown } | undefined)?.lens,
     );
     return {
     capabilities: {
@@ -302,6 +314,15 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
       (params.settings as { nudo?: { analysis?: { mode?: unknown } } } | undefined)
         ?.nudo?.analysis?.mode,
     );
+    const nextLens = parseLensMode(
+      (params.settings as { nudo?: { lens?: unknown } } | undefined)?.nudo?.lens,
+    );
+    if (nextLens !== clientLensMode) {
+      clientLensMode = nextLens;
+      // 观察层互斥切换：刷新 lens 与 inlay 投影（诊断/hover 不受视图影响）
+      void connection.sendRequest(CodeLensRefreshRequest.type).catch(() => {});
+      void connection.languages.inlayHint.refresh().catch(() => {});
+    }
     if (next === clientDefaultAnalysisMode) return;
     clientDefaultAnalysisMode = next;
     // gate 结果失效：重检打开文档（新纳入 → 出诊断；新排除 → 清诊断）
@@ -375,6 +396,7 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
     isNudoFile,
     getActiveCases: getActiveCasesForUri,
     activeLoadModule,
+    getLensMode: () => clientLensMode,
     get agentToolDeps() {
       return agentToolDepsRef.current!;
     },

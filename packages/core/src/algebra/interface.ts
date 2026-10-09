@@ -862,9 +862,16 @@ export function formatEffectiveInterfaceDisplay(eff: EffectiveInterface): string
   return s;
 }
 
-/** CodeLens / hover 首行标题（design-refine-derivation §8）：`● interface / <source>` */
+/** 档位源缩写：handwritten=hw / generated=gen / implicit=imp */
+export const INTERFACE_SOURCE_ABBR: Record<InterfaceSource, string> = {
+  handwritten: "hw",
+  generated: "gen",
+  implicit: "imp",
+};
+
+/** CodeLens / hover 首行标题（design-refine-derivation §8）：`● contract / hw|gen|imp` */
 export function formatInterfaceTierLine(source: InterfaceSource): string {
-  return `● interface / ${source}`;
+  return `● contract / ${INTERFACE_SOURCE_ABBR[source]}`;
 }
 
 export type InterfaceTierInfo = {

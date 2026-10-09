@@ -74,11 +74,11 @@ function upper(s) {
 
 CodeLens faces the **interface tier** first (design §8):
 
-- **● interface / handwritten|generated|implicit** — effective contract source for each exported function; click prints the same surface as `nudo contract`
+- **● contract / hw|gen|imp** — effective contract source for each exported function; click prints the same surface as `nudo contract`
 - **⚡ persist interface** / **↻ update interface** — freeze call-site domains into the `*.nudo.js` sidecar
 - **● / ○ case "name"** — debug sub-layer; click selects the active case for type replay
 
-Hover on an exported function name shows the same `● interface / <source>` line (A7 same-source). The active case is highlighted with a distinct style in VS Code.
+Hover on an exported function name shows the same `● contract / hw\|gen\|imp` line (A7 same-source). The active case is highlighted with a distinct style in VS Code.
 
 ### Inlay Hints
 
@@ -161,7 +161,7 @@ The Nudo language server is designed to stay small next to your other tooling:
 
 | Feature           | Description                                              |
 |-------------------|----------------------------------------------------------|
-| Hover             | Abs / intension; `● interface / <source>` on export fn names |
+| Hover             | Abs / intension; `● contract / hw\|gen\|imp` on export fn names |
 | Completions       | Triggered on `.`; property/method suggestions            |
 | CodeLens          | Interface tier + persist/update; case sub-layer          |
 | Inlay hints       | Abs param/return; `derived` on implicit exports          |

@@ -181,7 +181,7 @@ buildSemanticTokens(
 ): number[]
 ```
 
-从分析结果产出 LSP 编码的语义 token（五元组：deltaLine/deltaStartChar/length/tokenType/tokenModifiers）——函数绑定标为 `function`，其余绑定标为 `variable`，参数标为 `parameter`。顶层 **named-export** 函数绑定额外带 interface 档 modifier（`contract` / `generated` / `derived`），与 CodeLens `● interface` 经 `interfaceTierOf` 同源（A7）；非导出声明只带 `declaration`。LSP 服务器的 semanticTokens handler 直接消费它。
+从分析结果产出 LSP 编码的语义 token（五元组：deltaLine/deltaStartChar/length/tokenType/tokenModifiers）——函数绑定标为 `function`，其余绑定标为 `variable`，参数标为 `parameter`。顶层 **named-export** 函数绑定额外带 interface 档 modifier（`contract` / `generated` / `derived`），与 CodeLens `● contract` 经 `interfaceTierOf` 同源（A7）；非导出声明只带 `declaration`。LSP 服务器的 semanticTokens handler 直接消费它。
 
 配套的图例与编码器从同一模块导出，LSP 包再原样再导出（`TOKEN_TYPES`/`TOKEN_MODIFIERS`），因此 tokenType 索引不可能与提取器漂移：
 

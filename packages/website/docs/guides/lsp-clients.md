@@ -25,7 +25,7 @@ Gap themes (full table + workarounds below; tracking IDs live in the design sour
 | Theme | IDs | Who feels it |
 |-------|-----|--------------|
 | Active-case decoration | **LSP-G1** | Closed on **VS Code** (function-body + case-line decorations). Zed / Neovim / Helix still open (client has no decoration API, or needs a plugin) |
-| CodeLens not rendered | **LSP-G2** | Helix / minimal Neovim — **observation face covered by inlay** `● interface / <source>` (same `computeInterfaceLenses` as CodeLens). CodeLens UI itself remains a client limit |
+| CodeLens not rendered | **LSP-G2** | Helix / minimal Neovim — **observation face covered by inlay** `● contract / hw\|gen\|imp` (same `computeInterfaceLenses` as CodeLens). CodeLens UI itself remains a client limit |
 | Semantic tokens off by default | **LSP-G3** | **VS Code** can paint (`semanticTokenScopes`). Zed / Neovim / Helix: enable per Setup notes |
 | Secondary-server noise next to tsserver | **LSP-G4** | All clients (config: `nudo.analysis.include` / `exclude`, or `mode: "directives"`). VS Code: command `Nudo: Apply coexistence settings` |
 | Pull diagnostics unused | **LSP-G6** | Older clients — **push path is pinned** (validateText always publishes); pull is an enhancement |
@@ -40,9 +40,9 @@ Declared on `initialize` (see [@nudojs/lsp API](../api/lsp.md)):
 | Capability | Server handler | Notes |
 |------------|----------------|-------|
 | Diagnostics | `validateText` (push) + `diagnosticProvider` (pull) | Adaptive debounce 300/400/800 ms; cancel-stale generations (A8); pull hits cache only when version + casesHash + depsHash match |
-| Hover | `onHover` | Abs / intension; exported fn name shows `● interface / handwritten\|generated\|implicit` (A7) |
+| Hover | `onHover` | Abs / intension; exported fn name shows `● contract / hw\|gen\|imp` (A7) |
 | Completion (`.`) | `onCompletion` | Inferred property/method members |
-| CodeLens | `onCodeLens` | **Interface tier first**: `● interface / <source>` + persist/update; case lenses are the debug sub-layer |
+| CodeLens | `onCodeLens` | **Interface tier first**: `● contract / hw\|gen\|imp` + persist/update; case lenses are the debug sub-layer |
 | Inlay hints | `languages.inlayHint` | Case hints + Abs param/return (`derived` mark on implicit exports) |
 | Definition / References / Rename | standard LSP | Sidecar binding names included (A5) |
 | Document / workspace symbols | standard LSP | |
@@ -187,7 +187,7 @@ Detail behind the [read-first summary](#known-gaps--which-limits-are-client-side
 | Gap | Affected clients | Workaround | Tracking |
 |-----|------------------|------------|----------|
 | Active-case visual decoration (highlights the selected case **function body**) | Zed, Neovim, Helix (**VS Code closed**) | VS Code extension highlights the whole function body + case line. Elsewhere: CodeLens `●`/`○` still switches the active case when the client renders CodeLens; hover follows. Without CodeLens UI: CLI `nudo check` / agent `nudo.hover` after selectCase via custom request | **LSP-G1** — closed on VS Code; client limitation elsewhere (Zed has no decoration API; Neovim needs a custom plugin) |
-| CodeLens not rendered | Helix, some minimal Neovim setups | **Inlay `● interface / …`** mirrors the CodeLens observation face (same source). Also CLI `nudo contract` / `nudo check`; agent `nudo.contract` / `nudo.contract.draft`; VS Code/Zed for UI CodeLens | **LSP-G2** — observation face via inlay; CodeLens UI still client-limited |
+| CodeLens not rendered | Helix, some minimal Neovim setups | **Inlay `● contract / …`** mirrors the CodeLens observation face (same source). Also CLI `nudo contract` / `nudo check`; agent `nudo.contract` / `nudo.contract.draft`; VS Code/Zed for UI CodeLens | **LSP-G2** — observation face via inlay; CodeLens UI still client-limited |
 | Semantic tokens off by default | Zed, Neovim, Helix (**VS Code can paint**) | VS Code ships `semanticTokenScopes`. Elsewhere set client settings from Setup notes (Zed `semantic_tokens: "combined"`; Neovim treesitter/semantic-tokens plugin; Helix `editor.semantic-tokens`) | **LSP-G3** — VS Code ok; config debt on other clients |
 | Secondary-server diagnostics may compete with tsserver noise | All | VS Code: command `Nudo: Apply coexistence settings`. Or scope `package.json#nudo.analysis.include` / `exclude`; or `mode: "directives"` — full recipe in [Coexistence](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) | **LSP-G4** — config; VS Code self-serve + [coexistence recipe](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) |
 | File detection / `analysis.mode` docs | Docs | Source of truth: [`@nudojs/service` API](../api/service.md#shouldanalyzefile) + [`PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md) §7 | **LSP-G5** — closed (docs synced to `exports` default) |
@@ -200,7 +200,7 @@ These surfaces always share one computation (pinned by tests):
 
 | Surface | Shared source |
 |---------|----------------|
-| CodeLens `● interface` | `interfaceTierOf` |
+| CodeLens `● contract` | `interfaceTierOf` |
 | Hover first line + contract display | `interfaceTierOf` + `getHoverAtPosition` |
 | Inlay `interfaceSource` / `derived` | `collectAbsInlays` + `interfaceTierOf` |
 | Semantic token modifiers | `buildSemanticTokens` + `interfaceTierOf` |

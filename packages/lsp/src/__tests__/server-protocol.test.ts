@@ -75,6 +75,7 @@ function createMockConnection() {
       },
       inlayHint: {
         on: (h: AnyHandler) => byName("textDocument/inlayHint", h),
+        refresh: () => Promise.resolve(undefined),
       },
       semanticTokens: {
         on: (h: AnyHandler) => byName("textDocument/semanticTokens/full", h),
@@ -451,5 +452,109 @@ describe("createNudoServer — client settings (initializationOptions / didChang
 
     await reconfigure(undefined);
     expect(await symbolsFor(mock, uri)).toEqual([]);
+  });
+});
+
+describe("createNudoServer — nudo.lens 观察层互斥视图（contract | case）", () => {
+  // 同一文件同时具备契约档元素（export → implicit 档 + persist/draft 动作）
+  // 与观察档元素（指令 case + 未导出函数的字面量调用点合成 call@）
+  const LENS_SRC = `/**
+ * @nudo:case "five" (2, 3)
+ */
+export function add(a, b) {
+  return a + b;
+}
+
+function mul(a, b) {
+  return a * b;
+}
+const r = mul(2, 3);
+`;
+
+  let lensDir: string;
+
+  beforeAll(() => {
+    lensDir = mkdtempSync(join(tmpdir(), "nudo-lsp-lensmode-"));
+    writeFileSync(join(lensDir, "lens.js"), LENS_SRC, "utf-8");
+  });
+
+  afterAll(() => {
+    rmSync(lensDir, { recursive: true, force: true });
+  });
+
+  function notification(mock: Mock, method: string): AnyHandler {
+    const h = mock.notifications.get(method);
+    expect(h, `notification "${method}" not registered`).toBeTruthy();
+    return h!;
+  }
+
+  async function startWithLens(initLens: unknown): Promise<{ mock: Mock; uri: string }> {
+    const mock = startServer();
+    await handler(mock, "initialize")({
+      processId: null,
+      rootUri: null,
+      workspaceFolders: [],
+      capabilities: {},
+      initializationOptions: initLens === undefined ? {} : { lens: initLens },
+    });
+    const uri = `file://${join(lensDir, "lens.js")}`;
+    notification(mock, "textDocument/didOpen")({
+      textDocument: { uri, languageId: "javascript", version: 1, text: LENS_SRC },
+    });
+    return { mock, uri };
+  }
+
+  async function lensTitles(mock: Mock, uri: string): Promise<string[]> {
+    const lenses = await handler(mock, "textDocument/codeLens")({ textDocument: { uri } });
+    return (lenses as { command?: { title?: string } }[]).map((l) => l.command?.title ?? "");
+  }
+
+  async function inlayLabels(mock: Mock, uri: string): Promise<string[]> {
+    const hints = await handler(mock, "textDocument/inlayHint")({
+      textDocument: { uri },
+      range: { start: { line: 0, character: 0 }, end: { line: 99, character: 0 } },
+    });
+    return ((hints ?? []) as { label?: unknown }[]).map((h) => String(h.label ?? ""));
+  }
+
+  it("default (contract)：契约档 lens，case / 观察层不出现", async () => {
+    const { mock, uri } = await startWithLens(undefined);
+    const titles = await lensTitles(mock, uri);
+    expect(titles).toContain("● contract / imp");
+    expect(titles).toContain("⚡ persist interface");
+    expect(titles).toContain("⚡ draft interface");
+    expect(titles.some((t) => t.includes('case "five"'))).toBe(false);
+    expect(titles.some((t) => t.startsWith("call@"))).toBe(false);
+  });
+
+  it("initializationOptions lens=case：观察档 lens，契约档不出现", async () => {
+    const { mock, uri } = await startWithLens("case");
+    const titles = await lensTitles(mock, uri);
+    expect(titles.some((t) => t.includes('case "five"'))).toBe(true);
+    expect(titles.some((t) => t.startsWith("call@"))).toBe(true);
+    expect(titles.some((t) => t.startsWith("● contract"))).toBe(false);
+    expect(titles).not.toContain("⚡ persist interface");
+    expect(titles).not.toContain("⚡ draft interface");
+  });
+
+  it("非法 lens 值回落 contract；didChangeConfiguration 切换后刷新 lens", async () => {
+    const { mock, uri } = await startWithLens("loud");
+    expect((await lensTitles(mock, uri)).some((t) => t.startsWith("● contract"))).toBe(true);
+
+    notification(mock, "workspace/didChangeConfiguration")({
+      settings: { nudo: { lens: "case" } },
+    });
+    expect(mock.sentRequests.length).toBeGreaterThan(0);
+    const titles = await lensTitles(mock, uri);
+    expect(titles.some((t) => t.startsWith("call@"))).toBe(true);
+    expect(titles.some((t) => t.startsWith("● contract"))).toBe(false);
+  });
+
+  it("inlay 档投影互斥：contract 视图有 `● contract / imp`，case 视图无", async () => {
+    const { mock, uri } = await startWithLens(undefined);
+    expect((await inlayLabels(mock, uri)).some((l) => l.includes("● contract / imp"))).toBe(true);
+
+    const caseView = await startWithLens("case");
+    expect((await inlayLabels(caseView.mock, caseView.uri)).some((l) => l.includes("● contract"))).toBe(false);
   });
 });

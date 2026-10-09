@@ -222,6 +222,7 @@ export {
   type InterfaceSource, type InterfaceTierInfo, type InterfaceTierOpts,
   effectiveInterface, formatConstraint, formatEffectiveInterfaceDisplay,
   formatInterfaceTierLine, generatedExportNames, interfaceDiagCount,
+  INTERFACE_SOURCE_ABBR,
   interfaceSourceOf, interfaceTierOf, isNodeModulesPath, localNamedExports,
   resetSidecarLoadFailureCache, setInterfaceDiagCollector, sidecarClosureFingerprint, sidecarPathOf,
   takeInterfaceDiags, takeInterfaceDiagsSince

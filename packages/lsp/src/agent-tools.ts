@@ -900,7 +900,7 @@ export function formatEmitResult(
 // CodeLens contract 档计算（design-refine-derivation §8）
 // ---------------------------------------------------------------------------
 
-/** 默认层 lens：`● interface / handwritten|generated|implicit` */
+/** 默认层 lens：`● contract / hw|gen|imp`（formatInterfaceTierLine 同源） */
 export type InterfaceLens =
   | { kind: "interface"; fn: string; line: number; source: InterfaceSource }
   /** 固化动作 lens：add=`⚡ persist interface`，update=`↻ update interface` */
@@ -971,7 +971,7 @@ function topLevelFunctionSlots(source: string): Array<{ name: string; line: numb
 
 /**
  * CodeLens 全量计算（server.ts onCodeLens 的可测纯函数形态）：
- * - interface 默认层：每个**导出**函数一条 `● interface / <source>`——
+ * - interface 默认层：每个**导出**函数一条 `● contract / hw|gen|imp`——
  *   effectiveInterface 命中 handwritten/generated，否则 implicit
  *   （隐式 interface 始终可算，§7.1）；私有函数不绑定不落盘（§2.1），不加。
  * - 固化动作：handwritten 只读展示；侧车已含同名 @generated 段 → update，

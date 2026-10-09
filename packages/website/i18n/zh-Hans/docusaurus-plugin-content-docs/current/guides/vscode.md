@@ -74,11 +74,11 @@ function upper(s) {
 
 CodeLens 面向 **interface 档**（设计 §8）：
 
-- **● interface / handwritten|generated|implicit** —— 每个导出函数的有效契约来源；点击打印与 `nudo contract` 同一表面
+- **● contract / hw|gen|imp** —— 每个导出函数的有效契约来源；点击打印与 `nudo contract` 同一表面
 - **⚡ persist interface** / **↻ update interface** —— 把调用点域固化进 `*.nudo.js` 侧车
 - **● / ○ case "name"** —— debug 副层；点击选择类型重放的激活 case
 
-悬停导出函数名时，hover 首行与 CodeLens 同源显示 `● interface / <source>`（A7）。VS Code 中当前激活 case 以不同样式高亮。
+悬停导出函数名时，hover 首行与 CodeLens 同源显示 `● contract / hw\|gen\|imp`（A7）。VS Code 中当前激活 case 以不同样式高亮。
 
 - **● case "name"** — 当前激活
 - **○ case "name"** — 点击激活
@@ -164,7 +164,7 @@ Nudo 语言服务器的设计目标是在你的其他工具旁保持轻量：
 
 | 功能             | 描述                                                     |
 |-------------------|----------------------------------------------------------|
-| 悬停              | Abs / intension；导出函数名显示 `● interface / <source>` |
+| 悬停              | Abs / intension；导出函数名显示 `● contract / hw\|gen\|imp` |
 | 补全              | 在 `.` 后触发；属性和方法建议                            |
 | CodeLens          | interface 档 + persist/update；case 副层                 |
 | 内联提示          | Abs 参数/返回；implicit 导出标 `derived`                 |

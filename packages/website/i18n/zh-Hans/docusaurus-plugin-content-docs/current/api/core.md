@@ -507,7 +507,7 @@ createEnvironment(parent?, bindings?)
 | <a id="formateffectiveinterfacedisplay"></a>`formatEffectiveInterfaceDisplay` | fn | EffectiveInterface → 契约展示串（与 CLI interface 打印同口径，不含函数名） | `formatEffectiveInterfaceDisplay(eff: EffectiveInterface): string` |
 | <a id="formatgithubannotations"></a>`formatGithubAnnotations` | fn | GitHub Actions 行内注解（PR Files changed 红/黄标）。 | `formatGithubAnnotations( r: CheckReport, opts: { workspaceRoot?: string } = {}, ): string` |
 | <a id="formatgitlabcodequality"></a>`formatGitlabCodeQuality` | fn | GitLab Code Quality 报告数组（`--gitlab`；可写 gl-code-quality-report.json） | `formatGitlabCodeQuality( r: CheckReport, opts: { workspaceRoot?: string } = {}, ): GitlabCodeQualityIssue[]` |
-| <a id="formatinterfacetierline"></a>`formatInterfaceTierLine` | fn | CodeLens / hover 首行标题（design-refine-derivation §8）：`● interface / <source>` | `formatInterfaceTierLine(source: InterfaceSource): string` |
+| <a id="formatinterfacetierline"></a>`formatInterfaceTierLine` | fn | CodeLens / hover 首行标题（design-refine-derivation §8）：`● contract / hw\|gen\|imp` | `formatInterfaceTierLine(source: InterfaceSource): string` |
 | <a id="formatoptions"></a>`FormatOptions` | type | — | `FormatOptions = { showTerm?: boolean; showPred?: boolean; indent?: string; }` |
 | <a id="formatshapeslot"></a>`formatShapeSlot` | fn | fn/arr 槽位：shape + 非 lit term（禁止在 format 里内联复制 term 逻辑） | `formatShapeSlot(a: Abs): string` |
 | <a id="ge"></a>`ge` | const | — | `const ge` |
