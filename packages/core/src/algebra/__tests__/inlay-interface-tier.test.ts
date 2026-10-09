@@ -84,7 +84,7 @@ describe("interfaceTierOf 同源 (A7)", () => {
       source: "handwritten",
       display: "(x: number().gt(0)) → number().gt(2)",
     });
-    expect(formatInterfaceTierLine(tier!.source)).toBe("● interface / handwritten");
+    expect(formatInterfaceTierLine(tier!.source)).toBe("● contract / hw");
   });
 
   it("non-export → undefined (not in tier system)", () => {

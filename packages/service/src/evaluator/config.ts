@@ -292,7 +292,9 @@ function globMatch(pattern: string, path: string): boolean {
 
 /**
  * findProjectConfig 的目录链 memo：key 为 resolve 后的 startDir，条目记录
- * 本次向上查找访问过的每个 package.json 的 mtimeMs+size（无文件记 absent）。
+ * 本次向上查找访问过的每个 package.json 的 mtimeMs+size（无文件记 absent；
+ * stat 失败记 STAT_ERROR_FP 哨兵——pkgStatFp 永不产出该值，恢复后必
+ * miss 重走，不把 null 钉死成稳定错值）。
  * 命中时只做链上 stat 比对（不 readFileSync/JSON.parse）；链上任何
  * package.json 新建/改写/删除（mtime 或 size 翻转，含 absent↔存在）都 miss
  * 重算——自校验，不依赖 watcher。LSP/宿主侧的显式失效走
@@ -308,18 +310,38 @@ const projectConfigMemo = new Map<string, ProjectConfigMemoEntry>();
 const MAX_PROJECT_CONFIG_MEMO = 128;
 let projectConfigDiskReads = 0;
 
+/** 链上 stat 失败的哨兵指纹：真实指纹是 `${mtimeMs}:${size}`，永不等于此值 */
+const STAT_ERROR_FP = "\u0000stat-error";
+
+/**
+ * stat 指纹：ENOENT → undefined（真缺席）；其他 stat 错误（EACCES/EIO/
+ * ESTALE/EMFILE…）**抛出**——不得静默折叠成「无 package.json」，否则瞬时
+ * fs 故障会让整棵子树的项目配置（adoption profile / env 名单 /
+ * sessionCache / maxForks）静默漂移（#135：existsSync/statSync 吞错族）。
+ */
 function pkgStatFp(pkgPath: string): string | undefined {
   try {
     const st = statSync(pkgPath);
     return `${st.mtimeMs}:${st.size}`;
-  } catch {
-    return undefined;
+  } catch (err) {
+    if (err instanceof Error && (err as NodeJS.ErrnoException).code === "ENOENT") {
+      return undefined;
+    }
+    throw err;
   }
 }
 
 function projectConfigMemoHit(entry: ProjectConfigMemoEntry): boolean {
   for (const { pkgPath, fp } of entry.chain) {
-    if (pkgStatFp(pkgPath) !== fp) return false;
+    let current: string | undefined;
+    try {
+      current = pkgStatFp(pkgPath);
+    } catch {
+      // 非 ENOENT stat 抛错 → 按「已变化」处理：miss 重走 findProjectConfig
+      // 主循环 → 走响亮的 fail-closed 路径，不得让异常炸穿校验入口
+      return false;
+    }
+    if (current !== fp) return false;
   }
   return true;
 }
@@ -359,7 +381,22 @@ export function findProjectConfig(
   // 对该子包完全不可见。
   while (dir !== root) {
     const pkgPath = resolve(dir, "package.json");
-    const statFp = pkgStatFp(pkgPath);
+    let statFp: string | undefined;
+    try {
+      statFp = pkgStatFp(pkgPath);
+    } catch (err) {
+      // 非 ENOENT stat 错误（EACCES/EIO/…）：不得静默当缺席继续向上——
+      // 否则子树 stat 故障会静默继承 monorepo 根配置（或无配置）。
+      // 链上记哨兵：故障持续时每次校验都 throw→miss→重走→再告警
+      // （fail-closed 保持响亮）；瞬态故障恢复后哨兵↔真实指纹必不匹配
+      // →miss→重走自愈（不会把 null 钉死成稳定错值，#135）。
+      memoEntry.chain.push({ pkgPath, fp: STAT_ERROR_FP });
+      process.stderr?.write?.(
+        `nudo: package.json stat failed at ${pkgPath} (${err instanceof Error ? err.message : String(err)}); project config disabled for this subtree (defaults + env apply)\n`,
+      );
+      applyBForkBudgetFromConfig(null);
+      return memoize(null);
+    }
     memoEntry.chain.push({ pkgPath, fp: statFp });
     if (statFp !== undefined) {
       // BUG-027：区分「无 nudo 键（继续向上）」与

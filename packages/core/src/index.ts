@@ -98,6 +98,7 @@ export {
   formatDiagnostics, formatEffectiveInterfaceDisplay,
   formatGithubAnnotations, formatGitlabCodeQuality,
   formatInterfaceTierLine, formatShape, formatShapeSlot, ge, geNum,
+  INTERFACE_SOURCE_ABBR,
   // D5=F1 / D6=G2：指令抽取单源 + 作用域绑定（directive-scan）
   extractFileEnvNames, extractMockModuleRecords, extractNudoImportRecords,
   extractBalancedParens, findFnDirectiveScope, fnDirectiveCommentLines, listFnDirectiveScopes,

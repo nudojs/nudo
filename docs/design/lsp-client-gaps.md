@@ -11,7 +11,7 @@
 | ID | 缺口 | 影响客户端 | 关闭条件 | 状态 |
 |----|------|------------|----------|------|
 | **LSP-G1** | Active-case 装饰（高亮选中 case 函数体） | Zed / Neovim / Helix | 客户端提供 decoration API，或 nudo 插件落地 | **VS Code 已闭**（函数体 + case 行装饰）；Zed/Neovim/Helix 仍开（客户端限制） |
-| **LSP-G2** | 不渲染 CodeLens | Helix / 部分精简 Neovim | Helix 上游 CodeLens UI，或用户接受 CLI/agent 权宜 | **观察面已补**：inlay 同源投影 `● interface / <source>`（`computeInterfaceLenses`）；CodeLens UI 本身仍为客户端限制 |
+| **LSP-G2** | 不渲染 CodeLens | Helix / 部分精简 Neovim | Helix 上游 CodeLens UI，或用户接受 CLI/agent 权宜 | **观察面已补**：inlay 同源投影 `●/○ contract / hw\|gen\|imp`（`computeInterfaceLenses`，镜像观察选择器激活态）；CodeLens UI 本身仍为客户端限制 |
 | **LSP-G3** | Semantic tokens 默认关闭 | Zed / Neovim / Helix | 各客户端 Setup notes 已写权宜；**本表只记配置债**——出厂配置随客户端插件默认打开才算关 | **VS Code 可染色**（`semanticTokenScopes`）；其它客户端权宜仍开 |
 | **LSP-G4** | 次要 server 诊断与 tsserver 噪声叠加 | 全部 | 非 bug。关闭条件 = 共存配方成为默认叙事且用户可自助收窄 | **VS Code 可自助**（`nudo.coexistence.apply` + settings）；配方仍是真源 |
 | **LSP-G5** | 文件探测 / analysis-mode 默认文档一致 | 文档 | `isNudoTargetPath` + `shouldAnalyzeFile` + `DEFAULT_ANALYSIS_MODE` 在 api/service、api/lsp、PUBLIC_API 与 website guides 同口径 | **已同步**（2026-09） |
@@ -26,7 +26,7 @@
 | ID | 权宜锚 |
 |----|--------|
 | LSP-G1 | VS Code 装饰已闭；其它客户端 CodeLens `●`/`○` 切 case；无 CodeLens UI → CLI `nudo check` / agent `nudo.hover` |
-| LSP-G2 | inlay `● interface / …`（与 CodeLens 同源）；CLI `nudo contract` / `nudo check`；agent `nudo.contract*` |
+| LSP-G2 | inlay `● contract / …`（与 CodeLens 同源，contract 视图）；CLI `nudo contract` / `nudo check`；agent `nudo.contract*` |
 | LSP-G3 | VS Code `semanticTokenScopes`；website lsp-clients Setup notes（Zed `semantic_tokens: "combined"` 等） |
 | LSP-G4 | VS Code 命令 `nudo.coexistence.apply`；website `guides/coexistence.md` 配方（include/exclude 或 `mode: "directives"`） |
 | LSP-G5 | `package.json#nudo.analysis` + `packages/lsp/PUBLIC_API.md` §7 |

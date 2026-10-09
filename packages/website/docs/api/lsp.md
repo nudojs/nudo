@@ -165,7 +165,7 @@ findIdentifierAtPosition(ast: Node, line: number, column: number): string | null
 encodeSemanticTokens(tokens: SemanticToken[]): number[];
 ```
 
-Delta-encodes `{ line, char, length, typeIndex, modifierBitmask }` tokens into the flat `number[]` the LSP expects. `TOKEN_TYPES` (`function`, `variable`, `parameter`, `property`, `type`, `keyword`, `string`, `number`, `comment`, `decorator`, `method`) and `TOKEN_MODIFIERS` (`declaration`, `readonly`, `deprecated`, `unreachable`, `contract`, `generated`, `derived`) form the server's declared legend. The server's semanticTokens handler colors declarations from the analysis result — function bindings get the `function` type, other bindings `variable`, parameters `parameter`; top-level named-export functions also carry an interface-tier modifier aligned with CodeLens `● interface` (A7) — via `buildSemanticTokens` from `@nudojs/service`.
+Delta-encodes `{ line, char, length, typeIndex, modifierBitmask }` tokens into the flat `number[]` the LSP expects. `TOKEN_TYPES` (`function`, `variable`, `parameter`, `property`, `type`, `keyword`, `string`, `number`, `comment`, `decorator`, `method`) and `TOKEN_MODIFIERS` (`declaration`, `readonly`, `deprecated`, `unreachable`, `contract`, `generated`, `derived`) form the server's declared legend. The server's semanticTokens handler colors declarations from the analysis result — function bindings get the `function` type, other bindings `variable`, parameters `parameter`; top-level named-export functions also carry an interface-tier modifier aligned with CodeLens `● contract` (A7) — via `buildSemanticTokens` from `@nudojs/service`.
 
 ## Server Capabilities
 
@@ -173,10 +173,10 @@ What the server registers on `connection.onInitialize` (`src/server.ts`):
 
 | Capability | Handler | Behavior |
 |------------|---------|----------|
-| Hover | `onHover` | Inferred type at cursor via `getTypeAtPosition`; when the cursor is on an exported function name, the first line is `● interface / handwritten|generated|implicit` (same source as CodeLens) plus the effective contract display for handwritten/generated |
+| Hover | `onHover` | Inferred type at cursor via `getTypeAtPosition`; when the cursor is on an exported function name, the first line is `● contract / hw\|gen\|imp` (handwritten / generated / implicit — same source as CodeLens) plus the effective contract display for handwritten/generated |
 | Completion (trigger `.`) | `onCompletion` | Property/method/variable items from `getCompletionsAtPosition` |
-| CodeLens | `onCodeLens` | Interface tier first: `● interface / handwritten|generated|implicit` (+ persist/update emit lenses + `⚡ draft interface` for non-handwritten exports); case lenses are the debug sub-layer — `● case "name"` active, `○` otherwise. Clicking sends `nudo.selectCase` / `nudo.contract` / `nudo.contract.draft` / `nudo.contract.emit` and refreshes lenses |
-| Inlay hints | `languages.inlayHint` | End-of-line case `Type` hints + Abs param/return inlays; implicit exports carry `· derived` |
+| CodeLens | `onCodeLens` | Observation selector — contract is one option alongside each case, exactly one `●` active (`○` inactive). Default: `● contract / hw\|gen\|imp` (handwritten / generated / implicit tier), all cases `○`. Clicking a case (`nudo.selectCase`) activates it and flips contract to `○`; clicking the contract option (`nudo.selectContract`) deactivates the case (idempotent). Non-handwritten exports also get persist/update emit lenses + `⚡ draft interface`; synthesized `call@` / `entry@` observation lenses pin call-site facts |
+| Inlay hints | `languages.inlayHint` | Abs param/return inlays + the `●/○ contract / hw\|gen\|imp` tier projection (mirrors the selector's active state, for clients without CodeLens UI) + end-of-line case `Type` hints (`· derived` witnesses) |
 | Definition | `onDefinition` | `resolveDefinitionLocations` (local + cross-file + sidecar + workspace fallback) |
 | References | `onReferences` | `buildSymbolTable` + `findReferences` |
 | Rename | `onRenameRequest` | Workspace edit over the definition plus all references |
@@ -289,5 +289,6 @@ Library exports from `src/index.ts` and side-effect-free `./public-api` constant
 | <a id="nudo.contract.draft"></a>`nudo.contract.draft` | fn | code-first `*.nudo.draft.*` | — |
 | <a id="nudo.contract.emit"></a>`nudo.contract.emit` | fn | persist `@generated` sidecar | — |
 | <a id="nudo.selectcase"></a>`nudo.selectCase` | fn | switch active case (positional or object args) | — |
+| <a id="nudo.selectcontract"></a>`nudo.selectContract` | fn | observation selector: pick the contract option — deactivate the fn's active case (idempotent) | — |
 | <a id="nudo.getactivecases"></a>`nudo.getActiveCases` | fn | active case index map | — |
 <!-- NUDO-API-SKELETON:END -->

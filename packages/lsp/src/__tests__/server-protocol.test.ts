@@ -75,6 +75,7 @@ function createMockConnection() {
       },
       inlayHint: {
         on: (h: AnyHandler) => byName("textDocument/inlayHint", h),
+        refresh: () => Promise.resolve(undefined),
       },
       semanticTokens: {
         on: (h: AnyHandler) => byName("textDocument/semanticTokens/full", h),
@@ -451,5 +452,112 @@ describe("createNudoServer — client settings (initializationOptions / didChang
 
     await reconfigure(undefined);
     expect(await symbolsFor(mock, uri)).toEqual([]);
+  });
+});
+
+describe("createNudoServer — 观察选择器（contract 与各 case 互斥选项）", () => {
+  // 同一文件同时具备契约选项（export → implicit 档 + persist/draft 动作）、
+  // 指令 case 与未导出函数的字面量调用点合成 call@
+  const LENS_SRC = `/**
+ * @nudo:case "five" (2, 3)
+ */
+export function add(a, b) {
+  return a + b;
+}
+
+function mul(a, b) {
+  return a * b;
+}
+const r = mul(2, 3);
+`;
+
+  let lensDir: string;
+
+  beforeAll(() => {
+    lensDir = mkdtempSync(join(tmpdir(), "nudo-lsp-lensmode-"));
+    writeFileSync(join(lensDir, "lens.js"), LENS_SRC, "utf-8");
+  });
+
+  afterAll(() => {
+    rmSync(lensDir, { recursive: true, force: true });
+  });
+
+  function notification(mock: Mock, method: string): AnyHandler {
+    const h = mock.notifications.get(method);
+    expect(h, `notification "${method}" not registered`).toBeTruthy();
+    return h!;
+  }
+
+  async function startSelectorSession(): Promise<{ mock: Mock; uri: string }> {
+    const mock = startServer();
+    await handler(mock, "initialize")({
+      processId: null,
+      rootUri: null,
+      workspaceFolders: [],
+      capabilities: {},
+    });
+    const uri = `file://${join(lensDir, "lens.js")}`;
+    notification(mock, "textDocument/didOpen")({
+      textDocument: { uri, languageId: "javascript", version: 1, text: LENS_SRC },
+    });
+    return { mock, uri };
+  }
+
+  async function lensTitles(mock: Mock, uri: string): Promise<string[]> {
+    const lenses = await handler(mock, "textDocument/codeLens")({ textDocument: { uri } });
+    return (lenses as { command?: { title?: string } }[]).map((l) => l.command?.title ?? "");
+  }
+
+  async function exec(mock: Mock, command: string, args: unknown[]) {
+    return handler(mock, "workspace/executeCommand")({ command, arguments: args });
+  }
+
+  it("默认：契约选项 ●，全部 case ○；动作与观察层照常", async () => {
+    const { mock, uri } = await startSelectorSession();
+    const titles = await lensTitles(mock, uri);
+    expect(titles).toContain("● contract / imp");
+    expect(titles).toContain('○ case "five"');
+    expect(titles.some((t) => t.startsWith("● case"))).toBe(false);
+    expect(titles).toContain("⚡ persist interface");
+    expect(titles).toContain("⚡ draft interface");
+    expect(titles.some((t) => t.startsWith("call@"))).toBe(true);
+  });
+
+  it("selectCase 后契约转 ○、选中 case 转 ●；inlay 档投影同态", async () => {
+    const { mock, uri } = await startSelectorSession();
+    await exec(mock, "nudo.selectCase", [uri, "add", 0, "five"]);
+    const titles = await lensTitles(mock, uri);
+    expect(titles).toContain("○ contract / imp");
+    expect(titles).toContain('● case "five"');
+
+    const hints = await handler(mock, "textDocument/inlayHint")({
+      textDocument: { uri },
+      range: { start: { line: 0, character: 0 }, end: { line: 99, character: 0 } },
+    });
+    const labels = ((hints ?? []) as { label?: unknown }[]).map((h) => String(h.label ?? ""));
+    expect(labels.some((l) => l.includes("○ contract / imp"))).toBe(true);
+  });
+
+  it("selectContract 切回契约（case 全 ○），幂等", async () => {
+    const { mock, uri } = await startSelectorSession();
+    await exec(mock, "nudo.selectCase", [uri, "add", 0, "five"]);
+    expect((await lensTitles(mock, uri)).some((t) => t.startsWith("○ contract"))).toBe(true);
+
+    await exec(mock, "nudo.selectContract", [uri, "add"]);
+    const titles = await lensTitles(mock, uri);
+    expect(titles).toContain("● contract / imp");
+    expect(titles).toContain('○ case "five"');
+
+    // 无激活 case 时再点契约：幂等保持 ●
+    await exec(mock, "nudo.selectContract", [uri, "add"]);
+    expect((await lensTitles(mock, uri)).some((t) => t.startsWith("● contract"))).toBe(true);
+  });
+
+  it("nudo/selectContract 请求别名与命令同效", async () => {
+    const { mock, uri } = await startSelectorSession();
+    await handler(mock, "nudo/selectCase")({ uri, functionName: "add", caseIndex: 0 });
+    await handler(mock, "nudo/selectContract")({ uri, functionName: "add" });
+    const titles = await lensTitles(mock, uri);
+    expect(titles.some((t) => t.startsWith("● contract"))).toBe(true);
   });
 });

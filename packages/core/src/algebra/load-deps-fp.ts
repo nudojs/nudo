@@ -26,6 +26,12 @@ export type LoadDepsFingerprint = {
   contents: Array<{ path: string; content: string | null }>;
   /** BFS 撞到节点上限：剩余 dep 未进指纹，键不可信 */
   truncated: boolean;
+  /**
+   * 任一装载 throw（EACCES/EMFILE/…）≠ 真 miss：读错误轮的报告（含
+   * nudo:interface-load）与真 miss 轮（干净）内容不同，折叠成同一 miss 键
+   * 会互为跨次陈旧命中（#135）。fp 带 `readerr:` 前缀，调用方 fail-open 禁 memo。
+   */
+  readError: boolean;
 };
 
 /** 防病态图；seen 已防环，此上限只限制遍历量 */
@@ -78,16 +84,23 @@ export function sidecarSpecsOf(source: string): string[] {
   );
 }
 
-/** 指纹遍历对 load I/O 错误 fail-safe：读失败当 miss（过近似，绝不陈旧命中）。 */
-function loadOrMiss(
+/** 单次装载尝试：miss（undefined）与读错误（throw）必须区分（#135）。 */
+type LoadAttempt = { src: string | undefined; err: boolean };
+
+/**
+ * 指纹遍历对 load I/O 错误 fail-safe：读失败的内容当 miss（过近似，绝不
+ * 陈旧命中），但置 err 标记 → 指纹带 `readerr:` 前缀 + readError=true，
+ * 调用方（check 整文件 memo / generalize L0）fail-open 禁 memo（trunc: 先例）。
+ */
+function tryLoadDeps(
   loadModule: (spec: string, fromFile: string) => string | undefined,
   spec: string,
   from: string,
-): string | undefined {
+): LoadAttempt {
   try {
-    return loadModule(spec, from);
+    return { src: loadModule(spec, from), err: false };
   } catch {
-    return undefined;
+    return { src: undefined, err: true };
   }
 }
 
@@ -119,12 +132,26 @@ export function loadModuleDepsFingerprint(
   );
   let n = 0;
   let truncated = false;
+  let readError = false;
+  /** 统一装载口：任何 throw 都让本轮指纹不可信（readerr: 前缀，禁 memo） */
+  const load = (spec: string, from: string): LoadAttempt => {
+    const a = tryLoadDeps(loadModule, spec, from);
+    if (a.err) readError = true;
+    return a;
+  };
 
   const finish = (): LoadDepsFingerprint => {
     parts.sort();
-    return truncated
-      ? { fp: `trunc:${parts.join(",")}`, paths, contents, truncated: true }
-      : { fp: parts.join(","), paths, contents, truncated: false };
+    // trunc:/readerr: 前缀同义：「键不可信」，调用方 fail-open 禁 memo。
+    // 两者同时出现时 trunc: 优先（既有前缀语义不变）。
+    const prefix = truncated ? "trunc:" : readError ? "readerr:" : "";
+    return {
+      fp: `${prefix}${parts.join(",")}`,
+      paths,
+      contents,
+      truncated,
+      readError,
+    };
   };
 
   /** 入口文件的 ambient 侧车 + 递归 .nudo 闭包（fromFile 与各 dep 共用） */
@@ -132,8 +159,17 @@ export function loadModuleDepsFingerprint(
     const sidecarPath = sidecarPathOf(entryFile);
     if (seen.has(sidecarPath)) return;
     const sidecarSpec = `./${sidecarPath.slice(sidecarPath.lastIndexOf("/") + 1)}`;
-    const sidecarSrc = loadOrMiss(loadModule, sidecarSpec, entryFile);
-    if (sidecarSrc === undefined) return; // 无侧车文件：零回归
+    const root = load(sidecarSpec, entryFile);
+    if (root.err) {
+      // 根侧车读错误 ≠ 无侧车：fp 由 readerr: 前缀标记；contents 补 null 条目，
+      // 让磁盘缓存消费方（dep-contents → hasBareMiss）与主 BFS 读错误同口径
+      // fail-closed，而不是按「无侧车」形状写缓存键（#135，值等价但防不变形）。
+      paths.push(sidecarPath);
+      contents.push({ path: sidecarPath, content: null });
+      return;
+    }
+    if (root.src === undefined) return; // 无侧车文件：零回归
+    const sidecarSrc = root.src;
     if (n >= MAX_LOAD_DEP_NODES) {
       truncated = true;
       return;
@@ -156,7 +192,7 @@ export function loadModuleDepsFingerprint(
       if (seen.has(path)) continue;
       seen.add(path);
       n++;
-      const src = loadOrMiss(loadModule, cur.spec, cur.from);
+      const src = load(cur.spec, cur.from).src;
       parts.push(`sidecar:${path}=${src === undefined ? "miss" : hashSource(src)}`);
       paths.push(path);
       contents.push({ path, content: src ?? null });
@@ -178,7 +214,7 @@ export function loadModuleDepsFingerprint(
     if (seen.has(path)) continue;
     seen.add(path);
     n++;
-    const src = loadOrMiss(loadModule, cur.spec, cur.from);
+    const src = load(cur.spec, cur.from).src;
     parts.push(`${path}=${src === undefined ? "miss" : hashSource(src)}`);
     paths.push(path);
     contents.push({ path, content: src ?? null });

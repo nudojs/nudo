@@ -2,7 +2,7 @@
  * RegExp brand 执行面（leaf-ish）：从 class.ts 拆出，避免巨型文件。
  */
 import type { Abs } from "../abs.ts";
-import { abs, litValue, boolLit, strLit, numLit, str } from "../abs.ts";
+import { abs, litValue, boolLit, strLit, numLit, num, str } from "../abs.ts";
 import { isObj, objOf, joinAbs } from "../objects.ts";
 import { undefAbs } from "../hof.ts";
 import { NudoThrow } from "./runtime.ts";
@@ -79,11 +79,41 @@ export function execRegexBrand(re: Abs, method: string, args: Abs[]): Abs | unde
     if (method === "test") {
       return abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial");
     }
-    // exec：null | 匹配数组（下标可读；未参与捕获组为 undefined）
-    const element = joinAbs(str(), undefAbs());
-    const matchAbs = abs({ k: "arr", element }, undefined, undefined, "path");
-    const nullAbs = abs({ k: "unknown" }, { op: "lit", value: null }, undefined, "exact");
-    return joinAbs(nullAbs, matchAbs);
+    // exec（issue #136）：null | 匹配数组。此前是均质 element（string|
+    // undefined）的 arr——`m[0]` 与 `m[1]` 同值、无从窄化；改为与具体路径
+    // matchResultAbs 同构的 per-index 槽 obj：捕获组数用 `pat + '|'` 空串
+    // 必中探针（引擎权威计数 + groups 名单一次性取得），"0"=整匹配 string、
+    // "1".."ng"=string|undefined（未参与捕获组 undefined）、length/index/
+    // input/groups 附加属性同源。pattern 异常（理论不可达——brand source 槽
+    // 出自真构造）回落旧均质 arr 保守。
+    let probe: RegExpExecArray | null = null;
+    try {
+      probe = new RegExp(`${parts.pat}|`).exec("");
+    } catch {
+      probe = null;
+    }
+    const nullArm = abs({ k: "unknown" }, { op: "lit", value: null }, undefined, "exact");
+    if (!probe) {
+      const element = joinAbs(str(), undefAbs());
+      return joinAbs(nullArm, abs({ k: "arr", element }, undefined, undefined, "path"));
+    }
+    const ng = probe.length - 1;
+    const slots: Record<string, { value: Abs }> = {
+      "0": { value: str() },
+      length: { value: numLit(probe.length) },
+      index: { value: num() },
+      input: { value: str() },
+    };
+    for (let i = 1; i <= ng; i++) {
+      slots[String(i)] = { value: joinAbs(str(), undefAbs()) };
+    }
+    const groupNames = probe.groups ? Object.keys(probe.groups) : [];
+    slots["groups"] = {
+      value: groupNames.length
+        ? objOf(Object.fromEntries(groupNames.map((n) => [n, { value: joinAbs(str(), undefAbs()) }])))
+        : undefAbs(),
+    };
+    return joinAbs(nullArm, abs({ k: "obj", slots }, undefined, undefined, "path"));
   }
   try {
     return regexExecWithState(re, method, subject).result;
