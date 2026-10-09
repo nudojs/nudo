@@ -1,9 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { getHoverAtPosition, getAbsAtPosition } from "../lsp-surface.ts";
 import { makeBufferAwareLoadModule } from "../validation.ts";
+import { attachHover } from "../server-ide.ts";
 import { formatAbs } from "@nudojs/core";
 
 describe("getHoverAtPosition lossless Abs", () => {
@@ -212,12 +213,14 @@ export const decide = fn(
     // line 1 声明处 grade（col 25）与 line 2 体内引用（col 9）
     const decl = getHoverAtPosition(f, main, 1, 25, undefined, { loadModule });
     expect(decl).not.toBeNull();
-    expect(decl!.typeText).toContain("string");
+    expect(decl!.typeText).toBe("grade: string");
 
     const body = getHoverAtPosition(f, main, 2, 9, undefined, { loadModule });
     expect(body).not.toBeNull();
-    expect(body!.typeText).toContain("string");
-    expect(body!.abs).toContain("#");
+    expect(body!.typeText).toBe("grade: string");
+    // 标识符面单行外延：内涵（term/pred/conf 多行）留给函数名 hover 的契约面
+    expect(body!.abs).toBe(body!.typeText);
+    expect(body!.absMultiline).toBeUndefined();
 
     rmSync(dir, { recursive: true, force: true });
   });
@@ -230,11 +233,141 @@ export const decide = fn(
     expect(hover!.abs).toBeDefined();
   });
 
-  it("unconstrained param / body local stay fail-closed null", () => {
+  it("unconstrained param / non-call local stay fail-closed null", () => {
     const src = `export function scale(x) {\n  return x * 2;\n}\n`;
     // 无契约、无提升：参数与局部都不产出（诚实 unknown，不冒充 any）
     expect(getHoverAtPosition("/t/param-null.js", src, 1, 23)).toBeNull();
     const local = `export function f(n) {\n  const local = n + 1;\n  return local;\n}\n`;
     expect(getHoverAtPosition("/t/local-null.js", local, 2, 8)).toBeNull();
+  });
+});
+
+describe("getHoverAtPosition body locals & refs (case fn no longer dead)", () => {
+  // 复刻 npm-safe decide.js 形态：case 函数体内 = 调用初始化局部（vetos）
+  // + 同文件顶层函数引用（countOf）——旧实现整体短路（case 重放已删成恒 null）
+  const MAIN = `export function countOf(arr) {
+  return arr.length;
+}
+
+/**
+ * @nudo:case "t" ({ items: [] })
+ */
+export function run({ items }) {
+  const kept = countOf(items);
+  return kept;
+}
+`;
+
+  function withSidecar(main: string, fn: string, entry: string): string {
+    void entry;
+    const dir = mkdtempSync(join(tmpdir(), "nudo-local-hover-"));
+    writeFileSync(
+      join(dir, fn),
+      `import { fn, shape, array, number, boolean } from '@nudojs/core';
+export const run = fn({ items: array(shape({ ok: boolean() })) }, number());
+`,
+      "utf-8",
+    );
+    const f = join(dir, "run.js");
+    writeFileSync(f, main, "utf-8");
+    return f;
+  }
+
+  it("call-initialized local hovers from EvalCallRecord (entry-args call)", () => {
+    const f = withSidecar(MAIN, "run.nudo.js", "items");
+    const loadModule = makeBufferAwareLoadModule(() => undefined);
+    // line 9: `  const kept = countOf(items);` — kept col 9
+    const hover = getHoverAtPosition(f, MAIN, 9, 9, undefined, { loadModule });
+    expect(hover).not.toBeNull();
+    expect(hover!.typeText).toMatch(/^kept: /);
+    expect(hover!.typeText).toContain("number");
+    rmSync(dirname(f), { recursive: true, force: true });
+  });
+
+  it("sibling top-level fn reference inside case fn body hovers (binding face)", () => {
+    const f = withSidecar(MAIN, "run.nudo.js", "items");
+    const loadModule = makeBufferAwareLoadModule(() => undefined);
+    // line 9: `  const kept = countOf(items);` — countOf col 18（callee；
+    // 本地函数 → intension 面；此处验证同文件顶层引用也走通）
+    const hover = getHoverAtPosition(f, MAIN, 9, 18, undefined, { loadModule });
+    expect(hover).not.toBeNull();
+    expect(hover!.typeText).toMatch(/^(countOf|kept): /);
+    rmSync(dirname(f), { recursive: true, force: true });
+  });
+
+  it("non-call-initialized local without contract stays fail-closed null", () => {
+    const src = `export function run(items) {\n  const local = items.length + 1;\n  return local;\n}\n`;
+    // MemberExpression 初始化：无调用记录、无赋值记录 → 无信息
+    expect(getHoverAtPosition("/t/local-dead.js", src, 2, 8)).toBeNull();
+  });
+});
+
+describe("attachHover markdown (fn name: tier + check-style signature only)", () => {
+  // 函数名 hover 弹层 = 档线 + check 同口径签名一行；builder 模板 /
+  // symbolic 多行 / display 签名三面不再重复（nudo.hover payload 保留无损面）
+  const MAIN = `export function decide({ grade, findings }) {
+  return grade + String(findings.length);
+}
+`;
+
+  function setup(): { hover: (line: number, ch: number) => string; cleanup: () => void } {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-fn-hover-md-"));
+    writeFileSync(
+      join(dir, "decide.nudo.js"),
+      `import { fn, string, shape, array } from '@nudojs/core';
+export const decide = fn(
+  { grade: string(), findings: array(shape({ ruleId: string() })) },
+  shape({ ok: string() }),
+);
+`,
+      "utf-8",
+    );
+    const f = join(dir, "decide.js");
+    writeFileSync(f, MAIN, "utf-8");
+    let handler: ((p: unknown) => unknown) | undefined;
+    attachHover({
+      connection: {
+        onHover: (h) => {
+          handler = h as typeof handler;
+        },
+        console: { error: () => undefined },
+      } as never,
+      getDocument: () => ({ getText: () => MAIN, version: 1 }) as never,
+      isNudoFile: () => true,
+      getActiveCases: () => new Map(),
+      activeLoadModule: makeBufferAwareLoadModule(() => undefined),
+    } as never);
+    return {
+      hover: (line, ch) =>
+        String(
+          (handler as unknown as (p: unknown) => { contents: { value: string } })({
+            textDocument: { uri: `file://${f}` },
+            position: { line: line - 1, character: ch },
+          })?.contents?.value ?? "",
+        ),
+      cleanup: () => rmSync(dir, { recursive: true, force: true }),
+    };
+  }
+
+  it("fn-name hover renders tier line + single signature block", () => {
+    const { hover, cleanup } = setup();
+    const md = hover(1, 16); // decide fn name
+    expect(md).toContain("● contract / hw");
+    expect(md).toMatch(/```nudo\ndecide\(\{ grade, findings \}: \{ grade: string,/);
+    // 三面去重：builder 语法 / symbolic conf 行 / placeholder 签名不再出现
+    expect(md).not.toContain("string()");
+    expect(md).not.toContain("conf:");
+    expect(md).not.toContain("_p0");
+    cleanup();
+  });
+
+  it("identifier hover keeps one-line ext face (no tier/signature block)", () => {
+    const { hover, cleanup } = setup();
+    const md = hover(2, 9); // body grade
+    // 档线/签名是函数名 hover 的面；标识符只有单行外延块
+    expect(md).toContain("grade: string");
+    expect(md).not.toMatch(/decide\(/);
+    expect(md).not.toContain("●");
+    cleanup();
   });
 });

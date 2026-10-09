@@ -172,7 +172,7 @@ encodeSemanticTokens(tokens: SemanticToken[]): number[];
 
 | 能力 | Handler | 行为 |
 |------------|---------|----------|
-| 悬停 | `onHover` | 通过 `getTypeAtPosition` 获取光标处推断类型；光标落在导出函数名上时，首行为 `● contract / hw|gen|imp`（与 CodeLens 同源），handwritten/generated 另附有效契约展示；**形参**（含 `{ grade, findings }` 解构属性）从 enclosing 函数的 `PolyFn` 入口面投影——与函数名 hover 同源（契约种子 + 模块图） |
+| 悬停 | `onHover` | 导出函数**名**：`● contract / hw\|gen\|imp` 档线 + 单个代码块**与 check 完全同口径的签名**（`decide({ grade, findings }: { grade: string, findings: { ruleId: string }[] }) => { … }`）——builder 模板、symbolic 多行（`conf:` 细节）与占位符签名在弹层中去重（无损面保留在 `nudo.hover` payload）。**标识符**单行 `name: shape`（`grade: string`）：形参（含 `{ grade, findings }` 解构属性）从 enclosing 函数的 `PolyFn` 入口面投影（契约种子 + 模块图）；调用初始化的体内局部（`const vetos = filter(findings)`）经一次 entry 实参调用的 `EvalCallRecord` 投影；模块级引用（import / 同文件顶层函数）走绑定面——`@nudo:case` 函数体内同样生效。调用 **callee** 保持调用点面 |
 | 补全（触发 `.`） | `onCompletion` | 来自 `getCompletionsAtPosition` 的属性/方法/变量项 |
 | CodeLens | `onCodeLens` | 观察选择器——contract 是与各 case 并排的一项，恰好一项 `●` 激活（`○` 未激活）。默认：`● contract / hw\|gen\|imp`（handwritten / generated / implicit 档），全部 case `○`。点击 case（`nudo.selectCase`）激活该 case 并将契约转 `○`；点击契约选项（`nudo.selectContract`）取消激活 case（幂等）。非手写导出另有 persist/update 固化动作 + `⚡ draft interface`；合成 `call@` / `entry@` 观察透镜钉调用点事实 |
 | 内联提示 | `languages.inlayHint` | Abs 参数/返回 inlay + `●/○ contract / hw\|gen\|imp` 档投影（镜像选择器激活态，供无 CodeLens UI 的客户端）+ 行尾 case `Type` 提示（`· derived` 见证） |

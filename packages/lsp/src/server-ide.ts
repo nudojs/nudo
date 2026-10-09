@@ -105,22 +105,28 @@ export function attachHover(deps: IdeDeps): void {
       // 与 CodeLens `● interface / <source>` 同源首行（A7 验收）
       if (hover.interfaceSource) {
         lines.push(formatInterfaceTierLine(hover.interfaceSource));
+      }
+      if (hover.signature) {
+        // 函数名 hover：check 同口径签名一行——builder 模板 / symbolic 多行 /
+        // display 签名不再重复（nudo.hover payload 保留无损面）
+        lines.push("```nudo", hover.signature, "```");
+      } else {
         if (hover.interfaceDisplay && hover.interfaceSource !== "implicit") {
           lines.push("```nudo", hover.interfaceDisplay, "```");
         }
-      }
-      // 无损 Abs 优先（类型即计算本体）
-      if (hover.absMultiline) {
-        lines.push("```nudo", hover.absMultiline, "```");
-      } else if (hover.abs) {
-        lines.push("```nudo", hover.abs, "```");
-      }
-      if (hover.intension && hover.intension !== hover.abs) {
-        lines.push("```nudo", hover.intension, "```");
-      }
-      // 外延 TypeValue 仅作对照，且与内涵不同时才显示
-      if (hover.typeText && hover.typeText !== hover.intension && hover.typeText !== hover.abs) {
-        lines.push("```nudo", `ext: ${hover.typeText}`, "```");
+        // 无损 Abs 优先（类型即计算本体）
+        if (hover.absMultiline) {
+          lines.push("```nudo", hover.absMultiline, "```");
+        } else if (hover.abs) {
+          lines.push("```nudo", hover.abs, "```");
+        }
+        if (hover.intension && hover.intension !== hover.abs) {
+          lines.push("```nudo", hover.intension, "```");
+        }
+        // 外延 TypeValue 仅作对照，且与内涵不同时才显示
+        if (hover.typeText && hover.typeText !== hover.intension && hover.typeText !== hover.abs) {
+          lines.push("```nudo", `ext: ${hover.typeText}`, "```");
+        }
       }
       if (lines.length === 0) {
         lines.push("```nudo", hover.typeText, "```");

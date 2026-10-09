@@ -36,7 +36,7 @@ Declared in `connection.onInitialize` (`src/server.ts`). Keys are the freeze lis
 | Capability key | Notes |
 |----------------|-------|
 | `textDocumentSync` | `Full` |
-| `hoverProvider` | Abs / intension + interface tier on export fn names |
+| `hoverProvider` | Export fn **name**: `● contract / hw\|gen\|imp` tier line + one block with the check-identical signature (`decide({ grade, findings }: { … }) => { … }`; builder template / symbolic multiline / display signature are deduped — full faces stay in the `nudo.hover` payload). Identifiers (params / body locals / module refs) render one-line `name: shape` — param slots project from the enclosing fn's `PolyFn` entry face, call-initialized locals from `EvalCallRecord` (entry-args call), module-level refs from the binding face (case-fn bodies included) |
 | `completionProvider` | trigger `.`; `resolveProvider: false` |
 | `codeLensProvider` | `resolveProvider: false`; interface tier first; case debug layer; **synthetic `call@`/`entry@` observation lenses** (CLI test facts pinned to source; click → `nudo.trace`) |
 | `inlayHintProvider` | case + Abs param/return |
