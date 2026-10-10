@@ -12,7 +12,7 @@ import { pushCtorFrame, popCtorFrame, withNewTargetReset } from "./runtime/state
 import { $call } from "./call.ts";
 import { evalEnterCall, evalExitCall, evalTruncatedAbs, isHostGlobalFn, callHostGlobalFn } from "./calls.ts";
 import { getFnImpl, absFunction, hostFnCtorFacet, isAbsApplyResult } from "../abs-fn.ts";
-import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, evalBuiltinNew, extStateOf, getPropFlags, isEnumerableView, makeArrayCtorAbs, assignSourceSlots, isSymbolAbs, stringOfSymbol, evalPromiseCtor, evalPromiseMethod, builtinCtorNameOf, hostBuiltinCtorName, makeProxyAbs, makeArrayBufferAbs, makeSharedArrayBufferAbs, makeDataViewAbs, makeUrlAbs, makeBoxedAbs, boxedPrimitiveValue, evalRegExpCtor, sumHasPrimMember, evalDateCtor, evalArrayStatic } from "../builtins.ts";
+import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, evalBuiltinNew, extStateOf, getPropFlags, isEnumerableView, makeArrayCtorAbs, assignSourceSlots, isSymbolAbs, stringOfSymbol, evalPromiseCtor, evalPromiseMethod, builtinCtorNameOf, hostBuiltinCtorName, makeProxyAbs, makeArrayBufferAbs, makeSharedArrayBufferAbs, makeDataViewAbs, makeUrlAbs, makeTextDecoderAbs, makeUrlSearchParamsAbs, makeBoxedAbs, boxedPrimitiveValue, evalRegExpCtor, sumHasPrimMember, evalDateCtor, evalArrayStatic } from "../builtins.ts";
 import { arrayJoinToString, arrayJoinWithSep, validateJoinElements } from "../builtins/array.ts";
 import { isMapAbs, isSetAbs, makeMapAbs, makeSetAbs, collectionElementJoin, ctorArgDefinitelyInvalid, makeWeakCollectionAbs } from "../collections.ts";
 import { registerMatchIter } from "./match-iter.ts";
@@ -436,6 +436,16 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
     // 与 evalBuiltinNew 的 Abs 面同口径（evalDateCtor 返回同款 brand）。
     if (clsName === "Date") {
       return evalDateCtor(args);
+    }
+    // new TextDecoder(label?) —— encoding label 校验（非法字符确定
+    // RangeError / 知名 label 正常构造 / 未知 ASCII 形与抽象 → may）
+    if (clsName === "TextDecoder") {
+      return makeTextDecoderAbs(args[0]);
+    }
+    // new URLSearchParams(init?) —— 序列实参校验（非二元组元素确定
+    // TypeError / 字面量正常构造 / 开放数组与抽象 → may）
+    if (clsName === "URLSearchParams") {
+      return makeUrlSearchParamsAbs(args[0]);
     }
     // Bug 16：未识别宿主函数（用户 function 声明/表达式——转译产物是真
     // JS 函数，体已 $ 助手化、Abs this 经 $rawThis(this) prologue 承接）

@@ -34,6 +34,8 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   // Bug 15：解构临时名单调计数器（跨语句/prologue 唯一，与源行号解耦）
   const destrTmpSeq = opts.destrTmpSeq ?? { n: 0 };
+  // Bug 42：try 临时名单调计数器（`__nudoTm_`/`__nudoE_` 同口径）
+  const tryTmpSeq = opts.tryTmpSeq ?? { n: 0 };
   // Bug 21：模块级 var 提升（模块体是单作用域——块内 var 提升到模块顶；
   // export var 保持声明面不发提升 let，但名字留在发射集——块内同名 var
   // 仍改发赋值，写到导出绑定）
@@ -55,6 +57,7 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const scopedOpts: TranspileOptions = {
     ...opts,
     destrTmpSeq,
+    tryTmpSeq,
     ...(varEmitNames.size > 0 ? { hoistedVarNames: varEmitNames } : {}),
   };
   const lines: string[] = [

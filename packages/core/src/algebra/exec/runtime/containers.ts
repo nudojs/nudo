@@ -23,7 +23,7 @@ import {
   regexBrandAbsFrom, evalObjectProtoMethod, objectProtoMethodAbs,
   isObjectProtoBrand, OBJECT_PROTO_METHOD_NAMES, isSymbolAbs,
   symbolDescriptionAbs, objectProtoBrand, builtinCtorAbs, ctorNameOfRecv,
-  protoBrandAbs, notePromiseExecutorFork,
+  protoBrandAbs, notePromiseExecutorFork, protoOfRecv, makeIntlCtorAbs,
 } from "../../builtins.ts";
 import { arrayMethodAbs } from "../../builtins/array.ts";
 import { validateCallableArg, validateIndexArg } from "../../hof.ts";
@@ -35,6 +35,7 @@ import {
   BOOLEAN_PROTO_METHODS,
   SYMBOL_PROTO_METHODS,
   BIGINT_PROTO_METHODS,
+  ARRAY_PROTO_METHOD_NAMES,
 } from "../member-diag.ts";
 import { errorTypeAbs, recordMayThrow, type MayThrowEffect } from "../may-throw.ts";
 import { getEvalClass } from "../class-registry.ts";
@@ -1467,6 +1468,15 @@ export function $forInKeys(o: Abs): Abs {
     );
   };
   if (shape.k === "obj") {
+    // Bug 18：open obj（Object.create(proto) / setPrototypeOf / spread 开面
+    // 产物）原型链未跟踪（Object.create 不记 protoTable）——可携带任意
+    // 可枚举继承键，不得断言精确（可能为空的）自有键序列（for-in over
+    // Object.create({x:1}) 原生跑 1 次）。诚实降级为抽象字符串键数组
+    // （体 0..N 次，与 any 接收者臂同口径）；null-proto 标记链终止于
+    // null，闭 obj（原型恰为无可枚举自有的 Object.prototype）仍精确。
+    if (shape.open && !isNullProtoObj(o)) {
+      return abs({ k: "arr", element: str() }, undefined, undefined, "partial");
+    }
     // 仅自有可枚举键——与 Object.keys 的 enumKeys 同口径
     // （getPropFlags().enumerable === false 的 defineProperty 键剔除）
     const keys = enumOwnKeys(o, shape.slots);
@@ -1709,6 +1719,10 @@ export const NAMESPACE_GLOBALS: ReadonlyArray<readonly [string, unknown]> = [
   ["Boolean", Boolean],
   ["RegExp", RegExp],
   ["Error", Error],
+  // Bug 44：Intl 命名空间身份路由——typeof Intl 折 object（ops.$typeof）、
+  // 成员读投影（NumberFormat/DateTimeFormat 为带 locale 校验的构造器值，
+  // 其余成员走通用 fn 投影）；入表同时 env-skip（intrinsics 同步）
+  ["Intl", Intl],
 ];
 
 export function namespaceNameOf(v: unknown): string | undefined {
@@ -1724,21 +1738,17 @@ export function $regex(pattern: string, flags = ""): Abs {
   return regexBrandAbsFrom(pattern, flags);
 }
 
-/** Array.prototype 自有可读键（push/map/keys/… 与 Symbol.iterator 投影名） */
-const ARRAY_PROTO_METHOD_NAMES = new Set([
-  "at", "concat", "copyWithin", "entries", "every", "fill", "filter", "find",
-  "findIndex", "findLast", "findLastIndex", "flat", "flatMap", "forEach",
-  "includes", "indexOf", "join", "keys", "lastIndexOf", "map", "pop", "push",
-  "reduce", "reduceRight", "reverse", "shift", "slice", "some", "sort", "splice",
-  "toSorted", "toReversed", "toSpliced", "with",
-  "toLocaleString", "toString", "unshift", "values", "@@iterator",
-]);
+// ARRAY_PROTO_METHOD_NAMES 已上移 member-diag.ts（$in tuple 臂共用；避免
+// members ↔ containers 循环 import）
 
 function isPossiblyProtoMemberKey(key: string): boolean {
   return (
     OBJECT_PROTO_METHOD_NAMES.has(key) ||
     ARRAY_PROTO_METHOD_NAMES.has(key) ||
     key === "constructor" ||
+    // Bug 17：__proto__ 是 Object.prototype 访问器（读 [[Prototype]]），
+    // 不得在 tuple/字符串 prim 的非下标键兑底折 undef
+    key === "__proto__" ||
     key.startsWith("@@")
   );
 }
@@ -1831,14 +1841,23 @@ export function $get(
       if (ns === "Object") return objectProtoBrand();
       if (ns) return protoBrandAbs(ns);
     }
+    // Bug 44：Intl 两个格式化构造器——带 locale 校验的构造器值（fn name
+    // "Intl.<Sub>" → $new 按名派发 evalBuiltinNew；调用面 apply 同 builder）
+    if (ns === "Intl" && (key === "NumberFormat" || key === "DateTimeFormat")) {
+      return makeIntlCtorAbs(key);
+    }
     if (ns) {
       try {
         const raw = (o as Record<string, unknown>)[key];
         if (typeof raw === "function") {
+          // Bug 44：宿主成员函数的可构造性 facet 透传（hostFnCtorFacet）——
+          // 成员值被 $new 时不再记假 may TypeError（Intl.Collator 等原生可
+          // 构造成员；Math.max 等方法值原生确定不可构造 → ctor:false 定抛）
+          const ctor = hostFnCtorFacet(raw);
           return absFunction([`${ns}.${key}`], {
             body: noBody,
             apply: (args) => evalNamespaceCall(ns, key, args) ?? unknown,
-          });
+          }, ctor !== undefined ? { ctor } : undefined);
         }
         return $lit(raw);
       } catch {
@@ -2080,6 +2099,16 @@ export function $get(
     if (!isNullProtoObj(o) && OBJECT_PROTO_METHOD_NAMES.has(key)) {
       return objectProtoMethodAbs(key);
     }
+    // Object.prototype.__proto__ 访问器（Bug 17）：读 [[Prototype]]——与
+    // Object.getPrototypeOf 的 protoOfRecv 投影同款（闭字面量原型恰为
+    // Object.prototype 单例、open 走 protoTable/unknown），不得折精确
+    // undefined；null-proto 无该访问器 → 原生读 undefined（不是 null）。
+    // protoTable 原型自身是 null-proto 对象时访问器同样缺席 → undefined。
+    if (key === "__proto__") {
+      if (isNullProtoObj(o)) return undef();
+      const p = protoOfRecv(o);
+      return isNullProtoObj(p) ? undef() : p;
+    }
     if ((o.shape as ObjShape).open) return unknown;
     // Object.prototype.constructor（null-proto 无 → undef）
     if (key === "constructor" && !isNullProtoObj(o)) {
@@ -2093,6 +2122,18 @@ export function $get(
     // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce
     const parts = o.shape.members.map((m) => $get(m, key, opts));
     return parts.length ? parts.reduce((a, b) => joinAbs(a, b)) : unknown;
+  }
+  // prim / tuple / arr / fn / eff 的 __proto__（Bug 17）：Object.prototype
+  // 访问器读 [[Prototype]]——protoOfRecv 同款投影（tuple/arr →
+  // Array.prototype、prim → 装箱原型、fn → Function.prototype）；null-proto
+  // 标记（setPrototypeOf(…, null) 产物）无访问器 → 原生 undefined。
+  // nullish/unknown/any 形状不在此列（访问器存在性不可判，走底部诊断路径）。
+  if (
+    key === "__proto__" &&
+    (o.shape.k === "prim" || o.shape.k === "tuple" || o.shape.k === "arr" ||
+      o.shape.k === "fn" || o.shape.k === "eff")
+  ) {
+    return isNullProtoObj(o) ? undef() : protoOfRecv(o);
   }
   // prim / tuple / arr / fn / eff 的原型 constructor（上文未命中自有槽）
   if (key === "constructor") {

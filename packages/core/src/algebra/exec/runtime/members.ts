@@ -16,7 +16,7 @@ import {
   symbolDescriptionAbs, objectProtoBrand, builtinCtorAbs, ctorNameOfRecv,
 } from "../../builtins.ts";
 import { errorTypeAbs, recordMayThrow, type MayThrowEffect } from "../may-throw.ts";
-import { OBJECT_PROTO_NAMES } from "../member-diag.ts";
+import { OBJECT_PROTO_NAMES, ARRAY_PROTO_METHOD_NAMES } from "../member-diag.ts";
 import { $call } from "../call.ts";
 import { getEvalClass } from "../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../class-mark.ts";
@@ -133,8 +133,9 @@ export function findAccessor(
 // --- in / instanceof / delete（transpile 运算符路由） ---
 
 /**
- * `key in obj`：闭形状精确判定（含 Object.prototype 名、数组下标/length、
- * class 方法/访问器与内建 brand 方法）；prim/nullish 接收者原生抛 TypeError →
+ * `key in obj`：闭形状精确判定（含 Object.prototype/Array.prototype 名、
+ * 数组下标/length、class 方法/访问器与内建 brand 方法/访问器）；
+ * prim/nullish 接收者原生抛 TypeError →
  * unknown；抽象键/开形状 → boolean。
  */
 export function $in(key: Abs, o: Abs): Abs {
@@ -176,7 +177,10 @@ export function $in(key: Abs, o: Abs): Abs {
       if (o.shape.holes?.includes(idx)) return boolLit(false);
       return boolLit(idx < o.shape.elements.length);
     }
-    return boolLit(false);
+    // Bug 15：tuple 原型链 Array.prototype → Object.prototype——非下标键
+    // 按两表精确判定（"map"/"toString"/"constructor" in [] 原生 true）；
+    // 表外键闭 tuple 精确缺席（"x" in [1] → false）。
+    return boolLit(ARRAY_PROTO_METHOD_NAMES.has(keyStr) || OBJECT_PROTO_NAMES.has(keyStr));
   }
   if (o.shape.k === "arr") return bool(); // 抽象数组：索引域未知
   if (o.shape.k === "obj" || o.shape.k === "brand") {
@@ -251,9 +255,19 @@ export function brandHasProtoMember(brandName: string, key: string): boolean {
     if (spec?.accessors?.[key]) return true;
     const builtin = BUILTIN_BRAND_METHODS[name];
     if (builtin?.has(key)) return true;
+    const builtinAcc = BUILTIN_BRAND_ACCESSORS[name];
+    if (builtinAcc?.has(key)) return true;
   }
   return false;
 }
+
+/** 内建 brand 原型访问器（非方法成员；$in 精确判定用——值读不走方法表：
+ *  Map/Set 的 size 在 $get 单独委托 mapSizeAbs/setSizeAbs，混入
+ *  BUILTIN_BRAND_METHODS 会把 m.size 折成函数形状）。Bug 15。 */
+export const BUILTIN_BRAND_ACCESSORS: Record<string, ReadonlySet<string>> = {
+  Map: new Set(["size"]),
+  Set: new Set(["size"]),
+};
 
 /** 内建错误层级（Error 为根，registry 无 superName 时回退） */
 export const BUILTIN_ERROR_SUPER: Record<string, string> = {
@@ -363,8 +377,12 @@ export function $instanceof(left: Abs, rightName: string, rightVal?: Abs): Abs {
       //（含 Object 与内建/自定义构造器）。标记随 $set/$del 迁移（objects.ts 侧表）。
       if (isNullProtoObj(left)) return boolLit(false);
       if (rightName === "Object") return boolLit(true);
-      if (BUILTIN_CTOR_NAMES.has(rightName)) return boolLit(false);
-      return bool(); // Object.create(C.prototype)
+      // Bug 16：open obj（Object.create(proto) / setPrototypeOf 产物）原型链
+      // 未知——可含任意内建原型（Object.create([]) instanceof Array 原生
+      // true），不得断言精确 false，降 boolean；闭字面量原型恰为
+      // Object.prototype，内建构造器（除 Object）恒 false 保持精确。
+      if (!left.shape.open && BUILTIN_CTOR_NAMES.has(rightName)) return boolLit(false);
+      return bool(); // Object.create(C.prototype) / open obj
     case "fn":
       if (rightName === "Function" || rightName === "Object") return boolLit(true);
       if (BUILTIN_CTOR_NAMES.has(rightName)) return boolLit(false);

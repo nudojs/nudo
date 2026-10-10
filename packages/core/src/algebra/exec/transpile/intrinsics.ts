@@ -48,6 +48,9 @@ export const ENV_SHADOW_SKIP_GLOBALS: ReadonlySet<string> = new Set([
   "Boolean",
   "RegExp",
   "Error",
+  // Bug 44：进路由表（Intl.NumberFormat/DateTimeFormat 构造器值 + typeof
+  // Intl 折 object + 成员投影）——skip 防 env 注入遮蔽宿主身份路由
+  "Intl",
 ]);
 
 /** 生成代码里的 undefined 值源——刻意避开标识符 `undefined` */

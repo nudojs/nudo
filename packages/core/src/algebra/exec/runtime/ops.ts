@@ -2,7 +2,7 @@
  * 运算符重载面（transpile 目标）：$add/$sub/…、比较/位运算。
  */
 import type { Abs } from "../../abs.ts";
-import { abs, bool, boolLit, confJoin, litValue, numLit, unknown, type Confidence } from "../../abs.ts";
+import { abs, bool, boolLit, confJoin, litValue, numLit, strLit, unknown, type Confidence } from "../../abs.ts";
 import { lit } from "../../term.ts";
 import type { Phi } from "../../pred.ts";
 import { pTrue, and, predEquals } from "../../pred.ts";
@@ -108,6 +108,11 @@ export function $neg(a: Abs): Abs {
   return negAbs(a);
 }
 export function $typeof(a: Abs): Abs {
+  // Bug 44：Intl 命名空间宿主对象（env-skip 后经全局作用域漏入）——typeof
+  // 折 exact "object"。仅 Intl（本 bug 范围）；Math/JSON/Reflect 等其余
+  // 宿主命名空间的 typeof 维持既有 partial 口径（K1a 钉住），不外溢。
+  // 不走 namespaceNameOf（containers → ops 反向 import 成环）
+  if (a === (globalThis as { Intl?: unknown }).Intl) return strLit("object");
   return typeofAbs(a);
 }
 export function $not(a: Abs): Abs {

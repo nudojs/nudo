@@ -1432,6 +1432,44 @@
     "batch2.corpus5": [
       "let a = [1, 2]; Object.freeze(a); a[0] = 9; return a;"
     ],
+    "batch20-transpile-adversarial.sameLineTry": [
+      "try { throw [1, 2]; } catch ([a, b]) { return a + b; } return 0;",
+      "try { throw {v: 9}; } catch ({v}) { return v; } return 0;"
+    ],
+    "batch20-transpile-adversarial.sameLineTryControlFlow": [
+      "let n = 0; do { n++; if (n === 1) continue; n += 10; } while (n < 3); return n;"
+    ],
+    "batch21-ctor-battery.bufferCtor": [
+      "try { return new ArrayBuffer({}).byteLength; } catch (e) { return e.constructor.name; }"
+    ],
+    "batch21-ctor-battery.dateCtor": [
+      "try { return new Date(\"x\").getTime(); } catch (e) { return e.constructor.name; }",
+      "try { return new Date(\"bad-$$\").getTime(); } catch (e) { return e.constructor.name; }",
+      "try { return new Date(null).getTime(); } catch (e) { return e.constructor.name; }",
+      "try { return new Date(0).getTime(); } catch (e) { return e.constructor.name; }",
+      "try { return new Date(-1).getTime(); } catch (e) { return e.constructor.name; }",
+      "try { return new Date({}).getTime(); } catch (e) { return e.constructor.name; }",
+      "try { return new Date([]).getTime(); } catch (e) { return e.constructor.name; }"
+    ],
+    "batch21-ctor-battery.errorCtor": [
+      "try { return new Error({}).message; } catch (e) { return e.constructor.name; }"
+    ],
+    "batch21-ctor-battery.mapCtor": [
+      "try { return new Map([[\"a\"]]).get(\"a\"); } catch (e) { return e.constructor.name; }"
+    ],
+    "batch21-ctor-battery.objectArrayCtor": [
+      "try { const o = {}; return new Object(o) === o; } catch (e) { return e.constructor.name; }",
+      "try { return new Array({}).length; } catch (e) { return e.constructor.name; }"
+    ],
+    "batch21-ctor-battery.symbolBigIntCall": [
+      "try { return BigInt([]); } catch (e) { return e.constructor.name; }",
+      "try { return BigInt([1]); } catch (e) { return e.constructor.name; }"
+    ],
+    "batch21-ctor-battery.wrapCtor": [
+      "try { return new Number({}).valueOf(); } catch (e) { return e.constructor.name; }",
+      "try { return new Boolean(Symbol()).valueOf(); } catch (e) { return e.constructor.name; }",
+      "try { return new String({}).valueOf(); } catch (e) { return e.constructor.name; }"
+    ],
     "batch3.corpus1": [
       "return [3,1,2].toSorted((a,b)=>b-a);",
       "return [1,2,3].at(9);",

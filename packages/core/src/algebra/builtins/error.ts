@@ -76,6 +76,13 @@ export function evalNamespaceCall(
     case "URL":
       // Bug 24：URL 静态面（canParse）
       return evalUrlStatic(method, args);
+    case "Intl":
+      // Bug 44：NumberFormat/DateTimeFormat 调用面（new 省略形 ≡ new，
+      // 宿主接收者经 $invoke→ns 分派到此处）——与 evalBuiltinNew 同 builder
+      if (method === "NumberFormat" || method === "DateTimeFormat") {
+        return makeIntlFormatAbs(method, args[0]);
+      }
+      return undefined;
     default:
       return undefined;
   }
@@ -168,10 +175,58 @@ function evalBigIntStatic(method: string, args: Abs[]): Abs | undefined {
       recordMayThrow({ kind: "RangeError", cause: "BigInt.asIntN/asUintN bits may be negative" });
     }
   }
-  const val = valA?.term?.op === "lit" ? (valA.term as { value: unknown }).value : undefined;
-  if (typeof bits === "number" && typeof val === "bigint") {
+  // Bug 41：value 过 ToBigInt（与 bits 档的 ToIndex 镜像；node 实测）。
+  // 字面量面：bigint 保留折叠；number/symbol/null/undefined/缺参 → 硬抛
+  // TypeError（ToBigInt 对 Number/Symbol/Nullish 恒抛）；string →
+  // StringToBigInt（合法折叠、非法硬抛 SyntaxError）；boolean → ToBigInt
+  // 折 1n/0n。抽象面按 shape 分档：symbol prim → 硬 TypeError；prim
+  // number → may TypeError；prim string → may SyntaxError；闭形无
+  // valueOf/toString 自有槽的 obj（{} 等——ToPrimitive 恒
+  // "[object Object]"）→ 硬 SyntaxError；其余（any/带强转槽 obj/fn/
+  // brand/sum/tuple…）→ may TypeError + may SyntaxError（带 Symbol 的
+  // 数组 join 抛 TypeError、['x'] 抛 SyntaxError，node 实测）。
+  let bigval: bigint | undefined;
+  if (!valA) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  } else if (valA.term?.op === "lit") {
+    const v = (valA.term as { value: unknown }).value;
+    if (typeof v === "bigint") {
+      bigval = v;
+    } else if (typeof v === "number" || typeof v === "symbol" || v === null || v === undefined) {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    } else if (typeof v === "boolean") {
+      bigval = v ? 1n : 0n;
+    } else if (typeof v === "string") {
+      try {
+        bigval = BigInt(v);
+      } catch {
+        throw new NudoThrow(errorTypeAbs("SyntaxError"));
+      }
+    }
+  } else if (isSymbolAbs(valA)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  } else if (valA.shape.k === "prim") {
+    const vt = (valA.shape as { type?: string }).type;
+    if (vt === "number") {
+      recordMayThrow({ kind: "TypeError", cause: "BigInt.asIntN/asUintN value ToBigInt(Number) may throw" });
+    } else if (vt === "string") {
+      recordMayThrow({ kind: "SyntaxError", cause: "BigInt.asIntN/asUintN value StringToBigInt may throw" });
+    }
+    // bigint/boolean prim：ToBigInt 全定（0n/1n），不记
+  } else if (
+    valA.shape.k === "obj" &&
+    !(valA.shape as { open?: boolean }).open &&
+    !getSlot((valA.shape as { slots: Record<string, { value: Abs }> }).slots, "valueOf") &&
+    !getSlot((valA.shape as { slots: Record<string, { value: Abs }> }).slots, "toString")
+  ) {
+    throw new NudoThrow(errorTypeAbs("SyntaxError"));
+  } else {
+    recordMayThrow({ kind: "TypeError", cause: "BigInt.asIntN/asUintN value ToBigInt may throw (Symbol/BigInt via ToPrimitive)" });
+    recordMayThrow({ kind: "SyntaxError", cause: "BigInt.asIntN/asUintN value StringToBigInt may throw" });
+  }
+  if (typeof bits === "number" && typeof bigval === "bigint") {
     try {
-      return bigintLit(method === "asIntN" ? BigInt.asIntN(bits, val) : BigInt.asUintN(bits, val));
+      return bigintLit(method === "asIntN" ? BigInt.asIntN(bits, bigval) : BigInt.asUintN(bits, bigval));
     } catch {
       throw new NudoThrow(errorTypeAbs("RangeError"));
     }
@@ -381,6 +436,52 @@ function enforceToIndex(a: Abs | undefined, what: string): void {
   if (c.k === "may") {
     recordMayThrow({ kind: "RangeError", cause: `${what} may be negative or invalid (ToIndex)` });
   }
+}
+
+/** Bug 43：CanBeHeldWeakly 校验分类（FinalizationRegistry.register/unregister 弱键） */
+type WeakHeldClass = { k: "ok" } | { k: "def" } | { k: "may" };
+
+/**
+ * Bug 43：ES CanBeHeldWeakly 分类——对象形态（obj/tuple/arr/fn/brand/eff）
+ * 与 symbol 是合法弱键（node 26 实测 register(Symbol(),1) 不抛）；
+ * number/string/boolean/bigint 字面量与 nullish 字面量/缺省 ≡ undefined
+ * → 确定非弱键；抽象 prim/any/unknown/含坏成员 union → may。
+ */
+function classifyCanBeHeldWeakly(a: Abs | undefined): WeakHeldClass {
+  if (!a) return { k: "def" }; // 缺省 ≡ undefined：非弱键
+  const s = a.shape;
+  if (s.k === "prim") {
+    // shape-first：symbol 恒无 lit term（无 symbol 字面量），先查形态
+    if (s.type === "symbol") return { k: "ok" };
+    return a.term?.op === "lit" ? { k: "def" } : { k: "may" }; // 抽象 prim：值未知
+  }
+  if (s.k === "any" || s.k === "unknown") {
+    // nullish 字面量挂 k:"unknown" + lit term（与 isNullishLit 同口径）
+    return isNullishLit(a) ? { k: "def" } : { k: "may" };
+  }
+  if (s.k === "sum") {
+    // 有坏成员但可能取好成员 → 整体 may（与 classifyToIndex 同口径，不 definite）
+    for (const m of s.members) {
+      if (classifyCanBeHeldWeakly(m).k !== "ok") return { k: "may" };
+    }
+    return { k: "ok" };
+  }
+  return { k: "ok" }; // obj/fn/brand/tuple/arr/eff：对象 → 弱键合法
+}
+
+/** Bug 43：弱键校验落地：def → NudoThrow(TypeError)；may → recordMayThrow(TypeError) */
+function enforceCanBeHeldWeakly(a: Abs | undefined, what: string): void {
+  const c = classifyCanBeHeldWeakly(a);
+  if (c.k === "def") throw new NudoThrow(errorTypeAbs("TypeError"));
+  if (c.k === "may") {
+    recordMayThrow({ kind: "TypeError", cause: `${what} may not be an object or symbol (CanBeHeldWeakly)` });
+  }
+}
+
+/** Bug 43：实参确定为 undefined（缺省 / undefined 字面量）——register 的
+ * unregisterToken 仅此形态跳过弱键校验（原生 SameValue(·,undefined) 豁免） */
+function isDefinitelyUndefinedArg(a: Abs | undefined): boolean {
+  return !a || (a.term?.op === "lit" && a.term.value === undefined);
 }
 
 /**
@@ -638,6 +739,160 @@ export function makeUrlAbs(input: Abs | undefined, base: Abs | undefined): Abs {
 }
 
 /**
+ * TextDecoder 知名 encoding label → canonical 名（node 实测口径；全部
+ * WHATWG label 表的子集——表外 ASCII 形 label 走保守 may RangeError，
+ * 不枚举全表）。匹配前 strip ASCII 空白 + 小写（WHATWG label 算法）。
+ */
+const TEXT_DECODER_KNOWN_LABELS: Record<string, string> = {
+  "utf-8": "utf-8",
+  utf8: "utf-8",
+  "unicode-1-1-utf-8": "utf-8",
+  unicode11utf8: "utf-8",
+  unicode20utf8: "utf-8",
+  "x-unicode20utf8": "utf-8",
+  "utf-16le": "utf-16le",
+  "utf-16": "utf-16le",
+  "utf-16be": "utf-16be",
+  unicodefffe: "utf-16be",
+  "iso-8859-1": "windows-1252",
+  "iso8859-1": "windows-1252",
+  "iso_8859-1": "windows-1252",
+  iso88591: "windows-1252",
+  "iso-ir-100": "windows-1252",
+  latin1: "windows-1252",
+  l1: "windows-1252",
+  cp819: "windows-1252",
+  ibm819: "windows-1252",
+  "windows-1252": "windows-1252",
+  cp1252: "windows-1252",
+  "x-cp1252": "windows-1252",
+  ascii: "windows-1252",
+  "us-ascii": "windows-1252",
+  "ansi_x3.4-1968": "windows-1252",
+};
+
+/** TextDecoder brand：encoding 槽（may 臂取 string 域——构造成功时原生恒 string） */
+function textDecoderBrandAbs(encoding?: string): Abs {
+  const slots: Record<string, { value: Abs }> = {
+    encoding: { value: encoding !== undefined ? strLit(encoding) : str("path") },
+  };
+  return abs(
+    { k: "brand", name: "TextDecoder", shape: objOf(slots) },
+    undefined,
+    undefined,
+    encoding !== undefined ? "exact" : "path",
+  );
+}
+
+/**
+ * new TextDecoder(label?) —— label 过 ToString（symbol → TypeError）后按
+ * WHATWG encoding label 匹配（strip ASCII 空白 + 小写）：
+ * - 含 label 字符集（[A-Za-z0-9_.:()/-]）外字符（如 `$`/空格）→ 任何
+ *   label 表都不含 → 确定 RangeError（node: new TextDecoder("bad-$$")）；
+ * - 知名 label（utf-8/utf8/utf-16le/iso-8859-1/latin1/ascii…）→ 正常构造
+ *   （encoding 槽取 canonical 名）；缺省/undefined 字面量 ≡ 默认 utf-8；
+ * - 其余 ASCII 形 label（表未枚举，宿主 ICU 表有差异）→ 保守 may
+ *   RangeError；非 string 字面量 ToString 折叠后同判（123 → "123"）；
+ * - 抽象 label → may RangeError。options（fatal/ignoreBOM）布尔面不校验。
+ */
+export function makeTextDecoderAbs(label: Abs | undefined): Abs {
+  // 缺省 ≡ undefined 字面量：WebIDL 默认 label = "utf-8"（node 实测
+  // new TextDecoder(undefined) → encoding "utf-8"）
+  if (!label || (label.term?.op === "lit" && label.term.value === undefined)) {
+    return textDecoderBrandAbs("utf-8");
+  }
+  if (isSymbolAbs(label)) throw new NudoThrow(errorTypeAbs("TypeError")); // ToString(symbol)
+  const vR = litValue(label);
+  let labelStr: string | undefined;
+  if (vR.ok) labelStr = String(vR.value); // 非 string 字面量按 ToString 折叠
+  if (labelStr !== undefined) {
+    // WHATWG label 匹配：strip 首尾 ASCII 空白（TAB/LF/FF/CR/SPACE）后判
+    const stripped = labelStr.replace(/^[ \t\n\f\r]+/, "").replace(/[ \t\n\f\r]+$/, "");
+    if (/[^A-Za-z0-9_.:()/-]/.test(stripped)) {
+      throw new NudoThrow(errorTypeAbs("RangeError")); // 不可能出现在任何 label 中
+    }
+    const canonical = TEXT_DECODER_KNOWN_LABELS[stripped.toLowerCase()];
+    if (canonical !== undefined) return textDecoderBrandAbs(canonical);
+    // ASCII 形未知 label：宿主 label 表有差异（node 实测 iso-8859-1:1987
+    // 即抛）→ 保守 may RangeError
+    recordMayThrow({ kind: "RangeError", cause: "TextDecoder encoding label may be unsupported" });
+    return textDecoderBrandAbs();
+  }
+  recordMayThrow({ kind: "RangeError", cause: "TextDecoder encoding label may be invalid" });
+  return textDecoderBrandAbs();
+}
+
+/** URLSearchParams brand（条目表不建模——与 WeakMap/WeakSet 空 brand 同口径） */
+function urlSearchParamsBrandAbs(): Abs {
+  return abs(
+    { k: "brand", name: "URLSearchParams", shape: objOf({}) },
+    undefined,
+    undefined,
+    "path",
+  );
+}
+
+/**
+ * new URLSearchParams(init?) —— init 形态判定（node ground truth：
+ * ("a=1") 解析构造 / ([["a"]]) TypeError "Each query pair must be an
+ * iterable [name, value] tuple" / (42) → ToString 后按查询串解析 [["42",""]]）：
+ * - 缺省/nullish/symbol 以外字面量 → 原生恒 total（null 解析出 "null" 条目）；
+ * - tuple 字面量元素非 [name,value] 二元组（非 tuple / 长度 ≠ 2）→ 确定
+ *   TypeError；二元组元素走 ToString symbol 校验（noteBoxedCtorArg 同口径）；
+ * - 开放数组（arr）/ sum / 抽象 / Set brand → may TypeError；
+ * - Map brand 条目恒二元组 → 正常构造；对象 init（record 路径）槽值走
+ *   ToString symbol 校验。
+ */
+export function makeUrlSearchParamsAbs(init: Abs | undefined): Abs {
+  if (!init || isNullishLit(init)) return urlSearchParamsBrandAbs();
+  if (isSymbolAbs(init)) throw new NudoThrow(errorTypeAbs("TypeError")); // ToString(symbol)
+  const vR = litValue(init);
+  if (vR.ok) return urlSearchParamsBrandAbs(); // string/number/bool/bigint：ToString 解析恒不抛
+  if (init.shape.k === "tuple") {
+    for (const el of init.shape.elements) {
+      // 元素必须是 [name,value] 二元组：prim 恒非 entry（node: (["a"]) TypeError）
+      if (el.shape.k === "prim") throw new NudoThrow(errorTypeAbs("TypeError"));
+      if (el.shape.k === "tuple") {
+        if (el.shape.elements.length !== 2) {
+          throw new NudoThrow(errorTypeAbs("TypeError")); // ([["a"]]) / ([["a","b","c"]])
+        }
+        // name/value ToString：symbol 确定 TypeError、any → may
+        noteBoxedCtorArg("String", el.shape.elements[0]);
+        noteBoxedCtorArg("String", el.shape.elements[1]);
+        continue;
+      }
+      // arr/obj/sum/brand…元素无法确定是二元组 → may TypeError
+      recordMayThrow({
+        kind: "TypeError",
+        cause: "URLSearchParams init entries may not be [name, value] pairs",
+      });
+    }
+    return urlSearchParamsBrandAbs();
+  }
+  if (init.shape.k === "obj") {
+    if (init.shape.open === true) {
+      // 开放对象：未枚举槽值可能为 symbol（ToString 抛）或携带自定义迭代
+      recordMayThrow({
+        kind: "TypeError",
+        cause: "URLSearchParams record values may be symbols",
+      });
+      return urlSearchParamsBrandAbs();
+    }
+    // record 路径：槽值 ToString（symbol 确定/any → may）
+    for (const key of Object.keys(init.shape.slots)) {
+      noteBoxedCtorArg("String", init.shape.slots[key]!.value);
+    }
+    return urlSearchParamsBrandAbs();
+  }
+  if (init.shape.k === "brand" && init.shape.name === "Map") {
+    return urlSearchParamsBrandAbs(); // 条目恒二元组
+  }
+  // arr / Set brand / sum / any / unknown / 其余 brand → 保守 may TypeError
+  recordMayThrow({ kind: "TypeError", cause: "URLSearchParams init may be invalid" });
+  return urlSearchParamsBrandAbs();
+}
+
+/**
  * Bug 53：new Number(v)/new String(v) —— ToNumber/ToString(symbol) 确定
  * TypeError（Boolean 的 ToBoolean 全定，不校验）；any/unknown/含 symbol
  * 成员 union → may；非 symbol 字面量/对象原生合法（ToNumber(1n)=1 等）。
@@ -771,6 +1026,154 @@ export function boxedPrimitiveValue(recv: Abs): Abs | undefined {
   return getSlot(inner.shape.slots, BOXED_PRIMITIVE_SLOT)?.value;
 }
 
+// --- Intl 命名空间构造器（Bug 44）---------------------------------------
+
+/** Bug 44：建模的 Intl 子构造器（带 locale 校验的构造器值） */
+export type IntlSubCtor = "NumberFormat" | "DateTimeFormat";
+
+/** Intl 格式化实例 brand（方法面不建模——台账 Intl.<Sub>.proto.* 维持 imprecise） */
+function intlFormatBrandAbs(sub: IntlSubCtor): Abs {
+  return abs(
+    { k: "brand", name: `Intl.${sub}`, shape: objOf({}) },
+    undefined,
+    undefined,
+    "path",
+  );
+}
+
+/**
+ * Bug 44：BCP47 结构校验（Intl 口径，宽松）。只拒「确定不可能」形：
+ * 合形但未知的 tag（如 "zz"）原生不抛（node 实测）→ 正常构造，故宁可
+ * 放过奇异合形（如非法 u 扩展键），不可误拒合法 tag。
+ *
+ * node ground truth（NumberFormat ≡ DateTimeFormat）：
+ * - 字符集 [A-Za-z0-9-]、无首尾 '-'、无 '--'（"en_US"/"zh~Hans"/"en US" 抛）；
+ * - 语言子标签 2-3 或 5-8 alpha：1/4/9+ 字符与含数字均畸形（"e"/"abcd"/
+ *   "abcdefghi"/"123"/"1234" 抛；"excess" 6 字符 OK）——4 字符保留给 script，
+ *   且 Intl 不收 extlang（"en-abc" 抛）与纯私有用（"x-private" 抛）；
+ * - [script 4alpha] [region 2alpha|3digit] 顺序固定（"en-US-Hans" 抛）；
+ * - variant 5-8 alnum 或 digit+3alnum（"en-123"/"de-CH-1901" OK；
+ *   "en-a1b2" 抛）；singleton 扩展后跟 2-8 alnum 子标签（"en-a-aaa-u-bbb"
+ *   OK；"en-a"/"en-a-b" 抛）；puext "x-" 后 1-8 alnum（"en-x-us" OK、
+ *   "en-x"/13 字符子标签抛）；
+ * - 祖父标签按 grammar 覆盖：i- 系/en-GB-oed/zh-min 系等畸形子标签形全抛，
+ *   art-lojban/zh-guoyu 等合法替代形按 lang+variant 合形通过（node 同）。
+ */
+function isWellFormedIntlLocaleTag(tag: string): boolean {
+  if (!/^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/.test(tag)) return false;
+  const subs = tag.toLowerCase().split("-");
+  const isAlpha = (s: string) => /^[a-z]+$/.test(s);
+  const isAlnum = (s: string) => /^[a-z0-9]+$/.test(s);
+  const isVariant = (s: string) =>
+    (s.length >= 5 && s.length <= 8 && isAlnum(s)) ||
+    (s.length === 4 && s.charCodeAt(0) >= 0x30 && s.charCodeAt(0) <= 0x39 && isAlnum(s));
+  const n = subs.length;
+  const lang = subs[0]!;
+  if (
+    !isAlpha(lang) ||
+    (lang.length !== 2 && lang.length !== 3 && (lang.length < 5 || lang.length > 8))
+  ) {
+    return false;
+  }
+  let i = 1;
+  if (i < n && isAlpha(subs[i]!) && subs[i]!.length === 4) i++; // script
+  if (
+    i < n &&
+    ((isAlpha(subs[i]!) && subs[i]!.length === 2) || /^[0-9]{3}$/.test(subs[i]!))
+  ) {
+    i++; // region
+  }
+  while (i < n && isVariant(subs[i]!)) i++;
+  // 扩展序列：singleton（非 x）+ 至少一个 2-8 alnum 子标签（可多个序列）
+  while (i < n && subs[i]!.length === 1 && subs[i]! !== "x" && isAlnum(subs[i]!)) {
+    i++;
+    let took = 0;
+    while (i < n && subs[i]!.length >= 2 && subs[i]!.length <= 8 && isAlnum(subs[i]!)) {
+      i++;
+      took++;
+    }
+    if (took === 0) return false;
+  }
+  // 尾部私有用：x + 至少一个 1-8 alnum 子标签
+  if (i < n && subs[i]! === "x") {
+    i++;
+    if (i >= n) return false;
+    while (i < n && subs[i]!.length <= 8 && isAlnum(subs[i]!)) i++;
+  }
+  return i === n;
+}
+
+/**
+ * Bug 44：Intl.NumberFormat / Intl.DateTimeFormat 构造（locale 校验与
+ * CanonicalizeLocaleList 同口径，node ground truth）：
+ * - 缺省 / undefined → 默认 locale，恒不抛；
+ * - string 字面量畸形（不可能字符 / 空串 / 不合 BCP47 形）→ 硬抛
+ *   RangeError；合形（含未知 tag "zz"）→ 正常构造；
+ * - null 字面量 → 确定 TypeError（ToObject(null)）；
+ * - 其余原始值字面量（number/boolean/bigint/symbol）非 String → 按
+ *   array-like 空 locale 表 → 默认 locale，原生不抛（node 实测
+ *   new Intl.NumberFormat(123) OK——不经 ToString，"123" 字符串才抛）；
+ * - tuple 字面量 → 逐项：string 项同判；非 string/object 项确定
+ *   TypeError（"Language ID should be string or object"）；抽象项保守 may；
+ * - 抽象（any/unknown/obj/arr/sum 等）→ may RangeError + 保守构造。
+ * options（第二参）不校验（任务口径：仅 locale 面）。
+ */
+export function makeIntlFormatAbs(sub: IntlSubCtor, locales: Abs | undefined): Abs {
+  if (!locales || (locales.term?.op === "lit" && locales.term.value === undefined)) {
+    return intlFormatBrandAbs(sub);
+  }
+  if (locales.term?.op === "lit" && locales.term.value === null) {
+    throw new NudoThrow(errorTypeAbs("TypeError")); // ToObject(null)
+  }
+  const vR = litValue(locales);
+  if (vR.ok && typeof vR.value === "string") {
+    if (!isWellFormedIntlLocaleTag(vR.value)) {
+      throw new NudoThrow(errorTypeAbs("RangeError")); // Invalid language tag
+    }
+    return intlFormatBrandAbs(sub);
+  }
+  if (vR.ok) return intlFormatBrandAbs(sub); // number/bool/bigint：array-like 空表
+  // symbol：非 String → array-like 空表（ToObject 包装后无 length）→ 默认
+  // locale，原生不抛（node 实测；symbol Abs 无 lit 项，须按形状判）
+  if (isSymbolAbs(locales)) return intlFormatBrandAbs(sub);
+  if (locales.shape.k === "tuple") {
+    for (const el of locales.shape.elements) {
+      const eR = litValue(el);
+      if (eR.ok) {
+        if (typeof eR.value === "string") {
+          if (!isWellFormedIntlLocaleTag(eR.value)) {
+            throw new NudoThrow(errorTypeAbs("RangeError"));
+          }
+          continue;
+        }
+        throw new NudoThrow(errorTypeAbs("TypeError")); // 非 string/object 的语言 ID 项
+      }
+      recordMayThrow({ kind: "RangeError", cause: `Intl.${sub} locale entry may be invalid` });
+      return intlFormatBrandAbs(sub);
+    }
+    return intlFormatBrandAbs(sub);
+  }
+  recordMayThrow({ kind: "RangeError", cause: `Intl.${sub} locale may be invalid` });
+  return intlFormatBrandAbs(sub);
+}
+
+/**
+ * Bug 44：Intl.NumberFormat / Intl.DateTimeFormat 构造器值（$get 命名空间
+ * 成员读产出）。fn shape name "Intl.<Sub>" → $new 按名派发 evalBuiltinNew；
+ * 调用面（原生 new 省略形 Intl.NumberFormat("en") ≡ new）走 apply 同一
+ * 校验 builder。ctor facet true（typeof "function"、可 new）。
+ */
+export function makeIntlCtorAbs(sub: IntlSubCtor): Abs {
+  return absFunction(
+    ["locales", "options"],
+    {
+      body: noBody,
+      apply: (args) => makeIntlFormatAbs(sub, args[0]),
+    },
+    { name: `Intl.${sub}`, ctor: true },
+  );
+}
+
 /** new X(...) */
 export function evalBuiltinNew(className: string, args: Abs[]): Abs | undefined {
   switch (className) {
@@ -829,6 +1232,13 @@ export function evalBuiltinNew(className: string, args: Abs[]): Abs | undefined 
     case "URL":
       // Bug 85：input ToString + URL 解析校验（字面量真解析带 href 槽）
       return makeUrlAbs(args[0], args[1]);
+    case "Intl.NumberFormat":
+    case "Intl.DateTimeFormat":
+      // Bug 44：makeIntlCtorAbs 的 fn name 按名派发——locale 校验构造
+      return makeIntlFormatAbs(
+        className === "Intl.NumberFormat" ? "NumberFormat" : "DateTimeFormat",
+        args[0],
+      );
     default:
       // C2.2：Error 家族 → name/message 槽
       if (isErrorCtorName(className)) {
@@ -995,6 +1405,30 @@ export function evalBuiltinInstanceMethod(
         return collectionIteratorAbs(setElementsAbs(recv));
       case "entries":
         return collectionIteratorAbs(setElementsAbs(recv).map(setEntryTuple));
+      default:
+        return undefined;
+    }
+  }
+  // Bug 43：FCR register/unregister 的 IsObject（CanBeHeldWeakly）校验——
+  // 此前走空 brand 兜底不校验 target（L2 漏报）。FCR 实例是 $new 空 brand
+  // 兜底产物（brand 名 "FinalizationRegistry"，$invokeInner 品牌派发直达）。
+  if (brandName === "FinalizationRegistry") {
+    switch (method) {
+      case "register":
+        // target 非弱键 → TypeError（node 实测 register(1,1)/('s',1)/(null,1)/
+        // (undefined,1)/(true,1)/(1n,1) 抛；register(Symbol(),1)/({},1) 合法）；
+        // heldToken 任意值合法（原生不校验）；unregisterToken 仅在给出且
+        // 非 undefined 时同校验（SameValue(·,undefined) 豁免，null 仍抛）
+        enforceCanBeHeldWeakly(args[0], "FinalizationRegistry.prototype.register target");
+        if (!isDefinitelyUndefinedArg(args[2])) {
+          enforceCanBeHeldWeakly(args[2], "FinalizationRegistry.prototype.register unregisterToken");
+        }
+        return undefAbs(); // 原生恒 undefined（may 档亦然——非抛臂返回面确定）
+      case "unregister":
+        // token 过 CanBeHeldWeakly（无 register 的 undefined 豁免——缺省/
+        // undefined 字面量亦抛，node 实测）；cells 表未建模 → 保守 boolean
+        enforceCanBeHeldWeakly(args[0], "FinalizationRegistry.prototype.unregister unregisterToken");
+        return boolPrim();
       default:
         return undefined;
     }
