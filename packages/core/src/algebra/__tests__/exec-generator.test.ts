@@ -80,7 +80,12 @@ export function sum() {
     expect(litValue(rs.result)).toEqual({ ok: true, value: 3 });
   });
 
-  it("yield* prim-lit 接收者：委托前抛出 → 值域前缀为空（native 前缀语义）", () => {
+  // Bug 82：yield* 委托——迭代性校验同 $elems 分类器。Bug 34 修复后：
+  // 非可迭代接收者的 definite TypeError 不再静默截断值域（native
+  // `[...g()]` 整抛，前缀不出货）——断言迁到 throws 面（值域前缀语义
+  // 见 eval-generator-semantics.test.ts 的 next() 链：前缀 yield 照常
+  // 交付，耗尽点抛）。
+  it("yield* prim-lit 接收者：委托前抛出 → [...g()] 抛 TypeError（native 整抛，不再截断成前缀）", () => {
     const src = `
 export function* g() { yield 1; yield* 2; yield 3; }
 export function* i() { yield* null; }
@@ -89,9 +94,9 @@ export function spreadI() { return [...i()]; }
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
     const rg = callTranspiledExportFull(exports, "spreadG", []);
-    expect(formatAbs(rg.result as never)).toContain("[1]");
+    expect(formatAbs(rg.throws as never)).toContain("TypeError");
     const ri = callTranspiledExportFull(exports, "spreadI", []);
-    expect(formatAbs(ri.result as never)).toContain("[]");
+    expect(formatAbs(ri.throws as never)).toContain("TypeError");
   });
 
   it("yield* any 接收者 → 元素 any（无约束，不是 unknown 引擎债）", () => {

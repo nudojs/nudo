@@ -25,7 +25,7 @@ Nudo 只交付**一个**语言服务器（`@nudojs/lsp`）。编辑器差异仅�
 | 主题 | ID | 谁会碰到 |
 |------|----|----------|
 | Active-case 装饰 | **LSP-G1** | **VS Code 已闭**（函数体 + case 行装饰）。Zed / Neovim / Helix 仍开（客户端无装饰 API，或需要插件） |
-| CodeLens 不渲染 | **LSP-G2** | Helix / 极简 Neovim — **观察面由 inlay 覆盖** `● interface / <source>`（与 CodeLens 同源）。CodeLens UI 本身仍是客户端限制 |
+| CodeLens 不渲染 | **LSP-G2** | Helix / 极简 Neovim — **观察面由 inlay 覆盖** `● contract / hw\|gen\|imp`（与 CodeLens 同源）。CodeLens UI 本身仍是客户端限制 |
 | Semantic tokens 默认关闭 | **LSP-G3** | **VS Code 可染色**（`semanticTokenScopes`）。Zed / Neovim / Helix：按 Setup 说明打开 |
 | 与 tsserver 并存的次要服务器噪音 | **LSP-G4** | 所有客户端（配置：`nudo.analysis.include` / `exclude`，或 `mode: "directives"`）。VS Code：命令 `Nudo: Apply coexistence settings` |
 | Pull diagnostics 未被使用 | **LSP-G6** | 较老客户端 — **push 面已钉**（validateText 必 publish）；pull 是增强 |
@@ -40,9 +40,9 @@ Nudo 只交付**一个**语言服务器（`@nudojs/lsp`）。编辑器差异仅�
 | 能力 | 服务器 handler | 说明 |
 |------|----------------|------|
 | Diagnostics | `validateText`（push） | 自适应防抖 300/400/800 ms；过期 generation 可取消（A8） |
-| Hover | `onHover` | Abs / intension；导出函数名首行 `● interface / handwritten\|generated\|implicit`（A7） |
+| Hover | `onHover` | Abs / intension；导出函数名首行 `● contract / hw\|gen\|imp`（A7） |
 | 补全（`.`） | `onCompletion` | 按推断类型给出 property/method |
-| CodeLens | `onCodeLens` | **interface 档在前**：`● interface / <source>` + persist/update；case 为 debug 副层 |
+| CodeLens | `onCodeLens` | **观察选择器**：`●/○ contract / hw\|gen\|imp`（默认激活）+ persist/update；`●/○ case "…"` 选项跟随（`nudo.selectCase` / `nudo.selectContract`） |
 | Inlay hints | `languages.inlayHint` | case 提示 + Abs 参数/返回（implicit 导出标 `derived`） |
 | 跳转定义 / 引用 / 重命名 | 标准 LSP | 含侧车绑定名（A5） |
 | 文档 / 工作区符号 | 标准 LSP | |
@@ -181,7 +181,7 @@ Helix 渲染诊断 / hover / 定义 / 重命名。**UI 无 CodeLens**——用 C
 | 缺口 | 影响客户端 | 权宜 | 跟踪 |
 |------|------------|------|------|
 | Active-case 装饰（高亮当前 case **函数体**） | Zed、Neovim、Helix（**VS Code 已闭**） | VS Code 扩展高亮整个函数体 + case 行。其它客户端：渲染 CodeLens 时用 `●`/`○` 切换 case，hover 跟随；无 CodeLens UI 时用 CLI `nudo check` / agent `nudo.hover` | **LSP-G1** — VS Code 已闭；其余为客户端限制（Zed 无 decoration API；Neovim 需自写插件） |
-| 不渲染 CodeLens | Helix、部分精简 Neovim | **Inlay `● interface / …`** 与 CodeLens 同源投影观察面。另有 CLI `nudo contract` / `nudo check`；agent `nudo.contract` / `nudo.contract.draft` | **LSP-G2** — 观察面已由 inlay 覆盖；CodeLens UI 仍为客户端限制 |
+| 不渲染 CodeLens | Helix、部分精简 Neovim | **Inlay `● contract / …`** 与 CodeLens 同源投影观察面。另有 CLI `nudo contract` / `nudo check`；agent `nudo.contract` / `nudo.contract.draft` | **LSP-G2** — 观察面已由 inlay 覆盖；CodeLens UI 仍为客户端限制 |
 | Semantic tokens 默认关闭 | Zed、Neovim、Helix（**VS Code 可染色**） | VS Code 自带 `semanticTokenScopes`。其它客户端按 Setup notes 打开（Zed `semantic_tokens: "combined"`；Neovim treesitter/semantic-tokens 插件；Helix `editor.semantic-tokens`） | **LSP-G3** — VS Code 已可；其余仍配置债 |
 | 次要 server 诊断可能与 tsserver 噪声叠加 | 全部 | VS Code：命令 `Nudo: Apply coexistence settings`。或收窄 `package.json#nudo.analysis.include` / `exclude`，或 `mode: "directives"` — 完整步骤见 [共存](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) | **LSP-G4** — 配置面；VS Code 可自助 + [共存配方](./coexistence.md#recipe-mixed-js-ts-no-double-error-storm) |
 | 文件探测 / `analysis.mode` 文档 | 文档 | 真值：[`@nudojs/service` API](../api/service.md#shouldanalyzefile) + [`PUBLIC_API.md`](https://github.com/nudojs/nudo/blob/main/packages/lsp/PUBLIC_API.md) §7 | **LSP-G5** — 已关闭（文档已对齐 `exports` 默认） |
@@ -194,7 +194,7 @@ Helix 渲染诊断 / hover / 定义 / 重命名。**UI 无 CodeLens**——用 C
 
 | 表面 | 共享数据源 |
 |------|------------|
-| CodeLens `● interface` | `interfaceTierOf` |
+| CodeLens `● contract` | `interfaceTierOf` |
 | Hover 首行 + 契约展示 | `interfaceTierOf` + `getHoverAtPosition` |
 | Inlay `interfaceSource` / `derived` | `collectAbsInlays` + `interfaceTierOf` |
 | Semantic token modifiers | `buildSemanticTokens` + `interfaceTierOf` |

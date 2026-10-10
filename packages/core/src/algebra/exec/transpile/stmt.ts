@@ -65,6 +65,8 @@ import {
   narrowTypeArmThunk,
   discriminantGuardsOf,
   narrowDiscriminantArmThunks,
+  relGuardOf,
+  narrowRelArmThunk,
 } from "./stmt-predicates.ts";
 
 /**
@@ -279,10 +281,13 @@ export function transpileFnBodyStmts(
 
 
 export function transpileBodyNode(node: Node, opts: TranspileOptions): string {
+  // Bug 42：body-fn 转译单元也建 try 临时计数器（外层未传时兜底，
+  // 保证单元内同级 try 不撞名——与 transpileFile 同口径）
+  const unitOpts: TranspileOptions = opts.tryTmpSeq ? opts : { ...opts, tryTmpSeq: { n: 0 } };
   if (isExpression(node as { type: string })) {
-    return `return ${emitTranspileExpression(node as Expression, opts)};`;
+    return `return ${emitTranspileExpression(node as Expression, unitOpts)};`;
   }
-  return withImplicitReturn(node, transpileStatement(node as Statement, 1, opts), 1);
+  return withImplicitReturn(node, transpileStatement(node as Statement, 1, unitOpts), 1);
 }
 
 export function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptions): string {
@@ -695,14 +700,22 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const guards = nullishGuardsOf(stmt.test);
       const tguard = typeGuardOf(stmt.test);
       const dguards = discriminantGuardsOf(stmt.test);
-      const consNarrowed = narrowDiscriminantArmThunks(
-        narrowTypeArmThunk(
-          narrowNullishArmThunks(consRaw, guards, "cons", recvSet),
-          tguard,
+      // 关系守卫（Bug 1）：`if (x >= 0)` 真臂 x 影子重绑带界 Abs——
+      // 裸 `return x` 不再丢守卫事实（return-constraint gate 假阳根因）
+      const rguard = relGuardOf(stmt.test);
+      const consNarrowed = narrowRelArmThunk(
+        narrowDiscriminantArmThunks(
+          narrowTypeArmThunk(
+            narrowNullishArmThunks(consRaw, guards, "cons", recvSet),
+            tguard,
+            "cons",
+            recvSet,
+          ),
+          dguards,
           "cons",
           recvSet,
         ),
-        dguards,
+        rguard,
         "cons",
         recvSet,
       );
@@ -1102,7 +1115,12 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         }
         return lines.join("\n");
       }
-      const markName = `__nudoTm_${stmt.loc?.start.line ?? 0}`;
+      // Bug 42：try 临时名走单调查询计数器——同作用域同一行两个 try
+      // （压缩/生成代码）按行号命名会重复 const 声明 → new Function
+      // SyntaxError 整模块 fail-closed；loc 缺失 `?? 0` 同样撞车
+      const tryTmpSeq = opts.tryTmpSeq ?? { n: 0 };
+      const tmpNo = tryTmpSeq.n++;
+      const markName = `__nudoTm_${tmpNo}`;
       const tryOpts: TranspileOptions = {
         ...opts,
         inTry: (opts.inTry ?? 0) + 1,
@@ -1124,7 +1142,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         stmt.handler?.param?.type === "Identifier"
           ? (stmt.handler.param as { name: string }).name
           : "e";
-      const catchTmp = `__nudoE_${stmt.loc?.start.line ?? 0}`;
+      const catchTmp = `__nudoE_${tmpNo}`;
       const transpileCatchBody = (d: number, o: TranspileOptions): string =>
         !stmt.handler
           ? ""

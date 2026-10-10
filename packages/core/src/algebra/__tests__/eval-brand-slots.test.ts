@@ -21,13 +21,9 @@
  * 原生 ground truth：node v26.10.0 实测对照。
  */
 import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  litValue,
-  formatAbs,
-  abs,
-} from "@nudojs/core";
+import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
+import { litValue, abs } from "../abs.ts";
+import { formatAbs } from "../format.ts";
 import {
   runWithMayThrowSession,
   setMayThrowCollector,
@@ -227,12 +223,16 @@ describe("Bug 22: boxed brand (new String/Number/Boolean) instance methods", () 
       .toEqual({ ok: true, value: "5.0" });
   });
 
-  it("构造强转折叠（ToNumber/ToString/ToBoolean；缺省 ≡ undefined）", () => {
+  it("构造强转折叠（ToNumber/ToString/ToBoolean；缺省 ≠ undefined——+0/\"\"）", () => {
     expect(litValue(call(`export function f() { return new Number("5").valueOf(); }`).result))
       .toEqual({ ok: true, value: 5 });
     expect(litValue(call(`export function f() { return new Number().valueOf(); }`).result))
-      .toEqual({ ok: true, value: NaN });
+      .toEqual({ ok: true, value: 0 });
     expect(litValue(call(`export function f() { return new String().valueOf(); }`).result))
+      .toEqual({ ok: true, value: "" });
+    expect(litValue(call(`export function f() { return new Number(undefined).valueOf(); }`).result))
+      .toEqual({ ok: true, value: NaN });
+    expect(litValue(call(`export function f() { return new String(undefined).valueOf(); }`).result))
       .toEqual({ ok: true, value: "undefined" });
     expect(litValue(call(`export function f() { return new String(null).valueOf(); }`).result))
       .toEqual({ ok: true, value: "null" });

@@ -11,19 +11,62 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 | Package | Current version |
 |----------|-----------------|
-| `@nudojs/core` | 1.9.1 |
-| `@nudojs/service` | 1.6.13 |
-| `nudojs (CLI)` | 1.3.14 |
-| `@nudojs/parser` | 1.4.10 |
-| `@nudojs/lsp` | 1.4.11 |
-| `@nudojs/env` | 0.4.28 |
-| `@nudojs/harvester` | 0.3.14 |
-| `vite-plugin-nudo` | 0.4.29 |
-| `nudo-vscode` | 0.3.33 |
+| `@nudojs/core` | 1.9.4 |
+| `@nudojs/service` | 1.6.16 |
+| `nudojs (CLI)` | 1.3.17 |
+| `@nudojs/parser` | 1.4.13 |
+| `@nudojs/lsp` | 1.5.1 |
+| `@nudojs/env` | 0.4.31 |
+| `@nudojs/harvester` | 0.3.17 |
+| `vite-plugin-nudo` | 0.4.32 |
+| `nudo-vscode` | 0.3.36 |
 
 **Jump to package:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.9.1 {#pkg-core}
+## @nudojs/core 1.9.4 {#pkg-core}
+
+## 1.9.4
+
+### Patch Changes
+
+- 2af4016: fix(core): generalize display (hover intension) renders destructured params as `{ a, b }` via `formalParamSignatureNames` instead of the `_p0` evaluation placeholder, while entryReqs preds and promoted entryShapes/fnRels lookups keep using the placeholder keys (#138)
+- 2af4016: fix(core): sidecar dot-path keys (`fn({ 'card.grade': string() })`) now bind nested destructured params — nestedPaths surface collection, fieldPath-aware projection in check/case scans, and nested obj-Abs synthesis in the refine block; flat binding names keep precedence (#137)
+
+<details>
+<summary>Version history (39)</summary>
+
+## 1.9.3
+
+### Patch Changes
+
+- b6495c6: fix(core): regex 捕获组接收者窄化 + exec 抽象匹配 per-index 槽（#136）与方法调用接收者守卫事实
+  
+  - 抽象 subject 的 `re.exec()` 结果从均质元素 arr（`m[0]`/`m[1]` 同值 `string|undefined`、无从窄化）改为与具体路径 `matchResultAbs` 同构的 per-index 槽 obj：`m[0]`=string、捕获组槽=string|undefined、`length`/`index`/`input`/具名 `groups` 全可读（修前 length/index/input 为 unknown）。
+  - `if (m[1].trim().length > 0) out.push(m[1])`：方法调用求值到达 ⇒ 接收者非 nullish——该事实经既有臂 thunk 影子参数窄化应用到 if 两臂（短路方向 sound：`A && B` 的 B 位仅真值臂、`A || B` 的 B 位仅假值臂；`?.` 可选链不识别）。修复 1.3.15 数组元素诚实化引入的 `array(string())` 误报 constraint-violated（守卫后 push 的元素必为 string）。
+  - `memberGuardTarget` 计算键认数值字面量：`if (m[1])` 显式真值守卫与 `if (o.p)` 同走 $removeMemberNullish 槽剪影（此前计算键一律不识别）。
+  - 诚实化不回退：无守卫直推仍如实报 `string | undefined` 契约违例；`.trim()` 的 nullish 臂 throws 事实不丢（无契约时仍报 entry-may-throw）。
+- 04a6d1d: fix(lsp): IDE 面（hover/inlay/check 诊断）接入模块图——跨模块 import 塌缩 unknown 的假空与假红
+  
+  - 根因：CLI `nudo check` 经 `buildCheckInjection` 把 `evalAbsModuleGraph` 模块图传给 `checkSource`/`generalizeFromAst`，而 LSP 侧同族调用（hover intension、`collectAbsInlays`、`checkToLspDiagnostics`）不带图——跨模块 import 不可解析，函数体求值 fail-closed。表现：函数名 hover 显示 `(_p0: A1) => unknown / conf: opaque`（参数无侧车种子 + 返回 unknown），Abs inlay 为空/unknown，且 `nudo:unproven-return` 假红（CLI 同文件全绿）。求值引擎本身精确（entry@/combinedAbs 无误），仅 host 装配缺口。
+  - `validation.ts` 新增 `evalAnalysisModules(filePath, source)`：`evalAbsModuleGraph` 组装（abs-modules-graph 内容缓存，重复调用廉价；cycle 不注入，与 CLI hasCycle 分支同语义 fail-closed）。
+  - `lsp-surface.ts` 函数名 hover 的 `generalizeFromAst` 补 `refine`（fromFile/loadModule/autoBind——此前连 refine 都没传，参数丢契约种子成 A1）与 `modules`（经 `SurfaceReuse.modules`）。
+  - `core/algebra/inlay.ts` `CollectAbsInlaysOpts` 增加 `modules` 透传给 generalize；`server-ide.ts` hover/inlay 处理器组装并传入图。
+  - 验证（npm-safe scanner decide.js，手写侧车 + 跨模块调用链）：修复后 hover = 契约 + `{confidence: 1|0.9|0.7|0.95, grade: "F"|string, …}`，inlay 三函数全精确，假红诊断 0；全套 vitest 1841 通过。
+  
+  feat(lsp): 观察选择器——contract 成为与各 case 并排的 ●/○ 选项 + 档线改名 `● contract / hw|gen|imp`
+  
+  - 档线改名：CodeLens / hover 首行 / inlay 档投影的 `● interface / handwritten|generated|implicit` 统一改为 `● contract / hw|gen|imp`（`formatInterfaceTierLine` 单源，新增 `INTERFACE_SOURCE_ABBR` 导出）。
+  - **contract 是观察选择器的一项，与各 case 互斥**（IDE 内点 ●/○ 切换，非配置开关）：
+    - 默认 `● contract / hw|gen|imp`、全部 case `○`——与分析器默认（无激活 case 不跑 case 种子）一致（此前 case 0 默认显示 ● 与实际观察态不符）；
+    - 点击 case（`nudo.selectCase`，已有）→ 该 case `●`、契约转 `○`；点击契约选项（新增 `nudo.selectContract`，executeCommand + `nudo/selectContract` 请求别名，位置参数 `[uri, fn]`）→ 取消激活 case（幂等）；
+    - inlay 档投影镜像激活态（`●/○ contract / …`）；persist/draft 动作与 `call@`/`entry@` 观察层不受选择影响。
+  - hover 与 Abs inlay（参数约束/返回 term/pred）不参与选择器（推导面）。
+
+## 1.9.2
+
+### Patch Changes
+
+- c8e0417: Propagate member truthy-guard facts into union containers (issue #129). `$removeMemberNullish` now classifies sum members per the guarded key: members whose read is definitely nullish — a closed shape without the key whose absent read yields `undefined` (no `open`/index signature, no `Object.prototype`/`constructor` key, no getter), or a getter-free all-nullish slot value — cannot survive the truthy arm and are pruned; members with `T | nullish` slot values or `optional` flags are rebuilt with the nullish members stripped and the flag dropped (same refinement the single-object branch has applied since #118, now also migrating the accessor/invariant/nullProto side tables to the rebuilt identity). `if (!node.property) return` followed by a chained re-read `node.property.type` on a discriminated union with a lenient catch-all arm no longer records a false `property 'type' on undefined` may-throw. Keys whose absent read is unjudgeable — `open`/index shapes, `Object.prototype` method names and `constructor` (proto-chain reads a function), and getter-backed keys (the read returns the getter result, not the placeholder slot) — stay conservatively, as do `any`/`unknown` slot values and non-object members; all-pruned sums pass through unchanged and single-member remainders collapse, matching `$narrowMemberEq` conventions.
 
 ## 1.9.1
 
@@ -52,9 +95,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   Reflection mutators: the five `Reflect.set`/`deleteProperty`/`defineProperty`/`setPrototypeOf`/`preventExtensions` now apply their state effect to the receiver (in-place slot write/delete, proto marking, ext-state) while keeping native boolean returns; `Object.create(proto, descriptors)` installs descriptors as own properties (open obj for object protos, null-proto preserved).
   
   Enumeration: `Object.create(<obj>)` no longer poisons the keys family with a false may-throw (keys/values/entries fold `[]`); `Object.keys/values/entries` classify non-string primitives (`[]`) and builtin brands (boxed String → `["0","1"]`, gOPN includes `length`); accessor properties are visible to `Object.entries`/`Object.values`/`Object.getOwnPropertyDescriptor` (accessor descriptors `{get,set,enumerable,configurable}`) and `JSON.stringify` through a single `readProperty` [[Get]] entry point — getter thunks are invoked, the defineProperty+enumerable stringify variant loses its false may-throw, and `for (k in new String(…))` no longer enumerates `length`.
-
-<details>
-<summary>Version history (36)</summary>
 
 ## 1.9.0
 
@@ -897,7 +937,49 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/service 1.6.13 {#pkg-service}
+## @nudojs/service 1.6.16 {#pkg-service}
+
+## 1.6.16
+
+### Patch Changes
+
+- Updated dependencies [2af4016]
+- Updated dependencies [2af4016]
+  - @nudojs/core@1.9.4
+  - @nudojs/env@0.4.31
+  - @nudojs/harvester@0.3.17
+  - @nudojs/parser@1.4.13
+
+<details>
+<summary>Version history (41)</summary>
+
+## 1.6.15
+
+### Patch Changes
+
+- b6495c6: fix(service): check 结果对瞬时/持久 fs 故障确定性化（#135 少集模式）
+  
+  - `resolveModuleFile` 改单次 statSync（消灭 existsSync+statSync TOCTOU 双调用）：ENOENT/ENOTDIR/EISDIR 按候选 miss；其余 errno（EACCES/EIO/ESTALE/EMFILE…）抛 ModuleReadError，不再被 existsSync 吞成「无此文件」。
+  - 持久 fs 故障：侧车 ambient 绑定显式报 error 级 `nudo:interface-load`（带路径+errno）且 check exit 1——修复前同一故障静默丢整族契约诊断（constraint-violated/unproven-return 整体消失、无任何诊断、exit 0 假绿，且跨版本逐字节相同）。
+  - 瞬态故障自愈：checkSource per-call loadModule 缓存对「抛错」不缓存、下一探测重试——单次 stat 抖动不再钉死整场 miss。
+  - `LoadDepsFingerprint.readError`（`readerr:` 前缀，`trunc:` 优先）：读错误轮指纹键不可信，check 整文件 memo / generalize L0 / evaluator memo / analysisFileCacheKey / LSP 校验指纹一律 fail-closed 不读不写，杜绝错误轮与 miss 轮互为跨次陈旧命中。
+  - `findProjectConfig` stat 错误分类：非 ENOENT 的 package.json stat 故障 stderr 告警 + 子树 fail-closed（不静默继承/丢失 profile、env 名单），修复 severity 漂移（adoption 丢失导致 entry-may-throw error↔warning 摆动）。
+- Updated dependencies [b6495c6]
+- Updated dependencies [04a6d1d]
+  - @nudojs/core@1.9.3
+  - @nudojs/env@0.4.30
+  - @nudojs/harvester@0.3.16
+  - @nudojs/parser@1.4.12
+
+## 1.6.14
+
+### Patch Changes
+
+- Updated dependencies [c8e0417]
+  - @nudojs/core@1.9.2
+  - @nudojs/env@0.4.29
+  - @nudojs/harvester@0.3.15
+  - @nudojs/parser@1.4.11
 
 ## 1.6.13
 
@@ -912,9 +994,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/env@0.4.28
   - @nudojs/harvester@0.3.14
   - @nudojs/parser@1.4.10
-
-<details>
-<summary>Version history (38)</summary>
 
 ## 1.6.12
 
@@ -1716,7 +1795,46 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## nudojs (CLI) 1.3.14 {#pkg-nudojs}
+## nudojs (CLI) 1.3.17 {#pkg-nudojs}
+
+## 1.3.17
+
+### Patch Changes
+
+- Updated dependencies [2af4016]
+- Updated dependencies [2af4016]
+  - @nudojs/core@1.9.4
+  - @nudojs/env@0.4.31
+  - @nudojs/harvester@0.3.17
+  - @nudojs/parser@1.4.13
+  - @nudojs/service@1.6.16
+
+<details>
+<summary>Version history (38)</summary>
+
+## 1.3.16
+
+### Patch Changes
+
+- Updated dependencies [b6495c6]
+- Updated dependencies [b6495c6]
+- Updated dependencies [04a6d1d]
+  - @nudojs/core@1.9.3
+  - @nudojs/service@1.6.15
+  - @nudojs/env@0.4.30
+  - @nudojs/harvester@0.3.16
+  - @nudojs/parser@1.4.12
+
+## 1.3.15
+
+### Patch Changes
+
+- Updated dependencies [c8e0417]
+  - @nudojs/core@1.9.2
+  - @nudojs/env@0.4.29
+  - @nudojs/harvester@0.3.15
+  - @nudojs/parser@1.4.11
+  - @nudojs/service@1.6.14
 
 ## 1.3.14
 
@@ -1732,9 +1850,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/harvester@0.3.14
   - @nudojs/parser@1.4.10
   - @nudojs/service@1.6.13
-
-<details>
-<summary>Version history (35)</summary>
 
 ## 1.3.13
 
@@ -2309,7 +2424,33 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/parser 1.4.10 {#pkg-parser}
+## @nudojs/parser 1.4.13 {#pkg-parser}
+
+## 1.4.13
+
+### Patch Changes
+
+- Updated dependencies [2af4016]
+- Updated dependencies [2af4016]
+  - @nudojs/core@1.9.4
+
+<details>
+<summary>Version history (38)</summary>
+
+## 1.4.12
+
+### Patch Changes
+
+- Updated dependencies [b6495c6]
+- Updated dependencies [04a6d1d]
+  - @nudojs/core@1.9.3
+
+## 1.4.11
+
+### Patch Changes
+
+- Updated dependencies [c8e0417]
+  - @nudojs/core@1.9.2
 
 ## 1.4.10
 
@@ -2321,9 +2462,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 - Updated dependencies [bf601e0]
 - Updated dependencies [bf601e0]
   - @nudojs/core@1.9.1
-
-<details>
-<summary>Version history (35)</summary>
 
 ## 1.4.9
 
@@ -2779,7 +2917,87 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/lsp 1.4.11 {#pkg-lsp}
+## @nudojs/lsp 1.5.1 {#pkg-lsp}
+
+## 1.5.1
+
+### Patch Changes
+
+- 71fd9fc: fix(lsp): 参数 hover——形参（含解构属性）从 PolyFn 面投影，不再空白
+  
+  - 根因：hover 的标识符解析只有模块级 import 绑定面（bindings / collectAbsBindingsFromGraph），形参从不入绑定表；带 `@nudo:case` 的函数体内更被整体短路（旧理由“保护 case 重放”，但重放面已删成恒 null）——`decide({ grade, findings })` 的参数声明与体内引用 hover 全空。
+  - 修复：`getHoverAtPosition` 末段新增参数投影——traverse 直查光标最内层 enclosing 函数（不依赖指令存在，`extractDirectivesQuiet` 只返回带指令的函数），`generalizeFromAst`（与函数名 hover 同源：契约种子 refine + 模块图）后从 `PolyFn.entryShapes + formals` 解析：
+    - 直接形参（id/default）→ `entryShapes[name]`；rest 同理；
+    - 解构形参（pattern）→ `bound` 名经 `propKey` 投影到 placeholder 对象 slot（rename `{a: b}` 时契约可写 a 或 b，Abs 对象只有 slot a，语义正确）。
+  - fail-closed 不变：无契约/无提升的参数与体内局部变量保持空（诚实 unknown，不冒充 any）；非 case 函数体内的 import 引用仍走绑定面。
+  - 验证：npm-safe `decide.js`（手写侧车）——`grade` → `string / term: grade #path`，`findings` → `{ ruleId: string, severity: string, veto?: boolean }[]`，声明处与体内引用一致；函数名 hover 无回归；单测覆盖侧车解构投影、提升形参、fail-closed 三态。
+  
+  follow-up（同 patch）：
+  
+  - **标识符 hover 单行化**：参数/局部/绑定引用不再展开 `term/pred/conf` 多行内涵（那是函数名 hover 契约面的职责），单行外延 `grade: string` / `vetos: { ruleId: string, … }[]`。
+  - **体内局部 hover**：`const vetos = vetoFindings(findings)` 这类调用初始化局部，经 entry 实参（契约种子）驱动一次 enclosing 调用，从 `EvalCallRecord.result`（callLoc 对位）投影；`let` 再赋值经 `$assignRecord` 范围内 join。结果按 (file, fn, 源指纹) 缓存，hover 连续触发不重跑。非调用/非赋值初始化保持 fail-closed。
+  - **case 函数体内的模块级引用**：绑定面不再被 `insideCaseFn` 整体短路（原理由"保护 case 重放"已随重放删除失效）——`vetoFindings` 等导入/同文件顶层引用恢复 hover；导入函数 callee（本文件无声明、intension 面缺失）同样放行到绑定面。
+  - 验证：stdio 实测 npm-safe `decide.js`——`grade`（声明/引用）单行 `grade: string`；`vetos` → `{ ruleId: string, severity: string, veto?: boolean }[]`（filter 后元素形状保持）；`vetoFindings` → fn Abs；函数名 hover（`● contract / hw` + 契约）无回归。
+  
+  follow-up 2（同 patch）：函数名 hover 弹层格式化——档线 + check 同口径签名单块
+  
+  - 旧弹层四块近重复：builder 语法契约模板 + symbolic 多行（shape + `conf:`）+ `_p0` 占位符 display 签名 + `ext:` 对照。现在：`● contract / hw` + 一个代码块，内容与 `nudo check` 签名**逐字同口径**（`formalParamSignatureNames` + `formatShape` 同公式，解构参数名还原为源码名；throws 归 check 门禁面）。
+  - 面的归属：签名面只在**声明名**位置（函数声明 id / `const f =` / 方法键），调用 callee 保持调用点面 + intension；标识符保持单行外延。无损面（builder 模板 / absMultiline / intension）保留在 `nudo.hover` slash payload，仅 IDE 弹层去重。
+  - 验证：stdio 实测 npm-safe `decide.js`——fn 名弹层 = 档线 + `decide({ grade, findings }: { grade: string, findings: { ruleId: string, severity: string, veto?: boolean }[] }) => { … }`，与 `nudo check` 输出逐字一致；`grade` / callee hover 无回归；新增 attachHover markdown 组装用例（此前弹层组装零覆盖）。
+- Updated dependencies [2af4016]
+- Updated dependencies [2af4016]
+  - @nudojs/core@1.9.4
+  - @nudojs/parser@1.4.13
+  - @nudojs/service@1.6.16
+
+<details>
+<summary>Version history (42)</summary>
+
+## 1.5.0
+
+### Minor Changes
+
+- 04a6d1d: fix(lsp): IDE 面（hover/inlay/check 诊断）接入模块图——跨模块 import 塌缩 unknown 的假空与假红
+  
+  - 根因：CLI `nudo check` 经 `buildCheckInjection` 把 `evalAbsModuleGraph` 模块图传给 `checkSource`/`generalizeFromAst`，而 LSP 侧同族调用（hover intension、`collectAbsInlays`、`checkToLspDiagnostics`）不带图——跨模块 import 不可解析，函数体求值 fail-closed。表现：函数名 hover 显示 `(_p0: A1) => unknown / conf: opaque`（参数无侧车种子 + 返回 unknown），Abs inlay 为空/unknown，且 `nudo:unproven-return` 假红（CLI 同文件全绿）。求值引擎本身精确（entry@/combinedAbs 无误），仅 host 装配缺口。
+  - `validation.ts` 新增 `evalAnalysisModules(filePath, source)`：`evalAbsModuleGraph` 组装（abs-modules-graph 内容缓存，重复调用廉价；cycle 不注入，与 CLI hasCycle 分支同语义 fail-closed）。
+  - `lsp-surface.ts` 函数名 hover 的 `generalizeFromAst` 补 `refine`（fromFile/loadModule/autoBind——此前连 refine 都没传，参数丢契约种子成 A1）与 `modules`（经 `SurfaceReuse.modules`）。
+  - `core/algebra/inlay.ts` `CollectAbsInlaysOpts` 增加 `modules` 透传给 generalize；`server-ide.ts` hover/inlay 处理器组装并传入图。
+  - 验证（npm-safe scanner decide.js，手写侧车 + 跨模块调用链）：修复后 hover = 契约 + `{confidence: 1|0.9|0.7|0.95, grade: "F"|string, …}`，inlay 三函数全精确，假红诊断 0；全套 vitest 1841 通过。
+  
+  feat(lsp): 观察选择器——contract 成为与各 case 并排的 ●/○ 选项 + 档线改名 `● contract / hw|gen|imp`
+  
+  - 档线改名：CodeLens / hover 首行 / inlay 档投影的 `● interface / handwritten|generated|implicit` 统一改为 `● contract / hw|gen|imp`（`formatInterfaceTierLine` 单源，新增 `INTERFACE_SOURCE_ABBR` 导出）。
+  - **contract 是观察选择器的一项，与各 case 互斥**（IDE 内点 ●/○ 切换，非配置开关）：
+    - 默认 `● contract / hw|gen|imp`、全部 case `○`——与分析器默认（无激活 case 不跑 case 种子）一致（此前 case 0 默认显示 ● 与实际观察态不符）；
+    - 点击 case（`nudo.selectCase`，已有）→ 该 case `●`、契约转 `○`；点击契约选项（新增 `nudo.selectContract`，executeCommand + `nudo/selectContract` 请求别名，位置参数 `[uri, fn]`）→ 取消激活 case（幂等）；
+    - inlay 档投影镜像激活态（`●/○ contract / …`）；persist/draft 动作与 `call@`/`entry@` 观察层不受选择影响。
+  - hover 与 Abs inlay（参数约束/返回 term/pred）不参与选择器（推导面）。
+
+### Patch Changes
+
+- b6495c6: fix(service): check 结果对瞬时/持久 fs 故障确定性化（#135 少集模式）
+  
+  - `resolveModuleFile` 改单次 statSync（消灭 existsSync+statSync TOCTOU 双调用）：ENOENT/ENOTDIR/EISDIR 按候选 miss；其余 errno（EACCES/EIO/ESTALE/EMFILE…）抛 ModuleReadError，不再被 existsSync 吞成「无此文件」。
+  - 持久 fs 故障：侧车 ambient 绑定显式报 error 级 `nudo:interface-load`（带路径+errno）且 check exit 1——修复前同一故障静默丢整族契约诊断（constraint-violated/unproven-return 整体消失、无任何诊断、exit 0 假绿，且跨版本逐字节相同）。
+  - 瞬态故障自愈：checkSource per-call loadModule 缓存对「抛错」不缓存、下一探测重试——单次 stat 抖动不再钉死整场 miss。
+  - `LoadDepsFingerprint.readError`（`readerr:` 前缀，`trunc:` 优先）：读错误轮指纹键不可信，check 整文件 memo / generalize L0 / evaluator memo / analysisFileCacheKey / LSP 校验指纹一律 fail-closed 不读不写，杜绝错误轮与 miss 轮互为跨次陈旧命中。
+  - `findProjectConfig` stat 错误分类：非 ENOENT 的 package.json stat 故障 stderr 告警 + 子树 fail-closed（不静默继承/丢失 profile、env 名单），修复 severity 漂移（adoption 丢失导致 entry-may-throw error↔warning 摆动）。
+- Updated dependencies [b6495c6]
+- Updated dependencies [b6495c6]
+- Updated dependencies [04a6d1d]
+  - @nudojs/core@1.9.3
+  - @nudojs/service@1.6.15
+  - @nudojs/parser@1.4.12
+
+## 1.4.12
+
+### Patch Changes
+
+- Updated dependencies [c8e0417]
+  - @nudojs/core@1.9.2
+  - @nudojs/parser@1.4.11
+  - @nudojs/service@1.6.14
 
 ## 1.4.11
 
@@ -2793,9 +3011,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/core@1.9.1
   - @nudojs/parser@1.4.10
   - @nudojs/service@1.6.13
-
-<details>
-<summary>Version history (39)</summary>
 
 ## 1.4.10
 
@@ -3525,7 +3740,33 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/env 0.4.28 {#pkg-env}
+## @nudojs/env 0.4.31 {#pkg-env}
+
+## 0.4.31
+
+### Patch Changes
+
+- Updated dependencies [2af4016]
+- Updated dependencies [2af4016]
+  - @nudojs/core@1.9.4
+
+<details>
+<summary>Version history (38)</summary>
+
+## 0.4.30
+
+### Patch Changes
+
+- Updated dependencies [b6495c6]
+- Updated dependencies [04a6d1d]
+  - @nudojs/core@1.9.3
+
+## 0.4.29
+
+### Patch Changes
+
+- Updated dependencies [c8e0417]
+  - @nudojs/core@1.9.2
 
 ## 0.4.28
 
@@ -3537,9 +3778,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 - Updated dependencies [bf601e0]
 - Updated dependencies [bf601e0]
   - @nudojs/core@1.9.1
-
-<details>
-<summary>Version history (35)</summary>
 
 ## 0.4.27
 
@@ -3933,7 +4171,39 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/harvester 0.3.14 {#pkg-harvester}
+## @nudojs/harvester 0.3.17 {#pkg-harvester}
+
+## 0.3.17
+
+### Patch Changes
+
+- Updated dependencies [2af4016]
+- Updated dependencies [2af4016]
+  - @nudojs/core@1.9.4
+  - @nudojs/env@0.4.31
+  - @nudojs/parser@1.4.13
+
+<details>
+<summary>Version history (38)</summary>
+
+## 0.3.16
+
+### Patch Changes
+
+- Updated dependencies [b6495c6]
+- Updated dependencies [04a6d1d]
+  - @nudojs/core@1.9.3
+  - @nudojs/env@0.4.30
+  - @nudojs/parser@1.4.12
+
+## 0.3.15
+
+### Patch Changes
+
+- Updated dependencies [c8e0417]
+  - @nudojs/core@1.9.2
+  - @nudojs/env@0.4.29
+  - @nudojs/parser@1.4.11
 
 ## 0.3.14
 
@@ -3947,9 +4217,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/core@1.9.1
   - @nudojs/env@0.4.28
   - @nudojs/parser@1.4.10
-
-<details>
-<summary>Version history (35)</summary>
 
 ## 0.3.13
 
@@ -4394,7 +4661,37 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## vite-plugin-nudo 0.4.29 {#pkg-vite-plugin}
+## vite-plugin-nudo 0.4.32 {#pkg-vite-plugin}
+
+## 0.4.32
+
+### Patch Changes
+
+- Updated dependencies [2af4016]
+- Updated dependencies [2af4016]
+  - @nudojs/core@1.9.4
+  - @nudojs/service@1.6.16
+
+<details>
+<summary>Version history (41)</summary>
+
+## 0.4.31
+
+### Patch Changes
+
+- Updated dependencies [b6495c6]
+- Updated dependencies [b6495c6]
+- Updated dependencies [04a6d1d]
+  - @nudojs/core@1.9.3
+  - @nudojs/service@1.6.15
+
+## 0.4.30
+
+### Patch Changes
+
+- Updated dependencies [c8e0417]
+  - @nudojs/core@1.9.2
+  - @nudojs/service@1.6.14
 
 ## 0.4.29
 
@@ -4407,9 +4704,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 - Updated dependencies [bf601e0]
   - @nudojs/core@1.9.1
   - @nudojs/service@1.6.13
-
-<details>
-<summary>Version history (38)</summary>
 
 ## 0.4.28
 

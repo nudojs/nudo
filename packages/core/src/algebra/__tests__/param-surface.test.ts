@@ -37,7 +37,7 @@ describe("C4.1 formalParamsFromNodes", () => {
     expect(names.has("y")).toBe(true);
     expect(locateContractParam(formals, "b")).toEqual({ index: 1 });
     expect(locateContractParam(formals, "args")).toEqual({ index: 2, rest: true });
-    expect(locateContractParam(formals, "x")).toEqual({ index: 3, field: "x" });
+    expect(locateContractParam(formals, "x")).toEqual({ index: 3, field: "x", fieldPath: ["x"] }); // #137：平铺命中带单段 fieldPath
   });
 
   it("object pattern rest + rename key aliases are contract-visible", () => {

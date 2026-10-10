@@ -165,7 +165,7 @@ findIdentifierAtPosition(ast: Node, line: number, column: number): string | null
 encodeSemanticTokens(tokens: SemanticToken[]): number[];
 ```
 
-Delta-encodes `{ line, char, length, typeIndex, modifierBitmask }` tokens into the flat `number[]` the LSP expects. `TOKEN_TYPES` (`function`, `variable`, `parameter`, `property`, `type`, `keyword`, `string`, `number`, `comment`, `decorator`, `method`) and `TOKEN_MODIFIERS` (`declaration`, `readonly`, `deprecated`, `unreachable`, `contract`, `generated`, `derived`) form the server's declared legend. The server's semanticTokens handler colors declarations from the analysis result — function bindings get the `function` type, other bindings `variable`, parameters `parameter`; top-level named-export functions also carry an interface-tier modifier aligned with CodeLens `● interface` (A7) — via `buildSemanticTokens` from `@nudojs/service`.
+Delta-encodes `{ line, char, length, typeIndex, modifierBitmask }` tokens into the flat `number[]` the LSP expects. `TOKEN_TYPES` (`function`, `variable`, `parameter`, `property`, `type`, `keyword`, `string`, `number`, `comment`, `decorator`, `method`) and `TOKEN_MODIFIERS` (`declaration`, `readonly`, `deprecated`, `unreachable`, `contract`, `generated`, `derived`) form the server's declared legend. The server's semanticTokens handler colors declarations from the analysis result — function bindings get the `function` type, other bindings `variable`, parameters `parameter`; top-level named-export functions also carry an interface-tier modifier aligned with CodeLens `● contract` (A7) — via `buildSemanticTokens` from `@nudojs/service`.
 
 ## Server Capabilities
 
@@ -173,10 +173,10 @@ What the server registers on `connection.onInitialize` (`src/server.ts`):
 
 | Capability | Handler | Behavior |
 |------------|---------|----------|
-| Hover | `onHover` | Inferred type at cursor via `getTypeAtPosition`; when the cursor is on an exported function name, the first line is `● interface / handwritten|generated|implicit` (same source as CodeLens) plus the effective contract display for handwritten/generated |
+| Hover | `onHover` | Export fn **name**: `● contract / hw\|gen\|imp` tier line + one code block with the **check-identical signature** (`decide({ grade, findings }: { grade: string, findings: { ruleId: string }[] }) => { … }`) — the builder-grammar template, symbolic multiline (`conf:` detail) and placeholder signature are deduped in the popup (the lossless faces remain in the `nudo.hover` payload). **Identifiers** render one line `name: shape` (`grade: string`): parameters (incl. destructured props) project from the enclosing function's `PolyFn` entry surface (contract seeds + module graph), call-initialized body locals (`const vetos = filter(findings)`) from a single entry-args call's `EvalCallRecord`, and module-level references (imports / sibling top-level fns) from the binding face — also inside `@nudo:case` function bodies. Call **callees** keep the call-site face |
 | Completion (trigger `.`) | `onCompletion` | Property/method/variable items from `getCompletionsAtPosition` |
-| CodeLens | `onCodeLens` | Interface tier first: `● interface / handwritten|generated|implicit` (+ persist/update emit lenses + `⚡ draft interface` for non-handwritten exports); case lenses are the debug sub-layer — `● case "name"` active, `○` otherwise. Clicking sends `nudo.selectCase` / `nudo.contract` / `nudo.contract.draft` / `nudo.contract.emit` and refreshes lenses |
-| Inlay hints | `languages.inlayHint` | End-of-line case `Type` hints + Abs param/return inlays; implicit exports carry `· derived` |
+| CodeLens | `onCodeLens` | Observation selector — contract is one option alongside each case, exactly one `●` active (`○` inactive). Default: `● contract / hw\|gen\|imp` (handwritten / generated / implicit tier), all cases `○`. Clicking a case (`nudo.selectCase`) activates it and flips contract to `○`; clicking the contract option (`nudo.selectContract`) deactivates the case (idempotent). Non-handwritten exports also get persist/update emit lenses + `⚡ draft interface`; synthesized `call@` / `entry@` observation lenses pin call-site facts |
+| Inlay hints | `languages.inlayHint` | Abs param/return inlays + the `●/○ contract / hw\|gen\|imp` tier projection (mirrors the selector's active state, for clients without CodeLens UI) + end-of-line case `Type` hints (`· derived` witnesses) |
 | Definition | `onDefinition` | `resolveDefinitionLocations` (local + cross-file + sidecar + workspace fallback) |
 | References | `onReferences` | `buildSymbolTable` + `findReferences` |
 | Rename | `onRenameRequest` | Workspace edit over the definition plus all references |
@@ -263,7 +263,7 @@ Library exports from `src/index.ts` and side-effect-free `./public-api` constant
 | <a id="gethoveratposition"></a>`getHoverAtPosition` | fn | LSP hover：优先无损 Abs（类型即计算本体）。 | `getHoverAtPosition( filePath: string, source: string, line: number, column: number, activeCases?: Map<string, number>, opts?: HoverInterfaceOpts, reuse?: SurfaceReuse, ): HoverInfo \| null` |
 | <a id="gettypeatposition"></a>`getTypeAtPosition` | fn | 光标处类型（Abs）。evaluator 节点表优先；用例函数体走 Abs 重放。 | `getTypeAtPosition( filePath: string, source: string, line: number, column: number, activeCases?: Map<string, number>, reuse?: SurfaceReuse, ): Abs \| null` |
 | <a id="gettypeatpositionasync"></a>`getTypeAtPositionAsync` | fn | Async entry to getTypeAtPosition with path-env preloading (see analyzeFileAsync). | `getTypeAtPositionAsync( filePath: string, source: string, line: number, column: number, activeCases?: Map<string, number>, ): Promise<Abs \| null>` |
-| <a id="hoverinfo"></a>`HoverInfo` | type | — | `HoverInfo = { typeText: string; intension?: string; abs?: string; absMultiline?: string; interfaceSource?: InterfaceSource; interfaceDisp...` |
+| <a id="hoverinfo"></a>`HoverInfo` | type | — | `HoverInfo = { typeText: string; intension?: string; abs?: string; absMultiline?: string; signature?: string; interfaceSource?: InterfaceS...` |
 | <a id="interfacetiermodifierbit"></a>`interfaceTierModifierBit` | fn | A7：interface 档 → semantic token modifier（与 CodeLens 同源） | `interfaceTierModifierBit(src: InterfaceSource): number` |
 | <a id="nudo_agent_tool_names"></a>`NUDO_AGENT_TOOL_NAMES` | const | Agent-tool names shared by executeCommand / slash requests / AGENT_TOOL_SOURCES. | `const NUDO_AGENT_TOOL_NAMES` |
 | <a id="nudo_execute_commands"></a>`NUDO_EXECUTE_COMMANDS` | const | workspace/executeCommand names (dot form) — declared on initialize | `const NUDO_EXECUTE_COMMANDS` |
@@ -289,5 +289,6 @@ Library exports from `src/index.ts` and side-effect-free `./public-api` constant
 | <a id="nudo.contract.draft"></a>`nudo.contract.draft` | fn | code-first `*.nudo.draft.*` | — |
 | <a id="nudo.contract.emit"></a>`nudo.contract.emit` | fn | persist `@generated` sidecar | — |
 | <a id="nudo.selectcase"></a>`nudo.selectCase` | fn | switch active case (positional or object args) | — |
+| <a id="nudo.selectcontract"></a>`nudo.selectContract` | fn | observation selector: pick the contract option — deactivate the fn's active case (idempotent) | — |
 | <a id="nudo.getactivecases"></a>`nudo.getActiveCases` | fn | active case index map | — |
 <!-- NUDO-API-SKELETON:END -->

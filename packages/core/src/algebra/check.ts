@@ -189,7 +189,12 @@ function checkSourceInScope(
       ? sidecarClosureFingerprint(callOpts.fromFile, callOpts)
       : undefined;
   const allowMemo =
-    useMemo && !depsFp.truncated && !(sidecarFp?.startsWith("trunc:") ?? false);
+    useMemo &&
+    !depsFp.truncated &&
+    // 读错误轮键不可信（#135）：错误轮报告（nudo:interface-load）与真 miss 轮
+    // （干净）若共享 miss 键会互为跨次陈旧命中——不读也不写 memo
+    !depsFp.readError &&
+    !(sidecarFp?.startsWith("trunc:") ?? false);
   if (allowMemo) {
     memoKey = checkMemoKey(filePath, stable, opts, depsFp, sidecarFp);
     const hit = checkMemoGet(memoKey);

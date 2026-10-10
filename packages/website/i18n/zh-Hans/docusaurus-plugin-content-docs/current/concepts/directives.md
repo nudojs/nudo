@@ -264,6 +264,22 @@ calc.js
 **自动绑定规则：**
 
 - 只绑定源码文件**同名本地 named export**（`export function` / `export const`）。re-export、`export default`、CJS 不参与。
+- `fn({ ... })` 的键按参数名绑定：普通标识符、解构绑定名，或嵌套解构的**点路径键**。嵌套 pattern 的外层键仍可整体绑定 `shape(...)`；数组元素没有路径形态。平铺名与同拼写的点键冲突时平铺名优先。
+
+```javascript
+// v.js
+export function nested({ card: { grade } }) {
+  return grade + "#";
+}
+```
+
+```javascript
+// v.nudo.js —— 'card.grade' 绑内层字段；'card' 绑整个对象
+import { fn, string } from "@nudojs/core";
+
+export const nested = fn({ "card.grade": string() }, string());
+```
+
 - `node_modules/` 下的侧车永不自动加载。
 - 源码注解与侧车对同参的约束**合取**；矛盾合取（如 `x > 0` ∧ `x < 0`）报 `nudo:interface-conflict`。
 - 合并序：手写（源码注解 ∪ 侧车绑定）> 生成段 > 隐式推导。`nudo contract` 按层标注（`[handwritten]` / `[generated]` / `[implicit]`）。

@@ -13,6 +13,7 @@ import {
   callTranspiledExportApply,
   foldStaticStringExpr,
   hostFnCtorFacet,
+  isCjsMainRun,
   namespaceAbsOf,
   undefAbs,
   unknown,
@@ -434,6 +435,10 @@ export function evalExportsToModuleExports(
   }
   const out: AbsModuleExports = { named, evaluated: true };
   if (def !== undefined) out.default = def;
+  // CJS `module.exports = X` 重赋值形态：原生 require 返回 X 本身——
+  // 供 run.ts requireFromModules 返回 default（Bug 10 obj-callee 定抛
+  // 暴露的形状失真：单函数导出包折成 namespace obj 后不可调）。
+  if (isCjsMainRun(run)) out.cjsMain = true;
   return out;
 }
 
@@ -712,6 +717,8 @@ export function evalAbsModuleGraph(
     Object.assign(placeholder.named, exports.named);
     if (exports.default !== undefined) placeholder.default = exports.default;
     if (exports.evaluated) placeholder.evaluated = true;
+    // CJS `module.exports = X` 重赋值标记（require 返回 X 本身，Bug 10 回归）
+    if (exports.cjsMain) placeholder.cjsMain = true;
     cache.set(absPath, placeholder);
 
     // 子树内容指纹组合（DESIGN-002）：直接本地依赖的 contentHash + 各依赖

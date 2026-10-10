@@ -18,14 +18,25 @@ import type { File, Node } from "@babel/types";
 import traverse from "@babel/traverse";
 import {
   type Abs,
+  type AbsModuleExports,
+  callTranspiledExportFull,
   generalizeFromAst,
   formatAbs,
   formatAbsMultiline,
   formatShape,
+  formalParamSignatureNames,
   interfaceTierOf,
+  joinAbs,
   listFnDirectiveScopes,
+  runTranspiled,
+  setEvalAssignCollector,
+  setEvalCallCollector,
+  type EvalAbsAssignRecord,
+  type EvalCallRecord,
   type InterfaceSource,
   type InterfaceTierOpts,
+  type Phi,
+  type PolyFn,
 } from "@nudojs/core";
 import { parse, extractDirectivesQuiet } from "@nudojs/parser";
 import type { FunctionWithDirectives } from "@nudojs/parser";
@@ -58,6 +69,12 @@ import {
 export type SurfaceReuse = {
   result?: AnalysisResult;
   ast?: File;
+  /**
+   * eval 模块图（`evalAnalysisModules` 组装）。函数名 hover 的 intension
+   * （generalizeFromAst）必须带图：缺图时跨模块 import 塌缩 unknown，
+   * 求值引擎的精确结果反而被 `(_p0: A1) => unknown` 兜底盖住。
+   */
+  modules?: Record<string, AbsModuleExports | Record<string, unknown>>;
 };
 
 /** SurfaceReuse.result.bindings 的单绑定读（缺省安全） */
@@ -117,11 +134,15 @@ function positionInsideCaseFunction(
   source: string,
   ast: ReturnType<typeof parse> | undefined,
   line: number,
+  column?: number,
 ): boolean {
   if (!ast) return false;
   try {
-    const enclosing = findEnclosingFunction(extractDirectivesQuiet(ast), line);
-    return !!enclosing && enclosing.directives.some((d) => d.kind === "case");
+    const enclosing = findEnclosingFunction(ast, line, column ?? 0);
+    if (!enclosing) return false;
+    return extractDirectivesQuiet(ast).some(
+      (f) => f.node === enclosing.node && f.directives.some((d) => d.kind === "case"),
+    );
   } catch {
     return false;
   }
@@ -227,6 +248,8 @@ export type HoverInfo = {
   abs?: string;
   /** 无损 Abs 多行展示 */
   absMultiline?: string;
+  /** check 同口径签名（`fn(params) => ret`）；IDE hover 渲染面 */
+  signature?: string;
   /** CodeLens `● interface` 同源档位（A7）；仅本地 named export */
   interfaceSource?: InterfaceSource;
   /** 有效契约展示（handwritten/generated）；implicit 为 undefined */
@@ -270,7 +293,10 @@ export function getHoverAtPosition(
       file = undefined;
     }
   }
-  const fnName = findFunctionNameAtPosition(source, line, column, file);
+  const fnHit = findFunctionNameAtPosition(source, line, column, file);
+  const fnName = fnHit?.name;
+  /** 声明名位置（非调用 callee）才有 check 同口径签名面 */
+  const fnDeclPos = fnHit?.isDecl ?? false;
 
   // interface 档（A7）：与 CodeLens 同源；仅导出函数标注
   const tier =
@@ -282,13 +308,37 @@ export function getHoverAtPosition(
   let gDisplay: string | undefined;
   let gAbs: string | undefined;
   let gMulti: string | undefined;
+  let gSig: string | undefined;
   if (fnName) {
     try {
-      const g = generalizeFromAst(fnName, source, file ? { file } : {});
+      // refine（fromFile/侧车 ambient）与 modules（跨模块图）一并传入：
+      // 缺 refine → 参数无契约种子（A1）；缺 modules → 跨模块调用 unknown
+      const g = generalizeFromAst(fnName, source, {
+        ...(file ? { file } : {}),
+        refine: {
+          fromFile: filePath,
+          ...(opts?.loadModule ? { loadModule: opts.loadModule } : {}),
+          ...(opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
+        },
+        ...(reuse?.modules ? { modules: reuse.modules } : {}),
+      });
       if (g) {
         gDisplay = g.display;
         gAbs = formatAbs(g.symbolic);
         gMulti = formatAbsMultiline(g.symbolic, fnName);
+        // check 同口径签名（check-signatures formatEntrySigLine 同公式：
+        // formalParamSignatureNames + formatShape；throws 归 check 门禁面）
+        const names =
+          g.formals && g.formals.length > 0 ? formalParamSignatureNames(g.formals) : g.params;
+        const ps = names
+          .map((p, i) => {
+            const t = g.typeParams[i]?.value;
+            // design §2：无约束 any；真 unknown 不得伪装
+            const shown = !t ? "any" : t.shape.k === "unknown" ? "unknown" : formatShape(t);
+            return `${p}: ${shown}`;
+          })
+          .join(", ");
+        gSig = `${fnName}(${ps}) => ${formatShape(g.symbolic)}`;
       }
     } catch {
       // ignore
@@ -304,8 +354,17 @@ export function getHoverAtPosition(
   };
   const attachIntension = (info: HoverInfo | null): HoverInfo | null => {
     if (!gDisplay) return withTier(info);
+    const sigField = fnDeclPos && gSig ? { signature: gSig } : {};
     if (!info) {
-      return withTier({ typeText: gDisplay, intension: gDisplay, abs: gAbs, absMultiline: gMulti });
+      // 函数名 hover：signature（check 同口径）是 IDE 渲染面；
+      // abs/absMultiline/intension 保留给 nudo.hover payload（无损面）
+      return withTier({
+        typeText: gDisplay,
+        intension: gDisplay,
+        abs: gAbs,
+        absMultiline: gMulti,
+        ...sigField,
+      });
     }
     return withTier({
       ...info,
@@ -313,12 +372,13 @@ export function getHoverAtPosition(
       // 外延侧已有更准 Abs 时保留；否则用 symbolic 兜底
       abs: info.abs ?? gAbs,
       absMultiline: info.absMultiline ?? gMulti,
+      ...sigField,
     });
   };
 
   // 求值引擎：优先 Abs 节点表 / 标识符绑定，不经 TypeValue evaluateProgram。
   // 用例函数体内：Abs 重放 selected case（activeCases），再 TypeValue 兜底。
-  const insideCaseFn = positionInsideCaseFunction(source, file, line);
+  const insideCaseFn = positionInsideCaseFunction(source, file, line, column);
 
   if (!insideCaseFn) {
     const fromB = absFromEval(filePath, source, line, column, file, reuse);
@@ -347,21 +407,55 @@ export function getHoverAtPosition(
     return attachIntension({ typeText: absLine, abs: absLine, absMultiline: absMulti });
   }
 
-  // 标识符绑定优先（比粗粒度节点表更准）。用例函数体内跳过：
-  // evaluator 绑定来自调用点，会盖住 activeCases 重放结果。
+  // 标识符面（顺序即优先级）：
+  // A 参数投影 → B 模块级绑定面 → C 体内局部（entry 实参调用 + 记录投影）。
+  // 用例函数体内不再整体短路：case 重放面已删（恒 null），绑定面只覆盖
+  // 模块级名（import/顶层声明），参数已在 A 先返回——不会被调用点绑定污染。
+  // fnName 命中且本地 generalize 有内涵（函数名/本地 callee）时走上方
+  // intension 面不进这里；fnName 命中但 gDisplay 缺失（导入函数的 callee
+  // ——本文件无声明）时放行，绑定面给 fn Abs。
   const ident = findIdentNameAtPosition(source, line, column, file);
-  if (ident && !fnName && !insideCaseFn) {
-    if (reuse?.result) {
-      // 同源绑定面：分析结果命中即返回；无绑定 = 无信息
-      const absBound = reuseBinding(reuse, ident);
-      if (absBound) {
-        const absLine = formatAbs(absBound);
-        const absMulti = formatAbsMultiline(absBound, ident);
-        return attachIntension({ typeText: absLine, abs: absLine, absMultiline: absMulti });
+  const fnFaceMissing = fnName !== undefined && gDisplay === undefined;
+  if (ident && (!fnName || fnFaceMissing)) {
+    /** 标识符 hover 单行外延：`grade: string`——内涵（term/pred/conf）
+     *  留给函数名 hover 的契约面，标识符面不重复展开 */
+    const identHover = (value: Abs): HoverInfo => {
+      const text = `${ident}: ${formatShape(value)}`;
+      return { typeText: text, abs: text };
+    };
+    // —— A. 参数面：光标在参数声明（含解构属性）或参数引用上时，从
+    // enclosing 函数的 generalized Abs 投影参数槽位。绑定面只覆盖模块级
+    // import——参数 Abs 的唯一权威源是 generalize（契约种子 + 模块图
+    // 在此生效，与函数名 hover 同源）。lexical shadowing 同口径：参数先于绑定。
+    let encFn: EnclosingFn | undefined;
+    let gEnc: PolyFn | undefined;
+    if (file) {
+      encFn = findEnclosingFunction(file, line, column);
+      if (encFn) {
+        try {
+          gEnc = generalizeFromAst(encFn.name, source, {
+            file,
+            refine: {
+              fromFile: filePath,
+              ...(opts?.loadModule ? { loadModule: opts.loadModule } : {}),
+              ...(opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
+            },
+            ...(reuse?.modules ? { modules: reuse.modules } : {}),
+          });
+        } catch {
+          // fail-closed：generalize 失败 → 无参数面（不拖垮 hover）
+        }
+        const paramHit = gEnc ? projectParamAbs(gEnc, ident) : undefined;
+        if (paramHit) return attachIntension(identHover(paramHit));
       }
-    } else if (file) {
+    }
+    // —— B. 绑定面（模块级名：import / 顶层声明）。同源绑定优先；
+    // 缺失时经模块图（相对 + 裸包）现求——case 函数体内的 import 引用
+    // （vetoFindings 等）由此返回。
+    const absBound = reuse?.result ? reuseBinding(reuse, ident) : undefined;
+    if (absBound) return attachIntension(identHover(absBound));
+    if (file) {
       try {
-        // 经模块图（相对 + 裸包）求 Abs 绑定
         const seeds = mockDirectivesToAbsSeeds(extractDirectivesQuiet(file), {
           fromFile: filePath,
         });
@@ -369,15 +463,18 @@ export function getHoverAtPosition(
           seedVars: seeds.seedVars,
           seedFns: seeds.seedFns as never,
         });
-        const absBound = absBinds.get(ident);
-        if (absBound) {
-          const absLine = formatAbs(absBound);
-          const absMulti = formatAbsMultiline(absBound, ident);
-          return attachIntension({ typeText: absLine, abs: absLine, absMultiline: absMulti });
-        }
+        const fromGraph = absBinds.get(ident);
+        if (fromGraph) return attachIntension(identHover(fromGraph));
       } catch {
         // fail-closed：绑定面求值失败 → 不产出 Abs（不拖垮 hover）
       }
+    }
+    // —— C. 体内局部：enclosing 以 entry 形参（契约种子）实参调用一次，
+    // 从赋值记录（let/var 再赋值）与调用记录（调用初始化 const）投影。
+    // 非调用初始化 / 非赋值局部保持 fail-closed（诚实无信息）。
+    if (encFn && gEnc) {
+      const local = projectLocalAbs(filePath, source, encFn, gEnc, ident, reuse?.modules);
+      if (local) return attachIntension(identHover(local));
     }
   }
 
@@ -392,6 +489,7 @@ export function getHoverAtPosition(
       intension: gDisplay,
       abs: gAbs,
       absMultiline: gMulti,
+      ...(fnDeclPos && gSig ? { signature: gSig } : {}),
     });
   }
   return null;
@@ -432,10 +530,13 @@ function findFunctionNameAtPosition(
   line: number,
   column: number,
   fileAst?: ReturnType<typeof parse>,
-): string | undefined {
+): { name: string; isDecl: boolean } | undefined {
   try {
     const ast = fileAst ?? parse(source);
     let found: string | undefined;
+    // 声明 id（FunctionDeclaration/VariableDeclarator/method key/property key）
+    // vs 调用 callee——签名面（check 同口径）只属于前者，callee 走调用点面
+    let foundDecl = false;
     // G2 绑定名（C.m / owner.key）——与 listFnDirectiveScopes 同口径
     let scopes: ReturnType<typeof listFnDirectiveScopes> | undefined;
     const scopeNameOf = (node: unknown): string | undefined => {
@@ -453,11 +554,13 @@ function findFunctionNameAtPosition(
         // 函数声明 id
         if (parent.type === "FunctionDeclaration" && parent.id === path.node) {
           found = path.node.name;
+          foundDecl = true;
           return;
         }
         // 调用 callee
         if (parent.type === "CallExpression" && parent.callee === path.node) {
           found = path.node.name;
+          foundDecl = false;
           return;
         }
         // ClassMethod / ObjectMethod key → G2 绑定名（C.m / owner.key）
@@ -468,6 +571,7 @@ function findFunctionNameAtPosition(
           (parent as { key?: unknown }).key === path.node
         ) {
           found = scopeNameOf(parent) ?? path.node.name;
+          foundDecl = true;
           return;
         }
         // 变量声明的函数初始化：const helper = (n) => … / const f = function () {}
@@ -479,6 +583,7 @@ function findFunctionNameAtPosition(
               init.type === "FunctionExpression")
           ) {
             found = path.node.name;
+            foundDecl = true;
             return;
           }
         }
@@ -497,29 +602,235 @@ function findFunctionNameAtPosition(
               val.type === "FunctionExpression")
           ) {
             found = scopeNameOf(parent) ?? path.node.name;
+            foundDecl = true;
             return;
           }
         }
       },
     });
-    return found;
+    return found !== undefined ? { name: found, isDecl: foundDecl } : undefined;
   } catch {
     return undefined;
   }
 }
 
+/**
+ * 光标最内层 enclosing 函数（traverse 直查，不依赖指令存在——
+ * extractDirectivesQuiet 只返回带指令的函数）。
+ * 覆盖：函数声明 / const fn = arrow|function / 对象方法 / 类方法。
+ * 返回 node（函数体节点，含 loc）供体内局部声明扫描与记录过滤。
+ */
+type EnclosingFn = { name: string; node: Node };
+
 function findEnclosingFunction(
-  functions: FunctionWithDirectives[],
+  ast: Node,
   line: number,
-): FunctionWithDirectives | null {
-  for (const fn of functions) {
-    const loc = fn.node.loc;
-    if (!loc) continue;
-    if (loc.start.line <= line && loc.end.line >= line) {
-      return fn;
+  column: number,
+): EnclosingFn | undefined {
+  let best: { name: string; startLine: number; node: Node } | undefined;
+  const traverseFn = (typeof traverse === "function" ? traverse : (traverse as any).default) as typeof traverse;
+  try {
+    traverseFn(ast, {
+      FunctionDeclaration(p) {
+        const loc = p.node.loc;
+        const name = p.node.id?.name;
+        if (!loc || !name) return;
+        if (loc.start.line <= line && loc.end.line >= line) {
+          if (!best || loc.start.line > best.startLine) best = { name, startLine: loc.start.line, node: p.node };
+        }
+      },
+      VariableDeclarator(p) {
+        const init = p.node.init;
+        if (!init || (init.type !== "ArrowFunctionExpression" && init.type !== "FunctionExpression")) return;
+        const loc = init.loc;
+        const name = (p.node.id as { name?: string } | null)?.name;
+        if (!loc || !name) return;
+        if (loc.start.line <= line && loc.end.line >= line) {
+          if (!best || loc.start.line > best.startLine) best = { name, startLine: loc.start.line, node: init };
+        }
+      },
+      "ObjectMethod|ClassMethod"(p) {
+        const node = p.node as unknown as {
+          loc?: { start: { line: number }; end: { line: number } };
+          key?: { name?: string };
+        };
+        const name = node.key?.name;
+        if (!node.loc || !name) return;
+        if (node.loc.start.line <= line && node.loc.end.line >= line) {
+          if (!best || node.loc.start.line > best.startLine) best = { name, startLine: node.loc.start.line, node: p.node };
+        }
+      },
+    });
+  } catch {
+    // ignore
+  }
+  return best ? { name: best.name, node: best.node } : undefined;
+}
+
+/**
+ * 参数 Abs 投影：光标在参数声明/引用上时，从 enclosing 函数的 PolyFn 面
+ * （entryShapes + formals）解析标识符：
+ * - 直接形参（id/default）→ entryShapes[name]
+ * - 解构形参（pattern）→ bound 名经 propKey 投影到 placeholder 对象 slot
+ * （rename `{a: b}` 时契约可写 a 或 b，Abs 对象只有 slot a）
+ * 与函数名 hover 同源（契约种子 + 模块图在此生效）。
+ */
+function projectParamAbs(g: PolyFn, ident: string): Abs | undefined {
+  const entry = g.entryShapes;
+  if (!entry) return undefined;
+  for (const f of g.formals ?? []) {
+    if ((f.kind === "id" || f.kind === "default") && f.name === ident) {
+      return entry.get(f.name)?.abs;
+    }
+    if (f.kind === "rest" && (f.name === ident || f.display === ident)) {
+      return entry.get(f.name)?.abs ?? entry.get(f.display)?.abs;
+    }
+    if (f.kind === "pattern" && f.bound.includes(ident)) {
+      const abs = entry.get(f.placeholder)?.abs;
+      const key = f.propKey[ident] ?? ident;
+      if (abs?.shape.k === "obj") return abs.shape.slots[key]?.value;
     }
   }
-  return null;
+  return undefined;
+}
+
+/**
+ * 体内局部 Abs 投影（hover C 面）。观测通道 = 执行记录插桩：
+ * - 调用初始化 `const vetos = vetoFindings(x)` → EvalCallRecord.result
+ *   （callLoc 与声明 init 的 loc 精确对位）；
+ * - 再赋值 `let acc; acc = …` → EvalAbsAssignRecord.next（范围内 join）。
+ * 一次 entry 实参调用（typeParams.value，契约种子已注入）驱动全 body。
+ * 结果按 (file, fn, 源指纹) 缓存——hover 连续触发不重跑。
+ */
+const fnLocalsCache = new Map<string, Map<string, Abs> | null>();
+
+function hashSource(s: string): string {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return `${s.length}:${(h >>> 0).toString(36)}`;
+}
+
+function projectLocalAbs(
+  filePath: string,
+  source: string,
+  enc: EnclosingFn,
+  g: PolyFn,
+  ident: string,
+  modules?: SurfaceReuse["modules"],
+): Abs | undefined {
+  const key = `${filePath}|${enc.name}|${hashSource(source)}`;
+  let locals = fnLocalsCache.get(key);
+  if (locals === undefined) {
+    locals = collectEnclosingFnLocals(source, enc, g, modules);
+    if (fnLocalsCache.size >= 32) {
+      const oldest = fnLocalsCache.keys().next().value;
+      if (oldest !== undefined) fnLocalsCache.delete(oldest);
+    }
+    fnLocalsCache.set(key, locals); // null（求值失败）也缓存——失败不重跑
+  }
+  return locals?.get(ident);
+}
+
+function collectEnclosingFnLocals(
+  source: string,
+  enc: EnclosingFn,
+  g: PolyFn,
+  modules?: SurfaceReuse["modules"],
+): Map<string, Abs> | null {
+  const assigns: EvalAbsAssignRecord[] = [];
+  const calls: EvalCallRecord[] = [];
+  const prevAssign = setEvalAssignCollector((r) => assigns.push(r));
+  const prevCall = setEvalCallCollector((r) => calls.push(r));
+  try {
+    const run = runTranspiled(source, {
+      mode: "analyze",
+      ...(modules
+        ? { modules: modules as Record<string, AbsModuleExports | Record<string, unknown>> }
+        : {}),
+    });
+    if (!Object.hasOwn(run, enc.name)) return null;
+    const args = g.typeParams.map((t) => t.value);
+    const phi: Phi | undefined =
+      g.entryReqs && g.entryReqs.length > 0
+        ? g.entryReqs.length === 1
+          ? g.entryReqs[0]!.pred
+          : ({ op: "and", args: g.entryReqs.map((r) => r.pred) } as Phi)
+        : undefined;
+    callTranspiledExportFull(run, enc.name, args, phi ? { phi } : undefined);
+  } catch {
+    // fail-closed：求值失败 → 无局部面（不拖垮 hover）
+    return null;
+  } finally {
+    setEvalAssignCollector(prevAssign);
+    setEvalCallCollector(prevCall);
+  }
+  const loc = (enc.node as { loc?: { start: { line: number }; end: { line: number } } }).loc;
+  const out = new Map<string, Abs>();
+  // 调用初始化声明 → 调用记录 result（callLoc 对位 init 起点）
+  for (const d of declaredCallInits(enc.node)) {
+    const rec = calls.find(
+      (c) => c.callLoc && c.callLoc.line === d.line && c.callLoc.column === d.column,
+    );
+    if (rec) out.set(d.name, rec.result);
+  }
+  // 范围内再赋值 → join（路径不敏感的诚实答案）
+  if (loc) {
+    for (const r of assigns) {
+      if (r.line === undefined || r.line < loc.start.line || r.line > loc.end.line) continue;
+      const prev = out.get(r.name);
+      out.set(r.name, prev ? joinAbs(prev, r.next) : r.next);
+    }
+  }
+  return out;
+}
+
+/**
+ * enclosing 函数体内（不含嵌套函数作用域）调用初始化的变量声明：
+ * `const x = f(…)` → { name: x, init 调用起点 }。
+ * 手写 AST 走访（不下钻 Function/ObjectMethod/ClassMethod——闭包
+ * 有自己的作用域，hover 闭包内标识符时 enclosing 即闭包自身）。
+ */
+const NESTED_SCOPE_TYPES = new Set([
+  "FunctionDeclaration",
+  "FunctionExpression",
+  "ArrowFunctionExpression",
+  "ObjectMethod",
+  "ClassMethod",
+  "ClassPrivateMethod",
+]);
+
+function declaredCallInits(fnNode: Node): Array<{ name: string; line: number; column: number }> {
+  const out: Array<{ name: string; line: number; column: number }> = [];
+  const walk = (node: unknown): void => {
+    if (!node || typeof node !== "object") return;
+    const n = node as {
+      type?: string;
+      id?: { type?: string; name?: string };
+      init?: { type?: string; loc?: { start: { line: number; column: number } } };
+    };
+    if (n.type === "VariableDeclarator") {
+      const start = n.init?.loc?.start;
+      if (
+        n.id?.type === "Identifier" &&
+        n.init?.type === "CallExpression" &&
+        start
+      ) {
+        out.push({ name: n.id.name!, line: start.line, column: start.column });
+      }
+    }
+    if (n !== fnNode && typeof n.type === "string" && NESTED_SCOPE_TYPES.has(n.type)) return;
+    for (const k of Object.keys(node)) {
+      if (k === "loc" || k === "start" || k === "end" || k.endsWith("Comments")) continue;
+      const v = (node as Record<string, unknown>)[k];
+      if (Array.isArray(v)) {
+        for (const c of v) walk(c);
+      } else if (v && typeof v === "object" && typeof (v as { type?: string }).type === "string") {
+        walk(v);
+      }
+    }
+  };
+  walk(fnNode);
+  return out;
 }
 
 function findIdentifierAtPosition(ast: Node, line: number, column: number): string | null {

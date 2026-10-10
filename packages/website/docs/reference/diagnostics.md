@@ -104,7 +104,7 @@ Context: [@nudo:case](../concepts/directives.md#nudocase--debug-witnesses) · [D
 
 ### `nudo:interface-param-mismatch` {#nudo-interface-param-mismatch}
 
-Handwritten contract param name is not on the formal surface. (Diagnostic ID keeps historical `interface` token; product term is **contract**.)
+Handwritten contract param name is not on the formal surface. (Diagnostic ID keeps historical `interface` token; product term is **contract**.) Legal names: plain parameter names, destructured binding names (source property keys for renames), and dot-path keys for nested destructuring (`'card.grade'` for `({ card: { grade } })`) — see [Sidecar auto-binding](../concepts/directives.md#main-path-sidecar-auto-binding).
 
 Context: [Contracts first](../guides/contract.md#contracts-first-contracts-style) · [Interface diagnostics](../guides/check.md#interface-diagnostics)
 

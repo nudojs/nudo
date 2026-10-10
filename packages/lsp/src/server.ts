@@ -73,6 +73,7 @@ import {
 } from "./server-watch.ts";
 import {
   makeHandleSelectCase,
+  makeHandleSelectContract,
   makeHandleGetActiveCases,
   makeHandleContractEmit,
   type CommandDeps,
@@ -420,6 +421,7 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
   };
 
   const handleSelectCase = makeHandleSelectCase(commandDeps);
+  const handleSelectContract = makeHandleSelectContract(commandDeps);
   const handleGetActiveCases = makeHandleGetActiveCases(commandDeps);
   const handleContractEmit = makeHandleContractEmit(commandDeps);
 
@@ -464,6 +466,8 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
         return handleContractEmit(arg as Parameters<typeof handleContractEmit>[0]);
       case "nudo.selectCase":
         return handleSelectCase(arg as Parameters<typeof handleSelectCase>[0]);
+      case "nudo.selectContract":
+        return handleSelectContract(arg as Parameters<typeof handleSelectContract>[0]);
       case "nudo.getActiveCases":
         return handleGetActiveCases(arg as Parameters<typeof handleGetActiveCases>[0]);
       default:
@@ -485,6 +489,17 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
         uri: args[0] as string,
         functionName: args[1] as string,
         caseIndex: args[2] as number,
+      });
+    }
+    // CodeLens 契约选项位置参数：[uri, functionName]（selectContract）
+    if (
+      params.command === "nudo.selectContract" &&
+      args.length >= 2 &&
+      typeof args[0] === "string"
+    ) {
+      return handleSelectContract({
+        uri: args[0] as string,
+        functionName: args[1] as string,
       });
     }
     // CodeLens passes contract print positionally: [uri, functionName?]
@@ -519,6 +534,7 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
   });
 
   connection.onRequest("nudo/selectCase", handleSelectCase);
+  connection.onRequest("nudo/selectContract", handleSelectContract);
 
   connection.onRequest("nudo/getActiveCases", handleGetActiveCases);
 

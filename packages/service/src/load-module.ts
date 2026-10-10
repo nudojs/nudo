@@ -3,7 +3,7 @@
  * CLI / LSP / vite / check 共用同一扩展名表，避免门禁结果分叉。
  */
 
-import { existsSync, statSync, readFileSync } from "node:fs";
+import { statSync, readFileSync } from "node:fs";
 import { dirname, resolve, join } from "node:path";
 
 export type LoadModule = (spec: string, fromFile: string) => string | undefined;
@@ -24,16 +24,33 @@ export function moduleResolveCandidates(spec: string, fromFile: string): string[
   ];
 }
 
-/** 首个真实文件候选（跳过目录）；无命中返回 undefined。 */
+/**
+ * 首个真实文件候选（跳过目录）；无命中返回 undefined。
+ *
+ * fs 错误分类（#135）：单次 statSync（顺带消灭 existsSync+statSync 的
+ * TOCTOU 双调用）——「路径不存在」类（ENOENT / ENOTDIR / EISDIR，其中
+ * ENOTDIR 常见于候选表 `p/index.js` 穿过文件段 p）按该候选 miss 继续；
+ * 其余（EACCES / EIO / ESTALE / EMFILE / EROFS…）是真实读故障，抛
+ * ModuleReadError 上抛。此前 existsSync 吞掉一切错误 + 外层 catch 吞
+ * statSync 抛错，瞬态故障被折叠成「无此文件」，再被上游缓存钉死整场。
+ */
 export function resolveModuleFile(spec: string, fromFile: string): string | undefined {
   for (const cand of moduleResolveCandidates(spec, fromFile)) {
-    if (existsSync(cand) && !statSync(cand).isDirectory()) return cand;
+    let st: ReturnType<typeof statSync>;
+    try {
+      st = statSync(cand);
+    } catch (e) {
+      const code = (e as { code?: string } | undefined)?.code;
+      if (code === "ENOENT" || code === "ENOTDIR" || code === "EISDIR") continue;
+      throw new ModuleReadError(cand, e);
+    }
+    if (!st.isDirectory()) return cand;
   }
   return undefined;
 }
 
 /**
- * 文件已解析但读失败（EACCES / EMFILE / EISDIR-race …）。
+ * 路径 stat 或文件读失败（EACCES / EMFILE / ESTALE / EIO …）。
  * 与「无此文件」（loadModule 返回 undefined）必须区分：侧车 auto-bind 在
  * 读失败时静默失效会让约束回落 any，且没有任何 nudo:interface-load。
  */
@@ -51,17 +68,13 @@ export class ModuleReadError extends Error {
 
 /**
  * 默认 loadModule：支持 .js/.mjs/.ts 与 index 入口。
- * 契约：无候选文件 → undefined；文件存在但读失败 → 抛 ModuleReadError
- * （调用方可据此区分「无侧车」与「侧车不可读」）。
+ * 契约：无候选文件 → undefined；stat/read 级真实 fs 错误 → 抛
+ * ModuleReadError（调用方可据此区分「无侧车」与「侧车不可读」）。
  */
 export function defaultLoadModule(spec: string, fromFile: string): string | undefined {
   if (!spec.startsWith(".") && !spec.startsWith("/")) return undefined;
-  let cand: string | undefined;
-  try {
-    cand = resolveModuleFile(spec, fromFile);
-  } catch {
-    return undefined;
-  }
+  // stat 级真实 fs 故障以 ModuleReadError 上抛（不得折叠成「无此文件」）
+  const cand = resolveModuleFile(spec, fromFile);
   if (!cand) return undefined;
   try {
     return readFileSync(cand, "utf-8");

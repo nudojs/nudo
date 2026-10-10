@@ -164,7 +164,7 @@ findIdentifierAtPosition(ast: Node, line: number, column: number): string | null
 encodeSemanticTokens(tokens: SemanticToken[]): number[];
 ```
 
-把 `{ line, char, length, typeIndex, modifierBitmask }` token 增量编码为 LSP 期望的扁平 `number[]`。`TOKEN_TYPES`（`function`、`variable`、`parameter`、`property`、`type`、`keyword`、`string`、`number`、`comment`、`decorator`、`method`）与 `TOKEN_MODIFIERS`（`declaration`、`readonly`、`deprecated`、`unreachable`、`contract`、`generated`、`derived`）构成服务器声明的图例。服务器的 semanticTokens handler 基于 `@nudojs/service` 的 `buildSemanticTokens` 对分析结果着色——函数绑定标为 `function`，其余绑定标为 `variable`，参数标为 `parameter`；顶层 named-export 函数绑定额外带与 CodeLens `● interface` 同源的 interface 档 modifier（A7）。
+把 `{ line, char, length, typeIndex, modifierBitmask }` token 增量编码为 LSP 期望的扁平 `number[]`。`TOKEN_TYPES`（`function`、`variable`、`parameter`、`property`、`type`、`keyword`、`string`、`number`、`comment`、`decorator`、`method`）与 `TOKEN_MODIFIERS`（`declaration`、`readonly`、`deprecated`、`unreachable`、`contract`、`generated`、`derived`）构成服务器声明的图例。服务器的 semanticTokens handler 基于 `@nudojs/service` 的 `buildSemanticTokens` 对分析结果着色——函数绑定标为 `function`，其余绑定标为 `variable`，参数标为 `parameter`；顶层 named-export 函数绑定额外带与 CodeLens `● contract` 同源的 interface 档 modifier（A7）。
 
 ## 服务器能力
 
@@ -172,10 +172,10 @@ encodeSemanticTokens(tokens: SemanticToken[]): number[];
 
 | 能力 | Handler | 行为 |
 |------------|---------|----------|
-| 悬停 | `onHover` | 通过 `getTypeAtPosition` 获取光标处推断类型；光标落在导出函数名上时，首行为 `● interface / handwritten|generated|implicit`（与 CodeLens 同源），handwritten/generated 另附有效契约展示 |
+| 悬停 | `onHover` | 导出函数**名**：`● contract / hw\|gen\|imp` 档线 + 单个代码块**与 check 完全同口径的签名**（`decide({ grade, findings }: { grade: string, findings: { ruleId: string }[] }) => { … }`）——builder 模板、symbolic 多行（`conf:` 细节）与占位符签名在弹层中去重（无损面保留在 `nudo.hover` payload）。**标识符**单行 `name: shape`（`grade: string`）：形参（含 `{ grade, findings }` 解构属性）从 enclosing 函数的 `PolyFn` 入口面投影（契约种子 + 模块图）；调用初始化的体内局部（`const vetos = filter(findings)`）经一次 entry 实参调用的 `EvalCallRecord` 投影；模块级引用（import / 同文件顶层函数）走绑定面——`@nudo:case` 函数体内同样生效。调用 **callee** 保持调用点面 |
 | 补全（触发 `.`） | `onCompletion` | 来自 `getCompletionsAtPosition` 的属性/方法/变量项 |
-| CodeLens | `onCodeLens` | interface 档在前：`● interface / handwritten|generated|implicit`（+ persist/update + 非手写导出上的 `⚡ draft interface`）；case 为 debug 副层——激活 `● case "name"`，其余 `○`。点击发送 `nudo.selectCase` / `nudo.contract` / `nudo.contract.draft` / `nudo.contract.emit` 并刷新透镜 |
-| 内联提示 | `languages.inlayHint` | 行尾 case `Type` 提示 + Abs 参数/返回 inlay；implicit 导出带 `· derived` |
+| CodeLens | `onCodeLens` | 观察选择器——contract 是与各 case 并排的一项，恰好一项 `●` 激活（`○` 未激活）。默认：`● contract / hw\|gen\|imp`（handwritten / generated / implicit 档），全部 case `○`。点击 case（`nudo.selectCase`）激活该 case 并将契约转 `○`；点击契约选项（`nudo.selectContract`）取消激活 case（幂等）。非手写导出另有 persist/update 固化动作 + `⚡ draft interface`；合成 `call@` / `entry@` 观察透镜钉调用点事实 |
+| 内联提示 | `languages.inlayHint` | Abs 参数/返回 inlay + `●/○ contract / hw\|gen\|imp` 档投影（镜像选择器激活态，供无 CodeLens UI 的客户端）+ 行尾 case `Type` 提示（`· derived` 见证） |
 | 定义 | `onDefinition` | `buildSymbolTable` + `findDefinition`（含侧车绑定名） |
 | 引用 | `onReferences` | `buildSymbolTable` + `findReferences` |
 | 重命名 | `onRenameRequest` | 对定义及全部引用生成 workspace edit |
@@ -262,7 +262,7 @@ encodeSemanticTokens(tokens: SemanticToken[]): number[];
 | <a id="gethoveratposition"></a>`getHoverAtPosition` | fn | LSP hover：优先无损 Abs（类型即计算本体）。 | `getHoverAtPosition( filePath: string, source: string, line: number, column: number, activeCases?: Map<string, number>, opts?: HoverInterfaceOpts, reuse?: SurfaceReuse, ): HoverInfo \| null` |
 | <a id="gettypeatposition"></a>`getTypeAtPosition` | fn | 光标处类型（Abs）。evaluator 节点表优先；用例函数体走 Abs 重放。 | `getTypeAtPosition( filePath: string, source: string, line: number, column: number, activeCases?: Map<string, number>, reuse?: SurfaceReuse, ): Abs \| null` |
 | <a id="gettypeatpositionasync"></a>`getTypeAtPositionAsync` | fn | Async entry to getTypeAtPosition with path-env preloading (see analyzeFileAsync). | `getTypeAtPositionAsync( filePath: string, source: string, line: number, column: number, activeCases?: Map<string, number>, ): Promise<Abs \| null>` |
-| <a id="hoverinfo"></a>`HoverInfo` | type | — | `HoverInfo = { typeText: string; intension?: string; abs?: string; absMultiline?: string; interfaceSource?: InterfaceSource; interfaceDisp...` |
+| <a id="hoverinfo"></a>`HoverInfo` | type | — | `HoverInfo = { typeText: string; intension?: string; abs?: string; absMultiline?: string; signature?: string; interfaceSource?: InterfaceS...` |
 | <a id="interfacetiermodifierbit"></a>`interfaceTierModifierBit` | fn | A7：interface 档 → semantic token modifier（与 CodeLens 同源） | `interfaceTierModifierBit(src: InterfaceSource): number` |
 | <a id="nudo_agent_tool_names"></a>`NUDO_AGENT_TOOL_NAMES` | const | Agent-tool names shared by executeCommand / slash requests / AGENT_TOOL_SOURCES. | `const NUDO_AGENT_TOOL_NAMES` |
 | <a id="nudo_execute_commands"></a>`NUDO_EXECUTE_COMMANDS` | const | workspace/executeCommand names (dot form) — declared on initialize | `const NUDO_EXECUTE_COMMANDS` |
@@ -288,5 +288,6 @@ encodeSemanticTokens(tokens: SemanticToken[]): number[];
 | <a id="nudo.contract.draft"></a>`nudo.contract.draft` | fn | code-first `*.nudo.draft.*` | — |
 | <a id="nudo.contract.emit"></a>`nudo.contract.emit` | fn | persist `@generated` sidecar | — |
 | <a id="nudo.selectcase"></a>`nudo.selectCase` | fn | switch active case (positional or object args) | — |
+| <a id="nudo.selectcontract"></a>`nudo.selectContract` | fn | observation selector: pick the contract option — deactivate the fn's active case (idempotent) | — |
 | <a id="nudo.getactivecases"></a>`nudo.getActiveCases` | fn | active case index map | — |
 <!-- NUDO-API-SKELETON:END -->

@@ -157,7 +157,9 @@ export function mergeHarvestUnderEnv(
   const out: Record<string, AbsModuleExports> = {};
   for (const [mod, exports] of Object.entries(harvestModules)) {
     const named = { ...exports.named };
-    out[mod] = exports.default !== undefined ? { named, default: exports.default } : { named };
+    // 保留 cjsMain / evaluated 等标记位（Bug 10 回归：require 对 CJS 单函数
+    // 导出需返回 default 本身，丢标记会回落 namespace obj → obj-callee 定抛）
+    out[mod] = exports.default !== undefined ? { ...exports, named } : { ...exports, named };
   }
   const notify = opts?.onConflict ?? envHarvestConflictCollectorSlot.get();
   for (const [mod, envExports] of Object.entries(envModules)) {
@@ -165,7 +167,7 @@ export function mergeHarvestUnderEnv(
     if (!existing) {
       const named = { ...envExports.named };
       out[mod] =
-        envExports.default !== undefined ? { named, default: envExports.default } : { named };
+        envExports.default !== undefined ? { ...envExports, named } : { ...envExports, named };
       continue;
     }
     const overwritten: string[] = [];
@@ -380,7 +382,9 @@ function evalDepKey(source: string, filePath: string, loadModule?: LoadModule): 
     // 指纹经同一 loadModule 采集：自定义 loader（虚拟 FS）的内容变更同样翻转键
     const fp = loadModuleDepsFingerprint(source, loadModule ?? defaultLoadModule, filePath);
     // fingerprint is path=hash,… — hash whole blob so long abs paths still flip
-    if (fp.truncated) return null;
+    // truncated/readerr（#135）：读错误轮的键不可信（flaky 与持久错误轮同
+    // readerr 键但底层现实不同）→ fail-closed 禁 evaluator memo
+    if (fp.truncated || fp.readError) return null;
     return hashSource(fp.fp);
   } catch {
     return null;

@@ -35,7 +35,7 @@ import {
   type EffectiveInterfaceOpts,
 } from "./interface.ts";
 import { generalizeSourceKeyPart, resetFnFpCache } from "./fn-fp.ts";
-import { formalParamsFromNodes, formalParamDisplayNames, locateContractParam, type FormalParam } from "./param-surface.ts";
+import { formalParamsFromNodes, formalParamDisplayNames, formalParamSignatureNames, locateContractParam, type FormalParam } from "./param-surface.ts";
 import { resetHashSourceCache } from "./hash-source.ts";
 import {
   loadModuleDepsFingerprint,
@@ -205,7 +205,7 @@ type DepFingerprint = { fp: string; paths: string[]; truncated: boolean };
  */
 function refineDepsFingerprint(source: string, refine?: RefineResolveOpts): LoadDepsFingerprint {
   if (!refine?.loadModule || !refine.fromFile) {
-    return { fp: "-", paths: [], contents: [], truncated: false };
+    return { fp: "-", paths: [], contents: [], truncated: false, readError: false };
   }
   return loadModuleDepsFingerprint(source, refine.loadModule, refine.fromFile);
 }
@@ -246,9 +246,9 @@ function generalizeMemoKey(
   const budget = opts.budget ?? defaultLeakBudget;
   const deps =
     opts.depsFp ??
-    (r ? refineDepsFingerprint(source, r) : { fp: "-", paths: [], contents: [], truncated: false });
+    (r ? refineDepsFingerprint(source, r) : { fp: "-", paths: [], contents: [], truncated: false, readError: false });
   // ambient 侧车闭包进键：侧车内容变更 → L0 失效；路径登记供定向逐出。
-  // 截断前缀（trunc:）→ 键不可信，调用方 fail-open。
+  // 截断（trunc:）/ 读错误（readerr:）→ 键不可信，调用方 fail-open。
   const sc =
     opts.sidecarFp ??
     (r?.loadModule && r.fromFile ? sidecarClosureFingerprint(r.fromFile, r) : undefined);
@@ -272,7 +272,8 @@ function generalizeMemoKey(
   return {
     key,
     depPaths: scPath !== undefined ? [...deps.paths, scPath] : deps.paths,
-    truncated: deps.truncated || (sc?.startsWith("trunc:") ?? false),
+    truncated:
+      deps.truncated || deps.readError || (sc?.startsWith("trunc:") ?? false),
   };
 }
 
@@ -688,7 +689,7 @@ export function generalizeFromAst(
   } = {},
 ): PolyFn | undefined {
   const { key, depPaths, truncated } = generalizeMemoKey(fnName, source, opts);
-  // 截断指纹不可信：不读也不写 L0
+  // 截断/读错误指纹不可信：不读也不写 L0
   if (!truncated) {
     const cached = generalizeMemoGet(key);
     if (cached !== null) {
@@ -759,8 +760,16 @@ function generalizeFromAstUncached(
           param: e.param,
           pred: instantiateConstraint(e.constraint, e.param),
         }));
-        /** 解构形参（C4.1）：字段契约聚合成 obj Abs，挂到 placeholder 槽 */
-        const patternFields = new Map<number, Record<string, { abs: Abs; optional?: boolean }>>();
+        /**
+         * 解构形参（C4.1）：字段契约聚合成 obj Abs，挂到 placeholder 槽。
+         * #137：嵌套点路径（'card.grade'）建子树——叶子 {abs, optional?} /
+         * 中间节点 {slots}；同键既有平铺叶子又有嵌套路径时平铺胜
+         * （整对象 shape 契约已覆盖内层，嵌套插入跳过）。
+         */
+        type PatternFieldNode =
+          | { abs: Abs; optional?: boolean }
+          | { slots: Record<string, PatternFieldNode> };
+        const patternFields = new Map<number, Record<string, PatternFieldNode>>();
         for (const e of reqs) {
           const idx = params.indexOf(e.param);
           if (idx >= 0) {
@@ -785,10 +794,35 @@ function generalizeFromAstUncached(
               patternFields.set(hit.index, bag);
             }
             const fieldAbs = constraintToEntryAbs(e.constraint, e.param);
-            bag[hit.field] = {
+            const leaf: PatternFieldNode = {
               abs: fieldAbs,
               ...(e.constraint.isOptional ? { optional: true } : {}),
             };
+            // #137：单段平铺（含 rename propKey）——平铺叶子直接覆盖同键子树
+            const segs = hit.fieldPath ?? [hit.field];
+            if (segs.length <= 1) {
+              bag[hit.field] = leaf;
+              continue;
+            }
+            // 嵌套路径逐段下钻；途中遇到平铺叶子 → 整体跳过（平铺胜）
+            let level = bag;
+            let skip = false;
+            for (let i = 0; i < segs.length - 1; i++) {
+              const node = level[segs[i]!];
+              if (node === undefined) {
+                const sub: PatternFieldNode = { slots: {} };
+                level[segs[i]!] = sub;
+                level = sub.slots;
+              } else if ("slots" in node) {
+                level = node.slots;
+              } else {
+                skip = true;
+                break;
+              }
+            }
+            if (!skip) {
+              level[segs[segs.length - 1]!] = leaf;
+            }
           } else if (hit) {
             // placeholder / `_` / rest 裸名：整参契约
             const entryAbs = constraintToEntryAbs(e.constraint, e.param);
@@ -803,19 +837,39 @@ function generalizeFromAstUncached(
           }
         }
         // 解构字段合成 obj Abs（签名上屏 `{ grade: string, … }`，不再是 any）
-        for (const [pIdx, bag] of patternFields) {
+        // #137：嵌套子树递归合成；中间节点 term 用 `sigName.已走段点连接`，
+        // 顶层 term 用签名展示名（#138 hover 命名一致：echo 名 = `{ card }` 面）
+        const sigNames = formalParamSignatureNames(formals);
+        const buildPatternObjAbs = (
+          slotsBag: Record<string, PatternFieldNode>,
+          sigName: string,
+          walked: string[],
+        ): Abs => {
           const slots: Record<string, { value: Abs; optional?: boolean }> = {};
-          for (const [key, rec] of Object.entries(bag)) {
-            slots[key] = {
-              value: rec.abs,
-              ...(rec.optional ? { optional: true } : {}),
-            };
+          for (const [key, node] of Object.entries(slotsBag)) {
+            if ("abs" in node) {
+              slots[key] = {
+                value: node.abs,
+                ...(node.optional ? { optional: true } : {}),
+              };
+            } else {
+              slots[key] = {
+                value: buildPatternObjAbs(node.slots, sigName, [...walked, key]),
+              };
+            }
           }
-          const objAbs = abs(
+          return abs(
             { k: "obj", slots },
-            termVar(params[pIdx] ?? `_p${pIdx}`),
+            termVar(walked.length === 0 ? sigName : `${sigName}.${walked.join(".")}`),
             undefined,
             "path",
+          );
+        };
+        for (const [pIdx, bag] of patternFields) {
+          const objAbs = buildPatternObjAbs(
+            bag,
+            sigNames[pIdx] ?? params[pIdx] ?? `_p${pIdx}`,
+            [],
           );
           typeParams[pIdx] = {
             id: typeParams[pIdx]!.id,
@@ -1026,6 +1080,9 @@ function generalizeFromAstUncached(
     }
   }
 
+  // #138：参数名槽用签名展示名（解构形参渲染 `{ a, b }`，不落回求值占位
+  // `_p0`）；entryReqs 谓词与提升快照查找仍按 params——见 formatPoly 注释。
+  const renderNames = formals.length > 0 ? formalParamSignatureNames(formals) : params;
   return {
     name: fnName,
     params,
@@ -1034,6 +1091,7 @@ function generalizeFromAstUncached(
     instantiate: (args, phi) => run(args, phi ?? pTrue),
     display: formatPoly(
       fnName,
+      renderNames,
       params,
       typeParams,
       symbolic,
@@ -1051,6 +1109,10 @@ function generalizeFromAstUncached(
 
 function formatPoly(
   name: string,
+  /** 展示名槽（formalParamSignatureNames）：解构形参渲染 `{ a, b }`（#138） */
+  renderNames: string[],
+  /** 查找键（formalParamDisplayNames 的 `_p0`）：entryReqs 谓词与提升快照
+   *  （entryShapes / fnRels）按它键控——placeholder/`_` 整参契约的 pred 不丢 */
   params: string[],
   typeParams: TypeParam[],
   symbolic: Abs,
@@ -1059,13 +1121,14 @@ function formatPoly(
   fnRels?: Map<string, { abs: Abs; source: RelSource }>,
 ): string {
   const reqByParam = new Map((entryReqs ?? []).map((r) => [r.param, r.pred]));
-  const ps = params
+  const ps = renderNames
     .map((p, i) => {
+      const key = params[i] ?? p;
       const id = typeParams[i]?.id ?? "unknown";
-      const pred = reqByParam.get(p);
+      const pred = reqByParam.get(key);
       // 提升快照优先（entryShapes / fnRels）
       const promoted =
-        entryShapes?.get(p)?.abs ?? fnRels?.get(p)?.abs;
+        entryShapes?.get(key)?.abs ?? fnRels?.get(key)?.abs;
       if (promoted) {
         const slot = formatShapeSlot(promoted);
         if (pred && pred.op !== "true") {

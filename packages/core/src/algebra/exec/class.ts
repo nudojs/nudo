@@ -6,13 +6,14 @@
 import type { Abs } from "../abs.ts";
 import { abs, unknown, confJoin, litValue, bool, boolLit, str, strLit, numLit } from "../abs.ts";
 import { objOf, joinAbs, isObj, canonicalArrayIndex, getSlot, setSlot, propertyKeyOf, getProtoAbs } from "../objects.ts";
-import { findClassAccessor } from "./runtime/members.ts";
+import { findClassAccessor, TYPED_ARRAY_CALLBACK_METHODS } from "./runtime/members.ts";
+import { typedArrayElementOf } from "../builtins/shared.ts";
 import { $get, $set, $lit, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary, lookupObjAccessor, fillTuple, clearStaleTermPred } from "./runtime.ts";
 import { pushCtorFrame, popCtorFrame, withNewTargetReset } from "./runtime/state.ts";
 import { $call } from "./call.ts";
 import { evalEnterCall, evalExitCall, evalTruncatedAbs, isHostGlobalFn, callHostGlobalFn } from "./calls.ts";
 import { getFnImpl, absFunction, hostFnCtorFacet, isAbsApplyResult } from "../abs-fn.ts";
-import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, evalBuiltinNew, extStateOf, getPropFlags, isEnumerableView, makeArrayCtorAbs, assignSourceSlots, isSymbolAbs, stringOfSymbol, evalPromiseCtor, evalPromiseMethod, builtinCtorNameOf, hostBuiltinCtorName, makeProxyAbs, makeArrayBufferAbs, makeSharedArrayBufferAbs, makeDataViewAbs, makeUrlAbs, makeBoxedAbs, boxedPrimitiveValue, evalRegExpCtor, sumHasPrimMember, evalDateCtor, evalArrayStatic } from "../builtins.ts";
+import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, evalBuiltinNew, extStateOf, getPropFlags, isEnumerableView, makeArrayCtorAbs, assignSourceSlots, isSymbolAbs, stringOfSymbol, evalPromiseCtor, evalPromiseMethod, builtinCtorNameOf, hostBuiltinCtorName, makeProxyAbs, makeArrayBufferAbs, makeSharedArrayBufferAbs, makeDataViewAbs, makeTypedArrayAbs, makeUrlAbs, makeTextDecoderAbs, makeUrlSearchParamsAbs, makeBoxedAbs, boxedPrimitiveValue, evalRegExpCtor, sumHasPrimMember, evalDateCtor, evalArrayStatic, makeDynamicFunctionAbs, makeWeakRefAbs, makeFinalizationRegistryAbs } from "../builtins.ts";
 import { arrayJoinToString, arrayJoinWithSep, validateJoinElements } from "../builtins/array.ts";
 import { isMapAbs, isSetAbs, makeMapAbs, makeSetAbs, collectionElementJoin, ctorArgDefinitelyInvalid, makeWeakCollectionAbs } from "../collections.ts";
 import { registerMatchIter } from "./match-iter.ts";
@@ -370,7 +371,7 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
     // 与 $callNamed 同一 never-execute 守卫——真构造会开真实连接。
     // 命中 fail-closed 为 unknown#opaque，不落入下方空 brand（那是
     // 「碰巧安全」而非显式拦截）。
-    const blockedHost = blockHostSideEffect(cls);
+    const blockedHost = blockHostSideEffect(cls, args);
     if (blockedHost) return blockedHost;
     // new Array(n) → n 元空洞 tuple；new Array(a,b,c) → 字面量 tuple；
     // 非法 length（1.5/-1/NaN/超 2^32-1）→ RangeError
@@ -405,12 +406,24 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
     // Bug 15：WeakMap/WeakSet 与 Map/Set 同口径 iterable 校验；合法 → 空 brand
     if (clsName === "WeakMap") return makeWeakCollectionAbs("WeakMap", args[0]);
     if (clsName === "WeakSet") return makeWeakCollectionAbs("WeakSet", args[0]);
+    // Bug 25：new WeakRef(target) —— target CanBeHeldWeakly 校验（与
+    // FCR.register 同口径）；合法 → 空 brand（deref 面保持现状）
+    if (clsName === "WeakRef") return makeWeakRefAbs(args[0]);
+    // Bug 25：new FinalizationRegistry(cb) —— cleanupCallback IsCallable
+    // 前置校验（缺省同抛）；合法 → 空 brand（实例方法面 Bug 43 已落）
+    if (clsName === "FinalizationRegistry") return makeFinalizationRegistryAbs(args[0]);
     // Bug 41/15：new ArrayBuffer(length, options?) —— ToIndex 校验 + 槽构造
     if (clsName === "ArrayBuffer") return makeArrayBufferAbs(args[0], args[1]);
     // Bug 15：new SharedArrayBuffer 同款（growable 面）
     if (clsName === "SharedArrayBuffer") return makeSharedArrayBufferAbs(args[0], args[1]);
     // Bug 63：new DataView(buf, off?, len?) —— IsArrayBuffer + ToIndex 校验
     if (clsName === "DataView") return makeDataViewAbs(args[0], args[1], args[2]);
+    // Bug 21：TypedArray 家族（TYPED_ARRAY_ELEMENT 表驱动）——length 实参
+    // ToIndex 校验（负/超界 → RangeError；symbol/bigint → TypeError；抽象 →
+    // may）；与 evalBuiltinNew（Abs 面）同 builder
+    if (typedArrayElementOf(clsName) !== undefined) {
+      return makeTypedArrayAbs(clsName, args);
+    }
     // Bug 85：new URL(input, base?) —— ToString + 解析校验（合法带 href 槽）
     if (clsName === "URL") return makeUrlAbs(args[0], args[1]);
     // Bug 22：装箱统一 makeBoxedAbs（[[PrimitiveValue]] 槽 + String 下标槽；
@@ -431,11 +444,29 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
     if (clsName === "Promise") {
       return evalPromiseCtor(args);
     }
+    // Bug 29（强转三连）：new Function(body)——实参 ToString（Symbol → 确定
+    // TypeError，node 实测；抽象 → may）。动态代码语义不建模（同 eval：值域
+    // 经 fn shape 调用得 unknown），但校验是纯静态的，与原生同口径；调用形
+    // Function(x) 经 callHostGlobalLiteralOnly 已覆盖，此处补构造器形。
+    // 与 evalBuiltinNew（Abs 面）同 builder 口径。
+    if (clsName === "Function") {
+      return makeDynamicFunctionAbs(args[0]);
+    }
     // Bug 24：new Date(value) —— 单参 ToPrimitive/ToNumber 校验（symbol/bigint
     // 确定抛，node 实测 new Date(1n) TypeError）；多参逐实参 ToNumber。
     // 与 evalBuiltinNew 的 Abs 面同口径（evalDateCtor 返回同款 brand）。
     if (clsName === "Date") {
       return evalDateCtor(args);
+    }
+    // new TextDecoder(label?) —— encoding label 校验（非法字符确定
+    // RangeError / 知名 label 正常构造 / 未知 ASCII 形与抽象 → may）
+    if (clsName === "TextDecoder") {
+      return makeTextDecoderAbs(args[0]);
+    }
+    // new URLSearchParams(init?) —— 序列实参校验（非二元组元素确定
+    // TypeError / 字面量正常构造 / 开放数组与抽象 → may）
+    if (clsName === "URLSearchParams") {
+      return makeUrlSearchParamsAbs(args[0]);
     }
     // Bug 16：未识别宿主函数（用户 function 声明/表达式——转译产物是真
     // JS 函数，体已 $ 助手化、Abs this 经 $rawThis(this) prologue 承接）
@@ -488,13 +519,22 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
   }
   const spec = specOf(cls);
   if (!spec) {
+    // Bug 32：原生 [[Construct]] 先做 IsConstructor(C)——obj/arr/tuple 形
+    // callee 恒非构造器（`new ({})()` 定抛 TypeError: not a constructor）。
+    // 引擎内该三形 Abs 从不携带构造面（类 spec 走上方 constructClass 分支、
+    // fn 形走下方 ctor 旗标分支、attachFnImpl 只产 fn 形状）→ 确定 TypeError，
+    // 不再静默落 $call（Bug 10 同缺口）。brand（Proxy construct trap 可
+    // 构造）/unknown（fail-closed 令牌）维持原口径不记。
+    const fs = cls && typeof cls === "object" && "shape" in (cls as object)
+      ? (cls as Abs).shape
+      : undefined;
+    if (fs?.k === "obj" || fs?.k === "arr" || fs?.k === "tuple") {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
     // Bug 9：fn 形 callee 的可构造性校验（箭头/方法/async/generator 不可 new）。
     // 已知非构造 → hard NudoThrow（tier 1）；已知可构造（函数/类表达式值）→
     // 与宿主函数分支同口径的空 brand 实例；未知（mock/桥接/env）→ may-throw
     // （tier 2），值域保持 $call 回退不变。
-    const fs = cls && typeof cls === "object" && "shape" in (cls as object)
-      ? (cls as Abs).shape
-      : undefined;
     if (fs?.k === "fn") {
       if (fs.ctor === false) {
         throw new NudoThrow(errorTypeAbs("TypeError"));
@@ -983,6 +1023,42 @@ function $invokeInner(
     if (boxedPrim) {
       return $invokeInner(boxedPrim, method, args, loc);
     }
+    // Bug 36：TypedArray 原型回调族（forEach/map/filter/reduce/reduceRight/
+    // every/some/find/findIndex/findLast/findLastIndex）。TA 实例是 $new 兜底
+    // 的空 brand（长度/条目不建模），evalBuiltinInstanceMethod 与
+    // BUILTIN_BRAND_METHODS 此前皆无 TA 条目——HOF 调用落 $get → undef →
+    // unknown：回调静默不跑（副作用计数器折 wrong-exact 0）、GetCallback
+    // 校验缺失（非函数回调不抛、L2 假阴）。按抽象数组视图复用数组 HOF
+    // 机器（invokeArrMethod，单一事实源）：元素域 = TYPED_ARRAY_ELEMENT 的
+    // prim（BigInt64/BigUint64 → bigint），各分支内置 validateCallableArg
+    //（零迭代也定抛）+ 代表元素回调执行（副作用/抛错传播）+ 返回面对齐
+    // 数组口径。回调收到的第 3 实参（数组本尊）是本视图而非 TA brand——
+    // instanceof 面的诚实不精确（长度未建模同源）。map 原生结果 = 同族
+    // TA，元素经 ToNumber/ToBigInt 收敛回元素 prim（回调返回 string 不渗入
+    // 元素域）；回调返回 symbol/number↔bigint 交 ConvertThrow 面未建模
+    //（同长度口径，接受）。
+    const taElem = typedArrayElementOf(brandName);
+    if (taElem && TYPED_ARRAY_CALLBACK_METHODS.has(method)) {
+      const taElemPrim = abs(
+        { k: "prim", type: taElem },
+        undefined,
+        undefined,
+        "exact",
+      );
+      const arrView = abs(
+        { k: "arr", element: taElemPrim },
+        undefined,
+        undefined,
+        thisVal.conf,
+      );
+      const taR = invokeArrMethod(arrView, method, args);
+      if (taR !== undefined) {
+        if (method === "map" && taR.shape.k === "arr") {
+          return abs({ k: "arr", element: taElemPrim }, undefined, undefined, taR.conf);
+        }
+        return taR;
+      }
+    }
     // 内建 brand 实例方法（Date/RegExp/Map/Set/Error 家族）：统一经 builtin 表分派。
     // 此前只对 Map/Set 调 evalBuiltinInstanceMethod，Date.getTime 等落到
     // findMethod 未命中 → 折 lit(undefined)，Number.isNaN(getTime()) 假 false。
@@ -990,6 +1066,10 @@ function $invokeInner(
     if (viaBuiltin !== undefined) return viaBuiltin;
     // C1：Map/Set forEach（条目表回调）
     if ((brandName === "Map" || brandName === "Set") && method === "forEach") {
+      // Bug 31：GetCallback 前置校验（空接收者零迭代也要抛）——Bug 55
+      // 数组 HOF 同口径；此前回调可调用性只在 invokeCb 内经 $call 逐条目
+      // 触发，空 Map/Set 与对象回调形态静默不抛（L2 假阴）。
+      validateCallableArg(args[0], `${brandName}.prototype.forEach callback may not be callable`);
       const r = $collectionForEach(thisVal, args[0]);
       if (r !== undefined) return r;
     }

@@ -79,15 +79,15 @@ export function analysisFileCacheKey(
   const envSeg = projectEnvNames && projectEnvNames.length > 0 ? projectEnvNames.join(",") : "-";
   const abSeg = autoBind === false ? "ab0" : autoBind === true ? "ab1" : "ab?";
   // dep 内容变更（入口 source 未变）也必须 miss——default loader 同样进指纹。
-  // 指纹失败/truncated → 禁用共享命中（fail-closed，见 noCache）。
+  // 指纹失败/truncated/readerr → 禁用共享命中（fail-closed，见 noCache）。
   const effectiveLoader = loadModule ?? defaultLoadModule;
   let depSeg = "-";
   let noCache = false;
   try {
     const fp = loadModuleDepsFingerprint(source, effectiveLoader, filePath);
-    if (fp.truncated) {
+    if (fp.truncated || fp.readError) {
       noCache = true;
-      depSeg = `trunc:${fp.paths.length}`;
+      depSeg = `${fp.truncated ? "trunc" : "readerr"}:${fp.paths.length}`;
     } else {
       // fingerprint is path=hash,… — hash the whole blob so long abs paths still flip
       depSeg = hashSource(fp.fp);

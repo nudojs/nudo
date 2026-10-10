@@ -2,7 +2,7 @@
   "name": "nudo-vscode",
   "displayName": "Nudo",
   "description": "Nudo type inference engine for VS Code / Cursor",
-  "version": "0.3.33",
+  "version": "0.3.36",
   "private": true,
   "publisher": "wmzy",
   "engines": {

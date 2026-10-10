@@ -98,6 +98,7 @@ export {
   formatDiagnostics, formatEffectiveInterfaceDisplay,
   formatGithubAnnotations, formatGitlabCodeQuality,
   formatInterfaceTierLine, formatShape, formatShapeSlot, ge, geNum,
+  INTERFACE_SOURCE_ABBR,
   // D5=F1 / D6=G2：指令抽取单源 + 作用域绑定（directive-scan）
   extractFileEnvNames, extractMockModuleRecords, extractNudoImportRecords,
   extractBalancedParens, findFnDirectiveScope, fnDirectiveCommentLines, listFnDirectiveScopes,
@@ -112,7 +113,7 @@ export {
   interfaceTierOf, isAbsApplyResult, isAbsVal, isArrMutator, isBigPrim, isDefinitelyFalse, makeAbsApplyResult,
   isDefinitelyTrue, isErrorCtorName, isExactLit, isIntFlag, isMapAbs,
   isNodeModulesPath, isNudoBreak, isNudoConstraint, isNudoContinue,
-  isNudoReturn, isNudoThrow, isNullProtoObj, isNullishLitAbs, isNumPrim,
+  isNudoReturn, isNudoThrow, isNullProtoObj, isNullishLitAbs, isCjsMainRun, isNumPrim,
   isObj, isObjectProtoBrand, isRelFn, isSetAbs, isStrPrim, isSymbolAbs,
   joinAbs, joinFunctions, joinObjects, joinThenProject, joinValues, lazy, le,
   leNum, leavePromiseExecutorScope, lenTerm, leqAbs, listFunctionNames,

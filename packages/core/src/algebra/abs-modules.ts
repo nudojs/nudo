@@ -19,6 +19,12 @@ export type AbsModuleExports = {
    * 成功求值的表报（zero-FP，避免与 module-missing 叠报）。
    */
   evaluated?: boolean;
+  /**
+   * CJS `module.exports = X` 重赋值形态（Bug 10 回归修复）：原生 require
+   * 返回 X 本身（常为可调用函数），而非命名空间对象。requireFromModules
+   * 据此返回 default（= module.exports 值）；缺省按命名空间对象口径。
+   */
+  cjsMain?: boolean;
 };
 
 /**

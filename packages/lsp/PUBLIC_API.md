@@ -36,7 +36,7 @@ Declared in `connection.onInitialize` (`src/server.ts`). Keys are the freeze lis
 | Capability key | Notes |
 |----------------|-------|
 | `textDocumentSync` | `Full` |
-| `hoverProvider` | Abs / intension + interface tier on export fn names |
+| `hoverProvider` | Export fn **name**: `● contract / hw\|gen\|imp` tier line + one block with the check-identical signature (`decide({ grade, findings }: { … }) => { … }`; builder template / symbolic multiline / display signature are deduped — full faces stay in the `nudo.hover` payload). Identifiers (params / body locals / module refs) render one-line `name: shape` — param slots project from the enclosing fn's `PolyFn` entry face, call-initialized locals from `EvalCallRecord` (entry-args call), module-level refs from the binding face (case-fn bodies included) |
 | `completionProvider` | trigger `.`; `resolveProvider: false` |
 | `codeLensProvider` | `resolveProvider: false`; interface tier first; case debug layer; **synthetic `call@`/`entry@` observation lenses** (CLI test facts pinned to source; click → `nudo.trace`) |
 | `inlayHintProvider` | case + Abs param/return |
@@ -70,6 +70,7 @@ types/modifiers may gain entries (**non-breaking**); removals are breaking.
 | `nudo.contract.draft` | code-first `*.nudo.draft.*` |
 | `nudo.contract.emit` | persist `@generated` sidecar |
 | `nudo.selectCase` | switch active case (positional or object args) |
+| `nudo.selectContract` | observation selector: pick the contract option — deactivate the fn's active case (idempotent) |
 | `nudo.getActiveCases` | active case index map |
 
 ## 4. Custom requests `nudo/…` (slash form) — protocol contract
@@ -90,6 +91,7 @@ to the same handlers (`AGENT_TOOL_SOURCES` same-source pin).
 | `nudo/contract.draft` | `nudo.contract.draft` | draft summary |
 | `nudo/contract.emit` | `nudo.contract.emit` | emit summary |
 | `nudo/selectCase` | `nudo.selectCase` | `{ success: true }` — editor-only (slash + executeCommand; no dot-form custom request) |
+| `nudo/selectContract` | `nudo.selectContract` | `{ success: true }` — editor-only (slash + executeCommand; no dot-form custom request) |
 | `nudo/getActiveCases` | `nudo.getActiveCases` | `Record<string, number>` — editor-only (slash + executeCommand; no dot-form custom request) |
 
 **Consistency invariant (A7):** every slash-form request must have a matching
