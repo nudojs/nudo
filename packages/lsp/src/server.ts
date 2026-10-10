@@ -140,6 +140,13 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
    */
   let clientDefaultAnalysisMode: AnalysisMode | undefined;
 
+  /**
+   * 宿主设置（VS Code `nudo.inlayHints.parameters` 等）提供的默认值。
+   * 优先级同 analysis.mode：项目 package.json#nudo.inlayHints.parameters
+   * 显式值赢；此值只在项目未显式设置该键时作为默认；均缺失 → false（关）。
+   */
+  let clientDefaultInlayParams: boolean | undefined;
+
   let debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   connection.onInitialize((params: InitializeParams): InitializeResult => {
@@ -151,10 +158,15 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
       if (root) workspaceRoots = [root];
     }
     // initializationOptions（vscode 扩展等宿主转发的工作区设置）：
-    // { analysis: { mode } }。作为项目配置缺失时的默认 mode（项目显式值优先）。
+    // { analysis: { mode } }、{ inlayHints: { parameters } }。作为项目配置
+    // 缺失时的默认（项目显式值优先）。
     clientDefaultAnalysisMode = parseAnalysisMode(
       (params.initializationOptions as { analysis?: { mode?: unknown } } | undefined)
         ?.analysis?.mode,
+    );
+    clientDefaultInlayParams = parseInlayParams(
+      (params.initializationOptions as { inlayHints?: { parameters?: unknown } } | undefined)
+        ?.inlayHints?.parameters,
     );
     return {
     capabilities: {
@@ -269,6 +281,11 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
     return raw === "exports" || raw === "directives" || raw === "all" ? raw : undefined;
   }
 
+  /** inlayHints.parameters 归一化：非法/缺失 → undefined（回落默认 false）。 */
+  function parseInlayParams(raw: unknown): boolean | undefined {
+    return typeof raw === "boolean" ? raw : undefined;
+  }
+
   /**
    * 文件级 AnalysisConfig：项目 package.json#nudo.analysis.mode 显式值优先；
    * 项目未设置该键时用宿主设置（initializationOptions / didChangeConfiguration
@@ -282,6 +299,18 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
       return { ...cfg, mode: clientDefaultAnalysisMode };
     }
     return cfg;
+  }
+
+  /**
+   * 参数约束 inlay（形参后 `where …`）开关，按文件解析。
+   * 优先级：项目 package.json#nudo.inlayHints.parameters 显式值赢；
+   * 项目未设置该键时用宿主设置作默认；均缺失 → false（关）。
+   */
+  function inlayParamsEnabled(filePath: string): boolean {
+    const projectValue = findProjectConfig(dirname(filePath))?.config
+      ?.inlayHints?.parameters;
+    if (projectValue !== undefined) return projectValue;
+    return clientDefaultInlayParams ?? false;
   }
 
   function isNudoFile(uri: string): boolean {
@@ -303,8 +332,19 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
       (params.settings as { nudo?: { analysis?: { mode?: unknown } } } | undefined)
         ?.nudo?.analysis?.mode,
     );
-    if (next === clientDefaultAnalysisMode) return;
+    const nextInlayParams = parseInlayParams(
+      (params.settings as { nudo?: { inlayHints?: { parameters?: unknown } } } | undefined)
+        ?.nudo?.inlayHints?.parameters,
+    );
+    const inlayChanged = nextInlayParams !== clientDefaultInlayParams;
+    if (next === clientDefaultAnalysisMode && !inlayChanged) return;
     clientDefaultAnalysisMode = next;
+    clientDefaultInlayParams = nextInlayParams;
+    // inlay 开关变化（含移除 → 回落项目/默认）：客户端拉取的
+    // inlay hints 需刷新重取
+    if (inlayChanged) {
+      connection.languages.inlayHint.refresh().catch(() => {});
+    }
     // gate 结果失效：重检打开文档（新纳入 → 出诊断；新排除 → 清诊断）
     nudoFileCache.clear();
     for (const doc of documents.all()) {
@@ -376,6 +416,7 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
     isNudoFile,
     getActiveCases: getActiveCasesForUri,
     activeLoadModule,
+    inlayParamsEnabled,
     get agentToolDeps() {
       return agentToolDepsRef.current!;
     },

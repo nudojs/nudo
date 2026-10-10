@@ -2,10 +2,10 @@
  * VS Code `nudo.*` 设置 → LSP 载荷的纯映射（无 vscode 模块依赖，单测直接跑）。
  *
  * 协议形状与 lsp server 的合并逻辑对齐：
- * - `initializationOptions` = `{ analysis?: { mode } }`（client 启动时）
+ * - `initializationOptions` = `{ analysis?: { mode }, inlayHints?: { parameters } }`（client 启动时）
  * - `workspace/didChangeConfiguration` 的 `settings.nudo` 同形（设置变更时）
  *
- * 优先级（配置项 description 同步写明）：项目 package.json#nudo.analysis.mode
+ * 优先级（配置项 description 同步写明）：项目 package.json#nudo.*
  * 显式值赢；VS Code 设置只在项目未显式设置该键时作为默认值。
  */
 
@@ -21,24 +21,42 @@ export function parseAnalysisMode(raw: unknown): NudoAnalysisMode | undefined {
   return raw === "exports" || raw === "directives" || raw === "all" ? raw : undefined;
 }
 
-/** nudo 段设置 → 服务端可理解的 `{ analysis?: { mode } }`。 */
+/** inlayHints.parameters 归一化：非法/缺失 → undefined（服务端回落默认 false）。 */
+export function parseInlayParams(raw: unknown): boolean | undefined {
+  return typeof raw === "boolean" ? raw : undefined;
+}
+
+/** nudo 段设置 → 服务端可理解的 `{ analysis?: { mode }, inlayHints?: { parameters } }`。 */
 export function toNudoSettings(
   cfg: NudoSettingsLike,
-): { analysis?: { mode: NudoAnalysisMode } } {
+): {
+  analysis?: { mode: NudoAnalysisMode };
+  inlayHints?: { parameters: boolean };
+} {
   const mode = parseAnalysisMode(cfg.get("analysis.mode"));
-  return mode === undefined ? {} : { analysis: { mode } };
+  const parameters = parseInlayParams(cfg.get("inlayHints.parameters"));
+  return {
+    ...(mode === undefined ? {} : { analysis: { mode } }),
+    ...(parameters === undefined ? {} : { inlayHints: { parameters } }),
+  };
 }
 
 /** LanguageClient `initializationOptions`（与 `settings.nudo` 同形）。 */
 export function toInitializationOptions(cfg: NudoSettingsLike): {
   analysis?: { mode: NudoAnalysisMode };
+  inlayHints?: { parameters: boolean };
 } {
   return toNudoSettings(cfg);
 }
 
 /** `workspace/didChangeConfiguration` 通知载荷（只含 nudo 段，避免噪声）。 */
 export function toDidChangeConfigurationParams(cfg: NudoSettingsLike): {
-  settings: { nudo: { analysis?: { mode: NudoAnalysisMode } } };
+  settings: {
+    nudo: {
+      analysis?: { mode: NudoAnalysisMode };
+      inlayHints?: { parameters: boolean };
+    };
+  };
 } {
   return { settings: { nudo: toNudoSettings(cfg) } };
 }

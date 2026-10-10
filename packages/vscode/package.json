@@ -63,6 +63,11 @@
           "type": "boolean",
           "default": true,
           "description": "When true, Nudo may suggest muting tsserver JS validation on nudo-managed files to avoid stacked diagnostics (LSP-G4). Extension-side only (controls the coexistence prompt); never sent to the language server."
+        },
+        "nudo.inlayHints.parameters": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show parameter contract inlay hints (the 'where …' text after function parameters). Off by default: explicit contracts (e.g. recursive AST-node unions) can expand to tens of thousands of characters. Hover still shows the full contract. Priority: an explicit package.json#nudo.inlayHints.parameters in the project always wins; this setting only provides the default when the project does not set it."
         }
       }
     },

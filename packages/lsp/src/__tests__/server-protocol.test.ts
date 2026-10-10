@@ -455,6 +455,139 @@ describe("createNudoServer — client settings (initializationOptions / didChang
   });
 });
 
+describe("createNudoServer — 参数 inlay hints 开关（nudo.inlayHints.parameters，默认关）", () => {
+  // 显式侧车契约（同名 *.nudo.js 自动绑定）→ 参数 `where …` inlay
+  const PARAM_SRC = `export function need(x) {
+  return x;
+}
+`;
+  const PARAM_SIDECAR = `import { fn, number } from "@nudojs/core";
+export const need = fn({ x: number() }, number());
+`;
+
+  let paramDir: string;
+
+  beforeAll(() => {
+    paramDir = mkdtempSync(join(tmpdir(), "nudo-lsp-paraminlay-"));
+  });
+
+  afterAll(() => {
+    rmSync(paramDir, { recursive: true, force: true });
+  });
+
+  function notification(mock: Mock, method: string): AnyHandler {
+    const h = mock.notifications.get(method);
+    expect(h, `notification "${method}" not registered`).toBeTruthy();
+    return h!;
+  }
+
+  /** 建独立子项目（避免 findProjectConfig memo 指纹撞车）并打开 need.js */
+  async function startParamSession(
+    initializationOptions?: unknown,
+    projectNudo?: unknown,
+  ): Promise<{ mock: Mock; uri: string }> {
+    const sub = `proj-${Math.random().toString(36).slice(2, 8)}`;
+    const projDir = join(paramDir, sub);
+    mkdirSync(projDir, { recursive: true });
+    writeFileSync(join(projDir, "need.js"), PARAM_SRC, "utf-8");
+    writeFileSync(join(projDir, "need.nudo.js"), PARAM_SIDECAR, "utf-8");
+    if (projectNudo !== undefined) {
+      writeFileSync(
+        join(projDir, "package.json"),
+        JSON.stringify({ nudo: projectNudo }),
+        "utf-8",
+      );
+    }
+    const mock = startServer();
+    await handler(mock, "initialize")({
+      processId: null,
+      rootUri: null,
+      workspaceFolders: [],
+      capabilities: {},
+      ...(initializationOptions === undefined ? {} : { initializationOptions }),
+    });
+    const uri = `file://${join(projDir, "need.js")}`;
+    notification(mock, "textDocument/didOpen")({
+      textDocument: { uri, languageId: "javascript", version: 1, text: PARAM_SRC },
+    });
+    return { mock, uri };
+  }
+
+  async function inlayLabels(mock: Mock, uri: string): Promise<string[]> {
+    const hints = (await handler(mock, "textDocument/inlayHint")({
+      textDocument: { uri },
+      range: { start: { line: 0, character: 0 }, end: { line: 99, character: 0 } },
+    })) as { label?: unknown }[];
+    return hints.map((h) => String(h.label ?? ""));
+  }
+
+  it("默认关：无参数 where inlay（返回 inlay 仍在）", async () => {
+    const { mock, uri } = await startParamSession();
+    const labels = await inlayLabels(mock, uri);
+    expect(labels.some((l) => l.includes("where"))).toBe(false);
+    // 返回 inlay（`: x` 路径摘要）短小，不受开关影响
+    expect(labels.some((l) => l.includes(": x"))).toBe(true);
+  });
+
+  it("initializationOptions inlayHints.parameters=true 开启", async () => {
+    const { mock, uri } = await startParamSession({
+      inlayHints: { parameters: true },
+    });
+    const labels = await inlayLabels(mock, uri);
+    expect(labels.some((l) => l.includes('where typeof x = "number"'))).toBe(
+      true,
+    );
+  });
+
+  it("非法宿主值回落默认关", async () => {
+    const { mock, uri } = await startParamSession({
+      inlayHints: { parameters: "yes" },
+    });
+    const labels = await inlayLabels(mock, uri);
+    expect(labels.some((l) => l.includes("where"))).toBe(false);
+  });
+
+  it("workspace/didChangeConfiguration 实时开关", async () => {
+    const { mock, uri } = await startParamSession();
+    expect((await inlayLabels(mock, uri)).some((l) => l.includes("where"))).toBe(
+      false,
+    );
+    notification(mock, "workspace/didChangeConfiguration")({
+      settings: { nudo: { inlayHints: { parameters: true } } },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect((await inlayLabels(mock, uri)).some((l) => l.includes("where"))).toBe(
+      true,
+    );
+    notification(mock, "workspace/didChangeConfiguration")({
+      settings: { nudo: { inlayHints: { parameters: false } } },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect((await inlayLabels(mock, uri)).some((l) => l.includes("where"))).toBe(
+      false,
+    );
+  });
+
+  it("项目 package.json#nudo.inlayHints.parameters 显式值赢过宿主默认", async () => {
+    // 项目关 + 宿主开 → 关
+    const off = await startParamSession(
+      { inlayHints: { parameters: true } },
+      { inlayHints: { parameters: false } },
+    );
+    expect((await inlayLabels(off.mock, off.uri)).some((l) => l.includes("where"))).toBe(
+      false,
+    );
+    // 项目开 + 宿主关 → 开
+    const on = await startParamSession(
+      { inlayHints: { parameters: false } },
+      { inlayHints: { parameters: true } },
+    );
+    expect((await inlayLabels(on.mock, on.uri)).some((l) => l.includes("where"))).toBe(
+      true,
+    );
+  });
+});
+
 describe("createNudoServer — 观察选择器（contract 与各 case 互斥选项）", () => {
   // 同一文件同时具备契约选项（export → implicit 档 + persist/draft 动作）、
   // 指令 case 与未导出函数的字面量调用点合成 call@

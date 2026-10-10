@@ -35,6 +35,16 @@ export type NudoConfig = {
   };
   /** 磁盘缓存（B3）：true → `.nudo/cache`；字符串 → 自定义根；false/省略 → 关 */
   cache?: boolean | string;
+  /** IDE 展示面（inlay hints） */
+  inlayHints?: {
+    /**
+     * 参数约束 inlay（形参后 `where …`）。默认 **false**（关）：
+     * 契约判别联合（如递归 AST 节点）外延展开可达数万字符。
+     * 宿主设置（VS Code `nudo.inlayHints.parameters`）只在项目
+     * 未显式设置该键时作默认（项目显式值优先）。
+     */
+    parameters?: boolean;
+  };
   /**
    * 进程内会话 LRU 上限（内存/速度权衡）。多项目开 IDE 时调低封顶；
    * 单大仓 warm 命中可调高。0 = 关闭该层。

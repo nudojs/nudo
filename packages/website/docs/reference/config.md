@@ -83,6 +83,14 @@ See [`@nudo:env`](../concepts/directives.md) for path-based env files and the bu
 
 Scope tuning recipes (mixed TS/JS repos, `directives` vs `exports`) are in [Coexisting with TypeScript](../guides/coexistence.md); budget behavior in [Performance](../guides/performance.md).
 
+## `nudo.inlayHints` — IDE display
+
+| Key | Values | Default | Meaning |
+|---|---|---|---|
+| `inlayHints.parameters` | boolean | `false` | Parameter contract inlay hints (the `where …` text after function parameters, from explicit `*.nudo.js` / `@nudo:contract` contracts). Off by default: explicit contracts — e.g. recursive AST-node unions — can expand to tens of thousands of characters inline. Hover still shows the full contract; return-type inlays (`: …`) are unaffected. |
+
+The VS Code setting `nudo.inlayHints.parameters` (and the Zed `language-servers.nudo.initialization_options` equivalent) only provides the default when the project does not set this key.
+
 ## `nudo.cache` — project disk cache
 
 | Value | Meaning |

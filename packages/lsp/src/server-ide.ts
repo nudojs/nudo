@@ -53,6 +53,8 @@ export type IdeDeps = {
   isNudoFile: (uri: string) => boolean;
   getActiveCases: (uri: string) => Map<string, number>;
   activeLoadModule: LoadModule;
+  /** 参数约束 inlay（`where …`）开关：项目配置 > 宿主设置 > false（关） */
+  inlayParamsEnabled: (filePath: string) => boolean;
   agentToolDeps: AgentToolDeps;
 };
 
@@ -346,6 +348,7 @@ export function attachInlayHint(deps: IdeDeps): void {
     const cases = getActiveCasesForUri(params.textDocument.uri);
     const lines = source.split("\n");
     const autoBind = interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
+    const showParamInlays = deps.inlayParamsEnabled(filePath);
 
     try {
       const result = getCachedOrAnalyze(
@@ -381,6 +384,10 @@ export function attachInlayHint(deps: IdeDeps): void {
           ...(autoBind === false ? { autoBind: false } : {}),
           ...(analysisModules ? { modules: analysisModules } : {}),
         })) {
+          // 参数约束 inlay（`where …`）：nudo.inlayHints.parameters
+          // 默认关——契约判别联合外延展开可达数万字符；返回 inlay
+          // （`: …`，短）不受影响
+          if (abs.kind === "parameter" && !showParamInlays) continue;
           const lineIdx = abs.line - 1;
           if (lineIdx < 0 || lineIdx >= lines.length) continue;
           hints.push({

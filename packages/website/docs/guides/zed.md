@@ -103,7 +103,7 @@ the same pattern as other Zed language-server extensions. A user
 | Diagnostics | Automatic for analysis targets (`.js`/`.mjs`/`.ts`); see `nudo.analysis.mode` for directive-less files |
 | Hover types | Standard LSP; exported fn names show `● contract / hw\|gen\|imp` (same as CodeLens) |
 | Go to Definition / References / Rename | Standard LSP (sidecar binding names included) |
-| Inlay hints | Enable `inlay_hints.enabled`; implicit exports mark `derived` |
+| Inlay hints | Enable `inlay_hints.enabled`; implicit exports mark `derived`. Parameter contract hints (`where …`) are **off by default** — enable via `language-servers.nudo.initialization_options: { "inlayHints": { "parameters": true } }` (or `package.json#nudo.inlayHints.parameters`); recursive contracts can be tens of thousands of characters |
 | CodeLens | Enable `code_lens: "on"` — **observation selector**: `●/○ contract / hw\|gen\|imp` (default active) + persist/update + `⚡ draft interface`; `●/○ case "…"` options follow |
 | Semantic tokens | Default off; set `semantic_tokens: "combined"` — includes `contract`/`generated`/`derived` modifiers |
 | Code actions / Signature help | Standard LSP quickfix + signature help (real `paramTypes` / return). Includes action-map quickfixes (`[fix]` / `[silence]` / `[review]` / `[adjust]` / `[scaffold]`) |

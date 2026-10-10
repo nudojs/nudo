@@ -39,7 +39,7 @@ Declared in `connection.onInitialize` (`src/server.ts`). Keys are the freeze lis
 | `hoverProvider` | Export fn **name**: `● contract / hw\|gen\|imp` tier line + one block with the check-identical signature (`decide({ grade, findings }: { … }) => { … }`; builder template / symbolic multiline / display signature are deduped — full faces stay in the `nudo.hover` payload). Identifiers (params / body locals / module refs) render one-line `name: shape` — param slots project from the enclosing fn's `PolyFn` entry face, call-initialized locals from `EvalCallRecord` (entry-args call), module-level refs from the binding face (case-fn bodies included) |
 | `completionProvider` | trigger `.`; `resolveProvider: false` |
 | `codeLensProvider` | `resolveProvider: false`; interface tier first; case debug layer; **synthetic `call@`/`entry@` observation lenses** (CLI test facts pinned to source; click → `nudo.trace`) |
-| `inlayHintProvider` | case + Abs param/return |
+| `inlayHintProvider` | case + Abs param/return. **Param contract hints (`where …`) default off** — `nudo.inlayHints.parameters` (project `package.json` wins; host setting via `initializationOptions` / `workspace/didChangeConfiguration` as default; live `inlayHint/refresh` on change). Return hints (`: …`) always on |
 | `definitionProvider` | local + cross-file + sidecar |
 | `referencesProvider` | |
 | `renameProvider` | `prepareProvider: true` — 非绑定（属性键/成员属性）prepareRename 返回 null；同绑定 scope 改名（refactor-gold） |
