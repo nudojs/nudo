@@ -63,6 +63,6 @@
     "smoke": "node ./scripts/smoke-stdio.mjs"
   },
   "devDependencies": {
-    "@types/node": "^26.6.3"
+    "@types/node": "^26.6.4"
   }
 }
