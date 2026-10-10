@@ -74,3 +74,32 @@ export function mayCoerceThrowOperand(a: Abs | undefined): boolean {
   );
 }
 
+/**
+ * TypedArray 家族表（brand 名 → 元素域 prim；BigInt64/BigUint64 是 bigint，
+ * 其余 number，Float16Array 同 number）。单一事实源，三处消费：
+ * - exec/runtime/containers.ts `$idx` 元素读投影（Uint8Array 下标 → number ∪
+ *   undefined）；
+ * - builtins/error.ts `makeTypedArrayAbs`（Bug 21 构造器 ToIndex 校验）与
+ *   `evalTypedArrayStatic`（Bug 27 from/of 静态面，bigint 域 of 走 ToBigInt）；
+ * - exec/runtime/containers.ts `NAMESPACE_GLOBALS`（静态面身份路由）。
+ */
+export const TYPED_ARRAY_ELEMENT: Record<string, "number" | "bigint"> = {
+  Int8Array: "number",
+  Uint8Array: "number",
+  Uint8ClampedArray: "number",
+  Int16Array: "number",
+  Uint16Array: "number",
+  Int32Array: "number",
+  Uint32Array: "number",
+  Float16Array: "number",
+  Float32Array: "number",
+  Float64Array: "number",
+  BigInt64Array: "bigint",
+  BigUint64Array: "bigint",
+};
+
+/** TypedArray 家族名 → 元素域 prim；非家族名 → undefined */
+export function typedArrayElementOf(name: string): "number" | "bigint" | undefined {
+  return TYPED_ARRAY_ELEMENT[name];
+}
+

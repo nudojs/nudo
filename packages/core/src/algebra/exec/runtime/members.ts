@@ -16,6 +16,7 @@ import {
   symbolDescriptionAbs, objectProtoBrand, builtinCtorAbs, ctorNameOfRecv,
 } from "../../builtins.ts";
 import { errorTypeAbs, recordMayThrow, type MayThrowEffect } from "../may-throw.ts";
+import { TYPED_ARRAY_ELEMENT } from "../../builtins/shared.ts";
 import { OBJECT_PROTO_NAMES, ARRAY_PROTO_METHOD_NAMES } from "../member-diag.ts";
 import { $call } from "../call.ts";
 import { getEvalClass } from "../class-registry.ts";
@@ -161,6 +162,17 @@ export function $in(key: Abs, o: Abs): Abs {
   if (o.shape.k === "prim" || o.shape.k === "never" || isNullishLitAbs(o)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
+  // any（无约束值）可能是 prim/nullish → may TypeError。接收者效应与键形态
+  // 无关（Bug 6：抽象/symbol 键此前在下方键分类早退，漏记本臂）；unknown 是
+  // 引擎 fail-closed 令牌（不进 throws 域，与 member-diag 的 unknown-recv
+  // 口径一致），静默。
+  if (o.shape.k === "any") {
+    recordMayThrow({
+      kind: "TypeError",
+      cause: "'in' on any (unconstrained value): receiver may be a non-object",
+    });
+    return bool();
+  }
   // null/undefined/boolean 键走 ToPropertyKey（"null"/"undefined"/"true"）——
   // 原生 `undefined in o` / `null in o` 不抛，是普通字符串键查询。
   // 仅**右操作数**非对象才 TypeError。非字面量键 → boolean 近似。
@@ -216,17 +228,9 @@ export function $in(key: Abs, o: Abs): Abs {
     if (o.shape.eff === "promise" && PROMISE_PROTO_NAMES.has(keyStr)) return boolLit(true);
     return boolLit(OBJECT_PROTO_NAMES.has(keyStr));
   }
-  // unknown/any：无信息，不得按 Object.prototype 成员误判（Object.create 未建模时
-  // "toString" in o 曾折 true）。any（无约束值）可能是 prim/nullish → may
-  // TypeError；unknown 是引擎 fail-closed 令牌（不进 throws 域，与
-  // member-diag 的 unknown-recv 口径一致）。
-  if (o.shape.k === "any") {
-    recordMayThrow({
-      kind: "TypeError",
-      cause: "'in' on any (unconstrained value): receiver may be a non-object",
-    });
-    return bool();
-  }
+  // unknown：无信息，不得按 Object.prototype 成员误判（Object.create 未建模时
+  // "toString" in o 曾折 true）。fail-closed 令牌不进 throws 域；any 接收者的
+  // may-throw 已在函数首按接收者统一记录（Bug 6）。
   if (o.shape.k === "unknown") return bool();
   return boolLit(OBJECT_PROTO_NAMES.has(keyStr));
 }
@@ -235,18 +239,88 @@ export function $in(key: Abs, o: Abs): Abs {
 export const FUNCTION_PROTO_NAMES = new Set(["call", "apply", "bind", "length", "name", "prototype"]);
 export const PROMISE_PROTO_NAMES = new Set(["then", "catch", "finally"]);
 
-/** 内建 brand 原型方法名（$in 精确判定用；不必穷尽，未知名仍回落 false/proto） */
+/** 内建 brand 原型方法名（值读 protoMethodValueAbs / $in 精确判定共用；
+ *  Bug 40：按宿主原型面补齐——缺席名经闭 obj 槽 miss 折精确 undefined/
+ *  false（wrong-exact），表内名折 "function"/true。名录与宿主
+ *  Object.getOwnPropertyNames(X.prototype) 对齐（Node 26 实测）。 */
 export const BUILTIN_BRAND_METHODS: Record<string, ReadonlySet<string>> = {
-  Date: new Set(["getTime", "valueOf", "toISOString", "toString", "getMilliseconds", "getSeconds", "getMinutes", "getHours", "getDate", "getDay", "getMonth", "getFullYear"]),
-  RegExp: new Set(["test", "exec", "toString"]),
-  Map: new Set(["get", "set", "has", "delete", "clear", "forEach", "keys", "values", "entries"]),
-  Set: new Set(["has", "add", "delete", "clear", "forEach", "keys", "values", "entries"]),
+  Date: new Set([
+    "toString", "toDateString", "toTimeString", "toISOString", "toUTCString", "toGMTString",
+    "getDate", "setDate", "getDay", "getFullYear", "setFullYear", "getHours", "setHours",
+    "getMilliseconds", "setMilliseconds", "getMinutes", "setMinutes", "getMonth", "setMonth",
+    "getSeconds", "setSeconds", "getTime", "setTime", "getTimezoneOffset",
+    "getUTCDate", "setUTCDate", "getUTCDay", "getUTCFullYear", "setUTCFullYear",
+    "getUTCHours", "setUTCHours", "getUTCMilliseconds", "setUTCMilliseconds",
+    "getUTCMinutes", "setUTCMinutes", "getUTCMonth", "setUTCMonth",
+    "getUTCSeconds", "setUTCSeconds", "valueOf", "getYear", "setYear",
+    "toJSON", "toLocaleString", "toLocaleDateString", "toLocaleTimeString", "toTemporalInstant",
+  ]),
+  RegExp: new Set(["test", "exec", "toString", "compile"]),
+  Map: new Set(["get", "set", "has", "delete", "clear", "forEach", "keys", "values", "entries", "getOrInsert", "getOrInsertComputed"]),
+  Set: new Set([
+    "has", "add", "delete", "clear", "forEach", "keys", "values", "entries",
+    "union", "intersection", "difference", "symmetricDifference",
+    "isSubsetOf", "isSupersetOf", "isDisjointFrom",
+  ]),
   // Bug 56：X.prototype.<method> 值读通道的表源（WeakMap/WeakSet 补齐）
-  WeakMap: new Set(["get", "has", "set", "delete"]),
+  WeakMap: new Set(["get", "has", "set", "delete", "getOrInsert", "getOrInsertComputed"]),
   WeakSet: new Set(["add", "has", "delete"]),
   Error: new Set(["toString"]),
   Promise: new Set(["then", "catch", "finally"]),
+  // Bug 40：二进制缓冲 / 视图 / 弱引用家族原型面（此前全缺 → typeof/in
+  // wrong-exact；调用面经 protoMethodValueAbs → $invoke 落既有派发，未建模
+  // 方法调用仍诚实 unknown）
+  ArrayBuffer: new Set(["slice", "resize", "transfer", "transferToFixedLength"]),
+  SharedArrayBuffer: new Set(["slice", "grow"]),
+  DataView: new Set([
+    "getInt8", "setInt8", "getUint8", "setUint8",
+    "getInt16", "setInt16", "getUint16", "setUint16",
+    "getInt32", "setInt32", "getUint32", "setUint32",
+    "getFloat16", "setFloat16", "getFloat32", "setFloat32",
+    "getFloat64", "setFloat64", "getBigInt64", "setBigInt64", "getBigUint64", "setBigUint64",
+  ]),
+  WeakRef: new Set(["deref"]),
+  FinalizationRegistry: new Set(["register", "unregister"]),
 };
+
+/** Bug 36：%TypedArray%.prototype 回调族（HOF + find 系 + reduce 系；
+ *  flatMap 原生不在 TA 原型上，不得混入）。$invokeInner 回调派发专用
+ *  （exec/class.ts 按 TYPED_ARRAY_ELEMENT 家族路由 invokeArrMethod）；
+ *  家族键 = builtins/shared.ts 的 TYPED_ARRAY_ELEMENT 单一事实源（12 家族）。 */
+export const TYPED_ARRAY_CALLBACK_METHODS: ReadonlySet<string> = new Set([
+  "forEach", "map", "filter", "reduce", "reduceRight",
+  "every", "some", "find", "findIndex", "findLast", "findLastIndex",
+]);
+
+/** Bug 40：%TypedArray%.prototype 全量字符串键方法面（值读/$in 用）——
+ *  回调族之外还有 set/subarray/at/join/sort 等非回调方法，此前缺席令
+ *  `typeof ta.set` 折精确 "undefined"（wrong-exact）。回调调用派发仍只认
+ *  TYPED_ARRAY_CALLBACK_METHODS（exec/class.ts），两表分工不同不得合并。 */
+export const TYPED_ARRAY_PROTO_METHOD_NAMES: ReadonlySet<string> = new Set([
+  "entries", "keys", "values", "at", "copyWithin", "every", "fill", "filter",
+  "find", "findIndex", "findLast", "findLastIndex", "forEach", "includes",
+  "indexOf", "join", "lastIndexOf", "map", "reverse", "reduce", "reduceRight",
+  "set", "slice", "some", "sort", "subarray", "toReversed", "toSorted", "with",
+  "toLocaleString", "toString",
+]);
+for (const fam of Object.keys(TYPED_ARRAY_ELEMENT)) {
+  BUILTIN_BRAND_METHODS[fam] = TYPED_ARRAY_PROTO_METHOD_NAMES;
+}
+// base64/hex 提案面仅 Uint8Array 原生自有（Float64Array 等无——混入共享表
+// 会反向 wrong-exact）
+BUILTIN_BRAND_METHODS.Uint8Array = new Set([
+  ...TYPED_ARRAY_PROTO_METHOD_NAMES,
+  "toBase64", "setFromBase64", "toHex", "setFromHex",
+]);
+
+/** @@iterator 值读（typeof x[Symbol.iterator]）只对原生可迭代 brand 折
+ *  "function"（Map/Set/TA 家族）；Date/RegExp/Error/WeakMap/AB/DV 等非可
+ *  迭代 brand 原生 undefined——Bug 40 前臂上 `key === "@@iterator"` 对
+ *  任意有表 brand 折函数（wrong-exact）。迭代协议派发不走该值读臂。 */
+export const ITERABLE_BRANDS: ReadonlySet<string> = new Set([
+  "Map", "Set",
+  ...Object.keys(TYPED_ARRAY_ELEMENT),
+]);
 
 export function brandHasProtoMember(brandName: string, key: string): boolean {
   for (const name of evalClassChain(brandName)) {
@@ -263,10 +337,26 @@ export function brandHasProtoMember(brandName: string, key: string): boolean {
 
 /** 内建 brand 原型访问器（非方法成员；$in 精确判定用——值读不走方法表：
  *  Map/Set 的 size 在 $get 单独委托 mapSizeAbs/setSizeAbs，混入
- *  BUILTIN_BRAND_METHODS 会把 m.size 折成函数形状）。Bug 15。 */
+ *  BUILTIN_BRAND_METHODS 会把 m.size 折成函数形状）。Bug 15。
+ *  Bug 40 补：二进制/TA/RegExp 访问器名（byteLength 等值读多由构造器
+ *  槽面建模，此处补 $in presence——`"buffer" in dv` / `"length" in ta`
+ *  此前折精确 false）。 */
 export const BUILTIN_BRAND_ACCESSORS: Record<string, ReadonlySet<string>> = {
   Map: new Set(["size"]),
   Set: new Set(["size"]),
+  ArrayBuffer: new Set(["byteLength", "maxByteLength", "resizable", "detached"]),
+  SharedArrayBuffer: new Set(["byteLength", "maxByteLength", "growable"]),
+  DataView: new Set(["buffer", "byteLength", "byteOffset"]),
+  RegExp: new Set([
+    "source", "flags", "global", "ignoreCase", "multiline",
+    "dotAll", "sticky", "unicode", "unicodeSets", "hasIndices",
+  ]),
+  ...Object.fromEntries(
+    Object.keys(TYPED_ARRAY_ELEMENT).map((fam) => [
+      fam,
+      new Set(["buffer", "byteLength", "byteOffset", "length", "BYTES_PER_ELEMENT"]),
+    ]),
+  ),
 };
 
 /** 内建错误层级（Error 为根，registry 无 superName 时回退） */
@@ -305,11 +395,23 @@ export const BUILTIN_CTOR_NAMES = new Set([
 ]);
 
 /**
- * instanceof 右操作数校验（原生 GetMethod(C, @@hasInstance) 的 ToObject 步）：
- * 非对象 RHS（null/undefined/prim 字面量或 prim 形状）→ definite TypeError
- * （"Right-hand side of 'instanceof' is not an object"）→ hard NudoThrow；
- * any/unknown RHS → may TypeError。obj/fn/brand 形状不在此校验（可调性 /
- * constructibility 是另一维度）。
+ * instanceof 右操作数校验（原生 InstanceofOperator 的 (1)/(2)/(4) 步）：
+ * (1) 非对象 RHS（null/undefined/prim 字面量或 prim 形状）→ definite
+ *     TypeError（"Right-hand side of 'instanceof' is not an object"）；
+ * (4) 无 callable @@hasInstance 处理器且非 callable → definite TypeError
+ *     （"Right-hand side of 'instanceof' is not callable"，Bug 33）：
+ *     arr/tuple 继承面（Array/Object.prototype）无 @@hasInstance、引擎内
+ *     也从不携带 call impl → 定抛；闭 obj 自有槽集完整，无 callable
+ *     @@hasInstance 槽即确定 non-callable（Object.create(null) 的闭
+ *     null-proto 同理），open obj（动态继承不建模）保守不抛；brand 实例
+ *     （Map/Date/… 值）原生 non-callable 定抛，但 Proxy（apply trap）可
+ *     callable，引擎不可区分 → may TypeError，类值（classNameOfValue 已
+ *     标，含内建构造器）是 constructor 函数 → 合法不记。
+ * fn 形状 RHS 不校验（箭头/async 原生因无 .prototype 定抛，generator fn
+ * 有 .prototype 合法——ctor facet 三者混同，definite/may 均会误伤
+ * generator，见 eval-instanceof-rhs.test.ts documented 债）；any RHS 可能
+ * 是非对象/非 callable → may TypeError；unknown 是引擎 fail-closed 令牌
+ * （桥接/契约包裹后的内部值），不进 throws 域。
  */
 function validateInstanceofRhs(rightVal: Abs): void {
   const k = rightVal.shape?.k;
@@ -322,6 +424,41 @@ function validateInstanceofRhs(rightVal: Abs): void {
     recordMayThrow({
       kind: "TypeError",
       cause: "instanceof RHS may be a non-object (null/undefined/prim)",
+    });
+  }
+  // Bug 33：原生第 (4) 步——数组继承面（Array.prototype → Object.prototype）
+  // 链上无 @@hasInstance，且 arr/tuple Abs 从不携带 call impl（attachFnImpl
+  // 只产 fn 形状）→ 确定 non-callable → 定抛
+  if (k === "arr" || k === "tuple") {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  if (k === "obj" && !(rightVal.shape as ObjShape).open) {
+    // 闭 shape（字面量 / Object.create(null) 的闭 null-proto）自有槽集完整：
+    // 无 callable @@hasInstance 槽即确定 non-callable；槽值不可调用时原生
+    // GetMethod 也直接定抛（"x is not a function"），与缺槽同折。open obj
+    //（Object.create(proto)/setPrototypeOf 产物，动态继承不建模）保守不抛，
+    // $instanceof 左值分派折抽象 boolean（imprecision 优于 wrong-exact）。
+    const slot = (rightVal.shape as ObjShape).slots["@@hasInstance"];
+    const callable =
+      slot !== undefined &&
+      (slot.value.shape.k === "fn" || getFnImpl(slot.value) !== undefined);
+    if (!callable) {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+    // callable 槽可能缺位（optional）：缺位路径无处理器 → 原生定抛 → may
+    if (slot.optional) {
+      recordMayThrow({
+        kind: "TypeError",
+        cause: "instanceof RHS @@hasInstance slot may be absent",
+      });
+    }
+  }
+  if (k === "brand" && classNameOfValue(rightVal as object) === undefined) {
+    // brand 实例（new Map() 等值）non-callable → 原生 TypeError；Proxy
+    //（apply trap）可 callable → 原生不抛，引擎不可区分 → may
+    recordMayThrow({
+      kind: "TypeError",
+      cause: "instanceof RHS brand may be a non-callable instance",
     });
   }
 }

@@ -2,8 +2,8 @@
  * Error 家族 + evalBuiltinNew / evalBuiltinInstanceMethod + namespace 分派
  */
 import type { Abs } from "../abs.ts";
-import { abs, strLit, numLit, litValue, bigintLit, boolLit, unknown } from "../abs.ts";
-import { objOf, getSlot } from "../objects.ts";
+import { abs, strLit, numLit, litValue, bigintLit, boolLit, unknown, confJoin } from "../abs.ts";
+import { objOf, getSlot, setSlot, joinAbs } from "../objects.ts";
 import {
   makeMapAbs,
   makeSetAbs,
@@ -21,19 +21,27 @@ import {
   setClearEntries,
   setSizeAbs,
   setElementsAbs,
+  setMethodFold,
+  isSetAbs,
+  isMapAbs,
   ctorArgDefinitelyInvalid,
   makeWeakCollectionAbs,
+  // Bug 8/43：CanBeHeldWeakly 分类自本文件移入 collections.ts（单一口径）
+  classifyCanBeHeldWeakly,
 } from "../collections.ts";
-import { undefAbs } from "../hof.ts";
+import { undefAbs, validateCallableArg, applyCallbackValue } from "../hof.ts";
+import { pTrue } from "../pred.ts";
+import { defaultLeakBudget } from "../leak.ts";
+import { emptyEnv } from "../ast-env.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
 import { registerGenElements } from "../exec/match-iter.ts";
 import { absFunction } from "../abs-fn.ts";
 import { setPropFlags } from "./invariants.ts";
 import { isSymbolAbs, evalSymbolStatic } from "./symbol.ts";
-import { str, numPrim, boolPrim, noBody, mayCoerceThrowOperand, isBigintPrimAbs } from "./shared.ts";
+import { str, numPrim, boolPrim, noBody, mayCoerceThrowOperand, isBigintPrimAbs, typedArrayElementOf } from "./shared.ts";
 import { evalMathMethod } from "./math.ts";
-import { evalObjectMethod } from "./object.ts";
+import { evalObjectMethod, foldGroupBy } from "./object.ts";
 import { evalJsonMethod } from "./json.ts";
 import { evalNumberStatic } from "./number.ts";
 import { evalStringStatic } from "./string.ts";
@@ -76,6 +84,10 @@ export function evalNamespaceCall(
     case "URL":
       // Bug 24：URL 静态面（canParse）
       return evalUrlStatic(method, args);
+    case "Map":
+      // Bug 26：Map.groupBy（ES2024）—— Map 入 NAMESPACE_GLOBALS 后成员
+      // 读经 $get 命中 ns 分派，此前无 case → 折 unknown（无校验/无投影）
+      return evalMapStatic(method, args);
     case "Intl":
       // Bug 44：NumberFormat/DateTimeFormat 调用面（new 省略形 ≡ new，
       // 宿主接收者经 $invoke→ns 分派到此处）——与 evalBuiltinNew 同 builder
@@ -84,8 +96,63 @@ export function evalNamespaceCall(
       }
       return undefined;
     default:
-      return undefined;
+      // Bug 27：TypedArray 家族静态面（from/of，TYPED_ARRAY_ELEMENT 表驱动；
+      // 非家族名/未建模方法 → undefined 走通用回退）
+      return evalTypedArrayStatic(ns, method, args);
   }
+}
+
+/**
+ * Bug 26：Map.groupBy（ES2024）—— Map 命名空间静态。校验与分组折叠与
+ * Object.groupBy 同形（foldGroupBy，键模式 "map"：原始键 SameValueZero 字面量
+ * 合并，不 ToPropertyKey）。结果 Map brand：字面量键装 litKey 表；键不可判
+ * 组并入 shadow（get 未知键 → 元素域数组 join undefined，诚实保守）。
+ */
+function evalMapStatic(method: string, args: Abs[]): Abs | undefined {
+  if (method !== "groupBy") return undefined;
+  const fold = foldGroupBy(args[0], args[1], "Map.groupBy", "map");
+  const entries: Abs[] = [];
+  const valueTuple = (values: Abs[]): Abs => {
+    let vc: Abs["conf"] = "exact";
+    for (const v of values) vc = confJoin(vc, v.conf);
+    return abs({ k: "tuple", elements: values }, undefined, undefined, vc);
+  };
+  if (fold.status === "unknown") {
+    // items 不可判：条目域未知 → shadow 值 unknown 元素数组
+    entries.push(
+      abs(
+        { k: "tuple", elements: [unknown, abs({ k: "arr", element: unknown }, undefined, undefined, "partial")] },
+        undefined,
+        undefined,
+        "partial",
+      ),
+    );
+  } else {
+    for (const g of fold.groups) {
+      const vt = valueTuple(g.values);
+      entries.push(
+        abs(
+          { k: "tuple", elements: [g.key, vt] },
+          undefined,
+          undefined,
+          confJoin(g.key.conf, vt.conf),
+        ),
+      );
+    }
+    if (fold.open) {
+      // 键不可判组：元素可归入任意组 → shadow 值 = 元素域数组
+      const domain = fold.unkeyed.reduce((x, y) => joinAbs(x, y));
+      entries.push(
+        abs(
+          { k: "tuple", elements: [unknown, abs({ k: "arr", element: domain }, undefined, undefined, "partial")] },
+          undefined,
+          undefined,
+          "partial",
+        ),
+      );
+    }
+  }
+  return makeMapAbs(abs({ k: "tuple", elements: entries }, undefined, undefined, "partial"));
 }
 
 /**
@@ -438,36 +505,8 @@ function enforceToIndex(a: Abs | undefined, what: string): void {
   }
 }
 
-/** Bug 43：CanBeHeldWeakly 校验分类（FinalizationRegistry.register/unregister 弱键） */
-type WeakHeldClass = { k: "ok" } | { k: "def" } | { k: "may" };
-
-/**
- * Bug 43：ES CanBeHeldWeakly 分类——对象形态（obj/tuple/arr/fn/brand/eff）
- * 与 symbol 是合法弱键（node 26 实测 register(Symbol(),1) 不抛）；
- * number/string/boolean/bigint 字面量与 nullish 字面量/缺省 ≡ undefined
- * → 确定非弱键；抽象 prim/any/unknown/含坏成员 union → may。
- */
-function classifyCanBeHeldWeakly(a: Abs | undefined): WeakHeldClass {
-  if (!a) return { k: "def" }; // 缺省 ≡ undefined：非弱键
-  const s = a.shape;
-  if (s.k === "prim") {
-    // shape-first：symbol 恒无 lit term（无 symbol 字面量），先查形态
-    if (s.type === "symbol") return { k: "ok" };
-    return a.term?.op === "lit" ? { k: "def" } : { k: "may" }; // 抽象 prim：值未知
-  }
-  if (s.k === "any" || s.k === "unknown") {
-    // nullish 字面量挂 k:"unknown" + lit term（与 isNullishLit 同口径）
-    return isNullishLit(a) ? { k: "def" } : { k: "may" };
-  }
-  if (s.k === "sum") {
-    // 有坏成员但可能取好成员 → 整体 may（与 classifyToIndex 同口径，不 definite）
-    for (const m of s.members) {
-      if (classifyCanBeHeldWeakly(m).k !== "ok") return { k: "may" };
-    }
-    return { k: "ok" };
-  }
-  return { k: "ok" }; // obj/fn/brand/tuple/arr/eff：对象 → 弱键合法
-}
+/** Bug 43：CanBeHeldWeakly 校验分类——自本文件移入 collections.ts 内核叶子
+ *  （Bug 8：集合构造器条目键复用同口径，避免 collections ↔ builtins 新环）。 */
 
 /** Bug 43：弱键校验落地：def → NudoThrow(TypeError)；may → recordMayThrow(TypeError) */
 function enforceCanBeHeldWeakly(a: Abs | undefined, what: string): void {
@@ -623,6 +662,9 @@ export function makeSharedArrayBufferAbs(len: Abs | undefined, options?: Abs | u
  * Bug 63：new DataView(buffer, byteOffset?, byteLength?) —— buffer 必须
  * ArrayBuffer/SharedArrayBuffer（其余闭形态确定 TypeError，any/unknown/
  * open obj/union → may）；byteOffset/byteLength 过 ToIndex（负 → RangeError）。
+ * Bug 35：ctor bounds——byteOffset/byteLength 越出 buffer.byteLength →
+ * 定抛 RangeError；组合不可判 → may；byteLength 显式 undefined ≡ 缺省
+ * （填满缓冲区）。
  */
 export function makeDataViewAbs(
   buf: Abs | undefined,
@@ -645,6 +687,10 @@ export function makeDataViewAbs(
   }
   enforceToIndex(off, "DataView byteOffset");
   enforceToIndex(len, "DataView byteLength");
+  // Bug 35：byteLength 显式 undefined ≡ 缺省（原生构造器先判 undefined 再
+  // ToIndex——new DataView(buf, 2, undefined).byteLength 是 bufLen−off 而非
+  // ToIndex(undefined)=0，node 实测 6；null 仍走 ToIndex → 0）。
+  const lenDefaulted = isDefinitelyUndefinedArg(len);
   // Bug 15：byteOffset/byteLength 存入 brand 槽（字面量 ToIndex 折叠、抽象 →
   // number 域）。byteLength 缺省 = buffer 的 byteLength 槽 − byteOffset
   // （buffer 为 ArrayBuffer/SharedArrayBuffer brand 时可读其槽）。
@@ -654,16 +700,291 @@ export function makeDataViewAbs(
   const bufLenAbs = bufInner && bufInner.shape.k === "obj" ? getSlot(bufInner.shape.slots, "byteLength")?.value : undefined;
   const bufLenV = bufLenAbs !== undefined ? toIndexLiteralValue(bufLenAbs) : undefined;
   const lenV =
-    len !== undefined
+    !lenDefaulted && len !== undefined
       ? toIndexLiteralValue(len)
       : offV !== undefined && bufLenV !== undefined
         ? Math.max(0, bufLenV - offV)
         : undefined;
+  // Bug 35 ctor bounds：byteOffset > buffer.byteLength 或（显式长度时）
+  // byteOffset + byteLength > buffer.byteLength → 定抛 RangeError（node 实测
+  // new DataView(buf8, 9) / (buf8, 4, 8) / (buf8, 100) 均 RangeError）；
+  // 组合不可判 → may RangeError。缺省长度臂 = 填满缓冲区恒不越界，仅
+  // byteOffset 需判；off=0 的缺省长度（含 any buffer 的 new DataView(x)）
+  // 恒安全不记 may。
+  if (offV !== undefined && bufLenV !== undefined) {
+    if (offV > bufLenV) throw new NudoThrow(errorTypeAbs("RangeError"));
+    if (!lenDefaulted) {
+      if (lenV !== undefined) {
+        if (offV + lenV > bufLenV) throw new NudoThrow(errorTypeAbs("RangeError"));
+      } else {
+        recordMayThrow({ kind: "RangeError", cause: "DataView byteLength may exceed the buffer bounds" });
+      }
+    }
+  } else if (!(offV === 0 && lenDefaulted)) {
+    recordMayThrow({ kind: "RangeError", cause: "DataView byteOffset/byteLength may exceed the buffer bounds" });
+  }
   const slots: Record<string, { value: Abs }> = {
     byteOffset: { value: offV !== undefined ? numLit(offV) : numPrim("path") },
     byteLength: { value: lenV !== undefined ? numLit(lenV) : numPrim("path") },
   };
   return abs({ k: "brand", name: "DataView", shape: objOf(slots) }, undefined, undefined, "path");
+}
+
+/**
+ * Bug 21：new <TA>(length) —— length 实参过 ToIndex（与 makeArrayBufferAbs
+ * 同口径：负/±∞/超 2^53-1 → RangeError；symbol/bigint → TypeError；缺省/
+ * NaN/截断小数合法）。抽象长度除 may RangeError 外还 may TypeError（any 载体
+ * 可能是 Symbol——ToNumber 定抛）。iterable/array-like/对象实参走 ToPrimitive
+ * 良性惯例 → 不抛（长度不建模，值域 imprecision 非 wrong-exact）。evalBuiltinNew
+ * （Abs 面）与 $new 宿主分支共用本 builder。Bug 38 补：数字 length 形态
+ * （单 prim 实参）length 入槽（非可枚举），set 的越界档据此可判。
+ */
+export function makeTypedArrayAbs(name: string, args: Abs[]): Abs {
+  const len = args[0];
+  // ToIndex 三档复用 enforceToIndex（range/type 定抛 / may → may RangeError）；
+  // may 档额外记 may TypeError——any/obj 载体可能取 Symbol（ToNumber 定抛）
+  enforceToIndex(len, "typed array length");
+  if (classifyToIndex(len).k === "may" && mayCoerceThrowOperand(len)) {
+    recordMayThrow({ kind: "TypeError", cause: "typed array length ToNumber may throw (Symbol/BigInt)" });
+  }
+  // Bug 38：数字 length 形态入槽（new <TA>(8).length === 8——原生非可枚举
+  // 自有数据属性；字面量 ToIndex 折叠，抽象数字 → number 域；iterable/
+  // buffer 形态长度不建模无槽）。%TypedArray%.prototype.set 的越界档
+  // （offset + srcLen > targetLen）据此可判。length 槽标 enumerable:false
+  // ——for-in / Object.keys 枚举视图保持空（原生同）。
+  const slots: Record<string, { value: Abs }> = {};
+  let lenIsNumericForm = false;
+  if (len && len.shape.k === "prim" && args.length === 1) {
+    lenIsNumericForm = true;
+    const lenV = toIndexLiteralValue(len);
+    slots.length = { value: lenV !== undefined ? numLit(lenV) : numPrim("path") };
+  }
+  const inner = objOf(slots);
+  if (lenIsNumericForm) setPropFlags(inner, "length", { enumerable: false });
+  return abs({ k: "brand", name, shape: inner }, undefined, undefined, "path");
+}
+
+/** Bug 27：可能取 null/undefined 的抽象实参（ToObject 定抛面）——any/unknown
+ * （nullish 字面量挂 k:"unknown"+lit，由 isNullishLit 定抛分支处理）/含
+ * 可能 nullish 臂的 sum；prim（非 nullish 值域）/obj/tuple/arr/fn/brand 恒非。 */
+function mayBeNullishOperand(a: Abs | undefined): boolean {
+  if (!a || isNullishLit(a)) return false;
+  const k = a.shape.k;
+  if (k === "any" || k === "unknown") return true;
+  if (k === "sum") {
+    return (a.shape as { k: "sum"; members: Abs[] }).members.some(mayBeNullishOperand);
+  }
+  return false;
+}
+
+/**
+ * Bug 28：set-like `.size` 槽的 ToNumber 分类（GetSetRecord 第一读）。
+ * ok = 数值可折（number/string/bool 字面量、null→0、抽象 bool）；
+ * nan = NaN 定抛（undefined 字面量、NaN、不可解析 string 字面量）；
+ * type = ToNumber 定抛 TypeError（symbol/bigint 形态）；
+ * may = 抽象 number/string（可能 NaN）/对象强转路径不可判。
+ * 注意 nullish 字面量挂 k:"unknown"+lit（isNullishLit 同口径）：
+ * ToNumber(null)=0 合法、ToNumber(undefined)=NaN 定抛。
+ */
+function classifySetArgSizeNumber(v: Abs): "ok" | "nan" | "type" | "may" {
+  if (isNullishLit(v)) {
+    // isNullishLit 保证 lit term；此处显式收窄仅为类型（行为不变）
+    const t = v.term;
+    return t?.op === "lit" && t.value === null ? "ok" : "nan";
+  }
+  const s = v.shape;
+  if (s.k === "prim") {
+    if (s.type === "symbol") return "type"; // shape-first：symbol 恒无 lit term
+    const r = litValue(v);
+    if (!r.ok) {
+      // 抽象 prim：bool 恒 0/1；抽象 number 可能 NaN、string 可能不可解析
+      return s.type === "boolean" ? "ok" : "may";
+    }
+    const val = r.value;
+    if (typeof val === "bigint") return "type"; // ToNumber(bigint) 原生 TypeError
+    return Number.isNaN(Number(val)) ? "nan" : "ok"; // number/string/bool 折算
+  }
+  return "may"; // obj/tuple/arr/fn/brand/sum/any/unknown：valueOf 路径不可判
+}
+
+/**
+ * Bug 28：ES2025 Set 方法实参的 GetSetRecord 校验（union/intersection/
+ * difference/symmetricDifference/isSubsetOf/isSupersetOf/isDisjointFrom
+ * 共用，node 实测）。原生三读：① 非对象 → "argument must be an object"
+ * TypeError；② ToNumber(arg.size) 为 NaN 或 ToNumber 抛（symbol/bigint）
+ * → TypeError；③ arg.has / arg.keys 非 callable → TypeError。Set/Map
+ * brand 天然合法；tuple/arr/闭 obj 无 size 槽 → 定抛（.size 读取
+ * undefined → NaN）；闭 obj 带 size 槽 → 逐槽三读（数值 size + 可调用
+ * has/keys 全过才放行——duck-typed set-like 原生合法）；open obj/fn/
+ * 其他 brand/any/unknown/sum/eff → may（可能有数值 size + 可调用槽，
+ * 如自定义 set-like 类实例）。
+ */
+function enforceSetMethodArg(a: Abs | undefined, method: string): void {
+  const what = `Set.prototype.${method} argument`;
+  if (!a || isNullishLit(a) || a.shape.k === "prim") {
+    throw new NudoThrow(errorTypeAbs("TypeError")); // 缺省/nullish/prim：非对象
+  }
+  const k = a.shape.k;
+  if (k === "tuple" || k === "arr") {
+    throw new NudoThrow(errorTypeAbs("TypeError")); // .size 读取 undefined → NaN
+  }
+  // Set/Map brand：数值 size + 可调用 has/keys 由构造保证 → 全定合法
+  if (isSetAbs(a) || isMapAbs(a)) return;
+  if (k === "obj") {
+    const s = a.shape as Extract<Abs["shape"], { k: "obj" }>;
+    if (s.open === true || s.index) {
+      recordMayThrow({
+        kind: "TypeError",
+        cause: `${what} .size may be NaN / .has .keys may not be callable (open object)`,
+      });
+      return;
+    }
+    const sizeSlot = getSlot(s.slots, "size");
+    if (!sizeSlot) throw new NudoThrow(errorTypeAbs("TypeError")); // 无 size 槽 → NaN
+    if (sizeSlot.optional) {
+      recordMayThrow({ kind: "TypeError", cause: `${what} .size may be absent (NaN)` });
+    } else {
+      const c = classifySetArgSizeNumber(sizeSlot.value);
+      if (c === "nan" || c === "type") throw new NudoThrow(errorTypeAbs("TypeError"));
+      if (c === "may") {
+        recordMayThrow({ kind: "TypeError", cause: `${what} .size may be NaN` });
+      }
+    }
+    for (const name of ["has", "keys"] as const) {
+      const slot = getSlot(s.slots, name);
+      if (!slot) throw new NudoThrow(errorTypeAbs("TypeError")); // undefined 非 callable
+      if (slot.optional) {
+        recordMayThrow({ kind: "TypeError", cause: `${what} .${name} may not be callable` });
+        continue;
+      }
+      validateCallableArg(slot.value, `${what} .${name} may not be callable`);
+    }
+    return;
+  }
+  // fn/brand(非 Set/Map)/any/unknown/sum/eff：set-like 可能（不可判）→ may
+  if (mayCoerceThrowOperand(a) || k === "eff") {
+    recordMayThrow({
+      kind: "TypeError",
+      cause: `${what} .size may be NaN / .has .keys may not be callable`,
+    });
+  }
+}
+
+/**
+ * Bug 27：ToBigInt 单项校验（bigint 域 of 的逐项面，与 evalBigIntStatic 的
+ * value 档同口径）：bigint/boolean 字面量合法；number/symbol/nullish 字面量
+ * 与 symbol prim → 定抛 TypeError；string 字面量 StringToBigInt（非法 →
+ * SyntaxError）；prim number → may TypeError、prim string → may SyntaxError；
+ * 闭对象无 valueOf/toString 自有槽 → ToPrimitive 恒 "[object Object]" →
+ * 定抛 SyntaxError；其余（any/带强转槽 obj/fn/brand/sum/tuple…）→ may。
+ */
+function enforceTaBigIntItem(it: Abs): void {
+  if (it.term?.op === "lit") {
+    const v = it.term.value;
+    if (typeof v === "bigint" || typeof v === "boolean") return; // ToBigInt 全定
+    if (typeof v === "number" || typeof v === "symbol" || v === null || v === undefined) {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+    if (typeof v === "string") {
+      try {
+        BigInt(v);
+      } catch {
+        throw new NudoThrow(errorTypeAbs("SyntaxError"));
+      }
+    }
+    return; // 其余对象字面量：ToPrimitive 良性惯例 → 下方保守面不重复记
+  }
+  if (isSymbolAbs(it)) throw new NudoThrow(errorTypeAbs("TypeError"));
+  if (it.shape.k === "prim") {
+    const t = (it.shape as { type?: string }).type;
+    if (t === "number") {
+      recordMayThrow({ kind: "TypeError", cause: "TypedArray.of item ToBigInt(Number) may throw" });
+    } else if (t === "string") {
+      recordMayThrow({ kind: "SyntaxError", cause: "TypedArray.of item StringToBigInt may throw" });
+    }
+    return; // bigint/boolean prim：ToBigInt 全定
+  }
+  if (
+    it.shape.k === "obj" &&
+    (it.shape as { open?: boolean }).open !== true &&
+    !getSlot((it.shape as { slots: Record<string, { value: Abs }> }).slots, "valueOf") &&
+    !getSlot((it.shape as { slots: Record<string, { value: Abs }> }).slots, "toString")
+  ) {
+    throw new NudoThrow(errorTypeAbs("SyntaxError"));
+  }
+  recordMayThrow({ kind: "TypeError", cause: "TypedArray.of item ToBigInt may throw (Symbol/Number via ToPrimitive)" });
+  recordMayThrow({ kind: "SyntaxError", cause: "TypedArray.of item StringToBigInt may throw" });
+}
+
+/**
+ * Bug 27：%TypedArray%.from / .of 静态面（12 家族，TYPED_ARRAY_ELEMENT 键）：
+ * - from：items 过 ToObject——null/undefined 字面量 → 定抛 TypeError（原生
+ *   "object null is not iterable"）；可能 nullish 的抽象 → may TypeError。
+ *   非可迭代非 array-like 对象（含 Symbol() 装箱、number prim）原生折空
+ *   数组不抛——不做 iterable 校验（与 Map/Set ctor 口径不同）。迭代逐项的
+ *   元素转换（Uint8Array.from([1n]) 原生 TypeError）不建模（imprecision）。
+ *   mapFn IsCallable 前置校验 + tuple items 的 mapper 逐元素执行（Bug 37，
+ *   validateCallableArg/applyCallbackValue 对齐 Array.from 口径）。
+ * - of：逐项过元素转换——number 域 ToNumber（symbol/bigint → 定抛
+ *   TypeError、抽象 may）；bigint 域 ToBigInt（enforceTaBigIntItem）。
+ * 值域：元素域 brand（长度/内容不建模，$idx 走 TYPED_ARRAY_ELEMENT 投影）。
+ */
+export function evalTypedArrayStatic(
+  name: string,
+  method: string,
+  args: Abs[],
+): Abs | undefined {
+  const elem = typedArrayElementOf(name);
+  if (elem === undefined) return undefined;
+  const brand = () => abs({ k: "brand", name, shape: objOf({}) }, undefined, undefined, "path");
+  if (method === "from") {
+    const items = args[0];
+    if (items && isNullishLit(items)) throw new NudoThrow(errorTypeAbs("TypeError"));
+    if (items && mayBeNullishOperand(items)) {
+      recordMayThrow({ kind: "TypeError", cause: "TypedArray.from items ToObject may throw (null/undefined)" });
+    }
+    // Bug 37：? GetMethod(mapFn) 前置校验——对齐 Array.from（Bug 49）口径：
+    // 原生 mapFn 先于任何元素映射过 IsCallable（空 items 也抛）。缺省/严格
+    // undefined → 无 mapper；null/prim/闭 obj/tuple → 确定 TypeError；
+    // any/unknown/open obj/含不可调用臂 sum → may TypeError
+    validateCallableArg(args[1], "TypedArray.from mapFn may not be callable", {
+      undefinedOk: true,
+    });
+    // 合法 mapper + 字面量元素（tuple items）：逐元素执行——副作用/体内
+    // 抛错传播落地（对齐 Array.from 的 mapOne；元素转换与值域不建模，
+    // brand 元素域投影同 Bug 27 口径）。抽象 items 元素未知，不执行。
+    // isDefinitelyUndefinedArg：严格 undefined 字面量 ≡ 无 mapper（原生同，
+    // validateCallableArg 的 undefinedOk 豁免同口径——不重蹈 Array.from
+    // 对 undefined-lit mapper 误执行的覆辙）
+    const mapFn = args[1];
+    const hasMapper = !!mapFn && !isDefinitelyUndefinedArg(mapFn);
+    if (hasMapper && items && items.shape.k === "tuple") {
+      const els = (items.shape as { elements: Abs[] }).elements;
+      for (let i = 0; i < els.length; i++) {
+        applyCallbackValue(mapFn, [els[i]!, numLit(i)], emptyEnv(), pTrue, defaultLeakBudget);
+      }
+    }
+    return brand();
+  }
+  if (method === "of") {
+    for (const it of args) {
+      if (elem === "bigint") {
+        enforceTaBigIntItem(it);
+        continue;
+      }
+      // number 域：ToNumber——symbol（shape 恒无 lit）/bigint 字面量/抽象
+      // bigint prim → 定抛 TypeError；any/obj/fn/brand/sum 抽象项 → may
+      if (isSymbolAbs(it) || isBigintPrimAbs(it)) throw new NudoThrow(errorTypeAbs("TypeError"));
+      if (it.term?.op === "lit" && typeof it.term.value === "bigint") {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      if (it.term?.op !== "lit" && mayCoerceThrowOperand(it)) {
+        recordMayThrow({ kind: "TypeError", cause: "TypedArray.of item ToNumber may throw (Symbol/BigInt)" });
+      }
+    }
+    return brand();
+  }
+  return undefined;
 }
 
 /** URL brand：解析成功携带宿主精确组件槽（Bug 29 补 7 组件——hostname/
@@ -838,6 +1159,7 @@ function urlSearchParamsBrandAbs(): Abs {
  * iterable [name, value] tuple" / (42) → ToString 后按查询串解析 [["42",""]]）：
  * - 缺省/nullish/symbol 以外字面量 → 原生恒 total（null 解析出 "null" 条目）；
  * - tuple 字面量元素非 [name,value] 二元组（非 tuple / 长度 ≠ 2）→ 确定
+ *   TypeError；闭 obj 元素无 @@iterator 槽（非可迭代 pair，如 [{}]）→ 确定
  *   TypeError；二元组元素走 ToString symbol 校验（noteBoxedCtorArg 同口径）；
  * - 开放数组（arr）/ sum / 抽象 / Set brand → may TypeError；
  * - Map brand 条目恒二元组 → 正常构造；对象 init（record 路径）槽值走
@@ -860,6 +1182,16 @@ export function makeUrlSearchParamsAbs(init: Abs | undefined): Abs {
         noteBoxedCtorArg("String", el.shape.elements[0]);
         noteBoxedCtorArg("String", el.shape.elements[1]);
         continue;
+      }
+      // 闭 obj 且无 @@iterator 槽 → 非可迭代 pair 元素，确定 TypeError
+      //（node：new URLSearchParams([{}]) / ([{0:"a",1:"b"}]) 均抛；
+      // 带 @@iterator 槽 / open obj 可能自定义迭代 → 落下方 may）
+      if (
+        el.shape.k === "obj" &&
+        (el.shape as { open?: boolean }).open !== true &&
+        !getSlot((el.shape as { slots: Record<string, { value: Abs }> }).slots, "@@iterator")
+      ) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
       }
       // arr/obj/sum/brand…元素无法确定是二元组 → may TypeError
       recordMayThrow({
@@ -915,17 +1247,22 @@ export const BOXED_PRIMITIVE_SLOT = "[[PrimitiveValue]]";
 
 /**
  * Bug 22：装箱 brand 的包装原始值（字面量精确折叠、抽象 prim 保持、
- * 其余 → 域）。Number:ToNumber 折叠（null→0/undefined→NaN/字符串数字）；
- * Boolean:ToBoolean 折叠（对象恒 true、nullish→false）；String:ToString
- * 折叠（缺省 ≡ undefined → "undefined"）。litValue not-ok（抽象实参）
- * 不得与「字面量 undefined」混淆——以哨兵区分。
+ * 其余 → 域）。Number:ToNumber 折叠（缺省 → +0、null→0/undefined→NaN/
+ * 字符串数字）；Boolean:ToBoolean 折叠（对象恒 true、nullish/缺省→false）；
+ * String:ToString 折叠（缺省 → ""，显式 undefined → "undefined"）。
+ * litValue not-ok（抽象实参）不得与「字面量 undefined」混淆——以哨兵区分。
  */
 const NOT_A_LITERAL = Symbol("not-a-literal");
 
 function boxedPrimitiveOf(name: "String" | "Number" | "Boolean", arg: Abs | undefined): Abs {
   let v: unknown = NOT_A_LITERAL;
   if (!arg) {
-    v = undefined; // 缺省 ≡ 字面量 undefined
+    // 缺省 ≠ undefined 字面量：Number()/String() 无参 → +0 / ""（native
+    // new Number().valueOf() → 0、new String() → ""；显式传 undefined 才
+    // 折 NaN/"undefined"）。Boolean 缺省与 undefined 同折 false，不变。
+    if (name === "Number") return numLit(0);
+    if (name === "String") return strLit("");
+    v = undefined;
   } else {
     const vR = litValue(arg);
     if (vR.ok) v = vR.value;
@@ -1174,13 +1511,70 @@ export function makeIntlCtorAbs(sub: IntlSubCtor): Abs {
   );
 }
 
+/**
+ * Bug 29（强转三连）：`new Function(p0, …, body)` / `Function(…)` 动态代码
+ * 构造器。实参逐个 ToString（Symbol → 确定 TypeError，node 实测
+ * `new Function(Symbol())` 抛 "Cannot convert a Symbol value to a string"；
+ * 抽象 any/obj/… → may）。动态体不静态求值（同 eval 口径）：返回 path 级
+ * 抽象 fn，调用面保守 unknown。$new 宿主分支与 evalBuiltinNew（Abs 面）共
+ * 用本 builder。
+ */
+export function makeDynamicFunctionAbs(a0: Abs | undefined): Abs {
+  if (a0 && isSymbolAbs(a0)) throw new NudoThrow(errorTypeAbs("TypeError"));
+  if (a0 && a0.term?.op !== "lit" && mayCoerceThrowOperand(a0)) {
+    recordMayThrow({
+      kind: "TypeError",
+      cause: "new Function(body) ToString may throw (Symbol)",
+    });
+  }
+  return abs({ k: "fn", params: [] }, undefined, undefined, "path");
+}
+
+/**
+ * Bug 25：`new WeakRef(target)` —— target 过 CanBeHeldWeakly（与
+ * FinalizationRegistry.register 同口径，enforceCanBeHeldWeakly 单一分类）：
+ * prim/nullish 字面量与缺省 → 确定 TypeError（node 实测 "WeakRef:
+ * invalid target"）；symbol/对象形态合法；抽象 → recordMayThrow。
+ * 合法 → 空 brand（与原兜底同款；deref 值域走 BUILTIN_BRAND_METHODS 现状，
+ * 弱目标身份不在分析域）。$new 宿主分支与 evalBuiltinNew（Abs 面）共用。
+ */
+export function makeWeakRefAbs(target: Abs | undefined): Abs {
+  enforceCanBeHeldWeakly(target, "new WeakRef(target) target");
+  return abs({ k: "brand", name: "WeakRef", shape: objOf({}) }, undefined, undefined, "path");
+}
+
+/**
+ * Bug 25：`new FinalizationRegistry(cleanupCallback)` —— IsCallable 前置
+ * 校验（validateCallableArg，无 undefinedOk 豁免——缺省/undefined 原生同抛
+ * "cleanup must be callable"）：非 callable（prim/nullish 字面量/闭 obj/
+ * 缺省）→ 确定 TypeError；any/open obj/含不可调用臂 union → may。
+ * 合法 → 空 brand（实例方法面 register/unregister Bug 43 已落）。
+ */
+export function makeFinalizationRegistryAbs(cb: Abs | undefined): Abs {
+  validateCallableArg(cb, "new FinalizationRegistry(cleanupCallback) callback may not be callable");
+  return abs(
+    { k: "brand", name: "FinalizationRegistry", shape: objOf({}) },
+    undefined,
+    undefined,
+    "path",
+  );
+}
+
 /** new X(...) */
 export function evalBuiltinNew(className: string, args: Abs[]): Abs | undefined {
+  // Bug 21：TypedArray 家族（TYPED_ARRAY_ELEMENT 表驱动）——length 实参
+  // ToIndex 校验；$new 宿主分支共用 makeTypedArrayAbs
+  if (typedArrayElementOf(className) !== undefined) {
+    return makeTypedArrayAbs(className, args);
+  }
   switch (className) {
     case "Date":
       return evalDateCtor(args);
     case "RegExp":
       return evalRegExpCtor(args);
+    case "Function":
+      // Bug 29：构造器形与调用形同口径（makeDynamicFunctionAbs 单一 builder）
+      return makeDynamicFunctionAbs(args[0]);
     case "Symbol":
       // new Symbol() 原生 TypeError
       throw new NudoThrow(errorTypeAbs("TypeError"));
@@ -1216,6 +1610,12 @@ export function evalBuiltinNew(className: string, args: Abs[]): Abs | undefined 
     case "WeakSet":
       // Bug 15：Map/Set 同口径 iterable 校验；合法 → 空 brand（条目表不建模）
       return makeWeakCollectionAbs(className as "WeakMap" | "WeakSet", args[0]);
+    case "WeakRef":
+      // Bug 25：target CanBeHeldWeakly 校验（与 FCR.register 同口径）
+      return makeWeakRefAbs(args[0]);
+    case "FinalizationRegistry":
+      // Bug 25：cleanupCallback IsCallable 前置校验（缺省同抛）
+      return makeFinalizationRegistryAbs(args[0]);
     case "Proxy":
       // Bug 37：target/handler IsObject 校验
       return makeProxyAbs(args[0], args[1]);
@@ -1315,6 +1715,107 @@ function setEntryTuple(el: Abs): Abs {
   );
 }
 
+/**
+ * Bug 35：DataView.prototype get/set 存取族元素位宽（getFloat16/setFloat16
+ * 为 ES2025 面，node v26 已有——台账键同名登记）。
+ */
+const DATAVIEW_ACCESS_BITS: Record<string, number> = {
+  getInt8: 8, getUint8: 8,
+  getInt16: 16, getUint16: 16, getFloat16: 16,
+  getInt32: 32, getUint32: 32, getFloat32: 32,
+  getBigInt64: 64, getBigUint64: 64, getFloat64: 64,
+  setInt8: 8, setUint8: 8,
+  setInt16: 16, setUint16: 16, setFloat16: 16,
+  setInt32: 32, setUint32: 32, setFloat32: 32,
+  setBigInt64: 64, setBigUint64: 64, setFloat64: 64,
+};
+
+/**
+ * Bug 35：DataView get/set 存取族——byteOffset 实参过 ToIndex（负 →
+ * RangeError；缺省/undefined → 0），越界（offset + 元素宽 > 视图
+ * byteLength 槽）→ 定抛 RangeError；组合不可判（抽象 offset / 视图长度
+ * 折不出）→ may RangeError。读返回域按元素类型（number 家族 → number、
+ * BigInt64/BigUint64 → bigint——元素值域未建模的诚实 prim 域），写恒
+ * undefined；littleEndian 实参 ToBoolean 恒不抛不校验。
+ */
+function evalDataViewMethod(method: string, recv: Abs, args: Abs[]): Abs | undefined {
+  const bits = DATAVIEW_ACCESS_BITS[method];
+  if (bits === undefined) return undefined;
+  const isBigint = method === "getBigInt64" || method === "getBigUint64";
+  const isSet = method.startsWith("set");
+  enforceToIndex(args[0], `DataView.prototype.${method} byteOffset`);
+  const offV = toIndexLiteralValue(args[0]);
+  const inner = recv.shape.k === "brand" ? recv.shape.shape : undefined;
+  const viewLenAbs =
+    inner && inner.shape.k === "obj" ? getSlot(inner.shape.slots, "byteLength")?.value : undefined;
+  const viewLenV = viewLenAbs !== undefined ? toIndexLiteralValue(viewLenAbs) : undefined;
+  if (offV !== undefined && viewLenV !== undefined) {
+    if (offV + bits / 8 > viewLenV) throw new NudoThrow(errorTypeAbs("RangeError"));
+  } else {
+    recordMayThrow({ kind: "RangeError", cause: `DataView.prototype.${method} byteOffset may exceed the view bounds` });
+  }
+  if (isSet) return undefAbs();
+  return isBigint
+    ? abs({ k: "prim", type: "bigint" }, undefined, undefined, "path")
+    : numPrim("path");
+}
+
+/** Bug 38：TA brand 的 length 槽数字折叠（makeTypedArrayAbs 数字形态入槽；
+ * iterable/buffer 形态与抽象长度 → undefined，越界档落 may） */
+function taLengthSlotLit(recv: Abs): number | undefined {
+  if (recv.shape.k !== "brand") return undefined;
+  const inner = (recv.shape as { shape: Abs }).shape;
+  if (inner.shape.k !== "obj") return undefined;
+  const lenA = getSlot((inner.shape as { slots: Record<string, { value: Abs }> }).slots, "length")?.value;
+  if (!lenA) return undefined;
+  const v = litValue(lenA);
+  return v.ok && typeof v.value === "number" ? v.value : undefined;
+}
+
+/**
+ * Bug 38：set 源长度折叠（原生 array-like 的 Get(source,"length") →
+ * ToLength 语义）：tuple 元数 / 字符串字面量长度 / TA 源 length 槽 / 装箱
+ * prim 与无 length 槽闭对象折 0；其余（arr 抽象元素、open obj、any、抽象
+ * length 槽、symbol 槽）不可判 → undefined（越界档落 may）。
+ */
+function taSetSourceLength(src: Abs): number | undefined {
+  const k = src.shape.k;
+  if (k === "tuple") return (src.shape as { elements: Abs[] }).elements.length;
+  if (k === "prim") {
+    if ((src.shape as { type?: string }).type === "string") {
+      const v = litValue(src);
+      return v.ok && typeof v.value === "string" ? v.value.length : undefined;
+    }
+    return 0; // number/bool/bigint/symbol 装箱无 length → ToLength(undefined)=0
+  }
+  if (k === "brand" && typedArrayElementOf((src.shape as { name?: string }).name ?? "") !== undefined) {
+    return taLengthSlotLit(src);
+  }
+  if (k === "obj" && (src.shape as { open?: boolean }).open !== true) {
+    const lenA = getSlot((src.shape as { slots: Record<string, { value: Abs }> }).slots, "length")?.value;
+    if (!lenA) return 0; // 无 length 槽：Get → undefined → 0
+    if (lenA.term?.op === "lit") {
+      const v = lenA.term.value;
+      if (v === null || v === undefined) return 0;
+      if (typeof v === "number" || typeof v === "string" || typeof v === "boolean") {
+        const n = Number(v);
+        if (Number.isNaN(n)) return 0;
+        return Math.min(Math.max(Math.trunc(n), 0), Number.MAX_SAFE_INTEGER);
+      }
+    }
+  }
+  return undefined;
+}
+
+/** brand 内层 obj 槽表（非 obj 内层 → undefined） */
+function brandObjSlots(recv: Abs): Record<string, { value: Abs }> | undefined {
+  if (recv.shape.k !== "brand") return undefined;
+  const inner = (recv.shape as { shape: Abs }).shape;
+  return inner.shape.k === "obj"
+    ? (inner.shape as { slots: Record<string, { value: Abs }> }).slots
+    : undefined;
+}
+
 /** brand 实例方法（Date/RegExp/Map/Set/Error 家族/装箱拆箱后的 prim 面在外层） */
 export function evalBuiltinInstanceMethod(
   brandName: string,
@@ -1324,6 +1825,65 @@ export function evalBuiltinInstanceMethod(
 ): Abs | undefined {
   if (brandName === "Date") return evalDateMethod(method, recv, args);
   if (brandName === "RegExp") return evalRegExpMethod(method, recv, args);
+  // Bug 35：DataView get/set 存取族（bounds 校验 + 元素域返回）
+  if (brandName === "DataView") return evalDataViewMethod(method, recv, args);
+  // Bug 38：%TypedArray%.prototype.set(source, offset) —— 原生三段校验：
+  // ① ToIndex(offset)（负/±∞/超 2^53-1 → RangeError；symbol/bigint →
+  //    TypeError；抽象 → may RangeError，复用 enforceToIndex）；② ToObject
+  //    (source)（nullish 字面量/缺省 → 定抛 TypeError；any/含 nullish 臂
+  //    sum → may）；③ targetOffset + sourceLength > targetLength → RangeError
+  //    ——target 长度读 makeTypedArrayAbs 的 length 槽（数字形态折叠），
+  //    source 长度读 taSetSourceLength（tuple 元数/字符串长度/TA 源槽/装箱
+  //    折 0）；任一侧不可判 → 保守 may。成功恒返 undefined；元素拷贝值域
+  //    不建模（imprecision，同长度口径）。
+  if (typedArrayElementOf(brandName) !== undefined && method === "set") {
+    const offset = args.length > 1 ? args[1] : undefined;
+    enforceToIndex(offset, "TypedArray.prototype.set offset");
+    const src = args[0];
+    if (!src || isNullishLit(src)) throw new NudoThrow(errorTypeAbs("TypeError"));
+    if (mayBeNullishOperand(src)) {
+      recordMayThrow({ kind: "TypeError", cause: "TypedArray.prototype.set source ToObject may throw (null/undefined)" });
+    }
+    const offV = toIndexLiteralValue(offset);
+    const srcLen = taSetSourceLength(src);
+    const tgtLen = taLengthSlotLit(recv);
+    if (offV !== undefined && srcLen !== undefined && tgtLen !== undefined) {
+      if (offV + srcLen > tgtLen) throw new NudoThrow(errorTypeAbs("RangeError"));
+    } else {
+      recordMayThrow({ kind: "RangeError", cause: "TypedArray.prototype.set may exceed target bounds" });
+    }
+    return undefAbs();
+  }
+  // Bug 39：ArrayBuffer.prototype.resize(newLength) —— ValidateAndApply：
+  // ① resizable 槽 false 字面量 → 定抛 TypeError（原生先于 newLength 求值）；
+  //    抽象 → may TypeError。② newLength 过 ToIndex（负/超界 → RangeError；
+  //    symbol/bigint → TypeError；抽象 → may）。③ newLength > maxByteLength
+  //    槽 → 定抛 RangeError；任一侧抽象 → may。成功臂：byteLength 槽原地
+  //    更新（$set 引用语义惯例——别名同步；字面量折新值、抽象 → number
+  //    域）；恒返 undefined。transfer/grow/slice 不扩 scope（另行任务）。
+  if (brandName === "ArrayBuffer" && method === "resize") {
+    const slots = brandObjSlots(recv);
+    const resizableA = slots ? getSlot(slots, "resizable")?.value : undefined;
+    const resR = resizableA ? litValue(resizableA) : undefined;
+    const resizableLit = resR?.ok && typeof resR.value === "boolean" ? resR.value : undefined;
+    if (resizableLit === false) throw new NudoThrow(errorTypeAbs("TypeError"));
+    if (resizableLit === undefined) {
+      recordMayThrow({ kind: "TypeError", cause: "ArrayBuffer.prototype.resize buffer may not be resizable" });
+    }
+    enforceToIndex(args[0], "ArrayBuffer resize newLength");
+    const newLen = toIndexLiteralValue(args[0]);
+    const maxA = slots ? getSlot(slots, "maxByteLength")?.value : undefined;
+    const maxV = maxA ? toIndexLiteralValue(maxA) : undefined;
+    if (newLen !== undefined && maxV !== undefined) {
+      if (newLen > maxV) throw new NudoThrow(errorTypeAbs("RangeError"));
+    } else {
+      recordMayThrow({ kind: "RangeError", cause: "ArrayBuffer resize newLength may exceed maxByteLength" });
+    }
+    if (slots) {
+      setSlot(slots, "byteLength", { value: newLen !== undefined ? numLit(newLen) : numPrim("path") });
+    }
+    return undefAbs();
+  }
   // Bug 42：URL.prototype.toJSON ≡ href（原生恒 string，total——与 Date 的
   // toJSON 同语义；toString 巧合路径之外补显式面）
   if (brandName === "URL") {
@@ -1405,9 +1965,46 @@ export function evalBuiltinInstanceMethod(
         return collectionIteratorAbs(setElementsAbs(recv));
       case "entries":
         return collectionIteratorAbs(setElementsAbs(recv).map(setEntryTuple));
+      // Bug 28：ES2025 Set 方法族——实参 GetSetRecord 校验（非对象 /
+      // .size NaN / .has·.keys 非 callable → TypeError）+ 值域折叠
+      // （setMethodFold：双方条目表确切时 union 恒折、其余运算与 is*
+      // 谓词全字面量折；不可折 → 集合运算诚实 unknown / is* 抽象 boolean）。
+      case "union":
+      case "intersection":
+      case "difference":
+      case "symmetricDifference":
+      case "isSubsetOf":
+      case "isSupersetOf":
+      case "isDisjointFrom": {
+        enforceSetMethodArg(args[0], method);
+        const isPred =
+          method === "isSubsetOf" || method === "isSupersetOf" || method === "isDisjointFrom";
+        return setMethodFold(recv, method, args[0] as Abs) ?? (isPred ? boolPrim() : unknown);
+      }
       default:
         return undefined;
     }
+  }
+  // Bug 12/22：WeakMap/WeakSet 实例方法——弱持有条目表不建模（key 身份
+  // 不在分析域，makeWeakCollectionAbs 空 brand）：set/add 键过 CanBeHeldWeakly
+  // （enforceCanBeHeldWeakly 与 FCR 同口径：prim/nullish 字面量与缺省 →
+  // 确定 TypeError；symbol/对象形态合法弱键——注册 Symbol.for 原生抛、
+  // 未注册不抛，Abs 无注册标记不可分，保守按合法；抽象 → may）；返回面
+  // set/add → receiver（原生恒返 this，链式精确），get/has/delete 原生对
+  // 非弱键不抛直返 undefined/false——确定非弱键可精确折，其余键条目表
+  // 不建模：get → unknown、has/delete → 抽象 boolean。
+  if (brandName === "WeakMap" || brandName === "WeakSet") {
+    if (method === "set" || method === "add") {
+      enforceCanBeHeldWeakly(args[0], `${brandName}.prototype.${method} key`);
+      return recv;
+    }
+    if (method === "get" || method === "has" || method === "delete") {
+      if (classifyCanBeHeldWeakly(args[0]).k === "def") {
+        return method === "get" ? undefAbs() : boolLit(false);
+      }
+      return method === "get" ? unknown : boolPrim();
+    }
+    return undefined;
   }
   // Bug 43：FCR register/unregister 的 IsObject（CanBeHeldWeakly）校验——
   // 此前走空 brand 兜底不校验 target（L2 漏报）。FCR 实例是 $new 空 brand

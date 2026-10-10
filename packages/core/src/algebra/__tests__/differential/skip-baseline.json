@@ -1667,9 +1667,7 @@
       "const a = new Uint8Array([1,2,3]); return a[0] + a[2]",
       "const a = new Uint8Array([255,255]); return a[0]"
     ],
-    "batch5.corpus10": [
-      "function* g() { yield 1; return 2; } const it = g(); it.next(); return it.next().value"
-    ],
+    "batch5.corpus10": [],
     "batch5.corpus11": [
       "return new Number(5).valueOf()",
       "return new Boolean(0).valueOf()"

@@ -6,15 +6,13 @@
  * native 抛错域与值域。
  *
  * 探针后不入库的 MISMATCH 形态（= 剩余缺口面台账，编号见 bug-report）：
- * - new Map([null]) / new WeakMap([{}])：元素级 entry/key 校验漏 null
- *   键与 open-obj 键（Bug 8 集合构造器实参校验残余，值级漏抛）；
- * - new Map([["a"]]).size：一元 pair 折 size 0（native 1）——未编号新面；
- * - new URLSearchParams([{}])：非可迭代 pair 漏检（Bug 45 修复残余）；
- * - new DataView(buf, 4, 8) / new DataView(buf, 9)：越界 ctor 缺 RangeError
- *   （Bug 35 ctor bounds 未修面）；
- * - new Number().valueOf() / new String().valueOf()：缺省实参分别折
- *   NaN / undefined（native +0 / ""）——未编号新面（wrapper 缺省 ≠ undefined）；
- * - BigInt([1, 2])：数组 ToString 折叠漏 SyntaxError——未编号新面。
+ * - new Map([null]) / new WeakMap([{}])：元素级 entry/key 校验——Bug 8
+ *   已修（ctorArgDefinitelyInvalid 走 classifyEntryObject /
+ *   classifyCanBeHeldWeakly），回归锁定于 eval-collection-ctor-iterables.test.ts；
+ * - new Map([["a"]]).size：一元 pair 折 size 0——Bug 8 已修（makeMapAbs
+ *   任意长度元组/对象条目入表），同上回归锁定；
+ * - BigInt 数组/USP 闭 obj pair 元素/装箱缺省实参/Array.from undefined
+ *   mapper 四面已修（eval-battery-leftovers.test.ts 回归锁定），随修复入库。
  * Intl.NumberFormat/DateTimeFormat 未建模（Bug 44 修复中）整族不入库。
  */
 export const mapCtor = [
@@ -95,6 +93,8 @@ export const uspCtor = [
   `try { new URLSearchParams([["a"]]); return "no-throw"; } catch (e) { return e.constructor.name; }`,
   `try { new URLSearchParams([["a", "b", "c"]]); return "no-throw"; } catch (e) { return e.constructor.name; }`,
   `try { new URLSearchParams([0]); return "no-throw"; } catch (e) { return e.constructor.name; }`,
+  // 闭 obj 元素无 @@iterator 槽 → 非可迭代 pair，确定 TypeError（已修入库）
+  `try { new URLSearchParams([{}]); return "no-throw"; } catch (e) { return e.constructor.name; }`,
 ];
 
 export const tdCtor = [
@@ -133,9 +133,15 @@ export const bufferCtor = [
   `try { return new DataView(new ArrayBuffer(8)).byteLength; } catch (e) { return e.constructor.name; }`,
   `try { return new DataView(new ArrayBuffer(8), 4).byteLength; } catch (e) { return e.constructor.name; }`,
   `try { new DataView(new ArrayBuffer(8), -1); return "no-throw"; } catch (e) { return e.constructor.name; }`,
+  // Bug 35 已修（ctor bounds）：越界定抛 RangeError，随修复入库
+  `try { new DataView(new ArrayBuffer(8), 4, 8); return "no-throw"; } catch (e) { return e.constructor.name; }`,
+  `try { new DataView(new ArrayBuffer(8), 9); return "no-throw"; } catch (e) { return e.constructor.name; }`,
 ];
 
 export const wrapCtor = [
+  // 缺省实参 ≠ undefined：native +0 / ""（已修入库；显式 undefined 行照旧 NaN/"undefined"）
+  `try { return new Number().valueOf(); } catch (e) { return e.constructor.name; }`,
+  `try { return new String().valueOf(); } catch (e) { return e.constructor.name; }`,
   `try { return new Number(0).valueOf(); } catch (e) { return e.constructor.name; }`,
   `try { return new Number(-1).valueOf(); } catch (e) { return e.constructor.name; }`,
   `try { return new Number("x").valueOf(); } catch (e) { return e.constructor.name; }`,
@@ -184,6 +190,8 @@ export const symbolBigIntCall = [
   // 不出具体值（引擎对数组实参保守返回，concrete() 盲区）
   `try { return BigInt([]); } catch (e) { return e.constructor.name; }`,
   `try { return BigInt([1]); } catch (e) { return e.constructor.name; }`,
+  // 数组 ToString 折叠：join 出 "1,2" 不可解析 → 确定 SyntaxError（已修入库）
+  `try { BigInt([1, 2]); return "no-throw"; } catch (e) { return e.constructor.name; }`,
   `try { BigInt(Symbol()); return "no-throw"; } catch (e) { return e.constructor.name; }`,
   `try { new BigInt(); return "no-throw"; } catch (e) { return e.constructor.name; }`,
   `try { new BigInt(0); return "no-throw"; } catch (e) { return e.constructor.name; }`,
@@ -267,4 +275,7 @@ export const objectArrayCtor = [
   `try { return new Array("bad-$$").length; } catch (e) { return e.constructor.name; }`,
   // 合法 skip（钉在 skip-baseline.json）：open obj 单元素数组的 length 非具体
   `try { return new Array({}).length; } catch (e) { return e.constructor.name; }`,
+  // undefined 字面量 mapper ≡ 无 mapper（native 不抛；null/prim 定抛）——
+  // 此前引擎假抛 TypeError（已修入库）
+  `try { Array.from([1], undefined); return "no-throw"; } catch (e) { return e.constructor.name; }`,
 ];

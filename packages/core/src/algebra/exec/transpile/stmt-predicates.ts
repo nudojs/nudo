@@ -3,6 +3,7 @@
  */
 import type { Statement, Node } from "@babel/types";
 import { indent } from "./helpers.ts";
+import { matchRelIdentLit } from "../../arithmetic.ts";
 
 export function stmtCompletesControl(stmt: Statement | undefined | null): boolean {
   if (!stmt) return false;
@@ -732,4 +733,42 @@ export function narrowDiscriminantArmThunks(
     )
     .join(", ");
   return `((${params}) => ${thunk})(${args})`;
+}
+
+// --- 关系守卫（Bug 1）-----------------------------------------------------
+
+/**
+ * 关系守卫（Bug 1）：`x >= 0` / `0 < x`（标识符 × 数字字面量，matchRelIdentLit
+ * 同一匹配面）→ 事实臂（cons）内以 $refineRel 影子重绑——守卫建立的隐含
+ * 约束随**普通变量读取**进入返回 Abs（此前只有算术折叠消费 exec Φ，
+ * `x + 0` 携带界而裸 `return x` 丢守卫事实 → return-constraint gate 假阳）。
+ * 补集臂（¬x≥0）含 NaN 可能（NaN 与任何比较皆假），不可健全表示 → 不窄化。
+ */
+export type RelGuard = {
+  /** 被守卫的标识符 */
+  name: string;
+  /** 关系（含翻转后的 `3 < x` → gt） */
+  op: "gt" | "ge" | "lt" | "le";
+  /** 字面量界 */
+  k: number;
+};
+
+export function relGuardOf(test: unknown): RelGuard | undefined {
+  return matchRelIdentLit(test);
+}
+
+/** 关系守卫臂 thunk 的剪影包装：`((x) => THUNK)($refineRel(x, "ge", 0))`——
+ *  仅事实臂；守卫名在 fork 绑定集（臂内写/快照重绑）时跳过（与 nullish/
+ *  typeof/判别剪影同一跳过口径，宁缺毋假：影子参数会吞掉臂内写）。 */
+export function narrowRelArmThunk(
+  thunk: string,
+  guard: RelGuard | undefined,
+  arm: "cons" | "alt",
+  forkBindingNames: ReadonlySet<string> | readonly string[],
+): string {
+  if (!guard || arm !== "cons") return thunk;
+  const names =
+    forkBindingNames instanceof Set ? (forkBindingNames as Set<string>) : new Set(forkBindingNames);
+  if (names.has(guard.name)) return thunk;
+  return `((${guard.name}) => ${thunk})($refineRel(${guard.name}, ${JSON.stringify(guard.op)}, ${guard.k}))`;
 }

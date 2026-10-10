@@ -214,7 +214,7 @@ export {
   setEvalAssignCollector, setEvalBindingSink, setEvalCallCollector,
   setEvalFallbackCollector, takeLoopExits, takeThrowExits, transpile,
   transpileBodyNode, transpileExpression, transpileFile, transpileSource,
-  tryRunTranspiled, withExecPhi
+  tryRunTranspiled, withExecPhi, isCjsMainRun
 } from "./exec/index.ts";
 
 export {

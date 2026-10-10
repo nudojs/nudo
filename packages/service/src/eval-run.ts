@@ -157,7 +157,9 @@ export function mergeHarvestUnderEnv(
   const out: Record<string, AbsModuleExports> = {};
   for (const [mod, exports] of Object.entries(harvestModules)) {
     const named = { ...exports.named };
-    out[mod] = exports.default !== undefined ? { named, default: exports.default } : { named };
+    // 保留 cjsMain / evaluated 等标记位（Bug 10 回归：require 对 CJS 单函数
+    // 导出需返回 default 本身，丢标记会回落 namespace obj → obj-callee 定抛）
+    out[mod] = exports.default !== undefined ? { ...exports, named } : { ...exports, named };
   }
   const notify = opts?.onConflict ?? envHarvestConflictCollectorSlot.get();
   for (const [mod, envExports] of Object.entries(envModules)) {
@@ -165,7 +167,7 @@ export function mergeHarvestUnderEnv(
     if (!existing) {
       const named = { ...envExports.named };
       out[mod] =
-        envExports.default !== undefined ? { named, default: envExports.default } : { named };
+        envExports.default !== undefined ? { ...envExports, named } : { ...envExports, named };
       continue;
     }
     const overwritten: string[] = [];

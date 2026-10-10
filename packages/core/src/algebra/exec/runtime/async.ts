@@ -2,11 +2,12 @@
  * async / await / generator / ??（$nullishTest / $removeNullish）。
  */
 import type { Abs } from "../../abs.ts";
-import { abs, bool, boolLit, confJoin, litValue, numLit, strLit, unknown, type Confidence } from "../../abs.ts";
+import { abs, bool, boolLit, confJoin, isNumPrim, litValue, numLit, strLit, unknown, type Confidence } from "../../abs.ts";
 import { lit, termEquals } from "../../term.ts";
 import type { Phi, Pred } from "../../pred.ts";
 import { pTrue, and, implies, predEquals, type PrimName } from "../../pred.ts";
 import { joinAbs, objOf, migrateNullProto, type ObjShape } from "../../objects.ts";
+import { refineAbsForRelTrue } from "../../arithmetic.ts";
 import { OBJECT_PROTO_METHOD_NAMES, migrateInvariants } from "../../builtins.ts";
 import { accessorTable, migrateAccessors } from "./members.ts";
 import { leqAbs } from "../../leq.ts";
@@ -17,8 +18,8 @@ import {
   currentExecPhi, $lit, asAbsVal, $fnVal, noBody, writeInPlace, clearStaleTermPred,
   isNudoReturn, isNudoBreak, isNudoContinue,
 } from "./state.ts";
-import { pushMayThrowFrame, popMayThrowFrame } from "../may-throw.ts";
-import { registerGenElements } from "../match-iter.ts";
+import { pushMayThrowFrame, popMayThrowFrame, recordMayThrow, throwPayloadOf, type MayThrowEffect } from "../may-throw.ts";
+import { registerGenElements, registerGenDeferred, type GenDeferred } from "../match-iter.ts";
 import { $unknown, $eq, $ne, $add, $typeof, $not, $lt, $le, $gt, $ge, $join } from "./ops.ts";
 import {
   yieldStack, genPathSensitive, genJoinOverride, mergeArmYields,
@@ -111,11 +112,27 @@ function genIterResult(value: Abs, done: boolean): Abs {
  *   for-of / [...g()] / Array.from / yield* / 数组解构经既有迭代路径
  *   按序精确展开（迭代路径从侧表取出元素域，不回归）。
  */
-function makeGenObject(els: Abs[], conf: Confidence): Abs {
-  const state = { i: 0, done: false };
+function makeGenObject(
+  els: Abs[],
+  conf: Confidence,
+  retVal: Abs,
+  deferred?: GenDeferred,
+): Abs {
+  const state = { i: 0, done: false, delivered: false };
   const next = $fnVal([], (): Abs => {
+    // Bug 34：消费点重放——体内 soft may-throw 重记进当前帧（gate 面），
+    // definite 载荷在 yield 前缀耗尽后抛（首个触达抛点的 next()）
+    if (deferred && !state.done) {
+      for (const e of deferred.soft) recordMayThrow(e);
+    }
     if (state.done || state.i >= els.length) {
-      state.done = true;
+      if (!state.done) {
+        state.done = true;
+        state.delivered = true;
+        if (deferred?.throw !== undefined) throw new NudoThrow(deferred.throw);
+        // Bug 2：终末 return 值在首个 done:true 交付（此后 native 回 undefined）
+        return genIterResult(retVal, true);
+      }
       return genIterResult(undef(), true);
     }
     const v = els[state.i]!;
@@ -124,6 +141,7 @@ function makeGenObject(els: Abs[], conf: Confidence): Abs {
   });
   const ret = $fnVal([], (...args: Abs[]): Abs => {
     state.done = true;
+    state.delivered = true;
     return genIterResult(args.length > 0 ? args[0]! : undef(), true);
   });
   const thr = $fnVal([], (...args: Abs[]): Abs => {
@@ -142,37 +160,52 @@ function makeGenObject(els: Abs[], conf: Confidence): Abs {
   }
   const g = abs({ k: "obj", slots }, undefined, undefined, conf);
   registerGenElements(g, els);
+  if (deferred) registerGenDeferred(g, deferred);
   return g;
 }
 
 /** function* 体：收集所有 yield 值；返回带迭代器协议面的生成器对象 Abs；
  *  抽象分支时降 conf（P0-6）
  *
- * Bug 58：调用生成器是原生全操作——体只在首个 next() 执行。此前 body()
- * eager 执行把体内 may-throw（成员读 any）/显式 throw 折进**调用方** throws
- * 域（每生成器入口假 entry-may-throw）。现以丢弃式 may-throw 帧包裹：
- * soft 效果进帧后丢弃、NudoThrow/宿主异常吞掉（迭代期语义，调用期不表面）。
- * yield 收集保持 eager（既有值域建模，注释口径不变）。
+ * Bug 58：调用生成器是原生全操作——体只在首个 next() 执行。body() eager
+ * 执行的体内效果（成员读 may-throw / 显式 throw）不折进**调用方** throws
+ * 域——以捕获式 may-throw 帧包裹：soft 效果与 NudoThrow 挂生成器对象
+ * （Bug 34 延迟重放：首个触达抛点的 next()/迭代消费，仅构造不消费不
+ * 表面）。yield 收集保持 eager（既有值域建模，注释口径不变）。
+ * Bug 2：thunk 返回值 = 终末 return 值——不再丢弃，经 makeGenObject 在
+ * 首个 done:true 作为 value 交付（node 实测：此后 next 回 undefined）。
  * Bug 22：结果从 yield 元组数组改为生成器对象（next/return/throw 方法面 +
  * constructor 身份）；元素域经侧表保留（$arr 的 ≤cap tuple / >cap arr
  * widen 策略不变），迭代路径（for-of/spread/Array.from）继续工作。 */
-export function $gen(body: () => void): Abs {
+export function $gen(body: () => Abs): Abs {
   const ys: Abs[] = [];
   const marker = genPathSensitive;
   const prevOverride = genJoinOverride;
   setGenJoinOverride(null);
   yieldStack.push(ys);
   pushMayThrowFrame();
+  let retVal: Abs | undefined;
+  let thrown: Abs | undefined;
+  let soft: MayThrowEffect[] = [];
+  let controlToken: unknown;
   try {
-    body();
+    // Bug 2：终末 return 值（transpile 侧 withImplicitReturn 保证有返回）
+    retVal = asAbsVal(body());
   } catch (e) {
     // 控制流 token（fork/循环返回）不是迭代期异常——不得吞
-    if (isNudoReturn(e) || isNudoBreak(e) || isNudoContinue(e)) throw e;
-    // 体内 throw 属首个 next() 迭代期——调用期吞掉（throws 域不泄漏）
+    if (isNudoReturn(e) || isNudoBreak(e) || isNudoContinue(e)) controlToken = e;
+    // Bug 34：体内异常不再静默吞掉——延迟到消费点重放（见 makeGenObject）
+    else thrown = throwPayloadOf(e);
   } finally {
-    popMayThrowFrame(true);
+    // token 再抛路径保持丢弃式（旧行为）；正常/延迟异常路径保留帧内
+    // soft 效果挂生成器对象（gate 面：消费点重记，见 registerGenDeferred）
+    soft = popMayThrowFrame(controlToken !== undefined);
     yieldStack.pop();
+    if (controlToken !== undefined) throw controlToken;
   }
+  const ret: Abs = retVal ?? undef();
+  const deferred: GenDeferred | undefined =
+    thrown === undefined && soft.length === 0 ? undefined : { throw: thrown, soft };
   if (genJoinOverride) {
     const joined: Abs = genJoinOverride;
     setGenJoinOverride(prevOverride);
@@ -182,6 +215,8 @@ export function $gen(body: () => void): Abs {
     return makeGenObject(
       els,
       joined.conf === "exact" ? ("path" as Confidence) : joined.conf,
+      ret,
+      deferred,
     );
   }
   setGenJoinOverride(prevOverride);
@@ -192,9 +227,11 @@ export function $gen(body: () => void): Abs {
     return makeGenObject(
       els,
       arr.conf === "exact" ? ("path" as Confidence) : arr.conf,
+      ret,
+      deferred,
     );
   }
-  return makeGenObject(els, arr.conf);
+  return makeGenObject(els, arr.conf, ret, deferred);
 }
 
 /** yield v：压入当前生成器收集器；表达式值用 unknown */
@@ -456,6 +493,23 @@ export function $narrowTypeOf(a: Abs, typeOf: string, keep: boolean): Abs {
   if (kept.length === members.length) return a;
   if (kept.length === 0) return a;
   return kept.length === 1 ? kept[0]! : { ...a, shape: { k: "sum" as const, members: kept } };
+}
+
+/**
+ * 关系守卫臂剪影（Bug 1）：`x >= 0` 真臂把 x 重绑为带 ge(x,0) 界的 Abs
+ * ——守卫建立的隐含约束随**普通变量读取**进入返回值 / 签名面。此前只有
+ * 算术折叠消费 exec Φ（`x + 0` 携带界），裸 `return x` 丢守卫事实 →
+ * return-constraint gate 假阳（可证合规的函数过不了 CI）。只做事实臂：
+ * ¬(x≥0) 含 NaN 可能（NaN 与任何比较皆假），补集界不可健全表示。精确
+ * 字面量（lit term）的界由域隶属折叠，不加 pred 保持精确面干净。
+ * 只精化 number prim：any 的真臂还含 bigint（`10n >= 0` 为真）与
+ * ToPrimitive 对象面，refineAbsForRelTrue 的 number|string 并集会
+ * 凭空排除 bigint → 假证明；any/unknown 保持原样（宁缺毋假）。
+ */
+export function $refineRel(a: Abs, op: "gt" | "ge" | "lt" | "le", k: number): Abs {
+  if (!a || typeof a !== "object" || !("shape" in (a as object))) return a;
+  if (a.term?.op === "lit" || !isNumPrim(a) || !a.term) return a;
+  return refineAbsForRelTrue(a, op, k);
 }
 
 /**

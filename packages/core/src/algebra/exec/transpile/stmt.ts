@@ -65,6 +65,8 @@ import {
   narrowTypeArmThunk,
   discriminantGuardsOf,
   narrowDiscriminantArmThunks,
+  relGuardOf,
+  narrowRelArmThunk,
 } from "./stmt-predicates.ts";
 
 /**
@@ -698,14 +700,22 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const guards = nullishGuardsOf(stmt.test);
       const tguard = typeGuardOf(stmt.test);
       const dguards = discriminantGuardsOf(stmt.test);
-      const consNarrowed = narrowDiscriminantArmThunks(
-        narrowTypeArmThunk(
-          narrowNullishArmThunks(consRaw, guards, "cons", recvSet),
-          tguard,
+      // 关系守卫（Bug 1）：`if (x >= 0)` 真臂 x 影子重绑带界 Abs——
+      // 裸 `return x` 不再丢守卫事实（return-constraint gate 假阳根因）
+      const rguard = relGuardOf(stmt.test);
+      const consNarrowed = narrowRelArmThunk(
+        narrowDiscriminantArmThunks(
+          narrowTypeArmThunk(
+            narrowNullishArmThunks(consRaw, guards, "cons", recvSet),
+            tguard,
+            "cons",
+            recvSet,
+          ),
+          dguards,
           "cons",
           recvSet,
         ),
-        dguards,
+        rguard,
         "cons",
         recvSet,
       );

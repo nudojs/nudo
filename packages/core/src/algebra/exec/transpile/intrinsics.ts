@@ -51,6 +51,27 @@ export const ENV_SHADOW_SKIP_GLOBALS: ReadonlySet<string> = new Set([
   // Bug 44：进路由表（Intl.NumberFormat/DateTimeFormat 构造器值 + typeof
   // Intl 折 object + 成员投影）——skip 防 env 注入遮蔽宿主身份路由
   "Intl",
+  // Bug 27：TypedArray 全家进路由表（from/of 静态面校验 + 常量成员投影）
+  // ——skip 防 env 注入遮蔽宿主身份路由（parity 门钉住）
+  "Int8Array",
+  "Uint8Array",
+  "Uint8ClampedArray",
+  "Int16Array",
+  "Uint16Array",
+  "Int32Array",
+  "Uint32Array",
+  "Float16Array",
+  "Float32Array",
+  "Float64Array",
+  "BigInt64Array",
+  "BigUint64Array",
+  // Bug 40：二进制/弱引用构造器进路由表（.prototype 成员读派发）——skip
+  // 防 env 注入遮蔽宿主身份路由（parity 门钉住）
+  "ArrayBuffer",
+  "SharedArrayBuffer",
+  "DataView",
+  "WeakRef",
+  "FinalizationRegistry",
 ]);
 
 /** 生成代码里的 undefined 值源——刻意避开标识符 `undefined` */

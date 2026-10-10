@@ -7,6 +7,9 @@
  * 独立叶子模块避免 runtime ↔ class 循环依赖。
  */
 import type { Abs } from "../abs.ts";
+import type { MayThrowEffect } from "../may-throw.ts";
+import { recordMayThrow } from "../may-throw.ts";
+import { NudoThrow } from "./nudo-throw.ts";
 
 const tables = new WeakMap<object, Abs[]>();
 
@@ -30,6 +33,30 @@ const genIterTables = new WeakMap<object, Abs[]>();
 
 export function registerGenElements(val: Abs, elements: Abs[]): void {
   genIterTables.set(val as object, elements);
+}
+
+/** 生成器体内延迟异常（Bug 34）：$gen eager 体执行捕获的异常载荷
+ *  （definite）+ 吞帧保留的 soft may-throw 效果——延迟到消费点重放。
+ *  native：体异常属首个触达抛点的 next()（此后 done），g() 构造期不表面。 */
+export interface GenDeferred {
+  throw: Abs | undefined;
+  soft: MayThrowEffect[];
+}
+const genDeferredTables = new WeakMap<object, GenDeferred>();
+
+export function registerGenDeferred(val: Abs, deferred: GenDeferred): void {
+  genDeferredTables.set(val as object, deferred);
+}
+
+/** 消费点重放（Bug 34）：迭代路径（for-of / spread / yield* / 解构 /
+ *  Array.from）触达即——soft 效果重记进当前帧（gate 面：`yield* x`
+ *  （x:any）体内 may-throw 不再被丢弃式帧吞掉），definite 载荷抛
+ *  NudoThrow（迭代截断点）。仅构造不消费不重放（Bug 58 口径保持）。 */
+export function replayGenDeferred(a: Abs): void {
+  const d = genDeferredTables.get(a as object);
+  if (!d) return;
+  for (const e of d.soft) recordMayThrow(e);
+  if (d.throw !== undefined) throw new NudoThrow(d.throw);
 }
 
 export function matchIterElements(a: Abs): Abs[] | undefined {

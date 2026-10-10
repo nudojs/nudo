@@ -5,10 +5,10 @@
  */
 
 import type { Abs } from "./abs.ts";
-import { abs, litValue, unknown, confJoin, strLit } from "./abs.ts";
+import { abs, litValue, unknown, confJoin, strLit, boolLit } from "./abs.ts";
 import { objOf, joinAbs } from "./objects.ts";
 import { NudoThrow } from "./nudo-throw.ts";
-import { errorTypeAbs } from "./may-throw.ts";
+import { errorTypeAbs, recordMayThrow } from "./may-throw.ts";
 
 type LitKey = string | number | boolean | null | undefined;
 /** litKeyOf 无字面量哨兵：lit(undefined) 是合法键，不得与「无字面量」共用 undefined */
@@ -324,15 +324,117 @@ function elementsFrom(iterable: Abs | undefined): Abs[] {
   return [];
 }
 
+/** Bug 43：CanBeHeldWeakly 校验分类（FinalizationRegistry.register/unregister 弱键；
+ *  Bug 8 起也供集合构造器条目键复用。自 builtins/error.ts 移入本内核叶子，
+ *  避免 collections ↔ builtins 新环，单一口径。） */
+export type WeakHeldClass = { k: "ok" } | { k: "def" } | { k: "may" };
+
+/**
+ * Bug 43：ES CanBeHeldWeakly 分类——对象形态（obj/tuple/arr/fn/brand/eff）
+ * 与 symbol 是合法弱键（node 26 实测 register(Symbol(),1) 不抛）；
+ * number/string/boolean/bigint 字面量与 nullish 字面量/缺省 ≡ undefined
+ * → 确定非弱键；抽象 prim/any/unknown/含坏成员 union → may。
+ */
+export function classifyCanBeHeldWeakly(a: Abs | undefined): WeakHeldClass {
+  if (!a) return { k: "def" }; // 缺省 ≡ undefined：非弱键
+  const s = a.shape;
+  if (s.k === "prim") {
+    // shape-first：symbol 恒无 lit term（无 symbol 字面量），先查形态
+    if (s.type === "symbol") return { k: "ok" };
+    return a.term?.op === "lit" ? { k: "def" } : { k: "may" }; // 抽象 prim：值未知
+  }
+  if (s.k === "any" || s.k === "unknown") {
+    if (a.term?.op !== "lit") return { k: "may" };
+    // nullish 字面量挂 k:"unknown" + lit term（与 isNullishLit 同口径）→
+    // 非弱键；symbol 字面量同挂 unknown 形态（shapeOfTerm）但可弱持有
+    // （node 实测 new WeakSet([Symbol()]) 不抛）
+    return typeof a.term.value === "symbol" ? { k: "ok" } : { k: "def" };
+  }
+  if (s.k === "sum") {
+    // 有坏成员但可能取好成员 → 整体 may（与 classifyToIndex 同口径，不 definite）
+    for (const m of s.members) {
+      if (classifyCanBeHeldWeakly(m).k !== "ok") return { k: "may" };
+    }
+    return { k: "ok" };
+  }
+  return { k: "ok" }; // obj/fn/brand/tuple/arr/eff：对象 → 弱键合法
+}
+
+/** Bug 8：条目「是对象」分类（Map/WeakMap AddEntriesFromIterable 的 IsObject，
+ *  node 实测 new Map([null]) / ([1]) / (["s"]) / ([Symbol()]) 均
+ *  TypeError "Iterator value … is not an entry object"）：
+ *  prim（number/string/bool/bigint/symbol——含抽象 prim）与 nullish/symbol
+ *  字面量（shape unknown + lit term）→ 确定非对象；any/unknown 非字面量、
+ *  开放 obj → 可能非对象；tuple/arr/fn/brand/eff/闭 obj → 对象。 */
+type EntryObjectClass = { k: "ok" } | { k: "def" } | { k: "may" };
+
+function classifyEntryObject(a: Abs | undefined): EntryObjectClass {
+  if (!a) return { k: "def" }; // 缺省 ≡ undefined：非 entry 对象
+  const s = a.shape;
+  if (s.k === "prim") return { k: "def" };
+  if (s.k === "any" || s.k === "unknown") {
+    return a.term?.op === "lit" ? { k: "def" } : { k: "may" };
+  }
+  if (s.k === "obj") return s.open === true ? { k: "may" } : { k: "ok" };
+  if (s.k === "sum") {
+    for (const m of s.members) {
+      if (classifyEntryObject(m).k !== "ok") return { k: "may" };
+    }
+    return { k: "ok" };
+  }
+  return { k: "ok" }; // tuple/arr/fn/brand/eff/never：对象（never 空臂不可达）
+}
+
+/** Bug 8：WeakMap 条目键 = Get(entry, "0")——按条目形态取下标 0 的值。
+ *  keyUndefined 表示键不可知（开放对象/index/eff 等查不到 0 槽的形态），
+ *  供 may 记录；tuple 缺首元素 / 闭形态无 0 槽 ≡ 键 undefined（非弱键）。 */
+function weakMapEntryKey(el: Abs): { key: Abs | undefined; keyUnknown: boolean } {
+  let s: Abs["shape"] = el.shape;
+  while (s.k === "brand") s = s.shape.shape;
+  if (s.k === "tuple") {
+    if (s.holes?.includes(0)) return { key: undefined, keyUnknown: false };
+    return { key: s.elements[0], keyUnknown: false };
+  }
+  if (s.k === "obj" || s.k === "fn") {
+    const slot0 = s.slots?.["0"];
+    if (slot0) return { key: slot0.value, keyUnknown: false };
+    if (s.k === "obj" && (s.open === true || s.index)) return { key: undefined, keyUnknown: true };
+    return { key: undefined, keyUnknown: false };
+  }
+  if (s.k === "arr") return { key: s.element, keyUnknown: false };
+  return { key: undefined, keyUnknown: true };
+}
+
+/** Bug 8：外层 iterable「可能非可迭代」——迭代性不确定的形态记 may TypeError。
+ *  Map/Set brand 自身带迭代协议（拷贝构造全定不记，避免 gate 假阳）；
+ *  prim 非串臂仅 sum 成员可达（顶层已被 nonIterableLit 定抛）。 */
+function mayBeNonIterableOuter(a: Abs): boolean {
+  const k = a.shape.k;
+  if (k === "prim") return (a.shape as { k: "prim"; type: string }).type !== "string";
+  if (k === "sum") return (a.shape as { k: "sum"; members: Abs[] }).members.some(mayBeNonIterableOuter);
+  if (k === "brand") {
+    const n = (a.shape as { k: "brand"; name: string }).name;
+    return n !== "Map" && n !== "Set";
+  }
+  return k === "any" || k === "unknown" || k === "obj" || k === "fn";
+}
+
 /**
  * 构造器实参**确定**非法（原生 TypeError 域）：
- * - 非可迭代字面量（number/boolean/symbol/bigint、闭对象字面量）→ 四个集合构造器都抛
- * - Map/WeakMap 条目必须是对象：外层 iterable 出现 lit prim 条目（含字符串实参的
- *   每个字符、tuple/Set 元素）→ TypeError（空串例外：零条目合法）；
- *   WeakMap 键还必须可弱持有——tuple 条目首元素（键）为 prim → TypeError
- *   （Map 键可以是 prim，仅 WeakMap 抛 "Invalid value used as weak map key"）
- * - WeakSet 元素必须可弱持有：prim 元素（含字符串字符）→ TypeError
- * 抽象形态不确定 → false（保守）。
+ * - 非可迭代字面量（number/boolean/symbol/bigint、闭对象字面量、symbol
+ *   字面量）→ 四个集合构造器都抛
+ * - Map/WeakMap 条目必须是对象（IsObject）：prim 条目（含字符串实参的
+ *   每个字符、tuple/Set 元素）与 nullish 字面量条目 → TypeError
+ *   （Bug 8：null/undefined/symbol 字面量挂 shape unknown + lit term，
+ *   旧 primEntry 只查 prim 形态 → 漏抛）
+ * - WeakMap 键 = Get(entry, "0") 须可弱持有（classifyCanBeHeldWeakly 同
+ *   口径）：零/一元组、闭对象/fn/无 0 槽 brand 条目键 undefined、prim/
+ *   nullish 键 → TypeError（Bug 8：旧口径只查 ≥2 元组首元素 prim）
+ * - WeakSet 元素须可弱持有：prim/nullish 字面量元素（含字符串字符）→
+ *   TypeError；symbol 元素合法（node 实测 new WeakSet([Symbol()]) 不抛）
+ * - Bug 8 gate 面：抽象外层 iterable（any/unknown/开放 obj/fn/其它 brand）
+ *   可能非可迭代、抽象元素（含抽象字符串实参的字符臂）可能非 entry/
+ *   非弱键 → recordMayThrow（三个分派点共用本判定，集中记录）
  */
 export function ctorArgDefinitelyInvalid(
   name: "Map" | "Set" | "WeakMap" | "WeakSet",
@@ -349,33 +451,69 @@ export function ctorArgDefinitelyInvalid(
       if (typeof v === "string") return false; // 字符串可迭代
       return true; // number/bool/symbol/bigint 字面量不可迭代
     }
+    // symbol 字面量挂 unknown 形态（shapeOfTerm），同样不可迭代
+    if (a.shape.k === "unknown" && a.term?.op === "lit" && typeof a.term.value === "symbol") {
+      return true;
+    }
     if (a.shape.k === "obj" && a.shape.open !== true) return true; // 闭对象字面量
     return false;
   };
   if (nonIterableLit(iterable)) return true;
-  if (name === "Set") return false;
-  // Map/WeakMap/WeakSet：外层 iterable 的每个条目/元素必须是（可弱持有的）
-  // 对象；lit prim 条目（含字符串字符）→ TypeError
-  const primEntry = (a: Abs): boolean => a.shape.k === "prim";
-  const svR = litValue(iterable);
-  const sv = svR.ok && typeof svR.value === "string" ? svR.value : undefined;
-  if (typeof sv === "string") return sv.length > 0;
-  if (iterable.shape.k === "tuple") {
-    for (const el of iterable.shape.elements) {
-      if (primEntry(el)) return true;
-      // WeakMap 键必须可弱持有：entry 是 ≥2 元 tuple 且键（首元素）为 prim → TypeError
-      if (
-        name === "WeakMap" &&
-        el.shape.k === "tuple" &&
-        el.shape.elements.length >= 2 &&
-        primEntry(el.shape.elements[0]!)
-      ) {
-        return true;
-      }
-    }
-    return false;
+  // Bug 8：抽象外层 iterable 可能非可迭代 → L2 gate 记 may TypeError；
+  // 抽象字符串实参的字符是非 entry prim / 非弱键（空串臂合法）→ 同记
+  // （Set 不查元素形态，仅非可迭代面）
+  if (mayBeNonIterableOuter(iterable)) {
+    recordMayThrow({
+      kind: "TypeError",
+      cause: `new ${name}(x) iterable may be non-iterable`,
+    });
+  } else if (
+    name !== "Set" &&
+    iterable.shape.k === "prim" &&
+    iterable.shape.type === "string" &&
+    iterable.term?.op !== "lit"
+  ) {
+    recordMayThrow({
+      kind: "TypeError",
+      cause: `new ${name}(str) char entries may be non-object or non-weak key`,
+    });
   }
-  if (isSetAbs(iterable)) return setElementsAbs(iterable).some(primEntry);
+  if (name === "Set") return false;
+  // Map/WeakMap/WeakSet：逐条目/元素校验（elementsFrom 与值侧同源：
+  // tuple/arr/sum/字符串字面量/Set/Map 拷贝）
+  for (const el of elementsFrom(iterable)) {
+    if (name === "WeakSet") {
+      const wk = classifyCanBeHeldWeakly(el);
+      if (wk.k === "def") return true;
+      if (wk.k === "may") {
+        recordMayThrow({
+          kind: "TypeError",
+          cause: "new WeakSet(x) element may not be weakly holdable",
+        });
+      }
+      continue;
+    }
+    const eo = classifyEntryObject(el);
+    if (eo.k === "def") return true;
+    if (name === "WeakMap") {
+      const { key, keyUnknown } = weakMapEntryKey(el);
+      const wk = classifyCanBeHeldWeakly(key);
+      if (wk.k === "def") return true;
+      if (wk.k === "may" || keyUnknown || eo.k === "may") {
+        recordMayThrow({
+          kind: "TypeError",
+          cause: "new WeakMap(x) entry key may not be weakly holdable",
+        });
+      }
+      continue;
+    }
+    if (eo.k === "may") {
+      recordMayThrow({
+        kind: "TypeError",
+        cause: "new Map(x) iterator value may not be an entry object",
+      });
+    }
+  }
   return false;
 }
 
@@ -399,13 +537,46 @@ export function makeMapAbs(iterable?: Abs): Abs {
   const m = brandOf("Map");
   const table = emptyMapTable();
   for (const el of elementsFrom(iterable)) {
-    // Map 构造接收 entry 元组 [k, v] 时拆开；否则整段作 value、key 未建模
-    if (el.shape.k === "tuple" && el.shape.elements.length >= 2) {
-      const k = litKeyOf(el.shape.elements[0]);
-      const v = el.shape.elements[1]!;
-      if (isLitKey(k)) table.byLit.set(k, v);
+    // Map 构造接收 entry 元组 [k, v] 时拆开；否则整段作 value、key 未建模。
+    // Bug 8：一元/零元组也是合法条目（缺省键/值 ≡ undefined——native
+    // new Map([["a"]]).size === new Map([[]]).size === 1），此前 ≥2 元组
+    // 才入表 → size 假 0
+    if (el.shape.k === "tuple") {
+      const k = el.shape.elements[0] ?? undefAbs();
+      const v = el.shape.elements[1] ?? undefAbs();
+      const lk = litKeyOf(k);
+      if (isLitKey(lk)) table.byLit.set(lk, v);
       else table.shadowValues.push(v);
+      continue;
     }
+    // Bug 8：对象条目键 = Get(entry, "0")——闭形态（obj/fn/brand 剥壳）无
+    // 0 槽 → undefined 键入表（size 精确 +1）；开放 obj/index → 键不可知
+    // → shadow（size 诚实 unknown）
+    let s: Abs["shape"] = el.shape;
+    while (s.k === "brand") s = s.shape.shape;
+    if (s.k === "obj" || s.k === "fn") {
+      const slot0 = s.slots?.["0"];
+      const slot1 = s.slots?.["1"];
+      if (slot0) {
+        const lk = litKeyOf(slot0.value);
+        if (isLitKey(lk)) table.byLit.set(lk, slot1?.value ?? undefAbs());
+        else table.shadowValues.push(slot1?.value ?? undefAbs());
+      } else if (s.k === "obj" && (s.open === true || s.index)) {
+        table.shadowValues.push(undefAbs());
+      } else {
+        table.byLit.set(undefined, undefAbs());
+      }
+      continue;
+    }
+    if (s.k === "arr") {
+      // 数组条目：键 = 首元素（抽象数组的元素域）
+      const lk = litKeyOf(s.element);
+      if (isLitKey(lk)) table.byLit.set(lk, undefAbs());
+      else table.shadowValues.push(undefAbs());
+      continue;
+    }
+    // 抽象条目（any/unknown/sum）：可能入包 → size 不可折（shadow 保底）
+    table.shadowValues.push(unknown);
   }
   mapTables.set(m as object, table);
   return m;
@@ -668,6 +839,19 @@ export function mapEntriesAbs(mapAbs: Abs): Abs[] {
   return entries;
 }
 
+/**
+ * Bug 28：Map 键序列——ES2025 Set 方法族的 Map 实参语义：GetSetRecord
+ * 迭代 `other.keys()`，条目值不参与（`set.union(map)` = 元素 ∪ map 键）。
+ * 调用方以 collectionExactLen 前置门控保证无影子键（全字面键）。
+ */
+export function mapKeysAbs(mapAbs: Abs): Abs[] {
+  const t = mapTableForRead(mapAbs);
+  if (!t) return [];
+  const keys: Abs[] = [];
+  for (const k of t.byLit.keys()) keys.push(keyAbsFromLitKey(k));
+  return keys;
+}
+
 /** Set#add：fork 内写 overlay；返回同一 Abs */
 export function setAddEntry(setAbs: Abs, value: Abs): Abs {
   const t = setTableForWrite(setAbs);
@@ -741,6 +925,83 @@ export function setSizeAbs(setAbs: Abs): Abs {
 export function setElementsAbs(setAbs: Abs): Abs[] {
   const t = setTableForRead(setAbs);
   return t ? [...t.elements] : [];
+}
+
+/**
+ * Bug 28：ES2025 Set 方法族值域折叠（union/intersection/difference/
+ * symmetricDifference/isSubsetOf/isSupersetOf/isDisjointFrom）。
+ * 前提：receiver 与实参（Set/Map brand）均持有确切条目表
+ * （collectionExactLen 定义；无表 / maybeAbsent / shadow 不折，调用方先过
+ * enforceSetMethodArg 校验面）。Map 实参语义是键域（GetSetRecord 迭代
+ * other.keys()，条目值不参与——node 实测 set.union(map) = 元素 ∪ map 键）。
+ * union 恒折（元素并，SameValueZero 字面量去重，抽象元素可能重复——
+ * 表域口径）；其余运算与 is* 谓词仅在双方元素全字面量（SameValueZero
+ * 成员判定可判）时折，否则返回 undefined（集合运算诚实 unknown / is*
+ * 抽象 boolean 由调用方兜底）。
+ */
+export function setMethodFold(recv: Abs, method: string, arg: Abs): Abs | undefined {
+  if (collectionExactLen(recv) === undefined) return undefined;
+  if (!isSetAbs(arg) && !isMapAbs(arg)) return undefined;
+  if (collectionExactLen(arg) === undefined) return undefined;
+  const recvEls = setElementsAbs(recv);
+  const argEls = isSetAbs(arg) ? setElementsAbs(arg) : mapKeysAbs(arg);
+  if (method === "union") {
+    return makeSetAbs(
+      abs({ k: "tuple", elements: [...recvEls, ...argEls] }, undefined, undefined, "path"),
+    );
+  }
+  // 其余运算：双方元素全字面量才可做成员判定
+  const recvKeysAll = recvEls.map(litKeyOf);
+  const argKeysAll = argEls.map(litKeyOf);
+  if (recvKeysAll.some((k) => !isLitKey(k)) || argKeysAll.some((k) => !isLitKey(k))) {
+    return undefined;
+  }
+  const recvKeys = recvKeysAll.filter(isLitKey);
+  const argKeys = argKeysAll.filter(isLitKey);
+  const hasKey = (keys: LitKey[], k: LitKey) => keys.some((b) => sameValueZeroKey(k, b));
+  switch (method) {
+    case "intersection":
+      return makeSetAbs(
+        abs(
+          { k: "tuple", elements: recvEls.filter((_, i) => hasKey(argKeys, recvKeys[i]!)) },
+          undefined,
+          undefined,
+          "path",
+        ),
+      );
+    case "difference":
+      return makeSetAbs(
+        abs(
+          { k: "tuple", elements: recvEls.filter((_, i) => !hasKey(argKeys, recvKeys[i]!)) },
+          undefined,
+          undefined,
+          "path",
+        ),
+      );
+    case "symmetricDifference":
+      return makeSetAbs(
+        abs(
+          {
+            k: "tuple",
+            elements: [
+              ...recvEls.filter((_, i) => !hasKey(argKeys, recvKeys[i]!)),
+              ...argEls.filter((_, i) => !hasKey(recvKeys, argKeys[i]!)),
+            ],
+          },
+          undefined,
+          undefined,
+          "path",
+        ),
+      );
+    case "isSubsetOf":
+      return boolLit(recvKeys.every((k) => hasKey(argKeys, k)));
+    case "isSupersetOf":
+      return boolLit(argKeys.every((k) => hasKey(recvKeys, k)));
+    case "isDisjointFrom":
+      return boolLit(!recvKeys.some((k) => hasKey(argKeys, k)));
+    default:
+      return undefined;
+  }
 }
 
 /**
