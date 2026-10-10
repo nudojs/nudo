@@ -18,6 +18,7 @@ import {
   getHoverAtPosition,
   getCompletionsAtPosition,
 } from "./lsp-surface.ts";
+import { filePathToUri } from "./server-navigation.ts";
 import { buildSemanticTokens } from "./semantic-tokens.ts";
 import {
   isNudoTargetPath,
@@ -132,6 +133,20 @@ export function attachHover(deps: IdeDeps): void {
       }
       if (lines.length === 0) {
         lines.push("```nudo", hover.typeText, "```");
+      }
+      // 契约原文链接：折叠展示（声明形态）的展开入口——
+      // 侧车绑定契约跳到侧车声明行（`#L<n>` fragment，
+      // VS Code / Zed hover 链接均支持）；markdown file
+      // 链接，宿主可点击
+      if (hover.sidecarPath) {
+        const uri = filePathToUri(hover.sidecarPath);
+        lines.push(
+          `[契约原文](${
+            hover.sidecarLine !== undefined
+              ? `${uri}#L${hover.sidecarLine}`
+              : uri
+          })`,
+        );
       }
       return {
         contents: {
@@ -398,6 +413,8 @@ export function attachInlayHint(deps: IdeDeps): void {
                 ? InlayHintKind.Parameter
                 : InlayHintKind.Type,
             paddingLeft: true,
+            // 折叠展示（表达式原文）的完整 pred：hover 展开
+            ...(abs.tooltip !== undefined ? { tooltip: abs.tooltip } : {}),
           });
         }
       } catch (err) {

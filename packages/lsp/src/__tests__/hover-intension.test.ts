@@ -416,3 +416,98 @@ export const addPair = fn({ a: number(), b: number() }, number());
     expect(hover!.intension).toContain("...args");
   });
 });
+
+// 参数声明位折叠：侧车表达式原文（display）替代 formatShape
+// 的判别联合无损展开（可达数万字符）；契约原文链接（sidecarPath）
+// 提供展开入口。声明位才折叠——体内引用展示该程序点的计算类型
+describe("getHoverAtPosition param-decl display folding", () => {
+  const SIDE = `import { fn, string, nullable, union, shape, lit } from '@nudojs/core';
+export const astNode = union(
+  shape({ type: lit('Identifier'), name: string() }),
+  shape({ type: lit('Literal'), value: string() }),
+);
+export const literal = fn({ node: nullable(astNode) }, nullable(string()));
+`;
+  const MAIN = `export function literal(node) {\n  return node === null ? null : node.value;\n}\n`;
+
+  function setup() {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-param-fold-"));
+    writeFileSync(join(dir, "literal.nudo.js"), SIDE, "utf-8");
+    const f = join(dir, "literal.js");
+    writeFileSync(f, MAIN, "utf-8");
+    const loadModule = makeBufferAwareLoadModule(() => undefined);
+    return { dir, f, loadModule, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+  }
+
+  it("声明位 hover 折叠为声明形态 + sidecarPath；体内引用不折叠", () => {
+    const { f, loadModule, cleanup } = setup();
+    // L1 C24 = 参数 node 声明位
+    const decl = getHoverAtPosition(f, MAIN, 1, 24, undefined, { loadModule });
+    expect(decl).not.toBeNull();
+    expect(decl!.typeText).toBe("node: nullable(astNode)");
+    expect(decl!.abs).toBe("node: nullable(astNode)");
+    expect(decl!.absMultiline).toBeUndefined();
+    expect(decl!.sidecarPath).toBeDefined();
+    expect(decl!.sidecarPath!.endsWith("literal.nudo.js")).toBe(true);
+
+    // L2 C9 = 体内引用：计算类型（formatShape 全展），非声明位不折叠
+    const body = getHoverAtPosition(f, MAIN, 2, 9, undefined, { loadModule });
+    expect(body).not.toBeNull();
+    expect(body!.typeText).toContain("node:");
+    expect(body!.typeText).toContain("{ type: string");
+    expect(body!.sidecarPath).toBeUndefined();
+    cleanup();
+  });
+
+  it("函数名 hover：签名参数折叠为声明形态 + 契约面 display", () => {
+    const { f, loadModule, cleanup } = setup();
+    const fn = getHoverAtPosition(f, MAIN, 1, 16, undefined, { loadModule });
+    expect(fn).not.toBeNull();
+    // 签名参数折叠为声明形态（返回类型是推断值，随函数体
+    // 流分析变化——只断言参数折叠部分）
+    expect(fn!.signature).toContain("literal(node: nullable(astNode))");
+    expect(fn!.signature).not.toContain("{ type: string");
+    expect(fn!.interfaceDisplay).toBe(
+      "(node: nullable(astNode)) → union(string(), lit(null), lit(undefined))",
+    );
+    expect(fn!.sidecarPath).toBeDefined();
+    expect(fn!.sidecarPath!.endsWith("literal.nudo.js")).toBe(true);
+    cleanup();
+  });
+
+  it("attachHover 渲染折叠块 + [契约原文] file:// 链接", () => {
+    const { dir, f, loadModule, cleanup } = setup();
+    let handler: ((p: unknown) => unknown) | undefined;
+    attachHover({
+      connection: {
+        onHover: (h) => {
+          handler = h as typeof handler;
+        },
+        console: { error: () => undefined },
+      } as never,
+      getDocument: () => ({ getText: () => MAIN, version: 1 }) as never,
+      isNudoFile: () => true,
+      getActiveCases: () => new Map(),
+      activeLoadModule: loadModule,
+    } as never);
+    const md = String(
+      (
+        handler as unknown as (p: unknown) => {
+          contents: { value: string };
+        }
+      )({
+        textDocument: { uri: `file://${f}` },
+        position: { line: 0, character: 24 }, // 参数 node 声明位
+      })?.contents?.value ?? "",
+    );
+    expect(md).toContain("node: nullable(astNode)");
+    // 折叠后不再出现判别联合的无损展开
+    expect(md).not.toContain("lit('Identifier')");
+    // 契约原文链接带声明行 fragment（`export const literal`
+    // 在侧车第 6 行）——VS Code / Zed 均支持 file://…#L<n>
+    expect(md).toContain(
+      `[契约原文](file://${dir.replace(/\\/g, "/")}/literal.nudo.js#L6)`,
+    );
+    cleanup();
+  });
+});

@@ -254,6 +254,10 @@ export type HoverInfo = {
   interfaceSource?: InterfaceSource;
   /** 有效契约展示（handwritten/generated）；implicit 为 undefined */
   interfaceDisplay?: string;
+  /** 契约来源侧车 canonical 路径（侧车绑定时）；契约原文链接跳转用 */
+  sidecarPath?: string;
+  /** 侧车绑定声明行（1-based；契约原文链接 `#L<n>` 跳转目标） */
+  sidecarLine?: number;
 };
 
 /** A7：hover/inlay 与 CodeLens interface 档同源（design-refine-derivation §8） */
@@ -326,12 +330,20 @@ export function getHoverAtPosition(
         gDisplay = g.display;
         gAbs = formatAbs(g.symbolic);
         gMulti = formatAbsMultiline(g.symbolic, fnName);
-        // check 同口径签名（check-signatures formatEntrySigLine 同公式：
-        // formalParamSignatureNames + formatShape；throws 归 check 门禁面）
+        // check 同口径签名（check-signatures formatEntrySigLine
+        // 同公式：formalParamSignatureNames + formatShape；throws
+        // 归 check 门禁面）。契约参数优先展示声明形态
+        // （entryReqs.display——判别联合的 formatShape 展开
+        // 可达数万字符）；无契约参数保持推断 shape
+        const reqByParam = new Map(
+          (g.entryReqs ?? []).map((r) => [r.param, r.display]),
+        );
         const names =
           g.formals && g.formals.length > 0 ? formalParamSignatureNames(g.formals) : g.params;
         const ps = names
           .map((p, i) => {
+            const display = reqByParam.get(p);
+            if (display !== undefined) return `${p}: ${display}`;
             const t = g.typeParams[i]?.value;
             // design §2：无约束 any；真 unknown 不得伪装
             const shown = !t ? "any" : t.shape.k === "unknown" ? "unknown" : formatShape(t);
@@ -350,6 +362,8 @@ export function getHoverAtPosition(
       ...info,
       interfaceSource: tier.source,
       ...(tier.display !== undefined ? { interfaceDisplay: tier.display } : {}),
+      ...(tier.sidecarPath !== undefined ? { sidecarPath: tier.sidecarPath } : {}),
+      ...(tier.sidecarLine !== undefined ? { sidecarLine: tier.sidecarLine } : {}),
     };
   };
   const attachIntension = (info: HoverInfo | null): HoverInfo | null => {
@@ -444,6 +458,24 @@ export function getHoverAtPosition(
           });
         } catch {
           // fail-closed：generalize 失败 → 无参数面（不拖垮 hover）
+        }
+        // 参数声明位 + 声明形态（display）→ 折叠展示 + 契约原文
+        // 链接（侧车路径）；替代 formatShape 的判别联合无损展开
+        const declFold = gEnc
+          ? paramDeclDisplay(encFn, line, column, gEnc)
+          : undefined;
+        if (declFold !== undefined) {
+          const encTier = interfaceTierOf(source, encFn.name, filePath, opts ?? {});
+          return {
+            typeText: declFold,
+            abs: declFold,
+            ...(encTier?.sidecarPath !== undefined
+              ? { sidecarPath: encTier.sidecarPath }
+              : {}),
+            ...(encTier?.sidecarLine !== undefined
+              ? { sidecarLine: encTier.sidecarLine }
+              : {}),
+          };
         }
         const paramHit = gEnc ? projectParamAbs(gEnc, ident) : undefined;
         if (paramHit) return attachIntension(identHover(paramHit));
@@ -665,6 +697,42 @@ function findEnclosingFunction(
     // ignore
   }
   return best ? { name: best.name, node: best.node } : undefined;
+}
+
+/**
+ * 参数声明位的声明形态折叠：光标在（简单）形参标识符上时，
+ * 用 entryReqs 的 display（侧车表达式原文 / 指令约束名）
+ * 替代 formatShape 的无损展开——判别联合参数可达数万字符。
+ * 无 display（派生形参 / 无契约 / 解构子属性）→ undefined，
+ * 回落既有投影面（诚实降级）。
+ */
+function paramDeclDisplay(
+  encFn: EnclosingFn,
+  line: number,
+  column: number,
+  g: PolyFn,
+): string | undefined {
+  const params = (
+    encFn.node as {
+      params?: Array<{
+        type: string;
+        name?: string;
+        loc?: {
+          start: { line: number; column: number };
+          end: { line: number; column: number };
+        };
+      }>;
+    }
+  ).params;
+  if (!params) return undefined;
+  for (const p of params) {
+    if (p.type !== "Identifier" || !p.name || !p.loc) continue;
+    if (p.loc.start.line !== line) continue;
+    if (column < p.loc.start.column || column > p.loc.end.column) continue;
+    const req = g.entryReqs?.find((r) => r.param === p.name);
+    return req?.display !== undefined ? `${p.name}: ${req.display}` : undefined;
+  }
+  return undefined;
 }
 
 /**

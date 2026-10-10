@@ -99,9 +99,9 @@ git clone https://github.com/nudojs/nudo-zed
 | 能力 | 说明 |
 |------|------|
 | Diagnostics | 分析目标（`.js`/`.mjs`/`.ts`）自动分析；无指令文件见 `nudo.analysis.mode` |
-| Hover 类型 | 标准 LSP；导出函数名显示 `● contract / hw\|gen\|imp`（与 CodeLens 同源） |
+|| Hover 类型 | 标准 LSP；导出函数名显示 `● contract / hw\|gen\|imp`（与 CodeLens 同源）。契约参数在声明位与签名中折叠为声明形态（`node: nullable(astNode)`）；折叠面附 `` `[契约原文](file://…#L<n>)` `` 链接，跳转侧车绑定声明行 |
 | 跳转定义 / 引用 / 重命名 | 标准 LSP（含侧车绑定名） |
-| Inlay hints | 需打开 `inlay_hints.enabled`；implicit 导出标 `derived` |
+| Inlay hints | 需打开 `inlay_hints.enabled`；implicit 导出标 `derived`。参数契约 hint（`where …`）**默认关**——经 `language-servers.nudo.initialization_options: { "inlayHints": { "parameters": true } }`（或 `package.json#nudo.inlayHints.parameters`）开启；开启后展示契约声明形态（侧车模板表达式 / 指令约束名，如 `where nullable(astNode)`），完整谓词经 hint tooltip 展示 |
 | CodeLens | 需打开 `code_lens: "on"`——**观察选择器**：`●/○ contract / hw\|gen\|imp`（默认激活）+ persist/update + `⚡ draft interface`；`●/○ case "…"` 选项跟随 |
 | Semantic tokens | 默认关闭，设 `semantic_tokens: "combined"`——含 `contract`/`generated`/`derived` modifier |
 | Code actions / Signature help | 标准 LSP quickfix 与 signature help（真实 `paramTypes` / 返回类型）。含 action-map quickfix（`[fix]` / `[silence]` / `[review]` / `[adjust]` / `[scaffold]`） |

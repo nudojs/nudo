@@ -534,9 +534,15 @@ export const need = fn({ x: number() }, number());
       inlayHints: { parameters: true },
     });
     const labels = await inlayLabels(mock, uri);
-    expect(labels.some((l) => l.includes('where typeof x = "number"'))).toBe(
+    // 声明形态折叠（侧车表达式原文）——非 pred 无损展开
+    // （`typeof x = "number"`）；exec 缓存跨路径命中时
+    // 按当前路径补登记文本，折叠不丢
+    expect(labels.some((l) => l.includes("where number()"))).toBe(
       true,
     );
+    expect(
+      labels.some((l) => l.includes('where typeof x = "number"')),
+    ).toBe(false);
   });
 
   it("非法宿主值回落默认关", async () => {
@@ -585,6 +591,44 @@ export const need = fn({ x: number() }, number());
     expect((await inlayLabels(on.mock, on.uri)).some((l) => l.includes("where"))).toBe(
       true,
     );
+  });
+
+  it("折叠展示：侧车表达式原文 label + 完整 pred tooltip", async () => {
+    const sub = `proj-${Math.random().toString(36).slice(2, 8)}`;
+    const projDir = join(paramDir, sub);
+    mkdirSync(projDir, { recursive: true });
+    writeFileSync(join(projDir, "need.js"), PARAM_SRC, "utf-8");
+    writeFileSync(
+      join(projDir, "need.nudo.js"),
+      `import { fn, number } from "@nudojs/core";
+export const need = fn({ x: number().gt(0) }, number());
+`,
+      "utf-8",
+    );
+    const mock = startServer();
+    await handler(mock, "initialize")({
+      processId: null,
+      rootUri: null,
+      workspaceFolders: [],
+      capabilities: {},
+      initializationOptions: { inlayHints: { parameters: true } },
+    });
+    const uri = `file://${join(projDir, "need.js")}`;
+    notification(mock, "textDocument/didOpen")({
+      textDocument: { uri, languageId: "javascript", version: 1, text: PARAM_SRC },
+    });
+    const hints = (await handler(mock, "textDocument/inlayHint")({
+      textDocument: { uri },
+      range: { start: { line: 0, character: 0 }, end: { line: 99, character: 0 } },
+    })) as { label?: unknown; tooltip?: unknown }[];
+    const param = hints.find((h) => String(h.label ?? "").includes("where"));
+    expect(param).toBeDefined();
+    // 表达式原文折叠（替代 pred 无损展开）
+    expect(String(param!.label)).toBe("  where number().gt(0)");
+    // 完整 pred 进 tooltip 供 hover 展开
+    expect(typeof param!.tooltip).toBe("string");
+    expect(String(param!.tooltip)).toContain("x");
+    expect(String(param!.tooltip)).toContain(">");
   });
 });
 
