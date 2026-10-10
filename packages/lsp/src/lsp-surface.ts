@@ -153,6 +153,7 @@ function absNodeAtPosition(
   reuse: SurfaceReuse | undefined,
   line: number,
   column: number,
+  fileAst?: ReturnType<typeof parse>,
 ): Abs | undefined {
   const entryReqs = g.entryReqs;
   if (!entryReqs || entryReqs.length === 0) return undefined;
@@ -182,7 +183,31 @@ function absNodeAtPosition(
     }
     absNodeReplayCache.set(cacheKey, { source, nodes });
   }
-  return nodes?.get(`${line}:${column}`);
+  const exact = nodes?.get(`${line}:${column}`);
+  if (exact !== undefined || nodes === undefined) return exact;
+  // 词中 hover：记录键 = Babel 起始位（$nodoPos 用 loc.start）——光标在
+  // 标识符跨距内但不在首列时精确键 miss，回落到跨距解析（最窄包含
+  // Identifier 的起始键）
+  let best: { key: string; span: number } | undefined;
+  try {
+    if (fileAst) {
+      traverse(fileAst, {
+        Identifier(path) {
+          const loc = path.node.loc;
+          if (!loc) return;
+          if (loc.start.line !== line) return;
+          // 光标行一致 + 在跨距内（Babel end.column 为 exclusive——含尾列）
+          if (column < loc.start.column || column > loc.end.column) return;
+          const span = loc.end.column - loc.start.column;
+          const key = `${loc.start.line}:${loc.start.column}`;
+          if (best === undefined || span < best.span) best = { key, span };
+        },
+      });
+    }
+  } catch {
+    // fail-closed：跨距解析失败 → 保持精确键 miss
+  }
+  return best !== undefined ? nodes.get(best.key) : undefined;
 }
 
 /** 重放求值态是否「未窄化」：与入口 Abs
@@ -665,6 +690,7 @@ export function getHoverAtPosition(
             reuse,
             line,
             column,
+            file,
           );
           if (nodeAbs !== undefined) {
             const entryAbs = gEnc.entryShapes?.get(ident)?.abs;

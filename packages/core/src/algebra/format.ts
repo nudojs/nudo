@@ -70,18 +70,30 @@ export function formatShape(a: Abs, opts?: { maxDepth?: number; showLits?: boole
  * 项）等于字面量；非该形态 pred / 无 pred → undefined
  * （纯 shape 渲染不变） */
 function litPredValue(a: Abs): LiteralValue | undefined {
-  const p = a.pred;
-  if (p === undefined || p.op !== "eq" || a.term === undefined) {
-    return undefined;
+  if (a.term === undefined) return undefined;
+  // eq 事实可藏在合取深层（$narrowMemberEq 的 keep 臂槽精化挂 and(既有, eq)）
+  const conjuncts: Pred[] = [];
+  const visit = (p: Pred | undefined): void => {
+    if (p === undefined) return;
+    if (p.op === "and") {
+      p.args.forEach(visit);
+      return;
+    }
+    conjuncts.push(p);
+  };
+  visit(a.pred);
+  for (const p of conjuncts) {
+    if (p.op !== "eq") continue;
+    const { a: x, b: y } = p;
+    const litT =
+      x.op === "lit" && termEquals(y, a.term)
+        ? x
+        : y.op === "lit" && termEquals(x, a.term)
+          ? y
+          : undefined;
+    if (litT !== undefined) return litT.value;
   }
-  const { a: x, b: y } = p;
-  const lit =
-    x.op === "lit" && termEquals(y, a.term)
-      ? x
-      : y.op === "lit" && termEquals(x, a.term)
-        ? y
-        : undefined;
-  return lit === undefined ? undefined : lit.value;
+  return undefined;
 }
 
 function formatShapeB(a: Abs, budget: ProjectionBudget): string {
