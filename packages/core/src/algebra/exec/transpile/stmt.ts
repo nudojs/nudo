@@ -599,6 +599,13 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const tmpSeq = opts.destrTmpSeq ?? { n: 0 };
       for (const d of stmt.declarations) {
         if (d.id.type === "Identifier") {
+          // 声明位位置记录（hover 重放 recordPositions 时）：把 init 绑定值
+          // 记到 declarator id 起点——非调用初始化（三元 / 可选链 / 字面量）
+          // 的局部量声明位 hover 由 A0 直读，不再依赖调用记录配对
+          const recInit = (initSrc: string): string =>
+            opts.recordPositions && d.id.loc
+              ? `$nodoPos(${initSrc}, ${d.id.loc.start.line}, ${d.id.loc.start.column})`
+              : initSrc;
           if (isVar && hoistedVar?.has(d.id.name)) {
             // 提升绑定上的赋值：裸 `var x;` 无写跳过（绑定已由顶部 let 提供）
             if (!d.init) {
@@ -607,9 +614,11 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
               }
               continue;
             }
-            const init = asVar
-              ? asVar
-              : emitTranspileExpression(d.init, opts);
+            const init = recInit(
+              asVar
+                ? asVar
+                : emitTranspileExpression(d.init, opts),
+            );
             lines.push(`${pad}${d.id.name} = ${init};`);
             if (depth === 0) {
               lines.push(`${pad}$recordBinding(${JSON.stringify(d.id.name)}, ${d.id.name});`);
@@ -620,11 +629,13 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
             continue;
           }
           // @nudo:as：覆盖整个声明语句的 init
-          const init = asVar
-            ? asVar
-            : d.init
-              ? emitTranspileExpression(d.init, opts)
-              : "$lit(void 0)";
+          const init = recInit(
+            asVar
+              ? asVar
+              : d.init
+                ? emitTranspileExpression(d.init, opts)
+                : "$lit(void 0)",
+          );
           const declKw = isVar ? "var" : kw;
           lines.push(`${pad}${declKw} ${d.id.name} = ${init};`);
           // 顶层绑定表（checkSource varAbs / scanLiteralCalls 实参解析）

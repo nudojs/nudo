@@ -370,6 +370,20 @@ function coerceToStringParts(a: Abs): Abs[] | undefined {
       ];
     }
   }
+  // 联合：逐臂 ToString 投影（nullish 臂 → "null"/"undefined"
+  // part）——`${x}` 的 x 为可空联合时拼接结果恒 string
+  // （JS ToString 对联合值逐臂取值，模板拼接臂不抛）。
+  // 此前联合整体落 undefined → concatString 污染成 unknown，
+  // 把整条返回链（模板返回的函数）的推断类型抹成 unknown。
+  if (a.shape.k === "sum" && a.shape.members) {
+    const parts: Abs[] = [];
+    for (const m of a.shape.members) {
+      const mp = coerceToStringParts(m);
+      if (mp === undefined) return undefined;
+      parts.push(...mp);
+    }
+    return parts;
+  }
   return undefined;
 }
 

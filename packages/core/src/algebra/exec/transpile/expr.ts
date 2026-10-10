@@ -175,9 +175,9 @@ export function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
 // **剩余整条链**（含非可选访问/调用）不得再求值。此前每跳独立 `$optionalGet`，
 // 下一跳 `$get(undefined, "x")` 硬抛 TypeError。
 type ChainHop =
-  | { kind: "get"; key: string; optional: boolean }
-  | { kind: "idx"; keySrc: string; optional: boolean }
-  | { kind: "len"; optional: boolean }
+  | { kind: "get"; key: string; optional: boolean; posArg: string }
+  | { kind: "idx"; keySrc: string; optional: boolean; posArg: string }
+  | { kind: "len"; optional: boolean; posArg: string }
   | { kind: "call"; argsSrc: string; optional: boolean; locArg: string }
   | {
       kind: "invoke";
@@ -215,6 +215,25 @@ function chainNeedsShortCircuit(n: Node): boolean {
     cur = (cur.callee ?? cur.object) as typeof cur;
   }
   return false;
+}
+
+/** 链跳位置 posArg（hover 重放插桩——
+ * `$nodoPos` 记录成员读结果的位置——
+ * 静态属性记属性位、计算成员记表达式
+ * 起始位，与 positionRecordWrap 同口
+ * 径）；节点无 loc → 空串（不记录） */
+function posArgOf(n: {
+  loc?: { start: { line: number; column: number } } | null;
+}): string {
+  return n.loc ? `, ${n.loc.start.line}, ${n.loc.start.column}` : "";
+}
+
+/** 链跳结果的位置插桩包装（posArg
+ * 空时直通——与 transpileExpression 的
+ * recordPositions 门同语义：无收集器
+ * 时 $nodoPos 运行时恒等直通） */
+function posWrap(src: string, posArg: string): string {
+  return posArg === "" ? src : `$nodoPos(${src}${posArg})`;
 }
 
 function flattenChain(
@@ -286,15 +305,17 @@ function flattenChain(
     const optionalM = optional;
     if (cur.computed) {
       const key = cur.property as { type?: string; value?: unknown };
+      // 计算成员：记表达式起始位（与 positionRecordWrap 同口径）
       if (key?.type === "StringLiteral") {
-        hops.unshift({ kind: "get", key: JSON.stringify(key.value), optional: optionalM });
+        hops.unshift({ kind: "get", key: JSON.stringify(key.value), optional: optionalM, posArg: posArgOf(cur) });
       } else if (key?.type === "NumericLiteral") {
-        hops.unshift({ kind: "idx", keySrc: `$lit(${key.value})`, optional: optionalM });
+        hops.unshift({ kind: "idx", keySrc: `$lit(${key.value})`, optional: optionalM, posArg: posArgOf(cur) });
       } else if (isExpression(cur.property as Node)) {
         hops.unshift({
           kind: "idx",
           keySrc: transpileExpression(cur.property as Expression, opts),
           optional: optionalM,
+          posArg: posArgOf(cur),
         });
       } else {
         return undefined;
@@ -302,12 +323,17 @@ function flattenChain(
       cur = cur.object as typeof cur;
       continue;
     }
-    const prop = cur.property as { type?: string; name?: string };
+    const prop = cur.property as {
+      type?: string;
+      name?: string;
+      loc?: { start: { line: number; column: number } } | null;
+    };
     if (prop?.type !== "Identifier") return undefined;
+    // 静态属性：记属性位（hover 属性名直读槽位 Abs）
     if (prop.name === "length") {
-      hops.unshift({ kind: "len", optional: optionalM });
+      hops.unshift({ kind: "len", optional: optionalM, posArg: posArgOf(prop) });
     } else {
-      hops.unshift({ kind: "get", key: JSON.stringify(prop.name), optional: optionalM });
+      hops.unshift({ kind: "get", key: JSON.stringify(prop.name), optional: optionalM, posArg: posArgOf(prop) });
     }
     cur = cur.object as typeof cur;
   }
@@ -329,18 +355,18 @@ function emitChainFrom(hops: ChainHop[], i: number, valSrc: string): string {
       // 原生不抛 → silent（不记 any may-throw，Bug 3）。链上后续跳仍走 $get
       //（x?.a.b 的 .b 保持 may-throw）。
       return hop.optional
-        ? shortCircuitHop(valSrc, (r) => `$get(${r}, ${hop.key}, { silent: true })`, hops, i)
-        : rest(`$get(${valSrc}, ${hop.key})`);
+        ? shortCircuitHop(valSrc, (r) => posWrap(`$get(${r}, ${hop.key}, { silent: true })`, hop.posArg), hops, i)
+        : rest(posWrap(`$get(${valSrc}, ${hop.key})`, hop.posArg));
     case "idx":
       return hop.optional
-        ? shortCircuitHop(valSrc, (r) => `$idx(${r}, ${hop.keySrc}, { silent: true })`, hops, i)
-        : rest(`$idx(${valSrc}, ${hop.keySrc})`);
+        ? shortCircuitHop(valSrc, (r) => posWrap(`$idx(${r}, ${hop.keySrc}, { silent: true })`, hop.posArg), hops, i)
+        : rest(posWrap(`$idx(${valSrc}, ${hop.keySrc})`, hop.posArg));
     case "len":
       // 可选跳（a?.length）：nullish 已由守卫臂剪除；any 不记 may-throw
       //（Bug 3，与 get/idx 跳同口径）。非可选 `.length` 走 $len 守卫诊断。
       return hop.optional
-        ? shortCircuitHop(valSrc, (r) => `$len(${r}, { silent: true })`, hops, i)
-        : rest(`$len(${valSrc})`);
+        ? shortCircuitHop(valSrc, (r) => posWrap(`$len(${r}, { silent: true })`, hop.posArg), hops, i)
+        : rest(posWrap(`$len(${valSrc})`, hop.posArg));
     case "call":
       return hop.optional
         ? shortCircuitHop(valSrc, (r) => `$callNamed("call", ${r}, ${hop.argsSrc}${hop.locArg})`, hops, i)
@@ -450,7 +476,48 @@ function paramNamesOfFn(params: Node[]): ReadonlySet<string> {
   return acc;
 }
 
+/**
+ * 表达式发射入口（位置插桩包装层）。recordPositions 时把
+ * Identifier 值读 / 静态成员读的转译输出包 `$nodoPos`——
+ * 运行时记 (行, 列) → Abs 并原样返回（语义恒等；无收集
+ * 器时直通）。内部递归经本包装——每个子表达式恰包一次。
+ */
 export function transpileExpression(expr: Expression, opts: TranspileOptions = {}): string {
+  const src = transpileExpressionImpl(expr, opts);
+  if (!opts.recordPositions || !expr.loc) return src;
+  return positionRecordWrap(expr, src);
+}
+
+/** 位置插桩包装：Identifier 记自身位；静态成员读记属性位
+ * （hover 属性名直读槽位 Abs——对象 Identifier 位由
+ * memberPathOf 根插桩另记）；计算成员读记表达式起始位 */
+function positionRecordWrap(expr: Expression, src: string): string {
+  const loc = expr.loc;
+  if (!loc) return src;
+  if (expr.type === "Identifier") {
+    return `$nodoPos(${src}, ${loc.start.line}, ${loc.start.column})`;
+  }
+  if (expr.type === "MemberExpression") {
+    const m = expr as unknown as {
+      computed?: boolean;
+      property?: {
+        type: string;
+        loc?: { start: { line: number; column: number } };
+      };
+    };
+    if (
+      m.computed !== true &&
+      m.property?.type === "Identifier" &&
+      m.property.loc
+    ) {
+      return `$nodoPos(${src}, ${m.property.loc.start.line}, ${m.property.loc.start.column})`;
+    }
+    return `$nodoPos(${src}, ${loc.start.line}, ${loc.start.column})`;
+  }
+  return src;
+}
+
+function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}): string {
   // @nudo:replace：节点源码文本匹配则换成注入变量
   const rep = matchReplacement(expr as Node, opts);
   if (rep) return rep;

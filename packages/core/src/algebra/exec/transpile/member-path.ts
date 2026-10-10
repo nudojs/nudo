@@ -71,6 +71,12 @@ export function memberPathOf(m: { object: Node; property: Node; computed: boolea
       rootSrc = opts.argsBinding;
     } else {
       rootSrc = cur.name;
+      // 位置插桩：成员链根 Identifier 记对象位（hover
+      // `node` 于 `node.value` → 对象 Abs——臂内 shadow
+      // 重绑后解析到窄化值，与槽位插桩同语义）
+      if (opts.recordPositions && cur.loc) {
+        rootSrc = `$nodoPos(${cur.name}, ${cur.loc.start.line}, ${cur.loc.start.column})`;
+      }
     }
   } else if (cur.type === "ThisExpression" && opts.thisParam) {
     rootSrc = opts.thisParam;

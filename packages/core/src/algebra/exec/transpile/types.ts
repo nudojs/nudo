@@ -89,4 +89,12 @@ export type TranspileOptions = {
    * 声明语句），此类名字从提升集扣除、不发改赋值。
    */
   keepVarDecl?: boolean;
+  /**
+   * 节点级 Abs 记录插桩（hover 重放用）：Identifier 值读与
+   * 静态成员读的转译输出包 `$nodoPos(<src>, line, column)`，
+   * 运行时把 (行, 列) → Abs 记入活跃的位置 collector（无收
+   * 集器时 no-op 直通）。默认关——热路径（check/模块图）不
+   * 承担插桩开销；仅 replayFnAbsNodes 重放开。
+   */
+  recordPositions?: boolean;
 };

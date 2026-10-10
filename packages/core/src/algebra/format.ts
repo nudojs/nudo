@@ -4,11 +4,11 @@
 
 import type { Abs } from "./abs.ts";
 import { litValue } from "./abs.ts";
-import type { Term } from "./term.ts";
-import { termToString } from "./term.ts";
+import type { Term, LiteralValue } from "./term.ts";
+import { termEquals, termToString } from "./term.ts";
 import type { Pred } from "./pred.ts";
 import { predToString } from "./pred.ts";
-import { ProjectionBudget } from "./projection-budget.ts";
+import { ProjectionBudget, PROJECTION_MAX_DEPTH } from "./projection-budget.ts";
 
 export type FormatOptions = {
   /** 是否显示 term= */
@@ -58,8 +58,30 @@ function formatShapeSlotB(a: Abs, budget: ProjectionBudget): string {
 /** 环 / 超深 shape 的截断标记（format 无 dropped 台账——标记本身即观测） */
 const FORMAT_TRUNC = { cycle: "…cycle", depth: "…" } as const;
 
-export function formatShape(a: Abs): string {
-  return formatShapeB(a, new ProjectionBudget());
+export function formatShape(a: Abs, opts?: { maxDepth?: number; showLits?: boolean }): string {
+  const budget = new ProjectionBudget(opts?.maxDepth ?? PROJECTION_MAX_DEPTH);
+  budget.showLits = opts?.showLits === true;
+  return formatShapeB(a, budget);
+}
+
+/** eq(self, lit(v)) pred 的字面量值——lit 判别槽位渲染
+ * （`lit('StringLiteral')`——与侧车契约文法同形）；pred 断言
+ * Abs 自身 term（槽位为 `get(p, k)` 字段项，顶层为参数
+ * 项）等于字面量；非该形态 pred / 无 pred → undefined
+ * （纯 shape 渲染不变） */
+function litPredValue(a: Abs): LiteralValue | undefined {
+  const p = a.pred;
+  if (p === undefined || p.op !== "eq" || a.term === undefined) {
+    return undefined;
+  }
+  const { a: x, b: y } = p;
+  const lit =
+    x.op === "lit" && termEquals(y, a.term)
+      ? x
+      : y.op === "lit" && termEquals(x, a.term)
+        ? y
+        : undefined;
+  return lit === undefined ? undefined : lit.value;
 }
 
 function formatShapeB(a: Abs, budget: ProjectionBudget): string {
@@ -102,6 +124,10 @@ function formatShapeInner(a: Abs, budget: ProjectionBudget): string {
       // JSON.stringify(bigint) throws；按 JS 字面量拼法展示
       if (typeof lv === "bigint") return `${String(lv)}n`;
       if (lvR.ok) return JSON.stringify(lv);
+      if (budget.showLits) {
+        const plv = litPredValue(a);
+        if (plv !== undefined) return `lit(${JSON.stringify(plv)})`;
+      }
       return s.type;
     }
     case "obj": {
@@ -109,7 +135,12 @@ function formatShapeInner(a: Abs, budget: ProjectionBudget): string {
         const opt = slot.optional ? "?" : "";
         // 非标识符键 JSON 引号，避免展示串本身不可解析（`a, b: 1`）
         const key = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(k) ? k : JSON.stringify(k);
-        return `${key}${opt}: ${formatShapeB(slot.value, budget)}`;
+        let val = formatShapeB(slot.value, budget);
+        if (budget.showLits) {
+          const plv = litPredValue(slot.value);
+          if (plv !== undefined) val = `lit(${JSON.stringify(plv)})`;
+        }
+        return `${key}${opt}: ${val}`;
       });
       return `{ ${entries.join(", ")} }`;
     }

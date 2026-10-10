@@ -14,11 +14,12 @@
  * buildNodeTypeMap）由 analyzer 显式导出。
  */
 import { dirname } from "node:path";
-import type { File, Node } from "@babel/types";
+import type { File, Identifier, Node } from "@babel/types";
 import traverse from "@babel/traverse";
 import {
   type Abs,
   type AbsModuleExports,
+  and,
   callTranspiledExportFull,
   generalizeFromAst,
   formatAbs,
@@ -27,12 +28,15 @@ import {
   formalParamSignatureNames,
   interfaceTierOf,
   joinAbs,
+  leqAbs,
   listFnDirectiveScopes,
   runTranspiled,
   setEvalAssignCollector,
   setEvalCallCollector,
+  setPosCollector,
   type EvalAbsAssignRecord,
   type EvalCallRecord,
+  type EvalPosRecord,
   type InterfaceSource,
   type InterfaceTierOpts,
   type Phi,
@@ -55,6 +59,7 @@ import {
   collectEnvNames,
   type AnalysisResult,
   type CompletionItem,
+  type LoadModule,
   type SourceLocation,
 } from "@nudojs/service";
 
@@ -80,6 +85,140 @@ export type SurfaceReuse = {
 /** SurfaceReuse.result.bindings 的单绑定读（缺省安全） */
 function reuseBinding(reuse: SurfaceReuse | undefined, name: string): Abs | undefined {
   return reuse?.result?.bindings.get(name)?.abs;
+}
+
+/**
+ * 引擎节点级 Abs 重放（hover 求值态面）：transpile
+ * （recordPositions 插桩）+ 符号执行导出函数（入口
+ * Φ 种子 + 契约参数 Abs）——收集 (行:列) → 求值态
+ * Abs。流敏感窄化为**引擎求值语义**（Φ-native B：
+ * $fork 臂内 withExecPhi(Φ∧test) + $narrowMemberEq /
+ * $narrowTypeOf / $removeNullish 剪影——早退守卫 /
+ * 判别等值 / typeof 守卫 / && / || 链全覆盖），非
+ * LSP 层近似。fail-closed：求值失败 / 预算超限 →
+ * undefined（调用方回落声明形态面）。
+ */
+function replayFnAbsNodes(
+  source: string,
+  opts: {
+    fnName: string;
+    args: Abs[];
+    phi?: Phi;
+    modules?: SurfaceReuse["modules"];
+  },
+): Map<string, Abs> | undefined {
+  const collected = new Map<string, Abs>();
+  const prev = setPosCollector((r: EvalPosRecord) => {
+    const key = `${r.line}:${r.column}`;
+    if (!collected.has(key)) collected.set(key, r.abs);
+  });
+  try {
+    const exports = runTranspiled(source, {
+      mode: "analyze",
+      modules: opts.modules,
+      recordPositions: true,
+    });
+    callTranspiledExportFull(exports, opts.fnName, opts.args, {
+      phi: opts.phi,
+    });
+    return collected;
+  } catch {
+    return undefined;
+  } finally {
+    setPosCollector(prev);
+  }
+}
+
+/** 重放缓存（filePath#fnName → 源码 + 位置表）：
+ * hover 高频——同源码同函数不重跑；容量有界
+ * （超限清空——会话级 hover 函数集合有界） */
+const absNodeReplayCache = new Map<
+  string,
+  { source: string; nodes: Map<string, Abs> | undefined }
+>();
+const ABS_NODE_REPLAY_CACHE_MAX = 64;
+
+/**
+ * 位置求值态 Abs（引擎重放面）：仅顶层导出函数且
+ * 契约参数 Abs 齐备（Identifier 形参逐一有入口
+ * Abs——解构 / 无契约形参不重放，回落声明形态面）。
+ * 位置键 = Babel 口径（1-based 行，0-based 列——
+ * 与插桩记录同口径）。
+ */
+function absNodeAtPosition(
+  filePath: string,
+  source: string,
+  encFn: EnclosingFn,
+  g: PolyFn,
+  reuse: SurfaceReuse | undefined,
+  line: number,
+  column: number,
+): Abs | undefined {
+  const entryReqs = g.entryReqs;
+  if (!entryReqs || entryReqs.length === 0) return undefined;
+  const params = (encFn.node as { params?: Node[] }).params;
+  if (!params || params.length === 0) return undefined;
+  const args: Abs[] = [];
+  for (const p of params) {
+    if (p.type !== "Identifier") return undefined;
+    const abs = g.entryShapes?.get(p.name)?.abs;
+    if (abs === undefined) return undefined;
+    args.push(abs);
+  }
+  const cacheKey = `${filePath}#${encFn.name}`;
+  const cached = absNodeReplayCache.get(cacheKey);
+  let nodes: Map<string, Abs> | undefined;
+  if (cached && cached.source === source) {
+    nodes = cached.nodes;
+  } else {
+    nodes = replayFnAbsNodes(source, {
+      fnName: encFn.name,
+      args,
+      phi: and(...entryReqs.map((r) => r.pred)),
+      modules: reuse?.modules,
+    });
+    if (absNodeReplayCache.size >= ABS_NODE_REPLAY_CACHE_MAX) {
+      absNodeReplayCache.clear();
+    }
+    absNodeReplayCache.set(cacheKey, { source, nodes });
+  }
+  return nodes?.get(`${line}:${column}`);
+}
+
+/** 重放求值态是否「未窄化」：与入口 Abs
+ * 等价（leqAbs 双向）——未窄化（声明位 /
+ * 检查点）或仅剥 nullish（早退守卫 / 成员
+ * 访问对象 / 落回位）→ 声明形态折叠面
+ * 保持用户口径；否则（判别等值 / !== 对偶
+ * / typeof 守卫窄化、槽位读、局部量）
+ * → 求值态展示 */
+function isUnnarrowedAbs(a: Abs, entry: Abs): boolean {
+  if (absEquiv(a, entry)) return true;
+  const nonNullish = nonNullishPartOf(entry);
+  return nonNullish !== undefined && absEquiv(a, nonNullish);
+}
+
+function absEquiv(a: Abs, b: Abs): boolean {
+  return leqAbs(a, b, {}).ok && leqAbs(b, a, {}).ok;
+}
+
+/** 入口 Abs 的非 nullish 部分（sum 成员
+ * 过滤 nullish 字面量臂——`nullable(X)`
+ * → X）；非 sum / 无 nullish 臂 →
+ * undefined（入口本身即非空——无需剥） */
+function nonNullishPartOf(entry: Abs): Abs | undefined {
+  const sh = entry.shape as { k: string; members?: Abs[] };
+  if (sh.k !== "sum" || !sh.members) return undefined;
+  const kept = sh.members.filter((m) => !isNullishLitMember(m));
+  if (kept.length === sh.members.length) return undefined;
+  let out = kept[0];
+  for (const m of kept.slice(1)) out = joinAbs(out, m);
+  return out;
+}
+
+function isNullishLitMember(m: Abs): boolean {
+  const t = m.term as { op?: string; value?: unknown } | undefined;
+  return t?.op === "lit" && (t.value === null || t.value === undefined);
 }
 
 export type CaseInfo = {
@@ -258,6 +397,14 @@ export type HoverInfo = {
   sidecarPath?: string;
   /** 侧车绑定声明行（1-based；契约原文链接 `#L<n>` 跳转目标） */
   sidecarLine?: number;
+  /**
+   * 类型值变量链接面（参数折叠展示的 markdown 渲染：引用标识符
+   * 如 `astNode` 包为 `[astNode](file://<定义路径>#L<行>)`）。
+   * 在场时 IDE hover 直接渲染它（plain markdown——代码块内
+   * 链接不渲染），契约原文行不再重复；缺席时回落 ```nudo 代码块
+   * + 契约原文行（无引用变量的契约的唯一跳转入口）
+   */
+  linkedText?: string;
 };
 
 /** A7：hover/inlay 与 CodeLens interface 档同源（design-refine-derivation §8） */
@@ -350,7 +497,7 @@ export function getHoverAtPosition(
             return `${p}: ${shown}`;
           })
           .join(", ");
-        gSig = `${fnName}(${ps}) => ${formatShape(g.symbolic)}`;
+        gSig = `${fnName}(${ps}) => ${formatShape(g.symbolic, { maxDepth: 4 })}`;
       }
     } catch {
       // ignore
@@ -394,8 +541,17 @@ export function getHoverAtPosition(
   // 用例函数体内：Abs 重放 selected case（activeCases），再 TypeValue 兜底。
   const insideCaseFn = positionInsideCaseFunction(source, file, line, column);
 
+  // arity-only fn Abs（shape.k=fn 且 returnType 槽空——未被调用观测过）：
+  // 携带信息少于 generalize 的内涵签名（gDisplay / gSig），不作为展示面。
+  // 函数名 / callee 位 hover 由此回落下方 intension 面（引擎 generalize 语义，
+  // 非源码文本近似）；fn Abs 已带 returnType（被调用观测过）时仍直读 Abs。
+  const deferIfArityOnlyFn = (a: Abs | null): Abs | null => {
+    if (!a || !gDisplay) return a;
+    return a.shape.k === "fn" && a.shape.returnType === undefined ? null : a;
+  };
+
   if (!insideCaseFn) {
-    const fromB = absFromEval(filePath, source, line, column, file, reuse);
+    const fromB = deferIfArityOnlyFn(absFromEval(filePath, source, line, column, file, reuse));
     if (fromB) {
       const absLine = formatAbs(fromB);
       const absMulti = formatAbsMultiline(fromB, undefined);
@@ -411,10 +567,12 @@ export function getHoverAtPosition(
   }
 
   // Abs 兜底（同源 reuse：不再内部重复 parse + 全量求值）
-  const absFallback = getAbsAtPosition(filePath, source, line, column, activeCases, {
-    ...(reuse?.result !== undefined ? { result: reuse.result } : {}),
-    ...(file !== undefined ? { ast: file } : {}),
-  });
+  const absFallback = deferIfArityOnlyFn(
+    getAbsAtPosition(filePath, source, line, column, activeCases, {
+      ...(reuse?.result !== undefined ? { result: reuse.result } : {}),
+      ...(file !== undefined ? { ast: file } : {}),
+    }),
+  );
   if (absFallback) {
     const absLine = formatAbs(absFallback);
     const absMulti = formatAbsMultiline(absFallback, undefined);
@@ -432,9 +590,11 @@ export function getHoverAtPosition(
   const fnFaceMissing = fnName !== undefined && gDisplay === undefined;
   if (ident && (!fnName || fnFaceMissing)) {
     /** 标识符 hover 单行外延：`grade: string`——内涵（term/pred/conf）
-     *  留给函数名 hover 的契约面，标识符面不重复展开 */
+     *  留给函数名 hover 的契约面，标识符面不重复展开。
+     *  展开层级受限（maxDepth 4——lazy 自引用在深预算下指数
+     *  展开，可达数万字符单行；超深以 `…` 截断标记） */
     const identHover = (value: Abs): HoverInfo => {
-      const text = `${ident}: ${formatShape(value)}`;
+      const text = `${ident}: ${formatShape(value, { maxDepth: 4 })}`;
       return { typeText: text, abs: text };
     };
     // —— A. 参数面：光标在参数声明（含解构属性）或参数引用上时，从
@@ -459,19 +619,124 @@ export function getHoverAtPosition(
         } catch {
           // fail-closed：generalize 失败 → 无参数面（不拖垮 hover）
         }
-        // 参数声明位 + 声明形态（display）→ 折叠展示 + 契约原文
-        // 链接（侧车路径）；替代 formatShape 的判别联合无损展开
-        const declFold = gEnc
-          ? paramDeclDisplay(encFn, line, column, gEnc)
-          : undefined;
-        if (declFold !== undefined) {
-          const encTier = interfaceTierOf(source, encFn.name, filePath, opts ?? {});
+        // 侧车契约档（参数面 + 成员投影共用）：
+        // 侧车源码 / AST 预解析（判别窄化的臂
+        // 过滤与变量链接的引用解析共用）
+        const encTier = interfaceTierOf(source, encFn.name, filePath, opts ?? {});
+        const sidecarPath = encTier?.sidecarPath;
+        let sidecarProgram: File["program"] | undefined;
+        let sidecarSrc: string | undefined;
+        if (
+          sidecarPath !== undefined &&
+          opts?.loadModule !== undefined
+        ) {
+          sidecarSrc = opts.loadModule(sidecarPath, sidecarPath);
+          if (sidecarSrc !== undefined) {
+            try {
+              sidecarProgram = parse(sidecarSrc).program;
+            } catch {
+              sidecarProgram = undefined;
+            }
+          }
+        }
+        // —— A0. 引擎节点级 Abs 重放（求值态面——
+        // 优先）：导出函数 + 契约参数 Abs 齐备
+        // 时符号执行，位置直读求值态 Abs（流
+        // 敏感窄化为引擎求值语义——早退守卫 /
+        // 判别等值 / !== 对偶 / typeof 守卫 /
+        // && / || 链，$fork 臂内 withExecPhi +
+        // $narrowMemberEq 剪影）。显示口径：
+        // ident 是形参且求值态与入口 Abs 等价
+        // （未窄化 / 仅剥 nullish——声明位 /
+        // 检查点 / 成员访问对象位 / 落回位）
+        // → 下方声明形态折叠面（用户口径——
+        // nullable(astNode) / astNode + 链接）；
+        // 窄化位（守卫 then 分支 / 槽位读 /
+        // 局部量）→ 求值态（formatShape
+        // maxDepth 4）。重放未覆盖 / 失败 →
+        // 回落声明形态面
+        let engineAbs: Abs | undefined;
+        if (gEnc) {
+          const nodeAbs = absNodeAtPosition(
+            filePath,
+            source,
+            encFn,
+            gEnc,
+            reuse,
+            line,
+            column,
+          );
+          if (nodeAbs !== undefined) {
+            const entryAbs = gEnc.entryShapes?.get(ident)?.abs;
+            if (entryAbs === undefined || !isUnnarrowedAbs(nodeAbs, entryAbs)) {
+              engineAbs = nodeAbs;
+            }
+          }
+        }
+        if (engineAbs !== undefined) {
+          const typeText = `${ident}: ${formatShape(engineAbs, {
+            maxDepth: 4,
+            showLits: true,
+          })}`;
           return {
-            typeText: declFold,
-            abs: declFold,
-            ...(encTier?.sidecarPath !== undefined
-              ? { sidecarPath: encTier.sidecarPath }
+            typeText,
+            abs: typeText,
+            ...(sidecarPath !== undefined ? { sidecarPath } : {}),
+            ...(encTier?.sidecarLine !== undefined
+              ? { sidecarLine: encTier.sidecarLine }
               : {}),
+          };
+        }
+        // 参数声明位 / 引用位：声明形态折叠（体内
+        // 引用叠加流窄化——早退守卫 / 成员访问对象
+        // 之后剥离 nullable 包装；等值守卫 then
+        // 分支判别窄化为匹配臂——重放未覆盖时的
+        // 近似面）。投影面（projectParamAbs）展示
+        // 的 generalized 参数类型与声明形态同信息
+        // ——一为判别联合无损展开（lazy 自引用
+        // 指数展开可达数万字符单行）、一为声明
+        // 原文；evaluator 流敏感面（absFromEval
+        // 模块级绑定面在上方）不受影响。名称
+        // 匹配（ident = 形参名）；lexical
+        // shadowing 同口径：参数先于绑定
+        const display = gEnc
+          ? paramDisplayOf(
+              gEnc,
+              ident,
+              encFn.node,
+              file,
+              line,
+              column,
+              sidecarPath,
+              sidecarProgram,
+              sidecarSrc,
+              opts?.loadModule,
+            )
+          : undefined;
+        if (display !== undefined) {
+          // 类型值变量链接（侧车表达式中的引用
+          // 标识符 → 定义位置）：在场时 IDE hover
+          // 渲染 plain markdown（代码块内链接不
+          // 渲染），契约原文行不再重复
+          const linked =
+            sidecarPath !== undefined &&
+            sidecarProgram !== undefined &&
+            sidecarSrc !== undefined
+              ? linkTypeVariables(
+                  ident,
+                  display,
+                  sidecarPath,
+                  sidecarProgram,
+                  sidecarSrc,
+                  opts?.loadModule,
+                )
+              : undefined;
+          const typeText = `${ident}: ${display}`;
+          return {
+            typeText,
+            abs: typeText,
+            ...(linked !== undefined ? { linkedText: linked } : {}),
+            ...(sidecarPath !== undefined ? { sidecarPath } : {}),
             ...(encTier?.sidecarLine !== undefined
               ? { sidecarLine: encTier.sidecarLine }
               : {}),
@@ -700,39 +965,887 @@ function findEnclosingFunction(
 }
 
 /**
- * 参数声明位的声明形态折叠：光标在（简单）形参标识符上时，
- * 用 entryReqs 的 display（侧车表达式原文 / 指令约束名）
- * 替代 formatShape 的无损展开——判别联合参数可达数万字符。
- * 无 display（派生形参 / 无契约 / 解构子属性）→ undefined，
- * 回落既有投影面（诚实降级）。
+ * 参数声明形态折叠（名称匹配 + 流窄化）：ident 是形参名且
+ * entryReqs 有声明形态（display——侧车表达式原文 / 指令
+ * 约束名）时返回 display，替代投影面的判别联合无损展开
+ * （可达数万字符单行——lazy 自引用指数展开）。无 display
+ * （派生形参 / 无契约 / 解构子属性点路径不匹配）→
+ * undefined，回落投影面（诚实降级）。
+ *
+ * 体内引用位叠加流窄化事实（有界规则集）：
+ * - 成员访问对象（`node.x`，非可选链）：访问成立即排除
+ *   nullish；
+ * - 早退守卫之后（`if (!node) return …;`——守卫蕴含
+ *   nullish 且 then 以 return/throw 结束）：后续语句排除
+ *   nullish；
+ * - `p.type === 'lit'` 等值守卫的 then 分支：判别窄化——
+ *   联合类型值引用（`astNode`）过滤为匹配臂的 shape 文本。
+ * 窄化成立时剥离 display 的 `nullable(…)` 包装（链式表达式
+ * 才剥——union 字面量 / 合并形态不剥）；检查点（`!node`
+ * 自身）与声明位不窄化，保持声明形态。
  */
-function paramDeclDisplay(
-  encFn: EnclosingFn,
+function paramDisplayOf(
+  g: PolyFn,
+  ident: string,
+  fnNode: Node,
+  file: Node,
   line: number,
   column: number,
-  g: PolyFn,
+  sidecarPath: string | undefined,
+  sidecarProgram: File["program"] | undefined,
+  sidecarSrc: string | undefined,
+  loadModule: LoadModule | undefined,
 ): string | undefined {
-  const params = (
-    encFn.node as {
-      params?: Array<{
-        type: string;
-        name?: string;
-        loc?: {
-          start: { line: number; column: number };
-          end: { line: number; column: number };
-        };
-      }>;
+  const req = g.entryReqs?.find((r) => r.param === ident);
+  if (req?.display === undefined) return undefined;
+  const facts = flowFactsAt(fnNode, file, ident, line, column);
+  let display = req.display;
+  if (facts.nonNullish) display = stripNullableWrappers(display);
+  // 判别窄化（等值守卫 then 分支——联合类型值
+  // 引用过滤为匹配臂）
+  if (
+    facts.typeFilters.length > 0 &&
+    sidecarPath !== undefined &&
+    sidecarProgram !== undefined &&
+    sidecarSrc !== undefined
+  ) {
+    display =
+      narrowByDiscriminant(
+        display,
+        facts.typeFilters,
+        sidecarPath,
+        sidecarProgram,
+        sidecarSrc,
+        loadModule,
+      ) ?? display;
+  }
+  return display;
+}
+
+/** 流窄化事实（有界规则集，见 paramDisplayOf） */
+type FlowFacts = {
+  nonNullish: boolean;
+  /**
+   * `p.type === 'lit'` 等值守卫（判别窄化）：每个
+   * filter 是该位置必须匹配的 type 值集（`&&` 链的
+   * 操作数——单等值守卫为单值集、`||` 组为多值集；
+   * 臂须匹配所有 filter）。then 分支内生效
+   * （test 求值语义）；else 分支不窄化（否定形态
+   * 有界跳过）
+   */
+  typeFilters: Array<Set<string>>;
+};
+
+function flowFactsAt(
+  fnNode: Node,
+  file: Node,
+  paramName: string,
+  line: number,
+  column: number,
+): FlowFacts {
+  const facts: FlowFacts = { nonNullish: false, typeFilters: [] };
+  // 成员访问对象规则：光标标识符是非可选成员访问的对象
+  const hit = findIdentParent(file, line, column);
+  if (
+    hit &&
+    hit.name === paramName &&
+    isNonNullishMemberObject(hit.parent, hit.ident)
+  ) {
+    facts.nonNullish = true;
+  }
+  // 早退守卫规则：从函数体起点按序走查，位置之前的语句
+  // 生效（早退守卫 → nonNullish；参数赋值 → 重置）
+  const body = (fnNode as { body?: { body?: Node[] } }).body?.body;
+  if (body) walkStmtsForFacts(body, paramName, line, column, facts);
+  return facts;
+}
+
+type Pos = { line: number; column: number };
+
+function posCmp(a: Pos, b: Pos): number {
+  return a.line !== b.line ? a.line - b.line : a.column - b.column;
+}
+
+function containsPos(n: Node, line: number, column: number): boolean {
+  const loc = n.loc;
+  if (!loc) return false;
+  return (
+    posCmp(loc.start, { line, column }) <= 0 &&
+    posCmp({ line, column }, loc.end) <= 0
+  );
+}
+
+/** 找到光标处标识符及其父节点（父指针需自走查，Babel 无 parent） */
+function findIdentParent(
+  node: Node,
+  line: number,
+  column: number,
+): { name: string; ident: Node; parent: Node } | null {
+  for (const key of Object.keys(node)) {
+    if (
+      key === "loc" ||
+      key === "extra" ||
+      key === "leadingComments" ||
+      key === "trailingComments" ||
+      key === "innerComments" ||
+      key === "tokens" ||
+      key === "comments"
+    ) {
+      continue;
     }
-  ).params;
-  if (!params) return undefined;
-  for (const p of params) {
-    if (p.type !== "Identifier" || !p.name || !p.loc) continue;
-    if (p.loc.start.line !== line) continue;
-    if (column < p.loc.start.column || column > p.loc.end.column) continue;
-    const req = g.entryReqs?.find((r) => r.param === p.name);
-    return req?.display !== undefined ? `${p.name}: ${req.display}` : undefined;
+    const v = (node as unknown as Record<string, unknown>)[key];
+    if (Array.isArray(v)) {
+      for (const el of v) {
+        if (isNode(el)) {
+          if (el.type === "Identifier" && containsPos(el, line, column)) {
+            return {
+              name: (el as Identifier).name,
+              ident: el,
+              parent: node,
+            };
+          }
+          const r = findIdentParent(el, line, column);
+          if (r) return r;
+        }
+      }
+    } else if (isNode(v)) {
+      if (v.type === "Identifier" && containsPos(v, line, column)) {
+        return {
+          name: (v as Identifier).name,
+          ident: v,
+          parent: node,
+        };
+      }
+      const r = findIdentParent(v, line, column);
+      if (r) return r;
+    }
+  }
+  return null;
+}
+
+function isNode(v: unknown): v is Node {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    typeof (v as Node).type === "string"
+  );
+}
+
+/** 非可选成员访问的对象（`node.x` 隐含 node 非 nullish；`node?.x` 不窄化） */
+function isNonNullishMemberObject(parent: Node, ident: Node): boolean {
+  const p = parent as unknown as {
+    type: string;
+    object?: Node;
+    optional?: boolean;
+  };
+  return (
+    p.type === "MemberExpression" &&
+    p.object === ident &&
+    p.optional !== true
+  );
+}
+
+/** 语句级事实走查：位置之前生效，位置所在语句递归入内 */
+function walkStmtsForFacts(
+  stmts: Node[],
+  paramName: string,
+  line: number,
+  column: number,
+  facts: FlowFacts,
+): void {
+  const pos = { line, column };
+  for (const s of stmts) {
+    const loc = s.loc;
+    if (!loc) continue;
+    if (posCmp(loc.end, pos) <= 0) {
+      applyStmtFact(s, paramName, facts);
+      continue;
+    }
+    if (posCmp(loc.start, pos) <= 0) {
+      if (s.type === "IfStatement") {
+        const ifS = s as unknown as {
+          test: Node;
+          consequent: Node;
+          alternate?: Node | null;
+        };
+        // then 分支：test 的等值守卫生效（判别窄化 +
+        // 成员访问隐含非空）；else 分支不窄化。
+        // 位置在 consequent 内——该分支的事实即
+        // 位置的事实：追加后不再恢复（walk 在
+        // 包含语句处终止，事实为最终值）
+        if (containsPos(ifS.consequent, line, column)) {
+          const testFilters = collectTypeFilters(ifS.test, paramName);
+          if (testFilters.length > 0) {
+            facts.typeFilters = [...facts.typeFilters, ...testFilters];
+            facts.nonNullish = true;
+          }
+          recurseIntoBlock(ifS.consequent);
+          return;
+        }
+        recurseIntoBlock(ifS.consequent);
+        if (ifS.alternate) recurseIntoBlock(ifS.alternate);
+      } else if (s.type === "SwitchStatement") {
+        for (const c of (s as unknown as { cases: Node[] }).cases) {
+          const cons = (c as unknown as { consequent?: Node[] }).consequent;
+          if (
+            Array.isArray(cons) &&
+            cons.some((st) => containsPos(st, line, column))
+          ) {
+            walkStmtsForFacts(cons, paramName, line, column, facts);
+          }
+        }
+      } else {
+        for (const nested of nestedBlocksOf(s)) {
+          if (containsPos(nested, line, column)) {
+            walkStmtsForFacts(
+              (nested as unknown as { body: Node[] }).body,
+              paramName,
+              line,
+              column,
+              facts,
+            );
+          }
+        }
+      }
+      return;
+    }
+    // 语句起点在位置之后——后续语句不生效
+    return;
+  }
+  function recurseIntoBlock(n: Node): void {
+    if (!containsPos(n, line, column)) return;
+    if (n.type === "BlockStatement") {
+      walkStmtsForFacts(
+        (n as unknown as { body: Node[] }).body,
+        paramName,
+        line,
+        column,
+        facts,
+      );
+    } else {
+      walkStmtsForFacts([n], paramName, line, column, facts);
+    }
+  }
+}
+
+/** 非 if/switch 语句内嵌的块（函数体除外——窄化不跨函数边界） */
+function nestedBlocksOf(s: Node): Node[] {
+  const out: Node[] = [];
+  const t = s as unknown as {
+    body?: unknown;
+    block?: unknown;
+    finalizer?: unknown;
+    handler?: unknown;
+  };
+  const add = (n: unknown): void => {
+    if (n !== null && typeof n === "object" && (n as Node).type === "BlockStatement") {
+      out.push(n as Node);
+    }
+  };
+  add(t.body);
+  add(t.block);
+  add(t.finalizer);
+  add((t.handler as { body?: unknown } | undefined)?.body);
+  return out;
+}
+
+/** 位置之前语句的窄化效果：早退守卫 → nonNullish；参数赋值 → 重置 */
+function applyStmtFact(s: Node, paramName: string, facts: FlowFacts): void {
+  if (isParamReassignment(s, paramName)) {
+    facts.nonNullish = false;
+    facts.typeFilters = [];
+    return;
+  }
+  if (s.type !== "IfStatement") return;
+  const ifS = s as unknown as { test: Node; consequent: Node };
+  if (!isNullishGuardOn(ifS.test, paramName)) return;
+  if (endsWithReturnThrow(ifS.consequent)) facts.nonNullish = true;
+}
+
+/**
+ * test 的 `p.type === 'lit'` 等值守卫收集
+ * （判别窄化）：`&&` 链的每个操作数是一个
+ * filter——单等值守卫（`p.type === 'X'`）为
+ * 单值集、`||` 组（`p.type === 'X' ||
+ * p.type === 'Y'`）为多值集；非等值操作数
+ * 不贡献 filter。臂须匹配所有 filter
+ * （&& 语义）。
+ */
+function collectTypeFilters(
+  test: Node,
+  paramName: string,
+): Array<Set<string>> {
+  if (test.type === "LogicalExpression") {
+    const t = test as unknown as {
+      operator: string;
+      left: Node;
+      right: Node;
+    };
+    if (t.operator === "&&") {
+      return [
+        ...collectTypeFilters(t.left, paramName),
+        ...collectTypeFilters(t.right, paramName),
+      ];
+    }
+    if (t.operator === "||") {
+      const left = typeEqualityValue(t.left, paramName);
+      const right = typeEqualityValue(t.right, paramName);
+      if (left !== undefined && right !== undefined) {
+        return [new Set([left, right])];
+      }
+      return [];
+    }
+    return [];
+  }
+  const v = typeEqualityValue(test, paramName);
+  return v === undefined ? [] : [new Set([v])];
+}
+
+/** `p.type === 'lit'` 等值守卫的值（非守卫 → undefined） */
+function typeEqualityValue(
+  test: Node,
+  paramName: string,
+): string | undefined {
+  if (test.type !== "BinaryExpression") return undefined;
+  const t = test as unknown as {
+    operator: string;
+    left: Node;
+    right: Node;
+  };
+  if (t.operator !== "===") return undefined;
+  const m = isParamTypeMember(t.left, paramName)
+    ? t.right
+    : isParamTypeMember(t.right, paramName)
+      ? t.left
+      : undefined;
+  return m === undefined ? undefined : literalStringValue(m);
+}
+
+/** `p.type` 成员访问（p 是参数、property 是 type、非计算非可选） */
+function isParamTypeMember(n: Node, paramName: string): boolean {
+  if (n.type !== "MemberExpression") return false;
+  const m = n as unknown as {
+    object: Node;
+    property: Node;
+    computed?: boolean;
+    optional?: boolean;
+  };
+  if (m.computed === true || m.optional === true) return false;
+  if (m.property.type !== "Identifier" || m.property.name !== "type") {
+    return false;
+  }
+  return m.object.type === "Identifier" && m.object.name === paramName;
+}
+
+/** 字符串字面量值（`'X'` 或构建器 `lit('X')`——Babel 节点类型为 StringLiteral） */
+function literalStringValue(v: Node): string | undefined {
+  if (v.type === "StringLiteral") {
+    const lv = (v as unknown as { value: unknown }).value;
+    return typeof lv === "string" ? lv : undefined;
+  }
+  if (v.type === "CallExpression") {
+    const c = v as unknown as { callee: Node; arguments: Node[] };
+    if (
+      c.callee.type === "Identifier" &&
+      c.callee.name === "lit" &&
+      c.arguments.length === 1
+    ) {
+      return literalStringValue(c.arguments[0]);
+    }
   }
   return undefined;
+}
+
+/** 守卫 test 蕴含 paramName 为 nullish：`!p` / `p == null` / `||` 任一 / `&&` 全部 */
+function isNullishGuardOn(test: Node, paramName: string): boolean {
+  if (
+    test.type === "UnaryExpression" &&
+    (test as unknown as { operator: string }).operator === "!"
+  ) {
+    const arg = (test as unknown as { argument: Node }).argument;
+    return arg.type === "Identifier" && arg.name === paramName;
+  }
+  if (
+    test.type === "BinaryExpression" &&
+    ["===", "=="].includes((test as unknown as { operator: string }).operator)
+  ) {
+    const t = test as unknown as { left: Node; right: Node };
+    return isParamVsNullish(t.left, t.right, paramName) ||
+      isParamVsNullish(t.right, t.left, paramName);
+  }
+  if (test.type === "LogicalExpression") {
+    const t = test as unknown as {
+      operator: string;
+      left: Node;
+      right: Node;
+    };
+    if (t.operator === "||") {
+      return isNullishGuardOn(t.left, paramName) || isNullishGuardOn(t.right, paramName);
+    }
+    if (t.operator === "&&") {
+      return isNullishGuardOn(t.left, paramName) && isNullishGuardOn(t.right, paramName);
+    }
+  }
+  return false;
+}
+
+function isParamVsNullish(a: Node, b: Node, paramName: string): boolean {
+  if (a.type !== "Identifier" || a.name !== paramName) return false;
+  if ((b.type as string) === "Literal") {
+    return (b as unknown as { value: unknown }).value === null ||
+      (b as unknown as { value: unknown }).value === undefined;
+  }
+  return b.type === "Identifier" && b.name === "undefined";
+}
+
+/** then 分支以 return/throw 结束（块看末语句）——早退路径 */
+function endsWithReturnThrow(node: Node): boolean {
+  if (node.type === "ReturnStatement" || node.type === "ThrowStatement") return true;
+  if (node.type === "BlockStatement") {
+    const body = (node as unknown as { body: Node[] }).body;
+    return body.length > 0 && endsWithReturnThrow(body[body.length - 1]);
+  }
+  return false;
+}
+
+function isParamReassignment(stmt: Node, paramName: string): boolean {
+  if (stmt.type !== "ExpressionStatement") return false;
+  const expr = (stmt as unknown as { expression: Node }).expression;
+  if (expr.type === "AssignmentExpression") {
+    const left = (expr as unknown as { left: Node }).left;
+    return left.type === "Identifier" && left.name === paramName;
+  }
+  if (expr.type === "UpdateExpression") {
+    const arg = (expr as unknown as { argument: Node }).argument;
+    return arg.type === "Identifier" && arg.name === paramName;
+  }
+  return false;
+}
+
+/** 链式表达式（标识符 / 调用 / 属性链）——`nullable(X)` 剥离 X 的合法性 */
+const CHAIN_EXPR =
+  /^[A-Za-z_$][A-Za-z0-9_$]*(?:\(.*\))?(?:\.[A-Za-z_$][A-Za-z0-9_$]*(?:\(.*\))?)*$/;
+
+/**
+ * 剥离 `nullable(…)` 包装（可重复——`nullable(nullable(x))`）；
+ * 仅当内层是链式表达式（构建器调用 / 引用——其类型本就不含
+ * null）；union 字面量 / 合并形态（` ∧ `）不剥。` ∧ name` 合并
+ * 形态只处理表达式前缀。
+ */
+function stripNullableWrappers(display: string): string {
+  const idx = display.indexOf(" ∧ ");
+  const expr = idx === -1 ? display : display.slice(0, idx);
+  const rest = idx === -1 ? "" : display.slice(idx);
+  let out = expr;
+  while (
+    out.length > 10 &&
+    out.startsWith("nullable(") &&
+    out.endsWith(")") &&
+    CHAIN_EXPR.test(out.slice(9, -1))
+  ) {
+    out = out.slice(9, -1);
+  }
+  return out + rest;
+}
+
+/**
+ * 判别窄化：`p.type === 'lit'` 等值守卫之后，
+ * 纯标识符引用（联合类型值——`astNode`）窄化
+ * 为匹配臂的 shape 文本（then 分支的推导
+ * 类型）。解析引用定义 → union(…) 的 shape
+ * 臂 → 过滤（臂的 `type` 字面量匹配所有
+ * filter）→ 匹配臂文本（` | ` 拼接）。
+ * 无匹配 / 非联合定义 / 非 shape 臂 / 非
+ * 纯标识符 → undefined（回退声明形态）。
+ */
+function narrowByDiscriminant(
+  refName: string,
+  filters: Array<Set<string>>,
+  sidecarPath: string,
+  sidecarProgram: File["program"],
+  sidecarSrc: string,
+  loadModule: LoadModule | undefined,
+): string | undefined {
+  if (loadModule === undefined) return undefined;
+  // 仅纯标识符引用（调用 / 属性链不窄化）
+  if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(refName)) return undefined;
+  const def = resolveTypeValueDef(
+    refName,
+    sidecarPath,
+    sidecarProgram,
+    sidecarSrc,
+    loadModule,
+    0,
+  );
+  if (def === null || def.node === undefined) return undefined;
+  const arms = unionShapeArms(def.node, def.src);
+  if (arms === null) return undefined;
+  const matched = arms.filter((arm) => {
+    const tv = arm.typeValue;
+    return tv !== undefined && filters.every((f) => f.has(tv));
+  });
+  if (matched.length === 0) return undefined;
+  return matched.map((arm) => arm.text).join(" | ");
+}
+
+/**
+ * union(…) 调用的 shape 臂。臂 = shape({ … })
+ * 调用的对象字面量（或直接对象字面量）——
+ * 文本为源码切片（保留构建器原文）；非
+ * shape 臂（如 lit(…) 字面量臂）→ null
+ * （不过滤，回退）。
+ */
+function unionShapeArms(
+  def: Node,
+  src: string,
+): Array<{ typeValue: string | undefined; text: string }> | null {
+  if (def.type !== "CallExpression") return null;
+  const c = def as unknown as { callee: Node; arguments: Node[] };
+  if (c.callee.type !== "Identifier" || c.callee.name !== "union") {
+    return null;
+  }
+  const lineStarts = computeLineStarts(src);
+  const arms: Array<{ typeValue: string | undefined; text: string }> = [];
+  for (const arg of c.arguments) {
+    let obj: Node | undefined;
+    if (arg.type === "CallExpression") {
+      const a = arg as unknown as { callee: Node; arguments: Node[] };
+      if (
+        a.callee.type === "Identifier" &&
+        a.callee.name === "shape" &&
+        a.arguments.length === 1 &&
+        a.arguments[0].type === "ObjectExpression"
+      ) {
+        obj = a.arguments[0];
+      }
+    } else if (arg.type === "ObjectExpression") {
+      obj = arg;
+    }
+    if (obj === undefined || obj.loc == null) return null;
+    const start = lineColToOffset(lineStarts, obj.loc.start);
+    const end = lineColToOffset(lineStarts, obj.loc.end);
+    if (start === -1 || end === -1 || end <= start) return null;
+    arms.push({
+      typeValue: objectTypeValue(obj),
+      text: src.slice(start, end),
+    });
+  }
+  return arms.length > 0 ? arms : null;
+}
+
+/** 对象字面量的 `type` 槽字面量值（判别键） */
+function objectTypeValue(obj: Node): string | undefined {
+  for (const prop of (obj as unknown as { properties: Node[] }).properties) {
+    if (prop.type !== "ObjectProperty") continue;
+    const p = prop as unknown as {
+      key: Node;
+      value: Node;
+      computed?: boolean;
+    };
+    if (p.computed === true || p.key.type !== "Identifier" || p.key.name !== "type") {
+      continue;
+    }
+    return literalStringValue(p.value);
+  }
+  return undefined;
+}
+
+/** 类型值变量链接段（display 文本内偏移 → markdown 链接目标） */
+type TypeValueLink = { start: number; end: number; target: string };
+
+/**
+ * 类型值变量链接：折叠展示中的引用标识符（如 `nullable(astNode)`
+ * 的 `astNode`）解析到其定义位置（侧车本地顶层声明 / import 表
+ * / re-export 一级），在整行 `ident: display` 中包为
+ * `[astNode](file://<定义>#L<行>)`（纯文本段为代码 span——
+ * 代码块内链接不渲染，故调用方 plain markdown 推送）。
+ * 纯 JS 表达式形态才解析（` ∧ ` 合并形态含非 JS 字符 → 放弃）；
+ * 解析不出的名字（构建器如 `string`——非 import 非本地声明）
+ * 不链接。无链接段 → undefined。
+ */
+function linkTypeVariables(
+  ident: string,
+  display: string,
+  sidecarPath: string,
+  sidecarProgram: File["program"],
+  sidecarSrc: string,
+  loadModule: LoadModule | undefined,
+): string | undefined {
+  if (loadModule === undefined || display.includes(" ∧ ")) return undefined;
+  let exprAst: File;
+  try {
+    exprAst = parse(display);
+  } catch {
+    return undefined;
+  }
+  const lineStarts = computeLineStarts(display);
+  const links: TypeValueLink[] = [];
+  for (const id of collectExprIdentifiers(exprAst)) {
+    const loc = id.loc;
+    if (!loc) continue;
+    const def = resolveTypeValueDef(
+      id.name,
+      sidecarPath,
+      sidecarProgram,
+      sidecarSrc,
+      loadModule,
+      0,
+    );
+    if (def === null) continue;
+    const start = lineColToOffset(lineStarts, loc.start);
+    const end = lineColToOffset(lineStarts, loc.end);
+    if (start === -1 || end === -1 || end <= start) continue;
+    links.push({ start, end, target: `file://${def.path}#L${def.line}` });
+  }
+  if (links.length === 0) return undefined;
+  links.sort((a, b) => a.start - b.start);
+  // 整行渲染（ident 前缀并入首个纯文本段——避免相邻代码
+  // span 之间出现空 span）
+  const text = `${ident}: ${display}`;
+  const shift = ident.length + 2;
+  const parts: string[] = [];
+  let pos = 0;
+  for (const seg of links) {
+    const start = seg.start + shift;
+    const end = seg.end + shift;
+    if (start < pos) continue;
+    if (start > pos) parts.push(`\`${text.slice(pos, start)}\``);
+    parts.push(`[${text.slice(start, end)}](${seg.target})`);
+    pos = end;
+  }
+  if (pos < text.length) parts.push(`\`${text.slice(pos)}\``);
+  return parts.join("");
+}
+
+/** 表达式中的引用标识符（跳过成员属性 / 对象键 / 调用 callee） */
+function collectExprIdentifiers(ast: File): Identifier[] {
+  const out: Identifier[] = [];
+  const walk = (node: Node, parent: Node | null): void => {
+    for (const key of Object.keys(node)) {
+      if (
+        key === "loc" ||
+        key === "extra" ||
+        key === "leadingComments" ||
+        key === "trailingComments" ||
+        key === "innerComments"
+      ) {
+        continue;
+      }
+      const v = (node as unknown as Record<string, unknown>)[key];
+      const visit = (el: unknown, keyName: string): void => {
+        if (!isNode(el)) return;
+        if (el.type === "Identifier") {
+          const skip =
+            (keyName === "property" &&
+              (parent as unknown as { computed?: boolean } | null)?.computed !==
+                true) ||
+            (keyName === "key" &&
+              (parent as unknown as { computed?: boolean } | null)?.computed !==
+                true) ||
+            (keyName === "callee" && parent !== null);
+          if (!skip) out.push(el as Identifier);
+          return;
+        }
+        walk(el, node);
+      };
+      if (Array.isArray(v)) {
+        for (const el of v) visit(el, key);
+      } else {
+        visit(v, key);
+      }
+    }
+  };
+  walk(ast, null);
+  return out;
+}
+
+/** 每行起始偏移（1-based 行号 → 文本内偏移） */
+function computeLineStarts(text: string): number[] {
+  const starts = [0];
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) === 10) starts.push(i + 1);
+  }
+  return starts;
+}
+
+function lineColToOffset(
+  lineStarts: number[],
+  p: { line: number; column: number },
+): number {
+  const base = lineStarts[p.line - 1];
+  return base === undefined ? -1 : base + p.column;
+}
+
+/** 类型值定义（定义位置 + 定义表达式 + 所在源码） */
+type TypeValueDef = {
+  path: string;
+  line: number;
+  /** 定义表达式（VariableDeclarator.init / 函数声明
+   *  / default 声明）——判别窄化（union 臂过滤）用 */
+  node?: Node;
+  /** 定义所在文件源码（臂文本切片用） */
+  src: string;
+};
+
+/**
+ * 类型值定义解析：侧车本地顶层声明 → re-export 桥接
+ * （`export { a as b }`）→ re-export（`export { x } from`
+ * 递归依赖）→ import 表（递归依赖）。深度上限 2
+ * （re-export / import 链有界）。依赖经 resolveModule
+ * 解析（相对 spec + 目录 → 路径 + AST），源码经
+ * loadModule 读（臂切片用）。
+ */
+function resolveTypeValueDef(
+  name: string,
+  filePath: string,
+  program: File["program"],
+  src: string,
+  loadModule: LoadModule,
+  depth: number,
+): TypeValueDef | null {
+  if (depth > 2) return null;
+  const locals = new Map<string, { line: number; node?: Node }>();
+  const imports = new Map<string, { imported: string; spec: string }>();
+  const bridges = new Map<string, string>();
+  const reexports = new Map<string, { local: string; spec: string }>();
+  for (const stmt of program.body) {
+    const t = stmt as unknown as {
+      type: string;
+      source?: { value: string };
+      specifiers?: Node[];
+      declaration?: Node;
+      loc?: { start: { line: number } };
+    };
+    if (t.type === "ImportDeclaration" && t.specifiers && t.source) {
+      for (const sp of t.specifiers) {
+        const s = sp as unknown as {
+          type: string;
+          local: Identifier;
+          imported?: Identifier;
+        };
+        if (s.type === "ImportSpecifier") {
+          imports.set(s.local.name, {
+            imported: s.imported?.name ?? "default",
+            spec: t.source.value,
+          });
+        } else if (s.type === "ImportDefaultSpecifier") {
+          imports.set(s.local.name, { imported: "default", spec: t.source.value });
+        }
+      }
+    } else if (t.type === "VariableDeclaration" && t.declaration === undefined) {
+      for (const d of (stmt as unknown as { declarations: Node[] }).declarations) {
+        const dd = d as unknown as { id: Node; init?: Node };
+        if (dd.id.type === "Identifier") {
+          locals.set(dd.id.name, {
+            line: stmt.loc?.start.line ?? 1,
+            node: dd.init,
+          });
+        }
+      }
+    } else if (
+      t.type === "FunctionDeclaration" &&
+      (stmt as unknown as { id?: Identifier }).id
+    ) {
+      locals.set((stmt as unknown as { id: Identifier }).id.name, {
+        line: stmt.loc?.start.line ?? 1,
+        node: stmt,
+      });
+    } else if (t.type === "ExportNamedDeclaration") {
+      const decl = t.declaration;
+      if (decl) {
+        if (decl.type === "VariableDeclaration") {
+          for (const d of (decl as unknown as { declarations: Node[] }).declarations) {
+            const dd = d as unknown as { id: Node; init?: Node };
+            if (dd.id.type === "Identifier") {
+              locals.set(dd.id.name, {
+                line: decl.loc?.start.line ?? 1,
+                node: dd.init,
+              });
+            }
+          }
+        } else if (
+          decl.type === "FunctionDeclaration" &&
+          (decl as unknown as { id?: Identifier }).id
+        ) {
+          locals.set((decl as unknown as { id: Identifier }).id.name, {
+            line: decl.loc?.start.line ?? 1,
+            node: decl,
+          });
+        }
+      } else if (t.specifiers) {
+        for (const sp of t.specifiers) {
+          const s = sp as unknown as {
+            type: string;
+            local: Identifier;
+            exported: Identifier;
+          };
+          if (s.type !== "ExportSpecifier") continue;
+          const exported = s.exported.name;
+          const local = s.local.name;
+          if (t.source) {
+            reexports.set(exported, { local, spec: t.source.value });
+          } else {
+            bridges.set(exported, local);
+          }
+        }
+      }
+    } else if (t.type === "ExportDefaultDeclaration") {
+      locals.set("default", {
+        line: stmt.loc?.start.line ?? 1,
+        node: (stmt as unknown as { declaration?: Node }).declaration,
+      });
+    }
+  }
+  const viaLocal = (l: { line: number; node?: Node }): TypeValueDef => ({
+    path: filePath,
+    line: l.line,
+    ...(l.node !== undefined ? { node: l.node } : {}),
+    src,
+  });
+  // 1. 本地顶层声明（含 export 声明）
+  const local = locals.get(name);
+  if (local !== undefined) return viaLocal(local);
+  // 2. re-export 桥接（export { a as b }）→ 本地 a 的声明
+  const bridged = bridges.get(name);
+  if (bridged !== undefined) {
+    const viaB = locals.get(bridged);
+    if (viaB !== undefined) return viaLocal(viaB);
+  }
+  // 3/4. re-export（export { x } from）/ import 表 → 依赖递归
+  const viaDep = (localName: string, spec: string): TypeValueDef | null => {
+    let dep: ReturnType<typeof resolveModule>;
+    try {
+      dep = resolveModule(spec, dirname(filePath));
+    } catch {
+      return null;
+    }
+    if (dep === null) return null;
+    let depSrc: string | undefined;
+    try {
+      depSrc = loadModule(dep.filePath, filePath);
+    } catch {
+      return null;
+    }
+    if (depSrc === undefined) return null;
+    return resolveTypeValueDef(
+      localName,
+      dep.filePath,
+      dep.ast.program,
+      depSrc,
+      loadModule,
+      depth + 1,
+    );
+  };
+  const re = reexports.get(name);
+  if (re !== undefined) {
+    const inner = viaDep(re.local, re.spec);
+    if (inner !== null) return inner;
+  }
+  const imp = imports.get(name);
+  if (imp !== undefined) {
+    return viaDep(imp.imported, imp.spec);
+  }
+  return null;
 }
 
 /**
@@ -834,16 +1947,27 @@ function collectEnclosingFnLocals(
   }
   const loc = (enc.node as { loc?: { start: { line: number }; end: { line: number } } }).loc;
   const out = new Map<string, Abs>();
-  // 调用初始化声明 → 调用记录 result（callLoc 对位 init 起点）
+  // 调用初始化声明 → 调用记录 result（callLoc 对位 init 起点）。
+  // 帧过滤（depth === 0）：递归函数内层帧以重入态重执行同一调用位
+  // （含 cycle 截断的 opaque unknown），不代表本函数单次入口的绑定值；
+  // 顶层帧的同位多条记录（联合 fork）做 join——路径不敏感的诚实答案
   for (const d of declaredCallInits(enc.node)) {
-    const rec = calls.find(
-      (c) => c.callLoc && c.callLoc.line === d.line && c.callLoc.column === d.column,
+    const recs = calls.filter(
+      (c) =>
+        c.callLoc &&
+        c.callLoc.line === d.line &&
+        c.callLoc.column === d.column &&
+        (c.depth ?? 0) === 0,
     );
-    if (rec) out.set(d.name, rec.result);
+    if (recs.length > 0) {
+      out.set(d.name, recs.map((c) => c.result).reduce((a, b) => joinAbs(a, b)));
+    }
   }
-  // 范围内再赋值 → join（路径不敏感的诚实答案）
+  // 范围内再赋值 → join（路径不敏感的诚实答案）。
+  // 帧过滤同上：递归内层帧的重入赋值不算本函数单次入口的绑定流
   if (loc) {
     for (const r of assigns) {
+      if ((r.depth ?? 0) !== 0) continue;
       if (r.line === undefined || r.line < loc.start.line || r.line > loc.end.line) continue;
       const prev = out.get(r.name);
       out.set(r.name, prev ? joinAbs(prev, r.next) : r.next);

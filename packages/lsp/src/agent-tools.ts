@@ -596,7 +596,7 @@ export function trace(params: FunctionToolParams, deps: AgentToolDeps = {}): Age
     }
 
     const traces = fn.cases.map((c) => {
-      const args = c.argAbs.map(formatShape).join(", ");
+      const args = c.argAbs.map((a) => formatShape(a)).join(", ");
       return `Input: (${args}) => Output: ${formatShape(c.abs)}`;
     }).join("\n");
 

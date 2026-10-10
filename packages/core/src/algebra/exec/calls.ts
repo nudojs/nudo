@@ -46,6 +46,9 @@ export type EvalCallRecord = {
    * （resultAbs=payload、throwsAbs=never，isLeakedCallRecord
    * 的 never+never 拦不住）。5 处 emitter 均已显式设置。 */
   threw: boolean;
+  /** 调用方帧深度（0 = 最外层求值帧；递归内层帧 ≥1）。
+   *  局部量投影按帧过滤重入记录（与 $nodoPos 同口径）。 */
+  depth?: number;
 };
 
 /** pureCallMemo 内层 Map 上界（与 pureMemo 同口径） */
@@ -82,6 +85,8 @@ export type EvalAbsAssignRecord = {
   line?: number;
   column?: number;
   conditional?: boolean;
+  /** 调用方帧深度（0 = 最外层求值帧；与 EvalCallRecord.depth 同口径） */
+  depth?: number;
 };
 
 /** 赋值记录 collector（作用域化，同 evalCallCollectorSlot） */
@@ -118,6 +123,8 @@ export function $assignRecord(
       line: line || undefined,
       column: column || undefined,
       conditional,
+      // 调用方帧深度（与 EvalCallRecord.depth 同口径——局部量投影按帧过滤）
+      depth: evalCallDepth,
     });
   } catch {
     /* collector 不得打断执行 */
@@ -128,6 +135,57 @@ export function $assignRecord(
  *  作用域化，同 evalCallCollectorSlot） */
 const bindingSinkSlot = createScopedSlot<Map<string, unknown> | null>(() => null);
 registerCollectorScopeParticipant((body) => bindingSinkSlot.runScoped(body));
+
+/** 位置级 Abs 记录（hover 重放插桩 `$nodoPos` 消费）：
+ * (1-based 行, 0-based 列) → 该位置表达式求值态 Abs */
+export type EvalPosRecord = {
+  line: number;
+  column: number;
+  abs: Abs;
+};
+
+/** 位置 collector（作用域化，同 evalCallCollectorSlot） */
+const evalPosCollectorSlot = createScopedSlot<
+  ((r: EvalPosRecord) => void) | null
+>(() => null);
+registerCollectorScopeParticipant((body) => evalPosCollectorSlot.runScoped(body));
+
+/** 返回先前 collector，便于嵌套调用 save/restore（禁止 finally 置 null 砸外层） */
+export function setPosCollector(
+  collector: ((r: EvalPosRecord) => void) | null,
+): ((r: EvalPosRecord) => void) | null {
+  const prev = evalPosCollectorSlot.get();
+  evalPosCollectorSlot.set(collector);
+  return prev;
+}
+
+export function getPosCollector(): ((r: EvalPosRecord) => void) | null {
+  return evalPosCollectorSlot.get();
+}
+
+/**
+ * 位置级 Abs 记录（transpile 插桩调用——`recordPositions` 时
+ * Identifier 值读 / 静态成员读包此调用）：把 (行, 列) → Abs
+ * 记入活跃 collector 并**原样返回**（语义恒等）；无收集器时
+ * 直通（热路径零开销——仅重放开插桩）。
+ *
+ * 仅记最外层求值帧（evalCallDepth === 0）：递归函数的内层帧
+ * （$callNamed/$new 预算帧）会以重入态重执行同一源码位置——
+ * 自递归类型（lazy 自引用契约）下内层帧携带 cycle 截断的
+ * opaque unknown，first-wins 记录会以外层正确值被污染为序；
+ * 编辑器位置的语义以最外层调用帧（hover 重放的单次入口）为准。
+ */
+export function $nodoPos(v: Abs, line: number, column: number): Abs {
+  const collector = evalPosCollectorSlot.get();
+  if (collector && evalCallDepth === 0) {
+    try {
+      collector({ line, column, abs: v });
+    } catch {
+      /* collector 不得打断执行 */
+    }
+  }
+  return v;
+}
 
 export function setEvalBindingSink(sink: Map<string, unknown> | null): void {
   bindingSinkSlot.set(sink);
@@ -626,6 +684,10 @@ export function $callNamed(
           result,
           callLoc: loc ? { line: loc[0], column: loc[1] } : undefined,
           threw,
+          // 调用方帧深度（evalEnterCall 已弹栈后记录）：0 = 最外层
+          // 求值帧。递归内层帧的重入记录与顶层帧同 callLoc——局部量
+          // 投影（collectEnclosingFnLocals）按帧过滤，与 $nodoPos 同口径
+          depth: evalCallDepth,
         });
       } catch {
         /* collector 不得打断 */

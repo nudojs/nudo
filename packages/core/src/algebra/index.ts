@@ -212,7 +212,8 @@ export {
   pushThrowExit, registerEvalClass, resetEvalCallBudget, runTranspiled,
   runTranspiledOptionsMemoKey, runWithLoopExits, runtimeImportOf,
   setEvalAssignCollector, setEvalBindingSink, setEvalCallCollector,
-  setEvalFallbackCollector, takeLoopExits, takeThrowExits, transpile,
+  setEvalFallbackCollector, setPosCollector, type EvalPosRecord,
+  takeLoopExits, takeThrowExits, transpile,
   transpileBodyNode, transpileExpression, transpileFile, transpileSource,
   tryRunTranspiled, withExecPhi, isCjsMainRun
 } from "./exec/index.ts";

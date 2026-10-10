@@ -1311,7 +1311,7 @@ function $invokeInner(
 }
 
 /** 首次/后续方法调用后，把观测结果 join 进 fn.returnType 槽（展示用，不回写分析） */
-function refineFnReturnType(fn: Abs, result: Abs): void {
+export function refineFnReturnType(fn: Abs, result: Abs): void {
   if (!fn || typeof fn !== "object" || !("shape" in fn)) return;
   const s = fn.shape as { k?: string; returnType?: Abs };
   if (s.k !== "fn") return;
