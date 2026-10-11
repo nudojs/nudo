@@ -1,5 +1,15 @@
 # @nudojs/service
 
+## 1.6.19
+
+### Patch Changes
+
+- Updated dependencies [8806e93]
+  - @nudojs/core@1.10.2
+  - @nudojs/env@0.4.34
+  - @nudojs/harvester@0.3.20
+  - @nudojs/parser@1.4.16
+
 ## 1.6.18
 
 ### Patch Changes
