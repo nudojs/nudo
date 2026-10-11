@@ -313,10 +313,9 @@ export const decide = fn(
     const body = getHoverAtPosition(f, main, 2, 9, undefined, { loadModule });
     expect(body).not.toBeNull();
     expect(body!.typeText).toBe("grade: string()");
-    // 折叠面：单行声明形态 + 契约原文链接（侧车绑定）
+    // 折叠面：单行声明形态（侧车绑定）
     expect(body!.abs).toBe(body!.typeText);
     expect(body!.absMultiline).toBeUndefined();
-    expect(body!.sidecarPath).toBeDefined();
 
     rmSync(dir, { recursive: true, force: true });
   });
@@ -557,8 +556,6 @@ export const astNode = union(
     expect(decl!.typeText).toBe("node: nullable(astNode)");
     expect(decl!.abs).toBe("node: nullable(astNode)");
     expect(decl!.absMultiline).toBeUndefined();
-    expect(decl!.sidecarPath).toBeDefined();
-    expect(decl!.sidecarPath!.endsWith("literal.nudo.js")).toBe(true);
     // 类型值变量链接：astNode 经 import 表 → 依赖侧车定义行
     // （整行渲染：前缀并入首个代码 span）
     expect(decl!.linkedText).toBe(
@@ -598,8 +595,6 @@ export const astNode = union(
     expect(fn!.interfaceDisplay).toBe(
       "(node: nullable(astNode)) → union(string(), lit(null), lit(undefined))",
     );
-    expect(fn!.sidecarPath).toBeDefined();
-    expect(fn!.sidecarPath!.endsWith("literal.nudo.js")).toBe(true);
     cleanup();
   });
 
@@ -612,10 +607,10 @@ export const astNode = union(
     // 为 shape 名；闭口联合无尾臂——单臂）
     const thenNode = getHoverAtPosition(f, MAIN, 3, 38, undefined, { loadModule });
     expect(thenNode).not.toBeNull();
+    // pretty 多行缩进：obj 每槽一行 + 尾逗号 + 2 空格缩进
     expect(thenNode!.typeText).toBe(
-      'node: { type: lit("Literal"), value: string }',
+      'node: {\n  type: lit("Literal"),\n  value: string,\n}',
     );
-    expect(thenNode!.sidecarPath).toBeDefined();
 
     // L3 C43 = 成员读属性位（node.value 的 value
     // 位）——引擎记录的槽位类型
@@ -636,7 +631,8 @@ export const astNode = union(
       "",
     ].join("\n");
     writeFileSync(f, mainOr, "utf-8");
-    // L3 C69 = || 组 then 分支裸 node——两臂均匹配
+    // L3 C69 = || 组 then 分支裸 node——两臂均匹配（声明形态判别
+    // 窄化面——paramDisplayOf 口径，保持单行不受 pretty 影响）
     const orHover = getHoverAtPosition(f, mainOr, 3, 69, undefined, { loadModule });
     expect(orHover).not.toBeNull();
     expect(orHover!.typeText).toBe(
@@ -662,7 +658,7 @@ export const astNode = union(
     cleanup();
   });
 
-  it("attachHover 渲染链接面（plain markdown）；无链接时回落契约原文行", () => {
+  it("attachHover 渲染链接面（plain markdown）；弹窗不再含契约原文链接行", () => {
     const { dir, f, loadModule, shapesUri, cleanup } = setup();
     let handler: ((p: unknown) => unknown) | undefined;
     attachHover({
@@ -694,12 +690,99 @@ export const astNode = union(
     expect(declMd).toContain(`[astNode](${shapesUri}#L2)`);
     // 折叠后不再出现判别联合的无损展开
     expect(declMd).not.toContain("lit('Identifier')");
-    // 链接面在场——契约原文行不再重复
+    // 链接面在场——无契约原文行
     expect(declMd).not.toContain("契约原文");
     // 体内引用（L3 C6）：窄化 + 链接
     const bodyMd = hoverMd(3, 6);
     expect(bodyMd).toContain("`node: `[astNode](" + shapesUri + "#L2)");
     expect(bodyMd).not.toContain("契约原文");
+    // 引擎求值态位（L3 C38：return node.value 的 node——窄化 Literal 臂，
+    // 无链接面）：弹窗也不含契约原文行（链接行已删）
+    const engineMd = hoverMd(3, 38);
+    expect(engineMd).toContain("node:");
+    expect(engineMd).not.toContain("契约原文");
+    cleanup();
+  });
+});
+
+// return 表达式推导 hover（无 ident 位）：ReturnStatement 位置记录
+// 键 = `return` 关键字起始位（不是 argument 起始位——后者与内部
+// 根标识符值读记录同键 first-wins 丢失）；表达式内非标识符位
+// （成员访问 `.`）经最小 span 候选命中；pretty 缩进断言
+describe("getHoverAtPosition return expression hover (no-ident positions)", () => {
+  const SHAPES = `import { union, shape, lit, string, array } from '@nudojs/core';
+export const astNode = union(
+  shape({ type: lit('Literal'), value: string() }),
+  shape({ type: lit('TemplateLiteral'), quasis: array(shape({ value: shape({ cooked: string() }) })) }),
+);
+`;
+  const SIDE = `import { fn, string, nullable } from '@nudojs/core';
+import { astNode } from './shapes.nudo.js';
+export const literal = fn({ node: nullable(astNode) }, nullable(string()));
+`;
+  const MAIN = [
+    "export function literal(node) {",
+    "  if (!node) return null;",
+    "  if (node.type === 'Literal') return node.value;",
+    "  const q = node.quasis?.[0];",
+    "  return q ? q.value.cooked : null;",
+    "}",
+    "",
+  ].join("\n");
+
+  function setup() {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-return-hover-"));
+    writeFileSync(join(dir, "shapes.nudo.js"), SHAPES, "utf-8");
+    writeFileSync(join(dir, "literal.nudo.js"), SIDE, "utf-8");
+    const f = join(dir, "literal.js");
+    writeFileSync(f, MAIN, "utf-8");
+    const loadModule = makeBufferAwareLoadModule(() => undefined);
+    return { f, loadModule, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+  }
+
+  it("return 关键字位 hover 显示整个返回表达式的推导类型（无 ident 前缀）", () => {
+    const { f, loadModule, cleanup } = setup();
+    // L3 `  if (node.type === 'Literal') return node.value;`——return 起始 col 31；
+    // 窄化 Literal 臂后 node.value → string
+    const ret = getHoverAtPosition(f, MAIN, 3, 31, undefined, { loadModule });
+    expect(ret).not.toBeNull();
+    expect(ret!.typeText).toBe("string");
+    expect(ret!.abs).toBe(ret!.typeText);
+    // L5 `  return q ? q.value.cooked : null;`——return 起始 col 2；
+    // 三元 join：cooked: string 与 null
+    const ret5 = getHoverAtPosition(f, MAIN, 5, 2, undefined, { loadModule });
+    expect(ret5).not.toBeNull();
+    expect(ret5!.typeText).toContain("string");
+    expect(ret5!.typeText).toContain("null");
+    cleanup();
+  });
+
+  it("表达式内非标识符位 hover（`?.[` / `[0]`）有类型", () => {
+    const { f, loadModule, cleanup } = setup();
+    // L4 `  const q = node.quasis?.[0];`——`?.`（col 24）与 `[0]`（col 26）
+    // 都不在任何标识符跨距内：最小 span 候选 = OptionalMemberExpression
+    // （起始键 = node 值读记录）→ 整体 union（pretty 按臂断行）
+    const optChain = getHoverAtPosition(f, MAIN, 4, 24, undefined, { loadModule });
+    expect(optChain).not.toBeNull();
+    expect(optChain!.typeText).toMatch(/^\{\n  type: lit\("Literal"\),\n  value: string,\n\}\n\| \{/);
+    const index = getHoverAtPosition(f, MAIN, 4, 26, undefined, { loadModule });
+    expect(index).not.toBeNull();
+    expect(index!.typeText).toContain('lit("TemplateLiteral")');
+    cleanup();
+  });
+
+  it("pretty：窄化标识符臂多行缩进（换行 + 两空格）；纯 prim 联合仍单行", () => {
+    const { f, loadModule, cleanup } = setup();
+    // L3 col 38 = node（return node.value 的对象）——窄化 Literal 臂
+    const node = getHoverAtPosition(f, MAIN, 3, 38, undefined, { loadModule });
+    expect(node).not.toBeNull();
+    expect(node!.typeText).toContain("\n");
+    expect(node!.typeText).toMatch(
+      /^node: \{\n  type: lit\("Literal"\),\n  value: string,\n\}$/,
+    );
+    // 纯 prim 联合（L5 return 记录：string | null）不断行
+    const ret5 = getHoverAtPosition(f, MAIN, 5, 2, undefined, { loadModule });
+    expect(ret5!.typeText).not.toContain("\n");
     cleanup();
   });
 });

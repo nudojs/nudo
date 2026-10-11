@@ -18,7 +18,6 @@ import {
   getHoverAtPosition,
   getCompletionsAtPosition,
 } from "./lsp-surface.ts";
-import { filePathToUri } from "./server-navigation.ts";
 import { buildSemanticTokens } from "./semantic-tokens.ts";
 import {
   isNudoTargetPath,
@@ -136,23 +135,9 @@ export function attachHover(deps: IdeDeps): void {
       }
       // 类型值变量链接面：折叠展示中的引用标识符（如
       // `astNode`）包为 markdown 链接（跳定义行）——
-      // plain markdown 推送（代码块内链接不渲染），
-      // 契约原文行不再重复
+      // plain markdown 推送（代码块内链接不渲染）
       if (hover.linkedText) {
         lines.push(hover.linkedText);
-      } else if (hover.sidecarPath) {
-        // 契约原文链接：无引用变量的契约（折叠面唯一
-        // 跳转入口）——侧车绑定契约跳到侧车声明行
-        // （`#L<n>` fragment，VS Code / Zed hover
-        // 链接均支持）；markdown file 链接，宿主可点击
-        const uri = filePathToUri(hover.sidecarPath);
-        lines.push(
-          `[契约原文](${
-            hover.sidecarLine !== undefined
-              ? `${uri}#L${hover.sidecarLine}`
-              : uri
-          })`,
-        );
       }
       return {
         contents: {

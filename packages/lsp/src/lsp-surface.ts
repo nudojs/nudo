@@ -185,21 +185,28 @@ function absNodeAtPosition(
   }
   const exact = nodes?.get(`${line}:${column}`);
   if (exact !== undefined || nodes === undefined) return exact;
-  // 词中 hover：记录键 = Babel 起始位（$nodoPos 用 loc.start）——光标在
-  // 标识符跨距内但不在首列时精确键 miss，回落到跨距解析（最窄包含
-  // Identifier 的起始键）
+  // 词中 / 非标识符位回落：记录键 = Babel 起始位（$nudoPos 用 loc.start）
+  // ——光标在节点跨距内但不在起始列时精确键 miss，回落到跨距解析。
+  // 候选泛化为**任意带 loc 节点**（return 关键字位 / 表达式内非标识符
+  // 位（`?.[` / `[0]`）由 ReturnStatement / MemberExpression 记录覆盖），
+  // 仅当该节点起始键已有记录才参赛，取最小 span——词中标识符位
+  // 标识符节点 span 最小且其值读记录在起始键上，行为不变
   let best: { key: string; span: number } | undefined;
   try {
     if (fileAst) {
       traverse(fileAst, {
-        Identifier(path) {
+        enter(path) {
           const loc = path.node.loc;
           if (!loc) return;
-          if (loc.start.line !== line) return;
-          // 光标行一致 + 在跨距内（Babel end.column 为 exclusive——含尾列）
-          if (column < loc.start.column || column > loc.end.column) return;
-          const span = loc.end.column - loc.start.column;
-          const key = `${loc.start.line}:${loc.start.column}`;
+          const { start, end } = loc;
+          // 跨行包含：行区间内（同行看列区间；Babel end.column 为
+          // exclusive 字符区间——尾列容忍与既有标识符口径一致）
+          if (line < start.line || line > end.line) return;
+          if (line === start.line && column < start.column) return;
+          if (line === end.line && column > end.column) return;
+          const key = `${start.line}:${start.column}`;
+          if (!nodes.has(key)) return;
+          const span = (end.line - start.line) * 100000 + (end.column - start.column);
           if (best === undefined || span < best.span) best = { key, span };
         },
       });
@@ -418,16 +425,11 @@ export type HoverInfo = {
   interfaceSource?: InterfaceSource;
   /** 有效契约展示（handwritten/generated）；implicit 为 undefined */
   interfaceDisplay?: string;
-  /** 契约来源侧车 canonical 路径（侧车绑定时）；契约原文链接跳转用 */
-  sidecarPath?: string;
-  /** 侧车绑定声明行（1-based；契约原文链接 `#L<n>` 跳转目标） */
-  sidecarLine?: number;
   /**
    * 类型值变量链接面（参数折叠展示的 markdown 渲染：引用标识符
    * 如 `astNode` 包为 `[astNode](file://<定义路径>#L<行>)`）。
    * 在场时 IDE hover 直接渲染它（plain markdown——代码块内
-   * 链接不渲染），契约原文行不再重复；缺席时回落 ```nudo 代码块
-   * + 契约原文行（无引用变量的契约的唯一跳转入口）
+   * 链接不渲染）；缺席时回落 ```nudo 代码块
    */
   linkedText?: string;
 };
@@ -534,8 +536,6 @@ export function getHoverAtPosition(
       ...info,
       interfaceSource: tier.source,
       ...(tier.display !== undefined ? { interfaceDisplay: tier.display } : {}),
-      ...(tier.sidecarPath !== undefined ? { sidecarPath: tier.sidecarPath } : {}),
-      ...(tier.sidecarLine !== undefined ? { sidecarLine: tier.sidecarLine } : {}),
     };
   };
   const attachIntension = (info: HoverInfo | null): HoverInfo | null => {
@@ -614,12 +614,14 @@ export function getHoverAtPosition(
   const ident = findIdentNameAtPosition(source, line, column, file);
   const fnFaceMissing = fnName !== undefined && gDisplay === undefined;
   if (ident && (!fnName || fnFaceMissing)) {
-    /** 标识符 hover 单行外延：`grade: string`——内涵（term/pred/conf）
+    /** 标识符 hover 外延：`grade: string`——内涵（term/pred/conf）
      *  留给函数名 hover 的契约面，标识符面不重复展开。
      *  展开层级受限（maxDepth 4——lazy 自引用在深预算下指数
-     *  展开，可达数万字符单行；超深以 `…` 截断标记） */
+     *  展开，可达数万字符；超深以 `…` 截断标记）；pretty 多行
+     *  缩进（obj 每槽一行 + 尾逗号、复合臂 union 按臂断行），
+     *  纯 prim 联合保持单行 */
     const identHover = (value: Abs): HoverInfo => {
-      const text = `${ident}: ${formatShape(value, { maxDepth: 4 })}`;
+      const text = `${ident}: ${formatShape(value, { maxDepth: 4, pretty: true })}`;
       return { typeText: text, abs: text };
     };
     // —— A. 参数面：光标在参数声明（含解构属性）或参数引用上时，从
@@ -703,14 +705,11 @@ export function getHoverAtPosition(
           const typeText = `${ident}: ${formatShape(engineAbs, {
             maxDepth: 4,
             showLits: true,
+            pretty: true,
           })}`;
           return {
             typeText,
             abs: typeText,
-            ...(sidecarPath !== undefined ? { sidecarPath } : {}),
-            ...(encTier?.sidecarLine !== undefined
-              ? { sidecarLine: encTier.sidecarLine }
-              : {}),
           };
         }
         // 参数声明位 / 引用位：声明形态折叠（体内
@@ -762,10 +761,6 @@ export function getHoverAtPosition(
             typeText,
             abs: typeText,
             ...(linked !== undefined ? { linkedText: linked } : {}),
-            ...(sidecarPath !== undefined ? { sidecarPath } : {}),
-            ...(encTier?.sidecarLine !== undefined
-              ? { sidecarLine: encTier.sidecarLine }
-              : {}),
           };
         }
         const paramHit = gEnc ? projectParamAbs(gEnc, ident) : undefined;
@@ -801,8 +796,52 @@ export function getHoverAtPosition(
     }
   }
 
-  // fail-closed：Abs 节点表（collectAbsNodeTypes）已删——任意表达式
-  // 光标 Abs 由标识符绑定面（absFromEval）与 interface 档覆盖
+  // —— 无 ident 位（return 关键字 / 表达式内非标识符位）：引擎重放
+  // 位置表直读（ReturnStatement 记录键 = return 关键字起始位；子
+  // 表达式位经最小 span 候选命中）。无 ident 前缀；不进
+  // withTier/attachIntension（fnName 为空时它们本就无效）
+  if (!ident && !fnName && !insideCaseFn && file) {
+    const encFn = findEnclosingFunction(file, line, column);
+    if (encFn) {
+      let gEnc: PolyFn | undefined;
+      try {
+        gEnc = generalizeFromAst(encFn.name, source, {
+          file,
+          refine: {
+            fromFile: filePath,
+            ...(opts?.loadModule ? { loadModule: opts.loadModule } : {}),
+            ...(opts?.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
+          },
+          ...(reuse?.modules ? { modules: reuse.modules } : {}),
+        });
+      } catch {
+        // fail-closed：generalize 失败 → 无重放（不拖垮 hover）
+      }
+      if (gEnc) {
+        const abs = absNodeAtPosition(
+          filePath,
+          source,
+          encFn,
+          gEnc,
+          reuse,
+          line,
+          column,
+          file,
+        );
+        if (abs !== undefined) {
+          const typeText = formatShape(abs, {
+            maxDepth: 4,
+            showLits: true,
+            pretty: true,
+          });
+          return { typeText, abs: typeText };
+        }
+      }
+    }
+  }
+
+  // fail-closed：其余任意表达式光标 Abs 由标识符绑定面（absFromEval）
+  // 与 interface 档覆盖（return / 子表达式位已在上方重放面处理）
 
   // 无类型结果时仍返回 intension（函数名 hover 的同源保证）；
   // tier 可缺（nested / 非导出），gDisplay 有就给出
