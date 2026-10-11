@@ -227,6 +227,17 @@ Return postcondition could not be proved (any / unknown / opaque face, or a wide
 
 Context: [nudo check](../guides/check.md#what-it-checks)
 
+### `nudo:assume-relied` {#nudo-assume-relied}
+
+```text
+sim: return contract proved via @nudo:assume d <= max
+→ @nudo:assume is a user-supplied axiom — falsify it with concrete @nudo:case runs (nudo test)
+```
+
+A return-contract proof **relied on a user-supplied lemma** (`@nudo:assume`). **Info** — an audit annotation, not a gate: the engine verifies the obligation (the return contract), never the lemma itself. The report suggests falsifying the lemma with concrete `@nudo:case` runs (`nudo test`) — a wrong lemma makes the affected proof unsound, so the reliance must stay visible. Complement of [`nudo:unproven-return`](#nudo-unproven-return) (cannot prove — honestly kept as a warning).
+
+Context: [@nudo:assume](../concepts/directives.md#nudoassume--user-lemmas) · [nudo check](../guides/check.md#what-it-checks)
+
 ### `nudo:unknown-recv` {#nudo-unknown-recv}
 
 Member access on `unknown` receiver. Does not replace L2 throws modeling.
@@ -316,6 +327,19 @@ Context: [Directive syntax](../concepts/directives.md) · [Skip grammar](../conc
 Malformed `@nudo:contract` segment or `@nudo:import` form (e.g. `x > 0` instead of `x positive`, default import). **Warning** — the segment is ignored; use `<param> <constraintName>` or `return <constraintName>`.
 
 Context: [Contracts](../concepts/directives.md#nudo--constraint-templates) · [Contract gate (L1)](../guides/check.md#l1--explicit-contracts)
+
+### `nudo:assume-invalid` {#nudo-assume-invalid}
+
+```text
+sim: malformed @nudo:assume 'd <= 10' (expected <param> <= <param> or <param> >= <param>; constant bounds belong to sidecar contracts)
+sim: @nudo:assume parameter name(s) not in the formal parameter list (x, y)
+```
+
+A `@nudo:assume` segment is outside the `var <= var` grammar, or references names that are not formal parameters of the anchored function. **Error** — the segment is ignored; no lemma folds. The grammar accepts only `<param> <= <param>` (`>=` is normalized to `le`); `<` / `>` / `==` and constant bounds (`d <= 10`) are invalid — **constant bounds belong to sidecar contracts** (`number().le(10)`); the directive is only for cross-variable lemmas the engine cannot derive.
+
+**Fix:** reference parameter names from the anchored function's formal list; move constant bounds into a sidecar / `@nudo:contract`.
+
+Context: [@nudo:assume](../concepts/directives.md#nudoassume--user-lemmas) · [Contract gate (L1)](../guides/check.md#l1--explicit-contracts)
 
 ### `nudo:env-unresolved` {#nudo-env-unresolved}
 

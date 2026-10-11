@@ -71,6 +71,31 @@ export function withExecPhi<T>(p: Phi, body: () => T): T {
   }
 }
 
+/**
+ * 用户引理前提（issue #152 `@nudo:assume d <= max`）：checkSource 在目标
+ * 函数入口求值时种子，**不随调用链继承**——callee 帧一律见空（callee 同名
+ * 参数误匹配外层引理 = unsound 假精度；phi 是全局单槽且调用边界不重置，
+ * 故独立成槽）。清空机制：callAtFunctionBoundary 在前提非平凡时以
+ * withAssumePremises(pTrue, …) 包裹 callee 体（边界退出还原 caller 值）。
+ * 消费方：arithmetic.ts 的 div 关系折叠（同名相关性
+ * le(a,b) ∧ b>0 ⇒ a/b ≤ 1，独立区间传播证不出）。
+ */
+let assumePremises: Phi = pTrue;
+
+export function currentAssumePremises(): Phi {
+  return assumePremises;
+}
+
+export function withAssumePremises<T>(p: Phi, body: () => T): T {
+  const prev = assumePremises;
+  assumePremises = p;
+  try {
+    return body();
+  } finally {
+    assumePremises = prev;
+  }
+}
+
 /** apply 型 impl 的占位 body（AbsFnImpl.body 必需；$call 走 apply 不经 body） */
 type EmptyBlock = { type: "BlockStatement"; body: never[]; directives: never[] };
 export const noBody: EmptyBlock = { type: "BlockStatement", body: [], directives: [] };
@@ -145,6 +170,17 @@ export function $absVal(v: unknown): Abs {
  * always-throw 走 NudoThrow 异常原样 rethrow（不经此转发）。
  */
 export function callAtFunctionBoundary<T>(body: () => T): T {
+  // #152：callee 帧不继承 caller 的用户引理（assume 槽清空+边界退出还原）。
+  // termVar 同名误匹配（#123 contract-face 重锚实参名）在嵌套帧是 unsound
+  // 假精度；未种子（pTrue）时零开销直通。闭包回调（数组方法内联回调经
+  // 此边界）同按嵌套帧清空——保守诚实。
+  if (assumePremises !== pTrue) {
+    return withAssumePremises(pTrue, () => boundaryBody(body));
+  }
+  return boundaryBody(body);
+}
+
+function boundaryBody<T>(body: () => T): T {
   let forwarded: Abs[] = [];
   try {
     return runWithLoopExits(() => {

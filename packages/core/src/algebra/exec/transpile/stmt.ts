@@ -560,7 +560,12 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         ) {
           const argSrcs = expr.arguments
             .map((a) =>
-              a.type === "SpreadElement" ? "$unknown()" : emitTranspileExpression(a as Expression, opts),
+              // spread 实参展开（issue #153）：$elems → JS Abs[]，数组字面量 JS spread
+              // 平铺（与普通调用 $callNamed/$invoke 同口径，DEC-006 K5）；
+              // 此前折 $unknown() 单参会污染容器元素域
+              a.type === "SpreadElement"
+                ? `...$elems(${emitTranspileExpression(a.argument as Expression, opts)})`
+                : emitTranspileExpression(a as Expression, opts),
             )
             .join(", ");
           const objNode = expr.callee.object as Node;

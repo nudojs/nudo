@@ -37,6 +37,7 @@ export {
   callAtFunctionBoundary,
   clearStaleTermPred,
   confPartial,
+  currentAssumePremises,
   currentExecPhi,
   isDefinitelyFalse,
   isDefinitelyTrue,
@@ -50,6 +51,7 @@ export {
   runWithLoopExits,
   takeLoopExits,
   takeThrowExits,
+  withAssumePremises,
   withExecPhi,
   withNewTargetReset,
 } from "./runtime/state.ts";

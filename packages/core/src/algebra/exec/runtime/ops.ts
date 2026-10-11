@@ -13,7 +13,7 @@ import {
   toNumericAbs, updateAddAbs, updateSubAbs,
 } from "../../surface.ts";
 import { joinAbs } from "../../objects.ts";
-import { asAbsVal, currentExecPhi, $lit, litTruth, isDefinitelyTrue, isDefinitelyFalse, noBody, undef, throwStrictWrite, NudoThrow } from "./state.ts";
+import { asAbsVal, currentExecPhi, currentAssumePremises, $lit, litTruth, isDefinitelyTrue, isDefinitelyFalse, noBody, undef, throwStrictWrite, NudoThrow } from "./state.ts";
 
 
 export function $unknown(): Abs {
@@ -57,7 +57,8 @@ export function $mul(a: Abs, b: Abs): Abs {
   return mul(a, b, currentExecPhi());
 }
 export function $div(a: Abs, b: Abs): Abs {
-  return div(a, b, currentExecPhi());
+  // issue #152：用户引理前提（@nudo:assume d <= max）参与同名相关性界折叠
+  return div(a, b, currentExecPhi(), currentAssumePremises());
 }
 export function $mod(a: Abs, b: Abs): Abs {
   return mod(a, b, currentExecPhi());

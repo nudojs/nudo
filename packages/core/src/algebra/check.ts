@@ -25,6 +25,7 @@ import {
 import type { AbsAssignRecord, AbsCallRecord } from "./ast-records.ts";
 import { leqAbs } from "./leq.ts";
 import {
+  extractAssumeSegs,
   extractRefineReturnFromSource,
   extractDeclaredThrows,
   refineDiagCount,
@@ -68,8 +69,9 @@ import {
 import { anyAbs } from "./abs.ts";
 import type { Abs } from "./abs.ts";
 import { abs } from "./abs.ts";
-import type { Phi } from "./pred.ts";
-import { pTrue } from "./pred.ts";
+import type { Phi, Pred } from "./pred.ts";
+import { and as pAndPred, le as lePred, pTrue } from "./pred.ts";
+import { v as termVar } from "./term.ts";
 import { formatAbs, formatAbsMultiline, formatShape } from "./format.ts";
 import type { CheckIssue, CheckReport, NudoSig } from "./check-report.ts";
 import type { PolyFn } from "./generalize.ts";
@@ -93,6 +95,7 @@ import {
   callTranspiledExportFull,
   bindingsOf,
 } from "./exec/run.ts";
+import { withAssumePremises } from "./exec/runtime.ts";
 import { setEvalAssignCollector, setEvalCallCollector, type EvalCallRecord } from "./exec/calls.ts";
 import {
   filterGateThrows,
@@ -423,6 +426,73 @@ function sidecarDiagIssues(
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// #152：@nudo:assume 用户引理前提（文法/形参校验 + 入口 Phi 构造）
+// ---------------------------------------------------------------------------
+
+/**
+ * `@nudo:assume <param> <= <param>`（`>=` 已在 refine 翻转为 le）：
+ * - 文法外形态（`<` / `>` / `==`、字面量界）→ error nudo:assume-invalid（不折）
+ * - 引用名不在锚定函数形参表 → error nudo:assume-invalid（消息口径仿
+ *   nudo:interface-param-mismatch）
+ * 合法段构造 le(termVar(lhs), termVar(rhs))（param 契约 Abs 同锚定口径），
+ * pAnd 成 Phi 供目标函数入口求值种子（withAssumePremises，不随调用链继承）。
+ * display = 合法段原文（`d <= max`），供证明成功时的审计标注
+ * （nudo:assume-relied——assume 是用户公理，依赖面必须上屏可见）。
+ * 无 assume 行（或全部非法不折）→ undefined（零行为变化）。
+ */
+function assumePremisesPhiOf(
+  name: string,
+  source: string,
+  file: ReturnType<typeof parse>,
+  issues: CheckIssue[],
+): { phi: Phi; display: string[] } | undefined {
+  const segs = extractAssumeSegs(source, name);
+  if (segs.length === 0) return undefined;
+  const meta = extractFn(source, name, file);
+  // 契约面 = formals（解构顶层绑定名）∪ 展示名（默认/rest 裸名）
+  const bindable = new Set<string>([
+    ...contractParamNameSet(meta?.formals ?? []),
+    ...(meta?.params ?? []),
+  ]);
+  const surface = [...bindable].join(", ");
+  const preds: Pred[] = [];
+  const display: string[] = [];
+  for (const seg of segs) {
+    if (seg.kind === "bad") {
+      issues.push({
+        severity: "error",
+        code: "nudo:assume-invalid",
+        message: `${name}: malformed @nudo:assume '${seg.raw}' (expected <param> <= <param> or <param> >= <param>; constant bounds belong to sidecar contracts)`,
+        actual: seg.raw,
+        expected: "<param> <= <param>",
+        suggestion:
+          "cross-variable lemmas: @nudo:assume d <= max — constant bounds: sidecar number().le(10)",
+        fn: name,
+      });
+      continue;
+    }
+    const bad = [seg.lhs, seg.rhs].filter((n) => !bindable.has(n));
+    if (bad.length > 0) {
+      issues.push({
+        severity: "error",
+        code: "nudo:assume-invalid",
+        message: `${name}: @nudo:assume parameter name(s) not in the formal parameter list (${bad.join(", ")})`,
+        actual: bad.join(", "),
+        expected: surface || "(no params)",
+        suggestion: `reference one of: ${surface || "(function has no params)"}`,
+        fn: name,
+      });
+      continue;
+    }
+    preds.push(lePred(termVar(seg.lhs), termVar(seg.rhs)));
+    // ok 段已 le 规范化（`>=` 解析期翻转）——display 用规范形重建
+    display.push(`${seg.lhs} <= ${seg.rhs}`);
+  }
+  if (preds.length === 0) return undefined;
+  return { phi: pAndPred(...preds), display };
+}
+
 function checkSourceInner(
   filePath: string,
   source: string,
@@ -478,6 +548,11 @@ function checkSourceInner(
     return eff;
   };
   for (const name of names) {
+    // #152：@nudo:assume 校验 + 入口前提种子（无 assume → undefined，零行为变化）
+    const assumePhi = assumePremisesPhiOf(name, source, file, issues);
+    // 目标函数入口求值（generalize 内部 invoke / L2）动态域内喂独立槽
+    const runSeeded = <T>(body: () => T): T =>
+      assumePhi === undefined ? body() : withAssumePremises(assumePhi.phi, body);
     // @nudo:skip [returnsExpr]：不评估 body（host 传解析结果）。
     // 声明了返回类型 → 按声明上屏；未声明 → any（开发者主动退出推断，不是引擎债）。
     // L1 调用点义务由文件级 scan 照常执行；L2 入口 may-throw 不评估。
@@ -536,19 +611,23 @@ function checkSourceInner(
       }
       continue;
     }
-    const g = generalizeFromAst(name, source, {
-      file,
-      refine: {
-        loadModule: refineLoad,
-        fromFile: refineFrom,
-        ...(autoBind !== undefined ? { autoBind } : {}),
-        ...(projectDir !== undefined ? { projectDir } : {}),
-      },
-      depsFp,
-      sidecarFp,
-      modules: opts.modules,
-      ...(opts.inject ? { inject: opts.inject } : {}),
-    });
+    // assume 前提喂独立槽：generalize 内部 callTranspiledExportFull 的入口
+    // invoke 动态域内 div 等关系折叠消费（currentAssumePremises）
+    const g = runSeeded(() =>
+      generalizeFromAst(name, source, {
+        file,
+        refine: {
+          loadModule: refineLoad,
+          fromFile: refineFrom,
+          ...(autoBind !== undefined ? { autoBind } : {}),
+          ...(projectDir !== undefined ? { projectDir } : {}),
+        },
+        depsFp,
+        sidecarFp,
+        modules: opts.modules,
+        ...(opts.inject ? { inject: opts.inject } : {}),
+      }),
+    );
     if (!g) {
       const isEntryCandidate =
         entryNames.has(name) ||
@@ -623,7 +702,7 @@ function checkSourceInner(
     // L2 入口 throws：any/nullish 危险操作的效果（design-cli-semantics §3）
     let throwsDisplay: string | undefined;
     if (isEntry && entryThrowsMode !== "off") {
-      const effects = collectEntryMayThrows(source, name, g, file, phi, opts);
+      const effects = runSeeded(() => collectEntryMayThrows(source, name, g, file, phi, opts));
       // 展示层始终上屏未过滤 throws（门禁过滤 ≠ 藏事实）
       throwsDisplay = formatThrowsAbs(mayThrowEffectsToAbs(effects));
       const declared =
@@ -652,7 +731,7 @@ function checkSourceInner(
       }
     } else if (isEntry) {
       // 展示层仍上屏 throws（off 只关执法，不藏事实）
-      const effects = collectEntryMayThrows(source, name, g, file, phi, opts);
+      const effects = runSeeded(() => collectEntryMayThrows(source, name, g, file, phi, opts));
       throwsDisplay = formatThrowsAbs(mayThrowEffectsToAbs(effects));
     }
 
@@ -797,6 +876,7 @@ function checkSourceInner(
           display,
           eff.returns.constraint,
           g.symbolic,
+          assumePhi?.display,
         );
         if (retIssues.some((i) => i.severity === "error")) returnViolated.add(name);
         issues.push(...retIssues);
@@ -1049,9 +1129,29 @@ function checkReturnConstraint(
   cName: string,
   constraint: NudoConstraint,
   ret: Abs,
+  assumeDisplay?: string[],
 ): CheckIssue[] {
   const proof = assertImplies(ret, constraint);
-  if (proof.status === "proved") return [];
+  if (proof.status === "proved") {
+    // #152 审计分层：assume 是用户公理（引擎不验证其真实性）——依赖了
+    // 引理的证明必须上屏可见。粒度 = 函数级（本函数声明了 assume 且返回
+    // 契约证得；不求值依赖集）。skip 路径/调用点对账不传 → 不标。
+    if (assumeDisplay && assumeDisplay.length > 0) {
+      return [
+        {
+          severity: "info",
+          code: "nudo:assume-relied",
+          message: `${fnName}: return contract proved via @nudo:assume ${assumeDisplay.join("; ")}`,
+          actual: `proof relies on user lemma${assumeDisplay.length > 1 ? "s" : ""}`,
+          expected: "engine verifies the obligation, not the lemma itself",
+          suggestion:
+            "@nudo:assume is a user-supplied axiom — falsify it with concrete @nudo:case runs (nudo test)",
+          fn: fnName,
+        },
+      ];
+    }
+    return [];
+  }
   const push = (
     severity: "error" | "warning",
     actual: string,

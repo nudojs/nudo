@@ -33,6 +33,7 @@ import { registerCollectorScopeParticipant } from "./collector-scope.ts";
 import {
   extractNudoImportRecords,
   fnDirectiveCommentLines,
+  scanAssumeSegments,
   scanBudgetDecl,
   scanContractSegments,
   scanMalformedNudoImports,
@@ -1084,6 +1085,38 @@ function collectConstraints(
 function extractRefineLines(source: string, fnName: string): string[] {
   const lines = fnDirectiveCommentLines(source, fnName);
   return scanContractSegments(lines);
+}
+
+/**
+ * @nudo:assume 解析段（issue #152 用户引理前提）。
+ * ok：lhs ≤ rhs（`>=` 段已在解析时翻转，消费方只见 le）；
+ * bad：文法外原文（`<` / `>` / `==`、字面量界等——check 发 nudo:assume-invalid）。
+ * 锚定 = AST 最近 Function（与 @nudo:contract 同 D6=G2 注释块绑定）。
+ */
+export type AssumeSeg =
+  | { kind: "ok"; lhs: string; rhs: string }
+  | { kind: "bad"; raw: string };
+
+export function extractAssumeSegs(source: string, fnName: string): AssumeSeg[] {
+  // 快路径：整文件无 @nudo:assume 时免 parse 全文（与 extractRefinesFromSource 同口径）
+  // 指令住注释——字符串里的同形文本不算
+  if (!stripStringsKeepComments(source).includes("@nudo:assume")) return [];
+  const out: AssumeSeg[] = [];
+  for (const seg of scanAssumeSegments(fnDirectiveCommentLines(source, fnName))) {
+    // 仅 var ≤ var（var-var 关系引理；`>=` 翻转为 le）；常数界属侧车契约文法
+    const geSeg = seg.match(/^([A-Za-z_$][\w$]*)\s*>=\s*([A-Za-z_$][\w$]*)$/);
+    if (geSeg) {
+      out.push({ kind: "ok", lhs: geSeg[2]!, rhs: geSeg[1]! });
+      continue;
+    }
+    const leSeg = seg.match(/^([A-Za-z_$][\w$]*)\s*<=\s*([A-Za-z_$][\w$]*)$/);
+    if (leSeg) {
+      out.push({ kind: "ok", lhs: leSeg[1]!, rhs: leSeg[2]! });
+      continue;
+    }
+    out.push({ kind: "bad", raw: seg });
+  }
+  return out;
 }
 
 /**

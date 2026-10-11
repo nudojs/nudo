@@ -227,6 +227,17 @@ Return postcondition could not be proved (any / unknown / opaque face, or a wide
 
 Context: [nudo check](../guides/check.md#what-it-checks)
 
+### `nudo:assume-relied` {#nudo-assume-relied}
+
+```text
+sim: return contract proved via @nudo:assume d <= max
+→ @nudo:assume is a user-supplied axiom — falsify it with concrete @nudo:case runs (nudo test)
+```
+
+返回契约的证明**依赖了用户引理**（`@nudo:assume`）。**Info** —— 审计标注而非门禁：引擎验证的是义务（返回契约），从不验证引理本身。报告会建议用具体 `@nudo:case`（`nudo test`）证伪引理——错误引理会让受影响的证明 unsound，依赖面必须上屏可见。与 [`nudo:unproven-return`](#nudo-unproven-return)（证不出、诚实保留为 warning）互为对偶。
+
+Context: [@nudo:assume](../concepts/directives.md#nudoassume--user-lemmas) · [nudo check](../guides/check.md#what-it-checks)
+
 ### `nudo:unknown-recv` {#nudo-unknown-recv}
 
 `unknown` 接收者上的成员访问。不能替代 L2 throws 建模。
@@ -316,6 +327,19 @@ Context: [指令文法](../concepts/directives.md) · [Skip 文法](../concepts/
 `@nudo:contract` 段或 `@nudo:import` 形态非法（如 `x > 0` 而非 `x positive`、default import）。**Warning** —— 该段被忽略；使用 `<param> <约束名>` 或 `return <约束名>`。
 
 Context: [约束模板](../concepts/directives.md#nudo--约束模板引入) · [契约门禁（L1）](../guides/check.md#l1--显式契约)
+
+### `nudo:assume-invalid` {#nudo-assume-invalid}
+
+```text
+sim: malformed @nudo:assume 'd <= 10' (expected <param> <= <param> or <param> >= <param>; constant bounds belong to sidecar contracts)
+sim: @nudo:assume parameter name(s) not in the formal parameter list (x, y)
+```
+
+`@nudo:assume` 段不在 `var <= var` 文法之内，或引用了锚定函数形参表之外的名字。**Error** —— 该段被忽略，不折入任何引理。文法只接受 `<param> <= <param>`（`>=` 归一为 `le`）；`<` / `>` / `==` 与常数界（`d <= 10`）均非法——**常数界归侧车契约**（`number().le(10)`），该指令只声明引擎推导不出的跨变量引理。
+
+**Fix:** 引用锚定函数形参表内的名字；常数界写进侧车 / `@nudo:contract`。
+
+Context: [@nudo:assume](../concepts/directives.md#nudoassume--user-lemmas) · [契约门禁（L1）](../guides/check.md#l1--显式契约)
 
 ### `nudo:env-unresolved` {#nudo-env-unresolved}
 
