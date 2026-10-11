@@ -341,7 +341,7 @@ function lonely(u) {
       expect(triple.cases).toHaveLength(1);
       expect(triple.cases[0].name).toMatch(/^call@L\d+$/);
       expect(triple.cases[0].source).toBe("callsite");
-      expect(triple.cases[0].argAbs.map(formatShape)).toEqual(["4"]);
+      expect(triple.cases[0].argAbs.map(a => formatShape(a))).toEqual(["4"]);
       expect(formatShape(triple.cases[0].abs)).toBe("12");
       expect(triple.combinedAbs).toBeDefined();
       expect(formatShape(triple.combinedAbs!)).toBe("12");
@@ -441,7 +441,7 @@ f(3);
     expect(f!.cases).toHaveLength(1);
     expect(f!.cases[0].source).toBe("callsite");
     expect(f!.cases[0].name).toMatch(/^call@L\d+$/);
-    expect(f!.cases[0].argAbs.map(formatShape)).toEqual(["3"]);
+    expect(f!.cases[0].argAbs.map(a => formatShape(a))).toEqual(["3"]);
     expect(formatShape(f!.cases[0].abs)).toBe("6");
     expect(formatShape(f!.combinedAbs!)).toBe("6");
   });
@@ -494,7 +494,7 @@ module.exports = { formatName, shout };
     expect(formatName.entryOnly).toBeFalsy();
     expect(formatName.cases).toHaveLength(1);
     expect(formatName.cases[0].source).toBe("callsite");
-    expect(formatName.cases[0].argAbs.map(formatShape)).toEqual(['"Ada"', '"Lovelace"']);
+    expect(formatName.cases[0].argAbs.map(a => formatShape(a))).toEqual(['"Ada"', '"Lovelace"']);
     expect(formatShape(formatName.cases[0].abs)).toBe('"Ada Lovelace"');
 
     // 未被使用现场调用的 shout 保持 entry-only
@@ -555,7 +555,7 @@ module.exports = function (a, b) {
     expect(main.entryOnly).toBeFalsy();
     expect(main.cases).toHaveLength(1);
     expect(main.cases[0].source).toBe("callsite");
-    expect(main.cases[0].argAbs.map(formatShape)).toEqual(["1", "2"]);
+    expect(main.cases[0].argAbs.map(a => formatShape(a))).toEqual(["1", "2"]);
     expect(formatShape(main.cases[0].abs)).toBe("3");
 
     // 同文件其他函数不经模块路误染：名字对不上 → 保持 entry-only
@@ -642,7 +642,7 @@ function fail(msg) {
     expect(fn.entryOnly).toBeFalsy();
     expect(fn.cases).toHaveLength(1);
     expect(fn.cases[0].source).toBe("callsite");
-    expect(fn.cases[0].argAbs.map(formatShape)).toEqual(['"boom"']);
+    expect(fn.cases[0].argAbs.map(a => formatShape(a))).toEqual(['"boom"']);
     expect(fn.cases[0].abs.shape.k).toBe("never");
     expect(formatShape(fn.cases[0].throwsAbs)).toBe("string");
   });

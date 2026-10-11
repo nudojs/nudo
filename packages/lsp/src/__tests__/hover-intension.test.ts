@@ -422,7 +422,7 @@ export const decide = fn(
     let handler: ((p: unknown) => unknown) | undefined;
     attachHover({
       connection: {
-        onHover: (h: unknown) => {
+        onHover: (h: (p: unknown) => unknown) => {
           handler = h as typeof handler;
         },
         console: { error: () => undefined },
@@ -591,7 +591,7 @@ export const astNode = union(
     // 浅层联合在深度 4 内有界完整展开；lazy 自引用
     // 的指数展开被深度预算截断）
     expect(fn!.signature).toContain("literal(node: nullable(astNode))");
-    expect(fn!.signature.length).toBeLessThan(300);
+    expect(fn!.signature!.length).toBeLessThan(300);
     expect(fn!.interfaceDisplay).toBe(
       "(node: nullable(astNode)) → union(string(), lit(null), lit(undefined))",
     );
@@ -663,7 +663,7 @@ export const astNode = union(
     let handler: ((p: unknown) => unknown) | undefined;
     attachHover({
       connection: {
-        onHover: (h) => {
+        onHover: (h: (p: unknown) => unknown) => {
           handler = h as typeof handler;
         },
         console: { error: () => undefined },

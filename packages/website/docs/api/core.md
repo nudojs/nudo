@@ -233,7 +233,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="constraintbuilder"></a>`ConstraintBuilder` | type | `@nudo:contract` builder grammar | `ConstraintBuilder = NudoConstraint & { gt(n: number): ConstraintBuilder; ge(n: number): ConstraintBuilder; lt(n: number): ConstraintBuild...` |
 | <a id="createenvironment"></a>`createEnvironment` | fn | env host surface | `createEnvironment( parent?: Environment, bindings: Map<string, Abs> = new Map(), ): Environment` |
 | <a id="effectiveinterface"></a>`effectiveInterface` | fn | interface tiers | `effectiveInterface( source: string, fnName: string, opts: EffectiveInterfaceOpts = {}, ): EffectiveInterface \| undefined` |
-| <a id="effectiveinterface"></a>`EffectiveInterface` | type | interface tiers | `EffectiveInterface = { fnName: string; params: Array<{ param: string; constraint: NudoConstraint }>; returns?: { constraint: NudoConstrai...` |
+| <a id="effectiveinterface"></a>`EffectiveInterface` | type | interface tiers | `EffectiveInterface = { fnName: string; params: Array<{ param: string; constraint: NudoConstraint; display?: string }>; returns?: { constr...` |
 | <a id="environment"></a>`Environment` | type | env host surface | `Environment = { lookup(name: string): Abs; bind(name: string, value: Abs): Environment; update(name: string, value: Abs): boolean; extend...` |
 | <a id="evalexprabs"></a>`evalExprAbs` | fn | Abs-native expression eval | `evalExprAbs( expr: import("@babel/types").Expression, bindings: Record<string, Abs> = {}, ): Abs` |
 | <a id="extractfileenvnames"></a>`extractFileEnvNames` | const | single-source `@nudo:` directive grammar (see `docs/design/directive-scope.md`) | — |
@@ -248,12 +248,12 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="formatabs"></a>`formatAbs` | fn | extensional rendering (one-way) | `formatAbs(a: Abs, opts: FormatOptions = {}): string` |
 | <a id="formatcheckreport"></a>`formatCheckReport` | fn | extensional rendering (one-way) | `formatCheckReport(r: CheckReport, opts: { verbose?: boolean } = {}): string` |
 | <a id="formatconstraint"></a>`formatConstraint` | fn | extensional rendering (one-way) | `formatConstraint(c: NudoConstraint): string` |
-| <a id="formatshape"></a>`formatShape` | fn | extensional rendering (one-way) | `formatShape(a: Abs): string` |
+| <a id="formatshape"></a>`formatShape` | fn | extensional rendering (one-way) | `formatShape( a: Abs, opts?: { maxDepth?: number; showLits?: boolean; pretty?: boolean }, ): string` |
 | <a id="generalizeall"></a>`generalizeAll` | fn | symbolic α generalization | `generalizeAll( source: string, opts: { budget?: LeakBudget } = {}, ): PolyFn[]` |
 | <a id="generalizefromast"></a>`generalizeFromAst` | fn | symbolic α generalization | `generalizeFromAst( fnName: string, source: string, opts: { budget?: LeakBudget; label?: string; refine?: EffectiveInterfaceOpts; file?: ReturnType<typeof babelParse>; depsFp?: LoadDepsFingerprint; sidecarFp?: string; modules?: Record<string, AbsModuleExports \| Record<string, unknown>>; inject?: RunTranspiledOptions; } = {}, ): PolyFn \| undefined` |
 | <a id="getparsesourcecachesize"></a>`getParseSourceCacheSize` | fn | Babel parse + memo | `getParseSourceCacheSize(): number` |
 | <a id="instantiateconstraint"></a>`instantiateConstraint` | fn | contract checking | `instantiateConstraint( c: NudoConstraint, paramName: string, depth: number = LAZY_TEMPLATE_DEPTH, ): Pred` |
-| <a id="interfacetierinfo"></a>`InterfaceTierInfo` | type | interface tiers | `InterfaceTierInfo = { source: InterfaceSource; display?: string; }` |
+| <a id="interfacetierinfo"></a>`InterfaceTierInfo` | type | interface tiers | `InterfaceTierInfo = { source: InterfaceSource; display?: string; sidecarPath?: string; sidecarLine?: number; }` |
 | <a id="interfacetierof"></a>`interfaceTierOf` | fn | interface tiers | `interfaceTierOf( source: string, fnName: string, fromFile: string, opts: InterfaceTierOpts = {}, ): InterfaceTierInfo \| undefined` |
 | <a id="isabsapplyresult"></a>`isAbsApplyResult` | fn | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `isAbsApplyResult(v: AbsApplyReturn): v` |
 | <a id="isexactlit"></a>`isExactLit` | fn | literal Abs; `litValue` → `LitValueResult` tagged (`&#123;ok:true,value&#125;\ | `isExactLit(a: Abs): boolean` |
@@ -368,7 +368,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="$yield"></a>`$yield` | fn | async / generator | `$yield(v: Abs): Abs` |
 | <a id="$yieldstar"></a>`$yieldStar` | const | async / generator | — |
 | <a id="asabsval"></a>`asAbsVal` | fn | value / class runtime | `asAbsVal(v: unknown): Abs` |
-| <a id="evalcallrecord"></a>`EvalCallRecord` | type | call-site recording for analyze | `EvalCallRecord = { fnName: string; args: Abs[]; result: Abs; callLoc?: { line: number; column: number }; threw: boolean; }` |
+| <a id="evalcallrecord"></a>`EvalCallRecord` | type | call-site recording for analyze | `EvalCallRecord = { fnName: string; args: Abs[]; result: Abs; callLoc?: { line: number; column: number }; threw: boolean; depth?: number; }` |
 | <a id="filltuple"></a>`fillTuple` | fn | array runtime | `fillTuple( shape: { k: "tuple"; elements: Abs[]; holes?: number[] } \| { k: "arr"; element: Abs }, vals: Abs[], arr: Abs, ): Abs` |
 | <a id="foldrequirespecarg"></a>`foldRequireSpecArg` | fn | static folding helpers | `foldRequireSpecArg(arg: unknown): string \| undefined` |
 | <a id="foldstaticstringexpr"></a>`foldStaticStringExpr` | fn | static folding helpers | `foldStaticStringExpr(node: unknown): string \| undefined` |
@@ -386,7 +386,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="transpilesource"></a>`transpileSource` | fn | JS AST → `$op` program | `transpileSource(source: string, opts: TranspileOptions = {}): string` |
 
 <details>
-<summary>Additional exports from src/index.ts (346)</summary>
+<summary>Additional exports from src/index.ts (348)</summary>
 
 | Name | Kind | Summary | Signature |
 |------|------|------|------|
@@ -461,7 +461,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="enterpromiseexecutorscope"></a>`enterPromiseExecutorScope` | fn | — | `enterPromiseExecutorScope(): void` |
 | <a id="eq"></a>`eq` | const | — | `const eq` |
 | <a id="errorbrandabs"></a>`errorBrandAbs` | fn | Error brand：shape 带 name/message（字面量 message 保精确）。 | `errorBrandAbs(name: string, args: Abs[]): Abs` |
-| <a id="evalabsassignrecord"></a>`EvalAbsAssignRecord` | type | B 赋值记录（与 ast-records.ts AbsAssignRecord 同形；structuralAssignIssues 消费） | `EvalAbsAssignRecord = { name: string; prev: Abs \| undefined; next: Abs; line?: number; column?: number; conditional?: boolean; }` |
+| <a id="evalabsassignrecord"></a>`EvalAbsAssignRecord` | type | B 赋值记录（与 ast-records.ts AbsAssignRecord 同形；structuralAssignIssues 消费） | `EvalAbsAssignRecord = { name: string; prev: Abs \| undefined; next: Abs; line?: number; column?: number; conditional?: boolean; depth?: nu...` |
 | <a id="evalarraystatic"></a>`evalArrayStatic` | fn | Array.isArray / Array.from / Array.of | `evalArrayStatic(name: string, args: Abs[]): Abs \| undefined` |
 | <a id="evalbuiltininstancemethod"></a>`evalBuiltinInstanceMethod` | fn | brand 实例方法（Date/RegExp/Map/Set/Error 家族/装箱拆箱后的 prim 面在外层） | `evalBuiltinInstanceMethod( brandName: string, method: string, recv: Abs, args: Abs[], ): Abs \| undefined` |
 | <a id="evalbuiltinnew"></a>`evalBuiltinNew` | fn | new X(...) | `evalBuiltinNew(className: string, args: Abs[]): Abs \| undefined` |
@@ -477,6 +477,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="evalnumberstatic"></a>`evalNumberStatic` | fn | Number.isInteger / isNaN / parseFloat 等 | `evalNumberStatic(name: string, args: Abs[]): Abs \| undefined` |
 | <a id="evalobjectmethod"></a>`evalObjectMethod` | fn | Object.keys/values/entries/assign + 不变性方法 | `evalObjectMethod(name: string, args: Abs[]): Abs \| undefined` |
 | <a id="evalobjectprotomethod"></a>`evalObjectProtoMethod` | fn | Object.prototype 方法语义（evaluator $invoke 与 Object.prototype.X.call 共用）。 | `evalObjectProtoMethod( name: string, thisVal: Abs, args: Abs[], ): Abs \| undefined` |
+| <a id="evalposrecord"></a>`EvalPosRecord` | type | 位置级 Abs 记录（hover 重放插桩 `$nodoPos` 消费）： (1-based 行, 0-based 列) → 该位置表达式求值态 Abs | `EvalPosRecord = { line: number; column: number; abs: Abs; }` |
 | <a id="evalpromisector"></a>`evalPromiseCtor` | fn | new Promise(executor)：调用 executor(resolve, reject)，收集 resolve 实参作为 promise inner。原生只认第一次 settle——顺序双 resolve 取第一次；执行器内 $fork 分叉时各臂 settle 值 join（路径敏感，不得 first-wins 假精确）。 | `evalPromiseCtor(args: Abs[]): Abs` |
 | <a id="evalpromisemethod"></a>`evalPromiseMethod` | fn | then/catch/finally：可映射回调 → 新 inner；做不到诚实 promise&lt;unknown&gt; | `evalPromiseMethod( name: string, recv: Abs, args: Abs[], ): Abs \| undefined` |
 | <a id="evalpromisestatic"></a>`evalPromiseStatic` | fn | — | `evalPromiseStatic(name: string, args: Abs[]): Abs \| undefined` |
@@ -657,7 +658,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="queuepromisemicro"></a>`queuePromiseMicro` | fn | — | `queuePromiseMicro(task: () => void): void` |
 | <a id="refinediag"></a>`RefineDiag` | type | refine 侧车加载诊断（severity 由消费方按 code 定档，形状对齐 Issue 子集） | `RefineDiag = { code: string; message: string; file?: string }` |
 | <a id="refinediagcount"></a>`refineDiagCount` | fn | 当前诊断累计序号（since 锚） | `refineDiagCount(): number` |
-| <a id="refineentry"></a>`RefineEntry` | type | 解析 `ms delay` / `n percent` → [param, Pred] 多条用 &amp;&amp; 或换行连接。 | `RefineEntry = { param: string; pred: Pred; constraint: NudoConstraint; }` |
+| <a id="refineentry"></a>`RefineEntry` | type | 同时保留原始 NudoConstraint（shape 字段检查用）。 | `RefineEntry = { param: string; pred: Pred; constraint: NudoConstraint; name?: string; }` |
 | <a id="refineresolveopts"></a>`RefineResolveOpts` | type | — | `RefineResolveOpts = { loadModule?: (spec: string, fromFile: string) => string \| undefined; fromFile?: string; }` |
 | <a id="refinetoindexedfull"></a>`refineToIndexedFull` | fn | refine 参数 → 带约束模板的下标表（shape 检查用） | `refineToIndexedFull( source: string, fnName: string, paramNames: string[], opts: RefineResolveOpts = {}, ): Array<[number, RefineEntry]>` |
 | <a id="regexbrandabsfrom"></a>`regexBrandAbsFrom` | fn | RegExp brand：source/flags/lastIndex + 7 标志 getter 进 slots （evaluator evalRegExpCtor / $regex 共用；槽构造收敛于 regexpBrandSlots） | `regexBrandAbsFrom(pattern: string, flags: string): Abs` |
@@ -689,6 +690,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="sethasentry"></a>`setHasEntry` | fn | — | `setHasEntry(setAbs: Abs, value: Abs): Abs` |
 | <a id="setimplicationoracle"></a>`setImplicationOracle` | fn | — | `setImplicationOracle(fn: ImplicationOracle \| undefined): void` |
 | <a id="setinterfacediagcollector"></a>`setInterfaceDiagCollector` | fn | 设置诊断观察者（null 清除）；缓冲照常累积，takeInterfaceDiags 取走 | `setInterfaceDiagCollector( fn: ((d: InterfaceDiag) => void) \| null, ): void` |
+| <a id="setposcollector"></a>`setPosCollector` | fn | 返回先前 collector，便于嵌套调用 save/restore（禁止 finally 置 null 砸外层） | `setPosCollector( collector: ((r: EvalPosRecord) => void) \| null, )` |
 | <a id="setpropflags"></a>`setPropFlags` | fn | — | `setPropFlags(o: Abs, key: string, f: PropFlags): void` |
 | <a id="setrefinediagcollector"></a>`setRefineDiagCollector` | fn | 设置诊断观察者（null 清除）；缓冲照常累积，takeRefineDiags 取走 | `setRefineDiagCollector(fn: ((d: RefineDiag) => void) \| null): void` |
 | <a id="setsizeabs"></a>`setSizeAbs` | fn | — | `setSizeAbs(setAbs: Abs): Abs` |
