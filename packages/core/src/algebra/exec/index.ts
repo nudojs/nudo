@@ -10,7 +10,7 @@ export {
   $importMeta, $in, $instanceof, $instanceofNonIdent, $isBreakTo,
   $isForkExit, $join, $le, $len, $lit, $loopBreak, $loopContinue,
   $loopReturn, $lt, $mod, $mul, $ne, $neLoose, $neg, $narrowMemberEq, $narrowTypeOf, $not, $nullishTest, $newTarget,
-  $obj, $objAccessor, $objAccessorKey, $objRest, $pow, $pushLoopExit, $rawThis, $regex,
+  $obj, $objAccessor, $objAccessorKey, $objRest, $pow, $pushLoopExit, $rawThis, $regex, $refineRel,
   $removeMemberNullish, $removeNull, $removeNullish, $removeUndefined, $rethrowIfNudoReturn, $set, $setProto, $shl, $shr, $spread, $sub, $switch, $throw,
   $toNumber, $toNumeric, $tpl, $updateAdd, $updateSub, $tryCurrentMark, $tryDetachSoftCatch, $tryDigestSoftCatch,
   $tryDiscardSoft, $tryMark, $tryOrphanSoft, $tryPopMark,
@@ -55,7 +55,8 @@ export {
   type TranspiledCallResult, bindingsOf, callTranspiledExport,
   callTranspiledExportApply, callTranspiledExportFull, evalExprAbs, getEvalFallbackStats, isAbsVal, noteEvalFallback,
   resetEvalFallbackStats, runTranspiled,
-  runTranspiledOptionsMemoKey, setEvalFallbackCollector, tryRunTranspiled
+  runTranspiledOptionsMemoKey, setEvalFallbackCollector, tryRunTranspiled,
+  isCjsMainRun
 } from "./run.ts";
 
 export {

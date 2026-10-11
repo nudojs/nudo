@@ -1,7 +1,9 @@
 /**
- * 差分语料门禁（P0 oracle 收编）：batch14–19——Promise/Date/JSON/RegExp
+ * 差分语料门禁（P0 oracle 收编）：batch14–21——Promise/Date/JSON/RegExp
  * ctor/Map-Set/字符串数字数组边缘 + 第 18 批六类修复的读层金丝雀 +
- * 第 19 批方法体早退 if 回归。新增 skip（skip-baseline.json 基线外）即失败。
+ * 第 19 批方法体早退 if 回归 + 第 20 批转译对抗形态（同行多语句/压缩
+ * 单行，Bug 42 同类）+ 第 21 批构造器 × 非法实参系统化电池。
+ * 新增 skip（skip-baseline.json 基线外）即失败。
  */
 import { describe, it, expect } from "vitest";
 import { runCorpus, sectionsOf, newSkippedBodies, unexpectedMismatches } from "./harness.ts";
@@ -23,6 +25,8 @@ import * as b17a from "./corpus/batch17a.ts";
 import * as b17b from "./corpus/batch17b.ts";
 import * as b18 from "./corpus/batch18-readprobes.ts";
 import * as b19 from "./corpus/batch19-method-early-return.ts";
+import * as b20 from "./corpus/batch20-transpile-adversarial.ts";
+import * as b21 from "./corpus/batch21-ctor-battery.ts";
 
 const FILES: Array<[string, Record<string, unknown>]> = [
   ["batch14a", b14a],
@@ -43,6 +47,8 @@ const FILES: Array<[string, Record<string, unknown>]> = [
   ["batch17b", b17b],
   ["batch18-readprobes", b18],
   ["batch19-method-early-return", b19],
+  ["batch20-transpile-adversarial", b20],
+  ["batch21-ctor-battery", b21],
 ];
 
 let totalCompared = 0;

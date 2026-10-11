@@ -59,11 +59,21 @@ export {
   makeArrayBufferAbs,
   makeSharedArrayBufferAbs,
   makeDataViewAbs,
+  makeTypedArrayAbs,
+  evalTypedArrayStatic,
   makeUrlAbs,
+  makeTextDecoderAbs,
+  makeUrlSearchParamsAbs,
+  makeIntlCtorAbs,
+  makeIntlFormatAbs,
+  type IntlSubCtor,
   noteBoxedCtorArg,
   makeBoxedAbs,
   boxedPrimitiveValue,
   sumHasPrimMember,
+  makeDynamicFunctionAbs,
+  makeWeakRefAbs,
+  makeFinalizationRegistryAbs,
 } from "./builtins/error.ts";
 export { evalStringStatic } from "./builtins/string.ts";
 export {

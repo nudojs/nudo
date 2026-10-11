@@ -329,7 +329,19 @@ export function litAbsFromJs(v: unknown, depth = 0): Abs {
   // 循环引用/过深/非 plain 对象（Date/Map/Set/RegExp…）诚实 unknown。
   if (depth < 8) {
     if (Array.isArray(v)) {
-      const els = v.map((x) => litAbsFromJs(x, depth + 1));
+      // 稀疏数组（case 实参 [1,,3]）：`i in v` 探洞，洞下标记入 tuple.holes
+      //（与字面量路径 $arrWithHoles 同口径——读值 undefined、`in`/自有属性
+      // 判定 false）；超 cap widen 成 arr 时丢洞精度（arr 形状无 holes 槽，
+      // 同 $arrWithHoles 退化）
+      const holes: number[] = [];
+      const els: Abs[] = [];
+      for (let i = 0; i < v.length; i++) {
+        if (i in v) els.push(litAbsFromJs(v[i], depth + 1));
+        else {
+          holes.push(i);
+          els.push(litAbsFromJs(undefined));
+        }
+      }
       if (shouldWidenArrayLiteral(els.length)) {
         return abs(
           { k: "arr", element: els.reduce((x, y) => joinAbs(x, y)) },
@@ -338,7 +350,12 @@ export function litAbsFromJs(v: unknown, depth = 0): Abs {
           widenedArrayConf(),
         );
       }
-      return abs({ k: "tuple", elements: els }, undefined, undefined, "exact");
+      return abs(
+        { k: "tuple", elements: els, ...(holes.length ? { holes } : {}) },
+        undefined,
+        undefined,
+        "exact",
+      );
     }
     if (t === "object") {
       const proto = Object.getPrototypeOf(v);

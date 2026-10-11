@@ -8,7 +8,8 @@
  * 对象形态恒等返回（ToObject 不变式），抽象 prim → open 对象。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue, abs } from "@nudojs/core";
+import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
+import { litValue, abs } from "../abs.ts";
 
 function call(src: string, fnName = "f") {
   const exports = runTranspiled(src, { mode: "analyze" });
@@ -83,10 +84,14 @@ describe("evaluator new String() wrapper slots", () => {
     expect(litValue(r.result)).toEqual({ ok: false });
   });
 
-  it("new String(undefined) wraps \"undefined\" (native)", () => {
+  it("new String() 缺省折 \"\"；显式 undefined 才折 \"undefined\"（native）", () => {
     const r = call(`export function f() { return new String().length; }`);
-    expect(litValue(r.result)).toEqual({ ok: true, value: 9 });
+    expect(litValue(r.result)).toEqual({ ok: true, value: 0 });
     const r2 = call(`export function f() { return new String().valueOf(); }`);
-    expect(litValue(r2.result)).toEqual({ ok: true, value: "undefined" });
+    expect(litValue(r2.result)).toEqual({ ok: true, value: "" });
+    const r3 = call(`export function f() { return new String(undefined).length; }`);
+    expect(litValue(r3.result)).toEqual({ ok: true, value: 9 });
+    const r4 = call(`export function f() { return new String(undefined).valueOf(); }`);
+    expect(litValue(r4.result)).toEqual({ ok: true, value: "undefined" });
   });
 });

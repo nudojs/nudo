@@ -10,7 +10,7 @@ import { applyCallbackValue, undefAbs, asAbs, validateCallableArg } from "../hof
 import { numericBounds } from "../arithmetic.ts";
 import { isNullishLitAbs } from "../surface.ts";
 import { recordMayThrow } from "../may-throw.ts";
-import { matchIterElements } from "../exec/match-iter.ts";
+import { matchIterElements, replayGenDeferred } from "../exec/match-iter.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs } from "../exec/may-throw.ts";
 import { pTrue } from "../pred.ts";
@@ -140,7 +140,11 @@ function evalArrayFrom(args: Abs[]): Abs {
     }
   }
   const mapFn = args[1];
-  const hasMapFn = mapFn !== undefined && mapFn !== null;
+  // 缺省 / 严格 undefined 字面量 ≡ 无 mapper（native Array.from(x, undefined)
+  // 不抛——mapper undefined 则 mapping false；null/prim/闭 obj 已在上方
+  // validateCallableArg 定抛）。此前对 undefined-lit Abs 误当 mapper 应用于
+  // applyCallbackValue → 假抛 TypeError（TypedArray.from Bug 37 同款口径）。
+  const hasMapFn = !!mapFn && !(mapFn.term?.op === "lit" && mapFn.term.value === undefined);
   const mapOne = (el: Abs, i: Abs): Abs => {
     if (!hasMapFn) return el;
     return applyCallbackValue(mapFn, [el, i], emptyEnv(), pTrue, defaultLeakBudget);
@@ -158,6 +162,9 @@ function evalArrayFrom(args: Abs[]): Abs {
     // matchAll 迭代器：逐匹配项展开
     const mi = matchIterElements(a0);
     if (mi) {
+      // Bug 34：生成器对象的体内延迟异常在消费点重放（definite 抛 /
+      // soft may-throw 重记）——Array.from 不再静默截断成前缀
+      replayGenDeferred(a0);
       if (mi.length === 0) {
         return abs({ k: "arr", element: unknown }, undefined, undefined, "path");
       }

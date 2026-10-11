@@ -66,6 +66,14 @@ export type TranspileOptions = {
    */
   destrTmpSeq?: { n: number };
   /**
+   * try 临时名单调计数器（`__nudoTm_`/`__nudoE_`；transpileFile /
+   * transpileBodyNode 创建，单次转译输出内共享）。此前按源行号命名——
+   * 同一作用域同一行两个 try（压缩/生成代码）重名 → 重复 `const` 声明 →
+   * `new Function` SyntaxError 整模块 fail-closed；计数器与行号解耦
+   * （含 loc 缺失 `?? 0` 的碰撞），跨语句单调。
+   */
+  tryTmpSeq?: { n: number };
+  /**
    * 当前词法作用域可见的 const 绑定名（用户层再赋值须 TypeError）。
    * 成员/下标写对根的内部重绑不在用户赋值路径，不走此表。
    */

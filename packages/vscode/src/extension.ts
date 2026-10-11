@@ -226,6 +226,30 @@ export async function activate(context: ExtensionContext): Promise<void> {
   );
 
   context.subscriptions.push(
+    commands.registerCommand(
+      "nudo.selectContract",
+      async (uri: string, functionName: string) => {
+        const c = client;
+        if (!c) return;
+
+        // 服务端把契约激活记为「取消该函数激活 case」——
+        // 本地 case 高亮同步清除（重检后透镜刷新由服务端
+        // CodeLens/refresh 驱动）；请求失败不回滚（幂等）。
+        const fileState = getFileState(uri);
+        if (fileState.size > 0) {
+          fileState.clear();
+          updateHighlights();
+        }
+        try {
+          await c.sendRequest("nudo/selectContract", { uri, functionName });
+        } catch (err) {
+          showRequestError("nudo/selectContract", err);
+        }
+      },
+    ),
+  );
+
+  context.subscriptions.push(
     commands.registerCommand("nudo.contract", async (uri?: string, functionName?: string) => {
       if (!client) return;
       const file = uri ?? window.activeTextEditor?.document.uri.toString();

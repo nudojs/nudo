@@ -3,8 +3,8 @@
  */
 import type { Expression, Node, Statement } from "@babel/types";
 import type { TranspileOptions } from "./types.ts";
-import type { DiscriminantGuard, NullishGuard, TypeGuard } from "./stmt-predicates.ts";
-import { narrowNullishArmThunks, narrowTypeArmThunk, nullishGuardsOf, nullishRemoveCallOf, typeGuardOf, discriminantGuardsOf, narrowDiscriminantArmThunks } from "./stmt-predicates.ts";
+import type { DiscriminantGuard, NullishGuard, TypeGuard, RelGuard } from "./stmt-predicates.ts";
+import { narrowNullishArmThunks, narrowTypeArmThunk, nullishGuardsOf, nullishRemoveCallOf, typeGuardOf, discriminantGuardsOf, narrowDiscriminantArmThunks, relGuardOf, narrowRelArmThunk } from "./stmt-predicates.ts";
 import {
   isExpression,
   matchReplacement,
@@ -65,6 +65,8 @@ export function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
   typeGuard?: TypeGuard;
   /** 判别等值守卫（issue #126）：事实臂内 $narrowMemberEq 剪 union 成员 */
   discGuards?: readonly DiscriminantGuard[];
+  /** 关系守卫（Bug 1）：事实臂内 $refineRel 影子重绑（`x >= 0 ? x : 0`） */
+  relGuard?: RelGuard;
 }): string {
   const alwaysNames = new Set<string>(collectForkBindingNames(...parts.alwaysNodes));
   const branchNames = new Set<string>(alwaysNames);
@@ -116,6 +118,8 @@ export function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
       narrowDiscriminantArmThunks(src, parts.discGuards, arm, []);
     consExpr = applyDisc(consExpr, "cons");
     altExpr = applyDisc(altExpr, "alt");
+    // 关系守卫（Bug 1）：事实臂影子重绑（与 stmt.ts IfStatement 同源）
+    consExpr = narrowRelArmThunk(consExpr, parts.relGuard, "cons", []);
     return `$fork(${forkTest}, () => ${consExpr}, () => ${altExpr})`;
   }
 
@@ -137,9 +141,14 @@ export function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
   // nullish 守卫臂剪影与 stmt.ts IfStatement 同源（#97 / #118 v3 多名）：
   // 任一守卫名在 fork 绑定集（mutator 重绑/臂内写）时不收窄——影子参数会
   // 吞掉臂内写（narrowNullishArmThunks 内统一跳过）
-  const consFinal = narrowDiscriminantArmThunks(
-    narrowNullishArmThunks(forkArmThunk(consLines, "fk1_", names), guards, "cons", names),
-    parts.discGuards,
+  const consFinal = narrowRelArmThunk(
+    narrowDiscriminantArmThunks(
+      narrowNullishArmThunks(forkArmThunk(consLines, "fk1_", names), guards, "cons", names),
+      parts.discGuards,
+      "cons",
+      names,
+    ),
+    parts.relGuard,
     "cons",
     names,
   );
@@ -327,8 +336,10 @@ function emitChainFrom(hops: ChainHop[], i: number, valSrc: string): string {
         ? shortCircuitHop(valSrc, (r) => `$idx(${r}, ${hop.keySrc}, { silent: true })`, hops, i)
         : rest(`$idx(${valSrc}, ${hop.keySrc})`);
     case "len":
+      // 可选跳（a?.length）：nullish 已由守卫臂剪除；any 不记 may-throw
+      //（Bug 3，与 get/idx 跳同口径）。非可选 `.length` 走 $len 守卫诊断。
       return hop.optional
-        ? shortCircuitHop(valSrc, (r) => `$len(${r})`, hops, i)
+        ? shortCircuitHop(valSrc, (r) => `$len(${r}, { silent: true })`, hops, i)
         : rest(`$len(${valSrc})`);
     case "call":
       return hop.optional
@@ -484,7 +495,12 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         depth,
         opts,
       );
-      const specSrc = [`$class(${JSON.stringify(name)}, {`, ...specLines, `${indent(depth)}});`].join("\n");
+      // Bug 9：类 spec 发**纯表达式**（结尾不带 `;`）——子表达式位置
+      // （return 值/数组元素/实参/new 被调者/…）由父级任意包裹；语句终止符
+      // 由消费方补（命名/静态块分支 IIFE 内 `let NAME = …;`、声明位
+      // transpileClass 自带 `});`）。此前抄声明形带 `;` → `return($class(…}););`
+      // new Function SyntaxError，整模块加载失败。
+      const specSrc = [`$class(${JSON.stringify(name)}, {`, ...specLines, `${indent(depth)}})`].join("\n");
       if (ce.id || staticInitLines.length) {
         // 命名类表达式：内部名只作用于类体（词法屏蔽外层同名绑定）；
         // 静态块须在类值绑定后执行（Bug 77）——IIFE 内 let 绑定让方法体/
@@ -603,6 +619,8 @@ export function transpileExpression(expr: Expression, opts: TranspileOptions = {
         narrowGuards: nullishGuardsOf(expr.test),
         typeGuard: typeGuardOf(expr.test),
         discGuards: discriminantGuardsOf(expr.test),
+        // 关系守卫（Bug 1）：`x >= 0 ? x : 0` 事实臂影子重绑
+        relGuard: relGuardOf(expr.test),
       });
     }
     case "RegExpLiteral": {

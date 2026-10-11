@@ -150,6 +150,7 @@ export {
   $narrowMemberEq,
   $narrowTypeOf,
   $nullishTest,
+  $refineRel,
   $removeMemberNullish,
   $removeNull,
   $removeNullish,

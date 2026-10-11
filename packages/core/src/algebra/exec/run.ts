@@ -342,7 +342,12 @@ function bindNamespace(modules: RunTranspiledOptions["modules"], spec: string): 
   return unknown;
 }
 
-/** CJS require：modules[spec] → 可 $get 的 namespace Abs；缺失/非字符串 → unknown（不炸） */
+/**
+ * CJS require：modules[spec] → 可 $get 的 namespace Abs；缺失/非字符串 → unknown（不炸）。
+ * `module.exports = X` 重赋值形态（cjsMain）：原生 require 返回 X 本身
+ * （ms 等单函数导出包可直接调用），返回 default 而非命名空间对象——
+ * Bug 10 的 obj-callee 定抛暴露了旧口径的形状失真（namespace obj 不可调）。
+ */
 function requireFromModules(
   modules: RunTranspiledOptions["modules"],
   spec: string,
@@ -350,6 +355,10 @@ function requireFromModules(
   if (typeof spec !== "string") return unknown;
   const mod = modules?.[spec] as AbsModuleExports | undefined;
   if (!mod) return unknown;
+  if (mod.cjsMain) {
+    const d = (mod as AbsModuleExports).default;
+    if (d !== undefined) return d;
+  }
   if (mod.named) return namespaceAbsOf(mod);
   return mod;
 }
@@ -642,7 +651,7 @@ function runTranspiledInner(
   // （ESM 早错保证 decl/specifier 不重名，star×star 按源序后者覆盖——
   // 与 collectAbsExports 顺序口径一致）。
   const cjsMerge = hasCjsExports
-    ? `(() => { const me = $get(module, "exports"); if (me !== __nudoCjsOrig && me && typeof me === "object" && "shape" in me) { return { default: me }; } const out = {}; if (__nudoCjsOrig && __nudoCjsOrig.shape && __nudoCjsOrig.shape.k === "obj") { for (const k of Object.keys(__nudoCjsOrig.shape.slots)) out[k] = __nudoCjsOrig.shape.slots[k].value; } return out; })()`
+    ? `(() => { const me = $get(module, "exports"); if (me !== __nudoCjsOrig && me && typeof me === "object" && "shape" in me) { return { default: me, [Symbol.for("nudo.cjsMain")]: true }; } const out = {}; if (__nudoCjsOrig && __nudoCjsOrig.shape && __nudoCjsOrig.shape.k === "obj") { for (const k of Object.keys(__nudoCjsOrig.shape.slots)) out[k] = __nudoCjsOrig.shape.slots[k].value; } return out; })()`
     : "{}";
   const ret = `return { ...__nudoExports, ...${cjsMerge}, ${names.join(", ")} };`;
   const fn = new Function(...argNames, `${js}\n${ret}`);
@@ -777,6 +786,11 @@ export function noteEvalFallback(e: unknown): void {
  * unsupported:*（能力边界）/ internal（B 缺陷）都记录到收集器；
  * 返回 undefined 表示调用方应走解释路径。
  */
+/** run 表是否来自 CJS `module.exports = X` 重赋值形态（供桥接层标 cjsMain）。 */
+export function isCjsMainRun(run: Record<string, unknown>): boolean {
+  return Boolean((run as Record<PropertyKey, unknown>)[Symbol.for("nudo.cjsMain")]);
+}
+
 export function tryRunTranspiled(
   source: string,
   opts: RunTranspiledOptions = {},

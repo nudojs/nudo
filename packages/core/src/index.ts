@@ -113,7 +113,7 @@ export {
   interfaceTierOf, isAbsApplyResult, isAbsVal, isArrMutator, isBigPrim, isDefinitelyFalse, makeAbsApplyResult,
   isDefinitelyTrue, isErrorCtorName, isExactLit, isIntFlag, isMapAbs,
   isNodeModulesPath, isNudoBreak, isNudoConstraint, isNudoContinue,
-  isNudoReturn, isNudoThrow, isNullProtoObj, isNullishLitAbs, isNumPrim,
+  isNudoReturn, isNudoThrow, isNullProtoObj, isNullishLitAbs, isCjsMainRun, isNumPrim,
   isObj, isObjectProtoBrand, isRelFn, isSetAbs, isStrPrim, isSymbolAbs,
   joinAbs, joinFunctions, joinObjects, joinThenProject, joinValues, lazy, le,
   leNum, leavePromiseExecutorScope, lenTerm, leqAbs, listFunctionNames,

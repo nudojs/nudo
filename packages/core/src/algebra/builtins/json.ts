@@ -96,10 +96,13 @@ function foldJsonTotalBrand(a: Abs): Abs | undefined {
  * 结构对齐：fn/symbol 子树已折 OMIT（值域省略、不抛）→ 视为 total；
  * bigint prim 无 lit 项已在 absToJsonNative 定抛（不达此判定）；
  * 其余抽象 prim（number/string/boolean）、闭 obj 全 total 槽、arr
- * non-bigint 元素 → total。open obj/index 键、rest tuple、访问器
- * （getter 用户面）、非 lit toJSON 槽 → 不 total。
+ * open obj/index 键、rest tuple、访问器
+ * （getter 用户面）、非 lit toJSON 槽 → 不 total。环（$set 就地写槽的
+ * 引用语义，`o.self = o` 产出真 Abs 环）→ 原生定抛 cyclic TypeError
+ * → 不 total（Bug 20：seen 集防无限递归栈溢出，与 absToJsonNative
+ * 同构）。
  */
-function jsonStringifyTotal(a: Abs): boolean {
+function jsonStringifyTotal(a: Abs, seen: Set<object> = new Set()): boolean {
   const s = a.shape;
   if (a.term?.op === "lit") return true;
   if (s.k === "fn") return true; // OMIT（值域省略，不抛）
@@ -109,18 +112,22 @@ function jsonStringifyTotal(a: Abs): boolean {
   }
   if (s.k === "tuple") {
     if ((s as { rest?: Abs }).rest) return false;
-    return s.elements.every(jsonStringifyTotal);
+    if (seen.has(a as object)) return false; // 环 → 原生定抛 cyclic TypeError
+    seen.add(a as object);
+    return s.elements.every((el) => jsonStringifyTotal(el, seen));
   }
-  if (s.k === "arr") return jsonStringifyTotal((s as { element: Abs }).element);
+  if (s.k === "arr") return jsonStringifyTotal((s as { element: Abs }).element, seen);
   if (s.k === "obj") {
     const os = s as { open?: boolean; index?: unknown; slots: Record<string, { value: Abs }> };
     if (os.open || os.index) return false;
     if (accessorTable.get(a as object)) return false; // getter 用户面（Bug 57 同源）
+    if (seen.has(a as object)) return false; // 环 → 原生定抛 cyclic TypeError
+    seen.add(a as object);
     const flags = getPropFlags(a);
     for (const [k, sv] of Object.entries(os.slots)) {
       if (flags?.get(k)?.enumerable === false) continue;
       if (k === "toJSON" && sv.value.term?.op !== "lit") return false;
-      if (!jsonStringifyTotal(sv.value)) return false;
+      if (!jsonStringifyTotal(sv.value, seen)) return false;
     }
     return true;
   }

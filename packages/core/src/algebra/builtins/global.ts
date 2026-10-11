@@ -4,19 +4,31 @@
  */
 import type { Abs } from "../abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, bigintLit, unknown, confJoin } from "../abs.ts";
-import { objOf } from "../objects.ts";
+import { objOf, isNullProtoObj } from "../objects.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow, throwPayloadOf } from "../exec/may-throw.ts";
 import { numPrim, str, boolPrim, mayCoerceThrowOperand, isBigintPrimAbs } from "./shared.ts";
 import { builtinBrandToPrimitive } from "../arithmetic.ts";
 import { foldParseInt, foldParseFloat } from "./number.ts";
-import { makeArrayCtorAbs } from "./array.ts";
+import { makeArrayCtorAbs, arrayJoinToString, validateJoinElements } from "./array.ts";
 import { makeSymbolAbs, isSymbolAbs, stringOfSymbol } from "./symbol.ts";
 import { errorBrandAbs, isErrorCtorName, makeBoxedAbs } from "./error.ts";
 
 /** term 确为 lit（含 lit(undefined)）；litValue 无法区分「字面量 undefined」与「无 lit」 */
 function litTermOf(a: Abs | undefined): { value: unknown } | undefined {
   return a?.term?.op === "lit" ? (a.term as { value: unknown }) : undefined;
+}
+
+/** obj 形是否带自有 toString/valueOf 槽（ToPrimitive coercer 位）。
+ * slots 是普通对象，`in` 会撞原型链（Object.prototype.toString 恒在），
+ * 必须与 getSlot 同款 hasOwnProperty 语义。 */
+function hasToPrimitiveCoercer(a: Abs): boolean {
+  const so = a.shape as { slots?: Record<string, unknown> };
+  if (!so.slots) return false;
+  return (
+    Object.prototype.hasOwnProperty.call(so.slots, "toString") ||
+    Object.prototype.hasOwnProperty.call(so.slots, "valueOf")
+  );
 }
 
 /**
@@ -55,9 +67,33 @@ function toBigIntAbs(args: Abs[]): Abs {
   //（node 实测 BigInt({}) / BigInt({a:1}) 抛）；open obj / 带 coercer /
   // any/fn/brand/sum → may（TypeError: Symbol 载体 / SyntaxError: 不可解析）
   if (a0.shape.k === "obj") {
-    const so = a0.shape as { slots: Record<string, unknown>; open?: boolean };
-    const hasCoercer = "toString" in so.slots || "valueOf" in so.slots;
-    if (!so.open && !hasCoercer) throw new NudoThrow(errorTypeAbs("SyntaxError"));
+    const so = a0.shape as { open?: boolean };
+    if (!so.open && !hasToPrimitiveCoercer(a0)) throw new NudoThrow(errorTypeAbs("SyntaxError"));
+  }
+  if (a0.shape.k === "tuple" || a0.shape.k === "arr") {
+    // 数组实参：ToPrimitive ⇒ ToString（Array.prototype.toString = join(",")）。
+    // 元素级 symbol → 确定 TypeError（validateJoinElements 口径）；join 折出
+    // 具体串后过 StringToBigInt——BigInt([1,2]) → "1,2" 不可解析 → 确定
+    // SyntaxError；折不出（抽象/嵌套非 lit 元素）→ 补记 may SyntaxError
+    //（symbol 载体臂由 validateJoinElements 记）。值面维持保守非具体
+    //（BigInt([])/([1]) 值行 skip-baseline 同盲区，不破坏基线）。
+    validateJoinElements(a0);
+    const jR = litValue(arrayJoinToString(a0));
+    if (jR.ok) {
+      try {
+        BigInt(jR.value as string);
+      } catch {
+        throw new NudoThrow(errorTypeAbs("SyntaxError"));
+      }
+    } else {
+      recordMayThrow({ kind: "SyntaxError", cause: "BigInt() array ToString may be unparseable" });
+    }
+    return abs(
+      { k: "prim", type: "bigint" },
+      undefined,
+      undefined,
+      confJoin(a0.conf, "widened"),
+    );
   }
   if (mayCoerceThrowOperand(a0)) {
     recordMayThrow({ kind: "TypeError", cause: "BigInt() ToPrimitive may be a Symbol" });
@@ -224,6 +260,26 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
       if (args[0] && isSymbolAbs(args[0])) return stringOfSymbol(args[0]);
       if (!args[0]) return strLit("");
       if (a0Lit) return strLit(String(a0Lit.value));
+      // Bug 24（强转三连）：闭 null-proto 且无自有 toString/valueOf 槽 →
+      // ToPrimitive 无 coercer 可走，原生定抛 TypeError（node 实测
+      // String(Object.create(null))）；带 coercer 槽 / open 形（未知成员可能
+      // 含 coercer）落到下方 may
+      if (
+        args[0].shape.k === "obj" &&
+        isNullProtoObj(args[0]) &&
+        !(args[0].shape as { open?: boolean }).open &&
+        !hasToPrimitiveCoercer(args[0])
+      ) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      // Bug 24：抽象臂（any/obj/fn/brand/sum）ToPrimitive 可能抛
+      //（throwing toString / null-proto）——与 Number/parseInt 同口径
+      if (mayCoerceThrowOperand(args[0])) {
+        recordMayThrow({
+          kind: "TypeError",
+          cause: "String() ToPrimitive may throw (null-proto object / throwing toString)",
+        });
+      }
       return str();
     case "Symbol":
       // Symbol([desc])：非具体 unique symbol

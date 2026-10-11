@@ -8,7 +8,21 @@ import {
   transpile,
   formatAbs,
   anyAbs,
+  abs,
+  numLit,
+  strLit,
 } from "@nudojs/core";
+import { $copy } from "../exec/runtime/containers.ts";
+import {
+  registerGenDeferred,
+  replayGenDeferred,
+  registerGenElements,
+  matchIterElements,
+  registerMatchIter,
+} from "../exec/match-iter.ts";
+import { NudoThrow } from "../exec/nudo-throw.ts";
+import { absFunction } from "../abs-fn.ts";
+import { runWithMayThrowSession, setMayThrowCollector } from "../may-throw.ts";
 
 describe("evaluator generators", () => {
   it("function* collects yields into tuple", () => {
@@ -80,7 +94,12 @@ export function sum() {
     expect(litValue(rs.result)).toEqual({ ok: true, value: 3 });
   });
 
-  it("yield* prim-lit 接收者：委托前抛出 → 值域前缀为空（native 前缀语义）", () => {
+  // Bug 82：yield* 委托——迭代性校验同 $elems 分类器。Bug 34 修复后：
+  // 非可迭代接收者的 definite TypeError 不再静默截断值域（native
+  // `[...g()]` 整抛，前缀不出货）——断言迁到 throws 面（值域前缀语义
+  // 见 eval-generator-semantics.test.ts 的 next() 链：前缀 yield 照常
+  // 交付，耗尽点抛）。
+  it("yield* prim-lit 接收者：委托前抛出 → [...g()] 抛 TypeError（native 整抛，不再截断成前缀）", () => {
     const src = `
 export function* g() { yield 1; yield* 2; yield 3; }
 export function* i() { yield* null; }
@@ -89,9 +108,9 @@ export function spreadI() { return [...i()]; }
 `;
     const exports = runTranspiled(src, { mode: "analyze" });
     const rg = callTranspiledExportFull(exports, "spreadG", []);
-    expect(formatAbs(rg.result as never)).toContain("[1]");
+    expect(formatAbs(rg.throws as never)).toContain("TypeError");
     const ri = callTranspiledExportFull(exports, "spreadI", []);
-    expect(formatAbs(ri.result as never)).toContain("[]");
+    expect(formatAbs(ri.throws as never)).toContain("TypeError");
   });
 
   it("yield* any 接收者 → 元素 any（无约束，不是 unknown 引擎债）", () => {
@@ -142,5 +161,64 @@ export function f() { const it = o.m(); return it[0] + it[1]; }
   it("transpile reads the delegate flag ($yieldStar vs $yield)", () => {
     expect(transpile(`export function* g() { yield* [1]; }`)).toContain("$yieldStar(");
     expect(transpile(`export function* g() { yield 1; }`)).not.toContain("$yieldStar(");
+  });
+});
+
+// review fix：$copy 快照迁移生成器侧表（fork/switch 臂
+// 重绑 `it = $copy(__fkN_it)` 换新身份——延迟异常 /
+// 迭代元素侧表必须随副本迁移，否则臂内消费点重放
+// 查不到副本，definite 体异常被静默丢弃（L2 假阴）
+describe("$copy 快照迁移生成器侧表", () => {
+  it("genDeferred 延迟抛随副本重放（NudoThrow）", () => {
+    const gen = abs({ k: "obj", slots: {} }, undefined, undefined, "exact");
+    registerGenDeferred(gen, { throw: anyAbs, soft: [] });
+    const copy = $copy(gen);
+    let threw: unknown;
+    try {
+      replayGenDeferred(copy);
+    } catch (e) {
+      threw = e;
+    }
+    expect(threw).toBeInstanceOf(NudoThrow);
+  });
+
+  it("genDeferred soft 效果随副本重记", () => {
+    const gen = abs({ k: "obj", slots: {} }, undefined, undefined, "exact");
+    registerGenDeferred(gen, {
+      throw: undefined,
+      soft: [{ kind: "TypeError", cause: "test" }],
+    });
+    const copy = $copy(gen);
+    const effects: unknown[] = [];
+    runWithMayThrowSession(() => {
+      setMayThrowCollector((e) => effects.push(e));
+      replayGenDeferred(copy);
+    });
+    expect(effects).toHaveLength(1);
+  });
+
+  it("genIter 元素表随副本迁移（matchIterElements 命中副本）", () => {
+    const iterFn = absFunction([], { apply: () => anyAbs });
+    const gen = abs(
+      { k: "obj", slots: { "@@iterator": { value: iterFn } } },
+      undefined,
+      undefined,
+      "exact",
+    );
+    registerGenElements(gen, [numLit(1), numLit(2)]);
+    const copy = $copy(gen);
+    expect(matchIterElements(copy)).toEqual([numLit(1), numLit(2)]);
+  });
+
+  it("matchAll 迭代器元素表随副本迁移（brand 路径）", () => {
+    const mi = abs(
+      { k: "brand", name: "RegExpMatchIterator", shape: abs({ k: "obj", slots: {} }, undefined, undefined, "exact") },
+      undefined,
+      undefined,
+      "exact",
+    );
+    registerMatchIter(mi, [strLit("a")]);
+    const copy = $copy(mi);
+    expect(matchIterElements(copy)).toEqual([strLit("a")]);
   });
 });

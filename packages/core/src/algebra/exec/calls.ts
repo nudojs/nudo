@@ -12,7 +12,7 @@ import { isSymbolAbs } from "../builtins/symbol.ts";
 import { $call, routeApplyThrows, clearPureMemo } from "./call.ts";
 import { callAtFunctionBoundary, $copy, asAbsVal } from "./runtime.ts";
 import { setHostGlobalFnCall } from "./runtime/state.ts";
-import { setHostGlobalCallBridge } from "../hof.ts";
+import { setHostGlobalCallBridge, validateCallableArg } from "../hof.ts";
 import { throwPayloadOf, recordMayThrow, errorTypeAbs } from "./may-throw.ts";
 import { NudoThrow } from "./nudo-throw.ts";
 import { pureFnNameOf, makeAbsApplyResult, type AbsApplyResult } from "../abs-fn.ts";
@@ -215,10 +215,16 @@ export function neverExecHostName(fn: unknown): string | null {
 /**
  * 守卫宿主副作用（调用与构造共用）：命中名单 → 上报 + 返回 opaque unknown；
  * 未命中 → null，调用方继续正常路径。
+ * Bug 30（强转三连）：queueMicrotask 原生同步校验 IsCallable——fail-closed
+ * 仍不执行回调，但校验是纯静态的，与原生同口径（setTimeout/fetch 等名单
+ * 其余成员原生接受任意首实参，无校验可言，维持纯拦截）。
  */
-export function blockHostSideEffect(fn: unknown): Abs | null {
+export function blockHostSideEffect(fn: unknown, args?: Abs[]): Abs | null {
   const hostName = neverExecHostName(fn);
   if (hostName === null) return null;
+  if (hostName === "queueMicrotask" && args) {
+    validateCallableArg(args[0], "queueMicrotask callback must be callable");
+  }
   noteHostEffectBlocked(hostName);
   return abs({ k: "unknown" }, undefined, undefined, "opaque");
 }
@@ -341,7 +347,7 @@ export function callHostGlobalFn(fn: unknown, args: Abs[]): Abs | undefined {
     }
   }
   if (g !== undefined) return g;
-  const blocked = blockHostSideEffect(fn);
+  const blocked = blockHostSideEffect(fn, args);
   if (blocked !== null) return blocked;
   return callHostGlobalLiteralOnly(name, fn as (...a: unknown[]) => unknown, args);
 }
@@ -556,7 +562,7 @@ export function $callNamed(
           g = evalGlobalFn(ctorName, args);
         }
       }
-      const blockedHost = g === undefined ? blockHostSideEffect(fn) : null;
+      const blockedHost = g === undefined ? blockHostSideEffect(fn, args) : null;
       if (g !== undefined) {
         result = g;
       } else if (blockedHost !== null) {

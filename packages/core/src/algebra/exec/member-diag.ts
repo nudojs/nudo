@@ -285,6 +285,19 @@ export const OBJECT_PROTO_NAMES = new Set([
   "__proto__",
 ]);
 
+/** Array.prototype 自有可读键（push/map/keys/… 与 Symbol.iterator 投影名）。
+ *  `in` 判定（$in tuple 臂：Array.prototype → Object.prototype 原型链）与
+ *  值读投影（$get 方法值读通道）共用；host 在此避免 members ↔ containers
+ *  循环 import（members 不可引 runtime/containers）。 */
+export const ARRAY_PROTO_METHOD_NAMES = new Set([
+  "at", "concat", "copyWithin", "entries", "every", "fill", "filter", "find",
+  "findIndex", "findLast", "findLastIndex", "flat", "flatMap", "forEach",
+  "includes", "indexOf", "join", "keys", "lastIndexOf", "map", "pop", "push",
+  "reduce", "reduceRight", "reverse", "shift", "slice", "some", "sort", "splice",
+  "toSorted", "toReversed", "toSpliced", "with",
+  "toLocaleString", "toString", "unshift", "values", "@@iterator",
+]);
+
 /**
  * 结构上确定不可调用的成员调用（evaluator $invoke）：
  * - null-proto 对象：无 Object.prototype 可回退，缺失自有槽即确定缺失

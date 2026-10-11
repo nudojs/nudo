@@ -8,7 +8,7 @@ import { registerSymbolMeta, symbolIdOf, symbolDescriptionAbs, isSymbolAbs as is
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
 import { pTrue } from "../pred.ts";
-import { numPrim, str, boolPrim } from "./shared.ts";
+import { numPrim, str, boolPrim, mayCoerceThrowOperand } from "./shared.ts";
 
 function undefLit(): Abs {
   return abs({ k: "unknown" }, { op: "lit", value: undefined }, pTrue, "exact");
@@ -34,6 +34,12 @@ export function makeSymbolAbs(descArg?: Abs): Abs {
     // （JS 无 symbol 字面量，上面 lit 分支的 typeof symbol 是防御性死代码），
     // ToString(descriptor) 原生恒抛 TypeError（node 实测 Symbol(Symbol()) 抛）
     if (isSymAbs(descArg)) throw new NudoThrow(errorTypeAbs("TypeError"));
+    // Bug 7：抽象 description（any/unknown/obj/fn/brand/sum）may ToString 抛
+    //（ToPrimitive 可能成 Symbol，同 parseInt 口径）——仅补 throws 效果，
+    // 值域不变
+    if (mayCoerceThrowOperand(descArg)) {
+      recordMayThrow({ kind: "TypeError", cause: "Symbol() description ToString may throw (Symbol)" });
+    }
     // 抽象 description：ToString 结果未知（string 或 undefined）
     description = abs({ k: "prim", type: "string" }, undefined, undefined, "partial");
   }

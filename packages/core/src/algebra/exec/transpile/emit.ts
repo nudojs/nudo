@@ -146,8 +146,11 @@ export function emitArrMutatorRebinds(
       }
       // 仍要遍历参数内嵌套 mutator（如 a.pop(b.pop())）
     }
-    // Object.defineProperty(o, "k", desc)：返回值是新容器（value 进 slots），
-    // 语句位置必须写回第一实参（freeze/seal/preventExtensions 就地标记无需写回）
+    // Object.defineProperty / defineProperties(o, …)：返回值是新容器（value
+    // 进 slots、访问器进侧表），语句位置必须写回第一实参（freeze/seal/
+    // preventExtensions 就地标记无需写回）。Bug 19：defineProperties（复数）
+    // 与单数同形态（第一实参 Identifier），漏写回则描述符安装在被丢弃的副本
+    // 上，后续 o.a 折 exact undefined——表达式位走返回值不受影响。
     if (
       node.type === "CallExpression" &&
       node.callee?.type === "MemberExpression" &&
@@ -155,10 +158,12 @@ export function emitArrMutatorRebinds(
       node.callee.object?.type === "Identifier" &&
       (node.callee.object as { name: string }).name === "Object" &&
       node.callee.property?.type === "Identifier" &&
-      (node.callee.property as { name: string }).name === "defineProperty" &&
+      ((node.callee.property as { name: string }).name === "defineProperty" ||
+        (node.callee.property as { name: string }).name === "defineProperties") &&
       node.arguments?.[0] &&
       (node.arguments[0] as { type?: string }).type === "Identifier"
     ) {
+      const methodName = (node.callee.property as { name: string }).name;
       const argSrcs = (node.arguments as unknown as Expression[])
         .map((a) =>
           (a as { type?: string }).type === "SpreadElement"
@@ -168,7 +173,7 @@ export function emitArrMutatorRebinds(
         .join(", ");
       const targetName = (node.arguments[0] as { name: string }).name;
       lines.push(
-        `${pad}${targetName} = $invoke(Object, "defineProperty", [${argSrcs}]);`,
+        `${pad}${targetName} = $invoke(Object, ${JSON.stringify(methodName)}, [${argSrcs}]);`,
       );
     }
     // delete obj[key]：语句位置把删键后的容器写回绑定（表达式值 $delRes 由 transpile 负责）
