@@ -390,6 +390,10 @@ function numericBound(
   if (p.op !== "gt" && p.op !== "ge" && p.op !== "lt" && p.op !== "le") return undefined;
   if (!self) return undefined;
   if (termEquals(p.a, self) && p.b.op === "lit" && typeof p.b.value === "number") {
+    // 非有限界（NaN/±Infinity）不投影（BUG-019 口径）：返回不可表达，
+    // schema 侧落 shape fallback 由 refinementsFromPreds 记 "not projected"
+    // 台账；同时避免经 builder 重放（c.gt(NaN)）触发 finiteBoundArg 脚枪。
+    if (!Number.isFinite(p.b.value)) return undefined;
     return { op: p.op, n: p.b.value };
   }
   return undefined;
