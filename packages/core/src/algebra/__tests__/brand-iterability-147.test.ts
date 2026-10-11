@@ -42,6 +42,22 @@ const brandNum: Abs = abs(
   undefined,
   "exact",
 );
+/** 内层 tuple 的 brand：spread 应保持 tuple 精确展开（元素域与长度） */
+const brandTuple: Abs = abs(
+  {
+    k: "brand",
+    name: "Array<string>",
+    shape: abs(
+      { k: "tuple", elements: [strPrim, strPrim] },
+      undefined,
+      undefined,
+      "exact",
+    ),
+  },
+  undefined,
+  undefined,
+  "exact",
+);
 
 const SRC = `
 export function firstEntry() {
@@ -54,6 +70,9 @@ export function sumLen() {
   let n = 0;
   for (const f of list) n += f.length;
   return n;
+}
+export function concatBrandTuple() {
+  return ["x", ...pair];
 }
 `;
 
@@ -103,5 +122,14 @@ describe("brand 迭代消费（issue #147）", () => {
     // may 路径：软记录 possibly non-iterable；definite 路径会是 hard
     // NudoThrow（cause 为 throw TypeError，非 possibly non-iterable）
     expect(iterabilityWarnings(r)).toBeGreaterThan(0);
+  });
+
+  it("内层 tuple 的 brand：spread 保持 tuple 形状（不折 arr）", () => {
+    const r = check({ pair: brandTuple });
+    expect(iterabilityWarnings(r)).toBe(0);
+    const sig = sigOf(r, "concatBrandTuple");
+    // tuple 形状：元素在括号内逗号分隔；arr 形状会显示 "string[]"
+    expect(sig).toContain("[");
+    expect(sig).not.toContain("[]");
   });
 });

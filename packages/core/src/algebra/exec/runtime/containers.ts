@@ -1233,6 +1233,10 @@ export function $concat(a: Abs, b: Abs): Abs {
     // brand 结构面在内层（issue #147）：Set/Map/match-iter brand 已在上方
     // 按名命中，此处只兜结构 delegation（内层 tuple 精确展开等）。
     if (x.shape.k === "brand") return expand(x.shape.shape);
+    // 内层 tuple 精确展开（裸 tuple 已被 $concat 顶部 tuple×tuple 分支
+    // 吸收，此处只经 brand delegation 到达）：[...t1, ...brandT2] 保持
+    // tuple 形状，元素域与长度均精确（此前折 arr）。
+    if (x.shape.k === "tuple") return [...x.shape.elements];
     return null;
   };
   // 单侧元素域（与 expand 侧表配套）：any → any、tuple 逐元素 join、抽象
@@ -1260,8 +1264,9 @@ export function $concat(a: Abs, b: Abs): Abs {
     // brand delegation 的内层）
     if (x?.shape?.k === "arr") return x.shape.element;
     // brand 结构面在内层（issue #147）：[...Array<T> brand] 元素域 = 内层
-    // arr 元素，不再折 unknown（Set/Map/match-iter brand 在 expand 按名命中）
-    if (x?.shape?.k === "brand") return sideEl(x.shape.shape, expanded);
+    // arr 元素，不再折 unknown（Set/Map/match-iter brand 在 expand 按名命中）。
+    // expanded 在此必为 null（顶部 if (expanded) 已返回）——显式传 null。
+    if (x?.shape?.k === "brand") return sideEl(x.shape.shape, null);
     return unknown;
   };
   if (as.k === "tuple") {
