@@ -221,7 +221,7 @@ createEnvironment(parent?, bindings?)
 | <a id="boollit"></a>`boolLit` | fn | literal Abs; `litValue` → `LitValueResult` tagged (`&#123;ok:true,value&#125;\ | `boolLit(value: boolean): Abs` |
 | <a id="calltranspiledexport"></a>`callTranspiledExport` | fn | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `callTranspiledExport( exports: Record<string, unknown>, name: string, args: Abs[], ): Abs` |
 | <a id="calltranspiledexportapply"></a>`callTranspiledExportApply` | fn | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `callTranspiledExportApply( exports: Record<string, unknown> \| (() => Record<string, unknown>), name: string, )` |
-| <a id="calltranspiledexportfull"></a>`callTranspiledExportFull` | fn | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `callTranspiledExportFull( exports: Record<string, unknown>, name: string, args: Abs[], opts?: { phi?: Phi }, ): TranspiledCallResult` |
+| <a id="calltranspiledexportfull"></a>`callTranspiledExportFull` | fn | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `callTranspiledExportFull( exports: Record<string, unknown>, name: string, args: Abs[], opts?: { phi?: Phi; assumePremises?: Phi }, ): TranspiledCallResult` |
 | <a id="casetag"></a>`CaseTag` | type | single-source `@nudo:` directive grammar (see `docs/design/directive-scope.md`) | `CaseTag = { name: string; argsText: string; expectedText?: string; tagOffset: number; }` |
 | <a id="checkarg"></a>`checkArg` | fn | contract checking | `checkArg( arg: Abs, expect: Pred \| undefined, phi: Phi = pTrue, ): Diagnostic \| undefined` |
 | <a id="checkcall"></a>`checkCall` | fn | contract checking | `checkCall( source: string, fnName: string, args: Abs[], phi: Phi = pTrue, ): Diagnostic[]` |
@@ -452,7 +452,7 @@ createEnvironment(parent?, bindings?)
 | <a id="derefconstraint"></a>`derefConstraint` | fn | 解一层 lazy：调用 thunk 一次、校验产物是约束、toPlainConstraint 归一化， 并按 thunk 记忆化（重复 deref 同一闭包 → 同一对象）。 | `derefConstraint(c: NudoConstraint): NudoConstraint` |
 | <a id="describephi"></a>`describePhi` | fn | — | `describePhi(): string` |
 | <a id="diagnostic"></a>`Diagnostic` | type | — | `Diagnostic = { severity: "error" \| "warning" \| "info"; code: string; message: string; suggestion?: string; fn?: string; argIndex?: number; }` |
-| <a id="div"></a>`div` | fn | 除法：字面量折叠；除以正/负常数时按单调性推界。 | `div(a: Abs, b: Abs, phi: Phi = pTrue): Abs` |
+| <a id="div"></a>`div` | fn | 除法：字面量折叠；除以正/负常数时按单调性推界。 | `div(a: Abs, b: Abs, phi: Phi = pTrue, assume?: Phi): Abs` |
 | <a id="drainpromisemicros"></a>`drainPromiseMicros` | fn | — | `drainPromiseMicros(): void` |
 | <a id="effectiveinterfaceopts"></a>`EffectiveInterfaceOpts` | type | — | `EffectiveInterfaceOpts = RefineResolveOpts & { autoBind?: boolean \| ((sidecarPath: string) => boolean); projectDir?: string; }` |
 | <a id="emptyenv"></a>`emptyEnv` | fn | 空求值环境（分析宿主用：不带任何绑定） | `emptyEnv(): AstEnv` |
