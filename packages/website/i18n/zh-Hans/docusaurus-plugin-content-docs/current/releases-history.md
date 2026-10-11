@@ -11,28 +11,37 @@ slug: /releases-history
 
 | 包 | 当前版本 |
 |----|----------|
-| `@nudojs/core` | 1.10.1 |
-| `@nudojs/service` | 1.6.18 |
-| `nudojs (CLI)` | 1.3.19 |
-| `@nudojs/parser` | 1.4.15 |
-| `@nudojs/lsp` | 1.6.1 |
-| `@nudojs/env` | 0.4.33 |
-| `@nudojs/harvester` | 0.3.19 |
-| `vite-plugin-nudo` | 0.4.34 |
-| `nudo-vscode` | 0.3.38 |
+| `@nudojs/core` | 1.10.2 |
+| `@nudojs/service` | 1.6.19 |
+| `nudojs (CLI)` | 1.3.20 |
+| `@nudojs/parser` | 1.4.16 |
+| `@nudojs/lsp` | 1.6.2 |
+| `@nudojs/env` | 0.4.34 |
+| `@nudojs/harvester` | 0.3.20 |
+| `vite-plugin-nudo` | 0.4.35 |
+| `nudo-vscode` | 0.3.39 |
 
 **按包跳转:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.10.1 {#pkg-core}
+## @nudojs/core 1.10.2 {#pkg-core}
+
+## 1.10.2
+
+### Patch Changes
+
+- 8806e93: Fix env-brand iteration false warnings and env-global slot writes poisoning whole-function evaluation (issues #147/#148):
+  
+  - `iterabilityKind`/`asyncIterabilityKind` now treat a `brand` shape as a nominal label delegating to its inner structural face: a brand wrapping an array/tuple/string/`@@iterator` object is **total** (no more `may throw TypeError — iteration over possibly non-iterable` on `for…of`/spread over env `Array<T>` brands such as `fs.readdirSync`). Non-total inner faces stay **may** and never degrade to **definite** (TypedArray/Buffer brands wrap an empty object whose prototype `@@iterator` is not modeled). Element domains delegate the same way (`elemsOf`/`$concat`): the `for…of` loop variable and spread elements now fold to the inner array element (`string | Dirent`) instead of `unknown`, and a brand wrapping a tuple keeps the precise tuple shape when spread (`[...t, ...brandT]` stays a tuple, not `T[]`).
+  - Env-global injection in `runTranspiled` binds globals with `let` instead of `const`: a member write like `process.exitCode = 1` compiles to a root-rebinding write-back chain (`process = $set(process, …)`), which against a `const` binding threw a native TypeError and poisoned the whole eval (return folded to `unknown` + `nudo:unknown-inference` + `nudo:entry-may-throw`). Env globals are writable `globalThis` properties natively; writes now fold and a later read in the same program run observes the written value.
+
+<details>
+<summary>历史版本 (42)</summary>
 
 ## 1.10.1
 
 ### Patch Changes
 
 - 96090cd: Fix unsound getter loss on object joins: `joinAbs`/`joinObjects` built the merged object as a fresh Abs identity without migrating the accessor side table, so a getter arm joined with a data arm read as its `undefined` placeholder (`{ get q() { return 42; } }` joined with `{ q: 0 }` read `undefined | 0` instead of `42 | 0`). Mixed arms now fold the getter's read domain (evaluated with its original receiver, same as `$spread`) into the data slot; arms sharing the identical accessor definition (aliases, migrated immutable updates such as loop-widening frames) migrate the registration whole so reads keep dispatching through the side table. The accessor table moved to a leaf module `algebra/accessors.ts` so `objects.ts` can consume it without an import cycle; `annotateJoinPath`'s re-wrap now migrates registrations to the final identity.
-
-<details>
-<summary>历史版本 (41)</summary>
 
 ## 1.10.0
 
@@ -976,7 +985,20 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/service 1.6.18 {#pkg-service}
+## @nudojs/service 1.6.19 {#pkg-service}
+
+## 1.6.19
+
+### Patch Changes
+
+- Updated dependencies [8806e93]
+  - @nudojs/core@1.10.2
+  - @nudojs/env@0.4.34
+  - @nudojs/harvester@0.3.20
+  - @nudojs/parser@1.4.16
+
+<details>
+<summary>历史版本 (44)</summary>
 
 ## 1.6.18
 
@@ -987,9 +1009,6 @@ slug: /releases-history
   - @nudojs/env@0.4.33
   - @nudojs/harvester@0.3.19
   - @nudojs/parser@1.4.15
-
-<details>
-<summary>历史版本 (43)</summary>
 
 ## 1.6.17
 
@@ -1873,7 +1892,21 @@ slug: /releases-history
 
 </details>
 
-## nudojs (CLI) 1.3.19 {#pkg-nudojs}
+## nudojs (CLI) 1.3.20 {#pkg-nudojs}
+
+## 1.3.20
+
+### Patch Changes
+
+- Updated dependencies [8806e93]
+  - @nudojs/core@1.10.2
+  - @nudojs/env@0.4.34
+  - @nudojs/harvester@0.3.20
+  - @nudojs/parser@1.4.16
+  - @nudojs/service@1.6.19
+
+<details>
+<summary>历史版本 (41)</summary>
 
 ## 1.3.19
 
@@ -1885,9 +1918,6 @@ slug: /releases-history
   - @nudojs/harvester@0.3.19
   - @nudojs/parser@1.4.15
   - @nudojs/service@1.6.18
-
-<details>
-<summary>历史版本 (40)</summary>
 
 ## 1.3.18
 
@@ -2535,7 +2565,17 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/parser 1.4.15 {#pkg-parser}
+## @nudojs/parser 1.4.16 {#pkg-parser}
+
+## 1.4.16
+
+### Patch Changes
+
+- Updated dependencies [8806e93]
+  - @nudojs/core@1.10.2
+
+<details>
+<summary>历史版本 (41)</summary>
 
 ## 1.4.15
 
@@ -2543,9 +2583,6 @@ slug: /releases-history
 
 - Updated dependencies [96090cd]
   - @nudojs/core@1.10.1
-
-<details>
-<summary>历史版本 (40)</summary>
 
 ## 1.4.14
 
@@ -3045,7 +3082,19 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/lsp 1.6.1 {#pkg-lsp}
+## @nudojs/lsp 1.6.2 {#pkg-lsp}
+
+## 1.6.2
+
+### Patch Changes
+
+- Updated dependencies [8806e93]
+  - @nudojs/core@1.10.2
+  - @nudojs/parser@1.4.16
+  - @nudojs/service@1.6.19
+
+<details>
+<summary>历史版本 (45)</summary>
 
 ## 1.6.1
 
@@ -3055,9 +3104,6 @@ slug: /releases-history
   - @nudojs/core@1.10.1
   - @nudojs/parser@1.4.15
   - @nudojs/service@1.6.18
-
-<details>
-<summary>历史版本 (44)</summary>
 
 ## 1.6.0
 
@@ -3930,7 +3976,17 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/env 0.4.33 {#pkg-env}
+## @nudojs/env 0.4.34 {#pkg-env}
+
+## 0.4.34
+
+### Patch Changes
+
+- Updated dependencies [8806e93]
+  - @nudojs/core@1.10.2
+
+<details>
+<summary>历史版本 (41)</summary>
 
 ## 0.4.33
 
@@ -3938,9 +3994,6 @@ slug: /releases-history
 
 - Updated dependencies [96090cd]
   - @nudojs/core@1.10.1
-
-<details>
-<summary>历史版本 (40)</summary>
 
 ## 0.4.32
 
@@ -4378,7 +4431,19 @@ slug: /releases-history
 
 </details>
 
-## @nudojs/harvester 0.3.19 {#pkg-harvester}
+## @nudojs/harvester 0.3.20 {#pkg-harvester}
+
+## 0.3.20
+
+### Patch Changes
+
+- Updated dependencies [8806e93]
+  - @nudojs/core@1.10.2
+  - @nudojs/env@0.4.34
+  - @nudojs/parser@1.4.16
+
+<details>
+<summary>历史版本 (41)</summary>
 
 ## 0.3.19
 
@@ -4388,9 +4453,6 @@ slug: /releases-history
   - @nudojs/core@1.10.1
   - @nudojs/env@0.4.33
   - @nudojs/parser@1.4.15
-
-<details>
-<summary>历史版本 (40)</summary>
 
 ## 0.3.18
 
@@ -4889,7 +4951,18 @@ slug: /releases-history
 
 </details>
 
-## vite-plugin-nudo 0.4.34 {#pkg-vite-plugin}
+## vite-plugin-nudo 0.4.35 {#pkg-vite-plugin}
+
+## 0.4.35
+
+### Patch Changes
+
+- Updated dependencies [8806e93]
+  - @nudojs/core@1.10.2
+  - @nudojs/service@1.6.19
+
+<details>
+<summary>历史版本 (44)</summary>
 
 ## 0.4.34
 
@@ -4898,9 +4971,6 @@ slug: /releases-history
 - Updated dependencies [96090cd]
   - @nudojs/core@1.10.1
   - @nudojs/service@1.6.18
-
-<details>
-<summary>历史版本 (43)</summary>
 
 ## 0.4.33
 
