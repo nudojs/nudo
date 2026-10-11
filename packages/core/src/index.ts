@@ -142,7 +142,7 @@ export {
   setApplyCallbackHost, setEvalAssignCollector, setEvalBindingSink,
   setEvalCallCollector, setEvalFallbackCollector, setClearEntries,
   setDeleteEntry, setElementsAbs, setHasEntry, setImplicationOracle,
-  setInterfaceDiagCollector, setPropFlags, setRefineDiagCollector,
+  setInterfaceDiagCollector, setPosCollector, type EvalPosRecord, setPropFlags, setRefineDiagCollector,
   setSizeAbs, shape, shapeOfTerm, shapeOnlyFn, shapeToString, shlAbs,
   shrAbs, sidecarClosureFingerprint, sidecarPathOf, simplifyTerm,
   snapshotAbs, spread, str, strLit, strictEqAbs, string, stringOfSymbol,

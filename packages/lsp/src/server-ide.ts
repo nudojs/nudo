@@ -112,7 +112,7 @@ export function attachHover(deps: IdeDeps): void {
         // 函数名 hover：check 同口径签名一行——builder 模板 / symbolic 多行 /
         // display 签名不再重复（nudo.hover payload 保留无损面）
         lines.push("```nudo", hover.signature, "```");
-      } else {
+      } else if (!hover.linkedText) {
         if (hover.interfaceDisplay && hover.interfaceSource !== "implicit") {
           lines.push("```nudo", hover.interfaceDisplay, "```");
         }
@@ -130,8 +130,14 @@ export function attachHover(deps: IdeDeps): void {
           lines.push("```nudo", `ext: ${hover.typeText}`, "```");
         }
       }
-      if (lines.length === 0) {
+      if (lines.length === 0 && !hover.linkedText) {
         lines.push("```nudo", hover.typeText, "```");
+      }
+      // 类型值变量链接面：折叠展示中的引用标识符（如
+      // `astNode`）包为 markdown 链接（跳定义行）——
+      // plain markdown 推送（代码块内链接不渲染）
+      if (hover.linkedText) {
+        lines.push(hover.linkedText);
       }
       return {
         contents: {
@@ -398,6 +404,8 @@ export function attachInlayHint(deps: IdeDeps): void {
                 ? InlayHintKind.Parameter
                 : InlayHintKind.Type,
             paddingLeft: true,
+            // 折叠展示（表达式原文）的完整 pred：hover 展开
+            ...(abs.tooltip !== undefined ? { tooltip: abs.tooltip } : {}),
           });
         }
       } catch (err) {

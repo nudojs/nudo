@@ -32,6 +32,14 @@ export class ProjectionBudget {
   #onPath = new Set<object>();
   /** 粘性：本次投影是否发生过截断（"cycle" / "depth"），供台账记录 */
   truncated: ProjectionStopReason | undefined;
+  /** 展示口径：eq(self, lit(v)) pred 渲染为 lit(v)（lit 判别值
+   *  可见——hover 求值态面）；默认 false（纯 shape 外延渲染，
+   *  与既有全部展示面同口径） */
+  showLits = false;
+  /** 展示口径：多行缩进渲染（hover 弹窗面）——obj 槽位每槽一行 +
+   *  尾逗号 + 2 空格缩进递增，复合臂 union 按臂断行；默认 false
+   *  （单行——check 签名 / dts / inlay 等既有面字节不变） */
+  pretty = false;
 
   constructor(maxDepth: number = PROJECTION_MAX_DEPTH) {
     this.#maxDepth = maxDepth;

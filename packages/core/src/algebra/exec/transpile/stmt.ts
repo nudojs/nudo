@@ -499,11 +499,21 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // try 内：先 drain 抽象 throwExits，有则 rethrow 让 catch 吸收；正常返回值进 loopExits 后由出口 join
       const prefix = (opts.inLoop ?? 0) > 0 ? "$loopReturn" : "return";
       const markExpr = opts.tryMarkName ?? "$tryCurrentMark()";
+      // return 表达式推导 hover：把返回值记到 **`return` 关键字起始位**
+      // （不是 argument 起始位——后者与内部根标识符值读记录同键，
+      // first-wins 会让 return 记录丢失；挂关键词位则 hover `return`
+      // 精确命中，表达式内部子表达式由既有记录覆盖）。裸 `return;`
+      // 不记录。$nodoPos 记录并原样返回（语义恒等；无收集器时直通）
+      const retPos =
+        opts.recordPositions && stmt.argument?.loc && stmt.loc
+          ? `, ${stmt.loc.start.line}, ${stmt.loc.start.column}`
+          : "";
       const emitRet = (src: string, mutNodes?: Node | null): string => {
+        const rec = retPos === "" ? src : `$nodoPos(${src}${retPos})`;
         const retRebinds = mutNodes ? emitArrMutatorRebinds(mutNodes, opts, pad) : [];
         if ((opts.inTry ?? 0) > 0) {
           return [
-            `${pad}const __nudoRet = ${src};`,
+            `${pad}const __nudoRet = ${rec};`,
             ...retRebinds,
             `${pad}{`,
             `${indent(depth + 1)}const __xs = $tryTakeSince(${markExpr});`,
@@ -516,9 +526,9 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
             `${pad}${prefix}(__nudoRet);`,
           ].join("\n");
         }
-        if (retRebinds.length === 0) return `${pad}${prefix}(${src});`;
+        if (retRebinds.length === 0) return `${pad}${prefix}(${rec});`;
         return [
-          `${pad}let __mutRet = ${src};`,
+          `${pad}let __mutRet = ${rec};`,
           ...retRebinds,
           `${pad}${prefix}(__mutRet);`,
         ].join("\n");
@@ -599,6 +609,13 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const tmpSeq = opts.destrTmpSeq ?? { n: 0 };
       for (const d of stmt.declarations) {
         if (d.id.type === "Identifier") {
+          // 声明位位置记录（hover 重放 recordPositions 时）：把 init 绑定值
+          // 记到 declarator id 起点——非调用初始化（三元 / 可选链 / 字面量）
+          // 的局部量声明位 hover 由 A0 直读，不再依赖调用记录配对
+          const recInit = (initSrc: string): string =>
+            opts.recordPositions && d.id.loc
+              ? `$nodoPos(${initSrc}, ${d.id.loc.start.line}, ${d.id.loc.start.column})`
+              : initSrc;
           if (isVar && hoistedVar?.has(d.id.name)) {
             // 提升绑定上的赋值：裸 `var x;` 无写跳过（绑定已由顶部 let 提供）
             if (!d.init) {
@@ -607,9 +624,11 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
               }
               continue;
             }
-            const init = asVar
-              ? asVar
-              : emitTranspileExpression(d.init, opts);
+            const init = recInit(
+              asVar
+                ? asVar
+                : emitTranspileExpression(d.init, opts),
+            );
             lines.push(`${pad}${d.id.name} = ${init};`);
             if (depth === 0) {
               lines.push(`${pad}$recordBinding(${JSON.stringify(d.id.name)}, ${d.id.name});`);
@@ -620,11 +639,13 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
             continue;
           }
           // @nudo:as：覆盖整个声明语句的 init
-          const init = asVar
-            ? asVar
-            : d.init
-              ? emitTranspileExpression(d.init, opts)
-              : "$lit(void 0)";
+          const init = recInit(
+            asVar
+              ? asVar
+              : d.init
+                ? emitTranspileExpression(d.init, opts)
+                : "$lit(void 0)",
+          );
           const declKw = isVar ? "var" : kw;
           lines.push(`${pad}${declKw} ${d.id.name} = ${init};`);
           // 顶层绑定表（checkSource varAbs / scanLiteralCalls 实参解析）
@@ -1936,11 +1957,17 @@ export function transpileBlockAsThunk(stmt: Statement, depth: number, opts: Tran
   }
   if (stmt.type === "ReturnStatement") {
     const v = stmt.argument ? emitTranspileExpression(stmt.argument, opts) : "$lit(void 0)";
+    // return 表达式推导 hover：单语句 if 臂 return 快路径同 emitRet
+    // 口径记录（键 = return 关键字起始位；裸 return 不记录）
+    const rec =
+      opts.recordPositions && stmt.argument?.loc && stmt.loc
+        ? `$nodoPos(${v}, ${stmt.loc.start.line}, ${stmt.loc.start.column})`
+        : v;
     // C2.1：循环体内的 return 是函数提前返回，不是 thunk 的表达式值
     if ((opts.inLoop ?? 0) > 0) {
-      return `() => { $loopReturn(${v}); }`;
+      return `() => { $loopReturn(${rec}); }`;
     }
-    return `() => ${v}`;
+    return `() => ${rec}`;
   }
   const one = transpileStatement(stmt, depth + 1, opts);
   return `() => {\n${one}\n${indent(depth)}}`;

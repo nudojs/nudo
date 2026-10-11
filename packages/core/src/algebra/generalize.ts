@@ -374,7 +374,7 @@ export type PolyFn = {
   symbolic: Abs;
   display: string;
   /** 入口契约（@nudo:contract），供签名/inlay 展示 */
-  entryReqs?: Array<{ param: string; pred: import("./pred.ts").Pred }>;
+  entryReqs?: Array<{ param: string; pred: import("./pred.ts").Pred; display?: string }>;
   /**
    * 形参表面（C4.1）：默认/rest/解构的契约可绑定名。
    * 与 params（求值展示名）并列；检查/侧车匹配走 formals。
@@ -732,7 +732,7 @@ function generalizeFromAstUncached(
     value: abs({ k: "any" }, termVar(`${label}${i + 1}`), pTrue, "path"),
   }));
 
-  let entryReqs: Array<{ param: string; pred: import("./pred.ts").Pred }> | undefined;
+  let entryReqs: Array<{ param: string; pred: import("./pred.ts").Pred; display?: string }> | undefined;
   /** refine 契约带来的 entryShapes（source=refine，不重复提升） */
   const refineEntryShapes = new Map<
     string,
@@ -759,6 +759,7 @@ function generalizeFromAstUncached(
         entryReqs = reqs.map((e) => ({
           param: e.param,
           pred: instantiateConstraint(e.constraint, e.param),
+          ...(e.display !== undefined ? { display: e.display } : {}),
         }));
         /**
          * 解构形参（C4.1）：字段契约聚合成 obj Abs，挂到 placeholder 槽。
@@ -1116,7 +1117,7 @@ function formatPoly(
   params: string[],
   typeParams: TypeParam[],
   symbolic: Abs,
-  entryReqs?: Array<{ param: string; pred: import("./pred.ts").Pred }>,
+  entryReqs?: Array<{ param: string; pred: import("./pred.ts").Pred; display?: string }>,
   entryShapes?: Map<string, { abs: Abs; source: RelSource }>,
   fnRels?: Map<string, { abs: Abs; source: RelSource }>,
 ): string {

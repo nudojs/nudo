@@ -31,6 +31,8 @@ export type AbsInlay = {
   interfaceSource?: InterfaceSource;
   /** true = 隐式推导展示（非义务契约），label 已带 `· derived` */
   derived?: boolean;
+  /** 折叠展示时的完整 pred 文本（hover tooltip；display 缺席时无） */
+  tooltip?: string;
 };
 
 export type CollectAbsInlaysOpts = InterfaceTierOpts & {
@@ -191,10 +193,12 @@ export function collectAbsInlays(
     const isImplicitExport = tierSrc === "implicit";
 
     const params = g.params;
-    const predsByName = new Map<string, import("./pred.ts").Pred[]>();
+    const predsByName = new Map<string, Array<{ pred: import("./pred.ts").Pred; display?: string }>>();
     if (g.entryReqs) {
       for (const r of g.entryReqs) {
-        predsByName.set(r.param, [r.pred]);
+        predsByName.set(r.param, [
+          { pred: r.pred, ...(r.display !== undefined ? { display: r.display } : {}) },
+        ]);
       }
     }
 
@@ -207,12 +211,20 @@ export function collectAbsInlays(
       if (!p?.loc || !pname) continue;
       const preds = predsByName.get(pname);
       if (preds && preds.length > 0) {
-        const text = preds.map(predToString).join(" ∧ ");
+        const text = preds.map((p) => predToString(p.pred)).join(" ∧ ");
+        // 运行时标志折叠：表达式原文/约束名替代 pred 无损展开
+        // （lazy 判别联合展开可达数万字符）；完整 pred 进 tooltip
+        // 供 hover 展开。任一 pred 无 display → 整体回落全展。
+        const displays = preds.map((p) => p.display);
+        const display = displays.every((d) => d !== undefined)
+          ? displays.map((d) => d!).join(" ∧ ")
+          : undefined;
         inlays.push({
           line: p.loc.end.line,
           character: p.loc.end.column,
-          label: `  where ${text}`,
+          label: display !== undefined ? `  where ${display}` : `  where ${text}`,
           kind: "parameter",
+          ...(display !== undefined ? { tooltip: text } : {}),
           ...(tierSrc ? { interfaceSource: tierSrc } : {}),
         });
       }

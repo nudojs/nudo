@@ -47,7 +47,8 @@ export {
   getEvalCallBudgetState,
   getEvalCallCollector, enterEvalCallBudgetSession, exitEvalCallBudgetSession,
   noteEvalCallRecord, resetEvalCallBudget, setEvalAssignCollector, setEvalBindingSink,
-  setEvalCallCollector, withEvalBudgetOverride
+  setEvalCallCollector, withEvalBudgetOverride,
+  $nodoPos, setPosCollector, getPosCollector, type EvalPosRecord
 } from "./calls.ts";
 
 export {

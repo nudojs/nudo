@@ -4,11 +4,11 @@
 
 import type { Abs } from "./abs.ts";
 import { litValue } from "./abs.ts";
-import type { Term } from "./term.ts";
-import { termToString } from "./term.ts";
+import type { Term, LiteralValue } from "./term.ts";
+import { termEquals, termToString } from "./term.ts";
 import type { Pred } from "./pred.ts";
 import { predToString } from "./pred.ts";
-import { ProjectionBudget } from "./projection-budget.ts";
+import { ProjectionBudget, PROJECTION_MAX_DEPTH } from "./projection-budget.ts";
 
 export type FormatOptions = {
   /** 是否显示 term= */
@@ -44,8 +44,8 @@ export function formatShapeSlot(a: Abs): string {
   return formatShapeSlotB(a, new ProjectionBudget());
 }
 
-function formatShapeSlotB(a: Abs, budget: ProjectionBudget): string {
-  const base = formatShapeB(a, budget);
+function formatShapeSlotB(a: Abs, budget: ProjectionBudget, ind: string = ""): string {
+  const base = formatShapeB(a, budget, ind);
   if (!a.term || a.term.op === "lit") return base;
   // 关系在 paramTypes/returnType 或 element 里，外层 term 是形参 α 身份，不重复展示
   // （否则 items: arr(A1) 会变成 arr(A1) = A1）
@@ -58,24 +58,65 @@ function formatShapeSlotB(a: Abs, budget: ProjectionBudget): string {
 /** 环 / 超深 shape 的截断标记（format 无 dropped 台账——标记本身即观测） */
 const FORMAT_TRUNC = { cycle: "…cycle", depth: "…" } as const;
 
-export function formatShape(a: Abs): string {
-  return formatShapeB(a, new ProjectionBudget());
+export function formatShape(
+  a: Abs,
+  opts?: { maxDepth?: number; showLits?: boolean; pretty?: boolean },
+): string {
+  const budget = new ProjectionBudget(opts?.maxDepth ?? PROJECTION_MAX_DEPTH);
+  budget.showLits = opts?.showLits === true;
+  budget.pretty = opts?.pretty === true;
+  return formatShapeB(a, budget);
 }
 
-function formatShapeB(a: Abs, budget: ProjectionBudget): string {
+/** eq(self, lit(v)) pred 的字面量值——lit 判别槽位渲染
+ * （`lit('StringLiteral')`——与侧车契约文法同形）；pred 断言
+ * Abs 自身 term（槽位为 `get(p, k)` 字段项，顶层为参数
+ * 项）等于字面量；非该形态 pred / 无 pred → undefined
+ * （纯 shape 渲染不变） */
+function litPredValue(a: Abs): LiteralValue | undefined {
+  if (a.term === undefined) return undefined;
+  // eq 事实可藏在合取深层（$narrowMemberEq 的 keep 臂槽精化挂 and(既有, eq)）
+  const conjuncts: Pred[] = [];
+  const visit = (p: Pred | undefined): void => {
+    if (p === undefined) return;
+    if (p.op === "and") {
+      p.args.forEach(visit);
+      return;
+    }
+    conjuncts.push(p);
+  };
+  visit(a.pred);
+  for (const p of conjuncts) {
+    if (p.op !== "eq") continue;
+    const { a: x, b: y } = p;
+    const litT =
+      x.op === "lit" && termEquals(y, a.term)
+        ? x
+        : y.op === "lit" && termEquals(x, a.term)
+          ? y
+          : undefined;
+    if (litT !== undefined) return litT.value;
+  }
+  return undefined;
+}
+
+function formatShapeB(a: Abs, budget: ProjectionBudget, ind: string = ""): string {
   // DESIGN-001：Abs 可环可深（`a.self = a` 在 evaluator 下是真环），
   // 展示层必须有界；截断渲染显式标记而非栈溢出。
   const stop = budget.enter(a);
   if (stop === "cycle") return FORMAT_TRUNC.cycle;
   if (stop === "depth") return FORMAT_TRUNC.depth;
   try {
-    return formatShapeInner(a, budget);
+    return formatShapeInner(a, budget, ind);
   } finally {
     budget.exit();
   }
 }
 
-function formatShapeInner(a: Abs, budget: ProjectionBudget): string {
+/** pretty 断行的复合 shape（union 臂断行条件——map/set 即 brand） */
+const PRETTY_COMPOSITE_SHAPES = new Set(["obj", "arr", "tuple", "fn", "brand", "eff"]);
+
+function formatShapeInner(a: Abs, budget: ProjectionBudget, ind: string): string {
   const s = a.shape;
   switch (s.k) {
     case "never":
@@ -102,6 +143,10 @@ function formatShapeInner(a: Abs, budget: ProjectionBudget): string {
       // JSON.stringify(bigint) throws；按 JS 字面量拼法展示
       if (typeof lv === "bigint") return `${String(lv)}n`;
       if (lvR.ok) return JSON.stringify(lv);
+      if (budget.showLits) {
+        const plv = litPredValue(a);
+        if (plv !== undefined) return `lit(${JSON.stringify(plv)})`;
+      }
       return s.type;
     }
     case "obj": {
@@ -109,35 +154,45 @@ function formatShapeInner(a: Abs, budget: ProjectionBudget): string {
         const opt = slot.optional ? "?" : "";
         // 非标识符键 JSON 引号，避免展示串本身不可解析（`a, b: 1`）
         const key = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(k) ? k : JSON.stringify(k);
-        return `${key}${opt}: ${formatShapeB(slot.value, budget)}`;
+        let val = formatShapeB(slot.value, budget, `${ind}  `);
+        if (budget.showLits) {
+          const plv = litPredValue(slot.value);
+          if (plv !== undefined) val = `lit(${JSON.stringify(plv)})`;
+        }
+        return `${key}${opt}: ${val}`;
       });
+      // pretty：每槽一行 + 尾逗号 + 2 空格缩进递增（值内嵌套以槽位
+      // 行起点为基准列——悬挂式对齐）；空 obj 保持单行（与默认口径同形）
+      if (budget.pretty && entries.length > 0) {
+        return `{\n${entries.map((e) => `${ind}  ${e},`).join("\n")}\n${ind}}`;
+      }
       return `{ ${entries.join(", ")} }`;
     }
     case "arr": {
       // any+var 元素 → arr(A1)（展示关系）；否则 element[]
       if (s.element.shape.k === "any" && s.element.term?.op === "var") {
-        return `arr(${formatShapeSlotB(s.element, budget)})`;
+        return `arr(${formatShapeSlotB(s.element, budget, ind)})`;
       }
       // Bug 34：union 元素加括号——`3 | 1 | 2[]` 按 TS 解析歧义为
       // 3 | 1 | (2[])（sort/flatMap 元素 join 的 arr(sum) 面）；单 prim/
       // lit 元素保持 `X[]` 不加冗余括号
-      const el = formatShapeB(s.element, budget);
+      const el = formatShapeB(s.element, budget, ind);
       return s.element.shape.k === "sum" ? `(${el})[]` : `${el}[]`;
     }
     case "tuple": {
       // hole 槽是稀疏空位（`1 in a` 为 false），不得渲染成 undefined 槽
       const holes = s.holes ?? [];
       const parts = s.elements.map((el, i) =>
-        holes.includes(i) ? "" : formatShapeB(el, budget),
+        holes.includes(i) ? "" : formatShapeB(el, budget, ind),
       );
       if (s.rest) {
-        parts.push(`...${formatShapeB(s.rest, budget)}`);
+        parts.push(`...${formatShapeB(s.rest, budget, ind)}`);
       }
       return `[${parts.join(", ")}]`;
     }
     case "fn": {
       const ret =
-        s.returnType !== undefined ? formatShapeSlotB(s.returnType, budget) : "?";
+        s.returnType !== undefined ? formatShapeSlotB(s.returnType, budget, ind) : "?";
       const labels = s.params ?? [];
       const paramTypes = s.paramTypes;
       const hasMarkers = labels.some(
@@ -152,7 +207,7 @@ function formatShapeInner(a: Abs, budget: ProjectionBudget): string {
         for (let i = 0; i < n; i++) {
           const label = labels[i];
           const type = paramTypes?.[i];
-          const typeText = type !== undefined ? formatShapeSlotB(type, budget) : undefined;
+          const typeText = type !== undefined ? formatShapeSlotB(type, budget, ind) : undefined;
           if (label?.startsWith("...")) {
             ps.push(typeText ? `...${label.slice(3)}: ${typeText}` : label);
           } else if (label?.endsWith("?")) {
@@ -170,7 +225,7 @@ function formatShapeInner(a: Abs, budget: ProjectionBudget): string {
         return `(${renderLabeled().join(", ")}) => ${ret}`;
       }
       if (paramTypes && paramTypes.length > 0) {
-        const ps = paramTypes.map((p) => formatShapeSlotB(p, budget));
+        const ps = paramTypes.map((p) => formatShapeSlotB(p, budget, ind));
         return `(${ps.join(", ")}) => ${ret}`;
       }
       return `(${labels.join(", ")}) => ${ret}`;
@@ -182,7 +237,7 @@ function formatShapeInner(a: Abs, budget: ProjectionBudget): string {
       if (slots) {
         const arg = (key: string): string | undefined => {
           const sl = slots[key];
-          return sl ? formatShapeSlotB(sl.value, budget) : undefined;
+          return sl ? formatShapeSlotB(sl.value, budget, ind) : undefined;
         };
         if (s.name === "Map" || s.name === "ReadonlyMap" || s.name === "WeakMap") {
           const k = arg("__key");
@@ -197,18 +252,30 @@ function formatShapeInner(a: Abs, budget: ProjectionBudget): string {
       return `${s.name}`;
     }
     case "eff":
-      return `${s.eff}<${formatShapeB(s.inner, budget)}>`;
+      return `${s.eff}<${formatShapeB(s.inner, budget, ind)}>`;
     case "sum": {
       // 渲染去重：不同 term/pred 的成员可能渲染成同一形状（例如两条 number
       // 路径）——formatShape 是有损外延视图，重复文本只留一次；formatAbs
       // 仍保留全部成员（无损）。
       const seen = new Set<string>();
       const parts: string[] = [];
+      const kinds: string[] = [];
       for (const m of s.members) {
-        const t = formatShapeB(m, budget);
+        const t = formatShapeB(m, budget, ind);
         if (seen.has(t)) continue;
         seen.add(t);
         parts.push(t);
+        kinds.push(m.shape.k);
+      }
+      // pretty：仅当至少一臂是复合 shape（object/array/map/set/fn——
+      // map/set 即 brand）或其渲染含 `{` 时按臂断行（` | ` 前缀换行，
+      // 臂缩进与首臂起点对齐）；纯 prim/lit 联合保持单行
+      // （`string | null | undefined` 不断）
+      if (
+        budget.pretty &&
+        parts.some((t, i) => PRETTY_COMPOSITE_SHAPES.has(kinds[i]!) || t.includes("{"))
+      ) {
+        return parts.join(`\n${ind}| `);
       }
       return parts.join(" | ");
     }

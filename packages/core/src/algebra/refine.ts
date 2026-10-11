@@ -184,7 +184,12 @@ function sidecarImportNames(stmt: ImportDeclaration): SidecarImportName[] {
 function rewriteSidecarSource(
   src: string,
   fromFile: string | undefined,
-): { code: string; exportPairs: Array<{ key: string; expr: string }>; imports: SidecarImport[] } {
+): {
+  code: string;
+  exportPairs: Array<{ key: string; expr: string }>;
+  imports: SidecarImport[];
+  bindingInfos: Map<string, SidecarBindingInfo>;
+} {
   // .nudo.ts 需要未剥除 TS 的 AST（keepTs）——类型注解/声明的区间才能切除；
   // 默认路径照旧走剥除（全链消费方依赖剥除后形态）
   const keepTs = fromFile?.endsWith(".nudo.ts") === true;
@@ -341,6 +346,148 @@ function rewriteSidecarSource(
     }
   }
 
+  // ---- 运行时标志提取（Phase 1）：fn() 形参约束的表达式源码 ----
+  // 消费端（inlay 等）以原文折叠展示，替代 pred 无损展开（lazy
+  // 判别联合展开可达数万字符）。整表达式别名规范化：`import {
+  // astNode as N }` 的裸 `N` → 导入名（表达式内无绑定声明，无
+  // 遮蔽风险）；包裹表达式按原文展示。
+  const aliasToImported = new Map<string, string>();
+  const fnAliases = new Set<string>(["fn"]);
+  for (const imp of imports) {
+    for (const n of imp.names) {
+      if (n.ns) continue;
+      if (n.imported !== undefined && n.local !== undefined && n.imported !== n.local) {
+        aliasToImported.set(n.local, n.imported);
+      }
+      if (n.imported === "fn" && n.local !== undefined) fnAliases.add(n.local);
+    }
+  }
+  const paramTextsOfFnCall = (init: unknown): SidecarParamTexts | undefined => {
+    const call = init as
+      | {
+          type: string;
+          callee?: { type: string; name?: string };
+          arguments?: Array<{
+            type: string;
+            start?: number | null;
+            end?: number | null;
+            properties?: Array<{
+              type: string;
+              computed?: boolean;
+              key?: { type: string; name?: string; value?: string };
+              value?: {
+                type: string;
+                name?: string;
+                start?: number | null;
+                end?: number | null;
+              };
+            }>;
+          }>
+        }
+      | undefined;
+    if (!call || call.type !== "CallExpression") return undefined;
+    if (
+      call.callee?.type !== "Identifier" ||
+      !fnAliases.has(call.callee.name ?? "")
+    ) {
+      return undefined;
+    }
+    const first = call.arguments?.[0];
+    if (!first || first.type !== "ObjectExpression") return undefined;
+    const texts = new Map<string, string>();
+    for (const prop of first.properties ?? []) {
+      if (prop.type !== "ObjectProperty" || prop.computed) continue;
+      const key =
+        prop.key?.type === "Identifier"
+          ? prop.key.name
+          : prop.key?.type === "StringLiteral"
+            ? prop.key.value
+            : undefined;
+      if (key === undefined) continue;
+      const v = prop.value;
+      if (!v || v.start == null || v.end == null) continue;
+      texts.set(
+        key,
+        v.type === "Identifier" && aliasToImported.has(v.name ?? "")
+          ? aliasToImported.get(v.name ?? "")!
+          : src.slice(v.start, v.end),
+      );
+    }
+    return texts;
+  };
+  const paramInfosByLocal = new Map<string, SidecarBindingInfo>();
+  const collectVarFns = (
+    decls: Array<{
+      id?: { type: string; name?: string };
+      init?: unknown;
+      loc?: { start?: { line?: number } };
+    }>,
+  ): void => {
+    for (const d of decls) {
+      if (d?.id?.type !== "Identifier" || d.id.name === undefined) continue;
+      const texts = paramTextsOfFnCall(d.init);
+      if (texts)
+        paramInfosByLocal.set(d.id.name, {
+          texts,
+          line: d.loc?.start?.line ?? 1,
+        });
+    }
+  };
+  for (const stmt of ast.program.body) {
+    // export const name = fn({…})：顶层 stmt 是 ExportNamedDeclaration
+    if (
+      stmt.type === "ExportNamedDeclaration" &&
+      (stmt as { declaration?: { type: string } }).declaration?.type ===
+        "VariableDeclaration"
+    ) {
+      collectVarFns(
+        (
+          (stmt as {
+            declaration?: {
+              declarations?: Array<{
+                id?: { type: string; name?: string };
+                init?: unknown;
+                loc?: { start?: { line?: number } };
+              }>;
+            };
+          }).declaration?.declarations ?? []
+        ),
+      );
+    } else if (stmt.type === "VariableDeclaration") {
+      // const local = fn({…})（经 export { local as exported } 桥接）
+      collectVarFns(
+        (
+          stmt as {
+            declarations?: Array<{
+              id?: { type: string; name?: string };
+              init?: unknown;
+              loc?: { start?: { line?: number } };
+            }>;
+          }
+        ).declarations ?? [],
+      );
+    } else if (stmt.type === "ExportDefaultDeclaration") {
+      // export default fn({…})：登记在 DEFAULT_LOCAL 键
+      // （exportPairs 的 expr 即改写后的 __nudoDefault）
+      const decl = (stmt as { declaration?: unknown }).declaration;
+      const texts = paramTextsOfFnCall(decl);
+      if (texts)
+        paramInfosByLocal.set(DEFAULT_LOCAL, {
+          texts,
+          line:
+            (stmt as { loc?: { start?: { line?: number } } }).loc?.start
+              ?.line ?? 1,
+        });
+    }
+  }
+  // 登记键 = 导出键：exportPairs 把 `export { local as exported }` 桥接为
+  // exported → local；`export const name = fn(…)` 的 key/expr 同名。
+  const bindingInfos = new Map<string, SidecarBindingInfo>();
+  for (const p of exportPairs) {
+    const info = paramInfosByLocal.get(p.expr);
+    if (info) bindingInfos.set(p.key, info);
+  }
+
   // .nudo.ts：收集 TS 子语法区间（类型注解/类型声明/as/!/泛型）一并切除。
   // 区间与语句级 cuts 可能重叠（如 declare 语句）——排序后合并重叠段。
   if (fromFile?.endsWith(".nudo.ts")) {
@@ -369,7 +516,7 @@ function rewriteSidecarSource(
     pos = c.end;
   }
   code += src.slice(pos);
-  return { code, exportPairs, imports };
+  return { code, exportPairs, imports, bindingInfos };
 }
 
 /** 纯类型语句：整体删除（运行时无对应语义；enum 的反向映射本引擎不支持） */
@@ -463,6 +610,32 @@ function collectTsSyntaxCuts(
   return cuts;
 }
 
+/** 侧车参数文本注册（路径 → 内容hash → 导出键 → 表达式原文）。
+ *  execSidecar 成功求值后登记；exec 缓存命中（同内容侧车在
+ *  不同路径——复制的契约）时不重跑 execSidecar，由
+ *  execNudoModuleCached 在命中路径补登记，否则第二个侧车
+ *  路径查不到折叠文本、回落 pred 全展。 */
+function registerSidecarParamTexts(
+  sidecarPath: string,
+  contentKey: string,
+  infos: Map<string, SidecarBindingInfo>,
+): void {
+  let perPath = sidecarParamTextsRegistry.get(sidecarPath);
+  if (perPath === undefined) {
+    perPath = new Map();
+    sidecarParamTextsRegistry.set(sidecarPath, perPath);
+    if (sidecarParamTextsRegistry.size > MAX_SIDECAR_PARAM_TEXTS_PATHS) {
+      const oldest = sidecarParamTextsRegistry.keys().next().value;
+      if (oldest !== undefined) sidecarParamTextsRegistry.delete(oldest);
+    }
+  }
+  perPath.set(contentKey, infos);
+  if (perPath.size > MAX_SIDECAR_PARAM_TEXTS_VERSIONS) {
+    const oldest = perPath.keys().next().value;
+    if (oldest !== undefined) perPath.delete(oldest);
+  }
+}
+
 /**
  * 执行侧车模块（真实 JS + 注入构建器，不编译内部 IR）：
  * - `@nudojs/core` / 裸包名 → 注入 sidecarInjects（alias/namespace 走
@@ -479,9 +652,12 @@ function execSidecar(
   opts: RefineResolveOpts | undefined,
   chain: string[],
   preloaded: ReadonlyMap<string, string | undefined>,
-): Record<string, unknown> {
+): {
+  exports: Record<string, unknown>;
+  bindingInfos: Map<string, SidecarBindingInfo>;
+} {
   const fromFile = opts?.fromFile;
-  const { code, exportPairs, imports } = rewriteSidecarSource(src, fromFile);
+  const { code, exportPairs, imports, bindingInfos } = rewriteSidecarSource(src, fromFile);
   const prologue: string[] = [];
   const deps: Record<string, unknown> = {};
 
@@ -571,12 +747,13 @@ function execSidecar(
       for (const n of imp.names) deps[n.local] = undefined;
       continue;
     }
-    const depExports = execSidecar(
+    const depOut = execSidecar(
       depSrc,
       { loadModule: load, fromFile: canonical },
       [...chain, canonical],
       preloaded,
     );
+    const depExports = depOut.exports;
     for (const n of imp.names) {
       if (n.ns) {
         deps[n.local] = depExports;
@@ -620,7 +797,15 @@ function execSidecar(
     "__nudoDeps",
     body,
   );
-  return fn(...Object.values(sidecarInjects), sidecarInjects, deps) as Record<string, unknown>;
+  const result = fn(...Object.values(sidecarInjects), sidecarInjects, deps) as Record<string, unknown>;
+  // 绑定信息登记：成功求值后按侧车 canonical 路径 + 内容
+  // hash 入库（失败不登记；resetNudoModuleExecCache 同口径清除）。
+  // exec 缓存命中不重登记——同内容首次求值已入库；命中路径
+  // 的跨路径补登记在 execNudoModuleCached（同内容不同路径）。
+  if (fromFile !== undefined && bindingInfos.size > 0) {
+    registerSidecarParamTexts(fromFile, hashSource(src), bindingInfos);
+  }
+  return { exports: result, bindingInfos };
 }
 
 /**
@@ -638,8 +823,13 @@ export type RefineResolveOpts = {
   fromFile?: string;
 };
 
-/** *.nudo.js 构建器执行结果（LRU）。键 = 依赖闭包内容指纹；无 loadModule 退化为 src */
-const nudoModuleExecCache = new Map<string, Record<string, unknown>>();
+/** *.nudo.js 构建器执行结果（LRU）。键 = 依赖闭包内容指纹；无 loadModule 退化为 src。
+ * 值携带 bindingInfos——缓存命中（同内容侧车在不同路径）时
+ * 由 execNudoModuleCached 按当前路径补登记参数折叠文本。 */
+const nudoModuleExecCache = new Map<
+  string,
+  { exports: Record<string, unknown>; bindingInfos: Map<string, SidecarBindingInfo> }
+>();
 /** 执行失败缓存（#64）：同指纹失败只 exec 一次，后续调用重抛同一错误 */
 const nudoModuleFailCache = new Map<string, unknown>();
 const MAX_NUDO_MODULE_EXEC = 64;
@@ -712,7 +902,17 @@ function execNudoModuleCached(src: string, opts: RefineResolveOpts): Record<stri
     if (hit !== undefined) {
       nudoModuleExecCache.delete(key);
       nudoModuleExecCache.set(key, hit);
-      return hit;
+      // 缓存命中不重跑 execSidecar——注册表按侧车路径键，
+      // 同内容侧车在不同路径（复制的契约）时在此补登记，
+      // 否则第二个路径的参数折叠文本丢失（回落 pred 全展）
+      if (opts.fromFile !== undefined && hit.bindingInfos.size > 0) {
+        registerSidecarParamTexts(
+          opts.fromFile,
+          hashSource(src),
+          hit.bindingInfos,
+        );
+      }
+      return hit.exports;
     }
     if (nudoModuleFailCache.has(key)) {
       throw nudoModuleFailCache.get(key);
@@ -720,15 +920,15 @@ function execNudoModuleCached(src: string, opts: RefineResolveOpts): Record<stri
   }
 
   try {
-    const out = execSidecar(src, opts, opts.fromFile ? [opts.fromFile] : [], preloaded);
+    const { exports, bindingInfos } = execSidecar(src, opts, opts.fromFile ? [opts.fromFile] : [], preloaded);
     if (key !== undefined) {
       if (nudoModuleExecCache.size >= MAX_NUDO_MODULE_EXEC) {
         const oldest = nudoModuleExecCache.keys().next().value;
         if (oldest !== undefined) nudoModuleExecCache.delete(oldest);
       }
-      nudoModuleExecCache.set(key, out);
+      nudoModuleExecCache.set(key, { exports, bindingInfos });
     }
-    return out;
+    return exports;
   } catch (e) {
     if (key !== undefined) {
       if (nudoModuleFailCache.size >= MAX_NUDO_MODULE_EXEC) {
@@ -744,6 +944,42 @@ function execNudoModuleCached(src: string, opts: RefineResolveOpts): Record<stri
 export function resetNudoModuleExecCache(): void {
   nudoModuleExecCache.clear();
   nudoModuleFailCache.clear();
+  sidecarParamTextsRegistry.clear();
+}
+
+/**
+ * 侧车 fn() 形参约束的表达式源码表（运行时标志，Phase 1）。
+ * 键 = 侧车 canonical 路径 → 内容 hash → 导出键 → 绑定信息
+ * （形参表达式原文 + 声明行）。内容 hash 二级键与 exec 缓存
+ * 同语义：同路径不同内容（编辑 / 未保存缓冲）不串文本；
+ * 同内容命中 exec 缓存时信息仍在（首次求值已登记）。
+ * execSidecar 成功求值时登记，与 nudoModuleExecCache 同生命期
+ * （reset 一并清除）。
+ */
+const sidecarParamTextsRegistry = new Map<
+  string,
+  Map<string, Map<string, SidecarBindingInfo>>
+>();
+/** 路径数上限：超出逐出最旧路径（与 nudoModuleExecCache 同口径） */
+const MAX_SIDECAR_PARAM_TEXTS_PATHS = 64;
+/** 单路径内容版本上限：超出逐出最旧版本（长会话反复编辑侧车） */
+const MAX_SIDECAR_PARAM_TEXTS_VERSIONS = 32;
+
+/**
+ * 侧车绑定信息查询（canonical 路径 + 内容 hash + 导出键）。
+ * 未登记（派生形参 / 未执行 / 已 reset / 内容不匹配）→ undefined，
+ * 消费端回落 pred 全展（无原文跳转行）。
+ */
+export function lookupSidecarParamTexts(
+  sidecarPath: string,
+  srcHash: string,
+  bindingName: string,
+): SidecarBindingInfo | undefined {
+  const perPath = sidecarParamTextsRegistry.get(sidecarPath);
+  if (perPath === undefined) return undefined;
+  const perHash = perPath.get(srcHash);
+  if (perHash === undefined) return undefined;
+  return perHash.get(bindingName);
 }
 
 /**
@@ -851,14 +1087,31 @@ function extractRefineLines(source: string, fnName: string): string[] {
 }
 
 /**
- * 解析 `ms delay` / `n percent` → [param, Pred]
- * 多条用 && 或换行连接。
+ * 侧车 fn() 形参约束的表达式源码表（运行时标志，Phase 1 整表达式）。
+ * 键 = 形参键（含 `'card.grade'` 点路径形态），值 = 表达式原文
+ * （整表达式别名已规范化为导入名）。派生形参（computed key / 运行时
+ * 拼对象）无静态文本 → 不登记，消费端回落 pred 全展。
+ */
+export type SidecarParamTexts = Map<string, string>;
+
+/** 侧车 fn() 绑定信息：形参表达式源码表 + 绑定声明行。
+ *  line = `export const name = fn(…)` 声明所在行（1-based），
+ *  契约原文链接（`file://…#L<line>`）的跳转目标。 */
+export type SidecarBindingInfo = {
+  texts: SidecarParamTexts;
+  line: number;
+};
+
+/**
+ * @nudo:contract 提取条目（pred 相对 param 项）。
  * 同时保留原始 NudoConstraint（shape 字段检查用）。
  */
 export type RefineEntry = {
   param: string;
   pred: Pred;
   constraint: NudoConstraint;
+  /** 指令引用的约束名（`@nudo:contract x positive` 的 `positive`）；display 折叠用 */
+  name?: string;
 };
 
 export function extractRefinesFromSource(
@@ -903,6 +1156,7 @@ export function extractRefinesFromSource(
         param: param!,
         pred: instantiateConstraint(c, param!),
         constraint: c,
+        name: cName!,
       });
     }
   }

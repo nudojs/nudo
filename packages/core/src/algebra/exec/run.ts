@@ -33,6 +33,7 @@ import { drainPromiseMicros } from "../builtins.ts";
 import { sourceHasCjsExports } from "../code-text.ts";
 import { isNudoThrow, isNudoReturn, $isForkExit, runWithLoopExits, takeLoopExits, takeThrowExits, asAbsVal, withNewTargetReset } from "./runtime.ts";
 import { $call } from "./call.ts";
+import { refineFnReturnType } from "./class.ts";
 import {
   runWithCollectorScope,
   createScopedSlot,
@@ -62,6 +63,9 @@ export type RunTranspiledOptions = {
   envGlobals?: Record<string, Abs>;
   /** @nudo:mock 注入值：name → Abs（mockDirectivesToAbsSeeds 产物） */
   mocks?: Record<string, Abs>;
+  /** 节点级 Abs 记录插桩（hover 重放用——透传 transpile 的
+   * recordPositions：Identifier 值读 / 静态成员读包 $nodoPos） */
+  recordPositions?: boolean;
   /** 宽松全局（调用点发现 exec 采集：未声明全局调用保守 unknown 不中断） */
   lenientGlobals?: boolean;
 };
@@ -547,6 +551,7 @@ function runTranspiledInner(
     replacements: opts.replacementTargets,
     asOverrides: opts.asOverrideTargets,
     lenientGlobals: opts.lenientGlobals,
+    recordPositions: opts.recordPositions,
   });
   js = js.replace(RUNTIME_IMPORT_RE, "");
   js = rewriteUserImports(js);
@@ -913,7 +918,11 @@ function callTranspiledExportFullInner(
           const r = $call(fn, args);
           // 与 JS 函数分支同口径：同步返回值算完后排空微队列
           drainPromiseMicros();
-          return joinControlExits(r);
+          const joined = joinControlExits(r);
+          // 观测结果回填 fn.returnType 槽（与类方法槽同口径，展示用
+          // 不回写分析）——arity-only fn Abs 调用后携带真实返回
+          refineFnReturnType(fn, joined.result);
+          return joined;
         } catch (e) {
           drainPromiseMicros();
           if (isNudoReturn(e)) {

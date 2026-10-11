@@ -37,7 +37,7 @@ function caseLabel(c: CaseResult): string {
 }
 
 function formatCaseLine(c: CaseResult): string {
-  const argsStr = c.argAbs.map(formatShape).join(", ");
+  const argsStr = c.argAbs.map((a) => formatShape(a)).join(", ");
   let line = `  ${caseLabel(c)}  (${argsStr}) => ${formatShape(c.abs)}`;
   if (c.throwsAbs && c.throwsAbs.shape.k !== "never") {
     line += `   throws ${formatShape(c.throwsAbs)}`;

@@ -530,6 +530,9 @@ function litRefutesEq(other: unknown, v: string | number | boolean): boolean {
   return other !== v;
 }
 
+/** 剥 term/pred 的纯 shape Abs（形态赋值检查口径） */
+const shapeOnly = (s: Abs["shape"]): Abs => abs(s, undefined, undefined, "exact");
+
 function memberEqClass(m: Abs, key: string, litAbs: Abs, value: string | number | boolean): MemberEqClass {
   const sh = m.shape;
   if (sh.k === "obj") {
@@ -540,8 +543,6 @@ function memberEqClass(m: Abs, key: string, litAbs: Abs, value: string | number 
     }
     const slotValue = slots[key]!.value;
     if (slotValue.shape.k === "any" || slotValue.shape.k === "unknown") return "may";
-    // 形态相容（剥 term/pred 的纯 shape 赋值检查）：lit 形态不在槽值域 → never
-    const shapeOnly = (s: Abs["shape"]): Abs => abs(s, undefined, undefined, "exact");
     if (!leqAbs(shapeOnly(litAbs.shape), shapeOnly(slotValue.shape)).ok) return "never";
     const t = slotValue.term;
     const p = slotValue.pred;
@@ -600,6 +601,35 @@ export function $narrowMemberEq(
   });
   if (kept.length === members.length) return a;
   if (kept.length === 0) return a;
+  if (keep) {
+    // keep 臂内 `x.key === lit` 事实成立 → 存活成员的兼容槽值挂
+    // eq(term, lit) 谓词（lit 在 term/pred 层，shape 保持同型）：
+    // formatShape(showLits) 经 litPredValue 渲染 lit(...)（尾臂判别窄化
+    // 可见于展示），memberEqClass 升级 only（链式窄化 / 补集臂剪除
+    // 受益）。既有谓词合取保留；无 term 的纯声明槽直接落 lit term。
+    // any/unknown 槽不收窄（unknown 是推断失败标记 / any 即「无信息」）；
+    // keep=false 补集臂无字面量可落（string \ lit 不可表示）。
+    const refined = kept.map((m) => {
+      const sh = m.shape;
+      if (sh.k !== "obj") return m;
+      const slots = (sh as ObjShape).slots;
+      const slot = slots[key];
+      if (!slot) return m;
+      const v = slot.value;
+      if (v.shape.k === "any" || v.shape.k === "unknown") return m;
+      if (!leqAbs(shapeOnly(litAbs.shape), shapeOnly(v.shape)).ok) return m;
+      const litTerm = lit(value);
+      const value2: Abs =
+        v.term !== undefined
+          ? { ...v, pred: and(v.pred ?? pTrue, { op: "eq", a: v.term, b: litTerm }) }
+          : { ...v, term: litTerm, pred: pTrue };
+      return {
+        ...m,
+        shape: { ...sh, slots: { ...slots, [key]: { ...slot, value: value2 } } },
+      } as Abs;
+    });
+    return refined.length === 1 ? refined[0]! : { ...a, shape: { k: "sum" as const, members: refined } };
+  }
   return kept.length === 1 ? kept[0]! : { ...a, shape: { k: "sum" as const, members: kept } };
 }
 
