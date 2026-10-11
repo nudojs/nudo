@@ -339,6 +339,87 @@ function register(u) {
 
 ---
 
+## @nudo:assume — 用户引理 {#nudoassume--user-lemmas}
+
+声明一条引擎推导不出的**跨变量引理**——关于两个形参的算法事实（编辑距离 ≤ 较长串的长度），普通区间传播表达不了它：那需要两个抽象值之间的相关性。前提参与除法关系折叠——`d <= max ∧ max > 0 ⇒ d/max <= 1`（镜像与负分母翻转不等号）——下游 `+` / `-` / `*` 折叠消费推出的界，于是 `1 - d/max ∈ [0,1]` 这类返回契约变得可证。
+
+### 语法
+
+```text
+@nudo:assume <param> <= <param>
+@nudo:assume <param> >= <param>
+```
+
+- **函数级**——写在紧邻函数上方的注释块里，与 `@nudo:contract` 同一条扫描路径；锚定到最近的函数。
+- 两个名字都必须是**锚定函数的形参**（`d`、`max`），否则 error `nudo:assume-invalid`。
+- 只接受 `<=` / `>=`（`>=` 归一为 `le`）。`<`、`>`、`==` 与常数界（`d <= 10`）均非法——常数界归侧车契约（`number().le(10)`）。
+- 多行可叠加——前提合取。
+
+### 语义——公理，不是被检验的事实
+
+- **引擎从不验证引理。** 证明依赖它时，`nudo check` 发 info `nudo:assume-relied`（`sim: return contract proved via @nudo:assume d <= max`），并建议用具体 `@nudo:case`（`nudo test`）证伪。错误引理会让受影响的证明 unsound——引理要少、要可评审。
+- **前提不跨调用边界继承。** callee 帧看到的前提槽为空（函数入口清空、退出恢复）；递归调用保守清空。关于 `sim` 的 `d`/`max` 的引理不会泄漏进别的函数的同名形参。
+
+### 示例——相似度得分
+
+```javascript
+// sim.js
+/**
+ * @nudo:assume d <= max
+ */
+export function sim(d, max) {
+  return max === 0 ? 1 : 1 - d / max;
+}
+```
+
+```javascript
+// sim.nudo.js
+import { fn, number } from "@nudojs/core";
+
+export const sim = fn(
+  { d: number().ge(0), max: number().ge(1) },
+  number().ge(0).le(1),
+);
+```
+
+```text
+$ nudo check sim.js
+OK
+  0 error · 0 warning · 1 info · 1 fn
+
+signatures
+  sim(d: number, max: number) => 1 | number
+
+issues
+  [INFO sim] sim: return contract proved via @nudo:assume d <= max  (nudo:assume-relied)
+      → @nudo:assume is a user-supplied axiom — falsify it with concrete @nudo:case runs (nudo test)
+```
+
+去掉 `@nudo:assume` 行，同一文件 + 侧车**诚实保留为证不出**——warning `nudo:unproven-return`：
+
+```text
+[WARNING sim] sim: return value ⊭ @nudo:contract return number().ge(0).le(1)  (nudo:unproven-return)
+```
+
+区间传播分别知道 `d >= 0` 与 `max >= 1`，但没有东西把两个值关联起来——这条相关性正是引理所提供的。
+
+### 与侧车契约的分工
+
+| 事实 | 归属 |
+|------|------|
+| 常数界——`d <= 10`、`max >= 1` | 侧车 / `@nudo:contract` 构建器（`number().le(10)`） |
+| 跨变量引理——`d <= max` | `@nudo:assume`（引擎推导不出） |
+
+`.le("max")` 此前被静默接受，产出一个**字符串字面量** pred（`le(self, lit("max"))`），从不参与任何证明。数值界构建器（`gt` / `ge` / `lt` / `le` / `min` / `max` / `shift`）现在在加载期拒绝非数值、非有限实参——侧车以 `nudo:interface-load` 失败：
+
+```text
+sidecar './sim.nudo.js' failed to load: nudo le(): finite numeric bound expected, got "max" — variable references are not supported; express cross-variable lemmas with @nudo:assume (issue #152)
+```
+
+这类侧车请迁移到 `@nudo:assume`。
+
+---
+
 ## @nudo:throws — 申报有意抛错 {#nudothrows--declare-intentional-throws}
 
 申报函数**有意抛错**。L2（`nudo:entry-may-throw`）要求入口/导出函数不携带未申报的 throw —— 与其藏起 fail-fast，不如把它申报出来。申报只解除已申报种类的 L2；throw 仍保留在签名上（是申报，不是抹除）。
@@ -635,6 +716,7 @@ const result = a + b;
 | `@nudo:skip` | `[=> returnsExpr]` / `[(returnsExpr)]` | 跳过求值，使用已有类型信息 |
 | `@nudo:sample` | `N` | 保留的无效果指令（已解析，未消费） |
 | `@nudo:contract` | `param constraint` / `return constraint` | 源码内契约（主路径是 `*.nudo.js` 侧车自动绑定） |
+| `@nudo:assume` | `<param> <= <param>`（或 `>=`） | 声明跨变量用户引理（公理，不被验证）——依赖它的证明带 `nudo:assume-relied` 审计标注 |
 | `@nudo:throws` | `Error, TypeError` 或 `*` | 申报有意抛错 —— 按申报种类解除 L2 `nudo:entry-may-throw` |
 | `@nudo:import` | `{ name } from "spec"`（文件级 `///`） | 为 `@nudo:contract` 引入 `*.nudo.js` 约束模板 |
 | `@nudo:env` | `name1, name2`（文件级 `///`） | 声明运行时环境 API |

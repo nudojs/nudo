@@ -340,6 +340,87 @@ function register(u) {
 
 ---
 
+## @nudo:assume — User Lemmas {#nudoassume--user-lemmas}
+
+Declare a **cross-variable lemma** the engine cannot derive — an algorithmic fact relating two parameters (edit distance ≤ the longer string's length) that plain interval propagation cannot express, because it needs a correlation between two abstract values. The premise feeds relational division folding — `d <= max ∧ max > 0 ⇒ d/max <= 1` (mirrors and negative denominators flip the inequality) — and downstream `+` / `-` / `*` folding consumes the derived bound, so return contracts like `1 - d/max ∈ [0,1]` become provable.
+
+### Syntax
+
+```text
+@nudo:assume <param> <= <param>
+@nudo:assume <param> >= <param>
+```
+
+- **Function-scoped** — the comment block immediately above the function, on the same scan path as `@nudo:contract`; it anchors to the nearest function.
+- Both names must be **parameters of the anchored function** (`d`, `max`), otherwise error `nudo:assume-invalid`.
+- Only `<=` / `>=` (`>=` is normalized to `le`). `<`, `>`, `==`, and constant bounds (`d <= 10`) are invalid — constant bounds belong to sidecar contracts (`number().le(10)`).
+- Multiple lines stack — premises are conjoined.
+
+### Semantics — an axiom, not a checked fact
+
+- **The engine never verifies the lemma.** When a proof relies on it, `nudo check` emits info `nudo:assume-relied` (`sim: return contract proved via @nudo:assume d <= max`) and suggests falsifying it with concrete `@nudo:case` runs (`nudo test`). A wrong lemma makes the affected proof unsound — keep lemmas few and reviewable.
+- **Premises never cross call boundaries.** Callee frames see an empty premise slot (cleared at function entry, restored on exit); recursive calls are conservatively cleared. A lemma about `sim`'s `d`/`max` cannot leak into another function's same-name parameters.
+
+### Example — similarity score
+
+```javascript
+// sim.js
+/**
+ * @nudo:assume d <= max
+ */
+export function sim(d, max) {
+  return max === 0 ? 1 : 1 - d / max;
+}
+```
+
+```javascript
+// sim.nudo.js
+import { fn, number } from "@nudojs/core";
+
+export const sim = fn(
+  { d: number().ge(0), max: number().ge(1) },
+  number().ge(0).le(1),
+);
+```
+
+```text
+$ nudo check sim.js
+OK
+  0 error · 0 warning · 1 info · 1 fn
+
+signatures
+  sim(d: number, max: number) => 1 | number
+
+issues
+  [INFO sim] sim: return contract proved via @nudo:assume d <= max  (nudo:assume-relied)
+      → @nudo:assume is a user-supplied axiom — falsify it with concrete @nudo:case runs (nudo test)
+```
+
+Remove the `@nudo:assume` line and the same file + sidecar stays **honestly unproven** — warning `nudo:unproven-return`:
+
+```text
+[WARNING sim] sim: return value ⊭ @nudo:contract return number().ge(0).le(1)  (nudo:unproven-return)
+```
+
+Interval propagation knows `d >= 0` and `max >= 1` separately, but nothing correlates the two values — that correlation is exactly what the lemma supplies.
+
+### Division of labor with sidecar contracts
+
+| Fact | Belongs to |
+|------|-----------|
+| Constant bound — `d <= 10`, `max >= 1` | Sidecar / `@nudo:contract` builders (`number().le(10)`) |
+| Cross-variable lemma — `d <= max` | `@nudo:assume` (the engine cannot derive it) |
+
+`.le("max")` used to be accepted silently, building a **string-literal** predicate (`le(self, lit("max"))`) that never participated in any proof. Numeric-bound builders (`gt` / `ge` / `lt` / `le` / `min` / `max` / `shift`) now reject non-numeric, non-finite arguments at load time — the sidecar fails with `nudo:interface-load`:
+
+```text
+sidecar './sim.nudo.js' failed to load: nudo le(): finite numeric bound expected, got "max" — variable references are not supported; express cross-variable lemmas with @nudo:assume (issue #152)
+```
+
+Migrate such sidecars to `@nudo:assume`.
+
+---
+
 ## @nudo:throws — Declare Intentional Throws {#nudothrows--declare-intentional-throws}
 
 Declare that a function **intentionally throws**. L2 (`nudo:entry-may-throw`) requires entry/export functions to be total — instead of hiding a fail-fast, declare it. The declaration discharges L2 for the declared kinds only; the throw stays visible on the signature (declared, not removed).
@@ -636,6 +717,7 @@ const result = a + b;
 | `@nudo:skip` | `[=> returnsExpr]` / `[(returnsExpr)]` | Skip evaluation, use existing type info |
 | `@nudo:sample` | `N` | Reserved no-op (parsed, not consumed) |
 | `@nudo:contract` | `param constraint` / `return constraint` | In-source contract (main path is the `*.nudo.js` sidecar auto-binding) |
+| `@nudo:assume` | `<param> <= <param>` (or `>=`) | Declare a cross-variable user lemma (axiom, never verified) — proofs relying on it are audit-tagged `nudo:assume-relied` |
 | `@nudo:throws` | `Error, TypeError` or `*` | Declare intentional throws — discharges L2 `nudo:entry-may-throw` for the declared kinds |
 | `@nudo:import` | `{ name } from "spec"` (file-level `///`) | Import `*.nudo.js` constraint templates for `@nudo:contract` |
 | `@nudo:env` | `name1, name2` (file-level `///`) | Declare runtime environment APIs |
