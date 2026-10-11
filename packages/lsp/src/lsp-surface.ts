@@ -138,6 +138,27 @@ const absNodeReplayCache = new Map<
 >();
 const ABS_NODE_REPLAY_CACHE_MAX = 64;
 
+/** LRU 淘汰：Map 迭代序 = 插入序，命中即 delete+set 移到最新端；
+ * 超限删最旧（首个 key）。此前为「超限全清」——多文件浏览填满后
+ * 一次清空，后续 hover 全部冷重放（大文件同步重放数百 ms），编辑/
+ * 诊断/inlay 同一事件循环排队，客户端感知 hover 卡死无响应。 */
+function replayCacheGet(key: string) {
+  const hit = absNodeReplayCache.get(key);
+  if (hit !== undefined) {
+    absNodeReplayCache.delete(key);
+    absNodeReplayCache.set(key, hit);
+  }
+  return hit;
+}
+
+function replayCachePut(key: string, entry: { source: string; nodes: Map<string, Abs> | undefined }) {
+  if (absNodeReplayCache.size >= ABS_NODE_REPLAY_CACHE_MAX) {
+    const oldest = absNodeReplayCache.keys().next().value;
+    if (oldest !== undefined) absNodeReplayCache.delete(oldest);
+  }
+  absNodeReplayCache.set(key, entry);
+}
+
 /**
  * 位置求值态 Abs（引擎重放面）：仅顶层导出函数且
  * 契约参数 Abs 齐备（Identifier 形参逐一有入口
@@ -167,7 +188,7 @@ function absNodeAtPosition(
     args.push(abs);
   }
   const cacheKey = `${filePath}#${encFn.name}`;
-  const cached = absNodeReplayCache.get(cacheKey);
+  const cached = replayCacheGet(cacheKey);
   let nodes: Map<string, Abs> | undefined;
   if (cached && cached.source === source) {
     nodes = cached.nodes;
@@ -178,10 +199,7 @@ function absNodeAtPosition(
       phi: and(...entryReqs.map((r) => r.pred)),
       modules: reuse?.modules,
     });
-    if (absNodeReplayCache.size >= ABS_NODE_REPLAY_CACHE_MAX) {
-      absNodeReplayCache.clear();
-    }
-    absNodeReplayCache.set(cacheKey, { source, nodes });
+    replayCachePut(cacheKey, { source, nodes });
   }
   const exact = nodes?.get(`${line}:${column}`);
   if (exact !== undefined || nodes === undefined) return exact;

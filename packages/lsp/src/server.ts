@@ -694,6 +694,16 @@ function isMainModule(): boolean {
 // Bin entry: transport selection + createConnection live here so importing
 // createNudoServer (tests, embeds) never starts a language server.
 if (isMainModule()) {
+  // 进程级兜底：任何未被 handler 捕获的异步异常默认会直接终止进程
+  // （Node ≥15 unhandledRejections=throw），客户端只看到 "server shut down"
+  // 且无任何 stderr 留痕——改为记录后继续运行，把「无日志的静默死亡」
+  // 变成可排查的日志事件。
+  process.on("unhandledRejection", (reason) => {
+    console.error(`[nudo-lsp] unhandled rejection:`, reason);
+  });
+  process.on("uncaughtException", (err) => {
+    console.error(`[nudo-lsp] uncaught exception:`, err);
+  });
   // Default to stdio when the host did not pick a transport (Zed, MCP bridges,
   // `nudo-lsp` with no args). VS Code passes --node-ipc via vscode-languageclient.
   if (
