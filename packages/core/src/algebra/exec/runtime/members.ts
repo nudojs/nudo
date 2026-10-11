@@ -23,33 +23,9 @@ import { getEvalClass } from "../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../class-mark.ts";
 import { NudoThrow, noBody, undef, throwStrictWrite, writeInPlace, clearStaleTermPred, asAbsVal, isDefinitelyTrue, isDefinitelyFalse, currentExecPhi, $lit, litTruth } from "./state.ts";
 import { $typeof, $eq, $ne } from "./ops.ts";
+import { $objAccessor, lookupObjAccessor, migrateAccessors, accessorTable } from "../../accessors.ts";
 
-// 访问器侧表
-/** 对象字面量访问器侧表（Abs 不可存裸 JS 闭包；键为对象 Abs 身份） */
-export const accessorTable = new WeakMap<
-  object,
-  Map<string, { get?: (t: Abs) => Abs; set?: (t: Abs, v: Abs) => Abs }>
->();
-
-/** 注册对象字面量访问器（transpile 调用；返回原 obj 以便链式包裹） */
-export function $objAccessor(
-  o: Abs,
-  key: string,
-  get: ((t: Abs) => Abs) | null,
-  set: ((t: Abs, v: Abs) => Abs) | null,
-): Abs {
-  if (!get && !set) return o;
-  let m = accessorTable.get(o);
-  if (!m) {
-    m = new Map();
-    accessorTable.set(o, m);
-  }
-  const def = m.get(key) ?? {};
-  if (get) def.get = get;
-  if (set) def.set = set;
-  m.set(key, def);
-  return o;
-}
+// 访问器侧表已下沉到 ../../accessors.ts（叶子模块，objects.ts join 共用）
 
 /** 计算键访问器注册（`{ get [expr]() {} }`）：键为 Abs，ToPropertyKey 后注册。
  *  非字面量键无法静态定键——保占位槽（键存在性），不注册派发。 */
@@ -62,29 +38,6 @@ export function $objAccessorKey(
   const pk = propertyKeyOf(key);
   if (pk === undefined) return o;
   return $objAccessor(o, pk, get, set);
-}
-
-/** 对象字面量访问器查询（供 $get/$set/$spread/Object.assign 共用） */
-export function lookupObjAccessor(
-  o: Abs,
-  key: string,
-): { get?: (t: Abs) => Abs; set?: (t: Abs, v: Abs) => Abs } | undefined {
-  return accessorTable.get(o)?.get(key);
-}
-
-/** 不可变更新产生新 Abs 时迁移侧表；omitKey=delete 目标键（对象字面量自有访问器随键删除） */
-export function migrateAccessors(from: Abs, to: Abs, omitKey?: string): void {
-  if (to === from) return;
-  const m = accessorTable.get(from);
-  if (!m) return;
-  if (omitKey === undefined) {
-    accessorTable.set(to, m);
-    return;
-  }
-  const copy = new Map(m);
-  copy.delete(omitKey);
-  if (copy.size === 0) accessorTable.delete(to);
-  else accessorTable.set(to, copy);
 }
 
 export type ClassAccessor = { get?: (t: Abs) => Abs; set?: (t: Abs, v: Abs) => Abs };

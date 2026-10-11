@@ -94,10 +94,12 @@ export {
   $in,
   $instanceof,
   $instanceofNonIdent,
-  $objAccessor,
   $objAccessorKey,
-  lookupObjAccessor,
 } from "./runtime/members.ts";
+export {
+  $objAccessor,
+  lookupObjAccessor,
+} from "../accessors.ts";
 export {
   $catchVal,
   $for,

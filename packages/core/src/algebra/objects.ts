@@ -10,6 +10,7 @@ import { pTrue, predToString } from "./pred.ts";
 import type { Abs, Shape, Confidence } from "./abs.ts";
 import { abs, confJoin, litValue, unknown, never, strLit } from "./abs.ts";
 import { noteDerivationJoin } from "./derivation.ts";
+import { $objAccessor, lookupObjAccessor, migrateAccessors } from "./accessors.ts";
 
 export type Slot = { value: Abs; optional?: boolean; readonly?: boolean };
 
@@ -238,15 +239,46 @@ export function joinObjects(a: Abs, b: Abs): Abs {
 
   const slots: Record<string, Slot> = {};
   let conf: Confidence = confJoin(a.conf, b.conf);
+  // 同一访问器定义（双臂相同闭包：别名 fork / migrateAccessors 迁移产物，
+  // 如循环加宽的前后帧）→ 整组迁移到 join 产物，读写继续走侧表
+  const sameDefs: Array<[string, { get?: (t: Abs) => Abs; set?: (t: Abs, v: Abs) => Abs }]> = [];
   for (const k of ka) {
     const sa = a.shape.slots[k]!;
     const sb = b.shape.slots[k]!;
     const optional = sa.optional || sb.optional;
-    const jv = joinValues(sa.value, sb.value);
+    const accA = lookupObjAccessor(a, k);
+    const accB = lookupObjAccessor(b, k);
+    let jv: Abs;
+    if (accA && accB && accA.get === accB.get && accA.set === accB.set) {
+      // 槽位保持占位口径（in/keys 只看键存在性；读域由侧表派发）
+      jv = joinValues(sa.value, sb.value);
+      sameDefs.push([k, accA]);
+    } else {
+      // 混合臂（一侧访问器、另一侧数据槽；或两臂不同访问器）：单一访问器
+      // 不能代表另一臂——getter 读域按原臂接收者求值后并入数据槽（与
+      // $spread 调 getter 拷结果同口径）；setter-only 原生读 undefined，
+      // 占位槽即其读域。侧表不迁移：读写折数据槽 = 保守超近似。
+      const va = accA?.get ? evalGetterDomain(accA.get, a) : sa.value;
+      const vb = accB?.get ? evalGetterDomain(accB.get, b) : sb.value;
+      jv = joinValues(va, vb);
+    }
     conf = confJoin(conf, jv.conf);
     setSlot(slots, k, { value: jv, optional });
   }
-  return { shape: { k: "obj", slots }, conf };
+  const joined: Abs = { shape: { k: "obj", slots }, conf };
+  for (const [k, def] of sameDefs) $objAccessor(joined, k, def.get ?? null, def.set ?? null);
+  return joined;
+}
+
+/** join 时求 getter 读域：与 $get 同口径、以原臂为接收者调用闭包。
+ *  求值失败或求值中抛（含 NudoThrow）折 unknown——读域不可静态刻画时的
+ *  sound 超近似（此前占位槽折 definite undefined 是假精确）。 */
+function evalGetterDomain(get: (t: Abs) => Abs, recv: Abs): Abs {
+  try {
+    return get(recv);
+  } catch {
+    return unknown;
+  }
 }
 
 /** 值级 join：同型双字面量保留为枚举 sum；其余 prim 同型收成 path */
@@ -543,7 +575,12 @@ export function joinAbs(a: Abs, b: Abs): Abs {
   if (a.shape.k === "never") return b;
   if (b.shape.k === "never") return a;
   if (isObj(a) && isObj(b)) {
-    return annotateJoinPath(a, b, joinObjects(a, b));
+    const joined = joinObjects(a, b);
+    const out = annotateJoinPath(a, b, joined);
+    // annotateJoinPath 可能 {...result} 再包一层新身份；侧表按对象身份键控，
+    // joinObjects 注册的访问器须随迁（同 $set/$del 的迁移先例）
+    if (out !== joined) migrateAccessors(joined, out);
+    return out;
   }
   if (a.shape.k === "fn" && b.shape.k === "fn") {
     return annotateJoinPath(a, b, joinFunctions(a, b));

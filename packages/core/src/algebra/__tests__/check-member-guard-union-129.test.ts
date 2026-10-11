@@ -41,7 +41,7 @@ import {
   derefConstraint,
 } from "@nudojs/core";
 import { $removeMemberNullish, $removeNullish } from "../exec/runtime/async.ts";
-import { $objAccessor } from "../exec/runtime/members.ts";
+import { $objAccessor } from "../accessors.ts";
 import { abs } from "../abs.ts";
 import { lit as litTerm } from "../term.ts";
 

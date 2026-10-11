@@ -15,7 +15,7 @@ import { TYPED_ARRAY_ELEMENT } from "./shared.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
 import { $call } from "../exec/call.ts";
-import { $objAccessor, migrateAccessors, lookupObjAccessor } from "../exec/runtime/members.ts";
+import { $objAccessor, migrateAccessors, lookupObjAccessor } from "../accessors.ts";
 import { getFnImpl, absFunction } from "../abs-fn.ts";
 import { isSymbolAbs } from "./symbol.ts";
 import { boolPrim, numPrim, str, isPrimLike, mayCoerceThrowOperand, noBody } from "./shared.ts";

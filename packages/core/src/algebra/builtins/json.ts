@@ -13,7 +13,7 @@ import { pTrue } from "../pred.ts";
 import { str, isBigintPrimAbs, mayCoerceThrowOperand } from "./shared.ts";
 import { getPropFlags } from "./invariants.ts";
 import { readProperty } from "./object.ts";
-import { accessorTable } from "../exec/runtime/members.ts";
+import { accessorTable } from "../accessors.ts";
 
 const NOT_LITERAL = Symbol("nudo:not-literal");
 /** value 模式下 fn/symbol 子树：JSON 值域省略（obj 槽跳过 / 数组槽 null） */

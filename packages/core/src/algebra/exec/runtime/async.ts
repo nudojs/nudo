@@ -9,7 +9,7 @@ import { pTrue, and, implies, predEquals, type PrimName } from "../../pred.ts";
 import { joinAbs, objOf, migrateNullProto, type ObjShape } from "../../objects.ts";
 import { refineAbsForRelTrue } from "../../arithmetic.ts";
 import { OBJECT_PROTO_METHOD_NAMES, migrateInvariants } from "../../builtins.ts";
-import { accessorTable, migrateAccessors } from "./members.ts";
+import { accessorTable, migrateAccessors } from "../../accessors.ts";
 import { leqAbs } from "../../leq.ts";
 import { absFunction, getFnImpl } from "../../abs-fn.ts";
 import { isNullishLitAbs, definitelyNotNullishShape, typeofName } from "../../surface.ts";
