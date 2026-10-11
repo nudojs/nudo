@@ -115,8 +115,11 @@ export function emitArrMutatorRebinds(
       const methodName = (node.callee.property as { name: string }).name;
       const argSrcs = (node.arguments ?? [])
         .map((a) =>
+          // spread 实参展开（issue #153）：$elems → JS Abs[]，数组字面量 JS
+          // spread 平铺（与 expr.ts 普通调用同口径）；此前折 $unknown() 单参
+          // 让重绑行以 unknown 实参执行真实变更，污染容器元素域
           (a as { type?: string }).type === "SpreadElement"
-            ? "$unknown()"
+            ? `...$elems(${emitTranspileExpression((a as { argument: Expression }).argument, opts)})`
             : isExpression(a as Node)
               ? emitTranspileExpression(a as Expression, opts)
               : "$unknown()",

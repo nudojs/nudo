@@ -69,6 +69,9 @@ function retAnchorTerm(ret: Abs): Term {
  * - conf widened / mock / opaque：分析显式丢失精度
  * - any：开发者未约束；unknown 无 term：推断失败
  * - 拓宽 sum 成员的 bare prim（无 term/pred）：any+any 派生产物
+ * 例外（issue #151，消费方各自判断）：widened 裸 prim 臂对无界裸 prim
+ * 契约的域隶属可证（provesBarePrimDomain discharge，与 #115 partial
+ * 同口径——宽化丢界/路径证据，不丢 prim 值域）。
  */
 function isValueSetUnknown(ret: Abs): boolean {
   if (
@@ -114,10 +117,13 @@ function flattenSumArms(ret: Abs): Abs[] {
  * any 参与运算符派生的 sum 臂（`any+any → number|string`）：
  * parent conf=partial 且成员是无 term/pred 的裸 prim。报则假阳性
  * （gold 门禁口径）；proof 侧当 unprovable，不得当 proved/disproved。
+ * issue #151：循环携带绑定宽化（loop-widen）注入的 prim 域顶臂同形——
+ * arm conf="widened"（parent sum 亦 widened），与 partial 同口径：宽化丢
+ * 界/路径证据，不丢 prim 值域，无界裸 prim 契约的域隶属可证。
  */
 function isWidenedSumArm(m: Abs, parent: Abs): boolean {
   return (
-    parent.conf === "partial" &&
+    (parent.conf === "partial" || m.conf === "widened") &&
     m.shape.k === "prim" &&
     !m.term &&
     (!m.pred || m.pred.op === "true")
@@ -188,8 +194,13 @@ export function assertImplies(
   // any() 契约：无义务
   if (isAnyConstraint(constraint)) return proved();
 
-  // --- 值域未知（整段）：any / true unknown / opaque/widened/mock ---
-  if (isValueSetUnknown(ret)) {
+  // --- 值域未知（整段）：any / true unknown / opaque/mock ---
+  // issue #151 例外：conf="widened"（loop-widen 循环携带宽化产物）不下沉
+  // 到这里的整段 unprovable——与 #115 的 partial 同口径：宽化丢界/路径
+  // 证据，不丢 prim 值域。放行进入逐臂分发（assertSumArms /
+  // assertImpliesSingle 的 per-arm isValueSetUnknown 门照旧兜底：非裸
+  // prim / 带界义务 / 错配 prim 仍 unprovable，不会伪装成功）。
+  if (isValueSetUnknown(ret) && ret.conf !== "widened") {
     return unprovable(
       ret.shape.k === "any"
         ? "any does not establish the return contract"
@@ -245,9 +256,9 @@ function assertSumArms(
       continue;
     }
     if (isValueSetUnknown(arm) || isWidenedSumArm(arm, parent)) {
-      // 无界 prim 契约的域隶属可证（issue #115）：该臂 discharged，
-      // 不降整体 unprovable。其余（unknown 值域 / 带界义务 / 错配 prim）
-      // 保持 unprovable 口径。
+      // 无界 prim 契约的域隶属可证（issue #115 partial / #151 widened）：
+      // 该臂 discharged，不降整体 unprovable。其余（unknown 值域 / 带界
+      // 义务 / 错配 prim）保持 unprovable 口径。
       if (
         isWidenedSumArm(arm, parent) &&
         provesBarePrimDomain(arm, constraint)
@@ -294,6 +305,20 @@ function assertImpliesSingle(
 
   // --- 值域未知：any / true unknown / opaque ---
   if (isValueSetUnknown(arm)) {
+    // issue #151：循环携带绑定宽化到 prim 域顶的裸 prim 臂（loop-widen
+    // 产物：conf="widened"、无 term/pred）与 #115 的 partial 臂同口径——
+    // 宽化丢的是界/路径证据，不丢 prim 值域。无界裸 prim 契约只问域隶属
+    // → proved，不降假 unproven-return；带界/结构义务与错配 prim 保持原
+    // unprovable（宽化臂的界义务本就证不出，也不得变 disproved）。
+    if (
+      arm.conf === "widened" &&
+      arm.shape.k === "prim" &&
+      !arm.term &&
+      (!arm.pred || arm.pred.op === "true") &&
+      provesBarePrimDomain(arm, constraint)
+    ) {
+      return proved();
+    }
     return unprovable(
       arm.shape.k === "any"
         ? "any does not establish the return contract"
