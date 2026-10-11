@@ -499,7 +499,8 @@ const runBindings = new WeakMap<object, Map<string, unknown>>();
 /**
  * env 全局注入时**不得**遮蔽的宿主内建名 = `HOST_INTRINSIC_SET`（与转译折叠同源）。
  *
- * 注入形式是模块级 `const <name> = __nudoEnv["<name>"]`，会遮蔽宿主全局。
+ * 注入形式是模块级 `let <name> = __nudoEnv["<name>"]`（可写绑定，原生
+ * globalThis 属性可赋值），会遮蔽宿主全局。
  * 转译产物对这三个名字发**无标识符**源（`void 0` / `0/0` / `1/0` → `$lit`），
  * 但产物里仍有依赖宿主 `undefined` 身份的省略哨兵（`$fork` 缺 else 臂的第三参
  * 省略），且用户源里裸标识符一经遮蔽也会把 Abs 送进 `$lit`/调用位。
@@ -635,9 +636,14 @@ function runTranspiledInner(
   const envInjectNames = Object.keys(envAndMocks).filter(
     (k) => !ENV_SHADOW_SKIP.has(k),
   );
+  // @nudo:env 全局 + @nudo:mock 绑定（与 __nudoEnv 合并表一致）。
+  // let 而非 const：env 全局在原生是 globalThis 的可写属性，`process.exitCode = 1`
+  // 这类成员写经 memberPath 写回链重绑根标识符（`process = $set(process, …)`）——
+  // const 注入会把它变成原生 TypeError 并毒化整场求值（issue #148：
+  // 返回值折 unknown + entry-may-throw）。
   if (envInjectNames.length > 0) {
     const envBinds = envInjectNames
-      .map((k) => `const ${k} = __nudoEnv[${JSON.stringify(k)}];`)
+      .map((k) => `let ${k} = __nudoEnv[${JSON.stringify(k)}];`)
       .join("\n");
     js = `${envBinds}\n${js}`;
   }

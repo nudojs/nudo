@@ -1230,28 +1230,17 @@ export function $concat(a: Abs, b: Abs): Abs {
     if (isMapAbs(x)) return mapEntriesAbs(x);
     const mi = matchIterElements(x);
     if (mi) return mi;
+    // brand 结构面在内层（issue #147）：Set/Map/match-iter brand 已在上方
+    // 按名命中，此处只兜结构 delegation（内层 tuple 精确展开等）。
+    if (x.shape.k === "brand") return expand(x.shape.shape);
+    // 内层 tuple 精确展开（裸 tuple 已被 $concat 顶部 tuple×tuple 分支
+    // 吸收，此处只经 brand delegation 到达）：[...t1, ...brandT2] 保持
+    // tuple 形状，元素域与长度均精确（此前折 arr）。
+    if (x.shape.k === "tuple") return [...x.shape.elements];
     return null;
   };
-  if (as.k === "tuple") {
-    const be = expand(b);
-    if (be) {
-      return tupleOrWiden([...as.elements, ...be], confJoin(a.conf, b.conf));
-    }
-    // b 可能可迭代：spread 并入的是 b 的元素而非 b 本身。
-    // any 的元素域是 any（无约束），不是 unknown（引擎债）。
-    const bEl = b?.shape?.k === "any" ? anyMemberResult() : unknown;
-    return abs(
-      { k: "arr", element: [...as.elements, bEl].reduce((x, y) => joinAbs(x, y)) },
-      undefined,
-      undefined,
-      "path",
-    );
-  }
-  const ae = expand(a);
-  if (ae && bs.k === "tuple") {
-    return tupleOrWiden([...ae, ...bs.elements], confJoin(a.conf, b.conf));
-  }
-  // 双侧皆非精确容器：元素 join（any → any；空 tuple 不贡献元素）
+  // 单侧元素域（与 expand 侧表配套）：any → any、tuple 逐元素 join、抽象
+  // 字符串恒 string、brand delegation 到内层；其余 unknown。
   const sideEl = (x: Abs, expanded: Abs[] | null): Abs => {
     // DEC-006：空 Set/Map/match-iter 展开无元素——不得裸 reduce
     if (expanded) {
@@ -1271,8 +1260,35 @@ export function $concat(a: Abs, b: Abs): Abs {
     if (x?.shape?.k === "prim" && x.shape.type === "string") {
       return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
     }
+    // arr 元素域 = 单代表元素（顶层 arr 已被函数首部分支吸收，此臂只服务
+    // brand delegation 的内层）
+    if (x?.shape?.k === "arr") return x.shape.element;
+    // brand 结构面在内层（issue #147）：[...Array<T> brand] 元素域 = 内层
+    // arr 元素，不再折 unknown（Set/Map/match-iter brand 在 expand 按名命中）。
+    // expanded 在此必为 null（顶部 if (expanded) 已返回）——显式传 null。
+    if (x?.shape?.k === "brand") return sideEl(x.shape.shape, null);
     return unknown;
   };
+  if (as.k === "tuple") {
+    const be = expand(b);
+    if (be) {
+      return tupleOrWiden([...as.elements, ...be], confJoin(a.conf, b.conf));
+    }
+    // b 可能可迭代：spread 并入的是 b 的元素而非 b 本身。
+    // any 的元素域是 any（无约束），不是 unknown（引擎债）。
+    const bEl = sideEl(b, be);
+    return abs(
+      { k: "arr", element: [...as.elements, bEl].reduce((x, y) => joinAbs(x, y)) },
+      undefined,
+      undefined,
+      "path",
+    );
+  }
+  const ae = expand(a);
+  if (ae && bs.k === "tuple") {
+    return tupleOrWiden([...ae, ...bs.elements], confJoin(a.conf, b.conf));
+  }
+  // 双侧皆非精确容器：元素 join（any → any；空 tuple 不贡献元素）
   return abs(
     { k: "arr", element: joinAbs(sideEl(a, ae), sideEl(b, expand(b))) },
     undefined,
@@ -1287,8 +1303,11 @@ export function $concat(a: Abs, b: Abs): Abs {
  *  - definite：非 string prim（num/bool/bigint/symbol/null/undefined——这些
  *    prim 的任何取值都没有 @@iterator，含字面量与抽象 prim）与闭 obj
  *    （无 @@iterator 槽；Object.prototype 原型链亦无）
- *  - may：any / unknown / open obj（未知键可能含 @@iterator）/ fn / brand /
- *    promise eff —— 抽象面可能不可迭代
+ *  - may：any / unknown / open obj（未知键可能含 @@iterator）/ fn /
+ *    promise eff —— 抽象面可能非可迭代
+ *  brand：名义标签，结构面在内层——内层 total 则 total（env/harvest 的
+ *    Array<T> brand 整族，issue #147）；其余 may，绝不下 definite 结论
+ *    （TypedArray/Buffer 等内层空 obj，原型链 @@iterator 不在内层建模）。
  *  sum：逐臂归约（全臂 definite → definite；任一臂非 total → may） */
 type IterabilityKind = "total" | "may" | "definite";
 
@@ -1332,6 +1351,12 @@ function iterabilityKind(a: Abs): IterabilityKind {
     if (s.slots["@@iterator"]) return "total";
     return s.open ? "may" : "definite";
   }
+  // brand 只是名义标签，不改变结构可迭代性（issue #147）：
+  // 内层全量可迭代 → total；否则 may——不下 definite（内层结构不承诺
+  // 原型链无 @@iterator）。
+  if (s.k === "brand") {
+    return iterabilityKind(s.shape) === "total" ? "total" : "may";
+  }
   return "may";
 }
 
@@ -1360,6 +1385,18 @@ function asyncIterabilityKind(a: Abs): IterabilityKind {
     s.slots["@@asyncIterator"]
   ) {
     return "total";
+  }
+  // brand 同步口径（issue #147）：内层仅异步可迭代（只有 @@asyncIterator 槽）
+  // → total；其余委派 iterabilityKind（其 brand 臂按内层结构面判）。
+  if (s.k === "brand") {
+    const ish = s.shape.shape;
+    if (
+      ish.k === "obj" &&
+      !ish.slots["@@iterator"] &&
+      ish.slots["@@asyncIterator"]
+    ) {
+      return "total";
+    }
   }
   return iterabilityKind(a);
 }
@@ -1469,6 +1506,10 @@ function elemsOf(a: Abs): Abs[] {
   if (a.shape.k === "prim" && a.shape.type === "string") {
     return [abs({ k: "prim", type: "string" }, undefined, undefined, "path")];
   }
+  // brand 结构面在内层（issue #147）：env/harvest 的 Array<T> brand 的
+  // for-of / spread 元素域 = 内层 arr 元素（此前折 unknown）。Set/Map/
+  // match-iter brand 已在上方按名命中侧表，此处只兜结构 delegation。
+  if (a.shape.k === "brand") return elemsOf(a.shape.shape);
   return [unknown];
 }
 

@@ -2,7 +2,7 @@
  * @nudo:env 全局注入不得遮蔽宿主内建标识符 undefined / NaN / Infinity。
  *
  * 回归背景：`runTranspiled` 把每个 env 全局转成模块级
- * `const <name> = __nudoEnv["<name>"]`，一旦 env 声明了 `undefined`
+ * `let <name> = __nudoEnv["<name>"]`，一旦 env 声明了 `undefined`
  * （`@nudojs/env/es` 恒声明 `undefined: undef()`，web/node 又隐含 es），产物里的
  * **裸 `undefined` 文本**（隐式返回、缺 else 臂）与 `$lit(undefined)` 都拿到 Abs
  * 对象 → 循环内提前 return 的分支 join 整条折 unknown；`NaN` 绑成 `prim.num()`
