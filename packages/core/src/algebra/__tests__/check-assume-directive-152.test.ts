@@ -307,17 +307,18 @@ describe("assume 前提槽（currentAssumePremises / withAssumePremises）", () 
     expect(currentAssumePremises().op).toBe("true");
   });
 
-  it("callTranspiledExportFull 接受 assumePremises（与 phi 组合不崩）", () => {
+  it("withAssumePremises 包裹与 opts.phi 组合不崩（播种单一机制）", () => {
     const run = tryRunTranspiled(`export function one() { return 1; }`);
     expect(run).toBeDefined();
     const premise = le(termVar("d"), termVar("max"));
-    const r = callTranspiledExportFull(run!, "one", [], {
-      assumePremises: premise,
-    });
+    // #152 播种单一机制：assume 前提只走 withAssumePremises 动态域包裹
+    // （callTranspiledExportFull 无 assumePremises 选项位），phi 走 opts.phi
+    // ——两层嵌套互不干扰
+    const r = withAssumePremises(premise, () =>
+      callTranspiledExportFull(run!, "one", [], { phi: premise }),
+    );
     expect(r.result.term?.op).toBe("lit");
-    const r2 = callTranspiledExportFull(run!, "one", [], {
-      assumePremises: premise,
-    });
+    const r2 = withAssumePremises(premise, () => callTranspiledExportFull(run!, "one", []));
     expect(r2.result.term?.op).toBe("lit");
   });
 });
