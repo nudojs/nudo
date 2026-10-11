@@ -147,9 +147,9 @@ nested({ card: { grade: 'A' } });
     const sig = r.signatures.find((s) => s.name === "nested");
     expect(sig).toBeDefined();
     expect(sig!.params[0]).toContain("card");
-    expect(sig!.paramTypes[0]).toContain("card");
-    expect(sig!.paramTypes[0]).toContain("grade");
-    expect(sig!.paramTypes[0]).toContain("string");
+    expect(sig!.paramTypes![0]).toContain("card");
+    expect(sig!.paramTypes![0]).toContain("grade");
+    expect(sig!.paramTypes![0]).toContain("string");
     // 契约挂上后不再是 unknown（unknown-inference 消失）
     expect(
       r.issues.filter((i) => i.code === "nudo:unknown-inference" && i.fn === "nested"),

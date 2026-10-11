@@ -135,10 +135,10 @@ describe("Bug 8: 集合构造器元素级 entry 校验（值级定抛）", () =>
 
   it("TypeError 可 catch（值级与原生同域）", () => {
     expect(
-      litValue(call(`export function f() { try { new Map([null]); } catch (e) { return "caught"; } return "missed"; }`).result),
+      litValue(call(`export function f() { try { new Map([null]); } catch (e) { return "caught"; } return "missed"; }`).result as never),
     ).toEqual({ ok: true, value: "caught" });
     expect(
-      litValue(call(`export function f() { try { new WeakMap([{}]); } catch (e) { return "caught"; } return "missed"; }`).result),
+      litValue(call(`export function f() { try { new WeakMap([{}]); } catch (e) { return "caught"; } return "missed"; }`).result as never),
     ).toEqual({ ok: true, value: "caught" });
   });
 });
@@ -146,11 +146,11 @@ describe("Bug 8: 集合构造器元素级 entry 校验（值级定抛）", () =>
 describe("Bug 8: 合法 entry 对齐原生（一元/零元组与对象条目入表）", () => {
   it("new Map([['a']]).size === 1，get('a') → undefined，has('a') → true", () => {
     expect(numLitOf(call(`export function f() { return new Map([["a"]]).size; }`).result)).toBe(1);
-    expect(litValue(call(`export function f() { return new Map([["a"]]).get("a"); }`).result)).toEqual({
+    expect(litValue(call(`export function f() { return new Map([["a"]]).get("a"); }`).result as never)).toEqual({
       ok: true,
       value: undefined,
     });
-    expect(litValue(call(`export function f() { return new Map([["a"]]).has("a"); }`).result)).toEqual({
+    expect(litValue(call(`export function f() { return new Map([["a"]]).has("a"); }`).result as never)).toEqual({
       ok: true,
       value: true,
     });
@@ -160,7 +160,7 @@ describe("Bug 8: 合法 entry 对齐原生（一元/零元组与对象条目入�
     expect(numLitOf(call(`export function f() { return new Map([[]]).size; }`).result)).toBe(1);
     expect(numLitOf(call(`export function f() { return new Map([{}]).size; }`).result)).toBe(1);
     expect(numLitOf(call(`export function f() { return new Map([new Date()]).size; }`).result)).toBe(1);
-    expect(litValue(call(`export function f() { return new Map([[]]).get(undefined); }`).result)).toEqual({
+    expect(litValue(call(`export function f() { return new Map([[]]).get(undefined); }`).result as never)).toEqual({
       ok: true,
       value: undefined,
     });
@@ -171,7 +171,7 @@ describe("Bug 8: 合法 entry 对齐原生（一元/零元组与对象条目入�
     expect(numLitOf(call(`export function f() { return new Map([[], []]).size; }`).result)).toBe(1);
     expect(numLitOf(call(`export function f() { return new Map([["a", 1], ["b"]]).size; }`).result)).toBe(2);
     expect(numLitOf(call(`export function f() { return new Map([{ 0: 1 }]).size; }`).result)).toBe(1);
-    expect(litValue(call(`export function f() { return new Map([{ 0: 1 }]).get(1); }`).result)).toEqual({
+    expect(litValue(call(`export function f() { return new Map([{ 0: 1 }]).get(1); }`).result as never)).toEqual({
       ok: true,
       value: undefined,
     });
@@ -179,7 +179,7 @@ describe("Bug 8: 合法 entry 对齐原生（一元/零元组与对象条目入�
 
   it("合法控制组不回退：二元组 / null 键 / Set 元素 / 弱键对象", () => {
     expect(numLitOf(call(`export function f() { return new Map([["a", 1]]).size; }`).result)).toBe(1);
-    expect(litValue(call(`export function f() { return new Map([["a", 1]]).get("a"); }`).result)).toEqual({
+    expect(litValue(call(`export function f() { return new Map([["a", 1]]).get("a"); }`).result as never)).toEqual({
       ok: true,
       value: 1,
     });

@@ -327,7 +327,7 @@ export const decide = fn(
     let handler: ((p: unknown) => unknown) | undefined;
     attachHover({
       connection: {
-        onHover: (h) => {
+        onHover: (h: unknown) => {
           handler = h as typeof handler;
         },
         console: { error: () => undefined },

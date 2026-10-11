@@ -261,7 +261,7 @@ describe("Map.groupBy: arr/抽象串代表元素 + 常量键（open ∧ unkeyed 
     const r = evalNamespaceCall("Map", "groupBy", [items, cb]);
     expect(r).toBeDefined();
     expect(r!.shape.k).toBe("brand");
-    expect(r!.shape.name).toBe("Map");
+    expect((r!.shape as { name: string }).name).toBe("Map");
   });
 
   it("抽象 string prim + 字面量键 → 同口径", () => {
@@ -270,7 +270,7 @@ describe("Map.groupBy: arr/抽象串代表元素 + 常量键（open ∧ unkeyed 
     const r = evalNamespaceCall("Map", "groupBy", [items, cb]);
     expect(r).toBeDefined();
     expect(r!.shape.k).toBe("brand");
-    expect(r!.shape.name).toBe("Map");
+    expect((r!.shape as { name: string }).name).toBe("Map");
   });
 
   it("Object.groupBy 同形对照（本就不裸抛）", () => {

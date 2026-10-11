@@ -93,7 +93,7 @@ describe("Bug 3：any 接收者（无约束入口参）的 L2 gate", () => {
     const issues = l2Issues(r, "f");
     expect(issues.length).toBeGreaterThan(0);
     expect(issues.some((i) => i.message.includes("TypeError"))).toBe(true);
-    expect(issues.some((i) => i.suggestion.includes("'length'"))).toBe(true);
+    expect(issues.some((i) => i.suggestion!.includes("'length'"))).toBe(true);
   });
 
   it("对照：x.prop 同样记（$get 路径不回退）", () => {

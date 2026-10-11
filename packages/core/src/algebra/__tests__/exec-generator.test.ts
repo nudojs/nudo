@@ -198,7 +198,7 @@ describe("$copy 快照迁移生成器侧表", () => {
   });
 
   it("genIter 元素表随副本迁移（matchIterElements 命中副本）", () => {
-    const iterFn = absFunction([], { apply: () => anyAbs() });
+    const iterFn = absFunction([], { apply: () => anyAbs });
     const gen = abs(
       { k: "obj", slots: { "@@iterator": { value: iterFn } } },
       undefined,
@@ -212,7 +212,7 @@ describe("$copy 快照迁移生成器侧表", () => {
 
   it("matchAll 迭代器元素表随副本迁移（brand 路径）", () => {
     const mi = abs(
-      { k: "brand", name: "RegExpMatchIterator", shape: abs({ k: "obj", slots: {} }) },
+      { k: "brand", name: "RegExpMatchIterator", shape: abs({ k: "obj", slots: {} }, undefined, undefined, "exact") },
       undefined,
       undefined,
       "exact",
