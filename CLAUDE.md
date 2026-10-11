@@ -15,7 +15,7 @@ Product CLI face (`docs/design/cli-semantics.md`): primary verbs are `check` / `
 ## Development Commands
 
 ```bash
-pnpm install            # Install dependencies (requires pnpm@9.1.0)
+pnpm install            # Install dependencies (requires pnpm@11.28.0, see packageManager)
 pnpm run build          # Build all packages with tsup
 pnpm run test           # Run all tests (vitest run)
 pnpm run test:watch     # Run tests in watch mode

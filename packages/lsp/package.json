@@ -49,11 +49,11 @@
     "registry": "https://registry.npmjs.org"
   },
   "dependencies": {
-    "@nudojs/service": "workspace:*",
+    "@babel/traverse": "^8.0.7",
+    "@babel/types": "^8.0.6",
     "@nudojs/core": "workspace:*",
     "@nudojs/parser": "workspace:*",
-    "@babel/traverse": "^8.0.6",
-    "@babel/types": "^8.0.6",
+    "@nudojs/service": "workspace:*",
     "vscode-languageserver": "^10.1.2",
     "vscode-languageserver-textdocument": "^1.0.15"
   },
@@ -63,6 +63,6 @@
     "smoke": "node ./scripts/smoke-stdio.mjs"
   },
   "devDependencies": {
-    "@types/node": "^26.6.3"
+    "@types/node": "^26.6.5"
   }
 }
