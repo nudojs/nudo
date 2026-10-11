@@ -358,7 +358,7 @@ function register(u) {
 ### 语义——公理，不是被检验的事实
 
 - **引擎从不验证引理。** 证明依赖它时，`nudo check` 发 info `nudo:assume-relied`（`sim: return contract proved via @nudo:assume d <= max`），并建议用具体 `@nudo:case`（`nudo test`）证伪。错误引理会让受影响的证明 unsound——引理要少、要可评审。
-- **前提不跨调用边界继承。** callee 帧看到的前提槽为空（函数入口清空、退出恢复）；递归调用保守清空。关于 `sim` 的 `d`/`max` 的引理不会泄漏进别的函数的同名形参。
+- **前提不跨调用边界继承。** callee 帧看到的前提槽为空（函数入口清空、退出恢复）；递归调用保守清空。关于 `sim` 的 `d`/`max` 的引理不会泄漏进别的函数的同名形参。前提激活期间，契约面采用（contract-face adoption）同样跳过：无信息实参不会被重锚到 callee 的形参名上，Fabricate 出的同名 term 无法流回 caller 帧冒充引理变量（否则 `sim` 内调用 `helper(d)` 会让 `helper` 自己的 `d` 与引理的 `d` 碰撞）。
 
 ### 示例——相似度得分
 

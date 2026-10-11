@@ -322,6 +322,50 @@ describe("assume 前提槽（currentAssumePremises / withAssumePremises）", () 
   });
 });
 
+describe("assume × #123 adoption 碰撞（unsound 假证明守卫）", () => {
+  // 实测漏洞：sim 帧内 getD(wild(undefined)) 的无信息实参被 contract-face
+  // adoption 重锚为 getD 的形参名 term（termVar("d")）；getD 无返回契约 →
+  // presentCallResultFace 不洗回 → 该 term 原样流回 sim 帧（caller 帧前提
+  // 仍激活——callAtFunctionBoundary 只清 callee 帧槽），与引理 d <= max 的
+  // 裸 var 名按 termEquals 碰撞 → dd/mm 假折 le(·,1) →「return contract
+  // proved via @nudo:assume」假证明（dd/mm 实际是 wild(undefined) 的结果，
+  // 与 sim 形参毫无关系）。修复：adoptCallArgsToFaces 在前提槽非 pTrue 时
+  // 跳过采用（callee 帧内槽已清空、照常采用；目标帧自身形参由 generalize
+  // 的 entry Abs 锚定，不经采用）。
+  const sidecar = `export const getD = fn({ d: number() });
+export const getM = fn({ max: number().ge(1) });
+export const sim = fn({ d: number(), max: number() }, number().le(1));`;
+  const opts = {
+    loadModule: (spec: string) => (spec.endsWith(".nudo.js") ? sidecar : undefined),
+    fromFile: "/t/assume.js",
+  };
+  const body = (assumeSeg: string) => `
+export function getD(d) { return d; }
+export function getM(max) { return max; }
+export function wild(x) { return x ** 2; }
+/**
+ * ${assumeSeg}
+ * @nudo:contract
+ */
+export function sim(d, max) {
+  const dd = getD(wild(undefined));
+  const mm = getM(wild(undefined));
+  return dd / mm;
+}
+`;
+
+  it("对照（无 assume）：unproven-return 诚实上报", () => {
+    const r = checkOf(body(""), opts);
+    expect(r.issues.some((i) => i.code === "nudo:unproven-return")).toBe(true);
+  });
+
+  it("adoption 重锚的假 term 不得撞引理：无 assume-relied 假证明，仍 unproven-return", () => {
+    const r = checkOf(body("@nudo:assume d <= max"), opts);
+    expect(r.issues.some((i) => i.code === "nudo:assume-relied")).toBe(false);
+    expect(r.issues.some((i) => i.code === "nudo:unproven-return")).toBe(true);
+  });
+});
+
 describe("无 assume → 零行为变化", () => {
   it("无指令源不产任何 nudo:assume-* 诊断", () => {
     const r = checkOf(`

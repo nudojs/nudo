@@ -25,6 +25,8 @@
 
 import type { Abs } from "./abs.ts";
 import { litValue } from "./abs.ts";
+import { pTrue } from "./pred.ts";
+import { currentAssumePremises } from "./exec/runtime.ts";
 import { leqAbs } from "./leq.ts";
 import { constraintToEntryAbs, type NudoConstraint } from "./constraint.ts";
 import { literalMeetsConstraint } from "./domain-membership.ts";
@@ -100,8 +102,19 @@ function argLacksInformation(a: unknown): boolean {
 /**
  * 参数面采用：仅替换无信息位，且不改变 arity（缺参位不补——补面会把
  * 运行时 undefined 伪装成契约值，吞掉真实 TypeError）。无变化时原数组引用返回。
+ *
+ * #152 soundness：assume 前提激活（目标帧动态域——checkSource 的
+ * runSeeded extent / 入口 invoke 种子）时跳过采用。采用会把无信息实参
+ * **重锚为 callee 形参名 term**（constraintToEntryAbs(constraint, calleeParam)），
+ * 该 term 经 callee 返回值流回 caller 帧后，与用户引理的裸 var 名匹配
+ * （divAssumeBounds 按 termEquals 恒等）= unsound 假证明——callee 形参名
+ * 与引理形参名同名时（d/max 等常见名），无关值也能折出界。
+ * callAtFunctionBoundary 只清 **callee 帧**的槽，救不了 caller 帧内
+ * 已 Fabricate 的假 term。目标帧自身形参由 generalize 的 entry Abs 锚定
+ * （不经采用），跳过无精度损失；嵌套 callee 帧（槽已清空）照常采用。
  */
 export function adoptCallArgsToFaces(args: Abs[], faces: FnContractFaces): Abs[] {
+  if (currentAssumePremises() !== pTrue) return args;
   const n = Math.min(args.length, faces.paramFaces.length);
   let changed = false;
   const out = args.slice();

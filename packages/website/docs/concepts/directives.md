@@ -359,7 +359,7 @@ Declare a **cross-variable lemma** the engine cannot derive — an algorithmic f
 ### Semantics — an axiom, not a checked fact
 
 - **The engine never verifies the lemma.** When a proof relies on it, `nudo check` emits info `nudo:assume-relied` (`sim: return contract proved via @nudo:assume d <= max`) and suggests falsifying it with concrete `@nudo:case` runs (`nudo test`). A wrong lemma makes the affected proof unsound — keep lemmas few and reviewable.
-- **Premises never cross call boundaries.** Callee frames see an empty premise slot (cleared at function entry, restored on exit); recursive calls are conservatively cleared. A lemma about `sim`'s `d`/`max` cannot leak into another function's same-name parameters.
+- **Premises never cross call boundaries.** Callee frames see an empty premise slot (cleared at function entry, restored on exit); recursive calls are conservatively cleared. A lemma about `sim`'s `d`/`max` cannot leak into another function's same-name parameters. While premises are active, contract-face adoption is also skipped: an info-free argument is not re-anchored to the callee's parameter names, so fabricated same-name terms cannot flow back into the caller frame and masquerade as the lemma's variables (a `helper(d)` call inside `sim` would otherwise let `helper`'s own `d` collide with the lemma's `d`).
 
 ### Example — similarity score
 
