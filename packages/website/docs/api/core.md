@@ -337,14 +337,14 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="$foriter"></a>`$forIter` | const | control-flow lowering | — |
 | <a id="$fork"></a>`$fork` | fn | control-flow lowering | `$fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): Abs` |
 | <a id="$ge"></a>`$ge` | fn | operator runtime | `$ge(a: Abs, b: Abs): Abs` |
-| <a id="$gen"></a>`$gen` | fn | async / generator | `$gen(body: () => void): Abs` |
+| <a id="$gen"></a>`$gen` | fn | async / generator | `$gen(body: () => Abs): Abs` |
 | <a id="$get"></a>`$get` | fn | object / member runtime | `$get( o: Abs, key: string, opts?: { silent?: boolean }, ): Abs` |
 | <a id="$idx"></a>`$idx` | fn | array runtime | `$idx( a: Abs, i: Abs, opts?: { silent?: boolean }, ): Abs` |
 | <a id="$idxset"></a>`$idxSet` | fn | array runtime | `$idxSet(a: Abs, i: Abs, value: Abs): Abs` |
 | <a id="$in"></a>`$in` | fn | value / class runtime | `$in(key: Abs, o: Abs): Abs` |
 | <a id="$instanceof"></a>`$instanceof` | fn | value / class runtime | `$instanceof(left: Abs, rightName: string, rightVal?: Abs): Abs` |
 | <a id="$join"></a>`$join` | fn | operator runtime | `$join(a: Abs, b: Abs): Abs` |
-| <a id="$len"></a>`$len` | fn | array runtime | `$len(a: Abs): Abs` |
+| <a id="$len"></a>`$len` | fn | array runtime | `$len(a: Abs, opts?: { silent?: boolean }): Abs` |
 | <a id="$lit"></a>`$lit` | fn | value / class runtime | `$lit(v: unknown): Abs` |
 | <a id="$loopbreak"></a>`$loopBreak` | fn | control-signal / throw | `$loopBreak(label?: string): never` |
 | <a id="$loopcontinue"></a>`$loopContinue` | fn | control-signal / throw | `$loopContinue(label?: string): never` |
@@ -386,7 +386,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="transpilesource"></a>`transpileSource` | fn | JS AST → `$op` program | `transpileSource(source: string, opts: TranspileOptions = {}): string` |
 
 <details>
-<summary>Additional exports from src/index.ts (345)</summary>
+<summary>Additional exports from src/index.ts (346)</summary>
 
 | Name | Kind | Summary | Signature |
 |------|------|------|------|
@@ -395,7 +395,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="abscallrecord"></a>`AbsCallRecord` | type | Abs 域调用记录（eval 通道 EvalCallRecord 的同形投影） | `AbsCallRecord = { fnName: string; args: Abs[]; result: Abs; callLoc?: { line: number; column: number }; threw?: boolean; }` |
 | <a id="absfnimpl"></a>`AbsFnImpl` | type | — | `AbsFnImpl = { params: string[]; body?: Node; async?: boolean; env?: AstEnv; kind?: string; length?: number; apply?: (args: Abs[], thisVal...` |
 | <a id="absfunction"></a>`absFunction` | fn | 造一个带实现的 Abs 函数值 | `absFunction( params: string[], impl: Omit<AbsFnImpl, "params">, opts?: { name?: string; paramTypes?: Abs[]; returnType?: Abs; slots?: Record<string, { value: Abs; optional?: boolean; readonly?: boolean }>; conf?: Confidence; ctor?: boolean; length?: number; }, ): Abs` |
-| <a id="absmoduleexports"></a>`AbsModuleExports` | type | — | `AbsModuleExports = { named: Record<string, Abs>; default?: Abs; evaluated?: boolean; }` |
+| <a id="absmoduleexports"></a>`AbsModuleExports` | type | — | `AbsModuleExports = { named: Record<string, Abs>; default?: Abs; evaluated?: boolean; cjsMain?: boolean; }` |
 | <a id="absshapekey"></a>`absShapeKey` | fn | — | `absShapeKey(a: Abs, seen: Set<object> = new Set()): string` |
 | <a id="abssigimpl"></a>`AbsSigImpl` | type | Abs 原生 env/builtin 实现（evaluator 优先） | `AbsSigImpl = (args: Abs[], thisVal?: Abs) => Abs \| undefined` |
 | <a id="abstoconstraint"></a>`absToConstraint` | fn | Abs → 契约；不可表达 → undefined。 | `absToConstraint( a: Abs, budget: ProjectionBudget = new ProjectionBudget(), ): NudoConstraint \| undefined` |
@@ -443,7 +443,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="constrainttoentryabs"></a>`constraintToEntryAbs` | fn | 契约 → 函数入口 param Abs（infer/hover 用）。 | `constraintToEntryAbs( c: NudoConstraint, paramName: string, depth: number = LAZY_TEMPLATE_DEPTH, ): Abs` |
 | <a id="contractparamnameset"></a>`contractParamNameSet` | fn | 侧车契约可绑定的参数名全集 | `contractParamNameSet(formals: FormalParam[]): Set<string>` |
 | <a id="createhofcollectctx"></a>`createHofCollectCtx` | fn | — | `createHofCollectCtx( paramNames: ReadonlySet<string>, alphaIds: Iterable<string>, ): HofCollectCtx` |
-| <a id="ctorargdefinitelyinvalid"></a>`ctorArgDefinitelyInvalid` | fn | 构造器实参**确定**非法（原生 TypeError 域）： - 非可迭代字面量（number/boolean/symbol/bigint、闭对象字面量）→ 四个集合构造器都抛 - Map/WeakMap 条目必须是对象：外层 iterable 出现 lit prim 条目（含字符串实参的 每个字符、tuple/Set 元素）→ TypeError（空串例外：零条目合法）； WeakMap 键还必须可弱持有——tuple 条目首元素（键）为 prim → TypeError （Map 键可以是 prim，仅 WeakMap 抛 "Invalid value used as weak map key"） - WeakSet 元素必须可弱持有：prim 元素（含字符串字符）→ TypeError 抽象形态不确定 → false（保守）。 | `ctorArgDefinitelyInvalid( name: "Map" \| "Set" \| "WeakMap" \| "WeakSet", iterable: Abs \| undefined, ): boolean` |
+| <a id="ctorargdefinitelyinvalid"></a>`ctorArgDefinitelyInvalid` | fn | 构造器实参**确定**非法（原生 TypeError 域）： - 非可迭代字面量（number/boolean/symbol/bigint、闭对象字面量、symbol 字面量）→ 四个集合构造器都抛 - Map/WeakMap 条目必须是对象（IsObject）：prim 条目（含字符串实参的 每个字符、tuple/Set 元素）与 nullish 字面量条目 → TypeError （Bug 8：null/undefined/symbol 字面量挂 shape unknown + lit term， 旧 primEntry 只查 prim 形态 → 漏抛） - WeakMap 键 = Get(entry, "0") 须可弱持有（classifyCanBeHeldWeakly 同 口径）：零/一元组、闭对象/fn/无 0 槽 brand 条目键 undefined、prim/ nullish 键 → TypeError（Bug 8：旧口径只查 ≥2 元组首元素 prim） - WeakSet 元素须可弱持有：prim/nullish 字面量元素（含字符串字符）→ TypeError；symbol 元素合法（node 实测 new WeakSet([Symbol()]) 不抛） - Bug 8 gate 面：抽象外层 iterable（any/unknown/开放 obj/fn/其它 brand） 可能非可迭代、抽象元素（含抽象字符串实参的字符臂）可能非 entry/ 非弱键 → recordMayThrow（三个分派点共用本判定，集中记录） | `ctorArgDefinitelyInvalid( name: "Map" \| "Set" \| "WeakMap" \| "WeakSet", iterable: Abs \| undefined, ): boolean` |
 | <a id="ctornameofrecv"></a>`ctorNameOfRecv` | fn | 接收者 → 原型链 constructor 名（`.constructor` 折叠）。 | `ctorNameOfRecv(recv: Abs): string \| undefined` |
 | <a id="currentexecphi"></a>`currentExecPhi` | fn | — | `currentExecPhi(): Phi` |
 | <a id="currentphi"></a>`currentPhi` | fn | — | `currentPhi(): Phi` |
@@ -540,6 +540,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="interfacetieropts"></a>`InterfaceTierOpts` | type | — | `InterfaceTierOpts = EffectiveInterfaceOpts` |
 | <a id="isabsval"></a>`isAbsVal` | fn | — | `isAbsVal(v: unknown): v` |
 | <a id="isbigprim"></a>`isBigPrim` | fn | — | `isBigPrim(a: Abs): boolean` |
+| <a id="iscjsmainrun"></a>`isCjsMainRun` | fn | run 表是否来自 CJS `module.exports = X` 重赋值形态（供桥接层标 cjsMain）。 | `isCjsMainRun(run: Record<string, unknown>): boolean` |
 | <a id="isdefinitelyfalse"></a>`isDefinitelyFalse` | fn | — | `isDefinitelyFalse(a: Abs): boolean` |
 | <a id="isdefinitelytrue"></a>`isDefinitelyTrue` | fn | — | `isDefinitelyTrue(a: Abs): boolean` |
 | <a id="iserrorctorname"></a>`isErrorCtorName` | fn | — | `isErrorCtorName(name: string \| undefined): boolean` |
@@ -725,7 +726,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="trypromoteforofiteratee"></a>`tryPromoteForOfIteratee` | fn | for-of 迭代对象提升（applyEach 型）：`for (const x of items)`， items 为形参且仍是 any/unknown → arr(自身 var)。不依赖方法名。 | `tryPromoteForOfIteratee( env: AstEnv, iterateeName: string, loc?: { line: number; column: number }, ): Abs \| undefined` |
 | <a id="trypromotehofcallback"></a>`tryPromoteHofCallback` | fn | 挂载点③：HOF 回调实参。回调是 Identifier ∈ paramNames 且尚未有 fn 形状。 | `tryPromoteHofCallback( env: AstEnv, cevalName: string, method: string, argAbses: Abs[], loc?: { line: number; column: number }, ): Abs \| undefined` |
 | <a id="trypromotereceiverasarr"></a>`tryPromoteReceiverAsArr` | fn | 挂载点①：方法派发 miss。receiver 是形参 Identifier 且 shape 为 any/未知， 方法名为 filter/map/reduce/flatMap → 提升为 arr(自身 var)。 | `tryPromoteReceiverAsArr( env: AstEnv, receiverName: string, method: string, loc?: { line: number; column: number }, ): Abs \| undefined` |
-| <a id="tryruntranspiled"></a>`tryRunTranspiled` | fn | B 单一入口：runTranspiled + 类型化回落观测。 | `tryRunTranspiled( source: string, opts: RunTranspiledOptions = {}, ): Record<string, unknown> \| undefined` |
+| <a id="tryruntranspiled"></a>`tryRunTranspiled` | fn | — | `tryRunTranspiled( source: string, opts: RunTranspiledOptions = {}, ): Record<string, unknown> \| undefined` |
 | <a id="typeof_names"></a>`TYPEOF_NAMES` | const | typeof 标签全集（否定展开用；顺序稳定） | `const TYPEOF_NAMES` |
 | <a id="typeofabs"></a>`typeofAbs` | fn | JS typeof：结果域永远是 string | `typeofAbs(a: Abs): Abs` |
 | <a id="typeofname"></a>`TypeofName` | type | JS `typeof` 完整结果域（8 标签）。Pred 的 typeof 节点用此域。 | `TypeofName = \| "undefined" \| "object" \| "boolean" \| "number" \| "bigint" \| "string" \| "symbol" \| "function"` |
