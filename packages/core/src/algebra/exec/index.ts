@@ -17,11 +17,12 @@ export {
   $tryReleaseSoftCatch, $tryReleaseSoftOut, $tryTakeSince, $typeof,
   $unknown, $ushr, $while, $whileSeq, $yield, $yieldStar, DEFAULT_MAX_LOOP_ITERS,
   NudoLoopSignal, NudoReturn, NudoThrow, asAbsVal, callAtFunctionBoundary,
-  clearStaleTermPred, currentExecPhi, fillTuple, isArrMutator,
+  clearStaleTermPred, currentAssumePremises, currentExecPhi, fillTuple,
+  isArrMutator,
   isDefinitelyFalse, isDefinitelyTrue, isNudoBreak, isNudoContinue,
   isNudoReturn, isNudoThrow, litTruth, lookupObjAccessor, namespaceNameOf,
   pushLoopExit, pushThrowExit, runWithLoopExits, takeLoopExits,
-  takeThrowExits, withExecPhi
+  takeThrowExits, withAssumePremises, withExecPhi
 } from "./runtime.ts";
 
 export {

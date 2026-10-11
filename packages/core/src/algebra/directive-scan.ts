@@ -848,7 +848,7 @@ export function scanMalformedCaseTagRests(
 }
 
 // ---------------------------------------------------------------------------
-// 函数级标签行扫描（contract / throws / budget）
+// 函数级标签行扫描（case / contract / assume / throws / budget）
 // ---------------------------------------------------------------------------
 
 /**
@@ -863,6 +863,21 @@ export function scanContractSegments(lines: string[]): string[] {
     if (m) reqs.push(m[1]!.trim().replace(/\*\/$/, "").trim());
   }
   return reqs;
+}
+
+/**
+ * `@nudo:assume <ident> <= <ident>` 行（issue #152 用户引理前提）。
+ * 同时接受 `>=`（构造时翻转为 le）；一函数可多行。返回原始段文本，
+ * 文法/操作符/形参校验由消费方（check）发 nudo:assume-invalid。
+ */
+export function scanAssumeSegments(lines: string[]): string[] {
+  const out: string[] = [];
+  for (const line of lines) {
+    // 行首锚定：句中散文「声明 @nudo:assume p q 后…」不是指令
+    const m = line.match(/^@nudo:assume\s+(.+)$/);
+    if (m) out.push(m[1]!.trim().replace(/\*\/$/, "").trim());
+  }
+  return out;
 }
 
 /**
