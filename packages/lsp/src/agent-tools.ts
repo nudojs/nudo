@@ -60,7 +60,7 @@ import {
 } from "@nudojs/core";
 import type { CheckJson } from "@nudojs/core";
 import { collectAbsInlays } from "@nudojs/core/internal";
-import { lspLoadModule } from "./validation.ts";
+import { lspLoadModule, evalAnalysisModules } from "./validation.ts";
 import {
   injectBindings,
   typeExprToDirective,
@@ -288,9 +288,14 @@ export function checkTool(
     // 与 CLI runCheck 同源读取 package.json#nudo.check（L2）
     const cCfg = checkConfig(findProjectConfig(dirname(filePath))?.config);
     const projectDir = resolveDraftProjectDir(filePath);
+    // 模块图（与 checkToLspDiagnostics 同源）：缺图时跨模块
+    // 调用塌缩 unknown → nudo:unproven-return 假红（CLI/LSP
+    // 同文件干净，agent 面分叉——E5 同源契约）
+    const analysisModules = evalAnalysisModules(filePath, source);
     const report = checkSource(filePath, source, pTrue, {
       loadModule: params.loadModule ?? deps.loadModule ?? lspLoadModule,
       fromFile: filePath,
+      ...(analysisModules ? { modules: analysisModules } : {}),
       ...(autoBind === false ? { autoBind: false } : {}),
       ...(projectDir ? { projectDir } : {}),
       entryThrows: cCfg.entryThrows,
@@ -349,13 +354,16 @@ export function hoverTool(
     const source = params.source ?? readSource(filePath, deps);
     const loadModule = params.loadModule ?? deps.loadModule ?? lspLoadModule;
     const autoBind = resolveProjectAutoBind(filePath, params.autoBind);
+    // 模块图（与 LSP hover 同源）：缺图时跨模块调用塌缩
+    // unknown（intension `(_p0: A1) => unknown`——E5 同源契约）
+    const analysisModules = evalAnalysisModules(filePath, source);
     const hover = getHoverAtPosition(filePath, source, params.line, params.column, undefined, {
       loadModule,
       ...(autoBind === false ? { autoBind: false } : {}),
       ...(resolveDraftProjectDir(filePath)
         ? { projectDir: resolveDraftProjectDir(filePath)! }
         : {}),
-    });
+    }, analysisModules ? { modules: analysisModules } : undefined);
     const payload: Record<string, unknown> = {
       file: filePath,
       line: params.line,
@@ -376,6 +384,7 @@ export function hoverTool(
       payload.inlays = collectAbsInlays(source, {
         loadModule,
         fromFile: filePath,
+        ...(analysisModules ? { modules: analysisModules } : {}),
         ...(autoBind === false ? { autoBind: false } : {}),
       });
     }

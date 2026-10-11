@@ -146,6 +146,41 @@ function f(x) {
 `),
     ).toEqual([]);
   });
+
+  // review fix：Bug 1 早退提升路径（if-return 后接非尾语句）
+  // 与 IfStatement 分叉路径同口径补 narrowRelArmThunk——
+  // 此前 cons 臂裸 `return x` 丢守卫界 → 假阳
+  it("ok: 早退提升 if (x >= 0) return x; <非尾语句>; return 1 —— nonNeg", () => {
+    expect(
+      retViolations(`
+/**
+ * @nudo:contract x num
+ * @nudo:contract return nonNeg
+ */
+function f(x) {
+  if (x >= 0) return x;
+  console.log(x);
+  return 1;
+}
+`),
+    ).toEqual([]);
+  });
+
+  it("ok: 早退提升翻转形态 0 < x + 非尾语句 —— positive", () => {
+    expect(
+      retViolations(`
+/**
+ * @nudo:contract x num
+ * @nudo:contract return positive
+ */
+function f(x) {
+  if (0 < x) return x;
+  console.log(x);
+  return 1;
+}
+`),
+    ).toEqual([]);
+  });
 });
 
 describe("Bug 1: 真实违规控制组（精度红线——仍报 error）", () => {

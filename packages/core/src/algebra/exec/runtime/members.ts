@@ -281,6 +281,21 @@ export const BUILTIN_BRAND_METHODS: Record<string, ReadonlySet<string>> = {
   ]),
   WeakRef: new Set(["deref"]),
   FinalizationRegistry: new Set(["register", "unregister"]),
+  // Bug 40 同口径补齐：新建品牌原型面（此前空 brand 闭 obj
+  // 槽 miss → 值读折精确 undefined wrong-exact，`if (usp.get)`
+  // / `if (td.decode)` 证伪死分支；调用面仍经既有派发，
+  // 未建模方法调用诚实 unknown）
+  URLSearchParams: new Set([
+    "append", "delete", "entries", "forEach", "get", "getAll",
+    "has", "keys", "set", "sort", "toString", "values",
+  ]),
+  TextDecoder: new Set(["decode"]),
+  "Intl.NumberFormat": new Set([
+    "format", "formatRange", "formatRangeToParts", "formatToParts", "resolvedOptions",
+  ]),
+  "Intl.DateTimeFormat": new Set([
+    "format", "formatRange", "formatRangeToParts", "formatToParts", "resolvedOptions",
+  ]),
 };
 
 /** Bug 36：%TypedArray%.prototype 回调族（HOF + find 系 + reduce 系；
@@ -319,6 +334,8 @@ BUILTIN_BRAND_METHODS.Uint8Array = new Set([
  *  任意有表 brand 折函数（wrong-exact）。迭代协议派发不走该值读臂。 */
 export const ITERABLE_BRANDS: ReadonlySet<string> = new Set([
   "Map", "Set",
+  // URLSearchParams 原生可迭代（@@iterator === entries）
+  "URLSearchParams",
   ...Object.keys(TYPED_ARRAY_ELEMENT),
 ]);
 
@@ -351,6 +368,8 @@ export const BUILTIN_BRAND_ACCESSORS: Record<string, ReadonlySet<string>> = {
     "source", "flags", "global", "ignoreCase", "multiline",
     "dotAll", "sticky", "unicode", "unicodeSets", "hasIndices",
   ]),
+  URLSearchParams: new Set(["size"]),
+  TextDecoder: new Set(["encoding", "fatal", "ignoreBOM"]),
   ...Object.fromEntries(
     Object.keys(TYPED_ARRAY_ELEMENT).map((fam) => [
       fam,

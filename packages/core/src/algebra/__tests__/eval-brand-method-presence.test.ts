@@ -229,3 +229,67 @@ describe("Bug 40: 控制组", () => {
     )).toBe('"dv"');
   });
 });
+
+// review fix：URLSearchParams / TextDecoder / Intl 格式化
+// 构造器此前无 brand 名录——原型方法值读落内层闭 obj
+// 槽 miss → 折精确 undefined（`typeof usp.get` →
+// "undefined"），对原生恒有成员做 wrong-exact 断言。
+describe("URLSearchParams / TextDecoder / Intl 构造器 presence（review 补齐名录）", () => {
+  const typeofCases: [string, string][] = [
+    ["typeof new URLSearchParams('a=1').get", "function f() { return typeof new URLSearchParams('a=1').get; }"],
+    ["typeof new URLSearchParams('a=1').getAll", "function f() { return typeof new URLSearchParams('a=1').getAll; }"],
+    ["typeof new URLSearchParams('a=1').append", "function f() { return typeof new URLSearchParams('a=1').append; }"],
+    ["typeof new URLSearchParams('a=1').sort", "function f() { return typeof new URLSearchParams('a=1').sort; }"],
+    ["typeof new URLSearchParams('a=1').size", "function f() { return typeof new URLSearchParams('a=1').size; }"],
+    ["typeof new TextDecoder().decode", "function f() { return typeof new TextDecoder().decode; }"],
+    ["typeof new TextDecoder().encoding", "function f() { return typeof new TextDecoder().encoding; }"],
+    ["typeof new TextDecoder().fatal", "function f() { return typeof new TextDecoder().fatal; }"],
+    ["typeof new TextDecoder().ignoreBOM", "function f() { return typeof new TextDecoder().ignoreBOM; }"],
+    ["typeof new Intl.NumberFormat('en').format", "function f() { return typeof new Intl.NumberFormat('en').format; }"],
+    ["typeof new Intl.NumberFormat('en').formatToParts", "function f() { return typeof new Intl.NumberFormat('en').formatToParts; }"],
+    ["typeof new Intl.DateTimeFormat('en').formatRange", "function f() { return typeof new Intl.DateTimeFormat('en').formatRange; }"],
+    ["typeof new Intl.DateTimeFormat('en').resolvedOptions", "function f() { return typeof new Intl.DateTimeFormat('en').resolvedOptions; }"],
+  ];
+  for (const [label, src] of typeofCases) {
+    it(label, () => {
+      expect(val(src)).not.toBe('"undefined"');
+    });
+  }
+  it("具体值面：encoding 精确 string（自有槽），size/fatal/ignoreBOM 诚实域", () => {
+    // encoding：构造器自有槽（strLit("utf-8")）→ typeof 精确 "string"；
+    // size/fatal/ignoreBOM：未建模 → $get 落 BUILTIN_BRAND_ACCESSORS
+    // 兜底折 honest unknown，typeof 折 string 域（修复前落闭 obj
+    // 槽 miss 折精确 "undefined"，对原生恒有成员 wrong-exact）
+    expect(val("function f() { return typeof new TextDecoder().encoding; }")).toBe('"string"');
+    expect(val("function f() { return typeof new URLSearchParams('a=1').size; }")).toBe("string");
+    expect(val("function f() { return typeof new TextDecoder().fatal; }")).toBe("string");
+    expect(val("function f() { return typeof new TextDecoder().ignoreBOM; }")).toBe("string");
+  });
+
+  it("in 操作符：表内名折 true", () => {
+    expect(val("function f() { return 'get' in new URLSearchParams('a=1'); }")).toBe("true");
+    expect(val("function f() { return 'size' in new URLSearchParams('a=1'); }")).toBe("true");
+    expect(val("function f() { return 'decode' in new TextDecoder(); }")).toBe("true");
+    expect(val("function f() { return 'encoding' in new TextDecoder(); }")).toBe("true");
+    expect(val("function f() { return 'format' in new Intl.NumberFormat('en'); }")).toBe("true");
+  });
+
+  it("USP 可迭代：@@iterator 值读折 function", () => {
+    expect(val("function f() { return typeof new URLSearchParams('a=1')[Symbol.iterator]; }")).toBe('"function"');
+  });
+
+  it("缺席名仍折精确 undefined/false（闭合面不回退）", () => {
+    expect(val("function f() { return typeof new URLSearchParams('a=1').noSuchMethod; }")).toBe('"undefined"');
+    expect(val("function f() { return 'noSuchMethod' in new TextDecoder(); }")).toBe("false");
+    expect(val("function f() { return 'noSuchMethod' in new Intl.NumberFormat('en'); }")).toBe("false");
+  });
+
+  it("守卫场景：feature detection 不再被证伪", () => {
+    expect(val(
+      "function f() { if (typeof new TextDecoder().decode === 'function') return 'decodable'; return 'no'; }",
+    )).toBe('"decodable"');
+    expect(val(
+      "function f() { if ('get' in new URLSearchParams('a=1')) return 'qsp'; return 'no'; }",
+    )).toBe('"qsp"');
+  });
+});

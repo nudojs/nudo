@@ -140,8 +140,14 @@ function evalMapStatic(method: string, args: Abs[]): Abs | undefined {
       );
     }
     if (fold.open) {
-      // 键不可判组：元素可归入任意组 → shadow 值 = 元素域数组
-      const domain = fold.unkeyed.reduce((x, y) => joinAbs(x, y));
+      // 键不可判组：元素可归入任意组 → shadow 值 = 元素域数组。
+      // unkeyed 可为空（arr/抽象串的代表元素键可判时 open 仍
+      // true）——空 reduce 裸抛宿主 TypeError（非 NudoThrow）炸穿
+      // 求值；空域折 unknown（与 unknown 元素同口径）
+      const domain =
+        fold.unkeyed.length > 0
+          ? fold.unkeyed.reduce((x, y) => joinAbs(x, y))
+          : unknown;
       entries.push(
         abs(
           { k: "tuple", elements: [unknown, abs({ k: "arr", element: domain }, undefined, undefined, "partial")] },
@@ -1513,19 +1519,22 @@ export function makeIntlCtorAbs(sub: IntlSubCtor): Abs {
 
 /**
  * Bug 29（强转三连）：`new Function(p0, …, body)` / `Function(…)` 动态代码
- * 构造器。实参逐个 ToString（Symbol → 确定 TypeError，node 实测
- * `new Function(Symbol())` 抛 "Cannot convert a Symbol value to a string"；
- * 抽象 any/obj/… → may）。动态体不静态求值（同 eval 口径）：返回 path 级
- * 抽象 fn，调用面保守 unknown。$new 宿主分支与 evalBuiltinNew（Abs 面）共
- * 用本 builder。
+ * 构造器。实参**逐个** ToString（ES FunctionConstructor：每个参数
+ * ToString 后拼接 body）——Symbol 字面量定抛（node 实测
+ * `new Function("a", Symbol())` 抛 "Cannot convert a Symbol value
+ * to a string"）；抽象 any/obj/… → may。动态体不静态求值（同 eval
+ * 口径）：返回 path 级抽象 fn，调用面保守 unknown。$new 宿主分支与
+ * evalBuiltinNew（Abs 面）共用本 builder。
  */
-export function makeDynamicFunctionAbs(a0: Abs | undefined): Abs {
-  if (a0 && isSymbolAbs(a0)) throw new NudoThrow(errorTypeAbs("TypeError"));
-  if (a0 && a0.term?.op !== "lit" && mayCoerceThrowOperand(a0)) {
-    recordMayThrow({
-      kind: "TypeError",
-      cause: "new Function(body) ToString may throw (Symbol)",
-    });
+export function makeDynamicFunctionAbs(args: Abs[]): Abs {
+  for (const a of args) {
+    if (a && isSymbolAbs(a)) throw new NudoThrow(errorTypeAbs("TypeError"));
+    if (a && a.term?.op !== "lit" && mayCoerceThrowOperand(a)) {
+      recordMayThrow({
+        kind: "TypeError",
+        cause: "new Function(args) ToString may throw (Symbol)",
+      });
+    }
   }
   return abs({ k: "fn", params: [] }, undefined, undefined, "path");
 }
@@ -1574,7 +1583,7 @@ export function evalBuiltinNew(className: string, args: Abs[]): Abs | undefined 
       return evalRegExpCtor(args);
     case "Function":
       // Bug 29：构造器形与调用形同口径（makeDynamicFunctionAbs 单一 builder）
-      return makeDynamicFunctionAbs(args[0]);
+      return makeDynamicFunctionAbs(args);
     case "Symbol":
       // new Symbol() 原生 TypeError
       throw new NudoThrow(errorTypeAbs("TypeError"));

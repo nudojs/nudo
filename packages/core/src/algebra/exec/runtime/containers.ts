@@ -48,6 +48,7 @@ import {
 } from "./state.ts";
 import { $unknown, $toNumber, $eq, $ne, $typeof, $add, $sub } from "./ops.ts";
 import { lookupObjAccessor, migrateAccessors, $objAccessor, findClassAccessor, findStaticClassAccessor, $in, $instanceof, $del, accessorTable, BUILTIN_BRAND_METHODS, BUILTIN_BRAND_ACCESSORS, ITERABLE_BRANDS, evalClassChain } from "./members.ts";
+import { copyMatchIterTables } from "../match-iter.ts";
 import { DEFAULT_MAX_LOOP_ITERS, MAX_CONCRETE_LOOP_ITERS, LOOP_TRUNCATION_LABEL } from "./loop-budget.ts";
 import { makeLoopWidener } from "./loop-widen.ts";
 import { noteAbsTruncation } from "../../call-budget.ts";
@@ -451,6 +452,10 @@ export function $copy(a: Abs): Abs {
     migrateAccessors(a, next);
     migrateInvariants(a, next);
     migrateNullProto(a, next);
+    // 生成器 / 模板标签 / matchAll 迭代器对象（obj 形 +
+    // @@iterator 槽）：侧表随副本迁移，否则臂内消费点
+    // 重放查不到副本（延迟异常静默丢弃，L2 假阴）
+    copyMatchIterTables(a, next);
     return next;
   }
   if (s.k === "brand") {
@@ -459,6 +464,8 @@ export function $copy(a: Abs): Abs {
     const clsName = classNameOfValue(a as object);
     if (clsName) markClassValue(next as object, clsName);
     migrateInvariants(a, next);
+    // RegExpMatchIterator brand：匹配项侧表随副本迁移
+    copyMatchIterTables(a, next);
     return next;
   }
   if (s.k === "eff") {

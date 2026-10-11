@@ -48,6 +48,22 @@ export function registerGenDeferred(val: Abs, deferred: GenDeferred): void {
   genDeferredTables.set(val as object, deferred);
 }
 
+/**
+ * $copy 快照迁移（fork/switch 臂重绑）：生成器对象经
+ * `$copy(__fkN_it)` 换新身份后，迭代元素 / 延迟异常侧表
+ * 必须随副本迁移——否则臂内消费（for-of / spread / yield*）
+ * 重放点查不到副本，definite 体异常被静默丢弃（L2 假阴）。
+ * 无条目时零开销（WeakMap miss 即返回）。
+ */
+export function copyMatchIterTables(src: Abs, dst: Abs): void {
+  const s = src as object;
+  const d = dst as object;
+  if (tables.has(s)) tables.set(d, tables.get(s)!);
+  if (tplIterTables.has(s)) tplIterTables.set(d, tplIterTables.get(s)!);
+  if (genIterTables.has(s)) genIterTables.set(d, genIterTables.get(s)!);
+  if (genDeferredTables.has(s)) genDeferredTables.set(d, genDeferredTables.get(s)!);
+}
+
 /** 消费点重放（Bug 34）：迭代路径（for-of / spread / yield* / 解构 /
  *  Array.from）触达即——soft 效果重记进当前帧（gate 面：`yield* x`
  *  （x:any）体内 may-throw 不再被丢弃式帧吞掉），definite 载荷抛

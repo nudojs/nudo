@@ -444,13 +444,14 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
     if (clsName === "Promise") {
       return evalPromiseCtor(args);
     }
-    // Bug 29（强转三连）：new Function(body)——实参 ToString（Symbol → 确定
-    // TypeError，node 实测；抽象 → may）。动态代码语义不建模（同 eval：值域
-    // 经 fn shape 调用得 unknown），但校验是纯静态的，与原生同口径；调用形
-    // Function(x) 经 callHostGlobalLiteralOnly 已覆盖，此处补构造器形。
-    // 与 evalBuiltinNew（Abs 面）同 builder 口径。
+    // Bug 29（强转三连）：new Function(body)——实参**逐个**
+    // ToString（Symbol → 确定 TypeError，node 实测；抽象 →
+    // may）。动态代码语义不建模（同 eval：值域经 fn shape
+    // 调用得 unknown），但校验是纯静态的，与原生同口径；
+    // 调用形 Function(x) 经 callHostGlobalLiteralOnly 已覆盖，
+    // 此处补构造器形。与 evalBuiltinNew（Abs 面）同 builder 口径。
     if (clsName === "Function") {
-      return makeDynamicFunctionAbs(args[0]);
+      return makeDynamicFunctionAbs(args);
     }
     // Bug 24：new Date(value) —— 单参 ToPrimitive/ToNumber 校验（symbol/bigint
     // 确定抛，node 实测 new Date(1n) TypeError）；多参逐实参 ToNumber。

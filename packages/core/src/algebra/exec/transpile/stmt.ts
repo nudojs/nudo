@@ -221,33 +221,46 @@ export function transpileFnBodyStmts(
     const earlyGuards = nullishGuardsOf(stmt.test);
     const earlyTGuard = typeGuardOf(stmt.test);
     const earlyDGuards = discriminantGuardsOf(stmt.test);
-    const consNarrowed = narrowDiscriminantArmThunks(
-      narrowTypeArmThunk(
-        narrowNullishArmThunks(
-          transpileBlockAsThunk(stmt.consequent, depth, scopedOpts),
-          earlyGuards,
+    // 关系守卫（Bug 1）：早退提升路径与 IfStatement 分叉路径同口径——
+    // cons 臂裸 `return x` 携带守卫界（缺省时 return-constraint 假阳）
+    const earlyRGuard = relGuardOf(stmt.test);
+    const consNarrowed = narrowRelArmThunk(
+      narrowDiscriminantArmThunks(
+        narrowTypeArmThunk(
+          narrowNullishArmThunks(
+            transpileBlockAsThunk(stmt.consequent, depth, scopedOpts),
+            earlyGuards,
+            "cons",
+            recvSet,
+          ),
+          earlyTGuard,
           "cons",
           recvSet,
         ),
-        earlyTGuard,
+        earlyDGuards,
         "cons",
         recvSet,
       ),
-      earlyDGuards,
+      earlyRGuard,
       "cons",
       recvSet,
     );
     const cons = wrapArm(consNarrowed, "fk1_");
     const altBody = transpileFnBodyStmts(rest, depth + 1, { ...scopedOpts, inLoop: opts.inLoop });
     const altThunk = `() => {\n${altBody}\n${pad}}`;
-    const altNarrowed = narrowDiscriminantArmThunks(
-      narrowTypeArmThunk(
-        narrowNullishArmThunks(altThunk, earlyGuards, "alt", recvSet),
-        earlyTGuard,
+    const altNarrowed = narrowRelArmThunk(
+      narrowDiscriminantArmThunks(
+        narrowTypeArmThunk(
+          narrowNullishArmThunks(altThunk, earlyGuards, "alt", recvSet),
+          earlyTGuard,
+          "alt",
+          recvSet,
+        ),
+        earlyDGuards,
         "alt",
         recvSet,
       ),
-      earlyDGuards,
+      earlyRGuard,
       "alt",
       recvSet,
     );

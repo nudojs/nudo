@@ -21,6 +21,9 @@ import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
 import { formatAbs } from "../format.ts";
 import { $lit } from "../exec/runtime/state.ts";
 import { runWithMayThrowSession, setMayThrowCollector, type MayThrowEffect } from "../may-throw.ts";
+import { evalNamespaceCall } from "../builtins/error.ts";
+import { absFunction } from "../abs-fn.ts";
+import { abs, numLit, strLit } from "../index.ts";
 
 function call(src: string, fnName = "f") {
   const exports = runTranspiled(src, { mode: "analyze" });
@@ -242,5 +245,38 @@ describe("Bug 26: Map.groupBy 校验面（node 实测）", () => {
   it("控制组：具体合法入参 gate 静默", () => {
     const r = check(`export function g() { return Map.groupBy([1,2], v => "k"); }`);
     expect(l2Count(r, "g")).toBe(0);
+  });
+});
+
+// --- Map.groupBy 空 unkeyed 回归（review fix：空 reduce 裸抛宿主 TypeError） ---
+
+describe("Map.groupBy: arr/抽象串代表元素 + 常量键（open ∧ unkeyed 空）", () => {
+  // foldGroupBy 对 arr 形 / 抽象 string prim 条目 open=true；
+  // 回调对代表元素返回字面量键时 unkeyed 为空——shadow 域
+  // join 不得对空数组裸 reduce（宿主 TypeError 非 NudoThrow，
+  // 此前炸穿整个模块求值，fail-closed unknown 导出）
+  it("arr 元素域 + 字面量键 → Map brand（不裸抛）", () => {
+    const items = abs({ k: "arr", element: numLit(1) }, undefined, undefined, "exact");
+    const cb = absFunction(["v"], { apply: () => strLit("k") });
+    const r = evalNamespaceCall("Map", "groupBy", [items, cb]);
+    expect(r).toBeDefined();
+    expect(r!.shape.k).toBe("brand");
+    expect(r!.shape.name).toBe("Map");
+  });
+
+  it("抽象 string prim + 字面量键 → 同口径", () => {
+    const items = abs({ k: "prim", type: "string" }, undefined, undefined, "exact");
+    const cb = absFunction(["v"], { apply: () => strLit("k") });
+    const r = evalNamespaceCall("Map", "groupBy", [items, cb]);
+    expect(r).toBeDefined();
+    expect(r!.shape.k).toBe("brand");
+    expect(r!.shape.name).toBe("Map");
+  });
+
+  it("Object.groupBy 同形对照（本就不裸抛）", () => {
+    const items = abs({ k: "arr", element: numLit(1) }, undefined, undefined, "exact");
+    const cb = absFunction(["v"], { apply: () => strLit("k") });
+    const r = evalNamespaceCall("Object", "groupBy", [items, cb]);
+    expect(r).toBeDefined();
   });
 });
