@@ -11,145 +11,231 @@ This page keeps each package’s **current** notes only. Full history: [Full rel
 
 | Package | Current version |
 |----------|-----------------|
-| `@nudojs/core` | 1.9.4 |
-| `@nudojs/service` | 1.6.16 |
-| `nudojs (CLI)` | 1.3.17 |
-| `@nudojs/parser` | 1.4.13 |
-| `@nudojs/lsp` | 1.5.1 |
-| `@nudojs/env` | 0.4.31 |
-| `@nudojs/harvester` | 0.3.17 |
-| `vite-plugin-nudo` | 0.4.32 |
-| `nudo-vscode` | 0.3.36 |
+| `@nudojs/core` | 1.10.0 |
+| `@nudojs/service` | 1.6.17 |
+| `nudojs (CLI)` | 1.3.18 |
+| `@nudojs/parser` | 1.4.14 |
+| `@nudojs/lsp` | 1.6.0 |
+| `@nudojs/env` | 0.4.32 |
+| `@nudojs/harvester` | 0.3.18 |
+| `vite-plugin-nudo` | 0.4.33 |
+| `nudo-vscode` | 0.3.37 |
 
 **Jump to package:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.9.4 {#pkg-core}
+## @nudojs/core 1.10.0 {#pkg-core}
 
-## 1.9.4
+## 1.10.0
 
-### Patch Changes
+### Minor Changes
 
-- 2af4016: fix(core): generalize display (hover intension) renders destructured params as `{ a, b }` via `formalParamSignatureNames` instead of the `_p0` evaluation placeholder, while entryReqs preds and promoted entryShapes/fnRels lookups keep using the placeholder keys (#138)
-- 2af4016: fix(core): sidecar dot-path keys (`fn({ 'card.grade': string() })`) now bind nested destructured params — nestedPaths surface collection, fieldPath-aware projection in check/case scans, and nested obj-Abs synthesis in the refine block; flat binding names keep precedence (#137)
-
-Older versions (39) → [Full release history](./releases-history.md#pkg-core)
-
-## @nudojs/service 1.6.16 {#pkg-service}
-
-## 1.6.16
-
-### Patch Changes
-
-- Updated dependencies [2af4016]
-- Updated dependencies [2af4016]
-  - @nudojs/core@1.9.4
-  - @nudojs/env@0.4.31
-  - @nudojs/harvester@0.3.17
-  - @nudojs/parser@1.4.13
-
-Older versions (41) → [Full release history](./releases-history.md#pkg-service)
-
-## nudojs (CLI) 1.3.17 {#pkg-nudojs}
-
-## 1.3.17
-
-### Patch Changes
-
-- Updated dependencies [2af4016]
-- Updated dependencies [2af4016]
-  - @nudojs/core@1.9.4
-  - @nudojs/env@0.4.31
-  - @nudojs/harvester@0.3.17
-  - @nudojs/parser@1.4.13
-  - @nudojs/service@1.6.16
-
-Older versions (38) → [Full release history](./releases-history.md#pkg-nudojs)
-
-## @nudojs/parser 1.4.13 {#pkg-parser}
-
-## 1.4.13
-
-### Patch Changes
-
-- Updated dependencies [2af4016]
-- Updated dependencies [2af4016]
-  - @nudojs/core@1.9.4
-
-Older versions (38) → [Full release history](./releases-history.md#pkg-parser)
-
-## @nudojs/lsp 1.5.1 {#pkg-lsp}
-
-## 1.5.1
-
-### Patch Changes
-
-- 71fd9fc: fix(lsp): 参数 hover——形参（含解构属性）从 PolyFn 面投影，不再空白
+- b8db17b: 参数契约折叠展示（inlay + hover + 签名）：
   
-  - 根因：hover 的标识符解析只有模块级 import 绑定面（bindings / collectAbsBindingsFromGraph），形参从不入绑定表；带 `@nudo:case` 的函数体内更被整体短路（旧理由“保护 case 重放”，但重放面已删成恒 null）——`decide({ grade, findings })` 的参数声明与体内引用 hover 全空。
-  - 修复：`getHoverAtPosition` 末段新增参数投影——traverse 直查光标最内层 enclosing 函数（不依赖指令存在，`extractDirectivesQuiet` 只返回带指令的函数），`generalizeFromAst`（与函数名 hover 同源：契约种子 refine + 模块图）后从 `PolyFn.entryShapes + formals` 解析：
-    - 直接形参（id/default）→ `entryShapes[name]`；rest 同理；
-    - 解构形参（pattern）→ `bound` 名经 `propKey` 投影到 placeholder 对象 slot（rename `{a: b}` 时契约可写 a 或 b，Abs 对象只有 slot a，语义正确）。
-  - fail-closed 不变：无契约/无提升的参数与体内局部变量保持空（诚实 unknown，不冒充 any）；非 case 函数体内的 import 引用仍走绑定面。
-  - 验证：npm-safe `decide.js`（手写侧车）——`grade` → `string / term: grade #path`，`findings` → `{ ruleId: string, severity: string, veto?: boolean }[]`，声明处与体内引用一致；函数名 hover 无回归；单测覆盖侧车解构投影、提升形参、fail-closed 三态。
-  
-  follow-up（同 patch）：
-  
-  - **标识符 hover 单行化**：参数/局部/绑定引用不再展开 `term/pred/conf` 多行内涵（那是函数名 hover 契约面的职责），单行外延 `grade: string` / `vetos: { ruleId: string, … }[]`。
-  - **体内局部 hover**：`const vetos = vetoFindings(findings)` 这类调用初始化局部，经 entry 实参（契约种子）驱动一次 enclosing 调用，从 `EvalCallRecord.result`（callLoc 对位）投影；`let` 再赋值经 `$assignRecord` 范围内 join。结果按 (file, fn, 源指纹) 缓存，hover 连续触发不重跑。非调用/非赋值初始化保持 fail-closed。
-  - **case 函数体内的模块级引用**：绑定面不再被 `insideCaseFn` 整体短路（原理由"保护 case 重放"已随重放删除失效）——`vetoFindings` 等导入/同文件顶层引用恢复 hover；导入函数 callee（本文件无声明、intension 面缺失）同样放行到绑定面。
-  - 验证：stdio 实测 npm-safe `decide.js`——`grade`（声明/引用）单行 `grade: string`；`vetos` → `{ ruleId: string, severity: string, veto?: boolean }[]`（filter 后元素形状保持）；`vetoFindings` → fn Abs；函数名 hover（`● contract / hw` + 契约）无回归。
-  
-  follow-up 2（同 patch）：函数名 hover 弹层格式化——档线 + check 同口径签名单块
-  
-  - 旧弹层四块近重复：builder 语法契约模板 + symbolic 多行（shape + `conf:`）+ `_p0` 占位符 display 签名 + `ext:` 对照。现在：`● contract / hw` + 一个代码块，内容与 `nudo check` 签名**逐字同口径**（`formalParamSignatureNames` + `formatShape` 同公式，解构参数名还原为源码名；throws 归 check 门禁面）。
-  - 面的归属：签名面只在**声明名**位置（函数声明 id / `const f =` / 方法键），调用 callee 保持调用点面 + intension；标识符保持单行外延。无损面（builder 模板 / absMultiline / intension）保留在 `nudo.hover` slash payload，仅 IDE 弹层去重。
-  - 验证：stdio 实测 npm-safe `decide.js`——fn 名弹层 = 档线 + `decide({ grade, findings }: { grade: string, findings: { ruleId: string, severity: string, veto?: boolean }[] }) => { … }`，与 `nudo check` 输出逐字一致；`grade` / callee hover 无回归；新增 attachHover markdown 组装用例（此前弹层组装零覆盖）。
-- Updated dependencies [2af4016]
-- Updated dependencies [2af4016]
-  - @nudojs/core@1.9.4
-  - @nudojs/parser@1.4.13
-  - @nudojs/service@1.6.16
-
-Older versions (42) → [Full release history](./releases-history.md#pkg-lsp)
-
-## @nudojs/env 0.4.31 {#pkg-env}
-
-## 0.4.31
+  - **inlay**：侧车 `fn()` 形参表达式原文（如 `where nullable(astNode)`）或 `@nudo:contract` 指令约束名替代谓词无损展开（lazy 判别联合展开可达数万字符），完整谓词经 LSP inlay tooltip 展示。侧车 ∧ 指令并存时展示 `expr ∧ name`（任一文本缺席则整体回落谓词全展）；整表达式别名（`import { astNode as N }` 的裸 `N`）规范化为导入名；派生形参（spread / computed）无静态文本，回落谓词全展。
+  - **hover**：参数声明位 hover 折叠为声明形态（`node: nullable(astNode)`），函数名 hover 签名的契约参数同口径折叠；函数名 hover 的契约面 display 同步折叠。**体内引用位经求值器重放直读引擎求值态 Abs**（核心变更）：transpile `recordPositions` 插桩（`$nodoPos`——标识符值读 / 静态成员属性位 / 可选链成员跳属性位，计算成员记表达式起始位；记录并原样返回，语义恒等）+ `runTranspiled` 符号执行导出函数（入口 Φ 种子 + 契约参数 Abs），位置直读求值态 Abs——流敏感窄化为**引擎求值语义**（早退守卫 nullish 剥离 / 判别等值窄化 / `!==` 对偶 / typeof 守卫 / `&&` / `||` 链，Φ-native `$fork` 臂内 `withExecPhi` + `$narrowMemberEq` 剪影），非 LSP 层近似。显示阶梯：求值态与入口 Abs 等价（leqAbs 双向）或仅剥 nullish 的位置（声明位 / 检查点 / 成员访问对象 / 落回位）→ 折叠声明形态 + 类型值变量链接；窄化位（守卫 then 分支 / 成员读槽位 / 局部量）→ 求值态展示（`node: { type: lit("StringLiteral"), value: string } | { type: string }`——`showLits` 渲染 lit 判别值与侧车文法同形；开放尾臂按 may 态保守保留——其 `type: string()` 值域与 lit 判别重叠，成员读槽位在尾臂缺席 → `string | undefined` sound）。重放 fail-closed（求值失败 / 预算超限 / 无契约 / 非导出 / 解构形参）→ 回落声明形态面：`||` 组 then 分支（引擎 phi 合取不能表达析取事实）LSP 层按匹配臂联合源文本窄化（sound）；else 分支否定形态有界跳过。折叠面中的**类型值变量包为链接**（`[astNode](file://<依赖侧车>#L<定义行>)`——经侧车 import 表 / 本地顶层声明 / re-export 一级解析；渲染为 plain markdown——代码块内链接不渲染），替代原独立"契约原文"行；无引用变量的契约回落契约原文行。
+  - **core API**：`formatShape(a, { maxDepth, showLits })`——`showLits` 把 `eq(self, lit(v))` pred（槽位为 `get(p, k)` 字段项、顶层为参数项）渲染为 `lit(v)`（默认 false——既有全部展示面口径不变）。
+  - **修复**：exec 缓存命中（同内容侧车在不同路径——复制的契约）时不重跑 `execSidecar`，参数折叠文本注册表按路径键在命中路径补登记；此前第二个同内容侧车路径查不到折叠文本、回落谓词全展。
 
 ### Patch Changes
 
-- Updated dependencies [2af4016]
-- Updated dependencies [2af4016]
-  - @nudojs/core@1.9.4
+- 334b914: Discriminant narrowing visible in slot display; mid-token hover resolution
+  
+  - `$narrowMemberEq` keep-arm refinement: surviving union members with a compatible discriminant slot now carry the `eq(slotTerm, lit)` fact on that slot (conjoined with any existing pred). `formatShape(showLits)` renders it via `litPredValue`, so the open-tail arm displays `{ type: lit("TemplateLiteral") }` after `node.type === 'TemplateLiteral'` instead of the unrefined `{ type: string }`; `memberEqClass` upgrades those members to `only`, improving chained discriminant narrowing and complement-arm pruning. `any`/`unknown` slots stay untouched (fail-closed markers).
+  - `litPredValue` now reads `eq(self, lit)` facts through `and`-conjunctions, not only top-level eq preds.
+  - LSP A0 hover replay resolves mid-token cursor positions: record keys are Babel start positions (`$nodoPos` uses `loc.start`), so a cursor anywhere inside an identifier span now resolves to that identifier's record instead of falling back to the declared-form fold (previously only the first column hit).
+- 94197eb: hover 弹窗可读性与 return 表达式推导：
+  
+  - **pretty 缩进展示**：`formatShape(a, { pretty: true })`（opts 挂 `ProjectionBudget.pretty`，与 `showLits` 同先例）——object 每槽一行 + 尾逗号 + 2 空格缩进递增；union 仅当至少一臂是复合 shape（object/array/map/set/fn 或渲染含 `{`）时按臂断行（` | ` 前缀换行），纯 prim/lit 联合保持单行（`string | null | undefined` 不断）；截断标记 `…`/`…cycle` 原样内联。默认（不传 pretty）输出字节不变——check 签名 / dts / inlay / 语义 token 面不受影响。应用点仅 hover 面：标识符 hover（identHover / A0 求值态）与 return 表达式 hover；`gSig` 签名、`paramDisplayOf` 声明形态折叠面保持单行。
+  - **删除「契约原文」链接行**：hover 弹窗不再推送 `[契约原文](file://…#L<n>)` 链接（`linkedText` 变量链接面保留）；`HoverInfo.sidecarPath`/`sidecarLine` 字段随唯一消费方一并删除。
+  - **return 表达式推导 hover**：transpile `ReturnStatement` 在 `recordPositions` 时把返回值包 `$nodoPos(src, line, column)` 记录到 **`return` 关键字起始位**（argument 起始位与内部根标识符读记录同键 first-wins 丢失；`emitRet` 单一 choke point 覆盖 asVar/try/loop/mutator 全路径；裸 `return;` 不记录）。LSP `absNodeAtPosition` 词中回落从 Identifier 泛化为任意带 loc 节点（候选仅当起始键已有记录，取最小 span——词中标识符行为不变）；新增无 ident 分支——hover `return` 关键字或表达式内非标识符位（`?.[`、`[0]`、`.`）直接显示推导类型（无 ident 前缀，pretty 渲染）。
+- 5e275df: fix: review hardening — Map.groupBy empty-reduce crash, Bug 1 early-exit relational narrowing, fs-error graph-edge degradation, agent tool module graph, brand presence for URLSearchParams/TextDecoder/Intl, generator side-table $copy migration
+  
+  - `Map.groupBy` / `Object.groupBy`: shadow-domain join no longer bare-`reduce`s an empty unkeyed list (raw host `TypeError: Reduce of empty array with no initial value` escaped module evaluation → fail-closed unknown exports when the callback folds a literal key over arr/abstract-string-prim items); empty fold degrades to `unknown`.
+  - Early-exit lift path (if-return followed by non-tail statements) now applies the same relational-arm narrowing as the regular IfStatement path (`narrowRelArmThunk`), fixing false positives like `if (x >= 0) return x; console.log(x); return 1;` under `@nudo:contract return nonNeg`.
+  - `extractImportEdges` skips import edges whose target resolution throws `ModuleReadError` (EACCES/ESTALE, #135) instead of crashing module-graph construction (CLI watch start, incremental rebuild false-green rounds, LSP validation).
+  - `new Function(...)` / `new Function("a", "b", ...)` validate every argument for the L2 may-throw gate, not just the first.
+  - Brand presence tables: URLSearchParams (methods + `size`), TextDecoder (`decode` + accessors), Intl.NumberFormat/DateTimeFormat (`format`/`formatRange`/parts/`resolvedOptions`); URLSearchParams joins ITERABLE_BRANDS (@@iterator → function).
+  - `$copy` snapshots migrate generator/match side tables (genDeferred throws, genIter/matchAll elements), so fork/switch-arm rebinding no longer silently drops deferred generator throws.
+  - LSP agent tools (check/hover) build the module graph like the CLI and LSP validation do, fixing cross-module unknown collapse (E5 parity).
 
-Older versions (38) → [Full release history](./releases-history.md#pkg-env)
+Older versions (40) → [Full release history](./releases-history.md#pkg-core)
 
-## @nudojs/harvester 0.3.17 {#pkg-harvester}
+## @nudojs/service 1.6.17 {#pkg-service}
 
-## 0.3.17
+## 1.6.17
 
 ### Patch Changes
 
-- Updated dependencies [2af4016]
-- Updated dependencies [2af4016]
-  - @nudojs/core@1.9.4
-  - @nudojs/env@0.4.31
-  - @nudojs/parser@1.4.13
+- fa52735: 参数契约 inlay hints（形参后 `where …`）默认关闭：显式契约（递归 AST 节点联合等）行内展开可达数万字符。新增 `nudo.inlayHints.parameters`（boolean，默认 `false`）三级配置——项目 `package.json#nudo.inlayHints.parameters` 显式值赢，宿主设置（VS Code `nudo.inlayHints.parameters` / Zed `language-servers.nudo.initialization_options.inlayHints.parameters`）只在项目未设置时作默认；`workspace/didChangeConfiguration` 实时生效并触发 `inlayHint/refresh`。返回类型 inlay（`: …`）、case hints 与 interface 档 inlay 不受影响；hover 仍展示完整契约。
+- 35ce944: Fix recursive-fn local hover poisoning and arity-only fn hover display
+  
+  - `$nodoPos` position records and call/assign records now carry the caller-frame depth; hover replay surfaces (`absNodeAtPosition`, `collectEnclosingFnLocals`) only read outermost-frame records. Recursive functions on self-referential contracts (`lazy(() => astNode)`) no longer bind cycle-truncated `opaque unknown` into local-variable hovers (`obj` now shows the computed `null | string | undefined`).
+  - `const x = <non-call init>` declarations record the bound Abs at the declarator-id position during hover replay (`recordPositions` only) — ternary/optional-chain/literal-initialized locals are hoverable (`prop`, `q`).
+  - `callTranspiledExportFullInner` refines the called fn Abs `returnType` slot after a successful call (same policy as class method slots, display-only).
+  - LSP hover: an arity-only fn Abs (empty `returnType` slot) no longer preempts the generalize intension face; fn-name/callee hovers show the full contract signature `(node: nullable(astNode)) => null | string | undefined` instead of `(arg0) => ?`.
+- 5e275df: fix: review hardening — Map.groupBy empty-reduce crash, Bug 1 early-exit relational narrowing, fs-error graph-edge degradation, agent tool module graph, brand presence for URLSearchParams/TextDecoder/Intl, generator side-table $copy migration
+  
+  - `Map.groupBy` / `Object.groupBy`: shadow-domain join no longer bare-`reduce`s an empty unkeyed list (raw host `TypeError: Reduce of empty array with no initial value` escaped module evaluation → fail-closed unknown exports when the callback folds a literal key over arr/abstract-string-prim items); empty fold degrades to `unknown`.
+  - Early-exit lift path (if-return followed by non-tail statements) now applies the same relational-arm narrowing as the regular IfStatement path (`narrowRelArmThunk`), fixing false positives like `if (x >= 0) return x; console.log(x); return 1;` under `@nudo:contract return nonNeg`.
+  - `extractImportEdges` skips import edges whose target resolution throws `ModuleReadError` (EACCES/ESTALE, #135) instead of crashing module-graph construction (CLI watch start, incremental rebuild false-green rounds, LSP validation).
+  - `new Function(...)` / `new Function("a", "b", ...)` validate every argument for the L2 may-throw gate, not just the first.
+  - Brand presence tables: URLSearchParams (methods + `size`), TextDecoder (`decode` + accessors), Intl.NumberFormat/DateTimeFormat (`format`/`formatRange`/parts/`resolvedOptions`); URLSearchParams joins ITERABLE_BRANDS (@@iterator → function).
+  - `$copy` snapshots migrate generator/match side tables (genDeferred throws, genIter/matchAll elements), so fork/switch-arm rebinding no longer silently drops deferred generator throws.
+  - LSP agent tools (check/hover) build the module graph like the CLI and LSP validation do, fixing cross-module unknown collapse (E5 parity).
+- Updated dependencies [334b914]
+- Updated dependencies [94197eb]
+- Updated dependencies [b8db17b]
+- Updated dependencies [5e275df]
+  - @nudojs/core@1.10.0
+  - @nudojs/env@0.4.32
+  - @nudojs/harvester@0.3.18
+  - @nudojs/parser@1.4.14
 
-Older versions (38) → [Full release history](./releases-history.md#pkg-harvester)
+Older versions (42) → [Full release history](./releases-history.md#pkg-service)
 
-## vite-plugin-nudo 0.4.32 {#pkg-vite-plugin}
+## nudojs (CLI) 1.3.18 {#pkg-nudojs}
+
+## 1.3.18
+
+### Patch Changes
+
+- 35ce944: Fix recursive-fn local hover poisoning and arity-only fn hover display
+  
+  - `$nodoPos` position records and call/assign records now carry the caller-frame depth; hover replay surfaces (`absNodeAtPosition`, `collectEnclosingFnLocals`) only read outermost-frame records. Recursive functions on self-referential contracts (`lazy(() => astNode)`) no longer bind cycle-truncated `opaque unknown` into local-variable hovers (`obj` now shows the computed `null | string | undefined`).
+  - `const x = <non-call init>` declarations record the bound Abs at the declarator-id position during hover replay (`recordPositions` only) — ternary/optional-chain/literal-initialized locals are hoverable (`prop`, `q`).
+  - `callTranspiledExportFullInner` refines the called fn Abs `returnType` slot after a successful call (same policy as class method slots, display-only).
+  - LSP hover: an arity-only fn Abs (empty `returnType` slot) no longer preempts the generalize intension face; fn-name/callee hovers show the full contract signature `(node: nullable(astNode)) => null | string | undefined` instead of `(arg0) => ?`.
+- Updated dependencies [334b914]
+- Updated dependencies [94197eb]
+- Updated dependencies [b8db17b]
+- Updated dependencies [fa52735]
+- Updated dependencies [35ce944]
+- Updated dependencies [5e275df]
+  - @nudojs/core@1.10.0
+  - @nudojs/service@1.6.17
+  - @nudojs/env@0.4.32
+  - @nudojs/harvester@0.3.18
+  - @nudojs/parser@1.4.14
+
+Older versions (39) → [Full release history](./releases-history.md#pkg-nudojs)
+
+## @nudojs/parser 1.4.14 {#pkg-parser}
+
+## 1.4.14
+
+### Patch Changes
+
+- Updated dependencies [334b914]
+- Updated dependencies [94197eb]
+- Updated dependencies [b8db17b]
+- Updated dependencies [5e275df]
+  - @nudojs/core@1.10.0
+
+Older versions (39) → [Full release history](./releases-history.md#pkg-parser)
+
+## @nudojs/lsp 1.6.0 {#pkg-lsp}
+
+## 1.6.0
+
+### Minor Changes
+
+- b8db17b: 参数契约折叠展示（inlay + hover + 签名）：
+  
+  - **inlay**：侧车 `fn()` 形参表达式原文（如 `where nullable(astNode)`）或 `@nudo:contract` 指令约束名替代谓词无损展开（lazy 判别联合展开可达数万字符），完整谓词经 LSP inlay tooltip 展示。侧车 ∧ 指令并存时展示 `expr ∧ name`（任一文本缺席则整体回落谓词全展）；整表达式别名（`import { astNode as N }` 的裸 `N`）规范化为导入名；派生形参（spread / computed）无静态文本，回落谓词全展。
+  - **hover**：参数声明位 hover 折叠为声明形态（`node: nullable(astNode)`），函数名 hover 签名的契约参数同口径折叠；函数名 hover 的契约面 display 同步折叠。**体内引用位经求值器重放直读引擎求值态 Abs**（核心变更）：transpile `recordPositions` 插桩（`$nodoPos`——标识符值读 / 静态成员属性位 / 可选链成员跳属性位，计算成员记表达式起始位；记录并原样返回，语义恒等）+ `runTranspiled` 符号执行导出函数（入口 Φ 种子 + 契约参数 Abs），位置直读求值态 Abs——流敏感窄化为**引擎求值语义**（早退守卫 nullish 剥离 / 判别等值窄化 / `!==` 对偶 / typeof 守卫 / `&&` / `||` 链，Φ-native `$fork` 臂内 `withExecPhi` + `$narrowMemberEq` 剪影），非 LSP 层近似。显示阶梯：求值态与入口 Abs 等价（leqAbs 双向）或仅剥 nullish 的位置（声明位 / 检查点 / 成员访问对象 / 落回位）→ 折叠声明形态 + 类型值变量链接；窄化位（守卫 then 分支 / 成员读槽位 / 局部量）→ 求值态展示（`node: { type: lit("StringLiteral"), value: string } | { type: string }`——`showLits` 渲染 lit 判别值与侧车文法同形；开放尾臂按 may 态保守保留——其 `type: string()` 值域与 lit 判别重叠，成员读槽位在尾臂缺席 → `string | undefined` sound）。重放 fail-closed（求值失败 / 预算超限 / 无契约 / 非导出 / 解构形参）→ 回落声明形态面：`||` 组 then 分支（引擎 phi 合取不能表达析取事实）LSP 层按匹配臂联合源文本窄化（sound）；else 分支否定形态有界跳过。折叠面中的**类型值变量包为链接**（`[astNode](file://<依赖侧车>#L<定义行>)`——经侧车 import 表 / 本地顶层声明 / re-export 一级解析；渲染为 plain markdown——代码块内链接不渲染），替代原独立"契约原文"行；无引用变量的契约回落契约原文行。
+  - **core API**：`formatShape(a, { maxDepth, showLits })`——`showLits` 把 `eq(self, lit(v))` pred（槽位为 `get(p, k)` 字段项、顶层为参数项）渲染为 `lit(v)`（默认 false——既有全部展示面口径不变）。
+  - **修复**：exec 缓存命中（同内容侧车在不同路径——复制的契约）时不重跑 `execSidecar`，参数折叠文本注册表按路径键在命中路径补登记；此前第二个同内容侧车路径查不到折叠文本、回落谓词全展。
+- fa52735: 参数契约 inlay hints（形参后 `where …`）默认关闭：显式契约（递归 AST 节点联合等）行内展开可达数万字符。新增 `nudo.inlayHints.parameters`（boolean，默认 `false`）三级配置——项目 `package.json#nudo.inlayHints.parameters` 显式值赢，宿主设置（VS Code `nudo.inlayHints.parameters` / Zed `language-servers.nudo.initialization_options.inlayHints.parameters`）只在项目未设置时作默认；`workspace/didChangeConfiguration` 实时生效并触发 `inlayHint/refresh`。返回类型 inlay（`: …`）、case hints 与 interface 档 inlay 不受影响；hover 仍展示完整契约。
+
+### Patch Changes
+
+- 334b914: Discriminant narrowing visible in slot display; mid-token hover resolution
+  
+  - `$narrowMemberEq` keep-arm refinement: surviving union members with a compatible discriminant slot now carry the `eq(slotTerm, lit)` fact on that slot (conjoined with any existing pred). `formatShape(showLits)` renders it via `litPredValue`, so the open-tail arm displays `{ type: lit("TemplateLiteral") }` after `node.type === 'TemplateLiteral'` instead of the unrefined `{ type: string }`; `memberEqClass` upgrades those members to `only`, improving chained discriminant narrowing and complement-arm pruning. `any`/`unknown` slots stay untouched (fail-closed markers).
+  - `litPredValue` now reads `eq(self, lit)` facts through `and`-conjunctions, not only top-level eq preds.
+  - LSP A0 hover replay resolves mid-token cursor positions: record keys are Babel start positions (`$nodoPos` uses `loc.start`), so a cursor anywhere inside an identifier span now resolves to that identifier's record instead of falling back to the declared-form fold (previously only the first column hit).
+- f89677d: Hover 无响应排查修复：A0 重放缓存 LRU 化 + 进程级异常兜底
+  
+  - `absNodeReplayCache`（64 条上限）从「超限全清」改为 LRU 滚动淘汰（命中刷新新端、超限删最旧）。此前多文件浏览填满缓存后一次清空，后续 hover 全部触发冷重放（大文件同步重放数百 ms），与编辑防抖/诊断/inlay 同一事件循环排队，客户端感知 hover 卡死且无日志；LRU 后热条目（当前文件/最近浏览）在缓存压力下持续命中（实测雪崩 70 key 后原条目 12ms）。
+  - server bin 入口注册 `unhandledRejection` / `uncaughtException` 兜底：默认行为下未捕获异步异常会静默终止进程（客户端只见 "server shut down"、无 stderr 留痕），现在记录后继续运行，把静默死亡变成可排查的日志事件。
+- 94197eb: hover 弹窗可读性与 return 表达式推导：
+  
+  - **pretty 缩进展示**：`formatShape(a, { pretty: true })`（opts 挂 `ProjectionBudget.pretty`，与 `showLits` 同先例）——object 每槽一行 + 尾逗号 + 2 空格缩进递增；union 仅当至少一臂是复合 shape（object/array/map/set/fn 或渲染含 `{`）时按臂断行（` | ` 前缀换行），纯 prim/lit 联合保持单行（`string | null | undefined` 不断）；截断标记 `…`/`…cycle` 原样内联。默认（不传 pretty）输出字节不变——check 签名 / dts / inlay / 语义 token 面不受影响。应用点仅 hover 面：标识符 hover（identHover / A0 求值态）与 return 表达式 hover；`gSig` 签名、`paramDisplayOf` 声明形态折叠面保持单行。
+  - **删除「契约原文」链接行**：hover 弹窗不再推送 `[契约原文](file://…#L<n>)` 链接（`linkedText` 变量链接面保留）；`HoverInfo.sidecarPath`/`sidecarLine` 字段随唯一消费方一并删除。
+  - **return 表达式推导 hover**：transpile `ReturnStatement` 在 `recordPositions` 时把返回值包 `$nodoPos(src, line, column)` 记录到 **`return` 关键字起始位**（argument 起始位与内部根标识符读记录同键 first-wins 丢失；`emitRet` 单一 choke point 覆盖 asVar/try/loop/mutator 全路径；裸 `return;` 不记录）。LSP `absNodeAtPosition` 词中回落从 Identifier 泛化为任意带 loc 节点（候选仅当起始键已有记录，取最小 span——词中标识符行为不变）；新增无 ident 分支——hover `return` 关键字或表达式内非标识符位（`?.[`、`[0]`、`.`）直接显示推导类型（无 ident 前缀，pretty 渲染）。
+- 35ce944: Fix recursive-fn local hover poisoning and arity-only fn hover display
+  
+  - `$nodoPos` position records and call/assign records now carry the caller-frame depth; hover replay surfaces (`absNodeAtPosition`, `collectEnclosingFnLocals`) only read outermost-frame records. Recursive functions on self-referential contracts (`lazy(() => astNode)`) no longer bind cycle-truncated `opaque unknown` into local-variable hovers (`obj` now shows the computed `null | string | undefined`).
+  - `const x = <non-call init>` declarations record the bound Abs at the declarator-id position during hover replay (`recordPositions` only) — ternary/optional-chain/literal-initialized locals are hoverable (`prop`, `q`).
+  - `callTranspiledExportFullInner` refines the called fn Abs `returnType` slot after a successful call (same policy as class method slots, display-only).
+  - LSP hover: an arity-only fn Abs (empty `returnType` slot) no longer preempts the generalize intension face; fn-name/callee hovers show the full contract signature `(node: nullable(astNode)) => null | string | undefined` instead of `(arg0) => ?`.
+- 5e275df: fix: review hardening — Map.groupBy empty-reduce crash, Bug 1 early-exit relational narrowing, fs-error graph-edge degradation, agent tool module graph, brand presence for URLSearchParams/TextDecoder/Intl, generator side-table $copy migration
+  
+  - `Map.groupBy` / `Object.groupBy`: shadow-domain join no longer bare-`reduce`s an empty unkeyed list (raw host `TypeError: Reduce of empty array with no initial value` escaped module evaluation → fail-closed unknown exports when the callback folds a literal key over arr/abstract-string-prim items); empty fold degrades to `unknown`.
+  - Early-exit lift path (if-return followed by non-tail statements) now applies the same relational-arm narrowing as the regular IfStatement path (`narrowRelArmThunk`), fixing false positives like `if (x >= 0) return x; console.log(x); return 1;` under `@nudo:contract return nonNeg`.
+  - `extractImportEdges` skips import edges whose target resolution throws `ModuleReadError` (EACCES/ESTALE, #135) instead of crashing module-graph construction (CLI watch start, incremental rebuild false-green rounds, LSP validation).
+  - `new Function(...)` / `new Function("a", "b", ...)` validate every argument for the L2 may-throw gate, not just the first.
+  - Brand presence tables: URLSearchParams (methods + `size`), TextDecoder (`decode` + accessors), Intl.NumberFormat/DateTimeFormat (`format`/`formatRange`/parts/`resolvedOptions`); URLSearchParams joins ITERABLE_BRANDS (@@iterator → function).
+  - `$copy` snapshots migrate generator/match side tables (genDeferred throws, genIter/matchAll elements), so fork/switch-arm rebinding no longer silently drops deferred generator throws.
+  - LSP agent tools (check/hover) build the module graph like the CLI and LSP validation do, fixing cross-module unknown collapse (E5 parity).
+- Updated dependencies [334b914]
+- Updated dependencies [94197eb]
+- Updated dependencies [b8db17b]
+- Updated dependencies [fa52735]
+- Updated dependencies [35ce944]
+- Updated dependencies [5e275df]
+  - @nudojs/core@1.10.0
+  - @nudojs/service@1.6.17
+  - @nudojs/parser@1.4.14
+
+Older versions (43) → [Full release history](./releases-history.md#pkg-lsp)
+
+## @nudojs/env 0.4.32 {#pkg-env}
 
 ## 0.4.32
 
 ### Patch Changes
 
-- Updated dependencies [2af4016]
-- Updated dependencies [2af4016]
-  - @nudojs/core@1.9.4
-  - @nudojs/service@1.6.16
+- Updated dependencies [334b914]
+- Updated dependencies [94197eb]
+- Updated dependencies [b8db17b]
+- Updated dependencies [5e275df]
+  - @nudojs/core@1.10.0
 
-Older versions (41) → [Full release history](./releases-history.md#pkg-vite-plugin)
+Older versions (39) → [Full release history](./releases-history.md#pkg-env)
+
+## @nudojs/harvester 0.3.18 {#pkg-harvester}
+
+## 0.3.18
+
+### Patch Changes
+
+- Updated dependencies [334b914]
+- Updated dependencies [94197eb]
+- Updated dependencies [b8db17b]
+- Updated dependencies [5e275df]
+  - @nudojs/core@1.10.0
+  - @nudojs/env@0.4.32
+  - @nudojs/parser@1.4.14
+
+Older versions (39) → [Full release history](./releases-history.md#pkg-harvester)
+
+## vite-plugin-nudo 0.4.33 {#pkg-vite-plugin}
+
+## 0.4.33
+
+### Patch Changes
+
+- Updated dependencies [334b914]
+- Updated dependencies [94197eb]
+- Updated dependencies [b8db17b]
+- Updated dependencies [fa52735]
+- Updated dependencies [35ce944]
+- Updated dependencies [5e275df]
+  - @nudojs/core@1.10.0
+  - @nudojs/service@1.6.17
+
+Older versions (42) → [Full release history](./releases-history.md#pkg-vite-plugin)
 
 ## nudo-vscode 0.3.7 {#pkg-vscode}
 

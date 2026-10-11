@@ -1,5 +1,27 @@
 # nudojs
 
+## 1.3.18
+
+### Patch Changes
+
+- 35ce944: Fix recursive-fn local hover poisoning and arity-only fn hover display
+  
+  - `$nodoPos` position records and call/assign records now carry the caller-frame depth; hover replay surfaces (`absNodeAtPosition`, `collectEnclosingFnLocals`) only read outermost-frame records. Recursive functions on self-referential contracts (`lazy(() => astNode)`) no longer bind cycle-truncated `opaque unknown` into local-variable hovers (`obj` now shows the computed `null | string | undefined`).
+  - `const x = <non-call init>` declarations record the bound Abs at the declarator-id position during hover replay (`recordPositions` only) — ternary/optional-chain/literal-initialized locals are hoverable (`prop`, `q`).
+  - `callTranspiledExportFullInner` refines the called fn Abs `returnType` slot after a successful call (same policy as class method slots, display-only).
+  - LSP hover: an arity-only fn Abs (empty `returnType` slot) no longer preempts the generalize intension face; fn-name/callee hovers show the full contract signature `(node: nullable(astNode)) => null | string | undefined` instead of `(arg0) => ?`.
+- Updated dependencies [334b914]
+- Updated dependencies [94197eb]
+- Updated dependencies [b8db17b]
+- Updated dependencies [fa52735]
+- Updated dependencies [35ce944]
+- Updated dependencies [5e275df]
+  - @nudojs/core@1.10.0
+  - @nudojs/service@1.6.17
+  - @nudojs/env@0.4.32
+  - @nudojs/harvester@0.3.18
+  - @nudojs/parser@1.4.14
+
 ## 1.3.17
 
 ### Patch Changes
