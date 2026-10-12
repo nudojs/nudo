@@ -11,19 +11,34 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 | Package | Current version |
 |----------|-----------------|
-| `@nudojs/core` | 1.11.0 |
-| `@nudojs/service` | 1.6.20 |
-| `nudojs (CLI)` | 1.3.21 |
-| `@nudojs/parser` | 1.4.17 |
-| `@nudojs/lsp` | 1.6.3 |
-| `@nudojs/env` | 0.4.35 |
-| `@nudojs/harvester` | 0.3.21 |
-| `vite-plugin-nudo` | 0.4.36 |
-| `nudo-vscode` | 0.3.40 |
+| `@nudojs/core` | 1.11.1 |
+| `@nudojs/service` | 1.6.21 |
+| `nudojs (CLI)` | 1.3.22 |
+| `@nudojs/parser` | 1.4.18 |
+| `@nudojs/lsp` | 1.6.4 |
+| `@nudojs/env` | 0.4.36 |
+| `@nudojs/harvester` | 0.3.22 |
+| `vite-plugin-nudo` | 0.4.37 |
+| `nudo-vscode` | 0.3.41 |
 
 **Jump to package:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.11.0 {#pkg-core}
+## @nudojs/core 1.11.1 {#pkg-core}
+
+## 1.11.1
+
+### Patch Changes
+
+- 612d64f: Fix loop-mutated array bindings widening with fabricated `(unknown | undefined)[]` arms — `for…of` + `push` return values now prove against element contracts (issue #156):
+  
+  - `loop-widen.ts`: tuple length growth (push accumulation) is now detected as element-domain growth (`{el}`) instead of whole-value growth; widening goes through `arrify` — element domain = join of all observed element domains. No fabricated `unknown` element arm from the empty initial tuple, no baked out-of-bounds `undefined` (OOB is a read-site fact: `$idx` on an abstract index already joins the marker; concrete-index optimism matches the engine-wide `arr` invariant shared with `splice`/`sort` degradation).
+  - Packed-container slot joins produce sums of objects (`joinValues` does not structurally merge object slots); `normalizeForWiden` structurally merges same-key-set object sums before the growth tree descends, so sequential states of `{ list: [...] }`-style accumulators union their element domains instead of widening the zero-element member alone into `arr(unknown)`.
+  - `control.ts` `widenLoopJoin`: stops baking the OOB marker into collapsed element domains (hole reads still contribute, they are real element values).
+  - `postcondition.ts`: `conf="widened"` structural arms (`arr`/`tuple`/`obj`) against `array(...)`/`shape(...)` contracts (union members traversed) now discharge through per-element/per-field reconciliation — widening loses length/key-openness/bound/path evidence, not the structural domain. Guards unchanged: bounded element contracts (`number().gt(0)`), mismatched prim domains, and unknown element domains stay `unprovable`; interrupted loops (abstract `break`) keep the honest `unknown[]` top.
+  - No-growth loop exits now collapse array-family sums in packed binding slots (`collapseArrSums`): a parameter-position `arr` binding whose element domain is `unknown` absorbs `push` values (growth detection sees nothing), and the widener's accumulated `joinAbs` used to smear the sequential states into a two-arm sum (`unknown[] | (unknown | {v})[]`). Sequential states of one binding now union into a single `arr` (conf preserved — representation collapse, not widening; equal-length tuple-only joins and non-array sums untouched).
+
+<details>
+<summary>Version history (44)</summary>
 
 ## 1.11.0
 
@@ -49,9 +64,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   
   - The array-mutator fast path in `transpile/stmt.ts` (statement position, identifier/member-path receivers) and the rebind lines of `emitArrMutatorRebinds` in `transpile/emit.ts` (expression position / nested mutators — the rebind line performs the *real* mutation, so the unknown argument landed in the container) now emit `...$elems(<expr>)`, the same flattening the ordinary call paths have used since DEC-006 K5. Generated code is a JS spread inside the args array literal, so `$elems`' returned `Abs[]` flattens element-wise into `$arrMutContainer`.
   - Element precision restored: `const findings = []; findings.push(...check(x)); return findings` keeps the precise per-element tuple from `check` instead of `[unknown]`; mixed arguments keep order (`f.push(a, ...xs, b)`); spreading an abstract array joins its known element domain via the single representative; spreading a string pushes per code point, matching native `push(..."ab")` semantics.
-
-<details>
-<summary>Version history (43)</summary>
 
 ## 1.10.2
 
@@ -1010,7 +1022,20 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/service 1.6.20 {#pkg-service}
+## @nudojs/service 1.6.21 {#pkg-service}
+
+## 1.6.21
+
+### Patch Changes
+
+- Updated dependencies [612d64f]
+  - @nudojs/core@1.11.1
+  - @nudojs/env@0.4.36
+  - @nudojs/harvester@0.3.22
+  - @nudojs/parser@1.4.18
+
+<details>
+<summary>Version history (46)</summary>
 
 ## 1.6.20
 
@@ -1023,9 +1048,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/env@0.4.35
   - @nudojs/harvester@0.3.21
   - @nudojs/parser@1.4.17
-
-<details>
-<summary>Version history (45)</summary>
 
 ## 1.6.19
 
@@ -1929,7 +1951,21 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## nudojs (CLI) 1.3.21 {#pkg-nudojs}
+## nudojs (CLI) 1.3.22 {#pkg-nudojs}
+
+## 1.3.22
+
+### Patch Changes
+
+- Updated dependencies [612d64f]
+  - @nudojs/core@1.11.1
+  - @nudojs/env@0.4.36
+  - @nudojs/harvester@0.3.22
+  - @nudojs/parser@1.4.18
+  - @nudojs/service@1.6.21
+
+<details>
+<summary>Version history (43)</summary>
 
 ## 1.3.21
 
@@ -1943,9 +1979,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/harvester@0.3.21
   - @nudojs/parser@1.4.17
   - @nudojs/service@1.6.20
-
-<details>
-<summary>Version history (42)</summary>
 
 ## 1.3.20
 
@@ -2615,7 +2648,17 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/parser 1.4.17 {#pkg-parser}
+## @nudojs/parser 1.4.18 {#pkg-parser}
+
+## 1.4.18
+
+### Patch Changes
+
+- Updated dependencies [612d64f]
+  - @nudojs/core@1.11.1
+
+<details>
+<summary>Version history (43)</summary>
 
 ## 1.4.17
 
@@ -2625,9 +2668,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 - Updated dependencies [16cda31]
 - Updated dependencies [cce5e58]
   - @nudojs/core@1.11.0
-
-<details>
-<summary>Version history (42)</summary>
 
 ## 1.4.16
 
@@ -3141,7 +3181,19 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/lsp 1.6.3 {#pkg-lsp}
+## @nudojs/lsp 1.6.4 {#pkg-lsp}
+
+## 1.6.4
+
+### Patch Changes
+
+- Updated dependencies [612d64f]
+  - @nudojs/core@1.11.1
+  - @nudojs/parser@1.4.18
+  - @nudojs/service@1.6.21
+
+<details>
+<summary>Version history (47)</summary>
 
 ## 1.6.3
 
@@ -3153,9 +3205,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/core@1.11.0
   - @nudojs/parser@1.4.17
   - @nudojs/service@1.6.20
-
-<details>
-<summary>Version history (46)</summary>
 
 ## 1.6.2
 
@@ -4046,7 +4095,17 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/env 0.4.35 {#pkg-env}
+## @nudojs/env 0.4.36 {#pkg-env}
+
+## 0.4.36
+
+### Patch Changes
+
+- Updated dependencies [612d64f]
+  - @nudojs/core@1.11.1
+
+<details>
+<summary>Version history (43)</summary>
 
 ## 0.4.35
 
@@ -4056,9 +4115,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 - Updated dependencies [16cda31]
 - Updated dependencies [cce5e58]
   - @nudojs/core@1.11.0
-
-<details>
-<summary>Version history (42)</summary>
 
 ## 0.4.34
 
@@ -4510,7 +4566,19 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/harvester 0.3.21 {#pkg-harvester}
+## @nudojs/harvester 0.3.22 {#pkg-harvester}
+
+## 0.3.22
+
+### Patch Changes
+
+- Updated dependencies [612d64f]
+  - @nudojs/core@1.11.1
+  - @nudojs/env@0.4.36
+  - @nudojs/parser@1.4.18
+
+<details>
+<summary>Version history (43)</summary>
 
 ## 0.3.21
 
@@ -4522,9 +4590,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/core@1.11.0
   - @nudojs/env@0.4.35
   - @nudojs/parser@1.4.17
-
-<details>
-<summary>Version history (42)</summary>
 
 ## 0.3.20
 
@@ -5041,7 +5106,18 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## vite-plugin-nudo 0.4.36 {#pkg-vite-plugin}
+## vite-plugin-nudo 0.4.37 {#pkg-vite-plugin}
+
+## 0.4.37
+
+### Patch Changes
+
+- Updated dependencies [612d64f]
+  - @nudojs/core@1.11.1
+  - @nudojs/service@1.6.21
+
+<details>
+<summary>Version history (46)</summary>
 
 ## 0.4.36
 
@@ -5052,9 +5128,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 - Updated dependencies [cce5e58]
   - @nudojs/core@1.11.0
   - @nudojs/service@1.6.20
-
-<details>
-<summary>Version history (45)</summary>
 
 ## 0.4.35
 

@@ -1,6 +1,6 @@
 {
   "name": "@nudojs/parser",
-  "version": "1.4.17",
+  "version": "1.4.18",
   "engines": {
     "node": ">=20"
   },
