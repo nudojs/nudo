@@ -14,6 +14,7 @@ import {
   litToStringOf,
   staticKeyOf,
   symbolKeyOf,
+  privateNameKeySrc,
   paramDisplayNames,
   methodBindNames,
   collectFreeAssignedNames,
@@ -707,6 +708,24 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
         const r = isExpression(expr.right) ? transpileExpression(expr.right, opts) : "$lit(void 0)";
         return `$instanceofNonIdent(${l}, ${r})`;
       }
+      // Bug 80：#x in o —— PrivateName 被 isExpression 排除，通用路径会把
+      // 左操作数折 $lit(void 0) 再当字符串键查询（假精确）。私有名左操作数
+      // → "#x" 混淆键直发 $in（与成员读同口径；接收者非对象硬抛 / brand
+      // 槽 presence 判定由运行期 $in 收口，无需重复 brand 校验）
+      if (expr.operator === "in" && expr.left.type === "PrivateName") {
+        const key = privateNameKeySrc(
+          expr.left as unknown as { id?: { name?: string }; name?: string },
+        );
+        if (!key) {
+          throw new NudoUnsupportedError(
+            `binary:in-private`,
+            expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
+          );
+        }
+        // $in 键参数是 Abs（正常 "x" in o 走 $lit 表达式路径）——私有名
+        // 字面量同样包 $lit，propertyKeyOf 才能折出 "#x" 字符串键
+        return `$in($lit(${key}), ${transpileExpression(expr.right, opts)})`;
+      }
       const fn = BIN_OPS[expr.operator];
       if (!fn) {
         // 未映射二元运算符：抛 unsupported 交消费方回落（不得假精确 undefined）
@@ -1155,15 +1174,15 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
         // Bug 78：this.#x / C.#x → "#x" 混淆键槽读写（公有名不含 "#"，
         // 无碰撞）；不再抛 unsupported 令整模块 fail-closed
         const recv = transpileExpression(expr.object as Expression, opts);
-        const priv = (expr.property as { id?: { name?: string }; name?: string }).id?.name
-          ?? (expr.property as { name?: string }).name;
-        if (!priv) {
+        const key = privateNameKeySrc(
+          expr.property as { id?: { name?: string }; name?: string },
+        );
+        if (!key) {
           throw new NudoUnsupportedError(
             `member:PrivateName`,
             expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
           );
         }
-        const key = JSON.stringify(`#${priv}`);
         return optional ? `$optionalGet(${recv}, ${key})` : `$get(${recv}, ${key})`;
       }
       if (expr.property.type !== "Identifier") {
@@ -1318,17 +1337,23 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
         // 根不可重绑（如 foo().x = v）：保留旧纯表达式形态；
         // 表达式值 = 写入的值（$set/$idxSet 返回容器不是 JS 语义）
         if (!m.computed && m.property.type === "PrivateName") {
-          // Bug 78：this.#x = v → "#x" 混淆键槽写
+          // Bug 78：this.#x = v → "#x" 混淆键槽写；Bug 81：复合赋值
+          // （this.#x += 1）此前无视 compoundFn 直发右值（假精确），修为
+          // 读-改-写（镜像 memberPath 臂）；逻辑赋值已在上方对不可重绑
+          // 目标抛 unsupported（fail-closed sound），不落本分支
           const obj = transpileExpression(m.object as Expression, opts);
-          const priv = (m.property as { id?: { name?: string }; name?: string }).id?.name
-            ?? (m.property as { name?: string }).name;
-          if (!priv) {
+          const key = privateNameKeySrc(
+            m.property as { id?: { name?: string }; name?: string },
+          );
+          if (!key) {
             throw new NudoUnsupportedError(
               `assign-target`,
               expr.loc ? { line: expr.loc.start.line, column: expr.loc.start.column } : undefined,
             );
           }
-          return `((__v) => (($set(${obj}, ${JSON.stringify(`#${priv}`)}, __v)), __v))(${right})`;
+          const cur = `$get(${obj}, ${key})`;
+          const valSrc = compoundFn ? `${compoundFn}(${cur}, ${right})` : right;
+          return `((__v) => (($set(${obj}, ${key}, __v)), __v))(${valSrc})`;
         }
         if (!m.computed && m.property.type === "Identifier") {
           const obj = transpileExpression(m.object as Expression, opts);

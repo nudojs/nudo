@@ -30,7 +30,8 @@ export type Shape =
   | { k: "prim"; type: PrimName }
   | {
       k: "obj";
-      slots: Record<string, { value: Abs; optional?: boolean; readonly?: boolean }>;
+      /** 槽形与 objects.ts Slot 同构（含 Bug 84 internal 私有槽标记） */
+      slots: Record<string, { value: Abs; optional?: boolean; readonly?: boolean; internal?: boolean }>;
       index?: { key: Abs; value: Abs };
       open?: boolean;
     }

@@ -12,6 +12,7 @@ import { isSymbolAbs } from "../symbol-id.ts";
 import { pTrue } from "../pred.ts";
 import { str, isBigintPrimAbs, mayCoerceThrowOperand } from "./shared.ts";
 import { getPropFlags } from "./invariants.ts";
+import { classInstanceInnerOf, classChainHasJsonUserFace } from "../exec/class-registry.ts";
 import { readProperty } from "./object.ts";
 import { accessorTable } from "../accessors.ts";
 
@@ -126,6 +127,8 @@ function jsonStringifyTotal(a: Abs, seen: Set<object> = new Set()): boolean {
     const flags = getPropFlags(a);
     for (const [k, sv] of Object.entries(os.slots)) {
       if (flags?.get(k)?.enumerable === false) continue;
+      // Bug 84：internal 私有槽不进序列化（内部槽对 JSON 不可见）
+      if ((sv as { internal?: boolean }).internal === true) continue;
       if (k === "toJSON" && sv.value.term?.op !== "lit") return false;
       if (!jsonStringifyTotal(sv.value, seen)) return false;
     }
@@ -186,8 +189,10 @@ function absToJsonNative(
     const out: Record<string, unknown> = {};
     const flags = getPropFlags(a);
     for (const [k, sv] of Object.entries(s.slots as Record<string, { value: Abs }>)) {
-      // enumerable:false（defineProperty 描述符）→ JSON.stringify 跳过
+      // enumerable:false（defineProperty 描述符）→ JSON.stringify 跳过；
+      // internal 私有槽（Bug 84）——内部槽对序列化不可见
       if (flags?.get(k)?.enumerable === false) continue;
+      if ((sv as { internal?: boolean }).internal === true) continue;
       // toJSON 槽：callable（fn 形）/抽象 → 原生先调用再序列化其返回值，
       // 不可折（{toJSON(){return 'x'}} → "\"x\""，非省略）——保守 NOT_LITERAL
       if (k === "toJSON") {
@@ -296,7 +301,18 @@ export function evalJsonMethod(name: string, args: Abs[]): Abs | undefined {
     // 顶层 undefined / function / symbol → 原生返回 undefined 值（非字符串）
     const a0Abs = args[0];
     if (!a0Abs) return undefAbs();
-    const v = absToJsonNative(a0Abs, new Set(), true);
+    // Bug 84：用户类实例 brand → 内层闭 obj 的公有自有槽（私有 Slot.internal
+    // 与 enumerable:false 剔除——原生私有字段不进 JSON）。类链带 toJSON /
+    // 实例访问器用户面时不可折（原生先调用），保持既有保守 partial。
+    let jsonArg = a0Abs;
+    {
+      const inner = classInstanceInnerOf(a0Abs);
+      const brandName = a0Abs.shape.k === "brand" ? a0Abs.shape.name : undefined;
+      if (inner && brandName !== undefined && !classChainHasJsonUserFace(brandName)) {
+        jsonArg = inner;
+      }
+    }
+    const v = absToJsonNative(jsonArg, new Set(), true);
     if (v === NOT_LITERAL || v === OMIT) {
       // 顶层 function/symbol：JSON.stringify 返回 undefined，不是 string
       if (isNonJsonTopLevel(a0Abs)) return undefAbs();

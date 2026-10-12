@@ -12,7 +12,19 @@ import { abs, confJoin, litValue, unknown, never, strLit } from "./abs.ts";
 import { noteDerivationJoin } from "./derivation.ts";
 import { $objAccessor, lookupObjAccessor, migrateAccessors } from "./accessors.ts";
 
-export type Slot = { value: Abs; optional?: boolean; readonly?: boolean };
+/**
+ * Bug 84：internal 标记私有槽（私有字段 "#x" 混淆键落实例内层 obj）。
+ * 原生私有字段是内部槽，对所有属性 introspection（for-in / hasOwnProperty
+ * / keys / gOPN / spread / assign / stringify）不可见；$get/$set 直连键
+ * 访问与 $in 槽存在性查询不受影响（Bug 78 语义）。必须用槽标志而非
+ * 名字前缀过滤——合法公共字符串键 {"#x":1} 与私有槽同键空间共存。
+ */
+export type Slot = {
+  value: Abs;
+  optional?: boolean;
+  readonly?: boolean;
+  internal?: boolean;
+};
 
 /** ES 规范数组下标（无前导零、< 2^32-1）；非规范键返回 undefined */
 export function canonicalArrayIndex(v: unknown): number | undefined {

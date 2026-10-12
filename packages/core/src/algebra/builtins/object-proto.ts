@@ -57,6 +57,9 @@ function hasOwnDecision(recv: Abs, key: string): Abs {
     }
     if (inner.shape.k === "obj") {
       const slot = getSlot(inner.shape.slots, key);
+      // Bug 84：internal 私有槽是内部槽——hasOwnProperty 折 false（$in 的
+      // 槽存在性查询不走此判定，`#x in this` 保持 true）
+      if (slot?.internal) return boolLit(false);
       if (slot && !slot.optional) return boolLit(true);
       if (slot?.optional) return boolPrimB();
       if (!inner.shape.open) return boolLit(false);
@@ -66,6 +69,8 @@ function hasOwnDecision(recv: Abs, key: string): Abs {
   }
   if (s.k === "obj") {
     const slot = getSlot(s.slots, key);
+    // Bug 84：internal 私有槽非自有属性（同 brand 臂）
+    if (slot?.internal) return boolLit(false);
     if (slot && !slot.optional) return boolLit(true);
     if (slot?.optional) return boolPrimB();
     if (!s.open && recv.conf === "exact") return boolLit(false);
