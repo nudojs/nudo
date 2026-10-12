@@ -400,7 +400,7 @@ createEnvironment(parent?, bindings?)
 | <a id="abssigimpl"></a>`AbsSigImpl` | type | Abs 原生 env/builtin 实现（evaluator 优先） | `AbsSigImpl = (args: Abs[], thisVal?: Abs) => Abs \| undefined` |
 | <a id="abstoconstraint"></a>`absToConstraint` | fn | Abs → 契约；不可表达 → undefined。 | `absToConstraint( a: Abs, budget: ProjectionBudget = new ProjectionBudget(), ): NudoConstraint \| undefined` |
 | <a id="abstostring"></a>`absToString` | fn | — | `absToString(a: Abs): string` |
-| <a id="actionsforissue"></a>`actionsForIssue` | fn | 诊断码 → 结构化动作（AI1）；未知码给 info 提示 | `actionsForIssue(i: { code: string; expected?: string; suggestion?: string; fn?: string; }): CheckAction[]` |
+| <a id="actionsforissue"></a>`actionsForIssue` | fn | 诊断码 → 结构化动作（AI1）；未知码给 info 提示 | `actionsForIssue(i: { code: string; expected?: string; suggestion?: string; fn?: string; reason?: string; }): CheckAction[]` |
 | <a id="add"></a>`add` | fn | — | `add(a: Abs, b: Abs, phi: Phi = pTrue): Abs` |
 | <a id="alphaof"></a>`alphaOf` | fn | 仅当 term 是 var 且 id ∈ alphaIds（本次 typeParams）时复用；否则 fresh α。 | `alphaOf( absOrTerm: Abs \| Term \| undefined, ctx: HofCollectCtx, ): Term` |
 | <a id="applycallbackabs"></a>`applyCallbackAbs` | fn | — | `applyCallbackAbs( cb: Abs \| { type: string }, args: Abs[], env: unknown, phi: unknown, budget: unknown, thisVal?: Abs, ): Abs` |
@@ -425,7 +425,7 @@ createEnvironment(parent?, bindings?)
 | <a id="callatfunctionboundary"></a>`callAtFunctionBoundary` | fn | 函数调用边界：callee 的 loop/early-return 不得冒泡成 caller 结果。 | `callAtFunctionBoundary<T>(body: () => T): T` |
 | <a id="canonicalarrayindex"></a>`canonicalArrayIndex` | fn | ES 规范数组下标（无前导零、&lt; 2^32-1）；非规范键返回 undefined | `canonicalArrayIndex(v: unknown): number \| undefined` |
 | <a id="checkaction"></a>`CheckAction` | type | 结构化修复动作（AI1；稳定枚举，只增不改语义） | `CheckAction = { kind: "draft" \| "relax" \| "callsite" \| "assume" \| "mock" \| "emit" \| "ignore-throws" \| "info"; command?: string; label: st...` |
-| <a id="checkissue"></a>`CheckIssue` | type | — | `CheckIssue = Diagnostic & { fn?: string; line?: number; column?: number; actual?: string; expected?: string; actions?: CheckAction[]; }` |
+| <a id="checkissue"></a>`CheckIssue` | type | — | `CheckIssue = Diagnostic & { fn?: string; line?: number; column?: number; actual?: string; expected?: string; reason?: "cycle" \| "depth" \|...` |
 | <a id="checkjsonmulti"></a>`CheckJsonMulti` | type | 多文件 `check --json` 信封（CI / monorepo）。单文件仍输出裸 CheckJson。 | `CheckJsonMulti = { version: 1; kind: "multi"; ok: boolean; summary: CheckReport["summary"] & { files: number; budgetTruncated?: boolean }...` |
 | <a id="checkoptions"></a>`CheckOptions` | type | — | — |
 | <a id="clearbclasses"></a>`clearBClasses` | fn | — | `clearBClasses(): void` |
