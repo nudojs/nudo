@@ -32,8 +32,20 @@ let _fnCallIdSeq = 0;
 let _callTruncated = false;
 /** 本轮 A 路径是否发生 cycle 截断（cycle ≠ 预算；与 B 探针结果 OR） */
 let _cycleTruncated = false;
+/** 本轮是否发生循环迭代预算截断（#loop-iterations；与调用预算不同轴） */
+let _loopTruncated = false;
 /** 调用截断原因集合（A+B 经 noteAbsTruncation 单点收集；宿主入口重置） */
 let _truncReasons = new Set<AbsTruncationReason>();
+
+/**
+ * 循环迭代预算截断（两段 maxIters 抽象 / MAX_CONCRETE_LOOP_ITERS 硬上限
+ * 仍未终止）。与调用预算不同轴：`@nudo:budget calls=/depth=` 抬不动它，
+ * 不进 reasons——但计入 truncated 可观测（诊断与 budget 块不得矛盾）。
+ */
+export function noteLoopTruncation(label: string): void {
+  _loopTruncated = true;
+  noteAbsTruncation(label);
+}
 /** 当前生效的调用预算（@nudo:budget 可逐函数抬高；默认 = 全局常量） */
 let _callDepthLimit = MAX_CALL_DEPTH;
 let _totalCallsLimit = MAX_TOTAL_CALLS;
@@ -56,6 +68,8 @@ export type AbsBudgetStats = {
   evalCallTruncated: boolean;
   /** 任一路径的 cycle 截断（预算抬不动的那类；issue #158） */
   cycleTruncated: boolean;
+  /** 循环迭代预算截断（#loop-iterations；maxIters/硬上限，非调用预算） */
+  loopTruncated: boolean;
   /** 调用截断原因集合（A+B；稳定排序，进 JSON） */
   reasons: AbsTruncationReason[];
 };
@@ -90,11 +104,13 @@ export function getAbsCallBudgetStats(): AbsBudgetStats {
     maxForks: _evalForkBudgetLimit,
     callTruncated: _callTruncated,
     forkTruncated: _evalForkTruncNoted,
-    truncated: _callTruncated || (b?.callTruncated ?? false) || _evalForkTruncNoted,
+    truncated:
+      _callTruncated || (b?.callTruncated ?? false) || _evalForkTruncNoted || _loopTruncated,
     evalCalls: b?.calls ?? 0,
     maxEvalCalls: b?.maxCalls ?? MAX_TOTAL_CALLS,
     evalCallTruncated: b?.callTruncated ?? false,
     cycleTruncated: _cycleTruncated || (b?.cycleTruncated ?? false),
+    loopTruncated: _loopTruncated,
     reasons: [..._truncReasons].sort(),
   };
 }
@@ -106,6 +122,7 @@ export function resetAbsCallBudget(): void {
   _activeCallKeys = [];
   _callTruncated = false;
   _cycleTruncated = false;
+  _loopTruncated = false;
   _truncReasons = new Set();
   _callDepthLimit = MAX_CALL_DEPTH;
   _totalCallsLimit = MAX_TOTAL_CALLS;

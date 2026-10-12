@@ -279,6 +279,12 @@ Branch-expansion budget (`$fork` total count) hit; affected results widened. **W
 
 Context: [Analysis budgets](../guides/performance.md#analysis-budgets)
 
+### `nudo:loop-truncated` {#nudo-loop-truncated}
+
+A loop's exit condition stayed concrete-true past the iteration budget (abstract unroll cap 8, concrete extension cap 1024 — e.g. an unbounded `while (i < n)` with concrete `i`/`n`); the loop state was widened (bounded, not exact). **Info.** This is a *loop* iteration budget, not the call budget — `@nudo:budget calls=…/depth=…` cannot lift it. Make the bound data-dependent (abstract) or pin the result with `@nudo:case` / `@nudo:contract` — non-blocking.
+
+Context: [Analysis budgets](../guides/performance.md#analysis-budgets)
+
 ### `nudo:promise-micro-truncated` {#nudo-promise-micro-truncated}
 
 Promise microtask queue hit the hard cap (`MAX_PROMISE_MICROS = 1024`); remaining queued callbacks were dropped. **Info.** Affected promise results stay widened rather than silently wrong.

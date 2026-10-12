@@ -52,7 +52,7 @@ import { lookupObjAccessor, migrateAccessors, $objAccessor, accessorTable } from
 import { copyMatchIterTables } from "../match-iter.ts";
 import { DEFAULT_MAX_LOOP_ITERS, MAX_CONCRETE_LOOP_ITERS, LOOP_TRUNCATION_LABEL } from "./loop-budget.ts";
 import { makeLoopWidener } from "./loop-widen.ts";
-import { noteAbsTruncation } from "../../call-budget.ts";
+import { noteLoopTruncation } from "../../call-budget.ts";
 import { isNudoThrow, callAtFunctionBoundary } from "./state.ts";
 import { $call } from "../call.ts";
 
@@ -1750,7 +1750,7 @@ export function $forOf(
   }
   if (unbounded && n === 0) snapExit();
   if (concreteOverrun) {
-    noteAbsTruncation(LOOP_TRUNCATION_LABEL);
+    noteLoopTruncation(LOOP_TRUNCATION_LABEL);
     if (pack && unpack) unpack(confPartialPacked(pack()));
     return;
   }

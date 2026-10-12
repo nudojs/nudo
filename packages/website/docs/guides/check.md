@@ -106,6 +106,7 @@ issues
 | `nudo:opaque-result` | engine | info | Evaluation returned opaque / uninformative Abs |
 | `nudo:eval-error` | engine | error | Body evaluation threw during analysis |
 | `nudo:recursion-truncated` | engine | info | Recursive evaluation cut short — `reason: cycle` (same abstract args on stack; a budget cannot lift it) or `depth`/`calls` (budget ran out) |
+| `nudo:loop-truncated` | engine | info | Loop exit condition stayed concrete-true past the iteration budget; loop state widened (not the call budget) |
 | `nudo:fork-truncated` | engine | info | Branch-expansion (`$fork`) budget hit; result widened |
 | `nudo:host-effect-blocked` | engine | info | Host side-effect function (`fetch` / timers / …) not executed during analysis — result widened to `unknown#opaque`. Mock with `@nudo:mock` / `@nudo:env` |
 | `nudo:no-signature` | engine/L1 | warning | Function could not be generalized (CJS/anon forms still get L2 via entry fallback) |

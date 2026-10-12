@@ -2,7 +2,7 @@
  * 控制流：loop/try 退出栈、$fork/$for/$while、$throw。
  */
 import { AsyncLocalStorage } from "node:async_hooks";
-import { bumpEvalForkBudget, noteAbsTruncation } from "../../call-budget.ts";
+import { bumpEvalForkBudget, noteLoopTruncation } from "../../call-budget.ts";
 import type { Abs } from "../../abs.ts";
 import { abs, bool, boolLit, confJoin, litValue, numLit, unknown, type Confidence } from "../../abs.ts";
 import { lit } from "../../term.ts";
@@ -330,7 +330,7 @@ export function $for(
   // definitely-true 时迭代空间具体可判定（原生语义确定），截断会产出错误
   // 的 #exact（globToRegex 对 12 字符串只跑 8 轮拼出 `^lib\/debu$` 还声明
   // exact）——延展到 MAX_CONCRETE_LOOP_ITERS。硬上限仍未终止 → 截断观测
-  // （noteAbsTruncation）+ conf 降级（有界、可观测，与 fork/call 预算同
+  // （noteLoopTruncation）+ conf 降级（有界、可观测，与 fork/call 预算同
   // posture）。延展相里条件退化为抽象即停（回到耗尽口径，不越抽象预算）。
   let limit = maxIters;
   let extended = false;
@@ -428,7 +428,7 @@ export function $for(
   snapCounter();
   snapExt();
   if (concreteExhausted) {
-    noteAbsTruncation(LOOP_TRUNCATION_LABEL);
+    noteLoopTruncation(LOOP_TRUNCATION_LABEL);
     if (extJoin && pack && unpack) unpack(confPartialPacked(widenLoopJoin(joinAbs(extJoin, pack()))));
     return confPartial(exitJoin ?? state);
   }
@@ -557,7 +557,7 @@ export function $while(
     }
   }
   if (concreteExhausted) {
-    noteAbsTruncation(LOOP_TRUNCATION_LABEL);
+    noteLoopTruncation(LOOP_TRUNCATION_LABEL);
     return confPartial(exitJoin ? joinAbs(exitJoin, state) : state);
   }
   // 抽象预算耗尽：增长计数器宽化到无上界域（Bug 48；稳定不动点原样）
@@ -653,7 +653,7 @@ export function $whileSeq(
   // 预算耗尽：最后一轮条件仍可能为真 → 当前态也是出口
   snapExit();
   if (concreteExhausted) {
-    noteAbsTruncation(LOOP_TRUNCATION_LABEL);
+    noteLoopTruncation(LOOP_TRUNCATION_LABEL);
     if (exitJoin && pack && unpack) unpack(confPartialPacked(joinAbs(exitJoin, pack())));
     return;
   }

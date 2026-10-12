@@ -23,6 +23,7 @@ import {
   PROMISE_MICRO_ERROR_LABEL,
   type AbsTruncationReason,
 } from "./call-budget.ts";
+import { LOOP_TRUNCATION_LABEL } from "./exec/runtime/loop-budget.ts";
 import type { AbsAssignRecord, AbsCallRecord } from "./ast-records.ts";
 import { leqAbs } from "./leq.ts";
 import {
@@ -968,9 +969,21 @@ function checkSourceInner(
       });
       continue;
     }
+    // 循环迭代预算（两段 maxIters/MAX_CONCRETE_LOOP_ITERS 仍未终止）：不是
+    // 递归、不是调用预算——@nudo:budget calls=/depth= 抬不动（#158 后续）
+    if (label === LOOP_TRUNCATION_LABEL) {
+      issues.push({
+        severity: "info",
+        code: "nudo:loop-truncated",
+        message: `A loop did not terminate within its iteration budget (abstract unroll cap reached and the exit condition stayed concrete-true); affected loop state was widened (bounded, not exact)`,
+        suggestion:
+          "optional: restructure so the exit condition becomes abstract (data-dependent) within a few iterations, or pin the result with @nudo:case / @nudo:contract — non-blocking",
+      });
+      continue;
+    }
     // 调用截断归因（#158）：全是 cycle → 「调用环」文案（抬预算无效）；
-    // 否则按 depth/calls 指明可抬的预算维。reasons 为空 = 非调用截断标签
-    // （如 #loop-iterations）沿用预算口径。
+    // 否则按 depth/calls 指明可抬的预算维。到达此处的都是调用截断标签
+    // （fork/promise/math/host-effect/loop 已分流），reasons 非空。
     const allCycle = reasons.size > 0 && [...reasons].every((r) => r === "cycle");
     const depth = reasons.has("depth");
     const calls = reasons.has("calls");

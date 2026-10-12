@@ -279,6 +279,12 @@ Context: [分析预算](../guides/performance.md#分析预算)
 
 Context: [分析预算](../guides/performance.md#分析预算)
 
+### `nudo:loop-truncated` {#nudo-loop-truncated}
+
+循环的退出条件越过迭代预算仍保持具体真（抽象展开上限 8、具体延展上限 1024——如 `while (i < n)` 的 `i`/`n` 都是具体值且不终止）；循环状态被拓宽（有界、非 exact）。**info**。这是**循环迭代预算**，不是调用预算——`@nudo:budget calls=…/depth=…` 抬不动。让上界依赖数据（抽象化）或用 `@nudo:case` / `@nudo:contract` 钉住结果——非阻塞。
+
+Context: [分析预算](../guides/performance.md#分析预算)
+
 ### `nudo:promise-micro-truncated` {#nudo-promise-micro-truncated}
 
 Promise 微任务队列触及硬上限（`MAX_PROMISE_MICROS = 1024`），剩余排队回调被丢弃。**info**。受影响的 promise 结果保持拓宽，而不是静默出错。

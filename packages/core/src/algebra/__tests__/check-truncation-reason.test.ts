@@ -172,3 +172,37 @@ describe("#158 check 面：归因文案 + budget 块自洽", () => {
     expect(cal[0]!.label).toContain("@nudo:budget calls");
   });
 });
+
+describe("#158 后续：循环迭代截断 ≠ 递归/调用预算", () => {
+  const LOOP_SRC = `export function infiniteDec(n) {\n  let i = 0;\n  while (i < n) { i = i - 1; }\n  return i;\n}\ninfiniteDec(5);\n`;
+
+  it("infinite concrete loop 报 nudo:loop-truncated（不再冒充递归/预算）", () => {
+    const r = checkSource("/t/loop158.js", LOOP_SRC, pTrue);
+    const loop = r.issues.find((i) => i.code === "nudo:loop-truncated");
+    expect(loop).toBeDefined();
+    // 旧路径的假归因必须消失：不是递归、不指向 @nudo:budget
+    expect(loop!.message).not.toContain("Recursive evaluation");
+    expect(loop!.suggestion).not.toContain("@nudo:budget");
+    expect(r.issues.find((i) => i.code === "nudo:recursion-truncated")).toBeUndefined();
+  });
+
+  it("budget 块自洽：loopTruncated=true 计入 truncated（json/人类面/多文件）", () => {
+    const r = checkSource("/t/loop158-json.js", LOOP_SRC, pTrue);
+    expect(r.budget!.truncated).toBe(true);
+    expect(r.budget!.loopTruncated).toBe(true);
+    const json = serializeCheckJson(r);
+    expect(json.budget!.loopTruncated).toBe(true);
+    expect(json.budget!.truncated).toBe(true);
+    const multi = serializeCheckJsonMulti([json]);
+    expect(multi.budget!.loopTruncated).toBe(true);
+    expect(multi.summary.budgetTruncated).toBe(true);
+    const text = formatCheckReport(r);
+    expect(text).toContain("(loop iters)");
+  });
+
+  it("actionsForIssue：loop-truncated 不指向调用预算旋钮", () => {
+    const acts = actionsForIssue({ code: "nudo:loop-truncated" });
+    expect(acts[0]!.label).not.toContain("@nudo:budget calls");
+    expect(acts[0]!.label).toContain("@nudo:case");
+  });
+});

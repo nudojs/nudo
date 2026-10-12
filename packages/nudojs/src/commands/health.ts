@@ -41,6 +41,8 @@ type HealthReport = {
     maxEvalCalls: number;
     evalCallTruncated: boolean;
     cycleTruncated: boolean;
+    /** 循环迭代预算截断（#loop-iterations；maxIters/硬上限，非调用预算） */
+    loopTruncated: boolean;
     reasons: string[];
   };
   /** D6-A：evaluator internal 回落计数（指标暴露，非 fail 条件） */
@@ -240,9 +242,17 @@ async function runHealth(paths: string[], opts: { from?: string[]; json?: boolea
         );
       }
       if (r.budget?.truncated) {
+        const onlyLoop =
+          r.budget.loopTruncated &&
+          !r.budget.callTruncated &&
+          !r.budget.evalCallTruncated &&
+          !r.budget.forkTruncated;
         console.log(
           `  ⚠ budget truncated  calls ${r.budget.calls}/${r.budget.maxCalls} · eval calls ${r.budget.evalCalls}/${r.budget.maxEvalCalls} · forks ${r.budget.forks}/${r.budget.maxForks}` +
-            `${r.budget.callTruncated ? "  (calls)" : ""}${r.budget.evalCallTruncated ? "  (eval calls)" : ""}${r.budget.forkTruncated ? "  (forks)" : ""} — some results widened to unknown` +
+            `${r.budget.callTruncated ? "  (calls)" : ""}${r.budget.evalCallTruncated ? "  (eval calls)" : ""}${r.budget.forkTruncated ? "  (forks)" : ""}${r.budget.loopTruncated ? "  (loop iters)" : ""}` +
+            (onlyLoop
+              ? " — loop state widened (iteration budget; @nudo:budget does not apply)"
+              : " — some results widened to unknown") +
             (r.budget.cycleTruncated ? ` (includes call cycles — a budget cannot lift them)` : ""),
         );
       }
