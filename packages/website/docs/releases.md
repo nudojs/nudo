@@ -11,143 +11,123 @@ This page keeps each package’s **current** notes only. Full history: [Full rel
 
 | Package | Current version |
 |----------|-----------------|
-| `@nudojs/core` | 1.11.2 |
-| `@nudojs/service` | 1.6.22 |
-| `nudojs (CLI)` | 1.3.23 |
-| `@nudojs/parser` | 1.4.19 |
-| `@nudojs/lsp` | 1.6.5 |
-| `@nudojs/env` | 0.4.37 |
-| `@nudojs/harvester` | 0.3.23 |
-| `vite-plugin-nudo` | 0.4.38 |
-| `nudo-vscode` | 0.3.42 |
+| `@nudojs/core` | 1.11.3 |
+| `@nudojs/service` | 1.6.23 |
+| `nudojs (CLI)` | 1.3.24 |
+| `@nudojs/parser` | 1.4.20 |
+| `@nudojs/lsp` | 1.6.6 |
+| `@nudojs/env` | 0.4.38 |
+| `@nudojs/harvester` | 0.3.24 |
+| `vite-plugin-nudo` | 0.4.39 |
+| `nudo-vscode` | 0.3.43 |
 
 **Jump to package:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.11.2 {#pkg-core}
+## @nudojs/core 1.11.3 {#pkg-core}
 
-## 1.11.2
+## 1.11.3
 
 ### Patch Changes
 
-- 82eaae8: Fix `nudo:recursion-truncated` misattributing call-cycle truncation to "depth/size budget", and make `nudo check --json` budget stats see the B-path (`$callNamed`) truncation (issue #158):
+- 08d7a55: Fix five exec-surface wrong-concrete bugs (80–84) found by differential testing:
   
-  - `enterCall` / `evalEnterCall` now attribute a truncation reason — `cycle` (same name+arg fingerprint already on the evaluation stack; data-dependent self/mutual recursion such as directory walkers or `grow`-style recursion) vs `depth` / `calls` (real budget exhaustion). The check diagnostic message, suggestion, structured action, and a new `reason` field on the issue (`cycle` | `depth` | `calls` | `budget`) split accordingly: cycle says *"budget cannot lift this"* and never points at `@nudo:budget`; depth/calls name the exact raisable dimension (`@nudo:budget depth=…` / `calls=…`).
-  - The `check --json` / health budget block no longer reports `truncated:false` alongside a `nudo:recursion-truncated` info: B-path counters are latched across execution sessions within one host entry and surfaced as `evalCalls` / `maxEvalCalls` / `evalCallTruncated`, plus `cycleTruncated` and a sorted `reasons[]` set (single-file and multi-file envelopes, and the disk-cache round trip). Fork counters/truncation flags are latched per host entry too (the last-session snapshot could previously erase an already-reported `nudo:fork-truncated`).
-  - The `@nudo:budget` quickfix (`nudo check --fix` / LSP code action) is no longer offered when the truncation reason is `cycle`; the `reason` is plumbed through `check --json`, the disk cache, LSP diagnostic data, and `materializeAction`.
-  - Raising `@nudo:budget` on a same-args recursion could never lift the truncation — the old message misled real budget investigations into "directive ignored" hypotheses.
-  - Loop-iteration truncation (`#loop-iterations`) no longer masquerades as recursion: it now emits its own `nudo:loop-truncated` info with an honest message and suggestion (the call-budget knobs cannot lift a loop budget — `@nudo:budget calls=/depth=` does not apply), gets a `loopTruncated` flag in the `check --json` / health budget block (single-file and multi-file envelopes), and no longer offers the misleading `@nudo:budget` quickfix it used to inherit from the recursion branch.
+  - **`#x in obj`** (private-field `in` operator): the left `PrivateName` operand fell through `isExpression` and compiled to `$lit(void 0)`, so the presence test always returned `false`. The `in` arm now emits the mangled `"#x"` key via the shared `privateNameKeySrc` helper (also deduped into member read/assign).
+  - **`this.#x += 1`** (private-field compound assignment): the root-non-rebindable branch emitted a simple assignment using the RHS directly, dropping the operation (`+=1` assigned `1`). It now applies `compoundFn` to the current `$get` value, mirroring the member-path branch.
+  - **`o + "x"` with a `Symbol.toPrimitive` hook**: `coerceToStringParts` folded hook-only objects to the default `"[object Object]"` tag (wrong concrete string). The fold guard now also checks for an own `"@@toPrimitive"` slot — hook presence blocks the fold and yields a sound abstract string domain.
+  - **`Array.prototype.concat` ignores `Symbol.isConcatSpreadable`**: spreadable objects are now spread as array-likes (`ToLength(o.length)` elements), `lit false` suppresses spreading, abstract flags degrade to `arr` (sound).
+  - **Private fields leak as enumerable own properties**: private slots are now flagged `internal` at instance-field registration (not by `#` name prefix — public string keys like `{"#x":1}` share the key space and stay visible). `for-in`, `Object.keys/values/entries`, `hasOwnProperty`, `getOwnPropertyNames/Descriptors`, spread, `Object.assign`, and `JSON.stringify` exclude internal slots; direct `this.#x` access and `#x in obj` slot-presence semantics are unchanged. Class-instance spread/assign now also includes public fields (previously dropped), and Error-family own slots (`name`/`message`/`stack`) are non-enumerable per native semantics.
+  - **Class-instance precision follow-ups**: `Object.getOwnPropertyDescriptor(new A(), key)` now folds exact data/accessor descriptors for public fields (runtime `defineProperty` flags and dynamic getters included) instead of the conservative `descriptor|undefined` domain; `JSON.stringify` folds class instances with prototype getters exactly (`{"pub":2}` — prototype accessors are not own properties, native never invokes them during stringify; only `toJSON` methods keep the conservative fold).
 
-Older versions (45) → [Full release history](./releases-history.md#pkg-core)
+Older versions (46) → [Full release history](./releases-history.md#pkg-core)
 
-## @nudojs/service 1.6.22 {#pkg-service}
+## @nudojs/service 1.6.23 {#pkg-service}
 
-## 1.6.22
-
-### Patch Changes
-
-- 82eaae8: Fix `nudo:recursion-truncated` misattributing call-cycle truncation to "depth/size budget", and make `nudo check --json` budget stats see the B-path (`$callNamed`) truncation (issue #158):
-  
-  - `enterCall` / `evalEnterCall` now attribute a truncation reason — `cycle` (same name+arg fingerprint already on the evaluation stack; data-dependent self/mutual recursion such as directory walkers or `grow`-style recursion) vs `depth` / `calls` (real budget exhaustion). The check diagnostic message, suggestion, structured action, and a new `reason` field on the issue (`cycle` | `depth` | `calls` | `budget`) split accordingly: cycle says *"budget cannot lift this"* and never points at `@nudo:budget`; depth/calls name the exact raisable dimension (`@nudo:budget depth=…` / `calls=…`).
-  - The `check --json` / health budget block no longer reports `truncated:false` alongside a `nudo:recursion-truncated` info: B-path counters are latched across execution sessions within one host entry and surfaced as `evalCalls` / `maxEvalCalls` / `evalCallTruncated`, plus `cycleTruncated` and a sorted `reasons[]` set (single-file and multi-file envelopes, and the disk-cache round trip). Fork counters/truncation flags are latched per host entry too (the last-session snapshot could previously erase an already-reported `nudo:fork-truncated`).
-  - The `@nudo:budget` quickfix (`nudo check --fix` / LSP code action) is no longer offered when the truncation reason is `cycle`; the `reason` is plumbed through `check --json`, the disk cache, LSP diagnostic data, and `materializeAction`.
-  - Raising `@nudo:budget` on a same-args recursion could never lift the truncation — the old message misled real budget investigations into "directive ignored" hypotheses.
-  - Loop-iteration truncation (`#loop-iterations`) no longer masquerades as recursion: it now emits its own `nudo:loop-truncated` info with an honest message and suggestion (the call-budget knobs cannot lift a loop budget — `@nudo:budget calls=/depth=` does not apply), gets a `loopTruncated` flag in the `check --json` / health budget block (single-file and multi-file envelopes), and no longer offers the misleading `@nudo:budget` quickfix it used to inherit from the recursion branch.
-- Updated dependencies [82eaae8]
-  - @nudojs/core@1.11.2
-  - @nudojs/env@0.4.37
-  - @nudojs/harvester@0.3.23
-  - @nudojs/parser@1.4.19
-
-Older versions (47) → [Full release history](./releases-history.md#pkg-service)
-
-## nudojs (CLI) 1.3.23 {#pkg-nudojs}
-
-## 1.3.23
+## 1.6.23
 
 ### Patch Changes
 
-- 82eaae8: Fix `nudo:recursion-truncated` misattributing call-cycle truncation to "depth/size budget", and make `nudo check --json` budget stats see the B-path (`$callNamed`) truncation (issue #158):
-  
-  - `enterCall` / `evalEnterCall` now attribute a truncation reason — `cycle` (same name+arg fingerprint already on the evaluation stack; data-dependent self/mutual recursion such as directory walkers or `grow`-style recursion) vs `depth` / `calls` (real budget exhaustion). The check diagnostic message, suggestion, structured action, and a new `reason` field on the issue (`cycle` | `depth` | `calls` | `budget`) split accordingly: cycle says *"budget cannot lift this"* and never points at `@nudo:budget`; depth/calls name the exact raisable dimension (`@nudo:budget depth=…` / `calls=…`).
-  - The `check --json` / health budget block no longer reports `truncated:false` alongside a `nudo:recursion-truncated` info: B-path counters are latched across execution sessions within one host entry and surfaced as `evalCalls` / `maxEvalCalls` / `evalCallTruncated`, plus `cycleTruncated` and a sorted `reasons[]` set (single-file and multi-file envelopes, and the disk-cache round trip). Fork counters/truncation flags are latched per host entry too (the last-session snapshot could previously erase an already-reported `nudo:fork-truncated`).
-  - The `@nudo:budget` quickfix (`nudo check --fix` / LSP code action) is no longer offered when the truncation reason is `cycle`; the `reason` is plumbed through `check --json`, the disk cache, LSP diagnostic data, and `materializeAction`.
-  - Raising `@nudo:budget` on a same-args recursion could never lift the truncation — the old message misled real budget investigations into "directive ignored" hypotheses.
-  - Loop-iteration truncation (`#loop-iterations`) no longer masquerades as recursion: it now emits its own `nudo:loop-truncated` info with an honest message and suggestion (the call-budget knobs cannot lift a loop budget — `@nudo:budget calls=/depth=` does not apply), gets a `loopTruncated` flag in the `check --json` / health budget block (single-file and multi-file envelopes), and no longer offers the misleading `@nudo:budget` quickfix it used to inherit from the recursion branch.
-- Updated dependencies [82eaae8]
-  - @nudojs/core@1.11.2
-  - @nudojs/service@1.6.22
-  - @nudojs/env@0.4.37
-  - @nudojs/harvester@0.3.23
-  - @nudojs/parser@1.4.19
+- Updated dependencies [08d7a55]
+  - @nudojs/core@1.11.3
+  - @nudojs/env@0.4.38
+  - @nudojs/harvester@0.3.24
+  - @nudojs/parser@1.4.20
 
-Older versions (44) → [Full release history](./releases-history.md#pkg-nudojs)
+Older versions (48) → [Full release history](./releases-history.md#pkg-service)
 
-## @nudojs/parser 1.4.19 {#pkg-parser}
+## nudojs (CLI) 1.3.24 {#pkg-nudojs}
 
-## 1.4.19
+## 1.3.24
 
 ### Patch Changes
 
-- Updated dependencies [82eaae8]
-  - @nudojs/core@1.11.2
+- Updated dependencies [08d7a55]
+  - @nudojs/core@1.11.3
+  - @nudojs/env@0.4.38
+  - @nudojs/harvester@0.3.24
+  - @nudojs/parser@1.4.20
+  - @nudojs/service@1.6.23
 
-Older versions (44) → [Full release history](./releases-history.md#pkg-parser)
+Older versions (45) → [Full release history](./releases-history.md#pkg-nudojs)
 
-## @nudojs/lsp 1.6.5 {#pkg-lsp}
+## @nudojs/parser 1.4.20 {#pkg-parser}
 
-## 1.6.5
-
-### Patch Changes
-
-- 82eaae8: Fix `nudo:recursion-truncated` misattributing call-cycle truncation to "depth/size budget", and make `nudo check --json` budget stats see the B-path (`$callNamed`) truncation (issue #158):
-  
-  - `enterCall` / `evalEnterCall` now attribute a truncation reason — `cycle` (same name+arg fingerprint already on the evaluation stack; data-dependent self/mutual recursion such as directory walkers or `grow`-style recursion) vs `depth` / `calls` (real budget exhaustion). The check diagnostic message, suggestion, structured action, and a new `reason` field on the issue (`cycle` | `depth` | `calls` | `budget`) split accordingly: cycle says *"budget cannot lift this"* and never points at `@nudo:budget`; depth/calls name the exact raisable dimension (`@nudo:budget depth=…` / `calls=…`).
-  - The `check --json` / health budget block no longer reports `truncated:false` alongside a `nudo:recursion-truncated` info: B-path counters are latched across execution sessions within one host entry and surfaced as `evalCalls` / `maxEvalCalls` / `evalCallTruncated`, plus `cycleTruncated` and a sorted `reasons[]` set (single-file and multi-file envelopes, and the disk-cache round trip). Fork counters/truncation flags are latched per host entry too (the last-session snapshot could previously erase an already-reported `nudo:fork-truncated`).
-  - The `@nudo:budget` quickfix (`nudo check --fix` / LSP code action) is no longer offered when the truncation reason is `cycle`; the `reason` is plumbed through `check --json`, the disk cache, LSP diagnostic data, and `materializeAction`.
-  - Raising `@nudo:budget` on a same-args recursion could never lift the truncation — the old message misled real budget investigations into "directive ignored" hypotheses.
-  - Loop-iteration truncation (`#loop-iterations`) no longer masquerades as recursion: it now emits its own `nudo:loop-truncated` info with an honest message and suggestion (the call-budget knobs cannot lift a loop budget — `@nudo:budget calls=/depth=` does not apply), gets a `loopTruncated` flag in the `check --json` / health budget block (single-file and multi-file envelopes), and no longer offers the misleading `@nudo:budget` quickfix it used to inherit from the recursion branch.
-- Updated dependencies [82eaae8]
-  - @nudojs/core@1.11.2
-  - @nudojs/service@1.6.22
-  - @nudojs/parser@1.4.19
-
-Older versions (48) → [Full release history](./releases-history.md#pkg-lsp)
-
-## @nudojs/env 0.4.37 {#pkg-env}
-
-## 0.4.37
+## 1.4.20
 
 ### Patch Changes
 
-- Updated dependencies [82eaae8]
-  - @nudojs/core@1.11.2
+- Updated dependencies [08d7a55]
+  - @nudojs/core@1.11.3
 
-Older versions (44) → [Full release history](./releases-history.md#pkg-env)
+Older versions (45) → [Full release history](./releases-history.md#pkg-parser)
 
-## @nudojs/harvester 0.3.23 {#pkg-harvester}
+## @nudojs/lsp 1.6.6 {#pkg-lsp}
 
-## 0.3.23
+## 1.6.6
 
 ### Patch Changes
 
-- Updated dependencies [82eaae8]
-  - @nudojs/core@1.11.2
-  - @nudojs/env@0.4.37
-  - @nudojs/parser@1.4.19
+- Updated dependencies [08d7a55]
+  - @nudojs/core@1.11.3
+  - @nudojs/parser@1.4.20
+  - @nudojs/service@1.6.23
 
-Older versions (44) → [Full release history](./releases-history.md#pkg-harvester)
+Older versions (49) → [Full release history](./releases-history.md#pkg-lsp)
 
-## vite-plugin-nudo 0.4.38 {#pkg-vite-plugin}
+## @nudojs/env 0.4.38 {#pkg-env}
 
 ## 0.4.38
 
 ### Patch Changes
 
-- Updated dependencies [82eaae8]
-  - @nudojs/core@1.11.2
-  - @nudojs/service@1.6.22
+- Updated dependencies [08d7a55]
+  - @nudojs/core@1.11.3
 
-Older versions (47) → [Full release history](./releases-history.md#pkg-vite-plugin)
+Older versions (45) → [Full release history](./releases-history.md#pkg-env)
+
+## @nudojs/harvester 0.3.24 {#pkg-harvester}
+
+## 0.3.24
+
+### Patch Changes
+
+- Updated dependencies [08d7a55]
+  - @nudojs/core@1.11.3
+  - @nudojs/env@0.4.38
+  - @nudojs/parser@1.4.20
+
+Older versions (45) → [Full release history](./releases-history.md#pkg-harvester)
+
+## vite-plugin-nudo 0.4.39 {#pkg-vite-plugin}
+
+## 0.4.39
+
+### Patch Changes
+
+- Updated dependencies [08d7a55]
+  - @nudojs/core@1.11.3
+  - @nudojs/service@1.6.23
+
+Older versions (48) → [Full release history](./releases-history.md#pkg-vite-plugin)
 
 ## nudo-vscode 0.3.7 {#pkg-vscode}
 
