@@ -20,7 +20,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { checkSource } from "../check.ts";
-import { anyAbs, litValue } from "../abs.ts";
+import { anyAbs, litValue, type Abs } from "../abs.ts";
 import { formatAbs } from "../format.ts";
 import { $lit } from "../exec/runtime/state.ts";
 import {
@@ -47,7 +47,7 @@ function numLitOf(r: unknown): unknown {
 function evalSrc(
   src: string,
   fnName: string,
-  args: unknown[],
+  args: Abs[],
 ): { value: string; throws: string; effects: string[] } {
   const effects: MayThrowEffect[] = [];
   let result: { result?: unknown; throws?: unknown } = {};
