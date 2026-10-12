@@ -262,7 +262,9 @@ function applyInstanceFields(spec: EvalClassSpec, thisVal: Abs): Abs {
       }
     }
     if (!key) continue;
-    cur = $set(cur, key, asAbsVal(f.init(cur)));
+    // Bug 84：私有字段落地槽打 Slot.internal（introspection 面剔除；
+    // $get/$set 直连访问与 $in 存在性不受影响）
+    cur = $set(cur, key, asAbsVal(f.init(cur)), { internal: f.private === true });
   }
   return cur;
 }
@@ -2012,16 +2014,96 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
     );
   }
   if (method === "concat") {
-    // Bug 66：数组实参展开、其余原样追加（Symbol.isConcatSpreadable 未建模）；
-    // 任一实参为抽象 arr → 结果长度未知降 arr。hole 保留（原生 concat 走
-    // HasProperty/CreateDataProperty——接收者与 tuple 实参的 hole 平移存活）
+    // Bug 66：数组实参展开、其余原样追加；任一实参为抽象 arr → 结果长度未知
+    // 降 arr。hole 保留（原生 concat 走 HasProperty/CreateDataProperty——
+    // 接收者与 tuple 实参的 hole 平移存活）
+    // Bug 83：native 对每个实参先查 o[Symbol.isConcatSpreadable]（计算符号键
+    // 投影槽 "@@isConcatSpreadable"，只有 obj / brand inner 槽面可携带——
+    // tuple shape 无 slots 字段，且 $set 对 tuple 的非索引键写直接降级 arr
+    // （widenTupleToArr），「native 数组被抑制展开」子面在本引擎不可表达，
+    // lit-false 抑制只对 obj 实参生效，属接受近似）：
+    // - lit true（ToBoolean）→ 按 array-like 展开：length 槽 lit number →
+    //   ToLength（截断/负数夹 0/NaN→0；无槽/undefined → 0），逐位读
+    //   String(i) 槽——缺席位 native Get 得 undefined（fail-closed 同口径）；
+    //   length 非字面量/Infinity/超物化上限 → 整体降 arr
+    // - lit false → 单元素追加（不展开）
+    // - 槽缺席 → 默认行为：tuple/arr 展开、其余单元素（Bug 66 口径不变）
+    // - 槽存在但抽象 → 展开性未知 → 整体降 arr（sound）
+    /** 实参槽面：obj 直读 / brand inner obj；tuple/arr 等无 slots 的 shape → undefined */
+    const argObjShapeOf = (
+      v: Abs,
+    ): { slots: Record<string, { value: Abs }>; index?: { key: Abs; value: Abs } } | undefined => {
+      const s = v.shape;
+      if (s.k === "obj") return s;
+      if (s.k === "brand" && s.shape.shape.k === "obj") return s.shape.shape;
+      return undefined;
+    };
+    /** @@isConcatSpreadable 投影槽判定（lit → ToBoolean；抽象 → "abstract"） */
+    const spreadableOf = (v: Abs): "absent" | "true" | "false" | "abstract" => {
+      const o = argObjShapeOf(v);
+      const slot = o ? getSlot(o.slots, "@@isConcatSpreadable") : undefined;
+      if (!slot) return "absent";
+      const lv = litValue(slot.value);
+      if (!lv.ok) return "abstract";
+      const w = lv.value;
+      // ToBoolean（与 callbackTruth 同口径；lit undefined 哨兵归 false）
+      if (
+        w === undefined || w === null || w === false || w === "" ||
+        (w as unknown) === 0n ||
+        (typeof w === "number" && (w === 0 || Number.isNaN(w)))
+      ) {
+        return "false";
+      }
+      return "true";
+    };
+    /** lit-true 展开的 array-like 元素：length 非字面量/巨长稀疏 → null（整体降 arr） */
+    const spreadElsOf = (v: Abs): Abs[] | null => {
+      const o = argObjShapeOf(v);
+      if (!o) return null;
+      const lenAbs = getSlot(o.slots, "length")?.value;
+      if (!lenAbs || isNullishLitAbs(lenAbs)) return []; // Get length undefined → ToLength 0
+      const lv = litValue(lenAbs);
+      if (!lv.ok || typeof lv.value !== "number") return null;
+      const t = Math.trunc(lv.value);
+      if (t > TUPLE_MATERIALIZE_CAP) return null;
+      const n = t < 0 ? 0 : t; // NaN → 循环不执行（ToLength(NaN)=0）
+      const els: Abs[] = [];
+      for (let i = 0; i < n; i++) els.push(getSlot(o.slots, String(i))?.value ?? undefAbs());
+      return els;
+    };
+    /** 降级并集（展开性/长度未知）：索引槽值 ∪ 计算索引值 ∪ 自身（不展开臂）∪ undefined */
+    const spreadPossiblesOf = (v: Abs): Abs => {
+      const o = argObjShapeOf(v);
+      const parts: Abs[] = [v, undefAbs()];
+      if (o) {
+        for (const [k, s] of Object.entries(o.slots)) {
+          if (canonicalArrayIndex(k) !== undefined) parts.push(s.value);
+        }
+        if (o.index) parts.push(o.index.value);
+      }
+      return parts.reduce((x, y) => joinAbs(x, y));
+    };
     if (shape.k === "tuple") {
       const out: Abs[] = [...shape.elements];
       const holesC = new Set(holes);
       let degraded = false;
       for (const a of args) {
         const aa = asAbs(a) ?? unknown;
-        if (aa.shape.k === "tuple") {
+        const spread = spreadableOf(aa);
+        if (spread === "true") {
+          const els = spreadElsOf(aa);
+          if (els === null) {
+            out.push(spreadPossiblesOf(aa));
+            degraded = true;
+          } else out.push(...els);
+        } else if (spread === "false") {
+          // native 抑制展开：单元素追加
+          out.push(aa);
+        } else if (spread === "abstract") {
+          // 展开性未知 → 降 arr（sound）
+          out.push(spreadPossiblesOf(aa));
+          degraded = true;
+        } else if (aa.shape.k === "tuple") {
           const argHoles = aa.shape.holes ?? [];
           const base = out.length;
           for (let i = 0; i < aa.shape.elements.length; i++) {
@@ -2049,14 +2131,30 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
         confJoin(arr.conf, "path"),
       );
     }
-    const parts = [shape.element, ...args.map((a) => {
+    // arr 接收者：结果本就降 arr（element join）；Bug 83 同一槽判定并入
+    // join——lit true 展开 array-like 元素、lit false 自身、抽象 → 展开并集
+    const parts: Abs[] = [shape.element];
+    for (const a of args) {
       const aa = asAbs(a) ?? unknown;
-      return aa.shape.k === "arr" || aa.shape.k === "tuple"
-        ? aa.shape.k === "arr"
-          ? aa.shape.element
-          : (aa.shape.elements.length ? aa.shape.elements.reduce((x, y) => joinAbs(x, y)) : unknown)
-        : aa;
-    })];
+      const spread = spreadableOf(aa);
+      if (spread === "true") {
+        const els = spreadElsOf(aa);
+        if (els === null) parts.push(spreadPossiblesOf(aa));
+        else parts.push(...els);
+      } else if (spread === "false") {
+        parts.push(aa);
+      } else if (spread === "abstract") {
+        parts.push(spreadPossiblesOf(aa));
+      } else if (aa.shape.k === "arr") {
+        parts.push(aa.shape.element);
+      } else if (aa.shape.k === "tuple") {
+        parts.push(
+          aa.shape.elements.length
+            ? aa.shape.elements.reduce((x, y) => joinAbs(x, y))
+            : unknown,
+        );
+      } else parts.push(aa);
+    }
     return abs(
       { k: "arr", element: parts.reduce((x, y) => joinAbs(x, y)) },
       undefined,

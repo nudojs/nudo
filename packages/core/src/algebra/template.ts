@@ -358,13 +358,22 @@ function coerceToStringParts(a: Abs): Abs[] | undefined {
   if (a.shape.k === "tuple" || a.shape.k === "arr") {
     return [arrayToPrimitiveString(a)];
   }
-  // 闭普通对象（无自定义 valueOf/toString 槽）：Default Object ToString
+  // 闭普通对象（无自定义 valueOf/toString/@@toPrimitive 槽）：Default Object ToString
   // 注意：slots 是普通对象，`slots["toString"]` 会命中 Object.prototype——
   // 必须 hasOwn，否则所有对象都被误判为带自定义 toString。
   // null-proto 无 Object.prototype.toString：ToPrimitive 原生 TypeError，不得折。
   if (a.shape.k === "obj" && !a.shape.open && !a.shape.index && !isNullProtoObj(a)) {
     const slots = a.shape.slots;
-    if (!Object.hasOwn(slots, "toString") && !Object.hasOwn(slots, "valueOf")) {
+    // Bug 82：计算键 [Symbol.toPrimitive](h){…} 经 symbolKeyOf 投影存为
+    // "@@toPrimitive" 字符串槽。钩子调用面此处不建模，但钩子的**存在性**
+    // 必须阻断默认标签折叠——否则 `o + "x"` 错折 "[object Object]x"
+    // （native 是钩子返回值，wrong-concrete）。放行到 undefined → 上层
+    // concatString 的 isStrPrim 臂落抽象 string 域（sound skip）。
+    if (
+      !Object.hasOwn(slots, "toString") &&
+      !Object.hasOwn(slots, "valueOf") &&
+      !Object.hasOwn(slots, "@@toPrimitive")
+    ) {
       return [
         abs({ k: "prim", type: "string" }, lit("[object Object]"), undefined, "exact"),
       ];

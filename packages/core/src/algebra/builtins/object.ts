@@ -3,7 +3,7 @@
  */
 import type { Abs } from "../abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, bigintLit, unknown, confJoin, isExactLit } from "../abs.ts";
-import { joinAbs, objOf, markNullProtoObj, canonicalArrayIndex, setSlot, setProtoAbs, type ObjShape } from "../objects.ts";
+import { joinAbs, objOf, markNullProtoObj, canonicalArrayIndex, setSlot, setProtoAbs, getSlot, type ObjShape } from "../objects.ts";
 import { TUPLE_MATERIALIZE_CAP } from "../containers.ts";
 import { mapEntriesAbs, isMapAbs, isSetAbs, setElementsAbs } from "../collections.ts";
 import { undefAbs, applyCallbackValue, validateCallableArg } from "../hof.ts";
@@ -19,7 +19,8 @@ import { $objAccessor, migrateAccessors, lookupObjAccessor } from "../accessors.
 import { getFnImpl, absFunction } from "../abs-fn.ts";
 import { isSymbolAbs } from "./symbol.ts";
 import { boolPrim, numPrim, str, isPrimLike, mayCoerceThrowOperand, noBody } from "./shared.ts";
-import { type PropFlags, getPropFlags, markExtState, extStateOf, setPropFlags, migrateInvariants, isEnumerableView } from "./invariants.ts";
+import { type PropFlags, getPropFlags, markExtState, extStateOf, setPropFlags, migrateInvariants, isEnumerableView, enumOwnKeys } from "./invariants.ts";
+import { classInstanceInnerOf } from "../exec/class-registry.ts";
 import { protoOfRecv } from "./ctor.ts";
 import { isErrorCtorName } from "./error.ts";
 
@@ -55,6 +56,20 @@ export function assignSourceSlots(src: Abs): Record<string, { value: Abs }> | un
       if (Object.keys(slots).length > 0 || !inner.shape.open) return slots;
     }
     return undefined;
+  }
+  // Bug 84：用户类实例源（Object.assign({}, new A())）——拷贝公有可枚举自有
+  // 槽（私有 Slot.internal / enumerable:false 剔除；此前 brand 源键集不可判
+  // → undefined 保守降级，公有字段全丢）。evaluator runtimeAssignObject 与
+  // evalObjectMethod("assign") 共用此处。
+  {
+    const inner = classInstanceInnerOf(src);
+    if (inner) {
+      const slots: Record<string, { value: Abs }> = {};
+      for (const k of enumOwnKeys(inner, (inner.shape as ObjShape).slots)) {
+        setSlot(slots, k, getSlot((inner.shape as ObjShape).slots as Record<string, { value: Abs }>, k)!);
+      }
+      return slots;
+    }
   }
   if (s.k === "prim") return s.type === "string" ? undefined : {};
   if (s.k === "eff" || s.k === "never") return {}; // Promise 无自有可枚举键
@@ -531,12 +546,22 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
     }
   };
 
-/** enumerable:false（defineProperty 记录）的键从枚举视图剔除 */
+/** enumerable:false（defineProperty 记录）/ internal 私有槽（Bug 84）的键
+ *  从枚举视图剔除 */
   const enumKeys = (slots: Record<string, unknown>, target: Abs): string[] => {
     const flags = getPropFlags(target);
     return Object.keys(slots).filter(
-      (k) => flags?.get(k)?.enumerable !== false,
+      (k) => flags?.get(k)?.enumerable !== false && (slots[k] as { internal?: boolean })?.internal !== true,
     );
+  };
+
+  /** Bug 84：用户类实例 brand 的公有可枚举自有键值对（私有 Slot.internal
+   *  剔除）；非类实例面 → undefined（调用方保持既有保守口径） */
+  const classInstanceEnumEntries = (a0: Abs | undefined): Array<[string, Abs]> | undefined => {
+    const inner = a0 ? classInstanceInnerOf(a0) : undefined;
+    if (!inner) return undefined;
+    const slots = (inner.shape as ObjShape).slots as Record<string, { value: Abs }>;
+    return enumOwnKeys(inner, slots).map((k) => [k, getSlot(slots, k)!.value] as [string, Abs]);
   };
 
   switch (name) {
@@ -691,6 +716,12 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         if (builtinBrandNoEnumKeys(a0)) {
           return abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
         }
+        // Bug 84：用户类实例——内层闭 obj 公有可枚举自有键（私有槽 internal 剔除；
+        // 此前整 brand 保守 partial string[]）
+        const ciKeys = classInstanceEnumEntries(a0);
+        if (ciKeys) {
+          return abs({ k: "tuple", elements: ciKeys.map(([k]) => strLit(k)) }, undefined, undefined, "exact");
+        }
       }
       // Bug 61：抽象接收者（any/unknown/含 nullish 臂 union）may ToObject 抛——
       // 仅补 throws 效果，partial 值域不变
@@ -753,6 +784,11 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         }
         if (builtinBrandNoEnumKeys(a0)) {
           return abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
+        }
+        // Bug 84：用户类实例——公有可枚举自有值（私有槽 internal 剔除）
+        const ciVals = classInstanceEnumEntries(a0);
+        if (ciVals) {
+          return abs({ k: "tuple", elements: ciVals.map(([, v]) => v) }, undefined, undefined, "exact");
         }
       }
       // Bug 61：同 keys——抽象接收者 may ToObject 抛
@@ -838,6 +874,21 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         if (builtinBrandNoEnumKeys(a0)) {
           return abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
         }
+        // Bug 84：用户类实例——公有可枚举自有键值对（私有槽 internal 剔除）
+        const ciEntries = classInstanceEnumEntries(a0);
+        if (ciEntries) {
+          return abs(
+            {
+              k: "tuple",
+              elements: ciEntries.map(([k, v]) =>
+                abs({ k: "tuple", elements: [strLit(k), v] }, undefined, undefined, "exact"),
+              ),
+            },
+            undefined,
+            undefined,
+            "exact",
+          );
+        }
       }
       // Bug 61：同 keys——抽象接收者 may ToObject 抛
       noteRecvMayNullish(a0, "Object.entries receiver ToObject");
@@ -856,10 +907,27 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       if (typeof key !== "string") return boolPrim();
       if (a0.shape.k === "obj") {
         const shape = a0.shape as { slots: Record<string, unknown>; open?: boolean };
+        // Bug 84：internal 私有槽非自有属性（内部槽，GetOwnProperty 不可见）
+        if ((shape.slots[key] as { internal?: boolean } | undefined)?.internal === true) {
+          return boolLit(false);
+        }
         if (Object.prototype.hasOwnProperty.call(shape.slots, key)) return boolLit(true);
         // 闭 exact 对象确定无槽 → false；open/非 exact conf → 保守
         if (!shape.open && a0.conf === "exact") return boolLit(false);
         return boolPrim();
+      }
+      // Bug 84：用户类实例——internal 私有槽 → false；公有槽自有 → true；
+      // 闭 inner 缺席键 → false（与 obj 臂同口径）
+      {
+        const inner = classInstanceInnerOf(a0);
+        if (inner) {
+          const slots = (inner.shape as ObjShape).slots;
+          const slot = getSlot(slots, key);
+          if (slot?.internal) return boolLit(false);
+          if (slot && !slot.optional) return boolLit(true);
+          if (slot?.optional) return boolPrim();
+          return boolLit(false);
+        }
       }
       return boolPrim();
     }
@@ -1164,6 +1232,8 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
           // open 语义折 descriptor|undefined 保守域）
           const slots: Record<string, { value: Abs }> = {};
           for (const key of Object.keys(os.slots)) {
+            // Bug 84：internal 私有槽非自有属性，不产 descriptor
+            if ((os.slots[key] as { internal?: boolean })?.internal === true) continue;
             const value = os.slots[key]!.value;
             const flags = getPropFlags(a0)?.get(key);
             slots[key] = {
@@ -1177,9 +1247,10 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
           }
           return abs({ k: "obj", slots, open: true }, undefined, undefined, "partial");
         }
-        const entries = Object.keys(os.slots).map(
-          (key) => [key, os.slots[key]!.value] as [string, Abs],
-        );
+        // Bug 84：internal 私有槽非自有属性，不产 descriptor
+        const entries = Object.keys(os.slots)
+          .filter((key) => (os.slots[key] as { internal?: boolean })?.internal !== true)
+          .map((key) => [key, os.slots[key]!.value] as [string, Abs]);
         const flagsMap = getPropFlags(a0);
         return descSlotsOf(entries, (key) => {
           const f = flagsMap?.get(key);
@@ -1273,13 +1344,35 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         if (builtinBrandNoEnumKeys(a0)) {
           return abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
         }
+        // Bug 84：用户类实例——自有字符串键投影（含不可枚举；私有槽
+        // Slot.internal 剔除——原生私有字段对 gOPN 不可见；此前整 brand
+        // 保守 partial string[]）
+        {
+          const inner = classInstanceInnerOf(a0);
+          if (inner) {
+            const os = inner.shape as unknown as { slots: Record<string, { internal?: boolean }> };
+            const names = Object.keys(os.slots).filter((k) => os.slots[k]!.internal !== true);
+            return abs(
+              { k: "tuple", elements: names.map((n) => strLit(n)) },
+              undefined,
+              undefined,
+              "exact",
+            );
+          }
+        }
       }
       if (a0.shape.k === "obj") {
         const os = a0.shape as { slots: Record<string, unknown>; open?: boolean; index?: unknown };
         if (!os.open && !os.index) {
-          // 含不可枚举（defineProperty enumerable:false）——不过滤
+          // 含不可枚举（defineProperty enumerable:false）——不过滤；
+          // internal 私有槽剔除（Bug 84——内部槽对 gOPN 不可见）
           return abs(
-            { k: "tuple", elements: Object.keys(os.slots).map((n) => strLit(n)) },
+            {
+              k: "tuple",
+              elements: Object.keys(os.slots)
+                .filter((n) => (os.slots[n] as { internal?: boolean })?.internal !== true)
+                .map((n) => strLit(n)),
+            },
             undefined,
             undefined,
             "exact",
@@ -1325,44 +1418,57 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       const mkDesc = mkPropDescAbs;
       // 键不可判 / 槽开放：可能有也可能没有 → descriptor | undefined 联合
       const maybeDesc = maybePropDescAbs;
+      /**
+       * Bug 57/84：访问器属性描述符（get/set thunk 包成 fn Abs；
+       * 调用经 apply 钩子求值）。this 回退 target——gOPD 返回的
+       * 描述符 getter 被调用时 this 为接收者（obj 臂为本体 a0、
+       * 类实例臂为承载槽的内层 inner，但原生 this 是 brand 实例，
+       * 侧表 thunk 闭包已绑定接收者语义）。
+       */
+      const accessorDescOf = (target: Abs, key: string): Abs | undefined => {
+        const acc = lookupObjAccessor(target, key);
+        if (!acc) return undefined;
+        const flags = getPropFlags(target)?.get(key);
+        const wrapGet = (thunk: (t: Abs) => Abs): Abs =>
+          absFunction(["_this"], {
+            body: noBody,
+            apply: (_args, thisVal) => thunk(thisVal ?? target),
+          });
+        const wrapSet = (thunk: (t: Abs, v: Abs) => Abs): Abs =>
+          absFunction(["_this", "value"], {
+            body: noBody,
+            apply: (args2, thisVal) => {
+              thunk(thisVal ?? target, args2[0] ?? undefAbs());
+              return undefAbs(); // setter 返回值原生丢弃
+            },
+          });
+        return abs(
+          {
+            k: "obj",
+            slots: {
+              get: { value: acc.get ? wrapGet(acc.get) : undefAbs() },
+              set: { value: acc.set ? wrapSet(acc.set) : undefAbs() },
+              enumerable: { value: boolLit(flags?.enumerable !== false) },
+              configurable: { value: boolLit(flags?.configurable !== false) },
+            },
+          },
+          undefined,
+          undefined,
+          "exact",
+        );
+      };
       if (a0.shape.k === "obj") {
         const os = a0.shape as { slots: Record<string, { value: Abs }>; open?: boolean; index?: unknown };
         if (os.open || os.index || key === undefined) return maybeDesc();
+        // Bug 84：internal 私有槽非自有属性——GetOwnProperty 折 undefined
+        if ((os.slots[key] as { internal?: boolean } | undefined)?.internal === true) {
+          return undefAbs();
+        }
         if (Object.prototype.hasOwnProperty.call(os.slots, key)) {
           // Bug 57：访问器侧表优先——访问器描述符 { get: ƒ|undefined,
-          // set: ƒ|undefined, enumerable, configurable }（无 value/writable；
-          // thunk 包成 fn Abs，调用经 apply 钩子求值）
-          const acc = lookupObjAccessor(a0, key);
-          if (acc) {
-            const flags = getPropFlags(a0)?.get(key);
-            const wrapGet = (thunk: (t: Abs) => Abs): Abs =>
-              absFunction(["_this"], {
-                body: noBody,
-                apply: (_args, thisVal) => thunk(thisVal ?? a0),
-              });
-            const wrapSet = (thunk: (t: Abs, v: Abs) => Abs): Abs =>
-              absFunction(["_this", "value"], {
-                body: noBody,
-                apply: (args2, thisVal) => {
-                  thunk(thisVal ?? a0, args2[0] ?? undefAbs());
-                  return undefAbs(); // setter 返回值原生丢弃
-                },
-              });
-            return abs(
-              {
-                k: "obj",
-                slots: {
-                  get: { value: acc.get ? wrapGet(acc.get) : undefAbs() },
-                  set: { value: acc.set ? wrapSet(acc.set) : undefAbs() },
-                  enumerable: { value: boolLit(flags?.enumerable !== false) },
-                  configurable: { value: boolLit(flags?.configurable !== false) },
-                },
-              },
-              undefined,
-              undefined,
-              "exact",
-            );
-          }
+          // set: ƒ|undefined, enumerable, configurable }（无 value/writable）
+          const accDesc = accessorDescOf(a0, key);
+          if (accDesc) return accDesc;
           const flags = getPropFlags(a0)?.get(key);
           return mkDesc(
             readProperty(a0, key),
@@ -1373,6 +1479,37 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         }
         if (a0.conf === "exact") return undefAbs();
         return maybeDesc();
+      }
+      // Bug 84：用户类实例——内层闭 obj 自有槽精确描述符（此前整
+      // brand 保守 descriptor|undefined）。类字段原生描述符
+      // writable/enumerable/configurable 全 true（defineProperty
+      // 收紧的 flags 经 getPropFlags——flags 表记在内层 Abs 上）；
+      // 动态 defineProperty 安装的访问器经内层侧表派发（同 obj 臂
+      // Bug 57 口径——安装机器把侧表注册在新内层 obj Abs）；
+      // internal 私有槽非自有属性 → undefined；闭内层缺席键 → undefined
+      {
+        const inner = classInstanceInnerOf(a0);
+        if (inner && key !== undefined) {
+          const slots = (inner.shape as ObjShape)
+            .slots as Record<string, { value: Abs; internal?: boolean }>;
+          if ((slots[key] as { internal?: boolean } | undefined)?.internal === true) {
+            return undefAbs();
+          }
+          if (Object.prototype.hasOwnProperty.call(slots, key)) {
+            const accDesc = accessorDescOf(inner, key);
+            if (accDesc) return accDesc;
+            // flags 表记在接收者 brand 上（applyPropertyDescriptor
+            // setPropFlags(out, …)——out 为 brand）
+            const flags = getPropFlags(a0)?.get(key);
+            return mkDesc(
+              slots[key]!.value,
+              flags?.writable !== false,
+              flags?.enumerable !== false,
+              flags?.configurable !== false,
+            );
+          }
+          return undefAbs();
+        }
       }
       if (a0.shape.k === "tuple" && key !== undefined) {
         const holes = (a0.shape as { holes?: number[] }).holes ?? [];

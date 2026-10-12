@@ -402,11 +402,18 @@ export function errorBrandAbs(name: string, args: Abs[]): Abs {
       : undefAbs();
     slots["cause"] = { value: cause };
   }
+  // Bug 84：Error 家族自有槽（name/message/stack；AggregateError 的
+  // errors/cause）原生全不可枚举——枚举视图（for-in/keys/spread/assign/
+  // stringify）与 extends Error 用户类实例的内层公有槽展开据此剔除
+  const errInner = objOf(slots);
+  for (const k of Object.keys(slots)) {
+    setPropFlags(errInner, k, { enumerable: false });
+  }
   return abs(
     {
       k: "brand",
       name,
-      shape: objOf(slots),
+      shape: errInner,
     },
     undefined,
     undefined,

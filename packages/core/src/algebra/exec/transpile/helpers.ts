@@ -833,3 +833,11 @@ export function collectArrMutatorReceivers(node: unknown, acc = new Set<string>(
 export function isExpression(n: { type: string }): n is Expression {
   return n.type !== "PrivateName" && !n.type.endsWith("Statement") && !n.type.endsWith("Declaration");
 }
+
+/** PrivateName 节点 → "#x" 混淆键源串（JSON 字符串字面量；公有名不含
+ *  "#"，无碰撞）。成员读/写（Bug 78）与 in 运算符（Bug 80）共用——统一
+ *  提取点防内联复制复发。无名（解析异常）→ null，交调用方 fail-closed。 */
+export function privateNameKeySrc(prop: { id?: { name?: string }; name?: string }): string | null {
+  const priv = prop.id?.name ?? prop.name;
+  return priv ? JSON.stringify(`#${priv}`) : null;
+}

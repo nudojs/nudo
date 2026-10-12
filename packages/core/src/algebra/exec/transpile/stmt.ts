@@ -1594,8 +1594,10 @@ export function classSpecOf(
     : null;
 
   /**
-   * 成员键提取（Bug 60/Bug 78）：
-   * - 非计算键：PrivateName → "#x" 混淆键（公有名不含 "#"，无碰撞；Bug 78）；
+   * 成员键提取（Bug 60/Bug 78/Bug 84）：
+   * - 非计算键：PrivateName → "#x" 混淆键（公有名不含 "#"，无碰撞；Bug 78）
+   *   + private 标记（Bug 84：落地槽打 Slot.internal，introspection 面剔除；
+   *   公共字符串键 "#x"（含计算键 ["#x"]）不带标记）；
    *   Identifier/String/Numeric → 原名（Numeric 原生 ToPropertyKey 成串）；
    * - 计算键（含 `[k]()` 的 Identifier 形状——babel 把 computed 标在成员上）：
    *   发射求值源，$class 折叠真名，不静默挂 "method"。
@@ -1603,14 +1605,14 @@ export function classSpecOf(
   const keyOf = (
     key: unknown,
     computed: boolean,
-  ): { name: string } | { computed: string } | null => {
+  ): { name: string; private?: boolean } | { computed: string } | null => {
     const k = key as
       | { type?: string; name?: string; value?: unknown; id?: { name?: string } }
       | undefined;
     if (!k?.type) return null;
     if (!computed && k.type === "PrivateName") {
       const n = k.id?.name ?? k.name;
-      return n ? { name: `#${n}` } : null;
+      return n ? { name: `#${n}`, private: true } : null;
     }
     if (!computed && k.type === "Identifier" && k.name) return { name: k.name };
     if (k.type === "StringLiteral" || k.type === "NumericLiteral") {
@@ -1685,8 +1687,9 @@ export function classSpecOf(
         : "$lit(void 0)";
       const initSrc = thunkOf(vsrc, depth + 2);
       if (keyR && "name" in keyR) {
+        // Bug 84：私有字段透传 private 标记（槽落地打 Slot.internal）
         instanceFieldParts.push(
-          `${indent(depth + 2)}{ name: ${JSON.stringify(keyR.name)}, init: ${initSrc} },`,
+          `${indent(depth + 2)}{ name: ${JSON.stringify(keyR.name)}, init: ${initSrc}${keyR.private === true ? ", private: true" : ""} },`,
         );
       } else if (keyR && "computed" in keyR) {
         // 原生计算键逐实例求值（ClassFieldDefinitionEvaluation 在构造期）

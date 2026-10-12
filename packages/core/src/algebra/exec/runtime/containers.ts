@@ -39,7 +39,7 @@ import {
   ARRAY_PROTO_METHOD_NAMES,
 } from "../member-diag.ts";
 import { errorTypeAbs, recordMayThrow, type MayThrowEffect } from "../may-throw.ts";
-import { getEvalClass } from "../class-registry.ts";
+import { getEvalClass, classInstanceInnerOf } from "../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../class-mark.ts";
 import {
   NudoThrow, undef, oobUndef, isOobUndef, throwStrictWrite, writeInPlace, clearStaleTermPred,
@@ -1041,7 +1041,21 @@ export function $spread(a: Abs, b: Abs): Abs {
   // any 展开：无约束键 → open obj（不是空 {} / unknown）
   const aa = asAbsVal(a);
   // 必须用 getter 求值后的 bb（不是原始 b0）——否则展开丢掉访问器结果
-  const b0 = bb;
+  let b0 = bb;
+  // Bug 84：类实例 brand 源（{...new A()}）——展开公有可枚举自有槽（私有
+  // Slot.internal 与 enumerable:false 剔除；此前 brand 源键集不可判 → 保守
+  // open 空 obj，公有字段全丢）
+  {
+    const ciInner = classInstanceInnerOf(b0);
+    if (ciInner) {
+      const ciSlots = (ciInner.shape as ObjShape).slots;
+      const pub: Record<string, Slot> = {};
+      for (const k of enumOwnKeys(ciInner, ciSlots)) {
+        setSlot(pub, k, getSlot(ciSlots, k)!);
+      }
+      b0 = abs({ k: "obj", slots: pub }, undefined, undefined, b0.conf);
+    }
+  }
   if (aa?.shape?.k === "any" || b0?.shape?.k === "any") {
     const base = spreadObj(
       aa?.shape?.k === "any" ? abs({ k: "obj", slots: {}, open: true }, undefined, undefined, "partial") : aa,
@@ -2309,8 +2323,15 @@ export function $collectionForEach(recv: Abs, cb: unknown): Abs | undefined {
   return undefined;
 }
 
-/** 成员写：返回新 obj/brand（不可变更新）；frozen/sealed/只读目标按 sloppy 静默失败 */
-export function $set(o: Abs, key: string, value: Abs): Abs {
+/** 成员写：返回新 obj/brand（不可变更新）；frozen/sealed/只读目标按 sloppy 静默失败。
+ *  opts.internal（Bug 84）：私有字段落地——槽打 Slot.internal 标记；后续覆写
+ *  保留既有标记（this.#x = v 不丢失 internal）。 */
+export function $set(
+  o: Abs,
+  key: string,
+  value: Abs,
+  opts?: { internal?: boolean },
+): Abs {
   // 私有名（"#" 键）：foreign-receiver brand check（PrivateFieldSet）
   privateNameGuard(o, key);
   // DEC-006 B/C：free identifier 可能把宿主值（globalThis…）漏进来——
@@ -2342,12 +2363,17 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
           throwStrictWrite(); // 不可扩展：新键写 TypeError
         }
         if (getPropFlags(o)?.get(key)?.writable === false) throwStrictWrite();
-        setSlot(inner.shape.slots, key, { value: asAbsVal(value) });
+        // Bug 84：覆写保留既有 internal 标记（this.#x = v 不丢 introspection 不可见性）
+        const prevSlot = getSlot(inner.shape.slots, key);
+        setSlot(inner.shape.slots, key, {
+          value: asAbsVal(value),
+          ...(prevSlot?.internal || opts?.internal ? { internal: true } : {}),
+        });
         clearStaleTermPred(o);
         return o;
       }
     }
-    const inner = $set(o.shape.shape, key, value);
+    const inner = $set(o.shape.shape, key, value, opts);
     const next = abs(
       { k: "brand", name: o.shape.name, shape: inner },
       o.term,
@@ -2466,7 +2492,12 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
     return $setProto(o, value);
   }
   // 就地写槽（引用语义：const b = o; b.x = v 对 o 可见）——Abs 身份不变
-  setSlot(shape.slots, key, { value: asAbsVal(value) });
+  // Bug 84：覆写保留既有 internal 标记 / opts.internal 新打标
+  const prevSlot = getSlot(shape.slots, key);
+  setSlot(shape.slots, key, {
+    value: asAbsVal(value),
+    ...(prevSlot?.internal || opts?.internal ? { internal: true } : {}),
+  });
   o.conf = confJoin(o.conf, value.conf);
   clearStaleTermPred(o);
   return o;

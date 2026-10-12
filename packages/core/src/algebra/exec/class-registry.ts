@@ -41,6 +41,12 @@ export type EvalClassSpec = {
     name?: string;
     key?: (thisVal: Abs) => Abs;
     init: (thisVal: Abs) => Abs;
+    /**
+     * Bug 84：PrivateName 声明的私有字段（transpile 期标记）——落地槽打
+     * Slot.internal，对所有属性 introspection 不可见（内部槽语义）；
+     * 计算键公共字段（如 ["#x"]）不带此标记（同键空间共存）。
+     */
+    private?: boolean;
   }>;
   /**
    * Bug 60：计算键成员——synth 名 → 键 Abs（定义期求值，求值本身即
@@ -129,6 +135,53 @@ export function registerEvalClass(spec: EvalClassSpec): void {
 
 export function getEvalClass(name: string): EvalClassSpec | undefined {
   return classRegistry.get(name);
+}
+
+/**
+ * Bug 84：用户类实例 brand 的内层闭 obj（公有/私有自有槽的承载者）。
+ * 属性 introspection 面（Object.keys/values/entries / gOPN / assign /
+ * spread / JSON.stringify / hasOwn）据此展开公有自有槽——私有槽以
+ * Slot.internal 打标（transpile 期 PrivateName 标记）在各面剔除。
+ * 非实例面 → undefined（保持既有保守口径）：
+ * - 类值（classNameOfValue 命中——ctor facet，槽是 statics+name）；
+ * - 未注册 brand（内建 Error/Map/Set/… 的自有槽枚举面另有专门口径）；
+ * - 内层非闭 obj（开放键集不可精确列举）。
+ */
+export function classInstanceInnerOf(a: Abs): Abs | undefined {
+  const s = a.shape;
+  if (s.k !== "brand") return undefined;
+  if (classNameOfValue(a as object) === s.name) return undefined;
+  if (!classRegistry.has(s.name)) return undefined;
+  const inner = s.shape;
+  const is = inner.shape;
+  if (is.k !== "obj" || is.open || is.index) return undefined;
+  return inner;
+}
+
+/**
+ * Bug 84：类继承链是否带 JSON 用户面（toJSON 方法）——有则
+ * stringify 不可折（原生经原型查找调用 value.toJSON），保持
+ * 保守 partial。链止于未注册名（extends Error 等内建基类——
+ * Error 家族无 toJSON、stringify 恒 total "{}"）。
+ *
+ * 类访问器（spec.accessors）**不**构成 JSON 用户面：原生访问器
+ * 安装在原型上，非实例自有属性；JSON.stringify 只枚举自有可
+ * 枚举键（字段），不经 [[Get]] 调用原型访问器（node 实测
+ * `class A { get x(){} pub=2 }` → `{"pub":2}`）。动态
+ * defineProperty 到实例的访问器在内层留占位槽，absToJsonNative
+ * 经 readProperty/accessorTable 派发 getter（Bug 57 口径），
+ * 折叠仍精确；抽象键写使内层 open → NOT_LITERAL。
+ */
+export function classChainHasJsonUserFace(name: string): boolean {
+  let cur: string | undefined = name;
+  const seen = new Set<string>();
+  while (cur && !seen.has(cur)) {
+    seen.add(cur);
+    const spec = classRegistry.get(cur);
+    if (spec?.methods?.["toJSON"]) return true;
+    cur = spec?.superName;
+  }
+  return false;
 }
 
 export function clearBClasses(): void {
