@@ -161,6 +161,39 @@ function primTop(type: string): Abs {
   }
 }
 
+/** 数组族 sum 的元素域聚合：每个成员贡献其元素域（tuple = 元素 join，
+ *  空 tuple 贡献空；arr = element），聚合 join。任一非数组成员 →
+ *  ok=false（不可收敛，调用方走原路径）。collapse=true 表示值得收敛
+ *  （含 arr 臂或 tuple 长度失配——与 widenLoopJoin 的守卫同口径：等长
+ *  tuple-only join 不收敛，保长度精度）。 */
+function sumArrParts(s: { members: Abs[] }): {
+  ok: boolean;
+  collapse: boolean;
+  element?: Abs;
+} {
+  const elems: Abs[] = [];
+  const lengths = new Set<number>();
+  let hasArr = false;
+  for (const m of s.members) {
+    const ms = m.shape;
+    if (ms.k === "tuple") {
+      lengths.add(ms.elements.length);
+      const e = joinElems(ms);
+      if (e) elems.push(e);
+    } else if (ms.k === "arr") {
+      hasArr = true;
+      elems.push(ms.element);
+    } else {
+      return { ok: false, collapse: false };
+    }
+  }
+  return {
+    ok: true,
+    collapse: hasArr || lengths.size > 1,
+    element: elems.length > 0 ? elems.reduce((x, y) => joinAbs(x, y)) : undefined,
+  };
+}
+
 /** 数组化（#156）：tuple / tuple·arr 同族 sum → 单一 arr，元素域 = 全部
  *  已知元素域 join（空 tuple 成员贡献空，不注入 unknown 顶——与
  *  $arrMutContainer 的 splice/sort 降 arr、control 的 widenLoopJoin 同
@@ -178,19 +211,10 @@ function arrify(v: Abs): Abs | undefined {
     );
   }
   if (s.k === "sum") {
-    const elems: Abs[] = [];
-    for (const m of s.members) {
-      if (m.shape.k === "tuple") {
-        const e = joinElems(m.shape);
-        if (e) elems.push(e);
-      } else if (m.shape.k === "arr") {
-        elems.push(m.shape.element);
-      } else {
-        return undefined;
-      }
-    }
+    const p = sumArrParts(s);
+    if (!p.ok) return undefined;
     return abs(
-      { k: "arr", element: elems.length > 0 ? elems.reduce((x, y) => joinAbs(x, y)) : unknown },
+      { k: "arr", element: p.element ?? unknown },
       undefined,
       undefined,
       confJoin(v.conf, "widened"),
@@ -326,12 +350,39 @@ function widenWithPath(v: Abs, g: GrowthTree): Abs {
   return domainTop(v);
 }
 
+/** 无增长退出的数组族 sum 收敛（#156 残留）：顶层与 obj 槽位递归，把
+ *  「同一绑定顺序状态」的 arr/tuple 多臂 sum 收成单 arr（元素域并，
+ *  conf 沿用该 sum 自身——表示收敛非宽化）。等长 tuple-only join、
+ *  非数组族、非收敛形态原样。 */
+function collapseArrSums(v: Abs): Abs {
+  const s = v.shape;
+  if (s.k === "sum") {
+    const p = sumArrParts(s);
+    if (p.ok && p.collapse && p.element) {
+      return abs({ k: "arr", element: p.element }, undefined, undefined, v.conf);
+    }
+    return v;
+  }
+  if (s.k === "obj") {
+    let changed = false;
+    const slots: typeof s.slots = {};
+    for (const [k, slot] of Object.entries(s.slots)) {
+      const w = collapseArrSums(slot.value);
+      if (w !== slot.value) changed = true;
+      slots[k] = { ...slot, value: w };
+    }
+    return changed ? abs({ ...s, slots }, undefined, undefined, v.conf) : v;
+  }
+  return v;
+}
+
 export interface LoopCarriedWidener {
   /** 记录一次出口快照（累计 join + 逐槽增长检测） */
   observe(p: Abs): void;
   /** 代表体被 break/continue 打断（完整迭代效应不可观测）→ 出口整体宽化 */
   markInterrupted(): void;
-  /** 预算耗尽出口：并入最终态后按增长宽化；无增长时原样返回累计 join */
+  /** 预算耗尽出口：并入最终态后按增长宽化；无增长时返回累计 join（数组
+   *  族 sum 收敛为单 arr——同一绑定顺序状态的表示收敛，非宽化） */
   widenFinal(final: Abs): Abs;
 }
 
@@ -356,7 +407,16 @@ export function makeLoopWidener(): LoopCarriedWidener {
       observe(final);
       const base = acc ?? final;
       const g: GrowthTree = interrupted ? true : growth;
-      if (g === null) return base;
+      if (g === null) {
+        // #156 残留：无增长但快照 join 是数组族 sum（参数位 arr 绑定的顺序
+        // 状态：unknown 吸收 push 值 → 元素域增长检测不到，joinAbs 把
+        // arr×arr 摊成多臂 sum）。同一绑定的顺序状态按元素域并收敛成单
+        // arr（与 {el} 增长路径的 arrify、control 的 widenLoopJoin 同口
+        // 径）；conf 沿用该值自身的累计 join——这是表示收敛不是宽化，
+        // 不标 widened。等长 tuple-only join 不收敛（保长度精度）。打包
+        // 绑定包是 obj（每绑定一槽），sum 藏在槽位里——递归下钻。
+        return collapseArrSums(base);
+      }
       return widenWithPath(normalizeForWiden(base, g), g);
     },
   };

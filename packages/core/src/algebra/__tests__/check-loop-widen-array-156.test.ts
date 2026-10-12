@@ -53,10 +53,17 @@ const strArrAbs = abs(
   undefined,
   "exact",
 );
+const unknownAbs = abs({ k: "unknown" }, undefined, undefined, "exact");
+const arrUnknownAbs = abs(
+  { k: "arr", element: unknownAbs },
+  undefined,
+  undefined,
+  "exact",
+);
 
-function evalOf(src: string): string {
+function evalOf(src: string, args: unknown[] = [strArrAbs]): string {
   const run = runTranspiled(src, { mode: "analyze" });
-  const r = callTranspiledExportFull(run, "f", [strArrAbs] as never) as { result: unknown };
+  const r = callTranspiledExportFull(run, "f", args as never) as { result: unknown };
   return formatShape(r.result as never);
 }
 
@@ -130,6 +137,64 @@ describe("issue #156：for…of + push 的元素域宽化（eval 面）", () => 
   });
 });
 
+describe("issue #156 残留：参数位数组绑定的顺序状态收敛（无增长路径）", () => {
+  it("r1 for-of + 参数位 arr(unknown)：单臂（元素域并），不再摊成 unknown[] | … 双臂", () => {
+    const s = evalOf(
+      `export function f(xs, out) { for (const x of xs) out.push({ v: x }); return out; }`,
+      [strArrAbs, arrUnknownAbs],
+    );
+    expect(s).toBe("(unknown | { v: string })[]");
+  });
+
+  it("r2 for(;;) + 参数位 arr(unknown)：control 循环同口径（widenFinal 累计 join 不再摊回）", () => {
+    const s = evalOf(
+      `export function f(xs, out) { for (let i = 0; i < xs.length; i++) out.push({ v: xs[i] }); return out; }`,
+      [strArrAbs, arrUnknownAbs],
+    );
+    expect(s).toBe("(unknown | { v: string })[]");
+  });
+
+  it("r3 while + 参数位 arr(unknown)：单臂", () => {
+    const s = evalOf(
+      `export function f(xs, out) { let i = 0; while (i < xs.length) { out.push({ v: xs[i] }); i++; } return out; }`,
+      [strArrAbs, arrUnknownAbs],
+    );
+    expect(s).toBe("(unknown | { v: string })[]");
+  });
+
+  it("r4 本地拷贝 const acc = [...out]：同口径收敛", () => {
+    const s = evalOf(
+      `export function f(xs, out) { const acc = [...out]; for (const x of xs) acc.push({ v: x }); return acc; }`,
+      [strArrAbs, arrUnknownAbs],
+    );
+    expect(s).toBe("(unknown | { v: string })[]");
+  });
+
+  it("r5 参数位 arr 元素域已知（{ v: string }）：join-幂等，exact 单臂不变", () => {
+    const objV = abs(
+      { k: "obj", slots: { v: { value: abs({ k: "prim", type: "string" }, undefined, undefined, "exact") } } },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const arrV = abs({ k: "arr", element: objV }, undefined, undefined, "exact");
+    const s = evalOf(
+      `export function f(xs, out) { for (const x of xs) out.push({ v: x }); return out; }`,
+      [strArrAbs, arrV],
+    );
+    expect(s).toBe("{ v: string }[]");
+  });
+
+  it("r6 收敛只动数组族：计数器 prim-sum（0 | 1）不被折叠", () => {
+    const s = evalOf(
+      `export function f(xs) { let n = 0; for (const x of xs) n++; return n; }`,
+    );
+    // 计数器增长走 domainTop（number），但若绑定 join-幂等（n++ 被吸收前
+    // 的快照）不得把 prim-sum 当数组收敛
+    expect(s).toBe("number");
+  });
+});
+
 describe("issue #156：宽化结构臂对 array/shape 契约可证（check 面）", () => {
   it("复现契约证得：array(shape({ v: string() })) 无 unproven-return", () => {
     const r = check(`
@@ -139,6 +204,22 @@ describe("issue #156：宽化结构臂对 array/shape 契约可证（check 面�
  */
 export function one(xs) {
   const out = [];
+  for (const x of xs) out.push({ v: x });
+  return out;
+}
+`);
+    expect(r.summary.errors).toBe(0);
+    expect(retIssues(r)).toEqual([]);
+  });
+
+  it("参数位数组绑定：out 带元素契约，循环 push 后 return 证得（残留收敛后无假臂）", () => {
+    const r = check(`
+/**
+ * @nudo:contract xs strArr
+ * @nudo:contract out findingsV
+ * @nudo:contract return findingsV
+ */
+export function one(xs, out) {
   for (const x of xs) out.push({ v: x });
   return out;
 }
