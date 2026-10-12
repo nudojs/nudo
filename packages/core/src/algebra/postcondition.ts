@@ -130,6 +130,30 @@ function isWidenedSumArm(m: Abs, parent: Abs): boolean {
   );
 }
 
+/** 结构契约与臂形状可对账（array(...)×arr/tuple、shape(...)×obj；
+ * union 成员递归穿透 lazy） */
+function constraintMatchesStructuralArm(arm: Abs, c: NudoConstraint): boolean {
+  if (c.element) return arm.shape.k === "arr" || arm.shape.k === "tuple";
+  if (c.fields) return arm.shape.k === "obj";
+  if (c.members) {
+    return c.members.some((m) => constraintMatchesStructuralArm(arm, derefConstraint(m)));
+  }
+  return false;
+}
+
+/**
+ * issue #156：循环变异绑定宽化的结构臂（loop-widen arrify/domainTop 产物：
+ * conf="widened" 的 arr / tuple / obj）。宽化丢的是长度 / 键开闭 / 界与
+ * 路径证据，**不丢结构域**（arrify 元素域 = 观测元素 join；obj 槽位形状
+ * 保留）。结构契约（array(...) / shape(...)，union 成员穿透）存在时放行
+ * 进入逐元素/逐字段对账；叶子 widened prim 的带界义务照旧 unprovable
+ * （provesBarePrimDomain / assertScalar 兜底）、unknown 元素域同样兜底
+ * ——不会伪装成功。
+ */
+function isWidenedStructuralArm(arm: Abs, constraint: NudoConstraint): boolean {
+  return arm.conf === "widened" && constraintMatchesStructuralArm(arm, constraint);
+}
+
 /**
  * 无界 prim 契约（裸 `number()` / `string()`：prim + 无显式 pred + 无
  * int 义务 + 无结构面）只问**域隶属**。裸 prim 臂（term-less partial，
@@ -265,6 +289,14 @@ function assertSumArms(
       ) {
         continue;
       }
+      // #156 结构臂：conf=widened 的 arr/tuple/obj 对结构契约放行进入
+      // 结构对账；结果非 proved 降 unprovable（本臂自身已计入
+      // hasWidenedArm，不得 disproved——与错配 prim 的 FP 保护同口径）。
+      if (isWidenedStructuralArm(arm, constraint)) {
+        const r = assertImpliesSingle(arm, constraint, opts, phi);
+        if (r.status !== "proved") sawUnprovable = true;
+        continue;
+      }
       sawUnprovable = true;
       continue;
     }
@@ -304,12 +336,14 @@ function assertImpliesSingle(
   }
 
   // --- 值域未知：any / true unknown / opaque ---
-  if (isValueSetUnknown(arm)) {
+  if (isValueSetUnknown(arm) && !isWidenedStructuralArm(arm, constraint)) {
     // issue #151：循环携带绑定宽化到 prim 域顶的裸 prim 臂（loop-widen
     // 产物：conf="widened"、无 term/pred）与 #115 的 partial 臂同口径——
     // 宽化丢的是界/路径证据，不丢 prim 值域。无界裸 prim 契约只问域隶属
     // → proved，不降假 unproven-return；带界/结构义务与错配 prim 保持原
     // unprovable（宽化臂的界义务本就证不出，也不得变 disproved）。
+    // issue #156：widened 结构臂（arr/tuple/obj）对结构契约放行到下方
+    // 逐元素/逐字段对账（union/fields/element 分支）。
     if (
       arm.conf === "widened" &&
       arm.shape.k === "prim" &&

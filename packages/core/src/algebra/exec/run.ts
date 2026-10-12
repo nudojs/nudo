@@ -15,7 +15,7 @@ import {
   exitEvalCallBudgetSession,
   setEvalBindingSink,
 } from "./calls.ts";
-import { withExecPhi, withAssumePremises, $copy } from "./runtime.ts";
+import { withExecPhi, $copy } from "./runtime.ts";
 import type { Abs } from "../abs.ts";
 import type { Phi } from "../pred.ts";
 import { never, unknown } from "../abs.ts";
@@ -826,14 +826,14 @@ export function isAbsVal(v: unknown): v is Abs {
 
 /** 调用 runTranspiled 导出（捕获 $throw）。opts.phi：入口 Φ 种子
  *  （instantiate/symbolic 的约束入口——eval 侧路径条件收窄）。
- *  opts.assumePremises（#152 用户引理）：入口前提独立槽种子——与 phi 分槽
- *  （不随调用链继承），消费方经 currentAssumePremises() 读。
- *  嵌套进入（导出桥 apply）继承外层预算；仅最外层宿主入口重置。 */
+ *  嵌套进入（导出桥 apply）继承外层预算；仅最外层宿主入口重置。
+ *  #152 assume 前提不设选项位：播种统一走 withAssumePremises 动态域
+ *  包裹（check.ts 的 runSeeded extent），单一机制无第二路径。 */
 export function callTranspiledExportFull(
   exports: Record<string, unknown>,
   name: string,
   args: Abs[],
-  opts?: { phi?: Phi; assumePremises?: Phi },
+  opts?: { phi?: Phi },
 ): TranspiledCallResult {
   // collector 作用域（幂等）：同 runTranspiled——最外层宿主入口开 store，
   // 嵌套（同一次分析内的逐导出调用 / 导出桥）复用外层。
@@ -859,7 +859,7 @@ function callTranspiledExportFullInner(
   exports: Record<string, unknown>,
   name: string,
   args: Abs[],
-  opts?: { phi?: Phi; assumePremises?: Phi },
+  opts?: { phi?: Phi },
 ): TranspiledCallResult {
   // own-property：name 为 toString/constructor 等 Object.prototype 成员且模块
   // 无同名自有导出时，裸读会把原型方法当导出调用（constructor 曾原样返回实参）
@@ -878,11 +878,7 @@ function callTranspiledExportFullInner(
       try {
         const invoke = () =>
           withNewTargetReset(() => (fn as (...a: Abs[]) => unknown)(...callArgs));
-        // #152：assume 前提内层包 phi 外层（与 opts.phi 组合时两层嵌套）；
-        // 独立槽 = 只喂本入口的直接求值域，不随 $call 链继承
-        const ap = opts?.assumePremises;
-        const seeded = ap !== undefined ? () => withAssumePremises(ap, invoke) : invoke;
-        const r = opts?.phi ? withExecPhi(opts.phi, seeded) : seeded();
+        const r = opts?.phi ? withExecPhi(opts.phi, invoke) : invoke();
         // 微任务（then/catch 回调）在同步返回值算完后才跑
         drainPromiseMicros();
         // Bug 26：宿主裸值（裸全局标识符 return parseInt 等）先经 asAbsVal

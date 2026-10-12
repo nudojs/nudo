@@ -131,8 +131,8 @@ describe("assume relational div: sum 操作数（成员级透传）", () => {
 
 function callSim(src: string, fn: string, args: Abs[], assumePremises?: ReturnType<typeof and>) {
   const run = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(run, fn, args, assumePremises ? { assumePremises } : undefined)
-    .result;
+  const call = () => callTranspiledExportFull(run, fn, args).result;
+  return assumePremises ? withAssumePremises(assumePremises, call) : call();
 }
 
 describe("assume relational div: 端到端（runTranspiled）", () => {

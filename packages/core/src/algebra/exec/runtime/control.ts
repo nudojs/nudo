@@ -443,8 +443,9 @@ export function $for(
 
 /**
  * 循环出口 join 的容器 widen：把「不同长度 tuple 的 sum」收成 arr
- *（元素域 = 全部已知元素 ∪ OOB marker undefined——长度未知 ⇒ 下标可能
- * miss）。只动顶层与 obj 槽位；非增长形态（等长 tuple / 非容器）原样。
+ *（元素域 = 全部已知元素 join；OOB undefined 不烘焙——读位事实由 $idx
+ * 抽象下标读并入，#156）。只动顶层与 obj 槽位；非增长形态（等长
+ * tuple / 非容器）原样。
  */
 function widenLoopJoin(a: Abs): Abs {
   const widenValue = (v: Abs): Abs => {
@@ -468,13 +469,16 @@ function widenLoopJoin(a: Abs): Abs {
       }
     }
     if (!hasArr && lengths.size <= 1) return v; // 等长 tuple join：无增长，不 widen
-    // 长度增长（或已有 arr 臂）→ 长度未知；hole/越界读 undefined → OOB marker
+    // 长度增长（或已有 arr 臂）→ 长度未知。#156：元素域 = 全部已知元素
+    // join（hole 下标读值 undefined 是真实元素值域，保留）；OOB undefined
+    // 不烘焙——越界是读位事实（$idx 抽象下标读已并入元素 ∪ undefined），
+    // 烘焙会把「循环 + push」对任何元素契约变成不可证（凭空 undefined 臂）
     const known = els.length ? els.reduce((x, y) => joinAbs(x, y)) : unknown;
     const element = undefArms.length
       ? undefArms.reduce((x, y) => joinAbs(x, y), known)
       : known;
     return abs(
-      { k: "arr", element: joinAbs(element, oobUndef()) },
+      { k: "arr", element },
       undefined,
       undefined,
       confJoin(v.conf, "widened"),
