@@ -36,6 +36,14 @@ type HealthReport = {
     maxCalls: number;
     forks: number;
     maxForks: number;
+    /** B 命名调用路径（#158）：计数/截断与 cycle 归因 */
+    evalCalls: number;
+    maxEvalCalls: number;
+    evalCallTruncated: boolean;
+    cycleTruncated: boolean;
+    /** 循环迭代预算截断（#loop-iterations；maxIters/硬上限，非调用预算） */
+    loopTruncated: boolean;
+    reasons: string[];
   };
   /** D6-A：evaluator internal 回落计数（指标暴露，非 fail 条件） */
   internalFallbacks?: number;
@@ -69,15 +77,7 @@ async function healthFile(filePath: string, records?: CallRecord[]): Promise<Hea
       .map((fn) => fn.name);
     {
       const b = getAbsCallBudgetStats();
-      report.budget = {
-        truncated: b.truncated,
-        callTruncated: b.callTruncated,
-        forkTruncated: b.forkTruncated,
-        calls: b.calls,
-        maxCalls: b.maxCalls,
-        forks: b.forks,
-        maxForks: b.maxForks,
-      };
+      report.budget = { ...b };
     }
     {
       // D6-A：internal 回落是缺陷指标（接受暴露），不吞、不单独 fail
@@ -242,9 +242,18 @@ async function runHealth(paths: string[], opts: { from?: string[]; json?: boolea
         );
       }
       if (r.budget?.truncated) {
+        const onlyLoop =
+          r.budget.loopTruncated &&
+          !r.budget.callTruncated &&
+          !r.budget.evalCallTruncated &&
+          !r.budget.forkTruncated;
         console.log(
-          `  ⚠ budget truncated  calls ${r.budget.calls}/${r.budget.maxCalls} · forks ${r.budget.forks}/${r.budget.maxForks}` +
-            `${r.budget.callTruncated ? "  (calls)" : ""}${r.budget.forkTruncated ? "  (forks)" : ""} — some results widened to unknown`,
+          `  ⚠ budget truncated  calls ${r.budget.calls}/${r.budget.maxCalls} · eval calls ${r.budget.evalCalls}/${r.budget.maxEvalCalls} · forks ${r.budget.forks}/${r.budget.maxForks}` +
+            `${r.budget.callTruncated ? "  (calls)" : ""}${r.budget.evalCallTruncated ? "  (eval calls)" : ""}${r.budget.forkTruncated ? "  (forks)" : ""}${r.budget.loopTruncated ? "  (loop iters)" : ""}` +
+            (onlyLoop
+              ? " — loop state widened (iteration budget; @nudo:budget does not apply)"
+              : " — some results widened to unknown") +
+            (r.budget.cycleTruncated ? ` (includes call cycles — a budget cannot lift them)` : ""),
         );
       }
       if ((r.internalFallbacks ?? 0) > 0) {

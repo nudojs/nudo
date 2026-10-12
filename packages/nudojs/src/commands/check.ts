@@ -693,6 +693,7 @@ async function runCheckFix(opts: {
           throwsKind,
           expected: issue.expected,
           suggestion: issue.suggestion,
+          reason: issue.reason,
         });
         if (plan) plans.push(plan);
       }

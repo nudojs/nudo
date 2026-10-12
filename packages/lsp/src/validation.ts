@@ -833,6 +833,7 @@ export function checkToLspDiagnostics(
             fn: i.fn,
             suggestion: i.suggestion,
             suggestions: i.suggestion ? [i.suggestion] : [],
+            reason: i.reason,
             actions: i.actions,
           },
         } satisfies LspDiagnostic;

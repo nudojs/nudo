@@ -351,6 +351,8 @@ export type MaterializeInput = {
   throwsKind?: string;
   expected?: string;
   suggestion?: string;
+  /** 截断归因（nudo:recursion-truncated；#158）：cycle 时抬预算无效 */
+  reason?: string;
 };
 
 /**
@@ -479,7 +481,8 @@ export function materializeAction(input: MaterializeInput): QuickfixPlan | undef
   }
 
   // —— recursion-truncated：@nudo:budget ——
-  if (code === "nudo:recursion-truncated" && fn) {
+  // cycle 归因（#158）抬预算解不开（同抽象实参调用环），不提供该 quickfix
+  if (code === "nudo:recursion-truncated" && fn && input.reason !== "cycle") {
     const r = addBudgetAnnotation(source, fn);
     if (!r) return undefined;
     return {

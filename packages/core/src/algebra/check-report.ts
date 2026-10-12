@@ -40,6 +40,12 @@ export type CheckIssue = Diagnostic & {
   /** 期望约束（Pred 或 Abs 展示） */
   expected?: string;
   /**
+   * 截断归因（`nudo:recursion-truncated`，issue #158）：
+   * `cycle`=同抽象实参调用环（抬预算无效）；`depth`/`calls`=真预算超限；
+   * `budget`=混合（cycle+预算或 depth+calls 同报）。
+   */
+  reason?: "cycle" | "depth" | "calls" | "budget";
+  /**
    * AI1：结构化下一步（additive）。agent 优先消费 `actions`，
    * 不必解析 `suggestion` 散文；`command` 可直接执行。
    */
@@ -74,6 +80,8 @@ export type CheckReport = {
   /**
    * A2 预算/截断可观测（additive）。`truncated=true` 时部分结果可能已
    * widen 成 unknown——不是契约失败，是引擎预算。
+   * evalCalls/evalCallTruncated = B 命名调用（$callNamed）路径；
+   * cycleTruncated/reasons = 归因（#158）：cycle 抬 @nudo:budget 无效。
    */
   budget?: {
     truncated: boolean;
@@ -83,6 +91,13 @@ export type CheckReport = {
     maxCalls: number;
     forks: number;
     maxForks: number;
+    evalCalls: number;
+    maxEvalCalls: number;
+    evalCallTruncated: boolean;
+    cycleTruncated: boolean;
+    /** 循环迭代预算截断（#loop-iterations；maxIters/硬上限，非调用预算） */
+    loopTruncated: boolean;
+    reasons: string[];
   };
 };
 
@@ -116,6 +131,8 @@ export type CheckJson = {
     actual?: string;
     expected?: string;
     suggestion?: string;
+    /** 截断归因（nudo:recursion-truncated；issue #158，additive） */
+    reason?: CheckIssue["reason"];
     /** AI1：结构化 next-action（只增字段） */
     actions?: CheckAction[];
   }>;
@@ -129,6 +146,7 @@ export function actionsForIssue(i: {
   expected?: string;
   suggestion?: string;
   fn?: string;
+  reason?: string;
 }): CheckAction[] {
   const draft: CheckAction = {
     kind: "draft",
@@ -211,7 +229,6 @@ export function actionsForIssue(i: {
         { kind: "info", label: "add a call site or @nudo:case" },
       ];
     case "nudo:fork-truncated":
-    case "nudo:recursion-truncated":
     case "nudo:promise-micro-truncated":
     case "nudo:promise-micro-error":
       return [
@@ -219,6 +236,28 @@ export function actionsForIssue(i: {
           kind: "info",
           label:
             "results widened to unknown — raise budget (@nudo:budget forks/calls/depth on the function) or narrow control flow",
+        },
+      ];
+    case "nudo:loop-truncated":
+      // 循环迭代预算 ≠ 调用预算：@nudo:budget calls=/depth= 抬不动
+      return [
+        {
+          kind: "info",
+          label:
+            "loop state widened — the exit condition stayed concrete-true past the iteration cap; make the bound data-dependent (abstract) or pin the result with @nudo:case / @nudo:contract",
+        },
+      ];
+    case "nudo:recursion-truncated":
+      // #158 归因：cycle 不是预算——不得把 agent 引向抬 @nudo:budget
+      return [
+        {
+          kind: "info",
+          label:
+            i.reason === "cycle"
+              ? "call cycle: same abstract arguments already on the stack — raising @nudo:budget cannot lift it; make the arguments vary per recursion level or declare @nudo:contract"
+              : i.reason === "depth" || i.reason === "calls" || i.reason === "budget"
+                ? `results widened to unknown — raise budget (@nudo:budget ${i.reason === "depth" ? "depth" : i.reason === "calls" ? "calls" : "calls/depth"} on the function) or narrow the recursion`
+                : "results widened to unknown — raise budget (@nudo:budget calls/depth on the function) or narrow control flow",
         },
       ];
     case "nudo:host-effect-blocked":
@@ -298,6 +337,7 @@ export function serializeCheckJson(r: CheckReport): CheckJson {
         ...(i.actual !== undefined ? { actual: i.actual } : {}),
         ...(i.expected !== undefined ? { expected: i.expected } : {}),
         ...(i.suggestion !== undefined ? { suggestion: i.suggestion } : {}),
+        ...(i.reason !== undefined ? { reason: i.reason } : {}),
         ...(acts.length > 0 ? { actions: acts } : {}),
       };
     }),
@@ -320,6 +360,12 @@ export function serializeCheckJsonMulti(reports: CheckJson[]): CheckJsonMulti {
   let maxForks = 0;
   let callTruncated = false;
   let forkTruncated = false;
+  let evalCalls = 0;
+  let maxEvalCalls = 0;
+  let evalCallTruncated = false;
+  let cycleTruncated = false;
+  let loopTruncated = false;
+  const reasons = new Set<string>();
   for (const r of reports) {
     summary.errors += r.summary.errors;
     summary.warnings += r.summary.warnings;
@@ -332,9 +378,15 @@ export function serializeCheckJsonMulti(reports: CheckJson[]): CheckJsonMulti {
       maxForks = Math.max(maxForks, r.budget.maxForks);
       callTruncated = callTruncated || r.budget.callTruncated;
       forkTruncated = forkTruncated || r.budget.forkTruncated;
+      evalCalls += r.budget.evalCalls ?? 0;
+      maxEvalCalls = Math.max(maxEvalCalls, r.budget.maxEvalCalls ?? 0);
+      evalCallTruncated = evalCallTruncated || (r.budget.evalCallTruncated ?? false);
+      cycleTruncated = cycleTruncated || (r.budget.cycleTruncated ?? false);
+      loopTruncated = loopTruncated || (r.budget.loopTruncated ?? false);
+      for (const x of r.budget.reasons ?? []) reasons.add(x);
     }
   }
-  const budgetTruncated = callTruncated || forkTruncated;
+  const budgetTruncated = callTruncated || evalCallTruncated || forkTruncated || loopTruncated;
   return {
     version: 1,
     kind: "multi",
@@ -353,6 +405,12 @@ export function serializeCheckJsonMulti(reports: CheckJson[]): CheckJsonMulti {
             maxCalls,
             forks,
             maxForks,
+            evalCalls,
+            maxEvalCalls,
+            evalCallTruncated,
+            cycleTruncated,
+            loopTruncated,
+            reasons: [...reasons].sort(),
           },
         }
       : {}),
@@ -384,14 +442,23 @@ export function formatCheckReport(r: CheckReport, opts: { verbose?: boolean } = 
 
   // A2：预算截断必须上屏——用户要能知道结果何时被 widen
   if (r.budget?.truncated) {
+    const onlyLoop =
+      r.budget.loopTruncated &&
+      !r.budget.callTruncated &&
+      !r.budget.evalCallTruncated &&
+      !r.budget.forkTruncated;
     lines.push("");
     lines.push("budget");
     lines.push(
-      `  truncated  calls ${r.budget.calls}/${r.budget.maxCalls} · forks ${r.budget.forks}/${r.budget.maxForks}` +
-        `${r.budget.callTruncated ? "  (calls)" : ""}${r.budget.forkTruncated ? "  (forks)" : ""}`,
+      `  truncated  calls ${r.budget.calls}/${r.budget.maxCalls} · eval calls ${r.budget.evalCalls}/${r.budget.maxEvalCalls} · forks ${r.budget.forks}/${r.budget.maxForks}` +
+        `${r.budget.callTruncated ? "  (calls)" : ""}${r.budget.evalCallTruncated ? "  (eval calls)" : ""}${r.budget.forkTruncated ? "  (forks)" : ""}${r.budget.loopTruncated ? "  (loop iters)" : ""}`,
     );
     lines.push(
-      `  → some results widened to unknown (not a contract failure) — raise nudo.analysis.maxForks / simplify recursion`,
+      r.budget.cycleTruncated
+        ? `  → some results widened to unknown (not a contract failure) — includes call cycles (same abstract args; a budget cannot lift them)`
+        : onlyLoop
+          ? `  → loop state widened (iteration budget, not a contract failure) — @nudo:budget does not apply; make the bound data-dependent or pin with @nudo:case / @nudo:contract`
+          : `  → some results widened to unknown (not a contract failure) — raise @nudo:budget / nudo.analysis.maxForks or simplify recursion`,
     );
   }
 
