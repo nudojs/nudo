@@ -25,7 +25,7 @@ Only the fork budget is adjustable (`NUDO_MAX_FORKS` env wins over `nudo.analysi
 
 ### When truncation fires — and what to do
 
-**`nudo:recursion-truncated`** — the call budget (depth 64 or 20,000 total entries) ran out; affected results widen. **`nudo:fork-truncated`** — the branch-expansion budget ran out; affected results widen (**warning**). Both are visible in `nudo check` / `nudo test` output — truncation never degrades results silently.
+**`nudo:recursion-truncated`** — recursive evaluation was cut short; affected results widen. The `reason` field (`check --json`) and the message distinguish **why**: `cycle` means a call with the *same abstract arguments* was already on the evaluation stack — a call cycle, which **no budget can lift** (make the arguments vary per level, narrow the base case, or declare `@nudo:contract`); `depth` / `calls` means the call budget (depth 64 / 20,000 total entries) actually ran out — `@nudo:budget depth=… / calls=…` on the function can raise it. **`nudo:fork-truncated`** — the branch-expansion budget ran out; affected results widen (**warning**). Both are visible in `nudo check` / `nudo test` output — truncation never degrades results silently.
 
 Three levers, in the order worth trying:
 

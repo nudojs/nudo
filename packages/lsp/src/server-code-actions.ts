@@ -274,6 +274,7 @@ connection.onCodeAction((params) => {
       expected?: string;
       actual?: string;
       suggestion?: string;
+      reason?: string;
       actions?: CheckAction[];
     };
     const fn = data.fn;
@@ -284,6 +285,7 @@ connection.onCodeAction((params) => {
         fn,
         expected: data.expected,
         suggestion: data.suggestion,
+        reason: data.reason,
       });
     const sidecarPath = sidecarPathOf(filePath);
     const sidecarText = (() => {
@@ -316,6 +318,7 @@ connection.onCodeAction((params) => {
           throwsKind,
           expected: data.expected,
           suggestion: data.suggestion,
+          reason: data.reason,
         });
       } catch {
         continue;

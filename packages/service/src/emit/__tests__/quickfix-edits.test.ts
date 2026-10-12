@@ -61,6 +61,23 @@ export function f(n) {
     expect(next).toContain("fn({ range: string() }");
   });
 
+  it("#158 recursion-truncated: @nudo:budget quickfix only for budget reasons (not cycle)", () => {
+    const src = `export function sameArgs(x) { sameArgs(x); return x; }\n`;
+    const base = {
+      code: "nudo:recursion-truncated",
+      fn: "sameArgs",
+      file: "/t/a.js",
+      source: src,
+      sidecarPath: "/t/a.nudo.js",
+      action: { kind: "info", label: "raise budget" } as const,
+    };
+    const budgetPlan = materializeAction({ ...base, reason: "depth" });
+    expect(budgetPlan).toBeDefined();
+    expect(budgetPlan!.title).toContain("@nudo:budget");
+    // cycle 归因：抬预算解不开，不得提供该 quickfix
+    expect(materializeAction({ ...base, reason: "cycle" })).toBeUndefined();
+  });
+
   it("materialize entry-may-throw draft: source body-read is enough (no empty shape)", () => {
     // 诊断未带 body-read 时仍可从源码用法推断并生成 shape（非 command-only）
     const src = `export function staticName(node) {

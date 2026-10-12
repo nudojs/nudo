@@ -16,7 +16,15 @@ import { setHostGlobalCallBridge, validateCallableArg } from "../hof.ts";
 import { throwPayloadOf, recordMayThrow, errorTypeAbs } from "./may-throw.ts";
 import { NudoThrow } from "./nudo-throw.ts";
 import { pureFnNameOf, makeAbsApplyResult, type AbsApplyResult } from "../abs-fn.ts";
-import { noteAbsTruncation, callBudgetKey, resetEvalForkBudget, noteHostEffectBlocked } from "../call-budget.ts";
+import {
+  noteAbsTruncation,
+  callBudgetKey,
+  resetEvalForkBudget,
+  resetEvalForkCount,
+  noteHostEffectBlocked,
+  registerEvalCallBudgetProbe,
+  type AbsTruncationReason,
+} from "../call-budget.ts";
 import {
   tagAbsOrigin,
   pushCallLoc,
@@ -443,6 +451,31 @@ let evalTotalCallsLimit = MAX_EVAL_TOTAL_CALLS;
 const evalFnCallIds = new WeakMap<object, string>();
 let evalFnCallIdSeq = 0;
 
+// --- B 调用预算可观测累计（issue #158）-------------------------------------
+// 会话（enterEvalCallBudgetSession 最外层）重置预算计数 depth/totalCalls/
+// activeKeys，但**不**重置这三个：check --json 的 budget 块要反映整个宿主
+// 入口（一次 check 内 generalize / tryRunTranspiled 会开多个会话），否则
+// `truncated:false` 与 nudo:recursion-truncated 共存自相矛盾。
+// 宿主入口清零路径 = resetAbsCallBudget（经探针）与 resetEvalCallBudget。
+let evalObsCalls = 0;
+let evalObsCallTruncated = false;
+let evalObsCycleTruncated = false;
+
+// 探针注册（call-budget 反向 import 破环 → 注册式；本模块加载即生效）
+registerEvalCallBudgetProbe({
+  stats: () => ({
+    calls: evalObsCalls,
+    maxCalls: evalTotalCallsLimit,
+    callTruncated: evalObsCallTruncated,
+    cycleTruncated: evalObsCycleTruncated,
+  }),
+  resetObservability: () => {
+    evalObsCalls = 0;
+    evalObsCallTruncated = false;
+    evalObsCycleTruncated = false;
+  },
+});
+
 function evalStableId(obj: object): string {
   let id = evalFnCallIds.get(obj);
   if (id === undefined) {
@@ -460,6 +493,10 @@ export function resetEvalCallBudget(): void {
   evalBudgetSessionDepth = 0;
   evalCallDepthLimit = MAX_EVAL_CALL_DEPTH;
   evalTotalCallsLimit = MAX_EVAL_TOTAL_CALLS;
+  // 观测累计同轮生命周期（与 resetAbsCallBudget 经探针的清零同口径）
+  evalObsCalls = 0;
+  evalObsCallTruncated = false;
+  evalObsCycleTruncated = false;
   // fork 总次数与调用预算同轮生命周期（不跨宿主入口累积）
   resetEvalForkBudget();
   // pure memo 同轮生命周期（宿主入口清零，防长驻进程无界膨胀）
@@ -498,7 +535,9 @@ export function enterEvalCallBudgetSession(): void {
     evalCallDepth = 0;
     evalTotalCalls = 0;
     evalActiveCallKeys = [];
-    resetEvalForkBudget();
+    // 只清 fork 预算计数（新会话拿满额度）；截断旗标/观测累计 latch 到
+    // 宿主入口（#158：stats 不得与已上报诊断矛盾）
+    resetEvalForkCount();
   }
   evalBudgetSessionDepth++;
 }
@@ -536,21 +575,29 @@ function evalCallBudgetKey(name: string, fn: unknown, args: Abs[]): string {
   return callBudgetKey(name, id, args);
 }
 
-/** 进入命名调用：超限/cycle → 不执行，返回 opaque（并上报截断）。
- *  $new 的宿主函数 [[Construct]] 体执行共用（Bug 16，递归构造深度守卫）。 */
+/** 进入命名调用：cycle/超限 → 不执行，返回 opaque（并上报截断）。
+ *  $new 的宿主函数 [[Construct]] 体执行共用（Bug 16，递归构造深度守卫）。
+ *  归因（#158）：cycle=同 name+arg 指纹已在栈上（预算抬不动），先于
+ *  depth/calls 判定——与守卫的短路顺序一致。 */
 export function evalEnterCall(name: string, fn: unknown, args: Abs[]): { ok: boolean; key?: string } {
   const key = evalCallBudgetKey(name, fn, args);
-  if (
-    evalActiveCallKeys.includes(key) ||
-    evalCallDepth >= evalCallDepthLimit ||
-    evalTotalCalls >= evalTotalCallsLimit
-  ) {
-    noteAbsTruncation(name);
+  const reason: AbsTruncationReason | undefined = evalActiveCallKeys.includes(key)
+    ? "cycle"
+    : evalCallDepth >= evalCallDepthLimit
+      ? "depth"
+      : evalTotalCalls >= evalTotalCallsLimit
+        ? "calls"
+        : undefined;
+  if (reason) {
+    evalObsCallTruncated = true;
+    if (reason === "cycle") evalObsCycleTruncated = true;
+    noteAbsTruncation(name, reason);
     return { ok: false };
   }
   evalActiveCallKeys.push(key);
   evalCallDepth++;
   evalTotalCalls++;
+  evalObsCalls++;
   return { ok: true, key };
 }
 

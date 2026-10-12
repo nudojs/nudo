@@ -264,7 +264,12 @@ Context: [Evaluator gaps](../concepts/limits.md#evaluator-gaps-summary)
 
 ### `nudo:recursion-truncated` {#nudo-recursion-truncated}
 
-Recursion budget hit; result widened. Budget knobs and what to do: [Performance](../guides/performance.md).
+Recursive evaluation was cut short; the result widened to `unknown#opaque`. The message — and the `reason` field in `check --json` — tells you **which kind**:
+
+- **`cycle`** — a call with the *same abstract arguments* was already on the evaluation stack (data-dependent self/mutual recursion, e.g. `walk(dir, out)` recursing on `(dir, out)`). This is **not a budget**: raising `@nudo:budget` cannot lift it. Make the recursion arguments vary per level, narrow the base case, or declare `@nudo:contract`.
+- **`depth` / `calls`** — the call budget (depth 64 / 20,000 total entries) ran out. Raising `@nudo:budget depth=… / calls=…` on the function can help; otherwise restructure the recursion.
+
+Budget knobs and what to do: [Performance](../guides/performance.md).
 
 Context: [Analysis budgets](../guides/performance.md#analysis-budgets)
 

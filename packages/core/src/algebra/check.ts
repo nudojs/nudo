@@ -21,6 +21,7 @@ import {
   MATH_FOLD_ERROR_LABEL,
   PROMISE_MICRO_OVERFLOW_LABEL,
   PROMISE_MICRO_ERROR_LABEL,
+  type AbsTruncationReason,
 } from "./call-budget.ts";
 import type { AbsAssignRecord, AbsCallRecord } from "./ast-records.ts";
 import { leqAbs } from "./leq.ts";
@@ -220,10 +221,16 @@ function checkSourceInScope(
       ? [...new Set([...depsFp.paths, normPath(sidecarPathOf(callOpts.fromFile))])]
       : depsFp.paths;
 
-  // 递归截断：与 TypeValue 的 nudo:recursion-truncated 对齐
-  const truncated = new Set<string>();
+  // 递归截断：与 TypeValue 的 nudo:recursion-truncated 对齐。
+  // label → 截断原因集（#158）：cycle（同抽象实参已在栈上）与 depth/calls
+  // （真预算）分流——前者抬 @nudo:budget 无效，报预算只会误导排查。
+  const truncated = new Map<string, Set<AbsTruncationReason>>();
   resetAbsCallBudget();
-  const prevTrunc = setAbsTruncationCollector((label) => truncated.add(label));
+  const prevTrunc = setAbsTruncationCollector((label, reason) => {
+    const reasons = truncated.get(label) ?? new Set<AbsTruncationReason>();
+    if (reason) reasons.add(reason);
+    truncated.set(label, reasons);
+  });
   try {
     // #123 fix B：调用边界契约面——同文件按名 resolver（$callNamed 消费）+
     // 跨模块桥接 Abs fn 预挂面（$call 消费）。安装在本 check 的动态范围内：
@@ -502,7 +509,7 @@ function checkSourceInner(
   issues: CheckIssue[],
   signatures: NudoSig[],
   names: string[],
-  truncated: Set<string>,
+  truncated: Map<string, Set<AbsTruncationReason>>,
   identityOpts: CheckOptions = opts,
   depsFp?: LoadDepsFingerprint,
   sidecarFp?: string,
@@ -905,7 +912,7 @@ function checkSourceInner(
     }
   }
 
-  for (const label of truncated) {
+  for (const [label, reasons] of truncated) {
     // fork/递归截断 = **预算观测**（A2），不是质量失败——降为 info，避免 agent 绿后空转
     if (label === FORK_TRUNCATION_LABEL) {
       issues.push({
@@ -961,12 +968,26 @@ function checkSourceInner(
       });
       continue;
     }
+    // 调用截断归因（#158）：全是 cycle → 「调用环」文案（抬预算无效）；
+    // 否则按 depth/calls 指明可抬的预算维。reasons 为空 = 非调用截断标签
+    // （如 #loop-iterations）沿用预算口径。
+    const allCycle = reasons.size > 0 && [...reasons].every((r) => r === "cycle");
+    const depth = reasons.has("depth");
+    const calls = reasons.has("calls");
     issues.push({
       severity: "info",
       code: "nudo:recursion-truncated",
-      message: `Recursive evaluation of '${label}' was truncated (depth/size budget); result widened to unknown#opaque (budget — not inference debt)`,
-      suggestion:
-        "raise the function budget with @nudo:budget calls=… depth=… (or narrow the recursion base case / declare @nudo:contract return)",
+      message: allCycle
+        ? `Recursive evaluation of '${label}' hit a call cycle (same abstract arguments already on the stack); result widened to unknown#opaque (cycle — budget cannot lift this)`
+        : `Recursive evaluation of '${label}' was truncated (${depth && calls ? "depth/size budget" : depth ? "call-depth budget" : calls ? "total-calls budget" : "depth/size budget"}); result widened to unknown#opaque (budget — not inference debt)`,
+      suggestion: allCycle
+        ? "a call cycle is not a budget: make the recursion arguments vary per level, narrow the base case, or declare @nudo:contract — raising @nudo:budget will not change this"
+        : depth && !calls
+          ? "raise the function budget with @nudo:budget depth=… (or narrow the recursion base case / declare @nudo:contract return)"
+          : calls && !depth
+            ? "raise the function budget with @nudo:budget calls=… (or narrow the recursion base case / declare @nudo:contract return)"
+            : "raise the function budget with @nudo:budget calls=… depth=… (or narrow the recursion base case / declare @nudo:contract return)",
+      reason: allCycle ? "cycle" : depth && calls ? "budget" : depth ? "depth" : calls ? "calls" : "budget",
       fn: label,
     });
   }
@@ -1096,6 +1117,8 @@ function checkSourceInner(
   const warnings = issues.filter((i) => i.severity === "warning").length;
   const infos = issues.filter((i) => i.severity === "info").length;
 
+  // 预算块 = 全量 stats（A 计数 + B 计数/截断旗标 + cycle/reasons 归因；
+  // #158：B 截断不进块会与 nudo:recursion-truncated 自相矛盾）
   const budget = getAbsCallBudgetStats();
   return {
     file: filePath,
@@ -1103,15 +1126,7 @@ function checkSourceInner(
     ok: errors === 0,
     signatures,
     summary: { errors, warnings, infos, functions: signatures.length },
-    budget: {
-      truncated: budget.truncated,
-      callTruncated: budget.callTruncated,
-      forkTruncated: budget.forkTruncated,
-      calls: budget.calls,
-      maxCalls: budget.maxCalls,
-      forks: budget.forks,
-      maxForks: budget.maxForks,
-    },
+    budget: { ...budget },
   };
 }
 

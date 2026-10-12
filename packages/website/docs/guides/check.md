@@ -105,8 +105,8 @@ issues
 | `nudo:builtin-unknown` | engine debt | warning | API not covered by env/inference (e.g. unmodeled global). Prefer `@nudo:env` / mock |
 | `nudo:opaque-result` | engine | info | Evaluation returned opaque / uninformative Abs |
 | `nudo:eval-error` | engine | error | Body evaluation threw during analysis |
-| `nudo:recursion-truncated` | engine | warning | Recursion budget hit; result widened |
-| `nudo:fork-truncated` | engine | warning | Branch-expansion (`$fork`) budget hit; result widened |
+| `nudo:recursion-truncated` | engine | info | Recursive evaluation cut short — `reason: cycle` (same abstract args on stack; a budget cannot lift it) or `depth`/`calls` (budget ran out) |
+| `nudo:fork-truncated` | engine | info | Branch-expansion (`$fork`) budget hit; result widened |
 | `nudo:host-effect-blocked` | engine | info | Host side-effect function (`fetch` / timers / …) not executed during analysis — result widened to `unknown#opaque`. Mock with `@nudo:mock` / `@nudo:env` |
 | `nudo:no-signature` | engine/L1 | warning | Function could not be generalized (CJS/anon forms still get L2 via entry fallback) |
 | `nudo:no-method` | engine | error (primitive receivers) / warning | Member access cannot resolve — ``Method 'x' does not exist on type 'T'``. Distinct from `nudo:unknown-recv` |

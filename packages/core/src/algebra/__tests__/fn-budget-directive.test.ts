@@ -78,9 +78,10 @@ export function f(x) {
     expect(getAbsCallBudgetStats().maxCalls).toBe(20_000);
   });
 
-  it("recursion-truncated suggestion mentions @nudo:budget", () => {
-    // 深递归 → 截断；suggestion 应指向函数级旋钮
-    const src = `
+  it("recursion-truncated suggestion follows the truncation reason (#158)", () => {
+    // 同实参自递归 → 调用环（cycle）：不得把用户引向抬预算；
+    // 实参逐层变化 + 深度封顶 → 真预算：指向函数级旋钮并指明维度
+    const cycSrc = `
 /**
  * @nudo:budget depth=2
  */
@@ -89,11 +90,28 @@ export function rec(n) {
 }
 rec(1);
 `;
-    const r = checkSource("/t/rec.js", src, pTrue, {});
-    const trunc = r.issues.find((i) => i.code === "nudo:recursion-truncated");
-    // 可能因 memo/求值路径不同不触发截断——触发时必须指向 @nudo:budget
-    if (trunc) {
-      expect(trunc.suggestion).toContain("@nudo:budget");
+    const cyc = checkSource("/t/rec-cycle.js", cycSrc, pTrue, {});
+    const cycTrunc = cyc.issues.find((i) => i.code === "nudo:recursion-truncated");
+    if (cycTrunc) {
+      expect(cycTrunc.reason).toBe("cycle");
+      expect(cycTrunc.suggestion).toContain("will not change this");
+    }
+
+    const depthSrc = `
+/**
+ * @nudo:budget depth=2
+ */
+export function down(n) {
+  if (n <= 0) { return 0; }
+  return down(n - 1);
+}
+down(9);
+`;
+    const dep = checkSource("/t/rec-depth.js", depthSrc, pTrue, {});
+    const depTrunc = dep.issues.find((i) => i.code === "nudo:recursion-truncated");
+    if (depTrunc) {
+      expect(depTrunc.reason).toBe("depth");
+      expect(depTrunc.suggestion).toContain("@nudo:budget depth=");
     }
   });
 });

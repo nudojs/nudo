@@ -264,7 +264,12 @@ Context: [求值器缺口](../concepts/limits.md#求值器缺口摘要)
 
 ### `nudo:recursion-truncated` {#nudo-recursion-truncated}
 
-递归预算用尽；结果拓宽。预算旋钮与修复：[性能：预算与分析缓存](../guides/performance.md)。
+递归求值被截断；结果拓宽为 `unknown#opaque`。文案——以及 `check --json` 的 `reason` 字段——指明**归因**：
+
+- **`cycle`** ——同**抽象实参**的调用已在求值栈上（数据依赖的自/互递归，如 `walk(dir, out)` 以 `(dir, out)` 递归自身）。这**不是预算**：抬 `@nudo:budget` 解不开。让递归实参逐层变化、收窄基例，或声明 `@nudo:contract`。
+- **`depth` / `calls`** ——调用预算（深度 64 / 总进入 20,000）用尽。抬函数上的 `@nudo:budget depth=… / calls=…` 有效；否则重构递归。
+
+预算旋钮与修复：[性能：预算与分析缓存](../guides/performance.md)。
 
 Context: [分析预算](../guides/performance.md#分析预算)
 
