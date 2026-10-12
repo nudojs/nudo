@@ -7,26 +7,28 @@
  */
 import { describe, it, expect } from "vitest";
 import { runCorpus, sectionsOf, newSkippedBodies, unexpectedMismatches } from "./harness.ts";
-import * as b14a from "./corpus/batch14a.ts";
-import * as b14b from "./corpus/batch14b.ts";
-import * as b14c from "./corpus/batch14c.ts";
-import * as b14d from "./corpus/batch14d.ts";
-import * as b14e from "./corpus/batch14e.ts";
-import * as b14f from "./corpus/batch14f.ts";
-import * as b15a from "./corpus/batch15a.ts";
-import * as b15b from "./corpus/batch15b.ts";
-import * as b15c from "./corpus/batch15c.ts";
-import * as b15d from "./corpus/batch15d.ts";
-import * as b16a from "./corpus/batch16a.ts";
-import * as b16b from "./corpus/batch16b.ts";
-import * as b16c from "./corpus/batch16c.ts";
-import * as b16d from "./corpus/batch16d.ts";
-import * as b17a from "./corpus/batch17a.ts";
-import * as b17b from "./corpus/batch17b.ts";
-import * as b18 from "./corpus/batch18-readprobes.ts";
-import * as b19 from "./corpus/batch19-method-early-return.ts";
-import * as b20 from "./corpus/batch20-transpile-adversarial.ts";
-import * as b21 from "./corpus/batch21-ctor-battery.ts";
+import {
+  batch14a as b14a,
+  batch14b as b14b,
+  batch14c as b14c,
+  batch14d as b14d,
+  batch14e as b14e,
+  batch14f as b14f,
+  batch15a as b15a,
+  batch15b as b15b,
+  batch15c as b15c,
+  batch15d as b15d,
+  batch16a as b16a,
+  batch16b as b16b,
+  batch16c as b16c,
+  batch16d as b16d,
+  batch17a as b17a,
+  batch17b as b17b,
+  batch18Readprobes as b18,
+  batch19MethodEarlyReturn as b19,
+  batch20TranspileAdversarial as b20,
+  batch21CtorBattery as b21,
+} from "./all-batches.ts";
 
 const FILES: Array<[string, Record<string, unknown>]> = [
   ["batch14a", b14a],

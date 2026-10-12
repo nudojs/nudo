@@ -2,22 +2,18 @@
  * @nudo:mock-module — module-level replacement into the modules map.
  * Full replace and partial `{ a, b }` overlay; fail-closed on missing mock.
  */
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
+import { describe, it, expect, beforeEach } from "vitest";
+import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { applyMockModuleDirectivesFromSource } from "../mock-module.ts";
 import type { AbsModuleExports } from "@nudojs/core";
 import { formatAbs, $call } from "@nudojs/core";
+import { tmpProject } from "./tmp-project.ts";
 
 let dir: string;
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "nudo-mock-mod-"));
-});
-
-afterEach(() => {
-  rmSync(dir, { recursive: true, force: true });
+  dir = tmpProject("nudo-mock-mod-");
 });
 
 function write(rel: string, body: string): string {

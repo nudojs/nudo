@@ -18,22 +18,8 @@
  * Array.at 的索引强制是 array 侧同族漏网点。
  */
 import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  litValue,
-  formatShape,
-  anyAbs,
-} from "../index.ts";
-
-function call(src: string, fnName = "f", args: Parameters<typeof callTranspiledExportFull>[2] = []) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, args);
-}
-
-function val(src: string) {
-  return litValue(call(src).result);
-}
+import { litValue, formatShape, anyAbs } from "../index.ts";
+import { call, val } from "./eval-helpers.ts";
 
 describe("String.prototype.at ToIntegerOrInfinity", () => {
   it("at() defaults to index 0", () => {

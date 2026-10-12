@@ -4,12 +4,8 @@
  * void 折叠为 $lit(undefined)，操作数整体丢失。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue, formatShape } from "@nudojs/core";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { litValue, formatShape } from "@nudojs/core";
+import { call } from "./eval-helpers.ts";
 
 describe("evaluator void operator", () => {
   it("void (n = 9) evaluates the assignment", () => {

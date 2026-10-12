@@ -1,6 +1,5 @@
-import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, it, expect } from "vitest";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   analyzeFile,
@@ -9,17 +8,12 @@ import {
   clearEvalCache,
 } from "@nudojs/service";
 import { formatShape, $lit, litValue } from "@nudojs/core";
-
-const dirs: string[] = [];
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
-});
+import { tmpProject } from "./tmp-project.ts";
 
 describe("evaluator require", () => {
   it("relative require injects Abs exports", () => {
     clearEvalCache();
-    const dir = mkdtempSync(join(tmpdir(), "nudo-req-"));
-    dirs.push(dir);
+    const dir = tmpProject("nudo-req-");
     writeFileSync(
       join(dir, "math.js"),
       `function double(x) { return x * 2; }\nexport { double };\n`,
@@ -42,8 +36,7 @@ export function go(n) {
 
   it("analyzeFile case works with require", () => {
     clearEvalCache();
-    const dir = mkdtempSync(join(tmpdir(), "nudo-req2-"));
-    dirs.push(dir);
+    const dir = tmpProject("nudo-req2-");
     writeFileSync(join(dir, "util.js"), `export function inc(x) { return x + 1; }\n`);
     const main = `
 const util = require("./util.js");
@@ -65,8 +58,7 @@ function go(n) {
 
   it("template / concat require specs resolve like string literals", () => {
     clearEvalCache();
-    const dir = mkdtempSync(join(tmpdir(), "nudo-req3-"));
-    dirs.push(dir);
+    const dir = tmpProject("nudo-req3-");
     writeFileSync(join(dir, "math.js"), `export function double(x) { return x * 2; }\n`);
     const main = `
 const a = require(\`./math.js\`);
@@ -87,8 +79,7 @@ export function go(n) {
 
   it("dynamic require degrades to unknown without crashing", () => {
     clearEvalCache();
-    const dir = mkdtempSync(join(tmpdir(), "nudo-req4-"));
-    dirs.push(dir);
+    const dir = tmpProject("nudo-req4-");
     const main = `
 /**
  * @nudo:case "t" ("./x.js")
@@ -108,8 +99,7 @@ export function go(spec) {
 
   it("optional require prefers the success side", () => {
     clearEvalCache();
-    const dir = mkdtempSync(join(tmpdir(), "nudo-req5-"));
-    dirs.push(dir);
+    const dir = tmpProject("nudo-req5-");
     writeFileSync(join(dir, "a.js"), `export function tag() { return "from-a"; }\n`);
     writeFileSync(join(dir, "b.js"), `export function tag() { return "from-b"; }\n`);
     const main = `

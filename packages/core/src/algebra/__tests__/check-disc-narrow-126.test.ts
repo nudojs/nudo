@@ -20,6 +20,7 @@ import { describe, it, expect } from "vitest";
 import { checkSource, pTrue, string, shape, union, litC as lit, nullable, array, formatAbs } from "@nudojs/core";
 import { constraintToEntryAbs, derefConstraint, transpile } from "@nudojs/core";
 import { $narrowMemberEq } from "../exec/runtime/async.ts";
+import { l2Count, sigOf, sidecarOpts } from "./nudo-constraints.ts";
 
 /** 不相交判别联合（TS 判别联合正典形态：两 lit 臂，无 string() 尾臂） */
 const DISJOINT_SRC = `
@@ -41,25 +42,10 @@ const CATCHALL_SRC = DISJOINT_SRC.replace(
 
 const IMP = `/// @nudo:import { nodeParam } from "./std126.nudo.js"\n`;
 
-const opts = {
-  loadModule: (spec: string) => (spec.includes("std126") ? DISJOINT_SRC : undefined),
-  fromFile: "/test/file.js",
-};
+const opts = sidecarOpts("std126", DISJOINT_SRC);
 
 function check(src: string, sidecar: string = DISJOINT_SRC) {
-  return checkSource("/t/disc-narrow-126.js", IMP + src, pTrue, {
-    ...opts,
-    loadModule: (spec: string) => (spec.includes("std126") ? sidecar : undefined),
-  });
-}
-
-/** L2 entry-may-throw 数（按函数名过滤可选） */
-function l2Count(r: ReturnType<typeof check>, fn?: string): number {
-  return r.issues.filter((i) => i.code === "nudo:entry-may-throw" && (!fn || i.fn === fn)).length;
-}
-
-function sigOf(r: ReturnType<typeof check>, fn: string): string {
-  return r.signatures.find((s) => s.name === fn)?.display ?? "(missing)";
+  return checkSource("/t/disc-narrow-126.js", IMP + src, pTrue, sidecarOpts("std126", sidecar));
 }
 
 const CONTRACT = `/**

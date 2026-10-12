@@ -1,17 +1,11 @@
-import { it, expect, describe, afterAll } from "vitest";
+import { it, expect, describe } from "vitest";
 import { analyzeFile, clearEvalCache } from "@nudojs/service";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-
-const dirs: string[] = [];
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
-});
+import { tmpProject } from "./tmp-project.ts";
 
 function analyze(src: string, file = "index.js") {
-  const dir = mkdtempSync(join(tmpdir(), "nudo-hosted-"));
-  dirs.push(dir);
+  const dir = tmpProject("nudo-hosted-");
   writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "hosted", version: "1.0.0" }));
   const p = join(dir, file);
   writeFileSync(p, src);
@@ -38,8 +32,7 @@ export function scale(x) {
   });
 
   it("import + top-level call still yields call@ cases", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-hosted2-"));
-    dirs.push(dir);
+    const dir = tmpProject("nudo-hosted2-");
     writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "h2", version: "1.0.0" }));
     writeFileSync(
       join(dir, "util.js"),

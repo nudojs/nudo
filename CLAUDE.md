@@ -89,6 +89,7 @@ Product CLI lives in `packages/nudojs` (published as `nudojs`, bin `nudo`). The 
 - Package `exports` point to `./dist/*` built output (tsup); `files: ["dist"]` on published packages
 - No ESLint/Prettier — linting is type-checking only (`tsc --noEmit`)
 - Tests live in `__tests__/` dirs alongside source, named `*.test.ts`
+- Test harness is shared per package — don't re-inline copies in test files: core `__tests__/eval-helpers.ts` (call/isNever/throwsError/effects) + `nudo-constraints.ts` (l2Count/sigOf/issuesOf/makeFiles/sidecarOpts), service `__tests__/tmp-project.ts` + `emit/__tests__/fixtures.ts`, nudojs `__tests__/helpers/run-cli.ts`, lsp `__tests__/helpers.ts`, core `__tests__/differential/all-batches.ts`
 - Test files use `describe`/`it`/`expect` from vitest
 - Versioning via @changesets/cli with public access, base branch `main`
 

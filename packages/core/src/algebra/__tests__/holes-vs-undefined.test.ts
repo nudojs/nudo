@@ -5,17 +5,8 @@
  * 互相 leq 通过——结构同一性与可赋值性双双假精确。
  */
 import { describe, it, expect } from "vitest";
-import {
-  abs,
-  lit,
-  numLit,
-  formatShape,
-  formatAbs,
-  absShapeKey,
-  leqAbs,
-  runTranspiled,
-  callTranspiledExportFull,
-} from "../index.ts";
+import { abs, lit, numLit, formatShape, formatAbs, absShapeKey, leqAbs } from "../index.ts";
+import { call } from "./eval-helpers.ts";
 
 function undefLit() {
   return abs({ k: "unknown" }, lit(undefined), undefined, "exact");
@@ -37,11 +28,6 @@ function denseArr() {
     undefined,
     "exact",
   );
-}
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
 }
 
 describe("array holes vs explicit undefined", () => {

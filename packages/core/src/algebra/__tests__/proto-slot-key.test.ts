@@ -18,16 +18,8 @@
  *   null-proto 目标无 setter → 自有数据属性
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue, formatAbs } from "@nudojs/core";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
-
-function val(src: string) {
-  return litValue(call(src).result);
-}
+import { litValue, formatAbs } from "@nudojs/core";
+import { call, val } from "./eval-helpers.ts";
 
 function fmt(src: string) {
   return formatAbs(call(src).result);

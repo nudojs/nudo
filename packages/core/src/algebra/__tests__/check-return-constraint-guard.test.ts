@@ -12,19 +12,10 @@
  * （窄化按 fork 绑定集跳过）都不得漏。
  */
 import { describe, it, expect } from "vitest";
-import { checkSource, pTrue } from "../index.ts";
-import { withStdImport, stdOpts } from "./nudo-constraints.ts";
-
-function issuesOf(src: string) {
-  return checkSource("/t/ret-guard.js", withStdImport(src), pTrue, stdOpts);
-}
-
-function errorsOf(src: string) {
-  return issuesOf(src).issues.filter((i) => i.severity === "error");
-}
+import { issuesOf, errorsOf } from "./nudo-constraints.ts";
 
 function retViolations(src: string) {
-  return errorsOf(src).filter((i) => i.code === "nudo:constraint-violated");
+  return errorsOf(src, "/t/ret-guard.js").filter((i) => i.code === "nudo:constraint-violated");
 }
 
 describe("Bug 1: 守卫后普通变量返回（假阳 → 无 issue）", () => {

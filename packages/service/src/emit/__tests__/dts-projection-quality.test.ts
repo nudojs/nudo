@@ -1,15 +1,11 @@
-import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, it, expect } from "vitest";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { abs, num, str, bool, numLit, strLit, objOf, type Abs } from "@nudojs/core";
 import { absToTSType, generateDts } from "../dts-generator.ts";
-
-const dirs: string[] = [];
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
-});
+import { tupleSparse, tupleDense } from "./fixtures.ts";
+import { tmpProject } from "../../__tests__/tmp-project.ts";
 
 const arrOf = (element: Abs): Abs => abs({ k: "arr", element }, undefined, undefined, "exact");
 const tupleOf = (elements: Abs[], rest?: Abs): Abs =>
@@ -27,8 +23,7 @@ const optSlot = (value: Abs): Abs =>
   ({ shape: { k: "obj", slots: { f: { value, optional: true } } }, conf: "exact" }) as Abs;
 
 function tscNoEmit(dts: string): { ok: boolean; stderr: string } {
-  const dir = mkdtempSync(join(tmpdir(), "nudo-dts-q-"));
-  dirs.push(dir);
+  const dir = tmpProject("nudo-dts-q-");
   const p = join(dir, "mod.d.ts");
   writeFileSync(p, dts.endsWith("\n") ? dts : dts + "\n", "utf-8");
   try {
@@ -149,20 +144,8 @@ describe("absToTSType legality (E1)", () => {
   });
 
   it("hole-marked tuples stay tsc-clean and distinct from undefined slots (BUG-020)", () => {
-    const undefLit = (): Abs =>
-      abs({ k: "unknown" }, { op: "lit", value: undefined }, undefined, "exact");
-    const sparse = abs(
-      { k: "tuple", elements: [numLit(1), undefLit(), numLit(3)], holes: [1] },
-      undefined,
-      undefined,
-      "exact",
-    );
-    const dense = abs(
-      { k: "tuple", elements: [numLit(1), undefLit(), numLit(3)] },
-      undefined,
-      undefined,
-      "exact",
-    );
+    const sparse = tupleSparse();
+    const dense = tupleDense();
     const sparseTs = absToTSType(sparse);
     const denseTs = absToTSType(dense);
     expect(sparseTs).not.toBe(denseTs);

@@ -7,13 +7,13 @@
  *   平铺整对象绑定可用；绑内层平铺叶名仍 fail-closed（param-mismatch）。
  */
 import { describe, it, expect } from "vitest";
-import * as path from "node:path";
 import {
   formalParamsFromNodes,
   contractParamNameSet,
   locateContractParam,
   type FormalParam,
 } from "../param-surface.ts";
+import { makeFiles } from "./nudo-constraints.ts";
 import { parseSource } from "../parse-source.ts";
 import { checkSource, resetCheckSourceMemo } from "../check.ts";
 import { pTrue } from "../pred.ts";
@@ -30,16 +30,6 @@ function patternOf(formals: FormalParam[]) {
   const f = formals[0]!;
   if (f.kind !== "pattern") throw new Error("expected pattern param");
   return f;
-}
-
-function makeFiles(files: Record<string, string>) {
-  return {
-    loadModule: (spec: string, fromFile: string) => {
-      const dir = path.dirname(fromFile);
-      const joined = path.resolve(dir, spec);
-      return files[joined] ?? files[spec];
-    },
-  };
 }
 
 describe("#137 param-surface nested path collection", () => {

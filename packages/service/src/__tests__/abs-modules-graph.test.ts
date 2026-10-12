@@ -1,9 +1,8 @@
-import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, it, expect } from "vitest";
 import { join } from "node:path";
 import { evalAbsModuleGraph } from "@nudojs/service";
 import { runTranspiled, callTranspiledExportFull, litValue, numLit, type Abs } from "@nudojs/core";
+import { tmpProject as makeTmpProject } from "./tmp-project.ts";
 
 /** 求值引擎驱动：runTranspiled（注入模块图）+ 导出调用（取代 analyzeFn 的求值面） */
 function analyzeExportWithModules(
@@ -16,21 +15,8 @@ function analyzeExportWithModules(
   return callTranspiledExportFull(run, fnName, args).result;
 }
 
-const dirs: string[] = [];
-
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
-});
-
 function tmpProject(files: Record<string, string>): string {
-  const dir = mkdtempSync(join(tmpdir(), "nudo-abs-mod-"));
-  dirs.push(dir);
-  for (const [rel, src] of Object.entries(files)) {
-    const p = join(dir, rel);
-    mkdirSync(join(p, ".."), { recursive: true });
-    writeFileSync(p, src, "utf-8");
-  }
-  return dir;
+  return makeTmpProject("nudo-abs-mod-", files);
 }
 
 describe("Abs module graph", () => {

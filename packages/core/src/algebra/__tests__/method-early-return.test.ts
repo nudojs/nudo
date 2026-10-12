@@ -4,12 +4,8 @@
  * 恒折 fall-through（假精确）。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue, $lit, transpile } from "@nudojs/core";
-
-function call(src: string, name: string, args: unknown[] = []) {
-  const run = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(run, name, args as never[]);
-}
+import { litValue, $lit, transpile } from "@nudojs/core";
+import { call } from "./eval-helpers.ts";
 
 const n0 = () => $lit(0);
 const n5 = () => $lit(5);

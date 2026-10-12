@@ -21,6 +21,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue } from "@nudojs/core";
+import { sigOf, sidecarOpts } from "./nudo-constraints.ts";
 
 /** issue #136 侧车形态：fn({ content: string() }, array(string())) */
 const NUDO_SRC = `
@@ -31,17 +32,10 @@ export const nodeShape = shape({ name: string().optional() });
 
 const IMP = `/// @nudo:import { contentShape, strArr, nodeShape } from "./std136.nudo.js"\n`;
 
-const opts = {
-  loadModule: (spec: string) => (spec.includes("std136") ? NUDO_SRC : undefined),
-  fromFile: "/test/file.js",
-};
+const opts = sidecarOpts("std136", NUDO_SRC);
 
 function check(src: string) {
   return checkSource("/t/regex-capture-narrow-136.js", IMP + src, pTrue, opts);
-}
-
-function sigOf(r: ReturnType<typeof check>, fn: string): string {
-  return r.signatures.find((s) => s.name === fn)?.display ?? "(missing)";
 }
 
 function l2Of(r: ReturnType<typeof check>, fn?: string) {

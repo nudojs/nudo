@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { validateText, type ValidateTextDeps } from "../validation.ts";
+import { validateText } from "../validation.ts";
 import type { LspDiagnostic } from "../validation.ts";
+import { makeValidateDeps } from "./helpers.ts";
 
 /**
  * LSP-G6：老客户端只消费 push（textDocument/publishDiagnostics），
@@ -9,11 +10,11 @@ import type { LspDiagnostic } from "../validation.ts";
 describe("push diagnostics face (LSP-G6)", () => {
   it("validateText always publishes via sendDiagnostics (no pull required)", async () => {
     const published: Array<{ uri: string; diagnostics: LspDiagnostic[] }> = [];
-    const deps: ValidateTextDeps = {
-      sendDiagnostics: (p) => {
+    const deps = makeValidateDeps({
+      onPublish: (p) => {
         published.push(p);
       },
-    };
+    });
     const src = `export function f(user) { return user.name; }\nf({});\n`;
     await validateText("/t/g6.js", "file:///t/g6.js", src, 1, deps, false, true);
     expect(published.length).toBeGreaterThan(0);
@@ -25,11 +26,11 @@ describe("push diagnostics face (LSP-G6)", () => {
 
   it("empty publish on clean file still fires (clears stale UI)", async () => {
     const published: Array<{ uri: string; diagnostics: LspDiagnostic[] }> = [];
-    const deps: ValidateTextDeps = {
-      sendDiagnostics: (p) => {
+    const deps = makeValidateDeps({
+      onPublish: (p) => {
         published.push(p);
       },
-    };
+    });
     // Bug 8（wave 3）：any 形参算术不再 clean（may TypeError）——clean 样本
     // 改用恒总 identity，本用例意图（clean 文件 → 空诊断 publish）不变。
     const src = `export function id(x) { return x; }\n`;

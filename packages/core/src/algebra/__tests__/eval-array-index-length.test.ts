@@ -15,18 +15,9 @@
  * 非法 length 硬抛 RangeError；2^32-1 起下标按 expando 处理（降 arr 防假精确）。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue, checkSource, pTrue } from "@nudojs/core";
+import { litValue, checkSource, pTrue } from "@nudojs/core";
 import { withStdImport, stdOpts } from "./nudo-constraints.ts";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
-
-function isNever(r: unknown): boolean {
-  const a = r as { shape?: { k?: string } };
-  return !!a && typeof a === "object" && a.shape?.k === "never";
-}
+import { call, isNever } from "./eval-helpers.ts";
 
 function throwsRangeError(t: unknown): boolean {
   const a = t as { shape?: { k?: string; name?: string } };

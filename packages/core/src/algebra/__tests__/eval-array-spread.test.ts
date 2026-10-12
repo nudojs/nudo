@@ -12,17 +12,8 @@
  * `[...5]` 不抛而折 [5]（原生 TypeError）。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue, unknown } from "@nudojs/core";
-
-function call(src: string, fnName = "f", args: unknown[] = []) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, args as never);
-}
-
-function isNever(r: unknown): boolean {
-  const a = r as { shape?: { k?: string } };
-  return !!a && typeof a === "object" && a.shape?.k === "never";
-}
+import { litValue, unknown } from "@nudojs/core";
+import { call, isNever } from "./eval-helpers.ts";
 
 function throwsTypeError(t: unknown): boolean {
   const a = t as { shape?: { k?: string; name?: string } };

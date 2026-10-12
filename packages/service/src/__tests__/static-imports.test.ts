@@ -1,13 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { collectStaticImports } from "../static-imports.ts";
+import { withTmpProject } from "./tmp-project.ts";
 
 describe("host static imports (not a bundler)", () => {
-  it("collects relative imports for type facts", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-imp-"));
-    try {
+  it("collects relative imports for type facts", () =>
+    withTmpProject("nudo-imp-", (dir) => {
       writeFileSync(
         join(dir, "math.js"),
         `export function add(a, b) { return a + b; }\nexport function scale(x) { return add(x, 1); }\n`,
@@ -23,22 +22,15 @@ describe("host static imports (not a bundler)", () => {
       expect(index.poly.get("double")?.display).toContain("double");
       const math = graph.get(join(dir, "math.js"))!;
       expect(math.poly.get("add")?.display).toContain("A1");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+    }));
 
-  it("skips bare specifiers (npm packages)", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-bare-"));
-    try {
+  it("skips bare specifiers (npm packages)", () =>
+    withTmpProject("nudo-bare-", (dir) => {
       writeFileSync(
         join(dir, "app.js"),
         `import lodash from "lodash";\nexport function f(x) { return x + 1; }\n`,
       );
       const graph = collectStaticImports(join(dir, "app.js"));
       expect(graph.size).toBe(1);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+    }));
 });

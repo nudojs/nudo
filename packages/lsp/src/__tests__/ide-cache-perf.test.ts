@@ -55,6 +55,7 @@ import {
   analysisCache,
 } from "../validation.ts";
 import { getHoverAtPosition, getCompletionsAtPosition } from "../lsp-surface.ts";
+import { createMockConnection } from "./helpers.ts";
 
 const SRC = `const greeting = "hi";
 export function f(x) { return greeting + x; }
@@ -136,67 +137,6 @@ describe("IDE high-frequency handlers reuse the analysis cache (P-IDE1)", () => 
 // ---------------------------------------------------------------------------
 // 协议面：mock connection 驱动真实 handler（server-protocol.test.ts 同款 harness）
 // ---------------------------------------------------------------------------
-
-type AnyHandler = (params: any) => any;
-
-function createMockConnection() {
-  const requests = new Map<string, AnyHandler>();
-  const notifications = new Map<string, AnyHandler>();
-  const consoleErrors: string[] = [];
-  const register =
-    (map: Map<string, AnyHandler>) =>
-    (method: string, handler: AnyHandler): { dispose: () => void } => {
-      map.set(method, handler);
-      return { dispose: () => map.delete(method) };
-    };
-  const byName = register(requests);
-  const byNotification = register(notifications);
-  const mock = {
-    onInitialize: (h: AnyHandler) => byName("initialize", h),
-    onExecuteCommand: (h: AnyHandler) => byName("workspace/executeCommand", h),
-    onRequest: (method: string, h: AnyHandler) => byName(method, h),
-    onHover: (h: AnyHandler) => byName("textDocument/hover", h),
-    onCompletion: (h: AnyHandler) => byName("textDocument/completion", h),
-    onCodeLens: (h: AnyHandler) => byName("textDocument/codeLens", h),
-    onSignatureHelp: (h: AnyHandler) => byName("textDocument/signatureHelp", h),
-    onCodeAction: (h: AnyHandler) => byName("textDocument/codeAction", h),
-    onDefinition: (h: AnyHandler) => byName("textDocument/definition", h),
-    onDocumentSymbol: (h: AnyHandler) => byName("textDocument/documentSymbol", h),
-    onPrepareRename: (h: AnyHandler) => byName("textDocument/prepareRename", h),
-    onReferences: (h: AnyHandler) => byName("textDocument/references", h),
-    onRenameRequest: (h: AnyHandler) => byName("textDocument/rename", h),
-    onWorkspaceSymbol: (h: AnyHandler) => byName("workspace/symbol", h),
-    onDidChangeWatchedFiles: (h: AnyHandler) =>
-      byNotification("workspace/didChangeWatchedFiles", h),
-    onDidChangeConfiguration: (h: AnyHandler) =>
-      byNotification("workspace/didChangeConfiguration", h),
-    onDidOpenTextDocument: (h: AnyHandler) => byNotification("textDocument/didOpen", h),
-    onDidChangeTextDocument: (h: AnyHandler) => byNotification("textDocument/didChange", h),
-    onDidCloseTextDocument: (h: AnyHandler) => byNotification("textDocument/didClose", h),
-    onDidSaveTextDocument: (h: AnyHandler) => byNotification("textDocument/didSave", h),
-    onWillSaveTextDocument: (h: AnyHandler) => byNotification("textDocument/willSave", h),
-    onWillSaveTextDocumentWaitUntil: (h: AnyHandler) =>
-      byNotification("textDocument/willSaveWaitUntil", h),
-    languages: {
-      diagnostics: { on: (h: AnyHandler) => byName("textDocument/diagnostic", h) },
-      inlayHint: { on: (h: AnyHandler) => byName("textDocument/inlayHint", h) },
-      semanticTokens: { on: (h: AnyHandler) => byName("textDocument/semanticTokens/full", h) },
-    },
-    sendDiagnostics: () => {},
-    sendRequest: () => Promise.resolve(undefined),
-    console: {
-      error: (msg: unknown) => consoleErrors.push(String(msg)),
-      warn: () => {},
-      log: () => {},
-      info: () => {},
-    },
-    listen: () => {},
-    requests,
-    notifications,
-    consoleErrors,
-  };
-  return mock;
-}
 
 describe("IDE handlers via protocol surface", () => {
   beforeEach(() => {

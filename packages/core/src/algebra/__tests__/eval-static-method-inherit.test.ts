@@ -7,12 +7,8 @@
  * findMethod 实例链同口径），两处共用。
  */
 import { describe, it, expect } from "vitest";
-import { type Abs, runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-
-function call(src: string, name: string, args: Abs[] = []) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, name, args);
-}
+import { litValue } from "@nudojs/core";
+import { call } from "./eval-helpers.ts";
 
 describe("Bug 18: static methods inherit along the superName chain", () => {
   it("class B extends A {} 的 B.m() → 1", () => {

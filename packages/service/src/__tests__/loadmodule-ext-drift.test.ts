@@ -3,26 +3,19 @@
  * 所有装载管线（load-module / 模块图 / 脏图边 / env 装载 / abs 局部绑定）解析到同一文件。
  * 三套扩展名表漂移曾导致 check 能装载、模块图侧报 missing。
  */
-import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, it, expect } from "vitest";
+import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { defaultLoadModule, moduleResolveCandidates, resolveModuleFile } from "../load-module.ts";
 import { defaultAbsLoadModule, evalAbsModuleGraph } from "../abs-modules-graph.ts";
 import { buildModuleGraph } from "../analyzer-module-load.ts";
 import { resolveLoadSpecPath } from "../env-path-deps.ts";
 import { resolveImportAbs } from "../analyzer-abs-eval.ts";
-
-const dirs: string[] = [];
-
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
-});
+import { tmpProject } from "./tmp-project.ts";
 
 /** 只有 `utils/index.ts`，无 utils.js / utils/index.js 的目录 fixture */
 function dirIndexFixture(): { dir: string; main: string; indexTs: string; src: string } {
-  const dir = mkdtempSync(join(tmpdir(), "nudo-ext-drift-"));
-  dirs.push(dir);
+  const dir = tmpProject("nudo-ext-drift-");
   mkdirSync(join(dir, "utils"), { recursive: true });
   const indexTs = join(dir, "utils", "index.ts");
   writeFileSync(indexTs, `export function pad(s: string): string { return "[" + s + "]"; }\n`, "utf-8");

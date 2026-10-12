@@ -13,23 +13,7 @@ import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface.t
 import { takeRefineDiags } from "../refine.ts";
 import { generalizeFromAst } from "../generalize.ts";
 import { formalParamSignatureNames, formalParamsFromNodes } from "../param-surface.ts";
-
-function makeFiles(files: Record<string, string>) {
-  const resolve = (from: string, spec: string): string => {
-    if (!spec.startsWith(".")) return spec;
-    const parts = from.split("/").slice(0, -1);
-    for (const seg of spec.split("/")) {
-      if (seg === "" || seg === ".") continue;
-      if (seg === "..") parts.pop();
-      else parts.push(seg);
-    }
-    return parts.join("/");
-  };
-  return {
-    loadModule: (spec: string, from: string): string | undefined =>
-      files[resolve(from, spec)],
-  };
-}
+import { makeFiles } from "./nudo-constraints.ts";
 
 describe("#64 P3 destructured param contracts render in signatures", () => {
   beforeEach(() => {

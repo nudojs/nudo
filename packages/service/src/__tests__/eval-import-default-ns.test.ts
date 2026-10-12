@@ -1,18 +1,12 @@
-import { it, expect, describe, afterAll } from "vitest";
+import { it, expect, describe } from "vitest";
 import { analyzeFile, clearEvalCache } from "@nudojs/service";
 import { litValue } from "@nudojs/core";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-
-const dirs: string[] = [];
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
-});
+import { tmpProject } from "./tmp-project.ts";
 
 function setup() {
-  const dir = mkdtempSync(join(tmpdir(), "nudo-imp-"));
-  dirs.push(dir);
+  const dir = tmpProject("nudo-imp-");
   writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "imp", version: "1.0.0" }));
   writeFileSync(
     join(dir, "util.js"),

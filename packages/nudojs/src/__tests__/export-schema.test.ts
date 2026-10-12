@@ -2,27 +2,10 @@
  * export — schema / dialect 命令面（Phase B）。
  */
 import { describe, it, expect } from "vitest";
-import { spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const cliEntry = fileURLToPath(new URL("../index.ts", import.meta.url));
-const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
-
-function runCli(args: string[]): { stdout: string; stderr: string; status: number } {
-  const r = spawnSync(
-    process.execPath,
-    [join(repoRoot, "node_modules/tsx/dist/cli.mjs"), cliEntry, ...args],
-    {
-      cwd: repoRoot,
-      encoding: "utf-8",
-      env: { ...process.env, NO_COLOR: "1", GITHUB_ACTIONS: "false" },
-    },
-  );
-  return { stdout: r.stdout ?? "", stderr: r.stderr ?? "", status: r.status ?? 1 };
-}
+import { runCliNode as runCli } from "./helpers/run-cli.ts";
 
 function writeFixture(dir: string, name: string, src: string): string {
   const p = join(dir, name);

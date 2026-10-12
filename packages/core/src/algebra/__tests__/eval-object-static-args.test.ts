@@ -14,30 +14,8 @@
  * hasOwn/getPrototypeOf 新增字面量折叠与 nullish 硬抛。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
-
-function isNever(r: unknown): boolean {
-  const a = r as { shape?: { k?: string } };
-  return !!a && typeof a === "object" && a.shape?.k === "never";
-}
-
-function throwsError(t: unknown, name: string): boolean {
-  const a = t as { shape?: { k?: string; name?: string } };
-  return !!a && typeof a === "object" && a.shape?.k === "brand" && a.shape.name === name;
-}
-
-function tupleEls(r: unknown): unknown[] | undefined {
-  const a = r as { shape?: { k?: string; elements?: unknown[] } };
-  if (!a || typeof a !== "object" || a.shape?.k !== "tuple") return undefined;
-  const els = a.shape.elements!.map((e) => { const r = litValue(e as never); return r.ok ? r.value : undefined; });
-  if (els.some((e) => e === undefined)) return undefined;
-  return els as unknown[];
-}
+import { litValue } from "@nudojs/core";
+import { call, isNever, throwsError, tupleEls } from "./eval-helpers.ts";
 
 describe("evaluator Object.keys/values/entries", () => {
   it("folds object slots", () => {

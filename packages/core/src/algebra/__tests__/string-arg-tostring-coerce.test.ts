@@ -11,20 +11,7 @@
  * ToString；搜索/分隔/替换与 parseInt 家族是同族漏网点。
  */
 import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  litValue,
-} from "../index.ts";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
-
-function val(src: string) {
-  return litValue(call(src).result);
-}
+import { val } from "./eval-helpers.ts";
 
 describe("startsWith / endsWith / includes ToString + missing args", () => {
   it("missing searchString folds like undefined", () => {

@@ -8,12 +8,8 @@
  * 的 catch 形参路径本就正确）。
  */
 import { describe, it, expect } from "vitest";
-import { type Abs, runTranspiled, callTranspiledExportFull, litValue, formatAbs, strLit } from "@nudojs/core";
-
-function call(src: string, name: string, args: Abs[] = []) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, name, args);
-}
+import { litValue, formatAbs, strLit } from "@nudojs/core";
+import { call } from "./eval-helpers.ts";
 
 describe("Bug 6: builtin throw payload catch param has name/message slots", () => {
   it('"a".includes(/a/) 的 catch 形参 e.name → "TypeError"', () => {

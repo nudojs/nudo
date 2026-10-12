@@ -10,11 +10,7 @@
 import { describe, it, expect } from "vitest";
 import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
 import { litValue, abs } from "../abs.ts";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { call } from "./eval-helpers.ts";
 
 describe("evaluator Object() boxing", () => {
   it("Object(number) is a boxed object", () => {

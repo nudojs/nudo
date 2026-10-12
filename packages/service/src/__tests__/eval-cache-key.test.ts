@@ -11,9 +11,9 @@ import {
 } from "@nudojs/service";
 import { callTranspiledExport } from "../eval-run.ts";
 import { litValue } from "@nudojs/core";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { tmpProject } from "./tmp-project.ts";
 
 afterEach(() => clearEvalCache());
 
@@ -138,17 +138,13 @@ describe("evalRunCache mode slots: analyze / exec 互不逐出", () => {
 });
 
 describe("tryRunEval/tryEvalCall loadModule passthrough", () => {
-  const dirs: string[] = [];
   afterEach(() => {
-    for (const d of dirs) rmSync(d, { recursive: true, force: true });
-    dirs.length = 0;
     clearEvalCache();
     clearAbsModuleCache();
   });
 
   it("in-memory loader content drives evaluation; depKey separates it from disk content", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-loader-pass-"));
-    dirs.push(dir);
+    const dir = tmpProject("nudo-loader-pass-");
     writeFileSync(join(dir, "dep.js"), `export const v = 100;\n`);
     const src = `import { v } from "./dep.js";\nexport function f() { return v + 1; }\n`;
     const file = join(dir, "main.js");

@@ -41,11 +41,7 @@ import {
   type MayThrowEffect,
 } from "../exec/may-throw.ts";
 import { STD_NUDO_SRC, stdOpts } from "./nudo-constraints.ts";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { call } from "./eval-helpers.ts";
 
 function fmt(a: unknown): string {
   return formatAbs(a as never)?.replace(/\s+#[a-z]+$/, "") ?? "";

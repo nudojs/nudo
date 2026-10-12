@@ -35,6 +35,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue } from "@nudojs/core";
+import { l2Count, sigOf, sidecarOpts } from "./nudo-constraints.ts";
 
 /** issue #118 三契约形态（optional 槽 / nullable 基名 / nullable 数组） */
 const NUDO_SRC = `
@@ -45,22 +46,10 @@ export const fileArray = nullable(array(string()));
 
 const IMP = `/// @nudo:import { reportShape, docShape, fileArray } from "./std118.nudo.js"\n`;
 
-const opts = {
-  loadModule: (spec: string) => (spec.includes("std118") ? NUDO_SRC : undefined),
-  fromFile: "/test/file.js",
-};
+const opts = sidecarOpts("std118", NUDO_SRC);
 
 function check(src: string) {
   return checkSource("/t/guard-narrow-fp-118.js", IMP + src, pTrue, opts);
-}
-
-/** L2 entry-may-throw 的 issue 数（按函数名过滤可选） */
-function l2Count(r: ReturnType<typeof check>, fn?: string): number {
-  return r.issues.filter((i) => i.code === "nudo:entry-may-throw" && (!fn || i.fn === fn)).length;
-}
-
-function sigOf(r: ReturnType<typeof check>, fn: string): string {
-  return r.signatures.find((s) => s.name === fn)?.display ?? "(missing)";
 }
 
 describe("#118 三守卫形态不再误报 entry-may-throw", () => {

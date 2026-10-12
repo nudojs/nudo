@@ -20,6 +20,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue } from "@nudojs/core";
+import { l2Count, sigOf, sidecarOpts } from "./nudo-constraints.ts";
 
 /** issue #120 侧车原文（astNode/staticName 逐字）；nodeParam/strOrNull 为指令绑定用的测试专用模板 */
 const NUDO_SRC = `
@@ -41,22 +42,10 @@ export const strOrNull = nullable(string());
 
 const IMP = `/// @nudo:import { nodeParam, strOrNull } from "./std120.nudo.js"\n`;
 
-const opts = {
-  loadModule: (spec: string) => (spec.includes("std120") ? NUDO_SRC : undefined),
-  fromFile: "/test/file.js",
-};
+const opts = sidecarOpts("std120", NUDO_SRC);
 
 function check(src: string) {
   return checkSource("/t/lazy-recursive-120.js", IMP + src, pTrue, opts);
-}
-
-/** L2 entry-may-throw 的 issue 数（按函数名过滤可选） */
-function l2Count(r: ReturnType<typeof check>, fn?: string): number {
-  return r.issues.filter((i) => i.code === "nudo:entry-may-throw" && (!fn || i.fn === fn)).length;
-}
-
-function sigOf(r: ReturnType<typeof check>, fn: string): string {
-  return r.signatures.find((s) => s.name === fn)?.display ?? "(missing)";
 }
 
 describe("#120 lazy 递归模板：issue 原型 staticName", () => {

@@ -29,11 +29,7 @@ import {
   setMayThrowCollector,
   type MayThrowEffect,
 } from "../exec/may-throw.ts";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { call } from "./eval-helpers.ts";
 
 /** 抽象 prim 实参调用：返回 { value, throws, effects }（formatAbs 渲染，conf 剥离） */
 function evalWithArgs(

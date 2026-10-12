@@ -4,33 +4,10 @@
  * migrate 只测 status（strip/verify/retire 有写副作用，不在 golden 范围）。
  */
 import { describe, it, expect } from "vitest";
-import { spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const root = fileURLToPath(new URL("../../../..", import.meta.url));
-const cli = join(root, "packages/nudojs/src/index.ts");
-const tsx = join(root, "node_modules/.bin/tsx");
-
-function runCli(
-  args: string[],
-  opts: { cwd: string },
-): { status: number; stdout: string; stderr: string } {
-  const r = spawnSync(tsx, [cli, ...args], {
-    cwd: opts.cwd,
-    encoding: "utf8",
-    // Force a stable face: CI runners set GITHUB_ACTIONS=true, which would
-    // append `::error` / `::warning` annotations and desync the snapshot.
-    env: { ...process.env, NO_COLOR: "1", GITHUB_ACTIONS: "false" },
-  });
-  return {
-    status: r.status ?? 1,
-    stdout: r.stdout ?? "",
-    stderr: r.stderr ?? "",
-  };
-}
+import { runCliTsx as runCli } from "./helpers/run-cli.ts";
 
 /** fixture 目录绝对路径（含 /private 解析）→ <DIR>，保证跨机器快照稳定 */
 function normalize(text: string, dir: string): string {

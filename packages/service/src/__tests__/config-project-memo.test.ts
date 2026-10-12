@@ -9,9 +9,8 @@
  * - 非 ENOENT（EACCES/…）= fail-closed：告警 + null（不猜根配置），
  *   memo 校验抛错按「已变化」回落重走，瞬态故障恢复后自愈。
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync, chmodSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { mkdirSync, writeFileSync, utimesSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import {
   findProjectConfig,
@@ -19,24 +18,15 @@ import {
   projectConfigMemoStats,
   interfaceConfig,
 } from "../evaluator/config.ts";
-
-const dirs: string[] = [];
+import { tmpProject } from "./tmp-project.ts";
 
 beforeEach(() => {
   evictProjectConfigMemo();
 });
 
-afterEach(() => {
-  while (dirs.length > 0) {
-    const d = dirs.pop()!;
-    rmSync(d, { recursive: true, force: true });
-  }
-});
-
 describe("findProjectConfig directory-chain memo (P-IDE3)", () => {
   it("memoizes the upward walk: repeated lookups hit without disk reads", () => {
-    const root = mkdtempSync(join(tmpdir(), "nudo-cfgmemo-hit-"));
-    dirs.push(root);
+    const root = tmpProject("nudo-cfgmemo-hit-");
     writeFileSync(
       join(root, "package.json"),
       JSON.stringify({ name: "m", nudo: { contract: { autoBind: false } } }),
@@ -58,8 +48,7 @@ describe("findProjectConfig directory-chain memo (P-IDE3)", () => {
   });
 
   it("package.json rewrite (mtime flip) invalidates and serves the new config", () => {
-    const root = mkdtempSync(join(tmpdir(), "nudo-cfgmemo-rew-"));
-    dirs.push(root);
+    const root = tmpProject("nudo-cfgmemo-rew-");
     const pkg = join(root, "package.json");
     writeFileSync(pkg, JSON.stringify({ name: "m", nudo: { contract: { autoBind: false } } }));
     const t0 = new Date(Date.now() - 60_000);
@@ -79,8 +68,7 @@ describe("findProjectConfig directory-chain memo (P-IDE3)", () => {
   });
 
   it("explicit eviction (clearAnalysisSessionCaches channel) forces a re-read", () => {
-    const root = mkdtempSync(join(tmpdir(), "nudo-cfgmemo-ev-"));
-    dirs.push(root);
+    const root = tmpProject("nudo-cfgmemo-ev-");
     writeFileSync(join(root, "package.json"), JSON.stringify({ name: "m", nudo: {} }));
     const src = join(root, "src");
     mkdirSync(src);
@@ -97,8 +85,7 @@ describe("findProjectConfig directory-chain memo (P-IDE3)", () => {
   });
 
   it("a package.json appearing in a previously-absent chain dir flips the memo (absent → present)", () => {
-    const root = mkdtempSync(join(tmpdir(), "nudo-cfgmemo-abs-"));
-    dirs.push(root);
+    const root = tmpProject("nudo-cfgmemo-abs-");
     const mid = join(root, "packages", "lib");
     const deep = join(mid, "src");
     mkdirSync(deep, { recursive: true });
@@ -117,8 +104,7 @@ describe("findProjectConfig directory-chain memo (P-IDE3)", () => {
   });
 
   it("null results are memoized too (no package.json anywhere)", () => {
-    const root = mkdtempSync(join(tmpdir(), "nudo-cfgmemo-null-"));
-    dirs.push(root);
+    const root = tmpProject("nudo-cfgmemo-null-");
     const deep = join(root, "x", "y");
     mkdirSync(deep, { recursive: true });
 
@@ -131,8 +117,7 @@ describe("findProjectConfig directory-chain memo (P-IDE3)", () => {
 
 describe("findProjectConfig stat-error taxonomy (#135)", () => {
   it("ENOENT is true absence: the walk continues upward and finds the parent config", () => {
-    const root = mkdtempSync(join(tmpdir(), "nudo-cfgstat-enoent-"));
-    dirs.push(root);
+    const root = tmpProject("nudo-cfgstat-enoent-");
     writeFileSync(
       join(root, "package.json"),
       JSON.stringify({ name: "m", nudo: { contract: { autoBind: false } } }),
@@ -156,8 +141,7 @@ const isRoot = typeof process.getuid === "function" && process.getuid() === 0;
  */
 describe.skipIf(isRoot)("findProjectConfig non-ENOENT stat failure (EACCES)", () => {
   function makeTree(): { root: string; locked: string; src: string } {
-    const root = mkdtempSync(join(tmpdir(), "nudo-cfgstat-eacces-"));
-    dirs.push(root);
+    const root = tmpProject("nudo-cfgstat-eacces-");
     // 根有 nudo 配置：旧实现把 EACCES 吞成「缺席」继续向上 → 静默继承
     // 根配置（假绿）。新语义必须 fail-closed 返回 null，不猜根配置。
     writeFileSync(
@@ -187,7 +171,7 @@ describe.skipIf(isRoot)("findProjectConfig non-ENOENT stat failure (EACCES)", ()
       expect(out).toContain(join(locked, "src", "package.json"));
     } finally {
       spy.mockRestore();
-      chmodSync(locked, 0o755); // 恢复，让 afterEach 的 rmSync 可清理
+      chmodSync(locked, 0o755); // 恢复，让 tmpProject 的 afterAll 清理可移除目录
     }
   });
 

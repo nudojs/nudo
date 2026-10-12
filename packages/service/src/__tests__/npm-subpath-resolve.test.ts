@@ -1,21 +1,15 @@
 /**
  * resolveNpmNudo 子路径要归一成 exports 键（./sub），不能带前导 /。
  */
-import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, it, expect } from "vitest";
+import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { resolveNpmNudo } from "../evaluator/resolve-npm.ts";
-
-const tmpDirs: string[] = [];
-afterAll(() => {
-  for (const d of tmpDirs) rmSync(d, { recursive: true, force: true });
-});
+import { tmpProject } from "./tmp-project.ts";
 
 describe("resolveNpmNudo subpath key", () => {
   it("resolves pkg/sub via exports['./sub']", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-npm-"));
-    tmpDirs.push(dir);
+    const dir = tmpProject("nudo-npm-");
     const pkgDir = join(dir, "node_modules", "pkg");
     mkdirSync(pkgDir, { recursive: true });
     writeFileSync(
@@ -31,8 +25,7 @@ describe("resolveNpmNudo subpath key", () => {
   });
 
   it("resolves pkg root via exports['.']", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-npm-"));
-    tmpDirs.push(dir);
+    const dir = tmpProject("nudo-npm-");
     const pkgDir = join(dir, "node_modules", "pkg");
     mkdirSync(pkgDir, { recursive: true });
     writeFileSync(

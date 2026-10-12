@@ -5,27 +5,21 @@
  * 2. 条件唯一出口挂在 browser 下 → pickExport 不得 miss
  * 3. 数组 fallback `["./miss.js", "./hit.js"]` → 命中 ./hit.js
  */
-import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, it, expect } from "vitest";
+import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import {
   resolveNpmJsEntry,
   resolveNpmJsEntryDetailed,
   resolveNpmNudo,
 } from "../evaluator/resolve-npm.ts";
-
-const tmpDirs: string[] = [];
-afterAll(() => {
-  for (const d of tmpDirs) rmSync(d, { recursive: true, force: true });
-});
+import { tmpProject } from "./tmp-project.ts";
 
 function makePkg(
   pkgJson: Record<string, unknown>,
   files: Record<string, string> = {},
 ): { dir: string; pkgDir: string } {
-  const dir = mkdtempSync(join(tmpdir(), "nudo-exports-"));
-  tmpDirs.push(dir);
+  const dir = tmpProject("nudo-exports-");
   const pkgDir = join(dir, "node_modules", "pkg");
   mkdirSync(pkgDir, { recursive: true });
   writeFileSync(join(pkgDir, "package.json"), JSON.stringify({ name: "pkg", ...pkgJson }));

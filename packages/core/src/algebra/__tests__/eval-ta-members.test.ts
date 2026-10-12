@@ -19,23 +19,9 @@
 import { describe, it, expect } from "vitest";
 // 相对路径引 src 引擎面（不经 @nudojs/core 别名——本 worktree 的 vite8
 // 别名解析会把裸包名落到 dist 旧产物，同 eval-ta-hofs.test.ts）。
-import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
 import { checkSource } from "../check.ts";
-import { litValue, anyAbs, type Abs } from "../abs.ts";
-import {
-  runWithMayThrowSession,
-  setMayThrowCollector,
-  type MayThrowEffect,
-} from "../may-throw.ts";
-
-function run(src: string, args: Abs[] = []) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, "f", args);
-}
-
-function val(src: string, args?: Abs[]) {
-  return litValue(run(src, args).result);
-}
+import { call, val, effects } from "./eval-helpers.ts";
+import { l2Count } from "./nudo-constraints.ts";
 
 /** 原生：定抛（try/catch 吸收后返回 "caught"） */
 function expectCaught(src: string) {
@@ -44,7 +30,7 @@ function expectCaught(src: string) {
 
 /** 定抛：无 try/catch 时 throws 面是相应 Error brand */
 function expectThrows(src: string, name: string) {
-  const r = run(src);
+  const r = call(src);
   const got = r.throws?.shape?.k === "brand"
     ? (r.throws as { shape: { name: string } }).shape.name
     : r.throws?.shape?.k;
@@ -53,27 +39,6 @@ function expectThrows(src: string, name: string) {
 
 function check(src: string) {
   return checkSource("/t/eval-ta-members.js", src);
-}
-
-/** L2 entry-may-throw issue 数 */
-function l2Count(r: ReturnType<typeof check>): number {
-  return r.issues.filter((i) => i.code === "nudo:entry-may-throw").length;
-}
-
-/** any 实参运行时效果（may-throw 收集器面） */
-function effects(src: string): string[] {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  const eff: MayThrowEffect[] = [];
-  runWithMayThrowSession(() => {
-    setMayThrowCollector((e) => eff.push(e));
-    try {
-      callTranspiledExportFull(exports, "f", [anyAbs]);
-    } catch {
-      /* 入口整抛：效果经 throws 面表达 */
-    }
-    setMayThrowCollector(null);
-  });
-  return [...new Set(eff.map((e) => e.kind))];
 }
 
 // ---------------------------------------------------------------------------
@@ -228,7 +193,7 @@ describe("Bug 38：new <TA>(n) 数字 length 入槽", () => {
   it("length 不入枚举视图（Object.keys / for-in 保持空）", () => {
     // Object.keys(ta) 折空 tuple（exact）——length 槽 enumerable:false +
     // TA 家族入 BUILTIN_BRAND_NO_ENUM_KEYS
-    const r = run(`export function f() { return Object.keys(new Uint8Array(8)); }`);
+    const r = call(`export function f() { return Object.keys(new Uint8Array(8)); }`);
     expect(r.result.shape.k).toBe("tuple");
     expect((r.result.shape as { elements: unknown[] }).elements.length).toBe(0);
     expect(val(`export function f() { const ks = []; for (const k in new Uint8Array(8)) { ks.push(k); } return ks.length; }`))

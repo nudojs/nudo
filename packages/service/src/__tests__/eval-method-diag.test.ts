@@ -1,20 +1,14 @@
-import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, it, expect } from "vitest";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { analyzeFile, clearEvalCache, tryEvalCallFull } from "@nudojs/service";
 import { $lit } from "@nudojs/core";
-
-const dirs: string[] = [];
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
-});
+import { tmpProject } from "./tmp-project.ts";
 
 describe("evaluator method-missing diagnostics", () => {
   it("records no-method on number receiver via B execution", () => {
     clearEvalCache();
-    const dir = mkdtempSync(join(tmpdir(), "nudo-md-"));
-    dirs.push(dir);
+    const dir = tmpProject("nudo-md-");
     const src = `
 export function badNum(n) {
   return n.toUpperCase();

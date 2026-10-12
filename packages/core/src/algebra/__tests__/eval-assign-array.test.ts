@@ -10,22 +10,8 @@
  * getter（与 obj 分支同口径）；frozen/sealed 新下标 strict TypeError。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
-
-function isNever(r: unknown): boolean {
-  const a = r as { shape?: { k?: string } };
-  return !!a && typeof a === "object" && a.shape?.k === "never";
-}
-
-function throwsError(t: unknown, name: string): boolean {
-  const a = t as { shape?: { k?: string; name?: string } };
-  return !!a && typeof a === "object" && a.shape?.k === "brand" && a.shape.name === name;
-}
+import { litValue } from "@nudojs/core";
+import { call, isNever, throwsError } from "./eval-helpers.ts";
 
 describe("evaluator Object.assign to array target", () => {
   it("numeric keys write indices and extend length", () => {

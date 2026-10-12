@@ -22,7 +22,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue, formatAbs, runTranspiled, callTranspiledExportFull } from "@nudojs/core";
-import { withStdImport, stdOpts } from "./nudo-constraints.ts";
+import { withStdImport, stdOpts, l2Count, sigOf } from "./nudo-constraints.ts";
 import { abs, num, str, anyAbs, unknown, numLit, type Abs } from "../abs.ts";
 import { objOf } from "../objects.ts";
 import { lit } from "../term.ts";
@@ -33,14 +33,6 @@ import { nullishGuardOf, typeGuardOf } from "../exec/transpile/stmt-predicates.t
 
 function check(src: string) {
   return checkSource("/t/throw-granularity.js", withStdImport(src), pTrue, stdOpts);
-}
-
-function l2Count(r: ReturnType<typeof check>, fn?: string): number {
-  return r.issues.filter((i) => i.code === "nudo:entry-may-throw" && (!fn || i.fn === fn)).length;
-}
-
-function sigOf(r: ReturnType<typeof check>, fn: string): string {
-  return r.signatures.find((s) => s.name === fn)?.display ?? "(missing)";
 }
 
 /** 引擎边界 may-throw 效果收集（判定层单测用） */

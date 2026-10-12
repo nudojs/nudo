@@ -18,17 +18,13 @@ import {
   setMayThrowCollector,
   type MayThrowEffect,
 } from "../may-throw.ts";
+import { call } from "./eval-helpers.ts";
 
 /** 无约束实参（may 档探针——缺省会把 x 绑成 undefined 字面量而走折叠面） */
 const anyAbs = abs({ k: "any" }, undefined, undefined, "path");
 
 /** 每例内建的 FCR 接收者（$new 空 brand 兜底产物，brand 名路由） */
 const MK = `const fcr = new FinalizationRegistry(() => {});`;
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
 
 /** result + throws + may-effects 三面（effects 去重 kind）；args 传入 f 的实参 */
 function evalAbs(

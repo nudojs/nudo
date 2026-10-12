@@ -13,16 +13,7 @@
  * 槽把「undefined→len」和「null→0」混成了同一个 ?? 缺省。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
-
-function val(src: string) {
-  return litValue(call(src).result);
-}
+import { val } from "./eval-helpers.ts";
 
 describe("String.prototype.substring end arg null vs undefined", () => {
   it("null end is ToIntegerOrInfinity 0, not omitted", () => {

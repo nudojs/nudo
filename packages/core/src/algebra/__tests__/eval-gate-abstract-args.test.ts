@@ -13,14 +13,10 @@ import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
 import { formatAbs } from "../format.ts";
 import { $lit } from "../exec/runtime/state.ts";
 import { runWithMayThrowSession, setMayThrowCollector, type MayThrowEffect } from "../may-throw.ts";
+import { l2Count } from "./nudo-constraints.ts";
 
 function check(src: string) {
   return checkSource("/t/gate-abstract-args.js", src);
-}
-
-/** L2 entry-may-throw 的 issue 数（按函数名过滤可选） */
-function l2Count(r: ReturnType<typeof check>, fn?: string): number {
-  return r.issues.filter((i) => i.code === "nudo:entry-may-throw" && (!fn || i.fn === fn)).length;
 }
 
 function evalSrc(

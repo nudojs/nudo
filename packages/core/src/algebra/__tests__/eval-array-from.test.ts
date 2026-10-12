@@ -6,12 +6,8 @@
  * Set/Map 走条目表、array-like 按 length 槽逐位调（元素 undefined）。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { litValue } from "@nudojs/core";
+import { call } from "./eval-helpers.ts";
 
 describe("evaluator Array.from mapFn", () => {
   it("invokes mapFn once per tuple element with index", () => {

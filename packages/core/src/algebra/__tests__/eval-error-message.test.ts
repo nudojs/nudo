@@ -14,12 +14,8 @@
  * undefined）；.errors/.cause 闭槽 miss 折 undefined（原生有值）。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { litValue } from "@nudojs/core";
+import { call } from "./eval-helpers.ts";
 
 describe("evaluator Error message slot is always a string", () => {
   it("string message passthrough", () => {

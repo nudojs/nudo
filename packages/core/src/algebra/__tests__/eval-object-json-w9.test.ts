@@ -29,45 +29,9 @@
 import { describe, it, expect } from "vitest";
 import { runTranspiled, callTranspiledExportFull, litValue, abs } from "@nudojs/core";
 import { runWithMayThrowSession, setMayThrowCollector, type MayThrowEffect } from "../may-throw.ts";
+import { call, isNever, throwsError, tupleEls, objSlots } from "./eval-helpers.ts";
 
 const anyAbs = abs({ k: "any" }, undefined, undefined, "path");
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
-
-function isNever(r: unknown): boolean {
-  const a = r as { shape?: { k?: string } };
-  return !!a && typeof a === "object" && a.shape?.k === "never";
-}
-
-function throwsError(t: unknown, name: string): boolean {
-  const a = t as { shape?: { k?: string; name?: string } };
-  return !!a && typeof a === "object" && a.shape?.k === "brand" && a.shape.name === name;
-}
-
-function tupleEls(r: unknown): unknown[] | undefined {
-  const a = r as { shape?: { k?: string; elements?: unknown[] } };
-  if (!a || typeof a !== "object" || a.shape?.k !== "tuple") return undefined;
-  const els = a.shape.elements!.map((e) => {
-    const rr = litValue(e as never);
-    return rr.ok ? rr.value : undefined;
-  });
-  if (els.some((e) => e === undefined)) return undefined;
-  return els as unknown[];
-}
-
-function objSlots(r: unknown): Record<string, unknown> | undefined {
-  const a = r as { shape?: { k?: string; slots?: Record<string, { value: unknown }> } };
-  if (!a || typeof a !== "object" || a.shape?.k !== "obj") return undefined;
-  const out: Record<string, unknown> = {};
-  for (const [k, s] of Object.entries(a.shape.slots ?? {})) {
-    const rr = litValue(s.value as never);
-    out[k] = rr.ok ? rr.value : undefined;
-  }
-  return out;
-}
 
 /** 源级求值（带 any 实参）：{ value, throws, effects } 三面 */
 function evalSrc(

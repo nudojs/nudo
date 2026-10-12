@@ -12,24 +12,7 @@ import { resetCheckSourceMemo } from "../check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { takeInterfaceDiags } from "../interface.ts";
 import { takeRefineDiags } from "../refine.ts";
-
-/** 虚拟文件系统 loader：相对 spec 按 fromFile 目录解析 */
-function makeFiles(files: Record<string, string>) {
-  const resolve = (from: string, spec: string): string => {
-    if (!spec.startsWith(".")) return spec;
-    const parts = from.split("/").slice(0, -1);
-    for (const seg of spec.split("/")) {
-      if (seg === "" || seg === ".") continue;
-      if (seg === "..") parts.pop();
-      else parts.push(seg);
-    }
-    return parts.join("/");
-  };
-  return {
-    loadModule: (spec: string, from: string): string | undefined =>
-      files[resolve(from, spec)],
-  };
-}
+import { makeFiles } from "./nudo-constraints.ts";
 
 describe("check × effectiveInterface 收口", () => {
   beforeEach(() => {

@@ -23,25 +23,18 @@ import { describe, it, expect } from "vitest";
 // 别名解析会把裸包名落到 dist 旧产物，同 eval-ta-hofs.test.ts）。
 import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
 import { checkSource } from "../check.ts";
-import { litValue, anyAbs, type Abs } from "../abs.ts";
+import { anyAbs, type Abs } from "../abs.ts";
 import { formatShape } from "../format.ts";
 import {
   runWithMayThrowSession,
   setMayThrowCollector,
   type MayThrowEffect,
 } from "../may-throw.ts";
-
-function run(src: string, args: Abs[] = []) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, "f", args);
-}
-
-function val(src: string, args?: Abs[]) {
-  return litValue(run(src, args).result);
-}
+import { call, val } from "./eval-helpers.ts";
+import { l2Count } from "./nudo-constraints.ts";
 
 function shape(src: string, args?: Abs[]) {
-  return formatShape(run(src, args).result);
+  return formatShape(call(src, "f", args).result);
 }
 
 /** try/catch 吸收后返回 "RangeError"（对齐报告矩阵行体） */
@@ -51,7 +44,7 @@ function expectCaughtRangeError(src: string) {
 
 /** 无 try/catch：入口 throws 面是 RangeError brand */
 function expectThrowsRangeError(src: string) {
-  const r = run(src);
+  const r = call(src);
   const name = r.throws?.shape?.k === "brand"
     ? (r.throws as { shape: { name: string } }).shape.name
     : r.throws?.shape?.k;
@@ -60,13 +53,6 @@ function expectThrowsRangeError(src: string) {
 
 function check(src: string) {
   return checkSource("/t/eval-dataview.js", src);
-}
-
-/** L2 entry-may-throw issue 数（按函数名过滤可选） */
-function l2Count(r: ReturnType<typeof check>, fn?: string): number {
-  return r.issues.filter(
-    (i) => i.code === "nudo:entry-may-throw" && (!fn || i.fn === fn),
-  ).length;
 }
 
 /** 运行时 may-throw 效果 kind 集（args 可传 anyAbs 或空） */
@@ -187,13 +173,13 @@ describe("Bug 35：构造器越界（byteOffset/byteLength 相对缓冲区）", 
     // null 仍走 ToIndex → 0（node 实测）
     expect(val(`export function f() { return new DataView(new ArrayBuffer(8), 2, null).byteLength; }`))
       .toEqual({ ok: true, value: 0 });
-    const r = run(`export function f() { return new DataView(new ArrayBuffer(8)); }`);
+    const r = call(`export function f() { return new DataView(new ArrayBuffer(8)); }`);
     expect(r.result.shape.k === "brand" && (r.result.shape as { name?: string }).name).toBe("DataView");
   });
 
   it("既有口径控制组：ToIndex 负偏移 / 非 buffer 接收者", () => {
     expectCaughtRangeError(caught(`new DataView(new ArrayBuffer(8), -1)`));
-    const t = run(`export function f() { return new DataView(1); }`).throws;
+    const t = call(`export function f() { return new DataView(1); }`).throws;
     expect(t?.shape?.k === "brand" && (t as { shape: { name?: string } }).shape.name).toBe("TypeError");
   });
 });

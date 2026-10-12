@@ -12,23 +12,7 @@ import { resetGeneralizeMemo } from "../generalize.ts";
 import { resetNudoModuleExecCache } from "../refine.ts";
 import { resetSidecarLoadFailureCache, takeInterfaceDiags } from "../interface.ts";
 import { takeRefineDiags } from "../refine.ts";
-
-function makeFiles(files: Record<string, string>) {
-  const resolve = (from: string, spec: string): string => {
-    if (!spec.startsWith(".")) return spec;
-    const parts = from.split("/").slice(0, -1);
-    for (const seg of spec.split("/")) {
-      if (seg === "" || seg === ".") continue;
-      if (seg === "..") parts.pop();
-      else parts.push(seg);
-    }
-    return parts.join("/");
-  };
-  return {
-    loadModule: (spec: string, from: string): string | undefined =>
-      files[resolve(from, spec)],
-  };
-}
+import { makeFiles } from "./nudo-constraints.ts";
 
 describe("#64 sidecar load failure dedup", () => {
   beforeEach(() => {

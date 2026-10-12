@@ -7,11 +7,11 @@
  * PublishDiagnosticsParams.version，宿主客户端据此丢弃陈旧发布）。
  */
 import { describe, it, expect } from "vitest";
-import { validateText, type ValidateTextDeps } from "../validation.ts";
+import { validateText } from "../validation.ts";
 import { clearValidationState } from "../validation.ts";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { makeValidateDeps, withTempDir } from "./helpers.ts";
 
 const SRC_V1 = `export function f(x) {
   return x;
@@ -25,8 +25,7 @@ const SRC_V2 = `export function f(x) {
 describe("validateText 文档 version 门（BUG-021）", () => {
   it("superseded 文档版本的慢分析不发布陈旧诊断", async () => {
     clearValidationState();
-    const dir = mkdtempSync(join(tmpdir(), "nudo-vgate-"));
-    try {
+    await withTempDir("nudo-vgate-", async (dir) => {
       const filePath = join(dir, "a.js");
       // 带相对导入：分析中段会经 deps.loadModule 取依赖（E5 路径）——
       // 用它做「慢分析进行中」的接缝，无需 mock 实现
@@ -39,8 +38,8 @@ describe("validateText 文档 version 门（BUG-021）", () => {
       // 文档跟踪器：version 可变（模拟宿主 didChange 实时更新）
       const doc = { uri, version: 1, getText: () => SRC_V1 };
       const sent: Array<{ uri: string; version?: number; n: number }> = [];
-      const deps: ValidateTextDeps = {
-        sendDiagnostics: (p) =>
+      const deps = makeValidateDeps({
+        onPublish: (p) =>
           sent.push({ uri: p.uri, version: p.version, n: p.diagnostics.length }),
         getOpenDocumentByPath: () => doc,
         loadModule: (spec) => {
@@ -52,7 +51,7 @@ describe("validateText 文档 version 门（BUG-021）", () => {
           }
           return `export function g(x) { return x; }`;
         },
-      };
+      });
 
       await validateText(filePath, uri, SRC_V1, 1, deps);
 
@@ -65,49 +64,41 @@ describe("validateText 文档 version 门（BUG-021）", () => {
       await validateText(filePath, uri, SRC_V2, 2, deps);
       expect(sent.length).toBe(1);
       expect(sent[0]!.version).toBe(2);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+    });
   });
 
   it("未变更文档的分析正常发布且带启动时 version", async () => {
     clearValidationState();
-    const dir = mkdtempSync(join(tmpdir(), "nudo-vgate2-"));
-    try {
+    await withTempDir("nudo-vgate2-", async (dir) => {
       const filePath = join(dir, "a.js");
       writeFileSync(filePath, SRC_V1);
       const uri = "file://" + filePath;
       const doc = { uri, version: 1, getText: () => SRC_V1 };
       const sent: Array<{ uri: string; version?: number }> = [];
-      const deps: ValidateTextDeps = {
-        sendDiagnostics: (p) => sent.push({ uri: p.uri, version: p.version }),
+      const deps = makeValidateDeps({
+        onPublish: (p) => sent.push({ uri: p.uri, version: p.version }),
         getOpenDocumentByPath: () => doc,
-      };
+      });
       await validateText(filePath, uri, SRC_V1, 1, deps);
       expect(sent.length).toBe(1);
       expect(sent[0]!.version).toBe(1);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+    });
   });
 
   it("无文档跟踪的宿主回落 generation-only 口径（照常发布）", async () => {
     clearValidationState();
-    const dir = mkdtempSync(join(tmpdir(), "nudo-vgate3-"));
-    try {
+    await withTempDir("nudo-vgate3-", async (dir) => {
       const filePath = join(dir, "a.js");
       writeFileSync(filePath, SRC_V1);
       const uri = "file://" + filePath;
       const sent: Array<{ uri: string; version?: number }> = [];
-      const deps: ValidateTextDeps = {
-        sendDiagnostics: (p) => sent.push({ uri: p.uri, version: p.version }),
+      const deps = makeValidateDeps({
+        onPublish: (p) => sent.push({ uri: p.uri, version: p.version }),
         // 宿主不提供文档跟踪 → 不加 version 门
-      };
+      });
       await validateText(filePath, uri, SRC_V1, 1, deps);
       expect(sent.length).toBe(1);
       expect(sent[0]!.version).toBe(1);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+    });
   });
 });

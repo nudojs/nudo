@@ -6,32 +6,17 @@
  * 读回消费。本文件钉住 CLI 全链：miss/命中/再命中 三轮输出逐字节一致。
  */
 import { describe, it, expect } from "vitest";
-import { spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const root = fileURLToPath(new URL("../../../..", import.meta.url));
-const cli = join(root, "packages/nudojs/src/index.ts");
-const tsx = join(root, "node_modules/.bin/tsx");
+import { runCliTsx } from "./helpers/run-cli.ts";
 
 function runCheck(
   file: string,
   cacheDir: string,
   args: string[] = [],
 ): { status: number; stdout: string; stderr: string } {
-  const r = spawnSync(tsx, [cli, "check", file, ...args], {
-    cwd: root,
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      NO_COLOR: "1",
-      GITHUB_ACTIONS: "false",
-      NUDO_CACHE_DIR: cacheDir,
-    },
-  });
-  return { status: r.status ?? 1, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
+  return runCliTsx(["check", file, ...args], { env: { NUDO_CACHE_DIR: cacheDir } });
 }
 
 describe("check disk-cache miss/hit rendering symmetry", () => {

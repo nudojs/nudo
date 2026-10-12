@@ -1,20 +1,12 @@
-import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, it, expect } from "vitest";
+import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { shouldAnalyzeFile } from "../analysis-scope.ts";
 import { analysisConfig, type AnalysisConfig } from "../evaluator/config.ts";
-
-const dirs: string[] = [];
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
-});
+import { tmpProject as makeTmpProject } from "./tmp-project.ts";
 
 function tmpProject(pkg: Record<string, unknown>): string {
-  const dir = mkdtempSync(join(tmpdir(), "nudo-scope-"));
-  dirs.push(dir);
-  writeFileSync(join(dir, "package.json"), JSON.stringify(pkg));
-  return dir;
+  return makeTmpProject("nudo-scope-", { "package.json": JSON.stringify(pkg) });
 }
 
 const directivesCfg = analysisConfig({ analysis: { mode: "directives" } });

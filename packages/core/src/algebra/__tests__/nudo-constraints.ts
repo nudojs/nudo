@@ -2,6 +2,8 @@
  * 测试用标准约束库（*.nudo.js 形态）。
  * 金标统一：@nudo:contract <param> <name>
  */
+import { checkSource, pTrue } from "../index.ts";
+
 export const STD_NUDO_SRC = `
 export const positive = number().gt(0);
 export const delay = number().gt(0);
@@ -64,3 +66,60 @@ export const stdOpts = {
   loadModule: stdLoadModule,
   fromFile: "/test/file.js",
 };
+
+/** L2 entry-may-throw 的 issue 数（按函数名过滤可选）——去重自 15+ 份文件内私有副本 */
+export function l2Count(
+  r: { issues: { code: string; fn?: string }[] },
+  fn?: string,
+): number {
+  return r.issues.filter(
+    (i) => i.code === "nudo:entry-may-throw" && (!fn || i.fn === fn),
+  ).length;
+}
+
+/** 按函数名取 checkSource 签名显示串（缺失为 "(missing)"） */
+export function sigOf(
+  r: { signatures: { name: string; display: string }[] },
+  fn: string,
+): string {
+  return r.signatures.find((s) => s.name === fn)?.display ?? "(missing)";
+}
+
+/** checkSource + withStdImport + stdOpts 的标准三件套包装（file 参与相对解析，各文件保留原路径） */
+export function issuesOf(src: string, file = "/t/std-issues.js") {
+  return checkSource(file, withStdImport(src), pTrue, stdOpts);
+}
+
+export function errorsOf(src: string, file?: string) {
+  return issuesOf(src, file).issues.filter((i) => i.severity === "error");
+}
+
+export function warningsOf(src: string, file?: string) {
+  return issuesOf(src, file).issues.filter((i) => i.severity === "warning");
+}
+
+/** issue 回归文件的侧车 opts：spec 含 marker 时返回 src，其余 undefined */
+export function sidecarOpts(marker: string, src: string, fromFile = "/test/file.js") {
+  return {
+    loadModule: (spec: string): string | undefined =>
+      spec.includes(marker) ? src : undefined,
+    fromFile,
+  };
+}
+
+/** 虚拟文件系统 loader：相对 spec 按 fromFile 目录解析（去重自 11 份文件内私有副本） */
+export function makeFiles(files: Record<string, string>) {
+  const resolve = (from: string, spec: string): string => {
+    if (!spec.startsWith(".")) return spec;
+    const parts = from.split("/").slice(0, -1);
+    for (const seg of spec.split("/")) {
+      if (seg === "" || seg === ".") continue;
+      if (seg === "..") parts.pop();
+      else parts.push(seg);
+    }
+    return parts.join("/");
+  };
+  const loadModule = (spec: string, from: string): string | undefined =>
+    files[resolve(from, spec)];
+  return { loadModule, resolve };
+}

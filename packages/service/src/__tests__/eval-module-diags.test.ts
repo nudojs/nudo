@@ -1,17 +1,11 @@
-import { it, expect, describe, afterAll } from "vitest";
+import { it, expect, describe } from "vitest";
 import { analyzeFile, clearEvalCache, evalAbsModuleGraph } from "@nudojs/service";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-
-const dirs: string[] = [];
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
-});
+import { tmpProject } from "./tmp-project.ts";
 
 function setup(files: Record<string, string>) {
-  const dir = mkdtempSync(join(tmpdir(), "nudo-bdiag-"));
-  dirs.push(dir);
+  const dir = tmpProject("nudo-bdiag-");
   writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "bdiag", version: "1.0.0" }));
   for (const [name, src] of Object.entries(files)) {
     writeFileSync(join(dir, name), src);

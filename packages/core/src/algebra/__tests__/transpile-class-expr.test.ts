@@ -9,16 +9,8 @@
  * 位置 + 空/具名/声明位类不回退。
  */
 import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  litValue,
-} from "@nudojs/core";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { runTranspiled, litValue } from "@nudojs/core";
+import { call } from "./eval-helpers.ts";
 
 /** 模块可加载且 f 可调用，result 折字面量值 */
 function evalsTo(src: string, value: unknown, fnName = "f") {
