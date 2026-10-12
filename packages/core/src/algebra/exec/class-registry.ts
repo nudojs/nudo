@@ -159,10 +159,18 @@ export function classInstanceInnerOf(a: Abs): Abs | undefined {
 }
 
 /**
- * Bug 84：类继承链是否带 JSON 用户面（toJSON 方法 / 实例访问器）——
- * 有则 stringify 不可折（原生先调 toJSON/getter），保持保守 partial。
- * 链止于未注册名（extends Error 等内建基类——Error 家族无 toJSON、
- * stringify 恒 total "{}"）。
+ * Bug 84：类继承链是否带 JSON 用户面（toJSON 方法）——有则
+ * stringify 不可折（原生经原型查找调用 value.toJSON），保持
+ * 保守 partial。链止于未注册名（extends Error 等内建基类——
+ * Error 家族无 toJSON、stringify 恒 total "{}"）。
+ *
+ * 类访问器（spec.accessors）**不**构成 JSON 用户面：原生访问器
+ * 安装在原型上，非实例自有属性；JSON.stringify 只枚举自有可
+ * 枚举键（字段），不经 [[Get]] 调用原型访问器（node 实测
+ * `class A { get x(){} pub=2 }` → `{"pub":2}`）。动态
+ * defineProperty 到实例的访问器在内层留占位槽，absToJsonNative
+ * 经 readProperty/accessorTable 派发 getter（Bug 57 口径），
+ * 折叠仍精确；抽象键写使内层 open → NOT_LITERAL。
  */
 export function classChainHasJsonUserFace(name: string): boolean {
   let cur: string | undefined = name;
@@ -171,7 +179,6 @@ export function classChainHasJsonUserFace(name: string): boolean {
     seen.add(cur);
     const spec = classRegistry.get(cur);
     if (spec?.methods?.["toJSON"]) return true;
-    if (spec?.accessors && Object.keys(spec.accessors).length > 0) return true;
     cur = spec?.superName;
   }
   return false;

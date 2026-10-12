@@ -134,7 +134,7 @@ describe("Bug 84: transpile emits the private flag on instanceFields spec", () =
     const code = transpileSource(
       `export function f() { class A { #x = 1; ["#y"] = 2; pub = 3; } return new A(); }`,
     );
-    // init thunk 内含 '}'，不能用单行正则——按 entry 边界切片逐条断言
+    // init thunk 内含 '}'，不能用单列正则——按 entry 边界切片逐条断言
     const fields = code.slice(code.indexOf("instanceFields: ["), code.indexOf("],", code.indexOf("instanceFields: [")));
     const entryOf = (name: string): string => {
       const start = fields.indexOf(`{ name: "${name}",`);
@@ -145,5 +145,71 @@ describe("Bug 84: transpile emits the private flag on instanceFields spec", () =
     expect(entryOf("#x")).toContain("private: true");
     expect(entryOf("#y")).not.toContain("private");
     expect(entryOf("pub")).not.toContain("private");
+  });
+});
+
+describe("Bug 84 precision: class-instance gOPD / JSON fold", () => {
+  it("gOPD on public field → exact data descriptor (native: all-true flags)", () => {
+    expect(
+      exec(
+        `class A { #x = 1; pub = 2; } return Object.getOwnPropertyDescriptor(new A(), "pub");`,
+      ),
+    ).toEqual({ value: 2, writable: true, enumerable: true, configurable: true });
+  });
+  it("gOPD on private slot → undefined (internal slot, not an own property)", () => {
+    expect(
+      exec(
+        `class A { #x = 1; pub = 2; } return Object.getOwnPropertyDescriptor(new A(), "#x") === undefined;`,
+      ),
+    ).toBe(true);
+  });
+  it("gOPD on absent key → undefined (closed inner)", () => {
+    expect(
+      exec(
+        `class A { pub = 2; } return Object.getOwnPropertyDescriptor(new A(), "nope") === undefined;`,
+      ),
+    ).toBe(true);
+  });
+  it("gOPD on runtime defineProperty field → exact descriptor with flags", () => {
+    expect(
+      exec(
+        `class A { pub = 2; } const a = new A();` +
+          ` Object.defineProperty(a, "z", { value: 9, writable: true, enumerable: true, configurable: true });` +
+          ` return Object.getOwnPropertyDescriptor(a, "z");`,
+      ),
+    ).toEqual({ value: 9, writable: true, enumerable: true, configurable: true });
+  });
+  it("gOPD on runtime defineProperty getter → accessor descriptor (enumerable flag survives)", () => {
+    expect(
+      exec(
+        `class A { pub = 2; } const a = new A();` +
+          ` Object.defineProperty(a, "z", { get() { return 1; }, enumerable: true, configurable: true });` +
+          ` const d = Object.getOwnPropertyDescriptor(a, "z");` +
+          ` return [typeof d.get, d.enumerable, d.configurable, d.set === undefined];`,
+      ),
+    ).toEqual(["function", true, true, true]);
+  });
+  it("JSON.stringify with prototype getter folds exactly (getter is not an own prop)", () => {
+    // 原生：访问器装在原型上，非实例自有属性——不枚举不调用（node 实测 {"pub":2}）
+    expect(
+      exec(`class A { get x() { return "G"; } pub = 2; } return JSON.stringify(new A());`),
+    ).toBe('{"pub":2}');
+  });
+  it("JSON.stringify with toJSON method stays abstract (native calls it via proto lookup)", () => {
+    const r = exec(
+      `class A { toJSON() { return "T"; } pub = 2; } return JSON.stringify(new A());`,
+    );
+    expect(typeof r).toBe("string");
+    expect(r).toMatch(/^abs=/); // 保守不折（原生返回 "T"）
+  });
+  it("JSON.stringify with dynamic defineProperty getter folds via accessor dispatch", () => {
+    // 动态访问器：内层占位槽 + 侧表派发 getter（Bug 57 口径）→ 精确
+    expect(
+      exec(
+        `class A { pub = 2; } const a = new A();` +
+          ` Object.defineProperty(a, "z", { get() { return "G"; }, enumerable: true });` +
+          ` return JSON.stringify(a);`,
+      ),
+    ).toBe('{"pub":2,"z":"G"}');
   });
 });

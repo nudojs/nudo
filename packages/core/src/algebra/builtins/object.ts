@@ -1418,6 +1418,45 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       const mkDesc = mkPropDescAbs;
       // 键不可判 / 槽开放：可能有也可能没有 → descriptor | undefined 联合
       const maybeDesc = maybePropDescAbs;
+      /**
+       * Bug 57/84：访问器属性描述符（get/set thunk 包成 fn Abs；
+       * 调用经 apply 钩子求值）。this 回退 target——gOPD 返回的
+       * 描述符 getter 被调用时 this 为接收者（obj 臂为本体 a0、
+       * 类实例臂为承载槽的内层 inner，但原生 this 是 brand 实例，
+       * 侧表 thunk 闭包已绑定接收者语义）。
+       */
+      const accessorDescOf = (target: Abs, key: string): Abs | undefined => {
+        const acc = lookupObjAccessor(target, key);
+        if (!acc) return undefined;
+        const flags = getPropFlags(target)?.get(key);
+        const wrapGet = (thunk: (t: Abs) => Abs): Abs =>
+          absFunction(["_this"], {
+            body: noBody,
+            apply: (_args, thisVal) => thunk(thisVal ?? target),
+          });
+        const wrapSet = (thunk: (t: Abs, v: Abs) => Abs): Abs =>
+          absFunction(["_this", "value"], {
+            body: noBody,
+            apply: (args2, thisVal) => {
+              thunk(thisVal ?? target, args2[0] ?? undefAbs());
+              return undefAbs(); // setter 返回值原生丢弃
+            },
+          });
+        return abs(
+          {
+            k: "obj",
+            slots: {
+              get: { value: acc.get ? wrapGet(acc.get) : undefAbs() },
+              set: { value: acc.set ? wrapSet(acc.set) : undefAbs() },
+              enumerable: { value: boolLit(flags?.enumerable !== false) },
+              configurable: { value: boolLit(flags?.configurable !== false) },
+            },
+          },
+          undefined,
+          undefined,
+          "exact",
+        );
+      };
       if (a0.shape.k === "obj") {
         const os = a0.shape as { slots: Record<string, { value: Abs }>; open?: boolean; index?: unknown };
         if (os.open || os.index || key === undefined) return maybeDesc();
@@ -1427,39 +1466,9 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         }
         if (Object.prototype.hasOwnProperty.call(os.slots, key)) {
           // Bug 57：访问器侧表优先——访问器描述符 { get: ƒ|undefined,
-          // set: ƒ|undefined, enumerable, configurable }（无 value/writable；
-          // thunk 包成 fn Abs，调用经 apply 钩子求值）
-          const acc = lookupObjAccessor(a0, key);
-          if (acc) {
-            const flags = getPropFlags(a0)?.get(key);
-            const wrapGet = (thunk: (t: Abs) => Abs): Abs =>
-              absFunction(["_this"], {
-                body: noBody,
-                apply: (_args, thisVal) => thunk(thisVal ?? a0),
-              });
-            const wrapSet = (thunk: (t: Abs, v: Abs) => Abs): Abs =>
-              absFunction(["_this", "value"], {
-                body: noBody,
-                apply: (args2, thisVal) => {
-                  thunk(thisVal ?? a0, args2[0] ?? undefAbs());
-                  return undefAbs(); // setter 返回值原生丢弃
-                },
-              });
-            return abs(
-              {
-                k: "obj",
-                slots: {
-                  get: { value: acc.get ? wrapGet(acc.get) : undefAbs() },
-                  set: { value: acc.set ? wrapSet(acc.set) : undefAbs() },
-                  enumerable: { value: boolLit(flags?.enumerable !== false) },
-                  configurable: { value: boolLit(flags?.configurable !== false) },
-                },
-              },
-              undefined,
-              undefined,
-              "exact",
-            );
-          }
+          // set: ƒ|undefined, enumerable, configurable }（无 value/writable）
+          const accDesc = accessorDescOf(a0, key);
+          if (accDesc) return accDesc;
           const flags = getPropFlags(a0)?.get(key);
           return mkDesc(
             readProperty(a0, key),
@@ -1470,6 +1479,37 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         }
         if (a0.conf === "exact") return undefAbs();
         return maybeDesc();
+      }
+      // Bug 84：用户类实例——内层闭 obj 自有槽精确描述符（此前整
+      // brand 保守 descriptor|undefined）。类字段原生描述符
+      // writable/enumerable/configurable 全 true（defineProperty
+      // 收紧的 flags 经 getPropFlags——flags 表记在内层 Abs 上）；
+      // 动态 defineProperty 安装的访问器经内层侧表派发（同 obj 臂
+      // Bug 57 口径——安装机器把侧表注册在新内层 obj Abs）；
+      // internal 私有槽非自有属性 → undefined；闭内层缺席键 → undefined
+      {
+        const inner = classInstanceInnerOf(a0);
+        if (inner && key !== undefined) {
+          const slots = (inner.shape as ObjShape)
+            .slots as Record<string, { value: Abs; internal?: boolean }>;
+          if ((slots[key] as { internal?: boolean } | undefined)?.internal === true) {
+            return undefAbs();
+          }
+          if (Object.prototype.hasOwnProperty.call(slots, key)) {
+            const accDesc = accessorDescOf(inner, key);
+            if (accDesc) return accDesc;
+            // flags 表记在接收者 brand 上（applyPropertyDescriptor
+            // setPropFlags(out, …)——out 为 brand）
+            const flags = getPropFlags(a0)?.get(key);
+            return mkDesc(
+              slots[key]!.value,
+              flags?.writable !== false,
+              flags?.enumerable !== false,
+              flags?.configurable !== false,
+            );
+          }
+          return undefAbs();
+        }
       }
       if (a0.shape.k === "tuple" && key !== undefined) {
         const holes = (a0.shape as { holes?: number[] }).holes ?? [];
