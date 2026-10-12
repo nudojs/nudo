@@ -30,13 +30,9 @@ import {
   setMayThrowCollector,
   type MayThrowEffect,
 } from "../may-throw.ts";
+import { call, isNever } from "./eval-helpers.ts";
 
 type CallResult = { result: Abs; throws: Abs };
-
-function call(src: string, fnName = "f", args: unknown[] = []): CallResult {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, args as never[]) as unknown as CallResult;
-}
 
 /** 值 + throws + may-throw 效果三面（effects 收集需要 may-throw session） */
 function evalSrc(
@@ -65,11 +61,6 @@ function evalSrc(
     throws: norm(result?.throws, true),
     effects: [...new Set(effects.map((e) => e.kind))],
   };
-}
-
-function isNever(r: unknown): boolean {
-  const a = r as { shape?: { k?: string } };
-  return !!a && typeof a === "object" && a.shape?.k === "never";
 }
 
 function throwsBrand(t: unknown, name: string): boolean {

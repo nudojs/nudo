@@ -3,10 +3,10 @@
  * 批量 check 时 a 项目的 env 加载失败不得泄进 b 项目报告，b 的磁盘缓存键
  * 不得折入 a 的 env 内容；无参 getter 仍返回全量（兼容既有消费面）。
  */
-import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync, utimesSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, it, expect, beforeEach } from "vitest";
+import { writeFileSync, utimesSync } from "node:fs";
 import { join, basename } from "node:path";
+import { tmpProject } from "./tmp-project.ts";
 import {
   preloadPathEnvs,
   getPathEnvLoadErrors,
@@ -14,16 +14,9 @@ import {
   clearPathEnvCaches,
 } from "../evaluator/env-loader.ts";
 
-const dirs: string[] = [];
 function makeDir(): string {
-  const d = mkdtempSync(join(tmpdir(), "nudo-env-basedir-"));
-  dirs.push(d);
-  return d;
+  return tmpProject("nudo-env-basedir-");
 }
-
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
-});
 
 // 失败形态：不可解析的 @nudojs 子路径（无 fallback 可重写 → 上报 import 失败）
 const FAILING_ENV = `import "@nudojs/env/does-not-exist";

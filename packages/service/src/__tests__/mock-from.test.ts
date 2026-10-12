@@ -4,30 +4,18 @@
  * - 缺文件 → 明确 nudo:module-missing 诊断，不静默丢弃
  * - 内联 mock 不回归
  */
-import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { formatAbs, litValue, unknown as absUnknown } from "@nudojs/core";
 import { mockDirectivesToAbsSeeds, mockSeedsToAbsMocks } from "../mock-abs.ts";
 import { parse, extractDirectives } from "@nudojs/parser";
 import { tryEvalCallFull } from "../eval-run.ts";
 import { analyzeFile } from "../analyzer.ts";
-
-const dirs: string[] = [];
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
-});
+import { tmpProject as makeTmpProject } from "./tmp-project.ts";
 
 function tmpProject(files: Record<string, string>): string {
-  const dir = mkdtempSync(join(tmpdir(), "nudo-mock-from-"));
-  dirs.push(dir);
-  for (const [rel, content] of Object.entries(files)) {
-    const p = join(dir, rel);
-    mkdirSync(join(p, ".."), { recursive: true });
-    writeFileSync(p, content, "utf-8");
-  }
-  return dir;
+  return makeTmpProject("nudo-mock-from-", files);
 }
 
 function seedsOf(source: string, fromFile: string) {

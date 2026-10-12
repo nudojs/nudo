@@ -5,12 +5,8 @@
  * 注意：replace 只替换命中片段，断言整串中的替换结果。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { litValue } from "@nudojs/core";
+import { call } from "./eval-helpers.ts";
 
 describe("evaluator replace named capture groups", () => {
   it("callback receives offset as a number even with named groups", () => {

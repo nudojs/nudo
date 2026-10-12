@@ -8,22 +8,13 @@
 import { describe, it, expect } from "vitest";
 import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
 import { abs } from "../abs.ts";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { call, isNever } from "./eval-helpers.ts";
 
 function callFork(src: string) {
   const exports = runTranspiled(src, { mode: "analyze" });
   return callTranspiledExportFull(exports, "f", [
     abs({ k: "prim", type: "number" }, undefined, undefined, "path"),
   ]);
-}
-
-function isNever(r: unknown): boolean {
-  const a = r as { shape?: { k?: string } };
-  return !!a && typeof a === "object" && a.shape?.k === "never";
 }
 
 function throwsTypeError(t: unknown): boolean {

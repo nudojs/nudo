@@ -2,19 +2,14 @@
  * P0.4：check 磁盘缓存指纹必须覆盖 @nudo:env / @nudo:mock-module 路径内容。
  * 只改 env 模板、入口源码不变 → checkCacheKey 必须 miss。
  */
-import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, it, expect } from "vitest";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { extractAllLoadSpecs, loadModuleDepsFingerprint } from "@nudojs/core/internal";
 import { checkCacheKey } from "../disk-cache.ts";
 import { collectLoadDepContents } from "../dep-contents.ts";
 import { defaultLoadModule } from "../load-module.ts";
-
-const dirs: string[] = [];
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
-});
+import { tmpProject } from "./tmp-project.ts";
 
 describe("extractAllLoadSpecs includes path-based @nudo:env / mock-module", () => {
   it("parses unquoted path env", () => {
@@ -46,8 +41,7 @@ describe("extractAllLoadSpecs includes path-based @nudo:env / mock-module", () =
 
 describe("checkCacheKey misses when only @nudo:env file content changes", () => {
   it("entry source unchanged + env template rewrite flips key", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-env-fp-"));
-    dirs.push(dir);
+    const dir = tmpProject("nudo-env-fp-");
     const envPath = join(dir, "custom.env.ts");
     const mainPath = join(dir, "main.js");
     const main = `/// @nudo:env ./custom.env.ts

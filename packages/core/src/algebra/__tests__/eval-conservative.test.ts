@@ -6,12 +6,8 @@
  * 经 GLOBAL_FNS 身份校验路由，ast-eval 直接分派），不再调用宿主 eval。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { litValue } from "@nudojs/core";
+import { call } from "./eval-helpers.ts";
 
 describe("evaluator eval is conservative unknown", () => {
   it("direct eval does not fold the code string", () => {

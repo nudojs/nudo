@@ -3,8 +3,7 @@
  * Anchors C1–C8 pin natural miss, host eviction, residual gap, and path-env clear.
  */
 import { describe, it, expect, afterEach } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync, utimesSync, statSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync, utimesSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
   analyzeFile,
@@ -21,11 +20,10 @@ import {
   type AnalysisResult,
 } from "@nudojs/service";
 import { formatShape } from "@nudojs/core";
+import { tmpProject } from "./tmp-project.ts";
 
-const dirs: string[] = [];
 afterEach(() => {
   clearAnalysisSessionCaches();
-  for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
 function caseResultOf(result: AnalysisResult, fnName: string, caseName: string): string {
@@ -64,8 +62,7 @@ function go(n) {
 `;
 
 function tmpGraph(): { dir: string; depPath: string; mainPath: string; tSec: number } {
-  const dir = mkdtempSync(join(tmpdir(), "nudo-cic-"));
-  dirs.push(dir);
+  const dir = tmpProject("nudo-cic-");
   const depPath = join(dir, "util.js");
   const mainPath = join(dir, "main.js");
   writeFileSync(depPath, `export function inc(x) { return x + 1; }\n`);
@@ -88,8 +85,7 @@ function editDepPinned(depPath: string, tSec: number, to: number): void {
 
 /** 2 层依赖图：e.js → m.js → z.js（叶子内容可编辑；m 是会话缓存的中间模块） */
 function tmpGraph2(): { dir: string; zPath: string; mPath: string; ePath: string } {
-  const dir = mkdtempSync(join(tmpdir(), "nudo-cic2-"));
-  dirs.push(dir);
+  const dir = tmpProject("nudo-cic2-");
   const zPath = join(dir, "z.js");
   const mPath = join(dir, "m.js");
   const ePath = join(dir, "e.js");
@@ -153,8 +149,7 @@ describe("host cache-invalidation contract", () => {
 
   it("C6: evictAnalysisCachesForFiles clears path-env caches", async () => {
     clearAnalysisSessionCaches();
-    const dir = mkdtempSync(join(tmpdir(), "nudo-cic-env-"));
-    dirs.push(dir);
+    const dir = tmpProject("nudo-cic-env-");
     writeFileSync(
       join(dir, "custom.env.ts"),
       `import { numLit } from "@nudojs/core";

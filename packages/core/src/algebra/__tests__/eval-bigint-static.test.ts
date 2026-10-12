@@ -16,16 +16,7 @@ import { runTranspiled, callTranspiledExportFull, litValue, checkSource, pTrue }
 import { abs } from "../abs.ts";
 import { runWithMayThrowSession, setMayThrowCollector, type MayThrowEffect } from "../exec/may-throw.ts";
 import { withStdImport, stdOpts } from "./nudo-constraints.ts";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
-
-function isNever(r: unknown): boolean {
-  const a = r as { shape?: { k?: string } };
-  return !!a && typeof a === "object" && a.shape?.k === "never";
-}
+import { call, isNever } from "./eval-helpers.ts";
 
 function throwsName(t: unknown): string | undefined {
   const a = t as { shape?: { k?: string; name?: string } };

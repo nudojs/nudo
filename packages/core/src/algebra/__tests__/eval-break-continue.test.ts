@@ -6,12 +6,8 @@
  * switch 臂内的无标签 break 是「臂结束」，转译为 return，不得当循环信号。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { litValue } from "@nudojs/core";
+import { call } from "./eval-helpers.ts";
 
 describe("evaluator break/continue", () => {
   it("for + continue skips the rest of the body", () => {

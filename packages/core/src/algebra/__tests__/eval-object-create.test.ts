@@ -20,23 +20,9 @@ import {
   setMayThrowCollector,
   type MayThrowEffect,
 } from "../may-throw.ts";
+import { call, isNever, throwsError } from "./eval-helpers.ts";
 
 const anyAbs = abs({ k: "any" }, undefined, undefined, "path");
-
-function call(src: string) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, "f", []);
-}
-
-function isNever(r: unknown): boolean {
-  const a = r as { shape?: { k?: string } };
-  return !!a && typeof a === "object" && a.shape?.k === "never";
-}
-
-function throwsError(t: unknown, name: string): boolean {
-  const a = t as { shape?: { k?: string; name?: string } };
-  return !!a && typeof a === "object" && a.shape?.k === "brand" && a.shape.name === name;
-}
 
 function kindOf(r: unknown): string | undefined {
   return (r as { shape?: { k?: string } })?.shape?.k;

@@ -10,12 +10,8 @@
  * - rest 绑定仍走真实 arguments/rest 形参（transpile restBind），与本槽解耦。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue, formatShape, formatAbs, $lit, unknown as unknownAbs } from "@nudojs/core";
-
-function call(src: string, fnName = "f", args: unknown[] = []) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, args as never);
-}
+import { litValue, formatShape, formatAbs, $lit, unknown as unknownAbs } from "@nudojs/core";
+import { call } from "./eval-helpers.ts";
 
 function lit(n: number | string | boolean | undefined | null) {
   return $lit(n as never);

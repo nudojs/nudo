@@ -28,6 +28,7 @@ import {
   setMayThrowCollector,
   type MayThrowEffect,
 } from "../may-throw.ts";
+import { throwsError } from "./eval-helpers.ts";
 
 /** 无约束实参（may 档探针——缺省会把 x 绑成 undefined 字面量而走折叠面） */
 const anyAbs = abs({ k: "any" }, undefined, undefined, "path");
@@ -35,16 +36,6 @@ const anyAbs = abs({ k: "any" }, undefined, undefined, "path");
 /** 无约束实参版：f(x) 的 x 绑 any（may 档探针） */
 function evalSrcAny(src: string): ReturnType<typeof evalSrc> {
   return evalSrc(src, [anyAbs]);
-}
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
-
-function throwsError(t: unknown, name: string): boolean {
-  const a = t as { shape?: { k?: string; name?: string } };
-  return !!a && typeof a === "object" && a.shape?.k === "brand" && a.shape.name === name;
 }
 
 /** 值 + throws + may-effects 三面（effects 去重 kind）；args 传入 f 的实参 */

@@ -4,20 +4,7 @@
  * DEC-001：统一证明通道 assertImplies + nullish 显式化 + any/unknown 策略。
  */
 import { describe, it, expect } from "vitest";
-import { checkSource, pTrue } from "../index.ts";
-import { withStdImport, stdOpts } from "./nudo-constraints.ts";
-
-function issuesOf(src: string) {
-  return checkSource("/t/ret.js", withStdImport(src), pTrue, stdOpts);
-}
-
-function errorsOf(src: string) {
-  return issuesOf(src).issues.filter((i) => i.severity === "error");
-}
-
-function warningsOf(src: string) {
-  return issuesOf(src).issues.filter((i) => i.severity === "warning");
-}
+import { issuesOf, errorsOf, warningsOf } from "./nudo-constraints.ts";
 
 describe("@nudo:contract return", () => {
   it("ok: 返回值满足 positive", () => {
@@ -29,7 +16,7 @@ describe("@nudo:contract return", () => {
 function inc(x) {
   return x + 1;
 }
-`);
+`, "/t/ret.js");
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
   });
 
@@ -41,7 +28,7 @@ function inc(x) {
 function bad() {
   return 0;
 }
-`);
+`, "/t/ret.js");
     expect(r.ok).toBe(false);
     const err = r.issues.find((i) => i.message.includes("@nudo:contract return"));
     expect(err).toBeDefined();
@@ -56,7 +43,7 @@ function bad() {
 function n() {
   return 1;
 }
-`);
+`, "/t/ret.js");
     // notAString 不在 std 里 → 无契约可查，不报违例（false positive = 0）
     expect(r.issues.filter((i) => i.message.includes("@nudo:contract return") && i.severity === "error")).toEqual([]);
     // 但静默失效不允许：未知约束名 → nudo:contract-syntax warning
@@ -72,7 +59,7 @@ function n() {
 function free() {
   return -1;
 }
-`);
+`, "/t/ret.js");
     expect(r.issues.filter((i) => i.message.includes("@nudo:contract return"))).toEqual([]);
   });
 
@@ -84,7 +71,7 @@ function free() {
 function big() {
   return 150;
 }
-`);
+`, "/t/ret.js");
     expect(r.ok).toBe(false);
     expect(r.issues.some((i) => i.message.includes("@nudo:contract return"))).toBe(true);
   });
@@ -97,7 +84,7 @@ function big() {
 function name() {
   return "";
 }
-`);
+`, "/t/ret.js");
     expect(r.ok).toBe(false);
     expect(r.issues.some((i) => i.message.includes("@nudo:contract return"))).toBe(true);
   });
@@ -110,7 +97,7 @@ function name() {
 function name() {
   return "abc";
 }
-`);
+`, "/t/ret.js");
     expect(r.issues.filter((i) => i.message.includes("@nudo:contract return"))).toEqual([]);
   });
 
@@ -123,7 +110,7 @@ function name() {
 function keep(x) {
   return x;
 }
-`);
+`, "/t/ret.js");
     // 符号返回带 pred x>0，应满足
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
   });
@@ -139,7 +126,7 @@ function maybe(x) {
   if (x.name) o.extra = x.name;
   return o;
 }
-`);
+`, "/t/ret.js");
     expect(r.issues.filter((i) => i.message.includes("@nudo:contract return"))).toEqual([]);
   });
 
@@ -152,7 +139,7 @@ function pick(flag) {
   if (flag) return { id: 1, name: "a", extra: 1 };
   return { id: 1 };
 }
-`);
+`, "/t/ret.js");
     const err = r.issues.find((i) => i.message.includes("@nudo:contract return"));
     expect(err).toBeDefined();
     expect(err!.expected).toContain("missing field name");
@@ -168,7 +155,7 @@ describe("DEC-001: 非字面量返回证数值界", () => {
 function f(x) {
   return x - 100;
 }
-`);
+`, "/t/ret.js");
     const retIssues = r.issues.filter((i) => i.message.includes("@nudo:contract return"));
     expect(retIssues.length).toBeGreaterThan(0);
     // 无 pred 证据 → unprovable → warning（不得静默放行）
@@ -185,7 +172,7 @@ function f(x) {
 function f(x) {
   return x;
 }
-`);
+`, "/t/ret.js");
     // x ≥ 0 不蕴含 x > 0（0 不满足 positive）→ pred 存在但不蕴含 → error
     expect(errs.length).toBeGreaterThan(0);
     expect(errs[0]!.code).toBe("nudo:constraint-violated");
@@ -199,7 +186,7 @@ function f(x) {
 function g(x) {
   return x;
 }
-`);
+`, "/t/ret.js");
     // any 不得伪装成功：至少 warning 可见
     const retIssues = r.issues.filter((i) => i.message.includes("@nudo:contract return"));
     expect(retIssues.length).toBeGreaterThan(0);
@@ -216,7 +203,7 @@ function g(x) {
 function inc(x) {
   return x + 1;
 }
-`);
+`, "/t/ret.js");
     expect(errs).toEqual([]);
   });
 
@@ -229,7 +216,7 @@ function inc(x) {
 function keep(x) {
   return x;
 }
-`);
+`, "/t/ret.js");
     expect(errs).toEqual([]);
   });
 });
@@ -243,7 +230,7 @@ describe("DEC-001: nullish 显式化", () => {
 function f() {
   return null;
 }
-`);
+`, "/t/ret.js");
     expect(errs.length).toBeGreaterThan(0);
     expect(errs[0]!.code).toBe("nudo:constraint-violated");
   });
@@ -256,7 +243,7 @@ function f() {
 function f() {
   return undefined;
 }
-`);
+`, "/t/ret.js");
     expect(errs.length).toBeGreaterThan(0);
   });
 
@@ -268,7 +255,7 @@ function f() {
 function f() {
   return null;
 }
-`);
+`, "/t/ret.js");
     expect(errs).toEqual([]);
   });
 
@@ -280,7 +267,7 @@ function f() {
 function f() {
   return undefined;
 }
-`);
+`, "/t/ret.js");
     expect(errs).toEqual([]);
   });
 
@@ -294,7 +281,7 @@ function f(flag) {
   if (flag) return null;
   return 7;
 }
-`);
+`, "/t/ret.js");
     const retIssues = r.issues.filter((i) => i.message.includes("@nudo:contract return"));
     expect(retIssues).toEqual([]);
   });
@@ -308,7 +295,7 @@ function f(flag, n) {
   if (flag) return null;
   return n;
 }
-`);
+`, "/t/ret.js");
     // n 为 unconstrained any → 臂 unprovable，但不得 error
     // 契约是 maybePositive = nullable(positive=gt0)，n 无界 → warning
     const errs = r.issues.filter(
@@ -327,7 +314,7 @@ function f(flag, x) {
   if (flag) return null;
   return x;
 }
-`);
+`, "/t/ret.js");
     expect(errs).toEqual([]);
   });
 
@@ -340,7 +327,7 @@ function f(flag) {
   if (flag) return null;
   return 0;
 }
-`);
+`, "/t/ret.js");
     expect(errs.length).toBeGreaterThan(0);
     expect(errs[0]!.code).toBe("nudo:constraint-violated");
   });
@@ -353,7 +340,7 @@ function f(flag) {
 function f() {
   return null;
 }
-`);
+`, "/t/ret.js");
     expect(errs).toEqual([]);
   });
 
@@ -365,7 +352,7 @@ function f() {
 function f() {
   return 0;
 }
-`);
+`, "/t/ret.js");
     expect(errs.length).toBeGreaterThan(0);
   });
 
@@ -378,7 +365,7 @@ function f(flag) {
   if (flag) return null;
   return 1;
 }
-`);
+`, "/t/ret.js");
     expect(errs.length).toBeGreaterThan(0);
     expect(errs[0]!.expected).toContain("nullish");
   });
@@ -391,7 +378,7 @@ describe("BUG-002: 裸 prim 契约对非 prim 返回（obj/arr/fn）必须 dispr
  * @nudo:contract return nonEmpty
  */
 function f() { return { a: 1 }; }
-`);
+`, "/t/ret.js");
     const retIssues = r.issues.filter((i) => i.message.includes("@nudo:contract return"));
     expect(retIssues.length).toBeGreaterThan(0);
     expect(retIssues[0]!.severity).toBe("error");
@@ -404,7 +391,7 @@ function f() { return { a: 1 }; }
  * @nudo:contract return nonEmpty
  */
 function f() { return [1]; }
-`);
+`, "/t/ret.js");
     const retIssues = r.issues.filter((i) => i.message.includes("@nudo:contract return"));
     expect(retIssues.length).toBeGreaterThan(0);
     expect(retIssues[0]!.severity).toBe("error");
@@ -417,7 +404,7 @@ function f() { return [1]; }
  * @nudo:contract return nonEmpty
  */
 function f() { return () => {}; }
-`);
+`, "/t/ret.js");
     const retIssues = r.issues.filter((i) => i.message.includes("@nudo:contract return"));
     expect(retIssues.length).toBeGreaterThan(0);
     expect(retIssues[0]!.severity).toBe("error");
@@ -430,7 +417,7 @@ function f() { return () => {}; }
  * @nudo:contract return positive
  */
 function f() { return { a: 1 }; }
-`);
+`, "/t/ret.js");
     // positive = number().gt(0)：prim 门应直接 disproved（非 unprovable warning）
     const retIssues = r.issues.filter((i) => i.message.includes("@nudo:contract return"));
     expect(retIssues.length).toBeGreaterThan(0);
@@ -444,7 +431,7 @@ function f() { return { a: 1 }; }
  * @nudo:contract return positive
  */
 function f() { return [1]; }
-`);
+`, "/t/ret.js");
     const retIssues = r.issues.filter((i) => i.message.includes("@nudo:contract return"));
     expect(retIssues.length).toBeGreaterThan(0);
     expect(retIssues[0]!.severity).toBe("error");
@@ -456,7 +443,7 @@ function f() { return [1]; }
  * @nudo:contract return nonEmpty
  */
 function f() { return 1; }
-`);
+`, "/t/ret.js");
     const retIssues = r.issues.filter((i) => i.message.includes("@nudo:contract return"));
     expect(retIssues.length).toBeGreaterThan(0);
     expect(retIssues[0]!.severity).toBe("error");
@@ -469,7 +456,7 @@ function f() { return 1; }
  * @nudo:contract return userShape
  */
 function f() { return { id: 1, name: { a: 1 } }; }
-`);
+`, "/t/ret.js");
     const retIssues = r.issues.filter((i) => i.message.includes("@nudo:contract return"));
     expect(retIssues.length).toBeGreaterThan(0);
     expect(retIssues[0]!.severity).toBe("error");
@@ -482,7 +469,7 @@ function f() { return { id: 1, name: { a: 1 } }; }
  * @nudo:contract return nonEmpty
  */
 function f(x) { return x + 1; }
-`);
+`, "/t/ret.js");
     // x:any → x+1 派生 number|string（any 参与运算符）→ 不得报 error
     const errs = r.issues.filter(
       (i) => i.severity === "error" && i.message.includes("@nudo:contract return"),
@@ -500,7 +487,7 @@ describe("DEC-001: any/unknown 策略（不得伪装成功）", () => {
 function f(x) {
   return x;
 }
-`);
+`, "/t/ret.js");
     const retIssues = r.issues.filter((i) => i.message.includes("@nudo:contract return"));
     expect(retIssues.length).toBeGreaterThan(0);
     expect(retIssues[0]!.severity).toBe("warning");
@@ -516,7 +503,7 @@ function sumTo(n) {
   return n + sumTo(n - 1);
 }
 const s = sumTo(10);
-`);
+`, "/t/ret.js");
     // opaque/截断 → warning 不得计 error（gold FP 保护）
     const errs = r.issues.filter(
       (i) => i.severity === "error" && i.message.includes("@nudo:contract return"),
@@ -541,7 +528,7 @@ function pick(n) {
   if (n > 0) out.push(n);
   return out;
 }
-`);
+`, "/t/ret.js");
     expect(errs).toEqual([]);
   });
 
@@ -555,7 +542,7 @@ function keep(list) {
   for (const f of list) out.push({ severity: f.severity });
   return out;
 }
-`);
+`, "/t/ret.js");
     expect(errs).toEqual([]);
   });
 
@@ -568,7 +555,7 @@ function pick(n) {
   if (n > 0) return [n];
   return [];
 }
-`);
+`, "/t/ret.js");
     expect(errs).toEqual([]);
   });
 
@@ -581,7 +568,7 @@ function bad(n) {
   if (n > 0) return 1;
   return [];
 }
-`);
+`, "/t/ret.js");
     expect(errs.length).toBeGreaterThan(0);
     expect(errs[0]!.expected).toContain("array(...)");
   });
@@ -594,7 +581,7 @@ function bad(n) {
 function one() {
   return [1];
 }
-`);
+`, "/t/ret.js");
     expect(errs).toEqual([]);
   });
 
@@ -610,7 +597,7 @@ function pick(flag) {
   const s = flag ? 20 : 55;
   return Math.max(0, Math.min(100, s));
 }
-`);
+`, "/t/ret.js");
     expect(errs).toEqual([]);
   });
 
@@ -624,7 +611,7 @@ function pick(flag) {
   if (Number.isNaN(s)) return 0;
   return Math.min(100, s);
 }
-`);
+`, "/t/ret.js");
     expect(errs).toEqual([]);
   });
 
@@ -641,7 +628,7 @@ function supplyChainScore(attestation) {
   if (Number.isNaN(score)) return 0;
   return Math.max(0, Math.min(100, score));
 }
-`);
+`, "/t/ret.js");
     expect(errs).toEqual([]);
   });
 
@@ -656,7 +643,7 @@ function pick(flag) {
   const s = flag ? 20 : 55;
   return 100 - s;
 }
-`);
+`, "/t/ret.js");
     expect(errs).toEqual([]);
     // 断言分发精度：100 - (20 | 55) 推断为 45 | 80，不得退化成 unknown
     const violated = issuesOf(`
@@ -667,7 +654,7 @@ function pickSmall(flag) {
   const s = flag ? 20 : 55;
   return 100 - s;
 }
-`);
+`, "/t/ret.js");
     const err = violated.issues.find((i) => i.message.includes("@nudo:contract return"));
     expect(err).toBeDefined();
     expect(err!.actual).toContain("45");
@@ -685,7 +672,7 @@ function weighted(flag) {
   const b = flag ? 10 : 40;
   return 0.3 * a + 0.7 * b;
 }
-`);
+`, "/t/ret.js");
     expect(errs).toEqual([]);
     // 断言分发精度：0.3*a + 0.7*b 推断为四个字面量臂，不得退化成 unknown
     const violated = issuesOf(`
@@ -697,7 +684,7 @@ function weightedSmall(flag) {
   const b = flag ? 10 : 40;
   return 0.3 * a + 0.7 * b;
 }
-`);
+`, "/t/ret.js");
     const err = violated.issues.find((i) => i.message.includes("@nudo:contract return"));
     expect(err).toBeDefined();
     expect(err!.actual).toContain("13");
@@ -732,7 +719,7 @@ function computeScorecard({ findings }) {
     .reduce((acc, f) => acc + penaltyFor(f.severity), 0);
   return { codeBehavior: clamp100(codeBehavior) };
 }
-`);
+`, "/t/ret.js");
     expect(errs).toEqual([]);
   });
 
@@ -758,7 +745,7 @@ function totalScore(dims) {
     0.15 * dims.metadataTrust;
   return Math.round(clamp100(raw));
 }
-`);
+`, "/t/ret.js");
     expect(r.issues.filter((i) => i.severity !== "info")).toEqual([]);
   });
 });
@@ -796,8 +783,7 @@ export function lev(a, b) {
 
   it("OSA levenshtein：number() 返回契约不报 error（marker → warning）", () => {
     const r = issuesOf(
-      `/**\n * @nudo:contract a nonEmpty\n * @nudo:contract b nonEmpty\n * @nudo:contract return num\n */\n${LEV}`,
-    );
+      `/**\n * @nudo:contract a nonEmpty\n * @nudo:contract b nonEmpty\n * @nudo:contract return num\n */\n${LEV}`, "/t/ret.js");
     expect(r.ok).toBe(true);
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
     const ret = r.issues.filter((i) => i.message.includes("@nudo:contract return"));
@@ -817,7 +803,7 @@ function miss(i) {
   const d = [];
   return d[i];
 }
-`);
+`, "/t/ret.js");
     expect(r.ok).toBe(true);
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
     expect(r.issues.some((i) => i.code === "nudo:unproven-return")).toBe(true);
@@ -825,8 +811,7 @@ function miss(i) {
 
   it("nullable 契约下多臂 marker discharged（与单臂 proved 对称）", () => {
     const r = issuesOf(
-      `/**\n * @nudo:contract a nonEmpty\n * @nudo:contract b nonEmpty\n * @nudo:contract return nullableNum\n */\n${LEV}`,
-    );
+      `/**\n * @nudo:contract a nonEmpty\n * @nudo:contract b nonEmpty\n * @nudo:contract return nullableNum\n */\n${LEV}`, "/t/ret.js");
     expect(r.ok).toBe(true);
     // 0 | number | marker：真实臂证毕，marker 的 undefined 可能性被
     // nullable 域覆盖 → 整体 proved，不再残留 unproven-return warning
@@ -842,7 +827,7 @@ function miss(i) {
   const d = [];
   return d[i];
 }
-`);
+`, "/t/ret.js");
     expect(r.ok).toBe(true);
     expect(r.issues.filter((i) => i.message.includes("@nudo:contract return"))).toEqual([]);
   });
@@ -855,7 +840,7 @@ function miss(i) {
 function real() {
   return undefined;
 }
-`);
+`, "/t/ret.js");
     expect(r.ok).toBe(false);
     expect(r.issues.some((i) => i.code === "nudo:constraint-violated")).toBe(true);
   });
@@ -898,14 +883,14 @@ function compareVersions(a, b) {
 `;
 
   it("ok: 0 | -1 | 1 | number（裸 prim partial 臂）对 number() 域隶属可证", () => {
-    const r = issuesOf(CMP_SRC);
+    const r = issuesOf(CMP_SRC, "/t/ret.js");
     expect(
       r.issues.filter((i) => i.message.includes("@nudo:contract return")),
     ).toEqual([]);
   });
 
   it("warning: 同形态对带界契约（positive）仍不可证（gold FP 口径不动）", () => {
-    const r = issuesOf(CMP_SRC.replace("return num", "return positive"));
+    const r = issuesOf(CMP_SRC.replace("return num", "return positive"), "/t/ret.js");
     const warns = r.issues.filter(
       (i) =>
         i.code === "nudo:unproven-return" &&
@@ -924,7 +909,7 @@ describe("Bug 30: array 契约元素级执法（[-1] ⊭ array(number().gt(0))�
 function negElem() {
   return [-1];
 }
-`);
+`, "/t/ret.js");
     expect(errs.length).toBeGreaterThan(0);
     expect(errs[0]!.expected).toContain("array element [0]");
 
@@ -935,7 +920,7 @@ function negElem() {
 function mixedElem() {
   return [1, -1];
 }
-`);
+`, "/t/ret.js");
     expect(mixed.length).toBeGreaterThan(0);
     expect(mixed[0]!.expected).toContain("array element [1]");
   });
@@ -948,7 +933,7 @@ function mixedElem() {
 function strElem() {
   return ["a"];
 }
-`);
+`, "/t/ret.js");
     expect(errs.length).toBeGreaterThan(0);
     expect(errs[0]!.expected).toContain('array element [0]');
   });
@@ -961,7 +946,7 @@ function strElem() {
 function okElem() {
   return [1, 2];
 }
-`);
+`, "/t/ret.js");
     expect(ok).toEqual([]);
     const empty = errorsOf(`
 /**
@@ -970,7 +955,7 @@ function okElem() {
 function none() {
   return [];
 }
-`);
+`, "/t/ret.js");
     expect(empty).toEqual([]);
   });
 
@@ -982,7 +967,7 @@ function none() {
 function absElem(n) {
   return [n];
 }
-`);
+`, "/t/ret.js");
     const unproven = warns.filter((i) => i.code === "nudo:unproven-return");
     expect(unproven.length).toBeGreaterThan(0);
     // any 元素（无约束形参）不可反证 → 同样保守 warning，不伪装 proved
@@ -993,7 +978,7 @@ function absElem(n) {
 function absAny(s) {
   return [s];
 }
-`);
+`, "/t/ret.js");
     const anyUnproven = anyWarns.filter((i) => i.code === "nudo:unproven-return");
     expect(anyUnproven.length).toBeGreaterThan(0);
     expect(
@@ -1009,7 +994,7 @@ function absAny(s) {
 function arrBad(xs) {
   return xs.map((x) => String(x));
 }
-`);
+`, "/t/ret.js");
     expect(errs.length).toBeGreaterThan(0);
   });
 });

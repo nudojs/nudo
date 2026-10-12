@@ -9,12 +9,8 @@
  * replaceAll 非全局正则硬抛同口径）。
  */
 import { describe, it, expect } from "vitest";
-import { type Abs, runTranspiled, callTranspiledExportFull, litValue, formatAbs } from "@nudojs/core";
-
-function call(src: string, name: string, args: Abs[] = []) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, name, args);
-}
+import { litValue, formatAbs } from "@nudojs/core";
+import { call } from "./eval-helpers.ts";
 
 function throwsName(r: { throws: { shape: { k: string; name?: string } } }): string | undefined {
   return r.throws.shape.k === "brand" ? r.throws.shape.name : undefined;

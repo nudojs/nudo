@@ -3,9 +3,9 @@
  * 且不会单调无界增长。不依赖大堆——小 max + 小批即可验证 LRU 封顶。
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { writeFileSync, mkdtempSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { tmpProject } from "./tmp-project.ts";
 import {
   setSessionCacheLimits,
   resetSessionCacheLimitState,
@@ -126,7 +126,7 @@ describe("BoundedLruMap hard cap", () => {
 describe("session analysis caches stay bounded under repeat analyze", () => {
   it("same batch analyzed many times does not grow caches past the caps", () => {
     setSessionCacheLimits({ maxFiles: 8, maxFns: 16, maxEvalRuns: 4 });
-    const dir = mkdtempSync(join(tmpdir(), "nudo-mem-"));
+    const dir = tmpProject("nudo-mem-");
     const files = writeBatch(dir, 20); // more files than maxFiles
 
     const sizesAfterFirst: number[] = [];
@@ -150,7 +150,7 @@ describe("session analysis caches stay bounded under repeat analyze", () => {
 
   it("incrementally growing file set stays under the file/fn caps", () => {
     setSessionCacheLimits({ maxFiles: 6, maxFns: 10, maxEvalRuns: 3 });
-    const dir = mkdtempSync(join(tmpdir(), "nudo-mem-inc-"));
+    const dir = tmpProject("nudo-mem-inc-");
     for (let i = 0; i < 40; i++) {
       const p = join(dir, `inc${i}.js`);
       writeFileSync(p, `export function g${i}(x) { return x * ${i}; }\n`);
@@ -171,7 +171,7 @@ describe("session analysis caches stay bounded under repeat analyze", () => {
 
   it("analysis file cache trims to maxFiles even after inserts of many keys", () => {
     setSessionCacheLimits({ maxFiles: 4, maxFns: 8, maxEvalRuns: 2 });
-    const dir = mkdtempSync(join(tmpdir(), "nudo-mem-trim-"));
+    const dir = tmpProject("nudo-mem-trim-");
     for (let i = 0; i < 30; i++) {
       const p = join(dir, `t${i}.js`);
       writeFileSync(p, `export function t${i}() { return ${i}; }\n`);
@@ -205,7 +205,7 @@ describe("harvest / abs-module / path-env resident structures are capped", () =>
   });
 
   it("env path dependents map is capped", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-envdep-"));
+    const dir = tmpProject("nudo-envdep-");
     for (let i = 0; i < 300; i++) {
       // 每个源引用不同的 env 模板路径 → 外层 key 数必须被 LRU 封顶
       const envFile = join(dir, `e${i}.env.ts`);
@@ -221,7 +221,7 @@ describe("harvest / abs-module / path-env resident structures are capped", () =>
 describe("repeat analyze does not monotonically grow retained caches", () => {
   it("size plateaus after warm-up rounds", () => {
     setSessionCacheLimits({ maxFiles: 8, maxFns: 8, maxEvalRuns: 4 });
-    const dir = mkdtempSync(join(tmpdir(), "nudo-mem-plateau-"));
+    const dir = tmpProject("nudo-mem-plateau-");
     const files = writeBatch(dir, 12, "p");
     const srcOf = (i: number) => `export function p${i}(x) { return x + 1; }\n`;
 

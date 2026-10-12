@@ -14,18 +14,9 @@
  * 原生 ground truth 均为 node 实测。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { val } from "./eval-helpers.ts";
 
 type Lit = { ok: boolean; value?: unknown };
-
-function val(src: string): Lit {
-  return litValue(call(src).result) as Lit;
-}
 
 /** 断言折叠为指定精确值 */
 function expectExact(src: string, value: unknown) {

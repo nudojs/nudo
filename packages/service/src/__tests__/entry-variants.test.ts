@@ -3,9 +3,7 @@
  * - 分析到双入口变体之一 → info（记录不跨文件注入，观察面只覆盖本入口）
  * - 单入口包 / 两面同一文件 / 非入口文件 → 零误报
  */
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, it, expect, beforeEach } from "vitest";
 import { join } from "node:path";
 import { analyzeFile } from "../analyzer.ts";
 import {
@@ -13,32 +11,17 @@ import {
   entryVariantForFile,
   entryVariantIssueForFile,
 } from "../entry-variants.ts";
+import { tmpProject } from "./tmp-project.ts";
 
-const temps: string[] = [];
 function tempPkg(pkgJson: unknown, files: Record<string, string> = {}): string {
-  const dir = mkdtempSync(join(tmpdir(), "nudo-dual-"));
-  temps.push(dir);
-  writeFileSync(join(dir, "package.json"), JSON.stringify(pkgJson), "utf-8");
-  for (const [rel, src] of Object.entries(files)) {
-    const abs = join(dir, rel);
-    mkdirSync(join(abs, ".."), { recursive: true });
-    writeFileSync(abs, src, "utf-8");
-  }
-  return dir;
+  return tmpProject("nudo-dual-", {
+    "package.json": JSON.stringify(pkgJson),
+    ...files,
+  });
 }
 
 beforeEach(() => {
   /* each test owns its temp dir */
-});
-afterEach(() => {
-  while (temps.length) {
-    const d = temps.pop()!;
-    try {
-      rmSync(d, { recursive: true, force: true });
-    } catch {
-      /* ignore */
-    }
-  }
 });
 
 describe("detectEntryVariantsFromPackageJson", () => {

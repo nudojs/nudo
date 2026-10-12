@@ -8,22 +8,8 @@
  *    .description 字面量或 undefined；typeof "symbol"；隐式 ToString TypeError。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue, anyAbs } from "@nudojs/core";
-
-function call(src: string, fnName = "f", args: Parameters<typeof callTranspiledExportFull>[2] = []) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, args);
-}
-
-function isNever(r: unknown): boolean {
-  const a = r as { shape?: { k?: string } };
-  return !!a && typeof a === "object" && a.shape?.k === "never";
-}
-
-function throwsError(t: unknown, name: string): boolean {
-  const a = t as { shape?: { k?: string; name?: string } };
-  return !!a && typeof a === "object" && a.shape?.k === "brand" && a.shape.name === name;
-}
+import { litValue, anyAbs } from "@nudojs/core";
+import { call, isNever, throwsError } from "./eval-helpers.ts";
 
 describe("A. String.fromCharCode", () => {
   it("folds literal code points", () => {

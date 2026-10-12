@@ -1,14 +1,9 @@
-import { describe, it, expect, afterAll, beforeEach } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, it, expect, beforeEach } from "vitest";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tryEvalCallFull, analyzeFile, resetAllAnalysisCaches } from "@nudojs/service";
 import { $lit, litValue, formatShape } from "@nudojs/core";
-
-const dirs: string[] = [];
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
-});
+import { tmpProject } from "./tmp-project.ts";
 
 // 用例级缓存隔离：tryEvalCallFull / analyzeFile 背后的 evalRunCache 及级联的
 // analysisFileCache·fnAnalysisCache、absModuleCache、core memo 全部清空。
@@ -18,8 +13,7 @@ beforeEach(() => {
 
 describe("evaluator call site collection", () => {
   it("records calls during B evaluation", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-bcall-"));
-    dirs.push(dir);
+    const dir = tmpProject("nudo-bcall-");
     const src = `
 function helper(x) { return x + 1; }
 export function caller(n) { return helper(n); }

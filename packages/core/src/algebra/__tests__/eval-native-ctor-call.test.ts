@@ -10,18 +10,8 @@
  * （lit 抽取 / 按 spec 转换 / errorBrandAbs），禁止裸宿主调用。
  */
 import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  litValue,
-  setEvalFallbackCollector,
-  type EvalFallback,
-} from "@nudojs/core";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { litValue, setEvalFallbackCollector, type EvalFallback } from "@nudojs/core";
+import { call, isNever } from "./eval-helpers.ts";
 
 function withFallbacks<T>(fn: () => T): { result: T; fallbacks: EvalFallback[] } {
   const fallbacks: EvalFallback[] = [];
@@ -36,11 +26,6 @@ function withFallbacks<T>(fn: () => T): { result: T; fallbacks: EvalFallback[] }
 function throwsName(t: unknown): string | undefined {
   const a = t as { shape?: { k?: string; name?: string } };
   return a?.shape?.k === "brand" ? a.shape.name : undefined;
-}
-
-function isNever(r: unknown): boolean {
-  const a = r as { shape?: { k?: string } };
-  return !!a && typeof a === "object" && a.shape?.k === "never";
 }
 
 describe("BigInt(x) ToBigInt conversion (K2)", () => {

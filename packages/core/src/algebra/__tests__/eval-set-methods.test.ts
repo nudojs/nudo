@@ -17,14 +17,10 @@
  * ground truth：node 26 原生实测（native 是 ground truth）。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
 import { checkSource } from "../check.ts";
-import { litValue, anyAbs, type Abs } from "../abs.ts";
-import {
-  runWithMayThrowSession,
-  setMayThrowCollector,
-  type MayThrowEffect,
-} from "../may-throw.ts";
+import { anyAbs, type Abs } from "../abs.ts";
+import { call, val, effects } from "./eval-helpers.ts";
+import { l2Count } from "./nudo-constraints.ts";
 
 const METHODS = [
   "union",
@@ -36,15 +32,6 @@ const METHODS = [
   "isDisjointFrom",
 ] as const;
 
-function run(src: string, args: Abs[] = []) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, "f", args);
-}
-
-function val(src: string, args?: Abs[]) {
-  return litValue(run(src, args).result);
-}
-
 /** 原生：定抛（try/catch 吸收后返回 "caught"） */
 function expectCaught(src: string) {
   expect(val(src), `caught for: ${src}`).toEqual({ ok: true, value: "caught" });
@@ -52,7 +39,7 @@ function expectCaught(src: string) {
 
 /** 定抛：无 try/catch 时 throws 面是相应 Error brand */
 function expectThrows(src: string, name: string) {
-  const r = run(src);
+  const r = call(src);
   const got = r.throws?.shape?.k === "brand"
     ? (r.throws as { shape: { name: string } }).shape.name
     : r.throws?.shape?.k;
@@ -61,27 +48,6 @@ function expectThrows(src: string, name: string) {
 
 function check(src: string) {
   return checkSource("/t/eval-set-methods.js", src);
-}
-
-/** L2 entry-may-throw issue 数 */
-function l2Count(r: ReturnType<typeof checkSource>): number {
-  return r.issues.filter((i) => i.code === "nudo:entry-may-throw").length;
-}
-
-/** any 实参运行时效果（may-throw 收集器面） */
-function effects(src: string): string[] {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  const eff: MayThrowEffect[] = [];
-  runWithMayThrowSession(() => {
-    setMayThrowCollector((e) => eff.push(e));
-    try {
-      callTranspiledExportFull(exports, "f", [anyAbs]);
-    } catch {
-      /* 入口整抛：效果经 throws 面表达 */
-    }
-    setMayThrowCollector(null);
-  });
-  return [...new Set(eff.map((e) => e.kind))];
 }
 
 /** result 面 shape kind */
@@ -241,9 +207,9 @@ describe("Bug 28：union/difference/intersection/symmetricDifference 折叠", ()
   });
 
   it("诚实档：抽象实参不可折 → 集合运算 unknown / is* 抽象 boolean", () => {
-    const r1 = run(`export function f(x) { return new Set([1]).union(x); }`, [anyAbs]);
+    const r1 = call(`export function f(x) { return new Set([1]).union(x); }`, "f", [anyAbs]);
     expect(shapeK(r1.result)).toBe("unknown");
-    const r2 = run(`export function f(x) { return new Set([1]).isSubsetOf(x); }`, [anyAbs]);
+    const r2 = call(`export function f(x) { return new Set([1]).isSubsetOf(x); }`, "f", [anyAbs]);
     expect(shapeK(r2.result)).toBe("prim");
     expect((r2.result!.shape as { type?: string }).type).toBe("boolean");
     expect(r2.result!.term?.op).not.toBe("lit");
@@ -251,7 +217,7 @@ describe("Bug 28：union/difference/intersection/symmetricDifference 折叠", ()
     expect(val(`export function f(x) { return new Set([x]).union(new Set([1])).size; }`, [anyAbs]))
       .toEqual({ ok: true, value: 2 });
     // 抽象元素：intersection 成员判定不可判 → 诚实 unknown
-    const r3 = run(`export function f(x) { return new Set([x]).intersection(new Set([1])); }`, [anyAbs]);
+    const r3 = call(`export function f(x) { return new Set([x]).intersection(new Set([1])); }`, "f", [anyAbs]);
     expect(shapeK(r3.result)).toBe("unknown");
   });
 });

@@ -17,6 +17,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue, abs, type Abs } from "@nudojs/core";
+import { sigOf } from "./nudo-constraints.ts";
 
 const strPrim: Abs = abs({ k: "prim", type: "string" }, undefined, undefined, "path");
 const numPrim: Abs = abs({ k: "prim", type: "number" }, undefined, undefined, "path");
@@ -89,10 +90,6 @@ function iterabilityWarnings(r: ReturnType<typeof check>, fn?: string): number {
       (!fn || i.fn === fn) &&
       `${i.message} ${i.suggestion ?? ""}`.includes("possibly non-iterable"),
   ).length;
-}
-
-function sigOf(r: ReturnType<typeof check>, fn: string): string {
-  return r.signatures.find((s) => s.name === fn)?.display ?? "(missing)";
 }
 
 describe("brand 迭代消费（issue #147）", () => {

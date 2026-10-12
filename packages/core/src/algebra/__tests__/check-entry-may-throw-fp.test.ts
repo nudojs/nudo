@@ -26,19 +26,10 @@
  */
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue } from "@nudojs/core";
-import { withStdImport, stdOpts } from "./nudo-constraints.ts";
+import { withStdImport, stdOpts, l2Count, sigOf } from "./nudo-constraints.ts";
 
 function check(src: string) {
   return checkSource("/t/entry-may-throw-fp.js", withStdImport(src), pTrue, stdOpts);
-}
-
-/** L2 entry-may-throw 的 issue 数（按函数名过滤可选） */
-function l2Count(r: ReturnType<typeof check>, fn?: string): number {
-  return r.issues.filter((i) => i.code === "nudo:entry-may-throw" && (!fn || i.fn === fn)).length;
-}
-
-function sigOf(r: ReturnType<typeof check>, fn: string): string {
-  return r.signatures.find((s) => s.name === fn)?.display ?? "(missing)";
 }
 
 const PARSE = `function parse(s) { if (s === 'x') return { major: 1 }; return null; }`;

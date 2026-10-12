@@ -1,6 +1,5 @@
-import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, it, expect } from "vitest";
+import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import {
   findProjectConfig,
@@ -8,11 +7,7 @@ import {
   matchesEmitAllowlist,
   type NudoConfig,
 } from "../evaluator/config.ts";
-
-const dirs: string[] = [];
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
-});
+import { tmpProject } from "./tmp-project.ts";
 
 describe("interfaceConfig", () => {
   it("defaults when config is null/undefined or lacks the contract key", () => {
@@ -84,8 +79,7 @@ describe("matchesEmitAllowlist", () => {
 
 describe("findProjectConfig with contract key", () => {
   it("finds package.json upward across directory levels and reads its contract section", () => {
-    const root = mkdtempSync(join(tmpdir(), "nudo-iface-cfg-"));
-    dirs.push(root);
+    const root = tmpProject("nudo-iface-cfg-");
     writeFileSync(
       join(root, "package.json"),
       JSON.stringify({
@@ -102,8 +96,7 @@ describe("findProjectConfig with contract key", () => {
   });
 
   it("package.json without a nudo key yields null config and default contract settings", () => {
-    const root = mkdtempSync(join(tmpdir(), "nudo-iface-plain-"));
-    dirs.push(root);
+    const root = tmpProject("nudo-iface-plain-");
     writeFileSync(join(root, "package.json"), JSON.stringify({ name: "plain", version: "1.0.0" }));
     const sub = join(root, "sub");
     mkdirSync(sub);
@@ -114,8 +107,7 @@ describe("findProjectConfig with contract key", () => {
   });
 
   it("monorepo: child package.json without nudo continues up to the root nudo config", () => {
-    const root = mkdtempSync(join(tmpdir(), "nudo-iface-mono-"));
-    dirs.push(root);
+    const root = tmpProject("nudo-iface-mono-");
     writeFileSync(
       join(root, "package.json"),
       JSON.stringify({
@@ -136,8 +128,7 @@ describe("findProjectConfig with contract key", () => {
   });
 
   it("BUG-027: corrupted child package.json stops the walk with a diagnosis (no silent root inheritance)", () => {
-    const root = mkdtempSync(join(tmpdir(), "nudo-cfg-corrupt-"));
-    dirs.push(root);
+    const root = tmpProject("nudo-cfg-corrupt-");
     writeFileSync(
       join(root, "package.json"),
       JSON.stringify({
@@ -179,8 +170,7 @@ describe("findProjectConfig with contract key", () => {
   });
 
   it("BUG-027: non-object package.json (JSON null) does not crash (old: TypeError swallowed)", () => {
-    const root = mkdtempSync(join(tmpdir(), "nudo-cfg-null-"));
-    dirs.push(root);
+    const root = tmpProject("nudo-cfg-null-");
     writeFileSync(
       join(root, "package.json"),
       JSON.stringify({ name: "mono-root", nudo: { contract: { autoBind: false } } }),

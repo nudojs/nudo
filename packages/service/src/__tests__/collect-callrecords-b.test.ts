@@ -4,20 +4,13 @@
  * 展开，队列自然处理 describe 嵌套）。
  */
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { collectCallRecords } from "../analyzer.ts";
 import { litValue } from "@nudojs/core";
+import { withTmpProject } from "./tmp-project.ts";
 
-function withDir(fn: (dir: string) => void) {
-  const dir = mkdtempSync(join(tmpdir(), "nudo-tcb-"));
-  try {
-    fn(dir);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
+const withDir = (fn: (dir: string) => void) => withTmpProject("nudo-tcb-", fn);
 
 describe("collectCallRecords: B exec + test callback expansion", () => {
   it("it(...) callback body calls are harvested", () => {

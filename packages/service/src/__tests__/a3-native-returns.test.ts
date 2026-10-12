@@ -1,14 +1,14 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, it, expect, beforeAll } from "vitest";
+import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { runTranspiled, callTranspiledExportFull, formatShape, $lit, setEvalCallCollector } from "@nudojs/core";
 import { evalAbsModuleGraph } from "../abs-modules-graph.ts";
+import { tmpProject } from "./tmp-project.ts";
 
 let root: string;
 
 beforeAll(() => {
-  root = mkdtempSync(join(tmpdir(), "nudo-a3-native-"));
+  root = tmpProject("nudo-a3-native-");
   // 真实形态：CJS 单文件纯 JS 包（ms 同构），含 isFinite + else-if 早退
   const pkgDir = join(root, "node_modules", "tiny-ms");
   mkdirSync(pkgDir, { recursive: true });
@@ -32,10 +32,6 @@ beforeAll(() => {
 `,
     "utf-8",
   );
-});
-
-afterAll(() => {
-  rmSync(root, { recursive: true, force: true });
 });
 
 describe("A3 native / bare-package returns", () => {

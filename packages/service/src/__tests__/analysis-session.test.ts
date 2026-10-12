@@ -1,13 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { getAnalysisSession, setAnalysisSession } from "../analysis-session.ts";
-import { writeFileSync, mkdtempSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { tmpProject } from "./tmp-project.ts";
 
 describe("B5 AnalysisSession", () => {
   it("default session shares analyze memo and supports clear/evict", () => {
     const session = getAnalysisSession();
-    const dir = mkdtempSync(join(tmpdir(), "nudo-sess-"));
+    const dir = tmpProject("nudo-sess-");
     const file = join(dir, "id.js");
     const src = `export function id(x) { return x; }\n`;
     writeFileSync(file, src);

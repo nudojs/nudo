@@ -21,16 +21,12 @@ import {
   setMayThrowCollector,
   type MayThrowEffect,
 } from "../may-throw.ts";
+import { call, isNever } from "./eval-helpers.ts";
 
 const anyAbs = abs({ k: "any" }, undefined, undefined, "path");
 const numParam = abs({ k: "prim", type: "number" }, undefined, undefined, "path");
 
 type CallResult = { result: Abs; throws: Abs };
-
-function call(src: string, fnName = "f", args: unknown[] = []): CallResult {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, args as never[]) as unknown as CallResult;
-}
 
 /** may-throw 效果收集（gate 面断言；效果收集需要 may-throw session） */
 function evalEffects(
@@ -50,11 +46,6 @@ function evalEffects(
     setMayThrowCollector(null);
   });
   return [...new Set(effects.map((e) => e.kind))];
-}
-
-function isNever(r: unknown): boolean {
-  const a = r as { shape?: { k?: string } };
-  return !!a && typeof a === "object" && a.shape?.k === "never";
 }
 
 function throwsBrand(t: unknown, name: string): boolean {

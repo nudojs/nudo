@@ -7,20 +7,8 @@
  * 同类：div/mul 对 k=0 的字面量路径已保真；mod 的 vb===0 特判是漏网点。
  */
 import { describe, it, expect } from "vitest";
-import {
-  mod,
-  numLit,
-  numVar,
-  litValue,
-  predToString,
-  runTranspiled,
-  callTranspiledExportFull,
-} from "../index.ts";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { mod, numLit, numVar, litValue, predToString } from "../index.ts";
+import { call } from "./eval-helpers.ts";
 
 describe("mod by zero folds to exact NaN", () => {
   it("5 % 0 is exact NaN", () => {

@@ -517,11 +517,14 @@ export const addPair = fn({ a: number(), b: number() }, number());
 // 保持声明形态；早退守卫 / 成员访问对象之后剥离
 // nullable 包装（流窄化）；引用标识符（如 astNode）
 // 包为链接跳定义（import 表 → 依赖侧车定义行）
-describe("getHoverAtPosition param display folding", () => {
-  const SIDE = `import { fn, string, nullable } from '@nudojs/core';
+// 下面两个 describe（param display folding / return expression hover）共享的
+// literal 侧车（SHAPES 各自不同，留在各 describe 内）
+const LITERAL_SIDE = `import { fn, string, nullable } from '@nudojs/core';
 import { astNode } from './shapes.nudo.js';
 export const literal = fn({ node: nullable(astNode) }, nullable(string()));
 `;
+
+describe("getHoverAtPosition param display folding", () => {
   const SHAPES = `import { union, shape, lit, string } from '@nudojs/core';
 export const astNode = union(
   shape({ type: lit('Identifier'), name: string() }),
@@ -539,7 +542,7 @@ export const astNode = union(
 
   function setup() {
     const dir = mkdtempSync(join(tmpdir(), "nudo-param-fold-"));
-    writeFileSync(join(dir, "literal.nudo.js"), SIDE, "utf-8");
+    writeFileSync(join(dir, "literal.nudo.js"), LITERAL_SIDE, "utf-8");
     writeFileSync(join(dir, "shapes.nudo.js"), SHAPES, "utf-8");
     const f = join(dir, "literal.js");
     writeFileSync(f, MAIN, "utf-8");
@@ -716,10 +719,6 @@ export const astNode = union(
   shape({ type: lit('TemplateLiteral'), quasis: array(shape({ value: shape({ cooked: string() }) })) }),
 );
 `;
-  const SIDE = `import { fn, string, nullable } from '@nudojs/core';
-import { astNode } from './shapes.nudo.js';
-export const literal = fn({ node: nullable(astNode) }, nullable(string()));
-`;
   const MAIN = [
     "export function literal(node) {",
     "  if (!node) return null;",
@@ -733,7 +732,7 @@ export const literal = fn({ node: nullable(astNode) }, nullable(string()));
   function setup() {
     const dir = mkdtempSync(join(tmpdir(), "nudo-return-hover-"));
     writeFileSync(join(dir, "shapes.nudo.js"), SHAPES, "utf-8");
-    writeFileSync(join(dir, "literal.nudo.js"), SIDE, "utf-8");
+    writeFileSync(join(dir, "literal.nudo.js"), LITERAL_SIDE, "utf-8");
     const f = join(dir, "literal.js");
     writeFileSync(f, MAIN, "utf-8");
     const loadModule = makeBufferAwareLoadModule(() => undefined);

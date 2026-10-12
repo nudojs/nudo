@@ -8,8 +8,8 @@ import {
   nudoDepParents,
   registerNudoImportDeps,
   validateText,
-  type ValidateTextDeps,
 } from "../validation.ts";
+import { makeValidateDeps } from "./helpers.ts";
 import { generalizeFromAst, getGeneralizeMemoSize, resetGeneralizeMemo } from "@nudojs/core";
 import {
   checkSource,
@@ -66,23 +66,23 @@ needsPositive(-1);
 
     let revalidated = 0;
     const sent = new Map<string, unknown[]>();
-    const openDocs = new Map([
-      [
-        resolve(parent).replace(/\\/g, "/"),
-        {
-          uri: `file://${parent}`,
-          version: 2,
-          getText: () => parentSrc,
-        },
+    const deps = makeValidateDeps({
+      docs: [
+        [
+          resolve(parent).replace(/\\/g, "/"),
+          {
+            uri: `file://${parent}`,
+            version: 2,
+            getText: () => parentSrc,
+          },
+        ],
       ],
-    ]);
-    const deps: ValidateTextDeps = {
-      sendDiagnostics: (p) => {
+      lookupKey: (p) => p.replace(/\\/g, "/"),
+      onPublish: (p) => {
         sent.set(p.uri, p.diagnostics);
         revalidated++;
       },
-      getOpenDocumentByPath: (p) => openDocs.get(p.replace(/\\/g, "/")),
-    };
+    });
 
     await handleNudoDepFileChanged(dep, deps);
 
@@ -100,9 +100,7 @@ needsPositive(-1);
   it("does nothing when no parent depends on the path", async () => {
     resetGeneralizeMemo();
     const before = getGeneralizeMemoSize();
-    await handleNudoDepFileChanged("/nope/x.nudo.js", {
-      sendDiagnostics: () => {},
-    });
+    await handleNudoDepFileChanged("/nope/x.nudo.js", makeValidateDeps());
     expect(getGeneralizeMemoSize()).toBe(before);
   });
 });
@@ -136,16 +134,14 @@ describe("autoBind implicit sidecar dep edges (设计 §4.5)", () => {
 
     let revalidated = 0;
     const sent = new Map<string, unknown[]>();
-    const openDocs = new Map([
-      [norm(parent), { uri: `file://${parent}`, version: 2, getText: () => parentSrc }],
-    ]);
-    const deps: ValidateTextDeps = {
-      sendDiagnostics: (p) => {
+    const deps = makeValidateDeps({
+      docs: [[norm(parent), { uri: `file://${parent}`, version: 2, getText: () => parentSrc }]],
+      lookupKey: (p) => p.replace(/\\/g, "/"),
+      onPublish: (p) => {
         sent.set(p.uri, p.diagnostics);
         revalidated++;
       },
-      getOpenDocumentByPath: (p) => openDocs.get(p.replace(/\\/g, "/")),
-    };
+    });
     await handleNudoDepFileChanged(sidecar, deps);
 
     const g2 = generalizeFromAst("needsPositive", parentSrc, {
@@ -185,15 +181,13 @@ describe("autoBind implicit sidecar dep edges (设计 §4.5)", () => {
     expect(g1).toBeDefined();
 
     let revalidated = 0;
-    const openDocs = new Map([
-      [norm(parent), { uri: `file://${parent}`, version: 2, getText: () => parentSrc }],
-    ]);
-    const deps: ValidateTextDeps = {
-      sendDiagnostics: () => {
+    const deps = makeValidateDeps({
+      docs: [[norm(parent), { uri: `file://${parent}`, version: 2, getText: () => parentSrc }]],
+      lookupKey: (p) => p.replace(/\\/g, "/"),
+      onPublish: () => {
         revalidated++;
       },
-      getOpenDocumentByPath: (p) => openDocs.get(p.replace(/\\/g, "/")),
-    };
+    });
     await handleNudoDepFileChanged(std, deps);
     const g2 = generalizeFromAst("go", parentSrc, {
       refine: { loadModule, fromFile: parent },
@@ -254,13 +248,11 @@ describe("autoBind implicit sidecar dep edges (设计 §4.5)", () => {
     registerNudoImportDeps(parent, parentSrc);
 
     const sent = new Map<string, { code?: unknown }[]>();
-    const openDocs = new Map([
-      [norm(parent), { uri: `file://${parent}`, version: 2, getText: () => parentSrc }],
-    ]);
-    const deps: ValidateTextDeps = {
-      sendDiagnostics: (p) => sent.set(p.uri, p.diagnostics),
-      getOpenDocumentByPath: (p) => openDocs.get(p.replace(/\\/g, "/")),
-    };
+    const deps = makeValidateDeps({
+      docs: [[norm(parent), { uri: `file://${parent}`, version: 2, getText: () => parentSrc }]],
+      lookupKey: (p) => p.replace(/\\/g, "/"),
+      onPublish: (p) => sent.set(p.uri, p.diagnostics),
+    });
     // 初验：gt(0) 契约 × -1 实参 → nudo:constraint-violated
     await validateText(parent, `file://${parent}`, parentSrc, 2, deps, false);
     const before = sent.get(`file://${parent}`) ?? [];

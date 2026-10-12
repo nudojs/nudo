@@ -1,19 +1,13 @@
-import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, it, expect } from "vitest";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { runTranspiled, callTranspiledExport, $lit, litValue } from "@nudojs/core";
 import { tryEvalCall, analyzeFile } from "@nudojs/service";
 import { formatShape } from "@nudojs/core";
-
-const dirs: string[] = [];
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
-});
+import { tmpProject } from "./tmp-project.ts";
 
 function tmpPair(math: string, main: string) {
-  const dir = mkdtempSync(join(tmpdir(), "nudo-eval-imp-"));
-  dirs.push(dir);
+  const dir = tmpProject("nudo-eval-imp-");
   writeFileSync(join(dir, "math.js"), math, "utf-8");
   writeFileSync(join(dir, "main.js"), main, "utf-8");
   return { dir, mainPath: join(dir, "main.js"), main };
@@ -67,8 +61,7 @@ export function run(n) { return triple(n); }
   it("object slots holding functions become first-class Abs fns (no raw JS leak)", () => {
     // 回归：transpile 把函数表达式编译成真实 JS 函数；流进对象槽后
     // 下游 absToTypeValue 读 .shape 曾裸崩（Cannot read properties of undefined (reading 'k')）
-    const dir = mkdtempSync(join(tmpdir(), "nudo-eval-fnslot-"));
-    dirs.push(dir);
+    const dir = tmpProject("nudo-eval-fnslot-");
     const p = join(dir, "main.js");
     const src = `
 function helper(a, b) { return a; }

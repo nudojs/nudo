@@ -13,12 +13,8 @@
  * 实例（new A()）不受影响：typeof 仍 "object"、instanceof Function 仍 false。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { litValue } from "@nudojs/core";
+import { call } from "./eval-helpers.ts";
 
 describe("evaluator class value is a function", () => {
   it("typeof class declaration is function", () => {

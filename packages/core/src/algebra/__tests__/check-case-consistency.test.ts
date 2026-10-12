@@ -3,12 +3,7 @@
  * case 是契约的见证，不是另一套前置来源。
  */
 import { describe, it, expect } from "vitest";
-import { checkSource, pTrue } from "../index.ts";
-import { withStdImport, stdOpts } from "./nudo-constraints.ts";
-
-function issuesOf(src: string) {
-  return checkSource("/t/case.js", withStdImport(src), pTrue, stdOpts);
-}
+import { issuesOf } from "./nudo-constraints.ts";
 
 describe("case vs refine", () => {
   it("ok: case 实参满足契约", () => {
@@ -20,7 +15,7 @@ describe("case vs refine", () => {
 function needsPositive(x) {
   return x;
 }
-`);
+`, "/t/case.js");
     expect(r.issues.filter((i) => i.code === "nudo:case-inconsistency")).toEqual([]);
   });
 
@@ -33,7 +28,7 @@ function needsPositive(x) {
 function needsPositive(x) {
   return x;
 }
-`);
+`, "/t/case.js");
     const err = r.issues.find((i) => i.code === "nudo:case-inconsistency");
     expect(err).toBeDefined();
     expect(err!.severity).toBe("error");
@@ -50,7 +45,7 @@ function needsPositive(x) {
 function pct(n) {
   return n;
 }
-`);
+`, "/t/case.js");
     expect(r.ok).toBe(false);
     expect(r.issues.some((i) => i.code === "nudo:case-inconsistency")).toBe(true);
   });
@@ -63,7 +58,7 @@ function pct(n) {
 function id(x) {
   return x;
 }
-`);
+`, "/t/case.js");
     expect(r.issues.filter((i) => i.code === "nudo:case-inconsistency")).toEqual([]);
   });
 
@@ -78,7 +73,7 @@ function id(x) {
 function needsInt(x) {
   return x;
 }
-`);
+`, "/t/case.js");
     const err = r.issues.find((i) => i.code === "nudo:case-inconsistency");
     expect(err).toBeDefined();
     expect(err!.severity).toBe("error");
@@ -95,7 +90,7 @@ function needsInt(x) {
 function needsIntId(x) {
   return x;
 }
-`);
+`, "/t/case.js");
     const err = r.issues.find((i) => i.code === "nudo:case-inconsistency");
     expect(err).toBeDefined();
     expect(err!.expected).toContain("int");
@@ -110,7 +105,7 @@ function needsIntId(x) {
 function a(x) {
   return x;
 }
-`);
+`, "/t/case.js");
     const err = bad.issues.find((i) => i.code === "nudo:case-inconsistency");
     expect(err).toBeDefined();
     expect(err!.expected).toContain(">");
@@ -123,7 +118,7 @@ function a(x) {
 function b(x) {
   return x;
 }
-`);
+`, "/t/case.js");
     expect(ok.issues.filter((i) => i.code === "nudo:case-inconsistency")).toEqual([]);
   });
 
@@ -136,7 +131,7 @@ function b(x) {
 function c(x) {
   return x;
 }
-`);
+`, "/t/case.js");
     expect(r.issues.filter((i) => i.code === "nudo:case-inconsistency")).toEqual([]);
   });
 });

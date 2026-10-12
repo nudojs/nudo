@@ -14,32 +14,16 @@
 import { describe, it, expect } from "vitest";
 import { checkSource } from "../check.ts";
 import { litValue } from "../abs.ts";
-import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
-
-function call(src: string, fnName = "f") {
-  const run = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(run, fnName, []) as {
-    result?: unknown;
-    throws?: unknown;
-  };
-}
+import { call, isNever } from "./eval-helpers.ts";
+import { l2Count } from "./nudo-constraints.ts";
 
 function check(src: string) {
   return checkSource("/t/battery-leftovers.js", src);
 }
 
-function l2Count(r: ReturnType<typeof check>, fn?: string): number {
-  return r.issues.filter((i) => i.code === "nudo:entry-may-throw" && (!fn || i.fn === fn)).length;
-}
-
 function throwsKind(t: unknown, name: string): boolean {
   const a = t as { shape?: { k?: string; name?: string } };
   return !!a && typeof a === "object" && a.shape?.k === "brand" && a.shape.name === name;
-}
-
-function isNever(r: unknown): boolean {
-  const a = r as { shape?: { k?: string } };
-  return !!a && typeof a === "object" && a.shape?.k === "never";
 }
 
 function litOf(r: unknown): { ok: boolean; value?: unknown } {

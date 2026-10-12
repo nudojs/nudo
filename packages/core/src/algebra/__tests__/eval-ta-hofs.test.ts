@@ -20,28 +20,15 @@
 import { describe, it, expect } from "vitest";
 // 相对路径引 src 引擎面（不经 @nudojs/core 别名——本 worktree 的 vite8
 // 别名解析会把裸包名落到 dist 旧产物，同 eval-non-callable.test.ts）。
-import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
 import { checkSource } from "../check.ts";
-import { litValue, anyAbs, type Abs } from "../abs.ts";
+import { type Abs } from "../abs.ts";
 import { formatShape } from "../format.ts";
 import { $lit } from "../exec/runtime/state.ts";
-import {
-  runWithMayThrowSession,
-  setMayThrowCollector,
-  type MayThrowEffect,
-} from "../may-throw.ts";
-
-function run(src: string, args: Abs[] = []) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, "f", args);
-}
-
-function val(src: string, args?: Abs[]) {
-  return litValue(run(src, args).result);
-}
+import { call, val, effects } from "./eval-helpers.ts";
+import { l2Count } from "./nudo-constraints.ts";
 
 function shape(src: string, args?: Abs[]) {
-  return formatShape(run(src, args).result);
+  return formatShape(call(src, "f", args).result);
 }
 
 /** 原生：GetCallback 非函数定抛 TypeError（try/catch 吸收） */
@@ -51,7 +38,7 @@ function expectCaught(src: string) {
 
 /** 定抛 TypeError：无 try/catch 时 throws 面是 TypeError brand */
 function expectTypeError(src: string) {
-  const r = run(src);
+  const r = call(src);
   const name = r.throws?.shape?.k === "brand"
     ? (r.throws as { shape: { name: string } }).shape.name
     : r.throws?.shape?.k;
@@ -60,29 +47,6 @@ function expectTypeError(src: string) {
 
 function check(src: string) {
   return checkSource("/t/eval-ta-hofs.js", src);
-}
-
-/** L2 entry-may-throw issue 数（按函数名过滤可选） */
-function l2Count(r: ReturnType<typeof check>, fn?: string): number {
-  return r.issues.filter(
-    (i) => i.code === "nudo:entry-may-throw" && (!fn || i.fn === fn),
-  ).length;
-}
-
-/** any 实参运行时效果（may-throw 收集器面） */
-function effects(src: string): string[] {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  const eff: MayThrowEffect[] = [];
-  runWithMayThrowSession(() => {
-    setMayThrowCollector((e) => eff.push(e));
-    try {
-      callTranspiledExportFull(exports, "f", [anyAbs]);
-    } catch {
-      /* 入口整抛：效果经 throws 面表达 */
-    }
-    setMayThrowCollector(null);
-  });
-  return [...new Set(eff.map((e) => e.kind))];
 }
 
 describe("Bug 36：TA HOF 非函数回调定抛 TypeError（GetCallback 前置）", () => {

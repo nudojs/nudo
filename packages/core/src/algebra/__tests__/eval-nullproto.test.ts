@@ -6,12 +6,8 @@
  * 自有槽；标记随 $set/$del 不可变更新迁移；$in 对 unknown 形状回 bool()。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { litValue } from "@nudojs/core";
+import { call } from "./eval-helpers.ts";
 
 describe("evaluator Object.create(null)", () => {
   it("prototype members are absent", () => {

@@ -8,11 +8,7 @@
 import { describe, it, expect } from "vitest";
 import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
 import { abs } from "../abs.ts";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { call } from "./eval-helpers.ts";
 
 /** 抽象条件分支测试：参数是抽象 number（truthy 判定未知 → 两臂都探索） */
 function callFork(src: string) {

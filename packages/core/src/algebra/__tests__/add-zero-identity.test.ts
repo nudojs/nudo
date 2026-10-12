@@ -8,24 +8,8 @@
  * 会把 `x+0` 误认成 `x`，进而 strictEqAbs(same var) 折 true。
  */
 import { describe, it, expect } from "vitest";
-import {
-  add,
-  simplifyTerm,
-  app,
-  lit,
-  v,
-  numLit,
-  numVar,
-  strictEqAbs,
-  litValue,
-  runTranspiled,
-  callTranspiledExportFull,
-} from "../index.ts";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { add, simplifyTerm, app, lit, v, numLit, numVar, strictEqAbs, litValue } from "../index.ts";
+import { call } from "./eval-helpers.ts";
 
 describe("x+0 identity is unsound", () => {
   it("simplifyTerm must not fold x+0 to x (-0 + 0 = +0)", () => {

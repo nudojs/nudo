@@ -5,24 +5,17 @@
  * hasOwnProperty 导出时，把 Object.prototype 成员当模块导出调用
  * （伪造结果 / 伪造 throws 面）。导出存在性必须按自有属性判定。
  */
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, it, expect, beforeEach } from "vitest";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tryEvalCallFull, resetAllAnalysisCaches } from "@nudojs/service";
 import { applyMockModuleDirectivesFromSource } from "../mock-module.ts";
 import type { AbsModuleExports } from "@nudojs/core";
 import { $lit, litValue } from "@nudojs/core";
-
-const dirs: string[] = [];
+import { tmpProject } from "./tmp-project.ts";
 
 beforeEach(() => {
   resetAllAnalysisCaches();
-});
-
-afterEach(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
-  dirs.length = 0;
 });
 
 describe("tryEvalCallFull: Object.prototype names are not module exports", () => {
@@ -51,8 +44,7 @@ describe("tryEvalCallFull: Object.prototype names are not module exports", () =>
 
 describe("mock-module partial overlay does not pick Object.prototype names", () => {
   it("{ toString } on a mock without such export → not overlaid", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-proto-mock-"));
-    dirs.push(dir);
+    const dir = tmpProject("nudo-proto-mock-");
     writeFileSync(join(dir, "mock.js"), `export function a() { return 1; }\n`, "utf-8");
     const src = `/// @nudo:mock-module "dep" { toString, a } from "./mock.js"\nexport function f() { return 1; }\n`;
     const base: Record<string, AbsModuleExports> = { dep: { named: {} } };

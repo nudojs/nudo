@@ -20,8 +20,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { checkSource } from "../check.ts";
-import { anyAbs, litValue } from "../abs.ts";
-import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
+import { anyAbs, litValue, type Abs } from "../abs.ts";
 import { formatAbs } from "../format.ts";
 import { $lit } from "../exec/runtime/state.ts";
 import {
@@ -29,31 +28,16 @@ import {
   setMayThrowCollector,
   type MayThrowEffect,
 } from "../may-throw.ts";
-
-function call(src: string, fnName = "f", args: unknown[] = []) {
-  const run = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(run, fnName, args as never[]) as {
-    result?: unknown;
-    throws?: unknown;
-  };
-}
+import { call, isNever } from "./eval-helpers.ts";
+import { l2Count } from "./nudo-constraints.ts";
 
 function check(src: string) {
   return checkSource("/t/collection-ctor-iterables.js", src);
 }
 
-function l2Count(r: ReturnType<typeof check>, fn?: string): number {
-  return r.issues.filter((i) => i.code === "nudo:entry-may-throw" && (!fn || i.fn === fn)).length;
-}
-
 function throwsTypeError(t: unknown): boolean {
   const a = t as { shape?: { k?: string; name?: string } };
   return !!a && typeof a === "object" && a.shape?.k === "brand" && a.shape.name === "TypeError";
-}
-
-function isNever(r: unknown): boolean {
-  const a = r as { shape?: { k?: string } };
-  return !!a && typeof a === "object" && a.shape?.k === "never";
 }
 
 function numLitOf(r: unknown): unknown {
@@ -63,7 +47,7 @@ function numLitOf(r: unknown): unknown {
 function evalSrc(
   src: string,
   fnName: string,
-  args: unknown[],
+  args: Abs[],
 ): { value: string; throws: string; effects: string[] } {
   const effects: MayThrowEffect[] = [];
   let result: { result?: unknown; throws?: unknown } = {};

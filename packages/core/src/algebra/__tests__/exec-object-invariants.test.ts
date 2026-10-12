@@ -7,24 +7,11 @@
  * 可写路径（seal 已有键、preventExtensions 已有键、writable:true）照常写入。
  */
 import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  litValue,
-} from "@nudojs/core";
-
-function call(src: string, fnName: string) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { litValue } from "@nudojs/core";
+import { call, isNever } from "./eval-helpers.ts";
 
 function str(src: string) {
   return litValue(call(src, "run").result);
-}
-
-function isNever(r: unknown): boolean {
-  const a = r as { shape?: { k?: string } };
-  return !!a && typeof a === "object" && a.shape?.k === "never";
 }
 
 function throwsTypeError(t: unknown): boolean {

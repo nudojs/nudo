@@ -27,6 +27,7 @@ import { pTrue } from "../pred.ts";
 import { abs, litValue, type Abs } from "../abs.ts";
 import { runWithMayThrowSession, setMayThrowCollector, type MayThrowEffect } from "../exec/may-throw.ts";
 import { withStdImport, stdOpts } from "./nudo-constraints.ts";
+import { isNever } from "./eval-helpers.ts";
 
 function evalAbs(
   src: string,
@@ -60,11 +61,6 @@ function evalAny(src: string, fnName = "f"): ReturnType<typeof evalAbs> {
 function litOf(a: Abs | undefined): unknown {
   const r = a ? litValue(a) : undefined;
   return r?.ok ? r.value : undefined;
-}
-
-function isNever(a: unknown): boolean {
-  const s = a as { shape?: { k?: string } };
-  return !!s && typeof s === "object" && s.shape?.k === "never";
 }
 
 function check(src: string) {

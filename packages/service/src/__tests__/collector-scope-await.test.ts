@@ -1,15 +1,9 @@
-import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, it, expect } from "vitest";
 import { join } from "node:path";
 import { runTranspiled, callTranspiledExportFull, num } from "@nudojs/core";
 import { runWithCollectorScope, setAbsTruncationCollector } from "@nudojs/core/internal";
 import { analyzeFileAsync } from "@nudojs/service";
-
-const dirs: string[] = [];
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
-});
+import { tmpProject } from "./tmp-project.ts";
 
 describe("collector scope across await", () => {
   it("scoped: interleaved analyses keep their own truncation collector across await", async () => {
@@ -38,8 +32,7 @@ describe("collector scope across await", () => {
   });
 
   it("analyzeFileAsync x2 concurrent on same source stays correct", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-collector-scope-"));
-    dirs.push(dir);
+    const dir = tmpProject("nudo-collector-scope-");
     const f = join(dir, "id.js");
     const src = "export function id(x){return x;}";
     const [a, b] = await Promise.all([analyzeFileAsync(f, src), analyzeFileAsync(f, src)]);

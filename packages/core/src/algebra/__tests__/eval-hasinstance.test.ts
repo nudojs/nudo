@@ -13,11 +13,7 @@ import { describe, it, expect } from "vitest";
 import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
 import { litValue } from "../abs.ts";
 import { formatShape } from "../format.ts";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { call } from "./eval-helpers.ts";
 
 describe("evaluator instanceof @@hasInstance", () => {
   it("custom Symbol.hasInstance returning true", () => {

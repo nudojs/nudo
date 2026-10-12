@@ -11,11 +11,7 @@ import {
   litValue,
   formatShape,
 } from "@nudojs/core";
-
-function call(src: string, fnName: string) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { call } from "./eval-helpers.ts";
 
 function callWithArr(src: string, fnName: string, arrSrc: ReturnType<typeof $arr>) {
   const exports = runTranspiled(src, { mode: "analyze" });

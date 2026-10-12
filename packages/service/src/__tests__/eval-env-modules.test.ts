@@ -1,14 +1,7 @@
-import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, it, expect } from "vitest";
 import { join } from "node:path";
 import { analyzeFile, clearEvalCache } from "@nudojs/service";
 import { formatShape } from "@nudojs/core";
-
-const dirs: string[] = [];
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
-});
 
 describe("evaluator env modules (node:path)", () => {
   it("path.join via import from node:path", () => {

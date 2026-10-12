@@ -3,25 +3,7 @@
  * 其后的位置参数——定向 usage error + `--` 终止符。
  */
 import { describe, it, expect } from "vitest";
-import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import { join } from "node:path";
-
-const cliEntry = fileURLToPath(new URL("../index.ts", import.meta.url));
-const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
-
-function runCli(args: string[]): { stdout: string; stderr: string; status: number } {
-  const r = spawnSync(
-    process.execPath,
-    [join(repoRoot, "node_modules/tsx/dist/cli.mjs"), cliEntry, ...args],
-    {
-      cwd: repoRoot,
-      encoding: "utf-8",
-      env: { ...process.env, NO_COLOR: "1", GITHUB_ACTIONS: "false" },
-    },
-  );
-  return { stdout: r.stdout ?? "", stderr: r.stderr ?? "", status: r.status ?? 1 };
-}
+import { runCliNode as runCli } from "./helpers/run-cli.ts";
 
 describe("BUG-024: variadic 旗标吞噬位置参数", () => {
   it("check --from a.js target.js → targeted usage error pointing at --from", () => {

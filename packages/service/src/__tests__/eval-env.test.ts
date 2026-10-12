@@ -1,20 +1,14 @@
-import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, it, expect } from "vitest";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { analyzeFile, tryEvalCall, clearEvalCache } from "@nudojs/service";
 import { formatShape, $lit, absToString } from "@nudojs/core";
-
-const dirs: string[] = [];
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
-});
+import { tmpProject } from "./tmp-project.ts";
 
 describe("evaluator @nudo:env", () => {
   it("JSON.parse via @nudo:env es", () => {
     clearEvalCache();
-    const dir = mkdtempSync(join(tmpdir(), "nudo-env-"));
-    dirs.push(dir);
+    const dir = tmpProject("nudo-env-");
     const main = `/// @nudo:env es
 
 /**
@@ -50,8 +44,7 @@ function addOne(n) {
 
   it("arrowFn @nudo:mock injects into evaluator (no real fetch call)", () => {
     clearEvalCache();
-    const dir = mkdtempSync(join(tmpdir(), "nudo-mock-b-"));
-    dirs.push(dir);
+    const dir = tmpProject("nudo-mock-b-");
     // 回归：arrowFn mock 落在 seedFns，此前 求值引擎注入只吃 seedVars——
     // 函数体内的 fetch 调用落到真实原生 fetch，拿 Abs 当 URL 直接崩
     const source = `// @nudo:mock fetch = (url) => ({ ok: true, json: () => ({ id: 1, name: "ada" }) })

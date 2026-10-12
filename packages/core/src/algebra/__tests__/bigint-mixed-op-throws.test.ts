@@ -15,21 +15,12 @@
  * 关系比较（< <= > >=）允许混合 bigint⊗number，不在本文件范围。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { litValue } from "@nudojs/core";
+import { call, isNever } from "./eval-helpers.ts";
 
 function throwsName(t: unknown): string | undefined {
   const a = t as { shape?: { k?: string; name?: string } };
   return a?.shape?.k === "brand" ? a.shape.name : undefined;
-}
-
-function isNever(r: unknown): boolean {
-  const a = r as { shape?: { k?: string } };
-  return !!a && typeof a === "object" && a.shape?.k === "never";
 }
 
 describe("mixed bigint ⊗ number arithmetic throws TypeError", () => {

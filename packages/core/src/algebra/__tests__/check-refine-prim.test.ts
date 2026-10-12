@@ -2,14 +2,10 @@
  * refine 模板门禁：array()/string() 与 body 方法访问的结构门禁优先级。
  */
 import { describe, it, expect } from "vitest";
-import { checkSource, pTrue } from "../index.ts";
-import { withStdImport, stdOpts } from "./nudo-constraints.ts";
+import { issuesOf } from "./nudo-constraints.ts";
 
-function issuesOf(src: string) {
-  return checkSource("/t/refine-prim.js", withStdImport(src), pTrue, stdOpts);
-}
 function errorCodes(src: string): string[] {
-  return issuesOf(src)
+  return issuesOf(src, "/t/refine-prim.js")
     .issues.filter((i) => i.severity === "error")
     .map((i) => i.code);
 }
@@ -22,7 +18,7 @@ describe("array() refine", () => {
  */
 function sumPos(items) { return items; }
 sumPos([1, 2, 3]);
-`);
+`, "/t/refine-prim.js");
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
   });
 
@@ -33,7 +29,7 @@ sumPos([1, 2, 3]);
  */
 function sumPos(items) { return items; }
 sumPos([-1, 2]);
-`);
+`, "/t/refine-prim.js");
     expect(r.ok).toBe(false);
     const err = r.issues.find((i) => i.code === "nudo:constraint-violated");
     expect(err).toBeDefined();
@@ -47,7 +43,7 @@ sumPos([-1, 2]);
  */
 function sumPos(items) { return items; }
 sumPos("nope");
-`);
+`, "/t/refine-prim.js");
     expect(r.ok).toBe(false);
   });
 
@@ -60,7 +56,7 @@ function report(findings) {
   return findings.some(f => f.severity);
 }
 report([{ severity: "high" }]);
-`);
+`, "/t/refine-prim.js");
     // 无 arg-structure 误报；refine 优先于 body 方法访问
     expect(r.issues.filter((i) => i.code === "nudo:arg-structure")).toEqual([]);
   });
@@ -74,7 +70,7 @@ describe("string() refine", () => {
  */
 function greet(s) { return "hi " + s; }
 greet(42);
-`);
+`, "/t/refine-prim.js");
     expect(r.ok).toBe(false);
     const err = r.issues.find((i) => i.code === "nudo:constraint-violated");
     expect(err).toBeDefined();
@@ -88,7 +84,7 @@ greet(42);
  */
 function nick(n) { return n; }
 nick("");
-`);
+`, "/t/refine-prim.js");
     expect(r.ok).toBe(false);
   });
 
@@ -99,7 +95,7 @@ nick("");
  */
 function greet(s) { return "hi " + s; }
 greet("ada");
-`);
+`, "/t/refine-prim.js");
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
   });
 
@@ -115,7 +111,7 @@ greet("ada");
 /** @nudo:contract s nonEmpty */
 ${decl}
 first(42);
-`);
+`, "/t/refine-prim.js");
       expect(bad.ok).toBe(false);
       const err = bad.issues.find((i) => i.code === "nudo:constraint-violated");
       expect(err, decl).toBeDefined();
@@ -125,7 +121,7 @@ first(42);
 /** @nudo:contract s nonEmpty */
 ${decl}
 first("abc");
-`);
+`, "/t/refine-prim.js");
       expect(good.issues.filter((i) => i.severity === "error"), decl).toEqual([]);
     }
   });
@@ -139,7 +135,7 @@ describe("structural gate vs refine priority", () => {
  */
 function register(u) { return u.name; }
 register({ id: -1, name: "a" });
-`);
+`, "/t/refine-prim.js");
     expect(r.ok).toBe(false);
   });
 
@@ -149,7 +145,7 @@ function take(xs) {
   return xs.map(x => x);
 }
 take([1, 2, 3]);
-`);
+`, "/t/refine-prim.js");
     expect(r.issues.filter((i) => i.code === "nudo:arg-structure")).toEqual([]);
   });
 
@@ -161,7 +157,7 @@ take([1, 2, 3]);
 function register(u) { return u.name; }
 function wrapper(u) { return register(u); }
 wrapper({ id: 3 });
-`);
+`, "/t/refine-prim.js");
     expect(r.ok).toBe(false);
     const err = r.issues.find((i) => i.message.includes("wrapper→register"));
     expect(err).toBeDefined();

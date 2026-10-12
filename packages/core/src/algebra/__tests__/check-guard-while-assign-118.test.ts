@@ -23,6 +23,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue } from "@nudojs/core";
+import { l2Count, sigOf, sidecarOpts } from "./nudo-constraints.ts";
 
 /** issue #118 v3 / #120 契约形态（string 入参 / string[] 收集器 / optional 槽） */
 const NUDO_SRC = `
@@ -34,22 +35,10 @@ export const objShape = nullable(shape({ v: number() }));
 
 const IMP = `/// @nudo:import { contentShape, fragmentsShape, nodeShape, objShape } from "./std118c.nudo.js"\n`;
 
-const opts = {
-  loadModule: (spec: string) => (spec.includes("std118c") ? NUDO_SRC : undefined),
-  fromFile: "/test/file.js",
-};
+const opts = sidecarOpts("std118c", NUDO_SRC);
 
 function check(src: string) {
   return checkSource("/t/guard-while-assign-118.js", IMP + src, pTrue, opts);
-}
-
-/** L2 entry-may-throw 的 issue 数（按函数名过滤可选） */
-function l2Count(r: ReturnType<typeof check>, fn?: string): number {
-  return r.issues.filter((i) => i.code === "nudo:entry-may-throw" && (!fn || i.fn === fn)).length;
-}
-
-function sigOf(r: ReturnType<typeof check>, fn: string): string {
-  return r.signatures.find((s) => s.name === fn)?.display ?? "(missing)";
 }
 
 describe("#118 v3 赋值即守卫不再误报 entry-may-throw", () => {

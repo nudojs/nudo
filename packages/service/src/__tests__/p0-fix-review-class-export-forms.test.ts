@@ -1,12 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { analyzeFile } from "../analyzer.ts";
+import { tmpProject } from "./tmp-project.ts";
 
 describe("P0 service class method collector export forms", () => {
   function fns(src: string) {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-class-"));
+    const dir = tmpProject("nudo-class-");
     const file = join(dir, "m.js");
     writeFileSync(file, src);
     const r = analyzeFile(file, src);

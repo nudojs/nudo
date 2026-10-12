@@ -4,23 +4,17 @@
  * miss 继续；真实读故障（EACCES 等）抛 ModuleReadError，不得折叠成
  * 「无此文件」（否则瞬态故障被上游缓存钉死，契约族诊断静默消失）。
  */
-import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, chmodSync, rmSync, mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, it, expect } from "vitest";
+import { writeFileSync, chmodSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { defaultLoadModule, ModuleReadError, resolveModuleFile } from "../load-module.ts";
-
-const dirs: string[] = [];
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
-});
+import { tmpProject } from "./tmp-project.ts";
 
 /** root 对 chmod 000 免疫，真实 EACCES 用例无法生效 */
 const isRoot = process.geteuid?.() === 0;
 
 function freshDir(prefix: string): { dir: string; from: string } {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
-  dirs.push(dir);
+  const dir = tmpProject(prefix);
   const from = join(dir, "main.js");
   writeFileSync(from, ``, "utf-8");
   return { dir, from };

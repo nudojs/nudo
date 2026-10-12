@@ -10,36 +10,38 @@ import { describe, it, expect } from "vitest";
 import { runTranspiled, tryRunTranspiled, callTranspiledExportFull, setEvalFallbackCollector, litValue, type EvalFallback } from "@nudojs/core";
 import { formatAbs } from "../format.ts";
 import { runCorpus } from "./differential/harness.ts";
-import * as b1 from "./differential/corpus/batch1.ts";
-import * as b2 from "./differential/corpus/batch2.ts";
-import * as b3 from "./differential/corpus/batch3.ts";
-import * as b4 from "./differential/corpus/batch4.ts";
-import * as b5 from "./differential/corpus/batch5.ts";
-import * as b6 from "./differential/corpus/batch6.ts";
-import * as b7 from "./differential/corpus/batch7.ts";
-import * as b8 from "./differential/corpus/batch8.ts";
-import * as b9 from "./differential/corpus/batch9.ts";
-import * as b10 from "./differential/corpus/batch10.ts";
-import * as b11 from "./differential/corpus/batch11.ts";
-import * as b12 from "./differential/corpus/batch12.ts";
-import * as b13 from "./differential/corpus/batch13.ts";
-import * as b14a from "./differential/corpus/batch14a.ts";
-import * as b14b from "./differential/corpus/batch14b.ts";
-import * as b14c from "./differential/corpus/batch14c.ts";
-import * as b14d from "./differential/corpus/batch14d.ts";
-import * as b14e from "./differential/corpus/batch14e.ts";
-import * as b14f from "./differential/corpus/batch14f.ts";
-import * as b15a from "./differential/corpus/batch15a.ts";
-import * as b15b from "./differential/corpus/batch15b.ts";
-import * as b15c from "./differential/corpus/batch15c.ts";
-import * as b15d from "./differential/corpus/batch15d.ts";
-import * as b16a from "./differential/corpus/batch16a.ts";
-import * as b16b from "./differential/corpus/batch16b.ts";
-import * as b16c from "./differential/corpus/batch16c.ts";
-import * as b16d from "./differential/corpus/batch16d.ts";
-import * as b17a from "./differential/corpus/batch17a.ts";
-import * as b17b from "./differential/corpus/batch17b.ts";
-import * as b18 from "./differential/corpus/batch18-readprobes.ts";
+import {
+  batch1 as b1,
+  batch2 as b2,
+  batch3 as b3,
+  batch4 as b4,
+  batch5 as b5,
+  batch6 as b6,
+  batch7 as b7,
+  batch8 as b8,
+  batch9 as b9,
+  batch10 as b10,
+  batch11 as b11,
+  batch12 as b12,
+  batch13 as b13,
+  batch14a as b14a,
+  batch14b as b14b,
+  batch14c as b14c,
+  batch14d as b14d,
+  batch14e as b14e,
+  batch14f as b14f,
+  batch15a as b15a,
+  batch15b as b15b,
+  batch15c as b15c,
+  batch15d as b15d,
+  batch16a as b16a,
+  batch16b as b16b,
+  batch16c as b16c,
+  batch16d as b16d,
+  batch17a as b17a,
+  batch17b as b17b,
+  batch18Readprobes as b18,
+} from "./differential/all-batches.ts";
 
 function withCollector<T>(fn: () => T): { result: T; fallbacks: EvalFallback[] } {
   const fallbacks: EvalFallback[] = [];

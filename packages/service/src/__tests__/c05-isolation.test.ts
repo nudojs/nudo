@@ -2,11 +2,12 @@
  * C0.5：evalMissingSlot 必须 per-analysis 隔离——flag 不粘滞、不串项目。
  */
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setEvalMissingSlotEnabled, isEvalMissingSlotEnabled, runWithEvalMissingSlot } from "@nudojs/core/internal";
 import { analyzeFile } from "../analyzer.ts";
+import { withTmpProject } from "./tmp-project.ts";
 
 describe("C0.5 evalMissingSlot per-analysis isolation", () => {
   it("runWithEvalMissingSlot restores outer flag after body", () => {
@@ -36,9 +37,8 @@ export function readField(o) {
     expect(isEvalMissingSlotEnabled()).toBe(false);
   });
 
-  it("project package.json evalMissingSlot:warning does not leak to next analysis", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-c05-iso-"));
-    try {
+  it("project package.json evalMissingSlot:warning does not leak to next analysis", () =>
+    withTmpProject("nudo-c05-iso-", (dir) => {
       writeFileSync(
         join(dir, "package.json"),
         JSON.stringify({ name: "t", nudo: { analysis: { evalMissingSlot: "warning" } } }),
@@ -70,8 +70,5 @@ greet2({ id: 1 });
       } finally {
         rmSync(offFile, { force: true });
       }
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+    }));
 });

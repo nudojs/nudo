@@ -24,18 +24,11 @@ import { runWithMayThrowSession, setMayThrowCollector, type MayThrowEffect } fro
 import { evalNamespaceCall } from "../builtins/error.ts";
 import { absFunction } from "../abs-fn.ts";
 import { abs, numLit, strLit } from "../index.ts";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { call, isNever, throwsError } from "./eval-helpers.ts";
+import { l2Count } from "./nudo-constraints.ts";
 
 function check(src: string) {
   return checkSource("/t/eval-groupby.js", src);
-}
-
-function l2Count(r: ReturnType<typeof check>, fn?: string): number {
-  return r.issues.filter((i) => i.code === "nudo:entry-may-throw" && (!fn || i.fn === fn)).length;
 }
 
 function evalSrc(
@@ -61,16 +54,6 @@ function evalSrc(
     throws: norm(result.throws),
     effects: [...new Set(effects.map((e) => e.kind))],
   };
-}
-
-function isNever(r: unknown): boolean {
-  const a = r as { shape?: { k?: string } };
-  return !!a && typeof a === "object" && a.shape?.k === "never";
-}
-
-function throwsError(t: unknown, name: string): boolean {
-  const a = t as { shape?: { k?: string; name?: string } };
-  return !!a && typeof a === "object" && a.shape?.k === "brand" && a.shape.name === name;
 }
 
 /** 精确 obj 槽视图：键 → 字面量元素组；任一非字面量 → undefined（精度断言） */

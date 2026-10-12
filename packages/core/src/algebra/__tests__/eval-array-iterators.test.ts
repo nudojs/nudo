@@ -10,12 +10,8 @@
  * 走未知 number 下标（arr element 保守）。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { litValue } from "@nudojs/core";
+import { call } from "./eval-helpers.ts";
 
 function tupleLits(r: unknown): unknown[] | undefined {
   const a = r as { shape?: { k?: string; elements?: unknown[] } };

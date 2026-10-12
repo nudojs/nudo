@@ -15,23 +15,14 @@ import {
   setMayThrowCollector,
   type MayThrowEffect,
 } from "../may-throw.ts";
+import { call, throwsError } from "./eval-helpers.ts";
 
 /** 无约束实参（may 档探针——缺省会把 x 绑成 undefined 字面量而走默认面） */
 const anyAbs = abs({ k: "any" }, undefined, undefined, "path");
 
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
-
 /** 无约束实参版：f(x) 的 x 绑 any（may 档探针） */
 function evalSrcAny(src: string): ReturnType<typeof evalSrc> {
   return evalSrc(src, [anyAbs]);
-}
-
-function throwsError(t: unknown, name: string): boolean {
-  const a = t as { shape?: { k?: string; name?: string } };
-  return !!a && typeof a === "object" && a.shape?.k === "brand" && a.shape.name === name;
 }
 
 /** resultShape（已是 shape）的 k——definite throw 折 never */

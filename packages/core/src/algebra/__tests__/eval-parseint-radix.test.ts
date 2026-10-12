@@ -5,12 +5,8 @@
  * 修复：foldParseInt 先对 radix 做 ToInt32（| 0），0 走缺省路径。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { litValue } from "@nudojs/core";
+import { call } from "./eval-helpers.ts";
 
 describe("evaluator parseInt radix ToInt32", () => {
   it("fractional radix truncates toward zero", () => {

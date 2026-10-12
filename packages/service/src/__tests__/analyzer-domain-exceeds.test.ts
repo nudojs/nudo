@@ -11,16 +11,16 @@
  *   沿用 check-real-packages.test.ts 方案）
  */
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { analyzeFile, collectCallRecords, type CallRecord } from "../analyzer.ts";
-import { numLit, strLit, abs as makeAbs } from "@nudojs/core";
+import { numLit, strLit } from "@nudojs/core";
+import { withTmpProject } from "./tmp-project.ts";
+import { neverAbs } from "../emit/__tests__/fixtures.ts";
 
 const DOMAIN = "nudo:interface-domain-exceeds";
-const neverAbs = () => makeAbs({ k: "never" }, undefined, undefined, "exact");
 
 const rec = (over: Partial<CallRecord>): CallRecord => ({
   fnName: "area",
@@ -31,9 +31,8 @@ const rec = (over: Partial<CallRecord>): CallRecord => ({
 });
 
 describe("nudo:interface-domain-exceeds（analyzer 注入消费区接线）", () => {
-  it("手写侧车契约 + 注入 \"a\" 证据 → 恰一条 error，range 在被调函数声明处", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-dom-"));
-    try {
+  it("手写侧车契约 + 注入 \"a\" 证据 → 恰一条 error，range 在被调函数声明处", () =>
+    withTmpProject("nudo-dom-", (dir) => {
       const lievalSrc = `export function area(x) {
   return x;
 }
@@ -59,14 +58,10 @@ describe("nudo:interface-domain-exceeds（analyzer 注入消费区接线）", ()
       // 诊断是纯增量：不污染 case 合成（证据记录仍合成 call@ case）
       const area = result.functions.find((f) => f.name === "area")!;
       expect(area.cases.some((c) => c.source === "callsite")).toBe(true);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+    }));
 
-  it("源码 @nudo:contract 手写契约（std 侧车经 defaultLoadModule 读盘）→ 执法", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-dom-"));
-    try {
+  it("源码 @nudo:contract 手写契约（std 侧车经 defaultLoadModule 读盘）→ 执法", () =>
+    withTmpProject("nudo-dom-", (dir) => {
       writeFileSync(
         join(dir, "std.nudo.js"),
         'import { number } from "@nudojs/core";\nexport const positive = number().gt(0);\n',
@@ -87,14 +82,10 @@ export function area(x) {
       const issues = result.diagnostics.filter((d) => d.code === DOMAIN);
       expect(issues).toHaveLength(1);
       expect(issues[0]!.severity).toBe("error");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+    }));
 
-  it("证据 ⊆ 手写契约 → 零新诊断", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-dom-"));
-    try {
+  it("证据 ⊆ 手写契约 → 零新诊断", () =>
+    withTmpProject("nudo-dom-", (dir) => {
       const lievalSrc = `export function area(x) {
   return x;
 }
@@ -110,14 +101,10 @@ export function area(x) {
         rec({ argAbs: [numLit(1)], targetModule: libPath, targetExport: "area" }),
       ]);
       expect(result.diagnostics.filter((d) => d.code === DOMAIN)).toEqual([]);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+    }));
 
-  it("generated 侧车不执法（过期归 nudo:interface-drift，T10a）", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-dom-"));
-    try {
+  it("generated 侧车不执法（过期归 nudo:interface-drift，T10a）", () =>
+    withTmpProject("nudo-dom-", (dir) => {
       const lievalSrc = `export function area(x) {
   return x;
 }
@@ -132,14 +119,10 @@ export function area(x) {
         rec({ targetModule: libPath, targetExport: "area" }),
       ]);
       expect(result.diagnostics.filter((d) => d.code === DOMAIN)).toEqual([]);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+    }));
 
-  it("归属守卫：指向其他模块的注入记录（fnName 撞名）不触发", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-dom-"));
-    try {
+  it("归属守卫：指向其他模块的注入记录（fnName 撞名）不触发", () =>
+    withTmpProject("nudo-dom-", (dir) => {
       const lievalSrc = `export function area(x) {
   return x;
 }
@@ -155,14 +138,10 @@ export function area(x) {
         rec({ fnModule: "/elsewhere/other.js", targetModule: "/elsewhere/other.js" }),
       ]);
       expect(result.diagnostics.filter((d) => d.code === DOMAIN)).toEqual([]);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+    }));
 
-  it("带 @nudo:case 的导出函数同样执法（此前盲区）", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-dom-case-"));
-    try {
+  it("带 @nudo:case 的导出函数同样执法（此前盲区）", () =>
+    withTmpProject("nudo-dom-case-", (dir) => {
       const withCase = `// @nudo:case "ok" (5)
 export function area(x) {
   return x;
@@ -180,10 +159,7 @@ export function area(x) {
       const issues = result.diagnostics.filter((d) => d.code === DOMAIN);
       expect(issues).toHaveLength(1);
       expect(issues[0]!.severity).toBe("error");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+    }));
 });
 
 describe("real-package zero-FP：真实包注入记录不产生 domain-exceeds", () => {
@@ -213,9 +189,8 @@ describe("real-package zero-FP：真实包注入记录不产生 domain-exceeds",
     expect(result.diagnostics.filter((d) => d.code === DOMAIN).length).toBe(1);
   }
 
-  it("ms / kleur：真实使用现场记录回灌被调文件，零 domain-exceeds", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-real-"));
-    try {
+  it("ms / kleur：真实使用现场记录回灌被调文件，零 domain-exceeds", () =>
+    withTmpProject("nudo-real-", (dir) => {
       positiveControl(dir);
 
       const msEntry = coreRequire.resolve("ms");
@@ -249,8 +224,5 @@ kleur.blue(42);
         const fps = result.diagnostics.filter((d) => d.code === DOMAIN);
         expect(fps, `${target}:\n${fps.map((f) => f.message).join("\n")}`).toEqual([]);
       }
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+    }));
 });

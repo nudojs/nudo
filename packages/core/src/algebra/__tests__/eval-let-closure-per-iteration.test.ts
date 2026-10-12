@@ -9,12 +9,8 @@
  * 抽象边界循环（条件非具体）仍走 $for 的 pack/unpack 保守 join，不假装精确。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue, formatShape } from "@nudojs/core";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { litValue, formatShape } from "@nudojs/core";
+import { call } from "./eval-helpers.ts";
 
 describe("evaluator per-iteration let closures", () => {
   it("for-let closures capture the iteration binding (sum 0+1+2=3)", () => {

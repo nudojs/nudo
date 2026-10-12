@@ -10,20 +10,7 @@
  * 这里是同族漏网点。
  */
 import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  litValue,
-} from "../index.ts";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
-
-function val(src: string) {
-  return litValue(call(src).result);
-}
+import { val } from "./eval-helpers.ts";
 
 describe("unary minus honors ToNumber on coercible literals", () => {
   it("-'5' / -true / -null fold like native", () => {

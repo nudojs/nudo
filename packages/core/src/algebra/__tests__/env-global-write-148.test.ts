@@ -14,6 +14,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue, objOf, abs, undefAbs, type Abs } from "@nudojs/core";
+import { sigOf } from "./nudo-constraints.ts";
 
 const strPrim: Abs = abs({ k: "prim", type: "string" }, undefined, undefined, "path");
 const numOrUndef: Abs = abs(
@@ -66,14 +67,10 @@ const report = checkSource("/t/env-global-write-148.js", SRC, pTrue, {
   inject: { envGlobals: { process: processGlobal } },
 });
 
-function sigOf(fn: string): string {
-  return report.signatures.find((s) => s.name === fn)?.display ?? "(missing)";
-}
-
 describe("env 全局槽位写（issue #148）", () => {
   it("process.exitCode = 1 不毒化返回路径", () => {
-    expect(sigOf("setExitA")).toContain(`"ok"`);
-    expect(sigOf("setExitA")).not.toContain("unknown");
+    expect(sigOf(report, "setExitA")).toContain(`"ok"`);
+    expect(sigOf(report, "setExitA")).not.toContain("unknown");
   });
 
   it("不产生 entry-may-throw / unknown-inference", () => {
@@ -82,12 +79,12 @@ describe("env 全局槽位写（issue #148）", () => {
   });
 
   it("同场后读看到写入值（引用语义）", () => {
-    expect(sigOf("readAfterWrite")).toContain("1");
-    expect(sigOf("readAfterWrite")).not.toContain("unknown");
+    expect(sigOf(report, "readAfterWrite")).toContain("1");
+    expect(sigOf(report, "readAfterWrite")).not.toContain("unknown");
   });
 
   it("开放记录 brand 的键写（process.env.FOO = …）同样干净", () => {
-    expect(sigOf("writeEnvKey")).toContain(`"ok"`);
-    expect(sigOf("writeEnvKey")).not.toContain("unknown");
+    expect(sigOf(report, "writeEnvKey")).toContain(`"ok"`);
+    expect(sigOf(report, "writeEnvKey")).not.toContain("unknown");
   });
 });

@@ -5,10 +5,12 @@
  */
 import { describe, it, expect } from "vitest";
 import { runCorpus, sectionsOf, newSkippedBodies, unexpectedMismatches } from "./harness.ts";
-import * as b10 from "./corpus/batch10.ts";
-import * as b11 from "./corpus/batch11.ts";
-import * as b12 from "./corpus/batch12.ts";
-import * as b13 from "./corpus/batch13.ts";
+import {
+  batch10 as b10,
+  batch11 as b11,
+  batch12 as b12,
+  batch13 as b13,
+} from "./all-batches.ts";
 
 const FILES: Array<[string, Record<string, unknown>]> = [
   ["batch10", b10],

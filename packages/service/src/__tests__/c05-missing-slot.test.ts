@@ -5,13 +5,13 @@
  * - 不发明 check 义务（handwritten 契约仍走 constraint-violated）
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { analyzeFile } from "../analyzer.ts";
 import { analysisConfig } from "../evaluator/config.ts";
 import { setEvalMissingSlotEnabled, isEvalMissingSlotEnabled, noteObjSlotMissing, setMemberDiagCollector } from "@nudojs/core/internal";
 import { numLit, objOf } from "@nudojs/core";
+import { withTmpProject } from "./tmp-project.ts";
 
 describe("C0.5 evalMissingSlot config", () => {
   it("defaults to off; warning only when explicit", () => {
@@ -75,9 +75,8 @@ greet({ id: 1 });
     expect(noteObjSlotMissing(o, "id")).toBe(false);
   });
 
-  it("project package.json evalMissingSlot:warning wires into analyzeFile (ALS, no sticky flag)", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-c05-"));
-    try {
+  it("project package.json evalMissingSlot:warning wires into analyzeFile (ALS, no sticky flag)", () =>
+    withTmpProject("nudo-c05-", (dir) => {
       mkdirSync(join(dir, "src"), { recursive: true });
       writeFileSync(
         join(dir, "package.json"),
@@ -93,8 +92,5 @@ greet({ id: 1 });
       // 分析结果可正常返回；若 evaluator hosted 则可能带 missing-slot warning
       expect(r).toBeDefined();
       void r;
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+    }));
 });
