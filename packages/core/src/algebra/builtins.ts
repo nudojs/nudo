@@ -17,7 +17,7 @@ export {
   isEnumerableView,
 } from "./builtins/invariants.ts";
 export { evalMathMethod } from "./builtins/math.ts";
-export { assignSourceSlots, evalObjectMethod } from "./builtins/object.ts";
+export { assignSourceSlots, evalObjectMethod, primTargetAssignThrows } from "./builtins/object.ts";
 export { evalJsonMethod } from "./builtins/json.ts";
 export { evalNumberStatic } from "./builtins/number.ts";
 export { evalGlobalFn } from "./builtins/global.ts";
@@ -53,6 +53,8 @@ export {
   evalNamespaceCall,
   isErrorCtorName,
   errorBrandAbs,
+  collectionIteratorAbs,
+  abstractSeqIteratorAbs,
   evalBuiltinNew,
   evalBuiltinInstanceMethod,
   makeProxyAbs,

@@ -4,7 +4,8 @@
 import type { Abs } from "../abs.ts";
 import { abs, numLit, strLit, boolLit, unknown, litValue } from "../abs.ts";
 import { getSlot, setSlot } from "../objects.ts";
-import { undefAbs } from "../hof.ts";
+import { undefAbs, applyCallbackAbs } from "../hof.ts";
+import { defaultLeakBudget } from "../leak.ts";
 import { getFnImpl } from "../abs-fn.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
@@ -129,12 +130,43 @@ function jsonStringifyTotal(a: Abs, seen: Set<object> = new Set()): boolean {
       if (flags?.get(k)?.enumerable === false) continue;
       // Bug 84：internal 私有槽不进序列化（内部槽对 JSON 不可见）
       if ((sv as { internal?: boolean }).internal === true) continue;
+      // Bug 73：symbol 键槽（投影 "@@X"）原生不序列化
+      if ((sv as { symbolKey?: boolean }).symbolKey === true) continue;
       if (k === "toJSON" && sv.value.term?.op !== "lit") return false;
       if (!jsonStringifyTotal(sv.value, seen)) return false;
     }
     return true;
   }
   return false;
+}
+
+/**
+ * stringifyObj 单层枚举键（absToJsonNative 对象臂与 callable replacer
+ * 逐项桥接共用）：
+ * - enumerable:false（defineProperty 描述符）→ JSON.stringify 跳过；
+ * - internal 私有槽（Bug 84）——内部槽对序列化不可见；
+ * - symbol 键槽（Bug 73，投影 "@@X" 带 Slot.symbolKey 标记）原生不
+ *   序列化——标记来自投影期，字面量字符串键 "{@@lit:1}" 不受影响；
+ * - toJSON 槽：callable（fn 形）/抽象 → 原生先调用再序列化其返回值，
+ *   不可折（{toJSON(){return 'x'}} → "\"x\""）——返回 undefined（保守）；
+ * - Bug 57：[[Get]] 语义——访问器属性经 accessorTable getter 求值
+ *   （此前直接序列化占位数据槽 → 字面量 getter 键整个丢失、defineProperty
+ *   getter 占位 unknown → 假 may-throw）。
+ * open/index 键不可判 → undefined。
+ */
+function jsonEnumerableEntries(a: Abs): Array<[string, Abs]> | undefined {
+  const s = a.shape;
+  if (s.k !== "obj" || s.open || s.index) return undefined;
+  const flags = getPropFlags(a);
+  const out: Array<[string, Abs]> = [];
+  for (const [k, sv] of Object.entries(s.slots as Record<string, { value: Abs }>)) {
+    if (flags?.get(k)?.enumerable === false) continue;
+    if ((sv as { internal?: boolean }).internal === true) continue;
+    if ((sv as { symbolKey?: boolean }).symbolKey === true) continue;
+    if (k === "toJSON" && sv.value.term?.op !== "lit") return undefined;
+    out.push([k, readProperty(a, k)]);
+  }
+  return out;
 }
 
 /**
@@ -152,7 +184,15 @@ function absToJsonNative(
   seen: Set<object>,
   valueMode: boolean,
 ): unknown | typeof NOT_LITERAL | typeof OMIT {
-  if (seen.has(a as object)) return NOT_LITERAL; // 防御自引用（Abs 树理论无环）
+  if (seen.has(a as object)) {
+    // Bug 60：seen 现为「在栈」集（子树收尾出栈）——重入即真环
+    // （$set 就地写槽的引用语义，`o.self = o` 产出真 Abs 环）。序列化
+    // 语义下原生定抛「Converting circular structure to JSON」；extract
+    // 模式（replacer 白名单提取）环不抛（原生 propertyList 展开自带
+    // 去重）→ 保守 NOT_LITERAL
+    if (valueMode) throw new NudoThrow(errorTypeAbs("TypeError"));
+    return NOT_LITERAL;
+  }
   const t = a.term;
   if (t?.op === "lit") return t.value; // 含 bigint/symbol/undefined/null
   const s = a.shape;
@@ -170,43 +210,37 @@ function absToJsonNative(
     seen.add(a as object);
     const holes = (a.shape as { holes?: number[] }).holes ?? [];
     const out: unknown[] = [];
-    for (let i = 0; i < s.elements.length; i++) {
-      // hole 与 undefined 元素提取同为 undefined——JSON.stringify 数组槽都输出 null
-      if (holes.includes(i)) {
-        out.push(undefined);
-        continue;
+    try {
+      for (let i = 0; i < s.elements.length; i++) {
+        // hole 与 undefined 元素提取同为 undefined——JSON.stringify 数组槽都输出 null
+        if (holes.includes(i)) {
+          out.push(undefined);
+          continue;
+        }
+        const v = absToJsonNative(s.elements[i]!, seen, valueMode);
+        if (v === NOT_LITERAL) return NOT_LITERAL;
+        out.push(v === OMIT ? null : v);
       }
-      const v = absToJsonNative(s.elements[i]!, seen, valueMode);
-      if (v === NOT_LITERAL) return NOT_LITERAL;
-      out.push(v === OMIT ? null : v);
+      return out;
+    } finally {
+      seen.delete(a as object);
     }
-    return out;
   }
   if (s.k === "obj") {
-    // open/带 index 的对象有未知键：序列化结果不确定
-    if (s.open || s.index) return NOT_LITERAL;
+    const entries = jsonEnumerableEntries(a);
+    if (!entries) return NOT_LITERAL;
     seen.add(a as object);
-    const out: Record<string, unknown> = {};
-    const flags = getPropFlags(a);
-    for (const [k, sv] of Object.entries(s.slots as Record<string, { value: Abs }>)) {
-      // enumerable:false（defineProperty 描述符）→ JSON.stringify 跳过；
-      // internal 私有槽（Bug 84）——内部槽对序列化不可见
-      if (flags?.get(k)?.enumerable === false) continue;
-      if ((sv as { internal?: boolean }).internal === true) continue;
-      // toJSON 槽：callable（fn 形）/抽象 → 原生先调用再序列化其返回值，
-      // 不可折（{toJSON(){return 'x'}} → "\"x\""，非省略）——保守 NOT_LITERAL
-      if (k === "toJSON") {
-        const ts = sv.value;
-        if (ts.term?.op !== "lit") return NOT_LITERAL;
+    try {
+      const out: Record<string, unknown> = {};
+      for (const [k, child] of entries) {
+        const v = absToJsonNative(child, seen, valueMode);
+        if (v === NOT_LITERAL) return NOT_LITERAL;
+        if (v !== OMIT) out[k] = v;
       }
-      // Bug 57：[[Get]] 语义——访问器属性经 accessorTable getter 求值
-      //（此前直接序列化占位数据槽 → 字面量 getter 键整个丢失、defineProperty
-      // getter 占位 unknown → 假 may-throw）
-      const v = absToJsonNative(readProperty(a, k), seen, valueMode);
-      if (v === NOT_LITERAL) return NOT_LITERAL;
-      if (v !== OMIT) out[k] = v;
+      return out;
+    } finally {
+      seen.delete(a as object);
     }
-    return out;
   }
   return NOT_LITERAL;
 }
@@ -235,6 +269,132 @@ function isNonJsonTopLevel(a: Abs): boolean {
   if (a.shape.k === "fn") return true;
   if (a.shape.k === "prim" && a.shape.type === "symbol") return true;
   return false;
+}
+
+/** replacer 回调执行环境（methods.ts callbackEnv 同口径） */
+function replacerEnv(): unknown {
+  return { vars: new Map(), fns: new Map(), hofCollect: undefined };
+}
+
+/** space 实参折叠：number/string 原样；缺省/null/undefined → 紧凑；
+ *  其余（非字面量/对象等）→ "partial" 哨兵（值域不可折） */
+function foldJsonSpace(spaceArg: Abs | undefined): number | string | undefined | "partial" {
+  if (!spaceArg) return undefined;
+  const t = spaceArg.term;
+  if (t?.op !== "lit") return "partial";
+  const sv = t.value;
+  if (typeof sv === "number" || typeof sv === "string") return sv;
+  if (sv !== undefined && sv !== null) return "partial";
+  return undefined;
+}
+
+/**
+ * Bug 59：callable replacer 逐项桥接（原生 SerializeJSONProperty 语义：
+ * 每个键——含根 ""——先调 replacer.call(holder, key, value)，再对返回值
+ * 递归序列化）。逐层剥离（而非整树预提取）保证原生调用序：
+ * - 抛错 replacer → NudoThrow 定抛传播（catch 可吸收）；
+ * - replacer 返回值不可折（抽象）→ 值域 partial（注册 skip），其深层
+ *   键的 replacer 调用不可见 → may-throw 记账（条件抛 replacer）；
+ * - replacer 返回非 lit bigint prim / 环回值 → 原生定抛 TypeError
+ *  （bigint 序列化抛 / Converting circular structure to JSON）；
+ * - replacer 把（子）值变成 undefined → 键省略（数组槽 null）、变成
+ *   fn/symbol → 键省略（数组槽 null）、根变 fn/symbol → 返回 undefined。
+ */
+function stringifyFnReplacer(
+  root: Abs,
+  rep: Abs,
+  space: number | string | undefined,
+): Abs {
+  let partial = false;
+  let unseen = false;
+  // 序列化路径栈（原生 InternalJSONTrack 同构）：replacer 返回在栈祖先
+  // → 环 → 定抛
+  const path = new Set<object>();
+  const walk = (key: string, val: Abs): { kind: "val" | "omit" | "nonlit"; v?: unknown } => {
+    const r = applyCallbackAbs(rep, [strLit(key), val], replacerEnv(), pTrue, defaultLeakBudget);
+    if (path.has(r as object)) throw new NudoThrow(errorTypeAbs("TypeError"));
+    const t = r.term;
+    if (t?.op === "lit") return { kind: "val", v: t.value };
+    const s = r.shape;
+    if (s.k === "prim" && s.type === "symbol") return { kind: "omit" };
+    if (isBigintPrimAbs(r)) throw new NudoThrow(errorTypeAbs("TypeError"));
+    if (s.k === "fn") return { kind: "omit" };
+    if (s.k === "tuple") {
+      if ((s as { rest?: Abs }).rest) {
+        partial = true;
+        unseen = true;
+        return { kind: "nonlit" };
+      }
+      path.add(r as object);
+      try {
+        const holes = (s as { holes?: number[] }).holes ?? [];
+        const out: unknown[] = [];
+        for (let i = 0; i < s.elements.length; i++) {
+          if (holes.includes(i)) {
+            out.push(null);
+            continue;
+          }
+          const c = walk(String(i), s.elements[i]!);
+          // 抽象子值折 null 是占位——结果不可折精确（partial）
+          if (c.kind !== "val" || c.v === undefined) {
+            if (c.kind === "nonlit") {
+              partial = true;
+              unseen = true;
+            }
+            out.push(null);
+          } else {
+            out.push(c.v);
+          }
+        }
+        return { kind: "val", v: out };
+      } finally {
+        path.delete(r as object);
+      }
+    }
+    if (s.k === "obj") {
+      const entries = jsonEnumerableEntries(r);
+      if (!entries) {
+        partial = true;
+        unseen = true;
+        return { kind: "nonlit" };
+      }
+      path.add(r as object);
+      try {
+        const out: Record<string, unknown> = {};
+        for (const [k2, child] of entries) {
+          const c = walk(k2, child);
+          if (c.kind === "val" && c.v !== undefined) out[k2] = c.v;
+          else if (c.kind === "nonlit") {
+            // 抽象子值省略键是占位——结果不可折精确（partial）
+            partial = true;
+            unseen = true;
+          }
+        }
+        return { kind: "val", v: out };
+      } finally {
+        path.delete(r as object);
+      }
+    }
+    partial = true;
+    unseen = true;
+    return { kind: "nonlit" };
+  };
+  const r0 = walk("", root);
+  if (unseen) {
+    recordMayThrow({
+      kind: "Error",
+      cause: "JSON.stringify replacer may throw on entries beyond abstract values",
+    });
+  }
+  if (r0.kind === "omit") return undefAbs();
+  if (r0.kind === "nonlit" || partial) return str("partial");
+  try {
+    const s = JSON.stringify(r0.v, undefined, space);
+    return s === undefined ? undefAbs() : strLit(s);
+  } catch {
+    // bigint 字面量载荷 / 防御 → 原生 TypeError
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
 }
 
 /** JSON.parse / stringify：字面量实参真执行折叠；失败硬抛（catch 可吸收） */
@@ -312,6 +472,19 @@ export function evalJsonMethod(name: string, args: Abs[]): Abs | undefined {
         jsonArg = inner;
       }
     }
+    // Bug 59：callable replacer（fn 形）——原生对每个键（含根 ""）先调
+    // replacer 再序列化其返回值；预提取（absToJsonNative）会先于 replacer
+    // 撞 bigint/环面 → 直接走逐项桥接（replacer 可把二者变换掉）
+    const fnRep = args[1] && args[1].shape.k === "fn" ? args[1] : undefined;
+    if (fnRep) {
+      const space = foldJsonSpace(args[2]);
+      // space 先于序列化处理（原生步骤序）：抽象 space may ToString 抛，
+      // 即使 replacer 不抛——不得静默 no-throw
+      if (space === "partial") {
+        recordMayThrow({ kind: "TypeError", cause: "JSON.stringify space ToString may throw" });
+      }
+      return stringifyFnReplacer(jsonArg, fnRep, space === "partial" ? undefined : space);
+    }
     const v = absToJsonNative(jsonArg, new Set(), true);
     if (v === NOT_LITERAL || v === OMIT) {
       // 顶层 function/symbol：JSON.stringify 返回 undefined，不是 string
@@ -344,12 +517,32 @@ export function evalJsonMethod(name: string, args: Abs[]): Abs | undefined {
     let replacer: (string | number)[] | undefined;
     if (replacerArg) {
       const rv = absToJsonNative(replacerArg, new Set(), false);
-      if (rv === NOT_LITERAL || rv === OMIT) return str("partial");
+      if (rv === NOT_LITERAL || rv === OMIT) {
+        // Bug 59：NOT_LITERAL 的 replacer 可能 callable（any/unknown/brand/
+        // sum/host fn 字面量载荷）——原生逐键调用，may 抛；确定非 callable
+        // （prim/tuple/never/闭 obj）不抛
+        if (
+          replacerArg.shape.k === "any" ||
+          replacerArg.shape.k === "unknown" ||
+          replacerArg.shape.k === "brand" ||
+          replacerArg.shape.k === "sum" ||
+          replacerArg.shape.k === "eff" ||
+          (replacerArg.shape.k === "obj" && (replacerArg.shape as { open?: boolean }).open === true)
+        ) {
+          recordMayThrow({
+            kind: "Error",
+            cause: "JSON.stringify replacer may be callable and throw",
+          });
+        }
+        return str("partial");
+      }
       if (Array.isArray(rv)) {
         replacer = rv.filter(
           (x): x is string | number => typeof x === "string" || typeof x === "number",
         );
       } else if (typeof rv === "function") {
+        // 宿主 fn 字面量载荷：原生逐键调用（may 抛），不建模调用面
+        recordMayThrow({ kind: "Error", cause: "JSON.stringify host-fn replacer may throw" });
         return str("partial");
       }
       // 其余（null/prim/对象）：原生忽略 replacer，照常序列化
@@ -358,18 +551,8 @@ export function evalJsonMethod(name: string, args: Abs[]): Abs | undefined {
     // min(10, ToIntegerOrInfinity(space)) + 「原 space>0 即使 <1 也 pretty」）；
     // 预折 isFinite/floor 会把 Infinity 折成 0、(0,1) 折成紧凑——同族漏网。
     // 缺省/null/undefined → 紧凑。其余非字面量 → 保守
-    const spaceArg = args[2];
-    let space: number | string | undefined;
-    if (spaceArg) {
-      const t = spaceArg.term;
-      if (t?.op !== "lit") return str("partial");
-      const sv = t.value;
-      if (typeof sv === "number" || typeof sv === "string") {
-        space = sv;
-      } else if (sv !== undefined && sv !== null) {
-        return str("partial");
-      }
-    }
+    const space = foldJsonSpace(args[2]);
+    if (space === "partial") return str("partial");
     try {
       const s = JSON.stringify(v, replacer, space);
       return s === undefined ? undefAbs() : strLit(s);

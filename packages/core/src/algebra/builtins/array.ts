@@ -10,7 +10,7 @@ import { applyCallbackValue, undefAbs, asAbs, validateCallableArg } from "../hof
 import { numericBounds } from "../arithmetic.ts";
 import { isNullishLitAbs } from "../surface.ts";
 import { recordMayThrow } from "../may-throw.ts";
-import { matchIterElements, replayGenDeferred } from "../exec/match-iter.ts";
+import { matchIterElements, replayGenDeferred, drainGenElements } from "../exec/match-iter.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs } from "../exec/may-throw.ts";
 import { pTrue } from "../pred.ts";
@@ -112,6 +112,16 @@ export function makeArrayCtorAbs(args: Abs[]): Abs {
  * - 无 length 槽：closed → []；open → 按抽象长度处理。
  */
 function evalArrayFrom(args: Abs[]): Abs {
+  // Bug 56/57：Arguments / Proxy brand 剥层到内层靶（tuple/arr 元素面；
+  // Proxy 迭代经靶 @@iterator 透明转发）。后续 a0 均按靶形态走
+  if (
+    args[0] &&
+    typeof args[0] === "object" &&
+    args[0].shape.k === "brand" &&
+    (args[0].shape.name === "Arguments" || args[0].shape.name === "Proxy")
+  ) {
+    args = [args[0].shape.shape as Abs, ...args.slice(1)];
+  }
   const a0 = args[0];
   // Array.from(iterable[, mapFn])：取可迭代物的元素，不是把实参整个当元素
   //（那是 Array.of 的语义）。mapFn 逐位应用 (el, i)——副作用必须落地：
@@ -160,7 +170,8 @@ function evalArrayFrom(args: Abs[]): Abs {
   }
   {
     // matchAll 迭代器：逐匹配项展开
-    const mi = matchIterElements(a0);
+    // Bug 54：生成器对象是消费——从当前位取剩余（drainGenElements），此后耗尽
+    const mi = drainGenElements(a0) ?? matchIterElements(a0);
     if (mi) {
       // Bug 34：生成器对象的体内延迟异常在消费点重放（definite 抛 /
       // soft may-throw 重记）——Array.from 不再静默截断成前缀
@@ -291,6 +302,10 @@ export function evalArrayStatic(name: string, args: Abs[]): Abs | undefined {
       if (!a0) return boolLit(false);
       // Array.prototype 本身是数组 exotic（原生 Array.isArray(Array.prototype) === true）
       if (a0.shape.k === "brand" && a0.shape.name === "Array.prototype") return boolLit(true);
+      // Bug 56：arguments 对象不是数组 exotic——brand "Arguments" 包 tuple
+      // 内层（$arguments），peelBrand 会看到 tuple，须在剥层前判定 false
+      if (a0.shape.k === "brand" && a0.shape.name === "Arguments") return boolLit(false);
+      // Bug 57：Proxy 剥 brand 即靶形态（ArrayCreate 保留靶 IsArray 槽）
       const s = peelBrand(a0.shape);
       if (s.k === "arr" || s.k === "tuple") return boolLit(true);
       // any/unknown/sum 可能是数组（sum 成员可含 arr/tuple）。下 `false` 结论

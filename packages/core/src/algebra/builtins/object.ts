@@ -16,7 +16,7 @@ import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
 import { $call } from "../exec/call.ts";
 import { $objAccessor, migrateAccessors, lookupObjAccessor } from "../accessors.ts";
-import { getFnImpl, absFunction } from "../abs-fn.ts";
+import { absFunction } from "../abs-fn.ts";
 import { isSymbolAbs } from "./symbol.ts";
 import { boolPrim, numPrim, str, isPrimLike, mayCoerceThrowOperand, noBody } from "./shared.ts";
 import { type PropFlags, getPropFlags, markExtState, extStateOf, setPropFlags, migrateInvariants, isEnumerableView, enumOwnKeys } from "./invariants.ts";
@@ -74,6 +74,67 @@ export function assignSourceSlots(src: Abs): Record<string, { value: Abs }> | un
   if (s.k === "prim") return s.type === "string" ? undefined : {};
   if (s.k === "eff" || s.k === "never") return {}; // Promise 无自有可枚举键
   return undefined; // arr/brand/sum/fn/any/unknown…：键集未知
+}
+
+/**
+ * M5：装箱 prim target 的 Object.assign 键写抛错域（node 实测）：
+ * - bigint → 恒定抛 TypeError（`assign(1n)` 无源也抛）；
+ * - string 字面量（长 L）→ 任一源的可枚举自有键含 canonical 数组下标
+ *   k < L → String wrapper 下标属性只读 → strict 定抛 TypeError
+ *   （`{0:'x'}` / `['x']` / `'cd'` 源）；下标 ≥ L（`{2:'x'}` 对 `'ab'`）/
+ *   非下标键（`{a:1}`）→ 原生安全返回原始串；键集未知（open obj / arr /
+ *   抽象）→ may；
+ * - number / boolean → wrapper expando 合法 → 恒安全（原生返回原始值）。
+ * symbol target 走既有 Bug 76 定抛路径，不进本判定（返回 "unhandled"）。
+ * 非可枚举 / internal 键不写（与 mergeObj/enumKeys 同口径）不计入。
+ */
+export function primTargetAssignThrows(
+  target: Abs,
+  sources: Abs[],
+): "definite" | "may" | "never" | "unhandled" {
+  const shape = target.shape;
+  if (shape.k !== "prim") return "unhandled";
+  const t = shape.type;
+  if (t === "bigint") return "definite";
+  if (t === "number" || t === "boolean") return "never";
+  if (t !== "string") return "unhandled";
+  const tvR = litValue(target);
+  if (!tvR.ok || typeof tvR.value !== "string") return "unhandled"; // 抽象 string 长度未知
+  const L = tvR.value.length;
+  if (L === 0) return "never";
+  let may = false;
+  for (const src of sources) {
+    if (!src || typeof src !== "object" || !("shape" in src)) {
+      may = true;
+      break;
+    }
+    const s = src.shape;
+    let keys: Iterable<string> | undefined;
+    if (s.k === "obj") {
+      if (s.open) {
+        may = true;
+        break;
+      }
+      const flags = getPropFlags(src);
+      keys = Object.keys(s.slots).filter(
+        (k) =>
+          flags?.get(k)?.enumerable !== false &&
+          ((s.slots as Record<string, { internal?: boolean }>)[k]?.internal !== true),
+      );
+    } else {
+      const slots = assignSourceSlots(src);
+      if (slots === undefined) {
+        may = true;
+        break;
+      }
+      keys = Object.keys(slots);
+    }
+    for (const k of keys) {
+      const idx = canonicalArrayIndex(k);
+      if (idx !== undefined && idx < L) return "definite";
+    }
+  }
+  return may ? "may" : "never";
 }
 
 /**
@@ -165,21 +226,15 @@ function applyPropertyDescriptor(a0: Abs, key: string, descAbs: Abs): Abs {
   // 性不可判定 → may TypeError，槽占位 unknown。
   const getFAbs = dslots["get"]?.value;
   const setFAbs = dslots["set"]?.value;
+  // Bug 46：receiver 统一经 $call 第三参（bindThis impl 由派发注入首参）
   const getThunk = accessorPresent && getFAbs && getFAbs.shape.k === "fn"
-    ? (getFnImpl(getFAbs)?.bindThis
-        ? (t: Abs) => $call(getFAbs, [t])
-        : (t: Abs) => $call(getFAbs, [], t))
+    ? (t: Abs) => $call(getFAbs, [], t)
     : undefined;
   const setThunk = accessorPresent && setFAbs && setFAbs.shape.k === "fn"
-    ? (getFnImpl(setFAbs)?.bindThis
-        ? (t: Abs, v: Abs): Abs => {
-            $call(setFAbs, [t, v]);
-            return t; // setter 返回值原生丢弃；目标重绑约定同字面量访问器（返 receiver）
-          }
-        : (t: Abs, v: Abs): Abs => {
-            $call(setFAbs, [v], t);
-            return t;
-          })
+    ? (t: Abs, v: Abs): Abs => {
+        $call(setFAbs, [v], t);
+        return t; // setter 返回值原生丢弃；目标重绑约定同字面量访问器（返 receiver）
+      }
     : undefined;
   if (
     accessorPresent &&
@@ -575,6 +630,10 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       const protoV = protoVR.ok ? protoVR.value : undefined;
       let base: Abs | undefined;
       let nullProto = false;
+      // Bug 67 联动：Abs 对象原型进 protoTable（[[Prototype]] 事实）——
+      // instanceof Object 的链终止判定（null 终止链不得折 true）与
+      // gPo(super) 投影消费；宿主原始对象原型不收形，不入表
+      let protoToRecord: Abs | undefined;
       if (protoV === null) {
         base = abs({ k: "obj", slots: {} }, undefined, undefined, "exact");
         nullProto = true;
@@ -598,6 +657,7 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         // open obj（缺槽读保守 unknown，兼容「不得折成 false」pin；keys
         // 家族走 obj 分支精确枚举自有槽）
         base = abs({ k: "obj", slots: {}, open: true }, undefined, undefined, "path");
+        protoToRecord = a0;
       }
       // Bug 32：第二实参 propertiesObject——逐（可枚举字符串键）描述符经
       // ToPropertyDescriptor + DefineOwnProperty 安装为**自有属性**（此前
@@ -664,6 +724,9 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         // 串可枚举键槽同理
       }
       if (base !== undefined && nullProto) return markNullProtoObj(base);
+      if (base !== undefined && protoToRecord !== undefined) {
+        return setProtoAbs(base, protoToRecord);
+      }
       return base; // 抽象 proto 臂：保守 unknown（值域与前一致）
     }
     case "keys": {
@@ -907,8 +970,10 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       if (typeof key !== "string") return boolPrim();
       if (a0.shape.k === "obj") {
         const shape = a0.shape as { slots: Record<string, unknown>; open?: boolean };
-        // Bug 84：internal 私有槽非自有属性（内部槽，GetOwnProperty 不可见）
-        if ((shape.slots[key] as { internal?: boolean } | undefined)?.internal === true) {
+        // Bug 84：internal 私有槽非自有属性（内部槽，GetOwnProperty 不可见）；
+        // Bug 66：inherited 槽（errorBrandAbs 的 name——原型链解析）同折 false
+        const own = shape.slots[key] as { internal?: boolean; inherited?: boolean } | undefined;
+        if (own?.internal === true || own?.inherited === true) {
           return boolLit(false);
         }
         if (Object.prototype.hasOwnProperty.call(shape.slots, key)) return boolLit(true);
@@ -923,7 +988,7 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         if (inner) {
           const slots = (inner.shape as ObjShape).slots;
           const slot = getSlot(slots, key);
-          if (slot?.internal) return boolLit(false);
+          if (slot?.internal || slot?.inherited) return boolLit(false);
           if (slot && !slot.optional) return boolLit(true);
           if (slot?.optional) return boolPrim();
           return boolLit(false);
@@ -995,11 +1060,28 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
     case "assign": {
       // Object.assign(a, b) ≈ spread
       if (!args.length) return unknown;
-      // target 字面量：null/undefined → TypeError 硬抛；prim → 装箱语义未建模
+      // target 字面量：null/undefined → TypeError 硬抛；装箱 prim → M5
+      // 抛错域判定（bigint 恒抛 / string 下标写定抛 / number·bool 安全返原值）
       const t0 = args[0];
       if (t0 && t0.term?.op === "lit") {
         if (t0.term.value === null || t0.term.value === undefined) {
           throw new NudoThrow(errorTypeAbs("TypeError"));
+        }
+        const dom = primTargetAssignThrows(t0, args.slice(1));
+        if (dom === "definite") throw new NudoThrow(errorTypeAbs("TypeError"));
+        if (dom === "may") {
+          recordMayThrow({
+            kind: "TypeError",
+            cause: "Object.assign boxed target index write may be read-only",
+          });
+          return t0;
+        }
+        if (dom === "never") {
+          // string → 原生返回 String wrapper（expando 键不进 JSON 序列化面，
+          // 序列化同原始串）→ 折原始串；number/bool → 原生返回带 expando 的
+          // Number/Boolean wrapper（值域 ≠ 原始值）→ 有源时降级
+          const type = (t0.shape as { k: "prim"; type: string }).type;
+          if (args.length === 1 || type === "string") return t0;
         }
         return unknown;
       }
@@ -1333,8 +1415,16 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         if (isErrorCtorName(brandName) && inner && inner.shape.k === "obj") {
           const os = inner.shape as unknown as { slots: Record<string, unknown>; open?: boolean };
           if (!os.open) {
+            // Bug 66：inherited 槽（name——原生经 X.prototype 原型链解析，
+            // 非实例自有）不在 gOPN 面；message/stack（/errors/cause）自有
+            // 不可枚举照列
             return abs(
-              { k: "tuple", elements: Object.keys(os.slots).map((n) => strLit(n)) },
+              {
+                k: "tuple",
+                elements: Object.keys(os.slots)
+                  .filter((n) => (os.slots[n] as { inherited?: boolean } | undefined)?.inherited !== true)
+                  .map((n) => strLit(n)),
+              },
               undefined,
               undefined,
               "exact",
@@ -1346,12 +1436,16 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         }
         // Bug 84：用户类实例——自有字符串键投影（含不可枚举；私有槽
         // Slot.internal 剔除——原生私有字段对 gOPN 不可见；此前整 brand
-        // 保守 partial string[]）
+        // 保守 partial string[]）；Bug 66 inherited 槽（error 家族 name）同剔
         {
           const inner = classInstanceInnerOf(a0);
           if (inner) {
-            const os = inner.shape as unknown as { slots: Record<string, { internal?: boolean }> };
-            const names = Object.keys(os.slots).filter((k) => os.slots[k]!.internal !== true);
+            const os = inner.shape as unknown as {
+              slots: Record<string, { internal?: boolean; inherited?: boolean }>;
+            };
+            const names = Object.keys(os.slots).filter(
+              (k) => os.slots[k]!.internal !== true && os.slots[k]!.inherited !== true,
+            );
             return abs(
               { k: "tuple", elements: names.map((n) => strLit(n)) },
               undefined,

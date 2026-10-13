@@ -9,6 +9,7 @@
 import type { Abs } from "../abs.ts";
 import type { MayThrowEffect } from "../may-throw.ts";
 import { recordMayThrow } from "../may-throw.ts";
+import { getSlot } from "../objects.ts";
 import { NudoThrow } from "./nudo-throw.ts";
 
 const tables = new WeakMap<object, Abs[]>();
@@ -35,6 +36,44 @@ export function registerGenElements(val: Abs, elements: Abs[]): void {
   genIterTables.set(val as object, elements);
 }
 
+/** 生成器消费视图（Bug 54）：迭代消费（spread / for-of / Array.from /
+ *  解构 / yield*）从当前位取剩余元素并推进生成器状态——与 next() 同步，
+ *  侧表不再从 0 重放已消费元素。drain 返回剩余快照并排空（迭代耗尽
+ *  语义）；peek 供数组解构逐项投影按消费位读（不推进）。 */
+interface GenIterView {
+  drain: () => Abs[];
+  peek: (i: number) => Abs | undefined;
+  peekAll: () => Abs[];
+}
+const genDrainTables = new WeakMap<object, GenIterView>();
+
+export function registerGenDrain(val: Abs, view: GenIterView): void {
+  genDrainTables.set(val as object, view);
+}
+
+export function drainGenElements(a: Abs): Abs[] | undefined {
+  const d = genDrainTables.get(a as object);
+  return d ? d.drain() : undefined;
+}
+
+/** 生成器对象的消费位视图（无条目 → undefined）：$idx 数字下标按
+ *  live 视图读（解构 `const [a] = it` 在部分消费后取当前位元素）。 */
+export function peekGenElement(a: Abs, i: number): Abs | undefined {
+  const d = genDrainTables.get(a as object);
+  return d ? d.peek(i) : undefined;
+}
+
+/** 生成器对象消费位判定（$idx 分派） */
+export function hasGenView(a: Abs): boolean {
+  return genDrainTables.has(a as object);
+}
+
+/** 消费位剩余快照（不推进）——$idx 抽象下标 join 用 */
+export function peekAllGenElements(a: Abs): Abs[] {
+  const d = genDrainTables.get(a as object);
+  return d ? d.peekAll() : [];
+}
+
 /** 生成器体内延迟异常（Bug 34）：$gen eager 体执行捕获的异常载荷
  *  （definite）+ 吞帧保留的 soft may-throw 效果——延迟到消费点重放。
  *  native：体异常属首个触达抛点的 next()（此后 done），g() 构造期不表面。 */
@@ -46,6 +85,61 @@ const genDeferredTables = new WeakMap<object, GenDeferred>();
 
 export function registerGenDeferred(val: Abs, deferred: GenDeferred): void {
   genDeferredTables.set(val as object, deferred);
+}
+
+// --- Proxy 对象侧表（Bug 57/71）------------------------------------------
+// makeProxyAbs 的 brand "Proxy"（inner = target Abs）只承载靶形态；
+// target/handler 引用挂本表——get/has/set 陷阱派发（$get/$set/$in）与
+// 无陷阱回退读靶用。独立于 error.ts（leaf 模块，无环）。
+
+export interface ProxyParts {
+  target: Abs;
+  handler: Abs | undefined;
+}
+
+const proxyTables = new WeakMap<object, ProxyParts>();
+
+export function registerProxyParts(val: Abs, parts: ProxyParts): void {
+  proxyTables.set(val as object, parts);
+}
+
+export function proxyPartsOf(a: Abs): ProxyParts | undefined {
+  return proxyTables.get(a as object);
+}
+
+/**
+ * Proxy handler 陷阱判定（Bug 71）：GetMethod(handler, trap) 的三值投影。
+ * - fn：陷阱可调用（$call 派发，receiver = handler）
+ * - dead：有槽但不可调用（原生每次触达抛 TypeError——降级 sound）
+ * - opaque：handler 形态不可判（any/open obj…）——结果域按 unknown 近似
+ * - absent：无陷阱（回退靶语义）
+ */
+export type ProxyTrap = { k: "fn"; fn: Abs } | { k: "dead" } | { k: "opaque" } | { k: "absent" };
+
+export function proxyTrapOf(
+  handler: Abs | undefined,
+  name: "get" | "has" | "set",
+): ProxyTrap {
+  if (!handler) return { k: "opaque" };
+  const s = handler.shape;
+  if (s.k === "any" || s.k === "unknown" || s.k === "sum") return { k: "opaque" };
+  const objShape =
+    s.k === "obj"
+      ? s
+      : s.k === "brand" && s.shape.shape.k === "obj"
+        ? s.shape.shape
+        : undefined;
+  if (!objShape) return { k: "opaque" };
+  const slot = getSlot(objShape.slots, name);
+  if (!slot) return objShape.open ? { k: "opaque" } : { k: "absent" };
+  if (slot.optional) return { k: "opaque" };
+  const v = slot.value;
+  // undefined 字面量陷阱 ≡ 缺省（原生 GetMethod 只排除 undefined/null）
+  if (v.term?.op === "lit" && (v.term.value === undefined || v.term.value === null)) {
+    return { k: "absent" };
+  }
+  if (v.shape.k === "fn") return { k: "fn", fn: v };
+  return { k: "dead" };
 }
 
 /**
@@ -61,7 +155,9 @@ export function copyMatchIterTables(src: Abs, dst: Abs): void {
   if (tables.has(s)) tables.set(d, tables.get(s)!);
   if (tplIterTables.has(s)) tplIterTables.set(d, tplIterTables.get(s)!);
   if (genIterTables.has(s)) genIterTables.set(d, genIterTables.get(s)!);
+  if (genDrainTables.has(s)) genDrainTables.set(d, genDrainTables.get(s)!);
   if (genDeferredTables.has(s)) genDeferredTables.set(d, genDeferredTables.get(s)!);
+  if (proxyTables.has(s)) proxyTables.set(d, proxyTables.get(s)!);
 }
 
 /** 消费点重放（Bug 34）：迭代路径（for-of / spread / yield* / 解构 /

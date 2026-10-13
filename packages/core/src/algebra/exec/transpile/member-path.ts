@@ -36,12 +36,13 @@ export function memberPathOf(m: { object: Node; property: Node; computed: boolea
         });
       } else if (isExpression(k)) {
         // [Symbol.X] 计算键 → "@@X" 字符串槽（镜像成员读 / 对象字面量计算键
-        // 投影——`ai[Symbol.asyncIterator] = fn` 落成可识别槽，Bug 13）
+        // 投影——`ai[Symbol.asyncIterator] = fn` 落成可识别槽，Bug 13）；
+        // 写入打 Slot.symbolKey 标记（Bug 73——JSON 枚举面不可见）
         const symK = symbolKeyOf(k as unknown as Parameters<typeof symbolKeyOf>[0]);
         if (symK !== null) {
           layers.unshift({
             get: (b) => `$get(${b}, ${symK})`,
-            set: (b, v) => `$set(${b}, ${symK}, ${v})`,
+            set: (b, v) => `$set(${b}, ${symK}, ${v}, { symbolKey: true })`,
           });
         } else {
           const key = emitTranspileExpression(k, opts);

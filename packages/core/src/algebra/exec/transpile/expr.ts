@@ -10,12 +10,14 @@ import {
   matchReplacement,
   fnBodyHasThis,
   fnBodyHasOwnArguments,
+  fnBodyIsEffectFree,
   indent,
   litToStringOf,
   staticKeyOf,
   symbolKeyOf,
   privateNameKeySrc,
   paramDisplayNames,
+  nativeParamArity,
   methodBindNames,
   collectFreeAssignedNames,
   collectForkBindingNames,
@@ -47,6 +49,7 @@ import {
   emitFnBlockBody,
   withImplicitReturn,
   classSpecOf,
+  emitSetterAccessorThunk,
 } from "./stmt.ts";
 
 export function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
@@ -587,11 +590,12 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
       const intrinsic = hostIntrinsicLit(expr.name);
       if (intrinsic) return intrinsic;
       if (expr.name === "arguments") {
-        // 词法外层 arguments：仅非箭头函数体**直接**引用时建 argsBinding；
-        // 箭头沿该绑定继承。无绑定（模块顶层 / 仅嵌套箭头引用）→ 诚实 unknown
-        // （差分 harness 外层是箭头 IIFE，native 为 ReferenceError；投影外层
-        // arguments 会假精确）。
-        return opts.argsBinding ?? "$unknown()";
+        // 词法外层 arguments：非箭头函数体（或其嵌套箭头）引用时建
+        // argsBinding——箭头沿该绑定词法继承。无绑定（模块顶层）→ 自由
+        // arguments 非宿主全局，原生 unresolvable reference → 定抛
+        // ReferenceError（`typeof arguments` 豁免由 Unary 分支折
+        // "undefined"，不落此处）。
+        return opts.argsBinding ?? "$throwFreeArguments()";
       }
       return expr.name;
     }
@@ -790,6 +794,15 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
       // 抛 ReferenceError（原生 typeof 不豁免 TDZ）。
       if (expr.operator === "typeof") {
         if ((expr.argument as Node).type === "Identifier") {
+          // 自由 `arguments`（无 argsBinding）同 Bug 14 未声明标识符豁免：
+          // 原生 typeof 折 "undefined" 不抛（下方 JS 守卫对 $throwFreeArguments()
+          // 调用源无效——先特判短路）
+          if (
+            (expr.argument as { name?: string }).name === "arguments" &&
+            !opts.argsBinding
+          ) {
+            return `$lit("undefined")`;
+          }
           return `typeof ${arg} === "undefined" ? $lit("undefined") : $typeof(${arg})`;
         }
         return `$typeof(${arg})`;
@@ -848,13 +861,17 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
       // Bug 82：yield* expr ≠ yield expr——读 Babel 的 delegate 标志：
       // 委托 = GetIterator 校验 + 逐元素 yield（元素，不是整个可迭代值），
       // 表达式值 = 内层迭代器 return 值（保守 unknown）。yield* 语法必有实参。
+      // Bug 52：try 上下文位随 yield 点发射（$yield 第二实参；0 不发射，
+      // 保持既有输出面不变）
+      const yctx = opts.yieldTryCtx ?? 0;
+      const yctxArg = yctx !== 0 ? `, ${yctx}` : "";
       if (expr.delegate) {
-        return `$yieldStar(${transpileExpression(expr.argument as Expression, opts)})`;
+        return `$yieldStar(${transpileExpression(expr.argument as Expression, opts)}${yctxArg})`;
       }
       const arg = expr.argument
         ? transpileExpression(expr.argument as Expression, opts)
         : "$lit(void 0)";
-      return `$yield(${arg})`;
+      return `$yield(${arg}${yctxArg})`;
     }
     case "TemplateLiteral": {
       const quasis = expr.quasis;
@@ -968,20 +985,32 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
           const isProtoKey = mkey === '"__proto__"';
           const displayNames = paramDisplayNames(prop.params);
           const bindNames = methodBindNames(prop.params);
-          // 方法体是新的函数边界：inLoop/inTry 必须归零；直接引用 arguments 时建槽
-          const mHasArgs = fnBodyHasOwnArguments({ body: prop.body as Node });
+          // 方法体是新的函数边界：inLoop/inTry 必须归零；直接/嵌套箭头引用
+          // arguments（含参数默认值）时建槽
+          const mHasArgs = fnBodyHasOwnArguments({
+            body: prop.body as Node,
+            params: prop.params as Node[] | undefined,
+          });
           const methodOpts: TranspileOptions = {
             ...opts,
             inLoop: 0,
             inTry: 0,
+            // 方法体是新函数边界：return 不携带外层 if 臂退出信号
+            conditionalFlow: 0,
             thisParam: "__this",
             argsBinding: mHasArgs ? "__nudoArgs" : undefined,
+            // Bug 52：方法体是新生成器边界——外层 try 不覆盖体内 yield
+            yieldTryCtx: 0,
           };
           // get/set 访问器：注册进运行时侧表（$get/$set 派发；展开/assign 时调用）
           if (prop.kind === "get" || prop.kind === "set") {
-            // 占位槽保键存在性（'x' in o / keys / assign 拷贝目标）；读写在 $get/$set 层派发
+            // 占位槽保键存在性（'x' in o / keys / assign 拷贝目标）；读写在 $get/$set 派发
             if (isProtoKey) {
               acc = `$setKey(${acc ?? "$obj({})"}, $lit("__proto__"), $lit(void 0))`;
+            } else if (symK !== null) {
+              // Bug 73：symbol 键投影写打 Slot.symbolKey 标记（JSON 枚举面不可见）
+              flushProps();
+              acc = `$set(${acc ?? "$obj({})"}, ${symK}, $lit(void 0), { symbolKey: true })`;
             } else if (computedKeySrc !== null) {
               acc = `$setKey(${acc ?? "$obj({})"}, ${computedKeySrc}, $lit(void 0))`;
             } else {
@@ -994,12 +1023,18 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
               const bodySrc = `{\n${emitFnBlockBody(prop.body, 1, methodOpts, { varParams: omVarParams })}\n}`;
               accRegs.push({ key: regKey, keyAbs: computedKeySrc ?? undefined, get: `(__this) => ${bodySrc}` });
             } else {
-              // setter 尾部 return __this——implicitReturn 关闭
+              // setter thunk（与 stmt.ts 类访问器同口径，emitSetterAccessorThunk）：
+              // 内层箭头丢弃体返回值（恒返回 __this）+ 别名写接收者回收
               const vname = bindNames.length > 0 && bindNames[0] !== "_a" ? bindNames[0]!.replace(/^\.\.\./, "") : "__v";
+              const setBody = emitFnBlockBody(prop.body, 2, methodOpts, {
+                implicitReturn: false,
+                varParams: omVarParams,
+              });
+              const aliasNames = collectForkBindingNames(prop.body).filter((n) => !omVarParams.has(n));
               accRegs.push({
                 key: regKey,
                 keyAbs: computedKeySrc ?? undefined,
-                set: `(__this, ${vname}) => {\n${emitFnBlockBody(prop.body, 1, methodOpts, { implicitReturn: false, varParams: omVarParams })}\nreturn __this;\n}`,
+                set: emitSetterAccessorThunk(vname, setBody, aliasNames, 1),
               });
             }
             continue;
@@ -1024,11 +1059,26 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
               `});`,
             ].join("\n");
           }
+          // Bug 70：async 对象方法体包 $async（此前丢 async 修饰——返回裸体
+          // 值而非 Promise）；async *m() 双包（$gen 内、$async 外，镜像类
+          // 方法 stmt.ts 路径）
+          if ((prop as { async?: boolean }).async) {
+            mBodyInner = [
+              `return $async(() => {`,
+              mBodyInner,
+              `});`,
+            ].join("\n");
+          }
           const bodySrc = `{\n${mBodyInner}\n}`;
           // Bug 9：对象方法是方法定义语法，原生不可 new → ctor: false
-          const fnValSrc = `$fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${mParams.join(", ")}) => ${bodySrc}, { bindThis: true, ctor: false })`;
+          // Bug 69：原生 fn.length（首个默认值/rest 前形参；bindThis 的 receiver 注入不占用户形参）
+          const fnValSrc = `$fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${mParams.join(", ")}) => ${bodySrc}, { bindThis: true, ctor: false, length: ${nativeParamArity(prop.params)} })`;
           if (isProtoKey) {
             acc = `$setKey(${acc ?? "$obj({})"}, $lit("__proto__"), ${fnValSrc})`;
+          } else if (symK !== null) {
+            // Bug 73：symbol 键投影写打 Slot.symbolKey 标记（JSON 枚举面不可见）
+            flushProps();
+            acc = `$set(${acc ?? "$obj({})"}, ${symK}, ${fnValSrc}, { symbolKey: true })`;
           } else if (computedKeySrc !== null) {
             acc = `$setKey(${acc ?? "$obj({})"}, ${computedKeySrc}, ${fnValSrc})`;
           } else {
@@ -1044,7 +1094,8 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
           const v = transpileExpression(prop.value as Expression, opts);
           const base = acc === null ? `$obj({})` : acc;
           if (symK !== null) {
-            acc = `$set(${base}, ${symK}, ${v})`;
+            // Bug 73：symbol 键投影写打 Slot.symbolKey 标记（JSON 枚举面不可见）
+            acc = `$set(${base}, ${symK}, ${v}, { symbolKey: true })`;
             continue;
           }
           const k = transpileExpression(prop.key as Expression, opts);
@@ -1075,10 +1126,15 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
           if (!fn.generator) {
             const displayNames = paramDisplayNames(fn.params);
             const bindNames = methodBindNames(fn.params);
-            const mHasArgs = fnBodyHasOwnArguments({ body: fn.body });
+            const mHasArgs = fnBodyHasOwnArguments({
+              body: fn.body,
+              params: fn.params as unknown as Node[] | undefined,
+            });
             const methodOpts: TranspileOptions = {
               ...opts,
               inLoop: 0,
+              // 方法型函数表达式体是新函数边界：return 不携带外层 if 臂退出信号
+              conditionalFlow: 0,
               thisParam: "__this",
               argsBinding: mHasArgs ? "__nudoArgs" : undefined,
             };
@@ -1098,7 +1154,7 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
             const bodySrc = `{\n${mBodyInner}\n}`;
             // Bug 9：方法型 FunctionExpression 仍是函数表达式——原生可 new（区别于 ObjectMethod）
             props.push(
-              `${key}: $fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${mParams.join(", ")}) => ${bodySrc}, { bindThis: true, ctor: true })`,
+              `${key}: $fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${mParams.join(", ")}) => ${bodySrc}, { bindThis: true, ctor: true, length: ${nativeParamArity(fn.params)} })`,
             );
             continue;
           }
@@ -1334,6 +1390,26 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
           // 表达式值 = 写入的值（JS 语义）；写回仍走不可变更新链
           return `((__v) => { ${path.rootSrc} = ${setPathSrc(path, "__v")}; return __v; })(${valSrc})`;
         }
+        // Bug 55：super.k = v / super[k] = v（实例方法/构造器）——此前裸发
+        // `/* super */` 注释哨兵（$set(, "x", v)）→ 宿主硬 SyntaxError。
+        // SetSuper：父类原型链 setter 派发，无 setter → 接收者写；对象
+        // 字面量方法（无 className）走 home object 面 $setSuperObj。静态
+        // 方法体不拦截（Super 已发父类构造器源，落通用 $set）。
+        if (m.object.type === "Super" && !opts.staticSuperSrc) {
+          const recv = opts.thisParam ?? "__this";
+          const keySrc = m.computed
+            ? transpileExpression(m.property as Expression, opts)
+            : `$lit(${JSON.stringify((m.property as { name: string }).name)})`;
+          const setCall = opts.className
+            ? `$setSuper(${recv}, ${JSON.stringify(opts.className)}, ${keySrc}, __v)`
+            : `$setSuperObj(${recv}, ${keySrc}, __v)`;
+          // 复合赋值（super.x += 5）：读-改-写——读沿 super 链（$getSuper）
+          const readSrc = opts.className
+            ? `$getSuper(${recv}, ${JSON.stringify(opts.className)}, ${keySrc})`
+            : `$getSuperObj(${recv}, ${keySrc})`;
+          const valSrc = compoundFn ? `${compoundFn}(${readSrc}, ${right})` : right;
+          return `((__v) => ((${setCall}), __v))(${valSrc})`;
+        }
         // 根不可重绑（如 foo().x = v）：保留旧纯表达式形态；
         // 表达式值 = 写入的值（$set/$idxSet 返回容器不是 JS 语义）
         if (!m.computed && m.property.type === "PrivateName") {
@@ -1374,7 +1450,8 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
             // 否则 for await 的异步可迭代性不可见，Bug 13）
             const symK = symbolKeyOf(k as unknown as Parameters<typeof symbolKeyOf>[0]);
             if (symK !== null) {
-              return `((__v) => (($set(${obj}, ${symK}, __v)), __v))(${right})`;
+              // Bug 73：symbol 键投影写打 Slot.symbolKey 标记（JSON 枚举面不可见）
+              return `((__v) => (($set(${obj}, ${symK}, __v, { symbolKey: true })), __v))(${right})`;
             }
             return `((__v) => (($idxSet(${obj}, ${transpileExpression(k, opts)}, __v)), __v))(${right})`;
           }
@@ -1622,14 +1699,28 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
       // 非箭头且体直接引用 arguments：建独立 tuple 槽。箭头不建槽（沿外层
       // argsBinding；无绑定 → $unknown()，见 Identifier 分支）。
       const hasArgs = !isArrow && fnBodyHasOwnArguments(fn);
-      const { sig, rest, prologue } = emitParamBinding(fn.params, indent(1), opts);
+      // 参数默认值在函数作用域求值：非箭头且引用自有 arguments
+      // （fnBodyHasOwnArguments 已含参数面）→ 默认表达式读 __nudoArgs 槽
+      //（useArgsSlot 路径由 emitParamBindingFromArgs 处理，此处覆盖
+      // hasArgs&&hasThis 真函数包装路径）；箭头默认值词法继承外层绑定
+      const paramOpts: TranspileOptions = !isArrow && hasArgs
+        ? { ...opts, argsBinding: "__nudoArgs" }
+        : opts;
+      // M4：无副作用面 facet（保守静态判定；sort 等按调用次数敏感的内建
+      // 只对 effectFree 回调真执行——副作用回调多执行不可回滚）
+      const effectFree = fnBodyIsEffectFree(fn);
+      const { sig, rest, prologue } = emitParamBinding(fn.params, indent(1), paramOpts);
       // 函数边界：return 不是循环提前返回；非箭头清掉外层 argsBinding
       const fnBodyOpts: TranspileOptions = {
         ...opts,
         inLoop: 0,
+        // 函数体是新边界：return 是本函数的返回，不是外层 if 臂的退出信号
+        conditionalFlow: 0,
         inFunction: true,
         ...(hasThis ? { thisParam: "__this" } : {}),
         ...(isArrow ? {} : { argsBinding: hasArgs ? "__nudoArgs" : undefined }),
+        // Bug 52：函数体是新生成器边界——外层 try 不覆盖体内 yield
+        yieldTryCtx: 0,
       };
       // FunctionExpression 无宿主 this 时编成箭头（无真实 arguments）——需要
       // arguments 时改收 `(...__allArgs)`，从 $arguments 槽绑定形参（strict 独立）。
@@ -1647,6 +1738,9 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
       // 不是宿主绑定 sig（默认参是 `_p{i}` 占位，rest 不在 sig 里）。
       // 异步 body 包 $async 保持 eff(promise) 语义（裸 JS async 会泄漏 Promise）。
       const nameList = `[${paramDisplayNames(fn.params).map((p) => JSON.stringify(p)).join(", ")}]`;
+      // Bug 69：原生 fn.length（首个默认值/rest 前形参数）——宿主 impl 是
+      // 解糖产物（`_p{i}` 占位全成真参），长度不可信，transpile 侧记真值
+      const fnLen = nativeParamArity(fn.params);
       // Bug 16：__this 必须 let——`this.s = v` 的赋值包装发射
       // `__this = $set(__this, …)` 重绑（构造调用 this 是对象时执行到），
       // const 重绑宿主 TypeError
@@ -1669,10 +1763,14 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
             //（padArgs:false），缺参归一移到体内（省略槽位无 sloppy 别名，
             // arguments 保持原生长度）
             ...(hasArgs ? sig.map((p) => `  ${p} = $absVal(${p});`) : []),
-            ...prologue,
+            // rest 绑定先于 prologue：模式 rest 参的 destructure 行引用
+            // `_rest{i}`，后置 = TDZ ReferenceError（差分 FALSE-THROW）
             ...restPrologue,
+            // __nudoArgs/__this 槽先于默认值/解构 prologue：默认表达式可读
+            // 自有 arguments（`a = arguments.length`）与 this——后置 = TDZ
             ...thisPrologue,
             ...argsSlotPrologue,
+            ...prologue,
           ];
       if (fn.body.type === "BlockStatement") {
         const raw = withImplicitReturn(
@@ -1691,12 +1789,12 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
             ? `function (${argsParamParts.join(", ")}) { return $async(() => {\n${inner}\n}); }`
             : `function (${argsParamParts.join(", ")}) {\n${inner}\n}`;
           // Bug 7：hasArgs 时体内已归一缺参——钩子补齐会膨胀 arguments.length
-          return `$fnVal(${nameList}, ${wrap}, { ctor: ${fnCtor}${hasArgs ? ", padArgs: false" : ""} })`;
+          return `$fnVal(${nameList}, ${wrap}, { ctor: ${fnCtor}${hasArgs ? ", padArgs: false" : ""}, length: ${fnLen}, effectFree: ${effectFree} })`;
         }
         if (fn.async && !fn.generator) {
-          return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => $async(() => {\n${inner}\n}), { ctor: ${fnCtor} })`;
+          return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => $async(() => {\n${inner}\n}), { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree} })`;
         }
-        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor} })`;
+        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree} })`;
       }
       const bodySrc = transpileExpression(fn.body as Expression, fnBodyOpts);
       if (allPrologue.length > 0 || hasThis) {
@@ -1710,9 +1808,9 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
         if (hasThis) {
           const wrap = `function (${argsParamParts.join(", ")}) {\n${inner}\n}`;
           // Bug 7：hasArgs 时体内已归一缺参——钩子补齐会膨胀 arguments.length
-          return `$fnVal(${nameList}, ${wrap}, { ctor: ${fnCtor}${hasArgs ? ", padArgs: false" : ""} })`;
+          return `$fnVal(${nameList}, ${wrap}, { ctor: ${fnCtor}${hasArgs ? ", padArgs: false" : ""}, length: ${fnLen}, effectFree: ${effectFree} })`;
         }
-        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor} })`;
+        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree} })`;
       }
       // 表达式体：块体包裹跑语句级 rebind pass——`()=>n++` / `()=>a.push(1)`
       // 的写回此前静默丢失（表达式上下文无语句级扫描）
@@ -1722,12 +1820,12 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
           ...rebinds.map((l) => `  ${l}`),
           `  return ${fn.async ? `$async(() => ${bodySrc})` : bodySrc};`,
         ].join("\n");
-        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor} })`;
+        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree} })`;
       }
       if (fn.async) {
-        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => $async(() => ${bodySrc}), { ctor: ${fnCtor} })`;
+        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => $async(() => ${bodySrc}), { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree} })`;
       }
-      return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => ${bodySrc}, { ctor: ${fnCtor} })`;
+      return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => ${bodySrc}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree} })`;
       })();
       if (!nfeName) return fnValSrc;
       // IIFE 绑定 NFE 自身名：调用期 g 已是 fn Abs（体内引用按词法捕获）；

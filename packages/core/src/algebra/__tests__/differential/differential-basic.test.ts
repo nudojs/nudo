@@ -38,7 +38,7 @@ describe("differential corpus batch1-9", () => {
       it(`${file}.${name} zero mismatch`, () => {
         const { compared, mismatches, skipped } = runCorpus(corpus);
         totalCompared += compared;
-        const unexpected = unexpectedMismatches(mismatches);
+        const unexpected = unexpectedMismatches(mismatches, corpus);
         expect(
           unexpected,
           `${file}.${name} compared=${compared} skipped=${skipped.length} mismatches=${mismatches.length}\n${unexpected.join("\n")}`,

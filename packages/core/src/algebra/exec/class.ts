@@ -8,12 +8,12 @@ import { abs, unknown, confJoin, litValue, bool, boolLit, str, strLit, numLit } 
 import { objOf, joinAbs, isObj, canonicalArrayIndex, getSlot, setSlot, propertyKeyOf, getProtoAbs } from "../objects.ts";
 import { findClassAccessor, TYPED_ARRAY_CALLBACK_METHODS } from "./runtime/members.ts";
 import { typedArrayElementOf } from "../builtins/shared.ts";
-import { $get, $set, $lit, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary, lookupObjAccessor, fillTuple, clearStaleTermPred } from "./runtime.ts";
-import { pushCtorFrame, popCtorFrame, withNewTargetReset } from "./runtime/state.ts";
+import { $get, $set, $lit, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary, lookupObjAccessor, clearStaleTermPred } from "./runtime.ts";
+import { pushCtorFrame, popCtorFrame, withNewTargetReset, throwStrictWrite } from "./runtime/state.ts";
 import { $call } from "./call.ts";
 import { evalEnterCall, evalExitCall, evalTruncatedAbs, isHostGlobalFn, callHostGlobalFn } from "./calls.ts";
 import { getFnImpl, absFunction, hostFnCtorFacet, isAbsApplyResult } from "../abs-fn.ts";
-import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, evalBuiltinNew, extStateOf, getPropFlags, isEnumerableView, makeArrayCtorAbs, assignSourceSlots, isSymbolAbs, stringOfSymbol, evalPromiseCtor, evalPromiseMethod, builtinCtorNameOf, hostBuiltinCtorName, makeProxyAbs, makeArrayBufferAbs, makeSharedArrayBufferAbs, makeDataViewAbs, makeTypedArrayAbs, makeUrlAbs, makeTextDecoderAbs, makeUrlSearchParamsAbs, makeBoxedAbs, boxedPrimitiveValue, evalRegExpCtor, sumHasPrimMember, evalDateCtor, evalArrayStatic, makeDynamicFunctionAbs, makeWeakRefAbs, makeFinalizationRegistryAbs } from "../builtins.ts";
+import { evalNamespaceCall, errorBrandAbs, isErrorCtorName, evalBuiltinInstanceMethod, evalBuiltinNew, extStateOf, getPropFlags, isEnumerableView, makeArrayCtorAbs, assignSourceSlots, primTargetAssignThrows, isSymbolAbs, stringOfSymbol, evalPromiseCtor, evalPromiseMethod, builtinCtorNameOf, hostBuiltinCtorName, makeProxyAbs, makeArrayBufferAbs, makeSharedArrayBufferAbs, makeDataViewAbs, makeTypedArrayAbs, makeUrlAbs, makeTextDecoderAbs, makeUrlSearchParamsAbs, makeBoxedAbs, boxedPrimitiveValue, evalRegExpCtor, sumHasPrimMember, evalDateCtor, evalArrayStatic, makeDynamicFunctionAbs, makeWeakRefAbs, makeFinalizationRegistryAbs, collectionIteratorAbs, abstractSeqIteratorAbs } from "../builtins.ts";
 import { arrayJoinToString, arrayJoinWithSep, validateJoinElements } from "../builtins/array.ts";
 import { isMapAbs, isSetAbs, makeMapAbs, makeSetAbs, collectionElementJoin, ctorArgDefinitelyInvalid, makeWeakCollectionAbs } from "../collections.ts";
 import { registerMatchIter } from "./match-iter.ts";
@@ -29,7 +29,7 @@ import {
   validateCallableArg,
   validateIndexArg,
 } from "../hof.ts";
-import { toIOI, privateNameGuard, setProtoMethodDispatch, copyWithinTuple } from "./runtime/containers.ts";
+import { toIOI, privateNameGuard, setProtoMethodDispatch, sortTupleAbs } from "./runtime/containers.ts";
 import { emptyEnv } from "../ast-env.ts";
 import { defaultLeakBudget } from "../leak.ts";
 import { pTrue } from "../pred.ts";
@@ -44,6 +44,8 @@ import {
   noteNullishMemberThrows,
   anyMemberResult,
   definitelyUncallableMember,
+  BIGINT_PROTO_METHODS,
+  OBJECT_PROTO_NAMES,
 } from "./member-diag.ts";
 import { errorTypeAbs, throwPayloadOf, recordMayThrow } from "./may-throw.ts";
 import { isNullishLitAbs } from "../surface.ts";
@@ -51,6 +53,7 @@ import { NudoThrow, $collectionForEach } from "./runtime.ts";
 import { callAbsMethod, toIntegerOrInfinityLit } from "../methods.ts";
 import {
   registerEvalClass,
+  registerClassValue,
   markClassValue,
   getEvalClass,
   type EvalClassSpec,
@@ -152,6 +155,12 @@ export function $class(
   // Bug 60：计算键折叠——键表达式已在 spec 对象字面量构造时求值（定义期，
   // throws 效果已记录）。字面量 string/number 键 → 挂真名；抽象键
   // （any/symbol/…）无法静态列举 → 摘除 synth 名成员（不静默挂错名）。
+  // 例外（Bug 50）：键求值为宿主 well-known Symbol.hasInstance 的计算键
+  // 投影为 "@@hasInstance" 字符串槽名（镜像对象字面量 [Symbol.X] → "@@X"
+  // 的 transpile 投影）——$instanceof 读到即调用，class 形与 object 形同臂。
+  // Bug 72：Symbol.toStringTag 同款投影 "@@toStringTag"——class
+  // get [Symbol.toStringTag]() 的访问器/方法/静态面挂真投影名（$get 实例
+  // 读与 typeTagOf 的 Object.prototype.toString 标签折叠同臂）。
   if (spec.computedKeys) {
     const renames = new Map<string, string>();
     const drops = new Set<string>();
@@ -160,6 +169,10 @@ export function $class(
       const lv = litValue(k);
       if (lv.ok && (typeof lv.value === "string" || typeof lv.value === "number")) {
         renames.set(synth, String(lv.value));
+      } else if (lv.ok && (lv.value as symbol | (typeof lv.value)) === Symbol.hasInstance) {
+        renames.set(synth, "@@hasInstance");
+      } else if (lv.ok && (lv.value as symbol | (typeof lv.value)) === Symbol.toStringTag) {
+        renames.set(synth, "@@toStringTag");
       } else {
         drops.add(synth);
       }
@@ -187,6 +200,38 @@ export function $class(
   if (full.statics) {
     for (const [k, v] of Object.entries(full.statics)) setSlot(slots, k, { value: asAbsVal(v) });
   }
+  // Bug 50：static [Symbol.hasInstance]（方法/字段）以 "@@hasInstance" 槽
+  // 挂到类值。静态方法/字段 impl 无 __this 形参（静态面不 this 改写）；
+  // Bug 46 统一口径：适配器声明 bindThis——receiver 经 $call 第三参注入
+  // 首参后由适配器剥掉再转发（继承（D extends C）由 $instanceof 的
+  // registry 链查找兜住，不在此复制槽）。
+  {
+    const hiMethod = full.staticMethods?.["@@hasInstance"] as
+      | ((...args: Abs[]) => Abs)
+      | undefined;
+    const hiField = full.statics?.["@@hasInstance"];
+    const hiParams = full.staticMethodParams?.["@@hasInstance"] ?? [];
+    if (hiMethod) {
+      setSlot(slots, "@@hasInstance", {
+        value: absFunction(hiParams, {
+          bindThis: true,
+          apply: (args) => hiMethod(...((args ?? []).slice(1))),
+        }, { name: `${name}[Symbol.hasInstance]`, ctor: false }),
+      });
+    } else if (hiField) {
+      const fieldAbs = asAbsVal(hiField);
+      setSlot(slots, "@@hasInstance", {
+        value: absFunction(hiParams, {
+          bindThis: true,
+          // 内层 fn 的 receiver 原样转发（bindThis 内层 → 派发再注入首参；
+          // 普通 fn → 宿主 this）——`static [Symbol.hasInstance] = 方法`
+          // 的 this 语义保持 instanceof 调用位（this = 类值）
+          apply: (args) =>
+            $call(fieldAbs, (args ?? []).slice(1), (args ?? [])[0]),
+        }, { name: `${name}[Symbol.hasInstance]`, ctor: false }),
+      });
+    }
+  }
   // 类值自有 name 属性（原生 Function.name；类表达式/声明均可读）
   setSlot(slots, "name", { value: strLit(name) });
   const val = abs(
@@ -200,6 +245,9 @@ export function $class(
   );
   classImpl.set(val as object, full);
   markClassValue(val as object, name);
+  // Bug 58：类值入名 → Abs 注册表——protoOfRecv 的父构造器投影按
+  // superName 回取同一引用（Object.getPrototypeOf(B) === A 折 exact）
+  registerClassValue(name, val);
   return val;
 }
 
@@ -562,7 +610,13 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
             return evalTruncatedAbs();
           }
           try {
-            const afterR = impl.apply(args, thisVal);
+            // Bug 46：bindThis impl（方法型 FunctionExpression 值可 new）——
+            // 新实例走首参注入（与 $call 派发同口径）；普通 fn 经 thisVal
+            // 进宿主 this。
+            const afterR = impl.apply(
+              impl.bindThis ? [thisVal, ...args] : args,
+              thisVal,
+            );
             const after = isAbsApplyResult(afterR) ? afterR.abs : afterR;
             if (
               after &&
@@ -679,12 +733,28 @@ function throwStrictAssign(): never {
 
 function runtimeAssignObject(args: Abs[]): Abs {
   if (!args.length) return unknown;
-  // target 字面量：null/undefined → TypeError 硬抛；prim → 装箱语义未建模。
-  // 两者都不该折出精确值（假精确 null 的根因）
+  // target 字面量：null/undefined → TypeError 硬抛；装箱 prim → M5 抛错域
+  //（与 builtins/object.ts evalObjectMethod "assign" 同口径：bigint 恒抛 /
+  // string 下标写定抛 / number·bool 安全返原值）
   const t0 = asAbsVal(args[0]!);
   if (t0.term?.op === "lit") {
     if (t0.term.value === null || t0.term.value === undefined) {
       throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+    const dom = primTargetAssignThrows(t0, args.slice(1));
+    if (dom === "definite") throw new NudoThrow(errorTypeAbs("TypeError"));
+    if (dom === "may") {
+      recordMayThrow({
+        kind: "TypeError",
+        cause: "Object.assign boxed target index write may be read-only",
+      });
+      return t0;
+    }
+    if (dom === "never") {
+      // string → 折原始串（同 evalObjectMethod 口径）；number/bool →
+      // 原生返回带 expando 的 wrapper → 有源时降级
+      const type = (t0.shape as { k: "prim"; type: string }).type;
+      if (args.length === 1 || type === "string") return t0;
     }
     return unknown;
   }
@@ -957,17 +1027,14 @@ function $invokeInner(
       const fnImpl = getFnImpl(thisVal);
       const isCallable = thisVal.shape.k === "fn" || fnImpl !== undefined;
       if (isCallable) {
-        // bindThis（对象方法）：thisArg 注入首参；普通 fn：thisVal 经 apply 钩子传入
-        const bindThis = !!fnImpl?.bindThis;
+        // Bug 46：thisArg 统一经 $call 第三参传递——bindThis impl（对象方法）
+        // 由 $call 派发注入首参；普通 fn 经 apply 钩子进宿主 this。
+        // 缺 thisArg（call() 无实参）→ undefined ≡ strict this undefined。
         if (method === "call") {
-          return bindThis
-            ? $call(thisVal, [args[0] ?? $lit(undefined), ...args.slice(1)])
-            : $call(thisVal, args.slice(1), args[0]);
+          return $call(thisVal, args.slice(1), args[0]);
         }
         if (method === "apply") {
-          return bindThis
-            ? $call(thisVal, [args[0] ?? $lit(undefined), ...expandApplyArgs(args[1])])
-            : $call(thisVal, expandApplyArgs(args[1]), args[0]);
+          return $call(thisVal, expandApplyArgs(args[1]), args[0]);
         }
         const boundThis = args[0];
         const bound = args.slice(1);
@@ -980,9 +1047,7 @@ function $invokeInner(
           {
             apply: (callArgs) =>
               callAtFunctionBoundary(() =>
-                bindThis
-                  ? $call(thisVal, [boundThis ?? $lit(undefined), ...bound, ...callArgs])
-                  : $call(thisVal, [...bound, ...callArgs], boundThis),
+                $call(thisVal, [...bound, ...callArgs], boundThis),
               ),
           },
           boundCtor !== undefined ? { ctor: boundCtor } : undefined,
@@ -1128,6 +1193,17 @@ function $invokeInner(
     const bv = bvR.ok ? (bvR.value as bigint | undefined) : undefined;
     if (typeof bv === "bigint") {
       if (method === "valueOf") return thisVal;
+      // toLocaleString：BigInt 原型真方法（M3 白名单成员）——宿主 ICU 真执行
+      //（千分位随 locale 精确；此前落通用路径折 "[object BigInt]" 假精确）；
+      // 实参不参与（ICU 路径不转换，symbol 实参原生不抛——Number 口径同）
+      if (method === "toLocaleString") {
+        try {
+          const impl = BigInt.prototype as unknown as Record<string, (...a: unknown[]) => string>;
+          return strLit(impl.toLocaleString.call(bv));
+        } catch {
+          return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
+        }
+      }
       if (method === "toString") {
         const argAbs = args[0];
         // Bug 65：radix 经 ToIntegerOrInfinity——symbol 按 shape 判定（无
@@ -1153,8 +1229,12 @@ function $invokeInner(
           return unknown;
         }
       }
+    } else if (method === "toLocaleString") {
+      // 抽象 bigint：toLocaleString 恒成功（ICU 不转换实参）→ 抽象 string
+      return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
     }
-    return unknown;
+    // 未接管的其它方法不得在此 return——继续后续诊断路径（M3：原型外
+    // 方法名（toFixed 等）在下方定抛 TypeError；toLocaleString 等软保守）
   }
   // number 字面量：toString(radix)/toFixed/toExponential/toPrecision/valueOf
   // 精确折叠——字面量实参真执行（ToIntegerOrInfinity 截断、NaN→缺省等由原生
@@ -1273,9 +1353,11 @@ function $invokeInner(
     let result: Abs = unknown;
     let threw = false;
     try {
-      result = impl.bindThis
-        ? $call(prop as Abs, [thisVal, ...args])
-        : $call(prop as Abs, args);
+      // Bug 46：receiver 统一经 thisVal 通道传入（bindThis impl 由 $call
+      // 派发注入首参；普通 fn 经 apply 钩子进宿主 this——$rawThis 承接）。
+      // 动态赋值的方法（o.get = function(){…}）不再因定义位点无 bindThis
+      // 标记而丢接收者（此前 undefined.v 假 TypeError + never）。
+      result = $call(prop as Abs, args, thisVal);
       return result;
     } catch (e) {
       threw = true;
@@ -1296,6 +1378,19 @@ function $invokeInner(
   // 结构上确定不可调用（null-proto 缺失名 / 闭 exact 对象非 OP 名缺失 /
   // 字面量非函数槽）→ 原生 TypeError hard throw（catch 可吸收）
   if (definitelyUncallableMember(thisVal, method)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  // bigint prim 接收者的原型外方法（M3）：BigInt.prototype 自有方法集是
+  // **封闭**的 {toString, toLocaleString, valueOf}（规范全列，无宿主扩展
+  // 面）——方法调用确定 TypeError（`(5n).toFixed(1)` 原生同抛）。与
+  // string/number 的软判定（STRING_METHODS 近似面，漏列会假抛）不同，
+  // bigint 面可枚举所以可定抛。属性读（$get 通道）不受影响。
+  if (
+    thisVal?.shape?.k === "prim" &&
+    (thisVal.shape as { type?: string }).type === "bigint" &&
+    !OBJECT_PROTO_NAMES.has(method) &&
+    !BIGINT_PROTO_METHODS.has(method)
+  ) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
   // prim 接收者上的未知方法 → no-method
@@ -1695,145 +1790,78 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
   }
   if (method === "keys") {
     if (shape.k === "tuple") {
+      // Bug 63：原生返回 Array Iterator 对象（非数组）——Map/Set 的
+      // collectionIteratorAbs 同款协议面（next/@@iterator + 元素侧表），
+      // Array.isArray 折 false、Object.keys 折 []、typeof .next 折
+      // "function"；spread/for-of/Array.from/.next() 链路经侧表全求值。
       // 原生数组迭代器：0..length-1 全下标（不跳过 hole），键是 number
       // （自有属性键才是字符串——Object.keys / for-in 不受此影响）
-      return abs(
-        {
-          k: "tuple",
-          elements: shape.elements.map((_, i) => numLit(i)),
-        },
-        undefined,
-        undefined,
-        "exact",
-      );
+      return collectionIteratorAbs(shape.elements.map((_, i) => numLit(i)));
     }
-    return abs({ k: "arr", element: unknownIdx() }, undefined, undefined, "partial");
+    // 长度未知：迭代器对象保守面（next 值域 el∪undefined、done 布尔域；
+    // 不挂侧表——spread/for-of 走 unbounded join，不折精确长度）
+    return abstractSeqIteratorAbs(unknownIdx());
   }
   if (method === "values") {
     if (shape.k === "tuple") {
       const holes = shape.holes ?? [];
       // 原生迭代器不跳过 hole：hole 位按 Get 语义产出 undefined
-      return abs(
-        {
-          k: "tuple",
-          elements: shape.elements.map((el, i) => (holes.includes(i) ? undefAbs() : el)),
-        },
-        undefined,
-        undefined,
-        arr.conf,
+      return collectionIteratorAbs(
+        shape.elements.map((el, i) => (holes.includes(i) ? undefAbs() : el)),
       );
     }
-    return arr;
+    return abstractSeqIteratorAbs(shape.element);
   }
   if (method === "entries") {
     if (shape.k === "tuple") {
       const holes = shape.holes ?? [];
-      return abs(
-        {
-          k: "tuple",
-          elements: shape.elements.map((el, i) =>
-            abs(
-              { k: "tuple", elements: [numLit(i), holes.includes(i) ? undefAbs() : el] },
-              undefined,
-              undefined,
-              "exact",
-            ),
+      return collectionIteratorAbs(
+        shape.elements.map((el, i) =>
+          abs(
+            { k: "tuple", elements: [numLit(i), holes.includes(i) ? undefAbs() : el] },
+            undefined,
+            undefined,
+            "exact",
           ),
-        },
-        undefined,
-        undefined,
-        "exact",
+        ),
       );
     }
-    return abs(
-      {
-        k: "arr",
-        element: abs(
-          { k: "tuple", elements: [unknownIdx(), shape.element] },
-          undefined,
-          undefined,
-          "partial",
-        ),
-      },
-      undefined,
-      undefined,
-      "partial",
+    return abstractSeqIteratorAbs(
+      abs(
+        { k: "tuple", elements: [unknownIdx(), shape.element] },
+        undefined,
+        undefined,
+        "partial",
+      ),
     );
   }
   if (method === "fill" && args.length >= 1) {
-    // 表达式值 = 变更后数组本身；start/end 折叠复用语句级 fillTuple
-    // （字面量精确窗口；抽象边界 join 回退；Symbol 等非法参数保守）
-    return fillTuple(shape, args, arr);
+    // Bug 49：$invoke 调用点就地变更（fillTuple 精确窗口），返回接收者容器
+    return $arrMutContainer(arr, method, args);
   }
   if (method === "sort" || method === "toSorted") {
     // Bug 51/74：GetSortComparator——缺省/严格 undefined → 默认比较器；
     // null/prim/非可调用（含 symbol）→ 确定 TypeError；any/抽象 → may。
     // 默认比较器（ToString 序）下全字面量元组精确排序（undefined 恒排尾
     // 不参与比较；≥2 个可比较元素含 symbol → 比较 ToString 确定 TypeError）；
-    // 比较器在场 / 抽象元素 → 位次不可信，tuple 降 arr（元素 join，与语句级
-    // $arrMutContainer 同口径）。
-    validateCallableArg(args[0], `${method} comparator may not be callable`, {
+    // 比较器在场 / 抽象元素 → 位次不可信，tuple 降 arr（元素 join）。
+    // Bug 49：sort 经 $arrMutContainer 在调用点就地变更（含 frozen/sealed
+    // 校验）并返回接收者；toSorted 是非变更拷贝。
+    if (method === "sort") {
+      return $arrMutContainer(arr, method, args);
+    }
+    validateCallableArg(args[0], "toSorted comparator may not be callable", {
       undefinedOk: true,
     });
     if (shape.k === "arr") {
       return abs({ k: "arr", element: shape.element }, undefined, undefined, "partial");
     }
-    const slots = shape.elements.map((el, i) => (isHole(i) ? undefAbs() : el));
-    const isUndefLit = (el: Abs): boolean =>
-      el.term?.op === "lit" && el.term.value === undefined;
-    const isDefaultCmp =
-      args[0] === undefined ||
-      (!!asAbs(args[0])?.term && asAbs(args[0])!.term!.op === "lit" &&
-        (asAbs(args[0])!.term as { value: unknown }).value === undefined);
-    if (isDefaultCmp) {
-      const comparable = slots.filter((el) => !isUndefLit(el));
-      if (comparable.length >= 2 && comparable.some((el) => isSymbolAbs(el))) {
-        throw new NudoThrow(errorTypeAbs("TypeError"));
-      }
-      if (slots.every((el) => el.term?.op === "lit")) {
-        const vals = slots.map((el) => {
-          const r = litValue(el);
-          return r.ok ? r.value : undefined;
-        });
-        if (vals.every((v) => v === undefined || typeof v !== "object")) {
-          const sortedVals = vals.filter((v) => v !== undefined).sort();
-          const undefCount = vals.length - sortedVals.length;
-          const els = [
-            ...sortedVals.map((v) => $lit(v)),
-            ...Array.from({ length: undefCount }, () => undefAbs()),
-          ];
-          return abs(
-            { k: "tuple", elements: els },
-            undefined,
-            undefined,
-            confJoin(arr.conf, "path"),
-          );
-        }
-      }
-    }
-    const el = shape.elements.length
-      ? shape.elements.reduce((x, y) => joinAbs(x, y))
-      : unknown;
-    return abs({ k: "arr", element: el }, undefined, undefined, confJoin(arr.conf, "path"));
+    return sortTupleAbs(arr, args[0]);
   }
   if (method === "reverse") {
-    // Bug 71：表达式位置镜像语句级 $arrMutContainer 语义（holes 随元素镜像
-    // 翻转），返回反转后数组；抽象 arr 顺序未建模、元素不变
-    if (shape.k === "tuple") {
-      const len = shape.elements.length;
-      const holesR = shape.holes ? shape.holes.map((h) => len - 1 - h) : undefined;
-      return abs(
-        {
-          k: "tuple",
-          elements: [...shape.elements].reverse(),
-          holes: holesR && holesR.length > 0 ? holesR : undefined,
-        },
-        undefined,
-        undefined,
-        confJoin(arr.conf, "path"),
-      );
-    }
-    return abs({ k: "arr", element: shape.element }, undefined, undefined, "partial");
+    // Bug 49/71：$invoke 调用点就地变更（holes 随元素镜像翻转），返回
+    // 接收者容器；抽象 arr 顺序未建模、元素不变
+    return $arrMutContainer(arr, method, args);
   }
   if (method === "toReversed") {
     // Bug 66：非变更拷贝——hole 位按 Get 语义写实 undefined（与 reverse 不同）
@@ -2247,23 +2275,37 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
   if (method === "includes") {
     return abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial");
   }
-  // C1.4：语句重绑走 $arrMutContainer（容器）；表达式位置按 JS 语义返回 length
+  // C1.4 / Bug 49/51：mutator 在 $invoke 调用点就地变更（writeInPlace 保持
+  // Abs 身份 → 变量别名 / 成员槽 / Map 条目同步可见），表达式内连续
+  // mutator 按求值顺序生效；返回值按 JS 语义（push/unshift → 新长度）
   if (method === "push" || method === "unshift") {
-    return abs({ k: "prim", type: "number" }, undefined, undefined, "path");
+    const preLen = shape.k === "tuple" ? shape.elements.length : undefined;
+    $arrMutContainer(arr, method, args);
+    // tuple 长度精确（原长 + 实参个数）；抽象 arr 长度未知
+    return preLen === undefined
+      ? abs({ k: "prim", type: "number" }, undefined, undefined, "path")
+      : numLit(preLen + args.length);
   }
   if (method === "pop") {
-    if (shape.k === "tuple") {
-      return shape.elements.length > 0
-        ? (shape.elements[shape.elements.length - 1] ?? unknown)
-        : undefAbs();
-    }
-    if (shape.k === "arr") return joinAbs(shape.element, undefAbs());
+    // 返回值取自变更前快照（旧 shape 对象不受 writeBack 影响）
+    const ret =
+      shape.k === "tuple"
+        ? shape.elements.length > 0
+          ? (shape.elements[shape.elements.length - 1] ?? unknown)
+          : undefAbs()
+        : joinAbs(shape.element, undefAbs());
+    $arrMutContainer(arr, method, args);
+    return ret;
   }
   if (method === "shift") {
-    if (shape.k === "tuple" && shape.elements.length > 0) {
-      return shape.elements[0] ?? unknown;
-    }
-    if (shape.k === "arr") return joinAbs(shape.element, undefAbs());
+    const ret =
+      shape.k === "tuple" && shape.elements.length > 0
+        ? (shape.elements[0] ?? unknown)
+        : shape.k === "arr"
+          ? joinAbs(shape.element, undefAbs())
+          : undefAbs();
+    $arrMutContainer(arr, method, args);
+    return ret;
   }
   if (method === "at") {
     // ToIntegerOrInfinity：缺省/undefined/null/NaN → 0；true → 1；'1' → 1；
@@ -2285,15 +2327,16 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
     if (shape.k === "arr") return joinAbs(shape.element, undefAbs());
   }
   if (method === "splice") {
-    // Bug 33：表达式位置（语句位走 $arrMutContainer 重绑）——返回被删元素
-    // tuple。start/deleteCount 经 ToIntegerOrInfinity（symbol/bigint 确定
-    // TypeError；抽象 → may——与 $arrMutContainer 同款校验）；items 实参
-    // 不校验（原生存储不转换）。native：缺省 deleteCount（仅 start）→
-    // 删到尾；显式 undefined → 0；start ≥ len → 空删。抽象 arr 接收者 /
-    // 不可判定下标 → 保守 arr（元素域）。
+    // Bug 33/49：返回被删元素 tuple（取自变更前快照），调用点经
+    // $arrMutContainer 就地变更。start/deleteCount 经 ToIntegerOrInfinity
+    //（symbol/bigint 确定 TypeError；抽象 → may——与 $arrMutContainer
+    // 同款校验）；items 实参不校验（原生存储不转换）。native：缺省
+    // deleteCount（仅 start）→ 删到尾；显式 undefined → 0；start ≥ len →
+    // 空删。抽象 arr 接收者 / 不可判定下标 → 保守 arr（元素域）。
     validateIndexArg(args[0], "splice start may not be convertible to a number");
     validateIndexArg(args[1], "splice deleteCount may not be convertible to a number");
     if (shape.k === "arr") {
+      $arrMutContainer(arr, method, args);
       return abs({ k: "arr", element: shape.element }, undefined, undefined, "partial");
     }
     const len = shape.elements.length;
@@ -2301,7 +2344,9 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
     const dc = toIOI(args[1]);
     if (st === null || dc === null) {
       const el = len ? shape.elements.reduce((x, y) => joinAbs(x, y)) : unknown;
-      return abs({ k: "arr", element: el }, undefined, undefined, "partial");
+      const removed = abs({ k: "arr", element: el }, undefined, undefined, "partial");
+      $arrMutContainer(arr, method, args);
+      return removed;
     }
     const start = st === undefined ? 0 : st < 0 ? Math.max(len + st, 0) : Math.min(st, len);
     const del =
@@ -2310,21 +2355,22 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
         : dc === undefined
           ? 0
           : Math.min(Math.max(dc, 0), len - start);
-    const removed = shape.elements
-      .slice(start, start + del)
-      .map((el, i) => (isHole(start + i) ? undefAbs() : el));
-    return abs(
-      { k: "tuple", elements: removed },
+    const removed = abs(
+      { k: "tuple", elements: shape.elements
+        .slice(start, start + del)
+        .map((el, i) => (isHole(start + i) ? undefAbs() : el)) },
       undefined,
       undefined,
       confJoin(arr.conf, "path"),
     );
+    $arrMutContainer(arr, method, args);
+    return removed;
   }
   if (method === "copyWithin") {
-    // Bug 33：表达式位置返回复制后容器（copyWithinTuple 与语句位 $arrMutContainer
-    // 共用实现——窗口 clamp/holes/倒序重叠全一致）；抽象 arr → 元素域保持
+    // Bug 33/49：调用点经 $arrMutContainer 就地变更（copyWithinTuple——
+    // 窗口 clamp/holes/倒序重叠全一致），返回接收者容器；抽象 arr → 元素域保持
     validateIndexArg(args[0], "copyWithin target may not be convertible to a number");
-    return copyWithinTuple(shape, args);
+    return $arrMutContainer(arr, method, args);
   }
   return undefined;
 }
@@ -2358,6 +2404,46 @@ export function $getSuper(thisVal: Abs, childName: string, key: Abs): Abs {
   const acc = findClassAccessor(parentName, k);
   if (acc?.get) return acc.get(thisVal);
   return unknown;
+}
+
+/** 类实例方法/构造器内 super.k = v（Bug 55）：SetSuper——沿父类原型链找
+ *  setter（以接收者 this 调用）；getter-only 挡链 → strict TypeError；
+ *  无 setter → 原生折接收者自有数据属性（CreateDataProperty on this）。
+ *  子类自有同名访问器不拦截 super 写（查找从父类起）——绕过 $set 的
+ *  访问器派发直写接收者槽（brand 内层 in-place，引用语义）。 */
+export function $setSuper(thisVal: Abs, childName: string, key: Abs, value: Abs): Abs {
+  const k = propertyKeyOf(key);
+  if (k === undefined) {
+    // 抽象键：链上 setter 不可判定 → 计算键写（sound 过近似，不假精确）
+    return $setKey(thisVal, key, value);
+  }
+  const parentName = getEvalClass(childName)?.superName;
+  if (parentName) {
+    const acc = findClassAccessor(parentName, k);
+    if (acc) {
+      if (acc.set) return acc.set(thisVal, value);
+      // getter-only 访问器：strict TypeError（catch 可吸收）
+      throwStrictWrite();
+    }
+    if (findClassAccessor(childName, k)) {
+      // 子类-only 访问器：super 写不得派发它——接收者自有槽直写
+      if (thisVal.shape.k === "brand" && thisVal.shape.shape.shape.k === "obj") {
+        if (extStateOf(thisVal) === "frozen") throwStrictWrite();
+        const inner = thisVal.shape.shape.shape as { slots: Record<string, { value: Abs }> };
+        const st = extStateOf(thisVal);
+        if ((st === "sealed" || st === "nonext") && !getSlot(inner.slots, k)) {
+          throwStrictWrite();
+        }
+        if (getPropFlags(thisVal)?.get(k)?.writable === false) throwStrictWrite();
+        setSlot(inner.slots, k, { value: asAbsVal(value) });
+        clearStaleTermPred(thisVal);
+        return thisVal;
+      }
+      return $setKey(thisVal, $lit(k), value);
+    }
+  }
+  // 无 setter：$set 的实例字段写（frozen/sealed/不可变标志检查 + in-place）
+  return $set(thisVal, k, value);
 }
 
 /** 类实例方法内 super[k](args) 计算键调用（Bug 14）：ToPropertyKey 后沿父类链派发 */
@@ -2400,7 +2486,7 @@ export function $invokeSuperObj(thisVal: Abs, key: Abs, args: Abs[]): Abs {
       const impl = slot ? getFnImpl(slot.value) : undefined;
       if (impl) {
         return withNewTargetReset(() =>
-          impl.bindThis ? $call(slot!.value, [thisVal, ...args]) : $call(slot!.value, args),
+          $call(slot!.value, args, thisVal),
         );
       }
     }
@@ -2425,6 +2511,27 @@ export function $getSuperObj(thisVal: Abs, key: Abs): Abs {
     cur = superProtoOf(cur);
   }
   return unknown;
+}
+
+/** 对象字面量方法内 super.k = v（Bug 55 home object 面）：home 原型链
+ *  （运行时侧表）上找访问器 setter（以接收者调用）；getter-only →
+ *  strict TypeError；数据槽/缺槽 → 原生折接收者自有写（$set）。 */
+export function $setSuperObj(thisVal: Abs, key: Abs, value: Abs): Abs {
+  const k = propertyKeyOf(key);
+  if (k === undefined) return $setKey(thisVal, key, value);
+  let cur = superProtoOf(thisVal);
+  let hops = 0;
+  while (cur && hops++ < SUPER_PROTO_CHAIN_LIMIT) {
+    if (cur.shape.k === "obj") {
+      const acc = lookupObjAccessor(cur, k);
+      if (acc) {
+        if (acc.set) return acc.set(thisVal, value);
+        throwStrictWrite();
+      }
+    }
+    cur = superProtoOf(cur);
+  }
+  return $set(thisVal, k, value);
 }
 
 export function $thisGet(thisVal: Abs, key: string): Abs {

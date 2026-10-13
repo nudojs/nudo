@@ -138,10 +138,15 @@ export function asAbsVal(v: unknown): Abs {
         // 与 $fnVal / $callNamed 同边界：callee 的 NudoReturn 不得冒泡成 caller。
         // Bug 26：宿主全局函数值经桥分派（evalGlobalFn / 字面量守卫执行），
         // 非宿主全局（转译泄漏的普通函数）保持 Abs 实参直调。
-        apply: (args) => {
+        apply: (args, thisVal) => {
           const bridged = hostGlobalFnCall?.(v, args);
           if (bridged !== undefined) return bridged;
-          return callAtFunctionBoundary(() => (v as (...a: Abs[]) => Abs)(...args));
+          // Bug 46：receiver 经 thisVal 转发宿主 this（成员调用 o.m = 函数声明
+          // 后 o.m() 的接收者；$invoke/$call 第三参通道）——此前丢弃致
+          // $rawThis(this) 恒 undefined
+          return callAtFunctionBoundary(() =>
+            (v as (...a: Abs[]) => Abs).apply(thisVal as never, args),
+          );
         },
       },
       {
@@ -184,13 +189,19 @@ function boundaryBody<T>(body: () => T): T {
   let forwarded: Abs[] = [];
   try {
     return runWithLoopExits(() => {
+      // callee 帧内 fork/loop 早退 ret 值（settleForkArms 入 exits 通道）在
+      // 本边界与正常返回值 join —— 此前直接丢弃会错定（fall-through 值独占）。
+      const joinFrameExits = (normal: Abs): Abs => {
+        const frameExits = takeLoopExits();
+        return frameExits.length ? frameExits.reduce((acc, x) => joinAbs(acc, x), normal) : normal;
+      };
       try {
         const r = body();
         forwarded = takeThrowExits();
-        return r;
+        return joinFrameExits(r as unknown as Abs) as unknown as T;
       } catch (e) {
         forwarded = takeThrowExits();
-        if (isNudoReturn(e)) return e.absValue as unknown as T;
+        if (isNudoReturn(e)) return joinFrameExits(e.absValue) as unknown as T;
         throw e;
       }
     });
@@ -227,11 +238,14 @@ function padOmittedArgs(
  *  opts.ctor：Bug 9 可构造性 facet（箭头/方法/async/generator → false；
  *  函数表达式/类表达式值 → true）。
  *  opts.padArgs：默认 true（Bug 7 缺参归一）；读宿主 arguments 的
- *  function 包装传 false（arguments.length 不得被补齐膨胀）。 */
+ *  function 包装传 false（arguments.length 不得被补齐膨胀）。
+ *  opts.length：Bug 69 原生 fn.length（首个默认值/rest 形参前的形参数）——
+ *  宿主 impl 是解糖产物（默认参占位 `_p{i}` 全成真参），长度不可信；
+ *  transpile 侧记录真值，$len 的 fn 分支折 exact。 */
 export function $fnVal(
   params: string[],
   impl: (...args: Abs[]) => Abs,
-  opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean },
+  opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean },
 ): Abs {
   const argsOf =
     opts?.padArgs === false
@@ -253,8 +267,12 @@ export function $fnVal(
               ),
             ),
       ...(opts?.bindThis ? { bindThis: true } : {}),
+      ...(opts?.effectFree ? { effectFree: true } : {}),
     },
-    opts?.ctor !== undefined ? { ctor: opts.ctor } : undefined,
+    {
+      ...(opts?.ctor !== undefined ? { ctor: opts.ctor } : {}),
+      ...(opts?.length !== undefined ? { length: opts.length } : {}),
+    },
   );
 }
 
@@ -283,6 +301,15 @@ export function throwStrictWrite(): never {
 /** const 绑定再赋值（Assignment to constant variable）→ hard TypeError */
 export function $throwConstAssign(): never {
   throw new NudoThrow(errorTypeAbs("TypeError"));
+}
+
+/**
+ * 自由 `arguments` 读（模块顶层 / 无任何外层函数绑定）：非宿主全局，
+ * 原生 unresolvable reference → hard ReferenceError（ESM 无 arguments
+ * 全局；`typeof arguments` 豁免由 transpile 折 "undefined" 不走此处）。
+ */
+export function $throwFreeArguments(): never {
+  throw new NudoThrow(errorTypeAbs("ReferenceError"));
 }
 
 // --- new.target（Bug 79）---
@@ -626,6 +653,18 @@ export function isNudoReturn(e: unknown): e is NudoReturn {
 /** transpile `return x` inside for/while → `$loopReturn(x)` */
 export function $loopReturn(v: Abs): never {
   throw new NudoReturn(v);
+}
+
+/**
+ * transpile 函数体边界吸收器：`try { body } catch (e) { return $catchReturn(e); }`
+ * —— 函数体内 $loopReturn 早退（循环 / if 臂）在函数自身边界收成返回值，
+ * 转译模块对裸宿主调用（e2e 真实 .mjs 导入 / 模块顶层互调）自包含；
+ * 其余异常（NudoThrow / 原生错误）原样 rethrow。仅在发射体含 $loopReturn
+ * 时由 transpile 侧包裹。
+ */
+export function $catchReturn(e: unknown): Abs {
+  if (isNudoReturn(e)) return e.absValue;
+  throw e;
 }
 
 /**

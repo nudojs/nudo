@@ -6,7 +6,7 @@
  * 但 throws 域必须含 TypeError，且写入值不得假成功。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
+import { runTranspiled, callTranspiledExportFull, litValue, formatShape } from "@nudojs/core";
 import { abs } from "../abs.ts";
 import { call, isNever } from "./eval-helpers.ts";
 
@@ -65,8 +65,13 @@ describe("strict invariants survive fork snapshots", () => {
     const r = callFork(
       `export function f(x) { const o = {a:1}; Object.freeze(o); if (x) { try { o.a = 2; } catch(e) { return 'caught'; } } return 'ok'; }`,
     );
-    const v = litValue(r.result);
-    expect(v.ok && (v.value === "caught" || v.value === "ok")).toBe(true);
+    // 抽象 x 双臂可达：try 臂 catch-return 'caught' 与 fall-through 'ok'
+    // 均 join 进结果（fork×try 早退修复前 catch 臂被丢弃、错定 'ok'）；
+    // frozen-write 已被 try/catch 吸收 → 不泄漏 TypeError
+    const s = formatShape(r.result);
+    expect(s).toContain("caught");
+    expect(s).toContain("ok");
+    expect(throwsTypeError(r.throws)).toBe(false);
   });
 
   it("switch arm frozen write records TypeError", () => {

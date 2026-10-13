@@ -25,9 +25,9 @@ export const sameLineTry = [
   "try { return 1; } finally { } try { return 2; } finally { } return 3;",
   "try { throw 1; } catch (e) { return 'a'; } finally { } try { throw 2; } catch (e) { return 'b'; } finally { } return 'z';",
   "try { 1; } catch (e) {} try { 2; } catch (e) {} try { 3; } catch (e) {} try { 4; } catch (e) {} try { 5; } catch (e) {} return \"five\";",
-  // 以下两行 = 合法 skip（钉在 skip-baseline.json）：catch 参数位**解构**对抛出值
-  // 不折字面量（返回非具体 Abs，fail-closed），对照行 catch (e) + 成员读精确。
-  // 精度缺口未编号；修复后基线收缩告警会提示收紧。
+  // 以下两行：catch 参数位**解构**（模式参）——修复前只绑载体名，子名
+  // 静默丢绑定 → catch 体自由读 spurious-throw（钉过 knownFalseThrows）。
+  // 现经 emitDestructure 绑定全部子名，与对照行 catch (e) + 成员读同精确。
   "try { throw [1, 2]; } catch ([a, b]) { return a + b; } return 0;",
   "try { throw {v: 9}; } catch ({v}) { return v; } return 0;",
   "try { throw [1, 2]; } catch (e) { return e[0] + e[1]; } return 0;",

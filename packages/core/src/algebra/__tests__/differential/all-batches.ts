@@ -38,3 +38,4 @@ export * as batch18Readprobes from "./corpus/batch18-readprobes.ts";
 export * as batch19MethodEarlyReturn from "./corpus/batch19-method-early-return.ts";
 export * as batch20TranspileAdversarial from "./corpus/batch20-transpile-adversarial.ts";
 export * as batch21CtorBattery from "./corpus/batch21-ctor-battery.ts";
+export * as batch22ForkTryEarlyReturn from "./corpus/batch22-fork-try-early-return.ts";

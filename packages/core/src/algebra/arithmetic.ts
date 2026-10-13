@@ -38,7 +38,7 @@ import {
   never,
 } from "./abs.ts";
 import { concatString, isTemplateLike } from "./template.ts";
-import { makeSum, absShapeKey, getSlot } from "./objects.ts";
+import { makeSum, absShapeKey, getSlot, isNullProtoWithoutCoercer } from "./objects.ts";
 import { noteDerivationAdd } from "./derivation.ts";
 import { isSymbolAbs as isSym } from "./symbol-id.ts";
 import { NudoThrow } from "./nudo-throw.ts";
@@ -164,6 +164,13 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   if (fa || fb) return add(fa ?? a, fb ?? b, phi);
   // Symbol 参与 + / 模板：隐式 ToString 原生 TypeError（String(sym) 走 evalGlobalFn 不抛）
   if (isSym(a) || isSym(b)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  // 闭 null-proto 无自有 coercer（toString/valueOf/@@toPrimitive）→
+  // ToPrimitive 定抛 TypeError（`''+o` / `o+1` / `${o}` 全臂，node 实测
+  // "Cannot convert object to primitive value"）。open/index 形可能含
+  // coercer 由 helper 排除，落下方抽象臂。
+  if (isNullProtoWithoutCoercer(a) || isNullProtoWithoutCoercer(b)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
   // 字面量快速路径（tagged：.ok 才是字面量，含 lit(undefined)）

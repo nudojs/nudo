@@ -48,6 +48,11 @@ export type TranspileOptions = {
   hasTryHandler?: boolean;
   /** 当前 try 的 catch 体是否可能 rethrow（正常路径 soft 效果 release 而非 digest） */
   tryRethrowCatch?: boolean;
+  /** yield 点 try 上下文位（Bug 52）：进入 try 块/catch 体时按位 OR——
+   *  1 = 外层任一 try 带 finally，2 = 外层任一 try 带 catch（数值与
+   *  runtime/control.ts 的 YIELD_TRY_FINALLY / YIELD_TRY_CATCH 同步）。
+   *  发射为 $yield/$yieldStar 第二实参；函数/方法体边界重置为 0。 */
+  yieldTryCtx?: number;
   /** 分支/循环体内深度（赋值记录 conditional 标记；inLoop 也计入） */
   conditionalFlow?: number;
   /** 函数/箭头体内（顶层绑定表只收顶层作用域） */

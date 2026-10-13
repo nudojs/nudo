@@ -31,7 +31,7 @@ import {
   contractFacesOf,
   presentCallResultFace,
 } from "../contract-face.ts";
-import { pushThrowExit, peekThrowExitsSince, throwExitsMark, withNewTargetReset } from "./runtime/state.ts";
+import { pushThrowExit, peekThrowExitsSince, throwExitsMark, withNewTargetReset, undef, callAtFunctionBoundary } from "./runtime/state.ts";
 import {
   callBudgetKey,
   enterCall,
@@ -102,6 +102,14 @@ function $callInner(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
 }
 
 function $callDispatch(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
+  // Bug 46：bindThis impl 的 receiver 统一经 thisVal 通道注入（调用点
+  // 正确，不再由调用方手工前插）：成员调用 $invoke 传接收者；直接调用 /
+  // call/apply/bind 缺省 undefined（strict this 语义）。非 bindThis impl
+  // 不改形——thisVal 经 apply 钩子进宿主 this（$rawThis 承接）。
+  if (getFnImpl(fn)?.bindThis) {
+    args = [thisVal ?? undef(), ...args];
+    thisVal = undefined;
+  }
   // @nudo:pure：同实参直接命中缓存（无副作用契约）。缓存 {abs, throws} 双面——
   // 只缓存 abs 会在命中时丢掉 throws 通道（may-throw 假「不抛」）。
   const pureName = pureFnNameOf(fn);
@@ -190,7 +198,10 @@ function $callDispatch(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
       // pushThrowExit）。缓存前捕获本帧新增 throws 面——命中时 routeApplyThrows
       // 重放（只缓存 abs 会在命中时假「不抛」）。
       const throwMark = throwExitsMark();
-      const r = compiled(args);
+      // 编译体在函数边界执行：体内 $loopReturn 早退（if 臂/循环）经
+      // NudoReturn 收成返回值、帧内 exits join、throwExits 转发——
+      // 与 apply 路径（callAtFunctionBoundary 包裹）同口径。
+      const r = callAtFunctionBoundary(() => compiled(args));
       if (fnObj && pk !== undefined) {
         let m = pureMemo.get(fnObj);
         if (!m) {

@@ -246,7 +246,9 @@ describe("Bug 33: 表达式位 splice / copyWithin 精确折叠", () => {
 
 describe("Bug 34: arr-of-union 渲染加括号", () => {
   it("arr(sum) 元素 → (A | B)[]；单 prim 元素不加冗余括号", () => {
-    const r = call(`export function f() { return [3,1,2].sort((a, b) => a - b); }`);
+    // M4 后一致比较器（a-b）精确折 tuple——arr(sum) 降级面用不一致比较器
+    //（()=>1 违反反对称）保持触发；精确折叠断言见 eval-missed-throw-w10
+    const r = call(`export function f() { return [3,1,2].sort((a, b) => 1); }`);
     expect(fmt(r.result)).toBe("(3 | 1 | 2)[]");
     expect(formatShape(abs({ k: "arr", element: strAbs }, undefined, undefined, "path"))).toBe("string[]");
   });

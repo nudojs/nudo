@@ -12,13 +12,16 @@
  * may → throws=never + effects 含 kind（L2 门在 effects 上）。
  */
 import { describe, it, expect } from "vitest";
+// 经 src 直引（同 differential/harness.ts）：vitest 下 @nudojs/core 走
+// node_modules dist（陈旧），与下方 live src 的 may-throw 会话收集器分裂成
+// 两个模块实例——软效果（recordMayThrow）永远进不了本文件的 collector
 import {
   runTranspiled,
   callTranspiledExportFull,
   litValue,
   abs,
   formatAbs,
-} from "@nudojs/core";
+} from "../../index.ts";
 import {
   runWithMayThrowSession,
   setMayThrowCollector,
@@ -166,9 +169,11 @@ describe("Bug 51: sort comparator GetSortComparator validation", () => {
     expect(evalSrc(`export function f() { return [3,1,2].sort(); }`).throws).toBe("never");
   });
 
-  it("statement sort keeps degraded element-join (pinned semantics)", () => {
+  it("statement sort is exact for literal tuples (Bug 49 unification)", () => {
+    // 语句位与表达式位同一事实源（sortTupleAbs）：默认比较器 + 全字面量
+    // → 精确排序容器（此前语句位钉降级 (3|1|2)[]）
     const r = evalSrc(`export function f() { const a = [3,1,2]; a.sort(); return a; }`);
-    expect(r.value).toBe("(3 | 1 | 2)[]");
+    expect(r.value).toBe("[1, 2, 3]");
     expect(r.throws).toBe("never");
   });
 

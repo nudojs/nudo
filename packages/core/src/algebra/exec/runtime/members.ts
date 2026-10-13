@@ -2,24 +2,26 @@
  * 访问器（get/set）侧表、in / instanceof / delete 路由。
  */
 import type { Abs } from "../../abs.ts";
-import { abs, bool, boolLit, confJoin, litValue, numLit, unknown, type Confidence } from "../../abs.ts";
+import { abs, bool, boolLit, confJoin, litValue, numLit, strLit, unknown, type Confidence } from "../../abs.ts";
 import { lit } from "../../term.ts";
 import type { Phi } from "../../pred.ts";
 import { pTrue, and, predEquals } from "../../pred.ts";
 import { absFunction, getFnImpl } from "../../abs-fn.ts";
-import { joinAbs, isObj, type ObjShape, type Slot, isNullProtoObj, getSlot, canonicalArrayIndex, propertyKeyOf } from "../../objects.ts";
+import { joinAbs, isObj, type ObjShape, type Slot, isNullProtoObj, getSlot, canonicalArrayIndex, propertyKeyOf, getProtoAbs } from "../../objects.ts";
 import { isNullishLitAbs } from "../../surface.ts";
 import { isMapAbs, isSetAbs, mapSizeAbs, setSizeAbs } from "../../collections.ts";
 import {
   evalNamespaceCall, extStateOf, getPropFlags, migrateInvariants,
   isObjectProtoBrand, OBJECT_PROTO_METHOD_NAMES, isSymbolAbs,
   symbolDescriptionAbs, objectProtoBrand, builtinCtorAbs, ctorNameOfRecv,
+  protoOfRecv,
 } from "../../builtins.ts";
 import { errorTypeAbs, recordMayThrow, type MayThrowEffect } from "../may-throw.ts";
 import { TYPED_ARRAY_ELEMENT } from "../../builtins/shared.ts";
 import { OBJECT_PROTO_NAMES, ARRAY_PROTO_METHOD_NAMES } from "../member-diag.ts";
 import { $call } from "../call.ts";
-import { getEvalClass } from "../class-registry.ts";
+import { proxyPartsOf, proxyTrapOf } from "../match-iter.ts";
+import { getEvalClass, lookupClassValue, BUILTIN_ERROR_SUPER } from "../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../class-mark.ts";
 import { NudoThrow, noBody, undef, throwStrictWrite, writeInPlace, clearStaleTermPred, asAbsVal, isDefinitelyTrue, isDefinitelyFalse, currentExecPhi, $lit, litTruth } from "./state.ts";
 import { $typeof, $eq, $ne } from "./ops.ts";
@@ -148,6 +150,26 @@ export function $in(key: Abs, o: Abs): Abs {
     return boolLit(ARRAY_PROTO_METHOD_NAMES.has(keyStr) || OBJECT_PROTO_NAMES.has(keyStr));
   }
   if (o.shape.k === "arr") return bool(); // 抽象数组：索引域未知
+  // Bug 71：Proxy——has 陷阱优先（实参 (target, key)、this = handler）；
+  // 无陷阱回退靶包含判定（inner 即 target Abs）
+  if (o.shape.k === "brand" && o.shape.name === "Proxy") {
+    const parts = proxyPartsOf(o);
+    if (parts) {
+      const trap = proxyTrapOf(parts.handler, "has");
+      if (trap.k === "fn") {
+        return $call(trap.fn, [parts.target, strLit(String(kv))], parts.handler);
+      }
+      if (trap.k === "dead" || trap.k === "opaque") {
+        recordMayThrow({ kind: "TypeError", cause: `Proxy has trap for '${keyStr}' not callable / unknown` });
+        return bool();
+      }
+      return $in(key, parts.target);
+    }
+  }
+  // Bug 56：Arguments brand → 靶 tuple 包含判定（下标/length 精确）
+  if (o.shape.k === "brand" && o.shape.name === "Arguments") {
+    return $in(key, o.shape.shape);
+  }
   if (o.shape.k === "obj" || o.shape.k === "brand") {
     const objShape: ObjShape | undefined =
       o.shape.k === "brand"
@@ -219,6 +241,15 @@ export const BUILTIN_BRAND_METHODS: Record<string, ReadonlySet<string>> = {
   WeakMap: new Set(["get", "has", "set", "delete", "getOrInsert", "getOrInsertComputed"]),
   WeakSet: new Set(["add", "has", "delete"]),
   Error: new Set(["toString"]),
+  // Bug 68：Error 家族七子类原型面与 Error 同款（toString = `${name}: ${message}`；
+  // X.prototype.toString 值读/借用调用按接收者 brand 名派发到家族实现）
+  TypeError: new Set(["toString"]),
+  RangeError: new Set(["toString"]),
+  ReferenceError: new Set(["toString"]),
+  SyntaxError: new Set(["toString"]),
+  URIError: new Set(["toString"]),
+  EvalError: new Set(["toString"]),
+  AggregateError: new Set(["toString"]),
   Promise: new Set(["then", "catch", "finally"]),
   // Bug 40：二进制缓冲 / 视图 / 弱引用家族原型面（此前全缺 → typeof/in
   // wrong-exact；调用面经 protoMethodValueAbs → $invoke 落既有派发，未建模
@@ -331,22 +362,15 @@ export const BUILTIN_BRAND_ACCESSORS: Record<string, ReadonlySet<string>> = {
   ),
 };
 
-/** 内建错误层级（Error 为根，registry 无 superName 时回退） */
-export const BUILTIN_ERROR_SUPER: Record<string, string> = {
-  Error: "",
-  RangeError: "Error",
-  TypeError: "Error",
-  ReferenceError: "Error",
-  SyntaxError: "Error",
-  URIError: "Error",
-  EvalError: "Error",
-  AggregateError: "Error",
-};
-
-/** evaluator 品牌链：registry extends 优先，内建错误层级回退（限深防环） */
+/** evaluator 品牌链：registry extends 优先，内建错误层级回退（限深防环）。
+ *  Bug 64：".prototype" 后缀名（protoBrandAbs 品牌）从 owner 类起走链且
+ *  首项保留品牌名自身不含 owner——OrdinaryHasInstance 从 O.[[Prototype]]
+ *  起步：`X.prototype instanceof X` 原生 false（owner 不在自己的链上），
+ *  `X.prototype instanceof Super` 命中 owner 的 super 链。 */
 export function evalClassChain(name: string): string[] {
+  const ownerOf = name.endsWith(".prototype") ? name.slice(0, -".prototype".length) : name;
   const out = [name];
-  let cur: string | undefined = name;
+  let cur: string | undefined = ownerOf;
   let depth = 0;
   while (cur && depth++ < 32) {
     const spec = getEvalClass(cur);
@@ -425,6 +449,23 @@ function validateInstanceofRhs(rightVal: Abs): void {
       });
     }
   }
+  if (k === "brand" && classNameOfValue(rightVal as object) !== undefined) {
+    // Bug 50：类值带自有 @@hasInstance 槽但不可调用 → 原生 GetMethod 定抛
+    //（"x is not a function"，与闭 obj 臂同口径；继承槽只折抽象 boolean）
+    const inner = (rightVal.shape as { shape?: Abs }).shape;
+    const slot =
+      inner && inner.shape.k === "obj"
+        ? getSlot((inner.shape as ObjShape).slots, "@@hasInstance")
+        : undefined;
+    if (
+      slot &&
+      !slot.optional &&
+      slot.value.shape.k !== "fn" &&
+      getFnImpl(slot.value) === undefined
+    ) {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+  }
   if (k === "brand" && classNameOfValue(rightVal as object) === undefined) {
     // brand 实例（new Map() 等值）non-callable → 原生 TypeError；Proxy
     //（apply trap）可 callable → 原生不抛，引擎不可区分 → may
@@ -433,6 +474,32 @@ function validateInstanceofRhs(rightVal: Abs): void {
       cause: "instanceof RHS brand may be a non-callable instance",
     });
   }
+}
+
+/**
+ * Bug 50：类值 brand 的 @@hasInstance 槽查找——自有内层槽优先；未命中沿
+ * registry 继承链回取注册类值的槽（原生 @@hasInstance 是 inherited 属性：
+ * `class D extends C {}` 的 D.[[Proto]] = C，继承 C 的处理器）。
+ */
+function brandHasInstanceSlot(rv: Abs): Slot | undefined {
+  if (rv.shape.k !== "brand") return undefined;
+  const inner = rv.shape.shape;
+  const own =
+    inner && inner.shape.k === "obj"
+      ? getSlot((inner.shape as ObjShape).slots, "@@hasInstance")
+      : undefined;
+  if (own) return own;
+  for (const n of evalClassChain(rv.shape.name)) {
+    if (n === rv.shape.name) continue;
+    const cv = lookupClassValue(n);
+    const ci = cv && cv.shape.k === "brand" ? (cv.shape as { shape?: Abs }).shape : undefined;
+    const s2 =
+      ci && ci.shape.k === "obj"
+        ? getSlot((ci.shape as ObjShape).slots, "@@hasInstance")
+        : undefined;
+    if (s2) return s2;
+  }
+  return undefined;
 }
 
 /**
@@ -450,21 +517,27 @@ export function $instanceof(left: Abs, rightName: string, rightVal?: Abs): Abs {
   // （v instanceof o ≡ o[Symbol.hasInstance](v)）；槽在但不可调用 → 抽象
   if (rightVal) {
     const rv = asAbsVal(rightVal);
+    let slot: Slot | undefined;
     if (rv.shape.k === "obj") {
-      const slot = rv.shape.slots["@@hasInstance"];
-      if (slot && !slot.optional) {
-        // 槽在但不可调用 → 原生 TypeError；保守折抽象 boolean
-        if (slot.value.shape.k !== "fn" && getFnImpl(slot.value) === undefined) {
-          return bool();
-        }
-        // 与 $invoke bindThis 同口径：receiver 注入首参（impl 首参是 __this）
-        const r = $call(slot.value, [rv, left]);
-        const bvR = litValue(r);
-        // 原生把返回值 ToBoolean（return 0 → false、'yes' → true、undefined → false）。
-        // 「是否字面量」看 ok：lit(undefined) 的 ToBoolean 是 false，不是「无字面量」。
-        if (bvR.ok) return boolLit(Boolean(bvR.value));
+      slot = rv.shape.slots["@@hasInstance"];
+    } else if (rv.shape.k === "brand" && classNameOfValue(rv as object) !== undefined) {
+      // Bug 50：类值的 static [Symbol.hasInstance]（含继承——D extends C）
+      slot = brandHasInstanceSlot(rv);
+    }
+    if (slot && !slot.optional) {
+      // 槽在但不可调用 → 原生 TypeError；保守折抽象 boolean
+      if (slot.value.shape.k !== "fn" && getFnImpl(slot.value) === undefined) {
         return bool();
       }
+      // 与 $invoke 同口径：receiver 经 $call 第三参传递——bindThis impl
+      //（含 $class 注册的类值 @@hasInstance 适配器，Bug 50）由派发注入
+      // 首参后自行剥掉；非 bindThis impl 经 apply 钩子进宿主 this
+      const r = $call(slot.value, [left], rv);
+      const bvR = litValue(r);
+      // 原生把返回值 ToBoolean（return 0 → false、'yes' → true、undefined → false）。
+      // 「是否字面量」看 ok：lit(undefined) 的 ToBoolean 是 false，不是「无字面量」。
+      if (bvR.ok) return boolLit(Boolean(bvR.value));
+      return bool();
     }
   }
   switch (left.shape.k) {
@@ -472,6 +545,16 @@ export function $instanceof(left: Abs, rightName: string, rightVal?: Abs): Abs {
       // 类值本身是 constructor 函数：instanceof Function/Object 恒 true
       if (classNameOfValue(left as object) !== undefined) {
         return boolLit(rightName === "Function" || rightName === "Object");
+      }
+      // Bug 65：Object.prototype 的 [[Prototype]] 是 null（链终结符）——
+      // OrdinaryHasInstance 从 O.[[Prototype]] 起步比较，永不含自身 →
+      // instanceof 任何构造器（含 Object）恒 false
+      if (left.shape.name === "Object.prototype") return boolLit(false);
+      // Bug 67 联动：extends null 类的原型同为 null 链终结符——其
+      // instanceof Object 也不得折 true
+      if (left.shape.name.endsWith(".prototype")) {
+        const owner = left.shape.name.slice(0, -".prototype".length);
+        if (getEvalClass(owner)?.superNull) return boolLit(false);
       }
       return boolLit(
         rightName === "Object" || evalClassChain(left.shape.name).includes(rightName),
@@ -485,7 +568,27 @@ export function $instanceof(left: Abs, rightName: string, rightVal?: Abs): Abs {
       // Object.create(null)：原型链 null 终止——任何构造器的 instanceof 恒 false
       //（含 Object 与内建/自定义构造器）。标记随 $set/$del 迁移（objects.ts 侧表）。
       if (isNullProtoObj(left)) return boolLit(false);
-      if (rightName === "Object") return boolLit(true);
+      if (rightName === "Object") {
+        // Bug 67 联动：open obj 的已记录原型链可能 null 终止
+        // （Object.create(<extends-null 类原型>) / Object.create(
+        // Object.create(null))）——链上无 Object.prototype 则原生 false，
+        // 不得折 true；链不可判 → 保守 boolean（闭字面量原型恰为
+        // Object.prototype，保持精确 true）。
+        if ((left.shape as ObjShape).open) {
+          let cur: Abs | undefined = getProtoAbs(left);
+          let depth = 0;
+          while (cur !== undefined && depth++ < 8) {
+            if (isObjectProtoBrand(cur)) return boolLit(true);
+            const next = protoOfRecv(cur);
+            const nvR = litValue(next);
+            if (nvR.ok && nvR.value === null) return boolLit(false);
+            if (next === cur || next === unknown) break;
+            cur = next;
+          }
+          return bool();
+        }
+        return boolLit(true);
+      }
       // Bug 16：open obj（Object.create(proto) / setPrototypeOf 产物）原型链
       // 未知——可含任意内建原型（Object.create([]) instanceof Array 原生
       // true），不得断言精确 false，降 boolean；闭字面量原型恰为

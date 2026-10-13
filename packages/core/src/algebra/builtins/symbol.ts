@@ -4,7 +4,8 @@
 import type { Abs } from "../abs.ts";
 import { abs, litValue, strLit, unknown } from "../abs.ts";
 import { joinAbs } from "../objects.ts";
-import { registerSymbolMeta, symbolIdOf, symbolDescriptionAbs, isSymbolAbs as isSymAbs } from "../symbol-id.ts";
+import { registerSymbolMeta, symbolIdOf, symbolDescriptionAbs, isSymbolAbs as isSymAbs, markSymbolAbstractKey, isAbstractKeySymbol } from "../symbol-id.ts";
+import { concreteToStringOf } from "../template.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
 import { pTrue } from "../pred.ts";
@@ -72,13 +73,43 @@ export function evalSymbolCtor(args: Abs[]): Abs {
 //（=== 为 true、keyFor 可反查）。分析侧以 key 复用同一 Abs 对象建模身份；
 // 注册表跨模块驻留（与原生一致，进程生命周期）。
 const registeredSymbols = new Map<string, Abs>();
+/** Bug 61：抽象键驻留（键 ToString 不可判）：同键 Abs 复用同一符号 */
+const abstractKeySymbols = new WeakMap<Abs, Abs>();
+
+function internRegisteredSymbol(key: string): Abs {
+  const existing = registeredSymbols.get(key);
+  if (existing) return existing;
+  const sym = registerSymbolMeta(
+    { shape: { k: "prim", type: "symbol" }, conf: "path" } as Abs,
+    strLit(key),
+  );
+  registeredSymbols.set(key, sym);
+  return sym;
+}
+
+/**
+ * Bug 61：抽象键驻留符号。description = 键的抽象 ToString 面（makeSymbolAbs
+ * 的 may-throw 记账同源）；meta 打 abstractKey 标记 → 与其他注册符号的
+ * === 退化 unknown（strictEqAbs）。
+ */
+function abstractKeySymbol(key: Abs): Abs {
+  const existing = abstractKeySymbols.get(key);
+  if (existing) return existing;
+  const sym = markSymbolAbstractKey(makeSymbolAbs(key));
+  abstractKeySymbols.set(key, sym);
+  return sym;
+}
 
 /**
  * `Symbol.for(key)`：key 过 ToString——symbol prim（Symbol()/成员读产物，
  * 无 lit 项）定抛 TypeError；any/unknown/对象（toString 可能返 Symbol）
  * may；其余字面量（string/number/boolean/bigint/null/undefined）ToString
  * 全定，按 String(key) 入注册表（description = key 字符串，node 实测
- * Symbol.for().description === "undefined"）。抽象 key → 保守未注册 symbol。
+ * Symbol.for().description === "undefined"）。容器字面量键（Bug 61）：
+ * ToString 可判定（闭 tuple join(",") / 闭普通对象 "[object Object]"）
+ * → 按具体串驻留（String([1]) === "1"）；不可判定 → 以键 Abs 身份驻留
+ * （同 Abs 复用同一符号，=== 退化 unknown 而非假 false——原生注册表
+ * 驻留不断言不等）。
  */
 export function evalSymbolStatic(method: string, args: Abs[]): Abs | undefined {
   if (method !== "for" && method !== "keyFor") return undefined;
@@ -86,6 +117,12 @@ export function evalSymbolStatic(method: string, args: Abs[]): Abs | undefined {
   if (method === "for") {
     if (a0 && isSymAbs(a0)) throw new NudoThrow(errorTypeAbs("TypeError"));
     if (a0 && a0.term?.op !== "lit") {
+      // Bug 61：容器键 ToString 具体化——可判定（闭 tuple join(",") / 闭
+      // 普通对象 "[object Object]"，无用户 ToPrimitive 面）则原生 ToString
+      // 全定不抛，按具体串驻留（String([1]) === "1"，与 Symbol.for("1")
+      // 同一符号）
+      const concrete = concreteToStringOf(a0);
+      if (concrete !== undefined) return internRegisteredSymbol(concrete);
       // 抽象 key：ToPrimitive 可能成 Symbol → may（bigint/number/… 合法）
       if (
         a0.shape.k === "any" ||
@@ -97,21 +134,14 @@ export function evalSymbolStatic(method: string, args: Abs[]): Abs | undefined {
       ) {
         recordMayThrow({ kind: "TypeError", cause: "Symbol.for key ToString may throw (Symbol)" });
       }
-      // key 不可判 → 无法入注册表：保守未注册 unique symbol
-      return makeSymbolAbs(a0);
+      // 键 ToString 不可判 → 以键 Abs 身份驻留（同 Abs 复用同一符号，
+      // === 退化 unknown 而非假 false——原生注册表驻留不断言不等）
+      return abstractKeySymbol(a0);
     }
     // 缺省 ≡ Symbol.for(undefined)：key "undefined"（node 实测与
     // Symbol.for() 同一符号，description "undefined"）
     const v = a0 ? (a0.term as { value: unknown }).value : undefined;
-    const key = String(v);
-    const existing = registeredSymbols.get(key);
-    if (existing) return existing;
-    const sym = registerSymbolMeta(
-      { shape: { k: "prim", type: "symbol" }, conf: "path" } as Abs,
-      strLit(key),
-    );
-    registeredSymbols.set(key, sym);
-    return sym;
+    return internRegisteredSymbol(String(v));
   }
   // Symbol.keyFor(sym)：实参必须是 symbol——非 symbol 字面量 / 抽象 refined
   // prim（number/string/…，不可能是 symbol 值）定抛（node 实测 keyFor(1)/
@@ -123,6 +153,9 @@ export function evalSymbolStatic(method: string, args: Abs[]): Abs | undefined {
     for (const [key, sym] of registeredSymbols) {
       if (sym === a0) return strLit(key);
     }
+    // Bug 61：抽象键驻留符号原生 keyFor 恒返 key 字符串（不可判）——
+    // 不得折 undefined（wrong-definite），保守抽象 string
+    if (isAbstractKeySymbol(a0)) return str("path");
     return undefLit(); // 未注册 fresh symbol → undefined
   }
   if (a0.term?.op === "lit" || a0.shape.k === "prim") {

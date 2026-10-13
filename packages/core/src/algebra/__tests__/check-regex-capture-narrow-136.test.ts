@@ -62,9 +62,14 @@ export function rg(content) {
 }
 `);
     expect(r.summary.errors).toBe(0);
-    // 零迭代 [] | 至少一轮 [string]——undefined 臂已剥（修前 [string|undefined]
-    // ⊭ array(string()) 误报 constraint-violated）
-    expect(sigOf(r, "rg")).toBe("[string] | []  #exact");
+    // 零迭代 [] | 各轮守卫后 push——undefined 臂已剥（修前 [string|undefined]
+    // ⊭ array(string()) 误报 constraint-violated）。Bug 49/51 后 push 在
+    // sum 接收者上按成员生效（旧语句位重绑对 sum 是 no-op，≥2 轮的 push
+    // 被静默丢弃——不健全）：出口是有界预算内 {0..8} 次入栈的精确并集，
+    // 每臂元素恒 string（无 undefined 臂）
+    expect(sigOf(r, "rg")).not.toContain("undefined");
+    expect(sigOf(r, "rg")).toContain("[]");
+    expect(sigOf(r, "rg")).toContain("#exact");
   });
 
   it("同源码无侧车：仍报 entry-may-throw TypeError（.trim() nullish 臂 throws 事实不丢）", () => {
@@ -101,7 +106,10 @@ export function rgExplicit(content) {
 }
 `);
     expect(r.summary.errors).toBe(0);
-    expect(sigOf(r, "rgExplicit")).toBe("[string] | []  #exact");
+    // 同上（Bug 49/51：{0..8} 次入栈并集，元素恒 string，无 undefined 臂）
+    expect(sigOf(r, "rgExplicit")).not.toContain("undefined");
+    expect(sigOf(r, "rgExplicit")).toContain("[]");
+    expect(sigOf(r, "rgExplicit")).toContain("#exact");
   });
 
   it("无守卫直推 out.push(m[1])：仍 [string|undefined]（诚实化不回退）", () => {
@@ -237,7 +245,10 @@ export function optionalChain(content) {
 }
 `);
     expect(r.summary.errors).toBe(0);
-    expect(sigOf(r, "optionalChain")).toBe("[string | undefined] | []  #exact");
+    // 可选链不窄化：undefined 臂如实保留（Bug 49/51 后是 {0..8} 次入栈
+    // 并集，每臂元素 string | undefined）
+    expect(sigOf(r, "optionalChain")).toContain("string | undefined");
+    expect(sigOf(r, "optionalChain")).toContain("[]");
   });
 
   it("点成员接收者 X.p.m(…)：node.name.trim() 守卫窄化 node.name", () => {

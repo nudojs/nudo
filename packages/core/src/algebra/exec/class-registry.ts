@@ -60,6 +60,20 @@ export type EvalClassSpec = {
   staticAccessors?: Record<string, EvalClassAccessor>;
 };
 
+/** 内建错误层级（Error 为根，registry 无 superName 时回退）。
+ *  放本叶子模块：evalClassChain（exec/runtime/members.ts）与
+ *  protoOfRecv（builtins/ctor.ts）共用，后者不可反向引 members（环）。 */
+export const BUILTIN_ERROR_SUPER: Record<string, string> = {
+  Error: "",
+  RangeError: "Error",
+  TypeError: "Error",
+  ReferenceError: "Error",
+  SyntaxError: "Error",
+  URIError: "Error",
+  EvalError: "Error",
+  AggregateError: "Error",
+};
+
 const classRegistry = new Map<string, EvalClassSpec>();
 /** BUG-026：注册 epoch——同名类碰撞只在同一次求值
  * run 内才是真歧义（块级作用域同名类）；跨 run 的
@@ -137,6 +151,21 @@ export function getEvalClass(name: string): EvalClassSpec | undefined {
   return classRegistry.get(name);
 }
 
+/** Bug 58：类值 Abs 注册表（名 → $class 产出的类值本身）。
+ *  protoOfRecv 的父构造器投影按 superName 回取**同一** Abs 引用——
+ *  `Object.getPrototypeOf(B) === A` 折 exact true 的前提（品牌 === 按
+ *  引用恒等，不按名折叠）。与 spec 注册表同生命周期（last-wins /
+ *  clearBClasses 同清）。 */
+const classValues = new Map<string, Abs>();
+
+export function registerClassValue(name: string, value: Abs): void {
+  classValues.set(name, value);
+}
+
+export function lookupClassValue(name: string): Abs | undefined {
+  return classValues.get(name);
+}
+
 /**
  * Bug 84：用户类实例 brand 的内层闭 obj（公有/私有自有槽的承载者）。
  * 属性 introspection 面（Object.keys/values/entries / gOPN / assign /
@@ -186,6 +215,7 @@ export function classChainHasJsonUserFace(name: string): boolean {
 
 export function clearBClasses(): void {
   classRegistry.clear();
+  classValues.clear();
   classEpochs.clear();
   classCollisions.length = 0;
 }

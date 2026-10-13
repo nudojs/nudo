@@ -1,12 +1,11 @@
 /**
- * Bug 20：JSON.stringify 环形值——totality 预检 jsonStringifyTotal 对
- * obj 槽/tuple 元素递归无环守卫，而成员写 $set 就地改槽（引用语义，
- * `o.self = o` 产出真 Abs 环）→ 预检无限递归引擎栈溢出：用户 catch 面
- * 观察到 RangeError（原生 TypeError: Converting circular structure to
- * JSON），无 catch 面整评退化 internal eval-error → unknown + RangeError
- * throws 品牌。修复：预检带 seen 集（与 absToJsonNative 同构），环 →
- * not total → 既有软 may-throw 臂（记 may TypeError + partial 值域不变，
- * Bug 46 同源设计）。
+ * Bug 20 → Bug 60：JSON.stringify 环形值。Bug 20 修复了 jsonStringifyTotal
+ * 预检无环守卫的栈溢出（软 may-throw + partial 值域）；Bug 60 进一步把
+ * **可判定环**（$set 就地写槽的引用语义，`o.self = o` 产出真 Abs 环；
+ * seen 集改「在栈」语义——重入即真环，共享非环引用 `{x:t,y:t}` 不误伤）
+ * 升级为原生同面硬抛 TypeError「Converting circular structure to JSON」
+ * （catch 可吸收）；extract 模式（replacer 白名单）环不抛，保持
+ * NOT_LITERAL。
  */
 import { describe, it, expect } from "vitest";
 import {
@@ -44,45 +43,65 @@ function call(
   };
 }
 
-describe("JSON.stringify cyclic receivers (Bug 20)", () => {
-  it("self-referencing object: no engine crash, may TypeError, string partial", () => {
+function isThrowsBrand(t: unknown, name: string): boolean {
+  const a = t as { shape?: { k?: string; name?: string } };
+  return !!a && typeof a === "object" && a.shape?.k === "brand" && a.shape.name === name;
+}
+
+describe("JSON.stringify cyclic receivers (Bug 20 / Bug 60)", () => {
+  it("self-referencing object: definite TypeError (native parity)", () => {
     const r = call(
       `export function f() { const o = {}; o.self = o; return JSON.stringify(o); }`,
     );
-    // 原生定抛 TypeError；引擎软 may-throw：值域 string partial（不伪装精确），
-    // 不再栈溢出退化 unknown / RangeError 品牌
-    expect(formatShape(r.result as never)).toBe("string");
-    expect(r.effects).toContain("TypeError");
+    // 原生定抛 TypeError（Converting circular structure to JSON）
+    expect(isThrowsBrand(r.throws, "TypeError")).toBe(true);
   });
 
-  it("user catch arm no longer observes RangeError identity", () => {
+  it("user catch arm observes TypeError identity", () => {
     const r = call(
       `export function f() {
         const o = {}; o.self = o;
         try { return JSON.stringify(o); } catch (e) { return e.constructor.name; }
       }`,
     );
-    // 此前：引擎自身 RangeError 泄入用户 catch（原生 "TypeError"）。
-    // 修复后软 may-throw 不实际抛出 → 返回 string partial（不进 catch）
-    expect(formatShape(r.result as never)).toBe("string");
-    const lv = litValue(r.result as never);
-    expect(lv.ok).toBe(false); // 非 never/RangeError 字面量
+    expect(litValue(r.result as never)).toEqual({ ok: true, value: "TypeError" });
   });
 
-  it("circular array (a.push(a)) records may TypeError without crash", () => {
+  it("circular array (a.push(a)) throws TypeError", () => {
     const r = call(
       `export function f() { const a = []; a.push(a); return JSON.stringify(a); }`,
     );
-    expect(formatShape(r.result as never)).toBe("string");
-    expect(r.effects).toContain("TypeError");
+    expect(isThrowsBrand(r.throws, "TypeError")).toBe(true);
   });
 
-  it("nested circular structure (o.a.b.c = o.a) records may TypeError", () => {
+  it("nested circular structure (o.a.b.c = o.a) throws TypeError", () => {
     const r = call(
       `export function f() { const o = { a: { b: {} } }; o.a.b.c = o.a; return JSON.stringify(o); }`,
     );
+    expect(isThrowsBrand(r.throws, "TypeError")).toBe(true);
+  });
+
+  it("shared (non-cyclic) reference serializes both sides like native", () => {
+    // seen 在栈语义：兄弟位共享引用不是环——原生 {"x":{"n":1},"y":{"n":1}}
+    const r = call(
+      `export function f() { const t = { n: 1 }; const o = { x: t, y: t }; return JSON.stringify(o); }`,
+    );
+    expect(litValue(r.result as never)).toEqual({
+      ok: true,
+      value: '{"x":{"n":1},"y":{"n":1}}',
+    });
+    expect(r.effects).toEqual([]);
+  });
+
+  it("replacer-array cycle does not throw (extract mode stays conservative)", () => {
+    // 原生 replacer 数组展开自带去重（propertyList 空 → "{}"，不抛）；
+    // 引擎值域保守 partial 字符串（注册 skip），但**不得抛**
+    const r = call(
+      `export function f() { const r = []; r.push(r); try { return JSON.stringify({a:1}, r); } catch (e) { return "THROW"; } }`,
+    );
+    // 不抛：throws 面 never，结果停在 string 值域（partial 占位）
+    expect((r.throws as { shape?: { k?: string } })?.shape?.k).toBe("never");
     expect(formatShape(r.result as never)).toBe("string");
-    expect(r.effects).toContain("TypeError");
   });
 
   it("control: non-cyclic o.self = {} folds exactly, no may-throw", () => {

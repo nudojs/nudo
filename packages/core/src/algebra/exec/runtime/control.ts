@@ -46,18 +46,36 @@ export type ForkArm =
   | { kind: "ret"; v: Abs }
   | { kind: "throw"; v: Abs };
 
+/** 生成器 yield 收集器：els = yield 值序列；ctxs = 每 yield 点 try 上下文位
+ *  （Bug 52：$yield/$yieldStar 第二实参，transpile 静态标注——.return()/
+ *  .throw() 挂起点语义用）。els/ctxs 恒等长（同一 push 点成对压入）。 */
+export interface GenYieldCollector {
+  els: Abs[];
+  ctxs: number[];
+}
+
+/** yield 点 try 上下文位（Bug 52）：1 = 外层任一 try 带 finally；2 = 外层任一
+ *  try 带 catch。finalizer 静态事实（.transpile 标注）：4 = 最近 finalizer 含
+ *  yield/yield*（.return 后可再交付 → done 并 boolean）；8 = 最近 finalizer
+ *  含 return（.return 注入值可被覆盖 → 值并 unknown）。transpile 侧以数值
+ *  字面量发射。 */
+export const YIELD_TRY_FINALLY = 1;
+export const YIELD_TRY_CATCH = 2;
+export const YIELD_FINALLY_YIELDS = 4;
+export const YIELD_FINALLY_RETURNS = 8;
+
 /** 生成器 yield 收集：抽象分支时标记路径敏感，禁止 exact 元组出货 */
-export let yieldStack: Abs[][] = [];
+export let yieldStack: GenYieldCollector[] = [];
 export let genPathSensitive = 0;
 export let genJoinOverride: Abs | null = null;
 export function setGenJoinOverride(v: Abs | null): void { genJoinOverride = v; }
 export function bumpGenPathSensitive(): void { genPathSensitive++; }
 
-export function withIsolatedYields<T>(fn: () => T): { v: T; ys: Abs[] | null } {
+export function withIsolatedYields<T>(fn: () => T): { v: T; ys: GenYieldCollector | null } {
   const top = yieldStack[yieldStack.length - 1];
   // 无收集器：不换槽、不建 armYs（fork 热路径常态）
   if (!top) return { v: fn(), ys: null };
-  const armYs: Abs[] = [];
+  const armYs: GenYieldCollector = { els: [], ctxs: [] };
   yieldStack[yieldStack.length - 1] = armYs;
   try {
     return { v: fn(), ys: armYs };
@@ -66,32 +84,35 @@ export function withIsolatedYields<T>(fn: () => T): { v: T; ys: Abs[] | null } {
   }
 }
 
-export function mergeArmYields(armYsList: Array<Abs[] | null>): void {
+export function mergeArmYields(armYsList: Array<GenYieldCollector | null>): void {
   const top = yieldStack[yieldStack.length - 1];
   if (!top || armYsList.length === 0) return;
-  const concrete = armYsList.filter((x): x is Abs[] => x !== null);
+  const concrete = armYsList.filter((x): x is GenYieldCollector => x !== null);
   if (concrete.length === 0) return;
   if (concrete.length === 1) {
-    top.push(...concrete[0]!);
+    top.els.push(...concrete[0]!.els);
+    top.ctxs.push(...concrete[0]!.ctxs);
     return;
   }
   // 多臂：join 各臂 yield 序列，并标记路径敏感
   let joined: Abs | null = null;
   for (const ys of concrete) {
-    joined = joined ? joinAbs(joined, $arr(ys)) : $arr(ys);
+    joined = joined ? joinAbs(joined, $arr(ys.els)) : $arr(ys.els);
   }
   genPathSensitive++;
   if (joined) genJoinOverride = joined;
   // 父收集器仍并入全部臂元素（过近似），conf 由 genJoinOverride/path 敏感性压低
-  for (const ys of concrete) top.push(...ys);
+  for (const ys of concrete) {
+    top.els.push(...ys.els);
+    top.ctxs.push(...ys.ctxs);
+  }
 }
 
-export function runForkArm(arm: () => Abs, exits: Abs[] | undefined): ForkArm {
+export function runForkArm(arm: () => Abs): ForkArm {
   try {
     return { kind: "val", v: asAbsVal(arm()) };
   } catch (e) {
     if (isNudoReturn(e)) {
-      exits?.push(e.absValue);
       return { kind: "ret", v: e.absValue };
     }
     if (isNudoThrow(e)) {
@@ -113,6 +134,9 @@ export function settleForkArms(a: ForkArm, b: ForkArm, exits: Abs[] | undefined)
   // 混合 throw + val/ret：throws 已在 throwExits；继续处理非 throw 臂
   const first = aThrow ? b : a;
   const second = aThrow ? a : b;
+  // ret 值只经一个通道交付（恰一次）：双 ret 臂合并后抛 NudoReturn 由函数
+  // 边界收值；单 ret 臂入 exits 侧信道（语句位 fork 继续 fall-through，值
+  // 由边界 join）——不再由 runForkArm 预推（双 ret 会与抛出值双重计数）。
   if (first.kind === "ret" && second.kind === "ret") {
     throw new NudoReturn(joinAbs(first.v, second.v));
   }
@@ -120,16 +144,19 @@ export function settleForkArms(a: ForkArm, b: ForkArm, exits: Abs[] | undefined)
     // 恰一臂 throw：只携带非 throw 臂
     if (first.kind === "ret") {
       if (!exits) throw new NudoReturn(first.v);
+      exits.push(first.v);
       return undef();
     }
     return first.v;
   }
   if (first.kind === "ret") {
     if (!exits) throw new NudoReturn(first.v);
-    return second.kind === "val" ? second.v : undef();
+    exits.push(first.v);
+    return second.v;
   }
   if (second.kind === "ret") {
     if (!exits) throw new NudoReturn(second.v);
+    exits.push(second.v);
     return first.v;
   }
   return joinAbs(first.v, second.v);
@@ -200,7 +227,7 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
   // overlay 本身惰性分配——无 Map/Set 写入时零堆分配
   beginCollectionFork();
   const arms: Array<ReturnType<typeof popCollectionArm>> = [];
-  const armYsList: Array<Abs[] | null> = [];
+  const armYsList: Array<GenYieldCollector | null> = [];
   let a: ForkArm;
   let b: ForkArm;
   try {
@@ -209,7 +236,7 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
       // 抽象双臂：臂内 break/continue 信号标记 abstract（兄弟臂未执行，
       // 循环捕获点据此宽化循环携带绑定，Bug 47/48）
       const r = withExecPhi(phiTrue, () =>
-        withIsolatedYields(() => withAbstractForkArm(() => runForkArm(consequent, exits))),
+        withIsolatedYields(() => withAbstractForkArm(() => runForkArm(consequent))),
       );
       a = r.v;
       armYsList.push(r.ys);
@@ -220,7 +247,7 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
       pushCollectionArm();
       try {
         const r = withExecPhi(falsePhi(), () =>
-          withIsolatedYields(() => withAbstractForkArm(() => runForkArm(alternate, exits))),
+          withIsolatedYields(() => withAbstractForkArm(() => runForkArm(alternate))),
         );
         b = r.v;
         armYsList.push(r.ys);
@@ -688,12 +715,12 @@ export function $switch(
   const exits = loopExitsAls.getStore();
   beginCollectionFork();
   const armOverlays: Array<ReturnType<typeof popCollectionArm>> = [];
-  const armYsList: Array<Abs[] | null> = [];
+  const armYsList: Array<GenYieldCollector | null> = [];
   const runArm = (fn: () => Abs): ForkArm => {
     pushCollectionArm();
     try {
       // 抽象 disc 臂：臂内 break/continue 信号标记 abstract（同 $fork）
-      const r = withIsolatedYields(() => withAbstractForkArm(() => runForkArm(fn, exits)));
+      const r = withIsolatedYields(() => withAbstractForkArm(() => runForkArm(fn)));
       armYsList.push(r.ys);
       return r.v;
     } finally {
@@ -736,7 +763,14 @@ export function $switch(
   if (allRet) {
     throw new NudoReturn(nonThrow.map((r) => r.v).reduce((a, b) => joinAbs(a, b)));
   }
-  // 混合：ret/throw 臂已进 exits；语句位只携带 val 臂值继续
+  // 混合：ret 臂值入 exits 侧信道（恰一次，$fork settle 同口径）；语句位只携带 val 臂值继续
+  const retParts = nonThrow.filter((r): r is { kind: "ret"; v: Abs } => r.kind === "ret");
+  if (retParts.length > 0) {
+    if (!exits) {
+      throw new NudoReturn(retParts.map((r) => r.v).reduce((a, b) => joinAbs(a, b)));
+    }
+    for (const r of retParts) exits.push(r.v);
+  }
   const valParts = nonThrow.filter((r) => r.kind === "val").map((r) => r.v);
   if (valParts.length === 0) return undef();
   return valParts.reduce((a, b) => joinAbs(a, b));

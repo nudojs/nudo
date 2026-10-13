@@ -122,10 +122,21 @@ describe("evaluator arguments object (strict/ESM)", () => {
     expect(litValue(r2.result)).toEqual({ ok: true, value: 2 });
   });
 
-  it("arrow has no own arguments: honest unknown when outer slot is absent", () => {
-    // 差分 harness 外层是箭头 IIFE（native ReferenceError）；不得假精确折 0。
+  it("arrow has no own arguments: reads the enclosing non-arrow binding precisely", () => {
+    // 箭头词法继承外层函数的 arguments（fnBodyHasOwnArguments 下降箭头建槽）。
+    // f() 无实参 → f 的 arguments.length = 0；g(1,2) 的实参不影响箭头内读。
     const r = call(`export function f() { const g = () => arguments.length; return g(1,2); }`);
-    expect(formatShape(r.result)).toBe("unknown");
+    expect(litValue(r.result)).toEqual({ ok: true, value: 0 });
+  });
+
+  it("free arguments (module top level) is a definite ReferenceError", () => {
+    // ESM 模块顶层无 arguments：unresolvable reference → 定抛 ReferenceError
+    //（原生同抛）；`typeof arguments` 是唯一豁免（折 "undefined" 不抛）。
+    const r = call(`const f = () => arguments.length;\nexport function f2(){ return f(); }`, "f2");
+    expect(formatShape(r.result)).toBe("never");
+    expect(formatShape(r.throws)).toBe("ReferenceError");
+    const t = call(`const f = () => typeof arguments;\nexport function f2(){ return f(); }`, "f2");
+    expect(litValue(t.result)).toEqual({ ok: true, value: "undefined" });
   });
 
   it("arrow inherits outer arguments when the non-arrow outer also references it directly", () => {

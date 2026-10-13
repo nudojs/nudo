@@ -91,9 +91,11 @@ export type AbsFnImpl = {
    */
   apply?: (args: Abs[], thisVal?: Abs) => AbsApplyReturn;
   /**
-   * 对象方法（ObjectMethod / 方法型 FunctionExpression）：$invoke 时把
-   * receiver 作为 apply 的**首参**注入。shape.params 仍是用户可见形参
-   * （不含 receiver），自由调用不注入 → this 为 unbound（JS 语义）。
+   * 对象方法（ObjectMethod / 方法型 FunctionExpression）：$call 派发统一把
+   * receiver（$call 第三参 thisVal；成员调用 = 接收者，直接调用 / call /
+   * apply / bind 缺省 = undefined）注入 apply 的**首参**。shape.params 仍是
+   * 用户可见形参（不含 receiver）；自由调用注入 undefined → this 为
+   * unbound（JS 语义）。$new（可构造方法值）同样注入新实例。
    */
   bindThis?: boolean;
   /**
@@ -117,6 +119,13 @@ export type AbsFnImpl = {
   };
   /** `@nudo:pure`：调用结果按实参记忆化（无副作用契约） */
   pureName?: string;
+  /**
+   * M4：transpile 静态判定的「无副作用面」facet（保守：任意赋值/自增/
+   * 调用/delete/标签模板/非白名单 new 都算有副作用）。sort 等原生调用
+   * 次数取决于算法内部的内建，仅在该 facet 在场时才真执行回调比较——
+   * 副作用回调多执行不可回滚（外层绑定 n++ 会错定值）。
+   */
+  effectFree?: boolean;
 };
 
 const implByAbs = new WeakMap<object, AbsFnImpl>();

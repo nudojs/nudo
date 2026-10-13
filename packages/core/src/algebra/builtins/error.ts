@@ -2,7 +2,7 @@
  * Error 家族 + evalBuiltinNew / evalBuiltinInstanceMethod + namespace 分派
  */
 import type { Abs } from "../abs.ts";
-import { abs, strLit, numLit, litValue, bigintLit, boolLit, unknown, confJoin } from "../abs.ts";
+import { abs, strLit, numLit, litValue, bigintLit, boolLit, bool, unknown, confJoin } from "../abs.ts";
 import { objOf, getSlot, setSlot, joinAbs } from "../objects.ts";
 import {
   makeMapAbs,
@@ -35,7 +35,7 @@ import { defaultLeakBudget } from "../leak.ts";
 import { emptyEnv } from "../ast-env.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
-import { registerGenElements } from "../exec/match-iter.ts";
+import { registerGenElements, registerGenDrain, registerProxyParts } from "../exec/match-iter.ts";
 import { absFunction } from "../abs-fn.ts";
 import { setPropFlags } from "./invariants.ts";
 import { isSymbolAbs, evalSymbolStatic } from "./symbol.ts";
@@ -379,8 +379,14 @@ function errorMessageSlot(messageArg: Abs | undefined): Abs {
  */
 export function errorBrandAbs(name: string, args: Abs[]): Abs {
   const messageArg = name === "AggregateError" ? args[1] : args[0];
-  const slots: Record<string, { value: Abs }> = {
-    name: { value: strLit(name) },
+  const slots: Record<string, { value: Abs; inherited?: boolean }> = {
+    // Bug 66：name 原生不是实例自有属性——经原型链从 X.prototype.name 解析
+    // （Error.prototype.name = "Error"；TypeError.prototype.name =
+    // "TypeError"…）。槽保留（$get 直读折家族名、$in 存在性 true），打
+    // Slot.inherited 标记：hasOwnProperty / propertyIsEnumerable /
+    // Object.hasOwn / gOPN 的自有面折 false；$set 公有覆写落地转自有
+    // （e.name = "X" 原生建自有可枚举属性）。
+    name: { value: strLit(name), inherited: true },
     message: { value: errorMessageSlot(messageArg) },
     // Bug 59：stack 恒 string（V8/SpiderMonkey/JSC 堆栈轨迹文本，含调用点
     // 信息不可精确折叠）；用户写 e.stack = v 经既有 $set 槽写通道覆盖
@@ -456,6 +462,9 @@ function isNullishLit(a: Abs | undefined): boolean {
  * handler 各做 IsObject。prim（含 nullish/缺省 ≡ undefined）→ 确定
  * TypeError；any/unknown/含 prim 成员 union → may；obj/fn/brand/tuple/arr
  * 是对象 → 全定，构造 Proxy brand。
+ * Bug 57/71：brand inner = target Abs（无陷阱读写走靶语义、isArray 剥
+ * brand 看靶形态）；target/handler 引用挂 match-iter 侧表——get/has/set
+ * 陷阱派发（$get/$set/$in）与陷阱实参（首参 target）用。
  */
 export function makeProxyAbs(target: Abs | undefined, handler: Abs | undefined): Abs {
   for (const a of [target, handler]) {
@@ -466,7 +475,16 @@ export function makeProxyAbs(target: Abs | undefined, handler: Abs | undefined):
       recordMayThrow({ kind: "TypeError", cause: "new Proxy on non-object target or handler" });
     }
   }
-  return abs({ k: "brand", name: "Proxy", shape: objOf({}) }, undefined, undefined, "path");
+  const t = target as Abs;
+  const h = handler as Abs;
+  const proxy = abs(
+    { k: "brand", name: "Proxy", shape: t },
+    undefined,
+    undefined,
+    "path",
+  );
+  registerProxyParts(proxy, { target: t, handler: h });
+  return proxy;
 }
 
 /** ES ToIndex 校验分类（ArrayBuffer length / DataView byteOffset·byteLength） */
@@ -1685,9 +1703,16 @@ function iterResultAbs(value: Abs, done: boolean): Abs {
  * 同款协议面：obj + next 方法槽（按调用序折 {value, done}，耗尽 →
  * {value: undefined, done: true}）+ @@iterator 槽 + 元素侧表
  * （registerGenElements）——spread/for-of/Array.from/.next() 链路全求值。
+ * Bug 63：Array.prototype.entries/keys/values（tuple 接收者）同款复用。
+ * Bug 66 同口径：next/@@iterator 槽打 enumerable:false——原生迭代器 next
+ * 在 %ArrayIteratorPrototype% 等原型上（非自有可枚举），Object.keys(iter)
+ * / for-in / assign 折空。
  */
-function collectionIteratorAbs(els: Abs[]): Abs {
+export function collectionIteratorAbs(els: Abs[]): Abs {
   const state = { i: 0 };
+  // Bug 54：消费位 live 视图——next() 推进时收缩；迭代消费（spread /
+  // for-of / Array.from / 解构）经 drain 从当前位取剩余并排空
+  const live: Abs[] = [...els];
   const next = absFunction(
     [],
     {
@@ -1696,6 +1721,7 @@ function collectionIteratorAbs(els: Abs[]): Abs {
         if (state.i >= els.length) return iterResultAbs(undefAbs(), true);
         const v = els[state.i]!;
         state.i++;
+        if (live.length > 0) live.shift();
         return iterResultAbs(v, false);
       },
     },
@@ -1711,7 +1737,65 @@ function collectionIteratorAbs(els: Abs[]): Abs {
     undefined,
     els.every((e) => e.conf === "exact") ? "exact" : "path",
   );
-  registerGenElements(iter, els);
+  setPropFlags(iter, "next", { enumerable: false });
+  setPropFlags(iter, "@@iterator", { enumerable: false });
+  registerGenElements(iter, live);
+  registerGenDrain(iter, {
+    drain: (): Abs[] => {
+      const remaining = [...live];
+      live.length = 0;
+      state.i = els.length;
+      return remaining;
+    },
+    peek: (i: number): Abs | undefined => (i < live.length ? live[i] : undefAbs()),
+    peekAll: (): Abs[] => [...live],
+  });
+  return iter;
+}
+
+/**
+ * Bug 63：抽象序列（长度未知 arr 接收者）的 keys/values/entries 迭代器
+ * 对象。协议面与 collectionIteratorAbs 一致（next 槽 + @@iterator + 均
+ * 不可枚举 → Array.isArray 折 false、Object.keys 折 []、typeof .next 折
+ * "function"）；长度不可知**不挂元素侧表**——next() 折
+ * {value: el ∪ undefined, done: boolean 域}（可能已耗尽），spread/for-of
+ * 走 unbounded join 保守面（不折精确长度）。
+ */
+export function abstractSeqIteratorAbs(el: Abs): Abs {
+  const next = absFunction(
+    [],
+    {
+      body: noBody,
+      apply: (): Abs =>
+        abs(
+          {
+            k: "obj",
+            slots: {
+              value: { value: joinAbs(el, undefAbs()) },
+              done: { value: bool() },
+            },
+          },
+          undefined,
+          undefined,
+          "partial",
+        ),
+    },
+    { ctor: false },
+  );
+  const iter = abs(
+    {
+      k: "obj",
+      slots: {
+        next: { value: next },
+        "@@iterator": { value: absFunction([], { body: noBody }, { ctor: false }) },
+      },
+    },
+    undefined,
+    undefined,
+    "partial",
+  );
+  setPropFlags(iter, "next", { enumerable: false });
+  setPropFlags(iter, "@@iterator", { enumerable: false });
   return iter;
 }
 

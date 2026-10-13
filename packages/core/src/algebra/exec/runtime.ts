@@ -9,6 +9,7 @@
 export {
   $fnVal,
   $absVal,
+  $catchReturn,
   $isBreakTo,
   $lit,
   $loopBreak,
@@ -19,6 +20,7 @@ export {
   $rawThis,
   $rethrowIfNudoReturn,
   $throwConstAssign,
+  $throwFreeArguments,
   $litTruth,
   $tryCurrentMark,
   $tryDetachSoftCatch,

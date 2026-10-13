@@ -49,7 +49,12 @@ describe("real es env globals must not degrade host intrinsics", () => {
     expect(withEs.get("loopEarlyReturn")).toContain('"l1"');
     expect(withEs.get("loopEarlyReturn")).not.toContain("unknown");
     expect(withEs.get("implicitUndefined")).toContain("undefined");
-    expect(withEs.get("implicitUndefined")).not.toContain("unknown");
+    // fork×try 早退 join 修复：if (n > 1) return "a" 的早退臂不再被丢弃
+    //（修复前错定 undefined）。值域为 undefined | "a"（#exact）；formatAbs
+    // 尾部的 join(unknown | string) 是 pathNote 注记（shapeBrief 对
+    // lit(undefined) 打 unknown），非值成员——只断言值不塌成 unknown。
+    expect(withEs.get("implicitUndefined")).toContain('"a"');
+    expect(withEs.get("implicitUndefined")).not.toMatch(/^unknown\b/);
     expect(withEs.get("nanCompare")).toContain("false");
     // 正对照：普通 env 全局仍然生效（Math.abs(x) 不因 skip 而失效）
     expect(withEs.get("usesMath")).not.toContain("unknown");

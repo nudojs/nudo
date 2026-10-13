@@ -7,7 +7,7 @@ import type { Abs, Shape, Confidence } from "./abs.ts";
 import { abs, litValue, confJoin, num, numLit, bool, boolLit, strLit, bigintLit, isStrPrim, isBigPrim } from "./abs.ts";
 import { classNameOfValue } from "./class-mark.ts";
 import { builtinCtorNameOf, hostBuiltinCtorName } from "./builtins.ts";
-import { symbolIdOf, isSymbolAbs as isSym } from "./symbol-id.ts";
+import { symbolIdOf, isSymbolAbs as isSym, isAbstractKeySymbol } from "./symbol-id.ts";
 import type { LiteralValue, Term } from "./term.ts";
 import { lit, simplifyTerm, app } from "./term.ts";
 import type { Pred } from "./pred.ts";
@@ -627,11 +627,16 @@ export function strictEqAbs(a: Abs, b: Abs): boolean | undefined {
     }
     if (k === "prim" && a.shape.type === "symbol") return true;
   }
-  // Symbol 身份：同 Abs 引用 → true；两个独立 Symbol() → false（侧表 id）
+  // Symbol 身份：同 Abs 引用 → true；两个独立 Symbol() → false（侧表 id）。
+  // Bug 61：抽象键驻留符号（Symbol.for 不可判键）与其他注册符号 === 原生
+  // 不可判（键串可能相等）→ unknown，不得折 false
   if (a.shape.k === "prim" && a.shape.type === "symbol" && b.shape.k === "prim" && b.shape.type === "symbol") {
     const ia = symbolIdOf(a);
     const ib = symbolIdOf(b);
-    if (ia !== undefined && ib !== undefined) return ia === ib;
+    if (ia !== undefined && ib !== undefined) {
+      if (isAbstractKeySymbol(a) || isAbstractKeySymbol(b)) return undefined;
+      return ia === ib;
+    }
     return undefined;
   }
   const vaR = litValue(a);

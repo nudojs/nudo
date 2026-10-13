@@ -1,12 +1,12 @@
 /**
  * issue #153 回归：数组 mutator（push/unshift/splice…）的 spread 实参
  * `f.push(...xs)` 此前在两条转译路径被折成单参 `$unknown()`，污染容器元素域：
- * - stmt.ts ExpressionStatement mutator 快路径（语句位标识符/成员路径接收者）；
- * - emit.ts emitArrMutatorRebinds（表达式位 / 嵌套 mutator 的重绑行——重绑行
- *   以实参执行**真实变更**，$unknown() 污染在此发生）。
- * 修法：与普通调用（expr.ts $callNamed/$invoke，DEC-006 K5）同口径发射
- * `...$elems(<expr>)`——生成代码是数组字面量内的 JS spread，把 $elems
- * 返回的 Abs[] 平铺进 $arrMutContainer 的实参表。
+ * - stmt.ts ExpressionStatement mutator 快路径（Bug 49/51 后已移除——统一
+ *   走 $invoke 调用点就地变更）；
+ * - emit.ts emitArrMutatorRebinds 重绑行（同上移除）。
+ * 现口径：与普通调用（expr.ts $callNamed/$invoke，DEC-006 K5）同——
+ * `...$elems(<expr>)` 生成数组字面量内的 JS spread，把 $elems 返回的
+ * Abs[] 平铺进 $invoke 实参表，$invoke 内经 $arrMutContainer 就地变更。
  * $elems 元素域语义（exec/runtime/containers.ts）：
  * - tuple → 逐元素（保序逐位精确）；
  * - arr → 元素域单代表（与 $concat 同口径）；
