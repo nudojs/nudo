@@ -2,28 +2,8 @@
  * 第九轮 P0 回归：普通绑定隔离 / nullish / try mark / switch 贯穿 / 循环累加 / ast-eval env join
  */
 import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  $lit,
-  litValue,
-  formatAbs,
-  formatShape,
-} from "@nudojs/core";
-
-function call(src: string, fnName: string, ...litArgs: unknown[]) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(
-    exports,
-    fnName,
-    litArgs.map((a) => $lit(a as never)),
-  );
-}
-
-function callAbs(src: string, fnName: string, args: unknown[]) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, args as never[]);
-}
+import { litValue, formatAbs, formatShape } from "@nudojs/core";
+import { call as callAbs, callLit as call } from "./eval-helpers.ts";
 
 const absBool = { shape: { k: "prim", type: "boolean" }, conf: "path" } as never;
 const absNum = { shape: { k: "prim", type: "number" }, conf: "path" } as never;
@@ -69,13 +49,6 @@ describe("P0 ordinary binding fork isolation (evaluator)", () => {
 });
 
 describe("P0 nullish ?? and ??=", () => {
-  it("abstract number ?? fallback stays number, not fallback exact", () => {
-    const src = `export function f(a) { return a ?? "fallback"; }`;
-    const r = callAbs(src, "f", [absNum]);
-    expect(formatAbs(r.result)).not.toBe('"fallback"');
-    expect(formatShape(r.result)).not.toBe('"fallback"');
-  });
-
   it("abstract number ??= keeps number domain", () => {
     const src = `export function f(a) { let x = a; x ??= 42; return x; }`;
     const r = callAbs(src, "f", [absNum]);

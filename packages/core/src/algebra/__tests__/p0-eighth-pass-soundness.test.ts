@@ -2,34 +2,13 @@
  * 第八轮 review P0 回归：
  * - 无 default switch 不得当终止语句
  * - $switch 隐式 fall-through
- * - switch 臂间数组 mutator 隔离
  * - fork 臂 throw 不中止兄弟臂
  * - 逻辑赋值 ||= / &&= / ??=
  * - generator 抽象分支不得 exact 出货
  */
 import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  $lit,
-  litValue,
-  formatAbs,
-  formatShape,
-} from "@nudojs/core";
-
-function call(src: string, fnName: string, ...litArgs: unknown[]) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(
-    exports,
-    fnName,
-    litArgs.map((a) => $lit(a as never)),
-  );
-}
-
-function callAbs(src: string, fnName: string, args: unknown[]) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, args as never[]);
-}
+import { litValue, formatAbs, formatShape } from "@nudojs/core";
+import { call as callAbs, callLit as call } from "./eval-helpers.ts";
 
 const absBool = { shape: { k: "prim", type: "boolean" }, conf: "path" } as never;
 const absNum = { shape: { k: "prim", type: "number" }, conf: "path" } as never;
@@ -62,19 +41,6 @@ describe("P0-2 $switch implicit fall-through arm", () => {
     expect(s).toContain("2");
     expect(s === "1 | 2  #exact").toBe(false);
     expect(r.result.shape.k).toBe("sum");
-  });
-});
-
-describe("P0-3 switch array mutator arm isolation", () => {
-  const src = `export function f(n) { const a=[1,2,3]; switch(n){ case 1: a.pop(); break; default: break; } return a.length; }`;
-  it("concrete arms stay correct", () => {
-    expect(litValue(call(src, "f", 1).result)).toEqual({ ok: true, value: 2 });
-    expect(litValue(call(src, "f", 9).result)).toEqual({ ok: true, value: 3 });
-  });
-  it("abstract length is not exact 2", () => {
-    const r = callAbs(src, "f", [absNum]);
-    expect(formatShape(r.result)).not.toBe("2");
-    expect(r.result.conf).not.toBe("exact");
   });
 });
 

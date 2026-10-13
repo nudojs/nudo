@@ -1,7 +1,5 @@
 import { describe, it, expect } from "vitest";
 import {
-  runTranspiled,
-  callTranspiledExportFull,
   $lit,
   $arr,
   $idx,
@@ -11,27 +9,12 @@ import {
   numLit,
   strLit,
   abs,
-  pTrue,
   makeMapAbs,
   mapGetEntry,
   mapHasEntry,
   mapSetEntry,
-  type Abs,
 } from "@nudojs/core";
-
-function call(src: string, fnName: string, ...litArgs: unknown[]) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(
-    exports,
-    fnName,
-    litArgs.map((a) => $lit(a as never)),
-  );
-}
-
-function callWith(src: string, fnName: string, args: Abs[]) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, args);
-}
+import { call, callLit } from "./eval-helpers.ts";
 
 function strPrim() {
   return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
@@ -48,7 +31,7 @@ export function pick() {
   return 0;
 }
 `;
-    const r = call(src, "pick");
+    const r = callLit(src, "pick");
     expect(litValue(r.result)).toEqual({ ok: true, value: 1 });
   });
 
@@ -62,7 +45,7 @@ export function findFirst(arr) {
 }
 `;
     const arr = $arr([$lit(1), $lit(2), $lit(4), $lit(5)]);
-    const r = callWith(src, "findFirst", [arr]);
+    const r = call(src, "findFirst", [arr]);
     expect(litValue(r.result)).toEqual({ ok: true, value: 4 });
   });
 
@@ -78,7 +61,7 @@ export function outer(arr) {
 }
 `;
     const arr = $arr([$lit(1), $lit(2)]);
-    const r = callWith(src, "outer", [arr]);
+    const r = call(src, "outer", [arr]);
     const s = formatAbs(r.result);
     expect(s).not.toBe("10");
     expect(s).not.toBe("20");
@@ -96,7 +79,7 @@ export function untilThree() {
   return -1;
 }
 `;
-    const r = call(src, "untilThree");
+    const r = callLit(src, "untilThree");
     expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 });
@@ -153,7 +136,7 @@ export function lookup(key) {
   return m.get(key);
 }
 `;
-    const r = call(src, "lookup", undefined);
+    const r = callLit(src, "lookup", undefined);
     const s = formatAbs(r.result);
     expect(s).toContain("undefined");
     expect(s).not.toBe("unknown");
@@ -166,7 +149,7 @@ export function pick(key) {
   return o[key];
 }
 `;
-    const r = call(src, "pick", "c");
+    const r = callLit(src, "pick", "c");
     const s = formatAbs(r.result);
     expect(s).toContain("undefined");
   });
@@ -183,7 +166,7 @@ export function pick(key) {
   return { a: 1, b: "x" }[key];
 }
 `;
-    const r = call(src2, "pick", undefined);
+    const r = callLit(src2, "pick", undefined);
     const s = formatAbs(r.result);
     expect(s).toContain("undefined");
     expect(src).toBeDefined();

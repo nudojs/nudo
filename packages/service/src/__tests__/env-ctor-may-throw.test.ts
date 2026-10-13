@@ -23,6 +23,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { checkSource, pTrue, resetGeneralizeMemo, type RunTranspiledOptions } from "@nudojs/core";
 import { collectEnvGlobals } from "../eval-run.ts";
+import { l2Count } from "./check-helpers.ts";
 
 const SRC = `/// @nudo:env es, web
 export class ApiError extends Error {
@@ -52,10 +53,6 @@ beforeAll(() => {
 
 function check() {
   return checkSource("/t/env-ctor-may-throw.js", SRC, pTrue, { inject });
-}
-
-function l2Count(r: ReturnType<typeof check>, fn?: string): number {
-  return r.issues.filter((i) => i.code === "nudo:entry-may-throw" && (!fn || i.fn === fn)).length;
 }
 
 describe("#106 env 声明构造器不报 constructibility 假 may-throw", () => {

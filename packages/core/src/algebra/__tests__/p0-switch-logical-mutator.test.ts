@@ -5,28 +5,8 @@
  * - P0.3 逻辑/三元短路臂内数组 mutator 不得无条件重绑
  */
 import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  $lit,
-  litValue,
-  formatAbs,
-  formatShape,
-} from "@nudojs/core";
-
-function call(src: string, fnName: string, ...litArgs: unknown[]) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(
-    exports,
-    fnName,
-    litArgs.map((a) => $lit(a as never)),
-  );
-}
-
-function callWithAbs(src: string, fnName: string, args: unknown[]) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, args as never[]);
-}
+import { litValue, formatAbs, formatShape } from "@nudojs/core";
+import { call as callWithAbs, callLit as call } from "./eval-helpers.ts";
 
 const absBool = {
   shape: { k: "prim", type: "boolean" },

@@ -1,26 +1,17 @@
 /**
  * P0.1 数组 mutator 在抽象 if 臂间不得泄漏；
- * P0.3 a.at(-1) 是末元素，不是首元素；
+ * P0.3 a.at(0) 是首元素；
  * P0.2 Map/Set delete/clear 建模（经 evaluator builtin）。
  */
 import { describe, it, expect } from "vitest";
 import {
   runTranspiled,
   callTranspiledExportFull,
-  $lit,
   litValue,
   formatShape,
   formatAbs,
 } from "@nudojs/core";
-
-function call(src: string, fnName: string, ...litArgs: unknown[]) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(
-    exports,
-    fnName,
-    litArgs.map((a) => $lit(a as never)),
-  );
-}
+import { callLit as call } from "./eval-helpers.ts";
 
 describe("P0.1 array mutator fork isolation", () => {
   it("abstract if true-arm pop does not leak exact mutated container to post-if", () => {
@@ -115,19 +106,8 @@ export function f(flag) {
 });
 
 describe("P0.3 Array#at index semantics", () => {
-  it("a.at(-1) is last element, not first", () => {
-    const r = call(
-      `
-export function f() {
-  const a = ["first", "mid", "last"];
-  return a.at(-1);
-}
-`,
-      "f",
-    );
-    expect(litValue(r.result)).toEqual({ ok: true, value: "last" });
-  });
-
+  // at(-1)/at(1)/OOB/抽象下标回归已由 eval-array-methods-w7 Bug 67 控制组
+  // 同源码覆盖；此处仅保留 w7 未以同源码覆盖的显式字面量下标 at(0)。
   it("a.at(0) is first element", () => {
     const r = call(
       `
@@ -139,51 +119,6 @@ export function f() {
       "f",
     );
     expect(litValue(r.result)).toEqual({ ok: true, value: "first" });
-  });
-
-  it("a.at(1) is second element", () => {
-    const r = call(
-      `
-export function f() {
-  const a = ["first", "last"];
-  return a.at(1);
-}
-`,
-      "f",
-    );
-    expect(litValue(r.result)).toEqual({ ok: true, value: "last" });
-  });
-
-  it("a.at(out of range) is undefined", () => {
-    const r = call(
-      `
-export function f() {
-  const a = ["x"];
-  return a.at(5);
-}
-`,
-      "f",
-    );
-    const s = formatAbs(r.result);
-    expect(s).toContain("undefined");
-  });
-
-  it("a.at(non-lit) joins elements (literals or widened string) + undefined", () => {
-    const src = `
-export function f(i) {
-  const a = ["A", "B"];
-  return a.at(i);
-}
-`;
-    const exports = runTranspiled(src, { mode: "analyze" });
-    const absIdx = {
-      shape: { k: "prim", type: "number" },
-      conf: "path",
-    } as never;
-    const r = callTranspiledExportFull(exports, "f", [absIdx]);
-    const s = formatShape(r.result);
-    expect(s).toMatch(/string|A|B/);
-    expect(s).toContain("undefined");
   });
 });
 

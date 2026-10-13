@@ -2,22 +2,8 @@
  * 短路/三元 mutator 臂隔离 + fork join 绑定（P2：不用 undefined 当哨兵）。
  */
 import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  $lit,
-  litValue,
-  formatAbs,
-} from "@nudojs/core";
-
-function call(src: string, fnName: string, ...args: unknown[]) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(
-    exports,
-    fnName,
-    args.map((a) => $lit(a as never)),
-  );
-}
+import { litValue } from "@nudojs/core";
+import { callLit as call } from "./eval-helpers.ts";
 
 describe("short-circuit mutator fork join", () => {
   it("concrete true && pop still mutates; false does not", () => {

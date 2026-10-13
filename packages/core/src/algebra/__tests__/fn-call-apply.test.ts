@@ -2,21 +2,8 @@
  * Function.prototype.call/apply/bind（P1）：求值引擎不得对合法 HOF 形态签 unknown。
  */
 import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  $lit,
-  litValue,
-} from "@nudojs/core";
-
-function call(src: string, fnName: string, ...args: unknown[]) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(
-    exports,
-    fnName,
-    args.map((a) => $lit(a as never)),
-  );
-}
+import { runTranspiled, litValue } from "@nudojs/core";
+import { callLit as call } from "./eval-helpers.ts";
 
 describe("Function.prototype.call/apply on evaluator", () => {
   it("g.call(null, 41) resolves through $invoke", () => {

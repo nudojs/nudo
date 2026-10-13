@@ -7,15 +7,7 @@ import {
   litValue,
   formatAbs,
 } from "@nudojs/core";
-
-function call(src: string, fnName: string, ...litArgs: unknown[]) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(
-    exports,
-    fnName,
-    litArgs.map((a) => $lit(a as never)),
-  );
-}
+import { callLit as call } from "./eval-helpers.ts";
 
 describe("C1.1 Map literal key tracking", () => {
   it("get after set with matching literal key is precise", () => {
