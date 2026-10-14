@@ -3,7 +3,7 @@
 // 运行：pnpm run check docs/examples/constraints/similarity.js
 //
 // check 输出（OK；证明依赖引理 → info 审计标注）：
-//   sim(d: number, max: number) => 1 | number
+//   sim(d: number, max: number) => number
 //   [INFO sim] sim: return contract proved via @nudo:assume d <= max  (nudo:assume-relied)
 // 去掉 @nudo:assume 行，同文件 + 侧车诚实保留 warning nudo:unproven-return（证不出）。
 
