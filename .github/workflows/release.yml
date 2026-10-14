@@ -65,8 +65,8 @@ jobs:
 
       # ── 发布门禁重构：按「有没有待发布物」路由，消灭同 SHA 重复工作 ──
       # 原 Release 在每次 main push 上无条件 build + lint + test:coverage
-      # （~4.5 min），而同一 push 的 CI 已跑完全相同的门禁（且是超集：
-      # lint / build / test:coverage / benchmark / verify:*）。
+      # （~4.5 min），而同一 push 的 CI 已跑完等价门禁（lint / build /
+      # 全量测试 / benchmark / verify:*；coverage 只在夜间跑，非门禁）。
       #   路由 A（有 pending changesets）→ 只 version + 开 Version PR：
       #     ci:version 链（gate-major / changeset version / bump-vscode /
       #     gen-releases / gen-api-docs）纯 fs，无需 dist；Version PR 本身
