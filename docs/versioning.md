@@ -133,7 +133,7 @@ Do **not** hand-edit published `CHANGELOG.md` history on `main`; fix forward wit
 
 `release.yml` **same workflow file** (npm Trusted Publishing is bound to a workflow filename — a second file cannot publish) runs the `release-beta` job on **`dev` push** with the same `NPM_TOKEN` environment:
 
-1. lint + `test:coverage` (same bar as stable — no untested publishes)
+1. CI gate (same SHA — no untested publishes; tests + lint + build via ci.yml)
 2. If `.changeset/*.md` are pending **and** `.changeset/pre.json` is in pre mode → `changeset version` + push `[skip ci]` version commit
 3. `changeset publish` — dist-tag comes from `.changeset/pre.json` (`beta` today); already-published versions are skipped
 
