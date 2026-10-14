@@ -11,19 +11,34 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 | Package | Current version |
 |----------|-----------------|
-| `@nudojs/core` | 1.12.0 |
-| `@nudojs/service` | 1.6.24 |
-| `nudojs (CLI)` | 1.3.25 |
-| `@nudojs/parser` | 1.4.21 |
-| `@nudojs/lsp` | 1.6.7 |
-| `@nudojs/env` | 0.4.39 |
-| `@nudojs/harvester` | 0.3.25 |
-| `vite-plugin-nudo` | 0.4.40 |
-| `nudo-vscode` | 0.3.44 |
+| `@nudojs/core` | 1.13.0 |
+| `@nudojs/service` | 1.6.25 |
+| `nudojs (CLI)` | 1.3.26 |
+| `@nudojs/parser` | 1.4.22 |
+| `@nudojs/lsp` | 1.6.8 |
+| `@nudojs/env` | 0.4.40 |
+| `@nudojs/harvester` | 0.3.26 |
+| `vite-plugin-nudo` | 0.4.41 |
+| `nudo-vscode` | 0.3.45 |
 
 **Jump to package:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.12.0 {#pkg-core}
+## @nudojs/core 1.13.0 {#pkg-core}
+
+## 1.13.0
+
+### Minor Changes
+
+- f5c0c6e: Guard-equality path facts and sum anchoring close the normalised-similarity derivation chain (#170) — `@nudo:assume d <= max` now proves `1 - d/max ∈ [0,1]` when `max` comes from `Math.max(a.length, b.length)` and the body guards `max === 0`, with no per-callee sidecar bounds.
+  
+  - `===` / `!==` on undecided operands now carry symbolic `eq`/`ne` predicates (previously folded to an unconstrained boolean), so `$fork` pushes the equality fact into branch Φ — the else arm of `max === 0 ? … : …` knows `ne(max, 0)`
+  - `numericBounds` tightens an endpoint when a `ne(x, n)` fact matches its value: `x ≠ 0 ∧ x ≥ 0 ⇒ x > 0` (cross-source order-independent: the bound and the exclusion may live on the pred and Φ respectively); supplies the strict positive denominator that relational division folding requires
+  - `cmp` no longer applies brand `ToPrimitive` unboxing for `eq`/`ne` — strict equality has no coercion (`new Number(5) === 5` stays false)
+  - `@nudo:assume` local anchoring descends into fork-join sums: each member's term α-renames to the local's name (on that arm the member's value **is** the local), so a `d = cond ? 0 : Math.max(...)` callee result still matches the lemma; literal members keep their exact identity
+  - `0 / x` with a provably non-zero, non-NaN denominator folds to literal `0` — the literal arm of such a sum no longer poisons the joined quotient bounds
+
+<details>
+<summary>Version history (48)</summary>
 
 ## 1.12.0
 
@@ -117,9 +132,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   
   - function-boundary params are subtracted from inherited const bindings: `const K = 1; function f(K) { K = 5; }` no longer folds `TypeError` (writes the param binding — native no-throw); covers declarations, expressions, arrows (incl. expression bodies), and class methods
   - catch params likewise: `try { … } catch (K) { K = 5; }` with an outer `const K`/class-body name no longer falsely throws
-
-<details>
-<summary>Version history (47)</summary>
 
 ## 1.11.3
 
@@ -1140,7 +1152,20 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/service 1.6.24 {#pkg-service}
+## @nudojs/service 1.6.25 {#pkg-service}
+
+## 1.6.25
+
+### Patch Changes
+
+- Updated dependencies [f5c0c6e]
+  - @nudojs/core@1.13.0
+  - @nudojs/env@0.4.40
+  - @nudojs/harvester@0.3.26
+  - @nudojs/parser@1.4.22
+
+<details>
+<summary>Version history (50)</summary>
 
 ## 1.6.24
 
@@ -1154,9 +1179,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/env@0.4.39
   - @nudojs/harvester@0.3.25
   - @nudojs/parser@1.4.21
-
-<details>
-<summary>Version history (49)</summary>
 
 ## 1.6.23
 
@@ -2109,7 +2131,21 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## nudojs (CLI) 1.3.25 {#pkg-nudojs}
+## nudojs (CLI) 1.3.26 {#pkg-nudojs}
+
+## 1.3.26
+
+### Patch Changes
+
+- Updated dependencies [f5c0c6e]
+  - @nudojs/core@1.13.0
+  - @nudojs/env@0.4.40
+  - @nudojs/harvester@0.3.26
+  - @nudojs/parser@1.4.22
+  - @nudojs/service@1.6.25
+
+<details>
+<summary>Version history (47)</summary>
 
 ## 1.3.25
 
@@ -2124,9 +2160,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/harvester@0.3.25
   - @nudojs/parser@1.4.21
   - @nudojs/service@1.6.24
-
-<details>
-<summary>Version history (46)</summary>
 
 ## 1.3.24
 
@@ -2849,7 +2882,17 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/parser 1.4.21 {#pkg-parser}
+## @nudojs/parser 1.4.22 {#pkg-parser}
+
+## 1.4.22
+
+### Patch Changes
+
+- Updated dependencies [f5c0c6e]
+  - @nudojs/core@1.13.0
+
+<details>
+<summary>Version history (47)</summary>
 
 ## 1.4.21
 
@@ -2860,9 +2903,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 - Updated dependencies [1881f97]
 - Updated dependencies [8466793]
   - @nudojs/core@1.12.0
-
-<details>
-<summary>Version history (46)</summary>
 
 ## 1.4.20
 
@@ -3406,7 +3446,19 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/lsp 1.6.7 {#pkg-lsp}
+## @nudojs/lsp 1.6.8 {#pkg-lsp}
+
+## 1.6.8
+
+### Patch Changes
+
+- Updated dependencies [f5c0c6e]
+  - @nudojs/core@1.13.0
+  - @nudojs/parser@1.4.22
+  - @nudojs/service@1.6.25
+
+<details>
+<summary>Version history (51)</summary>
 
 ## 1.6.7
 
@@ -3419,9 +3471,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/core@1.12.0
   - @nudojs/parser@1.4.21
   - @nudojs/service@1.6.24
-
-<details>
-<summary>Version history (50)</summary>
 
 ## 1.6.6
 
@@ -4357,7 +4406,17 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/env 0.4.39 {#pkg-env}
+## @nudojs/env 0.4.40 {#pkg-env}
+
+## 0.4.40
+
+### Patch Changes
+
+- Updated dependencies [f5c0c6e]
+  - @nudojs/core@1.13.0
+
+<details>
+<summary>Version history (47)</summary>
 
 ## 0.4.39
 
@@ -4368,9 +4427,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 - Updated dependencies [1881f97]
 - Updated dependencies [8466793]
   - @nudojs/core@1.12.0
-
-<details>
-<summary>Version history (46)</summary>
 
 ## 0.4.38
 
@@ -4852,7 +4908,19 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/harvester 0.3.25 {#pkg-harvester}
+## @nudojs/harvester 0.3.26 {#pkg-harvester}
+
+## 0.3.26
+
+### Patch Changes
+
+- Updated dependencies [f5c0c6e]
+  - @nudojs/core@1.13.0
+  - @nudojs/env@0.4.40
+  - @nudojs/parser@1.4.22
+
+<details>
+<summary>Version history (47)</summary>
 
 ## 0.3.25
 
@@ -4865,9 +4933,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/core@1.12.0
   - @nudojs/env@0.4.39
   - @nudojs/parser@1.4.21
-
-<details>
-<summary>Version history (46)</summary>
 
 ## 0.3.24
 
@@ -5422,7 +5487,18 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## vite-plugin-nudo 0.4.40 {#pkg-vite-plugin}
+## vite-plugin-nudo 0.4.41 {#pkg-vite-plugin}
+
+## 0.4.41
+
+### Patch Changes
+
+- Updated dependencies [f5c0c6e]
+  - @nudojs/core@1.13.0
+  - @nudojs/service@1.6.25
+
+<details>
+<summary>Version history (50)</summary>
 
 ## 0.4.40
 
@@ -5434,9 +5510,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 - Updated dependencies [8466793]
   - @nudojs/core@1.12.0
   - @nudojs/service@1.6.24
-
-<details>
-<summary>Version history (49)</summary>
 
 ## 0.4.39
 
