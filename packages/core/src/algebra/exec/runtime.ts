@@ -59,6 +59,7 @@ export {
 } from "./runtime/state.ts";
 export {
   $add,
+  $assumeAnchor,
   $bitand,
   $bitnot,
   $bitor,

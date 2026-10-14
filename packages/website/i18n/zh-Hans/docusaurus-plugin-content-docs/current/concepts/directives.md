@@ -341,18 +341,21 @@ function register(u) {
 
 ## @nudo:assume — 用户引理 {#nudoassume--user-lemmas}
 
-声明一条引擎推导不出的**跨变量引理**——关于两个形参的算法事实（编辑距离 ≤ 较长串的长度），普通区间传播表达不了它：那需要两个抽象值之间的相关性。前提参与除法关系折叠——`d <= max ∧ max > 0 ⇒ d/max <= 1`（镜像与负分母翻转不等号）——下游 `+` / `-` / `*` 折叠消费推出的界，于是 `1 - d/max ∈ [0,1]` 这类返回契约变得可证。
+声明一条引擎推导不出的**跨变量引理**——关于两个形参或顶层局部量的算法事实（编辑距离 ≤ 较长串的长度），普通区间传播表达不了它：那需要两个抽象值之间的相关性。前提参与除法关系折叠——`d <= max ∧ max > 0 ⇒ d/max <= 1`（镜像与负分母翻转不等号）——下游 `+` / `-` / `*` 折叠消费推出的界，于是 `1 - d/max ∈ [0,1]` 这类返回契约变得可证。
 
 ### 语法
 
 ```text
-@nudo:assume <param> <= <param>
-@nudo:assume <param> >= <param>
+@nudo:assume <name> <= <name>
+@nudo:assume <name> >= <name>
 ```
 
 - **函数级**——写在紧邻函数上方的注释块里，与 `@nudo:contract` 同一条扫描路径；锚定到最近的函数。
-- 两个名字都必须是**锚定函数的形参**（`d`、`max`），否则 error `nudo:assume-invalid`。
+- 两个名字都可以是**锚定函数的形参或函数体顶层的 `const`/`let`/`var` 局部绑定**（`d`、`max`）——只收函数体直接子语句中 `VariableDeclaration` 的普通 `Identifier` 声明名；解构、嵌套块、`for` 头声明不接受。否则 error `nudo:assume-invalid`。
+- 局部量按 **SSA 语义**锚定——引理作用于绑定值，从定义点生效到作用域尾；重新赋值后相关性保守失效（不折）。
+- 锚定只在目标函数自己的帧激活——callee 帧前提已清空，同名局部不会误匹配。
 - 只接受 `<=` / `>=`（`>=` 归一为 `le`）。`<`、`>`、`==` 与常数界（`d <= 10`）均非法——常数界归侧车契约（`number().le(10)`）。
+- 常数界仍归侧车——但侧车够不到函数自己的局部量：局部量的常数界放在**生产它的 callee 的返回**上（如 levenshtein 侧车 `return number().ge(0)`）。
 - 多行可叠加——前提合取。
 
 ### 语义——公理，不是被检验的事实
@@ -402,6 +405,34 @@ issues
 ```
 
 区间传播分别知道 `d >= 0` 与 `max >= 1`，但没有东西把两个值关联起来——这条相关性正是引理所提供的。
+
+### 示例——局部量作引理名
+
+引理名也可以是锚定函数函数体的顶层局部量：
+
+```javascript
+// sim.js
+/**
+ * @nudo:assume d <= max
+ */
+export function sim(a, b) {
+  const d = rawDist(a, b);   // 编辑距离
+  const max = maxLen(a, b);  // 较长串的长度
+  return 1 - d / max;
+}
+```
+
+`d`、`max` 是函数体顶层 `const` 局部量——各自锚定在定义点（SSA 语义），引理相关性保持到作用域尾。它们的**常数**界来自各自生产 callee 的侧车——外层函数的侧车够不到自己的局部量：
+
+```javascript
+// rawDist.nudo.js / maxLen.nudo.js
+import { fn, number, string } from "@nudojs/core";
+
+export const rawDist = fn({ a: string(), b: string() }, number().ge(0));
+export const maxLen = fn({ a: string(), b: string() }, number().ge(1));
+```
+
+由 `d >= 0`（rawDist 侧车）、`max >= 1`（maxLen 侧车）与引理 `d <= max`，`1 - d/max ∈ [0,1]` 返回契约可折——与形参版同一证明形状（sim 自己的侧车照常携带 `number().ge(0).le(1)`）。
 
 ### 与侧车契约的分工
 
@@ -716,7 +747,7 @@ const result = a + b;
 | `@nudo:skip` | `[=> returnsExpr]` / `[(returnsExpr)]` | 跳过求值，使用已有类型信息 |
 | `@nudo:sample` | `N` | 保留的无效果指令（已解析，未消费） |
 | `@nudo:contract` | `param constraint` / `return constraint` | 源码内契约（主路径是 `*.nudo.js` 侧车自动绑定） |
-| `@nudo:assume` | `<param> <= <param>`（或 `>=`） | 声明跨变量用户引理（公理，不被验证）——依赖它的证明带 `nudo:assume-relied` 审计标注 |
+| `@nudo:assume` | `<name> <= <name>`（或 `>=`） | 声明跨变量用户引理（形参或函数体顶层局部量；公理，不被验证）——依赖它的证明带 `nudo:assume-relied` 审计标注 |
 | `@nudo:throws` | `Error, TypeError` 或 `*` | 申报有意抛错 —— 按申报种类解除 L2 `nudo:entry-may-throw` |
 | `@nudo:import` | `{ name } from "spec"`（文件级 `///`） | 为 `@nudo:contract` 引入 `*.nudo.js` 约束模板 |
 | `@nudo:env` | `name1, name2`（文件级 `///`） | 声明运行时环境 API |

@@ -30,6 +30,7 @@ import {
   extractAssumeSegs,
   extractRefineReturnFromSource,
   extractDeclaredThrows,
+  fnTopLevelLocalNames,
   refineDiagCount,
   setRefineDiagCollector,
   takeRefineDiagsSince,
@@ -441,8 +442,9 @@ function sidecarDiagIssues(
 /**
  * `@nudo:assume <param> <= <param>`（`>=` 已在 refine 翻转为 le）：
  * - 文法外形态（`<` / `>` / `==`、字面量界）→ error nudo:assume-invalid（不折）
- * - 引用名不在锚定函数形参表 → error nudo:assume-invalid（消息口径仿
- *   nudo:interface-param-mismatch）
+ * - 引用名不在锚定函数形参 ∪ 函数体顶层局部绑定（#165）→ error
+ *   nudo:assume-invalid（消息口径仿 nudo:interface-param-mismatch）；
+ *   局部绑定 SSA 语义：引理作用于绑定值，从定义点到作用域尾
  * 合法段构造 le(termVar(lhs), termVar(rhs))（param 契约 Abs 同锚定口径），
  * pAnd 成 Phi 供目标函数入口求值种子（withAssumePremises，不随调用链继承）。
  * display = 合法段原文（`d <= max`），供证明成功时的审计标注
@@ -458,10 +460,13 @@ function assumePremisesPhiOf(
   const segs = extractAssumeSegs(source, name);
   if (segs.length === 0) return undefined;
   const meta = extractFn(source, name, file);
-  // 契约面 = formals（解构顶层绑定名）∪ 展示名（默认/rest 裸名）
+  // #165：可锚定面 = 形参 ∪ 函数体顶层局部绑定（const/let/var Identifier 名）。
+  // 局部绑定走 SSA 语义：引理作用于绑定值，从定义点到作用域尾。
+  const locals = fnTopLevelLocalNames(meta?.body);
   const bindable = new Set<string>([
     ...contractParamNameSet(meta?.formals ?? []),
     ...(meta?.params ?? []),
+    ...locals,
   ]);
   const surface = [...bindable].join(", ");
   const preds: Pred[] = [];
@@ -485,10 +490,10 @@ function assumePremisesPhiOf(
       issues.push({
         severity: "error",
         code: "nudo:assume-invalid",
-        message: `${name}: @nudo:assume parameter name(s) not in the formal parameter list (${bad.join(", ")})`,
+        message: `${name}: @nudo:assume name(s) not bound as parameters or top-level locals (${bad.join(", ")})`,
         actual: bad.join(", "),
-        expected: surface || "(no params)",
-        suggestion: `reference one of: ${surface || "(function has no params)"}`,
+        expected: surface || "(no params/locals)",
+        suggestion: `reference one of: ${surface || "(no params or top-level locals)"}`,
         fn: name,
       });
       continue;

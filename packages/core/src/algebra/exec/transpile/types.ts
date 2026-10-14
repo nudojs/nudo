@@ -97,6 +97,22 @@ export type TranspileOptions = {
    */
   keepVarDecl?: boolean;
   /**
+   * issue #165：文件含 `@nudo:assume` 引理——transpileFile 顶层对源文本
+   * 做一次 includes 判定后置位。文件级快速门：无引理的文件不进锚定收集，
+   * 发射产物逐字节不变（零插桩开销）。
+   */
+  assumeDirectiveFile?: boolean;
+  /**
+   * issue #165：待锚定的 declarator AST 节点集合（按对象身份匹配）——
+   * 函数体**直接子语句** VariableDeclaration 中带 init 的 Identifier
+   * declarator。发射位对命中者把 init 包 `$assumeAnchor(init, name)`
+   *（SSA：@nudo:assume 引理作用于绑定值，从定义点到作用域尾）。嵌套块 /
+   * for-init / 解构不收；嵌套函数体在自身边界重算（并集外层集合）。
+   * 运行时护栏（premise 不含该名的 le 原子则直通原值）见
+   * exec/runtime/ops.ts。
+   */
+  anchorDeclNodes?: ReadonlySet<object>;
+  /**
    * 节点级 Abs 记录插桩（hover 重放用）：Identifier 值读与
    * 静态成员读的转译输出包 `$nodoPos(<src>, line, column)`，
    * 运行时把 (行, 列) → Abs 记入活跃的位置 collector（无收

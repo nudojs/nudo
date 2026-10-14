@@ -174,10 +174,32 @@ export function transpileFnBodyStmts(
       };
     }
   }
+  // issue #165：@nudo:assume 引理锚定收集——仅函数/方法体边界（varScope
+  // 存在）且文件含 @nudo:assume（assumeDirectiveFile 快速门）时进行。从
+  // stmtsIn（completeElseChains 之前，保持节点身份）收**直接子语句**
+  // VariableDeclaration 中 id 为 Identifier 且有 init 的 declarator 节点，
+  // 发射位按对象身份匹配（completeElseChains 的浅拷贝语句共享 declarations
+  // 数组，declarator 身份不变）。嵌套块 / for-init / 解构不收——嵌套块
+  // 沿用外层集合但节点不命中（身份判定天然排除）；嵌套函数体在自身边界
+  // 重算并集（外层节点不越界出现在体内，并集幂等）。早退拆分的 rest
+  // 递归不传 varScope → 沿用本集合，同节点身份仍命中。
+  let anchorNodes: Set<object> | null = null;
+  if (varScope && opts.assumeDirectiveFile) {
+    for (const s of stmtsIn) {
+      if (s.type !== "VariableDeclaration") continue;
+      for (const d of s.declarations) {
+        if (d.id.type !== "Identifier" || !d.init) continue;
+        // 外层已有集合取并集新 Set（varOpts 已携带外层集合时保持单调）
+        if (!anchorNodes) anchorNodes = new Set(opts.anchorDeclNodes);
+        anchorNodes.add(d);
+      }
+    }
+  }
   // 本层 const 可见性（含父作用域、扣除本层 let/var 遮蔽）——用户再赋值 TypeError
   const scopedOpts: TranspileOptions = {
     ...varOpts,
     constNames: computeConstScope(stmts, varOpts.constNames),
+    ...(anchorNodes ? { anchorDeclNodes: anchorNodes } : {}),
   };
   for (let i = 0; i < stmts.length; i++) {
     const stmt = stmts[i]!;
@@ -625,6 +647,22 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
             opts.recordPositions && d.id.loc
               ? `$nodoPos(${initSrc}, ${d.id.loc.start.line}, ${d.id.loc.start.column})`
               : initSrc;
+          // issue #165：@nudo:assume 引理锚定——函数体直接子语句的
+          // declarator 命中 anchorDeclNodes（节点身份判定：嵌套块 /
+          // 嵌套函数体 / for-init 的声明不在集合内，天然不包）时，init
+          // 最内层包 $assumeAnchor，把非 lit term α-改名 var(<name>)
+          //（SSA：引理作用于绑定值，从定义点到作用域尾）。包在 $nodoPos
+          // 位置记录与 @nudo:as 覆盖之**内层**——锚定最贴近求值、位置记录
+          // 在外；as 覆盖命中时整体替换 init，不再锚定。解构分支不包
+          //（保守）。运行时护栏（premise 不含该名 le 原子则直通原值）
+          // 见 runtime/ops.ts。
+          const anchored = opts.anchorDeclNodes?.has(d) === true;
+          // 窄化捕获：闭包内 d.id 无法保持 Identifier 收窄，名字先落局部
+          const declName = d.id.name;
+          const anchorInit = (initSrc: string): string =>
+            anchored
+              ? `$assumeAnchor(${initSrc}, ${JSON.stringify(declName)})`
+              : initSrc;
           if (isVar && hoistedVar?.has(d.id.name)) {
             // 提升绑定上的赋值：裸 `var x;` 无写跳过（绑定已由顶部 let 提供）
             if (!d.init) {
@@ -636,7 +674,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
             const init = recInit(
               asVar
                 ? asVar
-                : emitTranspileExpression(d.init, opts),
+                : anchorInit(emitTranspileExpression(d.init, opts)),
             );
             lines.push(`${pad}${d.id.name} = ${init};`);
             if (depth === 0) {
@@ -651,9 +689,11 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           const init = recInit(
             asVar
               ? asVar
-              : d.init
-                ? emitTranspileExpression(d.init, opts)
-                : "$lit(void 0)",
+              : anchorInit(
+                  d.init
+                    ? emitTranspileExpression(d.init, opts)
+                    : "$lit(void 0)",
+                ),
           );
           const declKw = isVar ? "var" : kw;
           lines.push(`${pad}${declKw} ${d.id.name} = ${init};`);

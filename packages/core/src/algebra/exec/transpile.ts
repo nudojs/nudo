@@ -54,11 +54,16 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
       ? `let ${varDeclNames.map((n) => `${n} = $lit(void 0)`).join(", ")};`
       : null;
   const varEmitNames = new Set([...varNames, ...exportVarNames]);
+  // issue #165：文件级 @nudo:assume 快速门——源文本含引理指令才置
+  // assumeDirectiveFile（transpileFnBodyStmts 在函数体边界收待锚定
+  // declarator）；无引理的文件锚定收集整体跳过，发射产物逐字节不变。
+  const assumeFile = (opts.source ?? "").includes("@nudo:assume");
   const scopedOpts: TranspileOptions = {
     ...opts,
     destrTmpSeq,
     tryTmpSeq,
     ...(varEmitNames.size > 0 ? { hoistedVarNames: varEmitNames } : {}),
+    ...(assumeFile ? { assumeDirectiveFile: true } : {}),
   };
   const lines: string[] = [
     `// nudo evaluator transpile — values are Abs; operators are overloaded calls`,
