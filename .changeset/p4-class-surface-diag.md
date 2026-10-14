@@ -1,3 +1,4 @@
+---
 "@nudojs/core": patch
 ---
 
