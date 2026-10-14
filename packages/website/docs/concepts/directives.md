@@ -392,7 +392,7 @@ OK
   0 error · 0 warning · 1 info · 1 fn
 
 signatures
-  sim(d: number, max: number) => 1 | number
+  sim(d: number, max: number) => number
 
 issues
   [INFO sim] sim: return contract proved via @nudo:assume d <= max  (nudo:assume-relied)

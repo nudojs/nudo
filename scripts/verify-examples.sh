@@ -236,7 +236,7 @@ pin 'pnpm run test:cli docs/examples/constraints/add-pred.js' \
 # honestly keeps warning nudo:unproven-return.
 pin 'pnpm run check docs/examples/constraints/similarity.js' \
   '0 error · 0 warning · 1 info · 1 fn' \
-  'sim(d: number, max: number) => 1 | number' \
+  'sim(d: number, max: number) => number' \
   'return contract proved via @nudo:assume d <= max' \
   'nudo:assume-relied'
 
