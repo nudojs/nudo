@@ -23,14 +23,27 @@ export type EvalClassSpec = {
    * （Super constructor null … is not a constructor）；显式 super() 同抛（$super）。
    */
   superNull?: boolean;
+  /**
+   * N2：extends 目标是**宿主**内建构造器（host fn 或 builtinCtorAbs brand
+   * 身份）——类值静态读/调用（B.keys / E.captureStackTrace）沿链到未注册
+   * 父名时凭此标记走宿主静态通道。mock/桥接父类（fn Abs 同名）不带标记
+   * → 无通道 → sound unknown（不折 undefined / 不误派发宿主真值）。
+   */
+  superBuiltinHost?: boolean;
   ctor?: (thisVal: Abs, ...args: Abs[]) => Abs;
   methods?: Record<string, (thisVal: Abs, ...args: Abs[]) => Abs>;
   /** 实例方法形参展示名（AST 形参名；未调用方法槽 `shape.params` 用） */
   methodParams?: Record<string, string[]>;
-  staticMethods?: Record<string, (...args: Abs[]) => Abs>;
+  /** R5：静态方法 impl 首参 __this = 类值（接收者——沿链调用时是调用类） */
+  staticMethods?: Record<string, (thisVal: Abs, ...args: Abs[]) => Abs>;
   /** 静态方法形参展示名 */
   staticMethodParams?: Record<string, string[]>;
-  statics?: Record<string, Abs>;
+  /**
+   * 静态字段：R5 起值可为 thunk（以类值为 this 求值——原生
+   * ClassFieldDefinitionEvaluation 的 receiver 是类值；箭头/`this.x`
+   * 读写随之恢复）。旧行（宿主 Abs）保持兼容。
+   */
+  statics?: Record<string, Abs | ((cls: Abs) => Abs)>;
   /**
    * Bug 59：实例字段——每次 $new 以新实例为 this 按源序求值（原生
    * InitializeInstanceElements）。name 为字面量键；key 为计算键的

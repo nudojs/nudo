@@ -9,8 +9,9 @@ import { isMapAbs, isSetAbs, setElementsAbs, mapEntriesAbs } from "../collection
 import { applyCallbackValue, undefAbs, asAbs, validateCallableArg } from "../hof.ts";
 import { numericBounds } from "../arithmetic.ts";
 import { isNullishLitAbs } from "../surface.ts";
+import { markFreshInstance } from "../instance-id.ts";
 import { recordMayThrow } from "../may-throw.ts";
-import { matchIterElements, replayGenDeferred, drainGenElements } from "../exec/match-iter.ts";
+import { matchIterElements, replayGenDeferred, drainGenElements, genDrainViewOf } from "../exec/match-iter.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs } from "../exec/may-throw.ts";
 import { pTrue } from "../pred.ts";
@@ -18,6 +19,7 @@ import { defaultLeakBudget } from "../leak.ts";
 import { emptyEnv } from "../ast-env.ts";
 import { absFunction } from "../abs-fn.ts";
 import { numPrim, boolPrim, peelBrand, noBody, str, mayCoerceThrowOperand } from "./shared.ts";
+import { thenableRiskOf } from "./promise.ts";
 import { isSymbolAbs } from "./symbol.ts";
 
 export function makeArrayCtorAbs(args: Abs[]): Abs {
@@ -179,6 +181,20 @@ function evalArrayFrom(args: Abs[]): Abs {
       if (mi.length === 0) {
         return abs({ k: "arr", element: unknown }, undefined, undefined, "path");
       }
+      // R1b：exact 生成器视图（线性收集序列）→ 逐位映射重组 exact 元组
+      //（越过 TUPLE_LITERAL_CAP——元素序列是权威数据，cap 只约束类型面；
+      // 超大列表退 arr join 保 sound）
+      if (genDrainViewOf(a0)?.exact === true && mi.length <= TUPLE_MATERIALIZE_CAP) {
+        return abs(
+          {
+            k: "tuple",
+            elements: mi.map((el, i) => mapOne(el, numLit(i))),
+          },
+          undefined,
+          undefined,
+          a0.conf,
+        );
+      }
       let el = mapOne(mi[0]!, numLit(0));
       for (let i = 1; i < mi.length; i++) el = joinAbs(el, mapOne(mi[i]!, numLit(i)));
       return abs({ k: "arr", element: el }, undefined, undefined, "path");
@@ -332,18 +348,43 @@ export function evalArrayStatic(name: string, args: Abs[]): Abs | undefined {
       const sync = evalArrayFrom(args);
       const unwrapEl = (el: Abs): Abs =>
         el.shape.k === "eff" && el.shape.eff === "promise" ? el.shape.inner : el;
+      // R3：逐元素 await 的拒绝面（eff 元素 rejected/unsettled 通道在 unwrap
+      // 中丢失 / thenable 风险元素）→ 结果 unsettled
+      const elRisky = (el: Abs): boolean =>
+        (el.shape.k === "eff" &&
+          el.shape.eff === "promise" &&
+          ((el.shape as { rejected?: Abs }).rejected !== undefined ||
+            (el.shape as { unsettled?: boolean }).unsettled === true)) ||
+        thenableRiskOf(el);
+      let risky = sync.shape.k !== "tuple" && sync.shape.k !== "arr" && thenableRiskOf(sync);
+      const noteRisk = (el: Abs): void => {
+        if (elRisky(el)) risky = true;
+      };
+      const mark = (el: Abs): Abs => {
+        noteRisk(el);
+        return unwrapEl(el);
+      };
       const inner =
         sync.shape.k === "tuple"
           ? abs(
-              { k: "tuple", elements: sync.shape.elements.map(unwrapEl) },
+              { k: "tuple", elements: sync.shape.elements.map(mark) },
               undefined,
               undefined,
               "path",
             )
           : sync.shape.k === "arr"
-            ? abs({ k: "arr", element: unwrapEl(sync.shape.element) }, undefined, undefined, "path")
+            ? (noteRisk(sync.shape.element),
+              abs({ k: "arr", element: unwrapEl(sync.shape.element) }, undefined, undefined, "path"))
             : sync;
-      return abs({ k: "eff", eff: "promise", inner }, undefined, undefined, "path");
+      // R2b：fromAsync 每次调用产出新 promise 对象——打新鲜实例标
+      return markFreshInstance(
+        abs(
+          { k: "eff", eff: "promise", inner, ...(risky ? { unsettled: true } : {}) },
+          undefined,
+          undefined,
+          "path",
+        ),
+      );
     }
     default:
       return undefined;

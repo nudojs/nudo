@@ -1149,14 +1149,28 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // finally/catch 覆盖内；finally 体不在自身 finally 覆盖内（外层 ctx
       // 原样）。位值与 runtime/control.ts 的 YIELD_* 常量钉死同步（transpile
       // 不 import runtime）：1 = TRY_FINALLY，2 = TRY_CATCH，4 = FINALLY_
-      // YIELDS，8 = FINALLY_RETURNS
+      // YIELDS，8 = FINALLY_RETURNS，16 = CATCH_RETURNS，32 = CATCH_YIELDS，
+      // 64 = CATCH_RETHROWS
       const fin = stmt.finalizer
         ? finalizerBits(stmt.finalizer as Node)
         : undefined;
       const finBits = stmt.finalizer
         ? 1 | (fin!.yields ? 4 : 0) | (fin!.returns ? 8 : 0)
         : 0;
-      const innerYieldCtx = (opts.yieldTryCtx ?? 0) | finBits | (stmt.handler ? 2 : 0);
+      // R1a：catch 静态事实（finalizerBits 同口径：含 yield / 含 return /
+      // 可能 rethrow）——描述**最近** enclosing catch 的吸收结局，故本 try
+      // 带 handler 时替换外层 catch 事实位（外层 catch 只有在内层重抛后才
+      // 可达，此时结局不可分类 → 64 降级）。内层可能 rethrow 且外层还有
+      // catch → 二次吸收路径外层事实未标注，同样置 64。
+      const catchFacts = stmt.handler
+        ? (() => {
+            const cb = finalizerBits(stmt.handler!.body as Node);
+            const rethrows = catchMayRethrow(stmt.handler!) && ((opts.yieldTryCtx ?? 0) & 2) !== 0;
+            return 2 | (cb.returns ? 16 : 0) | (cb.yields ? 32 : 0) | (rethrows ? 64 : 0);
+          })()
+        : 0;
+      const innerYieldCtx =
+        ((opts.yieldTryCtx ?? 0) & ~(16 | 32 | 64)) | finBits | catchFacts;
       const tryOpts: TranspileOptions = {
         ...opts,
         inTry: (opts.inTry ?? 0) + 1,
@@ -1602,9 +1616,12 @@ export function emitSetterAccessorThunk(
   bodySrc: string,
   aliasNames: readonly string[],
   depth: number,
+  /** N3：setter 形参默认值/解构绑定行（__nudoArgs 槽，见类/对象 setter 发射位） */
+  paramPrologue: string[] = [],
 ): string {
   const pad = indent(depth);
   const lines: string[] = [`(__this, ${vname}) => {`];
+  lines.push(...paramPrologue);
   aliasNames.forEach((n, i) => lines.push(`${pad}const __nab${i} = ${n};`));
   lines.push(`${pad}(() => {`, bodySrc, `${pad}})();`);
   if (aliasNames.length === 1) {
@@ -1751,15 +1768,40 @@ export function classSpecOf(
     if (m.type === "ClassProperty" || m.type === "ClassPrivateProperty") {
       const keyR = keyOf(m.key, m.computed === true);
       if (m.static) {
-        // 静态字段：定义期求值挂类值自有槽（this 近似为模块作用域——既有口径）
+        // R5：静态字段——thunk 以类值为 this 定义期求值（原生
+        // ClassFieldDefinitionEvaluation 的 receiver 是类值，this.x 读写
+        // /箭头捕获随之恢复；$class 建类值后逐槽调用，源序保持）
+        const fieldOpts: TranspileOptions = { ...methodOptsBase };
         const vsrc = m.value
-          ? emitTranspileExpression(m.value as Expression, opts)
+          ? emitTranspileExpression(m.value as Expression, fieldOpts)
           : "$lit(void 0)";
+        // N4：静态字段 thunk 求值于 $class 内——`let C = $class(…)` 尚未
+        // 赋值，类名自由引用命中宿主 TDZ ReferenceError（原生
+        // ClassDefinitionEvaluation 先初始化类体自有词法绑定再跑静态字段
+        // 初始化器，`this === C` 折 true / `C.n` 前序同胞字段可读）。自有
+        // 名类在 thunk 顶部引入同名 let 绑定（值 = 类值 __this）复刻该词法
+        // 绑定：内层参数/具名函数遮蔽、闭包捕获、内嵌类引用外层类名沿生成
+        // 代码词法链免费对齐。用 let 不用 const——`C.q = v` 成员写经
+        // memberPathOf 根重绑（C = $set(C,…)）不得假 TypeError（原生允许）；
+        // 代价是 `C = v` 名字重绑静默通过（原生 TypeError）= 向 sound 侧
+        // 过近似（与模块级 let C 同口径）。匿名类表达式（无自有名）不引入
+        // 绑定：外层名引用保持自由，TDZ 面与原生一致。计算键不在类体绑定
+        // 作用域内（原生求值于绑定初始化前，引用类名原生亦 TDZ）——保持
+        // 裸表达式。静态块/静态方法体求值于类绑定赋值后，无需处理。
+        const selfName = stmt.id?.name;
+        const initSrc = selfName
+          ? [
+              `(__this) => {`,
+              `${indent(depth + 3)}let ${selfName} = __this;`,
+              `${indent(depth + 3)}return ${vsrc};`,
+              `${indent(depth + 2)}}`,
+            ].join("\n")
+          : thunkOf(vsrc, depth + 2);
         if (keyR && "name" in keyR) {
-          staticFieldParts.push(`${indent(depth + 2)}${JSON.stringify(keyR.name)}: ${vsrc},`);
+          staticFieldParts.push(`${indent(depth + 2)}${JSON.stringify(keyR.name)}: ${initSrc},`);
         } else if (keyR && "computed" in keyR) {
           const synth = `__ck${ckSeq++}`;
-          staticFieldParts.push(`${indent(depth + 2)}${JSON.stringify(synth)}: ${vsrc},`);
+          staticFieldParts.push(`${indent(depth + 2)}${JSON.stringify(synth)}: ${initSrc},`);
           computedKeyParts.push(`${indent(depth + 2)}${JSON.stringify(synth)}: ${keyR.computed},`);
         }
         // 无名键（解析异常）：无表达式可发射，跳过
@@ -1824,7 +1866,9 @@ export function classSpecOf(
         const accBodyStmts = emitFnBlockBody(accBody, depth + 3, accBodyOpts, { varParams: accVarParams });
         def.get = `(__this) => {\n${accBodyStmts}\n${indent(depth + 3)}}`;
       } else {
-        const vname = params.length > 0 && params[0] !== "_" ? params[0]! : "__v";
+        const setParams = (m.params ?? []) as Node[];
+        const firstP = setParams[0] as { type?: string; name?: string } | undefined;
+        const vname = firstP?.type === "Identifier" && firstP.name ? firstP.name : "__v";
         // setter thunk：内层箭头丢弃体返回值（恒返回 __this）+ 别名写接收者回收
         // （详见 emitSetterAccessorThunk；F3：裸 return 折 undefined → TypeError，
         // 别名写 + 早退 if 提升被赋值点重绑冲掉 → undefined）
@@ -1833,7 +1877,17 @@ export function classSpecOf(
           varParams: accVarParams,
         });
         const aliasNames = collectForkBindingNames(accBody).filter((n) => !accVarParams.has(n));
-        def.set = emitSetterAccessorThunk(vname, setBody, aliasNames, depth + 3);
+        // N3：setter 形参带默认值/解构——经 __nudoArgs 槽统一绑定（与
+        // emitParamBindingFromArgs 同机制）：原生 `o.s = undefined` 触发默认值
+        //（此前默认值静默丢弃折 undefined），解构 setter 参此前成自由标识符
+        //（折 never）。赋进值以 [__v] 元组入槽，默认表达式以访问器边界
+        // opts（thisParam __this）求值。
+        let setPrologue: string[] = [];
+        if (firstP && firstP.type !== "Identifier") {
+          const bound = emitParamBindingFromArgs(setParams, indent(depth + 4), accBodyOpts, "__nudoArgs");
+          setPrologue = [`${indent(depth + 4)}let __nudoArgs = $arguments([__v]);`, ...bound.prologue];
+        }
+        def.set = emitSetterAccessorThunk(vname, setBody, aliasNames, depth + 3, setPrologue);
       }
       target.set(mname, def);
       if (computedKeySrc) {
@@ -1847,28 +1901,38 @@ export function classSpecOf(
       body: m.body as Node,
       params: m.params as Node[] | undefined,
     });
+    // N3：非简单形参（默认值/解构/rest）与读 arguments 的方法同走
+    // `...__margs` + emitParamBindingFromArgs 统一绑定——paramsOf 只认
+    // Identifier，默认参/解构/rest 形参此前被静默丢弃（宿主签名无名、
+    // prologue 无绑定 → 体引用成自由标识符折 never，或默认值不求值折
+    // undefined）。默认表达式经方法边界 opts 求值：__this（实例 receiver
+    // / R5 静态类值）在作用域内，与原生默认参以调用点 this 求值一致。
+    const mParamsNodes = (m.params ?? []) as Node[];
+    const bindFromArgs =
+      mHasArgs || mParamsNodes.some((p) => (p as { type?: string } | undefined)?.type !== "Identifier");
     const methodOpts: TranspileOptions = {
       ...methodOptsBase,
-      argsBinding: mHasArgs ? "__nudoArgs" : undefined,
+      argsBinding: bindFromArgs ? "__nudoArgs" : undefined,
     };
+    // 静态方法体边界（R5/Bug 14）：默认表达式里的 super.x 也要按
+    // staticSuperSrc 派发——绑定与体共用同一 opts
+    const staticOpts: TranspileOptions = {
+      ...methodOptsBase,
+      argsBinding: bindFromArgs ? "__nudoArgs" : undefined,
+      ...(superSrc !== null ? { staticSuperSrc: superSrc } : {}),
+    };
+    const bindOpts = m.static ? staticOpts : methodOpts;
     let bodyStmts = emitFnBlockBody(
       m.body as Node | undefined,
       depth + 3,
-      m.static
-        ? {
-            ...opts,
-            argsBinding: mHasArgs ? "__nudoArgs" : undefined,
-            // Bug 14：静态方法体 super 接收者 = 父类构造器
-            ...(superSrc !== null ? { staticSuperSrc: superSrc } : {}),
-          }
-        : methodOpts,
-      { implicitReturn: !isCtor, varParams: paramNamesOf((m.params ?? []) as Node[]) },
+      bindOpts,
+      { implicitReturn: !isCtor, varParams: paramNamesOf(mParamsNodes) },
     );
-    if (mHasArgs) {
+    if (bindFromArgs) {
       const bound = emitParamBindingFromArgs(
-        (m.params ?? []) as Node[],
+        mParamsNodes,
         indent(depth + 4),
-        methodOpts,
+        bindOpts,
         "__nudoArgs",
       );
       bodyStmts = [
@@ -1900,7 +1964,8 @@ export function classSpecOf(
     }
     if (m.static) {
       staticMethodParts.push(
-        `${indent(depth + 3)}${JSON.stringify(mname)}: (${mHasArgs ? "...__margs" : paramList}) => {`,
+        // R5：__this 首参 = 类值（接收者）——与实例方法 __this 载体同构
+        `${indent(depth + 3)}${JSON.stringify(mname)}: (__this, ${bindFromArgs ? "...__margs" : paramList}) => {`,
         bodyStmts,
         `${indent(depth + 3)}},`,
       );
@@ -1912,14 +1977,14 @@ export function classSpecOf(
     }
     if (isCtor) {
       ctorParts.push(
-        `${indent(depth + 2)}ctor: (__this, ${mHasArgs ? "...__margs" : paramList}) => {`,
+        `${indent(depth + 2)}ctor: (__this, ${bindFromArgs ? "...__margs" : paramList}) => {`,
         bodyStmts,
         `${indent(depth + 3)}return __this;`,
         `${indent(depth + 2)}},`,
       );
     } else if (m.async) {
       methodParts.push(
-        `${indent(depth + 3)}${JSON.stringify(mname)}: (__this, ${mHasArgs ? "...__margs" : paramList}) => {`,
+        `${indent(depth + 3)}${JSON.stringify(mname)}: (__this, ${bindFromArgs ? "...__margs" : paramList}) => {`,
         `${indent(depth + 4)}return $async(() => {`,
         bodyStmts,
         `${indent(depth + 4)}});`,
@@ -1928,7 +1993,7 @@ export function classSpecOf(
       methodParamEntries.push([mname, paramDisplayNames(m.params)]);
     } else {
       methodParts.push(
-        `${indent(depth + 3)}${JSON.stringify(mname)}: (__this, ${mHasArgs ? "...__margs" : paramList}) => {`,
+        `${indent(depth + 3)}${JSON.stringify(mname)}: (__this, ${bindFromArgs ? "...__margs" : paramList}) => {`,
         bodyStmts,
         `${indent(depth + 3)}},`,
       );

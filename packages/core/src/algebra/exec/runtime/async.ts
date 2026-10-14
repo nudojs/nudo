@@ -11,6 +11,7 @@ import { refineAbsForRelTrue } from "../../arithmetic.ts";
 import { OBJECT_PROTO_METHOD_NAMES, migrateInvariants } from "../../builtins.ts";
 import { accessorTable, migrateAccessors } from "../../accessors.ts";
 import { leqAbs } from "../../leq.ts";
+import { markFreshInstance } from "../../instance-id.ts";
 import { absFunction, getFnImpl } from "../../abs-fn.ts";
 import { isNullishLitAbs, definitelyNotNullishShape, typeofName } from "../../surface.ts";
 import {
@@ -19,13 +20,14 @@ import {
   isNudoReturn, isNudoBreak, isNudoContinue,
 } from "./state.ts";
 import { pushMayThrowFrame, popMayThrowFrame, recordMayThrow, throwPayloadOf, type MayThrowEffect } from "../may-throw.ts";
-import { registerGenElements, registerGenDeferred, registerGenDrain, type GenDeferred } from "../match-iter.ts";
+import { registerGenElements, registerGenDeferred, registerGenDrain, genDrainViewOf, type GenDeferred } from "../match-iter.ts";
 import { $unknown, $eq, $ne, $add, $typeof, $not, $lt, $le, $gt, $ge, $join } from "./ops.ts";
 import {
   yieldStack, genPathSensitive, genJoinOverride, mergeArmYields,
   withIsolatedYields, runForkArm, type ForkArm, type GenYieldCollector,
   setGenJoinOverride, bumpGenPathSensitive,
   YIELD_TRY_FINALLY, YIELD_TRY_CATCH, YIELD_FINALLY_YIELDS, YIELD_FINALLY_RETURNS,
+  YIELD_CATCH_YIELDS, YIELD_CATCH_RETHROWS, YIELD_DELEGATED_GEN,
 } from "./control.ts";
 import { beginCollectionFork, endCollectionFork, popCollectionArm, pushCollectionArm } from "../../collections.ts";
 import { $arr, $yieldStarElems } from "./containers.ts";
@@ -33,11 +35,15 @@ import { loopExitsAls } from "./state.ts";
 
 export function wrapPromiseAbs(inner: Abs): Abs {
   inner = asAbsVal(inner);
-  return abs(
-    { k: "eff", eff: "promise", inner },
-    undefined,
-    undefined,
-    confJoin(inner.conf, "path"),
+  // R2b：async 调用每次产出新 promise 对象——打新鲜实例标（=== 按
+  // 创建事件折 false；别名传播复用同一 Abs 引用不受影响）
+  return markFreshInstance(
+    abs(
+      { k: "eff", eff: "promise", inner },
+      undefined,
+      undefined,
+      confJoin(inner.conf, "path"),
+    ),
   );
 }
 
@@ -59,11 +65,14 @@ export function $async(thunk: () => Abs): Abs {
     return wrapPromiseAbs(r);
   } catch (e) {
     if (isNudoThrow(e)) {
-      return abs(
-        { k: "eff", eff: "promise", inner: never, rejected: e.absValue },
-        undefined,
-        undefined,
-        "path",
+      // R2b：确定拒绝的 promise 同为新鲜实例（每次调用新对象）
+      return markFreshInstance(
+        abs(
+          { k: "eff", eff: "promise", inner: never, rejected: e.absValue },
+          undefined,
+          undefined,
+          "path",
+        ),
       );
     }
     throw e;
@@ -147,15 +156,21 @@ function genIterResult(value: Abs, done: boolean): Abs {
  * 时同步收缩；迭代消费（spread/for-of/…）经 registerGenDrain 排空——
  * 消费后生成器 done（native 迭代协议耗尽语义）。
  * Bug 52：`ctxs[i]` = 第 i 个 yield 点的 try 上下文位（YIELD_TRY_FINALLY /
- * YIELD_TRY_CATCH + finalizer 静态事实 YIELD_FINALLY_YIELDS/RETURNS）。
+ * YIELD_TRY_CATCH + finalizer 静态事实 YIELD_FINALLY_YIELDS/RETURNS + R1a
+ * catch 静态事实 YIELD_CATCH_RETURNS/YIELDS/RETHROWS）。
  * eager 快照模型下无挂起帧可恢复：.return(v) 挂在 try/finally 内的 yield
  * 上时按 finalizer 事实分级——仅副作用 → v 精确透传；含 return → 值并
  * unknown（done 恒 true）；含 yield → 值并 unknown 且 done 并 boolean、
  * 续体不可判（poisoned）。.throw(e) 挂在 try/catch 内的 yield 上时被吸收
  * （catch 体收集期未执行、续体不可判）→ {value: unknown, done: boolean}
- * + may-throw（catch 可重抛），不再定值抛出；无 finally/catch 的挂起点
- * 保持原生精确（.return(v) → v，.throw(e) → 抛 e）。poisoned 后 next()
+ * + may-throw（catch 可重抛），不再定值抛出；R1a：catch 事实 + 收集序列
+ * 可判「吸收必完成」（catch 无 yield、重抛不被外层 catch 二次吸收、挂起点
+ * 后无剩余 yield）时 done 折 true（值域保持 unknown）；无 finally/catch 的
+ * 挂起点保持原生精确（.return(v) → v，.throw(e) → 抛 e）。poisoned 后 next()
  * 给 {value: unknown, done: boolean}。
+ * R1b：exact = 收集序列是线性（非路径敏感）——drain 视图带 exact 位，
+ * 消费端（spread/Array.from/解构 rest）重组数组时越 TUPLE_LITERAL_CAP
+ * 出 exact 元组（形状面 widened 的 els 槽不受影响）。
  */
 function makeGenObject(
   els: Abs[],
@@ -164,6 +179,7 @@ function makeGenObject(
   deferred: GenDeferred | undefined,
   full: Abs[],
   ctxs: number[],
+  exact = false,
 ): Abs {
   const state = { i: 0, done: false, poisoned: false };
   const live: Abs[] = [...full];
@@ -219,14 +235,28 @@ function makeGenObject(
     const ctx = suspendedCtx();
     state.done = true;
     if (ctx & YIELD_TRY_CATCH) {
-      // 注入异常被 catch 吸收——catch 体在 eager 收集期未执行（无注入源），
-      // 吸收后续体不可判：结果 {value: unknown, done: boolean}；catch 重抛
-      // 面记 may-throw（不给出定值抛出）
-      state.poisoned = true;
+      // 注入异常被 catch 吸收——catch 体在 eager 收集期未执行（无注入源）。
+      // catch 重抛面恒记 may-throw（不给出定值抛出）。
       recordMayThrow({
         kind: "Error",
         cause: "generator .throw() into try/catch — unexecuted catch body may rethrow",
       });
+      // R1a：catch 静态事实（transpile 标注位）+ 收集序列分类吸收结局——
+      // catch 体不含 yield 且可能重抛只进无 catch 外层（64 未置）、挂起点
+      // 后无剩余已收集 yield（线性序列尾）、非 yield* 委托进生成器对象
+      //（128：.throw 转发进内层，内层 catch 吸收后续体不可分类）⇒ 吸收必
+      // 完成生成器（catch return / fallthrough 跑到体末 / 重抛→may-throw
+      // 已记）：done 折 true；值域保持 unknown（catch 体未执行，return
+      // 表达式不可判）。其余（catch 含 yield 可再交付 / 重抛可被外层 catch
+      // 二次吸收 / 挂起点后还有 yield 会续体 / 生成器委托）→ 布尔域 + poisoned。
+      const catchYields = (ctx & YIELD_CATCH_YIELDS) !== 0;
+      const rethrowsIntoCatch = (ctx & YIELD_CATCH_RETHROWS) !== 0;
+      const delegatedGen = (ctx & YIELD_DELEGATED_GEN) !== 0;
+      const remaining = full.length - state.i;
+      if (!catchYields && !rethrowsIntoCatch && !delegatedGen && remaining <= 0) {
+        return genIterResult(unknown, true);
+      }
+      state.poisoned = true;
       return iterResultUnknown();
     }
     throw new NudoThrow(e);
@@ -253,9 +283,11 @@ function makeGenObject(
     },
     peek: (i: number): Abs | undefined => (i < live.length ? live[i] : undef()),
     peekAll: (): Abs[] => [...live],
+    exact,
   });
   if (deferred) registerGenDeferred(g, deferred);
-  return g;
+  // R2b：每次 gen() 调用产出新生成器对象——打新鲜实例标
+  return markFreshInstance(g);
 }
 
 /** function* 体：收集所有 yield 值；返回带迭代器协议面的生成器对象 Abs；
@@ -327,6 +359,7 @@ export function $gen(body: () => Abs): Abs {
       deferred,
       ys.els,
       ctxs,
+      false,
     );
   }
   setGenJoinOverride(prevOverride);
@@ -341,9 +374,12 @@ export function $gen(body: () => Abs): Abs {
       deferred,
       ys.els,
       ctxs,
+      false,
     );
   }
-  return makeGenObject(els, arr.conf, ret, deferred, ys.els, ctxs);
+  // R1b：线性收集（非路径敏感）→ drain 视图 exact：消费端重组数组可越过
+  // TUPLE_LITERAL_CAP 出 exact 元组（路径敏感拼接序列不可，退 widened arr）
+  return makeGenObject(els, arr.conf, ret, deferred, ys.els, ctxs, true);
 }
 
 /** yield v：压入当前生成器收集器；表达式值用 unknown。
@@ -372,7 +408,12 @@ export function $yieldStar(v: unknown, tryCtx = 0): Abs {
   const top = yieldStack[yieldStack.length - 1];
   if (top) {
     top.els.push(...els);
-    for (let i = 0; i < els.length; i++) top.ctxs.push(tryCtx);
+    // R1a：委托进生成器对象的 yield 点标 YIELD_DELEGATED_GEN——.throw()
+    // 原生转发进内层迭代器，内层 catch 吸收后续体（可再交付）外层不可
+    // 分类 → makeGenObject 吸收结局不折 done（数组等无 throw() 内层回注
+    // 外层帧，可折，不标）
+    const ctx = tryCtx | (genDrainViewOf(a) !== undefined ? YIELD_DELEGATED_GEN : 0);
+    for (let i = 0; i < els.length; i++) top.ctxs.push(ctx);
     if (!lengthKnown) bumpGenPathSensitive();
   }
   return unknown;

@@ -67,7 +67,17 @@ export type Shape =
   // rejected（Bug 36）：promise 的拒绝通道——携带已知拒绝 reason。inner 为
   // never 时表示确定拒绝（fulfilled 臂不可能）；inner 非 never 时两臂均可能
   //（executor fork 一臂 resolve 一臂 reject）。generator 不使用该槽。
-  | { k: "eff"; eff: "promise" | "generator"; inner: Abs; rejected?: Abs }
+  // unsettled（R3）：settle 态未知——引擎未建模的 settle 面（外部 promise /
+  // 未知 thenable 采纳 / withResolvers 未捕获 resolve / import() 加载失败）。
+  // 无该标记且无 rejected 通道 = 确定 fulfilled（catch/then 的 onRejected
+  // 原生死代码，R3a 直通）。展示/态信息，不进 leq / 指纹。
+  | {
+      k: "eff";
+      eff: "promise" | "generator";
+      inner: Abs;
+      rejected?: Abs;
+      unsettled?: boolean;
+    }
   | { k: "sum"; members: Abs[] };
 
 export type Abs = {

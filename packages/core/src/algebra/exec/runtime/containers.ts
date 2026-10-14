@@ -18,7 +18,7 @@ import {
 } from "../../collections.ts";
 import { shouldWidenArrayLiteral, widenedArrayConf, TUPLE_MATERIALIZE_CAP } from "../../containers.ts";
 import { TYPED_ARRAY_ELEMENT } from "../../builtins/shared.ts";
-import { registerMatchIter, registerTplElements, matchIterElements, replayGenDeferred, drainGenElements, hasGenView, peekGenElement, peekAllGenElements, proxyPartsOf, proxyTrapOf } from "../match-iter.ts";
+import { registerMatchIter, registerTplElements, matchIterElements, replayGenDeferred, drainGenElements, genDrainViewOf, hasGenView, peekGenElement, peekAllGenElements, proxyPartsOf, proxyTrapOf } from "../match-iter.ts";
 import {
   evalNamespaceCall, extStateOf, getPropFlags, setPropFlags, migrateInvariants, enumOwnKeys,
   regexBrandAbsFrom, evalObjectProtoMethod, objectProtoMethodAbs,
@@ -41,15 +41,16 @@ import {
   ARRAY_PROTO_METHOD_NAMES,
 } from "../member-diag.ts";
 import { errorTypeAbs, recordMayThrow, type MayThrowEffect } from "../may-throw.ts";
-import { getEvalClass, classInstanceInnerOf } from "../class-registry.ts";
+import { getEvalClass, classInstanceInnerOf, lookupClassValue } from "../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../class-mark.ts";
+import { markFreshInstance } from "../../instance-id.ts";
 import {
   NudoThrow, undef, oobUndef, isOobUndef, throwStrictWrite, writeInPlace, clearStaleTermPred,
   asAbsVal, $lit, litTruth, isDefinitelyTrue, isDefinitelyFalse, currentExecPhi,
   isNudoReturn, isNudoBreak, isNudoContinue, $fnVal, $rawThis, noBody, confPartialPacked,
 } from "./state.ts";
 import { $unknown, $toNumber, $eq, $ne, $typeof, $add, $sub } from "./ops.ts";
-import { findClassAccessor, findStaticClassAccessor, $in, $instanceof, $del, BUILTIN_BRAND_METHODS, BUILTIN_BRAND_ACCESSORS, ITERABLE_BRANDS, evalClassChain } from "./members.ts";
+import { findClassAccessor, findStaticClassAccessor, $in, $instanceof, $del, BUILTIN_BRAND_METHODS, BUILTIN_BRAND_ACCESSORS, ITERABLE_BRANDS, evalClassChain, builtinSuperCtorOf } from "./members.ts";
 import { lookupObjAccessor, migrateAccessors, $objAccessor, accessorTable } from "../../accessors.ts";
 import { copyMatchIterTables } from "../match-iter.ts";
 import { DEFAULT_MAX_LOOP_ITERS, MAX_CONCRETE_LOOP_ITERS, LOOP_TRUNCATION_LABEL } from "./loop-budget.ts";
@@ -149,9 +150,24 @@ export function tupleOrWiden(els: Abs[], conf: Confidence): Abs {
   return abs({ k: "tuple", elements: els }, undefined, undefined, conf);
 }
 
+/**
+ * R1b：生成器 drain 列表重组数组——exact 视图（makeGenObject 注册的线性
+ * 收集序列）时元素序列是权威数据（Bug 53 ys.els），越过 TUPLE_LITERAL_CAP
+ * 出 exact 元组（cap 只约束字面量/拼接的类型面）；仅超大列表
+ * （> TUPLE_MATERIALIZE_CAP）退 arr join（sound 上界）。非 exact（路径
+ * 敏感拼接序列）→ tupleOrWiden 原口径（widened arr）。
+ */
+function drainTupleOrWiden(els: Abs[], conf: Confidence, exact: boolean): Abs {
+  if (exact && els.length <= TUPLE_MATERIALIZE_CAP) {
+    return abs({ k: "tuple", elements: els }, undefined, undefined, conf);
+  }
+  return tupleOrWiden(els, conf);
+}
+
 /** 数组字面量 → ≤cap tuple（逐元素精确）/ >cap arr；策略与 containers.ts 同源 */
 export function $arr(items: Abs[]): Abs {
-  return tupleOrWiden(items.map(asAbsVal), "exact");
+  // R2b：每次字面量求值产出新数组对象——打新鲜实例标（=== 折 false）
+  return markFreshInstance(tupleOrWiden(items.map(asAbsVal), "exact"));
 }
 
 /**
@@ -1292,7 +1308,8 @@ export function $obj(slots: Record<string, Abs>): Abs {
   for (const k of Object.keys(slots)) {
     setSlot(s, k, { value: asAbsVal(slots[k]!) });
   }
-  return objOf(s);
+  // R2b：每次字面量求值产出新对象——打新鲜实例标（=== 折 false）
+  return markFreshInstance(objOf(s));
 }
 
 /**
@@ -1435,15 +1452,23 @@ export function $arrRest(a: Abs, start: number): Abs {
   // Bug 54：解构是消费——从生成器当前位取剩余再切（此后生成器耗尽）
   const mi = matchIterElements(a);
   if (mi) {
+    // R1b：exact 生成器视图（线性收集序列）→ 切片越过 cap 出 exact 元组
+    const exact = genDrainViewOf(a)?.exact === true;
     const sliced = (drainGenElements(a) ?? mi).slice(start);
     if (sliced.length === 0) return abs({ k: "arr", element: unknown }, undefined, undefined, "path");
-    if (shouldWidenArrayLiteral(sliced.length)) {
+    if ((!exact || sliced.length > TUPLE_MATERIALIZE_CAP) && shouldWidenArrayLiteral(sliced.length)) {
       const element = sliced.reduce((x, y) => joinAbs(x, y));
       return abs({ k: "arr", element }, undefined, undefined, widenedArrayConf());
     }
     return abs({ k: "tuple", elements: sliced }, undefined, undefined, a.conf);
   }
   a = asAbsVal(a);
+  // Bug 56/N3：Arguments brand → 委托 tuple 内层——方法形参 rest 绑定
+  //（emitParamBindingFromArgs 的 $arrRest 读 $arguments 槽）此前落尾
+  // unknown（rest 形参在「读 arguments 的方法」里同样丢精度）
+  if (a.shape.k === "brand" && a.shape.name === "Arguments") {
+    return $arrRest(a.shape.shape, start);
+  }
   if (a.shape.k === "sum") {
     // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce
     const parts = a.shape.members.map((m) => $arrRest(m, start));
@@ -1578,7 +1603,12 @@ export function $concat(a: Abs, b: Abs): Abs {
   if (as.k === "tuple") {
     const be = expand(b);
     if (be) {
-      return tupleOrWiden([...as.elements, ...be], confJoin(a.conf, b.conf));
+      // R1b：exact 生成器视图（线性收集序列）→ 重组越过 cap 出 exact 元组
+      return drainTupleOrWiden(
+        [...as.elements, ...be],
+        confJoin(a.conf, b.conf),
+        genDrainViewOf(b)?.exact === true,
+      );
     }
     // b 可能可迭代：spread 并入的是 b 的元素而非 b 本身。
     // any 的元素域是 any（无约束），不是 unknown（引擎债）。
@@ -1592,7 +1622,12 @@ export function $concat(a: Abs, b: Abs): Abs {
   }
   const ae = expand(a);
   if (ae && bs.k === "tuple") {
-    return tupleOrWiden([...ae, ...bs.elements], confJoin(a.conf, b.conf));
+    // R1b：同上——[...g()] 的元素域来自 drain 的权威序列，不受形状面 cap
+    return drainTupleOrWiden(
+      [...ae, ...bs.elements],
+      confJoin(a.conf, b.conf),
+      genDrainViewOf(a)?.exact === true,
+    );
   }
   // 双侧皆非精确容器：元素 join（any → any；空 tuple 不贡献元素）
   return abs(
@@ -1759,13 +1794,16 @@ export function $yieldStarElems(a: Abs): { els: Abs[]; lengthKnown: boolean } {
   }
   const els = $elems(a);
   const s = a.shape;
+  // R1b：exact 生成器视图（线性收集序列）长度可知——yield* 委托并出的
+  // 元素序列是权威列表，不 bumpGenPathSensitive（外层生成器保持 exact）
   const lengthKnown =
     s.k === "tuple" ||
     s.k === "never" ||
     (s.k === "prim" && s.type === "string") ||
     isSetAbs(a) ||
     isMapAbs(a) ||
-    matchIterElements(a) !== undefined;
+    matchIterElements(a) !== undefined ||
+    genDrainViewOf(a)?.exact === true;
   return { els, lengthKnown };
 }
 
@@ -2408,11 +2446,28 @@ export function $get(
       // 类值上读实例访问器键 → 原生 undefined
       if (findClassAccessor(o.shape.name, key)) return undef();
       // 静态方法一等读取（typeof A.m / 高阶传递）：沿继承链在 registry 找
-      // 未调用方法槽带 AST 形参展示名（不再假零参）
-      for (const n of evalClassChain(o.shape.name)) {
-        const spec = getEvalClass(n);
-        if (spec?.staticMethods?.[key]) {
-          return absFunction(spec.staticMethodParams?.[key] ?? [], { body: noBody }, { ctor: false });
+      // 未调用方法槽带 AST 形参展示名（不再假零参）。
+      // N2：同级补祖先类值自有槽——继承静态字段（B.x ← A 的 static x）与
+      // 动态写（A.y = …）：原生静态成员挂构造器 [[Prototype]] 链
+      // （B.__proto__ = A），own 槽（上方）优先后逐级上溯；取**同一 Abs
+      // 引用**（B.x === A.x 恒等保持）。name/length/prototype 是每个函数
+      // 的自有属性——不经链继承。
+      if (key !== "name" && key !== "length" && key !== "prototype") {
+        let level = 0;
+        for (const n of evalClassChain(o.shape.name)) {
+          const spec = getEvalClass(n);
+          if (spec?.staticMethods?.[key]) {
+            return absFunction(spec.staticMethodParams?.[key] ?? [], { body: noBody }, { ctor: false });
+          }
+          if (level++ > 0) {
+            const anc = lookupClassValue(n);
+            const ancInner = anc && anc.shape.k === "brand" ? anc.shape.shape : undefined;
+            if (ancInner?.shape.k === "obj") {
+              const slot = getSlot(ancInner.shape.slots, key);
+              if (slot && !slot.optional) return slot.value;
+            }
+            if (!spec) break; // 链洞：槽面止步（宿主通道在下方）
+          }
         }
       }
       // 类值是 constructor 函数：prototype 对象与 Function.prototype 成员
@@ -2424,6 +2479,16 @@ export function $get(
       }
       if (key === "call" || key === "apply" || key === "bind") {
         return absFunction([], { body: noBody }, { ctor: false });
+      }
+      // N2：内建父构造器静态读（B extends Object → B.keys / E extends Error →
+      // E.captureStackTrace）：宿主静态通道（$get 的 namespace 投影 / 宿主
+      // 真值）。仅 superBuiltinHost 标记放行（真实宿主 extends；mock 同名
+      // 父类无通道 → 落下方 unknown，不折 undefined）。name/length/prototype/
+      // constructor 是每函数自有/共享面——不经链继承（排除；constructor 保
+      // 留既有 ctorNameOfRecv 折叠口径）。
+      if (key !== "name" && key !== "length" && key !== "prototype" && key !== "constructor") {
+        const sup = builtinSuperCtorOf(o.shape.name);
+        if (sup) return $get(sup.host as Abs, key, opts);
       }
     } else {
       const acc = findClassAccessor(o.shape.name, key);

@@ -245,7 +245,7 @@ function padOmittedArgs(
 export function $fnVal(
   params: string[],
   impl: (...args: Abs[]) => Abs,
-  opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean },
+  opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean },
 ): Abs {
   const argsOf =
     opts?.padArgs === false
@@ -268,6 +268,7 @@ export function $fnVal(
             ),
       ...(opts?.bindThis ? { bindThis: true } : {}),
       ...(opts?.effectFree ? { effectFree: true } : {}),
+      ...(opts?.closed ? { closed: true } : {}),
     },
     {
       ...(opts?.ctor !== undefined ? { ctor: opts.ctor } : {}),

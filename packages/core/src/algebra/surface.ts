@@ -8,6 +8,7 @@ import { abs, litValue, confJoin, num, numLit, bool, boolLit, strLit, bigintLit,
 import { classNameOfValue } from "./class-mark.ts";
 import { builtinCtorNameOf, hostBuiltinCtorName } from "./builtins.ts";
 import { symbolIdOf, isSymbolAbs as isSym, isAbstractKeySymbol } from "./symbol-id.ts";
+import { freshInstanceIdOf } from "./instance-id.ts";
 import type { LiteralValue, Term } from "./term.ts";
 import { lit, simplifyTerm, app } from "./term.ts";
 import type { Pred } from "./pred.ts";
@@ -677,6 +678,16 @@ export function strictEqAbs(a: Abs, b: Abs): boolean | undefined {
     const aCtor = a.shape.ctor === true;
     const bCtor = b.shape.ctor === true;
     if (aCtor !== bCtor) return false;
+  }
+  // 新鲜实例身份（R2b）：两个不同创建事件产出的对象值（async 调用 /
+  // Promise.resolve 各自的 promise、生成器/迭代器对象、new 实例、字面量
+  // 对象/数组）原生引用必不同 → false。同创建事件的别名/采纳复用同一
+  // Abs 引用（上方同 ref / 同 var 已折 true，id 相同不入此臂）；任一侧
+  // 未打标（join 产物 / 重包装 / 宿主对象）不折，维持 unknown。
+  {
+    const fa = freshInstanceIdOf(a);
+    const fb = freshInstanceIdOf(b);
+    if (fa !== undefined && fb !== undefined && fa !== fb) return false;
   }
   return undefined;
 }

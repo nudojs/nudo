@@ -28,7 +28,7 @@ import {
 } from "./state.ts";
 import { $unknown, $eq, $ne, $lt, $le, $gt, $ge, $add, $sub, $typeof, $not } from "./ops.ts";
 import { $arr } from "./containers.ts";
-import { notePromiseExecutorFork } from "../../builtins.ts";
+import { notePromiseExecutorFork, enterPromiseForkArm, leavePromiseForkArm } from "../../builtins.ts";
 import { falseConstraint } from "../../arithmetic.ts";
 import { leqAbs } from "../../leq.ts";
 
@@ -57,12 +57,25 @@ export interface GenYieldCollector {
 /** yield 点 try 上下文位（Bug 52）：1 = 外层任一 try 带 finally；2 = 外层任一
  *  try 带 catch。finalizer 静态事实（.transpile 标注）：4 = 最近 finalizer 含
  *  yield/yield*（.return 后可再交付 → done 并 boolean）；8 = 最近 finalizer
- *  含 return（.return 注入值可被覆盖 → 值并 unknown）。transpile 侧以数值
- *  字面量发射。 */
+ *  含 return（.return 注入值可被覆盖 → 值并 unknown）。
+ *  catch 静态事实（R1a，最近 enclosing catch）：16 = catch 体含 return
+ *  （吸收后完成）；32 = catch 体含 yield/yield*（吸收后续体可再交付）；
+ *  64 = catch 体可能 rethrow 且外层还有 catch（吸收结局不可静态分类——
+ *  内层重抛会被外层 catch 二次吸收，外层 catch 事实未标注）。
+ *  transpile 侧以数值字面量发射。 */
 export const YIELD_TRY_FINALLY = 1;
 export const YIELD_TRY_CATCH = 2;
 export const YIELD_FINALLY_YIELDS = 4;
 export const YIELD_FINALLY_RETURNS = 8;
+export const YIELD_CATCH_RETURNS = 16;
+export const YIELD_CATCH_YIELDS = 32;
+export const YIELD_CATCH_RETHROWS = 64;
+/** R1a：yield* 委托进**生成器对象**的 yield 点位（$yieldStar 运行时标注，
+ *  非 transpile）：.throw() 原生转发进内层迭代器——内层 catch 吸收后续体
+ *  （可再交付）超出外层 ctx 可分类面 → 吸收结局不可折 done。数组/字符串
+ *  等无 throw() 方法的内层：原生 TypeError 回注外层帧 → 外层 catch 吸收
+ *  （可折），不置位。 */
+export const YIELD_DELEGATED_GEN = 128;
 
 /** 生成器 yield 收集：抽象分支时标记路径敏感，禁止 exact 元组出货 */
 export let yieldStack: GenYieldCollector[] = [];
@@ -109,6 +122,10 @@ export function mergeArmYields(armYsList: Array<GenYieldCollector | null>): void
 }
 
 export function runForkArm(arm: () => Abs): ForkArm {
+  // N1：fork 臂 = 替代路径——promise executor 内各臂的 settle（resolve/
+  // reject）按臂路径 token 判定 first-wins（兄弟臂 settle 均活，见
+  // evalPromiseCtor）；executor 外零开销（enter 内部门闩）。
+  enterPromiseForkArm();
   try {
     return { kind: "val", v: asAbsVal(arm()) };
   } catch (e) {
@@ -120,6 +137,8 @@ export function runForkArm(arm: () => Abs): ForkArm {
       return { kind: "throw", v: e.absValue };
     }
     throw e;
+  } finally {
+    leavePromiseForkArm();
   }
 }
 

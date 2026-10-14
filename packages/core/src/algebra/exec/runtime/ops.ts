@@ -13,6 +13,7 @@ import {
   toNumericAbs, updateAddAbs, updateSubAbs,
 } from "../../surface.ts";
 import { joinAbs } from "../../objects.ts";
+import { markFreshInstance } from "../../instance-id.ts";
 import { asAbsVal, currentExecPhi, currentAssumePremises, $lit, litTruth, isDefinitelyTrue, isDefinitelyFalse, noBody, undef, throwStrictWrite, NudoThrow } from "./state.ts";
 
 
@@ -44,7 +45,11 @@ export function $dynamicImport(_spec: Abs): Abs {
     undefined,
     "path",
   );
-  return abs({ k: "eff", eff: "promise", inner: ns }, undefined, undefined, "path");
+  // R2b：每次 import() 调用产出新 promise 对象——打新鲜实例标
+  // R3：模块加载可能失败（native rejection 面）→ unsettled（catch 臂保持活）
+  return markFreshInstance(
+    abs({ k: "eff", eff: "promise", inner: ns, unsettled: true }, undefined, undefined, "path"),
+  );
 }
 
 export function $add(a: Abs, b: Abs): Abs {

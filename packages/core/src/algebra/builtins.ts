@@ -41,6 +41,8 @@ export {
   enterPromiseExecutorScope,
   leavePromiseExecutorScope,
   notePromiseExecutorFork,
+  enterPromiseForkArm,
+  leavePromiseForkArm,
   queuePromiseMicro,
   drainPromiseMicros,
   getPromiseMicrosLength,

@@ -94,7 +94,7 @@ export function finalizerBits(node: Node): { yields: boolean; returns: boolean }
       }
     }
   };
-  walk(node);
+    walk(node);
   return { yields, returns };
 }
 
@@ -253,10 +253,149 @@ export function fnBodyIsEffectFree(fn: { body?: Node | null; params?: Node[] }):
   return !dirty;
 }
 
+/**
+ * R3：函数体「封闭」保守静态判定（transpile 侧 facet，与 effectFree 同族；
+ * 二者合取才允许 promise then/catch 同步执行回调）。
+ * closed = 执行面（形参默认值 + 体，嵌套函数体不下降——执行必有 Call，
+ * effectFree 已脏）上所有标识符引用只绑定：自身形参 / 体内声明 /
+ * 纯全局白名单。脏标记（宁可漏判封闭）：
+ * - ThisExpression / Super / MetaProperty（new.target：this/元面不可封闭）；
+ * - `arguments`（非箭头自有 arguments 面保守脏）；
+ * - 非白名单自由标识符（外层可变态读取——同步执行会读到 drain 前旧值）。
+ * 声明面（var/let/const/函数/类/catch 形参）在下降前收进 bound 集；
+ * 非计算属性键 / 成员属性名 / label 不是引用，不检查。
+ */
+const CLOSED_GLOBAL_NAMES = new Set<string>([
+  "undefined", "NaN", "Infinity",
+  "Math", "JSON",
+  "Promise",
+  ...SAFE_CTOR_NAMES,
+]);
+
+export function fnBodyIsClosed(fn: { body?: Node | null; params?: Node[] }): boolean {
+  const body = fn.body;
+  if (!body) return false;
+  const bound = new Set<string>();
+  const seen = new Set<Node>();
+  let dirty = false;
+
+  // 绑定模式（形参 / 声明 id / catch 形参）递归收名；默认值表达式照走读检查
+  const bindPattern = (p: Node | null | undefined): void => {
+    if (!p || typeof p !== "object") return;
+    switch (p.type) {
+      case "Identifier":
+        bound.add((p as unknown as { name: string }).name);
+        return;
+      case "AssignmentPattern": {
+        const q = p as unknown as { left: Node; right: Node };
+        bindPattern(q.left);
+        walk(q.right);
+        return;
+      }
+      case "RestElement":
+        bindPattern((p as unknown as { argument: Node }).argument);
+        return;
+      case "ObjectPattern":
+        for (const prop of (p as unknown as { properties: Node[] }).properties) {
+          if (prop.type === "RestElement") {
+            bindPattern(prop);
+          } else if (prop.type === "ObjectProperty") {
+            const q = prop as unknown as { key: Node; value: Node; computed: boolean };
+            if (q.computed) walk(q.key); // 计算键是引用面（`{[x]: v}` 读 x）
+            bindPattern(q.value);
+          }
+        }
+        return;
+      case "ArrayPattern":
+        for (const el of (p as unknown as { elements: (Node | null)[] }).elements) {
+          bindPattern(el);
+        }
+        return;
+      default:
+        return;
+    }
+  };
+
+  const checkRef = (n: Node): void => {
+    const name = (n as unknown as { name: string }).name;
+    if (!bound.has(name) && !CLOSED_GLOBAL_NAMES.has(name)) dirty = true;
+  };
+
+  const walk = (n: Node | null | undefined): void => {
+    if (dirty || !n || typeof n !== "object") return;
+    switch (n.type) {
+      case "Identifier":
+        checkRef(n);
+        return;
+      case "ThisExpression":
+      case "Super":
+      case "MetaProperty":
+        dirty = true;
+        return;
+      // 嵌套函数体不执行（effectFree 已保证）；名也不绑定外层读
+      case "FunctionDeclaration":
+      case "FunctionExpression":
+      case "ArrowFunctionExpression":
+      case "ObjectMethod":
+      case "ClassMethod":
+      case "ClassExpression":
+      case "ClassDeclaration":
+        return;
+      case "VariableDeclarator": {
+        const q = n as unknown as { id: Node; init: Node | null };
+        bindPattern(q.id);
+        walk(q.init);
+        return;
+      }
+      case "CatchClause": {
+        const q = n as unknown as { param: Node | null; body: Node };
+        bindPattern(q.param);
+        walk(q.body);
+        return;
+      }
+      case "LabeledStatement":
+        walk((n as unknown as { body: Node }).body);
+        return;
+      case "BreakStatement":
+      case "ContinueStatement":
+        return; // label 非引用
+      case "MemberExpression":
+      case "OptionalMemberExpression": {
+        const q = n as unknown as { object: Node; property: Node; computed: boolean };
+        walk(q.object);
+        if (q.computed) walk(q.property);
+        return;
+      }
+      case "ObjectProperty": {
+        const q = n as unknown as { key: Node; value: Node; computed: boolean };
+        if (q.computed) walk(q.key);
+        walk(q.value);
+        return;
+      }
+      default:
+        break;
+    }
+    if (seen.has(n)) return;
+    seen.add(n);
+    for (const [k, v] of Object.entries(n)) {
+      if (k === "loc" || k === "start" || k === "end" || k === "leadingComments" || k === "trailingComments") continue;
+      if (Array.isArray(v)) {
+        for (const item of v) {
+          if (item && typeof item === "object" && "type" in (item as object)) walk(item as Node);
+        }
+      } else if (v && typeof v === "object" && "type" in (v as object)) {
+        walk(v as Node);
+      }
+    }
+  };
+  for (const p of fn.params ?? []) bindPattern(p);
+  walk(body);
+  return !dirty;
+}
+
 export function normWs(s: string): string {
   return s.replace(/\s+/g, "");
 }
-
 
 export function matchReplacement(node: Node, opts: TranspileOptions): string | null {
   if (!opts.source || !opts.replacements?.length) return null;

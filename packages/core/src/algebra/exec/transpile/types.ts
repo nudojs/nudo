@@ -50,7 +50,9 @@ export type TranspileOptions = {
   tryRethrowCatch?: boolean;
   /** yield 点 try 上下文位（Bug 52）：进入 try 块/catch 体时按位 OR——
    *  1 = 外层任一 try 带 finally，2 = 外层任一 try 带 catch（数值与
-   *  runtime/control.ts 的 YIELD_TRY_FINALLY / YIELD_TRY_CATCH 同步）。
+   *  runtime/control.ts 的 YIELD_TRY_FINALLY / YIELD_TRY_CATCH 同步）；
+   *  R1a catch 事实位（16/32/64）描述**最近** enclosing catch：16 = 含
+   *  return，32 = 含 yield，64 = 可能 rethrow 进外层 catch（结局不可分类）。
    *  发射为 $yield/$yieldStar 第二实参；函数/方法体边界重置为 0。 */
   yieldTryCtx?: number;
   /** 分支/循环体内深度（赋值记录 conditional 标记；inLoop 也计入） */

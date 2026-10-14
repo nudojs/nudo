@@ -74,13 +74,12 @@ describe("BUG-013 promise micro queue", () => {
   it("drain-time callback errors are recorded, not silently swallowed", () => {
     const seen: string[] = [];
     setAbsTruncationCollector((l) => seen.push(l));
-    const run = runTranspiled(
-      `export function f() {
-        return Promise.resolve(1).then((x) => { throw new Error("boom"); });
-      }`,
-      { mode: "analyze" },
-    );
-    callTranspiledExportFull(run, "f", []);
+    // R3：promise handler 的 NudoThrow 现折进结果拒绝通道（不再依赖 drain
+    // 记录）；非 NudoThrow 宿主异常仍走 drain 的可观测记录面（不静默吞）
+    queuePromiseMicro(() => {
+      throw new Error("host boom");
+    });
+    drainPromiseMicros();
     expect(getPromiseMicrosLength()).toBe(0);
     expect(seen).toContain("#promise-micro-error");
   });

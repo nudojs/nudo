@@ -39,11 +39,15 @@ export function registerGenElements(val: Abs, elements: Abs[]): void {
 /** 生成器消费视图（Bug 54）：迭代消费（spread / for-of / Array.from /
  *  解构 / yield*）从当前位取剩余元素并推进生成器状态——与 next() 同步，
  *  侧表不再从 0 重放已消费元素。drain 返回剩余快照并排空（迭代耗尽
- *  语义）；peek 供数组解构逐项投影按消费位读（不推进）。 */
+ *  语义）；peek 供数组解构逐项投影按消费位读（不推进）。
+ *  exact（R1b）= 剩余列表是**线性收集序列**（非路径敏感拼接）——消费端
+ *  重组数组时可越过 TUPLE_LITERAL_CAP 出 exact 元组（仅 Abs 形状面 widened
+ *  的对象无此位，退 arr join）。 */
 interface GenIterView {
   drain: () => Abs[];
   peek: (i: number) => Abs | undefined;
   peekAll: () => Abs[];
+  exact?: boolean;
 }
 const genDrainTables = new WeakMap<object, GenIterView>();
 
@@ -54,6 +58,11 @@ export function registerGenDrain(val: Abs, view: GenIterView): void {
 export function drainGenElements(a: Abs): Abs[] | undefined {
   const d = genDrainTables.get(a as object);
   return d ? d.drain() : undefined;
+}
+
+/** 消费视图整体读取（R1b）：drain 前后皆可读——exact 是构造期静态事实。 */
+export function genDrainViewOf(a: Abs): GenIterView | undefined {
+  return genDrainTables.get(a as object);
 }
 
 /** 生成器对象的消费位视图（无条目 → undefined）：$idx 数字下标按

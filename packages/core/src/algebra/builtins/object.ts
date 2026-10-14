@@ -994,6 +994,21 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
           return boolLit(false);
         }
       }
+      // R4a：Error 家族 brand——自有槽 presence 精确折（message/stack（/
+      // errors/cause）自有 → true；name 是 inherited 原型链槽 → false；
+      // 闭内层缺席键 → false——自有键集构造期静态可知；$set 公有覆写
+      // inherited 槽已落地转自有不受影响）。其余内建 brand（URL/Map/…
+      // 内层槽是建模槽非原生自有属性）保持保守不折。
+      if (a0.shape.k === "brand" && isErrorCtorName((a0.shape as { name?: string }).name)) {
+        const inner = a0.shape.shape;
+        if (inner.shape.k === "obj" && !inner.shape.open) {
+          const slot = getSlot(inner.shape.slots, key);
+          if (slot?.internal || slot?.inherited) return boolLit(false);
+          if (slot && !slot.optional) return boolLit(true);
+          if (slot?.optional) return boolPrim();
+          return boolLit(false);
+        }
+      }
       return boolPrim();
     }
     case "getPrototypeOf": {
@@ -1593,8 +1608,38 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
             const accDesc = accessorDescOf(inner, key);
             if (accDesc) return accDesc;
             // flags 表记在接收者 brand 上（applyPropertyDescriptor
-            // setPropFlags(out, …)——out 为 brand）
-            const flags = getPropFlags(a0)?.get(key);
+            // setPropFlags(out, …)——out 为 brand）；构造期装的 flags
+            // （extends Error 内层复用 errorBrandAbs 内层 obj）记在内层
+            const flags = getPropFlags(a0)?.get(key) ?? getPropFlags(inner)?.get(key);
+            return mkDesc(
+              slots[key]!.value,
+              flags?.writable !== false,
+              flags?.enumerable !== false,
+              flags?.configurable !== false,
+            );
+          }
+          return undefAbs();
+        }
+      }
+      // R4a：Error 家族 brand——内层闭 obj 自有槽带 flags 侧表
+      // （errorBrandAbs 的 enumerable:false 记在内层；后续 defineProperty
+      // 的 flags 记在外层 brand——brand 优先）折精确数据描述符；
+      // inherited 槽（name——原生经 X.prototype 原型链解析非自有）与
+      // internal 私有槽 → undefined；闭内层缺席键 → undefined（自有键集
+      // 构造期静态可知）。动态 defineProperty 安装的访问器经内层侧表
+      // 派发（同上臂 Bug 57 口径）。
+      if (key !== undefined && a0.shape.k === "brand" && isErrorCtorName((a0.shape as { name?: string }).name)) {
+        const inner = a0.shape.shape;
+        if (inner.shape.k === "obj" && !inner.shape.open) {
+          const slots = (inner.shape as ObjShape)
+            .slots as Record<string, { value: Abs; internal?: boolean; inherited?: boolean }>;
+          if (Object.prototype.hasOwnProperty.call(slots, key)) {
+            if (slots[key]!.internal === true || slots[key]!.inherited === true) {
+              return undefAbs();
+            }
+            const accDesc = accessorDescOf(inner, key);
+            if (accDesc) return accDesc;
+            const flags = getPropFlags(a0)?.get(key) ?? getPropFlags(inner)?.get(key);
             return mkDesc(
               slots[key]!.value,
               flags?.writable !== false,

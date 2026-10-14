@@ -14,7 +14,7 @@ import {
   evalNamespaceCall, extStateOf, getPropFlags, migrateInvariants,
   isObjectProtoBrand, OBJECT_PROTO_METHOD_NAMES, isSymbolAbs,
   symbolDescriptionAbs, objectProtoBrand, builtinCtorAbs, ctorNameOfRecv,
-  protoOfRecv,
+  protoOfRecv, hostBuiltinCtorName,
 } from "../../builtins.ts";
 import { errorTypeAbs, recordMayThrow, type MayThrowEffect } from "../may-throw.ts";
 import { TYPED_ARRAY_ELEMENT } from "../../builtins/shared.ts";
@@ -182,6 +182,24 @@ export function $in(key: Abs, o: Abs): Abs {
     if (slot) {
       if (slot.optional) return bool(); // optional 槽可能缺席
       return boolLit(true);
+    }
+    // N2：类值接收者——静态面（ctor [[Prototype]] 链）：自有/继承静态方法、
+    // 静态访问器、祖先类值槽 + 内建父构造器宿主链。实例方法/访问器不在此
+    // 链（挂 X.prototype——`"m" in B` 原生 false），brandHasProtoMember 的
+    // 实例面不适用；类值是函数：Function.prototype 名（call/apply/bind…）
+    // 原生恒在。链洞（mock/桥接父名）→ 不可判 → boolean。
+    if (o.shape.k === "brand" && classNameOfValue(o as object) === o.shape.name) {
+      if (classValueHasStatic(o.shape.name, keyStr)) return boolLit(true);
+      const sup = builtinSuperCtorOf(o.shape.name);
+      if (sup) {
+        try {
+          if (keyStr in (sup.host as object)) return boolLit(true);
+        } catch {
+          /* 宿主 in 不可判 → 走下方降级 */
+        }
+      }
+      if (classChainHasHole(o.shape.name)) return bool();
+      return boolLit(OBJECT_PROTO_NAMES.has(keyStr) || FUNCTION_PROTO_NAMES.has(keyStr));
     }
     // class 实例：原型链上的方法/访问器/内建 brand 方法
     if (o.shape.k === "brand" && brandHasProtoMember(o.shape.name, keyStr)) {
@@ -380,6 +398,83 @@ export function evalClassChain(name: string): string[] {
     cur = parent;
   }
   return out;
+}
+
+/** N2：名 → 宿主内建构造器（globalThis 面 + 身份校验；hostBuiltinCtorName
+ *  名单 + TYPED_ARRAY_ELEMENT 家族）。NAMESPACE_GLOBALS-only 名（URL /
+ *  ArrayBuffer / …）不在面内 → undefined（调用方 sound 降级，不折缺席）。
+ *  $class 的 superBuiltinHost 标记用「名 → 宿主值恒等」校验 extends 目标
+ *  是真实内建（mock 同名 fn 不匹配）。 */
+export function hostBuiltinCtorOf(name: string): unknown {
+  const v = (globalThis as Record<string, unknown>)[name];
+  if (typeof v !== "function") return undefined;
+  if (hostBuiltinCtorName(v) === name) return v;
+  if (name in TYPED_ARRAY_ELEMENT && (v as { name?: unknown }).name === name) return v;
+  return undefined;
+}
+
+/**
+ * N2：类值继承链上的**内建父构造器**：链上首个未注册名，且其直接子类带
+ * superBuiltinHost 标记（extends 目标是真实宿主内建构造器，非 mock 同名
+ * fn）。返回宿主值供 $get / $call 走既有宿主静态通道（namespace 投影 /
+ * 宿主真值）。无通道（mock/桥接父类 / 非名单内建）→ undefined。
+ * 原生：类值的 [[Prototype]] 链通到内建构造器，其静态成员
+ * （Object.keys / Error.captureStackTrace / Promise.all / TA.from …）
+ * 经链被派生类继承。
+ */
+export function builtinSuperCtorOf(startName: string): { host: unknown; ns: string } | undefined {
+  const chain = evalClassChain(startName);
+  for (let i = 1; i < chain.length; i++) {
+    const n = chain[i]!;
+    if (getEvalClass(n)) continue; // 用户注册面优先（同名用户类遮蔽内建）
+    const child = getEvalClass(chain[i - 1]!);
+    if (!child?.superBuiltinHost || child.superName !== n) continue;
+    const host = hostBuiltinCtorOf(n);
+    if (host !== undefined) return { host, ns: n };
+    return undefined;
+  }
+  return undefined;
+}
+
+/**
+ * N2：类值静态成员 presence（`"m2" in A` / `"x" in B`）：自有静态方法/
+ * 静态访问器（spec 表——静态方法不落槽）+ 沿链祖先类值自有槽（声明静态
+ * 字段 + 动态写 A.y=…）。实例方法/访问器不在类值链上（挂 X.prototype，
+ * `"m" in B` 原生 false）——与 brandHasProtoMember 的实例面互补。
+ */
+export function classValueHasStatic(startName: string, key: string): boolean {
+  let level = 0;
+  for (const n of evalClassChain(startName)) {
+    const spec = getEvalClass(n);
+    if (spec?.staticMethods?.[key] || spec?.staticAccessors?.[key]) return true;
+    if (level++ > 0) {
+      const anc = lookupClassValue(n);
+      const inner = anc && anc.shape.k === "brand" ? anc.shape.shape : undefined;
+      if (inner?.shape.k === "obj" && getSlot(inner.shape.slots, key)) return true;
+      if (!spec) break; // 链洞：槽面止步（宿主通道由调用方处理）
+    }
+  }
+  return false;
+}
+
+/**
+ * N2：类值继承链是否有洞——任一未注册父名（且非 superBuiltinHost 放行的
+ * 宿主内建父）→ 链不可判定，presence/缺席不可折精确（调用方降级
+ * boolean）。全链已注册（末名无 super → 隐式 Function.prototype 尾）或
+ * 经宿主内建父闭合 → 链完整。
+ */
+export function classChainHasHole(startName: string): boolean {
+  const chain = evalClassChain(startName);
+  for (let i = 1; i < chain.length; i++) {
+    const n = chain[i]!;
+    if (getEvalClass(n)) continue;
+    const child = getEvalClass(chain[i - 1]!);
+    if (child?.superBuiltinHost && child.superName === n && hostBuiltinCtorOf(n) !== undefined) {
+      continue; // 宿主内建父：链经宿主原生 [[Prototype]] 链闭合
+    }
+    return true;
+  }
+  return false;
 }
 
 /** 内建构造器名：对其 exact false / true 可判定；未知用户构造器名 → boolean */

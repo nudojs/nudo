@@ -37,6 +37,7 @@ import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
 import { registerGenElements, registerGenDrain, registerProxyParts } from "../exec/match-iter.ts";
 import { absFunction } from "../abs-fn.ts";
+import { markFreshInstance } from "../instance-id.ts";
 import { setPropFlags } from "./invariants.ts";
 import { isSymbolAbs, evalSymbolStatic } from "./symbol.ts";
 import { str, numPrim, boolPrim, noBody, mayCoerceThrowOperand, isBigintPrimAbs, typedArrayElementOf } from "./shared.ts";
@@ -379,7 +380,15 @@ function errorMessageSlot(messageArg: Abs | undefined): Abs {
  */
 export function errorBrandAbs(name: string, args: Abs[]): Abs {
   const messageArg = name === "AggregateError" ? args[1] : args[0];
+  // R4b：槽插入序 = 原生自有属性安装序（gOPN 观察序）——node 实测
+  // gOPN(new Error("m")) → ["stack","message"]（V8 先装 stack）；
+  // 带 cause → ["stack","message","cause"]；AggregateError →
+  // ["stack","message","cause","errors"]（cause 先于 errors）。name 是
+  // inherited 原型链槽，不在 gOPN 面，位置不影响观察序。
   const slots: Record<string, { value: Abs; inherited?: boolean }> = {
+    // Bug 59：stack 恒 string（V8/SpiderMonkey/JSC 堆栈轨迹文本，含调用点
+    // 信息不可精确折叠）；用户写 e.stack = v 经既有 $set 槽写通道覆盖
+    stack: { value: str("path") },
     // Bug 66：name 原生不是实例自有属性——经原型链从 X.prototype.name 解析
     // （Error.prototype.name = "Error"；TypeError.prototype.name =
     // "TypeError"…）。槽保留（$get 直读折家族名、$in 存在性 true），打
@@ -388,10 +397,14 @@ export function errorBrandAbs(name: string, args: Abs[]): Abs {
     // （e.name = "X" 原生建自有可枚举属性）。
     name: { value: strLit(name), inherited: true },
     message: { value: errorMessageSlot(messageArg) },
-    // Bug 59：stack 恒 string（V8/SpiderMonkey/JSC 堆栈轨迹文本，含调用点
-    // 信息不可精确折叠）；用户写 e.stack = v 经既有 $set 槽写通道覆盖
-    stack: { value: str("path") },
   };
+  const optionsArg = name === "AggregateError" ? args[2] : args[1];
+  if (optionsArg && optionsArg.shape.k === "obj") {
+    const cause = Object.prototype.hasOwnProperty.call(optionsArg.shape.slots, "cause")
+      ? optionsArg.shape.slots["cause"]!.value
+      : undefAbs();
+    slots["cause"] = { value: cause };
+  }
   if (name === "AggregateError") {
     // Bug 54：errors（args[0]）过 IterableToList——非可迭代定抛（node 实测
     // AggregateError(Symbol())/1/()/null 全抛 "… is not iterable"；字符串
@@ -400,13 +413,6 @@ export function errorBrandAbs(name: string, args: Abs[]): Abs {
     enforceIterableStaticArg(args[0], "AggregateError errors");
     // errors：字面量 tuple 保留精确；抽象/缺省（原生 []）保守 unknown
     slots["errors"] = { value: args[0] ?? unknown };
-  }
-  const optionsArg = name === "AggregateError" ? args[2] : args[1];
-  if (optionsArg && optionsArg.shape.k === "obj") {
-    const cause = Object.prototype.hasOwnProperty.call(optionsArg.shape.slots, "cause")
-      ? optionsArg.shape.slots["cause"]!.value
-      : undefAbs();
-    slots["cause"] = { value: cause };
   }
   // Bug 84：Error 家族自有槽（name/message/stack；AggregateError 的
   // errors/cause）原生全不可枚举——枚举视图（for-in/keys/spread/assign/
@@ -1750,7 +1756,8 @@ export function collectionIteratorAbs(els: Abs[]): Abs {
     peek: (i: number): Abs | undefined => (i < live.length ? live[i] : undefAbs()),
     peekAll: (): Abs[] => [...live],
   });
-  return iter;
+  // R2b：每次 entries/keys/values 调用产出新迭代器对象——打新鲜实例标
+  return markFreshInstance(iter);
 }
 
 /**
@@ -1796,7 +1803,8 @@ export function abstractSeqIteratorAbs(el: Abs): Abs {
   );
   setPropFlags(iter, "next", { enumerable: false });
   setPropFlags(iter, "@@iterator", { enumerable: false });
-  return iter;
+  // R2b：同 collectionIteratorAbs——每次调用新迭代器对象
+  return markFreshInstance(iter);
 }
 
 /** Bug 23：Map 迭代条目的 key 投影（条目是 [k, v] 元组；非元组臂 → unknown） */

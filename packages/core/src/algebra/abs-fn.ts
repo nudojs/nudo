@@ -126,6 +126,14 @@ export type AbsFnImpl = {
    * 副作用回调多执行不可回滚（外层绑定 n++ 会错定值）。
    */
   effectFree?: boolean;
+  /**
+   * R3：transpile 静态判定的「封闭」facet（保守）：体内所有标识符引用只
+   * 绑定自身形参/体内声明/纯全局白名单——不读任何外层可变态。
+   * promise then/catch 对 effectFree∧closed 回调允许同步执行：原生微任务
+   * 时刻 ≠ 同步时刻，只有不读外层态的回调两个时刻求值无差（`v => v + x`
+   * 读外层 x，同步执行会读到 drain 前旧值——假精确，须留在微任务路径）。
+   */
+  closed?: boolean;
 };
 
 const implByAbs = new WeakMap<object, AbsFnImpl>();

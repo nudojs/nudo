@@ -11,6 +11,7 @@ import {
   fnBodyHasThis,
   fnBodyHasOwnArguments,
   fnBodyIsEffectFree,
+  fnBodyIsClosed,
   indent,
   litToStringOf,
   staticKeyOf,
@@ -991,6 +992,14 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
             body: prop.body as Node,
             params: prop.params as Node[] | undefined,
           });
+          // N3：非简单形参（默认值/解构/rest）与读 arguments 同走 ...__margs
+          // 槽绑定——methodBindNames 只发左名（默认值表达式静默丢弃 → 缺参折
+          // undefined 而非默认值；rest 收裸宿主数组 fail-closed unknown）。
+          // emitParamBindingFromArgs 统一绑定，默认表达式以方法边界 opts 求值
+          //（thisParam __this 在作用域内，与原生默认参以调用点 this 求值一致）
+          const omBindFromArgs =
+            mHasArgs ||
+            (prop.params as Node[]).some((p) => (p as { type?: string } | undefined)?.type !== "Identifier");
           const methodOpts: TranspileOptions = {
             ...opts,
             inLoop: 0,
@@ -998,7 +1007,7 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
             // 方法体是新函数边界：return 不携带外层 if 臂退出信号
             conditionalFlow: 0,
             thisParam: "__this",
-            argsBinding: mHasArgs ? "__nudoArgs" : undefined,
+            argsBinding: omBindFromArgs ? "__nudoArgs" : undefined,
             // Bug 52：方法体是新生成器边界——外层 try 不覆盖体内 yield
             yieldTryCtx: 0,
           };
@@ -1025,23 +1034,30 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
             } else {
               // setter thunk（与 stmt.ts 类访问器同口径，emitSetterAccessorThunk）：
               // 内层箭头丢弃体返回值（恒返回 __this）+ 别名写接收者回收
-              const vname = bindNames.length > 0 && bindNames[0] !== "_a" ? bindNames[0]!.replace(/^\.\.\./, "") : "__v";
+              const omFirstP = (prop.params as Node[])[0] as { type?: string } | undefined;
+              const vname = omFirstP?.type === "Identifier" ? (bindNames[0] ?? "__v") : "__v";
               const setBody = emitFnBlockBody(prop.body, 2, methodOpts, {
                 implicitReturn: false,
                 varParams: omVarParams,
               });
               const aliasNames = collectForkBindingNames(prop.body).filter((n) => !omVarParams.has(n));
+              // N3：setter 形参默认值/解构经 __nudoArgs 槽绑定（类 setter 同口径）
+              let setPrologue: string[] = [];
+              if (omFirstP && omFirstP.type !== "Identifier") {
+                const bound = emitParamBindingFromArgs(prop.params as Node[], "    ", methodOpts, "__nudoArgs");
+                setPrologue = [`    let __nudoArgs = $arguments([__v]);`, ...bound.prologue];
+              }
               accRegs.push({
                 key: regKey,
                 keyAbs: computedKeySrc ?? undefined,
-                set: emitSetterAccessorThunk(vname, setBody, aliasNames, 1),
+                set: emitSetterAccessorThunk(vname, setBody, aliasNames, 1, setPrologue),
               });
             }
             continue;
           }
           let mBodyInner = emitFnBlockBody(prop.body, 1, methodOpts, { varParams: paramNamesOfFn(prop.params as Node[]) });
           let mParams = ["__this", ...bindNames];
-          if (mHasArgs) {
+          if (omBindFromArgs) {
             const bound = emitParamBindingFromArgs(prop.params as Node[], "  ", methodOpts, "__nudoArgs");
             mBodyInner = [
               `  let __nudoArgs = $arguments(__margs);`,
@@ -1130,19 +1146,23 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
               body: fn.body,
               params: fn.params as unknown as Node[] | undefined,
             });
+            // N3：非简单形参（默认值/解构/rest）同走 ...__margs 槽绑定（ObjectMethod 同口径）
+            const feBindFromArgs =
+              mHasArgs ||
+              (fn.params as unknown as Node[]).some((p) => (p as { type?: string } | undefined)?.type !== "Identifier");
             const methodOpts: TranspileOptions = {
               ...opts,
               inLoop: 0,
               // 方法型函数表达式体是新函数边界：return 不携带外层 if 臂退出信号
               conditionalFlow: 0,
               thisParam: "__this",
-              argsBinding: mHasArgs ? "__nudoArgs" : undefined,
+              argsBinding: feBindFromArgs ? "__nudoArgs" : undefined,
             };
             let mBodyInner = emitFnBlockBody(fn.body, 1, methodOpts, {
               varParams: paramNamesOfFn(fn.params as unknown as Node[]),
             });
             let mParams = ["__this", ...bindNames];
-            if (mHasArgs) {
+            if (feBindFromArgs) {
               const bound = emitParamBindingFromArgs(fn.params as Node[], "  ", methodOpts, "__nudoArgs");
               mBodyInner = [
                 `  let __nudoArgs = $arguments(__margs);`,
@@ -1390,11 +1410,33 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
           // 表达式值 = 写入的值（JS 语义）；写回仍走不可变更新链
           return `((__v) => { ${path.rootSrc} = ${setPathSrc(path, "__v")}; return __v; })(${valSrc})`;
         }
+        // R5：静态方法体 super.k = v（staticSuperSrc + thisParam + className
+        // 同时在）——SetSuper 静态面：父类静态 setter 派发，数据字段/缺槽
+        // → 接收者（this = 调用类值）自有写。此前落通用 $set(父类) 把写
+        // 错挂到父类槽（原生 CreateDataProperty on this）。复合赋值读沿
+        // 父类静态面（super.x += 5 读 A.x、写 B.x）。
+        if (
+          m.object.type === "Super" &&
+          opts.staticSuperSrc &&
+          opts.thisParam &&
+          opts.className
+        ) {
+          const keySrc = m.computed
+            ? transpileExpression(m.property as Expression, opts)
+            : `$lit(${JSON.stringify((m.property as { name: string }).name)})`;
+          const setCall = `$setSuperStatic(${opts.thisParam}, ${JSON.stringify(opts.className)}, ${keySrc}, __v)`;
+          // 复合读沿父类静态面（$get 收字符串键；计算键经 $idx 收 Abs）
+          const readSrc = m.computed
+            ? `$idx(${opts.staticSuperSrc}, ${keySrc})`
+            : `$get(${opts.staticSuperSrc}, ${JSON.stringify((m.property as { name: string }).name)})`;
+          const valSrc = compoundFn ? `${compoundFn}(${readSrc}, ${right})` : right;
+          return `((__v) => ((${setCall}), __v))(${valSrc})`;
+        }
         // Bug 55：super.k = v / super[k] = v（实例方法/构造器）——此前裸发
         // `/* super */` 注释哨兵（$set(, "x", v)）→ 宿主硬 SyntaxError。
         // SetSuper：父类原型链 setter 派发，无 setter → 接收者写；对象
         // 字面量方法（无 className）走 home object 面 $setSuperObj。静态
-        // 方法体不拦截（Super 已发父类构造器源，落通用 $set）。
+        // 方法体不拦截（静态面在上方 R5 分支处理）。
         if (m.object.type === "Super" && !opts.staticSuperSrc) {
           const recv = opts.thisParam ?? "__this";
           const keySrc = m.computed
@@ -1508,7 +1550,7 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
       }
       // super.method(args) / super[k](args) → $invokeSuper(...)（类实例方法）；
       // 对象字面量方法 → $invokeSuperObj（home object 原型链派发，Bug 19）；
-      // 静态方法体 → 不拦截：Super 节点已发父类构造器源，落通用 $invoke。
+      // 静态方法体 → $staticSuperInvoke（父类静态链 + 接收者 this，R5）。
       if (
         callee.type === "MemberExpression" &&
         callee.object.type === "Super" &&
@@ -1524,6 +1566,12 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
         const keySrc = callee.computed
           ? transpileExpression(callee.property as Expression, opts)
           : `$lit(${JSON.stringify((callee.property as { name: string }).name)})`;
+        // R5：静态方法体 super.m()——父类**静态**链查找，接收者 = this
+        //（调用类值，非父类）。须先于实例分支（静态体现在也带
+        // thisParam+className）。
+        if (opts.thisParam && opts.className && opts.staticSuperSrc) {
+          return `$staticSuperInvoke(${opts.thisParam}, ${JSON.stringify(opts.className)}, ${keySrc}, [${args}])`;
+        }
         if (opts.thisParam && opts.className) {
           const nameArg = callee.computed
             ? ""
@@ -1709,6 +1757,8 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
       // M4：无副作用面 facet（保守静态判定；sort 等按调用次数敏感的内建
       // 只对 effectFree 回调真执行——副作用回调多执行不可回滚）
       const effectFree = fnBodyIsEffectFree(fn);
+      // R3：封闭 facet（不读外层可变态）——promise then/catch 的同步执行门
+      const closed = fnBodyIsClosed(fn);
       const { sig, rest, prologue } = emitParamBinding(fn.params, indent(1), paramOpts);
       // 函数边界：return 不是循环提前返回；非箭头清掉外层 argsBinding
       const fnBodyOpts: TranspileOptions = {
@@ -1789,12 +1839,12 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
             ? `function (${argsParamParts.join(", ")}) { return $async(() => {\n${inner}\n}); }`
             : `function (${argsParamParts.join(", ")}) {\n${inner}\n}`;
           // Bug 7：hasArgs 时体内已归一缺参——钩子补齐会膨胀 arguments.length
-          return `$fnVal(${nameList}, ${wrap}, { ctor: ${fnCtor}${hasArgs ? ", padArgs: false" : ""}, length: ${fnLen}, effectFree: ${effectFree} })`;
+          return `$fnVal(${nameList}, ${wrap}, { ctor: ${fnCtor}${hasArgs ? ", padArgs: false" : ""}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed} })`;
         }
         if (fn.async && !fn.generator) {
-          return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => $async(() => {\n${inner}\n}), { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree} })`;
+          return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => $async(() => {\n${inner}\n}), { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed} })`;
         }
-        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree} })`;
+        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed} })`;
       }
       const bodySrc = transpileExpression(fn.body as Expression, fnBodyOpts);
       if (allPrologue.length > 0 || hasThis) {
@@ -1808,9 +1858,9 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
         if (hasThis) {
           const wrap = `function (${argsParamParts.join(", ")}) {\n${inner}\n}`;
           // Bug 7：hasArgs 时体内已归一缺参——钩子补齐会膨胀 arguments.length
-          return `$fnVal(${nameList}, ${wrap}, { ctor: ${fnCtor}${hasArgs ? ", padArgs: false" : ""}, length: ${fnLen}, effectFree: ${effectFree} })`;
+          return `$fnVal(${nameList}, ${wrap}, { ctor: ${fnCtor}${hasArgs ? ", padArgs: false" : ""}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed} })`;
         }
-        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree} })`;
+        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed} })`;
       }
       // 表达式体：块体包裹跑语句级 rebind pass——`()=>n++` / `()=>a.push(1)`
       // 的写回此前静默丢失（表达式上下文无语句级扫描）
@@ -1820,12 +1870,12 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
           ...rebinds.map((l) => `  ${l}`),
           `  return ${fn.async ? `$async(() => ${bodySrc})` : bodySrc};`,
         ].join("\n");
-        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree} })`;
+        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed} })`;
       }
       if (fn.async) {
-        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => $async(() => ${bodySrc}), { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree} })`;
+        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => $async(() => ${bodySrc}), { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed} })`;
       }
-      return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => ${bodySrc}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree} })`;
+      return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => ${bodySrc}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed} })`;
       })();
       if (!nfeName) return fnValSrc;
       // IIFE 绑定 NFE 自身名：调用期 g 已是 fn Abs（体内引用按词法捕获）；

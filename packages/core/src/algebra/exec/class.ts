@@ -5,11 +5,13 @@
 
 import type { Abs } from "../abs.ts";
 import { abs, unknown, confJoin, litValue, bool, boolLit, str, strLit, numLit } from "../abs.ts";
-import { objOf, joinAbs, isObj, canonicalArrayIndex, getSlot, setSlot, propertyKeyOf, getProtoAbs } from "../objects.ts";
-import { findClassAccessor, TYPED_ARRAY_CALLBACK_METHODS } from "./runtime/members.ts";
+import { objOf, joinAbs, isObj, canonicalArrayIndex, getSlot, setSlot, propertyKeyOf, getProtoAbs, isNullProtoObj } from "../objects.ts";
+import { markFreshInstance } from "../instance-id.ts";
+import { findClassAccessor, findStaticClassAccessor, TYPED_ARRAY_CALLBACK_METHODS, builtinSuperCtorOf, hostBuiltinCtorOf } from "./runtime/members.ts";
+import { OBJECT_PROTO_METHOD_NAMES, objectProtoMethodAbs, builtinCtorAbs, protoOfRecv } from "../builtins.ts";
 import { typedArrayElementOf } from "../builtins/shared.ts";
 import { $get, $set, $lit, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary, lookupObjAccessor, clearStaleTermPred } from "./runtime.ts";
-import { pushCtorFrame, popCtorFrame, withNewTargetReset, throwStrictWrite } from "./runtime/state.ts";
+import { pushCtorFrame, popCtorFrame, withNewTargetReset, throwStrictWrite, undef } from "./runtime/state.ts";
 import { $call } from "./call.ts";
 import { evalEnterCall, evalExitCall, evalTruncatedAbs, isHostGlobalFn, callHostGlobalFn } from "./calls.ts";
 import { getFnImpl, absFunction, hostFnCtorFacet, isAbsApplyResult } from "../abs-fn.ts";
@@ -55,6 +57,7 @@ import {
   registerEvalClass,
   registerClassValue,
   markClassValue,
+  classNameOfValue,
   getEvalClass,
   type EvalClassSpec,
 } from "./class-registry.ts";
@@ -142,6 +145,14 @@ export function $class(
     name,
     superName,
     ...(superNull ? { superNull: true } : {}),
+    // N2：宿主内建父标记（真实 host fn 身份（hostBuiltinCtorOf 名→宿主
+    // 恒等）或 builtinCtorAbs brand；mock 同名 fn Abs 不带）——内建父
+    // 静态派发（builtinSuperCtorOf）的放行条件
+    ...(superName && !superNull &&
+        ((typeof extVal === "function" && hostBuiltinCtorOf(superName) === extVal) ||
+          builtinCtorNameOf(extVal as object) === superName)
+      ? { superBuiltinHost: true }
+      : {}),
     ctor: spec.ctor,
     methods: spec.methods,
     methodParams: spec.methodParams,
@@ -197,43 +208,10 @@ export function $class(
   }
   registerEvalClass(full);
   const slots: Record<string, { value: Abs }> = {};
-  if (full.statics) {
-    for (const [k, v] of Object.entries(full.statics)) setSlot(slots, k, { value: asAbsVal(v) });
-  }
-  // Bug 50：static [Symbol.hasInstance]（方法/字段）以 "@@hasInstance" 槽
-  // 挂到类值。静态方法/字段 impl 无 __this 形参（静态面不 this 改写）；
-  // Bug 46 统一口径：适配器声明 bindThis——receiver 经 $call 第三参注入
-  // 首参后由适配器剥掉再转发（继承（D extends C）由 $instanceof 的
-  // registry 链查找兜住，不在此复制槽）。
-  {
-    const hiMethod = full.staticMethods?.["@@hasInstance"] as
-      | ((...args: Abs[]) => Abs)
-      | undefined;
-    const hiField = full.statics?.["@@hasInstance"];
-    const hiParams = full.staticMethodParams?.["@@hasInstance"] ?? [];
-    if (hiMethod) {
-      setSlot(slots, "@@hasInstance", {
-        value: absFunction(hiParams, {
-          bindThis: true,
-          apply: (args) => hiMethod(...((args ?? []).slice(1))),
-        }, { name: `${name}[Symbol.hasInstance]`, ctor: false }),
-      });
-    } else if (hiField) {
-      const fieldAbs = asAbsVal(hiField);
-      setSlot(slots, "@@hasInstance", {
-        value: absFunction(hiParams, {
-          bindThis: true,
-          // 内层 fn 的 receiver 原样转发（bindThis 内层 → 派发再注入首参；
-          // 普通 fn → 宿主 this）——`static [Symbol.hasInstance] = 方法`
-          // 的 this 语义保持 instanceof 调用位（this = 类值）
-          apply: (args) =>
-            $call(fieldAbs, (args ?? []).slice(1), (args ?? [])[0]),
-        }, { name: `${name}[Symbol.hasInstance]`, ctor: false }),
-      });
-    }
-  }
-  // 类值自有 name 属性（原生 Function.name；类表达式/声明均可读）
-  setSlot(slots, "name", { value: strLit(name) });
+  // R5：类值先行创建（共享空槽 brand）——静态字段 thunk 以类值为 this
+  // 求值（原生 ClassFieldDefinitionEvaluation 的 receiver 是类值；源序
+  // 逐槽就地 setSlot，经共享 slots 对类值立即可见）。类值身份标记同步
+  // 前置：初始化器内 this.m() / this.#x 经注册表面即可派发。
   const val = abs(
     // ctor: true —— 类值 brand facet（构造器值本身）。实例 brand 无此
     // facet：严格相等可直接判定「实例 ≠ 类值」（new C() === C → false，
@@ -248,6 +226,52 @@ export function $class(
   // Bug 58：类值入名 → Abs 注册表——protoOfRecv 的父构造器投影按
   // superName 回取同一引用（Object.getPrototypeOf(B) === A 折 exact）
   registerClassValue(name, val);
+  // 类值自有 name 属性（原生 Function.name；类表达式/声明均可读）。
+  // N4：必须在静态字段 thunk 求值**前**落地——原生构造器创建即带 name，
+  // 初始化器内 `C.name` 可读（"C"）；用户 `static name = "custom"` 字段
+  // 在 statics 循环里按源序覆盖该槽（原生同名静态字段覆写 Function.name）。
+  // 此前尾置：初始化器内 C.name 折 undefined，且用户 static name 被
+  // 尾置 strLit(name) 冲回类名（双缺陷，同一处顺序修正）。
+  setSlot(slots, "name", { value: strLit(name) });
+  const evalStatic = (v: Abs | ((cls: Abs) => Abs)): Abs =>
+    typeof v === "function" ? asAbsVal((v as (cls: Abs) => Abs)(val)) : asAbsVal(v);
+  if (full.statics) {
+    for (const [k, v] of Object.entries(full.statics)) setSlot(slots, k, { value: evalStatic(v) });
+  }
+  // Bug 50：static [Symbol.hasInstance]（方法/字段）以 "@@hasInstance" 槽
+  // 挂到类值。R5：静态方法 impl 首参 __this = 类值——适配器把 receiver
+  // 转发为首参（原生 instanceof 调用位 this = 类值）。
+  // Bug 46 统一口径：适配器声明 bindThis——receiver 经 $call 第三参注入
+  // 首参后由适配器剥掉再转发（继承（D extends C）由 $instanceof 的
+  // registry 链查找兜住，不在此复制槽）。
+  {
+    const hiMethod = full.staticMethods?.["@@hasInstance"] as
+      | ((thisVal: Abs, ...args: Abs[]) => Abs)
+      | undefined;
+    const hiFieldRaw = full.statics?.["@@hasInstance"];
+    const hiParams = full.staticMethodParams?.["@@hasInstance"] ?? [];
+    if (hiMethod) {
+      setSlot(slots, "@@hasInstance", {
+        value: absFunction(hiParams, {
+          bindThis: true,
+          apply: (args) => hiMethod((args ?? [])[0] ?? val, ...((args ?? []).slice(1))),
+        }, { name: `${name}[Symbol.hasInstance]`, ctor: false }),
+      });
+    } else if (hiFieldRaw !== undefined) {
+      // 上方 statics 循环已求值 thunk（同名槽）——取既有结果，不重复求值
+      const fieldAbs = getSlot(slots, "@@hasInstance")?.value ?? evalStatic(hiFieldRaw);
+      setSlot(slots, "@@hasInstance", {
+        value: absFunction(hiParams, {
+          bindThis: true,
+          // 内层 fn 的 receiver 原样转发（bindThis 内层 → 派发再注入首参；
+          // 普通 fn → 宿主 this）——`static [Symbol.hasInstance] = 方法`
+          // 的 this 语义保持 instanceof 调用位（this = 类值）
+          apply: (args) =>
+            $call(fieldAbs, (args ?? []).slice(1), (args ?? [])[0]),
+        }, { name: `${name}[Symbol.hasInstance]`, ctor: false }),
+      });
+    }
+  }
   return val;
 }
 
@@ -279,7 +303,7 @@ function findMethod(
 function findStaticMethod(
   startName: string,
   method: string,
-): ((...args: Abs[]) => Abs) | undefined {
+): ((thisVal: Abs, ...args: Abs[]) => Abs) | undefined {
   let cur: string | undefined = startName;
   const seen = new Set<string>();
   while (cur && !seen.has(cur)) {
@@ -667,7 +691,10 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
   // 的类值；嵌套普通调用（$call/$invoke 面已清空）读 undefined（原生语义）。
   pushCtorFrame(cls);
   try {
-    return constructClass(className, thisVal, args);
+    const inst = constructClass(className, thisVal, args);
+    // R2b：每次 new 产出新实例——brand 形打新鲜实例标（=== 折 false；
+    // 构造器 return 既有对象时重打只改该 Abs 引用的 id，别名恒等不受影响）
+    return inst.shape.k === "brand" ? markFreshInstance(inst) : inst;
   } finally {
     popCtorFrame();
   }
@@ -1163,26 +1190,44 @@ function $invokeInner(
         });
       }
     }
-    // Bug 18：静态方法沿 superName 继承链查找（空派生类 B.m() 不断链）
-    const sm = findStaticMethod(brandName, method);
-    if (sm) {
-      let result: Abs = unknown;
-      let threw = false;
-      try {
-        result = sm(...args);
-        return result;
-      } catch (e) {
-        threw = true;
-        result = throwPayloadOf(e);
-        throw e;
-      } finally {
-        noteEvalCallRecord({
-          fnName: `${brandName}.${method}`,
-          args,
-          result,
-          callLoc: loc ? { line: loc[0], column: loc[1] } : undefined,
-          threw,
-        });
+    // Bug 18：静态方法沿 superName 继承链查找（空派生类 B.m() 不断链）。
+    // N2：只对类值接收者派发——实例接收者的 [[Prototype]] 是 X.prototype，
+    // 静态成员不在其链上（原生 a.staticM() 定抛 TypeError，此前误派发成
+    // 静态结果）。
+    if (classNameOfValue(thisVal as object) === brandName) {
+      const sm = findStaticMethod(brandName, method);
+      if (sm) {
+        let result: Abs = unknown;
+        let threw = false;
+        try {
+          // R5：接收者（thisVal = 调用类值）作 __this 首参注入——沿链
+          // 调用时 this 是调用类（B.m() 继承 A.m：this === B）
+          result = sm(thisVal, ...args);
+          return result;
+        } catch (e) {
+          threw = true;
+          result = throwPayloadOf(e);
+          throw e;
+        } finally {
+          noteEvalCallRecord({
+            fnName: `${brandName}.${method}`,
+            args,
+            result,
+            callLoc: loc ? { line: loc[0], column: loc[1] } : undefined,
+            threw,
+          });
+        }
+      }
+      // N2：内建父构造器静态调用（B extends Object → B.keys / E extends
+      // Error → E.captureStackTrace）——宿主静态通道（$get namespace 投影
+      // → $call，与直接 Object.keys 调用同派发面）。无通道（mock/桥接父
+      // 类）→ 落下方通用诊断面（unknown，不折 undefined）。
+      const sup = builtinSuperCtorOf(brandName);
+      if (sup) {
+        const prop = $get(sup.host as Abs, method);
+        if (prop && prop.shape.k === "fn") {
+          return $call(prop, args, thisVal);
+        }
       }
     }
   }
@@ -2395,15 +2440,43 @@ export function $invokeSuper(
 
 /** 类实例方法内 super.p / super[k] 属性读（Bug 14）：父类原型链上的
  *  访问器以 this 调用；实例字段/自有槽不在查找面（super 读的是原型）。
- *  方法作为值（super.m 未调用）不做 fn Abs 投影——诚实 unknown。 */
+ *  方法作为值（super.m 未调用）不做 fn Abs 投影——诚实 unknown。
+ *  R2a：闭链缺槽折 undefined——父链全为已注册求值类且终止于「无
+ *  extends」（尾巴 Object.prototype）/「extends null」（无尾巴）时，
+ *  缺键原生读 undefined（`super.x += 5` 折 NaN）；setter-only 访问器
+ *  挡链读同样 undefined。宿主基类（extends Array/Error 等未注册名）/
+ *  抽象键 → 链开 → 诚实 unknown。Object.prototype 尾巴与 $get 闭 obj
+ *  缺槽同口径（方法名/constructor/__proto__ 不折 undefined）。 */
 export function $getSuper(thisVal: Abs, childName: string, key: Abs): Abs {
   const k = propertyKeyOf(key);
   if (k === undefined) return unknown;
-  const parentName = getEvalClass(childName)?.superName;
-  if (!parentName) return unknown;
-  const acc = findClassAccessor(parentName, k);
-  if (acc?.get) return acc.get(thisVal);
-  return unknown;
+  const childSpec = getEvalClass(childName);
+  if (!childSpec) return unknown;
+  // extends null：B.prototype 之上无链（无 Object.prototype 尾巴）
+  if (childSpec.superNull) return undef();
+  let cur: string | undefined = childSpec.superName;
+  const seen = new Set<string>();
+  while (cur && !seen.has(cur)) {
+    seen.add(cur);
+    const spec = getEvalClass(cur);
+    if (!spec) return unknown; // 宿主/未注册基类：原型面不可枚举 → 链开
+    const acc = spec.accessors?.[k];
+    // 访问器挡链（含 setter-only：读止步于此 → undefined）
+    if (acc) return acc.get ? acc.get(thisVal) : undef();
+    // 方法存在（作为值读取）：不做 fn 投影——诚实 unknown，不得折 undefined
+    if (spec.methods?.[k]) return unknown;
+    if (spec.superNull) return undef(); // extends null：链终止，无尾巴
+    cur = spec.superName; // 无 superName → 循环退出 → Object.prototype 尾巴
+  }
+  if (cur) return unknown; // 环（防御）：链不可判定
+  // Object.prototype 尾巴（闭）：与 $get 闭 obj 缺槽同口径
+  if (OBJECT_PROTO_METHOD_NAMES.has(k)) return objectProtoMethodAbs(k);
+  if (k === "constructor") return builtinCtorAbs("Object");
+  if (k === "__proto__") {
+    const p = protoOfRecv(thisVal);
+    return isNullProtoObj(p) ? undef() : p;
+  }
+  return undef();
 }
 
 /** 类实例方法/构造器内 super.k = v（Bug 55）：SetSuper——沿父类原型链找
@@ -2495,20 +2568,39 @@ export function $invokeSuperObj(thisVal: Abs, key: Abs, args: Abs[]): Abs {
   return unknown;
 }
 
-/** super.v / super[k]：原型链属性读（访问器 getter 以 this 调用；数据槽直读） */
+/** super.v / super[k]：原型链属性读（访问器 getter 以 this 调用；数据槽直读）。
+ *  R2a：闭链缺槽折 undefined——home 原型链全为闭 obj 且终止（无记录
+ *  原型 → Object.prototype 尾巴 / 显式 null-proto）时缺键原生读
+ *  undefined；开 obj / 品牌 / 超深链 → 链开 → 诚实 unknown。 */
 export function $getSuperObj(thisVal: Abs, key: Abs): Abs {
   const k = propertyKeyOf(key);
   if (k === undefined) return unknown;
-  let cur = superProtoOf(thisVal);
+  // 非 obj 接收者（borrow-call 的 brand this 等）：home 链不可判
+  if (thisVal.shape.k !== "obj") return unknown;
+  let cur: Abs = thisVal;
   let hops = 0;
-  while (cur && hops++ < SUPER_PROTO_CHAIN_LIMIT) {
-    if (cur.shape.k === "obj") {
-      const acc = lookupObjAccessor(cur, k);
-      if (acc?.get) return acc.get(thisVal);
-      const slot = getSlot(cur.shape.slots, k);
-      if (slot) return slot.value;
+  while (hops++ < SUPER_PROTO_CHAIN_LIMIT) {
+    const proto = superProtoOf(cur);
+    if (proto === undefined) {
+      // 链终止：显式 null-proto → 之上无链；否则尾巴是 Object.prototype
+      //（闭，与 $get 闭 obj 缺槽同口径）
+      if (isNullProtoObj(cur)) return undef();
+      if (OBJECT_PROTO_METHOD_NAMES.has(k)) return objectProtoMethodAbs(k);
+      if (k === "constructor") return builtinCtorAbs("Object");
+      if (k === "__proto__") {
+        const p = protoOfRecv(thisVal);
+        return isNullProtoObj(p) ? undef() : p;
+      }
+      return undef();
     }
-    cur = superProtoOf(cur);
+    if (proto.shape.k !== "obj") return unknown; // 品牌等未建模原型 → 链开
+    const acc = lookupObjAccessor(proto, k);
+    // 访问器挡链（含 setter-only：读止步于此 → undefined）
+    if (acc) return acc.get ? acc.get(thisVal) : undef();
+    if ((proto.shape as { open?: boolean }).open) return unknown; // 开 obj：键集不完整
+    const slot = getSlot(proto.shape.slots, k);
+    if (slot) return slot.value;
+    cur = proto;
   }
   return unknown;
 }
@@ -2641,12 +2733,26 @@ export function $staticInvoke(cls: Abs, method: string, args: Abs[]): Abs {
     const className = spec?.name ?? (cls.shape.k === "brand" ? cls.shape.name : undefined);
     // Bug 18：静态方法沿 superName 继承链查找（空派生类 B.m() 不断链）
     const m = className ? findStaticMethod(className, method) : undefined;
-    if (!m) return unknown;
+    if (!m) {
+      // N2：内建父构造器静态（B extends Object → B.keys）：宿主静态通道
+      //（$get namespace 投影 → $call）。无通道 → unknown（不折 undefined）。
+      if (className) {
+        const sup = builtinSuperCtorOf(className);
+        if (sup) {
+          const prop = $get(sup.host as Abs, method);
+          if (prop && prop.shape.k === "fn") {
+            return $call(prop, args, cls);
+          }
+        }
+      }
+      return unknown;
+    }
     const recordName = className ? `${className}.${method}` : method;
     let result: Abs = unknown;
     let threw = false;
     try {
-      result = m(...args);
+      // R5：类值（接收者）作 __this 首参注入——静态方法体内 this = 调用类
+      result = m(cls, ...args);
       return result;
     } catch (e) {
       threw = true;
@@ -2656,6 +2762,47 @@ export function $staticInvoke(cls: Abs, method: string, args: Abs[]): Abs {
       noteEvalCallRecord({ fnName: recordName, args, result, threw });
     }
   });
+}
+
+/** 静态方法体内 super.m(args) / super[k](args)（R5）：沿父类**静态**链查找
+ *  （home = 类值，[[Prototype]] = 父构造器——Bug 18 链），以接收者类值
+ *  为 this 调用（原生 super.m() 的 this 是外围 this = 调用类，非父类）。 */
+export function $staticSuperInvoke(
+  thisVal: Abs,
+  childName: string,
+  key: Abs,
+  args: Abs[],
+): Abs {
+  const k = propertyKeyOf(key);
+  if (k === undefined) return unknown;
+  const parentName = getEvalClass(childName)?.superName;
+  if (!parentName) return unknown;
+  const m = findStaticMethod(parentName, k);
+  if (!m) return unknown;
+  return withNewTargetReset(() => m(thisVal, ...args));
+}
+
+/** 静态方法体内 super.k = v（R5 / SetSuper 静态面）：沿父类静态链找 setter
+ *  （以接收者类值调用）；getter-only 挡链 → strict TypeError；数据字段/
+ *  缺槽 → 原生折接收者自有数据属性（OrdinarySetWithOwnDescriptor：
+ *  CreateDataProperty on this = 调用类值，父类槽不动）。 */
+export function $setSuperStatic(thisVal: Abs, childName: string, key: Abs, value: Abs): Abs {
+  const k = propertyKeyOf(key);
+  if (k === undefined) {
+    // 抽象键：链上 setter 不可判定 → 接收者计算键写（sound 过近似）
+    return $setKey(thisVal, key, value);
+  }
+  const parentName = getEvalClass(childName)?.superName;
+  if (parentName) {
+    const sacc = findStaticClassAccessor(parentName, k);
+    if (sacc) {
+      if (sacc.set) return sacc.set(thisVal, value);
+      // getter-only 访问器：strict TypeError（catch 可吸收）
+      throwStrictWrite();
+    }
+  }
+  // 无 setter：接收者（类值）自有槽写（$set 类值臂就地共享 slots）
+  return $set(thisVal, k, value);
 }
 
 /** 计算属性写：o[kAbs] = v。非字面量 key → open + index join（不得写成字面槽 "?"） */

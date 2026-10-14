@@ -21,7 +21,9 @@
  *     （此后 next() → {value: unknown, done: boolean}）；
  *   · .throw(e) 挂 try/catch 内 → 被吸收：{value: unknown, done:
  *     boolean} + may-throw（catch 体收集期未执行、可重抛），不再定值抛；
- *   · 无 finally/catch 挂起点（含未启动 / 已耗尽）保持原生精确：
+ *     R1a 精化：catch 静态事实（无 yield、重抛不被外层 catch 二次吸收）
+ *     且挂起点后无剩余收集 yield → 吸收必完成，done 折 true（native）；
+ *   · 无 finally/catch 的挂起点（含未启动 / 已耗尽）保持原生精确：
  *     .return(v) → v；.throw(e) → 抛 e。
  *   soundness 纪律：消除 wrong-definite（native 值恒在值域内），
  *   完整续体恢复（真跑 finally/catch 体）超出 eager 快照模型能力。
@@ -223,11 +225,13 @@ describe("Bug 52: .return()/.throw() 挂起点语义（try 上下文分级，无
     expect(isNever(r.throws)).toBe(true);
   });
 
-  it(".throw 进 try/catch：done 并 boolean（catch 吸收后可续可返，不定值）", () => {
+  it(".throw 进 try/catch（catch 含 return、无剩余 yield）：done 折 true（R1a，native true）", () => {
     const r = call(
       `export function f() { function* h() { try { yield 1; } catch (e) { return "caught"; } } const it2 = h(); it2.next(); return it2.throw(new Error("x")).done; }`,
     );
-    expect(litValue(r.result).ok).toBe(false);
+    // R1a：catch 静态事实（含 return、无 yield）+ 挂起点后无剩余收集 yield →
+    // 吸收必完成生成器，done 定值 true（native：catch return → 生成器完成）
+    expect(litValue(r.result)).toEqual({ ok: true, value: true });
   });
 
   it(".throw 进 try/catch：catch 重抛面记 may-throw（sound 过近似）", () => {
