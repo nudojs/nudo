@@ -1,20 +1,14 @@
-import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, it, expect } from "vitest";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { analyzeFileAsync, clearEvalCache } from "@nudojs/service";
 import { formatShape } from "@nudojs/core";
-
-const dirs: string[] = [];
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
-});
+import { tmpProject } from "./tmp-project.ts";
 
 describe("evaluator path-based @nudo:env", () => {
   it("loads ./custom.env.ts globals", async () => {
     clearEvalCache();
-    const dir = mkdtempSync(join(tmpdir(), "nudo-path-env-"));
-    dirs.push(dir);
+    const dir = tmpProject("nudo-path-env-");
     writeFileSync(
       join(dir, "custom.env.ts"),
       `import { numLit } from "@nudojs/core";

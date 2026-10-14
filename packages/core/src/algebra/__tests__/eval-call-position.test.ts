@@ -32,11 +32,7 @@ import {
   setMayThrowCollector,
   type MayThrowEffect,
 } from "../exec/may-throw.ts";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { call } from "./eval-helpers.ts";
 
 /** formatAbs 渲染 + conf 后缀剥离（evalWithArgs.norm 同款） */
 function fmt(a: unknown): string {

@@ -6,12 +6,8 @@
  * 方法名时返回可 typeof 的 fn 形状（typeof new A().m 此前 undefined）。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { litValue } from "@nudojs/core";
+import { call } from "./eval-helpers.ts";
 
 describe("evaluator class instance state", () => {
   it("method field increment persists across calls", () => {

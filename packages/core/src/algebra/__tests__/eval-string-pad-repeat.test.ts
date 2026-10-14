@@ -7,22 +7,8 @@
  * 求值引擎经 $catchVal 吸收、ast-eval 在 viaTable 调用点吸收为 EvalResult{threw}。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
-
-function isNever(r: unknown): boolean {
-  const a = r as { shape?: { k?: string } };
-  return !!a && typeof a === "object" && a.shape?.k === "never";
-}
-
-function throwsError(t: unknown, name: string): boolean {
-  const a = t as { shape?: { k?: string; name?: string } };
-  return !!a && typeof a === "object" && a.shape?.k === "brand" && a.shape.name === name;
-}
+import { litValue } from "@nudojs/core";
+import { call, isNever, throwsError } from "./eval-helpers.ts";
 
 describe("evaluator string repeat folding", () => {
   it("folds integer repeat", () => {

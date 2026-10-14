@@ -17,7 +17,10 @@ function litStrOf(a: Parameters<typeof litValue>[0]): string {
 }
 import { lit, termToString, type Term } from "./term.ts";
 import { pTrue, type Pred } from "./pred.ts";
-import { isNullProtoObj } from "./objects.ts";
+import { isNullProtoObj, isNullProtoWithoutCoercer } from "./objects.ts";
+import { lookupObjAccessor } from "./accessors.ts";
+import { NudoThrow } from "./nudo-throw.ts";
+import { errorTypeAbs } from "./may-throw.ts";
 
 export type TemplateMeta = {
   templateParts: Abs[];
@@ -308,6 +311,11 @@ export function isTemplateLike(a: Abs): boolean {
 
 /** 字符串拼接：字面量折叠 + template parts 合并 */
 export function concatString(a: Abs, b: Abs): Abs {
+  // 闭 null-proto 无 coercer → ToString 前的 ToPrimitive 定抛 TypeError
+  //（'x'.concat(o) 等非运算符入口；`+`/模板运算符面由 add() 前置同判）
+  if (isNullProtoWithoutCoercer(a) || isNullProtoWithoutCoercer(b)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
   // 双字面量
   if (isStrLit(a) && isStrLit(b)) {
     return abs(
@@ -335,6 +343,24 @@ export function concatString(a: Abs, b: Abs): Abs {
 }
 
 /**
+ * Bug 61：Abs 的可判定 ToString 具体串（能判定时返回串，否则 undefined）。
+ * 复用模板拼接的 ToString 投影：数组 join(",")（hole/null/undefined → ""）、
+ * 闭普通对象 "[object Object]"（无用户 toString/valueOf/@@toPrimitive 面）、
+ * prim 字面量 String(v)。任一 part 抽象 → 不可判。
+ * 消费面：Symbol.for 容器键驻留（String([1]) === "1"）。
+ */
+export function concreteToStringOf(a: Abs): string | undefined {
+  const parts = coerceToStringParts(a);
+  if (parts === undefined) return undefined;
+  let out = "";
+  for (const p of parts) {
+    if (p.term?.op !== "lit" || typeof p.term.value !== "string") return undefined;
+    out += p.term.value;
+  }
+  return out;
+}
+
+/**
  * JS ToString / 数组 ToPrimitive（join）投影为 string part。
  * 返回 undefined = 不可折叠（抽象 / symbol 经 + 是 TypeError 由上层抛）。
  *
@@ -358,17 +384,63 @@ function coerceToStringParts(a: Abs): Abs[] | undefined {
   if (a.shape.k === "tuple" || a.shape.k === "arr") {
     return [arrayToPrimitiveString(a)];
   }
-  // 闭普通对象（无自定义 valueOf/toString 槽）：Default Object ToString
+  // 闭普通对象（无自定义 valueOf/toString/@@toPrimitive 槽）：Default Object ToString
   // 注意：slots 是普通对象，`slots["toString"]` 会命中 Object.prototype——
   // 必须 hasOwn，否则所有对象都被误判为带自定义 toString。
   // null-proto 无 Object.prototype.toString：ToPrimitive 原生 TypeError，不得折。
   if (a.shape.k === "obj" && !a.shape.open && !a.shape.index && !isNullProtoObj(a)) {
     const slots = a.shape.slots;
-    if (!Object.hasOwn(slots, "toString") && !Object.hasOwn(slots, "valueOf")) {
+    // Bug 82：计算键 [Symbol.toPrimitive](h){…} 经 symbolKeyOf 投影存为
+    // "@@toPrimitive" 字符串槽。钩子调用面此处不建模，但钩子的**存在性**
+    // 必须阻断默认标签折叠——否则 `o + "x"` 错折 "[object Object]x"
+    // （native 是钩子返回值，wrong-concrete）。放行到 undefined → 上层
+    // concatString 的 isStrPrim 臂落抽象 string 域（sound skip）。
+    if (
+      !Object.hasOwn(slots, "toString") &&
+      !Object.hasOwn(slots, "valueOf") &&
+      !Object.hasOwn(slots, "@@toPrimitive")
+    ) {
+      // Bug 72：@@toStringTag（数据槽 / get [Symbol.toStringTag]() 访问器
+      // 形——访问器占位槽 lit(void 0) 无意义，getter 求值为准）改写默认
+      // 标签（typeTagOf 同口径）：lit 串折 "[object T]"；非串 lit 折默认
+      // "[object Object]"（native Type(tag)≠String）；抽象串不折（getter
+      // 体抛错则原生沿 ToString 链传播）。
+      let tag: string | undefined;
+      let tagAbstract = false;
+      const tagAcc = lookupObjAccessor(a, "@@toStringTag");
+      if (tagAcc?.get) {
+        const lr = litValue(tagAcc.get(a));
+        if (!lr.ok) tagAbstract = true;
+        else if (typeof lr.value === "string") tag = lr.value;
+      } else if (Object.hasOwn(slots, "@@toStringTag")) {
+        const lr = litValue(slots["@@toStringTag"]!.value);
+        if (!lr.ok) tagAbstract = true;
+        else if (typeof lr.value === "string") tag = lr.value;
+      }
+      if (tagAbstract) return undefined;
       return [
-        abs({ k: "prim", type: "string" }, lit("[object Object]"), undefined, "exact"),
+        abs(
+          { k: "prim", type: "string" },
+          lit(`[object ${tag ?? "Object"}]`),
+          undefined,
+          "exact",
+        ),
       ];
     }
+  }
+  // 联合：逐臂 ToString 投影（nullish 臂 → "null"/"undefined"
+  // part）——`${x}` 的 x 为可空联合时拼接结果恒 string
+  // （JS ToString 对联合值逐臂取值，模板拼接臂不抛）。
+  // 此前联合整体落 undefined → concatString 污染成 unknown，
+  // 把整条返回链（模板返回的函数）的推断类型抹成 unknown。
+  if (a.shape.k === "sum" && a.shape.members) {
+    const parts: Abs[] = [];
+    for (const m of a.shape.members) {
+      const mp = coerceToStringParts(m);
+      if (mp === undefined) return undefined;
+      parts.push(...mp);
+    }
+    return parts;
   }
   return undefined;
 }

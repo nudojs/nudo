@@ -15,11 +15,7 @@ import {
   numLit,
   abs,
 } from "../index.ts";
-
-function call(src: string, fnName = "f", args: unknown[] = []) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, args as never);
-}
+import { call } from "./eval-helpers.ts";
 
 describe("x === x must not fold true when x may be NaN", () => {
   it("abstract number arg: x === x is not exact true", () => {

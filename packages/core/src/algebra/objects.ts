@@ -10,8 +10,32 @@ import { pTrue, predToString } from "./pred.ts";
 import type { Abs, Shape, Confidence } from "./abs.ts";
 import { abs, confJoin, litValue, unknown, never, strLit } from "./abs.ts";
 import { noteDerivationJoin } from "./derivation.ts";
+import { $objAccessor, lookupObjAccessor, migrateAccessors } from "./accessors.ts";
 
-export type Slot = { value: Abs; optional?: boolean; readonly?: boolean };
+/**
+ * Bug 84：internal 标记私有槽（私有字段 "#x" 混淆键落实例内层 obj）。
+ * 原生私有字段是内部槽，对所有属性 introspection（for-in / hasOwnProperty
+ * / keys / gOPN / spread / assign / stringify）不可见；$get/$set 直连键
+ * 访问与 $in 槽存在性查询不受影响（Bug 78 语义）。必须用槽标志而非
+ * 名字前缀过滤——合法公共字符串键 {"#x":1} 与私有槽同键空间共存。
+ */
+export type Slot = {
+  value: Abs;
+  optional?: boolean;
+  readonly?: boolean;
+  internal?: boolean;
+  /** Bug 66：原型链解析槽（errorBrandAbs 的 name——原生经 X.prototype.name
+   * 可见，非实例自有）。$get 直读 / $in 存在性照常；自有面 introspection
+   * （hasOwnProperty / propertyIsEnumerable / Object.hasOwn / gOPN）折
+   * false；$set 公有覆写落地转自有（e.name = "X" 原生建自有可枚举属性）。 */
+  inherited?: boolean;
+  /** Bug 73：计算 symbol 键投影槽（[Symbol.X] → "@@X"，transpile 期
+   * $set opts.symbolKey 打标）。原生 symbol 键对 JSON.stringify 等
+   * 字符串键枚举面不可见；字面量字符串键 {"@@lit":1} 无标记、照常
+   * 序列化——不得用 "@@" 前缀语法过滤（会误滤）。$get/$set/$in 直连
+   * 键访问不受影响。 */
+  symbolKey?: boolean;
+};
 
 /** ES 规范数组下标（无前导零、< 2^32-1）；非规范键返回 undefined */
 export function canonicalArrayIndex(v: unknown): number | undefined {
@@ -238,15 +262,46 @@ export function joinObjects(a: Abs, b: Abs): Abs {
 
   const slots: Record<string, Slot> = {};
   let conf: Confidence = confJoin(a.conf, b.conf);
+  // 同一访问器定义（双臂相同闭包：别名 fork / migrateAccessors 迁移产物，
+  // 如循环加宽的前后帧）→ 整组迁移到 join 产物，读写继续走侧表
+  const sameDefs: Array<[string, { get?: (t: Abs) => Abs; set?: (t: Abs, v: Abs) => Abs }]> = [];
   for (const k of ka) {
     const sa = a.shape.slots[k]!;
     const sb = b.shape.slots[k]!;
     const optional = sa.optional || sb.optional;
-    const jv = joinValues(sa.value, sb.value);
+    const accA = lookupObjAccessor(a, k);
+    const accB = lookupObjAccessor(b, k);
+    let jv: Abs;
+    if (accA && accB && accA.get === accB.get && accA.set === accB.set) {
+      // 槽位保持占位口径（in/keys 只看键存在性；读域由侧表派发）
+      jv = joinValues(sa.value, sb.value);
+      sameDefs.push([k, accA]);
+    } else {
+      // 混合臂（一侧访问器、另一侧数据槽；或两臂不同访问器）：单一访问器
+      // 不能代表另一臂——getter 读域按原臂接收者求值后并入数据槽（与
+      // $spread 调 getter 拷结果同口径）；setter-only 原生读 undefined，
+      // 占位槽即其读域。侧表不迁移：读写折数据槽 = 保守超近似。
+      const va = accA?.get ? evalGetterDomain(accA.get, a) : sa.value;
+      const vb = accB?.get ? evalGetterDomain(accB.get, b) : sb.value;
+      jv = joinValues(va, vb);
+    }
     conf = confJoin(conf, jv.conf);
     setSlot(slots, k, { value: jv, optional });
   }
-  return { shape: { k: "obj", slots }, conf };
+  const joined: Abs = { shape: { k: "obj", slots }, conf };
+  for (const [k, def] of sameDefs) $objAccessor(joined, k, def.get ?? null, def.set ?? null);
+  return joined;
+}
+
+/** join 时求 getter 读域：与 $get 同口径、以原臂为接收者调用闭包。
+ *  求值失败或求值中抛（含 NudoThrow）折 unknown——读域不可静态刻画时的
+ *  sound 超近似（此前占位槽折 definite undefined 是假精确）。 */
+function evalGetterDomain(get: (t: Abs) => Abs, recv: Abs): Abs {
+  try {
+    return get(recv);
+  } catch {
+    return unknown;
+  }
 }
 
 /** 值级 join：同型双字面量保留为枚举 sum；其余 prim 同型收成 path */
@@ -543,7 +598,12 @@ export function joinAbs(a: Abs, b: Abs): Abs {
   if (a.shape.k === "never") return b;
   if (b.shape.k === "never") return a;
   if (isObj(a) && isObj(b)) {
-    return annotateJoinPath(a, b, joinObjects(a, b));
+    const joined = joinObjects(a, b);
+    const out = annotateJoinPath(a, b, joined);
+    // annotateJoinPath 可能 {...result} 再包一层新身份；侧表按对象身份键控，
+    // joinObjects 注册的访问器须随迁（同 $set/$del 的迁移先例）
+    if (out !== joined) migrateAccessors(joined, out);
+    return out;
   }
   if (a.shape.k === "fn" && b.shape.k === "fn") {
     return annotateJoinPath(a, b, joinFunctions(a, b));
@@ -566,6 +626,21 @@ export function markNullProtoObj(o: Abs): Abs {
 
 export function isNullProtoObj(o: Abs): boolean {
   return nullProtoMarks.has(o as object);
+}
+
+/** 闭 null-proto 对象且无自有 ToPrimitive coercer（toString / valueOf /
+ *  @@toPrimitive 槽——symbol 键写按 "@@X" 投影落地，Bug 73）→ ToPrimitive
+ * 无 coercer 可走，原生定抛 TypeError（"Cannot convert object to primitive
+ * value"）。open / index 形未知成员可能含 coercer，不得判缺（返回 false 落
+ * 上层 may）。Bug 24（global.ts String()）同源；供 arithmetic/template 的
+ * `+` 拼接臂复用。 */
+export function isNullProtoWithoutCoercer(a: Abs): boolean {
+  if (a.shape.k !== "obj" || !isNullProtoObj(a)) return false;
+  const so = a.shape as { open?: boolean; index?: unknown; slots?: Record<string, unknown> };
+  if (so.open || so.index) return false;
+  if (!so.slots) return true;
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(so.slots, k);
+  return !has("toString") && !has("valueOf") && !has("@@toPrimitive");
 }
 
 /** 同一对象的不可变更新（$set/$del）迁移 nullProto 标记 */

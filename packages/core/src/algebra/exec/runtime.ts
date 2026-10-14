@@ -9,6 +9,7 @@
 export {
   $fnVal,
   $absVal,
+  $catchReturn,
   $isBreakTo,
   $lit,
   $loopBreak,
@@ -19,6 +20,7 @@ export {
   $rawThis,
   $rethrowIfNudoReturn,
   $throwConstAssign,
+  $throwFreeArguments,
   $litTruth,
   $tryCurrentMark,
   $tryDetachSoftCatch,
@@ -37,6 +39,7 @@ export {
   callAtFunctionBoundary,
   clearStaleTermPred,
   confPartial,
+  currentAssumePremises,
   currentExecPhi,
   isDefinitelyFalse,
   isDefinitelyTrue,
@@ -50,11 +53,13 @@ export {
   runWithLoopExits,
   takeLoopExits,
   takeThrowExits,
+  withAssumePremises,
   withExecPhi,
   withNewTargetReset,
 } from "./runtime/state.ts";
 export {
   $add,
+  $assumeAnchor,
   $bitand,
   $bitnot,
   $bitor,
@@ -94,10 +99,12 @@ export {
   $in,
   $instanceof,
   $instanceofNonIdent,
-  $objAccessor,
   $objAccessorKey,
-  lookupObjAccessor,
 } from "./runtime/members.ts";
+export {
+  $objAccessor,
+  lookupObjAccessor,
+} from "../accessors.ts";
 export {
   $catchVal,
   $for,
@@ -150,6 +157,7 @@ export {
   $narrowMemberEq,
   $narrowTypeOf,
   $nullishTest,
+  $refineRel,
   $removeMemberNullish,
   $removeNull,
   $removeNullish,

@@ -1,19 +1,13 @@
-import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, it, expect } from "vitest";
+import { writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { analyzeFile } from "@nudojs/service";
 import { formatShape } from "@nudojs/core";
-
-const dirs: string[] = [];
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
-});
+import { tmpProject } from "./tmp-project.ts";
 
 describe("Abs call records with relative import", () => {
   it("tags imported calls with targetModule and feeds externalFunctions", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-abs-call-"));
-    dirs.push(dir);
+    const dir = tmpProject("nudo-abs-call-");
     const evalSrc = `export function triple(x) { return x * 3; }\n`;
     const aSrc = `import { triple } from "./b.js";\nfunction caller(n) { return triple(n); }\nconst r = caller(4);\n`;
     writeFileSync(join(dir, "b.js"), evalSrc);

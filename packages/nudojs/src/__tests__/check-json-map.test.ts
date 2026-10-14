@@ -48,6 +48,17 @@ describe("issueFromCachedJson", () => {
     });
   });
 
+  it("carries truncation reason (#158)", () => {
+    const i = issueFromCachedJson({
+      severity: "info",
+      code: "nudo:recursion-truncated",
+      message: "m",
+      fn: "sameArgs",
+      reason: "cycle",
+    });
+    expect(i.reason).toBe("cycle");
+  });
+
   it("carries optional fields when present", () => {
     const i = issueFromCachedJson({
       severity: "warning",

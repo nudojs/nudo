@@ -10,24 +10,8 @@
  * 确定混型（1n+1 / 1n+true / 1n+null）仍须硬抛——见 bigint-mixed-op-throws。
  */
 import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  formatAbs,
-  abs,
-  strLit,
-  numLit,
-} from "@nudojs/core";
-
-function call(src: string, fnName = "f", args: unknown[] = []) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, args as never[]);
-}
-
-function isNever(r: unknown): boolean {
-  const a = r as { shape?: { k?: string } };
-  return !!a && typeof a === "object" && a.shape?.k === "never";
-}
+import { formatAbs, abs, strLit, numLit } from "@nudojs/core";
+import { call, isNever } from "./eval-helpers.ts";
 
 function faceOf(r: unknown): string {
   return formatAbs(r as never).split(/\s{2,}/)[0]!;

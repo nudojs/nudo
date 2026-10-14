@@ -19,9 +19,11 @@ import {
   staticKeyOf,
   symbolKeyOf,
   paramDisplayNames,
+  nativeParamArity,
   computeConstScope,
   collectPatternNames,
   collectVarHoistNames,
+  finalizerBits,
 } from "./helpers.ts";
 import { BIN_OPS, COMPOUND_OPS, isStatefulMethodName } from "./ops.ts";
 import {
@@ -35,7 +37,6 @@ import {
   matchOptionalRequire,
   catchMayRethrow,
 } from "./emit.ts";
-import { memberPathOf, readPathSrc, setPathSrc, readPrefix, setParentPathSrc } from "./member-path.ts";
 import { emitTranspileExpression } from "./transpile-dispatch.ts";
 import { UNDEF_LIT, HOST_INTRINSIC_SET } from "./intrinsics.ts";
 
@@ -65,6 +66,8 @@ import {
   narrowTypeArmThunk,
   discriminantGuardsOf,
   narrowDiscriminantArmThunks,
+  relGuardOf,
+  narrowRelArmThunk,
 } from "./stmt-predicates.ts";
 
 /**
@@ -157,11 +160,46 @@ export function transpileFnBodyStmts(
     // 函数体边界：重算提升集；keepVarDecl 只属于模块顶层 export var 的
     // 直接声明发射，不得泄漏进嵌套函数体（否则块内 var 误发块级 let）
     varOpts = { ...opts, hoistedVarNames: hoisted, keepVarDecl: undefined };
+    // P4b：函数边界参数遮蔽——继承的 constNames（外层 const / 类体不可变
+    // 自有名）被本函数参数模式名遮蔽时必须扣除：`function f(K) { K = 5 }`
+    // 外层 `const K` / 类名 K，体内写的是参数绑定（原生 no-throw），不得
+    // 假 TypeError（wrong-definite）。参数默认值表达式仍以 opts 求值
+    //（emitParamBinding 的 paramOpts 不减——默认式里写外层 const 原生照抛）。
+    if (opts.constNames && varScope.skip.size > 0) {
+      varOpts = {
+        ...varOpts,
+        constNames: new Set(
+          [...opts.constNames].filter((n) => !varScope!.skip.has(n)),
+        ),
+      };
+    }
+  }
+  // issue #165：@nudo:assume 引理锚定收集——仅函数/方法体边界（varScope
+  // 存在）且文件含 @nudo:assume（assumeDirectiveFile 快速门）时进行。从
+  // stmtsIn（completeElseChains 之前，保持节点身份）收**直接子语句**
+  // VariableDeclaration 中 id 为 Identifier 且有 init 的 declarator 节点，
+  // 发射位按对象身份匹配（completeElseChains 的浅拷贝语句共享 declarations
+  // 数组，declarator 身份不变）。嵌套块 / for-init / 解构不收——嵌套块
+  // 沿用外层集合但节点不命中（身份判定天然排除）；嵌套函数体在自身边界
+  // 重算并集（外层节点不越界出现在体内，并集幂等）。早退拆分的 rest
+  // 递归不传 varScope → 沿用本集合，同节点身份仍命中。
+  let anchorNodes: Set<object> | null = null;
+  if (varScope && opts.assumeDirectiveFile) {
+    for (const s of stmtsIn) {
+      if (s.type !== "VariableDeclaration") continue;
+      for (const d of s.declarations) {
+        if (d.id.type !== "Identifier" || !d.init) continue;
+        // 外层已有集合取并集新 Set（varOpts 已携带外层集合时保持单调）
+        if (!anchorNodes) anchorNodes = new Set(opts.anchorDeclNodes);
+        anchorNodes.add(d);
+      }
+    }
   }
   // 本层 const 可见性（含父作用域、扣除本层 let/var 遮蔽）——用户再赋值 TypeError
   const scopedOpts: TranspileOptions = {
     ...varOpts,
     constNames: computeConstScope(stmts, varOpts.constNames),
+    ...(anchorNodes ? { anchorDeclNodes: anchorNodes } : {}),
   };
   for (let i = 0; i < stmts.length; i++) {
     const stmt = stmts[i]!;
@@ -204,10 +242,7 @@ export function transpileFnBodyStmts(
         `}`,
       ].join("\n");
     };
-    const testRecvs = collectArrMutatorReceivers(stmt.test);
-    const testRebinds = testRecvs.size
-      ? emitArrMutatorRebinds(stmt.test as Node, scopedOpts, pad)
-      : [];
+    const testRebinds = emitArrMutatorRebinds(stmt.test as Node, scopedOpts, pad);
     // Bug 2：早退提升路径同样做守卫剪影——rest 在测试假值臂内执行，守卫名
     // 以 $removeNullish/$narrowTypeOf 影子重绑后，`const t = p.major` 类
     // 非终结尾句不再撞未剪 null/undefined 臂记假 may-throw（与 IfStatement
@@ -219,33 +254,46 @@ export function transpileFnBodyStmts(
     const earlyGuards = nullishGuardsOf(stmt.test);
     const earlyTGuard = typeGuardOf(stmt.test);
     const earlyDGuards = discriminantGuardsOf(stmt.test);
-    const consNarrowed = narrowDiscriminantArmThunks(
-      narrowTypeArmThunk(
-        narrowNullishArmThunks(
-          transpileBlockAsThunk(stmt.consequent, depth, scopedOpts),
-          earlyGuards,
+    // 关系守卫（Bug 1）：早退提升路径与 IfStatement 分叉路径同口径——
+    // cons 臂裸 `return x` 携带守卫界（缺省时 return-constraint 假阳）
+    const earlyRGuard = relGuardOf(stmt.test);
+    const consNarrowed = narrowRelArmThunk(
+      narrowDiscriminantArmThunks(
+        narrowTypeArmThunk(
+          narrowNullishArmThunks(
+            transpileBlockAsThunk(stmt.consequent, depth, scopedOpts),
+            earlyGuards,
+            "cons",
+            recvSet,
+          ),
+          earlyTGuard,
           "cons",
           recvSet,
         ),
-        earlyTGuard,
+        earlyDGuards,
         "cons",
         recvSet,
       ),
-      earlyDGuards,
+      earlyRGuard,
       "cons",
       recvSet,
     );
     const cons = wrapArm(consNarrowed, "fk1_");
     const altBody = transpileFnBodyStmts(rest, depth + 1, { ...scopedOpts, inLoop: opts.inLoop });
     const altThunk = `() => {\n${altBody}\n${pad}}`;
-    const altNarrowed = narrowDiscriminantArmThunks(
-      narrowTypeArmThunk(
-        narrowNullishArmThunks(altThunk, earlyGuards, "alt", recvSet),
-        earlyTGuard,
+    const altNarrowed = narrowRelArmThunk(
+      narrowDiscriminantArmThunks(
+        narrowTypeArmThunk(
+          narrowNullishArmThunks(altThunk, earlyGuards, "alt", recvSet),
+          earlyTGuard,
+          "alt",
+          recvSet,
+        ),
+        earlyDGuards,
         "alt",
         recvSet,
       ),
-      earlyDGuards,
+      earlyRGuard,
       "alt",
       recvSet,
     );
@@ -279,10 +327,13 @@ export function transpileFnBodyStmts(
 
 
 export function transpileBodyNode(node: Node, opts: TranspileOptions): string {
+  // Bug 42：body-fn 转译单元也建 try 临时计数器（外层未传时兜底，
+  // 保证单元内同级 try 不撞名——与 transpileFile 同口径）
+  const unitOpts: TranspileOptions = opts.tryTmpSeq ? opts : { ...opts, tryTmpSeq: { n: 0 } };
   if (isExpression(node as { type: string })) {
-    return `return ${emitTranspileExpression(node as Expression, opts)};`;
+    return `return ${emitTranspileExpression(node as Expression, unitOpts)};`;
   }
-  return withImplicitReturn(node, transpileStatement(node as Statement, 1, opts), 1);
+  return withImplicitReturn(node, transpileStatement(node as Statement, 1, unitOpts), 1);
 }
 
 export function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptions): string {
@@ -391,23 +442,30 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // 嵌套函数声明不是 export 面；函数体是新边界，inLoop 必须归零
       const exportKw = depth === 0 ? "export " : "";
       const hasThis = fnBodyHasThis(stmt as { body?: Node | null });
-      // `arguments`：体直接引用时建独立 tuple 槽（strict 映射，见 $arguments）
-      const hasArgs = fnBodyHasOwnArguments(stmt as { body?: Node | null });
+      // `arguments`：体/嵌套箭头引用（含参数默认值）时建独立 tuple 槽（strict 映射，见 $arguments）
+      const hasArgs = fnBodyHasOwnArguments(stmt as { body?: Node | null; params?: Node[] });
       const fnOpts: TranspileOptions = {
         ...opts,
         inLoop: 0,
+        // 函数体是新边界：return 是本函数的返回，不是外层 if 臂的退出信号
+        conditionalFlow: 0,
         inFunction: true,
         ...(hasThis ? { thisParam: "__this" } : {}),
         argsBinding: hasArgs ? "__nudoArgs" : undefined,
+        // Bug 52：函数体是新生成器边界——外层 try 不覆盖体内 yield
+        yieldTryCtx: 0,
       };
-      const { sig, rest, prologue } = emitParamBinding(
+      const { sig, rest, prologue, defaulted } = emitParamBinding(
         stmt.params as Node[],
         indent(depth + 2),
         fnOpts,
       );
       const named = sig;
-      const paramsSig = rest ? [...named, `...${rest}`] : named;
-      const params = paramsSig.join(", ");
+      // Bug 69：宿主签名默认参占位 `_p{i}` 按位补显式默认 `= void 0`——
+      // 宿主 fn.length 与原生对齐（首个默认值前形参数；占位收 undefined
+      // 的绑定语义不变，$orDefault 缺参归一同效）
+      const defaultedSet = new Set(defaulted);
+      const hostSig = named.map((p, i) => (defaultedSet.has(i) ? `${p} = void 0` : p));
       // Bug 7：缺参归一——省略的尾实参以宿主 undefined 绑定宿主签名形参，
       // 裸值流进 $add 等算子读 .shape 崩溃（假 may-throw），直接 return 时
       // 经结果通道泄漏裸 undefined。函数边界统一 $absVal 收形：省略 ≡ 显式
@@ -426,11 +484,14 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const argsPrologue = hasArgs
         ? `${indent(depth + 2)}let __nudoArgs = $arguments(arguments);\n`
         : "";
+      // 顺序：缺参归一 → __nudoArgs/__this 建立 → 参数默认值/解构（默认值
+      // 可读自有 arguments（`a = arguments.length`）与 this——槽必须先于
+      // prologue 声明，否则 TDZ ReferenceError）
       const bodyStmts =
         stmt.body.type === "BlockStatement"
           ? withImplicitReturn(
               stmt.body,
-              [...bindParams, ...prologue, thisPrologue, argsPrologue, transpileFnBodyStmts(stmt.body.body, depth + 2, fnOpts, {
+              [...bindParams, thisPrologue, argsPrologue, ...prologue, transpileFnBodyStmts(stmt.body.body, depth + 2, fnOpts, {
                 // Bug 21：函数体 var 提升边界——参数模式名已绑定，不得提升
                 skip: paramNamesOf(stmt.params as Node[]),
               })]
@@ -439,6 +500,21 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
               depth + 2,
             )
           : `${indent(depth + 2)}${bindParams.map((l) => `${l.trim()} `).join("")}${thisPrologue.trim()}${argsPrologue.trim()}return ${emitTranspileExpression(stmt.body as unknown as Expression, fnOpts)};`;
+      // 函数体自包含边界：体内 $loopReturn 早退（循环 / if 臂 both-return）
+      // 在函数自身边界收成返回值——裸宿主调用（e2e 真实 .mjs 导入、模块
+      // 顶层互调）不经引擎调用边界（callTranspiledExportFullInner /
+      // callAtFunctionBoundary 的 NudoReturn 捕获），必须体内自吸收。
+      // 引擎路径不受影响：settleForkArms 对 ret 值恰一次交付（双 ret 抛出
+      // / 单 ret 入 exits），此处捕获的即全部早退值。
+      const bodySrc = bodyStmts.includes("$loopReturn(")
+        ? [
+            `${indent(depth + 1)}try {`,
+            bodyStmts,
+            `${indent(depth + 1)}} catch (__nudoFnRet) {`,
+            `${indent(depth + 1)}  return $catchReturn(__nudoFnRet);`,
+            `${indent(depth + 1)}}`,
+          ].join("\n")
+        : bodyStmts;
       // Bug 44：rest 绑定经 $restBind——真调用按 arguments 切片包 $arr（长度
       // 保持原生）；签名符号执行的开放数组哨兵直通（不塌缩固定 1 元组）
       const restBind = rest
@@ -449,10 +525,10 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // 提升到作用域顶部（先用后声明也可见，Bug 9）
       if (stmt.generator) {
         return [
-          `${pad}${exportKw}function ${stmt.id.name}(${named.join(", ")}) {`,
+          `${pad}${exportKw}function ${stmt.id.name}(${hostSig.join(", ")}) {`,
           restBind,
           `${indent(depth + 1)}return $gen(() => {`,
-          bodyStmts,
+          bodySrc,
           `${indent(depth + 1)}});`,
           `${pad}}`,
         ].join("\n");
@@ -460,18 +536,18 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // async 声明同口径：宿主函数是普通 function（body 包 $async）
       if (stmt.async) {
         return [
-          `${pad}${exportKw}function ${stmt.id.name}(${named.join(", ")}) {`,
+          `${pad}${exportKw}function ${stmt.id.name}(${hostSig.join(", ")}) {`,
           restBind,
           `${indent(depth + 1)}return $async(() => {`,
-          bodyStmts,
+          bodySrc,
           `${indent(depth + 1)}});`,
           `${pad}}`,
         ].join("\n");
       }
       return [
-        `${pad}${exportKw}function ${stmt.id.name}(${named.join(", ")}) {`,
+        `${pad}${exportKw}function ${stmt.id.name}(${hostSig.join(", ")}) {`,
         restBind,
-        bodyStmts,
+        bodySrc,
         `${pad}}`,
       ].join("\n");
     }
@@ -479,13 +555,30 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const asVar = matchAsOverride(stmt as Node, opts);
       // C2.1：循环体内 return 不是「回调返回」，而是函数提前返回
       // try 内：先 drain 抽象 throwExits，有则 rethrow 让 catch 吸收；正常返回值进 loopExits 后由出口 join
-      const prefix = (opts.inLoop ?? 0) > 0 ? "$loopReturn" : "return";
+      // if 臂 thunk 内（conditionalFlow>0，非循环）：return 同理是函数退出
+      // 信号——裸 JS return 只退出 thunk，值会被语句位 $fork 丢弃（fork-arm
+      // × try-region 早退被 fall-through 覆盖的根因）；$loopReturn 沿
+      // loopExits 侧信道由函数边界 join（runForkArm/settleForkArms 已按
+      // kind:"ret" 处理：确定臂直抛 NudoReturn，抽象臂 exits.push 后兄弟
+      // 臂/fall-through 继续探索）。
+      const prefix =
+        (opts.inLoop ?? 0) > 0 || (opts.conditionalFlow ?? 0) > 0 ? "$loopReturn" : "return";
       const markExpr = opts.tryMarkName ?? "$tryCurrentMark()";
+      // return 表达式推导 hover：把返回值记到 **`return` 关键字起始位**
+      // （不是 argument 起始位——后者与内部根标识符值读记录同键，
+      // first-wins 会让 return 记录丢失；挂关键词位则 hover `return`
+      // 精确命中，表达式内部子表达式由既有记录覆盖）。裸 `return;`
+      // 不记录。$nodoPos 记录并原样返回（语义恒等；无收集器时直通）
+      const retPos =
+        opts.recordPositions && stmt.argument?.loc && stmt.loc
+          ? `, ${stmt.loc.start.line}, ${stmt.loc.start.column}`
+          : "";
       const emitRet = (src: string, mutNodes?: Node | null): string => {
+        const rec = retPos === "" ? src : `$nodoPos(${src}${retPos})`;
         const retRebinds = mutNodes ? emitArrMutatorRebinds(mutNodes, opts, pad) : [];
         if ((opts.inTry ?? 0) > 0) {
           return [
-            `${pad}const __nudoRet = ${src};`,
+            `${pad}const __nudoRet = ${rec};`,
             ...retRebinds,
             `${pad}{`,
             `${indent(depth + 1)}const __xs = $tryTakeSince(${markExpr});`,
@@ -498,9 +591,9 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
             `${pad}${prefix}(__nudoRet);`,
           ].join("\n");
         }
-        if (retRebinds.length === 0) return `${pad}${prefix}(${src});`;
+        if (retRebinds.length === 0) return `${pad}${prefix}(${rec});`;
         return [
-          `${pad}let __mutRet = ${src};`,
+          `${pad}let __mutRet = ${rec};`,
           ...retRebinds,
           `${pad}${prefix}(__mutRet);`,
         ].join("\n");
@@ -515,48 +608,14 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       return `${pad}$throw(${arg});`;
     }
     case "ExpressionStatement": {
-      // C1.4：数组 mutator 语句重绑到**变更后容器**（$arrMutContainer），
-      // 不得绑到 JS 返回值（pop 返回元素，会污染 receiver Abs）。
-      // 表达式内 mutator：先求值（$invoke 只读容器），再重绑（P0 顺序）。
+      // Bug 49/51：数组 mutator 在 $invoke 调用点就地变更（引用语义——
+      // $arrMutContainer 的 writeBack 保持 Abs 身份，变量别名 / 成员槽 /
+      // Map 条目同步可见），语句与表达式位置统一走普通调用发射，不再
+      // 语句位重绑（旧的「先求值再重绑」P0 顺序让同表达式内第二个
+      // mutator 看到变更前容器，且 CallExpression 接收者丢变更）。
+      // 此处的写回只剩 defineProperty/delete。
       const expr = stmt.expression as Expression;
       const exprRebinds = emitArrMutatorRebinds(expr, opts, pad);
-      if (
-        expr.type === "CallExpression" &&
-        expr.callee.type === "MemberExpression" &&
-        !expr.callee.computed &&
-        expr.callee.property.type === "Identifier"
-      ) {
-        const methodName = (expr.callee.property as { name: string }).name;
-        if (
-          ["push", "unshift", "splice", "pop", "shift", "reverse", "sort"].includes(methodName)
-        ) {
-          const argSrcs = expr.arguments
-            .map((a) =>
-              a.type === "SpreadElement" ? "$unknown()" : emitTranspileExpression(a as Expression, opts),
-            )
-            .join(", ");
-          const objNode = expr.callee.object as Node;
-          // 标识符：直接重绑绑定名
-          if (objNode.type === "Identifier") {
-            const name = (objNode as { name: string }).name;
-            return `${pad}${name} = $arrMutContainer(${name}, ${JSON.stringify(methodName)}, [${argSrcs}]);`;
-          }
-          // 成员路径（this.arr / obj.x）：读-改-写重绑根，禁止 `$get(...) = …`
-          if (objNode.type === "MemberExpression" || objNode.type === "ThisExpression") {
-            const path =
-              objNode.type === "MemberExpression"
-                ? memberPathOf(objNode as unknown as { object: Node; property: Node; computed: boolean }, opts)
-                : null;
-            if (path) {
-              const recvSrc = readPathSrc(path);
-              const mutSrc = `$arrMutContainer(${recvSrc}, ${JSON.stringify(methodName)}, [${argSrcs}])`;
-              return `${pad}${path.rootSrc} = ${setPathSrc(path, mutSrc)};`;
-            }
-            // 根不可重绑（this 无 thisParam 等）：保持纯调用
-            return `${pad}${emitTranspileExpression(stmt.expression, opts)};`;
-          }
-        }
-      }
       if (exprRebinds.length > 0) {
         return [
           `${pad}${emitTranspileExpression(expr, opts)};`,
@@ -581,6 +640,29 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const tmpSeq = opts.destrTmpSeq ?? { n: 0 };
       for (const d of stmt.declarations) {
         if (d.id.type === "Identifier") {
+          // 声明位位置记录（hover 重放 recordPositions 时）：把 init 绑定值
+          // 记到 declarator id 起点——非调用初始化（三元 / 可选链 / 字面量）
+          // 的局部量声明位 hover 由 A0 直读，不再依赖调用记录配对
+          const recInit = (initSrc: string): string =>
+            opts.recordPositions && d.id.loc
+              ? `$nodoPos(${initSrc}, ${d.id.loc.start.line}, ${d.id.loc.start.column})`
+              : initSrc;
+          // issue #165：@nudo:assume 引理锚定——函数体直接子语句的
+          // declarator 命中 anchorDeclNodes（节点身份判定：嵌套块 /
+          // 嵌套函数体 / for-init 的声明不在集合内，天然不包）时，init
+          // 最内层包 $assumeAnchor，把非 lit term α-改名 var(<name>)
+          //（SSA：引理作用于绑定值，从定义点到作用域尾）。包在 $nodoPos
+          // 位置记录与 @nudo:as 覆盖之**内层**——锚定最贴近求值、位置记录
+          // 在外；as 覆盖命中时整体替换 init，不再锚定。解构分支不包
+          //（保守）。运行时护栏（premise 不含该名 le 原子则直通原值）
+          // 见 runtime/ops.ts。
+          const anchored = opts.anchorDeclNodes?.has(d) === true;
+          // 窄化捕获：闭包内 d.id 无法保持 Identifier 收窄，名字先落局部
+          const declName = d.id.name;
+          const anchorInit = (initSrc: string): string =>
+            anchored
+              ? `$assumeAnchor(${initSrc}, ${JSON.stringify(declName)})`
+              : initSrc;
           if (isVar && hoistedVar?.has(d.id.name)) {
             // 提升绑定上的赋值：裸 `var x;` 无写跳过（绑定已由顶部 let 提供）
             if (!d.init) {
@@ -589,9 +671,11 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
               }
               continue;
             }
-            const init = asVar
-              ? asVar
-              : emitTranspileExpression(d.init, opts);
+            const init = recInit(
+              asVar
+                ? asVar
+                : anchorInit(emitTranspileExpression(d.init, opts)),
+            );
             lines.push(`${pad}${d.id.name} = ${init};`);
             if (depth === 0) {
               lines.push(`${pad}$recordBinding(${JSON.stringify(d.id.name)}, ${d.id.name});`);
@@ -602,11 +686,15 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
             continue;
           }
           // @nudo:as：覆盖整个声明语句的 init
-          const init = asVar
-            ? asVar
-            : d.init
-              ? emitTranspileExpression(d.init, opts)
-              : "$lit(void 0)";
+          const init = recInit(
+            asVar
+              ? asVar
+              : anchorInit(
+                  d.init
+                    ? emitTranspileExpression(d.init, opts)
+                    : "$lit(void 0)",
+                ),
+          );
           const declKw = isVar ? "var" : kw;
           lines.push(`${pad}${declKw} ${d.id.name} = ${init};`);
           // 顶层绑定表（checkSource varAbs / scanLiteralCalls 实参解析）
@@ -647,10 +735,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         ...collectForkBindingNames(stmt.consequent),
         ...collectForkBindingNames(stmt.alternate),
       ]);
-      const testRecvs = collectArrMutatorReceivers(stmt.test);
-      const testRebinds = testRecvs.size
-        ? emitArrMutatorRebinds(stmt.test as Node, opts, pad)
-        : [];
+      const testRebinds = emitArrMutatorRebinds(stmt.test as Node, opts, pad);
       const names = [...recvSet];
       const padIn = indent(depth + 1);
       // 块级作用域：同一函数内多个 if 都改 errors 时，__fk0_* 不得重复声明
@@ -695,14 +780,22 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const guards = nullishGuardsOf(stmt.test);
       const tguard = typeGuardOf(stmt.test);
       const dguards = discriminantGuardsOf(stmt.test);
-      const consNarrowed = narrowDiscriminantArmThunks(
-        narrowTypeArmThunk(
-          narrowNullishArmThunks(consRaw, guards, "cons", recvSet),
-          tguard,
+      // 关系守卫（Bug 1）：`if (x >= 0)` 真臂 x 影子重绑带界 Abs——
+      // 裸 `return x` 不再丢守卫事实（return-constraint gate 假阳根因）
+      const rguard = relGuardOf(stmt.test);
+      const consNarrowed = narrowRelArmThunk(
+        narrowDiscriminantArmThunks(
+          narrowTypeArmThunk(
+            narrowNullishArmThunks(consRaw, guards, "cons", recvSet),
+            tguard,
+            "cons",
+            recvSet,
+          ),
+          dguards,
           "cons",
           recvSet,
         ),
-        dguards,
+        rguard,
         "cons",
         recvSet,
       );
@@ -1042,9 +1135,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       }
       switchBodySeq += Math.max(bodyIdx, 1);
       const dflt = defaultSrc ? `, ${defaultSrc}` : "";
-      const discRebinds = collectArrMutatorReceivers(stmt.discriminant as Node).size
-        ? emitArrMutatorRebinds(stmt.discriminant as Node, opts, pad)
-        : [];
+      const discRebinds = emitArrMutatorRebinds(stmt.discriminant as Node, opts, pad);
       const switchCall = `$switch(${disc}, [\n${caseLines.map((l) => indent(depth + 1) + l).join("\n")}\n${indent(depth + 1)}]${dflt})`;
       if (names.length === 0) {
         return [
@@ -1102,13 +1193,45 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         }
         return lines.join("\n");
       }
-      const markName = `__nudoTm_${stmt.loc?.start.line ?? 0}`;
+      // Bug 42：try 临时名走单调查询计数器——同作用域同一行两个 try
+      // （压缩/生成代码）按行号命名会重复 const 声明 → new Function
+      // SyntaxError 整模块 fail-closed；loc 缺失 `?? 0` 同样撞车
+      const tryTmpSeq = opts.tryTmpSeq ?? { n: 0 };
+      const tmpNo = tryTmpSeq.n++;
+      const markName = `__nudoTm_${tmpNo}`;
+      // Bug 52：yield 点 try 上下文位——try 块与 catch 体在本 try 的
+      // finally/catch 覆盖内；finally 体不在自身 finally 覆盖内（外层 ctx
+      // 原样）。位值与 runtime/control.ts 的 YIELD_* 常量钉死同步（transpile
+      // 不 import runtime）：1 = TRY_FINALLY，2 = TRY_CATCH，4 = FINALLY_
+      // YIELDS，8 = FINALLY_RETURNS，16 = CATCH_RETURNS，32 = CATCH_YIELDS，
+      // 64 = CATCH_RETHROWS
+      const fin = stmt.finalizer
+        ? finalizerBits(stmt.finalizer as Node)
+        : undefined;
+      const finBits = stmt.finalizer
+        ? 1 | (fin!.yields ? 4 : 0) | (fin!.returns ? 8 : 0)
+        : 0;
+      // R1a：catch 静态事实（finalizerBits 同口径：含 yield / 含 return /
+      // 可能 rethrow）——描述**最近** enclosing catch 的吸收结局，故本 try
+      // 带 handler 时替换外层 catch 事实位（外层 catch 只有在内层重抛后才
+      // 可达，此时结局不可分类 → 64 降级）。内层可能 rethrow 且外层还有
+      // catch → 二次吸收路径外层事实未标注，同样置 64。
+      const catchFacts = stmt.handler
+        ? (() => {
+            const cb = finalizerBits(stmt.handler!.body as Node);
+            const rethrows = catchMayRethrow(stmt.handler!) && ((opts.yieldTryCtx ?? 0) & 2) !== 0;
+            return 2 | (cb.returns ? 16 : 0) | (cb.yields ? 32 : 0) | (rethrows ? 64 : 0);
+          })()
+        : 0;
+      const innerYieldCtx =
+        ((opts.yieldTryCtx ?? 0) & ~(16 | 32 | 64)) | finBits | catchFacts;
       const tryOpts: TranspileOptions = {
         ...opts,
         inTry: (opts.inTry ?? 0) + 1,
         tryMarkName: markName,
         hasTryHandler: !!stmt.handler,
         tryRethrowCatch: stmt.handler ? catchMayRethrow(stmt.handler) : false,
+        yieldTryCtx: innerYieldCtx,
       };
       const tryBody =
         stmt.block.type === "BlockStatement"
@@ -1120,11 +1243,40 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         tryBody,
         `${pad}}`,
       ];
+      // catch ([a, b]) / catch ({v})：模式参此前只绑载体名 "e"，子名静默丢
+      // 绑定 → catch 体自由读 spurious-throw 面（差分 FALSE-THROW）。
+      // 载体改用 catchTmp 原生绑定（可再赋、与用户子名不撞车），守卫区内
+      // emitDestructure 绑定全部子名（let 语义：catch 参块内可再赋）。
+      const handlerParam = stmt.handler?.param as Node | null | undefined;
+      const patternParam =
+        handlerParam &&
+        (handlerParam.type === "ObjectPattern" || handlerParam.type === "ArrayPattern")
+          ? handlerParam
+          : null;
       const catchParam =
-        stmt.handler?.param?.type === "Identifier"
-          ? (stmt.handler.param as { name: string }).name
+        handlerParam?.type === "Identifier"
+          ? (handlerParam as unknown as { name: string }).name
           : "e";
-      const catchTmp = `__nudoE_${stmt.loc?.start.line ?? 0}`;
+      const catchTmp = `__nudoE_${tmpNo}`;
+      // Bug 52：catch 体仍受本 try 的 finally 覆盖（.return 注入值可被改写），
+      // 但注入到 catch 内 yield 的 .throw 不再被**本** catch 重新吸收
+      //（native：catch 内 throw 直接穿出 try，经 finally 上抛）——只并
+      // 外层 ctx + 本 finally 位（含 finalizer 静态事实）
+      // P4b：catch 参数遮蔽外层 const / 类体不可变自有名——体内写的是
+      // catch 绑定（let 语义，原生可再赋 no-throw），不得假 TypeError。
+      const catchShadow = new Set<string>();
+      if (stmt.handler?.param) collectPatternNames(stmt.handler.param, catchShadow);
+      const catchOpts: TranspileOptions = {
+        ...opts,
+        yieldTryCtx: (opts.yieldTryCtx ?? 0) | finBits,
+        ...(opts.constNames && catchShadow.size > 0
+          ? {
+              constNames: new Set(
+                [...opts.constNames].filter((n) => !catchShadow.has(n)),
+              ),
+            }
+          : {}),
+      };
       const transpileCatchBody = (d: number, o: TranspileOptions): string =>
         !stmt.handler
           ? ""
@@ -1132,7 +1284,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
             ? stmt.handler.body.body.map((s) => transpileStatement(s, d, o)).join("\n")
             : transpileStatement(stmt.handler.body as unknown as Statement, d, o);
       if (stmt.handler) {
-        const catchBody = transpileCatchBody(depth + 1, opts);
+        const catchBody = transpileCatchBody(depth + 1, catchOpts);
         const softVar = `__soft_${markName}`;
         lines.push(`${pad}catch (${catchTmp}) {`);
         // NudoReturn 是控制流信号，不是 catch 绑定
@@ -1142,10 +1294,25 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         lines.push(`${indent(depth + 1)}const __xs_${markName} = $tryTakeSince(${markName});`);
         lines.push(`${indent(depth + 1)}__xs_${markName}.push($catchVal(${catchTmp}));`);
         lines.push(
-          // catch 绑定可再赋（let 语义），不是 const
-          `${indent(depth + 1)}let ${catchParam} = __xs_${markName}.reduce((a, b) => $join(a, b));`,
+          // catch 绑定可再赋（let 语义），不是 const；模式参载体 = catchTmp
+          patternParam
+            ? `${indent(depth + 1)}${catchTmp} = __xs_${markName}.reduce((a, b) => $join(a, b));`
+            : `${indent(depth + 1)}let ${catchParam} = __xs_${markName}.reduce((a, b) => $join(a, b));`,
         );
         lines.push(`${indent(depth + 1)}try {`);
+        if (patternParam) {
+          // 模式参绑定入守卫区：$iterCheck/$get 抛出的 TypeError 经 rethrow
+          // 包装上抛 = native 口径（解构抛错不是 catch 体可消化的路径）
+          emitDestructure(
+            patternParam,
+            catchTmp,
+            "let",
+            indent(depth + 2),
+            catchOpts,
+            lines,
+            opts.destrTmpSeq ?? { n: 0 },
+          );
+        }
         lines.push(catchBody);
         lines.push(`${indent(depth + 1)}} catch (__rethrow_${markName}) {`);
         lines.push(`${indent(depth + 2)}$tryOrphanSoft(${softVar});`);
@@ -1185,13 +1352,26 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       }
       // try/catch/finally 之后再 drain 未吸收的抽象 throw
       if (stmt.handler) {
-        const catchBody = transpileCatchBody(depth + 2, opts);
+        const catchBody = transpileCatchBody(depth + 2, catchOpts);
         lines.push(`${pad}{`);
         lines.push(`${indent(depth + 1)}const __post_${markName} = $tryTakeSince(${markName});`);
         lines.push(`${indent(depth + 1)}if (__post_${markName}.length) {`);
         lines.push(
-          `${indent(depth + 2)}let ${catchParam} = __post_${markName}.reduce((a, b) => $join(a, b));`,
+          patternParam
+            ? `${indent(depth + 2)}let ${catchTmp} = __post_${markName}.reduce((a, b) => $join(a, b));`
+            : `${indent(depth + 2)}let ${catchParam} = __post_${markName}.reduce((a, b) => $join(a, b));`,
         );
+        if (patternParam) {
+          emitDestructure(
+            patternParam,
+            catchTmp,
+            "let",
+            indent(depth + 2),
+            catchOpts,
+            lines,
+            opts.destrTmpSeq ?? { n: 0 },
+          );
+        }
         lines.push(
           catchBody
             .split("\n")
@@ -1313,6 +1493,8 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           : transpileStatement(stmt.body, depth + 1, bodyOpts);
       const max = opts.maxLoopIters ?? 8;
       // body/test 内被赋值的标识符 → pack/unpack，抽象条件出口可 join（P0 健全）
+      // 注：mutator 接收者不入集——与既有 while 精度口径一致（for/for-of/
+      // do-while 入集；while 保持 #136 的 {0,1} 出口 join 精度）
       const assigned = new Set<string>();
       collectAssignedIds(stmt.body, assigned);
       collectAssignedIds(stmt.test, assigned);
@@ -1482,6 +1664,45 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
 }
 
 /**
+ * setter thunk 发射（类访问器与对象字面量访问器共用）：
+ * - 体包内层箭头：原生 setter 返回值被丢弃（赋值表达式值 = RHS），thunk 契约
+ *   恒返回接收者——体内早退 if 提升（return $fork）/裸 return/带值 return/
+ *   throw 臂的 joined 臂值不得顶掉接收者（否则 $set 把接收者重绑成臂值，
+ *   F3：裸 return 折 undefined → 后续成员读 TypeError）。
+ * - 接收者回收：体内经**别名绑定**写接收者（`o._v = v` / `C._v = v`——标识符根
+ *   的成员写进 fork 协议，早退 if 提升时臂 copy/join 会重绑别名绑定）时，赋值点
+ *   `root = $set(root, …)` 拿过时的 __this 重绑会把 join 结果冲掉（成员读折
+ *   undefined）。尾部回收：入参时值 === __this 且体内跑完后分叉了的别名绑定
+ *   就是更新后的接收者，返回它（未分叉 / 非接收者别名 / 继承派发的父类写
+ *   都原样 return __this）。
+ */
+export function emitSetterAccessorThunk(
+  vname: string,
+  bodySrc: string,
+  aliasNames: readonly string[],
+  depth: number,
+  /** N3：setter 形参默认值/解构绑定行（__nudoArgs 槽，见类/对象 setter 发射位） */
+  paramPrologue: string[] = [],
+): string {
+  const pad = indent(depth);
+  const lines: string[] = [`(__this, ${vname}) => {`];
+  lines.push(...paramPrologue);
+  aliasNames.forEach((n, i) => lines.push(`${pad}const __nab${i} = ${n};`));
+  lines.push(`${pad}(() => {`, bodySrc, `${pad}})();`);
+  if (aliasNames.length === 1) {
+    lines.push(`${pad}if (__nab0 === __this && ${aliasNames[0]} !== __nab0) return ${aliasNames[0]};`);
+  } else if (aliasNames.length > 1) {
+    lines.push(`${pad}let __nabs;`);
+    aliasNames.forEach((n, i) =>
+      lines.push(`${pad}if (__nab${i} === __this && ${n} !== __nab${i}) __nabs = __nabs ? $join(__nabs, ${n}) : ${n};`),
+    );
+    lines.push(`${pad}if (__nabs !== undefined) return __nabs;`);
+  }
+  lines.push(`${pad}return __this;`, `${indent(depth - 1)}}`);
+  return lines.join("\n");
+}
+
+/**
  * 类体成员 → $class spec 片段（类声明与类表达式共用，Bug 80）。
  * 返回 spec 行（不含 `let C = $class(...)` 包装）与静态块后置语句
  * （Bug 77：static 块须在类绑定完成后执行——块体内类名可见）。
@@ -1525,6 +1746,8 @@ export function classSpecOf(
   /** 方法形参展示名（未调用方法槽 shape.params） */
   const methodParamEntries: Array<[string, string[]]> = [];
   const staticMethodParamEntries: Array<[string, string[]]> = [];
+  /** P2b：构造器元数（.length 自有属性）——隐式构造器（基类/派生）恒 0 */
+  let ctorLength = 0;
   const accessorDefs = new Map<string, { get?: string; set?: string }>();
   const staticAccessorDefs = new Map<string, { get?: string; set?: string }>();
   let ckSeq = 0;
@@ -1537,8 +1760,10 @@ export function classSpecOf(
     : null;
 
   /**
-   * 成员键提取（Bug 60/Bug 78）：
-   * - 非计算键：PrivateName → "#x" 混淆键（公有名不含 "#"，无碰撞；Bug 78）；
+   * 成员键提取（Bug 60/Bug 78/Bug 84）：
+   * - 非计算键：PrivateName → "#x" 混淆键（公有名不含 "#"，无碰撞；Bug 78）
+   *   + private 标记（Bug 84：落地槽打 Slot.internal，introspection 面剔除；
+   *   公共字符串键 "#x"（含计算键 ["#x"]）不带标记）；
    *   Identifier/String/Numeric → 原名（Numeric 原生 ToPropertyKey 成串）；
    * - 计算键（含 `[k]()` 的 Identifier 形状——babel 把 computed 标在成员上）：
    *   发射求值源，$class 折叠真名，不静默挂 "method"。
@@ -1546,14 +1771,14 @@ export function classSpecOf(
   const keyOf = (
     key: unknown,
     computed: boolean,
-  ): { name: string } | { computed: string } | null => {
+  ): { name: string; private?: boolean } | { computed: string } | null => {
     const k = key as
       | { type?: string; name?: string; value?: unknown; id?: { name?: string } }
       | undefined;
     if (!k?.type) return null;
     if (!computed && k.type === "PrivateName") {
       const n = k.id?.name ?? k.name;
-      return n ? { name: `#${n}` } : null;
+      return n ? { name: `#${n}`, private: true } : null;
     }
     if (!computed && k.type === "Identifier" && k.name) return { name: k.name };
     if (k.type === "StringLiteral" || k.type === "NumericLiteral") {
@@ -1575,13 +1800,31 @@ export function classSpecOf(
       return id?.type === "Identifier" && id.name ? id.name : "_";
     });
 
+  // P4b：类体词法绑定是**不可变**绑定（ClassDefinitionEvaluation 对自有名
+  // CreateImmutableBinding——体内/静态块/字段初始化器里 `C = v` 原生
+  // TypeError）。经 constNames 复用 const 赋值通道（$throwConstAssign）。
+  // 只作用于类体成员 opts；外层绑定保持可再绑（ClassDeclaration
+  // IsConstantDeclaration = false，`class C {}; C = 5` 原生合法 no-throw）。
+  // 静态字段 thunk 发射的 `let C = __this`（N4）保持 let：`C.q = v` 成员写
+  // 经 memberPathOf 根重绑是裸 JS 赋值，不走 constNames，不受影响。
+  // 匿名类无自有名绑定——不引入。
+  const selfConstNames = stmt.id?.name
+    ? opts.constNames
+      ? new Set([...opts.constNames, stmt.id.name])
+      : new Set([stmt.id.name])
+    : opts.constNames;
   const methodOptsBase: TranspileOptions = {
     ...opts,
     inLoop: 0,
     inTry: 0,
+    // 方法体是新函数边界：return 不携带外层 if 臂退出信号
+    conditionalFlow: 0,
     inFunction: true,
     thisParam: "__this",
     className: name,
+    constNames: selfConstNames,
+    // Bug 52：方法体是新生成器边界——外层 try 不覆盖体内 yield
+    yieldTryCtx: 0,
   };
 
   for (const m of methods) {
@@ -1606,15 +1849,42 @@ export function classSpecOf(
     if (m.type === "ClassProperty" || m.type === "ClassPrivateProperty") {
       const keyR = keyOf(m.key, m.computed === true);
       if (m.static) {
-        // 静态字段：定义期求值挂类值自有槽（this 近似为模块作用域——既有口径）
+        // R5：静态字段——thunk 以类值为 this 定义期求值（原生
+        // ClassFieldDefinitionEvaluation 的 receiver 是类值，this.x 读写
+        // /箭头捕获随之恢复；$class 建类值后逐槽调用，源序保持）
+        const fieldOpts: TranspileOptions = { ...methodOptsBase };
         const vsrc = m.value
-          ? emitTranspileExpression(m.value as Expression, opts)
+          ? emitTranspileExpression(m.value as Expression, fieldOpts)
           : "$lit(void 0)";
+        // N4：静态字段 thunk 求值于 $class 内——`let C = $class(…)` 尚未
+        // 赋值，类名自由引用命中宿主 TDZ ReferenceError（原生
+        // ClassDefinitionEvaluation 先初始化类体自有词法绑定再跑静态字段
+        // 初始化器，`this === C` 折 true / `C.n` 前序同胞字段可读）。自有
+        // 名类在 thunk 顶部引入同名 let 绑定（值 = 类值 __this）复刻该词法
+        // 绑定：内层参数/具名函数遮蔽、闭包捕获、内嵌类引用外层类名沿生成
+        // 代码词法链免费对齐。用 let 不用 const——`C.q = v` 成员写经
+        // memberPathOf 根重绑（C = $set(C,…)）是裸 JS 赋值不得假 TypeError
+        // （原生允许）。P4b：`C = v` 名字重绑的 TypeError 由 fieldOpts 的
+        // constNames（methodOptsBase 注入类体不可变自有名）在 transpile 层
+        // 折 $throwConstAssign——宿主 let 只服务内部根重绑，用户层直写不再
+        // 静默通过。匿名类表达式（无自有名）不引入
+        // 绑定：外层名引用保持自由，TDZ 面与原生一致。计算键不在类体绑定
+        // 作用域内（原生求值于绑定初始化前，引用类名原生亦 TDZ）——保持
+        // 裸表达式。静态块/静态方法体求值于类绑定赋值后，无需处理。
+        const selfName = stmt.id?.name;
+        const initSrc = selfName
+          ? [
+              `(__this) => {`,
+              `${indent(depth + 3)}let ${selfName} = __this;`,
+              `${indent(depth + 3)}return ${vsrc};`,
+              `${indent(depth + 2)}}`,
+            ].join("\n")
+          : thunkOf(vsrc, depth + 2);
         if (keyR && "name" in keyR) {
-          staticFieldParts.push(`${indent(depth + 2)}${JSON.stringify(keyR.name)}: ${vsrc},`);
+          staticFieldParts.push(`${indent(depth + 2)}${JSON.stringify(keyR.name)}: ${initSrc},`);
         } else if (keyR && "computed" in keyR) {
           const synth = `__ck${ckSeq++}`;
-          staticFieldParts.push(`${indent(depth + 2)}${JSON.stringify(synth)}: ${vsrc},`);
+          staticFieldParts.push(`${indent(depth + 2)}${JSON.stringify(synth)}: ${initSrc},`);
           computedKeyParts.push(`${indent(depth + 2)}${JSON.stringify(synth)}: ${keyR.computed},`);
         }
         // 无名键（解析异常）：无表达式可发射，跳过
@@ -1628,8 +1898,9 @@ export function classSpecOf(
         : "$lit(void 0)";
       const initSrc = thunkOf(vsrc, depth + 2);
       if (keyR && "name" in keyR) {
+        // Bug 84：私有字段透传 private 标记（槽落地打 Slot.internal）
         instanceFieldParts.push(
-          `${indent(depth + 2)}{ name: ${JSON.stringify(keyR.name)}, init: ${initSrc} },`,
+          `${indent(depth + 2)}{ name: ${JSON.stringify(keyR.name)}, init: ${initSrc}${keyR.private === true ? ", private: true" : ""} },`,
         );
       } else if (keyR && "computed" in keyR) {
         // 原生计算键逐实例求值（ClassFieldDefinitionEvaluation 在构造期）
@@ -1663,9 +1934,13 @@ export function classSpecOf(
         ...opts,
         inLoop: 0,
         inTry: 0,
+        // 访问器体是新函数边界：return 不携带外层 if 臂退出信号
+        conditionalFlow: 0,
         inFunction: true,
         thisParam: "__this",
         className: name,
+        // P4b：访问器体同在类体不可变自有名绑定作用域内（methodOptsBase 同口径）
+        constNames: selfConstNames,
         // Bug 14：静态访问器体 super 接收者 = 父类构造器
         ...(m.static && superSrc !== null ? { staticSuperSrc: superSrc } : {}),
       };
@@ -1676,10 +1951,28 @@ export function classSpecOf(
         const accBodyStmts = emitFnBlockBody(accBody, depth + 3, accBodyOpts, { varParams: accVarParams });
         def.get = `(__this) => {\n${accBodyStmts}\n${indent(depth + 3)}}`;
       } else {
-        const vname = params.length > 0 && params[0] !== "_" ? params[0]! : "__v";
-        // setter 尾部 return __this——implicitReturn 关闭
-        const setBody = emitFnBlockBody(accBody, depth + 3, accBodyOpts, { implicitReturn: false, varParams: accVarParams });
-        def.set = `(__this, ${vname}) => {\n${setBody}\n${indent(depth + 4)}return __this;\n${indent(depth + 3)}}`;
+        const setParams = (m.params ?? []) as Node[];
+        const firstP = setParams[0] as { type?: string; name?: string } | undefined;
+        const vname = firstP?.type === "Identifier" && firstP.name ? firstP.name : "__v";
+        // setter thunk：内层箭头丢弃体返回值（恒返回 __this）+ 别名写接收者回收
+        // （详见 emitSetterAccessorThunk；F3：裸 return 折 undefined → TypeError，
+        // 别名写 + 早退 if 提升被赋值点重绑冲掉 → undefined）
+        const setBody = emitFnBlockBody(accBody, depth + 4, accBodyOpts, {
+          implicitReturn: false,
+          varParams: accVarParams,
+        });
+        const aliasNames = collectForkBindingNames(accBody).filter((n) => !accVarParams.has(n));
+        // N3：setter 形参带默认值/解构——经 __nudoArgs 槽统一绑定（与
+        // emitParamBindingFromArgs 同机制）：原生 `o.s = undefined` 触发默认值
+        //（此前默认值静默丢弃折 undefined），解构 setter 参此前成自由标识符
+        //（折 never）。赋进值以 [__v] 元组入槽，默认表达式以访问器边界
+        // opts（thisParam __this）求值。
+        let setPrologue: string[] = [];
+        if (firstP && firstP.type !== "Identifier") {
+          const bound = emitParamBindingFromArgs(setParams, indent(depth + 4), accBodyOpts, "__nudoArgs");
+          setPrologue = [`${indent(depth + 4)}let __nudoArgs = $arguments([__v]);`, ...bound.prologue];
+        }
+        def.set = emitSetterAccessorThunk(vname, setBody, aliasNames, depth + 3, setPrologue);
       }
       target.set(mname, def);
       if (computedKeySrc) {
@@ -1689,29 +1982,42 @@ export function classSpecOf(
     }
     // ctor 有显式 `return __this`（下方追加）——不得加隐式 return 抢行
     const isCtor = m.kind === "constructor" || mname === "constructor";
-    const mHasArgs = fnBodyHasOwnArguments({ body: m.body as Node });
+    const mHasArgs = fnBodyHasOwnArguments({
+      body: m.body as Node,
+      params: m.params as Node[] | undefined,
+    });
+    // N3：非简单形参（默认值/解构/rest）与读 arguments 的方法同走
+    // `...__margs` + emitParamBindingFromArgs 统一绑定——paramsOf 只认
+    // Identifier，默认参/解构/rest 形参此前被静默丢弃（宿主签名无名、
+    // prologue 无绑定 → 体引用成自由标识符折 never，或默认值不求值折
+    // undefined）。默认表达式经方法边界 opts 求值：__this（实例 receiver
+    // / R5 静态类值）在作用域内，与原生默认参以调用点 this 求值一致。
+    const mParamsNodes = (m.params ?? []) as Node[];
+    const bindFromArgs =
+      mHasArgs || mParamsNodes.some((p) => (p as { type?: string } | undefined)?.type !== "Identifier");
     const methodOpts: TranspileOptions = {
       ...methodOptsBase,
-      argsBinding: mHasArgs ? "__nudoArgs" : undefined,
+      argsBinding: bindFromArgs ? "__nudoArgs" : undefined,
     };
+    // 静态方法体边界（R5/Bug 14）：默认表达式里的 super.x 也要按
+    // staticSuperSrc 派发——绑定与体共用同一 opts
+    const staticOpts: TranspileOptions = {
+      ...methodOptsBase,
+      argsBinding: bindFromArgs ? "__nudoArgs" : undefined,
+      ...(superSrc !== null ? { staticSuperSrc: superSrc } : {}),
+    };
+    const bindOpts = m.static ? staticOpts : methodOpts;
     let bodyStmts = emitFnBlockBody(
       m.body as Node | undefined,
       depth + 3,
-      m.static
-        ? {
-            ...opts,
-            argsBinding: mHasArgs ? "__nudoArgs" : undefined,
-            // Bug 14：静态方法体 super 接收者 = 父类构造器
-            ...(superSrc !== null ? { staticSuperSrc: superSrc } : {}),
-          }
-        : methodOpts,
-      { implicitReturn: !isCtor, varParams: paramNamesOf((m.params ?? []) as Node[]) },
+      bindOpts,
+      { implicitReturn: !isCtor, varParams: paramNamesOf(mParamsNodes) },
     );
-    if (mHasArgs) {
+    if (bindFromArgs) {
       const bound = emitParamBindingFromArgs(
-        (m.params ?? []) as Node[],
+        mParamsNodes,
         indent(depth + 4),
-        methodOpts,
+        bindOpts,
         "__nudoArgs",
       );
       bodyStmts = [
@@ -1743,7 +2049,8 @@ export function classSpecOf(
     }
     if (m.static) {
       staticMethodParts.push(
-        `${indent(depth + 3)}${JSON.stringify(mname)}: (${mHasArgs ? "...__margs" : paramList}) => {`,
+        // R5：__this 首参 = 类值（接收者）——与实例方法 __this 载体同构
+        `${indent(depth + 3)}${JSON.stringify(mname)}: (__this, ${bindFromArgs ? "...__margs" : paramList}) => {`,
         bodyStmts,
         `${indent(depth + 3)}},`,
       );
@@ -1754,15 +2061,17 @@ export function classSpecOf(
       continue;
     }
     if (isCtor) {
+      // P2b：.length = 首个默认值/rest 形参前的形参数（Bug 69 同口径）
+      ctorLength = nativeParamArity(m.params);
       ctorParts.push(
-        `${indent(depth + 2)}ctor: (__this, ${mHasArgs ? "...__margs" : paramList}) => {`,
+        `${indent(depth + 2)}ctor: (__this, ${bindFromArgs ? "...__margs" : paramList}) => {`,
         bodyStmts,
         `${indent(depth + 3)}return __this;`,
         `${indent(depth + 2)}},`,
       );
     } else if (m.async) {
       methodParts.push(
-        `${indent(depth + 3)}${JSON.stringify(mname)}: (__this, ${mHasArgs ? "...__margs" : paramList}) => {`,
+        `${indent(depth + 3)}${JSON.stringify(mname)}: (__this, ${bindFromArgs ? "...__margs" : paramList}) => {`,
         `${indent(depth + 4)}return $async(() => {`,
         bodyStmts,
         `${indent(depth + 4)}});`,
@@ -1771,7 +2080,7 @@ export function classSpecOf(
       methodParamEntries.push([mname, paramDisplayNames(m.params)]);
     } else {
       methodParts.push(
-        `${indent(depth + 3)}${JSON.stringify(mname)}: (__this, ${mHasArgs ? "...__margs" : paramList}) => {`,
+        `${indent(depth + 3)}${JSON.stringify(mname)}: (__this, ${bindFromArgs ? "...__margs" : paramList}) => {`,
         bodyStmts,
         `${indent(depth + 3)}},`,
       );
@@ -1783,6 +2092,8 @@ export function classSpecOf(
   }
 
   const specLines: string[] = [];
+  // P2b：始终发射（隐式构造器 0）——手写 spec（mock 等）不发射 → unknown
+  specLines.push(`${indent(depth + 2)}ctorLength: ${ctorLength},`);
   if (superClassNode) {
     // 活引用而非名字字符串：class B extends A {} 在 A 声明前求值时
     // 触发 let TDZ ReferenceError（原生语义）；宿主全局（extends Map）按名解析。
@@ -1905,11 +2216,19 @@ export function transpileBlockAsThunk(stmt: Statement, depth: number, opts: Tran
   }
   if (stmt.type === "ReturnStatement") {
     const v = stmt.argument ? emitTranspileExpression(stmt.argument, opts) : "$lit(void 0)";
-    // C2.1：循环体内的 return 是函数提前返回，不是 thunk 的表达式值
-    if ((opts.inLoop ?? 0) > 0) {
-      return `() => { $loopReturn(${v}); }`;
+    // return 表达式推导 hover：单语句 if 臂 return 快路径同 emitRet
+    // 口径记录（键 = return 关键字起始位；裸 return 不记录）
+    const rec =
+      opts.recordPositions && stmt.argument?.loc && stmt.loc
+        ? `$nodoPos(${v}, ${stmt.loc.start.line}, ${stmt.loc.start.column})`
+        : v;
+    // C2.1：循环体内的 return 是函数提前返回，不是 thunk 的表达式值。
+    // if 臂 thunk 内（conditionalFlow>0）同口径——$loopReturn 走函数退出
+    // 侧信道，裸 JS return 的 thunk 值会被语句位 $fork 丢弃。
+    if ((opts.inLoop ?? 0) > 0 || (opts.conditionalFlow ?? 0) > 0) {
+      return `() => { $loopReturn(${rec}); }`;
     }
-    return `() => ${v}`;
+    return `() => ${rec}`;
   }
   const one = transpileStatement(stmt, depth + 1, opts);
   return `() => {\n${one}\n${indent(depth)}}`;

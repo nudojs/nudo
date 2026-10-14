@@ -584,7 +584,7 @@ export default function PlaygroundApp() {
                       r.internal
                         ? `internal · util.js:${r.line ?? '?'}`
                         : `call@test.js:${r.line ?? '?'}`,
-                      r.args.map(formatShape).join(', '),
+                      r.args.map(a => formatShape(a)).join(', '),
                       formatShape(r.result),
                       isPrecise(formatShape(r.result)),
                       false,
@@ -602,7 +602,7 @@ export default function PlaygroundApp() {
                       {renderCaseCard(
                         'before',
                         preset.exportName,
-                        callsiteResult.beforeArgs.map(formatShape).join(', '),
+                        callsiteResult.beforeArgs.map(a => formatShape(a)).join(', '),
                         formatShape(callsiteResult.before),
                         isPrecise(formatShape(callsiteResult.before)),
                         false,
@@ -622,7 +622,7 @@ export default function PlaygroundApp() {
                         ? renderCaseCard(
                             'after',
                             preset.exportName,
-                            (callsiteResult.afterArgs ?? []).map(formatShape).join(', '),
+                            (callsiteResult.afterArgs ?? []).map(a => formatShape(a)).join(', '),
                             formatShape(callsiteResult.after),
                             isPrecise(formatShape(callsiteResult.after)),
                             false,
@@ -810,7 +810,7 @@ export default function PlaygroundApp() {
                         renderCaseCard(
                           `case-${i}`,
                           `case "${r.name}" — ${r.fnName}`,
-                          r.args.map(formatShape).join(', '),
+                          r.args.map(a => formatShape(a)).join(', '),
                           formatShape(r.result),
                           isPrecise(formatShape(r.result)),
                           i === activeCaseIndex,

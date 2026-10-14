@@ -104,7 +104,7 @@ Context: [@nudo:case](../concepts/directives.md#nudocase--debug-witnesses) · [�
 
 ### `nudo:interface-param-mismatch` {#nudo-interface-param-mismatch}
 
-手写契约参数名不在形式参数面上。（诊断 ID 保留历史 `interface` 词元；产品术语是 **contract**。）
+手写契约参数名不在形式参数面上。（诊断 ID 保留历史 `interface` 词元；产品术语是 **contract**。）合法名：普通参数名、解构绑定名（rename 时用源属性键）、嵌套解构的点路径键（`({ card: { grade } })` 用 `'card.grade'`）——见[侧车自动绑定](../concepts/directives.md#主路径侧车自动绑定)。
 
 Context: [契约优先](../guides/contract.md#契约优先契约层风格) · [接口诊断](../guides/check.md#接口诊断)
 
@@ -227,6 +227,17 @@ Return postcondition could not be proved (any / unknown / opaque face, or a wide
 
 Context: [nudo check](../guides/check.md#what-it-checks)
 
+### `nudo:assume-relied` {#nudo-assume-relied}
+
+```text
+sim: return contract proved via @nudo:assume d <= max
+→ @nudo:assume is a user-supplied axiom — falsify it with concrete @nudo:case runs (nudo test)
+```
+
+返回契约的证明**依赖了用户引理**（`@nudo:assume`）。**Info** —— 审计标注而非门禁：引擎验证的是义务（返回契约），从不验证引理本身。报告会建议用具体 `@nudo:case`（`nudo test`）证伪引理——错误引理会让受影响的证明 unsound，依赖面必须上屏可见。与 [`nudo:unproven-return`](#nudo-unproven-return)（证不出、诚实保留为 warning）互为对偶。
+
+Context: [@nudo:assume](../concepts/directives.md#nudoassume--user-lemmas) · [nudo check](../guides/check.md#what-it-checks)
+
 ### `nudo:unknown-recv` {#nudo-unknown-recv}
 
 `unknown` 接收者上的成员访问。不能替代 L2 throws 建模。
@@ -253,13 +264,24 @@ Context: [求值器缺口](../concepts/limits.md#求值器缺口摘要)
 
 ### `nudo:recursion-truncated` {#nudo-recursion-truncated}
 
-递归预算用尽；结果拓宽。预算旋钮与修复：[性能：预算与分析缓存](../guides/performance.md)。
+递归求值被截断；结果拓宽为 `unknown#opaque`。文案——以及 `check --json` 的 `reason` 字段——指明**归因**：
+
+- **`cycle`** ——同**抽象实参**的调用已在求值栈上（数据依赖的自/互递归，如 `walk(dir, out)` 以 `(dir, out)` 递归自身）。这**不是预算**：抬 `@nudo:budget` 解不开。让递归实参逐层变化、收窄基例，或声明 `@nudo:contract`。
+- **`depth` / `calls`** ——调用预算（深度 64 / 总进入 20,000）用尽。抬函数上的 `@nudo:budget depth=… / calls=…` 有效；否则重构递归。
+
+预算旋钮与修复：[性能：预算与分析缓存](../guides/performance.md)。
 
 Context: [分析预算](../guides/performance.md#分析预算)
 
 ### `nudo:fork-truncated` {#nudo-fork-truncated}
 
 分支展开预算（`$fork` 总次数）用尽；受影响结果拓宽。**warning**。可用 `NUDO_MAX_FORKS` 或 `package.json#nudo.analysis.maxForks` 调高（默认 5000）。预算与修复：[性能：预算与分析缓存](../guides/performance.md)。
+
+Context: [分析预算](../guides/performance.md#分析预算)
+
+### `nudo:loop-truncated` {#nudo-loop-truncated}
+
+循环的退出条件越过迭代预算仍保持具体真（抽象展开上限 8、具体延展上限 1024——如 `while (i < n)` 的 `i`/`n` 都是具体值且不终止）；循环状态被拓宽（有界、非 exact）。**info**。这是**循环迭代预算**，不是调用预算——`@nudo:budget calls=…/depth=…` 抬不动。让上界依赖数据（抽象化）或用 `@nudo:case` / `@nudo:contract` 钉住结果——非阻塞。
 
 Context: [分析预算](../guides/performance.md#分析预算)
 
@@ -316,6 +338,19 @@ Context: [指令文法](../concepts/directives.md) · [Skip 文法](../concepts/
 `@nudo:contract` 段或 `@nudo:import` 形态非法（如 `x > 0` 而非 `x positive`、default import）。**Warning** —— 该段被忽略；使用 `<param> <约束名>` 或 `return <约束名>`。
 
 Context: [约束模板](../concepts/directives.md#nudo--约束模板引入) · [契约门禁（L1）](../guides/check.md#l1--显式契约)
+
+### `nudo:assume-invalid` {#nudo-assume-invalid}
+
+```text
+sim: malformed @nudo:assume 'd <= 10' (expected <param> <= <param> or <param> >= <param>; constant bounds belong to sidecar contracts)
+sim: @nudo:assume name(s) not bound as parameters or top-level locals (x, y)
+```
+
+`@nudo:assume` 段不在 `var <= var` 文法之内，或引用了锚定函数**形参或函数体顶层 `const`/`let`/`var` 局部绑定**之外的名字（解构、嵌套块、`for` 头声明不算）。**Error** —— 该段被忽略，不折入任何引理。文法只接受 `<name> <= <name>`（`>=` 归一为 `le`）；`<` / `>` / `==` 与常数界（`d <= 10`）均非法——**常数界归侧车契约**（`number().le(10)`），该指令只声明引擎推导不出的跨变量引理。
+
+**Fix:** 引用锚定函数形参或函数体顶层局部绑定内的名字；常数界写进侧车 / `@nudo:contract`（局部量的常数界放在生产它的 callee 的返回契约上）。
+
+Context: [@nudo:assume](../concepts/directives.md#nudoassume--user-lemmas) · [契约门禁（L1）](../guides/check.md#l1--显式契约)
 
 ### `nudo:env-unresolved` {#nudo-env-unresolved}
 

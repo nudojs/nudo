@@ -1,51 +1,18 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { resolve } from "node:path";
 import { join } from "node:path";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, chmodSync, utimesSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { litValue, formatShape, numLit, strLit, boolLit, str, abs as makeAbs, type Abs } from "@nudojs/core";
+import { writeFileSync, readFileSync, chmodSync, utimesSync } from "node:fs";
+import { litValue, formatShape, str, abs as makeAbs, type Abs } from "@nudojs/core";
 import { analyzeFile, collectCallRecords, buildModuleGraph, type ModuleGraphCache, computeDirtySet, topoSortDirty } from "../analyzer.ts";
 import { resetAllAnalysisCaches } from "../index.ts";
-import type { CallRecord } from "../evaluator/call-record.ts";
+import { withTmpProject, writeTmpFile } from "./tmp-project.ts";
+import { absRec, neverAbs, litAbs } from "../emit/__tests__/fixtures.ts";
 
-const neverAbs = (): Abs => makeAbs({ k: "never" }, undefined, undefined, "exact");
-const nullLit = (): Abs => makeAbs({ k: "unknown" }, { op: "lit", value: null }, undefined, "exact");
-const undefLit = (): Abs => makeAbs({ k: "unknown" }, { op: "lit", value: undefined }, undefined, "exact");
-function litAbs(v: string | number | boolean | null | undefined): Abs {
-  if (typeof v === "number") return numLit(v);
-  if (typeof v === "string") return strLit(v);
-  if (typeof v === "boolean") return boolLit(v);
-  if (v === null) return nullLit();
-  return undefLit();
-}
 const objAbs = (props: Record<string, Abs>): Abs => {
   const slots: Record<string, { value: Abs }> = {};
   for (const [k, v] of Object.entries(props)) slots[k] = { value: v };
   return makeAbs({ k: "obj", slots }, undefined, undefined, "exact");
 };
-
-/** 测试夹具：Abs CallRecord */
-function absRec(p: {
-  fnName: string;
-  argAbs: Abs[];
-  resultAbs: Abs;
-  throwsAbs: Abs;
-  callLoc?: { line: number; column: number };
-  targetModule?: string;
-  targetExport?: string;
-  targetAliases?: string[];
-}): CallRecord {
-  return {
-    fnName: p.fnName,
-    argAbs: p.argAbs,
-    resultAbs: p.resultAbs,
-    throwsAbs: p.throwsAbs,
-    ...(p.callLoc ? { callLoc: p.callLoc } : {}),
-    ...(p.targetModule ? { targetModule: p.targetModule } : {}),
-    ...(p.targetExport ? { targetExport: p.targetExport } : {}),
-    ...(p.targetAliases ? { targetAliases: p.targetAliases } : {}),
-  };
-}
 
 // 用例级缓存隔离：analyzeFile 背后的会话级缓存（analysisFileCache / evalRunCache /
 // fnAnalysisCache / absModuleCache / core 的 checkSource·generalize·nudo-exec
@@ -323,9 +290,8 @@ function lonely(u) {
     expect(formatShape(entry!.throwsAbs)).toContain("TypeError");
   });
 
-  it("aggregates cross-file call sites of imported functions into externalFunctions", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-ext-"));
-    try {
+  it("aggregates cross-file call sites of imported functions into externalFunctions", () =>
+    withTmpProject("nudo-ext-", (dir) => {
       const aSrc = `import { triple } from "./b.js";\nfunction caller(n) { return triple(n); }\nconst r = caller(4);\n`;
       const aPath = resolve(dir, "a.js");
       writeFileSync(aPath, aSrc);
@@ -341,16 +307,13 @@ function lonely(u) {
       expect(triple.cases).toHaveLength(1);
       expect(triple.cases[0].name).toMatch(/^call@L\d+$/);
       expect(triple.cases[0].source).toBe("callsite");
-      expect(triple.cases[0].argAbs.map(formatShape)).toEqual(["4"]);
+      expect(triple.cases[0].argAbs.map(a => formatShape(a))).toEqual(["4"]);
       expect(formatShape(triple.cases[0].abs)).toBe("12");
       expect(triple.combinedAbs).toBeDefined();
       expect(formatShape(triple.combinedAbs!)).toBe("12");
       // imported function must not leak into this file's local functions
       expect(result.functions.map((f) => f.name)).toEqual(["caller"]);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+    }));
 
   it("leaves externalFunctions empty for files without imports", () => {
     const source = `function id(x) { return x; }\nconst y = id(1);\n`;
@@ -441,7 +404,7 @@ f(3);
     expect(f!.cases).toHaveLength(1);
     expect(f!.cases[0].source).toBe("callsite");
     expect(f!.cases[0].name).toMatch(/^call@L\d+$/);
-    expect(f!.cases[0].argAbs.map(formatShape)).toEqual(["3"]);
+    expect(f!.cases[0].argAbs.map(a => formatShape(a))).toEqual(["3"]);
     expect(formatShape(f!.cases[0].abs)).toBe("6");
     expect(formatShape(f!.combinedAbs!)).toBe("6");
   });
@@ -494,7 +457,7 @@ module.exports = { formatName, shout };
     expect(formatName.entryOnly).toBeFalsy();
     expect(formatName.cases).toHaveLength(1);
     expect(formatName.cases[0].source).toBe("callsite");
-    expect(formatName.cases[0].argAbs.map(formatShape)).toEqual(['"Ada"', '"Lovelace"']);
+    expect(formatName.cases[0].argAbs.map(a => formatShape(a))).toEqual(['"Ada"', '"Lovelace"']);
     expect(formatShape(formatName.cases[0].abs)).toBe('"Ada Lovelace"');
 
     // 未被使用现场调用的 shout 保持 entry-only
@@ -502,9 +465,8 @@ module.exports = { formatName, shout };
     expect(shout.entryOnly).toBe(true);
   });
 
-  it("collectCallRecords harvests real call shapes from usage-site files", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-cs-"));
-    try {
+  it("collectCallRecords harvests real call shapes from usage-site files", () =>
+    withTmpProject("nudo-cs-", (dir) => {
       const libPath = join(dir, "util.js");
       writeFileSync(libPath, "export function double(n) { return n * 2; }\n");
       const testPath = join(dir, "test.js");
@@ -521,10 +483,7 @@ module.exports = { formatName, shout };
       const fn = result.functions.find((f) => f.name === "double")!;
       expect(fn.entryOnly).toBeFalsy();
       expect(formatShape(fn.combinedAbs!)).toBe("42");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+    }));
 
   it("matches injected records to anonymous module.exports single-export files via the module path", () => {
     const source = `
@@ -555,7 +514,7 @@ module.exports = function (a, b) {
     expect(main.entryOnly).toBeFalsy();
     expect(main.cases).toHaveLength(1);
     expect(main.cases[0].source).toBe("callsite");
-    expect(main.cases[0].argAbs.map(formatShape)).toEqual(["1", "2"]);
+    expect(main.cases[0].argAbs.map(a => formatShape(a))).toEqual(["1", "2"]);
     expect(formatShape(main.cases[0].abs)).toBe("3");
 
     // 同文件其他函数不经模块路误染：名字对不上 → 保持 entry-only
@@ -642,87 +601,64 @@ function fail(msg) {
     expect(fn.entryOnly).toBeFalsy();
     expect(fn.cases).toHaveLength(1);
     expect(fn.cases[0].source).toBe("callsite");
-    expect(fn.cases[0].argAbs.map(formatShape)).toEqual(['"boom"']);
+    expect(fn.cases[0].argAbs.map(a => formatShape(a))).toEqual(['"boom"']);
     expect(fn.cases[0].abs.shape.k).toBe("never");
     expect(formatShape(fn.cases[0].throwsAbs)).toBe("string");
   });
 });
 
 describe("buildModuleGraph / computeDirtySet / topoSortDirty", () => {
-  const tmpWrite = (dir: string, name: string, content: string) => {
-    const path = resolve(dir, name);
-    writeFileSync(path, content);
-    return path;
-  };
-
-  it("builds imports/dependents edges and propagates dirt to transitive dependents", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-graph-"));
-    try {
-      const a = tmpWrite(dir, "a.js", `import { b } from "./b.js";\nexport const a = b;\n`);
-      const b = tmpWrite(dir, "b.js", `export const b = 1;\n`);
+  it("builds imports/dependents edges and propagates dirt to transitive dependents", () =>
+    withTmpProject("nudo-graph-", (dir) => {
+      const a = writeTmpFile(dir, "a.js", `import { b } from "./b.js";\nexport const a = b;\n`);
+      const b = writeTmpFile(dir, "b.js", `export const b = 1;\n`);
       const { imports, dependents } = buildModuleGraph([a, b]);
       expect(imports.get(a)).toContain(b);
       expect(dependents.get(b)).toContain(a);
 
       expect(new Set(computeDirtySet(dependents, b))).toEqual(new Set([b, a]));
       expect(computeDirtySet(dependents, a)).toEqual([a]);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+    }));
 
-  it("propagates dirt along a three-file chain", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-graph-"));
-    try {
-      const a = tmpWrite(dir, "a.js", `import { b } from "./b.js";\n`);
-      const b = tmpWrite(dir, "b.js", `import { c } from "./c.js";\n`);
-      const c = tmpWrite(dir, "c.js", `export const c = 1;\n`);
+  it("propagates dirt along a three-file chain", () =>
+    withTmpProject("nudo-graph-", (dir) => {
+      const a = writeTmpFile(dir, "a.js", `import { b } from "./b.js";\n`);
+      const b = writeTmpFile(dir, "b.js", `import { c } from "./c.js";\n`);
+      const c = writeTmpFile(dir, "c.js", `export const c = 1;\n`);
       const { dependents } = buildModuleGraph([a, b, c]);
       expect(new Set(computeDirtySet(dependents, c))).toEqual(new Set([c, b, a]));
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+    }));
 
-  it("handles import cycles without infinite loop", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-graph-"));
-    try {
-      const a = tmpWrite(dir, "a.js", `import { b } from "./b.js";\nexport const a = 1;\n`);
-      const b = tmpWrite(dir, "b.js", `import { a } from "./a.js";\nexport const b = 2;\n`);
+  it("handles import cycles without infinite loop", () =>
+    withTmpProject("nudo-graph-", (dir) => {
+      const a = writeTmpFile(dir, "a.js", `import { b } from "./b.js";\nexport const a = 1;\n`);
+      const b = writeTmpFile(dir, "b.js", `import { a } from "./a.js";\nexport const b = 2;\n`);
       const { imports, dependents } = buildModuleGraph([a, b]);
       const dirty = computeDirtySet(dependents, a);
       expect(new Set(dirty)).toEqual(new Set([a, b]));
 
       const ordered = topoSortDirty(imports, dirty);
       expect(new Set(ordered)).toEqual(new Set([a, b]));
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+    }));
 
-  it("skips bare npm specifiers and orders dirty set dependencies-first", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-graph-"));
-    try {
-      const a = tmpWrite(dir, "a.js", `import _ from "lodash";\nimport { b } from "./b.js";\n`);
-      const b = tmpWrite(dir, "b.js", `export const b = 1;\n`);
+  it("skips bare npm specifiers and orders dirty set dependencies-first", () =>
+    withTmpProject("nudo-graph-", (dir) => {
+      const a = writeTmpFile(dir, "a.js", `import _ from "lodash";\nimport { b } from "./b.js";\n`);
+      const b = writeTmpFile(dir, "b.js", `export const b = 1;\n`);
       const { imports, dependents } = buildModuleGraph([a, b]);
       expect(imports.get(a)).toEqual(new Set([b]));
 
       const dirty = computeDirtySet(dependents, b);
       const ordered = topoSortDirty(imports, dirty);
       expect(ordered.indexOf(b)).toBeLessThan(ordered.indexOf(a));
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+    }));
 
   // BUG-006：re-export / require 边必须进脏图——仅 barrel 形态时 base 变更 → barrel 进 dirty set
-  it("collects export * from / export {} from re-export edges into the dirty graph", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-graph-reexport-"));
-    try {
-      const star = tmpWrite(dir, "star.js", `export * from "./base.js";\n`);
-      const named = tmpWrite(dir, "named.js", `export { k } from "./base.js";\n`);
-      const base = tmpWrite(dir, "base.js", `export const k = 1;\n`);
+  it("collects export * from / export {} from re-export edges into the dirty graph", () =>
+    withTmpProject("nudo-graph-reexport-", (dir) => {
+      const star = writeTmpFile(dir, "star.js", `export * from "./base.js";\n`);
+      const named = writeTmpFile(dir, "named.js", `export { k } from "./base.js";\n`);
+      const base = writeTmpFile(dir, "base.js", `export const k = 1;\n`);
       const { imports, dependents } = buildModuleGraph([star, named, base]);
       expect(dependents.get(base)).toEqual(new Set([star, named]));
       expect(imports.get(star)).toEqual(new Set([base]));
@@ -730,54 +666,36 @@ describe("buildModuleGraph / computeDirtySet / topoSortDirty", () => {
 
       const dirty = computeDirtySet(dependents, base);
       expect(new Set(dirty)).toEqual(new Set([base, star, named]));
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+    }));
 
-  it("collects require() / require.resolve edges into the dirty graph", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-graph-require-"));
-    try {
-      const barrel = tmpWrite(dir, "barrel.js", `const m = require("./base.js");\nmodule.exports = m;\n`);
-      const viaResolve = tmpWrite(dir, "via-resolve.js", `const p = require.resolve("./base.js");\n`);
-      const base = tmpWrite(dir, "base.js", `exports.k = 1;\n`);
+  it("collects require() / require.resolve edges into the dirty graph", () =>
+    withTmpProject("nudo-graph-require-", (dir) => {
+      const barrel = writeTmpFile(dir, "barrel.js", `const m = require("./base.js");\nmodule.exports = m;\n`);
+      const viaResolve = writeTmpFile(dir, "via-resolve.js", `const p = require.resolve("./base.js");\n`);
+      const base = writeTmpFile(dir, "base.js", `exports.k = 1;\n`);
       const { dependents } = buildModuleGraph([barrel, viaResolve, base]);
       expect(dependents.get(base)).toEqual(new Set([barrel, viaResolve]));
 
       const dirty = computeDirtySet(dependents, base);
       expect(new Set(dirty)).toEqual(new Set([base, barrel, viaResolve]));
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+    }));
 
-  it("does not create edges from require/import mentioned only in strings or comments", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-graph-str-"));
-    try {
-      const a = tmpWrite(dir, "a.js", `// require("./base.js");\nconst s = "require('./base.js')";\nexport const a = s;\n`);
-      const base = tmpWrite(dir, "base.js", `export const k = 1;\n`);
+  it("does not create edges from require/import mentioned only in strings or comments", () =>
+    withTmpProject("nudo-graph-str-", (dir) => {
+      const a = writeTmpFile(dir, "a.js", `// require("./base.js");\nconst s = "require('./base.js')";\nexport const a = s;\n`);
+      const base = writeTmpFile(dir, "base.js", `export const k = 1;\n`);
       const { dependents } = buildModuleGraph([a, base]);
       expect(dependents.get(base) ?? new Set()).toEqual(new Set());
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+    }));
 });
 
 // 来源：LSP 隔离控制工程化——buildModuleGraph mtime 边缓存
 describe("buildModuleGraph mtime 边缓存", () => {
-  const tmpWrite = (dir: string, name: string, content: string) => {
-    const path = resolve(dir, name);
-    writeFileSync(path, content);
-    return path;
-  };
-
-  it("同输入带/不带 cache 结果一致（含二次全命中）", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-graph-cache-"));
-    try {
-      const a = tmpWrite(dir, "a.js", `import { b } from "./b.js";\n`);
-      const b = tmpWrite(dir, "b.js", `import { c } from "./c.js";\n`);
-      const c = tmpWrite(dir, "c.js", `export const c = 1;\n`);
+  it("同输入带/不带 cache 结果一致（含二次全命中）", () =>
+    withTmpProject("nudo-graph-cache-", (dir) => {
+      const a = writeTmpFile(dir, "a.js", `import { b } from "./b.js";\n`);
+      const b = writeTmpFile(dir, "b.js", `import { c } from "./c.js";\n`);
+      const c = writeTmpFile(dir, "c.js", `export const c = 1;\n`);
       const plain = buildModuleGraph([a, b, c]);
       const cache: ModuleGraphCache = new Map();
       const once = buildModuleGraph([a, b, c], cache);
@@ -790,17 +708,13 @@ describe("buildModuleGraph mtime 边缓存", () => {
       expect(normalize(once)).toBe(normalize(plain));
       expect(normalize(twice)).toBe(normalize(plain));
       expect(cache.size).toBe(3); // 三个文件均回填缓存
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+    }));
 
-  it("内容变化（size 改变）后失效重读并回填", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-graph-cache-"));
-    try {
-      const a = tmpWrite(dir, "a.js", `import { b } from "./b.js";\n`);
-      const b = tmpWrite(dir, "b.js", `export const b = 1;\n`);
-      const d = tmpWrite(dir, "d.js", `export const d = 1;\n`);
+  it("内容变化（size 改变）后失效重读并回填", () =>
+    withTmpProject("nudo-graph-cache-", (dir) => {
+      const a = writeTmpFile(dir, "a.js", `import { b } from "./b.js";\n`);
+      const b = writeTmpFile(dir, "b.js", `export const b = 1;\n`);
+      const d = writeTmpFile(dir, "d.js", `export const d = 1;\n`);
       const cache: ModuleGraphCache = new Map();
       const before = buildModuleGraph([a, b, d], cache);
       expect(before.imports.get(a)).toEqual(new Set([b]));
@@ -809,17 +723,13 @@ describe("buildModuleGraph mtime 边缓存", () => {
       const after = buildModuleGraph([a, b, d], cache);
       expect(after.imports.get(a)).toEqual(new Set([b, d]));
       expect(new Set(cache.get(a)!.edges)).toEqual(new Set([b, d]));
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+    }));
 
-  it("仅 mtime 变化（size 不变）后失效重读", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-graph-cache-"));
-    try {
-      const a = tmpWrite(dir, "a.js", `import { v } from "./b.js";\n`);
-      const b = tmpWrite(dir, "b.js", `export const v = 1;\n`);
-      const c = tmpWrite(dir, "c.js", `export const v = 2;\n`);
+  it("仅 mtime 变化（size 不变）后失效重读", () =>
+    withTmpProject("nudo-graph-cache-", (dir) => {
+      const a = writeTmpFile(dir, "a.js", `import { v } from "./b.js";\n`);
+      const b = writeTmpFile(dir, "b.js", `export const v = 1;\n`);
+      const c = writeTmpFile(dir, "c.js", `export const v = 2;\n`);
       const cache: ModuleGraphCache = new Map();
       expect(buildModuleGraph([a, b, c], cache).imports.get(a)).toEqual(new Set([b]));
       // 同尺寸内容换成导入 c，再用 utimesSync 显式把 mtime 拉开 10s（size 维度保持一致）
@@ -828,16 +738,12 @@ describe("buildModuleGraph mtime 边缓存", () => {
       utimesSync(a, forced, forced);
       const after = buildModuleGraph([a, b, c], cache);
       expect(after.imports.get(a)).toEqual(new Set([c]));
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+    }));
 
-  it("命中时不读盘：文件不可读仍能从 cache 得出正确边", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-graph-cache-"));
-    try {
-      const a = tmpWrite(dir, "a.js", `import { b } from "./b.js";\n`);
-      const b = tmpWrite(dir, "b.js", `export const b = 1;\n`);
+  it("命中时不读盘：文件不可读仍能从 cache 得出正确边", () =>
+    withTmpProject("nudo-graph-cache-", (dir) => {
+      const a = writeTmpFile(dir, "a.js", `import { b } from "./b.js";\n`);
+      const b = writeTmpFile(dir, "b.js", `export const b = 1;\n`);
       const cache: ModuleGraphCache = new Map();
       buildModuleGraph([a, b], cache);
       chmodSync(a, 0o000); // chmod 不改 mtime → 必命中；statSync 仍可用，readFileSync 将 EACCES
@@ -851,8 +757,5 @@ describe("buildModuleGraph mtime 边缓存", () => {
       } finally {
         chmodSync(a, 0o644);
       }
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+    }));
 });

@@ -105,7 +105,7 @@ nudo contract --emit src/lib.js --dry-run --exit-on-diff
 
 | 表面 | 入口 |
 |------|------|
-| Hover 档位 | `● interface / handwritten\|generated\|implicit` |
+| Hover 档位 | `● contract / hw\|gen\|imp` |
 | CodeLens | persist / update / **draft** |
 | VS Code | Nudo Output 通道命令 |
 | Agent | `nudo.contract` / `nudo.contract.draft` / `nudo.check` |

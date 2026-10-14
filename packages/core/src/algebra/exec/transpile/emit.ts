@@ -1,12 +1,12 @@
 /**
- * 模式解构 / 形参绑定 / 数组 mutator 重绑 / fork 臂 thunk。
+ * 模式解构 / 形参绑定 / 语句位写回（defineProperty/delete）/ fork 臂 thunk。
+ * 数组 mutator 已改为 $invoke 调用点就地变更（Bug 49/51），不再语句位重绑。
  * 发射时经 transpile-dispatch 调 transpileExpression（避免与 expr.ts 成环）。
  */
 import type { Statement, Expression, Node } from "@babel/types";
 import type { TranspileOptions } from "./types.ts";
 import { emitTranspileExpression } from "./transpile-dispatch.ts";
 import { isExpression, foldRequireSpecArg, staticKeyOf, isConstAssignTarget, symbolKeyOf } from "./helpers.ts";
-import { ARR_MUTATOR_NAMES } from "./ops.ts";
 import { memberPathOf, readPathSrc, setPathSrc, readPrefix, setParentPathSrc } from "./member-path.ts";
 import { NudoUnsupportedError } from "../unsupported.ts";
 
@@ -61,7 +61,8 @@ function emitMemberTargetAssign(
     if (isExpression(k)) {
       const symK = symbolKeyOf(k as Parameters<typeof symbolKeyOf>[0]);
       if (symK !== null) {
-        out.push(`${pad}$set(${obj}, ${symK}, ${valueSrc});`);
+        // Bug 73：symbol 键投影写打 Slot.symbolKey 标记（JSON 枚举面不可见）
+        out.push(`${pad}$set(${obj}, ${symK}, ${valueSrc}, { symbolKey: true });`);
         return;
       }
       out.push(`${pad}$idxSet(${obj}, ${emitTranspileExpression(k, opts)}, ${valueSrc});`);
@@ -71,6 +72,11 @@ function emitMemberTargetAssign(
   throw new NudoUnsupportedError("assign-target", m.loc ? { line: m.loc.start.line, column: m.loc.start.column } : undefined);
 }
 
+/**
+ * 语句位写回收集（历史名保留）：defineProperty/defineProperties 第一实参
+ * 与 delete 成员路径的绑定写回。数组 mutator 的写回已随 Bug 49/51 的
+ * $invoke 就地变更移除（此处不再发射 $arrMutContainer 行）。
+ */
 export function emitArrMutatorRebinds(
   expr: Node | null | undefined,
   opts: TranspileOptions,
@@ -101,53 +107,19 @@ export function emitArrMutatorRebinds(
       node.type === "AssignmentExpression" &&
       (node.operator === "||=" || node.operator === "&&=" || node.operator === "??=")
     ) {
-      // 逻辑赋值 RHS 由短路 fork 隔离；语句级不得再无条件 rebind（P0-5）
+      // 逻辑赋值 RHS 由短路 fork 隔离；语句级不得再无条件写回（P0-5）
       visit((node as { left?: unknown }).left);
       return;
     }
-    if (
-      node.type === "CallExpression" &&
-      node.callee?.type === "MemberExpression" &&
-      node.callee.computed !== true &&
-      node.callee.property?.type === "Identifier" &&
-      ARR_MUTATOR_NAMES.has((node.callee.property as { name: string }).name)
-    ) {
-      const methodName = (node.callee.property as { name: string }).name;
-      const argSrcs = (node.arguments ?? [])
-        .map((a) =>
-          (a as { type?: string }).type === "SpreadElement"
-            ? "$unknown()"
-            : isExpression(a as Node)
-              ? emitTranspileExpression(a as Expression, opts)
-              : "$unknown()",
-        )
-        .join(", ");
-      // 注：RegExp test/exec 的状态写回在表达式内部联 IIFE 完成（顺序副作用
-      // 需要），此处不重复写回（$reStateCall 重复执行会推进 lastIndex 两次）
-      const objNode = node.callee.object as Node;
-      if (objNode.type === "Identifier") {
-        const name = (objNode as { name: string }).name;
-        lines.push(
-          `${pad}${name} = $arrMutContainer(${name}, ${JSON.stringify(methodName)}, [${argSrcs}]);`,
-        );
-      } else if (objNode.type === "MemberExpression" || objNode.type === "ThisExpression") {
-        const path =
-          objNode.type === "MemberExpression"
-            ? memberPathOf(
-                objNode as unknown as { object: Node; property: Node; computed: boolean },
-                opts,
-              )
-            : null;
-        if (path) {
-          const recvSrc = readPathSrc(path);
-          const mutSrc = `$arrMutContainer(${recvSrc}, ${JSON.stringify(methodName)}, [${argSrcs}])`;
-          lines.push(`${pad}${path.rootSrc} = ${setPathSrc(path, mutSrc)};`);
-        }
-      }
-      // 仍要遍历参数内嵌套 mutator（如 a.pop(b.pop())）
-    }
-    // Object.defineProperty(o, "k", desc)：返回值是新容器（value 进 slots），
-    // 语句位置必须写回第一实参（freeze/seal/preventExtensions 就地标记无需写回）
+    // 数组 mutator（push/pop/…）不再需要语句位写回：$invoke 在调用点经
+    // $arrMutContainer 就地变更（Bug 49/51——表达式内连续 mutator 按求值
+    // 顺序生效；非可重绑接收者 m.get(k).push(x) 经共享容器别名持久）。
+    // 下方仅保留 defineProperty/delete 的语句位写回。
+    // Object.defineProperty / defineProperties(o, …)：返回值是新容器（value
+    // 进 slots、访问器进侧表），语句位置必须写回第一实参（freeze/seal/
+    // preventExtensions 就地标记无需写回）。Bug 19：defineProperties（复数）
+    // 与单数同形态（第一实参 Identifier），漏写回则描述符安装在被丢弃的副本
+    // 上，后续 o.a 折 exact undefined——表达式位走返回值不受影响。
     if (
       node.type === "CallExpression" &&
       node.callee?.type === "MemberExpression" &&
@@ -155,10 +127,12 @@ export function emitArrMutatorRebinds(
       node.callee.object?.type === "Identifier" &&
       (node.callee.object as { name: string }).name === "Object" &&
       node.callee.property?.type === "Identifier" &&
-      (node.callee.property as { name: string }).name === "defineProperty" &&
+      ((node.callee.property as { name: string }).name === "defineProperty" ||
+        (node.callee.property as { name: string }).name === "defineProperties") &&
       node.arguments?.[0] &&
       (node.arguments[0] as { type?: string }).type === "Identifier"
     ) {
+      const methodName = (node.callee.property as { name: string }).name;
       const argSrcs = (node.arguments as unknown as Expression[])
         .map((a) =>
           (a as { type?: string }).type === "SpreadElement"
@@ -168,7 +142,7 @@ export function emitArrMutatorRebinds(
         .join(", ");
       const targetName = (node.arguments[0] as { name: string }).name;
       lines.push(
-        `${pad}${targetName} = $invoke(Object, "defineProperty", [${argSrcs}]);`,
+        `${pad}${targetName} = $invoke(Object, ${JSON.stringify(methodName)}, [${argSrcs}]);`,
       );
     }
     // delete obj[key]：语句位置把删键后的容器写回绑定（表达式值 $delRes 由 transpile 负责）
@@ -261,16 +235,37 @@ export function emitDestructure(
   if (pattern.type === "ObjectPattern") {
     const namedKeys: string[] = [];
     let restName: string | undefined;
+    let restMember: Node | undefined;
     for (const prop of pattern.properties) {
       if (prop.type === "RestElement") {
         if (prop.argument.type === "Identifier") restName = prop.argument.name;
+        // ({ a, ...o.x } = src)：赋值位 rest 成员目标（键集收齐后写回）
+        else if (prop.argument.type === "MemberExpression") {
+          restMember = prop.argument as Node;
+        }
         continue;
       }
       if (prop.type !== "ObjectProperty") continue;
       const key = staticKeyOf(prop.key as { type?: string; name?: string; value?: unknown });
-      if (key === null) continue;
-      const keyLit = JSON.stringify(key);
-      namedKeys.push(key);
+      // Bug 47：计算键不得静默丢绑定（target 变自由标识符 → 值域腐化 +
+      // 裸读 ReferenceError 面）。[Symbol.X] → "@@X" 投影（镜像对象字面量
+      // 计算键 / 成员读写口径）；其余计算键经 $idx 计算读（键不可判定 →
+      // 槽并 undefined，sound 过近似）。
+      const isComputed = (prop as { computed?: boolean }).computed === true;
+      const symKey =
+        key === null && isComputed
+          ? symbolKeyOf(prop.key as unknown as Parameters<typeof symbolKeyOf>[0])
+          : null;
+      const computedKeySrc =
+        key === null && symKey === null && isComputed
+          ? emitTranspileExpression(prop.key as Expression, opts)
+          : null;
+      if (key === null && symKey === null && computedKeySrc === null) continue;
+      const keyLit = key !== null ? JSON.stringify(key) : symKey;
+      if (keyLit !== null) namedKeys.push(JSON.parse(keyLit));
+      // 键读取源：静态/符号投影键走 $get；抽象计算键走 $idx
+      const readSrc =
+        keyLit !== null ? `$get(${fromSrc}, ${keyLit})` : `$idx(${fromSrc}, ${computedKeySrc})`;
       if (prop.value.type === "AssignmentPattern") {
         const def = emitTranspileExpression(prop.value.right as Expression, opts);
         const left = prop.value.left;
@@ -279,20 +274,20 @@ export function emitDestructure(
             out.push(`${pad}$throwConstAssign();`);
           } else {
             out.push(
-              `${pad}${kw} ${left.name} = $orDefault($get(${fromSrc}, ${keyLit}), () => ${def});`,
+              `${pad}${kw} ${left.name} = $orDefault(${readSrc}, () => ${def});`,
             );
           }
         } else {
           // 嵌套 + 默认：const { a: { b } = {} } = o
           const t = `_n${tmpSeq.n++}`;
-          out.push(`${pad}const ${t} = $orDefault($get(${fromSrc}, ${keyLit}), () => ${def});`);
+          out.push(`${pad}const ${t} = $orDefault(${readSrc}, () => ${def});`);
           emitDestructure(left, t, kw, pad, opts, out, tmpSeq);
         }
         continue;
       }
       if (prop.value.type === "ObjectPattern" || prop.value.type === "ArrayPattern") {
         const t = `_n${tmpSeq.n++}`;
-        out.push(`${pad}const ${t} = $get(${fromSrc}, ${keyLit});`);
+        out.push(`${pad}const ${t} = ${readSrc};`);
         emitDestructure(prop.value, t, kw, pad, opts, out, tmpSeq);
         continue;
       }
@@ -300,11 +295,11 @@ export function emitDestructure(
         if (kw === "" && isConstAssignTarget(prop.value.name, opts)) {
           out.push(`${pad}$throwConstAssign();`);
         } else {
-          out.push(`${pad}${kw} ${prop.value.name} = $get(${fromSrc}, ${keyLit});`);
+          out.push(`${pad}${kw} ${prop.value.name} = ${readSrc};`);
         }
       } else if (prop.value.type === "MemberExpression") {
         // ({ p: o.x } = src)：成员目标写回（不得静默跳过）
-        emitMemberTargetAssign(prop.value as Node, `$get(${fromSrc}, ${keyLit})`, pad, opts, out);
+        emitMemberTargetAssign(prop.value as Node, readSrc, pad, opts, out);
       }
     }
     if (restName) {
@@ -315,6 +310,15 @@ export function emitDestructure(
           `${pad}${kw} ${restName} = $objRest(${fromSrc}, ${JSON.stringify(namedKeys)});`,
         );
       }
+    } else if (restMember) {
+      // rest 成员目标写回（namedKeys 须循环收齐后再算 $objRest）
+      emitMemberTargetAssign(
+        restMember,
+        `$objRest(${fromSrc}, ${JSON.stringify(namedKeys)})`,
+        pad,
+        opts,
+        out,
+      );
     }
     return;
   }
@@ -332,8 +336,35 @@ export function emitDestructure(
         if (el.argument.type === "Identifier") {
           restName = el.argument.name;
           restAt = i;
+          return;
         }
-        return;
+        // ...[b, c] / ...{0: b}（rest 实参为模式）：rest 值先入临时，再子模式
+        // 绑定。此前只认 Identifier，模式实参静默丢绑定 → 子名自由读
+        // spurious-throw 面（差分 FALSE-THROW）。
+        if (el.argument.type === "ObjectPattern" || el.argument.type === "ArrayPattern") {
+          const t = `_n${tmpSeq.n++}`;
+          out.push(`${pad}const ${t} = $arrRest(${fromSrc}, ${i});`);
+          emitDestructure(el.argument, t, kw, pad, opts, out, tmpSeq);
+          return;
+        }
+        if (el.argument.type === "MemberExpression") {
+          // [...o.x] = src（赋值位 rest 成员目标）：成员写回，不得静默跳过
+          emitMemberTargetAssign(
+            el.argument as Node,
+            `$arrRest(${fromSrc}, ${i})`,
+            pad,
+            opts,
+            out,
+          );
+          return;
+        }
+        // 其余 LVal（TS 断言等）无可靠 lowering：fail-closed 回落
+        throw new NudoUnsupportedError(
+          "destructure-rest",
+          el.argument.loc
+            ? { line: el.argument.loc.start.line, column: el.argument.loc.start.column }
+            : undefined,
+        );
       }
       if (el.type === "AssignmentPattern") {
         const def = emitTranspileExpression(el.right as Expression, opts);
@@ -383,14 +414,17 @@ export function emitDestructure(
  * Identifier 直通；ObjectPattern/ArrayPattern/AssignmentPattern 用占位参数
  * `_p{i}` 接收，再在函数体首部 emitDestructure / $orDefault 绑定。
  * RestElement 返回 rest 名（FunctionDeclaration 由 arguments 绑定；arrow 直接 rest 形参）。
+ * defaulted：sig 下标里默认参（AssignmentPattern）占位的位置——宿主签名
+ * 按位补 `= void 0` 后 fn.length 与原生对齐（Bug 69：首个默认值前形参数）。
  */
 export function emitParamBinding(
   params: Node[],
   pad: string,
   opts: TranspileOptions,
-): { sig: string[]; rest?: string; prologue: string[] } {
+): { sig: string[]; rest?: string; prologue: string[]; defaulted: number[] } {
   const sig: string[] = [];
   const prologue: string[] = [];
+  const defaulted: number[] = [];
   let rest: string | undefined;
   params.forEach((p, i) => {
     if (p.type === "Identifier") {
@@ -410,6 +444,7 @@ export function emitParamBinding(
     const ph = `_p${i}`;
     sig.push(ph);
     if (p.type === "AssignmentPattern") {
+      defaulted.push(i);
       const def = emitTranspileExpression(p.right as Expression, opts);
       if (p.left.type === "Identifier") {
         prologue.push(`${pad}const ${p.left.name} = $orDefault(${ph}, () => ${def});`);
@@ -424,7 +459,7 @@ export function emitParamBinding(
       emitDestructure(p, ph, "const", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
     }
   });
-  return { sig, rest, prologue };
+  return { sig, rest, prologue, defaulted };
 }
 
 /**
@@ -442,12 +477,18 @@ export function emitParamBindingFromArgs(
   const prologue: string[] = [];
   let rest: string | undefined;
   let namedCount = 0;
+  // rest 绑定是否已在 RestElement 处提前发射（模式 rest 参的 destructure
+  // 行引用 `_rest{i}`，尾置绑定 = TDZ ReferenceError）
+  let restBoundEarly = false;
   params.forEach((p, i) => {
     if (p.type === "RestElement") {
       if (p.argument.type === "Identifier") {
         rest = p.argument.name;
       } else {
         rest = `_rest${i}`;
+        restBoundEarly = true;
+        // rest 语法上必为末参 → namedCount 此处已终值
+        prologue.push(`${pad}let ${rest} = $arrRest(${argsSrc}, ${namedCount});`);
         emitDestructure(p.argument, rest, "const", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
       }
       return;
@@ -473,7 +514,7 @@ export function emitParamBindingFromArgs(
       emitDestructure(p, idxSrc, "let", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
     }
   });
-  if (rest) {
+  if (rest && !restBoundEarly) {
     prologue.push(`${pad}let ${rest} = $arrRest(${argsSrc}, ${namedCount});`);
   }
   return { prologue, rest, namedCount };

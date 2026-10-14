@@ -18,6 +18,7 @@ import { predToString } from "./pred.ts";
 import { termToString } from "./term.ts";
 import { litValue, type Abs } from "./abs.ts";
 import { interfaceTierOf, type InterfaceSource, type InterfaceTierOpts } from "./interface.ts";
+import type { AbsModuleExports } from "./abs-modules.ts";
 
 export type AbsInlay = {
   /** 1-based 行号 */
@@ -30,11 +31,18 @@ export type AbsInlay = {
   interfaceSource?: InterfaceSource;
   /** true = 隐式推导展示（非义务契约），label 已带 `· derived` */
   derived?: boolean;
+  /** 折叠展示时的完整 pred 文本（hover tooltip；display 缺席时无） */
+  tooltip?: string;
 };
 
 export type CollectAbsInlaysOpts = InterfaceTierOpts & {
   loadModule?: (spec: string, fromFile: string) => string | undefined;
   fromFile?: string;
+  /**
+   * eval 模块图（host 组装，如 service `evalAbsModuleGraph`）。缺省时
+   * generalizeFromAst 看不到跨模块 import → 调用塌缩 unknown（inlay 假空）。
+   */
+  modules?: Record<string, AbsModuleExports | Record<string, unknown>>;
 };
 
 function listFunctions(source: string): Array<{ name: string; node: Node }> {
@@ -157,13 +165,17 @@ export function collectAbsInlays(
       ? {
           ...(opts.loadModule ? { loadModule: opts.loadModule } : {}),
           ...(opts.fromFile ? { fromFile: opts.fromFile } : {}),
+          ...(opts.autoBind !== undefined ? { autoBind: opts.autoBind } : {}),
         }
       : undefined;
 
   for (const { name, node } of listFunctions(source)) {
     let g: ReturnType<typeof generalizeFromAst>;
     try {
-      g = generalizeFromAst(name, source, refineOpts ? { refine: refineOpts } : {});
+      g = generalizeFromAst(name, source, {
+        ...(refineOpts ? { refine: refineOpts } : {}),
+        ...(opts?.modules ? { modules: opts.modules } : {}),
+      });
     } catch {
       continue;
     }
@@ -181,10 +193,12 @@ export function collectAbsInlays(
     const isImplicitExport = tierSrc === "implicit";
 
     const params = g.params;
-    const predsByName = new Map<string, import("./pred.ts").Pred[]>();
+    const predsByName = new Map<string, Array<{ pred: import("./pred.ts").Pred; display?: string }>>();
     if (g.entryReqs) {
       for (const r of g.entryReqs) {
-        predsByName.set(r.param, [r.pred]);
+        predsByName.set(r.param, [
+          { pred: r.pred, ...(r.display !== undefined ? { display: r.display } : {}) },
+        ]);
       }
     }
 
@@ -197,12 +211,20 @@ export function collectAbsInlays(
       if (!p?.loc || !pname) continue;
       const preds = predsByName.get(pname);
       if (preds && preds.length > 0) {
-        const text = preds.map(predToString).join(" ∧ ");
+        const text = preds.map((p) => predToString(p.pred)).join(" ∧ ");
+        // 运行时标志折叠：表达式原文/约束名替代 pred 无损展开
+        // （lazy 判别联合展开可达数万字符）；完整 pred 进 tooltip
+        // 供 hover 展开。任一 pred 无 display → 整体回落全展。
+        const displays = preds.map((p) => p.display);
+        const display = displays.every((d) => d !== undefined)
+          ? displays.map((d) => d!).join(" ∧ ")
+          : undefined;
         inlays.push({
           line: p.loc.end.line,
           character: p.loc.end.column,
-          label: `  where ${text}`,
+          label: display !== undefined ? `  where ${display}` : `  where ${text}`,
           kind: "parameter",
+          ...(display !== undefined ? { tooltip: text } : {}),
           ...(tierSrc ? { interfaceSource: tierSrc } : {}),
         });
       }

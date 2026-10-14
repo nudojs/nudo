@@ -9,12 +9,8 @@
  * runtime 的 fillTuple 精确折叠。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue, formatAbs } from "@nudojs/core";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { litValue, formatAbs } from "@nudojs/core";
+import { call } from "./eval-helpers.ts";
 
 function concreteTuple(r: unknown): unknown[] | undefined {
   const a = r as { shape?: { k?: string; elements?: unknown[] } };

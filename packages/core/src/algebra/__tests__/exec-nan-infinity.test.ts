@@ -7,16 +7,8 @@
  * 每条断言与 Node 真实执行结果对齐（vm 复核）。
  */
 import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  litValue,
-} from "@nudojs/core";
-
-function call(src: string, fnName: string) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { litValue } from "@nudojs/core";
+import { call } from "./eval-helpers.ts";
 
 function str(src: string) {
   return litValue(call(src, "run").result);

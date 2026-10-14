@@ -5,19 +5,8 @@
  * 对象读键的同路径已经 join undef()（containers.ts），tuple/arr 漏网。
  */
 import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  formatShape,
-  leqAbs,
-  num,
-  litValue,
-} from "../index.ts";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { formatShape, leqAbs, num, litValue } from "../index.ts";
+import { call } from "./eval-helpers.ts";
 
 describe("unknown index read joins undefined", () => {
   it("tuple[i] with abstract i is not assignable to number", () => {

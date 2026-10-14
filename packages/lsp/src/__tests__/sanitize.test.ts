@@ -9,8 +9,9 @@ import { homedir, tmpdir } from "node:os";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { sanitizeErrorMessage } from "../sanitize.ts";
-import { checkToLspDiagnostics, validateText, type ValidateTextDeps } from "../validation.ts";
+import { checkToLspDiagnostics, validateText } from "../validation.ts";
 import { checkTool, type AgentToolDeps } from "../agent-tools.ts";
+import { makeValidateDeps } from "./helpers.ts";
 import type { MarkupContent } from "vscode-languageserver/node";
 
 describe("sanitizeErrorMessage (BUG-023)", () => {
@@ -96,11 +97,11 @@ describe("G7: production error faces use injected workspaceRoots", () => {
 
   it("validateText forwards deps.workspaceRoots to the check error face", async () => {
     const published: string[] = [];
-    const deps: ValidateTextDeps = {
-      sendDiagnostics: (p) => published.push(...p.diagnostics.map((d) => asText(d.message))),
+    const deps = makeValidateDeps({
+      onPublish: (p) => published.push(...p.diagnostics.map((d) => asText(d.message))),
       loadModule: boomLoad,
       workspaceRoots: [ROOT],
-    };
+    });
     await validateText(`${ROOT}/vt.js`, `file://${ROOT}/vt.js`, SRC, 1, deps, false, true);
     const checkErr = published.find((m) => m.startsWith("Check error:"));
     expect(checkErr).toBeDefined();
@@ -108,10 +109,10 @@ describe("G7: production error faces use injected workspaceRoots", () => {
     expect(checkErr).toContain("cannot load ./");
     // 同输入不注入 roots → 泄漏（cwd ≠ /wsl/repo）——钉住注入才是生效来源
     const leaked: string[] = [];
-    await validateText(`${ROOT}/vt2.js`, `file://${ROOT}/vt2.js`, SRC, 2, {
-      sendDiagnostics: (p) => leaked.push(...p.diagnostics.map((d) => asText(d.message))),
+    await validateText(`${ROOT}/vt2.js`, `file://${ROOT}/vt2.js`, SRC, 2, makeValidateDeps({
+      onPublish: (p) => leaked.push(...p.diagnostics.map((d) => asText(d.message))),
       loadModule: boomLoad,
-    }, false, true);
+    }), false, true);
     const leakedErr = leaked.find((m) => m.startsWith("Check error:"));
     expect(leakedErr).toBeDefined();
     expect(leakedErr).toContain(ROOT);

@@ -13,12 +13,8 @@
  * name 字段/赋值后落地覆盖，源序在 super 之后）。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-
-function call(src: string, fnName: string, args: Parameters<typeof callTranspiledExportFull>[2] = []) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, args);
-}
+import { litValue } from "@nudojs/core";
+import { call } from "./eval-helpers.ts";
 
 const API = `
 export class ApiError extends Error {

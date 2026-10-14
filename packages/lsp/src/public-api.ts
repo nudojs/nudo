@@ -26,6 +26,7 @@ export const NUDO_EXECUTE_COMMANDS = [
   "nudo.contract.draft",
   "nudo.contract.emit",
   "nudo.selectCase",
+  "nudo.selectContract",
   "nudo.getActiveCases",
 ] as const;
 
@@ -35,6 +36,7 @@ export const NUDO_EXECUTE_COMMANDS = [
  */
 export const NUDO_SLASH_REQUESTS = [
   "nudo/selectCase",
+  "nudo/selectContract",
   "nudo/getActiveCases",
   "nudo/whatIf",
   "nudo/suggestCase",

@@ -4,12 +4,8 @@
  * 现：break label → $loopBreak(label)；labeled block 用 try/$isBreakTo 吸收同标签信号。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { litValue } from "@nudojs/core";
+import { call } from "./eval-helpers.ts";
 
 describe("evaluator labeled block break", () => {
   it("break out of labeled block skips the rest", () => {

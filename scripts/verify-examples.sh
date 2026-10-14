@@ -229,6 +229,16 @@ pin 'pnpm run check docs/examples/constraints/add-pred.js' \
   'scale[x]: argument ⊭ precondition' 'actual:   -1  #exact'
 pin 'pnpm run test:cli docs/examples/constraints/add-pred.js' \
   '(1, 3) => 4' '(100, 1) => 101' '(-1, 1) => 0'
+# similarity/ — @nudo:assume user lemma (#152): the [0,1] return contract needs
+# the cross-variable premise (interval propagation knows d ≥ 0 and max ≥ 1
+# separately but cannot correlate them); the proof is audit-tagged
+# nudo:assume-relied (info). Without the directive the same file + sidecar
+# honestly keeps warning nudo:unproven-return.
+pin 'pnpm run check docs/examples/constraints/similarity.js' \
+  '0 error · 0 warning · 1 info · 1 fn' \
+  'sim(d: number, max: number) => 1 | number' \
+  'return contract proved via @nudo:assume d <= max' \
+  'nudo:assume-relied'
 
 # structure/ — pin the shape-mismatch reports. The error-count lines
 # lock the width-subtyping positives: the passing excess-slot calls in

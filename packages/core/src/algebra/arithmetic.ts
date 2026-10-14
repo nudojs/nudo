@@ -4,7 +4,7 @@
  */
 
 import type { LiteralValue, Term } from "./term.ts";
-import { app, lit, simplifyTerm, termToString } from "./term.ts";
+import { app, lit, simplifyTerm, termEquals, termToString } from "./term.ts";
 import type { Pred } from "./pred.ts";
 import {
   and,
@@ -38,7 +38,7 @@ import {
   never,
 } from "./abs.ts";
 import { concatString, isTemplateLike } from "./template.ts";
-import { makeSum, absShapeKey, getSlot } from "./objects.ts";
+import { makeSum, absShapeKey, getSlot, isNullProtoWithoutCoercer } from "./objects.ts";
 import { noteDerivationAdd } from "./derivation.ts";
 import { isSymbolAbs as isSym } from "./symbol-id.ts";
 import { NudoThrow } from "./nudo-throw.ts";
@@ -164,6 +164,13 @@ export function add(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   if (fa || fb) return add(fa ?? a, fb ?? b, phi);
   // Symbol 参与 + / 模板：隐式 ToString 原生 TypeError（String(sym) 走 evalGlobalFn 不抛）
   if (isSym(a) || isSym(b)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  // 闭 null-proto 无自有 coercer（toString/valueOf/@@toPrimitive）→
+  // ToPrimitive 定抛 TypeError（`''+o` / `o+1` / `${o}` 全臂，node 实测
+  // "Cannot convert object to primitive value"）。open/index 形可能含
+  // coercer 由 helper 排除，落下方抽象臂。
+  if (isNullProtoWithoutCoercer(a) || isNullProtoWithoutCoercer(b)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
   // 字面量快速路径（tagged：.ok 才是字面量，含 lit(undefined)）
@@ -860,11 +867,79 @@ export function mul(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   return abs({ k: "unknown" }, undefined, undefined, "partial");
 }
 
+/** assume 前提链（and 归一化）拆解为原子列表；pTrue → 空 */
+function assumePremiseList(assume: Phi | undefined): Pred[] {
+  if (!assume || assume.op === "true") return [];
+  const out: Pred[] = [];
+  const walk = (p: Pred): void => {
+    if (p.op === "and") {
+      p.args.forEach(walk);
+      return;
+    }
+    if (p.op !== "true") out.push(p);
+  };
+  walk(assume);
+  return out;
+}
+
+/**
+ * assume 引理的同名相关性除法界（issue #152 `@nudo:assume d <= max`）：
+ * 分子分母同名相关是独立区间传播证不出的——独立代入 a.hi/b.lo 会得 ±∞，
+ * 只有用户引理提供的相关性可折。前提归一化为 le(lhs, rhs)（`a >= b`
+ * 构造期已翻转），项匹配用 termEquals（var 名恒等 / app 结构等价）。
+ *   正分母（b > 0，须**严格**——b ≥ 0 非严格不排除 0，n/0=±Inf 界失效）：
+ *     a ≤ b ⇒ a/b ≤ 1；a ≥ b ⇒ a/b ≥ 1；a ≥ 0 ⇒ a/b ≥ 0；a ≤ 0 ⇒ a/b ≤ 0
+ *   负分母（b < 0）镜像：除以负数不等号反向——a ≤ b < 0 ⇒ a/b ≥ 1，
+ *     a ≥ 0 ∧ b < 0 ⇒ a/b ≤ 0 等。
+ * 分子侧符号界与关系界按区间语义合取（and 合并；strict 随分子界保留）。
+ * ±Inf 同名端点对（a=b=±Inf ⇒ a/b=NaN）与既有 path facts 同约定，不另设防。
+ * 无前提命中（项不匹配）/无分母符号知识 → undefined（保守回退，与现状一致）。
+ */
+function divAssumeBounds(
+  a: Abs,
+  b: Abs,
+  resultTerm: Term,
+  phi: Phi,
+  assume: Phi | undefined,
+): Pred | undefined {
+  const premises = assumePremiseList(assume);
+  if (premises.length === 0) return undefined;
+  if (!a.term || !b.term) return undefined;
+  const bb = numericBounds(b, phi);
+  const posDen = bb?.lo !== undefined && (bb.lo.value > 0 || (bb.lo.value === 0 && bb.lo.strict));
+  const negDen = bb?.hi !== undefined && (bb.hi.value < 0 || (bb.hi.value === 0 && bb.hi.strict));
+  if (!posDen && !negDen) return undefined;
+  let aLeB = false; // a ≤ b（le(a.term, b.term) 命中）
+  let bLeA = false; // a ≥ b（le(b.term, a.term) 命中）
+  for (const p of premises) {
+    if (p.op !== "le") continue;
+    if (termEquals(p.a, a.term) && termEquals(p.b, b.term)) aLeB = true;
+    else if (termEquals(p.a, b.term) && termEquals(p.b, a.term)) bLeA = true;
+  }
+  // soundness：引理与操作数项不匹配 → 不得产生任何界
+  if (!aLeB && !bLeA) return undefined;
+  const facts: Pred[] = [];
+  if (aLeB) facts.push(posDen ? le(resultTerm, lit(1)) : ge(resultTerm, lit(1)));
+  if (bLeA) facts.push(posDen ? ge(resultTerm, lit(1)) : le(resultTerm, lit(1)));
+  const ab = numericBounds(a, phi);
+  if (ab?.lo !== undefined && (ab.lo.value > 0 || ab.lo.value === 0)) {
+    // a ≥ 0（strict 时 a > 0）
+    if (posDen) facts.push(ab.lo.strict ? gt(resultTerm, lit(0)) : ge(resultTerm, lit(0)));
+    else facts.push(ab.lo.strict ? lt(resultTerm, lit(0)) : le(resultTerm, lit(0)));
+  }
+  if (ab?.hi !== undefined && (ab.hi.value < 0 || ab.hi.value === 0)) {
+    // a ≤ 0
+    if (posDen) facts.push(ab.hi.strict ? lt(resultTerm, lit(0)) : le(resultTerm, lit(0)));
+    else facts.push(ab.hi.strict ? gt(resultTerm, lit(0)) : ge(resultTerm, lit(0)));
+  }
+  return facts.length ? and(...facts) : undefined;
+}
+
 /**
  * 除法：字面量折叠；除以正/负常数时按单调性推界。
  * 除以 0：JS 语义为 ±Infinity / NaN，shape 仍 number（不报违例）。
  */
-export function div(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
+export function div(a: Abs, b: Abs, phi: Phi = pTrue, assume?: Phi): Abs {
   // Bug 25：内建 brand ToPrimitive（hint number）——见 sub 同款注释
   {
     const fa = builtinBrandToPrimitive(a, "number");
@@ -928,7 +1003,15 @@ export function div(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
         term.op === "lit" ? "exact" : confJoin(confJoin(a.conf, b.conf), "path"),
       );
     }
-    return abs(num().shape, term, undefined, confJoin(confJoin(a.conf, b.conf), "path"));
+    // assume 引理（issue #152）：同名相关性界。下游 sub 等折叠经
+    // numericBounds 消费本界 → `1 - d/max ∈ [0,1]` 这类返回契约可证。
+    const assumePred = divAssumeBounds(a, b, term, phi, assume);
+    return abs(
+      num().shape,
+      term,
+      assumePred,
+      confJoin(confJoin(a.conf, b.conf), "path"),
+    );
   }
   if (isNumericLike(a) && isNumericLike(b)) {
     return abs(num().shape, undefined, undefined, "partial");
@@ -942,8 +1025,9 @@ export function div(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   if (isAnyLike(a) || isAnyLike(b)) {
     return toNumberResult(a, b, "/");
   }
-  // sum 分发（与 add 同口径）
-  const distributed = distributeSumBinOp("/", a, b, phi, div);
+  // sum 分发（与 add 同口径）；成员级同构透传 assume——成员臂内项匹配仍以
+  // termEquals 为准（不匹配的成员不产生界），soundness 不变
+  const distributed = distributeSumBinOp("/", a, b, phi, (x, y, p) => div(x, y, p, assume));
   if (distributed) return distributed;
   // Bug 8：obj/fn/brand 抽象面回退（`x.a / 2`，valueOf 可能产 bigint/Symbol）→ may TypeError
   noteAbstractArithMayThrow(a, b);

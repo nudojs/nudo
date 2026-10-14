@@ -131,7 +131,15 @@ function extractImportEdges(file: string): string[] {
   }
   for (const specifier of collectDependencySpecs(ast)) {
     if (!specifier.startsWith(".") && !specifier.startsWith("/")) continue;
-    const resolved = resolveImportPath(specifier, file);
+    // stat 级读故障（EACCES/ESTALE/EIO…，#135 起 resolveModuleFile
+    // 抛 ModuleReadError）：该边不可判 → 不进边（直读兜底仍覆盖
+    // file 自身内容；抛穿会炸垮 watch 增量图 / LSP 脏传播）
+    let resolved: string | null;
+    try {
+      resolved = resolveImportPath(specifier, file);
+    } catch {
+      continue;
+    }
     if (resolved) edges.push(resolved);
   }
   return edges;

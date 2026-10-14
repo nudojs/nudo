@@ -7,18 +7,8 @@
  *    `lk !== undefined` 当成非字面量 → 重复 add 不去重、size 假精确。
  */
 import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  litValue,
-  formatShape,
-  anyAbs,
-} from "../index.ts";
-
-function call(src: string, fnName = "f", args: Parameters<typeof callTranspiledExportFull>[2] = []) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, args);
-}
+import { litValue, formatShape, anyAbs } from "../index.ts";
+import { call } from "./eval-helpers.ts";
 
 describe("litValue sentinel: abstract pos arg / undefined Set key", () => {
   it("template startsWith with abstract position is undecided (not exact true)", () => {

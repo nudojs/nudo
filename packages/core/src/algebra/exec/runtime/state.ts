@@ -71,6 +71,31 @@ export function withExecPhi<T>(p: Phi, body: () => T): T {
   }
 }
 
+/**
+ * 用户引理前提（issue #152 `@nudo:assume d <= max`）：checkSource 在目标
+ * 函数入口求值时种子，**不随调用链继承**——callee 帧一律见空（callee 同名
+ * 参数误匹配外层引理 = unsound 假精度；phi 是全局单槽且调用边界不重置，
+ * 故独立成槽）。清空机制：callAtFunctionBoundary 在前提非平凡时以
+ * withAssumePremises(pTrue, …) 包裹 callee 体（边界退出还原 caller 值）。
+ * 消费方：arithmetic.ts 的 div 关系折叠（同名相关性
+ * le(a,b) ∧ b>0 ⇒ a/b ≤ 1，独立区间传播证不出）。
+ */
+let assumePremises: Phi = pTrue;
+
+export function currentAssumePremises(): Phi {
+  return assumePremises;
+}
+
+export function withAssumePremises<T>(p: Phi, body: () => T): T {
+  const prev = assumePremises;
+  assumePremises = p;
+  try {
+    return body();
+  } finally {
+    assumePremises = prev;
+  }
+}
+
 /** apply 型 impl 的占位 body（AbsFnImpl.body 必需；$call 走 apply 不经 body） */
 type EmptyBlock = { type: "BlockStatement"; body: never[]; directives: never[] };
 export const noBody: EmptyBlock = { type: "BlockStatement", body: [], directives: [] };
@@ -113,10 +138,15 @@ export function asAbsVal(v: unknown): Abs {
         // 与 $fnVal / $callNamed 同边界：callee 的 NudoReturn 不得冒泡成 caller。
         // Bug 26：宿主全局函数值经桥分派（evalGlobalFn / 字面量守卫执行），
         // 非宿主全局（转译泄漏的普通函数）保持 Abs 实参直调。
-        apply: (args) => {
+        apply: (args, thisVal) => {
           const bridged = hostGlobalFnCall?.(v, args);
           if (bridged !== undefined) return bridged;
-          return callAtFunctionBoundary(() => (v as (...a: Abs[]) => Abs)(...args));
+          // Bug 46：receiver 经 thisVal 转发宿主 this（成员调用 o.m = 函数声明
+          // 后 o.m() 的接收者；$invoke/$call 第三参通道）——此前丢弃致
+          // $rawThis(this) 恒 undefined
+          return callAtFunctionBoundary(() =>
+            (v as (...a: Abs[]) => Abs).apply(thisVal as never, args),
+          );
         },
       },
       {
@@ -145,16 +175,33 @@ export function $absVal(v: unknown): Abs {
  * always-throw 走 NudoThrow 异常原样 rethrow（不经此转发）。
  */
 export function callAtFunctionBoundary<T>(body: () => T): T {
+  // #152：callee 帧不继承 caller 的用户引理（assume 槽清空+边界退出还原）。
+  // termVar 同名误匹配（#123 contract-face 重锚实参名）在嵌套帧是 unsound
+  // 假精度；未种子（pTrue）时零开销直通。闭包回调（数组方法内联回调经
+  // 此边界）同按嵌套帧清空——保守诚实。
+  if (assumePremises !== pTrue) {
+    return withAssumePremises(pTrue, () => boundaryBody(body));
+  }
+  return boundaryBody(body);
+}
+
+function boundaryBody<T>(body: () => T): T {
   let forwarded: Abs[] = [];
   try {
     return runWithLoopExits(() => {
+      // callee 帧内 fork/loop 早退 ret 值（settleForkArms 入 exits 通道）在
+      // 本边界与正常返回值 join —— 此前直接丢弃会错定（fall-through 值独占）。
+      const joinFrameExits = (normal: Abs): Abs => {
+        const frameExits = takeLoopExits();
+        return frameExits.length ? frameExits.reduce((acc, x) => joinAbs(acc, x), normal) : normal;
+      };
       try {
         const r = body();
         forwarded = takeThrowExits();
-        return r;
+        return joinFrameExits(r as unknown as Abs) as unknown as T;
       } catch (e) {
         forwarded = takeThrowExits();
-        if (isNudoReturn(e)) return e.absValue as unknown as T;
+        if (isNudoReturn(e)) return joinFrameExits(e.absValue) as unknown as T;
         throw e;
       }
     });
@@ -191,11 +238,14 @@ function padOmittedArgs(
  *  opts.ctor：Bug 9 可构造性 facet（箭头/方法/async/generator → false；
  *  函数表达式/类表达式值 → true）。
  *  opts.padArgs：默认 true（Bug 7 缺参归一）；读宿主 arguments 的
- *  function 包装传 false（arguments.length 不得被补齐膨胀）。 */
+ *  function 包装传 false（arguments.length 不得被补齐膨胀）。
+ *  opts.length：Bug 69 原生 fn.length（首个默认值/rest 形参前的形参数）——
+ *  宿主 impl 是解糖产物（默认参占位 `_p{i}` 全成真参），长度不可信；
+ *  transpile 侧记录真值，$len 的 fn 分支折 exact。 */
 export function $fnVal(
   params: string[],
   impl: (...args: Abs[]) => Abs,
-  opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean },
+  opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean },
 ): Abs {
   const argsOf =
     opts?.padArgs === false
@@ -217,8 +267,13 @@ export function $fnVal(
               ),
             ),
       ...(opts?.bindThis ? { bindThis: true } : {}),
+      ...(opts?.effectFree ? { effectFree: true } : {}),
+      ...(opts?.closed ? { closed: true } : {}),
     },
-    opts?.ctor !== undefined ? { ctor: opts.ctor } : undefined,
+    {
+      ...(opts?.ctor !== undefined ? { ctor: opts.ctor } : {}),
+      ...(opts?.length !== undefined ? { length: opts.length } : {}),
+    },
   );
 }
 
@@ -247,6 +302,15 @@ export function throwStrictWrite(): never {
 /** const 绑定再赋值（Assignment to constant variable）→ hard TypeError */
 export function $throwConstAssign(): never {
   throw new NudoThrow(errorTypeAbs("TypeError"));
+}
+
+/**
+ * 自由 `arguments` 读（模块顶层 / 无任何外层函数绑定）：非宿主全局，
+ * 原生 unresolvable reference → hard ReferenceError（ESM 无 arguments
+ * 全局；`typeof arguments` 豁免由 transpile 折 "undefined" 不走此处）。
+ */
+export function $throwFreeArguments(): never {
+  throw new NudoThrow(errorTypeAbs("ReferenceError"));
 }
 
 // --- new.target（Bug 79）---
@@ -329,7 +393,19 @@ export function litAbsFromJs(v: unknown, depth = 0): Abs {
   // 循环引用/过深/非 plain 对象（Date/Map/Set/RegExp…）诚实 unknown。
   if (depth < 8) {
     if (Array.isArray(v)) {
-      const els = v.map((x) => litAbsFromJs(x, depth + 1));
+      // 稀疏数组（case 实参 [1,,3]）：`i in v` 探洞，洞下标记入 tuple.holes
+      //（与字面量路径 $arrWithHoles 同口径——读值 undefined、`in`/自有属性
+      // 判定 false）；超 cap widen 成 arr 时丢洞精度（arr 形状无 holes 槽，
+      // 同 $arrWithHoles 退化）
+      const holes: number[] = [];
+      const els: Abs[] = [];
+      for (let i = 0; i < v.length; i++) {
+        if (i in v) els.push(litAbsFromJs(v[i], depth + 1));
+        else {
+          holes.push(i);
+          els.push(litAbsFromJs(undefined));
+        }
+      }
       if (shouldWidenArrayLiteral(els.length)) {
         return abs(
           { k: "arr", element: els.reduce((x, y) => joinAbs(x, y)) },
@@ -338,7 +414,12 @@ export function litAbsFromJs(v: unknown, depth = 0): Abs {
           widenedArrayConf(),
         );
       }
-      return abs({ k: "tuple", elements: els }, undefined, undefined, "exact");
+      return abs(
+        { k: "tuple", elements: els, ...(holes.length ? { holes } : {}) },
+        undefined,
+        undefined,
+        "exact",
+      );
     }
     if (t === "object") {
       const proto = Object.getPrototypeOf(v);
@@ -573,6 +654,18 @@ export function isNudoReturn(e: unknown): e is NudoReturn {
 /** transpile `return x` inside for/while → `$loopReturn(x)` */
 export function $loopReturn(v: Abs): never {
   throw new NudoReturn(v);
+}
+
+/**
+ * transpile 函数体边界吸收器：`try { body } catch (e) { return $catchReturn(e); }`
+ * —— 函数体内 $loopReturn 早退（循环 / if 臂）在函数自身边界收成返回值，
+ * 转译模块对裸宿主调用（e2e 真实 .mjs 导入 / 模块顶层互调）自包含；
+ * 其余异常（NudoThrow / 原生错误）原样 rethrow。仅在发射体含 $loopReturn
+ * 时由 transpile 侧包裹。
+ */
+export function $catchReturn(e: unknown): Abs {
+  if (isNudoReturn(e)) return e.absValue;
+  throw e;
 }
 
 /**

@@ -9,17 +9,8 @@
  * catch 经 $catchVal 吸收为 TypeError 绑定。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
-
-function isNever(r: unknown): boolean {
-  const a = r as { shape?: { k?: string } };
-  return !!a && typeof a === "object" && a.shape?.k === "never";
-}
+import { litValue } from "@nudojs/core";
+import { call, isNever } from "./eval-helpers.ts";
 
 function throwsTypeError(t: unknown): boolean {
   const a = t as { shape?: { k?: string; name?: string } };

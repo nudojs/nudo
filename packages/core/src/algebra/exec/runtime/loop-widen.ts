@@ -13,12 +13,19 @@
  * 体对绑定的效应不再产生新值）不宽化——宽化结果与现状一致，行为不变。
  * break/continue 打断代表体（fork 的 break 臂冒泡，后续语句丢失，完整
  * 迭代效应不可观测）→ markInterrupted：出口按「全体打包位增长」宽化。
+ *
+ * issue #156（数组绑定变异面）：push 累积的 tuple 快照按**长度维**增长
+ * （arr 形状抹除）——元素域增长单独检测（diffGrowth 长度失配 → {el}），
+ * 宽化走 arrify：元素域 = 全部观测元素域 join，不整值 domainTop、不
+ * 烘焙 OOB undefined（越界是读位事实，$idx 抽象下标读已并入）、不凭空
+ * 注入 unknown 元素臂（空 tuple 只在零观测元素时诚实取 unknown 顶）。
  */
 import type { Abs } from "../../abs.ts";
-import { abs, confJoin, num, str, bool, unknown, litValue } from "../../abs.ts";
-import { joinAbs } from "../../objects.ts";
+import { abs, confJoin, num, str, bool, unknown, never, litValue } from "../../abs.ts";
+import { joinAbs, joinObjects } from "../../objects.ts";
 import { leqAbs } from "../../leq.ts";
 import { numericBounds } from "../../arithmetic.ts";
+import { oobUndef } from "./state.ts";
 
 /** 增长标记树：true=整值增长；slots/els/el=结构内增长路径；null=稳定 */
 type GrowthTree =
@@ -90,6 +97,14 @@ function leafGrew(acc: Abs, next: Abs): boolean {
   return !leqAbs(next, acc).ok;
 }
 
+/** tuple 元素域 join；无元素 → undefined（调用方决定空时语义：宽化顶
+ *  unknown（诚实：未观测的 push 仍可能发生）/ 增长检测底 never。hole
+ *  下标读值 undefined 是真实元素值域（spread/迭代产出 undefined），并入。 */
+function joinElems(t: { elements: Abs[]; holes?: number[] }): Abs | undefined {
+  const parts = t.holes?.length ? [...t.elements, oobUndef()] : t.elements;
+  return parts.length > 0 ? parts.reduce((x, y) => joinAbs(x, y)) : undefined;
+}
+
 function diffGrowth(acc: Abs, next: Abs): GrowthTree {
   const as = acc.shape;
   const ns = next.shape;
@@ -108,7 +123,13 @@ function diffGrowth(acc: Abs, next: Abs): GrowthTree {
     return any ? { slots } : null;
   }
   if (as.k === "tuple" && ns.k === "tuple") {
-    if (as.elements.length !== ns.elements.length) return true;
+    if (as.elements.length !== ns.elements.length) {
+      // #156 长度增长（push/unshift 累积）：值级增长在**长度维**（arr
+      // 形状抹除）——元素域增长单独检测（空 → never 底：首个观测元素即
+      // 增长），宽化走 arrify + 元素路径，不整值 domainTop
+      const g = diffGrowth(joinElems(as) ?? never, joinElems(ns) ?? never);
+      return { el: g };
+    }
     let any = false;
     const els: GrowthTree[] = [];
     for (let i = 0; i < ns.elements.length; i++) {
@@ -140,9 +161,72 @@ function primTop(type: string): Abs {
   }
 }
 
-/** 值域顶（sound 超集）：lit-sum / prim → 所在 prim 域；tuple → arr
- *  （长度未知 ⇒ 下标可能 miss → OOB undefined 并入，与 widenLoopJoin 同
- *  口径）；obj → 槽位值域顶 + open（可能新增键）；其余形状已抽象，原样。 */
+/** 数组族 sum 的元素域聚合：每个成员贡献其元素域（tuple = 元素 join，
+ *  空 tuple 贡献空；arr = element），聚合 join。任一非数组成员 →
+ *  ok=false（不可收敛，调用方走原路径）。collapse=true 表示值得收敛
+ *  （含 arr 臂或 tuple 长度失配——与 widenLoopJoin 的守卫同口径：等长
+ *  tuple-only join 不收敛，保长度精度）。 */
+function sumArrParts(s: { members: Abs[] }): {
+  ok: boolean;
+  collapse: boolean;
+  element?: Abs;
+} {
+  const elems: Abs[] = [];
+  const lengths = new Set<number>();
+  let hasArr = false;
+  for (const m of s.members) {
+    const ms = m.shape;
+    if (ms.k === "tuple") {
+      lengths.add(ms.elements.length);
+      const e = joinElems(ms);
+      if (e) elems.push(e);
+    } else if (ms.k === "arr") {
+      hasArr = true;
+      elems.push(ms.element);
+    } else {
+      return { ok: false, collapse: false };
+    }
+  }
+  return {
+    ok: true,
+    collapse: hasArr || lengths.size > 1,
+    element: elems.length > 0 ? elems.reduce((x, y) => joinAbs(x, y)) : undefined,
+  };
+}
+
+/** 数组化（#156）：tuple / tuple·arr 同族 sum → 单一 arr，元素域 = 全部
+ *  已知元素域 join（空 tuple 成员贡献空，不注入 unknown 顶——与
+ *  $arrMutContainer 的 splice/sort 降 arr、control 的 widenLoopJoin 同
+ *  口径）。不烘焙 OOB undefined——越界是**读位**事实（$idx 抽象下标读已
+ *  并入），不是元素值域；全体空（零观测元素）→ unknown 诚实顶。非数组
+ *  族 → undefined（调用方走原路径）。 */
+function arrify(v: Abs): Abs | undefined {
+  const s = v.shape;
+  if (s.k === "tuple") {
+    return abs(
+      { k: "arr", element: joinElems(s) ?? unknown },
+      undefined,
+      undefined,
+      confJoin(v.conf, "widened"),
+    );
+  }
+  if (s.k === "sum") {
+    const p = sumArrParts(s);
+    if (!p.ok) return undefined;
+    return abs(
+      { k: "arr", element: p.element ?? unknown },
+      undefined,
+      undefined,
+      confJoin(v.conf, "widened"),
+    );
+  }
+  return undefined;
+}
+
+/** 值域顶（sound 超集）：lit-sum / prim → 所在 prim 域；tuple·arr 同族
+ *  sum / tuple → 单一 arr（元素域顶 join，#156——不再逐成员 map 出多臂
+ *  sum、不烘焙 OOB undefined、不凭空注入 unknown 元素臂）；obj → 槽位
+ *  值域顶 + open（可能新增键）；其余形状已抽象，原样。 */
 function domainTop(v: Abs): Abs {
   const s = v.shape;
   // 有限域完备（bool 的 {true,false}）：已是全域，原样保留（conf/join 注解
@@ -159,6 +243,19 @@ function domainTop(v: Abs): Abs {
   }
   let top: Abs;
   if (s.k === "sum") {
+    // 数组族 sum（长度失配 / 混 arr 臂）：整体数组化，元素域取顶——整值
+    // 增长（interrupted / 形状漂移）到达这里时的 sound 超集
+    const collapsed = arrify(v);
+    if (collapsed) {
+      return confJoin2(
+        abs(
+          { k: "arr", element: domainTop((collapsed.shape as { k: "arr"; element: Abs }).element) },
+          undefined,
+          undefined,
+          collapsed.conf,
+        ),
+      );
+    }
     let acc: Abs | undefined;
     for (const m of s.members) {
       const t = domainTop(m);
@@ -168,15 +265,14 @@ function domainTop(v: Abs): Abs {
   } else if (s.k === "prim") {
     top = primTop(s.type);
   } else if (s.k === "tuple") {
-    const els = s.elements.map((e) => domainTop(e));
-    const known = els.length ? els.reduce((x, y) => joinAbs(x, y)) : unknown;
-    top = abs(
-      { k: "arr", element: joinAbs(known, abs({ k: "unknown" }, { op: "lit", value: undefined }, undefined, "partial")) },
-      undefined,
-      undefined,
-      "widened",
-    );
-    return top;
+    // #156：元素域 = 已知元素域顶 join（空 → unknown 诚实顶：整值宽化下
+    // 未观测的 push 仍可能发生）；OOB undefined 不烘焙（读位事实，$idx
+    // 抽象下标读已并入）
+    const parts = s.holes?.length ? [...s.elements, oobUndef()] : s.elements;
+    const known = parts.length > 0
+      ? parts.map((e) => domainTop(e)).reduce((x, y) => joinAbs(x, y))
+      : unknown;
+    return abs({ k: "arr", element: known }, undefined, undefined, "widened");
   } else if (s.k === "arr") {
     top = abs({ k: "arr", element: domainTop(s.element) }, undefined, undefined, v.conf);
   } else if (s.k === "obj") {
@@ -193,6 +289,30 @@ function domainTop(v: Abs): Abs {
 function confJoin2(top: Abs): Abs {
   const c = confJoin(top.conf, "widened");
   return c === top.conf ? top : { ...top, conf: c };
+}
+
+/** 增长树下行前的结构归一（#156）：打包容器的槽位 join 走 joinValues——
+ *  obj 值槽不结构合并，sum-of-objs 里的「同一绑定的顺序状态」若逐成员
+ *  独立宽化，零元素成员会独自放大成 arr(unknown)（元素域联合被丢）。
+ *  对同 key 集成员先 joinObjects 折成槽位级并（元素/槽位域取联合，是各
+ *  成员独自取顶的 sound 超集），再随树递归；异 key 集 / 非全 obj 成员
+ *  保持 sum（widenWithPath 走 domainTop 整值兜底，行为不变）。 */
+function normalizeForWiden(v: Abs, g: GrowthTree): Abs {
+  if (g === null) return v;
+  const s = v.shape;
+  let target = v;
+  if (s.k === "sum" && s.members.length > 0 && s.members.every((m) => m.shape.k === "obj")) {
+    target = s.members.reduce((x, y) => joinObjects(x, y));
+  }
+  if (g === true || !("slots" in g)) return target;
+  const ts = target.shape;
+  if (ts.k !== "obj") return target;
+  const slots: typeof ts.slots = {};
+  for (const [k, slot] of Object.entries(ts.slots)) {
+    const gi = g.slots[k];
+    slots[k] = gi === undefined ? slot : { ...slot, value: normalizeForWiden(slot.value, gi) };
+  }
+  return abs({ ...ts, slots }, undefined, undefined, target.conf);
 }
 
 /** 按增长树宽化：稳定路径原样保留（精度不变），增长路径取值域顶 */
@@ -213,11 +333,47 @@ function widenWithPath(v: Abs, g: GrowthTree): Abs {
     const elements = s.elements.map((e, i) => widenWithPath(e, g.els[i] ?? null));
     return abs({ ...s, elements }, undefined, undefined, v.conf);
   }
-  if ("el" in g && s.k === "arr") {
-    return abs({ k: "arr", element: widenWithPath(s.element, g.el) }, undefined, undefined, v.conf);
+  if ("el" in g) {
+    // #156：长度增长路径的 base 可能是 tuple / tuple·arr 同族 sum（不同
+    // 长度快照的 join）——先数组化再走元素宽化；已是 arr 原样
+    const a = s.k === "arr" ? v : arrify(v);
+    if (a && a.shape.k === "arr") {
+      return abs(
+        { k: "arr", element: widenWithPath(a.shape.element, g.el) },
+        undefined,
+        undefined,
+        a.conf,
+      );
+    }
   }
   // 增长树与现形状不匹配（join 后形状漂移）：整值宽化
   return domainTop(v);
+}
+
+/** 无增长退出的数组族 sum 收敛（#156 残留）：顶层与 obj 槽位递归，把
+ *  「同一绑定顺序状态」的 arr/tuple 多臂 sum 收成单 arr（元素域并，
+ *  conf 沿用该 sum 自身——表示收敛非宽化）。等长 tuple-only join、
+ *  非数组族、非收敛形态原样。 */
+function collapseArrSums(v: Abs): Abs {
+  const s = v.shape;
+  if (s.k === "sum") {
+    const p = sumArrParts(s);
+    if (p.ok && p.collapse && p.element) {
+      return abs({ k: "arr", element: p.element }, undefined, undefined, v.conf);
+    }
+    return v;
+  }
+  if (s.k === "obj") {
+    let changed = false;
+    const slots: typeof s.slots = {};
+    for (const [k, slot] of Object.entries(s.slots)) {
+      const w = collapseArrSums(slot.value);
+      if (w !== slot.value) changed = true;
+      slots[k] = { ...slot, value: w };
+    }
+    return changed ? abs({ ...s, slots }, undefined, undefined, v.conf) : v;
+  }
+  return v;
 }
 
 export interface LoopCarriedWidener {
@@ -225,7 +381,8 @@ export interface LoopCarriedWidener {
   observe(p: Abs): void;
   /** 代表体被 break/continue 打断（完整迭代效应不可观测）→ 出口整体宽化 */
   markInterrupted(): void;
-  /** 预算耗尽出口：并入最终态后按增长宽化；无增长时原样返回累计 join */
+  /** 预算耗尽出口：并入最终态后按增长宽化；无增长时返回累计 join（数组
+   *  族 sum 收敛为单 arr——同一绑定顺序状态的表示收敛，非宽化） */
   widenFinal(final: Abs): Abs;
 }
 
@@ -250,7 +407,17 @@ export function makeLoopWidener(): LoopCarriedWidener {
       observe(final);
       const base = acc ?? final;
       const g: GrowthTree = interrupted ? true : growth;
-      return g === null ? base : widenWithPath(base, g === true ? true : g);
+      if (g === null) {
+        // #156 残留：无增长但快照 join 是数组族 sum（参数位 arr 绑定的顺序
+        // 状态：unknown 吸收 push 值 → 元素域增长检测不到，joinAbs 把
+        // arr×arr 摊成多臂 sum）。同一绑定的顺序状态按元素域并收敛成单
+        // arr（与 {el} 增长路径的 arrify、control 的 widenLoopJoin 同口
+        // 径）；conf 沿用该值自身的累计 join——这是表示收敛不是宽化，
+        // 不标 widened。等长 tuple-only join 不收敛（保长度精度）。打包
+        // 绑定包是 obj（每绑定一槽），sum 藏在槽位里——递归下钻。
+        return collapseArrSums(base);
+      }
+      return widenWithPath(normalizeForWiden(base, g), g);
     },
   };
 }

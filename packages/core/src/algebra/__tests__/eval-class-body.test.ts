@@ -6,6 +6,8 @@
  * - 78 私有成员：#x/#m 混淆键建模，不再整模块 fail-closed
  * - 79 new.target：普通调用 undefined / 构造帧内类值（不再混编 import.meta）
  * - 80 类表达式：非空类体走 $class 机制（不再恒 unknown）
+ * - 80/81（differential 批）私有名补漏：#x in o 运算符派发 $in（不再折
+ *   $lit(void 0) 键）；私有字段复合赋值读-改-写（不再无视 compoundFn）
  * - 58 生成器：调用期全操作——体内 throw/may-throw 不泄漏进调用方 throws 域
  * 每条断言与 node 真实执行对齐（值域 + throws 域双钉）。
  */
@@ -15,6 +17,7 @@ import {
   callTranspiledExportFull,
   formatAbs,
   abs,
+  transpileSource,
   type Abs,
 } from "@nudojs/core";
 import {
@@ -412,5 +415,108 @@ describe("Bug 58: generator calls are total (body throws deferred to iteration)"
       [anyAbs],
     );
     expect(r.kinds).toContain("TypeError");
+  });
+});
+
+describe("Bug 80 (differential): #x in o routes through $in", () => {
+  it("#x in this on own instance → true (was void-0 key query)", () => {
+    const r = evalSrc(
+      `export function f() { class A { #x = 1; has() { return #x in this; } } return new A().has(); }`,
+      "f",
+    );
+    expect(r.value).toBe("true");
+  });
+
+  it("#x in sibling instance passed as arg → true", () => {
+    const r = evalSrc(
+      `export function f() { class A { #x = 1; has(o) { return #x in o; } } return new A().has(new A()); }`,
+      "f",
+    );
+    expect(r.value).toBe("true");
+  });
+
+  it("#x in plain object → false (foreign receiver, no throw)", () => {
+    const r = evalSrc(
+      `export function f() { class A { #x = 1; has(o) { return #x in o; } } return new A().has({}); }`,
+      "f",
+    );
+    expect(r.value).toBe("false");
+  });
+
+  it("static #x in class value → true (statics land on ctor slots)", () => {
+    const r = evalSrc(
+      `export function f() { class A { static #x = 1; static has(c) { return #x in c; } } return A.has(A); }`,
+      "f",
+    );
+    expect(r.value).toBe("true");
+  });
+
+  it("#x in 5 → definite TypeError (non-object receiver)", () => {
+    const r = evalSrc(
+      `export function f() { class A { #x = 1; has(o) { return #x in o; } } return new A().has(5); }`,
+      "f",
+    );
+    expect(r.value).toBe("never");
+    expect(r.throws).toContain("TypeError");
+  });
+
+  it("transpile emits $in($lit(key), recv) — PrivateName not folded to void 0", () => {
+    const out = transpileSource(`class A { #x = 1; has() { return #x in this; } }`);
+    expect(out).toContain(`$in($lit("#x"), __this)`);
+  });
+});
+
+describe("Bug 81 (differential): private-field compound assignment is read-modify-write", () => {
+  it("this.#x += 1 (was: RHS written verbatim → 1)", () => {
+    const r = evalSrc(
+      `export function f() { class A { #x = 1; inc() { this.#x += 1; return this.#x; } } return new A().inc(); }`,
+      "f",
+    );
+    expect(r.value).toBe("2");
+  });
+
+  it("this.#x -= 3", () => {
+    const r = evalSrc(
+      `export function f() { class A { #x = 10; dec() { this.#x -= 3; return this.#x; } } return new A().dec(); }`,
+      "f",
+    );
+    expect(r.value).toBe("7");
+  });
+
+  it("this.#x *= 3", () => {
+    const r = evalSrc(
+      `export function f() { class A { #x = 2; mul() { this.#x *= 3; return this.#x; } } return new A().mul(); }`,
+      "f",
+    );
+    expect(r.value).toBe("6");
+  });
+
+  it('this.#s += "b" (string concat keeps exact lit)', () => {
+    const r = evalSrc(
+      `export function f() { class A { #s = "a"; cat() { this.#s += "b"; return this.#s; } } return new A().cat(); }`,
+      "f",
+    );
+    expect(r.value).toBe('"ab"');
+  });
+
+  it("simple this.#x = v stays exact (Bug 78 regression)", () => {
+    const r = evalSrc(
+      `export function f() { class A { #x = 1; m(v) { this.#x = v; return this.#x; } } return new A().m(4); }`,
+      "f",
+    );
+    expect(r.value).toBe("4");
+  });
+
+  it("public this.x += 1 keeps its member-path read-modify-write (control)", () => {
+    const r = evalSrc(
+      `export function f() { class A { x = 1; inc() { this.x += 1; return this.x; } } return new A().inc(); }`,
+      "f",
+    );
+    expect(r.value).toBe("2");
+  });
+
+  it("transpile emits $add($get(...)) under the $set wrapper", () => {
+    const out = transpileSource(`class A { #x = 1; inc() { this.#x += 1; return this.#x; } }`);
+    expect(out).toContain(`(($set(__this, "#x", __v)), __v))($add($get(__this, "#x"), $lit(1))`);
   });
 });

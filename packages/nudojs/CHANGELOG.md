@@ -1,5 +1,138 @@
 # nudojs
 
+## 1.3.24
+
+### Patch Changes
+
+- Updated dependencies [08d7a55]
+  - @nudojs/core@1.11.3
+  - @nudojs/env@0.4.38
+  - @nudojs/harvester@0.3.24
+  - @nudojs/parser@1.4.20
+  - @nudojs/service@1.6.23
+
+## 1.3.23
+
+### Patch Changes
+
+- 82eaae8: Fix `nudo:recursion-truncated` misattributing call-cycle truncation to "depth/size budget", and make `nudo check --json` budget stats see the B-path (`$callNamed`) truncation (issue #158):
+  
+  - `enterCall` / `evalEnterCall` now attribute a truncation reason — `cycle` (same name+arg fingerprint already on the evaluation stack; data-dependent self/mutual recursion such as directory walkers or `grow`-style recursion) vs `depth` / `calls` (real budget exhaustion). The check diagnostic message, suggestion, structured action, and a new `reason` field on the issue (`cycle` | `depth` | `calls` | `budget`) split accordingly: cycle says *"budget cannot lift this"* and never points at `@nudo:budget`; depth/calls name the exact raisable dimension (`@nudo:budget depth=…` / `calls=…`).
+  - The `check --json` / health budget block no longer reports `truncated:false` alongside a `nudo:recursion-truncated` info: B-path counters are latched across execution sessions within one host entry and surfaced as `evalCalls` / `maxEvalCalls` / `evalCallTruncated`, plus `cycleTruncated` and a sorted `reasons[]` set (single-file and multi-file envelopes, and the disk-cache round trip). Fork counters/truncation flags are latched per host entry too (the last-session snapshot could previously erase an already-reported `nudo:fork-truncated`).
+  - The `@nudo:budget` quickfix (`nudo check --fix` / LSP code action) is no longer offered when the truncation reason is `cycle`; the `reason` is plumbed through `check --json`, the disk cache, LSP diagnostic data, and `materializeAction`.
+  - Raising `@nudo:budget` on a same-args recursion could never lift the truncation — the old message misled real budget investigations into "directive ignored" hypotheses.
+  - Loop-iteration truncation (`#loop-iterations`) no longer masquerades as recursion: it now emits its own `nudo:loop-truncated` info with an honest message and suggestion (the call-budget knobs cannot lift a loop budget — `@nudo:budget calls=/depth=` does not apply), gets a `loopTruncated` flag in the `check --json` / health budget block (single-file and multi-file envelopes), and no longer offers the misleading `@nudo:budget` quickfix it used to inherit from the recursion branch.
+- Updated dependencies [82eaae8]
+  - @nudojs/core@1.11.2
+  - @nudojs/service@1.6.22
+  - @nudojs/env@0.4.37
+  - @nudojs/harvester@0.3.23
+  - @nudojs/parser@1.4.19
+
+## 1.3.22
+
+### Patch Changes
+
+- Updated dependencies [612d64f]
+  - @nudojs/core@1.11.1
+  - @nudojs/env@0.4.36
+  - @nudojs/harvester@0.3.22
+  - @nudojs/parser@1.4.18
+  - @nudojs/service@1.6.21
+
+## 1.3.21
+
+### Patch Changes
+
+- Updated dependencies [cce5e58]
+- Updated dependencies [16cda31]
+- Updated dependencies [cce5e58]
+  - @nudojs/core@1.11.0
+  - @nudojs/env@0.4.35
+  - @nudojs/harvester@0.3.21
+  - @nudojs/parser@1.4.17
+  - @nudojs/service@1.6.20
+
+## 1.3.20
+
+### Patch Changes
+
+- Updated dependencies [8806e93]
+  - @nudojs/core@1.10.2
+  - @nudojs/env@0.4.34
+  - @nudojs/harvester@0.3.20
+  - @nudojs/parser@1.4.16
+  - @nudojs/service@1.6.19
+
+## 1.3.19
+
+### Patch Changes
+
+- Updated dependencies [96090cd]
+  - @nudojs/core@1.10.1
+  - @nudojs/env@0.4.33
+  - @nudojs/harvester@0.3.19
+  - @nudojs/parser@1.4.15
+  - @nudojs/service@1.6.18
+
+## 1.3.18
+
+### Patch Changes
+
+- 35ce944: Fix recursive-fn local hover poisoning and arity-only fn hover display
+  
+  - `$nodoPos` position records and call/assign records now carry the caller-frame depth; hover replay surfaces (`absNodeAtPosition`, `collectEnclosingFnLocals`) only read outermost-frame records. Recursive functions on self-referential contracts (`lazy(() => astNode)`) no longer bind cycle-truncated `opaque unknown` into local-variable hovers (`obj` now shows the computed `null | string | undefined`).
+  - `const x = <non-call init>` declarations record the bound Abs at the declarator-id position during hover replay (`recordPositions` only) — ternary/optional-chain/literal-initialized locals are hoverable (`prop`, `q`).
+  - `callTranspiledExportFullInner` refines the called fn Abs `returnType` slot after a successful call (same policy as class method slots, display-only).
+  - LSP hover: an arity-only fn Abs (empty `returnType` slot) no longer preempts the generalize intension face; fn-name/callee hovers show the full contract signature `(node: nullable(astNode)) => null | string | undefined` instead of `(arg0) => ?`.
+- Updated dependencies [334b914]
+- Updated dependencies [94197eb]
+- Updated dependencies [b8db17b]
+- Updated dependencies [fa52735]
+- Updated dependencies [35ce944]
+- Updated dependencies [5e275df]
+  - @nudojs/core@1.10.0
+  - @nudojs/service@1.6.17
+  - @nudojs/env@0.4.32
+  - @nudojs/harvester@0.3.18
+  - @nudojs/parser@1.4.14
+
+## 1.3.17
+
+### Patch Changes
+
+- Updated dependencies [2af4016]
+- Updated dependencies [2af4016]
+  - @nudojs/core@1.9.4
+  - @nudojs/env@0.4.31
+  - @nudojs/harvester@0.3.17
+  - @nudojs/parser@1.4.13
+  - @nudojs/service@1.6.16
+
+## 1.3.16
+
+### Patch Changes
+
+- Updated dependencies [b6495c6]
+- Updated dependencies [b6495c6]
+- Updated dependencies [04a6d1d]
+  - @nudojs/core@1.9.3
+  - @nudojs/service@1.6.15
+  - @nudojs/env@0.4.30
+  - @nudojs/harvester@0.3.16
+  - @nudojs/parser@1.4.12
+
+## 1.3.15
+
+### Patch Changes
+
+- Updated dependencies [c8e0417]
+  - @nudojs/core@1.9.2
+  - @nudojs/env@0.4.29
+  - @nudojs/harvester@0.3.15
+  - @nudojs/parser@1.4.11
+  - @nudojs/service@1.6.14
+
 ## 1.3.14
 
 ### Patch Changes

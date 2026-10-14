@@ -1,5 +1,102 @@
 # @nudojs/harvester
 
+## 0.3.24
+
+### Patch Changes
+
+- Updated dependencies [08d7a55]
+  - @nudojs/core@1.11.3
+  - @nudojs/env@0.4.38
+  - @nudojs/parser@1.4.20
+
+## 0.3.23
+
+### Patch Changes
+
+- Updated dependencies [82eaae8]
+  - @nudojs/core@1.11.2
+  - @nudojs/env@0.4.37
+  - @nudojs/parser@1.4.19
+
+## 0.3.22
+
+### Patch Changes
+
+- Updated dependencies [612d64f]
+  - @nudojs/core@1.11.1
+  - @nudojs/env@0.4.36
+  - @nudojs/parser@1.4.18
+
+## 0.3.21
+
+### Patch Changes
+
+- Updated dependencies [cce5e58]
+- Updated dependencies [16cda31]
+- Updated dependencies [cce5e58]
+  - @nudojs/core@1.11.0
+  - @nudojs/env@0.4.35
+  - @nudojs/parser@1.4.17
+
+## 0.3.20
+
+### Patch Changes
+
+- Updated dependencies [8806e93]
+  - @nudojs/core@1.10.2
+  - @nudojs/env@0.4.34
+  - @nudojs/parser@1.4.16
+
+## 0.3.19
+
+### Patch Changes
+
+- Updated dependencies [96090cd]
+  - @nudojs/core@1.10.1
+  - @nudojs/env@0.4.33
+  - @nudojs/parser@1.4.15
+
+## 0.3.18
+
+### Patch Changes
+
+- Updated dependencies [334b914]
+- Updated dependencies [94197eb]
+- Updated dependencies [b8db17b]
+- Updated dependencies [5e275df]
+  - @nudojs/core@1.10.0
+  - @nudojs/env@0.4.32
+  - @nudojs/parser@1.4.14
+
+## 0.3.17
+
+### Patch Changes
+
+- Updated dependencies [2af4016]
+- Updated dependencies [2af4016]
+  - @nudojs/core@1.9.4
+  - @nudojs/env@0.4.31
+  - @nudojs/parser@1.4.13
+
+## 0.3.16
+
+### Patch Changes
+
+- Updated dependencies [b6495c6]
+- Updated dependencies [04a6d1d]
+  - @nudojs/core@1.9.3
+  - @nudojs/env@0.4.30
+  - @nudojs/parser@1.4.12
+
+## 0.3.15
+
+### Patch Changes
+
+- Updated dependencies [c8e0417]
+  - @nudojs/core@1.9.2
+  - @nudojs/env@0.4.29
+  - @nudojs/parser@1.4.11
+
 ## 0.3.14
 
 ### Patch Changes

@@ -1,5 +1,155 @@
 # @nudojs/core
 
+## 1.11.3
+
+### Patch Changes
+
+- 08d7a55: Fix five exec-surface wrong-concrete bugs (80–84) found by differential testing:
+  
+  - **`#x in obj`** (private-field `in` operator): the left `PrivateName` operand fell through `isExpression` and compiled to `$lit(void 0)`, so the presence test always returned `false`. The `in` arm now emits the mangled `"#x"` key via the shared `privateNameKeySrc` helper (also deduped into member read/assign).
+  - **`this.#x += 1`** (private-field compound assignment): the root-non-rebindable branch emitted a simple assignment using the RHS directly, dropping the operation (`+=1` assigned `1`). It now applies `compoundFn` to the current `$get` value, mirroring the member-path branch.
+  - **`o + "x"` with a `Symbol.toPrimitive` hook**: `coerceToStringParts` folded hook-only objects to the default `"[object Object]"` tag (wrong concrete string). The fold guard now also checks for an own `"@@toPrimitive"` slot — hook presence blocks the fold and yields a sound abstract string domain.
+  - **`Array.prototype.concat` ignores `Symbol.isConcatSpreadable`**: spreadable objects are now spread as array-likes (`ToLength(o.length)` elements), `lit false` suppresses spreading, abstract flags degrade to `arr` (sound).
+  - **Private fields leak as enumerable own properties**: private slots are now flagged `internal` at instance-field registration (not by `#` name prefix — public string keys like `{"#x":1}` share the key space and stay visible). `for-in`, `Object.keys/values/entries`, `hasOwnProperty`, `getOwnPropertyNames/Descriptors`, spread, `Object.assign`, and `JSON.stringify` exclude internal slots; direct `this.#x` access and `#x in obj` slot-presence semantics are unchanged. Class-instance spread/assign now also includes public fields (previously dropped), and Error-family own slots (`name`/`message`/`stack`) are non-enumerable per native semantics.
+  - **Class-instance precision follow-ups**: `Object.getOwnPropertyDescriptor(new A(), key)` now folds exact data/accessor descriptors for public fields (runtime `defineProperty` flags and dynamic getters included) instead of the conservative `descriptor|undefined` domain; `JSON.stringify` folds class instances with prototype getters exactly (`{"pub":2}` — prototype accessors are not own properties, native never invokes them during stringify; only `toJSON` methods keep the conservative fold).
+
+## 1.11.2
+
+### Patch Changes
+
+- 82eaae8: Fix `nudo:recursion-truncated` misattributing call-cycle truncation to "depth/size budget", and make `nudo check --json` budget stats see the B-path (`$callNamed`) truncation (issue #158):
+  
+  - `enterCall` / `evalEnterCall` now attribute a truncation reason — `cycle` (same name+arg fingerprint already on the evaluation stack; data-dependent self/mutual recursion such as directory walkers or `grow`-style recursion) vs `depth` / `calls` (real budget exhaustion). The check diagnostic message, suggestion, structured action, and a new `reason` field on the issue (`cycle` | `depth` | `calls` | `budget`) split accordingly: cycle says *"budget cannot lift this"* and never points at `@nudo:budget`; depth/calls name the exact raisable dimension (`@nudo:budget depth=…` / `calls=…`).
+  - The `check --json` / health budget block no longer reports `truncated:false` alongside a `nudo:recursion-truncated` info: B-path counters are latched across execution sessions within one host entry and surfaced as `evalCalls` / `maxEvalCalls` / `evalCallTruncated`, plus `cycleTruncated` and a sorted `reasons[]` set (single-file and multi-file envelopes, and the disk-cache round trip). Fork counters/truncation flags are latched per host entry too (the last-session snapshot could previously erase an already-reported `nudo:fork-truncated`).
+  - The `@nudo:budget` quickfix (`nudo check --fix` / LSP code action) is no longer offered when the truncation reason is `cycle`; the `reason` is plumbed through `check --json`, the disk cache, LSP diagnostic data, and `materializeAction`.
+  - Raising `@nudo:budget` on a same-args recursion could never lift the truncation — the old message misled real budget investigations into "directive ignored" hypotheses.
+  - Loop-iteration truncation (`#loop-iterations`) no longer masquerades as recursion: it now emits its own `nudo:loop-truncated` info with an honest message and suggestion (the call-budget knobs cannot lift a loop budget — `@nudo:budget calls=/depth=` does not apply), gets a `loopTruncated` flag in the `check --json` / health budget block (single-file and multi-file envelopes), and no longer offers the misleading `@nudo:budget` quickfix it used to inherit from the recursion branch.
+
+## 1.11.1
+
+### Patch Changes
+
+- 612d64f: Fix loop-mutated array bindings widening with fabricated `(unknown | undefined)[]` arms — `for…of` + `push` return values now prove against element contracts (issue #156):
+  
+  - `loop-widen.ts`: tuple length growth (push accumulation) is now detected as element-domain growth (`{el}`) instead of whole-value growth; widening goes through `arrify` — element domain = join of all observed element domains. No fabricated `unknown` element arm from the empty initial tuple, no baked out-of-bounds `undefined` (OOB is a read-site fact: `$idx` on an abstract index already joins the marker; concrete-index optimism matches the engine-wide `arr` invariant shared with `splice`/`sort` degradation).
+  - Packed-container slot joins produce sums of objects (`joinValues` does not structurally merge object slots); `normalizeForWiden` structurally merges same-key-set object sums before the growth tree descends, so sequential states of `{ list: [...] }`-style accumulators union their element domains instead of widening the zero-element member alone into `arr(unknown)`.
+  - `control.ts` `widenLoopJoin`: stops baking the OOB marker into collapsed element domains (hole reads still contribute, they are real element values).
+  - `postcondition.ts`: `conf="widened"` structural arms (`arr`/`tuple`/`obj`) against `array(...)`/`shape(...)` contracts (union members traversed) now discharge through per-element/per-field reconciliation — widening loses length/key-openness/bound/path evidence, not the structural domain. Guards unchanged: bounded element contracts (`number().gt(0)`), mismatched prim domains, and unknown element domains stay `unprovable`; interrupted loops (abstract `break`) keep the honest `unknown[]` top.
+  - No-growth loop exits now collapse array-family sums in packed binding slots (`collapseArrSums`): a parameter-position `arr` binding whose element domain is `unknown` absorbs `push` values (growth detection sees nothing), and the widener's accumulated `joinAbs` used to smear the sequential states into a two-arm sum (`unknown[] | (unknown | {v})[]`). Sequential states of one binding now union into a single `arr` (conf preserved — representation collapse, not widening; equal-length tuple-only joins and non-array sums untouched).
+
+## 1.11.0
+
+### Minor Changes
+
+- 16cda31: Add `@nudo:assume <param> <= <param>` user lemmas: cross-variable bound premises participate in relational division folding, so return contracts like `1 - d/max ∈ [0,1]` become provable (#152).
+  
+  - `@nudo:assume a >= b` is normalized to `le(b, a)`; malformed lemmas or names outside the formal parameter list report `nudo:assume-invalid` (error).
+  - Premises are seeded per target-function entry evaluation and never inherited across call boundaries (callee frames are cleared — same-name re-anchoring cannot produce false precision). Recursive calls are conservatively cleared.
+  - Division folding derives the correlated bound `le(a,b) ∧ b > 0 ⇒ a/b ≤ 1` (plus mirrors), which plain interval propagation cannot express; downstream `+`/`-`/`*` folding consumes it as usual.
+  - Proofs that rely on lemmas surface `nudo:assume-relied` (info) — user axioms stay audit-visible.
+  - Constraint builders now throw on non-numeric bounds (`number().le("max")` previously built a silent string-literal predicate); use `@nudo:assume` for cross-variable references.
+
+### Patch Changes
+
+- cce5e58: Fix false `nudo:unproven-return` warnings when a return value was widened to a prim domain top by the loop-carried-binding widener (issue #151):
+  
+  - `postcondition.ts` now treats `conf="widened"` loop-widen products under the same policy as issue #115 partial arms: widening loses bound/path evidence but not the prim value domain, so domain membership against an unbounded bare prim contract is provable.
+  - The whole-value `isValueSetUnknown` gate in `assertImplies` no longer swallows `conf="widened"` returns before arm distribution; the per-arm gates in `assertImpliesSingle` (new proved exit) and `assertSumArms` keep everything else conservative.
+  - `isWidenedSumArm` also accepts arm-level `conf="widened"` (loop-widen sums carry widened on both parent and arm), enabling the existing `provesBarePrimDomain` discharge for union members such as `union(string(), lit(null))`.
+  - Guards unchanged: widened arms with mismatched prim or bounded contracts (`number().gt(0)`), and any-derivation FP protection, stay `unprovable` (never `proved`, never `disproved`); non-widened exact-arm semantics are untouched.
+- cce5e58: Fix array mutator spread arguments (`f.push(...xs)`) folding to `$unknown()` and polluting the container element domain (issue #153):
+  
+  - The array-mutator fast path in `transpile/stmt.ts` (statement position, identifier/member-path receivers) and the rebind lines of `emitArrMutatorRebinds` in `transpile/emit.ts` (expression position / nested mutators — the rebind line performs the *real* mutation, so the unknown argument landed in the container) now emit `...$elems(<expr>)`, the same flattening the ordinary call paths have used since DEC-006 K5. Generated code is a JS spread inside the args array literal, so `$elems`' returned `Abs[]` flattens element-wise into `$arrMutContainer`.
+  - Element precision restored: `const findings = []; findings.push(...check(x)); return findings` keeps the precise per-element tuple from `check` instead of `[unknown]`; mixed arguments keep order (`f.push(a, ...xs, b)`); spreading an abstract array joins its known element domain via the single representative; spreading a string pushes per code point, matching native `push(..."ab")` semantics.
+
+## 1.10.2
+
+### Patch Changes
+
+- 8806e93: Fix env-brand iteration false warnings and env-global slot writes poisoning whole-function evaluation (issues #147/#148):
+  
+  - `iterabilityKind`/`asyncIterabilityKind` now treat a `brand` shape as a nominal label delegating to its inner structural face: a brand wrapping an array/tuple/string/`@@iterator` object is **total** (no more `may throw TypeError — iteration over possibly non-iterable` on `for…of`/spread over env `Array<T>` brands such as `fs.readdirSync`). Non-total inner faces stay **may** and never degrade to **definite** (TypedArray/Buffer brands wrap an empty object whose prototype `@@iterator` is not modeled). Element domains delegate the same way (`elemsOf`/`$concat`): the `for…of` loop variable and spread elements now fold to the inner array element (`string | Dirent`) instead of `unknown`, and a brand wrapping a tuple keeps the precise tuple shape when spread (`[...t, ...brandT]` stays a tuple, not `T[]`).
+  - Env-global injection in `runTranspiled` binds globals with `let` instead of `const`: a member write like `process.exitCode = 1` compiles to a root-rebinding write-back chain (`process = $set(process, …)`), which against a `const` binding threw a native TypeError and poisoned the whole eval (return folded to `unknown` + `nudo:unknown-inference` + `nudo:entry-may-throw`). Env globals are writable `globalThis` properties natively; writes now fold and a later read in the same program run observes the written value.
+
+## 1.10.1
+
+### Patch Changes
+
+- 96090cd: Fix unsound getter loss on object joins: `joinAbs`/`joinObjects` built the merged object as a fresh Abs identity without migrating the accessor side table, so a getter arm joined with a data arm read as its `undefined` placeholder (`{ get q() { return 42; } }` joined with `{ q: 0 }` read `undefined | 0` instead of `42 | 0`). Mixed arms now fold the getter's read domain (evaluated with its original receiver, same as `$spread`) into the data slot; arms sharing the identical accessor definition (aliases, migrated immutable updates such as loop-widening frames) migrate the registration whole so reads keep dispatching through the side table. The accessor table moved to a leaf module `algebra/accessors.ts` so `objects.ts` can consume it without an import cycle; `annotateJoinPath`'s re-wrap now migrates registrations to the final identity.
+
+## 1.10.0
+
+### Minor Changes
+
+- b8db17b: 参数契约折叠展示（inlay + hover + 签名）：
+  
+  - **inlay**：侧车 `fn()` 形参表达式原文（如 `where nullable(astNode)`）或 `@nudo:contract` 指令约束名替代谓词无损展开（lazy 判别联合展开可达数万字符），完整谓词经 LSP inlay tooltip 展示。侧车 ∧ 指令并存时展示 `expr ∧ name`（任一文本缺席则整体回落谓词全展）；整表达式别名（`import { astNode as N }` 的裸 `N`）规范化为导入名；派生形参（spread / computed）无静态文本，回落谓词全展。
+  - **hover**：参数声明位 hover 折叠为声明形态（`node: nullable(astNode)`），函数名 hover 签名的契约参数同口径折叠；函数名 hover 的契约面 display 同步折叠。**体内引用位经求值器重放直读引擎求值态 Abs**（核心变更）：transpile `recordPositions` 插桩（`$nodoPos`——标识符值读 / 静态成员属性位 / 可选链成员跳属性位，计算成员记表达式起始位；记录并原样返回，语义恒等）+ `runTranspiled` 符号执行导出函数（入口 Φ 种子 + 契约参数 Abs），位置直读求值态 Abs——流敏感窄化为**引擎求值语义**（早退守卫 nullish 剥离 / 判别等值窄化 / `!==` 对偶 / typeof 守卫 / `&&` / `||` 链，Φ-native `$fork` 臂内 `withExecPhi` + `$narrowMemberEq` 剪影），非 LSP 层近似。显示阶梯：求值态与入口 Abs 等价（leqAbs 双向）或仅剥 nullish 的位置（声明位 / 检查点 / 成员访问对象 / 落回位）→ 折叠声明形态 + 类型值变量链接；窄化位（守卫 then 分支 / 成员读槽位 / 局部量）→ 求值态展示（`node: { type: lit("StringLiteral"), value: string } | { type: string }`——`showLits` 渲染 lit 判别值与侧车文法同形；开放尾臂按 may 态保守保留——其 `type: string()` 值域与 lit 判别重叠，成员读槽位在尾臂缺席 → `string | undefined` sound）。重放 fail-closed（求值失败 / 预算超限 / 无契约 / 非导出 / 解构形参）→ 回落声明形态面：`||` 组 then 分支（引擎 phi 合取不能表达析取事实）LSP 层按匹配臂联合源文本窄化（sound）；else 分支否定形态有界跳过。折叠面中的**类型值变量包为链接**（`[astNode](file://<依赖侧车>#L<定义行>)`——经侧车 import 表 / 本地顶层声明 / re-export 一级解析；渲染为 plain markdown——代码块内链接不渲染），替代原独立"契约原文"行；无引用变量的契约回落契约原文行。
+  - **core API**：`formatShape(a, { maxDepth, showLits })`——`showLits` 把 `eq(self, lit(v))` pred（槽位为 `get(p, k)` 字段项、顶层为参数项）渲染为 `lit(v)`（默认 false——既有全部展示面口径不变）。
+  - **修复**：exec 缓存命中（同内容侧车在不同路径——复制的契约）时不重跑 `execSidecar`，参数折叠文本注册表按路径键在命中路径补登记；此前第二个同内容侧车路径查不到折叠文本、回落谓词全展。
+
+### Patch Changes
+
+- 334b914: Discriminant narrowing visible in slot display; mid-token hover resolution
+  
+  - `$narrowMemberEq` keep-arm refinement: surviving union members with a compatible discriminant slot now carry the `eq(slotTerm, lit)` fact on that slot (conjoined with any existing pred). `formatShape(showLits)` renders it via `litPredValue`, so the open-tail arm displays `{ type: lit("TemplateLiteral") }` after `node.type === 'TemplateLiteral'` instead of the unrefined `{ type: string }`; `memberEqClass` upgrades those members to `only`, improving chained discriminant narrowing and complement-arm pruning. `any`/`unknown` slots stay untouched (fail-closed markers).
+  - `litPredValue` now reads `eq(self, lit)` facts through `and`-conjunctions, not only top-level eq preds.
+  - LSP A0 hover replay resolves mid-token cursor positions: record keys are Babel start positions (`$nodoPos` uses `loc.start`), so a cursor anywhere inside an identifier span now resolves to that identifier's record instead of falling back to the declared-form fold (previously only the first column hit).
+- 94197eb: hover 弹窗可读性与 return 表达式推导：
+  
+  - **pretty 缩进展示**：`formatShape(a, { pretty: true })`（opts 挂 `ProjectionBudget.pretty`，与 `showLits` 同先例）——object 每槽一行 + 尾逗号 + 2 空格缩进递增；union 仅当至少一臂是复合 shape（object/array/map/set/fn 或渲染含 `{`）时按臂断行（` | ` 前缀换行），纯 prim/lit 联合保持单行（`string | null | undefined` 不断）；截断标记 `…`/`…cycle` 原样内联。默认（不传 pretty）输出字节不变——check 签名 / dts / inlay / 语义 token 面不受影响。应用点仅 hover 面：标识符 hover（identHover / A0 求值态）与 return 表达式 hover；`gSig` 签名、`paramDisplayOf` 声明形态折叠面保持单行。
+  - **删除「契约原文」链接行**：hover 弹窗不再推送 `[契约原文](file://…#L<n>)` 链接（`linkedText` 变量链接面保留）；`HoverInfo.sidecarPath`/`sidecarLine` 字段随唯一消费方一并删除。
+  - **return 表达式推导 hover**：transpile `ReturnStatement` 在 `recordPositions` 时把返回值包 `$nodoPos(src, line, column)` 记录到 **`return` 关键字起始位**（argument 起始位与内部根标识符读记录同键 first-wins 丢失；`emitRet` 单一 choke point 覆盖 asVar/try/loop/mutator 全路径；裸 `return;` 不记录）。LSP `absNodeAtPosition` 词中回落从 Identifier 泛化为任意带 loc 节点（候选仅当起始键已有记录，取最小 span——词中标识符行为不变）；新增无 ident 分支——hover `return` 关键字或表达式内非标识符位（`?.[`、`[0]`、`.`）直接显示推导类型（无 ident 前缀，pretty 渲染）。
+- 5e275df: fix: review hardening — Map.groupBy empty-reduce crash, Bug 1 early-exit relational narrowing, fs-error graph-edge degradation, agent tool module graph, brand presence for URLSearchParams/TextDecoder/Intl, generator side-table $copy migration
+  
+  - `Map.groupBy` / `Object.groupBy`: shadow-domain join no longer bare-`reduce`s an empty unkeyed list (raw host `TypeError: Reduce of empty array with no initial value` escaped module evaluation → fail-closed unknown exports when the callback folds a literal key over arr/abstract-string-prim items); empty fold degrades to `unknown`.
+  - Early-exit lift path (if-return followed by non-tail statements) now applies the same relational-arm narrowing as the regular IfStatement path (`narrowRelArmThunk`), fixing false positives like `if (x >= 0) return x; console.log(x); return 1;` under `@nudo:contract return nonNeg`.
+  - `extractImportEdges` skips import edges whose target resolution throws `ModuleReadError` (EACCES/ESTALE, #135) instead of crashing module-graph construction (CLI watch start, incremental rebuild false-green rounds, LSP validation).
+  - `new Function(...)` / `new Function("a", "b", ...)` validate every argument for the L2 may-throw gate, not just the first.
+  - Brand presence tables: URLSearchParams (methods + `size`), TextDecoder (`decode` + accessors), Intl.NumberFormat/DateTimeFormat (`format`/`formatRange`/parts/`resolvedOptions`); URLSearchParams joins ITERABLE_BRANDS (@@iterator → function).
+  - `$copy` snapshots migrate generator/match side tables (genDeferred throws, genIter/matchAll elements), so fork/switch-arm rebinding no longer silently drops deferred generator throws.
+  - LSP agent tools (check/hover) build the module graph like the CLI and LSP validation do, fixing cross-module unknown collapse (E5 parity).
+
+## 1.9.4
+
+### Patch Changes
+
+- 2af4016: fix(core): generalize display (hover intension) renders destructured params as `{ a, b }` via `formalParamSignatureNames` instead of the `_p0` evaluation placeholder, while entryReqs preds and promoted entryShapes/fnRels lookups keep using the placeholder keys (#138)
+- 2af4016: fix(core): sidecar dot-path keys (`fn({ 'card.grade': string() })`) now bind nested destructured params — nestedPaths surface collection, fieldPath-aware projection in check/case scans, and nested obj-Abs synthesis in the refine block; flat binding names keep precedence (#137)
+
+## 1.9.3
+
+### Patch Changes
+
+- b6495c6: fix(core): regex 捕获组接收者窄化 + exec 抽象匹配 per-index 槽（#136）与方法调用接收者守卫事实
+  
+  - 抽象 subject 的 `re.exec()` 结果从均质元素 arr（`m[0]`/`m[1]` 同值 `string|undefined`、无从窄化）改为与具体路径 `matchResultAbs` 同构的 per-index 槽 obj：`m[0]`=string、捕获组槽=string|undefined、`length`/`index`/`input`/具名 `groups` 全可读（修前 length/index/input 为 unknown）。
+  - `if (m[1].trim().length > 0) out.push(m[1])`：方法调用求值到达 ⇒ 接收者非 nullish——该事实经既有臂 thunk 影子参数窄化应用到 if 两臂（短路方向 sound：`A && B` 的 B 位仅真值臂、`A || B` 的 B 位仅假值臂；`?.` 可选链不识别）。修复 1.3.15 数组元素诚实化引入的 `array(string())` 误报 constraint-violated（守卫后 push 的元素必为 string）。
+  - `memberGuardTarget` 计算键认数值字面量：`if (m[1])` 显式真值守卫与 `if (o.p)` 同走 $removeMemberNullish 槽剪影（此前计算键一律不识别）。
+  - 诚实化不回退：无守卫直推仍如实报 `string | undefined` 契约违例；`.trim()` 的 nullish 臂 throws 事实不丢（无契约时仍报 entry-may-throw）。
+- 04a6d1d: fix(lsp): IDE 面（hover/inlay/check 诊断）接入模块图——跨模块 import 塌缩 unknown 的假空与假红
+  
+  - 根因：CLI `nudo check` 经 `buildCheckInjection` 把 `evalAbsModuleGraph` 模块图传给 `checkSource`/`generalizeFromAst`，而 LSP 侧同族调用（hover intension、`collectAbsInlays`、`checkToLspDiagnostics`）不带图——跨模块 import 不可解析，函数体求值 fail-closed。表现：函数名 hover 显示 `(_p0: A1) => unknown / conf: opaque`（参数无侧车种子 + 返回 unknown），Abs inlay 为空/unknown，且 `nudo:unproven-return` 假红（CLI 同文件全绿）。求值引擎本身精确（entry@/combinedAbs 无误），仅 host 装配缺口。
+  - `validation.ts` 新增 `evalAnalysisModules(filePath, source)`：`evalAbsModuleGraph` 组装（abs-modules-graph 内容缓存，重复调用廉价；cycle 不注入，与 CLI hasCycle 分支同语义 fail-closed）。
+  - `lsp-surface.ts` 函数名 hover 的 `generalizeFromAst` 补 `refine`（fromFile/loadModule/autoBind——此前连 refine 都没传，参数丢契约种子成 A1）与 `modules`（经 `SurfaceReuse.modules`）。
+  - `core/algebra/inlay.ts` `CollectAbsInlaysOpts` 增加 `modules` 透传给 generalize；`server-ide.ts` hover/inlay 处理器组装并传入图。
+  - 验证（npm-safe scanner decide.js，手写侧车 + 跨模块调用链）：修复后 hover = 契约 + `{confidence: 1|0.9|0.7|0.95, grade: "F"|string, …}`，inlay 三函数全精确，假红诊断 0；全套 vitest 1841 通过。
+  
+  feat(lsp): 观察选择器——contract 成为与各 case 并排的 ●/○ 选项 + 档线改名 `● contract / hw|gen|imp`
+  
+  - 档线改名：CodeLens / hover 首行 / inlay 档投影的 `● interface / handwritten|generated|implicit` 统一改为 `● contract / hw|gen|imp`（`formatInterfaceTierLine` 单源，新增 `INTERFACE_SOURCE_ABBR` 导出）。
+  - **contract 是观察选择器的一项，与各 case 互斥**（IDE 内点 ●/○ 切换，非配置开关）：
+    - 默认 `● contract / hw|gen|imp`、全部 case `○`——与分析器默认（无激活 case 不跑 case 种子）一致（此前 case 0 默认显示 ● 与实际观察态不符）；
+    - 点击 case（`nudo.selectCase`，已有）→ 该 case `●`、契约转 `○`；点击契约选项（新增 `nudo.selectContract`，executeCommand + `nudo/selectContract` 请求别名，位置参数 `[uri, fn]`）→ 取消激活 case（幂等）；
+    - inlay 档投影镜像激活态（`●/○ contract / …`）；persist/draft 动作与 `call@`/`entry@` 观察层不受选择影响。
+  - hover 与 Abs inlay（参数约束/返回 term/pred）不参与选择器（推导面）。
+
+## 1.9.2
+
+### Patch Changes
+
+- c8e0417: Propagate member truthy-guard facts into union containers (issue #129). `$removeMemberNullish` now classifies sum members per the guarded key: members whose read is definitely nullish — a closed shape without the key whose absent read yields `undefined` (no `open`/index signature, no `Object.prototype`/`constructor` key, no getter), or a getter-free all-nullish slot value — cannot survive the truthy arm and are pruned; members with `T | nullish` slot values or `optional` flags are rebuilt with the nullish members stripped and the flag dropped (same refinement the single-object branch has applied since #118, now also migrating the accessor/invariant/nullProto side tables to the rebuilt identity). `if (!node.property) return` followed by a chained re-read `node.property.type` on a discriminated union with a lenient catch-all arm no longer records a false `property 'type' on undefined` may-throw. Keys whose absent read is unjudgeable — `open`/index shapes, `Object.prototype` method names and `constructor` (proto-chain reads a function), and getter-backed keys (the read returns the getter result, not the placeholder slot) — stay conservatively, as do `any`/`unknown` slot values and non-object members; all-pruned sums pass through unchanged and single-member remainders collapse, matching `$narrowMemberEq` conventions.
+
 ## 1.9.1
 
 ### Patch Changes

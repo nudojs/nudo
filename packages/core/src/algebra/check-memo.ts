@@ -51,7 +51,7 @@ export function checkDepsFingerprint(
   opts: CheckOptions,
 ): LoadDepsFingerprint {
   if (!opts.loadModule || !opts.fromFile) {
-    return { fp: "-", paths: [], contents: [], truncated: false };
+    return { fp: "-", paths: [], contents: [], truncated: false, readError: false };
   }
   return loadModuleDepsFingerprint(source, opts.loadModule, opts.fromFile);
 }

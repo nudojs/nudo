@@ -13,31 +13,10 @@
  * subprocess 型（tsx 直跑 src，与 check-profile.test.ts 同法）。
  */
 import { describe, it, expect } from "vitest";
-import { spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const root = fileURLToPath(new URL("../../../..", import.meta.url));
-const cli = join(root, "packages/nudojs/src/index.ts");
-const tsx = join(root, "node_modules/.bin/tsx");
-
-function runCli(
-  args: string[],
-  opts: { cwd?: string } = {},
-): { status: number; stdout: string; stderr: string } {
-  const r = spawnSync(tsx, [cli, ...args], {
-    cwd: opts.cwd ?? root,
-    encoding: "utf8",
-    env: { ...process.env, NO_COLOR: "1", GITHUB_ACTIONS: "false" },
-  });
-  return {
-    status: r.status ?? 1,
-    stdout: r.stdout ?? "",
-    stderr: r.stderr ?? "",
-  };
-}
+import { runCliTsx as runCli } from "./helpers/run-cli.ts";
 
 /** L2-only：export 上未消化 may-throw（throws TypeError） */
 const L2_SRC = "export function getName(user){ return user.name; }\n";

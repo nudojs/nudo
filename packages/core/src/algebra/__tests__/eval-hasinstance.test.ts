@@ -8,12 +8,12 @@
  * \$instanceof 读到 "@@hasInstance" 可调用槽则调用并把结果布尔化。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+// 相对路径引 src 引擎面（不经 @nudojs/core 别名——本 worktree 的 vite8
+// 别名解析会把裸包名落到 dist 旧产物，同 eval-ta-hofs.test.ts）。
+import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
+import { litValue } from "../abs.ts";
+import { formatShape } from "../format.ts";
+import { call } from "./eval-helpers.ts";
 
 describe("evaluator instanceof @@hasInstance", () => {
   it("custom Symbol.hasInstance returning true", () => {
@@ -56,9 +56,11 @@ describe("evaluator instanceof @@hasInstance", () => {
   });
 
   it("object without hasInstance falls back to prototype chain", () => {
-    expect(
-      litValue(call(`export function f() { let o = {}; return 5 instanceof o; }`).result),
-    ).toEqual({ ok: true, value: false });
+    // Bug 33：无 @@hasInstance 槽的闭 obj RHS 确定 non-callable → 原生定抛
+    // TypeError（修前静默折 false——wrong-exact）。见 eval-instanceof-rhs.test.ts。
+    const r = call(`export function f() { let o = {}; return 5 instanceof o; }`);
+    expect(litValue(r.result).ok).toBe(false);
+    expect(formatShape(r.throws)).toContain("TypeError");
     expect(
       litValue(call(`export function f() { let o = {}; return o instanceof Object; }`).result),
     ).toEqual({ ok: true, value: true });

@@ -6,15 +6,17 @@
  */
 import { describe, it, expect } from "vitest";
 import { runCorpus, sectionsOf, newSkippedBodies, unexpectedMismatches } from "./harness.ts";
-import * as b1 from "./corpus/batch1.ts";
-import * as b2 from "./corpus/batch2.ts";
-import * as b3 from "./corpus/batch3.ts";
-import * as b4 from "./corpus/batch4.ts";
-import * as b5 from "./corpus/batch5.ts";
-import * as b6 from "./corpus/batch6.ts";
-import * as b7 from "./corpus/batch7.ts";
-import * as b8 from "./corpus/batch8.ts";
-import * as b9 from "./corpus/batch9.ts";
+import {
+  batch1 as b1,
+  batch2 as b2,
+  batch3 as b3,
+  batch4 as b4,
+  batch5 as b5,
+  batch6 as b6,
+  batch7 as b7,
+  batch8 as b8,
+  batch9 as b9,
+} from "./all-batches.ts";
 
 const FILES: Array<[string, Record<string, unknown>]> = [
   ["batch1", b1],
@@ -36,7 +38,7 @@ describe("differential corpus batch1-9", () => {
       it(`${file}.${name} zero mismatch`, () => {
         const { compared, mismatches, skipped } = runCorpus(corpus);
         totalCompared += compared;
-        const unexpected = unexpectedMismatches(mismatches);
+        const unexpected = unexpectedMismatches(mismatches, corpus);
         expect(
           unexpected,
           `${file}.${name} compared=${compared} skipped=${skipped.length} mismatches=${mismatches.length}\n${unexpected.join("\n")}`,

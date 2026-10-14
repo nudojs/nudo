@@ -3,6 +3,7 @@
  */
 import type { Statement, Node } from "@babel/types";
 import { indent } from "./helpers.ts";
+import { matchRelIdentLit } from "../../arithmetic.ts";
 
 export function stmtCompletesControl(stmt: Statement | undefined | null): boolean {
   if (!stmt) return false;
@@ -20,9 +21,87 @@ export function stmtCompletesControl(stmt: Statement | undefined | null): boolea
         stmtCompletesControl(stmt.consequent as Statement) &&
         stmtCompletesControl(stmt.alternate as Statement)
       );
+    case "TryStatement":
+      return tryCompletesControl(stmt as unknown as TryShape);
     default:
       return false;
   }
+}
+
+/** try 语句的最小形态（Babel TryStatement 的结构投影） */
+type TryShape = {
+  block: Statement;
+  handler: { body: Statement } | null;
+  finalizer: Statement | null;
+};
+
+/** finalizer 内的 break/continue 是否可能跳出 finalizer——取消 try 的
+ *  return/throw abrupt completion（原生：finally 里的 break/continue 覆盖
+ *  try/catch 的退出，控制流落在 try 语句之后）。无标签信号只跳最近的
+ *  循环/switch（迭代深度 >0 时留在 finalizer 体内）；带标签信号仅当标签
+ *  未在 finalizer 内声明（祖先标签集之外）时外逃。嵌套函数体不参与
+ *  （调用不转移控制权）。 */
+function finalizerJumpsOut(node: Node): boolean {
+  const LOOP_OR_SWITCH = new Set([
+    "ForStatement",
+    "ForOfStatement",
+    "ForInStatement",
+    "WhileStatement",
+    "DoWhileStatement",
+    "SwitchStatement",
+  ]);
+  const FN_BODY = new Set([
+    "FunctionExpression",
+    "ArrowFunctionExpression",
+    "FunctionDeclaration",
+    "ObjectMethod",
+    "ClassMethod",
+    "ClassPrivateMethod",
+    "StaticBlock",
+  ]);
+  const walk = (n: unknown, iterDepth: number, labels: ReadonlySet<string>): boolean => {
+    if (!n || typeof n !== "object") return false;
+    const t = n as Record<string, unknown> & { type?: string };
+    if (typeof t.type === "string" && FN_BODY.has(t.type)) return false;
+    if (t.type === "BreakStatement" || t.type === "ContinueStatement") {
+      const lbl = (t.label as { name?: string } | undefined)?.name;
+      return lbl !== undefined ? !labels.has(lbl) : iterDepth === 0;
+    }
+    let nextIter = iterDepth;
+    let nextLabels: ReadonlySet<string> = labels;
+    if (t.type === "LabeledStatement") {
+      nextLabels = new Set(labels).add((t.label as { name: string }).name);
+    }
+    if (typeof t.type === "string" && LOOP_OR_SWITCH.has(t.type)) nextIter = iterDepth + 1;
+    for (const key of Object.keys(t)) {
+      if (key === "loc" || key === "start" || key === "end" || key === "range") continue;
+      const child = t[key] as unknown;
+      if (Array.isArray(child)) {
+        for (const c of child) if (walk(c, nextIter, nextLabels)) return true;
+      } else if (child && typeof child === "object") {
+        if (walk(child, nextIter, nextLabels)) return true;
+      }
+    }
+    return false;
+  };
+  return walk(node, 0, new Set<string>());
+}
+
+/** try 是否绝不正常完成（return/throw/break/continue 任一控制转移）：
+ *  - finalizer 自身确定退出 → 覆盖一切出口；
+ *  - finalizer 可跳出 → break/continue 取消 try 的退出 → 正常完成；
+ *  - 否则 block 与（有 catch 时）handler 体都绝不正常完成才成立。 */
+function tryCompletesControl(stmt: TryShape): boolean {
+  if (stmt.finalizer) {
+    if (stmtCompletesControl(stmt.finalizer)) return true;
+    if (finalizerJumpsOut(stmt.finalizer)) return true;
+  }
+  if (stmt.handler) {
+    return (
+      stmtCompletesControl(stmt.block) && stmtCompletesControl(stmt.handler.body)
+    );
+  }
+  return stmtCompletesControl(stmt.block);
 }
 
 /** 语句或块内是否出现 return/throw（决定 if 是否提升为 return $fork） */
@@ -31,6 +110,19 @@ export function stmtReturns(stmt: Statement): boolean {
   if (stmt.type === "BlockStatement") return stmt.body.some(stmtReturns);
   if (stmt.type === "IfStatement") {
     return stmtReturns(stmt.consequent) && stmt.alternate != null && stmtReturns(stmt.alternate);
+  }
+  if (stmt.type === "TryStatement") {
+    const t = stmt as unknown as TryShape;
+    // finalizer 自身确定 return/throw：一切出口被覆盖，整体终止
+    if (t.finalizer && stmtReturns(t.finalizer)) return true;
+    // finalizer 可 break/continue 外逃：取消 try/catch 的 return/throw，
+    // try 可能正常完成——不得视为终止（提升会丢 fall-through 路径）
+    if (t.finalizer && finalizerJumpsOut(t.finalizer)) return false;
+    if (t.handler) {
+      // block 必终止（return 直出 / throw 入 catch）且 handler 必终止
+      return stmtReturns(t.block) && stmtReturns(t.handler.body);
+    }
+    return stmtReturns(t.block);
   }
   // switch：所有可达臂均 return/throw 且 **存在 default** 才视为终止
   // （无 default 时 no-match 会 fall-through，不得当终止 — P0-1）
@@ -144,7 +236,8 @@ export type NullishGuard = {
    * 单层成员真值守卫（issue #118）：`o.p` / `o?.p` 真值守卫——真值 ⇒ 基名
    * 非 nullish（真值访问未抛）且槽 p 的值非 nullish、槽必在场。臂内基名
    * 重绑为 $removeMemberNullish($removeNullish(o), key)（optional 摘除 +
-   * 槽值剥 nullish）。只做单层；嵌套路径 / 计算键不识别。
+   * 槽值剥 nullish）。只做单层；嵌套路径不识别；计算键仅数值字面量
+   * （issue #136 (b)，`m[1]` 下标槽键即 String(i)）。
    */
   memberKey?: string;
 };
@@ -178,7 +271,9 @@ function mergeGrain(a: "null" | "undefined", b: "null" | "undefined"): "nullish"
  * OptionalMemberExpression，后者可能被 ChainExpression 包裹——非表达式
  * 语句起点不包，if 测试实测为裸 OptionalMemberExpression，双形态兼容）。
  * 只认非计算键 + Identifier 基名（单层）；property 取 Identifier 名或
- * StringLiteral 值。
+ * StringLiteral 值。issue #136 (b)：计算键认数值（NumericLiteral / 数值
+ * 字符串 StringLiteral）——`m[1]` 真值守卫与 `m.p` 同事实（RegExpExecArray
+ * 下标槽键即 String(i)）；非数值字面量 / 字符串模板计算键不识别。
  */
 const memberGuardTarget = (n: unknown): { name: string; key: string } | undefined => {
   const t = n as {
@@ -190,9 +285,18 @@ const memberGuardTarget = (n: unknown): { name: string; key: string } | undefine
   };
   const m = (t?.type === "ChainExpression" ? t.expression : t) as typeof t;
   if (m?.type !== "MemberExpression" && m?.type !== "OptionalMemberExpression") return undefined;
-  if (m.computed) return undefined;
   if (m.object?.type !== "Identifier" || !m.object.name) return undefined;
   const p = m.property;
+  if (m.computed) {
+    // 数值下标：键 = String(value)（"1" / "-1"；非规范数值字符串保守不认）
+    if (p?.type === "NumericLiteral" && typeof p.value === "number") {
+      return { name: m.object.name, key: String(p.value) };
+    }
+    if (p?.type === "StringLiteral" && typeof p.value === "string" && /^-?\d+$/.test(p.value)) {
+      return { name: m.object.name, key: p.value };
+    }
+    return undefined;
+  }
   const key =
     p?.type === "Identifier" ? p.name : p?.type === "StringLiteral" && typeof p.value === "string" ? p.value : undefined;
   if (key === undefined) return undefined;
@@ -381,6 +485,122 @@ function mergeGuardInto(list: NullishGuard[], g: NullishGuard): void {
   if (prev.memberKey === undefined && g.memberKey !== undefined) prev.memberKey = g.memberKey;
 }
 
+/** 方法调用接收者的静态路径（issue #136 (c)）：callee 为普通
+ *  MemberExpression（`x.m(...)`）且接收者（callee.object）是标识符或
+ *  单层静态成员/数值下标（memberGuardTarget 同形态）。OptionalMember /
+ *  ChainExpression（`?.` 链）不识别——可选链短路求值不蕴含接收者非
+ *  nullish；接收者含调用/三元等复杂表达式不提取（宁缺毋假）。 */
+const methodReceiverTarget = (callee: unknown): { name: string; key?: string } | undefined => {
+  const c = callee as { type?: string; object?: unknown };
+  if (c?.type !== "MemberExpression") return undefined;
+  const o = c.object as { type?: string; name?: string };
+  if (o?.type === "Identifier" && o.name) return { name: o.name };
+  if (o?.type === "MemberExpression") return memberGuardTarget(o);
+  return undefined;
+};
+
+/** 接收者事实的臂上下文：both = 无条件求值（双臂成立）；cons/alt = 仅在该
+ *  臂成立；null = 任一臂都不可证（丢弃）。 */
+type ReceiverArmCtx = "both" | "cons" | "alt" | null;
+
+/**
+ * 测试表达式内方法调用接收者的非 nullish 事实收集（issue #136 (c)）：
+ * `x.m(...)` / `x.p.m(...)` / `x[1].m(...)` 的调用子式求值到达 ⇒ 接收者
+ * 非 nullish（nullish 臂在方法名成员读处 throws 分流——undefined.trim()
+ * TypeError；测试取得值即证接收者有值）。臂归属按短路方向：
+ * - 无条件求值位（二元/一元操作数、调用实参、`A && B`/`A || B` 的 A 位、
+ *   三元 test）→ 双臂；
+ * - `A && B` 的 B 位 → 仅 cons（B 求值 ⇒ A 真 ⇒ 整体真，假值臂含 A 假短路
+ *   位不可证）；
+ * - `A || B` 的 B 位 → 仅 alt（B 求值 ⇒ A 假，整体真假随 B——真值臂含 A
+ *   真短路位不可证）；
+ * - `??` 右侧 / 三元分支 / 嵌套反向逻辑（臂交不出单臂）→ 不提取。
+ */
+const collectReceiverFacts = (n: unknown, ctx: ReceiverArmCtx, out: NullishGuard[]): void => {
+  if (ctx === null || !n || typeof n !== "object") return;
+  const t = n as {
+    type?: string;
+    operator?: string;
+    left?: unknown;
+    right?: unknown;
+    test?: unknown;
+    argument?: unknown;
+    callee?: unknown;
+    arguments?: unknown[];
+    object?: unknown;
+    property?: unknown;
+    computed?: boolean;
+  };
+  switch (t.type) {
+    case "LogicalExpression":
+      if (t.operator === "&&" || t.operator === "||") {
+        const rArm: "cons" | "alt" = t.operator === "&&" ? "cons" : "alt";
+        collectReceiverFacts(t.left, ctx, out);
+        // B 位臂位 = 当前臂位 ∩ rArm：both → rArm；同向保持；异向/不确定 → null
+        collectReceiverFacts(
+          t.right,
+          ctx === "both" || ctx === rArm ? rArm : null,
+          out,
+        );
+      } else if (t.operator === "??") {
+        // 右侧仅左 nullish 时求值，与整体真假无确定关系 → 只收左侧
+        collectReceiverFacts(t.left, ctx, out);
+      }
+      return;
+    case "ConditionalExpression":
+      // 三元：test 无条件求值；两分支与整体真假无确定关系 → 分支不提取
+      collectReceiverFacts(t.test, ctx, out);
+      return;
+    case "CallExpression": {
+      const recv = methodReceiverTarget(t.callee);
+      if (recv) {
+        for (const arm of ctx === "both" ? (["cons", "alt"] as const) : [ctx]) {
+          out.push({
+            name: recv.name,
+            arm,
+            grain: "nullish",
+            ...(recv.key !== undefined ? { memberKey: recv.key } : {}),
+          });
+        }
+      }
+      // 实参无条件求值；callee 为嵌套调用（f(x).m() 的 f(x)）时其内部同臂位
+      collectReceiverFacts(t.callee, ctx, out);
+      for (const a of t.arguments ?? []) collectReceiverFacts(a, ctx, out);
+      return;
+    }
+    default:
+      // 二元/一元/赋值等无条件求值位：操作数按当前臂位继续；成员访问的
+      // object 位（`m[1].trim().length` 的调用在 .length 的 object 里）与
+      // 计算键属性位（`a[k.m()]` 的 k.m() 无条件求值）同此
+      collectReceiverFacts(t.left, ctx, out);
+      collectReceiverFacts(t.right, ctx, out);
+      collectReceiverFacts(t.argument, ctx, out);
+      collectReceiverFacts(t.object, ctx, out);
+      if (t.computed) collectReceiverFacts(t.property, ctx, out);
+      return;
+  }
+};
+
+/** 接收者事实并入守卫列表：同名同臂合并（粒度取并、成员键补缺——接收者
+ *  事实自身蕴含基名非 nullish，nullish 粒度并进不放大）；同名异臂并存
+ *  （narrowNullishArmThunks 按臂过滤，不产生重复形参）；已有不同成员键 →
+ *  保留首个（sound 子集，与 mergeGuardInto 同规则）。 */
+function appendReceiverGuards(test: unknown, out: NullishGuard[]): void {
+  const facts: NullishGuard[] = [];
+  collectReceiverFacts(test, "both", facts);
+  for (const f of facts) {
+    const prev = out.find((x) => x.name === f.name && x.arm === f.arm);
+    if (!prev) {
+      out.push(f);
+      continue;
+    }
+    const grainA = prev.grain ?? "nullish";
+    const grainB = f.grain ?? "nullish";
+    if (grainA !== grainB) prev.grain = "nullish";
+    if (prev.memberKey === undefined && f.memberKey !== undefined) prev.memberKey = f.memberKey;
+  }
+}
+
 /**
  * 测试表达式的**全部**独立 nullish 守卫事实（issue #118 v3 / #120 多名
  * 复合）。单（非复合）测试式 → nullishGuardOf 单守卫；LogicalExpression
@@ -390,7 +610,8 @@ function mergeGuardInto(list: NullishGuard[], g: NullishGuard): void {
  * （cons）事实。同名同臂合并粒度、异键保首；异方向子式（`||` 内嵌 `&&`）
  * 的单侧真假不传播事实——递归结果按臂过滤后自然丢弃。单守卫 API
  * nullishGuardOf 对异名复合仍保守 undefined（历史语义），多名收窄一律
- * 走本入口。
+ * 走本入口。issue #136 (c)：非复合测试式额外并入方法调用接收者事实
+ * （collectReceiverFacts，含臂归属的短路方向推理）。
  */
 export function nullishGuardsOf(test: unknown): NullishGuard[] {
   const t = test as { type?: string; operator?: string; left?: unknown; right?: unknown };
@@ -404,7 +625,9 @@ export function nullishGuardsOf(test: unknown): NullishGuard[] {
     return out;
   }
   const g = nullishGuardOf(test);
-  return g ? [g] : [];
+  const out: NullishGuard[] = g ? [g] : [];
+  appendReceiverGuards(test, out);
+  return out;
 }
 
 /**
@@ -601,4 +824,42 @@ export function narrowDiscriminantArmThunks(
     )
     .join(", ");
   return `((${params}) => ${thunk})(${args})`;
+}
+
+// --- 关系守卫（Bug 1）-----------------------------------------------------
+
+/**
+ * 关系守卫（Bug 1）：`x >= 0` / `0 < x`（标识符 × 数字字面量，matchRelIdentLit
+ * 同一匹配面）→ 事实臂（cons）内以 $refineRel 影子重绑——守卫建立的隐含
+ * 约束随**普通变量读取**进入返回 Abs（此前只有算术折叠消费 exec Φ，
+ * `x + 0` 携带界而裸 `return x` 丢守卫事实 → return-constraint gate 假阳）。
+ * 补集臂（¬x≥0）含 NaN 可能（NaN 与任何比较皆假），不可健全表示 → 不窄化。
+ */
+export type RelGuard = {
+  /** 被守卫的标识符 */
+  name: string;
+  /** 关系（含翻转后的 `3 < x` → gt） */
+  op: "gt" | "ge" | "lt" | "le";
+  /** 字面量界 */
+  k: number;
+};
+
+export function relGuardOf(test: unknown): RelGuard | undefined {
+  return matchRelIdentLit(test);
+}
+
+/** 关系守卫臂 thunk 的剪影包装：`((x) => THUNK)($refineRel(x, "ge", 0))`——
+ *  仅事实臂；守卫名在 fork 绑定集（臂内写/快照重绑）时跳过（与 nullish/
+ *  typeof/判别剪影同一跳过口径，宁缺毋假：影子参数会吞掉臂内写）。 */
+export function narrowRelArmThunk(
+  thunk: string,
+  guard: RelGuard | undefined,
+  arm: "cons" | "alt",
+  forkBindingNames: ReadonlySet<string> | readonly string[],
+): string {
+  if (!guard || arm !== "cons") return thunk;
+  const names =
+    forkBindingNames instanceof Set ? (forkBindingNames as Set<string>) : new Set(forkBindingNames);
+  if (names.has(guard.name)) return thunk;
+  return `((${guard.name}) => ${thunk})($refineRel(${guard.name}, ${JSON.stringify(guard.op)}, ${guard.k}))`;
 }

@@ -2262,15 +2262,7 @@ type RequireGold = {
   note?: string;
 };
 
-const REQUIRE_GOLD: RequireGold[] = [
-  {
-    id: "require-destructure-violates",
-    source: `
-const { needsPositive } = require("./v.js");
-needsPositive(-1);
-`,
-    modules: {
-      "./v.js": `
+const V_CJS = `
 /// @nudo:import { positive } from "./std.nudo.js"
 /**
  * @nudo:contract x positive
@@ -2280,7 +2272,50 @@ function needsPositive(x) {
   return 0;
 }
 module.exports = { needsPositive };
+`;
+
+const V_CJS_PROP = `
+/// @nudo:import { positive } from "./std.nudo.js"
+/**
+ * @nudo:contract x positive
+ */
+function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+module.exports.needsPositive = needsPositive;
+`;
+
+const V_ESM = `
+export /// @nudo:import { positive } from "./std.nudo.js"
+/**
+ * @nudo:contract x positive
+ */
+function needsPositive(x) {
+  if (x > 0) return x;
+  return 0;
+}
+`;
+
+const V_SETUP = `
+export /// @nudo:import { configShape } from "./std.nudo.js"
+/**
+ * @nudo:contract c configShape
+ */
+function setup(c) {
+  return c.retries;
+}
+`;
+
+const REQUIRE_GOLD: RequireGold[] = [
+  {
+    id: "require-destructure-violates",
+    source: `
+const { needsPositive } = require("./v.js");
+needsPositive(-1);
 `,
+    modules: {
+      "./v.js": V_CJS,
     },
     expect: "violation",
   },
@@ -2291,17 +2326,7 @@ const { needsPositive } = require("./v.js");
 needsPositive(5);
 `,
     modules: {
-      "./v.js": `
-/// @nudo:import { positive } from "./std.nudo.js"
-/**
- * @nudo:contract x positive
- */
-function needsPositive(x) {
-  if (x > 0) return x;
-  return 0;
-}
-module.exports = { needsPositive };
-`,
+      "./v.js": V_CJS,
     },
     expect: "ok",
   },
@@ -2312,17 +2337,7 @@ const v = require("./v.js");
 v.needsPositive(0);
 `,
     modules: {
-      "./v.js": `
-/// @nudo:import { positive } from "./std.nudo.js"
-/**
- * @nudo:contract x positive
- */
-function needsPositive(x) {
-  if (x > 0) return x;
-  return 0;
-}
-module.exports = { needsPositive };
-`,
+      "./v.js": V_CJS,
     },
     expect: "violation",
   },
@@ -2333,17 +2348,7 @@ const needsPositive = require("./v.js").needsPositive;
 needsPositive(-3);
 `,
     modules: {
-      "./v.js": `
-/// @nudo:import { positive } from "./std.nudo.js"
-/**
- * @nudo:contract x positive
- */
-function needsPositive(x) {
-  if (x > 0) return x;
-  return 0;
-}
-module.exports.needsPositive = needsPositive;
-`,
+      "./v.js": V_CJS_PROP,
     },
     expect: "violation",
   },
@@ -2354,16 +2359,7 @@ import { needsPositive } from "./v.js";
 needsPositive(-1);
 `,
     modules: {
-      "./v.js": `
-export /// @nudo:import { positive } from "./std.nudo.js"
-/**
- * @nudo:contract x positive
- */
-function needsPositive(x) {
-  if (x > 0) return x;
-  return 0;
-}
-`,
+      "./v.js": V_ESM,
     },
     expect: "violation",
   },
@@ -2374,16 +2370,7 @@ import { needsPositive as np } from "./v.js";
 np(0);
 `,
     modules: {
-      "./v.js": `
-export /// @nudo:import { positive } from "./std.nudo.js"
-/**
- * @nudo:contract x positive
- */
-function needsPositive(x) {
-  if (x > 0) return x;
-  return 0;
-}
-`,
+      "./v.js": V_ESM,
     },
     expect: "violation",
   },
@@ -2394,16 +2381,7 @@ import * as v from "./v.js";
 v.needsPositive(-2);
 `,
     modules: {
-      "./v.js": `
-export /// @nudo:import { positive } from "./std.nudo.js"
-/**
- * @nudo:contract x positive
- */
-function needsPositive(x) {
-  if (x > 0) return x;
-  return 0;
-}
-`,
+      "./v.js": V_ESM,
     },
     expect: "violation",
   },
@@ -2414,16 +2392,7 @@ import { needsPositive } from "./v.js";
 needsPositive(10);
 `,
     modules: {
-      "./v.js": `
-export /// @nudo:import { positive } from "./std.nudo.js"
-/**
- * @nudo:contract x positive
- */
-function needsPositive(x) {
-  if (x > 0) return x;
-  return 0;
-}
-`,
+      "./v.js": V_ESM,
     },
     expect: "ok",
   },
@@ -2437,16 +2406,7 @@ async function main() {
 main();
 `,
     modules: {
-      "./v.js": `
-export /// @nudo:import { positive } from "./std.nudo.js"
-/**
- * @nudo:contract x positive
- */
-function needsPositive(x) {
-  if (x > 0) return x;
-  return 0;
-}
-`,
+      "./v.js": V_ESM,
     },
     expect: "violation",
   },
@@ -2460,16 +2420,7 @@ async function main() {
 main();
 `,
     modules: {
-      "./v.js": `
-export /// @nudo:import { positive } from "./std.nudo.js"
-/**
- * @nudo:contract x positive
- */
-function needsPositive(x) {
-  if (x > 0) return x;
-  return 0;
-}
-`,
+      "./v.js": V_ESM,
     },
     expect: "violation",
   },
@@ -2481,16 +2432,7 @@ needsPositive(-1);
 `,
     modules: {
       "./barrel.js": `export { needsPositive } from "./v.js";\n`,
-      "./v.js": `
-export /// @nudo:import { positive } from "./std.nudo.js"
-/**
- * @nudo:contract x positive
- */
-function needsPositive(x) {
-  if (x > 0) return x;
-  return 0;
-}
-`,
+      "./v.js": V_ESM,
     },
     expect: "violation",
     note: "barrel 只 re-export，约束在 v.js",
@@ -2526,15 +2468,7 @@ import { setup } from "./v.js";
 setup({ retries: 1 });
 `,
     modules: {
-      "./v.js": `
-export /// @nudo:import { configShape } from "./std.nudo.js"
-/**
- * @nudo:contract c configShape
- */
-function setup(c) {
-  return c.retries;
-}
-`,
+      "./v.js": V_SETUP,
     },
     expect: "ok",
     note: "optional 省略经 ESM named 仍合法",
@@ -2546,15 +2480,7 @@ import { setup } from "./v.js";
 setup({ retries: 1, label: 9 });
 `,
     modules: {
-      "./v.js": `
-export /// @nudo:import { configShape } from "./std.nudo.js"
-/**
- * @nudo:contract c configShape
- */
-function setup(c) {
-  return c.retries;
-}
-`,
+      "./v.js": V_SETUP,
     },
     expect: "violation",
     note: "optional 类型错经 ESM named 必须报",

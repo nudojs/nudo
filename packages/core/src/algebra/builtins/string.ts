@@ -104,7 +104,15 @@ export function evalStringStatic(name: string, args: Abs[]): Abs | undefined {
   const codes: number[] = [];
   for (const a of args) {
     if (isSymbolAbs(a)) throw new NudoThrow(errorTypeAbs("TypeError"));
-    if (a.term?.op !== "lit") return str("path");
+    if (a.term?.op !== "lit") {
+      // Bug 11：抽象实参（any/obj/fn/brand/sum）may ToNumber 抛（symbol/
+      // bigint 载体，同 fromCodePoint 口径）。值域上 fromCharCode 对
+      // ToNumber 结果全定（ToUint16 截断），无 RangeError 臂
+      if (mayCoerceThrowOperand(a)) {
+        recordMayThrow({ kind: "TypeError", cause: "String.fromCharCode ToNumber may throw (Symbol/BigInt)" });
+      }
+      return str("path");
+    }
     const v = a.term.value;
     if (typeof v === "symbol") throw new NudoThrow(errorTypeAbs("TypeError"));
     if (typeof v === "number") {

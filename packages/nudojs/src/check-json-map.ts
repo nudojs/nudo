@@ -30,6 +30,7 @@ export function issueFromCachedJson(i: CheckJson["issues"][number]): CheckIssue 
     ...(i.actual !== undefined ? { actual: i.actual } : {}),
     ...(i.expected !== undefined ? { expected: i.expected } : {}),
     ...(i.suggestion !== undefined ? { suggestion: i.suggestion } : {}),
+    ...(i.reason !== undefined ? { reason: i.reason } : {}),
   };
 }
 

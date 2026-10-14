@@ -27,6 +27,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue } from "@nudojs/core";
+import { l2Count, sigOf } from "./nudo-constraints.ts";
 
 /** issue 原始 sidecar：string().optional() / number().optional() 槽 + nullable(string()) */
 const LIB = `import { shape, string, number, nullable } from "@nudojs/core";
@@ -38,15 +39,6 @@ function check(src: string) {
     loadModule: (spec) => (spec.endsWith(".nudo.js") ? LIB : undefined),
     fromFile: "/test/file.js",
   });
-}
-
-/** L2 entry-may-throw 数（按函数名过滤可选） */
-function l2Count(r: ReturnType<typeof check>, fn?: string): number {
-  return r.issues.filter((i) => i.code === "nudo:entry-may-throw" && (!fn || i.fn === fn)).length;
-}
-
-function sigOf(r: ReturnType<typeof check>, fn: string): string {
-  return r.signatures.find((s) => s.name === fn)?.display ?? "(missing)";
 }
 
 const IMPORT = `/// @nudo:import { fView, nullableStr } from "./std.nudo.js"\n`;

@@ -25,7 +25,7 @@ description: Nudo 分析性能 —— 预算（fork / 调用 / 调用点）、�
 
 ### 何时触发截断 —— 该做什么
 
-**`nudo:recursion-truncated`** —— 调用预算（深度 64 或总计 20,000 次）用尽；受影响结果拓宽。**`nudo:fork-truncated`** —— 分支展开预算用尽；受影响结果拓宽（**warning**）。两者都出现在 `nudo check` / `nudo test` 输出里 —— 截断绝不静默降级结果。
+**`nudo:recursion-truncated`** —— 递归求值被截断；受影响结果拓宽。`reason` 字段（`check --json`）与文案区分**归因**：`cycle` 表示同**抽象实参**的调用已在求值栈上——调用环，**任何预算都解不开**（让实参逐层变化、收窄基例，或声明 `@nudo:contract`）；`depth` / `calls` 表示调用预算（深度 64 / 总进入 20,000）真的用尽——函数上的 `@nudo:budget depth=… / calls=…` 可抬。**`nudo:loop-truncated`** —— 循环退出条件越过迭代预算（抽象展开 8 / 具体 1024）仍具体真；循环状态拓宽。这是**循环**预算——`@nudo:budget calls/depth` 不适用；让上界依赖数据或用 `@nudo:case` / `@nudo:contract` 钉住。**`nudo:fork-truncated`** —— 分支展开预算用尽；受影响结果拓宽（**warning**）。这些都出现在 `nudo check` / `nudo test` 输出里 —— 截断绝不静默降级结果。
 
 三个杠杆，按值得尝试的顺序：
 

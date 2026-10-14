@@ -7,25 +7,7 @@
  * ≥2 个裸 token，其后位置参数与多 from 文件不可区分）仍报 BUG-024 错误。
  */
 import { describe, it, expect } from "vitest";
-import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import { join } from "node:path";
-
-const cliEntry = fileURLToPath(new URL("../index.ts", import.meta.url));
-const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
-
-function runCli(args: string[]): { stdout: string; stderr: string; status: number } {
-  const r = spawnSync(
-    process.execPath,
-    [join(repoRoot, "node_modules/tsx/dist/cli.mjs"), cliEntry, ...args],
-    {
-      cwd: repoRoot,
-      encoding: "utf-8",
-      env: { ...process.env, NO_COLOR: "1", GITHUB_ACTIONS: "false" },
-    },
-  );
-  return { stdout: r.stdout ?? "", stderr: r.stderr ?? "", status: r.status ?? 1 };
-}
+import { runCliNode as runCli } from "./helpers/run-cli.ts";
 
 describe("G6: health --from 无位置参数（--from 收尾）", () => {
   it("health --from usage.js → 定向 usage error，文案如实、不声称 consumed", () => {

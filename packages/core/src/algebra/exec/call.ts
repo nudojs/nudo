@@ -31,7 +31,7 @@ import {
   contractFacesOf,
   presentCallResultFace,
 } from "../contract-face.ts";
-import { pushThrowExit, peekThrowExitsSince, throwExitsMark, withNewTargetReset } from "./runtime/state.ts";
+import { pushThrowExit, peekThrowExitsSince, throwExitsMark, withNewTargetReset, undef, callAtFunctionBoundary } from "./runtime/state.ts";
 import {
   callBudgetKey,
   enterCall,
@@ -102,6 +102,14 @@ function $callInner(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
 }
 
 function $callDispatch(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
+  // Bug 46：bindThis impl 的 receiver 统一经 thisVal 通道注入（调用点
+  // 正确，不再由调用方手工前插）：成员调用 $invoke 传接收者；直接调用 /
+  // call/apply/bind 缺省 undefined（strict this 语义）。非 bindThis impl
+  // 不改形——thisVal 经 apply 钩子进宿主 this（$rawThis 承接）。
+  if (getFnImpl(fn)?.bindThis) {
+    args = [thisVal ?? undef(), ...args];
+    thisVal = undefined;
+  }
   // @nudo:pure：同实参直接命中缓存（无副作用契约）。缓存 {abs, throws} 双面——
   // 只缓存 abs 会在命中时丢掉 throws 通道（may-throw 假「不抛」）。
   const pureName = pureFnNameOf(fn);
@@ -120,10 +128,21 @@ function $callDispatch(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
     // 调用边界收成 throws）；any（无约束值）→ may-throw（tier 2）。
     // unknown 是引擎 fail-closed 令牌（桥接/契约包裹后的内部值，如 sidecar
     // 约束下的导入函数）而非「可能非函数」的用户语义——记 may-throw 会把
-    // 引擎债放大成 L2 假报，不记。obj/brand 等其余形状保守：可能经桥接可调。
+    // 引擎债放大成 L2 假报，不记。
+    // Bug 10：obj/arr/tuple 同入 tier 1 定抛——原生 IsCallable 对非函数
+    // 恒 false（`({})()` / `[]()` 定抛 TypeError）；引擎内该三形 Abs 从不
+    // 携带调用面（attachFnImpl 只产 fn 形状），「可能经桥接可调」论据空置。
+    // brand 保守维持 unknown 不记（new Proxy(fn,{apply}) 是唯一合法可调
+    // 对象逃逸——记 may-throw 会把合法面对放大成 L2 假报）。
     const calleeAbs = fn && typeof fn === "object" ? (fn as Abs) : undefined;
     const calleeK = calleeAbs?.shape?.k;
-    if (calleeK === "prim" || (calleeAbs !== undefined && isNullishLitAbs(calleeAbs))) {
+    if (
+      calleeK === "prim" ||
+      calleeK === "obj" ||
+      calleeK === "arr" ||
+      calleeK === "tuple" ||
+      (calleeAbs !== undefined && isNullishLitAbs(calleeAbs))
+    ) {
       throw new NudoThrow(errorTypeAbs("TypeError"));
     }
     if (calleeK === "any") {
@@ -179,7 +198,10 @@ function $callDispatch(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
       // pushThrowExit）。缓存前捕获本帧新增 throws 面——命中时 routeApplyThrows
       // 重放（只缓存 abs 会在命中时假「不抛」）。
       const throwMark = throwExitsMark();
-      const r = compiled(args);
+      // 编译体在函数边界执行：体内 $loopReturn 早退（if 臂/循环）经
+      // NudoReturn 收成返回值、帧内 exits join、throwExits 转发——
+      // 与 apply 路径（callAtFunctionBoundary 包裹）同口径。
+      const r = callAtFunctionBoundary(() => compiled(args));
       if (fnObj && pk !== undefined) {
         let m = pureMemo.get(fnObj);
         if (!m) {

@@ -28,8 +28,8 @@ import {
   knownFiles,
   moduleGraphCache,
   validateText,
-  type ValidateTextDeps,
 } from "../validation.ts";
+import { makeValidateDeps } from "./helpers.ts";
 import {
   injectBindings,
   normalizeFilePath,
@@ -179,9 +179,9 @@ function foo(x) {
       ].join("\n");
 
       const sent = new Map<string, any[]>();
-      await validateText("/test/origin.js", "file:///test/origin.js", src, 1, {
-        sendDiagnostics: (p) => sent.set(p.uri, p.diagnostics),
-      });
+      await validateText("/test/origin.js", "file:///test/origin.js", src, 1, makeValidateDeps({
+        onPublish: (p) => sent.set(p.uri, p.diagnostics),
+      }));
 
       expect([...sent.keys()]).toEqual(["file:///test/origin.js"]);
       const noMethod = sent.get("file:///test/origin.js")!.find((d) => d.code === "nudo:no-method");
@@ -223,20 +223,20 @@ function foo(x) {
 
         let evalText = bV1;
         let bVersion = 1;
-        const openDocs = new Map<string, { uri: string; version: number; getText(): string }>([
-          [aPath, { uri: uriOf(aPath), version: 1, getText: () => aSrc }],
-          [bPath, { uri: uriOf(bPath), version: bVersion, getText: () => evalText }],
-        ]);
         const sent = new Map<string, any[]>();
-        const deps: ValidateTextDeps = {
-          sendDiagnostics: (p) => sent.set(p.uri, p.diagnostics),
+        const deps = makeValidateDeps({
+          docs: [
+            [aPath, { uri: uriOf(aPath), version: 1, getText: () => aSrc }],
+            [bPath, { uri: uriOf(bPath), version: bVersion, getText: () => evalText }],
+          ],
           isNudoUri: (uri) => {
             const doc = [...openDocs.values()].find((d) => d.uri === uri);
             return doc ? hasNudoDirectives(doc.getText()) : false;
           },
           getActiveCases: () => new Map(),
-          getOpenDocumentByPath: (p) => openDocs.get(p),
-        };
+          onPublish: (p) => sent.set(p.uri, p.diagnostics),
+        });
+        const { openDocs } = deps;
 
         // initial validation: b v1 is safe, a must have no no-method diagnostic
         await validateText(aPath, uriOf(aPath), aSrc, 1, deps, true);
@@ -278,9 +278,9 @@ function foo(x) {
       const sent = new Map<string, any[]>();
       expect(analysisCache.has("/test/open-fresh.js")).toBe(false); // 之前从未验证过
 
-      await validateText("/test/open-fresh.js", "file:///test/open-fresh.js", src, 1, {
-        sendDiagnostics: (p) => sent.set(p.uri, p.diagnostics),
-      }, true);
+      await validateText("/test/open-fresh.js", "file:///test/open-fresh.js", src, 1, makeValidateDeps({
+        onPublish: (p) => sent.set(p.uri, p.diagnostics),
+      }), true);
 
       const diags = sent.get("file:///test/open-fresh.js") ?? [];
       expect(diags.some((d) => d.code === "nudo:no-method")).toBe(true);
@@ -292,10 +292,10 @@ function foo(x) {
       // 打开入口对非 nudo 文件的门控：清空诊断且不进 knownFiles/analysisCache
       clearValidationState();
       const sent = new Map<string, any[]>();
-      await validateText("/test/open-plain.js", "file:///test/open-plain.js", "function id(x) { return x; }\n", 1, {
-        sendDiagnostics: (p) => sent.set(p.uri, p.diagnostics),
+      await validateText("/test/open-plain.js", "file:///test/open-plain.js", "function id(x) { return x; }\n", 1, makeValidateDeps({
+        onPublish: (p) => sent.set(p.uri, p.diagnostics),
         isNudoUri: () => false,
-      }, true);
+      }), true);
 
       expect(sent.get("file:///test/open-plain.js")).toEqual([]);
       expect(knownFiles.has("/test/open-plain.js")).toBe(false);
@@ -307,9 +307,7 @@ function foo(x) {
       // uri 调 forgetValidatedFile；这里验证该清理单元确实移除会话登记项。
       clearValidationState();
       const src = '// @nudo:case "n" (1)\nfunction f(x) { return x; }\n';
-      await validateText("/test/gone.js", "file:///test/gone.js", src, 1, {
-        sendDiagnostics: () => {},
-      });
+      await validateText("/test/gone.js", "file:///test/gone.js", src, 1, makeValidateDeps());
       expect(knownFiles.has("/test/gone.js")).toBe(true);
       expect(analysisCache.has("/test/gone.js")).toBe(true);
 
@@ -342,16 +340,16 @@ function foo(x) {
         writeFileSync(bPath, bV1);
 
         let evalText = bV1;
-        const openDocs = new Map<string, { uri: string; version: number; getText(): string }>([
-          [aPath, { uri: uriOf(aPath), version: 1, getText: () => aSrc }],
-          [bPath, { uri: uriOf(bPath), version: 1, getText: () => evalText }],
-        ]);
         const sent = new Map<string, any[]>();
-        const deps: ValidateTextDeps = {
-          sendDiagnostics: (p) => sent.set(p.uri, p.diagnostics),
+        const deps = makeValidateDeps({
+          docs: [
+            [aPath, { uri: uriOf(aPath), version: 1, getText: () => aSrc }],
+            [bPath, { uri: uriOf(bPath), version: 1, getText: () => evalText }],
+          ],
           getActiveCases: () => new Map(),
-          getOpenDocumentByPath: (p) => openDocs.get(p),
-        };
+          onPublish: (p) => sent.set(p.uri, p.diagnostics),
+        });
+        const { openDocs } = deps;
 
         // 首验：b、a 依次入会话；a 的传播首次构建模块图并回填边缓存
         await validateText(bPath, uriOf(bPath), bV1, 1, deps);
@@ -410,20 +408,20 @@ function foo(x) {
 
         let aText = aV1;
         let cText = cV1;
-        const openDocs = new Map<string, { uri: string; version: number; getText(): string }>([
-          [aPath, { uri: uriOf(aPath), version: 1, getText: () => aText }],
-          [cPath, { uri: uriOf(cPath), version: 1, getText: () => cText }],
-        ]);
         const publishes = new Map<string, number>();
         const sent = new Map<string, any[]>();
-        const deps: ValidateTextDeps = {
-          sendDiagnostics: (p) => {
+        const deps = makeValidateDeps({
+          docs: [
+            [aPath, { uri: uriOf(aPath), version: 1, getText: () => aText }],
+            [cPath, { uri: uriOf(cPath), version: 1, getText: () => cText }],
+          ],
+          getActiveCases: () => new Map(),
+          onPublish: (p) => {
             publishes.set(p.uri, (publishes.get(p.uri) ?? 0) + 1);
             sent.set(p.uri, p.diagnostics);
           },
-          getActiveCases: () => new Map(),
-          getOpenDocumentByPath: (p) => openDocs.get(p),
-        };
+        });
+        const { openDocs } = deps;
 
         // 首轮：c、b、a 入会话，a 的传播回填边缓存 a→[b]
         await validateText(cPath, uriOf(cPath), cV1, 1, deps);

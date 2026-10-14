@@ -11,6 +11,7 @@ import { pTrue } from "../pred.ts";
 import { defaultLeakBudget } from "../leak.ts";
 import { emptyEnv } from "../ast-env.ts";
 import { isNullishLitAbs } from "../surface.ts";
+import { markFreshInstance } from "../instance-id.ts";
 import {
   noteAbsTruncation,
   PROMISE_MICRO_OVERFLOW_LABEL,
@@ -22,12 +23,123 @@ import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
 
 const promiseExecStack: number[] = [];
 
-export function enterPromiseExecutorScope(): void {
-  promiseExecStack.push(0);
+// N1：fork 臂 = 替代路径。臂 token（parent 指针树）用于 executor settle 的
+// 路径判定——同路径（祖先链上已有 settle）顺序双 settle 是原生 first-wins
+// no-op；兄弟臂 / join 后延续的 settle 不在链上 → 独立路径首个 settle，
+// resolve/reject 通道都必须收集（不得静默丢 reject 臂 → 假确定 fulfilled）。
+const settleArmParents = new Map<number, number>();
+let settleArmCounter = 0;
+let currentSettleArm = 0;
+
+/**
+ * N5：单个 executor scope 的路径面收集。arms = 本 scope 进入过的全部替代
+ * 路径臂（fork/switch 臂、抽象循环条件的体臂/出口臂）；任一臂走到末端而
+ * 无 settle → 存在永不 settle 的路径（原生 promise 悬挂）→ 结果必须带
+ * unsettled 通道。hangSettled = 确定性死循环截断（预算硬上限处条件仍具体
+ * 真）时悬挂路径是否已有 settle（token-0/臂子树 settle，且发生在截断点
+ * 之前——join 后的 post-loop settle 不在悬挂路径上）。
+ */
+interface PromiseExecutorArms {
+  arms: number[];
+  hang: { settleIdx: number; arms: number[]; depth: number } | null;
+  hangSettled: boolean | null;
+  /** scope 深度（enter 时栈深）——settle/exit 事件按深度过滤（内层/姊妹
+   * executor 的 settle 不 settle 本 promise） */
+  depth: number;
 }
 
-export function leavePromiseExecutorScope(): number {
-  return promiseExecStack.pop() ?? 0;
+const promiseExecArms: PromiseExecutorArms[] = [];
+// settle 事件序（token × scope 深度）——hang 快照按序切前缀
+const settleLogToken: number[] = [];
+const settleLogDepth: number[] = [];
+// N5：退出事件（fork 臂内 throw/return——延续被截断：join 后的 trailing
+// settle 不在退出路径上，只有退出点之前的路径 settle 覆盖）。clock 取
+// settleLog 长度（事件序单调）。
+const exitLogArm: number[] = [];
+const exitLogClock: number[] = [];
+
+function notePromiseSettle(token: number): void {
+  if (promiseExecStack.length === 0) return;
+  settleLogToken.push(token);
+  settleLogDepth.push(promiseExecStack.length);
+}
+
+/** N5：runForkArm 捕获 throw/return 时打点（executor 外零开销） */
+export function notePromiseForkExit(token: number): void {
+  if (promiseExecStack.length === 0) return;
+  exitLogArm.push(token);
+  exitLogClock.push(settleLogToken.length);
+}
+
+export function enterPromiseExecutorScope(): void {
+  promiseExecStack.push(0);
+  promiseExecArms.push({ arms: [], hang: null, hangSettled: null, depth: promiseExecStack.length });
+}
+
+export function leavePromiseExecutorScope(settledArms: number[]): boolean {
+  const rec = promiseExecArms.pop() ?? null;
+  promiseExecStack.pop();
+  // 覆盖判定必须在全局 token 树清空前（外层 leave 清 settleArmParents/
+  // settle/exit 事件序——快照在 rec 内，树在模块级）
+  const unsettled = promiseArmsUnsettled(rec, settledArms);
+  if (promiseExecStack.length === 0) {
+    settleArmCounter = 0;
+    currentSettleArm = 0;
+    settleArmParents.clear();
+    settleLogToken.length = 0;
+    settleLogDepth.length = 0;
+    exitLogArm.length = 0;
+    exitLogClock.length = 0;
+  }
+  return unsettled;
+}
+
+/** executor scope 是否活跃（$fork/$switch 隐式臂打点的零开销门闩） */
+export function promiseExecutorActive(): boolean {
+  return promiseExecStack.length > 0;
+}
+
+/**
+ * N5：确定性死循环截断（concreteExhausted——条件在硬上限处仍具体真）。
+ * 悬挂路径 = 循环前的全部语句 + 死循环体；只有截断点之前、同 scope 深度
+ * 的 token-0 / 臂子树 settle 能证明其已 settle。executor 外零开销。
+ */
+export function notePromiseExecutorHang(): void {
+  if (promiseExecStack.length === 0) return;
+  const rec = promiseExecArms[promiseExecArms.length - 1]!;
+  // 首个 hang 即唯一可达的悬挂点（确定性死循环之后的语句不可达）
+  if (!rec.hang) {
+    rec.hang = { settleIdx: settleLogToken.length, arms: [...rec.arms], depth: promiseExecStack.length };
+  }
+}
+
+function hangPathSettles(hang: { settleIdx: number; arms: number[]; depth: number }, scopeArms: number[]): boolean {
+  const children = armChildrenOf(scopeArms);
+  const subtree = new Set<number>();
+  const visit = (t: number): void => {
+    subtree.add(t);
+    for (const c of children.get(t) ?? []) visit(c);
+  };
+  for (const a of hang.arms) visit(a);
+  for (let i = 0; i < hang.settleIdx; i++) {
+    if (settleLogDepth[i] !== hang.depth) continue;
+    const t = settleLogToken[i]!;
+    if (t === 0 || subtree.has(t)) return true;
+  }
+  return false;
+}
+
+/** 同 scope 臂的 children 表（parent → 臂列表；跨 scope 边不算——内层
+ * executor 的 settle 不 settle 外层 promise） */
+function armChildrenOf(scopeArms: number[]): Map<number, number[]> {
+  const children = new Map<number, number[]>();
+  for (const a of scopeArms) {
+    const p = settleArmParents.get(a) ?? 0;
+    const list = children.get(p);
+    if (list) list.push(a);
+    else children.set(p, [a]);
+  }
+  return children;
 }
 
 /** $fork 在 executor 内发生时打点（多臂 resolve 需 join，不得 first-wins 假精确） */
@@ -37,8 +149,122 @@ export function notePromiseExecutorFork(): void {
   }
 }
 
+/** N1：fork 臂执行区间（runForkArm）压入新路径 token；executor 外零开销。
+ * N5：token 同时记入当前 executor scope 的臂表（覆盖判定用）。 */
+export function enterPromiseForkArm(): void {
+  if (promiseExecStack.length === 0) return;
+  settleArmCounter += 1;
+  settleArmParents.set(settleArmCounter, currentSettleArm);
+  currentSettleArm = settleArmCounter;
+  const top = promiseExecArms[promiseExecArms.length - 1];
+  if (top) top.arms.push(settleArmCounter);
+}
+
+export function leavePromiseForkArm(): void {
+  if (promiseExecStack.length === 0) return;
+  currentSettleArm = settleArmParents.get(currentSettleArm) ?? 0;
+}
+
+/** N1：当前路径（fork 臂祖先链）上是否已有 settle——有则本次 settle 是同
+ * 路径 first-wins no-op。链走穿（防御环，token 树构造上无环）视为活——
+ * 收集是过近似方向（sound）。 */
+export function promiseSettlePathHas(settledArms: number[]): boolean {
+  let t = currentSettleArm;
+  for (let i = 0; i <= settleArmParents.size; i++) {
+    if (settledArms.includes(t)) return true;
+    if (t === 0) return false;
+    t = settleArmParents.get(t) ?? 0;
+  }
+  return false;
+}
+
+export function currentPromiseSettleArm(): number {
+  return currentSettleArm;
+}
+
+/**
+ * N5：executor 是否存在「走到末端而无 settle」的路径（fork/switch 单臂
+ * settle、抽象循环出口无 post-loop settle、确定性死循环截断）→ 原生
+ * promise 可能永不 settle，结果必须带 unsettled 通道（禁止 wrong-definite）。
+ *
+ * 臂 A 覆盖判定（同 scope）：
+ * - A 自身有 settle（首个活 settle）；
+ * - 祖先链（含 token 0 = join 后主路径）有 settle——trailing settle 覆盖
+ *   全部臂（`if (c) resolve(1); resolve(2);` 仍确定）；
+ * - 全部同 scope 子臂覆盖——穿过 A 的每条路径都在 A 内嵌 fork 中 settle。
+ * 悬挂（确定性死循环）：hangSettled 由 leavePromiseExecutorScope 按事件序
+ * 判定（截断点之后的 post-loop settle 不算）。
+ */
+function promiseArmsUnsettled(rec: PromiseExecutorArms | null, settledArms: number[]): boolean {
+  if (!rec) return false;
+  if (rec.hang && rec.hangSettled === null) {
+    rec.hangSettled = hangPathSettles(rec.hang, rec.arms);
+  }
+  if (rec.hangSettled === false) return true;
+  const arms = rec.arms;
+  if (arms.length === 0) return false;
+  const settled = new Set(settledArms);
+  const children = armChildrenOf(arms);
+  // 退出臂（throw/return）：延续被截断——只有退出点之前、自身/祖先/同 scope
+  // 子树内的 settle 覆盖（join 后 trailing settle 不在退出路径上）
+  const exitClock = new Map<number, number>();
+  for (let i = 0; i < exitLogArm.length; i++) exitClock.set(exitLogArm[i]!, exitLogClock[i]!);
+  const settleBeforeOnPath = (t: number, clock: number): boolean => {
+    const onPath = new Set<number>([t, 0]);
+    let a = settleArmParents.get(t) ?? 0;
+    while (a !== 0) {
+      onPath.add(a);
+      a = settleArmParents.get(a) ?? 0;
+    }
+    const descend = (x: number): void => {
+      for (const c of children.get(x) ?? []) {
+        onPath.add(c);
+        descend(c);
+      }
+    };
+    descend(t);
+    for (let i = 0; i < clock; i++) {
+      if (settleLogDepth[i] === rec.depth && onPath.has(settleLogToken[i]!)) return true;
+    }
+    return false;
+  };
+  const memo = new Map<number, boolean>();
+  const covered = (t: number): boolean => {
+    const hit = memo.get(t);
+    if (hit !== undefined) return hit;
+    memo.set(t, false); // 防御环（token 树构造上无环）
+    let r: boolean;
+    const exitAt = exitClock.get(t);
+    if (exitAt !== undefined) {
+      r = settled.has(t) ? true : settleBeforeOnPath(t, exitAt);
+    } else if (settled.has(t) || settled.has(0)) {
+      r = true;
+    } else {
+      r = false;
+      let a = settleArmParents.get(t) ?? 0;
+      while (a !== 0) {
+        if (settled.has(a)) {
+          r = true;
+          break;
+        }
+        a = settleArmParents.get(a) ?? 0;
+      }
+      if (!r) {
+        const kids = children.get(t);
+        r = !!kids && kids.length > 0 && kids.every(covered);
+      }
+    }
+    memo.set(t, r);
+    return r;
+  };
+  return arms.some((a) => !covered(a));
+}
+
 function promiseAbs(inner: Abs, conf: Abs["conf"] = "path"): Abs {
-  return abs({ k: "eff", eff: "promise", inner }, undefined, undefined, conf);
+  // R2b：每个 Promise.resolve / then 链 / 构造器调用产出新 promise 对象
+  //（采纳路径——Promise.resolve(既有 promise) / unwrapThenable——返回
+  // 原 Abs 引用，不经此构造）——打新鲜实例标
+  return markFreshInstance(abs({ k: "eff", eff: "promise", inner }, undefined, undefined, conf));
 }
 
 /**
@@ -47,7 +273,52 @@ function promiseAbs(inner: Abs, conf: Abs["conf"] = "path"): Abs {
  * 拒绝透传（nullish handler ≡ Identity）经同款构造保持通道。
  */
 function promiseRejected(reason: Abs, conf: Abs["conf"] = "path"): Abs {
-  return abs({ k: "eff", eff: "promise", inner: never, rejected: reason }, undefined, undefined, conf);
+  return markFreshInstance(
+    abs({ k: "eff", eff: "promise", inner: never, rejected: reason }, undefined, undefined, conf),
+  );
+}
+
+/** R3：state 未知 promise（unsettled 标记——catch/then 的拒绝臂保持活） */
+function promiseUnsettled(inner: Abs, conf: Abs["conf"] = "path"): Abs {
+  return markFreshInstance(
+    abs({ k: "eff", eff: "promise", inner, unsettled: true }, undefined, undefined, conf),
+  );
+}
+
+/** R3b：effectFree∧closed facet（无写 + 不读外层可变态）——同步执行与
+ * 原生微任务执行无任何可观测差（promise 回调原生异步跑，只有不碰外层
+ * 态的回调两个时刻求值等价）。 */
+function syncFacetOf(h: Abs | undefined): boolean {
+  if (!h) return false;
+  const impl = getFnImpl(h);
+  return impl?.effectFree === true && impl.closed === true;
+}
+
+/** R3b：同步执行的 then 回调返回值 → 结果 promise：
+ * - eff(promise) → 递归采纳（inner 与 rejected/unsettled 通道随返回 promise，
+ *   原生 then 回调返回 thenable 的采纳同款）；
+ * - unknown 单例（可能是 thenable，采纳面不可判）→ unsettled promise<unknown>；
+ * - 其余 → unwrapThenable 后 settled promise。 */
+function adoptHandlerReturn(mapped: Abs | undefined, conf: Abs["conf"]): Abs {
+  if (mapped && isPromiseEff(mapped)) {
+    const sh = mapped.shape as { inner: Abs; rejected?: Abs; unsettled?: boolean };
+    return markFreshInstance(
+      abs(
+        {
+          k: "eff",
+          eff: "promise",
+          inner: sh.inner,
+          ...(sh.rejected !== undefined ? { rejected: sh.rejected } : {}),
+          ...(sh.unsettled ? { unsettled: true } : {}),
+        },
+        undefined,
+        undefined,
+        conf,
+      ),
+    );
+  }
+  const next = !mapped || isUnknownSingleton(mapped) ? unknown : unwrapThenable(mapped);
+  return isUnknownSingleton(next) ? promiseUnsettled(next, conf) : promiseAbs(next, conf);
 }
 
 /** promise 的已知拒绝 reason（无通道 → undefined） */
@@ -57,7 +328,49 @@ function rejectedOf(recv: Abs): Abs | undefined {
 }
 
 function promiseUnknown(): Abs {
-  return promiseAbs(unknown, "partial");
+  return markFreshInstance(
+    abs({ k: "eff", eff: "promise", inner: unknown, unsettled: true }, undefined, undefined, "partial"),
+  );
+}
+
+/** unknown 单例（无 term 的 unknown——对值与 settle 均无信息） */
+function isUnknownSingleton(a: Abs | undefined): boolean {
+  return !!a && a.shape.k === "unknown" && a.term === undefined;
+}
+
+/**
+ * R3：值可能自带 thenable 采纳面（resolve/then 回调返回值的 settle 采纳不可
+ * 判）→ promise 标 unsettled（catch/then 拒绝臂保持活）。any/unknown（无
+ * term）/fn/open obj/含此类成员的 sum 都可能实现 then；闭 obj 带 then 槽同。
+ */
+export function thenableRiskOf(v: Abs): boolean {
+  const k = v.shape.k;
+  if (k === "any") return true;
+  if (k === "unknown") return v.term === undefined;
+  if (k === "fn") return true;
+  if (k === "obj") {
+    const o = v.shape as { slots: Record<string, unknown>; open?: boolean };
+    return o.open === true || "then" in o.slots;
+  }
+  if (k === "sum") return (v.shape as { members: Abs[] }).members.some(thenableRiskOf);
+  return false;
+}
+
+/** eff(promise) 形态判定（通道采纳用） */
+function isPromiseEff(v: Abs): boolean {
+  return v.shape.k === "eff" && v.shape.eff === "promise";
+}
+
+/**
+ * R3 settle 三分类谓词：确定 fulfilled = 无拒绝通道且无 unsettled 标记
+ * （inner 无信息也算确定 fulfilled——值未知但态已知，catch 回调原生死
+ * 代码）。unsettled 标记是 state 未知的唯一信号（unknown 单例 inner 不再
+ * 单独隐含——executor resolve(unknown) 是确定 fulfilled·值未知）。
+ */
+function settledFulfilledOf(recv: Abs): boolean {
+  if (recv.shape.k !== "eff" || recv.shape.eff !== "promise") return false;
+  const sh = recv.shape as { rejected?: Abs; unsettled?: boolean; inner: Abs };
+  return sh.rejected === undefined && sh.unsettled !== true && sh.inner.shape.k !== "never";
 }
 
 /** resolve 实参是 thenable → 展开 inner（与 Promise.resolve 同口径） */
@@ -153,35 +466,42 @@ export function evalPromiseCtor(args: Abs[]): Abs {
     }
   }
 
-  let hasSettle = false;
-  let hasResolve = false;
-  let hasReject = false;
   const resolveValues: Abs[] = [];
   const rejectValues: Abs[] = [];
+  // R3：resolve 值的 thenable 采纳面（不可判 settle → unsettled）
+  const resolveRisks: boolean[] = [];
+  // N1：已 settle 的路径 token（fork 臂 = 替代路径）：first-wins 只在同路径
+  // 成立——祖先链上已有 settle 的后续 settle 是原生 no-op；兄弟臂 settle 是
+  // 独立路径首个 settle，resolve/reject 全通道收集（不得丢 reject 臂）。
+  const settledArms: number[] = [];
+  // R3：eff(promise) resolve 实参（唯一活 settle → 全通道递归采纳；多活
+  // settle → inner 已 unwrap 进 join 面，rejected/unsettled 通道仍并入）
+  const effSettles: Abs[] = [];
 
   const onResolve = (value?: unknown): Abs => {
     const raw = asAbs(value) ?? litFromJs(value);
+    if (promiseSettlePathHas(settledArms)) return undefAbs(); // 同路径 no-op
     const v = unwrapThenable(raw);
-    if (!hasSettle) {
-      hasSettle = true;
-      hasResolve = true;
-      resolveValues.push(v);
-    } else if (hasResolve) {
-      // 后续 resolve：顺序 no-op（first-wins）或另一 fork 臂（稍后 join）
-      resolveValues.push(v);
+    const token = currentPromiseSettleArm();
+    settledArms.push(token);
+    notePromiseSettle(token); // N5：hang 快照按事件序切前缀
+    resolveValues.push(v);
+    if (isPromiseEff(raw)) {
+      effSettles.push(raw);
+      resolveRisks.push(true);
+    } else {
+      resolveRisks.push(thenableRiskOf(v));
     }
     return undefAbs();
   };
   // Bug 36：reject 通道与 resolve 对称收集（fork 臂 join；first-wins 同款）
   const onReject = (reason?: unknown): Abs => {
     const raw = asAbs(reason) ?? litFromJs(reason);
-    if (!hasSettle) {
-      hasSettle = true;
-      hasReject = true;
-      rejectValues.push(raw);
-    } else if (hasReject) {
-      rejectValues.push(raw);
-    }
+    if (promiseSettlePathHas(settledArms)) return undefAbs(); // 同路径 no-op
+    const token = currentPromiseSettleArm();
+    settledArms.push(token);
+    notePromiseSettle(token); // N5：hang 快照按事件序切前缀
+    rejectValues.push(raw);
     return undefAbs();
   };
 
@@ -197,6 +517,13 @@ export function evalPromiseCtor(args: Abs[]): Abs {
   }, { ctor: false });
 
   enterPromiseExecutorScope();
+  // executed = executor 真跑过（早退/抽象 fn/抛出 → promise<unknown>）。
+  // finally 保证 scope 恒弹出：早退 return / 抛出走 catch 都不得泄漏栈帧
+  //（泄漏会让后续所有 $fork 误记入已死的 executor 计数与路径 token 表）。
+  let executed = true;
+  // N5：scope 路径面覆盖判定（leave 在 token 树清空前算好——fork/switch/
+  // loop 臂 + hang + throw/return 退出臂）
+  let armUnsettled = false;
   try {
     if (typeof executor === "function") {
       (executor as (...a: unknown[]) => unknown)(
@@ -208,42 +535,90 @@ export function evalPromiseCtor(args: Abs[]): Abs {
       const k = (executor as Abs).shape.k;
       // 抽象 fn（无 body/apply）：不可执行，保持 promise<unknown>
       if (!impl?.body && !impl?.apply && k === "fn" && !impl?.relation) {
-        return promiseUnknown();
+        executed = false;
+      } else {
+        applyCallbackValue(executor, [resolveAbs, rejectAbs], emptyEnv(), pTrue, defaultLeakBudget);
       }
-      applyCallbackValue(executor, [resolveAbs, rejectAbs], emptyEnv(), pTrue, defaultLeakBudget);
     } else {
-      return promiseUnknown();
+      executed = false;
     }
   } catch {
     // executor 抛出 → rejected promise；resolved 通道不假装 settle
-    return promiseUnknown();
+    executed = false;
+  } finally {
+    armUnsettled = leavePromiseExecutorScope(settledArms);
   }
-  const forks = leavePromiseExecutorScope();
+  if (!executed) return promiseUnknown();
 
-  // Bug 36：确定拒绝（仅 reject 臂 settle）→ resolved 域 never + reason 通道；
+  // Bug 36：确定拒绝（唯一活 settle 是 reject）→ resolved 域 never + reason 通道；
   // 两臂都可能（fork：一臂 resolve 一臂 reject）→ inner 与 rejected 并存
-  //（then/catch 两臂 join 消费）
-  if (!hasResolve && rejectValues.length > 0) {
-    return promiseRejected(
-      rejectValues.length === 1 ? rejectValues[0]! : rejectValues.reduce((a, b) => joinAbs(a, b)),
+  //（then/catch 两臂 join 消费）。N5：无 settle 臂存在 → 拒绝也不确定
+  //（原生可能悬挂）→ unsettled 并存。
+  if (resolveValues.length === 0 && rejectValues.length > 0) {
+    const reason =
+      rejectValues.length === 1 ? rejectValues[0]! : rejectValues.reduce((a, b) => joinAbs(a, b));
+    if (!armUnsettled) return promiseRejected(reason);
+    return markFreshInstance(
+      abs(
+        { k: "eff", eff: "promise", inner: never, rejected: reason, unsettled: true },
+        undefined,
+        undefined,
+        "path",
+      ),
     );
   }
-  if (!hasResolve || resolveValues.length === 0) return promiseUnknown();
-  // 无 fork：顺序双 resolve 取第一次（原生 no-op）；有 fork：各臂 join
+  if (resolveValues.length === 0) return promiseUnknown();
+  // R3：唯一活 settle 是 eff(promise) resolve → 递归采纳（inner 与 rejected/
+  // unsettled 通道随被采纳 promise，native resolve(p) 同款）
+  if (effSettles.length === 1 && rejectValues.length === 0 && resolveValues.length === 1) {
+    const sh = effSettles[0]!.shape as { inner: Abs; rejected?: Abs; unsettled?: boolean };
+    return markFreshInstance(
+      abs(
+        {
+          k: "eff",
+          eff: "promise",
+          inner: sh.inner,
+          ...(sh.rejected !== undefined ? { rejected: sh.rejected } : {}),
+          ...(sh.unsettled || armUnsettled ? { unsettled: true } : {}),
+        },
+        undefined,
+        undefined,
+        "path",
+      ),
+    );
+  }
+  // 多活 settle（fork/switch 臂、join 后跨路径延续）：同通道 join（各臂
+  // resolve 值 ⊔ / 各臂 reject reason ⊔）；同路径顺序双 settle 已在收集处
+  // 按路径 first-wins no-op。任一臂 thenable 采纳面不可排除；eff(promise)
+  // 臂的 rejected/unsettled 通道并入（resolve(p) 原生递归采纳——p 拒绝则
+  // 本 promise 拒绝）
   const inner =
-    forks === 0 || resolveValues.length === 1
-      ? resolveValues[0]!
-      : resolveValues.reduce((a, b) => joinAbs(a, b));
-  if (rejectValues.length > 0) {
-    const rej = rejectValues.length === 1 ? rejectValues[0]! : rejectValues.reduce((a, b) => joinAbs(a, b));
-    return abs(
-      { k: "eff", eff: "promise", inner, rejected: rej },
-      undefined,
-      undefined,
-      "path",
+    resolveValues.length === 1 ? resolveValues[0]! : resolveValues.reduce((a, b) => joinAbs(a, b));
+  let rejected: Abs | undefined =
+    rejectValues.length === 1
+      ? rejectValues[0]!
+      : rejectValues.length > 1
+        ? rejectValues.reduce((a, b) => joinAbs(a, b))
+        : undefined;
+  let unsettled = resolveRisks.some(Boolean) || armUnsettled;
+  for (const eff of effSettles) {
+    const sh = eff.shape as { rejected?: Abs; unsettled?: boolean };
+    if (sh.rejected !== undefined) {
+      rejected = rejected === undefined ? sh.rejected : joinAbs(rejected, sh.rejected);
+    }
+    if (sh.unsettled) unsettled = true;
+  }
+  if (rejected !== undefined) {
+    return markFreshInstance(
+      abs(
+        { k: "eff", eff: "promise", inner, rejected, ...(unsettled ? { unsettled: true } : {}) },
+        undefined,
+        undefined,
+        "path",
+      ),
     );
   }
-  return promiseAbs(inner, "path");
+  return unsettled ? promiseUnsettled(inner) : promiseAbs(inner, "path");
 }
 
 /** then/catch/finally：可映射回调 → 新 inner；做不到诚实 promise<unknown> */
@@ -268,6 +643,15 @@ export function evalPromiseMethod(
     return false;
   };
   const confOf = (): Abs["conf"] => (recv.conf === "exact" ? "path" : recv.conf);
+  // R3 settle 三分类：unsettled 标记 = state 未知；rejected 通道 = 可能拒绝；
+  // 两者皆无 = 确定 fulfilled（onRejected/onFinally 原生死代码）
+  const unsettled = (recv.shape as { unsettled?: boolean }).unsettled === true;
+  const settledFulfilled = settledFulfilledOf(recv);
+  // N1：微任务闭包读活通道——FIFO 保证上游微任务先跑完（链式注册时上游
+  // join 尚未完成）；注册期捕获的 inner/rejected 是 pre-join 态（链式下游
+  // 假确定值 / 缺 reason 臂的来源）。同步分支不受影响：relation/syncFacet
+  // 要求 settledFulfilled，pre-join 出生带 unsettled 进不了同步分支。
+  const liveRecvShape = () => recv.shape as { inner: Abs; rejected?: Abs };
   switch (name) {
     case "then": {
       const onFulfilled = args[0];
@@ -286,12 +670,20 @@ export function evalPromiseMethod(
         }
         const resultPromise = promiseAbs(unknown, "path");
         queuePromiseMicro(() => {
-          const recovered = applyCallbackValue(onRejected, [reason], emptyEnv(), pTrue, defaultLeakBudget);
-          const next =
-            !recovered || (recovered.shape.k === "unknown" && recovered.term === undefined)
-              ? unknown
-              : unwrapThenable(recovered);
-          (resultPromise.shape as { inner: Abs }).inner = next;
+          const sh = resultPromise.shape as { inner: Abs; rejected?: Abs };
+          try {
+            const recovered = applyCallbackValue(onRejected, [reason], emptyEnv(), pTrue, defaultLeakBudget);
+            sh.inner =
+              !recovered || isUnknownSingleton(recovered) ? unknown : unwrapThenable(recovered);
+          } catch (e) {
+            if (e instanceof NudoThrow) {
+              // 回调定抛 → 结果确定拒绝（原生 onRejected 抛错折 rejection）
+              sh.inner = never;
+              sh.rejected = e.absValue;
+              return;
+            }
+            throw e;
+          }
         });
         return resultPromise;
       }
@@ -299,67 +691,146 @@ export function evalPromiseMethod(
       // Bug 37：nullish onFulfilled ≡ Identity 透传 settle 值
       if (fulNullish) {
         if (rejected === undefined) {
-          // 无拒绝通道信息：then(null) / then(null, null) → 透传 inner
-          //（settle 未知面只在 inner 为 unknown 时两臂 join——onRejected
-          // 可能对未知 reason 跑，join 后仍被 unknown 吸收）
-          if (!rejNullish && inner.shape.k === "unknown" && inner.term === undefined) {
-            const resultPromise = promiseAbs(unknown, "path");
+          // R3：state 未知 + 真回调 g → rejected 臂 g(unknown reason) 值 join
+          //（结果保持 unsettled）；确定 fulfilled（g 死代码）或 g 缺席 → 透传
+          if (!rejNullish && unsettled) {
+            const resultPromise = promiseUnsettled(unwrapThenable(inner), "path");
             queuePromiseMicro(() => {
-              const recovered = applyCallbackValue(onRejected, [unknown], emptyEnv(), pTrue, defaultLeakBudget);
-              const next =
-                !recovered || (recovered.shape.k === "unknown" && recovered.term === undefined)
-                  ? unknown
-                  : unwrapThenable(recovered);
-              (resultPromise.shape as { inner: Abs }).inner = joinAbs(unwrapThenable(inner), next);
+              const sh = resultPromise.shape as { inner: Abs; rejected?: Abs };
+              try {
+                const recovered = applyCallbackValue(onRejected, [unknown], emptyEnv(), pTrue, defaultLeakBudget);
+                const next =
+                  !recovered || isUnknownSingleton(recovered) ? unknown : unwrapThenable(recovered);
+                sh.inner = joinAbs(unwrapThenable(liveRecvShape().inner), next);
+              } catch (e) {
+                if (e instanceof NudoThrow) {
+                  sh.rejected = e.absValue;
+                  return;
+                }
+                throw e;
+              }
             });
             return resultPromise;
           }
-          return promiseAbs(unwrapThenable(inner), confOf());
+          return unsettled
+            ? promiseUnsettled(unwrapThenable(inner), confOf())
+            : promiseAbs(unwrapThenable(inner), confOf());
         }
         // 拒绝通道在场但 settle 未定（fork 双臂）：两臂 join——fulfilled 臂
         // 透传 inner；rejected 臂 g(reason) 或（nullish g）拒绝透传
         if (rejNullish) {
-          return abs(
-            { k: "eff", eff: "promise", inner: unwrapThenable(inner), rejected },
-            undefined,
-            undefined,
-            confOf(),
+          return markFreshInstance(
+            abs(
+              { k: "eff", eff: "promise", inner: unwrapThenable(inner), rejected },
+              undefined,
+              undefined,
+              confOf(),
+            ),
           );
         }
-        const resultPromise = promiseAbs(unwrapThenable(inner), "path");
+        // N1：出生 unsettled——fulfilled 透传 inner 在微任务 join 回收臂前
+        // 不得呈现为确定 fulfilled（链式 .then 会同步映射 pre-join 态 →
+        // 假确定 promise<inner>）；join 后清除（recovered 未知单例 = 采纳面
+        // 不可判，保持 unsettled）
+        const resultPromise = promiseUnsettled(unwrapThenable(inner), "path");
         queuePromiseMicro(() => {
-          const recovered = applyCallbackValue(onRejected, [rejected], emptyEnv(), pTrue, defaultLeakBudget);
-          const next =
-            !recovered || (recovered.shape.k === "unknown" && recovered.term === undefined)
-              ? unknown
-              : unwrapThenable(recovered);
-          (resultPromise.shape as { inner: Abs }).inner = joinAbs(unwrapThenable(inner), next);
+          const sh = resultPromise.shape as { inner: Abs; rejected?: Abs; unsettled?: boolean };
+          const live = liveRecvShape();
+          try {
+            const recovered = applyCallbackValue(onRejected, [live.rejected ?? rejected], emptyEnv(), pTrue, defaultLeakBudget);
+            const next =
+              !recovered || isUnknownSingleton(recovered) ? unknown : unwrapThenable(recovered);
+            sh.inner = joinAbs(unwrapThenable(live.inner), next);
+            if (!isUnknownSingleton(recovered) && recovered !== undefined) delete sh.unsettled;
+          } catch (e) {
+            if (e instanceof NudoThrow) {
+              sh.rejected = e.absValue;
+              delete sh.unsettled;
+              return;
+            }
+            throw e;
+          }
         });
         return resultPromise;
       }
 
-      // 纯 relation 回调：同步收窄 inner（analyze 路径立刻可读）
-      const rel = getFnImpl(onFulfilled)?.relation;
-      if (rel && !getFnImpl(onFulfilled)?.body && !getFnImpl(onFulfilled)?.apply) {
+      // 纯 relation 回调：同步收窄 inner（analyze 路径立刻可读；R3 门收紧为
+      // 确定 fulfilled——state 未知走微任务，与 rejected 臂 join）
+      const fnImpl = getFnImpl(onFulfilled);
+      const rel = fnImpl?.relation;
+      if (rel && !fnImpl?.body && !fnImpl?.apply && settledFulfilled) {
         const mapped = instantiateReturn(onFulfilled, [inner]);
         return promiseAbs(unwrapThenable(mapped), confOf());
       }
-      // 先建 promise 占位，回调在微任务里填 inner（原生 then 不同步跑回调）
-      const resultPromise = promiseAbs(unknown, "path");
+
+      // R3b：确定 fulfilled + effectFree∧closed 回调 → 同步映射 promise<h(v)>
+      //（原生 onFulfilled 只在 fulfilled 臂执行一次；无写 + 不读外层可变态
+      // ⇒ 同步执行与微任务执行无观测差——await p.then(h) 不再塌 unknown）。
+      // 回调定抛 → 结果确定拒绝（then 回调抛错原生折 rejection，不同步穿透
+      // 调用点）。无 facet（副作用/读外层态回调）保持微任务路径——同步窗口
+      // 副作用序不可破（外层 return 前写回 = 假精确）。
+      if (settledFulfilled && syncFacetOf(onFulfilled)) {
+        try {
+          const mapped = applyCallbackValue(onFulfilled, [inner], emptyEnv(), pTrue, defaultLeakBudget);
+          return adoptHandlerReturn(mapped, confOf());
+        } catch (e) {
+          if (e instanceof NudoThrow) return promiseRejected(e.absValue, confOf());
+          throw e;
+        }
+      }
+
+      // 微任务路径（state 未知 / fork 双臂 / 无 facet——回调执行时刻对齐原生
+      // 微任务序）。两臂折叠：fulfilled 臂 f(inner)（定抛 → 拒绝通道）；rejected
+      // 臂——fork：g(reason) 或（nullish g）拒绝透传；state 未知：g(unknown
+      // reason) 值臂 join（结果保持 unsettled）。定抛只置拒绝通道不定 never
+      //（另一臂仍可能 fulfilled——除确定 fulfilled 接收者的 f 臂）。
+      const resultPromise = unsettled ? promiseUnsettled(unknown, "path") : promiseAbs(unknown, "path");
       queuePromiseMicro(() => {
-        const mapped = applyCallbackValue(
-          onFulfilled,
-          [inner],
-          emptyEnv(),
-          pTrue,
-          defaultLeakBudget,
-        );
-        // 调用失败：无 term 的 unknown 单例。回调返回 undefined（undefAbs）合法。
-        const next =
-          !mapped || (mapped.shape.k === "unknown" && mapped.term === undefined)
-            ? unknown
-            : unwrapThenable(mapped);
-        (resultPromise.shape as { inner: Abs }).inner = next;
+        const sh = resultPromise.shape as { inner: Abs; rejected?: Abs };
+        const live = liveRecvShape();
+        const liveRejected = live.rejected ?? rejected;
+        const rejectArms: Abs[] = [];
+        const runArm = (h: Abs | undefined, arg: Abs): Abs => {
+          const r = applyCallbackValue(h, [arg], emptyEnv(), pTrue, defaultLeakBudget);
+          return !r || isUnknownSingleton(r) ? unknown : unwrapThenable(r);
+        };
+        let fulfilled: Abs = unknown;
+        let fThrew = false;
+        try {
+          fulfilled = runArm(onFulfilled, live.inner);
+        } catch (e) {
+          if (e instanceof NudoThrow) {
+            rejectArms.push(e.absValue);
+            fThrew = true;
+          } else {
+            throw e;
+          }
+        }
+        if (liveRejected !== undefined) {
+          if (rejNullish) {
+            rejectArms.push(liveRejected); // 拒绝透传臂
+          } else {
+            try {
+              fulfilled = joinAbs(fulfilled, runArm(onRejected, liveRejected));
+            } catch (e) {
+              if (e instanceof NudoThrow) rejectArms.push(e.absValue);
+              else throw e;
+            }
+          }
+        } else if (unsettled && !rejNullish) {
+          // state 未知的 rejected 臂：g(unknown reason) 值臂 join
+          try {
+            fulfilled = joinAbs(fulfilled, runArm(onRejected, unknown));
+          } catch (e) {
+            if (e instanceof NudoThrow) rejectArms.push(e.absValue);
+            else throw e;
+          }
+        }
+        // f 臂定抛且接收者确定 fulfilled（唯一臂）→ 确定拒绝（inner never）
+        sh.inner = fThrew && settledFulfilled ? never : fulfilled;
+        if (rejectArms.length > 0) {
+          sh.rejected = rejectArms.reduce((a, b) => joinAbs(a, b));
+        }
       });
       return resultPromise;
     }
@@ -375,75 +846,132 @@ export function evalPromiseMethod(
         }
         const resultPromise = promiseAbs(unknown, "path");
         queuePromiseMicro(() => {
-          const recovered = applyCallbackValue(onRejected, [rejected], emptyEnv(), pTrue, defaultLeakBudget);
-          if (!recovered || (recovered.shape.k === "unknown" && recovered.term === undefined)) {
-            (resultPromise.shape as { inner: Abs }).inner = unknown;
-            return;
+          const sh = resultPromise.shape as { inner: Abs; rejected?: Abs };
+          try {
+            const recovered = applyCallbackValue(onRejected, [rejected], emptyEnv(), pTrue, defaultLeakBudget);
+            sh.inner =
+              !recovered || isUnknownSingleton(recovered) ? unknown : unwrapThenable(recovered);
+          } catch (e) {
+            if (e instanceof NudoThrow) {
+              // 回调定抛 → 结果确定拒绝（原生 catch 回调抛错折 rejection）
+              sh.inner = never;
+              sh.rejected = e.absValue;
+              return;
+            }
+            throw e;
           }
-          (resultPromise.shape as { inner: Abs }).inner = unwrapThenable(recovered);
         });
         return resultPromise;
+      }
+      // R3a：确定 fulfilled——catch 回调原生死代码（fulfilled 接收者的
+      // onRejected 永不进队）：不执行、不 join 回调值，值原样透传。此前把
+      // h(unknown reason) 并进值域（Promise.resolve(1).catch(() => 2) →
+      // promise<1|2> 假臂，原生 promise<1>）。unsettled / 拒绝通道在场时
+      // 回调臂保持（下方 join）。
+      if (settledFulfilled) {
+        return promiseAbs(inner, confOf());
       }
       // Bug 37：nullish catch handler ≡ Identity——resolved 透传 / 拒绝透传
       if (isIdentity(onRejected)) {
         if (rejected !== undefined) {
           // settle 未定（fork 双臂）：resolved 透传 inner ∪ 拒绝透传 reason
-          return abs(
-            { k: "eff", eff: "promise", inner: unwrapThenable(inner), rejected },
-            undefined,
-            undefined,
-            confOf(),
+          return markFreshInstance(
+            abs(
+              { k: "eff", eff: "promise", inner: unwrapThenable(inner), rejected },
+              undefined,
+              undefined,
+              confOf(),
+            ),
           );
         }
-        return promiseAbs(inner, confOf());
+        // state 未知（unsettled）：透传值，保持 unsettled（拒绝臂仍可能）
+        return promiseUnsettled(inner, confOf());
       }
-      // 拒绝通道在场但 settle 未定：两臂 join（resolved: inner；rejected: g(R)）
+      // 拒绝通道在场但 settle 未定：两臂 join（resolved: inner；rejected:
+      // g(R)；g 定抛 → 结果可能拒绝——只置拒绝通道，fulfilled 臂保留）
       if (rejected !== undefined) {
-        const resultPromise = promiseAbs(unwrapThenable(inner), "path");
+        // N1：出生 unsettled——fulfilled 透传 inner 在微任务 join 回收臂前
+        // 不得呈现为确定 fulfilled（链式 .then 会同步映射 pre-join 态 →
+        // 假确定 promise<inner>）；join 后清除（recovered 未知单例 = 采纳面
+        // 不可判，保持 unsettled）
+        const resultPromise = promiseUnsettled(unwrapThenable(inner), "path");
         queuePromiseMicro(() => {
-          const recovered = applyCallbackValue(onRejected, [rejected], emptyEnv(), pTrue, defaultLeakBudget);
-          const next =
-            !recovered || (recovered.shape.k === "unknown" && recovered.term === undefined)
-              ? unknown
-              : unwrapThenable(recovered);
-          (resultPromise.shape as { inner: Abs }).inner = joinAbs(unwrapThenable(inner), next);
+          const sh = resultPromise.shape as { inner: Abs; rejected?: Abs; unsettled?: boolean };
+          const live = liveRecvShape();
+          try {
+            const recovered = applyCallbackValue(onRejected, [live.rejected ?? rejected], emptyEnv(), pTrue, defaultLeakBudget);
+            const next =
+              !recovered || isUnknownSingleton(recovered) ? unknown : unwrapThenable(recovered);
+            sh.inner = joinAbs(unwrapThenable(live.inner), next);
+            if (!isUnknownSingleton(recovered) && recovered !== undefined) delete sh.unsettled;
+          } catch (e) {
+            if (e instanceof NudoThrow) {
+              sh.rejected = e.absValue;
+              delete sh.unsettled;
+              return;
+            }
+            throw e;
+          }
         });
         return resultPromise;
       }
-      // 只建模 resolved 通道：onRejected 映射 reject reason（unknown）→ 可能 resolve
-      // 回调同样进微任务，不污染同步返回路径
-      const resultPromise = promiseAbs(inner, "path");
+      // state 未知（unsettled）：onRejected 对未知 reason 可能执行——值臂
+      // join（结果保持 unsettled）；定抛 → may-reject 通道。回调进微任务，
+      // 不污染同步返回路径。
+      const resultPromise = promiseUnsettled(inner, "path");
       queuePromiseMicro(() => {
-        const recovered = applyCallbackValue(
-          onRejected,
-          [unknown],
-          emptyEnv(),
-          pTrue,
-          defaultLeakBudget,
-        );
-        if (!recovered || (recovered.shape.k === "unknown" && recovered.term === undefined)) {
-          (resultPromise.shape as { inner: Abs }).inner = unknown;
-          return;
+        const sh = resultPromise.shape as { inner: Abs; rejected?: Abs };
+        try {
+          const recovered = applyCallbackValue(onRejected, [unknown], emptyEnv(), pTrue, defaultLeakBudget);
+          if (!recovered || isUnknownSingleton(recovered)) {
+            sh.inner = unknown;
+            return;
+          }
+          sh.inner = joinAbs(liveRecvShape().inner, unwrapThenable(recovered));
+        } catch (e) {
+          if (e instanceof NudoThrow) {
+            sh.rejected = e.absValue;
+            return;
+          }
+          throw e;
         }
-        (resultPromise.shape as { inner: Abs }).inner = joinAbs(
-          inner,
-          unwrapThenable(recovered),
-        );
       });
       return resultPromise;
     }
     case "finally": {
-      // finally 不改变 settled value（回调返回值丢弃）；Bug 36：拒绝通道
-      // 透传（Promise.reject(1).finally(g) 仍以 1 拒绝）
-      if (rejectedOf(recv) !== undefined) {
-        return abs(
-          { k: "eff", eff: "promise", inner, rejected: rejectedOf(recv) },
-          undefined,
-          undefined,
-          confOf(),
+      // finally 不改变 settled value（回调返回值丢弃——返回 thenable 的采纳
+      // 面不建模）；Bug 36：拒绝通道透传（Promise.reject(1).finally(g) 仍以 1
+      // 拒绝）。R3 audit：effectFree∧closed 回调真执行一次（原生 finally 回调
+      // 恒执行，无论 settle 态）：定抛 → 结果确定拒绝且 reason 替换（原生
+      // Promise.reject(1).finally(() => { throw 9 }) 拒绝 9）。无 facet（副作用
+      // 回调）不执行——抛错面不建模，通道透传。
+      const rejected = rejectedOf(recv);
+      const handler = args[0];
+      if (!isIdentity(handler) && syncFacetOf(handler)) {
+        try {
+          applyCallbackValue(handler, [], emptyEnv(), pTrue, defaultLeakBudget);
+        } catch (e) {
+          if (e instanceof NudoThrow) return promiseRejected(e.absValue, confOf());
+          throw e;
+        }
+      }
+      if (rejected !== undefined) {
+        return markFreshInstance(
+          abs(
+            {
+              k: "eff",
+              eff: "promise",
+              inner,
+              rejected,
+              ...(unsettled ? { unsettled: true } : {}),
+            },
+            undefined,
+            undefined,
+            confOf(),
+          ),
         );
       }
-      return promiseAbs(inner, confOf());
+      return unsettled ? promiseUnsettled(inner, confOf()) : promiseAbs(inner, confOf());
     }
     default:
       return undefined;
@@ -513,7 +1041,7 @@ export function evalPromiseStatic(name: string, args: Abs[]): Abs | undefined {
         {
           k: "obj",
           slots: {
-            promise: { value: promiseAbs(unknown, "path") },
+            promise: { value: promiseUnsettled(unknown) },
             resolve: { value: absFunction([], { body: noBody }, { ctor: false }) },
             reject: { value: absFunction([], { body: noBody }, { ctor: false }) },
           },
@@ -524,9 +1052,13 @@ export function evalPromiseStatic(name: string, args: Abs[]): Abs | undefined {
       );
     }
     case "resolve": {
-      const inner = args[0] ?? unknown;
-      // Promise.resolve(thenable) 展开
+      // R3：缺省 ≡ resolve(undefined)（确定 fulfilled·值 undefined，非 unknown）
+      const inner = args.length > 0 ? (args[0] ?? unknown) : undefAbs();
+      // Promise.resolve(thenable) 采纳（通道/标记随原 promise）
       if (inner.shape.k === "eff" && inner.shape.eff === "promise") return inner;
+      // 值可能自带 thenable 采纳面（any/unknown/fn/open obj/带 then 槽 obj）
+      // → settle 不可判，标 unsettled（catch/then 拒绝臂保持活）
+      if (thenableRiskOf(inner)) return promiseUnsettled(inner);
       return promiseAbs(inner, "path");
     }
     case "reject":
@@ -542,18 +1074,36 @@ export function evalPromiseStatic(name: string, args: Abs[]): Abs | undefined {
       if (classifyIterableArg(args[0]) === "bad") return promiseUnknown();
       const a0 = args[0];
       if (a0?.shape.k === "arr" && a0.shape.element.shape.k === "eff") {
-        return promiseAbs(
-          abs({ k: "arr", element: a0.shape.element.shape.inner }, undefined, undefined, "path"),
-          "path",
-        );
+        // 元素 promise 的拒绝会拒绝 all → settle 不可判（采纳通道在 join 中
+        // 丢失）→ unsettled
+        const el = a0.shape.element.shape as {
+          inner: Abs;
+          rejected?: Abs;
+          unsettled?: boolean;
+        };
+        const base = abs({ k: "arr", element: el.inner }, undefined, undefined, "path");
+        return el.rejected !== undefined || el.unsettled === true
+          ? promiseUnsettled(base)
+          : promiseAbs(base, "path");
       }
       // 字面量 tuple：逐元素展开 thenable（[Promise.resolve(1), 2] → [1, 2]，
-      // 与 race/any 的元素投影同口径）
+      // 与 race/any 的元素投影同口径）；任一元素 promise 携带拒绝通道/风险
+      // → all 结果 unsettled
       if (a0?.shape.k === "tuple") {
-        const els = a0.shape.elements.map(unwrapThenable);
-        return promiseAbs(abs({ k: "tuple", elements: els }, undefined, undefined, "path"), "path");
+        let risky = false;
+        const els = a0.shape.elements.map((el) => {
+          if (el.shape.k === "eff" && el.shape.eff === "promise") {
+            const p = el.shape as { inner: Abs; rejected?: Abs; unsettled?: boolean };
+            if (p.rejected !== undefined || p.unsettled === true) risky = true;
+            return p.inner;
+          }
+          if (thenableRiskOf(el)) risky = true;
+          return el;
+        });
+        const base = abs({ k: "tuple", elements: els }, undefined, undefined, "path");
+        return risky ? promiseUnsettled(base) : promiseAbs(base, "path");
       }
-      return promiseAbs(
+      return promiseUnsettled(
         abs({ k: "arr", element: unknown }, undefined, undefined, "partial"),
         "partial",
       );
@@ -569,7 +1119,16 @@ export function evalPromiseStatic(name: string, args: Abs[]): Abs | undefined {
         // 元素不可判（含非可迭代接收者——原生折为 rejection，非同步抛）
         return promiseUnknown();
       }
-      return promiseAbs(el, "path");
+      // race/any：任一元素 promise 的拒绝可能赢 → 采纳通道在元素联合中
+      // 丢失 → unsettled（纯原始值元素 settled）
+      const a0 = args[0];
+      const risky =
+        a0?.shape.k === "tuple"
+          ? a0.shape.elements.some((e) => isPromiseEff(e) || thenableRiskOf(e))
+          : a0?.shape.k === "arr"
+            ? isPromiseEff(a0.shape.element) || thenableRiskOf(a0.shape.element)
+            : thenableRiskOf(el);
+      return risky ? promiseUnsettled(el) : promiseAbs(el, "path");
     }
     case "allSettled": {
       // Bug 64：同 race/any——同步不抛；值域 arr<{status; value}|{status; reason}>。

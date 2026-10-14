@@ -11,8 +11,8 @@ import {
   registerNudoImportDeps,
   uriToFilePath,
   validateText,
-  type ValidateTextDeps,
 } from "../validation.ts";
+import { makeValidateDeps } from "./helpers.ts";
 
 /**
  * R2-2: analysisCache / knownFiles / nudoDepParents keys must be identical for
@@ -132,14 +132,14 @@ describe("session maps keyed by cacheKey (R2-2 forget/evict)", () => {
         },
       ],
     ]);
-    const deps: ValidateTextDeps = {
-      sendDiagnostics: () => {},
+    const deps = makeValidateDeps({
+      onPublish: () => {},
       getOpenDocumentByPath: (p) => {
         const hit = openDocs.get(cacheKey(p));
         if (hit) revalidated++;
         return hit;
       },
-    };
+    });
 
     // dep change delivered as a drive-slash path — must still find the URI-shaped open doc
     await handleNudoDepFileChanged("c:\\proj\\shapes.nudo.js", deps);
@@ -148,9 +148,7 @@ describe("session maps keyed by cacheKey (R2-2 forget/evict)", () => {
 
   it("POSIX paths behave as before (cacheKey is identity for clean absolute paths)", async () => {
     const src = '// @nudo:case "n" (1)\nfunction f(x) { return x; }\n';
-    await validateText("/test/a.js", "file:///test/a.js", src, 1, {
-      sendDiagnostics: () => {},
-    });
+    await validateText("/test/a.js", "file:///test/a.js", src, 1, makeValidateDeps());
     expect(knownFiles.has("/test/a.js")).toBe(true);
     expect(analysisCache.get("/test/a.js")?.version).toBe(1);
     forgetValidatedFile("/test/a.js");

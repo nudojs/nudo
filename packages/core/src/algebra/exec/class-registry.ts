@@ -4,6 +4,7 @@
  */
 
 import type { Abs } from "../abs.ts";
+import { abs } from "../abs.ts";
 import { markClassValue, classNameOfValue } from "../class-mark.ts";
 
 // 类值身份标记在 class-mark.ts（algebra 叶子）；此处 re-export 维持既有 import 面
@@ -23,14 +24,34 @@ export type EvalClassSpec = {
    * （Super constructor null … is not a constructor）；显式 super() 同抛（$super）。
    */
   superNull?: boolean;
+  /**
+   * N2：extends 目标是**宿主**内建构造器（host fn 或 builtinCtorAbs brand
+   * 身份）——类值静态读/调用（B.keys / E.captureStackTrace）沿链到未注册
+   * 父名时凭此标记走宿主静态通道。mock/桥接父类（fn Abs 同名）不带标记
+   * → 无通道 → sound unknown（不折 undefined / 不误派发宿主真值）。
+   */
+  superBuiltinHost?: boolean;
   ctor?: (thisVal: Abs, ...args: Abs[]) => Abs;
   methods?: Record<string, (thisVal: Abs, ...args: Abs[]) => Abs>;
   /** 实例方法形参展示名（AST 形参名；未调用方法槽 `shape.params` 用） */
   methodParams?: Record<string, string[]>;
-  staticMethods?: Record<string, (...args: Abs[]) => Abs>;
+  /** R5：静态方法 impl 首参 __this = 类值（接收者——沿链调用时是调用类） */
+  staticMethods?: Record<string, (thisVal: Abs, ...args: Abs[]) => Abs>;
   /** 静态方法形参展示名 */
   staticMethodParams?: Record<string, string[]>;
-  statics?: Record<string, Abs>;
+  /**
+   * P2b：构造器元数（首个默认值/rest 形参前的形参数，nativeParamArity
+   * 口径）——类值 .length 自有属性。隐式构造器（基类零参 / 派生
+   * `(...args){super(...args)}`）恒 0。transpile 期记录；未记录的手写
+   * spec（mock 等）undefined → $get 折诚实 unknown（不假 0）。
+   */
+  ctorLength?: number;
+  /**
+   * 静态字段：R5 起值可为 thunk（以类值为 this 求值——原生
+   * ClassFieldDefinitionEvaluation 的 receiver 是类值；箭头/`this.x`
+   * 读写随之恢复）。旧行（宿主 Abs）保持兼容。
+   */
+  statics?: Record<string, Abs | ((cls: Abs) => Abs)>;
   /**
    * Bug 59：实例字段——每次 $new 以新实例为 this 按源序求值（原生
    * InitializeInstanceElements）。name 为字面量键；key 为计算键的
@@ -41,6 +62,12 @@ export type EvalClassSpec = {
     name?: string;
     key?: (thisVal: Abs) => Abs;
     init: (thisVal: Abs) => Abs;
+    /**
+     * Bug 84：PrivateName 声明的私有字段（transpile 期标记）——落地槽打
+     * Slot.internal，对所有属性 introspection 不可见（内部槽语义）；
+     * 计算键公共字段（如 ["#x"]）不带此标记（同键空间共存）。
+     */
+    private?: boolean;
   }>;
   /**
    * Bug 60：计算键成员——synth 名 → 键 Abs（定义期求值，求值本身即
@@ -52,6 +79,20 @@ export type EvalClassSpec = {
   accessors?: Record<string, EvalClassAccessor>;
   /** 静态 get/set：挂在类构造器上，不在实例原型链 */
   staticAccessors?: Record<string, EvalClassAccessor>;
+};
+
+/** 内建错误层级（Error 为根，registry 无 superName 时回退）。
+ *  放本叶子模块：evalClassChain（exec/runtime/members.ts）与
+ *  protoOfRecv（builtins/ctor.ts）共用，后者不可反向引 members（环）。 */
+export const BUILTIN_ERROR_SUPER: Record<string, string> = {
+  Error: "",
+  RangeError: "Error",
+  TypeError: "Error",
+  ReferenceError: "Error",
+  SyntaxError: "Error",
+  URIError: "Error",
+  EvalError: "Error",
+  AggregateError: "Error",
 };
 
 const classRegistry = new Map<string, EvalClassSpec>();
@@ -131,8 +172,113 @@ export function getEvalClass(name: string): EvalClassSpec | undefined {
   return classRegistry.get(name);
 }
 
+/** Bug 58：类值 Abs 注册表（名 → $class 产出的类值本身）。
+ *  protoOfRecv 的父构造器投影按 superName 回取**同一** Abs 引用——
+ *  `Object.getPrototypeOf(B) === A` 折 exact true 的前提（品牌 === 按
+ *  引用恒等，不按名折叠）。与 spec 注册表同生命周期（last-wins /
+ *  clearBClasses 同清）。 */
+const classValues = new Map<string, Abs>();
+
+export function registerClassValue(name: string, value: Abs): void {
+  classValues.set(name, value);
+}
+
+export function lookupClassValue(name: string): Abs | undefined {
+  return classValues.get(name);
+}
+
+// ---- P3b：fn 值父类身份（函数/类表达式值作 extends 目标） ------------------
+// 匿名函数表达式父类（`const Base = function(){}; class B extends Base {}`）
+// 无 shape.name 可作 superName 链键——N2 前直接断链。机制：按 fn Abs 驻留
+// 「伪父名」（WeakMap，同 fn 跨 $class 复用），名下注册空 spec（链可走）
+// + 类值映射（伪名 → fn Abs 本身——类值槽走 / protoOfRecv 父构造器投影
+// 取同一引用）。伪名唯一（不与用户类名/内建名碰撞，无 BUG-026 碰撞面）。
+
+const fnParentNames = new WeakMap<object, string>();
+let fnParentSeq = 0;
+
+/** fn Abs → 伪父名（不存在则合成并注册空 spec + 类值映射）。 */
+export function ensureFnParentName(fnAbs: Abs): string {
+  let n = fnParentNames.get(fnAbs);
+  if (n === undefined) {
+    n = `__nudoFnParent${++fnParentSeq}`;
+    fnParentNames.set(fnAbs, n);
+    registerEvalClass({ name: n });
+    registerClassValue(n, fnAbs);
+  }
+  return n;
+}
+
+/** fn Abs 的 prototype 对象（按 fn Abs 驻留；原地可变跨读存活——原生每
+ *  fn 唯一共享 prototype，`f.prototype === f.prototype` 恒真、
+ *  `Base.prototype.x = 1` 写后读可见）。constructor 槽指回 fn 自身
+ *  （MakeConstructor 语义）。 */
+const fnProtos = new WeakMap<object, Abs>();
+
+export function fnProtoOf(fnAbs: Abs): Abs {
+  let p = fnProtos.get(fnAbs);
+  if (p === undefined) {
+    p = abs(
+      { k: "obj", slots: { constructor: { value: fnAbs } } },
+      undefined,
+      undefined,
+      "path",
+    );
+    fnProtos.set(fnAbs, p);
+  }
+  return p;
+}
+
+/**
+ * Bug 84：用户类实例 brand 的内层闭 obj（公有/私有自有槽的承载者）。
+ * 属性 introspection 面（Object.keys/values/entries / gOPN / assign /
+ * spread / JSON.stringify / hasOwn）据此展开公有自有槽——私有槽以
+ * Slot.internal 打标（transpile 期 PrivateName 标记）在各面剔除。
+ * 非实例面 → undefined（保持既有保守口径）：
+ * - 类值（classNameOfValue 命中——ctor facet，槽是 statics+name）；
+ * - 未注册 brand（内建 Error/Map/Set/… 的自有槽枚举面另有专门口径）；
+ * - 内层非闭 obj（开放键集不可精确列举）。
+ */
+export function classInstanceInnerOf(a: Abs): Abs | undefined {
+  const s = a.shape;
+  if (s.k !== "brand") return undefined;
+  if (classNameOfValue(a as object) === s.name) return undefined;
+  if (!classRegistry.has(s.name)) return undefined;
+  const inner = s.shape;
+  const is = inner.shape;
+  if (is.k !== "obj" || is.open || is.index) return undefined;
+  return inner;
+}
+
+/**
+ * Bug 84：类继承链是否带 JSON 用户面（toJSON 方法）——有则
+ * stringify 不可折（原生经原型查找调用 value.toJSON），保持
+ * 保守 partial。链止于未注册名（extends Error 等内建基类——
+ * Error 家族无 toJSON、stringify 恒 total "{}"）。
+ *
+ * 类访问器（spec.accessors）**不**构成 JSON 用户面：原生访问器
+ * 安装在原型上，非实例自有属性；JSON.stringify 只枚举自有可
+ * 枚举键（字段），不经 [[Get]] 调用原型访问器（node 实测
+ * `class A { get x(){} pub=2 }` → `{"pub":2}`）。动态
+ * defineProperty 到实例的访问器在内层留占位槽，absToJsonNative
+ * 经 readProperty/accessorTable 派发 getter（Bug 57 口径），
+ * 折叠仍精确；抽象键写使内层 open → NOT_LITERAL。
+ */
+export function classChainHasJsonUserFace(name: string): boolean {
+  let cur: string | undefined = name;
+  const seen = new Set<string>();
+  while (cur && !seen.has(cur)) {
+    seen.add(cur);
+    const spec = classRegistry.get(cur);
+    if (spec?.methods?.["toJSON"]) return true;
+    cur = spec?.superName;
+  }
+  return false;
+}
+
 export function clearBClasses(): void {
   classRegistry.clear();
+  classValues.clear();
   classEpochs.clear();
   classCollisions.length = 0;
 }

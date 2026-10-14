@@ -48,6 +48,13 @@ export type TranspileOptions = {
   hasTryHandler?: boolean;
   /** 当前 try 的 catch 体是否可能 rethrow（正常路径 soft 效果 release 而非 digest） */
   tryRethrowCatch?: boolean;
+  /** yield 点 try 上下文位（Bug 52）：进入 try 块/catch 体时按位 OR——
+   *  1 = 外层任一 try 带 finally，2 = 外层任一 try 带 catch（数值与
+   *  runtime/control.ts 的 YIELD_TRY_FINALLY / YIELD_TRY_CATCH 同步）；
+   *  R1a catch 事实位（16/32/64）描述**最近** enclosing catch：16 = 含
+   *  return，32 = 含 yield，64 = 可能 rethrow 进外层 catch（结局不可分类）。
+   *  发射为 $yield/$yieldStar 第二实参；函数/方法体边界重置为 0。 */
+  yieldTryCtx?: number;
   /** 分支/循环体内深度（赋值记录 conditional 标记；inLoop 也计入） */
   conditionalFlow?: number;
   /** 函数/箭头体内（顶层绑定表只收顶层作用域） */
@@ -66,6 +73,14 @@ export type TranspileOptions = {
    */
   destrTmpSeq?: { n: number };
   /**
+   * try 临时名单调计数器（`__nudoTm_`/`__nudoE_`；transpileFile /
+   * transpileBodyNode 创建，单次转译输出内共享）。此前按源行号命名——
+   * 同一作用域同一行两个 try（压缩/生成代码）重名 → 重复 `const` 声明 →
+   * `new Function` SyntaxError 整模块 fail-closed；计数器与行号解耦
+   * （含 loc 缺失 `?? 0` 的碰撞），跨语句单调。
+   */
+  tryTmpSeq?: { n: number };
+  /**
    * 当前词法作用域可见的 const 绑定名（用户层再赋值须 TypeError）。
    * 成员/下标写对根的内部重绑不在用户赋值路径，不走此表。
    */
@@ -81,4 +96,28 @@ export type TranspileOptions = {
    * 声明语句），此类名字从提升集扣除、不发改赋值。
    */
   keepVarDecl?: boolean;
+  /**
+   * issue #165：文件含 `@nudo:assume` 引理——transpileFile 顶层对源文本
+   * 做一次 includes 判定后置位。文件级快速门：无引理的文件不进锚定收集，
+   * 发射产物逐字节不变（零插桩开销）。
+   */
+  assumeDirectiveFile?: boolean;
+  /**
+   * issue #165：待锚定的 declarator AST 节点集合（按对象身份匹配）——
+   * 函数体**直接子语句** VariableDeclaration 中带 init 的 Identifier
+   * declarator。发射位对命中者把 init 包 `$assumeAnchor(init, name)`
+   *（SSA：@nudo:assume 引理作用于绑定值，从定义点到作用域尾）。嵌套块 /
+   * for-init / 解构不收；嵌套函数体在自身边界重算（并集外层集合）。
+   * 运行时护栏（premise 不含该名的 le 原子则直通原值）见
+   * exec/runtime/ops.ts。
+   */
+  anchorDeclNodes?: ReadonlySet<object>;
+  /**
+   * 节点级 Abs 记录插桩（hover 重放用）：Identifier 值读与
+   * 静态成员读的转译输出包 `$nodoPos(<src>, line, column)`，
+   * 运行时把 (行, 列) → Abs 记入活跃的位置 collector（无收
+   * 集器时 no-op 直通）。默认关——热路径（check/模块图）不
+   * 承担插桩开销；仅 replayFnAbsNodes 重放开。
+   */
+  recordPositions?: boolean;
 };

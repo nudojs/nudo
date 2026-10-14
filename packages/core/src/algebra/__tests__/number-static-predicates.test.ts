@@ -13,15 +13,7 @@ import {
   callTranspiledExportFull,
   litValue,
 } from "../index.ts";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
-
-function val(src: string) {
-  return litValue(call(src).result);
-}
+import { val } from "./eval-helpers.ts";
 
 describe("Number.isInteger / isNaN / isFinite on non-number lits", () => {
   it("Number.isInteger non-numbers fold to false", () => {

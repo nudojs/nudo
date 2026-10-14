@@ -104,7 +104,7 @@ Context: [@nudo:case](../concepts/directives.md#nudocase--debug-witnesses) · [D
 
 ### `nudo:interface-param-mismatch` {#nudo-interface-param-mismatch}
 
-Handwritten contract param name is not on the formal surface. (Diagnostic ID keeps historical `interface` token; product term is **contract**.)
+Handwritten contract param name is not on the formal surface. (Diagnostic ID keeps historical `interface` token; product term is **contract**.) Legal names: plain parameter names, destructured binding names (source property keys for renames), and dot-path keys for nested destructuring (`'card.grade'` for `({ card: { grade } })`) — see [Sidecar auto-binding](../concepts/directives.md#main-path-sidecar-auto-binding).
 
 Context: [Contracts first](../guides/contract.md#contracts-first-contracts-style) · [Interface diagnostics](../guides/check.md#interface-diagnostics)
 
@@ -227,6 +227,17 @@ Return postcondition could not be proved (any / unknown / opaque face, or a wide
 
 Context: [nudo check](../guides/check.md#what-it-checks)
 
+### `nudo:assume-relied` {#nudo-assume-relied}
+
+```text
+sim: return contract proved via @nudo:assume d <= max
+→ @nudo:assume is a user-supplied axiom — falsify it with concrete @nudo:case runs (nudo test)
+```
+
+A return-contract proof **relied on a user-supplied lemma** (`@nudo:assume`). **Info** — an audit annotation, not a gate: the engine verifies the obligation (the return contract), never the lemma itself. The report suggests falsifying the lemma with concrete `@nudo:case` runs (`nudo test`) — a wrong lemma makes the affected proof unsound, so the reliance must stay visible. Complement of [`nudo:unproven-return`](#nudo-unproven-return) (cannot prove — honestly kept as a warning).
+
+Context: [@nudo:assume](../concepts/directives.md#nudoassume--user-lemmas) · [nudo check](../guides/check.md#what-it-checks)
+
 ### `nudo:unknown-recv` {#nudo-unknown-recv}
 
 Member access on `unknown` receiver. Does not replace L2 throws modeling.
@@ -253,13 +264,24 @@ Context: [Evaluator gaps](../concepts/limits.md#evaluator-gaps-summary)
 
 ### `nudo:recursion-truncated` {#nudo-recursion-truncated}
 
-Recursion budget hit; result widened. Budget knobs and what to do: [Performance](../guides/performance.md).
+Recursive evaluation was cut short; the result widened to `unknown#opaque`. The message — and the `reason` field in `check --json` — tells you **which kind**:
+
+- **`cycle`** — a call with the *same abstract arguments* was already on the evaluation stack (data-dependent self/mutual recursion, e.g. `walk(dir, out)` recursing on `(dir, out)`). This is **not a budget**: raising `@nudo:budget` cannot lift it. Make the recursion arguments vary per level, narrow the base case, or declare `@nudo:contract`.
+- **`depth` / `calls`** — the call budget (depth 64 / 20,000 total entries) ran out. Raising `@nudo:budget depth=… / calls=…` on the function can help; otherwise restructure the recursion.
+
+Budget knobs and what to do: [Performance](../guides/performance.md).
 
 Context: [Analysis budgets](../guides/performance.md#analysis-budgets)
 
 ### `nudo:fork-truncated` {#nudo-fork-truncated}
 
 Branch-expansion budget (`$fork` total count) hit; affected results widened. **Warning.** Raise via `NUDO_MAX_FORKS` or `package.json#nudo.analysis.maxForks` (default 5000). Budgets and fixes: [Performance](../guides/performance.md).
+
+Context: [Analysis budgets](../guides/performance.md#analysis-budgets)
+
+### `nudo:loop-truncated` {#nudo-loop-truncated}
+
+A loop's exit condition stayed concrete-true past the iteration budget (abstract unroll cap 8, concrete extension cap 1024 — e.g. an unbounded `while (i < n)` with concrete `i`/`n`); the loop state was widened (bounded, not exact). **Info.** This is a *loop* iteration budget, not the call budget — `@nudo:budget calls=…/depth=…` cannot lift it. Make the bound data-dependent (abstract) or pin the result with `@nudo:case` / `@nudo:contract` — non-blocking.
 
 Context: [Analysis budgets](../guides/performance.md#analysis-budgets)
 
@@ -316,6 +338,19 @@ Context: [Directive syntax](../concepts/directives.md) · [Skip grammar](../conc
 Malformed `@nudo:contract` segment or `@nudo:import` form (e.g. `x > 0` instead of `x positive`, default import). **Warning** — the segment is ignored; use `<param> <constraintName>` or `return <constraintName>`.
 
 Context: [Contracts](../concepts/directives.md#nudo--constraint-templates) · [Contract gate (L1)](../guides/check.md#l1--explicit-contracts)
+
+### `nudo:assume-invalid` {#nudo-assume-invalid}
+
+```text
+sim: malformed @nudo:assume 'd <= 10' (expected <param> <= <param> or <param> >= <param>; constant bounds belong to sidecar contracts)
+sim: @nudo:assume name(s) not bound as parameters or top-level locals (x, y)
+```
+
+A `@nudo:assume` segment is outside the `var <= var` grammar, or references names that are not parameters or top-level `const`/`let`/`var` locals of the anchored function's body (destructuring, nested blocks, and `for`-init declarations do not count). **Error** — the segment is ignored; no lemma folds. The grammar accepts only `<name> <= <name>` (`>=` is normalized to `le`); `<` / `>` / `==` and constant bounds (`d <= 10`) are invalid — **constant bounds belong to sidecar contracts** (`number().le(10)`); the directive is only for cross-variable lemmas the engine cannot derive.
+
+**Fix:** reference names bound as parameters or top-level locals of the anchored function; move constant bounds into a sidecar / `@nudo:contract` (for a local's constant bound, put the contract on the return of the callee that produces it).
+
+Context: [@nudo:assume](../concepts/directives.md#nudoassume--user-lemmas) · [Contract gate (L1)](../guides/check.md#l1--explicit-contracts)
 
 ### `nudo:env-unresolved` {#nudo-env-unresolved}
 

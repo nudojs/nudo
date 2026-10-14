@@ -73,6 +73,7 @@ import {
 } from "./server-watch.ts";
 import {
   makeHandleSelectCase,
+  makeHandleSelectContract,
   makeHandleGetActiveCases,
   makeHandleContractEmit,
   type CommandDeps,
@@ -139,6 +140,13 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
    */
   let clientDefaultAnalysisMode: AnalysisMode | undefined;
 
+  /**
+   * 宿主设置（VS Code `nudo.inlayHints.parameters` 等）提供的默认值。
+   * 优先级同 analysis.mode：项目 package.json#nudo.inlayHints.parameters
+   * 显式值赢；此值只在项目未显式设置该键时作为默认；均缺失 → false（关）。
+   */
+  let clientDefaultInlayParams: boolean | undefined;
+
   let debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   connection.onInitialize((params: InitializeParams): InitializeResult => {
@@ -150,10 +158,15 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
       if (root) workspaceRoots = [root];
     }
     // initializationOptions（vscode 扩展等宿主转发的工作区设置）：
-    // { analysis: { mode } }。作为项目配置缺失时的默认 mode（项目显式值优先）。
+    // { analysis: { mode } }、{ inlayHints: { parameters } }。作为项目配置
+    // 缺失时的默认（项目显式值优先）。
     clientDefaultAnalysisMode = parseAnalysisMode(
       (params.initializationOptions as { analysis?: { mode?: unknown } } | undefined)
         ?.analysis?.mode,
+    );
+    clientDefaultInlayParams = parseInlayParams(
+      (params.initializationOptions as { inlayHints?: { parameters?: unknown } } | undefined)
+        ?.inlayHints?.parameters,
     );
     return {
     capabilities: {
@@ -268,6 +281,11 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
     return raw === "exports" || raw === "directives" || raw === "all" ? raw : undefined;
   }
 
+  /** inlayHints.parameters 归一化：非法/缺失 → undefined（回落默认 false）。 */
+  function parseInlayParams(raw: unknown): boolean | undefined {
+    return typeof raw === "boolean" ? raw : undefined;
+  }
+
   /**
    * 文件级 AnalysisConfig：项目 package.json#nudo.analysis.mode 显式值优先；
    * 项目未设置该键时用宿主设置（initializationOptions / didChangeConfiguration
@@ -281,6 +299,18 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
       return { ...cfg, mode: clientDefaultAnalysisMode };
     }
     return cfg;
+  }
+
+  /**
+   * 参数约束 inlay（形参后 `where …`）开关，按文件解析。
+   * 优先级：项目 package.json#nudo.inlayHints.parameters 显式值赢；
+   * 项目未设置该键时用宿主设置作默认；均缺失 → false（关）。
+   */
+  function inlayParamsEnabled(filePath: string): boolean {
+    const projectValue = findProjectConfig(dirname(filePath))?.config
+      ?.inlayHints?.parameters;
+    if (projectValue !== undefined) return projectValue;
+    return clientDefaultInlayParams ?? false;
   }
 
   function isNudoFile(uri: string): boolean {
@@ -302,8 +332,19 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
       (params.settings as { nudo?: { analysis?: { mode?: unknown } } } | undefined)
         ?.nudo?.analysis?.mode,
     );
-    if (next === clientDefaultAnalysisMode) return;
+    const nextInlayParams = parseInlayParams(
+      (params.settings as { nudo?: { inlayHints?: { parameters?: unknown } } } | undefined)
+        ?.nudo?.inlayHints?.parameters,
+    );
+    const inlayChanged = nextInlayParams !== clientDefaultInlayParams;
+    if (next === clientDefaultAnalysisMode && !inlayChanged) return;
     clientDefaultAnalysisMode = next;
+    clientDefaultInlayParams = nextInlayParams;
+    // inlay 开关变化（含移除 → 回落项目/默认）：客户端拉取的
+    // inlay hints 需刷新重取
+    if (inlayChanged) {
+      connection.languages.inlayHint.refresh().catch(() => {});
+    }
     // gate 结果失效：重检打开文档（新纳入 → 出诊断；新排除 → 清诊断）
     nudoFileCache.clear();
     for (const doc of documents.all()) {
@@ -375,6 +416,7 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
     isNudoFile,
     getActiveCases: getActiveCasesForUri,
     activeLoadModule,
+    inlayParamsEnabled,
     get agentToolDeps() {
       return agentToolDepsRef.current!;
     },
@@ -420,6 +462,7 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
   };
 
   const handleSelectCase = makeHandleSelectCase(commandDeps);
+  const handleSelectContract = makeHandleSelectContract(commandDeps);
   const handleGetActiveCases = makeHandleGetActiveCases(commandDeps);
   const handleContractEmit = makeHandleContractEmit(commandDeps);
 
@@ -464,6 +507,8 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
         return handleContractEmit(arg as Parameters<typeof handleContractEmit>[0]);
       case "nudo.selectCase":
         return handleSelectCase(arg as Parameters<typeof handleSelectCase>[0]);
+      case "nudo.selectContract":
+        return handleSelectContract(arg as Parameters<typeof handleSelectContract>[0]);
       case "nudo.getActiveCases":
         return handleGetActiveCases(arg as Parameters<typeof handleGetActiveCases>[0]);
       default:
@@ -485,6 +530,17 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
         uri: args[0] as string,
         functionName: args[1] as string,
         caseIndex: args[2] as number,
+      });
+    }
+    // CodeLens 契约选项位置参数：[uri, functionName]（selectContract）
+    if (
+      params.command === "nudo.selectContract" &&
+      args.length >= 2 &&
+      typeof args[0] === "string"
+    ) {
+      return handleSelectContract({
+        uri: args[0] as string,
+        functionName: args[1] as string,
       });
     }
     // CodeLens passes contract print positionally: [uri, functionName?]
@@ -519,6 +575,7 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
   });
 
   connection.onRequest("nudo/selectCase", handleSelectCase);
+  connection.onRequest("nudo/selectContract", handleSelectContract);
 
   connection.onRequest("nudo/getActiveCases", handleGetActiveCases);
 
@@ -637,6 +694,16 @@ function isMainModule(): boolean {
 // Bin entry: transport selection + createConnection live here so importing
 // createNudoServer (tests, embeds) never starts a language server.
 if (isMainModule()) {
+  // 进程级兜底：任何未被 handler 捕获的异步异常默认会直接终止进程
+  // （Node ≥15 unhandledRejections=throw），客户端只看到 "server shut down"
+  // 且无任何 stderr 留痕——改为记录后继续运行，把「无日志的静默死亡」
+  // 变成可排查的日志事件。
+  process.on("unhandledRejection", (reason) => {
+    console.error(`[nudo-lsp] unhandled rejection:`, reason);
+  });
+  process.on("uncaughtException", (err) => {
+    console.error(`[nudo-lsp] uncaught exception:`, err);
+  });
   // Default to stdio when the host did not pick a transport (Zed, MCP bridges,
   // `nudo-lsp` with no args). VS Code passes --node-ipc via vscode-languageclient.
   if (

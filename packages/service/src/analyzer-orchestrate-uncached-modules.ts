@@ -51,13 +51,13 @@ export function computeFnDepSegment(
 ): { fnDepSeg: string | null; fnDepFailClosed: boolean } {
   // dep 内容指纹（default 与 custom loader 同口径）：全图 BFS 一次，
   // 整文件 evaluator 缓存键（tryRunEval depKey）与逐函数 fn 缓存键共用
-  // ——否则 F 个函数 = F 次读盘（R2-5）。truncated / fingerprint 失败：
+  // ——否则 F 个函数 = F 次读盘（R2-5）。truncated / readerr / 指纹失败：
   // 与整文件 noCache 同口径 fail-closed（null = 禁缓存）。
   let fnDepSeg: string | null = "-";
   let fnDepFailClosed = false;
   try {
     const dfp = loadModuleDepsFingerprint(source, loadModule ?? defaultLoadModule, filePath);
-    if (dfp.truncated) {
+    if (dfp.truncated || dfp.readError) {
       fnDepFailClosed = true;
       fnDepSeg = null;
     } else {

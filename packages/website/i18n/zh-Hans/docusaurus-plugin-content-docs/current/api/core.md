@@ -233,7 +233,7 @@ createEnvironment(parent?, bindings?)
 | <a id="constraintbuilder"></a>`ConstraintBuilder` | type | `@nudo:contract` builder grammar | `ConstraintBuilder = NudoConstraint & { gt(n: number): ConstraintBuilder; ge(n: number): ConstraintBuilder; lt(n: number): ConstraintBuild...` |
 | <a id="createenvironment"></a>`createEnvironment` | fn | env host surface | `createEnvironment( parent?: Environment, bindings: Map<string, Abs> = new Map(), ): Environment` |
 | <a id="effectiveinterface"></a>`effectiveInterface` | fn | interface tiers | `effectiveInterface( source: string, fnName: string, opts: EffectiveInterfaceOpts = {}, ): EffectiveInterface \| undefined` |
-| <a id="effectiveinterface"></a>`EffectiveInterface` | type | interface tiers | `EffectiveInterface = { fnName: string; params: Array<{ param: string; constraint: NudoConstraint }>; returns?: { constraint: NudoConstrai...` |
+| <a id="effectiveinterface"></a>`EffectiveInterface` | type | interface tiers | `EffectiveInterface = { fnName: string; params: Array<{ param: string; constraint: NudoConstraint; display?: string }>; returns?: { constr...` |
 | <a id="environment"></a>`Environment` | type | env host surface | `Environment = { lookup(name: string): Abs; bind(name: string, value: Abs): Environment; update(name: string, value: Abs): boolean; extend...` |
 | <a id="evalexprabs"></a>`evalExprAbs` | fn | Abs-native expression eval | `evalExprAbs( expr: import("@babel/types").Expression, bindings: Record<string, Abs> = {}, ): Abs` |
 | <a id="extractfileenvnames"></a>`extractFileEnvNames` | const | single-source `@nudo:` directive grammar (see `docs/design/directive-scope.md`) | — |
@@ -248,12 +248,12 @@ createEnvironment(parent?, bindings?)
 | <a id="formatabs"></a>`formatAbs` | fn | extensional rendering (one-way) | `formatAbs(a: Abs, opts: FormatOptions = {}): string` |
 | <a id="formatcheckreport"></a>`formatCheckReport` | fn | extensional rendering (one-way) | `formatCheckReport(r: CheckReport, opts: { verbose?: boolean } = {}): string` |
 | <a id="formatconstraint"></a>`formatConstraint` | fn | extensional rendering (one-way) | `formatConstraint(c: NudoConstraint): string` |
-| <a id="formatshape"></a>`formatShape` | fn | extensional rendering (one-way) | `formatShape(a: Abs): string` |
+| <a id="formatshape"></a>`formatShape` | fn | extensional rendering (one-way) | `formatShape( a: Abs, opts?: { maxDepth?: number; showLits?: boolean; pretty?: boolean }, ): string` |
 | <a id="generalizeall"></a>`generalizeAll` | fn | symbolic α generalization | `generalizeAll( source: string, opts: { budget?: LeakBudget } = {}, ): PolyFn[]` |
 | <a id="generalizefromast"></a>`generalizeFromAst` | fn | symbolic α generalization | `generalizeFromAst( fnName: string, source: string, opts: { budget?: LeakBudget; label?: string; refine?: EffectiveInterfaceOpts; file?: ReturnType<typeof babelParse>; depsFp?: LoadDepsFingerprint; sidecarFp?: string; modules?: Record<string, AbsModuleExports \| Record<string, unknown>>; inject?: RunTranspiledOptions; } = {}, ): PolyFn \| undefined` |
 | <a id="getparsesourcecachesize"></a>`getParseSourceCacheSize` | fn | Babel parse + memo | `getParseSourceCacheSize(): number` |
 | <a id="instantiateconstraint"></a>`instantiateConstraint` | fn | contract checking | `instantiateConstraint( c: NudoConstraint, paramName: string, depth: number = LAZY_TEMPLATE_DEPTH, ): Pred` |
-| <a id="interfacetierinfo"></a>`InterfaceTierInfo` | type | interface tiers | `InterfaceTierInfo = { source: InterfaceSource; display?: string; }` |
+| <a id="interfacetierinfo"></a>`InterfaceTierInfo` | type | interface tiers | `InterfaceTierInfo = { source: InterfaceSource; display?: string; sidecarPath?: string; sidecarLine?: number; }` |
 | <a id="interfacetierof"></a>`interfaceTierOf` | fn | interface tiers | `interfaceTierOf( source: string, fnName: string, fromFile: string, opts: InterfaceTierOpts = {}, ): InterfaceTierInfo \| undefined` |
 | <a id="isabsapplyresult"></a>`isAbsApplyResult` | fn | evaluator execution (analyze mode); `callTranspiledExportApply` is the only apply-wrap of `callTranspiledExportFull` (throws channel, H1); construct AbsApplyResult only via `makeAbsApplyResult` (brand) | `isAbsApplyResult(v: AbsApplyReturn): v` |
 | <a id="isexactlit"></a>`isExactLit` | fn | literal Abs; `litValue` → `LitValueResult` tagged (`&#123;ok:true,value&#125;\ | `isExactLit(a: Abs): boolean` |
@@ -297,7 +297,7 @@ createEnvironment(parent?, bindings?)
 | <a id="serializecheckjsonmulti"></a>`serializeCheckJsonMulti` | fn | `nudo check` gate | `serializeCheckJsonMulti(reports: CheckJson[]): CheckJsonMulti` |
 | <a id="shape"></a>`shape` | fn | term / shape builders | `shape( fields: Record< string, NudoConstraint \| ConstraintBuilder \| number \| string \| boolean \| null \| undefined >, ): ConstraintBuilder` |
 | <a id="shape"></a>`Shape` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `Shape = \| { k: "never" } \| { k: "any" } \| { k: "unknown" } \| { k: "prim"; type: PrimName } \| { k: "obj"; slots: Record<string, { value: A...` |
-| <a id="slot"></a>`Slot` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `Slot = { value: Abs; optional?: boolean; readonly?: boolean }` |
+| <a id="slot"></a>`Slot` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `Slot = { value: Abs; optional?: boolean; readonly?: boolean; internal?: boolean; }` |
 | <a id="spy"></a>`spy` | fn | test mock helpers | `spy(): MockHelper` |
 | <a id="str"></a>`str` | fn | Abs constructors / faces | `str(): Abs` |
 | <a id="string"></a>`string` | fn | `@nudo:contract` builder grammar | `string(): ConstraintBuilder` |
@@ -337,14 +337,14 @@ createEnvironment(parent?, bindings?)
 | <a id="$foriter"></a>`$forIter` | const | control-flow lowering | — |
 | <a id="$fork"></a>`$fork` | fn | control-flow lowering | `$fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): Abs` |
 | <a id="$ge"></a>`$ge` | fn | operator runtime | `$ge(a: Abs, b: Abs): Abs` |
-| <a id="$gen"></a>`$gen` | fn | async / generator | `$gen(body: () => void): Abs` |
+| <a id="$gen"></a>`$gen` | fn | async / generator | `$gen(body: () => Abs): Abs` |
 | <a id="$get"></a>`$get` | fn | object / member runtime | `$get( o: Abs, key: string, opts?: { silent?: boolean }, ): Abs` |
 | <a id="$idx"></a>`$idx` | fn | array runtime | `$idx( a: Abs, i: Abs, opts?: { silent?: boolean }, ): Abs` |
 | <a id="$idxset"></a>`$idxSet` | fn | array runtime | `$idxSet(a: Abs, i: Abs, value: Abs): Abs` |
 | <a id="$in"></a>`$in` | fn | value / class runtime | `$in(key: Abs, o: Abs): Abs` |
 | <a id="$instanceof"></a>`$instanceof` | fn | value / class runtime | `$instanceof(left: Abs, rightName: string, rightVal?: Abs): Abs` |
 | <a id="$join"></a>`$join` | fn | operator runtime | `$join(a: Abs, b: Abs): Abs` |
-| <a id="$len"></a>`$len` | fn | array runtime | `$len(a: Abs): Abs` |
+| <a id="$len"></a>`$len` | fn | array runtime | `$len(a: Abs, opts?: { silent?: boolean }): Abs` |
 | <a id="$lit"></a>`$lit` | fn | value / class runtime | `$lit(v: unknown): Abs` |
 | <a id="$loopbreak"></a>`$loopBreak` | fn | control-signal / throw | `$loopBreak(label?: string): never` |
 | <a id="$loopcontinue"></a>`$loopContinue` | fn | control-signal / throw | `$loopContinue(label?: string): never` |
@@ -357,7 +357,7 @@ createEnvironment(parent?, bindings?)
 | <a id="$pow"></a>`$pow` | fn | operator runtime | `$pow(a: Abs, b: Abs): Abs` |
 | <a id="$rawthis"></a>`$rawThis` | fn | value / class runtime | `$rawThis(v: unknown): Abs` |
 | <a id="$recordbinding"></a>`$recordBinding` | fn | call-site recording for analyze | `$recordBinding(name: string, value: unknown): void` |
-| <a id="$set"></a>`$set` | fn | object / member runtime | `$set(o: Abs, key: string, value: Abs): Abs` |
+| <a id="$set"></a>`$set` | fn | object / member runtime | `$set( o: Abs, key: string, value: Abs, opts?: { internal?: boolean }, ): Abs` |
 | <a id="$spread"></a>`$spread` | fn | object / member runtime | `$spread(a: Abs, b: Abs): Abs` |
 | <a id="$switch"></a>`$switch` | fn | control-flow lowering | `$switch( disc: Abs, cases: Array<{ test: Abs; run: () => Abs }>, dflt?: () => Abs, ): Abs` |
 | <a id="$throw"></a>`$throw` | fn | control-signal / throw | `$throw(v: Abs): never` |
@@ -368,7 +368,7 @@ createEnvironment(parent?, bindings?)
 | <a id="$yield"></a>`$yield` | fn | async / generator | `$yield(v: Abs): Abs` |
 | <a id="$yieldstar"></a>`$yieldStar` | const | async / generator | — |
 | <a id="asabsval"></a>`asAbsVal` | fn | value / class runtime | `asAbsVal(v: unknown): Abs` |
-| <a id="evalcallrecord"></a>`EvalCallRecord` | type | call-site recording for analyze | `EvalCallRecord = { fnName: string; args: Abs[]; result: Abs; callLoc?: { line: number; column: number }; threw: boolean; }` |
+| <a id="evalcallrecord"></a>`EvalCallRecord` | type | call-site recording for analyze | `EvalCallRecord = { fnName: string; args: Abs[]; result: Abs; callLoc?: { line: number; column: number }; threw: boolean; depth?: number; }` |
 | <a id="filltuple"></a>`fillTuple` | fn | array runtime | `fillTuple( shape: { k: "tuple"; elements: Abs[]; holes?: number[] } \| { k: "arr"; element: Abs }, vals: Abs[], arr: Abs, ): Abs` |
 | <a id="foldrequirespecarg"></a>`foldRequireSpecArg` | fn | static folding helpers | `foldRequireSpecArg(arg: unknown): string \| undefined` |
 | <a id="foldstaticstringexpr"></a>`foldStaticStringExpr` | fn | static folding helpers | `foldStaticStringExpr(node: unknown): string \| undefined` |
@@ -386,7 +386,7 @@ createEnvironment(parent?, bindings?)
 | <a id="transpilesource"></a>`transpileSource` | fn | JS AST → `$op` program | `transpileSource(source: string, opts: TranspileOptions = {}): string` |
 
 <details>
-<summary>src/index.ts 其余导出（344）</summary>
+<summary>src/index.ts 其余导出（348）</summary>
 
 | 名称 | 种类 | 说明 | 签名 |
 |------|------|------|------|
@@ -395,12 +395,12 @@ createEnvironment(parent?, bindings?)
 | <a id="abscallrecord"></a>`AbsCallRecord` | type | Abs 域调用记录（eval 通道 EvalCallRecord 的同形投影） | `AbsCallRecord = { fnName: string; args: Abs[]; result: Abs; callLoc?: { line: number; column: number }; threw?: boolean; }` |
 | <a id="absfnimpl"></a>`AbsFnImpl` | type | — | `AbsFnImpl = { params: string[]; body?: Node; async?: boolean; env?: AstEnv; kind?: string; length?: number; apply?: (args: Abs[], thisVal...` |
 | <a id="absfunction"></a>`absFunction` | fn | 造一个带实现的 Abs 函数值 | `absFunction( params: string[], impl: Omit<AbsFnImpl, "params">, opts?: { name?: string; paramTypes?: Abs[]; returnType?: Abs; slots?: Record<string, { value: Abs; optional?: boolean; readonly?: boolean }>; conf?: Confidence; ctor?: boolean; length?: number; }, ): Abs` |
-| <a id="absmoduleexports"></a>`AbsModuleExports` | type | — | `AbsModuleExports = { named: Record<string, Abs>; default?: Abs; evaluated?: boolean; }` |
+| <a id="absmoduleexports"></a>`AbsModuleExports` | type | — | `AbsModuleExports = { named: Record<string, Abs>; default?: Abs; evaluated?: boolean; cjsMain?: boolean; }` |
 | <a id="absshapekey"></a>`absShapeKey` | fn | — | `absShapeKey(a: Abs, seen: Set<object> = new Set()): string` |
 | <a id="abssigimpl"></a>`AbsSigImpl` | type | Abs 原生 env/builtin 实现（evaluator 优先） | `AbsSigImpl = (args: Abs[], thisVal?: Abs) => Abs \| undefined` |
 | <a id="abstoconstraint"></a>`absToConstraint` | fn | Abs → 契约；不可表达 → undefined。 | `absToConstraint( a: Abs, budget: ProjectionBudget = new ProjectionBudget(), ): NudoConstraint \| undefined` |
 | <a id="abstostring"></a>`absToString` | fn | — | `absToString(a: Abs): string` |
-| <a id="actionsforissue"></a>`actionsForIssue` | fn | 诊断码 → 结构化动作（AI1）；未知码给 info 提示 | `actionsForIssue(i: { code: string; expected?: string; suggestion?: string; fn?: string; }): CheckAction[]` |
+| <a id="actionsforissue"></a>`actionsForIssue` | fn | 诊断码 → 结构化动作（AI1）；未知码给 info 提示 | `actionsForIssue(i: { code: string; expected?: string; suggestion?: string; fn?: string; reason?: string; }): CheckAction[]` |
 | <a id="add"></a>`add` | fn | — | `add(a: Abs, b: Abs, phi: Phi = pTrue): Abs` |
 | <a id="alphaof"></a>`alphaOf` | fn | 仅当 term 是 var 且 id ∈ alphaIds（本次 typeParams）时复用；否则 fresh α。 | `alphaOf( absOrTerm: Abs \| Term \| undefined, ctx: HofCollectCtx, ): Term` |
 | <a id="applycallbackabs"></a>`applyCallbackAbs` | fn | — | `applyCallbackAbs( cb: Abs \| { type: string }, args: Abs[], env: unknown, phi: unknown, budget: unknown, thisVal?: Abs, ): Abs` |
@@ -425,7 +425,7 @@ createEnvironment(parent?, bindings?)
 | <a id="callatfunctionboundary"></a>`callAtFunctionBoundary` | fn | 函数调用边界：callee 的 loop/early-return 不得冒泡成 caller 结果。 | `callAtFunctionBoundary<T>(body: () => T): T` |
 | <a id="canonicalarrayindex"></a>`canonicalArrayIndex` | fn | ES 规范数组下标（无前导零、&lt; 2^32-1）；非规范键返回 undefined | `canonicalArrayIndex(v: unknown): number \| undefined` |
 | <a id="checkaction"></a>`CheckAction` | type | 结构化修复动作（AI1；稳定枚举，只增不改语义） | `CheckAction = { kind: "draft" \| "relax" \| "callsite" \| "assume" \| "mock" \| "emit" \| "ignore-throws" \| "info"; command?: string; label: st...` |
-| <a id="checkissue"></a>`CheckIssue` | type | — | `CheckIssue = Diagnostic & { fn?: string; line?: number; column?: number; actual?: string; expected?: string; actions?: CheckAction[]; }` |
+| <a id="checkissue"></a>`CheckIssue` | type | — | `CheckIssue = Diagnostic & { fn?: string; line?: number; column?: number; actual?: string; expected?: string; reason?: "cycle" \| "depth" \|...` |
 | <a id="checkjsonmulti"></a>`CheckJsonMulti` | type | 多文件 `check --json` 信封（CI / monorepo）。单文件仍输出裸 CheckJson。 | `CheckJsonMulti = { version: 1; kind: "multi"; ok: boolean; summary: CheckReport["summary"] & { files: number; budgetTruncated?: boolean }...` |
 | <a id="checkoptions"></a>`CheckOptions` | type | — | — |
 | <a id="clearbclasses"></a>`clearBClasses` | fn | — | `clearBClasses(): void` |
@@ -443,7 +443,7 @@ createEnvironment(parent?, bindings?)
 | <a id="constrainttoentryabs"></a>`constraintToEntryAbs` | fn | 契约 → 函数入口 param Abs（infer/hover 用）。 | `constraintToEntryAbs( c: NudoConstraint, paramName: string, depth: number = LAZY_TEMPLATE_DEPTH, ): Abs` |
 | <a id="contractparamnameset"></a>`contractParamNameSet` | fn | 侧车契约可绑定的参数名全集 | `contractParamNameSet(formals: FormalParam[]): Set<string>` |
 | <a id="createhofcollectctx"></a>`createHofCollectCtx` | fn | — | `createHofCollectCtx( paramNames: ReadonlySet<string>, alphaIds: Iterable<string>, ): HofCollectCtx` |
-| <a id="ctorargdefinitelyinvalid"></a>`ctorArgDefinitelyInvalid` | fn | 构造器实参**确定**非法（原生 TypeError 域）： - 非可迭代字面量（number/boolean/symbol/bigint、闭对象字面量）→ 四个集合构造器都抛 - Map/WeakMap 条目必须是对象：外层 iterable 出现 lit prim 条目（含字符串实参的 每个字符、tuple/Set 元素）→ TypeError（空串例外：零条目合法）； WeakMap 键还必须可弱持有——tuple 条目首元素（键）为 prim → TypeError （Map 键可以是 prim，仅 WeakMap 抛 "Invalid value used as weak map key"） - WeakSet 元素必须可弱持有：prim 元素（含字符串字符）→ TypeError 抽象形态不确定 → false（保守）。 | `ctorArgDefinitelyInvalid( name: "Map" \| "Set" \| "WeakMap" \| "WeakSet", iterable: Abs \| undefined, ): boolean` |
+| <a id="ctorargdefinitelyinvalid"></a>`ctorArgDefinitelyInvalid` | fn | 构造器实参**确定**非法（原生 TypeError 域）： - 非可迭代字面量（number/boolean/symbol/bigint、闭对象字面量、symbol 字面量）→ 四个集合构造器都抛 - Map/WeakMap 条目必须是对象（IsObject）：prim 条目（含字符串实参的 每个字符、tuple/Set 元素）与 nullish 字面量条目 → TypeError （Bug 8：null/undefined/symbol 字面量挂 shape unknown + lit term， 旧 primEntry 只查 prim 形态 → 漏抛） - WeakMap 键 = Get(entry, "0") 须可弱持有（classifyCanBeHeldWeakly 同 口径）：零/一元组、闭对象/fn/无 0 槽 brand 条目键 undefined、prim/ nullish 键 → TypeError（Bug 8：旧口径只查 ≥2 元组首元素 prim） - WeakSet 元素须可弱持有：prim/nullish 字面量元素（含字符串字符）→ TypeError；symbol 元素合法（node 实测 new WeakSet([Symbol()]) 不抛） - Bug 8 gate 面：抽象外层 iterable（any/unknown/开放 obj/fn/其它 brand） 可能非可迭代、抽象元素（含抽象字符串实参的字符臂）可能非 entry/ 非弱键 → recordMayThrow（三个分派点共用本判定，集中记录） | `ctorArgDefinitelyInvalid( name: "Map" \| "Set" \| "WeakMap" \| "WeakSet", iterable: Abs \| undefined, ): boolean` |
 | <a id="ctornameofrecv"></a>`ctorNameOfRecv` | fn | 接收者 → 原型链 constructor 名（`.constructor` 折叠）。 | `ctorNameOfRecv(recv: Abs): string \| undefined` |
 | <a id="currentexecphi"></a>`currentExecPhi` | fn | — | `currentExecPhi(): Phi` |
 | <a id="currentphi"></a>`currentPhi` | fn | — | `currentPhi(): Phi` |
@@ -452,7 +452,7 @@ createEnvironment(parent?, bindings?)
 | <a id="derefconstraint"></a>`derefConstraint` | fn | 解一层 lazy：调用 thunk 一次、校验产物是约束、toPlainConstraint 归一化， 并按 thunk 记忆化（重复 deref 同一闭包 → 同一对象）。 | `derefConstraint(c: NudoConstraint): NudoConstraint` |
 | <a id="describephi"></a>`describePhi` | fn | — | `describePhi(): string` |
 | <a id="diagnostic"></a>`Diagnostic` | type | — | `Diagnostic = { severity: "error" \| "warning" \| "info"; code: string; message: string; suggestion?: string; fn?: string; argIndex?: number; }` |
-| <a id="div"></a>`div` | fn | 除法：字面量折叠；除以正/负常数时按单调性推界。 | `div(a: Abs, b: Abs, phi: Phi = pTrue): Abs` |
+| <a id="div"></a>`div` | fn | 除法：字面量折叠；除以正/负常数时按单调性推界。 | `div(a: Abs, b: Abs, phi: Phi = pTrue, assume?: Phi): Abs` |
 | <a id="drainpromisemicros"></a>`drainPromiseMicros` | fn | — | `drainPromiseMicros(): void` |
 | <a id="effectiveinterfaceopts"></a>`EffectiveInterfaceOpts` | type | — | `EffectiveInterfaceOpts = RefineResolveOpts & { autoBind?: boolean \| ((sidecarPath: string) => boolean); projectDir?: string; }` |
 | <a id="emptyenv"></a>`emptyEnv` | fn | 空求值环境（分析宿主用：不带任何绑定） | `emptyEnv(): AstEnv` |
@@ -461,7 +461,7 @@ createEnvironment(parent?, bindings?)
 | <a id="enterpromiseexecutorscope"></a>`enterPromiseExecutorScope` | fn | — | `enterPromiseExecutorScope(): void` |
 | <a id="eq"></a>`eq` | const | — | `const eq` |
 | <a id="errorbrandabs"></a>`errorBrandAbs` | fn | Error brand：shape 带 name/message（字面量 message 保精确）。 | `errorBrandAbs(name: string, args: Abs[]): Abs` |
-| <a id="evalabsassignrecord"></a>`EvalAbsAssignRecord` | type | B 赋值记录（与 ast-records.ts AbsAssignRecord 同形；structuralAssignIssues 消费） | `EvalAbsAssignRecord = { name: string; prev: Abs \| undefined; next: Abs; line?: number; column?: number; conditional?: boolean; }` |
+| <a id="evalabsassignrecord"></a>`EvalAbsAssignRecord` | type | B 赋值记录（与 ast-records.ts AbsAssignRecord 同形；structuralAssignIssues 消费） | `EvalAbsAssignRecord = { name: string; prev: Abs \| undefined; next: Abs; line?: number; column?: number; conditional?: boolean; depth?: nu...` |
 | <a id="evalarraystatic"></a>`evalArrayStatic` | fn | Array.isArray / Array.from / Array.of | `evalArrayStatic(name: string, args: Abs[]): Abs \| undefined` |
 | <a id="evalbuiltininstancemethod"></a>`evalBuiltinInstanceMethod` | fn | brand 实例方法（Date/RegExp/Map/Set/Error 家族/装箱拆箱后的 prim 面在外层） | `evalBuiltinInstanceMethod( brandName: string, method: string, recv: Abs, args: Abs[], ): Abs \| undefined` |
 | <a id="evalbuiltinnew"></a>`evalBuiltinNew` | fn | new X(...) | `evalBuiltinNew(className: string, args: Abs[]): Abs \| undefined` |
@@ -477,6 +477,7 @@ createEnvironment(parent?, bindings?)
 | <a id="evalnumberstatic"></a>`evalNumberStatic` | fn | Number.isInteger / isNaN / parseFloat 等 | `evalNumberStatic(name: string, args: Abs[]): Abs \| undefined` |
 | <a id="evalobjectmethod"></a>`evalObjectMethod` | fn | Object.keys/values/entries/assign + 不变性方法 | `evalObjectMethod(name: string, args: Abs[]): Abs \| undefined` |
 | <a id="evalobjectprotomethod"></a>`evalObjectProtoMethod` | fn | Object.prototype 方法语义（evaluator $invoke 与 Object.prototype.X.call 共用）。 | `evalObjectProtoMethod( name: string, thisVal: Abs, args: Abs[], ): Abs \| undefined` |
+| <a id="evalposrecord"></a>`EvalPosRecord` | type | 位置级 Abs 记录（hover 重放插桩 `$nodoPos` 消费）： (1-based 行, 0-based 列) → 该位置表达式求值态 Abs | `EvalPosRecord = { line: number; column: number; abs: Abs; }` |
 | <a id="evalpromisector"></a>`evalPromiseCtor` | fn | new Promise(executor)：调用 executor(resolve, reject)，收集 resolve 实参作为 promise inner。原生只认第一次 settle——顺序双 resolve 取第一次；执行器内 $fork 分叉时各臂 settle 值 join（路径敏感，不得 first-wins 假精确）。 | `evalPromiseCtor(args: Abs[]): Abs` |
 | <a id="evalpromisemethod"></a>`evalPromiseMethod` | fn | then/catch/finally：可映射回调 → 新 inner；做不到诚实 promise&lt;unknown&gt; | `evalPromiseMethod( name: string, recv: Abs, args: Abs[], ): Abs \| undefined` |
 | <a id="evalpromisestatic"></a>`evalPromiseStatic` | fn | — | `evalPromiseStatic(name: string, args: Abs[]): Abs \| undefined` |
@@ -507,7 +508,7 @@ createEnvironment(parent?, bindings?)
 | <a id="formateffectiveinterfacedisplay"></a>`formatEffectiveInterfaceDisplay` | fn | EffectiveInterface → 契约展示串（与 CLI interface 打印同口径，不含函数名） | `formatEffectiveInterfaceDisplay(eff: EffectiveInterface): string` |
 | <a id="formatgithubannotations"></a>`formatGithubAnnotations` | fn | GitHub Actions 行内注解（PR Files changed 红/黄标）。 | `formatGithubAnnotations( r: CheckReport, opts: { workspaceRoot?: string } = {}, ): string` |
 | <a id="formatgitlabcodequality"></a>`formatGitlabCodeQuality` | fn | GitLab Code Quality 报告数组（`--gitlab`；可写 gl-code-quality-report.json） | `formatGitlabCodeQuality( r: CheckReport, opts: { workspaceRoot?: string } = {}, ): GitlabCodeQualityIssue[]` |
-| <a id="formatinterfacetierline"></a>`formatInterfaceTierLine` | fn | CodeLens / hover 首行标题（design-refine-derivation §8）：`● interface / <source>` | `formatInterfaceTierLine(source: InterfaceSource): string` |
+| <a id="formatinterfacetierline"></a>`formatInterfaceTierLine` | fn | CodeLens / hover 首行标题（design-refine-derivation §8）：`● contract / hw\|gen\|imp`。 | `formatInterfaceTierLine(source: InterfaceSource, active = true): string` |
 | <a id="formatoptions"></a>`FormatOptions` | type | — | `FormatOptions = { showTerm?: boolean; showPred?: boolean; indent?: string; }` |
 | <a id="formatshapeslot"></a>`formatShapeSlot` | fn | fn/arr 槽位：shape + 非 lit term（禁止在 format 里内联复制 term 逻辑） | `formatShapeSlot(a: Abs): string` |
 | <a id="ge"></a>`ge` | const | — | `const ge` |
@@ -532,6 +533,7 @@ createEnvironment(parent?, bindings?)
 | <a id="implicationoracle"></a>`ImplicationOracle` | type | 外部蕴含 oracle（可选 SMT 等）。内建判定证不出时调用。 | `ImplicationOracle = (phi: Phi, pred: Pred) => boolean \| undefined` |
 | <a id="implies"></a>`implies` | fn | 简单蕴含：在区间/线性/字面量/typeof 可判定范围内判断 Φ ⊢ pred | `implies(phi: Phi, pred: Pred): boolean` |
 | <a id="instantiatereturn"></a>`instantiateReturn` | fn | relation-only / isRelFn 的应用：按 paramTypes 做 α 替换得到 returnType。 | `instantiateReturn(fn: Abs, args: Abs[]): Abs` |
+| <a id="interface_source_abbr"></a>`INTERFACE_SOURCE_ABBR` | const | 档位源缩写：handwritten=hw / generated=gen / implicit=imp | `const INTERFACE_SOURCE_ABBR` |
 | <a id="interfacediag"></a>`InterfaceDiag` | type | interface 推导诊断（severity 由消费方按 code 定档，形状对齐 Issue 子集） | `InterfaceDiag = { code: string; message: string; file?: string }` |
 | <a id="interfacediagcount"></a>`interfaceDiagCount` | fn | 当前诊断累计序号（since 锚：工具面只排干自身探测产生的增量） | `interfaceDiagCount(): number` |
 | <a id="interfacesource"></a>`InterfaceSource` | type | 有效契约来源：手写（源码 refine ∪ 侧车手写绑定）&gt; 生成段 &gt; 隐式 | `InterfaceSource = "handwritten" \| "generated" \| "implicit"` |
@@ -539,6 +541,7 @@ createEnvironment(parent?, bindings?)
 | <a id="interfacetieropts"></a>`InterfaceTierOpts` | type | — | `InterfaceTierOpts = EffectiveInterfaceOpts` |
 | <a id="isabsval"></a>`isAbsVal` | fn | — | `isAbsVal(v: unknown): v` |
 | <a id="isbigprim"></a>`isBigPrim` | fn | — | `isBigPrim(a: Abs): boolean` |
+| <a id="iscjsmainrun"></a>`isCjsMainRun` | fn | run 表是否来自 CJS `module.exports = X` 重赋值形态（供桥接层标 cjsMain）。 | `isCjsMainRun(run: Record<string, unknown>): boolean` |
 | <a id="isdefinitelyfalse"></a>`isDefinitelyFalse` | fn | — | `isDefinitelyFalse(a: Abs): boolean` |
 | <a id="isdefinitelytrue"></a>`isDefinitelyTrue` | fn | — | `isDefinitelyTrue(a: Abs): boolean` |
 | <a id="iserrorctorname"></a>`isErrorCtorName` | fn | — | `isErrorCtorName(name: string \| undefined): boolean` |
@@ -655,7 +658,7 @@ createEnvironment(parent?, bindings?)
 | <a id="queuepromisemicro"></a>`queuePromiseMicro` | fn | — | `queuePromiseMicro(task: () => void): void` |
 | <a id="refinediag"></a>`RefineDiag` | type | refine 侧车加载诊断（severity 由消费方按 code 定档，形状对齐 Issue 子集） | `RefineDiag = { code: string; message: string; file?: string }` |
 | <a id="refinediagcount"></a>`refineDiagCount` | fn | 当前诊断累计序号（since 锚） | `refineDiagCount(): number` |
-| <a id="refineentry"></a>`RefineEntry` | type | 解析 `ms delay` / `n percent` → [param, Pred] 多条用 &amp;&amp; 或换行连接。 | `RefineEntry = { param: string; pred: Pred; constraint: NudoConstraint; }` |
+| <a id="refineentry"></a>`RefineEntry` | type | 同时保留原始 NudoConstraint（shape 字段检查用）。 | `RefineEntry = { param: string; pred: Pred; constraint: NudoConstraint; name?: string; }` |
 | <a id="refineresolveopts"></a>`RefineResolveOpts` | type | — | `RefineResolveOpts = { loadModule?: (spec: string, fromFile: string) => string \| undefined; fromFile?: string; }` |
 | <a id="refinetoindexedfull"></a>`refineToIndexedFull` | fn | refine 参数 → 带约束模板的下标表（shape 检查用） | `refineToIndexedFull( source: string, fnName: string, paramNames: string[], opts: RefineResolveOpts = {}, ): Array<[number, RefineEntry]>` |
 | <a id="regexbrandabsfrom"></a>`regexBrandAbsFrom` | fn | RegExp brand：source/flags/lastIndex + 7 标志 getter 进 slots （evaluator evalRegExpCtor / $regex 共用；槽构造收敛于 regexpBrandSlots） | `regexBrandAbsFrom(pattern: string, flags: string): Abs` |
@@ -687,6 +690,7 @@ createEnvironment(parent?, bindings?)
 | <a id="sethasentry"></a>`setHasEntry` | fn | — | `setHasEntry(setAbs: Abs, value: Abs): Abs` |
 | <a id="setimplicationoracle"></a>`setImplicationOracle` | fn | — | `setImplicationOracle(fn: ImplicationOracle \| undefined): void` |
 | <a id="setinterfacediagcollector"></a>`setInterfaceDiagCollector` | fn | 设置诊断观察者（null 清除）；缓冲照常累积，takeInterfaceDiags 取走 | `setInterfaceDiagCollector( fn: ((d: InterfaceDiag) => void) \| null, ): void` |
+| <a id="setposcollector"></a>`setPosCollector` | fn | 返回先前 collector，便于嵌套调用 save/restore（禁止 finally 置 null 砸外层） | `setPosCollector( collector: ((r: EvalPosRecord) => void) \| null, )` |
 | <a id="setpropflags"></a>`setPropFlags` | fn | — | `setPropFlags(o: Abs, key: string, f: PropFlags): void` |
 | <a id="setrefinediagcollector"></a>`setRefineDiagCollector` | fn | 设置诊断观察者（null 清除）；缓冲照常累积，takeRefineDiags 取走 | `setRefineDiagCollector(fn: ((d: RefineDiag) => void) \| null): void` |
 | <a id="setsizeabs"></a>`setSizeAbs` | fn | — | `setSizeAbs(setAbs: Abs): Abs` |
@@ -724,7 +728,7 @@ createEnvironment(parent?, bindings?)
 | <a id="trypromoteforofiteratee"></a>`tryPromoteForOfIteratee` | fn | for-of 迭代对象提升（applyEach 型）：`for (const x of items)`， items 为形参且仍是 any/unknown → arr(自身 var)。不依赖方法名。 | `tryPromoteForOfIteratee( env: AstEnv, iterateeName: string, loc?: { line: number; column: number }, ): Abs \| undefined` |
 | <a id="trypromotehofcallback"></a>`tryPromoteHofCallback` | fn | 挂载点③：HOF 回调实参。回调是 Identifier ∈ paramNames 且尚未有 fn 形状。 | `tryPromoteHofCallback( env: AstEnv, cevalName: string, method: string, argAbses: Abs[], loc?: { line: number; column: number }, ): Abs \| undefined` |
 | <a id="trypromotereceiverasarr"></a>`tryPromoteReceiverAsArr` | fn | 挂载点①：方法派发 miss。receiver 是形参 Identifier 且 shape 为 any/未知， 方法名为 filter/map/reduce/flatMap → 提升为 arr(自身 var)。 | `tryPromoteReceiverAsArr( env: AstEnv, receiverName: string, method: string, loc?: { line: number; column: number }, ): Abs \| undefined` |
-| <a id="tryruntranspiled"></a>`tryRunTranspiled` | fn | B 单一入口：runTranspiled + 类型化回落观测。 | `tryRunTranspiled( source: string, opts: RunTranspiledOptions = {}, ): Record<string, unknown> \| undefined` |
+| <a id="tryruntranspiled"></a>`tryRunTranspiled` | fn | — | `tryRunTranspiled( source: string, opts: RunTranspiledOptions = {}, ): Record<string, unknown> \| undefined` |
 | <a id="typeof_names"></a>`TYPEOF_NAMES` | const | typeof 标签全集（否定展开用；顺序稳定） | `const TYPEOF_NAMES` |
 | <a id="typeofabs"></a>`typeofAbs` | fn | JS typeof：结果域永远是 string | `typeofAbs(a: Abs): Abs` |
 | <a id="typeofname"></a>`TypeofName` | type | JS `typeof` 完整结果域（8 标签）。Pred 的 typeof 节点用此域。 | `TypeofName = \| "undefined" \| "object" \| "boolean" \| "number" \| "bigint" \| "string" \| "symbol" \| "function"` |

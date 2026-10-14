@@ -26,14 +26,19 @@ import { getSlot } from "./objects.ts";
 import type { AbsModuleExports } from "./abs-modules.ts";
 import type { RunTranspiledOptions } from "./exec/run.ts";
 
-/** C4.1：case 见证的解构字段投影（与 scan.projectArgField 同口径） */
-function projectCaseArgField(arg: Abs, field: string): Abs | undefined {
-  if (!arg) return undefined;
-  if (arg.shape.k === "brand") {
-    return projectCaseArgField(arg.shape.shape as Abs, field);
+/** C4.1：case 见证的解构字段投影（与 scan.projectArgPath 同口径）；
+ *  #137：路径感知——嵌套点路径（'card.grade'）逐段下钻 */
+function projectCaseArgField(arg: Abs, fieldPath: string[]): Abs | undefined {
+  let cur: Abs | undefined = arg;
+  for (const seg of fieldPath) {
+    if (!cur) return undefined;
+    if (cur.shape.k === "brand") {
+      cur = cur.shape.shape as Abs;
+    }
+    if (cur.shape.k !== "obj") return undefined;
+    cur = getSlot(cur.shape.slots, seg)?.value;
   }
-  if (arg.shape.k !== "obj") return undefined;
-  return getSlot(arg.shape.slots, field)?.value;
+  return cur;
 }
 
 /**
@@ -155,18 +160,23 @@ export function scanCaseInconsistency(
     const conflictParams = new Set(eff.conflict?.params ?? []);
     const formals = g.formals ?? [];
     const reqs: Array<
-      [number, { param: string; pred: Pred; constraint: NudoConstraint }, string | undefined]
+      [
+        number,
+        { param: string; pred: Pred; constraint: NudoConstraint },
+        string[] | undefined,
+      ]
     > = [];
     for (const p of eff.params) {
       if (conflictParams.has(p.param)) continue;
-      // C4.1：display 名命中失败时用 locateContractParam（默认/rest/解构顶层名）
+      // C4.1：display 名命中失败时用 locateContractParam（默认/rest/解构
+      // 顶层名）；#137：嵌套点路径（'card.grade'）带多段 fieldPath
       let idx = paramNames.indexOf(p.param);
-      let field: string | undefined;
+      let fieldPath: string[] | undefined;
       if (idx < 0 && formals.length > 0) {
         const hit = locateContractParam(formals, p.param);
         if (hit) {
           idx = hit.index;
-          field = hit.field;
+          fieldPath = hit.fieldPath ?? (hit.field !== undefined ? [hit.field] : undefined);
         }
       }
       if (idx < 0) continue;
@@ -177,7 +187,7 @@ export function scanCaseInconsistency(
           pred: instantiateConstraint(p.constraint, p.param),
           constraint: p.constraint,
         },
-        field,
+        fieldPath,
       ]);
     }
     if (reqs.length === 0) return;
@@ -189,18 +199,20 @@ export function scanCaseInconsistency(
     for (const req of reqs) {
       const idx = req[0];
       const entry = req[1];
-      const field = req[2];
+      const fieldPath = req[2];
       if (entry.constraint.fields) continue;
       let arg = absArgs[idx];
       if (!arg) continue;
       // C4.1：destructure 契约名 → 实参字段投影后再判 pred；
       // 缺字段不能静默跳过（与 scan.checkReqs 同口径，报 case 见证违例）
-      if (field) {
-        const projected = projectCaseArgField(arg, field);
+      // #137：投影走路径（嵌套 'card.grade' 逐段下钻），展示用点连接串
+      if (fieldPath) {
+        const projected = projectCaseArgField(arg, fieldPath);
         if (!projected) {
           const k = arg.shape.k;
           if (k !== "unknown" && k !== "any") {
             const paramName = entry.param || paramNames[idx] || `arg${idx}`;
+            const field = fieldPath.join(".");
             out.push({
               severity: "error",
               code: "nudo:case-inconsistency",

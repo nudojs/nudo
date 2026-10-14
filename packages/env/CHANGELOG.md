@@ -1,5 +1,82 @@
 # @nudojs/env
 
+## 0.4.38
+
+### Patch Changes
+
+- Updated dependencies [08d7a55]
+  - @nudojs/core@1.11.3
+
+## 0.4.37
+
+### Patch Changes
+
+- Updated dependencies [82eaae8]
+  - @nudojs/core@1.11.2
+
+## 0.4.36
+
+### Patch Changes
+
+- Updated dependencies [612d64f]
+  - @nudojs/core@1.11.1
+
+## 0.4.35
+
+### Patch Changes
+
+- Updated dependencies [cce5e58]
+- Updated dependencies [16cda31]
+- Updated dependencies [cce5e58]
+  - @nudojs/core@1.11.0
+
+## 0.4.34
+
+### Patch Changes
+
+- Updated dependencies [8806e93]
+  - @nudojs/core@1.10.2
+
+## 0.4.33
+
+### Patch Changes
+
+- Updated dependencies [96090cd]
+  - @nudojs/core@1.10.1
+
+## 0.4.32
+
+### Patch Changes
+
+- Updated dependencies [334b914]
+- Updated dependencies [94197eb]
+- Updated dependencies [b8db17b]
+- Updated dependencies [5e275df]
+  - @nudojs/core@1.10.0
+
+## 0.4.31
+
+### Patch Changes
+
+- Updated dependencies [2af4016]
+- Updated dependencies [2af4016]
+  - @nudojs/core@1.9.4
+
+## 0.4.30
+
+### Patch Changes
+
+- Updated dependencies [b6495c6]
+- Updated dependencies [04a6d1d]
+  - @nudojs/core@1.9.3
+
+## 0.4.29
+
+### Patch Changes
+
+- Updated dependencies [c8e0417]
+  - @nudojs/core@1.9.2
+
 ## 0.4.28
 
 ### Patch Changes

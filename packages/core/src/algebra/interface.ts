@@ -56,9 +56,11 @@ import {
   extractRefinesFromSource,
   extractRefineReturnFromSource,
   extractDeclaredThrows,
+  lookupSidecarParamTexts,
   refineDiagCount,
   takeRefineDiagsSince,
   type RefineResolveOpts,
+  type SidecarParamTexts,
 } from "./refine.ts";
 
 // 单一定义在 sidecar-path.ts（leaf）；re-export 维持 @nudojs/core 导出面稳定
@@ -138,10 +140,15 @@ export type EffectiveInterfaceOpts = RefineResolveOpts & {
 
 export type EffectiveInterface = {
   fnName: string;
-  params: Array<{ param: string; constraint: NudoConstraint }>;
+  /** display = 表达式原文/约束名折叠形（运行时标志）；缺席 = 消费端回落 pred 全展 */
+  params: Array<{ param: string; constraint: NudoConstraint; display?: string }>;
   returns?: { constraint: NudoConstraint };
   /** 申报式抛错（@nudo:throws / case !! throws / sidecar fn.throws） */
   throws?: { kinds: string[] | "*" };
+  /** 契约来源侧车 canonical 路径（侧车绑定时）；契约原文链接跳转用 */
+  sidecarPath?: string;
+  /** 侧车绑定声明行（1-based；契约原文链接 `#L<n>` 跳转目标） */
+  sidecarLine?: number;
   source: InterfaceSource;
   /**
    * 合取不可满足标记：params = 常数界交叉矛盾（或 prim 矛盾等 and() 不可
@@ -180,6 +187,11 @@ type SidecarBinding =
       /** fn() 形态约束（Phase 1 唯一消费形态；非 fn 形态已收集诊断） */
       constraint: NudoConstraint & { fn: NonNullable<NudoConstraint["fn"]> };
       generated: boolean;
+      /** 形参表达式源码（运行时标志；派生形参未登记 → 缺席） */
+      paramTexts?: SidecarParamTexts;
+      /** 绑定声明行（1-based；契约原文链接 `#L<n>` 跳转目标；
+       *  未登记 → 缺席，链接只到文件） */
+      sidecarLine?: number;
     }
   | { ok: false };
 
@@ -336,6 +348,9 @@ function loadSidecarBinding(
   // 2. 嵌套对象 `export const Class = { method: fn(…) }`
   // 3. C4.4：`export { local as default }` + 侧车 `export default`
   let binding: unknown = Object.hasOwn(exports, fnName) ? exports[fnName] : undefined;
+  // 绑定键解析成功时的键（paramTexts 查询用，与 binding 解析同序）
+  let bindingKey: string | undefined;
+  if (binding !== undefined) bindingKey = fnName;
   // DESIGN-003：别名导出（`export { _c as class }`）的源码函数身份是本地名
   // _c，侧车契约身份是导出名 class——本地名查询按导出名桥接（旧侧车按本地
   // 名发射的形态仍走上方同名直查，两代侧车都可绑定）
@@ -343,20 +358,24 @@ function loadSidecarBinding(
     const aliasExport = exportedNameOfLocal(source, fnName);
     if (aliasExport !== undefined && Object.hasOwn(exports, aliasExport)) {
       binding = exports[aliasExport];
+      bindingKey = aliasExport;
     }
   }
   if (binding === undefined && exports.default !== undefined && isDefaultExportLocal(source, fnName)) {
     binding = exports.default;
+    bindingKey = "default";
   }
   if (binding === undefined && fnName.includes(".")) {
     const [cls, method] = fnName.split(".", 2);
-    binding = Object.hasOwn(exports, `${cls}_${method}`)
-      ? exports[`${cls}_${method}`]
-      : undefined;
+    if (Object.hasOwn(exports, `${cls}_${method}`)) {
+      binding = exports[`${cls}_${method}`];
+      bindingKey = `${cls}_${method}`;
+    }
     if (binding === undefined) {
       const bag = Object.hasOwn(exports, cls!) ? (exports[cls!] as Record<string, unknown> | undefined) : undefined;
       if (bag && typeof bag === "object" && !isNudoConstraint(bag)) {
         binding = Object.hasOwn(bag, method!) ? bag[method!] : undefined;
+        // 嵌套对象袋形态无静态 fn() 登记（init 非 fn 调用）→ paramTexts 查不到，消费端回落 pred
       }
     }
     // 侧车键近失配：只有裸 `method` 而目标是 `Class.method`——报而非静默不绑
@@ -406,11 +425,17 @@ function loadSidecarBinding(
           );
         })()
       : false);
+  const info =
+    bindingKey !== undefined
+      ? lookupSidecarParamTexts(sidecarPath, hashSource(sidecarSrc), bindingKey)
+      : undefined;
   return {
     ok: true,
     sidecarPath,
     constraint: binding as NudoConstraint & { fn: NonNullable<NudoConstraint["fn"]> },
     generated: isGenerated,
+    ...(info?.texts !== undefined ? { paramTexts: info.texts } : {}),
+    ...(info?.line !== undefined ? { sidecarLine: info.line } : {}),
   };
 }
 
@@ -551,8 +576,26 @@ export function effectiveInterface(
     collectDiag({ code: d.code, message: d.message, ...(d.file ? { file: d.file } : {}) });
   }
   const sidecarFn = sidecar.ok ? sidecar.constraint : undefined;
+  const sidecarParamTexts = sidecar.ok ? sidecar.paramTexts : undefined;
   const sidecarGenerated = sidecar.ok && sidecar.generated;
   const sidecarParams = sidecarFn ? fnConstraintToEntryReqs(sidecarFn) : [];
+  const sidecarParamSet = new Set(sidecarParams.map((p) => p.param));
+  /** 侧车形参表达式原文（param → 原文；缺席 = 派生形参，回落 pred 全展） */
+  const sidecarTexts = new Map<string, string>();
+  if (sidecarParamTexts) {
+    for (const param of sidecarParamSet) {
+      const t = sidecarParamTexts.get(param);
+      if (t !== undefined) sidecarTexts.set(param, t);
+    }
+  }
+  /** 指令契约名（param → 名列表；多行同参指令合取时并列） */
+  const directiveNames = new Map<string, string[]>();
+  for (const e of sourceEntries) {
+    if (e.name === undefined) continue;
+    const list = directiveNames.get(e.param);
+    if (list === undefined) directiveNames.set(e.param, [e.name]);
+    else if (!list.includes(e.name)) list.push(e.name);
+  }
   const sidecarReturns = sidecarFn?.fn.returns;
   const sidecarThrowsKinds = throwConstraintToKinds(sidecarFn?.fn.throws);
   /** 源码申报 ∪ 侧车 fn.throws（`*` 优先） */
@@ -572,9 +615,22 @@ export function effectiveInterface(
     if (sidecarFn !== undefined && sidecarGenerated) {
       return {
         fnName,
-        params: sidecarParams,
+        params: sidecarParams.map(({ param, constraint }) => {
+          const display = sidecarTexts.get(param);
+          return display !== undefined
+            ? { param, constraint, display }
+            : { param, constraint };
+        }),
         ...(sidecarReturns !== undefined ? { returns: { constraint: sidecarReturns } } : {}),
         ...(mergedThrows !== undefined ? { throws: { kinds: mergedThrows } } : {}),
+        ...(sidecar.ok
+          ? {
+              sidecarPath: sidecar.sidecarPath,
+              ...(sidecar.sidecarLine !== undefined
+                ? { sidecarLine: sidecar.sidecarLine }
+                : {}),
+            }
+          : {}),
         source: "generated",
       };
     }
@@ -638,9 +694,40 @@ export function effectiveInterface(
 
   return {
     fnName,
-    params: [...params.entries()].map(([param, constraint]) => ({ param, constraint })),
+    params: [...params.entries()].map(([param, constraint]) => {
+      // display 折叠规则：侧车 ∧ 指令并存时两者文本齐备才折叠
+      // （任一缺席 → 不展示残缺折叠形，回落 pred 全展）；单一
+      // 来源用其文本（侧车表达式原文 / 指令约束名）。
+      const sidecarText = sidecarTexts.get(param);
+      const names = directiveNames.get(param);
+      const fromSidecar =
+        sidecarFn !== undefined && !sidecarGenerated && sidecarParamSet.has(param);
+      const fromDirective = names !== undefined;
+      let display: string | undefined;
+      if (fromSidecar && fromDirective) {
+        display =
+          sidecarText !== undefined
+            ? `${sidecarText} ∧ ${names!.join(" ∧ ")}`
+            : undefined;
+      } else if (fromSidecar) {
+        display = sidecarText;
+      } else if (fromDirective) {
+        display = names!.join(" ∧ ");
+      }
+      return display !== undefined
+        ? { param, constraint, display }
+        : { param, constraint };
+    }),
     ...(returnsC !== undefined ? { returns: { constraint: returnsC } } : {}),
     ...(mergedThrows !== undefined ? { throws: { kinds: mergedThrows } } : {}),
+    ...(sidecar.ok
+      ? {
+          sidecarPath: sidecar.sidecarPath,
+          ...(sidecar.sidecarLine !== undefined
+            ? { sidecarLine: sidecar.sidecarLine }
+            : {}),
+        }
+      : {}),
     source: "handwritten",
     ...(conflictParams.length > 0 || conflictReturns
       ? {
@@ -854,23 +941,41 @@ export function formatConstraint(c: NudoConstraint): string {
 
 /** EffectiveInterface → 契约展示串（与 CLI interface 打印同口径，不含函数名） */
 export function formatEffectiveInterfaceDisplay(eff: EffectiveInterface): string {
+  // 参数契约优先展示声明形态（侧车表达式原文 / 指令约束名）——
+  // 惰性联合的无损展开可达数万字符（issue #120 同源问题）；
+  // 无声明形态（派生形参）→ 组合式显示（诚实降级）
   const params = eff.params
-    .map((p) => `${p.param}: ${formatConstraint(p.constraint)}`)
+    .map((p) => `${p.param}: ${p.display ?? formatConstraint(p.constraint)}`)
     .join(", ");
   let s = `(${params})`;
   if (eff.returns) s += ` → ${formatConstraint(eff.returns.constraint)}`;
   return s;
 }
 
-/** CodeLens / hover 首行标题（design-refine-derivation §8）：`● interface / <source>` */
-export function formatInterfaceTierLine(source: InterfaceSource): string {
-  return `● interface / ${source}`;
+/** 档位源缩写：handwritten=hw / generated=gen / implicit=imp */
+export const INTERFACE_SOURCE_ABBR: Record<InterfaceSource, string> = {
+  handwritten: "hw",
+  generated: "gen",
+  implicit: "imp",
+};
+
+/**
+ * CodeLens / hover 首行标题（design-refine-derivation §8）：`● contract / hw|gen|imp`。
+ * contract 是观察选择器的一个选项（与各 case 互斥）：`active=false` 时渲染 `○`，
+ * 表示该函数当前观察的是某个 case 而非契约。
+ */
+export function formatInterfaceTierLine(source: InterfaceSource, active = true): string {
+  return `${active ? "●" : "○"} contract / ${INTERFACE_SOURCE_ABBR[source]}`;
 }
 
 export type InterfaceTierInfo = {
   source: InterfaceSource;
   /** handwritten/generated 时的契约展示；implicit 为 undefined */
   display?: string;
+  /** 契约来源侧车 canonical 路径（侧车绑定时）；契约原文链接跳转用 */
+  sidecarPath?: string;
+  /** 侧车绑定声明行（1-based；契约原文链接 `#L<n>` 跳转目标） */
+  sidecarLine?: number;
 };
 
 export type InterfaceTierOpts = EffectiveInterfaceOpts;
@@ -892,7 +997,12 @@ export function interfaceTierOf(
   const eff = effectiveInterface(source, fnName, { fromFile, ...opts });
   const src: InterfaceSource = eff?.source ?? "implicit";
   if (eff && src !== "implicit") {
-    return { source: src, display: formatEffectiveInterfaceDisplay(eff) };
+    return {
+      source: src,
+      display: formatEffectiveInterfaceDisplay(eff),
+      ...(eff.sidecarPath !== undefined ? { sidecarPath: eff.sidecarPath } : {}),
+      ...(eff.sidecarLine !== undefined ? { sidecarLine: eff.sidecarLine } : {}),
+    };
   }
   return { source: src };
 }

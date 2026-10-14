@@ -212,9 +212,10 @@ export {
   pushThrowExit, registerEvalClass, resetEvalCallBudget, runTranspiled,
   runTranspiledOptionsMemoKey, runWithLoopExits, runtimeImportOf,
   setEvalAssignCollector, setEvalBindingSink, setEvalCallCollector,
-  setEvalFallbackCollector, takeLoopExits, takeThrowExits, transpile,
+  setEvalFallbackCollector, setPosCollector, type EvalPosRecord,
+  takeLoopExits, takeThrowExits, transpile,
   transpileBodyNode, transpileExpression, transpileFile, transpileSource,
-  tryRunTranspiled, withExecPhi
+  tryRunTranspiled, withExecPhi, isCjsMainRun
 } from "./exec/index.ts";
 
 export {
@@ -222,6 +223,7 @@ export {
   type InterfaceSource, type InterfaceTierInfo, type InterfaceTierOpts,
   effectiveInterface, formatConstraint, formatEffectiveInterfaceDisplay,
   formatInterfaceTierLine, generatedExportNames, interfaceDiagCount,
+  INTERFACE_SOURCE_ABBR,
   interfaceSourceOf, interfaceTierOf, isNodeModulesPath, localNamedExports,
   resetSidecarLoadFailureCache, setInterfaceDiagCollector, sidecarClosureFingerprint, sidecarPathOf,
   takeInterfaceDiags, takeInterfaceDiagsSince

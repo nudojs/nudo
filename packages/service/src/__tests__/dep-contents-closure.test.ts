@@ -1,13 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { writeFileSync, mkdtempSync, existsSync, readFileSync } from "node:fs";
+import { writeFileSync, existsSync, readFileSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
-import { tmpdir } from "node:os";
 import { collectLoadDepContents } from "../dep-contents.ts";
 import { checkCacheKey } from "../disk-cache.ts";
+import { tmpProject } from "./tmp-project.ts";
 
 describe("collectLoadDepContents sidecar ESM closure", () => {
   it("includes ambient sidecar of imported dep, not only @nudo:import comments", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-dep-"));
+    const dir = tmpProject("nudo-dep-");
     writeFileSync(join(dir, "std.nudo.js"), `export function positive(x) { return x; }\n`);
     const source = `import { positive } from "./std.nudo.js";\nexport function f(x) { return positive(x); }\n`;
     writeFileSync(join(dir, "user.js"), source);

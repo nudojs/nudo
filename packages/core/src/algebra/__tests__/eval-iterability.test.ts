@@ -117,13 +117,26 @@ describe("Bug 7: array destructuring GetIterator validation", () => {
 // --- Bug 13：for await 的 await 标志 ----------------------------------------
 
 describe("Bug 13: for await honors the await flag", () => {
-  it("for await (const v of 1) → definite TypeError（native: 1 is not async iterable）", () => {
+  it("for await (const v of 1) → definite rejection（native: f() rejects with TypeError，不逃逸调用点）", () => {
     const r = evalSrc(
       `export async function f() { for await (const v of 1) {} return 1; }`,
       "f",
       [],
     );
-    expect(r.throws).toContain("TypeError");
+    // F2：async 体抛错不逃逸调用点——调用恒返回 promise，体抛错 ⇒ 确定拒绝
+    //（inner=never：fulfilled 臂不可能）。throws 面恒 never（原生 f() 返回
+    // rejected promise 而非同步 throw；此前 NudoThrow 穿透 $async 被折进
+    // caller throws 面是假精确）。
+    expect(r.value).toContain("promise<never>");
+    expect(r.throws).toBe("never");
+    // 拒绝 reason 可被体内 try/catch 恢复（await 折 NudoThrow 由既有 catch 吸收）
+    const rc = evalSrc(
+      `export async function f() { try { for await (const v of 1) {} } catch (e) { return e instanceof TypeError; } return 1; }`,
+      "f",
+      [],
+    );
+    expect(rc.value).toContain("promise<true>");
+    expect(rc.throws).toBe("never");
   });
 
   it("for await (const v of x)（any）→ may TypeError，promise 值域保留", () => {

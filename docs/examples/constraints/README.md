@@ -26,6 +26,7 @@
 | [`return-contract.js`](./return-contract.js) | 返回：`@nudo:contract return positive` |
 | [`add-pred.js`](./add-pred.js) | Pred 流入代数 |
 | [`declared-vs-if.js`](./declared-vs-if.js) | if ≠ 契约 |
+| [`similarity.js`](./similarity.js) | 用户引理：`@nudo:assume d <= max`（跨变量前提） |
 
 ## 标量
 

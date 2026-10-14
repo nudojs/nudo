@@ -16,21 +16,8 @@
  * 数组/对象/undefined 是同族 ToPrimitive 漏网点。
  */
 import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  litValue,
-  formatShape,
-} from "../index.ts";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
-
-function val(src: string) {
-  return litValue(call(src).result);
-}
+import { formatShape } from "../index.ts";
+import { call, val } from "./eval-helpers.ts";
 
 function shape(src: string) {
   return formatShape(call(src).result);

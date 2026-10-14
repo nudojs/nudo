@@ -19,11 +19,11 @@ import {
   absToZodSchemaModule,
   projectAbsToSchema,
 } from "../schema-generator.ts";
+import { undefLit, tupleSparse, tupleDense, tupleMulti } from "./fixtures.ts";
 
 const arrOf = (element: Abs): Abs => abs({ k: "arr", element }, undefined, undefined, "exact");
 const unionOf = (...members: Abs[]): Abs => abs({ k: "sum", members }, undefined, undefined, "exact");
 const nullLit = (): Abs => abs({ k: "unknown" }, { op: "lit", value: null }, undefined, "exact");
-const undefLit = (): Abs => abs({ k: "unknown" }, { op: "lit", value: undefined }, undefined, "exact");
 const numWith = (pred: Pred): Abs => numVar("x", pred, "exact");
 const strWith = (pred: Pred): Abs =>
   abs({ k: "prim", type: "string" }, { op: "var", id: "s" }, pred, "exact");
@@ -80,18 +80,8 @@ describe("schema-generator", () => {
   it("projects tuple holes as z.unknown() and records them in dropped (BUG-020)", () => {
     // hole 槽 ≠ 显式 undefined 槽：zod tuple 无空槽概念，
     // 洞映射 z.unknown() 并计入 dropped，不得写成 z.undefined()
-    const sparse = abs(
-      { k: "tuple", elements: [numLit(1), undefLit(), numLit(3)], holes: [1] },
-      undefined,
-      undefined,
-      "exact",
-    );
-    const dense = abs(
-      { k: "tuple", elements: [numLit(1), undefLit(), numLit(3)] },
-      undefined,
-      undefined,
-      "exact",
-    );
+    const sparse = tupleSparse();
+    const dense = tupleDense();
     const sparseP = projectAbsToSchema(sparse);
     const denseP = projectAbsToSchema(dense);
     expect(sparseP.source).toBe("z.tuple([z.literal(1), z.unknown(), z.literal(3)])");
@@ -102,12 +92,7 @@ describe("schema-generator", () => {
   });
 
   it("projects leading/multi tuple holes and counts each in dropped (BUG-020)", () => {
-    const multi = abs(
-      { k: "tuple", elements: [undefLit(), numLit(1), undefLit()], holes: [0, 2] },
-      undefined,
-      undefined,
-      "exact",
-    );
+    const multi = tupleMulti();
     const p = projectAbsToSchema(multi);
     expect(p.source).toBe("z.tuple([z.unknown(), z.literal(1), z.unknown()])");
     const holeNotes = p.dropped.filter((d) => d.includes("hole"));

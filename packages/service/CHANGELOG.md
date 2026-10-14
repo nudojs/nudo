@@ -1,5 +1,142 @@
 # @nudojs/service
 
+## 1.6.23
+
+### Patch Changes
+
+- Updated dependencies [08d7a55]
+  - @nudojs/core@1.11.3
+  - @nudojs/env@0.4.38
+  - @nudojs/harvester@0.3.24
+  - @nudojs/parser@1.4.20
+
+## 1.6.22
+
+### Patch Changes
+
+- 82eaae8: Fix `nudo:recursion-truncated` misattributing call-cycle truncation to "depth/size budget", and make `nudo check --json` budget stats see the B-path (`$callNamed`) truncation (issue #158):
+  
+  - `enterCall` / `evalEnterCall` now attribute a truncation reason — `cycle` (same name+arg fingerprint already on the evaluation stack; data-dependent self/mutual recursion such as directory walkers or `grow`-style recursion) vs `depth` / `calls` (real budget exhaustion). The check diagnostic message, suggestion, structured action, and a new `reason` field on the issue (`cycle` | `depth` | `calls` | `budget`) split accordingly: cycle says *"budget cannot lift this"* and never points at `@nudo:budget`; depth/calls name the exact raisable dimension (`@nudo:budget depth=…` / `calls=…`).
+  - The `check --json` / health budget block no longer reports `truncated:false` alongside a `nudo:recursion-truncated` info: B-path counters are latched across execution sessions within one host entry and surfaced as `evalCalls` / `maxEvalCalls` / `evalCallTruncated`, plus `cycleTruncated` and a sorted `reasons[]` set (single-file and multi-file envelopes, and the disk-cache round trip). Fork counters/truncation flags are latched per host entry too (the last-session snapshot could previously erase an already-reported `nudo:fork-truncated`).
+  - The `@nudo:budget` quickfix (`nudo check --fix` / LSP code action) is no longer offered when the truncation reason is `cycle`; the `reason` is plumbed through `check --json`, the disk cache, LSP diagnostic data, and `materializeAction`.
+  - Raising `@nudo:budget` on a same-args recursion could never lift the truncation — the old message misled real budget investigations into "directive ignored" hypotheses.
+  - Loop-iteration truncation (`#loop-iterations`) no longer masquerades as recursion: it now emits its own `nudo:loop-truncated` info with an honest message and suggestion (the call-budget knobs cannot lift a loop budget — `@nudo:budget calls=/depth=` does not apply), gets a `loopTruncated` flag in the `check --json` / health budget block (single-file and multi-file envelopes), and no longer offers the misleading `@nudo:budget` quickfix it used to inherit from the recursion branch.
+- Updated dependencies [82eaae8]
+  - @nudojs/core@1.11.2
+  - @nudojs/env@0.4.37
+  - @nudojs/harvester@0.3.23
+  - @nudojs/parser@1.4.19
+
+## 1.6.21
+
+### Patch Changes
+
+- Updated dependencies [612d64f]
+  - @nudojs/core@1.11.1
+  - @nudojs/env@0.4.36
+  - @nudojs/harvester@0.3.22
+  - @nudojs/parser@1.4.18
+
+## 1.6.20
+
+### Patch Changes
+
+- Updated dependencies [cce5e58]
+- Updated dependencies [16cda31]
+- Updated dependencies [cce5e58]
+  - @nudojs/core@1.11.0
+  - @nudojs/env@0.4.35
+  - @nudojs/harvester@0.3.21
+  - @nudojs/parser@1.4.17
+
+## 1.6.19
+
+### Patch Changes
+
+- Updated dependencies [8806e93]
+  - @nudojs/core@1.10.2
+  - @nudojs/env@0.4.34
+  - @nudojs/harvester@0.3.20
+  - @nudojs/parser@1.4.16
+
+## 1.6.18
+
+### Patch Changes
+
+- Updated dependencies [96090cd]
+  - @nudojs/core@1.10.1
+  - @nudojs/env@0.4.33
+  - @nudojs/harvester@0.3.19
+  - @nudojs/parser@1.4.15
+
+## 1.6.17
+
+### Patch Changes
+
+- fa52735: 参数契约 inlay hints（形参后 `where …`）默认关闭：显式契约（递归 AST 节点联合等）行内展开可达数万字符。新增 `nudo.inlayHints.parameters`（boolean，默认 `false`）三级配置——项目 `package.json#nudo.inlayHints.parameters` 显式值赢，宿主设置（VS Code `nudo.inlayHints.parameters` / Zed `language-servers.nudo.initialization_options.inlayHints.parameters`）只在项目未设置时作默认；`workspace/didChangeConfiguration` 实时生效并触发 `inlayHint/refresh`。返回类型 inlay（`: …`）、case hints 与 interface 档 inlay 不受影响；hover 仍展示完整契约。
+- 35ce944: Fix recursive-fn local hover poisoning and arity-only fn hover display
+  
+  - `$nodoPos` position records and call/assign records now carry the caller-frame depth; hover replay surfaces (`absNodeAtPosition`, `collectEnclosingFnLocals`) only read outermost-frame records. Recursive functions on self-referential contracts (`lazy(() => astNode)`) no longer bind cycle-truncated `opaque unknown` into local-variable hovers (`obj` now shows the computed `null | string | undefined`).
+  - `const x = <non-call init>` declarations record the bound Abs at the declarator-id position during hover replay (`recordPositions` only) — ternary/optional-chain/literal-initialized locals are hoverable (`prop`, `q`).
+  - `callTranspiledExportFullInner` refines the called fn Abs `returnType` slot after a successful call (same policy as class method slots, display-only).
+  - LSP hover: an arity-only fn Abs (empty `returnType` slot) no longer preempts the generalize intension face; fn-name/callee hovers show the full contract signature `(node: nullable(astNode)) => null | string | undefined` instead of `(arg0) => ?`.
+- 5e275df: fix: review hardening — Map.groupBy empty-reduce crash, Bug 1 early-exit relational narrowing, fs-error graph-edge degradation, agent tool module graph, brand presence for URLSearchParams/TextDecoder/Intl, generator side-table $copy migration
+  
+  - `Map.groupBy` / `Object.groupBy`: shadow-domain join no longer bare-`reduce`s an empty unkeyed list (raw host `TypeError: Reduce of empty array with no initial value` escaped module evaluation → fail-closed unknown exports when the callback folds a literal key over arr/abstract-string-prim items); empty fold degrades to `unknown`.
+  - Early-exit lift path (if-return followed by non-tail statements) now applies the same relational-arm narrowing as the regular IfStatement path (`narrowRelArmThunk`), fixing false positives like `if (x >= 0) return x; console.log(x); return 1;` under `@nudo:contract return nonNeg`.
+  - `extractImportEdges` skips import edges whose target resolution throws `ModuleReadError` (EACCES/ESTALE, #135) instead of crashing module-graph construction (CLI watch start, incremental rebuild false-green rounds, LSP validation).
+  - `new Function(...)` / `new Function("a", "b", ...)` validate every argument for the L2 may-throw gate, not just the first.
+  - Brand presence tables: URLSearchParams (methods + `size`), TextDecoder (`decode` + accessors), Intl.NumberFormat/DateTimeFormat (`format`/`formatRange`/parts/`resolvedOptions`); URLSearchParams joins ITERABLE_BRANDS (@@iterator → function).
+  - `$copy` snapshots migrate generator/match side tables (genDeferred throws, genIter/matchAll elements), so fork/switch-arm rebinding no longer silently drops deferred generator throws.
+  - LSP agent tools (check/hover) build the module graph like the CLI and LSP validation do, fixing cross-module unknown collapse (E5 parity).
+- Updated dependencies [334b914]
+- Updated dependencies [94197eb]
+- Updated dependencies [b8db17b]
+- Updated dependencies [5e275df]
+  - @nudojs/core@1.10.0
+  - @nudojs/env@0.4.32
+  - @nudojs/harvester@0.3.18
+  - @nudojs/parser@1.4.14
+
+## 1.6.16
+
+### Patch Changes
+
+- Updated dependencies [2af4016]
+- Updated dependencies [2af4016]
+  - @nudojs/core@1.9.4
+  - @nudojs/env@0.4.31
+  - @nudojs/harvester@0.3.17
+  - @nudojs/parser@1.4.13
+
+## 1.6.15
+
+### Patch Changes
+
+- b6495c6: fix(service): check 结果对瞬时/持久 fs 故障确定性化（#135 少集模式）
+  
+  - `resolveModuleFile` 改单次 statSync（消灭 existsSync+statSync TOCTOU 双调用）：ENOENT/ENOTDIR/EISDIR 按候选 miss；其余 errno（EACCES/EIO/ESTALE/EMFILE…）抛 ModuleReadError，不再被 existsSync 吞成「无此文件」。
+  - 持久 fs 故障：侧车 ambient 绑定显式报 error 级 `nudo:interface-load`（带路径+errno）且 check exit 1——修复前同一故障静默丢整族契约诊断（constraint-violated/unproven-return 整体消失、无任何诊断、exit 0 假绿，且跨版本逐字节相同）。
+  - 瞬态故障自愈：checkSource per-call loadModule 缓存对「抛错」不缓存、下一探测重试——单次 stat 抖动不再钉死整场 miss。
+  - `LoadDepsFingerprint.readError`（`readerr:` 前缀，`trunc:` 优先）：读错误轮指纹键不可信，check 整文件 memo / generalize L0 / evaluator memo / analysisFileCacheKey / LSP 校验指纹一律 fail-closed 不读不写，杜绝错误轮与 miss 轮互为跨次陈旧命中。
+  - `findProjectConfig` stat 错误分类：非 ENOENT 的 package.json stat 故障 stderr 告警 + 子树 fail-closed（不静默继承/丢失 profile、env 名单），修复 severity 漂移（adoption 丢失导致 entry-may-throw error↔warning 摆动）。
+- Updated dependencies [b6495c6]
+- Updated dependencies [04a6d1d]
+  - @nudojs/core@1.9.3
+  - @nudojs/env@0.4.30
+  - @nudojs/harvester@0.3.16
+  - @nudojs/parser@1.4.12
+
+## 1.6.14
+
+### Patch Changes
+
+- Updated dependencies [c8e0417]
+  - @nudojs/core@1.9.2
+  - @nudojs/env@0.4.29
+  - @nudojs/harvester@0.3.15
+  - @nudojs/parser@1.4.11
+
 ## 1.6.13
 
 ### Patch Changes

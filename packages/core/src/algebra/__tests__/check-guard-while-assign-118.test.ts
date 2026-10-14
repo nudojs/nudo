@@ -23,6 +23,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { checkSource, pTrue } from "@nudojs/core";
+import { l2Count, sigOf, sidecarOpts } from "./nudo-constraints.ts";
 
 /** issue #118 v3 / #120 契约形态（string 入参 / string[] 收集器 / optional 槽） */
 const NUDO_SRC = `
@@ -34,22 +35,10 @@ export const objShape = nullable(shape({ v: number() }));
 
 const IMP = `/// @nudo:import { contentShape, fragmentsShape, nodeShape, objShape } from "./std118c.nudo.js"\n`;
 
-const opts = {
-  loadModule: (spec: string) => (spec.includes("std118c") ? NUDO_SRC : undefined),
-  fromFile: "/test/file.js",
-};
+const opts = sidecarOpts("std118c", NUDO_SRC);
 
 function check(src: string) {
   return checkSource("/t/guard-while-assign-118.js", IMP + src, pTrue, opts);
-}
-
-/** L2 entry-may-throw 的 issue 数（按函数名过滤可选） */
-function l2Count(r: ReturnType<typeof check>, fn?: string): number {
-  return r.issues.filter((i) => i.code === "nudo:entry-may-throw" && (!fn || i.fn === fn)).length;
-}
-
-function sigOf(r: ReturnType<typeof check>, fn: string): string {
-  return r.signatures.find((s) => s.name === fn)?.display ?? "(missing)";
 }
 
 describe("#118 v3 赋值即守卫不再误报 entry-may-throw", () => {
@@ -91,8 +80,11 @@ export function ifAssign(v) {
     expect(sigOf(r, "ifAssign")).not.toMatch(/throws/);
   });
 
-  it("while 单语句体（非块）赋值守卫：m[1].length 读零 L2", () => {
-    // 单语句体（非 BlockStatement）同样进 IIFE 收窄；块体形态见上例
+  it("while 单语句体（非块）赋值守卫：m[1] 直读成员面（Bug 3 口径拆分）", () => {
+    // 单语句体（非块）同样进 IIFE 收窄；块体形态见上例。
+    // #118 主题（赋值即守卫压掉 m 自身的 null 臂误报）仍由上两例钉住；
+    // 本例 m[1] 直读成员（元素域 any）：`.length` 修 Bug 3 后与 `.foo`
+    // 同口径记录 may-throw TypeError（修前的「零 L2」是 $len 假阴面）。
     const r = check(`
 /**
  * @nudo:contract v contentShape
@@ -104,9 +96,9 @@ export function whileSingleStmtBody(v) {
   return m;
 }
 `);
-    expect(l2Count(r, "whileSingleStmtBody")).toBe(0);
-    expect(r.summary.errors).toBe(0);
-    expect(sigOf(r, "whileSingleStmtBody")).not.toMatch(/throws/);
+    expect(l2Count(r, "whileSingleStmtBody")).toBe(1);
+    expect(r.summary.errors).toBe(1);
+    expect(sigOf(r, "whileSingleStmtBody")).toMatch(/throws TypeError/);
   });
 });
 

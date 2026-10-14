@@ -41,9 +41,10 @@ import {
   derefConstraint,
 } from "@nudojs/core";
 import { $removeMemberNullish, $removeNullish } from "../exec/runtime/async.ts";
-import { $objAccessor } from "../exec/runtime/members.ts";
+import { $objAccessor } from "../accessors.ts";
 import { abs } from "../abs.ts";
 import { lit as litTerm } from "../term.ts";
+import { l2Count, sigOf, sidecarOpts } from "./nudo-constraints.ts";
 
 /** issue 原文侧车：判别联合 + lazy 自引用 + string() 宽容尾臂 */
 const ISSUE_SRC = `
@@ -58,25 +59,10 @@ export const nodeParam = nullable(astNode);
 
 const IMP = `/// @nudo:import { nodeParam } from "./std129.nudo.js"\n`;
 
-const opts = {
-  loadModule: (spec: string) => (spec.includes("std129") ? ISSUE_SRC : undefined),
-  fromFile: "/test/file.js",
-};
+const opts = sidecarOpts("std129", ISSUE_SRC);
 
 function check(src: string, sidecar: string = ISSUE_SRC) {
-  return checkSource("/t/member-guard-union-129.js", IMP + src, pTrue, {
-    ...opts,
-    loadModule: (spec: string) => (spec.includes("std129") ? sidecar : undefined),
-  });
-}
-
-/** L2 entry-may-throw 数（按函数名过滤可选） */
-function l2Count(r: ReturnType<typeof check>, fn?: string): number {
-  return r.issues.filter((i) => i.code === "nudo:entry-may-throw" && (!fn || i.fn === fn)).length;
-}
-
-function sigOf(r: ReturnType<typeof check>, fn: string): string {
-  return r.signatures.find((s) => s.name === fn)?.display ?? "(missing)";
+  return checkSource("/t/member-guard-union-129.js", IMP + src, pTrue, sidecarOpts("std129", sidecar));
 }
 
 const CONTRACT = `/**

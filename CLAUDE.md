@@ -15,7 +15,7 @@ Product CLI face (`docs/design/cli-semantics.md`): primary verbs are `check` / `
 ## Development Commands
 
 ```bash
-pnpm install            # Install dependencies (requires pnpm@9.1.0)
+pnpm install            # Install dependencies (requires pnpm@11.28.0, see packageManager)
 pnpm run build          # Build all packages with tsup
 pnpm run test           # Run all tests (vitest run)
 pnpm run test:watch     # Run tests in watch mode
@@ -74,7 +74,7 @@ Product CLI lives in `packages/nudojs` (published as `nudojs`, bin `nudo`). The 
 
 **Extensional rendering** (`core/src/algebra/format.ts`): `formatShape` (display strings), `formatAbs` (lossless). One-way projections: `absToTSType` / `absToSchemaSource` / `projectAbsToSchema` / guard generators consume Abs directly. Nothing reads a projection back.
 
-**Parser** (`parser`): Uses `@babel/parser` with TypeScript+JSX plugins. Extracts function/file directives: `@nudo:case` (debug witnesses), `@nudo:mock`, `@nudo:pure`, `@nudo:skip`, `@nudo:sample`, `@nudo:env`, `@nudo:mock-module`, `@nudo:as`, `@nudo:replace`. Type expressions parse via `parseCaseArgExpr` only (constraint builders + concrete literals; no `T.*`). File-level `@nudo:import` and function-level `@nudo:contract` are parsed in **core** (`algebra/refine.ts`), not the parser package.
+**Parser** (`parser`): Uses `@babel/parser` with TypeScript+JSX plugins. Extracts function/file directives: `@nudo:case` (debug witnesses), `@nudo:mock`, `@nudo:pure`, `@nudo:skip`, `@nudo:sample`, `@nudo:env`, `@nudo:mock-module`, `@nudo:as`, `@nudo:replace`. Type expressions parse via `parseCaseArgExpr` only (constraint builders + concrete literals; no `T.*`). File-level `@nudo:import`, function-level `@nudo:contract`, and function-level `@nudo:assume <name> <= <name>` (user lemma premises over params or top-level locals, #152 — cross-variable bounds for relational div folding, `nudo:assume-invalid`/`nudo:assume-relied` diagnostics) are parsed in **core** (`algebra/refine.ts`), not the parser package.
 
 **Evaluator** (`service/src/evaluator`): Abs-native production evaluation. **Single engine** (`eval-run.ts` + `core/algebra/exec`: transpile → `new Function` with Abs values). Arithmetic/compare/unary/spread route through the algebra (`surface.ts`, `abs-route.ts`). Non-eval sources / eval failure are **fail-closed** (unknown/empty exports). Top-level `this` follows ESM (read → undefined; write → TypeError). `CallRecord` is Abs-only (`resultAbs`/`argsAbs`). Public API: `@nudojs/service/evaluator`.
 
@@ -89,6 +89,7 @@ Product CLI lives in `packages/nudojs` (published as `nudojs`, bin `nudo`). The 
 - Package `exports` point to `./dist/*` built output (tsup); `files: ["dist"]` on published packages
 - No ESLint/Prettier — linting is type-checking only (`tsc --noEmit`)
 - Tests live in `__tests__/` dirs alongside source, named `*.test.ts`
+- Test harness is shared per package — don't re-inline copies in test files: core `__tests__/eval-helpers.ts` (call/isNever/throwsError/effects) + `nudo-constraints.ts` (l2Count/sigOf/issuesOf/makeFiles/sidecarOpts), service `__tests__/tmp-project.ts` + `emit/__tests__/fixtures.ts`, nudojs `__tests__/helpers/run-cli.ts`, lsp `__tests__/helpers.ts`, core `__tests__/differential/all-batches.ts`
 - Test files use `describe`/`it`/`expect` from vitest
 - Versioning via @changesets/cli with public access, base branch `main`
 

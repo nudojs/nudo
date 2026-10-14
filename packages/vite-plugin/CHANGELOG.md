@@ -1,5 +1,95 @@
 # vite-plugin-nudo
 
+## 0.4.39
+
+### Patch Changes
+
+- Updated dependencies [08d7a55]
+  - @nudojs/core@1.11.3
+  - @nudojs/service@1.6.23
+
+## 0.4.38
+
+### Patch Changes
+
+- Updated dependencies [82eaae8]
+  - @nudojs/core@1.11.2
+  - @nudojs/service@1.6.22
+
+## 0.4.37
+
+### Patch Changes
+
+- Updated dependencies [612d64f]
+  - @nudojs/core@1.11.1
+  - @nudojs/service@1.6.21
+
+## 0.4.36
+
+### Patch Changes
+
+- Updated dependencies [cce5e58]
+- Updated dependencies [16cda31]
+- Updated dependencies [cce5e58]
+  - @nudojs/core@1.11.0
+  - @nudojs/service@1.6.20
+
+## 0.4.35
+
+### Patch Changes
+
+- Updated dependencies [8806e93]
+  - @nudojs/core@1.10.2
+  - @nudojs/service@1.6.19
+
+## 0.4.34
+
+### Patch Changes
+
+- Updated dependencies [96090cd]
+  - @nudojs/core@1.10.1
+  - @nudojs/service@1.6.18
+
+## 0.4.33
+
+### Patch Changes
+
+- Updated dependencies [334b914]
+- Updated dependencies [94197eb]
+- Updated dependencies [b8db17b]
+- Updated dependencies [fa52735]
+- Updated dependencies [35ce944]
+- Updated dependencies [5e275df]
+  - @nudojs/core@1.10.0
+  - @nudojs/service@1.6.17
+
+## 0.4.32
+
+### Patch Changes
+
+- Updated dependencies [2af4016]
+- Updated dependencies [2af4016]
+  - @nudojs/core@1.9.4
+  - @nudojs/service@1.6.16
+
+## 0.4.31
+
+### Patch Changes
+
+- Updated dependencies [b6495c6]
+- Updated dependencies [b6495c6]
+- Updated dependencies [04a6d1d]
+  - @nudojs/core@1.9.3
+  - @nudojs/service@1.6.15
+
+## 0.4.30
+
+### Patch Changes
+
+- Updated dependencies [c8e0417]
+  - @nudojs/core@1.9.2
+  - @nudojs/service@1.6.14
+
 ## 0.4.29
 
 ### Patch Changes

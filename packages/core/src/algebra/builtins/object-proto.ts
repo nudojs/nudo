@@ -13,6 +13,8 @@ import {
   setElementsAbs,
 } from "../collections.ts";
 import { absFunction } from "../abs-fn.ts";
+import { lookupObjAccessor } from "../accessors.ts";
+import { getEvalClass } from "../exec/class-registry.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs } from "../exec/may-throw.ts";
 import { str, boolPrim, noBody, peelBrand } from "./shared.ts";
@@ -57,6 +59,11 @@ function hasOwnDecision(recv: Abs, key: string): Abs {
     }
     if (inner.shape.k === "obj") {
       const slot = getSlot(inner.shape.slots, key);
+      // Bug 84：internal 私有槽是内部槽——hasOwnProperty 折 false（$in 的
+      // 槽存在性查询不走此判定，`#x in this` 保持 true）
+      // Bug 66：inherited 槽（errorBrandAbs 的 name——原生经 X.prototype
+      // 原型链解析）非自有属性 → false；$set 公有覆写已转自有不受影响
+      if (slot?.internal || slot?.inherited) return boolLit(false);
       if (slot && !slot.optional) return boolLit(true);
       if (slot?.optional) return boolPrimB();
       if (!inner.shape.open) return boolLit(false);
@@ -66,6 +73,8 @@ function hasOwnDecision(recv: Abs, key: string): Abs {
   }
   if (s.k === "obj") {
     const slot = getSlot(s.slots, key);
+    // Bug 84：internal 私有槽非自有属性（同 brand 臂）；Bug 66 inherited 同
+    if (slot?.internal || slot?.inherited) return boolLit(false);
     if (slot && !slot.optional) return boolLit(true);
     if (slot?.optional) return boolPrimB();
     if (!s.open && recv.conf === "exact") return boolLit(false);
@@ -120,13 +129,30 @@ function propertyIsEnumerableDecision(recv: Abs, key: string): Abs {
     if (s.k === "brand" && (s.name === "String" || s.name === "Array")) return boolLit(false);
   }
   // defineProperty(enumerable:false) 侧表
-  const flags = getPropFlags(recv);
+  // Bug 66：brand 接收者的 flags 记在内层 Abs 上（errorBrandAbs 家族槽
+  // name/message/stack/errors/cause 全不可枚举）——只查外层 brand 会 miss
+  // 折 true（原生 propertyIsEnumerable("message"|"stack"|"errors"|"cause")
+  // 恒 false）。与 Object.keys/gOPD 的 isEnumerableView(inner,k) 同口径。
+  const flagsHost = recv.shape.k === "brand" ? recv.shape.shape : recv;
+  const flags = getPropFlags(flagsHost) ?? getPropFlags(recv);
   if (flags?.get(key)?.enumerable === false) return boolLit(false);
   if (ownV === true) {
     // 下标在数组/字符串上可枚举
     return boolLit(true);
   }
   return boolPrimB();
+}
+
+/** Bug 72：@@toStringTag getter 求值 → 标签三值：
+ *  - lit string → 标签
+ *  - lit 非串（number/symbol/undefined…）→ null（native Type(tag)≠String
+ *    折默认 "Object"）
+ *  - 抽象串（非 lit）→ undefined（不折——native 可能是任意串） */
+function accessorTagOf(get: (t: Abs) => Abs, recv: Abs): string | null | undefined {
+  const vR = litValue(get(recv));
+  if (!vR.ok) return undefined;
+  if (typeof vR.value === "string") return vR.value;
+  return null;
 }
 
 function typeTagOf(recv: Abs): string | undefined {
@@ -162,8 +188,32 @@ function typeTagOf(recv: Abs): string | undefined {
       const tag = getSlot(inner.shape.slots, "@@toStringTag");
       if (tag) {
         const vR = litValue(tag.value);
-        const v = vR.ok ? vR.value : undefined;
-        if (typeof v === "string") return v;
+        if (!vR.ok) return undefined;
+        if (typeof vR.value === "string") return vR.value;
+      }
+      // Bug 72：访问器形 @@toStringTag——对象字面量 getter 落 accessorTable
+      // 占位槽（lit(void 0)），数据槽读不到标签；$get 同款读派发调用
+      // getter 求值（getter 体抛错则原生沿 ToString 链传播）。
+      const acc = lookupObjAccessor(inner, "@@toStringTag");
+      if (acc?.get) {
+        const t = accessorTagOf(acc.get, recv);
+        if (t !== null) return t;
+      }
+    }
+    // Bug 72：class get [Symbol.toStringTag]() 形——computed 键投影
+    // "@@toStringTag"（@@hasInstance 同款，见 exec/class.ts $class），沿
+    // 继承链取注册表访问器求值
+    {
+      let cur: string | undefined = s.name;
+      const seen = new Set<string>();
+      while (cur && !seen.has(cur)) {
+        seen.add(cur);
+        const acc = getEvalClass(cur)?.accessors?.["@@toStringTag"];
+        if (acc?.get) {
+          const t = accessorTagOf(acc.get, recv);
+          if (t !== null) return t;
+        }
+        cur = getEvalClass(cur)?.superName;
       }
     }
     if (KNOWN_TAGS.has(s.name) || s.name.endsWith("Error")) {
@@ -178,8 +228,14 @@ function typeTagOf(recv: Abs): string | undefined {
     const tag = getSlot(s.slots, "@@toStringTag");
     if (tag) {
       const vR = litValue(tag.value);
-      const v = vR.ok ? vR.value : undefined;
-      if (typeof v === "string") return v;
+      if (!vR.ok) return undefined;
+      if (typeof vR.value === "string") return vR.value;
+    }
+    // Bug 72：访问器形（对象字面量 get [Symbol.toStringTag]）——getter 求值
+    const acc = lookupObjAccessor(recv, "@@toStringTag");
+    if (acc?.get) {
+      const t = accessorTagOf(acc.get, recv);
+      if (t !== null) return t;
     }
     return "Object";
   }

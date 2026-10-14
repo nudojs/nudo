@@ -12,11 +12,19 @@ import { isSymbolAbs } from "../builtins/symbol.ts";
 import { $call, routeApplyThrows, clearPureMemo } from "./call.ts";
 import { callAtFunctionBoundary, $copy, asAbsVal } from "./runtime.ts";
 import { setHostGlobalFnCall } from "./runtime/state.ts";
-import { setHostGlobalCallBridge } from "../hof.ts";
+import { setHostGlobalCallBridge, validateCallableArg } from "../hof.ts";
 import { throwPayloadOf, recordMayThrow, errorTypeAbs } from "./may-throw.ts";
 import { NudoThrow } from "./nudo-throw.ts";
 import { pureFnNameOf, makeAbsApplyResult, type AbsApplyResult } from "../abs-fn.ts";
-import { noteAbsTruncation, callBudgetKey, resetEvalForkBudget, noteHostEffectBlocked } from "../call-budget.ts";
+import {
+  noteAbsTruncation,
+  callBudgetKey,
+  resetEvalForkBudget,
+  resetEvalForkCount,
+  noteHostEffectBlocked,
+  registerEvalCallBudgetProbe,
+  type AbsTruncationReason,
+} from "../call-budget.ts";
 import {
   tagAbsOrigin,
   pushCallLoc,
@@ -46,6 +54,9 @@ export type EvalCallRecord = {
    * （resultAbs=payload、throwsAbs=never，isLeakedCallRecord
    * 的 never+never 拦不住）。5 处 emitter 均已显式设置。 */
   threw: boolean;
+  /** 调用方帧深度（0 = 最外层求值帧；递归内层帧 ≥1）。
+   *  局部量投影按帧过滤重入记录（与 $nodoPos 同口径）。 */
+  depth?: number;
 };
 
 /** pureCallMemo 内层 Map 上界（与 pureMemo 同口径） */
@@ -82,6 +93,8 @@ export type EvalAbsAssignRecord = {
   line?: number;
   column?: number;
   conditional?: boolean;
+  /** 调用方帧深度（0 = 最外层求值帧；与 EvalCallRecord.depth 同口径） */
+  depth?: number;
 };
 
 /** 赋值记录 collector（作用域化，同 evalCallCollectorSlot） */
@@ -118,6 +131,8 @@ export function $assignRecord(
       line: line || undefined,
       column: column || undefined,
       conditional,
+      // 调用方帧深度（与 EvalCallRecord.depth 同口径——局部量投影按帧过滤）
+      depth: evalCallDepth,
     });
   } catch {
     /* collector 不得打断执行 */
@@ -128,6 +143,57 @@ export function $assignRecord(
  *  作用域化，同 evalCallCollectorSlot） */
 const bindingSinkSlot = createScopedSlot<Map<string, unknown> | null>(() => null);
 registerCollectorScopeParticipant((body) => bindingSinkSlot.runScoped(body));
+
+/** 位置级 Abs 记录（hover 重放插桩 `$nodoPos` 消费）：
+ * (1-based 行, 0-based 列) → 该位置表达式求值态 Abs */
+export type EvalPosRecord = {
+  line: number;
+  column: number;
+  abs: Abs;
+};
+
+/** 位置 collector（作用域化，同 evalCallCollectorSlot） */
+const evalPosCollectorSlot = createScopedSlot<
+  ((r: EvalPosRecord) => void) | null
+>(() => null);
+registerCollectorScopeParticipant((body) => evalPosCollectorSlot.runScoped(body));
+
+/** 返回先前 collector，便于嵌套调用 save/restore（禁止 finally 置 null 砸外层） */
+export function setPosCollector(
+  collector: ((r: EvalPosRecord) => void) | null,
+): ((r: EvalPosRecord) => void) | null {
+  const prev = evalPosCollectorSlot.get();
+  evalPosCollectorSlot.set(collector);
+  return prev;
+}
+
+export function getPosCollector(): ((r: EvalPosRecord) => void) | null {
+  return evalPosCollectorSlot.get();
+}
+
+/**
+ * 位置级 Abs 记录（transpile 插桩调用——`recordPositions` 时
+ * Identifier 值读 / 静态成员读包此调用）：把 (行, 列) → Abs
+ * 记入活跃 collector 并**原样返回**（语义恒等）；无收集器时
+ * 直通（热路径零开销——仅重放开插桩）。
+ *
+ * 仅记最外层求值帧（evalCallDepth === 0）：递归函数的内层帧
+ * （$callNamed/$new 预算帧）会以重入态重执行同一源码位置——
+ * 自递归类型（lazy 自引用契约）下内层帧携带 cycle 截断的
+ * opaque unknown，first-wins 记录会以外层正确值被污染为序；
+ * 编辑器位置的语义以最外层调用帧（hover 重放的单次入口）为准。
+ */
+export function $nodoPos(v: Abs, line: number, column: number): Abs {
+  const collector = evalPosCollectorSlot.get();
+  if (collector && evalCallDepth === 0) {
+    try {
+      collector({ line, column, abs: v });
+    } catch {
+      /* collector 不得打断执行 */
+    }
+  }
+  return v;
+}
 
 export function setEvalBindingSink(sink: Map<string, unknown> | null): void {
   bindingSinkSlot.set(sink);
@@ -215,10 +281,16 @@ export function neverExecHostName(fn: unknown): string | null {
 /**
  * 守卫宿主副作用（调用与构造共用）：命中名单 → 上报 + 返回 opaque unknown；
  * 未命中 → null，调用方继续正常路径。
+ * Bug 30（强转三连）：queueMicrotask 原生同步校验 IsCallable——fail-closed
+ * 仍不执行回调，但校验是纯静态的，与原生同口径（setTimeout/fetch 等名单
+ * 其余成员原生接受任意首实参，无校验可言，维持纯拦截）。
  */
-export function blockHostSideEffect(fn: unknown): Abs | null {
+export function blockHostSideEffect(fn: unknown, args?: Abs[]): Abs | null {
   const hostName = neverExecHostName(fn);
   if (hostName === null) return null;
+  if (hostName === "queueMicrotask" && args) {
+    validateCallableArg(args[0], "queueMicrotask callback must be callable");
+  }
   noteHostEffectBlocked(hostName);
   return abs({ k: "unknown" }, undefined, undefined, "opaque");
 }
@@ -341,7 +413,7 @@ export function callHostGlobalFn(fn: unknown, args: Abs[]): Abs | undefined {
     }
   }
   if (g !== undefined) return g;
-  const blocked = blockHostSideEffect(fn);
+  const blocked = blockHostSideEffect(fn, args);
   if (blocked !== null) return blocked;
   return callHostGlobalLiteralOnly(name, fn as (...a: unknown[]) => unknown, args);
 }
@@ -379,6 +451,31 @@ let evalTotalCallsLimit = MAX_EVAL_TOTAL_CALLS;
 const evalFnCallIds = new WeakMap<object, string>();
 let evalFnCallIdSeq = 0;
 
+// --- B 调用预算可观测累计（issue #158）-------------------------------------
+// 会话（enterEvalCallBudgetSession 最外层）重置预算计数 depth/totalCalls/
+// activeKeys，但**不**重置这三个：check --json 的 budget 块要反映整个宿主
+// 入口（一次 check 内 generalize / tryRunTranspiled 会开多个会话），否则
+// `truncated:false` 与 nudo:recursion-truncated 共存自相矛盾。
+// 宿主入口清零路径 = resetAbsCallBudget（经探针）与 resetEvalCallBudget。
+let evalObsCalls = 0;
+let evalObsCallTruncated = false;
+let evalObsCycleTruncated = false;
+
+// 探针注册（call-budget 反向 import 破环 → 注册式；本模块加载即生效）
+registerEvalCallBudgetProbe({
+  stats: () => ({
+    calls: evalObsCalls,
+    maxCalls: evalTotalCallsLimit,
+    callTruncated: evalObsCallTruncated,
+    cycleTruncated: evalObsCycleTruncated,
+  }),
+  resetObservability: () => {
+    evalObsCalls = 0;
+    evalObsCallTruncated = false;
+    evalObsCycleTruncated = false;
+  },
+});
+
 function evalStableId(obj: object): string {
   let id = evalFnCallIds.get(obj);
   if (id === undefined) {
@@ -396,6 +493,10 @@ export function resetEvalCallBudget(): void {
   evalBudgetSessionDepth = 0;
   evalCallDepthLimit = MAX_EVAL_CALL_DEPTH;
   evalTotalCallsLimit = MAX_EVAL_TOTAL_CALLS;
+  // 观测累计同轮生命周期（与 resetAbsCallBudget 经探针的清零同口径）
+  evalObsCalls = 0;
+  evalObsCallTruncated = false;
+  evalObsCycleTruncated = false;
   // fork 总次数与调用预算同轮生命周期（不跨宿主入口累积）
   resetEvalForkBudget();
   // pure memo 同轮生命周期（宿主入口清零，防长驻进程无界膨胀）
@@ -434,7 +535,9 @@ export function enterEvalCallBudgetSession(): void {
     evalCallDepth = 0;
     evalTotalCalls = 0;
     evalActiveCallKeys = [];
-    resetEvalForkBudget();
+    // 只清 fork 预算计数（新会话拿满额度）；截断旗标/观测累计 latch 到
+    // 宿主入口（#158：stats 不得与已上报诊断矛盾）
+    resetEvalForkCount();
   }
   evalBudgetSessionDepth++;
 }
@@ -472,21 +575,29 @@ function evalCallBudgetKey(name: string, fn: unknown, args: Abs[]): string {
   return callBudgetKey(name, id, args);
 }
 
-/** 进入命名调用：超限/cycle → 不执行，返回 opaque（并上报截断）。
- *  $new 的宿主函数 [[Construct]] 体执行共用（Bug 16，递归构造深度守卫）。 */
+/** 进入命名调用：cycle/超限 → 不执行，返回 opaque（并上报截断）。
+ *  $new 的宿主函数 [[Construct]] 体执行共用（Bug 16，递归构造深度守卫）。
+ *  归因（#158）：cycle=同 name+arg 指纹已在栈上（预算抬不动），先于
+ *  depth/calls 判定——与守卫的短路顺序一致。 */
 export function evalEnterCall(name: string, fn: unknown, args: Abs[]): { ok: boolean; key?: string } {
   const key = evalCallBudgetKey(name, fn, args);
-  if (
-    evalActiveCallKeys.includes(key) ||
-    evalCallDepth >= evalCallDepthLimit ||
-    evalTotalCalls >= evalTotalCallsLimit
-  ) {
-    noteAbsTruncation(name);
+  const reason: AbsTruncationReason | undefined = evalActiveCallKeys.includes(key)
+    ? "cycle"
+    : evalCallDepth >= evalCallDepthLimit
+      ? "depth"
+      : evalTotalCalls >= evalTotalCallsLimit
+        ? "calls"
+        : undefined;
+  if (reason) {
+    evalObsCallTruncated = true;
+    if (reason === "cycle") evalObsCycleTruncated = true;
+    noteAbsTruncation(name, reason);
     return { ok: false };
   }
   evalActiveCallKeys.push(key);
   evalCallDepth++;
   evalTotalCalls++;
+  evalObsCalls++;
   return { ok: true, key };
 }
 
@@ -556,7 +667,7 @@ export function $callNamed(
           g = evalGlobalFn(ctorName, args);
         }
       }
-      const blockedHost = g === undefined ? blockHostSideEffect(fn) : null;
+      const blockedHost = g === undefined ? blockHostSideEffect(fn, args) : null;
       if (g !== undefined) {
         result = g;
       } else if (blockedHost !== null) {
@@ -620,6 +731,10 @@ export function $callNamed(
           result,
           callLoc: loc ? { line: loc[0], column: loc[1] } : undefined,
           threw,
+          // 调用方帧深度（evalEnterCall 已弹栈后记录）：0 = 最外层
+          // 求值帧。递归内层帧的重入记录与顶层帧同 callLoc——局部量
+          // 投影（collectEnclosingFnLocals）按帧过滤，与 $nodoPos 同口径
+          depth: evalCallDepth,
         });
       } catch {
         /* collector 不得打断 */

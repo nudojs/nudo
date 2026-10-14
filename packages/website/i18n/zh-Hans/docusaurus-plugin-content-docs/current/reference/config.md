@@ -83,6 +83,14 @@ Nudo 从 `package.json` 的 `nudo` 键读取项目配置 —— 没有 `nudo.jso
 
 范围调优实操（TS/JS 混合仓、`directives` vs `exports`）见[与 TypeScript 共存](../guides/coexistence.md)；预算行为见[性能](../guides/performance.md)。
 
+## `nudo.inlayHints` —— IDE 展示面
+
+| 键 | 取值 | 默认 | 含义 |
+|---|---|---|---|
+| `inlayHints.parameters` | boolean | `false` | 参数契约 inlay hint（函数形参后的 `where …` 文本，来自显式 `*.nudo.js` / `@nudo:contract` 契约）。hint 展示契约的声明形态 —— 侧车模板表达式或指令的约束名（如 `where nullable(astNode)`）—— 而非完全展开的谓词；完整谓词经 hint tooltip（hover）展示。默认关：折叠文本与 hover 及 `● contract` CodeLens 已展示的内容重复，且部分契约（派生形参）仍回落到长谓词展开。返回类型 inlay（`: …`）不受影响。 |
+
+VS Code 设置 `nudo.inlayHints.parameters`（Zed 对应 `language-servers.nudo.initialization_options`）只在项目未显式设置该键时提供默认值。
+
 ## `nudo.cache` —— 项目磁盘缓存
 
 | 取值 | 含义 |

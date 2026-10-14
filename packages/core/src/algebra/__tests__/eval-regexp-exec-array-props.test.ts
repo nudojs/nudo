@@ -9,12 +9,8 @@
  * 键均可读，m[0]/m[1] 下标读不回归。
  */
 import { describe, it, expect } from "vitest";
-import { type Abs, runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-
-function call(src: string, name: string, args: Abs[] = []) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, name, args);
-}
+import { type Abs, litValue } from "@nudojs/core";
+import { call } from "./eval-helpers.ts";
 
 describe("Bug 11: exec/match result carries index/input/groups", () => {
   it("exec().index → 匹配下标", () => {

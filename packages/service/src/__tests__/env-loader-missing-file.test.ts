@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, it, expect, beforeEach } from "vitest";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { tmpProject as makeTmpProject } from "./tmp-project.ts";
 import {
   preloadPathEnvs,
   getPathEnvLoadErrors,
@@ -19,15 +19,8 @@ const OK_ENV = `export function defineEnv() {
 }
 `;
 
-const dirs: string[] = [];
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
-});
-
 function tmpProject(): string {
-  const dir = mkdtempSync(join(tmpdir(), "nudo-env-missing-"));
-  dirs.push(dir);
-  return dir;
+  return makeTmpProject("nudo-env-missing-");
 }
 
 describe("preloadPathEnvs — 缺失文件（静默跳过 → nudo:env-unresolved）", () => {

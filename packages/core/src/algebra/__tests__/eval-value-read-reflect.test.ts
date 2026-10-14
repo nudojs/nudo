@@ -32,11 +32,7 @@ import {
   setMayThrowCollector,
   type MayThrowEffect,
 } from "../exec/may-throw.ts";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { call } from "./eval-helpers.ts";
 
 /** formatAbs 渲染 + conf 后缀剥离（evalWithArgs.norm 同款） */
 function fmt(a: unknown): string {
@@ -106,10 +102,10 @@ describe("Bug 9: 函数值属性 name / length / prototype", () => {
       .toEqual({ ok: true, value: undefined });
     const r = call(`export function f() { const g = () => 1; return g.name; }`);
     expect(fmt(r.result)).toBe("string");
-    // fn Abs 面（$fnVal 产物）：length 保守 number ≥ 0（含 var term/pred 渲染）
+    // Bug 69：$fnVal opts.length 通道覆盖箭头函数 —— length 折叠精确 arity
+    // （原生 (a, b) => a 的 length === 2）
     const len = call(`export function f() { const g = (a, b) => a; return g.length; }`);
-    expect(fmt(len.result)).toContain("number");
-    expect(fmt(len.result)).toContain("≥ 0");
+    expect(litValue(len.result)).toEqual({ ok: true, value: 2 });
   });
 
   it("Object.prototype 方法在函数值上一等可读（typeof f.toString）", () => {

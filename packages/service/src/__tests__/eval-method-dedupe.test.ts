@@ -1,11 +1,11 @@
 import { it, expect, describe } from "vitest";
 import { analyzeFile } from "@nudojs/service";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { tmpProject } from "./tmp-project.ts";
 
 function analyze(src: string) {
-  const dir = mkdtempSync(join(tmpdir(), "nudo-bdedup-"));
+  const dir = tmpProject("nudo-bdedup-");
   writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "bdedup", version: "1.0.0" }));
   writeFileSync(join(dir, "index.js"), src);
   return analyzeFile(join(dir, "index.js"), src);

@@ -15,8 +15,6 @@
  */
 import { describe, it, expect } from "vitest";
 import {
-  checkSource,
-  pTrue,
   constraintToEntryAbs,
   formatShape,
   leqAbs,
@@ -28,11 +26,7 @@ import {
   union,
   abs,
 } from "../index.ts";
-import { withStdImport, stdOpts } from "./nudo-constraints.ts";
-
-function issuesOf(src: string) {
-  return checkSource("/t/nullish.js", withStdImport(src), pTrue, stdOpts);
-}
+import { issuesOf } from "./nudo-constraints.ts";
 
 describe("constraintOnTermAbs nullish encoding (Bug 24, unit)", () => {
   it("litC(null) entry Abs = unknown shape + term lit(null), renders null", () => {
@@ -72,7 +66,7 @@ describe("nudo check: numOrNull contract signatures (Bug 24, four symptoms)", ()
     const r = issuesOf(`
 /** @nudo:contract v numOrNull */
 export function sig(v) { return v; }
-`);
+`, "/t/nullish.js");
     const s = r.signatures.find((x) => x.name === "sig")!;
     expect(s.display).toContain("number | null");
     expect(s.display).not.toContain("unknown");
@@ -83,7 +77,7 @@ export function sig(v) { return v; }
     const r = issuesOf(`
 /** @nudo:contract v numOrNull */
 export function guardRet(v) { if (v !== null) { return v; } return 0; }
-`);
+`, "/t/nullish.js");
     const s = r.signatures.find((x) => x.name === "guardRet")!;
     expect(s.display.replace(/\s+/g, "")).not.toContain("null");
     expect(s.display).toContain("number");
@@ -93,7 +87,7 @@ export function guardRet(v) { if (v !== null) { return v; } return 0; }
     const r = issuesOf(`
 /** @nudo:contract v numOrNull */
 export function guardAdd(v) { if (v !== null) { return v + 1; } return 0; }
-`);
+`, "/t/nullish.js");
     const s = r.signatures.find((x) => x.name === "guardAdd")!;
     expect(s.display).not.toContain("string");
     expect(s.display).not.toContain("throws");
@@ -104,7 +98,7 @@ export function guardAdd(v) { if (v !== null) { return v + 1; } return 0; }
     const r = issuesOf(`
 /** @nudo:contract v numOrNull */
 export function guardRel(v) { if (v !== null && v > 0) { return v; } return 0; }
-`);
+`, "/t/nullish.js");
     expect(r.issues.filter((i) => i.code === "nudo:entry-may-throw")).toEqual([]);
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
     const s = r.signatures.find((x) => x.name === "guardRel")!;
@@ -116,7 +110,7 @@ export function guardRel(v) { if (v !== null && v > 0) { return v; } return 0; }
     const r = issuesOf(`
 /** @nudo:contract v nullableNum */
 export function nullableSig(v) { return v; }
-`);
+`, "/t/nullish.js");
     const s = r.signatures.find((x) => x.name === "nullableSig")!;
     expect(s.display).not.toContain("unknown");
     expect(s.display).toContain("null");
@@ -126,7 +120,7 @@ export function nullableSig(v) { return v; }
     const r = issuesOf(`
 /** @nudo:contract v posOrNull */
 export function litOnly(v) { return v; }
-`);
+`, "/t/nullish.js");
     expect(r.issues.filter((i) => i.code === "nudo:unknown-inference")).toEqual([]);
   });
 
@@ -134,7 +128,7 @@ export function litOnly(v) { return v; }
     const r = issuesOf(`
 /** @nudo:contract v numOrNull */
 export function bad(v) { return v + "!"; }
-`);
+`, "/t/nullish.js");
     // issue #119：number | null ⊗ string 原生全定（`1 + "!"`→"1!"、
     // `null + "!"`→"null!"——ToString 对 number/null 恒 total），lit(null)
     // 成员不再记 Symbol 强转 may-throw（Bug 24 时钉住的 wave-1 口径已修）。

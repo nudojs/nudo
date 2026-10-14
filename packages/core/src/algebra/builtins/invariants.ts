@@ -28,10 +28,18 @@ export function getPropFlags(o: Abs): Map<string, PropFlags> | undefined {
 }
 
 /** 枚举视图键（for-in / Object.keys|values|entries / Object.assign）：
- *  剔除 defineProperty 记下的 enumerable:false 自有键。 */
+ *  剔除 defineProperty 记下的 enumerable:false 自有键与 internal 私有槽
+ *  （Bug 84：私有字段是内部槽，枚举面不可见；$in/$get 不走此视图）。
+ *  注："#" 键空间与公共字符串键共存——`"#x" in obj` 无法区分私有 in 与
+ *  字符串 in（Bug 78 混淆键设计权衡），internal 标志只来自 transpile 期
+ *  PrivateName 标记，公共 {"#x":1} 不受影响。 */
 export function enumOwnKeys(o: Abs, slots: Record<string, unknown>): string[] {
   const flags = getPropFlags(o);
-  return Object.keys(slots).filter((k) => flags?.get(k)?.enumerable !== false);
+  return Object.keys(slots).filter(
+    (k) =>
+      flags?.get(k)?.enumerable !== false &&
+      (slots[k] as { internal?: boolean } | undefined)?.internal !== true,
+  );
 }
 
 /** 该键是否出现在枚举视图（无 flags 表 = 默认 enumerable） */

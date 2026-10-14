@@ -266,6 +266,22 @@ Sidecars are real JS modules: they may import builders from `@nudojs/core` and c
 **Auto-binding rules:**
 
 - Binds only **same-name local named exports** of the source file (`export function` / `export const`). Re-exports, `export default`, and CJS are out of scope.
+- Inside `fn({ ... })`, keys bind by parameter name: plain identifiers, destructured binding names, or **dot-path keys** for nested destructuring. The outer key of a nested pattern stays bindable as a whole-object `shape(...)`; array elements have no path form. Flat names always win over a dotted key that would spell the same string.
+
+```javascript
+// v.js
+export function nested({ card: { grade } }) {
+  return grade + "#";
+}
+```
+
+```javascript
+// v.nudo.js — 'card.grade' binds the inner field; 'card' binds the whole object
+import { fn, string } from "@nudojs/core";
+
+export const nested = fn({ "card.grade": string() }, string());
+```
+
 - Sidecars under `node_modules/` are never auto-loaded.
 - Same-parameter annotations from source and sidecar are **conjoined**; a contradictory conjunction (e.g. `x > 0` ∧ `x < 0`) reports `nudo:interface-conflict`.
 - A sidecar binding wins over nothing else — merge order is: handwritten (source annotation ∪ sidecar binding) > generated segment > implicit inference. The layer is shown by `nudo contract` (`[handwritten]` / `[generated]` / `[implicit]`).
@@ -321,6 +337,118 @@ function register(u) {
   return `${u.id}:${u.name}`;
 }
 ```
+
+---
+
+## @nudo:assume — User Lemmas {#nudoassume--user-lemmas}
+
+Declare a **cross-variable lemma** the engine cannot derive — an algorithmic fact relating two parameters or top-level locals (edit distance ≤ the longer string's length) that plain interval propagation cannot express, because it needs a correlation between two abstract values. The premise feeds relational division folding — `d <= max ∧ max > 0 ⇒ d/max <= 1` (mirrors and negative denominators flip the inequality) — and downstream `+` / `-` / `*` folding consumes the derived bound, so return contracts like `1 - d/max ∈ [0,1]` become provable.
+
+### Syntax
+
+```text
+@nudo:assume <name> <= <name>
+@nudo:assume <name> >= <name>
+```
+
+- **Function-scoped** — the comment block immediately above the function, on the same scan path as `@nudo:contract`; it anchors to the nearest function.
+- Both names must be **parameters of the anchored function or top-level `const`/`let`/`var` locals of its body** (`d`, `max`) — plain `Identifier` declarators among the body's direct statements; destructuring, nested blocks, and `for`-init declarations are not accepted. Otherwise error `nudo:assume-invalid`.
+- Locals follow **SSA semantics** — the lemma anchors to the bound value at its definition point and applies from definition to the end of the scope; after a reassignment the relevance conservatively lapses (no fold).
+- Anchoring activates only in the target function's own frame — callee frames see an empty premise slot, so same-name locals there cannot mismatch.
+- Only `<=` / `>=` (`>=` is normalized to `le`). `<`, `>`, `==`, and constant bounds (`d <= 10`) are invalid — constant bounds belong to sidecar contracts (`number().le(10)`).
+- Constant bounds still belong to sidecars — but a sidecar cannot reach a function's own locals: put a local's constant bound on the **return of the callee that produces it** (e.g. a levenshtein sidecar `return number().ge(0)`).
+- Multiple lines stack — premises are conjoined.
+
+### Semantics — an axiom, not a checked fact
+
+- **The engine never verifies the lemma.** When a proof relies on it, `nudo check` emits info `nudo:assume-relied` (`sim: return contract proved via @nudo:assume d <= max`) and suggests falsifying it with concrete `@nudo:case` runs (`nudo test`). A wrong lemma makes the affected proof unsound — keep lemmas few and reviewable.
+- **Premises never cross call boundaries.** Callee frames see an empty premise slot (cleared at function entry, restored on exit); recursive calls are conservatively cleared. A lemma about `sim`'s `d`/`max` cannot leak into another function's same-name parameters. While premises are active, contract-face adoption is also skipped: an info-free argument is not re-anchored to the callee's parameter names, so fabricated same-name terms cannot flow back into the caller frame and masquerade as the lemma's variables (a `helper(d)` call inside `sim` would otherwise let `helper`'s own `d` collide with the lemma's `d`).
+
+### Example — similarity score
+
+```javascript
+// sim.js
+/**
+ * @nudo:assume d <= max
+ */
+export function sim(d, max) {
+  return max === 0 ? 1 : 1 - d / max;
+}
+```
+
+```javascript
+// sim.nudo.js
+import { fn, number } from "@nudojs/core";
+
+export const sim = fn(
+  { d: number().ge(0), max: number().ge(1) },
+  number().ge(0).le(1),
+);
+```
+
+```text
+$ nudo check sim.js
+OK
+  0 error · 0 warning · 1 info · 1 fn
+
+signatures
+  sim(d: number, max: number) => 1 | number
+
+issues
+  [INFO sim] sim: return contract proved via @nudo:assume d <= max  (nudo:assume-relied)
+      → @nudo:assume is a user-supplied axiom — falsify it with concrete @nudo:case runs (nudo test)
+```
+
+Remove the `@nudo:assume` line and the same file + sidecar stays **honestly unproven** — warning `nudo:unproven-return`:
+
+```text
+[WARNING sim] sim: return value ⊭ @nudo:contract return number().ge(0).le(1)  (nudo:unproven-return)
+```
+
+Interval propagation knows `d >= 0` and `max >= 1` separately, but nothing correlates the two values — that correlation is exactly what the lemma supplies.
+
+### Example — locals as lemma names
+
+Lemma names may also be top-level locals of the anchored function's body:
+
+```javascript
+// sim.js
+/**
+ * @nudo:assume d <= max
+ */
+export function sim(a, b) {
+  const d = rawDist(a, b);   // edit distance
+  const max = maxLen(a, b);  // longer string's length
+  return 1 - d / max;
+}
+```
+
+`d` and `max` are top-level `const` locals — each anchors at its definition (SSA semantics) and stays lemma-relevant to the end of the scope. Their **constant** bounds come from the producing callees' sidecars, because the enclosing function's sidecar cannot reach its locals:
+
+```javascript
+// rawDist.nudo.js / maxLen.nudo.js
+import { fn, number, string } from "@nudojs/core";
+
+export const rawDist = fn({ a: string(), b: string() }, number().ge(0));
+export const maxLen = fn({ a: string(), b: string() }, number().ge(1));
+```
+
+With `d >= 0` (rawDist), `max >= 1` (maxLen), and the lemma `d <= max`, the `1 - d/max ∈ [0,1]` return contract folds — same proof shape as the parameter version (sim's own sidecar carries `number().ge(0).le(1)` as usual).
+
+### Division of labor with sidecar contracts
+
+| Fact | Belongs to |
+|------|-----------|
+| Constant bound — `d <= 10`, `max >= 1` | Sidecar / `@nudo:contract` builders (`number().le(10)`) |
+| Cross-variable lemma — `d <= max` | `@nudo:assume` (the engine cannot derive it) |
+
+`.le("max")` used to be accepted silently, building a **string-literal** predicate (`le(self, lit("max"))`) that never participated in any proof. Numeric-bound builders (`gt` / `ge` / `lt` / `le` / `min` / `max` / `shift`) now reject non-numeric, non-finite arguments at load time — the sidecar fails with `nudo:interface-load`:
+
+```text
+sidecar './sim.nudo.js' failed to load: nudo le(): finite numeric bound expected, got "max" — variable references are not supported; express cross-variable lemmas with @nudo:assume (issue #152)
+```
+
+Migrate such sidecars to `@nudo:assume`.
 
 ---
 
@@ -620,6 +748,7 @@ const result = a + b;
 | `@nudo:skip` | `[=> returnsExpr]` / `[(returnsExpr)]` | Skip evaluation, use existing type info |
 | `@nudo:sample` | `N` | Reserved no-op (parsed, not consumed) |
 | `@nudo:contract` | `param constraint` / `return constraint` | In-source contract (main path is the `*.nudo.js` sidecar auto-binding) |
+| `@nudo:assume` | `<name> <= <name>` (or `>=`) | Declare a cross-variable user lemma over params or top-level locals (axiom, never verified) — proofs relying on it are audit-tagged `nudo:assume-relied` |
 | `@nudo:throws` | `Error, TypeError` or `*` | Declare intentional throws — discharges L2 `nudo:entry-may-throw` for the declared kinds |
 | `@nudo:import` | `{ name } from "spec"` (file-level `///`) | Import `*.nudo.js` constraint templates for `@nudo:contract` |
 | `@nudo:env` | `name1, name2` (file-level `///`) | Declare runtime environment APIs |

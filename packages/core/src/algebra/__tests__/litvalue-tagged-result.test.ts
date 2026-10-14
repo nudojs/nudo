@@ -6,24 +6,9 @@
  * 判是否是字面量。本文件覆盖 lit(undefined) / lit(NaN) / bigint 全路径。
  */
 import { describe, it, expect } from "vitest";
-import {
-  abs,
-  bigintLit,
-  callTranspiledExportFull,
-  litValue,
-  numLit,
-  runTranspiled,
-  unknown,
-  type Abs,
-  type LiteralValue,
-  type LitValueResult,
-} from "../index.ts";
+import { abs, bigintLit, litValue, numLit, unknown, type Abs, type LiteralValue, type LitValueResult } from "../index.ts";
 import { lit } from "../term.ts";
-
-function call(src: string, fnName = "f", args: Abs[] = []) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, args);
-}
+import { call } from "./eval-helpers.ts";
 
 function okVal(v: LiteralValue): LitValueResult {
   return { ok: true, value: v };

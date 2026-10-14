@@ -12,15 +12,7 @@ import {
   callTranspiledExportFull,
   litValue,
 } from "../index.ts";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
-
-function val(src: string) {
-  return litValue(call(src).result);
-}
+import { val } from "./eval-helpers.ts";
 
 describe("charAt / charCodeAt default and ToNumber index", () => {
   it("charAt() defaults to 0", () => {

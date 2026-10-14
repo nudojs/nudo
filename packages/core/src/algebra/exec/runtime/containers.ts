@@ -17,16 +17,20 @@ import {
   mapEntriesAbs, mapSizeAbs, setSizeAbs,
 } from "../../collections.ts";
 import { shouldWidenArrayLiteral, widenedArrayConf, TUPLE_MATERIALIZE_CAP } from "../../containers.ts";
-import { registerMatchIter, registerTplElements, matchIterElements } from "../match-iter.ts";
+import { TYPED_ARRAY_ELEMENT } from "../../builtins/shared.ts";
+import { registerMatchIter, registerTplElements, matchIterElements, replayGenDeferred, drainGenElements, genDrainViewOf, hasGenView, peekGenElement, peekAllGenElements, proxyPartsOf, proxyTrapOf } from "../match-iter.ts";
 import {
-  evalNamespaceCall, extStateOf, getPropFlags, migrateInvariants, enumOwnKeys,
+  evalNamespaceCall, extStateOf, getPropFlags, setPropFlags, migrateInvariants, enumOwnKeys,
   regexBrandAbsFrom, evalObjectProtoMethod, objectProtoMethodAbs,
   isObjectProtoBrand, OBJECT_PROTO_METHOD_NAMES, isSymbolAbs,
   symbolDescriptionAbs, objectProtoBrand, builtinCtorAbs, ctorNameOfRecv,
-  protoBrandAbs, notePromiseExecutorFork,
+  protoBrandAbs, notePromiseExecutorFork, protoOfRecv, makeIntlCtorAbs,
+  enterPromiseForkArm, leavePromiseForkArm,
 } from "../../builtins.ts";
 import { arrayMethodAbs } from "../../builtins/array.ts";
-import { validateCallableArg, validateIndexArg } from "../../hof.ts";
+import { validateCallableArg, validateIndexArg, applyCallbackAbs } from "../../hof.ts";
+import { emptyEnv } from "../../ast-env.ts";
+import { defaultLeakBudget } from "../../leak.ts";
 import {
   noteUnknownMemberMissing, noteObjSlotMissing,
   noteAnyMemberMayThrow, noteNullishMemberThrows, isNullishAbs, anyMemberResult,
@@ -35,20 +39,25 @@ import {
   BOOLEAN_PROTO_METHODS,
   SYMBOL_PROTO_METHODS,
   BIGINT_PROTO_METHODS,
+  ARRAY_PROTO_METHOD_NAMES,
+  OBJECT_PROTO_NAMES,
 } from "../member-diag.ts";
 import { errorTypeAbs, recordMayThrow, type MayThrowEffect } from "../may-throw.ts";
-import { getEvalClass } from "../class-registry.ts";
+import { getEvalClass, classInstanceInnerOf, lookupClassValue, fnProtoOf, type EvalClassSpec } from "../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../class-mark.ts";
+import { markFreshInstance } from "../../instance-id.ts";
 import {
   NudoThrow, undef, oobUndef, isOobUndef, throwStrictWrite, writeInPlace, clearStaleTermPred,
   asAbsVal, $lit, litTruth, isDefinitelyTrue, isDefinitelyFalse, currentExecPhi,
   isNudoReturn, isNudoBreak, isNudoContinue, $fnVal, $rawThis, noBody, confPartialPacked,
 } from "./state.ts";
 import { $unknown, $toNumber, $eq, $ne, $typeof, $add, $sub } from "./ops.ts";
-import { lookupObjAccessor, migrateAccessors, $objAccessor, findClassAccessor, findStaticClassAccessor, $in, $instanceof, $del, accessorTable, BUILTIN_BRAND_METHODS, evalClassChain } from "./members.ts";
+import { findClassAccessor, findStaticClassAccessor, $in, $instanceof, $del, BUILTIN_BRAND_METHODS, BUILTIN_BRAND_ACCESSORS, ITERABLE_BRANDS, evalClassChain, builtinSuperCtorOf, chainProtoSlotOf, classChainHasHole, chainHasOpaqueFnParent } from "./members.ts";
+import { lookupObjAccessor, migrateAccessors, $objAccessor, accessorTable } from "../../accessors.ts";
+import { copyMatchIterTables } from "../match-iter.ts";
 import { DEFAULT_MAX_LOOP_ITERS, MAX_CONCRETE_LOOP_ITERS, LOOP_TRUNCATION_LABEL } from "./loop-budget.ts";
 import { makeLoopWidener } from "./loop-widen.ts";
-import { noteAbsTruncation } from "../../call-budget.ts";
+import { noteLoopTruncation } from "../../call-budget.ts";
 import { isNudoThrow, callAtFunctionBoundary } from "./state.ts";
 import { $call } from "../call.ts";
 
@@ -143,13 +152,30 @@ export function tupleOrWiden(els: Abs[], conf: Confidence): Abs {
   return abs({ k: "tuple", elements: els }, undefined, undefined, conf);
 }
 
+/**
+ * R1b：生成器 drain 列表重组数组——exact 视图（makeGenObject 注册的线性
+ * 收集序列）时元素序列是权威数据（Bug 53 ys.els），越过 TUPLE_LITERAL_CAP
+ * 出 exact 元组（cap 只约束字面量/拼接的类型面）；仅超大列表
+ * （> TUPLE_MATERIALIZE_CAP）退 arr join（sound 上界）。非 exact（路径
+ * 敏感拼接序列）→ tupleOrWiden 原口径（widened arr）。
+ */
+function drainTupleOrWiden(els: Abs[], conf: Confidence, exact: boolean): Abs {
+  if (exact && els.length <= TUPLE_MATERIALIZE_CAP) {
+    return abs({ k: "tuple", elements: els }, undefined, undefined, conf);
+  }
+  return tupleOrWiden(els, conf);
+}
+
 /** 数组字面量 → ≤cap tuple（逐元素精确）/ >cap arr；策略与 containers.ts 同源 */
 export function $arr(items: Abs[]): Abs {
-  return tupleOrWiden(items.map(asAbsVal), "exact");
+  // R2b：每次字面量求值产出新数组对象——打新鲜实例标（=== 折 false）
+  return markFreshInstance(tupleOrWiden(items.map(asAbsVal), "exact"));
 }
 
 /**
- * `arguments` 对象 → 类数组 tuple（$len/$idx 投影 length/下标；typeof 为 "object"）。
+ * `arguments` 对象 → 类数组 **brand "Arguments"** 包 tuple 内层（Bug 56：
+ * 不是数组 exotic——`Array.isArray(arguments)` 原生 false；$idx/$len/$in/
+ * spread/Array.from 经委托/剥层保持下标/长度/迭代精确）。
  * strict/ESM 与形参**独立映射**：写 `arguments[i]` 不改形参，写形参不改 `arguments`。
  * （sloppy 非严格是 mapped arguments object，二者互相写回——Nudo 分析按 ESM/strict。）
  * 与 rest 绑定解耦：rest 仍从真实 `arguments`/rest 形参收集，本对象只服务用户写的 `arguments`。
@@ -158,7 +184,8 @@ export function $arguments(items: ArrayLike<unknown>): Abs {
   const n = typeof items?.length === "number" && items.length > 0 ? items.length : 0;
   const els: Abs[] = new Array(n);
   for (let i = 0; i < n; i++) els[i] = asAbsVal((items as ArrayLike<unknown>)[i]);
-  return abs({ k: "tuple", elements: els }, undefined, undefined, "exact");
+  const tuple = abs({ k: "tuple", elements: els }, undefined, undefined, "exact");
+  return abs({ k: "brand", name: "Arguments", shape: tuple }, undefined, undefined, "exact");
 }
 
 /**
@@ -449,6 +476,10 @@ export function $copy(a: Abs): Abs {
     migrateAccessors(a, next);
     migrateInvariants(a, next);
     migrateNullProto(a, next);
+    // 生成器 / 模板标签 / matchAll 迭代器对象（obj 形 +
+    // @@iterator 槽）：侧表随副本迁移，否则臂内消费点
+    // 重放查不到副本（延迟异常静默丢弃，L2 假阴）
+    copyMatchIterTables(a, next);
     return next;
   }
   if (s.k === "brand") {
@@ -457,6 +488,8 @@ export function $copy(a: Abs): Abs {
     const clsName = classNameOfValue(a as object);
     if (clsName) markClassValue(next as object, clsName);
     migrateInvariants(a, next);
+    // RegExpMatchIterator brand：匹配项侧表随副本迁移
+    copyMatchIterTables(a, next);
     return next;
   }
   if (s.k === "eff") {
@@ -470,9 +503,225 @@ export function $copy(a: Abs): Abs {
   return a;
 }
 
+/**
+ * sort 的元组排序面（$arrMutContainer 与 invokeArrMethod 共用的单一事实源）：
+ * 默认比较器（缺省 / 严格 undefined）+ 全字面量元素 → 精确排序
+ * （undefined 恒排尾不参与比较；≥2 个可比较元素含 symbol → ToString
+ * 比较，确定 TypeError）。
+ * M4：比较器在场 → 仅 effectFree facet（transpile 保守静态判定）回调真
+ * 执行——原生调用次数是引擎不可知的算法内部量，副作用回调多执行不可
+ * 回滚（外层绑定 n++ 错定值），无 facet 一律降级不执行。effectFree 时：
+ * - ≤24 个可比较元素：全有序对调用并缓存符号——全对抛 → 定抛（原生首
+ *   调必为某有序对）；部分抛 → may + 降级；全数值 → 反对称/传递一致 →
+ *   稳定插入排序精确折叠（一致比较器的稳定序唯一，ES2019 起原生保证
+ *   稳定）；不一致 → 降级（原生序依赖算法细节）；
+ * - >24：单探针（首对不可知）抛 → may + 降级，否则直接降级。
+ * 调用方自行做 GetSortComparator 校验。
+ */
+const SORT_CMP_SWEEP_CAP = 24;
+
+export function sortTupleAbs(
+  arr: Abs,
+  cmp: Abs | undefined,
+): Abs {
+  const shape = arr.shape as { k: "tuple"; elements: Abs[]; holes?: number[] };
+  const holes = shape.holes ?? [];
+  const slots = shape.elements.map((el, i) => (holes.includes(i) ? undef() : el));
+  const isUndefLit = (el: Abs): boolean =>
+    el.term?.op === "lit" && el.term.value === undefined;
+  const asAbsOrNull = (v: unknown): Abs | null => {
+    const a = asAbsVal(v);
+    return a && typeof a === "object" && "shape" in a ? a : null;
+  };
+  const cmpAbs = cmp === undefined ? undefined : asAbsOrNull(cmp);
+  const isDefaultCmp =
+    cmp === undefined ||
+    (!!cmpAbs?.term &&
+      cmpAbs.term.op === "lit" &&
+      (cmpAbs.term as { value: unknown }).value === undefined);
+  const degrade = (): Abs => {
+    const el = shape.elements.length
+      ? shape.elements.reduce((x, y) => joinAbs(x, y))
+      : unknown;
+    return abs({ k: "arr", element: el }, undefined, undefined, confJoin(arr.conf, "path"));
+  };
+  if (isDefaultCmp) {
+    const comparable = slots.filter((el) => !isUndefLit(el));
+    if (comparable.length >= 2 && comparable.some((el) => isSymbolAbs(el))) {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+    if (slots.every((el) => el.term?.op === "lit")) {
+      const vals = slots.map((el) => {
+        const r = litValue(el);
+        return r.ok ? r.value : undefined;
+      });
+      if (vals.every((v) => v === undefined || typeof v !== "object")) {
+        const sortedVals = vals.filter((v) => v !== undefined).sort();
+        const undefCount = vals.length - sortedVals.length;
+        const els = [
+          ...sortedVals.map((v) => $lit(v)),
+          ...Array.from({ length: undefCount }, () => undef()),
+        ];
+        return abs(
+          { k: "tuple", elements: els },
+          undefined,
+          undefined,
+          confJoin(arr.conf, "path"),
+        );
+      }
+    }
+    return degrade();
+  }
+  // M4：比较器在场
+  if (cmpAbs && getFnImpl(cmpAbs)?.effectFree) {
+    const comparableIdx = slots
+      .map((el, i) => (isUndefLit(el) ? -1 : i))
+      .filter((i) => i >= 0);
+    const n = comparableIdx.length;
+    if (n < 2) return degrade(); // 比较器原生不会被调用
+    if (n > SORT_CMP_SWEEP_CAP) {
+      // 单探针：原生首调用对不可知 → 抛只能 may（不得定抛）
+      try {
+        applyCallbackAbs(
+          cmpAbs, [slots[comparableIdx[0]]!, slots[comparableIdx[1]]!],
+          emptyEnv(), pTrue, defaultLeakBudget,
+        );
+      } catch (e) {
+        if (e instanceof NudoThrow) {
+          recordMayThrow({
+            kind: "Error",
+            cause: "sort comparator may throw",
+          });
+        }
+      }
+      return degrade();
+    }
+    // 全有序对调用，缓存 ToNumber 符号（NaN → 0，与原生 sortCompare 折 +0 同语义）。
+    // 「抛事件」= NudoThrow（比较器体抛）或 symbol/bigint 字面量返回（ToNumber
+    // 确抛 TypeError，仅当该对真被比较）。全对事件 → 原生首调必抛 → 定抛
+    //（载荷 = 全部事件 join：原生首对是哪一个不可知）；部分 → may + 降级。
+    const signs: number[][] = Array.from({ length: n }, () => new Array<number>(n).fill(0));
+    let invocations = 0;
+    let throwEvents = 0;
+    let throwPayload: Abs | undefined;
+    const noteThrow = (payload: Abs): void => {
+      throwEvents++;
+      throwPayload = throwPayload === undefined ? payload : joinAbs(throwPayload, payload);
+    };
+    let nonNumeric = false;
+    outer: for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        if (i === j) continue;
+        let r: Abs;
+        try {
+          r = applyCallbackAbs(
+            cmpAbs, [slots[comparableIdx[i]!], slots[comparableIdx[j]!]],
+            emptyEnv(), pTrue, defaultLeakBudget,
+          );
+        } catch (e) {
+          if (e instanceof NudoThrow) {
+            noteThrow(e.absValue);
+            continue;
+          }
+          throw e;
+        }
+        invocations++;
+        // ToNumber（字面量真折叠；symbol/bigint → 该对 ToNumber 确抛）
+        const t = r.term;
+        if (t?.op !== "lit") {
+          nonNumeric = true; // 抽象返回值：可能 symbol/bigint（may）也可能 NaN
+          recordMayThrow({
+            kind: "TypeError",
+            cause: "sort comparator return may not be convertible to a number",
+          });
+          break outer;
+        }
+        const v = (t as { value: unknown }).value;
+        if (typeof v === "symbol" || typeof v === "bigint") {
+          noteThrow(errorTypeAbs("TypeError"));
+          continue;
+        }
+        const num =
+          typeof v === "number" ? v
+          : typeof v === "boolean" ? (v ? 1 : 0)
+          : v === null ? 0
+          : v === undefined ? NaN
+          : Number(v); // string 字面量：宿主 ToNumber 精确
+        signs[i]![j] = num > 0 ? 1 : num < 0 ? -1 : 0;
+      }
+    }
+    if (invocations === 0 && throwPayload !== undefined) {
+      // 全对抛：原生首调必抛 → 定抛（载荷 join，见上）
+      throw new NudoThrow(throwPayload);
+    }
+    if (throwEvents > 0) {
+      recordMayThrow({ kind: "Error", cause: "sort comparator may throw" });
+      return degrade();
+    }
+    if (nonNumeric) return degrade();
+    // 一致性：反对称 + 传递（含等价传递）——一致比较器的稳定序唯一
+    let consistent = true;
+    for (let i = 0; i < n && consistent; i++) {
+      for (let j = i + 1; j < n && consistent; j++) {
+        if (signs[i]![j]! !== -signs[j]![i]!) {
+          consistent = false;
+          break;
+        }
+      }
+    }
+    if (consistent) {
+      check: for (let i = 0; i < n; i++) {
+        for (let j = 0; j < n; j++) {
+          if (i === j) continue;
+          for (let k = 0; k < n; k++) {
+            if (k === i || k === j) continue;
+            const sij = signs[i]![j]!;
+            const sjk = signs[j]![k]!;
+            const sik = signs[i]![k]!;
+            if ((sij > 0 && sjk > 0 && sik <= 0) ||
+                (sij < 0 && sjk < 0 && sik >= 0) ||
+                (sij === 0 && sjk === 0 && sik !== 0)) {
+              consistent = false;
+              break check;
+            }
+          }
+        }
+      }
+    }
+    if (!consistent) return degrade(); // 原生序依赖算法细节
+    // comparableIdx 原下标 → signs 矩阵行/列下标映射
+    const rowOf = new Map(comparableIdx.map((idx, r) => [idx, r] as const));
+    // 稳定插入排序（等值保序 = ES2019 稳定性；一致比较器下序唯一）
+    const order = comparableIdx.slice();
+    for (let i = 1; i < order.length; i++) {
+      const cur = order[i]!;
+      const curRow = rowOf.get(cur)!;
+      let j = i - 1;
+      while (j >= 0 && signs[rowOf.get(order[j]!)!]![curRow]! > 0) {
+        order[j + 1] = order[j]!;
+        j--;
+      }
+      order[j + 1] = cur;
+    }
+    const undefCount = slots.length - n;
+    const els = [
+      ...order.map((idx) => slots[idx]!),
+      ...Array.from({ length: undefCount }, () => undef()),
+    ];
+    return abs(
+      { k: "tuple", elements: els },
+      undefined,
+      undefined,
+      confJoin(arr.conf, "path"),
+    );
+  }
+  return degrade();
+}
+
 /** 数组/元组方法（push/pop/shift/unshift/splice/reverse/sort/copyWithin/fill）
  *  的就地 mutator：Abs 身份不变（JS 引用语义——`const b = a; b.push(4)` 对 a
- *  可见）；transpile 重绑 `a = $arrMutContainer(a, …)` 仍写回同一对象。 */
+ *  可见）。$invoke 的 mutator 分支在**调用点**即刻执行本函数（表达式求值
+ *  顺序正确，Bug 49/51），别名 / 成员槽 / Map 条目经共享 Abs 同步可见。 */
 export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
   const shape = arr.shape;
   if (shape.k !== "tuple" && shape.k !== "arr") return arr;
@@ -598,40 +847,18 @@ export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
   if (method === "sort") {
     // Bug 51：GetSortComparator——缺省/严格 undefined → 默认比较器；
     // null/prim/非可调用（含 symbol）→ 确定 TypeError；any/抽象 → may
-    //（此前比较器实参完全未读）
+    //（此前比较器实参完全未读）。默认比较器 + 全字面量元组 → 精确排序
+    //（sortTupleAbs，与表达式位同一事实源）；否则降 arr（元素 join）。
     validateCallableArg(vals[0], "sort comparator may not be callable", {
       undefinedOk: true,
     });
-    // 顺序未建模：位次不可信，tuple 降为 arr（元素 join），避免 a[0] 假精确
     if (shape.k === "tuple") {
-      return writeBack(
-        abs(
-          { k: "arr", element: asArrEl(shape.elements) },
-          undefined,
-          undefined,
-          confJoin(arr.conf, "path"),
-        ),
-      );
+      return writeBack(sortTupleAbs(arr, vals[0]));
     }
     return arr;
   }
   return arr;
 }
-
-/** TypedArray brand 名 → 元素 prim（BigInt64/BigUint64 是 bigint，其余 number） */
-const TYPED_ARRAY_ELEMENT: Record<string, "number" | "bigint"> = {
-  Int8Array: "number",
-  Uint8Array: "number",
-  Uint8ClampedArray: "number",
-  Int16Array: "number",
-  Uint16Array: "number",
-  Int32Array: "number",
-  Uint32Array: "number",
-  Float32Array: "number",
-  Float64Array: "number",
-  BigInt64Array: "bigint",
-  BigUint64Array: "bigint",
-};
 
 /** 下标读 a[i]；规范数组下标走精确投影，确定非下标键 → undefined，否则并所有元素；string[i] → 单字符 */
 export function $idx(
@@ -664,6 +891,39 @@ export function $idx(
   const keyStr = propertyKeyOf(i);
   const iv = keyStr;
   const idx = iv !== undefined ? canonicalArrayIndex(iv) : undefined;
+  // Bug 54：生成器对象下标读（数组解构逐项投影 `const [a] = it`）——按
+  // 消费位 live 视图取数，不再从静态形状槽 0 重放已消费元素
+  if (a.shape.k === "obj" && hasGenView(a)) {
+    if (iv !== undefined && idx === undefined) return undef();
+    if (idx !== undefined) return peekGenElement(a, idx) ?? undef();
+    const liveEls = peekAllGenElements(a);
+    if (liveEls.length === 0) return oobUndef();
+    return joinAbs(liveEls.reduce((x, y) => joinAbs(x, y)), oobUndef());
+  }
+  // Bug 56：Arguments brand → 委托 tuple 内层（形参绑定/解构/arguments[i] 同走此）
+  if (a.shape.k === "brand" && a.shape.name === "Arguments") {
+    return $idx(a.shape.shape, i, opts);
+  }
+  // Bug 57/71：Proxy——get 陷阱优先（键走 ToPropertyKey 字符串）；无陷阱
+  // 回退靶下标读（inner 即 target Abs）
+  if (a.shape.k === "brand" && a.shape.name === "Proxy") {
+    const parts = proxyPartsOf(a);
+    if (parts) {
+      const trap = proxyTrapOf(parts.handler, "get");
+      if (trap.k === "fn") {
+        return $call(
+          trap.fn,
+          [parts.target, iv !== undefined ? strLit(String(iv)) : i, a],
+          parts.handler,
+        );
+      }
+      if (trap.k === "dead" || trap.k === "opaque") {
+        recordMayThrow({ kind: "TypeError", cause: "Proxy get trap not callable / unknown" });
+        return unknown;
+      }
+      return $idx(parts.target, i, opts);
+    }
+  }
   if (a.shape.k === "tuple") {
     const els = a.shape.elements;
     // 确定非下标键（"foo"、1.5…）：缺失属性 → undefined
@@ -799,6 +1059,32 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
   // 非字面量键（var/app term）→ iv undefined（对象走抽象键 open 路径）；
   // 此前误用 litValue 的 {ok:false} 包装对象，String(iv) 变 "[object Object]"
   const iv = pk;
+  // Bug 56：Arguments brand → 委托 tuple 内层（原地写回，brand 身份保持）
+  if (a.shape.k === "brand" && a.shape.name === "Arguments") {
+    $idxSet(a.shape.shape, i, value);
+    return a;
+  }
+  // Bug 71：Proxy——set 陷阱优先（键 ToPropertyKey；返回字面量 false →
+  // strict TypeError）；无陷阱转发靶下标写（原地，brand 身份保持）
+  if (a.shape.k === "brand" && a.shape.name === "Proxy") {
+    const parts = proxyPartsOf(a);
+    if (parts) {
+      const trap = proxyTrapOf(parts.handler, "set");
+      if (trap.k === "fn") {
+        const keyAbs = iv !== undefined ? strLit(String(iv)) : i;
+        const res = $call(trap.fn, [parts.target, keyAbs, value, a], parts.handler);
+        const rv = litValue(res);
+        if (rv.ok && rv.value === false) throwStrictWrite();
+        return a;
+      }
+      if (trap.k === "dead" || trap.k === "opaque") {
+        recordMayThrow({ kind: "TypeError", cause: "Proxy set trap not callable / unknown" });
+        return a;
+      }
+      $idxSet(parts.target, i, value);
+      return a;
+    }
+  }
   if (a.shape.k === "tuple" && numIdx !== undefined && Number.isInteger(numIdx) && numIdx >= 0) {
     const st = extStateOf(a);
     if (st === "frozen") throwStrictWrite(); // frozen 数组：下标写 TypeError
@@ -892,8 +1178,9 @@ function abstractLen(a: Abs): Abs {
   return abs({ k: "prim", type: "number" }, t, ge(t, lit(0)), "path");
 }
 
-/** 数组/字符串长度 */
-export function $len(a: Abs): Abs {
+/** 数组/字符串长度。opts.silent：可选链（a?.length）守卫臂——接收者已过
+ *  $removeNullish，仅 any 不记 may-throw（Bug 3，与 $get 的 silent 同口径）。 */
+export function $len(a: Abs, opts?: { silent?: boolean }): Abs {
   // DEC-006 B/C：形参/回调可能漏出 JS undefined（rest 未包 $arr、map 缺第 3 参）——
   // 非 Abs 入参 fail-closed unknown，禁止读 .shape 炸宿主 TypeError
   if (!a || typeof a !== "object" || !("shape" in (a as object))) {
@@ -904,8 +1191,17 @@ export function $len(a: Abs): Abs {
     }
     return unknown;
   }
-  // any 上的 .length：无约束成员（any ≠ unknown——不得报引擎债）
-  if (a?.shape?.k === "any") return anyMemberResult();
+  // Bug 3：nullish 接收者 .length 与 $get 同口径——记 throws 域并硬抛
+  //（原生 null.length / undefined.length 定抛 TypeError，此前直落尾 unknown）
+  if (noteNullishMemberThrows(a, "length", "property")) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  // any 上的 .length：无约束成员（any ≠ unknown——不得报引擎债）；
+  // 非可选链记 may-throw（Bug 3，与 $get 同口径——L2 gate 不再漏 .length）
+  if (a?.shape?.k === "any") {
+    if (!opts?.silent) noteAnyMemberMayThrow(a, "length", "property");
+    return anyMemberResult();
+  }
   if (a.shape.k === "tuple") {
     return abs(
       { k: "prim", type: "number" },
@@ -920,7 +1216,7 @@ export function $len(a: Abs): Abs {
   if (a.shape.k === "sum") {
     // 全成员长度同字面量 → 折叠（fork join 后 a.length 常见场景）；
     // 否则 number（成员长度可能不同）
-    const lens = a.shape.members.map((m) => $len(m));
+    const lens = a.shape.members.map((m) => $len(m, opts));
     const lits = lens.map(litValue);
     if (
       lits.length > 0 &&
@@ -929,6 +1225,21 @@ export function $len(a: Abs): Abs {
       return lens[0]!;
     }
     return abstractLen(a);
+  }
+  // Bug 56：Arguments brand → tuple 内层长度（arguments.length 精确）
+  if (a.shape.k === "brand" && a.shape.name === "Arguments") {
+    return $len(a.shape.shape, opts);
+  }
+  // Bug 57：Proxy——长度读即 get("length")：无陷阱回退靶长度；陷阱存在
+  //（可判定/不可判）时值域不可信 → 抽象 number（sound）
+  if (a.shape.k === "brand" && a.shape.name === "Proxy") {
+    const parts = proxyPartsOf(a);
+    if (parts) {
+      if (proxyTrapOf(parts.handler, "get").k === "absent") {
+        return $len(parts.target, opts);
+      }
+      return abstractLen(a);
+    }
   }
   // Bug 9：函数值 length（f.length = 首个默认值/rest 形参前的形参数）。
   // impl.length 静态已知（宿主函数 v.length / 全 Identifier 形参）→ exact；
@@ -970,9 +1281,31 @@ export function $len(a: Abs): Abs {
       if (lenSlot && !lenSlot.optional) return lenSlot.value;
     }
   }
+  // Bug 38：TypedArray brand 的 length 槽（makeTypedArrayAbs 数字形态入槽，
+  // 非可枚举自有数据属性——.length 编译为 $len，不经 $get 品牌槽路径）；
+  // iterable/buffer 形态无槽沿尾 unknown（长度不建模口径）
+  if (
+    a.shape.k === "brand" &&
+    TYPED_ARRAY_ELEMENT[(a.shape as { name?: string }).name ?? ""] !== undefined
+  ) {
+    const inner = (a.shape as { shape: Abs }).shape;
+    if (inner.shape.k === "obj") {
+      const lenSlot = getSlot((inner.shape as { slots: Record<string, { value: Abs; optional?: boolean }> }).slots, "length");
+      if (lenSlot && !lenSlot.optional) return lenSlot.value;
+    }
+  }
   // RegExpStringIterator（matchAll 结果）：无 length 属性 → undefined
   if (a.shape.k === "brand" && a.shape.name === "RegExpMatchIterator") {
     return undef();
+  }
+  // P2b：类值 length = 构造器元数——委托 $get 品牌面一处口径（自有静态
+  // length 槽 → 静态访问器 → 链上恰名 length 的静态方法/祖先槽 → 元数
+  // （transpile ctorLength 通道，隐式 ctor 恒 0；未记录 → unknown 不假 0））。
+  // `.length` 成员读编译为 $len（TypedArray 槽同款注释位），计算键
+  // C["length"] 直接走 $get 同臂；内建构造器 brand（Array 等）无注册
+  // spec → unknown（与改前 $len 尾 unknown 同值）。
+  if (a.shape.k === "brand" && classNameOfValue(a as object) === a.shape.name) {
+    return $get(a, "length", opts);
   }
   return unknown;
 }
@@ -986,7 +1319,8 @@ export function $obj(slots: Record<string, Abs>): Abs {
   for (const k of Object.keys(slots)) {
     setSlot(s, k, { value: asAbsVal(slots[k]!) });
   }
-  return objOf(s);
+  // R2b：每次字面量求值产出新对象——打新鲜实例标（=== 折 false）
+  return markFreshInstance(objOf(s));
 }
 
 /**
@@ -1023,7 +1357,21 @@ export function $spread(a: Abs, b: Abs): Abs {
   // any 展开：无约束键 → open obj（不是空 {} / unknown）
   const aa = asAbsVal(a);
   // 必须用 getter 求值后的 bb（不是原始 b0）——否则展开丢掉访问器结果
-  const b0 = bb;
+  let b0 = bb;
+  // Bug 84：类实例 brand 源（{...new A()}）——展开公有可枚举自有槽（私有
+  // Slot.internal 与 enumerable:false 剔除；此前 brand 源键集不可判 → 保守
+  // open 空 obj，公有字段全丢）
+  {
+    const ciInner = classInstanceInnerOf(b0);
+    if (ciInner) {
+      const ciSlots = (ciInner.shape as ObjShape).slots;
+      const pub: Record<string, Slot> = {};
+      for (const k of enumOwnKeys(ciInner, ciSlots)) {
+        setSlot(pub, k, getSlot(ciSlots, k)!);
+      }
+      b0 = abs({ k: "obj", slots: pub }, undefined, undefined, b0.conf);
+    }
+  }
   if (aa?.shape?.k === "any" || b0?.shape?.k === "any") {
     const base = spreadObj(
       aa?.shape?.k === "any" ? abs({ k: "obj", slots: {}, open: true }, undefined, undefined, "partial") : aa,
@@ -1112,17 +1460,26 @@ export function $objRest(o: Abs, keys: string[]): Abs {
 /** 数组 rest：`const [a, ...rest] = arr` → rest = 从 start 起的尾段 */
 export function $arrRest(a: Abs, start: number): Abs {
   // Bug 22：侧表迭代物（生成器对象）rest 解构按元素切片（原 tuple 路径）
+  // Bug 54：解构是消费——从生成器当前位取剩余再切（此后生成器耗尽）
   const mi = matchIterElements(a);
   if (mi) {
-    const sliced = mi.slice(start);
+    // R1b：exact 生成器视图（线性收集序列）→ 切片越过 cap 出 exact 元组
+    const exact = genDrainViewOf(a)?.exact === true;
+    const sliced = (drainGenElements(a) ?? mi).slice(start);
     if (sliced.length === 0) return abs({ k: "arr", element: unknown }, undefined, undefined, "path");
-    if (shouldWidenArrayLiteral(sliced.length)) {
+    if ((!exact || sliced.length > TUPLE_MATERIALIZE_CAP) && shouldWidenArrayLiteral(sliced.length)) {
       const element = sliced.reduce((x, y) => joinAbs(x, y));
       return abs({ k: "arr", element }, undefined, undefined, widenedArrayConf());
     }
     return abs({ k: "tuple", elements: sliced }, undefined, undefined, a.conf);
   }
   a = asAbsVal(a);
+  // Bug 56/N3：Arguments brand → 委托 tuple 内层——方法形参 rest 绑定
+  //（emitParamBindingFromArgs 的 $arrRest 读 $arguments 槽）此前落尾
+  // unknown（rest 形参在「读 arguments 的方法」里同样丢精度）
+  if (a.shape.k === "brand" && a.shape.name === "Arguments") {
+    return $arrRest(a.shape.shape, start);
+  }
   if (a.shape.k === "sum") {
     // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce
     const parts = a.shape.members.map((m) => $arrRest(m, start));
@@ -1200,36 +1557,32 @@ export function $concat(a: Abs, b: Abs): Abs {
   // （wave 2 残留）。字符串/元组/Set/Map 等可迭代面与字面量行为不变。
   guardIterable(a, "spread element");
   guardIterable(b, "spread element");
+  // Bug 34：数组字面量 spread 经 $concat（不走 $elems）——生成器对象的
+  // 体内延迟异常在此重放（definite 抛 / soft may-throw 重记）
+  replayGenDeferred(a);
+  replayGenDeferred(b);
   // Set/Map/matchAll 迭代器：条目精确展开（Map 是 entry 元组）；其余非容器
   // （unknown/any/brand/obj/抽象字符串）长度未知——必须 arr join，不得折单元素
   // tuple（[...x].length 假精确 1 的根因）
   const expand = (x: Abs): Abs[] | null => {
     if (isSetAbs(x)) return setElementsAbs(x);
     if (isMapAbs(x)) return mapEntriesAbs(x);
+    // Bug 54：生成器对象是消费——从当前位取剩余（drain），此后耗尽
+    const drained = drainGenElements(x);
+    if (drained) return drained;
     const mi = matchIterElements(x);
     if (mi) return mi;
+    // brand 结构面在内层（issue #147）：Set/Map/match-iter brand 已在上方
+    // 按名命中，此处只兜结构 delegation（内层 tuple 精确展开等）。
+    if (x.shape.k === "brand") return expand(x.shape.shape);
+    // 内层 tuple 精确展开（裸 tuple 已被 $concat 顶部 tuple×tuple 分支
+    // 吸收，此处只经 brand delegation 到达）：[...t1, ...brandT2] 保持
+    // tuple 形状，元素域与长度均精确（此前折 arr）。
+    if (x.shape.k === "tuple") return [...x.shape.elements];
     return null;
   };
-  if (as.k === "tuple") {
-    const be = expand(b);
-    if (be) {
-      return tupleOrWiden([...as.elements, ...be], confJoin(a.conf, b.conf));
-    }
-    // b 可能可迭代：spread 并入的是 b 的元素而非 b 本身。
-    // any 的元素域是 any（无约束），不是 unknown（引擎债）。
-    const bEl = b?.shape?.k === "any" ? anyMemberResult() : unknown;
-    return abs(
-      { k: "arr", element: [...as.elements, bEl].reduce((x, y) => joinAbs(x, y)) },
-      undefined,
-      undefined,
-      "path",
-    );
-  }
-  const ae = expand(a);
-  if (ae && bs.k === "tuple") {
-    return tupleOrWiden([...ae, ...bs.elements], confJoin(a.conf, b.conf));
-  }
-  // 双侧皆非精确容器：元素 join（any → any；空 tuple 不贡献元素）
+  // 单侧元素域（与 expand 侧表配套）：any → any、tuple 逐元素 join、抽象
+  // 字符串恒 string、brand delegation 到内层；其余 unknown。
   const sideEl = (x: Abs, expanded: Abs[] | null): Abs => {
     // DEC-006：空 Set/Map/match-iter 展开无元素——不得裸 reduce
     if (expanded) {
@@ -1249,8 +1602,45 @@ export function $concat(a: Abs, b: Abs): Abs {
     if (x?.shape?.k === "prim" && x.shape.type === "string") {
       return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
     }
+    // arr 元素域 = 单代表元素（顶层 arr 已被函数首部分支吸收，此臂只服务
+    // brand delegation 的内层）
+    if (x?.shape?.k === "arr") return x.shape.element;
+    // brand 结构面在内层（issue #147）：[...Array<T> brand] 元素域 = 内层
+    // arr 元素，不再折 unknown（Set/Map/match-iter brand 在 expand 按名命中）。
+    // expanded 在此必为 null（顶部 if (expanded) 已返回）——显式传 null。
+    if (x?.shape?.k === "brand") return sideEl(x.shape.shape, null);
     return unknown;
   };
+  if (as.k === "tuple") {
+    const be = expand(b);
+    if (be) {
+      // R1b：exact 生成器视图（线性收集序列）→ 重组越过 cap 出 exact 元组
+      return drainTupleOrWiden(
+        [...as.elements, ...be],
+        confJoin(a.conf, b.conf),
+        genDrainViewOf(b)?.exact === true,
+      );
+    }
+    // b 可能可迭代：spread 并入的是 b 的元素而非 b 本身。
+    // any 的元素域是 any（无约束），不是 unknown（引擎债）。
+    const bEl = sideEl(b, be);
+    return abs(
+      { k: "arr", element: [...as.elements, bEl].reduce((x, y) => joinAbs(x, y)) },
+      undefined,
+      undefined,
+      "path",
+    );
+  }
+  const ae = expand(a);
+  if (ae && bs.k === "tuple") {
+    // R1b：同上——[...g()] 的元素域来自 drain 的权威序列，不受形状面 cap
+    return drainTupleOrWiden(
+      [...ae, ...bs.elements],
+      confJoin(a.conf, b.conf),
+      genDrainViewOf(a)?.exact === true,
+    );
+  }
+  // 双侧皆非精确容器：元素 join（any → any；空 tuple 不贡献元素）
   return abs(
     { k: "arr", element: joinAbs(sideEl(a, ae), sideEl(b, expand(b))) },
     undefined,
@@ -1265,8 +1655,11 @@ export function $concat(a: Abs, b: Abs): Abs {
  *  - definite：非 string prim（num/bool/bigint/symbol/null/undefined——这些
  *    prim 的任何取值都没有 @@iterator，含字面量与抽象 prim）与闭 obj
  *    （无 @@iterator 槽；Object.prototype 原型链亦无）
- *  - may：any / unknown / open obj（未知键可能含 @@iterator）/ fn / brand /
- *    promise eff —— 抽象面可能不可迭代
+ *  - may：any / unknown / open obj（未知键可能含 @@iterator）/ fn /
+ *    promise eff —— 抽象面可能非可迭代
+ *  brand：名义标签，结构面在内层——内层 total 则 total（env/harvest 的
+ *    Array<T> brand 整族，issue #147）；其余 may，绝不下 definite 结论
+ *    （TypedArray/Buffer 等内层空 obj，原型链 @@iterator 不在内层建模）。
  *  sum：逐臂归约（全臂 definite → definite；任一臂非 total → may） */
 type IterabilityKind = "total" | "may" | "definite";
 
@@ -1310,6 +1703,12 @@ function iterabilityKind(a: Abs): IterabilityKind {
     if (s.slots["@@iterator"]) return "total";
     return s.open ? "may" : "definite";
   }
+  // brand 只是名义标签，不改变结构可迭代性（issue #147）：
+  // 内层全量可迭代 → total；否则 may——不下 definite（内层结构不承诺
+  // 原型链无 @@iterator）。
+  if (s.k === "brand") {
+    return iterabilityKind(s.shape) === "total" ? "total" : "may";
+  }
   return "may";
 }
 
@@ -1339,6 +1738,18 @@ function asyncIterabilityKind(a: Abs): IterabilityKind {
   ) {
     return "total";
   }
+  // brand 同步口径（issue #147）：内层仅异步可迭代（只有 @@asyncIterator 槽）
+  // → total；其余委派 iterabilityKind（其 brand 臂按内层结构面判）。
+  if (s.k === "brand") {
+    const ish = s.shape.shape;
+    if (
+      ish.k === "obj" &&
+      !ish.slots["@@iterator"] &&
+      ish.slots["@@asyncIterator"]
+    ) {
+      return "total";
+    }
+  }
   return iterabilityKind(a);
 }
 
@@ -1361,15 +1772,21 @@ function guardIterable(a: Abs, ctx: string): void {
  *  $idx / $arrRest 投影前调用；值域投影不变（字符串/元组等可迭代接收者
  *  不受影响）。 */
 export function $iterCheck(a: unknown): void {
-  guardIterable(asAbsVal(a), "array destructuring");
+  const v = asAbsVal(a);
+  guardIterable(v, "array destructuring");
+  // Bug 34：体内抛错的生成器（延迟异常挂对象侧表）——解构消费触达抛点
+  replayGenDeferred(v);
 }
 
 /** 元素列表（tuple 展开；arr 抽象；C1 Set/Map 逐条目；matchAll 迭代器逐匹配项；
  *  字符串按 code points）。Map 迭代语义是 entry `[key, value]` 元组，不是裸 value。
  *  消费前先过可迭代性守卫（Bug 6）：prim 字面量接收者 → 原生 definite
- *  TypeError；any/unknown → may。$forOf 与 call/new spread 实参路径继承。 */
+ *  TypeError；any/unknown → may。$forOf 与 call/new spread 实参路径继承。
+ *  Bug 34：生成器对象的体内延迟异常（definite 抛 / soft may-throw 重记）
+ *  在消费点重放——迭代不再静默截断成前缀。 */
 export function $elems(a: Abs): Abs[] {
   guardIterable(a, "iteration");
+  replayGenDeferred(a);
   return elemsOf(a);
 }
 
@@ -1379,17 +1796,25 @@ export function $elems(a: Abs): Abs[] {
  *  长度不可判（收集器不得以 exact 元组出货）。 */
 export function $yieldStarElems(a: Abs): { els: Abs[]; lengthKnown: boolean } {
   // any 接收者的元素域是 any（无约束），不是 unknown（引擎债）——与
-  // $concat sideEl 同口径（`[...x]`（x:any）→ any[]）
-  if (a.shape.k === "any") return { els: [anyMemberResult()], lengthKnown: false };
+  // $concat sideEl 同口径（`[...x]`（x:any）→ any[]）。但可迭代性守卫
+  // 不得跳过（Bug 34 gate 面）：GetIterator 对 any 是 may TypeError——
+  // 生成器体内记进 $gen 帧，消费点重放（`for (const v of x)` 同判）
+  if (a.shape.k === "any") {
+    guardIterable(a, "yield* delegation");
+    return { els: [anyMemberResult()], lengthKnown: false };
+  }
   const els = $elems(a);
   const s = a.shape;
+  // R1b：exact 生成器视图（线性收集序列）长度可知——yield* 委托并出的
+  // 元素序列是权威列表，不 bumpGenPathSensitive（外层生成器保持 exact）
   const lengthKnown =
     s.k === "tuple" ||
     s.k === "never" ||
     (s.k === "prim" && s.type === "string") ||
     isSetAbs(a) ||
     isMapAbs(a) ||
-    matchIterElements(a) !== undefined;
+    matchIterElements(a) !== undefined ||
+    genDrainViewOf(a)?.exact === true;
   return { els, lengthKnown };
 }
 
@@ -1423,6 +1848,9 @@ function elemsOf(a: Abs): Abs[] {
   if (a.shape.k === "arr") return [a.shape.element];
   if (isSetAbs(a)) return setElementsAbs(a);
   if (isMapAbs(a)) return mapEntriesAbs(a);
+  // Bug 54：生成器对象——从当前位取剩余并推进状态（迭代 = 消费），不再从 0 重放
+  const drained = drainGenElements(a);
+  if (drained) return drained;
   const mi = matchIterElements(a);
   if (mi) return mi;
   const svR = litValue(a);
@@ -1436,6 +1864,10 @@ function elemsOf(a: Abs): Abs[] {
   if (a.shape.k === "prim" && a.shape.type === "string") {
     return [abs({ k: "prim", type: "string" }, undefined, undefined, "path")];
   }
+  // brand 结构面在内层（issue #147）：env/harvest 的 Array<T> brand 的
+  // for-of / spread 元素域 = 内层 arr 元素（此前折 unknown）。Set/Map/
+  // match-iter brand 已在上方按名命中侧表，此处只兜结构 delegation。
+  if (a.shape.k === "brand") return elemsOf(a.shape.shape);
   return [unknown];
 }
 
@@ -1467,6 +1899,15 @@ export function $forInKeys(o: Abs): Abs {
     );
   };
   if (shape.k === "obj") {
+    // Bug 18：open obj（Object.create(proto) / setPrototypeOf / spread 开面
+    // 产物）原型链未跟踪（Object.create 不记 protoTable）——可携带任意
+    // 可枚举继承键，不得断言精确（可能为空的）自有键序列（for-in over
+    // Object.create({x:1}) 原生跑 1 次）。诚实降级为抽象字符串键数组
+    // （体 0..N 次，与 any 接收者臂同口径）；null-proto 标记链终止于
+    // null，闭 obj（原型恰为无可枚举自有的 Object.prototype）仍精确。
+    if (shape.open && !isNullProtoObj(o)) {
+      return abs({ k: "arr", element: str() }, undefined, undefined, "partial");
+    }
     // 仅自有可枚举键——与 Object.keys 的 enumKeys 同口径
     // （getPropFlags().enumerable === false 的 defineProperty 键剔除）
     const keys = enumOwnKeys(o, shape.slots);
@@ -1591,29 +2032,44 @@ export function $forOf(
   }
   const awaitElem = (x: Abs): Abs =>
     x.shape.k === "eff" && x.shape.eff === "promise" ? x.shape.inner : x;
-  const items = asyncOnly
-    ? [unknown]
-    : forAwait
-      ? elemsOf(iterable).map(awaitElem)
-      : $elems(iterable);
   const svR = litValue(iterable);
   const sv = svR.ok ? svR.value : undefined;
   // tuple / 确切 Set·Map 条目数 / 字符串字面量 code points → 有界展开；
   // 抽象 arr 与 maybeAbsent 仍 0..max join
   // Bug 22：生成器对象（obj + 元素侧表）按侧表长度精确展开（原 tuple
   // 直接读 elements；表示改 obj 后经 matchIterElements 取数）
+  // Bug 54：长度探测先于 $elems（消费排空）——生成器按**消费前**剩余
+  // 长度展开，与 items 快照一致
+  // Bug 56/57：Arguments / Proxy brand——迭代长度按内层靶投影（元素侧
+  // elemsOf 已剥层；无此长度归一 for-of 退单代表 + 出口宽化）
+  const lenShape =
+    shape.k === "brand" && (shape.name === "Arguments" || shape.name === "Proxy")
+      ? (shape.shape as Abs).shape
+      : shape;
   const knownLen =
-    shape.k === "tuple"
-      ? shape.elements.length
+    lenShape.k === "tuple"
+      ? lenShape.elements.length
       : typeof sv === "string"
         ? [...sv].length
         : collectionExactLen(iterable) ?? sideIterLen(iterable);
+  const items = asyncOnly
+    ? [unknown]
+    : forAwait
+      ? // Bug 34：for-await 消费生成器同样重放体内延迟异常（规范同步迭代器
+        // 回退路径，元素逐项 await）
+        (replayGenDeferred(iterable), elemsOf(iterable).map(awaitElem))
+      : $elems(iterable);
   // 非具体容器：长度未知（可能空、可能更长）→ 单代表元素只跑一次
   // （同一元素重复 join 幂等，maxIters 次展开只会让索引假精确 + 大数组
   // 反复深拷贝把分析拖死）；0 次出口由下方 snapExit join，保持 sound。
   const unbounded = knownLen === undefined;
 
-  if (unbounded) snapExit();
+  // N5：0 次出口臂（空容器/首元素前退出——同迭代后出口路径）
+  if (unbounded) {
+    enterPromiseForkArm();
+    leavePromiseForkArm();
+    snapExit();
+  }
 
   // 具体迭代空间（tuple / 字符串 code points / Set·Map 精确条目数）：展开到
   // 具体硬上限——maxIters 截断具体迭代会产出错误 #exact（countChars 对
@@ -1633,6 +2089,9 @@ export function $forOf(
   for (let i = 0; i < n; i++) {
     const item =
       items.length > 0 ? items[Math.min(i, items.length - 1)]! : unknown;
+    // N5：unbounded（长度未知，可能空）迭代 = 条件路径：体臂 + 出口臂
+    //（空容器路径直达循环后——无 post-loop settle 覆盖则悬挂）
+    if (unbounded) enterPromiseForkArm();
     try {
       body(
         item,
@@ -1660,12 +2119,24 @@ export function $forOf(
       }
       if (isNudoReturn(e) || isNudoThrow(e)) throw e;
       throw e;
+    } finally {
+      if (unbounded) leavePromiseForkArm();
     }
-    if (unbounded) snapExit();
+    if (unbounded) {
+      // N5：出口臂（本迭代后退出——代表迭代之后的元素路径直达循环后）
+      enterPromiseForkArm();
+      leavePromiseForkArm();
+      snapExit();
+    }
   }
-  if (unbounded && n === 0) snapExit();
+  if (unbounded && n === 0) {
+    // N5：0 次出口臂（空容器路径）
+    enterPromiseForkArm();
+    leavePromiseForkArm();
+    snapExit();
+  }
   if (concreteOverrun) {
-    noteAbsTruncation(LOOP_TRUNCATION_LABEL);
+    noteLoopTruncation(LOOP_TRUNCATION_LABEL);
     if (pack && unpack) unpack(confPartialPacked(pack()));
     return;
   }
@@ -1709,6 +2180,48 @@ export const NAMESPACE_GLOBALS: ReadonlyArray<readonly [string, unknown]> = [
   ["Boolean", Boolean],
   ["RegExp", RegExp],
   ["Error", Error],
+  // Bug 68：Error 家族七子类进路由表——`X.prototype` 读走 protoBrandAbs(X)
+  //（.constructor === X / X.prototype.toString 借用调用的家族派发），
+  // 此前落宿主 fn 通用通道的匿名闭 obj（constructor 假 Object、toString
+  // 假派 Object.prototype.toString）
+  ["TypeError", TypeError],
+  ["RangeError", RangeError],
+  ["ReferenceError", ReferenceError],
+  ["SyntaxError", SyntaxError],
+  ["EvalError", EvalError],
+  ["URIError", URIError],
+  ["AggregateError", AggregateError],
+  // Bug 44：Intl 命名空间身份路由——typeof Intl 折 object（ops.$typeof）、
+  // 成员读投影（NumberFormat/DateTimeFormat 为带 locale 校验的构造器值，
+  // 其余成员走通用 fn 投影）；入表同时 env-skip（intrinsics 同步）
+  ["Intl", Intl],
+  // Bug 27：TypedArray 全家（12 家族，TYPED_ARRAY_ELEMENT 单一事实源）——
+  // 此前 `Uint8Array.from` 成员读落宿主函数通用通道 → unknown + 零校验；
+  // 入表后静态面经 evalNamespaceCall → evalTypedArrayStatic（from 的
+  // ToObject / of 的逐项元素转换校验），BYTES_PER_ELEMENT 等常量成员折
+  // 宿主真值；构造面 new <TA>(len) 走 clsName 派发（Bug 21）不受影响
+  ["Int8Array", Int8Array],
+  ["Uint8Array", Uint8Array],
+  ["Uint8ClampedArray", Uint8ClampedArray],
+  ["Int16Array", Int16Array],
+  ["Uint16Array", Uint16Array],
+  ["Int32Array", Int32Array],
+  ["Uint32Array", Uint32Array],
+  ["Float16Array", Float16Array],
+  ["Float32Array", Float32Array],
+  ["Float64Array", Float64Array],
+  ["BigInt64Array", BigInt64Array],
+  ["BigUint64Array", BigUint64Array],
+  // Bug 40：二进制缓冲/视图 + 弱引用家族进路由表——`.prototype` 成员读
+  //（typeof ArrayBuffer.prototype.slice / WeakRef.prototype.deref）此前落
+  // 宿主 fn 通用通道的空闭 obj → wrong-exact "undefined"；入表后
+  // $get(ns,"prototype") → protoBrandAbs，经 BUILTIN_BRAND_METHODS 派发。
+  // new X(…) 走 clsName（宿主 fn.name）派发不受影响。
+  ["ArrayBuffer", ArrayBuffer],
+  ["SharedArrayBuffer", SharedArrayBuffer],
+  ["DataView", DataView],
+  ["WeakRef", WeakRef],
+  ["FinalizationRegistry", FinalizationRegistry],
 ];
 
 export function namespaceNameOf(v: unknown): string | undefined {
@@ -1724,21 +2237,17 @@ export function $regex(pattern: string, flags = ""): Abs {
   return regexBrandAbsFrom(pattern, flags);
 }
 
-/** Array.prototype 自有可读键（push/map/keys/… 与 Symbol.iterator 投影名） */
-const ARRAY_PROTO_METHOD_NAMES = new Set([
-  "at", "concat", "copyWithin", "entries", "every", "fill", "filter", "find",
-  "findIndex", "findLast", "findLastIndex", "flat", "flatMap", "forEach",
-  "includes", "indexOf", "join", "keys", "lastIndexOf", "map", "pop", "push",
-  "reduce", "reduceRight", "reverse", "shift", "slice", "some", "sort", "splice",
-  "toSorted", "toReversed", "toSpliced", "with",
-  "toLocaleString", "toString", "unshift", "values", "@@iterator",
-]);
+// ARRAY_PROTO_METHOD_NAMES 已上移 member-diag.ts（$in tuple 臂共用；避免
+// members ↔ containers 循环 import）
 
 function isPossiblyProtoMemberKey(key: string): boolean {
   return (
     OBJECT_PROTO_METHOD_NAMES.has(key) ||
     ARRAY_PROTO_METHOD_NAMES.has(key) ||
     key === "constructor" ||
+    // Bug 17：__proto__ 是 Object.prototype 访问器（读 [[Prototype]]），
+    // 不得在 tuple/字符串 prim 的非下标键兑底折 undef
+    key === "__proto__" ||
     key.startsWith("@@")
   );
 }
@@ -1797,6 +2306,37 @@ export function setProtoMethodDispatch(
   protoMethodDispatch = d;
 }
 
+/** P2a：类方法一等值驻留侧表——按（定义类 spec, kind, 成员键）驻留。
+ *  原生：静态方法挂**定义类**构造器、实例方法挂定义类 .prototype——
+ *  `B.m` 与 `A.m`（空派生类沿静态链解析到 A 的同一 spec 条目）是同一
+ *  函数对象（=== true）；不同键 / 覆盖（不同定义类）是不同对象（=== false）。
+ *  kind 前缀区分同名静态/实例方法（`A.m === new A().m` 原生 false）。
+ *  按定义 spec 对象弱键驻留（protoBrandAbs 按名驻留 / instance-id 侧表
+ *  同款思路）：同名类跨 run last-wins 重注册换新 spec 对象，驻留随旧 spec
+ *  回收失效，不串旧值。驻留值打 fresh-instance id——两个不同驻留条目
+ *  （A.m vs A.n / 覆盖 B.m vs A.m）原生必不同引用 → strictEqAbs 折 false；
+ *  同条目重复读返回同一 Abs 引用 → 同 ref 臂折 true。 */
+const classMethodValues = new WeakMap<EvalClassSpec, Map<string, Abs>>();
+
+function classMethodValueAbs(
+  spec: EvalClassSpec,
+  kind: "static" | "inst",
+  key: string,
+  params: string[] | undefined,
+): Abs {
+  let byKey = classMethodValues.get(spec);
+  if (!byKey) {
+    byKey = new Map();
+    classMethodValues.set(spec, byKey);
+  }
+  const memoKey = `${kind}:${key}`;
+  const cached = byKey.get(memoKey);
+  if (cached) return cached;
+  const fn = markFreshInstance(absFunction(params ?? [], { body: noBody }, { ctor: false }));
+  byKey.set(memoKey, fn);
+  return fn;
+}
+
 export function protoMethodValueAbs(home: string, name: string): Abs {
   return absFunction([], {
     body: noBody,
@@ -1831,14 +2371,23 @@ export function $get(
       if (ns === "Object") return objectProtoBrand();
       if (ns) return protoBrandAbs(ns);
     }
+    // Bug 44：Intl 两个格式化构造器——带 locale 校验的构造器值（fn name
+    // "Intl.<Sub>" → $new 按名派发 evalBuiltinNew；调用面 apply 同 builder）
+    if (ns === "Intl" && (key === "NumberFormat" || key === "DateTimeFormat")) {
+      return makeIntlCtorAbs(key);
+    }
     if (ns) {
       try {
         const raw = (o as Record<string, unknown>)[key];
         if (typeof raw === "function") {
+          // Bug 44：宿主成员函数的可构造性 facet 透传（hostFnCtorFacet）——
+          // 成员值被 $new 时不再记假 may TypeError（Intl.Collator 等原生可
+          // 构造成员；Math.max 等方法值原生确定不可构造 → ctor:false 定抛）
+          const ctor = hostFnCtorFacet(raw);
           return absFunction([`${ns}.${key}`], {
             body: noBody,
             apply: (args) => evalNamespaceCall(ns, key, args) ?? unknown,
-          });
+          }, ctor !== undefined ? { ctor } : undefined);
         }
         return $lit(raw);
       } catch {
@@ -1861,7 +2410,12 @@ export function $get(
         if (fn.prototype === undefined || hostFnCtorFacet(o as never) === false) {
           return undef();
         }
-        return abs({ k: "obj", slots: {} }, undefined, undefined, "path");
+        // Bug 64：宿主构造器（路由表外泄漏的全局/声明函数）的 prototype 带
+        // owner 身份——protoBrandAbs（constructor 槽 + 按名驻留 === 恒等），
+        // 不再捏匿名闭 obj（`X.prototype instanceof Super` 假精确 false）
+        return typeof fn.name === "string" && fn.name
+          ? protoBrandAbs(fn.name)
+          : abs({ k: "obj", slots: {} }, undefined, undefined, "path");
       }
       if (key === "call" || key === "apply" || key === "bind") {
         return absFunction([], { body: noBody }, { ctor: false });
@@ -1890,6 +2444,25 @@ export function $get(
     }, { ctor: false });
   }
   if (o.shape.k === "brand") {
+    // Bug 57/71：Proxy——get 陷阱优先（handler 提供 → $call 派发，实参
+    // (target, key, receiver)、this = handler）；无陷阱回退**靶读取**
+    //（inner 即 target Abs——含靶原型链）；陷阱不可判/不可调用 → 诚实
+    // unknown（原生是每次触达 TypeError，sound 降级）
+    if (o.shape.name === "Proxy") {
+      const parts = proxyPartsOf(o);
+      if (parts) {
+        const trap = proxyTrapOf(parts.handler, "get");
+        if (trap.k === "fn") {
+          return $call(trap.fn, [parts.target, strLit(key), o], parts.handler);
+        }
+        if (trap.k === "dead" || trap.k === "opaque") {
+          recordMayThrow({ kind: "TypeError", cause: `Proxy get trap for '${key}' not callable / unknown` });
+          return unknown;
+        }
+        return $get(parts.target, key, opts);
+      }
+      // 无侧表（退化副本）：沿通用 brand 内层（inner = target）路径
+    }
     if (o.shape.name.endsWith(".prototype")) {
       const ctorName = o.shape.name.slice(0, -".prototype".length);
       // Array 三键维持既有精确面（arrayMethodAbs：bindThis 注入 receiver）
@@ -1903,13 +2476,27 @@ export function $get(
       if (protoMethods?.has(key)) {
         return protoMethodValueAbs(ctorName, key);
       }
+      // P3b：constructor → 注册类值优先（B.prototype.constructor === B 折
+      // exact——protoBrandAbs 的 constructor 槽是 builtinCtorAbs 名义面，
+      // 与 $class 类值不同引用）。类值/内建名未注册 → 沿旧口径。
+      if (key === "constructor") {
+        const cv = lookupClassValue(ctorName);
+        if (cv) return cv;
+      }
     }
     const isClassVal = classNameOfValue(o as object) === o.shape.name;
     // 内建 brand 原型方法读取（typeof m.forEach / m[Symbol.iterator]）：
-    // 方法实现由 $invoke 派发，此处给可 typeof 的 fn 形状
+    // Bug 13：具名方法值走方法值读通道——protoMethodValueAbs 的 apply 钩子
+    // 把借用调用（m.get.call(m,k) / .apply / .bind 产物）转发回 $invoke 既有
+    // 派发；此前 no-op fn 被直接调用折精确 undefined。@@iterator 维持 no-op
+    // 形状（迭代协议派发另走，与数组臂同口径）。
     // （class 声明值同名内建时不误伤：类方法走 registry）
     const builtinM = BUILTIN_BRAND_METHODS[o.shape.name];
-    if (builtinM && !isClassVal && (key === "@@iterator" || builtinM.has(key))) {
+    // Bug 40：@@iterator 只对原生可迭代 brand（Map/Set/TA，ITERABLE_BRANDS）
+    // 折函数——此前任意有表 brand（Date/WeakMap/Error…）都折 "function"，
+    // 非可迭代 brand 原生 undefined（wrong-exact）。
+    if (builtinM && !isClassVal && (builtinM.has(key) || (key === "@@iterator" && ITERABLE_BRANDS.has(o.shape.name)))) {
+      if (key !== "@@iterator") return protoMethodValueAbs(o.shape.name, key);
       return absFunction([], { body: noBody }, { ctor: false });
     }
     // JS Map/Set 的 size 是属性不是方法；brand 内层为空 obj，须在 $get 委托
@@ -1922,25 +2509,90 @@ export function $get(
       const slot = getSlot(inner.shape.slots, key);
       if (slot && !slot.optional) return slot.value;
     }
+    // P3b：原型品牌的祖先数据槽（B.prototype.x ← Base/A.prototype.x）——
+    // own 槽（上）后沿链原型对象读槽（注册类 protoBrand / fn 伪父 memo
+    // prototype）。链洞（未注册父名）→ 缺席不可折（sound unknown；此前
+    // 闭 obj miss 折 undefined 是 wrong-exact）。Object.prototype 成员
+    // （hasOwnProperty/toString/…）恒经下方通用投影解析——不折 unknown。
+    if (
+      !isClassVal && o.shape.name.endsWith(".prototype") &&
+      key !== "constructor" && key !== "__proto__" && !OBJECT_PROTO_NAMES.has(key)
+    ) {
+      const ancHit = chainProtoSlotOf(o.shape.name.slice(0, -".prototype".length), key, 1);
+      if (ancHit !== undefined) return ancHit;
+      if (classChainHasHole(o.shape.name.slice(0, -".prototype".length))) return unknown;
+    }
     if (isClassVal) {
       const sacc = findStaticClassAccessor(o.shape.name, key);
       if (sacc) return sacc.get ? sacc.get(o) : undef();
-      // 类值上读实例访问器键 → 原生 undefined
-      if (findClassAccessor(o.shape.name, key)) return undef();
+      // 类值上读实例访问器键 → 原生 undefined。length 例外：实例访问器挂
+      // .prototype（不在构造器 [[Prototype]] 链上），遮不住构造器自有
+      // length（P2b arity 臂，见下方）。
+      if (key !== "length" && findClassAccessor(o.shape.name, key)) return undef();
       // 静态方法一等读取（typeof A.m / 高阶传递）：沿继承链在 registry 找
-      // 未调用方法槽带 AST 形参展示名（不再假零参）
-      for (const n of evalClassChain(o.shape.name)) {
-        const spec = getEvalClass(n);
-        if (spec?.staticMethods?.[key]) {
-          return absFunction(spec.staticMethodParams?.[key] ?? [], { body: noBody }, { ctor: false });
+      // 未调用方法槽带 AST 形参展示名（不再假零参）。
+      // N2：同级补祖先类值自有槽——继承静态字段（B.x ← A 的 static x）与
+      // 动态写（A.y = …）：原生静态成员挂构造器 [[Prototype]] 链
+      // （B.__proto__ = A），own 槽（上方）优先后逐级上溯；取**同一 Abs
+      // 引用**（B.x === A.x 恒等保持）。name/prototype 是每个函数的自有
+      // 属性——不经链继承；length 例外放行（静态方法/祖先静态槽可恰名为
+      // length 覆盖构造器自有元数，链解析后落下方 arity 臂）。
+      // P2a：驻留按（定义 spec, 键）——B.m 与 A.m 解析到同一 spec 条目
+      // 返回同一函数 Abs（=== 折 true）。
+      if (key !== "name" && key !== "prototype") {
+        let level = 0;
+        for (const n of evalClassChain(o.shape.name)) {
+          const spec = getEvalClass(n);
+          if (spec?.staticMethods?.[key]) {
+            return classMethodValueAbs(spec, "static", key, spec.staticMethodParams?.[key]);
+          }
+          if (level++ > 0) {
+            const anc = lookupClassValue(n);
+            const ancInner = anc && anc.shape.k === "brand" ? anc.shape.shape : undefined;
+            if (ancInner?.shape.k === "obj") {
+              const slot = getSlot(ancInner.shape.slots, key);
+              if (slot && !slot.optional) return slot.value;
+            }
+            // P3b：fn 伪父的自有静态槽（Base.px = 5 → B.px）——fn 值一等
+            // 对象的 expando 槽（$set fn 臂就地写，引用语义）。
+            if (anc && anc.shape.k === "fn" && anc.shape.slots) {
+              const fslot = getSlot(anc.shape.slots, key);
+              if (fslot && !fslot.optional) return fslot.value;
+            }
+            if (!spec) break; // 链洞：槽面止步（宿主通道在下方）
+          }
         }
+      }
+      // P2b：类值 length = 构造器元数（首个默认值/rest 形参前的形参数，
+      // Bug 69 nativeParamArity 同口径；隐式 ctor 基类/派生恒 0——派生
+      // 隐式是 constructor(...args){super(...args)}，不继承父元数）。
+      // 自有静态字段槽（上方 own 槽）/ 静态访问器（sacc）优先，恰名为
+      // length 的静态方法/祖先静态槽经上方链解析——都未命中才折元数。
+      // transpile 期经 spec.ctorLength 通道记录；未记录通道（手写 spec /
+      // mock）→ 诚实 unknown（不假 0）。
+      if (key === "length") {
+        const ownSpec = getEvalClass(o.shape.name);
+        return ownSpec?.ctorLength !== undefined ? numLit(ownSpec.ctorLength) : unknown;
       }
       // 类值是 constructor 函数：prototype 对象与 Function.prototype 成员
       if (key === "prototype") {
-        return abs({ k: "obj", slots: {} }, undefined, undefined, "path");
+        // Bug 64：类原型带 owner 身份——protoBrandAbs("X")（constructor 槽 +
+        // 按名驻留；`X.prototype.hasOwnProperty("constructor")` 折 true、
+        // instanceof 链走可解析名），不再捏匿名闭 obj（链身份全丢）
+        return protoBrandAbs(o.shape.name);
       }
       if (key === "call" || key === "apply" || key === "bind") {
         return absFunction([], { body: noBody }, { ctor: false });
+      }
+      // N2：内建父构造器静态读（B extends Object → B.keys / E extends Error →
+      // E.captureStackTrace）：宿主静态通道（$get 的 namespace 投影 / 宿主
+      // 真值）。仅 superBuiltinHost 标记放行（真实宿主 extends；mock 同名
+      // 父类无通道 → 落下方 unknown，不折 undefined）。name/length/prototype/
+      // constructor 是每函数自有/共享面——不经链继承（排除；constructor 保
+      // 留既有 ctorNameOfRecv 折叠口径）。
+      if (key !== "name" && key !== "length" && key !== "prototype" && key !== "constructor") {
+        const sup = builtinSuperCtorOf(o.shape.name);
+        if (sup) return $get(sup.host as Abs, key, opts);
       }
     } else {
       const acc = findClassAccessor(o.shape.name, key);
@@ -1948,18 +2600,57 @@ export function $get(
       // 实例上读静态访问器键 → 原生 undefined（属性在构造器上）
       if (findStaticClassAccessor(o.shape.name, key)) return undef();
       // 实例方法读取（typeof a.m / 一等值）：沿继承链在 registry 找方法
-      // 未调用方法槽带 AST 形参展示名（不再假零参）
+      // 未调用方法槽带 AST 形参展示名（不再假零参）。
+      // P2a：驻留按（定义 spec, 键）——a.m 与 b.m（跨实例/跨派生）解析到
+      // 同一 spec 条目返回同一函数 Abs（原生挂 .prototype，=== 折 true）。
       for (const n of evalClassChain(o.shape.name)) {
         const spec = getEvalClass(n);
         if (spec?.methods?.[key]) {
-          return absFunction(spec.methodParams?.[key] ?? [], { body: noBody }, { ctor: false });
+          return classMethodValueAbs(spec, "inst", key, spec.methodParams?.[key]);
         }
       }
+      // P3b：原型链数据槽（new B().x ← Base.prototype.x / A.prototype.x）
+      // ——own 槽与方法面之后沿链原型对象读槽。链洞 / fn 伪父（ctor 体
+      // 不透明，实例自有面不可判）→ 缺席不可折 undefined（sound unknown；
+      // 此前闭 obj miss 折 undefined 对抽象父是 wrong-exact）。
+      // Object.prototype 成员（hasOwnProperty/…）走下方通用投影，不折。
+      const protoHit = chainProtoSlotOf(o.shape.name, key, 0);
+      if (protoHit !== undefined) return protoHit;
+      if (
+        key !== "constructor" && key !== "__proto__" && !OBJECT_PROTO_NAMES.has(key) &&
+        (classChainHasHole(o.shape.name) || chainHasOpaqueFnParent(o.shape.name))
+      ) {
+        return unknown;
+      }
     }
-    // 原型链 constructor：内建 brand（Error/Date/…）→ 对应构造器 Abs
+    // 原型链 constructor：内建 brand（Error/Date/…）→ 对应构造器 Abs；
+    // P3b：注册类（用户类/fn 伪父）实例/原型 → 类值本身（=== 折 exact）。
+    // 类值接收者不经此（B.constructor 原生继承 Function——保持既有口径）。
     if (key === "constructor") {
       const cn = ctorNameOfRecv(o);
-      if (cn) return builtinCtorAbs(cn);
+      if (cn) {
+        if (!isClassVal) {
+          const cv = lookupClassValue(cn);
+          if (cv) return cv;
+        }
+        return builtinCtorAbs(cn);
+      }
+    }
+    // Bug 58/67：__proto__ 是 Object.prototype 访问器（读 [[Prototype]]）——
+    // brand 接收者走 protoOfRecv 的 brand 面：类值 → 父构造器 /
+    // Function.prototype；X.prototype 品牌 → owner extends（extends null
+    // → null 字面量）；实例 brand → X.prototype。不得落 inner obj 面折
+    // Object.prototype（类值/原型品牌的 [[Prototype]] 都不是它）。
+    if (key === "__proto__") {
+      return protoOfRecv(o);
+    }
+    // Bug 40：已知原型访问器名（BUILTIN_BRAND_ACCESSORS，$in presence 表）
+    // 的值读若槽面未建模 → 诚实 unknown——不得落闭 obj 槽 miss 折精确
+    // undefined（`typeof ab.detached` / `typeof ta.buffer` 曾断言成员缺席，
+    // wrong-exact）。own 槽已在上方优先（byteLength/resizable 等精确面
+    // 不回退）；类值（isClassVal）走静态面，不在此列。
+    if (!isClassVal && BUILTIN_BRAND_ACCESSORS[o.shape.name]?.has(key)) {
+      return unknown;
     }
     return $get(inner, key, opts);
   }
@@ -1983,7 +2674,11 @@ export function $get(
     if (key === "prototype") {
       return o.shape.ctor === false
         ? undef()
-        : abs({ k: "obj", slots: {} }, undefined, undefined, "path");
+        : // P3b：fn 的 prototype 对象身份按 fn Abs 驻留（原生每 fn 唯一
+          // 共享 prototype）——此前每次读捏新闭 obj，`Base.prototype.x = 1`
+          // 写后读丢、`f.prototype === f.prototype` 恒等丢。constructor 槽
+          // 指回 fn 自身（MakeConstructor 语义，=== 折 exact）。
+          fnProtoOf(o);
     }
   }
   // 数组 length：成员路径（a.length += 1 等复合写）与 a.length 读同源
@@ -2080,6 +2775,16 @@ export function $get(
     if (!isNullProtoObj(o) && OBJECT_PROTO_METHOD_NAMES.has(key)) {
       return objectProtoMethodAbs(key);
     }
+    // Object.prototype.__proto__ 访问器（Bug 17）：读 [[Prototype]]——与
+    // Object.getPrototypeOf 的 protoOfRecv 投影同款（闭字面量原型恰为
+    // Object.prototype 单例、open 走 protoTable/unknown），不得折精确
+    // undefined；null-proto 无该访问器 → 原生读 undefined（不是 null）。
+    // protoTable 原型自身是 null-proto 对象时访问器同样缺席 → undefined。
+    if (key === "__proto__") {
+      if (isNullProtoObj(o)) return undef();
+      const p = protoOfRecv(o);
+      return isNullProtoObj(p) ? undef() : p;
+    }
     if ((o.shape as ObjShape).open) return unknown;
     // Object.prototype.constructor（null-proto 无 → undef）
     if (key === "constructor" && !isNullProtoObj(o)) {
@@ -2093,6 +2798,18 @@ export function $get(
     // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce
     const parts = o.shape.members.map((m) => $get(m, key, opts));
     return parts.length ? parts.reduce((a, b) => joinAbs(a, b)) : unknown;
+  }
+  // prim / tuple / arr / fn / eff 的 __proto__（Bug 17）：Object.prototype
+  // 访问器读 [[Prototype]]——protoOfRecv 同款投影（tuple/arr →
+  // Array.prototype、prim → 装箱原型、fn → Function.prototype）；null-proto
+  // 标记（setPrototypeOf(…, null) 产物）无访问器 → 原生 undefined。
+  // nullish/unknown/any 形状不在此列（访问器存在性不可判，走底部诊断路径）。
+  if (
+    key === "__proto__" &&
+    (o.shape.k === "prim" || o.shape.k === "tuple" || o.shape.k === "arr" ||
+      o.shape.k === "fn" || o.shape.k === "eff")
+  ) {
+    return isNullProtoObj(o) ? undef() : protoOfRecv(o);
   }
   // prim / tuple / arr / fn / eff 的原型 constructor（上文未命中自有槽）
   if (key === "constructor") {
@@ -2151,8 +2868,22 @@ export function $collectionForEach(recv: Abs, cb: unknown): Abs | undefined {
   return undefined;
 }
 
-/** 成员写：返回新 obj/brand（不可变更新）；frozen/sealed/只读目标按 sloppy 静默失败 */
-export function $set(o: Abs, key: string, value: Abs): Abs {
+/** P3b：$set fn 臂自建槽的 fn Abs 集（与出生自带 slots 的 dual-facet env fn
+ *  区分——后者就地突变会跨 run 泄漏，维持只读）。 */
+const userFnSlots = new WeakSet<object>();
+
+/** 成员写：返回新 obj/brand（不可变更新）；frozen/sealed/只读目标按 sloppy 静默失败。
+ *  opts.internal（Bug 84）：私有字段落地——槽打 Slot.internal 标记；后续覆写
+ *  保留既有标记（this.#x = v 不丢失 internal）。
+ *  opts.symbolKey（Bug 73）：计算 symbol 键投影（[Symbol.X] → "@@X"）落地
+ * ——槽打 Slot.symbolKey 标记（JSON.stringify 等字符串键枚举面跳过）；
+ *  覆写保留既有标记。 */
+export function $set(
+  o: Abs,
+  key: string,
+  value: Abs,
+  opts?: { internal?: boolean; symbolKey?: boolean },
+): Abs {
   // 私有名（"#" 键）：foreign-receiver brand check（PrivateFieldSet）
   privateNameGuard(o, key);
   // DEC-006 B/C：free identifier 可能把宿主值（globalThis…）漏进来——
@@ -2162,6 +2893,30 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
     return o;
   }
   if (o.shape.k === "brand") {
+    // Bug 71：Proxy——set 陷阱优先（实参 (target, key, value, receiver)、
+    // this = handler）；返回字面量 false → strict TypeError（硬抛，catch 可
+    // 吸收）；无陷阱回转发写靶（原地；brand inner 即 target 引用，身份不
+    // 变）。陷阱体内 t[k]=v 经 $set 原地突变对代理读可见
+    if (o.shape.name === "Proxy") {
+      const parts = proxyPartsOf(o);
+      if (parts) {
+        const trap = proxyTrapOf(parts.handler, "set");
+        if (trap.k === "fn") {
+          const res = $call(trap.fn, [parts.target, strLit(key), value, o], parts.handler);
+          const rv = litValue(res);
+          if (rv.ok && rv.value === false) throwStrictWrite();
+          return o;
+        }
+        if (trap.k === "dead" || trap.k === "opaque") {
+          recordMayThrow({ kind: "TypeError", cause: `Proxy set trap for '${key}' not callable / unknown` });
+          return o;
+        }
+        $set(parts.target, key, value, opts);
+        o.conf = confJoin(o.conf, value.conf);
+        return o;
+      }
+      // 无侧表（退化副本）：沿通用 brand 内层（inner = target）路径
+    }
     if (extStateOf(o) === "frozen") throwStrictWrite();
     const isClassVal = classNameOfValue(o as object) === o.shape.name;
     if (isClassVal) {
@@ -2184,12 +2939,26 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
           throwStrictWrite(); // 不可扩展：新键写 TypeError
         }
         if (getPropFlags(o)?.get(key)?.writable === false) throwStrictWrite();
-        setSlot(inner.shape.slots, key, { value: asAbsVal(value) });
+        // Bug 84：覆写保留既有 internal 标记（this.#x = v 不丢 introspection 不可见性）
+        // Bug 73：symbol 键投影标记同语义保留
+        // Bug 66：inherited 槽（errorBrandAbs 的 name——原型链解析槽）公有
+        // 覆写落地转自有——新槽不携带 inherited，并清 enumerable:false 侧表
+        //（原生 e.name = "X" / 子类 name 字段建自有可枚举属性；message/
+        // stack 自有不可枚举槽覆写不受影响，侧表保持）
+        const prevSlot = getSlot(inner.shape.slots, key);
+        setSlot(inner.shape.slots, key, {
+          value: asAbsVal(value),
+          ...(prevSlot?.internal || opts?.internal ? { internal: true } : {}),
+          ...(prevSlot?.symbolKey || opts?.symbolKey ? { symbolKey: true } : {}),
+        });
+        if (prevSlot?.inherited && !opts?.internal) {
+          setPropFlags(inner, key, { enumerable: true });
+        }
         clearStaleTermPred(o);
         return o;
       }
     }
-    const inner = $set(o.shape.shape, key, value);
+    const inner = $set(o.shape.shape, key, value, opts);
     const next = abs(
       { k: "brand", name: o.shape.name, shape: inner },
       o.term,
@@ -2255,6 +3024,23 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
     clearStaleTermPred(o);
     return o;
   }
+  // P3b：fn 值 expando 静态写（`Base.px = 5` / 借用原型挂方法等）——
+  // slotless 用户/transpile fn 就地建槽（引用语义：别名与子类链静态读
+  // 共享同一槽面）。dual-facet env fn（出生自带 slots 的内建静态面，
+  // Number.isFinite 等）不就地改——env Abs 可能跨 run 复用，原地突变
+  // 泄漏到后续分析（既有不写口径维持：userFnSlots 只认本机制自建的槽）。
+  if (o.shape.k === "fn") {
+    if (o.shape.slots === undefined) {
+      o.shape = { ...o.shape, slots: {} };
+      userFnSlots.add(o);
+    }
+    if (o.shape.slots && userFnSlots.has(o)) {
+      setSlot(o.shape.slots, key, { value: asAbsVal(value) });
+      o.conf = confJoin(o.conf, value.conf);
+      clearStaleTermPred(o);
+    }
+    return o;
+  }
   if (!isObj(o)) {
     // strict/ESM 写语义：确定非对象目标原生 TypeError（硬抛，catch 可吸收）。
     // 此前一律 `return $obj({...})` 伪造对象——prim/空值静默成功（L2 漏报）、
@@ -2308,7 +3094,14 @@ export function $set(o: Abs, key: string, value: Abs): Abs {
     return $setProto(o, value);
   }
   // 就地写槽（引用语义：const b = o; b.x = v 对 o 可见）——Abs 身份不变
-  setSlot(shape.slots, key, { value: asAbsVal(value) });
+  // Bug 84：覆写保留既有 internal 标记 / opts.internal 新打标
+  // Bug 73：symbol 键投影标记同语义保留 / opts.symbolKey 新打标
+  const prevSlot = getSlot(shape.slots, key);
+  setSlot(shape.slots, key, {
+    value: asAbsVal(value),
+    ...(prevSlot?.internal || opts?.internal ? { internal: true } : {}),
+    ...(prevSlot?.symbolKey || opts?.symbolKey ? { symbolKey: true } : {}),
+  });
   o.conf = confJoin(o.conf, value.conf);
   clearStaleTermPred(o);
   return o;

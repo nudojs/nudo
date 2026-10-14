@@ -113,7 +113,7 @@ nudo contract --emit src/lib.js --dry-run --exit-on-diff   # CI drift gate
 
 | Surface | Entry |
 |---------|--------|
-| Hover tier | `● interface / handwritten\|generated\|implicit` |
+| Hover tier | `● contract / hw\|gen\|imp` |
 | CodeLens | persist / update / **draft** |
 | VS Code | Output channel commands |
 | Agent | `nudo.contract`, `nudo.contract.draft`, `nudo.check` |

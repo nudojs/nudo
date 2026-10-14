@@ -13,14 +13,10 @@ import {
 } from "../constraint.ts";
 import { predToString } from "../pred.ts";
 import { execNudoModule } from "../refine.ts";
-import { withStdImport, stdOpts } from "./nudo-constraints.ts";
-
-function issuesOf(src: string) {
-  return checkSource("/t/shape.js", withStdImport(src), pTrue, stdOpts);
-}
+import { issuesOf } from "./nudo-constraints.ts";
 
 function errorCodes(src: string): string[] {
-  return issuesOf(src)
+  return issuesOf(src, "/t/shape.js")
     .issues.filter((i) => i.severity === "error")
     .map((i) => i.code);
 }
@@ -72,7 +68,7 @@ function register(u) {
   return u.name;
 }
 register({ id: 1, name: "a" });
-`);
+`, "/t/shape.js");
     expect(r.ok).toBe(true);
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
   });
@@ -86,7 +82,7 @@ function register(u) {
   return u.name;
 }
 register({ id: -1, name: "a" });
-`);
+`, "/t/shape.js");
     expect(r.ok).toBe(false);
     const err = r.issues.find((i) => i.code === "nudo:constraint-violated");
     expect(err).toBeDefined();
@@ -104,7 +100,7 @@ function register(u) {
   return u.id;
 }
 register({ id: 1 });
-`);
+`, "/t/shape.js");
     expect(r.ok).toBe(false);
     const err = r.issues.find((i) => i.code === "nudo:constraint-violated");
     expect(err).toBeDefined();
@@ -121,7 +117,7 @@ function register(u) {
   return u.name;
 }
 register({ id: 1, name: 2 });
-`);
+`, "/t/shape.js");
     expect(r.ok).toBe(false);
     const err = r.issues.find((i) => i.code === "nudo:constraint-violated");
     expect(err).toBeDefined();
@@ -137,7 +133,7 @@ function setup(c) {
   return c.retries;
 }
 setup({ retries: 3 });
-`);
+`, "/t/shape.js");
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
   });
 
@@ -150,7 +146,7 @@ function setup(c) {
   return c.retries;
 }
 setup({ retries: 3, label: 9 });
-`);
+`, "/t/shape.js");
     expect(r.ok).toBe(false);
     expect(
       r.issues.some(
@@ -170,7 +166,7 @@ function setup(c) {
   return c.retries;
 }
 setup({ retries: 99 });
-`);
+`, "/t/shape.js");
     expect(r.ok).toBe(false);
     const err = r.issues.find((i) => i.code === "nudo:constraint-violated");
     expect(err).toBeDefined();
@@ -187,7 +183,7 @@ function register(u) {
 }
 const payload = getPayload();
 register(payload);
-`);
+`, "/t/shape.js");
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
   });
 
@@ -197,7 +193,7 @@ function open(u) {
   return u;
 }
 open({ id: -1 });
-`);
+`, "/t/shape.js");
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
   });
 
@@ -210,7 +206,7 @@ function place(o) {
   return o.user.id;
 }
 place({ user: { id: 1, name: "a" }, tags: ["x"] });
-`);
+`, "/t/shape.js");
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
   });
 
@@ -223,7 +219,7 @@ function place(o) {
   return o.user.id;
 }
 place({ user: { id: -1, name: "a" }, tags: ["x"] });
-`);
+`, "/t/shape.js");
     expect(r.ok).toBe(false);
     expect(r.issues.some((i) => i.code === "nudo:constraint-violated")).toBe(true);
   });
@@ -237,7 +233,7 @@ function place(o) {
   return o.tags;
 }
 place({ user: { id: 1, name: "a" }, tags: [""] });
-`);
+`, "/t/shape.js");
     expect(r.ok).toBe(false);
     expect(r.issues.some((i) => i.code === "nudo:constraint-violated")).toBe(true);
   });
@@ -249,7 +245,7 @@ place({ user: { id: 1, name: "a" }, tags: [""] });
  */
 function take(n) { return n; }
 take(3);
-`);
+`, "/t/shape.js");
     expect(ok.issues.filter((i) => i.severity === "error")).toEqual([]);
   });
 
@@ -260,7 +256,7 @@ take(3);
  */
 function take(n) { return n; }
 take(1.5);
-`);
+`, "/t/shape.js");
     expect(r.ok).toBe(false);
     expect(r.issues.some((i) => i.expected?.includes("int"))).toBe(true);
   });
@@ -272,7 +268,7 @@ take(1.5);
  */
 function take(xs) { return xs; }
 take(1);
-`);
+`, "/t/shape.js");
     expect(r.ok).toBe(false);
     expect(r.issues.some((i) => i.expected?.includes("array"))).toBe(true);
   });
@@ -284,7 +280,7 @@ take(1);
  */
 function take(xs) { return xs; }
 take([-1]);
-`);
+`, "/t/shape.js");
     expect(r.ok).toBe(false);
     expect(r.issues.some((i) => i.code === "nudo:constraint-violated")).toBe(true);
   });
@@ -296,7 +292,7 @@ take([-1]);
  */
 function take(s) { return s; }
 take("");
-`);
+`, "/t/shape.js");
     expect(r.ok).toBe(false);
     expect(r.issues.some((i) => i.expected?.includes("length"))).toBe(true);
   });

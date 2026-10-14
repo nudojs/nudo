@@ -73,6 +73,29 @@ export function makeHandleSelectCase(deps: CommandDeps) {
   };
 }
 
+export function makeHandleSelectContract(deps: CommandDeps) {
+  return async function handleSelectContract(params: {
+    uri?: string;
+    file?: string;
+    functionName: string;
+  }) {
+    // 契约是观察选择器的一个选项（与各 case 互斥）：选中 = 取消该函数的激活
+    // case（无条目即默认契约观察态，幂等），重检 + 刷新透镜。
+    const uri = uriForFileOrUri(params, deps);
+    const cases = deps.getActiveCases(uri);
+    cases.delete(params.functionName);
+
+    const document = deps.getDocument(uri);
+    if (document) {
+      await deps.validateDocument(document);
+    }
+
+    deps.connection.sendRequest(CodeLensRefreshRequest.type).catch(() => {});
+
+    return { success: true };
+  };
+}
+
 export function makeHandleGetActiveCases(deps: CommandDeps) {
   return function handleGetActiveCases(params: { uri?: string; file?: string }) {
     const cases = deps.getActiveCases(uriForFileOrUri(params, deps));

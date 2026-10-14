@@ -6,7 +6,7 @@
 
 import type { Abs } from "./abs.ts";
 
-export type SymbolMeta = { id: number; description: Abs };
+export type SymbolMeta = { id: number; description: Abs; abstractKey?: boolean };
 
 const symbolMeta = new WeakMap<object, SymbolMeta>();
 let symbolIdSeq = 0;
@@ -22,6 +22,22 @@ export function symbolIdOf(a: Abs): number | undefined {
 
 export function symbolDescriptionAbs(a: Abs): Abs | undefined {
   return symbolMeta.get(a as object)?.description;
+}
+
+/**
+ * Bug 61：Symbol.for 抽象键驻留符号标记。键 ToString 不可判（开对象/
+ * 抽象元素数组等）时以键 Abs 身份驻留：同 Abs 复用同一符号（=== 折
+ * true，与原生「同值同串同符号」一致）；两个不同驻留符号的 === 原生
+ * 不可判（各自键串可能相等）→ strictEqAbs 退化 unknown，不得折 false。
+ */
+export function markSymbolAbstractKey(a: Abs): Abs {
+  const m = symbolMeta.get(a as object);
+  if (m) m.abstractKey = true;
+  return a;
+}
+
+export function isAbstractKeySymbol(a: Abs): boolean {
+  return symbolMeta.get(a as object)?.abstractKey === true;
 }
 
 export function isSymbolAbs(a: Abs | undefined): boolean {

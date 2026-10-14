@@ -15,6 +15,14 @@ export const MAX_CALL_DEPTH = 64;
 /** 与 B 命名调用（calls.ts MAX_EVAL_TOTAL_CALLS）同阀：病态展开下 200k 级不可接受 */
 export const MAX_TOTAL_CALLS = 20_000;
 
+/**
+ * 调用截断归因（issue #158）：
+ * - `cycle`：同 name+arg 指纹的调用已在栈上——**不是预算**，抬高
+ *   `@nudo:budget` 永远解不开（数据依赖自递归在抽象层就是不动点）；
+ * - `depth` / `calls`：真预算超限，`@nudo:budget` 可抬。
+ */
+export type AbsTruncationReason = "cycle" | "depth" | "calls";
+
 let _absCallDepth = 0;
 let _absTotalCalls = 0;
 let _activeCallKeys: string[] = [];
@@ -22,6 +30,22 @@ const _fnCallIds = new WeakMap<object, string>();
 let _fnCallIdSeq = 0;
 /** 本轮是否发生调用预算截断（A2 可观测） */
 let _callTruncated = false;
+/** 本轮 A 路径是否发生 cycle 截断（cycle ≠ 预算；与 B 探针结果 OR） */
+let _cycleTruncated = false;
+/** 本轮是否发生循环迭代预算截断（#loop-iterations；与调用预算不同轴） */
+let _loopTruncated = false;
+/** 调用截断原因集合（A+B 经 noteAbsTruncation 单点收集；宿主入口重置） */
+let _truncReasons = new Set<AbsTruncationReason>();
+
+/**
+ * 循环迭代预算截断（两段 maxIters 抽象 / MAX_CONCRETE_LOOP_ITERS 硬上限
+ * 仍未终止）。与调用预算不同轴：`@nudo:budget calls=/depth=` 抬不动它，
+ * 不进 reasons——但计入 truncated 可观测（诊断与 budget 块不得矛盾）。
+ */
+export function noteLoopTruncation(label: string): void {
+  _loopTruncated = true;
+  noteAbsTruncation(label);
+}
 /** 当前生效的调用预算（@nudo:budget 可逐函数抬高；默认 = 全局常量） */
 let _callDepthLimit = MAX_CALL_DEPTH;
 let _totalCallsLimit = MAX_TOTAL_CALLS;
@@ -36,17 +60,58 @@ export type AbsBudgetStats = {
   forkTruncated: boolean;
   /** 任一预算截断 → true（结果可能已 widen 成 unknown） */
   truncated: boolean;
+  /** B 命名调用（exec $callNamed）累计进入次数——宿主入口内跨执行会话累计 */
+  evalCalls: number;
+  /** B 命名调用当前生效上限 */
+  maxEvalCalls: number;
+  /** B 命名调用发生截断（cycle/depth/calls 任一） */
+  evalCallTruncated: boolean;
+  /** 任一路径的 cycle 截断（预算抬不动的那类；issue #158） */
+  cycleTruncated: boolean;
+  /** 循环迭代预算截断（#loop-iterations；maxIters/硬上限，非调用预算） */
+  loopTruncated: boolean;
+  /** 调用截断原因集合（A+B；稳定排序，进 JSON） */
+  reasons: AbsTruncationReason[];
 };
 
+/**
+ * B 命名调用预算可观测探针（issue #158）：exec/calls.ts 的计数/旗标住在
+ * calls.ts（反向 import call-budget 破环不可静态引用），模块加载时注册，
+ * `getAbsCallBudgetStats` 合并、`resetAbsCallBudget` 联动重置。
+ */
+export type EvalCallBudgetProbe = {
+  stats(): {
+    calls: number;
+    maxCalls: number;
+    callTruncated: boolean;
+    cycleTruncated: boolean;
+  };
+  resetObservability(): void;
+};
+
+let _evalCallProbe: EvalCallBudgetProbe | null = null;
+
+export function registerEvalCallBudgetProbe(probe: EvalCallBudgetProbe | null): void {
+  _evalCallProbe = probe;
+}
+
 export function getAbsCallBudgetStats(): AbsBudgetStats {
+  const b = _evalCallProbe?.stats();
   return {
     calls: _absTotalCalls,
     maxCalls: _totalCallsLimit,
-    forks: _evalForkCount,
+    forks: _evalForkObsCount,
     maxForks: _evalForkBudgetLimit,
     callTruncated: _callTruncated,
     forkTruncated: _evalForkTruncNoted,
-    truncated: _callTruncated || _evalForkTruncNoted,
+    truncated:
+      _callTruncated || (b?.callTruncated ?? false) || _evalForkTruncNoted || _loopTruncated,
+    evalCalls: b?.calls ?? 0,
+    maxEvalCalls: b?.maxCalls ?? MAX_TOTAL_CALLS,
+    evalCallTruncated: b?.callTruncated ?? false,
+    cycleTruncated: _cycleTruncated || (b?.cycleTruncated ?? false),
+    loopTruncated: _loopTruncated,
+    reasons: [..._truncReasons].sort(),
   };
 }
 
@@ -56,8 +121,13 @@ export function resetAbsCallBudget(): void {
   _absTotalCalls = 0;
   _activeCallKeys = [];
   _callTruncated = false;
+  _cycleTruncated = false;
+  _loopTruncated = false;
+  _truncReasons = new Set();
   _callDepthLimit = MAX_CALL_DEPTH;
   _totalCallsLimit = MAX_TOTAL_CALLS;
+  // B 观测累计同轮生命周期（截断旗标跨执行会话 latch，宿主入口统一清）
+  _evalCallProbe?.resetObservability();
   resetEvalForkBudget();
 }
 
@@ -121,41 +191,50 @@ export function callBudgetKey(kind: string, id: string, args: unknown[]): string
 }
 
 /** 截断观测 collector（作用域化：runWithCollectorScope 内各分析互不串台；
- *  无作用域 = fallback 模块级单变量，行为同今日） */
+ *  无作用域 = fallback 模块级单变量，行为同今日）。
+ *  reason 只对调用截断（A enterCall / B evalEnterCall）非空——cycle 与
+ *  depth/calls 分流是 #158 的观测面。 */
 const absTruncCollectorSlot = createScopedSlot<
-  ((fnLabel: string) => void) | null
+  ((fnLabel: string, reason?: AbsTruncationReason) => void) | null
 >(() => null);
 registerCollectorScopeParticipant((body) => absTruncCollectorSlot.runScoped(body));
 
 /** 记录被截断的递归（service 可映射为 nudo:recursion-truncated）。
  *  返回先前 collector，便于嵌套 save/restore。 */
 export function setAbsTruncationCollector(
-  collector: ((fnLabel: string) => void) | null,
-): ((fnLabel: string) => void) | null {
+  collector: ((fnLabel: string, reason?: AbsTruncationReason) => void) | null,
+): ((fnLabel: string, reason?: AbsTruncationReason) => void) | null {
   const prev = absTruncCollectorSlot.get();
   absTruncCollectorSlot.set(collector);
   return prev;
 }
 
-export function noteAbsTruncation(label: string): void {
+export function noteAbsTruncation(label: string, reason?: AbsTruncationReason): void {
+  if (reason) _truncReasons.add(reason);
   const absTruncCollector = absTruncCollectorSlot.get();
   if (!absTruncCollector) return;
   try {
-    absTruncCollector(label);
+    absTruncCollector(label, reason);
   } catch {
     /* collector 不得打断求值 */
   }
 }
 
-/** 进入调用：超限/cycle 则不执行 body，返回 opaque */
+/** 进入调用：cycle/超限则不执行 body，返回 opaque。
+ *  归因顺序 = 守卫顺序（cycle 先于 depth 先于 calls）：同指纹调用已在栈上
+ *  时无论预算多深都会立即截断——报 cycle 而不是预算（#158）。 */
 export function enterCall(key: string, label: string): boolean {
-  if (
-    _activeCallKeys.includes(key) ||
-    _absCallDepth >= _callDepthLimit ||
-    _absTotalCalls >= _totalCallsLimit
-  ) {
+  const reason: AbsTruncationReason | undefined = _activeCallKeys.includes(key)
+    ? "cycle"
+    : _absCallDepth >= _callDepthLimit
+      ? "depth"
+      : _absTotalCalls >= _totalCallsLimit
+        ? "calls"
+        : undefined;
+  if (reason) {
     _callTruncated = true;
-    noteAbsTruncation(label);
+    if (reason === "cycle") _cycleTruncated = true;
+    noteAbsTruncation(label, reason);
     return false;
   }
   _activeCallKeys.push(key);
@@ -189,6 +268,9 @@ export const MAX_EVAL_TOTAL_FORKS = 5000;
 
 let _evalForkBudgetLimit = MAX_EVAL_TOTAL_FORKS;
 let _evalForkCount = 0;
+/** 宿主入口内跨 B 执行会话累计的 fork 次数（观测口径；会话预算计数 _evalForkCount
+ *  每会话清零，stats 上屏必须反映整轮宿主入口而不是最后一个会话） */
+let _evalForkObsCount = 0;
 /** 本轮是否已上报过 fork 截断（避免 collector 被同一轮刷屏） */
 let _evalForkTruncNoted = false;
 
@@ -246,14 +328,24 @@ export function getEvalForkCount(): number {
   return _evalForkCount;
 }
 
+/** 会话边界（enterEvalCallBudgetSession）只清预算计数：新执行会话拿满额度；
+ *  截断旗标 latch 到宿主入口（resetEvalForkBudget），否则 stats 会与已上报的
+ *  nudo:fork-truncated 自相矛盾（#158 同族）。 */
+export function resetEvalForkCount(): void {
+  _evalForkCount = 0;
+}
+
 /** 宿主入口前重置 fork 计数（与 resetAbsCallBudget / resetEvalCallBudget 同口径） */
 export function resetEvalForkBudget(): void {
-  _evalForkCount = 0;
+  resetEvalForkCount();
   _evalForkTruncNoted = false;
+  _evalForkObsCount = 0;
 }
 
 /** $fork 入口：超限放弃该分支（调用方返回 unknown = 最保守，安全）。 */
 export function bumpEvalForkBudget(): boolean {
+  // 观测口径 = 尝试次数（与预算计数同 ++，可超 maxForks——超限量本身就是信号）
+  _evalForkObsCount++;
   if (++_evalForkCount <= _evalForkBudgetLimit) return true;
   if (!_evalForkTruncNoted) {
     _evalForkTruncNoted = true;

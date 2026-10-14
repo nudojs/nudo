@@ -4,12 +4,8 @@
  * 内写回静默丢失（f() 后 n 不变）。修复：表达式体包块体跑同一 pass。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { litValue } from "@nudojs/core";
+import { call } from "./eval-helpers.ts";
 
 describe("evaluator expression-body arrow side effects", () => {
   it("postfix update writes back", () => {

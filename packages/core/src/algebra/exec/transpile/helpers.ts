@@ -13,6 +13,22 @@ export function paramDisplayNames(params: unknown[] | undefined): string[] {
 }
 
 /**
+ * Bug 69：原生 fn.length 边界——首个默认值（AssignmentPattern）或 rest
+ * 形参**前**的形参数。解构形参无默认值时计入（原生不截断）；transpile 侧
+ * 记入 $fnVal 的 length 通道（$len 的 fn 分支折 exact），宿主函数的解糖
+ * 占位（`function f(a, _p1)`）不再污染 arity。
+ */
+export function nativeParamArity(params: unknown[] | undefined): number {
+  let n = 0;
+  for (const raw of params ?? []) {
+    const t = (raw as { type?: string }).type;
+    if (t === "AssignmentPattern" || t === "RestElement") break;
+    n++;
+  }
+  return n;
+}
+
+/**
  * ObjectMethod / 方法型 FunctionExpression 的宿主绑定名：
  * Identifier / 默认参左名 / RestElement 直通；其余占位 `_a`。
  * 与 emitParamBinding 的 sig 同精神，但保持方法简写路径轻量。
@@ -41,6 +57,47 @@ export function matchAsOverride(stmt: Node, opts: TranspileOptions): string | nu
  * 只有 body 引用 this 的函数才需要宿主 this 注入（$rawThis）。
  * 嵌套函数声明/表达式有自己的 this 边界，不下降；箭头函数词法 this 下降。
  */
+/**
+ * Bug 52：finalizer 静态事实——是否含 yield/yield*（.return 注入后生成器
+ * 可再交付 → done 并 boolean）与 return（可覆盖注入值 → 值并 unknown）。
+ * 嵌套函数体（声明/表达式/箭头/方法/静态块）不属本生成器，不下降
+ * （同 fnBodyHasThis 的排除口径）。
+ */
+export function finalizerBits(node: Node): { yields: boolean; returns: boolean } {
+  let yields = false;
+  let returns = false;
+  const seen = new Set<Node>();
+  const walk = (n: Node): void => {
+    if (n.type === "YieldExpression") yields = true;
+    else if (n.type === "ReturnStatement") returns = true;
+    else if (
+      n.type === "FunctionDeclaration" ||
+      n.type === "FunctionExpression" ||
+      n.type === "ArrowFunctionExpression" ||
+      n.type === "ObjectMethod" ||
+      n.type === "ClassMethod" ||
+      n.type === "ClassPrivateMethod" ||
+      n.type === "StaticBlock"
+    ) {
+      return;
+    }
+    if (seen.has(n)) return;
+    seen.add(n);
+    for (const [k, v] of Object.entries(n)) {
+      if (k === "loc" || k === "start" || k === "end" || k === "leadingComments" || k === "trailingComments") continue;
+      if (Array.isArray(v)) {
+        for (const item of v) {
+          if (item && typeof item === "object" && "type" in (item as object)) walk(item as Node);
+        }
+      } else if (v && typeof v === "object" && "type" in (v as object)) {
+        walk(v as Node);
+      }
+    }
+  };
+    walk(node);
+  return { yields, returns };
+}
+
 export function fnBodyHasThis(fn: { body?: Node | null }): boolean {
   const body = fn.body;
   if (!body) return false;
@@ -68,12 +125,13 @@ export function fnBodyHasThis(fn: { body?: Node | null }): boolean {
 }
 
 /**
- * 函数体是否**直接**引用 `arguments`（不下降任何嵌套函数/箭头/方法）。
- * 仅此时建立 argsBinding——嵌套箭头的 `arguments` 沿此绑定词法继承；
- * 无绑定时 Identifier 折 $unknown()（差分 harness 外层是箭头 IIFE，
- * native 为 ReferenceError；投影外层 arguments 会假精确）。
+ * 函数是否引用 `arguments`（自身绑定持有者）——函数体**或嵌套箭头**
+ *（词法继承 arguments）任意 Identifier 引用即算；嵌套真实函数/方法有
+ * 自己的绑定，停止下降。参数默认值（`function f(a = arguments.length)`）
+ * 在函数作用域求值，一并扫描。仅此时建立 argsBinding；无绑定（模块顶层）
+ * → 自由 arguments 读折 $throwFreeArguments()（原生 ReferenceError）。
  */
-export function fnBodyHasOwnArguments(fn: { body?: Node | null }): boolean {
+export function fnBodyHasOwnArguments(fn: { body?: Node | null; params?: Node[] }): boolean {
   const body = fn.body;
   if (!body) return false;
   const seen = new Set<Node>();
@@ -82,10 +140,11 @@ export function fnBodyHasOwnArguments(fn: { body?: Node | null }): boolean {
     if (
       n.type === "FunctionDeclaration" ||
       n.type === "FunctionExpression" ||
-      n.type === "ArrowFunctionExpression" ||
       n.type === "ObjectMethod" ||
       n.type === "ClassMethod"
     ) {
+      // 箭头不在此列：词法继承外层 arguments，继续下降（箭头自身的
+      // params 默认值同属外层绑定作用域）
       return false;
     }
     if (seen.has(n)) return false;
@@ -104,13 +163,239 @@ export function fnBodyHasOwnArguments(fn: { body?: Node | null }): boolean {
     }
     return false;
   };
+  // 参数默认值先于 body 扫描（同为函数作用域求值面）
+  for (const p of fn.params ?? []) {
+    if (walk(p)) return true;
+  }
   return walk(body);
+}
+
+/**
+ * M4：函数体「无副作用面」保守静态判定（transpile 侧，facet 进 $fnVal）。
+ * 脏标记（保守过近似，宁可漏判纯）：
+ * - 任意赋值 / 自增自减 / delete / 标签模板（tag 是调用）；
+ * - 任意 CallExpression（含 Math.max 等纯调用——调用面不可内省）；
+ * - NewExpression 限于白名单 ctor（Error/集合/正则等无外写构造器；
+ *   Promise 排除——executor 同步执行可写外层；用户类不可知）；
+ * - for-in/for-of 的左部是赋值目标（非变量声明）。
+ * 嵌套函数体不下降：不调用就不执行；对它的调用已由 Call 脏标记覆盖。
+ * 用途：sort 等原生调用次数取决于算法内部的内建——只有无副作用面的
+ * 回调才允许引擎真执行（副作用回调多执行不可回滚，外层绑定会错定值）。
+ */
+const SAFE_CTOR_NAMES = new Set([
+  "Object", "Array", "Error", "TypeError", "RangeError", "ReferenceError",
+  "SyntaxError", "EvalError", "URIError", "AggregateError", "Map", "Set",
+  "WeakMap", "WeakSet", "Date", "RegExp", "Number", "String", "Boolean",
+  "BigInt", "Symbol",
+]);
+
+export function fnBodyIsEffectFree(fn: { body?: Node | null; params?: Node[] }): boolean {
+  const body = fn.body;
+  if (!body) return false;
+  let dirty = false;
+  const seen = new Set<Node>();
+  const walk = (n: Node): void => {
+    if (dirty || !n || typeof n !== "object") return;
+    switch (n.type) {
+      case "AssignmentExpression":
+      case "UpdateExpression":
+      case "TaggedTemplateExpression":
+      case "CallExpression":
+      case "OptionalCallExpression":
+      case "NewExpression":
+        if (n.type === "NewExpression") {
+          const callee = (n as unknown as { callee: Node }).callee;
+          if (callee.type === "Identifier" && SAFE_CTOR_NAMES.has((callee as { name: string }).name)) {
+            break; // 白名单 ctor：无外写
+          }
+        }
+        dirty = true;
+        return;
+      case "UnaryExpression":
+        if ((n as unknown as { operator: string }).operator === "delete") {
+          dirty = true;
+          return;
+        }
+        break;
+      case "ForInStatement":
+      case "ForOfStatement": {
+        const left = (n as unknown as { left: Node }).left;
+        if (left.type !== "VariableDeclaration") {
+          dirty = true;
+          return;
+        }
+        break;
+      }
+      case "FunctionDeclaration":
+      case "FunctionExpression":
+      case "ArrowFunctionExpression":
+      case "ObjectMethod":
+      case "ClassMethod":
+        return; // 嵌套函数体不执行（除非被调用——Call 脏标记覆盖）
+      default:
+        break;
+    }
+    if (seen.has(n)) return;
+    seen.add(n);
+    for (const [k, v] of Object.entries(n)) {
+      if (k === "loc" || k === "start" || k === "end" || k === "leadingComments" || k === "trailingComments") continue;
+      if (Array.isArray(v)) {
+        for (const item of v) {
+          if (item && typeof item === "object" && "type" in (item as object)) walk(item as Node);
+        }
+      } else if (v && typeof v === "object" && "type" in (v as object)) {
+        walk(v as Node);
+      }
+    }
+  };
+  for (const p of fn.params ?? []) walk(p);
+  walk(body);
+  return !dirty;
+}
+
+/**
+ * R3：函数体「封闭」保守静态判定（transpile 侧 facet，与 effectFree 同族；
+ * 二者合取才允许 promise then/catch 同步执行回调）。
+ * closed = 执行面（形参默认值 + 体，嵌套函数体不下降——执行必有 Call，
+ * effectFree 已脏）上所有标识符引用只绑定：自身形参 / 体内声明 /
+ * 纯全局白名单。脏标记（宁可漏判封闭）：
+ * - ThisExpression / Super / MetaProperty（new.target：this/元面不可封闭）；
+ * - `arguments`（非箭头自有 arguments 面保守脏）；
+ * - 非白名单自由标识符（外层可变态读取——同步执行会读到 drain 前旧值）。
+ * 声明面（var/let/const/函数/类/catch 形参）在下降前收进 bound 集；
+ * 非计算属性键 / 成员属性名 / label 不是引用，不检查。
+ */
+const CLOSED_GLOBAL_NAMES = new Set<string>([
+  "undefined", "NaN", "Infinity",
+  "Math", "JSON",
+  "Promise",
+  ...SAFE_CTOR_NAMES,
+]);
+
+export function fnBodyIsClosed(fn: { body?: Node | null; params?: Node[] }): boolean {
+  const body = fn.body;
+  if (!body) return false;
+  const bound = new Set<string>();
+  const seen = new Set<Node>();
+  let dirty = false;
+
+  // 绑定模式（形参 / 声明 id / catch 形参）递归收名；默认值表达式照走读检查
+  const bindPattern = (p: Node | null | undefined): void => {
+    if (!p || typeof p !== "object") return;
+    switch (p.type) {
+      case "Identifier":
+        bound.add((p as unknown as { name: string }).name);
+        return;
+      case "AssignmentPattern": {
+        const q = p as unknown as { left: Node; right: Node };
+        bindPattern(q.left);
+        walk(q.right);
+        return;
+      }
+      case "RestElement":
+        bindPattern((p as unknown as { argument: Node }).argument);
+        return;
+      case "ObjectPattern":
+        for (const prop of (p as unknown as { properties: Node[] }).properties) {
+          if (prop.type === "RestElement") {
+            bindPattern(prop);
+          } else if (prop.type === "ObjectProperty") {
+            const q = prop as unknown as { key: Node; value: Node; computed: boolean };
+            if (q.computed) walk(q.key); // 计算键是引用面（`{[x]: v}` 读 x）
+            bindPattern(q.value);
+          }
+        }
+        return;
+      case "ArrayPattern":
+        for (const el of (p as unknown as { elements: (Node | null)[] }).elements) {
+          bindPattern(el);
+        }
+        return;
+      default:
+        return;
+    }
+  };
+
+  const checkRef = (n: Node): void => {
+    const name = (n as unknown as { name: string }).name;
+    if (!bound.has(name) && !CLOSED_GLOBAL_NAMES.has(name)) dirty = true;
+  };
+
+  const walk = (n: Node | null | undefined): void => {
+    if (dirty || !n || typeof n !== "object") return;
+    switch (n.type) {
+      case "Identifier":
+        checkRef(n);
+        return;
+      case "ThisExpression":
+      case "Super":
+      case "MetaProperty":
+        dirty = true;
+        return;
+      // 嵌套函数体不执行（effectFree 已保证）；名也不绑定外层读
+      case "FunctionDeclaration":
+      case "FunctionExpression":
+      case "ArrowFunctionExpression":
+      case "ObjectMethod":
+      case "ClassMethod":
+      case "ClassExpression":
+      case "ClassDeclaration":
+        return;
+      case "VariableDeclarator": {
+        const q = n as unknown as { id: Node; init: Node | null };
+        bindPattern(q.id);
+        walk(q.init);
+        return;
+      }
+      case "CatchClause": {
+        const q = n as unknown as { param: Node | null; body: Node };
+        bindPattern(q.param);
+        walk(q.body);
+        return;
+      }
+      case "LabeledStatement":
+        walk((n as unknown as { body: Node }).body);
+        return;
+      case "BreakStatement":
+      case "ContinueStatement":
+        return; // label 非引用
+      case "MemberExpression":
+      case "OptionalMemberExpression": {
+        const q = n as unknown as { object: Node; property: Node; computed: boolean };
+        walk(q.object);
+        if (q.computed) walk(q.property);
+        return;
+      }
+      case "ObjectProperty": {
+        const q = n as unknown as { key: Node; value: Node; computed: boolean };
+        if (q.computed) walk(q.key);
+        walk(q.value);
+        return;
+      }
+      default:
+        break;
+    }
+    if (seen.has(n)) return;
+    seen.add(n);
+    for (const [k, v] of Object.entries(n)) {
+      if (k === "loc" || k === "start" || k === "end" || k === "leadingComments" || k === "trailingComments") continue;
+      if (Array.isArray(v)) {
+        for (const item of v) {
+          if (item && typeof item === "object" && "type" in (item as object)) walk(item as Node);
+        }
+      } else if (v && typeof v === "object" && "type" in (v as object)) {
+        walk(v as Node);
+      }
+    }
+  };
+  for (const p of fn.params ?? []) bindPattern(p);
+  walk(body);
+  return !dirty;
 }
 
 export function normWs(s: string): string {
   return s.replace(/\s+/g, "");
 }
-
 
 export function matchReplacement(node: Node, opts: TranspileOptions): string | null {
   if (!opts.source || !opts.replacements?.length) return null;
@@ -832,4 +1117,12 @@ export function collectArrMutatorReceivers(node: unknown, acc = new Set<string>(
 
 export function isExpression(n: { type: string }): n is Expression {
   return n.type !== "PrivateName" && !n.type.endsWith("Statement") && !n.type.endsWith("Declaration");
+}
+
+/** PrivateName 节点 → "#x" 混淆键源串（JSON 字符串字面量；公有名不含
+ *  "#"，无碰撞）。成员读/写（Bug 78）与 in 运算符（Bug 80）共用——统一
+ *  提取点防内联复制复发。无名（解析异常）→ null，交调用方 fail-closed。 */
+export function privateNameKeySrc(prop: { id?: { name?: string }; name?: string }): string | null {
+  const priv = prop.id?.name ?? prop.name;
+  return priv ? JSON.stringify(`#${priv}`) : null;
 }

@@ -1,6 +1,5 @@
 import { it, expect, describe, afterAll, beforeEach } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync, utimesSync, statSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync, rmSync, utimesSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { formatShape } from "@nudojs/core";
 import {
@@ -10,22 +9,13 @@ import {
   evictAbsModuleCacheFiles,
   getAbsModuleCacheSize,
 } from "@nudojs/service";
+import { tmpProject } from "./tmp-project.ts";
 
-const dirs: string[] = [];
-
-function setup(files: Record<string, string>): string {
-  const dir = mkdtempSync(join(tmpdir(), "nudo-modcache-"));
-  dirs.push(dir);
-  for (const [f, src] of Object.entries(files)) {
-    writeFileSync(join(dir, f), src, "utf-8");
-  }
-  return dir;
-}
+const setup = (files: Record<string, string>): string => tmpProject("nudo-modcache-", files);
 
 beforeEach(() => clearAbsModuleCache());
 afterAll(() => {
   clearAbsModuleCache();
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
 });
 
 describe("abs module session cache", () => {

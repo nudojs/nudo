@@ -10,18 +10,19 @@ export {
   $importMeta, $in, $instanceof, $instanceofNonIdent, $isBreakTo,
   $isForkExit, $join, $le, $len, $lit, $loopBreak, $loopContinue,
   $loopReturn, $lt, $mod, $mul, $ne, $neLoose, $neg, $narrowMemberEq, $narrowTypeOf, $not, $nullishTest, $newTarget,
-  $obj, $objAccessor, $objAccessorKey, $objRest, $pow, $pushLoopExit, $rawThis, $regex,
+  $obj, $objAccessor, $objAccessorKey, $objRest, $pow, $pushLoopExit, $rawThis, $regex, $refineRel,
   $removeMemberNullish, $removeNull, $removeNullish, $removeUndefined, $rethrowIfNudoReturn, $set, $setProto, $shl, $shr, $spread, $sub, $switch, $throw,
   $toNumber, $toNumeric, $tpl, $updateAdd, $updateSub, $tryCurrentMark, $tryDetachSoftCatch, $tryDigestSoftCatch,
   $tryDiscardSoft, $tryMark, $tryOrphanSoft, $tryPopMark,
   $tryReleaseSoftCatch, $tryReleaseSoftOut, $tryTakeSince, $typeof,
   $unknown, $ushr, $while, $whileSeq, $yield, $yieldStar, DEFAULT_MAX_LOOP_ITERS,
   NudoLoopSignal, NudoReturn, NudoThrow, asAbsVal, callAtFunctionBoundary,
-  clearStaleTermPred, currentExecPhi, fillTuple, isArrMutator,
+  clearStaleTermPred, currentAssumePremises, currentExecPhi, fillTuple,
+  isArrMutator,
   isDefinitelyFalse, isDefinitelyTrue, isNudoBreak, isNudoContinue,
   isNudoReturn, isNudoThrow, litTruth, lookupObjAccessor, namespaceNameOf,
   pushLoopExit, pushThrowExit, runWithLoopExits, takeLoopExits,
-  takeThrowExits, withExecPhi
+  takeThrowExits, withAssumePremises, withExecPhi
 } from "./runtime.ts";
 
 export {
@@ -37,7 +38,7 @@ export {
 export {
   $class, $invoke, $invokeSuper, $invokeSuperObj, $new, $optionalGet, $optionalInvoke,
   $orDefault, $reStateCall, $setKey, $staticInit, $staticInvoke, $invokeSuperKey, $super, $getSuper,
-  $getSuperObj, $thisGet,
+  $getSuperObj, $setSuper, $setSuperObj, $thisGet, $setSuperStatic, $staticSuperInvoke,
   $thisSet, type EvalClassSpec, clearBClasses, getEvalClass, registerEvalClass
 } from "./class.ts";
 
@@ -47,7 +48,8 @@ export {
   getEvalCallBudgetState,
   getEvalCallCollector, enterEvalCallBudgetSession, exitEvalCallBudgetSession,
   noteEvalCallRecord, resetEvalCallBudget, setEvalAssignCollector, setEvalBindingSink,
-  setEvalCallCollector, withEvalBudgetOverride
+  setEvalCallCollector, withEvalBudgetOverride,
+  $nodoPos, setPosCollector, getPosCollector, type EvalPosRecord
 } from "./calls.ts";
 
 export {
@@ -55,7 +57,8 @@ export {
   type TranspiledCallResult, bindingsOf, callTranspiledExport,
   callTranspiledExportApply, callTranspiledExportFull, evalExprAbs, getEvalFallbackStats, isAbsVal, noteEvalFallback,
   resetEvalFallbackStats, runTranspiled,
-  runTranspiledOptionsMemoKey, setEvalFallbackCollector, tryRunTranspiled
+  runTranspiledOptionsMemoKey, setEvalFallbackCollector, tryRunTranspiled,
+  isCjsMainRun
 } from "./run.ts";
 
 export {

@@ -4,8 +4,7 @@
  * 否则 AnalysisResult / evaluator / fn-cache 会命中陈旧结果。
  */
 import { describe, it, expect, afterEach } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   analyzeFile,
@@ -13,11 +12,10 @@ import {
   evictAnalysisCachesForFiles,
 } from "@nudojs/service";
 import { formatShape } from "@nudojs/core";
+import { tmpProject } from "./tmp-project.ts";
 
-const dirs: string[] = [];
 afterEach(() => {
   clearAnalysisSessionCaches();
-  for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
 function caseResultOf(result: ReturnType<typeof analyzeFile>, fnName: string, caseName: string): string {
@@ -40,8 +38,7 @@ function go(n) {
 
   it("default-loader analysisFileCacheKey includes dep fingerprint (no stale hit)", () => {
     clearAnalysisSessionCaches();
-    const dir = mkdtempSync(join(tmpdir(), "nudo-stale-"));
-    dirs.push(dir);
+    const dir = tmpProject("nudo-stale-");
     const depPath = join(dir, "util.js");
     const mainPath = join(dir, "main.js");
     writeFileSync(depPath, `export function inc(x) { return x + 1; }\n`);
@@ -58,8 +55,7 @@ function go(n) {
 
   it("evictAnalysisCachesForFiles still refreshes after dep change", () => {
     clearAnalysisSessionCaches();
-    const dir = mkdtempSync(join(tmpdir(), "nudo-evict-"));
-    dirs.push(dir);
+    const dir = tmpProject("nudo-evict-");
     const depPath = join(dir, "util.js");
     const mainPath = join(dir, "main.js");
     writeFileSync(depPath, `export function inc(x) { return x + 1; }\n`);
@@ -75,8 +71,7 @@ function go(n) {
 
   it("clearAnalysisSessionCaches is a full reset", () => {
     clearAnalysisSessionCaches();
-    const dir = mkdtempSync(join(tmpdir(), "nudo-clear-"));
-    dirs.push(dir);
+    const dir = tmpProject("nudo-clear-");
     const depPath = join(dir, "util.js");
     const mainPath = join(dir, "main.js");
     writeFileSync(depPath, `export function inc(x) { return x + 1; }\n`);

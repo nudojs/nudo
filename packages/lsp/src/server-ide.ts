@@ -26,6 +26,7 @@ import {
   interfaceConfig,
 } from "@nudojs/service";
 import type { LoadModule } from "@nudojs/service";
+import { formatInterfaceTierLine } from "@nudojs/core";
 import { collectAbsInlays } from "@nudojs/core/internal";
 import { parse } from "@nudojs/parser";
 import traverse from "@babel/traverse";
@@ -34,6 +35,7 @@ import { buildSignatureHelp } from "./signature-help.ts";
 import {
   getCachedOrAnalyze,
   cachedAstFor,
+  evalAnalysisModules,
   uriToFilePath,
   type ValidateTextDeps,
 } from "./validation.ts";
@@ -51,6 +53,8 @@ export type IdeDeps = {
   isNudoFile: (uri: string) => boolean;
   getActiveCases: (uri: string) => Map<string, number>;
   activeLoadModule: LoadModule;
+  /** 参数约束 inlay（`where …`）开关：项目配置 > 宿主设置 > false（关） */
+  inlayParamsEnabled: (filePath: string) => boolean;
   agentToolDeps: AgentToolDeps;
 };
 
@@ -85,6 +89,8 @@ export function attachHover(deps: IdeDeps): void {
         activeLoadModule,
       );
       const ast = cachedAstFor(filePath, source);
+      // intension generalize 需要模块图：缺图 → 跨模块调用 unknown
+      const analysisModules = evalAnalysisModules(filePath, source);
       // A7：interface 档与 CodeLens 同源——default 走 symbolic + entryReqs；
       // 选 case 时 body 仍走 activeCases 重放，interface 标注不变
       const hover = getHoverAtPosition(filePath, source, line, column, cases, {
@@ -93,32 +99,45 @@ export function attachHover(deps: IdeDeps): void {
       }, {
         ...(ast !== undefined ? { ast } : {}),
         result,
+        ...(analysisModules ? { modules: analysisModules } : {}),
       });
       if (!hover) return null;
 
       const lines: string[] = [];
       // 与 CodeLens `● interface / <source>` 同源首行（A7 验收）
       if (hover.interfaceSource) {
-        lines.push(`● interface / ${hover.interfaceSource}`);
+        lines.push(formatInterfaceTierLine(hover.interfaceSource));
+      }
+      if (hover.signature) {
+        // 函数名 hover：check 同口径签名一行——builder 模板 / symbolic 多行 /
+        // display 签名不再重复（nudo.hover payload 保留无损面）
+        lines.push("```nudo", hover.signature, "```");
+      } else if (!hover.linkedText) {
         if (hover.interfaceDisplay && hover.interfaceSource !== "implicit") {
           lines.push("```nudo", hover.interfaceDisplay, "```");
         }
+        // 无损 Abs 优先（类型即计算本体）
+        if (hover.absMultiline) {
+          lines.push("```nudo", hover.absMultiline, "```");
+        } else if (hover.abs) {
+          lines.push("```nudo", hover.abs, "```");
+        }
+        if (hover.intension && hover.intension !== hover.abs) {
+          lines.push("```nudo", hover.intension, "```");
+        }
+        // 外延 TypeValue 仅作对照，且与内涵不同时才显示
+        if (hover.typeText && hover.typeText !== hover.intension && hover.typeText !== hover.abs) {
+          lines.push("```nudo", `ext: ${hover.typeText}`, "```");
+        }
       }
-      // 无损 Abs 优先（类型即计算本体）
-      if (hover.absMultiline) {
-        lines.push("```nudo", hover.absMultiline, "```");
-      } else if (hover.abs) {
-        lines.push("```nudo", hover.abs, "```");
-      }
-      if (hover.intension && hover.intension !== hover.abs) {
-        lines.push("```nudo", hover.intension, "```");
-      }
-      // 外延 TypeValue 仅作对照，且与内涵不同时才显示
-      if (hover.typeText && hover.typeText !== hover.intension && hover.typeText !== hover.abs) {
-        lines.push("```nudo", `ext: ${hover.typeText}`, "```");
-      }
-      if (lines.length === 0) {
+      if (lines.length === 0 && !hover.linkedText) {
         lines.push("```nudo", hover.typeText, "```");
+      }
+      // 类型值变量链接面：折叠展示中的引用标识符（如
+      // `astNode`）包为 markdown 链接（跳定义行）——
+      // plain markdown 推送（代码块内链接不渲染）
+      if (hover.linkedText) {
+        lines.push(hover.linkedText);
       }
       return {
         contents: {
@@ -229,8 +248,10 @@ export function attachCodeLens(deps: IdeDeps): void {
     const cases = getActiveCasesForUri(params.textDocument.uri);
 
     try {
-      // interface 档在前（默认层 + 固化动作），case 降为 debug 副层跟随其后
-      // （design-refine-derivation §8）；标题与命令与既有 case lens 零改动。
+      // interface 档在前（契约选项 + 固化动作），case 选项跟随其后
+      // （design-refine-derivation §8）。观察选择器互斥：`●/○ contract / …` 与
+      // `●/○ case "…"` 恰好一项激活——点击契约选项（nudo.selectContract）取消
+      // 激活 case，点击 case（nudo.selectCase）则契约转 ○。
       const lenses: CodeLens[] = [];
       const autoBind = interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
       for (const lens of computeInterfaceLenses(source, filePath, {
@@ -245,10 +266,10 @@ export function attachCodeLens(deps: IdeDeps): void {
         if (lens.kind === "interface") {
           lenses.push({
             range,
-            // 只读打印当前 contract（点击即 `nudo.contract`，无写盘）
+            // 契约选项：点击切换回契约观察（取消激活 case；无激活时为幂等默认态）
             command: {
-              title: `● interface / ${lens.source}`,
-              command: "nudo.contract",
+              title: formatInterfaceTierLine(lens.source, lens.active),
+              command: "nudo.selectContract",
               arguments: [params.textDocument.uri, lens.fn],
             },
           });
@@ -333,6 +354,7 @@ export function attachInlayHint(deps: IdeDeps): void {
     const cases = getActiveCasesForUri(params.textDocument.uri);
     const lines = source.split("\n");
     const autoBind = interfaceConfig(findProjectConfig(dirname(filePath))?.config).autoBind;
+    const showParamInlays = deps.inlayParamsEnabled(filePath);
 
     try {
       const result = getCachedOrAnalyze(
@@ -359,12 +381,19 @@ export function attachInlayHint(deps: IdeDeps): void {
 
       // Abs inlay：参数约束 + 返回 term/pred（类型即计算，无损）
       // A7：default 走 symbolic + entryReqs；与 CodeLens interface 档同源
+      // modules：缺图时 generalize 看不到跨模块 import → 调用塌缩 unknown
+      const analysisModules = evalAnalysisModules(filePath, source);
       try {
         for (const abs of collectAbsInlays(source, {
           loadModule: activeLoadModule,
           fromFile: filePath,
           ...(autoBind === false ? { autoBind: false } : {}),
+          ...(analysisModules ? { modules: analysisModules } : {}),
         })) {
+          // 参数约束 inlay（`where …`）：nudo.inlayHints.parameters
+          // 默认关——契约判别联合外延展开可达数万字符；返回 inlay
+          // （`: …`，短）不受影响
+          if (abs.kind === "parameter" && !showParamInlays) continue;
           const lineIdx = abs.line - 1;
           if (lineIdx < 0 || lineIdx >= lines.length) continue;
           hints.push({
@@ -375,6 +404,8 @@ export function attachInlayHint(deps: IdeDeps): void {
                 ? InlayHintKind.Parameter
                 : InlayHintKind.Type,
             paddingLeft: true,
+            // 折叠展示（表达式原文）的完整 pred：hover 展开
+            ...(abs.tooltip !== undefined ? { tooltip: abs.tooltip } : {}),
           });
         }
       } catch (err) {
@@ -385,7 +416,7 @@ export function attachInlayHint(deps: IdeDeps): void {
       }
 
       // LSP-G2：CodeLens 不可见的客户端（Helix 等）用 inlay 投影同源 interface 档
-      // （`● interface / handwritten|generated|implicit`，与 CodeLens 同 computeInterfaceLenses）
+      // （`●/○ contract / hw|gen|imp`，与 CodeLens 同 computeInterfaceLenses）
       try {
         for (const lens of computeInterfaceLenses(source, filePath, {
           loadModule: activeLoadModule,
@@ -398,7 +429,7 @@ export function attachInlayHint(deps: IdeDeps): void {
           const lineLen = (lines[lineIdx] ?? "").length;
           hints.push({
             position: { line: lineIdx, character: lineLen },
-            label: `  ● interface / ${lens.source}`,
+            label: `  ${formatInterfaceTierLine(lens.source, lens.active)}`,
             kind: InlayHintKind.Type,
             paddingLeft: true,
           });

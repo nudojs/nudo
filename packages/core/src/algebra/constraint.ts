@@ -135,6 +135,20 @@ export function isIntFlag(c: NudoConstraint): boolean {
   return c.int === true || intFlaggedBuilders.has(c as object);
 }
 
+/**
+ * 数值界实参守卫（issue #152 脚枪）：`.le("max")` 等变量引用此前静默产出
+ * le(self, lit("max")) 字符串字面量 pred（不报错也不参与证明）——显式 throw。
+ */
+function finiteBoundArg(method: string, n: number): number {
+  if (typeof n !== "number" || !Number.isFinite(n)) {
+    const shown = typeof n === "string" ? JSON.stringify(n) : String(n);
+    throw new Error(
+      `nudo ${method}(): finite numeric bound expected, got ${shown} — variable references are not supported; express cross-variable lemmas with @nudo:assume (issue #152)`,
+    );
+  }
+  return n;
+}
+
 function makeBuilder(
   prim: PrimName | undefined,
   preds: Pred[],
@@ -176,18 +190,17 @@ function makeBuilder(
     Object.create(null),
     base,
     {
-      gt: (n: number) => add(gt(selfTerm(), termLit(n))),
-      ge: (n: number) => add(ge(selfTerm(), termLit(n))),
-      lt: (n: number) => add(lt(selfTerm(), termLit(n))),
-      le: (n: number) => add(le(selfTerm(), termLit(n))),
+      gt: (n: number) => add(gt(selfTerm(), termLit(finiteBoundArg("gt", n)))),
+      ge: (n: number) => add(ge(selfTerm(), termLit(finiteBoundArg("ge", n)))),
+      lt: (n: number) => add(lt(selfTerm(), termLit(finiteBoundArg("lt", n)))),
+      le: (n: number) => add(le(selfTerm(), termLit(finiteBoundArg("le", n)))),
       int: () => makeBuilder(prim ?? "number", preds, { ...extra, int: true }),
-      min: (n: number) => add(ge(lenTerm(selfTerm()), termLit(n))),
-      max: (n: number) => add(le(lenTerm(selfTerm()), termLit(n))),
+      min: (n: number) => add(ge(lenTerm(selfTerm()), termLit(finiteBoundArg("min", n)))),
+      max: (n: number) => add(le(lenTerm(selfTerm()), termLit(finiteBoundArg("max", n)))),
       length: (n: number) =>
         add(pAnd(ge(lenTerm(selfTerm()), termLit(n)), le(lenTerm(selfTerm()), termLit(n)))),
       shift: (n: number) => {
-        if (!Number.isFinite(n))
-          throw new Error("nudo shift(): offset must be a finite number");
+        finiteBoundArg("shift", n);
         if (fields || element || members || fnSlot || lazySlot)
           throw new Error("nudo shift(): only numeric scalar constraint chains are allowed (shape/array/union/fn are not supported)");
         if (prim !== undefined && prim !== "number")

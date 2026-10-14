@@ -13,15 +13,7 @@ import {
   callTranspiledExportFull,
   litValue,
 } from "../index.ts";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
-
-function val(src: string) {
-  return litValue(call(src).result);
-}
+import { val } from "./eval-helpers.ts";
 
 describe("Math unary/binary methods honor ToNumber on literal args", () => {
   it("Math.abs / floor / ceil / round / sqrt / sign coerce", () => {

@@ -29,6 +29,7 @@ import {
   callTranspiledExportApply,
   absFunction,
 } from "@nudojs/core";
+import { l2Count, sigOf } from "./nudo-constraints.ts";
 
 // ---------------------------------------------------------------------------
 // fixtures（issue #123 原文：levenshtein DP + fn({a,b: string}, number)）
@@ -110,16 +111,6 @@ function xmOpts(
     fromFile: filePath,
     modules,
   };
-}
-
-function l2Count(r: CheckResult, fn?: string): number {
-  return r.issues.filter(
-    (i) => i.code === "nudo:entry-may-throw" && (!fn || i.fn === fn),
-  ).length;
-}
-
-function sigOf(r: CheckResult, fn: string): string {
-  return r.signatures.find((s) => s.name === fn)?.display ?? "(missing)";
 }
 
 function codes(r: CheckResult): string[] {

@@ -36,12 +36,13 @@ export function memberPathOf(m: { object: Node; property: Node; computed: boolea
         });
       } else if (isExpression(k)) {
         // [Symbol.X] 计算键 → "@@X" 字符串槽（镜像成员读 / 对象字面量计算键
-        // 投影——`ai[Symbol.asyncIterator] = fn` 落成可识别槽，Bug 13）
+        // 投影——`ai[Symbol.asyncIterator] = fn` 落成可识别槽，Bug 13）；
+        // 写入打 Slot.symbolKey 标记（Bug 73——JSON 枚举面不可见）
         const symK = symbolKeyOf(k as unknown as Parameters<typeof symbolKeyOf>[0]);
         if (symK !== null) {
           layers.unshift({
             get: (b) => `$get(${b}, ${symK})`,
-            set: (b, v) => `$set(${b}, ${symK}, ${v})`,
+            set: (b, v) => `$set(${b}, ${symK}, ${v}, { symbolKey: true })`,
           });
         } else {
           const key = emitTranspileExpression(k, opts);
@@ -71,6 +72,12 @@ export function memberPathOf(m: { object: Node; property: Node; computed: boolea
       rootSrc = opts.argsBinding;
     } else {
       rootSrc = cur.name;
+      // 位置插桩：成员链根 Identifier 记对象位（hover
+      // `node` 于 `node.value` → 对象 Abs——臂内 shadow
+      // 重绑后解析到窄化值，与槽位插桩同语义）
+      if (opts.recordPositions && cur.loc) {
+        rootSrc = `$nodoPos(${cur.name}, ${cur.loc.start.line}, ${cur.loc.start.column})`;
+      }
     }
   } else if (cur.type === "ThisExpression" && opts.thisParam) {
     rootSrc = opts.thisParam;

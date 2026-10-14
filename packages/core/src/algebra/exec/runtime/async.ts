@@ -2,14 +2,16 @@
  * async / await / generator / ??（$nullishTest / $removeNullish）。
  */
 import type { Abs } from "../../abs.ts";
-import { abs, bool, boolLit, confJoin, litValue, numLit, strLit, unknown, type Confidence } from "../../abs.ts";
+import { abs, bool, boolLit, confJoin, isNumPrim, litValue, numLit, strLit, unknown, never, type Confidence } from "../../abs.ts";
 import { lit, termEquals } from "../../term.ts";
 import type { Phi, Pred } from "../../pred.ts";
 import { pTrue, and, implies, predEquals, type PrimName } from "../../pred.ts";
 import { joinAbs, objOf, migrateNullProto, type ObjShape } from "../../objects.ts";
+import { refineAbsForRelTrue } from "../../arithmetic.ts";
 import { OBJECT_PROTO_METHOD_NAMES, migrateInvariants } from "../../builtins.ts";
-import { accessorTable, migrateAccessors } from "./members.ts";
+import { accessorTable, migrateAccessors } from "../../accessors.ts";
 import { leqAbs } from "../../leq.ts";
+import { markFreshInstance } from "../../instance-id.ts";
 import { absFunction, getFnImpl } from "../../abs-fn.ts";
 import { isNullishLitAbs, definitelyNotNullishShape, typeofName } from "../../surface.ts";
 import {
@@ -17,13 +19,15 @@ import {
   currentExecPhi, $lit, asAbsVal, $fnVal, noBody, writeInPlace, clearStaleTermPred,
   isNudoReturn, isNudoBreak, isNudoContinue,
 } from "./state.ts";
-import { pushMayThrowFrame, popMayThrowFrame } from "../may-throw.ts";
-import { registerGenElements } from "../match-iter.ts";
+import { pushMayThrowFrame, popMayThrowFrame, recordMayThrow, throwPayloadOf, type MayThrowEffect } from "../may-throw.ts";
+import { registerGenElements, registerGenDeferred, registerGenDrain, genDrainViewOf, type GenDeferred } from "../match-iter.ts";
 import { $unknown, $eq, $ne, $add, $typeof, $not, $lt, $le, $gt, $ge, $join } from "./ops.ts";
 import {
   yieldStack, genPathSensitive, genJoinOverride, mergeArmYields,
-  withIsolatedYields, runForkArm, type ForkArm,
+  withIsolatedYields, runForkArm, type ForkArm, type GenYieldCollector,
   setGenJoinOverride, bumpGenPathSensitive,
+  YIELD_TRY_FINALLY, YIELD_TRY_CATCH, YIELD_FINALLY_YIELDS, YIELD_FINALLY_RETURNS,
+  YIELD_CATCH_YIELDS, YIELD_CATCH_RETHROWS, YIELD_DELEGATED_GEN,
 } from "./control.ts";
 import { beginCollectionFork, endCollectionFork, popCollectionArm, pushCollectionArm } from "../../collections.ts";
 import { $arr, $yieldStarElems } from "./containers.ts";
@@ -31,29 +35,113 @@ import { loopExitsAls } from "./state.ts";
 
 export function wrapPromiseAbs(inner: Abs): Abs {
   inner = asAbsVal(inner);
-  return abs(
-    { k: "eff", eff: "promise", inner },
-    undefined,
-    undefined,
-    confJoin(inner.conf, "path"),
+  // R2b：async 调用每次产出新 promise 对象——打新鲜实例标（=== 按
+  // 创建事件折 false；别名传播复用同一 Abs 引用不受影响）
+  return markFreshInstance(
+    abs(
+      { k: "eff", eff: "promise", inner },
+      undefined,
+      undefined,
+      confJoin(inner.conf, "path"),
+    ),
   );
-}
-
-export function awaitAbsVal(v: Abs): Abs {
-  if (v.shape.k === "eff" && v.shape.eff === "promise") return v.shape.inner;
-  return v;
 }
 
 /**
  * async 函数体包进 thunk，返回值经 wrapPromise。
+ * 原生语义：async 函数体 throw 不同步抛出调用点——调用恒返回 promise，
+ * 体抛错 ⇒ 确定拒绝（inner=never：fulfilled 臂不可能；rejected 通道携带
+ * reason，Bug 36 口径——.catch/两参 then 的 onRejected 实参来源，handled
+ * rejection 就地吸收；F2：此前 NudoThrow 直接穿透调用点，被 .catch 处理
+ * 的拒绝也变成 caller throw）。宿主异常（引擎自身 bug）照抛。
+ *
+ * N5：体内任一 await 的 promise 带 unsettled 面（可能永不 settle）→ 函数
+ * 结果 promise 同带 unsettled（原生：悬挂的 await 使整函数悬挂——下游
+ * 不得折确定 settle / exact 值域声明）。
  */
+let awaitUnsettledHit = false;
+
 export function $async(thunk: () => Abs): Abs {
-  return wrapPromiseAbs(thunk());
+  const saved = awaitUnsettledHit;
+  awaitUnsettledHit = false;
+  try {
+    const r = thunk();
+    // async 体 return <promise>：原生递归采纳 thenable——体已折
+    // eff("promise")（如 `return h()`）直接采纳（inner/拒绝通道随体），
+    // 不得再包一层（假嵌套 promise<promise<…>>）
+    if (r.shape.k === "eff" && r.shape.eff === "promise") {
+      if (!awaitUnsettledHit) return r;
+      const sh = r.shape as {
+        k: "eff";
+        eff: "promise";
+        inner: Abs;
+        rejected?: Abs;
+        unsettled?: boolean;
+      };
+      if (sh.unsettled === true) return r;
+      return markFreshInstance(
+        abs(
+          {
+            k: "eff",
+            eff: "promise",
+            inner: sh.inner,
+            ...(sh.rejected !== undefined ? { rejected: sh.rejected } : {}),
+            unsettled: true,
+          },
+          undefined,
+          undefined,
+          r.conf,
+        ),
+      );
+    }
+    if (awaitUnsettledHit) {
+      return markFreshInstance(
+        abs({ k: "eff", eff: "promise", inner: r, unsettled: true }, undefined, undefined, confJoin(r.conf, "path")),
+      );
+    }
+    return wrapPromiseAbs(r);
+  } catch (e) {
+    if (isNudoThrow(e)) {
+      // R2b：确定拒绝的 promise 同为新鲜实例（每次调用新对象）；体内还有
+      // 未 settle 的 await 路径 → 拒绝也不确定（悬挂面并存）
+      return markFreshInstance(
+        abs(
+          {
+            k: "eff",
+            eff: "promise",
+            inner: never,
+            rejected: e.absValue,
+            ...(awaitUnsettledHit ? { unsettled: true } : {}),
+          },
+          undefined,
+          undefined,
+          "path",
+        ),
+      );
+    }
+    throw e;
+  } finally {
+    awaitUnsettledHit = saved;
+  }
 }
 
 /** await → 解包 eff("promise") */
 export function $await(v: Abs): Abs {
-  return awaitAbsVal(v);
+  // 确定拒绝的 promise：await 在等待体内抛 reason（原生 reject → await
+  // throw）。不解包 never（否则 `await h(); return x` 折假精确 resolved 值
+  // ——原生整链拒绝）；try/catch 内由既有 catch 机制吸收。
+  if (v.shape.k === "eff" && v.shape.eff === "promise") {
+    const sh = v.shape as { inner: Abs; rejected?: Abs; unsettled?: boolean };
+    if (sh.inner.shape.k === "never" && sh.rejected !== undefined) {
+      // N5：拒绝路径 await throw，但悬挂路径原生不抛——面并入外层 async
+      if (sh.unsettled === true) awaitUnsettledHit = true;
+      throw new NudoThrow(sh.rejected);
+    }
+    // N5：值域保持 inner（产出时即该值），悬挂面记入外层 async 结果
+    if (sh.unsettled === true) awaitUnsettledHit = true;
+    return sh.inner;
+  }
+  return v;
 }
 
 /** async 直接 return 的 coerce */
@@ -110,25 +198,118 @@ function genIterResult(value: Abs, done: boolean): Abs {
  * - 数字下标槽（"0"…"n-1" = yield 值）+ @@iterator 槽 + 元素侧表——
  *   for-of / [...g()] / Array.from / yield* / 数组解构经既有迭代路径
  *   按序精确展开（迭代路径从侧表取出元素域，不回归）。
+ *
+ * Bug 53：`els` 是**类型面**元素列表（$arr >cap widen 后的单代表元素，
+ * 形状槽/签名展示用）；`full` 是收集到的完整 yield 序列——next()/done
+ * 与元素侧表按 full 推进，>8 yield 不再截断成单元素流。
+ * Bug 54：`live` 是侧表消费视图（registerGenElements 注册），next() 推进
+ * 时同步收缩；迭代消费（spread/for-of/…）经 registerGenDrain 排空——
+ * 消费后生成器 done（native 迭代协议耗尽语义）。
+ * Bug 52：`ctxs[i]` = 第 i 个 yield 点的 try 上下文位（YIELD_TRY_FINALLY /
+ * YIELD_TRY_CATCH + finalizer 静态事实 YIELD_FINALLY_YIELDS/RETURNS + R1a
+ * catch 静态事实 YIELD_CATCH_RETURNS/YIELDS/RETHROWS）。
+ * eager 快照模型下无挂起帧可恢复：.return(v) 挂在 try/finally 内的 yield
+ * 上时按 finalizer 事实分级——仅副作用 → v 精确透传；含 return → 值并
+ * unknown（done 恒 true）；含 yield → 值并 unknown 且 done 并 boolean、
+ * 续体不可判（poisoned）。.throw(e) 挂在 try/catch 内的 yield 上时被吸收
+ * （catch 体收集期未执行、续体不可判）→ {value: unknown, done: boolean}
+ * + may-throw（catch 可重抛），不再定值抛出；R1a：catch 事实 + 收集序列
+ * 可判「吸收必完成」（catch 无 yield、重抛不被外层 catch 二次吸收、挂起点
+ * 后无剩余 yield）时 done 折 true（值域保持 unknown）；无 finally/catch 的
+ * 挂起点保持原生精确（.return(v) → v，.throw(e) → 抛 e）。poisoned 后 next()
+ * 给 {value: unknown, done: boolean}。
+ * R1b：exact = 收集序列是线性（非路径敏感）——drain 视图带 exact 位，
+ * 消费端（spread/Array.from/解构 rest）重组数组时越 TUPLE_LITERAL_CAP
+ * 出 exact 元组（形状面 widened 的 els 槽不受影响）。
  */
-function makeGenObject(els: Abs[], conf: Confidence): Abs {
-  const state = { i: 0, done: false };
+function makeGenObject(
+  els: Abs[],
+  conf: Confidence,
+  retVal: Abs,
+  deferred: GenDeferred | undefined,
+  full: Abs[],
+  ctxs: number[],
+  exact = false,
+): Abs {
+  const state = { i: 0, done: false, poisoned: false };
+  const live: Abs[] = [...full];
+  const iterResultUnknown = (): Abs =>
+    joinAbs(genIterResult(unknown, true), genIterResult(unknown, false));
   const next = $fnVal([], (): Abs => {
-    if (state.done || state.i >= els.length) {
-      state.done = true;
+    // Bug 34：消费点重放——体内 soft may-throw 重记进当前帧（gate 面），
+    // definite 载荷在 yield 前缀耗尽后抛（首个触达抛点的 next()）
+    if (deferred && !state.done) {
+      for (const e of deferred.soft) recordMayThrow(e);
+    }
+    // Bug 52：.return/.throw 后续体不可判——不再给出定值
+    if (state.poisoned) return iterResultUnknown();
+    if (state.done || state.i >= full.length) {
+      if (!state.done) {
+        state.done = true;
+        if (deferred?.throw !== undefined) throw new NudoThrow(deferred.throw);
+        // Bug 2：终末 return 值在首个 done:true 交付（此后 native 回 undefined）
+        return genIterResult(retVal, true);
+      }
       return genIterResult(undef(), true);
     }
-    const v = els[state.i]!;
+    const v = full[state.i]!;
     state.i++;
+    if (live.length > 0) live.shift();
     return genIterResult(v, false);
   });
+  // Bug 52：挂起点 = 最近一次 next() 交付的 yield（未启动/已耗尽 → 无挂起）
+  const suspendedCtx = (): number =>
+    state.i > 0 && !state.done && !state.poisoned ? (ctxs[state.i - 1] ?? 0) : 0;
   const ret = $fnVal([], (...args: Abs[]): Abs => {
+    const v = args.length > 0 ? args[0]! : undef();
+    const ctx = suspendedCtx();
     state.done = true;
-    return genIterResult(args.length > 0 ? args[0]! : undef(), true);
+    if (ctx & YIELD_TRY_FINALLY) {
+      if (ctx & YIELD_FINALLY_YIELDS) {
+        // finally 可再交付（yield）或覆盖（return）→ 值并 unknown、
+        // done 并 boolean；续体不可判（poisoned）
+        state.poisoned = true;
+        return joinAbs(genIterResult(v, true), genIterResult(unknown, false));
+      }
+      if (ctx & YIELD_FINALLY_RETURNS) {
+        // finally 无 yield：完成路径必 done:true；return 可覆盖注入值 →
+        // 值并 unknown。后续 next() → {undefined, true}（native 完成语义）
+        return joinAbs(genIterResult(v, true), genIterResult(unknown, true));
+      }
+      // finally 仅副作用（eager 收集期已执行）→ 注入值精确透传（native）
+    }
+    return genIterResult(v, true);
   });
   const thr = $fnVal([], (...args: Abs[]): Abs => {
+    const e = args.length > 0 ? args[0]! : undef();
+    const ctx = suspendedCtx();
     state.done = true;
-    throw new NudoThrow(args.length > 0 ? args[0]! : undef());
+    if (ctx & YIELD_TRY_CATCH) {
+      // 注入异常被 catch 吸收——catch 体在 eager 收集期未执行（无注入源）。
+      // catch 重抛面恒记 may-throw（不给出定值抛出）。
+      recordMayThrow({
+        kind: "Error",
+        cause: "generator .throw() into try/catch — unexecuted catch body may rethrow",
+      });
+      // R1a：catch 静态事实（transpile 标注位）+ 收集序列分类吸收结局——
+      // catch 体不含 yield 且可能重抛只进无 catch 外层（64 未置）、挂起点
+      // 后无剩余已收集 yield（线性序列尾）、非 yield* 委托进生成器对象
+      //（128：.throw 转发进内层，内层 catch 吸收后续体不可分类）⇒ 吸收必
+      // 完成生成器（catch return / fallthrough 跑到体末 / 重抛→may-throw
+      // 已记）：done 折 true；值域保持 unknown（catch 体未执行，return
+      // 表达式不可判）。其余（catch 含 yield 可再交付 / 重抛可被外层 catch
+      // 二次吸收 / 挂起点后还有 yield 会续体 / 生成器委托）→ 布尔域 + poisoned。
+      const catchYields = (ctx & YIELD_CATCH_YIELDS) !== 0;
+      const rethrowsIntoCatch = (ctx & YIELD_CATCH_RETHROWS) !== 0;
+      const delegatedGen = (ctx & YIELD_DELEGATED_GEN) !== 0;
+      const remaining = full.length - state.i;
+      if (!catchYields && !rethrowsIntoCatch && !delegatedGen && remaining <= 0) {
+        return genIterResult(unknown, true);
+      }
+      state.poisoned = true;
+      return iterResultUnknown();
+    }
+    throw new NudoThrow(e);
   });
   const slots: Record<string, { value: Abs }> = {
     next: { value: next },
@@ -141,40 +322,82 @@ function makeGenObject(els: Abs[], conf: Confidence): Abs {
     slots[String(i)] = { value: els[i]! };
   }
   const g = abs({ k: "obj", slots }, undefined, undefined, conf);
-  registerGenElements(g, els);
-  return g;
+  registerGenElements(g, live);
+  registerGenDrain(g, {
+    drain: (): Abs[] => {
+      const remaining = [...live];
+      live.length = 0;
+      state.i = full.length;
+      state.done = true;
+      return remaining;
+    },
+    peek: (i: number): Abs | undefined => (i < live.length ? live[i] : undef()),
+    peekAll: (): Abs[] => [...live],
+    exact,
+  });
+  if (deferred) registerGenDeferred(g, deferred);
+  // R2b：每次 gen() 调用产出新生成器对象——打新鲜实例标
+  return markFreshInstance(g);
 }
 
 /** function* 体：收集所有 yield 值；返回带迭代器协议面的生成器对象 Abs；
  *  抽象分支时降 conf（P0-6）
  *
- * Bug 58：调用生成器是原生全操作——体只在首个 next() 执行。此前 body()
- * eager 执行把体内 may-throw（成员读 any）/显式 throw 折进**调用方** throws
- * 域（每生成器入口假 entry-may-throw）。现以丢弃式 may-throw 帧包裹：
- * soft 效果进帧后丢弃、NudoThrow/宿主异常吞掉（迭代期语义，调用期不表面）。
- * yield 收集保持 eager（既有值域建模，注释口径不变）。
+ * Bug 58：调用生成器是原生全操作——体只在首个 next() 执行。body() eager
+ * 执行的体内效果（成员读 may-throw / 显式 throw）不折进**调用方** throws
+ * 域——以捕获式 may-throw 帧包裹：soft 效果与 NudoThrow 挂生成器对象
+ * （Bug 34 延迟重放：首个触达抛点的 next()/迭代消费，仅构造不消费不
+ * 表面）。yield 收集保持 eager（既有值域建模，注释口径不变）。
+ * Bug 2：thunk 返回值 = 终末 return 值——不再丢弃，经 makeGenObject 在
+ * 首个 done:true 作为 value 交付（node 实测：此后 next 回 undefined）。
  * Bug 22：结果从 yield 元组数组改为生成器对象（next/return/throw 方法面 +
  * constructor 身份）；元素域经侧表保留（$arr 的 ≤cap tuple / >cap arr
- * widen 策略不变），迭代路径（for-of/spread/Array.from）继续工作。 */
-export function $gen(body: () => void): Abs {
-  const ys: Abs[] = [];
+ * widen 策略不变），迭代路径（for-of/spread/Array.from）继续工作。
+ * Bug 53：侧表/next() 消费完整收集序列（ys.els）——$arr >cap widen 只影响
+ * 形状槽（类型面），不再把 >8 yield 截断成单元素流。
+ * Bug 52：yield 点 try 上下文（ys.ctxs，$yield 第二实参）随序列传递——
+ * .return()/.throw() 挂起点语义见 makeGenObject。 */
+export function $gen(body: () => Abs): Abs {
+  const ys: GenYieldCollector = { els: [], ctxs: [] };
   const marker = genPathSensitive;
   const prevOverride = genJoinOverride;
   setGenJoinOverride(null);
   yieldStack.push(ys);
   pushMayThrowFrame();
+  let retVal: Abs | undefined;
+  let thrown: Abs | undefined;
+  let soft: MayThrowEffect[] = [];
+  let controlToken: unknown;
   try {
-    body();
+    // Bug 2：终末 return 值（transpile 侧 withImplicitReturn 保证有返回）
+    retVal = asAbsVal(body());
   } catch (e) {
     // 控制流 token（fork/循环返回）不是迭代期异常——不得吞
-    if (isNudoReturn(e) || isNudoBreak(e) || isNudoContinue(e)) throw e;
-    // 体内 throw 属首个 next() 迭代期——调用期吞掉（throws 域不泄漏）
+    if (isNudoReturn(e) || isNudoBreak(e) || isNudoContinue(e)) controlToken = e;
+    // Bug 34：体内异常不再静默吞掉——延迟到消费点重放（见 makeGenObject）
+    else thrown = throwPayloadOf(e);
   } finally {
-    popMayThrowFrame(true);
+    // token 再抛路径保持丢弃式（旧行为）；正常/延迟异常路径保留帧内
+    // soft 效果挂生成器对象（gate 面：消费点重记，见 registerGenDeferred）
+    soft = popMayThrowFrame(controlToken !== undefined);
     yieldStack.pop();
+    if (controlToken !== undefined) throw controlToken;
   }
-  if (genJoinOverride) {
-    const joined: Abs = genJoinOverride;
+  const ret: Abs = retVal ?? undef();
+  const deferred: GenDeferred | undefined =
+    thrown === undefined && soft.length === 0 ? undefined : { throw: thrown, soft };
+  // Bug 53：完整收集序列是 next()/侧表的权威数据；$arr(ys.els) 只产形状/conf
+  // （>cap widen 成 arr 是类型面合法过近似，不再吞掉元素序列）。
+  // Bug 52：fork join / 路径敏感后索引与臂对位不可信——全序列过近似：
+  // 任一臂出现过的 try 位并入每个 yield 点（保守，不做定值）。
+  const joined = genJoinOverride;
+  const pathSensitive = joined !== null || genPathSensitive > marker;
+  let ctxs = ys.ctxs;
+  if (pathSensitive && ys.ctxs.length > 0) {
+    const mask = ys.ctxs.reduce((a, b) => a | b, 0);
+    if (mask !== 0) ctxs = ys.els.map(() => mask);
+  }
+  if (joined) {
     setGenJoinOverride(prevOverride);
     const js = joined.shape;
     const els =
@@ -182,25 +405,43 @@ export function $gen(body: () => void): Abs {
     return makeGenObject(
       els,
       joined.conf === "exact" ? ("path" as Confidence) : joined.conf,
+      ret,
+      deferred,
+      ys.els,
+      ctxs,
+      false,
     );
   }
   setGenJoinOverride(prevOverride);
-  const arr = $arr(ys);
+  const arr = $arr(ys.els);
   const as = arr.shape;
   const els = as.k === "tuple" ? [...as.elements] : as.k === "arr" ? [as.element] : [unknown];
   if (genPathSensitive > marker) {
     return makeGenObject(
       els,
       arr.conf === "exact" ? ("path" as Confidence) : arr.conf,
+      ret,
+      deferred,
+      ys.els,
+      ctxs,
+      false,
     );
   }
-  return makeGenObject(els, arr.conf);
+  // R1b：线性收集（非路径敏感）→ drain 视图 exact：消费端重组数组可越过
+  // TUPLE_LITERAL_CAP 出 exact 元组（路径敏感拼接序列不可，退 widened arr）
+  return makeGenObject(els, arr.conf, ret, deferred, ys.els, ctxs, true);
 }
 
-/** yield v：压入当前生成器收集器；表达式值用 unknown */
-export function $yield(v: Abs): Abs {
+/** yield v：压入当前生成器收集器；表达式值用 unknown。
+ *  tryCtx（Bug 52）= transpile 静态标注的 yield 点 try 上下文位
+ *  （YIELD_TRY_FINALLY / YIELD_TRY_CATCH），.return()/.throw() 挂起点
+ *  语义用（见 makeGenObject）。 */
+export function $yield(v: Abs, tryCtx = 0): Abs {
   const top = yieldStack[yieldStack.length - 1];
-  if (top) top.push(v);
+  if (top) {
+    top.els.push(v);
+    top.ctxs.push(tryCtx);
+  }
   return unknown;
 }
 
@@ -211,12 +452,18 @@ export function $yield(v: Abs): Abs {
  *  iterator 的 done 值，不可判）→ 保守 unknown。长度不可判的接收者
  *  （arr/any/…）单代表元素过近似并入 + bumpGenPathSensitive 压 conf
  *  （mergeArmYields 同口径，禁 exact 元组出货）。 */
-export function $yieldStar(v: unknown): Abs {
+export function $yieldStar(v: unknown, tryCtx = 0): Abs {
   const a = asAbsVal(v);
   const { els, lengthKnown } = $yieldStarElems(a);
   const top = yieldStack[yieldStack.length - 1];
   if (top) {
-    top.push(...els);
+    top.els.push(...els);
+    // R1a：委托进生成器对象的 yield 点标 YIELD_DELEGATED_GEN——.throw()
+    // 原生转发进内层迭代器，内层 catch 吸收后续体（可再交付）外层不可
+    // 分类 → makeGenObject 吸收结局不折 done（数组等无 throw() 内层回注
+    // 外层帧，可折，不标）
+    const ctx = tryCtx | (genDrainViewOf(a) !== undefined ? YIELD_DELEGATED_GEN : 0);
+    for (let i = 0; i < els.length; i++) top.ctxs.push(ctx);
     if (!lengthKnown) bumpGenPathSensitive();
   }
   return unknown;
@@ -459,6 +706,23 @@ export function $narrowTypeOf(a: Abs, typeOf: string, keep: boolean): Abs {
 }
 
 /**
+ * 关系守卫臂剪影（Bug 1）：`x >= 0` 真臂把 x 重绑为带 ge(x,0) 界的 Abs
+ * ——守卫建立的隐含约束随**普通变量读取**进入返回值 / 签名面。此前只有
+ * 算术折叠消费 exec Φ（`x + 0` 携带界），裸 `return x` 丢守卫事实 →
+ * return-constraint gate 假阳（可证合规的函数过不了 CI）。只做事实臂：
+ * ¬(x≥0) 含 NaN 可能（NaN 与任何比较皆假），补集界不可健全表示。精确
+ * 字面量（lit term）的界由域隶属折叠，不加 pred 保持精确面干净。
+ * 只精化 number prim：any 的真臂还含 bigint（`10n >= 0` 为真）与
+ * ToPrimitive 对象面，refineAbsForRelTrue 的 number|string 并集会
+ * 凭空排除 bigint → 假证明；any/unknown 保持原样（宁缺毋假）。
+ */
+export function $refineRel(a: Abs, op: "gt" | "ge" | "lt" | "le", k: number): Abs {
+  if (!a || typeof a !== "object" || !("shape" in (a as object))) return a;
+  if (a.term?.op === "lit" || !isNumPrim(a) || !a.term) return a;
+  return refineAbsForRelTrue(a, op, k);
+}
+
+/**
  * 判别联合成员分类（issue #126）：成员 m 在「m.key === lit」事实下可判定的
  * 匹配性。三态：
  * - "only"：槽值域恰为该字面量（pred ⊢ eq(t, lit)）——事实假臂可剪；
@@ -476,6 +740,9 @@ function litRefutesEq(other: unknown, v: string | number | boolean): boolean {
   return other !== v;
 }
 
+/** 剥 term/pred 的纯 shape Abs（形态赋值检查口径） */
+const shapeOnly = (s: Abs["shape"]): Abs => abs(s, undefined, undefined, "exact");
+
 function memberEqClass(m: Abs, key: string, litAbs: Abs, value: string | number | boolean): MemberEqClass {
   const sh = m.shape;
   if (sh.k === "obj") {
@@ -486,8 +753,6 @@ function memberEqClass(m: Abs, key: string, litAbs: Abs, value: string | number 
     }
     const slotValue = slots[key]!.value;
     if (slotValue.shape.k === "any" || slotValue.shape.k === "unknown") return "may";
-    // 形态相容（剥 term/pred 的纯 shape 赋值检查）：lit 形态不在槽值域 → never
-    const shapeOnly = (s: Abs["shape"]): Abs => abs(s, undefined, undefined, "exact");
     if (!leqAbs(shapeOnly(litAbs.shape), shapeOnly(slotValue.shape)).ok) return "never";
     const t = slotValue.term;
     const p = slotValue.pred;
@@ -546,6 +811,35 @@ export function $narrowMemberEq(
   });
   if (kept.length === members.length) return a;
   if (kept.length === 0) return a;
+  if (keep) {
+    // keep 臂内 `x.key === lit` 事实成立 → 存活成员的兼容槽值挂
+    // eq(term, lit) 谓词（lit 在 term/pred 层，shape 保持同型）：
+    // formatShape(showLits) 经 litPredValue 渲染 lit(...)（尾臂判别窄化
+    // 可见于展示），memberEqClass 升级 only（链式窄化 / 补集臂剪除
+    // 受益）。既有谓词合取保留；无 term 的纯声明槽直接落 lit term。
+    // any/unknown 槽不收窄（unknown 是推断失败标记 / any 即「无信息」）；
+    // keep=false 补集臂无字面量可落（string \ lit 不可表示）。
+    const refined = kept.map((m) => {
+      const sh = m.shape;
+      if (sh.k !== "obj") return m;
+      const slots = (sh as ObjShape).slots;
+      const slot = slots[key];
+      if (!slot) return m;
+      const v = slot.value;
+      if (v.shape.k === "any" || v.shape.k === "unknown") return m;
+      if (!leqAbs(shapeOnly(litAbs.shape), shapeOnly(v.shape)).ok) return m;
+      const litTerm = lit(value);
+      const value2: Abs =
+        v.term !== undefined
+          ? { ...v, pred: and(v.pred ?? pTrue, { op: "eq", a: v.term, b: litTerm }) }
+          : { ...v, term: litTerm, pred: pTrue };
+      return {
+        ...m,
+        shape: { ...sh, slots: { ...slots, [key]: { ...slot, value: value2 } } },
+      } as Abs;
+    });
+    return refined.length === 1 ? refined[0]! : { ...a, shape: { k: "sum" as const, members: refined } };
+  }
   return kept.length === 1 ? kept[0]! : { ...a, shape: { k: "sum" as const, members: kept } };
 }
 

@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import {
-  mkdtempSync,
   rmSync,
   readFileSync,
   readdirSync,
@@ -8,7 +7,6 @@ import {
   mkdirSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import {
   DiskCache,
@@ -20,6 +18,7 @@ import {
   ANALYSIS_ABI,
 } from "../disk-cache.ts";
 import { diskCacheRoot, analysisConfig } from "../evaluator/config.ts";
+import { tmpProject, withTmpProject } from "./tmp-project.ts";
 
 type FsModule = typeof import("node:fs");
 
@@ -58,19 +57,15 @@ vi.mock("node:fs", async (importOriginal) => {
 });
 
 describe("B3 disk cache store", () => {
-  it("round-trips JSON values when enabled", () => {
-    const root = mkdtempSync(join(tmpdir(), "nudo-cache-"));
-    try {
+  it("round-trips JSON values when enabled", () =>
+    withTmpProject("nudo-cache-", (root) => {
       const c = new DiskCache({ root, namespace: "check" });
       expect(c.enabled).toBe(true);
       const key = checkCacheKey("/p/a.js", "export const x = 1;\n", { autoBind: true });
       expect(c.get(key)).toBeUndefined();
       c.set(key, { ok: true, n: 1 });
       expect(c.get(key)).toEqual({ ok: true, n: 1 });
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
+    }));
 
   it("is disabled without root and fails open", () => {
     const c = new DiskCache({ root: undefined, namespace: "check" });
@@ -148,9 +143,8 @@ describe("B3 disk cache atomic write", () => {
   const cachePath = (root: string, key: string) =>
     join(root, "check", key.slice(0, 2), `${key}.json`);
 
-  it("interrupted write leaves no torn JSON at the cache path", () => {
-    const root = mkdtempSync(join(tmpdir(), "nudo-cache-atomic-"));
-    try {
+  it("interrupted write leaves no torn JSON at the cache path", () =>
+    withTmpProject("nudo-cache-atomic-", (root) => {
       const c = new DiskCache({ root, namespace: "check" });
       const key = checkCacheKey("/p/a.js", "export const x = 1;\n", { autoBind: true });
       const first = { ok: true, n: 1 };
@@ -176,14 +170,10 @@ describe("B3 disk cache atomic write", () => {
 
       // 不残留孤儿 tmp
       expect(readdirSync(dirname(target)).filter((f) => f.includes(".tmp-"))).toEqual([]);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
+    }));
 
-  it("rename failure cleans tmp and keeps the previous entry intact", () => {
-    const root = mkdtempSync(join(tmpdir(), "nudo-cache-atomic-"));
-    try {
+  it("rename failure cleans tmp and keeps the previous entry intact", () =>
+    withTmpProject("nudo-cache-atomic-", (root) => {
       const c = new DiskCache({ root, namespace: "check" });
       const key = checkCacheKey("/p/a.js", "export const x = 2;\n", { autoBind: true });
       const first = { ok: true };
@@ -199,14 +189,10 @@ describe("B3 disk cache atomic write", () => {
       expect(JSON.parse(readFileSync(target, "utf8")).value).toEqual(first);
       expect(readdirSync(dirname(target)).filter((f) => f.includes(".tmp-"))).toEqual([]);
       expect(existsSync(target)).toBe(true);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
+    }));
 
-  it("successful set publishes atomically and leaves no tmp files", () => {
-    const root = mkdtempSync(join(tmpdir(), "nudo-cache-atomic-"));
-    try {
+  it("successful set publishes atomically and leaves no tmp files", () =>
+    withTmpProject("nudo-cache-atomic-", (root) => {
       const c = new DiskCache({ root, namespace: "check" });
       const key = checkCacheKey("/p/a.js", "export const x = 3;\n", { autoBind: true });
       c.set(key, { v: 1 });
@@ -214,10 +200,7 @@ describe("B3 disk cache atomic write", () => {
       const target = cachePath(root, key);
       expect(JSON.parse(readFileSync(target, "utf8")).value).toEqual({ v: 2 });
       expect(readdirSync(dirname(target))).toEqual([`${key}.json`]);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
+    }));
 });
 
 describe("B3 Phase B iface table cache", () => {
@@ -266,9 +249,8 @@ describe("B3 Phase B iface table cache", () => {
     expect(noSc).toBe(abFalse);
   });
 
-  it("iface table round-trips through DiskCache namespace", () => {
-    const root = mkdtempSync(join(tmpdir(), "nudo-iface-"));
-    try {
+  it("iface table round-trips through DiskCache namespace", () =>
+    withTmpProject("nudo-iface-", (root) => {
       const disk = new DiskCache({ root, namespace: "iface" });
       const key = ifaceCacheKey("/p/a.js", src, { autoBind: true, projectDir: "/p" });
       expect(disk.get(key)).toBeUndefined();
@@ -289,10 +271,7 @@ describe("B3 Phase B iface table cache", () => {
       };
       disk.set(key, table);
       expect(disk.get(key)).toEqual(table);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
+    }));
 });
 
 describe("B3/B4 config", () => {
@@ -347,7 +326,7 @@ describe("B3 path key portability (F-6 / FIX-D3)", () => {
     filePath: string;
     depPath: string;
   } {
-    const root = mkdtempSync(join(tmpdir(), "nudo-checkout-"));
+    const root = tmpProject("nudo-checkout-");
     const projectDir = join(root, "packages", "pkg");
     const filePath = join(projectDir, "src", "a.js");
     mkdirSync(join(projectDir, "src"), { recursive: true });

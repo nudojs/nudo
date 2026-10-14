@@ -105,8 +105,9 @@ issues
 | `nudo:builtin-unknown` | 引擎债 | warning | API 未被 env/推理覆盖（如未建模全局）。优先 `@nudo:env` / mock |
 | `nudo:opaque-result` | 引擎 | info | 求值返回 opaque / 无信息 Abs |
 | `nudo:eval-error` | 引擎 | error | 分析期间 body 求值抛出 |
-| `nudo:recursion-truncated` | 引擎 | warning | 递归预算用尽；结果拓宽 |
-| `nudo:fork-truncated` | 引擎 | warning | 分支展开（$fork）预算用尽；结果拓宽 |
+| `nudo:recursion-truncated` | 引擎 | info | 递归求值被截断 —— `reason: cycle`（同抽象实参在栈上；预算解不开）或 `depth`/`calls`（预算用尽） |
+| `nudo:loop-truncated` | 引擎 | info | 循环退出条件越过迭代预算仍具体真；循环状态拓宽（不是调用预算） |
+| `nudo:fork-truncated` | 引擎 | info | 分支展开（`$fork`）预算用尽；结果拓宽 |
 | `nudo:host-effect-blocked` | 引擎 | info | 宿主副作用函数（`fetch` / 定时器等）分析期不真实执行 —— 结果拓宽为 `unknown#opaque`。用 `@nudo:mock` / `@nudo:env` 打桩 |
 | `nudo:no-signature` | 引擎/L1 | warning | 函数无法泛化为符号 Abs（CJS/匿名形态仍走入口 fallback 执法 L2） |
 | `nudo:no-method` | 引擎 | error（原始类型接收者）/ warning | 成员访问无法解析 —— ``Method 'x' does not exist on type 'T'``。与 `nudo:unknown-recv` 不同 |

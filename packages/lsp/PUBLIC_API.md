@@ -36,10 +36,10 @@ Declared in `connection.onInitialize` (`src/server.ts`). Keys are the freeze lis
 | Capability key | Notes |
 |----------------|-------|
 | `textDocumentSync` | `Full` |
-| `hoverProvider` | Abs / intension + interface tier on export fn names |
+| `hoverProvider` | Export fn **name**: `● contract / hw\|gen\|imp` tier line + one block with the check-identical signature (`decide({ grade, findings }: { … }) => { … }`; builder template / symbolic multiline / display signature are deduped — full faces stay in the `nudo.hover` payload; the signature's return shape is depth-bounded). **Contract params fold to their declared form** (`node: nullable(astNode)` — the sidecar expression text / directive constraint name) in the signature and on the param declaration hover; body references are **flow-narrowed** (bounded rule set: a non-optional member-access object `node.x`, or a position after an early-return nullish guard `if (!node) return …;`, strips the `nullable(…)` wrapper → `node: astNode`; the check point `!node` itself and the declaration keep the declared form; param reassignment resets). The folded line carries **type-value variable links** (`[astNode](file://<dep sidecar>#L<def line>)` — resolved through the sidecar import table / local top-level declarations / one-level re-export; rendered as plain markdown since links don't render inside code fences), replacing the former standalone contract-source row; variable-less contracts (`number()`) fall back to the contract-source row (sidecar binding declaration line). Derived params without a display fall back to the projection face with a depth-bounded `formatShape` (hover `maxDepth` 4 — lazy self-references explode exponentially at deep budgets; truncated with `…`) |
 | `completionProvider` | trigger `.`; `resolveProvider: false` |
 | `codeLensProvider` | `resolveProvider: false`; interface tier first; case debug layer; **synthetic `call@`/`entry@` observation lenses** (CLI test facts pinned to source; click → `nudo.trace`) |
-| `inlayHintProvider` | case + Abs param/return |
+| `inlayHintProvider` | case + Abs param/return. **Param contract hints (`where …`) default off** — `nudo.inlayHints.parameters` (project `package.json` wins; host setting via `initializationOptions` / `workspace/didChangeConfiguration` as default; live `inlayHint/refresh` on change). On: label = declared form (sidecar expression text / directive constraint name), tooltip = full pred. Return hints (`: …`) always on |
 | `definitionProvider` | local + cross-file + sidecar |
 | `referencesProvider` | |
 | `renameProvider` | `prepareProvider: true` — 非绑定（属性键/成员属性）prepareRename 返回 null；同绑定 scope 改名（refactor-gold） |
@@ -70,6 +70,7 @@ types/modifiers may gain entries (**non-breaking**); removals are breaking.
 | `nudo.contract.draft` | code-first `*.nudo.draft.*` |
 | `nudo.contract.emit` | persist `@generated` sidecar |
 | `nudo.selectCase` | switch active case (positional or object args) |
+| `nudo.selectContract` | observation selector: pick the contract option — deactivate the fn's active case (idempotent) |
 | `nudo.getActiveCases` | active case index map |
 
 ## 4. Custom requests `nudo/…` (slash form) — protocol contract
@@ -90,6 +91,7 @@ to the same handlers (`AGENT_TOOL_SOURCES` same-source pin).
 | `nudo/contract.draft` | `nudo.contract.draft` | draft summary |
 | `nudo/contract.emit` | `nudo.contract.emit` | emit summary |
 | `nudo/selectCase` | `nudo.selectCase` | `{ success: true }` — editor-only (slash + executeCommand; no dot-form custom request) |
+| `nudo/selectContract` | `nudo.selectContract` | `{ success: true }` — editor-only (slash + executeCommand; no dot-form custom request) |
 | `nudo/getActiveCases` | `nudo.getActiveCases` | `Record<string, number>` — editor-only (slash + executeCommand; no dot-form custom request) |
 
 **Consistency invariant (A7):** every slash-form request must have a matching

@@ -5,12 +5,8 @@
  * `1 in a` 恒 true；数组字面量 hole 元素还被整体跳过压缩下标。
  */
 import { describe, it, expect } from "vitest";
-import { runTranspiled, callTranspiledExportFull, litValue, formatShape } from "@nudojs/core";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
+import { litValue, formatShape } from "@nudojs/core";
+import { call } from "./eval-helpers.ts";
 
 describe("evaluator array holes", () => {
   it("delete a[1] then 1 in a is false", () => {

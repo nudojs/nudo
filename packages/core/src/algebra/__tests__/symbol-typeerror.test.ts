@@ -20,7 +20,8 @@ import {
 } from "../surface.ts";
 import { makeSymbolAbs } from "../builtins/symbol.ts";
 import { NudoThrow, isNudoThrow } from "../exec/nudo-throw.ts";
-import { runTranspiled, callTranspiledExportFull, litValue } from "@nudojs/core";
+import { litValue } from "@nudojs/core";
+import { call } from "./eval-helpers.ts";
 
 function expectTypeError(fn: () => unknown): void {
   let threw: unknown;
@@ -33,11 +34,6 @@ function expectTypeError(fn: () => unknown): void {
   const payload = (threw as NudoThrow).absValue;
   expect(payload.shape.k).toBe("brand");
   expect((payload.shape as { name?: string }).name).toBe("TypeError");
-}
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
 }
 
 describe("BUG-012: symbol × numeric/bitwise ops throw TypeError", () => {

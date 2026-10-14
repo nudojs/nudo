@@ -3,18 +3,13 @@
  * 同一 (source, filePath, loader) 的指纹对所有函数相同——逐函数重算即 N+1。
  * 断言：函数数翻倍时 loadModule 调用数不随 F 线性增长。
  */
-import { describe, it, expect, afterAll, beforeEach } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, it, expect, beforeEach } from "vitest";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { analyzeFile } from "../analyzer.ts";
 import { resetAllAnalysisCaches } from "../session-cache.ts";
 import { defaultLoadModule } from "../load-module.ts";
-
-const dirs: string[] = [];
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
-});
+import { tmpProject } from "./tmp-project.ts";
 
 function countingLoader(counter: { n: number }) {
   return (spec: string, fromFile: string): string | undefined => {
@@ -42,8 +37,7 @@ describe("loadModuleDepsFingerprint hoisted out of per-fn loop (R2-5 A)", () => 
   });
 
   it("函数数翻倍不线性放大 loadModule 调用", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-fp-hoist-"));
-    dirs.push(dir);
+    const dir = tmpProject("nudo-fp-hoist-");
 
     const one = makeEntry(dir, 1);
     const c1 = { n: 0 };

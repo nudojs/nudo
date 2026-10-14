@@ -33,6 +33,7 @@ import { drainPromiseMicros } from "../builtins.ts";
 import { sourceHasCjsExports } from "../code-text.ts";
 import { isNudoThrow, isNudoReturn, $isForkExit, runWithLoopExits, takeLoopExits, takeThrowExits, asAbsVal, withNewTargetReset } from "./runtime.ts";
 import { $call } from "./call.ts";
+import { refineFnReturnType } from "./class.ts";
 import {
   runWithCollectorScope,
   createScopedSlot,
@@ -62,6 +63,9 @@ export type RunTranspiledOptions = {
   envGlobals?: Record<string, Abs>;
   /** @nudo:mock 注入值：name → Abs（mockDirectivesToAbsSeeds 产物） */
   mocks?: Record<string, Abs>;
+  /** 节点级 Abs 记录插桩（hover 重放用——透传 transpile 的
+   * recordPositions：Identifier 值读 / 静态成员读包 $nodoPos） */
+  recordPositions?: boolean;
   /** 宽松全局（调用点发现 exec 采集：未声明全局调用保守 unknown 不中断） */
   lenientGlobals?: boolean;
 };
@@ -342,7 +346,12 @@ function bindNamespace(modules: RunTranspiledOptions["modules"], spec: string): 
   return unknown;
 }
 
-/** CJS require：modules[spec] → 可 $get 的 namespace Abs；缺失/非字符串 → unknown（不炸） */
+/**
+ * CJS require：modules[spec] → 可 $get 的 namespace Abs；缺失/非字符串 → unknown（不炸）。
+ * `module.exports = X` 重赋值形态（cjsMain）：原生 require 返回 X 本身
+ * （ms 等单函数导出包可直接调用），返回 default 而非命名空间对象——
+ * Bug 10 的 obj-callee 定抛暴露了旧口径的形状失真（namespace obj 不可调）。
+ */
 function requireFromModules(
   modules: RunTranspiledOptions["modules"],
   spec: string,
@@ -350,6 +359,10 @@ function requireFromModules(
   if (typeof spec !== "string") return unknown;
   const mod = modules?.[spec] as AbsModuleExports | undefined;
   if (!mod) return unknown;
+  if (mod.cjsMain) {
+    const d = (mod as AbsModuleExports).default;
+    if (d !== undefined) return d;
+  }
   if (mod.named) return namespaceAbsOf(mod);
   return mod;
 }
@@ -486,7 +499,8 @@ const runBindings = new WeakMap<object, Map<string, unknown>>();
 /**
  * env 全局注入时**不得**遮蔽的宿主内建名 = `HOST_INTRINSIC_SET`（与转译折叠同源）。
  *
- * 注入形式是模块级 `const <name> = __nudoEnv["<name>"]`，会遮蔽宿主全局。
+ * 注入形式是模块级 `let <name> = __nudoEnv["<name>"]`（可写绑定，原生
+ * globalThis 属性可赋值），会遮蔽宿主全局。
  * 转译产物对这三个名字发**无标识符**源（`void 0` / `0/0` / `1/0` → `$lit`），
  * 但产物里仍有依赖宿主 `undefined` 身份的省略哨兵（`$fork` 缺 else 臂的第三参
  * 省略），且用户源里裸标识符一经遮蔽也会把 Abs 送进 `$lit`/调用位。
@@ -538,6 +552,7 @@ function runTranspiledInner(
     replacements: opts.replacementTargets,
     asOverrides: opts.asOverrideTargets,
     lenientGlobals: opts.lenientGlobals,
+    recordPositions: opts.recordPositions,
   });
   js = js.replace(RUNTIME_IMPORT_RE, "");
   js = rewriteUserImports(js);
@@ -621,9 +636,14 @@ function runTranspiledInner(
   const envInjectNames = Object.keys(envAndMocks).filter(
     (k) => !ENV_SHADOW_SKIP.has(k),
   );
+  // @nudo:env 全局 + @nudo:mock 绑定（与 __nudoEnv 合并表一致）。
+  // let 而非 const：env 全局在原生是 globalThis 的可写属性，`process.exitCode = 1`
+  // 这类成员写经 memberPath 写回链重绑根标识符（`process = $set(process, …)`）——
+  // const 注入会把它变成原生 TypeError 并毒化整场求值（issue #148：
+  // 返回值折 unknown + entry-may-throw）。
   if (envInjectNames.length > 0) {
     const envBinds = envInjectNames
-      .map((k) => `const ${k} = __nudoEnv[${JSON.stringify(k)}];`)
+      .map((k) => `let ${k} = __nudoEnv[${JSON.stringify(k)}];`)
       .join("\n");
     js = `${envBinds}\n${js}`;
   }
@@ -642,7 +662,7 @@ function runTranspiledInner(
   // （ESM 早错保证 decl/specifier 不重名，star×star 按源序后者覆盖——
   // 与 collectAbsExports 顺序口径一致）。
   const cjsMerge = hasCjsExports
-    ? `(() => { const me = $get(module, "exports"); if (me !== __nudoCjsOrig && me && typeof me === "object" && "shape" in me) { return { default: me }; } const out = {}; if (__nudoCjsOrig && __nudoCjsOrig.shape && __nudoCjsOrig.shape.k === "obj") { for (const k of Object.keys(__nudoCjsOrig.shape.slots)) out[k] = __nudoCjsOrig.shape.slots[k].value; } return out; })()`
+    ? `(() => { const me = $get(module, "exports"); if (me !== __nudoCjsOrig && me && typeof me === "object" && "shape" in me) { return { default: me, [Symbol.for("nudo.cjsMain")]: true }; } const out = {}; if (__nudoCjsOrig && __nudoCjsOrig.shape && __nudoCjsOrig.shape.k === "obj") { for (const k of Object.keys(__nudoCjsOrig.shape.slots)) out[k] = __nudoCjsOrig.shape.slots[k].value; } return out; })()`
     : "{}";
   const ret = `return { ...__nudoExports, ...${cjsMerge}, ${names.join(", ")} };`;
   const fn = new Function(...argNames, `${js}\n${ret}`);
@@ -777,6 +797,11 @@ export function noteEvalFallback(e: unknown): void {
  * unsupported:*（能力边界）/ internal（B 缺陷）都记录到收集器；
  * 返回 undefined 表示调用方应走解释路径。
  */
+/** run 表是否来自 CJS `module.exports = X` 重赋值形态（供桥接层标 cjsMain）。 */
+export function isCjsMainRun(run: Record<string, unknown>): boolean {
+  return Boolean((run as Record<PropertyKey, unknown>)[Symbol.for("nudo.cjsMain")]);
+}
+
 export function tryRunTranspiled(
   source: string,
   opts: RunTranspiledOptions = {},
@@ -801,7 +826,9 @@ export function isAbsVal(v: unknown): v is Abs {
 
 /** 调用 runTranspiled 导出（捕获 $throw）。opts.phi：入口 Φ 种子
  *  （instantiate/symbolic 的约束入口——eval 侧路径条件收窄）。
- *  嵌套进入（导出桥 apply）继承外层预算；仅最外层宿主入口重置。 */
+ *  嵌套进入（导出桥 apply）继承外层预算；仅最外层宿主入口重置。
+ *  #152 assume 前提不设选项位：播种统一走 withAssumePremises 动态域
+ *  包裹（check.ts 的 runSeeded extent），单一机制无第二路径。 */
 export function callTranspiledExportFull(
   exports: Record<string, unknown>,
   name: string,
@@ -899,7 +926,11 @@ function callTranspiledExportFullInner(
           const r = $call(fn, args);
           // 与 JS 函数分支同口径：同步返回值算完后排空微队列
           drainPromiseMicros();
-          return joinControlExits(r);
+          const joined = joinControlExits(r);
+          // 观测结果回填 fn.returnType 槽（与类方法槽同口径，展示用
+          // 不回写分析）——arity-only fn Abs 调用后携带真实返回
+          refineFnReturnType(fn, joined.result);
+          return joined;
         } catch (e) {
           drainPromiseMicros();
           if (isNudoReturn(e)) {

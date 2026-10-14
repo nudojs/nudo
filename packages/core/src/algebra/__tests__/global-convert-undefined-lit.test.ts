@@ -9,20 +9,8 @@
  * Number 另漏 ToNumber(null)=0 与 Number(5n)=5。
  */
 import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  litValue,
-} from "../index.ts";
-
-function call(src: string, fnName = "f") {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, []);
-}
-
-function val(src: string) {
-  return litValue(call(src).result);
-}
+import { litValue } from "../index.ts";
+import { val } from "./eval-helpers.ts";
 
 describe("String / Boolean fold undefined literal and missing args", () => {
   it("String(undefined) is 'undefined'; String() is ''", () => {

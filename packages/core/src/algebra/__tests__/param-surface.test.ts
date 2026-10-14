@@ -12,6 +12,7 @@ import { checkSource, pTrue } from "../index.ts";
 import { resetCheckSourceMemo } from "../check.ts";
 import { resetGeneralizeMemo } from "../generalize.ts";
 import { number, fn } from "../constraint.ts";
+import { makeFiles } from "./nudo-constraints.ts";
 
 describe("C4.1 formalParamsFromNodes", () => {
   it("maps identifier / default / rest / object pattern", () => {
@@ -37,7 +38,7 @@ describe("C4.1 formalParamsFromNodes", () => {
     expect(names.has("y")).toBe(true);
     expect(locateContractParam(formals, "b")).toEqual({ index: 1 });
     expect(locateContractParam(formals, "args")).toEqual({ index: 2, rest: true });
-    expect(locateContractParam(formals, "x")).toEqual({ index: 3, field: "x" });
+    expect(locateContractParam(formals, "x")).toEqual({ index: 3, field: "x", fieldPath: ["x"] }); // #137：平铺命中带单段 fieldPath
   });
 
   it("object pattern rest + rename key aliases are contract-visible", () => {
@@ -85,23 +86,6 @@ describe("C4.1 generalize formals alignment", () => {
     expect(names.has("age")).toBe(true);
   });
 });
-
-function makeFiles(files: Record<string, string>) {
-  const resolve = (from: string, spec: string): string => {
-    if (!spec.startsWith(".")) return spec;
-    const parts = from.split("/").slice(0, -1);
-    for (const seg of spec.split("/")) {
-      if (seg === "" || seg === ".") continue;
-      if (seg === "..") parts.pop();
-      else parts.push(seg);
-    }
-    return parts.join("/");
-  };
-  return {
-    loadModule: (spec: string, from: string): string | undefined =>
-      files[resolve(from, spec)],
-  };
-}
 
 describe("C4.1 sidecar binds default / rest / destructure names", () => {
   it("default param name binds sidecar contract", () => {

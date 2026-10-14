@@ -3,20 +3,15 @@
  * 否则入口 source 未变时文件级 memo 陈旧命中。
  * 另钉：maxForks / externalCallRecords 内容指纹（BUG-007）。
  */
-import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, it, expect } from "vitest";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { analysisFileCacheKey } from "../analyzer.ts";
 import { clearPathEnvCaches } from "../evaluator/env-loader.ts";
 import { clearAnalysisSessionCaches } from "../session-cache.ts";
 import { numLit, strLit, abs as makeAbs } from "@nudojs/core";
 import type { CallRecord } from "../evaluator/call-record.ts";
-
-const dirs: string[] = [];
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
-});
+import { tmpProject } from "./tmp-project.ts";
 
 const CFG = {
   mode: "directives",
@@ -40,8 +35,7 @@ function rec(over: Partial<CallRecord> = {}): CallRecord {
 
 describe("analysisFileCacheKey staleness dimensions", () => {
   it("misses when default-loader dep content changes", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-afp-"));
-    dirs.push(dir);
+    const dir = tmpProject("nudo-afp-");
     const depPath = join(dir, "util.js");
     const mainPath = join(dir, "main.js");
     const main = `const util = require("./util.js");\nexport function go(n) { return util.inc(n); }\n`;
@@ -56,8 +50,7 @@ describe("analysisFileCacheKey staleness dimensions", () => {
   });
 
   it("misses when project nudo.env names change", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-afp-env-"));
-    dirs.push(dir);
+    const dir = tmpProject("nudo-afp-env-");
     const mainPath = join(dir, "main.js");
     const main = `export function id(x) { return x; }\n`;
     writeFileSync(mainPath, main);
@@ -77,8 +70,7 @@ describe("analysisFileCacheKey staleness dimensions", () => {
   });
 
   it("maxForks flips the key (fork-budget change must miss)", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-afp-forks-"));
-    dirs.push(dir);
+    const dir = tmpProject("nudo-afp-forks-");
     const mainPath = join(dir, "main.js");
     const main = `export function id(x) { return x; }\n`;
     writeFileSync(mainPath, main);
@@ -91,8 +83,7 @@ describe("analysisFileCacheKey staleness dimensions", () => {
   });
 
   it("externalCallRecords: rebuilt array with same content hits; changed content misses", () => {
-    const dir = mkdtempSync(join(tmpdir(), "nudo-afp-ext-"));
-    dirs.push(dir);
+    const dir = tmpProject("nudo-afp-ext-");
     const mainPath = join(dir, "main.js");
     const main = `export function id(x) { return x; }\n`;
     writeFileSync(mainPath, main);
