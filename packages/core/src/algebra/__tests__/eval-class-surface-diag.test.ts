@@ -124,7 +124,7 @@ describe("P4a: static-only member invoked on instance receiver → definite Type
     const r = call(
       `class C { static m() { return 1; } } export function f() { return new C().m?.(); }`,
     );
-    expect(litValue(r.result).value).toBeUndefined();
+    expect(litValue(r.result)).toEqual({ ok: true, value: undefined });
     expect(diffBody(`class C { static m() { return 1; } } return new C().m?.();`)).toBeNull();
   });
 

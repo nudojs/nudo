@@ -14,6 +14,7 @@
  * 已在调试脚本对拍，此处钉引擎期望。
  */
 import { describe, it, expect } from "vitest";
+import type { FunctionDeclaration } from "@babel/types";
 import { formatShape } from "../format.ts";
 import { anyAbs, numLit, litValue } from "../abs.ts";
 import { $call } from "../exec/call.ts";
@@ -251,17 +252,60 @@ describe("fork-arm × try-region with abstract params", () => {
     expect(s).toContain("2");
     expect(s).toContain("3");
   });
+
+  it("throw-tail: ret 臂 × throw 兄弟臂不得虚构 fall-through undefined", () => {
+    // settleForkArms 单 ret 臂入 exits、兄弟臂 throw 时，语句位无 fall-through
+    // 可言——修复前幻影 undef() 被边界 join 成假 `undefined | "s"` 臂
+    const r = call(
+      `export function f(x) {
+  if (typeof x === "string") { return "s"; }
+  throw new Error("bad");
+}`,
+      "f",
+      [anyAbs],
+    );
+    expect(formatShape(r.result)).toBe('"s"');
+    expect(throwsError(r.throws, "Error")).toBe(true);
+  });
+
+  it("throw-tail 链：双 if 早退 + throw 尾只留真实完成值", () => {
+    const r = call(
+      `export function f(x) {
+  if (typeof x === "string") { return "s"; }
+  if (typeof x === "number") { return "n"; }
+  throw new Error("bad");
+}`,
+      "f",
+      [anyAbs],
+    );
+    const s = formatShape(r.result);
+    expect(s).toContain('"s"');
+    expect(s).toContain('"n"');
+    expect(s).not.toContain("undefined");
+  });
+
+  it("无尾早退：隐式 return undefined 仍保留（不得矫枉过正）", () => {
+    const r = call(
+      `export function f(x) {
+  if (typeof x === "string") { return "s"; }
+  if (typeof x === "number") { return "n"; }
+}`,
+      "f",
+      [anyAbs],
+    );
+    const s = formatShape(r.result);
+    expect(s).toContain("undefined");
+  });
 });
 
 describe("compiled body ($call body-fn) keeps arm returns", () => {
   const fnOf = (body: string) => {
     const file = parseSource(`function f(x) { ${body} }`);
     const decl = file.program.body.find(
-      (s): s is { type: "FunctionDeclaration"; params: Array<{ name?: string }>; body: never } =>
-        s.type === "FunctionDeclaration",
+      (s): s is FunctionDeclaration => s.type === "FunctionDeclaration",
     )!;
     return absFunction(
-      decl.params.map((p, i) => p.name ?? `p${i}`),
+      decl.params.map((p, i) => (p.type === "Identifier" ? p.name : `p${i}`)),
       { body: decl.body },
     );
   };

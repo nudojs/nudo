@@ -76,8 +76,7 @@ describe("N4: static-field initializer referencing the class by name", () => {
     const r = call(
       `class C { static n = 1; static i = class C { static x = C.n; }; } export function f() { return C.i.x; }`,
     );
-    expect(litValue(r.result).ok).toBe(true);
-    expect(litValue(r.result).value).toBeUndefined();
+    expect(litValue(r.result)).toEqual({ ok: true, value: undefined });
     expect(
       diffBody(`class C { static n = 1; static i = class C { static x = C.n; }; } return C.i.x;`),
     ).toBeNull();

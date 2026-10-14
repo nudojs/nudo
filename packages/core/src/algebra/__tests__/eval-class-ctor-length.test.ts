@@ -16,9 +16,7 @@ function v(src: string) {
 }
 
 function expectNum(src: string, expected: number) {
-  const r = v(src);
-  expect(r.ok).toBe(true);
-  expect(r.value).toEqual(expected);
+  expect(v(src)).toEqual({ ok: true, value: expected });
 }
 
 describe("P2b: 类值 length = 构造器元数", () => {

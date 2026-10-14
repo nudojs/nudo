@@ -4,7 +4,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { bumpEvalForkBudget, noteLoopTruncation } from "../../call-budget.ts";
 import type { Abs } from "../../abs.ts";
-import { abs, bool, boolLit, confJoin, litValue, numLit, unknown, type Confidence } from "../../abs.ts";
+import { abs, bool, boolLit, confJoin, litValue, never, numLit, unknown, type Confidence } from "../../abs.ts";
 import { lit } from "../../term.ts";
 import type { Phi } from "../../pred.ts";
 import { pTrue, and, predEquals } from "../../pred.ts";
@@ -176,7 +176,11 @@ export function settleForkArms(a: ForkArm, b: ForkArm, exits: Abs[] | undefined)
     if (first.kind === "ret") {
       if (!exits) throw new NudoReturn(first.v);
       exits.push(first.v);
-      return undef();
+      // ret 臂经 exits 交付、throw 臂已上 throwExits——两路径都离开了语句位，
+      // 无 fall-through 可言：幻影 undef() 会被边界 join 成假 undefined 臂
+      // （`if (g) return "s"; throw E` 错显 `undefined | "s"`）。never 是
+      // joinAbs 幂等元，正常完成不存在时静默消失。
+      return never;
     }
     return first.v;
   }
