@@ -13,6 +13,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { checkSource, pTrue, resetGeneralizeMemo, type RunTranspiledOptions } from "@nudojs/core";
 import { collectEnvGlobals } from "../eval-run.ts";
+import { l2Count } from "./check-helpers.ts";
 
 const SRC = `/// @nudo:env es
 export class ApiError extends Error {
@@ -42,10 +43,6 @@ function check() {
 
 function sig(r: ReturnType<typeof check>, fn: string): string {
   return r.signatures.find((s) => s.name === fn)?.display ?? "(missing)";
-}
-
-function l2Count(r: ReturnType<typeof check>, fn?: string): number {
-  return r.issues.filter((i) => i.code === "nudo:entry-may-throw" && (!fn || i.fn === fn)).length;
 }
 
 describe("#110 env class extends Error: super(message) 落 name/message 槽", () => {

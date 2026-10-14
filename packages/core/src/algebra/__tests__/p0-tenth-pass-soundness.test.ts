@@ -3,29 +3,8 @@
  * do-while 双路径 / leq 字面量判别
  */
 import { describe, it, expect } from "vitest";
-import {
-  runTranspiled,
-  callTranspiledExportFull,
-  $lit,
-  litValue,
-  formatAbs,
-  formatShape,
-  leqAbs,
-} from "@nudojs/core";
-
-function call(src: string, fnName: string, ...litArgs: unknown[]) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(
-    exports,
-    fnName,
-    litArgs.map((a) => $lit(a as never)),
-  );
-}
-
-function callAbs(src: string, fnName: string, args: unknown[]) {
-  const exports = runTranspiled(src, { mode: "analyze" });
-  return callTranspiledExportFull(exports, fnName, args as never[]);
-}
+import { $lit, litValue, formatAbs, formatShape, leqAbs } from "@nudojs/core";
+import { call as callAbs, callLit as call } from "./eval-helpers.ts";
 
 const absBool = { shape: { k: "prim", type: "boolean" }, conf: "path" } as never;
 const absNum = { shape: { k: "prim", type: "number" }, conf: "path" } as never;

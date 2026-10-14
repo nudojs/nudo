@@ -11,8 +11,9 @@
  */
 import { describe, it, expect } from "vitest";
 import { abs, num, str, numLit, type Abs } from "../abs.ts";
-import { litValue, runTranspiled, callTranspiledExportFull } from "../index.ts";
+import { litValue } from "../index.ts";
 import { widenForAssign } from "../check-assign.ts";
+import { call } from "./eval-helpers.ts";
 
 const tup = (elements: Abs[], rest?: Abs): Abs =>
   abs({ k: "tuple", elements, ...(rest ? { rest } : {}) }, undefined, undefined, "exact");
@@ -50,14 +51,9 @@ describe("widenForAssign keeps tuple rest in element join (BUG-002)", () => {
 });
 
 describe("runtime rest slot survives copy / destructure (BUG-002)", () => {
-  function call(src: string, arg: Abs) {
-    const exports = runTranspiled(src, { mode: "analyze" });
-    return callTranspiledExportFull(exports, "f", [arg] as never);
-  }
-
   it("$copy snapshot keeps rest (arg round-trip through call)", () => {
     // 实参经调用边界拷贝；返回原值必须仍携带 rest 槽
-    const r = call(`export function f(a) { return a; }`, tup([numLit(1)], str()));
+    const r = call(`export function f(a) { return a; }`, "f", [tup([numLit(1)], str())]);
     expect(r.result.shape.k).toBe("tuple");
     if (r.result.shape.k !== "tuple") return;
     expect(r.result.shape.elements).toHaveLength(1);
@@ -68,7 +64,8 @@ describe("runtime rest slot survives copy / destructure (BUG-002)", () => {
     // const [a, ...t] = [1, 2, ...string] → t = [2, ...string]，不是 [2]
     const r = call(
       `export function f(a) { const [h, ...t] = a; return t; }`,
-      tup([numLit(1), numLit(2)], str()),
+      "f",
+      [tup([numLit(1), numLit(2)], str())],
     );
     expect(r.result.shape.k).toBe("tuple");
     if (r.result.shape.k !== "tuple") return;
@@ -82,7 +79,8 @@ describe("runtime rest slot survives copy / destructure (BUG-002)", () => {
     // const [a, ...t] = [1, ...string] → t = string[]（固定位耗尽，尾段纯 rest）
     const r = call(
       `export function f(a) { const [h, ...t] = a; return t; }`,
-      tup([numLit(1)], str()),
+      "f",
+      [tup([numLit(1)], str())],
     );
     expect(r.result.shape.k).toBe("arr");
     if (r.result.shape.k !== "arr") return;
@@ -93,7 +91,8 @@ describe("runtime rest slot survives copy / destructure (BUG-002)", () => {
     // const [a, b, ...t] = [1, ...number] → t = number[]（起点落在 rest 段）
     const r = call(
       `export function f(a) { const [x, y, ...t] = a; return t; }`,
-      tup([numLit(1)], num()),
+      "f",
+      [tup([numLit(1)], num())],
     );
     expect(r.result.shape.k).toBe("arr");
     if (r.result.shape.k !== "arr") return;
@@ -102,11 +101,11 @@ describe("runtime rest slot survives copy / destructure (BUG-002)", () => {
 
   it("JSON.stringify does not fold rest tuple to fixed prefix (BUG-002)", () => {
     // rest 段有 0..n 个未知元素：折叠成 exact "[1]" 是缺尾假精确 → 保守 partial
-    const r = call(`export function f(a) { return JSON.stringify(a); }`, tup([numLit(1)], num()));
+    const r = call(`export function f(a) { return JSON.stringify(a); }`, "f", [tup([numLit(1)], num())]);
     const lv = litValue(r.result);
     expect(lv.ok && lv.value === "[1]").toBe(false);
     // 固定元组照常折叠
-    const r2 = call(`export function f(a) { return JSON.stringify(a); }`, tup([numLit(1)]));
+    const r2 = call(`export function f(a) { return JSON.stringify(a); }`, "f", [tup([numLit(1)])]);
     expect(litValue(r2.result)).toEqual({ ok: true, value: "[1]" });
   });
 });

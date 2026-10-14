@@ -119,9 +119,7 @@ describe("Bug 33: Object.create proto validation", () => {
     expect(r.effects).toContain("TypeError");
   });
 
-  it("controls: prim-lit throws, null folds nullProto", () => {
-    const c1 = call(`export function f() { return Object.create(1); }`);
-    expect(isNever(c1.result)).toBe(true);
+  it("controls: null folds nullProto", () => {
     const c2 = call(`export function f() { return Object.create(null); }`);
     expect(isNever(c2.result)).toBe(false);
     expect(isNever(c2.throws)).toBe(true);

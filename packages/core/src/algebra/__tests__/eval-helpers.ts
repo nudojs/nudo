@@ -8,6 +8,7 @@
  * 保留本地副本即可，避免行为漂移。
  */
 import { runTranspiled, callTranspiledExportFull } from "../exec/run.ts";
+import { $lit } from "../exec/runtime/state.ts";
 import { litValue, anyAbs, type Abs } from "../abs.ts";
 import {
   runWithMayThrowSession,
@@ -19,6 +20,11 @@ import {
 export function call(src: string, fnName = "f", args: Abs[] = []) {
   const exports = runTranspiled(src, { mode: "analyze" });
   return callTranspiledExportFull(exports, fnName, args);
+}
+
+/** 调用导出函数；JS 字面量实参经 $lit 提升为 Abs（去重自 p0/topic 系列 10 份内联副本） */
+export function callLit(src: string, fnName = "f", ...litArgs: unknown[]) {
+  return call(src, fnName, litArgs.map((a) => $lit(a as never)));
 }
 
 /** 调用结果的字面量值（litValue） */
