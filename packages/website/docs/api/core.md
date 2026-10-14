@@ -297,7 +297,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="serializecheckjsonmulti"></a>`serializeCheckJsonMulti` | fn | `nudo check` gate | `serializeCheckJsonMulti(reports: CheckJson[]): CheckJsonMulti` |
 | <a id="shape"></a>`shape` | fn | term / shape builders | `shape( fields: Record< string, NudoConstraint \| ConstraintBuilder \| number \| string \| boolean \| null \| undefined >, ): ConstraintBuilder` |
 | <a id="shape"></a>`Shape` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `Shape = \| { k: "never" } \| { k: "any" } \| { k: "unknown" } \| { k: "prim"; type: PrimName } \| { k: "obj"; slots: Record<string, { value: A...` |
-| <a id="slot"></a>`Slot` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `Slot = { value: Abs; optional?: boolean; readonly?: boolean; internal?: boolean; }` |
+| <a id="slot"></a>`Slot` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `Slot = { value: Abs; optional?: boolean; readonly?: boolean; internal?: boolean; inherited?: boolean; symbolKey?: boolean; }` |
 | <a id="spy"></a>`spy` | fn | test mock helpers | `spy(): MockHelper` |
 | <a id="str"></a>`str` | fn | Abs constructors / faces | `str(): Abs` |
 | <a id="string"></a>`string` | fn | `@nudo:contract` builder grammar | `string(): ConstraintBuilder` |
@@ -332,7 +332,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="$del"></a>`$del` | fn | object / member runtime | `$del(o: Abs, key: Abs): Abs` |
 | <a id="$elems"></a>`$elems` | fn | object / member runtime | `$elems(a: Abs): Abs[]` |
 | <a id="$eq"></a>`$eq` | fn | operator runtime | `$eq(a: Abs, b: Abs): Abs` |
-| <a id="$fnval"></a>`$fnVal` | fn | value / class runtime | `$fnVal( params: string[], impl: (...args: Abs[]) => Abs, opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean }, ): Abs` |
+| <a id="$fnval"></a>`$fnVal` | fn | value / class runtime | `$fnVal( params: string[], impl: (...args: Abs[]) => Abs, opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean }, ): Abs` |
 | <a id="$for"></a>`$for` | fn | control-flow lowering | `$for( init: Abs, test: (s: Abs) => Abs, step: (s: Abs) => Abs, body: (s: Abs) => Abs, maxIters: number = DEFAULT_MAX_LOOP_ITERS, opts?: { pack?: () => Abs; unpack?: (s: Abs) => void; label?: string; }, ): Abs` |
 | <a id="$foriter"></a>`$forIter` | const | control-flow lowering | — |
 | <a id="$fork"></a>`$fork` | fn | control-flow lowering | `$fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): Abs` |
@@ -357,7 +357,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="$pow"></a>`$pow` | fn | operator runtime | `$pow(a: Abs, b: Abs): Abs` |
 | <a id="$rawthis"></a>`$rawThis` | fn | value / class runtime | `$rawThis(v: unknown): Abs` |
 | <a id="$recordbinding"></a>`$recordBinding` | fn | call-site recording for analyze | `$recordBinding(name: string, value: unknown): void` |
-| <a id="$set"></a>`$set` | fn | object / member runtime | `$set( o: Abs, key: string, value: Abs, opts?: { internal?: boolean }, ): Abs` |
+| <a id="$set"></a>`$set` | fn | object / member runtime | `$set( o: Abs, key: string, value: Abs, opts?: { internal?: boolean; symbolKey?: boolean }, ): Abs` |
 | <a id="$spread"></a>`$spread` | fn | object / member runtime | `$spread(a: Abs, b: Abs): Abs` |
 | <a id="$switch"></a>`$switch` | fn | control-flow lowering | `$switch( disc: Abs, cases: Array<{ test: Abs; run: () => Abs }>, dflt?: () => Abs, ): Abs` |
 | <a id="$throw"></a>`$throw` | fn | control-signal / throw | `$throw(v: Abs): never` |
@@ -365,7 +365,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="$typeof"></a>`$typeof` | fn | operator runtime | `$typeof(a: Abs): Abs` |
 | <a id="$while"></a>`$while` | fn | control-flow lowering | `$while( init: Abs, test: (s: Abs) => Abs, step: (s: Abs) => Abs, maxIters: number = DEFAULT_MAX_LOOP_ITERS, ): Abs` |
 | <a id="$whileseq"></a>`$whileSeq` | fn | control-flow lowering | `$whileSeq( test: () => Abs, body: () => void, maxIters: number = DEFAULT_MAX_LOOP_ITERS, opts?: { pack?: () => Abs; unpack?: (s: Abs) => void; label?: string; }, ): void` |
-| <a id="$yield"></a>`$yield` | fn | async / generator | `$yield(v: Abs): Abs` |
+| <a id="$yield"></a>`$yield` | fn | async / generator | `$yield(v: Abs, tryCtx = 0): Abs` |
 | <a id="$yieldstar"></a>`$yieldStar` | const | async / generator | — |
 | <a id="asabsval"></a>`asAbsVal` | fn | value / class runtime | `asAbsVal(v: unknown): Abs` |
 | <a id="evalcallrecord"></a>`EvalCallRecord` | type | call-site recording for analyze | `EvalCallRecord = { fnName: string; args: Abs[]; result: Abs; callLoc?: { line: number; column: number }; threw: boolean; depth?: number; }` |
@@ -567,7 +567,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="jointhenproject"></a>`joinThenProject` | fn | 工件聚合投影（设计 §4.2：先 Abs join 折叠再投影）。 | `joinThenProject(absList: Abs[]): NudoConstraint \| undefined` |
 | <a id="lazy"></a>`lazy` | fn | lazy(() =&gt; constraint)：自引用约束模板（issue #120）。 | `lazy( thunk: () => NudoConstraint \| ConstraintBuilder, ): ConstraintBuilder` |
 | <a id="le"></a>`le` | const | — | `const le` |
-| <a id="leavepromiseexecutorscope"></a>`leavePromiseExecutorScope` | fn | — | `leavePromiseExecutorScope(): number` |
+| <a id="leavepromiseexecutorscope"></a>`leavePromiseExecutorScope` | fn | — | `leavePromiseExecutorScope(settledArms: number[]): boolean` |
 | <a id="lenterm"></a>`lenTerm` | fn | 长度项：length(u) | `lenTerm(t: Term): Term` |
 | <a id="lenum"></a>`leNum` | fn | — | `leNum(term: Term, n: number): Pred` |
 | <a id="leqresult"></a>`LeqResult` | type | — | `LeqResult = { ok: boolean; reason?: string; }` |
@@ -646,7 +646,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="promoteparamshape"></a>`promoteParamShape` | fn | 提升写入载体：替换 env.vars map 项，禁止 mutate 共享 Abs。 | `promoteParamShape( env: AstEnv, param: string, promotedShape: Shape, opts?: { loc?: { line: number; column: number }; recordSite?: boolean }, ): boolean` |
 | <a id="propertykeyof"></a>`propertyKeyOf` | fn | ES ToPropertyKey 的字面量折叠：null→"null"、undefined→"undefined"、 true/false→"true"/"false"、number/bigint/string → String(v)（ToString）。 | `propertyKeyOf(a: Abs \| undefined): string \| undefined` |
 | <a id="propflags"></a>`PropFlags` | type | — | `PropFlags = { writable?: boolean; enumerable?: boolean; configurable?: boolean; }` |
-| <a id="protobrandabs"></a>`protoBrandAbs` | fn | `X.prototype` 形态（getPrototypeOf 结果；带 constructor 槽） | `protoBrandAbs(ctorName: string): Abs` |
+| <a id="protobrandabs"></a>`protoBrandAbs` | fn | — | `protoBrandAbs(ctorName: string): Abs` |
 | <a id="protoofrecv"></a>`protoOfRecv` | fn | Object.getPrototypeOf 的具体原型投影（constructor 链可解）。 | `protoOfRecv(a: Abs): Abs` |
 | <a id="ptrue"></a>`pTrue` | const | — | `const pTrue` |
 | <a id="ptypeof"></a>`ptypeof` | const | — | `const ptypeof` |
