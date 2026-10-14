@@ -629,6 +629,14 @@ export function numericBounds(a: Abs, phi: Phi = pTrue): NumBounds | undefined {
   if (a.term?.op === "var") {
     collectBoundsFromPhi(phi, a.term.id, result);
   }
+  // 等值排除收紧（issue #170）：rel 界全部收齐后跑——ne 可能在另一来源
+  // （pred 收 ge、Φ 收 ne，或反之），顺序无关须两遍。
+  if (a.pred && a.term) {
+    collectExclusionsFromPred(a.pred, a.term, result);
+  }
+  if (a.term?.op === "var") {
+    collectExclusionsFromPhi(phi, a.term.id, result);
+  }
   // 字面量：上下界都是自身（NaN 无序，不得当端点）
   if (a.term?.op === "lit" && typeof a.term.value === "number" && !Number.isNaN(a.term.value)) {
     result.lo = { value: a.term.value, strict: false };
@@ -695,6 +703,56 @@ function collectBoundsFromPhi(phi: Phi, id: string, acc: NumBounds): void {
   const conjs = phi.op === "and" ? phi.args : [phi];
   for (const p of conjs) {
     noteBoundFromRel(p, isTarget, acc);
+  }
+}
+
+/**
+ * 等值排除收紧端点（issue #170）：`ne(t, n)` 与已收端点同值时非严格界
+ * 变严格——`x !== 0` 守卫假臂 ∧ `x ≥ 0` ⇒ `x > 0`（`max === 0 ? 1 :
+ * 1 - d/max` 的分母正性由此供出；else 臂 Φ 经 falseConstraint 得
+ * ne(var, lit)）。端点不同值时区间减点不可表示 → 不动。ne(t, NaN) 是
+ * 非 NaN 事实而非端点排除（NaN 无序），跳过。
+ */
+function noteStrictExclusion(p: Pred, isTarget: (t: Term) => boolean, acc: NumBounds): void {
+  if (p.op !== "ne") return;
+  const num = exclusionLitOf(p, isTarget);
+  if (num === undefined) return;
+  if (acc.lo !== undefined && acc.lo.value === num && !acc.lo.strict) {
+    acc.lo = { value: num, strict: true };
+  }
+  if (acc.hi !== undefined && acc.hi.value === num && !acc.hi.strict) {
+    acc.hi = { value: num, strict: true };
+  }
+}
+
+/** ne 原子中面向 target 的数值字面量（两侧对称；NaN 排除） */
+function exclusionLitOf(p: Pred & { op: "ne" }, isTarget: (t: Term) => boolean): number | undefined {
+  if (isTarget(p.a) && p.b.op === "lit" && typeof p.b.value === "number" && !Number.isNaN(p.b.value)) {
+    return p.b.value;
+  }
+  if (isTarget(p.b) && p.a.op === "lit" && typeof p.a.value === "number" && !Number.isNaN(p.a.value)) {
+    return p.a.value;
+  }
+  return undefined;
+}
+
+function collectExclusionsFromPred(pred: Pred, term: Term, acc: NumBounds): void {
+  const isTarget = (t: Term): boolean => termToString(t) === termToString(term);
+  const apply = (p: Pred): void => {
+    if (p.op === "and") {
+      p.args.forEach(apply);
+      return;
+    }
+    noteStrictExclusion(p, isTarget, acc);
+  };
+  apply(pred);
+}
+
+function collectExclusionsFromPhi(phi: Phi, id: string, acc: NumBounds): void {
+  const isTarget = (t: Term): boolean => t.op === "var" && t.id === id;
+  const conjs = phi.op === "and" ? phi.args : [phi];
+  for (const p of conjs) {
+    noteStrictExclusion(p, isTarget, acc);
   }
 }
 
@@ -966,6 +1024,19 @@ export function div(a: Abs, b: Abs, phi: Phi = pTrue, assume?: Phi): Abs {
     }
     return numLit(va / vb);
   }
+  // issue #170：`0 / x`（+0 字面量分子，x 可证非零且非 NaN）= +0。
+  // 叉积 sum 的字面量 0 臂（`d = cond ? 0 : …; d / max`）无项可匹配
+  // assume 引理 / 单调性界，join 后污染整体上界；分母界一旦排除 0
+  // （端点严格或整体在同号半轴）即可字面量折叠。界存在本身排除 NaN
+  // （比较 pred 对 NaN 全假）；-0 分子不折（-0/x = -0，lit 归一化会丢负零）。
+  if (va === 0 && !Object.is(va, -0)) {
+    const bb = numericBounds(b, phi);
+    const excludesZero =
+      bb !== undefined &&
+      ((bb.lo !== undefined && (bb.lo.value > 0 || (bb.lo.value === 0 && bb.lo.strict))) ||
+        (bb.hi !== undefined && (bb.hi.value < 0 || (bb.hi.value === 0 && bb.hi.strict))));
+    if (excludesZero) return numLit(0);
+  }
   if (ra.ok && rb.ok && coercibleLit(ra.value) && coercibleLit(rb.value)) {
     return numLit(Number(va) / Number(vb));
   }
@@ -1123,8 +1194,10 @@ export function cmp(
   phi: Phi = pTrue,
 ): Abs {
   // Bug 25：内建 brand ToPrimitive（hint number：关系比较先 valueOf——
-  // `new Date(0) < new Date(1)` → time value 比较，total）
-  {
+  // `new Date(0) < new Date(1)` → time value 比较，total）。
+  // eq/ne **不走**此块：=== 无强制转换（`new Number(5) === 5` 原生 false，
+  // 解箱比较会折假 true——#170 $eq 符号化后 eq 路径可达，此门必须先于解箱）。
+  if (op !== "eq" && op !== "ne") {
     const fa = builtinBrandToPrimitive(a, "number");
     const fb = builtinBrandToPrimitive(b, "number");
     if (fa || fb) return cmp(op, fa ?? a, fb ?? b, phi);

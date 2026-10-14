@@ -111,6 +111,25 @@ export function $assumeAnchor(v: unknown, name: string): unknown {
     typeof a !== "object" || a === null || a.term === undefined ||
     a.term.op === "lit" || (a.term.op === "var" && a.term.id === name)
   ) {
+    // issue #170：fork 合并产物（sum）无根 term，但**成员**各自有项——
+    // 局部量 d = callee() 的 callee 体含条件分支时，d 是 sum(0, Math.max(…))
+    // 一类形态，引理 le(d,max) 因项不匹配永远不折。改名下钻成员：每个
+    // 成员在该臂上就是 d 的值（前提对 d 的全部取值成立 ⇒ 按成员应用
+    // sound）；成员 pred 关于自身 term 的事实随改名同锚（该臂上成员值
+    // 即 d，事实等价迁移）。lit 成员自足身份不动；无 term 成员无从改。
+    if (a && typeof a === "object" && a.shape?.k === "sum") {
+      const members = (a.shape as { k: "sum"; members: Abs[] }).members.map((m) => {
+        if (
+          m.term === undefined || m.term.op === "lit" ||
+          (m.term.op === "var" && m.term.id === name)
+        ) {
+          return m;
+        }
+        const nt: Term = { op: "var", id: name };
+        return { ...m, term: nt, pred: rewritePred(m.pred, m.term, nt) };
+      });
+      return { ...a, shape: { ...(a.shape as object), members } } as Abs;
+    }
     return v;
   }
   const nt: Term = { op: "var", id: name };
@@ -207,12 +226,20 @@ export function $not(a: Abs): Abs {
 }
 export function $eq(a: Abs, b: Abs): Abs {
   const r = strictEqAbs(a, b);
-  return r === undefined ? bool() : boolLit(r);
+  if (r !== undefined) return boolLit(r);
+  // issue #170：不可判定时走符号面（cmp 构造 eq pred 挂 boolean）——
+  // `$fork` 才能把 eq/ne 事实压进臂 Φ（`max === 0 ? 1 : 1 - d/max`
+  // 的假臂 ne(max,0) 由此供出，numericBounds 折 ne∧ge ⇒ gt）。
+  // 此前裸 bool() 丢弃全部等值信息，守卫分支无法收窄。
+  return cmp("eq", a, b, currentExecPhi());
 }
 export function $ne(a: Abs, b: Abs): Abs {
   const r = strictEqAbs(a, b);
-  return r === undefined ? bool() : boolLit(!r);
+  if (r !== undefined) return boolLit(!r);
+  // 同 $eq（issue #170）：符号 ne pred（真臂直接得 ne 事实）
+  return cmp("ne", a, b, currentExecPhi());
 }
+
 /** `==` / `!=`（C2.3）：双字面量 Abstract Equality，否则回落严格判定 */
 export function $eqLoose(a: Abs, b: Abs): Abs {
   const r = looseEqAbs(a, b);
