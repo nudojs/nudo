@@ -14,14 +14,14 @@ import {
   evalNamespaceCall, extStateOf, getPropFlags, migrateInvariants,
   isObjectProtoBrand, OBJECT_PROTO_METHOD_NAMES, isSymbolAbs,
   symbolDescriptionAbs, objectProtoBrand, builtinCtorAbs, ctorNameOfRecv,
-  protoOfRecv, hostBuiltinCtorName,
+  protoOfRecv, hostBuiltinCtorName, protoBrandAbs,
 } from "../../builtins.ts";
 import { errorTypeAbs, recordMayThrow, type MayThrowEffect } from "../may-throw.ts";
 import { TYPED_ARRAY_ELEMENT } from "../../builtins/shared.ts";
 import { OBJECT_PROTO_NAMES, ARRAY_PROTO_METHOD_NAMES } from "../member-diag.ts";
 import { $call } from "../call.ts";
 import { proxyPartsOf, proxyTrapOf } from "../match-iter.ts";
-import { getEvalClass, lookupClassValue, BUILTIN_ERROR_SUPER } from "../class-registry.ts";
+import { getEvalClass, lookupClassValue, BUILTIN_ERROR_SUPER, fnProtoOf } from "../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../class-mark.ts";
 import { NudoThrow, noBody, undef, throwStrictWrite, writeInPlace, clearStaleTermPred, asAbsVal, isDefinitelyTrue, isDefinitelyFalse, currentExecPhi, $lit, litTruth } from "./state.ts";
 import { $typeof, $eq, $ne } from "./ops.ts";
@@ -400,16 +400,32 @@ export function evalClassChain(name: string): string[] {
   return out;
 }
 
+/** P3a：NAMESPACE_GLOBALS 路由表内、hostBuiltinCtorName 名单外的可扩展
+ *  宿主类（Bug 24/40/56 入表但 N2 名单未跟进）：URL / ArrayBuffer /
+ *  SharedArrayBuffer / DataView / WeakRef / FinalizationRegistry。
+ *  extends 这些父类时 superBuiltinHost 同样放行——静态读（typeof
+ *  AB.isView → "function" / 缺席键折 undefined）与白名单调用走宿主
+ *  通道；构造面（new AB(8)）经 constructClass 的 evalBuiltinNew 路由。
+ *  Set 成员按值恒等 + 名字配对（与 TYPED_ARRAY_ELEMENT 家族同校验）。 */
+const NAMESPACE_ONLY_HOST_CTORS = new Set<unknown>([
+  URL,
+  ArrayBuffer,
+  SharedArrayBuffer,
+  DataView,
+  WeakRef,
+  FinalizationRegistry,
+]);
+
 /** N2：名 → 宿主内建构造器（globalThis 面 + 身份校验；hostBuiltinCtorName
- *  名单 + TYPED_ARRAY_ELEMENT 家族）。NAMESPACE_GLOBALS-only 名（URL /
- *  ArrayBuffer / …）不在面内 → undefined（调用方 sound 降级，不折缺席）。
- *  $class 的 superBuiltinHost 标记用「名 → 宿主值恒等」校验 extends 目标
+ *  名单 + TYPED_ARRAY_ELEMENT 家族 + P3a 表内可扩展类）。$class 的
+ *  superBuiltinHost 标记用「名 → 宿主值恒等」校验 extends 目标
  *  是真实内建（mock 同名 fn 不匹配）。 */
 export function hostBuiltinCtorOf(name: string): unknown {
   const v = (globalThis as Record<string, unknown>)[name];
   if (typeof v !== "function") return undefined;
   if (hostBuiltinCtorName(v) === name) return v;
   if (name in TYPED_ARRAY_ELEMENT && (v as { name?: unknown }).name === name) return v;
+  if (NAMESPACE_ONLY_HOST_CTORS.has(v) && (v as { name?: unknown }).name === name) return v;
   return undefined;
 }
 
@@ -434,6 +450,49 @@ export function builtinSuperCtorOf(startName: string): { host: unknown; ns: stri
     return undefined;
   }
   return undefined;
+}
+
+/**
+ * P3b：原型链数据槽读（`X.prototype.k` / 实例 `.k` 经 extends 链）——原生
+ * 派生类原型 [[Prototype]] 通父原型，数据属性沿链可见。逐级取链名原型：
+ * 注册类 → protoBrandAbs(n) 内层槽（原地可变——`A.prototype.x = 1` 落
+ * memo 对象）；fn 伪父 → fnProtoOf(类值) 槽。constructor / __proto__ 不
+ * 在此列（专用分支）。未注册链名（洞）跳过——缺席折叠由调用方按
+ * classChainHasHole 决定（洞 → 不可折缺席）。
+ */
+export function chainProtoSlotOf(startName: string, key: string, fromLevel: number): Abs | undefined {
+  if (key === "constructor" || key === "__proto__") return undefined;
+  const chain = evalClassChain(startName);
+  for (let i = fromLevel; i < chain.length; i++) {
+    const n = chain[i]!;
+    const cv = lookupClassValue(n);
+    let protoInner: Abs | undefined;
+    if (cv && cv.shape.k === "fn") {
+      protoInner = fnProtoOf(cv); // fn 伪父：memo prototype 本体（闭 obj）
+    } else if (getEvalClass(n)) {
+      const pb = protoBrandAbs(n).shape;
+      protoInner = pb.k === "brand" ? pb.shape : undefined;
+    } else {
+      continue; // 链洞 / 内建未注册名：调用方按 hole 语义处理
+    }
+    if (protoInner && protoInner.shape.k === "obj") {
+      const slot = getSlot(protoInner.shape.slots, key);
+      if (slot && !slot.optional) return slot.value;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * P3b：链上是否有 fn 伪父（构造器体不透明——super() 不执行 fn 体，
+ * 实例自有面不可判）→ 实例缺槽不可折 undefined（sound unknown）。
+ */
+export function chainHasOpaqueFnParent(startName: string): boolean {
+  for (const n of evalClassChain(startName)) {
+    const cv = lookupClassValue(n);
+    if (cv && cv.shape.k === "fn") return true;
+  }
+  return false;
 }
 
 /**
@@ -650,6 +709,16 @@ export function $instanceof(left: Abs, rightName: string, rightVal?: Abs): Abs {
       if (left.shape.name.endsWith(".prototype")) {
         const owner = left.shape.name.slice(0, -".prototype".length);
         if (getEvalClass(owner)?.superNull) return boolLit(false);
+      }
+      // P3b：fn 值父类（函数表达式 extends）——链名是伪名（__nudoFnParentN），
+      // rightName 不命中；按注册类值**身份**匹配（lookupClassValue(链名) ===
+      // rightVal → 同一父构造器值）折 true（与名匹配同一名键假设，last-wins
+      // 语义一致）。身份不匹配不折（落 boolean）。
+      if (rightVal !== undefined) {
+        const rv = asAbsVal(rightVal);
+        for (const n of evalClassChain(left.shape.name)) {
+          if (lookupClassValue(n) === rv) return boolLit(true);
+        }
       }
       return boolLit(
         rightName === "Object" || evalClassChain(left.shape.name).includes(rightName),

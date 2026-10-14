@@ -7,7 +7,7 @@ import type { Abs } from "../abs.ts";
 import { abs, unknown, confJoin, litValue, bool, boolLit, str, strLit, numLit } from "../abs.ts";
 import { objOf, joinAbs, isObj, canonicalArrayIndex, getSlot, setSlot, propertyKeyOf, getProtoAbs, isNullProtoObj } from "../objects.ts";
 import { markFreshInstance } from "../instance-id.ts";
-import { findClassAccessor, findStaticClassAccessor, TYPED_ARRAY_CALLBACK_METHODS, builtinSuperCtorOf, hostBuiltinCtorOf } from "./runtime/members.ts";
+import { findClassAccessor, findStaticClassAccessor, TYPED_ARRAY_CALLBACK_METHODS, builtinSuperCtorOf, hostBuiltinCtorOf, brandHasProtoMember, evalClassChain, classChainHasHole } from "./runtime/members.ts";
 import { OBJECT_PROTO_METHOD_NAMES, objectProtoMethodAbs, builtinCtorAbs, protoOfRecv } from "../builtins.ts";
 import { typedArrayElementOf } from "../builtins/shared.ts";
 import { $get, $set, $lit, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary, lookupObjAccessor, clearStaleTermPred } from "./runtime.ts";
@@ -56,9 +56,11 @@ import { callAbsMethod, toIntegerOrInfinityLit } from "../methods.ts";
 import {
   registerEvalClass,
   registerClassValue,
+  lookupClassValue,
   markClassValue,
   classNameOfValue,
   getEvalClass,
+  ensureFnParentName,
   type EvalClassSpec,
 } from "./class-registry.ts";
 
@@ -112,7 +114,11 @@ export function $class(
             cause: `class extends ${s.k} function value (may not be a constructor)`,
           });
         }
-        superName = s.name;
+        // P3b：fn 值父类——匿名/别名函数表达式（`const Base = function(){}`）
+        // 无 shape.name，此前 superName 断链（静态/原型/构造全丢）。合成伪
+        // 父名（按 fn Abs 驻留）注册空 spec + 类值映射——链/槽/原型投影全
+        // 可解；伪名不与用户类名/内建名碰撞。
+        superName = ensureFnParentName(extVal as Abs);
       } else if (isNullishLitAbs(extVal as Abs)) {
         const lv = litValue(extVal as Abs);
         if (lv.ok && lv.value === null) superNull = true;
@@ -154,6 +160,8 @@ export function $class(
       ? { superBuiltinHost: true }
       : {}),
     ctor: spec.ctor,
+    // P2b：构造器元数通道（未记录 → 不挂键，$get 折 unknown）
+    ...(spec.ctorLength !== undefined ? { ctorLength: spec.ctorLength } : {}),
     methods: spec.methods,
     methodParams: spec.methodParams,
     staticMethods: spec.staticMethods,
@@ -316,6 +324,40 @@ function findStaticMethod(
 }
 
 /**
+ * P4a：类值链（含自有层）是否注册/落槽了该静态名——静态方法/静态访问器
+ * （spec 表）+ 静态字段（statics 表，自有层也认）+ 类值自有槽（声明静态
+ * 字段的求值产物 + 动态写 C.q = v）。与 classValueHasStatic（`"m" in C`
+ * presence，祖先槽面）互补：此处面向「实例接收者调静态独占成员」的
+ * static-only 证明，自有层 statics/槽都必须在场。
+ */
+function chainHasStaticMember(startName: string, key: string): boolean {
+  for (const n of evalClassChain(startName)) {
+    const spec = getEvalClass(n);
+    if (spec?.staticMethods?.[key] || spec?.staticAccessors?.[key]) return true;
+    if (spec?.statics && key in spec.statics) return true;
+    const cv = lookupClassValue(n);
+    const inner = cv && cv.shape.k === "brand" ? (cv.shape as { shape?: Abs }).shape : undefined;
+    if (inner?.shape.k === "obj" && getSlot(inner.shape.slots, key)) return true;
+  }
+  return false;
+}
+
+/**
+ * P4a：实例**自有**面是否可能有该成员——接收者内层闭槽（ctor
+ * `this.m = fn` 写入 / 字段落地的承载者，Bug 84）或链上同名实例字段
+ * （instanceFields：字段值可能是可调用，每次构造必然落地）。命中即不抛
+ * （成员可能在场，调用合法性交给通用派发面）。
+ */
+function instanceOwnFaceHasMember(recv: Abs, brandName: string, key: string): boolean {
+  const s = recv.shape;
+  const inner = s.k === "brand" ? s.shape : undefined;
+  if (inner?.shape.k === "obj" && getSlot(inner.shape.slots, key)) return true;
+  return evalClassChain(brandName).some((n) =>
+    getEvalClass(n)?.instanceFields?.some((f) => f.name === key),
+  );
+}
+
+/**
  * Bug 59：实例字段落地——以 thisVal 为 this 按源序求值（原生
  * InitializeInstanceElements：基类 ctor 体前 / super() 返回后）。
  * $set 对 brand 实例就地写槽，每构造一个新实例各自持有字段。
@@ -370,6 +412,27 @@ function constructClass(className: string, thisVal: Abs, args: Abs[]): Abs {
         eb.pred,
         eb.conf,
       );
+    }
+    // P3a：N2 名单外的宿主内建父（URL/ArrayBuffer/SAB/DataView/WeakRef/
+    // FCR——hostBuiltinCtorOf 路由表内可扩展类）：实例按 evalBuiltinNew
+    // 建模（new AB(8).byteLength → 8；URL href 槽、TA 家族同面），内建
+    // 自有槽嫁接到**被构造 brand 名**上（与 Error 家族同构——instanceof
+    // 沿 evalClassChain(AB) 命中 ArrayBuffer，brand 名不换）。未建模名 /
+    // $new 直达面维持原样 thisVal（$new 宿主分支自有建模范）。
+    if (hostBuiltinCtorOf(className) !== undefined) {
+      const built = evalBuiltinNew(className, args);
+      if (built !== undefined) {
+        // 非 brand 产物（Array ctor 的数组 / Promise 的 eff 面）原生就是
+        // 第一形态值，直接返回；brand 产物嫁接内建槽到被构造 brand 名。
+        if (built.shape.k !== "brand") return built;
+        const instName = thisVal.shape.k === "brand" ? thisVal.shape.name : className;
+        return abs(
+          { k: "brand", name: instName, shape: built.shape.shape },
+          built.term,
+          built.pred,
+          built.conf,
+        );
+      }
     }
     return thisVal;
   }
@@ -615,7 +678,10 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }
       if (fs.ctor === true) {
-        const instName = fs.name ?? "Anonymous";
+        // P3b：匿名函数表达式构造器——实例 brand 用伪父名（ensureFnParentName
+        // 注册链键），`new Base().x` 沿 memo prototype 折精确、instanceof /
+        // constructor 同链可解；有名 fn（Named NFE）保持声明名。
+        const instName = fs.name ?? ensureFnParentName(cls as Abs);
         // Bug 16：可构造 fn Abs（$fnVal 函数表达式值等）按 [[Construct]]
         // 执行体——apply 钩子承接 Abs thisVal（非 bindThis 的 thisArg 传入），
         // 返回 Abs 对象优先、undefined/原始值忽略（基类语义）
@@ -1229,6 +1295,31 @@ function $invokeInner(
           return $call(prop, args, thisVal);
         }
       }
+    }
+    // P4a：实例接收者 + 类注册面证明成员 STATIC-ONLY——实例的
+    // [[Prototype]] 是 X.prototype（静态成员不在其链上），`c.m()` 原生
+    // c.m === undefined → 调用确定 TypeError（N2 曾折 unknown 的精确化）。
+    // 全部条件满足才抛，缺一即保守落通用诊断面：
+    // - 接收者是实例（类值标记 ≠ brand——类值接收者走上方静态派发）；
+    // - 实例继承链完整（classChainHasHole：extends 未注册父的原型面不可
+    //   判定）；
+    // - 实例面缺席：链上无方法/访问器/内建 brand 成员（brandHasProtoMember，
+    //   findMethod 已 miss 是其子集）、无同名实例字段（instanceFields——
+    //   字段值可能是函数）、接收者无自有槽（ctor `this.m = fn` 写入的
+    //   承载者）；
+    // - 非 Object.prototype 名（c.toString() 原生沿 OP 链恒可得，不得抛）；
+    // - 静态面在场（chainHasStaticMember）——static-only 证明。这同时是
+    //   保守门：内建 brand 的未建模真实原型方法（BUILTIN_BRAND_METHODS
+    //   非全列）名不在任何静态面上，不会误抛。
+    if (
+      classNameOfValue(thisVal as object) !== brandName &&
+      !classChainHasHole(brandName) &&
+      !brandHasProtoMember(brandName, method) &&
+      !OBJECT_PROTO_NAMES.has(method) &&
+      !instanceOwnFaceHasMember(thisVal, brandName, method) &&
+      chainHasStaticMember(brandName, method)
+    ) {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
     }
   }
   // bigint 字面量：toString(radix)/valueOf 精确折叠——字面量实参真执行，

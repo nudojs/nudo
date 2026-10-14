@@ -19,6 +19,7 @@ import {
   staticKeyOf,
   symbolKeyOf,
   paramDisplayNames,
+  nativeParamArity,
   computeConstScope,
   collectPatternNames,
   collectVarHoistNames,
@@ -159,6 +160,19 @@ export function transpileFnBodyStmts(
     // 函数体边界：重算提升集；keepVarDecl 只属于模块顶层 export var 的
     // 直接声明发射，不得泄漏进嵌套函数体（否则块内 var 误发块级 let）
     varOpts = { ...opts, hoistedVarNames: hoisted, keepVarDecl: undefined };
+    // P4b：函数边界参数遮蔽——继承的 constNames（外层 const / 类体不可变
+    // 自有名）被本函数参数模式名遮蔽时必须扣除：`function f(K) { K = 5 }`
+    // 外层 `const K` / 类名 K，体内写的是参数绑定（原生 no-throw），不得
+    // 假 TypeError（wrong-definite）。参数默认值表达式仍以 opts 求值
+    //（emitParamBinding 的 paramOpts 不减——默认式里写外层 const 原生照抛）。
+    if (opts.constNames && varScope.skip.size > 0) {
+      varOpts = {
+        ...varOpts,
+        constNames: new Set(
+          [...opts.constNames].filter((n) => !varScope!.skip.has(n)),
+        ),
+      };
+    }
   }
   // 本层 const 可见性（含父作用域、扣除本层 let/var 遮蔽）——用户再赋值 TypeError
   const scopedOpts: TranspileOptions = {
@@ -1208,9 +1222,20 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // 但注入到 catch 内 yield 的 .throw 不再被**本** catch 重新吸收
       //（native：catch 内 throw 直接穿出 try，经 finally 上抛）——只并
       // 外层 ctx + 本 finally 位（含 finalizer 静态事实）
+      // P4b：catch 参数遮蔽外层 const / 类体不可变自有名——体内写的是
+      // catch 绑定（let 语义，原生可再赋 no-throw），不得假 TypeError。
+      const catchShadow = new Set<string>();
+      if (stmt.handler?.param) collectPatternNames(stmt.handler.param, catchShadow);
       const catchOpts: TranspileOptions = {
         ...opts,
         yieldTryCtx: (opts.yieldTryCtx ?? 0) | finBits,
+        ...(opts.constNames && catchShadow.size > 0
+          ? {
+              constNames: new Set(
+                [...opts.constNames].filter((n) => !catchShadow.has(n)),
+              ),
+            }
+          : {}),
       };
       const transpileCatchBody = (d: number, o: TranspileOptions): string =>
         !stmt.handler
@@ -1681,6 +1706,8 @@ export function classSpecOf(
   /** 方法形参展示名（未调用方法槽 shape.params） */
   const methodParamEntries: Array<[string, string[]]> = [];
   const staticMethodParamEntries: Array<[string, string[]]> = [];
+  /** P2b：构造器元数（.length 自有属性）——隐式构造器（基类/派生）恒 0 */
+  let ctorLength = 0;
   const accessorDefs = new Map<string, { get?: string; set?: string }>();
   const staticAccessorDefs = new Map<string, { get?: string; set?: string }>();
   let ckSeq = 0;
@@ -1733,6 +1760,19 @@ export function classSpecOf(
       return id?.type === "Identifier" && id.name ? id.name : "_";
     });
 
+  // P4b：类体词法绑定是**不可变**绑定（ClassDefinitionEvaluation 对自有名
+  // CreateImmutableBinding——体内/静态块/字段初始化器里 `C = v` 原生
+  // TypeError）。经 constNames 复用 const 赋值通道（$throwConstAssign）。
+  // 只作用于类体成员 opts；外层绑定保持可再绑（ClassDeclaration
+  // IsConstantDeclaration = false，`class C {}; C = 5` 原生合法 no-throw）。
+  // 静态字段 thunk 发射的 `let C = __this`（N4）保持 let：`C.q = v` 成员写
+  // 经 memberPathOf 根重绑是裸 JS 赋值，不走 constNames，不受影响。
+  // 匿名类无自有名绑定——不引入。
+  const selfConstNames = stmt.id?.name
+    ? opts.constNames
+      ? new Set([...opts.constNames, stmt.id.name])
+      : new Set([stmt.id.name])
+    : opts.constNames;
   const methodOptsBase: TranspileOptions = {
     ...opts,
     inLoop: 0,
@@ -1742,6 +1782,7 @@ export function classSpecOf(
     inFunction: true,
     thisParam: "__this",
     className: name,
+    constNames: selfConstNames,
     // Bug 52：方法体是新生成器边界——外层 try 不覆盖体内 yield
     yieldTryCtx: 0,
   };
@@ -1782,9 +1823,11 @@ export function classSpecOf(
         // 名类在 thunk 顶部引入同名 let 绑定（值 = 类值 __this）复刻该词法
         // 绑定：内层参数/具名函数遮蔽、闭包捕获、内嵌类引用外层类名沿生成
         // 代码词法链免费对齐。用 let 不用 const——`C.q = v` 成员写经
-        // memberPathOf 根重绑（C = $set(C,…)）不得假 TypeError（原生允许）；
-        // 代价是 `C = v` 名字重绑静默通过（原生 TypeError）= 向 sound 侧
-        // 过近似（与模块级 let C 同口径）。匿名类表达式（无自有名）不引入
+        // memberPathOf 根重绑（C = $set(C,…)）是裸 JS 赋值不得假 TypeError
+        // （原生允许）。P4b：`C = v` 名字重绑的 TypeError 由 fieldOpts 的
+        // constNames（methodOptsBase 注入类体不可变自有名）在 transpile 层
+        // 折 $throwConstAssign——宿主 let 只服务内部根重绑，用户层直写不再
+        // 静默通过。匿名类表达式（无自有名）不引入
         // 绑定：外层名引用保持自由，TDZ 面与原生一致。计算键不在类体绑定
         // 作用域内（原生求值于绑定初始化前，引用类名原生亦 TDZ）——保持
         // 裸表达式。静态块/静态方法体求值于类绑定赋值后，无需处理。
@@ -1856,6 +1899,8 @@ export function classSpecOf(
         inFunction: true,
         thisParam: "__this",
         className: name,
+        // P4b：访问器体同在类体不可变自有名绑定作用域内（methodOptsBase 同口径）
+        constNames: selfConstNames,
         // Bug 14：静态访问器体 super 接收者 = 父类构造器
         ...(m.static && superSrc !== null ? { staticSuperSrc: superSrc } : {}),
       };
@@ -1976,6 +2021,8 @@ export function classSpecOf(
       continue;
     }
     if (isCtor) {
+      // P2b：.length = 首个默认值/rest 形参前的形参数（Bug 69 同口径）
+      ctorLength = nativeParamArity(m.params);
       ctorParts.push(
         `${indent(depth + 2)}ctor: (__this, ${bindFromArgs ? "...__margs" : paramList}) => {`,
         bodyStmts,
@@ -2005,6 +2052,8 @@ export function classSpecOf(
   }
 
   const specLines: string[] = [];
+  // P2b：始终发射（隐式构造器 0）——手写 spec（mock 等）不发射 → unknown
+  specLines.push(`${indent(depth + 2)}ctorLength: ${ctorLength},`);
   if (superClassNode) {
     // 活引用而非名字字符串：class B extends A {} 在 A 声明前求值时
     // 触发 let TDZ ReferenceError（原生语义）；宿主全局（extends Map）按名解析。

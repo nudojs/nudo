@@ -674,10 +674,18 @@ export function strictEqAbs(a: Abs, b: Abs): boolean | undefined {
   // 实例 brand ⊗ 类值 brand：实例（无 ctor facet）永不是构造器值
   // （$class 类值带 ctor: true facet）——跨 facet 比较直接折 false
   // （new C() === C / new D() === C 均原生 false）。
+  // P3b：同为类值时不同类名必不同值（registry 裸名键：同名 last-wins
+  // 同一 Abs，上方同引用已折 true）——B.prototype.constructor === A /
+  // B === Base（fn 伪父）折 false exact。
   if (a.shape.k === "brand" && b.shape.k === "brand") {
     const aCtor = a.shape.ctor === true;
     const bCtor = b.shape.ctor === true;
     if (aCtor !== bCtor) return false;
+    if (aCtor && bCtor) {
+      const an = classNameOfValue(a);
+      const bn = classNameOfValue(b);
+      if (an !== undefined && bn !== undefined && an !== bn) return false;
+    }
   }
   // 新鲜实例身份（R2b）：两个不同创建事件产出的对象值（async 调用 /
   // Promise.resolve 各自的 promise、生成器/迭代器对象、new 实例、字面量

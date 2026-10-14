@@ -4,6 +4,7 @@
  */
 
 import type { Abs } from "../abs.ts";
+import { abs } from "../abs.ts";
 import { markClassValue, classNameOfValue } from "../class-mark.ts";
 
 // 类值身份标记在 class-mark.ts（algebra 叶子）；此处 re-export 维持既有 import 面
@@ -38,6 +39,13 @@ export type EvalClassSpec = {
   staticMethods?: Record<string, (thisVal: Abs, ...args: Abs[]) => Abs>;
   /** 静态方法形参展示名 */
   staticMethodParams?: Record<string, string[]>;
+  /**
+   * P2b：构造器元数（首个默认值/rest 形参前的形参数，nativeParamArity
+   * 口径）——类值 .length 自有属性。隐式构造器（基类零参 / 派生
+   * `(...args){super(...args)}`）恒 0。transpile 期记录；未记录的手写
+   * spec（mock 等）undefined → $get 折诚实 unknown（不假 0）。
+   */
+  ctorLength?: number;
   /**
    * 静态字段：R5 起值可为 thunk（以类值为 this 求值——原生
    * ClassFieldDefinitionEvaluation 的 receiver 是类值；箭头/`this.x`
@@ -177,6 +185,48 @@ export function registerClassValue(name: string, value: Abs): void {
 
 export function lookupClassValue(name: string): Abs | undefined {
   return classValues.get(name);
+}
+
+// ---- P3b：fn 值父类身份（函数/类表达式值作 extends 目标） ------------------
+// 匿名函数表达式父类（`const Base = function(){}; class B extends Base {}`）
+// 无 shape.name 可作 superName 链键——N2 前直接断链。机制：按 fn Abs 驻留
+// 「伪父名」（WeakMap，同 fn 跨 $class 复用），名下注册空 spec（链可走）
+// + 类值映射（伪名 → fn Abs 本身——类值槽走 / protoOfRecv 父构造器投影
+// 取同一引用）。伪名唯一（不与用户类名/内建名碰撞，无 BUG-026 碰撞面）。
+
+const fnParentNames = new WeakMap<object, string>();
+let fnParentSeq = 0;
+
+/** fn Abs → 伪父名（不存在则合成并注册空 spec + 类值映射）。 */
+export function ensureFnParentName(fnAbs: Abs): string {
+  let n = fnParentNames.get(fnAbs);
+  if (n === undefined) {
+    n = `__nudoFnParent${++fnParentSeq}`;
+    fnParentNames.set(fnAbs, n);
+    registerEvalClass({ name: n });
+    registerClassValue(n, fnAbs);
+  }
+  return n;
+}
+
+/** fn Abs 的 prototype 对象（按 fn Abs 驻留；原地可变跨读存活——原生每
+ *  fn 唯一共享 prototype，`f.prototype === f.prototype` 恒真、
+ *  `Base.prototype.x = 1` 写后读可见）。constructor 槽指回 fn 自身
+ *  （MakeConstructor 语义）。 */
+const fnProtos = new WeakMap<object, Abs>();
+
+export function fnProtoOf(fnAbs: Abs): Abs {
+  let p = fnProtos.get(fnAbs);
+  if (p === undefined) {
+    p = abs(
+      { k: "obj", slots: { constructor: { value: fnAbs } } },
+      undefined,
+      undefined,
+      "path",
+    );
+    fnProtos.set(fnAbs, p);
+  }
+  return p;
 }
 
 /**

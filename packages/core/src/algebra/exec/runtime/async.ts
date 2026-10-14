@@ -54,21 +54,65 @@ export function wrapPromiseAbs(inner: Abs): Abs {
  * reason，Bug 36 口径——.catch/两参 then 的 onRejected 实参来源，handled
  * rejection 就地吸收；F2：此前 NudoThrow 直接穿透调用点，被 .catch 处理
  * 的拒绝也变成 caller throw）。宿主异常（引擎自身 bug）照抛。
+ *
+ * N5：体内任一 await 的 promise 带 unsettled 面（可能永不 settle）→ 函数
+ * 结果 promise 同带 unsettled（原生：悬挂的 await 使整函数悬挂——下游
+ * 不得折确定 settle / exact 值域声明）。
  */
+let awaitUnsettledHit = false;
+
 export function $async(thunk: () => Abs): Abs {
+  const saved = awaitUnsettledHit;
+  awaitUnsettledHit = false;
   try {
     const r = thunk();
     // async 体 return <promise>：原生递归采纳 thenable——体已折
     // eff("promise")（如 `return h()`）直接采纳（inner/拒绝通道随体），
     // 不得再包一层（假嵌套 promise<promise<…>>）
-    if (r.shape.k === "eff" && r.shape.eff === "promise") return r;
+    if (r.shape.k === "eff" && r.shape.eff === "promise") {
+      if (!awaitUnsettledHit) return r;
+      const sh = r.shape as {
+        k: "eff";
+        eff: "promise";
+        inner: Abs;
+        rejected?: Abs;
+        unsettled?: boolean;
+      };
+      if (sh.unsettled === true) return r;
+      return markFreshInstance(
+        abs(
+          {
+            k: "eff",
+            eff: "promise",
+            inner: sh.inner,
+            ...(sh.rejected !== undefined ? { rejected: sh.rejected } : {}),
+            unsettled: true,
+          },
+          undefined,
+          undefined,
+          r.conf,
+        ),
+      );
+    }
+    if (awaitUnsettledHit) {
+      return markFreshInstance(
+        abs({ k: "eff", eff: "promise", inner: r, unsettled: true }, undefined, undefined, confJoin(r.conf, "path")),
+      );
+    }
     return wrapPromiseAbs(r);
   } catch (e) {
     if (isNudoThrow(e)) {
-      // R2b：确定拒绝的 promise 同为新鲜实例（每次调用新对象）
+      // R2b：确定拒绝的 promise 同为新鲜实例（每次调用新对象）；体内还有
+      // 未 settle 的 await 路径 → 拒绝也不确定（悬挂面并存）
       return markFreshInstance(
         abs(
-          { k: "eff", eff: "promise", inner: never, rejected: e.absValue },
+          {
+            k: "eff",
+            eff: "promise",
+            inner: never,
+            rejected: e.absValue,
+            ...(awaitUnsettledHit ? { unsettled: true } : {}),
+          },
           undefined,
           undefined,
           "path",
@@ -76,6 +120,8 @@ export function $async(thunk: () => Abs): Abs {
       );
     }
     throw e;
+  } finally {
+    awaitUnsettledHit = saved;
   }
 }
 
@@ -85,10 +131,14 @@ export function $await(v: Abs): Abs {
   // throw）。不解包 never（否则 `await h(); return x` 折假精确 resolved 值
   // ——原生整链拒绝）；try/catch 内由既有 catch 机制吸收。
   if (v.shape.k === "eff" && v.shape.eff === "promise") {
-    const sh = v.shape as { inner: Abs; rejected?: Abs };
+    const sh = v.shape as { inner: Abs; rejected?: Abs; unsettled?: boolean };
     if (sh.inner.shape.k === "never" && sh.rejected !== undefined) {
+      // N5：拒绝路径 await throw，但悬挂路径原生不抛——面并入外层 async
+      if (sh.unsettled === true) awaitUnsettledHit = true;
       throw new NudoThrow(sh.rejected);
     }
+    // N5：值域保持 inner（产出时即该值），悬挂面记入外层 async 结果
+    if (sh.unsettled === true) awaitUnsettledHit = true;
     return sh.inner;
   }
   return v;

@@ -85,6 +85,11 @@ export function evalNamespaceCall(
     case "URL":
       // Bug 24：URL 静态面（canParse）
       return evalUrlStatic(method, args);
+    case "ArrayBuffer":
+      // P3a：ArrayBuffer.isView 纯谓词（N3 白名单静态；AB(8).slice 等实例
+      // 方法不经此）。extends ArrayBuffer 派生类的静态调用沿 N2 宿主通道
+      // 派发到此处。
+      return evalArrayBufferStatic(method, args);
     case "Map":
       // Bug 26：Map.groupBy（ES2024）—— Map 入 NAMESPACE_GLOBALS 后成员
       // 读经 $get 命中 ns 分派，此前无 case → 折 unknown（无校验/无投影）
@@ -206,6 +211,46 @@ function evalUrlStatic(method: string, args: Abs[]): Abs | undefined {
   } catch {
     return boolPrim();
   }
+}
+
+/**
+ * P3a：ArrayBuffer.isView(arg) —— 纯谓词（恒不抛）：DataView/TypedArray
+ * brand → true；ArrayBuffer/SharedArrayBuffer brand 与 prim/obj/arr/tuple/
+ * fn/eff 面 → false（确定非视图）；其余（any/unknown/sum/未知 brand——
+ * 可能是宿主视图值或 mock）→ boolean（不可判不折）。node 实测
+ * isView(new ArrayBuffer(4)) === false（视图仅 DV/TA）。
+ */
+function evalArrayBufferStatic(method: string, args: Abs[]): Abs | undefined {
+  if (method !== "isView") return undefined;
+  const a = args[0];
+  if (a && typeof a === "object" && "shape" in (a as object)) {
+    const s = (a as Abs).shape;
+    if (s.k === "brand") {
+      if (s.name === "DataView" || typedArrayElementOf(s.name) !== undefined) return boolLit(true);
+      if (
+        s.name === "ArrayBuffer" ||
+        s.name === "SharedArrayBuffer" ||
+        isErrorCtorName(s.name) ||
+        s.name === "Map" || s.name === "Set" || s.name === "WeakMap" ||
+        s.name === "WeakSet" || s.name === "Date" || s.name === "RegExp" ||
+        s.name === "Promise" || s.name === "URL" || s.name === "WeakRef" ||
+        s.name === "FinalizationRegistry"
+      ) {
+        return boolLit(false);
+      }
+      // 用户类实例 brand：构造面（constructClass/evalBuiltinNew）产出内建
+      // brand，用户 brand 理论上非视图——但 extends TA 的旧路径/mock 面
+      // 不可枚举，保持不可判。
+      return bool();
+    }
+    if (
+      s.k === "prim" || s.k === "obj" || s.k === "arr" || s.k === "tuple" ||
+      s.k === "fn" || s.k === "eff"
+    ) {
+      return boolLit(false);
+    }
+  }
+  return bool();
 }
 
 /** BigInt.asIntN / asUintN（wrap 到指定位宽） */

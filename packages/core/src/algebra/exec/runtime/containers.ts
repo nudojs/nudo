@@ -25,6 +25,7 @@ import {
   isObjectProtoBrand, OBJECT_PROTO_METHOD_NAMES, isSymbolAbs,
   symbolDescriptionAbs, objectProtoBrand, builtinCtorAbs, ctorNameOfRecv,
   protoBrandAbs, notePromiseExecutorFork, protoOfRecv, makeIntlCtorAbs,
+  enterPromiseForkArm, leavePromiseForkArm,
 } from "../../builtins.ts";
 import { arrayMethodAbs } from "../../builtins/array.ts";
 import { validateCallableArg, validateIndexArg, applyCallbackAbs } from "../../hof.ts";
@@ -39,9 +40,10 @@ import {
   SYMBOL_PROTO_METHODS,
   BIGINT_PROTO_METHODS,
   ARRAY_PROTO_METHOD_NAMES,
+  OBJECT_PROTO_NAMES,
 } from "../member-diag.ts";
 import { errorTypeAbs, recordMayThrow, type MayThrowEffect } from "../may-throw.ts";
-import { getEvalClass, classInstanceInnerOf, lookupClassValue } from "../class-registry.ts";
+import { getEvalClass, classInstanceInnerOf, lookupClassValue, fnProtoOf, type EvalClassSpec } from "../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../class-mark.ts";
 import { markFreshInstance } from "../../instance-id.ts";
 import {
@@ -50,7 +52,7 @@ import {
   isNudoReturn, isNudoBreak, isNudoContinue, $fnVal, $rawThis, noBody, confPartialPacked,
 } from "./state.ts";
 import { $unknown, $toNumber, $eq, $ne, $typeof, $add, $sub } from "./ops.ts";
-import { findClassAccessor, findStaticClassAccessor, $in, $instanceof, $del, BUILTIN_BRAND_METHODS, BUILTIN_BRAND_ACCESSORS, ITERABLE_BRANDS, evalClassChain, builtinSuperCtorOf } from "./members.ts";
+import { findClassAccessor, findStaticClassAccessor, $in, $instanceof, $del, BUILTIN_BRAND_METHODS, BUILTIN_BRAND_ACCESSORS, ITERABLE_BRANDS, evalClassChain, builtinSuperCtorOf, chainProtoSlotOf, classChainHasHole, chainHasOpaqueFnParent } from "./members.ts";
 import { lookupObjAccessor, migrateAccessors, $objAccessor, accessorTable } from "../../accessors.ts";
 import { copyMatchIterTables } from "../match-iter.ts";
 import { DEFAULT_MAX_LOOP_ITERS, MAX_CONCRETE_LOOP_ITERS, LOOP_TRUNCATION_LABEL } from "./loop-budget.ts";
@@ -1296,6 +1298,15 @@ export function $len(a: Abs, opts?: { silent?: boolean }): Abs {
   if (a.shape.k === "brand" && a.shape.name === "RegExpMatchIterator") {
     return undef();
   }
+  // P2b：类值 length = 构造器元数——委托 $get 品牌面一处口径（自有静态
+  // length 槽 → 静态访问器 → 链上恰名 length 的静态方法/祖先槽 → 元数
+  // （transpile ctorLength 通道，隐式 ctor 恒 0；未记录 → unknown 不假 0））。
+  // `.length` 成员读编译为 $len（TypedArray 槽同款注释位），计算键
+  // C["length"] 直接走 $get 同臂；内建构造器 brand（Array 等）无注册
+  // spec → unknown（与改前 $len 尾 unknown 同值）。
+  if (a.shape.k === "brand" && classNameOfValue(a as object) === a.shape.name) {
+    return $get(a, "length", opts);
+  }
   return unknown;
 }
 
@@ -2053,7 +2064,12 @@ export function $forOf(
   // 反复深拷贝把分析拖死）；0 次出口由下方 snapExit join，保持 sound。
   const unbounded = knownLen === undefined;
 
-  if (unbounded) snapExit();
+  // N5：0 次出口臂（空容器/首元素前退出——同迭代后出口路径）
+  if (unbounded) {
+    enterPromiseForkArm();
+    leavePromiseForkArm();
+    snapExit();
+  }
 
   // 具体迭代空间（tuple / 字符串 code points / Set·Map 精确条目数）：展开到
   // 具体硬上限——maxIters 截断具体迭代会产出错误 #exact（countChars 对
@@ -2073,6 +2089,9 @@ export function $forOf(
   for (let i = 0; i < n; i++) {
     const item =
       items.length > 0 ? items[Math.min(i, items.length - 1)]! : unknown;
+    // N5：unbounded（长度未知，可能空）迭代 = 条件路径：体臂 + 出口臂
+    //（空容器路径直达循环后——无 post-loop settle 覆盖则悬挂）
+    if (unbounded) enterPromiseForkArm();
     try {
       body(
         item,
@@ -2100,10 +2119,22 @@ export function $forOf(
       }
       if (isNudoReturn(e) || isNudoThrow(e)) throw e;
       throw e;
+    } finally {
+      if (unbounded) leavePromiseForkArm();
     }
-    if (unbounded) snapExit();
+    if (unbounded) {
+      // N5：出口臂（本迭代后退出——代表迭代之后的元素路径直达循环后）
+      enterPromiseForkArm();
+      leavePromiseForkArm();
+      snapExit();
+    }
   }
-  if (unbounded && n === 0) snapExit();
+  if (unbounded && n === 0) {
+    // N5：0 次出口臂（空容器路径）
+    enterPromiseForkArm();
+    leavePromiseForkArm();
+    snapExit();
+  }
   if (concreteOverrun) {
     noteLoopTruncation(LOOP_TRUNCATION_LABEL);
     if (pack && unpack) unpack(confPartialPacked(pack()));
@@ -2275,6 +2306,37 @@ export function setProtoMethodDispatch(
   protoMethodDispatch = d;
 }
 
+/** P2a：类方法一等值驻留侧表——按（定义类 spec, kind, 成员键）驻留。
+ *  原生：静态方法挂**定义类**构造器、实例方法挂定义类 .prototype——
+ *  `B.m` 与 `A.m`（空派生类沿静态链解析到 A 的同一 spec 条目）是同一
+ *  函数对象（=== true）；不同键 / 覆盖（不同定义类）是不同对象（=== false）。
+ *  kind 前缀区分同名静态/实例方法（`A.m === new A().m` 原生 false）。
+ *  按定义 spec 对象弱键驻留（protoBrandAbs 按名驻留 / instance-id 侧表
+ *  同款思路）：同名类跨 run last-wins 重注册换新 spec 对象，驻留随旧 spec
+ *  回收失效，不串旧值。驻留值打 fresh-instance id——两个不同驻留条目
+ *  （A.m vs A.n / 覆盖 B.m vs A.m）原生必不同引用 → strictEqAbs 折 false；
+ *  同条目重复读返回同一 Abs 引用 → 同 ref 臂折 true。 */
+const classMethodValues = new WeakMap<EvalClassSpec, Map<string, Abs>>();
+
+function classMethodValueAbs(
+  spec: EvalClassSpec,
+  kind: "static" | "inst",
+  key: string,
+  params: string[] | undefined,
+): Abs {
+  let byKey = classMethodValues.get(spec);
+  if (!byKey) {
+    byKey = new Map();
+    classMethodValues.set(spec, byKey);
+  }
+  const memoKey = `${kind}:${key}`;
+  const cached = byKey.get(memoKey);
+  if (cached) return cached;
+  const fn = markFreshInstance(absFunction(params ?? [], { body: noBody }, { ctor: false }));
+  byKey.set(memoKey, fn);
+  return fn;
+}
+
 export function protoMethodValueAbs(home: string, name: string): Abs {
   return absFunction([], {
     body: noBody,
@@ -2414,6 +2476,13 @@ export function $get(
       if (protoMethods?.has(key)) {
         return protoMethodValueAbs(ctorName, key);
       }
+      // P3b：constructor → 注册类值优先（B.prototype.constructor === B 折
+      // exact——protoBrandAbs 的 constructor 槽是 builtinCtorAbs 名义面，
+      // 与 $class 类值不同引用）。类值/内建名未注册 → 沿旧口径。
+      if (key === "constructor") {
+        const cv = lookupClassValue(ctorName);
+        if (cv) return cv;
+      }
     }
     const isClassVal = classNameOfValue(o as object) === o.shape.name;
     // 内建 brand 原型方法读取（typeof m.forEach / m[Symbol.iterator]）：
@@ -2440,24 +2509,42 @@ export function $get(
       const slot = getSlot(inner.shape.slots, key);
       if (slot && !slot.optional) return slot.value;
     }
+    // P3b：原型品牌的祖先数据槽（B.prototype.x ← Base/A.prototype.x）——
+    // own 槽（上）后沿链原型对象读槽（注册类 protoBrand / fn 伪父 memo
+    // prototype）。链洞（未注册父名）→ 缺席不可折（sound unknown；此前
+    // 闭 obj miss 折 undefined 是 wrong-exact）。Object.prototype 成员
+    // （hasOwnProperty/toString/…）恒经下方通用投影解析——不折 unknown。
+    if (
+      !isClassVal && o.shape.name.endsWith(".prototype") &&
+      key !== "constructor" && key !== "__proto__" && !OBJECT_PROTO_NAMES.has(key)
+    ) {
+      const ancHit = chainProtoSlotOf(o.shape.name.slice(0, -".prototype".length), key, 1);
+      if (ancHit !== undefined) return ancHit;
+      if (classChainHasHole(o.shape.name.slice(0, -".prototype".length))) return unknown;
+    }
     if (isClassVal) {
       const sacc = findStaticClassAccessor(o.shape.name, key);
       if (sacc) return sacc.get ? sacc.get(o) : undef();
-      // 类值上读实例访问器键 → 原生 undefined
-      if (findClassAccessor(o.shape.name, key)) return undef();
+      // 类值上读实例访问器键 → 原生 undefined。length 例外：实例访问器挂
+      // .prototype（不在构造器 [[Prototype]] 链上），遮不住构造器自有
+      // length（P2b arity 臂，见下方）。
+      if (key !== "length" && findClassAccessor(o.shape.name, key)) return undef();
       // 静态方法一等读取（typeof A.m / 高阶传递）：沿继承链在 registry 找
       // 未调用方法槽带 AST 形参展示名（不再假零参）。
       // N2：同级补祖先类值自有槽——继承静态字段（B.x ← A 的 static x）与
       // 动态写（A.y = …）：原生静态成员挂构造器 [[Prototype]] 链
       // （B.__proto__ = A），own 槽（上方）优先后逐级上溯；取**同一 Abs
-      // 引用**（B.x === A.x 恒等保持）。name/length/prototype 是每个函数
-      // 的自有属性——不经链继承。
-      if (key !== "name" && key !== "length" && key !== "prototype") {
+      // 引用**（B.x === A.x 恒等保持）。name/prototype 是每个函数的自有
+      // 属性——不经链继承；length 例外放行（静态方法/祖先静态槽可恰名为
+      // length 覆盖构造器自有元数，链解析后落下方 arity 臂）。
+      // P2a：驻留按（定义 spec, 键）——B.m 与 A.m 解析到同一 spec 条目
+      // 返回同一函数 Abs（=== 折 true）。
+      if (key !== "name" && key !== "prototype") {
         let level = 0;
         for (const n of evalClassChain(o.shape.name)) {
           const spec = getEvalClass(n);
           if (spec?.staticMethods?.[key]) {
-            return absFunction(spec.staticMethodParams?.[key] ?? [], { body: noBody }, { ctor: false });
+            return classMethodValueAbs(spec, "static", key, spec.staticMethodParams?.[key]);
           }
           if (level++ > 0) {
             const anc = lookupClassValue(n);
@@ -2466,9 +2553,26 @@ export function $get(
               const slot = getSlot(ancInner.shape.slots, key);
               if (slot && !slot.optional) return slot.value;
             }
+            // P3b：fn 伪父的自有静态槽（Base.px = 5 → B.px）——fn 值一等
+            // 对象的 expando 槽（$set fn 臂就地写，引用语义）。
+            if (anc && anc.shape.k === "fn" && anc.shape.slots) {
+              const fslot = getSlot(anc.shape.slots, key);
+              if (fslot && !fslot.optional) return fslot.value;
+            }
             if (!spec) break; // 链洞：槽面止步（宿主通道在下方）
           }
         }
+      }
+      // P2b：类值 length = 构造器元数（首个默认值/rest 形参前的形参数，
+      // Bug 69 nativeParamArity 同口径；隐式 ctor 基类/派生恒 0——派生
+      // 隐式是 constructor(...args){super(...args)}，不继承父元数）。
+      // 自有静态字段槽（上方 own 槽）/ 静态访问器（sacc）优先，恰名为
+      // length 的静态方法/祖先静态槽经上方链解析——都未命中才折元数。
+      // transpile 期经 spec.ctorLength 通道记录；未记录通道（手写 spec /
+      // mock）→ 诚实 unknown（不假 0）。
+      if (key === "length") {
+        const ownSpec = getEvalClass(o.shape.name);
+        return ownSpec?.ctorLength !== undefined ? numLit(ownSpec.ctorLength) : unknown;
       }
       // 类值是 constructor 函数：prototype 对象与 Function.prototype 成员
       if (key === "prototype") {
@@ -2496,18 +2600,41 @@ export function $get(
       // 实例上读静态访问器键 → 原生 undefined（属性在构造器上）
       if (findStaticClassAccessor(o.shape.name, key)) return undef();
       // 实例方法读取（typeof a.m / 一等值）：沿继承链在 registry 找方法
-      // 未调用方法槽带 AST 形参展示名（不再假零参）
+      // 未调用方法槽带 AST 形参展示名（不再假零参）。
+      // P2a：驻留按（定义 spec, 键）——a.m 与 b.m（跨实例/跨派生）解析到
+      // 同一 spec 条目返回同一函数 Abs（原生挂 .prototype，=== 折 true）。
       for (const n of evalClassChain(o.shape.name)) {
         const spec = getEvalClass(n);
         if (spec?.methods?.[key]) {
-          return absFunction(spec.methodParams?.[key] ?? [], { body: noBody }, { ctor: false });
+          return classMethodValueAbs(spec, "inst", key, spec.methodParams?.[key]);
         }
       }
+      // P3b：原型链数据槽（new B().x ← Base.prototype.x / A.prototype.x）
+      // ——own 槽与方法面之后沿链原型对象读槽。链洞 / fn 伪父（ctor 体
+      // 不透明，实例自有面不可判）→ 缺席不可折 undefined（sound unknown；
+      // 此前闭 obj miss 折 undefined 对抽象父是 wrong-exact）。
+      // Object.prototype 成员（hasOwnProperty/…）走下方通用投影，不折。
+      const protoHit = chainProtoSlotOf(o.shape.name, key, 0);
+      if (protoHit !== undefined) return protoHit;
+      if (
+        key !== "constructor" && key !== "__proto__" && !OBJECT_PROTO_NAMES.has(key) &&
+        (classChainHasHole(o.shape.name) || chainHasOpaqueFnParent(o.shape.name))
+      ) {
+        return unknown;
+      }
     }
-    // 原型链 constructor：内建 brand（Error/Date/…）→ 对应构造器 Abs
+    // 原型链 constructor：内建 brand（Error/Date/…）→ 对应构造器 Abs；
+    // P3b：注册类（用户类/fn 伪父）实例/原型 → 类值本身（=== 折 exact）。
+    // 类值接收者不经此（B.constructor 原生继承 Function——保持既有口径）。
     if (key === "constructor") {
       const cn = ctorNameOfRecv(o);
-      if (cn) return builtinCtorAbs(cn);
+      if (cn) {
+        if (!isClassVal) {
+          const cv = lookupClassValue(cn);
+          if (cv) return cv;
+        }
+        return builtinCtorAbs(cn);
+      }
     }
     // Bug 58/67：__proto__ 是 Object.prototype 访问器（读 [[Prototype]]）——
     // brand 接收者走 protoOfRecv 的 brand 面：类值 → 父构造器 /
@@ -2547,7 +2674,11 @@ export function $get(
     if (key === "prototype") {
       return o.shape.ctor === false
         ? undef()
-        : abs({ k: "obj", slots: {} }, undefined, undefined, "path");
+        : // P3b：fn 的 prototype 对象身份按 fn Abs 驻留（原生每 fn 唯一
+          // 共享 prototype）——此前每次读捏新闭 obj，`Base.prototype.x = 1`
+          // 写后读丢、`f.prototype === f.prototype` 恒等丢。constructor 槽
+          // 指回 fn 自身（MakeConstructor 语义，=== 折 exact）。
+          fnProtoOf(o);
     }
   }
   // 数组 length：成员路径（a.length += 1 等复合写）与 a.length 读同源
@@ -2737,6 +2868,10 @@ export function $collectionForEach(recv: Abs, cb: unknown): Abs | undefined {
   return undefined;
 }
 
+/** P3b：$set fn 臂自建槽的 fn Abs 集（与出生自带 slots 的 dual-facet env fn
+ *  区分——后者就地突变会跨 run 泄漏，维持只读）。 */
+const userFnSlots = new WeakSet<object>();
+
 /** 成员写：返回新 obj/brand（不可变更新）；frozen/sealed/只读目标按 sloppy 静默失败。
  *  opts.internal（Bug 84）：私有字段落地——槽打 Slot.internal 标记；后续覆写
  *  保留既有标记（this.#x = v 不丢失 internal）。
@@ -2887,6 +3022,23 @@ export function $set(
     }
     o.conf = "partial";
     clearStaleTermPred(o);
+    return o;
+  }
+  // P3b：fn 值 expando 静态写（`Base.px = 5` / 借用原型挂方法等）——
+  // slotless 用户/transpile fn 就地建槽（引用语义：别名与子类链静态读
+  // 共享同一槽面）。dual-facet env fn（出生自带 slots 的内建静态面，
+  // Number.isFinite 等）不就地改——env Abs 可能跨 run 复用，原地突变
+  // 泄漏到后续分析（既有不写口径维持：userFnSlots 只认本机制自建的槽）。
+  if (o.shape.k === "fn") {
+    if (o.shape.slots === undefined) {
+      o.shape = { ...o.shape, slots: {} };
+      userFnSlots.add(o);
+    }
+    if (o.shape.slots && userFnSlots.has(o)) {
+      setSlot(o.shape.slots, key, { value: asAbsVal(value) });
+      o.conf = confJoin(o.conf, value.conf);
+      clearStaleTermPred(o);
+    }
     return o;
   }
   if (!isObj(o)) {

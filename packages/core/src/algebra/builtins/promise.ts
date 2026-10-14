@@ -31,18 +31,115 @@ const settleArmParents = new Map<number, number>();
 let settleArmCounter = 0;
 let currentSettleArm = 0;
 
-export function enterPromiseExecutorScope(): void {
-  promiseExecStack.push(0);
+/**
+ * N5：单个 executor scope 的路径面收集。arms = 本 scope 进入过的全部替代
+ * 路径臂（fork/switch 臂、抽象循环条件的体臂/出口臂）；任一臂走到末端而
+ * 无 settle → 存在永不 settle 的路径（原生 promise 悬挂）→ 结果必须带
+ * unsettled 通道。hangSettled = 确定性死循环截断（预算硬上限处条件仍具体
+ * 真）时悬挂路径是否已有 settle（token-0/臂子树 settle，且发生在截断点
+ * 之前——join 后的 post-loop settle 不在悬挂路径上）。
+ */
+interface PromiseExecutorArms {
+  arms: number[];
+  hang: { settleIdx: number; arms: number[]; depth: number } | null;
+  hangSettled: boolean | null;
+  /** scope 深度（enter 时栈深）——settle/exit 事件按深度过滤（内层/姊妹
+   * executor 的 settle 不 settle 本 promise） */
+  depth: number;
 }
 
-export function leavePromiseExecutorScope(): number {
-  const forks = promiseExecStack.pop() ?? 0;
+const promiseExecArms: PromiseExecutorArms[] = [];
+// settle 事件序（token × scope 深度）——hang 快照按序切前缀
+const settleLogToken: number[] = [];
+const settleLogDepth: number[] = [];
+// N5：退出事件（fork 臂内 throw/return——延续被截断：join 后的 trailing
+// settle 不在退出路径上，只有退出点之前的路径 settle 覆盖）。clock 取
+// settleLog 长度（事件序单调）。
+const exitLogArm: number[] = [];
+const exitLogClock: number[] = [];
+
+function notePromiseSettle(token: number): void {
+  if (promiseExecStack.length === 0) return;
+  settleLogToken.push(token);
+  settleLogDepth.push(promiseExecStack.length);
+}
+
+/** N5：runForkArm 捕获 throw/return 时打点（executor 外零开销） */
+export function notePromiseForkExit(token: number): void {
+  if (promiseExecStack.length === 0) return;
+  exitLogArm.push(token);
+  exitLogClock.push(settleLogToken.length);
+}
+
+export function enterPromiseExecutorScope(): void {
+  promiseExecStack.push(0);
+  promiseExecArms.push({ arms: [], hang: null, hangSettled: null, depth: promiseExecStack.length });
+}
+
+export function leavePromiseExecutorScope(settledArms: number[]): boolean {
+  const rec = promiseExecArms.pop() ?? null;
+  promiseExecStack.pop();
+  // 覆盖判定必须在全局 token 树清空前（外层 leave 清 settleArmParents/
+  // settle/exit 事件序——快照在 rec 内，树在模块级）
+  const unsettled = promiseArmsUnsettled(rec, settledArms);
   if (promiseExecStack.length === 0) {
     settleArmCounter = 0;
     currentSettleArm = 0;
     settleArmParents.clear();
+    settleLogToken.length = 0;
+    settleLogDepth.length = 0;
+    exitLogArm.length = 0;
+    exitLogClock.length = 0;
   }
-  return forks;
+  return unsettled;
+}
+
+/** executor scope 是否活跃（$fork/$switch 隐式臂打点的零开销门闩） */
+export function promiseExecutorActive(): boolean {
+  return promiseExecStack.length > 0;
+}
+
+/**
+ * N5：确定性死循环截断（concreteExhausted——条件在硬上限处仍具体真）。
+ * 悬挂路径 = 循环前的全部语句 + 死循环体；只有截断点之前、同 scope 深度
+ * 的 token-0 / 臂子树 settle 能证明其已 settle。executor 外零开销。
+ */
+export function notePromiseExecutorHang(): void {
+  if (promiseExecStack.length === 0) return;
+  const rec = promiseExecArms[promiseExecArms.length - 1]!;
+  // 首个 hang 即唯一可达的悬挂点（确定性死循环之后的语句不可达）
+  if (!rec.hang) {
+    rec.hang = { settleIdx: settleLogToken.length, arms: [...rec.arms], depth: promiseExecStack.length };
+  }
+}
+
+function hangPathSettles(hang: { settleIdx: number; arms: number[]; depth: number }, scopeArms: number[]): boolean {
+  const children = armChildrenOf(scopeArms);
+  const subtree = new Set<number>();
+  const visit = (t: number): void => {
+    subtree.add(t);
+    for (const c of children.get(t) ?? []) visit(c);
+  };
+  for (const a of hang.arms) visit(a);
+  for (let i = 0; i < hang.settleIdx; i++) {
+    if (settleLogDepth[i] !== hang.depth) continue;
+    const t = settleLogToken[i]!;
+    if (t === 0 || subtree.has(t)) return true;
+  }
+  return false;
+}
+
+/** 同 scope 臂的 children 表（parent → 臂列表；跨 scope 边不算——内层
+ * executor 的 settle 不 settle 外层 promise） */
+function armChildrenOf(scopeArms: number[]): Map<number, number[]> {
+  const children = new Map<number, number[]>();
+  for (const a of scopeArms) {
+    const p = settleArmParents.get(a) ?? 0;
+    const list = children.get(p);
+    if (list) list.push(a);
+    else children.set(p, [a]);
+  }
+  return children;
 }
 
 /** $fork 在 executor 内发生时打点（多臂 resolve 需 join，不得 first-wins 假精确） */
@@ -52,12 +149,15 @@ export function notePromiseExecutorFork(): void {
   }
 }
 
-/** N1：fork 臂执行区间（runForkArm）压入新路径 token；executor 外零开销 */
+/** N1：fork 臂执行区间（runForkArm）压入新路径 token；executor 外零开销。
+ * N5：token 同时记入当前 executor scope 的臂表（覆盖判定用）。 */
 export function enterPromiseForkArm(): void {
   if (promiseExecStack.length === 0) return;
   settleArmCounter += 1;
   settleArmParents.set(settleArmCounter, currentSettleArm);
   currentSettleArm = settleArmCounter;
+  const top = promiseExecArms[promiseExecArms.length - 1];
+  if (top) top.arms.push(settleArmCounter);
 }
 
 export function leavePromiseForkArm(): void {
@@ -80,6 +180,84 @@ export function promiseSettlePathHas(settledArms: number[]): boolean {
 
 export function currentPromiseSettleArm(): number {
   return currentSettleArm;
+}
+
+/**
+ * N5：executor 是否存在「走到末端而无 settle」的路径（fork/switch 单臂
+ * settle、抽象循环出口无 post-loop settle、确定性死循环截断）→ 原生
+ * promise 可能永不 settle，结果必须带 unsettled 通道（禁止 wrong-definite）。
+ *
+ * 臂 A 覆盖判定（同 scope）：
+ * - A 自身有 settle（首个活 settle）；
+ * - 祖先链（含 token 0 = join 后主路径）有 settle——trailing settle 覆盖
+ *   全部臂（`if (c) resolve(1); resolve(2);` 仍确定）；
+ * - 全部同 scope 子臂覆盖——穿过 A 的每条路径都在 A 内嵌 fork 中 settle。
+ * 悬挂（确定性死循环）：hangSettled 由 leavePromiseExecutorScope 按事件序
+ * 判定（截断点之后的 post-loop settle 不算）。
+ */
+function promiseArmsUnsettled(rec: PromiseExecutorArms | null, settledArms: number[]): boolean {
+  if (!rec) return false;
+  if (rec.hang && rec.hangSettled === null) {
+    rec.hangSettled = hangPathSettles(rec.hang, rec.arms);
+  }
+  if (rec.hangSettled === false) return true;
+  const arms = rec.arms;
+  if (arms.length === 0) return false;
+  const settled = new Set(settledArms);
+  const children = armChildrenOf(arms);
+  // 退出臂（throw/return）：延续被截断——只有退出点之前、自身/祖先/同 scope
+  // 子树内的 settle 覆盖（join 后 trailing settle 不在退出路径上）
+  const exitClock = new Map<number, number>();
+  for (let i = 0; i < exitLogArm.length; i++) exitClock.set(exitLogArm[i]!, exitLogClock[i]!);
+  const settleBeforeOnPath = (t: number, clock: number): boolean => {
+    const onPath = new Set<number>([t, 0]);
+    let a = settleArmParents.get(t) ?? 0;
+    while (a !== 0) {
+      onPath.add(a);
+      a = settleArmParents.get(a) ?? 0;
+    }
+    const descend = (x: number): void => {
+      for (const c of children.get(x) ?? []) {
+        onPath.add(c);
+        descend(c);
+      }
+    };
+    descend(t);
+    for (let i = 0; i < clock; i++) {
+      if (settleLogDepth[i] === rec.depth && onPath.has(settleLogToken[i]!)) return true;
+    }
+    return false;
+  };
+  const memo = new Map<number, boolean>();
+  const covered = (t: number): boolean => {
+    const hit = memo.get(t);
+    if (hit !== undefined) return hit;
+    memo.set(t, false); // 防御环（token 树构造上无环）
+    let r: boolean;
+    const exitAt = exitClock.get(t);
+    if (exitAt !== undefined) {
+      r = settled.has(t) ? true : settleBeforeOnPath(t, exitAt);
+    } else if (settled.has(t) || settled.has(0)) {
+      r = true;
+    } else {
+      r = false;
+      let a = settleArmParents.get(t) ?? 0;
+      while (a !== 0) {
+        if (settled.has(a)) {
+          r = true;
+          break;
+        }
+        a = settleArmParents.get(a) ?? 0;
+      }
+      if (!r) {
+        const kids = children.get(t);
+        r = !!kids && kids.length > 0 && kids.every(covered);
+      }
+    }
+    memo.set(t, r);
+    return r;
+  };
+  return arms.some((a) => !covered(a));
 }
 
 function promiseAbs(inner: Abs, conf: Abs["conf"] = "path"): Abs {
@@ -304,7 +482,9 @@ export function evalPromiseCtor(args: Abs[]): Abs {
     const raw = asAbs(value) ?? litFromJs(value);
     if (promiseSettlePathHas(settledArms)) return undefAbs(); // 同路径 no-op
     const v = unwrapThenable(raw);
-    settledArms.push(currentPromiseSettleArm());
+    const token = currentPromiseSettleArm();
+    settledArms.push(token);
+    notePromiseSettle(token); // N5：hang 快照按事件序切前缀
     resolveValues.push(v);
     if (isPromiseEff(raw)) {
       effSettles.push(raw);
@@ -318,7 +498,9 @@ export function evalPromiseCtor(args: Abs[]): Abs {
   const onReject = (reason?: unknown): Abs => {
     const raw = asAbs(reason) ?? litFromJs(reason);
     if (promiseSettlePathHas(settledArms)) return undefAbs(); // 同路径 no-op
-    settledArms.push(currentPromiseSettleArm());
+    const token = currentPromiseSettleArm();
+    settledArms.push(token);
+    notePromiseSettle(token); // N5：hang 快照按事件序切前缀
     rejectValues.push(raw);
     return undefAbs();
   };
@@ -339,6 +521,9 @@ export function evalPromiseCtor(args: Abs[]): Abs {
   // finally 保证 scope 恒弹出：早退 return / 抛出走 catch 都不得泄漏栈帧
   //（泄漏会让后续所有 $fork 误记入已死的 executor 计数与路径 token 表）。
   let executed = true;
+  // N5：scope 路径面覆盖判定（leave 在 token 树清空前算好——fork/switch/
+  // loop 臂 + hang + throw/return 退出臂）
+  let armUnsettled = false;
   try {
     if (typeof executor === "function") {
       (executor as (...a: unknown[]) => unknown)(
@@ -361,16 +546,25 @@ export function evalPromiseCtor(args: Abs[]): Abs {
     // executor 抛出 → rejected promise；resolved 通道不假装 settle
     executed = false;
   } finally {
-    leavePromiseExecutorScope();
+    armUnsettled = leavePromiseExecutorScope(settledArms);
   }
   if (!executed) return promiseUnknown();
 
   // Bug 36：确定拒绝（唯一活 settle 是 reject）→ resolved 域 never + reason 通道；
   // 两臂都可能（fork：一臂 resolve 一臂 reject）→ inner 与 rejected 并存
-  //（then/catch 两臂 join 消费）
+  //（then/catch 两臂 join 消费）。N5：无 settle 臂存在 → 拒绝也不确定
+  //（原生可能悬挂）→ unsettled 并存。
   if (resolveValues.length === 0 && rejectValues.length > 0) {
-    return promiseRejected(
-      rejectValues.length === 1 ? rejectValues[0]! : rejectValues.reduce((a, b) => joinAbs(a, b)),
+    const reason =
+      rejectValues.length === 1 ? rejectValues[0]! : rejectValues.reduce((a, b) => joinAbs(a, b));
+    if (!armUnsettled) return promiseRejected(reason);
+    return markFreshInstance(
+      abs(
+        { k: "eff", eff: "promise", inner: never, rejected: reason, unsettled: true },
+        undefined,
+        undefined,
+        "path",
+      ),
     );
   }
   if (resolveValues.length === 0) return promiseUnknown();
@@ -385,7 +579,7 @@ export function evalPromiseCtor(args: Abs[]): Abs {
           eff: "promise",
           inner: sh.inner,
           ...(sh.rejected !== undefined ? { rejected: sh.rejected } : {}),
-          ...(sh.unsettled ? { unsettled: true } : {}),
+          ...(sh.unsettled || armUnsettled ? { unsettled: true } : {}),
         },
         undefined,
         undefined,
@@ -406,7 +600,7 @@ export function evalPromiseCtor(args: Abs[]): Abs {
       : rejectValues.length > 1
         ? rejectValues.reduce((a, b) => joinAbs(a, b))
         : undefined;
-  let unsettled = resolveRisks.some(Boolean);
+  let unsettled = resolveRisks.some(Boolean) || armUnsettled;
   for (const eff of effSettles) {
     const sh = eff.shape as { rejected?: Abs; unsettled?: boolean };
     if (sh.rejected !== undefined) {

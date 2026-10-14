@@ -5,7 +5,7 @@ import type { Abs } from "../abs.ts";
 import { abs, strLit, unknown } from "../abs.ts";
 import { objOf, isNullProtoObj, getProtoAbs } from "../objects.ts";
 import { markClassValue, classNameOfValue } from "../class-mark.ts";
-import { getEvalClass, lookupClassValue, BUILTIN_ERROR_SUPER } from "../exec/class-registry.ts";
+import { getEvalClass, lookupClassValue, BUILTIN_ERROR_SUPER, fnProtoOf } from "../exec/class-registry.ts";
 import { pTrue } from "../pred.ts";
 import { str } from "./shared.ts";
 import { setPropFlags } from "./invariants.ts";
@@ -202,7 +202,14 @@ export function protoOfRecv(a: Abs): Abs {
       const spec = getEvalClass(owner);
       if (spec) {
         if (spec.superNull) return nullProtoLit;
-        if (spec.superName) return protoBrandAbs(spec.superName);
+        if (spec.superName) {
+          // P3b：fn 伪父——父原型是 fn 的驻留 prototype（同一 Abs 引用，
+          // gPo(B.prototype) === Base.prototype 折 exact）；注册类值名面
+          // 走既有 protoBrandAbs。
+          const pcv = lookupClassValue(spec.superName);
+          if (pcv && pcv.shape.k === "fn") return fnProtoOf(pcv);
+          return protoBrandAbs(spec.superName);
+        }
         return objectProtoBrand();
       }
       const be = BUILTIN_ERROR_SUPER[owner];

@@ -134,10 +134,10 @@ describe("N2: presence（$in）类值静态面", () => {
   });
 });
 
-describe("N2: 实例接收者不派发静态成员（原生 TypeError 面）", () => {
-  it("a.staticM() 不再折静态结果（sound unknown；此前折 \"static\" wrong-definite）", () => {
+describe("N2→P4a: 实例接收者不派发静态成员（原生 TypeError 面）", () => {
+  it("a.staticM() 定抛 TypeError（P4a：类注册面证明 static-only → NudoThrow；N2 曾折 unknown，更早折 \"static\" wrong-definite）", () => {
     const r = call(`function f() { class A { static m2() { return "static"; } } const a = new A(); return a.m2(); }`);
-    expect(r.result?.shape?.k).toBe("unknown");
+    expect(r.result?.shape?.k).toBe("never");
   });
   it("类值接收者静态派发不受影响（B.m2() → static）", () => {
     expect(v(`class A { static m2() { return "static"; } } class B extends A {} return B.m2();`)).toEqual({ ok: true, value: "static" });

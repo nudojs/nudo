@@ -1761,12 +1761,23 @@ function transpileExpressionImpl(expr: Expression, opts: TranspileOptions = {}):
       const closed = fnBodyIsClosed(fn);
       const { sig, rest, prologue } = emitParamBinding(fn.params, indent(1), paramOpts);
       // 函数边界：return 不是循环提前返回；非箭头清掉外层 argsBinding
+      // P4b：参数遮蔽扣除（箭头**表达式体**不经 transpileFnBodyStmts 的
+      // varScope 扣除路径——序列表达式 `(K) => (K = 5, x)` 里的标识符赋值
+      // 也须看到遮蔽后的 constNames；块体路径在 transpileFnBodyStmts 里
+      // 再扣一次，同名幂等）。默认值表达式走 paramOpts（未扣）——默认式
+      // 里写外层 const 原生照抛。
+      const fnParamShadows = paramNamesOfFn(fn.params);
+      const fnBodyConstNames =
+        opts.constNames && fnParamShadows.size > 0
+          ? new Set([...opts.constNames].filter((n) => !fnParamShadows.has(n)))
+          : opts.constNames;
       const fnBodyOpts: TranspileOptions = {
         ...opts,
         inLoop: 0,
         // 函数体是新边界：return 是本函数的返回，不是外层 if 臂的退出信号
         conditionalFlow: 0,
         inFunction: true,
+        ...(fnBodyConstNames !== opts.constNames ? { constNames: fnBodyConstNames } : {}),
         ...(hasThis ? { thisParam: "__this" } : {}),
         ...(isArrow ? {} : { argsBinding: hasArgs ? "__nudoArgs" : undefined }),
         // Bug 52：函数体是新生成器边界——外层 try 不覆盖体内 yield

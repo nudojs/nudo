@@ -28,7 +28,15 @@ import {
 } from "./state.ts";
 import { $unknown, $eq, $ne, $lt, $le, $gt, $ge, $add, $sub, $typeof, $not } from "./ops.ts";
 import { $arr } from "./containers.ts";
-import { notePromiseExecutorFork, enterPromiseForkArm, leavePromiseForkArm } from "../../builtins.ts";
+import {
+  notePromiseExecutorFork,
+  enterPromiseForkArm,
+  leavePromiseForkArm,
+  notePromiseExecutorHang,
+  promiseExecutorActive,
+  notePromiseForkExit,
+  currentPromiseSettleArm,
+} from "../../builtins.ts";
 import { falseConstraint } from "../../arithmetic.ts";
 import { leqAbs } from "../../leq.ts";
 
@@ -130,9 +138,13 @@ export function runForkArm(arm: () => Abs): ForkArm {
     return { kind: "val", v: asAbsVal(arm()) };
   } catch (e) {
     if (isNudoReturn(e)) {
+      // N5：return 截断延续（join 后 trailing settle 不在此路径）——打点
+      notePromiseForkExit(currentPromiseSettleArm());
       return { kind: "ret", v: e.absValue };
     }
     if (isNudoThrow(e)) {
+      // N5：throw 同款截断（延续是 catch/函数边界，非 join 后主路径）
+      notePromiseForkExit(currentPromiseSettleArm());
       pushThrowExit(e.absValue);
       return { kind: "throw", v: e.absValue };
     }
@@ -274,10 +286,12 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
         arms.push(popCollectionArm());
       }
     } else {
-      // 隐式 else：无写也必须占一臂，否则条件写入会被 merge 成必然（P0）
+      // 隐式 else：无写也必须占一臂，否则条件写入会被 merge 成必然（P0）。
+      // N5：隐式 else 也是替代路径——executor 内无 settle 则该路径悬挂 →
+      // 必须占 settle 臂 token（`if (c) resolve(1)` 单臂 settle 不得折确定）
       pushCollectionArm();
       try {
-        b = { kind: "val", v: undef() };
+        b = promiseExecutorActive() ? runForkArm(() => undef()) : { kind: "val", v: undef() };
         armYsList.push(null);
       } finally {
         arms.push(popCollectionArm());
@@ -393,11 +407,17 @@ export function $for(
     const abstractTest = !isDefinitelyTrue(t);
     if (abstractTest) {
       if (extended) break;
+      // N5：出口臂（本轮 test 假 → 跳过体直达循环后）：无 post-loop settle
+      // 覆盖则该路径悬挂（executor 内不得折确定 settle）
+      enterPromiseForkArm();
+      leavePromiseForkArm();
       snapCounter();
       snapExt();
     }
 
     let afterBody: Abs;
+    // N5：抽象条件迭代体 = 条件路径（体 settle 不得覆盖出口臂）
+    if (abstractTest) enterPromiseForkArm();
     try {
       afterBody = body(state);
     } catch (e) {
@@ -432,6 +452,8 @@ export function $for(
       } else {
         throw e;
       }
+    } finally {
+      if (abstractTest) leavePromiseForkArm();
     }
     const next = step(afterBody);
     // 抽象条件：本轮 body 完成后的绑定也是合法出口（下一轮 test 可能为假）
@@ -475,6 +497,9 @@ export function $for(
   snapExt();
   if (concreteExhausted) {
     noteLoopTruncation(LOOP_TRUNCATION_LABEL);
+    // N5：确定性死循环截断——悬挂路径真实存在（条件恒真不退出），除非
+    // 截断点之前已 settle，结果带 unsettled（post-loop settle 不可达）
+    notePromiseExecutorHang();
     if (extJoin && pack && unpack) unpack(confPartialPacked(widenLoopJoin(joinAbs(extJoin, pack()))));
     return confPartial(exitJoin ?? state);
   }
@@ -575,10 +600,20 @@ export function $while(
     const abstractTest = !isDefinitelyTrue(t);
     if (abstractTest) {
       if (extended) break;
+      // N5：出口臂（同 $for——无 post-loop settle 覆盖则悬挂）
+      enterPromiseForkArm();
+      leavePromiseForkArm();
       widen.observe(state);
       exitJoin = exitJoin ? joinAbs(exitJoin, state) : state;
     }
-    const next = step(state);
+    // N5：抽象条件迭代 = 条件路径（体 settle 不得覆盖出口臂）
+    let next: Abs;
+    if (abstractTest) enterPromiseForkArm();
+    try {
+      next = step(state);
+    } finally {
+      if (abstractTest) leavePromiseForkArm();
+    }
     if (i > 0) {
       const nvR = litValue(next);
       const svR = litValue(state);
@@ -604,6 +639,8 @@ export function $while(
   }
   if (concreteExhausted) {
     noteLoopTruncation(LOOP_TRUNCATION_LABEL);
+    // N5：确定性死循环截断（同 $for）——悬挂路径需 unsettled
+    notePromiseExecutorHang();
     return confPartial(exitJoin ? joinAbs(exitJoin, state) : state);
   }
   // 抽象预算耗尽：增长计数器宽化到无上界域（Bug 48；稳定不动点原样）
@@ -670,10 +707,18 @@ export function $whileSeq(
     }
     // 抽象条件：当前绑定是合法出口之一，先 snapshot 再进 body；
     // 延展相只接受具体真——条件退化抽象即停（不越抽象预算）
-    if (!isDefinitelyTrue(t)) {
+    const abstractIter = !isDefinitelyTrue(t);
+    if (abstractIter) {
       if (extended) break;
+      // N5：出口臂（本轮 test 假 → 跳过体直达循环后）：无 post-loop settle
+      // 覆盖则该路径悬挂（`while (c) { r(1); }` 不得折确定 promise<1>）
+      enterPromiseForkArm();
+      leavePromiseForkArm();
       snapExit();
     }
+    // N5：抽象条件迭代体 = 条件路径（体 settle 不得覆盖出口臂——但
+    // `while (c) { r(1); } r(2);` 的 post-loop settle 覆盖出口 → 确定 1|2）
+    if (abstractIter) enterPromiseForkArm();
     try {
       body();
     } catch (e) {
@@ -693,6 +738,8 @@ export function $whileSeq(
       }
       if (isNudoReturn(e) || isNudoThrow(e)) throw e;
       throw e;
+    } finally {
+      if (abstractIter) leavePromiseForkArm();
     }
     boundaryGate(i);
   }
@@ -700,6 +747,8 @@ export function $whileSeq(
   snapExit();
   if (concreteExhausted) {
     noteLoopTruncation(LOOP_TRUNCATION_LABEL);
+    // N5：确定性死循环截断（同 $for）——悬挂路径需 unsettled
+    notePromiseExecutorHang();
     if (exitJoin && pack && unpack) unpack(confPartialPacked(joinAbs(exitJoin, pack())));
     return;
   }
@@ -758,10 +807,14 @@ export function $switch(
     if (dflt) {
       if (!seenRuns.has(dflt)) results.push(runArm(dflt));
     } else {
-      // 隐式 no-match 臂：全 case 不命中时 fall-through（P0-2）
+      // 隐式 no-match 臂：全 case 不命中时 fall-through（P0-2）。
+      // N5：隐式臂也是替代路径（同 $fork 隐式 else）——executor 内必须占
+      // settle 臂 token，否则抽象 disc 全不命中路径被静默丢弃
       pushCollectionArm();
       try {
-        results.push({ kind: "val", v: undef() });
+        results.push(
+          promiseExecutorActive() ? runForkArm(() => undef()) : { kind: "val", v: undef() },
+        );
         armYsList.push(null);
       } finally {
         armOverlays.push(popCollectionArm());
