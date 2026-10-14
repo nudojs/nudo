@@ -11,123 +11,224 @@ slug: /releases
 
 | 包 | 当前版本 |
 |----|----------|
-| `@nudojs/core` | 1.11.3 |
-| `@nudojs/service` | 1.6.23 |
-| `nudojs (CLI)` | 1.3.24 |
-| `@nudojs/parser` | 1.4.20 |
-| `@nudojs/lsp` | 1.6.6 |
-| `@nudojs/env` | 0.4.38 |
-| `@nudojs/harvester` | 0.3.24 |
-| `vite-plugin-nudo` | 0.4.39 |
-| `nudo-vscode` | 0.3.43 |
+| `@nudojs/core` | 1.12.0 |
+| `@nudojs/service` | 1.6.24 |
+| `nudojs (CLI)` | 1.3.25 |
+| `@nudojs/parser` | 1.4.21 |
+| `@nudojs/lsp` | 1.6.7 |
+| `@nudojs/env` | 0.4.39 |
+| `@nudojs/harvester` | 0.3.25 |
+| `vite-plugin-nudo` | 0.4.40 |
+| `nudo-vscode` | 0.3.44 |
 
 **按包跳转:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.11.3 {#pkg-core}
+## @nudojs/core 1.12.0 {#pkg-core}
 
-## 1.11.3
+## 1.12.0
 
-### Patch Changes
+### Minor Changes
 
-- 08d7a55: Fix five exec-surface wrong-concrete bugs (80–84) found by differential testing:
+- e4e491f: `@nudo:assume` name resolution extends from parameters only to parameters ∪ top-level `const`/`let`/`var` locals of the anchored function's body (#165).
   
-  - **`#x in obj`** (private-field `in` operator): the left `PrivateName` operand fell through `isExpression` and compiled to `$lit(void 0)`, so the presence test always returned `false`. The `in` arm now emits the mangled `"#x"` key via the shared `privateNameKeySrc` helper (also deduped into member read/assign).
-  - **`this.#x += 1`** (private-field compound assignment): the root-non-rebindable branch emitted a simple assignment using the RHS directly, dropping the operation (`+=1` assigned `1`). It now applies `compoundFn` to the current `$get` value, mirroring the member-path branch.
-  - **`o + "x"` with a `Symbol.toPrimitive` hook**: `coerceToStringParts` folded hook-only objects to the default `"[object Object]"` tag (wrong concrete string). The fold guard now also checks for an own `"@@toPrimitive"` slot — hook presence blocks the fold and yields a sound abstract string domain.
-  - **`Array.prototype.concat` ignores `Symbol.isConcatSpreadable`**: spreadable objects are now spread as array-likes (`ToLength(o.length)` elements), `lit false` suppresses spreading, abstract flags degrade to `arr` (sound).
-  - **Private fields leak as enumerable own properties**: private slots are now flagged `internal` at instance-field registration (not by `#` name prefix — public string keys like `{"#x":1}` share the key space and stay visible). `for-in`, `Object.keys/values/entries`, `hasOwnProperty`, `getOwnPropertyNames/Descriptors`, spread, `Object.assign`, and `JSON.stringify` exclude internal slots; direct `this.#x` access and `#x in obj` slot-presence semantics are unchanged. Class-instance spread/assign now also includes public fields (previously dropped), and Error-family own slots (`name`/`message`/`stack`) are non-enumerable per native semantics.
-  - **Class-instance precision follow-ups**: `Object.getOwnPropertyDescriptor(new A(), key)` now folds exact data/accessor descriptors for public fields (runtime `defineProperty` flags and dynamic getters included) instead of the conservative `descriptor|undefined` domain; `JSON.stringify` folds class instances with prototype getters exactly (`{"pub":2}` — prototype accessors are not own properties, native never invokes them during stringify; only `toJSON` methods keep the conservative fold).
-
-更早版本（46）→ [完整发布历史](./releases-history.md#pkg-core)
-
-## @nudojs/service 1.6.23 {#pkg-service}
-
-## 1.6.23
+  - names resolve against plain `Identifier` declarators among the body's direct statements — destructuring, nested blocks, and `for`-init declarations stay out; unknown names fail with `nudo:assume-invalid` (`name(s) not bound as parameters or top-level locals`)
+  - locals follow SSA semantics — the lemma anchors the bound value at its definition point and applies to the end of the scope; after a reassignment the relevance conservatively lapses (no fold)
+  - anchoring activates only in the target function's own frame — callee frames see an empty premise slot, so same-name locals there cannot mismatch
+  - constant bounds still belong to sidecars; since a sidecar cannot reach a function's own locals, a local's constant contract goes on the producing callee's return (e.g. a levenshtein sidecar `return number().ge(0)`)
 
 ### Patch Changes
 
-- Updated dependencies [08d7a55]
-  - @nudojs/core@1.11.3
-  - @nudojs/env@0.4.38
-  - @nudojs/harvester@0.3.24
-  - @nudojs/parser@1.4.20
+- 1881f97: Fix 38 differential bugs (wrong-definite values / false throws / missed throws) found by native-oracle differential testing, plus remove the differential harness's `concrete()` blind spot.
+  
+  Call-site semantics (Bug 46/55/70/47, F1/F4/F5):
+  
+  - receiver injection is call-site-correct via the `$call` thisVal channel — dynamically-assigned/re-assigned/computed-key methods bind `this` (no more false always-throw `TypeError`)
+  - `super.x = v` (instance methods/ctors, incl. compound + computed) emits `$setSuper`/`$setSuperObj` with native setter-lookup semantics (was: invalid transpiled JS, hard `SyntaxError`)
+  - object-literal `async m()` wraps in `$async` (returns a Promise, not the raw body value)
+  - computed Symbol-key destructuring (`{[Symbol.iterator]: it} = arr`) binds; nested rest patterns (`...[b, c]`) and catch-param patterns (`catch ([a,b])` / `catch ({v})`) no longer drop bindings; un-lowerable rest LVals fail closed
+  
+  Object identity & prototype chains (Bug 56/57/58/63/64/65/67/68/71):
+  
+  - Proxy retains target + dispatches `get`/`has`/`set` traps (`set` returning `false` throws strict `TypeError`); `Array.isArray(proxy-of-array)` → true
+  - `arguments` is branded (`Array.isArray(arguments)` → false); error subclasses joined `NAMESPACE_GLOBALS` (`X.prototype.constructor === X`, family `toString` dispatch); `$get(Ctor, "prototype")` returns a memoized proto brand instead of an anonymous obj
+  - `instanceof` learns `Object.prototype` terminator (false for everything), class `static [Symbol.hasInstance]`, and `.prototype`-suffixed brand chains (`RangeError.prototype instanceof Error` → true); `Object.getPrototypeOf` handles class values (`B → A`), `extends null` (`A.prototype → null`), and `B.__proto__`
+  - array `entries/keys/values` return real iterator objects (isArray false, `.next` callable, spread/for-of exact)
+  
+  Effects & control flow (Bug 49/51/52/53/54, F2/F3, fork-try join):
+  
+  - array mutators mutate in place at `$invoke` time — expression-order correct (`s.pop()+s.pop()`), call-receiver receivers persist (`m.get("a").push(1)`); deferred expression-position rebind machinery removed
+  - generators: >8-yield sequences no longer truncate; spread/for-of continue from the current position; `.return()`/`.throw()` honor try-context (finally return-override → graded union, catch absorbs, no wrong-definite)
+  - async bodies convert throws to definite-rejected promises (`.catch` absorbs; `await` chains reject; thenable adoption); setter bare early-`return;` keeps the receiver
+  - `return`/`throw` inside try regions nested in if-arms join correctly (was: folded to fall-through value; also fixes latent callee-frame `loopExits` drops and `NudoReturn` leaks on raw-host call paths)
+  
+  Builtin throw domains (Bug 59/60/61/62/73, M1–M5):
+  
+  - `JSON.stringify`: callable replacers invoked per-entry (throwing replacer → definite throw; never silent no-throw); decidable cycles hard-throw `TypeError`; symbol-keyed slots never serialize (literal `"@@x"` string keys still do)
+  - `Symbol.for` interns container keys via ToString (`Symbol.for([1]) === Symbol.for("1")`); non-concretizable keys degrade to unknown identity
+  - `String.prototype.replace` passes the named-groups object to function replacers (`groups.d` works, no false `TypeError`)
+  - `Function.length` stops at the first default/rest param (declarations, expressions, arrows, methods)
+  - missed throws fixed: `'' + Object.create(null)`, free `arguments` (ReferenceError), `(5n).toFixed`, `sort` with throwing/impure comparators (effectFree facet; effect-free comparators execute with ES2019 stable-order exact fold), `Object.assign('ab', {0:'x'})`
+  - error instances: `name` inherited, `message`/`stack` own non-enumerable (`hasOwnProperty`/`propertyIsEnumerable` native-correct); accessor-form `Symbol.toStringTag` getters invoked by `Object.prototype.toString`
+  
+  Test harness: differential `concrete()` no longer masks never-results and abstract placeholders — engine-proven throws compare against the native throw domain (FALSE-THROW), native-throw vs engine-value is a new MISSED-THROW category with a `knownMissedThrows` pin ledger (rationale-carrying, loud warnings); 638 stale masking pins removed from `skip-baseline.json`.
+  
+  Precision residuals (native-exact where native is definite):
+  
+  - generators: `.throw()` into a returning catch folds `done:true` (catch-facts bits: contains-yield/return/rethrow, yield\*-delegation poisoning — unclassifiable arms stay sound boolean); fresh-generator spread/`Array.from`/destructuring-rest/`yield*` consume the authoritative yield list (exact >8-element tuples, no >8 widening loss)
+  - promise chains: definite-fulfilled `.catch` handler is dead code (exact passthrough); effect-free closed `.then`/`.catch`/`.finally` handlers execute synchronously with exact value adoption (`await Promise.resolve(21).then(x => x*2)` → 42); then second-arg joins the rejection arm on two-channel receivers (was dropped — unsound); unsettled state modeled as a first-class `unsettled` facet
+  - identity: fresh instance ids (WeakMap side table) — distinct promise/generator/iterator/class-instance/literal objects fold `=== false`; aliases and adopted references stay `true`
+  - `super.x += 5` on a closed parent chain folds exact `NaN` (missing proto slot reads `undefined`); static super writes land on the receiver class (native), not the parent
+  - static methods model `this` as the class value (`B.m() === B`, arrows capture lexically, `this.y = 5` writes the class, static field initializers see the class); `@@hasInstance` adapter forwards the receiver
+  - inherited static member reads walk the constructor's `[[Prototype]]` chain: `class B extends A { }` reads `B.x` / `B.m` / `B.g` (fields incl. computed keys, static blocks, and dynamic `A.y = …` writes; same Abs reference so `B.o === A.o`), multi-level chains, own-shadow first; builtin parents dispatch through the host static channel when `extends` targets a real host builtin (`class B extends Object {}` → `B.keys({a:1})` exact, `class E extends Error {}` → `typeof E.captureStackTrace` is `"function"` — was wrong-exact `"undefined"`); presence (`"m2" in A` / `"x" in B`) uses the static face (instance methods no longer fold `true` on class values, statics no longer fold `false`); instance receivers no longer dispatch statics (`a.staticM()` was folding the static result instead of the native `TypeError`); mock/holed parents degrade to sound unknown/boolean
+  - promise executors collect settle calls path-sensitively via a fork-arm token tree: `new Promise((res, rej) => { if (c) res(1); else rej(2); })` folds the two-channel `{inner: 1, rejected: 2}` (the reject arm was silently dropped); same-path sequential settles keep native first-wins; resolving a promise inside a fork arm merges its rejected/unsettled channels into the join face; early executor exits no longer leak the executor scope; chained-then recovery results stay unsettled until the microtask join (was folding the first arm's value)
+  - method default parameters bind like function defaults, with the receiver in scope: `m(a = this.v)`, object-method/setter/static/destructured forms, arrow-in-default lexical `this`, `arguments`-reading and rest defaults all fold exact (`$arrRest` now delegates the `Arguments` brand)
+  - static field initializers resolve the class's own name: `class C { static n = 3; static x = this === C; }` folds `true` (thunks emit `let <Name> = __this;` mirroring the native class-body lexical binding — inner-class references, named class expressions, shadowing params, and `static name = "custom"` overrides all native-exact)
+  - error introspection: `Object.getOwnPropertyDescriptor` on error brands builds exact data descriptors (flags-aware); `Object.hasOwn` folds own-vs-inherited exactly; gOPN returns the native install order (`stack, message[, cause][, errors]`); catch-param payloads gain the `stack` slot (was missing)
+  - dev infra: every package gets a package-local vitest config delegating to a shared factory — `cd packages/<p> && ../../node_modules/.bin/vitest` resolves `@nudojs/*` to workspace src (no more stale-dist split-brain)
+  
+  Final precision wave:
+  
+  - executor settle-liveness is path-sensitive: a fork arm that ends without a settle call contributes the `unsettled` facet (`new Promise(res => { if (c) res(1); })` no longer folds bare `promise<1>`); exit arms (early return / uncaught throw / swallowed catch) are clocked so join-after-exit settles don't cover them; `await` of an unsettled promise degrades through `$async` (definite awaits stay exact)
+  - static and instance method reads are identity-memoized per defining class entry — `B.m === A.m` folds `true` across inheritance, distinct/overridden fold `false`; class values expose `.length` (ctor arity before first default/rest — implicit derived ctors are `0`, matching the native rest-forwarding constructor)
+  - extensible host parents beyond Object/Error (ArrayBuffer/URL/DataView/WeakRef/…) dispatch inherited statics through the host channel (`typeof AB.isView` → `"function"`, absent → `undefined`, whitelisted pure calls fold) and construct through `evalBuiltinNew` (`new AB(8).byteLength` → 8); function-expression parents get a stable synthesized identity — `B.prototype.constructor === B`, memoized fn `.prototype` (mutable, expando statics land), chain data-slot reads with own-over-inherited precedence, `new B() instanceof Base` → true
+  - static-only members invoked on an instance receiver fold a definite `TypeError` (never result); rebinding the class's own name inside class bodies (methods, statics, accessors, static blocks, field initializers, arrow captures) folds a definite `TypeError` — while the outer class binding stays mutable exactly as native (verified: ESM class bindings are let-like); const names shadowed by params/catch params no longer false-throw
+- 1881f97: Fix fork-arm × try-region early-return join: `return`/`throw` inside try/catch/finally nested in an if-arm folded to the fall-through value instead of the arm's early exit.
+  
+  - `stmtReturns` learned `TryStatement` (finalizer jump-outs cancel, handler/block both-terminal) so try-region returns trigger arm promotion / both-return rewriting
+  - arm-thunk returns now signal via `$loopReturn` (`conditionalFlow`), delivered exactly once by `settleForkArms` (double-ret throws joined `NudoReturn`; single-ret enters the exits channel — no longer pre-pushed and double-counted)
+  - transpiled function bodies are self-contained: `$catchReturn` absorber keeps raw host calls (`nudo export` .mjs imports, e2e) from leaking `NudoReturn` — also fixes the latent leak for loop-returns
+  - `callAtFunctionBoundary` and the compiled-body `$call` path join frame `loopExits` (ret-arm values were silently dropped → wrong-definite, e.g. arrow functions with loop early-returns)
+  - a lone ret-arm whose sibling arm throws no longer fabricates a fall-through `undefined` completion (`if (g) return "s"; throw E` was `undefined | "s"`, now `"s"` — the statement has no fall-through path, so the join yields `never`)
+- 8466793: Class-surface diagnostics: static-on-instance calls and class-body self-name writes fold exact (P4).
+  
+  Static-only member on an instance receiver (`class C { static m() {} } new C().m()`):
+  
+  - native throws `TypeError` (`c.m` is `undefined` — statics live on the constructor, not `X.prototype`); the engine previously degraded to `unknown` (N2 sound stop-gap)
+  - now exact: when the class registry proves the member static-only (registered `staticMethods`/`staticAccessors`/`statics`/class-value slots anywhere on the chain) and the instance face provably lacks it (no method/accessor/builtin-brand member on the chain, no same-name instance field, no own receiver slot, no chain hole, not an `Object.prototype` name), `$invoke` throws a definite `TypeError`
+  - guards keep everything else unchanged: `c instanceof C` → true, instance-method calls, member reads (`typeof c.m` → `"undefined"`), optional calls (`c.m?.()` short-circuits to `undefined`), ctor-assigned own fn slots, same-name instance fields/getters, prototype-chain instance methods shadowing statics, class-value static dispatch
+  
+  Class-body self-name binding is immutable (native `CreateImmutableBinding`):
+  
+  - `C = v` / `C++` inside methods, accessors, static blocks, and field initializers now folds definite `TypeError` (was: silent rebind — N4's documented sound over-approximation); routed through the existing const-assignment channel (`constNames` on class-body member opts)
+  - the outer binding stays mutable on purpose: native `class C {}; C = 5` is legal (ClassDeclaration `IsConstantDeclaration` is false — verified on Node 26: no-throw, `C` becomes a number); the engine's outer-`let` emission already matched native and is unchanged, as are `let D = class {}; D = 5` and function-scope classes
+  - member writes on the class name (`C.q = v`, compound/update/logical-assign) still rebind through the internal root-rebind path — unaffected
+  
+  Binding-shadow fixes required by the above (wrong-definite throws, pre-existing for module `const` too):
+  
+  - function-boundary params are subtracted from inherited const bindings: `const K = 1; function f(K) { K = 5; }` no longer folds `TypeError` (writes the param binding — native no-throw); covers declarations, expressions, arrows (incl. expression bodies), and class methods
+  - catch params likewise: `try { … } catch (K) { K = 5; }` with an outer `const K`/class-body name no longer falsely throws
 
-更早版本（48）→ [完整发布历史](./releases-history.md#pkg-service)
+更早版本（47）→ [完整发布历史](./releases-history.md#pkg-core)
 
-## nudojs (CLI) 1.3.24 {#pkg-nudojs}
+## @nudojs/service 1.6.24 {#pkg-service}
 
-## 1.3.24
+## 1.6.24
 
 ### Patch Changes
 
-- Updated dependencies [08d7a55]
-  - @nudojs/core@1.11.3
-  - @nudojs/env@0.4.38
-  - @nudojs/harvester@0.3.24
-  - @nudojs/parser@1.4.20
-  - @nudojs/service@1.6.23
+- Updated dependencies [e4e491f]
+- Updated dependencies [1881f97]
+- Updated dependencies [1881f97]
+- Updated dependencies [8466793]
+  - @nudojs/core@1.12.0
+  - @nudojs/env@0.4.39
+  - @nudojs/harvester@0.3.25
+  - @nudojs/parser@1.4.21
 
-更早版本（45）→ [完整发布历史](./releases-history.md#pkg-nudojs)
+更早版本（49）→ [完整发布历史](./releases-history.md#pkg-service)
 
-## @nudojs/parser 1.4.20 {#pkg-parser}
+## nudojs (CLI) 1.3.25 {#pkg-nudojs}
 
-## 1.4.20
-
-### Patch Changes
-
-- Updated dependencies [08d7a55]
-  - @nudojs/core@1.11.3
-
-更早版本（45）→ [完整发布历史](./releases-history.md#pkg-parser)
-
-## @nudojs/lsp 1.6.6 {#pkg-lsp}
-
-## 1.6.6
+## 1.3.25
 
 ### Patch Changes
 
-- Updated dependencies [08d7a55]
-  - @nudojs/core@1.11.3
-  - @nudojs/parser@1.4.20
-  - @nudojs/service@1.6.23
+- Updated dependencies [e4e491f]
+- Updated dependencies [1881f97]
+- Updated dependencies [1881f97]
+- Updated dependencies [8466793]
+  - @nudojs/core@1.12.0
+  - @nudojs/env@0.4.39
+  - @nudojs/harvester@0.3.25
+  - @nudojs/parser@1.4.21
+  - @nudojs/service@1.6.24
 
-更早版本（49）→ [完整发布历史](./releases-history.md#pkg-lsp)
+更早版本（46）→ [完整发布历史](./releases-history.md#pkg-nudojs)
 
-## @nudojs/env 0.4.38 {#pkg-env}
+## @nudojs/parser 1.4.21 {#pkg-parser}
 
-## 0.4.38
-
-### Patch Changes
-
-- Updated dependencies [08d7a55]
-  - @nudojs/core@1.11.3
-
-更早版本（45）→ [完整发布历史](./releases-history.md#pkg-env)
-
-## @nudojs/harvester 0.3.24 {#pkg-harvester}
-
-## 0.3.24
+## 1.4.21
 
 ### Patch Changes
 
-- Updated dependencies [08d7a55]
-  - @nudojs/core@1.11.3
-  - @nudojs/env@0.4.38
-  - @nudojs/parser@1.4.20
+- Updated dependencies [e4e491f]
+- Updated dependencies [1881f97]
+- Updated dependencies [1881f97]
+- Updated dependencies [8466793]
+  - @nudojs/core@1.12.0
 
-更早版本（45）→ [完整发布历史](./releases-history.md#pkg-harvester)
+更早版本（46）→ [完整发布历史](./releases-history.md#pkg-parser)
 
-## vite-plugin-nudo 0.4.39 {#pkg-vite-plugin}
+## @nudojs/lsp 1.6.7 {#pkg-lsp}
+
+## 1.6.7
+
+### Patch Changes
+
+- Updated dependencies [e4e491f]
+- Updated dependencies [1881f97]
+- Updated dependencies [1881f97]
+- Updated dependencies [8466793]
+  - @nudojs/core@1.12.0
+  - @nudojs/parser@1.4.21
+  - @nudojs/service@1.6.24
+
+更早版本（50）→ [完整发布历史](./releases-history.md#pkg-lsp)
+
+## @nudojs/env 0.4.39 {#pkg-env}
 
 ## 0.4.39
 
 ### Patch Changes
 
-- Updated dependencies [08d7a55]
-  - @nudojs/core@1.11.3
-  - @nudojs/service@1.6.23
+- Updated dependencies [e4e491f]
+- Updated dependencies [1881f97]
+- Updated dependencies [1881f97]
+- Updated dependencies [8466793]
+  - @nudojs/core@1.12.0
 
-更早版本（48）→ [完整发布历史](./releases-history.md#pkg-vite-plugin)
+更早版本（46）→ [完整发布历史](./releases-history.md#pkg-env)
+
+## @nudojs/harvester 0.3.25 {#pkg-harvester}
+
+## 0.3.25
+
+### Patch Changes
+
+- Updated dependencies [e4e491f]
+- Updated dependencies [1881f97]
+- Updated dependencies [1881f97]
+- Updated dependencies [8466793]
+  - @nudojs/core@1.12.0
+  - @nudojs/env@0.4.39
+  - @nudojs/parser@1.4.21
+
+更早版本（46）→ [完整发布历史](./releases-history.md#pkg-harvester)
+
+## vite-plugin-nudo 0.4.40 {#pkg-vite-plugin}
+
+## 0.4.40
+
+### Patch Changes
+
+- Updated dependencies [e4e491f]
+- Updated dependencies [1881f97]
+- Updated dependencies [1881f97]
+- Updated dependencies [8466793]
+  - @nudojs/core@1.12.0
+  - @nudojs/service@1.6.24
+
+更早版本（49）→ [完整发布历史](./releases-history.md#pkg-vite-plugin)
 
 ## nudo-vscode 0.3.7 {#pkg-vscode}
 
