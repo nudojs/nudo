@@ -1120,6 +1120,30 @@ export function extractAssumeSegs(source: string, fnName: string): AssumeSeg[] {
 }
 
 /**
+ * #165：@nudo:assume 可锚定名扩展——函数体 BlockStatement **直接**子语句里
+ * VariableDeclaration 的 Identifier declarator 名（const/let/var 均收，
+ * 有无 init 均收）。SSA 语义：引理作用于绑定值，从定义点到作用域尾。
+ * 解构模式 / 嵌套块 / for-init 的绑定名不收（保守：不进 bindable 面）；
+ * 非 BlockStatement（箭头表达式体等）→ []。
+ */
+export function fnTopLevelLocalNames(body: unknown): string[] {
+  const block = body as { type?: string; body?: unknown } | null | undefined;
+  if (!block || block.type !== "BlockStatement" || !Array.isArray(block.body)) return [];
+  const names: string[] = [];
+  for (const stmt of block.body) {
+    const decl = stmt as { type?: string; declarations?: unknown[] } | null | undefined;
+    if (!decl || decl.type !== "VariableDeclaration" || !Array.isArray(decl.declarations)) {
+      continue;
+    }
+    for (const d of decl.declarations) {
+      const id = (d as { id?: { type?: string; name?: string } } | null | undefined)?.id;
+      if (id?.type === "Identifier" && typeof id.name === "string") names.push(id.name);
+    }
+  }
+  return names;
+}
+
+/**
  * 侧车 fn() 形参约束的表达式源码表（运行时标志，Phase 1 整表达式）。
  * 键 = 形参键（含 `'card.grade'` 点路径形态），值 = 表达式原文
  * （整表达式别名已规范化为导入名）。派生形参（computed key / 运行时

@@ -90,14 +90,14 @@ describe("Bug 22: generator object carries the iterator protocol face", () => {
     expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 
-  it("Array.from(g()) 不回归（元素并入 arr 域——同修复前 tuple 路径口径）", () => {
+  it("Array.from(g()) 不回归（元素并入域——R1b 后 exact 元组，native 11）", () => {
     const r = call(
       `export function f() { function* g() { yield 5; yield 6; } return Array.from(g()).reduce((a, b) => a + b, 0); }`,
       "f",
     );
-    // Array.from 消费的是元素（5|6 域），不是生成器对象本身
-    expect(formatAbs(r.result)).toContain("5");
-    expect(formatAbs(r.result)).toContain("6");
+    // Array.from 消费的是元素（不是生成器对象本身）；R1b 起 exact 生成器
+    // 视图重组 exact 元组 → reduce 折 native 定值
+    expect(litValue(r.result)).toEqual({ ok: true, value: 11 });
   });
 
   it("数组解构 const [a, b] = g() 不回归", () => {

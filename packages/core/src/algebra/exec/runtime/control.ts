@@ -4,7 +4,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { bumpEvalForkBudget, noteLoopTruncation } from "../../call-budget.ts";
 import type { Abs } from "../../abs.ts";
-import { abs, bool, boolLit, confJoin, litValue, numLit, unknown, type Confidence } from "../../abs.ts";
+import { abs, bool, boolLit, confJoin, litValue, never, numLit, unknown, type Confidence } from "../../abs.ts";
 import { lit } from "../../term.ts";
 import type { Phi } from "../../pred.ts";
 import { pTrue, and, predEquals } from "../../pred.ts";
@@ -28,7 +28,15 @@ import {
 } from "./state.ts";
 import { $unknown, $eq, $ne, $lt, $le, $gt, $ge, $add, $sub, $typeof, $not } from "./ops.ts";
 import { $arr } from "./containers.ts";
-import { notePromiseExecutorFork } from "../../builtins.ts";
+import {
+  notePromiseExecutorFork,
+  enterPromiseForkArm,
+  leavePromiseForkArm,
+  notePromiseExecutorHang,
+  promiseExecutorActive,
+  notePromiseForkExit,
+  currentPromiseSettleArm,
+} from "../../builtins.ts";
 import { falseConstraint } from "../../arithmetic.ts";
 import { leqAbs } from "../../leq.ts";
 
@@ -46,18 +54,49 @@ export type ForkArm =
   | { kind: "ret"; v: Abs }
   | { kind: "throw"; v: Abs };
 
+/** 生成器 yield 收集器：els = yield 值序列；ctxs = 每 yield 点 try 上下文位
+ *  （Bug 52：$yield/$yieldStar 第二实参，transpile 静态标注——.return()/
+ *  .throw() 挂起点语义用）。els/ctxs 恒等长（同一 push 点成对压入）。 */
+export interface GenYieldCollector {
+  els: Abs[];
+  ctxs: number[];
+}
+
+/** yield 点 try 上下文位（Bug 52）：1 = 外层任一 try 带 finally；2 = 外层任一
+ *  try 带 catch。finalizer 静态事实（.transpile 标注）：4 = 最近 finalizer 含
+ *  yield/yield*（.return 后可再交付 → done 并 boolean）；8 = 最近 finalizer
+ *  含 return（.return 注入值可被覆盖 → 值并 unknown）。
+ *  catch 静态事实（R1a，最近 enclosing catch）：16 = catch 体含 return
+ *  （吸收后完成）；32 = catch 体含 yield/yield*（吸收后续体可再交付）；
+ *  64 = catch 体可能 rethrow 且外层还有 catch（吸收结局不可静态分类——
+ *  内层重抛会被外层 catch 二次吸收，外层 catch 事实未标注）。
+ *  transpile 侧以数值字面量发射。 */
+export const YIELD_TRY_FINALLY = 1;
+export const YIELD_TRY_CATCH = 2;
+export const YIELD_FINALLY_YIELDS = 4;
+export const YIELD_FINALLY_RETURNS = 8;
+export const YIELD_CATCH_RETURNS = 16;
+export const YIELD_CATCH_YIELDS = 32;
+export const YIELD_CATCH_RETHROWS = 64;
+/** R1a：yield* 委托进**生成器对象**的 yield 点位（$yieldStar 运行时标注，
+ *  非 transpile）：.throw() 原生转发进内层迭代器——内层 catch 吸收后续体
+ *  （可再交付）超出外层 ctx 可分类面 → 吸收结局不可折 done。数组/字符串
+ *  等无 throw() 方法的内层：原生 TypeError 回注外层帧 → 外层 catch 吸收
+ *  （可折），不置位。 */
+export const YIELD_DELEGATED_GEN = 128;
+
 /** 生成器 yield 收集：抽象分支时标记路径敏感，禁止 exact 元组出货 */
-export let yieldStack: Abs[][] = [];
+export let yieldStack: GenYieldCollector[] = [];
 export let genPathSensitive = 0;
 export let genJoinOverride: Abs | null = null;
 export function setGenJoinOverride(v: Abs | null): void { genJoinOverride = v; }
 export function bumpGenPathSensitive(): void { genPathSensitive++; }
 
-export function withIsolatedYields<T>(fn: () => T): { v: T; ys: Abs[] | null } {
+export function withIsolatedYields<T>(fn: () => T): { v: T; ys: GenYieldCollector | null } {
   const top = yieldStack[yieldStack.length - 1];
   // 无收集器：不换槽、不建 armYs（fork 热路径常态）
   if (!top) return { v: fn(), ys: null };
-  const armYs: Abs[] = [];
+  const armYs: GenYieldCollector = { els: [], ctxs: [] };
   yieldStack[yieldStack.length - 1] = armYs;
   try {
     return { v: fn(), ys: armYs };
@@ -66,39 +105,52 @@ export function withIsolatedYields<T>(fn: () => T): { v: T; ys: Abs[] | null } {
   }
 }
 
-export function mergeArmYields(armYsList: Array<Abs[] | null>): void {
+export function mergeArmYields(armYsList: Array<GenYieldCollector | null>): void {
   const top = yieldStack[yieldStack.length - 1];
   if (!top || armYsList.length === 0) return;
-  const concrete = armYsList.filter((x): x is Abs[] => x !== null);
+  const concrete = armYsList.filter((x): x is GenYieldCollector => x !== null);
   if (concrete.length === 0) return;
   if (concrete.length === 1) {
-    top.push(...concrete[0]!);
+    top.els.push(...concrete[0]!.els);
+    top.ctxs.push(...concrete[0]!.ctxs);
     return;
   }
   // 多臂：join 各臂 yield 序列，并标记路径敏感
   let joined: Abs | null = null;
   for (const ys of concrete) {
-    joined = joined ? joinAbs(joined, $arr(ys)) : $arr(ys);
+    joined = joined ? joinAbs(joined, $arr(ys.els)) : $arr(ys.els);
   }
   genPathSensitive++;
   if (joined) genJoinOverride = joined;
   // 父收集器仍并入全部臂元素（过近似），conf 由 genJoinOverride/path 敏感性压低
-  for (const ys of concrete) top.push(...ys);
+  for (const ys of concrete) {
+    top.els.push(...ys.els);
+    top.ctxs.push(...ys.ctxs);
+  }
 }
 
-export function runForkArm(arm: () => Abs, exits: Abs[] | undefined): ForkArm {
+export function runForkArm(arm: () => Abs): ForkArm {
+  // N1：fork 臂 = 替代路径——promise executor 内各臂的 settle（resolve/
+  // reject）按臂路径 token 判定 first-wins（兄弟臂 settle 均活，见
+  // evalPromiseCtor）；executor 外零开销（enter 内部门闩）。
+  enterPromiseForkArm();
   try {
     return { kind: "val", v: asAbsVal(arm()) };
   } catch (e) {
     if (isNudoReturn(e)) {
-      exits?.push(e.absValue);
+      // N5：return 截断延续（join 后 trailing settle 不在此路径）——打点
+      notePromiseForkExit(currentPromiseSettleArm());
       return { kind: "ret", v: e.absValue };
     }
     if (isNudoThrow(e)) {
+      // N5：throw 同款截断（延续是 catch/函数边界，非 join 后主路径）
+      notePromiseForkExit(currentPromiseSettleArm());
       pushThrowExit(e.absValue);
       return { kind: "throw", v: e.absValue };
     }
     throw e;
+  } finally {
+    leavePromiseForkArm();
   }
 }
 
@@ -113,6 +165,9 @@ export function settleForkArms(a: ForkArm, b: ForkArm, exits: Abs[] | undefined)
   // 混合 throw + val/ret：throws 已在 throwExits；继续处理非 throw 臂
   const first = aThrow ? b : a;
   const second = aThrow ? a : b;
+  // ret 值只经一个通道交付（恰一次）：双 ret 臂合并后抛 NudoReturn 由函数
+  // 边界收值；单 ret 臂入 exits 侧信道（语句位 fork 继续 fall-through，值
+  // 由边界 join）——不再由 runForkArm 预推（双 ret 会与抛出值双重计数）。
   if (first.kind === "ret" && second.kind === "ret") {
     throw new NudoReturn(joinAbs(first.v, second.v));
   }
@@ -120,16 +175,23 @@ export function settleForkArms(a: ForkArm, b: ForkArm, exits: Abs[] | undefined)
     // 恰一臂 throw：只携带非 throw 臂
     if (first.kind === "ret") {
       if (!exits) throw new NudoReturn(first.v);
-      return undef();
+      exits.push(first.v);
+      // ret 臂经 exits 交付、throw 臂已上 throwExits——两路径都离开了语句位，
+      // 无 fall-through 可言：幻影 undef() 会被边界 join 成假 undefined 臂
+      // （`if (g) return "s"; throw E` 错显 `undefined | "s"`）。never 是
+      // joinAbs 幂等元，正常完成不存在时静默消失。
+      return never;
     }
     return first.v;
   }
   if (first.kind === "ret") {
     if (!exits) throw new NudoReturn(first.v);
-    return second.kind === "val" ? second.v : undef();
+    exits.push(first.v);
+    return second.v;
   }
   if (second.kind === "ret") {
     if (!exits) throw new NudoReturn(second.v);
+    exits.push(second.v);
     return first.v;
   }
   return joinAbs(first.v, second.v);
@@ -200,7 +262,7 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
   // overlay 本身惰性分配——无 Map/Set 写入时零堆分配
   beginCollectionFork();
   const arms: Array<ReturnType<typeof popCollectionArm>> = [];
-  const armYsList: Array<Abs[] | null> = [];
+  const armYsList: Array<GenYieldCollector | null> = [];
   let a: ForkArm;
   let b: ForkArm;
   try {
@@ -209,7 +271,7 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
       // 抽象双臂：臂内 break/continue 信号标记 abstract（兄弟臂未执行，
       // 循环捕获点据此宽化循环携带绑定，Bug 47/48）
       const r = withExecPhi(phiTrue, () =>
-        withIsolatedYields(() => withAbstractForkArm(() => runForkArm(consequent, exits))),
+        withIsolatedYields(() => withAbstractForkArm(() => runForkArm(consequent))),
       );
       a = r.v;
       armYsList.push(r.ys);
@@ -220,7 +282,7 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
       pushCollectionArm();
       try {
         const r = withExecPhi(falsePhi(), () =>
-          withIsolatedYields(() => withAbstractForkArm(() => runForkArm(alternate, exits))),
+          withIsolatedYields(() => withAbstractForkArm(() => runForkArm(alternate))),
         );
         b = r.v;
         armYsList.push(r.ys);
@@ -228,10 +290,12 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
         arms.push(popCollectionArm());
       }
     } else {
-      // 隐式 else：无写也必须占一臂，否则条件写入会被 merge 成必然（P0）
+      // 隐式 else：无写也必须占一臂，否则条件写入会被 merge 成必然（P0）。
+      // N5：隐式 else 也是替代路径——executor 内无 settle 则该路径悬挂 →
+      // 必须占 settle 臂 token（`if (c) resolve(1)` 单臂 settle 不得折确定）
       pushCollectionArm();
       try {
-        b = { kind: "val", v: undef() };
+        b = promiseExecutorActive() ? runForkArm(() => undef()) : { kind: "val", v: undef() };
         armYsList.push(null);
       } finally {
         arms.push(popCollectionArm());
@@ -347,11 +411,17 @@ export function $for(
     const abstractTest = !isDefinitelyTrue(t);
     if (abstractTest) {
       if (extended) break;
+      // N5：出口臂（本轮 test 假 → 跳过体直达循环后）：无 post-loop settle
+      // 覆盖则该路径悬挂（executor 内不得折确定 settle）
+      enterPromiseForkArm();
+      leavePromiseForkArm();
       snapCounter();
       snapExt();
     }
 
     let afterBody: Abs;
+    // N5：抽象条件迭代体 = 条件路径（体 settle 不得覆盖出口臂）
+    if (abstractTest) enterPromiseForkArm();
     try {
       afterBody = body(state);
     } catch (e) {
@@ -386,6 +456,8 @@ export function $for(
       } else {
         throw e;
       }
+    } finally {
+      if (abstractTest) leavePromiseForkArm();
     }
     const next = step(afterBody);
     // 抽象条件：本轮 body 完成后的绑定也是合法出口（下一轮 test 可能为假）
@@ -429,6 +501,9 @@ export function $for(
   snapExt();
   if (concreteExhausted) {
     noteLoopTruncation(LOOP_TRUNCATION_LABEL);
+    // N5：确定性死循环截断——悬挂路径真实存在（条件恒真不退出），除非
+    // 截断点之前已 settle，结果带 unsettled（post-loop settle 不可达）
+    notePromiseExecutorHang();
     if (extJoin && pack && unpack) unpack(confPartialPacked(widenLoopJoin(joinAbs(extJoin, pack()))));
     return confPartial(exitJoin ?? state);
   }
@@ -529,10 +604,20 @@ export function $while(
     const abstractTest = !isDefinitelyTrue(t);
     if (abstractTest) {
       if (extended) break;
+      // N5：出口臂（同 $for——无 post-loop settle 覆盖则悬挂）
+      enterPromiseForkArm();
+      leavePromiseForkArm();
       widen.observe(state);
       exitJoin = exitJoin ? joinAbs(exitJoin, state) : state;
     }
-    const next = step(state);
+    // N5：抽象条件迭代 = 条件路径（体 settle 不得覆盖出口臂）
+    let next: Abs;
+    if (abstractTest) enterPromiseForkArm();
+    try {
+      next = step(state);
+    } finally {
+      if (abstractTest) leavePromiseForkArm();
+    }
     if (i > 0) {
       const nvR = litValue(next);
       const svR = litValue(state);
@@ -558,6 +643,8 @@ export function $while(
   }
   if (concreteExhausted) {
     noteLoopTruncation(LOOP_TRUNCATION_LABEL);
+    // N5：确定性死循环截断（同 $for）——悬挂路径需 unsettled
+    notePromiseExecutorHang();
     return confPartial(exitJoin ? joinAbs(exitJoin, state) : state);
   }
   // 抽象预算耗尽：增长计数器宽化到无上界域（Bug 48；稳定不动点原样）
@@ -624,10 +711,18 @@ export function $whileSeq(
     }
     // 抽象条件：当前绑定是合法出口之一，先 snapshot 再进 body；
     // 延展相只接受具体真——条件退化抽象即停（不越抽象预算）
-    if (!isDefinitelyTrue(t)) {
+    const abstractIter = !isDefinitelyTrue(t);
+    if (abstractIter) {
       if (extended) break;
+      // N5：出口臂（本轮 test 假 → 跳过体直达循环后）：无 post-loop settle
+      // 覆盖则该路径悬挂（`while (c) { r(1); }` 不得折确定 promise<1>）
+      enterPromiseForkArm();
+      leavePromiseForkArm();
       snapExit();
     }
+    // N5：抽象条件迭代体 = 条件路径（体 settle 不得覆盖出口臂——但
+    // `while (c) { r(1); } r(2);` 的 post-loop settle 覆盖出口 → 确定 1|2）
+    if (abstractIter) enterPromiseForkArm();
     try {
       body();
     } catch (e) {
@@ -647,6 +742,8 @@ export function $whileSeq(
       }
       if (isNudoReturn(e) || isNudoThrow(e)) throw e;
       throw e;
+    } finally {
+      if (abstractIter) leavePromiseForkArm();
     }
     boundaryGate(i);
   }
@@ -654,6 +751,8 @@ export function $whileSeq(
   snapExit();
   if (concreteExhausted) {
     noteLoopTruncation(LOOP_TRUNCATION_LABEL);
+    // N5：确定性死循环截断（同 $for）——悬挂路径需 unsettled
+    notePromiseExecutorHang();
     if (exitJoin && pack && unpack) unpack(confPartialPacked(joinAbs(exitJoin, pack())));
     return;
   }
@@ -688,12 +787,12 @@ export function $switch(
   const exits = loopExitsAls.getStore();
   beginCollectionFork();
   const armOverlays: Array<ReturnType<typeof popCollectionArm>> = [];
-  const armYsList: Array<Abs[] | null> = [];
+  const armYsList: Array<GenYieldCollector | null> = [];
   const runArm = (fn: () => Abs): ForkArm => {
     pushCollectionArm();
     try {
       // 抽象 disc 臂：臂内 break/continue 信号标记 abstract（同 $fork）
-      const r = withIsolatedYields(() => withAbstractForkArm(() => runForkArm(fn, exits)));
+      const r = withIsolatedYields(() => withAbstractForkArm(() => runForkArm(fn)));
       armYsList.push(r.ys);
       return r.v;
     } finally {
@@ -712,10 +811,14 @@ export function $switch(
     if (dflt) {
       if (!seenRuns.has(dflt)) results.push(runArm(dflt));
     } else {
-      // 隐式 no-match 臂：全 case 不命中时 fall-through（P0-2）
+      // 隐式 no-match 臂：全 case 不命中时 fall-through（P0-2）。
+      // N5：隐式臂也是替代路径（同 $fork 隐式 else）——executor 内必须占
+      // settle 臂 token，否则抽象 disc 全不命中路径被静默丢弃
       pushCollectionArm();
       try {
-        results.push({ kind: "val", v: undef() });
+        results.push(
+          promiseExecutorActive() ? runForkArm(() => undef()) : { kind: "val", v: undef() },
+        );
         armYsList.push(null);
       } finally {
         armOverlays.push(popCollectionArm());
@@ -736,7 +839,14 @@ export function $switch(
   if (allRet) {
     throw new NudoReturn(nonThrow.map((r) => r.v).reduce((a, b) => joinAbs(a, b)));
   }
-  // 混合：ret/throw 臂已进 exits；语句位只携带 val 臂值继续
+  // 混合：ret 臂值入 exits 侧信道（恰一次，$fork settle 同口径）；语句位只携带 val 臂值继续
+  const retParts = nonThrow.filter((r): r is { kind: "ret"; v: Abs } => r.kind === "ret");
+  if (retParts.length > 0) {
+    if (!exits) {
+      throw new NudoReturn(retParts.map((r) => r.v).reduce((a, b) => joinAbs(a, b)));
+    }
+    for (const r of retParts) exits.push(r.v);
+  }
   const valParts = nonThrow.filter((r) => r.kind === "val").map((r) => r.v);
   if (valParts.length === 0) return undef();
   return valParts.reduce((a, b) => joinAbs(a, b));

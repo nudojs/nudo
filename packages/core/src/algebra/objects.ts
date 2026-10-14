@@ -24,6 +24,17 @@ export type Slot = {
   optional?: boolean;
   readonly?: boolean;
   internal?: boolean;
+  /** Bug 66：原型链解析槽（errorBrandAbs 的 name——原生经 X.prototype.name
+   * 可见，非实例自有）。$get 直读 / $in 存在性照常；自有面 introspection
+   * （hasOwnProperty / propertyIsEnumerable / Object.hasOwn / gOPN）折
+   * false；$set 公有覆写落地转自有（e.name = "X" 原生建自有可枚举属性）。 */
+  inherited?: boolean;
+  /** Bug 73：计算 symbol 键投影槽（[Symbol.X] → "@@X"，transpile 期
+   * $set opts.symbolKey 打标）。原生 symbol 键对 JSON.stringify 等
+   * 字符串键枚举面不可见；字面量字符串键 {"@@lit":1} 无标记、照常
+   * 序列化——不得用 "@@" 前缀语法过滤（会误滤）。$get/$set/$in 直连
+   * 键访问不受影响。 */
+  symbolKey?: boolean;
 };
 
 /** ES 规范数组下标（无前导零、< 2^32-1）；非规范键返回 undefined */
@@ -615,6 +626,21 @@ export function markNullProtoObj(o: Abs): Abs {
 
 export function isNullProtoObj(o: Abs): boolean {
   return nullProtoMarks.has(o as object);
+}
+
+/** 闭 null-proto 对象且无自有 ToPrimitive coercer（toString / valueOf /
+ *  @@toPrimitive 槽——symbol 键写按 "@@X" 投影落地，Bug 73）→ ToPrimitive
+ * 无 coercer 可走，原生定抛 TypeError（"Cannot convert object to primitive
+ * value"）。open / index 形未知成员可能含 coercer，不得判缺（返回 false 落
+ * 上层 may）。Bug 24（global.ts String()）同源；供 arithmetic/template 的
+ * `+` 拼接臂复用。 */
+export function isNullProtoWithoutCoercer(a: Abs): boolean {
+  if (a.shape.k !== "obj" || !isNullProtoObj(a)) return false;
+  const so = a.shape as { open?: boolean; index?: unknown; slots?: Record<string, unknown> };
+  if (so.open || so.index) return false;
+  if (!so.slots) return true;
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(so.slots, k);
+  return !has("toString") && !has("valueOf") && !has("@@toPrimitive");
 }
 
 /** 同一对象的不可变更新（$set/$del）迁移 nullProto 标记 */

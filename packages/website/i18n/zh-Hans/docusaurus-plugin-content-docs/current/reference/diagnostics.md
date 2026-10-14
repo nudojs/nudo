@@ -343,12 +343,12 @@ Context: [约束模板](../concepts/directives.md#nudo--约束模板引入) · [
 
 ```text
 sim: malformed @nudo:assume 'd <= 10' (expected <param> <= <param> or <param> >= <param>; constant bounds belong to sidecar contracts)
-sim: @nudo:assume parameter name(s) not in the formal parameter list (x, y)
+sim: @nudo:assume name(s) not bound as parameters or top-level locals (x, y)
 ```
 
-`@nudo:assume` 段不在 `var <= var` 文法之内，或引用了锚定函数形参表之外的名字。**Error** —— 该段被忽略，不折入任何引理。文法只接受 `<param> <= <param>`（`>=` 归一为 `le`）；`<` / `>` / `==` 与常数界（`d <= 10`）均非法——**常数界归侧车契约**（`number().le(10)`），该指令只声明引擎推导不出的跨变量引理。
+`@nudo:assume` 段不在 `var <= var` 文法之内，或引用了锚定函数**形参或函数体顶层 `const`/`let`/`var` 局部绑定**之外的名字（解构、嵌套块、`for` 头声明不算）。**Error** —— 该段被忽略，不折入任何引理。文法只接受 `<name> <= <name>`（`>=` 归一为 `le`）；`<` / `>` / `==` 与常数界（`d <= 10`）均非法——**常数界归侧车契约**（`number().le(10)`），该指令只声明引擎推导不出的跨变量引理。
 
-**Fix:** 引用锚定函数形参表内的名字；常数界写进侧车 / `@nudo:contract`。
+**Fix:** 引用锚定函数形参或函数体顶层局部绑定内的名字；常数界写进侧车 / `@nudo:contract`（局部量的常数界放在生产它的 callee 的返回契约上）。
 
 Context: [@nudo:assume](../concepts/directives.md#nudoassume--user-lemmas) · [契约门禁（L1）](../guides/check.md#l1--显式契约)
 

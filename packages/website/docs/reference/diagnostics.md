@@ -343,12 +343,12 @@ Context: [Contracts](../concepts/directives.md#nudo--constraint-templates) · [C
 
 ```text
 sim: malformed @nudo:assume 'd <= 10' (expected <param> <= <param> or <param> >= <param>; constant bounds belong to sidecar contracts)
-sim: @nudo:assume parameter name(s) not in the formal parameter list (x, y)
+sim: @nudo:assume name(s) not bound as parameters or top-level locals (x, y)
 ```
 
-A `@nudo:assume` segment is outside the `var <= var` grammar, or references names that are not formal parameters of the anchored function. **Error** — the segment is ignored; no lemma folds. The grammar accepts only `<param> <= <param>` (`>=` is normalized to `le`); `<` / `>` / `==` and constant bounds (`d <= 10`) are invalid — **constant bounds belong to sidecar contracts** (`number().le(10)`); the directive is only for cross-variable lemmas the engine cannot derive.
+A `@nudo:assume` segment is outside the `var <= var` grammar, or references names that are not parameters or top-level `const`/`let`/`var` locals of the anchored function's body (destructuring, nested blocks, and `for`-init declarations do not count). **Error** — the segment is ignored; no lemma folds. The grammar accepts only `<name> <= <name>` (`>=` is normalized to `le`); `<` / `>` / `==` and constant bounds (`d <= 10`) are invalid — **constant bounds belong to sidecar contracts** (`number().le(10)`); the directive is only for cross-variable lemmas the engine cannot derive.
 
-**Fix:** reference parameter names from the anchored function's formal list; move constant bounds into a sidecar / `@nudo:contract`.
+**Fix:** reference names bound as parameters or top-level locals of the anchored function; move constant bounds into a sidecar / `@nudo:contract` (for a local's constant bound, put the contract on the return of the callee that produces it).
 
 Context: [@nudo:assume](../concepts/directives.md#nudoassume--user-lemmas) · [Contract gate (L1)](../guides/check.md#l1--explicit-contracts)
 

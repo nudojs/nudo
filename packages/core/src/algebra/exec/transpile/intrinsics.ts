@@ -48,6 +48,15 @@ export const ENV_SHADOW_SKIP_GLOBALS: ReadonlySet<string> = new Set([
   "Boolean",
   "RegExp",
   "Error",
+  // Bug 68：Error 家族七子类进路由表（.prototype 身份读 / 家族派发）——
+  // parity 门要求路由名同步 skip，防 env 注入遮蔽宿主身份路由
+  "TypeError",
+  "RangeError",
+  "ReferenceError",
+  "SyntaxError",
+  "EvalError",
+  "URIError",
+  "AggregateError",
   // Bug 44：进路由表（Intl.NumberFormat/DateTimeFormat 构造器值 + typeof
   // Intl 折 object + 成员投影）——skip 防 env 注入遮蔽宿主身份路由
   "Intl",

@@ -58,7 +58,7 @@ export function other(a, b) {
     // 只有 other 报：d/max 不在 (a, b)；sim 的合法段不得被另一函数的消费污染
     expect(bad).toHaveLength(1);
     expect(bad[0]!.fn).toBe("other");
-    expect(bad[0]!.message).toContain("not in the formal parameter list");
+    expect(bad[0]!.message).toContain("not bound as parameters or top-level locals");
     expect(bad[0]!.actual).toContain("d");
     expect(bad[0]!.actual).toContain("max");
   });
@@ -160,7 +160,7 @@ export function f() {
 `);
     const bad = r.issues.find((i) => i.code === "nudo:assume-invalid");
     expect(bad).toBeDefined();
-    expect(bad!.expected).toBe("(no params)");
+    expect(bad!.expected).toBe("(no params/locals)");
   });
 
   it("合法段与非法段并存：合法段不被非法段拖垮（无 assume-invalid 以外的新码）", () => {
@@ -176,6 +176,125 @@ export function sim(d, max) {
     const bad = r.issues.filter((i) => i.code === "nudo:assume-invalid");
     expect(bad).toHaveLength(1);
     expect(bad[0]!.actual).toBe("d == max");
+  });
+});
+
+describe("@nudo:assume 局部量名解析（#165）", () => {
+  // #165：可锚定名 = 形参 ∪ 函数体顶层 const/let/var 局部绑定（SSA 锚定：
+  // 引理作用于绑定值，从定义点到作用域尾）。局部名收集 = BlockStatement
+  // 直接子语句 VariableDeclaration 的 Identifier declarator；嵌套块 /
+  // 解构 / for-init 不收（保守）。本 describe 钉校验面（bindable 名集），
+  // 折叠产物由 assume-relational-div-152 套件钉。
+  it("顶层局部名合法：不报 assume-invalid（嵌套块同名的另一函数不误判）", () => {
+    const r = checkOf(`
+/**
+ * @nudo:assume d <= max
+ */
+export function sim(a, b) {
+  const d = a.length + b.length;
+  const max = d + 1;
+  return max === 0 ? 1 : 1 - d / max;
+}
+export function other(x) {
+  if (x > 0) {
+    const d = x;
+    const max = x * 2;
+    return d / max;
+  }
+  return 0;
+}
+`);
+    // sim 的 d/max 是自身函数体顶层局部 → 合法；other 的嵌套块同名
+    // 不得污染 sim 的名解析（提取按锚定函数的 body，不跨函数）
+    expect(r.issues.filter((i) => i.code === "nudo:assume-invalid")).toEqual([]);
+  });
+
+  it("未知名报新消息：expected 为形参 ∪ 顶层局部名", () => {
+    const r = checkOf(`
+/**
+ * @nudo:assume d <= zz
+ */
+export function sim(a, b) {
+  const d = a.length + b.length;
+  return d;
+}
+`);
+    const bad = r.issues.filter((i) => i.code === "nudo:assume-invalid");
+    expect(bad).toHaveLength(1);
+    expect(bad[0]!.severity).toBe("error");
+    expect(bad[0]!.message).toContain("sim");
+    expect(bad[0]!.message).toContain("not bound as parameters or top-level locals");
+    expect(bad[0]!.actual).toBe("zz");
+    expect(bad[0]!.expected).toBe("a, b, d");
+    expect(r.ok).toBe(false);
+  });
+
+  it("嵌套块声明的名拒绝：expected 只列形参", () => {
+    const r = checkOf(`
+/**
+ * @nudo:assume d <= max
+ */
+export function sim(a, b) {
+  if (b > 0) {
+    const d = a.length;
+    const max = b.length;
+    return 1 - d / max;
+  }
+  return 0;
+}
+`);
+    const bad = r.issues.filter((i) => i.code === "nudo:assume-invalid");
+    expect(bad).toHaveLength(1);
+    expect(bad[0]!.actual).toBe("d, max");
+    expect(bad[0]!.expected).toBe("a, b");
+  });
+
+  it("解构 / for-init 声明的名不收（保守拒绝）", () => {
+    // 解构 declarator：id 是 ObjectPattern 而非 Identifier → 不进 bindable 面
+    const r1 = checkOf(`
+/**
+ * @nudo:assume d <= max
+ */
+export function sim(a, b) {
+  const { d, max } = { d: 1, max: 2 };
+  return 1 - d / max;
+}
+`);
+    const bad1 = r1.issues.filter((i) => i.code === "nudo:assume-invalid");
+    expect(bad1).toHaveLength(1);
+    expect(bad1[0]!.actual).toBe("d, max");
+    expect(bad1[0]!.expected).toBe("a, b");
+
+    // for-init：ForOfStatement 不是函数体直接子语句的 VariableDeclaration
+    const r2 = checkOf(`
+/**
+ * @nudo:assume d <= b
+ */
+export function loop(a, b) {
+  for (const d of [1, 2, 3]) {
+    return d / b;
+  }
+  return 0;
+}
+`);
+    const bad2 = r2.issues.filter((i) => i.code === "nudo:assume-invalid");
+    expect(bad2).toHaveLength(1);
+    expect(bad2[0]!.actual).toBe("d");
+    expect(bad2[0]!.expected).toBe("a, b");
+  });
+
+  it("var 声明同样收（const/let/var 同口径）", () => {
+    const r = checkOf(`
+/**
+ * @nudo:assume d <= max
+ */
+export function sim(a, b) {
+  var d = a.length + b.length;
+  var max = d + 1;
+  return max === 0 ? 1 : 1 - d / max;
+}
+`);
+    expect(r.issues.filter((i) => i.code === "nudo:assume-invalid")).toEqual([]);
   });
 });
 

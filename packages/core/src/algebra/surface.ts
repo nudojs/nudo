@@ -7,7 +7,8 @@ import type { Abs, Shape, Confidence } from "./abs.ts";
 import { abs, litValue, confJoin, num, numLit, bool, boolLit, strLit, bigintLit, isStrPrim, isBigPrim } from "./abs.ts";
 import { classNameOfValue } from "./class-mark.ts";
 import { builtinCtorNameOf, hostBuiltinCtorName } from "./builtins.ts";
-import { symbolIdOf, isSymbolAbs as isSym } from "./symbol-id.ts";
+import { symbolIdOf, isSymbolAbs as isSym, isAbstractKeySymbol } from "./symbol-id.ts";
+import { freshInstanceIdOf } from "./instance-id.ts";
 import type { LiteralValue, Term } from "./term.ts";
 import { lit, simplifyTerm, app } from "./term.ts";
 import type { Pred } from "./pred.ts";
@@ -627,11 +628,16 @@ export function strictEqAbs(a: Abs, b: Abs): boolean | undefined {
     }
     if (k === "prim" && a.shape.type === "symbol") return true;
   }
-  // Symbol 身份：同 Abs 引用 → true；两个独立 Symbol() → false（侧表 id）
+  // Symbol 身份：同 Abs 引用 → true；两个独立 Symbol() → false（侧表 id）。
+  // Bug 61：抽象键驻留符号（Symbol.for 不可判键）与其他注册符号 === 原生
+  // 不可判（键串可能相等）→ unknown，不得折 false
   if (a.shape.k === "prim" && a.shape.type === "symbol" && b.shape.k === "prim" && b.shape.type === "symbol") {
     const ia = symbolIdOf(a);
     const ib = symbolIdOf(b);
-    if (ia !== undefined && ib !== undefined) return ia === ib;
+    if (ia !== undefined && ib !== undefined) {
+      if (isAbstractKeySymbol(a) || isAbstractKeySymbol(b)) return undefined;
+      return ia === ib;
+    }
     return undefined;
   }
   const vaR = litValue(a);
@@ -668,10 +674,28 @@ export function strictEqAbs(a: Abs, b: Abs): boolean | undefined {
   // 实例 brand ⊗ 类值 brand：实例（无 ctor facet）永不是构造器值
   // （$class 类值带 ctor: true facet）——跨 facet 比较直接折 false
   // （new C() === C / new D() === C 均原生 false）。
+  // P3b：同为类值时不同类名必不同值（registry 裸名键：同名 last-wins
+  // 同一 Abs，上方同引用已折 true）——B.prototype.constructor === A /
+  // B === Base（fn 伪父）折 false exact。
   if (a.shape.k === "brand" && b.shape.k === "brand") {
     const aCtor = a.shape.ctor === true;
     const bCtor = b.shape.ctor === true;
     if (aCtor !== bCtor) return false;
+    if (aCtor && bCtor) {
+      const an = classNameOfValue(a);
+      const bn = classNameOfValue(b);
+      if (an !== undefined && bn !== undefined && an !== bn) return false;
+    }
+  }
+  // 新鲜实例身份（R2b）：两个不同创建事件产出的对象值（async 调用 /
+  // Promise.resolve 各自的 promise、生成器/迭代器对象、new 实例、字面量
+  // 对象/数组）原生引用必不同 → false。同创建事件的别名/采纳复用同一
+  // Abs 引用（上方同 ref / 同 var 已折 true，id 相同不入此臂）；任一侧
+  // 未打标（join 产物 / 重包装 / 宿主对象）不折，维持 unknown。
+  {
+    const fa = freshInstanceIdOf(a);
+    const fb = freshInstanceIdOf(b);
+    if (fa !== undefined && fb !== undefined && fa !== fb) return false;
   }
   return undefined;
 }

@@ -4,6 +4,7 @@
  */
 
 import type { Abs } from "../abs.ts";
+import { abs } from "../abs.ts";
 import { markClassValue, classNameOfValue } from "../class-mark.ts";
 
 // 类值身份标记在 class-mark.ts（algebra 叶子）；此处 re-export 维持既有 import 面
@@ -23,14 +24,34 @@ export type EvalClassSpec = {
    * （Super constructor null … is not a constructor）；显式 super() 同抛（$super）。
    */
   superNull?: boolean;
+  /**
+   * N2：extends 目标是**宿主**内建构造器（host fn 或 builtinCtorAbs brand
+   * 身份）——类值静态读/调用（B.keys / E.captureStackTrace）沿链到未注册
+   * 父名时凭此标记走宿主静态通道。mock/桥接父类（fn Abs 同名）不带标记
+   * → 无通道 → sound unknown（不折 undefined / 不误派发宿主真值）。
+   */
+  superBuiltinHost?: boolean;
   ctor?: (thisVal: Abs, ...args: Abs[]) => Abs;
   methods?: Record<string, (thisVal: Abs, ...args: Abs[]) => Abs>;
   /** 实例方法形参展示名（AST 形参名；未调用方法槽 `shape.params` 用） */
   methodParams?: Record<string, string[]>;
-  staticMethods?: Record<string, (...args: Abs[]) => Abs>;
+  /** R5：静态方法 impl 首参 __this = 类值（接收者——沿链调用时是调用类） */
+  staticMethods?: Record<string, (thisVal: Abs, ...args: Abs[]) => Abs>;
   /** 静态方法形参展示名 */
   staticMethodParams?: Record<string, string[]>;
-  statics?: Record<string, Abs>;
+  /**
+   * P2b：构造器元数（首个默认值/rest 形参前的形参数，nativeParamArity
+   * 口径）——类值 .length 自有属性。隐式构造器（基类零参 / 派生
+   * `(...args){super(...args)}`）恒 0。transpile 期记录；未记录的手写
+   * spec（mock 等）undefined → $get 折诚实 unknown（不假 0）。
+   */
+  ctorLength?: number;
+  /**
+   * 静态字段：R5 起值可为 thunk（以类值为 this 求值——原生
+   * ClassFieldDefinitionEvaluation 的 receiver 是类值；箭头/`this.x`
+   * 读写随之恢复）。旧行（宿主 Abs）保持兼容。
+   */
+  statics?: Record<string, Abs | ((cls: Abs) => Abs)>;
   /**
    * Bug 59：实例字段——每次 $new 以新实例为 this 按源序求值（原生
    * InitializeInstanceElements）。name 为字面量键；key 为计算键的
@@ -58,6 +79,20 @@ export type EvalClassSpec = {
   accessors?: Record<string, EvalClassAccessor>;
   /** 静态 get/set：挂在类构造器上，不在实例原型链 */
   staticAccessors?: Record<string, EvalClassAccessor>;
+};
+
+/** 内建错误层级（Error 为根，registry 无 superName 时回退）。
+ *  放本叶子模块：evalClassChain（exec/runtime/members.ts）与
+ *  protoOfRecv（builtins/ctor.ts）共用，后者不可反向引 members（环）。 */
+export const BUILTIN_ERROR_SUPER: Record<string, string> = {
+  Error: "",
+  RangeError: "Error",
+  TypeError: "Error",
+  ReferenceError: "Error",
+  SyntaxError: "Error",
+  URIError: "Error",
+  EvalError: "Error",
+  AggregateError: "Error",
 };
 
 const classRegistry = new Map<string, EvalClassSpec>();
@@ -137,6 +172,63 @@ export function getEvalClass(name: string): EvalClassSpec | undefined {
   return classRegistry.get(name);
 }
 
+/** Bug 58：类值 Abs 注册表（名 → $class 产出的类值本身）。
+ *  protoOfRecv 的父构造器投影按 superName 回取**同一** Abs 引用——
+ *  `Object.getPrototypeOf(B) === A` 折 exact true 的前提（品牌 === 按
+ *  引用恒等，不按名折叠）。与 spec 注册表同生命周期（last-wins /
+ *  clearBClasses 同清）。 */
+const classValues = new Map<string, Abs>();
+
+export function registerClassValue(name: string, value: Abs): void {
+  classValues.set(name, value);
+}
+
+export function lookupClassValue(name: string): Abs | undefined {
+  return classValues.get(name);
+}
+
+// ---- P3b：fn 值父类身份（函数/类表达式值作 extends 目标） ------------------
+// 匿名函数表达式父类（`const Base = function(){}; class B extends Base {}`）
+// 无 shape.name 可作 superName 链键——N2 前直接断链。机制：按 fn Abs 驻留
+// 「伪父名」（WeakMap，同 fn 跨 $class 复用），名下注册空 spec（链可走）
+// + 类值映射（伪名 → fn Abs 本身——类值槽走 / protoOfRecv 父构造器投影
+// 取同一引用）。伪名唯一（不与用户类名/内建名碰撞，无 BUG-026 碰撞面）。
+
+const fnParentNames = new WeakMap<object, string>();
+let fnParentSeq = 0;
+
+/** fn Abs → 伪父名（不存在则合成并注册空 spec + 类值映射）。 */
+export function ensureFnParentName(fnAbs: Abs): string {
+  let n = fnParentNames.get(fnAbs);
+  if (n === undefined) {
+    n = `__nudoFnParent${++fnParentSeq}`;
+    fnParentNames.set(fnAbs, n);
+    registerEvalClass({ name: n });
+    registerClassValue(n, fnAbs);
+  }
+  return n;
+}
+
+/** fn Abs 的 prototype 对象（按 fn Abs 驻留；原地可变跨读存活——原生每
+ *  fn 唯一共享 prototype，`f.prototype === f.prototype` 恒真、
+ *  `Base.prototype.x = 1` 写后读可见）。constructor 槽指回 fn 自身
+ *  （MakeConstructor 语义）。 */
+const fnProtos = new WeakMap<object, Abs>();
+
+export function fnProtoOf(fnAbs: Abs): Abs {
+  let p = fnProtos.get(fnAbs);
+  if (p === undefined) {
+    p = abs(
+      { k: "obj", slots: { constructor: { value: fnAbs } } },
+      undefined,
+      undefined,
+      "path",
+    );
+    fnProtos.set(fnAbs, p);
+  }
+  return p;
+}
+
 /**
  * Bug 84：用户类实例 brand 的内层闭 obj（公有/私有自有槽的承载者）。
  * 属性 introspection 面（Object.keys/values/entries / gOPN / assign /
@@ -186,6 +278,7 @@ export function classChainHasJsonUserFace(name: string): boolean {
 
 export function clearBClasses(): void {
   classRegistry.clear();
+  classValues.clear();
   classEpochs.clear();
   classCollisions.length = 0;
 }

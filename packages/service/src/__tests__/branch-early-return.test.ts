@@ -25,7 +25,10 @@ export function gradeFor(score) {
   it("transpile folds early-return if into return $fork", () => {
     const js = transpile(source);
     expect(js).toContain("return $fork(");
-    expect(js).toMatch(/return \$fork\([\s\S]*\(\) => \$lit\("A"\)/);
+    // 双 return 臂经 $loopReturn 信号（裸 return 只退出臂 thunk，会被语句位
+    // $fork 丢弃）；函数体自包含边界吸收 NudoReturn（fork×try 早退 join）
+    expect(js).toMatch(/\$loopReturn\(\$lit\("A"\)\)/);
+    expect(js).toContain("$catchReturn(__nudoFnRet)");
   });
 
   it("evaluator evaluateFunction returns A for score=92", () => {

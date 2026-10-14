@@ -9,6 +9,7 @@
  */
 import type { Abs } from "./abs.ts";
 import { abs, unknown, strLit, str } from "./abs.ts";
+import { setPropFlags } from "./builtins/invariants.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 
 export type MayThrowEffect = {
@@ -149,22 +150,34 @@ export function throwPayloadOf(e: unknown): Abs {
  *  message 内容宿主特定 → 保守 string 域（与 builtins/error.ts
  *  errorBrandAbs 同口径）。 */
 export function errorTypeAbs(name: string): Abs {
+  // Bug 66：与 errorBrandAbs 同口径——name 打 Slot.inherited（原生经
+  // X.prototype.name 原型链解析，非自有：catch 形参 e.hasOwnProperty("name")
+  // 折 false）；message 自有但不可枚举（enumerable:false 侧表）。
+  // R4a 补：stack 槽与 errorBrandAbs 同款（Bug 59——原生 throw 载荷也带
+  // 自有 stack，node 实测 gOPN(caught e) → ["stack","message"]；槽插入序
+  // 同 errorBrandAbs），否则 catch 形参 e.stack 闭槽 miss 假折 undefined、
+  // hasOwn/gOPD 自有面折 false/undefined 均为 wrong-definite。
+  const inner = abs(
+    {
+      k: "obj",
+      slots: {
+        stack: { value: str() },
+        name: { value: strLit(name), inherited: true },
+        message: { value: str() },
+      },
+    },
+    undefined,
+    undefined,
+    "exact",
+  );
+  setPropFlags(inner, "stack", { enumerable: false });
+  setPropFlags(inner, "message", { enumerable: false });
+  setPropFlags(inner, "name", { enumerable: false });
   return abs(
     {
       k: "brand",
       name,
-      shape: abs(
-        {
-          k: "obj",
-          slots: {
-            name: { value: strLit(name) },
-            message: { value: str() },
-          },
-        },
-        undefined,
-        undefined,
-        "exact",
-      ),
+      shape: inner,
     },
     undefined,
     undefined,

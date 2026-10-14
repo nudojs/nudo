@@ -8,7 +8,7 @@
 import type { Abs } from "./abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, unknown, str } from "./abs.ts";
 import { applyCallbackAbs, undefAbs, validateIndexArg } from "./hof.ts";
-import { joinAbs, objOf } from "./objects.ts";
+import { joinAbs, objOf, setSlot, isNullProtoWithoutCoercer } from "./objects.ts";
 import { NudoThrow } from "./nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "./may-throw.ts";
 import { pTrue } from "./pred.ts";
@@ -598,6 +598,11 @@ export function callAbsMethod(
     case "valueOf":
       return lit !== undefined ? strLit(lit) : strPrim("path");
     case "concat": {
+      // 逐参 ToPrimitive：闭 null-proto 无 coercer → 定抛（字面量接收者
+      // 折叠臂与抽象接收者共用；'x'.concat(o) node 实测 TypeError）
+      for (const a of args) {
+        if (isNullProtoWithoutCoercer(a)) throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
       if (lit !== undefined) {
         let s = lit;
         for (const a of args) {
@@ -740,6 +745,19 @@ export function callAbsMethod(
                 typeof offset === "number" ? numLit(offset) : unknown,
                 typeof whole === "string" ? strLit(whole) : unknown,
               ];
+              // Bug 62：命名组时末尾 groups 对象（原生 replacer 布局的第
+              // 5+ 实参）——宿主 replace 传入真实 groups（键→捕获串，
+              // 未参与组为 undefined），此前检测后丢弃 → groups 恒
+              // undefined、groups.d 假 TypeError
+              if (hasNamedGroups && last !== null && typeof last === "object") {
+                const gslots: Record<string, { value: Abs }> = Object.create(null);
+                for (const [gk, gv] of Object.entries(last as Record<string, unknown>)) {
+                  setSlot(gslots, gk, {
+                    value: gv === undefined ? undefAbs() : strLit(String(gv)),
+                  });
+                }
+                callArgs.push(abs({ k: "obj", slots: gslots }, undefined, undefined, "exact"));
+              }
               const r = applyCallbackAbs(repAbs, callArgs, callbackEnv(), pTrue, defaultLeakBudget);
               // Bug 1：GetSubstitution 对回调返回值做 ToString——Symbol 定抛
               // TypeError（原生 "ab".replace("a", () => Symbol())）。String(sym)

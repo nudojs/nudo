@@ -19,6 +19,7 @@ import { and, le, ge, pTrue } from "../pred.ts";
 import { div, numericBounds } from "../arithmetic.ts";
 import { makeSum } from "../objects.ts";
 import { formatAbs } from "../format.ts";
+import { checkSource } from "../index.ts";
 import type { Abs } from "../abs.ts";
 
 // 入口参数 Abs：契约口径锚 termVar(paramName)，pred 挂自身 term
@@ -238,5 +239,162 @@ export function simAfter(d, max) { const z = zero(); return z + 1 - d / max; }`;
     // div 在调用之后求值、分子分母保持裸 var term（d+z 会合成 +(d,0) 项，
     // 引理按项恒等不匹配——那是项匹配口径，与本还原断言无关）
     expect(numericBounds(r, pTrue)?.hi).toEqual({ value: 1, strict: false });
+  });
+});
+
+describe("assume 局部量锚定端到端（#165）", () => {
+  // #165：@nudo:assume 名字解析扩展到形参 ∪ 函数体顶层 const/let/var 局部
+  // 绑定（SSA 锚定）。局部量 d/max 的符号知识来自 callee 返回契约面
+  // （rawDist ≥ 0 / maxLen ≥ 1），transpile 在 declarator init 包
+  // $assumeAnchor 把 term α-改名 var(<name>)——引理 d <= max 与操作数
+  // 同项后关系折叠命中 ⇒ d/max ∈ [0,1] ⇒ 返回契约 [0,1] 可证。
+  const sidecar = `export const rawDist = fn({ a: string(), b: string() }, number().ge(0));
+export const maxLen = fn({ a: string(), b: string() }, number().ge(1));
+export const grow = fn({ a: string(), b: string() }, number().ge(0));
+export const sim = fn({ a: string(), b: string() }, number().ge(0).le(1));`;
+  const opts = {
+    loadModule: (spec: string) => (spec.endsWith(".nudo.js") ? sidecar : undefined),
+    fromFile: "/t/locals.js",
+  };
+  const callees = `export function rawDist(a, b) { return a.length + b.length; }
+export function maxLen(a, b) { return Math.max(a.length, b.length) + 1; }
+export function grow(a, b) { return a.length * 100 + b.length * 100; }`;
+  const src = (simSrc: string) => `${simSrc}\n${callees}`;
+
+  it("局部量引理折叠证明：const d/max 锚定 ⇒ 无 unproven-return + assume-relied", () => {
+    const r = checkSource(
+      "/t/locals.js",
+      src(`
+/**
+ * @nudo:assume d <= max
+ */
+export function sim(a, b) {
+  const d = rawDist(a, b);
+  const max = maxLen(a, b);
+  return max === 0 ? 1 : 1 - d / max;
+}
+`),
+      pTrue,
+      opts,
+    );
+    expect(r.issues.some((i) => i.code === "nudo:unproven-return")).toBe(false);
+    const relied = r.issues.find((i) => i.code === "nudo:assume-relied");
+    expect(relied).toBeDefined();
+    expect(relied!.severity).toBe("info");
+    expect(relied!.fn).toBe("sim");
+    expect(relied!.message).toContain("d <= max");
+    // 局部名合法：不报 assume-invalid
+    expect(r.issues.some((i) => i.code === "nudo:assume-invalid")).toBe(false);
+  });
+
+  it("对照（无 assume 行）：同名局部不折 ⇒ unproven-return 诚实上报", () => {
+    const r = checkSource(
+      "/t/locals.js",
+      src(`
+export function sim(a, b) {
+  const d = rawDist(a, b);
+  const max = maxLen(a, b);
+  return max === 0 ? 1 : 1 - d / max;
+}
+`),
+      pTrue,
+      opts,
+    );
+    const unproven = r.issues.find(
+      (i) => i.code === "nudo:unproven-return" && i.fn === "sim",
+    );
+    expect(unproven).toBeDefined();
+    expect(unproven!.severity).toBe("warning");
+    expect(r.issues.some((i) => i.code === "nudo:assume-relied")).toBe(false);
+  });
+
+  it("跨帧护栏：caller 引理不泄进 callee 帧（helper 同名局部 d/max 不折）", () => {
+    // 直构（runTranspiled，参照「调用边界隔离」describe）：文件含
+    // @nudo:assume（transpile 锚定门）→ 三个函数的顶层 declarator init
+    // 均包 $assumeAnchor。实参 term 用 x/y（非引理名）：锚定改名是否发生
+    // 直接决定折叠是否命中——helper 帧（嵌套 callee）前提被边界清空时
+    // anchor no-op、term 保持 x/y ⇒ 不折；若清空失效则改名折出 ≤1 界。
+    const s = `/**
+ * @nudo:assume d <= max
+ */
+export function simLocal(x, y) {
+  const d = x;
+  const max = y;
+  return 1 - d / max;
+}
+export function helper(x, y) {
+  const d = x;
+  const max = y;
+  return d / max;
+}
+export function simCall(x, y) {
+  return helper(x, y);
+}`;
+    const xAbs = abs(num().shape, v("x"), ge(v("x"), lit(0)), "path");
+    const yAbs = abs(num().shape, v("y"), ge(v("y"), lit(1)), "path");
+    const run = runTranspiled(s, { mode: "analyze" });
+    // 对照：目标帧（入口直接 invoke，前提保持）锚定改名生效 ⇒ [0,1]
+    const local = withAssumePremises(leDMax, () =>
+      callTranspiledExportFull(run, "simLocal", [xAbs, yAbs]).result,
+    );
+    const b = numericBounds(local, pTrue);
+    expect(b?.lo).toEqual({ value: 0, strict: false });
+    expect(b?.hi).toEqual({ value: 1, strict: false });
+    // 护栏：simCall 帧种子前提后调 helper——helper 帧见空前提，
+    // 其局部 d/max 不因 caller 引理折出界（返回无界）
+    const viaHelper = withAssumePremises(leDMax, () =>
+      callTranspiledExportFull(run, "simCall", [xAbs, yAbs]).result,
+    );
+    expect(numericBounds(viaHelper, pTrue)).toBeUndefined();
+  });
+
+  it("重赋值保守失效：let d 重赋新值后 term 不匹配 ⇒ 不折（保守保留 unproven）", () => {
+    const r = checkSource(
+      "/t/locals.js",
+      src(`
+/**
+ * @nudo:assume d <= max
+ */
+export function sim(a, b) {
+  let d = rawDist(a, b);
+  const max = maxLen(a, b);
+  d = grow(a, b);
+  return max === 0 ? 1 : 1 - d / max;
+}
+`),
+      pTrue,
+      opts,
+    );
+    // SSA 锚定首次定义：赋值表达式不包 $assumeAnchor，重赋后 d 的 term
+    // 是 grow 结果面 ≠ var("d") ⇒ 关系折叠不命中，返回契约保守不证
+    expect(r.issues.some((i) => i.code === "nudo:assume-relied")).toBe(false);
+    const unproven = r.issues.find(
+      (i) => i.code === "nudo:unproven-return" && i.fn === "sim",
+    );
+    expect(unproven).toBeDefined();
+  });
+
+  it("错名 no-op：未绑定名在局部量场景仍 assume-invalid error + report.ok false", () => {
+    const r = checkSource(
+      "/t/locals.js",
+      src(`
+/**
+ * @nudo:assume d <= zz
+ */
+export function sim(a, b) {
+  const d = rawDist(a, b);
+  const max = maxLen(a, b);
+  return max === 0 ? 1 : 1 - d / max;
+}
+`),
+      pTrue,
+      opts,
+    );
+    expect(r.ok).toBe(false);
+    const bad = r.issues.filter((i) => i.code === "nudo:assume-invalid");
+    expect(bad).toHaveLength(1);
+    expect(bad[0]!.severity).toBe("error");
+    expect(bad[0]!.actual).toBe("zz");
+    expect(bad[0]!.expected).toBe("a, b, d, max");
   });
 });

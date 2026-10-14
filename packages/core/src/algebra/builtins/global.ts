@@ -4,7 +4,7 @@
  */
 import type { Abs } from "../abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, bigintLit, unknown, confJoin } from "../abs.ts";
-import { objOf, isNullProtoObj } from "../objects.ts";
+import { objOf, isNullProtoObj, isNullProtoWithoutCoercer } from "../objects.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow, throwPayloadOf } from "../exec/may-throw.ts";
 import { numPrim, str, boolPrim, mayCoerceThrowOperand, isBigintPrimAbs } from "./shared.ts";
@@ -260,16 +260,13 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
       if (args[0] && isSymbolAbs(args[0])) return stringOfSymbol(args[0]);
       if (!args[0]) return strLit("");
       if (a0Lit) return strLit(String(a0Lit.value));
-      // Bug 24（强转三连）：闭 null-proto 且无自有 toString/valueOf 槽 →
+      // Bug 24（强转三连）：闭 null-proto 且无自有 coercer 槽 →
       // ToPrimitive 无 coercer 可走，原生定抛 TypeError（node 实测
-      // String(Object.create(null))）；带 coercer 槽 / open 形（未知成员可能
-      // 含 coercer）落到下方 may
-      if (
-        args[0].shape.k === "obj" &&
-        isNullProtoObj(args[0]) &&
-        !(args[0].shape as { open?: boolean }).open &&
-        !hasToPrimitiveCoercer(args[0])
-      ) {
+      // String(Object.create(null))）；带 coercer 槽 / open / index 形
+      //（未知成员可能含 coercer）落到下方 may。判缺收口
+      // objects.isNullProtoWithoutCoercer（含 @@toPrimitive 槽，
+      // 与 arithmetic/template 的 `+` 臂单一事实源）
+      if (isNullProtoWithoutCoercer(args[0])) {
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }
       // Bug 24：抽象臂（any/obj/fn/brand/sum）ToPrimitive 可能抛
