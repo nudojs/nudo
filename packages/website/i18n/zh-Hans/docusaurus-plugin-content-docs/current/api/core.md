@@ -706,7 +706,7 @@ createEnvironment(parent?, bindings?)
 | <a id="spread"></a>`spread` | fn | spread：base ⊕ over（右侧覆盖，不是 join） 未出现在 over 的 key 保留 base；over 的 key 覆盖。 | `spread(base: Abs, over: Abs): Abs` |
 | <a id="stricteqabs"></a>`strictEqAbs` | fn | 严格相等（Abs）：双字面量折叠；nullish 与 definitely-not-nullish → false。 | `strictEqAbs(a: Abs, b: Abs): boolean \| undefined` |
 | <a id="stringofsymbol"></a>`stringOfSymbol` | fn | String(sym) → SymbolDescriptiveString（原生不抛；隐式 ToString 才抛） | `stringOfSymbol(a: Abs): Abs` |
-| <a id="sub"></a>`sub` | fn | 减法：a - b = a + (-b)，数值上做单调性 | `sub(a: Abs, b: Abs, phi: Phi = pTrue): Abs` |
+| <a id="sub"></a>`sub` | fn | 减法：a - b = a + (-b)，数值上做单调性 | `sub(a: Abs, b: Abs, phi: Phi = pTrue, assume?: Phi): Abs` |
 | <a id="substabs"></a>`substAbs` | fn | α 替换：map 的 key 是 term var id，value 是替换 Abs。 | `substAbs(a: Abs, map: ReadonlyMap<string, Abs>): Abs` |
 | <a id="substpred"></a>`substPred` | fn | 把 pred 里的 Term 用 subst 替换（用于 bound 变量重命名等） | `substPred(p: Pred, subst: (t: Term) => Term): Pred` |
 | <a id="substpredabs"></a>`substPredAbs` | fn | pred 三条规则： 1. | `substPredAbs( p: Pred, map: ReadonlyMap<string, Abs>, )` |
