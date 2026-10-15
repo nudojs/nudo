@@ -11,122 +11,139 @@ This page keeps each package’s **current** notes only. Full history: [Full rel
 
 | Package | Current version |
 |----------|-----------------|
-| `@nudojs/core` | 1.13.0 |
-| `@nudojs/service` | 1.6.25 |
-| `nudojs (CLI)` | 1.3.26 |
-| `@nudojs/parser` | 1.4.22 |
-| `@nudojs/lsp` | 1.6.8 |
-| `@nudojs/env` | 0.4.40 |
-| `@nudojs/harvester` | 0.3.26 |
-| `vite-plugin-nudo` | 0.4.41 |
-| `nudo-vscode` | 0.3.45 |
+| `@nudojs/core` | 1.14.0 |
+| `@nudojs/service` | 1.7.0 |
+| `nudojs (CLI)` | 1.4.0 |
+| `@nudojs/parser` | 1.4.23 |
+| `@nudojs/lsp` | 1.6.9 |
+| `@nudojs/env` | 0.4.41 |
+| `@nudojs/harvester` | 0.3.27 |
+| `vite-plugin-nudo` | 0.4.42 |
+| `nudo-vscode` | 0.3.46 |
 
 **Jump to package:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.13.0 {#pkg-core}
+## @nudojs/core 1.14.0 {#pkg-core}
 
-## 1.13.0
+## 1.14.0
 
 ### Minor Changes
 
-- f5c0c6e: Guard-equality path facts and sum anchoring close the normalised-similarity derivation chain (#170) — `@nudo:assume d <= max` now proves `1 - d/max ∈ [0,1]` when `max` comes from `Math.max(a.length, b.length)` and the body guards `max === 0`, with no per-callee sidecar bounds.
+- 0d9e7de: Pure-expression equality folding and the `@nudo:invariant` loop lemma close #175/#176 — `const d = a === b ? 0 : Math.max(a.length, b.length); const max = Math.max(a.length, b.length); return max - d` now proves `ge(0)` with no directive, and levenshtein-style DP loops gain a user-declared invariant channel.
   
-  - `===` / `!==` on undecided operands now carry symbolic `eq`/`ne` predicates (previously folded to an unconstrained boolean), so `$fork` pushes the equality fact into branch Φ — the else arm of `max === 0 ? … : …` knows `ne(max, 0)`
-  - `numericBounds` tightens an endpoint when a `ne(x, n)` fact matches its value: `x ≠ 0 ∧ x ≥ 0 ⇒ x > 0` (cross-source order-independent: the bound and the exclusion may live on the pred and Φ respectively); supplies the strict positive denominator that relational division folding requires
-  - `cmp` no longer applies brand `ToPrimitive` unboxing for `eq`/`ne` — strict equality has no coercion (`new Number(5) === 5` stays false)
-  - `@nudo:assume` local anchoring descends into fork-join sums: each member's term α-renames to the local's name (on that arm the member's value **is** the local), so a `d = cond ? 0 : Math.max(...)` callee result still matches the lemma; literal members keep their exact identity
-  - `0 / x` with a provably non-zero, non-NaN denominator folds to literal `0` — the literal arm of such a sum no longer poisons the joined quotient bounds
+  - `sub` folds `x − x` to exact `0` (NaN arm preserved) when both operands carry structurally equal terms that pass `isDeterministicTerm` — `len#N` identity-minted leaves plus a deterministic host whitelist (`Math.max/min/…`, arithmetic). Adoption re-anchors, `get` member reads and `arg${i}` placeholders are rejected, so structurally-equal-but-distinct values never fold
+  - `sub` now consumes `@nudo:assume` premises (symmetric to `divAssumeBounds`): `@nudo:assume d <= max` proves `max - d ≥ 0` — the subtraction formulation of the similarity lemma previously had no working channel
+  - Domain-shared values (arr element handed to two index reads, for-of single representative, callback element args) are marked at hand-out (`len-sharing.ts`): `abstractLen` mints a fresh `len#N` per read and the reflexivity fold rejects marked operands — `xs[0].length - xs[1].length` no longer falsely folds to `0`
+  - `@nudo:invariant <name><path> <rel> <number>` (`dp[*][*] >= 0`, scalar `last >= 1`): loop analogue of `@nudo:assume` — parsed in core, seeded per target entry, enforced at loop join/widen on the named binding (element domains / object slots drilled by `[*]`/`.ident`), cleared at call boundaries, audited via `nudo:invariant-relied` info (+ `nudo:invariant-invalid` for bad syntax). Unguarded `dp[m][n]` keeps its honest `number | undefined` OOB read face
+  - `Array.from({length}, mapFn)` hands the callback a bounded index (`ge(0)`, plus `lt(length)` when the length term is available); the same bounds now apply to abstract-receiver `.map/.forEach/.reduce/...` callback indices and `entries()`; the array-like missing-slot seed no longer pins a false literal `0`
 
-Older versions (48) → [Full release history](./releases-history.md#pkg-core)
+Older versions (49) → [Full release history](./releases-history.md#pkg-core)
 
-## @nudojs/service 1.6.25 {#pkg-service}
+## @nudojs/service 1.7.0 {#pkg-service}
 
-## 1.6.25
+## 1.7.0
 
-### Patch Changes
+### Minor Changes
 
-- Updated dependencies [f5c0c6e]
-  - @nudojs/core@1.13.0
-  - @nudojs/env@0.4.40
-  - @nudojs/harvester@0.3.26
-  - @nudojs/parser@1.4.22
-
-Older versions (50) → [Full release history](./releases-history.md#pkg-service)
-
-## nudojs (CLI) 1.3.26 {#pkg-nudojs}
-
-## 1.3.26
+- 0d9e7de: `@nudo:skip` no longer kills `@nudo:case` evaluation (#176) — the declared face and runtime ground truth are no longer a trade-off.
+  
+  - A skipped function keeps `combinedAbs` from its declared return face (dts/sidecar/draft consumers unchanged), while declared `@nudo:case` directives are evaluated and asserted as usual; `nudo test` prints the skip note and the case assertions in the same block (previously the cases vanished entirely: "no declared @nudo:case expectations")
+  - `nudo check` behavior is byte-identical (caseMode none — no case evaluation, no synthesized entry@ for skipped functions)
 
 ### Patch Changes
 
-- Updated dependencies [f5c0c6e]
-  - @nudojs/core@1.13.0
-  - @nudojs/env@0.4.40
-  - @nudojs/harvester@0.3.26
-  - @nudojs/parser@1.4.22
-  - @nudojs/service@1.6.25
+- Updated dependencies [0d9e7de]
+  - @nudojs/core@1.14.0
+  - @nudojs/env@0.4.41
+  - @nudojs/harvester@0.3.27
+  - @nudojs/parser@1.4.23
 
-Older versions (47) → [Full release history](./releases-history.md#pkg-nudojs)
+Older versions (51) → [Full release history](./releases-history.md#pkg-service)
 
-## @nudojs/parser 1.4.22 {#pkg-parser}
+## nudojs (CLI) 1.4.0 {#pkg-nudojs}
 
-## 1.4.22
+## 1.4.0
 
-### Patch Changes
+### Minor Changes
 
-- Updated dependencies [f5c0c6e]
-  - @nudojs/core@1.13.0
-
-Older versions (47) → [Full release history](./releases-history.md#pkg-parser)
-
-## @nudojs/lsp 1.6.8 {#pkg-lsp}
-
-## 1.6.8
+- 0d9e7de: `@nudo:skip` no longer kills `@nudo:case` evaluation (#176) — the declared face and runtime ground truth are no longer a trade-off.
+  
+  - A skipped function keeps `combinedAbs` from its declared return face (dts/sidecar/draft consumers unchanged), while declared `@nudo:case` directives are evaluated and asserted as usual; `nudo test` prints the skip note and the case assertions in the same block (previously the cases vanished entirely: "no declared @nudo:case expectations")
+  - `nudo check` behavior is byte-identical (caseMode none — no case evaluation, no synthesized entry@ for skipped functions)
 
 ### Patch Changes
 
-- Updated dependencies [f5c0c6e]
-  - @nudojs/core@1.13.0
-  - @nudojs/parser@1.4.22
-  - @nudojs/service@1.6.25
+- Updated dependencies [0d9e7de]
+- Updated dependencies [0d9e7de]
+  - @nudojs/core@1.14.0
+  - @nudojs/service@1.7.0
+  - @nudojs/env@0.4.41
+  - @nudojs/harvester@0.3.27
+  - @nudojs/parser@1.4.23
 
-Older versions (51) → [Full release history](./releases-history.md#pkg-lsp)
+Older versions (48) → [Full release history](./releases-history.md#pkg-nudojs)
 
-## @nudojs/env 0.4.40 {#pkg-env}
+## @nudojs/parser 1.4.23 {#pkg-parser}
 
-## 0.4.40
-
-### Patch Changes
-
-- Updated dependencies [f5c0c6e]
-  - @nudojs/core@1.13.0
-
-Older versions (47) → [Full release history](./releases-history.md#pkg-env)
-
-## @nudojs/harvester 0.3.26 {#pkg-harvester}
-
-## 0.3.26
+## 1.4.23
 
 ### Patch Changes
 
-- Updated dependencies [f5c0c6e]
-  - @nudojs/core@1.13.0
-  - @nudojs/env@0.4.40
-  - @nudojs/parser@1.4.22
+- Updated dependencies [0d9e7de]
+  - @nudojs/core@1.14.0
 
-Older versions (47) → [Full release history](./releases-history.md#pkg-harvester)
+Older versions (48) → [Full release history](./releases-history.md#pkg-parser)
 
-## vite-plugin-nudo 0.4.41 {#pkg-vite-plugin}
+## @nudojs/lsp 1.6.9 {#pkg-lsp}
+
+## 1.6.9
+
+### Patch Changes
+
+- Updated dependencies [0d9e7de]
+- Updated dependencies [0d9e7de]
+  - @nudojs/core@1.14.0
+  - @nudojs/service@1.7.0
+  - @nudojs/parser@1.4.23
+
+Older versions (52) → [Full release history](./releases-history.md#pkg-lsp)
+
+## @nudojs/env 0.4.41 {#pkg-env}
 
 ## 0.4.41
 
 ### Patch Changes
 
-- Updated dependencies [f5c0c6e]
-  - @nudojs/core@1.13.0
-  - @nudojs/service@1.6.25
+- Updated dependencies [0d9e7de]
+  - @nudojs/core@1.14.0
 
-Older versions (50) → [Full release history](./releases-history.md#pkg-vite-plugin)
+Older versions (48) → [Full release history](./releases-history.md#pkg-env)
+
+## @nudojs/harvester 0.3.27 {#pkg-harvester}
+
+## 0.3.27
+
+### Patch Changes
+
+- Updated dependencies [0d9e7de]
+  - @nudojs/core@1.14.0
+  - @nudojs/env@0.4.41
+  - @nudojs/parser@1.4.23
+
+Older versions (48) → [Full release history](./releases-history.md#pkg-harvester)
+
+## vite-plugin-nudo 0.4.42 {#pkg-vite-plugin}
+
+## 0.4.42
+
+### Patch Changes
+
+- Updated dependencies [0d9e7de]
+- Updated dependencies [0d9e7de]
+  - @nudojs/core@1.14.0
+  - @nudojs/service@1.7.0
+
+Older versions (51) → [Full release history](./releases-history.md#pkg-vite-plugin)
 
 ## nudo-vscode 0.3.7 {#pkg-vscode}
 
