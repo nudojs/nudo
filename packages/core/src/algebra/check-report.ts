@@ -460,6 +460,52 @@ const CONTRACT_FIX_CODES = new Set([
 ]);
 
 /**
+ * budget 归因段构建器——check 面（formatCheckReport）与 health 面
+ * （nudojs commands/health）单一实现（#health-budget，两处曾各自维护
+ * 同一映射而漂移出回归）：只打触发截断的那条预算自己的计数段——
+ * depth 截断打 depth/limit 对、calls 截断打计数/上限（必到顶）、
+ * cycle 不是预算（无可打的计数）——杜绝「71/20000 却标 truncated」。
+ * 参数是 CheckReport.budget 内联对象与 AbsBudgetStats 的结构公共子集
+ * （reasons 按 `?? []` 防御，两个来源都必填但防御面保持一致）。
+ */
+export function budgetAttributionSegs(b: {
+  calls: number;
+  maxCalls: number;
+  /** A 路径（enterCall）截断原因 */
+  callReasons?: readonly string[];
+  depth: number;
+  maxDepth: number;
+  evalCalls: number;
+  maxEvalCalls: number;
+  /** B 路径（$callNamed）截断原因 */
+  evalReasons?: readonly string[];
+  evalDepth: number;
+  maxEvalDepth: number;
+  forks: number;
+  maxForks: number;
+  forkTruncated: boolean;
+  loopTruncated: boolean;
+}): { segs: string[]; cycleOnly: boolean } {
+  const segs: string[] = [];
+  if ((b.callReasons ?? []).includes("calls")) segs.push(`calls ${b.calls}/${b.maxCalls}`);
+  if ((b.callReasons ?? []).includes("depth")) segs.push(`call depth ${b.depth}/${b.maxDepth}`);
+  if ((b.evalReasons ?? []).includes("calls")) {
+    segs.push(`eval calls ${b.evalCalls}/${b.maxEvalCalls}`);
+  }
+  if ((b.evalReasons ?? []).includes("depth")) {
+    segs.push(`eval depth ${b.evalDepth}/${b.maxEvalDepth}`);
+  }
+  if (b.forkTruncated) segs.push(`forks ${b.forks}/${b.maxForks}`);
+  if (b.loopTruncated) segs.push("loop iterations");
+  // 空段 ⇔ 只有 cycle 触发（cycle 也会置 callTruncated/evalCallTruncated，
+  // 但 cycle/depth/calls 三种 reason 里只有 cycle 不产计数段）——归因必须
+  // 非空：纯 cycle 截断打「非预算」标签，杜绝「truncated」后空白
+  const cycleOnly = segs.length === 0;
+  if (cycleOnly) segs.push("call cycle — not a budget limit");
+  return { segs, cycleOnly };
+}
+
+/**
  * Nudo 原生报告：Abs 签名表 + actual ⊭ expected。
  * 不是 tsc 输出的换皮。
  */
@@ -472,9 +518,8 @@ export function formatCheckReport(r: CheckReport, opts: { verbose?: boolean } = 
   );
 
   // A2：预算截断必须上屏——用户要能知道结果何时被 widen。
-  // 归因与 health 同口径（#health-budget）：只打触发截断的那条预算自己的
-  // 计数段——depth 截断打 depth/limit 对、calls 截断打计数/上限（必到顶）、
-  // cycle 不是预算（无可打的计数）——杜绝「71/20000 却标 truncated」
+  // 归因段与 health 面同一实现（budgetAttributionSegs，#health-budget）；
+  // 空段 ⇔ 纯 cycle 触发的兜底段由共享构建器负责。
   if (r.budget?.truncated) {
     const b = r.budget;
     const onlyLoop =
@@ -482,21 +527,7 @@ export function formatCheckReport(r: CheckReport, opts: { verbose?: boolean } = 
       !b.callTruncated &&
       !b.evalCallTruncated &&
       !b.forkTruncated;
-    const segs: string[] = [];
-    if ((b.callReasons ?? []).includes("calls")) segs.push(`calls ${b.calls}/${b.maxCalls}`);
-    if ((b.callReasons ?? []).includes("depth")) segs.push(`call depth ${b.depth}/${b.maxDepth}`);
-    if ((b.evalReasons ?? []).includes("calls")) {
-      segs.push(`eval calls ${b.evalCalls}/${b.maxEvalCalls}`);
-    }
-    if ((b.evalReasons ?? []).includes("depth")) {
-      segs.push(`eval depth ${b.evalDepth}/${b.maxEvalDepth}`);
-    }
-    if (b.forkTruncated) segs.push(`forks ${b.forks}/${b.maxForks}`);
-    if (b.loopTruncated) segs.push("loop iterations");
-    // 空段 ⇔ 只有 cycle 触发（cycle 也会置 callTruncated/evalCallTruncated，
-    // 但 cycle/depth/calls 三种 reason 里只有 cycle 不产计数段）——归因必须
-    // 非空：纯 cycle 截断打「非预算」标签，杜绝「truncated」后空白
-    if (segs.length === 0) segs.push("call cycle — not a budget limit");
+    const { segs } = budgetAttributionSegs(b);
     lines.push("");
     lines.push("budget");
     lines.push(`  truncated  ${segs.join(" · ")}`);

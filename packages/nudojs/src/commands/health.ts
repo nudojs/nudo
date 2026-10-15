@@ -7,7 +7,7 @@ import { resolve, dirname, relative } from "node:path";
 import type { Command } from "commander";
 import { analyzeFileAsync, type CallRecord } from "@nudojs/service";
 import { paintOne } from "../ui.ts";
-import type { AbsBudgetStats } from "@nudojs/core/internal";
+import { budgetAttributionSegs, type AbsBudgetStats } from "@nudojs/core/internal";
 import {
   collectExternalRecords,
   collectNudoFiles,
@@ -248,22 +248,10 @@ async function runHealth(paths: string[], opts: { from?: string[]; json?: boolea
           b.callReasons.length === 0 &&
           b.evalReasons.length === 0 &&
           !b.forkTruncated;
-        // 只打触发截断的那条预算自己的计数（#health-budget）：
-        // depth 截断打 depth/limit 对、calls 截断打计数/上限（必到顶）、
-        // cycle 不是预算（没有可打的计数）——杜绝「71/20000 却标 truncated」
-        const segs: string[] = [];
-        if (b.callReasons.includes("calls")) segs.push(`calls ${b.calls}/${b.maxCalls}`);
-        if (b.callReasons.includes("depth")) segs.push(`call depth ${b.depth}/${b.maxDepth}`);
-        if (b.evalReasons.includes("calls")) {
-          segs.push(`eval calls ${b.evalCalls}/${b.maxEvalCalls}`);
-        }
-        if (b.evalReasons.includes("depth")) {
-          segs.push(`eval depth ${b.evalDepth}/${b.maxEvalDepth}`);
-        }
-        if (b.forkTruncated) segs.push(`forks ${b.forks}/${b.maxForks}`);
-        if (b.loopTruncated) segs.push("loop iterations");
-        const cycleOnly = segs.length === 0;
-        if (cycleOnly) segs.push("call cycle — not a budget limit");
+        // 归因段与 nudo check 同一实现（budgetAttributionSegs，
+        // #health-budget）：只打触发截断的那条预算自己的计数段；空段 ⇔ 纯
+        // cycle 触发，由共享构建器兜底（cycleOnly）
+        const { segs, cycleOnly } = budgetAttributionSegs(b);
         console.log(
           paintOne(
             `  ⚠ budget truncated  ${segs.join(" · ")}` +

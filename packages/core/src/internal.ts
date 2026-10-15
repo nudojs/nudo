@@ -33,6 +33,10 @@ export {
   setEvalForkBudgetLimit, stableCallId, truncatedAbs, withFnBudgetOverride
 } from "./algebra/call-budget.ts";
 export {
+  // budget 归因段构建器（check / health 两面共用，#health-budget 单一实现）
+  budgetAttributionSegs
+} from "./algebra/check-report.ts";
+export {
   MAX_PROMISE_MICROS, getPromiseMicrosLength
 } from "./algebra/builtins/promise.ts";
 export {
