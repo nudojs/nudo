@@ -49,9 +49,8 @@ import {
   transpileBlockAsThunk,
   emitFnBlockBody,
   withImplicitReturn,
-  classSpecOf,
-  emitSetterAccessorThunk,
 } from "./stmt.ts";
+import { classSpecOf, emitSetterAccessorThunk } from "./class-emit.ts";
 
 export function transpileShortCircuitExpr(opts: TranspileOptions, parts: {
   alwaysNodes: Array<Node | null | undefined>;
