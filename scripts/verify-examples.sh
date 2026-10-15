@@ -239,6 +239,18 @@ pin 'pnpm run check docs/examples/constraints/similarity.js' \
   'sim(d: number, max: number) => number' \
   'return contract proved via @nudo:assume d <= max' \
   'nudo:assume-relied'
+# levenshtein/ — @nudo:invariant loop-carried bound (#176): DP-cell nonnegativity
+# is a loop invariant the engine cannot re-derive (loop join/widening keeps the
+# value domain but loses interval evidence); the declared invariant restores the
+# pred at the widening sites and the proof is audit-tagged nudo:invariant-relied
+# (info). Without the directive the same file + sidecar honestly keeps warning
+# nudo:unproven-return (number | undefined face: abstract dp[m][n] read joins a
+# synthetic OOB undefined; the if-guard narrows it but no bound survives).
+pin 'pnpm run check docs/examples/constraints/levenshtein.js' \
+  '0 error · 0 warning · 1 info · 1 fn' \
+  'levenshtein(a: string, b: string) => 0 | number' \
+  'return contract proved via @nudo:invariant dp[*][*] >= 0' \
+  'nudo:invariant-relied'
 
 # structure/ — pin the shape-mismatch reports. The error-count lines
 # lock the width-subtyping positives: the passing excess-slot calls in

@@ -9,10 +9,10 @@
 import type { Abs } from "../abs.ts";
 import { abs, numLit } from "../abs.ts";
 import type { Term } from "../term.ts";
-import { app as termApp, lit, simplifyTerm, termEquals } from "../term.ts";
+import { app as termApp, lit, simplifyTerm } from "../term.ts";
 import type { Pred } from "../pred.ts";
-import { and as pAnd, type Phi } from "../pred.ts";
-import { numericBounds, type NumBounds } from "../arithmetic.ts";
+import { and as pAnd } from "../pred.ts";
+import { numericBounds, isNonNaN, type NumBounds } from "../arithmetic.ts";
 import { makeSum } from "../objects.ts";
 import { currentExecPhi } from "../exec/runtime/state.ts";
 import { numPrim } from "./shared.ts";
@@ -52,78 +52,6 @@ function mathMethod(name: string): ((...a: number[]) => number) | undefined {
   return typeof impl === "function"
     ? (impl as (...a: number[]) => number)
     : undefined;
-}
-
-/** 操作数是否确定不是 NaN：非 NaN 字面量 / 数值界 / ne(t,NaN) / assumeFinite */
-function isNonNaN(a: Abs, phi: Phi): boolean {
-  if (a.term?.op === "lit") {
-    return typeof a.term.value === "number" && !Number.isNaN(a.term.value);
-  }
-  // sum（fork 合并臂）：所有成员均可证非 NaN ⇒ 整体非 NaN。
-  // 此前 sum 落到 term/pred 检查全失败 ⇒ mayNaN ⇒ min/max 误挂
-  // NaN 臂，区间契约（number().ge(0).le(100)）被误报违反。
-  if (a.shape.k === "sum") {
-    return (a.shape as { k: "sum"; members: Abs[] }).members.every((m) =>
-      isNonNaN(m, phi),
-    );
-  }
-  const hasNonNaNFact = (p: Pred | undefined): boolean => {
-    if (!p) return false;
-    if (p.op === "and") return p.args.some(hasNonNaNFact);
-    if (p.op === "assumeFinite") {
-      // termless Abs 无法对齐具体 assumeFinite —— 不得采信
-      return !!a.term && termEquals(p.t, a.term);
-    }
-    if (p.op === "ne") {
-      // ne(t, NaN) ≡ t 不是 NaN
-      if (
-        p.b.op === "lit" &&
-        typeof p.b.value === "number" &&
-        Number.isNaN(p.b.value) &&
-        a.term &&
-        termEquals(p.a, a.term)
-      ) {
-        return true;
-      }
-    }
-    if (p.op === "gt" || p.op === "ge" || p.op === "lt" || p.op === "le") {
-      // 数值界排除 NaN（NaN 比较全假）
-      if (a.term && (termEquals(p.a, a.term) || termEquals(p.b, a.term))) return true;
-    }
-    return false;
-  };
-  if (hasNonNaNFact(a.pred)) return true;
-  if (a.term?.op === "var") {
-    const id = (a.term as { id: string }).id;
-    const conjs = phi.op === "and" ? phi.args : [phi];
-    for (const p of conjs) {
-      if (p.op === "assumeFinite" && p.t.op === "var" && (p.t as { id: string }).id === id) {
-        return true;
-      }
-      if (p.op === "ne") {
-        const b = p.b;
-        if (
-          b.op === "lit" &&
-          typeof b.value === "number" &&
-          Number.isNaN(b.value) &&
-          p.a.op === "var" &&
-          (p.a as { id: string }).id === id
-        ) {
-          return true;
-        }
-      }
-      if (p.op === "gt" || p.op === "ge" || p.op === "lt" || p.op === "le") {
-        const sides = [p.a, p.b];
-        if (
-          sides.some((t) => t.op === "var" && (t as { id: string }).id === id) &&
-          sides.some((t) => t.op === "lit" && typeof t.value === "number")
-        ) {
-          return true;
-        }
-      }
-    }
-  }
-  return false;
 }
 
 function ieeeBoundNum(n: number): number | undefined {

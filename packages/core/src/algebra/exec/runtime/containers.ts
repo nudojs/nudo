@@ -54,6 +54,7 @@ import {
 import { $unknown, $toNumber, $eq, $ne, $typeof, $add, $sub } from "./ops.ts";
 import { findClassAccessor, findStaticClassAccessor, $in, $instanceof, $del, BUILTIN_BRAND_METHODS, BUILTIN_BRAND_ACCESSORS, ITERABLE_BRANDS, evalClassChain, builtinSuperCtorOf, chainProtoSlotOf, classChainHasHole, chainHasOpaqueFnParent } from "./members.ts";
 import { lookupObjAccessor, migrateAccessors, $objAccessor, accessorTable } from "../../accessors.ts";
+import { markDomainShared, isDomainShared } from "../../len-sharing.ts";
 import { copyMatchIterTables } from "../match-iter.ts";
 import { DEFAULT_MAX_LOOP_ITERS, MAX_CONCRETE_LOOP_ITERS, LOOP_TRUNCATION_LABEL } from "./loop-budget.ts";
 import { makeLoopWidener } from "./loop-widen.ts";
@@ -944,7 +945,9 @@ export function $idx(
     if (idx === undefined) {
       return joinAbs(a.shape.element, oobUndef());
     }
-    return a.shape.element;
+    // #175 残留：具体下标读的元素投影是域分发（xs[0]/xs[1] 同一 element
+    // Abs、不同具体值）——标记后 abstractLen 不 memo 共享 len#N
+    return markDomainShared(a.shape.element);
   }
   // TypedArray brand：元素域 = 元素 prim ∪ undefined（长度未建模，下标可能
   // 越界；此前落 brand 内层空 obj → exact undefined，经 + 折 exact NaN）
@@ -1173,7 +1176,12 @@ function abstractLen(a: Abs): Abs {
   let t = lenTermMemo.get(a);
   if (!t) {
     t = { op: "var", id: `len#${lenVarSeq++}` };
-    lenTermMemo.set(a, t);
+    // #175 残留修复：域共享接收者（arr 元素域分发——xs[0]/xs[1]、for-of
+    // 单代表、回调元素实参）跨读是同一 Abs 但代表不同具体值——不 memo，
+    // 每次铸新 len#N，杜绝 sub 自反折叠把 xs[0].length - xs[1].length
+    // 假折 0（len-sharing.ts）。原绑定接收者不受影响（memo 照旧，跨读
+    // 同 term 是 sound 的：同一绑定同一值）。
+    if (!isDomainShared(a)) lenTermMemo.set(a, t);
   }
   return abs({ k: "prim", type: "number" }, t, ge(t, lit(0)), "path");
 }
@@ -1845,7 +1853,8 @@ export function $tpl(cooked: Array<string | undefined>, raw: string[]): Abs {
 
 function elemsOf(a: Abs): Abs[] {
   if (a.shape.k === "tuple") return [...a.shape.elements];
-  if (a.shape.k === "arr") return [a.shape.element];
+  // #175 残留：arr 元素域分发标记（len-sharing.ts——跨读不保证同值）
+  if (a.shape.k === "arr") return [markDomainShared(a.shape.element)];
   if (isSetAbs(a)) return setElementsAbs(a);
   if (isMapAbs(a)) return mapEntriesAbs(a);
   // Bug 54：生成器对象——从当前位取剩余并推进状态（迭代 = 消费），不再从 0 重放

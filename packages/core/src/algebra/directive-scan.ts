@@ -881,6 +881,22 @@ export function scanAssumeSegments(lines: string[]): string[] {
 }
 
 /**
+ * `@nudo:invariant <name><path> <rel> <number>` 行（issue #176 循环携带
+ * 界）。path = `[*]` / `.ident` 序列（可空 = 标量绑定）；rel ∈ >= <= > <；
+ * 数字允许负号。一函数可多行；返回原始段文本，文法/绑定名校验由消费方
+ * （check）发 nudo:invariant-invalid。
+ */
+export function scanInvariantSegments(lines: string[]): string[] {
+  const out: string[] = [];
+  for (const line of lines) {
+    // 行首锚定：句中散文「声明 @nudo:invariant dp >= 0 后…」不是指令
+    const m = line.match(/^@nudo:invariant\s+(.+)$/);
+    if (m) out.push(m[1]!.trim().replace(/\*\/$/, "").trim());
+  }
+  return out;
+}
+
+/**
  * `@nudo:throws …` / case 行 `!! throws …`。
  * 返回 `*` = 申报任意；字符串 = 逗号/空白分隔的 kind 列表；undefined = 无申报。
  */

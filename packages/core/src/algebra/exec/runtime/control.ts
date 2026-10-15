@@ -312,6 +312,7 @@ export function $fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): 
 export { DEFAULT_MAX_LOOP_ITERS, MAX_CONCRETE_LOOP_ITERS, LOOP_TRUNCATION_LABEL } from "./loop-budget.ts";
 import { DEFAULT_MAX_LOOP_ITERS, MAX_CONCRETE_LOOP_ITERS, LOOP_TRUNCATION_LABEL } from "./loop-budget.ts";
 import { makeLoopWidener } from "./loop-widen.ts";
+import { applyInvariantsToPack } from "./invariant-apply.ts";
 
 /**
  * for 的惰性展开：生成器只负责「按上限吐状态」。
@@ -520,9 +521,15 @@ export function $for(
  * 循环出口 join 的容器 widen：把「不同长度 tuple 的 sum」收成 arr
  *（元素域 = 全部已知元素 join；OOB undefined 不烘焙——读位事实由 $idx
  * 抽象下标读并入，#156）。只动顶层与 obj 槽位；非增长形态（等长
- * tuple / 非容器）原样。
+ * tuple / 非容器）原样。#176：末尾实施 @nudo:invariant（绑定包槽位按
+ * 名下钻强化）——$for 的 applyExtJoin 循环头 join、耗尽/截断出口三处
+ * 调用点统一在本体内覆盖，喂下一轮迭代体读点与出口读点强化后的域。
  */
 function widenLoopJoin(a: Abs): Abs {
+  return applyInvariantsToPack(widenLoopJoinInner(a));
+}
+
+function widenLoopJoinInner(a: Abs): Abs {
   const widenValue = (v: Abs): Abs => {
     if (v.shape.k !== "sum") return v;
     const members = (v.shape as { k: "sum"; members: Abs[] }).members;

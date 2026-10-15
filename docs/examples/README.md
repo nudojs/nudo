@@ -80,6 +80,7 @@ The single-line commands in each subdirectory README and example file header are
 | `pnpm run check docs/examples/constraints/add-pred.js` | **1** | Negative: `scale[x]: argument ⊭ precondition` (`actual: -1 #exact`) |
 | `pnpm run test:cli docs/examples/constraints/add-pred.js` | **0** | Pred flows into algebra (test case report, positive) |
 | `pnpm run check docs/examples/constraints/similarity.js` | **0** | Positive: `@nudo:assume d <= max` user lemma folds `d/max ≤ 1` — return contract `∈ [0,1]` proved, info `nudo:assume-relied` |
+| `pnpm run check docs/examples/constraints/levenshtein.js` | **0** | Positive: `@nudo:invariant dp[*][*] >= 0` loop-carried bound — return contract `number().ge(0)` proved, info `nudo:invariant-relied` |
 | `pnpm run check docs/examples/structure/assign.js` | **1** | Negative: `config: assignment ⊭ existing shape` (missing port) |
 | `pnpm run check docs/examples/structure/arg-structure.js` | **1** | Negative: shape contract missing field (`constraint-violated`, not a body scan) |
 | `pnpm run check docs/examples/vs-ts/constraints/nudo.js` | **1** | Nudo reports; tsc does not |

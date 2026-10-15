@@ -4,7 +4,8 @@
  */
 
 import type { LiteralValue, Term } from "./term.ts";
-import { app, lit, simplifyTerm, termEquals, termToString } from "./term.ts";
+import { app, lit, simplifyTerm, termEquals, termToString, isDeterministicTerm } from "./term.ts";
+import { isDomainShared } from "./len-sharing.ts";
 import type { Pred } from "./pred.ts";
 import {
   and,
@@ -756,14 +757,126 @@ function collectExclusionsFromPhi(phi: Phi, id: string, acc: NumBounds): void {
   }
 }
 
+/**
+ * 操作数是否确定不是 NaN：非 NaN 字面量 / 数值界 / ne(t,NaN) / assumeFinite。
+ * （自 builtins/math.ts 移入——arithmetic 的 sub 自反折叠（#175）要消费，
+ * math 侧 min/max/rounding 同用；math 反向依赖 arithmetic（numericBounds），
+ * 放此处避免环。）
+ */
+export function isNonNaN(a: Abs, phi: Phi): boolean {
+  if (a.term?.op === "lit") {
+    return typeof a.term.value === "number" && !Number.isNaN(a.term.value);
+  }
+  // sum（fork 合并臂）：所有成员均可证非 NaN ⇒ 整体非 NaN。
+  // 此前 sum 落到 term/pred 检查全失败 ⇒ mayNaN ⇒ min/max 误挂
+  // NaN 臂，区间契约（number().ge(0).le(100)）被误报违反。
+  if (a.shape.k === "sum") {
+    return (a.shape as { k: "sum"; members: Abs[] }).members.every((m) =>
+      isNonNaN(m, phi),
+    );
+  }
+  const hasNonNaNFact = (p: Pred | undefined): boolean => {
+    if (!p) return false;
+    if (p.op === "and") return p.args.some(hasNonNaNFact);
+    if (p.op === "assumeFinite") {
+      // termless Abs 无法对齐具体 assumeFinite —— 不得采信
+      return !!a.term && termEquals(p.t, a.term);
+    }
+    if (p.op === "ne") {
+      // ne(t, NaN) ≡ t 不是 NaN
+      if (
+        p.b.op === "lit" &&
+        typeof p.b.value === "number" &&
+        Number.isNaN(p.b.value) &&
+        a.term &&
+        termEquals(p.a, a.term)
+      ) {
+        return true;
+      }
+    }
+    if (p.op === "gt" || p.op === "ge" || p.op === "lt" || p.op === "le") {
+      // 数值界排除 NaN（NaN 比较全假）
+      if (a.term && (termEquals(p.a, a.term) || termEquals(p.b, a.term))) return true;
+    }
+    return false;
+  };
+  if (hasNonNaNFact(a.pred)) return true;
+  if (a.term?.op === "var") {
+    const id = (a.term as { id: string }).id;
+    const conjs = phi.op === "and" ? phi.args : [phi];
+    for (const p of conjs) {
+      if (p.op === "assumeFinite" && p.t.op === "var" && (p.t as { id: string }).id === id) {
+        return true;
+      }
+      if (p.op === "ne") {
+        const b = p.b;
+        if (
+          b.op === "lit" &&
+          typeof b.value === "number" &&
+          Number.isNaN(b.value) &&
+          p.a.op === "var" &&
+          (p.a as { id: string }).id === id
+        ) {
+          return true;
+        }
+      }
+      if (p.op === "gt" || p.op === "ge" || p.op === "lt" || p.op === "le") {
+        const sides = [p.a, p.b];
+        if (
+          sides.some((t) => t.op === "var" && (t as { id: string }).id === id) &&
+          sides.some((t) => t.op === "lit" && typeof t.value === "number")
+        ) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * assume 引理的减法界（issue #175 `@nudo:assume d <= max` ⇒ max-d ≥ 0）：
+ * 与 divAssumeBounds 同型的同名相关性折叠——独立区间传播对 `max - d`
+ * 只能得 ±∞（无界减无界），用户引理提供的相关性是唯一界源。减法无
+ * 分母符号问题，前提命中即得半轴界：
+ *   le(b, a)（减数 ≤ 被减数）⇒ a-b ≥ 0；le(a, b)（被减数 ≤ 减数）
+ *     ⇒ a-b ≤ 0。
+ * 项匹配用 termEquals（var 名恒等 / app 结构等价）；前提归一化为 le
+ * 原子（`a >= b` 构造期已翻转）。无前提命中 → undefined（保守回退）。
+ */
+function subAssumeBounds(
+  a: Abs,
+  b: Abs,
+  resultTerm: Term,
+  assume: Phi | undefined,
+): Pred | undefined {
+  const premises = assumePremiseList(assume);
+  if (premises.length === 0) return undefined;
+  if (!a.term || !b.term) return undefined;
+  const facts: Pred[] = [];
+  for (const p of premises) {
+    if (p.op !== "le") continue;
+    if (termEquals(p.a, a.term) && termEquals(p.b, b.term)) {
+      // 前提 le(a, b)：被减数 ≤ 减数 ⇒ a-b ≤ 0
+      facts.push(le(resultTerm, lit(0)));
+    } else if (termEquals(p.a, b.term) && termEquals(p.b, a.term)) {
+      // 前提 le(b, a)：减数 ≤ 被减数 ⇒ a-b ≥ 0
+      facts.push(ge(resultTerm, lit(0)));
+    }
+  }
+  return facts.length ? and(...facts) : undefined;
+}
+
 /** 减法：a - b = a + (-b)，数值上做单调性 */
-export function sub(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
+export function sub(a: Abs, b: Abs, phi: Phi = pTrue, assume?: Phi): Abs {
   // Bug 25：内建 brand ToPrimitive（hint number：Date → time value、
   // 装箱 → prim、其余 → string 面）——折 prim 后走既有数值臂
+  // （assume 随递归透传：brand 解箱不丢用户引理——div 的同型递归未传
+  // 是既有小瑕疵，此处带齐）
   {
     const fa = builtinBrandToPrimitive(a, "number");
     const fb = builtinBrandToPrimitive(b, "number");
-    if (fa || fb) return sub(fa ?? a, fb ?? b, phi);
+    if (fa || fb) return sub(fa ?? a, fb ?? b, phi, assume);
   }
   // Symbol 参与算术/位运算：ToNumber/ToNumeric 原生 TypeError（与 add 同口径）
   if (isSym(a) || isSym(b)) {
@@ -783,6 +896,39 @@ export function sub(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
     return numLit(Number(ra.value) - Number(rb.value));
   }
   if (isNumericLike(a) && isNumericLike(b) && a.term && b.term) {
+    // issue #175：同一函数体内「字面相同的纯子表达式」双次求值无相等
+    // 事实——`max - d` 证不出 ge(0)。自反折叠（区间折叠之前）：
+    // 结构相等项 ∧ isDeterministicTerm（len#N 唯一铸造 + 确定性宿主
+    // 白名单 ⇒ 结构相等 ⇒ 同值）⇒ x - x = 0。
+    // soundness 门（三层）：
+    // ① **不使用**「同一 Abs 对象 ⇒ 同值」——adoption 面（#123 把多个
+    //   无信息实参重锚到同一 callee 形参面）与同质元素域（arr(E) 的
+    //   xs[0]/xs[1] 共享 E）都会让**不同具体值**共享同一 Abs 对象
+    //   （实测 y-x 假折 {NaN,0}），值身份只骑在确定性项相等上；
+    // ② 同值不折 NaN——x 为 NaN 时 x-x=NaN，isNonNaN（比较 pred 排除
+    //   NaN）不成立时结果取真值域 {NaN, 0}（minMaxAbs 的 NaN 臂同款）；
+    //   ±Inf-±Inf=NaN 的角落与既有区间算术同口径（比较 pred 本就不排除
+    //   ±Inf 端点，len#N 根的项在具体层有限）；
+    // ③ 结构相等必须过确定性门：adoption 重锚的 callee 形参名 var、get
+    //   成员读、minMaxAbs 的 arg 占位都可能跨值同结构碰撞，一律不折。
+    // 域共享残留已修（len-sharing.ts）：元素域分发位（$idx 具体下标读 /
+    //   elemsOf arr 臂 / 回调元素实参）标记域共享，abstractLen 对标记
+    //   接收者不 memo——xs[0].length 与 xs[1].length 各铸独立 len#N，
+    //   本折叠不再过度承诺 0。
+    if (
+      termEquals(a.term, b.term) &&
+      isDeterministicTerm(a.term) &&
+      // 域共享门（len-sharing.ts，第二类洞）：同一带项 Abs 经元素域分发
+      // 到两个下标位（xs.map(s=>s.length) 的 a[0] 与 a[1]）——term 结构
+      // 相同但代表不同具体值，$idx/回调实参分发位已标记，此处拒绝折叠。
+      !isDomainShared(a) &&
+      !isDomainShared(b)
+    ) {
+      // 值相等 ⇒ 任一侧证得非 NaN 即整体非 NaN
+      return isNonNaN(a, phi) || isNonNaN(b, phi)
+        ? numLit(0)
+        : makeSum(numLit(NaN), numLit(0));
+    }
     const term = simplifyTerm(app("-", [a.term, b.term]));
     // a.lo - b.hi  <  a-b  <  a.hi - b.lo
     const ab = numericBounds(a, phi);
@@ -802,6 +948,10 @@ export function sub(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
         facts.push(strict ? lt(term, lit(hi)) : le(term, lit(hi)));
       }
     }
+    // assume 引理（issue #175）：le(b,a)/le(a,b) 同名相关性 ⇒ 半轴界，
+    // 与区间 facts 合取（两者各自独立成立，合取仍 sound）
+    const assumePred = subAssumeBounds(a, b, term, assume);
+    if (assumePred) facts.push(assumePred);
     const conf =
       term.op === "lit"
         ? "exact"
@@ -821,8 +971,10 @@ export function sub(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   if (isAnyLike(a) || isAnyLike(b)) {
     return toNumberResult(a, b, "-");
   }
-  // sum 分发（与 add 同口径）：100 - (cond ? 20 : 55) → 45 | 80
-  const distributed = distributeSumBinOp("-", a, b, phi, sub);
+  // sum 分发（与 add 同口径）：100 - (cond ? 20 : 55) → 45 | 80。
+  // 成员级同构透传 assume（div 同型先例）——d 的成员臂上项匹配仍以
+  // termEquals 为准（不匹配的成员不产生界），soundness 不变
+  const distributed = distributeSumBinOp("-", a, b, phi, (x, y, p) => sub(x, y, p, assume));
   if (distributed) return distributed;
   // Bug 8：obj/fn/brand 抽象面回退（`x.a - 1`，valueOf 可能产 bigint/Symbol）→ may TypeError
   noteAbstractArithMayThrow(a, b);

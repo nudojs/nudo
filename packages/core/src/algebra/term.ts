@@ -38,6 +38,51 @@ export function termEquals(a: Term, b: Term): boolean {
 }
 
 /**
+ * 确定性项判定（issue #175 sub 自反折叠的 soundness 门）。
+ *
+ * Term 是纯结构值（无唯一性计数）：结构相等本身**不**蕴含值相等——
+ * 形参 α 名、#123 contract-face adoption 重锚的 callee 形参名、
+ * $assumeAnchor 改名的 var(name) 都可能让不同值撞出同结构项。只有
+ * 「铸造过程确定性」（同输入 ⇒ 同值）的项，结构相等才可靠地蕴含
+ * 双次求值同值：
+ * - var 叶子仅限 `len#N`：abstractLen 按 **Abs 对象身份** WeakMap 唯一
+ *   铸造（同一 Abs → 同一 term，Abs 不可变 ⇒ len#N 全局稳定标识一个
+ *   抽象值），结构相同的两个 len#N 必出自同一对象身份。注意「同一
+ *   抽象值」≠「同一具体值」：同质元素域 / adoption 面这类**域共享**
+ *   接收者本身代表多个具体值（xs[0] 与 xs[1] 共享元素 Abs）——已由
+ *   len-sharing.ts 在元素域分发位标记修复：域共享接收者不 memo，
+ *   每次读铸独立 len#N（adoption 面由本白名单的 var 门拒绝）；
+ * - app 节点仅限确定性宿主白名单：IEEE 确定函数（Math.max/min/abs/
+ *   round/floor/ceil/trunc/sign）与算术 + - * / %（同输入恒同输出）。
+ *   **排除**：Math.random（非确定）、get（成员读，接收者 var 可能是
+ *   adoption 锚重锚出的同名项）、minMaxAbs 的 `arg${i}` 占位（实参无
+ *   term 时按调用铸造，两次不同调用同结构碰撞）、其余未列宿主一律
+ *   保守拒绝。
+ */
+const DETERMINISTIC_APP_FNS: ReadonlySet<string> = new Set([
+  "Math.max",
+  "Math.min",
+  "Math.abs",
+  "Math.round",
+  "Math.floor",
+  "Math.ceil",
+  "Math.trunc",
+  "Math.sign",
+  "+",
+  "-",
+  "*",
+  "/",
+  "%",
+]);
+const LEN_TERM_ID_RE = /^len#\d+$/;
+
+export function isDeterministicTerm(t: Term): boolean {
+  if (t.op === "lit") return true;
+  if (t.op === "var") return LEN_TERM_ID_RE.test(t.id);
+  return DETERMINISTIC_APP_FNS.has(t.fn) && t.args.every(isDeterministicTerm);
+}
+
+/**
  * 键通道字面量序列化：-0 与 0 身份不同（Object.is / 1/x 可观察差异），
  * String(-0)==="0" 会抹掉符号。NaN→"NaN" 已天然区分，bigint 靠 typeof 前缀分开。
  * 仅用于 dedup / map / cache / 指纹键；展示面走 formatShape（自身已特判 -0）。

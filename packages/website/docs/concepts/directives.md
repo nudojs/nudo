@@ -1,5 +1,5 @@
 ---
-description: "Syntax reference for all @nudo: directives — case, mock, pure, skip, sample, contract, throws, import, env, mock-module, as, replace — with constraints and examples."
+description: "Syntax reference for all @nudo: directives — case, mock, pure, skip, sample, contract, assume, invariant, throws, import, env, mock-module, as, replace — with constraints and examples."
 ---
 
 # Directives
@@ -441,6 +441,7 @@ With `d >= 0` (rawDist), `max >= 1` (maxLen), and the lemma `d <= max`, the `1 -
 |------|-----------|
 | Constant bound — `d <= 10`, `max >= 1` | Sidecar / `@nudo:contract` builders (`number().le(10)`) |
 | Cross-variable lemma — `d <= max` | `@nudo:assume` (the engine cannot derive it) |
+| Loop-carried bound — `dp[*][*] >= 0` | `@nudo:invariant` (loop joins/widening lose interval evidence) |
 
 `.le("max")` used to be accepted silently, building a **string-literal** predicate (`le(self, lit("max"))`) that never participated in any proof. Numeric-bound builders (`gt` / `ge` / `lt` / `le` / `min` / `max` / `shift`) now reject non-numeric, non-finite arguments at load time — the sidecar fails with `nudo:interface-load`:
 
@@ -449,6 +450,80 @@ sidecar './sim.nudo.js' failed to load: nudo le(): finite numeric bound expected
 ```
 
 Migrate such sidecars to `@nudo:assume`.
+
+---
+
+## @nudo:invariant — Loop Invariants {#nudoinvariant--loop-invariants}
+
+Declare a **loop-carried bound** the engine cannot re-derive — the loop-analogue of [`@nudo:assume`](#nudoassume--user-lemmas). Loop joins and widening keep the value domain (`number`) but lose interval evidence: even `let last = 0; for (let j = 1; j <= n; j++) last = j; return last` cannot prove `last >= 1` (deriving loop invariants automatically is research-grade — Nudo does not attempt it). The directive lets the user supply the invariant; the engine strengthens the bound at loop join / widening points.
+
+### Syntax
+
+```text
+@nudo:invariant <name><path> <rel> <number>
+@nudo:invariant dp[*][*] >= 0
+@nudo:invariant last >= 1
+```
+
+- **Function-scoped** — the comment block immediately above the function, same scan path as `@nudo:contract` / `@nudo:assume`; multiple lines stack.
+- `<name>` must be a **parameter of the anchored function or a top-level `const`/`let`/`var` local of its body**; otherwise warning `nudo:invariant-invalid`.
+- `<path>` drills into the binding: `[*]` steps into array elements / tuple members / union numeric arms; `.ident` steps into an object slot. An empty path means the scalar itself. Non-numeric leaves (strings, objects) and structural mismatches are skipped silently — a wrong-direction invariant surfaces as a proof failure, not a report.
+- `<rel>` is `>=` / `<=` / `>` / `<` with a **numeric constant** (`==`, `!=`, non-numeric bounds are invalid → `nudo:invariant-invalid`).
+- Strengthened leaves carry a fresh symbolic term with the declared pred (conf `path`); literal leaves are left untouched — a concrete value already has its truth.
+
+### Semantics — an axiom, not a checked fact
+
+- **The engine never verifies the invariant.** When a proof relies on it, `nudo check` emits info `nudo:invariant-relied` (`levenshtein: return contract proved via @nudo:invariant dp[*][*] >= 0`) and suggests falsifying it with concrete `@nudo:case` runs (`nudo test`). A wrong invariant makes the affected proof unsound — keep invariants few and reviewable.
+- **Invariants never cross call boundaries.** Callee frames see an empty invariant slot (cleared at function entry, restored on exit) — a lemma about the caller's `dp` cannot leak into a callee's same-name local.
+- What the invariant does **not** fix: out-of-bounds read facts stay honest. An abstract-index read `dp[m][n]` still joins a synthetic `undefined`; the `if (out === undefined) return 0` guard narrows it before the return contract sees it.
+
+### Example — edit distance
+
+```javascript
+// levenshtein.js
+/**
+ * @nudo:invariant dp[*][*] >= 0
+ */
+export function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, (_, i) => [i]);
+  for (let j = 1; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1,
+                          dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+  }
+  const out = dp[m][n];
+  if (out === undefined) return 0;
+  return out;
+}
+```
+
+```javascript
+// levenshtein.nudo.js
+import { fn, number, string } from "@nudojs/core";
+
+export const levenshtein = fn(
+  { a: string(), b: string() },
+  number().ge(0),
+);
+```
+
+```text
+$ nudo check levenshtein.js
+OK
+  0 error · 0 warning · 1 info · 1 fn
+
+signatures
+  levenshtein(a: string, b: string) => 0 | number
+
+issues
+  [INFO levenshtein] levenshtein: return contract proved via @nudo:invariant dp[*][*] >= 0  (nudo:invariant-relied)
+      → @nudo:invariant is a user-supplied axiom — falsify it with concrete @nudo:case runs (nudo test)
+```
+
+Remove the `@nudo:invariant` line and the same file + sidecar stays **honestly unproven** — warning `nudo:unproven-return` (the abstract `dp[m][n]` read joins a synthetic out-of-bounds `undefined`; the guard narrows it, but no bound survives widening to prove `ge(0)`).
 
 ---
 
@@ -749,6 +824,7 @@ const result = a + b;
 | `@nudo:sample` | `N` | Reserved no-op (parsed, not consumed) |
 | `@nudo:contract` | `param constraint` / `return constraint` | In-source contract (main path is the `*.nudo.js` sidecar auto-binding) |
 | `@nudo:assume` | `<name> <= <name>` (or `>=`) | Declare a cross-variable user lemma over params or top-level locals (axiom, never verified) — proofs relying on it are audit-tagged `nudo:assume-relied` |
+| `@nudo:invariant` | `<name><path> <rel> <number>` (e.g. `dp[*][*] >= 0`) | Declare a loop-carried bound over params or top-level locals, drilling by path (axiom, never verified) — proofs relying on it are audit-tagged `nudo:invariant-relied` |
 | `@nudo:throws` | `Error, TypeError` or `*` | Declare intentional throws — discharges L2 `nudo:entry-may-throw` for the declared kinds |
 | `@nudo:import` | `{ name } from "spec"` (file-level `///`) | Import `*.nudo.js` constraint templates for `@nudo:contract` |
 | `@nudo:env` | `name1, name2` (file-level `///`) | Declare runtime environment APIs |

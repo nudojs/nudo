@@ -14,6 +14,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { errorTypeAbs, $tryMarkSoft, $tryDigestSoft, $tryReleaseSoft, popMayThrowFrame, orphanMayThrowEffects, type MayThrowEffect } from "../may-throw.ts";
 import { shouldWidenArrayLiteral, widenedArrayConf } from "../../containers.ts";
 import { joinAbs, objOf } from "../../objects.ts";
+import type { InvariantSpec } from "./invariant-apply.ts";
 
 export { NudoThrow, isNudoThrow };
 
@@ -96,6 +97,38 @@ export function withAssumePremises<T>(p: Phi, body: () => T): T {
   }
 }
 
+/**
+ * #176 `@nudo:invariant dp[*][*] >= 0` 循环携带界规格（assume 的循环类比物，
+ * 同为用户公理——引擎不验证其真实性）：name = 循环携带绑定名（pack 槽键 /
+ * 形参 ∪ 函数体顶层局部），path = 下钻路径（`[*]` = 元素域逐层 / `.ident` =
+ * obj 槽），rel/value = 数值叶子界。消费方：exec/runtime/invariant-apply.ts
+ * 在循环 join/宽化位（widenLoopJoin / widenFinal）按绑定名实施强化——
+ * 循环携带界的自动推断是 research-grade（循环变量区间宽化丢失，issue #176
+ * 实测连 `last = j` 都证不出 ge(0)），用户声明是唯一通道。
+ * 与 assumePremises 同款动态域契约：**不随调用链继承**——callee 帧一律见
+ * 空（callee 同名局部误染外层不变式 = unsound 假精度），callAtFunctionBoundary
+ * 清空 + 边界退出还原。类型住 invariant-apply.ts（type-only import 无运行
+ * 时环——本文件是叶子模块）。
+ */
+let invariantSpecs: readonly InvariantSpec[] = [];
+
+export function currentInvariantSpecs(): readonly InvariantSpec[] {
+  return invariantSpecs;
+}
+
+export function withInvariantSpecs<T>(
+  specs: readonly InvariantSpec[],
+  body: () => T,
+): T {
+  const prev = invariantSpecs;
+  invariantSpecs = specs;
+  try {
+    return body();
+  } finally {
+    invariantSpecs = prev;
+  }
+}
+
 /** apply 型 impl 的占位 body（AbsFnImpl.body 必需；$call 走 apply 不经 body） */
 type EmptyBlock = { type: "BlockStatement"; body: never[]; directives: never[] };
 export const noBody: EmptyBlock = { type: "BlockStatement", body: [], directives: [] };
@@ -175,12 +208,16 @@ export function $absVal(v: unknown): Abs {
  * always-throw 走 NudoThrow 异常原样 rethrow（不经此转发）。
  */
 export function callAtFunctionBoundary<T>(body: () => T): T {
-  // #152：callee 帧不继承 caller 的用户引理（assume 槽清空+边界退出还原）。
-  // termVar 同名误匹配（#123 contract-face 重锚实参名）在嵌套帧是 unsound
-  // 假精度；未种子（pTrue）时零开销直通。闭包回调（数组方法内联回调经
+  // #152/#176：callee 帧不继承 caller 的用户公理（assume 引理 + invariant
+  // 循环不变式，槽清空+边界退出还原）。termVar 同名误匹配（#123
+  // contract-face 重锚实参名）/ 绑定名同名误染在嵌套帧是 unsound 假精度；
+  // 未种子（pTrue / 空 specs）时零开销直通。闭包回调（数组方法内联回调经
   // 此边界）同按嵌套帧清空——保守诚实。
-  if (assumePremises !== pTrue) {
-    return withAssumePremises(pTrue, () => boundaryBody(body));
+  if (assumePremises !== pTrue || invariantSpecs.length > 0) {
+    return withAssumePremises(
+      pTrue,
+      () => withInvariantSpecs([], () => boundaryBody(body)),
+    );
   }
   return boundaryBody(body);
 }

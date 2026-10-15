@@ -424,13 +424,17 @@ export function analyzeFileUncachedInner(
       cases: [],
     };
 
-    if (skipDirective && skipDirective.kind === "skip") {
+    // #176 skip×case 解耦：skip 只跳过**推断面**，不再 early-continue 整段——
+    // @nudo:case 照常求值断言（运行时见证），用户不必在「声明返回面」与
+    // 「运行时真值」之间二选一。面语义不变：combinedAbs 恒为声明面
+    // （@nudo:skip =>），case 结果不参与面合成；推断类产物（synthCandidates
+    // 调用点合成 / entry@ 兜底 / hof 泛型快照 / collapse 回写）对 skip 关闭。
+    const skipped = skipDirective !== undefined && skipDirective.kind === "skip";
+    if (skipped) {
       analysis.skipped = true;
       if (skipDirective.returns) {
         analysis.combinedAbs = skipDirective.returns;
       }
-      functionResults.push(analysis);
-      continue;
     }
 
     const caseDirectives = fn.directives.filter((d) => d.kind === "case");
@@ -507,7 +511,9 @@ export function analyzeFileUncachedInner(
       }
     }
 
-    if (isPure) {
+    // 纯度标记是求值语义面（调用可记忆化）：skip 函数保持旧口径不标记——
+    // skip 的产物只有声明面 + case 见证，不引入求值语义变化
+    if (isPure && !skipped) {
       const fnVal = globalEnv.has(fn.name) ? globalEnv.lookup(fn.name) : null;
       if (fnVal && typeof fnVal === "object") {
         markPureFn(fnVal as object, fn.name);
@@ -517,8 +523,9 @@ export function analyzeFileUncachedInner(
     const sampleDirective = fn.directives.find((d) => d.kind === "sample");
     void sampleDirective; // TypeValue setSampleCount 已删
 
-    // 无 case，或本轮不求值 case（none / selected 未命中）→ entry@ 出签名
-    if (caseIdxsToRun.length === 0) {
+    // 无 case，或本轮不求值 case（none / selected 未命中）→ entry@ 出签名；
+    // skip 函数不走合成/entry@ 兜底——推断面由声明面接管（#176）
+    if (!skipped && caseIdxsToRun.length === 0) {
       synthCandidates.push({ name: fn.name, node: fn.node, analysis });
     }
 
@@ -532,14 +539,17 @@ export function analyzeFileUncachedInner(
       activeCaseIdx,
     });
 
-    if (analysis.cases.length > 0) {
+    // skip：combinedAbs 已是声明面，case 结果不回写——case 是运行时见证，
+    // 不参与面合成（skip 的语义 = 声明面即产品面，#176）
+    if (!skipped && analysis.cases.length > 0) {
       analysis.combinedAbs = collapseAbsLits(
         analysis.cases.map((c) => c.abs),
         COLLAPSE_LITERAL_THRESHOLD,
       );
     }
 
-    attachHofSnapshot(analysis, source);
+    // hof 泛型快照是推断面产物（dts 泛型投影源）——skip 函数不采集
+    if (!skipped) attachHofSnapshot(analysis, source);
 
     if (fnCacheKey) {
       fnAnalysisCacheSet(fnCacheKey, {
