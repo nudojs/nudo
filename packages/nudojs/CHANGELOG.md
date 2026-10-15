@@ -1,5 +1,24 @@
 # nudojs
 
+## 1.4.0
+
+### Minor Changes
+
+- 0d9e7de: `@nudo:skip` no longer kills `@nudo:case` evaluation (#176) — the declared face and runtime ground truth are no longer a trade-off.
+  
+  - A skipped function keeps `combinedAbs` from its declared return face (dts/sidecar/draft consumers unchanged), while declared `@nudo:case` directives are evaluated and asserted as usual; `nudo test` prints the skip note and the case assertions in the same block (previously the cases vanished entirely: "no declared @nudo:case expectations")
+  - `nudo check` behavior is byte-identical (caseMode none — no case evaluation, no synthesized entry@ for skipped functions)
+
+### Patch Changes
+
+- Updated dependencies [0d9e7de]
+- Updated dependencies [0d9e7de]
+  - @nudojs/core@1.14.0
+  - @nudojs/service@1.7.0
+  - @nudojs/env@0.4.41
+  - @nudojs/harvester@0.3.27
+  - @nudojs/parser@1.4.23
+
 ## 1.3.26
 
 ### Patch Changes
