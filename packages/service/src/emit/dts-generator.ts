@@ -673,9 +673,11 @@ export function generateFunctionDtsLines(fn: FunctionAnalysis): string[] {
     return lines;
   }
 
-  if (fn.cases.length === 0) {
+  if (fn.skipped || fn.cases.length === 0) {
     // skipped / entryOnly / 无 case 函数：只有声明或 combined 返回类型已知，
     // 保持历史行为——rest-args 形式，combined（含 Promise<T>）原样输出。
+    // #176：skip 即使带 @nudo:case（运行时见证已照常求值）也走声明面——
+    // combinedAbs 来自 @nudo:skip => 声明，case 不参与 dts 面合成。
     const retAbs = fn.combinedAbs;
     if (retAbs) {
       return [

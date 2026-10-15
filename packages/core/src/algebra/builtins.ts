@@ -21,7 +21,7 @@ export { assignSourceSlots, evalObjectMethod, primTargetAssignThrows } from "./b
 export { evalJsonMethod } from "./builtins/json.ts";
 export { evalNumberStatic } from "./builtins/number.ts";
 export { evalGlobalFn } from "./builtins/global.ts";
-export { makeArrayCtorAbs, evalArrayStatic } from "./builtins/array.ts";
+export { makeArrayCtorAbs, evalArrayStatic, fromIdxAbs } from "./builtins/array.ts";
 export { evalDateCtor, evalDateStatic, evalDateMethod } from "./builtins/date.ts";
 export {
   evalRegExpCtor,

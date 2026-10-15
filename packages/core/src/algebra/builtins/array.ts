@@ -4,6 +4,7 @@
 import type { Abs } from "../abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, unknown } from "../abs.ts";
 import { joinAbs } from "../objects.ts";
+import { markDomainShared } from "../len-sharing.ts";
 import { TUPLE_MATERIALIZE_CAP } from "../containers.ts";
 import { isMapAbs, isSetAbs, setElementsAbs, mapEntriesAbs } from "../collections.ts";
 import { applyCallbackValue, undefAbs, asAbs, validateCallableArg } from "../hof.ts";
@@ -14,11 +15,12 @@ import { recordMayThrow } from "../may-throw.ts";
 import { matchIterElements, replayGenDeferred, drainGenElements, genDrainViewOf } from "../exec/match-iter.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs } from "../exec/may-throw.ts";
-import { pTrue } from "../pred.ts";
+import { and, ge, lt, pTrue, type Pred } from "../pred.ts";
+import { lit, v, type Term } from "../term.ts";
 import { defaultLeakBudget } from "../leak.ts";
 import { emptyEnv } from "../ast-env.ts";
 import { absFunction } from "../abs-fn.ts";
-import { numPrim, boolPrim, peelBrand, noBody, str, mayCoerceThrowOperand } from "./shared.ts";
+import { boolPrim, peelBrand, noBody, str, mayCoerceThrowOperand } from "./shared.ts";
 import { thenableRiskOf } from "./promise.ts";
 import { isSymbolAbs } from "./symbol.ts";
 
@@ -103,6 +105,30 @@ export function makeArrayCtorAbs(args: Abs[]): Abs {
   return abs({ k: "tuple", elements: [a0] }, undefined, undefined, "exact");
 }
 
+/** Array.from mapFn 抽象下标 fresh var 计数器（containers.ts abstractLen 的 len#N 同风格；无需 memo——每次调用的下标是同一值域的一次性 mint） */
+let fromIdxSeq = 0;
+
+/**
+ * Array.from mapFn 的抽象下标 Abs（#176）：此前是裸 number（无 term 无
+ * pred），`(_, i) => …` 里 i 的值域无界——`Array.from({length: n+1},
+ * (_, i) => [i])` 的元素域被无界下标污染，连 ge(0) 都证不出。
+ * 修复口径（规格事实，非假设）：ArrayFrom 逐位迭代保证 0 ≤ i <
+ * ToLength(length)——mapFn 被调用当且仅当长度 ≥ 1。
+ * - term = fresh var fromIdx#N；pred 至少挂 ge(t, 0)；
+ * - 长度项可得且载体是 prim number 时再挂 lt(t, lengthTerm)：number 原值
+ *   raw ≥ 0 时 ToLength 只减不增（trunc → max(·,0) → min(·,2^53-1)），故
+ *   L = ToLength(raw) ≤ raw，i < L ≤ raw；raw < 0 或 NaN 时 L = 0、回调
+ *   不发生（空真）。非 number 载体（obj/any/string 等 ToNumber 收敛与
+ *   原值无保序关系）→ 只挂 ge(0)，保守；
+ * - lit 长度走 tuple 物化路径（mapOne 收 numLit(i) 具体下标），不经此处。
+ */
+export function fromIdxAbs(lenTerm?: Term, lenNumeric = false): Abs {
+  const t = v(`fromIdx#${fromIdxSeq++}`);
+  const pred: Pred =
+    lenNumeric && lenTerm ? and(ge(t, lit(0)), lt(t, lenTerm)) : ge(t, lit(0));
+  return abs({ k: "prim", type: "number" }, t, pred, "path");
+}
+
 /**
  * Array.from / Array.fromAsync 共用的元素投影（Bug 24 抽出）。
  * Bug 51：array-like（obj）分支重写——
@@ -161,6 +187,9 @@ function evalArrayFrom(args: Abs[]): Abs {
     if (!hasMapFn) return el;
     return applyCallbackValue(mapFn, [el, i], emptyEnv(), pTrue, defaultLeakBudget);
   };
+  // 无 mapFn 时下标 Abs 被 mapOne 丢弃——不 mint fresh var（零开销占位）
+  const idxOrDrop = (lenTerm?: Term, lenNumeric = false): Abs =>
+    hasMapFn ? fromIdxAbs(lenTerm, lenNumeric) : unknown;
   if (isSetAbs(a0) || isMapAbs(a0)) {
     const els = isSetAbs(a0) ? setElementsAbs(a0) : mapEntriesAbs(a0);
     if (els.length === 0) {
@@ -202,8 +231,10 @@ function evalArrayFrom(args: Abs[]): Abs {
   }
   const k = a0.shape.k;
   if (k === "arr") {
-    // 抽象数组：单代表元素（索引未知）
-    const el = mapOne(a0.shape.element, numPrim());
+    // 抽象数组：单代表元素（索引未知）。arr shape 不携带长度面（元素域
+    // 单代表，无 length 项可挂 lt）→ 下标只挂 ge(0)（迭代序号恒非负）。
+    // 元素实参是域分发（跨读不同值）——标记（len-sharing.ts，#175 残留）
+    const el = mapOne(markDomainShared(a0.shape.element), idxOrDrop());
     return abs({ k: "arr", element: el }, undefined, undefined, "path");
   }
   if (k === "tuple") {
@@ -292,19 +323,32 @@ function evalArrayFrom(args: Abs[]): Abs {
         return abs({ k: "tuple", elements: els }, undefined, undefined, "exact");
       }
       // open obj / 超长具体 length：元素域 = 已知索引槽值 join undef
-      //（open 的未知键另并 unknown——可为任意值）+ 槽位 < n 的已知槽
-      let el = mapOne(undefAbs(), numLit(0));
-      for (const v of allIdxSlotValues()) el = joinAbs(el, mapOne(v, numPrim()));
-      if (open) el = joinAbs(el, mapOne(unknown, numPrim()));
+      //（open 的未知键另并 unknown——可为任意值）+ 槽位 < n 的已知槽。
+      // 下标域 [0, nLit-1]（nLit 是 ToLength 折叠后的 lit）→ 挂双界；
+      // 缺失槽臂的下标同用 iAbs（此前钉死 numLit(0)——`(_, i) => i` 会把
+      // 元素域假折成全 0，真实下标可取 [1, nLit) 内任意位，不 sound）
+      const iAbs = idxOrDrop(lit(nLit!), true);
+      let el = mapOne(undefAbs(), iAbs);
+      for (const vv of allIdxSlotValues()) el = joinAbs(el, mapOne(vv, iAbs));
+      if (open) el = joinAbs(el, mapOne(unknown, iAbs));
       return abs({ k: "arr", element: el }, undefined, undefined, "path");
     }
     // 抽象 length：迭代次数未知——元素域 = 全部数字索引槽 join undefined
-    //（open obj 另并 unknown）；mapFn 按抽象数组口径单代表元素 + 抽象索引
+    //（open obj 另并 unknown）；mapFn 按抽象数组口径单代表元素 + 抽象索引。
+    // #176：下标携带 0 ≤ i < ToLength(length)——长度槽值带项且载体是
+    // prim number 时挂 lt(t, lenTerm)（见 fromIdxAbs 的 soundness 注释），
+    // 其余（无项 / obj / any 载体）只挂 ge(0)
+    const lenT = lenAbs?.term;
+    const lenNum =
+      !!lenT &&
+      lenAbs!.shape.k === "prim" &&
+      (lenAbs!.shape as { type: string }).type === "number";
     const idxValues = allIdxSlotValues();
     let el = idxValues.length > 0 ? idxValues.reduce((x, y) => joinAbs(x, y)) : undefAbs();
     el = joinAbs(el, undefAbs());
     if (open) el = joinAbs(el, unknown);
-    el = mapOne(el, numPrim());
+    // 元素实参是域分发（缺失/未知槽 join 域）——标记（#175 残留）
+    el = mapOne(markDomainShared(el), idxOrDrop(lenT, lenNum));
     return abs({ k: "arr", element: el }, undefined, undefined, "path");
   }
   return unknown;

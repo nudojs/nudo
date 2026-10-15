@@ -28,6 +28,7 @@ import type { AbsAssignRecord, AbsCallRecord } from "./ast-records.ts";
 import { leqAbs } from "./leq.ts";
 import {
   extractAssumeSegs,
+  extractInvariantSegs,
   extractRefineReturnFromSource,
   extractDeclaredThrows,
   fnTopLevelLocalNames,
@@ -99,6 +100,8 @@ import {
   bindingsOf,
 } from "./exec/run.ts";
 import { withAssumePremises } from "./exec/runtime.ts";
+import { withInvariantSpecs } from "./exec/runtime/state.ts";
+import type { InvariantSpec } from "./exec/runtime/invariant-apply.ts";
 import { setEvalAssignCollector, setEvalCallCollector, type EvalCallRecord } from "./exec/calls.ts";
 import {
   filterGateThrows,
@@ -506,6 +509,77 @@ function assumePremisesPhiOf(
   return { phi: pAndPred(...preds), display };
 }
 
+// ---------------------------------------------------------------------------
+// #176：@nudo:invariant 循环携带界（文法/绑定名校验 + spec 构造）
+// ---------------------------------------------------------------------------
+
+/**
+ * `@nudo:invariant <name><path> <rel> <number>`（如 `dp[*][*] >= 0`）：
+ * - 文法外形态（`==`、字面量缺号、非 `[*]`/`.ident` 路径）→ warning
+ *   nudo:invariant-invalid（不折；warning 而非 assume 的 error——循环界
+ *   声明错只损失该引理的证明力，不产生假面）
+ * - 引用名不在锚定函数形参 ∪ 函数体顶层局部绑定 → 同码 warning
+ *   （消息口径仿 nudo:assume-invalid）
+ * 合法段构造 InvariantSpec 供目标函数入口求值种子（withInvariantSpecs，
+ * 不随调用链继承——callee 帧清空）。消费方：exec/runtime/invariant-apply.ts
+ * 在循环 join/宽化位（widenLoopJoin / widenFinal）按绑定名实施强化。
+ * display = 合法段规范形原文，供证明成功时的审计标注
+ * （nudo:invariant-relied——与 assume 同为用户公理，依赖面必须上屏可见）。
+ * 无 invariant 行（或全部非法不折）→ undefined（零行为变化）。
+ * 注：generalize L0 memo 键不含 specs（与 assume 前提同款已知少精度，
+ * 非 unsound——种子 extent 内算出的结果会被无种子上下文复用，方向是少证）。
+ */
+function invariantSpecsOf(
+  name: string,
+  source: string,
+  file: ReturnType<typeof parse>,
+  issues: CheckIssue[],
+): { specs: InvariantSpec[]; display: string[] } | undefined {
+  const segs = extractInvariantSegs(source, name);
+  if (segs.length === 0) return undefined;
+  const meta = extractFn(source, name, file);
+  // 可锚定面与 @nudo:assume 同口径：形参 ∪ 函数体顶层局部绑定（#165）
+  const bindable = new Set<string>([
+    ...contractParamNameSet(meta?.formals ?? []),
+    ...(meta?.params ?? []),
+    ...fnTopLevelLocalNames(meta?.body),
+  ]);
+  const surface = [...bindable].join(", ");
+  const specs: InvariantSpec[] = [];
+  const display: string[] = [];
+  for (const seg of segs) {
+    if (seg.kind === "bad") {
+      issues.push({
+        severity: "warning",
+        code: "nudo:invariant-invalid",
+        message: `${name}: malformed @nudo:invariant '${seg.raw}' (expected <name><path> <rel> <number>; path = [*] or .member steps)`,
+        actual: seg.raw,
+        expected: "<name><path> <rel> <number>",
+        suggestion:
+          "loop-carried bounds: @nudo:invariant dp[*][*] >= 0 — scalar: @nudo:invariant last >= 1",
+        fn: name,
+      });
+      continue;
+    }
+    if (!bindable.has(seg.name)) {
+      issues.push({
+        severity: "warning",
+        code: "nudo:invariant-invalid",
+        message: `${name}: @nudo:invariant name not bound as a parameter or top-level local (${seg.name})`,
+        actual: seg.name,
+        expected: surface || "(no params/locals)",
+        suggestion: `reference one of: ${surface || "(no params or top-level locals)"}`,
+        fn: name,
+      });
+      continue;
+    }
+    specs.push({ name: seg.name, path: seg.path, rel: seg.rel, value: seg.value });
+    display.push(seg.display);
+  }
+  if (specs.length === 0) return undefined;
+  return { specs, display };
+}
+
 function checkSourceInner(
   filePath: string,
   source: string,
@@ -563,9 +637,15 @@ function checkSourceInner(
   for (const name of names) {
     // #152：@nudo:assume 校验 + 入口前提种子（无 assume → undefined，零行为变化）
     const assumePhi = assumePremisesPhiOf(name, source, file, issues);
+    // #176：@nudo:invariant 校验 + 循环界种子（同上零行为变化）
+    const inv = invariantSpecsOf(name, source, file, issues);
     // 目标函数入口求值（generalize 内部 invoke / L2）动态域内喂独立槽
-    const runSeeded = <T>(body: () => T): T =>
-      assumePhi === undefined ? body() : withAssumePremises(assumePhi.phi, body);
+    // （assume → 引理 phi；invariant → 循环 join/宽化位消费的 specs）
+    const runSeeded = <T>(body: () => T): T => {
+      if (assumePhi === undefined && inv === undefined) return body();
+      return withAssumePremises(assumePhi?.phi ?? pTrue, () =>
+        withInvariantSpecs(inv?.specs ?? [], body));
+    };
     // @nudo:skip [returnsExpr]：不评估 body（host 传解析结果）。
     // 声明了返回类型 → 按声明上屏；未声明 → any（开发者主动退出推断，不是引擎债）。
     // L1 调用点义务由文件级 scan 照常执行；L2 入口 may-throw 不评估。
@@ -890,6 +970,7 @@ function checkSourceInner(
           eff.returns.constraint,
           g.symbolic,
           assumePhi?.display,
+          inv?.display,
         );
         if (retIssues.some((i) => i.severity === "error")) returnViolated.add(name);
         issues.push(...retIssues);
@@ -1163,27 +1244,39 @@ function checkReturnConstraint(
   constraint: NudoConstraint,
   ret: Abs,
   assumeDisplay?: string[],
+  invariantDisplay?: string[],
 ): CheckIssue[] {
   const proof = assertImplies(ret, constraint);
   if (proof.status === "proved") {
-    // #152 审计分层：assume 是用户公理（引擎不验证其真实性）——依赖了
-    // 引理的证明必须上屏可见。粒度 = 函数级（本函数声明了 assume 且返回
-    // 契约证得；不求值依赖集）。skip 路径/调用点对账不传 → 不标。
+    // #152/#176 审计分层：assume / invariant 都是用户公理（引擎不验证其
+    // 真实性）——依赖了公理的证明必须上屏可见。粒度 = 函数级（本函数声明了
+    // 该指令且返回契约证得；不求值依赖集）。skip 路径/调用点对账不传 → 不标。
+    const relied: CheckIssue[] = [];
     if (assumeDisplay && assumeDisplay.length > 0) {
-      return [
-        {
-          severity: "info",
-          code: "nudo:assume-relied",
-          message: `${fnName}: return contract proved via @nudo:assume ${assumeDisplay.join("; ")}`,
-          actual: `proof relies on user lemma${assumeDisplay.length > 1 ? "s" : ""}`,
-          expected: "engine verifies the obligation, not the lemma itself",
-          suggestion:
-            "@nudo:assume is a user-supplied axiom — falsify it with concrete @nudo:case runs (nudo test)",
-          fn: fnName,
-        },
-      ];
+      relied.push({
+        severity: "info",
+        code: "nudo:assume-relied",
+        message: `${fnName}: return contract proved via @nudo:assume ${assumeDisplay.join("; ")}`,
+        actual: `proof relies on user lemma${assumeDisplay.length > 1 ? "s" : ""}`,
+        expected: "engine verifies the obligation, not the lemma itself",
+        suggestion:
+          "@nudo:assume is a user-supplied axiom — falsify it with concrete @nudo:case runs (nudo test)",
+        fn: fnName,
+      });
     }
-    return [];
+    if (invariantDisplay && invariantDisplay.length > 0) {
+      relied.push({
+        severity: "info",
+        code: "nudo:invariant-relied",
+        message: `${fnName}: return contract proved via @nudo:invariant ${invariantDisplay.join("; ")}`,
+        actual: `proof relies on user invariant${invariantDisplay.length > 1 ? "s" : ""}`,
+        expected: "engine verifies the obligation, not the loop invariant itself",
+        suggestion:
+          "@nudo:invariant is a user-supplied axiom — falsify it with concrete @nudo:case runs (nudo test)",
+        fn: fnName,
+      });
+    }
+    return relied;
   }
   const push = (
     severity: "error" | "warning",

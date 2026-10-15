@@ -62,9 +62,10 @@ export type FunctionAnalysis = {
   /** C4.1 形参表面：draft/契约对齐（解构 placeholder + bound 名） */
   formals?: FormalParam[];
   cases: CaseResult[];
-  /** cases 结果 Abs 的 join；dts 返回位源 */
+  /** cases 结果 Abs 的 join；dts 返回位源。skip 函数恒为声明面（@nudo:skip =>），case 结果不参与（#176） */
   combinedAbs?: Abs;
   entryOnly?: boolean;
+  /** @nudo:skip：只跳过推断面（combinedAbs=声明面，无 synth/hof）；@nudo:case 照常求值断言（#176） */
   skipped?: boolean;
   /**
    * True for functions collected from CJS-style bindings/assignments

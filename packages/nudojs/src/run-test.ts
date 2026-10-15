@@ -60,10 +60,14 @@ export function buildTestReport(file: string, result: AnalysisResult): TestRepor
       caseLines.push(
         declared ? `  skipped (declared): ${declared}` : "  skipped (no return type declared)",
       );
-      caseLines.push("");
-      return;
-    }
-    if (cases.length === 0) {
+      // #176 skip×case 解耦：skip 只声明推断面（combinedAbs）；声明的
+      // @nudo:case 是运行时见证，照常逐条打印并计入断言结果——不再
+      // 「交易掉运行时真值换声明面」。无 case 的 skip 保持只显示说明行。
+      if (cases.length === 0) {
+        caseLines.push("");
+        return;
+      }
+    } else if (cases.length === 0) {
       caseLines.push("  (no cases)");
       caseLines.push("");
       return;

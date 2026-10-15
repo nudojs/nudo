@@ -8,7 +8,8 @@ import { abs, unknown, confJoin, litValue, bool, boolLit, str, strLit, numLit } 
 import { objOf, joinAbs, isObj, canonicalArrayIndex, getSlot, setSlot, propertyKeyOf, getProtoAbs, isNullProtoObj } from "../objects.ts";
 import { markFreshInstance } from "../instance-id.ts";
 import { findClassAccessor, findStaticClassAccessor, TYPED_ARRAY_CALLBACK_METHODS, builtinSuperCtorOf, hostBuiltinCtorOf, brandHasProtoMember, evalClassChain, classChainHasHole } from "./runtime/members.ts";
-import { OBJECT_PROTO_METHOD_NAMES, objectProtoMethodAbs, builtinCtorAbs, protoOfRecv } from "../builtins.ts";
+import { OBJECT_PROTO_METHOD_NAMES, objectProtoMethodAbs, builtinCtorAbs, protoOfRecv, fromIdxAbs } from "../builtins.ts";
+import { markDomainShared } from "../len-sharing.ts";
 import { typedArrayElementOf } from "../builtins/shared.ts";
 import { $get, $set, $lit, asAbsVal, namespaceNameOf, $regex, $arrMutContainer, callAtFunctionBoundary, lookupObjAccessor, clearStaleTermPred } from "./runtime.ts";
 import { pushCtorFrame, popCtorFrame, withNewTargetReset, throwStrictWrite, undef } from "./runtime/state.ts";
@@ -1649,7 +1650,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
         "path",
       );
     }
-    const out = callFn(args[0], args[1], shape.element, unknownIdx(), arr);
+    const out = callFn(args[0], args[1], markDomainShared(shape.element), fromIdxAbs(), arr);
     const el = mapElementFallback(asAbs(args[0]), shape.element, out);
     // fallback 强制 partial，否则 confJoin(arr, out)
     const conf =
@@ -1699,7 +1700,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
       }
       return acc;
     }
-    return callFn(fn, undefined, acc, shape.element, unknownIdx(), arr);
+    return callFn(fn, undefined, acc, markDomainShared(shape.element), fromIdxAbs(), arr);
   }
   if (method === "reduceRight") {
     // Bug 55：GetCallback 前置校验（同 reduce——单元素无初值不调回调也抛）
@@ -1740,7 +1741,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
         cause: "reduceRight of possibly-empty array with no initial value",
       });
     }
-    return callFn(fn, undefined, acc, shape.element, unknownIdx(), arr);
+    return callFn(fn, undefined, acc, markDomainShared(shape.element), fromIdxAbs(), arr);
   }
   if (method === "filter") {
     // Bug 55：GetCallback 前置校验（空元组零谓词也要抛）
@@ -1797,7 +1798,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
       );
       return projectFlatMapResult(arr.conf, mapped);
     }
-    const out = callFn(args[0], args[1], shape.element, unknownIdx(), arr);
+    const out = callFn(args[0], args[1], markDomainShared(shape.element), fromIdxAbs(), arr);
     return projectFlatMapResult(arr.conf, [out]);
   }
   if (method === "forEach") {
@@ -1808,7 +1809,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
         if (!isHole(i)) callFn(args[0], args[1], el, $lit(i), arr);
       });
     } else {
-      callFn(args[0], args[1], shape.element, unknownIdx(), arr);
+      callFn(args[0], args[1], markDomainShared(shape.element), fromIdxAbs(), arr);
     }
     return undefAbs();
   }
@@ -1830,7 +1831,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
         if (method === "every" && !t) return boolLit(false);
       }
     } else {
-      const t = callbackTruth(callFn(args[0], args[1], shape.element, unknownIdx(), arr));
+      const t = callbackTruth(callFn(args[0], args[1], markDomainShared(shape.element), fromIdxAbs(), arr));
       // 抽象 arr 长度未知（可能空）：单代表元素无法下结论
       if (t === undefined) return bool();
       if (method === "some" && t) return boolLit(true);
@@ -1857,8 +1858,8 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
       }
       return undefAbs();
     }
-    const el = shape.element;
-    const t = callbackTruth(callFn(args[0], args[1], el, unknownIdx(), arr));
+    const el = markDomainShared(shape.element);
+    const t = callbackTruth(callFn(args[0], args[1], el, fromIdxAbs(), arr));
     if (t === true) return el;
     if (t === false) return undefAbs();
     return joinAbs(el, undefAbs());
@@ -1876,7 +1877,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
       if (undecided) return joinAbs(unknownIdx(), $lit(-1));
       return $lit(-1);
     }
-    const t = callbackTruth(callFn(args[0], args[1], shape.element, unknownIdx(), arr));
+    const t = callbackTruth(callFn(args[0], args[1], markDomainShared(shape.element), fromIdxAbs(), arr));
     if (t === true) return unknownIdx();
     if (t === false) return $lit(-1);
     return joinAbs(unknownIdx(), $lit(-1));
@@ -1900,7 +1901,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
       }
       return wantIndex ? $lit(-1) : undefAbs();
     }
-    const t = callbackTruth(callFn(args[0], args[1], shape.element, unknownIdx(), arr));
+    const t = callbackTruth(callFn(args[0], args[1], markDomainShared(shape.element), fromIdxAbs(), arr));
     if (wantIndex) {
       if (t === true) return unknownIdx();
       if (t === false) return $lit(-1);
@@ -1964,7 +1965,7 @@ function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | undefined
     }
     return abstractSeqIteratorAbs(
       abs(
-        { k: "tuple", elements: [unknownIdx(), shape.element] },
+        { k: "tuple", elements: [fromIdxAbs(), markDomainShared(shape.element)] },
         undefined,
         undefined,
         "partial",

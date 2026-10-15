@@ -238,6 +238,17 @@ sim: return contract proved via @nudo:assume d <= max
 
 Context: [@nudo:assume](../concepts/directives.md#nudoassume--user-lemmas) · [nudo check](../guides/check.md#what-it-checks)
 
+### `nudo:invariant-relied` {#nudo-invariant-relied}
+
+```text
+levenshtein: return contract proved via @nudo:invariant dp[*][*] >= 0
+→ @nudo:invariant is a user-supplied axiom — falsify it with concrete @nudo:case runs (nudo test)
+```
+
+返回契约的证明**依赖了用户声明的循环不变式**（`@nudo:invariant`）。**Info** —— 审计标注而非门禁：引擎验证的是义务（返回契约），从不验证不变式本身。报告会建议用具体 `@nudo:case`（`nudo test`）证伪不变式——错误不变式会让受影响的证明 unsound，依赖面必须上屏可见。与 [`nudo:unproven-return`](#nudo-unproven-return) 互为对偶。
+
+Context: [@nudo:invariant](../concepts/directives.md#nudoinvariant--loop-invariants) · [nudo check](../guides/check.md#what-it-checks)
+
 ### `nudo:unknown-recv` {#nudo-unknown-recv}
 
 `unknown` 接收者上的成员访问。不能替代 L2 throws 建模。
@@ -351,6 +362,19 @@ sim: @nudo:assume name(s) not bound as parameters or top-level locals (x, y)
 **Fix:** 引用锚定函数形参或函数体顶层局部绑定内的名字；常数界写进侧车 / `@nudo:contract`（局部量的常数界放在生产它的 callee 的返回契约上）。
 
 Context: [@nudo:assume](../concepts/directives.md#nudoassume--user-lemmas) · [契约门禁（L1）](../guides/check.md#l1--显式契约)
+
+### `nudo:invariant-invalid` {#nudo-invariant-invalid}
+
+```text
+levenshtein: malformed @nudo:invariant 'dp[*][*] == 0' (expected <name><path> <rel> <number>; path = [*] or .member steps)
+f: @nudo:invariant name not bound as a parameter or top-level local (table)
+```
+
+`@nudo:invariant` 段不在 `<name><path> <rel> <number>` 文法之内（`==` / `!=` / 非数值界均非法），或引用了锚定函数形参或函数体顶层 `const`/`let`/`var` 局部绑定之外的名字。**Warning** —— 该段被忽略，循环 join 不做任何强化，依赖它的证明保持诚实 unproven。
+
+**Fix:** 用 `>=` / `<=` / `>` / `<` 配数值常数（`dp[*][*] >= 0`，对象槽用 `.ident`），并引用锚定函数形参或函数体顶层局部绑定内的名字。
+
+Context: [@nudo:invariant](../concepts/directives.md#nudoinvariant--loop-invariants) · [契约门禁（L1）](../guides/check.md#l1--显式契约)
 
 ### `nudo:env-unresolved` {#nudo-env-unresolved}
 

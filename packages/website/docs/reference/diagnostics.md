@@ -238,6 +238,17 @@ A return-contract proof **relied on a user-supplied lemma** (`@nudo:assume`). **
 
 Context: [@nudo:assume](../concepts/directives.md#nudoassume--user-lemmas) · [nudo check](../guides/check.md#what-it-checks)
 
+### `nudo:invariant-relied` {#nudo-invariant-relied}
+
+```text
+levenshtein: return contract proved via @nudo:invariant dp[*][*] >= 0
+→ @nudo:invariant is a user-supplied axiom — falsify it with concrete @nudo:case runs (nudo test)
+```
+
+A return-contract proof **relied on a user-declared loop invariant** (`@nudo:invariant`). **Info** — an audit annotation, not a gate: the engine verifies the obligation (the return contract), never the invariant itself. The report suggests falsifying it with concrete `@nudo:case` runs (`nudo test`) — a wrong invariant makes the affected proof unsound, so the reliance must stay visible. Complement of [`nudo:unproven-return`](#nudo-unproven-return).
+
+Context: [@nudo:invariant](../concepts/directives.md#nudoinvariant--loop-invariants) · [nudo check](../guides/check.md#what-it-checks)
+
 ### `nudo:unknown-recv` {#nudo-unknown-recv}
 
 Member access on `unknown` receiver. Does not replace L2 throws modeling.
@@ -351,6 +362,19 @@ A `@nudo:assume` segment is outside the `var <= var` grammar, or references name
 **Fix:** reference names bound as parameters or top-level locals of the anchored function; move constant bounds into a sidecar / `@nudo:contract` (for a local's constant bound, put the contract on the return of the callee that produces it).
 
 Context: [@nudo:assume](../concepts/directives.md#nudoassume--user-lemmas) · [Contract gate (L1)](../guides/check.md#l1--explicit-contracts)
+
+### `nudo:invariant-invalid` {#nudo-invariant-invalid}
+
+```text
+levenshtein: malformed @nudo:invariant 'dp[*][*] == 0' (expected <name><path> <rel> <number>; path = [*] or .member steps)
+f: @nudo:invariant name not bound as a parameter or top-level local (table)
+```
+
+A `@nudo:invariant` segment is outside the `<name><path> <rel> <number>` grammar (`==` / `!=` / non-numeric bounds are invalid), or references a name that is not a parameter or top-level `const`/`let`/`var` local of the anchored function's body. **Warning** — the segment is ignored; no invariant strengthens loop joins, so proofs that depended on it stay honestly unproven.
+
+**Fix:** use `>=` / `<=` / `>` / `<` with a numeric constant (`dp[*][*] >= 0`, `.ident` for object slots), and reference names bound as parameters or top-level locals of the anchored function.
+
+Context: [@nudo:invariant](../concepts/directives.md#nudoinvariant--loop-invariants) · [Contract gate (L1)](../guides/check.md#l1--explicit-contracts)
 
 ### `nudo:env-unresolved` {#nudo-env-unresolved}
 

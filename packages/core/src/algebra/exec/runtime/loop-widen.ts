@@ -26,6 +26,7 @@ import { joinAbs, joinObjects } from "../../objects.ts";
 import { leqAbs } from "../../leq.ts";
 import { numericBounds } from "../../arithmetic.ts";
 import { oobUndef } from "./state.ts";
+import { applyInvariantsToPack } from "./invariant-apply.ts";
 
 /** 增长标记树：true=整值增长；slots/els/el=结构内增长路径；null=稳定 */
 type GrowthTree =
@@ -407,6 +408,9 @@ export function makeLoopWidener(): LoopCarriedWidener {
       observe(final);
       const base = acc ?? final;
       const g: GrowthTree = interrupted ? true : growth;
+      // #176：宽化/收敛产物上实施 @nudo:invariant（applyInvariantsToPack
+      // 对非 obj / 无 specs 原样直通——counter 线程（state）零行为变化）。
+      // 覆盖 $for / $while / $whileSeq / $forOf 全部 widenFinal 消费方。
       if (g === null) {
         // #156 残留：无增长但快照 join 是数组族 sum（参数位 arr 绑定的顺序
         // 状态：unknown 吸收 push 值 → 元素域增长检测不到，joinAbs 把
@@ -415,9 +419,9 @@ export function makeLoopWidener(): LoopCarriedWidener {
         // 径）；conf 沿用该值自身的累计 join——这是表示收敛不是宽化，
         // 不标 widened。等长 tuple-only join 不收敛（保长度精度）。打包
         // 绑定包是 obj（每绑定一槽），sum 藏在槽位里——递归下钻。
-        return collapseArrSums(base);
+        return applyInvariantsToPack(collapseArrSums(base));
       }
-      return widenWithPath(normalizeForWiden(base, g), g);
+      return applyInvariantsToPack(widenWithPath(normalizeForWiden(base, g), g));
     },
   };
 }

@@ -34,6 +34,7 @@ import {
   extractNudoImportRecords,
   fnDirectiveCommentLines,
   scanAssumeSegments,
+  scanInvariantSegments,
   scanBudgetDecl,
   scanContractSegments,
   scanMalformedNudoImports,
@@ -1115,6 +1116,60 @@ export function extractAssumeSegs(source: string, fnName: string): AssumeSeg[] {
       continue;
     }
     out.push({ kind: "bad", raw: seg });
+  }
+  return out;
+}
+
+/**
+ * @nudo:invariant 解析段（issue #176 循环携带界，assume 的循环类比物）。
+ * ok：`<name><path> <rel> <number>`——path = `[*]`（元素域）/ `.ident`
+ * （obj 槽）序列（可空 = 标量），rel ∈ >= <= > <，数字允许负号（小数可）；
+ * display 为规范形原文（供 nudo:invariant-relied 审计标注）。
+ * bad：文法外原文（消费方 check 发 nudo:invariant-invalid）。
+ * 锚定 = AST 最近 Function（与 @nudo:assume 同 D6=G2 注释块绑定）。
+ */
+export type InvariantSeg =
+  | {
+      kind: "ok";
+      name: string;
+      path: Array<{ k: "idx" } | { k: "prop"; name: string }>;
+      rel: "ge" | "le" | "gt" | "lt";
+      value: number;
+      display: string;
+    }
+  | { kind: "bad"; raw: string };
+
+const INVARIANT_SEG_REGEX =
+  /^([A-Za-z_$][\w$]*)((?:\[\*\]|\.[A-Za-z_$][\w$]*)*)\s*(>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)$/;
+
+export function extractInvariantSegs(source: string, fnName: string): InvariantSeg[] {
+  // 快路径：整文件无 @nudo:invariant 时免 regex 扫全文（与 extractAssumeSegs 同口径）
+  // 指令住注释——字符串里的同形文本不算
+  if (!stripStringsKeepComments(source).includes("@nudo:invariant")) return [];
+  const out: InvariantSeg[] = [];
+  for (const seg of scanInvariantSegments(fnDirectiveCommentLines(source, fnName))) {
+    const m = seg.match(INVARIANT_SEG_REGEX);
+    if (!m) {
+      out.push({ kind: "bad", raw: seg });
+      continue;
+    }
+    const pathStr = m[2] ?? "";
+    const path: Array<{ k: "idx" } | { k: "prop"; name: string }> = [];
+    for (const pm of pathStr.matchAll(/\[\*\]|\.[A-Za-z_$][\w$]*/g)) {
+      const t = pm[0]!;
+      if (t === "[*]") path.push({ k: "idx" });
+      else path.push({ k: "prop", name: t.slice(1) });
+    }
+    const relTxt = m[3]!;
+    out.push({
+      kind: "ok",
+      name: m[1]!,
+      path,
+      rel:
+        relTxt === ">=" ? "ge" : relTxt === "<=" ? "le" : relTxt === ">" ? "gt" : "lt",
+      value: Number(m[4]),
+      display: `${m[1]}${pathStr} ${relTxt} ${m[4]}`,
+    });
   }
   return out;
 }

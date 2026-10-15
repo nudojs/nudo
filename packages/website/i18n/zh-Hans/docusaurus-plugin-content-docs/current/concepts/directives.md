@@ -1,5 +1,5 @@
 ---
-description: "全部 @nudo: 指令（case、mock、pure、skip、sample、contract、throws、import、env、mock-module、as、replace）的语法、约束与示例完整参考。"
+description: "全部 @nudo: 指令（case、mock、pure、skip、sample、contract、assume、invariant、throws、import、env、mock-module、as、replace）的语法、约束与示例完整参考。"
 ---
 
 # 指令系统
@@ -440,6 +440,7 @@ export const maxLen = fn({ a: string(), b: string() }, number().ge(1));
 |------|------|
 | 常数界——`d <= 10`、`max >= 1` | 侧车 / `@nudo:contract` 构建器（`number().le(10)`） |
 | 跨变量引理——`d <= max` | `@nudo:assume`（引擎推导不出） |
+| 循环携带界——`dp[*][*] >= 0` | `@nudo:invariant`（循环 join/宽化丢区间证据） |
 
 `.le("max")` 此前被静默接受，产出一个**字符串字面量** pred（`le(self, lit("max"))`），从不参与任何证明。数值界构建器（`gt` / `ge` / `lt` / `le` / `min` / `max` / `shift`）现在在加载期拒绝非数值、非有限实参——侧车以 `nudo:interface-load` 失败：
 
@@ -448,6 +449,80 @@ sidecar './sim.nudo.js' failed to load: nudo le(): finite numeric bound expected
 ```
 
 这类侧车请迁移到 `@nudo:assume`。
+
+---
+
+## @nudo:invariant — 循环不变式 {#nudoinvariant--loop-invariants}
+
+声明一条引擎推导不出的**循环携带界**——[`@nudo:assume`](#nudoassume--user-lemmas) 的循环类比物。循环 join 与宽化保留值域（`number`）但丢区间证据：连 `let last = 0; for (let j = 1; j <= n; j++) last = j; return last` 都证不出 `last >= 1`（自动推导循环不变式是 research-grade——Nudo 不尝试）。指令让用户供不变式；引擎在循环 join / 宽化位实施强化。
+
+### 语法
+
+```text
+@nudo:invariant <name><path> <rel> <number>
+@nudo:invariant dp[*][*] >= 0
+@nudo:invariant last >= 1
+```
+
+- **函数级**——写在紧邻函数上方的注释块里，与 `@nudo:contract` / `@nudo:assume` 同一条扫描路径；多行可叠加。
+- `<name>` 必须是**锚定函数的形参或函数体顶层 `const`/`let`/`var` 局部绑定**；否则 warning `nudo:invariant-invalid`。
+- `<path>` 沿绑定下钻：`[*]` 进数组元素 / tuple 成员 / union 数值臂；`.ident` 进对象槽。空路径即标量本身。非数值叶子（字符串、对象）与结构不匹配静默跳过——写错方向的不变式由证明失败暴露，不上报。
+- `<rel>` 是 `>=` / `<=` / `>` / `<` 配**数值常数**（`==`、`!=`、非数值界非法 → `nudo:invariant-invalid`）。
+- 强化叶子携带 fresh 符号 term 与声明的 pred（conf `path`）；字面量叶子不动——具体值自带真值。
+
+### 语义——公理，不是被检验的事实
+
+- **引擎从不验证不变式。** 证明依赖它时，`nudo check` 发 info `nudo:invariant-relied`（`levenshtein: return contract proved via @nudo:invariant dp[*][*] >= 0`），并建议用具体 `@nudo:case`（`nudo test`）证伪。错误不变式会让受影响的证明 unsound——不变式要少、要可评审。
+- **不变式不跨调用边界继承。** callee 帧看到的不变式槽为空（函数入口清空、退出恢复）——caller 的 `dp` 引理不会泄漏进 callee 的同名局部。
+- 不变式**不**顺手修的：OOB 读位事实保持诚实。抽象下标读 `dp[m][n]` 仍合成 `undefined`；`if (out === undefined) return 0` 守卫在返回契约看到它之前先窄化。
+
+### 示例——编辑距离
+
+```javascript
+// levenshtein.js
+/**
+ * @nudo:invariant dp[*][*] >= 0
+ */
+export function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, (_, i) => [i]);
+  for (let j = 1; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1,
+                          dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+  }
+  const out = dp[m][n];
+  if (out === undefined) return 0;
+  return out;
+}
+```
+
+```javascript
+// levenshtein.nudo.js
+import { fn, number, string } from "@nudojs/core";
+
+export const levenshtein = fn(
+  { a: string(), b: string() },
+  number().ge(0),
+);
+```
+
+```text
+$ nudo check levenshtein.js
+OK
+  0 error · 0 warning · 1 info · 1 fn
+
+signatures
+  levenshtein(a: string, b: string) => 0 | number
+
+issues
+  [INFO levenshtein] levenshtein: return contract proved via @nudo:invariant dp[*][*] >= 0  (nudo:invariant-relied)
+      → @nudo:invariant is a user-supplied axiom — falsify it with concrete @nudo:case runs (nudo test)
+```
+
+去掉 `@nudo:invariant` 行，同一文件 + 侧车**诚实保留为证不出**——warning `nudo:unproven-return`（抽象 `dp[m][n]` 读合成 OOB `undefined`；守卫窄化它，但宽化后没有任何界存活来证 `ge(0)`）。
 
 ---
 
@@ -748,6 +823,7 @@ const result = a + b;
 | `@nudo:sample` | `N` | 保留的无效果指令（已解析，未消费） |
 | `@nudo:contract` | `param constraint` / `return constraint` | 源码内契约（主路径是 `*.nudo.js` 侧车自动绑定） |
 | `@nudo:assume` | `<name> <= <name>`（或 `>=`） | 声明跨变量用户引理（形参或函数体顶层局部量；公理，不被验证）——依赖它的证明带 `nudo:assume-relied` 审计标注 |
+| `@nudo:invariant` | `<name><path> <rel> <number>`（如 `dp[*][*] >= 0`） | 声明循环携带界（形参或函数体顶层局部量沿路径下钻；公理，不被验证）——依赖它的证明带 `nudo:invariant-relied` 审计标注 |
 | `@nudo:throws` | `Error, TypeError` 或 `*` | 申报有意抛错 —— 按申报种类解除 L2 `nudo:entry-may-throw` |
 | `@nudo:import` | `{ name } from "spec"`（文件级 `///`） | 为 `@nudo:contract` 引入 `*.nudo.js` 约束模板 |
 | `@nudo:env` | `name1, name2`（文件级 `///`） | 声明运行时环境 API |

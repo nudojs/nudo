@@ -56,7 +56,9 @@ export function $add(a: Abs, b: Abs): Abs {
   return add(a, b, currentExecPhi());
 }
 export function $sub(a: Abs, b: Abs): Abs {
-  return sub(a, b, currentExecPhi());
+  // issue #175：用户引理前提（@nudo:assume d <= max ⇒ max-d ≥ 0）参与
+  // 同名相关性界折叠（镜像 $div）
+  return sub(a, b, currentExecPhi(), currentAssumePremises());
 }
 export function $mul(a: Abs, b: Abs): Abs {
   return mul(a, b, currentExecPhi());

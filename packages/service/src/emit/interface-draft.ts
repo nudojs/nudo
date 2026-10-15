@@ -277,12 +277,15 @@ function caseEvidence(fn: FunctionAnalysis): {
   paramEvidence: DraftEvidence;
   rawReturnEvidence: DraftEvidence;
 } {
-  const callsite = fn.cases.filter((c) => c.source === "callsite");
-  const directive = fn.cases.filter((c) => c.source === "directive");
+  // #176：skip 函数的 @nudo:case 是运行时断言见证，不作草稿证据——
+  // 与旧口径一致（此前 skip 无 case → 无参数/返回证据，只有 body 建议）
+  const cases = fn.skipped ? [] : fn.cases;
+  const callsite = cases.filter((c) => c.source === "callsite");
+  const directive = cases.filter((c) => c.source === "directive");
   return {
     paramCases: callsite.length > 0 ? callsite : directive,
     returnCases:
-      callsite.length > 0 ? callsite : directive.length > 0 ? directive : fn.cases,
+      callsite.length > 0 ? callsite : directive.length > 0 ? directive : cases,
     paramEvidence: callsite.length > 0 ? "callsite" : directive.length > 0 ? "directive" : "none",
     rawReturnEvidence:
       callsite.length > 0 ? "callsite" : directive.length > 0 ? "directive" : "none",

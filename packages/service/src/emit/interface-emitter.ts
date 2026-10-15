@@ -441,6 +441,10 @@ export function formatEmitSummary(
  * 任一有证据位 joinThenProject 落空 → undefined（not-projectable，不产垃圾）。
  */
 function projectFunctionDsl(fn: FunctionAnalysis): string | undefined {
+  // #176：skip 函数不产侧车契约——@nudo:case 现已照常求值（运行时见证），
+  // 但见证不参与面合成；skip 的面是 @nudo:skip => 声明（若有）。与旧口径
+  // 一致：此前 skip 无 case → 无证据 → not-projectable。
+  if (fn.skipped) return undefined;
   const callsite = fn.cases.filter((c) => c.source === "callsite");
   const directive = fn.cases.filter((c) => c.source === "directive");
   const paramCases = callsite.length > 0 ? callsite : directive;
