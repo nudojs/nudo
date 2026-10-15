@@ -6,6 +6,8 @@ import { readFileSync, existsSync, statSync } from "node:fs";
 import { resolve, dirname, relative } from "node:path";
 import type { Command } from "commander";
 import { analyzeFileAsync, type CallRecord } from "@nudojs/service";
+import { paintOne } from "../ui.ts";
+import type { AbsBudgetStats } from "@nudojs/core/internal";
 import {
   collectExternalRecords,
   collectNudoFiles,
@@ -27,24 +29,9 @@ type HealthReport = {
   uncovered: string[];
   drift?: { added: number; removed: number };
   interfaceDrift?: number;
-  /** A2：本轮分析预算/截断（truncated=true 时签名可能已 widen） */
-  budget?: {
-    truncated: boolean;
-    callTruncated: boolean;
-    forkTruncated: boolean;
-    calls: number;
-    maxCalls: number;
-    forks: number;
-    maxForks: number;
-    /** B 命名调用路径（#158）：计数/截断与 cycle 归因 */
-    evalCalls: number;
-    maxEvalCalls: number;
-    evalCallTruncated: boolean;
-    cycleTruncated: boolean;
-    /** 循环迭代预算截断（#loop-iterations；maxIters/硬上限，非调用预算） */
-    loopTruncated: boolean;
-    reasons: string[];
-  };
+  /** A2：本轮分析预算/截断（truncated=true 时签名可能已 widen）。
+   *  快照类型 = core AbsBudgetStats（与 nudo check --json 的 budget 同源同义） */
+  budget?: AbsBudgetStats;
   /** D6-A：evaluator internal 回落计数（指标暴露，非 fail 条件） */
   internalFallbacks?: number;
   error?: string;
@@ -60,8 +47,17 @@ async function healthFile(filePath: string, records?: CallRecord[]): Promise<Hea
     return report;
   }
   try {
-    const { getAbsCallBudgetStats, getEvalFallbackStats, resetEvalFallbackStats } = await import("@nudojs/core/internal");
+    const {
+      getAbsCallBudgetStats,
+      getEvalFallbackStats,
+      resetEvalFallbackStats,
+      resetAbsCallBudget,
+    } = await import("@nudojs/core/internal");
     resetEvalFallbackStats();
+    // 预算快照按文件隔离（与 checkSource 入口 resetAbsCallBudget 同源同义）：
+    // 不重置则上一文件（或同进程早先分析）的截断旗标/计数会 latch 进本文件
+    // 报告——未截断文件被误标 truncated、counters 与触发预算对不上。
+    resetAbsCallBudget();
     const result = await analyzeFileAsync(
       filePath,
       source,
@@ -222,43 +218,67 @@ async function runHealth(paths: string[], opts: { from?: string[]; json?: boolea
     for (const r of reports) {
       console.log(`${r.file}`);
       if (r.error) {
-        console.log(`  ✗ error: ${r.error}`);
+        console.log(paintOne(`  ✗ error: ${r.error}`));
         continue;
       }
       const entryInfo = r.entryOnly > 0 ? `, ${r.entryOnly} entry-only` : "";
       console.log(`  · ${r.functions} function(s)${entryInfo}`);
       if (r.uncovered.length > 0) {
-        console.log(`  ⚠ uncovered (no call-site evidence): ${r.uncovered.join(", ")}`);
+        console.log(paintOne(`  ⚠ uncovered (no call-site evidence): ${r.uncovered.join(", ")}`));
       }
       if (r.drift) {
         const refresh = `nudo test ${r.file} --from ${(opts.from ?? []).join(" ")} --freeze=update`;
         console.log(
-          `  ✗ drift: ${r.drift.added + r.drift.removed} witness directive(s) changed (+${r.drift.added} new, -${r.drift.removed} removed) — refresh: ${refresh.trim()}`,
+          paintOne(
+            `  ✗ drift: ${r.drift.added + r.drift.removed} witness directive(s) changed (+${r.drift.added} new, -${r.drift.removed} removed) — refresh: ${refresh.trim()}`,
+          ),
         );
       }
       if ((r.interfaceDrift ?? 0) > 0) {
         console.log(
-          `  ✗ contract drift: ${r.interfaceDrift} @generated slot(s) ≠ today's recompute — refresh with: nudo contract --emit ${r.file} --fn <name>`,
+          paintOne(
+            `  ✗ contract drift: ${r.interfaceDrift} @generated slot(s) ≠ today's recompute — refresh with: nudo contract --emit ${r.file} --fn <name>`,
+          ),
         );
       }
       if (r.budget?.truncated) {
+        const b = r.budget;
         const onlyLoop =
-          r.budget.loopTruncated &&
-          !r.budget.callTruncated &&
-          !r.budget.evalCallTruncated &&
-          !r.budget.forkTruncated;
+          b.loopTruncated &&
+          b.callReasons.length === 0 &&
+          b.evalReasons.length === 0 &&
+          !b.forkTruncated;
+        // 只打触发截断的那条预算自己的计数（#health-budget）：
+        // depth 截断打 depth/limit 对、calls 截断打计数/上限（必到顶）、
+        // cycle 不是预算（没有可打的计数）——杜绝「71/20000 却标 truncated」
+        const segs: string[] = [];
+        if (b.callReasons.includes("calls")) segs.push(`calls ${b.calls}/${b.maxCalls}`);
+        if (b.callReasons.includes("depth")) segs.push(`call depth ${b.depth}/${b.maxDepth}`);
+        if (b.evalReasons.includes("calls")) {
+          segs.push(`eval calls ${b.evalCalls}/${b.maxEvalCalls}`);
+        }
+        if (b.evalReasons.includes("depth")) {
+          segs.push(`eval depth ${b.evalDepth}/${b.maxEvalDepth}`);
+        }
+        if (b.forkTruncated) segs.push(`forks ${b.forks}/${b.maxForks}`);
+        if (b.loopTruncated) segs.push("loop iterations");
+        const cycleOnly = segs.length === 0;
+        if (cycleOnly) segs.push("call cycle — not a budget limit");
         console.log(
-          `  ⚠ budget truncated  calls ${r.budget.calls}/${r.budget.maxCalls} · eval calls ${r.budget.evalCalls}/${r.budget.maxEvalCalls} · forks ${r.budget.forks}/${r.budget.maxForks}` +
-            `${r.budget.callTruncated ? "  (calls)" : ""}${r.budget.evalCallTruncated ? "  (eval calls)" : ""}${r.budget.forkTruncated ? "  (forks)" : ""}${r.budget.loopTruncated ? "  (loop iters)" : ""}` +
-            (onlyLoop
-              ? " — loop state widened (iteration budget; @nudo:budget does not apply)"
-              : " — some results widened to unknown") +
-            (r.budget.cycleTruncated ? ` (includes call cycles — a budget cannot lift them)` : ""),
+          paintOne(
+            `  ⚠ budget truncated  ${segs.join(" · ")}` +
+              (onlyLoop
+                ? " — loop state widened (iteration budget; @nudo:budget does not apply)"
+                : " — some results widened to unknown") +
+              (b.cycleTruncated && !cycleOnly
+                ? ` (includes call cycles — a budget cannot lift them)`
+                : ""),
+          ),
         );
       }
       if ((r.internalFallbacks ?? 0) > 0) {
         // D6-A：internal 回落=引擎缺陷指标（接受暴露，不静默）
-        console.log(`  ⚠ internal_fallbacks: ${r.internalFallbacks}`);
+        console.log(paintOne(`  ⚠ internal_fallbacks: ${r.internalFallbacks}`));
       }
     }
     const internalTotal = reports.reduce((n, r) => n + (r.internalFallbacks ?? 0), 0);

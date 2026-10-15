@@ -31,6 +31,7 @@ function sectionOf(help: string, longFlag: string): string | undefined {
 const ALL_FLAGS = [
   "--watch",
   "--json",
+  "--quiet",
   "--profile",
   "--entry-throws",
   "--ignore-throws",
@@ -54,6 +55,7 @@ const ALL_FLAGS = [
 const EXPECTED_SECTION: Record<string, string> = {
   "--watch": "Common options:",
   "--json": "Common options:",
+  "--quiet": "Common options:",
   "--profile": "Common options:",
   "--entry-throws": "Common options:",
   "--ignore-throws": "Common options:",

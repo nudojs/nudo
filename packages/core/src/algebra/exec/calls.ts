@@ -489,6 +489,12 @@ let evalFnCallIdSeq = 0;
 let evalObsCalls = 0;
 let evalObsCallTruncated = false;
 let evalObsCycleTruncated = false;
+// B 路径归因分流（A/B 同名预算上屏要指到具体路径）+ depth 现场快照：
+// depth 截断时计数/上限取首次触发现场（@nudo:budget 覆盖期间触发亦如实）。
+const evalObsReasons = new Set<AbsTruncationReason>();
+let evalObsMaxDepth = 0;
+let evalObsDepthTruncDepth: number | null = null;
+let evalObsDepthTruncLimit: number | null = null;
 
 // 探针注册（call-budget 反向 import 破环 → 注册式；本模块加载即生效）
 registerEvalCallBudgetProbe({
@@ -497,11 +503,18 @@ registerEvalCallBudgetProbe({
     maxCalls: evalTotalCallsLimit,
     callTruncated: evalObsCallTruncated,
     cycleTruncated: evalObsCycleTruncated,
+    depth: evalObsDepthTruncDepth ?? evalObsMaxDepth,
+    maxDepth: evalObsDepthTruncLimit ?? evalCallDepthLimit,
+    reasons: [...evalObsReasons].sort(),
   }),
   resetObservability: () => {
     evalObsCalls = 0;
     evalObsCallTruncated = false;
     evalObsCycleTruncated = false;
+    evalObsReasons.clear();
+    evalObsMaxDepth = 0;
+    evalObsDepthTruncDepth = null;
+    evalObsDepthTruncLimit = null;
   },
 });
 
@@ -526,6 +539,10 @@ export function resetEvalCallBudget(): void {
   evalObsCalls = 0;
   evalObsCallTruncated = false;
   evalObsCycleTruncated = false;
+  evalObsReasons.clear();
+  evalObsMaxDepth = 0;
+  evalObsDepthTruncDepth = null;
+  evalObsDepthTruncLimit = null;
   // fork 总次数与调用预算同轮生命周期（不跨宿主入口累积）
   resetEvalForkBudget();
   // pure memo 同轮生命周期（宿主入口清零，防长驻进程无界膨胀）
@@ -619,12 +636,20 @@ export function evalEnterCall(name: string, fn: unknown, args: Abs[]): { ok: boo
         : undefined;
   if (reason) {
     evalObsCallTruncated = true;
+    evalObsReasons.add(reason);
     if (reason === "cycle") evalObsCycleTruncated = true;
+    // depth 截断现场（首次）：depth 计数上屏必须用触发时的深度/上限对
+    //（与 call-budget.ts enterCall 的 A 路径同口径）
+    if (reason === "depth" && evalObsDepthTruncDepth === null) {
+      evalObsDepthTruncDepth = evalCallDepth;
+      evalObsDepthTruncLimit = evalCallDepthLimit;
+    }
     noteAbsTruncation(name, reason);
     return { ok: false };
   }
   evalActiveCallKeys.push(key);
   evalCallDepth++;
+  if (evalCallDepth > evalObsMaxDepth) evalObsMaxDepth = evalCallDepth;
   evalTotalCalls++;
   evalObsCalls++;
   return { ok: true, key };

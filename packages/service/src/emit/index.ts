@@ -63,7 +63,10 @@ export {
 export {
   generateDts,
   generateFunctionDtsLines,
+  projectFunctionDts,
   absToTSType,
+  type DtsContractFace,
+  type DtsFunctionProjection,
 } from "./dts-generator.ts";
 
 export {
@@ -123,6 +126,7 @@ export {
   sidecarBindingFor,
   titleKindFor,
   findFnDeclStart,
+  sidecarClearsEntryThrow,
   type MaterializeInput,
   type QuickfixPlan,
   type QuickfixTitleKind,
@@ -132,8 +136,12 @@ export {
 // ─── body-read 字段类型推断（草稿 / quickfix 自动填类型） ─
 export {
   collectParamBodyReadTypes,
+  collectParamContracts,
+  contractDslOf,
   bodyReadFieldsFor,
   shapeDslFromFields,
   type BodyReadField,
   type BodyReadTypes,
+  type ParamContractEvidence,
+  type ParamContracts,
 } from "./body-read-types.ts";

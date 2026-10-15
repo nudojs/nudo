@@ -1,28 +1,38 @@
 /**
  * nudo export — 投影：dts | guard | schema (dialect) | standard | all。
- * 从 index.ts 原样迁出，行为不变。
+ * 从 index.ts 原样迁出；dts 面消费契约证据（sidecar / @nudo:contract /
+ * @nudo:case），与 check 签名面同数据源。
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { resolve, relative, join, basename } from "node:path";
+import { resolve, relative, join, basename, dirname } from "node:path";
 import type { Command } from "commander";
 import { reportPathErrors, resolveTargetsCollect, displayPathOf, type PathError } from "./shared.ts";
 import {
+  abs as makeAbs,
   effectiveInterface,
   constraintToEntryAbs,
   joinAbs,
+  localNamedExports,
   obj,
   type Abs,
 } from "@nudojs/core";
+import { extractDirectives, parse } from "@nudojs/parser";
 import {
   absToStandardSchemaModule,
   absToZodSchemaModule,
+  projectFunctionDts,
   type SchemaDialect,
   generateGuardFunctionFromAbs,
-  generateFunctionDtsLines,
+  type DtsContractFace,
 } from "@nudojs/service/emit";
 import {
   defaultLoadModule,
   analyzeFileAsync,
+  findProjectConfig,
+  interfaceConfig,
+  mockDirectivesToAbsSeeds,
+  mockSeedsToAbsMocks,
+  tryEvalCall,
   type CaseResult,
 } from "@nudojs/service";
 import {
@@ -49,7 +59,9 @@ async function runExport(
 ): Promise<void> {
   const filePath = resolve(file);
   const source = readFileSync(filePath, "utf-8");
-  const result = await analyzeFileAsync(filePath, source, undefined, undefined, undefined, "none");
+  // case 档 "all"：@nudo:case 见证参与投影面（无指令文件不受影响——
+  // call@/entry@ 合成与档位无关）
+  const result = await analyzeFileAsync(filePath, source, undefined, undefined, undefined, "all");
   const functions = result.functions.filter((f) => f.cases.length > 0);
 
   if (functions.length === 0) {
@@ -57,22 +69,57 @@ async function runExport(
     return;
   }
 
+  // 契约面与 check 签名面同数据源：effectiveInterface（sidecar ∪ inline
+  // @nudo:contract），autoBind/projectDir 与 check / iface 面同口径——
+  // 项目关 autoBind 时侧车不做 ambient 加载
+  const proj = findProjectConfig(dirname(filePath));
+  const autoBindCfg = interfaceConfig(proj?.config).autoBind;
+  const effOpts = {
+    loadModule: defaultLoadModule,
+    fromFile: filePath,
+    ...(autoBindCfg !== undefined ? { autoBind: autoBindCfg } : {}),
+    ...(proj?.projectDir ? { projectDir: proj.projectDir } : {}),
+  };
+  // 契约种子求值的 @nudo:mock 种子（与 analyzer 文件级种子同口径；env 面
+  // 不在此装配——env 依赖体 fail-closed 落 unknown，不伪造精度）
+  let evalMocks: Record<string, Abs> | undefined;
+  try {
+    const seeds = mockDirectivesToAbsSeeds(extractDirectives(parse(source)), {
+      fromFile: filePath,
+      loadModule: defaultLoadModule,
+    });
+    const mocks = mockSeedsToAbsMocks(seeds);
+    evalMocks = Object.keys(mocks).length > 0 ? mocks : undefined;
+  } catch {
+    evalMocks = undefined;
+  }
+  // dts 只发射导出面（export / export default / CJS exports —— 与 check
+  // entry 表同源 localNamedExports；导出 class 的实例方法按 Class 前缀放行）
+  const entryNames = localNamedExports(source);
+  const onExportFace = (name: string): boolean => {
+    if (entryNames.has(name) || name === "default") return true;
+    const m = /^([A-Za-z_$][\w$]*)\.[A-Za-z_$][\w$]*$/.exec(name);
+    return m !== null && entryNames.has(m[1]!);
+  };
+  /** 契约参数面：eff.params → entry Abs（无 eff / 无参数契约 = 空表） */
+  const contractParamsOf = (eff: ReturnType<typeof effectiveInterface>): Array<{ name: string; abs: Abs }> =>
+    eff ? eff.params.map((p) => ({ name: p.param, abs: constraintToEntryAbs(p.constraint, p.param) })) : [];
+
   const effectiveDialect = schemaDialectOf(format, dialect);
   const schemaExports: Record<string, Abs> = {};
   const standardChunks: string[] = [];
   const guardChunks: string[] = [];
   const dtsChunks: string[] = [];
   const droppedNotes: string[] = [];
+  /** 无证据（无契约 / 无 case / 无调用点）而落 unknown 的参数位（stderr 提示用） */
+  const unevidencedParams: string[] = [];
 
   for (const fn of functions) {
     const caseResults: CaseResult[] = fn.cases;
     const baseName = fn.name;
 
     // 运行时校验器应尽量反映**契约域**，而不是单次调用点字面量。
-    const eff = effectiveInterface(source, baseName, {
-      loadModule: defaultLoadModule,
-      fromFile: filePath,
-    });
+    const eff = effectiveInterface(source, baseName, effOpts);
     const paramExps: Array<{ name: string; abs: Abs }> = [];
     let outputAbs: Abs | undefined;
     if (eff) {
@@ -151,7 +198,42 @@ async function runExport(
     }
 
     if (format === "dts" || format === "all") {
-      dtsChunks.push(generateFunctionDtsLines(fn).join("\n"));
+      // 只发射导出面：非 export 的顶层函数是模块内部实现，不进 .d.ts
+      if (onExportFace(fn.name)) {
+        // 契约面优先：手写契约参数/返回投影；无返回契约但有参数契约时用
+        // 契约种子求值折返回（与 check 的 refine 种子同向：
+        // u: { name: string } ⇒ u.name: string）
+        const contractParams = contractParamsOf(eff);
+        let contractReturn: Abs | undefined = eff?.returns
+          ? constraintToEntryAbs(eff.returns.constraint, "return")
+          : undefined;
+        if (contractReturn === undefined && contractParams.length > 0) {
+          const byName = new Map(contractParams.map((p) => [p.name, p.abs]));
+          const seedArgs = fn.paramNames.map(
+            (n) =>
+              byName.get(n.startsWith("...") ? n.slice(3) : n) ??
+              makeAbs({ k: "any" }, undefined, undefined, "path"),
+          );
+          // fail-closed：求值失败/不可求值 → undefined，返回位落 case 观察
+          contractReturn =
+            tryEvalCall(source, filePath, fn.name, seedArgs, evalMocks ? { mocks: evalMocks } : {}) ??
+            undefined;
+        }
+        const contractFace: DtsContractFace | undefined =
+          contractParams.length > 0 || contractReturn !== undefined
+            ? {
+                params: contractParams,
+                ...(contractReturn !== undefined ? { return: contractReturn } : {}),
+              }
+            : undefined;
+        const dts = projectFunctionDts(fn, contractFace);
+        if (dts.lines.length > 0) {
+          dtsChunks.push(dts.lines.join("\n"));
+          for (const p of dts.params) {
+            if (p.type === "unknown") unevidencedParams.push(`${baseName}.${p.name}`);
+          }
+        }
+      }
     }
   }
 
@@ -160,6 +242,22 @@ async function runExport(
     Object.keys(schemaExports).length > 0
       ? absToZodSchemaModule(schemaExports)
       : undefined;
+
+  // 无证据参数的 stderr 提示（docs/design/cli-semantics.md §2 的 unknown
+  // 例外面）：指向三条补证据路径，stdout 投影面保持可钉住
+  if ((format === "dts" || format === "all") && unevidencedParams.length > 0) {
+    console.error(
+      `note: ${unevidencedParams.join(", ")} rendered as unknown (no contract/case evidence) — add a sidecar contract (*.nudo.js), @nudo:contract, or @nudo:case / call-site evidence`,
+    );
+  }
+
+  // dts 是模块面投影：函数存在但无导出声明面时如实说明（非错误，exit 0）
+  if (format === "dts" && functions.length > 0 && dtsChunks.length === 0) {
+    console.log(
+      "No exported declarations found — dts projects the module surface (export / export default / CJS exports).",
+    );
+    return;
+  }
 
   if (output) {
     // BUG-023：--out IO 失败转 nudo:path-io 面（路径相对

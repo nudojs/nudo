@@ -72,7 +72,7 @@ describe("G1: 注入装配失败挡 exit（单文件 --json）", () => {
     const file = join(dir, "boom.js");
     writeFileSync(file, BOOM_SRC, "utf-8");
     await runCheckCli(["check", file, "--json"]);
-    expect(errs.some((e) => e.includes("eval injection setup failed"))).toBe(true);
+    expect(errs.some((e) => e.includes("analysis setup failed for"))).toBe(true);
     // 降级分析零诊断：stdout 机器面仍是 CheckJson ok:true
     const json = JSON.parse(logs.join("\n"));
     expect(json.ok).toBe(true);
@@ -88,7 +88,7 @@ describe("G1: 注入装配失败挡 exit（单文件 --json）", () => {
     writeFileSync(clean, CLEAN_SRC, "utf-8");
     writeFileSync(boom, BOOM_SRC, "utf-8");
     await runCheckCli(["check", clean, boom, "--json"]);
-    expect(errs.some((e) => e.includes("eval injection setup failed"))).toBe(true);
+    expect(errs.some((e) => e.includes("analysis setup failed for"))).toBe(true);
     // 信封体本身 ok:true（分析面观察完整）——exit 由失败态挡红
     const envelope = JSON.parse(logs.join("\n"));
     expect(envelope.ok).toBe(true);
@@ -101,7 +101,7 @@ describe("G1: 注入装配失败挡 exit（单文件 --json）", () => {
     const file = join(dir, "boom.js");
     writeFileSync(file, BOOM_SRC, "utf-8");
     await runCheckCli(["check", file]);
-    expect(errs.some((e) => e.includes("eval injection setup failed"))).toBe(true);
+    expect(errs.some((e) => e.includes("analysis setup failed for"))).toBe(true);
     expect(process.exitCode).toBe(1);
     rmSync(dir, { recursive: true, force: true });
   });
@@ -129,7 +129,7 @@ describe("G1: 注入装配失败不回写磁盘缓存", () => {
 
     // ②二次运行：无缓存可命中 → 重新装配 → 仍失败仍红
     await runCheckCli(["check", file, "--json"]);
-    expect(errs.filter((e) => e.includes("eval injection setup failed")).length).toBe(2);
+    expect(errs.filter((e) => e.includes("analysis setup failed for")).length).toBe(2);
     expect(process.exitCode).toBe(1);
     expect(existsSync(join(cacheRoot, "check"))).toBe(false);
     rmSync(dir, { recursive: true, force: true });

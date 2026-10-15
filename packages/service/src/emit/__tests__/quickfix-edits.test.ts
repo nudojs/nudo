@@ -2,6 +2,7 @@
  * #69：action-map 物化层单测（kind → 文本编辑；标题区分 fix/silence/review）。
  */
 import { describe, it, expect } from "vitest";
+import { checkSource, pTrue } from "@nudojs/core";
 import {
   addThrowsAnnotation,
   applyTextEdits,
@@ -140,6 +141,103 @@ export function f(n) {
       suggestion: "/* body-read { type } */",
     });
     expect(plan?.sidecar?.newText).toContain("type: any()");
+  });
+
+  // —— fix-12：数组方法接收者契约（array(shape(…))）+ 验证门 ——
+  it("reduce receiver quickfix emits array(shape(…)) + scalar tax and clears L2 → [fix]", () => {
+    const src = `export function subtotal(items, tax) {
+  return items.reduce((s, i) => s + i.price * i.qty, 0) * (1 + tax);
+}
+`;
+    const plan = materializeAction({
+      code: "nudo:entry-may-throw",
+      fn: "subtotal",
+      file: "/t/a.js",
+      source: src,
+      sidecarPath: "/t/a.nudo.js",
+      action: { kind: "draft", label: "x" },
+      suggestion: "property 'reduce' on any",
+    });
+    // 数组方法读不是字段读
+    expect(plan?.sidecar?.newText).not.toContain("reduce:");
+    expect(plan?.titleKind).toBe("fix");
+    expect(plan?.sidecar?.newText).toContain(
+      "fn({ items: array(shape({ price: number(), qty: number() })), tax: number() })",
+    );
+    // 写盘后 L2 消失（quickfix 内部验证门同一判据，此处显式复检）
+    const r = checkSource("/t/a.js", src, pTrue, {
+      loadModule: () => plan!.sidecar!.newText,
+      fromFile: "/t/a.js",
+    });
+    expect(
+      r.issues.some((i) => i.code === "nudo:entry-may-throw" && i.fn === "subtotal"),
+    ).toBe(false);
+  });
+
+  it("engine cannot prove total → downgrade [review] (never auto-apply a half fix)", () => {
+    // i.date 是 any 被继续调用：array(any()) 证不出 total
+    const src = `export function fmt(items) {
+  return items.map((i) => i.date.toISOString()).join(", ");
+}
+`;
+    const plan = materializeAction({
+      code: "nudo:entry-may-throw",
+      fn: "fmt",
+      file: "/t/a.js",
+      source: src,
+      sidecarPath: "/t/a.nudo.js",
+      action: { kind: "draft", label: "x" },
+      suggestion: "property 'map' on any",
+    });
+    expect(plan?.titleKind).toBe("review");
+    expect(plan?.title).toContain("engine cannot prove total");
+    // 方法读进元素 shape（date.toISOString 读位无证据 → any()），
+    // any 字段被继续调用 → 引擎证不出 total，验证门降级
+    expect(plan?.sidecar?.newText).toContain(
+      "items: array(shape({ date: shape({ toISOString: any() }) }))",
+    );
+  });
+
+  it("map/filter receiver → array(shape(…)) [fix]", () => {
+    const src = `export function adultIds(users) {
+  return users.filter((u) => u.age >= 18).map((u) => u.id * 1).join(",");
+}
+`;
+    const plan = materializeAction({
+      code: "nudo:entry-may-throw",
+      fn: "adultIds",
+      file: "/t/a.js",
+      source: src,
+      sidecarPath: "/t/a.nudo.js",
+      action: { kind: "draft", label: "x" },
+      suggestion: "property 'filter' on any",
+    });
+    expect(plan?.titleKind).toBe("fix");
+    expect(plan?.sidecar?.newText).toContain(
+      "fn({ users: array(shape({ age: number(), id: number() })) })",
+    );
+  });
+
+  it("single-param items-only emit stays [review] when tax arithmetic keeps L2 red", () => {
+    // tax 无证据位不发射：`1 + tax` 仍可能 throw → 验证门降级
+    const src = `export function subtotal(items, tax) {
+  return items.reduce((s, i) => s + i.price, 0) + tax * 2;
+}
+`;
+    const plan = materializeAction({
+      code: "nudo:entry-may-throw",
+      fn: "subtotal",
+      file: "/t/a.js",
+      source: src,
+      sidecarPath: "/t/a.nudo.js",
+      action: { kind: "draft", label: "x" },
+      suggestion: "property 'reduce' on any",
+    });
+    expect(plan?.titleKind).toBe("review");
+    // `s + i.price`：+ 两侧无数字字面量（string concat 二义）→ price any()
+    expect(plan?.sidecar?.newText).toContain("items: array(shape({ price: any() }))");
+    // tax 乘法 → number()，逐位发射，但仍降级（引擎侧 total 判定说了算）
+    expect(plan?.sidecar?.newText).toContain("tax: number()");
   });
 
   // #76 缺口 A/C：嵌套成员读取 → 生成嵌套 shape。

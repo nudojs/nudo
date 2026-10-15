@@ -104,7 +104,7 @@ assertions
 |------|--------|
 | `nudo init` | 仅用法 / IO 错误（无 package.json、目标 package.json 非法 JSON）；幂等重跑 exit 0 |
 | `export` / `contract`（只读） | 仅用法 / IO 错误 |
-| `check`（含 `--abs` / `--json`） | 任一 error 级诊断（L1 或未 ignore 的 L2）；`--abs` 是观察面，**不是**关 CI 的旁路；路径/IO 错误也 exit 1（`--json` 下并入 `pathErrors` 且 `ok:false`） |
+| `check`（含 `--abs` / `--json`） | 任一 error 级诊断（L1 或未 ignore 的 L2）；`--abs` 是观察面，**不是**关 CI 的旁路；路径/IO/语法错也 exit 1（`--json` 下并入 `pathErrors` 且 `ok:false`；语法错人类面为 tsc 风格 `path:line:col` 块） |
 | `check --fix[ --write]` | 物化后**残余** error 级诊断 > 0（物化前的 error 不直接挡 exit——能被 [fix]/[adjust] 吃掉的已落盘计划）。**dry-run 反映磁盘未变的真实门禁状态**（计划中尚未应用的 error 仍计入残余，CI 门禁不因「可修」转绿）；`--write` 反映应用后剩余。`--fix` 与 `--json` / `--abs` / `--gha` / `--gitlab` / `--watch` / `--verbose` / `--from` / `--what-if` 组合为 usage error（物化面不与观察/机器面组合） |
 | `test`（含 `--json` / `--abs`） | 任一**声明断言**失败（合成 case / entry@ 不挡 exit） |
 | `health` | drift 或 analysis error；`--from` 路径错误（缺文件）也 exit 1（`--json` 下并入 `pathErrors[]` 且 `ok:false`） |
@@ -130,6 +130,9 @@ CI 门禁只认 `check`（及 `test` 的声明断言、`health` 的 drift）。
 | `--ignore-throws <names>` | L2：忽略这些入口 may-throw 类型名（`TypeError,RangeError`） |
 | `--entry-throws <mode>` | L2：`error` \| `warning` \| `off`（默认 `error`；**显式值压过** `--profile`） |
 | `--profile <adoption\|strict>` | 门禁**命名档**（默认 `strict`）。`adoption` ≡ L2 `entryThrows: warning`（迁移档）；`strict` ≡ 今日默认。**不吞 L1**：契约违例始终 error |
+| `--quiet` | 压 signatures 段（大仓 CI 日志降噪）：issues + summary + 门禁 exit 语义不变；成功且零 issue 时只打一行摘要（`文件 + OK + 计数`）。仅人类文本面——`--json` / `--gitlab` 机器契约不受影响 |
+
+语法错文件（解析失败）：人类面打 tsc 风格块 `path:line:col — syntax error: <信息>` + 源码摘录 + `^` 指位（不再暴露 `eval injection setup failed` 内部术语）；`--json` 面并入信封 `pathErrors[]`（`code: "syntax-error"`，`ok:false`）。
 
 `--ignore-throws` / `package.json#nudo.check.ignoreThrows` **只**作用于 L2 入口 throws，**不**吞 L1 契约违例。
 

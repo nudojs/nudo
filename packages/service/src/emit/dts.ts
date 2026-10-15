@@ -8,7 +8,10 @@
 export {
   generateDts,
   generateFunctionDtsLines,
+  projectFunctionDts,
   absToTSType,
+  type DtsContractFace,
+  type DtsFunctionProjection,
 } from "./dts-generator.ts";
 
 export {

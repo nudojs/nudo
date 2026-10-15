@@ -579,19 +579,36 @@ function draftDsl(entry: Pick<InterfaceDraftEntry, "params" | "returns">): strin
   return ret === undefined || ret === "" ? `fn(${obj})` : `fn(${obj}, ${ret})`;
 }
 
-/** 草稿建议 DSL（注释用，不写入 export 行）：body 字段自动填类型 */
-function suggestedBodyDsl(fnName: string, params: InterfaceDraftEntry["params"]): string | undefined {
-  const withBody = params.filter((p) => p.bodyAccesses && p.bodyAccesses.length > 0 && !p.projected);
-  if (withBody.length === 0) return undefined;
-  const parts = withBody.map((p) => {
-    const shapeText = p.bodyReadFields
-      ? shapeDslFromFields(p.bodyReadFields)
-      : `shape({ ${p.bodyAccesses!.map((k) => `${k}: any()`).join(", ")} })`;
-    return `${p.name}: ${shapeText}`;
-  });
-  return `//   suggested (body-read, not a contract): ${sanitizeCommentText(
-    `${fnName} = fn({ ${parts.join(", ")} })`,
-  )}`;
+/**
+ * 草稿建议 DSL 语句体（`fn({ … }, …)`，uncomment 即完整侧车绑定）：
+ * body-read 参数自动填形状；已投影参数/返回沿用 draftDsl 的约束——
+ * 建议行是绑定的完整替代，接受它不丢 callsite/symbolic 证据。
+ * 无 body 建议（或全部参数无证据）时返回 undefined。
+ */
+function suggestedBodyDsl(
+  params: InterfaceDraftEntry["params"],
+  returns?: InterfaceDraftEntry["returns"],
+): string | undefined {
+  const hasBody = (p: InterfaceDraftEntry["params"][number]) =>
+    p.bodyAccesses !== undefined && p.bodyAccesses.length > 0 && !p.projected;
+  if (!params.some(hasBody)) return undefined;
+  const parts = params
+    .filter((p) => (p.projected && p.constraint !== undefined) || hasBody(p))
+    .map((p) => {
+      if (p.projected && p.constraint !== undefined) {
+        return `${p.name}: ${toDraftBuilderDsl(formatConstraint(p.constraint))}`;
+      }
+      const shapeText = p.bodyReadFields
+        ? shapeDslFromFields(p.bodyReadFields)
+        : `shape({ ${p.bodyAccesses!.map((k) => `${k}: any()`).join(", ")} })`;
+      return `${p.name}: ${shapeText}`;
+    });
+  const obj = parts.length === 0 ? "{}" : `{ ${parts.join(", ")} }`;
+  const ret =
+    returns?.projected && returns.constraint !== undefined
+      ? toDraftBuilderDsl(formatConstraint(returns.constraint))
+      : undefined;
+  return ret === undefined || ret === "" ? `fn(${obj})` : `fn(${obj}, ${ret})`;
 }
 
 /**
@@ -710,7 +727,7 @@ export function formatDraftModule(
   const BUILDERS = ["fn", "number", "string", "boolean", "any", "shape", "array", "lit", "union"] as const;
   const used = new Set<string>(["fn"]);
   for (const e of draftable) {
-    const blob = `${e.dsl ?? ""}\n${suggestedBodyDsl(e.fn, e.params) ?? ""}`;
+    const blob = `${e.dsl ?? ""}\n${suggestedBodyDsl(e.params, e.returns) ?? ""}`;
     for (const b of BUILDERS) {
       if (new RegExp(`\\b${b}\\b`).test(blob)) used.add(b);
     }
@@ -750,8 +767,6 @@ export function formatDraftModule(
         lines.push(`//   ${sanitizeCommentText(`${p.name}: ${p.display}`)}`);
       }
     }
-    const suggested = suggestedBodyDsl(e.fn, e.params);
-    if (suggested) lines.push(suggested);
     if (e.returns && !e.returns.projected) {
       lines.push(`//   returns: ${sanitizeCommentText(e.returns.display)}`);
     } else if (e.returns?.display.includes("/* observed")) {
@@ -759,7 +774,14 @@ export function formatDraftModule(
     } else if (e.returnEvidence === "symbolic") {
       lines.push(`//   returns: ${sanitizeCommentText(e.returns?.display ?? "")} (symbolic)`);
     }
-    lines.push(`export const ${draftExportName(e.fn, exportUsed)} = ${e.dsl};`);
+    const suggested = suggestedBodyDsl(e.params, e.returns);
+    const exportName = draftExportName(e.fn, exportUsed);
+    if (suggested !== undefined) {
+      // 内联建议行：去 `// ` 即合法侧车绑定语句（绑定名/别名与下方 export 行一致）
+      lines.push("// suggested (uncomment to accept — body-read, not a contract):");
+      lines.push(`// export const ${exportName} = ${sanitizeCommentText(suggested)};`);
+    }
+    lines.push(`export const ${exportName} = ${e.dsl};`);
     if (e.fn.includes(".")) {
       lines.push(
         `//   sidecar key may also be written as \`${sanitizeCommentText(e.fn)}\` / nested { ${sanitizeCommentText(e.fn.split(".")[1] ?? "")}: … }`,

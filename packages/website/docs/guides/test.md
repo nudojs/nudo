@@ -70,6 +70,24 @@ export function getName(user) {
   entry@L1  (any) => any   throws TypeError
 ```
 
+When that never-called function holds a **check-enforced contract** (a handwritten `*.nudo.js` sidecar or `@nudo:contract`), the same block grows one annotation line. The honest `(any) => any   throws TypeError` stays — that is the unconstrained entry face — and the note explains why `nudo check` is still green for this function: the contract gates the check/export faces, not this fallback case.
+
+```js verify#entry-contract
+export function greet(u) {
+  return u.name;
+}
+```
+
+```js verify-sidecar#entry-contract
+export const greet = fn({ u: shape({ name: string() }) });
+```
+
+```text
+=== greet ===
+  entry@L1  (any) => any   throws TypeError
+  (entry@ runs the unconstrained entry face — this contract gates check/export; add @nudo:case or call sites for a constrained case)
+```
+
 ### The assertions summary
 
 The `assertions` block counts **declared cases only** — synthetic `call@` / `entry@` never enter it:

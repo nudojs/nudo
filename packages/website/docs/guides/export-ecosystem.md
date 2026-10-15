@@ -27,7 +27,7 @@ nudo export <path> [--format dts|guard|schema|standard|all] [--dialect zod] [--o
 
 | Format | Artifact | Inputs projected | When to use |
 |---|---|---|---|
-| `dts` | TypeScript declarations (default) | Call-site cases: params widened, returns keep precision | TS editors / npm types for a JS package |
+| `dts` | TypeScript declarations (default) | Contracts and case/call-site evidence: params widened, returns keep precision | TS editors / npm types for a JS package |
 | `guard` | Zero-dependency `typeof` guard functions | Joined call-site Abs | Inline runtime checks with no deps |
 | `schema` | Ready-to-import Zod module (`import { z } from "zod"`) for `--dialect` (currently `zod`) → `*.nudo.schema.zod.ts` | Per-case Abs (`call@L…` / `entry@L…`) | Assemble your own schema module |
 | `standard` | [Standard Schema](https://standardschema.dev) v1 modules (`~standard`, vendor `nudo`) | Sidecar / `@nudo:contract` domains, else joined call-site Abs | Plug into any Standard Schema library — no Zod dependency |
@@ -111,7 +111,7 @@ nudo export src/api/inline.js --format standard --out dist
 
 Literals observed at call sites pin exact values (`z.literal` / lit nodes / `=== "Ada"` checks). Add a sidecar when you want contract bounds (`gt/ge/lt/le`, `int`, string length) instead of observed literals.
 
-Honest boundary: an **uncalled** export falls back to `entry@L…` — arguments project as `unknown`, not a guess. That is the `--from`-ceiling ([Limits](../concepts/limits.md#call-site-discovery-ceiling)), not an inference bug. For contrast, `nudo check` prints the same unconstrained param as `any` ([Quick Start](../getting-started/quick-start.md)) — the `any`/`unknown` split is a product contract ([`docs/design/cli-semantics.md`](https://github.com/nudojs/nudo/blob/main/docs/design/cli-semantics.md) §2).
+Honest boundary: explicit contracts project first — a sidecar or `@nudo:contract` pins params/returns regardless of call sites. An export with **no evidence at all** (no contract, no `@nudo:case`, no call site) falls back to `entry@L…` — those arguments project as `unknown`, not a guess, and `export --format dts` prints a stderr note naming the params and the three evidence paths (sidecar `*.nudo.js`, `@nudo:contract`, `@nudo:case` / call-site evidence). That is the `--from`-ceiling ([Limits](../concepts/limits.md#call-site-discovery-ceiling)), not an inference bug. For contrast, `nudo check` prints the same unconstrained param as `any` ([Quick Start](../getting-started/quick-start.md)) — the `any`/`unknown` split is a product contract ([`docs/design/cli-semantics.md`](https://github.com/nudojs/nudo/blob/main/docs/design/cli-semantics.md) §2).
 
 ## Zod dialect schemas (`--format schema`)
 
@@ -181,6 +181,8 @@ export declare function createUser(input: { name: string; age: number }): { id: 
 ```
 
 With multiple cases the signature stays single — params union and widen across cases; each case's precise result is preserved in the `Case:` JSDoc rows (debug extensional notes, not the interface product). To write `.d.ts` files under a directory: `nudo export <file> --format dts --out <dir>`.
+
+`dts` projects the **module export surface** — only `export` / `export default` / CJS `exports` bindings appear; non-exported top-level functions stay internal. Contracts and `@nudo:case` witnesses feed the same signature as call sites (same data source as `nudo check`): params with **no** contract/case/call-site evidence stay `unknown` and are named in the stderr note described above.
 
 ## Validate vs project
 

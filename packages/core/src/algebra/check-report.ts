@@ -98,6 +98,18 @@ export type CheckReport = {
     /** 循环迭代预算截断（#loop-iterations；maxIters/硬上限，非调用预算） */
     loopTruncated: boolean;
     reasons: string[];
+    /** A 路径（enterCall）截断原因——归因到具体预算/路径（depth≠calls 预算） */
+    callReasons: string[];
+    /** A 路径最大进入深度；depth 截断时 = 触发时深度（== 触发时生效上限） */
+    depth: number;
+    /** A 路径 depth 上限；depth 截断时 = 触发时生效上限 */
+    maxDepth: number;
+    /** B 路径（$callNamed）截断原因 */
+    evalReasons: string[];
+    /** B 路径最大进入深度；depth 截断时 = 触发时深度（== 触发时生效上限） */
+    evalDepth: number;
+    /** B 路径 depth 上限；depth 截断时 = 触发时生效上限 */
+    maxEvalDepth: number;
   };
 };
 
@@ -365,6 +377,13 @@ export function serializeCheckJsonMulti(reports: CheckJson[]): CheckJsonMulti {
   let evalCallTruncated = false;
   let cycleTruncated = false;
   let loopTruncated = false;
+  // 归因字段（#health-budget）：reasons 取并集、depth 取各文件观测最大值
+  const callReasons = new Set<string>();
+  const evalReasons = new Set<string>();
+  let depth = 0;
+  let maxDepth = 0;
+  let evalDepth = 0;
+  let maxEvalDepth = 0;
   const reasons = new Set<string>();
   for (const r of reports) {
     summary.errors += r.summary.errors;
@@ -383,6 +402,12 @@ export function serializeCheckJsonMulti(reports: CheckJson[]): CheckJsonMulti {
       evalCallTruncated = evalCallTruncated || (r.budget.evalCallTruncated ?? false);
       cycleTruncated = cycleTruncated || (r.budget.cycleTruncated ?? false);
       loopTruncated = loopTruncated || (r.budget.loopTruncated ?? false);
+      for (const x of r.budget.callReasons ?? []) callReasons.add(x);
+      for (const x of r.budget.evalReasons ?? []) evalReasons.add(x);
+      depth = Math.max(depth, r.budget.depth ?? 0);
+      maxDepth = Math.max(maxDepth, r.budget.maxDepth ?? 0);
+      evalDepth = Math.max(evalDepth, r.budget.evalDepth ?? 0);
+      maxEvalDepth = Math.max(maxEvalDepth, r.budget.maxEvalDepth ?? 0);
       for (const x of r.budget.reasons ?? []) reasons.add(x);
     }
   }
@@ -410,6 +435,12 @@ export function serializeCheckJsonMulti(reports: CheckJson[]): CheckJsonMulti {
             evalCallTruncated,
             cycleTruncated,
             loopTruncated,
+            callReasons: [...callReasons].sort(),
+            depth,
+            maxDepth,
+            evalReasons: [...evalReasons].sort(),
+            evalDepth,
+            maxEvalDepth,
             reasons: [...reasons].sort(),
           },
         }
@@ -440,19 +471,34 @@ export function formatCheckReport(r: CheckReport, opts: { verbose?: boolean } = 
     `  ${r.summary.errors} error · ${r.summary.warnings} warning · ${r.summary.infos} info · ${r.summary.functions} fn`,
   );
 
-  // A2：预算截断必须上屏——用户要能知道结果何时被 widen
+  // A2：预算截断必须上屏——用户要能知道结果何时被 widen。
+  // 归因与 health 同口径（#health-budget）：只打触发截断的那条预算自己的
+  // 计数段——depth 截断打 depth/limit 对、calls 截断打计数/上限（必到顶）、
+  // cycle 不是预算（无可打的计数）——杜绝「71/20000 却标 truncated」
   if (r.budget?.truncated) {
+    const b = r.budget;
     const onlyLoop =
-      r.budget.loopTruncated &&
-      !r.budget.callTruncated &&
-      !r.budget.evalCallTruncated &&
-      !r.budget.forkTruncated;
+      b.loopTruncated &&
+      !b.callTruncated &&
+      !b.evalCallTruncated &&
+      !b.forkTruncated;
+    const segs: string[] = [];
+    if ((b.callReasons ?? []).includes("calls")) segs.push(`calls ${b.calls}/${b.maxCalls}`);
+    if ((b.callReasons ?? []).includes("depth")) segs.push(`call depth ${b.depth}/${b.maxDepth}`);
+    if ((b.evalReasons ?? []).includes("calls")) {
+      segs.push(`eval calls ${b.evalCalls}/${b.maxEvalCalls}`);
+    }
+    if ((b.evalReasons ?? []).includes("depth")) {
+      segs.push(`eval depth ${b.evalDepth}/${b.maxEvalDepth}`);
+    }
+    if (b.forkTruncated) segs.push(`forks ${b.forks}/${b.maxForks}`);
+    if (b.loopTruncated) segs.push("loop iterations");
+    if (!b.callTruncated && !b.evalCallTruncated && !b.forkTruncated && !b.loopTruncated) {
+      segs.push("call cycle — not a budget limit");
+    }
     lines.push("");
     lines.push("budget");
-    lines.push(
-      `  truncated  calls ${r.budget.calls}/${r.budget.maxCalls} · eval calls ${r.budget.evalCalls}/${r.budget.maxEvalCalls} · forks ${r.budget.forks}/${r.budget.maxForks}` +
-        `${r.budget.callTruncated ? "  (calls)" : ""}${r.budget.evalCallTruncated ? "  (eval calls)" : ""}${r.budget.forkTruncated ? "  (forks)" : ""}${r.budget.loopTruncated ? "  (loop iters)" : ""}`,
-    );
+    lines.push(`  truncated  ${segs.join(" · ")}`);
     lines.push(
       r.budget.cycleTruncated
         ? `  → some results widened to unknown (not a contract failure) — includes call cycles (same abstract args; a budget cannot lift them)`

@@ -27,7 +27,7 @@ nudo export <path> [--format dts|guard|schema|standard|all] [--dialect zod] [--o
 
 | 格式 | 产物 | 投影输入 | 何时用 |
 |---|---|---|---|
-| `dts` | TypeScript 声明（默认） | 调用点 case：参数放宽，返回保持精度 | JS 包给 TS 编辑器 / npm 的类型 |
+| `dts` | TypeScript 声明（默认） | 契约与 case/调用点证据：参数放宽，返回保持精度 | JS 包给 TS 编辑器 / npm 的类型 |
 | `guard` | 零依赖 `typeof` 守卫函数 | 调用点 Abs 的 join | 内联运行时检查、零依赖 |
 | `schema` | `--dialect`（目前 `zod`）可直接 import 的 Zod 模块 → `*.nudo.schema.zod.ts` | 逐 case Abs（`call@L…` / `entry@L…`） | 自己组装 schema 模块 |
 | `standard` | [Standard Schema](https://standardschema.dev) v1 模块（`~standard`，vendor `nudo`） | 侧车 / `@nudo:contract` 契约域，否则合并调用点 Abs | 接入任何 Standard Schema 库——无需 Zod 依赖 |
@@ -111,7 +111,7 @@ nudo export src/api/inline.js --format standard --out dist
 
 调用点观测到的字面量会钉死确切值（`z.literal` / lit 节点 / `=== "Ada"` 检查）。想要契约界（`gt/ge/lt/le`、`int`、字符串长度）而不是观测字面量时，加上侧车。
 
-诚实边界：**未被调用**的导出回退到 `entry@L…`——参数投影为 `unknown`，不做猜测。这是 `--from` 天花板（[Limits](../concepts/limits.md#调用点发现上限)），不是推断 bug。作为对照，`nudo check` 对同一无约束参数打印 `any`（见[快速开始](../getting-started/quick-start.md)）——`any`/`unknown` 的分工是产品契约（[`docs/design/cli-semantics.md`](https://github.com/nudojs/nudo/blob/main/docs/design/cli-semantics.md) §2）。
+诚实边界：显式契约优先投影——侧车或 `@nudo:contract` 钉住的参数/返回与调用点无关、直接进投影。只有**完全无证据**（无契约、无 `@nudo:case`、无调用点）的导出才回退 `entry@L…`——这些参数投影为 `unknown`，不做猜测，且 `export --format dts` 会在 stderr 打一行提示，点名这些参数与三条补证据路径（侧车 `*.nudo.js`、`@nudo:contract`、`@nudo:case` / 调用点证据）。这是 `--from` 天花板（[Limits](../concepts/limits.md#调用点发现上限)），不是推断 bug。作为对照，`nudo check` 对同一无约束参数打印 `any`（见[快速开始](../getting-started/quick-start.md)）——`any`/`unknown` 的分工是产品契约（[`docs/design/cli-semantics.md`](https://github.com/nudojs/nudo/blob/main/docs/design/cli-semantics.md) §2）。
 
 ## Zod 方言 schema（`--format schema`）
 
@@ -181,6 +181,8 @@ export declare function createUser(input: { name: string; age: number }): { id: 
 ```
 
 多个 case 时签名仍保持单个——参数跨 case 取并集并放宽；每个 case 的精确结果保留在 `Case:` JSDoc 行里（调试用外延笔记，不是接口产品）。写 `.d.ts` 文件到目录：`nudo export <file> --format dts --out <dir>`。
+
+`dts` 投影的是**模块导出面**——只有 `export` / `export default` / CJS `exports` 绑定会出现，非导出的顶层函数保持内部。契约与 `@nudo:case` 见证和调用点喂同一份签名（与 `nudo check` 同数据源）：**没有**契约/case/调用点证据的参数保持 `unknown`，并出现在上文所述的 stderr 提示里。
 
 ## 校验 vs 投影
 

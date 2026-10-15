@@ -18,7 +18,7 @@ npx nudojs check path/to/file.js
 ```
 
 ```bash
-nudo check <path> [--watch|-w] [--json] [--verbose] [--abs]
+nudo check <path> [--watch|-w] [--json] [--quiet] [--verbose] [--abs]
            [--from paths…] [--ignore-throws names] [--entry-throws error|warning|off]
            [--profile adoption|strict]
 ```
@@ -260,6 +260,7 @@ L2 entry-throws 严重级按首个命中解析：
 |------|------|
 | `--watch` / `-w` | 变更时重跑（旗标，不是动词） |
 | `--json` | 机器可读签名 + 诊断（`CheckJson` / `CheckJsonMulti`） |
+| `--quiet` | 压制 signatures 表 —— issues + summary + 门禁退出码不变；干净文件只打一行摘要（大仓 CI 日志降噪） |
 | `--verbose` | 展开 Abs 签名（term/pred/conf 细节） |
 | `--abs` | 逐函数代数面（shape + conf；`--generalize` 附加符号 term/pred α）——观察面，仍对 L1/L2 执法 |
 | `--fn <name>` | 搭配 `--abs`：限定单个函数 |
@@ -281,7 +282,7 @@ L2 entry-throws 严重级按首个命中解析：
 
 ## CI 集成
 
-`nudo check` 是契约与入口 throws 的 CI 门禁 —— 与 `tsc --noEmit` 对齐，但 check **成功时仍打印 signatures**。`--abs` 仍是观察面，但 L1/L2 error 仍门禁。退出码：`0` = 无 error 级诊断，`1` = 任一 error 级诊断（L1 或未 ignore 的 L2）—— 完整表见 [CLI 参考](../api/cli-reference.md#nudo-check)。
+`nudo check` 是契约与入口 throws 的 CI 门禁 —— 与 `tsc --noEmit` 对齐，但 check **成功时仍打印 signatures**。`--abs` 仍是观察面，但 L1/L2 error 仍门禁。退出码：`0` = 无 error 级诊断，`1` = 任一 error 级诊断（L1 或未 ignore 的 L2）—— 完整表见 [CLI 参考](../api/cli-reference.md#nudo-check)。大仓可加 `--quiet` 让日志只留信号：压制 signatures 表（issues + summary + 门禁退出码不变；干净文件只打一行摘要）。
 
 ### GitHub Actions
 

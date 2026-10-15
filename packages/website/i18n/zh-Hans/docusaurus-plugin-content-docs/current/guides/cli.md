@@ -42,7 +42,7 @@ nudo — JavaScript types, computed
 门禁契约与入口 throws。成功与失败都会打印 signatures —— **不是静默**。
 
 ```bash
-nudo check <path> [--watch|-w] [--json] [--verbose] [--abs]
+nudo check <path> [--watch|-w] [--json] [--quiet] [--verbose] [--abs]
            [--from paths…] [--ignore-throws names] [--entry-throws error|warning|off]
            [--profile adoption|strict] [--gha] [--gitlab] [--what-if name:type… [--target name]]
 ```
@@ -50,6 +50,7 @@ nudo check <path> [--watch|-w] [--json] [--verbose] [--abs]
 其余旗标各一句（完整表见 [CLI 参考](../api/cli-reference.md#nudo-check)）：
 
 - `--profile adoption|strict` —— 门禁 profile（默认 `strict`）：`adoption` 把 L2 入口 may-throw 降为 warning、L1 仍为 error；显式 `--entry-throws` 值可覆盖。
+- `--quiet` —— 压制 signatures 表（issues + summary + 门禁退出码不变；干净文件只打一行摘要），大仓 CI 日志降噪。
 - `--gha` —— GitHub Actions 行内注解（`::error` / `::warning`）；`GITHUB_ACTIONS=true` 时自动启用。
 - `--gitlab` —— GitLab Code Quality JSON 数组打到 stdout；CI 中重定向为 `gl-code-quality-report.json`。
 - `--what-if <name:type…>` —— 假设 `name:type` 绑定（如 `raw:string`）；配合 `--target <name>` 打印该绑定的推导类型（AI3）。
@@ -80,7 +81,7 @@ issues
 无约束入口参数显示为 **`any`**。`unknown` 表示推导失败（引擎债）—— 绝不是无约束入口参数的默认值。`[ERROR L# name]` 中 `L#` 是违规调用/声明的**行号**，不是契约层（L1/L2 才是层）。上方示例打印 `L1` 是因为该文件中 `getName` 声明在第 1 行 —— 其层是 L2。
 
 - **语义**（L1 显式契约 / L2 入口 throws、退出码、过滤）：[nudo check](./check.md)
-- **选项与配置**（`--watch` / `--json` / `--abs` / `--from` / `--ignore-throws` / `--entry-throws` / `--profile` / `--gha` / `--gitlab` / `--what-if`、`package.json#nudo.check`）：[CLI 参考](../api/cli-reference.md#nudo-check)
+- **选项与配置**（`--watch` / `--json` / `--quiet` / `--abs` / `--from` / `--ignore-throws` / `--entry-throws` / `--profile` / `--gha` / `--gitlab` / `--what-if`、`package.json#nudo.check`）：[CLI 参考](../api/cli-reference.md#nudo-check)
 
 `nudo check` 是 CI 门禁。
 

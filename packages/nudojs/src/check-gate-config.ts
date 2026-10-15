@@ -48,6 +48,30 @@ export function checkGateFromConfig(config: { check?: unknown } | null | undefin
 }
 
 /**
+ * 配置面非法值检测（typo 静默回落警示源）：值存在但
+ * isGateProfile / isEntryThrowsMode 落空 → 返回原始值（供上层 stderr
+ * warning；不改变解析结果，CLI 旗标已有 validateGateFlags 校验而配置面没有）。
+ */
+export function invalidGateConfig(config: { check?: unknown } | null | undefined): {
+  profile?: string;
+  entryThrows?: string;
+} {
+  const raw = config?.check as { profile?: unknown; entryThrows?: unknown } | undefined;
+  const bad = (v: unknown, ok: (s: string | undefined) => boolean): string | undefined =>
+    v === undefined || v === null || ok(v as string)
+      ? undefined
+      : typeof v === "string"
+        ? v
+        : JSON.stringify(v);
+  const profile = bad(raw?.profile, isGateProfile);
+  const entryThrows = bad(raw?.entryThrows, isEntryThrowsMode);
+  return {
+    ...(profile !== undefined ? { profile } : {}),
+    ...(entryThrows !== undefined ? { entryThrows } : {}),
+  };
+}
+
+/**
  * L2 entryThrows 解析顺序（design-cli-semantics §1.4）：
  * 1. CLI `--entry-throws`（显式，压过 profile）
  * 2. CLI `--profile` 预设（adoption→warning / strict→error）
