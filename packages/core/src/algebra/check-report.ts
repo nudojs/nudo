@@ -493,9 +493,10 @@ export function formatCheckReport(r: CheckReport, opts: { verbose?: boolean } = 
     }
     if (b.forkTruncated) segs.push(`forks ${b.forks}/${b.maxForks}`);
     if (b.loopTruncated) segs.push("loop iterations");
-    if (!b.callTruncated && !b.evalCallTruncated && !b.forkTruncated && !b.loopTruncated) {
-      segs.push("call cycle — not a budget limit");
-    }
+    // 空段 ⇔ 只有 cycle 触发（cycle 也会置 callTruncated/evalCallTruncated，
+    // 但 cycle/depth/calls 三种 reason 里只有 cycle 不产计数段）——归因必须
+    // 非空：纯 cycle 截断打「非预算」标签，杜绝「truncated」后空白
+    if (segs.length === 0) segs.push("call cycle — not a budget limit");
     lines.push("");
     lines.push("budget");
     lines.push(`  truncated  ${segs.join(" · ")}`);

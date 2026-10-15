@@ -157,10 +157,13 @@ describe("#158 check 面：归因文案 + budget 块自洽", () => {
     expect(r.budget!.reasons).toContain("depth");
   });
 
-  it("人类面 budget 块带 eval calls 与 cycle 提示", () => {
+  it("人类面 budget 块：cycle 归因（非预算）+ cycle 提示，不打未触发的 eval calls 计数", () => {
     const text = formatCheckReport(checkSource("/t/cyc158-fmt.js", CYC_SRC, pTrue));
-    expect(text).toContain("eval calls");
+    // #health-budget：归因只打真正触发的那条预算——cycle 不是预算，
+    // 打「非预算」标签而非计数段（cycle 截断 ≠ eval calls 到顶）
+    expect(text).toContain("call cycle — not a budget limit");
     expect(text).toContain("call cycles");
+    expect(text).not.toContain("eval calls");
   });
 
   it("actionsForIssue 按 reason 分流：cycle 不指向抬预算", () => {
@@ -197,7 +200,7 @@ describe("#158 后续：循环迭代截断 ≠ 递归/调用预算", () => {
     expect(multi.budget!.loopTruncated).toBe(true);
     expect(multi.summary.budgetTruncated).toBe(true);
     const text = formatCheckReport(r);
-    expect(text).toContain("(loop iters)");
+    expect(text).toContain("loop iterations");
   });
 
   it("actionsForIssue：loop-truncated 不指向调用预算旋钮", () => {

@@ -1262,9 +1262,9 @@ export function registerCheckCommand(program: Command): void {
         };
 
         if (opts.json) {
-          if (targets.length === 0) {
+          if (targets.length === 0 && allPathErrors.length === 0) {
             // 0 targets 且无路径错误：paths 必有值，每个路径要么出目标要么出错误
-            process.exitCode = allPathErrors.length > 0 ? 1 : 0;
+            process.exitCode = 0;
             return;
           }
           // 统一 collect：单文件无路径/语法错时与原直连面逐字节一致地打单
