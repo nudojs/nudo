@@ -20,6 +20,7 @@ nudo — JavaScript types, computed
 
 观察落在 `check` / `test` 的输出与 IDE hover，不设独立观察动词。
 
+**初始化：** `nudo init [path]` —— 向最近的 `package.json` 写入 adoption 基线（`nudo.check.profile: "adoption"`）。幂等：已存在 `nudo` 键时只打印、绝不覆写。零配置、零指令项目里 `nudo check` 失败时会打印 `onboarding` 块指向这里。
 **观察层：** `nudo check`（签名 + 门禁）。可选调试：`nudo test`（用例见证）。
 **契约层：** `nudo contract` + `nudo check`。
 **生态：** `nudo export`。

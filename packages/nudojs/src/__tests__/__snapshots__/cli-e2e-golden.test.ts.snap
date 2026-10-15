@@ -15,6 +15,13 @@ issues
       → throw TypeError → @nudo:throws TypeError  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch
       fix:  nudo contract --draft  (emit a sidecar draft you can edit)
 
+onboarding
+  every error above is an L2 entry may-throw — unconstrained entry points, not broken contracts.
+  no @nudo:* directives and no package.json#nudo config found in this project yet. next steps:
+    nudo init                      write an adoption baseline config (L2 → warning)
+    nudo contract --draft <file>   draft a *.nudo.js sidecar contract for one file
+    nudo check --profile adoption  preview the gate with L2 as warnings
+
 docs
   nudo:entry-may-throw → https://nudojs.github.io/nudo/docs/reference/diagnostics#nudo-entry-may-throw
 "

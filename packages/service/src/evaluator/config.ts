@@ -125,7 +125,11 @@ export function checkConfig(config: NudoConfig | null | undefined): CheckConfig 
 }
 
 const DEFAULT_ANALYSIS_INCLUDE: string[] = [];
-const DEFAULT_ANALYSIS_EXCLUDE = [
+/**
+ * 默认安全排除（analysis-scope 的 exclude 消费端**始终叠加**这组保护，
+ * 自定义 `nudo.analysis.exclude` 只收紧不放松）。
+ */
+export const DEFAULT_ANALYSIS_EXCLUDE = [
   "**/node_modules/**",
   "**/dist/**",
   "**/coverage/**",

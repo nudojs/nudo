@@ -64,7 +64,16 @@ issues
       expected: entry total, or @nudo:throws / try-catch
       → ToNumber coercion of abstract operand → @nudo:throws TypeError  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch
       fix:  nudo contract --draft  (emit a sidecar draft you can edit)
+
+onboarding
+  every error above is an L2 entry may-throw — unconstrained entry points, not broken contracts.
+  no @nudo:* directives and no package.json#nudo config found in this project yet. next steps:
+    nudo init                      write an adoption baseline config (L2 → warning)
+    nudo contract --draft <file>   draft a *.nudo.js sidecar contract for one file
+    nudo check --profile adoption  preview the gate with L2 as warnings
 ```
+
+The `onboarding` block is printed only when the whole run is pristine — zero `@nudo:*` directives, zero `nudo` config — and every error is L2. It never changes the exit code and disappears once a directive or config exists.
 
 > `L1` in `[ERROR L1 getName]` is the **line number** (the function is declared on line 1 here) — the layer is L2 (`nudo:entry-may-throw`). `L#` is always a location, never a contract layer.
 

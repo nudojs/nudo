@@ -3,7 +3,7 @@
  * runCheck 拆为 loadCache / buildInjection / report+exit 三段；
  * 依赖（@nudojs/core / service / parser）均为静态依赖，顶部静态引入。
  */
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, statSync } from "node:fs";
 import { resolve, dirname, basename } from "node:path";
 import type { Command } from "commander";
 import {
@@ -14,6 +14,7 @@ import {
   formatCheckReport,
   formatGithubAnnotations,
   formatGitlabCodeQuality,
+  listFnDirectiveScopes,
   pTrue,
   serializeCheckJson,
   serializeCheckJsonMulti,
@@ -50,6 +51,8 @@ import {
 } from "@nudojs/service";
 import {
   extractDirectives,
+  extractDirectivesQuiet,
+  extractFileDirectives,
   parse,
   runWithDirectiveDiags,
   type DirectiveDiag,
@@ -133,6 +136,77 @@ export function fileEnvNamesFromText(source: string): string[] {
 }
 
 // ---------------------------------------------------------------------------
+// #1 零配置 onboarding / #9 缓存 opt-in 提示（人类面批次探针）
+// ---------------------------------------------------------------------------
+
+/** L2 入口 may-throw 诊断码（onboarding 指纹：error 全为此码才打引导块） */
+const ENTRY_MAY_THROW_CODE = "nudo:entry-may-throw";
+
+/**
+ * 零配置指纹（#1）：源文件是否出现任何 @nudo:* 指令。
+ * parser 面（函数级 case/mock/pure/skip/sample、文件级 env/import/mock-module、
+ * 行内 as/replace）与 core 面函数标签（contract/assume/invariant/throws/budget，
+ * 清洗行首锚定）取并集——任一在场即不是纯净新项目。
+ */
+function sourceHasNudoDirectives(source: string): boolean {
+  const reps = collectEvalReplacements(source);
+  if (reps.targets.length > 0 || reps.asTargets.length > 0) return true;
+  const ast = parse(source);
+  if (extractDirectivesQuiet(ast).length > 0) return true;
+  if (extractFileDirectives(ast, { diags: [] }).length > 0) return true;
+  return listFnDirectiveScopes(ast).some((s) =>
+    s.commentLines.some((l) => l.startsWith("@nudo:")),
+  );
+}
+
+/**
+ * 人类面批次探针（action 层每轮新建；runCheck 聚合静态指纹，emitCheckReport
+ * 聚合 error 计数 / 缓存启用）。#1 onboarding 四条件：
+ * errorIssues>0（本次 exit 1）∧ 全部 error 为 L2 ∧ 零 @nudo:* 指令 ∧ 零 nudo 配置。
+ */
+type BatchProbe = {
+  /** 有 @nudo:* 指令的目标文件数（须为 0） */
+  filesWithDirectives: number;
+  /** 发现 package.json#nudo 配置的目标文件数（须为 0） */
+  filesWithConfig: number;
+  /** error 级 issue 总数（须 >0 且全为 L2） */
+  errorIssues: number;
+  /** 非 L2 error（含注入装配失败）出现即破坏指纹 */
+  nonL2Error: boolean;
+  /** 任一目标项目磁盘缓存已启用（nudo.cache / NUDO_CACHE_DIR） */
+  cacheEnabled: boolean;
+};
+
+function freshBatchProbe(): BatchProbe {
+  return {
+    filesWithDirectives: 0,
+    filesWithConfig: 0,
+    errorIssues: 0,
+    nonL2Error: false,
+    cacheEnabled: false,
+  };
+}
+
+/** #1 onboarding 块：issues 段之后、docs 段之前（措辞是文档/verify-examples 同步基线） */
+function printOnboardingBlock(): void {
+  console.log("");
+  console.log("onboarding");
+  console.log(
+    "  every error above is an L2 entry may-throw — unconstrained entry points, not broken contracts.",
+  );
+  console.log(
+    "  no @nudo:* directives and no package.json#nudo config found in this project yet. next steps:",
+  );
+  console.log("    nudo init                      write an adoption baseline config (L2 → warning)");
+  console.log("    nudo contract --draft <file>   draft a *.nudo.js sidecar contract for one file");
+  console.log("    nudo check --profile adoption  preview the gate with L2 as warnings");
+}
+
+/** #9 缓存 opt-in 提示（stderr 一行；仅人类面批量场景） */
+const CACHE_HINT =
+  '[hint] repeat runs: enable "nudo": { "cache": true } in package.json to speed up multi-file checks — see docs/design/persistent-cache.md';
+
+// ---------------------------------------------------------------------------
 // 门禁解析链单源（runCheck / runCheckFix 共用）
 // ---------------------------------------------------------------------------
 
@@ -200,6 +274,13 @@ type RunCheckOptions = {
    * 否则 `envelope.ok ? 0 : 1` 覆盖成假绿。
    */
   gateFlags?: { injectionSetupFailed?: boolean };
+  /**
+   * 人类面批次探针（#1/#9 聚合通道）：action 层仅在人类模式创建
+   * （--json / --gitlab / --gha / --fix 的 stdout 与 stderr 都是机器契约面）。
+   */
+  batchProbe?: BatchProbe;
+  /** 本轮最后一个目标：#1 onboarding 块在其 issues 段之后打印 */
+  onboardingFinal?: boolean;
 };
 
 /** 段1产物：缓存命中态 + 缓存键输入（段3 决定是否回写） */
@@ -327,11 +408,16 @@ function buildCheckInjection(
 ): { inject: RunTranspiledOptions; mockFromErrors: MockFromError[] } {
   const graph = evalAbsModuleGraph(source, filePath);
   const reps = collectEvalReplacements(source, { diags: dirDiags });
-  const seedPkg = runWithDirectiveDiags(dirDiags, () =>
-    mockDirectivesToAbsSeeds(extractDirectives(parse(source)), {
+  const seedPkg = runWithDirectiveDiags(dirDiags, () => {
+    const ast = parse(source);
+    const seeds = mockDirectivesToAbsSeeds(extractDirectives(ast), {
       fromFile: filePath,
-    }),
-  );
+    });
+    // D1 同族：JSDoc 块内错位的文件级指令族标签（@nudo:env / @nudo:mock-module）
+    // 不再静默——纯查询 extract 落本域（提取面不变，仍只认行注释）
+    extractFileDirectives(ast);
+    return seeds;
+  });
   let mockFromErrors: MockFromError[] = seedPkg.fromErrors ?? [];
   const mocks = mockSeedsToAbsMocks(seedPkg);
   const envGlobals = collectEnvGlobals(allEnvNames);
@@ -404,6 +490,15 @@ async function emitCheckReport(
   }
 
   const checkJson = cachedJson ?? serializeCheckJson(report);
+  // 批次探针聚合（#1/#9）：error 计数、非 L2 error 破坏标记、磁盘缓存启用探测
+  if (opts.batchProbe) {
+    const errs = report.issues.filter((i) => i.severity === "error");
+    opts.batchProbe.errorIssues += errs.length;
+    if (injectionSetupFailed || errs.some((i) => i.code !== ENTRY_MAY_THROW_CODE)) {
+      opts.batchProbe.nonL2Error = true;
+    }
+    if (cache.disk.enabled) opts.batchProbe.cacheEnabled = true;
+  }
   const wantGha = shouldEmitGha(opts.gha, process.env.GITHUB_ACTIONS);
   const workspaceRoot = process.env.GITHUB_WORKSPACE ?? process.cwd();
   const emitCiAnnotations = (): void => {
@@ -467,6 +562,20 @@ async function emitCheckReport(
   } else {
     console.log(formatCheckReport(report, { verbose: opts.verbose === true }));
     emitCiAnnotations();
+  }
+
+  // #1 零配置 onboarding（issues 段之后、docs 段之前）：全部 error 为 L2 入口
+  // may-throw + 全部目标零 @nudo:* 指令 + 零 nudo 配置的纯净新项目指纹。
+  // 门禁语义不变（仍 exit 1）；探针只在人类面创建（--json/--gitlab/--gha 无）。
+  if (
+    opts.batchProbe &&
+    opts.onboardingFinal &&
+    opts.batchProbe.errorIssues > 0 &&
+    !opts.batchProbe.nonL2Error &&
+    opts.batchProbe.filesWithDirectives === 0 &&
+    opts.batchProbe.filesWithConfig === 0
+  ) {
+    printOnboardingBlock();
   }
 
   // 诊断 → 文档深链（仅终端面；--json / --gitlab 机器契约不打——
@@ -606,6 +715,11 @@ async function runCheck(file: string, opts: RunCheckOptions = {}): Promise<void>
   }
 
   // 段3 report+exit：打印面 + 缓存回写 + exit
+  // #1 指纹静态面：目标文件 @nudo:* 指令 / 项目 nudo 配置在场计数
+  if (opts.batchProbe) {
+    if (sourceHasNudoDirectives(source)) opts.batchProbe.filesWithDirectives++;
+    if (cache.proj) opts.batchProbe.filesWithConfig++;
+  }
   await emitCheckReport(filePath, report, cache, injectionSetupFailed, opts);
 }
 
@@ -1008,13 +1122,47 @@ export function registerCheckCommand(program: Command): void {
           return;
         }
 
+        // #1/#9 人类面批次探针：--json / --gitlab / --gha / --fix 不参与
+        //（机器契约面 stdout 与 stderr 都必须干净；--fix 在上方已早退）
+        const humanMode = !opts.json && !opts.gitlab && !opts.gha;
+        // #9 批量指纹：多路径，或任一路径是目录
+        const multiPath =
+          paths.length > 1 ||
+          paths.some((p) => {
+            try {
+              return statSync(resolve(p)).isDirectory();
+            } catch {
+              return false;
+            }
+          });
+        // #1：批次探针——末目标的 issues 段后、docs 段前打 onboarding 块
+        const probe = humanMode ? freshBatchProbe() : undefined;
+        const lastTarget = targets[targets.length - 1];
+
         const runOne = async (t: string): Promise<void> => {
           // --abs 仍走 runCheck：代数观察 + L1/L2 门禁（design §1.3）
-          await runCheck(t, { ...shared, json: opts.json });
+          await runCheck(t, {
+            ...shared,
+            json: opts.json,
+            ...(probe ? { batchProbe: probe, onboardingFinal: t === lastTarget } : {}),
+          });
         };
 
         if (opts.watch) {
-          startWatch(paths, runOne, "check");
+          // watch 每轮独立探针（单文件轮即终轮）——指纹不跨轮残留
+          startWatch(
+            paths,
+            async (t: string) => {
+              await runCheck(t, {
+                ...shared,
+                json: opts.json,
+                ...(humanMode
+                  ? { batchProbe: freshBatchProbe(), onboardingFinal: true }
+                  : {}),
+              });
+            },
+            "check",
+          );
           return;
         }
         // GitLab Code Quality 只接受一份 JSON 数组报告：多 target 仿
@@ -1030,6 +1178,11 @@ export function registerCheckCommand(program: Command): void {
           return;
         }
         for (const t of targets) await runOne(t);
+        // #9 缓存 opt-in：批量（多路径/目录）check 跑完且磁盘缓存未启用 →
+        // stderr 一行提示（人类面；--json/--gitlab/--gha 面不创建探针，天然不打）
+        if (probe && multiPath && !probe.cacheEnabled) {
+          console.error(CACHE_HINT);
+        }
       },
     );
 }

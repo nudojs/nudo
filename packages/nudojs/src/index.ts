@@ -17,6 +17,8 @@ import { registerContractCommand } from "./commands/contract.ts";
 import { registerExportCommand } from "./commands/export.ts";
 import { registerHealthCommand } from "./commands/health.ts";
 import { registerMigrateCommand } from "./commands/migrate.ts";
+import { registerInitCommand } from "./commands/init.ts";
+import { applyCheckHelpGroups } from "./check-help-groups.ts";
 
 const program = new Command();
 
@@ -37,6 +39,7 @@ program
   .addHelpText(
     "after",
     `
+Setup   nudo init [path]     (write an adoption baseline nudo config into package.json)
 Day 0   nudo check <path>   (signatures + L1/L2 gate)
         nudo test <path>    (every inferred case)
 Day 1   nudo contract + check
@@ -49,11 +52,14 @@ No observation verb: signatures come from check, cases from test, hover from IDE
   );
 
 registerCheckCommand(program);
+// #11：check --help 旗标分组（只改帮助展示，不动 check.ts 旗标定义）
+applyCheckHelpGroups(program);
 registerTestCommand(program);
 registerContractCommand(program);
 registerExportCommand(program);
 registerHealthCommand(program);
 registerMigrateCommand(program);
+registerInitCommand(program);
 
 program.parseAsync(argv).catch((err: unknown) => {
   console.error(err instanceof Error ? (process.env.NUDO_DEBUG ? err.stack : err.message) : err);

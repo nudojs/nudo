@@ -3,7 +3,7 @@
  * 从 index.ts 原样迁出，行为不变。
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import { resolve, relative, dirname } from "node:path";
+import { resolve, dirname } from "node:path";
 import type { Command } from "commander";
 import {
   insertGeneratedCaseDirectives,
@@ -121,13 +121,15 @@ async function runTest(
   if (!opts.json && result.diagnostics.length > 0 && !opts.abs) {
     console.log("\ndiagnostics");
     for (const d of result.diagnostics) {
-      const loc = `${relative(process.cwd(), filePath)}:${d.range.start.line}:${d.range.start.column}`;
+      // #7 路径口径与 check 同规：cwd 内相对展示；目标在 cwd 外打绝对路径
+      //（displayPathOf：relative 以 .. 开头即逃出 cwd，回落原值）
+      const loc = `${displayPathOf(filePath)}:${d.range.start.line}:${d.range.start.column}`;
       console.log(`  [${d.severity}] ${loc} ${d.message}${d.code ? ` (${d.code})` : ""}`);
     }
   }
 
   if (opts.freeze && emitOut) {
-    const relPath = relative(process.cwd(), filePath) || filePath;
+    const relPath = displayPathOf(filePath);
     const skippedLines = emitOut.skipped.map((s) => `  ${s.fn}: ${s.reason}${s.detail ? ` (${s.detail})` : ""}`);
     if (emitOut.source === source) {
       console.log("\nfreeze: no changes.");

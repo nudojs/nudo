@@ -338,6 +338,14 @@ export function isHostGlobalFn(fn: unknown): boolean {
     hostGlobalFnIds = new Set<unknown>();
     const g = globalThis as Record<string, unknown>;
     for (const k of Object.getOwnPropertyNames(g)) {
+      // Node ≥ 22.4 的 webstorage 实验 accessor（localStorage/sessionStorage）
+      // GET 即触发 `ExperimentalWarning: ... is not available because
+      // --localstorage-file was not provided`。try/catch 无效（警告非异常）、
+      // `in` 预检无效（accessor 存在，GET 仍警告）→ 必须 GET 前跳名。
+      // 两名即使启用也返回 Storage 对象、永非函数，跳过不影响
+      // 「宿主全局函数身份集」语义。
+      // https://nodejs.org/api/webstorage.html
+      if (k === "localStorage" || k === "sessionStorage") continue;
       const v = g[k];
       if (typeof v === "function") hostGlobalFnIds.add(v);
     }

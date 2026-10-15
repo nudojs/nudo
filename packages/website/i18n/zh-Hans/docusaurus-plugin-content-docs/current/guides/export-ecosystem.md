@@ -111,7 +111,7 @@ nudo export src/api/inline.js --format standard --out dist
 
 调用点观测到的字面量会钉死确切值（`z.literal` / lit 节点 / `=== "Ada"` 检查）。想要契约界（`gt/ge/lt/le`、`int`、字符串长度）而不是观测字面量时，加上侧车。
 
-诚实边界：**未被调用**的导出回退到 `entry@L…`——参数投影为 `unknown`，不做猜测。这是 `--from` 天花板（[Limits](../concepts/limits.md#调用点发现上限)），不是推断 bug。
+诚实边界：**未被调用**的导出回退到 `entry@L…`——参数投影为 `unknown`，不做猜测。这是 `--from` 天花板（[Limits](../concepts/limits.md#调用点发现上限)），不是推断 bug。作为对照，`nudo check` 对同一无约束参数打印 `any`（见[快速开始](../getting-started/quick-start.md)）——`any`/`unknown` 的分工是产品契约（[`docs/design/cli-semantics.md`](https://github.com/nudojs/nudo/blob/main/docs/design/cli-semantics.md) §2）。
 
 ## Zod 方言 schema（`--format schema`）
 

@@ -3,18 +3,27 @@
  * CLI 显式路径不受 mode 限制；本模块供 LSP/watch 自动验证使用。
  */
 
-import { dirname } from "node:path";
+import { dirname, relative, sep } from "node:path";
 import { existsSync } from "node:fs";
 import { sidecarPathOf } from "@nudojs/core";
 import {
   analysisConfig,
+  DEFAULT_ANALYSIS_EXCLUDE,
   findProjectConfig,
   matchesEmitAllowlist,
   type AnalysisConfig,
   type DiagnosticsLevel,
 } from "./evaluator/config.ts";
+import { compileAnyMatcher, compilePattern } from "./glob.ts";
 import { isNudoTargetPath } from "./target-path.ts";
 import { stripCommentsAndStrings, stripStringsKeepComments } from "@nudojs/core/internal";
+
+/**
+ * 默认安全排除（node_modules / dist / coverage）——对归一化完整路径始终
+ * 叠加，自定义 `nudo.analysis.exclude` 不再顶掉这组保护（与
+ * analysisConfig 无自定义时的回落默认同源，见 evaluator/config.ts）。
+ */
+const DEFAULT_EXCLUDE_MATCH = compileAnyMatcher(DEFAULT_ANALYSIS_EXCLUDE);
 
 /** 默认档下应静音的 evaluator warning 码（噪声控制，A3） */
 const NOISY_WARNING_CODES = new Set([
@@ -90,11 +99,12 @@ export function shouldAnalyzeFile(
   const cfg = config ?? analysisConfig(proj?.config);
   const projectDir = proj?.projectDir;
 
-  if (cfg.exclude.length > 0 && projectDir) {
-    if (matchesEmitAllowlist(filePath, projectDir, cfg.exclude)) return false;
-  } else if (cfg.exclude.length > 0 && !projectDir) {
-    const norm = filePath.replace(/\\/g, "/");
-    if (cfg.exclude.some((p) => simpleExcludeHit(p, norm))) return false;
+  // exclude：默认安全排除（node_modules/dist/coverage）始终叠加；自定义
+  // 模式用共享 glob 编译器（./glob.ts）匹配，见 excludeHit。
+  const norm = filePath.replace(/\\/g, "/");
+  if (DEFAULT_EXCLUDE_MATCH(norm)) return false;
+  if (cfg.exclude.length > 0 && cfg.exclude.some((p) => excludeHit(p, projectDir, filePath, norm))) {
+    return false;
   }
   // include 空 = 不过滤（目标扩展名已由 isNudoTargetPath 保证）
   if (cfg.include.length > 0 && projectDir) {
@@ -118,19 +128,28 @@ export function shouldAnalyzeFile(
 }
 
 /**
- * 无 projectDir 时的 exclude 片段匹配（双星段或裸段名）。
- *
- * **限制（不假装自定义 glob 生效）**：package.json 自定义 `nudo.analysis.exclude`
- * 含 `*`/`**` 时无法相对 projectDir 解析，退化为最小安全默认——只拦
- * node_modules / dist / coverage 路径段；字面量路径片段仍按 contains 匹配。
- * 完整自定义 exclude 需要 findProjectConfig 命中带 `nudo` 键的 package.json
- * （从而拿到 projectDir + matchesEmitAllowlist）。
+ * exclude 模式命中判定（共享 glob 编译器 ./glob.ts；`nudo.analysis.exclude`
+ * 不含这组语义时就只是不命中，**不静默退化**成别的默认）：
+ * - 无通配符（`*` / `?`）→ **字面量子串**：完整路径或相对路径任一命中
+ *   （`src/generated` 命中 `…/src/generated/…` 与 `…/generated` 结尾）。
+ * - 通配符模式 → 锚定 glob（`**` 段零或多段、`*`/`?` 不跨 `/`）：
+ *   优先对 projectDir 相对路径匹配（`src/generated/**` 这类相对子树模式），
+ *   另对归一化完整路径匹配（`**` 前缀 + `*.spec.js` 这类模式与绝对路径
+ *   模式两种口径都能命中）。
+ *   无 projectDir 时只剩完整路径口径——纯相对前缀模式自然不命中，按其
+ *   字面量/glob 语义如实求值（本函数无诊断管道，不新增警告通道）。
+ * - 相对路径逃出 projectDir（`..` 前缀）不参与相对口径（与
+ *   matchesEmitAllowlist 同守卫）；完整路径口径仍可命中。
  */
-function simpleExcludeHit(pattern: string, path: string): boolean {
-  const bare = pattern.replace(/^\*\*/, "").replace(/^\//, "").replace(/\/\*\*$/, "").replace(/^\*\//, "");
-  if (!bare || bare.includes("*")) {
-    // 退化为：node_modules / dist / coverage 路径段（自定义 glob 不可用）
-    return /\/(node_modules|dist|coverage)\//.test("/" + path + "/");
-  }
-  return path.includes(`/${bare}/`) || path.endsWith(`/${bare}`);
+function excludeHit(
+  pattern: string,
+  projectDir: string | undefined,
+  filePath: string,
+  norm: string,
+): boolean {
+  const match = compilePattern(pattern);
+  if (match(norm)) return true;
+  if (!projectDir) return false;
+  const rel = relative(projectDir, filePath).split(sep).join("/");
+  return rel.startsWith("..") ? false : match(rel);
 }

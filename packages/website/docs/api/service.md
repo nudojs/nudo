@@ -683,6 +683,8 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="collectparambodyreadtypes"></a>`collectParamBodyReadTypes` | fn | 收集每个函数形参成员读取 + 用法推断类型。 | `collectParamBodyReadTypes(source: string): BodyReadTypes` |
 | <a id="collectskipreturns"></a>`collectSkipReturns` | fn | 每个带 `@nudo:skip` 的顶层函数 → 声明的返回 Abs；`null` = 未声明返回类型。 | `collectSkipReturns(source: string): Map<string, Abs \| null>` |
 | <a id="collectstaticimports"></a>`collectStaticImports` | fn | 从入口文件沿静态相对 import/require 收集（仅类型事实，不是运行时加载器）。 | `collectStaticImports( entryFile: string, maxDepth = 8, ): Map<string, ModuleExports>` |
+| <a id="compileanymatcher"></a>`compileAnyMatcher` | fn | Compile a pattern list into a matcher that is true when any pattern matches. | `compileAnyMatcher(patterns: string[] \| string): Matcher` |
+| <a id="compilepattern"></a>`compilePattern` | fn | 单模式编译：无通配符（`*` / `?`）→ 字面量子串匹配；有 → 锚定正则。 | `compilePattern(pattern: string): Matcher` |
 | <a id="completionitem"></a>`CompletionItem` | type | — | `CompletionItem = { label: string; kind: "property" \| "method" \| "variable"; detail?: string; }` |
 | <a id="composedevalmodules"></a>`ComposedEvalModules` | type | 模块图组装的共享产物：analyzer 与 tryRunEval 走同一序列 （evalAbsModuleGraph → collectEnvModules → mergeHarvestUnderEnv → applyMockModule*），单一事实源，不再各自漂移。 | `ComposedEvalModules = { modules: Record<string, AbsModuleExports>; issues: AbsModuleLoadIssue[]; mockErrors: string[]; }` |
 | <a id="composeevalmodules"></a>`composeEvalModules` | fn | 模块图组装单一入口：相对/harvest 模块图 → @nudo:env modules 并入 （手写 env wins，B8）→ @nudo:mock-module 覆盖。 | `composeEvalModules( source: string, filePath: string, opts: { envNames?: string[]; seedVars?: Record<string, Abs>; seedFns?: AbsGraphOptions["seedFns"]; loadModule?: LoadModule; fileDirectives?: FileDirective[]; } = {}, ): ComposedEvalModules` |
@@ -783,6 +785,7 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="iswatchrelevantpath"></a>`isWatchRelevantPath` | fn | Watch accept gate: analysis targets + sidecar/config/env-template invalidators | `isWatchRelevantPath(path: string): boolean` |
 | <a id="loadmodule"></a>`LoadModule` | type | — | `LoadModule = (spec: string, fromFile: string) => string \| undefined` |
 | <a id="locfromnode"></a>`locFromNode` | fn | — | `locFromNode(node: Node): SourceLocation` |
+| <a id="matcher"></a>`Matcher` | type | 极简 glob → RegExp 编译器（自 vite-plugin 内联实现抽取，语义不变）。 | `Matcher = (id: string) => boolean` |
 | <a id="matchesemitallowlist"></a>`matchesEmitAllowlist` | fn | 极简 glob（`**` / `*` / `?`）：相对 projectDir 匹配**源文件**绝对路径 （不是侧车路径；侧车随源文件同目录写出）。无白名单 → true。 | `matchesEmitAllowlist( absPath: string, projectDir: string \| undefined, patterns: string[], ): boolean` |
 | <a id="matchsidecarfndecl"></a>`matchSidecarFnDecl` | fn | 定位侧车里目标契约的声明起点：`export const <name> = fn(` / `<name> = fn(`。 | `matchSidecarFnDecl( sidecarSource: string, exportName: string, )` |
 | <a id="materializeaction"></a>`materializeAction` | fn | kind → WorkspaceEdit 物化。返回 undefined = 该 action 只读（info）或缺证据。 | `materializeAction(input: MaterializeInput): QuickfixPlan \| undefined` |

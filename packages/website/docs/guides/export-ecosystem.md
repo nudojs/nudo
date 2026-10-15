@@ -111,7 +111,7 @@ nudo export src/api/inline.js --format standard --out dist
 
 Literals observed at call sites pin exact values (`z.literal` / lit nodes / `=== "Ada"` checks). Add a sidecar when you want contract bounds (`gt/ge/lt/le`, `int`, string length) instead of observed literals.
 
-Honest boundary: an **uncalled** export falls back to `entry@L…` — arguments project as `unknown`, not a guess. That is the `--from`-ceiling ([Limits](../concepts/limits.md#call-site-discovery-ceiling)), not an inference bug.
+Honest boundary: an **uncalled** export falls back to `entry@L…` — arguments project as `unknown`, not a guess. That is the `--from`-ceiling ([Limits](../concepts/limits.md#call-site-discovery-ceiling)), not an inference bug. For contrast, `nudo check` prints the same unconstrained param as `any` ([Quick Start](../getting-started/quick-start.md)) — the `any`/`unknown` split is a product contract ([`docs/design/cli-semantics.md`](https://github.com/nudojs/nudo/blob/main/docs/design/cli-semantics.md) §2).
 
 ## Zod dialect schemas (`--format schema`)
 

@@ -71,6 +71,14 @@ export {
 } from "./entry-variants.ts";
 
 export { collectSkipReturns } from "./skip-directives.ts";
+
+// ─── Glob（极简 glob 编译器：vite-plugin / analysis-scope 共享实现） ──
+export {
+  compilePattern,
+  compileAnyMatcher,
+  type Matcher,
+} from "./glob.ts";
+
 // AI3：what-if 绑定注入（CLI / LSP 同构；emit 的 interface 面再导出）
 export {
   injectBindings,

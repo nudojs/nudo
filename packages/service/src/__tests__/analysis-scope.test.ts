@@ -74,4 +74,77 @@ describe("shouldAnalyzeFile", () => {
     writeFileSync(nm, "export function f(){}\n");
     expect(shouldAnalyzeFile(nm, "export function f(){}")).toBe(false);
   });
+
+  it("custom exclude glob **/*.spec.js excludes spec files at any depth", () => {
+    const dir = tmpProject({
+      name: "fx",
+      nudo: { analysis: { mode: "all", exclude: ["**/*.spec.js"] } },
+    });
+    const spec = join(dir, "src", "deep", "a.spec.js");
+    const plain = join(dir, "src", "a.js");
+    mkdirSync(join(dir, "src", "deep"), { recursive: true });
+    writeFileSync(spec, "export function f(){}\n");
+    writeFileSync(plain, "export function f(){}\n");
+    expect(shouldAnalyzeFile(spec, "export function f(){}")).toBe(false);
+    expect(shouldAnalyzeFile(plain, "export function f(){}")).toBe(true);
+  });
+
+  it("custom exclude src/generated/** excludes the subtree (projectDir 相对匹配)", () => {
+    const dir = tmpProject({
+      name: "fx",
+      nudo: { analysis: { mode: "all", exclude: ["src/generated/**"] } },
+    });
+    const gen = join(dir, "src", "generated", "deep", "g.js");
+    const keep = join(dir, "src", "g.js");
+    mkdirSync(join(dir, "src", "generated", "deep"), { recursive: true });
+    writeFileSync(gen, "export function f(){}\n");
+    writeFileSync(keep, "export function f(){}\n");
+    expect(shouldAnalyzeFile(gen, "export function f(){}")).toBe(false);
+    expect(shouldAnalyzeFile(keep, "export function f(){}")).toBe(true);
+  });
+
+  it("literal exclude paths still work (字面量子串)", () => {
+    const dir = tmpProject({
+      name: "fx",
+      nudo: { analysis: { mode: "all", exclude: ["src/vendored"] } },
+    });
+    const vendored = join(dir, "src", "vendored", "lib.js");
+    const keep = join(dir, "src", "lib.js");
+    mkdirSync(join(dir, "src", "vendored"), { recursive: true });
+    writeFileSync(vendored, "export function f(){}\n");
+    writeFileSync(keep, "export function f(){}\n");
+    expect(shouldAnalyzeFile(vendored, "export function f(){}")).toBe(false);
+    expect(shouldAnalyzeFile(keep, "export function f(){}")).toBe(true);
+  });
+
+  it("custom exclude does not disable the built-in node_modules/dist/coverage defaults", () => {
+    const dir = tmpProject({
+      name: "fx",
+      nudo: { analysis: { mode: "all", exclude: ["**/*.spec.js"] } },
+    });
+    const nm = join(dir, "node_modules", "p", "i.js");
+    const dist = join(dir, "dist", "i.js");
+    const cov = join(dir, "coverage", "i.js");
+    mkdirSync(join(dir, "node_modules", "p"), { recursive: true });
+    mkdirSync(join(dir, "dist"), { recursive: true });
+    mkdirSync(join(dir, "coverage"), { recursive: true });
+    writeFileSync(nm, "export function f(){}\n");
+    writeFileSync(dist, "export function f(){}\n");
+    writeFileSync(cov, "export function f(){}\n");
+    expect(shouldAnalyzeFile(nm, "export function f(){}")).toBe(false);
+    expect(shouldAnalyzeFile(dist, "export function f(){}")).toBe(false);
+    expect(shouldAnalyzeFile(cov, "export function f(){}")).toBe(false);
+  });
+
+  it("no projectDir: **-rooted globs match the full path; relative-only globs honestly miss", () => {
+    const specCfg: AnalysisConfig = { ...allCfg, exclude: ["**/*.spec.js"] };
+    expect(shouldAnalyzeFile("/noproj/x/a.spec.js", "export function f(){}", specCfg)).toBe(false);
+    expect(shouldAnalyzeFile("/noproj/x/a.js", "export function f(){}", specCfg)).toBe(true);
+    // 纯相对前缀模式无 projectDir 可解析：按字面量/glob 语义如实不命中，
+    // 不再静默退化成 node_modules/dist/coverage 之外的隐藏行为。
+    const relCfg: AnalysisConfig = { ...allCfg, exclude: ["src/generated/**"] };
+    expect(shouldAnalyzeFile("/noproj/src/generated/g.js", "export function f(){}", relCfg)).toBe(
+      true,
+    );
+  });
 });

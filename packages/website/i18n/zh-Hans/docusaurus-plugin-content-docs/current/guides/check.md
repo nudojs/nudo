@@ -64,7 +64,16 @@ issues
       expected: entry total, or @nudo:throws / try-catch
       → ToNumber coercion of abstract operand → @nudo:throws TypeError  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch
       fix:  nudo contract --draft  (emit a sidecar draft you can edit)
+
+onboarding
+  every error above is an L2 entry may-throw — unconstrained entry points, not broken contracts.
+  no @nudo:* directives and no package.json#nudo config found in this project yet. next steps:
+    nudo init                      write an adoption baseline config (L2 → warning)
+    nudo contract --draft <file>   draft a *.nudo.js sidecar contract for one file
+    nudo check --profile adoption  preview the gate with L2 as warnings
 ```
+
+`onboarding` 块只在整场运行「纯净」时打印——零 `@nudo:*` 指令、零 `nudo` 配置，且所有 error 都是 L2。它不改变退出码，出现任一指令或配置后即消失。
 
 > `[ERROR L1 getName]` 里的 `L1` 是**行号**（此处函数声明在第 1 行）—— 该诊断的层是 L2（`nudo:entry-may-throw`）。`L#` 永远是位置，不是契约层。
 

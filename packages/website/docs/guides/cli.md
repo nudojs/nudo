@@ -20,6 +20,7 @@ nudo — JavaScript types, computed
 
 Observation lives in the output of `check` / `test` and in IDE hover — not a separate primary command.
 
+**Setup:** `nudo init [path]` — write an adoption baseline (`nudo.check.profile: "adoption"`) into the nearest `package.json`. Idempotent: an existing `nudo` key is printed, never overwritten. In a zero-config, zero-directive project, a failing `nudo check` prints an `onboarding` block pointing here.
 **Observation:** `nudo check` (signatures + gate). Optional debug: `nudo test` (case witnesses).
 **Contracts:** `nudo contract` + `nudo check`.
 **Ecosystem:** `nudo export`.
