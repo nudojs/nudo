@@ -330,6 +330,21 @@ export function getEvalCallCollector(): ((r: EvalCallRecord) => void) | null {
  */
 let hostGlobalFnIds: Set<unknown> | undefined;
 
+/** 函数值 accessor 白名单：GET 无警告、值 typeof function、身份被消费的宿主全局。
+ *  node 26 实测（descriptor + typeof 全量探测）：Buffer（TypedArray 构造器）、
+ *  assert / events / stream / node:test（legacy builtin 模块，module.exports 即
+ *  函数）——读齐这五个后收集集与旧「全量 GET」实现逐元素一致（其余 accessor：
+ *  process/crypto/navigator/punycode/sys/wasi/ffi/模块 namespace，读出均非函数）。
+ *  未来新增非 accessor 宿主函数不受影响（value 属性照常收集）；新增 accessor
+ *  宿主函数若不在列，只会回落保守路径（无假精度），不泄漏警告。 */
+const HOST_FN_ACCESSOR_ALLOWLIST: ReadonlySet<string> = new Set([
+  "Buffer",
+  "assert",
+  "events",
+  "stream",
+  "node:test",
+]);
+
 /** 宿主全局函数身份判定（$new 宿主构造器分支共用，Bug 16）：模块转译
  *  函数是全新对象，绝不与宿主全局同一 → 不误伤。 */
 export function isHostGlobalFn(fn: unknown): boolean {
@@ -338,14 +353,20 @@ export function isHostGlobalFn(fn: unknown): boolean {
     hostGlobalFnIds = new Set<unknown>();
     const g = globalThis as Record<string, unknown>;
     for (const k of Object.getOwnPropertyNames(g)) {
-      // Node ≥ 22.4 的 webstorage 实验 accessor（localStorage/sessionStorage）
-      // GET 即触发 `ExperimentalWarning: ... is not available because
-      // --localstorage-file was not provided`。try/catch 无效（警告非异常）、
-      // `in` 预检无效（accessor 存在，GET 仍警告）→ 必须 GET 前跳名。
-      // 两名即使启用也返回 Storage 对象、永非函数，跳过不影响
-      // 「宿主全局函数身份集」语义。
-      // https://nodejs.org/api/webstorage.html
-      if (k === "localStorage" || k === "sessionStorage") continue;
+      const d = Object.getOwnPropertyDescriptor(g, k);
+      if (
+        d &&
+        (d.get !== undefined || d.set !== undefined) &&
+        !HOST_FN_ACCESSOR_ALLOWLIST.has(k)
+      ) {
+        // accessor 属性：GET 会执行宿主 lazy getter。Node ≥ 23 的 builtin
+        // alias getter（wasi / node:ffi / punycode / sys / …）GET 即发
+        // Experimental / Deprecation 警告，名单随版本只增不减
+        // （node:test / node:sea 已在列）→ 追「跳名清单」不可维护，按
+        // descriptor 形态跳过全部 accessor（白名单除外）。try/catch 无效
+        // （警告非异常）、`in` 预检无效（accessor 存在，GET 仍警告）。
+        continue;
+      }
       const v = g[k];
       if (typeof v === "function") hostGlobalFnIds.add(v);
     }
