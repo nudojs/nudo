@@ -7,7 +7,7 @@ import { resolve, dirname, relative } from "node:path";
 import type { Command } from "commander";
 import { analyzeFileAsync, type CallRecord } from "@nudojs/service";
 import { paintOne } from "../ui.ts";
-import { budgetAttributionSegs, type AbsBudgetStats } from "@nudojs/core/internal";
+import { budgetAttributionSegs, DIAG, type AbsBudgetStats } from "@nudojs/core/internal";
 import {
   collectExternalRecords,
   collectNudoFiles,
@@ -125,7 +125,7 @@ async function countInterfaceDrift(filePath: string): Promise<{ count: number; e
       // 与 nudo check 同源：@nudo:skip 的函数不评估 body，不产出 drift 候选
       skips: collectSkipReturns(source),
     });
-    return { count: r.issues.filter((i) => i.code === "nudo:interface-drift").length };
+    return { count: r.issues.filter((i) => i.code === DIAG.interfaceDrift).length };
   } catch (e) {
     return { count: 0, error: `checkSource failed: ${(e as Error).message}` };
   }

@@ -13,6 +13,7 @@ import { joinThenProject } from "./projection.ts";
 import { formatAbs } from "./format.ts";
 import { formatConstraint, type EffectiveInterface } from "./interface.ts";
 import type { CheckIssue } from "./check-report.ts";
+import { DIAG } from "./diag-codes.ts";
 
 // generated 段是 emit 时刻的固化事实快照（不执法）；本检查把它与「今日
 // 重算」做语义对比（§6 证据门槛：conf∈{exact,path} 且无截断标记，无证据
@@ -96,7 +97,7 @@ export function interfaceDriftIssues(
       if (leqAbs(today, expected).ok && leqAbs(expected, today).ok) continue;
       out.push({
         severity: "warning",
-        code: "nudo:interface-drift",
+        code: DIAG.interfaceDrift,
         message: `${cand.fnName}[${param}]: persisted @generated segment ≠ today's call-site domain`,
         actual: formatAbs(today),
         expected: formatConstraint(constraint),
@@ -123,7 +124,7 @@ export function interfaceDriftIssues(
     if (leqAbs(today, expected).ok && leqAbs(expected, today).ok) continue;
     out.push({
       severity: "warning",
-      code: "nudo:interface-drift",
+      code: DIAG.interfaceDrift,
       message: `${cand.fnName}[return]: persisted @generated segment ≠ today's inferred return`,
       actual: formatAbs(today),
       expected: formatConstraint(retC),

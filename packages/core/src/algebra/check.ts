@@ -132,6 +132,7 @@ import {
 
 export type { CheckOptions } from "./check-types.ts";
 import type { CheckOptions } from "./check-types.ts";
+import { DIAG } from "./diag-codes.ts";
 
 /**
  * 检查一个文件：
@@ -433,7 +434,7 @@ function sidecarDiagIssues(
     if (seen.has(k)) continue;
     seen.add(k);
     const severity =
-      d.code === "nudo:contract-syntax" || d.code === "nudo:directive-syntax"
+      d.code === DIAG.contractSyntax || d.code === DIAG.directiveSyntax
         ? ("warning" as const)
         : ("error" as const);
     out.push({ severity, code: d.code, message: d.message });
@@ -481,7 +482,7 @@ function assumePremisesPhiOf(
     if (seg.kind === "bad") {
       issues.push({
         severity: "error",
-        code: "nudo:assume-invalid",
+        code: DIAG.assumeInvalid,
         message: `${name}: malformed @nudo:assume '${seg.raw}' (expected <param> <= <param> or <param> >= <param>; constant bounds belong to sidecar contracts)`,
         actual: seg.raw,
         expected: "<param> <= <param>",
@@ -495,7 +496,7 @@ function assumePremisesPhiOf(
     if (bad.length > 0) {
       issues.push({
         severity: "error",
-        code: "nudo:assume-invalid",
+        code: DIAG.assumeInvalid,
         message: `${name}: @nudo:assume name(s) not bound as parameters or top-level locals (${bad.join(", ")})`,
         actual: bad.join(", "),
         expected: surface || "(no params/locals)",
@@ -554,7 +555,7 @@ function invariantSpecsOf(
     if (seg.kind === "bad") {
       issues.push({
         severity: "warning",
-        code: "nudo:invariant-invalid",
+        code: DIAG.invariantInvalid,
         message: `${name}: malformed @nudo:invariant '${seg.raw}' (expected <name><path> <rel> <number>; path = [*] or .member steps)`,
         actual: seg.raw,
         expected: "<name><path> <rel> <number>",
@@ -567,7 +568,7 @@ function invariantSpecsOf(
     if (!bindable.has(seg.name)) {
       issues.push({
         severity: "warning",
-        code: "nudo:invariant-invalid",
+        code: DIAG.invariantInvalid,
         message: `${name}: @nudo:invariant name not bound as a parameter or top-level local (${seg.name})`,
         actual: seg.name,
         expected: surface || "(no params/locals)",
@@ -781,7 +782,7 @@ function checkSourceInner(
           const loc = findFnLoc(file, name);
           issues.push({
             severity: entryThrowsMode === "warning" ? "warning" : "error",
-            code: "nudo:entry-may-throw",
+            code: DIAG.entryMayThrow,
             message: `${name} (export): may throw ${gateDisplay}`,
             actual: `${name}(…)    throws ${gateDisplay}`,
             expected: "entry total, or @nudo:throws / try-catch",
@@ -812,7 +813,7 @@ function checkSourceInner(
       }
       issues.push({
         severity: "warning",
-        code: "nudo:no-signature",
+        code: DIAG.noSignature,
         message: `${name}: could not generalize a symbolic Abs`,
         suggestion: "add @nudo:case or make the body algebraically evaluable",
         fn: name,
@@ -840,7 +841,7 @@ function checkSourceInner(
         const loc = findFnLoc(file, name);
         issues.push({
           severity: entryThrowsMode === "warning" ? "warning" : "error",
-          code: "nudo:entry-may-throw",
+          code: DIAG.entryMayThrow,
           message: `${name} (export): may throw ${gateDisplay}`,
           actual: `${formatEntrySigLine(name, g, gateDisplay)}`,
           expected: "entry total, or @nudo:throws / try-catch",
@@ -914,7 +915,7 @@ function checkSourceInner(
           : `${name} param ${g.params[unknownParamIdx] ?? `#${unknownParamIdx}`}: unknown`;
       issues.push({
         severity: "warning",
-        code: "nudo:unknown-inference",
+        code: DIAG.unknownInference,
         message: `${name}: signature has true unknown (inference failed)`,
         actual: where,
         expected: "computable Abs (any = unconstrained, unknown = engine debt)",
@@ -949,7 +950,7 @@ function checkSourceInner(
             .join(", ");
           issues.push({
             severity: "error",
-            code: "nudo:interface-param-mismatch",
+            code: DIAG.interfaceParamMismatch,
             message: `${name}: contract parameter name(s) not in the formal parameter list (${unknownParams.join(", ")})`,
             actual: unknownParams.join(", "),
             expected: surface || g.params.join(", ") || "(no params)",
@@ -964,7 +965,7 @@ function checkSourceInner(
         if (eff.conflict.params.length > 0) {
           issues.push({
             severity: "error",
-            code: "nudo:interface-conflict",
+            code: DIAG.interfaceConflict,
             message: `${name}: handwritten contract conjunction unsatisfiable (${eff.conflict.params.join(", ")})`,
             suggestion: "check whether the source @nudo:contract and the same-name sidecar binding have contradictory constant bounds",
             fn: name,
@@ -973,7 +974,7 @@ function checkSourceInner(
         if (eff.conflict.returns) {
           issues.push({
             severity: "error",
-            code: "nudo:interface-conflict",
+            code: DIAG.interfaceConflict,
             message: `${name}: handwritten contract conjunction unsatisfiable on the return slot`,
             suggestion:
               "check whether the source @nudo:contract return and the sidecar fn() return constraint are contradictory (the return slot is not enforced when they are)",
@@ -1023,7 +1024,7 @@ function checkSourceInner(
     if (g.symbolic.conf === "opaque" && !truncated.has(name)) {
       issues.push({
         severity: "info",
-        code: "nudo:opaque-result",
+        code: DIAG.opaqueResult,
         message: `${name}(...): conf=opaque (path not covered, or native)`,
         suggestion: opaqueEnvHint ? OPAQUE_ENV_HINT : OPAQUE_EVIDENCE_HINT,
         fn: name,
@@ -1036,7 +1037,7 @@ function checkSourceInner(
     if (label === FORK_TRUNCATION_LABEL) {
       issues.push({
         severity: "info",
-        code: "nudo:fork-truncated",
+        code: DIAG.forkTruncated,
         message: `Branch expansion was truncated (fork budget); affected results widened to unknown#opaque (budget)`,
         suggestion:
           "optional: raise nudo.analysis.maxForks, or @nudo:budget forks=… on the function — non-blocking",
@@ -1047,7 +1048,7 @@ function checkSourceInner(
     if (label === PROMISE_MICRO_OVERFLOW_LABEL) {
       issues.push({
         severity: "info",
-        code: "nudo:promise-micro-truncated",
+        code: DIAG.promiseMicroTruncated,
         message: `Promise microtask queue hit its hard cap; further then/catch callbacks were dropped (results stay fail-closed)`,
         suggestion: "optional: reduce top-level Promise.then fan-out — non-blocking",
       });
@@ -1056,7 +1057,7 @@ function checkSourceInner(
     if (label === PROMISE_MICRO_ERROR_LABEL) {
       issues.push({
         severity: "info",
-        code: "nudo:promise-micro-error",
+        code: DIAG.promiseMicroError,
         message: `A promise microtask threw while draining; the error was recorded and did not rewrite the synchronous return value`,
         suggestion: "optional: inspect the then/catch callback for a throw path — non-blocking",
       });
@@ -1066,7 +1067,7 @@ function checkSourceInner(
     if (label === MATH_FOLD_ERROR_LABEL) {
       issues.push({
         severity: "info",
-        code: "nudo:math-fold-error",
+        code: DIAG.mathFoldError,
         message: `A Math native fold threw during analysis (host-tampered or divergent Math.*); the result was widened to number`,
         suggestion:
           "optional: keep Math.* builtins unmodified in analyzed code, or mock them with @nudo:mock — non-blocking",
@@ -1079,7 +1080,7 @@ function checkSourceInner(
       const hostName = label.slice(HOST_EFFECT_LABEL_PREFIX.length);
       issues.push({
         severity: "info",
-        code: "nudo:host-effect-blocked",
+        code: DIAG.hostEffectBlocked,
         message: `Host function '${hostName}' is not executed during analysis (network/timer side effect); result widened to unknown#opaque`,
         suggestion:
           "optional: mock it with @nudo:mock / @nudo:env, or pass the value in from a call site",
@@ -1092,7 +1093,7 @@ function checkSourceInner(
     if (label === LOOP_TRUNCATION_LABEL) {
       issues.push({
         severity: "info",
-        code: "nudo:loop-truncated",
+        code: DIAG.loopTruncated,
         message: `A loop did not terminate within its iteration budget (abstract unroll cap reached and the exit condition stayed concrete-true); affected loop state was widened (bounded, not exact)`,
         suggestion:
           "optional: restructure so the exit condition becomes abstract (data-dependent) within a few iterations, or pin the result with @nudo:case / @nudo:contract — non-blocking",
@@ -1107,7 +1108,7 @@ function checkSourceInner(
     const calls = reasons.has("calls");
     issues.push({
       severity: "info",
-      code: "nudo:recursion-truncated",
+      code: DIAG.recursionTruncated,
       message: allCycle
         ? `Recursive evaluation of '${label}' hit a call cycle (same abstract arguments already on the stack); result widened to unknown#opaque (cycle — budget cannot lift this)`
         : `Recursive evaluation of '${label}' was truncated (${depth && calls ? "depth/size budget" : depth ? "call-depth budget" : calls ? "total-calls budget" : "depth/size budget"}); result widened to unknown#opaque (budget — not inference debt)`,
@@ -1287,7 +1288,7 @@ function checkReturnConstraint(
     if (assumeDisplay && assumeDisplay.length > 0) {
       relied.push({
         severity: "info",
-        code: "nudo:assume-relied",
+        code: DIAG.assumeRelied,
         message: `${fnName}: return contract proved via @nudo:assume ${assumeDisplay.join("; ")}`,
         actual: `proof relies on user lemma${assumeDisplay.length > 1 ? "s" : ""}`,
         expected: "engine verifies the obligation, not the lemma itself",
@@ -1299,7 +1300,7 @@ function checkReturnConstraint(
     if (invariantDisplay && invariantDisplay.length > 0) {
       relied.push({
         severity: "info",
-        code: "nudo:invariant-relied",
+        code: DIAG.invariantRelied,
         message: `${fnName}: return contract proved via @nudo:invariant ${invariantDisplay.join("; ")}`,
         actual: `proof relies on user invariant${invariantDisplay.length > 1 ? "s" : ""}`,
         expected: "engine verifies the obligation, not the loop invariant itself",
@@ -1318,7 +1319,7 @@ function checkReturnConstraint(
   ): CheckIssue[] => [
     {
       severity,
-      code: severity === "error" ? "nudo:constraint-violated" : "nudo:unproven-return",
+      code: severity === "error" ? DIAG.constraintViolated : DIAG.unprovenReturn,
       message: `${fnName}: return value ⊭ @nudo:contract return ${cName}`,
       actual,
       expected,

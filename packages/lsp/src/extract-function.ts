@@ -10,14 +10,7 @@
  */
 import { parse } from "@nudojs/parser";
 import type { Node, File, Statement, Expression } from "@babel/types";
-import traverseFnDefault from "@babel/traverse";
-
-type Traverse = typeof traverseFnDefault;
-function traverse(): Traverse {
-  return (typeof traverseFnDefault === "function"
-    ? traverseFnDefault
-    : (traverseFnDefault as unknown as { default: Traverse }).default) as Traverse;
-}
+import { traverseEsm } from "./traverse-esm.ts";
 
 export type LspPosition = { line: number; character: number };
 export type LspRange = { start: LspPosition; end: LspPosition };
@@ -169,7 +162,7 @@ function analyzeSelectionBindings(
   }
 
   try {
-    traverse()(ast, {
+    traverseEsm()(ast, {
       Identifier(path) {
         const loc = path.node.loc;
         if (!loc || !locIntersects(loc, selLoc)) return;
@@ -227,7 +220,7 @@ function analyzeSelectionBindings(
   const usedOutside = (name: string): boolean => {
     let hit = false;
     try {
-      traverse()(ast, {
+      traverseEsm()(ast, {
         Identifier(p) {
           if (hit) return;
           const loc = p.node.loc;
@@ -296,7 +289,7 @@ export function extractFunction(
   const exprBox: { node: Expression | null } = { node: null };
 
   try {
-    traverse()(ast, {
+    traverseEsm()(ast, {
       Function(path) {
         const loc = path.node.loc;
         if (!loc) return;

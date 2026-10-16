@@ -10,7 +10,7 @@
 > 执行模型与信任边界：[`kernel-merge.md`](./kernel-merge.md)「执行模型与信任边界」。
 > 现行计划未闭环项：[`plans/2026-09-19-close-remaining-dx-gaps.md`](./plans/2026-09-19-close-remaining-dx-gaps.md)。
 
-> **Executive summary (EN).** This document is the honesty ledger for still-binding design limits and open issues — not a tutorial and not a changelog. It governs what Nudo must **not** claim: L1 obligations come only from explicit contracts (`*.nudo.js` / `@nudo:contract`) or call-site facts; body-AST slot invention is forbidden (C0); HOF `promote` is warning-only, never a check error; entry unconstrained params display as **`any`** (`unknown` = inference failure); env/harvest never replaces mocks. Resolved items are one-line anchors in `../reports/limits-resolved.md`. Product CLI face and L1/L2: `cli-semantics.md`. Trust boundary: `kernel-merge.md`.
+> **Executive summary (EN).** This document is the honesty ledger for still-binding design limits and open issues — not a tutorial and not a changelog. It governs what Nudo must **not** claim: L1 obligations come only from explicit contracts (`*.nudo.js` / `@nudo:contract`) or call-site facts; body-AST slot invention is forbidden (C0); HOF `promote` is warning-only, never a check error; entry unconstrained params display as **`any`** (`unknown` = inference failure); env/harvest never replaces mocks. The directive-vs-call@ precision asymmetry recorded in old sessions did **not** reproduce (2026-10 retest, §3: identical exact results for literal args); still-binding: same-run exclusivity (a function whose `@nudo:case` runs gets no `call@` cases that run), recursion deeper than `callSiteBudget` (3) widens the call@ witness to inner records + symbolic while the directive case stays exact, and `check` signatures are case-source-independent. Resolved items are one-line anchors in `../reports/limits-resolved.md`. Product CLI face and L1/L2: `cli-semantics.md`. Trust boundary: `kernel-merge.md`.
 
 ---
 
@@ -87,7 +87,76 @@
 
 ---
 
-## 3. 已解决
+## 3. `@nudo:case` 指令路径 vs `call@` 调用点路径（2026-10 复测）
+
+历史会话曾记录「指令路径大量构造退化为 `unknown`、调用点路径精确」的严重不对称
+（字符串方法 / sumTo / switch·typeof 曾是两路都精确的例外）。2026-10-16 用双夹具
+复测（同一组函数，指令版挂 `@nudo:case` 具体实参；call@ 版去指令、文件顶层以
+同样实参真实调用），**旧不对称未复现**：具体字面量实参下两路结果逐条一致且精确，
+昔日的「例外」成了全量基线。仍有效的差异只剩结构性的（§3.2），方向与旧断言相反或正交。
+
+### 3.1 复测夹具与结果
+
+夹具（throwaway，放 `/tmp`，不入 `docs/examples/`）覆盖字符串方法链 / 数组
+reduce / map HOF / `typeof` 守卫 / `switch` 守卫 / 可选链 + 空值合并 / `.length` /
+`join` / HOF 箭头实参 / `String()`·`replace(//g)` 字面量折叠：
+
+```js
+function norm(s) { return s.trim().split(",").map((p) => p.trim()).join("-"); }
+function sum(xs) { return xs.reduce((a, b) => a + b, 0); }
+function double(x) { if (typeof x === "number") return x * 2; return null; }
+function classify(x) {
+  switch (typeof x) { case "string": return x.length; case "number": return x; default: return -1; }
+}
+function portOf(cfg) { return cfg?.server?.port ?? 8080; }
+// 指令版：每函数 JSDoc 挂 `@nudo:case "x-lit" (<同一实参>)`
+// call@ 版：去指令，顶层 `norm("  a, b ,c ")` 等同名实参真实调用
+// 各自跑 `pnpm run test:cli <file>`
+```
+
+`pnpm run test:cli` 逐条对照（实参相同，两路输出一致）：
+
+| 构造 | 指令路径（`debug "…"`） | call@ 路径（`call@L…`） |
+|---|---|---|
+| `norm("  a, b ,c ")` 链式 trim/split/map/join | `"a-b-c"` | `"a-b-c"` |
+| `sum([1,2,3])` reduce | `6` | `6` |
+| `doubleAll([1,2,3])` map ×2 | `[2, 4, 6]` | `[2, 4, 6]` |
+| `double(21)` typeof 守卫 | `42` | `42` |
+| `classify("abc")` switch·typeof | `3` | `3` |
+| `portOf({server:{port:3000}})` `?.`+`??` | `3000` | `3000` |
+| `lenOf("hello")` / `joinAll(["x","y"])` | `5` / `"x-y"` | `5` / `"x-y"` |
+| `apply((x)=>x*3, 5)` HOF 箭头实参 | `15` | `15` |
+| `String("hi").toUpperCase()+"!"` / `replace(/-/g,"_")` | `"HI!"` / `"a_b_c"` | 同左 |
+| `new Date("2026-01-02").getFullYear()` | `number` | `number`（同精度：两路同不精确） |
+
+符号实参（约束构建器）是指令路径独有的观察面，且精确：`string()` → `string`、
+`array(number())` → `number[]`、`shape({server:{port:number()}})` → `number`。
+
+### 3.2 现存边界（仍有效）
+
+1. **test 同轮互斥**：`test` 命令本轮求值了某函数的 `@nudo:case`，该函数就不再
+   合成 `call@`/`entry@` case（`analyzer-orchestrate-uncached.ts`：
+   `caseIdxsToRun.length === 0` 才进 `synthCandidates`）。同一函数的两路结果
+   **不能同轮同报**；对比必须双文件 / 双函数副本。
+2. **递归 × callSiteBudget**：递归深度超过 `callSiteBudget`（默认 `3`）时，call@ 只报
+   内部递归记录 + 宽化 `call@symbolic`（`sumTo(3)` → 三条内层 `(0)(1)(2)` +
+   `(number) => 0 | number | string`），顶层精确见证 `6` 被预算挤出、不出现；
+   指令路径照常精确（`sumTo(3)` → `6`）。深度 ≤ 预算时外层调用可见
+   （`sumTo(2)` → `call@ (2) => 3`）。要递归函数的精确见证，用 `@nudo:case`
+   固化，不要依赖 call@。
+3. **check 面与 case 来源无关**：两变体 `pnpm run check` 签名逐字节一致
+   （combined face 不区分 case 来源）。路径差异只体现在 `test` 报告，不影响门禁。
+4. **call@ 只能观察真实调用**：构建器 / 符号实参无法经 call@ 表达（记录只来自
+   真实代码调用）；符号见证面只有指令路径。
+
+### 3.3 文档纪律
+
+写精度断言时两条路径都要当场实跑，不得沿用旧会话记忆；「指令路径退化 unknown」
+的旧结论作废（2026-10 复测未复现），引用本节复测结果为准。
+
+---
+
+## 4. 已解决
 
 已闭环条目（一行锚）归档在 [`../reports/limits-resolved.md`](../reports/limits-resolved.md)；行为以测试 / `docs/examples/` 为准。
 

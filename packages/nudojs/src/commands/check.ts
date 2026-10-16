@@ -108,6 +108,7 @@ import {
   shouldPrintDocsLinks,
   shouldUseDiskCache,
 } from "../check-ci-flags.ts";
+import { DIAG } from "@nudojs/core/internal";
 
 // ---------------------------------------------------------------------------
 // check — 门禁 + 签名表（Day 0 / CI）
@@ -142,7 +143,7 @@ export function fileEnvNamesFromText(source: string): string[] {
 // ---------------------------------------------------------------------------
 
 /** L2 入口 may-throw 诊断码（onboarding 指纹：error 全为此码才打引导块） */
-const ENTRY_MAY_THROW_CODE = "nudo:entry-may-throw";
+const ENTRY_MAY_THROW_CODE = DIAG.entryMayThrow;
 
 /**
  * 零配置指纹（#1）：源文件是否出现任何 @nudo:* 指令。

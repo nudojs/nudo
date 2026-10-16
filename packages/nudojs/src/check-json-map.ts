@@ -9,6 +9,7 @@ import {
   type CheckReport,
   type NudoSig,
 } from "@nudojs/core";
+import { DIAG } from "@nudojs/core/internal";
 
 /**
  * 磁盘缓存私有的签名注记（additive；写盘加、读回消费后剥除，
@@ -149,10 +150,10 @@ export function mockFromErrorIssues(
   mockFromErrors: Array<{ name: string; fromPath: string; message: string; code?: string }>,
 ): CheckIssue[] {
   return mockFromErrors.map((fe) => {
-    const isExpr = fe.code === "nudo:mock-invalid";
+    const isExpr = fe.code === DIAG.mockInvalid;
     return {
       severity: "error" as const,
-      code: (fe.code ?? "nudo:module-missing") as string,
+      code: (fe.code ?? DIAG.moduleMissing) as string,
       message: fe.message,
       suggestion: isExpr
         ? "Fix the @nudo:mock expression (constraint builders, literals, or arrow functions)"
@@ -186,12 +187,12 @@ export function domainIssuesFromDiagnostics(
   diagnostics: readonly DomainDiagnosticLike[],
 ): CheckIssue[] {
   return diagnostics
-    .filter((d) => d.code === "nudo:interface-domain-exceeds")
+    .filter((d) => d.code === DIAG.interfaceDomainExceeds)
     .map((d) => {
       const data = (d.data ?? {}) as { actual?: unknown; expected?: unknown };
       return {
         severity: d.severity === "error" ? ("error" as const) : ("warning" as const),
-        code: "nudo:interface-domain-exceeds" as const,
+        code: DIAG.interfaceDomainExceeds,
         message: d.message,
         line: d.range.start.line,
         column: d.range.start.column,
@@ -210,7 +211,7 @@ export function dualEntryIssue(dual: {
 }): CheckIssue {
   return {
     severity: "info",
-    code: "nudo:dual-entry",
+    code: DIAG.dualEntry,
     message: dual.message,
     line: dual.line,
     column: dual.column,
@@ -268,7 +269,7 @@ export function mergeJsonIssues<T extends JsonSummarized>(
 }
 
 /** path env 加载失败告警码（live 瞬态：每轮 preloadPathEnvs 现场收集） */
-export const ENV_UNRESOLVED_CODE = "nudo:env-unresolved";
+export const ENV_UNRESOLVED_CODE = DIAG.envUnresolved;
 
 type StripSummaryLike = {
   issues: Array<{ severity?: string; code?: string }>;

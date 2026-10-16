@@ -5,6 +5,7 @@
   "version": "0.3.47",
   "private": true,
   "publisher": "wmzy",
+  "license": "MIT",
   "engines": {
     "vscode": "^1.85.0"
   },

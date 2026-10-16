@@ -8,6 +8,9 @@
  * See ../PUBLIC_API.md.
  */
 
+// 诊断码注册表（`nudo:*` 码单一真理源；core 内部走 ./algebra/diag-codes.ts 相对 import）
+export { DIAG, type DiagCode } from "./algebra/diag-codes.ts";
+
 // leak / budgets / memo keys
 export {
   stripCommentsAndStrings, stripStringsKeepComments,

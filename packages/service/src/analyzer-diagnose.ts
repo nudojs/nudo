@@ -4,7 +4,7 @@
  */
 import type { Node } from "@babel/types";
 import type { FunctionWithDirectives } from "@nudojs/parser";
-import { maskCommentsAndStrings, scanStringLiterals } from "@nudojs/core/internal";
+import { DIAG, maskCommentsAndStrings, scanStringLiterals } from "@nudojs/core/internal";
 import { CONSTRAINT_EXPR_RE } from "@nudojs/core";
 import {
   absStructureKey,
@@ -52,7 +52,7 @@ export function validateMockDirectives(
         range: { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } },
         severity: "warning",
         message: `Mock expression "${expr}" could not be parsed as a known pattern`,
-        code: "nudo:mock-invalid",
+        code: DIAG.mockInvalid,
         suggestions: [
           "Supported formats: stub(), stub().returns(value), spy(), mock()",
           "Arrow functions: (args) => expression or (args) => { statements; return value; }",

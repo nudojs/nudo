@@ -27,6 +27,7 @@ import {
   type CallRecord,
   type AnalysisResult,
 } from "@nudojs/service";
+import { DIAG } from "@nudojs/core/internal";
 
 export type EmitCasesOptions = { mode: "add" | "update"; dryRun: boolean; exitOnDiff: boolean };
 
@@ -40,12 +41,12 @@ function usageError(message: string, fix: string): void {
 export type PathError = {
   path: string;
   code:
-    | "nudo:path-not-found"
-    | "nudo:path-empty-dir"
-    | "nudo:path-not-target"
-    | "nudo:path-missing-callsite"
+    | typeof DIAG.pathNotFound
+    | typeof DIAG.pathEmptyDir
+    | typeof DIAG.pathNotTarget
+    | typeof DIAG.pathMissingCallsite
     /** BUG-023：--out 等 IO 失败（mkdir/write）——原始 errno 不进产品面 */
-    | "nudo:path-io";
+    | typeof DIAG.pathIo;
   message: string;
   suggestion: string;
 };
@@ -112,7 +113,7 @@ export function collectExternalRecords(
     if (!existsSync(sitePath)) {
       const err: PathError = {
         path: sitePath,
-        code: "nudo:path-missing-callsite",
+        code: DIAG.pathMissingCallsite,
         message: `Callsite file not found: ${sitePath}`,
         suggestion: `pass --from <file-or-dir> that exists; it supplies call@ records for generation`,
       };
@@ -150,7 +151,7 @@ export function resolveTargetsCollect(path: string): { targets: string[]; errors
       errors: [
         {
           path: resolved,
-          code: "nudo:path-not-found",
+          code: DIAG.pathNotFound,
           message: `Not found: ${resolved}`,
           suggestion: `check the path; it must be an existing .js/.mjs/.ts file or a directory containing them`,
         },
@@ -165,7 +166,7 @@ export function resolveTargetsCollect(path: string): { targets: string[]; errors
         errors: [
           {
             path: resolved,
-            code: "nudo:path-empty-dir",
+            code: DIAG.pathEmptyDir,
             message: `No nudo files found in directory: ${resolved}`,
             suggestion: `add .js/.mjs/.ts sources (or point at a directory that has them); sidecar/decl/JSX are skipped`,
           },
@@ -180,7 +181,7 @@ export function resolveTargetsCollect(path: string): { targets: string[]; errors
       errors: [
         {
           path: resolved,
-          code: "nudo:path-not-target",
+          code: DIAG.pathNotTarget,
           message: `Not an analysis target (need .js/.mjs/.ts, not sidecar/decl/JSX): ${resolved}`,
           suggestion: `pass a .js/.mjs/.ts analysis file (not .nudo.js sidecars, .d.ts decls, or .jsx/.tsx)`,
         },

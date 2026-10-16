@@ -36,7 +36,7 @@ import {
   collectSkipReturns,
   isNudoTargetPath,
 } from "@nudojs/service";
-import { parse } from "@nudojs/parser";
+import { parse, programBody } from "@nudojs/parser";
 import {
   abs,
   num,
@@ -956,7 +956,7 @@ export type InterfaceLensDeps = {
 function topLevelFunctionSlots(source: string): Array<{ name: string; line: number }> {
   const ast = parse(source);
   const out: Array<{ name: string; line: number }> = [];
-  for (const stmt of (ast as any).program.body ?? []) {
+  for (const stmt of programBody(ast)) {
     const line = stmt.loc?.start?.line;
     if (typeof line !== "number") continue;
     const d = stmt.type === "ExportNamedDeclaration" ? stmt.declaration : stmt;

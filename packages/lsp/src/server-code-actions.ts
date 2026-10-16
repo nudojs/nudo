@@ -16,6 +16,7 @@ import { inlineVariableAt, makeParamOptionalAt } from "./refactor-b2.ts";
 import type { AgentToolDeps } from "./agent-tools.ts";
 import { uriToFilePath } from "./validation.ts";
 import { filePathToUri } from "./server-navigation.ts";
+import { DIAG } from "@nudojs/core/internal";
 
 export type CodeActionDeps = {
   connection: Connection;
@@ -109,7 +110,7 @@ connection.onCodeAction((params) => {
       });
     }
     // A6：缺 slot → 调用点插字段 + 侧车 shape 补字段
-    if (diag.code === "nudo:constraint-violated" || diag.code === "nudo:missing-slot") {
+    if (diag.code === DIAG.constraintViolated || diag.code === DIAG.missingSlot) {
       const data = (diag.data ?? {}) as {
         expected?: string;
         actual?: string;
@@ -204,17 +205,19 @@ connection.onCodeAction((params) => {
       const loosen = sug.match(
         /Loosen the handwritten contract for\s+(\w+)\s*\((\w+):\s*([^)]+)\)/i,
       ) ?? sug.match(/放宽\s+(\w+)\s*的前置/) ?? sug.match(/改用满足\s+(.+?)\s*的/);
-      const relaxableCodes = new Set([
-        "nudo:constraint-violated",
+      const relaxableCodes = new Set<string>([
+        DIAG.constraintViolated,
+        // 不进 DIAG 注册表：从未发射的遗留宽松匹配名（无 glossary 锚点），
+        // 仅为旧缓存诊断的兜底匹配保留字面量
         "nudo:domain-exceeds",
-        "nudo:interface-domain-exceeds",
+        DIAG.interfaceDomainExceeds,
         "constraint-violated",
         "contract",
       ]);
       // missing-slot 只补字段，不挂「放宽侧车」——避免剥掉无关数值谓词
       const codeStr = String(diag.code ?? "");
       const isMissingSlot =
-        codeStr === "nudo:missing-slot" || codeStr === "missing-slot";
+        codeStr === DIAG.missingSlot || codeStr === "missing-slot";
       const canRelax =
         !isMissingSlot &&
         (loosen !== null ||
@@ -327,7 +330,7 @@ connection.onCodeAction((params) => {
 
       // unproven-return relax：补 a6-relax 的实际文本改写（review）
       if (
-        code === "nudo:unproven-return" &&
+        code === DIAG.unprovenReturn &&
         action.kind === "relax" &&
         fn &&
         sidecarText !== undefined

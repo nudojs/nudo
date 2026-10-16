@@ -40,6 +40,7 @@ import {
   resolveCalleeFn,
   type ExternalFnRef,
 } from "./scan-call-graph.ts";
+import { DIAG } from "./diag-codes.ts";
 /**
  * HOF 实参是否满足目标 fn 形状。
  * 自定义放宽比较：JS 允许多余实参（src.params.length >= tgt.params.length）。
@@ -310,7 +311,7 @@ export function scanLiteralCalls(
             const field = fieldPath.join(".");
             out.push({
               severity: "error",
-              code: "nudo:constraint-violated",
+              code: DIAG.constraintViolated,
               message: `${displayName}[${paramName}]: argument ⊭ precondition`,
               actual: formatAbs(arg),
               expected: `missing field ${field}`,
@@ -350,7 +351,7 @@ export function scanLiteralCalls(
           if (actualPrim !== undefined && actualPrim !== expected) {
             out.push({
               severity: "error",
-              code: "nudo:constraint-violated",
+              code: DIAG.constraintViolated,
               message: `${displayName}[${paramName}]: argument ⊭ precondition`,
               actual: formatAbs(arg),
               expected: `typeof ${paramName} = "${expected}"`,
@@ -374,7 +375,7 @@ export function scanLiteralCalls(
           ) {
             out.push({
               severity: "error",
-              code: "nudo:constraint-violated",
+              code: DIAG.constraintViolated,
               message: `${displayName}[${paramName}]: argument ⊭ precondition`,
               actual: formatAbs(arg),
               expected: predToString(p),
@@ -396,7 +397,7 @@ export function scanLiteralCalls(
             if (v !== undefined && lv !== v) {
               out.push({
                 severity: "error",
-                code: "nudo:constraint-violated",
+                code: DIAG.constraintViolated,
                 message: `${displayName}[${paramName}]: argument ⊭ precondition`,
                 actual: formatAbs(arg),
                 expected: predToString(p),
@@ -422,7 +423,7 @@ export function scanLiteralCalls(
             if (!pass && !unknown) {
               out.push({
                 severity: "error",
-                code: "nudo:constraint-violated",
+                code: DIAG.constraintViolated,
                 message: `${displayName}[${paramName}]: argument ⊭ precondition`,
                 actual: formatAbs(arg),
                 expected: predToString(p),
@@ -452,7 +453,7 @@ export function scanLiteralCalls(
             if (!ok) {
               out.push({
                 severity: "error",
-                code: "nudo:constraint-violated",
+                code: DIAG.constraintViolated,
                 message: `${displayName}[${paramName}]: argument ⊭ precondition`,
                 actual: formatAbs(arg),
                 expected: `length(${paramName}) ${opSym} ${n}`,
@@ -468,7 +469,7 @@ export function scanLiteralCalls(
           if (typeof lv === "boolean" || lv === null) {
             out.push({
               severity: "error",
-              code: "nudo:constraint-violated",
+              code: DIAG.constraintViolated,
               message: `${displayName}[${paramName}]: argument ⊭ precondition`,
               actual: formatAbs(arg),
               expected: predToString(p),
@@ -489,7 +490,7 @@ export function scanLiteralCalls(
           if (!ok) {
             out.push({
               severity: "error",
-              code: "nudo:constraint-violated",
+              code: DIAG.constraintViolated,
               message: `${displayName}[${paramName}]: argument ⊭ precondition`,
               actual: formatAbs(arg),
               expected: predToString(p),
@@ -537,7 +538,7 @@ export function scanLiteralCalls(
       ) {
         out.push({
           severity: "error",
-          code: "nudo:constraint-violated",
+          code: DIAG.constraintViolated,
           message: `${displayName}[${paramName}]: argument ⊭ precondition`,
           actual: formatAbs(absArg),
           expected: `object shape at ${path}`,
@@ -559,7 +560,7 @@ export function scanLiteralCalls(
         if (!field.optional && !field.constraint.isOptional) {
           out.push({
             severity: "error",
-            code: "nudo:constraint-violated",
+            code: DIAG.constraintViolated,
             message: `${displayName}[${paramName}]: argument ⊭ precondition`,
             actual: formatAbs(absArg),
             expected: `missing field ${fieldPath}`,
@@ -592,7 +593,7 @@ export function scanLiteralCalls(
       if (actualPrim !== constraint.prim) {
         out.push({
           severity: "error",
-          code: "nudo:constraint-violated",
+          code: DIAG.constraintViolated,
           message: `${displayName}[${paramName}]: argument ⊭ precondition`,
           actual: formatAbs(fieldAbs),
           expected: `typeof ${fieldPath} = "${constraint.prim}"`,
@@ -612,7 +613,7 @@ export function scanLiteralCalls(
       if (typeof iv === "number" && !Number.isInteger(iv)) {
         out.push({
           severity: "error",
-          code: "nudo:constraint-violated",
+          code: DIAG.constraintViolated,
           message: `${displayName}[${paramName}]: argument ⊭ precondition`,
           actual: formatAbs(fieldAbs),
           expected: `${fieldPath} is int`,
@@ -681,7 +682,7 @@ export function scanLiteralCalls(
             if (!ok) {
               out.push({
                 severity: "error",
-                code: "nudo:constraint-violated",
+                code: DIAG.constraintViolated,
                 message: `${displayName}[${paramName}]: argument ⊭ precondition`,
                 actual: formatAbs(fieldAbs),
                 expected: `length(${fieldPath}) ${opSym} ${n}`,
@@ -703,7 +704,7 @@ export function scanLiteralCalls(
           if (!ok) {
             out.push({
               severity: "error",
-              code: "nudo:constraint-violated",
+              code: DIAG.constraintViolated,
               message: `${displayName}[${paramName}]: argument ⊭ precondition`,
               actual: formatAbs(fieldAbs),
               expected: `${fieldPath} ${opSym} ${n}`,
@@ -732,7 +733,7 @@ export function scanLiteralCalls(
     ) {
       out.push({
         severity: "error",
-        code: "nudo:constraint-violated",
+        code: DIAG.constraintViolated,
         message: `${displayName}[${paramName}]: argument ⊭ precondition`,
         actual: formatAbs(fieldAbs),
         expected: `${fieldPath} ∈ ${formatConstraint(constraint)}`,
@@ -771,7 +772,7 @@ export function scanLiteralCalls(
             const field = fieldPath.join(".");
             out.push({
               severity: "error",
-              code: "nudo:constraint-violated",
+              code: DIAG.constraintViolated,
               message: `${displayName}[${paramName}]: argument ⊭ precondition`,
               actual: formatAbs(arg),
               expected: `missing field ${field}`,
@@ -819,7 +820,7 @@ export function scanLiteralCalls(
         ) {
           out.push({
             severity: "error",
-            code: "nudo:constraint-violated",
+            code: DIAG.constraintViolated,
             message: `${displayName}[${paramName}]: argument ⊭ precondition`,
             actual: formatAbs(arg),
             expected: `array at ${paramName}`,
@@ -837,7 +838,7 @@ export function scanLiteralCalls(
         if (typeof iv === "number" && !Number.isInteger(iv)) {
           out.push({
             severity: "error",
-            code: "nudo:constraint-violated",
+            code: DIAG.constraintViolated,
             message: `${displayName}[${paramName}]: argument ⊭ precondition`,
             actual: formatAbs(arg),
             expected: `${paramName} is int`,
@@ -1061,7 +1062,7 @@ export function scanLiteralCalls(
       // 外部被调契约解析失败：不再静默放弃执法——报 warning 便于定位
       out.push({
         severity: "warning",
-        code: "nudo:no-signature",
+        code: DIAG.noSignature,
         message: `${displayName}: external callee contract could not be resolved; skipping call-site precondition check`,
         fn: displayName,
         line: loc?.start.line,
@@ -1120,7 +1121,7 @@ export function scanLiteralCalls(
         const isPromote = rel.source === "promote";
         out.push({
           severity: isPromote ? "warning" : "error",
-          code: "nudo:arg-structure",
+          code: DIAG.argStructure,
           message: `${displayName}[${pname}]: argument is not a callable fn`,
           actual: formatAbs(absArg),
           expected: formatShape(expected),
@@ -1172,7 +1173,7 @@ export function scanLiteralCalls(
     } catch (e) {
       out.push({
         severity: "warning",
-        code: "nudo:no-signature",
+        code: DIAG.noSignature,
         message: `${displayName ?? fnName}: signature recovery failed (${e instanceof Error ? e.message : String(e)}); skipping call-site checks`,
         fn: displayName ?? fnName,
         line: loc?.start.line,

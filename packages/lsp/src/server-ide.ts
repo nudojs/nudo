@@ -29,7 +29,7 @@ import type { LoadModule } from "@nudojs/service";
 import { formatInterfaceTierLine } from "@nudojs/core";
 import { collectAbsInlays } from "@nudojs/core/internal";
 import { parse } from "@nudojs/parser";
-import traverse from "@babel/traverse";
+import { traverseEsm } from "./traverse-esm.ts";
 import type { CallExpression, Node } from "@babel/types";
 import { buildSignatureHelp } from "./signature-help.ts";
 import {
@@ -512,11 +512,8 @@ export function findEnclosingCall(
   line: number,
   column: number,
 ): { calleeLine: number; calleeCol: number; currentParamIndex: number } | null {
-  const raw = (
-    typeof traverse === "function" ? traverse : (traverse as unknown as { default?: typeof traverse }).default
-  );
-  if (typeof raw !== "function") return null;
-  const traverseFn = raw;
+  const traverseFn = traverseEsm();
+  if (typeof traverseFn !== "function") return null;
   let result: { calleeLine: number; calleeCol: number; currentParamIndex: number } | null = null;
   try {
     traverseFn(ast, {

@@ -13,7 +13,7 @@ import {
   sidecarPathOf,
   takeRefineDiagsSince,
 } from "@nudojs/core";
-import { sanitizeCommentText } from "@nudojs/core/internal";
+import { DIAG, sanitizeCommentText } from "@nudojs/core/internal";
 
 import { unifiedDiff } from "./case-emitter.ts";
 import { deriveFromRoot } from "./interface-derivation-derive.ts";
@@ -137,7 +137,7 @@ export function emitDerivedFromRoot(
       roots: derive.roots,
       issues: [
         {
-          code: "nudo:module-missing",
+          code: DIAG.moduleMissing,
           severity: "error",
           message: `derivation aborted: ${derive.graphError}`,
         },
@@ -204,7 +204,7 @@ export function emitDerivedFromRoot(
     for (const row of rows) {
       if (handwritten.has(row.fn)) {
         issues.push({
-          code: "nudo:interface-name-clash",
+          code: DIAG.interfaceNameClash,
           severity: "error",
           message: `sidecar already has a handwritten binding '${row.fn}' (${relative(process.cwd(), sidecarPath) || sidecarPath}); handwritten wins — skipping emit`,
         });
@@ -213,7 +213,7 @@ export function emitDerivedFromRoot(
       }
       if (row.underivable) {
         issues.push({
-          code: "nudo:interface-underivable",
+          code: DIAG.interfaceUnderivable,
           severity: "info",
           message: `${row.fn}: contract underivable from ${row.derivedFrom} (opaque / truncated / no evidence)`,
         });
@@ -294,7 +294,7 @@ export function emitDerivedFromRoot(
     // （单段自检挡不住 duplicate import / const 重定义）
     if (finalContent.trim() !== "" && !sidecarAssembles(finalContent, sidecarPath, loadModule)) {
       issues.push({
-        code: "nudo:interface-not-projectable",
+        code: DIAG.interfaceNotProjectable,
         severity: "error",
         message: `assembled sidecar failed round-trip (${relative(process.cwd(), sidecarPath) || sidecarPath}); refusing to write`,
       });

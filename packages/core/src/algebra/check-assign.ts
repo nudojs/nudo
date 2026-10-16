@@ -11,6 +11,7 @@ import { joinAbs } from "./objects.ts";
 import { leqAbs } from "./leq.ts";
 import { formatAbs } from "./format.ts";
 import type { CheckIssue } from "./check-report.ts";
+import { DIAG } from "./diag-codes.ts";
 
 /**
  * assign 通道 mutable 拓宽：lit→prim、tuple→arr。
@@ -119,7 +120,7 @@ export function structuralAssignIssues(records: AbsAssignRecord[]): CheckIssue[]
     if (!leq.ok) {
       out.push({
         severity: "error",
-        code: "nudo:assign-mismatch",
+        code: DIAG.assignMismatch,
         message: `${r.name}: assignment ⊭ existing shape`,
         actual: formatAbs(r.next),
         expected: formatAbs(r.prev),

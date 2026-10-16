@@ -27,6 +27,7 @@ import { describe, it, expect } from "vitest";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { DIAG } from "@nudojs/core/internal";
 
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
 
@@ -184,8 +185,13 @@ function srcFiles(): string[] {
   );
 }
 
+// 双源（P3-7 诊断码注册表落地后不得丢强制力）：
+//   1. 注册表值 —— @nudojs/core 的 DIAG 是生产面 `nudo:*` 诊断码的唯一真理源
+//      （生产 src 的 code 赋值/查找表/相等比较已改用 DIAG.*，字面量扫描面收缩）；
+//   2. src 残留字面量扫描 —— 兜住注册表外的 `code: "nudo:*"` 字面量
+//      （新码漏进注册表直接写字面量时仍被强制）。
 function emittedCodes(): Set<string> {
-  const codes = new Set<string>();
+  const codes = new Set<string>(Object.values(DIAG));
   for (const f of srcFiles()) {
     for (const m of readFileSync(f, "utf8").matchAll(/code:\s*"(nudo:[\w-]+)"/g)) {
       codes.add(m[1]);

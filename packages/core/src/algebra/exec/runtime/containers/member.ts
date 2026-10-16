@@ -154,7 +154,10 @@ export const NAMESPACE_GLOBALS: ReadonlyArray<readonly [string, unknown]> = [
   ["Uint16Array", Uint16Array],
   ["Int32Array", Int32Array],
   ["Uint32Array", Uint32Array],
-  ["Float16Array", Float16Array],
+  // Node <24 无 Float16Array 全局（V8 13.x 引入）；engines 声明 node>=20，
+  // 模块级表裸读会让 CLI 在 Node ≤22 启动即 ReferenceError。运行时不存在
+  // 该全局时如实不注册（无值可路由，namespaceNameOf 也无对应值可撞）。
+  ...(typeof Float16Array !== "undefined" ? ([["Float16Array", Float16Array]] as const) : []),
   ["Float32Array", Float32Array],
   ["Float64Array", Float64Array],
   ["BigInt64Array", BigInt64Array],

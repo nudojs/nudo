@@ -27,7 +27,7 @@ import {
   extractBalancedParens,
 } from "@nudojs/core";
 // 字面量助手单源：core/internal 的 absLit（env/harvester/service 测试同源）
-import { absLit } from "@nudojs/core/internal";
+import { absLit, DIAG } from "@nudojs/core/internal";
 import { parse as babelParse } from "./parse.ts";
 
 function absExact(shape: Abs["shape"]): Abs {
@@ -294,7 +294,7 @@ function tryParseConstraint(expr: string): NudoConstraint | undefined {
   // 必须过 AST 白名单，否则 `number(), process.exit(1)` 可借前缀执行任意 JS。
   if (!isSafeTypeExprSource(s)) {
     emitDirectiveDiag({
-      code: "nudo:directive-syntax",
+      code: DIAG.directiveSyntax,
       message: `Unsafe constraint expression rejected: ${s.slice(0, 80)} (only builder calls, chain methods, and literals are allowed)`,
     });
     return undefined;
@@ -403,7 +403,7 @@ const MAX_CASE_ARG_DEPTH = 32;
 /** 深度超限统一诊断：截断预览，防止恶意超长实参借诊断报文膨胀缓冲 */
 function depthCapDiag(expr: string): Abs {
   emitDirectiveDiag({
-    code: "nudo:directive-syntax",
+    code: DIAG.directiveSyntax,
     message: `Type expression nesting exceeds depth ${MAX_CASE_ARG_DEPTH}: ${expr.trim().slice(0, 40)} … (deeper structure collapses to unknown)`,
   });
   return absUnknown();
@@ -673,7 +673,7 @@ function parseAbsExprDiag(expr: string, context: string): Abs {
   const abs = parseCaseArgExpr(expr);
   if (abs.shape.k === "unknown" && !abs.term && !isExplicitUnknownExpr(expr)) {
     emitDirectiveDiag({
-      code: "nudo:directive-syntax",
+      code: DIAG.directiveSyntax,
       message: `Unrecognized type expression in ${context}: ${expr.trim()} (use constraint builders, literals, or structure syntax)`,
     });
   }
@@ -697,7 +697,7 @@ function parseSkipReturnsExpr(rest: string | undefined): Abs | undefined {
     const expr = s.slice(2).trim();
     if (expr === "") {
       emitDirectiveDiag({
-        code: "nudo:directive-syntax",
+        code: DIAG.directiveSyntax,
         message: `@nudo:skip => requires a type expression (e.g. @nudo:skip => number())`,
       });
       return undefined;
@@ -714,7 +714,7 @@ function parseSkipReturnsExpr(rest: string | undefined): Abs | undefined {
     if (inner === null) {
       // S4-003 同族：`@nudo:skip (number()` 括号未闭合不再静默落回散文分支
       emitDirectiveDiag({
-        code: "nudo:directive-syntax",
+        code: DIAG.directiveSyntax,
         message: `@nudo:skip type expression has unclosed parenthesis (expected @nudo:skip (<typeExpr>)) — got: ${s.slice(0, 60)}`,
       });
       return undefined;
@@ -1100,7 +1100,7 @@ function parseDirectivesFromCommentTexts(
       // 无数字 / 非完整数字 token：显式 nudo:directive-syntax，不再静默忽略或截断
       if (raw === undefined || !SAMPLE_NUM_RE.test(raw)) {
         emitDirectiveDiag({
-          code: "nudo:directive-syntax",
+          code: DIAG.directiveSyntax,
           message: `Malformed @nudo:sample: expected a numeric count (integer, decimal, or negative) — got: @nudo:sample ${raw ?? "(missing count)"}`,
         });
         continue;
@@ -1131,7 +1131,7 @@ function scanMalformedCaseNames(text: string, caseArgSpans: [number, number][]):
       const parenIdx = m.index + m[0].length - m[1]!.length + legal[0].length - 1;
       if (extractBalancedParens(text, parenIdx) === null) {
         emitDirectiveDiag({
-          code: "nudo:directive-syntax",
+          code: DIAG.directiveSyntax,
           message: `Malformed @nudo:case: unclosed argument list (missing closing ")") — got: @nudo:case ${rest.slice(0, 60)}`,
         });
       }
@@ -1150,7 +1150,7 @@ function scanMalformedCaseNames(text: string, caseArgSpans: [number, number][]):
       reason = `missing quoted name (expected @nudo:case "name" (…))`;
     }
     emitDirectiveDiag({
-      code: "nudo:directive-syntax",
+      code: DIAG.directiveSyntax,
       message: `Malformed @nudo:case: ${reason} — got: @nudo:case ${rest.slice(0, 60)}`,
     });
   }
@@ -1172,7 +1172,7 @@ function scanMalformedMockNames(text: string, caseArgSpans: [number, number][]):
     const nameMatch = rest.match(/^([^\s=]+)(?:\s*=|\s+from\b)/);
     if (!nameMatch) {
       emitDirectiveDiag({
-        code: "nudo:directive-syntax",
+        code: DIAG.directiveSyntax,
         message: `Malformed @nudo:mock: cannot parse name (expected @nudo:mock <ident> = <expr> or @nudo:mock <ident> from "path" / 'path') — got: ${rest.slice(0, 60)}`,
       });
       continue;
@@ -1180,7 +1180,7 @@ function scanMalformedMockNames(text: string, caseArgSpans: [number, number][]):
     const name = nameMatch[1]!;
     if (!JS_IDENT_RE.test(name)) {
       emitDirectiveDiag({
-        code: "nudo:directive-syntax",
+        code: DIAG.directiveSyntax,
         message: `Malformed @nudo:mock name '${name}': not a valid identifier (use letters, digits, _, $; Unicode letters allowed)`,
       });
       continue;
@@ -1191,7 +1191,7 @@ function scanMalformedMockNames(text: string, caseArgSpans: [number, number][]):
     const afterName = rest.slice(name.length);
     if (/^[ \t]+from[ \t]+(?:"[^"\n]*|'[^'\n]*)$/.test(afterName)) {
       emitDirectiveDiag({
-        code: "nudo:directive-syntax",
+        code: DIAG.directiveSyntax,
         message: `Malformed @nudo:mock from: unclosed quote in path (expected @nudo:mock ${name} from "path" / 'path') — got: @nudo:mock ${rest.slice(0, 60)}`,
       });
     }
@@ -1356,7 +1356,7 @@ function collectInlineDirectivesFromComments(comments: readonly Comment[]): Inli
         if (trailingIdx !== -1) {
           const typePart = rawExpr.slice(0, trailingIdx).trim();
           emitDirectiveDiag({
-            code: "nudo:directive-syntax",
+            code: DIAG.directiveSyntax,
             message: `Trailing comment in @nudo:as type expression: '${rawExpr}' (remove the comment; the type must be a clean expression)`,
           });
           results.push({ kind: "as", typeAbs: typePart ? parseAbsExprDiag(typePart, "@nudo:as") : absUnknown() });
@@ -1368,7 +1368,7 @@ function collectInlineDirectivesFromComments(comments: readonly Comment[]): Inli
       if (AS_BARE_RE.test(line)) {
         // 空载荷不再静默：`@nudo:as` 单独成行发显式诊断
         emitDirectiveDiag({
-          code: "nudo:directive-syntax",
+          code: DIAG.directiveSyntax,
           message: `@nudo:as requires a type expression (e.g. @nudo:as number())`,
         });
         continue;
@@ -1388,7 +1388,7 @@ function collectInlineDirectivesFromComments(comments: readonly Comment[]): Inli
           });
         } else {
           emitDirectiveDiag({
-            code: "nudo:directive-syntax",
+            code: DIAG.directiveSyntax,
             message: `Malformed @nudo:replace: cannot separate target from type (expected @nudo:replace <target> <typeExpr>) — got: ${raw.slice(0, 60)}`,
           });
         }
@@ -1396,7 +1396,7 @@ function collectInlineDirectivesFromComments(comments: readonly Comment[]): Inli
       }
       if (REPLACE_BARE_RE.test(line)) {
         emitDirectiveDiag({
-          code: "nudo:directive-syntax",
+          code: DIAG.directiveSyntax,
           message: `@nudo:replace requires a target and type expression (expected @nudo:replace <target> <typeExpr>)`,
         });
       }
@@ -1468,7 +1468,7 @@ function warnMisplacedFileTags(blockText: string): void {
   while ((m = FILE_TAG_IN_BLOCK_REGEX.exec(blockText))) {
     const tag = m[1]!;
     emitDirectiveDiag({
-      code: "nudo:directive-syntax",
+      code: DIAG.directiveSyntax,
       message:
         tag === "env"
           ? `@nudo:env is a file-level directive — use '/// @nudo:env node' at the top of the file (JSDoc block form is ignored)`

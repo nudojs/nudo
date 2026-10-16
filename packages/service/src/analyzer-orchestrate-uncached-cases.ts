@@ -16,6 +16,7 @@ import {
   unknown as absUnknown,
 } from "@nudojs/core";
 import {
+  DIAG,
   setMayThrowCollector,
   mayThrowEffectsToAbs,
   formatThrowsAbs,
@@ -234,7 +235,7 @@ export function evaluateCaseDirectives(
               range: { start: { line: directive.commentLine, column: 0 }, end: { line: directive.commentLine, column: 999 } },
               severity: "error",
               message: `debug "${directive.name}": expected ${formatShape(directive.expected)}, got ${formatShape(caseAbs)}. The inferred return type does not match the expected type declared in the @nudo:case witness`,
-              code: "nudo:case-expected",
+              code: DIAG.caseExpected,
             });
           }
         }
@@ -251,7 +252,7 @@ export function evaluateCaseDirectives(
             range: throwRange,
             severity: "warning",
             message: `Function "${fn.name}" case "${directive.name}" may throw: ${formatShape(caseThrowsAbs)}. Consider adding a try-catch block or using @nudo:contract return <constraint>`,
-            code: "nudo:may-throw",
+            code: DIAG.mayThrow,
           });
         }
         // unreachable 诊断已由文件级 collectEvalDiagnostics 统一上报（无 case 级重复扫描）
@@ -510,7 +511,7 @@ export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidat
             },
             severity: "info",
             message: `export '${candidate.analysis.name}' has no contract root and no call-site domain (entry-only)`,
-            code: "nudo:interface-entry-only",
+            code: DIAG.interfaceEntryOnly,
           });
         }
       }
