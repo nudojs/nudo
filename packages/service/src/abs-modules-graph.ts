@@ -23,7 +23,7 @@ import {
 } from "@nudojs/core";
 import type { Node } from "@babel/types";
 import { bareSpecToAbsModules } from "@nudojs/harvester";
-import { hashSource, stablePathKey } from "@nudojs/core/internal";
+import { hashSource, stablePathKey, clearLiveImportRefreshers } from "@nudojs/core/internal";
 import { resolveNpmJsEntryDetailed } from "./evaluator/resolve-npm.ts";
 import { moduleResolveCandidates } from "./load-module.ts";
 import { BoundedLruMap } from "./lru-map.ts";
@@ -402,22 +402,30 @@ export function evalExportsToModuleExports(
 ): AbsModuleExports {
   const named: Record<string, Abs> = {};
   let def: Abs | undefined;
+  let defGetter: (() => unknown) | undefined;
   const paramTable = topLevelFnParams(file);
-  for (const [k, v] of Object.entries(run)) {
-    let absVal: Abs;
+  // Bug ②（ESM live binding）：run 表的导出槽是 getter（run.ts ret 挂载），
+  // 读取时解析模块作用域当前值。转换侧同样挂 getter 保持 liveness——
+  // 若此处按值快照（Object.entries 求值），依赖内部变异对导入方不可见。
+  // 桥接 fn 按底层函数身份 memo：依赖重绑导出到新函数后按需重建桥，
+  // 同一函数重复读取保持 Abs 身份稳定。
+  const fnBridgeMemo = new WeakMap<Function, Abs>();
+  const convert = (v: unknown, k: string): Abs => {
     if (v === undefined || v === null) {
       // 「名存在但值 undefined/null」≠「从未导出」：保留槽位
-      absVal = v === null ? nullAbs() : undefAbs();
-    } else if (isAbsVal(v)) {
-      absVal = v;
-    } else if (typeof v === "function") {
+      return v === null ? nullAbs() : undefAbs();
+    }
+    if (isAbsVal(v)) return v;
+    if (typeof v === "function") {
+      const hit = fnBridgeMemo.get(v as Function);
+      if (hit) return hit;
       const params =
         paramTable.get(k) ??
         Array.from({ length: (v as { length?: number }).length ?? 0 }, (_, i) => `arg${i}`);
       // Bug 9：求值模块的宿主函数导出（函数声明产物）——generator/async 不可
       // new，普通声明可 new。可构造性 facet 进 shape（$new 校验）。
       const ctorFacet = hostFnCtorFacet(v as Function);
-      absVal = absFunction(params, {
+      const bridged = absFunction(params, {
         // H1：throws 面经 apply 返回值通道保留（callTranspiledExportApply），
         // $call 统一路由——桥内不得再手拆 .result / 自行 re-throw（BUG-006 根治）。
         apply: callTranspiledExportApply(run, k),
@@ -427,14 +435,39 @@ export function evalExportsToModuleExports(
         // _activeCallKeys 递归守卫被误截断为 opaque。按 模块#导出 唯一化。
         fingerprint: `${fingerprintPrefix}#${k}`,
       }, ctorFacet !== undefined ? { ctor: ctorFacet } : undefined);
-    } else {
-      absVal = unknown;
+      fnBridgeMemo.set(v as Function, bridged);
+      return bridged;
     }
+    return unknown;
+  };
+  for (const k of Object.keys(run)) {
+    const d = Object.getOwnPropertyDescriptor(run, k);
+    if (d?.get) {
+      // live 槽：getter 读取时转换（值/函数均按当前值）
+      const resolve = d.get;
+      if (k === "default") {
+        defGetter = resolve;
+      } else {
+        Object.defineProperty(named, k, {
+          enumerable: true,
+          configurable: true,
+          get: () => convert(resolve(), k),
+        });
+      }
+      continue;
+    }
+    const absVal = convert(run[k], k);
     if (k === "default") def = absVal;
     else named[k] = absVal;
   }
   const out: AbsModuleExports = { named, evaluated: true };
-  if (def !== undefined) out.default = def;
+  if (defGetter) {
+    Object.defineProperty(out, "default", {
+      enumerable: true,
+      configurable: true,
+      get: () => convert(defGetter!(), "default"),
+    });
+  } else if (def !== undefined) out.default = def;
   // CJS `module.exports = X` 重赋值形态：原生 require 返回 X 本身——
   // 供 run.ts requireFromModules 返回 default（Bug 10 obj-callee 定抛
   // 暴露的形状失真：单函数导出包折成 namespace obj 后不可调）。
@@ -526,6 +559,9 @@ export function evalAbsModuleGraph(
   entryFile: string,
   opts: AbsGraphOptions = {},
 ): AbsModuleGraphResult {
+  // Bug ②：每轮模块图求值入口清空 live import 刷新注册表——上一轮闭包只指向
+  // 已死模块作用域（语义无害但滞留膨胀）；本轮各模块求值时重新注册。
+  clearLiveImportRefreshers();
   const load = opts.loadModule ?? defaultAbsLoadModule;
   // 命中校验分叉开关：opts.loadModule 存在（custom loader，LSP buffer 等）时
   // 条目自身按 loader 内容复核；缺省（默认 loader）保持 stat 快路径（见
@@ -714,8 +750,31 @@ export function evalAbsModuleGraph(
     }
     loading.pop();
     // 就地回填占位：环内 import 持有的是 placeholder 引用，换新对象会永远空导出。
-    Object.assign(placeholder.named, exports.named);
-    if (exports.default !== undefined) placeholder.default = exports.default;
+    // 描述符迁移（Bug ②）：Object.assign 会把 named 表的 live getter 求值成
+    // 数据快照——getter 原样搬运，保持导出槽读取时解析模块当前值。
+    for (const k of Object.keys(exports.named)) {
+      const d = Object.getOwnPropertyDescriptor(exports.named, k);
+      if (!d) continue;
+      Object.defineProperty(
+        placeholder.named,
+        k,
+        d.get
+          ? { enumerable: true, configurable: true, get: d.get }
+          : { enumerable: true, configurable: true, writable: true, value: d.value },
+      );
+    }
+    const defDesc = Object.getOwnPropertyDescriptor(exports, "default");
+    if (defDesc) {
+      Object.defineProperty(
+        placeholder,
+        "default",
+        defDesc.get
+          ? { enumerable: true, configurable: true, get: defDesc.get }
+          : { enumerable: true, configurable: true, writable: true, value: defDesc.value },
+      );
+    } else if (exports.default !== undefined) {
+      placeholder.default = exports.default;
+    }
     if (exports.evaluated) placeholder.evaluated = true;
     // CJS `module.exports = X` 重赋值标记（require 返回 X 本身，Bug 10 回归）
     if (exports.cjsMain) placeholder.cjsMain = true;

@@ -1213,6 +1213,7 @@
       "checkInjectedDomainEvidence",
       "classChainNames",
       "classFromMethods",
+      "clearLiveImportRefreshers",
       "clearPureCallMemo",
       "clearPureMemo",
       "coerceAsyncReturn",

@@ -58,12 +58,22 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   // assumeDirectiveFile（transpileFnBodyStmts 在函数体边界收待锚定
   // declarator）；无引理的文件锚定收集整体跳过，发射产物逐字节不变。
   const assumeFile = (opts.source ?? "").includes("@nudo:assume");
+  // Bug ②：ESM import 绑定对用户代码不可变（再赋值 TypeError，
+  // "Assignment to constant variable"）——import 本地名进模块级 const 面：
+  // 标识符赋值/自增/逻辑赋值走既有 $throwConstAssign 通道；嵌套作用域
+  // computeConstScope 并集继承、参数/块级 let 遮蔽自动扣除。
+  const importConstNames = new Set<string>();
+  for (const s of file.program.body) {
+    if (s.type !== "ImportDeclaration") continue;
+    for (const spec of s.specifiers) importConstNames.add(spec.local.name);
+  }
   const scopedOpts: TranspileOptions = {
     ...opts,
     destrTmpSeq,
     tryTmpSeq,
     ...(varEmitNames.size > 0 ? { hoistedVarNames: varEmitNames } : {}),
     ...(assumeFile ? { assumeDirectiveFile: true } : {}),
+    ...(importConstNames.size > 0 ? { constNames: importConstNames } : {}),
   };
   const lines: string[] = [
     `// nudo evaluator transpile — values are Abs; operators are overloaded calls`,

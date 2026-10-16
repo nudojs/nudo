@@ -685,6 +685,13 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         ...opts,
         inLoop: (opts.inLoop ?? 0) + 1,
         loopLabel: undefined, // 标签属于本循环；体 opts 不得传给嵌套循环
+        // 循环变量是状态线程参数（`(initName) => {…}`），遮蔽外层
+        // const/import 同名绑定（Bug ②）——体内赋值合法，扣除误折面
+        ...(opts.constNames && opts.constNames.has(initName)
+          ? {
+              constNames: new Set([...opts.constNames].filter((n) => n !== initName)),
+            }
+          : {}),
       };
       const bodyStmts =
         stmt.body.type === "BlockStatement"
@@ -1148,6 +1155,14 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           collectPatternNames(stmt.left.declarations[0].id, patternNames);
           for (const n of patternNames) loopConstNames.add(n);
         }
+      } else if (
+        stmt.left.type === "VariableDeclaration" &&
+        (stmt.left.kind === "let" || stmt.left.kind === "var") &&
+        stmt.left.declarations[0]?.id.type === "Identifier"
+      ) {
+        // let/var 头绑定遮蔽外层 const/import 名（Bug ②）：体内可再赋，
+        // 不得误折 TypeError——从继承的 const 面扣除遮蔽名
+        loopConstNames.delete(stmt.left.declarations[0].id.name);
       }
       if (
         stmt.left.type === "VariableDeclaration" &&

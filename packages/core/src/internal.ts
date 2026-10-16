@@ -48,6 +48,10 @@ export {
   clearPureMemo
 } from "./algebra/exec/call.ts";
 export {
+  // Bug ②：ESM live import 刷新注册表生命周期（evalAbsModuleGraph 入口清空）
+  clearLiveImportRefreshers
+} from "./algebra/exec/live-imports.ts";
+export {
   type CollectorScopeParticipant, type ScopedSlot,
   createScopedSlot, registerCollectorScopeParticipant, runWithCollectorScope,
 } from "./algebra/collector-scope.ts";
