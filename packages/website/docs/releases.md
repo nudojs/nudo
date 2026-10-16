@@ -11,139 +11,155 @@ This page keeps each package’s **current** notes only. Full history: [Full rel
 
 | Package | Current version |
 |----------|-----------------|
-| `@nudojs/core` | 1.14.0 |
-| `@nudojs/service` | 1.7.0 |
-| `nudojs (CLI)` | 1.4.0 |
-| `@nudojs/parser` | 1.4.23 |
-| `@nudojs/lsp` | 1.6.9 |
-| `@nudojs/env` | 0.4.41 |
-| `@nudojs/harvester` | 0.3.27 |
-| `vite-plugin-nudo` | 0.4.42 |
-| `nudo-vscode` | 0.3.46 |
+| `@nudojs/core` | 1.14.1 |
+| `@nudojs/service` | 1.8.0 |
+| `nudojs (CLI)` | 1.5.0 |
+| `@nudojs/parser` | 1.4.24 |
+| `@nudojs/lsp` | 1.6.10 |
+| `@nudojs/env` | 0.4.42 |
+| `@nudojs/harvester` | 0.3.28 |
+| `vite-plugin-nudo` | 0.4.43 |
+| `nudo-vscode` | 0.3.47 |
 
 **Jump to package:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.14.0 {#pkg-core}
+## @nudojs/core 1.14.1 {#pkg-core}
 
-## 1.14.0
+## 1.14.1
+
+### Patch Changes
+
+- c19bd48: Host-global function collection no longer leaks Node lazy-getter warnings, and check hints point at the env directive (fix-12 batch).
+  
+  - `hostGlobalFnIds` skips accessor properties by descriptor shape (deny-by-default) instead of a name denylist — bare-node embedding consumers no longer emit `ExperimentalWarning`/`DeprecationWarning` for localStorage, punycode (DEP0040), sys (DEP0025), wasi/ffi; only the empirically warning-free, function-valued accessors (`Buffer`, `assert`, `events`, `stream`, `node:test`) are read. Future warning-emitting lazy getters are skipped automatically (fail-closed); parity probe on node 26 confirms an identical 122-function collection set.
+  - Opaque-result diagnostics now suggest `/// @nudo:env` when the file imports builtin modules with no env active.
+
+Older versions (50) → [Full release history](./releases-history.md#pkg-core)
+
+## @nudojs/service 1.8.0 {#pkg-service}
+
+## 1.8.0
 
 ### Minor Changes
 
-- 0d9e7de: Pure-expression equality folding and the `@nudo:invariant` loop lemma close #175/#176 — `const d = a === b ? 0 : Math.max(a.length, b.length); const max = Math.max(a.length, b.length); return max - d` now proves `ge(0)` with no directive, and levenshtein-style DP loops gain a user-declared invariant channel.
+- c19bd48: Misplaced file-level directives now warn instead of being silently ignored, and `nudo.analysis.exclude` supports real globs (fix-12 batch).
   
-  - `sub` folds `x − x` to exact `0` (NaN arm preserved) when both operands carry structurally equal terms that pass `isDeterministicTerm` — `len#N` identity-minted leaves plus a deterministic host whitelist (`Math.max/min/…`, arithmetic). Adoption re-anchors, `get` member reads and `arg${i}` placeholders are rejected, so structurally-equal-but-distinct values never fold
-  - `sub` now consumes `@nudo:assume` premises (symmetric to `divAssumeBounds`): `@nudo:assume d <= max` proves `max - d ≥ 0` — the subtraction formulation of the similarity lemma previously had no working channel
-  - Domain-shared values (arr element handed to two index reads, for-of single representative, callback element args) are marked at hand-out (`len-sharing.ts`): `abstractLen` mints a fresh `len#N` per read and the reflexivity fold rejects marked operands — `xs[0].length - xs[1].length` no longer falsely folds to `0`
-  - `@nudo:invariant <name><path> <rel> <number>` (`dp[*][*] >= 0`, scalar `last >= 1`): loop analogue of `@nudo:assume` — parsed in core, seeded per target entry, enforced at loop join/widen on the named binding (element domains / object slots drilled by `[*]`/`.ident`), cleared at call boundaries, audited via `nudo:invariant-relied` info (+ `nudo:invariant-invalid` for bad syntax). Unguarded `dp[m][n]` keeps its honest `number | undefined` OOB read face
-  - `Array.from({length}, mapFn)` hands the callback a bounded index (`ge(0)`, plus `lt(length)` when the length term is available); the same bounds now apply to abstract-receiver `.map/.forEach/.reduce/...` callback indices and `entries()`; the array-like missing-slot seed no longer pins a false literal `0`
+  - parser: file-level directives (`@nudo:env` / `@nudo:mock-module`) written inside JSDoc blocks emit `nudo:directive-syntax` with the correct `///` form instead of being dropped silently.
+  - service: `nudo.analysis.exclude` accepts glob patterns (shared `compilePattern`, extracted from vite-plugin as the single source; plain substrings still work, defaults always stack).
+  - vite-plugin: pattern matching cut over to the shared `compilePattern` — behavior unchanged, one implementation.
 
-Older versions (49) → [Full release history](./releases-history.md#pkg-core)
+### Patch Changes
 
-## @nudojs/service 1.7.0 {#pkg-service}
+- Updated dependencies [c19bd48]
+- Updated dependencies [c19bd48]
+  - @nudojs/core@1.14.1
+  - @nudojs/parser@1.4.24
+  - @nudojs/env@0.4.42
+  - @nudojs/harvester@0.3.28
 
-## 1.7.0
+Older versions (52) → [Full release history](./releases-history.md#pkg-service)
+
+## nudojs (CLI) 1.5.0 {#pkg-nudojs}
+
+## 1.5.0
 
 ### Minor Changes
 
-- 0d9e7de: `@nudo:skip` no longer kills `@nudo:case` evaluation (#176) — the declared face and runtime ground truth are no longer a trade-off.
+- c19bd48: DX batch: face consistency across check/fix/export/health/test, plus `nudo init` and onboarding (fix-12, 20-point TS-parity batch).
   
-  - A skipped function keeps `combinedAbs` from its declared return face (dts/sidecar/draft consumers unchanged), while declared `@nudo:case` directives are evaluated and asserted as usual; `nudo test` prints the skip note and the case assertions in the same block (previously the cases vanished entirely: "no declared @nudo:case expectations")
-  - `nudo check` behavior is byte-identical (caseMode none — no case evaluation, no synthesized entry@ for skipped functions)
+  - `export --format dts` consumes contract faces through the same `effectiveInterface` source as `check` — non-exported top-level functions no longer leak into `.d.ts`; evidence-less params stay unknown with a stderr note.
+  - `health` budget line no longer contradicts `check`: per-file budget snapshot, attribution segments only for the budget that actually triggered (depth 64/64, not "eval calls 71/20000"); human face and multi-envelope budgets aligned.
+  - `check --fix` no longer writes non-fixing contracts: array-method receivers synthesize `array(shape({...}))` from callback element reads, and a re-check gate downgrades unprovable totality to `[review]` — no auto-applied half-fixes.
+  - new `nudo init`: writes an idempotent adoption baseline into package.json (L2 → warning).
+  - zero-config failing check prints an onboarding block (`init` / `contract --draft` / `--profile` adoption); gate exit code unchanged.
+  - `nudo.test.profile` typos warn on stderr; syntax-error files print tsc-style blocks (path:line:col + excerpt + caret), `--json` folds them into `pathErrors`.
+  - `nudo test` annotates `entry@` fallback cases on contracted functions.
+  - TTY colors for severity markers / section headers (`NO_COLOR` master switch, `FORCE_COLOR` override, piped output stays plain); `check --quiet` suppresses signatures; `check --help` flags grouped (Common/Observation/Fix/CI/What-if); `contract --draft` emits uncomment-to-accept suggested bindings; diagnostics outside cwd print absolute paths; multi-file check prints an opt-in cache hint.
 
 ### Patch Changes
 
-- Updated dependencies [0d9e7de]
-  - @nudojs/core@1.14.0
-  - @nudojs/env@0.4.41
-  - @nudojs/harvester@0.3.27
-  - @nudojs/parser@1.4.23
+- Updated dependencies [c19bd48]
+- Updated dependencies [c19bd48]
+  - @nudojs/core@1.14.1
+  - @nudojs/parser@1.4.24
+  - @nudojs/service@1.8.0
+  - @nudojs/env@0.4.42
+  - @nudojs/harvester@0.3.28
 
-Older versions (51) → [Full release history](./releases-history.md#pkg-service)
+Older versions (49) → [Full release history](./releases-history.md#pkg-nudojs)
 
-## nudojs (CLI) 1.4.0 {#pkg-nudojs}
+## @nudojs/parser 1.4.24 {#pkg-parser}
 
-## 1.4.0
+## 1.4.24
 
-### Minor Changes
+### Patch Changes
 
-- 0d9e7de: `@nudo:skip` no longer kills `@nudo:case` evaluation (#176) — the declared face and runtime ground truth are no longer a trade-off.
+- c19bd48: Misplaced file-level directives now warn instead of being silently ignored, and `nudo.analysis.exclude` supports real globs (fix-12 batch).
   
-  - A skipped function keeps `combinedAbs` from its declared return face (dts/sidecar/draft consumers unchanged), while declared `@nudo:case` directives are evaluated and asserted as usual; `nudo test` prints the skip note and the case assertions in the same block (previously the cases vanished entirely: "no declared @nudo:case expectations")
-  - `nudo check` behavior is byte-identical (caseMode none — no case evaluation, no synthesized entry@ for skipped functions)
+  - parser: file-level directives (`@nudo:env` / `@nudo:mock-module`) written inside JSDoc blocks emit `nudo:directive-syntax` with the correct `///` form instead of being dropped silently.
+  - service: `nudo.analysis.exclude` accepts glob patterns (shared `compilePattern`, extracted from vite-plugin as the single source; plain substrings still work, defaults always stack).
+  - vite-plugin: pattern matching cut over to the shared `compilePattern` — behavior unchanged, one implementation.
+- Updated dependencies [c19bd48]
+  - @nudojs/core@1.14.1
+
+Older versions (49) → [Full release history](./releases-history.md#pkg-parser)
+
+## @nudojs/lsp 1.6.10 {#pkg-lsp}
+
+## 1.6.10
 
 ### Patch Changes
 
-- Updated dependencies [0d9e7de]
-- Updated dependencies [0d9e7de]
-  - @nudojs/core@1.14.0
-  - @nudojs/service@1.7.0
-  - @nudojs/env@0.4.41
-  - @nudojs/harvester@0.3.27
-  - @nudojs/parser@1.4.23
+- Updated dependencies [c19bd48]
+- Updated dependencies [c19bd48]
+  - @nudojs/core@1.14.1
+  - @nudojs/parser@1.4.24
+  - @nudojs/service@1.8.0
 
-Older versions (48) → [Full release history](./releases-history.md#pkg-nudojs)
+Older versions (53) → [Full release history](./releases-history.md#pkg-lsp)
 
-## @nudojs/parser 1.4.23 {#pkg-parser}
-
-## 1.4.23
-
-### Patch Changes
-
-- Updated dependencies [0d9e7de]
-  - @nudojs/core@1.14.0
-
-Older versions (48) → [Full release history](./releases-history.md#pkg-parser)
-
-## @nudojs/lsp 1.6.9 {#pkg-lsp}
-
-## 1.6.9
-
-### Patch Changes
-
-- Updated dependencies [0d9e7de]
-- Updated dependencies [0d9e7de]
-  - @nudojs/core@1.14.0
-  - @nudojs/service@1.7.0
-  - @nudojs/parser@1.4.23
-
-Older versions (52) → [Full release history](./releases-history.md#pkg-lsp)
-
-## @nudojs/env 0.4.41 {#pkg-env}
-
-## 0.4.41
-
-### Patch Changes
-
-- Updated dependencies [0d9e7de]
-  - @nudojs/core@1.14.0
-
-Older versions (48) → [Full release history](./releases-history.md#pkg-env)
-
-## @nudojs/harvester 0.3.27 {#pkg-harvester}
-
-## 0.3.27
-
-### Patch Changes
-
-- Updated dependencies [0d9e7de]
-  - @nudojs/core@1.14.0
-  - @nudojs/env@0.4.41
-  - @nudojs/parser@1.4.23
-
-Older versions (48) → [Full release history](./releases-history.md#pkg-harvester)
-
-## vite-plugin-nudo 0.4.42 {#pkg-vite-plugin}
+## @nudojs/env 0.4.42 {#pkg-env}
 
 ## 0.4.42
 
 ### Patch Changes
 
-- Updated dependencies [0d9e7de]
-- Updated dependencies [0d9e7de]
-  - @nudojs/core@1.14.0
-  - @nudojs/service@1.7.0
+- Updated dependencies [c19bd48]
+  - @nudojs/core@1.14.1
 
-Older versions (51) → [Full release history](./releases-history.md#pkg-vite-plugin)
+Older versions (49) → [Full release history](./releases-history.md#pkg-env)
+
+## @nudojs/harvester 0.3.28 {#pkg-harvester}
+
+## 0.3.28
+
+### Patch Changes
+
+- Updated dependencies [c19bd48]
+- Updated dependencies [c19bd48]
+  - @nudojs/core@1.14.1
+  - @nudojs/parser@1.4.24
+  - @nudojs/env@0.4.42
+
+Older versions (49) → [Full release history](./releases-history.md#pkg-harvester)
+
+## vite-plugin-nudo 0.4.43 {#pkg-vite-plugin}
+
+## 0.4.43
+
+### Patch Changes
+
+- c19bd48: Misplaced file-level directives now warn instead of being silently ignored, and `nudo.analysis.exclude` supports real globs (fix-12 batch).
+  
+  - parser: file-level directives (`@nudo:env` / `@nudo:mock-module`) written inside JSDoc blocks emit `nudo:directive-syntax` with the correct `///` form instead of being dropped silently.
+  - service: `nudo.analysis.exclude` accepts glob patterns (shared `compilePattern`, extracted from vite-plugin as the single source; plain substrings still work, defaults always stack).
+  - vite-plugin: pattern matching cut over to the shared `compilePattern` — behavior unchanged, one implementation.
+- Updated dependencies [c19bd48]
+- Updated dependencies [c19bd48]
+  - @nudojs/core@1.14.1
+  - @nudojs/service@1.8.0
+
+Older versions (52) → [Full release history](./releases-history.md#pkg-vite-plugin)
 
 ## nudo-vscode 0.3.7 {#pkg-vscode}
 

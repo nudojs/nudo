@@ -1,6 +1,6 @@
 {
   "name": "vite-plugin-nudo",
-  "version": "0.4.42",
+  "version": "0.4.43",
   "engines": {
     "node": ">=20"
   },
