@@ -23,7 +23,7 @@
 | `exports["./exec"]` | types `./dist/exec.d.ts`, default `./dist/exec.js` — evaluator transpile + `$op` runtime | **public** |
 | `exports["./internal"]` | types `./dist/internal.d.ts`, default `./dist/internal.js` — engine machinery for monorepo hosts | **internal** (minor may break) |
 | `files` | `["dist"]` — no `src/*` published | **public** |
-| Engines | Node `>=20` | **public** |
+| Engines | Node `>=22` | **public** |
 | Internal `src/*` deep paths | monorepo / test surface only; not an npm contract | **not public** |
 
 Published subpaths are only `.`, `./exec`, and `./internal`.

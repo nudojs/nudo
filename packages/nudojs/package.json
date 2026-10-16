@@ -2,7 +2,7 @@
   "name": "nudojs",
   "version": "1.5.0",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "description": "Nudo type inference engine CLI for JavaScript — check / test / contract / export / health / migrate",
   "type": "module",

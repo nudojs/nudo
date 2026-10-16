@@ -4,7 +4,7 @@ Thanks for contributing. This checklist keeps PRs reviewable and CI green.
 
 ## Before you open a PR
 
-Run these in order from the repo root (Node.js >= 20, pnpm 9.1.0):
+Run these in order from the repo root (Node.js >= 22, pnpm 11.28.0):
 
 ```bash
 pnpm install            # workspace deps
@@ -42,6 +42,17 @@ Because there is no style linter, **reviewers** must watch what the type-checker
 - **Unused code** — dead helpers, leftover experimental paths, unreferenced exports.
 - **`as` creep in tests** — type assertions that hide real type errors or paper over API drift. Prefer fixing types over `as`.
 - **Comment rot** — comments that describe deleted behavior, wrong invariants, or stale design decisions. Update or delete them in the same PR.
+
+### Root `devDependencies` that look dead but are not
+
+A static import scan over `packages/**/src` will flag these root `devDependencies` as unused. They are real runtime dependencies of non-package surfaces (fixtures, benchmark corpora) whose resolution only reaches the repo root's `node_modules` — deleting any of them turns a gate red with no corresponding code change:
+
+| Dep | Real consumer | Gate that goes red when removed |
+|---|---|---|
+| `ms` | [`docs/examples/retire-real/after`](./docs/examples/retire-real/) — the fixture declares `ms` in its own `package.json` but is never installed; `resolveNpmJsEntry` walks up the directory tree and resolves to the root `node_modules/ms` | `pnpm run verify:examples` / `verify:docs` — the `retire-real` fixture's check signature degrades to `unknown` (pinned output goes red) |
+| `semver`, `yargs`, `commander` | `benchmark/oss/packages.mts` `OSS_PACKAGES` corpus — `resolvePackageRoot` resolves package roots via `require.resolve` from `packages/core/src`, reachable only through the root `node_modules` | `pnpm run benchmark` / `benchmark:gate` — corpus packages fail to resolve |
+
+`commander` is additionally a declared dependency of `packages/nudojs` (that copy is visible); the root copy serves the benchmark corpus. Before removing any root `devDependency`, grep `docs/examples/` fixtures' `package.json` files and `benchmark/` corpora, not just `packages/**/src`.
 
 ### Scope and docs
 

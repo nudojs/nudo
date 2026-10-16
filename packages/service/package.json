@@ -2,7 +2,7 @@
   "name": "@nudojs/service",
   "version": "1.8.0",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "description": "Nudo analysis core and emit products: Abs-native file analysis, evaluator host API, interface/dts/schema/guard projections, and session caches",
   "type": "module",
