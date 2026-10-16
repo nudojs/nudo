@@ -28,23 +28,26 @@ export function moduleResolveCandidates(spec: string, fromFile: string): string[
  * 首个真实文件候选（跳过目录）；无命中返回 undefined。
  *
  * fs 错误分类（#135）：单次 statSync（顺带消灭 existsSync+statSync 的
- * TOCTOU 双调用）——「路径不存在」类（ENOENT / ENOTDIR / EISDIR，其中
- * ENOTDIR 常见于候选表 `p/index.js` 穿过文件段 p）按该候选 miss 继续；
- * 其余（EACCES / EIO / ESTALE / EMFILE / EROFS…）是真实读故障，抛
+ * TOCTOU 双调用）——「路径不存在」类按该候选 miss 继续；其余
+ * （EACCES / EIO / ESTALE / EMFILE / EROFS…）是真实读故障，抛
  * ModuleReadError 上抛。此前 existsSync 吞掉一切错误 + 外层 catch 吞
  * statSync 抛错，瞬态故障被折叠成「无此文件」，再被上游缓存钉死整场。
+ *
+ * 性能（OSS bench 回退根因，b6495c6e 引入）：裸 statSync 对不存在的
+ * 候选路径**抛异常**——模块解析的扩展名/index 候选探测大多 miss，
+ * 每次都付异常构造+栈捕获成本（semver 49 文件 × 129 条边实测 +50%）。
+ * `throwIfNoEntry: false`（Node ≥14.17）让 ENOENT/ENOTDIR 零异常返回
+ * undefined，真实故障照抛——#135 语义不变，miss 成本回到 existsSync 量级。
  */
 export function resolveModuleFile(spec: string, fromFile: string): string | undefined {
   for (const cand of moduleResolveCandidates(spec, fromFile)) {
-    let st: ReturnType<typeof statSync>;
+    let st: ReturnType<typeof statSync> | undefined;
     try {
-      st = statSync(cand);
+      st = statSync(cand, { throwIfNoEntry: false });
     } catch (e) {
-      const code = (e as { code?: string } | undefined)?.code;
-      if (code === "ENOENT" || code === "ENOTDIR" || code === "EISDIR") continue;
       throw new ModuleReadError(cand, e);
     }
-    if (!st.isDirectory()) return cand;
+    if (st !== undefined && !st.isDirectory()) return cand;
   }
   return undefined;
 }
