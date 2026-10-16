@@ -2,8 +2,9 @@
  * nudo check 报告渲染/格式化族（自 commands/check.ts 拆出，纯搬移零行为变化）：
  * docs 深链、#1 onboarding 块、语法错 tsc 风格块、runCheck 段 3/3 的
  * report+exit 打印面（终端/JSON/GHA/GitLab）+ 缓存回写 + exit。
- * 编排（loadCache / buildInjection / runCheck / runCheckFix / register）留在
- * check.ts；函数签名与上屏字节不变（verify:examples 逐字节 pin CLI 输出）。
+ * 编排（loadCache / buildInjection / runCheck / runCheckFix）留在 check.ts，
+ * commander 装配在 check-command.ts；函数签名与上屏字节不变
+ * （verify:examples 逐字节 pin CLI 输出）。
  */
 import { basename } from "node:path";
 import { paint } from "../ui.ts";

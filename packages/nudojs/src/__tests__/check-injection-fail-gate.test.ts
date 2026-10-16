@@ -32,7 +32,7 @@ vi.mock("@nudojs/service", async (importOriginal) => {
   };
 });
 
-import { registerCheckCommand } from "../commands/check.ts";
+import { registerCheckCommand } from "../commands/check-command.ts";
 
 async function runCheckCli(args: string[]): Promise<void> {
   const program = new Command();
