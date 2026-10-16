@@ -14,24 +14,7 @@
  * - 离线/registry 不可达：打印 skip 提示，exit 0（无网络不是失败）。
  * - 本地语料未安装（node_modules 缺 manifest）：exit 1（dev 环境问题，非网络）。
  */
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-/** 与 check-real-packages.test.ts / docs/check-real-packages.md 语料表同序 */
-const CORPUS = [
-  "commander",
-  "escape-string-regexp",
-  "is-plain-obj",
-  "debug",
-  "yocto-queue",
-  "p-limit",
-  "kleur",
-  "eventemitter3",
-  "ms",
-  "lodash",
-];
+import { CORPUS, installedCorpusVersion, repoRoot } from "./lib/corpus.mjs";
 
 /** 严格 semver 主版本（容忍 prerelease/build 后缀，如 8.0.0-beta.1 → 8）。 */
 function majorOf(version) {
@@ -40,17 +23,7 @@ function majorOf(version) {
   return Number(m[1]);
 }
 
-function installedVersion(pkg) {
-  try {
-    return JSON.parse(
-      readFileSync(join(repoRoot, "packages/core/node_modules", pkg, "package.json"), "utf-8"),
-    ).version;
-  } catch {
-    return undefined;
-  }
-}
-
-const installed = CORPUS.map((pkg) => ({ pkg, version: installedVersion(pkg) }));
+const installed = CORPUS.map((pkg) => ({ pkg, version: installedCorpusVersion(pkg) }));
 const missing = installed.filter((e) => !e.version);
 if (missing.length > 0) {
   for (const { pkg } of missing) console.error(`error: ${pkg} 未安装（先 pnpm install）`);
