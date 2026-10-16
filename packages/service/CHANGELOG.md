@@ -1,5 +1,24 @@
 # @nudojs/service
 
+## 1.8.0
+
+### Minor Changes
+
+- c19bd48: Misplaced file-level directives now warn instead of being silently ignored, and `nudo.analysis.exclude` supports real globs (fix-12 batch).
+  
+  - parser: file-level directives (`@nudo:env` / `@nudo:mock-module`) written inside JSDoc blocks emit `nudo:directive-syntax` with the correct `///` form instead of being dropped silently.
+  - service: `nudo.analysis.exclude` accepts glob patterns (shared `compilePattern`, extracted from vite-plugin as the single source; plain substrings still work, defaults always stack).
+  - vite-plugin: pattern matching cut over to the shared `compilePattern` — behavior unchanged, one implementation.
+
+### Patch Changes
+
+- Updated dependencies [c19bd48]
+- Updated dependencies [c19bd48]
+  - @nudojs/core@1.14.1
+  - @nudojs/parser@1.4.24
+  - @nudojs/env@0.4.42
+  - @nudojs/harvester@0.3.28
+
 ## 1.7.0
 
 ### Minor Changes
