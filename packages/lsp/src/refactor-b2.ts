@@ -4,11 +4,7 @@
  */
 import { parse } from "@nudojs/parser";
 import type { Node } from "@babel/types";
-import traverse from "@babel/traverse";
-
-function traverseFn(): typeof traverse {
-  return (typeof traverse === "function" ? traverse : (traverse as any).default) as typeof traverse;
-}
+import { traverseEsm } from "./traverse-esm.ts";
 
 export type TextEdit = {
   range: {
@@ -92,7 +88,7 @@ export function inlineVariableAt(
   let hit: Hit | null = null;
 
   try {
-    traverseFn()(ast, {
+    traverseEsm()(ast, {
       VariableDeclarator(path) {
         const d = path.node;
         if (d.id.type !== "Identifier" || !d.init) return;
@@ -216,7 +212,7 @@ export function makeParamOptionalAt(
   type Hit = { name: string; range: TextEdit["range"] };
   let hit: Hit | null = null;
   try {
-    traverseFn()(ast, {
+    traverseEsm()(ast, {
       Identifier(path) {
         const loc = path.node.loc;
         if (!loc) return;

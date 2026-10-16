@@ -4,11 +4,11 @@
  */
 import type { Node, Identifier, FunctionDeclaration, FunctionExpression, ArrowFunctionExpression, ClassMethod, ObjectMethod, TSDeclareMethod } from "@babel/types";
 import traverse from "@babel/traverse";
+import { traverseEsm } from "./traverse-esm.ts";
 import {
   parse,
   programBody,
   unwrapExport,
-  unwrapDefaultExport,
   getDeclarations,
   getDeclaratorId,
   getDeclaratorInit,
@@ -33,7 +33,7 @@ function locFromNode(node: Node): SourceLocation {
 }
 
 function traverseFn(): typeof traverse {
-  return unwrapDefaultExport(traverse);
+  return traverseEsm();
 }
 
 /**
