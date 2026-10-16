@@ -16,7 +16,7 @@ import {
 } from "./evaluator/config.ts";
 import { compileAnyMatcher, compilePattern } from "./glob.ts";
 import { isNudoTargetPath } from "./target-path.ts";
-import { stripCommentsAndStrings, stripStringsKeepComments } from "@nudojs/core/internal";
+import { DIAG, stripCommentsAndStrings, stripStringsKeepComments } from "@nudojs/core/internal";
 
 /**
  * 默认安全排除（node_modules / dist / coverage）——对归一化完整路径始终
@@ -26,10 +26,10 @@ import { stripCommentsAndStrings, stripStringsKeepComments } from "@nudojs/core/
 const DEFAULT_EXCLUDE_MATCH = compileAnyMatcher(DEFAULT_ANALYSIS_EXCLUDE);
 
 /** 默认档下应静音的 evaluator warning 码（噪声控制，A3） */
-const NOISY_WARNING_CODES = new Set([
-  "nudo:unknown-recv",
-  "nudo:builtin-unknown",
-  "nudo:no-signature",
+const NOISY_WARNING_CODES = new Set<string>([
+  DIAG.unknownRecv,
+  DIAG.builtinUnknown,
+  DIAG.noSignature,
 ]);
 
 /**

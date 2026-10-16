@@ -12,6 +12,7 @@ import { termToString, v as termVar, lit } from "./term.ts";
 import { generalizeFromAst, type PolyFn } from "./generalize.ts";
 
 import { formatShape } from "./format.ts";
+import { DIAG } from "./diag-codes.ts";
 
 export type Diagnostic = {
   severity: "error" | "warning" | "info";
@@ -36,7 +37,7 @@ export function checkArg(
   if (arg.shape.k === "unknown" && !arg.term) {
     return {
       severity: "warning",
-      code: "nudo:arg-opaque",
+      code: DIAG.argOpaque,
       message: `argument type is unknown; cannot verify constraint ${predToString(expect)}`,
       suggestion: "add a call site or @nudo:case, or provide preconditions via --assume",
     };
@@ -61,7 +62,7 @@ export function checkArg(
     if (ok === false) {
       return {
         severity: "error",
-        code: "nudo:constraint-violated",
+        code: DIAG.constraintViolated,
         message: `argument ${JSON.stringify(lvR.value)} does not satisfy ${predToString(expect)}`,
         suggestion: `use a value satisfying the constraint, or relax the function precondition`,
       };
@@ -70,7 +71,7 @@ export function checkArg(
 
   return {
     severity: "warning",
-    code: "nudo:constraint-unproven",
+    code: DIAG.constraintUnproven,
     message: `cannot prove the argument satisfies ${predToString(expect)}`,
     suggestion: `not enough information; use --assume or add a case`,
   };
@@ -112,7 +113,7 @@ export function checkCall(
   if (!g) {
     diags.push({
       severity: "error",
-      code: "nudo:fn-not-found",
+      code: DIAG.fnNotFound,
       message: `function ${fnName} not found`,
     });
     return diags;
@@ -122,7 +123,7 @@ export function checkCall(
   if (args.length !== g.params.length) {
     diags.push({
       severity: "error",
-      code: "nudo:arg-count",
+      code: DIAG.argCount,
       message: `${fnName} expects ${g.params.length} argument(s), got ${args.length}`,
       fn: fnName,
     });
@@ -143,7 +144,7 @@ export function checkCall(
   if (g.symbolic.conf === "partial" || g.symbolic.conf === "opaque") {
     diags.push({
       severity: "info",
-      code: "nudo:partial-result",
+      code: DIAG.partialResult,
       message: `${fnName}(...) result confidence ${g.symbolic.conf}`,
       suggestion: "add a call site or constraint to improve precision",
       fn: fnName,

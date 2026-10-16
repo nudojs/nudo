@@ -21,6 +21,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { DIAG } from "@nudojs/core/internal";
 
 export type EntryVariantInfo = {
   pkgPath: string;
@@ -296,7 +297,7 @@ export function entryVariantSuggestion(): string {
 /** Host-facing info issue (CLI check / JSON) for one analyzed entry variant. */
 export type EntryVariantIssue = {
   severity: "info";
-  code: "nudo:dual-entry";
+  code: typeof DIAG.dualEntry;
   message: string;
   suggestion: string;
   line: number;
@@ -308,7 +309,7 @@ export function entryVariantIssueForFile(filePath: string): EntryVariantIssue | 
   if (!info) return null;
   return {
     severity: "info",
-    code: "nudo:dual-entry",
+    code: DIAG.dualEntry,
     message: entryVariantMessage(info),
     suggestion: entryVariantSuggestion(),
     line: 0,

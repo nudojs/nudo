@@ -46,6 +46,7 @@ import {
   wantsStandard,
   type ExportFormat,
 } from "../export-format.ts";
+import { DIAG } from "@nudojs/core/internal";
 
 // ---------------------------------------------------------------------------
 // export — 投影：dts | guard | schema (dialect) | standard | all
@@ -266,7 +267,7 @@ async function runExport(
     const outDir = resolve(output);
     const ioError = (op: string): PathError => ({
       path: outDir,
-      code: "nudo:path-io",
+      code: DIAG.pathIo,
       message: `export --out ${op} failed: ${displayPathOf(outDir)}`,
       suggestion: `check --out <dir> is writable and the path is a directory, then re-run nudo export`,
     });

@@ -122,6 +122,7 @@ export type InterfaceSource = "handwritten" | "generated" | "implicit";
 // re-export 维持本文件既有导出面（algebra/index.ts / src/internal.ts 消费不变）
 export { exportedNameOfLocal, generatedExportNames, localNamedExports } from "./scan-named-exports.ts";
 import { exportedNameOfLocal, generatedExportNames, localNamedExports } from "./scan-named-exports.ts";
+import { DIAG } from "./diag-codes.ts";
 
 
 // ---------------------------------------------------------------------------
@@ -298,7 +299,7 @@ function loadSidecarBinding(
     const reason = e instanceof Error ? e.message : String(e);
     if (noteSidecarLoadFailure(sidecarPath, reason)) {
       collectDiag({
-        code: "nudo:interface-load",
+        code: DIAG.interfaceLoad,
         message: `sidecar '${spec}' failed to load: ${reason}`,
         file: sidecarPath,
       });
@@ -318,7 +319,7 @@ function loadSidecarBinding(
     exports = execNudoModule(sidecarSrc, { loadModule, fromFile: sidecarPath });
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
-    const code = e instanceof NudoSidecarError ? e.code : "nudo:interface-load";
+    const code = e instanceof NudoSidecarError ? e.code : DIAG.interfaceLoad;
     if (noteSidecarLoadFailure(sidecarPath, reason)) {
       // 模块级失败：不写 for 'X'（读起来像 X 自身有问题）。
       // 影响面 = 侧车导出名 ∩ 源本地导出名（静态近似；exec 失败时无法枚举真实绑定）。
@@ -385,7 +386,7 @@ function loadSidecarBinding(
       Object.hasOwn(exports, method)
     ) {
       collectDiag({
-        code: "nudo:interface-load",
+        code: DIAG.interfaceLoad,
         message: `sidecar key '${method}' does not bind '${fnName}' — use '${cls}.${method}', '${cls}_${method}', or nested { ${cls}: { ${method}: … } }`,
         file: sidecarPath,
       });
@@ -394,7 +395,7 @@ function loadSidecarBinding(
   if (binding === undefined) return { ok: false };
   if (!isNudoConstraint(binding)) {
     collectDiag({
-      code: "nudo:interface-load",
+      code: DIAG.interfaceLoad,
       message: `sidecar '${spec}' export '${fnName}' is not a Nudo constraint`,
       file: sidecarPath,
     });
@@ -403,7 +404,7 @@ function loadSidecarBinding(
   if (!binding.fn) {
     // Phase 1 侧车绑定只承诺 fn() 形态；标量/shape 单参形态后续 Phase 放开
     collectDiag({
-      code: "nudo:interface-load",
+      code: DIAG.interfaceLoad,
       message: `sidecar '${spec}' binding '${fnName}' is not fn() form (Phase 1 consumes only fn({ … }, …) bindings)`,
       file: sidecarPath,
     });

@@ -27,6 +27,7 @@ import {
 } from "@nudojs/core";
 import { defaultLoadModule, type LoadModule } from "./load-module.ts";
 import { evalMockFileWithDeps } from "./mock-file.ts";
+import { DIAG } from "@nudojs/core/internal";
 
 /**
  * mock 依赖结果 conf 不得高于 mock。
@@ -397,7 +398,7 @@ export function mockDirectivesToAbsSeeds(
               name: d.name,
               fromPath: "(inline)",
               message: `Failed to parse mock expression for '${d.name}': ${d.expression}`,
-              code: "nudo:mock-invalid",
+              code: DIAG.mockInvalid,
             });
           } else {
             seedVars[d.name] = abs;
@@ -409,7 +410,7 @@ export function mockDirectivesToAbsSeeds(
             message: `Failed to parse mock expression for '${d.name}': ${
               e instanceof Error ? e.message : String(e)
             }`,
-            code: "nudo:mock-invalid",
+            code: DIAG.mockInvalid,
           });
         }
       }

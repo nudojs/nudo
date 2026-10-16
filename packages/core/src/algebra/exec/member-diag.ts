@@ -13,6 +13,7 @@ import type { Abs } from "../abs.ts";
 import { abs } from "../abs.ts";
 import { recordMayThrow } from "./may-throw.ts";
 import { isNullProtoObj } from "../objects.ts";
+import { DIAG } from "../diag-codes.ts";
 import {
   createScopedSlot,
   registerCollectorScopeParticipant,
@@ -374,7 +375,7 @@ export function noteObjSlotMissing(
     kind: "property",
     name,
     receiver: "object",
-    code: "nudo:missing-slot",
+    code: DIAG.missingSlot,
     line: loc?.[0],
     column: loc?.[1],
     ...(origin ? { origin } : {}),

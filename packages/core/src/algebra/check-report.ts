@@ -11,6 +11,7 @@
 import type { Diagnostic } from "./diagnostics.ts";
 import type { Abs, Confidence } from "./abs.ts";
 import { formatAbs, formatShape } from "./format.ts";
+import { DIAG } from "./diag-codes.ts";
 
 /** 无损函数签名（类型即计算） */
 export type NudoSig = {
@@ -166,7 +167,7 @@ export function actionsForIssue(i: {
     label: "emit a sidecar draft you can edit",
   };
   switch (i.code) {
-    case "nudo:constraint-violated":
+    case DIAG.constraintViolated:
       return [
         {
           kind: "callsite",
@@ -180,7 +181,7 @@ export function actionsForIssue(i: {
         },
         draft,
       ];
-    case "nudo:assign-mismatch":
+    case DIAG.assignMismatch:
       return [
         {
           kind: "callsite",
@@ -189,7 +190,7 @@ export function actionsForIssue(i: {
         },
         draft,
       ];
-    case "nudo:entry-may-throw":
+    case DIAG.entryMayThrow:
       return [
         {
           kind: "draft",
@@ -213,7 +214,7 @@ export function actionsForIssue(i: {
           label: "migration switch: ignore this throw class on L2",
         },
       ];
-    case "nudo:unproven-return":
+    case DIAG.unprovenReturn:
       return [
         {
           kind: "relax",
@@ -227,22 +228,22 @@ export function actionsForIssue(i: {
             "or narrow the return expression / add a precondition so the bound is implied",
         },
       ];
-    case "nudo:unknown-inference":
-    case "nudo:opaque-result":
+    case DIAG.unknownInference:
+    case DIAG.opaqueResult:
       return [
         { kind: "mock", label: "pin the native/unknown face with @nudo:mock" },
         { kind: "assume", command: "nudo check --assume", label: "state preconditions via --assume" },
         { kind: "info", label: "or add a call site / @nudo:case for evidence" },
       ];
-    case "nudo:arg-opaque":
-    case "nudo:constraint-unproven":
+    case DIAG.argOpaque:
+    case DIAG.constraintUnproven:
       return [
         { kind: "assume", command: "nudo check --assume", label: "state preconditions via --assume" },
         { kind: "info", label: "add a call site or @nudo:case" },
       ];
-    case "nudo:fork-truncated":
-    case "nudo:promise-micro-truncated":
-    case "nudo:promise-micro-error":
+    case DIAG.forkTruncated:
+    case DIAG.promiseMicroTruncated:
+    case DIAG.promiseMicroError:
       return [
         {
           kind: "info",
@@ -250,7 +251,7 @@ export function actionsForIssue(i: {
             "results widened to unknown — raise budget (@nudo:budget forks/calls/depth on the function) or narrow control flow",
         },
       ];
-    case "nudo:loop-truncated":
+    case DIAG.loopTruncated:
       // 循环迭代预算 ≠ 调用预算：@nudo:budget calls=/depth= 抬不动
       return [
         {
@@ -259,7 +260,7 @@ export function actionsForIssue(i: {
             "loop state widened — the exit condition stayed concrete-true past the iteration cap; make the bound data-dependent (abstract) or pin the result with @nudo:case / @nudo:contract",
         },
       ];
-    case "nudo:recursion-truncated":
+    case DIAG.recursionTruncated:
       // #158 归因：cycle 不是预算——不得把 agent 引向抬 @nudo:budget
       return [
         {
@@ -272,12 +273,12 @@ export function actionsForIssue(i: {
                 : "results widened to unknown — raise budget (@nudo:budget calls/depth on the function) or narrow control flow",
         },
       ];
-    case "nudo:host-effect-blocked":
+    case DIAG.hostEffectBlocked:
       return [
         { kind: "mock", label: "pin the host API with @nudo:mock / @nudo:env" },
         { kind: "info", label: "results widened to unknown — or feed the value in from a call site" },
       ];
-    case "nudo:interface-drift":
+    case DIAG.interfaceDrift:
       return [
         {
           kind: "emit",
@@ -285,7 +286,7 @@ export function actionsForIssue(i: {
           label: "refresh the @generated segment",
         },
       ];
-    case "nudo:dual-entry":
+    case DIAG.dualEntry:
       return [
         {
           kind: "info",
@@ -450,13 +451,13 @@ export function serializeCheckJsonMulti(reports: CheckJson[]): CheckJsonMulti {
 }
 
 /** 契约/门禁类诊断：终端应给出可执行修复路径（draft 侧车 / refine）。 */
-const CONTRACT_FIX_CODES = new Set([
-  "nudo:constraint-violated",
-  "nudo:assign-mismatch",
-  "nudo:arg-structure",
-  "nudo:interface-domain-exceeds",
-  "nudo:entry-may-throw",
-  "nudo:missing-slot",
+const CONTRACT_FIX_CODES = new Set<string>([
+  DIAG.constraintViolated,
+  DIAG.assignMismatch,
+  DIAG.argStructure,
+  DIAG.interfaceDomainExceeds,
+  DIAG.entryMayThrow,
+  DIAG.missingSlot,
 ]);
 
 /**

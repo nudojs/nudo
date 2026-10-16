@@ -47,6 +47,7 @@ import {
   instantiateConstraint,
   CONSTRAINT_BUILDERS,
 } from "./constraint.ts";
+import { DIAG } from "./diag-codes.ts";
 
 /** `/// @nudo:import { delay, percent } from "./delay.nudo.js"` */
 export type NamedImport = { names: string[]; spec: string };
@@ -56,12 +57,12 @@ function diagnoseMalformedNudoImports(source: string): void {
   for (const bad of scanMalformedNudoImports(source)) {
     if (bad === "malformed-default") {
       collectDiag({
-        code: "nudo:contract-syntax",
+        code: DIAG.contractSyntax,
         message: `Default @nudo:import is not supported (use named { a, b } or namespace * as ns)`,
       });
     } else {
       collectDiag({
-        code: "nudo:contract-syntax",
+        code: DIAG.contractSyntax,
         message: `Unrecognized @nudo:import form (expected { names } from "path" or * as ns from "path")`,
       });
     }
@@ -204,7 +205,7 @@ function rewriteSidecarSource(
 
   const badExport = (what: string): void => {
     collectDiag({
-      code: "nudo:interface-load",
+      code: DIAG.interfaceLoad,
       message: `sidecar ${what}; recognized export forms are 'export const <name> = …' and 'export default <constraint|fn>'`,
       file: fromFile,
     });
@@ -672,7 +673,7 @@ function execSidecar(
           // namespace import 绑成整个 inject 表会静默把 fs/path 等本地名
           // 变成构建器袋——显式诊断，不再静默错绑
           collectDiag({
-            code: "nudo:interface-load",
+            code: DIAG.interfaceLoad,
             message: `sidecar namespace import '${n.local}' from '${imp.spec}' is not supported (import named builders only)`,
             file: fromFile,
           });
@@ -683,7 +684,7 @@ function execSidecar(
           const hasOwnInject = Object.hasOwn(sidecarInjects, n.imported);
           if (!hasOwnInject) {
             collectDiag({
-              code: "nudo:interface-load",
+              code: DIAG.interfaceLoad,
               message: `sidecar import '{ ${n.imported} }' from '${imp.spec}' is not an injected builder`,
               file: fromFile,
             });
@@ -695,7 +696,7 @@ function execSidecar(
         } else {
           // default import：侧车无默认导出概念——显式诊断（不再静默 undefined）
           collectDiag({
-            code: "nudo:interface-load",
+            code: DIAG.interfaceLoad,
             message: `sidecar default import '${n.local}' from '${imp.spec}' has no default export to bind (sidecars export named constraints only)`,
             file: fromFile,
           });
@@ -707,7 +708,7 @@ function execSidecar(
     const load = opts?.loadModule;
     if (!load || !fromFile) {
       collectDiag({
-        code: "nudo:interface-load",
+        code: DIAG.interfaceLoad,
         message: `sidecar import '${imp.spec}' is unresolvable (no loadModule for relative specifier)`,
         file: fromFile,
       });
@@ -716,7 +717,7 @@ function execSidecar(
     }
     if (!isSidecarSpec(imp.spec)) {
       collectDiag({
-        code: "nudo:interface-load",
+        code: DIAG.interfaceLoad,
         message: `sidecar import '${imp.spec}' unsupported: relative imports must target .nudo.js/.nudo.ts`,
         file: fromFile,
       });
@@ -726,7 +727,7 @@ function execSidecar(
     const canonical = resolveDepPath(fromFile, imp.spec);
     if (isNodeModulesPath(canonical)) {
       collectDiag({
-        code: "nudo:interface-load",
+        code: DIAG.interfaceLoad,
         message: `sidecar import '${imp.spec}' resolves into node_modules (${canonical}); ambient sidecar loading never crosses node_modules`,
         file: fromFile,
       });
@@ -735,14 +736,14 @@ function execSidecar(
     }
     if (chain.includes(canonical)) {
       throw new NudoSidecarError(
-        "nudo:interface-cycle",
+        DIAG.interfaceCycle,
         `sidecar import cycle: ${[...chain, canonical].join(" → ")}`,
       );
     }
     const depSrc = preloaded.has(canonical) ? preloaded.get(canonical) : load(imp.spec, fromFile);
     if (depSrc === undefined) {
       collectDiag({
-        code: "nudo:interface-load",
+        code: DIAG.interfaceLoad,
         message: `sidecar import '${imp.spec}' is unresolvable (loadModule returned no source)`,
         file: fromFile,
       });
@@ -765,7 +766,7 @@ function execSidecar(
           deps[n.local] = depExports[n.imported];
         } else {
           collectDiag({
-            code: "nudo:interface-load",
+            code: DIAG.interfaceLoad,
             message: `sidecar '${imp.spec}' has no export '${n.imported}'`,
             file: fromFile,
           });
@@ -774,7 +775,7 @@ function execSidecar(
       } else {
         // 相对侧车 default import：侧车只收集 named export，default 恒空
         collectDiag({
-          code: "nudo:interface-load",
+          code: DIAG.interfaceLoad,
           message: `sidecar default import '${n.local}' from '${imp.spec}' has no default export (sidecars export named constraints only)`,
           file: fromFile,
         });
@@ -1000,7 +1001,7 @@ function collectConstraints(
     if (!opts.loadModule || !opts.fromFile) {
       // host 忘传 loader：约束会静默失效——必须报，否则 refine 无声消失
       collectDiag({
-        code: "nudo:interface-load",
+        code: DIAG.interfaceLoad,
         message: `sidecar '${imp.spec}' not loaded: loadModule/fromFile missing from host options`,
         file: opts.fromFile,
       });
@@ -1011,7 +1012,7 @@ function collectConstraints(
       src = opts.loadModule(imp.spec, opts.fromFile);
     } catch (e) {
       collectDiag({
-        code: "nudo:interface-load",
+        code: DIAG.interfaceLoad,
         message: `sidecar '${imp.spec}' failed to load from '${opts.fromFile}': ${e instanceof Error ? e.message : String(e)}`,
         file: opts.fromFile,
       });
@@ -1019,7 +1020,7 @@ function collectConstraints(
     }
     if (src === undefined) {
       collectDiag({
-        code: "nudo:interface-load",
+        code: DIAG.interfaceLoad,
         message: `sidecar '${imp.spec}' failed to load from '${opts.fromFile}'`,
         file: opts.fromFile,
       });
@@ -1035,7 +1036,7 @@ function collectConstraints(
         collectDiag({ code: e.code, message: e.message, file: opts.fromFile });
       } else {
         collectDiag({
-          code: "nudo:interface-load",
+          code: DIAG.interfaceLoad,
           message: `sidecar '${imp.spec}' failed to execute: ${e instanceof Error ? e.message : String(e)}`,
           file: opts.fromFile,
         });
@@ -1062,13 +1063,13 @@ function collectConstraints(
         map.set(name, v);
       } else if (v === undefined) {
         collectDiag({
-          code: "nudo:interface-load",
+          code: DIAG.interfaceLoad,
           message: `sidecar '${imp.spec}' has no export '${imported}'`,
           file: opts.fromFile,
         });
       } else {
         collectDiag({
-          code: "nudo:interface-load",
+          code: DIAG.interfaceLoad,
           message: `sidecar '${imp.spec}' export '${imported}' is not a Nudo constraint`,
           file: opts.fromFile,
         });
@@ -1246,7 +1247,7 @@ export function extractRefinesFromSource(
         // return 段由 extractRefineReturnFromSource 处理，这里不报
         if (/^return\b/.test(part)) continue;
         collectDiag({
-          code: "nudo:contract-syntax",
+          code: DIAG.contractSyntax,
           message: `Malformed @nudo:contract segment '${part}' (expected <param> <constraintName> or return <constraintName>; e.g. @nudo:contract x positive)`,
         });
         continue;
@@ -1259,7 +1260,7 @@ export function extractRefinesFromSource(
         // 约束名 miss（别名错绑已修，剩拼写错/侧车缺名）：不再静默 continue，
         // 否则契约无声失效会被误读为「推断不精确」（BUG-016）
         collectDiag({
-          code: "nudo:contract-syntax",
+          code: DIAG.contractSyntax,
           message: `Unknown constraint name '${cName!}' in @nudo:contract (expected a name bound by @nudo:import)`,
         });
         continue;
@@ -1310,7 +1311,7 @@ export function extractRefineReturnFromSource(
         // return 段形态非法（如 `return > 0`）→ 诊断
         if (/^return\b/.test(part) && !/^return\s+[\w.]+$/.test(part)) {
           collectDiag({
-            code: "nudo:contract-syntax",
+            code: DIAG.contractSyntax,
             message: `Malformed @nudo:contract return segment '${part}' (expected return <constraintName>)`,
           });
         }
@@ -1321,7 +1322,7 @@ export function extractRefineReturnFromSource(
       if (!c) {
         // 同参数契约：约束名 miss 不再静默（BUG-016）
         collectDiag({
-          code: "nudo:contract-syntax",
+          code: DIAG.contractSyntax,
           message: `Unknown constraint name '${cName}' in @nudo:contract return (expected a name bound by @nudo:import)`,
         });
         continue;

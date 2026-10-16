@@ -102,6 +102,7 @@ face. Renames / signature changes / removals are **minor**, not major.
 | Scan extras | `checkInjectedDomainEvidence`, `listTopFunctions`, … | service analyzer |
 | evaluator collectors | `exec/may-throw.ts` (re-export face of kernel leaf `algebra/may-throw.ts`), `exec/member-diag.ts` | host plumbing, not `$op` |
 | Collector scope (ALS) | `collector-scope.ts`, `diag-channel.ts` | `runWithCollectorScope` (idempotent analysis-lifetime scope), `createScopedSlot` / `createScopedDiagChannel` + `registerCollectorScopeParticipant` — await-window isolation for module-global collectors / diag channels |
+| Diagnostic code registry | `diag-codes.ts` | `DIAG` / `DiagCode` — single source of every `nudo:*` diagnostic code string (P3-7); hosts match/emit codes via `DIAG.<camelCase>`, never raw literals |
 
 Import rule: hosts use `@nudojs/core/internal`. Do not deep-import `src/*`
 from published packages.

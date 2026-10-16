@@ -35,7 +35,7 @@ import {
   type Abs,
   type NudoConstraint,
 } from "@nudojs/core";
-import { sanitizeCommentText, exportedNameOfLocal, runWithCollectorScope } from "@nudojs/core/internal";
+import { DIAG, exportedNameOfLocal, runWithCollectorScope, sanitizeCommentText } from "@nudojs/core/internal";
 import { randomBytes } from "node:crypto";
 
 import { unifiedDiff } from "./case-emitter.ts";
@@ -134,7 +134,7 @@ export async function emitInterface(
         changed: false,
         issues: [
           {
-            code: "nudo:interface-emit-denied",
+            code: DIAG.interfaceEmitDenied,
             severity: "warning",
             message: `emit target '${relative(process.cwd(), abs) || abs}' is outside package.json#nudo.contract.emit allowlist`,
           },
@@ -295,7 +295,7 @@ export async function emitInterface(
       if (declared.has(name)) {
         skipped.push({ fn: name, reason: "name-clash" });
         issues.push({
-          code: "nudo:interface-name-clash",
+          code: DIAG.interfaceNameClash,
           severity: "error",
           message: `sidecar already has a handwritten binding '${name}' (${srcRel}); handwritten wins — skipping emit for it`,
         });
@@ -309,7 +309,7 @@ export async function emitInterface(
           const keptText = normalizeSection(prev.text);
           accepted.push({ fn: prev.names.join("+"), text: keptText, prevText: keptText });
           issues.push({
-            code: "nudo:interface-multi-declarator",
+            code: DIAG.interfaceMultiDeclarator,
             severity: "warning",
             message: `generated section '${prev.names.join(", ")}' is a hand-merged multi-declarator form; kept verbatim (split it into one export per section to re-emit)`,
           });

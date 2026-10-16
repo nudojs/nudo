@@ -14,6 +14,7 @@ import { literalMeetsConstraint } from "./domain-membership.ts";
 import { litValue } from "./abs.ts";
 import type { Abs } from "./abs.ts";
 import type { CheckIssue } from "./check-report.ts";
+import { DIAG } from "./diag-codes.ts";
 
 /**
  * 注入记录的最小结构面。Abs 为唯一真理源。
@@ -94,7 +95,7 @@ export function checkInjectedDomainEvidence(
     return [
       {
         severity: "warning",
-        code: "nudo:interface-load",
+        code: DIAG.interfaceLoad,
         message: `${fnName}: effective interface load failed (${e instanceof Error ? e.message : String(e)}); skipping domain-exceeds check`,
         fn: fnName,
         line: opts.loc?.line,
@@ -122,7 +123,7 @@ export function checkInjectedDomainEvidence(
     const shown = [...new Set(failures)].map(evidenceToString).join(", ");
     out.push({
       severity: "error",
-      code: "nudo:interface-domain-exceeds",
+      code: DIAG.interfaceDomainExceeds,
       message: `${fnName}[${param}]: cross-file call-site domain evidence ${shown} exceeds handwritten contract`,
       actual: shown,
       expected: formatConstraint(constraint),

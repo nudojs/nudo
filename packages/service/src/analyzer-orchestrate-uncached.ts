@@ -18,6 +18,7 @@ import {
   type Abs,
 } from "@nudojs/core";
 import {
+  DIAG,
   checkInjectedDomainEvidence,
   runWithEvalMissingSlot,
   fnFingerprints,
@@ -187,7 +188,7 @@ export function analyzeFileUncachedInner(
     if (evalMemberDiagSeen.has(key)) return;
     evalMemberDiagSeen.add(key);
     // C0.5：求值命中闭 shape 缺槽（默认 off；per-analysis ALS 已就绪）
-    if (d.code === "nudo:missing-slot") {
+    if (d.code === DIAG.missingSlot) {
       diagnostics.push({
         range: {
           start: { line: d.line ?? fallbackLine, column: d.column ?? 0 },
@@ -195,7 +196,7 @@ export function analyzeFileUncachedInner(
         },
         severity: "warning",
         message: `Field '${d.name}' is missing on the evaluated object shape`,
-        code: "nudo:missing-slot",
+        code: DIAG.missingSlot,
         ...(d.origin ? { origin: d.origin } : {}),
       });
       return;
@@ -209,7 +210,7 @@ export function analyzeFileUncachedInner(
         },
         severity: "warning",
         message: `Cannot resolve '${d.name}' on unknown value`,
-        code: "nudo:unknown-recv",
+        code: DIAG.unknownRecv,
         ...(d.origin ? { origin: d.origin } : {}),
       });
       return;
@@ -227,7 +228,7 @@ export function analyzeFileUncachedInner(
         d.kind === "method"
           ? `Method '${d.name}' does not exist on type '${d.receiver}'`
           : `Property '${d.name}' does not exist on type '${d.receiver}'`,
-      code: "nudo:no-method",
+      code: DIAG.noMethod,
       ...(d.origin ? { origin: d.origin } : {}),
     });
   };
@@ -254,14 +255,14 @@ export function analyzeFileUncachedInner(
       evalModuleIssueKinds.add(iss.kind);
       const code =
         iss.kind === "cycle"
-          ? "nudo:module-cycle"
+          ? DIAG.moduleCycle
           : iss.kind === "depth"
-            ? "nudo:module-depth"
+            ? DIAG.moduleDepth
             : iss.kind === "missing-export"
-              ? "nudo:missing-export"
+              ? DIAG.missingExport
               : iss.kind === "exports-unresolved"
-                ? "nudo:exports-unresolved"
-                : "nudo:module-missing";
+                ? DIAG.exportsUnresolved
+                : DIAG.moduleMissing;
       diagnostics.push({
         range: { start: { line: 1, column: 0 }, end: { line: 1, column: 0 } },
         severity: iss.kind === "missing" || iss.kind === "missing-export" ? "error" : "warning",
@@ -278,12 +279,12 @@ export function analyzeFileUncachedInner(
   // @nudo:mock name from "path" 解析失败 → 明确诊断（缺文件/缺绑定/求值失败），不静默丢弃
   // 内联表达式解析失败 → nudo:mock-invalid
   for (const fe of seeds.fromErrors ?? []) {
-    const isExpr = fe.code === "nudo:mock-invalid";
+    const isExpr = fe.code === DIAG.mockInvalid;
     diagnostics.push({
       range: { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } },
       severity: "error",
       message: fe.message,
-      code: fe.code ?? "nudo:module-missing",
+      code: fe.code ?? DIAG.moduleMissing,
       suggestions: isExpr
         ? [
             "Supported formats: stub(), stub().returns(value), spy(), mock()",
@@ -749,7 +750,7 @@ export function analyzeFileUncachedInner(
       message:
         `handwritten @nudo:env wins over harvest on module "${c.module}"${detail}; ` +
         `harvest only fills missing slots (B8). code=nudo:env-harvest-conflict`,
-      code: "nudo:env-harvest-conflict",
+      code: DIAG.envHarvestConflict,
     });
   }
 
@@ -762,7 +763,7 @@ export function analyzeFileUncachedInner(
         range: { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } },
         severity: "info",
         message: entryVariantMessage(dual),
-        code: "nudo:dual-entry",
+        code: DIAG.dualEntry,
         suggestions: [entryVariantSuggestion()],
       });
     }

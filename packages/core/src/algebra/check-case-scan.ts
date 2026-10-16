@@ -25,6 +25,7 @@ import { locateContractParam } from "./param-surface.ts";
 import { getSlot } from "./objects.ts";
 import type { AbsModuleExports } from "./abs-modules.ts";
 import type { RunTranspiledOptions } from "./exec/run.ts";
+import { DIAG } from "./diag-codes.ts";
 
 /** C4.1：case 见证的解构字段投影（与 scan.projectArgPath 同口径）；
  *  #137：路径感知——嵌套点路径（'card.grade'）逐段下钻 */
@@ -215,7 +216,7 @@ export function scanCaseInconsistency(
             const field = fieldPath.join(".");
             out.push({
               severity: "error",
-              code: "nudo:case-inconsistency",
+              code: DIAG.caseInconsistency,
               message: `${fnName} case "${caseName}": witness ⊭ contract`,
               actual: formatAbs(arg),
               expected: `missing field ${field}`,
@@ -246,7 +247,7 @@ export function scanCaseInconsistency(
           const paramName = entry.param || paramNames[idx] || `arg${idx}`;
           out.push({
             severity: "error",
-            code: "nudo:case-inconsistency",
+            code: DIAG.caseInconsistency,
             message: `${fnName} case "${caseName}": witness ⊭ contract`,
             actual: formatAbs(arg),
             expected: formatConstraint(entry.constraint),
@@ -266,7 +267,7 @@ export function scanCaseInconsistency(
         const paramName = entry.param || paramNames[idx] || `arg${idx}`;
         out.push({
           severity: "error",
-          code: "nudo:case-inconsistency",
+          code: DIAG.caseInconsistency,
           message: `${fnName} case "${caseName}": witness ⊭ contract`,
           actual: formatAbs(arg),
           expected: formatConstraint(entry.constraint),
@@ -292,7 +293,7 @@ export function scanCaseInconsistency(
             const paramName = entry.param || paramNames[idx] || `arg${idx}`;
             out.push({
               severity: "error",
-              code: "nudo:case-inconsistency",
+              code: DIAG.caseInconsistency,
               message: `${fnName} case "${caseName}": witness ⊭ contract`,
               actual: formatAbs(arg),
               expected: predToString(p),

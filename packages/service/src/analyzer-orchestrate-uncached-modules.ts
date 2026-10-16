@@ -5,6 +5,7 @@
  * 自 analyzer-orchestrate-uncached.ts 机械拆出；语义未改。
  */
 import {
+  DIAG,
   loadModuleDepsFingerprint,
   hashSource,
   type EvalMemberDiag,
@@ -123,7 +124,7 @@ export function assembleModuleGraph(args: {
           range: { start: { line: 1, column: 0 }, end: { line: 1, column: 0 } },
           severity: "error",
           message: msg,
-          code: "nudo:module-missing",
+          code: DIAG.moduleMissing,
         });
       }
       pushBModuleIssues(composed.issues);
@@ -190,7 +191,7 @@ export function pushEvalStaticDiagnostics(args: {
       range: b.range,
       severity: "warning",
       message: `Built-in API "${b.name}" is not covered by Nudo's type inference`,
-      code: "nudo:builtin-unknown",
+      code: DIAG.builtinUnknown,
       suggestions: [
         `Use @nudo:mock to define the type: @nudo:mock ${b.name} = stub().returns(...)`,
         `Or use @nudo:contract return <constraint> to declare the return contract`,

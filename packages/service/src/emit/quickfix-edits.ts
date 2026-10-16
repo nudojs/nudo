@@ -6,7 +6,7 @@
  */
 import type { CheckAction } from "@nudojs/core";
 import { checkSource, pTrue } from "@nudojs/core";
-import { isJsBindingIdent } from "@nudojs/core/internal";
+import { DIAG, isJsBindingIdent } from "@nudojs/core/internal";
 import {
   collectParamContracts,
   contractDslOf,
@@ -47,7 +47,7 @@ export function titleKindFor(code: string, action: CheckAction): QuickfixTitleKi
     case "draft":
       return "fix";
     case "relax":
-      return code === "nudo:unproven-return" ? "review" : "silence";
+      return code === DIAG.unprovenReturn ? "review" : "silence";
     case "mock":
     case "assume":
     case "emit":
@@ -400,9 +400,9 @@ export function sidecarClearsEntryThrow(input: {
       loadModule,
       fromFile: input.file,
     });
-    if (r.issues.some((i) => i.code === "nudo:interface-load")) return false;
+    if (r.issues.some((i) => i.code === DIAG.interfaceLoad)) return false;
     return !r.issues.some(
-      (i) => i.code === "nudo:entry-may-throw" && i.fn === input.fn,
+      (i) => i.code === DIAG.entryMayThrow && i.fn === input.fn,
     );
   } catch {
     return false;
@@ -417,7 +417,7 @@ export function materializeAction(input: MaterializeInput): QuickfixPlan | undef
   const tk = titleKindFor(code, action);
 
   // —— entry-may-throw：@nudo:throws（silence）——
-  if (code === "nudo:entry-may-throw" && action.kind === "relax" && fn) {
+  if (code === DIAG.entryMayThrow && action.kind === "relax" && fn) {
     const kind =
       input.throwsKind ??
       input.suggestion?.match(/@nudo:throws\s+(\w+)/)?.[1] ??
@@ -434,7 +434,7 @@ export function materializeAction(input: MaterializeInput): QuickfixPlan | undef
   // —— entry-may-throw：侧车 param contract（fix）——
   // 空 shape 禁令：无 body-read 证据时只给 draft 命令，不生成 shape({})
   // 类型：body 用法推断（node.type === … → string()），无证据 any()
-  if (code === "nudo:entry-may-throw" && action.kind === "draft" && fn) {
+  if (code === DIAG.entryMayThrow && action.kind === "draft" && fn) {
     const bodyRead = input.suggestion?.match(/body-read\s*\{([^}]+)\}/)?.[1];
     const fieldNames = bodyRead
       ?.split(",")
@@ -518,7 +518,7 @@ export function materializeAction(input: MaterializeInput): QuickfixPlan | undef
 
   // —— constraint-violated nullish → nullable(…) ——
   if (
-    code === "nudo:constraint-violated" &&
+    code === DIAG.constraintViolated &&
     (action.kind === "relax" || action.kind === "draft") &&
     fn &&
     sidecarText &&
@@ -537,7 +537,7 @@ export function materializeAction(input: MaterializeInput): QuickfixPlan | undef
   }
 
   // —— unproven-return：relax（review，须看 diff）——
-  if (code === "nudo:unproven-return" && action.kind === "relax" && fn && sidecarText) {
+  if (code === DIAG.unprovenReturn && action.kind === "relax" && fn && sidecarText) {
     // 调用方（LSP）已有 relaxSidecarConstraint；这里给标题，edit 由调用方补
     return {
       titleKind: "review",
@@ -549,7 +549,7 @@ export function materializeAction(input: MaterializeInput): QuickfixPlan | undef
 
   // —— recursion-truncated：@nudo:budget ——
   // cycle 归因（#158）抬预算解不开（同抽象实参调用环），不提供该 quickfix
-  if (code === "nudo:recursion-truncated" && fn && input.reason !== "cycle") {
+  if (code === DIAG.recursionTruncated && fn && input.reason !== "cycle") {
     const r = addBudgetAnnotation(source, fn);
     if (!r) return undefined;
     return {
@@ -561,14 +561,14 @@ export function materializeAction(input: MaterializeInput): QuickfixPlan | undef
 
   // —— unknown-inference / opaque-result：scaffold draft ——
   if (
-    (code === "nudo:unknown-inference" || code === "nudo:opaque-result") &&
+    (code === DIAG.unknownInference || code === DIAG.opaqueResult) &&
     (action.kind === "mock" || action.kind === "draft")
   ) {
     return {
       titleKind: "scaffold",
       title: `${titlePrefix("scaffold")} ${action.label}`,
       edits: [],
-      openPath: code === "nudo:opaque-result" ? input.file : sidecarPath,
+      openPath: code === DIAG.opaqueResult ? input.file : sidecarPath,
     };
   }
 

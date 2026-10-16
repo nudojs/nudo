@@ -41,7 +41,7 @@ import { preloadPathEnvs } from "@nudojs/service/evaluator";
 export { filterDiagnosticsByLevel, diagnosticsLevelForFile };
 import { checkSource, pTrue, evictGeneralizeMemoForPaths, evictCheckSourceMemoForPaths, extractNudoImports, isNodeModulesPath, sidecarPathOf, type AbsModuleExports } from "@nudojs/core";
 import { parse, extractDirectives, type DirectiveDiag } from "@nudojs/parser";
-import { extractAllLoadSpecs, resolveDepPath, sidecarSpecsOf, stablePathKey, stripStringsKeepComments, loadModuleDepsFingerprint, hashSource, runWithCollectorScope } from "@nudojs/core/internal";
+import { DIAG, extractAllLoadSpecs, hashSource, loadModuleDepsFingerprint, resolveDepPath, runWithCollectorScope, sidecarSpecsOf, stablePathKey, stripStringsKeepComments } from "@nudojs/core/internal";
 import type { File } from "@babel/types";
 import { createHash } from "node:crypto";
 
@@ -200,14 +200,14 @@ export function filterCheckLspByLevel(
   level: "off" | "errors" | "default" | "verbose",
 ): LspDiagnostic[] {
   /** CLI check 永远门禁的码：analysis.diagnostics=off 也不得静默 */
-  const ALWAYS_KEEP = new Set([
-    "nudo:entry-may-throw",
-    "nudo:constraint-violated",
-    "nudo:assign-mismatch",
-    "nudo:arg-structure",
-    "nudo:case-inconsistency",
-    "nudo:interface-param-mismatch",
-    "nudo:interface-conflict",
+  const ALWAYS_KEEP = new Set<string>([
+    DIAG.entryMayThrow,
+    DIAG.constraintViolated,
+    DIAG.assignMismatch,
+    DIAG.argStructure,
+    DIAG.caseInconsistency,
+    DIAG.interfaceParamMismatch,
+    DIAG.interfaceConflict,
   ]);
   const isGate = (d: LspDiagnostic): boolean => {
     const code = (d as { code?: string | number }).code;
@@ -847,7 +847,7 @@ export function checkToLspDiagnostics(
         range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
         message: `Check error: ${sanitizeErrorMessage((err as Error).message, workspaceRoots)}`,
         source: "nudo-check",
-        code: "nudo:internal",
+        code: DIAG.internal,
       },
     ];
   }
@@ -886,7 +886,7 @@ async function envUnresolvedDiags(filePath: string, source: string): Promise<Lsp
       range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
       message: `path env failed to load: ${e.path} — ${e.error}`,
       source: "nudo-check",
-      code: "nudo:env-unresolved",
+      code: DIAG.envUnresolved,
     }));
 }
 
