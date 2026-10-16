@@ -133,6 +133,9 @@ export function analyzeFileUncachedInner(
   // 显式通道：诊断直接落局部数组，不碰模块级 buffer（无 seq 锚 / 在途窃取窗口）
   const dirDiags: DirectiveDiag[] = [];
   const functions = extractDirectives(ast, { diags: dirDiags });
+  // JSDoc 块内错位的文件级指令族标签（@nudo:env / @nudo:mock-module）同通道
+  // 告警：块注释形态被抽取器忽略（只认行注释），不再静默（复用 nudo:directive-syntax）
+  const fileDirectives = extractFileDirectives(ast, { diags: dirDiags });
   const diagnostics: Diagnostic[] = [];
   for (const d of dirDiags) {
     diagnostics.push({
@@ -160,7 +163,7 @@ export function analyzeFileUncachedInner(
     }
   });
 
-  const fileDirectives = extractFileDirectives(ast);
+  // fileDirectives 已在 dirDiags 通道一并抽取（错位标签告警同域去重）
   const fileEnvNames = fileDirectives
     .filter((d) => d.kind === "env")
     .flatMap((d) => d.envs);

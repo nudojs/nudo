@@ -98,6 +98,18 @@ export type CheckReport = {
     /** 循环迭代预算截断（#loop-iterations；maxIters/硬上限，非调用预算） */
     loopTruncated: boolean;
     reasons: string[];
+    /** A 路径（enterCall）截断原因——归因到具体预算/路径（depth≠calls 预算） */
+    callReasons: string[];
+    /** A 路径最大进入深度；depth 截断时 = 触发时深度（== 触发时生效上限） */
+    depth: number;
+    /** A 路径 depth 上限；depth 截断时 = 触发时生效上限 */
+    maxDepth: number;
+    /** B 路径（$callNamed）截断原因 */
+    evalReasons: string[];
+    /** B 路径最大进入深度；depth 截断时 = 触发时深度（== 触发时生效上限） */
+    evalDepth: number;
+    /** B 路径 depth 上限；depth 截断时 = 触发时生效上限 */
+    maxEvalDepth: number;
   };
 };
 
@@ -365,6 +377,13 @@ export function serializeCheckJsonMulti(reports: CheckJson[]): CheckJsonMulti {
   let evalCallTruncated = false;
   let cycleTruncated = false;
   let loopTruncated = false;
+  // 归因字段（#health-budget）：reasons 取并集、depth 取各文件观测最大值
+  const callReasons = new Set<string>();
+  const evalReasons = new Set<string>();
+  let depth = 0;
+  let maxDepth = 0;
+  let evalDepth = 0;
+  let maxEvalDepth = 0;
   const reasons = new Set<string>();
   for (const r of reports) {
     summary.errors += r.summary.errors;
@@ -383,6 +402,12 @@ export function serializeCheckJsonMulti(reports: CheckJson[]): CheckJsonMulti {
       evalCallTruncated = evalCallTruncated || (r.budget.evalCallTruncated ?? false);
       cycleTruncated = cycleTruncated || (r.budget.cycleTruncated ?? false);
       loopTruncated = loopTruncated || (r.budget.loopTruncated ?? false);
+      for (const x of r.budget.callReasons ?? []) callReasons.add(x);
+      for (const x of r.budget.evalReasons ?? []) evalReasons.add(x);
+      depth = Math.max(depth, r.budget.depth ?? 0);
+      maxDepth = Math.max(maxDepth, r.budget.maxDepth ?? 0);
+      evalDepth = Math.max(evalDepth, r.budget.evalDepth ?? 0);
+      maxEvalDepth = Math.max(maxEvalDepth, r.budget.maxEvalDepth ?? 0);
       for (const x of r.budget.reasons ?? []) reasons.add(x);
     }
   }
@@ -410,6 +435,12 @@ export function serializeCheckJsonMulti(reports: CheckJson[]): CheckJsonMulti {
             evalCallTruncated,
             cycleTruncated,
             loopTruncated,
+            callReasons: [...callReasons].sort(),
+            depth,
+            maxDepth,
+            evalReasons: [...evalReasons].sort(),
+            evalDepth,
+            maxEvalDepth,
             reasons: [...reasons].sort(),
           },
         }
@@ -429,6 +460,52 @@ const CONTRACT_FIX_CODES = new Set([
 ]);
 
 /**
+ * budget 归因段构建器——check 面（formatCheckReport）与 health 面
+ * （nudojs commands/health）单一实现（#health-budget，两处曾各自维护
+ * 同一映射而漂移出回归）：只打触发截断的那条预算自己的计数段——
+ * depth 截断打 depth/limit 对、calls 截断打计数/上限（必到顶）、
+ * cycle 不是预算（无可打的计数）——杜绝「71/20000 却标 truncated」。
+ * 参数是 CheckReport.budget 内联对象与 AbsBudgetStats 的结构公共子集
+ * （reasons 按 `?? []` 防御，两个来源都必填但防御面保持一致）。
+ */
+export function budgetAttributionSegs(b: {
+  calls: number;
+  maxCalls: number;
+  /** A 路径（enterCall）截断原因 */
+  callReasons?: readonly string[];
+  depth: number;
+  maxDepth: number;
+  evalCalls: number;
+  maxEvalCalls: number;
+  /** B 路径（$callNamed）截断原因 */
+  evalReasons?: readonly string[];
+  evalDepth: number;
+  maxEvalDepth: number;
+  forks: number;
+  maxForks: number;
+  forkTruncated: boolean;
+  loopTruncated: boolean;
+}): { segs: string[]; cycleOnly: boolean } {
+  const segs: string[] = [];
+  if ((b.callReasons ?? []).includes("calls")) segs.push(`calls ${b.calls}/${b.maxCalls}`);
+  if ((b.callReasons ?? []).includes("depth")) segs.push(`call depth ${b.depth}/${b.maxDepth}`);
+  if ((b.evalReasons ?? []).includes("calls")) {
+    segs.push(`eval calls ${b.evalCalls}/${b.maxEvalCalls}`);
+  }
+  if ((b.evalReasons ?? []).includes("depth")) {
+    segs.push(`eval depth ${b.evalDepth}/${b.maxEvalDepth}`);
+  }
+  if (b.forkTruncated) segs.push(`forks ${b.forks}/${b.maxForks}`);
+  if (b.loopTruncated) segs.push("loop iterations");
+  // 空段 ⇔ 只有 cycle 触发（cycle 也会置 callTruncated/evalCallTruncated，
+  // 但 cycle/depth/calls 三种 reason 里只有 cycle 不产计数段）——归因必须
+  // 非空：纯 cycle 截断打「非预算」标签，杜绝「truncated」后空白
+  const cycleOnly = segs.length === 0;
+  if (cycleOnly) segs.push("call cycle — not a budget limit");
+  return { segs, cycleOnly };
+}
+
+/**
  * Nudo 原生报告：Abs 签名表 + actual ⊭ expected。
  * 不是 tsc 输出的换皮。
  */
@@ -440,19 +517,20 @@ export function formatCheckReport(r: CheckReport, opts: { verbose?: boolean } = 
     `  ${r.summary.errors} error · ${r.summary.warnings} warning · ${r.summary.infos} info · ${r.summary.functions} fn`,
   );
 
-  // A2：预算截断必须上屏——用户要能知道结果何时被 widen
+  // A2：预算截断必须上屏——用户要能知道结果何时被 widen。
+  // 归因段与 health 面同一实现（budgetAttributionSegs，#health-budget）；
+  // 空段 ⇔ 纯 cycle 触发的兜底段由共享构建器负责。
   if (r.budget?.truncated) {
+    const b = r.budget;
     const onlyLoop =
-      r.budget.loopTruncated &&
-      !r.budget.callTruncated &&
-      !r.budget.evalCallTruncated &&
-      !r.budget.forkTruncated;
+      b.loopTruncated &&
+      !b.callTruncated &&
+      !b.evalCallTruncated &&
+      !b.forkTruncated;
+    const { segs } = budgetAttributionSegs(b);
     lines.push("");
     lines.push("budget");
-    lines.push(
-      `  truncated  calls ${r.budget.calls}/${r.budget.maxCalls} · eval calls ${r.budget.evalCalls}/${r.budget.maxEvalCalls} · forks ${r.budget.forks}/${r.budget.maxForks}` +
-        `${r.budget.callTruncated ? "  (calls)" : ""}${r.budget.evalCallTruncated ? "  (eval calls)" : ""}${r.budget.forkTruncated ? "  (forks)" : ""}${r.budget.loopTruncated ? "  (loop iters)" : ""}`,
-    );
+    lines.push(`  truncated  ${segs.join(" · ")}`);
     lines.push(
       r.budget.cycleTruncated
         ? `  → some results widened to unknown (not a contract failure) — includes call cycles (same abstract args; a budget cannot lift them)`

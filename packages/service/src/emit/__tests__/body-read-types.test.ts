@@ -4,6 +4,8 @@
 import { describe, it, expect } from "vitest";
 import {
   collectParamBodyReadTypes,
+  collectParamContracts,
+  contractDslOf,
   shapeDslFromFields,
 } from "../body-read-types.ts";
 
@@ -175,5 +177,105 @@ export function opt(node) {
         (f) => f.field === "start",
       )?.fields?.find((f) => f.field === "line")?.type,
     ).toBe("any()");
+  });
+});
+
+// —— 数组方法接收者读（quickfix 数组形态证据面）——
+// `items.reduce(…)` 是方法读不是字段读：进 shape 字段清单会发射
+// `shape({ reduce: any() })`，写盘后 L2 永远证不出（fix-12）。
+describe("array receiver evidence", () => {
+  it("array method receiver read never becomes a shape field", () => {
+    const map = collectParamBodyReadTypes(`
+export function subtotal(items, tax) {
+  return items.reduce((s, i) => s + i.price * i.qty, 0) * (1 + tax);
+}
+`);
+    // items 无字段读（reduce 不是字段）；tax 无成员读 → 整函数无字段条目
+    expect(map.get("subtotal")).toBeUndefined();
+  });
+
+  it("reduce receiver → array(shape(…)) from callback element param + scalar tax", () => {
+    const contracts = collectParamContracts(`
+export function subtotal(items, tax) {
+  return items.reduce((s, i) => s + i.price * i.qty, 0) * (1 + tax);
+}
+`);
+    const ev = contracts.get("subtotal");
+    // reduce 元素位是第 2 形参（第 1 位是累加器 s，不进元素 shape）
+    expect(contractDslOf(ev?.get("items")!)).toBe(
+      "array(shape({ price: number(), qty: number() }))",
+    );
+    // tax 参与算术 → number()（多参逐位收窄：单写 items 消不掉 L2）
+    expect(contractDslOf(ev?.get("tax")!)).toBe("number()");
+    // 声明序：items 先于 tax
+    expect([...ev!.keys()]).toEqual(["items", "tax"]);
+  });
+
+  it("map/filter callbacks merge element fields; nested deref stays nested shape", () => {
+    const contracts = collectParamContracts(`
+export function adultTags(users) {
+  return users.filter((u) => u.age >= 18).map((u) => u.meta.tag).join(",");
+}
+`);
+    const ev = contracts.get("adultTags")?.get("users");
+    expect(contractDslOf(ev!)).toBe(
+      "array(shape({ age: number(), meta: shape({ tag: any() }) }))",
+    );
+  });
+
+  it("receiver without callback evidence → array(any())", () => {
+    const contracts = collectParamContracts(`
+export function joiner(items) {
+  return items.join(", ");
+}
+`);
+    expect(contractDslOf(contracts.get("joiner")?.get("items")!)).toBe(
+      "array(any())",
+    );
+  });
+
+  it("sort comparator: both callback params feed the element shape", () => {
+    const contracts = collectParamContracts(`
+export function sortBy(rows) {
+  return rows.slice().sort((a, b) => a.n - b.n);
+}
+`);
+    expect(contractDslOf(contracts.get("sortBy")?.get("rows")!)).toBe(
+      "array(shape({ n: number() }))",
+    );
+  });
+
+  it("nested array element: matrix.map(row => row.map(…)) → array(array(…))", () => {
+    const contracts = collectParamContracts(`
+export function flatPrices(matrix) {
+  return matrix.map((row) => row.map((x) => x.p * 2)).flat();
+}
+`);
+    expect(contractDslOf(contracts.get("flatPrices")?.get("matrix")!)).toBe(
+      "array(array(shape({ p: number() })))",
+    );
+  });
+
+  it("plain object field read stays shape (non-array unchanged)", () => {
+    const contracts = collectParamContracts(`
+export function getName(u) {
+  return u.name;
+}
+`);
+    expect(contractDslOf(contracts.get("getName")?.get("u")!)).toBe(
+      "shape({ name: any() })",
+    );
+  });
+
+  it("bare receiver reference (not called) is not array evidence", () => {
+    // `items.reduce` 未在调用位：无数组证据，退化为普通字段读
+    const contracts = collectParamContracts(`
+export function ref(items) {
+  const m = items.reduce;
+  return typeof m;
+}
+`);
+    const ev = contracts.get("ref")?.get("items");
+    expect(ev?.kind).toBe("shape");
   });
 });

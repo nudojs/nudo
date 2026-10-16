@@ -330,6 +330,21 @@ export function getEvalCallCollector(): ((r: EvalCallRecord) => void) | null {
  */
 let hostGlobalFnIds: Set<unknown> | undefined;
 
+/** 函数值 accessor 白名单：GET 无警告、值 typeof function、身份被消费的宿主全局。
+ *  node 26 实测（descriptor + typeof 全量探测）：Buffer（TypedArray 构造器）、
+ *  assert / events / stream / node:test（legacy builtin 模块，module.exports 即
+ *  函数）——读齐这五个后收集集与旧「全量 GET」实现逐元素一致（其余 accessor：
+ *  process/crypto/navigator/punycode/sys/wasi/ffi/模块 namespace，读出均非函数）。
+ *  未来新增非 accessor 宿主函数不受影响（value 属性照常收集）；新增 accessor
+ *  宿主函数若不在列，只会回落保守路径（无假精度），不泄漏警告。 */
+const HOST_FN_ACCESSOR_ALLOWLIST: ReadonlySet<string> = new Set([
+  "Buffer",
+  "assert",
+  "events",
+  "stream",
+  "node:test",
+]);
+
 /** 宿主全局函数身份判定（$new 宿主构造器分支共用，Bug 16）：模块转译
  *  函数是全新对象，绝不与宿主全局同一 → 不误伤。 */
 export function isHostGlobalFn(fn: unknown): boolean {
@@ -338,6 +353,20 @@ export function isHostGlobalFn(fn: unknown): boolean {
     hostGlobalFnIds = new Set<unknown>();
     const g = globalThis as Record<string, unknown>;
     for (const k of Object.getOwnPropertyNames(g)) {
+      const d = Object.getOwnPropertyDescriptor(g, k);
+      if (
+        d &&
+        (d.get !== undefined || d.set !== undefined) &&
+        !HOST_FN_ACCESSOR_ALLOWLIST.has(k)
+      ) {
+        // accessor 属性：GET 会执行宿主 lazy getter。Node ≥ 23 的 builtin
+        // alias getter（wasi / node:ffi / punycode / sys / …）GET 即发
+        // Experimental / Deprecation 警告，名单随版本只增不减
+        // （node:test / node:sea 已在列）→ 追「跳名清单」不可维护，按
+        // descriptor 形态跳过全部 accessor（白名单除外）。try/catch 无效
+        // （警告非异常）、`in` 预检无效（accessor 存在，GET 仍警告）。
+        continue;
+      }
       const v = g[k];
       if (typeof v === "function") hostGlobalFnIds.add(v);
     }
@@ -460,6 +489,12 @@ let evalFnCallIdSeq = 0;
 let evalObsCalls = 0;
 let evalObsCallTruncated = false;
 let evalObsCycleTruncated = false;
+// B 路径归因分流（A/B 同名预算上屏要指到具体路径）+ depth 现场快照：
+// depth 截断时计数/上限取首次触发现场（@nudo:budget 覆盖期间触发亦如实）。
+const evalObsReasons = new Set<AbsTruncationReason>();
+let evalObsMaxDepth = 0;
+let evalObsDepthTruncDepth: number | null = null;
+let evalObsDepthTruncLimit: number | null = null;
 
 // 探针注册（call-budget 反向 import 破环 → 注册式；本模块加载即生效）
 registerEvalCallBudgetProbe({
@@ -468,11 +503,18 @@ registerEvalCallBudgetProbe({
     maxCalls: evalTotalCallsLimit,
     callTruncated: evalObsCallTruncated,
     cycleTruncated: evalObsCycleTruncated,
+    depth: evalObsDepthTruncDepth ?? evalObsMaxDepth,
+    maxDepth: evalObsDepthTruncLimit ?? evalCallDepthLimit,
+    reasons: [...evalObsReasons].sort(),
   }),
   resetObservability: () => {
     evalObsCalls = 0;
     evalObsCallTruncated = false;
     evalObsCycleTruncated = false;
+    evalObsReasons.clear();
+    evalObsMaxDepth = 0;
+    evalObsDepthTruncDepth = null;
+    evalObsDepthTruncLimit = null;
   },
 });
 
@@ -497,6 +539,10 @@ export function resetEvalCallBudget(): void {
   evalObsCalls = 0;
   evalObsCallTruncated = false;
   evalObsCycleTruncated = false;
+  evalObsReasons.clear();
+  evalObsMaxDepth = 0;
+  evalObsDepthTruncDepth = null;
+  evalObsDepthTruncLimit = null;
   // fork 总次数与调用预算同轮生命周期（不跨宿主入口累积）
   resetEvalForkBudget();
   // pure memo 同轮生命周期（宿主入口清零，防长驻进程无界膨胀）
@@ -590,12 +636,20 @@ export function evalEnterCall(name: string, fn: unknown, args: Abs[]): { ok: boo
         : undefined;
   if (reason) {
     evalObsCallTruncated = true;
+    evalObsReasons.add(reason);
     if (reason === "cycle") evalObsCycleTruncated = true;
+    // depth 截断现场（首次）：depth 计数上屏必须用触发时的深度/上限对
+    //（与 call-budget.ts enterCall 的 A 路径同口径）
+    if (reason === "depth" && evalObsDepthTruncDepth === null) {
+      evalObsDepthTruncDepth = evalCallDepth;
+      evalObsDepthTruncLimit = evalCallDepthLimit;
+    }
     noteAbsTruncation(name, reason);
     return { ok: false };
   }
   evalActiveCallKeys.push(key);
   evalCallDepth++;
+  if (evalCallDepth > evalObsMaxDepth) evalObsMaxDepth = evalCallDepth;
   evalTotalCalls++;
   evalObsCalls++;
   return { ok: true, key };

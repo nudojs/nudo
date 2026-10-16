@@ -3,9 +3,10 @@
  * runCheck 拆为 loadCache / buildInjection / report+exit 三段；
  * 依赖（@nudojs/core / service / parser）均为静态依赖，顶部静态引入。
  */
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, statSync } from "node:fs";
 import { resolve, dirname, basename } from "node:path";
 import type { Command } from "commander";
+import { paint } from "../ui.ts";
 import {
   actionsForIssue,
   checkSource,
@@ -14,6 +15,7 @@ import {
   formatCheckReport,
   formatGithubAnnotations,
   formatGitlabCodeQuality,
+  listFnDirectiveScopes,
   pTrue,
   serializeCheckJson,
   serializeCheckJsonMulti,
@@ -50,6 +52,8 @@ import {
 } from "@nudojs/service";
 import {
   extractDirectives,
+  extractDirectivesQuiet,
+  extractFileDirectives,
   parse,
   runWithDirectiveDiags,
   type DirectiveDiag,
@@ -72,6 +76,7 @@ import {
 } from "./shared.ts";
 import {
   checkGateFromConfig,
+  invalidGateConfig,
   isEntryThrowsMode,
   isGateProfile,
   mergeIgnoreThrows,
@@ -133,6 +138,77 @@ export function fileEnvNamesFromText(source: string): string[] {
 }
 
 // ---------------------------------------------------------------------------
+// #1 零配置 onboarding / #9 缓存 opt-in 提示（人类面批次探针）
+// ---------------------------------------------------------------------------
+
+/** L2 入口 may-throw 诊断码（onboarding 指纹：error 全为此码才打引导块） */
+const ENTRY_MAY_THROW_CODE = "nudo:entry-may-throw";
+
+/**
+ * 零配置指纹（#1）：源文件是否出现任何 @nudo:* 指令。
+ * parser 面（函数级 case/mock/pure/skip/sample、文件级 env/import/mock-module、
+ * 行内 as/replace）与 core 面函数标签（contract/assume/invariant/throws/budget，
+ * 清洗行首锚定）取并集——任一在场即不是纯净新项目。
+ */
+function sourceHasNudoDirectives(source: string): boolean {
+  const reps = collectEvalReplacements(source);
+  if (reps.targets.length > 0 || reps.asTargets.length > 0) return true;
+  const ast = parse(source);
+  if (extractDirectivesQuiet(ast).length > 0) return true;
+  if (extractFileDirectives(ast, { diags: [] }).length > 0) return true;
+  return listFnDirectiveScopes(ast).some((s) =>
+    s.commentLines.some((l) => l.startsWith("@nudo:")),
+  );
+}
+
+/**
+ * 人类面批次探针（action 层每轮新建；runCheck 聚合静态指纹，emitCheckReport
+ * 聚合 error 计数 / 缓存启用）。#1 onboarding 四条件：
+ * errorIssues>0（本次 exit 1）∧ 全部 error 为 L2 ∧ 零 @nudo:* 指令 ∧ 零 nudo 配置。
+ */
+type BatchProbe = {
+  /** 有 @nudo:* 指令的目标文件数（须为 0） */
+  filesWithDirectives: number;
+  /** 发现 package.json#nudo 配置的目标文件数（须为 0） */
+  filesWithConfig: number;
+  /** error 级 issue 总数（须 >0 且全为 L2） */
+  errorIssues: number;
+  /** 非 L2 error（含注入装配失败）出现即破坏指纹 */
+  nonL2Error: boolean;
+  /** 任一目标项目磁盘缓存已启用（nudo.cache / NUDO_CACHE_DIR） */
+  cacheEnabled: boolean;
+};
+
+function freshBatchProbe(): BatchProbe {
+  return {
+    filesWithDirectives: 0,
+    filesWithConfig: 0,
+    errorIssues: 0,
+    nonL2Error: false,
+    cacheEnabled: false,
+  };
+}
+
+/** #1 onboarding 块：issues 段之后、docs 段之前（措辞是文档/verify-examples 同步基线） */
+function printOnboardingBlock(): void {
+  console.log("");
+  console.log("onboarding");
+  console.log(
+    "  every error above is an L2 entry may-throw — unconstrained entry points, not broken contracts.",
+  );
+  console.log(
+    "  no @nudo:* directives and no package.json#nudo config found in this project yet. next steps:",
+  );
+  console.log("    nudo init                      write an adoption baseline config (L2 → warning)");
+  console.log("    nudo contract --draft <file>   draft a *.nudo.js sidecar contract for one file");
+  console.log("    nudo check --profile adoption  preview the gate with L2 as warnings");
+}
+
+/** #9 缓存 opt-in 提示（stderr 一行；仅人类面批量场景） */
+const CACHE_HINT =
+  '[hint] repeat runs: enable "nudo": { "cache": true } in package.json to speed up multi-file checks — see docs/design/persistent-cache.md';
+
+// ---------------------------------------------------------------------------
 // 门禁解析链单源（runCheck / runCheckFix 共用）
 // ---------------------------------------------------------------------------
 
@@ -142,6 +218,24 @@ type GateCliOptions = {
   entryThrows?: EntryThrowsMode;
   profile?: GateProfile;
 };
+
+/**
+ * package.json#nudo.check.profile typo 警告（stderr 一行，不影响 exit code）：
+ * 非法 profile 此前被 checkGateFromConfig 静默丢弃回落 strict——用户以为
+ * 在 adoption 档。CLI 旗标有 validateGateFlags 校验而配置面没有。
+ * entryThrows 不在此报：service 层 checkConfig 已单源告警
+ * （`nudo.check.entryThrows: invalid value …`，LSP/CLI 同口径）。
+ * 同一 typo 进程内去重（批量/多文件不重复刷屏；watch 跨轮不重报）。
+ */
+const warnedGateConfig = new Set<string>();
+function warnInvalidGateConfig(config: Parameters<typeof checkConfig>[0]): void {
+  const invalid = invalidGateConfig(config);
+  if (invalid.profile === undefined || warnedGateConfig.has(invalid.profile)) return;
+  warnedGateConfig.add(invalid.profile);
+  console.error(
+    `warning: package.json nudo.check.profile: unknown value "${invalid.profile}" (expected: adoption | strict) — using default strict`,
+  );
+}
 
 /**
  * 门禁解析链（项目配置已知时的下半段）：
@@ -155,6 +249,7 @@ function resolveGateForConfig(
   config: Parameters<typeof checkConfig>[0],
   cli: GateCliOptions,
 ): { entryThrows: EntryThrowsMode; ignoreThrows: string[] } {
+  warnInvalidGateConfig(config);
   const cCfg = checkConfig(config);
   const gate = checkGateFromConfig(config);
   return {
@@ -176,6 +271,22 @@ function resolveGateForFile(
 // ---------------------------------------------------------------------------
 
 /** runCheck 选项（action 层装配；jsonCollect / gitlabRowsCollect / gateFlags 为多文件聚合通道） */
+
+/**
+ * --json 多文件聚合通道：注入装配失败标记 + 语法错文件的 pathError 行
+ * （后者与路径错误同信封字段——attachPathErrors 挂 ok:false；code 用
+ * 非 `nudo:*` 的 file 级事实码，不进源文件诊断术语表）。
+ */
+type GateFlagsChannel = {
+  injectionSetupFailed?: boolean;
+  syntaxPathErrors?: Array<{
+    path: string;
+    code: "syntax-error";
+    message: string;
+    suggestion: string;
+  }>;
+};
+
 type RunCheckOptions = {
   json?: boolean;
   /** 多文件 --json：收集 CheckJson，不在本函数内打印 / 设 exit */
@@ -199,7 +310,20 @@ type RunCheckOptions = {
    * （CheckJson ok:true），失败态必须经共享对象带到信封 exit，
    * 否则 `envelope.ok ? 0 : 1` 覆盖成假绿。
    */
-  gateFlags?: { injectionSetupFailed?: boolean };
+  gateFlags?: GateFlagsChannel;
+  /**
+   * --quiet：压 signatures 段（大仓 CI 日志降噪）——issues + summary +
+   * 门禁 exit 语义不变；成功且零 issue 时只打一行摘要。仅人类文本面
+   * （--json / --gitlab 机器契约不受影响）。
+   */
+  quiet?: boolean;
+  /**
+   * 人类面批次探针（#1/#9 聚合通道）：action 层仅在人类模式创建
+   * （--json / --gitlab / --gha / --fix 的 stdout 与 stderr 都是机器契约面）。
+   */
+  batchProbe?: BatchProbe;
+  /** 本轮最后一个目标：#1 onboarding 块在其 issues 段之后打印 */
+  onboardingFinal?: boolean;
 };
 
 /** 段1产物：缓存命中态 + 缓存键输入（段3 决定是否回写） */
@@ -308,6 +432,75 @@ async function loadCheckCache(
 /** `@nudo:mock name from "path"` 解析失败（缺文件/缺绑定/求值失败） */
 type MockFromError = { name: string; fromPath: string; message: string; code?: string };
 
+// ---------------------------------------------------------------------------
+// 语法错 UX（tsc 风格）：path:line:col — syntax error + 源码摘录 + ^ 指位
+// ---------------------------------------------------------------------------
+
+/** 语法错定位 + 本质信息（line/column 为 Babel 原生 1-based line / 0-based column） */
+type SyntaxErrorInfo = { line: number; column: number; essence: string };
+
+/**
+ * 解析/装配阶段的语法类错误识别。两种定位形态都处理：
+ *  - `err.loc`（Babel SyntaxError 原生，{line, column}）；
+ *  - message 尾部 `(l:c)`（经 service 层转发丢失 loc 的包装错）。
+ * 非语法类装配失败返回 null（走 `analysis setup failed` 通道）。
+ */
+function syntaxErrorInfo(err: unknown): SyntaxErrorInfo | null {
+  const message = String((err as Error | undefined)?.message ?? err ?? "");
+  const name = (err as { name?: unknown } | null | undefined)?.name;
+  const loc = (err as { loc?: { line?: unknown; column?: unknown } } | undefined)?.loc;
+  const looksSyntax =
+    err instanceof SyntaxError ||
+    name === "SyntaxError" ||
+    (loc !== undefined && loc !== null) ||
+    /\(\d+:\d+\)\s*$/.test(message);
+  if (!looksSyntax) return null;
+  let line: number | undefined;
+  let column: number | undefined;
+  if (loc && typeof loc.line === "number" && typeof loc.column === "number") {
+    line = loc.line;
+    column = loc.column;
+  } else {
+    const m = /\((\d+):(\d+)\)\s*$/.exec(message);
+    if (m) {
+      line = Number(m[1]);
+      column = Number(m[2]);
+    }
+  }
+  if (line === undefined || column === undefined) return null;
+  const essence = message.replace(/\s*\(\d+:\d+\)\s*$/, "").trim() || "syntax error";
+  return { line, column, essence };
+}
+
+/**
+ * 语法错上屏块（对齐 tsc 的 file:line:col + 源码 + 指位风格）：
+ * `path:line:col — syntax error: <本质信息>` + 源码行摘录 + 下一行 `^` 指位。
+ * 显示列 1-based（Babel 0-based + 1）；错误行越界/为空（EOF 错）时摘录回落
+ * 到最后一个非空行、`^` 落行尾；空源码退化为首行。
+ */
+function formatSyntaxErrorBlock(filePath: string, source: string, info: SyntaxErrorInfo): string {
+  const lines = source.split("\n").map((l) => l.replace(/\r$/, ""));
+  const header = `${filePath}:${info.line}:${info.column + 1} — syntax error: ${info.essence}`;
+  let excerpt: string | undefined;
+  let caretIndent: number | undefined;
+  const at = info.line >= 1 && info.line <= lines.length ? lines[info.line - 1] : undefined;
+  if (at !== undefined && at.trim().length > 0) {
+    excerpt = at;
+    caretIndent = Math.min(info.column, at.length);
+  } else {
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const l = lines[i]!;
+      if (l.trim().length > 0) {
+        excerpt = l;
+        caretIndent = l.length;
+        break;
+      }
+    }
+  }
+  if (excerpt === undefined || caretIndent === undefined) return header;
+  return `${header}\n${excerpt}\n${" ".repeat(caretIndent)}^`;
+}
+
 /**
  * eval 注入包装配。装配失败 throw——由调用方降级处理（BUG-023：
  * 分析仍跑，但门禁红且缓存不回写）。同文件内复用同一注入对象
@@ -327,11 +520,16 @@ function buildCheckInjection(
 ): { inject: RunTranspiledOptions; mockFromErrors: MockFromError[] } {
   const graph = evalAbsModuleGraph(source, filePath);
   const reps = collectEvalReplacements(source, { diags: dirDiags });
-  const seedPkg = runWithDirectiveDiags(dirDiags, () =>
-    mockDirectivesToAbsSeeds(extractDirectives(parse(source)), {
+  const seedPkg = runWithDirectiveDiags(dirDiags, () => {
+    const ast = parse(source);
+    const seeds = mockDirectivesToAbsSeeds(extractDirectives(ast), {
       fromFile: filePath,
-    }),
-  );
+    });
+    // D1 同族：JSDoc 块内错位的文件级指令族标签（@nudo:env / @nudo:mock-module）
+    // 不再静默——纯查询 extract 落本域（提取面不变，仍只认行注释）
+    extractFileDirectives(ast);
+    return seeds;
+  });
   let mockFromErrors: MockFromError[] = seedPkg.fromErrors ?? [];
   const mocks = mockSeedsToAbsMocks(seedPkg);
   const envGlobals = collectEnvGlobals(allEnvNames);
@@ -404,6 +602,15 @@ async function emitCheckReport(
   }
 
   const checkJson = cachedJson ?? serializeCheckJson(report);
+  // 批次探针聚合（#1/#9）：error 计数、非 L2 error 破坏标记、磁盘缓存启用探测
+  if (opts.batchProbe) {
+    const errs = report.issues.filter((i) => i.severity === "error");
+    opts.batchProbe.errorIssues += errs.length;
+    if (injectionSetupFailed || errs.some((i) => i.code !== ENTRY_MAY_THROW_CODE)) {
+      opts.batchProbe.nonL2Error = true;
+    }
+    if (cache.disk.enabled) opts.batchProbe.cacheEnabled = true;
+  }
   const wantGha = shouldEmitGha(opts.gha, process.env.GITHUB_ACTIONS);
   const workspaceRoot = process.env.GITHUB_WORKSPACE ?? process.cwd();
   const emitCiAnnotations = (): void => {
@@ -446,7 +653,7 @@ async function emitCheckReport(
     emitCiAnnotations();
     if (!report.ok) {
       // 仍打印简报，便于日志
-      console.error(formatCheckReport(report, { verbose: false }));
+      console.error(paint(formatCheckReport(report, { verbose: false })));
     }
   } else if (opts.abs) {
     // 代数观察面（term/pred/conf）；门禁不因 --abs 关闭：L1/L2 error 仍 exit 1
@@ -454,7 +661,7 @@ async function emitCheckReport(
     if (!report.ok) {
       // abs 仍计算 report：错误上屏，避免 exit 1 却无可见诊断
       console.log("");
-      console.log(formatCheckReport(report, { verbose: false }));
+      console.log(paint(formatCheckReport(report, { verbose: false })));
     } else {
       console.log("");
       console.log(`nudo check  ${basename(filePath)}`);
@@ -464,9 +671,39 @@ async function emitCheckReport(
       );
     }
     emitCiAnnotations();
-  } else {
-    console.log(formatCheckReport(report, { verbose: opts.verbose === true }));
+  } else if (opts.quiet) {
+    // --quiet（人类文本面）：压 signatures 段——issues + summary + 门禁 exit
+    // 不变；成功且零 issue 时只打一行摘要（文件 + OK + 计数）。空 signatures
+    // 的浅拷贝走同一 formatCheckReport：budget / issues 各段与全量面同构。
+    if (report.ok && report.issues.length === 0) {
+      console.log(
+        `nudo check  ${basename(filePath)}  OK  ${report.summary.errors} error · ${report.summary.warnings} warning · ${report.summary.infos} info · ${report.summary.functions} fn`,
+      );
+    } else {
+      console.log(
+        paint(
+          formatCheckReport({ ...report, signatures: [] }, { verbose: opts.verbose === true }),
+        ),
+      );
+    }
     emitCiAnnotations();
+  } else {
+    console.log(paint(formatCheckReport(report, { verbose: opts.verbose === true })));
+    emitCiAnnotations();
+  }
+
+  // #1 零配置 onboarding（issues 段之后、docs 段之前）：全部 error 为 L2 入口
+  // may-throw + 全部目标零 @nudo:* 指令 + 零 nudo 配置的纯净新项目指纹。
+  // 门禁语义不变（仍 exit 1）；探针只在人类面创建（--json/--gitlab/--gha 无）。
+  if (
+    opts.batchProbe &&
+    opts.onboardingFinal &&
+    opts.batchProbe.errorIssues > 0 &&
+    !opts.batchProbe.nonL2Error &&
+    opts.batchProbe.filesWithDirectives === 0 &&
+    opts.batchProbe.filesWithConfig === 0
+  ) {
+    printOnboardingBlock();
   }
 
   // 诊断 → 文档深链（仅终端面；--json / --gitlab 机器契约不打——
@@ -536,15 +773,42 @@ async function runCheck(file: string, opts: RunCheckOptions = {}): Promise<void>
       inject = built.inject;
       mockFromErrors = built.mockFromErrors;
     } catch (err) {
+      // 语法错文件：checkSource 走同一解析也会 throw（旧行为漏到顶层
+      // catch：裸 message、无文件名/摘录/指位且 stdout 全空）——这里
+      // 单点拦下：人类面 tsc 风格块（path:line:col + 摘录 + ^ 指位）、
+      // --json 面并入信封 pathErrors（与路径错误同字段，ok:false）。
+      const syntax = syntaxErrorInfo(err);
+      if (syntax) {
+        if (opts.json) {
+          // json ⇒ gateFlags 必在（action 层 1273/1290 两侧都装配）；自愈式
+          // 兜底防未来调用面漏传导致静默丢 ok:false
+          const flags = (opts.gateFlags ??= {});
+          (flags.syntaxPathErrors ??= []).push({
+            path: filePath,
+            code: "syntax-error",
+            message: `${syntax.line}:${syntax.column + 1} — syntax error: ${syntax.essence}`,
+            suggestion:
+              "fix the syntax error; run `nudo check` without --json for a source excerpt with a caret",
+          });
+        } else {
+          console.error(paint(formatSyntaxErrorBlock(filePath, source, syntax)));
+        }
+        injectionSetupFailed = true;
+        if (opts.gateFlags) opts.gateFlags.injectionSetupFailed = true;
+        // #1 指纹：语法错是非 L2 error（不得触发 onboarding 块）
+        if (opts.batchProbe) opts.batchProbe.nonL2Error = true;
+        process.exitCode = 1;
+        return;
+      }
       // BUG-023：注入装配失败不得静默跳过——无注入的分析
       // 会把未 mock 的模块图当作事实（假绿：签名看似通过
-      // 实则基于错误依赖）。上屏 + 失败态标记，分析仍跑
+      // 实则基于错误依赖）。上屏（含文件名）+ 失败态标记，分析仍跑
       // （观察面完整）；exit 由段3统一判定（不在此中途赋值：
       // --json 信封 / 缓存判定在其后，中途赋值会被
       // `ok ? 0 : 1` 覆盖回假绿），降级产物也不得写磁盘缓存
       // （否则下次 check 命中缓存整体跳过注入装配 → 静默转绿）。
       console.error(
-        `error: eval injection setup failed: ${(err as Error).message}`,
+        `error: analysis setup failed for ${filePath}: ${(err as Error).message}`,
       );
       injectionSetupFailed = true;
       if (opts.gateFlags) opts.gateFlags.injectionSetupFailed = true;
@@ -606,6 +870,11 @@ async function runCheck(file: string, opts: RunCheckOptions = {}): Promise<void>
   }
 
   // 段3 report+exit：打印面 + 缓存回写 + exit
+  // #1 指纹静态面：目标文件 @nudo:* 指令 / 项目 nudo 配置在场计数
+  if (opts.batchProbe) {
+    if (sourceHasNudoDirectives(source)) opts.batchProbe.filesWithDirectives++;
+    if (cache.proj) opts.batchProbe.filesWithConfig++;
+  }
   await emitCheckReport(filePath, report, cache, injectionSetupFailed, opts);
 }
 
@@ -694,6 +963,8 @@ async function runCheckFix(opts: {
           expected: issue.expected,
           suggestion: issue.suggestion,
           reason: issue.reason,
+          // 侧车契约验证重分析用同一宿主 loader（依赖解析与门禁复检同源）
+          loadModule: defaultLoadModule,
         });
         if (plan) plans.push(plan);
       }
@@ -774,6 +1045,10 @@ export function registerCheckCommand(program: Command): void {
     .argument("[paths...]", "File(s) or directory(s) to check")
     .option("--watch, -w", "Watch files and re-run check on change")
     .option("--json", "Emit stable CheckJson (1 file) or CheckJsonMulti envelope (N files) for CI / Agent")
+    .option(
+      "--quiet",
+      "Suppress the signature table (issues + summary + gate exit unchanged); clean run prints one summary line",
+    )
     .option("--gha", "GitHub Actions inline annotations (::error/::warning). Auto when GITHUB_ACTIONS=true")
     .option("--gitlab", "GitLab Code Quality JSON array (write as gl-code-quality-report.json)")
     .option("--verbose", "Expand Abs signatures (term/pred/conf detail)")
@@ -829,6 +1104,7 @@ export function registerCheckCommand(program: Command): void {
           only?: string[];
           write?: boolean;
           dryRun?: boolean;
+          quiet?: boolean;
         },
       ) => {
         // BUG-024：variadic 旗标（--from/--assume/--what-if/--only）
@@ -963,11 +1239,13 @@ export function registerCheckCommand(program: Command): void {
           profile?: GateProfile;
           gha?: boolean;
           gitlab?: boolean;
+          quiet?: boolean;
         } = {
           from: externalRecords,
           verbose: opts.verbose,
           gha: opts.gha,
           gitlab: opts.gitlab,
+          ...(opts.quiet ? { quiet: true } : {}),
           ...(opts.abs
             ? {
                 abs: true,
@@ -984,37 +1262,83 @@ export function registerCheckCommand(program: Command): void {
         };
 
         if (opts.json) {
-          // --json：路径错误纳入信封；exit 与 ok 单一来源（绝不 ok:true + exit≠0）
-          const wantMulti = targets.length > 1 || allPathErrors.length > 0;
-          if (wantMulti) {
-            const collected: CheckJson[] = [];
-            // 注入装配失败跨文件聚合（单文件 ok:true 的降级分析 + 失败态
-            // 必须让信封 exit 红，不能被 envelope.ok 覆盖成假绿）
-            const gateFlags: { injectionSetupFailed?: boolean } = {};
-            for (const t of targets) {
-              await runCheck(t, { ...shared, json: true, jsonCollect: collected, gateFlags });
-            }
-            const envelope = attachPathErrors(serializeCheckJsonMulti(collected), allPathErrors);
+          if (targets.length === 0 && allPathErrors.length === 0) {
+            // 0 targets 且无路径错误：paths 必有值，每个路径要么出目标要么出错误
+            process.exitCode = 0;
+            return;
+          }
+          // 统一 collect：单文件无路径/语法错时与原直连面逐字节一致地打单
+          // CheckJson；语法错文件（runCheck 提前 return、无 reports 条目）
+          // 经 gateFlags.syntaxPathErrors 与路径错误同信封字段并入 → ok:false
+          const collected: CheckJson[] = [];
+          // 注入装配失败跨文件聚合（单文件 ok:true 的降级分析 + 失败态
+          // 必须让信封 exit 红，不能被 envelope.ok 覆盖成假绿）
+          const gateFlags: GateFlagsChannel = {};
+          for (const t of targets) {
+            await runCheck(t, { ...shared, json: true, jsonCollect: collected, gateFlags });
+          }
+          const syntaxErrors = gateFlags.syntaxPathErrors ?? [];
+          if (targets.length > 1 || allPathErrors.length > 0 || syntaxErrors.length > 0) {
+            const envelope = attachPathErrors(serializeCheckJsonMulti(collected), [
+              ...allPathErrors,
+              ...syntaxErrors,
+            ]);
             console.log(JSON.stringify(envelope, null, 2));
             process.exitCode = envelope.ok && !gateFlags.injectionSetupFailed ? 0 : 1;
             return;
           }
-          if (targets.length === 1) {
-            await runCheck(targets[0]!, { ...shared, json: true });
+          const single = collected[0];
+          if (!single) {
+            process.exitCode = 1;
             return;
           }
-          // 0 targets 且无路径错误：paths 必有值，每个路径要么出目标要么出错误
-          process.exitCode = allPathErrors.length > 0 ? 1 : 0;
+          console.log(JSON.stringify(single, null, 2));
+          // exit 与打印出的 ok 同源；注入装配失败独立于 ok 挡红
+          process.exitCode = single.ok && !gateFlags.injectionSetupFailed ? 0 : 1;
           return;
         }
 
+        // #1/#9 人类面批次探针：--json / --gitlab / --gha / --fix 不参与
+        //（机器契约面 stdout 与 stderr 都必须干净；--fix 在上方已早退）
+        const humanMode = !opts.json && !opts.gitlab && !opts.gha;
+        // #9 批量指纹：多路径，或任一路径是目录
+        const multiPath =
+          paths.length > 1 ||
+          paths.some((p) => {
+            try {
+              return statSync(resolve(p)).isDirectory();
+            } catch {
+              return false;
+            }
+          });
+        // #1：批次探针——末目标的 issues 段后、docs 段前打 onboarding 块
+        const probe = humanMode ? freshBatchProbe() : undefined;
+        const lastTarget = targets[targets.length - 1];
+
         const runOne = async (t: string): Promise<void> => {
           // --abs 仍走 runCheck：代数观察 + L1/L2 门禁（design §1.3）
-          await runCheck(t, { ...shared, json: opts.json });
+          await runCheck(t, {
+            ...shared,
+            json: opts.json,
+            ...(probe ? { batchProbe: probe, onboardingFinal: t === lastTarget } : {}),
+          });
         };
 
         if (opts.watch) {
-          startWatch(paths, runOne, "check");
+          // watch 每轮独立探针（单文件轮即终轮）——指纹不跨轮残留
+          startWatch(
+            paths,
+            async (t: string) => {
+              await runCheck(t, {
+                ...shared,
+                json: opts.json,
+                ...(humanMode
+                  ? { batchProbe: freshBatchProbe(), onboardingFinal: true }
+                  : {}),
+              });
+            },
+            "check",
+          );
           return;
         }
         // GitLab Code Quality 只接受一份 JSON 数组报告：多 target 仿
@@ -1030,6 +1354,11 @@ export function registerCheckCommand(program: Command): void {
           return;
         }
         for (const t of targets) await runOne(t);
+        // #9 缓存 opt-in：批量（多路径/目录）check 跑完且磁盘缓存未启用 →
+        // stderr 一行提示（人类面；--json/--gitlab/--gha 面不创建探针，天然不打）
+        if (probe && multiPath && !probe.cacheEnabled) {
+          console.error(CACHE_HINT);
+        }
       },
     );
 }

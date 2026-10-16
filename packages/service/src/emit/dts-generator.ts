@@ -447,6 +447,39 @@ function getParamName(fn: FunctionAnalysis, index: number): string {
 // （Promise<42>、返回元组字面量等）。
 // ---------------------------------------------------------------------------
 
+/**
+ * 契约面证据（export CLI 从 effectiveInterface 取——与 check 签名面同数据源：
+ * sidecar（*.nudo.js）∪ inline `@nudo:contract`）。
+ * - params：手写契约参数位的 entry Abs（constraintToEntryAbs 产物）；
+ * - return：契约 returns 的 entry Abs；CLI 无 returns 契约时可喂契约种子
+ *   求值结果（与 check 的 refine 种子同向）。
+ * 证据优先级：手写契约 > case 见证（widen）> HOF 泛型快照。
+ */
+export interface DtsContractFace {
+  params: Array<{ name: string; abs: Abs }>;
+  return?: Abs;
+}
+
+/** 契约参数位查找表（bare 名匹配；`...rest` 剥前缀） */
+function contractParamMap(contract: DtsContractFace | undefined): Map<string, Abs> {
+  const m = new Map<string, Abs>();
+  for (const p of contract?.params ?? []) m.set(p.name, p.abs);
+  return m;
+}
+
+/** 契约参数位 → 参数位 TS 串（逆变 widen：与 case-widen 同口径） */
+function contractParamType(a: Abs, isRest: boolean): string {
+  const widened = widenParamAbs(a);
+  if (isRest && widened.shape.k !== "arr") {
+    // rest 位必须是数组类型；sum/fn 成员括号（与 fn shape / tuple rest 位同口径）
+    const ts = absToTSType(widened);
+    return widened.shape.k === "sum" || widened.shape.k === "fn"
+      ? `(${ts})[]`
+      : `${ts}[]`;
+  }
+  return absToTSType(widened);
+}
+
 type MainSignature = {
   /** 渲染后的参数声明（含 `?` / `...rest`），如 `["x: number", "y?: string"]` */
   params: string[];
@@ -458,7 +491,11 @@ type MainSignature = {
   returnType: string;
 };
 
-function computeMainSignature(fn: FunctionAnalysis): MainSignature {
+function computeMainSignature(
+  fn: FunctionAnalysis,
+  contract?: DtsContractFace,
+): MainSignature {
+  const contractByParam = contractParamMap(contract);
   const arity = Math.max(...fn.cases.map((c) => c.argAbs.length));
   const minArity = Math.min(...fn.cases.map((c) => c.argAbs.length));
   const params: string[] = [];
@@ -472,7 +509,6 @@ function computeMainSignature(fn: FunctionAnalysis): MainSignature {
       const a = caseArgAbs(c, i);
       if (a) members.push(a);
     }
-    const typeStr = paramTypeFromAbs(members);
     let name = getParamName(fn, i);
     const isRest = name.startsWith("...");
     const bare = isRest ? name.slice(3) : name;
@@ -487,13 +523,19 @@ function computeMainSignature(fn: FunctionAnalysis): MainSignature {
       name = `${name}${n}`;
     }
     usedNames.add(name);
+    // 手写契约（sidecar / @nudo:contract）优先于 case-widen：契约是用户
+    // 申报的调用域；case 见证只填契约未覆盖的参数位
+    const contractAbs = contractByParam.get(bare);
+    const typeStr = contractAbs
+      ? contractParamType(contractAbs, isRest)
+      : paramTypeFromAbs(members);
     // 各 case 元数不一致时，短 case 不传的尾部参数标可选，长调用短调用都放行
     const optional = i >= minArity && !isRest;
     params.push(optional ? `${name}?: ${typeStr}` : `${name}: ${typeStr}`);
     paramNames.push(name);
     paramTypes.push(typeStr);
   }
-  const retAbs = returnAbsOf(fn);
+  const retAbs = contract?.return ?? returnAbsOf(fn);
   const returnType = retAbs
     ? absToTSType(widenTopLevelAbs(retAbs))
     : "unknown";
@@ -513,14 +555,21 @@ function generateJSDoc(fn: FunctionAnalysis, sig: MainSignature): string {
   // Case: 行完整保留。与主签名同形的 case（无信息损失）不罗列。
   // Case: 行走 Abs 精确展示（字面量台账），不参与主签名计算。
   for (const c of fn.cases) {
+    const argRenders = c.argAbs.map((a) => absToTSType(a));
+    const resultRender = absToTSType(c.abs);
+    // 无信息行（entry@ any-参兜底：全位 unknown）不占 JSDoc——签名位有
+    // 契约/种子证据时它只会以 "=> unknown" 与主签名矛盾
+    if (argRenders.every((s) => s === "unknown") && resultRender === "unknown") {
+      continue;
+    }
     const preciseDiffers =
       c.argAbs.length !== sig.paramTypes.length ||
-      c.argAbs.some((a, i) => absToTSType(a) !== sig.paramTypes[i]) ||
-      absToTSType(c.abs) !== sig.returnType;
+      argRenders.some((s, i) => s !== sig.paramTypes[i]) ||
+      resultRender !== sig.returnType;
     if (!preciseDiffers) continue;
-    const argsStr = c.argAbs.map((a) => absToTSType(a)).join(", ");
+    const argsStr = argRenders.join(", ");
     // Case 名 / 类型串都可能含 `*/`、换行——注释体必须先清洗，否则提前闭合 JSDoc
-    lines.push(` * Case: ${sanitizeCommentText(`${c.name} (${argsStr}) => ${absToTSType(c.abs)}`)}`);
+    lines.push(` * Case: ${sanitizeCommentText(`${c.name} (${argsStr}) => ${resultRender}`)}`);
   }
   for (let i = 0; i < sig.paramTypes.length; i++) {
     lines.push(` * @param ${sanitizeCommentText(`${sig.paramNames[i]} - ${sig.paramTypes[i]}`)}`);
@@ -635,42 +684,107 @@ function computeHofSignature(
   return { typeParams, params, paramNames, paramTypes, returnType };
 }
 
+/** projectFunctionDts 的返回面：声明行 + 主签名参数位（unknown = 无证据） */
+export interface DtsFunctionProjection {
+  /** 声明行（JSDoc + 主签名）；空 = 不发射（noDeclaration 无稳定名等） */
+  lines: string[];
+  /** 主签名各参数位（bare 名 + widen 后 TS 串）；legacy rest-args 声明面为空 */
+  params: Array<{ name: string; type: string }>;
+}
+
+/** 契约-only 参数签名（skip / 无 case 函数 + 手写契约参数位）：具名参数 + 声明返回 */
+function contractOnlySignature(
+  fn: FunctionAnalysis,
+  contract: DtsContractFace,
+): MainSignature {
+  const byName = contractParamMap(contract);
+  const params: string[] = [];
+  const paramNames: string[] = [];
+  const paramTypes: string[] = [];
+  const usedNames = new Set<string>();
+  for (let i = 0; i < fn.paramNames.length; i++) {
+    const raw = fn.paramNames[i] ?? `arg${i}`;
+    const isRest = raw.startsWith("...");
+    const bare = isRest ? raw.slice(3) : raw;
+    const absVal = byName.get(bare);
+    byName.delete(bare);
+    let name = sanitizeParamName(raw, i);
+    if (usedNames.has(name)) {
+      let n = 2;
+      while (usedNames.has(`${name}${n}`)) n++;
+      name = `${name}${n}`;
+    }
+    usedNames.add(name);
+    const typeStr = absVal
+      ? contractParamType(absVal, isRest)
+      : isRest
+        ? "unknown[]"
+        : "unknown";
+    params.push(`${name}: ${typeStr}`);
+    paramNames.push(name);
+    paramTypes.push(typeStr);
+  }
+  // 契约里多出、形参表对不上的参数名不投影（arity 谎言；check 面报
+  // nudo:interface-param-mismatch，export 不执法）
+  const returnType = contract.return
+    ? absToTSType(widenTopLevelAbs(contract.return))
+    : fn.combinedAbs
+      ? absToTSType(fn.combinedAbs)
+      : "unknown";
+  return { params, paramNames, paramTypes, returnType };
+}
+
 /**
- * 为单个函数生成 .d.ts 声明行（JSDoc + 单一 widen 主签名）。
- * 有 hof 关系时优先泛型投影（C3.3）；否则 case-widen。
- * service 的 generateDts 与 CLI `--dts`（infer/watch）共用本函数，
- * 两条路径输出保持一致。
+ * 为单个函数生成 .d.ts 投影（JSDoc + 单一 widen 主签名）。
+ * 证据优先级：手写契约（contract，export CLI 从 effectiveInterface 取）
+ * > hof 泛型投影（C3.3）> case-widen。
+ * service 的 generateDts 与 CLI export --format dts 共用本函数。
  */
-export function generateFunctionDtsLines(fn: FunctionAnalysis): string[] {
+export function projectFunctionDts(
+  fn: FunctionAnalysis,
+  contract?: DtsContractFace,
+): DtsFunctionProjection {
   // CJS-style binding/assignment functions have no declaration-stable
   // export name; they stay in infer/JSON output only.
   // Class.method：投影为 Class_method（core 侧车可绑定同名），不再静默丢弃
   let emitFn = fn;
   if (fn.noDeclaration) {
     const m = /^([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)$/.exec(fn.name);
-    if (!m) return [];
+    if (!m) return { lines: [], params: [] };
     emitFn = { ...fn, name: `${m[1]}_${m[2]}`, noDeclaration: false };
   }
   fn = emitFn;
 
-  const hofSig = computeHofSignature(fn);
+  // 手写契约参数面优先于 HOF 泛型快照：契约是用户申报的调用面；混合投影
+  // （部分契约位 + 部分泛型位）会让泛型变元失去与 promoted 形参的定义关系
+  const hasContractParams = (contract?.params.length ?? 0) > 0;
+  const hofSig = hasContractParams ? undefined : computeHofSignature(fn);
   if (hofSig) {
+    const returnType = contract?.return
+      ? absToTSType(widenTopLevelAbs(contract.return))
+      : hofSig.returnType;
     const lines: string[] = [];
     if (fn.cases.length > 0) {
       const jsdoc = generateJSDoc(fn, {
         params: hofSig.params,
         paramNames: hofSig.paramNames,
         paramTypes: hofSig.paramTypes,
-        returnType: hofSig.returnType,
+        returnType,
       });
       if (jsdoc) lines.push(jsdoc);
     }
     const tparams =
       hofSig.typeParams.length > 0 ? `<${hofSig.typeParams.join(", ")}>` : "";
     lines.push(
-      `export declare function ${fn.name}${tparams}(${hofSig.params.join(", ")}): ${hofSig.returnType};`,
+      `export declare function ${fn.name}${tparams}(${hofSig.params.join(", ")}): ${returnType};`,
     );
-    return lines;
+    return {
+      lines,
+      params: hofSig.paramNames.map((name, i) => ({
+        name,
+        type: hofSig.paramTypes[i] ?? "unknown",
+      })),
+    };
   }
 
   if (fn.skipped || fn.cases.length === 0) {
@@ -678,21 +792,43 @@ export function generateFunctionDtsLines(fn: FunctionAnalysis): string[] {
     // 保持历史行为——rest-args 形式，combined（含 Promise<T>）原样输出。
     // #176：skip 即使带 @nudo:case（运行时见证已照常求值）也走声明面——
     // combinedAbs 来自 @nudo:skip => 声明，case 不参与 dts 面合成。
+    // 例外：手写契约参数位是申报面的一部分，具名投影。
+    if (hasContractParams) {
+      const sig = contractOnlySignature(fn, contract!);
+      return {
+        lines: [`export declare function ${fn.name}(${sig.params.join(", ")}): ${sig.returnType};`],
+        params: sig.paramNames.map((name, i) => ({ name, type: sig.paramTypes[i]! })),
+      };
+    }
     const retAbs = fn.combinedAbs;
     if (retAbs) {
-      return [
-        `export declare function ${fn.name}(...args: unknown[]): ${absToTSType(retAbs)};`,
-      ];
+      return {
+        lines: [
+          `export declare function ${fn.name}(...args: unknown[]): ${absToTSType(retAbs)};`,
+        ],
+        // rest-args 声明面无具名参数位可提示（skip = 开发者主动退出推断）
+        params: [],
+      };
     }
-    return [];
+    return { lines: [], params: [] };
   }
 
-  const sig = computeMainSignature(fn);
+  const sig = computeMainSignature(fn, contract);
   const jsdoc = generateJSDoc(fn, sig);
   const lines: string[] = [];
   if (jsdoc) lines.push(jsdoc);
   lines.push(`export declare function ${fn.name}(${sig.params.join(", ")}): ${sig.returnType};`);
-  return lines;
+  return {
+    lines,
+    params: sig.paramNames.map((name, i) => ({ name, type: sig.paramTypes[i]! })),
+  };
+}
+
+export function generateFunctionDtsLines(
+  fn: FunctionAnalysis,
+  contract?: DtsContractFace,
+): string[] {
+  return projectFunctionDts(fn, contract).lines;
 }
 
 export function generateDts(result: AnalysisResult): string {

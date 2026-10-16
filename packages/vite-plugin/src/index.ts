@@ -7,6 +7,7 @@ import {
   filterDiagnosticsByLevel,
   findProjectConfig,
   collectSkipReturns,
+  compileAnyMatcher,
   interfaceConfig,
   type AnalysisResult,
   type Diagnostic,
@@ -113,68 +114,9 @@ function viteDiagnosticsLevel(id: string): DiagnosticsLevel {
 const DEFAULT_INCLUDE = ["**/*.js", "**/*.mjs", "**/*.ts"];
 const DEFAULT_EXCLUDE = ["**/node_modules/**", "**/*.d.ts"];
 
-type Matcher = (id: string) => boolean;
-
 /** Single named sink for the build-summary line (keeps it greppable / swappable). */
 function logAnalysisSummary(errorCount: number, warnCount: number): void {
   console.log(`[nudo] Analysis complete: ${errorCount} error(s), ${warnCount} warning(s)`);
-}
-
-const REGEX_SPECIALS = /[\\^$.|?*+(){}\[\]]/;
-
-function escapeRegExpChar(ch: string): string {
-  return REGEX_SPECIALS.test(ch) ? `\\${ch}` : ch;
-}
-
-/** Translate one path segment (`**` segments are handled by the caller). */
-function segmentToRegExpSource(segment: string): string {
-  let source = "";
-  for (const ch of segment) {
-    if (ch === "*") source += "[^/]*";
-    else if (ch === "?") source += "[^/]";
-    else source += escapeRegExpChar(ch);
-  }
-  return source;
-}
-
-// Compile a glob pattern into an anchored RegExp. Supported syntax:
-// - a `**` segment: zero or more path segments, e.g. `**` + `/*.mjs` or `**` + `/node_modules/**`
-// - `*` / `?` inside a segment, never crossing `/`
-// - all other characters matched literally (regex specials are escaped)
-// Patterns without wildcards are treated as literal substrings by the caller.
-function patternToRegExp(pattern: string): RegExp {
-  const segments = pattern.split("/");
-  let source = "";
-  for (let i = 0; i < segments.length; i++) {
-    const segment = segments[i];
-    const isLast = i === segments.length - 1;
-    if (segment === "**") {
-      if (isLast) {
-        source = source.endsWith("/")
-          ? `${source.slice(0, -1)}(?:/.*)?`
-          : `${source}.*`;
-      } else {
-        source += "(?:.*/)?";
-      }
-    } else {
-      source += segmentToRegExpSource(segment);
-      if (!isLast) source += "/";
-    }
-  }
-  return new RegExp(`^${source}$`);
-}
-
-function compilePattern(pattern: string): Matcher {
-  if (!/[*?]/.test(pattern)) return (id) => id.includes(pattern);
-  const regExp = patternToRegExp(pattern);
-  return (id) => regExp.test(id);
-}
-
-/** Compile a pattern list into a matcher that is true when any pattern matches. */
-function compileAnyMatcher(patterns: string[] | string): Matcher {
-  const list = Array.isArray(patterns) ? patterns : [patterns];
-  const matchers = list.map(compilePattern);
-  return (id) => matchers.some((match) => match(id));
 }
 
 export default function nudoPlugin(options: NudoPluginOptions = {}): Plugin {

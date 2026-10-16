@@ -5,9 +5,11 @@
  * 空 shape 禁令：body-read 为空时不得生成 `shape({})`（会塌签名）。
  */
 import type { CheckAction } from "@nudojs/core";
+import { checkSource, pTrue } from "@nudojs/core";
 import { isJsBindingIdent } from "@nudojs/core/internal";
 import {
-  collectParamBodyReadTypes,
+  collectParamContracts,
+  contractDslOf,
   shapeDslFromFields,
   type BodyReadField,
 } from "./body-read-types.ts";
@@ -353,7 +355,59 @@ export type MaterializeInput = {
   suggestion?: string;
   /** 截断归因（nudo:recursion-truncated；#158）：cycle 时抬预算无效 */
   reason?: string;
+  /**
+   * 宿主模块加载器（CLI 的 defaultLoadModule）：侧车契约验证重分析时
+   * 供源文件相对依赖解析。缺省只验证 source+侧车合成内容（依赖 miss →
+   * 验证保守降级 review，不会误放行）。
+   */
+  loadModule?: (spec: string, from: string) => string | undefined;
 };
+
+/**
+ * 侧车契约验证（entry-may-throw 的 [fix] 门）：把合成侧车作为唯一侧车
+ * 来源重跑 checkSource，确认目标函数的 L2 entry-may-throw 消失。
+ * 引擎证不出 total（回调体算术面不 total / 元素字段 any 被继续调用等）
+ * → false：编辑降级 [review]，不得挂 fix 名自动落盘（半修复不可接受）。
+ * 任何失败（求值抛 / interface-load）按未通过处理。
+ */
+export function sidecarClearsEntryThrow(input: {
+  file: string;
+  source: string;
+  sidecarPath: string;
+  sidecarText: string;
+  fn: string;
+  loadModule?: (spec: string, from: string) => string | undefined;
+}): boolean {
+  const norm = (p: string): string => p.replace(/\\/g, "/");
+  const resolveRel = (from: string, spec: string): string | undefined => {
+    if (!spec.startsWith(".")) return undefined;
+    const parts = norm(from).split("/").slice(0, -1);
+    for (const seg of norm(spec).split("/")) {
+      if (seg === "" || seg === ".") continue;
+      if (seg === "..") parts.pop();
+      else parts.push(seg);
+    }
+    return parts.join("/");
+  };
+  const target = norm(input.sidecarPath);
+  const loadModule = (spec: string, from: string): string | undefined => {
+    const p = resolveRel(from, spec);
+    if (p !== undefined && p === target) return input.sidecarText;
+    return input.loadModule?.(spec, from);
+  };
+  try {
+    const r = checkSource(input.file, input.source, pTrue, {
+      loadModule,
+      fromFile: input.file,
+    });
+    if (r.issues.some((i) => i.code === "nudo:interface-load")) return false;
+    return !r.issues.some(
+      (i) => i.code === "nudo:entry-may-throw" && i.fn === input.fn,
+    );
+  } catch {
+    return false;
+  }
+}
 
 /**
  * kind → WorkspaceEdit 物化。返回 undefined = 该 action 只读（info）或缺证据。
@@ -386,29 +440,26 @@ export function materializeAction(input: MaterializeInput): QuickfixPlan | undef
       ?.split(",")
       .map((s) => s.trim())
       .filter(Boolean);
-    // 用法推断优先；诊断只有字段名时用推断补类型
-    const inferred = collectParamBodyReadTypes(source).get(fn);
-    // 找到含这些字段的形参（常见单参 helpers）
-    let fields: BodyReadField[] | undefined;
-    let paramName = "arg";
-    if (inferred) {
-      for (const [pname, list] of inferred) {
-        if (fieldNames && fieldNames.length > 0) {
-          const hit = list.filter((f) => fieldNames.includes(f.field));
-          if (hit.length > 0) {
-            fields = hit;
-            paramName = pname;
-            break;
-          }
-        } else if (list.length > 0) {
-          fields = list;
-          paramName = pname;
-          break;
-        }
-      }
-    }
-    if (!fields || fields.length === 0) {
-      if (!fieldNames || fieldNames.length === 0) {
+    // —— 证据发射面（数组接收者 / 成员读 / 参数本体标量）——
+    // 多参逐位收窄：L2 残余可能来自任何未约束位（subtotal 的 tax 参与算术），
+    // 只写一个参数的契约证不出 total。参数按声明序，无证据参数不发射。
+    const contracts = collectParamContracts(source).get(fn);
+    const entries = contracts ? [...contracts.entries()] : [];
+    // —— 无证据回落：诊断 body-read 字段名 + any() 占位（不用武断 string()）。
+    // 成员读/标量用法已由证据面覆盖；走到这里说明源码侧收集为空
+    // （诊断仍带字段名），参数名未知 → 占位 arg
+    let shapeText: string | undefined;
+    let fallbackFields: BodyReadField[] | undefined;
+    if (entries.length === 0) {
+      if (fieldNames && fieldNames.length > 0) {
+        fallbackFields = fieldNames.map((f) => ({
+          field: f,
+          type: "any()",
+          via: "read (no type evidence)",
+        }));
+        shapeText = `arg: ${shapeDslFromFields(fallbackFields)}`;
+      } else {
+        // 空 shape 禁令：无任何证据时只给 draft 命令，不生成 shape({})
         return {
           titleKind: "fix",
           title: `${titlePrefix("fix")} Add sidecar param contract for ${fn} (via nudo contract --draft)`,
@@ -416,15 +467,14 @@ export function materializeAction(input: MaterializeInput): QuickfixPlan | undef
           openPath: sidecarPath,
         };
       }
-      // 有字段名但无用法证据：any() 占位（不用武断 string()）
-      fields = fieldNames.map((f) => ({ field: f, type: "any()", via: "read (no type evidence)" }));
+    } else {
+      shapeText = entries.map(([p, ev]) => `${p}: ${contractDslOf(ev)}`).join(", ");
     }
-    const shapeText = shapeDslFromFields(fields);
     // DESIGN-003：身份=导出名 fn。绑定名不安全（保留字 / 非 ident）时别名
     // 发射（_nudo_<n> 按既有侧车内容避让），导出面保身份
     const direct = isJsBindingIdent(fn);
     const clause = direct
-      ? `export const ${fn} = fn({ ${paramName}: ${shapeText} });\n`
+      ? `export const ${fn} = fn({ ${shapeText} });\n`
       : (() => {
           const used = new Set(
             [...(sidecarText ?? "").matchAll(/(?<![\w$])_nudo_(\d+)(?![\w$])/g)].map(
@@ -432,7 +482,7 @@ export function materializeAction(input: MaterializeInput): QuickfixPlan | undef
             ),
           );
           const binding = allocNudoBinding((n) => used.has(n));
-          return `const ${binding} = fn({ ${paramName}: ${shapeText} });\nexport { ${binding} as ${exportNameRepr(fn)} };\n`;
+          return `const ${binding} = fn({ ${shapeText} });\nexport { ${binding} as ${exportNameRepr(fn)} };\n`;
         })();
     const next =
       sidecarText && sidecarText.trim().length > 0
@@ -440,9 +490,26 @@ export function materializeAction(input: MaterializeInput): QuickfixPlan | undef
           ? sidecarText + clause
           : sidecarText + "\n" + clause
         : `// Generated by quickfix — review before accepting\n${clause}`;
+    // 验证门：合成侧车写盘后重分析，L2 未消 → 降级 [review] 不自动落盘。
+    // 引擎证不出 total 时（回调体算术面不 total / any 字段被继续调用），
+    // 半修复契约写盘只会把红诊断钉在侧车里。
+    const cleared = sidecarClearsEntryThrow({
+      file: input.file,
+      source,
+      sidecarPath,
+      sidecarText: next,
+      fn,
+      ...(input.loadModule ? { loadModule: input.loadModule } : {}),
+    });
+    const summary =
+      fallbackFields !== undefined
+        ? fallbackFields.map((f) => `${f.field}: ${f.type}`).join(", ")
+        : shapeText!;
     return {
-      titleKind: "fix",
-      title: `${titlePrefix("fix")} Add sidecar param contract for ${fn} (${fields.map((f) => `${f.field}: ${f.type}`).join(", ")})`,
+      titleKind: cleared ? "fix" : "review",
+      title: cleared
+        ? `${titlePrefix("fix")} Add sidecar param contract for ${fn} (${summary})`
+        : `${titlePrefix("review")} Add sidecar param contract for ${fn} (${summary}) — engine cannot prove total yet, review before applying`,
       edits: [],
       sidecar: { path: sidecarPath, newText: next },
       openPath: sidecarPath,

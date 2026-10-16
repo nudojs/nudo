@@ -20,6 +20,9 @@
       "@nudojs/service": [
         "./packages/service/src"
       ],
+      "@nudojs/service/emit": [
+        "./packages/service/src/emit/index.ts"
+      ],
       "@nudojs/service/evaluator": [
         "./packages/service/src/evaluator/evaluator-api.ts"
       ],

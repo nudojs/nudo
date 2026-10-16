@@ -40,6 +40,7 @@ import {
   stableCallId,
 } from "../call-budget.ts";
 import { BoundedLruMap } from "../lru-map.ts";
+import { refreshLiveImports } from "./live-imports.ts";
 
 /** pure memo 内层 Map 上界（防 LSP 长会话无界膨胀；与 session-cache-limits 口径对齐） */
 const PURE_MEMO_MAX = 256;
@@ -83,7 +84,16 @@ function joinThrowsSince(mark: number): Abs {
 
 export function $call(fn: Abs, args: Abs[], thisVal?: Abs): Abs {
   // Bug 79：普通函数调用面——调用期间 new.target 读 undefined（构造帧清空）
-  return withNewTargetReset(() => $callInner(fn, args, thisVal));
+  // Bug ②：调用出口刷新 ESM live import 绑定——依赖模块状态的变异只能经
+  // 函数调用发生（顶层求值先于 import 绑定），返回即重读依赖当前导出值。
+  // refresh 闭包纯读不发起新调用（无重入）；注册表空时零开销。
+  return withNewTargetReset(() => {
+    try {
+      return $callInner(fn, args, thisVal);
+    } finally {
+      refreshLiveImports();
+    }
+  });
 }
 
 function $callInner(fn: Abs, args: Abs[], thisVal?: Abs): Abs {

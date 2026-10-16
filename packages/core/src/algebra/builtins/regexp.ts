@@ -190,10 +190,21 @@ export function validateRegexSubjectArg(subject: Abs | undefined): void {
   recordMayThrow({ kind: "TypeError", cause: "RegExp test/exec subject ToString may throw (Symbol)" });
 }
 
+/** d 旗标（ES2022 hasIndices）捕获组区间 [start, end] → 精确二元元组 */
+function indexPairAbs(pair: readonly [number, number]): Abs {
+  return abs({ k: "tuple", elements: [numLit(pair[0]), numLit(pair[1])] }, undefined, undefined, "exact");
+}
+
 /** RegExpExecArray → Abs（Bug 11）：capture 下标槽（"0"/"1"…）+
  *  length/index/input/groups 附加属性，合并为带附加属性的对象 Abs。
  *  `m[0]`/`m[1]` 经 $idx 字面量下标读槽、`m.index`/`m.input`/`m.groups.g`
- *  经 $get 字符串键读槽；具名组 → groups 对象、无具名组 → undefined。 */
+ *  经 $get 字符串键读槽；具名组 → groups 对象、无具名组 → undefined。
+ *  d 旗标（Bug：indices 未建模 → m.indices 读折 never 假不可达）：宿主真实
+ *  exec 结果带 indices（无 d 旗标时宿主不设该属性）→ 镜像为同构槽 obj：
+ *  下标槽 = [start,end] 精确元组（未参与捕获组 undefined）、length、groups
+ *  子对象（具名组 → 元组、未参与具名组 undefined、无具名组 → undefined）。
+ *  仅真实 exec 结果到达本函数；抽象 regex / 抽象 subject 的 match 面不经
+ *  此处——不为其发明 indices。 */
 export function matchResultAbs(m: RegExpExecArray): Abs {
   const slots: Record<string, { value: Abs }> = {
     length: { value: numLit(m.length) },
@@ -217,6 +228,32 @@ export function matchResultAbs(m: RegExpExecArray): Abs {
         )
       : undefAbs(),
   };
+  const indices = m.indices;
+  if (indices) {
+    const islots: Record<string, { value: Abs }> = {
+      length: { value: numLit(indices.length) },
+    };
+    for (let i = 0; i < indices.length; i++) {
+      const pair = indices[i];
+      // lib 类型 [number, number]，但宿主对未参与捕获组实为 undefined
+      const p = pair as readonly [number, number] | undefined;
+      islots[String(i)] = { value: p ? indexPairAbs(p) : undefAbs() };
+    }
+    const igroups = indices.groups as Record<string, readonly [number, number] | undefined> | undefined;
+    islots["groups"] = {
+      value: igroups
+        ? objOf(
+            Object.fromEntries(
+              Object.entries(igroups).map(([k, v]) => [
+                k,
+                { value: v ? indexPairAbs(v) : undefAbs() },
+              ]),
+            ),
+          )
+        : undefAbs(),
+    };
+    slots["indices"] = { value: abs({ k: "obj", slots: islots }, undefined, undefined, "exact") };
+  }
   return abs({ k: "obj", slots }, undefined, undefined, "exact");
 }
 

@@ -10,8 +10,10 @@
  * - 违例写清 actual ⊭ expected；成功也打印 signatures
  */
 
+import { isBuiltin } from "node:module";
 import { parseSource as parse } from "./parse-source.ts";
 import { stripStringsKeepComments } from "./code-text.ts";
+import { extractFileEnvNames } from "./directive-scan.ts";
 import {
   setAbsTruncationCollector,
   resetAbsCallBudget,
@@ -67,6 +69,7 @@ import { contractParamNameSet, formalParamSignatureNames } from "./param-surface
 import { canSkipLiteralCallScan } from "./fn-fp.ts";
 import { stableAnalyzeKeySource } from "./stable-source-key.ts";
 import {
+  extractAllLoadSpecs,
   normPath,
   type LoadDepsFingerprint,
 } from "./load-deps-fp.ts";
@@ -580,6 +583,27 @@ function invariantSpecsOf(
   return { specs, display };
 }
 
+/** opaque-result 原始 hint：用调用点 / 指令证据钉住结果面 */
+const OPAQUE_EVIDENCE_HINT = "add @nudo:case or a call site";
+/**
+ * opaque-result env 分流 hint（DX）：文件 import/require 了内置模块且无任何
+ * env 生效时，unknown 的第一嫌疑是原生模块缺运行时环境声明。may/declare
+ * 口径——env 覆盖不完整时 unknown 未必消除，不做过诺。
+ */
+const OPAQUE_ENV_HINT =
+  "declare the runtime env to type native modules: '/// @nudo:env node' (or web/es) — see guides/env-harvest.md";
+
+/**
+ * 裸说明符是否指向 Node 内置模块：`node:` 前缀剥掉后按首段判（覆盖
+ * fs/promises、node:path/win32 等子路径形态）。isBuiltin 名单是
+ * @nudojs/env 模块面（fs/path/os…）的可得超集，不在此硬编码。
+ */
+function isBuiltinModuleSpec(spec: string): boolean {
+  if (spec.startsWith(".") || spec.startsWith("/")) return false;
+  const base = (spec.startsWith("node:") ? spec.slice("node:".length) : spec).split("/")[0]!;
+  return base.length > 0 && isBuiltin(base);
+}
+
 function checkSourceInner(
   filePath: string,
   source: string,
@@ -603,6 +627,14 @@ function checkSourceInner(
   const exportedNames = sidecarFp !== undefined ? entryNames : undefined;
   const entryThrowsMode = opts.entryThrows ?? "error";
   const ignoreThrows = opts.ignoreThrows;
+  // opaque-result hint 分流（DX）：文件 import/require 了内置模块，且无任何
+  // env 生效（文件 /// @nudo:env 指令与 inject envGlobals 均空——项目级
+  // package.json#nudo.env 由 host 折进 envGlobals）→ hint 指向 env 声明。
+  // 整文件判一次，逐函数消费；其余场景维持原始 hint。
+  const opaqueEnvHint =
+    Object.keys(opts.inject?.envGlobals ?? {}).length === 0 &&
+    extractFileEnvNames(source).length === 0 &&
+    extractAllLoadSpecs(source).some(isBuiltinModuleSpec);
   // T10a：generated 事实快照的 drift 候选（每函数级，统一在拿到 varAbs 后判定）
   const driftCandidates: DriftCandidate[] = [];
   // 返回后置：符号返回（body  widen）之外，eval 执行态调用点 result 也要对账
@@ -993,7 +1025,7 @@ function checkSourceInner(
         severity: "info",
         code: "nudo:opaque-result",
         message: `${name}(...): conf=opaque (path not covered, or native)`,
-        suggestion: "add @nudo:case or a call site",
+        suggestion: opaqueEnvHint ? OPAQUE_ENV_HINT : OPAQUE_EVIDENCE_HINT,
         fn: name,
       });
     }

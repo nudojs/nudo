@@ -68,6 +68,24 @@ export function getName(user) {
   entry@L1  (any) => any   throws TypeError
 ```
 
+当这个无人调用的函数持有**受 check 执法的契约**（手写 `*.nudo.js` 侧车或 `@nudo:contract`）时，同一区块会多出一行注解。诚实的 `(any) => any   throws TypeError` 保留——那正是无约束入口 face——注解解释了为什么 `nudo check` 对该函数仍然全绿：契约作用于 check/export 面，而不是这个回退 case。
+
+```js verify#entry-contract
+export function greet(u) {
+  return u.name;
+}
+```
+
+```js verify-sidecar#entry-contract
+export const greet = fn({ u: shape({ name: string() }) });
+```
+
+```text
+=== greet ===
+  entry@L1  (any) => any   throws TypeError
+  (entry@ runs the unconstrained entry face — this contract gates check/export; add @nudo:case or call sites for a constrained case)
+```
+
 ### assertions 汇总
 
 `assertions` 块只统计**声明 case** —— 合成 `call@` / `entry@` 永不进入：

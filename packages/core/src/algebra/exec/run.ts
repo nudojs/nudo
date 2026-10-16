@@ -18,7 +18,7 @@ import {
 import { withExecPhi, $copy } from "./runtime.ts";
 import type { Abs } from "../abs.ts";
 import type { Phi } from "../pred.ts";
-import { never, unknown } from "../abs.ts";
+import { never, unknown, abs } from "../abs.ts";
 import { makeAbsApplyResult, type AbsApplyResult } from "../abs-fn.ts";
 import { joinAbs } from "../objects.ts";
 import { type AbsModuleExports, namespaceAbsOf } from "../abs-modules.ts";
@@ -27,6 +27,7 @@ import { transpile, transpileExpression, runtimeImportOf } from "./transpile.ts"
 import { ENV_SHADOW_SKIP_GLOBALS, HOST_INTRINSIC_SET } from "./transpile/intrinsics.ts";
 import { NudoUnsupportedError } from "./unsupported.ts";
 import { drainClassCollisions, beginClassEpoch } from "./class-registry.ts";
+import { registerLiveImportRefresh } from "./live-imports.ts";
 import { stripStaticExportDecls } from "./export-names.ts";
 import { errorTypeAbs, throwPayloadOf } from "./may-throw.ts";
 import { drainPromiseMicros } from "../builtins.ts";
@@ -105,35 +106,65 @@ export function runTranspiledOptionsMemoKey(
 
 export const RUNTIME_IMPORT_RE = /^import\s*\{[^}]+\}\s*from\s*"[^"]+";\s*$/m;
 
-/** 相对 import → 从注入 modules 取绑定（Abs fn 包成 JS 可调用） */
+/** 相对 import → 从注入 modules 取绑定（Abs fn 包成 JS 可调用）。
+ *  ESM live binding（Bug ②）：绑定是间接引用——首个 import 语句后注册
+ *  refresh 闭包，$call 出口重读依赖当前导出值（见 live-imports.ts）。 */
 function rewriteUserImports(js: string): string {
+  const refreshBinds: string[] = [];
+  const namedBindSrc = (bind: string, spec: string, imported: string): string => {
+    refreshBinds.push(
+      `${bind} = __nudoBindImport(${JSON.stringify(spec)}, ${JSON.stringify(imported)});`,
+    );
+    return `let ${bind} = __nudoBindImport(${JSON.stringify(spec)}, ${JSON.stringify(imported)});`;
+  };
+  const nsBindSrc = (local: string, spec: string): string => {
+    refreshBinds.push(`${local} = __nudoBindNamespace(${JSON.stringify(spec)});`);
+    return `let ${local} = __nudoBindNamespace(${JSON.stringify(spec)});`;
+  };
+  let registered = false;
+  const registerAfter = (line: string): string => {
+    if (registered) return line;
+    registered = true;
+    return `${line}\n__NUDO_LIVE_IMPORT_REGISTER__;`;
+  };
   // namespace：transpile 会写成 `import { * as ns } from "…"`
   js = js.replace(
     /^import\s*\{\s*\*\s+as\s+([A-Za-z_$][\w$]*)\s*\}\s*from\s*["']([^"']+)["'];\s*$/gm,
-    (_all, local: string, spec: string) =>
-      `let ${local} = __nudoBindNamespace(${JSON.stringify(spec)});`,
+    (_all, local: string, spec: string) => registerAfter(nsBindSrc(local, spec)),
   );
   // 无绑定副作用 import → 仅触发模块求值
   js = js.replace(
     /^import\s*["']([^"']+)["'];\s*$/gm,
     (_all, spec: string) => `void __nudoBindNamespace(${JSON.stringify(spec)});`,
   );
-  return js.replace(
+  js = js.replace(
     /^import\s*\{([^}]+)\}\s*from\s*["']([^"']+)["'];\s*$/gm,
     (_all, names: string, spec: string) => {
       const parts = names
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean);
-      return parts
-        .map((p) => {
-          const [imported, local] = p.split(/\s+as\s+/).map((x) => x.trim());
-          const bind = local ?? imported;
-          return `let ${bind} = __nudoBindImport(${JSON.stringify(spec)}, ${JSON.stringify(imported)});`;
-        })
-        .join("\n");
+      return registerAfter(
+        parts
+          .map((p) => {
+            const [imported, local] = p.split(/\s+as\s+/).map((x) => x.trim());
+            const bind = local ?? imported;
+            return namedBindSrc(bind, spec, imported);
+          })
+          .join("\n"),
+      );
     },
   );
+  // 多条 import 语句：注册闭包引用全部绑定（占位符在首个 import 位置，
+  // 全部 rewrite 完成后替换为全量绑定——后续 import 的 `let` 文本位置在其后，
+  // refresh 命中 TDZ 由 refreshLiveImports 容忍——绑定创建时读到的已是当前值）
+  if (registered) {
+    js = js.replace(
+      "__NUDO_LIVE_IMPORT_REGISTER__;",
+      `__nudoRegisterImportRefresh(() => { ${refreshBinds.join(" ")} });`,
+    );
+  }
+  return js;
 }
 
 /**
@@ -276,13 +307,16 @@ function isEffectfulTopLevelExpr(
   // 插桩控制流（$while 前缀含 $whileSeq）
   if (name === "$for" || name === "$fork" || name.startsWith("$while")) return true;
   // 其它未知全局裸调用；__nudoExport/__nudoExportStar/__nudoRecordBinding/
-  // __nudoRecordAssign 是簿记（rewrite/插桩产物），非副作用，保留
+  // __nudoRecordAssign/__nudoRegisterImportRefresh 是簿记（rewrite/插桩产物），
+  // 非副作用，保留（live import 注册剥离会让 analyze 模式丢失绑定刷新）
   return (
     !name.startsWith("$") &&
     name !== "__nudoExport" &&
+    name !== "__nudoExportLazy" &&
     name !== "__nudoExportStar" &&
     name !== "__nudoRecordBinding" &&
     name !== "__nudoRecordAssign" &&
+    name !== "__nudoRegisterImportRefresh" &&
     !declared.has(name)
   );
 }
@@ -298,6 +332,10 @@ function runtimeArgNames(): string[] {
   return Object.keys(rtAllBindings()).filter((k) => k.startsWith("$"));
 }
 
+/** fn Abs → JS 可调用 wrapper 缓存（live binding 刷新复用同 wrapper，
+ *  保持绑定函数身份稳定——`const g = imported; g === imported` 不随刷新翻假） */
+const importFnWrapperCache = new WeakMap<object, (...args: Abs[]) => Abs>();
+
 function bindImport(
   modules: RunTranspiledOptions["modules"],
   spec: string,
@@ -312,8 +350,11 @@ function bindImport(
         // 挂 __nudoAbsFn：$new 收到 wrapper 时回 Abs 派发——否则 wrapper 是
         // 箭头（hostFnCtorFacet → 不可构造），imported 构造函数被误判
         // Bug 9 假抛（`new G()` 原生合法）。
+        const hit = importFnWrapperCache.get(v as object);
+        if (hit) return hit;
         const w = (...args: Abs[]) => $call(v, args);
         (w as { __nudoAbsFn?: Abs }).__nudoAbsFn = v;
+        importFnWrapperCache.set(v as object, w);
         return w;
       }
       return v;
@@ -338,12 +379,28 @@ function bindImport(
   return absCallable(v as Abs);
 }
 
-/** `import * as ns`：整命名空间（named + default 槽）→ Abs 对象 */
+/** `import * as ns`：整命名空间（named + default 槽）→ Abs 对象。
+ *  ESM namespace 对象成员是 live binding（Bug ②）：`const N = U; mut(); N.x`
+ *  原生仍读当前值——槽 value 经 getter 读取时解析依赖当前导出表（导出名集
+ *  在命名空间构建时固定，与 ESM link-time 名集一致）。 */
 function bindNamespace(modules: RunTranspiledOptions["modules"], spec: string): Abs {
   const mod = modules?.[spec] as AbsModuleExports | undefined;
   if (!mod) return unknown;
-  if (mod.named) return namespaceAbsOf(mod);
-  return unknown;
+  if (!mod.named) return unknown;
+  const named = mod.named;
+  const slots: Record<string, { value: Abs }> = {};
+  const liveSlot = (read: () => Abs): { value: Abs } => {
+    const slot = {} as { value: Abs };
+    Object.defineProperty(slot, "value", { get: read });
+    return slot;
+  };
+  for (const key of Object.keys(named)) {
+    slots[key] = liveSlot(() => named[key]);
+  }
+  if (mod.default !== undefined) {
+    slots["default"] = liveSlot(() => (mod as AbsModuleExports).default as Abs);
+  }
+  return abs({ k: "obj", slots, open: true }, undefined, undefined, "path");
 }
 
 /**
@@ -392,7 +449,9 @@ function requireOptionalFromModules(
  *  （ESM 早错保证 decl/specifier 不重名，star×star 按源序后者覆盖——
  *  与 collectAbsExports 顺序口径一致）。 */
 function rewriteExportStatements(js: string): string {
-  // export { x as y } from "spec"：绑定经 modules 表注入
+  // export { x as y } from "spec"：绑定经 modules 表注入。
+  // ESM live binding（Bug ②）：re-export 是间接引用——导出槽挂 getter，
+  // 读取时经 __nudoBindImport 解析依赖当前值（依赖内部变异对导入方可见）。
   js = js.replace(
     /^export\s*\{([^}]*)\}\s*from\s*["']([^"']+)["'];\s*$/gm,
     (_all, names: string, spec: string) =>
@@ -403,23 +462,26 @@ function rewriteExportStatements(js: string): string {
         .map((p) => {
           const [local, exported] = p.split(/\s+as\s+/).map((x) => x.trim().replace(/^"|"$/g, ""));
           const exp = exported ?? local;
-          return `__nudoExport(${JSON.stringify(exp)}, __nudoBindImport(${JSON.stringify(spec)}, ${JSON.stringify(local)}));`;
+          return `__nudoExportLazy(${JSON.stringify(exp)}, () => __nudoBindImport(${JSON.stringify(spec)}, ${JSON.stringify(local)}));`;
         })
         .join("\n"),
   );
   // export * as ns from "spec"：命名空间 re-export（与 importLocalBindings 的
-  // namespace open-obj 口径一致——__nudoBindNamespace → namespaceAbsOf）
+  // namespace open-obj 口径一致——__nudoBindNamespace 建 live 槽命名空间）
   js = js.replace(
-    /^export\s*\*\s+as\s+([A-Za-z_$][\w$]*)\s+from\s*["']([^"']+)["'];\s*$/gm,
+    /^export\s*\*\s+as\s+([A-Za-z_$][\w$]*)\s*from\s*["']([^"']+)["'];\s*$/gm,
     (_all, ns: string, spec: string) =>
-      `__nudoExport(${JSON.stringify(ns)}, __nudoBindNamespace(${JSON.stringify(spec)}));`,
+      `__nudoExportLazy(${JSON.stringify(ns)}, () => __nudoBindNamespace(${JSON.stringify(spec)}));`,
   );
-  // export * from "spec"：并入 named（不含 default，ESM 语义）
+  // export * from "spec"：并入 named（不含 default，ESM 语义）。
+  // 描述符拷贝保留来源 getter（来源 named 表 live 化后传递 liveness）
   js = js.replace(
     /^export\s*\*\s*from\s*["']([^"']+)["'];\s*$/gm,
     (_all, spec: string) => `__nudoExportStar(${JSON.stringify(spec)});`,
   );
-  // export { a, b as c }：本地绑定重命名导出
+  // export { a, b as c }：本地绑定重命名导出。
+  // ESM live binding（Bug ②）：specifier 导出是绑定引用非值快照——
+  // `export { x }; x = 2` 后导入方读 2（getter 读模块作用域当前值）
   js = js.replace(
     /^export\s*\{([^}]*)\};\s*$/gm,
     (_all, names: string) =>
@@ -429,7 +491,7 @@ function rewriteExportStatements(js: string): string {
         .filter(Boolean)
         .map((p) => {
           const [local, exported] = p.split(/\s+as\s+/).map((x) => x.trim().replace(/^"|"$/g, ""));
-          return `__nudoExport(${JSON.stringify(exported ?? local)}, ${local});`;
+          return `__nudoExportLazy(${JSON.stringify(exported ?? local)}, () => ${local});`;
         })
         .join("\n"),
   );
@@ -585,11 +647,13 @@ function runTranspiledInner(
     "__nudoModules",
     "__nudoBindImport",
     "__nudoBindNamespace",
+    "__nudoRegisterImportRefresh",
     "__nudoReplaces",
     "__nudoRequire",
     "__nudoRequireOptional",
     "__nudoEnv",
     "__nudoExport",
+    "__nudoExportLazy",
     "__nudoExportStar",
     "__nudoExports",
   ];
@@ -600,6 +664,9 @@ function runTranspiledInner(
     }
     if (n === "__nudoBindNamespace") {
       return (spec: string) => bindNamespace(modules, spec);
+    }
+    if (n === "__nudoRegisterImportRefresh") {
+      return (fn: () => void) => registerLiveImportRefresh(fn);
     }
     if (n === "__nudoReplaces") return allInject;
     if (n === "__nudoRequire") {
@@ -617,12 +684,35 @@ function runTranspiledInner(
         explicitExportNames.add(name);
       };
     }
+    if (n === "__nudoExportLazy") {
+      // ESM live binding（Bug ②）：导出槽挂 getter，读取时解析绑定当前值
+      return (name: string, get: () => unknown) => {
+        Object.defineProperty(dynExports, name, {
+          enumerable: true,
+          configurable: true,
+          get,
+        });
+        explicitExportNames.add(name);
+      };
+    }
     if (n === "__nudoExportStar") {
       return (spec: string) => {
         const mod = modules?.[spec];
         if (mod && "named" in (mod as object)) {
-          for (const [k, v] of Object.entries((mod as AbsModuleExports).named)) {
-            if (!explicitExportNames.has(k)) dynExports[k] = v;
+          const namedTbl = (mod as AbsModuleExports).named;
+          for (const k of Object.keys(namedTbl)) {
+            if (explicitExportNames.has(k)) continue;
+            // 描述符拷贝：来源 named 表的 live getter 原样传递（名集按源序
+            // 当下固定——ESM star 名集是 link-time 属性）
+            const d = Object.getOwnPropertyDescriptor(namedTbl, k);
+            if (!d) continue;
+            Object.defineProperty(
+              dynExports,
+              k,
+              d.get
+                ? { enumerable: true, configurable: true, get: d.get }
+                : { enumerable: true, configurable: true, writable: true, value: d.value },
+            );
           }
         }
       };
@@ -664,7 +754,34 @@ function runTranspiledInner(
   const cjsMerge = hasCjsExports
     ? `(() => { const me = $get(module, "exports"); if (me !== __nudoCjsOrig && me && typeof me === "object" && "shape" in me) { return { default: me, [Symbol.for("nudo.cjsMain")]: true }; } const out = {}; if (__nudoCjsOrig && __nudoCjsOrig.shape && __nudoCjsOrig.shape.k === "obj") { for (const k of Object.keys(__nudoCjsOrig.shape.slots)) out[k] = __nudoCjsOrig.shape.slots[k].value; } return out; })()`
     : "{}";
-  const ret = `return { ...__nudoExports, ...${cjsMerge}, ${names.join(", ")} };`;
+  // ESM live binding（Bug ②）：导出表是间接引用——返回对象挂 getter：
+  // - 动态导出（__nudoExportLazy 的 getter / star 拷贝的 getter）按描述符
+  //   迁移（对象字面量展开会把 getter 求值成快照，liveness 断链）；
+  // - 静态声明名 getter 读模块作用域当前值（`export let x` 被导出函数
+  //   变异后，读取方拿到当前值而非装载完成时刻快照）。
+  // 优先级与旧展开形态一致：dyn → cjs → 静态名（显式压过 star/default 合并）。
+  // getter 带 converting setter：宿主侧对 run 表槽位再赋值（mock 桥替换、
+  // 测试探针）首次写即降级为普通数据槽——对象保持可写，行为与旧快照面兼容。
+  const ret = [
+    "return (() => {",
+    "  const __nudoRet = {};",
+    "  const __nudoSlot = (__nudoK, __nudoGet) => Object.defineProperty(__nudoRet, __nudoK, {",
+    "    enumerable: true, configurable: true,",
+    "    get: __nudoGet,",
+    "    set: (__nudoV) => Object.defineProperty(__nudoRet, __nudoK, { enumerable: true, configurable: true, writable: true, value: __nudoV }),",
+    "  });",
+    "  for (const __nudoK of Reflect.ownKeys(__nudoExports)) {",
+    "    const __nudoD = Object.getOwnPropertyDescriptor(__nudoExports, __nudoK);",
+    "    if (__nudoD && __nudoD.enumerable) {",
+    "      if (__nudoD.get) __nudoSlot(__nudoK, __nudoD.get);",
+    "      else Object.defineProperty(__nudoRet, __nudoK, __nudoD);",
+    "    }",
+    "  }",
+    `  Object.assign(__nudoRet, ${cjsMerge});`,
+    ...names.map((n) => `  __nudoSlot(${JSON.stringify(n)}, () => ${n});`),
+    "  return __nudoRet;",
+    "})();",
+  ].join("\n");
   const fn = new Function(...argNames, `${js}\n${ret}`);
   setEvalBindingSink(bindings);
   // BUG-026：开新求值 epoch——同名类碰撞只在
@@ -826,6 +943,10 @@ export function isAbsVal(v: unknown): v is Abs {
 
 /** 调用 runTranspiled 导出（捕获 $throw）。opts.phi：入口 Φ 种子
  *  （instantiate/symbolic 的约束入口——eval 侧路径条件收窄）。
+ *  opts.shareArgs：evaluator 内部桥（跨模块 import / mock 文件桥，
+ *  callTranspiledExportApply）传引用——被调方对容器实参的变异必须对
+ *  caller 帧可见（与同文件闭包调用同语义）；宿主重放（case/记录/LSP）
+ *  不传，保持 D1 防御副本。
  *  嵌套进入（导出桥 apply）继承外层预算；仅最外层宿主入口重置。
  *  #152 assume 前提不设选项位：播种统一走 withAssumePremises 动态域
  *  包裹（check.ts 的 runSeeded extent），单一机制无第二路径。 */
@@ -833,7 +954,7 @@ export function callTranspiledExportFull(
   exports: Record<string, unknown>,
   name: string,
   args: Abs[],
-  opts?: { phi?: Phi },
+  opts?: { phi?: Phi; shareArgs?: boolean },
 ): TranspiledCallResult {
   // collector 作用域（幂等）：同 runTranspiled——最外层宿主入口开 store，
   // 嵌套（同一次分析内的逐导出调用 / 导出桥）复用外层。
@@ -859,21 +980,26 @@ function callTranspiledExportFullInner(
   exports: Record<string, unknown>,
   name: string,
   args: Abs[],
-  opts?: { phi?: Phi },
+  opts?: { phi?: Phi; shareArgs?: boolean },
 ): TranspiledCallResult {
   // own-property：name 为 toString/constructor 等 Object.prototype 成员且模块
   // 无同名自有导出时，裸读会把原型方法当导出调用（constructor 曾原样返回实参）
   const fn = Object.hasOwn(exports, name) ? exports[name] : undefined;
   if (typeof fn === "function") {
-    // D1：重跑/导入调用用副本——mutator 不得把入参态污染回调用方/记录。
     // 宿主裸值（raw string/array/number…）先经 asAbsVal 收成 Abs（与 $fork
     // 对缺参/宿主裸值同口径）：否则裸值流进代数算子（$not/$forOf/…）读
     // .shape.k 直接 TypeError，被记成 internal 回落 + throws TypeError
     // （症状 B：raw 数组实参 → `Cannot read properties of undefined
     // (reading 'k')`）。raw 字面量收成 exact lit，具体实参照常精确求值。
-    const callArgs = args.map((a) =>
-      a && typeof a === "object" && "shape" in (a as object) ? $copy(a) : asAbsVal(a),
-    );
+    // D1：宿主重放（case/记录/LSP）用副本——mutator 不得把入参态污染回
+    // 调用方/记录。evaluator 内部桥（shareArgs，跨模块 import 调用）传
+    // 引用：JS 引用语义下被调方变异必须写回 caller 帧（h.n = v 后 caller
+    // 读 h.n 得 v，back === h 折 true）——复制会让 caller 绑定读到 stale
+    // 值（假 exact），与同文件闭包调用（直达、无副本）语义分叉。
+    const callArgs = args.map((a) => {
+      if (!(a && typeof a === "object" && "shape" in (a as object))) return asAbsVal(a);
+      return opts?.shareArgs ? (a as Abs) : $copy(a as Abs);
+    });
     return runWithLoopExits(() => {
       try {
         const invoke = () =>
@@ -988,6 +1114,10 @@ export function callTranspiledExport(
  * 返回 AbsApplyResult（`{abs, throws}`），$call 统一路由 throws。
  * 手拆 `.result` 会静默丢 throws 面（BUG-006 根因）。
  *
+ * 桥是 evaluator 内部调用（caller 帧 → 跨模块 import）：实参传引用
+ * （shareArgs），被调方 mutator 写回 caller 绑定——与同文件闭包调用同语义；
+ * 宿主重放不走此工厂，保持 D1 防御副本。
+ *
  * `exports` 可传惰性 getter（互递归模块桥：导出表在桥创建后才赋值）。
  */
 export function callTranspiledExportApply(
@@ -996,7 +1126,7 @@ export function callTranspiledExportApply(
 ): (args: Abs[], thisVal?: Abs) => AbsApplyResult {
   const resolve = typeof exports === "function" ? exports : () => exports;
   return (args: Abs[]) => {
-    const full = callTranspiledExportFull(resolve(), name, args);
+    const full = callTranspiledExportFull(resolve(), name, args, { shareArgs: true });
     return makeAbsApplyResult(full.result, full.throws);
   };
 }

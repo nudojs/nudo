@@ -26,6 +26,7 @@ This page is the **canonical flag / option / exit-code specification**. Tutorial
 | [`nudo export`](#nudo-export) | Project Abs into `dts` / `guard` / `schema` / `standard` artifacts |
 | [`nudo health`](#nudo-health) | Health-check files: analysis errors, call-site solidification drift |
 | [`nudo migrate`](#nudo-migrate) | One-way retire-tsc door: `status` / `strip` / `verify` / `retire` |
+| [`nudo init`](#nudo-init) | Setup: write an adoption baseline `nudo` config into `package.json` (idempotent) |
 
 There is **no** observation verb. Observation is `check` signatures, `test` case reports, and IDE hover.
 
@@ -53,6 +54,7 @@ nudo check <paths...> [options]
 |--------|-------------|
 | `--watch` / `-w` | Re-run on file changes (flag, not a verb) |
 | `--json` | Structured diagnostics + signatures — `CheckJson` (1 file) or `CheckJsonMulti` envelope (N files); cannot combine with `--abs` |
+| `--quiet` | Suppress the signature table — issues + summary + gate exit unchanged; a clean run prints one summary line. Human text face only (`--json` / `--gitlab` machine contracts unaffected) |
 | `--gha` | GitHub Actions inline annotations (`::error` / `::warning`); auto-enabled when `GITHUB_ACTIONS=true` |
 | `--gitlab` | GitLab Code Quality JSON array for `gl-code-quality-report.json` (emitted on stdout — redirect to the file in CI) |
 | `--verbose` | Expand Abs signatures (term/pred/conf detail) |
@@ -419,6 +421,18 @@ Samples: [`docs/examples/migrate/`](https://github.com/nudojs/nudo/tree/main/doc
 |------|---------|
 | `0` | Action completed (including dry-runs) |
 | `1` | Usage / IO errors; `verify` fails when `nudo check` fails |
+
+### nudo init
+
+```text
+nudo init [path]
+```
+
+Setup verb (aligned with `tsc`'s `init` command): write an adoption baseline into the nearest `package.json` — `"nudo": { "check": { "profile": "adoption" } }` (L2 entry may-throw demoted to warning; L1 contract violations stay `error`).
+
+Idempotent: re-running on a `package.json` that already has a `nudo` key prints the current config without writing.
+
+**Exit codes:** `0` on success and idempotent re-runs; `1` on usage / IO errors (no `package.json` found, malformed JSON).
 
 ---
 

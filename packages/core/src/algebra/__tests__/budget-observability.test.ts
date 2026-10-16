@@ -64,4 +64,56 @@ describe("A2 budget observability", () => {
     expect(multi.summary.files).toBe(2);
     expect(multi.budget === undefined || multi.budget.truncated === false).toBe(true);
   });
+
+  it("per-path attribution: depth 截断的 depth 计数/上限取触发现场（必到顶）", () => {
+    resetAbsCallBudget();
+    const report = checkSource(
+      "/t/deep.js",
+      `export function down(n) { if (n <= 0) { return 0; } return down(n - 1); }\n`,
+      pTrue,
+    );
+    const b = report.budget!;
+    expect(b.truncated).toBe(true);
+    // 截断的是 B 路径 depth 预算：A 路径无归因、calls 预算未到顶
+    expect(b.evalReasons).toContain("depth");
+    expect(b.callReasons).toEqual([]);
+    expect(b.evalCalls).toBeLessThan(b.maxEvalCalls);
+    // depth 计数 = 触发时深度 == 当时生效上限（不得打未到顶的总调用数冒充）
+    expect(b.evalDepth).toBe(b.maxEvalDepth);
+    expect(b.evalDepth).toBe(64);
+    expect(b.evalDepth).toBeGreaterThan(0);
+  });
+
+  it("cycle-only：truncated=true 但两路径 reasons 只有 cycle（无预算计数段）", () => {
+    resetAbsCallBudget();
+    const report = checkSource(
+      "/t/cyc.js",
+      `export function sameArgs(x) { sameArgs(x); return x; }\n`,
+      pTrue,
+    );
+    const b = report.budget!;
+    expect(b.truncated).toBe(true);
+    expect(b.evalReasons).toEqual(["cycle"]);
+    expect(b.callReasons).toEqual([]);
+    expect(b.evalCalls).toBeLessThan(b.maxEvalCalls);
+  });
+
+  it("resetAbsCallBudget 清空归因与 depth 现场（health 按文件隔离依赖此口径）", () => {
+    resetAbsCallBudget();
+    checkSource(
+      "/t/deep2.js",
+      `export function down(n) { if (n <= 0) { return 0; } return down(n - 1); }\n`,
+      pTrue,
+    );
+    expect(getAbsCallBudgetStats().truncated).toBe(true);
+    resetAbsCallBudget();
+    const after = getAbsCallBudgetStats();
+    expect(after.truncated).toBe(false);
+    expect(after.evalReasons).toEqual([]);
+    expect(after.callReasons).toEqual([]);
+    expect(after.depth).toBe(0);
+    expect(after.evalDepth).toBe(0);
+    expect(after.maxDepth).toBe(64);
+    expect(after.maxEvalDepth).toBe(64);
+  });
 });

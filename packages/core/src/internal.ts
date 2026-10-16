@@ -33,6 +33,10 @@ export {
   setEvalForkBudgetLimit, stableCallId, truncatedAbs, withFnBudgetOverride
 } from "./algebra/call-budget.ts";
 export {
+  // budget 归因段构建器（check / health 两面共用，#health-budget 单一实现）
+  budgetAttributionSegs
+} from "./algebra/check-report.ts";
+export {
   MAX_PROMISE_MICROS, getPromiseMicrosLength
 } from "./algebra/builtins/promise.ts";
 export {
@@ -43,6 +47,10 @@ export {
 export {
   clearPureMemo
 } from "./algebra/exec/call.ts";
+export {
+  // Bug ②：ESM live import 刷新注册表生命周期（evalAbsModuleGraph 入口清空）
+  clearLiveImportRefreshers
+} from "./algebra/exec/live-imports.ts";
 export {
   type CollectorScopeParticipant, type ScopedSlot,
   createScopedSlot, registerCollectorScopeParticipant, runWithCollectorScope,

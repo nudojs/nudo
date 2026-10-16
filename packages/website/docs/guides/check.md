@@ -18,7 +18,7 @@ npx nudojs check path/to/file.js
 ```
 
 ```bash
-nudo check <path> [--watch|-w] [--json] [--verbose] [--abs]
+nudo check <path> [--watch|-w] [--json] [--quiet] [--verbose] [--abs]
            [--from paths…] [--ignore-throws names] [--entry-throws error|warning|off]
            [--profile adoption|strict]
 ```
@@ -64,7 +64,16 @@ issues
       expected: entry total, or @nudo:throws / try-catch
       → ToNumber coercion of abstract operand → @nudo:throws TypeError  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch
       fix:  nudo contract --draft  (emit a sidecar draft you can edit)
+
+onboarding
+  every error above is an L2 entry may-throw — unconstrained entry points, not broken contracts.
+  no @nudo:* directives and no package.json#nudo config found in this project yet. next steps:
+    nudo init                      write an adoption baseline config (L2 → warning)
+    nudo contract --draft <file>   draft a *.nudo.js sidecar contract for one file
+    nudo check --profile adoption  preview the gate with L2 as warnings
 ```
+
+The `onboarding` block is printed only when the whole run is pristine — zero `@nudo:*` directives, zero `nudo` config — and every error is L2. It never changes the exit code and disappears once a directive or config exists.
 
 > `L1` in `[ERROR L1 getName]` is the **line number** (the function is declared on line 1 here) — the layer is L2 (`nudo:entry-may-throw`). `L#` is always a location, never a contract layer.
 
@@ -253,6 +262,7 @@ All flags and `package.json#nudo.check` config are specified once in the [CLI Re
 |--------|-------------|
 | `--watch` / `-w` | Re-run on changes (flag, not a verb) |
 | `--json` | Machine-readable signatures + diagnostics (`CheckJson` / `CheckJsonMulti`) |
+| `--quiet` | Suppress the signature table — issues + summary + gate exit unchanged; a clean run prints one summary line (for large CI logs) |
 | `--verbose` | Expand Abs signatures (term/pred/conf detail) |
 | `--abs` | Per-function algebra face (shape + conf; `--generalize` adds the symbolic term/pred α) — observation, still gates L1/L2 |
 | `--fn <name>` | With `--abs`: restrict to one function |
@@ -274,7 +284,7 @@ The sidecar / contract-plumbing codes (`nudo:interface-*`, `nudo:dual-entry`) ar
 
 ## CI integration
 
-`nudo check` is the CI gate for contracts and entry throws — aligned with `tsc --noEmit`, except check **still prints signatures on success**. `--abs` remains observation but still gates on L1/L2 errors. Exit codes: `0` = no error-level diagnostic, `1` = any error-level diagnostic (L1 or non-ignored L2) — full table in [CLI Reference](../api/cli-reference.md#nudo-check).
+`nudo check` is the CI gate for contracts and entry throws — aligned with `tsc --noEmit`, except check **still prints signatures on success**. `--abs` remains observation but still gates on L1/L2 errors. Exit codes: `0` = no error-level diagnostic, `1` = any error-level diagnostic (L1 or non-ignored L2) — full table in [CLI Reference](../api/cli-reference.md#nudo-check). On large repos, add `--quiet` to keep logs signal-only: it suppresses the signature table (issues + summary + gate exit unchanged; a clean file prints one summary line).
 
 ### GitHub Actions
 

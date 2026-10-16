@@ -38,7 +38,7 @@ export const double = fn({ x: number().gt(0) }, string());
 
 const SIDECAR_OK = `import { fn, number, string } from "@nudojs/core";
 
-export const double = fn({ x: number().gt(0) }, number().gt(40));
+export const double = fn({ x: number().gt(0) }, number().gt(0));
 `;
 
 function runCli(args, _cwd) {
@@ -72,14 +72,20 @@ try {
   const sidecarPath = join(dir, "utils.nudo.js");
   writeFileSync(srcPath, SAMPLE);
 
+  // 零注解样本上入口参数 x 显示 any（未约束），x * 2 的 ToNumber 强制
+  // 转换对 Symbol/bigint 实参原生抛 TypeError → L2 entry-may-throw 默认
+  // error（docs/guides/check.md 的 Day-0 标准输出，自 2e5aeb35 对齐原生
+  // 抛语义起即如此）。教学口径：新手第一次 check 就看到「入口可能抛」，
+  // 后续 x>0 侧车把它修绿——「违例→修→绿」路径的第一环。
   steps.push(
-    step("check (zero directives)", () => {
+    step("check (zero directives — expect nudo:entry-may-throw)", () => {
       const r = runCli(["check", srcPath], dir);
+      const reported = r.code === 1 && r.stdout.includes("nudo:entry-may-throw");
       return {
         cliMs: r.ms,
         exit: r.code,
-        ok: r.code === 0 && r.stdout.includes("double"),
-        ...(r.code !== 0 ? { note: (r.stderr || r.stdout).slice(0, 160) } : {}),
+        ok: reported,
+        ...(reported ? { note: "entry-may-throw reported" } : { note: r.stdout.slice(0, 160) || r.stderr.slice(0, 160) }),
       };
     }),
   );
@@ -107,7 +113,7 @@ try {
 
   writeFileSync(sidecarPath, SIDECAR_OK);
   steps.push(
-    step("check (return number().gt(40) — expect clean)", () => {
+    step("check (return number().gt(0) — expect clean)", () => {
       const r = runCli(["check", srcPath], dir);
       return {
         cliMs: r.ms,

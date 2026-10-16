@@ -3,7 +3,7 @@
  * 从 index.ts 原样迁出，行为不变。
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import { resolve, relative, dirname } from "node:path";
+import { resolve, dirname } from "node:path";
 import type { Command } from "commander";
 import {
   insertGeneratedCaseDirectives,
@@ -12,7 +12,8 @@ import {
 } from "@nudojs/service/emit";
 import { analyzeFileAsync, getPathEnvLoadErrors, type CallRecord } from "@nudojs/service";
 import { ENV_UNRESOLVED_CODE } from "../check-json-map.ts";
-import { buildTestReport, formatTestReport } from "../run-test.ts";
+import { paint, paintOne } from "../ui.ts";
+import { buildTestReport, entryContractNoteFns, formatTestReport } from "../run-test.ts";
 import {
   collectExternalRecords,
   reportPathErrors,
@@ -89,11 +90,15 @@ async function runTest(
     const report = buildTestReport(displayPathOf(filePath), result);
     await runAbsView(filePath, {});
     console.log("");
-    console.log(formatTestReport(report));
+    console.log(paint(formatTestReport(report)));
     if (report.failed > 0) process.exitCode = 1;
   } else {
-    const report = buildTestReport(displayPathOf(filePath), result);
-    console.log(formatTestReport(report));
+    // 人类默认面：entry@ 回退 × 有效契约（check 同判定）加注解行；
+    // --json / --abs 输出面不碰
+    const report = buildTestReport(displayPathOf(filePath), result, {
+      entryContractNotes: entryContractNoteFns(filePath, source, result),
+    });
+    console.log(paint(formatTestReport(report)));
     if (report.failed > 0) process.exitCode = 1;
   }
 
@@ -121,13 +126,15 @@ async function runTest(
   if (!opts.json && result.diagnostics.length > 0 && !opts.abs) {
     console.log("\ndiagnostics");
     for (const d of result.diagnostics) {
-      const loc = `${relative(process.cwd(), filePath)}:${d.range.start.line}:${d.range.start.column}`;
-      console.log(`  [${d.severity}] ${loc} ${d.message}${d.code ? ` (${d.code})` : ""}`);
+      // #7 路径口径与 check 同规：cwd 内相对展示；目标在 cwd 外打绝对路径
+      //（displayPathOf：relative 以 .. 开头即逃出 cwd，回落原值）
+      const loc = `${displayPathOf(filePath)}:${d.range.start.line}:${d.range.start.column}`;
+      console.log(paintOne(`  [${d.severity}] ${loc} ${d.message}${d.code ? ` (${d.code})` : ""}`));
     }
   }
 
   if (opts.freeze && emitOut) {
-    const relPath = relative(process.cwd(), filePath) || filePath;
+    const relPath = displayPathOf(filePath);
     const skippedLines = emitOut.skipped.map((s) => `  ${s.fn}: ${s.reason}${s.detail ? ` (${s.detail})` : ""}`);
     if (emitOut.source === source) {
       console.log("\nfreeze: no changes.");

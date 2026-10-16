@@ -1,0 +1,232 @@
+/**
+ * Error 家族（ERROR_CTOR_NAMES/isErrorCtorName/errorBrandAbs）+ 宿主构造器
+ * 实参校验谓词（sumHasPrimMember/isNullishLit/enforceCanBeHeldWeakly/
+ * isDefinitelyUndefinedArg）+ Proxy 构造（makeProxyAbs）。
+ *
+ * Invariants:
+ * - errorBrandAbs 槽插入序 = 原生 gOPN 观察序（stack→message→cause→
+ *   errors）；name 槽打 Slot.inherited（原型链槽：hasOwnProperty/gOPN 自有
+ *   面折 false，$set 覆写落地转自有）；家族自有槽全 enumerable:false
+ *  （Bug 84 枚举视图剔除，extends Error 内层公有槽展开同口径）。
+ * - message 过 ToString：symbol prim 定抛 TypeError、any/含 symbol 臂
+ *   union → may（Bug 54）；stack 恒 string 域不可精确折叠（Bug 59）。
+ * - 实参校验三档口径（Bug 37/41/53/63/85，两个派发点共用：exec/class $new
+ *   宿主分支与 dispatch.ts evalBuiltinNew）：definite 原生 throw（prim 字面
+ *   量/缺省）→ NudoThrow；any/unknown/含坏成员 union → recordMayThrow（值
+ *   域不变）；obj/fn/brand/tuple/arr 对象形态 → 原生全定。
+ * - isNullishLit 与 surface.isNullishLitAbs 同判定但**不引 surface**（避免
+ *   builtins↔surface 新环）；弱键分类本体在 collections.ts
+ *  （classifyCanBeHeldWeakly，Bug 8 集合条目键单一口径），此处只落校验。
+ * - Proxy brand inner = target Abs（无陷阱读写走靶语义、isArray 剥 brand 看
+ *   靶形态）；target/handler 引用挂 match-iter 侧表（Bug 57/71 陷阱派发）。
+ */
+
+import type { Abs } from "../../abs.ts";
+import { abs, strLit, bool, unknown } from "../../abs.ts";
+import { objOf } from "../../objects.ts";
+import { classifyCanBeHeldWeakly } from "../../collections.ts";
+import { undefAbs } from "../../hof.ts";
+import { NudoThrow } from "../../exec/nudo-throw.ts";
+import { errorTypeAbs, recordMayThrow } from "../../exec/may-throw.ts";
+import { registerProxyParts } from "../../exec/match-iter.ts";
+import { setPropFlags } from "../invariants.ts";
+import { isSymbolAbs } from "../symbol.ts";
+import { str } from "../shared.ts";
+import { enforceIterableStaticArg } from "../promise.ts";
+
+/** JS Error 家族构造器名（求值引擎 evalBuiltinNew / $new 共用） */
+const ERROR_CTOR_NAMES = new Set([
+  "Error",
+  "TypeError",
+  "RangeError",
+  "SyntaxError",
+  "ReferenceError",
+  "URIError",
+  "EvalError",
+  "AggregateError",
+]);
+
+export function isErrorCtorName(name: string | undefined): boolean {
+  return !!name && ERROR_CTOR_NAMES.has(name);
+}
+
+/** Error 构造器 message 槽：原生恒为字符串（缺省/undefined → ""；非字符串
+ *  字面量 → ToString）。非字面量保守（字符串保持、其余 strPrim）。
+ *  Bug 54：message 过 ToString——symbol prim（Symbol()/Symbol.for 产物，
+ *  无 lit 项——JS 无 symbol 字面量，旧 lit 分支是死代码）定抛 TypeError
+ *  （node 实测 new Error(Symbol()) 全家族抛）；any/unknown/含 symbol 臂
+ *  union → may；bigint/number/bool/对象 ToString 全定（良性惯例）。 */
+function errorMessageSlot(messageArg: Abs | undefined): Abs {
+  if (!messageArg) return strLit(""); // new Error() → ""
+  // shape-first：先于 lit 分支判 symbol 形态
+  if (isSymbolAbs(messageArg)) throw new NudoThrow(errorTypeAbs("TypeError"));
+  {
+    const k = messageArg.shape.k;
+    // nullish 字面量（shape k:"unknown" + lit term）ToString 全定（"null"/""）
+    const nullishLit =
+      messageArg.term?.op === "lit" &&
+      (messageArg.term.value === null || messageArg.term.value === undefined);
+    if (
+      k === "any" ||
+      (k === "unknown" && !nullishLit) ||
+      (k === "sum" && messageArg.shape.members.some((m) => isSymbolAbs(m)))
+    ) {
+      recordMayThrow({ kind: "TypeError", cause: "Error constructor message ToString may throw (Symbol)" });
+    }
+  }
+  if (messageArg.term?.op === "lit") {
+    const v = messageArg.term.value;
+    if (typeof v === "string") return messageArg;
+    if (typeof v === "number" || typeof v === "boolean" || typeof v === "bigint") {
+      return strLit(String(v));
+    }
+    if (v === null) return strLit("null");
+    if (v === undefined) return strLit(""); // new Error(undefined) → ""
+    // symbol 等：原生 ToString 抛 TypeError——保守 unknown，不折精确值
+    return str();
+  }
+  if (messageArg.shape.k === "prim" && messageArg.shape.type === "string") {
+    return messageArg;
+  }
+  return str();
+}
+
+/**
+ * Error brand：shape 带 name/message（字面量 message 保精确）。
+ * AggregateError(errors, message[, options])：message 在第二实参，errors
+ * 挂 .errors（原生是实参数组副本）；options.cause 挂 .cause（闭槽 miss
+ * 会折 undefined 假精确——原生 .cause 可能有值）。
+ * $new 的 new Error 路径共用——catch 形参成员访问可解。
+ */
+export function errorBrandAbs(name: string, args: Abs[]): Abs {
+  const messageArg = name === "AggregateError" ? args[1] : args[0];
+  // R4b：槽插入序 = 原生自有属性安装序（gOPN 观察序）——node 实测
+  // gOPN(new Error("m")) → ["stack","message"]（V8 先装 stack）；
+  // 带 cause → ["stack","message","cause"]；AggregateError →
+  // ["stack","message","cause","errors"]（cause 先于 errors）。name 是
+  // inherited 原型链槽，不在 gOPN 面，位置不影响观察序。
+  const slots: Record<string, { value: Abs; inherited?: boolean }> = {
+    // Bug 59：stack 恒 string（V8/SpiderMonkey/JSC 堆栈轨迹文本，含调用点
+    // 信息不可精确折叠）；用户写 e.stack = v 经既有 $set 槽写通道覆盖
+    stack: { value: str("path") },
+    // Bug 66：name 原生不是实例自有属性——经原型链从 X.prototype.name 解析
+    // （Error.prototype.name = "Error"；TypeError.prototype.name =
+    // "TypeError"…）。槽保留（$get 直读折家族名、$in 存在性 true），打
+    // Slot.inherited 标记：hasOwnProperty / propertyIsEnumerable /
+    // Object.hasOwn / gOPN 的自有面折 false；$set 公有覆写落地转自有
+    // （e.name = "X" 原生建自有可枚举属性）。
+    name: { value: strLit(name), inherited: true },
+    message: { value: errorMessageSlot(messageArg) },
+  };
+  const optionsArg = name === "AggregateError" ? args[2] : args[1];
+  if (optionsArg && optionsArg.shape.k === "obj") {
+    const cause = Object.prototype.hasOwnProperty.call(optionsArg.shape.slots, "cause")
+      ? optionsArg.shape.slots["cause"]!.value
+      : undefAbs();
+    slots["cause"] = { value: cause };
+  }
+  if (name === "AggregateError") {
+    // Bug 54：errors（args[0]）过 IterableToList——非可迭代定抛（node 实测
+    // AggregateError(Symbol())/1/()/null 全抛 "… is not iterable"；字符串
+    // 可迭代合法："ab" → errors ['a','b']）。与 Promise.all（Bug 47）共用
+    // 三档口径：prim 非 string/nullish/缺省 → NudoThrow；any/obj/… → may
+    enforceIterableStaticArg(args[0], "AggregateError errors");
+    // errors：字面量 tuple 保留精确；抽象/缺省（原生 []）保守 unknown
+    slots["errors"] = { value: args[0] ?? unknown };
+  }
+  // Bug 84：Error 家族自有槽（name/message/stack；AggregateError 的
+  // errors/cause）原生全不可枚举——枚举视图（for-in/keys/spread/assign/
+  // stringify）与 extends Error 用户类实例的内层公有槽展开据此剔除
+  const errInner = objOf(slots);
+  for (const k of Object.keys(slots)) {
+    setPropFlags(errInner, k, { enumerable: false });
+  }
+  return abs(
+    {
+      k: "brand",
+      name,
+      shape: errInner,
+    },
+    undefined,
+    undefined,
+    "path",
+  );
+}
+
+// --- 宿主构造器实参校验（Bug 37/41/53/63/85）---------------------------
+// 两个派发点共用：exec/class.ts $new 宿主函数分支（自由标识符漏入的宿主全局）
+// 与本文件 evalBuiltinNew（Abs 面）。三档口径与全仓约定一致：
+// - definite 原生 throw（prim 字面量/缺省等静态确定非法）→ NudoThrow
+// - any/unknown/含坏成员的 union → recordMayThrow（值域不变）
+// - obj/fn/brand/tuple/arr 等对象形态 → 原生全定（total）
+
+/** union 含 prim 成员（非 nullish）→ 该值可能是原始值（原生 may TypeError） */
+export function sumHasPrimMember(a: Abs): boolean {
+  if (a.shape.k !== "sum") return false;
+  return a.shape.members.some(
+    (m) =>
+      m.shape.k === "prim" &&
+      !(m.term?.op === "lit" && (m.term.value === null || m.term.value === undefined)),
+  );
+}
+
+/**
+ * nullish 字面量实参（shape k:"unknown" + lit term——引擎的 null/undefined
+ * 字面量表示，见 litAbsFromJs）。与 surface.isNullishLitAbs 同判定，本文件
+ * 不引 surface（避免 builtins↔surface 新环）。
+ */
+export function isNullishLit(a: Abs | undefined): boolean {
+  return (
+    !!a &&
+    a.term?.op === "lit" &&
+    (a.term.value === null || a.term.value === undefined)
+  );
+}
+
+/**
+ * Bug 37：new Proxy(target, handler) —— 原生 ProxyCreate 对 target 与
+ * handler 各做 IsObject。prim（含 nullish/缺省 ≡ undefined）→ 确定
+ * TypeError；any/unknown/含 prim 成员 union → may；obj/fn/brand/tuple/arr
+ * 是对象 → 全定，构造 Proxy brand。
+ * Bug 57/71：brand inner = target Abs（无陷阱读写走靶语义、isArray 剥
+ * brand 看靶形态）；target/handler 引用挂 match-iter 侧表——get/has/set
+ * 陷阱派发（$get/$set/$in）与陷阱实参（首参 target）用。
+ */
+export function makeProxyAbs(target: Abs | undefined, handler: Abs | undefined): Abs {
+  for (const a of [target, handler]) {
+    if (!a || isNullishLit(a) || a.shape.k === "prim") {
+      throw new NudoThrow(errorTypeAbs("TypeError")); // 缺省/nullish/prim：非对象
+    }
+    if (a.shape.k === "any" || a.shape.k === "unknown" || sumHasPrimMember(a)) {
+      recordMayThrow({ kind: "TypeError", cause: "new Proxy on non-object target or handler" });
+    }
+  }
+  const t = target as Abs;
+  const h = handler as Abs;
+  const proxy = abs(
+    { k: "brand", name: "Proxy", shape: t },
+    undefined,
+    undefined,
+    "path",
+  );
+  registerProxyParts(proxy, { target: t, handler: h });
+  return proxy;
+}
+
+/** Bug 43：CanBeHeldWeakly 校验分类——自本文件移入 collections.ts 内核叶子
+ *  （Bug 8：集合构造器条目键复用同口径，避免 collections ↔ builtins 新环）。 */
+
+/** Bug 43：弱键校验落地：def → NudoThrow(TypeError)；may → recordMayThrow(TypeError) */
+export function enforceCanBeHeldWeakly(a: Abs | undefined, what: string): void {
+  const c = classifyCanBeHeldWeakly(a);
+  if (c.k === "def") throw new NudoThrow(errorTypeAbs("TypeError"));
+  if (c.k === "may") {
+    recordMayThrow({ kind: "TypeError", cause: `${what} may not be an object or symbol (CanBeHeldWeakly)` });
+  }
+}
+
+/** Bug 43：实参确定为 undefined（缺省 / undefined 字面量）——register 的
+ * unregisterToken 仅此形态跳过弱键校验（原生 SameValue(·,undefined) 豁免） */
+export function isDefinitelyUndefinedArg(a: Abs | undefined): boolean {
+  return !a || (a.term?.op === "lit" && a.term.value === undefined);
+}

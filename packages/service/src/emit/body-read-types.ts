@@ -43,8 +43,51 @@ const NUMBER_METHODS = new Set([
 const ARRAY_METHODS = new Set([
   "map", "filter", "reduce", "forEach", "find", "findIndex", "some", "every",
   "push", "pop", "shift", "unshift", "sort", "reverse", "join", "flat",
-  "flatMap", "includes", "indexOf", "slice", "splice", "concat",
+  "flatMap", "includes", "indexOf", "lastIndexOf", "slice", "splice", "concat",
+  "reduceRight", "findLast", "findLastIndex", "at", "entries", "keys", "values",
 ]);
+
+/**
+ * 带回调的数组方法 → 回调形参中的元素位下标：
+ * reduce/reduceRight 元素在第 2 位（第 1 位是累加器）；sort 比较器
+ * 两形参都是元素；其余（map/filter/…）元素在第 1 位。
+ */
+const ARRAY_CALLBACK_METHODS: Record<string, number[]> = {
+  map: [0], filter: [0], forEach: [0], find: [0], findIndex: [0],
+  findLast: [0], findLastIndex: [0], some: [0], every: [0], flatMap: [0],
+  reduce: [1], reduceRight: [1],
+  sort: [0, 1],
+};
+
+/**
+ * 参数契约证据（quickfix 侧车发射面）：
+ * - array：参数被当数组方法接收者调用（`items.reduce(…)`）；element 为
+ *   回调元素位合成的元素契约（无证据 → array(any())）
+ * - shape：参数被成员读取（既有 body-read 字段面）
+ * - scalar：参数本体直接用法（`1 + tax` → number()）——多参函数只收窄
+ *   一个参数仍消不掉 L2（残余 may-throw 来自其余未约束位）
+ * 优先级：array > shape > scalar（数组方法读是最强形态证据）。
+ */
+export type ParamContractEvidence =
+  | { kind: "array"; element?: ParamContractEvidence }
+  | { kind: "shape"; fields: BodyReadField[] }
+  | { kind: "scalar"; type: string; via: string };
+
+/** fnName → paramName → 契约证据（参数按声明序插入） */
+export type ParamContracts = Map<string, Map<string, ParamContractEvidence>>;
+
+/** 成员读路径条目（param → path → hints） */
+type PathEntry = { path: string[]; hints: UseHint[] };
+
+/** 数组方法接收者调用证据；element 为回调元素位的递归读集 */
+type ArrayCallEvidence = { method: string; element?: ParamReads };
+
+/** 单函数读集：成员路径 / 数组接收者调用 / 参数本体标量用法 */
+type ParamReads = {
+  paths: Map<string, Map<string, PathEntry>>;
+  arrays: Map<string, ArrayCallEvidence[]>;
+  scalars: Map<string, UseHint[]>;
+};
 
 function keyOf(node: Node | undefined): string | undefined {
   if (!node) return undefined;
@@ -181,122 +224,178 @@ function hintFromTypeof(
 }
 
 /**
- * 收集每个函数形参成员读取 + 用法推断类型。
- * `fnName → paramName → fields[]`
+ * `p.m1(a).m2(b)` 调用链解析：链底须为标识符（接收者），沿途每个
+ * 调用环节是非计算成员方法调用。链底非标识符（`foo().bar()`）→ undefined。
  */
-export function collectParamBodyReadTypes(source: string): BodyReadTypes {
-  const out: BodyReadTypes = new Map();
-  let ast: ReturnType<typeof parse>;
-  try {
-    ast = parse(source);
-  } catch {
-    return out;
+const receiverChainOf = (
+  call: Record<string, unknown>,
+): { param: string; links: Array<{ method: string; cb?: Node }> } | undefined => {
+  const links: Array<{ method: string; cb?: Node }> = [];
+  let cur: Record<string, unknown> | undefined = call;
+  while (cur) {
+    if (cur.type !== "CallExpression" && cur.type !== "OptionalCallExpression") {
+      return undefined;
+    }
+    const callee = cur.callee as Record<string, unknown> | undefined;
+    if (
+      !callee ||
+      (callee.type !== "MemberExpression" &&
+        callee.type !== "OptionalMemberExpression") ||
+      callee.computed === true
+    ) {
+      return undefined;
+    }
+    const method = keyOf(callee.property as Node | undefined);
+    if (method === undefined) return undefined;
+    const args = (cur.arguments as unknown[] | undefined) ?? [];
+    const cb = args[0] as Node | undefined;
+    links.unshift({
+      method,
+      ...(cb &&
+      (cb.type === "ArrowFunctionExpression" || cb.type === "FunctionExpression")
+        ? { cb }
+        : {}),
+    });
+    const obj = callee.object as Record<string, unknown> | undefined;
+    if (!obj) return undefined;
+    if (obj.type === "Identifier") {
+      return { param: (obj as { name: string }).name, links };
+    }
+    if (obj.type === "CallExpression" || obj.type === "OptionalCallExpression") {
+      cur = obj;
+      continue;
+    }
+    return undefined;
   }
+  return undefined;
+};
 
-  const visitFn = (fnName: string, fnNode: Node, paramNames: Set<string>): void => {
-    if (paramNames.size === 0) return;
-    /** param → JSON 路径键 → { 路径, hints[] } */
-    const byParam = new Map<
-      string,
-      Map<string, { path: string[]; hints: UseHint[] }>
-    >();
-    const add = (
-      pname: string,
-      path: string[],
-      hint: UseHint | undefined,
-    ): void => {
-      if (path.length === 0) return;
-      let m = byParam.get(pname);
-      if (!m) byParam.set(pname, (m = new Map()));
-      const k = JSON.stringify(path);
-      let e = m.get(k);
-      if (!e) m.set(k, (e = { path, hints: [] }));
-      if (hint) e.hints.push(hint);
-    };
+const collectReads = (fnNode: Node, paramNames: Set<string>): ParamReads => {
+  const reads: ParamReads = {
+    paths: new Map(),
+    arrays: new Map(),
+    scalars: new Map(),
+  };
+  if (paramNames.size === 0) return reads;
+  const add = (
+    pname: string,
+    path: string[],
+    hint: UseHint | undefined,
+  ): void => {
+    if (path.length === 0) return;
+    let m = reads.paths.get(pname);
+    if (!m) reads.paths.set(pname, (m = new Map()));
+    const k = JSON.stringify(path);
+    let e = m.get(k);
+    if (!e) m.set(k, (e = { path, hints: [] }));
+    if (hint) e.hints.push(hint);
+  };
 
-    /**
-     * 从最外层成员表达式向下收集静态键路径，链底须为标识符。
-     * `node.a.b`（最外层）→ { path: ["a","b"], param: "node" }。
-     * 计算成员（`node.a[b]`）或链底非标识符（`foo().bar`）→ undefined。
-     */
-    const downChainPath = (
-      mem: Record<string, unknown>,
-    ): { path: string[]; param: string } | undefined => {
-      const keys: string[] = [];
-      let cur: Record<string, unknown> | undefined = mem;
-      let param: string | undefined;
-      while (cur) {
-        if (
-          (cur.type !== "MemberExpression" &&
-            cur.type !== "OptionalMemberExpression") ||
-          cur.computed === true
-        ) {
-          return undefined;
-        }
-        const key = keyOf(cur.property as Node | undefined);
-        if (key === undefined) return undefined;
-        keys.unshift(key);
-        const obj = cur.object as Node | undefined;
-        if (!obj) return undefined;
-        if (obj.type === "Identifier") {
-          param = obj.name;
-          break;
-        }
-        cur = obj as unknown as Record<string, unknown>;
-      }
-      if (param === undefined) return undefined;
-      return { path: keys, param };
-    };
-
-    /** 合成「下一环成员访问」父节点：hintFromUse 只读 type/property */
-    const synthMemberParent = (prop: string): Record<string, unknown> =>
-      ({ type: "MemberExpression", property: { type: "Identifier", name: prop } });
-
-    const walk = (
-      node: unknown,
-      shadowed: Set<string>,
-      parent?: Record<string, unknown>,
-      parentKey?: string,
-    ): void => {
-      if (!node || typeof node !== "object") return;
-      const n = node as Record<string, unknown>;
+  /**
+   * 从最外层成员表达式向下收集静态键路径，链底须为标识符。
+   * `node.a.b`（最外层）→ { path: ["a","b"], param: "node" }。
+   * 计算成员（`node.a[b]`）或链底非标识符（`foo().bar`）→ undefined。
+   */
+  const downChainPath = (
+    mem: Record<string, unknown>,
+  ): { path: string[]; param: string } | undefined => {
+    const keys: string[] = [];
+    let cur: Record<string, unknown> | undefined = mem;
+    let param: string | undefined;
+    while (cur) {
       if (
-        (n.type === "VariableDeclarator" || n.type === "FunctionDeclaration") &&
-        (n.id as Node | undefined)?.type === "Identifier"
+        (cur.type !== "MemberExpression" &&
+          cur.type !== "OptionalMemberExpression") ||
+        cur.computed === true
       ) {
-        const id = (n.id as { name: string }).name;
-        if (paramNames.has(id)) shadowed = new Set(shadowed).add(id);
+        return undefined;
       }
+      const key = keyOf(cur.property as Node | undefined);
+      if (key === undefined) return undefined;
+      keys.unshift(key);
+      const obj = cur.object as Node | undefined;
+      if (!obj) return undefined;
+      if (obj.type === "Identifier") {
+        param = obj.name;
+        break;
+      }
+      cur = obj as unknown as Record<string, unknown>;
+    }
+    if (param === undefined) return undefined;
+    return { path: keys, param };
+  };
 
-      // typeof param.a.b === "string"（链：整条路径取同一 typeof 证据）
-      if (n.type === "UnaryExpression" && n.operator === "typeof") {
-        const arg = n.argument as Node | undefined;
-        const mem = arg as Record<string, unknown> | undefined;
-        if (mem && (mem.type === "MemberExpression" || mem.type === "OptionalMemberExpression")) {
-          const chain = downChainPath(mem);
-          if (
-            chain &&
-            paramNames.has(chain.param) &&
-            !shadowed.has(chain.param)
-          ) {
-            // parent is UnaryExpression; grandparent is BinaryExpression
-            const gp = parent;
-            add(chain.param, chain.path, hintFromTypeof(n, gp));
+  /** 合成「下一环成员访问」父节点：hintFromUse 只读 type/property */
+  const synthMemberParent = (prop: string): Record<string, unknown> =>
+    ({ type: "MemberExpression", property: { type: "Identifier", name: prop } });
+
+  const walk = (
+    node: unknown,
+    shadowed: Set<string>,
+    parent?: Record<string, unknown>,
+    parentKey?: string,
+  ): void => {
+    if (!node || typeof node !== "object") return;
+    const n = node as Record<string, unknown>;
+    if (
+      (n.type === "VariableDeclarator" || n.type === "FunctionDeclaration") &&
+      (n.id as Node | undefined)?.type === "Identifier"
+    ) {
+      const id = (n.id as { name: string }).name;
+      if (paramNames.has(id)) shadowed = new Set(shadowed).add(id);
+    }
+
+    // typeof param.a.b === "string"（链：整条路径取同一 typeof 证据）
+    if (n.type === "UnaryExpression" && n.operator === "typeof") {
+      const arg = n.argument as Node | undefined;
+      const mem = arg as Record<string, unknown> | undefined;
+      if (mem && (mem.type === "MemberExpression" || mem.type === "OptionalMemberExpression")) {
+        const chain = downChainPath(mem);
+        if (
+          chain &&
+          paramNames.has(chain.param) &&
+          !shadowed.has(chain.param)
+        ) {
+          // parent is UnaryExpression; grandparent is BinaryExpression
+          const gp = parent;
+          add(chain.param, chain.path, hintFromTypeof(n, gp));
+        }
+      }
+    }
+
+    if (n.type === "MemberExpression" || n.type === "OptionalMemberExpression") {
+      // 链内环节（父节点是以本节点为 object 的非计算成员访问）跳过——
+      // 由链最外层统一收集整条路径（每条链只记一次）
+      const innerLink =
+        !!parent &&
+        (parent.type === "MemberExpression" ||
+          parent.type === "OptionalMemberExpression") &&
+        parentKey === "object" &&
+        (parent as Record<string, unknown>).computed !== true;
+      if (innerLink) return;
+
+      // 数组方法接收者调用链（`items.reduce(cb, 0)`、`users.filter(a).map(b)`）：
+      // 成员名是数组方法且本成员表达式在调用位（callee）。不进字段清单——
+      // `shape({ reduce: … })` 是把方法读当字段读，写盘后 L2 永远证不出；
+      // 证据（含回调元素读）由调用位分支统一记录（见下）。
+      let receiverArrayCall = false;
+      if (
+        (parent?.type === "CallExpression" ||
+          parent?.type === "OptionalCallExpression") &&
+        parentKey === "callee" &&
+        n.computed !== true
+      ) {
+        const method = keyOf(n.property as Node | undefined);
+        if (method !== undefined && ARRAY_METHODS.has(method)) {
+          const rc = receiverChainOf(parent as unknown as Record<string, unknown>);
+          if (rc && paramNames.has(rc.param) && !shadowed.has(rc.param)) {
+            receiverArrayCall = true;
           }
         }
       }
-
-      if (n.type === "MemberExpression" || n.type === "OptionalMemberExpression") {
-        // 链内环节（父节点是以本节点为 object 的非计算成员访问）跳过——
-        // 由链最外层统一收集整条路径（每条链只记一次）
-        const innerLink =
-          !!parent &&
-          (parent.type === "MemberExpression" ||
-            parent.type === "OptionalMemberExpression") &&
-          parentKey === "object" &&
-          (parent as Record<string, unknown>).computed !== true;
-        if (innerLink) return;
-
+      // 数组接收者链不进字段清单；子节点（含回调体内对外层参数的读，
+      // 如 `items.map(i => items.length)`）由下方通用遍历继续收集
+      if (!receiverArrayCall) {
         // 最外层：向下收集静态键路径，链底须为（未遮蔽的）形参
         const chain = downChainPath(n);
         if (chain && paramNames.has(chain.param) && !shadowed.has(chain.param)) {
@@ -321,41 +420,179 @@ export function collectParamBodyReadTypes(source: string): BodyReadTypes {
           add(chain.param, rev.slice(0, leafLen), leafHint);
         }
       }
-
-      for (const k of Object.keys(n)) {
-        if (k === "loc" || k === "start" || k === "end") continue;
-        const child = n[k];
-        if (Array.isArray(child)) {
-          for (const item of child) walk(item, shadowed, n, k);
-        } else if (child && typeof child === "object") {
-          walk(child, shadowed, n, k);
-        }
-      }
-    };
-    walk(fnNode, new Set());
-
-    if (byParam.size === 0) return;
-    const fieldsOf = new Map<string, BodyReadField[]>();
-    for (const [pname, pathMap] of byParam) {
-      // 路径 → trie：有子环的字段是中间环（值为对象 → 嵌套 shape），
-      // 叶子环携带用法推断类型
-      const root: TrieNode = { hints: [], children: new Map() };
-      for (const { path, hints } of pathMap.values()) {
-        let node = root;
-        for (const seg of path) {
-          let child = node.children.get(seg);
-          if (!child) {
-            node.children.set(seg, (child = { hints: [], children: new Map() }));
-          }
-          node = child;
-        }
-        node.hints.push(...hints);
-      }
-      fieldsOf.set(pname, emitFields(root));
     }
-    out.set(fnName, fieldsOf);
-  };
 
+    // 数组方法接收者调用链证据：只在链最外层调用位记录一次（内层调用
+    // 是更大链的 object，由外层统一收）。链上全部环节方法都是数组方法
+    // 才算数组形态；带回调的环节逐个合成元素读。
+    if (n.type === "CallExpression" || n.type === "OptionalCallExpression") {
+      const insideLargerChain =
+        (parent?.type === "MemberExpression" ||
+          parent?.type === "OptionalMemberExpression") &&
+        parentKey === "object";
+      if (!insideLargerChain) {
+        const rc = receiverChainOf(n);
+        if (
+          rc &&
+          paramNames.has(rc.param) &&
+          !shadowed.has(rc.param) &&
+          rc.links.every((l) => ARRAY_METHODS.has(l.method))
+        ) {
+          let list = reads.arrays.get(rc.param);
+          if (!list) reads.arrays.set(rc.param, (list = []));
+          for (const link of rc.links) {
+            const elemPositions = ARRAY_CALLBACK_METHODS[link.method];
+            const element =
+              link.cb && elemPositions
+                ? collectReads(link.cb, elemParamNames(link.cb, elemPositions))
+                : undefined;
+            list.push(element ? { method: link.method, element } : { method: link.method });
+          }
+        }
+      }
+    }
+
+    // 参数本体直接用法（无成员读的参数）：`1 + tax` → number()。
+    // 成员链 object 位不算（那是字段读的链底，另有收集）。
+    if (n.type === "Identifier") {
+      const name = (n as { name?: unknown }).name;
+      if (
+        typeof name === "string" &&
+        paramNames.has(name) &&
+        !shadowed.has(name) &&
+        !(
+          parent?.type === "MemberExpression" ||
+          parent?.type === "OptionalMemberExpression"
+        ) &&
+        parentKey !== "object"
+      ) {
+        const h = hintFromUse(parent, (parentKey as "left") ?? "object");
+        if (h) {
+          let list = reads.scalars.get(name);
+          if (!list) reads.scalars.set(name, (list = []));
+          list.push(h);
+        }
+      }
+    }
+
+    for (const k of Object.keys(n)) {
+      if (k === "loc" || k === "start" || k === "end") continue;
+      const child = n[k];
+      if (Array.isArray(child)) {
+        for (const item of child) walk(item, shadowed, n, k);
+      } else if (child && typeof child === "object") {
+        walk(child, shadowed, n, k);
+      }
+    }
+  };
+  walk(fnNode, new Set());
+  return reads;
+};
+
+/** 回调元素位形参名（reduce 第 2 位、sort 两位；解构/缺位跳过） */
+const elemParamNames = (cb: Node, positions: number[]): Set<string> => {
+  const names = new Set<string>();
+  const params = (cb as { params?: Node[] }).params ?? [];
+  for (const pos of positions) {
+    const p = params[pos];
+    if (!p) continue;
+    if (p.type === "Identifier") names.add((p as { name: string }).name);
+    else if (
+      p.type === "AssignmentPattern" &&
+      (p.left as Node | undefined)?.type === "Identifier"
+    ) {
+      names.add((p.left as { name: string }).name);
+    }
+  }
+  return names;
+};
+
+/** 路径表 → trie → 字段表（多个路径来源合并共用） */
+const fieldsFromPaths = (
+  pathMaps: Map<string, PathEntry>[],
+): BodyReadField[] => {
+  const root: TrieNode = { hints: [], children: new Map() };
+  for (const pathMap of pathMaps) {
+    for (const { path, hints } of pathMap.values()) {
+      let node = root;
+      for (const seg of path) {
+        let child = node.children.get(seg);
+        if (!child) {
+          node.children.set(seg, (child = { hints: [], children: new Map() }));
+        }
+        node = child;
+      }
+      node.hints.push(...hints);
+    }
+  }
+  if (root.children.size === 0) return [];
+  return emitFields(root);
+};
+
+/** 单参数读证据 → 契约证据；无证据 → undefined */
+const contractOf = (
+  reads: ParamReads,
+  pname: string,
+): ParamContractEvidence | undefined => {
+  const arrs = reads.arrays.get(pname);
+  if (arrs !== undefined && arrs.length > 0) {
+    // 多次数组方法调用的元素读合并（map + filter 各自回调）
+    return { kind: "array", element: elementContractOf(arrs) };
+  }
+  const paths = reads.paths.get(pname);
+  if (paths !== undefined && paths.size > 0) {
+    const fields = fieldsFromPaths([paths]);
+    if (fields.length > 0) return { kind: "shape", fields };
+  }
+  const scalar = scalarOf(reads.scalars.get(pname));
+  if (scalar !== undefined) return { kind: "scalar", ...scalar };
+  return undefined;
+};
+
+/** 数组调用证据 → 元素契约（回调元素参多名塌缩为单一元素视图） */
+const elementContractOf = (
+  arrs: ArrayCallEvidence[],
+): ParamContractEvidence | undefined => {
+  const nestedArrays: ArrayCallEvidence[] = [];
+  const pathMaps: Map<string, PathEntry>[] = [];
+  const scalarHints: UseHint[] = [];
+  for (const a of arrs) {
+    if (!a.element) continue;
+    for (const list of a.element.arrays.values()) nestedArrays.push(...list);
+    for (const pathMap of a.element.paths.values()) pathMaps.push(pathMap);
+    for (const hints of a.element.scalars.values()) scalarHints.push(...hints);
+  }
+  if (nestedArrays.length > 0) {
+    return { kind: "array", element: elementContractOf(nestedArrays) };
+  }
+  const fields = fieldsFromPaths(pathMaps);
+  if (fields.length > 0) return { kind: "shape", fields };
+  const scalar = scalarOf(scalarHints);
+  if (scalar !== undefined) return { kind: "scalar", ...scalar };
+  return undefined;
+};
+
+/** 标量 hints 合并；any() 无信息不发射（array(any()) 的元素位由缺省表达） */
+const scalarOf = (
+  hints: UseHint[] | undefined,
+): { type: string; via: string } | undefined => {
+  if (!hints || hints.length === 0) return undefined;
+  const merged = mergeHints(hints);
+  if (merged.type === "any()") return undefined;
+  return merged;
+};
+
+/** 遍历源文件全部顶层函数（含类方法），逐函数回调；解析失败返回 false */
+function forEachTopFn(
+  source: string,
+  visitFn: (fnName: string, fnNode: Node, paramNames: Set<string>) => void,
+): boolean {
+  let ast: ReturnType<typeof parse>;
+  try {
+    ast = parse(source);
+  } catch {
+    return false;
+  }
   const paramSet = (fnNode: Node): Set<string> => {
     const names = new Set<string>();
     const params = (fnNode as { params?: Node[] }).params ?? [];
@@ -447,7 +684,65 @@ export function collectParamBodyReadTypes(source: string): BodyReadTypes {
       considerDecl(stmt, false);
     }
   }
+  return true;
+}
+
+/**
+ * 收集每个函数形参成员读取 + 用法推断类型。
+ * `fnName → paramName → fields[]`。
+ * 数组方法接收者读（`items.reduce(…)`）不进字段清单——方法不是字段；
+ * 该形态经 collectParamContracts 以 `array(…)` 发射。
+ */
+export function collectParamBodyReadTypes(source: string): BodyReadTypes {
+  const out: BodyReadTypes = new Map();
+  forEachTopFn(source, (fnName, fnNode, paramNames) => {
+    if (paramNames.size === 0) return;
+    const reads = collectReads(fnNode, paramNames);
+    const fieldsOf = new Map<string, BodyReadField[]>();
+    for (const [pname, pathMap] of reads.paths) {
+      const fields = fieldsFromPaths([pathMap]);
+      if (fields.length > 0) fieldsOf.set(pname, fields);
+    }
+    if (fieldsOf.size === 0) return;
+    out.set(fnName, fieldsOf);
+  });
   return out;
+}
+
+/**
+ * 收集每个函数形参的契约证据（quickfix 侧车发射面）：
+ * 数组方法接收者读 → `array(元素契约)`（元素 shape 由回调元素位
+ * 成员读合成）；纯成员读 → `shape(…)`；参数本体标量用法 → 叶子 DSL
+ * （`number()` 等）。无证据参数不进表（契约留 any 位）。
+ */
+export function collectParamContracts(source: string): ParamContracts {
+  const out: ParamContracts = new Map();
+  forEachTopFn(source, (fnName, fnNode, paramNames) => {
+    if (paramNames.size === 0) return;
+    const reads = collectReads(fnNode, paramNames);
+    const byParam = new Map<string, ParamContractEvidence>();
+    for (const pname of paramNames) {
+      const ev = contractOf(reads, pname);
+      if (ev !== undefined) byParam.set(pname, ev);
+    }
+    if (byParam.size === 0) return;
+    out.set(fnName, byParam);
+  });
+  return out;
+}
+
+/** 契约证据 → constraint-builder DSL 文本（`array(shape({ … }))` 等） */
+export function contractDslOf(ev: ParamContractEvidence): string {
+  switch (ev.kind) {
+    case "array":
+      return ev.element === undefined
+        ? "array(any())"
+        : `array(${contractDslOf(ev.element)})`;
+    case "shape":
+      return shapeDslFromFields(ev.fields);
+    case "scalar":
+      return ev.type;
+  }
 }
 
 /** 路径 trie 节点：hints 为叶子环用法证据，children 为继续解引用 */

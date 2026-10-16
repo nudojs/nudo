@@ -201,9 +201,75 @@ describe("draftInterface", () => {
     // DSL 不发明 shape({ name }) 义务，仅注释建议（类型已自动填）
     expect(entry!.dsl).toBe("fn({})");
     expect(r.draftSource).toContain("body-read shape({ name: string() })");
-    expect(r.draftSource).toContain("suggested (body-read, not a contract)");
-    expect(r.draftSource).toContain("greet = fn({ user: shape({ name: string() }) })");
+    // 内联建议行：uncomment 即完整侧车绑定语句（绑定名与 export 行一致）
+    expect(r.draftSource).toContain(
+      "// suggested (uncomment to accept — body-read, not a contract):",
+    );
+    expect(r.draftSource).toContain(
+      "// export const greet = fn({ user: shape({ name: string() }) });",
+    );
     expect(r.draftSource).toContain("export const greet = fn({});");
+    // 旧 prose 形态（getName = fn(…) 无 export const、不可 uncomment）已移除
+    expect(r.draftSource).not.toContain("suggested (body-read, not a contract):");
+  });
+
+  it("uncommented suggestion lines are complete, parseable sidecar bindings", async () => {
+    const file = join(dir, "greet.js");
+    writeFileSync(
+      file,
+      `export function greet(user) {\n  return "hi " + user.name;\n}\n`,
+    );
+    const r = await draftInterface(file);
+    const { parse } = await import("@nudojs/parser");
+    // 取注释行、去 `// `，逐条断言 = 建议契约文本且 Babel module 语法完整
+    const suggestions = r.draftSource
+      .split("\n")
+      .filter((l) => l.startsWith("// export const "));
+    expect(suggestions.length).toBe(1);
+    for (const line of suggestions) {
+      const stmt = line.replace(/^\/\/ /, "");
+      expect(stmt).toBe("export const greet = fn({ user: shape({ name: string() }) });");
+      expect(() => parse(stmt)).not.toThrow();
+    }
+  });
+
+  it("mixed evidence: suggestion is a complete replacement (callsite params/return kept)", async () => {
+    const file = join(dir, "combo.js");
+    writeFileSync(
+      file,
+      `export function combo(a, b) { return a.x + (b ? b.y : 0); }\ncombo({ x: 1 });\n`,
+    );
+    const r = await draftInterface(file);
+    const entry = r.entries.find((e) => e.fn === "combo");
+    expect(entry!.dsl).toBe("fn({ a: shape({ x: number() }) }, number())");
+    // 建议行 = 绑定的完整替代：body-read 建议合入，callsite 证据不丢
+    expect(r.draftSource).toContain(
+      "// export const combo = fn({ a: shape({ x: number() }), b: shape({ y: any() }) }, number());",
+    );
+  });
+
+  it("bindings without suggestions keep current emission (no inline suggestion lines)", async () => {
+    const file = join(dir, "calls.js");
+    writeFileSync(file, CALLS_JS);
+    const r = await draftInterface(file);
+    expect(r.draftSource).toContain("export const double = fn({ x: number() }, number());");
+    expect(r.draftSource).not.toContain("// export const double = ");
+    expect(r.draftSource).not.toContain("uncomment to accept");
+  });
+
+  it("suggested line uses the same aliased binding name as the export line (Class.method)", async () => {
+    const file = join(dir, "cls.js");
+    writeFileSync(
+      file,
+      `export class U {\n  greet(user) { return "hi " + user.name; }\n}\n`,
+    );
+    const r = await draftInterface(file);
+    // 非 ident 导出名走同一别名清洗：建议行与 export 行同为 U_greet
+    expect(r.draftSource).toContain(
+      "// export const U_greet = fn({ user: shape({ name: string() }) });",
+    );
+    expect(r.draftSource).toContain("export const U_greet = fn({});");
+    expect(r.draftSource).not.toContain("// export const U.greet");
   });
 
   it("bodyAccesses:false disables body suggestions", async () => {

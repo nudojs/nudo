@@ -267,7 +267,7 @@ Parses a directive type expression into an Abs — the product grammar is constr
 | <a id="extractdirectives"></a>`extractDirectives` | fn | D6=G2：指令绑定 AST 最近 Function（含 nested function、class method）。 | `extractDirectives( ast: Node, opts?: ExtractDirectivesOpts, ): FunctionWithDirectives[]` |
 | <a id="extractdirectivesopts"></a>`ExtractDirectivesOpts` | type | extractDirectives 显式诊断通道 opts。 | `ExtractDirectivesOpts = { diags?: DirectiveDiag[]; }` |
 | <a id="extractdirectivesquiet"></a>`extractDirectivesQuiet` | fn | 纯查询 extract：诊断丢弃——hover/completion/collectSkipReturns 等探测 路径不产诊断（不污染消费方待收的诊断，也不背走别人的在途诊断）。 | `extractDirectivesQuiet(ast: Node): FunctionWithDirectives[]` |
-| <a id="extractfiledirectives"></a>`extractFileDirectives` | fn | — | `extractFileDirectives(ast: Node): FileDirective[]` |
+| <a id="extractfiledirectives"></a>`extractFileDirectives` | fn | 从 AST 抽文件级指令（`@nudo:env` / `@nudo:mock-module`，只认行注释）。 | `extractFileDirectives(ast: Node, opts?: ExtractDirectivesOpts): FileDirective[]` |
 | <a id="extractfileenvnames"></a>`extractFileEnvNames` | const | — | — |
 | <a id="extractinlinedirectives"></a>`extractInlineDirectives` | fn | 行内指令（@nudo:as / @nudo:replace）抽取，源为节点的 leadingComments。 | `extractInlineDirectives( node: Node, opts?: ExtractDirectivesOpts, ): InlineDirective[]` |
 | <a id="extractmockmodulerecords"></a>`extractMockModuleRecords` | const | — | — |

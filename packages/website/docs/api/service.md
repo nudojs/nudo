@@ -681,14 +681,18 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="collectmissingexportissues"></a>`collectMissingExportIssues` | fn | named import / re-export 缺名 → missing-export issue。 | `collectMissingExportIssues( source: string, modules: Record<string, AbsModuleExports>, fromFile: string, ): AbsModuleLoadIssue[]` |
 | <a id="collectparambodyaccesses"></a>`collectParamBodyAccesses` | fn | Draft-only：收集每个顶层函数形参上的成员读取键（`user.name` → name）。 | `collectParamBodyAccesses( source: string, ): Map` |
 | <a id="collectparambodyreadtypes"></a>`collectParamBodyReadTypes` | fn | 收集每个函数形参成员读取 + 用法推断类型。 | `collectParamBodyReadTypes(source: string): BodyReadTypes` |
+| <a id="collectparamcontracts"></a>`collectParamContracts` | fn | 收集每个函数形参的契约证据（quickfix 侧车发射面）： 数组方法接收者读 → `array(元素契约)`（元素 shape 由回调元素位 成员读合成）；纯成员读 → `shape(…)`；参数本体标量用法 → 叶子 DSL （`number()` 等）。无证据参数不进表（契约留 any 位）。 | `collectParamContracts(source: string): ParamContracts` |
 | <a id="collectskipreturns"></a>`collectSkipReturns` | fn | 每个带 `@nudo:skip` 的顶层函数 → 声明的返回 Abs；`null` = 未声明返回类型。 | `collectSkipReturns(source: string): Map<string, Abs \| null>` |
 | <a id="collectstaticimports"></a>`collectStaticImports` | fn | 从入口文件沿静态相对 import/require 收集（仅类型事实，不是运行时加载器）。 | `collectStaticImports( entryFile: string, maxDepth = 8, ): Map<string, ModuleExports>` |
+| <a id="compileanymatcher"></a>`compileAnyMatcher` | fn | Compile a pattern list into a matcher that is true when any pattern matches. | `compileAnyMatcher(patterns: string[] \| string): Matcher` |
+| <a id="compilepattern"></a>`compilePattern` | fn | 单模式编译：无通配符（`*` / `?`）→ 字面量子串匹配；有 → 锚定正则。 | `compilePattern(pattern: string): Matcher` |
 | <a id="completionitem"></a>`CompletionItem` | type | — | `CompletionItem = { label: string; kind: "property" \| "method" \| "variable"; detail?: string; }` |
 | <a id="composedevalmodules"></a>`ComposedEvalModules` | type | 模块图组装的共享产物：analyzer 与 tryRunEval 走同一序列 （evalAbsModuleGraph → collectEnvModules → mergeHarvestUnderEnv → applyMockModule*），单一事实源，不再各自漂移。 | `ComposedEvalModules = { modules: Record<string, AbsModuleExports>; issues: AbsModuleLoadIssue[]; mockErrors: string[]; }` |
 | <a id="composeevalmodules"></a>`composeEvalModules` | fn | 模块图组装单一入口：相对/harvest 模块图 → @nudo:env modules 并入 （手写 env wins，B8）→ @nudo:mock-module 覆盖。 | `composeEvalModules( source: string, filePath: string, opts: { envNames?: string[]; seedVars?: Record<string, Abs>; seedFns?: AbsGraphOptions["seedFns"]; loadModule?: LoadModule; fileDirectives?: FileDirective[]; } = {}, ): ComposedEvalModules` |
 | <a id="computedirtyset"></a>`computeDirtySet` | fn | changed plus its transitive dependents (reverse-edge BFS); cycle-safe via visited. | `computeDirtySet(dependents: Map<string, Set<string>>, changedFile: string): string[]` |
 | <a id="constraintsourceexpr"></a>`ConstraintSourceExpr` | type | — | `ConstraintSourceExpr = { expr: string; importFrom?: string; importName?: string; }` |
 | <a id="constrainttoschemanode"></a>`constraintToSchemaNode` | fn | NudoConstraint → SchemaNode（与 absToConstraint 投影语义对齐） | `constraintToSchemaNode(c: NudoConstraint): SchemaNode` |
+| <a id="contractdslof"></a>`contractDslOf` | fn | 契约证据 → constraint-builder DSL 文本（`array(shape({ … }))` 等） | `contractDslOf(ev: ParamContractEvidence): string` |
 | <a id="currentbforkbudgetlimit"></a>`currentBForkBudgetLimit` | fn | 当前生效 fork 上限（调试/测试；与 core getEvalForkBudgetLimit 同源） | `currentBForkBudgetLimit(): number` |
 | <a id="default_analysis_mode"></a>`DEFAULT_ANALYSIS_MODE` | const | ", ]; /** A1 产品默认：exports — 普通带导出的 .js 进 IDE；directives/all 需显式 | `const DEFAULT_ANALYSIS_MODE` |
 | <a id="default_session_cache_limits"></a>`DEFAULT_SESSION_CACHE_LIMITS` | const | 保守默认：多项目共存时不悄悄吃内存（大仓请显式调高） | `const DEFAULT_SESSION_CACHE_LIMITS` |
@@ -710,6 +714,8 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="diskcacheroot"></a>`diskCacheRoot` | fn | 磁盘缓存根（B3）：config.cache / NUDO_CACHE_DIR / 默认关 | `diskCacheRoot( config: NudoConfig \| null \| undefined, projectDir: string \| undefined, ): string \| undefined` |
 | <a id="draftevidence"></a>`DraftEvidence` | type | DraftEvidence `body` = 仅来自函数体对形参的成员读取（草稿建议，非义务）。 | `DraftEvidence = "callsite" \| "directive" \| "symbolic" \| "body" \| "none"` |
 | <a id="draftinterface"></a>`draftInterface` | fn | 为单文件顶层导出生成 interface 草稿（不写盘）。 | `draftInterface( filePath: string, opts: InterfaceDraftOpts = {}, ): Promise<InterfaceDraftResult>` |
+| <a id="dtscontractface"></a>`DtsContractFace` | type | 契约面证据（export CLI 从 effectiveInterface 取——与 check 签名面同数据源： sidecar（*.nudo.js）∪ inline `@nudo:contract`）。 | `DtsContractFace { params: Array<{ name: string; abs: Abs }>; return?: Abs; }` |
+| <a id="dtsfunctionprojection"></a>`DtsFunctionProjection` | type | projectFunctionDts 的返回面：声明行 + 主签名参数位（unknown = 无证据） | `DtsFunctionProjection { lines: string[]; params: Array<{ name: string; type: string }>; }` |
 | <a id="emitderivedfromroot"></a>`emitDerivedFromRoot` | fn | — | `emitDerivedFromRoot( rootFile: string, opts: { fnNames?: string[]; mode: "add" \| "update"; dryRun?: boolean; loadModule?: LoadModule; autoBind?: boolean; refreshExistingOnly?: boolean; }, ): EmitDerivedResult` |
 | <a id="emitderivedresult"></a>`EmitDerivedResult` | type | — | `EmitDerivedResult = { sidecars: Array<{ file: string; sidecarPath: string; fn: string; written: boolean; changed: boolean; skipped?: "nam...` |
 | <a id="emitinterface"></a>`emitInterface` | fn | 单文件 emit：分析 → 逐目标投影/自检 → 组装侧车内容 →（非 dryRun）写盘。 | `emitInterface( filePath: string, opts: EmitInterfaceOpts, ): Promise<EmitInterfaceResult>` |
@@ -750,7 +756,7 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="formatinterfacesurfaceline"></a>`formatInterfaceSurfaceLine` | fn | 单条 interface 打印行（CLI runInterface 与 LSP agent 面共用） | `formatInterfaceSurfaceLine(e: InterfaceSurfaceEntry): string` |
 | <a id="functionanalysis"></a>`FunctionAnalysis` | type | — | `FunctionAnalysis = { name: string; loc: SourceLocation; paramNames: string[]; formals?: FormalParam[]; cases: CaseResult[]; combinedAbs?:...` |
 | <a id="generatedts"></a>`generateDts` | fn | — | `generateDts(result: AnalysisResult): string` |
-| <a id="generatefunctiondtslines"></a>`generateFunctionDtsLines` | fn | 为单个函数生成 .d.ts 声明行（JSDoc + 单一 widen 主签名）。 | `generateFunctionDtsLines(fn: FunctionAnalysis): string[]` |
+| <a id="generatefunctiondtslines"></a>`generateFunctionDtsLines` | fn | — | `generateFunctionDtsLines( fn: FunctionAnalysis, contract?: DtsContractFace, ): string[]` |
 | <a id="generateguardfunction"></a>`generateGuardFunction` | fn | 兼容别名：Abs 路径唯一 | `generateGuardFunction(name: string, abs: Abs): string` |
 | <a id="generateguardfunctionfromabs"></a>`generateGuardFunctionFromAbs` | fn | Abs 指称守卫（设计 §2.7）：保留 pred | `generateGuardFunctionFromAbs(name: string, abs: Abs): string` |
 | <a id="getabsmodulecachesize"></a>`getAbsModuleCacheSize` | fn | 测试/诊断：当前条目数（≤ ABS_MODULE_CACHE_MAX） | `getAbsModuleCacheSize(): number` |
@@ -783,6 +789,7 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="iswatchrelevantpath"></a>`isWatchRelevantPath` | fn | Watch accept gate: analysis targets + sidecar/config/env-template invalidators | `isWatchRelevantPath(path: string): boolean` |
 | <a id="loadmodule"></a>`LoadModule` | type | — | `LoadModule = (spec: string, fromFile: string) => string \| undefined` |
 | <a id="locfromnode"></a>`locFromNode` | fn | — | `locFromNode(node: Node): SourceLocation` |
+| <a id="matcher"></a>`Matcher` | type | 极简 glob → RegExp 编译器（自 vite-plugin 内联实现抽取，语义不变）。 | `Matcher = (id: string) => boolean` |
 | <a id="matchesemitallowlist"></a>`matchesEmitAllowlist` | fn | 极简 glob（`**` / `*` / `?`）：相对 projectDir 匹配**源文件**绝对路径 （不是侧车路径；侧车随源文件同目录写出）。无白名单 → true。 | `matchesEmitAllowlist( absPath: string, projectDir: string \| undefined, patterns: string[], ): boolean` |
 | <a id="matchsidecarfndecl"></a>`matchSidecarFnDecl` | fn | 定位侧车里目标契约的声明起点：`export const <name> = fn(` / `<name> = fn(`。 | `matchSidecarFnDecl( sidecarSource: string, exportName: string, )` |
 | <a id="materializeaction"></a>`materializeAction` | fn | kind → WorkspaceEdit 物化。返回 undefined = 该 action 只读（info）或缺证据。 | `materializeAction(input: MaterializeInput): QuickfixPlan \| undefined` |
@@ -798,8 +805,11 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="modulereaderror"></a>`ModuleReadError` | fn | 路径 stat 或文件读失败（EACCES / EMFILE / ESTALE / EIO …）。 | `ModuleReadError extends Error { readonly code: string; readonly path: string; constructor(path: string, cause: unknown) { const code = (c...` |
 | <a id="noteenvpathdeps"></a>`noteEnvPathDeps` | fn | 源码里的 path-based load specs 解析为绝对路径后登记反向边 | `noteEnvPathDeps(sourcePath: string, source: string): void` |
 | <a id="nudoconfig"></a>`NudoConfig` | type | — | `NudoConfig = { env?: string[]; mocks?: Record<string, string>; contract?: { autoBind?: boolean; emit?: string[] \| string; }; analysis?: {...` |
+| <a id="paramcontractevidence"></a>`ParamContractEvidence` | type | 参数契约证据（quickfix 侧车发射面）： - array：参数被当数组方法接收者调用（`items.reduce(…)`）；element 为 回调元素位合成的元素契约（无证据 → array(any())） - shape：参数被成员读取（既有 body-read 字段面） - scalar：参数本体直接用法（`1 + tax` → number()）——多参函数只收窄 一个参数仍消不掉 L2（残余 may-throw 来自其余未约束位） 优先级：array &gt; shape &gt; scalar（数组方法读是最强形态证据）。 | `ParamContractEvidence = \| { kind: "array"; element?: ParamContractEvidence } \| { kind: "shape"; fields: BodyReadField[] } \| { kind: "scal...` |
+| <a id="paramcontracts"></a>`ParamContracts` | type | fnName → paramName → 契约证据（参数按声明序插入） | `ParamContracts = Map<string, Map<string, ParamContractEvidence>>` |
 | <a id="projectabstoschema"></a>`projectAbsToSchema` | fn | — | `projectAbsToSchema(a: Abs, opts?: { dialect?: SchemaDialect }): SchemaProjection` |
 | <a id="projectconfigmemostats"></a>`projectConfigMemoStats` | fn | 诊断/测试：memo 条目数 + 实际读盘（readFileSync+JSON.parse）次数 | `projectConfigMemoStats()` |
+| <a id="projectfunctiondts"></a>`projectFunctionDts` | fn | 为单个函数生成 .d.ts 投影（JSDoc + 单一 widen 主签名）。 | `projectFunctionDts( fn: FunctionAnalysis, contract?: DtsContractFace, ): DtsFunctionProjection` |
 | <a id="quickfixplan"></a>`QuickfixPlan` | type | — | `QuickfixPlan = { titleKind: QuickfixTitleKind; title: string; edits: TextEdit[]; sidecar?: { path: string; newText: string }; openPath?: ...` |
 | <a id="quickfixtitlekind"></a>`QuickfixTitleKind` | type | — | `QuickfixTitleKind = "fix" \| "silence" \| "review" \| "adjust" \| "scaffold"` |
 | <a id="referenceinfo"></a>`ReferenceInfo` | type | — | `ReferenceInfo = { name: string; loc: SourceLocation; uri?: string; }` |
@@ -826,6 +836,7 @@ Includes the `@nudojs/service` (`src/index.ts`) face and public emit faces re-ex
 | <a id="shapedslfromfields"></a>`shapeDslFromFields` | fn | `shape({ type: string(), loc: shape({ start: … }) })` 文本。 | `shapeDslFromFields(fields: BodyReadField[]): string` |
 | <a id="shouldanalyzefile"></a>`shouldAnalyzeFile` | fn | 是否应对该文件跑分析（自动路径，如 LSP validate）。 | `shouldAnalyzeFile( filePath: string, source: string \| undefined, config?: AnalysisConfig, ): boolean` |
 | <a id="sidecarbindingfor"></a>`sidecarBindingFor` | fn | 侧车里导出名 → 模块绑定名（DESIGN-003 别名段：`export { _nudo_1 as class }`）。 | `sidecarBindingFor(sidecarSource: string, exportName: string): string \| undefined` |
+| <a id="sidecarclearsentrythrow"></a>`sidecarClearsEntryThrow` | fn | 侧车契约验证（entry-may-throw 的 [fix] 门）：把合成侧车作为唯一侧车 来源重跑 checkSource，确认目标函数的 L2 entry-may-throw 消失。 | `sidecarClearsEntryThrow(input: { file: string; source: string; sidecarPath: string; sidecarText: string; fn: string; loadModule?: (spec: string, from: string) => string \| undefined; }): boolean` |
 | <a id="sidecardraftpath"></a>`sidecarDraftPath` | fn | `lib.js\|ts` → `lib.nudo.draft.js\|ts`（不进 ambient sidecar 表） | `sidecarDraftPath(filePath: string): string` |
 | <a id="sourcehasnudodirectives"></a>`sourceHasNudoDirectives` | fn | — | `hasNudoDirectives(source: string): boolean` |
 | <a id="sourcelocation"></a>`SourceLocation` | type | — | `SourceLocation = { start: { line: number; column: number }; end: { line: number; column: number }; }` |

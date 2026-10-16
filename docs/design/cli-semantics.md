@@ -31,6 +31,7 @@
 ```text
 nudo — JavaScript types, computed
 
+  nudo init [path]                 # setup：写 adoption 基线配置进 package.json（幂等）
   nudo check <path> [--watch|-w]   # 门禁 + 签名表（Day 0/CI 唯一终端入口）
   nudo test <path> [--watch|-w]    # 逐 case 调用点真值 + 可选断言（debug）
   nudo contract <path>             # 契约：打印 / draft / emit 侧车接口
@@ -38,6 +39,8 @@ nudo — JavaScript types, computed
   nudo health [paths] [--watch]    # 体检：分析错误 + 固化漂移
   nudo migrate <action> [paths]    # 替代 TS 单向门：status|strip|verify|retire
 ```
+
+`init` 是 **setup 动词**（对齐 `tsc --init` 心智），不是一级产品动词：零配置项目首跑 `check` 全 L2 error 时，输出尾部会打印 `onboarding` 块指向 `init` / `contract --draft` / `--profile adoption`；有任一 `@nudo:*` 指令或 `package.json#nudo` 配置后即消失。门禁 exit 语义不因 onboarding 改变。
 
 `watch` 是模式不是任务：对应 `tsc --watch`。仅挂在有持续重跑意义的子命令上（`check` / `test`，`health` 可选）；**不**挂在 `export`（出货一次性投影）与 `contract --emit`（写盘）。
 
@@ -85,6 +88,7 @@ assertions
 
 | 命令 | 产品职责 |
 |------|----------|
+| `nudo init` | setup：写 `package.json#nudo = { check: { profile: "adoption" } }` 基线（幂等；已有 nudo 键只打印不写） |
 | `nudo check` | Day 0 / CI 门禁；默认打印 signatures + L2 entry may-throw |
 | `nudo test` | case 报告 + 声明断言；`--from` 注入使用处；`--freeze` 固化见证 |
 | `nudo contract` | 打印 / `--draft` / `--emit` 侧车接口；`--from` 供域证据；**`--from-dts`** 逆向 `.d.ts`/TS 注解 → `@nudo:draft`（**不执法**，审阅后复制进 `*.nudo.js` 才是 L1） |
@@ -98,8 +102,9 @@ assertions
 
 | 命令 | exit 1 |
 |------|--------|
+| `nudo init` | 仅用法 / IO 错误（无 package.json、目标 package.json 非法 JSON）；幂等重跑 exit 0 |
 | `export` / `contract`（只读） | 仅用法 / IO 错误 |
-| `check`（含 `--abs` / `--json`） | 任一 error 级诊断（L1 或未 ignore 的 L2）；`--abs` 是观察面，**不是**关 CI 的旁路；路径/IO 错误也 exit 1（`--json` 下并入 `pathErrors` 且 `ok:false`） |
+| `check`（含 `--abs` / `--json`） | 任一 error 级诊断（L1 或未 ignore 的 L2）；`--abs` 是观察面，**不是**关 CI 的旁路；路径/IO/语法错也 exit 1（`--json` 下并入 `pathErrors` 且 `ok:false`；语法错人类面为 tsc 风格 `path:line:col` 块） |
 | `check --fix[ --write]` | 物化后**残余** error 级诊断 > 0（物化前的 error 不直接挡 exit——能被 [fix]/[adjust] 吃掉的已落盘计划）。**dry-run 反映磁盘未变的真实门禁状态**（计划中尚未应用的 error 仍计入残余，CI 门禁不因「可修」转绿）；`--write` 反映应用后剩余。`--fix` 与 `--json` / `--abs` / `--gha` / `--gitlab` / `--watch` / `--verbose` / `--from` / `--what-if` 组合为 usage error（物化面不与观察/机器面组合） |
 | `test`（含 `--json` / `--abs`） | 任一**声明断言**失败（合成 case / entry@ 不挡 exit） |
 | `health` | drift 或 analysis error；`--from` 路径错误（缺文件）也 exit 1（`--json` 下并入 `pathErrors[]` 且 `ok:false`） |
@@ -125,6 +130,9 @@ CI 门禁只认 `check`（及 `test` 的声明断言、`health` 的 drift）。
 | `--ignore-throws <names>` | L2：忽略这些入口 may-throw 类型名（`TypeError,RangeError`） |
 | `--entry-throws <mode>` | L2：`error` \| `warning` \| `off`（默认 `error`；**显式值压过** `--profile`） |
 | `--profile <adoption\|strict>` | 门禁**命名档**（默认 `strict`）。`adoption` ≡ L2 `entryThrows: warning`（迁移档）；`strict` ≡ 今日默认。**不吞 L1**：契约违例始终 error |
+| `--quiet` | 压 signatures 段（大仓 CI 日志降噪）：issues + summary + 门禁 exit 语义不变；成功且零 issue 时只打一行摘要（`文件 + OK + 计数`）。仅人类文本面——`--json` / `--gitlab` 机器契约不受影响 |
+
+语法错文件（解析失败）：人类面打 tsc 风格块 `path:line:col — syntax error: <信息>` + 源码摘录 + `^` 指位（不再暴露 `eval injection setup failed` 内部术语）；`--json` 面并入信封 `pathErrors[]`（`code: "syntax-error"`，`ok:false`）。
 
 `--ignore-throws` / `package.json#nudo.check.ignoreThrows` **只**作用于 L2 入口 throws，**不**吞 L1 契约违例。
 
@@ -165,6 +173,8 @@ L2 `entryThrows` 解析顺序：
 - 文档/CLI 把入口无约束参数打印或叙述为 `unknown`。
 - 把 `unknown` 与 `any` 在表格里并成同一格（如 `unknown`/`any` = 全集）。
 - 在 check 中对 `unknown`（失败）静默通过而不报引擎债相关诊断。
+
+**已记录例外（export 投影面）：** `nudo export` 的 `.d.ts` 投影把**未被调用（未观测）**的 export 参数按「不猜测」原则渲染为 `unknown`——这是 `entry@L…` 回退的诚实边界，不是推导失败，也不改变 check 签名面对入口无约束参数打 `any` 的契约。见 `packages/website/docs/guides/export-ecosystem.md`（en / zh-Hans 镜像同步维护）。
 
 **允许（代数层已如此）：**
 

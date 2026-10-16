@@ -26,6 +26,7 @@ nudo check ./src/utils.js
 | [`nudo export`](#nudo-export) | 把 Abs 投影为 `dts` / `guard` / `schema` / `standard` |
 | [`nudo health`](#nudo-health) | 健康检查：分析错误、调用点固化漂移 |
 | [`nudo migrate`](#nudo-migrate) | 单向 retire-tsc 之门：`status` / `strip` / `verify` / `retire` |
+| [`nudo init`](#nudo-init) | setup：向 `package.json` 写入 adoption 基线 nudo 配置（幂等） |
 
 观察 = `check` 签名 + `test` 用例报告 + IDE hover。
 
@@ -53,6 +54,7 @@ nudo check <paths...> [options]
 |------|------|
 | `--watch` / `-w` | 变更时重跑（旗标，不是动词） |
 | `--json` | 结构化诊断 + 签名 —— `CheckJson`（1 文件）或 `CheckJsonMulti` 信封（N 文件）；不能与 `--abs` 组合 |
+| `--quiet` | 压制 signatures 表 —— issues + summary + 门禁退出码不变；干净文件只打一行摘要。仅人类文本面（`--json` / `--gitlab` 机器契约不受影响） |
 | `--gha` | GitHub Actions 行内注解（`::error` / `::warning`）；`GITHUB_ACTIONS=true` 时自动启用 |
 | `--gitlab` | GitLab Code Quality JSON 数组，用于 `gl-code-quality-report.json`（打到 stdout —— CI 中重定向落盘） |
 | `--verbose` | 展开 Abs 签名（term/pred/conf 细节） |
@@ -404,6 +406,18 @@ nudo migrate <status|strip|verify|retire> [paths...] [options]
 |----|------|
 | `0` | 动作完成（含 dry-run） |
 | `1` | 用法 / IO 错误；`verify` 随 `nudo check` 失败而失败 |
+
+### nudo init
+
+```text
+nudo init [path]
+```
+
+setup 动词（对齐 `tsc` 的 `init` 命令心智）：向最近的 `package.json` 写入 adoption 基线 —— `"nudo": { "check": { "profile": "adoption" } }`（L2 入口 may-throw 降为 warning；L1 契约违例仍是 `error`）。
+
+幂等：`package.json` 已有 `nudo` 键时只打印当前配置、不写盘。
+
+**退出码：** 成功与幂等重跑 `0`；用法 / IO 错误（找不到 `package.json`、JSON 非法）`1`。
 
 ---
 

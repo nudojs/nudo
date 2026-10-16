@@ -441,7 +441,8 @@ pin 'pnpm run contract --draft docs/examples/interface-draft/greet.js' \
   'greet  [draft body/' \
   'export const double = ' \
   'body-read shape({ name: string() })' \
-  'suggested (body-read, not a contract)' \
+  'suggested (uncomment to accept — body-read, not a contract)' \
+  '// export const greet = fn({ user: shape({ name: string() }) });' \
   'export const greet = fn({});'
 
 printf -- '--------------------------------------------------------------\n'

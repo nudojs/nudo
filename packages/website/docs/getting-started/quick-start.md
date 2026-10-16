@@ -15,7 +15,7 @@ Paste this against any existing JavaScript file (a util you already trust):
 npx nudojs check /path/to/your/util.js
 ```
 
-You should immediately see **signatures** (e.g. `scale(x: any) => number | string  throws TypeError`), followed by either `(no issues)` or a list of L1/L2 findings. Entry params display as `any`, not `unknown` — unconstrained means unconstrained, not inference failure. The rest of this page explains what you just saw.
+You should immediately see **signatures** (e.g. `scale(x: any) => number | string  throws TypeError`), followed by either `(no issues)` or a list of L1/L2 findings. Entry params display as `any`, not `unknown` — unconstrained means unconstrained, not inference failure. (The export face differs by design: a generated `.d.ts` projects an uncalled export's params as `unknown` — an honest boundary, not an inference failure. See [Export: bridge to the ecosystem](../guides/export-ecosystem.md).) The rest of this page explains what you just saw.
 :::
 
 > **Trust boundary.** Nudo analyzes by **executing** the target code (Abs semantics, in-process evaluation). Do not run `nudo check` / `nudo test` on untrusted code; in CI this is the same trust as running the project's tests.
@@ -57,7 +57,16 @@ signatures
 issues
   [ERROR L1 scale] scale (export): may throw TypeError  (nudo:entry-may-throw)
   [ERROR L5 formatName] formatName (export): may throw TypeError  (nudo:entry-may-throw)
+
+onboarding
+  every error above is an L2 entry may-throw — unconstrained entry points, not broken contracts.
+  no @nudo:* directives and no package.json#nudo config found in this project yet. next steps:
+    nudo init                      write an adoption baseline config (L2 → warning)
+    nudo contract --draft <file>   draft a *.nudo.js sidecar contract for one file
+    nudo check --profile adoption  preview the gate with L2 as warnings
 ```
+
+The `onboarding` block appears only in a pristine project — no `@nudo:*` directives and no `nudo` config anywhere. Add either (the next section does) and it disappears; the gate result itself is unchanged.
 
 That `number | string` is honest JavaScript, not a bug: an unconstrained (`any`) operand to `+` can drive numeric addition *or* string concatenation (`"7" + 1`), so Nudo keeps both branches. Constrain `x` — a sidecar contract or call-site evidence — and the union collapses to `number`. See [Language semantics](../concepts/semantics.md).
 

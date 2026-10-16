@@ -36,6 +36,14 @@ let _cycleTruncated = false;
 let _loopTruncated = false;
 /** 调用截断原因集合（A+B 经 noteAbsTruncation 单点收集；宿主入口重置） */
 let _truncReasons = new Set<AbsTruncationReason>();
+/** A 路径（enterCall）本轮截断原因——与 B 探针 reasons 分流：上屏归因要指到具体预算 */
+const _aTruncReasons = new Set<AbsTruncationReason>();
+/** A 路径本轮最大进入深度 */
+let _absMaxDepth = 0;
+/** A 路径 depth 截断现场（首次触发时的深度与当时生效上限——@nudo:budget 覆盖期间
+ *  触发时，快照上限必须取现场值，否则 depth 计数会与已恢复的全局上限错位） */
+let _absDepthTruncDepth: number | null = null;
+let _absDepthTruncLimit: number | null = null;
 
 /**
  * 循环迭代预算截断（两段 maxIters 抽象 / MAX_CONCRETE_LOOP_ITERS 硬上限
@@ -72,6 +80,18 @@ export type AbsBudgetStats = {
   loopTruncated: boolean;
   /** 调用截断原因集合（A+B；稳定排序，进 JSON） */
   reasons: AbsTruncationReason[];
+  /** A 路径（enterCall 抽象调用）本轮截断原因——上屏归因用（与合并集 reasons 分流） */
+  callReasons: AbsTruncationReason[];
+  /** A 路径最大进入深度；depth 截断时 = 触发时深度（== 触发时生效上限） */
+  depth: number;
+  /** A 路径 depth 上限；depth 截断时 = 触发时生效上限（@nudo:budget 覆盖亦如实） */
+  maxDepth: number;
+  /** B 路径（$callNamed 求值调用）本轮截断原因 */
+  evalReasons: AbsTruncationReason[];
+  /** B 路径最大进入深度；depth 截断时 = 触发时深度（== 触发时生效上限） */
+  evalDepth: number;
+  /** B 路径 depth 上限；depth 截断时 = 触发时生效上限（@nudo:budget 覆盖亦如实） */
+  maxEvalDepth: number;
 };
 
 /**
@@ -85,6 +105,12 @@ export type EvalCallBudgetProbe = {
     maxCalls: number;
     callTruncated: boolean;
     cycleTruncated: boolean;
+    /** B 路径最大进入深度；depth 截断时 = 触发时深度 */
+    depth: number;
+    /** B 路径 depth 上限；depth 截断时 = 触发时生效上限 */
+    maxDepth: number;
+    /** B 路径本轮截断原因（A/B 分流归因） */
+    reasons: AbsTruncationReason[];
   };
   resetObservability(): void;
 };
@@ -112,6 +138,12 @@ export function getAbsCallBudgetStats(): AbsBudgetStats {
     cycleTruncated: _cycleTruncated || (b?.cycleTruncated ?? false),
     loopTruncated: _loopTruncated,
     reasons: [..._truncReasons].sort(),
+    callReasons: [..._aTruncReasons].sort(),
+    depth: _absDepthTruncDepth ?? _absMaxDepth,
+    maxDepth: _absDepthTruncLimit ?? _callDepthLimit,
+    evalReasons: [...(b?.reasons ?? [])].sort(),
+    evalDepth: b?.depth ?? 0,
+    maxEvalDepth: b?.maxDepth ?? MAX_CALL_DEPTH,
   };
 }
 
@@ -124,6 +156,10 @@ export function resetAbsCallBudget(): void {
   _cycleTruncated = false;
   _loopTruncated = false;
   _truncReasons = new Set();
+  _aTruncReasons.clear();
+  _absMaxDepth = 0;
+  _absDepthTruncDepth = null;
+  _absDepthTruncLimit = null;
   _callDepthLimit = MAX_CALL_DEPTH;
   _totalCallsLimit = MAX_TOTAL_CALLS;
   // B 观测累计同轮生命周期（截断旗标跨执行会话 latch，宿主入口统一清）
@@ -233,12 +269,20 @@ export function enterCall(key: string, label: string): boolean {
         : undefined;
   if (reason) {
     _callTruncated = true;
+    _aTruncReasons.add(reason);
     if (reason === "cycle") _cycleTruncated = true;
+    // depth 截断现场（首次）：depth 计数上屏必须用触发时的深度/上限对，
+    // 否则 @nudo:budget 覆盖期间触发、恢复后快照会显示「未到顶」
+    if (reason === "depth" && _absDepthTruncDepth === null) {
+      _absDepthTruncDepth = _absCallDepth;
+      _absDepthTruncLimit = _callDepthLimit;
+    }
     noteAbsTruncation(label, reason);
     return false;
   }
   _activeCallKeys.push(key);
   _absCallDepth++;
+  if (_absCallDepth > _absMaxDepth) _absMaxDepth = _absCallDepth;
   _absTotalCalls++;
   return true;
 }

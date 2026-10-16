@@ -234,6 +234,11 @@ verify_scenario test-math packages/website/docs/guides/test.md math test \
   '2 synthetic case(s) printed above'
 verify_scenario test-entry packages/website/docs/guides/test.md entry test \
   'entry@L1  (any) => any   throws TypeError'
+# entry@ fallback × check-enforced sidecar contract → annotation line pinned
+# verbatim（test.ts 的 ENTRY_CONTRACT_NOTE；契约注解只进人类面）。
+verify_scenario test-entry-contract packages/website/docs/guides/test.md entry-contract test \
+  'entry@L1  (any) => any   throws TypeError' \
+  '(entry@ runs the unconstrained entry face — this contract gates check/export; add @nudo:case or call sites for a constrained case)'
 verify_scenario test-dbl packages/website/docs/guides/test.md dbl test \
   'debug "double"  (2) => 4' \
   'debug "bad"  (3) => 6' \

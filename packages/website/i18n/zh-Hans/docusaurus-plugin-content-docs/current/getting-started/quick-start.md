@@ -15,7 +15,7 @@ description: "在普通 JavaScript 上门禁签名与用例——npx nudojs chec
 npx nudojs check /path/to/your/util.js
 ```
 
-应立刻看到**签名**（如 `scale(x: any) => number | string  throws TypeError`)，然后要么 `(no issues)`，要么一行 L1/L2 发现。入口参数显示为 `any` 而不是 `unknown`——未约束就是未约束，不是推断失败。后文逐项解释你刚看到的东西。
+应立刻看到**签名**（如 `scale(x: any) => number | string  throws TypeError`)，然后要么 `(no issues)`，要么一行 L1/L2 发现。入口参数显示为 `any` 而不是 `unknown`——未约束就是未约束，不是推断失败。（导出面则另有口径：生成的 `.d.ts` 会把未被调用的导出参数投影为 `unknown`——那是诚实边界，不是推断失败。见 [Export：通向生态的桥](../guides/export-ecosystem.md)。）后文逐项解释你刚看到的东西。
 :::
 
 > **信任边界。** Nudo 通过**执行**目标代码来分析（Abs 语义，进程内求值）。不要对不可信代码运行 `nudo check` / `nudo test`；在 CI 里这与跑项目测试是同一信任级别。
@@ -57,7 +57,16 @@ signatures
 issues
   [ERROR L1 scale] scale (export): may throw TypeError  (nudo:entry-may-throw)
   [ERROR L5 formatName] formatName (export): may throw TypeError  (nudo:entry-may-throw)
+
+onboarding
+  every error above is an L2 entry may-throw — unconstrained entry points, not broken contracts.
+  no @nudo:* directives and no package.json#nudo config found in this project yet. next steps:
+    nudo init                      write an adoption baseline config (L2 → warning)
+    nudo contract --draft <file>   draft a *.nudo.js sidecar contract for one file
+    nudo check --profile adoption  preview the gate with L2 as warnings
 ```
+
+`onboarding` 块只出现在「纯净」项目——没有任何 `@nudo:*` 指令、任何位置都没有 `nudo` 配置。加上二者之一（下一节就会加）它即消失；门禁结果本身不变。
 
 这个 `number | string` 是老实的 JavaScript 语义，不是 bug：`+` 的操作数无约束（`any`）时，既可能走数值相加，也可能走字符串拼接（`"7" + 1`），Nudo 两条分支都保留。给 `x` 加约束——侧车契约或调用点证据——联合就会坍缩为 `number`。见[语言语义](../concepts/semantics.md)。
 
