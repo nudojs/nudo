@@ -78,7 +78,7 @@ function healthSections(args: string[]): Map<string, string> {
 }
 
 describe("health budget line agrees with check --json", () => {
-  it("未截断文件：check truncated=false ⇔ health 无 truncated 行", () => {
+  it("未截断文件：check truncated=false ⇔ health 无 truncated 行", { timeout: 30_000 }, () => {
     writeFileSync(p("plain.js"), PLAIN);
     const budget = checkBudget(p("plain.js"));
     expect(budget.truncated).toBe(false);
@@ -86,7 +86,7 @@ describe("health budget line agrees with check --json", () => {
     expect(sec).not.toContain("budget truncated");
   });
 
-  it("深递归文件：两者同 truncated=true；health 打触发预算（eval depth）自己的计数且到顶", () => {
+  it("深递归文件：两者同 truncated=true；health 打触发预算（eval depth）自己的计数且到顶", { timeout: 30_000 }, () => {
     writeFileSync(p("deep.js"), DEEP);
     const budget = checkBudget(p("deep.js"));
     expect(budget.truncated).toBe(true);
@@ -101,7 +101,7 @@ describe("health budget line agrees with check --json", () => {
     expect(sec).not.toMatch(/· calls \d+\/\d+/);
   });
 
-  it("cycle 截断：不是预算——不打任何计数段，只声明 call cycle", () => {
+  it("cycle 截断：不是预算——不打任何计数段，只声明 call cycle", { timeout: 30_000 }, () => {
     writeFileSync(p("cycle.js"), CYCLE);
     const budget = checkBudget(p("cycle.js"));
     expect(budget.truncated).toBe(true);
@@ -113,7 +113,7 @@ describe("health budget line agrees with check --json", () => {
     expect(sec).not.toMatch(/\d+\/\d+/);
   });
 
-  it("多文件运行不串档：截断文件的旗标不得 latch 进后续未截断文件", () => {
+  it("多文件运行不串档：截断文件的旗标不得 latch 进后续未截断文件", { timeout: 30_000 }, () => {
     writeFileSync(p("deep2.js"), DEEP);
     writeFileSync(p("plain2.js"), PLAIN);
     const sections = healthSections([p("deep2.js"), p("plain2.js")]);

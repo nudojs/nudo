@@ -34,11 +34,16 @@ async function runTestCli(args: string[]): Promise<void> {
 
 let logs: string[] = [];
 let errs: string[] = [];
+let savedGha: string | undefined;
 
 beforeEach(() => {
   process.exitCode = undefined;
   logs = [];
   errs = [];
+  // 与 helpers/run-cli.ts 基线同因：CI 的 vitest 进程继承 GITHUB_ACTIONS=true，
+  // check 的 ::error 注记自动上 stderr，会击穿 --json 的 stderr 纯净断言
+  savedGha = process.env.GITHUB_ACTIONS;
+  process.env.GITHUB_ACTIONS = "false";
   vi.spyOn(console, "log").mockImplementation((...a: unknown[]) => {
     logs.push(a.map(String).join(" "));
   });
@@ -50,6 +55,8 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   process.exitCode = undefined;
+  if (savedGha === undefined) delete process.env.GITHUB_ACTIONS;
+  else process.env.GITHUB_ACTIONS = savedGha;
 });
 
 /** 诊断行 `[severity] <path>:<line>:<col> message (code)` → 抽出 path */
