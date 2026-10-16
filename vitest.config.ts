@@ -25,6 +25,9 @@ export default defineConfig({
       "**/docs/examples/**",
       "**/packages/website/**",
       "**/scripts/**",
+      // website benchmark-gate-noise 测试经子进程+动态 import 读 benchmark/
+      // 文件（非静态 import，模块图不覆盖）——只改 benchmark/ 的 PR 也须重跑
+      "**/benchmark/**",
       "**/.github/workflows/**",
     ],
     // lodash harvest + relationFn 图会顶爆默认 isolate 堆
