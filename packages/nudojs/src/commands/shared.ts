@@ -332,7 +332,12 @@ export function startWatch(
       const changedFiles = [...pendingChanged];
       pendingChanged.clear();
       if (changedFiles.some((f) => !existsSync(f))) getAnalysisSession().clear();
-      runIncremental(changedFiles).catch(() => {});
+      // 与 runAll 的 BUG-023 同口径：增量轮本体抛错（buildModuleGraph/
+      // evictForDependents/topoSortDirty 都在 runOne 的 try 之外）不得静默吞掉，
+      // 否则该轮无声死掉，用户只看到上一轮结果冻结。
+      runIncremental(changedFiles).catch((err) => {
+        console.error(`nudo ${label} incremental failed: ${(err as Error).message}`);
+      });
     }, 200);
   });
 

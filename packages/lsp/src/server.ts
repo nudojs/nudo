@@ -227,9 +227,15 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
     if (isNudoDepPath(openPath)) {
       void handleNudoDepFileChanged(openPath, validationDeps())
         .then(() => refreshPullDiagnostics())
-        .catch(() => {});
+        .catch((err) => {
+          // 契约/依赖重检失败必须可见：静默吞掉会让该文件永远没有诊断且无迹可查
+          console.error(`[nudo-lsp] dep file revalidate failed (${openPath}):`, err);
+        });
     }
-    validateDocument(event.document, true).catch(() => {});
+    validateDocument(event.document, true).catch((err) => {
+      // analyzer 对坏侧车/坏 mock 抛错时若无日志，「打开文件无诊断」不可排查
+      console.error(`[nudo-lsp] validateDocument failed (didOpen ${event.document.uri}):`, err);
+    });
   });
 
   documents.onDidChangeContent((change) => {
@@ -252,9 +258,16 @@ export function createNudoServer(connection: Connection): NudoServerHandle {
         if (isNudoDepPath(filePath)) {
           void handleNudoDepFileChanged(filePath, validationDeps())
             .then(() => refreshPullDiagnostics())
-            .catch(() => {});
+            .catch((err) => {
+              console.error(`[nudo-lsp] dep file revalidate failed (${filePath}):`, err);
+            });
         }
-        validateDocument(change.document, true).catch(() => {});
+        validateDocument(change.document, true).catch((err) => {
+          console.error(
+            `[nudo-lsp] validateDocument failed (didChange ${change.document.uri}):`,
+            err,
+          );
+        });
       }, delay),
     );
   });
