@@ -37,6 +37,83 @@ export function primToTypeof(p: PrimName): TypeofName {
   return p;
 }
 
+/**
+ * —— IEEE 754 double 位级步进原语（strict 端点舍入校准，Bug A） ——
+ *
+ * 离散性核心：对 double 端点 a，`x > a ⟺ x ≥ nextUp(a)`、
+ * `x < a ⟺ x ≤ nextDown(a)`。strict 端点断言的 soundness 检查把 strict
+ * 操作数替换为 next-step 见证值后重算端点运算（fl 单调性保证见证结果
+ * 与原端点至多差在舍入方向上；见 arithmetic/shared.ts synthEndpoint 与
+ * 本文件 linInterval 的消费点）。
+ *
+ * 层位说明：原计划放 arithmetic/shared.ts，但 shared 经 objects.ts 已
+ * 运行时依赖本模块（pTrue/predToString），反向 import 会成环——
+ * 本模块是 arithmetic/ 与自身都可消费的最低公共层，故落此。
+ */
+const ieeeBits = new DataView(new ArrayBuffer(8));
+
+/**
+ * 大于 n 的最小 double（按位模式步进；little-endian 布局下高字在
+ * bytes 4-7）。边界：±0 → MIN_VALUE（-0 与 +0 比较等价，x>0 的最小
+ * 取值是 MIN_VALUE）；MAX_VALUE → +Infinity；-Infinity → -MAX_VALUE；
+ * NaN / +Infinity 直通。
+ */
+export function nextUp(n: number): number {
+  if (Number.isNaN(n) || n === Infinity) return n;
+  if (n === 0) return Number.MIN_VALUE; // ±0
+  ieeeBits.setFloat64(0, n, true);
+  const hi = ieeeBits.getUint32(4, true);
+  const lo = ieeeBits.getUint32(0, true);
+  if (hi & 0x80000000) {
+    // 负数：幅值递减 = 向 +Inf 步进（-MAX_VALUE → -Infinity 借位自然发生）
+    if (lo === 0) {
+      ieeeBits.setUint32(0, 0xffffffff, true);
+      ieeeBits.setUint32(4, hi - 1, true);
+    } else {
+      ieeeBits.setUint32(0, lo - 1, true);
+    }
+  } else {
+    // 正数：幅值递增（MAX_VALUE → +Infinity 进位自然发生）
+    if (lo === 0xffffffff) {
+      ieeeBits.setUint32(0, 0, true);
+      ieeeBits.setUint32(4, hi + 1, true);
+    } else {
+      ieeeBits.setUint32(0, lo + 1, true);
+    }
+  }
+  return ieeeBits.getFloat64(0, true);
+}
+
+/**
+ * 小于 n 的最大 double（nextUp 的镜像）。边界：±0 → -MIN_VALUE；
+ * MIN_VALUE → +0；+Infinity → MAX_VALUE；NaN / -Infinity 直通。
+ */
+export function nextDown(n: number): number {
+  if (Number.isNaN(n) || n === -Infinity) return n;
+  if (n === 0) return -Number.MIN_VALUE; // ±0
+  ieeeBits.setFloat64(0, n, true);
+  const hi = ieeeBits.getUint32(4, true);
+  const lo = ieeeBits.getUint32(0, true);
+  if (hi & 0x80000000) {
+    // 负数：幅值递增 = 向 -Inf 步进（-MAX_VALUE → -Infinity 自然发生）
+    if (lo === 0xffffffff) {
+      ieeeBits.setUint32(0, 0, true);
+      ieeeBits.setUint32(4, hi + 1, true);
+    } else {
+      ieeeBits.setUint32(0, lo + 1, true);
+    }
+  } else {
+    // 正数：幅值递减（MIN_VALUE → +0 借位自然发生）
+    if (lo === 0) {
+      ieeeBits.setUint32(0, 0xffffffff, true);
+      ieeeBits.setUint32(4, hi - 1, true);
+    } else {
+      ieeeBits.setUint32(0, lo - 1, true);
+    }
+  }
+  return ieeeBits.getFloat64(0, true);
+}
+
 export type Pred =
   | { op: "true" }
   | { op: "false" }
@@ -826,7 +903,14 @@ function proveCmpDirect(
   // 端点比较：a op b 对所有取值成立
   if (op === "ge") {
     if (!ivA.lo || !ivB.hi) return false;
-    return ivA.lo.bound >= ivB.hi.bound;
+    if (ivA.lo.bound >= ivB.hi.bound) return true;
+    // 离散性收紧（Bug A 配套）：项的运行时值是 double——
+    // v > lo(strict) ⟹ v ≥ nextUp(lo)；v < hi(strict) ⟹ v ≤ nextDown(hi)。
+    // linInterval 校准后的 strict 端点（gt(nextDown(c)) ⟺ ge(c)）由此
+    // 不丢非严格目标的可证性。
+    if (ivA.lo.strict && nextUp(ivA.lo.bound) >= ivB.hi.bound) return true;
+    if (ivB.hi.strict && ivA.lo.bound >= nextDown(ivB.hi.bound)) return true;
+    return false;
   }
   if (op === "gt") {
     if (!ivA.lo || !ivB.hi) return false;
@@ -837,7 +921,11 @@ function proveCmpDirect(
   }
   if (op === "le") {
     if (!ivA.hi || !ivB.lo) return false;
-    return ivA.hi.bound <= ivB.lo.bound;
+    if (ivA.hi.bound <= ivB.lo.bound) return true;
+    // 离散性收紧（ge 臂同款）：v < hi(strict) ⟹ v ≤ nextDown(hi)
+    if (ivA.hi.strict && nextDown(ivA.hi.bound) <= ivB.lo.bound) return true;
+    if (ivB.lo.strict && ivA.hi.bound <= nextUp(ivB.lo.bound)) return true;
+    return false;
   }
   // lt
   if (!ivA.hi || !ivB.lo) return false;
@@ -1007,6 +1095,14 @@ function buildCtx(phi: Phi): Ctx {
 /**
  * 线性式的区间下/上界（独立合成：缺哪侧就缺哪侧）。
  * 系数符号决定用原子 lo 还是 hi；任一原子缺所需侧则该侧无界。
+ *
+ * Bug A（strict 端点 IEEE 舍入）：端点按每步 fl 累计合成，strict 输入
+ * 参与时累计舍入可能把端点折越过真实 inf/sup（如 `fl(0 + 1e-16 + …)`
+ * 吸收）。对 strict 输入用 next-step 见证替换重算一遍（每步系数符号
+ * 已知 ⇒ fl 单调 ⇒ w ≥ E（lo）/ w ≤ E（hi）恒成立）：w === E 表示
+ * 端点恰被取到（存在合法输入使线性值 === E），端点外推一步（strict
+ * 语义不变，gt/lt 断言仍成立）；w 落在错误侧（NaN/脏数据）保守退界。
+ * 非严格端点不经见证（fl 单调 ⇒ ge/le 永真）。
  */
 function linInterval(
   ctx: Ctx,
@@ -1014,6 +1110,8 @@ function linInterval(
 ): { lo?: { bound: number; strict: boolean }; hi?: { bound: number; strict: boolean } } {
   let lo = lin.k;
   let hi = lin.k;
+  let wLo = lin.k;
+  let wHi = lin.k;
   let loStrict = false;
   let hiStrict = false;
   let hasLo = true;
@@ -1025,27 +1123,42 @@ function linInterval(
     if (coeff > 0) {
       if (iv.lo) {
         lo += coeff * iv.lo.bound;
+        wLo += coeff * (iv.lo.strict ? nextUp(iv.lo.bound) : iv.lo.bound);
         if (iv.lo.strict) loStrict = true;
       } else hasLo = false;
       if (iv.hi) {
         hi += coeff * iv.hi.bound;
+        wHi += coeff * (iv.hi.strict ? nextDown(iv.hi.bound) : iv.hi.bound);
         if (iv.hi.strict) hiStrict = true;
       } else hasHi = false;
     } else {
       // 负系数：lo 用原子 hi，hi 用原子 lo
       if (iv.hi) {
         lo += coeff * iv.hi.bound;
+        wLo += coeff * (iv.hi.strict ? nextDown(iv.hi.bound) : iv.hi.bound);
         if (iv.hi.strict) loStrict = true;
       } else hasLo = false;
       if (iv.lo) {
         hi += coeff * iv.lo.bound;
+        wHi += coeff * (iv.lo.strict ? nextUp(iv.lo.bound) : iv.lo.bound);
         if (iv.lo.strict) hiStrict = true;
       } else hasHi = false;
     }
   }
   const out: { lo?: { bound: number; strict: boolean }; hi?: { bound: number; strict: boolean } } = {};
-  if (hasLo) out.lo = { bound: lo, strict: loStrict };
-  if (hasHi) out.hi = { bound: hi, strict: hiStrict };
+  if (hasLo) {
+    if (!loStrict) out.lo = { bound: lo, strict: false };
+    else if (wLo > lo) out.lo = { bound: lo, strict: true };
+    else if (wLo === lo) out.lo = { bound: nextDown(lo), strict: true };
+    // wLo < lo（含 NaN）：方向错/脏数据 → 退为非严格端点（保守）
+    else out.lo = { bound: lo, strict: false };
+  }
+  if (hasHi) {
+    if (!hiStrict) out.hi = { bound: hi, strict: false };
+    else if (wHi < hi) out.hi = { bound: hi, strict: true };
+    else if (wHi === hi) out.hi = { bound: nextUp(hi), strict: true };
+    else out.hi = { bound: hi, strict: false };
+  }
   return out;
 }
 
@@ -1119,7 +1232,9 @@ function proveInCtx(ctx: Ctx, pred: Pred): boolean {
     }
     if (op === "ge") {
       if (!iv.lo) return undefined;
-      return iv.lo.bound >= 0;
+      // 离散性收紧（Bug A 配套）：校准后的 strict 端点 gt(nextDown(0)) ⟺ ge(0)
+      if (iv.lo.bound >= 0) return true;
+      return iv.lo.strict && nextUp(iv.lo.bound) >= 0;
     }
     if (op === "lt") {
       if (!iv.hi) return undefined;
@@ -1128,7 +1243,8 @@ function proveInCtx(ctx: Ctx, pred: Pred): boolean {
     }
     if (op === "le") {
       if (!iv.hi) return undefined;
-      return iv.hi.bound <= 0;
+      if (iv.hi.bound <= 0) return true;
+      return iv.hi.strict && nextDown(iv.hi.bound) <= 0;
     }
     if (op === "eq") {
       // 夹逼

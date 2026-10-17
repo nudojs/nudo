@@ -11,6 +11,7 @@
 import type { LiteralValue } from "../term.ts";
 import { app, lit, simplifyTerm } from "../term.ts";
 import type { Pred, Phi } from "../pred.ts";
+import { nextUp, nextDown } from "../pred.ts";
 import type { Abs } from "../abs.ts";
 import { abs, confJoin, isNumPrim, isBigPrim } from "../abs.ts";
 import { absShapeKey } from "../objects.ts";
@@ -81,15 +82,73 @@ function normalizeNegZero(n: number): number {
 }
 
 /**
- * IEEE 安全的不等式端点。
- * - 非有限（NaN/±Inf）：不能当端点（NaN 恒假、Inf 与溢出值比较失真）
- * - 0 作 strict 端点仅当运算不会把正值下溢成 0（见各调用点的 strictZeroOk）
+ * IEEE 安全的端点（非严格）：非有限（NaN/±Inf）不能当端点（NaN 无序、
+ * ±Inf 与溢出值比较失真——`x>1e308 + y>1e308 ⊬ x+y > Infinity`）。
+ * 非严格断言 ge/le 由 fl 单调性永真，无需见证校准。
  */
-export function ieeeBound(n: number, strict: boolean, strictZeroOk: boolean): number | undefined {
+export function ieeeBound(n: number): number | undefined {
   if (!Number.isFinite(n)) return undefined;
-  const z = normalizeNegZero(n);
-  if (z === 0 && strict && !strictZeroOk) return undefined;
-  return z;
+  return normalizeNegZero(n);
+}
+
+/**
+ * strict 端点的 IEEE 舍入校准（Bug A）。
+ *
+ * 拟断言 result > E（claim="lo"）/ result < E（claim="hi"）：E 是用界
+ * 端点值算出的 fl(a op b)，w 是把 strict 操作数端点换成 next-step 见证
+ * 值（下界贡献取 nextUp、上界贡献取 nextDown，见 synthEndpoint）后重算
+ * 的 fl(a' op b')。fl 单调 ⇒ 恒有 w ≥ E（lo）/ w ≤ E（hi）：
+ *   - w > E（lo）/ w < E（hi）：真实 inf/sup 在端点外侧，断言 sound，
+ *     保留 E（含 w=±Inf 的见证溢出）；
+ *   - w === E：端点运算舍入越过/恰撞真实 inf/sup（反例：fl(1 + 1e-16)
+ *     = 1，而 x=1、y=2^-53 时 IEEE 和 === 1），存在合法输入使结果 === E，
+ *     端点外推一步（离散性下 gt(nextDown(E)) ⟺ ge(E)，strict 语义不变）；
+ *   - w 落在错误侧 / NaN：方向 bug 或脏数据，保守丢弃（undefined）。
+ */
+export function ieeeStrictEndpoint(E: number, w: number, claim: "lo" | "hi"): number | undefined {
+  if (!Number.isFinite(E)) return undefined;
+  if (claim === "lo") {
+    if (w > E) return normalizeNegZero(E);
+    if (w === E) return normalizeNegZero(nextDown(E));
+    return undefined;
+  }
+  if (w < E) return normalizeNegZero(E);
+  if (w === E) return normalizeNegZero(nextUp(E));
+  return undefined;
+}
+
+/** 数值界端点（NumBounds 的单侧）：value 为界值，strict 为严格性 */
+export type Endpoint = { value: number; strict: boolean };
+
+/**
+ * 端点合成 + strict 见证校准的统一入口（Bug A，addsub/muldiv 全消费点）。
+ *
+ * f 是端点运算的 JS fl 语义（+、−、×k、÷k——除法用真实 `/`，不换算
+ * `×(1/k)`，两者舍入不同）；a（及可选 b）是参与该端点合成的操作数界；
+ * dirA/dirB 是该操作数在这侧端点里的见证步进方向："up" = strict 时取
+ * nextUp（x > a ⟺ x ≥ nextUp(a)，操作数向下推端点时用），"down" 对偶。
+ * claim 是断言方向（"lo" 下界 result > E / "hi" 上界 result < E）。
+ *
+ * 全部非严格时直接 ieeeBound(E)（fl 单调 ⇒ ge/le 永真，无舍入问题）；
+ * 任一 strict 时经 ieeeStrictEndpoint 见证校准（subsumes 旧的
+ * strictZeroOk 下溢启发式：下溢由见证值 w === E 自然捕获，如
+ * `fl(MIN_VALUE / 2) = 0` 使 gt(x/2, 0) 退为 gt(x/2, -MIN_VALUE)）。
+ * b 省略时 f 只吃第一参数（×k/÷k 常数侧无数值界）。
+ */
+export function synthEndpoint(
+  f: (x: number, y: number) => number,
+  a: Endpoint,
+  dirA: "up" | "down",
+  claim: "lo" | "hi",
+  b?: Endpoint,
+  dirB: "up" | "down" = "up",
+): number | undefined {
+  const strict = a.strict || (b?.strict ?? false);
+  const E = b === undefined ? f(a.value, 0) : f(a.value, b.value);
+  if (!strict) return ieeeBound(E);
+  const aW = a.strict ? (dirA === "up" ? nextUp(a.value) : nextDown(a.value)) : a.value;
+  const bW = b === undefined ? 0 : b.strict ? (dirB === "up" ? nextUp(b.value) : nextDown(b.value)) : b.value;
+  return ieeeStrictEndpoint(E, f(aW, bW), claim);
 }
 
 /** any / unknown（含无 term 的裸 unknown）：JS ToNumber 语义用于 - * / % */

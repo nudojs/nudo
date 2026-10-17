@@ -12,6 +12,7 @@ import {
   predToString,
   litValue,
 } from "../index.ts";
+import { nextDown } from "../pred.ts";
 
 /**
  * 示例 0 金标：类型即计算
@@ -53,8 +54,11 @@ describe("Example 0: add is the computation itself", () => {
     expect(ps).toContain("1");
     expect(r.pred!.op).toBe("gt");
     if (r.pred!.op === "gt") {
+      // Bug A（IEEE strict 端点校准）：原断言 lit(1) 是假 strict 界——
+      // x=5e-324 时 fl(x+1) === 1（吸收），不 > 1；端点退一步
+      // （gt(nextDown(1)) ⟺ ge(1)，离散语义等价且 sound）。
       expect(termToString(r.pred!.a)).toBe("(x + 1)");
-      expect(r.pred!.b).toEqual(lit(1));
+      expect(r.pred!.b).toEqual(lit(nextDown(1)));
     }
     expect(r.conf).toBe("path");
   });
@@ -72,7 +76,8 @@ describe("Example 0: add is the computation itself", () => {
 
     expect(r.pred).toBeDefined();
     if (r.pred!.op === "gt") {
-      expect(r.pred!.b).toEqual(lit(2));
+      // Bug A：两次吸收链同理——x=5e-324 时 fl(fl(x+1)+1) === 2，不 > 2
+      expect(r.pred!.b).toEqual(lit(nextDown(2)));
     } else {
       expect(predToString(r.pred!)).toContain("2");
     }

@@ -14,8 +14,11 @@
 //   add(a, b)   number | string  = (A1 + A2)                #partial
 //     （a + b 的 ToPrimitive 可能抛 TypeError —— @nudo:throws TypeError
 //       申报为有意 fail-fast，L2 entry-may-throw 豁免）
-//   scale(x)    number           = (x + 1)  where (x+1) > 1 #path
-//   twice(x)    number           = ((x + 1) + 1)  where ((x+1)+1) > 2  #path
+//   scale(x)    number           = (x + 1)  where (x+1) > 0.9999999999999999  #path
+//   twice(x)    number           = ((x + 1) + 1)  where ((x+1)+1) > 1.9999999999999998  #path
+//
+// 注：严格界按 IEEE 舍入外推一 ulp——x>0 时 x+1 可被吸收（x=5e-324 时
+// fl(x+1)===1），故 sound 的严格下界是 nextDown(1) 而非 1 本身。
 //
 // TS 在后两者只能给 number；Nudo 让约束参与运算。
 

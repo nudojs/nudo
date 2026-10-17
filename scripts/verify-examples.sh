@@ -346,8 +346,8 @@ pin 'pnpm run test:cli docs/examples/algebra/0-add-intensional.js' \
 pin 'pnpm run check docs/examples/algebra/0-add-intensional.js --abs --assume "x>0"' \
   'nudo check --abs' 'assume: x > 0' \
   'number | string' 'conf: partial' \
-  'scale(number)' 'term: (x + 1)' 'pred: (x + 1) > 1' \
-  'term: ((x + 1) + 1)' 'pred: ((x + 1) + 1) > 2' 'conf: path'
+  'scale(number)' 'term: (x + 1)' 'pred: (x + 1) > 0.9999999999999999' \
+  'term: ((x + 1) + 1)' 'pred: ((x + 1) + 1) > 1.9999999999999998' 'conf: path'
 pin 'pnpm run test:cli docs/examples/algebra/a-spread-optional.js' \
   '({ port: 3000, debug: true }) => { host: "localhost", port: 3000, debug: true }' \
   '({  }) => { host: "localhost", port: 8080, debug: false }' \

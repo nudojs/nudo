@@ -55,7 +55,7 @@ The goal is runtime-adjacent variables in the source. The method is **executing 
 
 1. **Execution produces facts.** The engine evaluates on symbolic values and records each intermediate’s shape, value identity, and constraints — not inferred from annotations.
 2. **Call sites are evidence.** `scale(5) => 6` comes from an actual call path, not a comment.
-3. **Constraints participate in algebra.** `x > 0` implies `(x + 1) > 1`, so inlays show relations that can be reasoned about, not only type names.
+3. **Constraints participate in algebra.** `x ≥ 0` implies `(x + 1) ≥ 1` (strict bounds are ulp-adjusted to stay sound under IEEE rounding), so inlays show relations that can be reasoned about, not only type names.
 4. **Annotations are never required.** Sources stay plain `.js`; contracts are JS modules.
 
 Deeper: [Abstract interpretation](./concepts/abstract-interpretation.md) · [Abs](./concepts/abs.md).

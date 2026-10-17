@@ -103,7 +103,7 @@ const s = id("hi");   // 用 {"hi"} 重跑 → {"hi"}
 
 ```
 // 直线体 + 入口 x>0
-analyzeFn: number  = (x + 1)  where (x + 1) > 1  #path
+analyzeFn: number  = (x + 1)  where (x + 1) > 0.9999999999999999  #path
 
 // 分支体转译产物（无 JS if：条件是 Abs 布尔，$fork 双臂 + Φ）
 return $fork($gt(x, $lit(0)), () => $add(x, $lit(1)), () => $lit(0));

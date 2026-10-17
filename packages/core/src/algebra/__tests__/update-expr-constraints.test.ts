@@ -29,7 +29,7 @@ import {
   formatAbs,
 } from "../index.ts";
 import type { Abs } from "../abs.ts";
-import { gt } from "../pred.ts";
+import { gt, nextDown } from "../pred.ts";
 
 const xgt0 = numVar("x", gt(v("x"), lit(0)));
 
@@ -42,13 +42,20 @@ describe("UpdateExpression propagates term/pred like += / -=", () => {
   it("x++ on x>0 yields term x+1 and pred x+1>1", () => {
     const inc = updateAddAbs(xgt0);
     expect(inc.term).toEqual(simplifyTerm(app("+", [v("x"), lit(1)])));
-    expect(implies(inc.pred!, gt(inc.term!, lit(1)))).toBe(true);
+    // Bug A（IEEE strict 端点校准）：pred 为 gt(x+1, nextDown(1))——
+    // x=5e-324 时 fl(x+1) === 1（吸收），x+1 > 1 不成立。可证的最强形式
+    // 即端点本身：gt(x+1, nextDown(1))。（ge(x+1, 1) 也不可证：Φ 归一到
+    // x > -2^-53 后含实数语义空隙，离散事实在项层已丢。）
+    expect(implies(inc.pred!, gt(inc.term!, lit(1)))).toBe(false);
+    expect(implies(inc.pred!, gt(inc.term!, lit(nextDown(1))))).toBe(true);
   });
 
   it("x-- on x>0 yields term x-1 and pred x-1>-1", () => {
     const dec = updateSubAbs(xgt0);
     expect(dec.term).toEqual(simplifyTerm(app("-", [v("x"), lit(1)])));
-    expect(implies(dec.pred!, gt(dec.term!, lit(-1)))).toBe(true);
+    // Bug A：x=5e-324 时 fl(x-1) === -1；pred 为 gt(x-1, nextDown(-1))。
+    expect(implies(dec.pred!, gt(dec.term!, lit(-1)))).toBe(false);
+    expect(implies(dec.pred!, gt(dec.term!, lit(nextDown(-1))))).toBe(true);
   });
 
   it("x++ / x-- results identical to x += 1 / x -= 1 (shape × term × pred × conf)", () => {
@@ -79,7 +86,10 @@ describe("UpdateExpression propagates term/pred like += / -=", () => {
     const a = formatAbs(callFn(inc, [xgt0]));
     const b = formatAbs(callFn(comp, [xgt0]));
     expect(a).toBe(b);
-    expect(a.startsWith("true")).toBe(true);
+    // Bug A：x=5e-324 时 fl(x+1) === 1（吸收），x+1 > 1 非恒真——
+    // 不再折叠为字面量 true，保留符号面 boolean where (x+1) > 1。
+    expect(a.startsWith("boolean")).toBe(true);
+    expect(a).toContain("(x + 1) > 1");
   });
 
   it("evaluator: Φ seed gt(x,0) propagates through x++ (return keeps term+pred)", () => {
@@ -88,6 +98,7 @@ describe("UpdateExpression propagates term/pred like += / -=", () => {
       withExecPhi(gt(v("x"), lit(0)), () => callFn(src, [xgt0])),
     );
     expect(s).toContain("x + 1");
-    expect(s).toContain("> 1");
+    // Bug A：strict 下界退一步（吸收端点 1 可达）
+    expect(s).toContain("> 0.9999999999999999");
   });
 });

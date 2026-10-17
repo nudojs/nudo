@@ -128,6 +128,11 @@ function noteBoundFromRel(p: Pred, isTarget: (t: Term) => boolean, acc: NumBound
     return;
   }
   const n = (litSide as { value: number }).value;
+  // Bug B：NaN 无序——gt(x, NaN) / x ≤ NaN 等恒假，NaN 不是端点（与
+  // exclusionLitOf 口径对齐）。修复前 NaN 先到先得占住端点（tighten 的
+  // NaN 比较恒 false 改不动它），再向区间合成传播，只能靠下游
+  // ieeeBound 的 NaN→undefined 消毒。
+  if (Number.isNaN(n)) return;
   if (op === "gt") tightenLo(acc, n, true);
   else if (op === "ge") tightenLo(acc, n, false);
   else if (op === "lt") tightenHi(acc, n, true);
