@@ -59,7 +59,11 @@ const pathEnvCache = new BoundedLruMap<() => EnvDefinition>(PATH_ENV_CACHE_MAX);
 // resolvedPath → factory; looked up by trying the directive spelling as-is and
 // resolved against every baseDir seen during preload (covers `./env.ts`,
 // `../env.ts`, and bare `env.ts` spellings from different analyzed files).
-const pathEnvByPath = new BoundedLruMap<{ factory: () => EnvDefinition; mtimeMs: number }>(PATH_ENV_BY_PATH_MAX);
+const pathEnvByPath = new BoundedLruMap<{
+  factory: () => EnvDefinition;
+  mtimeMs: number;
+  size: number;
+}>(PATH_ENV_BY_PATH_MAX);
 // Set 保持插入序；超上限时删最旧 baseDir（LRU 等价——最近 preload 的排到尾）。
 const pathEnvBaseDirs = new Set<string>();
 
@@ -112,8 +116,11 @@ function rewriteBareImports(text: string): string | null {
   return rewrote ? out : null;
 }
 
-async function importPathEnv(resolvedPath: string, mtimeMs: number, baseDir: string): Promise<void> {
-  const cacheKey = `${resolvedPath}:${mtimeMs}`;
+async function importPathEnv(resolvedPath: string, mtimeMs: number, size: number, baseDir: string): Promise<void> {
+  // 键与校验双值（mtimeMs+size，stat 一次两值都拿）：粗 mtime 粒度文件系统上
+  // 「同秒编辑」若只看 mtime，旧 defineEnv 工厂陈旧命中且 recordPathEnvFile
+  // 重登记旧值会自我续命——size 变化必须击穿缓存（全仓 mtimeMs+size 严格相等口径）。
+  const cacheKey = `${resolvedPath}:${mtimeMs}:${size}`;
   // get 触发 LRU 触摸（命中仍返回同一 factory）；命中也是「已成功加载」，
   // 必须补记本次 baseDir 归属（同一 env 文件可被多个 baseDir 的 preload 命中）
   if (pathEnvCache.get(cacheKey)) {
@@ -125,7 +132,9 @@ async function importPathEnv(resolvedPath: string, mtimeMs: number, baseDir: str
   let mod: { defineEnv?: unknown } | null = null;
   let directErr: unknown = null;
   try {
-    const url = pathToFileURL(resolvedPath).href + `?mtime=${mtimeMs}`;
+    // URL query 同样带 size：同 mtime 不同 size 的编辑必须换 URL，否则
+    // Node/vite ESM 模块缓存按地址命中旧内容。
+    const url = pathToFileURL(resolvedPath).href + `?mtime=${mtimeMs}&size=${size}`;
     mod = (await import(url)) as { defineEnv?: unknown };
   } catch (e) {
     // Fall through to the rewritten-copy fallback below.
@@ -143,7 +152,10 @@ async function importPathEnv(resolvedPath: string, mtimeMs: number, baseDir: str
       }
       const cacheDir = joinPath(tmpdir(), "nudo-env");
       mkdirSync(cacheDir, { recursive: true });
-      const hash = createHash("md5").update(`${resolvedPath}:${mtimeMs}`).digest("hex").slice(0, 16);
+      // 副本文件名用 rewritten 内容指纹：键若只含 path:mtime，内容变而 mtime
+      // 不变时 Node ESM 按同一 URL 命中旧模块，新内容永不生效。内容变 → 文件
+      // 名变 → URL 变 → ESM 缓存自然失效。旧副本留在 tmpdir 由 OS 清理，不另扫。
+      const hash = createHash("md5").update(rewritten).digest("hex").slice(0, 16);
       const copyPath = joinPath(cacheDir, `${hash}.ts`);
       writeFileSync(copyPath, rewritten, "utf-8");
       mod = (await import(pathToFileURL(copyPath).href)) as { defineEnv?: unknown };
@@ -158,6 +170,7 @@ async function importPathEnv(resolvedPath: string, mtimeMs: number, baseDir: str
     pathEnvByPath.set(resolvedPath, {
       factory: mod.defineEnv as () => EnvDefinition,
       mtimeMs,
+      size,
     });
     recordPathEnvFile(resolvedPath, mtimeMs, baseDir);
     clearPathEnvError(resolvedPath);
@@ -172,10 +185,10 @@ function lookupPathEnv(name: string): (() => EnvDefinition) | undefined {
   for (const candidate of candidates) {
     const hit = pathEnvByPath.get(candidate);
     if (!hit) continue;
-    // mtime 变了 → 丢弃陈旧 factory（下次 preload 会重 import）
+    // mtime/size 任一变了 → 丢弃陈旧 factory（下次 preload 会重 import）
     try {
-      const { mtimeMs } = statSync(candidate);
-      if (mtimeMs !== hit.mtimeMs) {
+      const { mtimeMs, size } = statSync(candidate);
+      if (mtimeMs !== hit.mtimeMs || size !== hit.size) {
         pathEnvByPath.delete(candidate);
         return undefined;
       }
@@ -274,8 +287,8 @@ export async function preloadPathEnvs(envNames: string[], baseDir: string): Prom
       continue;
     }
     try {
-      const { mtimeMs } = statSync(resolved);
-      await importPathEnv(resolved, mtimeMs, baseDir);
+      const { mtimeMs, size } = statSync(resolved);
+      await importPathEnv(resolved, mtimeMs, size, baseDir);
     } catch (e) {
       recordPathEnvError(resolved, baseDir, e);
     }

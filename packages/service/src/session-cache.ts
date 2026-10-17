@@ -28,6 +28,7 @@ import {
   trimFnAnalysisCache,
 } from "./fn-analysis-cache.ts";
 import { clearPathEnvCaches } from "./evaluator/env-loader.ts";
+import { clearHarvestCache, clearNodeHarvestCache } from "@nudojs/harvester";
 import { evictProjectConfigMemo } from "./evaluator/config.ts";
 import {
   getSessionCacheLimits,
@@ -67,6 +68,12 @@ export function clearAnalysisSessionCaches(): void {
   clearEvalCache(); // cascades analysis-file + fn-analysis
   clearAbsModuleCache();
   clearPathEnvCaches();
+  // harvest 进程内缓存与宿主会话同生命周期（此前 clearHarvestCache/
+  // clearNodeHarvestCache 全仓只有测试调用，中途安装/变更 @types 不可见）：
+  // harvest-auto 的 pkg walk 缓存（含 null 占位）与 harvest-node 的
+  // @types/node 结果（含 not-found 钉死条目）一并丢弃，重新 harvest。
+  clearHarvestCache();
+  clearNodeHarvestCache();
   // findProjectConfig 目录链 memo（mtime 自校验；显式清覆盖「同 size+同 mtime」写入）
   evictProjectConfigMemo();
   resetGeneralizeMemo();
