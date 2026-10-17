@@ -2,7 +2,7 @@
   "name": "@nudojs/harvester",
   "version": "0.3.28",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "description": "Harvests TypeScript .d.ts declarations into Nudo env definitions",
   "type": "module",

@@ -6,7 +6,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { Command, type Option } from "commander";
-import { registerCheckCommand } from "../commands/check.ts";
+import { registerCheckCommand } from "../commands/check-command.ts";
 import { applyCheckHelpGroups } from "../check-help-groups.ts";
 
 function buildProgram(): Command {

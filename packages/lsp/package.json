@@ -2,7 +2,7 @@
   "name": "@nudojs/lsp",
   "version": "1.6.10",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "description": "Language Server Protocol implementation for the Nudo type inference engine",
   "type": "module",

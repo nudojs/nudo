@@ -11,7 +11,7 @@
  */
 import { Command } from "commander";
 import { formatVersionOutput } from "./version.ts";
-import { registerCheckCommand } from "./commands/check.ts";
+import { registerCheckCommand } from "./commands/check-command.ts";
 import { registerTestCommand } from "./commands/test.ts";
 import { registerContractCommand } from "./commands/contract.ts";
 import { registerExportCommand } from "./commands/export.ts";

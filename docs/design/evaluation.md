@@ -39,6 +39,26 @@ gt(x.add(1), 1)         // 集合间关系检查
 
 预算：`MAX_CALL_DEPTH` / `MAX_TOTAL_CALLS`（20k）/ `MAX_EVAL_TOTAL_FORKS`（默认 5000，可经 `NUDO_MAX_FORKS` / `nudo.analysis.maxForks` 调节）——截断观测见 `call-budget.ts`（调用截断 → `nudo:recursion-truncated`；fork 截断 → `nudo:fork-truncated`）。
 
+## 分析期真实执行面
+
+分析不是全符号沙箱：宿主全局按三层显式名单处置（定义均在
+`packages/core/src/algebra/exec/calls.ts`，Math/JSON 折算在 `algebra/builtins/`）。
+
+| 层 | 覆盖面 | 语义 |
+|---|---|---|
+| **真执行** | `GLOBAL_FNS` 名单（parseInt/Number/URI 族/escape 族…）+ `isHostGlobalFn` 兜底（Bug 20：按 `hostGlobalFnIds` **值身份**识别，覆盖 `const d = decodeURIComponent` 别名）+ Math 原生折叠 + JSON 解码 | host 纯函数真调用：全部实参为字面量 → 转真值执行，宿主异常折进 throws 域（`decodeURIComponent("%")` → URIError 不丢），返回值诚实转 Abs；任一抽象实参 → 不喂宿主（禁反模式：Abs 直接进真 JS 函数），保守 unknown + may TypeError |
+| **fail-closed 拦截** | `NEVER_EXEC_HOST_FN_NAMES`（fetch / XMLHttpRequest / WebSocket / EventSource / setTimeout / setInterval / setImmediate / queueMicrotask / requestAnimationFrame / requestIdleCallback） | 不执行——`fetch(unknownAbs)` 会以 `[object Object]` 发真请求、未处理 rejection 崩掉分析进程；命中 → unknown#opaque + `nudo:host-effect-blocked` 上报，`$callNamed` 与 `$new` 共用 |
+| **抽象化建模** | `process` / `fs` / `require` 等宿主面 | 经 `@nudojs/env` 的 Abs 声明消费，不触真实 IO；成员写（`process.exitCode = 1`）经 memberPath 写回链（`exec/transpile/member-path.ts`）重绑到 Abs 值——根绑定必须可重绑（`run.ts` env/mock 注入用 let），否则单点成员写毒化整场求值 |
+
+**前向兼容规则**：`isHostGlobalFn` 收集 `globalThis` 全部函数值属性——Node 未来
+新增的副作用全局（调度/网络/IO 族）默认会落进真执行兜底。兜底面出现**新名字
+必须审计**：进 `NEVER_EXEC_HOST_FN_NAMES` 拦截，或确认纯函数后并入探针基线。
+CI 信号 = 漂移探针
+[`packages/core/src/algebra/__tests__/host-global-drift.test.ts`](../../packages/core/src/algebra/__tests__/host-global-drift.test.ts)：
+裸 node 子进程枚举函数值名字 ↔ 基线 fixture（并集语义，跨 Node 版本只增不减）∪
+`NEVER_EXEC_HOST_FN_NAMES` 比对——基线外新名字失败（附处置指引），老 Node
+缺名字仅告警（CI Node 22 矩阵必然少于基线生成面 Node 26）。
+
 ## 传播机制：调用点实参集合重求值 callee body
 
 跨文件类型传播**不是**靠类型 scheme 传递，是逐调用点重求值：
@@ -83,7 +103,7 @@ const s = id("hi");   // 用 {"hi"} 重跑 → {"hi"}
 
 ```
 // 直线体 + 入口 x>0
-analyzeFn: number  = (x + 1)  where (x + 1) > 1  #path
+analyzeFn: number  = (x + 1)  where (x + 1) > 0.9999999999999999  #path
 
 // 分支体转译产物（无 JS if：条件是 Abs 布尔，$fork 双臂 + Φ）
 return $fork($gt(x, $lit(0)), () => $add(x, $lit(1)), () => $lit(0));

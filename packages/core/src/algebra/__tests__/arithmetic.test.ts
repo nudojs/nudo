@@ -27,6 +27,7 @@ import {
   simplifyTerm,
   app,
 } from "../index.ts";
+import { nextDown } from "../pred.ts";
 
 describe("term simplify", () => {
   it("folds 1+3", () => {
@@ -134,7 +135,10 @@ describe("sub / mul", () => {
     expect(r.term).toBeDefined();
     expect(r.pred!.op).toBe("gt");
     if (r.pred!.op === "gt") {
-      expect(r.pred!.b).toEqual(lit(-1));
+      // Bug A（IEEE strict 端点校准）：原断言 lit(-1) 是假 strict 界——
+      // x=5e-324 时 fl(x-1) === -1，不 > -1；端点退一步（gt(nextDown(-1))
+      // ⟺ ge(-1)，离散语义等价且 sound）。
+      expect(r.pred!.b).toEqual(lit(nextDown(-1)));
     }
   });
   it("3*4 = 12", () => {

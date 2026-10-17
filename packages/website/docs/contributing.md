@@ -10,8 +10,8 @@ Thank you for your interest in contributing to Nudo. This guide covers setup, pr
 
 ## Prerequisites
 
-- **Node.js** >= 20 (CI uses Node 24)
-- **pnpm** 9.1.0 (pinned in `packageManager`; later 9.x also works)
+- **Node.js** >= 22 (CI uses Node 24)
+- **pnpm** 11.28.0 (pinned in `packageManager`; later 11.x also works)
 
 ```bash
 npm install -g pnpm

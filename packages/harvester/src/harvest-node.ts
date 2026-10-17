@@ -80,8 +80,13 @@ function notFoundCacheKey(fromDir: string | undefined): string {
   return `not-found|@types/node|${fromDir ?? ""}`;
 }
 
-/** Stable cache key: root + budgets + package.json mtime/size signature. */
-function nodeHarvestCacheKey(
+/**
+ * Stable cache key: root + budgets + package.json mtime/size signature.
+ * mtimeMs 保留浮点不折整秒——全仓契约是 mtimeMs+size 严格相等（参照
+ * service validation.ts / abs-modules-graph.ts）；折整秒会让「同秒重写 +
+ * 同 size」的 package.json 沿用陈旧 harvest。测试导出（纯键构造）。
+ */
+export function nodeHarvestCacheKey(
   root: string,
   maxFiles: number,
   maxMs: number,
@@ -89,7 +94,7 @@ function nodeHarvestCacheKey(
   let sig = "nostat";
   try {
     const st = statSync(join(root, "package.json"));
-    sig = `${st.size}:${Math.floor(st.mtimeMs)}`;
+    sig = `${st.size}:${st.mtimeMs}`;
   } catch {
     // package.json missing — fall back to root identity only
   }

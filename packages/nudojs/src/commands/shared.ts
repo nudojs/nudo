@@ -110,7 +110,9 @@ export function collectExternalRecords(
   const records: CallRecord[] = [];
   for (const site of sites) {
     const sitePath = resolve(site);
-    if (!existsSync(sitePath)) {
+    // 单次 stat：miss（ENOENT）→ PathError；EACCES/EIO 上抛（顶层 CLI catch，不伪装 miss）
+    const siteStat = statSync(sitePath, { throwIfNoEntry: false });
+    if (!siteStat) {
       const err: PathError = {
         path: sitePath,
         code: DIAG.pathMissingCallsite,
@@ -121,7 +123,7 @@ export function collectExternalRecords(
       else reportPathErrors([err]);
       continue;
     }
-    const siteFiles = statSync(sitePath).isDirectory() ? collectNudoFiles(sitePath) : [sitePath];
+    const siteFiles = siteStat.isDirectory() ? collectNudoFiles(sitePath) : [sitePath];
     for (const sf of siteFiles) {
       records.push(...collectCallRecords(sf, readFileSync(sf, "utf-8")));
     }
@@ -220,7 +222,10 @@ export function startWatch(
   onRoundStart?: () => void,
 ): () => void {
   const resolvedList = paths.map((p) => resolve(p));
-  const isDir = resolvedList.some((p) => existsSync(p) && statSync(p).isDirectory());
+  // 单次 stat：miss（含竞态删除）不计 dir；EACCES/EIO 上抛（fail loud）
+  const isDir = resolvedList.some(
+    (p) => statSync(p, { throwIfNoEntry: false })?.isDirectory() === true,
+  );
   const primary = resolvedList[0]!;
 
   // 路径身份统一 stablePathKey：watch 事件 / collectNudoFiles / buildModuleGraph 边
@@ -228,8 +233,10 @@ export function startWatch(
   const getFiles = (): string[] => {
     const out: string[] = [];
     for (const p of resolvedList) {
-      if (!existsSync(p)) continue;
-      if (statSync(p).isDirectory()) out.push(...collectNudoFiles(p));
+      // miss（watch 启动后被删）→ 跳过该路径不崩；其余 errno 上抛
+      const st = statSync(p, { throwIfNoEntry: false });
+      if (!st) continue;
+      if (st.isDirectory()) out.push(...collectNudoFiles(p));
       else out.push(p);
     }
     return out.map(stablePathKey);
@@ -332,7 +339,12 @@ export function startWatch(
       const changedFiles = [...pendingChanged];
       pendingChanged.clear();
       if (changedFiles.some((f) => !existsSync(f))) getAnalysisSession().clear();
-      runIncremental(changedFiles).catch(() => {});
+      // 与 runAll 的 BUG-023 同口径：增量轮本体抛错（buildModuleGraph/
+      // evictForDependents/topoSortDirty 都在 runOne 的 try 之外）不得静默吞掉，
+      // 否则该轮无声死掉，用户只看到上一轮结果冻结。
+      runIncremental(changedFiles).catch((err) => {
+        console.error(`nudo ${label} incremental failed: ${(err as Error).message}`);
+      });
     }, 200);
   });
 

@@ -28,23 +28,26 @@ export function moduleResolveCandidates(spec: string, fromFile: string): string[
  * 首个真实文件候选（跳过目录）；无命中返回 undefined。
  *
  * fs 错误分类（#135）：单次 statSync（顺带消灭 existsSync+statSync 的
- * TOCTOU 双调用）——「路径不存在」类（ENOENT / ENOTDIR / EISDIR，其中
- * ENOTDIR 常见于候选表 `p/index.js` 穿过文件段 p）按该候选 miss 继续；
- * 其余（EACCES / EIO / ESTALE / EMFILE / EROFS…）是真实读故障，抛
+ * TOCTOU 双调用）——「路径不存在」类按该候选 miss 继续；其余
+ * （EACCES / EIO / ESTALE / EMFILE / EROFS…）是真实读故障，抛
  * ModuleReadError 上抛。此前 existsSync 吞掉一切错误 + 外层 catch 吞
  * statSync 抛错，瞬态故障被折叠成「无此文件」，再被上游缓存钉死整场。
+ *
+ * 性能（OSS bench 回退根因，b6495c6e 引入）：裸 statSync 对不存在的
+ * 候选路径**抛异常**——模块解析的扩展名/index 候选探测大多 miss，
+ * 每次都付异常构造+栈捕获成本（semver 49 文件 × 129 条边实测 +50%）。
+ * `throwIfNoEntry: false`（Node ≥14.17）让 ENOENT/ENOTDIR 零异常返回
+ * undefined，真实故障照抛——#135 语义不变，miss 成本回到 existsSync 量级。
  */
 export function resolveModuleFile(spec: string, fromFile: string): string | undefined {
   for (const cand of moduleResolveCandidates(spec, fromFile)) {
-    let st: ReturnType<typeof statSync>;
+    let st: ReturnType<typeof statSync> | undefined;
     try {
-      st = statSync(cand);
+      st = statSync(cand, { throwIfNoEntry: false });
     } catch (e) {
-      const code = (e as { code?: string } | undefined)?.code;
-      if (code === "ENOENT" || code === "ENOTDIR" || code === "EISDIR") continue;
       throw new ModuleReadError(cand, e);
     }
-    if (!st.isDirectory()) return cand;
+    if (st !== undefined && !st.isDirectory()) return cand;
   }
   return undefined;
 }
@@ -85,7 +88,14 @@ export function defaultLoadModule(spec: string, fromFile: string): string | unde
   }
 }
 
-/** loadModule 容错包装：读失败当 miss，避免 I/O 错误炸穿指纹/图遍历。 */
+/** safeLoadModule 已告警路径（一次性，防刷屏）。 */
+const safeLoadWarned = new Set<string>();
+
+/**
+ * loadModule 容错包装：读失败当 miss，避免 I/O 错误炸穿指纹/图遍历。
+ * 容错 ≠ 不可观测：非 ENOENT 的真实 fs 故障（EACCES/EIO…）按路径一次性
+ * console.error 告警——静默吞掉会让「模块面缺失」伪装成「无此模块」。
+ */
 export function safeLoadModule(
   loadModule: (spec: string, fromFile: string) => string | undefined,
   spec: string,
@@ -93,7 +103,15 @@ export function safeLoadModule(
 ): string | undefined {
   try {
     return loadModule(spec, fromFile);
-  } catch {
+  } catch (e) {
+    const err = e as { code?: string; path?: string } | undefined;
+    if (err?.code !== undefined && err.code !== "ENOENT") {
+      const at = err.path ?? spec;
+      if (!safeLoadWarned.has(at)) {
+        safeLoadWarned.add(at);
+        console.error(`[nudo] module load failed (${at}): ${err.code}`);
+      }
+    }
     return undefined;
   }
 }

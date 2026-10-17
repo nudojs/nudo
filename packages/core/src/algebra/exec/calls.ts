@@ -255,7 +255,9 @@ const GLOBAL_FNS = new Set([
  * `new WebSocket(abs)` 同理：构造器真执行会开真实 socket。
  * 命中即 fail-closed（unknown + 截断上报），不执行。$callNamed 与 $new 共用。
  */
-const NEVER_EXEC_HOST_FN_NAMES = [
+// 导出面=漂移探针（__tests__/host-global-drift.test.ts）比对已审计拦截面；
+// 拦截行为仍经 neverExecHostName / blockHostSideEffect 消费，不直接遍历。
+export const NEVER_EXEC_HOST_FN_NAMES = [
   "fetch",
   "XMLHttpRequest",
   "WebSocket",
@@ -345,33 +347,53 @@ const HOST_FN_ACCESSOR_ALLOWLIST: ReadonlySet<string> = new Set([
   "node:test",
 ]);
 
+/** 宿主全局函数值收集（isHostGlobalFn 惰性身份集与 collectHostGlobalFnEntryNames
+ *  探针枚举共用同套判定，零漂移）：Object.getOwnPropertyNames(globalThis) 逐名
+ *  过滤，返回 [名字, 函数值] 对。 */
+function collectHostGlobalFnEntries(): Array<[string, unknown]> {
+  const entries: Array<[string, unknown]> = [];
+  const g = globalThis as Record<string, unknown>;
+  for (const k of Object.getOwnPropertyNames(g)) {
+    const d = Object.getOwnPropertyDescriptor(g, k);
+    if (
+      d &&
+      (d.get !== undefined || d.set !== undefined) &&
+      !HOST_FN_ACCESSOR_ALLOWLIST.has(k)
+    ) {
+      // accessor 属性：GET 会执行宿主 lazy getter。Node ≥ 23 的 builtin
+      // alias getter（wasi / node:ffi / punycode / sys / …）GET 即发
+      // Experimental / Deprecation 警告，名单随版本只增不减
+      // （node:test / node:sea 已在列）→ 追「跳名清单」不可维护，按
+      // descriptor 形态跳过全部 accessor（白名单除外）。try/catch 无效
+      // （警告非异常）、`in` 预检无效（accessor 存在，GET 仍警告）。
+      continue;
+    }
+    const v = g[k];
+    if (typeof v === "function") entries.push([k, v]);
+  }
+  return entries;
+}
+
 /** 宿主全局函数身份判定（$new 宿主构造器分支共用，Bug 16）：模块转译
  *  函数是全新对象，绝不与宿主全局同一 → 不误伤。 */
 export function isHostGlobalFn(fn: unknown): boolean {
   if (typeof fn !== "function") return false;
   if (!hostGlobalFnIds) {
     hostGlobalFnIds = new Set<unknown>();
-    const g = globalThis as Record<string, unknown>;
-    for (const k of Object.getOwnPropertyNames(g)) {
-      const d = Object.getOwnPropertyDescriptor(g, k);
-      if (
-        d &&
-        (d.get !== undefined || d.set !== undefined) &&
-        !HOST_FN_ACCESSOR_ALLOWLIST.has(k)
-      ) {
-        // accessor 属性：GET 会执行宿主 lazy getter。Node ≥ 23 的 builtin
-        // alias getter（wasi / node:ffi / punycode / sys / …）GET 即发
-        // Experimental / Deprecation 警告，名单随版本只增不减
-        // （node:test / node:sea 已在列）→ 追「跳名清单」不可维护，按
-        // descriptor 形态跳过全部 accessor（白名单除外）。try/catch 无效
-        // （警告非异常）、`in` 预检无效（accessor 存在，GET 仍警告）。
-        continue;
-      }
-      const v = g[k];
-      if (typeof v === "function") hostGlobalFnIds.add(v);
-    }
+    for (const [, v] of collectHostGlobalFnEntries()) hostGlobalFnIds.add(v);
   }
   return hostGlobalFnIds.has(fn);
+}
+
+/** 宿主全局函数值名字枚举（当下 globalThis 快照，不落 hostGlobalFnIds 缓存）：
+ *  漂移审计探针（__tests__/host-global-drift.test.ts）消费。isHostGlobalFn 的
+ *  真调用兜底按**值身份**吸收 Node 未来新增的全局函数——副作用全局（调度 /
+ *  网络 / IO 族）默认会落进兜底真执行，因此本枚举出的**新名字必须审计**：
+ *  进 NEVER_EXEC_HOST_FN_NAMES 拦截或确认纯函数后并入探针基线 fixture。 */
+export function collectHostGlobalFnEntryNames(): string[] {
+  return collectHostGlobalFnEntries()
+    .map(([k]) => k)
+    .sort();
 }
 
 /**

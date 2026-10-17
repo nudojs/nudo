@@ -2,7 +2,7 @@
  * nudo health — 项目体检：未覆盖函数、witness drift、契约 drift、分析错误。
  * 从 index.ts 原样迁出，行为不变。
  */
-import { readFileSync, existsSync, statSync } from "node:fs";
+import { readFileSync, statSync, type Stats } from "node:fs";
 import { resolve, dirname, relative } from "node:path";
 import type { Command } from "commander";
 import { analyzeFileAsync, type CallRecord } from "@nudojs/service";
@@ -143,11 +143,20 @@ async function runHealth(paths: string[], opts: { from?: string[]; json?: boolea
   const reports: HealthReport[] = [];
   for (const p of targetPaths) {
     const abs = resolve(p);
-    if (!existsSync(abs)) {
+    // 单次 stat：miss（ENOENT）→ File not found 报告；
+    // EACCES/EIO 等 → error 报告通道（不伪装成 miss）
+    let st: Stats | undefined;
+    try {
+      st = statSync(abs, { throwIfNoEntry: false });
+    } catch (err) {
+      reports.push({ file: displayPathOf(abs), functions: 0, entryOnly: 0, uncovered: [], error: `Cannot access ${displayPathOf(abs)}: ${(err as Error).message}` });
+      continue;
+    }
+    if (!st) {
       reports.push({ file: displayPathOf(abs), functions: 0, entryOnly: 0, uncovered: [], error: `File not found: ${displayPathOf(abs)}` });
       continue;
     }
-    files.push(...(statSync(abs).isDirectory() ? collectNudoFiles(abs) : [abs]));
+    files.push(...(st.isDirectory() ? collectNudoFiles(abs) : [abs]));
   }
   for (const filePath of files) {
     reports.push(await healthFile(filePath, externalRecords));

@@ -365,8 +365,11 @@ function readDtsFiles(paths: string[], maxFiles = 16): string[] {
     }
   };
   for (const p of paths) {
-    if (!existsSync(p)) continue;
-    const st = statSync(p);
+    // 顶层入口单次 stat（walker 内部有 try，顶层此前没有）：不存在
+    // （ENOENT/ENOTDIR）按无入口处理；EACCES/EIO 等真实读故障上抛——
+    // harvester CLI 面有顶层 catch 收口，静默吞掉会让入口树无声缺文件。
+    const st = statSync(p, { throwIfNoEntry: false });
+    if (st === undefined) continue;
     if (st.isDirectory()) walk(p, 0);
     else if (/\.d\.ts$/.test(p) || /\.(m)?ts$/.test(p)) {
       if (!p.endsWith(".d.ts.map")) out.push(p);

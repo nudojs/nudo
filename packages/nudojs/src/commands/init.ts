@@ -9,7 +9,7 @@
  *
  * runInit 与 commander 解耦（返回退出码），测试可进程内直驱。
  */
-import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { Command } from "commander";
 import { displayPathOf } from "./shared.ts";
@@ -34,10 +34,12 @@ const defaultIo: InitIo = {
  */
 export function findPackageJsonUp(start: string): string | null {
   let dir = resolve(start);
-  if (existsSync(dir) && !statSync(dir).isDirectory()) dir = dirname(dir);
+  // 单次 stat：miss（ENOENT）→ 按目录继续向上；EACCES/EIO 上抛
+  const startStat = statSync(dir, { throwIfNoEntry: false });
+  if (startStat && !startStat.isDirectory()) dir = dirname(dir);
   for (;;) {
     const candidate = join(dir, "package.json");
-    if (existsSync(candidate) && statSync(candidate).isFile()) return candidate;
+    if (statSync(candidate, { throwIfNoEntry: false })?.isFile()) return candidate;
     const parent = dirname(dir);
     if (parent === dir) return null;
     dir = parent;

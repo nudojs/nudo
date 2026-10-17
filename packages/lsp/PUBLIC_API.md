@@ -23,7 +23,7 @@
 | `exports["./public-api"]` | types `./dist/public-api.d.ts`, default `./dist/public-api.js` — freeze inventory constants, importable without starting the server | **stable** (additive) |
 | `files` | `["dist"]` — no `src/*` published | **stable** |
 | Entry side effect | importing `.` starts the LSP (stdio/IPC) | **stable** (documented contract) |
-| Engines | Node `>=20` | **stable** |
+| Engines | Node `>=22` | **stable** |
 | Internal `src/*` paths | monorepo test surface only; not an npm contract | **not public** |
 
 There is no `createServer()` factory. Editors launch `nudo-lsp` or the bundled

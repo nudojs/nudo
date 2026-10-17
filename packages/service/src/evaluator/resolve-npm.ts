@@ -28,6 +28,33 @@ function findNodeModules(startDir: string): string | null {
 }
 
 /**
+ * 候选入口 stat（#135 口径 + 可见化）：单次 statSync——不存在按 miss；
+ * EACCES/EIO/EMFILE 等真实读故障不得静默折叠成「入口不存在」（整包导出
+ * 面静默 unknown 无迹可查），console.error 可见后按 miss 继续（不炸模块
+ * 解析——入口解析的容错优先，但容错 ≠ 不可观测）。
+ */
+function statEntryVisible(p: string): boolean {
+  try {
+    return statSync(p, { throwIfNoEntry: false })?.isFile() === true;
+  } catch (e) {
+    console.error(`[nudo] module entry stat failed (${p}): ${e instanceof Error ? e.message : String(e)}`);
+    return false;
+  }
+}
+
+/**
+ * package.json 读失败分流：fs 级 errno——ENOENT（未安装 / 竞态删除）是
+ * 安静 miss；其余（EACCES/EIO…）console.error 可见（整包判 miss = 导出面
+ * 静默 unknown）。非 fs 错误（JSON 语法错）维持既有安静 miss。
+ */
+function warnPkgJsonReadError(pkgJsonPath: string, e: unknown): void {
+  const code = (e as { code?: string } | undefined)?.code;
+  if (code !== undefined && code !== "ENOENT") {
+    console.error(`[nudo] package.json read failed (${pkgJsonPath}): ${code}`);
+  }
+}
+
+/**
  * JS 入口条件键优先级。`browser` 排在 `default` 之后：
  * 有 default 时取 Node 面，仅 browser-only 包才落到 browser。
  * `types` 不在此表——见 pickExport 兜底（且不作为可执行入口）。
@@ -205,15 +232,10 @@ export function resolveNpmJsEntryDetailed(
   if (!nodeModules) return none;
   const pkgDir = join(nodeModules, pkgName);
   const pkgJsonPath = join(pkgDir, "package.json");
-  if (!existsSync(pkgJsonPath)) return none;
 
   const tryFile = (p: string): string | null => {
     for (const c of [p, `${p}.js`, `${p}.cjs`, `${p}.mjs`, join(p, "index.js"), join(p, "index.cjs")]) {
-      try {
-        if (existsSync(c) && statSync(c).isFile()) return c;
-      } catch {
-        /* ignore */
-      }
+      if (statEntryVisible(c)) return c;
     }
     return null;
   };
@@ -221,7 +243,9 @@ export function resolveNpmJsEntryDetailed(
   let pkg: Record<string, unknown> = {};
   try {
     pkg = JSON.parse(readFileSync(pkgJsonPath, "utf-8")) as Record<string, unknown>;
-  } catch {
+  } catch (e) {
+    // 读失败分流：ENOENT（未安装）安静 miss；EACCES/EIO 可见后按 miss
+    warnPkgJsonReadError(pkgJsonPath, e);
     return none;
   }
 
@@ -281,24 +305,23 @@ export function resolveNpmNudo(
 
   const pkgDir = join(nodeModules, pkgName);
   const pkgJsonPath = join(pkgDir, "package.json");
-  if (!existsSync(pkgJsonPath)) return null;
+  let pkg: Record<string, unknown>;
+  try {
+    pkg = JSON.parse(readFileSync(pkgJsonPath, "utf-8")) as Record<string, unknown>;
+  } catch (e) {
+    // 读失败分流：ENOENT（未安装）安静 miss；EACCES/EIO 可见后按 miss
+    warnPkgJsonReadError(pkgJsonPath, e);
+    return null;
+  }
 
   try {
-    const pkg = JSON.parse(readFileSync(pkgJsonPath, "utf-8")) as Record<string, unknown>;
     const exportsField = pkg.exports;
     if (exportsField === undefined || exportsField === null) return null;
 
     const entry = findExportsEntry(exportsField, subpath);
     if (!entry) return null;
 
-    const tryFile = (p: string): string | null => {
-      try {
-        if (existsSync(p) && statSync(p).isFile()) return p;
-      } catch {
-        /* ignore */
-      }
-      return null;
-    };
+    const tryFile = (p: string): string | null => (statEntryVisible(p) ? p : null);
     const tryTarget = makeTryTarget(pkgDir, entry.substitution, tryFile);
     return pickNudoExport(entry.target, tryTarget);
   } catch {

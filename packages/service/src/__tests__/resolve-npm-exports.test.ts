@@ -5,8 +5,8 @@
  * 2. 条件唯一出口挂在 browser 下 → pickExport 不得 miss
  * 3. 数组 fallback `["./miss.js", "./hit.js"]` → 命中 ./hit.js
  */
-import { describe, it, expect } from "vitest";
-import { writeFileSync, mkdirSync } from "node:fs";
+import { describe, it, expect, vi } from "vitest";
+import { writeFileSync, mkdirSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import {
   resolveNpmJsEntry,
@@ -14,6 +14,9 @@ import {
   resolveNpmNudo,
 } from "../evaluator/resolve-npm.ts";
 import { tmpProject } from "./tmp-project.ts";
+
+/** root 对 chmod 000 免疫，真实 EACCES 用例无法生效 */
+const isRoot = process.geteuid?.() === 0;
 
 function makePkg(
   pkgJson: Record<string, unknown>,
@@ -347,5 +350,88 @@ describe("resolveNpmNudo aligned exports reading", () => {
       { "index.js": "export const x = 1;" },
     );
     expect(resolveNpmNudo("pkg", dir)).toBeNull();
+  });
+});
+
+describe("fs error taxonomy: EACCES 可见，不炸解析，不静默 unknown", () => {
+  it("包未安装（package.json ENOENT）→ 安静 miss，无告警", () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const dir = tmpProject("nudo-npm-fs-enoent-");
+      expect(resolveNpmJsEntry("pkg", dir)).toBeNull();
+      expect(resolveNpmNudo("pkg", dir)).toBeNull();
+      expect(errSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it.runIf(!isRoot)("package.json 读 EACCES（pkg 目录 000）→ null + console.error 可见", () => {
+    const { dir, pkgDir } = makePkg({ main: "index.js" }, { "index.js": "export const x = 1;" });
+    chmodSync(pkgDir, 0o000);
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      let path: string | null = "sentinel";
+      expect(() => {
+        path = resolveNpmJsEntry("pkg", dir);
+      }).not.toThrow();
+      expect(path).toBeNull();
+      expect(errSpy).toHaveBeenCalled();
+      const msg = errSpy.mock.calls.map((c) => String(c[0])).join("\n");
+      expect(msg).toContain("[nudo]");
+      expect(msg).toContain("package.json");
+      expect(msg).toContain("EACCES");
+    } finally {
+      chmodSync(pkgDir, 0o755);
+      vi.restoreAllMocks();
+    }
+  });
+
+  it.runIf(!isRoot)(
+    "入口候选 stat EACCES（legacy main 指向锁定目录）→ miss + 可见，不炸",
+    () => {
+      const { dir, pkgDir } = makePkg({ main: "./locked/index.js" }, {});
+      mkdirSync(join(pkgDir, "locked"), { recursive: true });
+      writeFileSync(join(pkgDir, "locked", "index.js"), "export const x = 1;", "utf-8");
+      chmodSync(join(pkgDir, "locked"), 0o000);
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        let result: { path: string | null; exportsUnresolved: boolean } | undefined;
+        expect(() => {
+          result = resolveNpmJsEntryDetailed("pkg", dir);
+        }).not.toThrow();
+        expect(result?.path).toBeNull();
+        expect(errSpy).toHaveBeenCalled();
+        const msg = errSpy.mock.calls.map((c) => String(c[0])).join("\n");
+        expect(msg).toContain("[nudo]");
+        expect(msg).toContain("EACCES");
+      } finally {
+        chmodSync(join(pkgDir, "locked"), 0o755);
+        vi.restoreAllMocks();
+      }
+    },
+  );
+
+  it.runIf(!isRoot)("resolveNpmNudo 入口候选 stat EACCES → null + 可见", () => {
+    const { dir, pkgDir } = makePkg(
+      { exports: { ".": { nudo: "./locked/index.nudo.js" } } },
+      {},
+    );
+    mkdirSync(join(pkgDir, "locked"), { recursive: true });
+    writeFileSync(join(pkgDir, "locked", "index.nudo.js"), "export const x = 1;", "utf-8");
+    chmodSync(join(pkgDir, "locked"), 0o000);
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      let path: string | null = "sentinel";
+      expect(() => {
+        path = resolveNpmNudo("pkg", dir);
+      }).not.toThrow();
+      expect(path).toBeNull();
+      expect(errSpy).toHaveBeenCalled();
+      expect(String(errSpy.mock.calls[0]?.[0])).toContain("EACCES");
+    } finally {
+      chmodSync(join(pkgDir, "locked"), 0o755);
+      vi.restoreAllMocks();
+    }
   });
 });

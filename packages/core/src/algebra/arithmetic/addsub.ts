@@ -20,7 +20,7 @@ import { noteDerivationAdd } from "../derivation.ts";
 import { isSymbolAbs as isSym } from "../symbol-id.ts";
 import { NudoThrow } from "../nudo-throw.ts";
 import { errorTypeAbs } from "../may-throw.ts";
-import { distributeSumBinOp, strLitResult, ieeeBound, isAnyLike, coercibleLit, toNumberResult, isNumericLike, assumePremiseList } from "./shared.ts";
+import { distributeSumBinOp, strLitResult, synthEndpoint, isAnyLike, coercibleLit, toNumberResult, isNumericLike, assumePremiseList } from "./shared.ts";
 import { builtinBrandToPrimitive, noteCoercionMayThrow, noteAbstractArithMayThrow, foldBigintBinOp } from "./coerce.ts";
 import { numericBounds, isNonNaN } from "./bounds.ts";
 
@@ -184,18 +184,33 @@ function addPred(a: Abs, b: Abs, sumTerm: Term, phi: Phi): Pred | undefined {
   const facts: Pred[] = [];
 
   // (a.lo + b.lo) < sum  或  ≤
-  // 溢出到 ±Inf 的和不能当端点（x>1e308 + y>1e308 ⊬ x+y > Infinity）
-  // 正数之和不会下溢成 0，strict 0 端点可保留
+  // 溢出到 ±Inf 的和不能当端点（x>1e308 + y>1e308 ⊬ x+y > Infinity）。
+  // strict 端点经 IEEE 见证校准（Bug A）：fl(1 + 1e-16) = 1 恰撞端点时
+  // gt(sum, 1) 是假证明（x=1、y=2^-53 时 IEEE 和 === 1），端点退一步。
   if (aBounds?.lo !== undefined && evalBounds?.lo !== undefined) {
     const strict = aBounds.lo.strict || evalBounds.lo.strict;
-    const loSum = ieeeBound(aBounds.lo.value + evalBounds.lo.value, strict, true);
+    const loSum = synthEndpoint(
+      (x, y) => x + y,
+      aBounds.lo,
+      "up",
+      "lo",
+      evalBounds.lo,
+      "up",
+    );
     if (loSum !== undefined) {
       facts.push(strict ? gt(sumTerm, lit(loSum)) : ge(sumTerm, lit(loSum)));
     }
   }
   if (aBounds?.hi !== undefined && evalBounds?.hi !== undefined) {
     const strict = aBounds.hi.strict || evalBounds.hi.strict;
-    const hiSum = ieeeBound(aBounds.hi.value + evalBounds.hi.value, strict, true);
+    const hiSum = synthEndpoint(
+      (x, y) => x + y,
+      aBounds.hi,
+      "down",
+      "hi",
+      evalBounds.hi,
+      "down",
+    );
     if (hiSum !== undefined) {
       facts.push(strict ? lt(sumTerm, lit(hiSum)) : le(sumTerm, lit(hiSum)));
     }
@@ -271,19 +286,35 @@ export function sub(a: Abs, b: Abs, phi: Phi = pTrue, assume?: Phi): Abs {
     }
     const term = simplifyTerm(app("-", [a.term, b.term]));
     // a.lo - b.hi  <  a-b  <  a.hi - b.lo
+    // strict 端点经 IEEE 见证校准（Bug A，与 add 同口径）：减数侧 hi 的
+    // 见证方向是 nextDown（b < b.hi ⟺ b ≤ nextDown(b.hi)）。
     const ab = numericBounds(a, phi);
     const bb = numericBounds(b, phi);
     const facts: Pred[] = [];
     if (ab?.lo !== undefined && bb?.hi !== undefined) {
       const strict = ab.lo.strict || bb.hi.strict;
-      const lo = ieeeBound(ab.lo.value - bb.hi.value, strict, true);
+      const lo = synthEndpoint(
+        (x, y) => x - y,
+        ab.lo,
+        "up",
+        "lo",
+        bb.hi,
+        "down",
+      );
       if (lo !== undefined) {
         facts.push(strict ? gt(term, lit(lo)) : ge(term, lit(lo)));
       }
     }
     if (ab?.hi !== undefined && bb?.lo !== undefined) {
       const strict = ab.hi.strict || bb.lo.strict;
-      const hi = ieeeBound(ab.hi.value - bb.lo.value, strict, true);
+      const hi = synthEndpoint(
+        (x, y) => x - y,
+        ab.hi,
+        "down",
+        "hi",
+        bb.lo,
+        "up",
+      );
       if (hi !== undefined) {
         facts.push(strict ? lt(term, lit(hi)) : le(term, lit(hi)));
       }

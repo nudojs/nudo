@@ -2,7 +2,7 @@
   "name": "@nudojs/parser",
   "version": "1.4.24",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "description": "Babel-based parser and directive extraction for Nudo",
   "type": "module",

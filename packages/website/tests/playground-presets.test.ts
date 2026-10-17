@@ -107,8 +107,9 @@ describe("flagship presets keep their documented behaviour", () => {
 
     const sig = report.signatures.find((s) => s.name === "scale");
     expect(sig, "scale signature missing").toBeTruthy();
-    // 契约 x > 0 进入代数：返回位显示派生的 (x + 1) > 1
-    expect(sig?.display).toContain("(x + 1) > 1");
+    // 契约 x > 0 进入代数：IEEE 严格端点退到 x ≥ 5e-324，x 极小时 fl(x + 1) === 1（吸收），
+    // 故返回位派生的严格下界是 nextDown(1)，而非 1（锚点与 docs/design/evaluation.md 一致）
+    expect(sig?.display).toContain("(x + 1) > 0.9999999999999999");
     expect(sig?.conf).toBe("path");
     const violation = report.issues.find((i) => i.code === "nudo:constraint-violated");
     expect(violation, "sidecar violation not reported").toBeTruthy();

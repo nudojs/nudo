@@ -15,7 +15,7 @@ import { abs, confJoin, isStrPrim, isBigPrim, litValue, num, numLit } from "../a
 import { isSymbolAbs as isSym } from "../symbol-id.ts";
 import { NudoThrow } from "../nudo-throw.ts";
 import { errorTypeAbs } from "../may-throw.ts";
-import { distributeSumBinOp, ieeeBound, isAnyLike, coercibleLit, toNumberResult, isNumericLike, assumePremiseList } from "./shared.ts";
+import { distributeSumBinOp, synthEndpoint, isAnyLike, coercibleLit, toNumberResult, isNumericLike, assumePremiseList } from "./shared.ts";
 import { builtinBrandToPrimitive, noteAbstractArithMayThrow, foldBigintBinOp } from "./coerce.ts";
 import { numericBounds } from "./bounds.ts";
 
@@ -57,26 +57,27 @@ export function mul(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
       base = b;
     }
     if (k !== undefined && base !== undefined && k !== 0 && Number.isFinite(k)) {
-      // |k|≥1 不会把正值下溢成 0，strict 0 端点可保留（x>0 * 2 ⇒ >0）
-      const strictZeroOk = Math.abs(k) >= 1;
+      // strict 端点经 IEEE 见证校准（Bug A，与 add 同口径）：下溢由见证
+      // 自然捕获（fl(MIN_VALUE × ½k) 可能落 0），取代旧的 |k|≥1
+      // strictZeroOk 启发式。负 k 时 lo/hi 侧与 base 端点互换。
       const ab = numericBounds(base, phi);
       const facts: Pred[] = [];
       if (ab?.lo !== undefined) {
         if (k > 0) {
-          const lo = ieeeBound(ab.lo.value * k, ab.lo.strict, strictZeroOk);
+          const lo = synthEndpoint((x, _k) => x * k, ab.lo, "up", "lo");
           if (lo !== undefined) facts.push(ab.lo.strict ? gt(term, lit(lo)) : ge(term, lit(lo)));
         } else {
           // 负数：lo * k 变成上界
-          const hi = ieeeBound(ab.lo.value * k, ab.lo.strict, strictZeroOk);
+          const hi = synthEndpoint((x, _k) => x * k, ab.lo, "up", "hi");
           if (hi !== undefined) facts.push(ab.lo.strict ? lt(term, lit(hi)) : le(term, lit(hi)));
         }
       }
       if (ab?.hi !== undefined) {
         if (k > 0) {
-          const hi = ieeeBound(ab.hi.value * k, ab.hi.strict, strictZeroOk);
+          const hi = synthEndpoint((x, _k) => x * k, ab.hi, "down", "hi");
           if (hi !== undefined) facts.push(ab.hi.strict ? lt(term, lit(hi)) : le(term, lit(hi)));
         } else {
-          const lo = ieeeBound(ab.hi.value * k, ab.hi.strict, strictZeroOk);
+          const lo = synthEndpoint((x, _k) => x * k, ab.hi, "down", "lo");
           if (lo !== undefined) facts.push(ab.hi.strict ? gt(term, lit(lo)) : ge(term, lit(lo)));
         }
       }
@@ -224,19 +225,21 @@ export function div(a: Abs, b: Abs, phi: Phi = pTrue, assume?: Phi): Abs {
       Number.isFinite(b.term.value)
     ) {
       const k = b.term.value;
-      // |k|≤1 时 x/k 不会把正值下溢成 0；|k|>1 可以（5e-324/2→0）
-      const strictZeroOk = Math.abs(k) <= 1;
+      // strict 端点经 IEEE 见证校准（Bug A，与 mul 同口径，除法用真实
+      // `/` 不换算 1/k——独立正确舍入）：x > 0, k=2 时 fl(MIN_VALUE/2)=0，
+      // 旧 |k|≤1 strictZeroOk 启发式保留 gt(x/2, 0) 是假证明，见证校准
+      // 后退为 gt(x/2, -MIN_VALUE)。
       const ab = numericBounds(a, phi);
       const facts: Pred[] = [];
       if (ab?.lo !== undefined) {
-        const lo = ieeeBound(ab.lo.value / k, ab.lo.strict, strictZeroOk);
+        const lo = synthEndpoint((x, _k) => x / k, ab.lo, "up", k > 0 ? "lo" : "hi");
         if (lo !== undefined) {
           if (k > 0) facts.push(ab.lo.strict ? gt(term, lit(lo)) : ge(term, lit(lo)));
           else facts.push(ab.lo.strict ? lt(term, lit(lo)) : le(term, lit(lo)));
         }
       }
       if (ab?.hi !== undefined) {
-        const hi = ieeeBound(ab.hi.value / k, ab.hi.strict, strictZeroOk);
+        const hi = synthEndpoint((x, _k) => x / k, ab.hi, "down", k > 0 ? "hi" : "lo");
         if (hi !== undefined) {
           if (k > 0) facts.push(ab.hi.strict ? lt(term, lit(hi)) : le(term, lit(hi)));
           else facts.push(ab.hi.strict ? gt(term, lit(hi)) : ge(term, lit(hi)));

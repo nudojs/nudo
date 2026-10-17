@@ -430,21 +430,17 @@ jobs:
       - name: Gate against baseline
         run: pnpm run benchmark:gate
 
-  # 引擎版本冒烟：全部 9 个发布包 engines 声明 node>=20，但日常 CI 只跑
-  # Node 24，声明从未被验证（Node 版本行为漂移真实发生过：host-global
-  # deprecation 警告族随 Node ≥22.4 改过引擎行为）。夜间在低版本 Node 上
-  # 冒烟真实产品面：bin（packages/nudojs/dist）+ verify:examples（tsx
-  # 直连包源码，覆盖全部 CLI 动词）。
-  # 现状红灯（2026-10 实测，隔离副本 fresh install 验证）：CLI 在 Node ≤22
-  # 启动即崩——core exec/runtime/containers/member.ts 模块级表裸读
-  # Float16Array（Node ≥24 才有全局），Node 22 上 bin --version exit 1、
-  # verify:examples 34/251；同副本 Node 26 全绿 251/251。即 engines
-  # node>=20 与实现矛盾。本 job 即该违规的红灯跟踪器：core 给
-  # Float16Array 加守卫后应转绿。矩阵暂为 [22]：Node 20 除上述外，还叠加
-  # pnpm@11.28（packageManager 钉住）engines node>=22.13 且运行期依赖
-  # node:sqlite（Node ≥22.5），编排器自身在 Node 20 上启动即
-  # ERR_UNKNOWN_BUILTIN_MODULE——重扩 [20, 22] 需「Node 24 装依赖 +
-  # 切版本 + pnpm 走 Node 24 的 shim」两段式。engines 不改（定案）。
+  # 引擎版本冒烟：全部发布包 engines 声明 node>=22（2026-10 收紧；Node 20
+  # 已于 2026-04-30 EOL），日常 CI 只跑 Node 24，声明下限从未被验证
+  # （Node 版本行为漂移真实发生过：host-global deprecation 警告族随
+  # Node ≥22.4 改过引擎行为；Float16Array 全局 Node ≥24 才有，core
+  # runtime 表已加 typeof 守卫兜住，声明下限不再启动即崩）。夜间在最低
+  # 声明版本上冒烟真实产品面：bin（packages/nudojs/dist）+
+  # verify:examples（tsx 直连包源码，覆盖全部 CLI 动词）。矩阵 [22] =
+  # 声明下限；Node 20 不再是声明面，也不可直接重扩——pnpm@11.28
+  # （packageManager 钉住）运行期硬依赖 node:sqlite（Node ≥22.5），
+  # 编排器自身在 Node 20 上启动即 ERR_UNKNOWN_BUILTIN_MODULE，需
+  # 「高版本装依赖 + 切版本 + pnpm 走高版本的 shim」两段式才能测。
   node-matrix:
     name: Node engine smoke (${{ matrix.node-version }})
     if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}

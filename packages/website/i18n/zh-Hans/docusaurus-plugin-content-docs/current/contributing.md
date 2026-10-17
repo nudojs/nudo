@@ -10,8 +10,8 @@ description: 搭建 Nudo monorepo 开发环境并参与贡献——项目结构�
 
 ## 环境要求
 
-- **Node.js** >= 20（CI 使用 Node 24）
-- **pnpm** 9.1.0（由 `packageManager` 固定；后续 9.x 亦可）
+- **Node.js** >= 22（CI 使用 Node 24）
+- **pnpm** 11.28.0（由 `packageManager` 固定；后续 11.x 亦可）
 
 ```bash
 npm install -g pnpm

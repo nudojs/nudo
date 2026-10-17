@@ -124,7 +124,9 @@ export function checkMemoKey(
   // autoBind 必须进键：执法档翻转后不得回放另一档报告（disk 键已含）。
   return [
     hashSource(source),
-    filePath,
+    // filePath 过 stablePathKey 归一（与依赖索引/逐出同口径）：同一文件的
+    // 裸路径与 file:// URL 两种形态不得各占一条 memo 条目（命中率损耗）。
+    stablePathKey(filePath),
     `${loadModuleId(identityOpts.loadModule)}:${identityOpts.fromFile ?? ""}`,
     deps.fp,
     sidecarFp ?? "-",

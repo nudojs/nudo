@@ -91,7 +91,10 @@ export function handleWatchedFilesChanges(
     for (const p of nudoTouched) {
       void handleNudoDepFileChanged(p, dep)
         .then(() => deps.refreshPullDiagnostics())
-        .catch(() => {});
+        .catch((err) => {
+          // 磁盘侧车变更后的重检失败必须可见，否则诊断静默停在旧状态
+          console.error(`[nudo-lsp] dep file revalidate failed (${p}):`, err);
+        });
     }
   }
   return gone;

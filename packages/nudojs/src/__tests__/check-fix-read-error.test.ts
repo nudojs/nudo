@@ -9,7 +9,7 @@ import { mkdtempSync, writeFileSync, chmodSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Command } from "commander";
-import { registerCheckCommand } from "../commands/check.ts";
+import { registerCheckCommand } from "../commands/check-command.ts";
 
 const isRoot = typeof process.getuid === "function" && process.getuid() === 0;
 

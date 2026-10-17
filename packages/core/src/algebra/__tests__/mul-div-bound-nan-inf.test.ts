@@ -46,7 +46,10 @@ describe("mul/div bound scaling is IEEE-safe", () => {
   it("mul(x>1e-300, 1e-300) must not claim result > 0 (underflow → 0)", () => {
     const x = numVar("x", gt(v("x"), lit(1e-300)));
     const r = mul(x, numLit(1e-300));
-    expect(predText(r)).not.toContain(">");
+    // Bug A 校准：真实端点 0 可达（underflow），strict 假界退一步到 -MIN；
+    // 不再断言「无 > 事实」——新事实 gt(·, -5e-324) 是 sound 的（0 > -MIN）。
+    expect(predText(r)).not.toContain("> 0");
+    expect(predText(r)).toContain("-5e-324");
   });
 
   it("mul(x>1e308, 10) must not claim result > Infinity (overflow)", () => {
