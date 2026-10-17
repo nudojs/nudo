@@ -15,7 +15,7 @@ import { joinAbs, getSlot } from "../../objects.ts";
 import { TYPED_ARRAY_CALLBACK_METHODS, builtinSuperCtorOf, brandHasProtoMember, classChainHasHole } from "../runtime/members.ts";
 import { typedArrayElementOf } from "../../builtins/shared.ts";
 import { $get, $lit, namespaceNameOf, callAtFunctionBoundary } from "../runtime.ts";
-import { withNewTargetReset, undef } from "../runtime/state.ts";
+import { withNewTargetReset, undef, asAbsVal } from "../runtime/state.ts";
 import { $call } from "../call.ts";
 import { callHostGlobalFn } from "../calls.ts";
 import { getFnImpl, absFunction, hostFnCtorFacet } from "../../abs-fn.ts";
@@ -61,8 +61,22 @@ export function $invoke(
   args: Abs[],
   loc?: [number, number],
 ): Abs {
+  // Bug 85：函数声明绑定是裸宿主函数（statement.ts 直发 host function），
+  // 作实参流入 Object/Reflect 静态、$in、JSON.stringify、强制转换全局的
+  // Abs 解引用点 → 内部 TypeError 冒泡（无 try 折 unknown / 有 try 被用户
+  // catch 吞成引擎错误消息）。此处统一归一化实参（函数边界 prologue 的
+  // $absVal 同口径，copy-on-write：全 Abs 时不分配新数组）。callee 位
+  // （thisVal）不动——宿主函数直调路径依赖裸值 apply
+  let normArgs = args;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i] as unknown;
+    if (!(a && typeof a === "object" && "shape" in a)) {
+      if (normArgs === args) normArgs = args.slice();
+      normArgs[i] = asAbsVal(a);
+    }
+  }
   // Bug 79：方法调用是普通调用面——调用期间 new.target 读 undefined
-  return withNewTargetReset(() => $invokeInner(thisVal, method, args, loc));
+  return withNewTargetReset(() => $invokeInner(thisVal, method, normArgs, loc));
 }
 
 function $invokeInner(

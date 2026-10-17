@@ -201,7 +201,15 @@ export function classSpecOf(
         // R5：静态字段——thunk 以类值为 this 定义期求值（原生
         // ClassFieldDefinitionEvaluation 的 receiver 是类值，this.x 读写
         // /箭头捕获随之恢复；$class 建类值后逐槽调用，源序保持）
-        const fieldOpts: TranspileOptions = { ...methodOptsBase };
+        const fieldOpts: TranspileOptions = {
+          ...methodOptsBase,
+          // Bug 119：静态字段初始化器内 super 的 home object 是类自身——
+          // super.<静态> 读父类构造器面。与静态方法/静态访问器 opts 同口径
+          // 注入 staticSuperSrc（此前缺省落 $getSuper 实例原型链，super.x
+          // 折 exact undefined、算术折 NaN）。实例字段（下方分支）不得
+          // 注入——实例 super 合法读原型链，$getSuper 已正确处理
+          ...(superSrc !== null ? { staticSuperSrc: superSrc } : {}),
+        };
         const vsrc = m.value
           ? emitTranspileExpression(m.value as Expression, fieldOpts)
           : "$lit(void 0)";
