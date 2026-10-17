@@ -143,7 +143,10 @@ export function tryMakeRegexAbs(args: Abs[]): Abs | undefined {
   }
   const pv = a0.term.value;
   try {
-    const r = new RegExp(String(pv), litFlags ?? "");
+    // Bug 95：pattern 为 undefined（lit(undefined)）视作缺省模式（RegExpInitialize：
+    // If pattern is undefined, let P be ""）——不得 String 化成 "undefined"；
+    // null 保持 ToString → "null"（control）。flags 侧同口径（上方 litFlags）。
+    const r = new RegExp(pv === undefined ? "" : String(pv), litFlags ?? "");
     return regexBrandAbsFrom(r.source, r.flags);
   } catch (e) {
     if (e instanceof SyntaxError) throw new NudoThrow(errorTypeAbs("SyntaxError"));

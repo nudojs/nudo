@@ -4,12 +4,15 @@
 import type { Abs } from "../abs.ts";
 import { abs, litValue, boolLit, strLit, numLit, num, str } from "../abs.ts";
 import { isObj, objOf, joinAbs } from "../objects.ts";
-import { undefAbs } from "../hof.ts";
+import { undefAbs, applyCallbackAbs, validateCallableArg } from "../hof.ts";
+import { pTrue } from "../pred.ts";
+import { emptyEnv } from "../ast-env.ts";
+import { defaultLeakBudget } from "../leak.ts";
 import { NudoThrow } from "./runtime.ts";
 import { errorTypeAbs, recordMayThrow } from "./may-throw.ts";
 import { registerMatchIter } from "./match-iter.ts";
 import { isSymbolAbs } from "../symbol-id.ts";
-import { validateRegexSubjectArg, matchResultAbs } from "../builtins/regexp.ts";
+import { validateRegexSubjectArg, matchResultAbs, tryMakeRegexAbs } from "../builtins/regexp.ts";
 
 /** RegExp brand 内部 source/flags/lastIndex 提取（exec/test 共用） */
 export function regexParts(re: Abs): { pat: string; flags: string; lastIndex: number } | undefined {
@@ -30,6 +33,84 @@ export function regexParts(re: Abs): { pat: string; flags: string; lastIndex: nu
   const lv = lvR?.ok ? lvR.value : undefined;
   const lastIndex = typeof lv === "number" ? lv : 0;
   return { pat, flags, lastIndex };
+}
+
+/** ToLength（ES 规范）：NaN→0、截断小数、夹 [0, 2^53-1]——match/matchAll
+ *  的 lastIndex 起点规范化（Bug 94）。 */
+function toLength(n: number): number {
+  if (Number.isNaN(n)) return 0;
+  const t = Math.trunc(n);
+  return t < 0 ? 0 : Math.min(t, Number.MAX_SAFE_INTEGER);
+}
+
+/** brand 槽 lastIndex 重绑原语（test/exec 状态写回 / Bug 96 参数位消费 / 共用） */
+function rebindLastIndex(re: Abs, lastIndex: number): Abs {
+  const inner = (re.shape as { k: "brand"; name: string; shape: Abs }).shape;
+  if (!isObj(inner)) return re;
+  const slots = { ...inner.shape.slots, lastIndex: { value: numLit(lastIndex) } };
+  return abs(
+    { k: "brand", name: "RegExp", shape: objOf(slots, { open: inner.shape.open }) },
+    re.term,
+    re.pred,
+    re.conf,
+  );
+}
+
+/** 严格 undefined 字面量判定（compile 的 flags 缺省形） */
+function isUndefLit(a: Abs | undefined): boolean {
+  if (!a || a.term?.op !== "lit") return false;
+  const r = litValue(a);
+  return r.ok && r.value === undefined;
+}
+
+/** Bug 126：r.compile(pattern, flags) 的 brand 重建（execRegexBrand 值通道与
+ *  $reStateCall 写回通道共用）。原生（Annex B B.2.3.1）：
+ *  - RegExp 实参 + flags 缺省/undefined 字面 → 复制其实参的 source/flags；
+ *    flags 给定（非 undefined 字面）→ 定抛 TypeError（compile 保留了
+ *    new RegExp(regex, flags) 在 ES2022 已放宽的限制，node 实测）；
+ *    flags 抽象 → may TypeError，保守原样返回。
+ *  - 其余实参走 tryMakeRegexAbs 验证（无参 → /(?:)/；symbol → TypeError；
+ *    非法 pattern/flags → SyntaxError；抽象 → may 打点返回 undefined）。
+ *  - 成功 → 全槽重建的新 brand（source/flags/标志 getter/lastIndex=0），
+ *    原生返回接收者本身（表达式值与写回绑定同源）。 */
+function compileRegexBrand(re: Abs, args: Abs[]): Abs {
+  const p0 = args[0];
+  const fAbs = args[1];
+  if (p0 && p0.shape.k === "brand" && (p0.shape as { name?: string }).name === "RegExp") {
+    if (fAbs && !isUndefLit(fAbs)) {
+      if (fAbs.term?.op === "lit") throw new NudoThrow(errorTypeAbs("TypeError"));
+      recordMayThrow({ kind: "TypeError", cause: "compile: RegExp argument with flags may throw (flags may be undefined)" });
+      return re;
+    }
+    const src = regexParts(p0);
+    if (!src) return re; // 实参 source/flags 非字面量：保守不动
+    return tryMakeRegexAbs([strLit(src.pat), strLit(src.flags)]) ?? re;
+  }
+  return tryMakeRegexAbs(args) ?? re;
+}
+
+/** Bug 81：模式自带 @@match/@@search/@@matchAll 钩子（re[Symbol.match]=fn
+ *  形——symbolKey 槽投影 "@@match"）的 GetMethod 语义检查：
+ *  - 无槽 → none（默认宿主 regex 重建路径）；
+ *  - 严格 undefined/null 字面 → nullish（GetMethod 视为缺省，但原生此后走
+ *    RegExpCreate(ToString(pattern))——模式变为 "/source/flags" 文本、新对象
+ *    起点 lastIndex=0，对 brand 形几乎恒不中）；
+ *  - 不可调用 → TypeError（字面量臂定抛；抽象臂 recordMayThrow 后照常调用）；
+ *  - 可调用 → call：以模式为 this、字符串为唯一实参调用钩子。 */
+type HookOutcome = { kind: "none" } | { kind: "nullish" } | { kind: "call"; value: Abs };
+function patternHookOutcome(
+  re: Abs,
+  inner: Abs | undefined,
+  key: "@@match" | "@@search" | "@@matchAll",
+  recv: Abs,
+): HookOutcome {
+  if (!inner || inner.shape.k !== "obj") return { kind: "none" };
+  const hook = inner.shape.slots[key]?.value;
+  if (!hook) return { kind: "none" };
+  const hv = litValue(hook);
+  if (hv.ok && (hv.value === undefined || hv.value === null)) return { kind: "nullish" };
+  validateCallableArg(hook, `pattern ${key} hook may not be callable`);
+  return { kind: "call", value: applyCallbackAbs(hook, [recv], emptyEnv(), pTrue, defaultLeakBudget, re) };
 }
 
 /** 带 receiver lastIndex 的真实执行：返回结果 Abs 与执行后的 lastIndex */
@@ -61,12 +142,14 @@ export function regexExecWithState(
   };
 }
 
-/** RegExp brand 上的 exec/test：pattern 与 subject 都是字面量 → 真执行 */
+/** RegExp brand 上的 exec/test/compile：pattern 与 subject 都是字面量 → 真执行 */
 export function execRegexBrand(re: Abs, method: string, args: Abs[]): Abs | undefined {
-  if (method !== "exec" && method !== "test" && method !== "toString") return undefined;
+  if (method !== "exec" && method !== "test" && method !== "toString" && method !== "compile") return undefined;
   const parts = regexParts(re);
   if (!parts) return undefined;
   if (method === "toString") return strLit(`/${parts.pat}/${parts.flags}`);
+  // Bug 126：compile 值通道——重建后的 brand 即返回值（原生 compile 返回接收者）
+  if (method === "compile") return compileRegexBrand(re, args);
   // Bug 57：subject ToString 校验（symbol 确定 TypeError；抽象 may）
   validateRegexSubjectArg(args[0]);
   const subjectR = args[0] ? litValue(args[0]) : undefined;
@@ -123,13 +206,37 @@ export function execRegexBrand(re: Abs, method: string, args: Abs[]): Abs | unde
 }
 
 /**
- * 语句级 RegExp 状态写回（test/exec）：执行并把 lastIndex 更新后的 brand
+ * 语句级 RegExp 状态写回（test/exec/compile）：执行并把状态更新后的 brand
  * 返回给 transpile 重绑（$reStateCall 与 $arrMutContainer 同模式）。
  * 表达式位置不写回（$invoke 只读执行，调用方按 JS 语义先取值）。
+ * Bug 96：match/replace/replaceAll 臂是**参数位**消费的语句位写回（模式
+ * 作为 String 方法实参，spec @@match/@replace 对原正则 Set lastIndex）。
+ * Bug 126：compile 臂重建接收者（值通道 $invoke→execRegexBrand 同一助手）。
  */
 export function $reStateCall(re: Abs, method: string, args: Abs[]): Abs {
   const parts = regexParts(re);
-  if (!parts || (method !== "test" && method !== "exec")) return re;
+  if (!parts) return re;
+  if (method === "compile") return compileRegexBrand(re, args);
+  if (method === "match" || method === "replace" || method === "replaceAll") {
+    // 全局 → Set lastIndex 0（@@match/@replace 步 2；replaceAll 恒 g）；
+    // 非全局 sticky 的 match ≡ 单次 RegExpExec 推进（成功 = 匹配末端，失败
+    // = 0——宿主 sticky 失败即归 0）；非 sticky 非全局原生不动。sticky 的
+    // replace 原生阵营分裂（V8 按 RegExpExec 推进、JSC 保原值）——以 JSC
+    // 差分门禁口径为准：不动（Bug 96 报告 Fix 亦只对 match 要求推进）。
+    if (parts.flags.includes("g")) return rebindLastIndex(re, 0);
+    if (method === "match" && parts.flags.includes("y")) {
+      const svR = args[0] ? litValue(args[0]) : undefined;
+      const sv = svR?.ok ? svR.value : undefined;
+      if (typeof sv !== "string") return re; // 抽象 subject：状态不可判定，保守不动
+      try {
+        return rebindLastIndex(re, regexExecWithState(re, "exec", sv).lastIndex);
+      } catch {
+        return re;
+      }
+    }
+    return re;
+  }
+  if (method !== "test" && method !== "exec") return re;
   // Bug 57：subject ToString 校验（语句级状态写回同样要先过 ToString）
   validateRegexSubjectArg(args[0]);
   const subjectR = args[0] ? litValue(args[0]) : undefined;
@@ -137,15 +244,7 @@ export function $reStateCall(re: Abs, method: string, args: Abs[]): Abs {
   if (typeof subject !== "string") return re; // 抽象 subject：状态不可判定，保守不动
   try {
     const { lastIndex } = regexExecWithState(re, method, subject);
-    const inner = (re.shape as { k: "brand"; name: string; shape: Abs }).shape;
-    if (!isObj(inner)) return re;
-    const slots = { ...inner.shape.slots, lastIndex: { value: numLit(lastIndex) } };
-    return abs(
-      { k: "brand", name: "RegExp", shape: objOf(slots, { open: inner.shape.open }) },
-      re.term,
-      re.pred,
-      re.conf,
-    );
+    return rebindLastIndex(re, lastIndex);
   } catch {
     return re;
   }
@@ -193,11 +292,33 @@ export function stringRegexMethod(recv: Abs, method: string, args: Abs[]): Abs |
   const flagsR = flagsAbs ? litValue(flagsAbs) : undefined;
   const flagsV = flagsR?.ok ? flagsR.value : undefined;
   const flags = typeof flagsV === "string" ? flagsV : "";
+  // Bug 94：brand 的 lastIndex 槽带入（regexParts 同口径；缺槽/非数值 → 0）
+  const lastAbs = inner && inner.shape.k === "obj" ? inner.shape.slots["lastIndex"]?.value : undefined;
+  const lastR = lastAbs ? litValue(lastAbs) : undefined;
+  const lastV = lastR?.ok ? lastR.value : undefined;
+  const lastIndex = typeof lastV === "number" ? lastV : 0;
+  // Bug 81：@@match/@@search 钩子分派（matchAll 的在 g 检查之后）——可调用
+  // 钩子以模式为 this、字符串为唯一实参调用；nullish 字面槽 → RegExpCreate
+  // (ToString(pattern)) 覆盖形（"/source/flags" 文本为模式、空 flags、新对象
+  // 起点 lastIndex=0）。
+  let toStringPat: string | undefined;
+  if (reBrand && method !== "matchAll") {
+    const oc = patternHookOutcome(re, inner, method === "match" ? "@@match" : "@@search", recv);
+    if (oc.kind === "call") return oc.value;
+    if (oc.kind === "nullish" && typeof pat === "string") toStringPat = `/${pat}/${flags}`;
+  }
   let reReal: RegExp;
   try {
-    reReal = new RegExp(typeof pat === "string" ? pat : strPat!, flags);
+    reReal = new RegExp(toStringPat ?? (typeof pat === "string" ? pat : strPat!), toStringPat !== undefined ? "" : flags);
   } catch {
     return undefined;
+  }
+  if (method !== "search" && toStringPat === undefined) {
+    // Bug 94：brand 的 lastIndex 起点带入——非全局 match ≡ exec（sticky 从
+    // lastIndex 起）；全局 match 宿主先 Set lastIndex=0（spec @@match 步 3），
+    // 赋值无害。search（spec 先置 0 再执行后恢复）与 Bug 81 的 RegExpCreate
+    // 新对象形（起点恒 0）不带入。
+    reReal.lastIndex = toLength(lastIndex);
   }
   if (method === "search") {
     const idx = sv.search(reReal);
@@ -226,7 +347,32 @@ export function stringRegexMethod(recv: Abs, method: string, args: Abs[]): Abs |
       errorTypeAbs("TypeError"),
     );
   }
-  const ms = sv.matchAll(reReal);
+  // Bug 81：@@matchAll 钩子在 g 检查之后分派（原生顺序：isRegExp/flags 检查
+  // 先于 GetMethod——非全局 brand 带钩子仍抛，node 实测）
+  {
+    const oc = patternHookOutcome(re, inner, "@@matchAll", recv);
+    if (oc.kind === "call") return oc.value;
+    if (oc.kind === "nullish" && typeof pat === "string") toStringPat = `/${pat}/${flags}`;
+  }
+  let iterRe = reReal;
+  if (toStringPat !== undefined) {
+    // Bug 81 nullish 覆盖形：RegExpCreate(ToString(r), "g")——新对象起点 0
+    try {
+      iterRe = new RegExp(toStringPat, "g");
+    } catch {
+      return undefined;
+    }
+  } else if (flags.includes("y")) {
+    // Bug 94：@@matchAll spec 克隆——flags 去 y（g 已由上方检查保证），
+    // ToLength(lastIndex) 起点（/a/g @1 → 命中 1、2；/b/gy @1 → 命中 1 次）
+    try {
+      iterRe = new RegExp(pat as string, flags.replace(/y/g, ""));
+      iterRe.lastIndex = toLength(lastIndex);
+    } catch {
+      return undefined;
+    }
+  }
+  const ms = sv.matchAll(iterRe);
   const matchEls: Abs[] = [];
   for (const m of ms) {
     const els: Abs[] = m.map((g) => (g === undefined ? undefAbs() : strLit(g)));

@@ -34,6 +34,8 @@ import {
   canonicalArrayIndex,
   setProtoAbs,
   getSlot,
+  setSlot,
+  propertyKeyOf,
   type ObjShape,
 } from "../../objects.ts";
 import { TUPLE_MATERIALIZE_CAP } from "../../containers.ts";
@@ -60,12 +62,14 @@ import { isErrorCtorName } from "../error.ts";
 import {
   applyPropertyDescriptor,
   assignSourceSlots,
+  classifyAssignSet,
   maybePropDescAbs,
   mkPropDescAbs,
   primTargetAssignThrows,
   readProperty,
   validateDefineTarget,
   validateDescriptorObject,
+  wellKnownSymbolSlotKey,
 } from "./descriptor.ts";
 import { boxedStringEnumEntries, builtinBrandNoEnumKeys, foldGroupBy } from "./enum-entries.ts";
 
@@ -95,11 +99,16 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
   };
 
 /** enumerable:false（defineProperty 记录）/ internal 私有槽（Bug 84）的键
- *  从枚举视图剔除 */
-  const enumKeys = (slots: Record<string, unknown>, target: Abs): string[] => {
+ *  从枚举视图剔除；includeSymbols 供 assign/defineProperties（原生
+ *  [[OwnPropertyKeys]] 含可枚举 symbol——经 "@@X" 投影槽），默认剔除
+ *  （Object.keys/values/entries 是字符串键视图，Bug 117） */
+  const enumKeys = (slots: Record<string, unknown>, target: Abs, includeSymbols = false): string[] => {
     const flags = getPropFlags(target);
     return Object.keys(slots).filter(
-      (k) => flags?.get(k)?.enumerable !== false && (slots[k] as { internal?: boolean })?.internal !== true,
+      (k) =>
+        flags?.get(k)?.enumerable !== false &&
+        (slots[k] as { internal?: boolean })?.internal !== true &&
+        (includeSymbols || (slots[k] as { symbolKey?: boolean })?.symbolKey !== true),
     );
   };
 
@@ -175,11 +184,17 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
             open?: boolean;
             index?: unknown;
           };
-          // 原生只取自有**可枚举**键（EnumerableTrue 过滤）
-          for (const key of ps.open || ps.index ? [] : enumKeys(ps.slots, props)) {
-            const descAbs = ps.slots[key]!.value;
-            validateDescriptorObject(descAbs, "Object.create");
-            base = applyPropertyDescriptor(base, key, descAbs);
+          // 原生只取自有**可枚举**键（EnumerableTrue 过滤；含 symbol 键——
+          // 经 "@@X" 投影槽，Bug 117 标记随安装传递）
+          for (const key of ps.open || ps.index ? [] : enumKeys(ps.slots, props, true)) {
+            const slot = ps.slots[key]! as { value: Abs; symbolKey?: boolean };
+            validateDescriptorObject(slot.value, "Object.create");
+            base = applyPropertyDescriptor(
+              base,
+              key,
+              slot.value,
+              slot.symbolKey ? { symbolKey: true } : undefined,
+            );
           }
         } else if (props.shape.k === "tuple") {
           // Bug 23：tuple props——下标槽即自有可枚举键（hole 位无键跳过），
@@ -235,11 +250,12 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         return abs({ k: "tuple", elements: keys }, undefined, undefined, "exact");
       }
       if (a0?.shape.k === "tuple") {
-        // 数组：索引键（hole 槽无键）
+        // 数组：索引键（hole 槽无键；defineProperty 记下的 enumerable:false
+        // 下标同样剔除——Bug 86）
         const holes = (a0.shape as { holes?: number[] }).holes ?? [];
         const keys = a0.shape.elements
           .map((_, i) => i)
-          .filter((i) => !holes.includes(i))
+          .filter((i) => !holes.includes(i) && isEnumerableView(a0, String(i)))
           .map((i) => strLit(String(i)));
         return abs({ k: "tuple", elements: keys }, undefined, undefined, "exact");
       }
@@ -297,10 +313,13 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       }
       if (a0?.shape.k === "tuple") {
         const holes = (a0.shape as { holes?: number[] }).holes ?? [];
+        // Bug 86：enumerable:false 下标键剔除（与 keys 同口径）
         return abs(
           {
             k: "tuple",
-            elements: a0.shape.elements.filter((_, i) => !holes.includes(i)),
+            elements: a0.shape.elements.filter(
+              (_, i) => !holes.includes(i) && isEnumerableView(a0, String(i)),
+            ),
           },
           undefined,
           undefined,
@@ -365,9 +384,10 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       }
       if (a0?.shape.k === "tuple") {
         const holes = (a0.shape as { holes?: number[] }).holes ?? [];
+        // Bug 86：enumerable:false 下标键剔除（与 keys 同口径）
         const entries = a0.shape.elements
           .map((el, i) => ({ el, i }))
-          .filter(({ i }) => !holes.includes(i))
+          .filter(({ i }) => !holes.includes(i) && isEnumerableView(a0, String(i)))
           .map(({ el, i }) =>
             abs({ k: "tuple", elements: [strLit(String(i)), el] }, undefined, undefined, "exact"),
           );
@@ -605,17 +625,45 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       noteRecvMayNullish(t0, "Object.assign target may be nullish (ToObject throws)");
       let acc = args[0]!;
       for (let i = 1; i < args.length; i++) {
+        const pre = acc; // Bug 128：accessorTable/protoTable 按 Abs 身份注册——拷贝丢身份，分类用拷贝前原 Abs
         acc = { ...acc }; // 保持结构；细粒度 spread 在 evalCall 侧
         const src = args[i]!;
         if (acc.shape.k === "obj" && src.shape.k === "obj") {
           const base = (acc.shape as { slots: Record<string, { value: Abs }> }).slots;
           const over = (src.shape as { slots: Record<string, { value: Abs }> }).slots;
-          // enumerable:false 自有键不拷贝（EnumerableOwnProperties）
+          // enumerable:false 自有键不拷贝（EnumerableOwnProperties）；symbol
+          // 投影槽随拷（@@X 标记保留——原生 assign 复制可枚举 symbol 键）
           const filtered: Record<string, { value: Abs }> = { ...base };
-          for (const k of enumKeys(over as Record<string, unknown>, src)) {
-            filtered[k] = over[k]!;
+          let opened = false;
+          let protoSet: Abs | undefined;
+          for (const k of enumKeys(over as Record<string, unknown>, src, true)) {
+            // Bug 128：逐键 [[Set]]（OrdinarySet）语义——此前直写自有槽：
+            // __proto__ 继承访问器不触发（原型污染面：JSON.parse 源键被折
+            // 成自有数据键）、自有访问器 setter 被数据覆写、继承非可写数据
+            // 属性不拦截不抛。分类共享 classifyAssignSet（evaluator 的
+            // mergeObj 就地同源）。源值走 [[Get]]（readProperty——getter
+            // 求值，不再拷访问器占位槽）。
+            const v = readProperty(src, k);
+            const plan = classifyAssignSet(pre, k, v);
+            if (plan.act === "throw") {
+              throw new NudoThrow(errorTypeAbs("TypeError"));
+            } else if (plan.act === "write") {
+              setSlot(filtered, k, { value: v }); // "__proto__" 自有键经 setSlot（普通赋值触发宿主原型 setter）
+            } else if (plan.act === "open") {
+              opened = true;
+            } else if (plan.act === "proto") {
+              protoSet = plan.proto;
+            } else if (plan.act === "setter") {
+              plan.set(acc, v);
+            }
           }
-          acc = abs({ k: "obj", slots: filtered }, undefined, undefined, confJoin(acc.conf, src.conf));
+          acc = abs(
+            { k: "obj", slots: filtered, ...(opened ? { open: true } : {}) },
+            undefined,
+            undefined,
+            confJoin(acc.conf, src.conf),
+          );
+          if (protoSet !== undefined) setProtoAbs(acc, protoSet);
         } else if (src.shape.k !== "obj") {
           // 非 obj 源：tuple（下标键、hole 跳过）/字符串字面量（码元键）/
           // number/boolean/nullish（无键忽略）；键集未知 → 保守降级（与
@@ -637,7 +685,28 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
             }
           } else if (acc.shape.k === "obj") {
             const base = (acc.shape as { slots: Record<string, { value: Abs }> }).slots;
-            acc = abs({ k: "obj", slots: { ...base, ...srcSlots } }, undefined, undefined, confJoin(acc.conf, src.conf));
+            // Bug 128：非 obj 源（tuple/字符串——下标键）同样逐键 [[Set]]
+            //（目标自有访问器 setter / 非可写拦截；下标键不会是 __proto__）
+            const filtered: Record<string, { value: Abs }> = { ...base };
+            let opened = false;
+            for (const [k, s] of Object.entries(srcSlots)) {
+              const plan = classifyAssignSet(pre, k, s.value);
+              if (plan.act === "throw") {
+                throw new NudoThrow(errorTypeAbs("TypeError"));
+              } else if (plan.act === "write") {
+                setSlot(filtered, k, { value: s.value }); // "__proto__" 自有键经 setSlot
+              } else if (plan.act === "open") {
+                opened = true;
+              } else if (plan.act === "setter") {
+                plan.set(acc, s.value);
+              }
+            }
+            acc = abs(
+              { k: "obj", slots: filtered, ...(opened ? { open: true } : {}) },
+              undefined,
+              undefined,
+              confJoin(acc.conf, src.conf),
+            );
           } else if (acc.shape.k === "tuple") {
             // 数组 target × tuple/字符串源：下标键按下标写（与 obj 源分支同口径；
             // 无 length 键/getter，直接逐位写）
@@ -749,13 +818,32 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       // Bug 8/39：target IsObject + 描述符校验抽共享 helper（defineProperties
       // 复用）；安装机器在 applyPropertyDescriptor（单一实现）
       validateDefineTarget(a0, "Object.defineProperty");
-      const kvR = args[1] ? litValue(args[1]) : undefined;
-      const kv = kvR?.ok ? kvR.value : undefined;
       // Bug 39：描述符校验先于 key 保守回退——原生 ToPropertyDescriptor 对
       // key 值不敏感，desc 定抛/may 抛都要记
       validateDescriptorObject(args[2], "Object.defineProperty");
-      if (typeof kv !== "string" && typeof kv !== "number") return a0;
-      return applyPropertyDescriptor(a0!, String(kv), args[2]!);
+      // Bug 117：键走 ToPropertyKey 投影（propertyKeyOf：number/bigint/bool/
+      // null/undefined/缺省 → 字符串键）。此前 typeof 门（string/number 才
+      // 装）把 symbol/bool/null/undefined 键静默丢弃——无槽无 may-throw，
+      // 后续成员读折 exact undefined。symbol 键 → 写路径同款 "@@X" 投影 +
+      // symbolKey 标记（读路径 $get(o,"@@X") 同键）；Symbol("k") 等无名
+      // symbol / 抽象键无可投影槽键——目标 open 化（读不折 exact
+      // undefined），不装精确面。
+      const kAbs = args[1] ?? undefAbs();
+      const kStr = propertyKeyOf(kAbs);
+      if (kStr !== undefined) {
+        return applyPropertyDescriptor(a0!, kStr, args[2]!);
+      }
+      if (isSymbolAbs(kAbs)) {
+        const sk = wellKnownSymbolSlotKey(kAbs);
+        if (sk !== undefined) {
+          return applyPropertyDescriptor(a0!, sk, args[2]!, { symbolKey: true });
+        }
+        if (a0 && a0.shape.k === "obj") {
+          return abs({ ...(a0.shape as ObjShape), open: true } as ObjShape, undefined, undefined, a0.conf);
+        }
+        return a0;
+      }
+      return a0; // 抽象键：保守 no-op（现状）
     }
     case "defineProperties": {
       // Bug 8：defineProperties(target, props) —— 返回值恒为 target（原生
@@ -786,11 +874,17 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
           open?: boolean;
           index?: unknown;
         };
-        // 原生只取自有**可枚举**键（EnumerableTrue 过滤）
-        for (const key of ps.open || ps.index ? [] : enumKeys(ps.slots, props)) {
-          const descAbs = ps.slots[key]!.value;
-          validateDescriptorObject(descAbs, "Object.defineProperties");
-          out = applyPropertyDescriptor(out, key, descAbs);
+        // 原生只取自有**可枚举**键（EnumerableTrue 过滤；含 symbol 键——
+        // 经 "@@X" 投影槽，Bug 117 标记随安装传递）
+        for (const key of ps.open || ps.index ? [] : enumKeys(ps.slots, props, true)) {
+          const slot = ps.slots[key]! as { value: Abs; symbolKey?: boolean };
+          validateDescriptorObject(slot.value, "Object.defineProperties");
+          out = applyPropertyDescriptor(
+            out,
+            key,
+            slot.value,
+            slot.symbolKey ? { symbolKey: true } : undefined,
+          );
         }
       }
       return out;
