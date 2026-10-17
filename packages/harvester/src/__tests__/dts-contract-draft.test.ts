@@ -2,7 +2,7 @@
  * contract --from-dts：TypeScript 声明 → 可审阅契约草稿（不执法）。
  */
 import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -10,6 +10,9 @@ import {
   dtsPathToContractDraft,
   formatDtsContractDraft,
 } from "../dts-contract-draft.ts";
+
+/** root 对 chmod 000 免疫，真实 EACCES 用例无法生效 */
+const isRoot = process.geteuid?.() === 0;
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -65,6 +68,31 @@ export declare function weird(x: SomeCustomBrand): void;
     expect(draft.files.length).toBe(1);
     expect(draft.stats.exports).toBe(1);
     expect(draft.draftSource).toContain("export const a");
+  });
+
+  it("dtsPathToContractDraft: 入口不存在（ENOENT）→ 空草稿，不抛", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-from-dts-miss-"));
+    dirs.push(dir);
+    const draft = dtsPathToContractDraft(join(dir, "nope.d.ts"), "miss");
+    expect(draft.files).toEqual([]);
+    expect(draft.stats.files).toBe(0);
+  });
+
+  it.runIf(!isRoot)("dtsPathToContractDraft: 顶层入口 stat EACCES（父目录 000）→ 上抛", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nudo-from-dts-eacces-"));
+    dirs.push(dir);
+    mkdirSync(join(dir, "locked"));
+    writeFileSync(join(dir, "locked", "a.d.ts"), `export declare function a(x: number): void;\n`, "utf-8");
+    chmodSync(join(dir, "locked"), 0o000);
+    try {
+      // 顶层入口自身在锁定目录内：stat 需要父目录可执行 → EACCES 上抛
+      // （harvester CLI 面有顶层 catch 收口；不得折叠成「无入口」）
+      expect(() => dtsPathToContractDraft(join(dir, "locked", "a.d.ts"), "locked")).toThrowError(
+        /EACCES/,
+      );
+    } finally {
+      chmodSync(join(dir, "locked"), 0o755);
+    }
   });
 });
 

@@ -2,7 +2,7 @@
  * nudo contract — 契约：打印 / draft / emit。
  * 从 index.ts 原样迁出，行为不变。
  */
-import { readFileSync, existsSync, statSync, writeFileSync, realpathSync } from "node:fs";
+import { readFileSync, existsSync, statSync, writeFileSync, realpathSync, type Stats } from "node:fs";
 import { resolve, dirname, relative, join, basename, isAbsolute } from "node:path";
 import type { Command } from "commander";
 import {
@@ -55,12 +55,31 @@ async function runContractFromDts(
 
   let label = "dts";
   let dtsFiles: string[] = [];
-  const fileLike = paths.filter((p) => existsSync(p));
-  const barePkgs = paths.filter((p) => !existsSync(p));
+  // 路径形态（./x、/x、含分隔符）必须是存在的文件/目录——拼错路径不得
+  // 回落成 npm 包名（旧实现报误导性 no .d.ts files found）；
+  // 裸名（无分隔符）仍按包名 harvest。
+  const isPathLike = (p: string): boolean =>
+    p.startsWith(".") || isAbsolute(p) || /[/\\]/.test(p);
+  const missingPaths: string[] = [];
+  const barePkgs: string[] = [];
 
-  for (const p of fileLike) {
+  for (const p of paths) {
     const abs = resolve(p);
-    if (statSync(abs).isDirectory()) {
+    // 单次 stat：miss（ENOENT）分类处理；EACCES/EIO 上抛面（error + exit）
+    let st: Stats | undefined;
+    try {
+      st = statSync(abs, { throwIfNoEntry: false });
+    } catch (err) {
+      console.error(`error: cannot access ${p}: ${(err as Error).message}`);
+      process.exitCode = 1;
+      return;
+    }
+    if (!st) {
+      if (isPathLike(p)) missingPaths.push(p);
+      else barePkgs.push(p);
+      continue;
+    }
+    if (st.isDirectory()) {
       const r = dtsPathToContractDraft(abs, basename(abs));
       dtsFiles.push(...r.files);
     } else if (/\.(d\.)?(m)?ts$/.test(abs) && !abs.endsWith(".d.ts.map")) {
@@ -70,6 +89,11 @@ async function runContractFromDts(
       const sibling = abs.replace(/\.[cm]?[jt]sx?$/, ".d.ts");
       if (existsSync(sibling)) dtsFiles.push(sibling);
     }
+  }
+  if (missingPaths.length > 0) {
+    console.error(`error: path not found for --from-dts: ${missingPaths.join(", ")}`);
+    process.exitCode = 1;
+    return;
   }
   for (const pkg of barePkgs) {
     const h = harvestPackage(pkg, process.cwd());

@@ -24,8 +24,8 @@ export type MockFileEval =
   | {
       ok: false;
       error: string;
-      /** not-found = mock 文件本身缺失；graph/eval = 依赖解析或求值失败（fail-closed） */
-      kind: "not-found" | "graph-failed" | "eval-failed";
+      /** not-found = miss；read-failed = fs 读故障（EACCES/EIO…）；graph/eval = 依赖解析或求值失败（fail-closed） */
+      kind: "not-found" | "read-failed" | "graph-failed" | "eval-failed";
     };
 
 /**
@@ -43,12 +43,23 @@ export function evalMockFileWithDeps(
 ): MockFileEval {
   const load = loadModule ?? defaultLoadModule;
   let source: string | undefined;
+  let loadErrCode: string | undefined;
   try {
     source = load(fromPath, fromFile);
-  } catch {
+  } catch (e) {
+    // miss（不存在）与读失败（EACCES/EIO…）必须区分：带 errno 的抛错是
+    // fs 读故障，不得折叠成 not-found（误导排障方向）。
+    loadErrCode = (e as { code?: string } | undefined)?.code;
     source = undefined;
   }
   if (source === undefined) {
+    if (loadErrCode !== undefined && loadErrCode !== "ENOENT") {
+      return {
+        ok: false,
+        kind: "read-failed",
+        error: `Mock file read failed (from "${fromPath}"): ${loadErrCode}`,
+      };
+    }
     return { ok: false, kind: "not-found", error: `Mock file not found (from "${fromPath}")` };
   }
   // Module-graph entry must be absolute so relative imports inside the mock

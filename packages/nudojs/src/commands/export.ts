@@ -91,7 +91,12 @@ async function runExport(
     });
     const mocks = mockSeedsToAbsMocks(seeds);
     evalMocks = Object.keys(mocks).length > 0 ? mocks : undefined;
-  } catch {
+  } catch (err) {
+    // mock 种子求值失败不得静默降级——导出面会无告警变 unknown；
+    // 上屏（含原因）后仍降级 undefined（不炸导出）
+    console.error(
+      `warning: @nudo:mock seed evaluation failed for ${filePath}: ${(err as Error).message} — mocks not applied; contract faces may render unknown`,
+    );
     evalMocks = undefined;
   }
   // dts 只发射导出面（export / export default / CJS exports —— 与 check

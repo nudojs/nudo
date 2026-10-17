@@ -732,11 +732,17 @@ export function resolveRelativeModule(spec: string, fromFile: string): string | 
     join(base, "index.mjs"),
     join(base, "index.ts"),
   ]) {
+    // 单次 statSync（#135 口径 + 可见化）：不存在 → miss 继续；EACCES/EIO 等
+    // 真实读故障不得静默折叠成候选 miss（定义跳转静默失联）——console.error
+    // 可见后继续下一候选（上抛会让 LSP 崩，吞掉则不可排查）。
+    let st: ReturnType<typeof statSync> | undefined;
     try {
-      if (existsSync(cand) && statSync(cand).isFile()) return cand;
-    } catch {
-      /* next */
+      st = statSync(cand, { throwIfNoEntry: false });
+    } catch (e) {
+      console.error(`[nudo-lsp] module candidate stat failed (${cand}):`, e);
+      continue;
     }
+    if (st !== undefined && st.isFile()) return cand;
   }
   return undefined;
 }

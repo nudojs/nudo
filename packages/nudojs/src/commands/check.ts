@@ -4,7 +4,7 @@
  * 在 check-report.ts；commander 装配在 check-command.ts）；
  * 依赖（@nudojs/core / service / parser）均为静态依赖，顶部静态引入。
  */
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { paint } from "../ui.ts";
 import {
@@ -305,11 +305,17 @@ async function loadCheckCache(
   });
   let sidecarContent: string | null = null;
   if (autoBind !== false) {
+    // sidecar 读取失败分类：ENOENT = 无 sidecar（合法 miss，静默 absent）；
+    // EACCES/EISDIR 等读失败必须上屏——静默当 absent 会让 check 假绿
+    const scPath = sidecarPathOf(filePath);
     try {
-      const scPath = sidecarPathOf(filePath);
-      if (existsSync(scPath)) sidecarContent = readFileSync(scPath, "utf-8");
-    } catch {
-      /* optional: sidecar unreadable — treat as absent */
+      sidecarContent = readFileSync(scPath, "utf-8");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+        console.error(
+          `warning: cannot read sidecar contract ${scPath}: ${(err as Error).message} — treating as absent`,
+        );
+      }
       sidecarContent = null;
     }
   }
@@ -622,9 +628,15 @@ export async function runCheckFix(opts: {
     });
     const sidecar = sidecarPathOf(file);
     let sidecarText: string | undefined;
+    // 与 plain check 同口径：ENOENT = miss；其余读失败上屏（不静默丢契约面）
     try {
-      sidecarText = existsSync(sidecar) ? readFileSync(sidecar, "utf-8") : undefined;
-    } catch {
+      sidecarText = readFileSync(sidecar, "utf-8");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+        console.error(
+          `warning: cannot read sidecar contract ${sidecar}: ${(err as Error).message} — treating as absent`,
+        );
+      }
       sidecarText = undefined;
     }
 

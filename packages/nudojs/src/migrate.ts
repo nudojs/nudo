@@ -108,15 +108,14 @@ type FileSnapshot =
   | { path: string; kind: "other" };
 
 function snapshotFile(path: string): FileSnapshot {
-  if (!existsSync(path)) return { path, kind: "missing" };
-  try {
-    if (statSync(path).isFile()) {
-      return { path, kind: "file", content: readFileSync(path, "utf-8") };
-    }
-    return { path, kind: "other" };
-  } catch {
-    return { path, kind: "other" };
+  // 单次 stat：miss（ENOENT）→ missing；EACCES/EIO 上抛——快照是
+  // 回滚数据安全网，读不了就不该开始迁移（不得伪装 other 跳过回滚）
+  const st = statSync(path, { throwIfNoEntry: false });
+  if (!st) return { path, kind: "missing" };
+  if (st.isFile()) {
+    return { path, kind: "file", content: readFileSync(path, "utf-8") };
   }
+  return { path, kind: "other" };
 }
 
 function restoreSnapshot(snap: FileSnapshot): void {
@@ -241,12 +240,14 @@ function unquoteYamlScalar(s: string): string {
  */
 function parsePnpmWorkspacePackages(root: string): string[] {
   const yamlPath = join(root, "pnpm-workspace.yaml");
-  if (!existsSync(yamlPath)) return [];
   let text: string;
   try {
     text = readFileSync(yamlPath, "utf-8");
-  } catch {
-    return [];
+  } catch (err) {
+    // ENOENT = 无 workspace 文件（单包仓库，合法 miss）；
+    // EACCES/EIO 等读失败上抛——静默 [] 会漏采 monorepo 包根
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw err;
   }
   const out: string[] = [];
   let inPackages = false;
@@ -626,7 +627,8 @@ export function findWorkflowDir(from: string): string | undefined {
   let cur = resolve(from);
   for (let i = 0; i < 6; i++) {
     const wf = join(cur, ".github", "workflows");
-    if (existsSync(wf) && statSync(wf).isDirectory()) return wf;
+    // 单次 stat：miss（ENOENT）→ 继续向上；EACCES/EIO 上抛（写盘工具 fail loud）
+    if (statSync(wf, { throwIfNoEntry: false })?.isDirectory()) return wf;
     const parent = dirname(cur);
     if (parent === cur) break;
     cur = parent;
@@ -721,12 +723,13 @@ export function migrateStatus(rootDir: string): MigrateStatusRow[] {
       ...((pkg?.dependencies ?? {}) as Record<string, string>),
       ...((pkg?.devDependencies ?? {}) as Record<string, string>),
     };
-    // 占位目录不算 retired——marker 必须是普通文件
+    // 占位目录不算 retired——marker 必须是普通文件；
+    // 单次 stat：miss（ENOENT）→ false；EACCES/EIO 上抛（不伪装未 retired）
     const markerPath = join(r, ".nudo", "migrate-retired.json");
-    const retired = existsSync(markerPath) && statSync(markerPath).isFile();
+    const retired = statSync(markerPath, { throwIfNoEntry: false })?.isFile() === true;
     const retiringPath = join(r, ".nudo", "migrate-retiring.json");
     const retiring =
-      !retired && existsSync(retiringPath) && statSync(retiringPath).isFile();
+      !retired && statSync(retiringPath, { throwIfNoEntry: false })?.isFile() === true;
     const blockers: string[] = [];
     if (retiring) {
       blockers.push(

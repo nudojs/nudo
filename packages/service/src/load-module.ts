@@ -88,7 +88,14 @@ export function defaultLoadModule(spec: string, fromFile: string): string | unde
   }
 }
 
-/** loadModule 容错包装：读失败当 miss，避免 I/O 错误炸穿指纹/图遍历。 */
+/** safeLoadModule 已告警路径（一次性，防刷屏）。 */
+const safeLoadWarned = new Set<string>();
+
+/**
+ * loadModule 容错包装：读失败当 miss，避免 I/O 错误炸穿指纹/图遍历。
+ * 容错 ≠ 不可观测：非 ENOENT 的真实 fs 故障（EACCES/EIO…）按路径一次性
+ * console.error 告警——静默吞掉会让「模块面缺失」伪装成「无此模块」。
+ */
 export function safeLoadModule(
   loadModule: (spec: string, fromFile: string) => string | undefined,
   spec: string,
@@ -96,7 +103,15 @@ export function safeLoadModule(
 ): string | undefined {
   try {
     return loadModule(spec, fromFile);
-  } catch {
+  } catch (e) {
+    const err = e as { code?: string; path?: string } | undefined;
+    if (err?.code !== undefined && err.code !== "ENOENT") {
+      const at = err.path ?? spec;
+      if (!safeLoadWarned.has(at)) {
+        safeLoadWarned.add(at);
+        console.error(`[nudo] module load failed (${at}): ${err.code}`);
+      }
+    }
     return undefined;
   }
 }
