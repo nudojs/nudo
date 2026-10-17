@@ -1,5 +1,18 @@
 # @nudojs/env
 
+## 0.5.0
+
+### Minor Changes
+
+- 8faa2b0: **BREAKING** (runtime floor): `engines.node` raised from `>=20` to `>=22` on all published packages. Node 20 reached end-of-life on 2026-04-30, and the nightly engine-smoke matrix only covers Node 22 (the `packageManager`-pinned pnpm already requires `node:sqlite`, i.e. Node >= 22.5, to orchestrate at all). No code or API changes — installs on Node 20 will now warn per npm `engines` semantics.
+
+### Patch Changes
+
+- Updated dependencies [aae0f96]
+- Updated dependencies [1ccff57]
+- Updated dependencies [8faa2b0]
+  - @nudojs/core@1.15.0
+
 ## 0.4.42
 
 ### Patch Changes

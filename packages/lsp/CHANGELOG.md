@@ -1,5 +1,52 @@
 # @nudojs/lsp
 
+## 1.7.0
+
+### Minor Changes
+
+- 8faa2b0: **BREAKING** (runtime floor): `engines.node` raised from `>=20` to `>=22` on all published packages. Node 20 reached end-of-life on 2026-04-30, and the nightly engine-smoke matrix only covers Node 22 (the `packageManager`-pinned pnpm already requires `node:sqlite`, i.e. Node >= 22.5, to orchestrate at all). No code or API changes — installs on Node 20 will now warn per npm `engines` semantics.
+
+### Patch Changes
+
+- 52de5ca: Classify fs "miss" vs "read failure" everywhere. Replaced every
+  `existsSync(p) && statSync(p)` double call (TOCTOU race + errno swallowing)
+  with a single `statSync(p, { throwIfNoEntry: false })` per the repo's
+  load-module convention: ENOENT stays a silent miss, EACCES/EIO surface via the
+  site's error channel (top-level catch, `reports.push({error})`, exit-1
+  message, or a logged warning) instead of masquerading as "file absent".
+  Read-failure catches now branch on `e.code`: sidecar contracts unreadable for
+  reasons other than ENOENT print a `warning: cannot read sidecar contract …`
+  in `check`/`check --fix` (no more silent contract-blind green runs);
+  `@nudo:mock` seed evaluation failures warn in `export` before degrading;
+  `pnpm-workspace.yaml` read failures other than ENOENT abort `migrate` (a
+  snapshot/read failure no longer disguises the file as "other" and skips
+  rollback); mock files that exist but can't be read report `read-failed` with
+  the errno instead of the misleading "Mock file not found"; npm entry
+  probes and LSP module-candidate stats log persistent failures instead of
+  degrading a package's export face to unknown or silently breaking
+  go-to-definition; `contract --from-dts` path-like arguments that don't exist
+  now error as `path not found` instead of being treated as npm package names
+  ending in a misleading `no .d.ts files found`.
+- 9a3d6e7: Stop silently swallowing business-Promise failures. `nudo check/test --watch`
+  incremental rounds died silently when the round body threw outside the
+  per-file try (`buildModuleGraph` / `evictForDependents` / `topoSortDirty`) —
+  the screen just froze on the previous round's results; the error is now
+  printed (`nudo <label> incremental failed: …`), mirroring the existing
+  first-round BUG-023 handling. In the LSP server, `validateDocument` (didOpen /
+  didChange debounce) and `handleNudoDepFileChanged` (didOpen / didChange /
+  watched-files) rejections were discarded with an empty catch — a file throwing
+  in the analyzer produced no diagnostics and no trace, forever; failures are
+  now logged to stderr as `[nudo-lsp] …` lines. Best-effort client capability
+  requests (`DiagnosticRefresh` / `CodeLensRefresh` / inlay-hint refresh) keep
+  their intentional silent catch.
+- Updated dependencies [aae0f96]
+- Updated dependencies [52de5ca]
+- Updated dependencies [1ccff57]
+- Updated dependencies [8faa2b0]
+  - @nudojs/core@1.15.0
+  - @nudojs/service@1.9.0
+  - @nudojs/parser@1.5.0
+
 ## 1.6.10
 
 ### Patch Changes

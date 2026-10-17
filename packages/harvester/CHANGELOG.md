@@ -1,5 +1,54 @@
 # @nudojs/harvester
 
+## 0.4.0
+
+### Minor Changes
+
+- 8faa2b0: **BREAKING** (runtime floor): `engines.node` raised from `>=20` to `>=22` on all published packages. Node 20 reached end-of-life on 2026-04-30, and the nightly engine-smoke matrix only covers Node 22 (the `packageManager`-pinned pnpm already requires `node:sqlite`, i.e. Node >= 22.5, to orchestrate at all). No code or API changes — installs on Node 20 will now warn per npm `engines` semantics.
+
+### Patch Changes
+
+- aae0f96: Fix stale-cache windows in cache keys and session eviction. `nodeHarvestCacheKey`
+  floored `mtimeMs` to whole seconds (same-second, same-size rewrites of
+  `@types/node` reused a stale harvest — now uses the raw float mtime, matching
+  the repo-wide `mtimeMs+size` strict-equality contract). The path-env cache
+  key/validation only compared `mtimeMs` (coarse-mtime filesystems could keep
+  serving a stale `defineEnv` factory and re-register it, self-perpetuating — now
+  `mtimeMs+size`, and the direct-import URL query carries `size` so the ESM
+  module cache can't replay old content). The path-env fallback copy filename
+  hashed only `path:mtime` — rewritten content now hashes into the filename so a
+  changed file gets a new URL and the ESM cache invalidates naturally. Harvest
+  caches (`harvestCache`, node not-found cache) had no production eviction —
+  `clearAnalysisSessionCaches()` now clears both, so `pnpm install` / watcher
+  rounds see upgraded or newly installed `@types` without a process restart.
+  `checkMemoKey` now normalizes `filePath` via `stablePathKey` (same file no
+  longer occupies two entries under different path shapes).
+- 52de5ca: Classify fs "miss" vs "read failure" everywhere. Replaced every
+  `existsSync(p) && statSync(p)` double call (TOCTOU race + errno swallowing)
+  with a single `statSync(p, { throwIfNoEntry: false })` per the repo's
+  load-module convention: ENOENT stays a silent miss, EACCES/EIO surface via the
+  site's error channel (top-level catch, `reports.push({error})`, exit-1
+  message, or a logged warning) instead of masquerading as "file absent".
+  Read-failure catches now branch on `e.code`: sidecar contracts unreadable for
+  reasons other than ENOENT print a `warning: cannot read sidecar contract …`
+  in `check`/`check --fix` (no more silent contract-blind green runs);
+  `@nudo:mock` seed evaluation failures warn in `export` before degrading;
+  `pnpm-workspace.yaml` read failures other than ENOENT abort `migrate` (a
+  snapshot/read failure no longer disguises the file as "other" and skips
+  rollback); mock files that exist but can't be read report `read-failed` with
+  the errno instead of the misleading "Mock file not found"; npm entry
+  probes and LSP module-candidate stats log persistent failures instead of
+  degrading a package's export face to unknown or silently breaking
+  go-to-definition; `contract --from-dts` path-like arguments that don't exist
+  now error as `path not found` instead of being treated as npm package names
+  ending in a misleading `no .d.ts files found`.
+- Updated dependencies [aae0f96]
+- Updated dependencies [1ccff57]
+- Updated dependencies [8faa2b0]
+  - @nudojs/core@1.15.0
+  - @nudojs/parser@1.5.0
+  - @nudojs/env@0.5.0
+
 ## 0.3.28
 
 ### Patch Changes

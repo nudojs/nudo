@@ -1,5 +1,44 @@
 # @nudojs/core
 
+## 1.15.0
+
+### Minor Changes
+
+- 8faa2b0: **BREAKING** (runtime floor): `engines.node` raised from `>=20` to `>=22` on all published packages. Node 20 reached end-of-life on 2026-04-30, and the nightly engine-smoke matrix only covers Node 22 (the `packageManager`-pinned pnpm already requires `node:sqlite`, i.e. Node >= 22.5, to orchestrate at all). No code or API changes — installs on Node 20 will now warn per npm `engines` semantics.
+
+### Patch Changes
+
+- aae0f96: Fix stale-cache windows in cache keys and session eviction. `nodeHarvestCacheKey`
+  floored `mtimeMs` to whole seconds (same-second, same-size rewrites of
+  `@types/node` reused a stale harvest — now uses the raw float mtime, matching
+  the repo-wide `mtimeMs+size` strict-equality contract). The path-env cache
+  key/validation only compared `mtimeMs` (coarse-mtime filesystems could keep
+  serving a stale `defineEnv` factory and re-register it, self-perpetuating — now
+  `mtimeMs+size`, and the direct-import URL query carries `size` so the ESM
+  module cache can't replay old content). The path-env fallback copy filename
+  hashed only `path:mtime` — rewritten content now hashes into the filename so a
+  changed file gets a new URL and the ESM cache invalidates naturally. Harvest
+  caches (`harvestCache`, node not-found cache) had no production eviction —
+  `clearAnalysisSessionCaches()` now clears both, so `pnpm install` / watcher
+  rounds see upgraded or newly installed `@types` without a process restart.
+  `checkMemoKey` now normalizes `filePath` via `stablePathKey` (same file no
+  longer occupies two entries under different path shapes).
+- 1ccff57: Fix unsound strict numeric endpoints under IEEE rounding. Strict bounds
+  (`gt`/`lt`) synthesized by endpoint arithmetic (add/sub/mul/div, linear
+  interval propagation) could round *inward* past the true infimum/supremum and
+  produce false proofs — e.g. `x >= 1 && y > 1e-16` proved `x + y > 1` while
+  `f(1, 1.05e-16)` returns exactly `1` in IEEE arithmetic. Strict endpoints are
+  now calibrated with a float-discreteness witness (`x > a ⟺ x ≥ nextUp(a)`):
+  when the witness result collides with the endpoint, the bound steps one ulp
+  outward (`gt(nextDown(E)) ⟺ ge(E)`), so `x > 0 ⟹ x + 1 > 1` now correctly
+  reports `> 0.9999999999999999`. Non-strict bounds are unaffected (fl
+  monotonicity). Also: `gt(x, NaN)` (a vacuously-false predicate from `0/0`
+  literals) is no longer collected as a numeric bound endpoint, matching the
+  existing NaN exclusion semantics. Contracts that relied on the old false
+  strict bounds (e.g. the `interface-derivation` example's `x>0 ⟹ x+4>4`) now
+  correctly fail — the example and docs were updated to sound forms
+  (`ge(0) ⟹ ge(4)`).
+
 ## 1.14.1
 
 ### Patch Changes
