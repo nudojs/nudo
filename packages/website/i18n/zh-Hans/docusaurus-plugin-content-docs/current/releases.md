@@ -11,155 +11,325 @@ slug: /releases
 
 | 包 | 当前版本 |
 |----|----------|
-| `@nudojs/core` | 1.14.1 |
-| `@nudojs/service` | 1.8.0 |
-| `nudojs (CLI)` | 1.5.0 |
-| `@nudojs/parser` | 1.4.24 |
-| `@nudojs/lsp` | 1.6.10 |
-| `@nudojs/env` | 0.4.42 |
-| `@nudojs/harvester` | 0.3.28 |
-| `vite-plugin-nudo` | 0.4.43 |
-| `nudo-vscode` | 0.3.47 |
+| `@nudojs/core` | 1.15.0 |
+| `@nudojs/service` | 1.9.0 |
+| `nudojs (CLI)` | 1.6.0 |
+| `@nudojs/parser` | 1.5.0 |
+| `@nudojs/lsp` | 1.7.0 |
+| `@nudojs/env` | 0.5.0 |
+| `@nudojs/harvester` | 0.4.0 |
+| `vite-plugin-nudo` | 0.5.0 |
+| `nudo-vscode` | 0.3.48 |
 
 **按包跳转:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.14.1 {#pkg-core}
+## @nudojs/core 1.15.0 {#pkg-core}
 
-## 1.14.1
-
-### Patch Changes
-
-- c19bd48: Host-global function collection no longer leaks Node lazy-getter warnings, and check hints point at the env directive (fix-12 batch).
-  
-  - `hostGlobalFnIds` skips accessor properties by descriptor shape (deny-by-default) instead of a name denylist — bare-node embedding consumers no longer emit `ExperimentalWarning`/`DeprecationWarning` for localStorage, punycode (DEP0040), sys (DEP0025), wasi/ffi; only the empirically warning-free, function-valued accessors (`Buffer`, `assert`, `events`, `stream`, `node:test`) are read. Future warning-emitting lazy getters are skipped automatically (fail-closed); parity probe on node 26 confirms an identical 122-function collection set.
-  - Opaque-result diagnostics now suggest `/// @nudo:env` when the file imports builtin modules with no env active.
-
-更早版本（50）→ [完整发布历史](./releases-history.md#pkg-core)
-
-## @nudojs/service 1.8.0 {#pkg-service}
-
-## 1.8.0
+## 1.15.0
 
 ### Minor Changes
 
-- c19bd48: Misplaced file-level directives now warn instead of being silently ignored, and `nudo.analysis.exclude` supports real globs (fix-12 batch).
-  
-  - parser: file-level directives (`@nudo:env` / `@nudo:mock-module`) written inside JSDoc blocks emit `nudo:directive-syntax` with the correct `///` form instead of being dropped silently.
-  - service: `nudo.analysis.exclude` accepts glob patterns (shared `compilePattern`, extracted from vite-plugin as the single source; plain substrings still work, defaults always stack).
-  - vite-plugin: pattern matching cut over to the shared `compilePattern` — behavior unchanged, one implementation.
+- 8faa2b0: **BREAKING** (runtime floor): `engines.node` raised from `>=20` to `>=22` on all published packages. Node 20 reached end-of-life on 2026-04-30, and the nightly engine-smoke matrix only covers Node 22 (the `packageManager`-pinned pnpm already requires `node:sqlite`, i.e. Node >= 22.5, to orchestrate at all). No code or API changes — installs on Node 20 will now warn per npm `engines` semantics.
 
 ### Patch Changes
 
-- Updated dependencies [c19bd48]
-- Updated dependencies [c19bd48]
-  - @nudojs/core@1.14.1
-  - @nudojs/parser@1.4.24
-  - @nudojs/env@0.4.42
-  - @nudojs/harvester@0.3.28
+- aae0f96: Fix stale-cache windows in cache keys and session eviction. `nodeHarvestCacheKey`
+  floored `mtimeMs` to whole seconds (same-second, same-size rewrites of
+  `@types/node` reused a stale harvest — now uses the raw float mtime, matching
+  the repo-wide `mtimeMs+size` strict-equality contract). The path-env cache
+  key/validation only compared `mtimeMs` (coarse-mtime filesystems could keep
+  serving a stale `defineEnv` factory and re-register it, self-perpetuating — now
+  `mtimeMs+size`, and the direct-import URL query carries `size` so the ESM
+  module cache can't replay old content). The path-env fallback copy filename
+  hashed only `path:mtime` — rewritten content now hashes into the filename so a
+  changed file gets a new URL and the ESM cache invalidates naturally. Harvest
+  caches (`harvestCache`, node not-found cache) had no production eviction —
+  `clearAnalysisSessionCaches()` now clears both, so `pnpm install` / watcher
+  rounds see upgraded or newly installed `@types` without a process restart.
+  `checkMemoKey` now normalizes `filePath` via `stablePathKey` (same file no
+  longer occupies two entries under different path shapes).
+- 1ccff57: Fix unsound strict numeric endpoints under IEEE rounding. Strict bounds
+  (`gt`/`lt`) synthesized by endpoint arithmetic (add/sub/mul/div, linear
+  interval propagation) could round *inward* past the true infimum/supremum and
+  produce false proofs — e.g. `x >= 1 && y > 1e-16` proved `x + y > 1` while
+  `f(1, 1.05e-16)` returns exactly `1` in IEEE arithmetic. Strict endpoints are
+  now calibrated with a float-discreteness witness (`x > a ⟺ x ≥ nextUp(a)`):
+  when the witness result collides with the endpoint, the bound steps one ulp
+  outward (`gt(nextDown(E)) ⟺ ge(E)`), so `x > 0 ⟹ x + 1 > 1` now correctly
+  reports `> 0.9999999999999999`. Non-strict bounds are unaffected (fl
+  monotonicity). Also: `gt(x, NaN)` (a vacuously-false predicate from `0/0`
+  literals) is no longer collected as a numeric bound endpoint, matching the
+  existing NaN exclusion semantics. Contracts that relied on the old false
+  strict bounds (e.g. the `interface-derivation` example's `x>0 ⟹ x+4>4`) now
+  correctly fail — the example and docs were updated to sound forms
+  (`ge(0) ⟹ ge(4)`).
 
-更早版本（52）→ [完整发布历史](./releases-history.md#pkg-service)
+更早版本（51）→ [完整发布历史](./releases-history.md#pkg-core)
 
-## nudojs (CLI) 1.5.0 {#pkg-nudojs}
+## @nudojs/service 1.9.0 {#pkg-service}
+
+## 1.9.0
+
+### Minor Changes
+
+- 8faa2b0: **BREAKING** (runtime floor): `engines.node` raised from `>=20` to `>=22` on all published packages. Node 20 reached end-of-life on 2026-04-30, and the nightly engine-smoke matrix only covers Node 22 (the `packageManager`-pinned pnpm already requires `node:sqlite`, i.e. Node >= 22.5, to orchestrate at all). No code or API changes — installs on Node 20 will now warn per npm `engines` semantics.
+
+### Patch Changes
+
+- aae0f96: Fix stale-cache windows in cache keys and session eviction. `nodeHarvestCacheKey`
+  floored `mtimeMs` to whole seconds (same-second, same-size rewrites of
+  `@types/node` reused a stale harvest — now uses the raw float mtime, matching
+  the repo-wide `mtimeMs+size` strict-equality contract). The path-env cache
+  key/validation only compared `mtimeMs` (coarse-mtime filesystems could keep
+  serving a stale `defineEnv` factory and re-register it, self-perpetuating — now
+  `mtimeMs+size`, and the direct-import URL query carries `size` so the ESM
+  module cache can't replay old content). The path-env fallback copy filename
+  hashed only `path:mtime` — rewritten content now hashes into the filename so a
+  changed file gets a new URL and the ESM cache invalidates naturally. Harvest
+  caches (`harvestCache`, node not-found cache) had no production eviction —
+  `clearAnalysisSessionCaches()` now clears both, so `pnpm install` / watcher
+  rounds see upgraded or newly installed `@types` without a process restart.
+  `checkMemoKey` now normalizes `filePath` via `stablePathKey` (same file no
+  longer occupies two entries under different path shapes).
+- 52de5ca: Classify fs "miss" vs "read failure" everywhere. Replaced every
+  `existsSync(p) && statSync(p)` double call (TOCTOU race + errno swallowing)
+  with a single `statSync(p, { throwIfNoEntry: false })` per the repo's
+  load-module convention: ENOENT stays a silent miss, EACCES/EIO surface via the
+  site's error channel (top-level catch, `reports.push({error})`, exit-1
+  message, or a logged warning) instead of masquerading as "file absent".
+  Read-failure catches now branch on `e.code`: sidecar contracts unreadable for
+  reasons other than ENOENT print a `warning: cannot read sidecar contract …`
+  in `check`/`check --fix` (no more silent contract-blind green runs);
+  `@nudo:mock` seed evaluation failures warn in `export` before degrading;
+  `pnpm-workspace.yaml` read failures other than ENOENT abort `migrate` (a
+  snapshot/read failure no longer disguises the file as "other" and skips
+  rollback); mock files that exist but can't be read report `read-failed` with
+  the errno instead of the misleading "Mock file not found"; npm entry
+  probes and LSP module-candidate stats log persistent failures instead of
+  degrading a package's export face to unknown or silently breaking
+  go-to-definition; `contract --from-dts` path-like arguments that don't exist
+  now error as `path not found` instead of being treated as npm package names
+  ending in a misleading `no .d.ts files found`.
+- Updated dependencies [aae0f96]
+- Updated dependencies [52de5ca]
+- Updated dependencies [1ccff57]
+- Updated dependencies [8faa2b0]
+  - @nudojs/core@1.15.0
+  - @nudojs/harvester@0.4.0
+  - @nudojs/parser@1.5.0
+  - @nudojs/env@0.5.0
+
+更早版本（53）→ [完整发布历史](./releases-history.md#pkg-service)
+
+## nudojs (CLI) 1.6.0 {#pkg-nudojs}
+
+## 1.6.0
+
+### Minor Changes
+
+- 8faa2b0: **BREAKING** (runtime floor): `engines.node` raised from `>=20` to `>=22` on all published packages. Node 20 reached end-of-life on 2026-04-30, and the nightly engine-smoke matrix only covers Node 22 (the `packageManager`-pinned pnpm already requires `node:sqlite`, i.e. Node >= 22.5, to orchestrate at all). No code or API changes — installs on Node 20 will now warn per npm `engines` semantics.
+
+### Patch Changes
+
+- 52de5ca: Classify fs "miss" vs "read failure" everywhere. Replaced every
+  `existsSync(p) && statSync(p)` double call (TOCTOU race + errno swallowing)
+  with a single `statSync(p, { throwIfNoEntry: false })` per the repo's
+  load-module convention: ENOENT stays a silent miss, EACCES/EIO surface via the
+  site's error channel (top-level catch, `reports.push({error})`, exit-1
+  message, or a logged warning) instead of masquerading as "file absent".
+  Read-failure catches now branch on `e.code`: sidecar contracts unreadable for
+  reasons other than ENOENT print a `warning: cannot read sidecar contract …`
+  in `check`/`check --fix` (no more silent contract-blind green runs);
+  `@nudo:mock` seed evaluation failures warn in `export` before degrading;
+  `pnpm-workspace.yaml` read failures other than ENOENT abort `migrate` (a
+  snapshot/read failure no longer disguises the file as "other" and skips
+  rollback); mock files that exist but can't be read report `read-failed` with
+  the errno instead of the misleading "Mock file not found"; npm entry
+  probes and LSP module-candidate stats log persistent failures instead of
+  degrading a package's export face to unknown or silently breaking
+  go-to-definition; `contract --from-dts` path-like arguments that don't exist
+  now error as `path not found` instead of being treated as npm package names
+  ending in a misleading `no .d.ts files found`.
+- 9a3d6e7: Stop silently swallowing business-Promise failures. `nudo check/test --watch`
+  incremental rounds died silently when the round body threw outside the
+  per-file try (`buildModuleGraph` / `evictForDependents` / `topoSortDirty`) —
+  the screen just froze on the previous round's results; the error is now
+  printed (`nudo <label> incremental failed: …`), mirroring the existing
+  first-round BUG-023 handling. In the LSP server, `validateDocument` (didOpen /
+  didChange debounce) and `handleNudoDepFileChanged` (didOpen / didChange /
+  watched-files) rejections were discarded with an empty catch — a file throwing
+  in the analyzer produced no diagnostics and no trace, forever; failures are
+  now logged to stderr as `[nudo-lsp] …` lines. Best-effort client capability
+  requests (`DiagnosticRefresh` / `CodeLensRefresh` / inlay-hint refresh) keep
+  their intentional silent catch.
+- Updated dependencies [aae0f96]
+- Updated dependencies [52de5ca]
+- Updated dependencies [1ccff57]
+- Updated dependencies [8faa2b0]
+  - @nudojs/core@1.15.0
+  - @nudojs/service@1.9.0
+  - @nudojs/harvester@0.4.0
+  - @nudojs/parser@1.5.0
+  - @nudojs/env@0.5.0
+
+更早版本（50）→ [完整发布历史](./releases-history.md#pkg-nudojs)
+
+## @nudojs/parser 1.5.0 {#pkg-parser}
 
 ## 1.5.0
 
 ### Minor Changes
 
-- c19bd48: DX batch: face consistency across check/fix/export/health/test, plus `nudo init` and onboarding (fix-12, 20-point TS-parity batch).
-  
-  - `export --format dts` consumes contract faces through the same `effectiveInterface` source as `check` — non-exported top-level functions no longer leak into `.d.ts`; evidence-less params stay unknown with a stderr note.
-  - `health` budget line no longer contradicts `check`: per-file budget snapshot, attribution segments only for the budget that actually triggered (depth 64/64, not "eval calls 71/20000"); human face and multi-envelope budgets aligned.
-  - `check --fix` no longer writes non-fixing contracts: array-method receivers synthesize `array(shape({...}))` from callback element reads, and a re-check gate downgrades unprovable totality to `[review]` — no auto-applied half-fixes.
-  - new `nudo init`: writes an idempotent adoption baseline into package.json (L2 → warning).
-  - zero-config failing check prints an onboarding block (`init` / `contract --draft` / `--profile` adoption); gate exit code unchanged.
-  - `nudo.test.profile` typos warn on stderr; syntax-error files print tsc-style blocks (path:line:col + excerpt + caret), `--json` folds them into `pathErrors`.
-  - `nudo test` annotates `entry@` fallback cases on contracted functions.
-  - TTY colors for severity markers / section headers (`NO_COLOR` master switch, `FORCE_COLOR` override, piped output stays plain); `check --quiet` suppresses signatures; `check --help` flags grouped (Common/Observation/Fix/CI/What-if); `contract --draft` emits uncomment-to-accept suggested bindings; diagnostics outside cwd print absolute paths; multi-file check prints an opt-in cache hint.
+- 8faa2b0: **BREAKING** (runtime floor): `engines.node` raised from `>=20` to `>=22` on all published packages. Node 20 reached end-of-life on 2026-04-30, and the nightly engine-smoke matrix only covers Node 22 (the `packageManager`-pinned pnpm already requires `node:sqlite`, i.e. Node >= 22.5, to orchestrate at all). No code or API changes — installs on Node 20 will now warn per npm `engines` semantics.
 
 ### Patch Changes
 
-- Updated dependencies [c19bd48]
-- Updated dependencies [c19bd48]
-  - @nudojs/core@1.14.1
-  - @nudojs/parser@1.4.24
-  - @nudojs/service@1.8.0
-  - @nudojs/env@0.4.42
-  - @nudojs/harvester@0.3.28
+- Updated dependencies [aae0f96]
+- Updated dependencies [1ccff57]
+- Updated dependencies [8faa2b0]
+  - @nudojs/core@1.15.0
 
-更早版本（49）→ [完整发布历史](./releases-history.md#pkg-nudojs)
+更早版本（50）→ [完整发布历史](./releases-history.md#pkg-parser)
 
-## @nudojs/parser 1.4.24 {#pkg-parser}
+## @nudojs/lsp 1.7.0 {#pkg-lsp}
 
-## 1.4.24
+## 1.7.0
 
-### Patch Changes
+### Minor Changes
 
-- c19bd48: Misplaced file-level directives now warn instead of being silently ignored, and `nudo.analysis.exclude` supports real globs (fix-12 batch).
-  
-  - parser: file-level directives (`@nudo:env` / `@nudo:mock-module`) written inside JSDoc blocks emit `nudo:directive-syntax` with the correct `///` form instead of being dropped silently.
-  - service: `nudo.analysis.exclude` accepts glob patterns (shared `compilePattern`, extracted from vite-plugin as the single source; plain substrings still work, defaults always stack).
-  - vite-plugin: pattern matching cut over to the shared `compilePattern` — behavior unchanged, one implementation.
-- Updated dependencies [c19bd48]
-  - @nudojs/core@1.14.1
-
-更早版本（49）→ [完整发布历史](./releases-history.md#pkg-parser)
-
-## @nudojs/lsp 1.6.10 {#pkg-lsp}
-
-## 1.6.10
+- 8faa2b0: **BREAKING** (runtime floor): `engines.node` raised from `>=20` to `>=22` on all published packages. Node 20 reached end-of-life on 2026-04-30, and the nightly engine-smoke matrix only covers Node 22 (the `packageManager`-pinned pnpm already requires `node:sqlite`, i.e. Node >= 22.5, to orchestrate at all). No code or API changes — installs on Node 20 will now warn per npm `engines` semantics.
 
 ### Patch Changes
 
-- Updated dependencies [c19bd48]
-- Updated dependencies [c19bd48]
-  - @nudojs/core@1.14.1
-  - @nudojs/parser@1.4.24
-  - @nudojs/service@1.8.0
+- 52de5ca: Classify fs "miss" vs "read failure" everywhere. Replaced every
+  `existsSync(p) && statSync(p)` double call (TOCTOU race + errno swallowing)
+  with a single `statSync(p, { throwIfNoEntry: false })` per the repo's
+  load-module convention: ENOENT stays a silent miss, EACCES/EIO surface via the
+  site's error channel (top-level catch, `reports.push({error})`, exit-1
+  message, or a logged warning) instead of masquerading as "file absent".
+  Read-failure catches now branch on `e.code`: sidecar contracts unreadable for
+  reasons other than ENOENT print a `warning: cannot read sidecar contract …`
+  in `check`/`check --fix` (no more silent contract-blind green runs);
+  `@nudo:mock` seed evaluation failures warn in `export` before degrading;
+  `pnpm-workspace.yaml` read failures other than ENOENT abort `migrate` (a
+  snapshot/read failure no longer disguises the file as "other" and skips
+  rollback); mock files that exist but can't be read report `read-failed` with
+  the errno instead of the misleading "Mock file not found"; npm entry
+  probes and LSP module-candidate stats log persistent failures instead of
+  degrading a package's export face to unknown or silently breaking
+  go-to-definition; `contract --from-dts` path-like arguments that don't exist
+  now error as `path not found` instead of being treated as npm package names
+  ending in a misleading `no .d.ts files found`.
+- 9a3d6e7: Stop silently swallowing business-Promise failures. `nudo check/test --watch`
+  incremental rounds died silently when the round body threw outside the
+  per-file try (`buildModuleGraph` / `evictForDependents` / `topoSortDirty`) —
+  the screen just froze on the previous round's results; the error is now
+  printed (`nudo <label> incremental failed: …`), mirroring the existing
+  first-round BUG-023 handling. In the LSP server, `validateDocument` (didOpen /
+  didChange debounce) and `handleNudoDepFileChanged` (didOpen / didChange /
+  watched-files) rejections were discarded with an empty catch — a file throwing
+  in the analyzer produced no diagnostics and no trace, forever; failures are
+  now logged to stderr as `[nudo-lsp] …` lines. Best-effort client capability
+  requests (`DiagnosticRefresh` / `CodeLensRefresh` / inlay-hint refresh) keep
+  their intentional silent catch.
+- Updated dependencies [aae0f96]
+- Updated dependencies [52de5ca]
+- Updated dependencies [1ccff57]
+- Updated dependencies [8faa2b0]
+  - @nudojs/core@1.15.0
+  - @nudojs/service@1.9.0
+  - @nudojs/parser@1.5.0
 
-更早版本（53）→ [完整发布历史](./releases-history.md#pkg-lsp)
+更早版本（54）→ [完整发布历史](./releases-history.md#pkg-lsp)
 
-## @nudojs/env 0.4.42 {#pkg-env}
+## @nudojs/env 0.5.0 {#pkg-env}
 
-## 0.4.42
+## 0.5.0
+
+### Minor Changes
+
+- 8faa2b0: **BREAKING** (runtime floor): `engines.node` raised from `>=20` to `>=22` on all published packages. Node 20 reached end-of-life on 2026-04-30, and the nightly engine-smoke matrix only covers Node 22 (the `packageManager`-pinned pnpm already requires `node:sqlite`, i.e. Node >= 22.5, to orchestrate at all). No code or API changes — installs on Node 20 will now warn per npm `engines` semantics.
 
 ### Patch Changes
 
-- Updated dependencies [c19bd48]
-  - @nudojs/core@1.14.1
+- Updated dependencies [aae0f96]
+- Updated dependencies [1ccff57]
+- Updated dependencies [8faa2b0]
+  - @nudojs/core@1.15.0
 
-更早版本（49）→ [完整发布历史](./releases-history.md#pkg-env)
+更早版本（50）→ [完整发布历史](./releases-history.md#pkg-env)
 
-## @nudojs/harvester 0.3.28 {#pkg-harvester}
+## @nudojs/harvester 0.4.0 {#pkg-harvester}
 
-## 0.3.28
+## 0.4.0
 
-### Patch Changes
+### Minor Changes
 
-- Updated dependencies [c19bd48]
-- Updated dependencies [c19bd48]
-  - @nudojs/core@1.14.1
-  - @nudojs/parser@1.4.24
-  - @nudojs/env@0.4.42
-
-更早版本（49）→ [完整发布历史](./releases-history.md#pkg-harvester)
-
-## vite-plugin-nudo 0.4.43 {#pkg-vite-plugin}
-
-## 0.4.43
+- 8faa2b0: **BREAKING** (runtime floor): `engines.node` raised from `>=20` to `>=22` on all published packages. Node 20 reached end-of-life on 2026-04-30, and the nightly engine-smoke matrix only covers Node 22 (the `packageManager`-pinned pnpm already requires `node:sqlite`, i.e. Node >= 22.5, to orchestrate at all). No code or API changes — installs on Node 20 will now warn per npm `engines` semantics.
 
 ### Patch Changes
 
-- c19bd48: Misplaced file-level directives now warn instead of being silently ignored, and `nudo.analysis.exclude` supports real globs (fix-12 batch).
-  
-  - parser: file-level directives (`@nudo:env` / `@nudo:mock-module`) written inside JSDoc blocks emit `nudo:directive-syntax` with the correct `///` form instead of being dropped silently.
-  - service: `nudo.analysis.exclude` accepts glob patterns (shared `compilePattern`, extracted from vite-plugin as the single source; plain substrings still work, defaults always stack).
-  - vite-plugin: pattern matching cut over to the shared `compilePattern` — behavior unchanged, one implementation.
-- Updated dependencies [c19bd48]
-- Updated dependencies [c19bd48]
-  - @nudojs/core@1.14.1
-  - @nudojs/service@1.8.0
+- aae0f96: Fix stale-cache windows in cache keys and session eviction. `nodeHarvestCacheKey`
+  floored `mtimeMs` to whole seconds (same-second, same-size rewrites of
+  `@types/node` reused a stale harvest — now uses the raw float mtime, matching
+  the repo-wide `mtimeMs+size` strict-equality contract). The path-env cache
+  key/validation only compared `mtimeMs` (coarse-mtime filesystems could keep
+  serving a stale `defineEnv` factory and re-register it, self-perpetuating — now
+  `mtimeMs+size`, and the direct-import URL query carries `size` so the ESM
+  module cache can't replay old content). The path-env fallback copy filename
+  hashed only `path:mtime` — rewritten content now hashes into the filename so a
+  changed file gets a new URL and the ESM cache invalidates naturally. Harvest
+  caches (`harvestCache`, node not-found cache) had no production eviction —
+  `clearAnalysisSessionCaches()` now clears both, so `pnpm install` / watcher
+  rounds see upgraded or newly installed `@types` without a process restart.
+  `checkMemoKey` now normalizes `filePath` via `stablePathKey` (same file no
+  longer occupies two entries under different path shapes).
+- 52de5ca: Classify fs "miss" vs "read failure" everywhere. Replaced every
+  `existsSync(p) && statSync(p)` double call (TOCTOU race + errno swallowing)
+  with a single `statSync(p, { throwIfNoEntry: false })` per the repo's
+  load-module convention: ENOENT stays a silent miss, EACCES/EIO surface via the
+  site's error channel (top-level catch, `reports.push({error})`, exit-1
+  message, or a logged warning) instead of masquerading as "file absent".
+  Read-failure catches now branch on `e.code`: sidecar contracts unreadable for
+  reasons other than ENOENT print a `warning: cannot read sidecar contract …`
+  in `check`/`check --fix` (no more silent contract-blind green runs);
+  `@nudo:mock` seed evaluation failures warn in `export` before degrading;
+  `pnpm-workspace.yaml` read failures other than ENOENT abort `migrate` (a
+  snapshot/read failure no longer disguises the file as "other" and skips
+  rollback); mock files that exist but can't be read report `read-failed` with
+  the errno instead of the misleading "Mock file not found"; npm entry
+  probes and LSP module-candidate stats log persistent failures instead of
+  degrading a package's export face to unknown or silently breaking
+  go-to-definition; `contract --from-dts` path-like arguments that don't exist
+  now error as `path not found` instead of being treated as npm package names
+  ending in a misleading `no .d.ts files found`.
+- Updated dependencies [aae0f96]
+- Updated dependencies [1ccff57]
+- Updated dependencies [8faa2b0]
+  - @nudojs/core@1.15.0
+  - @nudojs/parser@1.5.0
+  - @nudojs/env@0.5.0
 
-更早版本（52）→ [完整发布历史](./releases-history.md#pkg-vite-plugin)
+更早版本（50）→ [完整发布历史](./releases-history.md#pkg-harvester)
+
+## vite-plugin-nudo 0.5.0 {#pkg-vite-plugin}
+
+## 0.5.0
+
+### Minor Changes
+
+- 8faa2b0: **BREAKING** (runtime floor): `engines.node` raised from `>=20` to `>=22` on all published packages. Node 20 reached end-of-life on 2026-04-30, and the nightly engine-smoke matrix only covers Node 22 (the `packageManager`-pinned pnpm already requires `node:sqlite`, i.e. Node >= 22.5, to orchestrate at all). No code or API changes — installs on Node 20 will now warn per npm `engines` semantics.
+
+### Patch Changes
+
+- Updated dependencies [aae0f96]
+- Updated dependencies [52de5ca]
+- Updated dependencies [1ccff57]
+- Updated dependencies [8faa2b0]
+  - @nudojs/core@1.15.0
+  - @nudojs/service@1.9.0
+
+更早版本（53）→ [完整发布历史](./releases-history.md#pkg-vite-plugin)
 
 ## nudo-vscode 0.3.7 {#pkg-vscode}
 
