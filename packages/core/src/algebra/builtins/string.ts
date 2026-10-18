@@ -7,6 +7,7 @@ import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
 import { str, mayCoerceThrowOperand, isBigintPrimAbs } from "./shared.ts";
 import { isSymbolAbs } from "./symbol.ts";
+import { isNullishLit } from "./error/error-family.ts";
 
 function toUint16(n: number): number {
   if (!Number.isFinite(n)) return 0;
@@ -33,38 +34,94 @@ export function evalStringStatic(name: string, args: Abs[]): Abs | undefined {
     // GetTemplateObject 外的手写对象（raw 数组）同语义；quasis+subs 全
     // 字面量 → 精确拼接（sub 经 ToString，symbol 定抛 TypeError）；
     // 任一抽象 → str("path")。
+    // Bug 97：原生两级定抛面此前不建模（闭 obj 无 raw 槽折 str("path")
+    // 且 throws 域 never——假 total）：① ToObject(templates)——缺实参/
+    // nullish 字面量 → TypeError；② Get(template,"raw") 后 ToObject(raw)
+    // ——闭 obj 无 raw 槽（含 prim/tuple/arr 等无 raw 访问面形态，node
+    // 实测 String.raw(5)/String.raw([1,2]) 同抛）→ 确定 TypeError；
+    // open/带动态键 obj / any/unknown/sum → str("path") + may TypeError。
+    // fn/brand/eff（expando raw 槽不可判）走宿主回退不变。
     const tpl = args[0];
-    if (!tpl || tpl.shape.k !== "obj") return undefined;
-    const rawAbs = tpl.shape.slots["raw"]?.value;
-    const raws: string[] = [];
-    if (rawAbs && rawAbs.shape.k === "tuple") {
-      for (const el of rawAbs.shape.elements) {
-        const eR = litValue(el);
-        if (!(eR.ok && typeof eR.value === "string")) return str("path");
-        raws.push(eR.value);
-      }
-    } else {
-      return str("path"); // raw 槽缺失/非字面量数组：保守
-    }
-    let out = "";
-    for (let i = 0; i < raws.length; i++) {
-      out += raws[i]!;
-      // 末尾 raw 片后不再拼接；超出 raw 片数的 sub 原生忽略
-      if (i + 1 >= raws.length) break;
-      if (i >= args.length - 1) continue;
-      const sub = args[i + 1]!;
-      if (isSymbolAbs(sub)) throw new NudoThrow(errorTypeAbs("TypeError"));
-      if (sub.term?.op !== "lit") {
-        if (mayCoerceThrowOperand(sub)) {
-          recordMayThrow({ kind: "TypeError", cause: "String.raw substitution ToString may throw (Symbol)" });
+    if (!tpl || isNullishLit(tpl)) throw new NudoThrow(errorTypeAbs("TypeError"));
+    const tshape = tpl.shape;
+    if (tshape.k === "obj") {
+      const os = tshape as {
+        slots: Record<string, { value: Abs; optional?: boolean }>;
+        open?: boolean;
+        index?: unknown;
+      };
+      const rawSlot = Object.prototype.hasOwnProperty.call(os.slots, "raw")
+        ? os.slots["raw"]!
+        : undefined;
+      const openish = os.open === true || !!os.index;
+      if (!rawSlot) {
+        if (openish) {
+          recordMayThrow({ kind: "TypeError", cause: "String.raw template may lack a raw array (ToObject(raw) may throw)" });
+          return str("path");
         }
+        throw new NudoThrow(errorTypeAbs("TypeError")); // 闭 obj 必无 raw 槽
+      }
+      if (rawSlot.optional) {
+        recordMayThrow({ kind: "TypeError", cause: "String.raw template raw slot may be absent" });
         return str("path");
       }
-      const sv = sub.term.value;
-      if (typeof sv === "symbol") throw new NudoThrow(errorTypeAbs("TypeError"));
-      out += String(sv);
+      const rawAbs = rawSlot.value;
+      const raws: string[] = [];
+      if (rawAbs.shape.k === "tuple") {
+        for (const el of rawAbs.shape.elements) {
+          const eR = litValue(el);
+          if (!(eR.ok && typeof eR.value === "string")) {
+            // Bug 97（raw 内容面）：raw 数组元素过 ToString——symbol 定抛
+            // TypeError、抽象元素 may（node 实测 String.raw({raw:[Symbol()]})）
+            if (isSymbolAbs(el)) throw new NudoThrow(errorTypeAbs("TypeError"));
+            if (mayCoerceThrowOperand(el)) {
+              recordMayThrow({ kind: "TypeError", cause: "String.raw raw element ToString may throw (Symbol)" });
+            }
+            return str("path");
+          }
+          raws.push(eR.value);
+        }
+      } else if (isNullishLit(rawAbs)) {
+        // Bug 97（raw 内容面）：ToObject(raw) 对 null/undefined 字面量定抛
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      } else if (rawAbs.term?.op !== "lit") {
+        // Bug 97（raw 内容面）：抽象 raw（ToArrayLike/ToString 不可判）→
+        // may TypeError（原生 raw:null / {length:2**32} / [Symbol] 均抛）
+        recordMayThrow({ kind: "TypeError", cause: "String.raw raw slot content may throw (ToObject/ToString)" });
+        return str("path");
+      } else {
+        return str("path"); // 字面量非数组 raw（raw:5 原生 "" 等）：良性
+      }
+      let out = "";
+      for (let i = 0; i < raws.length; i++) {
+        out += raws[i]!;
+        // 末尾 raw 片后不再拼接；超出 raw 片数的 sub 原生忽略
+        if (i + 1 >= raws.length) break;
+        if (i >= args.length - 1) continue;
+        const sub = args[i + 1]!;
+        if (isSymbolAbs(sub)) throw new NudoThrow(errorTypeAbs("TypeError"));
+        if (sub.term?.op !== "lit") {
+          if (mayCoerceThrowOperand(sub)) {
+            recordMayThrow({ kind: "TypeError", cause: "String.raw substitution ToString may throw (Symbol)" });
+          }
+          return str("path");
+        }
+        const sv = sub.term.value;
+        if (typeof sv === "symbol") throw new NudoThrow(errorTypeAbs("TypeError"));
+        out += String(sv);
+      }
+      return strLit(out);
     }
-    return strLit(out);
+    if (tshape.k === "any" || tshape.k === "unknown" || tshape.k === "sum") {
+      recordMayThrow({ kind: "TypeError", cause: "String.raw template may lack a raw array (ToObject(raw) may throw)" });
+      return str("path");
+    }
+    if (tshape.k === "prim" || tshape.k === "tuple" || tshape.k === "arr") {
+      // 非里 nullish 已在上方定抛；这些形态无 raw 访问面 → Get 后
+      // ToObject(undefined) 确定 TypeError（node 实测）
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+    return undefined; // fn/brand/eff：raw expando 不可判 → 宿主回退
   }
   if (name === "fromCodePoint") {
     if (args.length === 0) return strLit(""); // fromCodePoint() → ""

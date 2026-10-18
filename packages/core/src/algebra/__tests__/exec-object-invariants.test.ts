@@ -8,7 +8,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { litValue } from "@nudojs/core";
-import { call, isNever } from "./eval-helpers.ts";
+import { call, isNever, effects } from "./eval-helpers.ts";
 
 function str(src: string) {
   return litValue(call(src, "run").result);
@@ -149,5 +149,102 @@ describe("evaluator object invariants", () => {
   it("spread still copies slots and preserves later overrides", () => {
     expect(str(`export function run() { let o = {a: 1, b: 2}; let c = {...o, b: 3}; return c.a + ':' + c.b; }`)).toEqual({ ok: true, value: "1:3" });
     expect(str(`export function run() { let o = {a: 1}; return ({...o}).a; }`)).toEqual({ ok: true, value: 1 });
+  });
+});
+
+describe("Bug 120: Object.setPrototypeOf extensibility", () => {
+  // ES2024 OrdinarySetPrototypeOf step 4：不可扩展目标改原型 → TypeError
+  //（此前无条件 setProtoAbs——frozen/sealed/nonext 目标静默改原型）。
+  it("frozen/sealed/non-extensible 目标改原型 → 定抛 TypeError", () => {
+    for (const setup of [
+      `const o = Object.freeze({});`,
+      `const o = Object.seal({a: 1});`,
+      `const o = Object.preventExtensions({});`,
+    ]) {
+      const r = call(`export function run() { ${setup} Object.setPrototypeOf(o, {}); return "no"; }`, "run");
+      expect(isNever(r.result)).toBe(true);
+      expect(throwsTypeError(r.throws)).toBe(true);
+    }
+    // null 原型方向同理（sealed + null）
+    const r2 = call(
+      `export function run() { const o = Object.seal({a: 1}); Object.setPrototypeOf(o, null); return "no"; }`,
+      "run",
+    );
+    expect(isNever(r2.result)).toBe(true);
+    expect(throwsTypeError(r2.throws)).toBe(true);
+  });
+
+  it("可扩展目标照常改原型 + 返回接收者（control）", () => {
+    expect(str(`export function run() { const o = {}; Object.setPrototypeOf(o, {}); return "ok"; }`)).toEqual({ ok: true, value: "ok" });
+    expect(str(`export function run() { const o = {}; Object.setPrototypeOf(o, null); return typeof Object.getPrototypeOf(o); }`)).toEqual({ ok: true, value: "object" });
+  });
+
+  it("frozen 重设同原型不抛（SameValue 豁免先于 extensible 检查）", () => {
+    // 缺省原型 ↔ Object.prototype
+    expect(str(`export function run() { const o = Object.freeze({}); Object.setPrototypeOf(o, Object.prototype); return "no"; }`)).toEqual({ ok: true, value: "no" });
+    // nullProto ↔ lit null
+    expect(str(`export function run() { const o = Object.freeze(Object.create(null)); Object.setPrototypeOf(o, null); return "no"; }`)).toEqual({ ok: true, value: "no" });
+    // protoTable 同 Abs 身份（同变量二次设定）
+    expect(str(`export function run() { const p = {}; const o = Object.setPrototypeOf({}, p); Object.freeze(o); Object.setPrototypeOf(o, p); return "no"; }`)).toEqual({ ok: true, value: "no" });
+    // nullProto frozen 改成对象原型：必抛
+    const r = call(`export function run() { const o = Object.freeze(Object.create(null)); Object.setPrototypeOf(o, {}); return "no"; }`, "run");
+    expect(isNever(r.result)).toBe(true);
+    expect(throwsTypeError(r.throws)).toBe(true);
+  });
+});
+
+describe("Bug 129: freeze/seal 非空 TypedArray", () => {
+  // SetIntegrityLevel 对整数索引异质对象不可行：length > 0 定抛
+  //（V8「Cannot freeze|seal array buffer views with elements」）；空 TA 合法。
+  it("freeze/seal 非空 TA（数字形态，length 槽可证）→ 定抛 TypeError", () => {
+    for (const expr of [
+      `Object.freeze(new Uint8Array(2))`,
+      `Object.seal(new Uint8Array(2))`,
+      `Object.freeze(new Int8Array(1))`,
+      `Object.freeze(new BigInt64Array(4))`,
+    ]) {
+      const r = call(`export function run() { ${expr}; return "ok"; }`, "run");
+      expect(isNever(r.result)).toBe(true);
+      expect(throwsTypeError(r.throws)).toBe(true);
+    }
+  });
+
+  it("freeze/seal 非空 TA（字面量源形态）→ 定抛 TypeError；空 TA 合法", () => {
+    for (const expr of [
+      `Object.freeze(new Uint8Array([1, 2]))`,
+      `Object.seal(new Uint8Array([1, 2]))`,
+      `Object.freeze(new Float64Array([1.5]))`,
+    ]) {
+      const r = call(`export function run() { ${expr}; return "ok"; }`, "run");
+      expect(isNever(r.result)).toBe(true);
+      expect(throwsTypeError(r.throws)).toBe(true);
+    }
+    // 空 TA：冻结成功 + isFrozen 反映（原生 freeze(Uint8Array(0)) 合法）
+    expect(str(`export function run() { const t = Object.freeze(new Uint8Array(0)); return Object.isFrozen(t); }`)).toEqual({ ok: true, value: true });
+    expect(str(`export function run() { const t = Object.seal(new Uint8Array([])); return Object.isSealed(t); }`)).toEqual({ ok: true, value: true });
+  });
+
+  it("preventExtensions/isFrozen/isSealed 对 TA 不抛（controls）", () => {
+    expect(str(`export function run() { Object.preventExtensions(new Uint8Array([1, 2])); return "ok"; }`)).toEqual({ ok: true, value: "ok" });
+    expect(str(`export function run() { return typeof Object.isFrozen(new Uint8Array([1, 2])); }`)).toEqual({ ok: true, value: "boolean" });
+    expect(str(`export function run() { return typeof Object.isSealed(new Uint8Array([1, 2])); }`)).toEqual({ ok: true, value: "boolean" });
+  });
+
+  it("非 TA 内建（ArrayBuffer/DataView/普通对象/数组）freeze 不抛（controls）", () => {
+    for (const recv of [
+      `new ArrayBuffer(4)`,
+      `new DataView(new ArrayBuffer(4))`,
+      `{a: 1}`,
+      `[1, 2]`,
+    ]) {
+      expect(str(`export function run() { Object.freeze(${recv}); return "ok"; }`)).toEqual({ ok: true, value: "ok" });
+    }
+  });
+
+  it("gate：any 接收者 freeze/seal 记 may TypeError；preventExtensions 不记", () => {
+    // 原生：freeze(x) 仅当 x 是非空 TA 才抛——any 域 may（非 false-positive）
+    expect(effects(`export function f(x) { return Object.freeze(x); }`)).toContain("TypeError");
+    expect(effects(`export function f(x) { return Object.seal(x); }`)).toContain("TypeError");
+    expect(effects(`export function f(x) { return Object.preventExtensions(x); }`)).not.toContain("TypeError");
   });
 });

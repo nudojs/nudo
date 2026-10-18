@@ -53,7 +53,7 @@ import { NudoThrow } from "../../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../../exec/may-throw.ts";
 import { $call } from "../../exec/call.ts";
 import { $objAccessor, migrateAccessors, lookupObjAccessor, accessorTable } from "../../accessors.ts";
-import { boolPrim } from "../shared.ts";
+import { boolPrim, TYPED_ARRAY_ELEMENT } from "../shared.ts";
 import {
   type PropFlags,
   getPropFlags,
@@ -66,6 +66,7 @@ import {
 } from "../invariants.ts";
 import { TUPLE_MATERIALIZE_CAP } from "../../containers.ts";
 import { classInstanceInnerOf } from "../../exec/class-registry.ts";
+import { typedArrayEnumKeyView } from "./enum-entries.ts";
 
 export function assignSourceSlots(src: Abs): Record<string, { value: Abs }> | undefined {
   const s = src.shape;
@@ -97,6 +98,21 @@ export function assignSourceSlots(src: Abs): Record<string, { value: Abs }> | un
         setSlot(slots, k, v);
       }
       if (Object.keys(slots).length > 0 || !inner.shape.open) return slots;
+    }
+    return undefined;
+  }
+  // Bug 125 残余：TypedArray 源——索引键是自有可枚举（ECMA-262 §10.4.5），
+  // assign 按长度槽投影 "0".."n-1"（值 = 元素域）；长度不可判（from/of 产
+  // 物无槽）→ undefined 保守降级，不再折 wrong-exact 空。
+  if (s.k === "brand" && TYPED_ARRAY_ELEMENT[s.name] !== undefined) {
+    const view = typedArrayEnumKeyView(src);
+    if (view?.k === "exact") {
+      const elem = TYPED_ARRAY_ELEMENT[s.name]!;
+      const slots: Record<string, { value: Abs }> = {};
+      for (let i = 0; i < view.count; i++) {
+        slots[String(i)] = { value: abs({ k: "prim", type: elem }, undefined, undefined, "exact") };
+      }
+      return slots;
     }
     return undefined;
   }

@@ -190,14 +190,16 @@ describe("Bug 38：new <TA>(n) 数字 length 入槽", () => {
       .toEqual({ ok: true, value: 4 });
   });
 
-  it("length 不入枚举视图（Object.keys / for-in 保持空）", () => {
-    // Object.keys(ta) 折空 tuple（exact）——length 槽 enumerable:false +
-    // TA 家族入 BUILTIN_BRAND_NO_ENUM_KEYS
+  it("length 不入枚举视图；下标键入枚举视图（Bug 125）", () => {
+    // Object.keys(ta) = 下标键 "0".."n-1"（整数索引异质属性——自有可枚举，
+    // Bug 125 修复口径）；length 槽 enumerable:false 不在键集（原生 length
+    // 是 %TypedArray%.prototype 访问器非自有键）
     const r = call(`export function f() { return Object.keys(new Uint8Array(8)); }`);
     expect(r.result.shape.k).toBe("tuple");
-    expect((r.result.shape as { elements: unknown[] }).elements.length).toBe(0);
+    expect((r.result.shape as { elements: { term?: { op: string; value: unknown } }[] }).elements.map((e) => e.term?.value))
+      .toEqual(["0", "1", "2", "3", "4", "5", "6", "7"]);
     expect(val(`export function f() { const ks = []; for (const k in new Uint8Array(8)) { ks.push(k); } return ks.length; }`))
-      .toEqual({ ok: true, value: 0 });
+      .toEqual({ ok: true, value: 8 });
   });
 });
 

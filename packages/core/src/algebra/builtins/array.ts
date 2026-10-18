@@ -289,6 +289,12 @@ function evalArrayFrom(args: Abs[]): Abs {
         const num = typeof v === "number" ? v : Number(v); // string/boolean
         if (Number.isNaN(num)) nLit = 0;
         else nLit = Math.min(Math.max(Math.trunc(num), 0), Number.MAX_SAFE_INTEGER);
+        // Bug 104：array-like 臂的 ArrayCreate(ToLength(len)) 上限——
+        // nLit > 2^32-1 → 定抛 RangeError（与 Array 构造器 4294967295
+        // 上限同口径；node 实测 Array.from({length:2**32}) /
+        // ({length:Infinity}) / ({length:1e10}) 均 RangeError
+        // "Invalid array length"）
+        if (nLit > 4294967295) throw new NudoThrow(errorTypeAbs("RangeError"));
       }
     } else if (isSymbolAbs(lenAbs)) {
       throw new NudoThrow(errorTypeAbs("TypeError")); // ToNumber(symbol) 定抛
@@ -312,7 +318,14 @@ function evalArrayFrom(args: Abs[]): Abs {
       }
       return out;
     };
-    if (!abstractLen) {
+    // Bug 104：抽象 length（open obj 缺槽 / 抽象 prim / obj·any 载体）的
+    // ArrayCreate 上限不可判 → may RangeError（值域/迭代投影不变）
+    if (abstractLen) {
+      recordMayThrow({
+        kind: "RangeError",
+        cause: "Array.from array-like length may exceed the maximum array length",
+      });
+    } else {
       if (nLit === 0) return abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
       if (!open && nLit! <= TUPLE_MATERIALIZE_CAP) {
         // closed obj：全部自有槽已知 → 逐位精确元组（Get(i)：缺失槽 undefined）

@@ -782,7 +782,13 @@ function runTranspiledInner(
     "  return __nudoRet;",
     "})();",
   ].join("\n");
-  const fn = new Function(...argNames, `${js}\n${ret}`);
+  // Bug 116：求值引擎模块体按 ESM 语义应为 strict——此前 new Function 默认
+  // sloppy：静默赋值未声明变量（原生 ESM ReferenceError）、重复参数/八进制
+  // 字面量/delete 变量等 sloppy 合法面不抛、函数 this 归一 globalThis（strict
+  // 应保 undefined/null）。指令前缀必须是函数体首语句（envBinds/CJS prelude
+  // 之前拼入）。注：宿主面折叠不覆盖 arguments.callee 读——$arguments 是纯
+  // Abs 构造，该面由 $get 的 Arguments brand 毒丸接管（C1 提交另落）。
+  const fn = new Function(...argNames, `"use strict";\n${js}\n${ret}`);
   setEvalBindingSink(bindings);
   // BUG-026：开新求值 epoch——同名类碰撞只在
   // 本 run 内判定（跨 run 重注册是常态，
@@ -851,6 +857,8 @@ export function evalExprAbs(
   const src = transpileExpression(expr, {});
   const js = [
     runtimeImportOf("@nudojs/core/exec"),
+    // Bug 116：case 实参等单表达式面同模块体 ESM 语义——strict 前缀
+    `"use strict";`,
     `return (${src});`,
   ].join("\n");
   const cleaned = js.replace(RUNTIME_IMPORT_RE, "");

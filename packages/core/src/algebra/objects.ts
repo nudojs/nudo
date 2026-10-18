@@ -10,6 +10,7 @@ import { pTrue, predToString } from "./pred.ts";
 import type { Abs, Shape, Confidence } from "./abs.ts";
 import { abs, confJoin, litValue, unknown, never, strLit } from "./abs.ts";
 import { noteDerivationJoin } from "./derivation.ts";
+import { enumOwnKeys } from "./builtins/invariants.ts";
 import { $objAccessor, lookupObjAccessor, migrateAccessors } from "./accessors.ts";
 
 /**
@@ -150,6 +151,22 @@ export function setProtoAbs(o: Abs, proto: Abs): Abs {
 }
 
 /**
+ * Bug 109：obj 源的枚举自有槽视图（enumOwnKeys 同口径——defineProperty
+ * 记的 enumerable:false 自有键与 internal 私有槽剔除）。spread/rest 的
+ * CopyDataProperties 面。主过滤在 $spread（getter 物化前，Abs 身份带
+ * flag 侧表时）；此处兜底（副本 abs 无 flag 表 → enumOwnKeys 幂等全过）。
+ */
+function enumSlotsOf(over: Abs): Record<string, Slot> {
+  if (over.shape.k !== "obj") return {};
+  const slots = over.shape.slots;
+  const ks = enumOwnKeys(over, slots);
+  if (ks.length === Object.keys(slots).length) return slots;
+  const out: Record<string, Slot> = {};
+  for (const k of ks) out[k] = slots[k]!;
+  return out;
+}
+
+/**
  * spread：base ⊕ over（右侧覆盖，不是 join）
  * 未出现在 over 的 key 保留 base；over 的 key 覆盖。
  */
@@ -196,11 +213,14 @@ export function spread(base: Abs, over: Abs): Abs {
     };
   }
   if (!isObj(base)) {
-    return { shape: { ...over.shape, open: true }, conf: confJoin(base.conf, over.conf) };
+    // Bug 109：over 侧枚举视图（CopyDataProperties）——defineProperty 记的
+    // enumerable:false 自有键与 internal 私有槽不拷贝
+    const shape: ObjShape = { ...over.shape, slots: enumSlotsOf(over), open: true };
+    return { shape, conf: confJoin(base.conf, over.conf) };
   }
 
   const slots: Record<string, Slot> = { ...base.shape.slots };
-  for (const [k, s] of Object.entries(over.shape.slots)) {
+  for (const [k, s] of Object.entries(enumSlotsOf(over))) {
     setSlot(slots, k, s);
   }
   // over 缺席的 key：若 over 是 open/有动态 key，则原 key 可能仍存在也可能被删

@@ -36,6 +36,7 @@ import {
   enterPromiseForkArm,
   leavePromiseForkArm,
 } from "../../../builtins.ts";
+import { typedArrayEnumKeyView } from "../../../builtins/object/enum-entries.ts";
 import {
   anyMemberResult,
 } from "../../member-diag.ts";
@@ -555,6 +556,16 @@ export function $forInKeys(o: Abs): Abs {
   // brand：内层 obj 槽的可枚举键（类实例字段等）；内建（Date/Map/Promise）
   // 零自有可枚举键 → 空键序列。
   if (shape.k === "brand") {
+    // Bug 125：TypedArray——整数索引异质属性是自有可枚举键 "0".."n-1"，
+    // 与 Object.keys 同口径（typedArrayEnumKeyView 读内层 length 槽）；
+    // 长度可知 → 精确键序列；长度开放 → 抽象字符串键（体 0..N 次——
+    // 空 TA 0 次、非空 n 次，不得折空）。此前整族折 []（wrong-exact）。
+    const taView = typedArrayEnumKeyView(o);
+    if (taView) {
+      return taView.k === "exact"
+        ? $arr(Array.from({ length: taView.count }, (_, i) => $lit(String(i))))
+        : abs({ k: "arr", element: str() }, undefined, undefined, "partial");
+    }
     const inner = shape.shape;
     if (inner.shape.k === "obj") {
       // boxed String brand（Bug 57 附带，T2 移交）：length 不可枚举——原生

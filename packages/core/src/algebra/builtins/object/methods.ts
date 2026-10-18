@@ -33,6 +33,8 @@ import {
   markNullProtoObj,
   canonicalArrayIndex,
   setProtoAbs,
+  getProtoAbs,
+  isNullProtoObj,
   getSlot,
   setSlot,
   propertyKeyOf,
@@ -46,7 +48,7 @@ import { errorTypeAbs, recordMayThrow } from "../../exec/may-throw.ts";
 import { lookupObjAccessor } from "../../accessors.ts";
 import { absFunction } from "../../abs-fn.ts";
 import { isSymbolAbs } from "../symbol.ts";
-import { boolPrim, str, isPrimLike, noBody } from "../shared.ts";
+import { boolPrim, str, isPrimLike, noBody, typedArrayElementOf } from "../shared.ts";
 import {
   getPropFlags,
   markExtState,
@@ -56,7 +58,7 @@ import {
   enumOwnKeys,
 } from "../invariants.ts";
 import { classInstanceInnerOf } from "../../exec/class-registry.ts";
-import { protoOfRecv } from "../ctor.ts";
+import { protoOfRecv, objectProtoBrand } from "../ctor.ts";
 import { isErrorCtorName } from "../error.ts";
 
 import {
@@ -71,7 +73,32 @@ import {
   validateDescriptorObject,
   wellKnownSymbolSlotKey,
 } from "./descriptor.ts";
-import { boxedStringEnumEntries, builtinBrandNoEnumKeys, foldGroupBy } from "./enum-entries.ts";
+import {
+  boxedStringEnumEntries,
+  builtinBrandNoEnumKeys,
+  foldGroupBy,
+  typedArrayEnumKeyView,
+} from "./enum-entries.ts";
+
+/**
+ * Bug 120：OrdinarySetPrototypeOf step 3+4（ES2024）——可扩展目标恒允许；
+ * 不可扩展（freeze/seal/preventExtensions 侧表标记）目标仅 SameValue 同
+ * 原型豁免：nullProto ↔ lit null / protoTable 同 Abs 身份 / 缺省原型 ↔
+ * Object.prototype 单例。抽自 reflect.ts 的 Reflect.setPrototypeOf 判定块
+ *（两入口同一事实源：Reflect 据此返 boolean、Object.setPrototypeOf 据此
+ * 抛 TypeError；SameValue 检查先于 extensibility——frozen 重设同原型不抛，
+ * eval-value-read-reflect.test.ts 已 pin）。
+ */
+export function protoChangeAllowed(t0: Abs, p0: Abs): boolean {
+  if (extStateOf(t0) === undefined) return true;
+  const curIsNull = isNullProtoObj(t0);
+  const p0IsNull = p0.term?.op === "lit" && p0.term.value === null;
+  if (curIsNull && p0IsNull) return true;
+  if (curIsNull !== p0IsNull) return false; // 一侧 null 一侧对象：必不同
+  if (getProtoAbs(t0) === p0) return true;
+  if (getProtoAbs(t0) === undefined && p0 === objectProtoBrand()) return true;
+  return false;
+}
 
 /** Object.keys/values/entries/assign + 不变性方法 */
 export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
@@ -113,12 +140,52 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
   };
 
   /** Bug 84：用户类实例 brand 的公有可枚举自有键值对（私有 Slot.internal
-   *  剔除）；非类实例面 → undefined（调用方保持既有保守口径） */
+   * 剔除）；非类实例面 → undefined（调用方保持既有保守口径） */
   const classInstanceEnumEntries = (a0: Abs | undefined): Array<[string, Abs]> | undefined => {
     const inner = a0 ? classInstanceInnerOf(a0) : undefined;
     if (!inner) return undefined;
     const slots = (inner.shape as ObjShape).slots as Record<string, { value: Abs }>;
     return enumOwnKeys(inner, slots).map((k) => [k, getSlot(slots, k)!.value] as [string, Abs]);
+  };
+
+  /** Bug 125：TA brand 枚举投影素材——typedArrayEnumKeyView（exact/open/
+   * 非 TA）+ 元素域 prim（枚举键全在界内，元素读不并入越界 undefined 臂） */
+  const taEnumInfo = (
+    a0: Abs | undefined,
+  ): { view: { k: "exact"; count: number } | { k: "open" }; elem: Abs } | undefined => {
+    const view = typedArrayEnumKeyView(a0);
+    if (!view) return undefined;
+    const et = typedArrayElementOf((a0!.shape as { name?: string }).name ?? "") ?? "number";
+    return { view, elem: abs({ k: "prim", type: et }, undefined, undefined, "exact") };
+  };
+
+  /** Bug 129：freeze/seal 的 TA 非空守卫——SetIntegrityLevel 对整数索引
+   * 异质对象不可行：长度槽可证 >0 → 定抛 TypeError（V8「Cannot freeze|
+   * seal array buffer views with elements」）、==0 合法照冻、长度抽象/
+   * 未建模（无 length 槽）→ may。抽象接收者（any/unknown/含 any 臂或
+   * 开放长度 TA 臂的 sum）可能是非空 TA → may（gate 面）。preventExtensions/
+   * isFrozen/isSealed 原生对 TA 不抛——不走此守卫。 */
+  const taSetIntegrityGuard = (recv: Abs | undefined, what: "freeze" | "seal"): void => {
+    const view = typedArrayEnumKeyView(recv);
+    if (view) {
+      if (view.k === "exact") {
+        if (view.count > 0) throw new NudoThrow(errorTypeAbs("TypeError"));
+      } else {
+        recordMayThrow({ kind: "TypeError", cause: `Cannot ${what} array buffer views with elements` });
+      }
+      return;
+    }
+    const cause = `Cannot ${what} array buffer views with elements`;
+    const mayTa = (m: Abs): boolean =>
+      m.shape.k === "any" || m.shape.k === "unknown" || typedArrayEnumKeyView(m) !== undefined;
+    const k = recv?.shape.k;
+    if (k === "any" || k === "unknown") {
+      recordMayThrow({ kind: "TypeError", cause });
+    } else if (k === "sum") {
+      if ((recv!.shape as unknown as { members: Abs[] }).members.some(mayTa)) {
+        recordMayThrow({ kind: "TypeError", cause });
+      }
+    }
   };
 
   switch (name) {
@@ -281,6 +348,24 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       // Bug 43：内建 brand 接收者分类——boxed String → 下标键（length 不可
       // 枚举）；其余内建 brand 零可枚举自有键；用户/未知 brand 保持 generic
       {
+        // Bug 125：TA brand——下标键 "0".."n-1"（整数索引异质属性，自有
+        // 可枚举；length 是原型访问器非自有键）；长度槽可知（数字/字面量
+        // 源构造形态）→ 精确键元组；长度开放 → 诚实 partial string[]（此前
+        // 整族折 []——wrong-exact）
+        const ta = taEnumInfo(a0);
+        if (ta) {
+          return ta.view.k === "exact"
+            ? abs(
+                {
+                  k: "tuple",
+                  elements: Array.from({ length: ta.view.count }, (_, i) => strLit(String(i))),
+                },
+                undefined,
+                undefined,
+                "exact",
+              )
+            : abs({ k: "arr", element: str("path") }, undefined, undefined, "partial");
+        }
         const brandKeys = boxedStringEnumEntries(a0);
         if (brandKeys) {
           return abs({ k: "tuple", elements: brandKeys.map(([k]) => strLit(k)) }, undefined, undefined, "exact");
@@ -353,6 +438,19 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       // Bug 43：内建 brand 接收者分类——boxed String → 下标槽字符；其余
       // 内建 brand 零可枚举自有键；用户/未知 brand 保持 generic
       {
+        // Bug 125：TA brand——值走元素域（枚举键全在界内，无越界 undefined
+        // 臂）；长度开放 → partial <元素域>[]（keys 同口径不再折空）
+        const ta = taEnumInfo(a0);
+        if (ta) {
+          return ta.view.k === "exact"
+            ? abs(
+                { k: "tuple", elements: Array.from({ length: ta.view.count }, () => ta.elem) },
+                undefined,
+                undefined,
+                "exact",
+              )
+            : abs({ k: "arr", element: ta.elem }, undefined, undefined, "partial");
+        }
         const brandVals = boxedStringEnumEntries(a0);
         if (brandVals) {
           return abs({ k: "tuple", elements: brandVals.map(([, v]) => v) }, undefined, undefined, "exact");
@@ -433,6 +531,21 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       }
       // Bug 43：内建 brand 分类（同 keys/values）
       {
+        // Bug 125：TA brand——["i", 元素域] 键值对（键集与 keys 同口径）；
+        // 此前整族折 []，entries[0] 下标读被证 always-throw（false-throw）
+        const ta = taEnumInfo(a0);
+        if (ta) {
+          const entry = (i: number): Abs =>
+            abs({ k: "tuple", elements: [strLit(String(i)), ta.elem] }, undefined, undefined, "exact");
+          return ta.view.k === "exact"
+            ? abs(
+                { k: "tuple", elements: Array.from({ length: ta.view.count }, (_, i) => entry(i)) },
+                undefined,
+                undefined,
+                "exact",
+              )
+            : abs({ k: "arr", element: entry(0) }, undefined, undefined, "partial");
+        }
         const brandEntries = boxedStringEnumEntries(a0);
         if (brandEntries) {
           return abs(
@@ -582,6 +695,13 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         (p0.shape.k === "any" || p0.shape.k === "unknown" || p0.shape.k === "sum")
       ) {
         recordMayThrow({ kind: "TypeError", cause: "Object.setPrototypeOf proto must be an object or null" });
+      }
+      // Bug 120：不可扩展目标（freeze/seal/preventExtensions 标记）改原型
+      // → TypeError（OrdinarySetPrototypeOf step 4）；SameValue 同原型豁免
+      // 在先（step 3——frozen 重设同原型不抛）。判定与 Reflect.setPrototypeOf
+      // 共享 protoChangeAllowed（Reflect 返 boolean、Object 抛——单一事实源）。
+      if (!protoChangeAllowed(t0, p0)) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
       }
       return setProtoAbs(t0, p0);
     }
@@ -785,11 +905,22 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       return boolPrim();
     }
     case "freeze": {
-      if (a0) return markExtState(a0, "frozen");
+      // Bug 129：非空 TypedArray 冻结定抛（SetIntegrityLevel 对整数索引
+      // 异质对象不可行——「Cannot freeze array buffer views with elements」）
+      if (a0) {
+        taSetIntegrityGuard(a0, "freeze");
+        return markExtState(a0, "frozen");
+      }
       return undefined;
     }
     case "seal": {
-      if (a0) return markExtState(a0, "sealed");
+      // Bug 129：非空 TypedArray 密封同款定抛（length>0 可证 → 硬抛；
+      // 抽象长度 → may）；preventExtensions/isFrozen/isSealed 原生对 TA
+      // 不抛（V8 允许 preventExt）——不走守卫
+      if (a0) {
+        taSetIntegrityGuard(a0, "seal");
+        return markExtState(a0, "sealed");
+      }
       return undefined;
     }
     case "preventExtensions": {
@@ -1001,6 +1132,26 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       // Bug 43：brand 接收者——boxed String → 下标 + length（不可枚举也含）；
       // Error 家族 → message/stack 等自有槽；其余内建 brand → []
       if (a0.shape.k === "brand") {
+        // Bug 125：TA brand——与 keys 同键集（整数索引自有键；gOPN 原生
+        // 不含 length——它是 %TypedArray%.prototype 访问器非自有键，node
+        // 实测 gOPN(new Uint8Array(3)) → ["0","1","2"]）；长度开放 →
+        // partial string[]
+        {
+          const ta = taEnumInfo(a0);
+          if (ta) {
+            return ta.view.k === "exact"
+              ? abs(
+                  {
+                    k: "tuple",
+                    elements: Array.from({ length: ta.view.count }, (_, i) => strLit(String(i))),
+                  },
+                  undefined,
+                  undefined,
+                  "exact",
+                )
+              : abs({ k: "arr", element: str("path") }, undefined, undefined, "partial");
+          }
+        }
         const brandName = (a0.shape as { name?: string }).name ?? "";
         const inner = (a0.shape as { shape?: Abs }).shape;
         if (brandName === "String" && inner && inner.shape.k === "obj") {

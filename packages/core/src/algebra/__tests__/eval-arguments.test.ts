@@ -178,3 +178,33 @@ describe("evaluator arguments object (strict/ESM)", () => {
     expect(litValue(r.result)).toEqual({ ok: true, value: 3 });
   });
 });
+
+// --- Bug 116：求值引擎模块体 strict 化（seam） ------------------------------
+
+describe("Bug 116: module body strict seam (new Function \"use strict\")", () => {
+  it("arguments / this / 递归既有面不回归（control）", () => {
+    expect(litValue(call(`export function f(a, b) { return arguments.length }`, "f", [lit(1), lit(2)]).result)).toEqual({ ok: true, value: 2 });
+    expect(litValue(call(`export function f(a) { return arguments[0] }`, "f", [lit(7)]).result)).toEqual({ ok: true, value: 7 });
+    // strict 下 arguments.caller 是 undefined 数据属性（node 实测不抛）
+    expect(litValue(call(`export function f() { return typeof arguments.caller }`, "f", []).result)).toEqual({ ok: true, value: "undefined" });
+    // 裸调用 this = undefined（strict）
+    expect(litValue(call(`export function f() { return typeof this }`, "f", []).result)).toEqual({ ok: true, value: "undefined" });
+    // 命名函数表达式递归
+    expect(litValue(call(`export function f(n) { return n <= 0 ? 0 : f(n - 1) }`, "f", [lit(3)]).result)).toEqual({ ok: true, value: 0 });
+  });
+
+  it("sloppy 静默赋值面：未声明变量写不再静默成功（strict ReferenceError 面）", () => {
+    // 引擎宿主面 strict 化后 undeclared 写冒 ReferenceError → throws 面表达
+    const r = call(`export function f() { function g() { q = 1; return "ok"; } try { return g(); } catch (e) { return "caught:" + e.name; } }`);
+    expect(litValue(r.result)).toEqual({ ok: true, value: "caught:ReferenceError" });
+  });
+
+  it("strict 毒丸：arguments.callee 读/写/delete 定抛 TypeError（caller 不毒）", () => {
+    // node 实测（strict）：callee 读/写/删都抛 TypeError；caller 读 undefined
+    expect(litValue(call(`export function f() { try { return (function () { return arguments.callee; })(); } catch (e) { return "T:" + e.name; } }`).result)).toEqual({ ok: true, value: "T:TypeError" });
+    expect(litValue(call(`export function f() { try { (function () { arguments.callee = 1; })(); return "ok"; } catch (e) { return "T:" + e.name; } }`).result)).toEqual({ ok: true, value: "T:TypeError" });
+    expect(litValue(call(`export function f() { try { (function () { delete arguments.callee; })(); return "ok"; } catch (e) { return "T:" + e.name; } }`).result)).toEqual({ ok: true, value: "T:TypeError" });
+    // control：caller 读 strict 下是 undefined 数据属性（不抛）
+    expect(litValue(call(`export function f() { return typeof (function () { return arguments.caller; })(); }`).result)).toEqual({ ok: true, value: "undefined" });
+  });
+});

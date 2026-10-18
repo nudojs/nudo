@@ -7,7 +7,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { litValue } from "@nudojs/core";
-import { call } from "./eval-helpers.ts";
+import { call, effects } from "./eval-helpers.ts";
 
 describe("evaluator Array.from mapFn", () => {
   it("invokes mapFn once per tuple element with index", () => {
@@ -52,5 +52,45 @@ describe("evaluator Array.from mapFn", () => {
   it("regression: Array.from of empty tuple stays abstract", () => {
     const r = call(`export function f() { let t = 0; Array.from([], (x) => { t++; return x; }); return t; }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: 0 });
+  });
+});
+
+// --- Bug 104：array-like length 的 ArrayCreate 上限 -------------------------
+
+describe("Bug 104: Array.from array-like length ceiling", () => {
+  it("字面量 length > 2^32-1 → definite RangeError（含折算字符串/Infinity）", () => {
+    for (const src of [
+      `export function f() { return Array.from({ length: 2 ** 32 }); }`,
+      `export function f() { return Array.from({ length: Infinity }); }`,
+      `export function f() { return Array.from({ length: 1e10 }); }`,
+      `export function f() { return Array.from({ length: "4294967296" }); }`,
+    ]) {
+      const r = call(src);
+      expect(litValue(r.result), src).toEqual({ ok: false });
+      expect((r.throws as { shape?: { k?: string; name?: string } })?.shape?.k === "never").toBe(false);
+      expect((r.throws as { shape?: { k?: string; name?: string } })?.shape?.name).toBe("RangeError");
+    }
+  });
+
+  it("边界内字面量（2^32-1 / 0 / NaN / 截断小数）不抛", () => {
+    // 2^32-1 行：4294967295 元素不可物化（诚实不精确）——只钉不抛 +
+    // throws 域 never；其余行长度可物化，钉精确
+    const r1 = call(`export function f() { return Array.from({ length: 4294967295 }).length; }`);
+    expect((r1.throws as { shape?: { k?: string } })?.shape?.k).toBe("never");
+    expect((r1.result as { shape?: { k?: string } })?.shape?.k).not.toBe("never");
+    for (const src of [
+      `export function f() { return Array.from({ length: 0 }).length === 0; }`,
+      `export function f() { return Array.from({ length: NaN }).length === 0; }`,
+      `export function f() { return Array.from({ length: 2.5 }, (v) => v).length === 2; }`,
+    ]) {
+      const r = call(src);
+      expect(litValue(r.result), src).toEqual({ ok: true, value: true });
+      expect((r.throws as { shape?: { k?: string } })?.shape?.k).toBe("never");
+    }
+  });
+
+  it("抽象 length → may RangeError（gate 面）", () => {
+    const eff = effects(`export function f(x) { return Array.from({ length: x }); }`);
+    expect(eff).toContain("RangeError");
   });
 });

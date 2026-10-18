@@ -25,10 +25,13 @@ import {
 import {
   migrateInvariants,
   enumOwnKeys,
+  isEnumerableView,
 } from "../../../builtins.ts";
 import {
   isNullishAbs,
 } from "../../member-diag.ts";
+import { TYPED_ARRAY_ELEMENT } from "../../../builtins/shared.ts";
+import { typedArrayEnumKeyView } from "../../../builtins/object/enum-entries.ts";
 import { errorTypeAbs, recordMayThrow } from "../../may-throw.ts";
 import { getEvalClass, classInstanceInnerOf } from "../../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../../class-mark.ts";
@@ -110,6 +113,19 @@ export function privateNameGuard(o: unknown, key: string): void {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
   if (s.k === "obj" || s.k === "any" || s.k === "sum") {
+    // Bug 115：闭 obj（对象字面量 / spread 产物 / Object.create(null) 靶）
+    // 必无私有名——私有名只安装于类实例（brand 内槽 / class spec 声明面）
+    // → 定抛 TypeError。open obj（动态键/未知槽/代理靶）与 any/sum 保留
+    // may 档。携带同名槽的克隆/代理靶（非 optional）放行——与 brand 臂
+    // 槽探测同口径。
+    if (s.k === "obj") {
+      const os = s as { slots: Record<string, { value: Abs; optional?: boolean }>; open?: boolean };
+      const slot = getSlot(os.slots, key);
+      if (slot && !slot.optional) return;
+      if (os.open !== true && !("index" in os)) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+    }
     recordMayThrow({
       kind: "TypeError",
       cause: `private member ${key} on receiver that may not declare it`,
@@ -219,20 +235,38 @@ export function $setProto(o: Abs, proto: Abs): Abs {
 /** 对象展开 { ...a, b } */
 export function $spread(a: Abs, b: Abs): Abs {
   let bb = asAbsVal(b);
-  // 原生展开会**调用**源对象 getter 并把结果作为数据槽拷入
+  // 原生展开会**调用**源对象 getter 并把结果作为数据槽拷入。Bug 109：
+  // CopyDataProperties 只拷枚举自有键——枚举视图（defineProperty 记的
+  // enumerable:false 键 / internal 私有槽剔除）与 getter 物化同趟重组
+  //（flag 侧表键控**原始** Abs 身份：先物化后过滤会丢 flag 表、先过滤后
+  // 物化会丢 accessorTable——单趟按枚举键集物化访问器再建副本）。
+  // 非枚举访问器的 getter 原生不调用。重组副本丢侧表（结果槽是纯数据面）。
   const acc = bb && typeof bb === "object" ? accessorTable.get(bb as object) : undefined;
-  if (acc && bb.shape.k === "obj") {
-    let changed = false;
-    const slots = { ...(bb.shape as ObjShape).slots };
-    for (const [k, fn] of acc) {
-      // 纯 getter（无同名数据槽）也要求值拷入——{ get x(){return 5} } 展开后 .x===5
-      if (fn.get) {
-        setSlot(slots, k, { value: fn.get(bb) });
-        changed = true;
+  if (bb && bb.shape.k === "obj") {
+    const os = bb.shape as ObjShape;
+    const enumKeys = new Set(enumOwnKeys(bb, os.slots));
+    // 纯访问器键可能无同名数据槽（不在 slots）——枚举访问器键并入
+    //（isEnumerableView 只查 flag，internal 槽不挂访问器）
+    if (acc) {
+      for (const k of acc.keys()) {
+        if (isEnumerableView(bb, k)) enumKeys.add(k);
       }
     }
-    if (changed) {
-      bb = abs({ k: "obj", slots }, undefined, undefined, bb.conf);
+    if (enumKeys.size !== Object.keys(os.slots).length || acc) {
+      const slots: Record<string, Slot> = {};
+      for (const k of enumKeys) {
+        const g = acc?.get(k)?.get;
+        if (g) {
+          // 纯 getter（无同名数据槽）也要求值拷入——{ get x(){return 5} } 展开后 .x===5
+          setSlot(slots, k, { value: g(bb) });
+        } else {
+          setSlot(slots, k, getSlot(os.slots, k)!);
+        }
+      }
+      const rebuilt: ObjShape = { k: "obj", slots };
+      if (os.open) rebuilt.open = true;
+      if (os.index) rebuilt.index = os.index;
+      bb = abs(rebuilt, undefined, undefined, bb.conf);
     }
   }
   // any 展开：无约束键 → open obj（不是空 {} / unknown）
@@ -251,6 +285,25 @@ export function $spread(a: Abs, b: Abs): Abs {
         setSlot(pub, k, getSlot(ciSlots, k)!);
       }
       b0 = abs({ k: "obj", slots: pub }, undefined, undefined, b0.conf);
+    }
+  }
+  // Bug 125 残余：TypedArray 源（{...ta}）——CopyDataProperties 展开自有
+  // 可枚举索引键，按长度槽投影 "0".."n-1"（值 = 元素域；与
+  // assignSourceSlots 的 TA 臂同口径）；长度不可判 → 保持 brand 走
+  // spreadObj 的 elemsOf 域（sound 抽象，不折 wrong-exact 空）。
+  {
+    const bs = b0?.shape;
+    if (bs?.k === "brand" && TYPED_ARRAY_ELEMENT[bs.name] !== undefined) {
+      const view = typedArrayEnumKeyView(b0);
+      if (view?.k === "exact") {
+        const pub: Record<string, Slot> = {};
+        for (let i = 0; i < view.count; i++) {
+          setSlot(pub, String(i), {
+            value: abs({ k: "prim", type: TYPED_ARRAY_ELEMENT[bs.name]! }, undefined, undefined, "exact"),
+          });
+        }
+        b0 = abs({ k: "obj", slots: pub }, undefined, undefined, b0.conf);
+      }
     }
   }
   if (aa?.shape?.k === "any" || b0?.shape?.k === "any") {
@@ -326,9 +379,12 @@ export function $objRest(o: Abs, keys: string[]): Abs {
   const drop = new Set(keys);
   const slots: Record<string, { value: Abs; optional?: boolean; readonly?: boolean }> = {};
   let openRest = o.shape.open === true;
-  for (const [k, s] of Object.entries(o.shape.slots)) {
+  // Bug 109：rest 只收枚举自有键（CopyDataProperties 同口径——
+  // defineProperty 记的 enumerable:false 键 / internal 私有槽不进 rest；
+  // enumOwnKeys 视图，obj 源 flag 侧表键控本 Abs 身份）
+  for (const k of enumOwnKeys(o, o.shape.slots)) {
     if (drop.has(k)) continue;
-    setSlot(slots, k, s);
+    setSlot(slots, k, o.shape.slots[k]!);
     // optional 源键可能仍以 undefined 出现在 rest 的动态面；闭槽无需 open
   }
   // 提取的 optional 键：JS rest 会排除该键，但 open 对象上未知键仍可能进 rest

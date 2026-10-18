@@ -54,6 +54,39 @@ import { findMethod, findStaticMethod, instanceOwnFaceHasMember, chainHasStaticM
 import { runtimeAssignObject } from "./assign.ts";
 import { execRegexBrand, stringRegexMethod } from "../class-regex.ts";
 
+/**
+ * Bug 107：Number.prototype digits/radix 字面量实参域检查（接收者无关——
+ * 提升于接收者字面量守卫之前）。非字面量实参直接 return——各方法臂既有
+ * recordMayThrow 口径不变。toLocaleString/valueOf 不转换实参，不在面内。
+ */
+function enforceNumProtoArgDomain(method: string, argAbs: Abs | undefined): void {
+  if (
+    method !== "toFixed" &&
+    method !== "toExponential" &&
+    method !== "toPrecision" &&
+    method !== "toString"
+  ) {
+    return;
+  }
+  if (argAbs === undefined) return;
+  if (isSymbolAbs(argAbs)) throw new NudoThrow(errorTypeAbs("TypeError"));
+  if (argAbs.term?.op !== "lit") return;
+  const v = argAbs.term.value;
+  if (v === undefined) return; // 显式 undefined ≡ 缺省
+  if (typeof v === "bigint") throw new NudoThrow(errorTypeAbs("TypeError")); // ToNumber(1n) 定抛
+  let n: number;
+  if (typeof v === "number") n = v;
+  else if (typeof v === "string" || typeof v === "boolean" || v === null) n = Number(v);
+  else return;
+  if (Number.isNaN(n)) n = 0; // ToIntegerOrInfinity(NaN) = +0（node 实测 (1.5).toFixed(NaN) === "2"）
+  else n = Math.trunc(n); // 截断（100.9 → 100 合法）
+  let bad: boolean;
+  if (method === "toFixed" || method === "toExponential") bad = !(n >= 0 && n <= 100);
+  else if (method === "toPrecision") bad = !(n >= 1 && n <= 100);
+  else bad = !(n >= 2 && n <= 36); // toString radix
+  if (bad) throw new NudoThrow(errorTypeAbs("RangeError"));
+}
+
 /** 实例方法调用：沿继承链；类 Abs 上回落 staticMethods；obj 上回落属性函数 */
 export function $invoke(
   thisVal: Abs,
@@ -442,6 +475,15 @@ function $invokeInner(
   // 未接管的其它方法不得在此 return——继续后续诊断路径（no-method）。
   if (thisVal.shape.k === "prim" && thisVal.shape.type === "number") {
     if (method === "valueOf") return thisVal;
+    // Bug 107：字面量 digits/radix 实参的域检查与接收者是否字面量无关——
+    // 提升到接收者 guard 之前（此前 Math.random().toFixed(500) 等抽象
+    // number 接收者在下方各方法臂早折抽象 string，漏掉确定的 RangeError
+    // → throws 域 never 的假 total）。方法界：toFixed/toExponential
+    // [0,100]、toPrecision [1,100]、toString radix [2,36]（ToIntegerOrInfinity
+    // 后判；symbol 实参 ToNumber 定抛、bigint 字面量同）；toLocaleString
+    // 的 ICU 路径不转换实参（(1.5).toLocaleString(Symbol()) → "1.5"）——
+    // 不在提升面。抽象实参 return——各方法臂既有 recordMayThrow 口径不变。
+    enforceNumProtoArgDomain(method, args[0]);
     if (method === "toString" || method === "toLocaleString") {
       const nvR = litValue(thisVal);
       const nv = nvR.ok ? nvR.value : undefined;
@@ -467,7 +509,11 @@ function $invokeInner(
       const av = avR?.ok ? avR.value : undefined;
       try {
         const impl = Number.prototype as unknown as Record<string, (...a: unknown[]) => string>;
-        return strLit(impl[method === "toLocaleString" ? "toString" : method]!.call(nv, av));
+        // toLocaleString 的 ICU 路径不转换实参（(1.5).toLocaleString(1n) →
+        // "1.5"）——重定向宿主 toString 时必须丢实参（此前透传 av 让字面量
+        // bigint/symbol 折假 never）
+        const hostArgs = method === "toLocaleString" ? [] : av === undefined ? [] : [av];
+        return strLit(impl[method === "toLocaleString" ? "toString" : method]!.call(nv, ...hostArgs));
       } catch (e) {
         if (e instanceof TypeError) throw new NudoThrow(errorTypeAbs("TypeError"));
         if (e instanceof RangeError) throw new NudoThrow(errorTypeAbs("RangeError"));
