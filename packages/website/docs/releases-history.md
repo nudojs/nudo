@@ -11,19 +11,47 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 | Package | Current version |
 |----------|-----------------|
-| `@nudojs/core` | 1.15.1 |
-| `@nudojs/service` | 1.9.1 |
-| `nudojs (CLI)` | 1.6.1 |
-| `@nudojs/parser` | 1.5.1 |
-| `@nudojs/lsp` | 1.7.1 |
-| `@nudojs/env` | 0.5.1 |
-| `@nudojs/harvester` | 0.4.1 |
-| `vite-plugin-nudo` | 0.5.1 |
-| `nudo-vscode` | 0.3.49 |
+| `@nudojs/core` | 1.15.2 |
+| `@nudojs/service` | 1.9.2 |
+| `nudojs (CLI)` | 1.6.2 |
+| `@nudojs/parser` | 1.5.2 |
+| `@nudojs/lsp` | 1.7.2 |
+| `@nudojs/env` | 0.5.2 |
+| `@nudojs/harvester` | 0.4.2 |
+| `vite-plugin-nudo` | 0.5.2 |
+| `nudo-vscode` | 0.3.50 |
 
 **Jump to package:** [`@nudojs/core`](#pkg-core) · [`@nudojs/service`](#pkg-service) · [`nudojs (CLI)`](#pkg-nudojs) · [`@nudojs/parser`](#pkg-parser) · [`@nudojs/lsp`](#pkg-lsp) · [`@nudojs/env`](#pkg-env) · [`@nudojs/harvester`](#pkg-harvester) · [`vite-plugin-nudo`](#pkg-vite-plugin) · [`nudo-vscode`](#pkg-vscode)
 
-## @nudojs/core 1.15.1 {#pkg-core}
+## @nudojs/core 1.15.2 {#pkg-core}
+
+## 1.15.2
+
+### Patch Changes
+
+- 4513a45: Fix a 5.5x yargs regression from the Bug 116 strict seam: guard shadow
+  rebinding emitted the **guarded identifier** as an arrow parameter
+  (`((arguments) => THUNK)(…)` for `if (arguments.length === 0)` style
+  discriminant/nullish/typeof/rel guards), and `arguments`/`eval` are
+  illegal binding names in strict code — the whole module body then died
+  at `new Function` compile time with "Unexpected eval or arguments in
+  strict mode", fail-closed to empty exports, and since failed evals are
+  never memoized every analysis re-transpiled the file (yargs check
+  5952ms → 1161ms after the fix). Guard names that cannot be bound in
+  strict mode now skip the narrowing wrapper entirely (same all-or-nothing
+  skip as fork-binding collisions — narrowing is a precision gain, not a
+  semantic obligation). The `"use strict"` prefix itself is now scoped to
+  sources with ESM syntax (`sourceHasEsmSyntax`: static `import` / any
+  `export` statement ⇒ definitely ESM); sources without it follow Node's
+  `.js`-without-`type:"module"` default and stay CommonJS/sloppy, so
+  sloppy-legal constructs (implicit global writes, `arguments` bindings)
+  no longer miscompile in CJS files. Docs: the levenshtein
+  `@nudo:invariant` example splits its L2 expectation
+  (`--ignore-throws RangeError`, mirroring the engine test suite) for the
+  legitimate `Array.from` array-like-length may-throw.
+
+<details>
+<summary>Version history (53)</summary>
 
 ## 1.15.1
 
@@ -217,9 +245,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   argsList, non-constructor newTarget) passed silently. argsList is now
   validated at `args[1]` for `construct`, and a present `newTarget` is
   checked for constructability (Bug 121).
-
-<details>
-<summary>Version history (52)</summary>
 
 ## 1.15.0
 
@@ -1405,7 +1430,20 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/service 1.9.1 {#pkg-service}
+## @nudojs/service 1.9.2 {#pkg-service}
+
+## 1.9.2
+
+### Patch Changes
+
+- Updated dependencies [4513a45]
+  - @nudojs/core@1.15.2
+  - @nudojs/env@0.5.2
+  - @nudojs/harvester@0.4.2
+  - @nudojs/parser@1.5.2
+
+<details>
+<summary>Version history (55)</summary>
 
 ## 1.9.1
 
@@ -1428,9 +1466,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/env@0.5.1
   - @nudojs/harvester@0.4.1
   - @nudojs/parser@1.5.1
-
-<details>
-<summary>Version history (54)</summary>
 
 ## 1.9.0
 
@@ -2493,7 +2528,21 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## nudojs (CLI) 1.6.1 {#pkg-nudojs}
+## nudojs (CLI) 1.6.2 {#pkg-nudojs}
+
+## 1.6.2
+
+### Patch Changes
+
+- Updated dependencies [4513a45]
+  - @nudojs/core@1.15.2
+  - @nudojs/env@0.5.2
+  - @nudojs/harvester@0.4.2
+  - @nudojs/parser@1.5.2
+  - @nudojs/service@1.9.2
+
+<details>
+<summary>Version history (52)</summary>
 
 ## 1.6.1
 
@@ -2517,9 +2566,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/harvester@0.4.1
   - @nudojs/parser@1.5.1
   - @nudojs/service@1.9.1
-
-<details>
-<summary>Version history (51)</summary>
 
 ## 1.6.0
 
@@ -3360,7 +3406,17 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/parser 1.5.1 {#pkg-parser}
+## @nudojs/parser 1.5.2 {#pkg-parser}
+
+## 1.5.2
+
+### Patch Changes
+
+- Updated dependencies [4513a45]
+  - @nudojs/core@1.15.2
+
+<details>
+<summary>Version history (52)</summary>
 
 ## 1.5.1
 
@@ -3380,9 +3436,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 - Updated dependencies [8dd2b50]
 - Updated dependencies [725c8e4]
   - @nudojs/core@1.15.1
-
-<details>
-<summary>Version history (51)</summary>
 
 ## 1.5.0
 
@@ -3975,7 +4028,19 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/lsp 1.7.1 {#pkg-lsp}
+## @nudojs/lsp 1.7.2 {#pkg-lsp}
+
+## 1.7.2
+
+### Patch Changes
+
+- Updated dependencies [4513a45]
+  - @nudojs/core@1.15.2
+  - @nudojs/parser@1.5.2
+  - @nudojs/service@1.9.2
+
+<details>
+<summary>Version history (56)</summary>
 
 ## 1.7.1
 
@@ -3997,9 +4062,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/core@1.15.1
   - @nudojs/parser@1.5.1
   - @nudojs/service@1.9.1
-
-<details>
-<summary>Version history (55)</summary>
 
 ## 1.7.0
 
@@ -5023,7 +5085,17 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/env 0.5.1 {#pkg-env}
+## @nudojs/env 0.5.2 {#pkg-env}
+
+## 0.5.2
+
+### Patch Changes
+
+- Updated dependencies [4513a45]
+  - @nudojs/core@1.15.2
+
+<details>
+<summary>Version history (52)</summary>
 
 ## 0.5.1
 
@@ -5043,9 +5115,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 - Updated dependencies [8dd2b50]
 - Updated dependencies [725c8e4]
   - @nudojs/core@1.15.1
-
-<details>
-<summary>Version history (51)</summary>
 
 ## 0.5.0
 
@@ -5571,7 +5640,19 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## @nudojs/harvester 0.4.1 {#pkg-harvester}
+## @nudojs/harvester 0.4.2 {#pkg-harvester}
+
+## 0.4.2
+
+### Patch Changes
+
+- Updated dependencies [4513a45]
+  - @nudojs/core@1.15.2
+  - @nudojs/env@0.5.2
+  - @nudojs/parser@1.5.2
+
+<details>
+<summary>Version history (52)</summary>
 
 ## 0.4.1
 
@@ -5593,9 +5674,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
   - @nudojs/core@1.15.1
   - @nudojs/env@0.5.1
   - @nudojs/parser@1.5.1
-
-<details>
-<summary>Version history (51)</summary>
 
 ## 0.4.0
 
@@ -6239,7 +6317,18 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 
 </details>
 
-## vite-plugin-nudo 0.5.1 {#pkg-vite-plugin}
+## vite-plugin-nudo 0.5.2 {#pkg-vite-plugin}
+
+## 0.5.2
+
+### Patch Changes
+
+- Updated dependencies [4513a45]
+  - @nudojs/core@1.15.2
+  - @nudojs/service@1.9.2
+
+<details>
+<summary>Version history (55)</summary>
 
 ## 0.5.1
 
@@ -6260,9 +6349,6 @@ Full history (including archived older versions). Current snapshot: [Releases](.
 - Updated dependencies [725c8e4]
   - @nudojs/core@1.15.1
   - @nudojs/service@1.9.1
-
-<details>
-<summary>Version history (54)</summary>
 
 ## 0.5.0
 
