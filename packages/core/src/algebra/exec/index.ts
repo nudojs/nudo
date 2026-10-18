@@ -36,7 +36,7 @@ export {
 } from "./call.ts";
 
 export {
-  $class, $invoke, $invokeSuper, $invokeSuperObj, $new, $optionalGet, $optionalInvoke,
+  $class, $invoke, $invokeKey, $optionalInvokeKey, $invokeSuper, $invokeSuperObj, $new, $optionalGet, $optionalInvoke,
   $orDefault, $reStateCall, $setKey, $staticInit, $staticInvoke, $invokeSuperKey, $super, $getSuper,
   $getSuperObj, $setSuper, $setSuperObj, $thisGet, $setSuperStatic, $staticSuperInvoke,
   $thisSet, type EvalClassSpec, clearBClasses, getEvalClass, registerEvalClass

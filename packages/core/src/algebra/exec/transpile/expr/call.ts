@@ -7,7 +7,9 @@
  * - require(spec) 可折叠说明符 → __nudoRequire；真动态 → 诚实 $unknown()；
  * - RegExp test/exec 的 lastIndex 写回必须发生在表达式内部（元素顺序副作用），
  *   receiver 为本地绑定时内联「求值 + 写回」IIFE；
- * - 计算字面量键调用（obj["m"]()/obj[1]()）同走 $invoke 保 this 绑定。
+ * - 计算字面量键调用（obj["m"]()/obj[1]()）同走 $invoke 保 this 绑定；
+ * - 计算非字面量键调用（obj[key]()，key 运行时求值）走 $invokeKey
+ *   （键折叠槽名 + $invoke 派发），接收者不丢。
  */
 import type {
   Expression,
@@ -194,6 +196,39 @@ export function transpileCallExpr(
           return opt
             ? `$optionalInvoke(${recv}, ${name}, [${args}])`
             : `$invoke(${recv}, ${name}, [${args}]${locArg})`;
+        }
+      }
+      // obj[key](args)（计算**非字面量**键：标识符/调用/成员链/Symbol 常量
+      // 读等）→ $invokeKey：键运行时求值折叠槽名后走 $invoke 既有派发，
+      // 接收者不丢（此前落通用 $call($idx(...))——$call 无接收者参数，方法体
+      // this 读失败/内建 brand 校验假定抛 → 假 never）。super 接收者由上方
+      // 专用分支接管，不在此列。
+      {
+        const calleeComputed = (callee as { computed?: boolean }).computed === true;
+        const keyNode = calleeComputed
+          ? (callee as { property?: { type?: string } }).property
+          : undefined;
+        if (
+          (callee.type === "MemberExpression" || callee.type === "OptionalMemberExpression") &&
+          keyNode !== undefined &&
+          isExpression(keyNode as Node) &&
+          callee.object.type !== "Super"
+        ) {
+          const recv = transpileExpression(callee.object as Expression, opts);
+          const keySrc = transpileExpression(keyNode as Expression, opts);
+          const args = expr.arguments
+            .map((a) =>
+              a.type === "SpreadElement"
+                ? `...$elems(${transpileExpression(a.argument as Expression, opts)})`
+                : transpileExpression(a as Expression, opts),
+            )
+            .join(", ");
+          const opt = optionalCall || (callee as { optional?: boolean }).optional === true;
+          const loc = expr.loc;
+          const locArg = loc ? `, [${loc.start.line}, ${loc.start.column}]` : "";
+          return opt
+            ? `$optionalInvokeKey(${recv}, ${keySrc}, [${args}])`
+            : `$invokeKey(${recv}, ${keySrc}, [${args}]${locArg})`;
         }
       }
       // 标识符调用 → $callNamed（可采集 call@ + 实参 provenance）

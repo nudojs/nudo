@@ -11,7 +11,7 @@
  */
 import type { Abs } from "../../abs.ts";
 import { abs, unknown, litValue, strLit } from "../../abs.ts";
-import { joinAbs, getSlot } from "../../objects.ts";
+import { joinAbs, getSlot, propertyKeyOf } from "../../objects.ts";
 import { TYPED_ARRAY_CALLBACK_METHODS, builtinSuperCtorOf, brandHasProtoMember, classChainHasHole } from "../runtime/members.ts";
 import { typedArrayElementOf } from "../../builtins/shared.ts";
 import { typedArrayEnumKeyView } from "../../builtins/object/enum-entries.ts";
@@ -21,7 +21,7 @@ import { withNewTargetReset, undef, asAbsVal } from "../runtime/state.ts";
 import { $call } from "../call.ts";
 import { callHostGlobalFn } from "../calls.ts";
 import { getFnImpl, absFunction, hostFnCtorFacet } from "../../abs-fn.ts";
-import { evalNamespaceCall, evalBuiltinInstanceMethod, isSymbolAbs, stringOfSymbol, evalPromiseMethod, boxedPrimitiveValue, sumHasPrimMember, evalArrayStatic } from "../../builtins.ts";
+import { evalNamespaceCall, evalBuiltinInstanceMethod, isSymbolAbs, stringOfSymbol, evalPromiseMethod, boxedPrimitiveValue, sumHasPrimMember, evalArrayStatic, collectionIteratorAbs, abstractSeqIteratorAbs } from "../../builtins.ts";
 import { isErrorCtorName } from "../../builtins/error.ts";
 import {
   validateCallableArg,
@@ -113,6 +113,112 @@ export function $invoke(
   }
   // Bug 79：方法调用是普通调用面——调用期间 new.target 读 undefined
   return withNewTargetReset(() => $invokeInner(thisVal, method, normArgs, loc));
+}
+
+// ---------------------------------------------------------------------------
+// 计算键成员调用（obj[key]()，key 是运行时求值的非字面量键——标识符/调用/
+// 成员链/Symbol 常量读等）。修复前 transpile 把这类 callee 落通用
+// $call($idx(obj, key))：$call 无接收者通道 → 方法体 this 读失败 / 内建
+// brand 校验假定抛 → 整调用折 never。此处键折叠成槽名后复用 $invoke 既有
+// 派发（实例槽/原型链/类注册表，接收者绑 recv）。
+// ---------------------------------------------------------------------------
+
+/** well-known symbol lit → "@@name" 槽名。与 transpile 静态投影
+ *  m[Symbol.iterator] → $get(m,"@@iterator")（expr/member.ts）同口径：按
+ *  宿主 Symbol 静态位身份映射（well-known 的 description 是
+ *  "Symbol.iterator"，不可直接当槽名用）；Symbol("x") / Symbol.for 的用户
+ *  符号无槽名模型 → undefined。 */
+const WELL_KNOWN_SYMBOL_SLOTS: ReadonlyMap<symbol, string> = (() => {
+  const m = new Map<symbol, string>();
+  for (const name of Object.getOwnPropertyNames(Symbol)) {
+    const v = (Symbol as unknown as Record<string, unknown>)[name];
+    if (typeof v === "symbol") m.set(v, `@@${name}`);
+  }
+  return m;
+})();
+
+/** 计算键 → 槽名：ToPropertyKey 字面量折叠（propertyKeyOf：数字/布尔/
+ *  nullish → String(v)）在前，well-known symbol 投影兜底；抽象键 / 用户
+ *  symbol → undefined（方法身份不可判）。 */
+function invokeKeySlotOf(key: Abs): string | undefined {
+  if (key.term?.op === "lit") {
+    const v = key.term.value;
+    if (typeof v === "symbol") return WELL_KNOWN_SYMBOL_SLOTS.get(v);
+  }
+  return propertyKeyOf(key);
+}
+
+/** @@iterator 协议面：tuple/arr/字符串接收者的迭代器对象不在 $invoke 派发
+ *  内（原生 Array.prototype[Symbol.iterator] === values，%StringPrototype%
+ *  上是字符串迭代器）——数组/元组复用 invokeArrMethod 的 values 臂（单一
+ *  事实源，产 collectionIteratorAbs/abstractSeqIteratorAbs，可 .next()/
+ *  spread）；字符串按 code point 展开（与 elemsOf 的字符串臂同口径）。
+ *  obj 接收者（生成器 @@iterator 自返槽 / match-iter 侧表等）不由本臂
+ *  接管，落 $invoke 的槽派发。 */
+function iteratorFaceOf(recv: Abs): Abs | undefined {
+  const s = recv.shape;
+  if (s.k === "arr" || s.k === "tuple") {
+    return invokeArrMethod(recv, "values", []);
+  }
+  let strRecv: Abs | undefined;
+  if (s.k === "prim" && s.type === "string") {
+    strRecv = recv;
+  } else if (s.k === "brand" && s.name === "String") {
+    // new String("ab")：拆箱后按字符串迭代（boxed → [[PrimitiveValue]]）
+    const un = boxedPrimitiveValue(recv);
+    if (un?.shape.k === "prim" && un.shape.type === "string") strRecv = un;
+  }
+  if (strRecv) {
+    const svR = litValue(strRecv);
+    const sv = svR.ok && typeof svR.value === "string" ? svR.value : undefined;
+    if (sv !== undefined) {
+      // 字面量字符串：code point 精确展开（[...sv] 按 Unicode 码点切，
+      // 代理对不拆半）
+      return collectionIteratorAbs([...sv].map((c) => strLit(c)));
+    }
+    // 抽象字符串：单代表 string 元素（长度不可知，与 arr 臂同口径）
+    return abstractSeqIteratorAbs(
+      abs({ k: "prim", type: "string" }, undefined, undefined, "path"),
+    );
+  }
+  return undefined;
+}
+
+/** obj[key]()：计算键成员调用（键运行时求值）。键折叠成槽名后走 $invoke
+ *  既有派发；@@iterator 键按接收者形态折迭代器对象。键不可折叠（抽象键 /
+ *  用户 symbol）→ 诚实 unknown（与 $call 对 unknown callee 同口径——
+ *  unknown 是 fail-closed 令牌，不记 may-throw）。 */
+export function $invokeKey(
+  thisVal: Abs,
+  key: Abs,
+  args: Abs[],
+  loc?: [number, number],
+): Abs {
+  const k = invokeKeySlotOf(key);
+  if (k === undefined) return unknown;
+  if (k === "@@iterator") {
+    const it = iteratorFaceOf(thisVal);
+    if (it !== undefined) return it;
+  }
+  return $invoke(thisVal, k, args, loc);
+}
+
+/** 可选链计算键调用（a?.[k]() / a[k]?.() 的非链路径）：nullish 接收者
+ *  短路 undefined 字面量（$optionalInvoke 同口径）；键折叠与派发同
+ *  $invokeKey。 */
+export function $optionalInvokeKey(thisVal: Abs, key: Abs, args: Abs[]): Abs {
+  if (
+    thisVal?.term?.op === "lit" &&
+    (thisVal.term.value === null || thisVal.term.value === undefined)
+  ) {
+    return abs(
+      { k: "unknown" },
+      { op: "lit", value: undefined },
+      undefined,
+      "exact",
+    );
+  }
+  return $invokeKey(thisVal, key, args);
 }
 
 function $invokeInner(
