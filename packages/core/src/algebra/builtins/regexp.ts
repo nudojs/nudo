@@ -9,6 +9,7 @@ import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
 import { pTrue } from "../pred.ts";
 import { boolPrim, str, mayCoerceThrowOperand } from "./shared.ts";
+import { setPropFlags } from "./invariants.ts";
 import { isSymbolAbs } from "../symbol-id.ts";
 
 export function evalRegExpCtor(args: Abs[]): Abs {
@@ -193,6 +194,32 @@ export function validateRegexSubjectArg(subject: Abs | undefined): void {
   recordMayThrow({ kind: "TypeError", cause: "RegExp test/exec subject ToString may throw (Symbol)" });
 }
 
+/**
+ * Bug「match/exec 结果 JSON 视图」：RegExpExecArray 原生是 Array（IsArray
+ * = true）——JSON.stringify 走 SerializeJSONArray：只见下标元素 0..n-1
+ * （"abc".match(/b/) → ["b"]），index/input/groups 虽可枚举但非数组下标、
+ * length 是数组 exotic 非枚举自有属性，均不进 JSON 面。
+ * 容器侧 arr（{k:"arr", element}）无长度/侧槽、tuple 无命名侧槽（非下标
+ * 键读折 undefined），形状维持 obj（m[0]/m.length/m.index/m.input/m.groups.x
+ * 的槽读面 #136 依赖）；数组性经本 WeakSet 侧表标注，json.ts 序列化面
+ * 消费（按下标槽 0..n-1 走数组序列化）。length 槽单挂 enumerable:false
+ * （原生数组 length 是唯一非枚举自有属性——Object.keys/展开/assign 面）；
+ * index/input/groups 保持可枚举（spec CreateDataProperty），且 groups 槽的
+ * undefined 值维持差分 harness concrete() 整值盲区（skip 基线不动）。
+ */
+const matchArrayViews = new WeakSet<object>();
+
+/** match 结果 Abs 标注数组视图（json.ts 按下标槽序列化为数组；具体/
+ *  抽象两路径与 matchAll 迭代元素共用） */
+export function markMatchArrayView(a: Abs): void {
+  matchArrayViews.add(a);
+}
+
+/** match 结果 Abs 判定（json.ts 的 stringify 三消费点共用） */
+export function isMatchArrayView(a: Abs): boolean {
+  return matchArrayViews.has(a);
+}
+
 /** d 旗标（ES2022 hasIndices）捕获组区间 [start, end] → 精确二元元组 */
 function indexPairAbs(pair: readonly [number, number]): Abs {
   return abs({ k: "tuple", elements: [numLit(pair[0]), numLit(pair[1])] }, undefined, undefined, "exact");
@@ -257,7 +284,19 @@ export function matchResultAbs(m: RegExpExecArray): Abs {
     };
     slots["indices"] = { value: abs({ k: "obj", slots: islots }, undefined, undefined, "exact") };
   }
-  return abs({ k: "obj", slots }, undefined, undefined, "exact");
+  const result = abs({ k: "obj", slots }, undefined, undefined, "exact");
+  // Bug「match/exec 结果 JSON 视图」：原生 Array——JSON.stringify 按下标槽
+  // 走数组序列化（["b"]）；length 是唯一非枚举自有属性（index/input/groups
+  // 原生可枚举、但非数组下标不进 JSON 面）。indices 镜像 obj 原生同为
+  // Array，一并标注
+  setPropFlags(result, "length", { enumerable: false });
+  markMatchArrayView(result);
+  const indicesAbs = slots["indices"]?.value;
+  if (indicesAbs) {
+    setPropFlags(indicesAbs, "length", { enumerable: false });
+    markMatchArrayView(indicesAbs);
+  }
+  return result;
 }
 
 export function evalRegExpMethod(name: string, recv: Abs, args: Abs[]): Abs | undefined {

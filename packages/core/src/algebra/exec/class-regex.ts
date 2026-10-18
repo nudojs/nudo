@@ -12,7 +12,8 @@ import { NudoThrow } from "./runtime.ts";
 import { errorTypeAbs, recordMayThrow } from "./may-throw.ts";
 import { registerMatchIter } from "./match-iter.ts";
 import { isSymbolAbs } from "../symbol-id.ts";
-import { validateRegexSubjectArg, matchResultAbs, tryMakeRegexAbs } from "../builtins/regexp.ts";
+import { setPropFlags } from "../builtins/invariants.ts";
+import { validateRegexSubjectArg, matchResultAbs, tryMakeRegexAbs, markMatchArrayView } from "../builtins/regexp.ts";
 
 /** RegExp brand 内部 source/flags/lastIndex 提取（exec/test 共用） */
 export function regexParts(re: Abs): { pat: string; flags: string; lastIndex: number } | undefined {
@@ -196,7 +197,13 @@ export function execRegexBrand(re: Abs, method: string, args: Abs[]): Abs | unde
         ? objOf(Object.fromEntries(groupNames.map((n) => [n, { value: joinAbs(str(), undefAbs()) }])))
         : undefAbs(),
     };
-    return joinAbs(nullArm, abs({ k: "obj", slots }, undefined, undefined, "path"));
+    // Bug「match/exec 结果 JSON 视图」：数组视图标注——JSON.stringify 按
+    // 下标槽走数组序列化（与具体路径 matchResultAbs 同构；元素抽象时照常
+    // 不可折 partial）。length 单挂非枚举（原生数组 length 唯一非枚举）
+    const mAbs = abs({ k: "obj", slots }, undefined, undefined, "path");
+    setPropFlags(mAbs, "length", { enumerable: false });
+    markMatchArrayView(mAbs);
+    return joinAbs(nullArm, mAbs);
   }
   try {
     return regexExecWithState(re, method, subject).result;
@@ -375,8 +382,12 @@ export function stringRegexMethod(recv: Abs, method: string, args: Abs[]): Abs |
   const ms = sv.matchAll(iterRe);
   const matchEls: Abs[] = [];
   for (const m of ms) {
-    const els: Abs[] = m.map((g) => (g === undefined ? undefAbs() : strLit(g)));
-    matchEls.push(abs({ k: "tuple", elements: els }, undefined, undefined, "exact"));
+    // Bug「match/exec 结果 JSON 视图」：迭代元素与 exec 结果同形（原生每项
+    // 也是 RegExpExecArray：下标元素进 JSON 面，index/input/groups 非数组
+    // 下标、length 非枚举不进）——matchResultAbs 的数组视图标注使
+    // JSON.stringify(元素) 按数组折叠，m[0]/m.length/m.index/m.input 读面
+    // 与 exec 结果一致
+    matchEls.push(matchResultAbs(m));
   }
   // RegExpStringIterator 是对象：无 .length/下标；展开经侧表按匹配项精确迭代
   const iter = abs(

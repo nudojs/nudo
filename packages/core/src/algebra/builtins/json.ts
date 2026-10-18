@@ -13,6 +13,7 @@ import { isSymbolAbs } from "../symbol-id.ts";
 import { pTrue } from "../pred.ts";
 import { str, isBigintPrimAbs, mayCoerceThrowOperand } from "./shared.ts";
 import { getPropFlags } from "./invariants.ts";
+import { isMatchArrayView } from "./regexp.ts";
 import { classInstanceInnerOf, classChainHasJsonUserFace } from "../exec/class-registry.ts";
 import { readProperty } from "./object.ts";
 import { accessorTable } from "../accessors.ts";
@@ -120,6 +121,15 @@ function jsonStringifyTotal(a: Abs, seen: Set<object> = new Set()): boolean {
   }
   if (s.k === "arr") return jsonStringifyTotal((s as { element: Abs }).element, seen);
   if (s.k === "obj") {
+    // Bug「match/exec 结果 JSON 视图」：match/exec 结果按数组序列化——
+    // total 性只看下标元素（侧槽不进枚举面）
+    if (isMatchArrayView(a)) {
+      const els = matchArrayViewElements(a);
+      if (!els) return false;
+      if (seen.has(a as object)) return false;
+      seen.add(a as object);
+      return els.every((el) => jsonStringifyTotal(el, seen));
+    }
     const os = s as { open?: boolean; index?: unknown; slots: Record<string, { value: Abs }> };
     if (os.open || os.index) return false;
     if (accessorTable.get(a as object)) return false; // getter 用户面（Bug 57 同源）
@@ -167,6 +177,29 @@ function jsonEnumerableEntries(a: Abs): Array<[string, Abs]> | undefined {
     out.push([k, readProperty(a, k)]);
   }
   return out;
+}
+
+/**
+ * Bug「match/exec 结果 JSON 视图」：match/exec 结果（isMatchArrayView 标注
+ * 的闭 obj）的下标元素序列——length 槽字面量定长，元素取 "0".."n-1" 槽。
+ * 原生 RegExpExecArray 是 Array：SerializeJSONArray 只产下标元素（["b"]）
+ * ——index/input/groups 虽可枚举但非数组下标、length 非枚举，均不进 JSON
+ * 面。length 非字面量 / 槽缺 → undefined（调用方按不可折处理）。
+ */
+function matchArrayViewElements(a: Abs): Abs[] | undefined {
+  const s = a.shape;
+  if (s.k !== "obj") return undefined;
+  const slots = s.slots as Record<string, { value: Abs }>;
+  const lenA = slots["length"]?.value;
+  const lenR = lenA ? litValue(lenA) : undefined;
+  if (!lenR?.ok || typeof lenR.value !== "number") return undefined;
+  const els: Abs[] = [];
+  for (let i = 0; i < lenR.value; i++) {
+    const el = slots[String(i)]?.value;
+    if (!el) return undefined;
+    els.push(el);
+  }
+  return els;
 }
 
 /**
@@ -218,6 +251,26 @@ function absToJsonNative(
           continue;
         }
         const v = absToJsonNative(s.elements[i]!, seen, valueMode);
+        if (v === NOT_LITERAL) return NOT_LITERAL;
+        out.push(v === OMIT ? null : v);
+      }
+      return out;
+    } finally {
+      seen.delete(a as object);
+    }
+  }
+  if (s.k === "obj" && isMatchArrayView(a)) {
+    // Bug「match/exec 结果 JSON 视图」：match/exec 结果原生是 Array——按下标
+    // 槽序列化（["b"]），index/input/groups 非数组下标、length 非枚举，均
+    // 不进 JSON 面（undefined 元素经宿主 JSON.stringify 输出 null，与原生
+    // 一致）
+    const els = matchArrayViewElements(a);
+    if (!els) return NOT_LITERAL;
+    seen.add(a as object);
+    try {
+      const out: unknown[] = [];
+      for (const el of els) {
+        const v = absToJsonNative(el, seen, valueMode);
         if (v === NOT_LITERAL) return NOT_LITERAL;
         out.push(v === OMIT ? null : v);
       }
@@ -336,6 +389,35 @@ function stringifyFnReplacer(
           }
           const c = walk(String(i), s.elements[i]!);
           // 抽象子值折 null 是占位——结果不可折精确（partial）
+          if (c.kind !== "val" || c.v === undefined) {
+            if (c.kind === "nonlit") {
+              partial = true;
+              unseen = true;
+            }
+            out.push(null);
+          } else {
+            out.push(c.v);
+          }
+        }
+        return { kind: "val", v: out };
+      } finally {
+        path.delete(r as object);
+      }
+    }
+    if (s.k === "obj" && isMatchArrayView(r)) {
+      // Bug「match/exec 结果 JSON 视图」：replacer 逐项桥接按下标键走数组
+      // 形（原生数组键序 ""→"0".."n-1"，非枚举侧槽不可见）
+      const els = matchArrayViewElements(r);
+      if (!els) {
+        partial = true;
+        unseen = true;
+        return { kind: "nonlit" };
+      }
+      path.add(r as object);
+      try {
+        const out: unknown[] = [];
+        for (let i = 0; i < els.length; i++) {
+          const c = walk(String(i), els[i]!);
           if (c.kind !== "val" || c.v === undefined) {
             if (c.kind === "nonlit") {
               partial = true;
