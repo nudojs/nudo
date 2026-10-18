@@ -332,7 +332,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="$del"></a>`$del` | fn | object / member runtime | `$del(o: Abs, key: Abs): Abs` |
 | <a id="$elems"></a>`$elems` | fn | object / member runtime | `$elems(a: Abs): Abs[]` |
 | <a id="$eq"></a>`$eq` | fn | operator runtime | `$eq(a: Abs, b: Abs): Abs` |
-| <a id="$fnval"></a>`$fnVal` | fn | value / class runtime | `$fnVal( params: string[], impl: (...args: Abs[]) => Abs, opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean }, ): Abs` |
+| <a id="$fnval"></a>`$fnVal` | fn | value / class runtime | `$fnVal( params: string[], impl: (...args: Abs[]) => Abs, opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean; kind?: string }, ): Abs` |
 | <a id="$for"></a>`$for` | fn | control-flow lowering | `$for( init: Abs, test: (s: Abs) => Abs, step: (s: Abs) => Abs, body: (s: Abs) => Abs, maxIters: number = DEFAULT_MAX_LOOP_ITERS, opts?: { pack?: () => Abs; unpack?: (s: Abs) => void; label?: string; }, ): Abs` |
 | <a id="$foriter"></a>`$forIter` | const | control-flow lowering | — |
 | <a id="$fork"></a>`$fork` | fn | control-flow lowering | `$fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): Abs` |
@@ -585,10 +585,10 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="makesetabs"></a>`makeSetAbs` | fn | — | `makeSetAbs(iterable?: Abs): Abs` |
 | <a id="makesymbolabs"></a>`makeSymbolAbs` | fn | Symbol([description])：非具体 unique symbol（prim type=symbol，无 term）。 | `makeSymbolAbs(descArg?: Abs): Abs` |
 | <a id="mapclearentries"></a>`mapClearEntries` | fn | Map#clear：清空条目；fork 下仍走 overlay | `mapClearEntries(mapAbs: Abs): Abs` |
-| <a id="mapdeleteentry"></a>`mapDeleteEntry` | fn | Map#delete：fork overlay 内移除字面量键；未知 key 仅标 shadow 不确定 | `mapDeleteEntry(mapAbs: Abs, key: Abs \| undefined): Abs` |
+| <a id="mapdeleteentry"></a>`mapDeleteEntry` | fn | Map#delete：fork overlay 内移除字面量键；未知 key 仅标 shadow 不确定。 | `mapDeleteEntry(mapAbs: Abs, key: Abs \| undefined): Abs` |
 | <a id="mapelementfallback"></a>`mapElementFallback` | fn | map 元素投影：body 在符号实参上跑出 unknown 时， 用 shape.returnType 槽，conf 由调用方按 path/partial 处理。 | `mapElementFallback( cbAbs: Abs \| undefined, elem: Abs, out: Abs, ): Abs` |
 | <a id="mapentriesabs"></a>`mapEntriesAbs` | fn | Map 迭代条目：JS `for (const [k,v] of map)` / `Array.from(map)` 产出 `[key, value]` 元组 Abs。字面量 key 精确；shadow 写入 key 为 unknown。 | `mapEntriesAbs(mapAbs: Abs): Abs[]` |
-| <a id="mapgetentry"></a>`mapGetEntry` | fn | Map#get：命中字面量 key → 精确；miss / 未知 key / maybeAbsent / shadow 并 undefined | `mapGetEntry(mapAbs: Abs, key: Abs \| undefined): Abs` |
+| <a id="mapgetentry"></a>`mapGetEntry` | fn | Map#get：命中字面量/身份 key → 精确；miss / 未知 key / maybeAbsent / shadow 并 undefined | `mapGetEntry(mapAbs: Abs, key: Abs \| undefined): Abs` |
 | <a id="maphasentry"></a>`mapHasEntry` | fn | Map#has：字面量 miss 折 exact false 时，get 必须是 undefined（不可再并 value） | `mapHasEntry(mapAbs: Abs, key: Abs \| undefined): Abs` |
 | <a id="mapsetentry"></a>`mapSetEntry` | fn | Map#set：fork 内写 overlay；否则原地。返回同一 Abs（JS 可变语义） | `mapSetEntry(mapAbs: Abs, key: Abs \| undefined, value: Abs): Abs` |
 | <a id="mapsizeabs"></a>`mapSizeAbs` | fn | — | `mapSizeAbs(mapAbs: Abs): Abs` |
@@ -682,7 +682,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="setaddentry"></a>`setAddEntry` | fn | Set#add：fork 内写 overlay；返回同一 Abs | `setAddEntry(setAbs: Abs, value: Abs): Abs` |
 | <a id="setapplycallbackhost"></a>`setApplyCallbackHost` | fn | evaluator 宿主 `exec/call.ts` 加载时注册（副作用）。 | `setApplyCallbackHost(fn: ApplyCallbackHost): void` |
 | <a id="setclearentries"></a>`setClearEntries` | fn | Set#clear | `setClearEntries(setAbs: Abs): Abs` |
-| <a id="setdeleteentry"></a>`setDeleteEntry` | fn | Set#delete：按字面量元素移除；fork overlay 内生效。 | `setDeleteEntry(setAbs: Abs, value: Abs): Abs` |
+| <a id="setdeleteentry"></a>`setDeleteEntry` | fn | Set#delete：按字面量/身份元素移除；fork overlay 内生效。 | `setDeleteEntry(setAbs: Abs, value: Abs): Abs` |
 | <a id="setelementsabs"></a>`setElementsAbs` | fn | — | `setElementsAbs(setAbs: Abs): Abs[]` |
 | <a id="setevalassigncollector"></a>`setEvalAssignCollector` | fn | 返回先前 collector，便于嵌套调用 save/restore（禁止 finally 置 null 砸外层） | `setEvalAssignCollector( collector: ((r: EvalAbsAssignRecord) => void) \| null, )` |
 | <a id="setevalbindingsink"></a>`setEvalBindingSink` | fn | — | `setEvalBindingSink(sink: Map<string, unknown> \| null): void` |
