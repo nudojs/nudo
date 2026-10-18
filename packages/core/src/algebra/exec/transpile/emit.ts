@@ -8,6 +8,8 @@ import type { TranspileOptions } from "./types.ts";
 import { emitTranspileExpression } from "./transpile-dispatch.ts";
 import { isExpression, foldRequireSpecArg, staticKeyOf, isConstAssignTarget, symbolKeyOf } from "./helpers.ts";
 import { memberPathOf, readPathSrc, setPathSrc, readPrefix, setParentPathSrc } from "./member-path.ts";
+import type { MemberPath } from "./member-path.ts";
+import { STRING_REGEX_ARG_STATE_NAMES } from "./ops.ts";
 import { NudoUnsupportedError } from "../unsupported.ts";
 
 /**
@@ -73,6 +75,21 @@ function emitMemberTargetAssign(
 }
 
 /**
+ * Bug 111：delete o?.a 链的 OptionalMemberExpression 节点按普通 member 层
+ * 处理——object 链递归替换 type（memberPathOf 只读 type/object/property/
+ * computed，property/computed 子树浅拷贝原样）；nullish 短路语义由调用方的
+ * fork 守卫单独表达，层本身无差别。
+ */
+function memberChainSansOptional(n: Node): Node {
+  if ((n as { type?: string }).type !== "OptionalMemberExpression") return n;
+  return {
+    ...(n as unknown as Record<string, unknown>),
+    type: "MemberExpression",
+    object: memberChainSansOptional((n as unknown as { object: Node }).object),
+  } as unknown as Node;
+}
+
+/**
  * 语句位写回收集（历史名保留）：defineProperty/defineProperties 第一实参
  * 与 delete 成员路径的绑定写回。数组 mutator 的写回已随 Bug 49/51 的
  * $invoke 就地变更移除（此处不再发射 $arrMutContainer 行）。
@@ -118,8 +135,11 @@ export function emitArrMutatorRebinds(
     // Object.defineProperty / defineProperties(o, …)：返回值是新容器（value
     // 进 slots、访问器进侧表），语句位置必须写回第一实参（freeze/seal/
     // preventExtensions 就地标记无需写回）。Bug 19：defineProperties（复数）
-    // 与单数同形态（第一实参 Identifier），漏写回则描述符安装在被丢弃的副本
-    // 上，后续 o.a 折 exact undefined——表达式位走返回值不受影响。
+    // 与单数同形态，漏写回则描述符安装在被丢弃的副本上，后续 o.a 折 exact
+    // undefined——表达式位走返回值不受影响。Bug 87：member 目标（o.p /
+    // C.prototype / a[0]）此前只认 Identifier 同样丢写回——可重绑 member
+    // 路径经 memberPathOf 不可变更新链写回根；根不可重绑（foo().p）→
+    // memberPathOf null → 跳过（表达式位语句照常执行，不误删）。
     if (
       node.type === "CallExpression" &&
       node.callee?.type === "MemberExpression" &&
@@ -130,34 +150,66 @@ export function emitArrMutatorRebinds(
       ((node.callee.property as { name: string }).name === "defineProperty" ||
         (node.callee.property as { name: string }).name === "defineProperties") &&
       node.arguments?.[0] &&
-      (node.arguments[0] as { type?: string }).type === "Identifier"
+      ((node.arguments[0] as { type?: string }).type === "Identifier" ||
+        (node.arguments[0] as { type?: string }).type === "MemberExpression")
     ) {
       const methodName = (node.callee.property as { name: string }).name;
-      const argSrcs = (node.arguments as unknown as Expression[])
+      const restSrcs = (node.arguments as unknown as Expression[])
+        .slice(1)
         .map((a) =>
           (a as { type?: string }).type === "SpreadElement"
             ? "$unknown()"
             : emitTranspileExpression(a, opts),
         )
         .join(", ");
-      const targetName = (node.arguments[0] as { name: string }).name;
-      lines.push(
-        `${pad}${targetName} = $invoke(Object, ${JSON.stringify(methodName)}, [${argSrcs}]);`,
-      );
+      const restSuffix = restSrcs ? `, ${restSrcs}` : "";
+      const target0 = node.arguments[0] as { type?: string };
+      if (target0.type === "Identifier") {
+        const targetName = (target0 as { name: string }).name;
+        lines.push(
+          `${pad}${targetName} = $invoke(Object, ${JSON.stringify(methodName)}, [${targetName}${restSuffix}]);`,
+        );
+      } else {
+        const path = memberPathOf(
+          target0 as unknown as Parameters<typeof memberPathOf>[0],
+          opts,
+        );
+        if (path) {
+          const curSrc = readPathSrc(path);
+          const newSrc = `$invoke(Object, ${JSON.stringify(methodName)}, [${curSrc}${restSuffix}])`;
+          lines.push(`${pad}${path.rootSrc} = ${setPathSrc(path, newSrc)};`);
+        }
+      }
     }
-    // delete obj[key]：语句位置把删键后的容器写回绑定（表达式值 $delRes 由 transpile 负责）
+    // delete obj[key] / delete o?.a：语句位置把删键后的容器写回绑定（表达式
+    // 值 $delRes 由 transpile 负责）。Bug 111：OptionalMemberExpression 形
+    // （delete o?.a）此前不匹配该 pass——表达式值对但从未真删（$delRes 是
+    // 非变更值通道）；写回经 nullish 守卫 fork：守卫真（链短路）保根原值，
+    // 假（链走通）从去 nullish 的守卫基删键写回。
     if (
       node.type === "UnaryExpression" &&
       (node as { operator?: string }).operator === "delete" &&
       (node as { argument?: unknown }).argument &&
-      ((node as { argument?: unknown }).argument as { type?: string }).type === "MemberExpression"
+      (((node as { argument?: unknown }).argument as { type?: string }).type === "MemberExpression" ||
+        ((node as { argument?: unknown }).argument as { type?: string }).type ===
+          "OptionalMemberExpression")
     ) {
       const m = (node as { argument: unknown }).argument as unknown as {
         object: Node;
         property: Node;
         computed: boolean;
+        type: string;
       };
-      const path = memberPathOf(m, opts);
+      // optional 链按普通 member 层处理（memberPathOf 只读 type/object/
+      // property/computed；nullish 短路语义由外层 fork 守卫单独表达）
+      const path = memberPathOf(
+        (m.type === "OptionalMemberExpression"
+          ? memberChainSansOptional(m as unknown as Node)
+          : m) as Parameters<
+          typeof memberPathOf
+        >[0],
+        opts,
+      );
       if (path) {
         const parentRead =
           path.layers.length >= 2 ? readPrefix(path, path.layers.length - 2) : path.rootSrc;
@@ -166,10 +218,75 @@ export function emitArrMutatorRebinds(
         const keySrc = m.computed
           ? emitTranspileExpression(m.property as Expression, opts)
           : `$lit(${JSON.stringify((m.property as { name: string }).name)})`;
-        lines.push(
-          `${pad}${path.rootSrc} = ${setParentPathSrc(path, `$del(${parentRead}, ${keySrc})`)};`,
-        );
+        // 求值序首个 optional hop 的层号（链上 `?.` 跳点节点带 optional
+        // 标记——其后的外层链接同为 OptionalMemberExpression 类型但无标记；
+        // walk 深度 s 的标记节点对应层 N-1-s，其 object 即守卫基）；-1 = 无
+        let guardLayer = -1;
+        if (m.type === "OptionalMemberExpression") {
+          let cur: unknown = m;
+          let s = 0;
+          while (cur && typeof cur === "object") {
+            const c = cur as { type?: string; optional?: boolean; object?: unknown };
+            if (c.type === "OptionalMemberExpression" && c.optional === true) {
+              guardLayer = path.layers.length - 1 - s;
+              break;
+            }
+            if (c.type !== "MemberExpression" && c.type !== "OptionalMemberExpression") break;
+            cur = c.object;
+            s++;
+          }
+        }
+        if (guardLayer < 0) {
+          lines.push(
+            `${pad}${path.rootSrc} = ${setParentPathSrc(path, `$del(${parentRead}, ${keySrc})`)};`,
+          );
+        } else {
+          // 守卫基 = 首个 optional hop 的 object 读；删键链从 $removeNullish
+          // 收窄后的守卫基重建（守卫抽象时 sum 的 nullish 成员不得进 del 臂，
+          // 否则误记 may-throw——原生 delete o?.a 恒不抛）
+          const guardSrc = guardLayer === 0 ? path.rootSrc : readPrefix(path, guardLayer - 1);
+          const narrow: MemberPath = {
+            rootSrc: `$removeNullish(${guardSrc})`,
+            layers: path.layers.slice(guardLayer),
+          };
+          const narrowParent =
+            narrow.layers.length >= 2
+              ? readPrefix(narrow, narrow.layers.length - 2)
+              : narrow.rootSrc;
+          const innerDel = setParentPathSrc(narrow, `$del(${narrowParent}, ${keySrc})`);
+          const armSrc =
+            guardLayer === 0
+              ? innerDel
+              : setPathSrc(
+                  { rootSrc: path.rootSrc, layers: path.layers.slice(0, guardLayer) } as MemberPath,
+                  innerDel,
+                );
+          lines.push(
+            `${pad}${path.rootSrc} = $fork($nullishTest(${guardSrc}), () => ${path.rootSrc}, () => (${armSrc}));`,
+          );
+        }
       }
+    }
+    // Bug 96：语句位 String.prototype.match/replace/replaceAll 的**参数位**
+    // RegExp 状态写回（spec @@match/@replace 对原正则 Set lastIndex；值通道
+    // stringRegexMethod 在实参 regex 的副本上执行）。仅字面量字符串接收者 +
+    // Identifier 实参（其余接收者类型不可静态判定，保守跳过）；实参非 RegExp
+    // brand 由 $reStateCall 运行时判定原样返回。search/split/matchAll 不写回
+    //（恢复原值 / 不动 / 克隆）。
+    if (
+      node.type === "CallExpression" &&
+      node.callee?.type === "MemberExpression" &&
+      node.callee.computed !== true &&
+      node.callee.object?.type === "StringLiteral" &&
+      node.callee.property?.type === "Identifier" &&
+      STRING_REGEX_ARG_STATE_NAMES.has((node.callee.property as { name: string }).name) &&
+      node.arguments?.[0] &&
+      (node.arguments[0] as { type?: string }).type === "Identifier"
+    ) {
+      const mName = (node.callee.property as { name: string }).name;
+      const argName = (node.arguments[0] as { name: string }).name;
+      const subjSrc = emitTranspileExpression(node.callee.object as Expression, opts);
+      lines.push(`${pad}${argName} = $reStateCall(${argName}, ${JSON.stringify(mName)}, [${subjSrc}]);`);
     }
     // 自增/自减：标识符前/后缀均在表达式内自包含写回
     //（后缀缓存 ToNumeric 旧值），本 pass 不得再补写回——否则双倍自增。

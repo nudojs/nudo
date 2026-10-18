@@ -213,17 +213,22 @@ export function transpileFunctionExpr(
         // Bug 58：generator 函数表达式体不在调用期执行——包 $gen（吞调用期
         // throws；yield 收集保持既有 eager 口径，与声明路径 stmt.ts 同编）
         const inner = fn.generator ? `return $gen(() => {\n${raw}\n});` : raw;
+        // Bug 93：generator 标记透传 $fnVal opts.kind → impl——member.ts 的
+        // fn 分支据此区分「不可构造但有 prototype」（generator 实例原型）
+        // 与「无 prototype」（箭头/async/方法）。声明路径走宿主函数分支
+        //（isHostGeneratorFn 源形判定），此处是表达式面。
+        const genKindSrc = fn.generator ? `, kind: "generator"` : "";
         if (hasThis) {
           const wrap = fn.async && !fn.generator
             ? `function (${argsParamParts.join(", ")}) { return $async(() => {\n${inner}\n}); }`
             : `function (${argsParamParts.join(", ")}) {\n${inner}\n}`;
           // Bug 7：hasArgs 时体内已归一缺参——钩子补齐会膨胀 arguments.length
-          return `$fnVal(${nameList}, ${wrap}, { ctor: ${fnCtor}${hasArgs ? ", padArgs: false" : ""}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed} })`;
+          return `$fnVal(${nameList}, ${wrap}, { ctor: ${fnCtor}${hasArgs ? ", padArgs: false" : ""}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${genKindSrc} })`;
         }
         if (fn.async && !fn.generator) {
-          return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => $async(() => {\n${inner}\n}), { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed} })`;
+          return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => $async(() => {\n${inner}\n}), { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${genKindSrc} })`;
         }
-        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed} })`;
+        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${genKindSrc} })`;
       }
       const bodySrc = transpileExpression(fn.body as Expression, fnBodyOpts);
       if (allPrologue.length > 0 || hasThis) {

@@ -29,6 +29,8 @@ export {
 } from "./class/super.ts";
 export {
   $invoke,
+  $invokeKey,
+  $optionalInvokeKey,
   refineFnReturnType,
 } from "./class/invoke.ts";
 export {

@@ -55,6 +55,24 @@ import { transpileClass } from "../class-emit.ts";
 /** switch 共享体函数名序号（跨语句/函数去重） */
 let switchBodySeq = 0;
 
+/** Bug 98：非纯 for-in 接收者临时名计数器（同块多 for-in 防重复声明） */
+let forInRecvSeq = 0;
+
+/** Bug 98：for-in 接收者重读是否无副作用——标识符 / 非计算成员链
+ *  （o、o.sub、o.a.b）。其余形态（调用、计算键、三元/短路等）经
+ *  emitTranspileExpression 可能含求值副作用，重读会重复副作用 →
+ *  循环头一次性求值入 __firN 临时。 */
+function isPureForInRecv(n: Expression): boolean {
+  switch (n.type) {
+    case "Identifier":
+      return true;
+    case "MemberExpression":
+      return !n.computed && isPureForInRecv(n.object as Expression);
+    default:
+      return false;
+  }
+}
+
 export function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptions): string {
   const pad = indent(depth);
   switch (stmt.type) {
@@ -1124,9 +1142,22 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // 接收者被同步 $elems 投影（对象槽位折进迭代产出）。
       const isForAwait = !isIn && (stmt as { await?: boolean }).await === true;
       // for-in：键序列由 $forInKeys 投影（整数键升序/字符串插入序/hole 跳过）
+      // Bug 98：非纯接收者（调用/计算键/短路等副作用面）先求值一次入
+      // __forInRecv（原生单次求值口径），iter 与重查 thunk 共用；纯接收者
+      // （标识符 / 非计算成员链）直接重读绑定——delete 写回可见。
+      let recvPre: string[] = [];
+      let recvSrc = "";
+      if (isIn && !isPureForInRecv(stmt.right as Expression)) {
+        // 同块多个 for-in 不得重复声明：模块级计数器唯一化
+        const recvTmp = `__fir${++forInRecvSeq}`;
+        recvPre = [`${pad}const ${recvTmp} = (${emitTranspileExpression(stmt.right as Expression, opts)});`];
+        recvSrc = recvTmp;
+      } else {
+        recvSrc = emitTranspileExpression(stmt.right as Expression, opts);
+      }
       const iter = isIn
-        ? `$forInKeys(${emitTranspileExpression(stmt.right as Expression, opts)})`
-        : emitTranspileExpression(stmt.right as Expression, opts);
+        ? `$forInKeys(${recvSrc})`
+        : recvSrc;
       // for (const x of xs) / for (const [a,b] of xs)
       let bindName = "_item";
       if (stmt.left.type === "VariableDeclaration") {
@@ -1200,7 +1231,14 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const names = [...assigned].filter((n) => n !== bindName && !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n));
       const loopOpts = opts.loopLabel ? `label: ${JSON.stringify(opts.loopLabel)}` : "";
       const forAwaitOpt = isForAwait ? "forAwait: true" : "";
-      const tailOpts = [loopOpts, forAwaitOpt].filter(Boolean).join(", ");
+      // Bug 98：for-in 接收者以 thunk 传给 $forOf——快照键进体前逐迭代重查
+      // 在场（体内 delete 的未访问键跳过，与原生 EnumerateObjectProperties
+      // 一致）。纯接收者 thunk 每迭代重读当前绑定（delete 写回
+      // o = $del(o, k) / 成员链 o = $set(o, …) 经闭包可见）；副作用接收者
+      // 已在循环头求值入 __forInRecv，重查按该快照引用（此形态 delete
+      // 不可见，保持快照口径——副作用一次求值优先）。
+      const forInRecvOpt = isIn ? `forInRecv: () => (${recvSrc})` : "";
+      const tailOpts = [loopOpts, forAwaitOpt, forInRecvOpt].filter(Boolean).join(", ");
       const optsSrc =
         names.length === 0
           ? tailOpts
@@ -1208,6 +1246,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
             : ""
           : `, { pack: () => $obj({ ${names.map((n) => `${JSON.stringify(n)}: $copy(${n})`).join(", ")} }), unpack: (__lp) => { ${names.map((n) => `${n} = $get(__lp, ${JSON.stringify(n)});`).join(" ")} }${tailOpts ? `, ${tailOpts}` : ""} }`;
       return [
+        ...recvPre,
         `${pad}$forOf(${iter}, (${bindName}, _i) => {`,
         ...bodyLines,
         bodyStmts,

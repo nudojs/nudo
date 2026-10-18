@@ -134,10 +134,13 @@ describe("spread / assign copies a __proto__ own key without hitting the setter"
     ).toEqual({ ok: true, value: 1 });
   });
 
-  it("Object.assign({}, JSON.parse('{\"__proto__\":1}')) keeps the key", () => {
+  it("Object.assign({}, JSON.parse('{\"__proto__\":1}')) does NOT create an own key", () => {
+    // Bug 128：assign 逐键 [[Set]]——__proto__ 非自有键走 Object.prototype
+    // 原型 setter，原始值被静默忽略（原生 keys=0；此前直写自有槽 → 假键）。
+    // spread（CreateDataProperty）保留自有键，见上。
     expect(
       val(`export function f() { return Object.keys(Object.assign({}, JSON.parse('{"__proto__":1}'))).length; }`),
-    ).toEqual({ ok: true, value: 1 });
+    ).toEqual({ ok: true, value: 0 });
   });
 });
 

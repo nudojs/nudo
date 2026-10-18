@@ -271,9 +271,25 @@ export function transpileOperatorExpr(
         if (path) {
           const readSrc = readPathSrc(path);
           // 前缀表达式的值是**新值**；容器写回由语句级 rebind pass 完成
-          // （标识符前缀自包含 `n = $updateAdd(n)`，值即新值，无此问题）
+          //（标识符前缀自包含 `n = $updateAdd(n)`，值即新值，无此问题）
           if (expr.prefix) return `${fn}(${readSrc})`;
           return `$toNumeric(${readSrc})`;
+        }
+        // Bug 80：this.#x++ / C.#n++——memberPathOf 对 PrivateName 返回
+        // null，此前落 update:++ unsupported 令整模块 fail-closed。镜像
+        // assignment.ts 私有名复合赋值的读-改-写（"#x" 混淆键槽）：前缀值
+        // = 新值；后缀缓存 ToNumeric 旧值且表达式内立刻写回（标识符后缀
+        // 同口径）。语句级 rebind pass 只处理 memberPath 命中形——无双重写回
+        if (!m.computed && m.property.type === "PrivateName") {
+          const key = privateNameKeySrc(m.property as { id?: { name?: string }; name?: string });
+          if (key !== null) {
+            const obj = transpileExpression(m.object as Expression, opts);
+            const cur = `$get(${obj}, ${key})`;
+            if (expr.prefix) {
+              return `((__v) => (($set(${obj}, ${key}, __v)), __v))(${fn}(${cur}))`;
+            }
+            return `((__old) => (($set(${obj}, ${key}, ${fn}(__old))), __old))($toNumeric(${cur}))`;
+          }
         }
       }
       // 不可写回目标（如 foo().x++ / super.x++ / 解构怪形 / 可选链更新）：

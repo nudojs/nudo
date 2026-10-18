@@ -25,6 +25,7 @@ import {
 } from "../../../objects.ts";
 import { TUPLE_MATERIALIZE_CAP } from "../../../containers.ts";
 import { TYPED_ARRAY_ELEMENT } from "../../../builtins/shared.ts";
+import { isSetAbs, isMapAbs, setElementsAbs, mapEntriesAbs } from "../../../collections.ts";
 import { hasGenView, peekGenElement, peekAllGenElements, proxyPartsOf, proxyTrapOf } from "../../match-iter.ts";
 import {
   extStateOf,
@@ -151,6 +152,26 @@ export function $idx(
         undef(),
       );
     }
+  }
+  // Bug 82：Set/Map brand 下标读（数组解构逐项投影 `const [a, b] = new Set(…)`）。
+  // 消费与 elemsOf 同源的侧表（setElementsAbs / mapEntriesAbs——spread /
+  // for-of / Array.from 的读法），解构与迭代口径一致；此前无 brand 臂落
+  // inner obj 槽（size / 条目表）miss 折 undef——`a + b` 假 NaN、元素属性
+  // 读假抛。Map 迭代语义是 entry [k, v] 元组。与 tuple 臂同口径：确定非
+  // 下标键 → undefined；越界 → undefined；抽象下标 → 元素域 ∪ OOB undefined。
+  if (isSetAbs(a)) {
+    const els = setElementsAbs(a);
+    if (iv !== undefined && idx === undefined) return undef();
+    if (idx !== undefined) return idx < els.length ? els[idx]! : undef();
+    if (els.length === 0) return oobUndef();
+    return joinAbs(els.reduce((x, y) => joinAbs(x, y)), oobUndef());
+  }
+  if (isMapAbs(a)) {
+    const entries = mapEntriesAbs(a);
+    if (iv !== undefined && idx === undefined) return undef();
+    if (idx !== undefined) return idx < entries.length ? entries[idx]! : undef();
+    if (entries.length === 0) return oobUndef();
+    return joinAbs(entries.reduce((x, y) => joinAbs(x, y)), oobUndef());
   }
   if (a.shape.k === "sum") {
     // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce。

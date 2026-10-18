@@ -11,15 +11,18 @@
  */
 import type { Abs } from "../../abs.ts";
 import { abs, unknown, litValue, strLit } from "../../abs.ts";
-import { joinAbs, getSlot } from "../../objects.ts";
+import { joinAbs, getSlot, propertyKeyOf } from "../../objects.ts";
 import { TYPED_ARRAY_CALLBACK_METHODS, builtinSuperCtorOf, brandHasProtoMember, classChainHasHole } from "../runtime/members.ts";
 import { typedArrayElementOf } from "../../builtins/shared.ts";
+import { typedArrayEnumKeyView } from "../../builtins/object/enum-entries.ts";
+import { MAX_CONCRETE_LOOP_ITERS } from "../runtime/loop-budget.ts";
 import { $get, $lit, namespaceNameOf, callAtFunctionBoundary } from "../runtime.ts";
-import { withNewTargetReset, undef } from "../runtime/state.ts";
+import { withNewTargetReset, undef, asAbsVal } from "../runtime/state.ts";
 import { $call } from "../call.ts";
 import { callHostGlobalFn } from "../calls.ts";
 import { getFnImpl, absFunction, hostFnCtorFacet } from "../../abs-fn.ts";
-import { evalNamespaceCall, evalBuiltinInstanceMethod, isSymbolAbs, stringOfSymbol, evalPromiseMethod, boxedPrimitiveValue, sumHasPrimMember, evalArrayStatic } from "../../builtins.ts";
+import { evalNamespaceCall, evalBuiltinInstanceMethod, isSymbolAbs, stringOfSymbol, evalPromiseMethod, boxedPrimitiveValue, sumHasPrimMember, evalArrayStatic, collectionIteratorAbs, abstractSeqIteratorAbs } from "../../builtins.ts";
+import { isErrorCtorName } from "../../builtins/error.ts";
 import {
   validateCallableArg,
 } from "../../hof.ts";
@@ -54,6 +57,39 @@ import { findMethod, findStaticMethod, instanceOwnFaceHasMember, chainHasStaticM
 import { runtimeAssignObject } from "./assign.ts";
 import { execRegexBrand, stringRegexMethod } from "../class-regex.ts";
 
+/**
+ * Bug 107：Number.prototype digits/radix 字面量实参域检查（接收者无关——
+ * 提升于接收者字面量守卫之前）。非字面量实参直接 return——各方法臂既有
+ * recordMayThrow 口径不变。toLocaleString/valueOf 不转换实参，不在面内。
+ */
+function enforceNumProtoArgDomain(method: string, argAbs: Abs | undefined): void {
+  if (
+    method !== "toFixed" &&
+    method !== "toExponential" &&
+    method !== "toPrecision" &&
+    method !== "toString"
+  ) {
+    return;
+  }
+  if (argAbs === undefined) return;
+  if (isSymbolAbs(argAbs)) throw new NudoThrow(errorTypeAbs("TypeError"));
+  if (argAbs.term?.op !== "lit") return;
+  const v = argAbs.term.value;
+  if (v === undefined) return; // 显式 undefined ≡ 缺省
+  if (typeof v === "bigint") throw new NudoThrow(errorTypeAbs("TypeError")); // ToNumber(1n) 定抛
+  let n: number;
+  if (typeof v === "number") n = v;
+  else if (typeof v === "string" || typeof v === "boolean" || v === null) n = Number(v);
+  else return;
+  if (Number.isNaN(n)) n = 0; // ToIntegerOrInfinity(NaN) = +0（node 实测 (1.5).toFixed(NaN) === "2"）
+  else n = Math.trunc(n); // 截断（100.9 → 100 合法）
+  let bad: boolean;
+  if (method === "toFixed" || method === "toExponential") bad = !(n >= 0 && n <= 100);
+  else if (method === "toPrecision") bad = !(n >= 1 && n <= 100);
+  else bad = !(n >= 2 && n <= 36); // toString radix
+  if (bad) throw new NudoThrow(errorTypeAbs("RangeError"));
+}
+
 /** 实例方法调用：沿继承链；类 Abs 上回落 staticMethods；obj 上回落属性函数 */
 export function $invoke(
   thisVal: Abs,
@@ -61,8 +97,128 @@ export function $invoke(
   args: Abs[],
   loc?: [number, number],
 ): Abs {
+  // Bug 85：函数声明绑定是裸宿主函数（statement.ts 直发 host function），
+  // 作实参流入 Object/Reflect 静态、$in、JSON.stringify、强制转换全局的
+  // Abs 解引用点 → 内部 TypeError 冒泡（无 try 折 unknown / 有 try 被用户
+  // catch 吞成引擎错误消息）。此处统一归一化实参（函数边界 prologue 的
+  // $absVal 同口径，copy-on-write：全 Abs 时不分配新数组）。callee 位
+  // （thisVal）不动——宿主函数直调路径依赖裸值 apply
+  let normArgs = args;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i] as unknown;
+    if (!(a && typeof a === "object" && "shape" in a)) {
+      if (normArgs === args) normArgs = args.slice();
+      normArgs[i] = asAbsVal(a);
+    }
+  }
   // Bug 79：方法调用是普通调用面——调用期间 new.target 读 undefined
-  return withNewTargetReset(() => $invokeInner(thisVal, method, args, loc));
+  return withNewTargetReset(() => $invokeInner(thisVal, method, normArgs, loc));
+}
+
+// ---------------------------------------------------------------------------
+// 计算键成员调用（obj[key]()，key 是运行时求值的非字面量键——标识符/调用/
+// 成员链/Symbol 常量读等）。修复前 transpile 把这类 callee 落通用
+// $call($idx(obj, key))：$call 无接收者通道 → 方法体 this 读失败 / 内建
+// brand 校验假定抛 → 整调用折 never。此处键折叠成槽名后复用 $invoke 既有
+// 派发（实例槽/原型链/类注册表，接收者绑 recv）。
+// ---------------------------------------------------------------------------
+
+/** well-known symbol lit → "@@name" 槽名。与 transpile 静态投影
+ *  m[Symbol.iterator] → $get(m,"@@iterator")（expr/member.ts）同口径：按
+ *  宿主 Symbol 静态位身份映射（well-known 的 description 是
+ *  "Symbol.iterator"，不可直接当槽名用）；Symbol("x") / Symbol.for 的用户
+ *  符号无槽名模型 → undefined。 */
+const WELL_KNOWN_SYMBOL_SLOTS: ReadonlyMap<symbol, string> = (() => {
+  const m = new Map<symbol, string>();
+  for (const name of Object.getOwnPropertyNames(Symbol)) {
+    const v = (Symbol as unknown as Record<string, unknown>)[name];
+    if (typeof v === "symbol") m.set(v, `@@${name}`);
+  }
+  return m;
+})();
+
+/** 计算键 → 槽名：ToPropertyKey 字面量折叠（propertyKeyOf：数字/布尔/
+ *  nullish → String(v)）在前，well-known symbol 投影兜底；抽象键 / 用户
+ *  symbol → undefined（方法身份不可判）。 */
+function invokeKeySlotOf(key: Abs): string | undefined {
+  if (key.term?.op === "lit") {
+    const v = key.term.value;
+    if (typeof v === "symbol") return WELL_KNOWN_SYMBOL_SLOTS.get(v);
+  }
+  return propertyKeyOf(key);
+}
+
+/** @@iterator 协议面：tuple/arr/字符串接收者的迭代器对象不在 $invoke 派发
+ *  内（原生 Array.prototype[Symbol.iterator] === values，%StringPrototype%
+ *  上是字符串迭代器）——数组/元组复用 invokeArrMethod 的 values 臂（单一
+ *  事实源，产 collectionIteratorAbs/abstractSeqIteratorAbs，可 .next()/
+ *  spread）；字符串按 code point 展开（与 elemsOf 的字符串臂同口径）。
+ *  obj 接收者（生成器 @@iterator 自返槽 / match-iter 侧表等）不由本臂
+ *  接管，落 $invoke 的槽派发。 */
+function iteratorFaceOf(recv: Abs): Abs | undefined {
+  const s = recv.shape;
+  if (s.k === "arr" || s.k === "tuple") {
+    return invokeArrMethod(recv, "values", []);
+  }
+  let strRecv: Abs | undefined;
+  if (s.k === "prim" && s.type === "string") {
+    strRecv = recv;
+  } else if (s.k === "brand" && s.name === "String") {
+    // new String("ab")：拆箱后按字符串迭代（boxed → [[PrimitiveValue]]）
+    const un = boxedPrimitiveValue(recv);
+    if (un?.shape.k === "prim" && un.shape.type === "string") strRecv = un;
+  }
+  if (strRecv) {
+    const svR = litValue(strRecv);
+    const sv = svR.ok && typeof svR.value === "string" ? svR.value : undefined;
+    if (sv !== undefined) {
+      // 字面量字符串：code point 精确展开（[...sv] 按 Unicode 码点切，
+      // 代理对不拆半）
+      return collectionIteratorAbs([...sv].map((c) => strLit(c)));
+    }
+    // 抽象字符串：单代表 string 元素（长度不可知，与 arr 臂同口径）
+    return abstractSeqIteratorAbs(
+      abs({ k: "prim", type: "string" }, undefined, undefined, "path"),
+    );
+  }
+  return undefined;
+}
+
+/** obj[key]()：计算键成员调用（键运行时求值）。键折叠成槽名后走 $invoke
+ *  既有派发；@@iterator 键按接收者形态折迭代器对象。键不可折叠（抽象键 /
+ *  用户 symbol）→ 诚实 unknown（与 $call 对 unknown callee 同口径——
+ *  unknown 是 fail-closed 令牌，不记 may-throw）。 */
+export function $invokeKey(
+  thisVal: Abs,
+  key: Abs,
+  args: Abs[],
+  loc?: [number, number],
+): Abs {
+  const k = invokeKeySlotOf(key);
+  if (k === undefined) return unknown;
+  if (k === "@@iterator") {
+    const it = iteratorFaceOf(thisVal);
+    if (it !== undefined) return it;
+  }
+  return $invoke(thisVal, k, args, loc);
+}
+
+/** 可选链计算键调用（a?.[k]() / a[k]?.() 的非链路径）：nullish 接收者
+ *  短路 undefined 字面量（$optionalInvoke 同口径）；键折叠与派发同
+ *  $invokeKey。 */
+export function $optionalInvokeKey(thisVal: Abs, key: Abs, args: Abs[]): Abs {
+  if (
+    thisVal?.term?.op === "lit" &&
+    (thisVal.term.value === null || thisVal.term.value === undefined)
+  ) {
+    return abs(
+      { k: "unknown" },
+      { op: "lit", value: undefined },
+      undefined,
+      "exact",
+    );
+  }
+  return $invokeKey(thisVal, key, args);
 }
 
 function $invokeInner(
@@ -256,16 +412,51 @@ function $invokeInner(
         undefined,
         "exact",
       );
-      const arrView = abs(
-        { k: "arr", element: taElemPrim },
-        undefined,
-        undefined,
-        thisVal.conf,
-      );
+      // Bug 100：按已知计数建视图——TA 内层 length 槽（makeTypedArrayAbs
+      // 数字形态 Bug 38 / 字面量源形态 Bug 125 折入；typedArrayEnumKeyView
+      // 与 keys/values/entries 同口径读）可知 → tuple 视图，invokeArrMethod
+      // 的逐下标臂跑 length 次（回调计数/副作用精确；元素域仍是单代表
+      // prim——值域 imprecision 保持既有口径）。抽象长度或超展开上限 →
+      // 维持单代表元素 arr 视图（长度不可判的既有口径，回调只跑一次）。
+      const lenView = typedArrayEnumKeyView(thisVal);
+      const count = lenView?.k === "exact" ? lenView.count : undefined;
+      const arrView =
+        count !== undefined && count <= MAX_CONCRETE_LOOP_ITERS
+          ? abs(
+              {
+                k: "tuple",
+                elements: Array.from({ length: count }, () => taElemPrim),
+              },
+              undefined,
+              undefined,
+              thisVal.conf,
+            )
+          : abs(
+              { k: "arr", element: taElemPrim },
+              undefined,
+              undefined,
+              thisVal.conf,
+            );
       const taR = invokeArrMethod(arrView, method, args);
       if (taR !== undefined) {
-        if (method === "map" && taR.shape.k === "arr") {
-          return abs({ k: "arr", element: taElemPrim }, undefined, undefined, taR.conf);
+        if (method === "map") {
+          // map 原生结果 = 同族 TA：元素经 ToNumber/ToBigInt 收敛回元素
+          // prim（回调返回 string 不渗入元素域）；tuple 视图保长度精确
+          //（Bug 100），抽象长度折 arr
+          if (taR.shape.k === "tuple") {
+            return abs(
+              {
+                k: "tuple",
+                elements: taR.shape.elements.map(() => taElemPrim),
+              },
+              undefined,
+              undefined,
+              taR.conf,
+            );
+          }
+          if (taR.shape.k === "arr") {
+            return abs({ k: "arr", element: taElemPrim }, undefined, undefined, taR.conf);
+          }
         }
         return taR;
       }
@@ -418,6 +609,34 @@ function $invokeInner(
     } else if (method === "toLocaleString") {
       // 抽象 bigint：toLocaleString 恒成功（ICU 不转换实参）→ 抽象 string
       return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
+    } else if (method === "valueOf") {
+      // Bug 105：抽象 bigint prim 的 valueOf = 接收者自身（thisBigIntValue
+      // 恒成功）——此前落通用路径被 Object.prototype.toString 吞
+      return thisVal;
+    } else if (method === "toString") {
+      // Bug 105：抽象 bigint prim 的 toString → BigInt.prototype.toString
+      //（结果恒 string），不落 Object.prototype.toString（"[object Bigint]"
+      // 假精确）。radix 实参口径与字面量接收者臂一致：symbol 定抛
+      // TypeError、字面量真查域（ToIntegerOrInfinity 后 [2,36] 否则
+      // RangeError）、抽象 may TypeError。
+      const argAbs = args[0];
+      if (argAbs !== undefined) {
+        if (isSymbolAbs(argAbs)) throw new NudoThrow(errorTypeAbs("TypeError"));
+        const avR = litValue(argAbs);
+        const av = avR.ok ? avR.value : undefined;
+        if (avR.ok && av !== undefined) {
+          const radix = Math.trunc(Number(av));
+          if (!Number.isFinite(radix) || radix < 2 || radix > 36) {
+            throw new NudoThrow(errorTypeAbs("RangeError"));
+          }
+        } else if (!avR.ok) {
+          recordMayThrow({
+            kind: "TypeError",
+            cause: "BigInt.prototype.toString radix may not be convertible to a number",
+          });
+        }
+      }
+      return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
     }
     // 未接管的其它方法不得在此 return——继续后续诊断路径（M3：原型外
     // 方法名（toFixed 等）在下方定抛 TypeError；toLocaleString 等软保守）
@@ -428,6 +647,15 @@ function $invokeInner(
   // 未接管的其它方法不得在此 return——继续后续诊断路径（no-method）。
   if (thisVal.shape.k === "prim" && thisVal.shape.type === "number") {
     if (method === "valueOf") return thisVal;
+    // Bug 107：字面量 digits/radix 实参的域检查与接收者是否字面量无关——
+    // 提升到接收者 guard 之前（此前 Math.random().toFixed(500) 等抽象
+    // number 接收者在下方各方法臂早折抽象 string，漏掉确定的 RangeError
+    // → throws 域 never 的假 total）。方法界：toFixed/toExponential
+    // [0,100]、toPrecision [1,100]、toString radix [2,36]（ToIntegerOrInfinity
+    // 后判；symbol 实参 ToNumber 定抛、bigint 字面量同）；toLocaleString
+    // 的 ICU 路径不转换实参（(1.5).toLocaleString(Symbol()) → "1.5"）——
+    // 不在提升面。抽象实参 return——各方法臂既有 recordMayThrow 口径不变。
+    enforceNumProtoArgDomain(method, args[0]);
     if (method === "toString" || method === "toLocaleString") {
       const nvR = litValue(thisVal);
       const nv = nvR.ok ? nvR.value : undefined;
@@ -453,7 +681,11 @@ function $invokeInner(
       const av = avR?.ok ? avR.value : undefined;
       try {
         const impl = Number.prototype as unknown as Record<string, (...a: unknown[]) => string>;
-        return strLit(impl[method === "toLocaleString" ? "toString" : method]!.call(nv, av));
+        // toLocaleString 的 ICU 路径不转换实参（(1.5).toLocaleString(1n) →
+        // "1.5"）——重定向宿主 toString 时必须丢实参（此前透传 av 让字面量
+        // bigint/symbol 折假 never）
+        const hostArgs = method === "toLocaleString" ? [] : av === undefined ? [] : [av];
+        return strLit(impl[method === "toLocaleString" ? "toString" : method]!.call(nv, ...hostArgs));
       } catch (e) {
         if (e instanceof TypeError) throw new NudoThrow(errorTypeAbs("TypeError"));
         if (e instanceof RangeError) throw new NudoThrow(errorTypeAbs("RangeError"));
@@ -630,9 +862,69 @@ function memberLikelyHasMethod(m: Abs, method: string): boolean {
 //   （字符 / 索引槽，Bug 51 面）后走数组派发（slice.call('abc') →
 //   ["a","b","c"]）；不可物化形态 → unknown（不折假值）。
 // ---------------------------------------------------------------------------
+// Bug 108：brand-checking 内建原型表 + 借用调用接收者 brand 判定
+const BRAND_CHECK_PROTOS = new Set([
+  "Number", "String", "Boolean", "Symbol", "BigInt",
+  "Date", "RegExp", "Map", "Set", "WeakMap", "WeakSet",
+]);
+/** prim 型 home（member.ts :832 的 protoMethodValueAbs(type, key)）→ brand 名 */
+const PRIM_HOME_BRAND: Record<string, string> = {
+  number: "Number",
+  string: "String",
+  boolean: "Boolean",
+  bigint: "BigInt",
+  symbol: "Symbol",
+};
+/** Array.prototype 写方法（prim 接收者上原生定抛；读方法走物化泛型） */
+const ARRAY_MUTATOR_METHODS = new Set([
+  "push", "pop", "shift", "unshift", "splice", "sort", "reverse", "fill", "copyWithin",
+]);
+/** 接收者 brand；不可判（any/unknown/sum/Proxy 陷阱壳）→ undefined（不抛）。
+ *  nullish 字面量 → "nullish"（与一切 brand 不匹配，定抛）。 */
+function borrowedRecvBrandOf(recv: Abs): string | undefined {
+  if (isNullishLitAbs(recv)) return "nullish";
+  const s = recv.shape;
+  if (s.k === "prim") return PRIM_HOME_BRAND[s.type];
+  if (s.k === "brand") return s.name === "Proxy" ? undefined : s.name;
+  if (s.k === "arr" || s.k === "tuple") return "Array";
+  if (s.k === "fn") return "Function";
+  if (s.k === "obj") return "Object";
+  if (s.k === "eff") return s.eff === "promise" ? "Promise" : "Generator";
+  return undefined;
+}
 setProtoMethodDispatch((home, name, thisVal, args) => {
   const recv: Abs = thisVal ?? $lit(undefined);
+  // Bug 108：brand-checking 内建原型的借用调用——home 与接收者 brand 不匹配
+  // 定抛 TypeError（原生 thisNumberValue/thisStringValue/… 前置校验：
+  // Number.prototype.valueOf.call("5") 折 "5" 是假精确）。Object.prototype
+  // （任意接收者合法）与 Array.prototype（上方物化 array-like）保持泛型。
+  // Proxy 接收者（get/apply 陷阱可换壳）与 any/unknown/sum 不可判 → 不抛。
+  {
+    const homeBrand = BRAND_CHECK_PROTOS.has(home)
+      ? home
+      : BRAND_CHECK_PROTOS.has(PRIM_HOME_BRAND[home] ?? "")
+        ? PRIM_HOME_BRAND[home]!
+        : isErrorCtorName(home)
+          ? "Error"
+          : undefined;
+    if (homeBrand !== undefined) {
+      const recvBrand = borrowedRecvBrandOf(recv);
+      const ok =
+        recvBrand === undefined ||
+        recvBrand === homeBrand ||
+        (homeBrand === "Error" ? isErrorCtorName(recvBrand) : false);
+      if (!ok) throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+  }
   if (home === "Array" && recv.shape.k !== "tuple" && recv.shape.k !== "arr") {
+    // Bug 108 邻接面：mutator（push/pop/…）在 prim 接收者上原生定抛
+    //（CreateDataProperty/DeleteProperty on primitive——node 实测
+    // Array.prototype.push.call("ab",1) → TypeError）。此前字符串接收者
+    // 被 Bug 51 物化通道吞成「拷贝元组上成功」的假不抛。读方法（slice/
+    // join/at/…）保持物化泛型。
+    if (recv.shape.k === "prim" && ARRAY_MUTATOR_METHODS.has(name)) {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
     // 字面量字符串 → code unit 字符 tuple（Array.prototype 借用算法按
     // length+索引读——code unit，非 code point；slice.call('abc') →
     // ["a","b","c"]）；其余 array-like（闭 obj）→ Array.from 物化

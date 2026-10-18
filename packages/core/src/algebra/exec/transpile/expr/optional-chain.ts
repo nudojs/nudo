@@ -8,8 +8,9 @@
  *   nullish，成员读不再记 may-throw；
  * - 位置插桩（$nodoPos）与 transpile.ts positionRecordWrap 同口径：静态
  *   属性记属性位、计算成员记表达式起始位；
- * - delete 链中缀含 call/invoke/len（不可删除目标的父链）→ undefined 交
- *   消费方 unsupported；
+ * - delete 链中缀含 call/invoke/invokeKey/len（不可删除目标的父链）→ undefined
+ *   交消费方 unsupported；
+ * - 计算键调用 hop（o[k]() / o?.[k]() / o[k]?.()）走 $invokeKey 保 this；
  * - 接收者经构造器注入而非文本替换（嵌套可选链 IIFE 的参数位不可盲替换，
  *   review Blocker 1）。
  */
@@ -38,6 +39,17 @@ export type ChainHop =
       fnOptional: boolean;
       /** 标识符 receiver（RegExp test/exec 的 lastIndex 写回目标） */
       recvName?: string;
+    }
+  | {
+      kind: "invokeKey";
+      /** 计算键源（运行时求值折叠槽名） */
+      keySrc: string;
+      argsSrc: string;
+      locArg: string;
+      /** `o?.[k]()`：接收者 nullish 短路 */
+      recvOptional: boolean;
+      /** `o[k]?.()`：方法值 nullish 短路（this 仍绑 o） */
+      fnOptional: boolean;
     };
 
 function isChainLink(n: { type?: string }): boolean {
@@ -145,6 +157,33 @@ export function flattenChain(
         cur = callee.object as typeof cur;
         continue;
       }
+      // 计算非字面量键调用（o[k]() / o?.[k]() / o[k]?.()）→ invokeKey hop：
+      // $invokeKey 保接收者（键运行时折叠槽名 + $invoke 派发）；此前落
+      // {kind:"call"} hop → $callNamed("call", $idx(o,k), …) 丢 this → 假
+      // never。super 接收者不在此列（链遇 Super 整体放弃，super[k]() 走
+      // call.ts 的 $invokeSuperKey 专用分支）。
+      {
+        const calleeComputed = callee?.computed === true;
+        const calleeKey = calleeComputed ? callee?.property : undefined;
+        if (
+          callee &&
+          callee.object &&
+          (callee.type === "MemberExpression" || callee.type === "OptionalMemberExpression") &&
+          callee.object.type !== "Super" &&
+          isExpression(calleeKey as Node)
+        ) {
+          hops.unshift({
+            kind: "invokeKey",
+            keySrc: transpileExpression(calleeKey as Expression, opts),
+            argsSrc: `[${args}]`,
+            locArg,
+            recvOptional: linkIsOptional(callee),
+            fnOptional: linkIsOptional(cur),
+          });
+          cur = callee.object as typeof cur;
+          continue;
+        }
+      }
       hops.unshift({ kind: "call", argsSrc: `[${args}]`, optional: linkIsOptional(cur), locArg });
       cur = (cur.callee ?? cur.object) as typeof cur;
       continue;
@@ -238,6 +277,21 @@ function emitChainFrom(hops: ChainHop[], i: number, valSrc: string): string {
       }
       return rest(invokeOf(valSrc, hop.fnOptional));
     }
+    case "invokeKey": {
+      // 计算键调用：$invokeKey 保 this；fnOptional（o[k]?.()）的方法值
+      // nullish 检查读 $idx(recv, key)——计算键无静态名（$get 不可用）。
+      // 键/接收者源文本内联两次与 invoke hop 的 fnCheck 同取舍（保派发，
+      // 副作用键表达式会跑两遍）。
+      const invokeOf = (recv: string, fnCheck: boolean): string => {
+        const call = `$invokeKey(${recv}, ${hop.keySrc}, ${hop.argsSrc}${hop.locArg})`;
+        if (!fnCheck) return call;
+        return `(($__fn) => $fork($nullishTest($__fn), () => $lit(void 0), () => ${call}))($idx(${recv}, ${hop.keySrc}))`;
+      };
+      if (hop.recvOptional) {
+        return shortCircuitHop(valSrc, (r) => invokeOf(r, hop.fnOptional), hops, i);
+      }
+      return rest(invokeOf(valSrc, hop.fnOptional));
+    }
   }
 }
 
@@ -297,7 +351,7 @@ export function emitDeleteChainFrom(hops: ChainHop[], i: number, valSrc: string)
     }
     return emitDeleteChainFrom(hops, i + 1, `$idx(${valSrc}, ${hop.keySrc})`);
   }
-  return undefined; // call/invoke/len 中缀：delete 目标父链不可发射
+  return undefined; // call/invoke/invokeKey/len 中缀：delete 目标父链不可发射
 }
 
 /** 若 expr 是含 `?.` 的成员/调用脊柱，返回整链短路源码 */

@@ -316,3 +316,69 @@ describe("Bug 34: generator-body exceptions propagate to the consumer, not silen
     expect(destructure.throws).toContain("TypeError");
   });
 });
+
+describe("Bug 83: 生成器 @@iterator 槽是自返方法（() => it），不再 body-less fn", () => {
+  // native（node 实测）：%GeneratorPrototype%[Symbol.iterator] 是
+  // function(){ return this; }——it[Symbol.iterator]() === it 折 true；
+  // 经槽再入（it[Symbol.iterator]().next() / [...it[Symbol.iterator]()]）
+  // 原生正常交付。修复前槽值是 body-less fn：恒等折 false、再入定抛。
+
+  it("it[Symbol.iterator]() === it → true（修复前 false）", () => {
+    const r = litOf(
+      `export function f() { function* g() { yield 1; } const it = g(); return it[Symbol.iterator]() === it; }`,
+      "f",
+    );
+    expect(r.ok).toBe(true);
+    expect(r.value).toBe(true);
+    expect(r.throws).not.toContain("Error");
+  });
+
+  it("经槽再入：it[Symbol.iterator]().next().value → 1（修复前 always-throw）", () => {
+    const r = litOf(
+      `export function f() { function* g() { yield 1; } const it = g(); return it[Symbol.iterator]().next().value; }`,
+      "f",
+    );
+    expect(r.ok).toBe(true);
+    expect(r.value).toBe(1);
+    expect(r.throws).toBe("never");
+  });
+
+  it("经槽 spread：[...it[Symbol.iterator]()].join(\",\") → \"1,2\"（修复前 always-throw）", () => {
+    const r = litOf(
+      `export function f() { function* g() { yield 1; yield 2; } const it = g(); return [...it[Symbol.iterator]()].join(","); }`,
+      "f",
+    );
+    expect(r.ok).toBe(true);
+    expect(r.value).toBe("1,2");
+    expect(r.throws).toBe("never");
+  });
+
+  it(".call 接收者通道：a[Symbol.iterator].call(b).next().value → b 的首 yield（native 5）", () => {
+    const r = litOf(
+      `export function f() { function* g1() { yield 1; } function* g2() { yield 5; } const a = g1(); const b = g2(); return a[Symbol.iterator].call(b).next().value; }`,
+      "f",
+    );
+    expect(r.ok).toBe(true);
+    expect(r.value).toBe(5);
+  });
+
+  it("槽值驻留：it[Symbol.iterator] === it[Symbol.iterator] → true", () => {
+    const r = litOf(
+      `export function f() { function* g() { yield 1; } const it = g(); return it[Symbol.iterator] === it[Symbol.iterator]; }`,
+      "f",
+    );
+    expect(r.ok).toBe(true);
+    expect(r.value).toBe(true);
+  });
+
+  // Controls（修复前亦正确——迭代消费走 drain 侧表，不经 @@iterator 槽）
+  it("control：直接 next/spread/for-of/typeof 不回归", () => {
+    expect(litOf(`export function f() { function* g() { yield 1; } const it = g(); return it.next().value; }`, "f").value).toBe(1);
+    expect(litOf(`export function f() { function* g() { yield 1; yield 2; } let s = 0; for (const v of g()) s += v; return s; }`, "f").value).toBe(3);
+    expect(litOf(`export function f() { function* g() { yield 1; } return [...g()].length; }`, "f").value).toBe(1);
+    const t = litOf(`export function f() { function* g() { yield 1; } const it = g(); return [typeof it[Symbol.iterator], typeof it.next].join(","); }`, "f");
+    expect(t.value).toBe("function,function");
+    const del = litOf(`export function f() { function* inner() { yield 1; yield 2; } function* outer() { yield* inner(); } return [...outer()].join(","); }`, "f");
+    expect(del.value).toBe("1,2");
+  });
+});

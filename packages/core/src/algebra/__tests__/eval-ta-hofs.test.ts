@@ -21,7 +21,7 @@ import { describe, it, expect } from "vitest";
 // 相对路径引 src 引擎面（不经 @nudojs/core 别名——本 worktree 的 vite8
 // 别名解析会把裸包名落到 dist 旧产物，同 eval-non-callable.test.ts）。
 import { checkSource } from "../check.ts";
-import { type Abs } from "../abs.ts";
+import { type Abs, anyAbs, litValue } from "../abs.ts";
 import { formatShape } from "../format.ts";
 import { $lit } from "../exec/runtime/state.ts";
 import { call, val, effects } from "./eval-helpers.ts";
@@ -130,20 +130,20 @@ describe("Bug 36：TA HOF 返回面对齐数组 HOF 口径", () => {
     expect(shape(`export function f() { return new Uint8Array([1]).forEach(() => {}); }`)).toBe("undefined");
   });
 
-  it("map → 元素域 number[]（ToNumber 收敛，回调返回 string 不渗入）", () => {
-    expect(shape(`export function f() { return new Uint8Array([1]).map((x) => x + 1); }`)).toBe("number[]");
-    expect(shape(`export function f() { return new Uint8Array([1]).map(() => "s"); }`)).toBe("number[]");
+  it("map → 元素域 number（ToNumber 收敛，回调返回 string 不渗入）；Bug 100 已知计数 → 长度精确的 [number]", () => {
+    expect(shape(`export function f() { return new Uint8Array([1]).map((x) => x + 1); }`)).toBe("[number]");
+    expect(shape(`export function f() { return new Uint8Array([1]).map(() => "s"); }`)).toBe("[number]");
   });
 
-  it("map → BigInt 家族元素域 bigint[]", () => {
-    expect(shape(`export function f() { return new BigInt64Array([1n]).map((x) => x + 1n); }`)).toBe("bigint[]");
+  it("map → BigInt 家族元素域 [bigint]", () => {
+    expect(shape(`export function f() { return new BigInt64Array([1n]).map((x) => x + 1n); }`)).toBe("[bigint]");
   });
 
-  it("filter → 元素域 number[]", () => {
-    expect(shape(`export function f() { return new Uint8Array([1]).filter((x) => x > 0); }`)).toBe("number[]");
+  it("filter → 元素域 [] | [number]（Bug 100 已知计数下 0/1 保留子序列精确）", () => {
+    expect(shape(`export function f() { return new Uint8Array([1]).filter((x) => x > 0); }`)).toBe("[] | [number]");
   });
 
-  it("every/some → boolean（长度未建模，诚实不精确）", () => {
+  it("every/some → boolean（谓词真值不可判时诚实不精确；Bug 100 已知计数下具体谓词折精确布尔）", () => {
     expect(shape(`export function f() { return new Uint8Array([1]).every((x) => x > 0); }`)).toBe("boolean");
     expect(shape(`export function f() { return new Uint8Array([1]).some((x) => x > 0); }`)).toBe("boolean");
   });
@@ -158,8 +158,15 @@ describe("Bug 36：TA HOF 返回面对齐数组 HOF 口径", () => {
     expect(shape(`export function f() { return new Uint8Array([1]).reduce((a, b) => a + b, 0); }`)).toBe("number");
   });
 
-  it("reduce 无初值 → may TypeError（空 TA 原生抛，与数组口径一致）", () => {
-    expect(effects(`export function f() { new Uint8Array([1]).reduce((a, b) => a + b); }`)).toContain("TypeError");
+  it("reduce 无初值：已知计数非空 → 不记 may（Bug 100 长度精确化）；抽象长度 → may TypeError（空 TA 原生抛）", () => {
+    // 长度 1 已知：原生单元素无初值不调回调不抛——不再记 may（旧口径长度
+    // 未建模折 possibly-empty 假 may）
+    expect(effects(`export function f() { new Uint8Array([1]).reduce((a, b) => a + b); }`)).not.toContain("TypeError");
+    // 抽象长度（new Uint8Array(n)）：可能为空 → may TypeError（与数组口径一致）
+    expect(effects(`export function f(n) { new Uint8Array(n).reduce((a, b) => a + b); }`)).toContain("TypeError");
+    // 长度 0 已知：原生定抛（Reduce of empty array）——hard NudoThrow
+    expect(val(`export function f() { try { new Uint8Array(0).reduce((a, b) => a + b); return "no-throw"; } catch (e) { return "caught:" + e.name; } }`))
+      .toEqual({ ok: true, value: "caught:TypeError" });
   });
 });
 
@@ -222,5 +229,68 @@ describe("Bug 36：控制组与边界", () => {
   it("非回调 TA 方法维持 unknown 口径（fill 未建模，不假抛）", () => {
     expect(val(`export function f() { try { new Uint8Array(8).fill(1); return "no-throw"; } catch (e) { return "caught"; } }`))
       .toEqual({ ok: true, value: "no-throw" });
+  });
+});
+
+describe("Bug 100：TA HOF 回调按已知长度逐下标执行（不再只跑一次）", () => {
+  it.each([
+    ["字面量源 5 元", 5, `new Uint8Array([1, 2, 3, 4, 5])`],
+    ["字面量源 3 元", 3, `new Uint8Array([9, 8, 7])`],
+    ["数字形态 4", 4, `new Int8Array(4)`],
+    ["零长度", 0, `new Uint8Array(0)`],
+  ])("%s → forEach 计数 %s", (_name, want, ctor) => {
+    expect(val(`export function f() { let n = 0; ${ctor}.forEach(() => { n++; }); return n; }`))
+      .toEqual({ ok: true, value: want });
+  });
+
+  it("map：计数 + 结果长度精确（长度 > 1）", () => {
+    expect(val(`export function f() { let n = 0; const r = new Int8Array(5).map(() => { n++; return 7; }); return n + "," + r.length; }`))
+      .toEqual({ ok: true, value: "5,5" });
+  });
+
+  it("filter：计数 + 谓词真值下结果长度（5 / 0）", () => {
+    expect(val(`export function f() { let n = 0; const r = new Int8Array(5).filter(() => { n++; return true; }); return n + "," + r.length; }`))
+      .toEqual({ ok: true, value: "5,5" });
+    expect(val(`export function f() { const r = new Int8Array(5).filter(() => false); return r.length; }`))
+      .toEqual({ ok: true, value: 0 });
+  });
+
+  it("reduce（带初值）：计数 = 长度", () => {
+    expect(val(`export function f() { let n = 0; new Uint8Array([1, 2, 3, 4]).reduce((a, b) => { n++; return a + b; }, 0); return n; }`))
+      .toEqual({ ok: true, value: 4 });
+  });
+
+  it("every/some：具体谓词全程求值（计数 5）+ 精确布尔", () => {
+    expect(val(`export function f() { let n = 0; const r = new Uint8Array([1, 2, 3, 4, 5]).every(() => { n++; return true; }); return n + "," + r; }`))
+      .toEqual({ ok: true, value: "5,true" });
+    expect(val(`export function f() { let n = 0; const r = new Uint8Array([1, 2, 3, 4, 5]).some(() => { n++; return false; }); return n + "," + r; }`))
+      .toEqual({ ok: true, value: "5,false" });
+  });
+
+  it("BigInt 家族（BigUint64Array）计数同口径", () => {
+    expect(val(`export function f() { let n = 0; new BigUint64Array(3).forEach(() => { n++; }); return n; }`))
+      .toEqual({ ok: true, value: 3 });
+  });
+
+  it("回调索引实参逐位（i 求和 = 0+1+2+3+4）", () => {
+    expect(val(`export function f() { let s = 0; new Uint8Array(5).forEach((_v, i) => { s += i; }); return s; }`))
+      .toEqual({ ok: true, value: 10 });
+  });
+
+  it("抽象长度（n 形参）→ arr 视图单代表：回调一次（旧口径不变）", () => {
+    expect(val(`export function f(n) { let c = 0; new Uint8Array(n).forEach(() => { c++; }); return c; }`, [anyAbs]))
+      .toEqual({ ok: true, value: 1 });
+  });
+
+  it("超展开上限（> MAX_CONCRETE_LOOP_ITERS）→ 回落单代表（预算内不物化）", () => {
+    const r = call(`export function f() { let c = 0; new Uint8Array(2000).forEach(() => { c++; }); return c; }`);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 1 });
+  });
+
+  it("控制组：数组/Set HOF 长度口径不回归（各 5）", () => {
+    expect(val(`export function f() { let n = 0; [1, 2, 3, 4, 5].forEach(() => { n++; }); return n; }`))
+      .toEqual({ ok: true, value: 5 });
+    expect(val(`export function f() { let n = 0; new Set([1, 2, 3, 4, 5]).forEach(() => { n++; }); return n; }`))
+      .toEqual({ ok: true, value: 5 });
   });
 });

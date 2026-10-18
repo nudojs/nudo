@@ -5,8 +5,9 @@
  */
 
 import type { Abs } from "./abs.ts";
-import { abs, litValue, unknown, confJoin, strLit, boolLit } from "./abs.ts";
+import { abs, anyAbs, litValue, unknown, confJoin, strLit, boolLit } from "./abs.ts";
 import { objOf, joinAbs } from "./objects.ts";
+import { isDomainShared } from "./len-sharing.ts";
 import { NudoThrow } from "./nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "./may-throw.ts";
 
@@ -19,6 +20,13 @@ type MapTable = {
   byLit: Map<LitKey, Abs>;
   /** 非字面量 key 写入的值（get 未知 key 时 join 用） */
   shadowValues: Abs[];
+  /**
+   * Bug 88：身份键条目（同一非字面量值——对象/函数/brand/any 绑定——
+   * 重复写不重复计数）。键不可字面量化但有可判身份（identKeyOf），
+   * size/keys/entries 仍可折 exact；无身份键的非字面量写入仍走
+   * shadowValues（size 保守）。
+   */
+  identEntries: Array<{ key: Abs; value: Abs }>;
   /** 抽象分支并入后「可能不存在」的字面量键（get/has 需保守） */
   maybeAbsent?: Set<LitKey>;
 };
@@ -63,6 +71,7 @@ function cloneMapTable(t: MapTable): MapTable {
   return {
     byLit: new Map(t.byLit),
     shadowValues: [...t.shadowValues],
+    identEntries: t.identEntries.map((e) => ({ ...e })),
     maybeAbsent: t.maybeAbsent ? new Set(t.maybeAbsent) : undefined,
   };
 }
@@ -170,9 +179,12 @@ export function endCollectionFork(arms: Array<ArmOverlay | undefined | null>): v
         const e = arm?.get(id);
         return e?.map ?? cloneMapTable(base);
       });
-      const merged: MapTable = { byLit: new Map(), shadowValues: [], maybeAbsent: new Set() };
+      const merged: MapTable = { byLit: new Map(), shadowValues: [], identEntries: [], maybeAbsent: new Set() };
       const keyArms = new Map<LitKey, number>();
       const forcedAbsent = new Set<LitKey>();
+      // Bug 88：身份键条目按臂计数——全臂在场的键保 exact（值 join），
+      // 部分臂在场 → 键可能缺席 → 值降级 shadowValues（size/get 保守）
+      const identArms = new Map<object, { key: Abs; value: Abs; count: number }>();
       for (const t of perArm) {
         for (const [k, v] of t.byLit) {
           const prev = merged.byLit.get(k);
@@ -180,6 +192,16 @@ export function endCollectionFork(arms: Array<ArmOverlay | undefined | null>): v
           keyArms.set(k, (keyArms.get(k) ?? 0) + 1);
         }
         for (const sv of t.shadowValues) merged.shadowValues.push(sv);
+        for (const e of t.identEntries) {
+          const ik = refIdentKeyOf(e.key) ?? (e.key as object);
+          const prev = identArms.get(ik);
+          if (prev) {
+            prev.value = joinAbs(prev.value, e.value);
+            prev.count++;
+          } else {
+            identArms.set(ik, { key: e.key, value: e.value, count: 1 });
+          }
+        }
         // 未知 key delete 只标 maybeAbsent、byLit 仍保留：键计数不够，必须并集
         if (t.maybeAbsent) {
           for (const k of t.maybeAbsent) forcedAbsent.add(k);
@@ -189,6 +211,10 @@ export function endCollectionFork(arms: Array<ArmOverlay | undefined | null>): v
         if (count < perArm.length) merged.maybeAbsent!.add(k);
       }
       for (const k of forcedAbsent) merged.maybeAbsent!.add(k);
+      for (const e of identArms.values()) {
+        if (e.count >= perArm.length) merged.identEntries.push({ key: e.key, value: e.value });
+        else merged.shadowValues.push(e.value);
+      }
       if (merged.maybeAbsent!.size === 0) delete merged.maybeAbsent;
       commitMap(id, merged);
     }
@@ -204,6 +230,10 @@ export function endCollectionFork(arms: Array<ArmOverlay | undefined | null>): v
       // per-key 臂计数（对齐 Map merge）：跨臂 delete 不同字面 key、长度相同也必须 maybeAbsent
       const litArmCount = new Map<LitKey, number>();
       const forcedAbsent = new Set<LitKey>();
+      // Bug 88：身份键元素跨臂并集去重（同身份 = 原生同一对象），臂计数对齐
+      // 字面 key——部分臂在场 → membership 不确定（wholeUncertain）
+      const identSeen = new Set<object>();
+      const identArmCount = new Map<object, number>();
       let wholeUncertain = false;
       let hasNonLit = false;
       for (const t of perArm) {
@@ -212,6 +242,7 @@ export function endCollectionFork(arms: Array<ArmOverlay | undefined | null>): v
           for (const k of t.maybeAbsent) forcedAbsent.add(k);
         }
         const armLits = new Set<LitKey>();
+        const armIdents = new Set<object>();
         for (const el of t.elements) {
           const lk = litKeyOf(el);
           if (isLitKey(lk)) {
@@ -221,12 +252,24 @@ export function endCollectionFork(arms: Array<ArmOverlay | undefined | null>): v
             }
             armLits.add(lk);
           } else {
-            hasNonLit = true;
-            mergedEls.push(el);
+            const ik = identKeyOf(el);
+            if (ik !== undefined) {
+              if (!identSeen.has(ik)) {
+                identSeen.add(ik);
+                mergedEls.push(el);
+              }
+              armIdents.add(ik);
+            } else {
+              hasNonLit = true;
+              mergedEls.push(el);
+            }
           }
         }
         for (const k of armLits) {
           litArmCount.set(k, (litArmCount.get(k) ?? 0) + 1);
+        }
+        for (const ik of armIdents) {
+          identArmCount.set(ik, (identArmCount.get(ik) ?? 0) + 1);
         }
       }
       const maybeKeys = new Set<LitKey>();
@@ -237,6 +280,10 @@ export function endCollectionFork(arms: Array<ArmOverlay | undefined | null>): v
           if (count < perArm.length) maybeKeys.add(k);
         }
         for (const k of forcedAbsent) maybeKeys.add(k);
+        // Bug 88：身份键部分臂在场 → 该元素 membership 不确定 → 整表不确定
+        for (const count of identArmCount.values()) {
+          if (count < perArm.length) wholeUncertain = true;
+        }
       }
       commitSet(id, {
         elements: mergedEls,
@@ -259,7 +306,7 @@ function setTableForReadBase(arm: ArmOverlay | null | undefined, id: object): Se
 }
 
 function emptyMapTable(): MapTable {
-  return { byLit: new Map(), shadowValues: [] };
+  return { byLit: new Map(), shadowValues: [], identEntries: [] };
 }
 
 function emptySetTable(): SetTable {
@@ -291,6 +338,52 @@ function sameValueZeroKey(a: LitKeyResult, b: LitKeyResult): boolean {
   if (a === NO_LIT_KEY || b === NO_LIT_KEY) return false;
   if (a === b) return true;
   return typeof a === "number" && typeof b === "number" && Number.isNaN(a) && Number.isNaN(b);
+}
+
+/**
+ * Bug 88：**引用语义**身份键——同键 ⇒ 原生同一引用值（SameValueZero 相等）。
+ * 引用语义形态（obj/arr/tuple/fn/brand/eff + symbol）以 **Abs 引用** 为身份：
+ * 同一创建事件 / 同一绑定的别名传播（变量赋值、槽位存取、函数传参）复用
+ * 同一 Abs 引用（instance-id.ts 同一健全性依据，strictEqAbs 同引用臂同口径）。
+ * 不可作身份键（返回 undefined）：
+ * - 字面量键（走 byLit 通道，含 lit(undefined)/NaN）；
+ * - 域共享值（len-sharing.ts：xs[0]/xs[1] 元素域分发、回调元素实参）——
+ *   同一 Abs 代表**多个**具体值，去重会假 1；
+ * - 抽象 prim 域（无 lit term 的 number/string/bool/bigint）、any/unknown、
+ *   sum——同 Abs 只保证同抽象域，不保证同具体值。
+ * 该谓词可安全用于「未命中 ⇒ 一定不存在」的精确 miss 折叠：引用值与
+ * 字面量/其它引用恒不等（fresh instance 身份，strictEqAbs 同口径）。
+ */
+function refIdentKeyOf(a: Abs | undefined): object | undefined {
+  if (!a) return undefined;
+  if (isLitKey(litKeyOf(a))) return undefined;
+  if (isDomainShared(a)) return undefined;
+  const k = a.shape.k;
+  if (k === "obj" || k === "arr" || k === "tuple" || k === "fn" || k === "brand" || k === "eff") {
+    return a as object;
+  }
+  // symbol：同引用同符号（strictEqAbs 同口径；symbol-id 侧表另有细分，此处只取同引用恒等）
+  if (k === "prim" && a.shape.type === "symbol") return a as object;
+  return undefined;
+}
+
+/**
+ * Bug 88：**绑定级**身份键 = 引用语义键 + 非单例 any/unknown 绑定值
+ * （逐形参/逐成员铸造的新 Abs，如 check 入口的 any 形参）。同一 Abs 引用
+ * = 同一绑定/同一创建事件 → 原生同一值，可用于**同绑定去重**（add 侧）；
+ * 但 any/unknown 键原生可能恰为某字面量/其它引用（形参无约束），**不得**
+ * 用于精确 miss / 键域全特定 / Map 键通道（那类判断用 refIdentKeyOf）。
+ * 全局共享单例 anyAbs/unknown（失败兜底值跨来源复用同一引用）除外。
+ * 注意：两个**不同**身份键只代表「不同绑定/创建事件」，原生仍可能巧合
+ * 同引用（s.add(x); s.add(y) 两 any 形参实参相同对象）——该残余过近似
+ * 是既有口径（此前同样折 exact 计数），不在 Bug 88 范围。
+ */
+function identKeyOf(a: Abs | undefined): object | undefined {
+  const ref = refIdentKeyOf(a);
+  if (ref !== undefined || !a) return ref;
+  const k = a.shape.k;
+  if ((k === "any" || k === "unknown") && a !== anyAbs && a !== unknown) return a as object;
+  return undefined;
 }
 
 export function isMapAbs(a: Abs | undefined): boolean {
@@ -544,9 +637,9 @@ export function makeMapAbs(iterable?: Abs): Abs {
     if (el.shape.k === "tuple") {
       const k = el.shape.elements[0] ?? undefAbs();
       const v = el.shape.elements[1] ?? undefAbs();
-      const lk = litKeyOf(k);
-      if (isLitKey(lk)) table.byLit.set(lk, v);
-      else table.shadowValues.push(v);
+      // Bug 88：非字面量键走身份通道（同键覆盖写）——new Map([[k,1],[k,2]])
+      // 原生单条目
+      mapTableSet(table, k, v);
       continue;
     }
     // Bug 8：对象条目键 = Get(entry, "0")——闭形态（obj/fn/brand 剥壳）无
@@ -558,9 +651,8 @@ export function makeMapAbs(iterable?: Abs): Abs {
       const slot0 = s.slots?.["0"];
       const slot1 = s.slots?.["1"];
       if (slot0) {
-        const lk = litKeyOf(slot0.value);
-        if (isLitKey(lk)) table.byLit.set(lk, slot1?.value ?? undefAbs());
-        else table.shadowValues.push(slot1?.value ?? undefAbs());
+        // Bug 88：同上——键可判身份时精确入表
+        mapTableSet(table, slot0.value, slot1?.value ?? undefAbs());
       } else if (s.k === "obj" && (s.open === true || s.index)) {
         table.shadowValues.push(undefAbs());
       } else {
@@ -586,11 +678,19 @@ export function makeSetAbs(iterable?: Abs): Abs {
   const s = brandOf("Set");
   const table = emptySetTable();
   const seen = new Set<LitKey>();
+  // Bug 88：非字面量元素按身份去重（new Set([k,k]) → 单条目）
+  const seenIdent = new Set<object>();
   for (const el of elementsFrom(iterable)) {
     const lk = litKeyOf(el);
     if (isLitKey(lk)) {
       if (seen.has(lk)) continue;
       seen.add(lk);
+    } else {
+      const ik = identKeyOf(el);
+      if (ik !== undefined) {
+        if (seenIdent.has(ik)) continue;
+        seenIdent.add(ik);
+      }
     }
     table.elements.push(el);
   }
@@ -674,16 +774,41 @@ function setTableForRead(a: Abs): SetTable | undefined {
   return setTables.get(a as object);
 }
 
+/**
+ * Bug 88：MapTable 条目写入——字面量键 byLit、引用身份键 identEntries
+ * （Map#set 覆盖写：同 SameValueZero 键替换值、不重复计数）、其余非字面量
+ * 键 shadowValues（size 保守）。身份键只取**引用语义**形态（refIdentKeyOf）：
+ * any/unknown 键原生可能恰为某字面量/其它引用，入身份通道会让字面量
+ * miss 折 exact false——必须留在 shadow 通道。
+ */
+function mapTableSet(t: MapTable, key: Abs, value: Abs): void {
+  const lk = litKeyOf(key);
+  if (isLitKey(lk)) {
+    t.byLit.set(lk, value);
+    return;
+  }
+  const ik = refIdentKeyOf(key);
+  if (ik !== undefined) {
+    const hit = t.identEntries.find((e) => refIdentKeyOf(e.key) === ik);
+    if (hit) hit.value = value;
+    else t.identEntries.push({ key, value });
+    return;
+  }
+  t.shadowValues.push(value);
+}
+
 /** Map#set：fork 内写 overlay；否则原地。返回同一 Abs（JS 可变语义） */
 export function mapSetEntry(mapAbs: Abs, key: Abs | undefined, value: Abs): Abs {
   const t = mapTableForWrite(mapAbs);
-  const k = litKeyOf(key);
-  if (isLitKey(k)) t.byLit.set(k, value);
+  if (key) mapTableSet(t, key, value);
   else if (value) t.shadowValues.push(value);
   return mapAbs;
 }
 
-/** Map#delete：fork overlay 内移除字面量键；未知 key 仅标 shadow 不确定 */
+/** Map#delete：fork overlay 内移除字面量键；未知 key 仅标 shadow 不确定。
+ * Bug 88：引用身份键删除可精确命中（同引用条目移除）/精确 miss（键域全
+ * 特定且无 shadow 时）。any/unknown 等无引用身份的抽象键删除 → 身份条目
+ * 降级 shadow（键可能就是任一身份键，size/get 回保守）。 */
 export function mapDeleteEntry(mapAbs: Abs, key: Abs | undefined): Abs {
   const t = mapTableForWrite(mapAbs);
   const k = litKeyOf(key);
@@ -691,10 +816,32 @@ export function mapDeleteEntry(mapAbs: Abs, key: Abs | undefined): Abs {
     t.byLit.delete(k);
     t.maybeAbsent?.delete(k);
     // 删除后若仍有 shadow 写入，get/has 仍须保守
-  } else if (t.shadowValues.length === 0 && t.byLit.size > 0) {
-    // 未知 key 可能删掉任一已知键 → 全部键 maybeAbsent
-    t.maybeAbsent = new Set(t.byLit.keys());
+    return abs(
+      { k: "prim", type: "boolean" },
+      undefined,
+      undefined,
+      "path",
+    );
   }
+  const ik = refIdentKeyOf(key);
+  if (ik !== undefined) {
+    const before = t.identEntries.length;
+    t.identEntries = t.identEntries.filter((e) => refIdentKeyOf(e.key) !== ik);
+    if (t.identEntries.length < before) return boolLit(true);
+    if (t.shadowValues.length === 0) return boolLit(false);
+    // shadow 存在：未知键可能就是查询键 → 删除结果不确定（保守 partial）
+    return abs(
+      { k: "prim", type: "boolean" },
+      undefined,
+      undefined,
+      "path",
+    );
+  }
+  // 抽象键（any/unknown/域共享/prim 域）：可能删掉任一已知键——字面量键
+  // maybeAbsent；身份条目降级 shadow（不降级会让 get/has/keys 假精确）
+  if (t.byLit.size > 0) t.maybeAbsent = new Set(t.byLit.keys());
+  for (const e of t.identEntries) t.shadowValues.push(e.value);
+  t.identEntries.length = 0;
   return abs(
     { k: "prim", type: "boolean" },
     undefined,
@@ -708,6 +855,7 @@ export function mapClearEntries(mapAbs: Abs): Abs {
   const t = mapTableForWrite(mapAbs);
   t.byLit.clear();
   t.shadowValues.length = 0;
+  t.identEntries.length = 0;
   delete t.maybeAbsent;
   return undefAbs();
 }
@@ -721,7 +869,7 @@ function joinAll(els: Abs[]): Abs | undefined {
   return els.reduce((a, b) => joinAbs(a, b));
 }
 
-/** Map#get：命中字面量 key → 精确；miss / 未知 key / maybeAbsent / shadow 并 undefined */
+/** Map#get：命中字面量/身份 key → 精确；miss / 未知 key / maybeAbsent / shadow 并 undefined */
 export function mapGetEntry(mapAbs: Abs, key: Abs | undefined): Abs {
   const t = mapTableForRead(mapAbs);
   if (!t) return unknown;
@@ -736,8 +884,22 @@ export function mapGetEntry(mapAbs: Abs, key: Abs | undefined): Abs {
     }
     if (t.shadowValues.length === 0) return undefAbs();
   }
+  // Bug 88：引用身份键命中——shadow 为空时精确（get(k) 只依赖键 k 的条目）；
+  // shadow key（未知键，原生可能就是 k 且后写覆盖）须并入
+  const ik = refIdentKeyOf(key);
+  if (ik !== undefined) {
+    const hit = t.identEntries.find((e) => refIdentKeyOf(e.key) === ik);
+    if (hit) {
+      if (t.shadowValues.length === 0) return hit.value;
+      return joinAll([hit.value, ...t.shadowValues, undefAbs()]) ?? undefAbs();
+    }
+    if (t.shadowValues.length === 0) {
+      // 精确 miss：引用键 ≠ 字面量键/其它引用键（maybeAbsent 只涉字面量键）
+      return undefAbs();
+    }
+  }
   // 字面量 miss / 未知 key：并入 undefined（存在性）+ 全部已知值
-  const known = [...t.byLit.values(), ...t.shadowValues];
+  const known = [...t.byLit.values(), ...t.identEntries.map((e) => e.value), ...t.shadowValues];
   const joined = joinAll(known);
   if (isLitKey(k) && t.shadowValues.length === 0) {
     // 纯字面量 miss：值只能是 undefined（shadows 为空时）
@@ -755,8 +917,17 @@ export function mapHasEntry(mapAbs: Abs, key: Abs | undefined): Abs {
   if (!t) return unknown;
   const k = litKeyOf(key);
   if (!isLitKey(k)) {
+    // Bug 88：引用身份键命中 → 条目在场（覆盖写不改在场性）→ exact true；
+    // miss 且无 shadow → 键域全特定 → exact false。any/unknown 查询键无
+    // 引用身份 → 保守 partial（可能就是任一身份键）
+    const ik = refIdentKeyOf(key);
+    if (ik !== undefined) {
+      const hit = t.identEntries.some((e) => refIdentKeyOf(e.key) === ik);
+      if (hit) return boolLit(true);
+      if (t.shadowValues.length === 0) return boolLit(false);
+    }
     // 未知 key：有条目则可能 true/false，无条目 unknown
-    return t.byLit.size > 0 || t.shadowValues.length > 0
+    return t.byLit.size > 0 || t.shadowValues.length > 0 || t.identEntries.length > 0
       ? abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial")
       : unknown;
   }
@@ -777,12 +948,13 @@ export function mapHasEntry(mapAbs: Abs, key: Abs | undefined): Abs {
 export function mapSizeAbs(mapAbs: Abs): Abs {
   const t = mapTableForRead(mapAbs);
   // shadow key / maybeAbsent 键 → 真实 size 不确定
+  // Bug 88：引用身份条目计数确定（覆盖写不增长）——size 保持 exact
   if (!t || t.shadowValues.length > 0 || (t.maybeAbsent && t.maybeAbsent.size > 0)) {
     return abs({ k: "prim", type: "number" }, undefined, undefined, "path");
   }
   return abs(
     { k: "prim", type: "number" },
-    { op: "lit", value: t.byLit.size as never },
+    { op: "lit", value: (t.byLit.size + t.identEntries.length) as never },
     undefined,
     "exact",
   );
@@ -791,7 +963,7 @@ export function mapSizeAbs(mapAbs: Abs): Abs {
 export function mapValuesAbs(mapAbs: Abs): Abs[] {
   const t = mapTableForRead(mapAbs);
   if (!t) return [];
-  return [...t.byLit.values(), ...t.shadowValues];
+  return [...t.byLit.values(), ...t.identEntries.map((e) => e.value), ...t.shadowValues];
 }
 
 /** LitKey → key Abs（Map entry 迭代用）；非字面量 key 走 unknown */
@@ -836,6 +1008,17 @@ export function mapEntriesAbs(mapAbs: Abs): Abs[] {
       ),
     );
   }
+  // Bug 88：引用身份条目——键为该特定引用（keys()/entries 精确展开）
+  for (const e of t.identEntries) {
+    entries.push(
+      abs(
+        { k: "tuple", elements: [e.key, e.value] },
+        undefined,
+        undefined,
+        confJoin(e.value.conf, "exact"),
+      ),
+    );
+  }
   return entries;
 }
 
@@ -843,12 +1026,15 @@ export function mapEntriesAbs(mapAbs: Abs): Abs[] {
  * Bug 28：Map 键序列——ES2025 Set 方法族的 Map 实参语义：GetSetRecord
  * 迭代 `other.keys()`，条目值不参与（`set.union(map)` = 元素 ∪ map 键）。
  * 调用方以 collectionExactLen 前置门控保证无影子键（全字面键）。
+ * Bug 88：引用身份键条目计入（union 并集原生含对象键；其余运算经
+ * setMethodFold 的全字面量门自然保守回落）。
  */
 export function mapKeysAbs(mapAbs: Abs): Abs[] {
   const t = mapTableForRead(mapAbs);
   if (!t) return [];
   const keys: Abs[] = [];
   for (const k of t.byLit.keys()) keys.push(keyAbsFromLitKey(k));
+  for (const e of t.identEntries) keys.push(e.key);
   return keys;
 }
 
@@ -859,23 +1045,50 @@ export function setAddEntry(setAbs: Abs, value: Abs): Abs {
   if (isLitKey(lk) && t.elements.some((el) => sameValueZeroKey(litKeyOf(el), lk))) {
     return setAbs; // JS Set 语义：重复 add 不增长（SameValueZero）
   }
+  // Bug 88：非字面量值可判身份时按 SameValueZero 去重（s.add(k); s.add(k)
+  // 原生单条目）；无身份键（抽象值/域共享/单例）保持逐次入表
+  const ik = identKeyOf(value);
+  if (ik !== undefined && t.elements.some((el) => identKeyOf(el) === ik)) {
+    return setAbs;
+  }
   t.elements.push(value);
   return setAbs;
 }
 
-/** Set#delete：按字面量元素移除；fork overlay 内生效。
+/** Set#delete：按字面量/身份元素移除；fork overlay 内生效。
  * 字面量删除且无残留非字面量元素 → 该臂可精确 miss；
- * 臂间分歧由 endCollectionFork 按元素数差标 maybeAbsent。 */
+ * 臂间分歧由 endCollectionFork 按元素数差标 maybeAbsent。
+ * Bug 88：身份删除按绑定级身份匹配（s.add(x); s.delete(x) 同绑定必命中）；
+ * 「无残留不确定元素」的精确 miss 判定用引用级身份——any/unknown 元素
+ * 原生可能恰为被删字面量/查询引用，不得当特定值。 */
 export function setDeleteEntry(setAbs: Abs, value: Abs): Abs {
   const t = setTableForWrite(setAbs);
   const lk = litKeyOf(value);
+  // 残留元素中「值不可判」的：非字面量且无引用级身份（any/unknown/域共享/prim 域）
+  const hasAbstract = (els: Abs[]): boolean =>
+    els.some((el) => !isLitKey(litKeyOf(el)) && refIdentKeyOf(el) === undefined);
   if (isLitKey(lk)) {
     t.elements = t.elements.filter((el) => !sameValueZeroKey(litKeyOf(el), lk));
-    const hasUnknown = t.elements.some((el) => !isLitKey(litKeyOf(el)));
-    if (hasUnknown) t.maybeAbsent = true;
+    // Bug 88：引用级身份元素是特定引用 ≠ 被删字面量——不构成「可能删掉了它」
+    if (hasAbstract(t.elements)) t.maybeAbsent = true;
     else delete t.maybeAbsent;
   } else {
-    t.maybeAbsent = true;
+    const ik = identKeyOf(value);
+    const rk = refIdentKeyOf(value);
+    if (ik !== undefined) {
+      const before = t.elements.length;
+      t.elements = t.elements.filter((el) => identKeyOf(el) !== ik);
+      const removed = t.elements.length < before;
+      const abstractLeft = hasAbstract(t.elements);
+      if (abstractLeft) t.maybeAbsent = true;
+      else delete t.maybeAbsent;
+      if (removed) return boolLit(true);
+      // 精确 miss 仅限引用语义查询键：any/unknown 绑定键可能等值于表中
+      // 字面量/引用元素（delete 结果原生可为 true），不得折 false
+      if (rk !== undefined && !abstractLeft) return boolLit(false);
+    } else {
+      t.maybeAbsent = true;
+    }
   }
   return abs({ k: "prim", type: "boolean" }, undefined, undefined, "path");
 }
@@ -898,12 +1111,33 @@ export function setHasEntry(setAbs: Abs, value: Abs): Abs {
     if (setAbsentKey(t, k)) {
       return abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial");
     }
+    // Bug 88：miss 时若有「值不可判」元素（any/unknown/域共享/prim 域——
+    // 原生可能恰为该字面量）不得折 exact false；引用级身份元素是特定
+    // 引用，恒不等字面量，不构成不确定性
+    if (!hit && t.elements.some((el) => !isLitKey(litKeyOf(el)) && refIdentKeyOf(el) === undefined)) {
+      return abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial");
+    }
     return abs(
       { k: "prim", type: "boolean" },
       { op: "lit", value: hit },
       undefined,
       "exact",
     );
+  }
+  // Bug 88：绑定级身份命中 → 该特定值在场 → exact true；引用语义查询键
+  // 的 miss 在表内无非字面量「值不可判」元素（any/unknown/域共享/prim 域
+  // ——它们可能恰为查询引用）时 → exact false（该特定引用 ≠ 任何字面量
+  // /其它引用）。any/unknown 查询键不作精确 miss（可能等值于其它抽象
+  // 元素）；fork membership 不确定（setAnyAbsent）时保守 partial。
+  const ik = identKeyOf(value);
+  if (ik !== undefined && !setAnyAbsent(t)) {
+    if (t.elements.some((el) => identKeyOf(el) === ik)) return boolLit(true);
+    if (
+      refIdentKeyOf(value) !== undefined &&
+      !t.elements.some((el) => !isLitKey(litKeyOf(el)) && refIdentKeyOf(el) === undefined)
+    ) {
+      return boolLit(false);
+    }
   }
   return abs({ k: "prim", type: "boolean" }, undefined, undefined, "partial");
 }
@@ -1023,7 +1257,8 @@ export function collectionExactLen(c: Abs): number | undefined {
     if (t.shadowValues.length > 0 || (t.maybeAbsent && t.maybeAbsent.size > 0)) {
       return undefined;
     }
-    return t.byLit.size;
+    // Bug 88：引用身份条目计数确定
+    return t.byLit.size + t.identEntries.length;
   }
   return undefined;
 }

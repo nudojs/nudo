@@ -112,6 +112,22 @@ export function transpileAssignmentExpr(
               return `((__v) => { ${path.rootSrc} = ${setPathSrc(path, "__v")}; return __v; })(${val})`;
             });
           }
+          // Bug 80：this.#x ||= v / &&= / ??=——memberPathOf 对 PrivateName
+          // 返回 null，此前落 assign:||= unsupported 令整模块 fail-closed。
+          // 复用 emitLogicalAssign：读 $get(obj,"#x")，短路写落同一混淆键槽
+          //（与下方普通/复合私有名赋值分支同口径）
+          if (!m.computed && m.property.type === "PrivateName") {
+            const key = privateNameKeySrc(
+              m.property as { id?: { name?: string }; name?: string },
+            );
+            if (key !== null) {
+              const obj = transpileExpression(m.object as Expression, opts);
+              return emitLogicalAssign(
+                `$get(${obj}, ${key})`,
+                (val) => `((__v) => (($set(${obj}, ${key}, __v)), __v))(${val})`,
+              );
+            }
+          }
         }
         // 逻辑赋值不可写回目标（如 foo().x ||= v）：折 undefined 是假精确
         throw new NudoUnsupportedError(

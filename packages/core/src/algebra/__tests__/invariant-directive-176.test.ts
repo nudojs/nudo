@@ -70,7 +70,10 @@ describe("@nudo:invariant 主靶（levenshtein 型 DP）", () => {
  */
 export function levenshtein(a, b) {${levenshteinBody}}
 `,
-      levOpts,
+      // Bug 129：Array.from({length: m+1}) 抽象长度 may 超 2^32-1 →
+      // RangeError（native 实测 {length: 2**32} 定抛）——L2 合法 note，
+      // 本用例主靶是 invariant 证明面，按惯例 ignoreThrows 拆分预期。
+      { ...levOpts, ignoreThrows: ["RangeError"] },
     );
     expect(r.issues.filter((i) => i.severity === "error")).toEqual([]);
     expect(r.issues.some((i) => i.code === "nudo:unproven-return")).toBe(false);

@@ -133,6 +133,27 @@ export function classSpecOf(
     if (k.type === "StringLiteral" || k.type === "NumericLiteral") {
       return { name: String(k.value) };
     }
+    // Bug 114：句法形 `Symbol.X` 计算键直接投影静态名 "@@X"——与读侧
+    // transpile/expr/member.ts 的 Symbol 常量键投影同口径（读侧早已无条件
+    // 投影，Symbol 命名空间按不可遮蔽处理）。定义期不再走宿主求值：fn 值
+    // 键（[Symbol.for]——$get ns 分支折 absFunction）litValue 失败会被
+    // $class drops，字段/方法/访问器三形态统一在此落真名。
+    const asMember = k as unknown as {
+      type?: string;
+      computed?: boolean;
+      object?: { type?: string; name?: string } | null;
+      property?: { type?: string; name?: string } | null;
+    };
+    if (
+      asMember.type === "MemberExpression" &&
+      asMember.computed !== true &&
+      asMember.object?.type === "Identifier" &&
+      asMember.object.name === "Symbol" &&
+      asMember.property?.type === "Identifier" &&
+      asMember.property.name
+    ) {
+      return { name: `@@${asMember.property.name}` };
+    }
     if (isExpression(k as Node)) {
       return { computed: emitTranspileExpression(k as Expression, opts) };
     }
@@ -201,7 +222,15 @@ export function classSpecOf(
         // R5：静态字段——thunk 以类值为 this 定义期求值（原生
         // ClassFieldDefinitionEvaluation 的 receiver 是类值，this.x 读写
         // /箭头捕获随之恢复；$class 建类值后逐槽调用，源序保持）
-        const fieldOpts: TranspileOptions = { ...methodOptsBase };
+        const fieldOpts: TranspileOptions = {
+          ...methodOptsBase,
+          // Bug 119：静态字段初始化器内 super 的 home object 是类自身——
+          // super.<静态> 读父类构造器面。与静态方法/静态访问器 opts 同口径
+          // 注入 staticSuperSrc（此前缺省落 $getSuper 实例原型链，super.x
+          // 折 exact undefined、算术折 NaN）。实例字段（下方分支）不得
+          // 注入——实例 super 合法读原型链，$getSuper 已正确处理
+          ...(superSrc !== null ? { staticSuperSrc: superSrc } : {}),
+        };
         const vsrc = m.value
           ? emitTranspileExpression(m.value as Expression, fieldOpts)
           : "$lit(void 0)";

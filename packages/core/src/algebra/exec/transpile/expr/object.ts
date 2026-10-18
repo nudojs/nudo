@@ -42,7 +42,7 @@ export function transpileObjectExpr(
       // 支持 { ...a, b: 1 } → $spread($spread(a, $obj({b:1})), ...)
       let acc: string | null = null;
       const props: string[] = [];
-      const accRegs: Array<{ key?: string; keyAbs?: string; get?: string; set?: string }> = [];
+      const accRegs: Array<{ key?: string; get?: string; set?: string }> = [];
       /** 非计算 `__proto__: v` 的特殊原型设定（ES）；primitive 忽略 */
       let protoSet: string | null = null;
       const flushProps = () => {
@@ -113,6 +113,39 @@ export function transpileObjectExpr(
           };
           // get/set 访问器：注册进运行时侧表（$get/$set 派发；展开/assign 时调用）
           if (prop.kind === "get" || prop.kind === "set") {
+            const omVarParams = paramNamesOfFn(prop.params as Node[]);
+            // thunk 先行构造（get：单表达式体；set：与 stmt.ts 类访问器同口径
+            // emitSetterAccessorThunk——内层箭头丢弃体返回值（恒返回 __this）
+            // + 别名写接收者回收；N3：setter 形参默认值/解构经 __nudoArgs 槽绑定）
+            const omFirstP = (prop.params as Node[])[0] as { type?: string } | undefined;
+            const thunkSrc =
+              prop.kind === "get"
+                ? `(__this) => {\n${emitFnBlockBody(prop.body, 1, methodOpts, { varParams: omVarParams })}\n}`
+                : emitSetterAccessorThunk(
+                    omFirstP?.type === "Identifier" ? (bindNames[0] ?? "__v") : "__v",
+                    emitFnBlockBody(prop.body, 2, methodOpts, {
+                      implicitReturn: false,
+                      varParams: omVarParams,
+                    }),
+                    collectForkBindingNames(prop.body).filter((n) => !omVarParams.has(n)),
+                    1,
+                    omFirstP && omFirstP.type !== "Identifier"
+                      ? [
+                          `    let __nudoArgs = $arguments([__v]);`,
+                          ...emitParamBindingFromArgs(prop.params as Node[], "    ", methodOpts, "__nudoArgs").prologue,
+                        ]
+                      : [],
+                  );
+            // Bug 112：计算键访问器的键表达式只求值一次——此前 computedKeySrc
+            // 内嵌两处（占位槽写 + $objAccessorKey 注册），副作用键翻倍
+            //（原生键只在字面量位置求值一次）。IIFE 绑定临时键 __k 供两处
+            // 共用；注册是侧表插入（与位置无关），键求值保持在字面量位置
+            if (computedKeySrc !== null) {
+              const getArg = prop.kind === "get" ? thunkSrc : "null";
+              const setArg = prop.kind === "set" ? thunkSrc : "null";
+              acc = `((__k) => $objAccessorKey($setKey(${acc ?? "$obj({})"}, __k, $lit(void 0)), __k, ${getArg}, ${setArg}))(${computedKeySrc})`;
+              continue;
+            }
             // 占位槽保键存在性（'x' in o / keys / assign 拷贝目标）；读写在 $get/$set 派发
             if (isProtoKey) {
               acc = `$setKey(${acc ?? "$obj({})"}, $lit("__proto__"), $lit(void 0))`;
@@ -120,39 +153,15 @@ export function transpileObjectExpr(
               // Bug 73：symbol 键投影写打 Slot.symbolKey 标记（JSON 枚举面不可见）
               flushProps();
               acc = `$set(${acc ?? "$obj({})"}, ${symK}, $lit(void 0), { symbolKey: true })`;
-            } else if (computedKeySrc !== null) {
-              acc = `$setKey(${acc ?? "$obj({})"}, ${computedKeySrc}, $lit(void 0))`;
             } else {
               props.push(`${mkey}: $lit(void 0)`);
             }
-            // 计算键访问器经 $objAccessorKey 注册（键为 Abs，运行时 ToPropertyKey）
-            const regKey: string | undefined = computedKeySrc !== null ? undefined : (mkey ?? undefined);
-            const omVarParams = paramNamesOfFn(prop.params as Node[]);
-            if (prop.kind === "get") {
-              const bodySrc = `{\n${emitFnBlockBody(prop.body, 1, methodOpts, { varParams: omVarParams })}\n}`;
-              accRegs.push({ key: regKey, keyAbs: computedKeySrc ?? undefined, get: `(__this) => ${bodySrc}` });
-            } else {
-              // setter thunk（与 stmt.ts 类访问器同口径，emitSetterAccessorThunk）：
-              // 内层箭头丢弃体返回值（恒返回 __this）+ 别名写接收者回收
-              const omFirstP = (prop.params as Node[])[0] as { type?: string } | undefined;
-              const vname = omFirstP?.type === "Identifier" ? (bindNames[0] ?? "__v") : "__v";
-              const setBody = emitFnBlockBody(prop.body, 2, methodOpts, {
-                implicitReturn: false,
-                varParams: omVarParams,
-              });
-              const aliasNames = collectForkBindingNames(prop.body).filter((n) => !omVarParams.has(n));
-              // N3：setter 形参默认值/解构经 __nudoArgs 槽绑定（类 setter 同口径）
-              let setPrologue: string[] = [];
-              if (omFirstP && omFirstP.type !== "Identifier") {
-                const bound = emitParamBindingFromArgs(prop.params as Node[], "    ", methodOpts, "__nudoArgs");
-                setPrologue = [`    let __nudoArgs = $arguments([__v]);`, ...bound.prologue];
-              }
-              accRegs.push({
-                key: regKey,
-                keyAbs: computedKeySrc ?? undefined,
-                set: emitSetterAccessorThunk(vname, setBody, aliasNames, 1, setPrologue),
-              });
-            }
+            // 静态键访问器经 $objAccessor 注册（字面量末尾统一应用）
+            accRegs.push(
+              prop.kind === "get"
+                ? { key: mkey ?? undefined, get: thunkSrc }
+                : { key: mkey ?? undefined, set: thunkSrc },
+            );
             continue;
           }
           let mBodyInner = emitFnBlockBody(prop.body, 1, methodOpts, { varParams: paramNamesOfFn(prop.params as Node[]) });
@@ -285,12 +294,8 @@ export function transpileObjectExpr(
       flushProps();
       let result = acc ?? `$obj({})`;
       for (const r of accRegs) {
-        // 计算键访问器：键为 Abs，运行时 ToPropertyKey 后注册
-        const register =
-          r.keyAbs !== undefined
-            ? `$objAccessorKey(${result}, ${r.keyAbs}, ${r.get ?? "null"}, ${r.set ?? "null"})`
-            : `$objAccessor(${result}, ${r.key}, ${r.get ?? "null"}, ${r.set ?? "null"})`;
-        result = register;
+        // 静态键访问器注册（计算键访问器已在属性位就地 $objAccessorKey——Bug 112）
+        result = `$objAccessor(${result}, ${r.key}, ${r.get ?? "null"}, ${r.set ?? "null"})`;
       }
       if (protoSet !== null) result = `$setProto(${result}, ${protoSet})`;
       return result;

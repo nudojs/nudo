@@ -452,7 +452,31 @@ export function $for(
         // 宽化）；definite continue 忠实
         if (e.abstract) extWiden?.markInterrupted();
         afterBody = state;
-      } else if (isNudoReturn(e) || isNudoThrow(e)) {
+      } else if (isNudoReturn(e)) {
+        // Bug 99：抽象条件轮的体内 return——0 迭代/后续退出路径仍活，
+        // 令牌冒泡会让函数边界只收体内返回值、post-loop 语句被吞
+        // （whileGuard(any) 折 0 #exact，unsound）。$switch/$fork 同构：
+        // 返回值收为一臂（exits 侧信道，函数边界 joinControlExits 汇合），
+        // 循环按出口收口（snapCounter 已含本轮入口快照）后 post-loop 语句
+        // 作为兄弟臂继续。definite-true 轮（出口臂不可达，for(;;){return}
+        // 保持 #exact）与无 exits 通道（裸宿主调用——$catchReturn 自包含
+        // 边界，吸收即丢值）保持原样冒泡。$gen/$async thunk 内 push 落
+        // **本地** exits 作用域（async.ts：臂值并入终末值域 / promise
+        // inner），不再漏成外层函数幻影臂。NudoThrow 是真异常，照抛。
+        const retExits = loopExitsAls.getStore();
+        if (abstractTest && retExits) {
+          retExits.push(e.absValue);
+          // N5：return 截断本臂延续（同 runForkArm 收 token 口径）
+          notePromiseForkExit(currentPromiseSettleArm());
+          snapCounter();
+          snapExt();
+          counterWiden.markInterrupted();
+          extWiden?.markInterrupted();
+          applyExtJoin(true);
+          return exitJoin !== undefined ? counterWiden.widenFinal(exitJoin) : state;
+        }
+        throw e;
+      } else if (isNudoThrow(e)) {
         throw e;
       } else {
         throw e;
@@ -747,7 +771,27 @@ export function $whileSeq(
         boundaryGate(i); // 体提前结束，副作用已在绑定
         continue;
       }
-      if (isNudoReturn(e) || isNudoThrow(e)) throw e;
+      if (isNudoReturn(e)) {
+        // Bug 99（$whileSeq 面，同 $for）：抽象条件轮体内 return 收臂 +
+        // 循环出口续体——令牌冒泡会让函数边界只收体内返回值、post-loop
+        // 语句被吞（0 迭代路径丢失）。snapExit 已含本轮入口快照（0 迭代/
+        // 先退出路径绑定），applyExitJoin 收口后 post-loop 语句作为兄弟臂
+        // 继续，返回值经 exits 侧信道在函数边界 joinControlExits 汇合。
+        // definite-true 轮（出口臂不可达）与无 exits 通道（裸宿主调用——
+        // $catchReturn 自包含边界，吸收即丢值）保持原样冒泡。$gen/$async
+        // thunk 内 push 落本地 exits 作用域（同 $for 面注释）。
+        const retExits = loopExitsAls.getStore();
+        if (abstractIter && retExits) {
+          retExits.push(e.absValue);
+          // N5：return 截断本臂延续（同 runForkArm 收 token 口径）
+          notePromiseForkExit(currentPromiseSettleArm());
+          widen?.markInterrupted();
+          applyExitJoin(true);
+          return;
+        }
+        throw e;
+      }
+      if (isNudoThrow(e)) throw e;
       throw e;
     } finally {
       if (abstractIter) leavePromiseForkArm();

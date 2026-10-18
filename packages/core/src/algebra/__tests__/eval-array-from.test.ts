@@ -7,7 +7,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { litValue } from "@nudojs/core";
-import { call } from "./eval-helpers.ts";
+import { call, effects } from "./eval-helpers.ts";
 
 describe("evaluator Array.from mapFn", () => {
   it("invokes mapFn once per tuple element with index", () => {
@@ -52,5 +52,83 @@ describe("evaluator Array.from mapFn", () => {
   it("regression: Array.from of empty tuple stays abstract", () => {
     const r = call(`export function f() { let t = 0; Array.from([], (x) => { t++; return x; }); return t; }`);
     expect(litValue(r.result)).toEqual({ ok: true, value: 0 });
+  });
+});
+
+// --- Bug 104：array-like length 的 ArrayCreate 上限 -------------------------
+
+describe("Bug 104: Array.from array-like length ceiling", () => {
+  it("字面量 length > 2^32-1 → definite RangeError（含折算字符串/Infinity）", () => {
+    for (const src of [
+      `export function f() { return Array.from({ length: 2 ** 32 }); }`,
+      `export function f() { return Array.from({ length: Infinity }); }`,
+      `export function f() { return Array.from({ length: 1e10 }); }`,
+      `export function f() { return Array.from({ length: "4294967296" }); }`,
+    ]) {
+      const r = call(src);
+      expect(litValue(r.result), src).toEqual({ ok: false });
+      expect((r.throws as { shape?: { k?: string; name?: string } })?.shape?.k === "never").toBe(false);
+      expect((r.throws as { shape?: { k?: string; name?: string } })?.shape?.name).toBe("RangeError");
+    }
+  });
+
+  it("边界内字面量（2^32-1 / 0 / NaN / 截断小数）不抛", () => {
+    // 2^32-1 行：4294967295 元素不可物化（诚实不精确）——只钉不抛 +
+    // throws 域 never；其余行长度可物化，钉精确
+    const r1 = call(`export function f() { return Array.from({ length: 4294967295 }).length; }`);
+    expect((r1.throws as { shape?: { k?: string } })?.shape?.k).toBe("never");
+    expect((r1.result as { shape?: { k?: string } })?.shape?.k).not.toBe("never");
+    for (const src of [
+      `export function f() { return Array.from({ length: 0 }).length === 0; }`,
+      `export function f() { return Array.from({ length: NaN }).length === 0; }`,
+      `export function f() { return Array.from({ length: 2.5 }, (v) => v).length === 2; }`,
+    ]) {
+      const r = call(src);
+      expect(litValue(r.result), src).toEqual({ ok: true, value: true });
+      expect((r.throws as { shape?: { k?: string } })?.shape?.k).toBe("never");
+    }
+  });
+
+  it("抽象 length → may RangeError（gate 面）", () => {
+    const eff = effects(`export function f(x) { return Array.from({ length: x }); }`);
+    expect(eff).toContain("RangeError");
+  });
+});
+
+// --- Bug 110：普通对象 @@iterator 先行（iterator beats array-like） ---------
+
+describe("Bug 110: Array.from 普通对象 @@iterator", () => {
+  it("带 @@iterator 的普通对象 → 迭代路径：元素域 unknown 的 arr（不再折 exact 空 tuple）", () => {
+    const r = call(`export function f() { const o = { [Symbol.iterator]: function* () { yield 1; yield 2; } }; return Array.from(o); }`);
+    const s = r.result as { shape?: { k?: string; element?: unknown } };
+    expect(s.shape?.k).toBe("arr");
+    expect((s.shape as { element?: { shape?: { k?: string } } }).element?.shape?.k).toBe("unknown");
+    // 长度不可判（native 2）——不得 wrong-exact 折 0
+    const len = call(`export function f() { const o = { [Symbol.iterator]: function* () { yield 1; yield 2; } }; return Array.from(o).length; }`);
+    expect(litValue(len.result)).toEqual({ ok: false });
+  });
+
+  it("非可调用 @@iterator 字面量 → definite TypeError（GetMethod 语义）", () => {
+    const r = call(`export function f() { const o = { [Symbol.iterator]: 5 }; return Array.from(o); }`);
+    expect((r.throws as { shape?: { name?: string } })?.shape?.name).toBe("TypeError");
+  });
+
+  it("iterator beats length：{...iterObj, length: 0} 仍走迭代（不折 exact 0）", () => {
+    const r = call(`export function f() { const g = { [Symbol.iterator]: function* () { yield 1; yield 2; } }; return Array.from({ ...g, length: 0 }).length; }`);
+    expect(litValue(r.result)).toEqual({ ok: false });
+  });
+
+  it("@@iterator 值 undefined → GetMethod 视为缺席，回落 array-like", () => {
+    const r = call(`export function f() { const o = { [Symbol.iterator]: undefined, 0: "a", 1: "b", length: 2 }; return Array.from(o).join(""); }`);
+    expect(litValue(r.result)).toEqual({ ok: true, value: "ab" });
+  });
+
+  it("控制组：无 @@iterator 的 array-like / 空对象面不回归（Bug 51 口径）", () => {
+    expect(litValue(call(`export function f() { return Array.from({ 0: "a", 1: "b", length: 2 }).length; }`).result))
+      .toEqual({ ok: true, value: 2 });
+    expect(litValue(call(`export function f() { return Array.from({ a: 1 }).length; }`).result))
+      .toEqual({ ok: true, value: 0 });
+    expect(litValue(call(`export function f() { function* gen() { yield 3; yield 4; } return Array.from(gen()).length; }`).result))
+      .toEqual({ ok: true, value: 2 });
   });
 });

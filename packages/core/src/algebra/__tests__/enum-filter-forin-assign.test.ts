@@ -75,3 +75,91 @@ describe("enumerable filter: for-in and Object.assign", () => {
     expect(val(src)).toEqual({ ok: true, value: true });
   });
 });
+
+// --- Bug 109：spread / rest 的枚举视图（CopyDataProperties） ----------------
+
+describe("Bug 109: spread/rest enumerable view (CopyDataProperties)", () => {
+  it("非枚举键不进 spread 结果（in 检查 + 键序 + JSON 投影）", () => {
+    const setup109 = `
+      const src = {};
+      Object.defineProperty(src, "a", { value: 1, enumerable: false });
+      src.b = 2;
+    `;
+    expect(
+      val(`export function f() {
+      ${setup109}
+      return "a" in ({ ...src });
+    }`),
+    ).toEqual({ ok: true, value: false });
+    expect(
+      val(`export function f() {
+      ${setup109}
+      return Object.keys({ ...src }).join(",");
+    }`),
+    ).toEqual({ ok: true, value: "b" });
+    expect(
+      val(`export function f() {
+      ${setup109}
+      return JSON.stringify({ ...src });
+    }`),
+    ).toEqual({ ok: true, value: '{"b":2}' });
+  });
+
+  it("非枚举键不进 rest 解构（named 提取 + rest 键集）", () => {
+    expect(
+      val(`export function f() {
+      const src = {};
+      Object.defineProperty(src, "a", { value: 1, enumerable: false });
+      const { a, ...r } = src;
+      return JSON.stringify(r);
+    }`),
+    ).toEqual({ ok: true, value: "{}" });
+  });
+
+  it("非枚举访问器 getter 不被 spread 调用（枚举访问器照常物化）", () => {
+    expect(
+      val(`export function f() {
+      const src = {};
+      Object.defineProperty(src, "a", { get() { return 5; }, enumerable: false });
+      return "a" in ({ ...src });
+    }`),
+    ).toEqual({ ok: true, value: false });
+    expect(
+      val(`export function f() {
+      const src = {};
+      Object.defineProperty(src, "a", { get() { return 5; }, enumerable: true });
+      return JSON.stringify({ ...src });
+    }`),
+    ).toEqual({ ok: true, value: '{"a":5}' });
+  });
+
+  it("枚举键照常展开 / for-in·assign 既有面不回归（control）", () => {
+    expect(
+      val(`export function f() {
+      const src = {};
+      Object.defineProperty(src, "a", { value: 1, enumerable: true });
+      return "a" in ({ ...src });
+    }`),
+    ).toEqual({ ok: true, value: true });
+    expect(
+      val(`export function f() {
+      const src = {};
+      Object.defineProperty(src, "a", { value: 1, enumerable: false });
+      return "a" in Object.assign({}, src);
+    }`),
+    ).toEqual({ ok: true, value: false });
+    expect(
+      val(`export function f() {
+      const src = {};
+      Object.defineProperty(src, "a", { value: 1, enumerable: false });
+      let n = 0;
+      for (const k in src) n++;
+      return n;
+    }`),
+    ).toEqual({ ok: true, value: 0 });
+    expect(val(`export function f() { return JSON.stringify({ ...{ a: 1 } }); }`)).toEqual({
+      ok: true,
+      value: '{"a":1}',
+    });
+  });
+});

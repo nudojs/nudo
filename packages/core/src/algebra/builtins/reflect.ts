@@ -13,15 +13,15 @@
  */
 import type { Abs } from "../abs.ts";
 import { abs, litValue, strLit, boolLit, unknown } from "../abs.ts";
-import { joinAbs, setProtoAbs, canonicalArrayIndex, getSlot, getProtoAbs, isNullProtoObj } from "../objects.ts";
+import { joinAbs, setProtoAbs, canonicalArrayIndex, getSlot } from "../objects.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
 import { isNullishLitAbs } from "../surface.ts";
 import { boolPrim } from "./shared.ts";
 import { evalObjectMethod } from "./object.ts";
 import { markExtState, extStateOf, getPropFlags, migrateInvariants } from "./invariants.ts";
-import { objectProtoBrand } from "./ctor.ts";
-import { $del } from "../exec/runtime/members.ts";
+import { protoChangeAllowed } from "./object/methods.ts";
+import { $del, proxyBooleanTrap, proxyGetProtoTrap } from "../exec/runtime/members.ts";
 import { lookupObjAccessor, migrateAccessors } from "../accessors.ts";
 import { $set, $idxSet } from "../exec/runtime/containers.ts";
 import { writeInPlace, undef, callAtFunctionBoundary } from "../exec/runtime/state.ts";
@@ -155,6 +155,14 @@ export function evalReflectMethod(method: string, args: Abs[]): Abs | undefined 
       // 原生 boolean；非配置属性 / frozen 目标原生返 false 不抛。
       enforceReflectTarget(args[0], "deleteProperty");
       const t0 = args[0]!;
+      // Bug 124：deleteProperty 陷阱优先——返回 ToBoolean(陷阱结果)（falsy
+      // 字面量 → false **不抛**，Reflect 口径与 delete 运算符的 strict 抛
+      // 不同，node v26 实测），且不触碰靶（删除责任在陷阱）
+      {
+        const trapR = proxyBooleanTrap(t0, "deleteProperty", (t) => [t, args[1] ?? undef()]);
+        if (trapR === "opaque") return boolPrim();
+        if (trapR !== undefined) return trapR;
+      }
       const kvR = args[1] ? litValue(args[1]) : undefined;
       const kv = kvR?.ok ? kvR.value : undefined;
       if (typeof kv === "string" || typeof kv === "number") {
@@ -234,6 +242,13 @@ export function evalReflectMethod(method: string, args: Abs[]): Abs | undefined 
     }
     case "getPrototypeOf": {
       enforceReflectTarget(args[0], "getPrototypeOf");
+      // Bug 124：getPrototypeOf 陷阱优先——返回陷阱结果（Object/null，非对象
+      // 非 null 字面量定抛 TypeError）；absent → Object.getPrototypeOf 靶语义
+      {
+        const trapR = proxyGetProtoTrap(args[0]!);
+        if (trapR === "opaque") return unknown;
+        if (trapR !== undefined) return trapR;
+      }
       return evalObjectMethod("getPrototypeOf", args);
     }
     case "setPrototypeOf": {
@@ -253,20 +268,20 @@ export function evalReflectMethod(method: string, args: Abs[]): Abs | undefined 
       }
       // Bug 31：应用原型设定（就地：null → nullProto 标记；object → open +
       // protoTable，setProtoAbs 语义）；不可扩展目标原生返 false 不抛。
-      // Review 补：ES2024 OrdinarySetPrototypeOf 的 SameValue(current, V)
-      // 检查先于 extensible 检查——原型未变时原生返 true（node 实测
-      // preventExtensions(o) 后 setPrototypeOf(o, getPrototypeOf(o)) → true）。
-      // 可判同原型：nullProto ↔ lit null；protoTable 同 Abs 身份（同变量）；
-      // 缺省原型（非 nullProto、无表项）↔ Object.prototype 单例。
+      // Bug 120：SameValue+ext 判定抽共享 protoChangeAllowed（object/methods.ts
+      // 单一事实源——ES2024 OrdinarySetPrototypeOf step 3+4，SameValue 先于
+      // extensible 检查：原型未变时原生返 true；Object.setPrototypeOf 据此
+      // 抛 TypeError，此处返 boolean）。
       const t0 = args[0]!;
+      // Bug 124：setPrototypeOf 陷阱优先——返回 ToBoolean(陷阱结果)（falsy
+      // 字面量 → false 不抛，Reflect 口径），且不落侧表（原型设定责任在陷阱）
+      {
+        const trapR = proxyBooleanTrap(t0, "setPrototypeOf", (t) => [t, p0]);
+        if (trapR === "opaque") return boolPrim();
+        if (trapR !== undefined) return trapR;
+      }
       if (extStateOf(t0) !== undefined) {
-        const curIsNull = isNullProtoObj(t0);
-        const p0IsNull = p0.term?.op === "lit" && p0.term.value === null;
-        if (curIsNull && p0IsNull) return boolLit(true);
-        if (curIsNull !== p0IsNull) return boolLit(false); // 一侧 null 一侧对象：必不同
-        if (getProtoAbs(t0) === p0) return boolLit(true);
-        if (getProtoAbs(t0) === undefined && p0 === objectProtoBrand()) return boolLit(true);
-        return boolLit(false);
+        return boolLit(protoChangeAllowed(t0, p0));
       }
       setProtoAbs(t0, p0);
       return boolLit(true);
@@ -301,7 +316,38 @@ export function evalReflectMethod(method: string, args: Abs[]): Abs | undefined 
         // prim（含 nullish 字面量）/ obj / tuple / arr / eff：确定不可调用
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }
-      enforceArgsList(args[2], method);
+      // Bug 121：argsList 槽位按方法索引——apply 是 args[2]，
+      // construct 是 args[1]（此前共用 args[2]：construct 的 2 参合法形
+      // 被缺省 newTarget ≡ undefined 的 prim 分类定抛成假 never，而
+      // argsList 本体从未校验 → Reflect.construct(A,"s",A) 漏抛）。
+      enforceArgsList(args[method === "apply" ? 2 : 1], method);
+      // Bug 121：construct 的 newTarget 在场时须过 IsConstructor——
+      // 普通对象 / prim（含 nullish 字面量）/ ctor:false fn 原生定抛
+      // TypeError；brand 类值带 ctor facet（$class ctor:true）可精确；
+      // 其余不可判面记 may（与 target 侧同三档口径）。apply 无此参。
+      if (method === "construct" && args[2] !== undefined) {
+        const nt = args[2];
+        if (isNullishLitAbs(nt)) throw new NudoThrow(errorTypeAbs("TypeError"));
+        const ns = nt.shape;
+        if (ns.k === "fn") {
+          const nctor = (ns as { ctor?: boolean }).ctor;
+          if (nctor === false) throw new NudoThrow(errorTypeAbs("TypeError"));
+          if (nctor !== true) {
+            recordMayThrow({ kind: "TypeError", cause: "Reflect.construct newTarget may not be a constructor" });
+          }
+        } else if (ns.k === "brand") {
+          const nctor = (ns as { ctor?: boolean }).ctor;
+          if (nctor === false) throw new NudoThrow(errorTypeAbs("TypeError"));
+          if (nctor !== true) {
+            recordMayThrow({ kind: "TypeError", cause: "Reflect.construct newTarget may not be a constructor" });
+          }
+        } else if (ns.k === "any" || ns.k === "unknown" || ns.k === "sum") {
+          recordMayThrow({ kind: "TypeError", cause: "Reflect.construct newTarget may not be a constructor" });
+        } else {
+          // obj / tuple / arr / eff / 非 nullish prim：确定不可构造
+          throw new NudoThrow(errorTypeAbs("TypeError"));
+        }
+      }
       // Bug 14：apply 镜像 $invoke 的 apply 路径（f.apply(t, a) ≡
       // Reflect.apply(f, t, a)——同一操作两口径）；construct 保持保守不
       // 复放（不同方法面，报告「已排除」）。argsList 展开：tuple 精确
@@ -354,6 +400,13 @@ export function evalReflectMethod(method: string, args: Abs[]): Abs | undefined 
       // Bug 31：标记 nonext（就地——Object.isExtensible(o) 随后折 false）；
       // 对象 target 原生恒返 true（已不可扩展也 true）。
       enforceReflectTarget(args[0], method);
+      // Bug 124：preventExtensions 陷阱优先——返回 ToBoolean(陷阱结果)
+      //（falsy 字面量 → false 不抛，Reflect 口径），不落 nonext 标记
+      {
+        const trapR = proxyBooleanTrap(args[0]!, "preventExtensions", (t) => [t]);
+        if (trapR === "opaque") return boolPrim();
+        if (trapR !== undefined) return trapR;
+      }
       if (args[0]) markExtState(args[0]!, "nonext");
       return boolLit(true);
     }

@@ -8,9 +8,10 @@
  */
 import type { Abs } from "../../abs.ts";
 import { abs, unknown, confJoin, bool, str } from "../../abs.ts";
-import { joinAbs, canonicalArrayIndex } from "../../objects.ts";
+import { joinAbs, canonicalArrayIndex, setProtoAbs, setSlot } from "../../objects.ts";
 import { $set, asAbsVal, lookupObjAccessor, clearStaleTermPred } from "../runtime.ts";
-import { extStateOf, getPropFlags, isEnumerableView, assignSourceSlots, primTargetAssignThrows, isSymbolAbs } from "../../builtins.ts";
+import { extStateOf, isEnumerableView, assignSourceSlots, primTargetAssignThrows, isSymbolAbs } from "../../builtins.ts";
+import { classifyAssignSet } from "../../builtins/object/descriptor.ts";
 import { TUPLE_MATERIALIZE_CAP } from "../../containers.ts";
 // 直连 member.ts（不经 containers barrel）：本模块体加载期即回调本 setter，
 // vite SSR 下 barrel 的 re-export 不是实例化期可用绑定（原单文件拓扑中
@@ -78,21 +79,35 @@ export function runtimeAssignObject(args: Abs[]): Abs {
   const mergeObj = (accObj: Abs, srcAbs: Abs, st: "nonext" | "sealed" | "frozen" | undefined): void => {
     // 就地写槽（同 $set 引用语义：语句位置无需重绑、别名同步、Abs 身份不变）
     const base = (accObj.shape as Extract<Abs["shape"], { k: "obj" }>).slots;
-    const flags = getPropFlags(accObj);
     for (const [k, s] of Object.entries((srcAbs.shape as Extract<Abs["shape"], { k: "obj" }>).slots)) {
       // Object.assign 走 [[OwnPropertyKeys]] + EnumerableOwnProperties：
       // enumerable:false 自有键不拷贝（与 Object.keys 同口径）
       if (!isEnumerableView(srcAbs, k)) continue;
-      // sealed/nonext 目标新键 / writable:false 键覆写：strict TypeError
+      // sealed/nonext 目标新键：strict [[Set]] 建键失败 → TypeError
       if (
         (st === "sealed" || st === "nonext") &&
         !Object.prototype.hasOwnProperty.call(base, k)
       ) {
         throwStrictAssign();
       }
-      if (flags?.get(k)?.writable === false) throwStrictAssign();
       const a = lookupObjAccessor(srcAbs, k);
-      base[k] = a?.get ? { value: a.get(srcAbs) } : s;
+      const v = a?.get ? a.get(srcAbs) : s.value; // 源值走 [[Get]]
+      // Bug 128：逐键 [[Set]]（OrdinarySet）语义——此前直写自有槽：
+      // "__proto__" 继承访问器不触发（原型污染面：JSON.parse 源键被折成
+      // 自有数据键、原型静默改写）、自有访问器 setter 被数据覆写、自有/
+      // 继承非可写数据属性不拦截不抛。分类共享 classifyAssignSet
+      //（builtins/object/methods.ts 的 assign 臂同源）。
+      const plan = classifyAssignSet(accObj, k, v);
+      if (plan.act === "throw") throwStrictAssign();
+      if (plan.act === "write") setSlot(base, k, { value: v }); // "__proto__" 自有键经 setSlot（普通赋值触发宿主原型 setter，键静默丢失）
+      else if (plan.act === "open") {
+        (accObj.shape as Extract<Abs["shape"], { k: "obj" }>).open = true;
+      } else if (plan.act === "proto") {
+        setProtoAbs(accObj, plan.proto);
+      } else if (plan.act === "setter") {
+        plan.set(accObj, v);
+      }
+      // "ignore"：__proto__ setter 对原始值静默忽略
     }
     if ((srcAbs.shape as Extract<Abs["shape"], { k: "obj" }>).open) {
       (accObj.shape as Extract<Abs["shape"], { k: "obj" }>).open = true;

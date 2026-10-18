@@ -20,6 +20,7 @@ import {
   joinAbs,
   isNullProtoObj,
   setSlot,
+  canonicalArrayIndex,
 } from "../../../objects.ts";
 import {
   isMapAbs,
@@ -36,6 +37,7 @@ import {
   enterPromiseForkArm,
   leavePromiseForkArm,
 } from "../../../builtins.ts";
+import { typedArrayEnumKeyView } from "../../../builtins/object/enum-entries.ts";
 import {
   anyMemberResult,
 } from "../../member-diag.ts";
@@ -82,6 +84,10 @@ export function $arrRest(a: Abs, start: number): Abs {
   if (a.shape.k === "brand" && a.shape.name === "Arguments") {
     return $arrRest(a.shape.shape, start);
   }
+  // Bug 82：Set/Map rest 解构——同源侧表切片（`const [...all] = new Set(…)`
+  // 此前落尾 unknown，all.length 假不可判；Map 条目是 [k, v] 元组）
+  if (isSetAbs(a)) return tupleOrWiden(setElementsAbs(a).slice(start), a.conf);
+  if (isMapAbs(a)) return tupleOrWiden(mapEntriesAbs(a).slice(start), a.conf);
   if (a.shape.k === "sum") {
     // DEC-006：空 sum 成员 join 无单位元——不得裸 reduce
     const parts = a.shape.members.map((m) => $arrRest(m, start));
@@ -265,7 +271,9 @@ export function $concat(a: Abs, b: Abs): Abs {
  *  sum：逐臂归约（全臂 definite → definite；任一臂非 total → may） */
 type IterabilityKind = "total" | "may" | "definite";
 
-function iterabilityKind(a: Abs): IterabilityKind {
+/** 可迭代性三档判定（$elems/$iterCheck/$concat 共享；Bug 110 起 Array.from
+ *  的 obj 臂同槽复用——@@iterator 槽即 total，两个消费者口径一致）。 */
+export function iterabilityKind(a: Abs): IterabilityKind {
   const s = a.shape;
   if (s.k === "sum") {
     let sawNonTotal = false;
@@ -555,6 +563,16 @@ export function $forInKeys(o: Abs): Abs {
   // brand：内层 obj 槽的可枚举键（类实例字段等）；内建（Date/Map/Promise）
   // 零自有可枚举键 → 空键序列。
   if (shape.k === "brand") {
+    // Bug 125：TypedArray——整数索引异质属性是自有可枚举键 "0".."n-1"，
+    // 与 Object.keys 同口径（typedArrayEnumKeyView 读内层 length 槽）；
+    // 长度可知 → 精确键序列；长度开放 → 抽象字符串键（体 0..N 次——
+    // 空 TA 0 次、非空 n 次，不得折空）。此前整族折 []（wrong-exact）。
+    const taView = typedArrayEnumKeyView(o);
+    if (taView) {
+      return taView.k === "exact"
+        ? $arr(Array.from({ length: taView.count }, (_, i) => $lit(String(i))))
+        : abs({ k: "arr", element: str() }, undefined, undefined, "partial");
+    }
     const inner = shape.shape;
     if (inner.shape.k === "obj") {
       // boxed String brand（Bug 57 附带，T2 移交）：length 不可枚举——原生
@@ -578,6 +596,39 @@ function sideIterLen(a: Abs): number | undefined {
   return mi ? mi.length : undefined;
 }
 
+/** Bug 98：for-in 快照键的在场重查——原生 EnumerateObjectProperties 到键
+ *  时回查 [[GetOwnProperty]]，进体前被 delete 的键跳过该迭代。仅闭 obj
+ *  （自有槽 hasOwnProperty 判定）与 tuple（hole 判定）可精确重查；其余面
+ *  （any/unknown/prim/开 obj/抽象 arr/brand/fn/eff）键序列本身已是抽象
+ *  近似 → 恒在场（保持体执行，0..N 出口 join 承接）。不走 $in：prim 接收
+ *  者（字符串键来自字面量面，不可 delete）会被 $in 记 definite TypeError，
+ *  而原生 for-in 对 prim 接收者零迭代不抛；$in 的原型链命中口径也与
+ *  for-in 的「自有可枚举」判据不符。跳过 = 过近似的安全侧（漏跳只失精度）。 */
+function forInKeyLive(key: Abs, recv: Abs): boolean {
+  const s = recv?.shape;
+  if (!s) return true;
+  if (s.k === "sum") {
+    // 任一臂在场即执行（union 接收者的键域是臂并的近似）
+    for (const m of s.members) {
+      if (forInKeyLive(key, m)) return true;
+    }
+    return false;
+  }
+  const kvR = litValue(key);
+  const kv = kvR.ok && typeof kvR.value === "string" ? kvR.value : undefined;
+  if (kv === undefined) return true; // 抽象键：不可判 → 保持执行
+  if (s.k === "obj") {
+    if (s.open) return true;
+    return Object.prototype.hasOwnProperty.call(s.slots, kv);
+  }
+  if (s.k === "tuple") {
+    const idx = canonicalArrayIndex(kv);
+    if (idx === undefined) return false; // 非下标键不在数组键序列里
+    return idx < s.elements.length && !(s.holes?.includes(idx) ?? false);
+  }
+  return true;
+}
+
 export function $forOf(
   iterable: Abs,
   body: (item: Abs, index: Abs) => void,
@@ -591,10 +642,17 @@ export function $forOf(
      *  即全量）；仅异步可迭代（无 @@iterator 槽）的接收者不折同步槽位投影，
      *  元素取抽象 unknown（原生由 next() 链驱动）。 */
     forAwait?: boolean;
+    /** for-in（Bug 98）：接收者重查 thunk——快照键进体前重查在场，体内
+     *  delete 的未访问键跳过该迭代（与原生 EnumerateObjectProperties 的
+     *  逐键 [[GetOwnProperty]] 回查一致）。thunk 每迭代重读当前绑定，
+     *  `delete o.k` 的写回（o = $del(o, k)）经闭包变量可见。 */
+    forInRecv?: () => Abs;
   },
 ): void {
   const pack = opts?.pack;
   const unpack = opts?.unpack;
+  // Bug 98：for-in 在场重查 thunk（见 opts.forInRecv 注释）
+  const forInRecv = opts?.forInRecv;
   // 循环携带绑定宽化器（Bug 47）：unbounded 单代表迭代的出口 join 是
   // {0 次, 1 次} 两个打包态——常步长累加器（n++ / n += 2）跨迭代增长，
   // 1 次代表不能覆盖任意迭代次数（原生 xs.length 任意）；增长槽位宽化
@@ -692,6 +750,9 @@ export function $forOf(
   for (let i = 0; i < n; i++) {
     const item =
       items.length > 0 ? items[Math.min(i, items.length - 1)]! : unknown;
+    // Bug 98：for-in 快照键进体前重查在场——被 delete 的键跳过本迭代
+    //（体副作用不发生；skip 在 fork 臂外，不产悬挂 arm）
+    if (forInRecv && !forInKeyLive(item, forInRecv())) continue;
     // N5：unbounded（长度未知，可能空）迭代 = 条件路径：体臂 + 出口臂
     //（空容器路径直达循环后——无 post-loop settle 覆盖则悬挂）
     if (unbounded) enterPromiseForkArm();

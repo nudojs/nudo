@@ -64,13 +64,30 @@ let awaitUnsettledHit = false;
 export function $async(thunk: () => Abs): Abs {
   const saved = awaitUnsettledHit;
   awaitUnsettledHit = false;
+  // Bug 99：async thunk 自带 try/catch（$catchReturn）是体内 $loopReturn 的
+  // 目标边界——终末值进 promise inner，不是外层函数 exits。本地开 loopExits
+  // 作用域收抽象循环吸收的早退臂值，并入 thunk 返回值
+  // （`while (c) return 5; return 9;` → promise<5 | 9>，不再把返回值漏成
+  // 外层幻影 number 臂 promise<9> | 5）。只 scope loopExits——throwExits/
+  // tryMarks 维持外层继承（体内 throw 面/soft 帧照常向外建模）。
+  let localExits: Abs[] = [];
+  const joinInner = (v: Abs): Abs =>
+    localExits.length > 0 ? localExits.reduce((a, b) => joinAbs(a, b), v) : v;
   try {
-    const r = thunk();
+    const r = loopExitsAls.run([], () => {
+      try {
+        return thunk();
+      } finally {
+        localExits = loopExitsAls.getStore() ?? [];
+      }
+    });
     // async 体 return <promise>：原生递归采纳 thenable——体已折
     // eff("promise")（如 `return h()`）直接采纳（inner/拒绝通道随体），
-    // 不得再包一层（假嵌套 promise<promise<…>>）
+    // 不得再包一层（假嵌套 promise<promise<…>>）。早退臂（localExits）
+    // 并入 inner，不是顶层（`while (c) return 5; return h();` →
+    // promise<5 | h_inner>，不得折 promise<promise_h | 5>）。
     if (r.shape.k === "eff" && r.shape.eff === "promise") {
-      if (!awaitUnsettledHit) return r;
+      if (localExits.length === 0 && !awaitUnsettledHit) return r;
       const sh = r.shape as {
         k: "eff";
         eff: "promise";
@@ -78,15 +95,15 @@ export function $async(thunk: () => Abs): Abs {
         rejected?: Abs;
         unsettled?: boolean;
       };
-      if (sh.unsettled === true) return r;
+      if (sh.unsettled === true && localExits.length === 0) return r;
       return markFreshInstance(
         abs(
           {
             k: "eff",
             eff: "promise",
-            inner: sh.inner,
+            inner: joinInner(sh.inner),
             ...(sh.rejected !== undefined ? { rejected: sh.rejected } : {}),
-            unsettled: true,
+            ...((awaitUnsettledHit || sh.unsettled === true) ? { unsettled: true } : {}),
           },
           undefined,
           undefined,
@@ -96,20 +113,22 @@ export function $async(thunk: () => Abs): Abs {
     }
     if (awaitUnsettledHit) {
       return markFreshInstance(
-        abs({ k: "eff", eff: "promise", inner: r, unsettled: true }, undefined, undefined, confJoin(r.conf, "path")),
+        abs({ k: "eff", eff: "promise", inner: joinInner(r), unsettled: true }, undefined, undefined, confJoin(r.conf, "path")),
       );
     }
-    return wrapPromiseAbs(r);
+    return wrapPromiseAbs(joinInner(r));
   } catch (e) {
     if (isNudoThrow(e)) {
       // R2b：确定拒绝的 promise 同为新鲜实例（每次调用新对象）；体内还有
-      // 未 settle 的 await 路径 → 拒绝也不确定（悬挂面并存）
+      // 未 settle 的 await 路径 → 拒绝也不确定（悬挂面并存）。若 throw 前
+      // 已有早退臂（localExits 非空），fulfill/reject 两路并存——臂值并
+      // 入 inner（同函数边界 NudoThrow × joinLoopExits(never) 口径）。
       return markFreshInstance(
         abs(
           {
             k: "eff",
             eff: "promise",
-            inner: never,
+            inner: joinInner(never),
             rejected: e.absValue,
             ...(awaitUnsettledHit ? { unsettled: true } : {}),
           },
@@ -222,6 +241,23 @@ function genIterResult(value: Abs, done: boolean): Abs {
  * 消费端（spread/Array.from/解构 rest）重组数组时越 TUPLE_LITERAL_CAP
  * 出 exact 元组（形状面 widened 的 els 槽不受影响）。
  */
+// Bug 83：生成器 @@iterator 槽——原生 %GeneratorPrototype%[Symbol.iterator]
+// 是自返方法（function(){ return this; }）：调用返回接收者自身
+//（it[Symbol.iterator]() === it 折 true），经槽再入
+//（it[Symbol.iterator]().next() / [...it[Symbol.iterator]()]）复用本生成器
+// 协议面，不再定抛。实现为**每生成器闭包捕获**（与 next/return/throw 的
+// 每对象闭包同口径）：计算符号键成员调用（it[Symbol.iterator]()）经
+// transpile 投影 $call($get(it,"@@iterator"), [])——接收者不进 $call，
+// apply 兜底回指捕获的生成器对象；.call/.apply/.bind 走 $invoke 的
+// call 分支，thisVal 通道正确（thisVal 优先——it[Symbol.iterator].call(o)
+// 原生返 o）。槽值单次驻留（makeGenObject 局部 const）——重复读
+// it[Symbol.iterator] === it[Symbol.iterator] 同 ref 折 true。
+function genSelfIteratorFn(g: Abs): Abs {
+  return absFunction([], {
+    body: noBody,
+    apply: (_args: Abs[], thisVal?: Abs) => thisVal ?? g,
+  }, { ctor: false });
+}
 function makeGenObject(
   els: Abs[],
   conf: Confidence,
@@ -316,12 +352,14 @@ function makeGenObject(
     return: { value: ret },
     throw: { value: thr },
     constructor: { value: generatorFunctionCtor() },
-    "@@iterator": { value: absFunction([], { body: noBody }, { ctor: false }) },
   };
   for (let i = 0; i < els.length; i++) {
     slots[String(i)] = { value: els[i]! };
   }
   const g = abs({ k: "obj", slots }, undefined, undefined, conf);
+  // Bug 83：@@iterator 自返槽——闭包捕获 g（槽值在 g 落地后驻留；
+  // shape 按引用共享，此处写入即生效）
+  slots["@@iterator"] = { value: genSelfIteratorFn(g) };
   registerGenElements(g, live);
   registerGenDrain(g, {
     drain: (): Abs[] => {
@@ -368,9 +406,21 @@ export function $gen(body: () => Abs): Abs {
   let thrown: Abs | undefined;
   let soft: MayThrowEffect[] = [];
   let controlToken: unknown;
+  let localExits: Abs[] = [];
   try {
-    // Bug 2：终末 return 值（transpile 侧 withImplicitReturn 保证有返回）
-    retVal = asAbsVal(body());
+    // Bug 2：终末 return 值（transpile 侧 withImplicitReturn 保证有返回）。
+    // Bug 99：体内 $loopReturn 的目标边界是本 thunk——本地开 loopExits
+    // 作用域收抽象循环吸收的早退臂值，并入终末值域（`while (c) return 5;
+    // return 9;` 终末 5 | 9，不再折单臂 5，也不漏成外层函数幻影臂）。
+    retVal = asAbsVal(
+      loopExitsAls.run([], () => {
+        try {
+          return body();
+        } finally {
+          localExits = loopExitsAls.getStore() ?? [];
+        }
+      }),
+    );
   } catch (e) {
     // 控制流 token（fork/循环返回）不是迭代期异常——不得吞
     if (isNudoReturn(e) || isNudoBreak(e) || isNudoContinue(e)) controlToken = e;
@@ -383,7 +433,10 @@ export function $gen(body: () => Abs): Abs {
     yieldStack.pop();
     if (controlToken !== undefined) throw controlToken;
   }
-  const ret: Abs = retVal ?? undef();
+  // Bug 99：早退臂并入终末值域（throw/token 路径上已推臂同样算数——
+  // 返回路径可能已先于 throw 完成）
+  const ret: Abs =
+    localExits.length > 0 ? localExits.reduce((a, b) => joinAbs(a, b), retVal ?? undef()) : (retVal ?? undef());
   const deferred: GenDeferred | undefined =
     thrown === undefined && soft.length === 0 ? undefined : { throw: thrown, soft };
   // Bug 53：完整收集序列是 next()/侧表的权威数据；$arr(ys.els) 只产形状/conf

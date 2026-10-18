@@ -15,6 +15,7 @@ import {
 import { absFunction } from "../abs-fn.ts";
 import { lookupObjAccessor } from "../accessors.ts";
 import { getEvalClass } from "../exec/class-registry.ts";
+import { classNameOfValue } from "../class-mark.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs } from "../exec/may-throw.ts";
 import { str, boolPrim, noBody, peelBrand } from "./shared.ts";
@@ -48,6 +49,24 @@ function strPath(): Abs {
   return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
 }
 
+/**
+ * Bug 90：类值自有静态面（spec 表）——静态方法/静态访问器是类构造器的
+ * **自有**属性（ClassDefinitionEvaluation DefineOwnProperty 到类值，
+ * 非枚举、不落 inner 槽）：`class D { static m(){} } D.hasOwnProperty("m")`
+ * 原生 true。own-only 语义（与 classValueHasStatic 的全链 `in`
+ * presence 互补）：m 挂祖先 A 时 B.hasOwnProperty("m") 原生 false。
+ * 静态字段在 $class 已落类值槽（getSlot 命中），此处只补 spec 表两面。
+ */
+function classValueOwnStaticMember(recv: Abs, key: string): boolean {
+  const s = recv.shape;
+  if (s.k !== "brand" || classNameOfValue(recv as object) !== s.name) return false;
+  const spec = getEvalClass(s.name);
+  return (
+    (spec?.staticMethods !== undefined && Object.hasOwn(spec.staticMethods, key)) ||
+    (spec?.staticAccessors !== undefined && Object.hasOwn(spec.staticAccessors, key))
+  );
+}
+
 /** hasOwnProperty 判定（自有槽 / 下标 / length / holes） */
 function hasOwnDecision(recv: Abs, key: string): Abs {
   const s = recv.shape;
@@ -57,6 +76,7 @@ function hasOwnDecision(recv: Abs, key: string): Abs {
     if (s.name === "Number" || s.name === "Boolean" || s.name === "BigInt" || s.name === "Symbol") {
       return boolLit(false);
     }
+    if (classValueOwnStaticMember(recv, key)) return boolLit(true);
     if (inner.shape.k === "obj") {
       const slot = getSlot(inner.shape.slots, key);
       // Bug 84：internal 私有槽是内部槽——hasOwnProperty 折 false（$in 的
@@ -136,6 +156,8 @@ function propertyIsEnumerableDecision(recv: Abs, key: string): Abs {
   const flagsHost = recv.shape.k === "brand" ? recv.shape.shape : recv;
   const flags = getPropFlags(flagsHost) ?? getPropFlags(recv);
   if (flags?.get(key)?.enumerable === false) return boolLit(false);
+  // Bug 90：静态方法/静态访问器虽自有但**非枚举**（spec 表面）——PIE 恒 false
+  if (classValueOwnStaticMember(recv, key)) return boolLit(false);
   if (ownV === true) {
     // 下标在数组/字符串上可枚举
     return boolLit(true);
@@ -168,8 +190,17 @@ function typeTagOf(recv: Abs): string | undefined {
   }
   const s = recv.shape;
   if (s.k === "prim") {
-    const t = s.type;
-    return t.charAt(0).toUpperCase() + t.slice(1);
+    // Bug 105：显式映射表——Abs prim 名 "bigint" 的大写化是 "Bigint"，
+    // 规范 tag 是 "BigInt"（原生 Object.prototype.toString 折
+    // "[object Bigint]" 假精确）。逐一映射，不再大小写推导。
+    const PRIM_TAGS: Record<string, string> = {
+      number: "Number",
+      string: "String",
+      boolean: "Boolean",
+      bigint: "BigInt",
+      symbol: "Symbol",
+    };
+    return PRIM_TAGS[s.type];
   }
   if (s.k === "arr" || s.k === "tuple") return "Array";
   if (s.k === "fn") return "Function";

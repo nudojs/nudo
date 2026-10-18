@@ -113,3 +113,73 @@ describe("P2a: 差分对账（native oracle）", () => {
     ).toBeNull();
   });
 });
+
+describe("Bug 89: 用户类方法一等值借用调用（.call/.apply/.bind）经 apply 钩子重入分派", () => {
+  // native：classMethodValueAbs 产的方法值此前是 noBody 无 apply 的 fn——
+  // $call 编译空 body 折 wrong-exact undefined。修复：apply 钩子经
+  // protoMethodDispatch 转发 $invoke(thisVal, key, args)（实例面 findMethod /
+  // 静态面 findStaticMethod 同一通道），kind:"protoMethod" 抑制尾部再入。
+
+  it("const m = c.m; m.call(c) → 3（修复前 #exact undefined）", () => {
+    const r = v(`export function f() { class C { constructor() { this.v = 3; } m() { return this.v; } } const c = new C(); const m = c.m; return m.call(c); }`);
+    expect(r.ok).toBe(true);
+    expect(r.value).toBe(3);
+  });
+
+  it("c.m.apply(c, []) → 4（修复前 #exact undefined）", () => {
+    const r = v(`export function f() { class C { constructor() { this.v = 4; } m() { return this.v; } } const c = new C(); return c.m.apply(c, []); }`);
+    expect(r.ok).toBe(true);
+    expect(r.value).toBe(4);
+  });
+
+  it("c.m.bind(c)() → 4（修复前 #exact undefined）", () => {
+    const r = v(`export function f() { class C { constructor() { this.v = 4; } m() { return this.v; } } const c = new C(); return c.m.bind(c)(); }`);
+    expect(r.ok).toBe(true);
+    expect(r.value).toBe(4);
+  });
+
+  it("静态面对称：const m = C.s; m.call(C) → 7", () => {
+    const r = v(`export function f() { class C { static s() { return 7; } } const m = C.s; return m.call(C); }`);
+    expect(r.ok).toBe(true);
+    expect(r.value).toBe(7);
+  });
+
+  it("继承链方法值：new B().m.call(c) → 解析到 A 的方法（native 1）", () => {
+    const r = v(`export function f() { class A { m() { return 1; } } class B extends A {} const c = new B(); return c.m.call(c); }`);
+    expect(r.ok).toBe(true);
+    expect(r.value).toBe(1);
+  });
+
+  it("方法值自由调用 f(c.m)：严格模式 this=undefined，this.v 读取按 nullish 面记账（非 wrong-exact undefined）", () => {
+    const r = v(`export function f() { class C { m() { return 8; } } const c = new C(); return [c.m].map((g) => g.call(c))[0]; }`);
+    expect(r.ok).toBe(true);
+    expect(r.value).toBe(8);
+  });
+
+  // Controls（修复前亦正确）
+  it("control：直接 c.m() → 3（registry 派发不经方法值）", () => {
+    expect(v(`export function f() { class C { constructor() { this.v = 3; } m() { return this.v; } } const c = new C(); return c.m(); }`).value).toBe(3);
+  });
+
+  it("control：对象字面量方法值 o.m.call(o) → 3（bindThis 通道）", () => {
+    expect(v(`export function f() { const o = { m() { return 3; } }; const m = o.m; return m.call(o); }`).value).toBe(3);
+  });
+
+  it("control：typeof c.m 仍折 \"function\"（值形状不变）", () => {
+    expect(v(`export function f() { class C { m() {} } const c = new C(); return typeof c.m; }`).value).toBe("function");
+  });
+
+  it("control：方法值身份驻留不回归——c1.m === c2.m → true", () => {
+    expectBool(`export function f() { class C { m() {} } const c1 = new C(), c2 = new C(); return c1.m === c2.m; }`, true);
+  });
+
+  it("差分对账（native oracle）", () => {
+    expect(
+      diffBody(
+        `class C { constructor() { this.v = 3; } m() { return this.v; } static s() { return 7; } }
+         const c = new C(); const m = c.m;
+         return [m.call(c), c.m.apply(c, []), c.m.bind(c)(), C.s.call(C), c.m()].join(",");`,
+      ),
+    ).toBeNull();
+  });
+});

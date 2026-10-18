@@ -151,8 +151,10 @@ export function parts(content) {
 `);
     expect(r.summary.errors).toBe(0);
     // 1 捕获组 → length 恒 2；整匹配 string（非空命中）；index:number；
-    // input:string（修前均质 arr：m[0] 也带 undefined、length/index/input unknown）
-    expect(sigOf(r, "parts")).toBe("[string, 2, number, string]  #exact");
+    // input:string（修前均质 arr：m[0] 也带 undefined、length/index/input unknown）。
+    // Bug 99：exec 首败零迭代臂（native 无匹配 → return null）现被正确汇合
+    // ——原断言钉的是丢 null 臂的 unsound 行为。
+    expect(sigOf(r, "parts")).toMatch(/^null \| \[string, 2, number, string\]  #exact/);
   });
 
   it("具名捕获组：m.groups.<name> 读 string|undefined 槽", () => {
@@ -171,8 +173,9 @@ export function named(content) {
 `);
     expect(r.summary.errors).toBe(0);
     // 具名组槽 string|undefined（未参与捕获 undefined）；join 尾注为
-    // undefAbs 的 unknown 形状显示（Bug 22 口径，非引擎债）
-    expect(sigOf(r, "named")).toMatch(/^string \| undefined  #exact/);
+    // undefAbs 的 unknown 形状显示（Bug 22 口径，非引擎债）。
+    // Bug 99：exec 首败零迭代臂 → return null 汇入（原断言丢 null 臂）。
+    expect(sigOf(r, "named")).toMatch(/^null \| string \| undefined  #exact/);
   });
 
   it("具体 subject 双字面量真执行路径（matchResultAbs）行为不变", () => {
@@ -225,8 +228,9 @@ export function orAlt(content) {
 }
 `);
     expect(r.summary.errors).toBe(0);
-    // 整体假 ⇒ A 假且 B 求值到达 ⇒ 接收者非 nullish
-    expect(sigOf(r, "orAlt")).toBe("string  #path");
+    // 整体假 ⇒ A 假且 B 求值到达 ⇒ 接收者非 nullish。
+    // Bug 99：exec 首败零迭代臂 → return null 汇入（原断言丢 null 臂）。
+    expect(sigOf(r, "orAlt")).toMatch(/^null \| string  #path/);
   });
 
   it("可选链 m?.[1]?.trim()：短路不蕴含接收者非 nullish（控制组不窄化）", () => {

@@ -111,7 +111,11 @@ function foldNumericBinOp(
   if (!bigOp && (typeof va === "bigint" || typeof vb === "bigint" || isBigPrim(a) || isBigPrim(b))) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
-  if (typeof va === "bigint" || typeof vb === "bigint") {
+  // Bug 106：bigint-ness 双侧判定 = 字面量 ∪ isBigPrim——抽象 bigint prim
+  //（BigInt(Date.now())）也是确定 bigint，此前仅字面量识别，b & 1 漏定抛
+  const aBig = typeof va === "bigint" || isBigPrim(a);
+  const bBig = typeof vb === "bigint" || isBigPrim(b);
+  if (aBig || bBig) {
     if (typeof va === "bigint" && typeof vb === "bigint") {
       // 折叠失败（2n**-1n）→ RangeError；上方已排除 !bigOp
       const op = bigOp!;
@@ -127,11 +131,12 @@ function foldNumericBinOp(
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }
     }
-    const other = typeof va === "bigint" ? b : a;
-    // bigint prim 对面：交抽象回退（bitwiseResultShape 分流）
-    if (isBigPrim(other)) return undefined;
-    // 无 bigint 重载的算子（>>>）：一侧是 bigint 即恒 TypeError
-    if (!bigOp) throw new NudoThrow(errorTypeAbs("TypeError"));
+    // 两侧均 bigint、至少一侧抽象：字面量负指数（**）的定抛 RangeError 由
+    // powAbs 在进入本折叠前检查；其余交抽象回退（bitwiseResultShape 折
+    // 抽象 bigint）
+    if (aBig && bBig) return undefined;
+    const other = aBig ? b : a;
+    // 恰一侧 bigint（另一侧确定非 bigint）：
     // 确定非 bigint 数值面 / string（ToNumber 后混型）→ TypeError
     if (isKnownNonBigintNumeric(other) || isStrPrim(other)) {
       throw new NudoThrow(errorTypeAbs("TypeError"));
@@ -297,6 +302,20 @@ export function powAbs(a: Abs, b: Abs): Abs {
     const fb = builtinBrandToPrimitive(b, "number");
     if (fa || fb) return powAbs(fa ?? a, fb ?? b);
   }
+  // Bug 106：两侧 bigint、至少一侧抽象——字面量负指数原生定抛 RangeError
+  //（"Negative exponent is not allowed"；b ** -1n 不得静默抽象 bigint）。
+  // 双字面量由 foldNumericBinOp 折叠臂同口径处理（本检查先触发同结果）。
+  {
+    const ra = litValue(a);
+    const rb = litValue(b);
+    const va = ra.ok ? ra.value : undefined;
+    const vb = rb.ok ? rb.value : undefined;
+    const aBig = typeof va === "bigint" || isBigPrim(a);
+    const bBig = typeof vb === "bigint" || isBigPrim(b);
+    if (aBig && bBig && typeof vb === "bigint" && vb < 0n) {
+      throw new NudoThrow(errorTypeAbs("RangeError"));
+    }
+  }
   return (
     foldNumericBinOp(a, b, (x, y) => x ** y, (x, y) => x ** y) ??
     bitwiseResultShape(a, b)
@@ -429,12 +448,20 @@ export function typeofName(s: Shape): string {
     case "obj":
     case "arr":
     case "tuple":
+    case "eff":
+      return "object";
     case "brand":
+      // Bug 123：Proxy 的 typeof 是**靶**的（typeof 读 [[IsCallable]]，
+      // 代理透传靶的可调用性——get 陷阱也换不了壳），brand 不得一律折
+      // "object"（typeof proxy(fn) 原生 "function"，此前 wrong-exact）。
+      // brand 的内层承载是 Abs（makeProxyAbs shape: target），再剥一层。
+      if (s.name === "Proxy") {
+        const inner = (s as { shape?: Abs }).shape;
+        return inner ? typeofName(inner.shape) : "object";
+      }
       return "object";
     case "fn":
       return "function";
-    case "eff":
-      return "object";
     case "sum": {
       const names = [...new Set(s.members.map((m) => typeofName(m.shape)))];
       if (names.length === 1) return names[0]!;

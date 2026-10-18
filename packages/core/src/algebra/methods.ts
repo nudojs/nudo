@@ -63,6 +63,23 @@ function isStrRecv(recv: Abs): boolean {
 }
 
 /**
+ * Bug 81：搜索值（RegExp brand 内层 obj / obj）上的 symbol 方法槽读取——
+ * "@@replace" 等经 symbol 键投影落字符串槽（Bug 73/117 同口径）。无槽 /
+ * 非对象形态 → undefined。
+ */
+function symbolHookSlot(x: Abs | undefined, projKey: string): Abs | undefined {
+  if (!x) return undefined;
+  const inner = x.shape.k === "brand" ? x.shape.shape : undefined;
+  const slots =
+    inner && inner.shape.k === "obj"
+      ? inner.shape.slots
+      : x.shape.k === "obj"
+        ? x.shape.slots
+        : undefined;
+  return slots?.[projKey]?.value;
+}
+
+/**
  * ToIntegerOrInfinity / ToNumber 可折叠的字面量位置实参：
  * 缺省、显式 undefined、number/string/bool/null 字面量。
  * 符号实参原生 THROW；抽象实参不折叠。
@@ -271,8 +288,14 @@ export function callAbsMethod(
     case "replace":
     case "replaceAll": {
       // pattern：RegExp brand 合法（折叠面分支）；fn replacement 不 ToString
-      //（回调语义）；其余 ToString 档
-      if (!isRegExpBrandAbs(args[0])) enforceToStringArg(args[0], "replace pattern");
+      //（回调语义）；其余 ToString 档。Bug 81：搜索值带 @@replace 槽时原生
+      // 只走 GetMethod 委托、从不 ToString(pattern)——有槽即跳过 pattern 档
+      if (
+        !isRegExpBrandAbs(args[0]) &&
+        symbolHookSlot(args[0], "@@replace") === undefined
+      ) {
+        enforceToStringArg(args[0], "replace pattern");
+      }
       if (!(args[1] && args[1].shape.k === "fn")) {
         enforceToStringArg(args[1], "replace replacement");
       }
@@ -673,6 +696,37 @@ export function callAbsMethod(
         // pattern / replacement 缺省 ≡ undefined → ToString；非字面量保守
         const patAbs = args[0];
         const repAbs = args[1];
+        // Bug 81：搜索值上的 @@replace 槽优先——原生 replace/replaceAll 是
+        // GetMethod(pattern, @@replace) 委托（re[Symbol.replace] = fn 覆盖
+        // 宿主正则分派），此前 RegExp brand 直接重建宿主正则、槽被绕过
+        // （折错 definite 字符串）。槽经 symbol 键投影存 "@@replace"
+        // （Bug 73/117 同口径）。原生（node 实测）：hook 返回值原样透传
+        // （不 ToString——() => 5 得 number）；实参布局 (string, replValue)；
+        // 槽值非函数且非 undefined/null → GetMethod 定抛 TypeError。
+        {
+          const hook = symbolHookSlot(patAbs, "@@replace");
+          if (hook !== undefined) {
+            if (hook.shape.k === "fn") {
+              return applyCallbackAbs(
+                hook,
+                [strLit(lit), repAbs ?? undefAbs()],
+                callbackEnv(),
+                pTrue,
+                defaultLeakBudget,
+              );
+            }
+            const hvR = litValue(hook);
+            if (hvR.ok && hvR.value !== undefined && hvR.value !== null) {
+              // GetMethod：非 callable 且非 undefined/null 定抛
+              throw new NudoThrow(errorTypeAbs("TypeError"));
+            }
+            if (!hvR.ok && hook.shape.k !== "prim") {
+              recordMayThrow({ kind: "TypeError", cause: "Symbol.replace must be callable" });
+              return unknown;
+            }
+            // undefined/null 槽：GetMethod → undefined → 走默认分派（下方）
+          }
+        }
         {
           // pattern：字符串字面量 / ToString 可折叠字面量 / RegExp brand（source/flags 槽）
           let patSrc: string | undefined;

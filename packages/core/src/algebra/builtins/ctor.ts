@@ -7,7 +7,8 @@ import { objOf, isNullProtoObj, getProtoAbs } from "../objects.ts";
 import { markClassValue, classNameOfValue } from "../class-mark.ts";
 import { getEvalClass, lookupClassValue, BUILTIN_ERROR_SUPER, fnProtoOf } from "../exec/class-registry.ts";
 import { pTrue } from "../pred.ts";
-import { str } from "./shared.ts";
+import { str, noBody } from "./shared.ts";
+import { absFunction } from "../abs-fn.ts";
 import { setPropFlags } from "./invariants.ts";
 
 const builtinCtorByName = new Map<string, Abs>();
@@ -123,6 +124,20 @@ export function ctorNameOfRecv(recv: Abs): string | undefined {
  *  这类恒等丢精度（also 原地可变性跨读存活，原生语义）。 */
 const protoBrandByName = new Map<string, Abs>();
 
+/** Bug 58/85/92 复盘：Function.prototype 原生是唯一 callable 的 prototype
+ *  （typeof "function"；调用返 undefined）。**单一驻留 fn 面**——
+ *  protoOfRecv(fn 形态/基类值) 与宿主 fn 的 .prototype 成员读
+ *  （member.ts Bug 92 分支）必须同引用，`Object.getPrototypeOf(g) ===
+ *  Function.prototype` 才能折 exact true；两套表示（fn 面 facade vs
+ *  obj 面 protoBrandAbs("Function")）曾让恒等折 wrong-exact false。 */
+let functionProtoCache: Abs | undefined;
+export function functionProtoAbs(): Abs {
+  if (!functionProtoCache) {
+    functionProtoCache = absFunction([], { body: noBody }, { ctor: false });
+  }
+  return functionProtoCache;
+}
+
 export function protoBrandAbs(ctorName: string): Abs {
   // Object.prototype 与 objectProtoBrand() 单例同身份（constructor 槽 +
   // 不可枚举标记），分身会让 === 恒等丢精度
@@ -172,7 +187,7 @@ export function protoOfRecv(a: Abs): Abs {
                 : undefined;
     return ctor ? protoBrandAbs(ctor) : unknown;
   }
-  if (s.k === "fn") return protoBrandAbs("Function");
+  if (s.k === "fn") return functionProtoAbs();
   if (s.k === "eff" && s.eff === "promise") return protoBrandAbs("Promise");
   if (s.k === "brand") {
     if (s.name === "Object.prototype") return nullProtoLit;
@@ -191,7 +206,8 @@ export function protoOfRecv(a: Abs): Abs {
       if (superName) {
         return lookupClassValue(superName) ?? unknown;
       }
-      return protoBrandAbs("Function");
+      // 基类值（含 extends null——[[Proto]] 仍 Function.prototype）
+      return functionProtoAbs();
     }
     // Bug 67/64：类原型品牌（protoBrandAbs）——owner 类的 extends 决定
     // [[Prototype]]：extends null → null；extends A → A.prototype（内建

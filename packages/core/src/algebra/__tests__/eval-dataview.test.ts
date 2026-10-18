@@ -30,7 +30,7 @@ import {
   setMayThrowCollector,
   type MayThrowEffect,
 } from "../may-throw.ts";
-import { call, val } from "./eval-helpers.ts";
+import { call, val, isNever } from "./eval-helpers.ts";
 import { l2Count } from "./nudo-constraints.ts";
 
 function shape(src: string, args?: Abs[]) {
@@ -214,5 +214,67 @@ describe("Bug 35：抽象面 may RangeError + L2 gate 假阴修复", () => {
   it("L2 gate 负控制：字面量边界内访问不标记", () => {
     expect(l2Count(check(`export function g() { return ${DV8}.getUint8(7); }`), "g")).toBe(0);
     expect(l2Count(check(`export function g() { const dv = new DataView(new ArrayBuffer(8), 4, 2); return dv.setUint8(1, 1); }`), "g")).toBe(0);
+  });
+});
+
+describe("Bug 91：未建模方法不得命中宿主 DATAVIEW_ACCESS_BITS（Object.prototype 名）", () => {
+  // 表是宿主普通对象，裸 table[method] 原型链取值令 toString/valueOf/
+  // hasOwnProperty/… 全部命中（host 函数 ≠ undefined）——被当建模的
+  // 字节偏移访问器：每个未建模方法折 number 域、Symbol/BigInt 实参假
+  // TypeError、抽象实参假 may RangeError。修复：own-property 查表。
+  const DV = `new DataView(new ArrayBuffer(8))`;
+
+  it("toString / toLocaleString → 抽象 string（不再折 number 域）", () => {
+    for (const src of [
+      `export function f() { const x = ${DV}; return x.toString(); }`,
+      `export function f() { const x = ${DV}; return x.toString(1); }`,
+      `export function f() { const x = ${DV}; return x.toLocaleString(); }`,
+    ]) {
+      expect(shape(src), src).toBe("string");
+      expect(isNever(call(src).result), src).toBe(false);
+    }
+  });
+
+  it("typeof x.valueOf() → exact \"object\"（不再 \"number\"）", () => {
+    for (const src of [
+      `export function f() { const x = ${DV}; return typeof x.valueOf(); }`,
+      `export function f() { const x = ${DV}; return typeof x.valueOf(1); }`,
+    ]) {
+      expect(val(src), src).toEqual({ ok: true, value: "object" });
+    }
+  });
+
+  it("hasOwnProperty / propertyIsEnumerable → exact false；isPrototypeOf 抽象 boolean（不假抛）", () => {
+    expect(val(`export function f() { const x = ${DV}; return x.hasOwnProperty("x"); }`))
+      .toEqual({ ok: true, value: false });
+    // 原生 false；引擎原型链不可判 → 保守 boolean（此前 number 域）
+    expect(shape(`export function f() { const x = ${DV}; return x.isPrototypeOf({}); }`)).toBe("boolean");
+    expect(val(`export function f() { const x = ${DV}; return x.propertyIsEnumerable("x"); }`))
+      .toEqual({ ok: true, value: false });
+  });
+
+  it("Symbol / BigInt 实参不再假 TypeError（ICU/ToString 不转换）", () => {
+    for (const src of [
+      `export function f() { const x = ${DV}; return x.toString(Symbol()); }`,
+      `export function f() { const x = ${DV}; return x.toString(1n); }`,
+    ]) {
+      expect(shape(src), src).toBe("string");
+      expect(isNever(call(src).result), src).toBe(false);
+    }
+  });
+
+  it("控制组：建模面与缺席面不回退", () => {
+    expect(val(`export function f() { const x = ${DV}; return x.byteLength; }`))
+      .toEqual({ ok: true, value: 8 });
+    expect(shape(`export function f() { const x = ${DV}; return x.getUint8(0); }`)).toBe("number");
+    expect(val(`export function f() { const x = ${DV}; return typeof x.frobnicate; }`))
+      .toEqual({ ok: true, value: "undefined" });
+  });
+
+  it("L2 假阳消除：toString/hasOwnProperty 不再记 entry-may-throw", () => {
+    expect(l2Count(check(`export function g() { const x = ${DV}; return x.toString(); }`), "g")).toBe(0);
+    expect(l2Count(check(`export function g() { const x = ${DV}; return x.hasOwnProperty("x"); }`), "g")).toBe(0);
+    // 真 may 面（抽象 offset 越界，Bug 35 既有口径）不回退
+    expect(l2Count(check(`export function g(x) { const v = ${DV}; return v.getUint8(x); }`), "g")).toBeGreaterThan(0);
   });
 });

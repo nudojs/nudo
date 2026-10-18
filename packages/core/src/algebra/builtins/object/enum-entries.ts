@@ -6,8 +6,9 @@
  *
  * Invariants:
  * - 键投影与 invariants 域同口径：isEnumerableView（propFlags enumerable:
- *   false + Slot.internal）剔除；TypedArray 全家入零键表（length 槽虽入
- *   brand 但 enumerable:false——keys/values/entries/assign 枚举视图折 []）。
+ *   false + Slot.internal）剔除；TypedArray 不入零键表（Bug 125——整数
+ *   索引自有可枚举，走 typedArrayEnumKeyView 按长度槽投影；length 槽虽
+ *   入 brand 但 enumerable:false）。
  * - foldGroupBy 是 array-grouping 单一折叠（Bug 5/26）：校验序
  *   RequireObjectCoercible → 回调 IsCallable → items 可迭代性（非字符串
  *   prim 定抛 not iterable）；回调逐元素执行（(value, k) 双参）求键，键非
@@ -73,17 +74,46 @@ const BUILTIN_BRAND_NO_ENUM_KEYS = new Set([
   "URL", "URLSearchParams", "ArrayBuffer", "SharedArrayBuffer", "DataView",
   "RegExpMatchIterator", "RegExpStringIterator",
 ]);
-// Bug 38：TypedArray 全家——实例零可枚举自有键（length 槽虽入 brand
-//（makeTypedArrayAbs 数字形态）但标 enumerable:false；keys/values/entries
-// /assign 枚举视图折 []，与 for-in 的 propFlags 过滤同口径）
-for (const fam of Object.keys(TYPED_ARRAY_ELEMENT)) {
-  BUILTIN_BRAND_NO_ENUM_KEYS.add(fam);
-}
 
+/** Bug 125：TypedArray 不入零键表——整数索引异质属性（ECMA-262 §10.4.5）
+ * 是自有 { enumerable: true } 键 "0".."length-1"（length 才是原型访问器，
+ * 非自有键）。此前整族折空是 wrong-exact；键投影走 typedArrayEnumKeyView
+ *（与 for-in 的 $forInKeys 同口径）。 */
 export function builtinBrandNoEnumKeys(a0: Abs | undefined): boolean {
   if (!a0 || a0.shape.k !== "brand") return false;
   const name = (a0.shape as { name?: string }).name ?? "";
   return BUILTIN_BRAND_NO_ENUM_KEYS.has(name);
+}
+
+/**
+ * Bug 125：TypedArray brand 的枚举键视图。整数索引异质属性是自有可枚举
+ * 键 "0".."length-1"（原生 Object.keys/gOPN/for-in 同序）；length 是
+ * %TypedArray%.prototype 上的访问器，非自有键（gOPN 不含）。
+ * 长度读内层 length 槽（makeTypedArrayAbs 数字形态折入；字面量源形态
+ * Bug 125 补入，均标 enumerable:false）：
+ * - { k: "exact", count }：长度字面量可知 → 键集精确可投影；
+ * - { k: "open" }：TA 但长度抽象/未建模（arr/open obj 源、buffer/from/of
+ *   形态）→ 键集开放——调用方折保守域（partial string[] / may-throw），
+ *   不得再折空（wrong-exact 根源）；
+ * - undefined：非 TypedArray brand。
+ * 消费方：Object.keys/values/entries/gOPN（methods.ts）、for-in
+ *（$forInKeys）、freeze/seal 非空定抛（methods.ts Bug 129）——同口径。
+ */
+export type TaEnumKeyView = { k: "exact"; count: number } | { k: "open" };
+
+export function typedArrayEnumKeyView(a0: Abs | undefined): TaEnumKeyView | undefined {
+  if (!a0 || a0.shape.k !== "brand") return undefined;
+  if (TYPED_ARRAY_ELEMENT[(a0.shape as { name?: string }).name ?? ""] === undefined) {
+    return undefined;
+  }
+  const inner = (a0.shape as { shape?: Abs }).shape;
+  if (!inner || inner.shape.k !== "obj") return { k: "open" };
+  const lenA = (inner.shape as unknown as { slots: Record<string, { value: Abs }> }).slots[
+    "length"
+  ]?.value;
+  if (!lenA) return { k: "open" };
+  const v = litValue(lenA);
+  return v.ok && typeof v.value === "number" ? { k: "exact", count: v.value } : { k: "open" };
 }
 
 /**

@@ -24,6 +24,7 @@ import { getFnImpl, absFunction, hostFnCtorFacet, isAbsApplyResult } from "../..
 import { errorBrandAbs, isErrorCtorName, evalBuiltinNew, makeArrayCtorAbs, evalPromiseCtor, builtinCtorNameOf, hostBuiltinCtorName, makeProxyAbs, makeArrayBufferAbs, makeSharedArrayBufferAbs, makeDataViewAbs, makeTypedArrayAbs, makeUrlAbs, makeTextDecoderAbs, makeUrlSearchParamsAbs, makeBoxedAbs, evalRegExpCtor, evalDateCtor, makeDynamicFunctionAbs, makeWeakRefAbs, makeFinalizationRegistryAbs } from "../../builtins.ts";
 import { makeMapAbs, makeSetAbs, ctorArgDefinitelyInvalid, makeWeakCollectionAbs } from "../../collections.ts";
 import { isDefinitelyUndefinedAbs } from "./this-member.ts";
+import { proxyPartsOf, proxyTrapOf } from "../match-iter.ts";
 // 直连 member.ts（不经 containers barrel）：本模块体加载期即回调本 setter，
 // vite SSR 下 barrel 的 re-export 不是实例化期可用绑定（原单文件拓扑中
 // setter 是本模块提升函数声明）。barrel 间接层会在此处拿到 undefined。
@@ -45,6 +46,52 @@ import {
 
 
 const classImpl = new WeakMap<object, EvalClassSpec>();
+
+/**
+ * Bug 90：spec 成员记录的 own-property 语义（第一道，源头治理）——
+ * transpile 侧（class-emit）产出的 methods/staticMethods/… 是宿主普通
+ * 对象字面量，`spec.methods[key]` 原型链取值会把 Object.prototype 继承名
+ * （toString/valueOf/hasOwnProperty/isPrototypeOf/propertyIsEnumerable/
+ * toLocaleString/constructor/__proto__/__defineGetter__…）当类成员：
+ * c.toString() 折 "[object Undefined]"、c.hasOwnProperty(k) 假 TypeError、
+ * c.constructor === C 假 false。$class 是**唯一**带记录的注册入口
+ * （registerEvalClass 其余调用面均 name-only）——在此把 7 张记录复制为
+ * null 原型容器，registry 全部读点（含 declare/member 之外的
+ * members.ts/super.ts/obj.ts/class-registry.ts 外围索引）随之安全。
+ */
+function ownRec<T>(rec: Record<string, T> | undefined): Record<string, T> | undefined {
+  if (rec === undefined) return undefined;
+  const out = Object.create(null) as Record<string, T>;
+  for (const k of Object.keys(rec)) out[k] = rec[k];
+  return out;
+}
+
+/**
+ * Bug 90：spec 记录读点的 own-property 取值（第二道，防御纵深）——
+ * 非 $class 注册面（手写/mock spec）仍可能携带普通对象记录，派发关键
+ * 读点直接判自有键，与 ownRec 双保险。
+ */
+function ownMember<T>(rec: Record<string, T> | undefined, key: string): T | undefined {
+  return rec !== undefined && Object.hasOwn(rec, key) ? rec[key] : undefined;
+}
+
+/** Bug 114：宿主 Symbol 命名空间的 well-known 反查表（键值 → "@@name"
+ *  投影，懒建）。well-known symbol 是 Symbol 函数的自有**字符串名**属性
+ *  （值为 symbol——getOwnPropertySymbols(Symbol) 反而是空表）；静态函数
+ *  键（Symbol.for / Symbol.keyFor）同映射 "@@for"/"@@keyFor"（读侧
+ *  [Symbol.X] 的 transpile 投影同串，两侧键字符串化恒等）。hasInstance/
+ *  toStringTag（Bug 50/72 旧两名单）被本表包含。drops 只留真抽象键。 */
+let wellKnownSymbolKeys: Map<unknown, string> | undefined;
+function wellKnownSymbolKeyOf(v: unknown): string | undefined {
+  if (!wellKnownSymbolKeys) {
+    wellKnownSymbolKeys = new Map();
+    for (const n of Object.getOwnPropertyNames(Symbol)) {
+      const f = (Symbol as unknown as Record<string, unknown>)[n];
+      if (typeof f === "symbol" || typeof f === "function") wellKnownSymbolKeys.set(f, `@@${n}`);
+    }
+  }
+  return wellKnownSymbolKeys.get(v);
+}
 
 /** 定义类 → 可 new 的 Abs（brand 标记；静态字段挂在 slots） */
 export function $class(
@@ -139,24 +186,27 @@ export function $class(
     ctor: spec.ctor,
     // P2b：构造器元数通道（未记录 → 不挂键，$get 折 unknown）
     ...(spec.ctorLength !== undefined ? { ctorLength: spec.ctorLength } : {}),
-    methods: spec.methods,
-    methodParams: spec.methodParams,
-    staticMethods: spec.staticMethods,
-    staticMethodParams: spec.staticMethodParams,
-    statics: spec.statics,
+    // Bug 90：记录容器一律换 null 原型副本（见 ownRec 注释）
+    methods: ownRec(spec.methods),
+    methodParams: ownRec(spec.methodParams),
+    staticMethods: ownRec(spec.staticMethods),
+    staticMethodParams: ownRec(spec.staticMethodParams),
+    statics: ownRec(spec.statics),
     instanceFields: spec.instanceFields,
-    accessors: spec.accessors,
-    staticAccessors: spec.staticAccessors,
+    accessors: ownRec(spec.accessors),
+    staticAccessors: ownRec(spec.staticAccessors),
   };
   // Bug 60：计算键折叠——键表达式已在 spec 对象字面量构造时求值（定义期，
   // throws 效果已记录）。字面量 string/number 键 → 挂真名；抽象键
   // （any/symbol/…）无法静态列举 → 摘除 synth 名成员（不静默挂错名）。
-  // 例外（Bug 50）：键求值为宿主 well-known Symbol.hasInstance 的计算键
-  // 投影为 "@@hasInstance" 字符串槽名（镜像对象字面量 [Symbol.X] → "@@X"
-  // 的 transpile 投影）——$instanceof 读到即调用，class 形与 object 形同臂。
-  // Bug 72：Symbol.toStringTag 同款投影 "@@toStringTag"——class
-  // get [Symbol.toStringTag]() 的访问器/方法/静态面挂真投影名（$get 实例
-  // 读与 typeTagOf 的 Object.prototype.toString 标签折叠同臂）。
+  // Bug 50/72：宿主 well-known Symbol.hasInstance/toStringTag 的计算键投影
+  // "@@hasInstance"/"@@toStringTag" 字符串槽名（镜像对象字面量
+  // [Symbol.X] → "@@X" 的 transpile 投影）——$instanceof 读到即调用、
+  // typeTagOf 标签折叠同臂。
+  // Bug 114：投影泛化到全 well-known 表——transpile 读侧对任意 [Symbol.X]
+  // 计算成员投 "@@X"，定义侧此前只认上述两名，species/iterator/match 等
+  // 全被 drops 删除（读侧 "@@species" miss 折 exact undefined）。改查宿主
+  // Symbol 命名空间反查表（wellKnownSymbolKeyOf）。
   if (spec.computedKeys) {
     const renames = new Map<string, string>();
     const drops = new Set<string>();
@@ -165,12 +215,13 @@ export function $class(
       const lv = litValue(k);
       if (lv.ok && (typeof lv.value === "string" || typeof lv.value === "number")) {
         renames.set(synth, String(lv.value));
-      } else if (lv.ok && (lv.value as symbol | (typeof lv.value)) === Symbol.hasInstance) {
-        renames.set(synth, "@@hasInstance");
-      } else if (lv.ok && (lv.value as symbol | (typeof lv.value)) === Symbol.toStringTag) {
-        renames.set(synth, "@@toStringTag");
       } else {
-        drops.add(synth);
+        // Bug 114：well-known symbol 键（描述 "Symbol.X" → "@@X"）与宿主
+        // Symbol 静态函数键（[Symbol.for] 等——读侧同投影 "@@for"，两侧
+        // 键字符串化恒等）→ 挂投影名；drops 只留真正无法静态列举的抽象键。
+        const wk = lv.ok ? wellKnownSymbolKeyOf(lv.value) : undefined;
+        if (wk !== undefined) renames.set(synth, wk);
+        else drops.add(synth);
       }
     }
     const rekey = (rec: Record<string, unknown> | undefined): void => {
@@ -276,7 +327,9 @@ export function findMethod(
   while (cur && !seen.has(cur)) {
     seen.add(cur);
     const spec = getEvalClass(cur);
-    if (spec?.methods?.[method]) return spec.methods[method];
+    // Bug 90：own-property 取值——宿主 Object.prototype 继承名不得命中
+    const m = ownMember(spec?.methods, method);
+    if (m) return m;
     cur = spec?.superName;
   }
   return undefined;
@@ -294,7 +347,9 @@ export function findStaticMethod(
   while (cur && !seen.has(cur)) {
     seen.add(cur);
     const spec = getEvalClass(cur);
-    if (spec?.staticMethods?.[method]) return spec.staticMethods[method];
+    // Bug 90：own-property 取值（D.hasOwnProperty / D.toString 不得命中）
+    const sm = ownMember(spec?.staticMethods, method);
+    if (sm) return sm;
     cur = spec?.superName;
   }
   return undefined;
@@ -310,8 +365,10 @@ export function findStaticMethod(
 export function chainHasStaticMember(startName: string, key: string): boolean {
   for (const n of evalClassChain(startName)) {
     const spec = getEvalClass(n);
-    if (spec?.staticMethods?.[key] || spec?.staticAccessors?.[key]) return true;
-    if (spec?.statics && key in spec.statics) return true;
+    // Bug 90：own-property 取值（含 `key in statics` → hasOwn——`in` 走
+    // 原型链，宿主 Object.prototype 名恒真）
+    if (ownMember(spec?.staticMethods, key) || ownMember(spec?.staticAccessors, key)) return true;
+    if (spec?.statics !== undefined && Object.hasOwn(spec.statics, key)) return true;
     const cv = lookupClassValue(n);
     const inner = cv && cv.shape.k === "brand" ? (cv.shape as { shape?: Abs }).shape : undefined;
     if (inner?.shape.k === "obj" && getSlot(inner.shape.slots, key)) return true;
@@ -460,6 +517,43 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
   // 必须走 evalBuiltinNew 按名构造，否则 $call 回退对无 apply 的 obj 折 unknown。
   if (cls && typeof cls === "object" && "shape" in (cls as object)) {
     const cs = (cls as Abs).shape;
+    // Bug 122：new <proxy 实例> 是靶的 [[Construct]]（或 construct 陷阱）——
+    // 不是重入 Proxy 构造器。brand 名 "Proxy" 与构造器同名，此前
+    // evalBuiltinNew("Proxy") 把 new 表达式的实参当 target/handler 重造
+    // 新代理（函数靶假抛 / 对象靶凭空造值，双向错）。
+    if (cs.k === "brand" && cs.name === "Proxy") {
+      const parts = proxyPartsOf(cls as Abs);
+      if (!parts) return unknown; // 退化副本：靶不可知，不凭空造代理/实例
+      const trap = proxyTrapOf(parts.handler, "construct");
+      if (trap.k === "fn") {
+        // construct(target, argsList, newTarget)；receiver = handler。
+        // 原生要求陷阱返 Object（TrapResultValidation：`[[Construct]] … must
+        // return an object`）——非对象字面量定抛 TypeError（node 实测
+        // construct(){ return 1; } → TypeError）；抽象面 may 抛。
+        const argsList = abs({ k: "tuple", elements: args }, undefined, undefined, "path");
+        return callAtFunctionBoundary(() => {
+          const r = $call(trap.fn, [parts.target, argsList, cls as Abs], parts.handler);
+          const rv = litValue(r);
+          if (rv.ok && (rv.value === null || typeof rv.value !== "object")) {
+            throw new NudoThrow(errorTypeAbs("TypeError"));
+          }
+          if (
+            r.shape.k === "prim" ||
+            (r.term?.op !== "lit" && (r.shape.k === "any" || r.shape.k === "unknown" || r.shape.k === "sum"))
+          ) {
+            recordMayThrow({ kind: "TypeError", cause: "Proxy construct trap must return an object" });
+          }
+          return r;
+        });
+      }
+      // dead：有槽不可调用——原生 GetMethod 定抛 TypeError
+      if (trap.k === "dead") throw new NudoThrow(errorTypeAbs("TypeError"));
+      // opaque：handler 形态不可判（陷阱可能在）——诚实 unknown
+      if (trap.k === "opaque") return unknown;
+      // absent：无陷阱 → 靶的 [[Construct]]（IsConstructor 校验在递归里
+      // 自然发生：obj/arr/tuple 靶 → TypeError，fn 靶 → ctor 旗标分支）
+      return $new(parts.target, args);
+    }
     const ctorName =
       cs.k === "brand"
         ? cs.name
@@ -591,6 +685,14 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
     // Boolean…未进上方派发表）不走体执行——Abs 实参喂真 JS 构造器会产
     // 宿主原值（静默错值），维持既有空 brand 口径。
     if (hostBuiltinCtorName(cls) === undefined && !isHostGlobalFn(cls)) {
+      // Bug 113：函数声明（宿主函数）[[Construct]]——铸实例 brand 前注册
+      // 链键（$class 的 registerEvalClass 同款）：chainProtoSlotOf 沿
+      // protoBrandAbs(clsName) 链解析（f.prototype 写落同名 memo 槽——
+      // 宿主函数 prototype 读正是 protoBrandAbs），实例缺槽读不再 exact
+      // undefined。同名注册面（用户类）不覆写。不用 ensureFnParentName/
+      // asAbsVal：宿主函数每次铸新 fn Abs 会 miss fnProtoOf 的 WeakMap，
+      // 而本分支原型载体是 protoBrandAbs 名面。
+      if (!getEvalClass(clsName)) registerEvalClass({ name: clsName });
       const thisVal = abs(
         { k: "brand", name: clsName, shape: objOf({}) },
         undefined,
