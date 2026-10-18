@@ -13,6 +13,7 @@ import { isNullishLitAbs } from "../surface.ts";
 import { markFreshInstance } from "../instance-id.ts";
 import { recordMayThrow } from "../may-throw.ts";
 import { matchIterElements, replayGenDeferred, drainGenElements, genDrainViewOf } from "../exec/match-iter.ts";
+import { iterabilityKind } from "../exec/runtime/containers/iterate.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs } from "../exec/may-throw.ts";
 import { and, ge, lt, pTrue, type Pred } from "../pred.ts";
@@ -261,6 +262,29 @@ function evalArrayFrom(args: Abs[]): Abs {
     );
   }
   if (k === "obj") {
+    // Bug 110：GetMethod(items, @@iterator) 先行——迭代器路径优先于
+    // array-like（iterator beats length：node 实测 {...iterObj, length: 0}
+    // 仍走迭代）。判定复用 iterabilityKind（iterate.ts——@@iterator 槽即
+    // total，[...o] / for..of 的同款谓词），两个消费者口径一致。此前 obj
+    // 臂只实现 array-like 半边：带 @@iterator 的对象被当零长 array-like 折
+    // exact 空 tuple（wrong-exact）。非可调用字面量 → 原生 GetMethod
+    // definite TypeError；可调用/抽象 → 迭代路径（元素域 unknown、长度
+    // 不可判——与 elemsOf 对 obj 迭代物的 [unknown] 单代表同口径）。
+    // optional 槽（可能缺席）按缺席处理——走 array-like 臂，不冒 definite
+    // 假抛。生成器/模板标签等侧表迭代物已在上方 mi 臂精确处理，不受影响。
+    if (iterabilityKind(a0) === "total") {
+      const iterSlot = (a0.shape as unknown as {
+        slots: Record<string, { value: Abs; optional?: boolean }>;
+      }).slots["@@iterator"];
+      const iterVal = iterSlot && !iterSlot.optional ? iterSlot.value : undefined;
+      if (
+        iterVal !== undefined &&
+        !(iterVal.term?.op === "lit" && iterVal.term.value === undefined)
+      ) {
+        validateCallableArg(iterVal, "Array.from @@iterator may not be callable");
+        return abs({ k: "arr", element: unknown }, undefined, undefined, "path");
+      }
+    }
     // Bug 51：array-like——length 槽决定迭代次数（ToLength 折叠），元素按
     // Get(i) 语义逐索引读槽（缺失 = undefined），不再硬编码 undefAbs()。
     const os = a0.shape as {

@@ -14,6 +14,8 @@ import { abs, unknown, litValue, strLit } from "../../abs.ts";
 import { joinAbs, getSlot } from "../../objects.ts";
 import { TYPED_ARRAY_CALLBACK_METHODS, builtinSuperCtorOf, brandHasProtoMember, classChainHasHole } from "../runtime/members.ts";
 import { typedArrayElementOf } from "../../builtins/shared.ts";
+import { typedArrayEnumKeyView } from "../../builtins/object/enum-entries.ts";
+import { MAX_CONCRETE_LOOP_ITERS } from "../runtime/loop-budget.ts";
 import { $get, $lit, namespaceNameOf, callAtFunctionBoundary } from "../runtime.ts";
 import { withNewTargetReset, undef, asAbsVal } from "../runtime/state.ts";
 import { $call } from "../call.ts";
@@ -303,16 +305,51 @@ function $invokeInner(
         undefined,
         "exact",
       );
-      const arrView = abs(
-        { k: "arr", element: taElemPrim },
-        undefined,
-        undefined,
-        thisVal.conf,
-      );
+      // Bug 100：按已知计数建视图——TA 内层 length 槽（makeTypedArrayAbs
+      // 数字形态 Bug 38 / 字面量源形态 Bug 125 折入；typedArrayEnumKeyView
+      // 与 keys/values/entries 同口径读）可知 → tuple 视图，invokeArrMethod
+      // 的逐下标臂跑 length 次（回调计数/副作用精确；元素域仍是单代表
+      // prim——值域 imprecision 保持既有口径）。抽象长度或超展开上限 →
+      // 维持单代表元素 arr 视图（长度不可判的既有口径，回调只跑一次）。
+      const lenView = typedArrayEnumKeyView(thisVal);
+      const count = lenView?.k === "exact" ? lenView.count : undefined;
+      const arrView =
+        count !== undefined && count <= MAX_CONCRETE_LOOP_ITERS
+          ? abs(
+              {
+                k: "tuple",
+                elements: Array.from({ length: count }, () => taElemPrim),
+              },
+              undefined,
+              undefined,
+              thisVal.conf,
+            )
+          : abs(
+              { k: "arr", element: taElemPrim },
+              undefined,
+              undefined,
+              thisVal.conf,
+            );
       const taR = invokeArrMethod(arrView, method, args);
       if (taR !== undefined) {
-        if (method === "map" && taR.shape.k === "arr") {
-          return abs({ k: "arr", element: taElemPrim }, undefined, undefined, taR.conf);
+        if (method === "map") {
+          // map 原生结果 = 同族 TA：元素经 ToNumber/ToBigInt 收敛回元素
+          // prim（回调返回 string 不渗入元素域）；tuple 视图保长度精确
+          //（Bug 100），抽象长度折 arr
+          if (taR.shape.k === "tuple") {
+            return abs(
+              {
+                k: "tuple",
+                elements: taR.shape.elements.map(() => taElemPrim),
+              },
+              undefined,
+              undefined,
+              taR.conf,
+            );
+          }
+          if (taR.shape.k === "arr") {
+            return abs({ k: "arr", element: taElemPrim }, undefined, undefined, taR.conf);
+          }
         }
         return taR;
       }

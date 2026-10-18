@@ -94,3 +94,41 @@ describe("Bug 104: Array.from array-like length ceiling", () => {
     expect(eff).toContain("RangeError");
   });
 });
+
+// --- Bug 110：普通对象 @@iterator 先行（iterator beats array-like） ---------
+
+describe("Bug 110: Array.from 普通对象 @@iterator", () => {
+  it("带 @@iterator 的普通对象 → 迭代路径：元素域 unknown 的 arr（不再折 exact 空 tuple）", () => {
+    const r = call(`export function f() { const o = { [Symbol.iterator]: function* () { yield 1; yield 2; } }; return Array.from(o); }`);
+    const s = r.result as { shape?: { k?: string; element?: unknown } };
+    expect(s.shape?.k).toBe("arr");
+    expect((s.shape as { element?: { shape?: { k?: string } } }).element?.shape?.k).toBe("unknown");
+    // 长度不可判（native 2）——不得 wrong-exact 折 0
+    const len = call(`export function f() { const o = { [Symbol.iterator]: function* () { yield 1; yield 2; } }; return Array.from(o).length; }`);
+    expect(litValue(len.result)).toEqual({ ok: false });
+  });
+
+  it("非可调用 @@iterator 字面量 → definite TypeError（GetMethod 语义）", () => {
+    const r = call(`export function f() { const o = { [Symbol.iterator]: 5 }; return Array.from(o); }`);
+    expect((r.throws as { shape?: { name?: string } })?.shape?.name).toBe("TypeError");
+  });
+
+  it("iterator beats length：{...iterObj, length: 0} 仍走迭代（不折 exact 0）", () => {
+    const r = call(`export function f() { const g = { [Symbol.iterator]: function* () { yield 1; yield 2; } }; return Array.from({ ...g, length: 0 }).length; }`);
+    expect(litValue(r.result)).toEqual({ ok: false });
+  });
+
+  it("@@iterator 值 undefined → GetMethod 视为缺席，回落 array-like", () => {
+    const r = call(`export function f() { const o = { [Symbol.iterator]: undefined, 0: "a", 1: "b", length: 2 }; return Array.from(o).join(""); }`);
+    expect(litValue(r.result)).toEqual({ ok: true, value: "ab" });
+  });
+
+  it("控制组：无 @@iterator 的 array-like / 空对象面不回归（Bug 51 口径）", () => {
+    expect(litValue(call(`export function f() { return Array.from({ 0: "a", 1: "b", length: 2 }).length; }`).result))
+      .toEqual({ ok: true, value: 2 });
+    expect(litValue(call(`export function f() { return Array.from({ a: 1 }).length; }`).result))
+      .toEqual({ ok: true, value: 0 });
+    expect(litValue(call(`export function f() { function* gen() { yield 3; yield 4; } return Array.from(gen()).length; }`).result))
+      .toEqual({ ok: true, value: 2 });
+  });
+});
