@@ -351,6 +351,12 @@ export function brandHasProtoMember(brandName: string, key: string): boolean {
     const builtinAcc = BUILTIN_BRAND_ACCESSORS[name];
     if (builtinAcc?.has(key)) return true;
   }
+  // Bug 113：原型链数据槽 presence（`A.prototype.x = 1` 落 protoBrandAbs
+  // memo 槽 / fn 伪父 fnProtoOf 槽 / 函数声明链 protoBrandAbs(n) 槽）——
+  // 值读（chainProtoSlotOf）已见而 in 判定此前忽略（`"zz" in new f()` 与
+  // class 实例 `C.prototype.zz = 5; "zz" in new C()` 同折假精确 false）。
+  // constructor/__proto__ 由此处恒 miss（chainProtoSlotOf 专用分支排除）。
+  if (chainProtoSlotOf(brandName, key, 0) !== undefined) return true;
   return false;
 }
 
@@ -911,6 +917,9 @@ export function $del(o: Abs, key: Abs): Abs {
   // frozen/sealed：删除 TypeError（strict 硬抛；表达式 delete 走 $delRes 返回 false）
   if (st === "frozen" || st === "sealed") throwStrictWrite();
   if (o.shape.k === "brand") {
+    // Bug 116：strict 毒丸——delete arguments.callee 定抛（与 $get/$set 的
+    // brand 臂同口径；复用 throwStrictWrite 的 strict TypeError 通道）
+    if (o.shape.name === "Arguments" && keyStr === "callee") throwStrictWrite();
     const inner = $del(o.shape.shape, key);
     if (inner === o.shape.shape) return o;
     const next = abs({ k: "brand", name: o.shape.name, shape: inner }, undefined, undefined, o.conf);

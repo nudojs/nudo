@@ -39,6 +39,13 @@ describe("Bug 15 — `in` walks the prototype chain (tuple / brand arms)", () =>
     expectExact(`export function f() { return "constructor" in []; }`, true);
   });
 
+  it("Object.prototype legacy accessors are exact true (Bug 15 残余)", () => {
+    expectExact(`export function f() { return "__defineGetter__" in {}; }`, true);
+    expectExact(`export function f() { return "__defineSetter__" in {}; }`, true);
+    expectExact(`export function f() { return "__lookupGetter__" in []; }`, true);
+    expectExact(`export function f() { return "__lookupSetter__" in [1]; }`, true);
+  });
+
   it("Map/Set size accessor is exact true", () => {
     expectExact(`export function f() { return "size" in new Map(); }`, true);
     expectExact(`export function f() { return "size" in new Set(); }`, true);

@@ -282,7 +282,7 @@ function padOmittedArgs(
 export function $fnVal(
   params: string[],
   impl: (...args: Abs[]) => Abs,
-  opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean },
+  opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean; kind?: string },
 ): Abs {
   const argsOf =
     opts?.padArgs === false
@@ -306,6 +306,9 @@ export function $fnVal(
       ...(opts?.bindThis ? { bindThis: true } : {}),
       ...(opts?.effectFree ? { effectFree: true } : {}),
       ...(opts?.closed ? { closed: true } : {}),
+      // Bug 93：generator 表达式标记（transpile 透传）——member.ts fn 分支
+      // 区分「不可构造但有 prototype」；宿主声明路径走 isHostGeneratorFn
+      ...(opts?.kind !== undefined ? { kind: opts.kind } : {}),
     },
     {
       ...(opts?.ctor !== undefined ? { ctor: opts.ctor } : {}),

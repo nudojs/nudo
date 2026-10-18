@@ -284,6 +284,13 @@ export const OBJECT_PROTO_NAMES = new Set([
   "isPrototypeOf",
   "propertyIsEnumerable",
   "__proto__",
+  // Bug 15 残余（node Object.getOwnPropertyNames(Object.prototype) 实测）：
+  // legacy 访问器四件——缺名时 "__defineGetter__" in {} / "__lookupGetter__"
+  // in [] 折 wrong-exact false（原生 true）
+  "__defineGetter__",
+  "__defineSetter__",
+  "__lookupGetter__",
+  "__lookupSetter__",
 ]);
 
 /** Array.prototype 自有可读键（push/map/keys/… 与 Symbol.iterator 投影名）。

@@ -15,10 +15,11 @@
 import type { Abs } from "../../../abs.ts";
 import { abs, confJoin, litValue, numLit, str, strLit, unknown } from "../../../abs.ts";
 import { lit } from "../../../term.ts";
-import { absFunction, hostFnCtorFacet } from "../../../abs-fn.ts";
+import { absFunction, hostFnCtorFacet, getFnImpl } from "../../../abs-fn.ts";
 import {
   joinAbs,
   isObj,
+  objOf,
   type ObjShape,
   type Slot,
   isNullProtoObj,
@@ -190,6 +191,68 @@ export function $regex(pattern: string, flags = ""): Abs {
 // ARRAY_PROTO_METHOD_NAMES 已上移 member-diag.ts（$in tuple 臂共用；避免
 // members ↔ containers 循环 import）
 
+/** Bug 114：原生带 @@species 静态访问器的内建构造器（Array/Promise/RegExp/
+ *  Map/Set/AB/SAB 自有 + TA 全家自 %TypedArray% 继承 getter，node 实测）——
+ *  宿主通道按字符串键 "@@species" 裸读是 undefined，须折构造器 fn 面
+ *  （typeof "function"）；Date/DataView/WeakMap/Error 等原生 undefined。 */
+const BUILTIN_SPECIES_CTORS: ReadonlySet<string> = new Set([
+  "Array", "Promise", "RegExp", "Map", "Set", "ArrayBuffer", "SharedArrayBuffer",
+  ...Object.keys(TYPED_ARRAY_ELEMENT),
+]);
+
+/** Bug 93：宿主 generator 函数判定——真 generator（env 泄漏/内建宿主值，
+ *  原型链 constructor 名可判）或 transpile 去种类化的 generator 声明（宿主
+ *  体首语句 `return $gen(…)`；async 声明是 `return $async(…)`——两者共享
+ *  __nudoNonCtor 标记，按源形区分，漏判安全降级为「无 prototype」旧口径）。 */
+function isHostGeneratorFn(v: Function): boolean {
+  const protoCtor = Object.getPrototypeOf(v)?.constructor?.name;
+  if (protoCtor === "GeneratorFunction" || protoCtor === "AsyncGeneratorFunction") return true;
+  if ((v as { __nudoNonCtor?: unknown }).__nudoNonCtor !== 1) return false;
+  try {
+    return /^\s*(?:export\s+)?function\s*[\w$]*\s*\([^)]*\)\s*\{\s*(?:const\s+[\w$]+\s*=\s*\$restBind\(arguments,\s*\d+\);\s*)?return\s+\$gen\(/.test(String(v));
+  } catch {
+    return false;
+  }
+}
+
+/** Bug 93：generator 函数 prototype 的可辨 brand——按宿主 fn 驻留（原生每
+ *  fn 唯一共享 prototype）。名不走 ".prototype" 后缀：protoOfRecv 会把该
+ *  后缀品牌的 [[Proto]] 折 owner extends / Object.prototype，而 generator
+ *  prototype 的 [[Proto]] 是 %GeneratorFunction.prototype%.prototype
+ * （`Object.getPrototypeOf(g.prototype) === Object.prototype` 原生 false）。
+ *  constructor 无槽 → 折 builtinCtorAbs 面（typeof "function"，
+ *  `g.prototype.constructor === g` 折 false——原生 generator prototype 的
+ *  constructor 不回指 g）。 */
+const genProtoByFn = new WeakMap<object, Abs>();
+let genProtoSeq = 0;
+function generatorProtoBrandOf(v: Function | Abs): Abs {
+  let p = genProtoByFn.get(v as object);
+  if (p === undefined) {
+    const rawNm = typeof v === "function" ? v.name : (v.shape as { name?: string }).name;
+    const nm = typeof rawNm === "string" && rawNm ? rawNm : `anonymous${++genProtoSeq}`;
+    p = abs(
+      { k: "brand", name: `${nm}.generatorProto`, shape: objOf({}) },
+      undefined,
+      undefined,
+      "exact",
+    );
+    genProtoByFn.set(v as object, p);
+  }
+  return p;
+}
+
+/** Bug 92：Function.prototype 的 fn 面——原生唯一 callable 的 prototype
+ *  （typeof "function"；调用返 undefined——$call 对 noBody 无 apply 折
+ *  undefined；自身 .prototype 原生 undefined → ctor:false）。按名驻留
+ *  （=== 恒等）。protoBrandAbs 是 obj 面 brand（typeof "object"，wrong-exact）。 */
+let functionProtoFacadeCache: Abs | undefined;
+function functionProtoFacade(): Abs {
+  if (!functionProtoFacadeCache) {
+    functionProtoFacadeCache = absFunction([], { body: noBody }, { ctor: false });
+  }
+  return functionProtoFacadeCache;
+}
+
 function isPossiblyProtoMemberKey(key: string): boolean {
   return (
     OBJECT_PROTO_METHOD_NAMES.has(key) ||
@@ -319,7 +382,21 @@ export function $get(
     const ns = namespaceNameOf(o);
     if (key === "prototype") {
       if (ns === "Object") return objectProtoBrand();
+      // Bug 92：prototype 是构造器自有属性——非构造命名空间（Math/JSON/
+      // Reflect/Intl，宿主值 typeof "object"）原生无 prototype，折 exact
+      // undefined（此前凭空捏 protoBrandAbs：typeof "object" wrong-exact、
+      // 与 in/hasOwn 缺席口径矛盾、`Math.prototype.x` 假不抛）。构造命名
+      // 空间（typeof "function"）维持原型 brand；非命名空间宿主函数不得
+      // 在此返回——落穿到下方 Bug 9 宿主函数分支（transpile 函数声明 /
+      // Function 本体），否则 f.prototype 误折 undefined。
+      if (ns && typeof o !== "function") return undef();
       if (ns) return protoBrandAbs(ns);
+    }
+    // Bug 114：内建构造器的 @@species 静态符号键（BUILTIN_SPECIES_CTORS，
+    // transpile 读侧 [Symbol.species] → "@@species" 投影）——宿主通道按
+    // 字符串键裸读是 undefined；折构造器 fn 面（typeof "function"）。
+    if (ns && key === "@@species" && BUILTIN_SPECIES_CTORS.has(ns)) {
+      return protoMethodValueAbs(ns, "@@species");
     }
     // Bug 44：Intl 两个格式化构造器——带 locale 校验的构造器值（fn name
     // "Intl.<Sub>" → $new 按名派发 evalBuiltinNew；调用面 apply 同 builder）
@@ -356,10 +433,19 @@ export function $get(
         return numLit(typeof fn.length === "number" ? fn.length : 0);
       }
       if (key === "prototype") {
-        // 箭头/async/generator（去种类化宿主函数）原生无 prototype → undefined
+        // Bug 93：generator 函数「不可构造但有 prototype」（generator 实例
+        // 原型，typeof "object"）——先于 ctor facet 合取：不可构造 ≠ 无
+        // prototype，generator 两属性恰好分离（async/箭头/方法两者皆无）。
+        // 可辨 brand（[[Proto]] 非 Object.prototype），不经 protoBrandAbs。
+        if (isHostGeneratorFn(o as never)) return generatorProtoBrandOf(o as never);
+        // 箭头/async（去种类化宿主函数）原生无 prototype → undefined
         if (fn.prototype === undefined || hostFnCtorFacet(o as never) === false) {
           return undef();
         }
+        // Bug 92：Function.prototype 原生 callable（唯一 prototype 为函数的
+        // 构造器）——protoBrandAbs 是 obj 面 brand（typeof "object"
+        // wrong-exact），折 fn 面。
+        if (typeof fn.prototype === "function") return functionProtoFacade();
         // Bug 64：宿主构造器（路由表外泄漏的全局/声明函数）的 prototype 带
         // owner 身份——protoBrandAbs（constructor 槽 + 按名驻留 === 恒等），
         // 不再捏匿名闭 obj（`X.prototype instanceof Super` 假精确 false）
@@ -394,6 +480,11 @@ export function $get(
     }, { ctor: false });
   }
   if (o.shape.k === "brand") {
+    // Bug 116：strict 毒丸——arguments.callee 读定抛（seam 前缀恢复模块体
+    // 严格性后，折叠面同样要抛；caller 读原生 undefined 不毒）
+    if (o.shape.name === "Arguments" && key === "callee") {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
     // Bug 57/71：Proxy——get 陷阱优先（handler 提供 → $call 派发，实参
     // (target, key, receiver)、this = handler）；无陷阱回退**靶读取**
     //（inner 即 target Abs——含靶原型链）；陷阱不可判/不可调用 → 诚实
@@ -594,6 +685,26 @@ export function $get(
     if (key === "__proto__") {
       return protoOfRecv(o);
     }
+    // Bug 102：TA 字符串形下标（v["1"] ≡ v[1]，与 $idx 的 TA 臂同元素域）——
+    // canonicalArrayIndex 归一；此前落 inner 闭 obj 槽 miss 折 exact
+    // undefined。长度槽字面量（makeTypedArrayAbs 数字形态）时精确：在界 →
+    // 元素域、越界 → undef；长度不可判 → 元素域 join undef（可能越界）。
+    if (!isClassVal && TYPED_ARRAY_ELEMENT[o.shape.name] !== undefined) {
+      const idx = canonicalArrayIndex(key);
+      if (idx !== undefined) {
+        const elem = TYPED_ARRAY_ELEMENT[o.shape.name]!;
+        const lenA = inner?.shape.k === "obj"
+          ? getSlot(inner.shape.slots, "length")?.value
+          : undefined;
+        const lenR = lenA ? litValue(lenA) : undefined;
+        if (lenR?.ok && typeof lenR.value === "number") {
+          return idx < lenR.value
+            ? abs({ k: "prim", type: elem }, undefined, undefined, "exact")
+            : undef();
+        }
+        return joinAbs(abs({ k: "prim", type: elem }, undefined, undefined, "exact"), undef());
+      }
+    }
     // Bug 40：已知原型访问器名（BUILTIN_BRAND_ACCESSORS，$in presence 表）
     // 的值读若槽面未建模 → 诚实 unknown——不得落闭 obj 槽 miss 折精确
     // undefined（`typeof ab.detached` / `typeof ta.buffer` 曾断言成员缺席，
@@ -622,6 +733,16 @@ export function $get(
     }
     if (key === "length") return $len(o);
     if (key === "prototype") {
+      // Bug 93：generator 表达式（$fnVal kind:"generator" 标记）——
+      // ctor:false 但原生有 prototype（generator 实例原型，typeof
+      // "object"）。可辨 brand（[[Proto]] 是 %GeneratorFunction%.prototype
+      // 而非 Object.prototype）；constructor 无槽折 builtinCtorAbs 面
+      //（`g.prototype.constructor === g` 原生 false——真 constructor 是
+      // GeneratorFunction.prototype，不回指 g）。箭头/async/方法保持
+      // exact undefined（原生无 prototype）。
+      if ((getFnImpl(o) as { kind?: string } | undefined)?.kind === "generator") {
+        return generatorProtoBrandOf(o);
+      }
       return o.shape.ctor === false
         ? undef()
         : // P3b：fn 的 prototype 对象身份按 fn Abs 驻留（原生每 fn 唯一
@@ -807,6 +928,11 @@ export function $set(
     return o;
   }
   if (o.shape.k === "brand") {
+    // Bug 116：strict 毒丸——arguments.callee 写定抛（node 实测 strict 下
+    // 赋值同抛；caller 写是普通数据属性不毒）
+    if (o.shape.name === "Arguments" && key === "callee") {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
     // Bug 71：Proxy——set 陷阱优先（实参 (target, key, value, receiver)、
     // this = handler）；返回字面量 false → strict TypeError（硬抛，catch 可
     // 吸收）；无陷阱回转发写靶（原地；brand inner 即 target 引用，身份不
@@ -848,6 +974,17 @@ export function $set(
       // 调用点持有的同一实例 Abs 可见（不可变更新会只改局部绑定）
       const inner = o.shape.shape;
       if (inner.shape.k === "obj") {
+        // Bug 103：内建 brand 的 getter-only 原型访问器（$in presence 表
+        // BUILTIN_BRAND_ACCESSORS：TA/DV 的 length/byteLength/byteOffset/
+        // BYTES_PER_ELEMENT、Map/Set.size、RegExp.source/flags 等）——strict
+        // 写原生 TypeError；此前落新自有槽 → 假写成功 + 假读回。例外仅
+        // opts.internal（引擎簿记写）。已知偏差：defineProperty 以
+        // writable:true 自建数据槽后覆写（原生成功）此处仍抛——descriptor
+        // 的 writeInPlace 复用原 Abs 身份不迁移 propFlags 侧表，豁免不可
+        // 判（构造器工件槽同无标记，不可放行）；超罕见边，留侧表迁移任务。
+        if (!opts?.internal && BUILTIN_BRAND_ACCESSORS[o.shape.name]?.has(key)) {
+          throwStrictWrite();
+        }
         const st = extStateOf(o);
         if ((st === "sealed" || st === "nonext") && !getSlot(inner.shape.slots, key)) {
           throwStrictWrite(); // 不可扩展：新键写 TypeError

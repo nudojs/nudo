@@ -46,6 +46,24 @@ import {
 
 const classImpl = new WeakMap<object, EvalClassSpec>();
 
+/** Bug 114：宿主 Symbol 命名空间的 well-known 反查表（键值 → "@@name"
+ *  投影，懒建）。well-known symbol 是 Symbol 函数的自有**字符串名**属性
+ *  （值为 symbol——getOwnPropertySymbols(Symbol) 反而是空表）；静态函数
+ *  键（Symbol.for / Symbol.keyFor）同映射 "@@for"/"@@keyFor"（读侧
+ *  [Symbol.X] 的 transpile 投影同串，两侧键字符串化恒等）。hasInstance/
+ *  toStringTag（Bug 50/72 旧两名单）被本表包含。drops 只留真抽象键。 */
+let wellKnownSymbolKeys: Map<unknown, string> | undefined;
+function wellKnownSymbolKeyOf(v: unknown): string | undefined {
+  if (!wellKnownSymbolKeys) {
+    wellKnownSymbolKeys = new Map();
+    for (const n of Object.getOwnPropertyNames(Symbol)) {
+      const f = (Symbol as unknown as Record<string, unknown>)[n];
+      if (typeof f === "symbol" || typeof f === "function") wellKnownSymbolKeys.set(f, `@@${n}`);
+    }
+  }
+  return wellKnownSymbolKeys.get(v);
+}
+
 /** 定义类 → 可 new 的 Abs（brand 标记；静态字段挂在 slots） */
 export function $class(
   name: string,
@@ -151,12 +169,14 @@ export function $class(
   // Bug 60：计算键折叠——键表达式已在 spec 对象字面量构造时求值（定义期，
   // throws 效果已记录）。字面量 string/number 键 → 挂真名；抽象键
   // （any/symbol/…）无法静态列举 → 摘除 synth 名成员（不静默挂错名）。
-  // 例外（Bug 50）：键求值为宿主 well-known Symbol.hasInstance 的计算键
-  // 投影为 "@@hasInstance" 字符串槽名（镜像对象字面量 [Symbol.X] → "@@X"
-  // 的 transpile 投影）——$instanceof 读到即调用，class 形与 object 形同臂。
-  // Bug 72：Symbol.toStringTag 同款投影 "@@toStringTag"——class
-  // get [Symbol.toStringTag]() 的访问器/方法/静态面挂真投影名（$get 实例
-  // 读与 typeTagOf 的 Object.prototype.toString 标签折叠同臂）。
+  // Bug 50/72：宿主 well-known Symbol.hasInstance/toStringTag 的计算键投影
+  // "@@hasInstance"/"@@toStringTag" 字符串槽名（镜像对象字面量
+  // [Symbol.X] → "@@X" 的 transpile 投影）——$instanceof 读到即调用、
+  // typeTagOf 标签折叠同臂。
+  // Bug 114：投影泛化到全 well-known 表——transpile 读侧对任意 [Symbol.X]
+  // 计算成员投 "@@X"，定义侧此前只认上述两名，species/iterator/match 等
+  // 全被 drops 删除（读侧 "@@species" miss 折 exact undefined）。改查宿主
+  // Symbol 命名空间反查表（wellKnownSymbolKeyOf）。
   if (spec.computedKeys) {
     const renames = new Map<string, string>();
     const drops = new Set<string>();
@@ -165,12 +185,13 @@ export function $class(
       const lv = litValue(k);
       if (lv.ok && (typeof lv.value === "string" || typeof lv.value === "number")) {
         renames.set(synth, String(lv.value));
-      } else if (lv.ok && (lv.value as symbol | (typeof lv.value)) === Symbol.hasInstance) {
-        renames.set(synth, "@@hasInstance");
-      } else if (lv.ok && (lv.value as symbol | (typeof lv.value)) === Symbol.toStringTag) {
-        renames.set(synth, "@@toStringTag");
       } else {
-        drops.add(synth);
+        // Bug 114：well-known symbol 键（描述 "Symbol.X" → "@@X"）与宿主
+        // Symbol 静态函数键（[Symbol.for] 等——读侧同投影 "@@for"，两侧
+        // 键字符串化恒等）→ 挂投影名；drops 只留真正无法静态列举的抽象键。
+        const wk = lv.ok ? wellKnownSymbolKeyOf(lv.value) : undefined;
+        if (wk !== undefined) renames.set(synth, wk);
+        else drops.add(synth);
       }
     }
     const rekey = (rec: Record<string, unknown> | undefined): void => {
@@ -591,6 +612,14 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
     // Boolean…未进上方派发表）不走体执行——Abs 实参喂真 JS 构造器会产
     // 宿主原值（静默错值），维持既有空 brand 口径。
     if (hostBuiltinCtorName(cls) === undefined && !isHostGlobalFn(cls)) {
+      // Bug 113：函数声明（宿主函数）[[Construct]]——铸实例 brand 前注册
+      // 链键（$class 的 registerEvalClass 同款）：chainProtoSlotOf 沿
+      // protoBrandAbs(clsName) 链解析（f.prototype 写落同名 memo 槽——
+      // 宿主函数 prototype 读正是 protoBrandAbs），实例缺槽读不再 exact
+      // undefined。同名注册面（用户类）不覆写。不用 ensureFnParentName/
+      // asAbsVal：宿主函数每次铸新 fn Abs 会 miss fnProtoOf 的 WeakMap，
+      // 而本分支原型载体是 protoBrandAbs 名面。
+      if (!getEvalClass(clsName)) registerEvalClass({ name: clsName });
       const thisVal = abs(
         { k: "brand", name: clsName, shape: objOf({}) },
         undefined,

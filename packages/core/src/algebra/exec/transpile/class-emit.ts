@@ -133,6 +133,27 @@ export function classSpecOf(
     if (k.type === "StringLiteral" || k.type === "NumericLiteral") {
       return { name: String(k.value) };
     }
+    // Bug 114：句法形 `Symbol.X` 计算键直接投影静态名 "@@X"——与读侧
+    // transpile/expr/member.ts 的 Symbol 常量键投影同口径（读侧早已无条件
+    // 投影，Symbol 命名空间按不可遮蔽处理）。定义期不再走宿主求值：fn 值
+    // 键（[Symbol.for]——$get ns 分支折 absFunction）litValue 失败会被
+    // $class drops，字段/方法/访问器三形态统一在此落真名。
+    const asMember = k as unknown as {
+      type?: string;
+      computed?: boolean;
+      object?: { type?: string; name?: string } | null;
+      property?: { type?: string; name?: string } | null;
+    };
+    if (
+      asMember.type === "MemberExpression" &&
+      asMember.computed !== true &&
+      asMember.object?.type === "Identifier" &&
+      asMember.object.name === "Symbol" &&
+      asMember.property?.type === "Identifier" &&
+      asMember.property.name
+    ) {
+      return { name: `@@${asMember.property.name}` };
+    }
     if (isExpression(k as Node)) {
       return { computed: emitTranspileExpression(k as Expression, opts) };
     }
