@@ -22,6 +22,7 @@ import { $call } from "../call.ts";
 import { callHostGlobalFn } from "../calls.ts";
 import { getFnImpl, absFunction, hostFnCtorFacet } from "../../abs-fn.ts";
 import { evalNamespaceCall, evalBuiltinInstanceMethod, isSymbolAbs, stringOfSymbol, evalPromiseMethod, boxedPrimitiveValue, sumHasPrimMember, evalArrayStatic } from "../../builtins.ts";
+import { isErrorCtorName } from "../../builtins/error.ts";
 import {
   validateCallableArg,
 } from "../../hof.ts";
@@ -502,6 +503,34 @@ function $invokeInner(
     } else if (method === "toLocaleString") {
       // 抽象 bigint：toLocaleString 恒成功（ICU 不转换实参）→ 抽象 string
       return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
+    } else if (method === "valueOf") {
+      // Bug 105：抽象 bigint prim 的 valueOf = 接收者自身（thisBigIntValue
+      // 恒成功）——此前落通用路径被 Object.prototype.toString 吞
+      return thisVal;
+    } else if (method === "toString") {
+      // Bug 105：抽象 bigint prim 的 toString → BigInt.prototype.toString
+      //（结果恒 string），不落 Object.prototype.toString（"[object Bigint]"
+      // 假精确）。radix 实参口径与字面量接收者臂一致：symbol 定抛
+      // TypeError、字面量真查域（ToIntegerOrInfinity 后 [2,36] 否则
+      // RangeError）、抽象 may TypeError。
+      const argAbs = args[0];
+      if (argAbs !== undefined) {
+        if (isSymbolAbs(argAbs)) throw new NudoThrow(errorTypeAbs("TypeError"));
+        const avR = litValue(argAbs);
+        const av = avR.ok ? avR.value : undefined;
+        if (avR.ok && av !== undefined) {
+          const radix = Math.trunc(Number(av));
+          if (!Number.isFinite(radix) || radix < 2 || radix > 36) {
+            throw new NudoThrow(errorTypeAbs("RangeError"));
+          }
+        } else if (!avR.ok) {
+          recordMayThrow({
+            kind: "TypeError",
+            cause: "BigInt.prototype.toString radix may not be convertible to a number",
+          });
+        }
+      }
+      return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
     }
     // 未接管的其它方法不得在此 return——继续后续诊断路径（M3：原型外
     // 方法名（toFixed 等）在下方定抛 TypeError；toLocaleString 等软保守）
@@ -727,9 +756,69 @@ function memberLikelyHasMethod(m: Abs, method: string): boolean {
 //   （字符 / 索引槽，Bug 51 面）后走数组派发（slice.call('abc') →
 //   ["a","b","c"]）；不可物化形态 → unknown（不折假值）。
 // ---------------------------------------------------------------------------
+// Bug 108：brand-checking 内建原型表 + 借用调用接收者 brand 判定
+const BRAND_CHECK_PROTOS = new Set([
+  "Number", "String", "Boolean", "Symbol", "BigInt",
+  "Date", "RegExp", "Map", "Set", "WeakMap", "WeakSet",
+]);
+/** prim 型 home（member.ts :832 的 protoMethodValueAbs(type, key)）→ brand 名 */
+const PRIM_HOME_BRAND: Record<string, string> = {
+  number: "Number",
+  string: "String",
+  boolean: "Boolean",
+  bigint: "BigInt",
+  symbol: "Symbol",
+};
+/** Array.prototype 写方法（prim 接收者上原生定抛；读方法走物化泛型） */
+const ARRAY_MUTATOR_METHODS = new Set([
+  "push", "pop", "shift", "unshift", "splice", "sort", "reverse", "fill", "copyWithin",
+]);
+/** 接收者 brand；不可判（any/unknown/sum/Proxy 陷阱壳）→ undefined（不抛）。
+ *  nullish 字面量 → "nullish"（与一切 brand 不匹配，定抛）。 */
+function borrowedRecvBrandOf(recv: Abs): string | undefined {
+  if (isNullishLitAbs(recv)) return "nullish";
+  const s = recv.shape;
+  if (s.k === "prim") return PRIM_HOME_BRAND[s.type];
+  if (s.k === "brand") return s.name === "Proxy" ? undefined : s.name;
+  if (s.k === "arr" || s.k === "tuple") return "Array";
+  if (s.k === "fn") return "Function";
+  if (s.k === "obj") return "Object";
+  if (s.k === "eff") return s.eff === "promise" ? "Promise" : "Generator";
+  return undefined;
+}
 setProtoMethodDispatch((home, name, thisVal, args) => {
   const recv: Abs = thisVal ?? $lit(undefined);
+  // Bug 108：brand-checking 内建原型的借用调用——home 与接收者 brand 不匹配
+  // 定抛 TypeError（原生 thisNumberValue/thisStringValue/… 前置校验：
+  // Number.prototype.valueOf.call("5") 折 "5" 是假精确）。Object.prototype
+  // （任意接收者合法）与 Array.prototype（上方物化 array-like）保持泛型。
+  // Proxy 接收者（get/apply 陷阱可换壳）与 any/unknown/sum 不可判 → 不抛。
+  {
+    const homeBrand = BRAND_CHECK_PROTOS.has(home)
+      ? home
+      : BRAND_CHECK_PROTOS.has(PRIM_HOME_BRAND[home] ?? "")
+        ? PRIM_HOME_BRAND[home]!
+        : isErrorCtorName(home)
+          ? "Error"
+          : undefined;
+    if (homeBrand !== undefined) {
+      const recvBrand = borrowedRecvBrandOf(recv);
+      const ok =
+        recvBrand === undefined ||
+        recvBrand === homeBrand ||
+        (homeBrand === "Error" ? isErrorCtorName(recvBrand) : false);
+      if (!ok) throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+  }
   if (home === "Array" && recv.shape.k !== "tuple" && recv.shape.k !== "arr") {
+    // Bug 108 邻接面：mutator（push/pop/…）在 prim 接收者上原生定抛
+    //（CreateDataProperty/DeleteProperty on primitive——node 实测
+    // Array.prototype.push.call("ab",1) → TypeError）。此前字符串接收者
+    // 被 Bug 51 物化通道吞成「拷贝元组上成功」的假不抛。读方法（slice/
+    // join/at/…）保持物化泛型。
+    if (recv.shape.k === "prim" && ARRAY_MUTATOR_METHODS.has(name)) {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
     // 字面量字符串 → code unit 字符 tuple（Array.prototype 借用算法按
     // length+索引读——code unit，非 code point；slice.call('abc') →
     // ["a","b","c"]）；其余 array-like（闭 obj）→ Array.from 物化

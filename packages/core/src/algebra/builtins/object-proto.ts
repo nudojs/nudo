@@ -190,8 +190,17 @@ function typeTagOf(recv: Abs): string | undefined {
   }
   const s = recv.shape;
   if (s.k === "prim") {
-    const t = s.type;
-    return t.charAt(0).toUpperCase() + t.slice(1);
+    // Bug 105：显式映射表——Abs prim 名 "bigint" 的大写化是 "Bigint"，
+    // 规范 tag 是 "BigInt"（原生 Object.prototype.toString 折
+    // "[object Bigint]" 假精确）。逐一映射，不再大小写推导。
+    const PRIM_TAGS: Record<string, string> = {
+      number: "Number",
+      string: "String",
+      boolean: "Boolean",
+      bigint: "BigInt",
+      symbol: "Symbol",
+    };
+    return PRIM_TAGS[s.type];
   }
   if (s.k === "arr" || s.k === "tuple") return "Array";
   if (s.k === "fn") return "Function";

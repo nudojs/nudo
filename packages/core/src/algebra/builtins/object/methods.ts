@@ -60,6 +60,9 @@ import {
 import { classInstanceInnerOf } from "../../exec/class-registry.ts";
 import { protoOfRecv, objectProtoBrand } from "../ctor.ts";
 import { isErrorCtorName } from "../error.ts";
+// Bug 124：Object.* 的 Proxy 对象级陷阱前置派发（deleteProperty 在 $del/
+// $delRes；此处 getPrototypeOf/setPrototypeOf/preventExtensions/defineProperty）
+import { proxyBooleanTrap, proxyGetProtoTrap } from "../../exec/runtime/members.ts";
 
 import {
   applyPropertyDescriptor,
@@ -652,6 +655,13 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       if (isSymbolAbs(a0)) {
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }
+      // Bug 124：getPrototypeOf 陷阱优先——返回陷阱结果（Object/null，非对象
+      // 非 null 字面量定抛 TypeError）；absent → protoOfRecv 靶原型
+      {
+        const trapR = proxyGetProtoTrap(a0!);
+        if (trapR === "opaque") return unknown;
+        if (trapR !== undefined) return trapR;
+      }
       // 具体原型带 constructor 槽（.constructor.name 链可解）；不可判保持 unknown
       return protoOfRecv(a0);
     }
@@ -695,6 +705,22 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         (p0.shape.k === "any" || p0.shape.k === "unknown" || p0.shape.k === "sum")
       ) {
         recordMayThrow({ kind: "TypeError", cause: "Object.setPrototypeOf proto must be an object or null" });
+      }
+      // Bug 124：setPrototypeOf 陷阱优先（Object 口径）——falsy 字面量结果
+      // 定抛 TypeError、truthy 返回 target（原型设定责任在陷阱，不落侧表）；
+      // opaque handler 保守返回 target 不落标记
+      {
+        const trapR = proxyBooleanTrap(t0!, "setPrototypeOf", (t) => [t, p0]);
+        if (trapR === "opaque") {
+          recordMayThrow({ kind: "TypeError", cause: "Proxy setPrototypeOf trap may return falsy" });
+          return t0;
+        }
+        if (trapR !== undefined) {
+          if (trapR.term?.op === "lit" && trapR.term.value === false) {
+            throw new NudoThrow(errorTypeAbs("TypeError"));
+          }
+          return t0;
+        }
       }
       // Bug 120：不可扩展目标（freeze/seal/preventExtensions 标记）改原型
       // → TypeError（OrdinarySetPrototypeOf step 4）；SameValue 同原型豁免
@@ -924,7 +950,23 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       return undefined;
     }
     case "preventExtensions": {
-      if (a0) return markExtState(a0, "nonext");
+      // Bug 124：preventExtensions 陷阱优先（Object 口径）——falsy 字面量结果
+      // 定抛 TypeError、truthy 返回 target（不落 nonext 标记）；opaque 保守
+      // 返回 target 不落标记（陷阱可能在/可能 falsy → may）
+      if (a0) {
+        const trapR = proxyBooleanTrap(a0, "preventExtensions", (t) => [t]);
+        if (trapR === "opaque") {
+          recordMayThrow({ kind: "TypeError", cause: "Proxy preventExtensions trap may return falsy" });
+          return a0;
+        }
+        if (trapR !== undefined) {
+          if (trapR.term?.op === "lit" && trapR.term.value === false) {
+            throw new NudoThrow(errorTypeAbs("TypeError"));
+          }
+          return a0;
+        }
+        return markExtState(a0, "nonext");
+      }
       return undefined;
     }
     case "isFrozen": {
@@ -952,6 +994,26 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       // Bug 39：描述符校验先于 key 保守回退——原生 ToPropertyDescriptor 对
       // key 值不敏感，desc 定抛/may 抛都要记
       validateDescriptorObject(args[2], "Object.defineProperty");
+      // Bug 124：defineProperty 陷阱优先（Object 口径）——falsy 字面量结果
+      // 定抛 TypeError、truthy 返回 target（属性安装责任在陷阱，引擎不装
+      // 槽/flags）；opaque 保守返回 target 不装
+      if (a0) {
+        const trapR = proxyBooleanTrap(
+          a0,
+          "defineProperty",
+          (t) => [t, args[1] ?? undefAbs(), args[2] ?? undefAbs()],
+        );
+        if (trapR === "opaque") {
+          recordMayThrow({ kind: "TypeError", cause: "Proxy defineProperty trap may return falsy" });
+          return a0;
+        }
+        if (trapR !== undefined) {
+          if (trapR.term?.op === "lit" && trapR.term.value === false) {
+            throw new NudoThrow(errorTypeAbs("TypeError"));
+          }
+          return a0;
+        }
+      }
       // Bug 117：键走 ToPropertyKey 投影（propertyKeyOf：number/bigint/bool/
       // null/undefined/缺省 → 字符串键）。此前 typeof 门（string/number 才
       // 装）把 symbol/bool/null/undefined 键静默丢弃——无槽无 may-throw，

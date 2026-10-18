@@ -175,7 +175,12 @@ export function foldBigintBinOp(
   const rb = litValue(b);
   const va = ra.ok ? ra.value : undefined;
   const vb = rb.ok ? rb.value : undefined;
-  if (typeof va !== "bigint" && typeof vb !== "bigint") return undefined;
+  // Bug 106：bigint-ness 双侧判定 = 字面量 ∪ isBigPrim（抽象 bigint prim
+  // ——BigInt(Date.now()) 等非字面量 bigint 也是**确定** bigint，此前仅凭
+  // 字面量识别，b+1 落通用臂折 number|string 漏定抛 TypeError）
+  const aBig = typeof va === "bigint" || isBigPrim(a);
+  const bBig = typeof vb === "bigint" || isBigPrim(b);
+  if (!aBig && !bBig) return undefined;
   if (typeof va === "bigint" && typeof vb === "bigint") {
     try {
       return bigintLit(op(va, vb));
@@ -184,9 +189,14 @@ export function foldBigintBinOp(
       throw new NudoThrow(errorTypeAbs("TypeError"));
     }
   }
-  // 一侧 bigint 字面量：另一侧为 bigint prim（无字面量）→ 交抽象回退
-  const other = typeof va === "bigint" ? b : a;
-  if (isBigPrim(other)) return undefined;
+  if (aBig && bBig) {
+    // 两侧均 bigint、至少一侧抽象：不可数值折叠。字面量 0n 除数（div/mod）
+    // / 字面量负指数（pow）的定抛 RangeError 由调用点在返回抽象 bigint 前
+    // 检查（coerce 是叶子模块，不带算子种类）；此处交回上层分流。
+    return undefined;
+  }
+  // 恰一侧 bigint（字面量或抽象 prim），另一侧确定非 bigint：
+  const other = aBig ? b : a;
   // 已知非 bigint 数值面（number/bool/null/undefined）：混型恒 TypeError
   if (isKnownNonBigintNumeric(other)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));

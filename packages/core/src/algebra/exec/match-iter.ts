@@ -127,7 +127,19 @@ export type ProxyTrap = { k: "fn"; fn: Abs } | { k: "dead" } | { k: "opaque" } |
 
 export function proxyTrapOf(
   handler: Abs | undefined,
-  name: "get" | "has" | "set",
+  name:
+    | "get"
+    | "has"
+    | "set"
+    // Bug 124：对象级强制陷阱（此前只接线 get/has/set 三个命名属性陷阱，
+    // deleteProperty/defineProperty/setPrototypeOf/preventExtensions/
+    // getPrototypeOf 被无视）；Bug 122 的 construct 同批入表
+    | "deleteProperty"
+    | "defineProperty"
+    | "setPrototypeOf"
+    | "preventExtensions"
+    | "getPrototypeOf"
+    | "construct",
 ): ProxyTrap {
   if (!handler) return { k: "opaque" };
   const s = handler.shape;

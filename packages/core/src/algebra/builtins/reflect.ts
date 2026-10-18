@@ -21,7 +21,7 @@ import { boolPrim } from "./shared.ts";
 import { evalObjectMethod } from "./object.ts";
 import { markExtState, extStateOf, getPropFlags, migrateInvariants } from "./invariants.ts";
 import { protoChangeAllowed } from "./object/methods.ts";
-import { $del } from "../exec/runtime/members.ts";
+import { $del, proxyBooleanTrap, proxyGetProtoTrap } from "../exec/runtime/members.ts";
 import { lookupObjAccessor, migrateAccessors } from "../accessors.ts";
 import { $set, $idxSet } from "../exec/runtime/containers.ts";
 import { writeInPlace, undef, callAtFunctionBoundary } from "../exec/runtime/state.ts";
@@ -155,6 +155,14 @@ export function evalReflectMethod(method: string, args: Abs[]): Abs | undefined 
       // 原生 boolean；非配置属性 / frozen 目标原生返 false 不抛。
       enforceReflectTarget(args[0], "deleteProperty");
       const t0 = args[0]!;
+      // Bug 124：deleteProperty 陷阱优先——返回 ToBoolean(陷阱结果)（falsy
+      // 字面量 → false **不抛**，Reflect 口径与 delete 运算符的 strict 抛
+      // 不同，node v26 实测），且不触碰靶（删除责任在陷阱）
+      {
+        const trapR = proxyBooleanTrap(t0, "deleteProperty", (t) => [t, args[1] ?? undef()]);
+        if (trapR === "opaque") return boolPrim();
+        if (trapR !== undefined) return trapR;
+      }
       const kvR = args[1] ? litValue(args[1]) : undefined;
       const kv = kvR?.ok ? kvR.value : undefined;
       if (typeof kv === "string" || typeof kv === "number") {
@@ -234,6 +242,13 @@ export function evalReflectMethod(method: string, args: Abs[]): Abs | undefined 
     }
     case "getPrototypeOf": {
       enforceReflectTarget(args[0], "getPrototypeOf");
+      // Bug 124：getPrototypeOf 陷阱优先——返回陷阱结果（Object/null，非对象
+      // 非 null 字面量定抛 TypeError）；absent → Object.getPrototypeOf 靶语义
+      {
+        const trapR = proxyGetProtoTrap(args[0]!);
+        if (trapR === "opaque") return unknown;
+        if (trapR !== undefined) return trapR;
+      }
       return evalObjectMethod("getPrototypeOf", args);
     }
     case "setPrototypeOf": {
@@ -258,6 +273,13 @@ export function evalReflectMethod(method: string, args: Abs[]): Abs | undefined 
       // extensible 检查：原型未变时原生返 true；Object.setPrototypeOf 据此
       // 抛 TypeError，此处返 boolean）。
       const t0 = args[0]!;
+      // Bug 124：setPrototypeOf 陷阱优先——返回 ToBoolean(陷阱结果)（falsy
+      // 字面量 → false 不抛，Reflect 口径），且不落侧表（原型设定责任在陷阱）
+      {
+        const trapR = proxyBooleanTrap(t0, "setPrototypeOf", (t) => [t, p0]);
+        if (trapR === "opaque") return boolPrim();
+        if (trapR !== undefined) return trapR;
+      }
       if (extStateOf(t0) !== undefined) {
         return boolLit(protoChangeAllowed(t0, p0));
       }
@@ -378,6 +400,13 @@ export function evalReflectMethod(method: string, args: Abs[]): Abs | undefined 
       // Bug 31：标记 nonext（就地——Object.isExtensible(o) 随后折 false）；
       // 对象 target 原生恒返 true（已不可扩展也 true）。
       enforceReflectTarget(args[0], method);
+      // Bug 124：preventExtensions 陷阱优先——返回 ToBoolean(陷阱结果)
+      //（falsy 字面量 → false 不抛，Reflect 口径），不落 nonext 标记
+      {
+        const trapR = proxyBooleanTrap(args[0]!, "preventExtensions", (t) => [t]);
+        if (trapR === "opaque") return boolPrim();
+        if (trapR !== undefined) return trapR;
+      }
       if (args[0]) markExtState(args[0]!, "nonext");
       return boolLit(true);
     }

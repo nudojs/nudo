@@ -42,6 +42,72 @@ export function $objAccessorKey(
   return $objAccessor(o, pk, get, set);
 }
 
+// ---------------------------------------------------------------------------
+// Bug 124：对象级 Proxy 陷阱（deleteProperty/defineProperty/setPrototypeOf/
+// preventExtensions/getPrototypeOf）统一派发面。此前只接线 get/has/set 三个
+// 命名属性陷阱，对象级强制陷阱被无视（falsy 陷阱结果不抛、靶被静默改动）。
+// ---------------------------------------------------------------------------
+
+/**
+ * 布尔陷阱派发（Object.* 抛 / Reflect.* 返布尔两口径共用）。返回：
+ * - undefined：无陷阱（absent）或无侧表 → 调用方回退靶语义
+ * - "opaque"：handler 形态不可判 → 调用方保守（boolean 域 / 原样返回）
+ * - Abs：陷阱已调用，ToBoolean(结果)——boolLit(true)/boolLit(false)；
+ *   抽象结果 → boolean 域（Object 口径的调用方不得对非字面量 false 抛）。
+ * dead（有槽不可调用，GetMethod 原生定抛）在此硬抛 TypeError。
+ */
+export function proxyBooleanTrap(
+  o: Abs,
+  name: "deleteProperty" | "defineProperty" | "setPrototypeOf" | "preventExtensions",
+  trapArgs: (target: Abs) => Abs[],
+): Abs | "opaque" | undefined {
+  if (o.shape.k !== "brand" || o.shape.name !== "Proxy") return undefined;
+  const parts = proxyPartsOf(o);
+  if (!parts) return undefined;
+  const trap = proxyTrapOf(parts.handler, name);
+  if (trap.k === "absent") return undefined;
+  if (trap.k === "dead") throw new NudoThrow(errorTypeAbs("TypeError"));
+  if (trap.k === "opaque") return "opaque";
+  const r = $call(trap.fn, trapArgs(parts.target), parts.handler);
+  const rv = litValue(r);
+  if (rv.ok) return boolLit(Boolean(rv.value));
+  return bool();
+}
+
+/**
+ * getPrototypeOf 陷阱派发。返回口径与 proxyBooleanTrap 同款：
+ * undefined（回退 protoOfRecv 靶原型）/ "opaque"（保守 unknown 由调用方落）/
+ * Abs（陷阱结果——原生要求 Object 或 null，非对象非 null 字面量在此定抛；
+ * 抽象面 may TypeError + unknown）。
+ */
+export function proxyGetProtoTrap(o: Abs): Abs | "opaque" | undefined {
+  if (o.shape.k !== "brand" || o.shape.name !== "Proxy") return undefined;
+  const parts = proxyPartsOf(o);
+  if (!parts) return undefined;
+  const trap = proxyTrapOf(parts.handler, "getPrototypeOf");
+  if (trap.k === "absent") return undefined;
+  if (trap.k === "dead") throw new NudoThrow(errorTypeAbs("TypeError"));
+  if (trap.k === "opaque") return "opaque";
+  const r = $call(trap.fn, [parts.target], parts.handler);
+  const rv = litValue(r);
+  if (rv.ok) {
+    if (rv.value === null) return r;
+    if (typeof rv.value === "object") return r;
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  if (
+    r.shape.k === "obj" || r.shape.k === "brand" || r.shape.k === "arr" ||
+    r.shape.k === "tuple" || r.shape.k === "fn" || r.shape.k === "eff"
+  ) {
+    return r;
+  }
+  recordMayThrow({
+    kind: "TypeError",
+    cause: "Proxy getPrototypeOf trap result must be an object or null",
+  });
+  return unknown;
+}
+
 export type ClassAccessor = { get?: (t: Abs) => Abs; set?: (t: Abs, v: Abs) => Abs };
 
 /** 沿继承链找实例 class get/set 访问器 */
@@ -706,6 +772,15 @@ export function $instanceof(left: Abs, rightName: string, rightVal?: Abs): Abs {
       if (classNameOfValue(left as object) !== undefined) {
         return boolLit(rightName === "Function" || rightName === "Object");
       }
+      // Bug 123：Proxy 的 [[GetPrototypeOf]] 透传靶原型链（getPrototypeOf
+      // 陷阱可改写，但靶形态是既有保守面）——instanceof 沿靶判定，不得
+      // 折 exact false（proxy(fn) instanceof Function 原生 true）。
+      // brand 内层承载是 Abs（makeProxyAbs shape: target）。
+      if (left.shape.name === "Proxy") {
+        const target = (left.shape as { shape?: Abs }).shape;
+        if (target) return $instanceof(target, rightName, rightVal);
+        return bool();
+      }
       // Bug 65：Object.prototype 的 [[Prototype]] 是 null（链终结符）——
       // OrdinaryHasInstance 从 O.[[Prototype]] 起步比较，永不含自身 →
       // instanceof 任何构造器（含 Object）恒 false
@@ -863,6 +938,17 @@ export function $delRes(o: Abs, _key: Abs): Abs {
   const kv = kvR.ok ? kvR.value : undefined;
   const flags =
     kv !== undefined ? getPropFlags(o)?.get(String(kv)) : undefined;
+  // Bug 124：deleteProperty 陷阱优先于靶语义——falsy 字面量结果 strict 定抛
+  // TypeError（原生无条件），truthy → 表达式值恒 true（删除责任在陷阱，
+  // 靶不动）；opaque → boolean 域；absent → 回退下方靶判定
+  {
+    const trapR = proxyBooleanTrap(o, "deleteProperty", (t) => [t, _key]);
+    if (trapR === "opaque") return bool();
+    if (trapR !== undefined) {
+      if (trapR.term?.op === "lit" && trapR.term.value === false) throwStrictWrite();
+      return trapR;
+    }
+  }
   // strict：frozen/sealed/non-configurable 删除 TypeError（表达式与语句同口径）
   if (st === "frozen" || st === "sealed") throwStrictWrite();
   if (flags?.configurable === false) throwStrictWrite();
@@ -912,6 +998,17 @@ export function $del(o: Abs, key: Abs): Abs {
       undefined,
       "partial",
     );
+  }
+  // Bug 124：deleteProperty 陷阱优先于一切靶判定——陷阱在场时删除责任
+  // 在陷阱（引擎不动靶）；falsy 字面量结果 strict 定抛（与 $delRes 同口径）；
+  // absent → 靶语义（下方 brand 递归删靶槽）
+  if (o.shape.k === "brand" && o.shape.name === "Proxy") {
+    const trapR = proxyBooleanTrap(o, "deleteProperty", (t) => [t, key]);
+    if (trapR === "opaque") return o;
+    if (trapR !== undefined) {
+      if (trapR.term?.op === "lit" && trapR.term.value === false) throwStrictWrite();
+      return o;
+    }
   }
   const st = extStateOf(o);
   // frozen/sealed：删除 TypeError（strict 硬抛；表达式 delete 走 $delRes 返回 false）

@@ -191,6 +191,9 @@ export function div(a: Abs, b: Abs, phi: Phi = pTrue, assume?: Phi): Abs {
   const big = foldBigintBinOp(a, b, (x, y) => x / y);
   if (big) return big;
   if (isBigPrim(a) && isBigPrim(b)) {
+    // Bug 106：两侧 bigint、至少一侧抽象——字面量 0n 除数原生定抛
+    // RangeError（"0 is an invalid divisor value"），不得静默抽象 bigint
+    if (rb.ok && vb === 0n) throw new NudoThrow(errorTypeAbs("RangeError"));
     return abs({ k: "prim", type: "bigint" }, undefined, undefined, confJoin(a.conf, b.conf));
   }
   if (typeof va === "number" && typeof vb === "number") {
@@ -306,6 +309,9 @@ export function mod(a: Abs, b: Abs, phi: Phi = pTrue): Abs {
   const big = foldBigintBinOp(a, b, (x, y) => x % y);
   if (big) return big;
   if (isBigPrim(a) && isBigPrim(b)) {
+    // Bug 106：两侧 bigint、至少一侧抽象——字面量 0n 除数原生定抛
+    // RangeError（与 div 同口径）
+    if (rb.ok && vb === 0n) throw new NudoThrow(errorTypeAbs("RangeError"));
     return abs({ k: "prim", type: "bigint" }, undefined, undefined, confJoin(a.conf, b.conf));
   }
   if (typeof va === "number" && typeof vb === "number") {

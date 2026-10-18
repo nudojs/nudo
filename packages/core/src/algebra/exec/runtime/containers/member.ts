@@ -840,7 +840,11 @@ export function $get(
         // 唯一例外：string prim 的 toString（此前被显式排除落 unknown，
         // Bug 49 值读面）——OP 泛型 toString 会折 "[object String]"，走
         // prim 通道才有 String.prototype.toString 域
-        ((o.shape as { type?: string }).type === "string" && key === "toString"))
+        ((o.shape as { type?: string }).type === "string" && key === "toString") ||
+        // Bug 105：bigint prim 的 toString/toLocaleString 是 BigInt.prototype
+        // 自有方法——OP 泛型版折 "[object BigInt]"（假精确，原生是十进制/
+        // 本地化数字串），必须走 prim 通道（apply 钩子 → $invoke bigint 臂）
+        ((o.shape as { type?: string }).type === "bigint" && (key === "toString" || key === "toLocaleString")))
     ) {
       // Bug 49：prim 专有原型方法（trim/toFixed/…）——方法值读通道：
       // apply 钩子转发 callAbsMethod 既有派发

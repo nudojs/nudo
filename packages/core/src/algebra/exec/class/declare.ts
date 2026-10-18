@@ -24,6 +24,7 @@ import { getFnImpl, absFunction, hostFnCtorFacet, isAbsApplyResult } from "../..
 import { errorBrandAbs, isErrorCtorName, evalBuiltinNew, makeArrayCtorAbs, evalPromiseCtor, builtinCtorNameOf, hostBuiltinCtorName, makeProxyAbs, makeArrayBufferAbs, makeSharedArrayBufferAbs, makeDataViewAbs, makeTypedArrayAbs, makeUrlAbs, makeTextDecoderAbs, makeUrlSearchParamsAbs, makeBoxedAbs, evalRegExpCtor, evalDateCtor, makeDynamicFunctionAbs, makeWeakRefAbs, makeFinalizationRegistryAbs } from "../../builtins.ts";
 import { makeMapAbs, makeSetAbs, ctorArgDefinitelyInvalid, makeWeakCollectionAbs } from "../../collections.ts";
 import { isDefinitelyUndefinedAbs } from "./this-member.ts";
+import { proxyPartsOf, proxyTrapOf } from "../match-iter.ts";
 // 直连 member.ts（不经 containers barrel）：本模块体加载期即回调本 setter，
 // vite SSR 下 barrel 的 re-export 不是实例化期可用绑定（原单文件拓扑中
 // setter 是本模块提升函数声明）。barrel 间接层会在此处拿到 undefined。
@@ -516,6 +517,43 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
   // 必须走 evalBuiltinNew 按名构造，否则 $call 回退对无 apply 的 obj 折 unknown。
   if (cls && typeof cls === "object" && "shape" in (cls as object)) {
     const cs = (cls as Abs).shape;
+    // Bug 122：new <proxy 实例> 是靶的 [[Construct]]（或 construct 陷阱）——
+    // 不是重入 Proxy 构造器。brand 名 "Proxy" 与构造器同名，此前
+    // evalBuiltinNew("Proxy") 把 new 表达式的实参当 target/handler 重造
+    // 新代理（函数靶假抛 / 对象靶凭空造值，双向错）。
+    if (cs.k === "brand" && cs.name === "Proxy") {
+      const parts = proxyPartsOf(cls as Abs);
+      if (!parts) return unknown; // 退化副本：靶不可知，不凭空造代理/实例
+      const trap = proxyTrapOf(parts.handler, "construct");
+      if (trap.k === "fn") {
+        // construct(target, argsList, newTarget)；receiver = handler。
+        // 原生要求陷阱返 Object（TrapResultValidation：`[[Construct]] … must
+        // return an object`）——非对象字面量定抛 TypeError（node 实测
+        // construct(){ return 1; } → TypeError）；抽象面 may 抛。
+        const argsList = abs({ k: "tuple", elements: args }, undefined, undefined, "path");
+        return callAtFunctionBoundary(() => {
+          const r = $call(trap.fn, [parts.target, argsList, cls as Abs], parts.handler);
+          const rv = litValue(r);
+          if (rv.ok && (rv.value === null || typeof rv.value !== "object")) {
+            throw new NudoThrow(errorTypeAbs("TypeError"));
+          }
+          if (
+            r.shape.k === "prim" ||
+            (r.term?.op !== "lit" && (r.shape.k === "any" || r.shape.k === "unknown" || r.shape.k === "sum"))
+          ) {
+            recordMayThrow({ kind: "TypeError", cause: "Proxy construct trap must return an object" });
+          }
+          return r;
+        });
+      }
+      // dead：有槽不可调用——原生 GetMethod 定抛 TypeError
+      if (trap.k === "dead") throw new NudoThrow(errorTypeAbs("TypeError"));
+      // opaque：handler 形态不可判（陷阱可能在）——诚实 unknown
+      if (trap.k === "opaque") return unknown;
+      // absent：无陷阱 → 靶的 [[Construct]]（IsConstructor 校验在递归里
+      // 自然发生：obj/arr/tuple 靶 → TypeError，fn 靶 → ctor 旗标分支）
+      return $new(parts.target, args);
+    }
     const ctorName =
       cs.k === "brand"
         ? cs.name
