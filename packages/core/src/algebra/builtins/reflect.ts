@@ -294,7 +294,38 @@ export function evalReflectMethod(method: string, args: Abs[]): Abs | undefined 
         // prim（含 nullish 字面量）/ obj / tuple / arr / eff：确定不可调用
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }
-      enforceArgsList(args[2], method);
+      // Bug 121：argsList 槽位按方法索引——apply 是 args[2]，
+      // construct 是 args[1]（此前共用 args[2]：construct 的 2 参合法形
+      // 被缺省 newTarget ≡ undefined 的 prim 分类定抛成假 never，而
+      // argsList 本体从未校验 → Reflect.construct(A,"s",A) 漏抛）。
+      enforceArgsList(args[method === "apply" ? 2 : 1], method);
+      // Bug 121：construct 的 newTarget 在场时须过 IsConstructor——
+      // 普通对象 / prim（含 nullish 字面量）/ ctor:false fn 原生定抛
+      // TypeError；brand 类值带 ctor facet（$class ctor:true）可精确；
+      // 其余不可判面记 may（与 target 侧同三档口径）。apply 无此参。
+      if (method === "construct" && args[2] !== undefined) {
+        const nt = args[2];
+        if (isNullishLitAbs(nt)) throw new NudoThrow(errorTypeAbs("TypeError"));
+        const ns = nt.shape;
+        if (ns.k === "fn") {
+          const nctor = (ns as { ctor?: boolean }).ctor;
+          if (nctor === false) throw new NudoThrow(errorTypeAbs("TypeError"));
+          if (nctor !== true) {
+            recordMayThrow({ kind: "TypeError", cause: "Reflect.construct newTarget may not be a constructor" });
+          }
+        } else if (ns.k === "brand") {
+          const nctor = (ns as { ctor?: boolean }).ctor;
+          if (nctor === false) throw new NudoThrow(errorTypeAbs("TypeError"));
+          if (nctor !== true) {
+            recordMayThrow({ kind: "TypeError", cause: "Reflect.construct newTarget may not be a constructor" });
+          }
+        } else if (ns.k === "any" || ns.k === "unknown" || ns.k === "sum") {
+          recordMayThrow({ kind: "TypeError", cause: "Reflect.construct newTarget may not be a constructor" });
+        } else {
+          // obj / tuple / arr / eff / 非 nullish prim：确定不可构造
+          throw new NudoThrow(errorTypeAbs("TypeError"));
+        }
+      }
       // Bug 14：apply 镜像 $invoke 的 apply 路径（f.apply(t, a) ≡
       // Reflect.apply(f, t, a)——同一操作两口径）；construct 保持保守不
       // 复放（不同方法面，报告「已排除」）。argsList 展开：tuple 精确
