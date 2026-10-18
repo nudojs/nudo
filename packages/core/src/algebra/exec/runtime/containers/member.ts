@@ -92,6 +92,17 @@ import { widenTupleToArr } from "./arr-make.ts";
 import { $len } from "./arr-index.ts";
 
 /**
+ * Bug 90：spec 记录读点的 own-property 判定——spec.methods[key] 等原型链
+ * 取值会把宿主 Object.prototype 继承名（constructor/toString/__proto__…）
+ * 当类成员值读（c.constructor === C 折假 false 的根因之一）。registry 记录
+ * 已在 declare.$class 统一换 null 原型容器；此处双保险覆盖手写/mock spec
+ * 注册面。
+ */
+function ownRecValue<T>(rec: Record<string, T> | undefined, key: string): T | undefined {
+  return rec !== undefined && Object.hasOwn(rec, key) ? rec[key] : undefined;
+}
+
+/**
  * 命名空间身份表：transpile 后 `Math.max(0, x)` 的接收者是宿主 JS 全局对象
  * （非 Abs）。按对象身份识别命名空间，路由到 Abs builtin 表。
  *
@@ -584,8 +595,10 @@ export function $get(
         let level = 0;
         for (const n of evalClassChain(o.shape.name)) {
           const spec = getEvalClass(n);
-          if (spec?.staticMethods?.[key]) {
-            return classMethodValueAbs(spec, "static", key, spec.staticMethodParams?.[key]);
+          // Bug 90：own-property 取值——D.constructor / D.toString 值读不得
+          // 命中宿主 Object.prototype 继承名
+          if (spec && ownRecValue(spec.staticMethods, key) !== undefined) {
+            return classMethodValueAbs(spec, "static", key, ownRecValue(spec.staticMethodParams, key));
           }
           if (level++ > 0) {
             const anc = lookupClassValue(n);
@@ -646,8 +659,10 @@ export function $get(
       // 同一 spec 条目返回同一函数 Abs（原生挂 .prototype，=== 折 true）。
       for (const n of evalClassChain(o.shape.name)) {
         const spec = getEvalClass(n);
-        if (spec?.methods?.[key]) {
-          return classMethodValueAbs(spec, "inst", key, spec.methodParams?.[key]);
+        // Bug 90：own-property 取值——c.constructor / c.__proto__ 值读不得
+        // 命中宿主 Object.prototype 继承名（此前折假 false 的根因）
+        if (spec && ownRecValue(spec.methods, key) !== undefined) {
+          return classMethodValueAbs(spec, "inst", key, ownRecValue(spec.methodParams, key));
         }
       }
       // P3b：原型链数据槽（new B().x ← Base.prototype.x / A.prototype.x）

@@ -197,7 +197,12 @@ const DATAVIEW_ACCESS_BITS: Record<string, number> = {
  * undefined；littleEndian 实参 ToBoolean 恒不抛不校验。
  */
 function evalDataViewMethod(method: string, recv: Abs, args: Abs[]): Abs | undefined {
-  const bits = DATAVIEW_ACCESS_BITS[method];
+  // Bug 91：own-property 查表——DATAVIEW_ACCESS_BITS 是宿主普通对象，
+  // 裸 `table[method]` 原型链取值令 Object.prototype 继承名（toString/
+  // valueOf/hasOwnProperty/…）全部命中（host 函数 ≠ undefined），被当
+  // 建模的字节偏移访问器：每个未建模方法折 number 域、Symbol/BigInt 实参
+  // 假 TypeError / 假 may RangeError。表外名 → undefined（未接管）。
+  const bits = Object.hasOwn(DATAVIEW_ACCESS_BITS, method) ? DATAVIEW_ACCESS_BITS[method] : undefined;
   if (bits === undefined) return undefined;
   const isBigint = method === "getBigInt64" || method === "getBigUint64";
   const isSet = method.startsWith("set");

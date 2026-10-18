@@ -46,6 +46,34 @@ import {
 
 const classImpl = new WeakMap<object, EvalClassSpec>();
 
+/**
+ * Bug 90：spec 成员记录的 own-property 语义（第一道，源头治理）——
+ * transpile 侧（class-emit）产出的 methods/staticMethods/… 是宿主普通
+ * 对象字面量，`spec.methods[key]` 原型链取值会把 Object.prototype 继承名
+ * （toString/valueOf/hasOwnProperty/isPrototypeOf/propertyIsEnumerable/
+ * toLocaleString/constructor/__proto__/__defineGetter__…）当类成员：
+ * c.toString() 折 "[object Undefined]"、c.hasOwnProperty(k) 假 TypeError、
+ * c.constructor === C 假 false。$class 是**唯一**带记录的注册入口
+ * （registerEvalClass 其余调用面均 name-only）——在此把 7 张记录复制为
+ * null 原型容器，registry 全部读点（含 declare/member 之外的
+ * members.ts/super.ts/obj.ts/class-registry.ts 外围索引）随之安全。
+ */
+function ownRec<T>(rec: Record<string, T> | undefined): Record<string, T> | undefined {
+  if (rec === undefined) return undefined;
+  const out = Object.create(null) as Record<string, T>;
+  for (const k of Object.keys(rec)) out[k] = rec[k];
+  return out;
+}
+
+/**
+ * Bug 90：spec 记录读点的 own-property 取值（第二道，防御纵深）——
+ * 非 $class 注册面（手写/mock spec）仍可能携带普通对象记录，派发关键
+ * 读点直接判自有键，与 ownRec 双保险。
+ */
+function ownMember<T>(rec: Record<string, T> | undefined, key: string): T | undefined {
+  return rec !== undefined && Object.hasOwn(rec, key) ? rec[key] : undefined;
+}
+
 /** Bug 114：宿主 Symbol 命名空间的 well-known 反查表（键值 → "@@name"
  *  投影，懒建）。well-known symbol 是 Symbol 函数的自有**字符串名**属性
  *  （值为 symbol——getOwnPropertySymbols(Symbol) 反而是空表）；静态函数
@@ -157,14 +185,15 @@ export function $class(
     ctor: spec.ctor,
     // P2b：构造器元数通道（未记录 → 不挂键，$get 折 unknown）
     ...(spec.ctorLength !== undefined ? { ctorLength: spec.ctorLength } : {}),
-    methods: spec.methods,
-    methodParams: spec.methodParams,
-    staticMethods: spec.staticMethods,
-    staticMethodParams: spec.staticMethodParams,
-    statics: spec.statics,
+    // Bug 90：记录容器一律换 null 原型副本（见 ownRec 注释）
+    methods: ownRec(spec.methods),
+    methodParams: ownRec(spec.methodParams),
+    staticMethods: ownRec(spec.staticMethods),
+    staticMethodParams: ownRec(spec.staticMethodParams),
+    statics: ownRec(spec.statics),
     instanceFields: spec.instanceFields,
-    accessors: spec.accessors,
-    staticAccessors: spec.staticAccessors,
+    accessors: ownRec(spec.accessors),
+    staticAccessors: ownRec(spec.staticAccessors),
   };
   // Bug 60：计算键折叠——键表达式已在 spec 对象字面量构造时求值（定义期，
   // throws 效果已记录）。字面量 string/number 键 → 挂真名；抽象键
@@ -297,7 +326,9 @@ export function findMethod(
   while (cur && !seen.has(cur)) {
     seen.add(cur);
     const spec = getEvalClass(cur);
-    if (spec?.methods?.[method]) return spec.methods[method];
+    // Bug 90：own-property 取值——宿主 Object.prototype 继承名不得命中
+    const m = ownMember(spec?.methods, method);
+    if (m) return m;
     cur = spec?.superName;
   }
   return undefined;
@@ -315,7 +346,9 @@ export function findStaticMethod(
   while (cur && !seen.has(cur)) {
     seen.add(cur);
     const spec = getEvalClass(cur);
-    if (spec?.staticMethods?.[method]) return spec.staticMethods[method];
+    // Bug 90：own-property 取值（D.hasOwnProperty / D.toString 不得命中）
+    const sm = ownMember(spec?.staticMethods, method);
+    if (sm) return sm;
     cur = spec?.superName;
   }
   return undefined;
@@ -331,8 +364,10 @@ export function findStaticMethod(
 export function chainHasStaticMember(startName: string, key: string): boolean {
   for (const n of evalClassChain(startName)) {
     const spec = getEvalClass(n);
-    if (spec?.staticMethods?.[key] || spec?.staticAccessors?.[key]) return true;
-    if (spec?.statics && key in spec.statics) return true;
+    // Bug 90：own-property 取值（含 `key in statics` → hasOwn——`in` 走
+    // 原型链，宿主 Object.prototype 名恒真）
+    if (ownMember(spec?.staticMethods, key) || ownMember(spec?.staticAccessors, key)) return true;
+    if (spec?.statics !== undefined && Object.hasOwn(spec.statics, key)) return true;
     const cv = lookupClassValue(n);
     const inner = cv && cv.shape.k === "brand" ? (cv.shape as { shape?: Abs }).shape : undefined;
     if (inner?.shape.k === "obj" && getSlot(inner.shape.slots, key)) return true;
