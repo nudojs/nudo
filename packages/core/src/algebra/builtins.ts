@@ -36,6 +36,7 @@ export {
   ctorNameOfRecv,
   protoBrandAbs,
   protoOfRecv,
+  functionProtoAbs,
 } from "./builtins/ctor.ts";
 export {
   enterPromiseExecutorScope,

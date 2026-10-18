@@ -50,6 +50,7 @@ import {
   ctorNameOfRecv,
   protoBrandAbs,
   protoOfRecv,
+  functionProtoAbs,
   makeIntlCtorAbs,
 } from "../../../builtins.ts";
 import { arrayMethodAbs } from "../../../builtins/array.ts";
@@ -252,17 +253,8 @@ function generatorProtoBrandOf(v: Function | Abs): Abs {
   return p;
 }
 
-/** Bug 92：Function.prototype 的 fn 面——原生唯一 callable 的 prototype
- *  （typeof "function"；调用返 undefined——$call 对 noBody 无 apply 折
- *  undefined；自身 .prototype 原生 undefined → ctor:false）。按名驻留
- *  （=== 恒等）。protoBrandAbs 是 obj 面 brand（typeof "object"，wrong-exact）。 */
-let functionProtoFacadeCache: Abs | undefined;
-function functionProtoFacade(): Abs {
-  if (!functionProtoFacadeCache) {
-    functionProtoFacadeCache = absFunction([], { body: noBody }, { ctor: false });
-  }
-  return functionProtoFacadeCache;
-}
+/** Bug 92：Function.prototype 的 fn 面由 ctor.ts 的 functionProtoAbs()
+ *  单一驻留（protoOfRecv 与本处 .prototype 成员读同引用——=== 恒等）。 */
 
 function isPossiblyProtoMemberKey(key: string): boolean {
   return (
@@ -471,7 +463,7 @@ export function $get(
         // Bug 92：Function.prototype 原生 callable（唯一 prototype 为函数的
         // 构造器）——protoBrandAbs 是 obj 面 brand（typeof "object"
         // wrong-exact），折 fn 面。
-        if (typeof fn.prototype === "function") return functionProtoFacade();
+        if (typeof fn.prototype === "function") return functionProtoAbs();
         // Bug 64：宿主构造器（路由表外泄漏的全局/声明函数）的 prototype 带
         // owner 身份——protoBrandAbs（constructor 槽 + 按名驻留 === 恒等），
         // 不再捏匿名闭 obj（`X.prototype instanceof Super` 假精确 false）
