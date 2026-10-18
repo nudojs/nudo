@@ -356,7 +356,22 @@ function classMethodValueAbs(
   const memoKey = `${kind}:${key}`;
   const cached = byKey.get(memoKey);
   if (cached) return cached;
-  const fn = markFreshInstance(absFunction(params ?? [], { body: noBody }, { ctor: false }));
+  // Bug 89：apply 钩子重入普通方法分派——借用调用（m.call(c) / m.apply /
+  // m.bind / HOF 传递）此前对 noBody 无 apply 的值编译空 body，折
+  // wrong-exact undefined。经 protoMethodDispatch 注册回调转发
+  // $invoke(thisVal, key, args)（member↔class 模块环；实例接收者 →
+  // findMethod、类值接收者 → findStaticMethod——静态/实例同一通道，thisVal
+  // 由调用位给出）。kind:"protoMethod" 抑制 $invokeInner 尾部「属性上的
+  // 可调用值」的无 receiver 再入（apply 已按接收者派发，回环会在
+  // undefined 接收者上假定抛）。直接 c.m() 不经此值（registry 派发先行）。
+  const fn = markFreshInstance(
+    absFunction(params ?? [], {
+      body: noBody,
+      apply: (args, thisVal) =>
+        protoMethodDispatch?.(spec.name, key, thisVal, args) ?? unknown,
+      kind: "protoMethod",
+    }, { ctor: false }),
+  );
   byKey.set(memoKey, fn);
   return fn;
 }

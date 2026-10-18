@@ -241,6 +241,23 @@ function genIterResult(value: Abs, done: boolean): Abs {
  * 消费端（spread/Array.from/解构 rest）重组数组时越 TUPLE_LITERAL_CAP
  * 出 exact 元组（形状面 widened 的 els 槽不受影响）。
  */
+// Bug 83：生成器 @@iterator 槽——原生 %GeneratorPrototype%[Symbol.iterator]
+// 是自返方法（function(){ return this; }）：调用返回接收者自身
+//（it[Symbol.iterator]() === it 折 true），经槽再入
+//（it[Symbol.iterator]().next() / [...it[Symbol.iterator]()]）复用本生成器
+// 协议面，不再定抛。实现为**每生成器闭包捕获**（与 next/return/throw 的
+// 每对象闭包同口径）：计算符号键成员调用（it[Symbol.iterator]()）经
+// transpile 投影 $call($get(it,"@@iterator"), [])——接收者不进 $call，
+// apply 兜底回指捕获的生成器对象；.call/.apply/.bind 走 $invoke 的
+// call 分支，thisVal 通道正确（thisVal 优先——it[Symbol.iterator].call(o)
+// 原生返 o）。槽值单次驻留（makeGenObject 局部 const）——重复读
+// it[Symbol.iterator] === it[Symbol.iterator] 同 ref 折 true。
+function genSelfIteratorFn(g: Abs): Abs {
+  return absFunction([], {
+    body: noBody,
+    apply: (_args: Abs[], thisVal?: Abs) => thisVal ?? g,
+  }, { ctor: false });
+}
 function makeGenObject(
   els: Abs[],
   conf: Confidence,
@@ -335,12 +352,14 @@ function makeGenObject(
     return: { value: ret },
     throw: { value: thr },
     constructor: { value: generatorFunctionCtor() },
-    "@@iterator": { value: absFunction([], { body: noBody }, { ctor: false }) },
   };
   for (let i = 0; i < els.length; i++) {
     slots[String(i)] = { value: els[i]! };
   }
   const g = abs({ k: "obj", slots }, undefined, undefined, conf);
+  // Bug 83：@@iterator 自返槽——闭包捕获 g（槽值在 g 落地后驻留；
+  // shape 按引用共享，此处写入即生效）
+  slots["@@iterator"] = { value: genSelfIteratorFn(g) };
   registerGenElements(g, live);
   registerGenDrain(g, {
     drain: (): Abs[] => {
