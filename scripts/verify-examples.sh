@@ -246,9 +246,13 @@ pin 'pnpm run check docs/examples/constraints/similarity.js' \
 # (info). Without the directive the same file + sidecar honestly keeps warning
 # nudo:unproven-return (number | undefined face: abstract dp[m][n] read joins a
 # synthetic OOB undefined; the if-guard narrows it but no bound survives).
-pin 'pnpm run check docs/examples/constraints/levenshtein.js' \
+# L2 split (Bug 129 wave): Array.from({length: m+1}) with an abstract length
+# records a legitimate may-throw RangeError (native {length: 2**32} throws) —
+# mirror the engine-test-suite convention and ignore RangeError here; the
+# signature face still shows the honest throws RangeError.
+pin 'pnpm run check docs/examples/constraints/levenshtein.js --ignore-throws RangeError' \
   '0 error · 0 warning · 1 info · 1 fn' \
-  'levenshtein(a: string, b: string) => 0 | number' \
+  'levenshtein(a: string, b: string) => 0 | number  throws RangeError' \
   'return contract proved via @nudo:invariant dp[*][*] >= 0' \
   'nudo:invariant-relied'
 

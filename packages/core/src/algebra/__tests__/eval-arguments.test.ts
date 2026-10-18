@@ -10,7 +10,7 @@
  * - rest 绑定仍走真实 arguments/rest 形参（transpile restBind），与本槽解耦。
  */
 import { describe, it, expect } from "vitest";
-import { litValue, formatShape, formatAbs, $lit, unknown as unknownAbs } from "@nudojs/core";
+import { litValue, formatShape, formatAbs, $lit, unknown as unknownAbs, runTranspiled, callTranspiledExportFull } from "@nudojs/core";
 import { call } from "./eval-helpers.ts";
 
 function lit(n: number | string | boolean | undefined | null) {
@@ -206,5 +206,58 @@ describe("Bug 116: module body strict seam (new Function \"use strict\")", () =>
     expect(litValue(call(`export function f() { try { (function () { delete arguments.callee; })(); return "ok"; } catch (e) { return "T:" + e.name; } }`).result)).toEqual({ ok: true, value: "T:TypeError" });
     // control：caller 读 strict 下是 undefined 数据属性（不抛）
     expect(litValue(call(`export function f() { return typeof (function () { return arguments.caller; })(); }`).result)).toEqual({ ok: true, value: "undefined" });
+  });
+});
+
+// --- strict seam 修订：守卫影子绑定 × ESM/CJS 面判定（yargs 回退） ---------
+
+describe("strict seam: guard shadow bindings × ESM/CJS source face", () => {
+  it("ESM 体内 arguments.length 判别守卫不再编译期 SyntaxError（yargs-factory 形态）", () => {
+    // 守卫影子重绑曾发射 ((arguments) => THUNK)(…)——arguments 在 strict 下
+    // 是非法绑定名，new Function 编译期整模块炸（bench yargs 5.5x 回退根因）；
+    // 现影子包装跳过，模块正常求值、fork 语义照旧 sound。
+    const r = call(
+      `export function f() {
+        if (arguments.length === 0) return "zero";
+        return "n:" + arguments.length;
+      }`,
+      "f",
+      [],
+    );
+    expect(litValue(r.result)).toEqual({ ok: true, value: "zero" });
+    const r2 = call(
+      `export function f() {
+        if (arguments.length === 0) return "zero";
+        return "n:" + arguments.length;
+      }`,
+      "f",
+      [lit(1), lit(2)],
+    );
+    expect(litValue(r2.result)).toEqual({ ok: true, value: "n:2" });
+  });
+
+  it("无 ESM 语法的源按 Node .js 默认 CJS（sloppy）正常求值（控制）", () => {
+    // CJS 面不强制 strict：模块求值照常（未声明写 ReferenceError 由
+    // $assignRecord 旧值读面产生，与 strict 前缀无关，不在此钉）。
+    const exp = runTranspiled(
+      `function g(x) { return x + 1; }\nmodule.exports = g;`,
+      { mode: "analyze" },
+    );
+    const r = callTranspiledExportFull(exp, "g", [lit(1)]);
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
+  });
+
+  it("ESM 源保持 Bug 116 strict 面：未声明写冒 ReferenceError", () => {
+    const r = call(`export function f() { function g() { q2 = 1; return "ok"; } try { return g(); } catch (e) { return "caught:" + e.name; } }`);
+    expect(litValue(r.result)).toEqual({ ok: true, value: "caught:ReferenceError" });
+  });
+
+  it("源码自身 \"use strict\" 前缀经 transpile 保留（无 ESM 语法的 strict 脚本）", () => {
+    const r = call(
+      `"use strict";
+       function g() { q3 = 1; return "ok"; }
+       export function f() { try { return g(); } catch (e) { return "caught:" + e.name; } }`,
+    );
+    expect(litValue(r.result)).toEqual({ ok: true, value: "caught:ReferenceError" });
   });
 });

@@ -31,7 +31,7 @@ import { registerLiveImportRefresh } from "./live-imports.ts";
 import { stripStaticExportDecls } from "./export-names.ts";
 import { errorTypeAbs, throwPayloadOf } from "./may-throw.ts";
 import { drainPromiseMicros } from "../builtins.ts";
-import { sourceHasCjsExports } from "../code-text.ts";
+import { sourceHasCjsExports, sourceHasEsmSyntax } from "../code-text.ts";
 import { isNudoThrow, isNudoReturn, $isForkExit, runWithLoopExits, takeLoopExits, takeThrowExits, asAbsVal, withNewTargetReset } from "./runtime.ts";
 import { $call } from "./call.ts";
 import { refineFnReturnType } from "./class.ts";
@@ -788,7 +788,15 @@ function runTranspiledInner(
   // 应保 undefined/null）。指令前缀必须是函数体首语句（envBinds/CJS prelude
   // 之前拼入）。注：宿主面折叠不覆盖 arguments.callee 读——$arguments 是纯
   // Abs 构造，该面由 $get 的 Arguments brand 毒丸接管（C1 提交另落）。
-  const fn = new Function(...argNames, `"use strict";\n${js}\n${ret}`);
+  // 修订（benchmark 回退）：strict 只对 ESM 面生效（sourceHasEsmSyntax——
+  // 静态 import/export 必是 ESM）；无 ESM 语法的源按 Node `.js` 默认 CJS
+  // （sloppy）口径。强制 strict 会让 CJS 里合法的 sloppy 语法（yargs 的
+  // `arguments` 绑定/赋值等）在 new Function 编译期直接 SyntaxError
+  // （"Unexpected eval or arguments in strict mode"）→ 整模块 fail-closed
+  // 空导出，且求值失败不进 memo → 每次全量重转译（yargs check 5.5x）。
+  // 源码自身的 "use strict" 指令前缀经 transpile 原样保留，不受此开关影响。
+  const strictPrefix = sourceHasEsmSyntax(source) ? `"use strict";\n` : "";
+  const fn = new Function(...argNames, `${strictPrefix}${js}\n${ret}`);
   setEvalBindingSink(bindings);
   // BUG-026：开新求值 epoch——同名类碰撞只在
   // 本 run 内判定（跨 run 重注册是常态，

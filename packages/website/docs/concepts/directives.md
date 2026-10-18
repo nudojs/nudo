@@ -511,17 +511,19 @@ export const levenshtein = fn(
 ```
 
 ```text
-$ nudo check levenshtein.js
+$ nudo check levenshtein.js --ignore-throws RangeError
 OK
   0 error · 0 warning · 1 info · 1 fn
 
 signatures
-  levenshtein(a: string, b: string) => 0 | number
+  levenshtein(a: string, b: string) => 0 | number  throws RangeError
 
 issues
   [INFO levenshtein] levenshtein: return contract proved via @nudo:invariant dp[*][*] >= 0  (nudo:invariant-relied)
       → @nudo:invariant is a user-supplied axiom — falsify it with concrete @nudo:case runs (nudo test)
 ```
+
+The `--ignore-throws RangeError` splits the L2 expectation for the legitimate `Array.from({ length: m + 1 })` array-like-length may-throw (an abstract length cannot be capped, and native `{ length: 2 ** 32 }` does throw) — the signature face keeps the honest `throws RangeError`.
 
 Remove the `@nudo:invariant` line and the same file + sidecar stays **honestly unproven** — warning `nudo:unproven-return` (the abstract `dp[m][n]` read joins a synthetic out-of-bounds `undefined`; the guard narrows it, but no bound survives widening to prove `ge(0)`).
 

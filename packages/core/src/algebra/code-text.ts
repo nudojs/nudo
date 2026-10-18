@@ -399,6 +399,26 @@ export function sourceHasCjsExports(source: string): boolean {
   return /\b(?:exports|module)\s*(?:\.|\[)/.test(stripCommentsAndStrings(source));
 }
 
+/**
+ * 真实 ESM 模块语法：静态 import 声明 / 任意 export 语句（忽略字符串/
+ * 注释/正则）。有则该文件**必是 ESM**——二者在 CJS 里都是 SyntaxError；
+ * 无则按 Node `.js` 无 `type:"module"` 的默认口径视为 CJS/脚本（sloppy）。
+ * 动态 `import(...)` 不是模块语法（CJS 合法，排除）。供求值引擎模块体的
+ * strict 前缀判定（Bug 116 修订）：强制 strict 会让 CJS 里合法的 sloppy
+ * 语法（`arguments` 作绑定名/赋值目标等）在 new Function **编译期**直接
+ * SyntaxError → 整模块 fail-closed 空导出且失败不进 memo（每次全量重转译）。
+ */
+export function sourceHasEsmSyntax(source: string): boolean {
+  const s = stripCommentsAndStrings(source);
+  // import 是保留字：代码区出现且后随非 `(`（动态）非 `:`（对象键）即静态
+  // import（import.meta 同）；属性位 `.import` / `x. import` 由 `(?<![\w$.])`
+  // 排除（点后空格形态极罕见，误报方向只是多打 strict，不炸编译）。
+  if (/(?<![\w$.])import(?!\s*[(:])/.test(s)) return true;
+  // export 同为保留字：属性位 `.export` 排除，对象字面量键 `export:` 由
+  // `(?!:)` 排除；合法剩余面只剩 export 语句。
+  return /(?<![\w$.])export\b(?!:)/.test(s);
+}
+
 /** 标识符/导出名插入 RegExp 前转义（`$` `.` `Class.method` 等） */
 export function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

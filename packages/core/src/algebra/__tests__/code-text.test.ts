@@ -9,6 +9,7 @@ import {
   maskStringsKeepComments,
   scanStringLiterals,
   sourceHasCjsExports,
+  sourceHasEsmSyntax,
   sourceHasModuleDependency,
   sourceHasRequireCall,
   stripCommentsAndStrings,
@@ -169,5 +170,42 @@ describe("mask/scan stay consistent with interpolation + regex", () => {
   it("scanStringLiterals still reports simple templates", () => {
     const s = "x(`fs`);";
     expect(scanStringLiterals(s).map((l) => l.value)).toEqual(["fs"]);
+  });
+});
+
+describe("sourceHasEsmSyntax (strict seam 的 ESM/CJS 面判定)", () => {
+  it("静态 import / export 语句 ⇒ ESM", () => {
+    expect(sourceHasEsmSyntax(`import x from "m"; export const a = 1;`)).toBe(true);
+    expect(sourceHasEsmSyntax(`import { y } from "./y.js";`)).toBe(true);
+    expect(sourceHasEsmSyntax(`import * as ns from "m";`)).toBe(true);
+    expect(sourceHasEsmSyntax(`import "side-effect";`)).toBe(true);
+    expect(sourceHasEsmSyntax(`import d, { x } from "m";`)).toBe(true);
+    expect(sourceHasEsmSyntax(`export default function f() {}`)).toBe(true);
+    expect(sourceHasEsmSyntax(`export { a };`)).toBe(true);
+    expect(sourceHasEsmSyntax(`export * from "m";`)).toBe(true);
+    expect(sourceHasEsmSyntax(`export function f() {}`)).toBe(true);
+    // import.meta 只在模块里合法
+    expect(sourceHasEsmSyntax(`const u = import.meta.url;`)).toBe(true);
+  });
+
+  it("动态 import() 不是模块语法（CJS 合法）", () => {
+    expect(sourceHasEsmSyntax(`const m = import("m");`)).toBe(false);
+    expect(sourceHasEsmSyntax(`const m = import(addr);\nmodule.exports = m;`)).toBe(false);
+    expect(sourceHasEsmSyntax(`const m = await import ( "x" );`)).toBe(false);
+  });
+
+  it("CJS / 脚本面 ⇒ 非 ESM", () => {
+    expect(sourceHasEsmSyntax(`const fs = require("fs"); module.exports = { fs };`)).toBe(false);
+    expect(sourceHasEsmSyntax(`exports.a = 1;`)).toBe(false);
+    expect(sourceHasEsmSyntax(`function f() { return 1; }`)).toBe(false);
+  });
+
+  it("字符串/注释/正则/属性位/对象键不算 ESM 面", () => {
+    expect(sourceHasEsmSyntax(`const s = "import x from \\"m\\"";`)).toBe(false);
+    expect(sourceHasEsmSyntax(`// export const a = 1\nconst b = 2;`)).toBe(false);
+    expect(sourceHasEsmSyntax(`const o = { export: 1, import: 2 };`)).toBe(false);
+    expect(sourceHasEsmSyntax(`const re = /import x from/;`)).toBe(false);
+    expect(sourceHasEsmSyntax(`const v = obj.import;`)).toBe(false);
+    expect(sourceHasEsmSyntax(`const w = obj.export;`)).toBe(false);
   });
 });

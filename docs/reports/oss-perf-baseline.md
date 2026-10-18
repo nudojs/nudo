@@ -6,7 +6,7 @@
 > **Corpus:** real `node_modules` **JavaScript** packages (**commander / yargs / semver**).
 > This baseline is **Nudo’s product face** (JS-first analysis + L1 zero-FP). Regression gate: `pnpm run benchmark:oss:gate`.
 
-- Generated at: 2026-10-16T22:40:04.957Z
+- Generated at: 2026-10-18T23:09:44.347Z
 - Node: v26.10.0
 - Scale: 3 packages · **79 JS files** · 354 KB source
 
@@ -14,13 +14,13 @@
 
 | Package | Files | Scanned | **L1 FP** | Cold analyze (ms) | Check all (ms) | Hub dirty | Hub edit (ms) |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| `commander` | 7 | 7 | **0** | 1350.52 | 728.67 | 6 (4 deps) | 900.06 |
-| `yargs` | 23 | 23 | **0** | 2518.93 | 942.47 | 8 (5 deps) | 1710.48 |
-| `semver` | 49 | 49 | **0** | 1485.14 | 447.23 | 43 (17 deps) | 1341.02 |
+| `commander` | 7 | 7 | **0** | 1333.68 | 731.87 | 6 (4 deps) | 900.1 |
+| `yargs` | 23 | 23 | **0** | 2956.99 | 1023.46 | 8 (5 deps) | 1847.96 |
+| `semver` | 49 | 49 | **0** | 1518.02 | 440.69 | 43 (17 deps) | 1392.8 |
 
 | Total | Files | Scanned | **L1 FP** | Cold analyze | Check all |
 |---|---:|---:|---:|---:|---:|
-| | 79 | 79 | **0** | 5354.59 | 2118.37 |
+| | 79 | 79 | **0** | 5808.69 | 2196.02 |
 
 ## Why this is **not** a “Nudo vs TypeScript” table
 
@@ -41,11 +41,11 @@ Same bytes through tsc `createProgram` + diagnostics (`allowJs+checkJs`, no Lang
 
 | Package | tsc total (ms) | tsc diagnostic count |
 |---|---:|---:|
-| `commander` | 521.74 | 223 |
-| `yargs` | 554.59 | 1222 |
-| `semver` | 353.79 | 420 |
+| `commander` | 547.05 | 223 |
+| `yargs` | 534.5 | 1222 |
+| `semver` | 344.96 | 420 |
 
-Total tsc load: **1430.12 ms** (ts 6.0.3) — host/tooling sensitive.
+Total tsc load: **1426.51 ms** (ts 6.0.3) — host/tooling sensitive.
 
 ## What is pinned (gate)
 

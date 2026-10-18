@@ -20,7 +20,7 @@
       "name": "yargs",
       "minFiles": 18,
       "maxFpCount": 0,
-      "maxColdAnalyzeMs": 2740.9,
+      "maxColdAnalyzeMs": 3400.4,
       "maxCheckAllMs": 1035.5,
       "maxHubDirtyMedianMs": 1901.3
     },

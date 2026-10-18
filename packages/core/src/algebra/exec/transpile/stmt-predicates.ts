@@ -218,6 +218,23 @@ export function withImplicitReturn(body: Node, bodyStmts: string, depth: number)
 
 // --- nullish / typeof 守卫识别（issue #97 / Bug 2/3/23） ---------------------
 
+/**
+ * 严格模式非法绑定名：`arguments` / `eval` 在 strict 代码里不能作形参/绑定
+ * 名。守卫影子重绑 `((name) => THUNK)(…)` 以**被守卫标识符**作形参——被守卫
+ * 名是 `arguments`（如 `if (arguments.length === 0)` 判别守卫）时，产物在
+ * strict 模块体（Bug 116 `"use strict"` 前缀）下 new Function 编译期直接
+ * SyntaxError（"Unexpected eval or arguments in strict mode"）→ 整模块
+ * fail-closed 空导出且失败不进 memo（yargs yargs-factory.js 实证：bench
+ * check 5.5x 回退）。此名面上影子包装整体跳过——与 fork 绑定集冲突跳过
+ * 同一口径（宁缺毋假：窄化是精度增益，跳过只是少剪，语义不变）。
+ */
+const STRICT_ILLEGAL_BINDINGS = new Set(["arguments", "eval"]);
+
+/** 守卫名是否不能作 strict 绑定名（守卫影子包装须跳过） */
+function isStrictIllegalBinding(name: string): boolean {
+  return STRICT_ILLEGAL_BINDINGS.has(name);
+}
+
 export type NullishGuard = {
   /** 被守卫的标识符 */
   name: string;
@@ -701,7 +718,7 @@ export function narrowNullishArmThunks(
   if (matching.length === 0) return thunk;
   const names =
     forkBindingNames instanceof Set ? (forkBindingNames as Set<string>) : new Set(forkBindingNames);
-  if (matching.some((g) => names.has(g.name))) return thunk;
+  if (matching.some((g) => names.has(g.name) || isStrictIllegalBinding(g.name))) return thunk;
   const params = matching.map((g) => g.name).join(", ");
   const args = matching.map((g) => nullishRemoveCallOf(g)).join(", ");
   return `((${params}) => ${thunk})(${args})`;
@@ -714,7 +731,7 @@ export function narrowTypeArmThunk(thunk: string, guard: TypeGuard | undefined, 
   if (!guard) return thunk;
   const names =
     forkBindingNames instanceof Set ? (forkBindingNames as Set<string>) : new Set(forkBindingNames);
-  if (names.has(guard.name)) return thunk;
+  if (names.has(guard.name) || isStrictIllegalBinding(guard.name)) return thunk;
   const keep = arm === guard.arm;
   return `((${guard.name}) => ${thunk})($narrowTypeOf(${guard.name}, ${JSON.stringify(guard.typeOf)}, ${keep}))`;
 }
@@ -807,7 +824,7 @@ export function narrowDiscriminantArmThunks(
   if (matching.length === 0) return thunk;
   const names =
     forkBindingNames instanceof Set ? (forkBindingNames as Set<string>) : new Set(forkBindingNames);
-  if (matching.some((g) => names.has(g.name))) return thunk;
+  if (matching.some((g) => names.has(g.name) || isStrictIllegalBinding(g.name))) return thunk;
   const byName = new Map<string, DiscriminantGuard[]>();
   for (const g of matching) {
     const list = byName.get(g.name) ?? [];
@@ -860,6 +877,6 @@ export function narrowRelArmThunk(
   if (!guard || arm !== "cons") return thunk;
   const names =
     forkBindingNames instanceof Set ? (forkBindingNames as Set<string>) : new Set(forkBindingNames);
-  if (names.has(guard.name)) return thunk;
+  if (names.has(guard.name) || isStrictIllegalBinding(guard.name)) return thunk;
   return `((${guard.name}) => ${thunk})($refineRel(${guard.name}, ${JSON.stringify(guard.op)}, ${guard.k}))`;
 }

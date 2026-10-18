@@ -23,6 +23,15 @@ function expectBool(src: string, expected: boolean) {
   expect(r.value).toEqual(expected);
 }
 
+/** 断言折成具体字面量并值相等（narrow 后取 .value，供 lint:tests 收窄） */
+function expectLit(src: string, expected: unknown) {
+  const r = v(src);
+  if (!r.ok) {
+    throw new Error(`expected literal ${String(expected)}, got non-literal result (domain / unknown)`);
+  }
+  expect(r.value).toEqual(expected);
+}
+
 describe("P2a: 静态方法值读身份（定义类驻留）", () => {
   it("class B extends A {}：B.m === A.m → true（同一静态条目）", () => {
     expectBool(
@@ -121,52 +130,58 @@ describe("Bug 89: 用户类方法一等值借用调用（.call/.apply/.bind）�
   // 静态面 findStaticMethod 同一通道），kind:"protoMethod" 抑制尾部再入。
 
   it("const m = c.m; m.call(c) → 3（修复前 #exact undefined）", () => {
-    const r = v(`export function f() { class C { constructor() { this.v = 3; } m() { return this.v; } } const c = new C(); const m = c.m; return m.call(c); }`);
-    expect(r.ok).toBe(true);
-    expect(r.value).toBe(3);
+    expectLit(
+      `export function f() { class C { constructor() { this.v = 3; } m() { return this.v; } } const c = new C(); const m = c.m; return m.call(c); }`,
+      3,
+    );
   });
 
   it("c.m.apply(c, []) → 4（修复前 #exact undefined）", () => {
-    const r = v(`export function f() { class C { constructor() { this.v = 4; } m() { return this.v; } } const c = new C(); return c.m.apply(c, []); }`);
-    expect(r.ok).toBe(true);
-    expect(r.value).toBe(4);
+    expectLit(
+      `export function f() { class C { constructor() { this.v = 4; } m() { return this.v; } } const c = new C(); return c.m.apply(c, []); }`,
+      4,
+    );
   });
 
   it("c.m.bind(c)() → 4（修复前 #exact undefined）", () => {
-    const r = v(`export function f() { class C { constructor() { this.v = 4; } m() { return this.v; } } const c = new C(); return c.m.bind(c)(); }`);
-    expect(r.ok).toBe(true);
-    expect(r.value).toBe(4);
+    expectLit(
+      `export function f() { class C { constructor() { this.v = 4; } m() { return this.v; } } const c = new C(); return c.m.bind(c)(); }`,
+      4,
+    );
   });
 
   it("静态面对称：const m = C.s; m.call(C) → 7", () => {
-    const r = v(`export function f() { class C { static s() { return 7; } } const m = C.s; return m.call(C); }`);
-    expect(r.ok).toBe(true);
-    expect(r.value).toBe(7);
+    expectLit(
+      `export function f() { class C { static s() { return 7; } } const m = C.s; return m.call(C); }`,
+      7,
+    );
   });
 
   it("继承链方法值：new B().m.call(c) → 解析到 A 的方法（native 1）", () => {
-    const r = v(`export function f() { class A { m() { return 1; } } class B extends A {} const c = new B(); return c.m.call(c); }`);
-    expect(r.ok).toBe(true);
-    expect(r.value).toBe(1);
+    expectLit(
+      `export function f() { class A { m() { return 1; } } class B extends A {} const c = new B(); return c.m.call(c); }`,
+      1,
+    );
   });
 
   it("方法值自由调用 f(c.m)：严格模式 this=undefined，this.v 读取按 nullish 面记账（非 wrong-exact undefined）", () => {
-    const r = v(`export function f() { class C { m() { return 8; } } const c = new C(); return [c.m].map((g) => g.call(c))[0]; }`);
-    expect(r.ok).toBe(true);
-    expect(r.value).toBe(8);
+    expectLit(
+      `export function f() { class C { m() { return 8; } } const c = new C(); return [c.m].map((g) => g.call(c))[0]; }`,
+      8,
+    );
   });
 
   // Controls（修复前亦正确）
   it("control：直接 c.m() → 3（registry 派发不经方法值）", () => {
-    expect(v(`export function f() { class C { constructor() { this.v = 3; } m() { return this.v; } } const c = new C(); return c.m(); }`).value).toBe(3);
+    expectLit(`export function f() { class C { constructor() { this.v = 3; } m() { return this.v; } } const c = new C(); return c.m(); }`, 3);
   });
 
   it("control：对象字面量方法值 o.m.call(o) → 3（bindThis 通道）", () => {
-    expect(v(`export function f() { const o = { m() { return 3; } }; const m = o.m; return m.call(o); }`).value).toBe(3);
+    expectLit(`export function f() { const o = { m() { return 3; } }; const m = o.m; return m.call(o); }`, 3);
   });
 
   it("control：typeof c.m 仍折 \"function\"（值形状不变）", () => {
-    expect(v(`export function f() { class C { m() {} } const c = new C(); return typeof c.m; }`).value).toBe("function");
+    expectLit(`export function f() { class C { m() {} } const c = new C(); return typeof c.m; }`, "function");
   });
 
   it("control：方法值身份驻留不回归——c1.m === c2.m → true", () => {
