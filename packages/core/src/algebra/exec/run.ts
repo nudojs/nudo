@@ -127,6 +127,13 @@ function rewriteUserImports(js: string): string {
     registered = true;
     return `${line}\n__NUDO_LIVE_IMPORT_REGISTER__;`;
   };
+  // 混合形态：默认 + 命名空间 `import d, * as ns from "…"`（Bug 153）
+  // ——默认走具名绑定（导出名 "default"），命名空间走 __nudoBindNamespace
+  js = js.replace(
+    /^import\s+([A-Za-z_$][\w$]*)\s*,\s*\*\s+as\s+([A-Za-z_$][\w$]*)\s+from\s+["']([^"']+)["'];\s*$/gm,
+    (_all, def: string, local: string, spec: string) =>
+      registerAfter(`${namedBindSrc(def, spec, "default")}\n${nsBindSrc(local, spec)}`),
+  );
   // namespace：transpile 会写成 `import { * as ns } from "…"`
   js = js.replace(
     /^import\s*\{\s*\*\s+as\s+([A-Za-z_$][\w$]*)\s*\}\s*from\s*["']([^"']+)["'];\s*$/gm,

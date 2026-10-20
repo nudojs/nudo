@@ -64,7 +64,11 @@ export function transpileFunctionExpr(
         body?: { body?: unknown[] };
       };
       const members = ce.body?.body ?? [];
-      if (members.length === 0) return "$classExpr()";
+      // Bug 154：空体快路径不得吞掉 `extends` 子句——`extends` 由 classSpecOf
+      // 从 superClass 读出，快路径绕过了它 ⇒ 原型链与类注册全丢
+      // （`new B() instanceof A` 折 false；`extends null` 的 TypeError 不抛）。
+      // 有父类时走与非空体同一条 classSpecOf 路径（对照：声明形态本就正确）。
+      if (members.length === 0 && !ce.superClass) return "$classExpr()";
       const depth = 1;
       const { name, specLines, staticInitLines } = classSpecOf(
         ce as unknown as Parameters<typeof classSpecOf>[0],

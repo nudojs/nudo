@@ -143,29 +143,45 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
     }
     case "ImportDeclaration": {
       // 保留 import；run.ts 会改写为 __nudoBindImport
-      const specs = stmt.specifiers
-        .map((s) => {
-          if (s.type === "ImportSpecifier") {
-            // Bug 177：任意模块导出名（ES2022 `import { "a-b" as x }`）——
-            // imported 在字符串字面量形态下是 **StringLiteral 节点对象**，
-            // `String(node)` 走 Object.prototype.toString ⇒ "[object Object]"
-            // ⇒ 渲染出**非法 JS** ⇒ 整模块求值失败 ⇒ 值静默变 unknown
-            // （假绿）。string 名必须保引号（与 export 侧同口径）。
-            const imported =
-              s.imported.type === "Identifier"
-                ? s.imported.name
-                : JSON.stringify((s.imported as unknown as { value: string }).value);
-            return imported === s.local.name ? imported : `${imported} as ${s.local.name}`;
-          }
-          if (s.type === "ImportDefaultSpecifier") return `default as ${s.local.name}`;
-          if (s.type === "ImportNamespaceSpecifier") return `* as ${s.local.name}`;
-          return "";
-        })
-        .filter(Boolean);
-      if (specs.length === 0) {
-        return `${pad}import ${JSON.stringify(stmt.source.value)};`;
+      const src = JSON.stringify(stmt.source.value);
+      const named: string[] = [];
+      let defaultName: string | null = null;
+      let nsName: string | null = null;
+      for (const s of stmt.specifiers) {
+        if (s.type === "ImportSpecifier") {
+          // Bug 177：任意模块导出名（ES2022 `import { "a-b" as x }`）——
+          // imported 在字符串字面量形态下是 **StringLiteral 节点对象**，
+          // `String(node)` 走 Object.prototype.toString ⇒ "[object Object]"
+          // ⇒ 渲染出**非法 JS** ⇒ 整模块求值失败 ⇒ 值静默变 unknown
+          // （假绿）。string 名必须保引号（与 export 侧同口径）。
+          const imported =
+            s.imported.type === "Identifier"
+              ? s.imported.name
+              : JSON.stringify((s.imported as unknown as { value: string }).value);
+          named.push(imported === s.local.name ? imported : `${imported} as ${s.local.name}`);
+        } else if (s.type === "ImportDefaultSpecifier") {
+          defaultName = s.local.name;
+        } else if (s.type === "ImportNamespaceSpecifier") {
+          nsName = s.local.name;
+        }
       }
-      return `${pad}import { ${specs.join(", ")} } from ${JSON.stringify(stmt.source.value)};`;
+      // Bug 153：默认 + 命名空间的**混合形态** `import d, * as ns from "…"`——
+      // 摊平成 `{ default as d, * as ns }` 既不是合法 ESM，运行时改写也匹配
+      // 不到命名空间分支（`*` 不紧跟 `{`）⇒ 具名分支把 `*` 当成被导入的
+      // 名字 ⇒ __nudoBindImport(spec, "*") ⇒ 命名空间绑定折 unknown。
+      // 改发**标准 ESM 形态**（run.ts 有对应的改写分支）。
+      if (defaultName && nsName) {
+        return `${pad}import ${defaultName}, * as ${nsName} from ${src};`;
+      }
+      const specs = [
+        ...named,
+        ...(defaultName ? [`default as ${defaultName}`] : []),
+        ...(nsName ? [`* as ${nsName}`] : []),
+      ];
+      if (specs.length === 0) {
+        return `${pad}import ${src};`;
+      }
+      return `${pad}import { ${specs.join(", ")} } from ${src};`;
     }
     case "ExportDefaultDeclaration": {
       const d = stmt.declaration;
