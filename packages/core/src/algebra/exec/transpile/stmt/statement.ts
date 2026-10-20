@@ -314,18 +314,25 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         const rec = retPos === "" ? src : `$nodoPos(${src}${retPos})`;
         const retRebinds = mutNodes ? emitArrMutatorRebinds(mutNodes, opts, pad) : [];
         if ((opts.inTry ?? 0) > 0) {
+          // Bug 145：临时量名固定为 `__nudoRet`——同一词法块内出现两个
+          // return 时就是**重复 const 声明**（new Function 编译期 SyntaxError
+          // → 整模块 fail-closed：同文件所有函数退化为 unknown / never）。
+          // 修法：把每个 return 的临时量收进**自己的块**（块作用域独立 →
+          // 不再同名冲突）；return 仍在块内——块不改变 return 的函数退出语义。
           return [
-            `${pad}const __nudoRet = ${rec};`,
-            ...retRebinds,
             `${pad}{`,
-            `${indent(depth + 1)}const __xs = $tryTakeSince(${markExpr});`,
-            `${indent(depth + 1)}if (__xs.length) {`,
-            `${indent(depth + 2)}$pushLoopExit(__nudoRet);`,
-            `${indent(depth + 2)}$throw(__xs.reduce((a, b) => $join(a, b)));`,
+            `${indent(depth + 1)}const __nudoRet = ${rec};`,
+            ...retRebinds,
+            `${indent(depth + 1)}{`,
+            `${indent(depth + 2)}const __xs = $tryTakeSince(${markExpr});`,
+            `${indent(depth + 2)}if (__xs.length) {`,
+            `${indent(depth + 3)}$pushLoopExit(__nudoRet);`,
+            `${indent(depth + 3)}$throw(__xs.reduce((a, b) => $join(a, b)));`,
+            `${indent(depth + 2)}}`,
+            `${indent(depth + 2)}${opts.tryRethrowCatch ? "$tryReleaseSoftCatch();" : opts.hasTryHandler === false ? "$tryReleaseSoftOut();" : "$tryDigestSoftCatch();"}`,
             `${indent(depth + 1)}}`,
-            `${indent(depth + 1)}${opts.tryRethrowCatch ? "$tryReleaseSoftCatch();" : opts.hasTryHandler === false ? "$tryReleaseSoftOut();" : "$tryDigestSoftCatch();"}`,
+            `${indent(depth + 1)}${prefix}(__nudoRet);`,
             `${pad}}`,
-            `${pad}${prefix}(__nudoRet);`,
           ].join("\n");
         }
         if (retRebinds.length === 0) return `${pad}${prefix}(${rec});`;
