@@ -29,7 +29,7 @@ import { nullishGuardsOf, typeGuardOf, discriminantGuardsOf, relGuardOf } from "
 import { isExpression, privateNameKeySrc, isConstAssignTarget } from "../helpers.ts";
 import { BIN_OPS } from "../ops.ts";
 import { NudoUnsupportedError } from "../../unsupported.ts";
-import { memberPathOf, readPathSrc, readPrefix } from "../member-path.ts";
+import { memberPathOf, readPathSrc, readPrefix, setPathSrc } from "../member-path.ts";
 import { emitTranspileExpression as transpileExpression } from "../transpile-dispatch.ts";
 import { transpileShortCircuitExpr } from "./short-circuit.ts";
 import { chainNeedsShortCircuit, flattenChain, emitDeleteChainFrom } from "./optional-chain.ts";
@@ -272,10 +272,16 @@ export function transpileOperatorExpr(
         const path = memberPathOf(m, opts);
         if (path) {
           const readSrc = readPathSrc(path);
-          // 前缀表达式的值是**新值**；容器写回由语句级 rebind pass 完成
-          //（标识符前缀自包含 `n = $updateAdd(n)`，值即新值，无此问题）
-          if (expr.prefix) return `${fn}(${readSrc})`;
-          return `$toNumeric(${readSrc})`;
+          // Bug 155：成员目标**自包含**——原生 `o.p++` 是**一次 Get + 一次
+          // Put**。此前拆成「表达式位求值」+「语句级 rebind 写回」两段，两段
+          // 各自独立发了一次 readPathSrc ⇒ **读了两遍**（getter 跑两次；有状态
+          // getter 第二次读到不同值 → 连返回值也错）。
+          // 修法：读一次、写回下沉到表达式内（语句级 rebind pass 不再补写）。
+          // 前缀：值 = 新值；后缀：值 = 旧值（ToNumeric 后），写回用同一旧值。
+          if (expr.prefix) {
+            return `((__v) => { const __n = ${fn}(__v); ${path.rootSrc} = ${setPathSrc(path, "__n")}; return __n; })(${readSrc})`;
+          }
+          return `((__old) => { ${path.rootSrc} = ${setPathSrc(path, `${fn}(__old)`)}; return __old; })($toNumeric(${readSrc}))`;
         }
         // Bug 80：this.#x++ / C.#n++——memberPathOf 对 PrivateName 返回
         // null，此前落 update:++ unsupported 令整模块 fail-closed。镜像

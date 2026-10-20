@@ -290,32 +290,11 @@ export function emitArrMutatorRebinds(
     }
     // 自增/自减：标识符前/后缀均在表达式内自包含写回
     //（后缀缓存 ToNumeric 旧值），本 pass 不得再补写回——否则双倍自增。
-    // 成员目标（o.n++/++o.n）前后缀表达式值由表达式给出，写回在此统一补
-    //（成员路径无匿名临时量，表达式内无法安全写回）。
-    // 写回必须走 $updateAdd/$updateSub（ToNumeric ± 1），不得 $add 字符串拼接。
-    if (
-      node.type === "UpdateExpression" &&
-      (node as { argument?: unknown }).argument
-    ) {
-      const arg = (node as { argument: unknown }).argument as {
-        type?: string;
-        name?: string;
-        object?: Node;
-        property?: Node;
-        computed?: boolean;
-      };
-      const fn = (node as { operator?: string }).operator === "++" ? "$updateAdd" : "$updateSub";
-      if (arg.type === "MemberExpression") {
-        const path = memberPathOf(
-          arg as unknown as { object: Node; property: Node; computed: boolean },
-          opts,
-        );
-        if (path) {
-          const readSrc = readPathSrc(path);
-          lines.push(`${pad}${path.rootSrc} = ${setPathSrc(path, `${fn}(${readSrc})`)};`);
-        }
-      }
-    }
+    // 成员目标（o.n++/++o.n）同样**自包含**（Bug 155：一次 Get + 一次 Put，
+    // getter 只读一次）——本 pass 也不得再补写回（否则双倍自增 / 读两遍）。
+    // 注：成员臂的写回下沉到表达式内后，语句位不再有任何自增写回；私有名
+    // 目标（this.#x++）本就自包含（memberPathOf 对 PrivateName 返回 null）。
+    // 成员目标的自增/自减写回已下沉到表达式内（自包含）——本 pass 不再补写。
     for (const key of Object.keys(node)) {
       if (key === "loc" || key === "start" || key === "end" || key === "range") continue;
       if (key === "callee" || key === "property") continue; // 已处理 receiver
