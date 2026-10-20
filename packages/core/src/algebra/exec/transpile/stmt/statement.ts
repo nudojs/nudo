@@ -675,6 +675,9 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           ...opts,
           inLoop: (opts.inLoop ?? 0) + 1,
           loopLabel: undefined, // 标签属于本循环；体 opts 不得传给嵌套循环
+          // Bug 173：循环体**不是** switch 臂——无标签 break 属于本循环
+          // （switch 臂标记不得带进循环体：break 被当臂结束 → 循环跑到结束）
+          inSwitchArm: false,
         };
         const bodyStmts =
           stmt.body.type === "BlockStatement"
@@ -749,6 +752,9 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         ...opts,
         inLoop: (opts.inLoop ?? 0) + 1,
         loopLabel: undefined, // 标签属于本循环；体 opts 不得传给嵌套循环
+        // Bug 173：循环体**不是** switch 臂——无标签 break 属于本循环
+        // （switch 臂标记不得带进循环体：break 被当臂结束 → 循环跑到结束）
+        inSwitchArm: false,
         // 循环变量是状态线程参数（`(initName) => {…}`），遮蔽外层
         // const/import 同名绑定（Bug ②）——体内赋值合法，扣除误折面
         ...(opts.constNames && opts.constNames.has(initName)
@@ -808,7 +814,10 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
     }
     case "SwitchStatement": {
       const disc = emitTranspileExpression(stmt.discriminant as Expression, opts);
-      type Arm = { tests: string[]; stmts: Statement[]; isDefault: boolean };
+      // `src`：臂体在源 AST 里的**原数组引用**——`case 1: default: body` 形态下
+      // default 的 consequent 与前一个 case 臂共享同一份（Bug 146：合并阶段
+      // 不得再串一份 → 体被执行两次）。
+      type Arm = { tests: string[]; stmts: Statement[]; isDefault: boolean; src?: Statement[] };
 
       // 1) 空 case 测试并入下一有体臂；default 独立
       const pre: Arm[] = [];
@@ -816,11 +825,16 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       for (const c of stmt.cases) {
         const testSrc = c.test ? emitTranspileExpression(c.test as Expression, opts) : null;
         if (testSrc === null) {
+          // Bug 146：default 紧跟空 case（`case 1: default: body`）——default
+          // 的 consequent 与前一个 case 臂**共享同一份语句**：case 臂负责
+          // 「命中 case 1 时落入 default 体」，default 臂负责「全不命中时也
+          // 落入 default 体」。两条路径各自引用同一份体，但**合并阶段不得
+          // 再串一份**（否则体在同一条臂里执行两次：返回值错、副作用翻倍）。
           if (pendingTests.length > 0 && c.consequent.length > 0) {
-            pre.push({ tests: pendingTests, stmts: c.consequent, isDefault: false });
+            pre.push({ tests: pendingTests, stmts: c.consequent, isDefault: false, src: c.consequent });
             pendingTests = [];
           }
-          pre.push({ tests: [], stmts: c.consequent, isDefault: true });
+          pre.push({ tests: [], stmts: c.consequent, isDefault: true, src: c.consequent });
           continue;
         }
         if (c.consequent.length === 0) {
@@ -841,8 +855,13 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         const body = [...arm.stmts];
         let j = i + 1;
         while (j < merged.length && !stmtCompletesControl(body[body.length - 1] as Statement)) {
-          body.push(...merged[j]!.stmts);
-          if (stmtCompletesControl(body[body.length - 1] as Statement)) break;
+          const next = merged[j]!;
+          // Bug 146：下一个臂与当前臂**共享同一份源语句**（default 紧跟空
+          // case）——体已在当前臂里，不得再串一份（否则执行两次）。
+          if (!(next.src && next.src === arm.src)) {
+            body.push(...next.stmts);
+            if (stmtCompletesControl(body[body.length - 1] as Statement)) break;
+          }
           j++;
         }
         arm.stmts = body;
@@ -1280,6 +1299,9 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         constNames: loopConstNames,
         inLoop: (opts.inLoop ?? 0) + 1,
         loopLabel: undefined,
+        // Bug 173：循环体**不是** switch 臂——无标签 break 属于本循环
+        // （switch 臂标记不得带进循环体：break 被当臂结束 → 循环跑到结束）
+        inSwitchArm: false,
       };
       const bodyStmts =
         stmt.body.type === "BlockStatement"
@@ -1323,6 +1345,9 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         ...opts,
         inLoop: (opts.inLoop ?? 0) + 1,
         loopLabel: undefined,
+        // Bug 173：循环体**不是** switch 臂——无标签 break 属于本循环
+        // （switch 臂标记不得带进循环体：break 被当臂结束 → 循环跑到结束）
+        inSwitchArm: false,
       };
       const body =
         stmt.body.type === "BlockStatement"
@@ -1385,6 +1410,9 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         ...opts,
         inLoop: (opts.inLoop ?? 0) + 1,
         loopLabel: undefined,
+        // Bug 173：循环体**不是** switch 臂——无标签 break 属于本循环
+        // （switch 臂标记不得带进循环体：break 被当臂结束 → 循环跑到结束）
+        inSwitchArm: false,
       };
       const bodyStmts =
         stmt.body.type === "BlockStatement"
