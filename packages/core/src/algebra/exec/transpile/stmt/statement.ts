@@ -690,15 +690,20 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           ? emitTranspileExpression(stmt.init.declarations[0].init, opts)
           : "$lit(void 0)";
       const testSrc = stmt.test ? emitTranspileExpression(stmt.test, opts) : "$lit(true)";
-      // for 步进闭包需要**自增后的新值**作状态线程；不能走 UpdateExpression 的
-      // 后置旧值语义（那会丢自增副作用）
+      // for 步进：**只取副作用**，状态线程恒为循环变量自身（与 fallback 路径
+      // 同口径——fallback 用合成计数器 `__n`，主路径用 `initName`）。
+      // - Bug 132：标识符 Update 必须走 $updateAdd/$updateSub（ToNumeric ± 1）。
+      //   $add 是二元 `+`：bigint + number 走 mixed-bigint 抛 TypeError 臂、
+      //   string 左操作数走字符串拼接臂（"5"++ 原生 6，拼接得 "51"）。
+      // - Bug 144：步进表达式的**值**不得作状态线程——序列表达式（`i++, n++`）
+      //   的值是末项值（后缀自增回旧值），会让循环变量停滞 / 超跑。
       const updateSrc =
         stmt.update && stmt.update.type === "UpdateExpression" &&
         stmt.update.argument.type === "Identifier"
-          ? `${stmt.update.argument.name} = ${stmt.update.operator === "++" ? "$add" : "$sub"}(${stmt.update.argument.name}, $lit(1))`
+          ? `${stmt.update.argument.name} = ${stmt.update.operator === "++" ? "$updateAdd" : "$updateSub"}(${stmt.update.argument.name})`
           : stmt.update
             ? emitTranspileExpression(stmt.update, opts)
-            : `$lit(void 0)`;
+            : null;
       const forBodyOpts: TranspileOptions = {
         ...opts,
         inLoop: (opts.inLoop ?? 0) + 1,
@@ -746,7 +751,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         `${pad}$for(`,
         `${indent(depth + 1)}${initExpr},`,
         `${indent(depth + 1)}(${initName}) => ${testSrc},`,
-        `${indent(depth + 1)}(${initName}) => ${updateSrc},`,
+        `${indent(depth + 1)}(${initName}) => { ${updateSrc ? `${updateSrc};` : ""} return ${initName}; },`,
         `${indent(depth + 1)}(${initName}) => {`,
         bodyStmts,
         `${indent(depth + 1)}  return ${initName};`,
