@@ -50,6 +50,7 @@ import {
 } from "../emit.ts";
 import { emitTranspileExpression } from "../transpile-dispatch.ts";
 import { paramNamesOf, transpileFnBodyStmts } from "./fn-body.ts";
+import { computeConstScope } from "../helpers.ts";
 import { transpileBlockAsThunk, extractForInitName } from "./block.ts";
 import { transpileClass } from "../class-emit.ts";
 /** switch 共享体函数名序号（跨语句/函数去重） */
@@ -694,6 +695,11 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           // Bug 173：循环体**不是** switch 臂——无标签 break 属于本循环
           // （switch 臂标记不得带进循环体：break 被当臂结束 → 循环跑到结束）
           inSwitchArm: false,
+          // Bug 148：循环体是块作用域——其内声明的 const 不可再赋（名单自算）
+          constNames: computeConstScope(
+            stmt.body.type === "BlockStatement" ? stmt.body.body : [],
+            opts.constNames,
+          ),
         };
         const bodyStmts =
           stmt.body.type === "BlockStatement"
@@ -764,6 +770,12 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           : stmt.update
             ? emitTranspileExpression(stmt.update, opts)
             : null;
+      // 循环变量是状态线程参数（`(initName) => {…}`），遮蔽外层
+      // const/import 同名绑定（Bug ②）——体内赋值合法，扣除误折面
+      const loopParentConsts =
+        opts.constNames && opts.constNames.has(initName)
+          ? new Set([...opts.constNames].filter((n) => n !== initName))
+          : opts.constNames;
       const forBodyOpts: TranspileOptions = {
         ...opts,
         inLoop: (opts.inLoop ?? 0) + 1,
@@ -771,13 +783,11 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         // Bug 173：循环体**不是** switch 臂——无标签 break 属于本循环
         // （switch 臂标记不得带进循环体：break 被当臂结束 → 循环跑到结束）
         inSwitchArm: false,
-        // 循环变量是状态线程参数（`(initName) => {…}`），遮蔽外层
-        // const/import 同名绑定（Bug ②）——体内赋值合法，扣除误折面
-        ...(opts.constNames && opts.constNames.has(initName)
-          ? {
-              constNames: new Set([...opts.constNames].filter((n) => n !== initName)),
-            }
-          : {}),
+        // Bug 148：循环体是块作用域——其内声明的 const 不可再赋（名单自算）
+        constNames: computeConstScope(
+          stmt.body.type === "BlockStatement" ? stmt.body.body : [],
+          loopParentConsts,
+        ),
       };
       const bodyStmts =
         stmt.body.type === "BlockStatement"
@@ -1017,10 +1027,18 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         const assignSrc = `((__v) => { $assignRecord(${JSON.stringify(optReq.name)}, ${optReq.name}, __v, ${optReq.locLine}, ${optReq.locCol}, ${cond});${!opts.inFunction ? ` $recordBinding(${JSON.stringify(optReq.name)}, __v);` : ""} return ${optReq.name} = __v; })(${reqSrc})`;
         const lines = [`${pad}${assignSrc};`];
         if (stmt.finalizer) {
+          // Bug 148：finally 体是块作用域——其内 const 名单自算
+          const finOpts: TranspileOptions = {
+            ...opts,
+            constNames: computeConstScope(
+              stmt.finalizer.type === "BlockStatement" ? stmt.finalizer.body : [],
+              opts.constNames,
+            ),
+          };
           const finBody =
             stmt.finalizer.type === "BlockStatement"
-              ? stmt.finalizer.body.map((s) => transpileStatement(s, depth, opts)).join("\n")
-              : transpileStatement(stmt.finalizer as unknown as Statement, depth, opts);
+              ? stmt.finalizer.body.map((s) => transpileStatement(s, depth, finOpts)).join("\n")
+              : transpileStatement(stmt.finalizer as unknown as Statement, depth, finOpts);
           lines.push(finBody);
         }
         return lines.join("\n");
@@ -1065,10 +1083,19 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         tryRethrowCatch: stmt.handler ? catchMayRethrow(stmt.handler) : false,
         yieldTryCtx: innerYieldCtx,
       };
+      // Bug 148：try 体是**块作用域**——其内声明的 const 在本作用域内不可再赋
+      // （此前名单缺失 ⇒ 赋值直写不抛 + throws 域折 never ⇒ L2 假绿）。
+      const tryScopeOpts: TranspileOptions = {
+        ...tryOpts,
+        constNames: computeConstScope(
+          stmt.block.type === "BlockStatement" ? stmt.block.body : [],
+          tryOpts.constNames,
+        ),
+      };
       const tryBody =
         stmt.block.type === "BlockStatement"
-          ? stmt.block.body.map((s) => transpileStatement(s, depth + 1, tryOpts)).join("\n")
-          : transpileStatement(stmt.block as unknown as Statement, depth + 1, tryOpts);
+          ? stmt.block.body.map((s) => transpileStatement(s, depth + 1, tryScopeOpts)).join("\n")
+          : transpileStatement(stmt.block as unknown as Statement, depth + 1, tryScopeOpts);
       const lines = [
         `${pad}const ${markName} = $tryMark();`,
         `${pad}try {`,
@@ -1119,7 +1146,16 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         !stmt.handler
           ? ""
           : stmt.handler.body.type === "BlockStatement"
-            ? stmt.handler.body.body.map((s) => transpileStatement(s, d, o)).join("\n")
+            ? stmt.handler.body.body
+                .map((s) =>
+                  transpileStatement(
+                    s,
+                    d,
+                    // Bug 148：catch 体是块作用域——本作用域的 const 名单自算
+                    { ...o, constNames: computeConstScope(stmt.handler!.body.body, o.constNames) },
+                  ),
+                )
+                .join("\n")
             : transpileStatement(stmt.handler.body as unknown as Statement, d, o);
       if (stmt.handler) {
         const catchBody = transpileCatchBody(depth + 1, catchOpts);
@@ -1172,12 +1208,20 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           ? "$tryReleaseSoftCatch();"
           : "$tryDigestSoftCatch();";
       if (stmt.finalizer) {
+        // Bug 148：finally 体是块作用域——其内声明的 const 不可再赋（名单自算）
+        const finScopeOpts: TranspileOptions = {
+          ...opts,
+          constNames: computeConstScope(
+            stmt.finalizer.type === "BlockStatement" ? stmt.finalizer.body : [],
+            opts.constNames,
+          ),
+        };
         const finBody =
           stmt.finalizer.type === "BlockStatement"
             ? stmt.finalizer.body
-                .map((s) => transpileStatement(s, depth + 1, opts))
+                .map((s) => transpileStatement(s, depth + 1, finScopeOpts))
                 .join("\n")
-            : transpileStatement(stmt.finalizer as unknown as Statement, depth + 1, opts);
+            : transpileStatement(stmt.finalizer as unknown as Statement, depth + 1, finScopeOpts);
         lines.push(`${pad}finally {`);
         lines.push(finBody);
         // finally 内收口 soft + mark（catch 与 finally 之间不得插入语句）
@@ -1320,7 +1364,12 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       }
       const bodyOpts: TranspileOptions = {
         ...opts,
-        constNames: loopConstNames,
+        // Bug 148：循环体是块作用域——其内声明的 const 不可再赋（在循环头
+        // 名单之上再叠本作用域的 const 面）
+        constNames: computeConstScope(
+          stmt.body.type === "BlockStatement" ? stmt.body.body : [],
+          loopConstNames,
+        ),
         inLoop: (opts.inLoop ?? 0) + 1,
         loopLabel: undefined,
         // Bug 173：循环体**不是** switch 臂——无标签 break 属于本循环
@@ -1367,6 +1416,11 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const test = emitTranspileExpression(stmt.test, opts);
       const bodyOpts: TranspileOptions = {
         ...opts,
+        // Bug 148：循环体是块作用域——其内声明的 const 不可再赋（名单自算）
+        constNames: computeConstScope(
+          stmt.body.type === "BlockStatement" ? stmt.body.body : [],
+          opts.constNames,
+        ),
         inLoop: (opts.inLoop ?? 0) + 1,
         loopLabel: undefined,
         // Bug 173：循环体**不是** switch 臂——无标签 break 属于本循环
@@ -1432,6 +1486,11 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const test = emitTranspileExpression(stmt.test, opts);
       const bodyOpts: TranspileOptions = {
         ...opts,
+        // Bug 148：循环体是块作用域——其内声明的 const 不可再赋（名单自算）
+        constNames: computeConstScope(
+          stmt.body.type === "BlockStatement" ? stmt.body.body : [],
+          opts.constNames,
+        ),
         inLoop: (opts.inLoop ?? 0) + 1,
         loopLabel: undefined,
         // Bug 173：循环体**不是** switch 臂——无标签 break 属于本循环
