@@ -268,7 +268,7 @@ function emitChainFrom(hops: ChainHop[], i: number, valSrc: string): string {
         // 成 __a，两个通道共用同一份值。
         const rawMethod = JSON.parse(hop.method) as string;
         if (hop.recvName && REGEX_STATEFUL_NAMES.has(rawMethod)) {
-          call = `(() => { const __a = ${hop.argsSrc}; const __v = $invoke(${recv}, ${hop.method}, __a${hop.locArg}); ${hop.recvName} = $reStateCall(${hop.recvName}, ${hop.method}, __a); return __v; })()`;
+          call = `(() => { const __nudoReArgs = ${hop.argsSrc}; const __v = $invoke(${recv}, ${hop.method}, __nudoReArgs${hop.locArg}); ${hop.recvName} = $reStateCall(${hop.recvName}, ${hop.method}, __nudoReArgs); return __v; })()`;
         }
         if (!fnCheck) return call;
         // o.m?.()：方法值 nullish 短路；this 仍绑 recv（$invoke 二次 get 方法属已知
@@ -321,9 +321,20 @@ function shortCircuitHop(
  * o?.[k]）。与读链（emitChainFrom）同构，差异两处：
  * - 任一 optional 跳命中 nullish → 短路臂返回 **true**（delete 表达式值），
  *   不是 undefined；
- * - 最后一跳（get/idx）发射 $delRes（删键结果布尔）而非 $get/$idx。
+ * - 最后一跳（get/idx）发射 delete 的**求值点自包含**形态（delOpSrc）而非
+ *   $get/$idx。
  * 中缀含 call/invoke/len（不可删除目标的父链）→ undefined（调用方 unsupported）。
  */
+
+/**
+ * delete 的求值点自包含形态（Bug 176）：父对象与键各只求值一次，删除
+ * （$del）与布尔值（$delRes）**同点**产出 ⇒ 同一条表达式里排在 delete
+ * 之后的读看到变更后的状态。Proxy 陷阱派发唯一在 $delRes（Bug 172）⇒
+ * 陷阱恰好一次。
+ */
+function delOpSrc(parentSrc: string, keySrc: string): string {
+  return `(() => { const __nudoDelP = ${parentSrc}; const __nudoDelK = ${keySrc}; $del(__nudoDelP, __nudoDelK); return $delRes(__nudoDelP, __nudoDelK); })()`;
+}
 export function emitDeleteChainFrom(hops: ChainHop[], i: number, valSrc: string): string | undefined {
   if (i >= hops.length) return undefined;
   const hop = hops[i]!;
@@ -333,8 +344,8 @@ export function emitDeleteChainFrom(hops: ChainHop[], i: number, valSrc: string)
   if (hop.kind === "get") {
     if (isLast) {
       return hop.optional
-        ? delShortCircuit(valSrc, `$delRes($removeNullish(__oc), ${hop.key})`)
-        : `$delRes(${valSrc}, ${hop.key})`;
+        ? delShortCircuit(valSrc, delOpSrc(`$removeNullish(__oc)`, hop.key))
+        : delOpSrc(valSrc, hop.key);
     }
     if (hop.optional) {
       const rest = emitDeleteChainFrom(hops, i + 1, `$get($removeNullish(__oc), ${hop.key})`);
@@ -345,8 +356,8 @@ export function emitDeleteChainFrom(hops: ChainHop[], i: number, valSrc: string)
   if (hop.kind === "idx") {
     if (isLast) {
       return hop.optional
-        ? delShortCircuit(valSrc, `$delRes($removeNullish(__oc), ${hop.keySrc})`)
-        : `$delRes(${valSrc}, ${hop.keySrc})`;
+        ? delShortCircuit(valSrc, delOpSrc(`$removeNullish(__oc)`, hop.keySrc))
+        : delOpSrc(valSrc, hop.keySrc);
     }
     if (hop.optional) {
       const rest = emitDeleteChainFrom(hops, i + 1, `$idx($removeNullish(__oc), ${hop.keySrc})`);

@@ -131,56 +131,11 @@ export function emitArrMutatorRebinds(
     // 数组 mutator（push/pop/…）不再需要语句位写回：$invoke 在调用点经
     // $arrMutContainer 就地变更（Bug 49/51——表达式内连续 mutator 按求值
     // 顺序生效；非可重绑接收者 m.get(k).push(x) 经共享容器别名持久）。
-    // 下方仅保留 defineProperty/delete 的语句位写回。
-    // Object.defineProperty / defineProperties(o, …)：返回值是新容器（value
-    // 进 slots、访问器进侧表），语句位置必须写回第一实参（freeze/seal/
-    // preventExtensions 就地标记无需写回）。Bug 19：defineProperties（复数）
-    // 与单数同形态，漏写回则描述符安装在被丢弃的副本上，后续 o.a 折 exact
-    // undefined——表达式位走返回值不受影响。Bug 87：member 目标（o.p /
-    // C.prototype / a[0]）此前只认 Identifier 同样丢写回——可重绑 member
-    // 路径经 memberPathOf 不可变更新链写回根；根不可重绑（foo().p）→
-    // memberPathOf null → 跳过（表达式位语句照常执行，不误删）。
-    if (
-      node.type === "CallExpression" &&
-      node.callee?.type === "MemberExpression" &&
-      node.callee.computed !== true &&
-      node.callee.object?.type === "Identifier" &&
-      (node.callee.object as { name: string }).name === "Object" &&
-      node.callee.property?.type === "Identifier" &&
-      ((node.callee.property as { name: string }).name === "defineProperty" ||
-        (node.callee.property as { name: string }).name === "defineProperties") &&
-      node.arguments?.[0] &&
-      ((node.arguments[0] as { type?: string }).type === "Identifier" ||
-        (node.arguments[0] as { type?: string }).type === "MemberExpression")
-    ) {
-      const methodName = (node.callee.property as { name: string }).name;
-      const restSrcs = (node.arguments as unknown as Expression[])
-        .slice(1)
-        .map((a) =>
-          (a as { type?: string }).type === "SpreadElement"
-            ? "$unknown()"
-            : emitTranspileExpression(a, opts),
-        )
-        .join(", ");
-      const restSuffix = restSrcs ? `, ${restSrcs}` : "";
-      const target0 = node.arguments[0] as { type?: string };
-      if (target0.type === "Identifier") {
-        const targetName = (target0 as { name: string }).name;
-        lines.push(
-          `${pad}${targetName} = $invoke(Object, ${JSON.stringify(methodName)}, [${targetName}${restSuffix}]);`,
-        );
-      } else {
-        const path = memberPathOf(
-          target0 as unknown as Parameters<typeof memberPathOf>[0],
-          opts,
-        );
-        if (path) {
-          const curSrc = readPathSrc(path);
-          const newSrc = `$invoke(Object, ${JSON.stringify(methodName)}, [${curSrc}${restSuffix}])`;
-          lines.push(`${pad}${path.rootTarget} = ${setPathSrc(path, newSrc)};`);
-        }
-      }
-    }
+    // 下方仅保留**可选链** delete 的语句位写回。
+    // Bug 137/176：Object.defineProperty / defineProperties 的写回**下沉到
+    // 求值点**（表达式位自包含 IIFE：实参只求值一次 + 写回同点完成）——
+    // 语句位不得再重发整条调用（实参副作用翻倍），也不得把写回推迟到整条
+    // 语句之后（同表达式内后续读看到变更前的状态）。
     // delete obj[key] / delete o?.a：语句位置把删键后的容器写回绑定（表达式
     // 值 $delRes 由 transpile 负责）。Bug 111：OptionalMemberExpression 形
     // （delete o?.a）此前不匹配该 pass——表达式值对但从未真删（$delRes 是
@@ -211,13 +166,6 @@ export function emitArrMutatorRebinds(
         opts,
       );
       if (path) {
-        const parentRead =
-          path.layers.length >= 2 ? readPrefix(path, path.layers.length - 2) : path.rootSrc;
-        // 注意：computed key 在此二次求值（副作用型 key 表达式会重复；
-        // 与数组 mutator 参数的重绑口径一致，罕见形态接受）
-        const keySrc = m.computed
-          ? emitTranspileExpression(m.property as Expression, opts)
-          : `$lit(${JSON.stringify((m.property as { name: string }).name)})`;
         // 求值序首个 optional hop 的层号（链上 `?.` 跳点节点带 optional
         // 标记——其后的外层链接同为 OptionalMemberExpression 类型但无标记；
         // walk 深度 s 的标记节点对应层 N-1-s，其 object 即守卫基）；-1 = 无
@@ -236,11 +184,17 @@ export function emitArrMutatorRebinds(
             s++;
           }
         }
-        if (guardLayer < 0) {
-          lines.push(
-            `${pad}${path.rootTarget} = ${setParentPathSrc(path, `$del(${parentRead}, ${keySrc})`)};`,
-          );
-        } else {
+        // Bug 176：**非**可选链的 delete 写回已下沉到**求值点**（表达式位
+        // 自包含 IIFE：删除与布尔值同点产出）——语句位不得再写（否则写回被
+        // 推迟到整条语句之后，同表达式内后续读看到变更前的状态）。
+        if (guardLayer >= 0) {
+          const parentRead =
+            path.layers.length >= 2 ? readPrefix(path, path.layers.length - 2) : path.rootSrc;
+          // 注意：computed key 在此二次求值（副作用型 key 表达式会重复；
+          // 与数组 mutator 参数的重绑口径一致，罕见形态接受）
+          const keySrc = m.computed
+            ? emitTranspileExpression(m.property as Expression, opts)
+            : `$lit(${JSON.stringify((m.property as { name: string }).name)})`;
           // 守卫基 = 首个 optional hop 的 object 读；删键链从 $removeNullish
           // 收窄后的守卫基重建（守卫抽象时 sum 的 nullish 成员不得进 del 臂，
           // 否则误记 may-throw——原生 delete o?.a 恒不抛）

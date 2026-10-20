@@ -22,7 +22,29 @@ import type { TranspileOptions } from "../types.ts";
 import { isExpression, foldRequireSpecArg } from "../helpers.ts";
 import { HOST_INTRINSIC_SET } from "../intrinsics.ts";
 import { REGEX_STATEFUL_NAMES } from "../ops.ts";
+import { memberPathOf, setPathSrc } from "../member-path.ts";
 import { emitTranspileExpression as transpileExpression } from "../transpile-dispatch.ts";
+/**
+ * Object.defineProperty 目标的**写回源**（第一实参可重绑时）：
+ * - 标识符 → `name = __nudoDefR`（`arguments` → argsBinding 槽）；
+ * - 成员路径 → `root = $set(root, …, __nudoDefR)`（不可变更新链写回根）；
+ * 不可重绑（调用结果 / new 表达式等）→ null（只发调用，不写回）。
+ */
+function definePropRebindSrc(target: Node, opts: TranspileOptions): string | null {
+  if (target.type === "Identifier") {
+    const name = (target as { name: string }).name;
+    if (name === "arguments") {
+      return opts.argsBinding ? `${opts.argsBinding} = __nudoDefR` : null;
+    }
+    return `${name} = __nudoDefR`;
+  }
+  if (target.type === "MemberExpression") {
+    const path = memberPathOf(target as unknown as Parameters<typeof memberPathOf>[0], opts);
+    if (!path) return null;
+    return `${path.rootTarget} = ${setPathSrc(path, "__nudoDefR")}`;
+  }
+  return null;
+}
 /**
  * 调用族：new、super()、super.m()、obj.m()、计算字面量键调用、标识符 $callNamed、
  * require/require.resolve 折叠与表达式 callee $call。
@@ -127,6 +149,37 @@ export function transpileCallExpr(
         if (spec !== undefined) return `__nudoRequire(${JSON.stringify(spec)})`;
         return "$unknown()";
       }
+      // Object.defineProperty / Object.defineProperties(o, …)：**求值点自包含**
+      // （Bug 137/176）——实参只求值一次（语句位写回曾**重发整条调用** ⇒ 实参
+      // 副作用翻倍），写回同点完成（同一条表达式里排在后面的读看到变更后的
+      // 状态）。返回值是新容器（value 进 slots、访问器进侧表）——写回第一
+      // 实参；freeze/seal/preventExtensions 就地标记无需写回（写回也无害）。
+      // 第一实参不可重绑（foo().p）→ 只发调用（不写回），与旧口径一致。
+      if (
+        callee.type === "MemberExpression" &&
+        !callee.computed &&
+        callee.object.type === "Identifier" &&
+        (callee.object as { name: string }).name === "Object" &&
+        callee.property.type === "Identifier" &&
+        ((callee.property as { name: string }).name === "defineProperty" ||
+          (callee.property as { name: string }).name === "defineProperties") &&
+        expr.arguments[0]
+      ) {
+        const methodName = (callee.property as { name: string }).name;
+        const rebind = definePropRebindSrc(expr.arguments[0] as Node, opts);
+        if (rebind !== null) {
+          const args = expr.arguments
+            .map((a) =>
+              a.type === "SpreadElement"
+                ? `...$elems(${transpileExpression(a.argument as Expression, opts)})`
+                : transpileExpression(a as Expression, opts),
+            )
+            .join(", ");
+          const loc = expr.loc;
+          const locArg = loc ? `, [${loc.start.line}, ${loc.start.column}]` : "";
+          return `(() => { const __nudoDefR = $invoke(Object, ${JSON.stringify(methodName)}, [${args}]${locArg}); ${rebind}; return __nudoDefR; })()`;
+        }
+      }
       // obj.method(args) / obj?.method(args) → $invoke / $optionalInvoke
       if (
         (callee.type === "MemberExpression" || callee.type === "OptionalMemberExpression") &&
@@ -165,7 +218,7 @@ export function transpileCallExpr(
           callee.object.type === "Identifier"
         ) {
           const recvName = (callee.object as { name: string }).name;
-          return `(() => { const __a = [${args}]; const __v = $invoke(${recvName}, ${name}, __a${locArg}); ${recvName} = $reStateCall(${recvName}, ${name}, __a); return __v; })()`;
+          return `(() => { const __nudoReArgs = [${args}]; const __v = $invoke(${recvName}, ${name}, __nudoReArgs${locArg}); ${recvName} = $reStateCall(${recvName}, ${name}, __nudoReArgs); return __v; })()`;
         }
         return opt
           ? `$optionalInvoke(${recv}, ${name}, [${args}])`

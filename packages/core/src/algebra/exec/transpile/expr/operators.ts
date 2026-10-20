@@ -29,7 +29,7 @@ import { nullishGuardsOf, typeGuardOf, discriminantGuardsOf, relGuardOf } from "
 import { isExpression, privateNameKeySrc, isConstAssignTarget } from "../helpers.ts";
 import { BIN_OPS } from "../ops.ts";
 import { NudoUnsupportedError } from "../../unsupported.ts";
-import { memberPathOf, readPathSrc, readPrefix, setPathSrc } from "../member-path.ts";
+import { memberPathOf, readPathSrc, readPrefix, setPathSrc, setParentPathSrc } from "../member-path.ts";
 import { emitTranspileExpression as transpileExpression } from "../transpile-dispatch.ts";
 import { transpileShortCircuitExpr } from "./short-circuit.ts";
 import { chainNeedsShortCircuit, flattenChain, emitDeleteChainFrom } from "./optional-chain.ts";
@@ -208,7 +208,17 @@ export function transpileOperatorExpr(
               : path
                 ? path.rootSrc
                 : transpileExpression(m.object as Expression, opts);
-          return `$delRes(${parentRead}, ${keySrc})`;
+          // Bug 176：删除在**求值点**发生（自包含 IIFE）——父对象与键各只
+          // 求值一次（Bug 136 的 delete 键双求值同解），删除（$del）与布尔值
+          // （$delRes）**同点**产出 ⇒ 同一条表达式里排在 delete 之后的读看到
+          // **变更后**的状态（原生语义），不再被推迟到整条语句之后。
+          // 注：Proxy 的 deleteProperty 陷阱派发唯一在 $delRes（Bug 172），
+          // $del 只做删除（陷阱在场时靶不动）⇒ 陷阱恰好派发一次。
+          // 写回（品牌类实例的不可变更新）同点完成：可重绑根才写。
+          const rebind = path
+            ? ` ${path.rootTarget} = ${setParentPathSrc(path, "__nudoDelD")};`
+            : "";
+          return `(() => { const __nudoDelP = ${parentRead}; const __nudoDelK = ${keySrc}; const __nudoDelD = $del(__nudoDelP, __nudoDelK);${rebind} return $delRes(__nudoDelP, __nudoDelK); })()`;
         }
         // 非成员目标的 delete 未 lowering：值应为 boolean，折 undefined 是假精确
         throw new NudoUnsupportedError(
