@@ -46,10 +46,17 @@ export function transpileAssignmentExpr(
       const op = expr.operator;
       if (op === "||=" || op === "&&=" || op === "??=") {
         const rNode = expr.right as Node;
-        const emitLogicalAssign = (targetSrc: string, setSrc: (val: string) => string): string => {
+        /**
+         * 逻辑赋值的短路 fork（标识符臂）。
+         *
+         * 标识符臂的写回是「写同一个值」（truthy → 保留原值 / falsy → 写
+         * right），对数据绑定不可观测——保持既有形态（写回在 fork 之外）。
+         * const 绑定另有分支（真写入抛 TypeError）。
+         */
+        const identFork = (targetSrc: string): string => {
           if (op === "||=") {
             // truthy → keep left；falsy → rhs
-            const sc = transpileShortCircuitExpr(opts, {
+            return transpileShortCircuitExpr(opts, {
               alwaysNodes: [],
               alwaysSrc: targetSrc,
               consSrc: "__test",
@@ -57,11 +64,10 @@ export function transpileAssignmentExpr(
               altSrc: right,
               altNodes: [rNode],
             });
-            return setSrc(sc);
           }
           if (op === "&&=") {
             // truthy → rhs；falsy → keep left
-            const sc = transpileShortCircuitExpr(opts, {
+            return transpileShortCircuitExpr(opts, {
               alwaysNodes: [],
               alwaysSrc: targetSrc,
               consSrc: right,
@@ -69,12 +75,11 @@ export function transpileAssignmentExpr(
               altSrc: "__test",
               altNodes: [],
             });
-            return setSrc(sc);
           }
           // ??= : nullish → rhs；否则 keep left
           // Bug 134：test / alt 引用左操作数的**单次求值绑定**（leftRef）——
           // 不得各自再发一份左操作数源码（成员读 / getter 跑两次）。
-          const sc = transpileShortCircuitExpr(opts, {
+          return transpileShortCircuitExpr(opts, {
             alwaysNodes: [],
             alwaysSrc: targetSrc,
             consSrc: right,
@@ -83,7 +88,62 @@ export function transpileAssignmentExpr(
             altNodes: [],
             testOf: (leftRef) => `$nullishTest(${leftRef})`,
           });
-          return setSrc(sc);
+        };
+        /**
+         * 逻辑赋值的短路 fork（成员臂）——Bug 138。
+         *
+         * 原生语义：只有**实际写入的分支**发生 PutValue——`o.a ||= 2` 在
+         * 左侧为真值时**不写**（不触发 setter、只读访问器不抛）。
+         *
+         * 修前写回包在整个 fork 结果之外（`setSrc(sc)`）——「保留原值」臂
+         * 也照样走一次 $set：只读访问器假抛 TypeError（门禁假红）、带 setter
+         * 的属性 setter 被多调一次。
+         *
+         * 修法：写回下沉到**写入臂**内，「保留原值」臂只返回读值；写回根
+         * 进 fork 绑定集（extraBindingNames）——臂内写经 fork 绑定-join
+         * 协议收口（两臂都跑时不得让后跑臂覆盖先跑臂的写）。
+         */
+        const memberFork = (
+          targetSrc: string,
+          targetNode: Node,
+          rootName: string | null,
+          writeArm: (val: string) => string,
+        ): string => {
+          const common = {
+            alwaysNodes: [] as Array<Node | null | undefined>,
+            alwaysSrc: targetSrc,
+            leftNode: targetNode,
+            ...(rootName ? { extraBindingNames: [rootName] } : {}),
+          };
+          if (op === "||=") {
+            // truthy → 保留原值（**不写**）；falsy → 写 right
+            return transpileShortCircuitExpr(opts, {
+              ...common,
+              consSrc: "__test",
+              consNodes: [],
+              altSrc: writeArm(right),
+              altNodes: [rNode],
+            });
+          }
+          if (op === "&&=") {
+            // truthy → 写 right；falsy → 保留原值（**不写**）
+            return transpileShortCircuitExpr(opts, {
+              ...common,
+              consSrc: writeArm(right),
+              consNodes: [rNode],
+              altSrc: "__test",
+              altNodes: [],
+            });
+          }
+          // ??= : nullish → 写 right；非 nullish → 保留原值（**不写**）
+          return transpileShortCircuitExpr(opts, {
+            ...common,
+            consSrc: writeArm(right),
+            consNodes: [rNode],
+            altOf: (leftRef) => `$removeNullish(${leftRef})`,
+            altNodes: [],
+            testOf: (leftRef) => `$nullishTest(${leftRef})`,
+          });
         };
         if (expr.left.type === "Identifier") {
           // 逻辑赋值真正写入 const 绑定 → TypeError。
@@ -99,7 +159,8 @@ export function transpileAssignmentExpr(
                   : `$litTruth($nullishTest(${lhs})) === false`;
             return `((${lhs}) => { if (!(${skipsWrite})) $throwConstAssign(); return ${lhs}; })(${lhs})`;
           }
-          return emitLogicalAssign(expr.left.name, (val) => `${expr.left.type === "Identifier" ? (expr.left as { name: string }).name : ""} = ${val}`);
+          const lhs = (expr.left as { name: string }).name;
+          return `${lhs} = ${identFork(lhs)}`;
         }
         if (expr.left.type === "MemberExpression") {
           const m = expr.left as unknown as {
@@ -109,14 +170,18 @@ export function transpileAssignmentExpr(
           };
           const path = memberPathOf(m, opts);
           if (path) {
-            return emitLogicalAssign(readPathSrc(path), (val) => {
+            const rootName = writeBackRootName(m, opts);
+            return memberFork(
+              readPathSrc(path),
+              expr.left as unknown as Node,
+              rootName,
               // 表达式值 = 写入的值；$set 返回容器不是 JS 语义
-              return `((__v) => { ${path.rootSrc} = ${setPathSrc(path, "__v")}; return __v; })(${val})`;
-            });
+              (val) => `((__v) => { ${path.rootSrc} = ${setPathSrc(path, "__v")}; return __v; })(${val})`,
+            );
           }
           // Bug 80：this.#x ||= v / &&= / ??=——memberPathOf 对 PrivateName
           // 返回 null，此前落 assign:||= unsupported 令整模块 fail-closed。
-          // 复用 emitLogicalAssign：读 $get(obj,"#x")，短路写落同一混淆键槽
+          // 复用短路协议：读 $get(obj,"#x")，短路写落同一混淆键槽
           //（与下方普通/复合私有名赋值分支同口径）
           if (!m.computed && m.property.type === "PrivateName") {
             const key = privateNameKeySrc(
@@ -124,8 +189,12 @@ export function transpileAssignmentExpr(
             );
             if (key !== null) {
               const obj = transpileExpression(m.object as Expression, opts);
-              return emitLogicalAssign(
+              // 私有名槽是**就地**写（$set 不重绑根）——无 fork 绑定可收口；
+              // 写臂内就地写、保留臂不写（Bug 138：只读访问器不得假抛）。
+              return memberFork(
                 `$get(${obj}, ${key})`,
+                expr.left as unknown as Node,
+                null,
                 (val) => `((__v) => (($set(${obj}, ${key}, __v)), __v))(${val})`,
               );
             }
@@ -269,4 +338,28 @@ export function transpileAssignmentExpr(
       );
     }
   }
+}
+
+/**
+ * 成员路径**写回根**的自由变量名——逻辑赋值的写入臂在臂内改写根绑定，
+ * 根必须进 fork 绑定集（fork 绑定-join 协议）才不会被另一臂的写覆盖。
+ *
+ * `this` 根取 transpile 的 this 形参名；`arguments` 根取 argsBinding；
+ * 普通标识符取其名；不可重绑的根（调用结果 / new 表达式）返回 null。
+ */
+function writeBackRootName(
+  m: { object: Node; property: Node; computed: boolean },
+  opts: TranspileOptions,
+): string | null {
+  let cur: Node = m as unknown as Node;
+  while (cur.type === "MemberExpression") {
+    cur = (cur as unknown as { object: Node }).object;
+  }
+  if (cur.type === "Identifier") {
+    const name = (cur as unknown as { name: string }).name;
+    if (name === "arguments") return opts.argsBinding ?? null;
+    return name;
+  }
+  if (cur.type === "ThisExpression") return opts.thisParam ?? null;
+  return null;
 }
