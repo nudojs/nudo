@@ -155,6 +155,9 @@ export function transpileCallExpr(
         // RegExp test/exec 的状态写回必须发生在**表达式内部**（元素顺序副作用：
         // [r.test(s), r.lastIndex] 原生第二个元素读到更新后的位置）。receiver 是
         // 本地绑定时内联「求值 + 写回」IIFE；语句级 emit 不再重复写回。
+        // Bug 171：实参**只求值一次**——原先同一份 `[${args}]` 源码文本内联进
+        // $invoke 与 $reStateCall 两处，实参表达式被执行两遍（副作用翻倍）。
+        // 改为先把实参物化成数组 __a，两个通道共用同一份值。
         if (
           !opt &&
           callee.property.type === "Identifier" &&
@@ -162,7 +165,7 @@ export function transpileCallExpr(
           callee.object.type === "Identifier"
         ) {
           const recvName = (callee.object as { name: string }).name;
-          return `(() => { const __v = $invoke(${recvName}, ${name}, [${args}]${locArg}); ${recvName} = $reStateCall(${recvName}, ${name}, [${args}]); return __v; })()`;
+          return `(() => { const __a = [${args}]; const __v = $invoke(${recvName}, ${name}, __a${locArg}); ${recvName} = $reStateCall(${recvName}, ${name}, __a); return __v; })()`;
         }
         return opt
           ? `$optionalInvoke(${recv}, ${name}, [${args}])`

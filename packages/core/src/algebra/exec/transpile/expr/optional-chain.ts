@@ -263,9 +263,12 @@ function emitChainFrom(hops: ChainHop[], i: number, valSrc: string): string {
         let call = `$invoke(${recv}, ${hop.method}, ${hop.argsSrc}${hop.locArg})`;
         // RegExp test/exec 的 lastIndex 写回：与非链路径同口径（receiver 为标识符时
         // 表达式内联 IIFE）。漏掉会让 `r.exec(s)?.[0]` 不推进 lastIndex。
+        // Bug 171：实参**只求值一次**——argsSrc 同一份数组字面量内联进 $invoke
+        // 与 $reStateCall 两处会让实参表达式跑两遍（副作用翻倍）；改为先物化
+        // 成 __a，两个通道共用同一份值。
         const rawMethod = JSON.parse(hop.method) as string;
         if (hop.recvName && REGEX_STATEFUL_NAMES.has(rawMethod)) {
-          call = `(() => { const __v = ${call}; ${hop.recvName} = $reStateCall(${hop.recvName}, ${hop.method}, ${hop.argsSrc}); return __v; })()`;
+          call = `(() => { const __a = ${hop.argsSrc}; const __v = $invoke(${recv}, ${hop.method}, __a${hop.locArg}); ${hop.recvName} = $reStateCall(${hop.recvName}, ${hop.method}, __a); return __v; })()`;
         }
         if (!fnCheck) return call;
         // o.m?.()：方法值 nullish 短路；this 仍绑 recv（$invoke 二次 get 方法属已知

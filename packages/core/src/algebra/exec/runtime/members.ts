@@ -1002,13 +1002,16 @@ export function $del(o: Abs, key: Abs): Abs {
   // Bug 124：deleteProperty 陷阱优先于一切靶判定——陷阱在场时删除责任
   // 在陷阱（引擎不动靶）；falsy 字面量结果 strict 定抛（与 $delRes 同口径）；
   // absent → 靶语义（下方 brand 递归删靶槽）
+  // Bug 172：陷阱的**派发**唯一发生在 $delRes（delete 表达式值通道）。本函数
+  // 是语句位写回通道（`o = $del(o, k)`）——若在此再派发一次，Proxy 的
+  // deleteProperty 陷阱会被调用两次（原生恰好一次），陷阱副作用翻倍。故
+  // 此处只**探测陷阱在场**（不调用），在场 → 靶不动、原样返回。
   if (o.shape.k === "brand" && o.shape.name === "Proxy") {
-    const trapR = proxyBooleanTrap(o, "deleteProperty", (t) => [t, key]);
-    if (trapR === "opaque") return o;
-    if (trapR !== undefined) {
-      if (trapR.term?.op === "lit" && trapR.term.value === false) throwStrictWrite();
-      return o;
-    }
+    const parts = proxyPartsOf(o);
+    const trap = parts ? proxyTrapOf(parts.handler, "deleteProperty") : undefined;
+    // opaque（形态不可判）→ 与 $delRes 同口径：靶不动；fn/dead（陷阱在场）
+    // → 删除责任在陷阱：靶不动。absent → 无陷阱，落靶语义。
+    if (parts && trap && trap.k !== "absent") return o;
   }
   const st = extStateOf(o);
   // frozen/sealed：删除 TypeError（strict 硬抛；表达式 delete 走 $delRes 返回 false）
