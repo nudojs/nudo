@@ -218,7 +218,7 @@ export function transpileCallExpr(
           callee.object.type === "Identifier"
         ) {
           const recvName = (callee.object as { name: string }).name;
-          return `(() => { const __nudoReArgs = [${args}]; const __v = $invoke(${recvName}, ${name}, __nudoReArgs${locArg}); ${recvName} = $reStateCall(${recvName}, ${name}, __nudoReArgs); return __v; })()`;
+          return `(() => { const __nudoReArgs = [${args}]; const __v = $invoke(${recvName}, ${name}, __nudoReArgs${locArg}); $reStateCall(${recvName}, ${name}, __nudoReArgs); return __v; })()`;
         }
         return opt
           ? `$optionalInvoke(${recv}, ${name}, [${args}])`

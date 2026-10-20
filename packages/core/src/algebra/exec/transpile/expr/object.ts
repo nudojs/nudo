@@ -114,27 +114,35 @@ export function transpileObjectExpr(
           // get/set 访问器：注册进运行时侧表（$get/$set 派发；展开/assign 时调用）
           if (prop.kind === "get" || prop.kind === "set") {
             const omVarParams = paramNamesOfFn(prop.params as Node[]);
+            // Bug 151：访问器是**普通函数**——原生里 `arguments` 天然存在
+            // （getter 长度 0 / setter 长度 1）。此前访问器 thunk 不发
+            // `__nudoArgs` 槽绑定 ⇒ 体里的 `arguments` 走 $throwFreeArguments()
+            // ⇒ 定抛 ReferenceError（原生返回 0）。访问器一律给槽绑定。
+            const accOpts: TranspileOptions = { ...methodOpts, argsBinding: "__nudoArgs" };
             // thunk 先行构造（get：单表达式体；set：与 stmt.ts 类访问器同口径
             // emitSetterAccessorThunk——内层箭头丢弃体返回值（恒返回 __this）
             // + 别名写接收者回收；N3：setter 形参默认值/解构经 __nudoArgs 槽绑定）
             const omFirstP = (prop.params as Node[])[0] as { type?: string } | undefined;
+            const omVName =
+              omFirstP?.type === "Identifier" ? (bindNames[0] ?? "__v") : "__v";
             const thunkSrc =
               prop.kind === "get"
-                ? `(__this) => {\n${emitFnBlockBody(prop.body, 1, methodOpts, { varParams: omVarParams })}\n}`
+                ? `(__this) => {\n  let __nudoArgs = $arguments([]);\n${emitFnBlockBody(prop.body, 1, accOpts, { varParams: omVarParams })}\n}`
                 : emitSetterAccessorThunk(
-                    omFirstP?.type === "Identifier" ? (bindNames[0] ?? "__v") : "__v",
-                    emitFnBlockBody(prop.body, 2, methodOpts, {
+                    omVName,
+                    emitFnBlockBody(prop.body, 2, accOpts, {
                       implicitReturn: false,
                       varParams: omVarParams,
                     }),
                     collectForkBindingNames(prop.body).filter((n) => !omVarParams.has(n)),
                     1,
-                    omFirstP && omFirstP.type !== "Identifier"
-                      ? [
-                          `    let __nudoArgs = $arguments([__v]);`,
-                          ...emitParamBindingFromArgs(prop.params as Node[], "    ", methodOpts, "__nudoArgs").prologue,
-                        ]
-                      : [],
+                    [
+                      // Bug 151：setter 的 arguments 长度 = 1（原生 setter 形参 1 个）
+                      `    let __nudoArgs = $arguments([${omVName}]);`,
+                      ...(omFirstP && omFirstP.type !== "Identifier"
+                        ? emitParamBindingFromArgs(prop.params as Node[], "    ", accOpts, "__nudoArgs").prologue
+                        : []),
+                    ],
                   );
             // Bug 112：计算键访问器的键表达式只求值一次——此前 computedKeySrc
             // 内嵌两处（占位槽写 + $objAccessorKey 注册），副作用键翻倍

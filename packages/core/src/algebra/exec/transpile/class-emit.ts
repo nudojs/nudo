@@ -317,6 +317,10 @@ export function classSpecOf(
         inFunction: true,
         thisParam: "__this",
         className: name,
+        // Bug 151：访问器是普通函数——原生 `arguments` 天然存在（getter 长度
+        // 0 / setter 长度 1）。此前访问器体无 args 绑定 ⇒ 体里的 arguments
+        // 定抛 ReferenceError（原生返回 0）。
+        argsBinding: "__nudoArgs",
         // P4b：访问器体同在类体不可变自有名绑定作用域内（methodOptsBase 同口径）
         constNames: selfConstNames,
         // Bug 14：静态访问器体 super 接收者 = 父类构造器
@@ -327,7 +331,8 @@ export function classSpecOf(
       const def = target.get(mname) ?? {};
       if (m.kind === "get") {
         const accBodyStmts = emitFnBlockBody(accBody, depth + 3, accBodyOpts, { varParams: accVarParams });
-        def.get = `(__this) => {\n${accBodyStmts}\n${indent(depth + 3)}}`;
+        // Bug 151：getter 的 arguments 长度 = 0
+        def.get = `(__this) => {\n${indent(depth + 3)}let __nudoArgs = $arguments([]);\n${accBodyStmts}\n${indent(depth + 3)}}`;
       } else {
         const setParams = (m.params ?? []) as Node[];
         const firstP = setParams[0] as { type?: string; name?: string } | undefined;
@@ -345,10 +350,13 @@ export function classSpecOf(
         //（此前默认值静默丢弃折 undefined），解构 setter 参此前成自由标识符
         //（折 never）。赋进值以 [__v] 元组入槽，默认表达式以访问器边界
         // opts（thisParam __this）求值。
-        let setPrologue: string[] = [];
+        // Bug 151：setter 的 arguments 长度 = 1（原生 setter 形参 1 个）
+        let setPrologue: string[] = [
+          `${indent(depth + 4)}let __nudoArgs = $arguments([${vname}]);`,
+        ];
         if (firstP && firstP.type !== "Identifier") {
           const bound = emitParamBindingFromArgs(setParams, indent(depth + 4), accBodyOpts, "__nudoArgs");
-          setPrologue = [`${indent(depth + 4)}let __nudoArgs = $arguments([__v]);`, ...bound.prologue];
+          setPrologue = [...setPrologue, ...bound.prologue];
         }
         def.set = emitSetterAccessorThunk(vname, setBody, aliasNames, depth + 3, setPrologue);
       }

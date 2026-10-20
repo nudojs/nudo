@@ -69,6 +69,9 @@ function isStrRecv(recv: Abs): boolean {
  */
 function symbolHookSlot(x: Abs | undefined, projKey: string): Abs | undefined {
   if (!x) return undefined;
+  // Bug 179：自由标识符实参（宿主全局值 `Math` / `eval`…）不是 Abs —— 不得
+  // 读 .shape（TypeError）⇒ 无符号钩子槽。
+  if (typeof x !== "object" || !("shape" in (x as object))) return undefined;
   const inner = x.shape.k === "brand" ? x.shape.shape : undefined;
   const slots =
     inner && inner.shape.k === "obj"
@@ -143,6 +146,12 @@ function isUndefinedArg(x: Abs | undefined): boolean {
  */
 export function toStringArgTier(x: Abs | undefined): "ok" | "throw" | "may" {
   if (x === undefined) return "ok";
+  // Bug 179：自由标识符实参（`Math` / `eval` / `JSON`…）在生成代码里是**宿主
+  // 全局值**而非 Abs —— 其 ToString total（symbol 除外）⇒ 不记抛，且不得
+  // 读 .shape / .term（宿主值上没有这些字段）。
+  if (typeof x !== "object" || x === null || !("shape" in (x as object))) {
+    return typeof x === "symbol" ? "throw" : "ok";
+  }
   if (isSymbolAbs(x)) return "throw";
   if (x.term?.op === "lit") return "ok";
   return x.shape.k === "prim" ? "ok" : "may";
@@ -159,7 +168,9 @@ export function enforceToStringArg(x: Abs | undefined, what: string): void {
 
 /** RegExp brand 判定（Bug 69 IsRegExp 守卫 / replace pattern 合法臂共用） */
 function isRegExpBrandAbs(x: Abs | undefined): boolean {
-  return !!x && x.shape.k === "brand" && (x.shape as { name?: string }).name === "RegExp";
+  // Bug 179：自由标识符实参（宿主全局值）不是 Abs —— 不得读 .shape。
+  if (!x || typeof x !== "object" || !("shape" in (x as object))) return false;
+  return x.shape.k === "brand" && (x.shape as { name?: string }).name === "RegExp";
 }
 
 /** Bug 2：match 的保守返回域——null | 匹配数组（global → string[]，
@@ -734,6 +745,11 @@ export function callAbsMethod(
           const pv = patAbs?.term?.op === "lit" ? patAbs.term.value : undefined;
           if (patAbs === undefined) {
             patSrc = "undefined";
+          } else if (typeof patAbs !== "object" || patAbs === null || !("shape" in (patAbs as object))) {
+            // Bug 179：自由标识符 pattern（宿主全局值 `Math` 等）——原生走
+            // ToString(pattern) 分支（非 RegExp 路径）⇒ 用宿主 ToString 折成
+            // 模式文本，不记抛。
+            patSrc = String(patAbs);
           } else if (typeof pv === "string") {
             patSrc = pv;
           } else if (patAbs.term?.op === "lit" && typeof pv !== "symbol") {

@@ -245,9 +245,15 @@ export function emitArrMutatorRebinds(
       (node.arguments[0] as { type?: string }).type === "Identifier"
     ) {
       const mName = (node.callee.property as { name: string }).name;
-      const argName = (node.arguments[0] as { name: string }).name;
+      // Bug 179：实参取**求值源**而非标识符文本——自由标识符（`undefined` /
+      // `eval` / `Math`…）在生成代码里是宿主全局值而非 Abs，传进运行时会在
+      // `.shape` 上抛 TypeError（凭空抛）。且**不生成赋值**——`eval = …` /
+      // `arguments = …` 在 strict 模式是 SyntaxError（整模块中止 ⇒ 契约从
+      // ERROR 降级成 WARNING ⇒ 门禁假绿）；lastIndex 改为**就地**写
+      // （$reStateCall 就地改槽），无需重绑根绑定。
+      const argSrc = emitTranspileExpression(node.arguments[0] as Expression, opts);
       const subjSrc = emitTranspileExpression(node.callee.object as Expression, opts);
-      lines.push(`${pad}${argName} = $reStateCall(${argName}, ${JSON.stringify(mName)}, [${subjSrc}]);`);
+      lines.push(`${pad}$reStateCall(${argSrc}, ${JSON.stringify(mName)}, [${subjSrc}]);`);
     }
     // 自增/自减：标识符前/后缀均在表达式内自包含写回
     //（后缀缓存 ToNumeric 旧值），本 pass 不得再补写回——否则双倍自增。

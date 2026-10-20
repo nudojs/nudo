@@ -17,6 +17,9 @@ import { validateRegexSubjectArg, matchResultAbs, tryMakeRegexAbs, markMatchArra
 
 /** RegExp brand 内部 source/flags/lastIndex 提取（exec/test 共用） */
 export function regexParts(re: Abs): { pat: string; flags: string; lastIndex: number } | undefined {
+  // 防御：自由标识符实参（`eval` / `Math` / `arguments`…）在生成代码里是宿主
+  // 全局值而非 Abs —— 不得读 .shape（TypeError）⇒ 视作「不是 RegExp」。
+  if (!re || typeof re !== "object" || !("shape" in re)) return undefined;
   if (re.shape.k !== "brand" || re.shape.name !== "RegExp") return undefined;
   const inner = re.shape.shape;
   if (!isObj(inner)) return undefined;
@@ -44,17 +47,27 @@ function toLength(n: number): number {
   return t < 0 ? 0 : Math.min(t, Number.MAX_SAFE_INTEGER);
 }
 
-/** brand 槽 lastIndex 重绑原语（test/exec 状态写回 / Bug 96 参数位消费 / 共用） */
-function rebindLastIndex(re: Abs, lastIndex: number): Abs {
+/**
+ * brand 槽 lastIndex **就地**写（test/exec 状态写回 / Bug 96 参数位消费）。
+ *
+ * 原生 lastIndex 是正则对象上的自有属性——别名（`const r2 = re`）共享同一
+ * 对象 ⇒ 就地改槽即可。此前本原语返回**新 brand** 由转译层重绑根绑定：
+ *  - 别名看不到更新（原生可见），
+ *  - 重绑目标可能是**自由标识符**（`undefined` / `eval` / `arguments`）⇒ 转译
+ *    产物要么 strict TypeError、要么 `eval = …` 的 strict SyntaxError ⇒ 整
+ *    模块中止（Bug 179）。
+ * 就地写后转译层不再需要写回（也不再有自由标识符赋值）。
+ */
+function setLastIndexInPlace(re: Abs, lastIndex: number): Abs {
   const inner = (re.shape as { k: "brand"; name: string; shape: Abs }).shape;
   if (!isObj(inner)) return re;
-  const slots = { ...inner.shape.slots, lastIndex: { value: numLit(lastIndex) } };
-  return abs(
-    { k: "brand", name: "RegExp", shape: objOf(slots, { open: inner.shape.open }) },
-    re.term,
-    re.pred,
-    re.conf,
-  );
+  const slot = inner.shape.slots["lastIndex"];
+  if (slot) {
+    slot.value = numLit(lastIndex);
+  } else {
+    inner.shape.slots["lastIndex"] = { value: numLit(lastIndex) };
+  }
+  return re;
 }
 
 /** 严格 undefined 字面量判定（compile 的 flags 缺省形） */
@@ -85,9 +98,27 @@ function compileRegexBrand(re: Abs, args: Abs[]): Abs {
     }
     const src = regexParts(p0);
     if (!src) return re; // 实参 source/flags 非字面量：保守不动
-    return tryMakeRegexAbs([strLit(src.pat), strLit(src.flags)]) ?? re;
+    return applyCompiledInPlace(re, tryMakeRegexAbs([strLit(src.pat), strLit(src.flags)]));
   }
-  return tryMakeRegexAbs(args) ?? re;
+  return applyCompiledInPlace(re, tryMakeRegexAbs(args));
+}
+
+/**
+ * compile 的结果**就地**写进接收者（Annex B：RegExp.prototype.compile 修改
+ * 接收者本身并返回它）。此前返回**新 brand** 由转译层重绑根绑定——那要求
+ * 根是**可写局部绑定**，自由标识符（`eval` / `arguments` / `undefined`）会
+ * 产出非法 strict JS 或凭空 TypeError（Bug 179）。就地写后无需重绑 ⇒ 也与
+ * 原生「同一对象」一致（r.compile("b") === r）。
+ */
+function applyCompiledInPlace(re: Abs, next: Abs | undefined): Abs {
+  if (next === undefined) return re;
+  const inner = (re.shape as { k: "brand"; name: string; shape: Abs }).shape;
+  const nextInner = (next.shape as { k: "brand"; name: string; shape: Abs }).shape;
+  if (!isObj(inner) || !isObj(nextInner)) return re;
+  for (const [k, slot] of Object.entries(nextInner.shape.slots)) {
+    inner.shape.slots[k] = slot;
+  }
+  return re;
 }
 
 /** Bug 81：模式自带 @@match/@@search/@@matchAll 钩子（re[Symbol.match]=fn
@@ -230,13 +261,13 @@ export function $reStateCall(re: Abs, method: string, args: Abs[]): Abs {
     // = 0——宿主 sticky 失败即归 0）；非 sticky 非全局原生不动。sticky 的
     // replace 原生阵营分裂（V8 按 RegExpExec 推进、JSC 保原值）——以 JSC
     // 差分门禁口径为准：不动（Bug 96 报告 Fix 亦只对 match 要求推进）。
-    if (parts.flags.includes("g")) return rebindLastIndex(re, 0);
+    if (parts.flags.includes("g")) return setLastIndexInPlace(re, 0);
     if (method === "match" && parts.flags.includes("y")) {
       const svR = args[0] ? litValue(args[0]) : undefined;
       const sv = svR?.ok ? svR.value : undefined;
       if (typeof sv !== "string") return re; // 抽象 subject：状态不可判定，保守不动
       try {
-        return rebindLastIndex(re, regexExecWithState(re, "exec", sv).lastIndex);
+        return setLastIndexInPlace(re, regexExecWithState(re, "exec", sv).lastIndex);
       } catch {
         return re;
       }
@@ -251,7 +282,7 @@ export function $reStateCall(re: Abs, method: string, args: Abs[]): Abs {
   if (typeof subject !== "string") return re; // 抽象 subject：状态不可判定，保守不动
   try {
     const { lastIndex } = regexExecWithState(re, method, subject);
-    return rebindLastIndex(re, lastIndex);
+    return setLastIndexInPlace(re, lastIndex);
   } catch {
     return re;
   }
@@ -276,9 +307,15 @@ export function stringRegexMethod(recv: Abs, method: string, args: Abs[]): Abs |
   // ToString 折叠；matchAll 的字符串 pattern 恒无 g → 下方 !reBrand 分支
   // 回落 callAbsMethod 的定抛臂。
   const litTerm = re && re.term?.op === "lit" ? (re.term as { op: "lit"; value: unknown }) : undefined;
+  // Bug 179：RegExpCreate 语义——pattern 为 undefined 字面量 ⇒ **空模式**
+  // （ES2023 RegExpCreate：pattern undefined → P = ""），不是 "undefined"。
+  // 原生 'abc'.match(undefined) → [""]（空模式在 0 处匹配）；此前折成
+  // "undefined" → 无匹配 → null。
   const strPat =
     !reBrand && litTerm && typeof litTerm.value !== "symbol"
-      ? String(litTerm.value)
+      ? litTerm.value === undefined
+        ? ""
+        : String(litTerm.value)
       : undefined;
   const svR = litValue(recv);
   const sv = svR.ok && typeof svR.value === "string" ? svR.value : undefined;

@@ -268,7 +268,7 @@ function emitChainFrom(hops: ChainHop[], i: number, valSrc: string): string {
         // 成 __a，两个通道共用同一份值。
         const rawMethod = JSON.parse(hop.method) as string;
         if (hop.recvName && REGEX_STATEFUL_NAMES.has(rawMethod)) {
-          call = `(() => { const __nudoReArgs = ${hop.argsSrc}; const __v = $invoke(${recv}, ${hop.method}, __nudoReArgs${hop.locArg}); ${hop.recvName} = $reStateCall(${hop.recvName}, ${hop.method}, __nudoReArgs); return __v; })()`;
+          call = `(() => { const __nudoReArgs = ${hop.argsSrc}; const __v = $invoke(${recv}, ${hop.method}, __nudoReArgs${hop.locArg}); $reStateCall(${hop.recvName}, ${hop.method}, __nudoReArgs); return __v; })()`;
         }
         if (!fnCheck) return call;
         // o.m?.()：方法值 nullish 短路；this 仍绑 recv（$invoke 二次 get 方法属已知
