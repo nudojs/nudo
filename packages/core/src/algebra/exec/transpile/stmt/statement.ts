@@ -1027,11 +1027,17 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         (handlerParam.type === "ObjectPattern" || handlerParam.type === "ArrayPattern")
           ? handlerParam
           : null;
+      const catchTmp = `__nudoE_${tmpNo}`;
+      // Bug 175：可选 catch 绑定（ES2019 `catch { … }`）**不引入任何绑定**——
+      // 此前载体名回落成**硬编码 "e"**：① 遮蔽外层同名绑定（自信错值）
+      // ② 顶掉未声明名的 ReferenceError（漏抛 / 假绿）③ 与用户自己的
+      // `let e` 撞车 → 重复声明 → 转译崩溃、类型塌成 unknown。
+      // 修法：可选绑定**不发射用户可见绑定**——catch 体按原样解析外层名字。
+      const optionalBinding = !handlerParam;
       const catchParam =
         handlerParam?.type === "Identifier"
           ? (handlerParam as unknown as { name: string }).name
-          : "e";
-      const catchTmp = `__nudoE_${tmpNo}`;
+          : catchTmp;
       // Bug 52：catch 体仍受本 try 的 finally 覆盖（.return 注入值可被改写），
       // 但注入到 catch 内 yield 的 .throw 不再被**本** catch 重新吸收
       //（native：catch 内 throw 直接穿出 try，经 finally 上抛）——只并
@@ -1068,10 +1074,13 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         lines.push(`${indent(depth + 1)}const __xs_${markName} = $tryTakeSince(${markName});`);
         lines.push(`${indent(depth + 1)}__xs_${markName}.push($catchVal(${catchTmp}));`);
         lines.push(
-          // catch 绑定可再赋（let 语义），不是 const；模式参载体 = catchTmp
+          // catch 绑定可再赋（let 语义），不是 const；模式参载体 = catchTmp；
+          // 可选 catch 绑定不引入用户可见绑定（Bug 175）
           patternParam
             ? `${indent(depth + 1)}${catchTmp} = __xs_${markName}.reduce((a, b) => $join(a, b));`
-            : `${indent(depth + 1)}let ${catchParam} = __xs_${markName}.reduce((a, b) => $join(a, b));`,
+            : optionalBinding
+              ? ""
+              : `${indent(depth + 1)}let ${catchParam} = __xs_${markName}.reduce((a, b) => $join(a, b));`,
         );
         lines.push(`${indent(depth + 1)}try {`);
         if (patternParam) {
@@ -1133,7 +1142,9 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         lines.push(
           patternParam
             ? `${indent(depth + 2)}let ${catchTmp} = __post_${markName}.reduce((a, b) => $join(a, b));`
-            : `${indent(depth + 2)}let ${catchParam} = __post_${markName}.reduce((a, b) => $join(a, b));`,
+            : optionalBinding
+              ? ""
+              : `${indent(depth + 2)}let ${catchParam} = __post_${markName}.reduce((a, b) => $join(a, b));`,
         );
         if (patternParam) {
           emitDestructure(
