@@ -146,8 +146,15 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const specs = stmt.specifiers
         .map((s) => {
           if (s.type === "ImportSpecifier") {
+            // Bug 177：任意模块导出名（ES2022 `import { "a-b" as x }`）——
+            // imported 在字符串字面量形态下是 **StringLiteral 节点对象**，
+            // `String(node)` 走 Object.prototype.toString ⇒ "[object Object]"
+            // ⇒ 渲染出**非法 JS** ⇒ 整模块求值失败 ⇒ 值静默变 unknown
+            // （假绿）。string 名必须保引号（与 export 侧同口径）。
             const imported =
-              s.imported.type === "Identifier" ? s.imported.name : String(s.imported);
+              s.imported.type === "Identifier"
+                ? s.imported.name
+                : JSON.stringify((s.imported as unknown as { value: string }).value);
             return imported === s.local.name ? imported : `${imported} as ${s.local.name}`;
           }
           if (s.type === "ImportDefaultSpecifier") return `default as ${s.local.name}`;

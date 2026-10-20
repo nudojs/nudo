@@ -149,7 +149,10 @@ function rewriteUserImports(js: string): string {
           .map((p) => {
             const [imported, local] = p.split(/\s+as\s+/).map((x) => x.trim());
             const bind = local ?? imported;
-            return namedBindSrc(bind, spec, imported);
+            // Bug 177：任意模块导出名（`import { "a-b" as x }`）——重写时
+            // 名字带引号，须去引号才是真正的导出名（带引号查不到 → unknown）
+            const importedName = imported.replace(/^["'](.*)["']$/, "$1");
+            return namedBindSrc(bind, spec, importedName);
           })
           .join("\n"),
       );
