@@ -279,9 +279,9 @@ export function transpileOperatorExpr(
           // 修法：读一次、写回下沉到表达式内（语句级 rebind pass 不再补写）。
           // 前缀：值 = 新值；后缀：值 = 旧值（ToNumeric 后），写回用同一旧值。
           if (expr.prefix) {
-            return `((__v) => { const __n = ${fn}(__v); ${path.rootSrc} = ${setPathSrc(path, "__n")}; return __n; })(${readSrc})`;
+            return `((__v) => { const __n = ${fn}(__v); ${path.rootTarget} = ${setPathSrc(path, "__n")}; return __n; })(${readSrc})`;
           }
-          return `((__old) => { ${path.rootSrc} = ${setPathSrc(path, `${fn}(__old)`)}; return __old; })($toNumeric(${readSrc}))`;
+          return `((__old) => { ${path.rootTarget} = ${setPathSrc(path, `${fn}(__old)`)}; return __old; })($toNumeric(${readSrc}))`;
         }
         // Bug 80：this.#x++ / C.#n++——memberPathOf 对 PrivateName 返回
         // null，此前落 update:++ unsupported 令整模块 fail-closed。镜像

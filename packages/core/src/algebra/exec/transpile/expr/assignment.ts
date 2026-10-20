@@ -176,7 +176,7 @@ export function transpileAssignmentExpr(
               expr.left as unknown as Node,
               rootName,
               // 表达式值 = 写入的值；$set 返回容器不是 JS 语义
-              (val) => `((__v) => { ${path.rootSrc} = ${setPathSrc(path, "__v")}; return __v; })(${val})`,
+              (val) => `((__v) => { ${path.rootTarget} = ${setPathSrc(path, "__v")}; return __v; })(${val})`,
             );
           }
           // Bug 80：this.#x ||= v / &&= / ??=——memberPathOf 对 PrivateName
@@ -218,7 +218,7 @@ export function transpileAssignmentExpr(
             ? `${compoundFn}(${readPathSrc(path)}, ${right})`
             : right;
           // 表达式值 = 写入的值（JS 语义）；写回仍走不可变更新链
-          return `((__v) => { ${path.rootSrc} = ${setPathSrc(path, "__v")}; return __v; })(${valSrc})`;
+          return `((__v) => { ${path.rootTarget} = ${setPathSrc(path, "__v")}; return __v; })(${valSrc})`;
         }
         // R5：静态方法体 super.k = v（staticSuperSrc + thisParam + className
         // 同时在）——SetSuper 静态面：父类静态 setter 派发，数据字段/缺槽

@@ -8,7 +8,17 @@ import { emitTranspileExpression } from "./transpile-dispatch.ts";
 import { isExpression, symbolKeyOf } from "./helpers.ts";
 
 export type MemberLayer = { get: (base: string) => string; set: (base: string, v: string) => string };
-export type MemberPath = { rootSrc: string; layers: MemberLayer[] };
+/**
+ * 可重绑成员路径。
+ *
+ * - `rootSrc`：根的**读**源（recordPositions 时包 `$nodoPos(name, l, c)`——
+ *   位置插桩读）；
+ * - `rootTarget`：根的**赋值目标**（裸绑定名 / argsBinding / thisParam）。
+ *   写回必须用它——`$nodoPos(o, l, c) = …` 是**非法 JS**（赋值目标不是简单
+ *   赋值目标），会让整个模块 new Function 抛 SyntaxError ⇒ fail-closed
+ *   （LSP 重放面 recordPositions 常开 ⇒ 带成员写回的模块整体退化为 unknown）。
+ */
+export type MemberPath = { rootSrc: string; rootTarget: string; layers: MemberLayer[] };
 
 /**
  * 成员/下标链 → 可重绑路径。根必须是标识符（或 transpile this 参数），
@@ -18,6 +28,7 @@ export function memberPathOf(m: { object: Node; property: Node; computed: boolea
   const layers: MemberLayer[] = [];
   let cur: Node = m as unknown as Node;
   let rootSrc: string | null = null;
+  let rootTarget: string | null = null;
   while (cur.type === "MemberExpression") {
     const mm = cur as unknown as { object: Node; property: Node; computed: boolean };
     const k = mm.property;
@@ -70,21 +81,25 @@ export function memberPathOf(m: { object: Node; property: Node; computed: boolea
     if (cur.name === "arguments") {
       if (!opts.argsBinding) return null;
       rootSrc = opts.argsBinding;
+      rootTarget = opts.argsBinding;
     } else {
       rootSrc = cur.name;
+      rootTarget = cur.name;
       // 位置插桩：成员链根 Identifier 记对象位（hover
       // `node` 于 `node.value` → 对象 Abs——臂内 shadow
       // 重绑后解析到窄化值，与槽位插桩同语义）
+      // —— 只包**读**源；写回的赋值目标用 rootTarget（裸绑定名）。
       if (opts.recordPositions && cur.loc) {
         rootSrc = `$nodoPos(${cur.name}, ${cur.loc.start.line}, ${cur.loc.start.column})`;
       }
     }
   } else if (cur.type === "ThisExpression" && opts.thisParam) {
     rootSrc = opts.thisParam;
+    rootTarget = opts.thisParam;
   } else {
     return null;
   }
-  return { rootSrc, layers };
+  return { rootSrc, rootTarget, layers };
 }
 
 /** 路径读取源：d[i][0] → $idx($idx(d, i), 0) */

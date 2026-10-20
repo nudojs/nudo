@@ -32,7 +32,7 @@ function emitMemberTargetAssign(
   };
   const path = memberPathOf(m, opts);
   if (path) {
-    out.push(`${pad}${path.rootSrc} = ${setPathSrc(path, valueSrc)};`);
+    out.push(`${pad}${path.rootTarget} = ${setPathSrc(path, valueSrc)};`);
     return;
   }
   const obj = emitTranspileExpression(m.object as Expression, opts);
@@ -177,7 +177,7 @@ export function emitArrMutatorRebinds(
         if (path) {
           const curSrc = readPathSrc(path);
           const newSrc = `$invoke(Object, ${JSON.stringify(methodName)}, [${curSrc}${restSuffix}])`;
-          lines.push(`${pad}${path.rootSrc} = ${setPathSrc(path, newSrc)};`);
+          lines.push(`${pad}${path.rootTarget} = ${setPathSrc(path, newSrc)};`);
         }
       }
     }
@@ -238,15 +238,18 @@ export function emitArrMutatorRebinds(
         }
         if (guardLayer < 0) {
           lines.push(
-            `${pad}${path.rootSrc} = ${setParentPathSrc(path, `$del(${parentRead}, ${keySrc})`)};`,
+            `${pad}${path.rootTarget} = ${setParentPathSrc(path, `$del(${parentRead}, ${keySrc})`)};`,
           );
         } else {
           // 守卫基 = 首个 optional hop 的 object 读；删键链从 $removeNullish
           // 收窄后的守卫基重建（守卫抽象时 sum 的 nullish 成员不得进 del 臂，
           // 否则误记 may-throw——原生 delete o?.a 恒不抛）
           const guardSrc = guardLayer === 0 ? path.rootSrc : readPrefix(path, guardLayer - 1);
+          // narrow / 前缀路径只作**读**用（$get / $set 的基读）——rootTarget
+          // 沿用外层根的裸绑定名（写回目标永远是外层根）。
           const narrow: MemberPath = {
             rootSrc: `$removeNullish(${guardSrc})`,
+            rootTarget: path.rootTarget,
             layers: path.layers.slice(guardLayer),
           };
           const narrowParent =
@@ -258,11 +261,15 @@ export function emitArrMutatorRebinds(
             guardLayer === 0
               ? innerDel
               : setPathSrc(
-                  { rootSrc: path.rootSrc, layers: path.layers.slice(0, guardLayer) } as MemberPath,
+                  {
+                    rootSrc: path.rootSrc,
+                    rootTarget: path.rootTarget,
+                    layers: path.layers.slice(0, guardLayer),
+                  } as MemberPath,
                   innerDel,
                 );
           lines.push(
-            `${pad}${path.rootSrc} = $fork($nullishTest(${guardSrc}), () => ${path.rootSrc}, () => (${armSrc}));`,
+            `${pad}${path.rootTarget} = $fork($nullishTest(${guardSrc}), () => ${path.rootSrc}, () => (${armSrc}));`,
           );
         }
       }
