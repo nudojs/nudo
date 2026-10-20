@@ -558,10 +558,21 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         ? wrapArm(altNarrowed === null ? `() => ${UNDEF_LIT}` : altNarrowed, "fk2_")
         : altNarrowed;
       const altArg = alt === null ? "" : `, ${alt}`;
+      // Bug 135：fork 快照（__fk0_*）是**臂的基线**——基线必须取自**测试
+      // 求值之后**。此前快照行排在 $fork(...) 之前，而测试表达式是 $fork 的
+      // 第一实参（后求值）——于是测试里的副作用（f() 计数 / getter / 赋值 /
+      // 自增）在臂入口被 `n = $copy(__fk0_n)` 整体回滚（原生保留）。
+      // 修法：测试先落临时量 __fkT，再取快照，$fork 用 __fkT。
       const joinLines = names.length
-        ? [...testRebinds, ...forkBindingDecls(names, padDecl)]
+        ? [
+            `${padDecl}const __fkT = (${test});`,
+            ...testRebinds,
+            ...forkBindingDecls(names, padDecl),
+          ]
         : testRebinds;
       const applyJoin = names.length ? forkJoinBindings(names, padDecl).join("\n") : "";
+      // 有 fork 绑定（快照基线）时测试已落 __fkT；否则测试仍是 $fork 的实参
+      const testRef = names.length > 0 ? "__fkT" : test;
       // 两分支都以 return/throw 退出时，$fork 即函数返回值
       // （循环/switch 臂内：用 $loopReturn 抛 NudoReturn，与早退语义一致）
       // else-if 链经 completeElseChains 补全最终 else 后同样命中本路径。
@@ -578,14 +589,14 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           return [
             ...joinLines,
             inCtrl
-              ? `${pad}$loopReturn($fork(${test}, ${cons}${altArg}));`
-              : `${pad}return $fork(${test}, ${cons}${altArg});`,
+              ? `${pad}$loopReturn($fork(${testRef}, ${cons}${altArg}));`
+              : `${pad}return $fork(${testRef}, ${cons}${altArg});`,
           ].join("\n");
         }
         return [
           openBlock,
           ...joinLines,
-          `${padDecl}const __fkR = $fork(${test}, ${cons}${altArg});`,
+          `${padDecl}const __fkR = $fork(${testRef}, ${cons}${altArg});`,
           applyJoin,
           inCtrl ? `${padDecl}$loopReturn(__fkR);` : `${padDecl}return __fkR;`,
           closeBlock,
@@ -594,7 +605,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       return [
         openBlock,
         ...joinLines,
-        `${padDecl}$fork(${test}, ${cons}${altArg});`,
+        `${padDecl}$fork(${testRef}, ${cons}${altArg});`,
         applyJoin,
         closeBlock,
       ]
@@ -885,14 +896,15 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       switchBodySeq += Math.max(bodyIdx, 1);
       const dflt = defaultSrc ? `, ${defaultSrc}` : "";
       const discRebinds = emitArrMutatorRebinds(stmt.discriminant as Node, opts, pad);
-      const switchCall = `$switch(${disc}, [\n${caseLines.map((l) => indent(depth + 1) + l).join("\n")}\n${indent(depth + 1)}]${dflt})`;
+      const switchCall = (discRef: string): string =>
+        `$switch(${discRef}, [\n${caseLines.map((l) => indent(depth + 1) + l).join("\n")}\n${indent(depth + 1)}]${dflt})`;
       if (names.length === 0) {
         return [
           ...discRebinds,
           ...sharedBodyDecls,
           allReturn
-            ? `${pad}return ${switchCall};`
-            : `${pad}${switchCall};`,
+            ? `${pad}return ${switchCall(disc)};`
+            : `${pad}${switchCall(disc)};`,
         ].join("\n");
       }
       const decls = names.flatMap((n) => [
@@ -910,14 +922,20 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         return `${pad}${n} = (() => { const __p = [${slots.join(",")}].filter((x) => x !== null); return __p.length === 0 ? ${n} : __p.reduce((a, b) => $join(a, b)); })();`;
       });
       // shared body 必须在声明 __sw0_* 的同一块内，否则闭包解析不到槽位绑定
+      //
+      // Bug 135：__sw0_* 是**臂的基线**——基线必须取自**判别式求值之后**。
+      // 此前判别式是 $switch(...) 的第一实参（后求值），而快照行排在它之前
+      // ——判别式里的副作用（f() 计数 / 赋值 / 自增）在臂入口被整体回滚。
+      // 修法：判别式先落 __swD（连同其自身写回），再取快照，$switch 用 __swD。
       return [
-        ...discRebinds,
         `${pad}{`,
+        `${pad}const __swD = (${disc});`,
+        ...discRebinds,
         ...decls.map((l) => l.replace(new RegExp(`^${pad}`), `${pad}`)),
         ...sharedBodyDecls.map((l) =>
           l.startsWith(pad) ? `${pad}${l.slice(pad.length)}` : `${pad}${l}`,
         ),
-        `${pad}const __swR = ${switchCall};`,
+        `${pad}const __swR = ${switchCall("__swD")};`,
         ...joins,
         allReturn ? `${pad}return __swR;` : null,
         `${pad}}`,
