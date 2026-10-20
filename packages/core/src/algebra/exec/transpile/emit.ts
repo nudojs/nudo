@@ -501,7 +501,9 @@ export function emitParamBinding(
       }
       const ph = `_rest${i}`;
       rest = ph;
-      emitDestructure(p.argument, ph, "const", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
+      // Bug 161：形参绑定**可变**（原生 `function f([...a]) { a = 5; }` 合法）
+      // ——此前按 const 发射 ⇒ 体内再赋抛 TypeError（假红 + 错值）。
+      emitDestructure(p.argument, ph, "let", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
       return;
     }
     const ph = `_p${i}`;
@@ -510,16 +512,18 @@ export function emitParamBinding(
       defaulted.push(i);
       const def = emitTranspileExpression(p.right as Expression, opts);
       if (p.left.type === "Identifier") {
-        prologue.push(`${pad}const ${p.left.name} = $orDefault(${ph}, () => ${def});`);
+        // Bug 161：默认参绑定可变（原生 `function f(a = 1) { a = 5; }` 合法）
+        prologue.push(`${pad}let ${p.left.name} = $orDefault(${ph}, () => ${def});`);
       } else {
         const t = `_pd${i}`;
         prologue.push(`${pad}const ${t} = $orDefault(${ph}, () => ${def});`);
-        emitDestructure(p.left, t, "const", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
+        emitDestructure(p.left, t, "let", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
       }
       return;
     }
     if (p.type === "ObjectPattern" || p.type === "ArrayPattern") {
-      emitDestructure(p, ph, "const", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
+      // Bug 161：形参解构绑定可变（原生可再赋）
+      emitDestructure(p, ph, "let", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
     }
   });
   return { sig, rest, prologue, defaulted };
@@ -552,7 +556,8 @@ export function emitParamBindingFromArgs(
         restBoundEarly = true;
         // rest 语法上必为末参 → namedCount 此处已终值
         prologue.push(`${pad}let ${rest} = $arrRest(${argsSrc}, ${namedCount});`);
-        emitDestructure(p.argument, rest, "const", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
+        // Bug 161：形参 rest 绑定可变
+        emitDestructure(p.argument, rest, "let", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
       }
       return;
     }
@@ -569,7 +574,8 @@ export function emitParamBindingFromArgs(
       } else {
         const t = `_pd${i}`;
         prologue.push(`${pad}let ${t} = $orDefault(${idxSrc}, () => ${def});`);
-        emitDestructure(p.left, t, "const", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
+        // Bug 161：默认参的解构绑定可变
+        emitDestructure(p.left, t, "let", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
       }
       return;
     }

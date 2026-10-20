@@ -458,7 +458,7 @@ function requireOptionalFromModules(
  *  冲突语义：显式导出（decl / specifier / 显式 re-export）压过 export *
  *  （ESM 早错保证 decl/specifier 不重名，star×star 按源序后者覆盖——
  *  与 collectAbsExports 顺序口径一致）。 */
-function rewriteExportStatements(js: string): string {
+function rewriteExportStatements(js: string): { js: string; exportedNames: string[] } {
   // export { x as y } from "spec"：绑定经 modules 表注入。
   // ESM live binding（Bug ②）：re-export 是间接引用——导出槽挂 getter，
   // 读取时经 __nudoBindImport 解析依赖当前值（依赖内部变异对导入方可见）。
@@ -505,12 +505,23 @@ function rewriteExportStatements(js: string): string {
         })
         .join("\n"),
   );
+  // Bug 156：`export { … }` 形态（解构导出 / 源级具名导出 / 再导出）的**导出名**
+  // 收进显式导出面——此前只有 `export const|let` / `export function` 的静态声明名
+  // 进该面（导出名回收正则认那两种形态），解构导出的真实名不在面内 ⇒ 与
+  // `export *` 同时出现时优先级判错。
+  const exportedNames: string[] = [];
   // export default <expr>;（transpile 保证函数/类默认已展开成命名 + 标识符形态）。
   // 表达式默认值（块体箭头/含方法对象）转译产物跨多行——`.` 不匹配换行的
   // 单行正则会整条漏改写（default 槽静默丢失）。按语句边界切分：从
   // `export default ` 起做括号深度扫描（跳过字符串字面量），深度归零且剩余
   // 仅 `;` 即语句完结。
-  return rewriteExportDefaults(js);
+  const rewritten = rewriteExportDefaults(js);
+  // 显式导出名：从改写产物（__nudoExportLazy("<名>", …)）回收——本地具名导出与
+  // 再导出都是显式导出（ESM 早错保证不与 export * 撞名）。
+  for (const m of rewritten.matchAll(/__nudoExportLazy\(\s*"([^"]+)"/g)) {
+    exportedNames.push(m[1]!);
+  }
+  return { js: rewritten, exportedNames };
 }
 
 /** export default 语句完结判定：括号深度归零处剩余仅 `;`（+尾随空白）。
@@ -628,7 +639,8 @@ function runTranspiledInner(
   });
   js = js.replace(RUNTIME_IMPORT_RE, "");
   js = rewriteUserImports(js);
-  js = rewriteExportStatements(js);
+  const exportRewrite = rewriteExportStatements(js);
+  js = exportRewrite.js;
   if (opts.mode === "analyze") {
     js = stripEffectfulTopLevel(js);
   }
@@ -650,7 +662,7 @@ function runTranspiledInner(
   const dynExports: Record<string, unknown> = {};
   // ESM：显式导出（静态 decl 名 + __nudoExport 的 specifier/re-export）恒压过
   // export *。star 只填「从未显式导出」的名；star×star 仍按源序后者覆盖。
-  const explicitExportNames = new Set<string>(names);
+  const explicitExportNames = new Set<string>([...names, ...exportRewrite.exportedNames]);
   const bindings = new Map<string, unknown>();
   const argNames = [
     ...runtimeArgNames(),

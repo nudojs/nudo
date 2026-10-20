@@ -5,8 +5,10 @@
  * `export ` 前缀（含未写 export 的，见 stmt.ts exportKw），顶层 export
  * const/let/class 以 `export (const|let) <name>` 发射（class 折成 `let X = $class`）。
  * 因此用正则从生成文本回收导出名。刻意不走 AST——历史口径要复现既有 quirk：
- * 多声明式 `export const a=1,b=2` 只有首绑定在 export 行（只收 a），解构
- * `export const {p}=obj` 发射为 `export const <临时名> = obj`（只收临时名）。
+ * 多声明式 `export const a=1,b=2` 只有首绑定在 export 行（只收 a）。
+ * 解构导出（`export const {p}=obj`）**不再**收内部临时名（Bug 156）——它发射为
+ * `export { p }` 形态，由运行时改写成 __nudoExportLazy（显式导出面另由
+ * run.ts 的 rewriteExportStatements 回收）。
  *
  * 若 transpile 改发射格式，本函数与 __tests__/run-export-names.test.ts 须同步。
  * 本模块刻意不进 exec/index.ts 桶导出（不属公开面），仅 run.ts + 测试引用。

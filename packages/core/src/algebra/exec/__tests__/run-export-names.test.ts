@@ -5,7 +5,8 @@ import { transpile } from "../transpile.ts";
 /**
  * 锁定 stripStaticExportDecls 从 transpile 生成 JS 回收的导出名（格式耦合面）。
  * 这些期望值刻意固定历史上被发现的名称（含 quirk）：多声明式只收首个绑定、
- * 解构只收临时名、非 export 顶层 function 也带 export 前缀故被发现。
+ * 非 export 顶层 function 也带 export 前缀故被发现。解构导出不再收内部临时名
+ * （Bug 156：真实绑定走 `export { … }` 形态）。
  * 若 transpile 发射格式变化导致失败，须同步 stripStaticExportDecls 与本测试。
  */
 describe("stripStaticExportDecls：导出名回收（与 transpile 发射格式耦合）", () => {
@@ -32,11 +33,13 @@ describe("stripStaticExportDecls：导出名回收（与 transpile 发射格式�
     expect(namesOf("export const a = 1, b = 2;")).toEqual(["a"]);
   });
 
-  it("export 解构只回收临时名（历史口径），不回收解构出的 p/q", () => {
+  it("export 解构不再收内部临时名（Bug 156）：改由 export { p, q } 形态承载", () => {
     const names = namesOf("export const {p, q} = obj;");
-    expect(names).toHaveLength(1);
-    // Bug 15：解构临时名与源行号解耦（跨语句单调计数 `_d<N>`）
-    expect(names[0]).toMatch(/^_d\d+$/);
+    // 临时名 `_d<N>` 不再泄漏进静态声明导出名面
+    expect(names.some((n) => /^_d\d+$/.test(n))).toBe(false);
+    // 真实绑定走 `export { … }`（运行时改写成 __nudoExportLazy）
+    const js = stripStaticExportDecls(transpile("export const {p, q} = obj;")).js;
+    expect(js).toContain("export { p, q };");
   });
 
   it("export class 折成 export let X = $class，回收 X", () => {

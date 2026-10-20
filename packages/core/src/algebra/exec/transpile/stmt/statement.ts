@@ -133,6 +133,22 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // 顶层 export const/let/class：保留 export 面（run.ts 收集进 exports，
       // 供 directive case 经 callTranspiledExport 求值；模块图依赖此表）
       if (depth === 0 && (decl.type === "VariableDeclaration" || decl.type === "ClassDeclaration") && !pad) {
+        // Bug 156：解构声明的 export 落点必须是**真实绑定**——`export { a, b };`
+        // （而非内部临时名 `_d0`：临时名被当导出名 ⇒ 真实导出名丢失 ⇒ 跨模块
+        // import 全灭）。运行时把 `export { … }` 改写成 __nudoExportLazy ✓
+        // （live binding，与源级 `export { a }` 同口径）。
+        if (decl.type === "VariableDeclaration") {
+          // 仅**解构**声明走这条路（普通标识符声明仍是 `export const x = …`，
+          // 导出名回收正则认这一形态）。
+          const patNames = new Set<string>();
+          for (const d of decl.declarations) {
+            if (d.id.type === "Identifier") continue;
+            collectPatternNames(d.id, patNames);
+          }
+          if (patNames.size > 0) {
+            return `${inner}\n${pad}export { ${[...patNames].join(", ")} };`;
+          }
+        }
         return `export ${inner}`;
       }
       return inner;
@@ -1271,12 +1287,19 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         }
       } else if (
         stmt.left.type === "VariableDeclaration" &&
-        (stmt.left.kind === "let" || stmt.left.kind === "var") &&
-        stmt.left.declarations[0]?.id.type === "Identifier"
+        (stmt.left.kind === "let" || stmt.left.kind === "var")
       ) {
         // let/var 头绑定遮蔽外层 const/import 名（Bug ②）：体内可再赋，
         // 不得误折 TypeError——从继承的 const 面扣除遮蔽名
-        loopConstNames.delete(stmt.left.declarations[0].id.name);
+        // （Bug 161：解构头的子名同样按头种类决定可变性）
+        const headId = stmt.left.declarations[0]?.id;
+        if (headId?.type === "Identifier") {
+          loopConstNames.delete(headId.name);
+        } else if (headId?.type === "ObjectPattern" || headId?.type === "ArrayPattern") {
+          const patternNames = new Set<string>();
+          collectPatternNames(headId, patternNames);
+          for (const n of patternNames) loopConstNames.delete(n);
+        }
       }
       if (
         stmt.left.type === "VariableDeclaration" &&
@@ -1284,10 +1307,11 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         (stmt.left.declarations[0].id.type === "ObjectPattern" ||
           stmt.left.declarations[0].id.type === "ArrayPattern")
       ) {
+        // Bug 161：解构头的绑定种类随头（const 头不可再赋 / let·var 头可再赋）
         emitDestructure(
           stmt.left.declarations[0].id as Node,
           bindName,
-          "const",
+          stmt.left.kind === "const" ? "const" : "let",
           indent(depth + 2),
           { ...opts, constNames: loopConstNames },
           bodyLines,
