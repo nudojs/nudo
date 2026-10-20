@@ -51,7 +51,20 @@ export function transpileAtomExpr(
   opts: TranspileOptions = {},
 ): string {
   switch (expr.type) {
-    case "NumericLiteral":
+    case "NumericLiteral": {
+      // Bug 150：数值字面量的渲染不能用 JSON.stringify——它对非有限数返回
+      // "null"（JSON 无 Infinity 表示），该文本被直接拼进生成代码 ⇒
+      // `1e400` 折成 null（原生 Infinity）、`-1e400` 折成 -0（原生
+      // -Infinity）。非有限数按 intrinsics.ts 同口径发 `1/0` / `-1/0`
+      // （无标识符依赖，宿主求值即 ±Infinity）；-0 另需保号
+      // （JSON.stringify(-0) === "0"，而 1/-0 = -Infinity ≠ 1/0）。
+      const v = expr.value as number;
+      if (Number.isNaN(v)) return "$lit(0/0)";
+      if (v === Infinity) return "$lit(1/0)";
+      if (v === -Infinity) return "$lit(-1/0)";
+      if (Object.is(v, -0)) return "$lit(-0)";
+      return `$lit(${JSON.stringify(v)})`;
+    }
     case "StringLiteral":
     case "BooleanLiteral":
       return `$lit(${JSON.stringify(expr.value)})`;
