@@ -72,14 +72,16 @@ export function transpileAssignmentExpr(
             return setSrc(sc);
           }
           // ??= : nullish → rhs；否则 keep left
+          // Bug 134：test / alt 引用左操作数的**单次求值绑定**（leftRef）——
+          // 不得各自再发一份左操作数源码（成员读 / getter 跑两次）。
           const sc = transpileShortCircuitExpr(opts, {
             alwaysNodes: [],
             alwaysSrc: targetSrc,
             consSrc: right,
             consNodes: [rNode],
-            altSrc: `$removeNullish(${targetSrc})`,
+            altOf: (leftRef) => `$removeNullish(${leftRef})`,
             altNodes: [],
-            testSrc: `$nullishTest(${targetSrc})`,
+            testOf: (leftRef) => `$nullishTest(${leftRef})`,
           });
           return setSrc(sc);
         };

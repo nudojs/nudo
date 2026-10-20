@@ -63,11 +63,13 @@ export function transpileOperatorExpr(
           alwaysSrc: l,
           // 测试用 nullish；返回侧：nullish → right，否则 → left 的**非 nullish 部分**
           // （索引访问/可选字段的左值常携带 undefined 臂，不去则 ?? 的 alt 仍含 undefined）
+          // Bug 134：test / alt 一律引用左操作数的**单次求值绑定**（leftRef），
+          // 不得各自再发一份左操作数源码（getter / 调用 / 计算键跑两次）。
           consSrc: r,
           consNodes: [rNode],
-          altSrc: `$removeNullish(${l})`,
+          altOf: (leftRef) => `$removeNullish(${leftRef})`,
           altNodes: [lNode],
-          testSrc: `$nullishTest(${l})`,
+          testOf: (leftRef) => `$nullishTest(${leftRef})`,
         });
       }
       // && : test=left, cons=right, alt=left(已算)  || : test=left, cons=left, alt=right
