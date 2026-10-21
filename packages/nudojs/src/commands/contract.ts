@@ -62,6 +62,8 @@ async function runContractFromDts(
     p.startsWith(".") || isAbsolute(p) || /[/\\]/.test(p);
   const missingPaths: string[] = [];
   const barePkgs: string[] = [];
+  /** 目录模式下遍历不到的目录数（族 27 Bug 1015）——并进最终汇总行 */
+  let droppedDirs = 0;;
 
   for (const p of paths) {
     const abs = resolve(p);
@@ -82,6 +84,10 @@ async function runContractFromDts(
     if (st.isDirectory()) {
       const r = dtsPathToContractDraft(abs, basename(abs));
       dtsFiles.push(...r.files);
+      // 族 27 Bug 1015：目录模式下 `dtsPathToContractDraft` 统计的
+      // 「遍历不到的目录」必须并进最终汇总行 —— 否则 CLI 只取 `r.files`
+      // 丢掉 stats ⇒ 汇总行说「0 skipped」而实际丢了东西。
+      droppedDirs += r.stats.droppedDirs ?? 0;
     } else if (/\.(d\.)?(m)?ts$/.test(abs) && !abs.endsWith(".d.ts.map")) {
       // .d.ts 或带注解的 .ts 源（迁移：从原 TS 逆向契约）
       dtsFiles.push(abs);
@@ -116,6 +122,11 @@ async function runContractFromDts(
   }
 
   const draft = dtsToContractDraft(dtsFiles, label);
+  if (droppedDirs > 0) {
+    // 目录模式的遍历缺口计入汇总行（否则「0 skipped」是说谎）
+    draft.stats.skipped += droppedDirs;
+    draft.stats.droppedDirs = droppedDirs;
+  }
   const base = label.replace(/\.d\.ts$|\.ts$|\.mts$/, "").replace(/[/\\]/g, "-");
   const outName = `${base}.nudo.draft.js`;
   const outPath = resolve(outName);

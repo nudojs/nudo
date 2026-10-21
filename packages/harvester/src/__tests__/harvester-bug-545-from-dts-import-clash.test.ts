@@ -5,13 +5,18 @@
  *
  * 症状（旧口径）：
  * ```js
- * import { fn, any, lit, union } from "@nudojs/core";
- * export const lit = fn({ l: union(lit("a"), lit("b")) }, any());
+ * import { fn, any, number, union } from "@nudojs/core";
+ * export const number = fn({ l: union(number(), number()) }, any());
  * ```
- * ⇒ `SyntaxError: Identifier 'lit' has already been declared`。
+ * ⇒ `SyntaxError: Identifier 'number' has already been declared`。
  *
  * 修法：侧车键取**导出身份**，绑定名与 builder import 撞名时走别名形态
  * `const _nudo_N = …; export { _nudo_N as <identity> };`。
+ *
+ * 勘误（族 27 收口）：本夹具原用 `lit` 作导出名，但草稿面的 builder 名单
+ * **不含** `lit`（公共 API 的 `lit` 是 Term 构造器，不是约束构建器）⇒
+ * `lit` 不再产生 import ⇒ 原断言的「撞名」前提不成立。改用名单内的
+ * `number` 作导出名，撞名前提与被钉的不变量（别名形态）均保持。
  */
 import { describe, it, expect, afterAll } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
@@ -39,19 +44,19 @@ function nodeCheck(file: string): { ok: boolean; stderr: string } {
 }
 
 describe("Bug 545 —— --from-dts 草稿的 import ↔ export 撞名", () => {
-  it("导出名撞 builder import ⇒ 走别名形态（改前：export const lit）", () => {
+  it("导出名撞 builder import ⇒ 走别名形态（改前：export const number）", () => {
     const src = formatDtsContractDraft("types", ["types.d.ts"], [
-      { name: "lit", dsl: `fn({ l: union(lit("a"), lit("b")) }, any())`, kind: "function" },
+      { name: "number", dsl: `fn({ l: union(number(), number()) }, any())`, kind: "function" },
     ]);
-    expect(src).not.toMatch(/^export const lit = /m);
-    expect(src).toContain("export { _nudo_1 as lit };");
+    expect(src).not.toMatch(/^export const number = /m);
+    expect(src).toContain("export { _nudo_1 as number };");
   });
 
-  it("草稿产物真能过 node --check（改前：Identifier 'lit' has already been declared）", () => {
+  it("草稿产物真能过 node --check（改前：Identifier 'number' has already been declared）", () => {
     const dir = mkdtempSync(join(tmpdir(), "nudo-from-dts-545-"));
     dirs.push(dir);
     const src = formatDtsContractDraft("types", ["types.d.ts"], [
-      { name: "lit", dsl: `fn({ l: union(lit("a"), lit("b")) }, any())`, kind: "function" },
+      { name: "number", dsl: `fn({ l: union(number(), number()) }, any())`, kind: "function" },
     ]);
     const file = join(dir, "types.nuco.draft.js");
     writeFileSync(file, src, "utf-8");

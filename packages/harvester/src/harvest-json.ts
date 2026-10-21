@@ -15,6 +15,19 @@ import {
 import type { HarvestedEnv } from "./harvest-dts.ts";
 
 /**
+ * 无原型字典（own-property 纪律）。
+ *
+ * 普通 `{}` 的原型链上挂着 `toString` / `constructor` / `__proto__` 等成员：
+ *   - 裸读 `rec[name]` 会命中原型成员 ⇒ 撞名的导出被当成「不存在」；
+ *   - 裸写 `rec["__proto__"] = v` 走 `[[SetPrototypeOf]]` ⇒ 键被吞 /
+ *     写穿到原型链（进程级原型污染）。
+ * `Object.create(null)` ⇒ 只有自有键可见，`__proto__` 只是普通数据键。
+ */
+function nullDict<T>(): Record<string, T> {
+  return Object.create(null) as Record<string, T>;
+}
+
+/**
  * 签名投影节点（可 JSON 化；足够 mock Abs 的 shape 面）。
  * lit.value 含 undefined：JSON 往返靠「键缺省」区分 null（显式存）与 undefined（键省略）。
  */
@@ -25,9 +38,29 @@ export type HarvestSig =
   | { k: "never" }
   | { k: "lit"; value: number | string | boolean | null | undefined }
   | { k: "arr"; element: HarvestSig }
-  | { k: "tuple"; elements: HarvestSig[] }
-  | { k: "obj"; slots: Record<string, { v: HarvestSig; opt?: boolean }> }
-  | { k: "fn"; params: string[]; paramTypes: HarvestSig[]; returns: HarvestSig }
+  | { k: "tuple"; elements: HarvestSig[]; rest?: HarvestSig }
+  | {
+      k: "obj";
+      slots: Record<string, { v: HarvestSig; opt?: boolean }>;
+      /** 族 27 Bug 803：索引签名（`Record<K,V>` / `obj[k]: V`）——不投影则
+       *  缓存往返会把「开放对象 + 值域」抹成闭合空对象 ⇒ 成员读 undefined ⇒ 定抛。 */
+      index?: { key: HarvestSig; value: HarvestSig };
+      /** 开放对象（索引签名的承载标志） */
+      open?: boolean;
+    }
+  | {
+      k: "fn";
+      params: string[];
+      paramTypes: HarvestSig[];
+      returns: HarvestSig;
+      ctor?: boolean;
+      slots?: Record<string, HarvestSig>;
+      /** 族 27 Bug 821 残留：条件类型的 `infer` 绑定线索。不投影 ⇒ 磁盘缓存
+       *  命中后条件元数据丢失 ⇒ 同一份 .d.ts 冷/热缓存给出**不同**类型。 */
+      inferFrom?: { fromVar: string; via: "arr" | "promise"; inferVar: string };
+      /** 条件类型判不出时的假支（`condFallback`） */
+      condFallback?: HarvestSig;
+    }
   | { k: "sum"; members: HarvestSig[] }
   | { k: "promise"; value: HarvestSig }
   | { k: "generator"; value: HarvestSig }
@@ -38,8 +71,19 @@ export type HarvestSig =
 /**
  * 磁盘 ABI / harvest 物化版本。**改动 Abs 投影或 interface 合并语义时必须 +1**，
  * 否则旧缓存会把提升前的空导出表当命中（lodash 场景）。
+ *
+ * 族 27（Bug 791–836 等 56 条）改的正是「Abs 投影 + interface 合并 + 导出表物化」语义
+ * ⇒ **v8 → v9**。否则用户本地 `~/.cache/nudo/deps/` 里的旧收割产物会继续命中
+ * ⇒ CLI **看不到本轮修复**（实测：同一夹具，旧缓存 ⇒ `useDefault(xs: any) => unknown`；
+ * `NUDO_DEPS_CACHE_DIR` 指向新目录 ⇒ `number[]`）。
+ *
+ * **v9 → v10**：族 27 收口时又改了三处投影/合并语义 ——
+ * ① `this` 形参不再进收割签名（Bug 794 的收割面）；② `declare class` 进入
+ * 接口成员表并带 `ctor` facet（Bug 796 / 826）；③ 顶层 `declare namespace`
+ * 的运行时成员收进命名空间自有记录（Bug 793）。任一条都会让旧缓存的
+ * 物化结果与新收割器**不一致** ⇒ 必须让旧缓存 miss。
  */
-export const HARVEST_DISK_ABI = "nudo-harvest-disk-v8";
+export const HARVEST_DISK_ABI = "nudo-harvest-disk-v10";
 
 export type HarvestJson = {
   v: 1;
@@ -84,16 +128,25 @@ export function absToHarvestSig(a: Abs): HarvestSig {
     case "arr":
       return { k: "arr", element: absToHarvestSig(s.element) };
     case "tuple":
-      return { k: "tuple", elements: s.elements.map(absToHarvestSig) };
+      return {
+        k: "tuple",
+        elements: s.elements.map(absToHarvestSig),
+        ...(s.rest ? { rest: absToHarvestSig(s.rest) } : {}),
+      };
     case "obj": {
-      const slots: Record<string, { v: HarvestSig; opt?: boolean }> = {};
+      const slots: Record<string, { v: HarvestSig; opt?: boolean }> = nullDict();
       for (const [key, slot] of Object.entries(s.slots)) {
         slots[key] = {
           v: absToHarvestSig(slot.value),
           ...(slot.optional ? { opt: true } : {}),
         };
       }
-      return { k: "obj", slots };
+      return {
+        k: "obj",
+        slots,
+        ...(s.index ? { index: { key: absToHarvestSig(s.index.key), value: absToHarvestSig(s.index.value) } } : {}),
+        ...(s.open ? { open: true } : {}),
+      };
     }
     case "fn": {
       // relation 槽是 α 替换真源（overload 合并可能只改 shape.returnType）
@@ -101,11 +154,22 @@ export function absToHarvestSig(a: Abs): HarvestSig {
       const pts = rel?.paramTypes ?? s.paramTypes ?? s.params.map(() => ({ shape: { k: "unknown" }, conf: "mock" } as Abs));
       const paramTypes = pts.map(absToHarvestSig);
       const retSrc = rel?.returnType ?? s.returnType ?? ({ shape: { k: "unknown" }, conf: "mock" } as Abs);
+      // 族 27 Bug 829 / 830：ctor facet 与静态槽不投影 ⇒ 缓存往返会把
+      // 「构造器」抹成普通 fn（new 落「可构造性未知」⇒ 假红），
+      // 把「类型字面量的调用签名带的具名成员」抹掉。
+      const fnSlots: Record<string, HarvestSig> = nullDict();
+      for (const [key, slot] of Object.entries(s.slots ?? {})) {
+        fnSlots[key] = absToHarvestSig(slot.value);
+      }
       return {
         k: "fn",
         params: s.params,
         paramTypes,
         returns: absToHarvestSig(retSrc),
+        ...(s.ctor !== undefined ? { ctor: s.ctor } : {}),
+        ...(Object.keys(fnSlots).length > 0 ? { slots: fnSlots } : {}),
+        ...(rel?.inferFrom ? { inferFrom: rel.inferFrom } : {}),
+        ...(rel?.condFallback ? { condFallback: absToHarvestSig(rel.condFallback) } : {}),
       };
     }
     case "sum":
@@ -130,15 +194,19 @@ export function harvestSigToAbs(sig: HarvestSig): Abs {
     return a;
   };
   switch (sig.k) {
-    case "prim":
-      return mark(
-        abs(
-          { k: "prim", type: sig.type as "number" | "string" | "boolean" | "bigint" },
-          undefined,
-          undefined,
-          "mock",
-        ),
-      );
+    case "prim": {
+      // 原语类型白名单：bigint / symbol 与内存收割面同口径（Bug 795）。
+      // 旧实现用 `as "number" | "string" | "boolean" | "bigint"` 硬转 —— 运行时
+      // 侥幸透传 "symbol"，但类型上撒谎，且未知 prim 会被静默当成合法 prim。
+      const t = sig.type;
+      if (
+        t !== "number" && t !== "string" && t !== "boolean" &&
+        t !== "bigint" && t !== "symbol"
+      ) {
+        return mark(abs({ k: "unknown" }, undefined, undefined, "mock"));
+      }
+      return mark(abs({ k: "prim", type: t }, undefined, undefined, "mock"));
+    }
     case "unknown":
       return mark(abs({ k: "unknown" }, undefined, undefined, "mock"));
     case "any":
@@ -174,17 +242,42 @@ export function harvestSigToAbs(sig: HarvestSig): Abs {
       return mark(abs({ k: "arr", element: harvestSigToAbs(sig.element) }, undefined, undefined, "mock"));
     case "tuple":
       return mark(
-        abs({ k: "tuple", elements: sig.elements.map(harvestSigToAbs) }, undefined, undefined, "mock"),
+        abs(
+          {
+            k: "tuple",
+            elements: sig.elements.map(harvestSigToAbs),
+            ...(sig.rest ? { rest: harvestSigToAbs(sig.rest) } : {}),
+          },
+          undefined,
+          undefined,
+          "mock",
+        ),
       );
     case "obj": {
-      const slots: Record<string, { value: Abs; optional?: boolean }> = {};
+      const slots: Record<string, { value: Abs; optional?: boolean }> = nullDict();
       for (const [key, slot] of Object.entries(sig.slots)) {
         slots[key] = {
           value: harvestSigToAbs(slot.v),
           ...(slot.opt ? { optional: true } : {}),
         };
       }
-      return mark(abs({ k: "obj", slots }, undefined, undefined, "mock"));
+      // 族 27 Bug 803：索引签名 + 开放对象标志必须还原 ⇒ 否则缓存往返把
+      // 「开放对象 + 值域」抹成闭合空对象 ⇒ 成员读 undefined ⇒ 定抛 TypeError。
+      return mark(
+        abs(
+          {
+            k: "obj",
+            slots,
+            ...(sig.index
+              ? { index: { key: harvestSigToAbs(sig.index.key), value: harvestSigToAbs(sig.index.value) } }
+              : {}),
+            ...(sig.open ? { open: true } : {}),
+          },
+          undefined,
+          undefined,
+          "mock",
+        ),
+      );
     }
     case "tvar":
       return mark(abs({ k: "any" }, { op: "var", id: sig.name }, undefined, "mock"));
@@ -192,12 +285,30 @@ export function harvestSigToAbs(sig: HarvestSig): Abs {
       const paramTypes = sig.paramTypes.map(harvestSigToAbs);
       const returnType = harvestSigToAbs(sig.returns);
       // relationFn 双写 shape + impl.relation（磁盘回放后仍可 α 替换）
-      return mark(
-        relationFn(paramTypes, returnType, {
-          params: sig.params,
-          conf: "mock",
-        }),
-      );
+      const fn = relationFn(paramTypes, returnType, {
+        params: sig.params,
+        conf: "mock",
+        // 族 27 Bug 821 残留：条件元数据必须一起往返，否则缓存命中后
+        // `infer` 绑定与假支丢失 ⇒ 冷/热缓存结论不一致。
+        ...(sig.inferFrom ? { inferFrom: sig.inferFrom } : {}),
+        ...(sig.condFallback ? { condFallback: harvestSigToAbs(sig.condFallback) } : {}),
+      });
+      // 族 27 Bug 829 / 830：ctor facet 与静态槽必须还原 ⇒ 否则缓存往返把
+      // 「构造器」抹成普通 fn（`new` 落「可构造性未知」⇒ 假红），
+      // 把「类型字面量的调用签名带的具名成员」抹掉。
+      const fnShape = fn.shape;
+      if (fnShape.k === "fn") {
+        const fnSlots: Record<string, { value: Abs; optional?: boolean; readonly?: boolean }> = nullDict();
+        for (const [key, v] of Object.entries(sig.slots ?? {})) {
+          fnSlots[key] = { value: harvestSigToAbs(v) };
+        }
+        fn.shape = {
+          ...fnShape,
+          ...(sig.ctor !== undefined ? { ctor: sig.ctor } : {}),
+          ...(Object.keys(fnSlots).length > 0 ? { slots: fnSlots } : {}),
+        };
+      }
+      return mark(fn);
     }
     case "sum":
       return mark(
@@ -236,13 +347,16 @@ export function serializeHarvestJson(
   env: HarvestedEnv,
   meta: { dtsHash: string; maxFiles: number; pkgVersion?: string },
 ): HarvestJson {
-  const modules: Record<string, Record<string, HarvestSig>> = {};
+  // 无原型表：模块名 / 导出名撞 Object.prototype 成员（`__proto__` /
+  // `constructor` / `toString` …）时既不会被吞，也不会写穿原型链
+  // （Bug 828 / Bug 836）。
+  const modules: Record<string, Record<string, HarvestSig>> = nullDict();
   for (const [mod, rec] of Object.entries(env.modules)) {
-    const named: Record<string, HarvestSig> = {};
+    const named: Record<string, HarvestSig> = nullDict();
     for (const [k, v] of Object.entries(rec)) named[k] = absToHarvestSig(v);
     modules[mod] = named;
   }
-  const globals: Record<string, HarvestSig> = {};
+  const globals: Record<string, HarvestSig> = nullDict();
   for (const [k, v] of Object.entries(env.globals)) globals[k] = absToHarvestSig(v);
   return {
     v: 1,
@@ -265,13 +379,13 @@ export function materializeHarvestJson(j: unknown): HarvestedEnv | null {
   if (h.knobs?.abi !== HARVEST_DISK_ABI) return null;
   if (!h.modules || typeof h.modules !== "object") return null;
   try {
-    const modules: Record<string, Record<string, Abs>> = {};
+    const modules: Record<string, Record<string, Abs>> = nullDict();
     for (const [mod, rec] of Object.entries(h.modules)) {
-      const named: Record<string, Abs> = {};
+      const named: Record<string, Abs> = nullDict();
       for (const [k, sig] of Object.entries(rec)) named[k] = harvestSigToAbs(sig);
       modules[mod] = named;
     }
-    const globals: Record<string, Abs> = {};
+    const globals: Record<string, Abs> = nullDict();
     for (const [k, sig] of Object.entries(h.globals ?? {})) {
       globals[k] = harvestSigToAbs(sig);
     }

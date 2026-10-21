@@ -5,22 +5,59 @@
 
 import { existsSync, readdirSync, statSync, readFileSync } from "node:fs";
 import { join, resolve, dirname, basename } from "node:path";
+import ts from "typescript";
 import { harvestDts, type HarvestedEnv } from "./harvest-dts.ts";
 import { formatShape } from "@nudojs/core";
+import { BoundedLruMap } from "./lru-map.ts";
 
-/** 在 node_modules 中解析包根（含 @types/*） */
+/** 包本体是否自带声明（package.json types/typings → index.d.ts） */
+function packageDeclaresTypes(root: string): boolean {
+  const pj = join(root, "package.json");
+  if (existsSync(pj)) {
+    try {
+      const raw = JSON.parse(readFileSync(pj, "utf8")) as { types?: string; typings?: string };
+      const entry = raw.types ?? raw.typings;
+      if (typeof entry === "string" && entry.length > 0 && existsSync(resolve(root, entry))) {
+        return true;
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return existsSync(join(root, "index.d.ts"));
+}
+
+/**
+ * 在 node_modules 中解析包根（含 @types/*）。
+ *
+ * 口径与 TypeScript / Node 一致（Bug 833）：
+ * 1. **包本体** `node_modules/<pkg>` 的 `types`/`typings` → `<pkg>/index.d.ts`；
+ * 2. **最后**才回落 `node_modules/@types/<pkg>`。
+ *
+ * 跨层查找时「**任意层**的包本体」先于「**任意层**的 `@types`」
+ * —— 否则更近层的 `@types/<pkg>` 会盖掉更远层的包本体，
+ * 收割到**陈旧的 @types 声明**（另一个版本的 API），且**零诊断**。
+ */
 export function resolvePackageRoot(
   pkg: string,
   fromDir: string = process.cwd(),
 ): string | undefined {
-  let dir = resolve(fromDir);
   const bare = pkg.replace(/^@/, "").replace(/\//g, "__");
-  // 向上找 node_modules；每层重算候选（@types 优先：lodash 等包本体无 index.d.ts）
+  const start = resolve(fromDir);
+  // 第一轮：包本体（任意层；包本体没有声明时不在这里命中）
+  let dir = start;
+  for (let i = 0; i < 8; i++) {
+    const pkgPath = join(dir, "node_modules", pkg);
+    if (existsSync(pkgPath) && packageDeclaresTypes(pkgPath)) return pkgPath;
+    const parent = resolve(dir, "..");
+    if (parent === dir) break;
+    dir = parent;
+  }
+  // 第二轮：@types 回落（任意层）
+  dir = start;
   for (let i = 0; i < 8; i++) {
     const typesPath = join(dir, "node_modules", "@types", bare);
     if (existsSync(typesPath)) return typesPath;
-    const pkgPath = join(dir, "node_modules", pkg);
-    if (existsSync(pkgPath)) return pkgPath;
     const parent = resolve(dir, "..");
     if (parent === dir) break;
     dir = parent;
@@ -175,6 +212,233 @@ export function harvestPackage(
   }
   const env = harvestDts(dtsFiles);
   return { pkg, root, dtsFiles, env };
+}
+
+// ---------------------------------------------------------------------------
+// 导出面（export surface）
+//
+// harvest 的 env 只有两个袋子：`globals`（顶层声明 + `declare global` 内容）与
+// `modules`（`declare module "x" { … }` 块）。**globals 袋里的东西不是导出**
+// ——`declare global { … }` 的内容与 script 模式（无 import/export）的 `.d.ts`
+// 顶层声明都是 **ambient**，TypeScript 侧不可 import（TS2305 / TS2306）。
+// ⇒ 桥接层要按「**这个文件导出了什么**」过滤，不能按「它在哪个袋子里」过滤。
+// ---------------------------------------------------------------------------
+
+/** 单个 `.d.ts` 的顶层扫描结果 */
+export type DtsFileScan = {
+  /** 顶层**具名导出**（`export` 修饰符 / `export {X as Y}` / `export default` / `export =`） */
+  exported: Set<string>;
+  /** **ambient** 声明（`declare global { … }` 内容 + script 模式文件的顶层声明） */
+  ambient: Set<string>;
+  /** `export * from "…"` 的说明符（需继续解析） */
+  stars: string[];
+  /** 是否 module 模式（有顶层 import/export） */
+  isModule: boolean;
+};
+
+/** 顶层声明的名字（函数/类/接口/类型/枚举/命名空间/变量） */
+function topLevelNames(stmt: ts.Statement): string[] {
+  if (ts.isFunctionDeclaration(stmt) || ts.isClassDeclaration(stmt)) {
+    return stmt.name ? [stmt.name.text] : [];
+  }
+  if (ts.isInterfaceDeclaration(stmt) || ts.isTypeAliasDeclaration(stmt)) {
+    return [stmt.name.text];
+  }
+  if (ts.isEnumDeclaration(stmt)) return [stmt.name.text];
+  if (ts.isModuleDeclaration(stmt)) {
+    return ts.isIdentifier(stmt.name) ? [stmt.name.text] : [];
+  }
+  if (ts.isVariableStatement(stmt)) {
+    const names: string[] = [];
+    for (const decl of stmt.declarationList.declarations) {
+      if (ts.isIdentifier(decl.name)) names.push(decl.name.text);
+    }
+    return names;
+  }
+  return [];
+}
+
+/** 顶层声明的名字（`declare global { … }` 块内） */
+function ambientNames(stmt: ts.ModuleDeclaration): string[] {
+  const names: string[] = [];
+  if (!stmt.body || !ts.isModuleBlock(stmt.body)) return names;
+  for (const inner of stmt.body.statements) names.push(...topLevelNames(inner));
+  return names;
+}
+
+/** 顶层声明的修饰符（export / default …） */
+function modifierKinds(stmt: ts.Statement): readonly ts.SyntaxKind[] {
+  if (!ts.canHaveModifiers(stmt)) return [];
+  return (ts.getModifiers(stmt) ?? []).map((m) => m.kind);
+}
+
+/** 空扫描结果（每次新建，避免共享可变对象） */
+function emptyScan(): DtsFileScan {
+  return {
+    exported: new Set(),
+    ambient: new Set(),
+    stars: [],
+    isModule: false,
+  };
+}
+
+/** 扫描一个 `.d.ts` 的顶层导出面 */
+function scanDtsFile(file: string): DtsFileScan {
+  let content: string;
+  try {
+    content = readFileSync(file, "utf8");
+  } catch {
+    return emptyScan();
+  }
+  let sf: ts.SourceFile;
+  try {
+    sf = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true);
+  } catch {
+    return emptyScan();
+  }
+  const scan: DtsFileScan = {
+    exported: new Set(),
+    ambient: new Set(),
+    stars: [],
+    isModule: ts.isExternalModule(sf),
+  };
+  for (const stmt of sf.statements) {
+    if (ts.isModuleDeclaration(stmt)) {
+      // `declare global { … }` → ambient（不是任何模块的导出）
+      if (ts.isIdentifier(stmt.name) && stmt.name.text === "global") {
+        for (const n of ambientNames(stmt)) scan.ambient.add(n);
+      }
+      // `declare module "x" { … }` → 模块记录（ambient module 块里的声明默认全导出），
+      // 不是本文件的顶层导出
+      continue;
+    }
+    if (ts.isExportDeclaration(stmt)) {
+      const clause = stmt.exportClause;
+      if (!clause) {
+        // `export * from "…"`
+        if (stmt.moduleSpecifier && ts.isStringLiteral(stmt.moduleSpecifier)) {
+          scan.stars.push(stmt.moduleSpecifier.text);
+        }
+        continue;
+      }
+      if (ts.isNamespaceExport(clause)) {
+        scan.exported.add(clause.name.text);
+        continue;
+      }
+      for (const el of clause.elements) scan.exported.add(el.name.text);
+      continue;
+    }
+    if (ts.isExportAssignment(stmt)) {
+      // `export default X` / `export = X` → 默认导出槽
+      scan.exported.add("default");
+      continue;
+    }
+    const names = topLevelNames(stmt);
+    const mods = modifierKinds(stmt);
+    if (mods.includes(ts.SyntaxKind.DefaultKeyword)) {
+      // `export default function foo() {}` ⇒ 导出名是 `default`；
+      // 局部名 `foo` **不是**具名导出（TS：`import { foo }` 是 TS2614）
+      scan.exported.add("default");
+      continue;
+    }
+    const isExported = mods.includes(ts.SyntaxKind.ExportKeyword);
+    for (const n of names) {
+      if (isExported) scan.exported.add(n);
+      // script 模式（无 import/export）⇒ 顶层声明是全局 ambient；
+      // module 模式里未导出的顶层声明是模块私有（既不是导出，也不是 ambient）⇒ 不进任何袋子
+      else if (!scan.isModule) scan.ambient.add(n);
+    }
+  }
+  return scan;
+}
+
+/** 文件扫描缓存（有界；同一文件只解析一次） */
+const fileScanCache = new BoundedLruMap<DtsFileScan>(64);
+
+/** 扫描一个 `.d.ts` 的顶层导出面（带缓存） */
+export function dtsFileScan(file: string): DtsFileScan {
+  const hit = fileScanCache.get(file);
+  if (hit) return hit;
+  const scan = scanDtsFile(file);
+  fileScanCache.set(file, scan);
+  return scan;
+}
+
+/** `export * from "./x"` → 目标文件（相对说明符才可判定） */
+function resolveStarTarget(spec: string, fromFile: string): string | undefined {
+  if (!spec.startsWith(".")) return undefined;
+  const raw = resolve(dirname(fromFile), spec);
+  const stem = raw.replace(/\.(js|mjs|cjs|ts)$/, "");
+  for (const cand of [`${raw}.d.ts`, `${stem}.d.ts`, join(raw, "index.d.ts"), join(stem, "index.d.ts")]) {
+    if (existsSync(cand)) return cand;
+  }
+  return undefined;
+}
+
+/** 包入口 `.d.ts`（package.json types/typings → index.d.ts → 收割列表首个） */
+export function packageEntryFile(h: PackageHarvest): string | undefined {
+  const entry = entryDtsFromPackageJson(h.root) ?? join(h.root, "index.d.ts");
+  if (existsSync(entry)) return entry;
+  return h.dtsFiles[0];
+}
+
+/** 包的公开导出面 */
+export type PackageExportSurface = {
+  /** 公开面的具名导出 */
+  names: Set<string>;
+  /** 存在**不可判定**的 `export * from "<外部包>"` ⇒ 公开面只知道一部分 */
+  unresolved: boolean;
+};
+
+const surfaceCache = new WeakMap<PackageHarvest, PackageExportSurface>();
+
+/**
+ * 包的公开导出面 = 入口 `.d.ts` 的顶层导出 ∪（`export * from "./x"` 目标文件的顶层导出）。
+ *
+ * `declare global { … }` 的内容与 script 模式文件的顶层声明**不在**其中
+ * ——它们是 ambient，TypeScript 侧不可 import（Bug 1014）。
+ */
+export function packageExportSurface(h: PackageHarvest): PackageExportSurface {
+  const hit = surfaceCache.get(h);
+  if (hit) return hit;
+  const names = new Set<string>();
+  let unresolved = false;
+  const visited = new Set<string>();
+  const visit = (file: string): void => {
+    if (visited.has(file)) return;
+    visited.add(file);
+    const scan = dtsFileScan(file);
+    for (const n of scan.exported) names.add(n);
+    for (const spec of scan.stars) {
+      const target = resolveStarTarget(spec, file);
+      if (target) visit(target);
+      else unresolved = true;
+    }
+  };
+  const entry = packageEntryFile(h);
+  if (entry) visit(entry);
+  const surface: PackageExportSurface = { names, unresolved };
+  surfaceCache.set(h, surface);
+  return surface;
+}
+
+/** 包内所有 ambient 名字（`declare global { … }` + script 模式顶层声明） */
+export function packageAmbientNames(h: PackageHarvest): Set<string> {
+  const ambient = new Set<string>();
+  for (const file of h.dtsFiles) {
+    for (const n of dtsFileScan(file).ambient) ambient.add(n);
+  }
+  return ambient;
+}
+
+/** 子路径说明符（"pkg/sub"）→ 该子路径入口 `.d.ts` */
+export function resolveSubpathEntry(root: string, sub: string): string | undefined {
+  if (!sub) return undefined;
+  const base = resolve(root, sub);
+  for (const cand of [`${base}.d.ts`, join(base, "index.d.ts")]) {
+    if (existsSync(cand)) return cand;
+  }
+  return undefined;
 }
 
 /** harvest 结果 → 人类可读导出表 */
