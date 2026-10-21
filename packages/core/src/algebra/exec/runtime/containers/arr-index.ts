@@ -10,6 +10,10 @@
  *   （issue #175：否则 xs[0].length - xs[1].length 假折 0）。
  * - abstractLen memo 只对**绑定接收者**合法（跨读同 term sound）；
  *   lenVarSeq 单调递增，len#N term 全局唯一。
+ * - Bug 209：Proxy **set 陷阱**返回值按规范 ToBoolean 判定——falsy（0 / "" /
+ *   null / undefined / false）→ strict TypeError（只认字面量 false 会漏）。
+ * - Bug 197：下标写查 defineProperty 的 writable:false → strict TypeError
+ *   （此前下标臂只查 frozen / sealed，flags 面没查 → 写穿无声）。
  */
 import type { Abs } from "../../../abs.ts";
 import { abs, confJoin, litValue, numLit, str, strLit, unknown } from "../../../abs.ts";
@@ -29,6 +33,7 @@ import { isSetAbs, isMapAbs, setElementsAbs, mapEntriesAbs } from "../../../coll
 import { hasGenView, peekGenElement, peekAllGenElements, proxyPartsOf, proxyTrapOf } from "../../match-iter.ts";
 import {
   extStateOf,
+  getPropFlags,
 } from "../../../builtins.ts";
 import {
   noteAnyMemberMayThrow,
@@ -132,7 +137,13 @@ export function $idx(
     return joinAbs(els.reduce((x, y) => joinAbs(x, y)), oobUndef());
   }
   if (a.shape.k === "arr") {
-    if (iv !== undefined && idx === undefined) return undef();
+    // Bug 232：确定非下标键（"foo"、-1、1.5、≥2^32-1…）——arr 形**没有**
+    // expando 槽模型（写面把 expando 写降级为 arr，值被丢弃），键**可能**
+    // 存在（原生 a[-1]=9 后读回 9）⇒ 不得折 exact undefined（自信的错值，
+    // 违反引擎自己的「不得假精确」不变式）。与字符串键路径同口径降级为
+    // 抽象值（$get 的 arr 臂返回 unknown）。
+    // 闭 tuple 无 expando（写面已就地降 arr）⇒ 仍折 exact undefined。
+    if (iv !== undefined && idx === undefined) return unknown;
     // 抽象下标可能 miss → 元素 ∪ undefined（与对象未知键同口径）；
     // 已知规范下标仍按元素投影（split()[0] 等非空序列链不断）
     if (idx === undefined) {
@@ -267,8 +278,8 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
     $idxSet(a.shape.shape, i, value);
     return a;
   }
-  // Bug 71：Proxy——set 陷阱优先（键 ToPropertyKey；返回字面量 false →
-  // strict TypeError）；无陷阱转发靶下标写（原地，brand 身份保持）
+  // Bug 71：Proxy——set 陷阱优先（键 ToPropertyKey；返回值按 ToBoolean 判定
+  // falsy → strict TypeError）；无陷阱转发靶下标写（原地，brand 身份保持）
   if (a.shape.k === "brand" && a.shape.name === "Proxy") {
     const parts = proxyPartsOf(a);
     if (parts) {
@@ -277,7 +288,9 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
         const keyAbs = iv !== undefined ? strLit(String(iv)) : i;
         const res = $call(trap.fn, [parts.target, keyAbs, value, a], parts.handler);
         const rv = litValue(res);
-        if (rv.ok && rv.value === false) throwStrictWrite();
+        // Bug 209：set 陷阱返回值按规范 **ToBoolean**——falsy（0 / "" / null /
+        // undefined / false）→ strict TypeError；此前只认字面量 false。
+        if (rv.ok && !rv.value) throwStrictWrite();
         return a;
       }
       if (trap.k === "dead" || trap.k === "opaque") {
@@ -297,6 +310,10 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
     ) {
       throwStrictWrite(); // 不可扩展：越界写（新下标）TypeError
     }
+    // Bug 197：下标位 defineProperty 的 **writable:false** → strict 写原生
+    // TypeError；此前下标臂只查 frozen/sealed（flags 面完全没查）→ 写穿
+    // 无声（门禁假绿）。
+    if (getPropFlags(a)?.get(String(numIdx))?.writable === false) throwStrictWrite();
     // i ≥ 2^32-1：非数组下标，原生是 expando 属性（length 不变、`i in a` 可见）。
     // 数组模型无 expando 槽：就地降 arr（读/keys/in 全保守），不得假精确
     if (numIdx >= 4294967295) {
@@ -370,6 +387,32 @@ export function $idxSet(a: Abs, i: Abs, value: Abs): Abs {
 const lenTermMemo = new WeakMap<Abs, Term>();
 let lenVarSeq = 0;
 
+/** 该 Abs 是否是「**确切的** undefined」（$len 的 undefined 臂：RegExp 匹配
+ *  迭代器等）——shape 是 unknown 令牌 + term 是 lit undefined。 */
+function isExactUndef(a: Abs): boolean {
+  return (
+    a.shape.k === "unknown" &&
+    a.term?.op === "lit" &&
+    (a.term as { value?: unknown }).value === undefined
+  );
+}
+
+/** 该成员**确定没有** .length 属性（原生读出 undefined，Bug 239）：
+ *  - prim 且非 string（number/boolean/bigint/symbol）
+ *  - 闭 obj 且无 length 槽
+ *  其余（unknown/any/brand/open obj/sum）长度**不可知**——不并 undefined 臂
+ *  （把「不可知」误当「确定无」会制造 L1 假红）。 */
+function memberHasNoLength(m: Abs): boolean {
+  const k = m.shape.k;
+  if (k === "prim") return (m.shape as { type?: string }).type !== "string";
+  if (k === "obj") {
+    const s = m.shape as ObjShape;
+    if (s.open) return false;
+    return getSlot(s.slots, "length") === undefined;
+  }
+  return false;
+}
+
 /** 抽象长度：number + var term + pred ≥0（字符串/数组长度恒非负）。
  *  供 `new Array(len + 1)` 等消费（add 的 addPred 平移界 → ctor 证非负
  *  不再记 RangeError，issue #98）。 */
@@ -433,7 +476,31 @@ export function $len(a: Abs, opts?: { silent?: boolean }): Abs {
     ) {
       return lens[0]!;
     }
-    return abstractLen(a);
+    // Bug 239：union 接收者读 .length 必须**保留各成员的长度**——某成员
+    // 根本没有 .length（原生 (7).length → undefined）时，旧口径
+    // `return abstractLen(a)` 把「无 length」当成「有 length」⇒ 恒 number
+    // ⇒ L1 契约 `number()` 被判成立、零诊断的**假绿**。
+    // 逐成员长度 join（同 $idx / $get 的 sum 分支口径）：确定「无 length」
+    // 的成员贡献 undefined 臂；长度不可知（unknown/any/brand/open obj）
+    // 的成员保持原值（不误并 undefined 臂 → 不制造假红）。
+    const arms: Abs[] = [];
+    let hasUndefArm = false;
+    for (const m of a.shape.members) {
+      const l = $len(m, opts);
+      if (memberHasNoLength(m)) {
+        arms.push(undef()); // 原生：成员没有 length 属性 → 读出 undefined
+        hasUndefArm = true;
+        continue;
+      }
+      if (isExactUndef(l)) {
+        arms.push(l); // 长度**就是** undefined（exact）
+        hasUndefArm = true;
+        continue;
+      }
+      arms.push(l);
+    }
+    if (!hasUndefArm) return abstractLen(a);
+    return arms.reduce((x, y) => joinAbs(x, y));
   }
   // Bug 56：Arguments brand → tuple 内层长度（arguments.length 精确）
   if (a.shape.k === "brand" && a.shape.name === "Arguments") {

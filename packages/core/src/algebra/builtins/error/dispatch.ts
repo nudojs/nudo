@@ -18,8 +18,10 @@
  *   viewLen 定抛 RangeError；读返回域按元素类型（bigint 家族 → bigint）。
  * - Error 家族 toString/toLocaleString = `${name}: ${message}`（槽已
  *   建模，空 message 只返 name）；Map/Set 方法族落 collections 条目机，
- *   迭代三件套经 iterator.ts 协议对象（mapEntryKey/setEntryTuple 条目
- *   投影），Set ES2025 方法族先过 binary 域 set-like 校验再 setMethodFold
+ *   迭代三件套经 iterator.ts 协议对象（collectionIteratorFor——**live
+ *   视图**，Bug 198：新增条目被访问、删除条目被跳过；快照与 live 同投影，
+ *   live 迭代器不登记静态元素侧表），Set ES2025 方法族先过 binary 域 set-like
+ *   校验再 setMethodFold
  *  （不可折 → 集合运算诚实 unknown / is* 抽象 boolean）。
  */
 
@@ -35,14 +37,11 @@ import {
   mapDeleteEntry,
   mapClearEntries,
   mapSizeAbs,
-  mapEntriesAbs,
-  mapValuesAbs,
   setAddEntry,
   setHasEntry,
   setDeleteEntry,
   setClearEntries,
   setSizeAbs,
-  setElementsAbs,
   setMethodFold,
   ctorArgDefinitelyInvalid,
   makeWeakCollectionAbs,
@@ -83,7 +82,21 @@ import {
   makeWeakRefAbs,
   makeFinalizationRegistryAbs,
 } from "./misc-ctor.ts";
-import { collectionIteratorAbs, mapEntryKey, setEntryTuple } from "./iterator.ts";
+import {
+  collectionIteratorFor,
+} from "./iterator.ts";
+
+/**
+ * Bug 198：Map/Set 迭代三件套（keys / values / entries）= **live 视图**的
+ * 协议对象——原生迭代器持条目指针：迭代期间**新增**的条目被访问、**删除**的
+ * 条目被跳过（`const it = m.keys(); it.next(); m.delete("b"); it.next().done`
+ * 原生 true，引擎快照口径折 false）。
+ *
+ * 投影与 live 视图的**同口径实现**都在 `builtins/error/iterator.ts` 的
+ * `collectionIteratorFor`（project 闭包只有一份：Map 的 keys/values 给
+ * 键/值，Set 的 entries 给 [el,el] 元组）——本文件此前自建了一份等价实现
+ * （绕开 iterator.ts 的投影错配），S17 已改回**直调**。
+ */
 
 /** new X(...) */
 export function evalBuiltinNew(className: string, args: Abs[]): Abs | undefined {
@@ -400,12 +413,17 @@ export function evalBuiltinInstanceMethod(
       case "size":
         return mapSizeAbs(recv);
       // Bug 23：迭代器三件套 → 带协议面的迭代器对象（条目表精确展开）
+      // Bug 198：改走 **live 视图**（collectionIteratorFor）——原生 Map
+      // 迭代器持条目指针：迭代期间**新增**的条目被访问、**删除**的条目被跳过
+      // （`const it = m.keys(); it.next(); m.delete("b"); it.next().done` 原生
+      // true，引擎快照口径折 false）。collectionIteratorAbs 的快照语义保留
+      // 给静态视图（Array.from 等）。
       case "keys":
-        return collectionIteratorAbs(mapEntriesAbs(recv).map(mapEntryKey));
+        return collectionIteratorFor(recv, "keys");
       case "values":
-        return collectionIteratorAbs(mapValuesAbs(recv));
+        return collectionIteratorFor(recv, "values");
       case "entries":
-        return collectionIteratorAbs(mapEntriesAbs(recv));
+        return collectionIteratorFor(recv, "entries");
       default:
         return undefined;
     }
@@ -423,11 +441,12 @@ export function evalBuiltinInstanceMethod(
       case "size":
         return setSizeAbs(recv);
       // Bug 23：Set keys ≡ values ≡ 元素序列；entries → [el, el] 条目
+      // Bug 198：同 Map 三件套——改走 live 视图（新增条目被访问、删除条目跳过）
       case "keys":
       case "values":
-        return collectionIteratorAbs(setElementsAbs(recv));
+        return collectionIteratorFor(recv, "values");
       case "entries":
-        return collectionIteratorAbs(setElementsAbs(recv).map(setEntryTuple));
+        return collectionIteratorFor(recv, "entries");
       // Bug 28：ES2025 Set 方法族——实参 GetSetRecord 校验（非对象 /
       // .size NaN / .has·.keys 非 callable → TypeError）+ 值域折叠
       // （setMethodFold：双方条目表确切时 union 恒折、其余运算与 is*

@@ -11,13 +11,13 @@
  */
 import type { Abs } from "../../abs.ts";
 import { abs, unknown, litValue, strLit } from "../../abs.ts";
-import { objOf, getSlot, setSlot } from "../../objects.ts";
+import { objOf, getSlot, setSlot, setInstanceProto } from "../../objects.ts";
 import { markFreshInstance } from "../../instance-id.ts";
 import { builtinSuperCtorOf, hostBuiltinCtorOf, evalClassChain } from "../runtime/members.ts";
-import { builtinCtorAbs, protoOfRecv } from "../../builtins.ts";
+import { builtinCtorAbs, protoBrandAbs, protoOfRecv } from "../../builtins.ts";
 import { typedArrayElementOf } from "../../builtins/shared.ts";
 import { $get, $set, asAbsVal, callAtFunctionBoundary } from "../runtime.ts";
-import { pushCtorFrame, popCtorFrame } from "../runtime/state.ts";
+import { pushCtorFrame, popCtorFrame, withNewTargetReset } from "../runtime/state.ts";
 import { $call } from "../call.ts";
 import { evalEnterCall, evalExitCall, evalTruncatedAbs, isHostGlobalFn } from "../calls.ts";
 import { getFnImpl, absFunction, hostFnCtorFacet, isAbsApplyResult } from "../../abs-fn.ts";
@@ -46,6 +46,24 @@ import {
 
 
 const classImpl = new WeakMap<object, EvalClassSpec>();
+
+/**
+ * Bug 205：fn Abs 构造器的实例 [[Prototype]]（构造期捕获用）。
+ *
+ * - 宿主函数 **facade**（member.ts 的 `$set` 宿主函数臂建）：其
+ *   "prototype" 槽即被替换后的新原型——实例的 [[Prototype]] 就是它
+ *   （原生 `F.prototype = {}` 之后 `new F()` 的实例原型是新对象）。
+ * - 其它 fn Abs（$fnVal 函数表达式 / env 构造器）：按名 protoBrandAbs
+ *   （与 evalProtoChain / `f.prototype` 读同一载体）。
+ */
+function fnAbsCtorProtoOf(cls: Abs, instName: string): Abs {
+  const sh = cls.shape;
+  if (sh.k === "fn" && sh.slots) {
+    const slot = getSlot(sh.slots, "prototype");
+    if (slot) return slot.value;
+  }
+  return protoBrandAbs(instName);
+}
 
 /**
  * Bug 142：静态块保留键前缀（NUL 开头——用户键不可能自然命中；与
@@ -114,10 +132,9 @@ export function $class(
   // hasExtends 标记区分「extends undefined（babel Identifier → 活引用 raw
   // undefined）」与「无 extends 子句」——前者定义期即 TypeError。
   const ext = spec.extends;
-  // bindImport 的 JS 可调用 wrapper（fn Abs → 箭头）：回 Abs 面（同 $new）——
-  // wrapper 是箭头，hostFnCtorFacet 会误判不可构造
-  const extAbsFn = (ext as { __nudoAbsFn?: Abs } | undefined)?.__nudoAbsFn;
-  const extVal = extAbsFn ?? ext;
+  // Bug 932 顺带清理：具名导入物化不再把 fn Abs 包成 JS 箭头 wrapper
+  // （bindImport 原样直出声明 Abs）⇒ `__nudoAbsFn` 回读已无生产方（死代码）。
+  const extVal = ext;
   let superName: string | undefined;
   let superNull = false;
   if (spec.hasExtends) {
@@ -382,6 +399,30 @@ export function findMethod(
   return undefined;
 }
 
+/**
+ * Bug 194：原型方法删除钩子——`delete X.prototype.m` 从**方法注册表**移除
+ * 该方法（原生：类方法就是原型对象的**自有属性**，delete 后原型上（及沿
+ * 原型链继承它的派生类原型上）都没有该方法）。
+ *
+ * 注册表 `spec.methods` 是引擎方法面的单一事实源——移除条目后三面同步缺席：
+ * - 读面（containers/member.ts 沿类链查 `spec.methods`）；
+ * - 调用面（`findMethod`）；
+ * - in 面（`brandHasProtoMember` 查 `spec.methods`）。
+ *
+ * **接线点在 `runtime/members.ts` 的 `$del`**（S1 的文件，本片不改）：删除
+ * 的接收者是 `.prototype` brand（`A.prototype`）时，按名取 owner 类并调用
+ * 本函数。原型对象上本就没有该方法的槽（方法在注册表里），`$del` 只删槽
+ * ⇒ 删除事件此前**不留任何痕迹**（注册表侧无人通知）——这正是本钩子的
+ * 存在理由。原生 `delete` 的返回值恒 true（与是否命中无关），故本函数只
+ * 报告「是否确有该方法条目」。
+ */
+export function deleteProtoMethod(ctorName: string, key: string): boolean {
+  const spec = getEvalClass(ctorName);
+  if (!spec?.methods || !Object.hasOwn(spec.methods, key)) return false;
+  delete spec.methods[key];
+  return true;
+}
+
 /** 沿继承链找静态方法（Bug 18）：原生静态方法挂构造器 [[Prototype]] 链
  *  （ClassDefinitionEvaluation 设 B.__proto__ = A）——空派生类
  *  `class B extends A {}` 的 B.m() 不得断链（与 findMethod 实例链同口径）。 */
@@ -442,6 +483,13 @@ export function instanceOwnFaceHasMember(recv: Abs, brandName: string, key: stri
  * Bug 59：实例字段落地——以 thisVal 为 this 按源序求值（原生
  * InitializeInstanceElements：基类 ctor 体前 / super() 返回后）。
  * $set 对 brand 实例就地写槽，每构造一个新实例各自持有字段。
+ *
+ * Bug 224：实例字段初始化器是**普通函数**（原生：field initializer 里的
+ * `new.target` 恒 undefined——`new.target` 只在构造器体里有值）。$new 的
+ * ctor 帧覆盖「构造器体 + 实例字段初始化器」整段，字段初始化器又**不走
+ * 调用边界**（不经 $call/$invoke ⇒ withNewTargetReset 不触发）⇒ 继承外层
+ * ctor 帧、折成类值。此处求值期清掉 new.target 帧（构造器帧只在构造器体
+ * 内成立；嵌套 new 自带帧，不串）。
  */
 export function applyInstanceFields(spec: EvalClassSpec, thisVal: Abs): Abs {
   let cur = thisVal;
@@ -459,7 +507,8 @@ export function applyInstanceFields(spec: EvalClassSpec, thisVal: Abs): Abs {
     if (!key) continue;
     // Bug 84：私有字段落地槽打 Slot.internal（introspection 面剔除；
     // $get/$set 直连访问与 $in 存在性不受影响）
-    cur = $set(cur, key, asAbsVal(f.init(cur)), { internal: f.private === true });
+    const initVal = withNewTargetReset(() => f.init(cur));
+    cur = $set(cur, key, asAbsVal(initVal), { internal: f.private === true });
   }
   return cur;
 }
@@ -555,10 +604,10 @@ export function constructClass(className: string, thisVal: Abs, args: Abs[]): Ab
 
 /** new C(...) → 空 brand 实例 + ctor 写字段；非类构造走 impl/$call */
 export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Abs {
-  // bindImport 的 JS 可调用 wrapper（fn Abs → 箭头）：回 Abs 面派发——
-  // wrapper 本身是箭头，hostFnCtorFacet 会误判不可构造（Bug 9 假抛）
-  const wrappedAbs = (cls as { __nudoAbsFn?: Abs } | undefined)?.__nudoAbsFn;
-  if (wrappedAbs) return $new(wrappedAbs, args);
+  // Bug 932 顺带清理：具名导入物化不再把 fn Abs 包成 JS 箭头 wrapper
+  // （bindImport 原样直出声明 Abs）⇒ `__nudoAbsFn` 回读已无生产方（死代码）。
+  // Abs 一等函数在两条调用面原生可派发（标识符调用走 $callNamed 的 Abs
+  // 分支 → $call(fn,args)；new 走本函数的 Abs 分支）。
   // Abs 侧内建构造器（builtinCtorAbs / env fn）：按名派发。
   // dual-facet 全局（Array/Date/Promise/Number…）经 env 遮蔽后 cls 是 Abs，
   // 必须走 evalBuiltinNew 按名构造，否则 $call 回退对无 apply 的 obj 折 unknown。
@@ -746,6 +795,12 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
         undefined,
         "path",
       );
+      // Bug 205：构造期捕获实例的真实 [[Prototype]]（宿主函数的 prototype
+      // 载体是 protoBrandAbs 名面——与 `F.prototype` 读同一对象）。捕获后
+      // 原型被替换（`F.prototype = {}`）时，instanceof 沿**记录的链**做
+      // 身份比较：换原型前造的实例记旧原型、换后造的新实例记新原型
+      // （原生 "false|true" 的区分依据）。
+      setInstanceProto(thisVal, protoBrandAbs(clsName));
       // new.target 帧：构造器体内 new.target = 被构造的函数值
       pushCtorFrame(asAbsVal(cls));
       const entered = evalEnterCall(clsName, cls, args);
@@ -804,14 +859,14 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }
       if (fs.ctor === true) {
-        // P3b：匿名函数表达式构造器——实例 brand 用伪父名（ensureFnParentName
-        // 注册链键），`new Base().x` 沿 memo prototype 折精确、instanceof /
-        // constructor 同链可解；有名 fn（Named NFE）保持声明名。
-        const instName = fs.name ?? ensureFnParentName(cls as Abs);
         // Bug 16：可构造 fn Abs（$fnVal 函数表达式值等）按 [[Construct]]
         // 执行体——apply 钩子承接 Abs thisVal（非 bindThis 的 thisArg 传入），
         // 返回 Abs 对象优先、undefined/原始值忽略（基类语义）
         const impl = getFnImpl(cls as Abs);
+        // P3b：匿名函数表达式构造器——实例 brand 用伪父名（ensureFnParentName
+        // 注册链键），`new Base().x` 沿 memo prototype 折精确、instanceof /
+        // constructor 同链可解；有名 fn（Named NFE）保持声明名。
+        const instName = fs.name ?? ensureFnParentName(cls as Abs);
         if (impl?.apply) {
           const thisVal = abs(
             { k: "brand", name: instName, shape: objOf({}) },
@@ -819,6 +874,11 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
             undefined,
             "path",
           );
+          // Bug 205：构造期捕获实例的真实 [[Prototype]]——fn Abs 构造器
+          // （$fnVal 函数表达式 / 宿主函数 **facade**：prototype 被替换过）
+          // 的 prototype 槽优先，否则按名 protoBrandAbs（与 evalProtoChain
+          // 同一载体）。
+          setInstanceProto(thisVal, fnAbsCtorProtoOf(cls as Abs, instName));
           pushCtorFrame(cls as Abs);
           const entered = evalEnterCall(instName, cls, args);
           if (!entered.ok) {
@@ -842,6 +902,14 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
             ) {
               return after;
             }
+            // Bug 242 注记：此处**不**按「apply 返回 unknown」把实例折 unknown——
+            // 匿名函数表达式构造器（$fnVal）空体时 apply 也返回 unknown（引擎
+            // fail-closed 令牌），按该信号收口会误伤 P3b（伪名链键 + 实例
+            // brand）。未建模的宿主类构造器（命名空间成员：Intl.Collator 等）
+            // 由**命名空间成员 fn 投影带 name** 收口——`$new` 取到真名
+            // （`Intl.<Sub>`）即不落内部伪名（`__nudoFnParentN` 是合法 JS
+            // 标识符却从未声明，会泄漏进 nudo check 签名 / dts 产物（TS2304）/
+            // schema 产物（z.instanceof(伪名) ⇒ 加载即 ReferenceError））。
             return thisVal;
           } finally {
             evalExitCall();
@@ -884,6 +952,9 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
   pushCtorFrame(cls);
   try {
     const inst = constructClass(className, thisVal, args);
+    // Bug 205：构造期捕获类实例的真实 [[Prototype]]（= 类原型对象）——
+    // 原型被替换 / setPrototypeOf 后 instanceof 沿**记录的链**做身份比较。
+    if (inst.shape.k === "brand") setInstanceProto(inst, protoBrandAbs(className));
     // R2b：每次 new 产出新实例——brand 形打新鲜实例标（=== 折 false；
     // 构造器 return 既有对象时重打只改该 Abs 引用的 id，别名恒等不受影响）
     return inst.shape.k === "brand" ? markFreshInstance(inst) : inst;

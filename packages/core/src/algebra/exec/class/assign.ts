@@ -11,7 +11,7 @@ import { abs, unknown, confJoin, bool, str } from "../../abs.ts";
 import { joinAbs, canonicalArrayIndex, setProtoAbs, setSlot } from "../../objects.ts";
 import { $set, asAbsVal, lookupObjAccessor, clearStaleTermPred } from "../runtime.ts";
 import { extStateOf, isEnumerableView, assignSourceSlots, primTargetAssignThrows, isSymbolAbs } from "../../builtins.ts";
-import { classifyAssignSet } from "../../builtins/object/descriptor.ts";
+import { classifyAssignSet, assignIntoBrandInner } from "../../builtins/object/descriptor.ts";
 import { TUPLE_MATERIALIZE_CAP } from "../../containers.ts";
 // 直连 member.ts（不经 containers barrel）：本模块体加载期即回调本 setter，
 // vite SSR 下 barrel 的 re-export 不是实例化期可用绑定（原单文件拓扑中
@@ -129,6 +129,23 @@ export function runtimeAssignObject(args: Abs[]): Abs {
         // （延长段 hole；非法 length 原生 RangeError）、非规范键 expando 忽略。
         // 源键序 = 原生 [[OwnPropertyKeys]] 序（整数键升序 → 字符串插入序）。
         assignArrayTarget(acc, src, st);
+      } else if (acc.shape.k === "brand" && acc.shape.shape.shape.k === "obj") {
+        // Bug 200/S4 接线：**原型对象**目标（Object.assign(A.prototype, {…})）——
+        // 原生写的是原型对象的自有属性（for-in 沿原型链可见）。引擎的原型
+        // 对象 = protoBrandAbs(name) 的内层 obj ⇒ 原地写该内层 obj 的槽
+        // （读侧 containers/iterate.ts 的 brandProtoEnumerableKeys 枚举的正是
+        // 它；不可变更新造出的新 brand 无人持有 ⇒ 写了也看不见）。
+        // 分类/写语义复用 builtins/object/descriptor.ts 的 assignIntoBrandInner。
+        const srcEntries = Object.entries(
+          (src.shape as Extract<Abs["shape"], { k: "obj" }>).slots,
+        )
+          .filter(([k]) => isEnumerableView(src, k))
+          .map(([k, s]) => {
+            const a = lookupObjAccessor(src, k);
+            const sv = s as { value: Abs };
+            return [k, a?.get ? a.get(src) : sv.value] as [string, Abs];
+          });
+        assignIntoBrandInner(acc, srcEntries);
       }
       continue;
     }
@@ -157,6 +174,12 @@ export function runtimeAssignObject(args: Abs[]): Abs {
       } else {
         assignArrayTarget(acc, srcObj, st);
       }
+    } else if (acc.shape.k === "brand" && acc.shape.shape.shape.k === "obj") {
+      // Bug 200/S4 接线：**原型对象**目标 × 非 obj 源（tuple/字符串下标键）
+      const srcEntries = Object.entries(srcSlots).map(
+        ([k, s]) => [k, s.value] as [string, Abs],
+      );
+      assignIntoBrandInner(acc, srcEntries);
     }
   }
   return acc;

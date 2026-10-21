@@ -29,6 +29,7 @@ import { undefAbs } from "../../hof.ts";
 import { NudoThrow } from "../../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../../exec/may-throw.ts";
 import { registerProxyParts } from "../../exec/match-iter.ts";
+import { markFreshInstance } from "../../instance-id.ts";
 import { setPropFlags } from "../invariants.ts";
 import { isSymbolAbs } from "../symbol.ts";
 import { str } from "../shared.ts";
@@ -191,6 +192,10 @@ export function isNullishLit(a: Abs | undefined): boolean {
  * Bug 57/71：brand inner = target Abs（无陷阱读写走靶语义、isArray 剥
  * brand 看靶形态）；target/handler 引用挂 match-iter 侧表——get/has/set
  * 陷阱派发（$get/$set/$in）与陷阱实参（首参 target）用。
+ * Bug 235：**新鲜实例标打在构造点**（原生 new Proxy 每次都是新对象，与靶
+ * 必不同引用）——`p === t` / `p1 === p2` 恒 false。读面懒打（首次经
+ * Proxy 面读时）只覆盖"读过"的代理；构造点打标覆盖**全部**代理（不经任何
+ * Proxy 面读的 `p === t` 也可判）。
  */
 export function makeProxyAbs(target: Abs | undefined, handler: Abs | undefined): Abs {
   for (const a of [target, handler]) {
@@ -209,6 +214,9 @@ export function makeProxyAbs(target: Abs | undefined, handler: Abs | undefined):
     undefined,
     "path",
   );
+  // Bug 235：构造点打新鲜实例标（Proxy 是独立创建事件——与靶、与其他代理
+  // 必不同引用）。读面懒打（member.ts）保留为兜底（$set 后的新 Abs 丢标）。
+  markFreshInstance(proxy);
   registerProxyParts(proxy, { target: t, handler: h });
   return proxy;
 }

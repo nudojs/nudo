@@ -11,6 +11,29 @@ import type { LiteralValue } from "./term.ts";
 import { safeMemberAccess } from "./codegen-escape.ts";
 import { ProjectionBudget } from "./projection-budget.ts";
 import { accessorReadDomain } from "./accessors.ts";
+import { canonicalArrayIndex } from "./objects.ts";
+
+/**
+ * Bug 240（S21）：**guard 面剔除 internal 槽**（内部槽对属性 introspection
+ * 不可见，不是自有属性）。
+ *
+ * 与投影面（`format.ts` 的 `isHiddenInternalSlot`）**同口径**：`Slot.internal`
+ * 为 true 且键**不是**规范数组下标 ⇒ 该槽不进 guard 产物。
+ *
+ * 不剔会产出**恒假条款**：生成器对象的协议槽（`next` / `return` / `throw` /
+ * `constructor` / `@@iterator`）是 internal 槽——原生挂在原型上、不是自有
+ * 属性。`@@iterator` 尤其致命：它是 **symbol 键**槽（`Symbol.iterator`），
+ * guard 面却按**字符串键** `"@@iterator"` 取值 ⇒ 原生恒 `undefined` ⇒
+ * `typeof data["@@iterator"] === "function"` **恒假** ⇒ 恒假条款污染 guard
+ * 产物（`service/src/emit/guard-generator.ts` 直接消费本函数）。
+ *
+ * 例外：**规范数组下标槽**保留——族 01 的建模口径里生成器的数字下标槽承载
+ * **元素域**（`format.ts` 同例外，`eval-spread-iter-elems` 钉住 `"0": string`），
+ * 不是内部实现细节 ⇒ 不在此剔除。
+ */
+function isHiddenInternalSlot(k: string, slot: { internal?: boolean }): boolean {
+  return slot.internal === true && canonicalArrayIndex(k) === undefined;
+}
 
 /** Abs 上的运行时守卫表达式（JS boolean 布尔串） */
 export function denoteGuard(a: Abs, v: string): string {
@@ -65,6 +88,9 @@ function denoteShape(a: Abs, v: string, budget: ProjectionBudget): string {
     case "obj": {
       const checks = [`typeof ${v} === "object"`, `${v} !== null`];
       for (const [key, slot] of Object.entries(s.slots)) {
+        // Bug 240（S21）：internal 槽不进 guard 面（内部槽不是自有属性）——
+        // 规范数组下标槽除外（承载元素域，族 01 口径）。
+        if (isHiddenInternalSlot(key, slot)) continue;
         const access = safeMemberAccess(v, key);
         // Bug 191：访问器键的槽是 `$lit(void 0)` 占位——守卫须按 getter 读域
         // 判定（原生读 `data.ab` 走 getter），否则对函数自己的返回值报假红。

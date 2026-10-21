@@ -98,14 +98,17 @@ describe("Bug 104: Array.from array-like length ceiling", () => {
 // --- Bug 110：普通对象 @@iterator 先行（iterator beats array-like） ---------
 
 describe("Bug 110: Array.from 普通对象 @@iterator", () => {
-  it("带 @@iterator 的普通对象 → 迭代路径：元素域 unknown 的 arr（不再折 exact 空 tuple）", () => {
+  it("带 @@iterator 的普通对象 → 迭代路径：驱动用户迭代器（exact 元素域 + 确切长度）", () => {
     const r = call(`export function f() { const o = { [Symbol.iterator]: function* () { yield 1; yield 2; } }; return Array.from(o); }`);
-    const s = r.result as { shape?: { k?: string; element?: unknown } };
-    expect(s.shape?.k).toBe("arr");
-    expect((s.shape as { element?: { shape?: { k?: string } } }).element?.shape?.k).toBe("unknown");
-    // 长度不可判（native 2）——不得 wrong-exact 折 0
+    const s = r.result as { shape?: { k?: string; elements?: unknown[] } };
+    // Bug 202：obj 臂**实际驱动**用户迭代器（GetIterator + IteratorNext）
+    // ⇒ 元素按迭代序精确取出（native [1,2]）——此前只判「可迭代」不驱动，
+    // 元素域折 unknown、长度不可判。
+    expect(s.shape?.k).toBe("tuple");
+    expect((s.shape as { elements?: unknown[] }).elements?.length).toBe(2);
+    // 长度确切（native 2）——迭代器报告 done ⇒ 元素数确切
     const len = call(`export function f() { const o = { [Symbol.iterator]: function* () { yield 1; yield 2; } }; return Array.from(o).length; }`);
-    expect(litValue(len.result)).toEqual({ ok: false });
+    expect(litValue(len.result)).toEqual({ ok: true, value: 2 });
   });
 
   it("非可调用 @@iterator 字面量 → definite TypeError（GetMethod 语义）", () => {
@@ -115,7 +118,9 @@ describe("Bug 110: Array.from 普通对象 @@iterator", () => {
 
   it("iterator beats length：{...iterObj, length: 0} 仍走迭代（不折 exact 0）", () => {
     const r = call(`export function f() { const g = { [Symbol.iterator]: function* () { yield 1; yield 2; } }; return Array.from({ ...g, length: 0 }).length; }`);
-    expect(litValue(r.result)).toEqual({ ok: false });
+    // Bug 202：迭代路径实际驱动用户迭代器 ⇒ 长度 = 迭代出的元素数（native 2），
+    // **不是** length 槽的 0——「iterator beats length」的口径不变。
+    expect(litValue(r.result)).toEqual({ ok: true, value: 2 });
   });
 
   it("@@iterator 值 undefined → GetMethod 视为缺席，回落 array-like", () => {

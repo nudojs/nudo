@@ -10,6 +10,9 @@
  *   抽象 → may（空接收者同样先校验）；values 实参不校验（原生存储不转换）。
  * - mutator 降 arr（splice 等）的元素域 = 全部观测元素 join——不并入
  *   OOB undefined（issue #156 元素域约定）。
+ * - 完整性门（Bug 223）：frozen 任何 mutator 抛；sealed 的**结构性扩展**
+ *   （push/unshift/splice）与**删除既有自有属性**（pop/shift 命中自有元素）
+ *   抛 TypeError；空数组 / 空洞位 / preventExtensions（nonext）不抛。
  */
 import type { Abs } from "../../../abs.ts";
 import { abs, confJoin, litValue, unknown, type Confidence } from "../../../abs.ts";
@@ -238,18 +241,48 @@ export function fillTuple(
  *   稳定）；不一致 → 降级（原生序依赖算法细节）；
  * - >24：单探针（首对不可知）抛 → may + 降级，否则直接降级。
  * 调用方自行做 GetSortComparator 校验。
+ *
+ * **空洞（hole）语义**（Bug 222）——原生两种形态不同：
+ * - 就地 `sort`：hole 位**不参与比较**、比较器看不到它、排序后**仍是
+ *   hole**（Object.keys 不含它 / `in` 为 false / HOF 跳过）——V8 实测
+ *   `[3,,1].sort()` → keys ["0","1"]、长度 3。
+ * - `toSorted`：拷贝面走 Get（hole 读成 undefined 并**写实**为元素）→
+ *   结果是**真实 undefined 元素**（keys ["0","1","2"]）。
+ * opts.preserveHoles=true 即就地 sort 语义（默认 false = toSorted 语义）。
  */
 const SORT_CMP_SWEEP_CAP = 24;
 
 export function sortTupleAbs(
   arr: Abs,
   cmp: Abs | undefined,
+  opts?: {
+    /**
+     * 原生**就地 sort** 保留空洞：hole 位不参与比较、末尾仍是 hole
+     * （Object.keys 不含 / `in` false / HOF 跳过）。默认 false = toSorted
+     * 语义（hole 按 Get 读成 undefined 并写实为元素）。
+     */
+    preserveHoles?: boolean;
+  },
 ): Abs {
   const shape = arr.shape as { k: "tuple"; elements: Abs[]; holes?: number[] };
   const holes = shape.holes ?? [];
-  const slots = shape.elements.map((el, i) => (holes.includes(i) ? undef() : el));
+  const holeSet = new Set(holes);
+  const preserveHoles = opts?.preserveHoles === true;
+  // hole 位：sort 下保留（不参与比较、末尾仍是 hole）；toSorted 下按 Get
+  // 语义读成 undefined 元素（原生拷贝面把 hole 写实）。
+  const slots = preserveHoles
+    ? [...shape.elements]
+    : shape.elements.map((el, i) => (holeSet.has(i) ? undef() : el));
   const isUndefLit = (el: Abs): boolean =>
     el.term?.op === "lit" && el.term.value === undefined;
+  // hole 位（仅 sort 语义）与真实 undefined 元素都**不参与比较**——原生
+  // 比较器既看不到 hole 也看不到 undefined 元素（V8 实测：undefined 元素
+  // 同样不传给比较器，只在末尾保留）。
+  const isHoleAt = (i: number): boolean => preserveHoles && holeSet.has(i);
+  const isComparable = (el: Abs, i: number): boolean =>
+    !isUndefLit(el) && !isHoleAt(i);
+  // 真实 undefined 元素（sort 语义下不含 hole；toSorted 语义下 hole 已并入）
+  const undefEls = slots.filter((el, i) => isUndefLit(el) && !isHoleAt(i));
   const asAbsOrNull = (v: unknown): Abs | null => {
     const a = asAbsVal(v);
     return a && typeof a === "object" && "shape" in a ? a : null;
@@ -266,8 +299,25 @@ export function sortTupleAbs(
       : unknown;
     return abs({ k: "arr", element: el }, undefined, undefined, confJoin(arr.conf, "path"));
   };
+  // 结果元组：排序后的可比元素 + 真实 undefined 元素 + （sort 保留的）空洞
+  // （空洞位写 undef() 占位并登记 holes 下标——读面 Object.keys / `in` /
+  // HOF 依 holes 跳过，与原生一致）。
+  const buildResult = (ordered: Abs[]): Abs => {
+    const holeEls = preserveHoles ? holes.map(() => undef()) : [];
+    const els = [...ordered, ...undefEls, ...holeEls];
+    const holeIdx =
+      holeEls.length > 0
+        ? Array.from({ length: holeEls.length }, (_, k) => els.length - holeEls.length + k)
+        : undefined;
+    return abs(
+      { k: "tuple", elements: els, holes: holeIdx },
+      undefined,
+      undefined,
+      confJoin(arr.conf, "path"),
+    );
+  };
   if (isDefaultCmp) {
-    const comparable = slots.filter((el) => !isUndefLit(el));
+    const comparable = slots.filter((el, i) => isComparable(el, i));
     if (comparable.length >= 2 && comparable.some((el) => isSymbolAbs(el))) {
       throw new NudoThrow(errorTypeAbs("TypeError"));
     }
@@ -277,18 +327,9 @@ export function sortTupleAbs(
         return r.ok ? r.value : undefined;
       });
       if (vals.every((v) => v === undefined || typeof v !== "object")) {
-        const sortedVals = vals.filter((v) => v !== undefined).sort();
-        const undefCount = vals.length - sortedVals.length;
-        const els = [
-          ...sortedVals.map((v) => $lit(v)),
-          ...Array.from({ length: undefCount }, () => undef()),
-        ];
-        return abs(
-          { k: "tuple", elements: els },
-          undefined,
-          undefined,
-          confJoin(arr.conf, "path"),
-        );
+        // 只有可比元素参与排序（hole 与 undefined 元素排尾、不参与比较）
+        const sortedVals = vals.filter((_, i) => isComparable(slots[i]!, i)).sort();
+        return buildResult(sortedVals.map((v) => $lit(v)));
       }
     }
     return degrade();
@@ -296,7 +337,7 @@ export function sortTupleAbs(
   // M4：比较器在场
   if (cmpAbs && getFnImpl(cmpAbs)?.effectFree) {
     const comparableIdx = slots
-      .map((el, i) => (isUndefLit(el) ? -1 : i))
+      .map((el, i) => (isComparable(el, i) ? i : -1))
       .filter((i) => i >= 0);
     const n = comparableIdx.length;
     if (n < 2) return degrade(); // 比较器原生不会被调用
@@ -424,17 +465,8 @@ export function sortTupleAbs(
       }
       order[j + 1] = cur;
     }
-    const undefCount = slots.length - n;
-    const els = [
-      ...order.map((idx) => slots[idx]!),
-      ...Array.from({ length: undefCount }, () => undef()),
-    ];
-    return abs(
-      { k: "tuple", elements: els },
-      undefined,
-      undefined,
-      confJoin(arr.conf, "path"),
-    );
+    // 结果：排序后的可比元素 + 真实 undefined 元素 + （sort 保留的）空洞
+    return buildResult(order.map((idx) => slots[idx]!));
   }
   return degrade();
 }
@@ -455,6 +487,36 @@ export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
     (method === "push" || method === "unshift" || method === "splice")
   ) {
     throwStrictWrite();
+  }
+  // Bug 223：sealed 数组的元素是**不可配置**自有属性 → pop/shift 的**删除**
+  // 动作即 TypeError（原生硬抛："Cannot delete property 'N' of [object Array]"）。
+  // 判定按原生逐步语义（node 实测）：
+  // - 空数组原生**不抛**（不删任何属性）；
+  // - 空洞（hole）不是自有属性 → 删它不抛：`Object.seal([1,,]).pop()` 原生不抛；
+  // - 但 shift 会把后续元素**前移**到空洞位 → 在不可扩展（sealed）数组上新增
+  //   自有属性 → 抛：`Object.seal([,,3]).shift()` 原生抛（Cannot add property）。
+  //   即：shift 抛 ⟺ 下标 0 是自有属性 ∨ 存在下标 ≥ 1 的自有属性。
+  // - preventExtensions（nonext）**不**冻结元素 → 截断**不**抛（node 实测：
+  //   `Object.preventExtensions([1,2]).pop()` 不抛）——故 nonext 不入本门。
+  if (st === "sealed" && (method === "pop" || method === "shift")) {
+    if (shape.k === "tuple") {
+      const holes = shape.holes;
+      // 自有属性 ⟺ 该下标不是空洞
+      const own = (i: number) => holes === undefined || !holes.includes(i);
+      if (shape.elements.length > 0) {
+        if (method === "pop") {
+          if (own(shape.elements.length - 1)) throwStrictWrite();
+        } else if (own(0) || shape.elements.some((_, i) => i > 0 && own(i))) {
+          throwStrictWrite();
+        }
+      }
+    } else {
+      // 抽象数组长度不可知 → may（空数组不抛、非空抛）
+      recordMayThrow({
+        kind: "TypeError",
+        cause: "pop/shift on a sealed array may delete a non-configurable element",
+      });
+    }
   }
   const vals = args.map((a) => asAbsVal(a));
   const asArrEl = (els: Abs[]): Abs =>
@@ -574,7 +636,10 @@ export function $arrMutContainer(arr: Abs, method: string, args: Abs[]): Abs {
       undefinedOk: true,
     });
     if (shape.k === "tuple") {
-      return writeBack(sortTupleAbs(arr, vals[0]));
+      // 就地 sort：原生**保留空洞**（hole 不参与比较、末尾仍是 hole——
+      // Object.keys 不含 / `in` false / HOF 跳过，Bug 222）。toSorted 走
+      // Get 语义（hole → 真实 undefined 元素），由 invoke-arr 侧默认语义。
+      return writeBack(sortTupleAbs(arr, vals[0], { preserveHoles: true }));
     }
     return arr;
   }

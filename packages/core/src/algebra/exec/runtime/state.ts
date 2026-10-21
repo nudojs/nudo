@@ -1,6 +1,19 @@
 /**
  * 求值引擎运行时共享状态：phi、就地写、字面量 Abs、真值、循环信号。
  * 叶子模块——不依赖 runtime 其它文件（tuple/obj 字面量就地构造，避免 state↔containers 环）。
+ *
+ * Invariants:
+ * - Bug 213：宿主 / 命名空间对象（Math / JSON / Reflect）的自有属性投影按
+ *   **getOwnPropertyNames**（全部自有字符串键）而非 Object.entries（只取可
+ *   枚举键）——原生这些对象的自有属性几乎全不可枚举，按可枚举投影会把整个
+ *   自有面丢掉（gOPN / ownKeys / hasOwn / gOPD 全折 0）；逐键记 enumerable /
+ *   writable / configurable 标志，不可枚举键仍不进枚举面。
+ * - Bug 210：enforceProxyGetInvariant 是 Proxy [[Get]] 规范不变量的单一实现
+ *   （靶上自有属性不可配置且不可写时，get 陷阱须返回其实际值）；
+ *   proxyTargetInnerObj 归一化「靶 → 内层 obj Abs」（不变性侧表与槽表都挂
+ *   在内层 obj 上——brand 包装的靶走内层）。
+ *   [[OwnPropertyKeys]] 不变量（重复名 / 漏键 / 多余键）在
+ *   builtins/object/descriptor.ts（enforceProxyOwnKeysInvariant）。
  */
 import type { Abs } from "../../abs.ts";
 import { abs, bool, boolLit, confJoin, litValue, numLit, strLit, unknown, type Confidence } from "../../abs.ts";
@@ -15,6 +28,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { errorTypeAbs, $tryMarkSoft, $tryDigestSoft, $tryReleaseSoft, popMayThrowFrame, orphanMayThrowEffects, type MayThrowEffect } from "../may-throw.ts";
 import { shouldWidenArrayLiteral, widenedArrayConf } from "../../containers.ts";
 import { joinAbs, objOf } from "../../objects.ts";
+import { extStateOf, getPropFlags, setPropFlags } from "../../builtins/invariants.ts";
 import type { InvariantSpec } from "./invariant-apply.ts";
 
 export { NudoThrow, isNudoThrow };
@@ -475,19 +489,162 @@ export function litAbsFromJs(v: unknown, depth = 0): Abs {
       const proto = Object.getPrototypeOf(v);
       if (proto === Object.prototype || proto === null) {
         const slots: Record<string, { value: Abs }> = {};
-        for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+        /**
+         * Bug 213：宿主 / 命名空间对象（Math / JSON / Reflect）的自有属性几乎
+         * 全部**不可枚举**（原生 Object.keys(Math) 为空串数组，但
+         * Object.getOwnPropertyNames(Math) 非空）——此前按 Object.entries
+         * （只取**可枚举**自有键）投影 ⇒ 整个自有面被丢弃 ⇒ 引擎侧
+         * gOPN / ownKeys / hasOwn / gOPD 对这些对象全折 0（原生折非 0）。
+         *
+         * 改为按 Object.getOwnPropertyNames 投影**全部自有字符串键**，并逐键
+         * 记下原生描述符标志（enumerable / writable / configurable）——
+         * 不可枚举键不进枚举面（Object.keys 仍为空，与原生一致），
+         * 描述符面（gOPD）与原生逐字段一致。
+         */
+        const names = Object.getOwnPropertyNames(v);
+        for (const k of names) {
+          const d = Object.getOwnPropertyDescriptor(v, k);
+          // 数据属性取 d.value；访问器属性取读值（getter 求值——与旧
+          // Object.entries 路径同口径：宿主 getter 在成员读时本就会求值）。
+          const raw = d && "value" in d ? d.value : (v as Record<string, unknown>)[k];
           Object.defineProperty(slots, k, {
-            value: { value: litAbsFromJs(val, depth + 1) },
+            value: { value: litAbsFromJs(raw, depth + 1) },
             enumerable: true,
             writable: true,
             configurable: true,
           });
         }
-        return objOf(slots);
+        const obj = objOf(slots);
+        for (const k of names) {
+          const d = Object.getOwnPropertyDescriptor(v, k);
+          if (!d) continue;
+          setPropFlags(obj, k, {
+            writable: d.writable !== false,
+            enumerable: d.enumerable !== false,
+            configurable: d.configurable !== false,
+          });
+        }
+        /**
+         * Bug 213（续）：宿主对象自有 **symbol** 键（如 Math 的
+         * Symbol.toStringTag）也进 [[OwnPropertyKeys]] 面——原生
+         * Reflect.ownKeys(Math) 比 getOwnPropertyNames 多一个 symbol 键。
+         * 引擎槽域是字符串键面，按既有约定投影为 "@@X" 槽（symbolKey 标记，
+         * 与 transpile 期 [Symbol.X] 投影同口径）；无名用户符号无投影
+         * （不凭空捏槽）。
+         */
+        for (const sym of Object.getOwnPropertySymbols(v)) {
+          const slotKey = hostSymbolSlotKeyOf(sym);
+          if (slotKey === undefined) continue;
+          const d = Object.getOwnPropertyDescriptor(v, sym);
+          Object.defineProperty(slots, slotKey, {
+            value: {
+              value: litAbsFromJs((v as unknown as Record<symbol, unknown>)[sym], depth + 1),
+              symbolKey: true,
+            },
+            enumerable: true,
+            writable: true,
+            configurable: true,
+          });
+          setPropFlags(obj, slotKey, {
+            writable: d?.writable !== false,
+            enumerable: d?.enumerable !== false,
+            configurable: d?.configurable !== false,
+          });
+        }
+        return obj;
       }
     }
   }
   return unknown;
+}
+
+/**
+ * Bug 213：宿主 Symbol 命名空间的 well-known 名 → "@@X" 槽键（**宿主身份**
+ * 反查——不用 description：用户符号 Symbol("Symbol.iterator") 的
+ * description 恰是 "Symbol.iterator"，按 description 会误投影到 well-known 槽）。
+ *
+ * 本模块是叶子（不能 import exec/runtime/symbol-key.ts——它依赖本文件的
+ * litAbsFromJs，会成 state↔symbol-key 环），故此处按宿主身份现查
+ * （宿主 well-known 符号集极小，仅在宿主对象带自有 symbol 键时触发）。
+ */
+function hostSymbolSlotKeyOf(sym: symbol): string | undefined {
+  const ns = Symbol as unknown as Record<string, unknown>;
+  for (const name of Object.getOwnPropertyNames(Symbol)) {
+    if (ns[name] === sym) return `@@${name}`;
+  }
+  return undefined;
+}
+
+/**
+ * Bug 210：Proxy 靶的**内层 obj Abs**（obj 靶 → 自身；brand 包装的靶 → 内层
+ * obj；其余形态 → undefined）——不变性侧表（extState / propFlags）与槽表都挂
+ * 在内层 obj 上（外层 brand Abs 只是包装）。
+ */
+export function proxyTargetInnerObj(target: Abs): Abs | undefined {
+  return target.shape.k === "obj"
+    ? target
+    : target.shape.k === "brand" && target.shape.shape.shape.k === "obj"
+      ? target.shape.shape
+      : undefined;
+}
+
+/**
+ * Bug 210：Proxy 靶上自有数据属性值（obj 槽 / brand 内层 obj 槽）。
+ * 非自有属性 → undefined（不变量不适用）。
+ */
+function proxyTargetOwnValue(target: Abs, key: string): Abs | undefined {
+  const inner = proxyTargetInnerObj(target);
+  if (!inner) return undefined;
+  const slots = (inner.shape as { slots: Record<string, { value: Abs }> }).slots;
+  if (!Object.prototype.hasOwnProperty.call(slots, key)) return undefined;
+  return slots[key]!.value;
+}
+
+/**
+ * Bug 210：Proxy [[Get]] 规范不变量（ES2024 10.5.4 step 6）——靶上该自有
+ * 属性**不可配置且不可写**（数据属性）时，get 陷阱必须返回该属性的实际值
+ * （SameValue），否则抛 TypeError（原生 "'get' on proxy: property 'a' is a
+ * read-only and non-configurable data property on the proxy target but the
+ * proxy did not return its actual value"）。
+ *
+ * 判定口径：
+ * - 冻结靶（extState "frozen"）：全部自有数据属性不可写 + 不可配置；
+ * - 密封靶（"sealed"）：不可配置但**仍可写** → 不触发不变量；
+ * - defineProperty 收紧的 flags：writable:false + configurable:false。
+ *
+ * 值不可判（抽象值 / 非字面量）→ 不抛（sound 保守——原生只在确定不一致
+ * 时抛；引擎不得凭空造不一致）。
+ *
+ * 符号投影键（"[Symbol.X]" → "@@X"）：靶的**自有 symbol 属性**面在引擎里
+ * 不可判（槽键 "@@X" 与原生 symbol 键不同域）→ 跳过（调用方以
+ * opts.symbolKey 标记）。
+ *
+ * 消费方：exec/runtime/containers/member.ts 的 Proxy get 陷阱分支
+ * （该文件归 S2a/S2b 分片——越界诉求：陷阱结果算出后调本函数一行）。
+ */
+export function enforceProxyGetInvariant(
+  target: Abs,
+  key: string,
+  trapResult: Abs,
+  opts?: { symbolKey?: boolean },
+): void {
+  if (opts?.symbolKey === true) return; // symbol 投影键 → 靶自有 symbol 面不可判
+  const inner = proxyTargetInnerObj(target);
+  if (!inner) return;
+  const st = extStateOf(inner);
+  const flags = getPropFlags(inner)?.get(key);
+  const nonWritable = flags?.writable === false || st === "frozen";
+  const nonConfigurable =
+    flags?.configurable === false || st === "frozen" || st === "sealed";
+  if (!nonWritable || !nonConfigurable) return;
+  const own = proxyTargetOwnValue(inner, key);
+  if (own === undefined) return; // 靶上非自有属性 → 不变量不适用
+  const a = litValue(own);
+  const b = litValue(trapResult);
+  if (!a.ok || !b.ok) return; // 值不可判 → 不抛
+  if (!Object.is(a.value, b.value)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
 }
 
 /** JS 真值：字面量按 Boolean(v)；对象形恒真；不可判 → undefined */

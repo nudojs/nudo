@@ -21,11 +21,15 @@ import { boolPrim } from "./shared.ts";
 import { evalObjectMethod } from "./object.ts";
 import { markExtState, extStateOf, getPropFlags, migrateInvariants } from "./invariants.ts";
 import { protoChangeAllowed } from "./object/methods.ts";
+import { proxyOwnKeysTrapKeys, proxyTargetOwnStringKeys, enforceProxyDeleteInvariant } from "./object/descriptor.ts";
 import { $del, proxyBooleanTrap, proxyGetProtoTrap } from "../exec/runtime/members.ts";
+import { protoChainSetVerdict } from "../exec/runtime/proto-set.ts";
 import { lookupObjAccessor, migrateAccessors } from "../accessors.ts";
-import { $set, $idxSet } from "../exec/runtime/containers.ts";
-import { writeInPlace, undef, callAtFunctionBoundary } from "../exec/runtime/state.ts";
+import { $set, $idxSet, $get } from "../exec/runtime/containers.ts";
+import { writeInPlace, undef, callAtFunctionBoundary, enforceProxyGetInvariant } from "../exec/runtime/state.ts";
 import { $call } from "../exec/call.ts";
+import { proxyPartsOf, proxyTrapOf } from "../exec/match-iter.ts";
+import { slotKeyOfSymbolAbs } from "../exec/runtime/symbol-key.ts";
 import { getFnImpl } from "../abs-fn.ts";
 
 /** target 三档：object（确定对象）/ prim（确定非对象）/ may（可能是 prim） */
@@ -80,7 +84,54 @@ export function evalReflectMethod(method: string, args: Abs[]): Abs | undefined 
   switch (method) {
     case "get": {
       enforceReflectTarget(args[0], "get");
-      const hit = closedObjSlotHit(args[0]!, args[1]);
+      const t0 = args[0]!;
+      /**
+       * Bug 210：Proxy get 陷阱优先（[[Get]]）——handler 的 "get" 槽派发，
+       * 实参 (target, key, receiver=proxy)，与成员读面（containers/member.ts
+       * 的 $get）同款；无陷阱回退靶读（Receiver = proxy，规范转发）。
+       * 陷阱结果过 [[Get]] 规范不变量（靶上不可配置+不可写属性须返回实际值，
+       * 否则原生定抛 TypeError）。
+       */
+      if (t0.shape.k === "brand" && t0.shape.name === "Proxy") {
+        const parts = proxyPartsOf(t0);
+        if (parts) {
+          const trap = proxyTrapOf(parts.handler, "get");
+          const kvR = args[1] ? litValue(args[1]) : undefined;
+          const kv = kvR?.ok ? kvR.value : undefined;
+          // 键 → 槽键面（字符串键原样；number → 十进制串；symbol → "@@X"
+          // 投影 + symbolKey 标记——Bug 149 的陷阱边界还原真 symbol）
+          let slotKey: string | undefined;
+          let symKey = false;
+          if (typeof kv === "string") slotKey = kv;
+          else if (typeof kv === "number") slotKey = String(kv);
+          else if (typeof kv === "symbol") {
+            slotKey = slotKeyOfSymbolAbs(args[1]!);
+            symKey = true;
+          }
+          if (trap.k === "fn") {
+            const keyAbs = args[1] ?? undef();
+            // receiver：Reflect.get 的第 3 实参（缺省 ≡ target，即 proxy 自己）
+            const recv = args[2] ?? t0;
+            const r = $call(trap.fn, [parts.target, keyAbs, recv], parts.handler);
+            if (slotKey !== undefined && !symKey) {
+              enforceProxyGetInvariant(parts.target, slotKey, r);
+            }
+            return r;
+          }
+          if (trap.k === "dead" || trap.k === "opaque") {
+            recordMayThrow({ kind: "TypeError", cause: "Proxy get trap not callable / unknown" });
+            return unknown;
+          }
+          if (slotKey === undefined) return unknown;
+          return $get(
+            parts.target,
+            slotKey,
+            symKey ? { symbolKey: true } : undefined,
+            args[2] ?? t0,
+          );
+        }
+      }
+      const hit = closedObjSlotHit(t0, args[1]);
       return hit ?? unknown;
     }
     case "set": {
@@ -123,6 +174,20 @@ export function evalReflectMethod(method: string, args: Abs[]): Abs | undefined 
         const exists = slotsOf
           ? Object.prototype.hasOwnProperty.call(slotsOf, key)
           : undefined;
+        /**
+         * Bug 197（Reflect.set 镜像）：receiver **无自有该键**时，[[Set]] 沿
+         * [[Prototype]] 链上溯——首个持有该键的原型的访问器（无 setter）/
+         * 不可写数据属性 / frozen 原型 ⇒ 写门失败。原生 Reflect.set 在写门
+         * 失败时**返 false**（不抛；抛错是 strict 赋值 `$set` 的语义）⇒ 此处
+         * 走 core 侧同一判定（exec/runtime/proto-set.ts 的 protoChainSetVerdict
+         * ——S3 新增的叶子模块），失败返 false。
+         * 此前 Reflect.set 直接走 $set ⇒ 写门失败时抛 TypeError（原生不抛
+         * ——B197-04 的 1 条不一致）。
+         */
+        if (exists === false) {
+          const verdict = protoChainSetVerdict(t0, key);
+          if (verdict.kind === "deny") return boolLit(false);
+        }
         if (st === "frozen" || flags?.writable === false || (acc && !acc.set)) {
           return boolLit(false);
         }
@@ -161,7 +226,15 @@ export function evalReflectMethod(method: string, args: Abs[]): Abs | undefined 
       {
         const trapR = proxyBooleanTrap(t0, "deleteProperty", (t) => [t, args[1] ?? undef()]);
         if (trapR === "opaque") return boolPrim();
-        if (trapR !== undefined) return trapR;
+        if (trapR !== undefined) {
+          // Bug 230：Proxy [[Delete]] 不变量（ES2024 10.5.9 step 10）——陷阱
+          // 返回 **true** 时，若靶上该键是**不可配置**自有属性 ⇒ 原生定抛
+          // TypeError。此前直接返 true（假绿）。
+          if (trapR.term?.op === "lit" && trapR.term.value === true) {
+            enforceProxyDeleteInvariant(t0, args[1]);
+          }
+          return trapR;
+        }
       }
       const kvR = args[1] ? litValue(args[1]) : undefined;
       const kv = kvR?.ok ? kvR.value : undefined;
@@ -186,6 +259,42 @@ export function evalReflectMethod(method: string, args: Abs[]): Abs | undefined 
     case "ownKeys": {
       enforceReflectTarget(args[0], "ownKeys");
       const t0 = args[0]!;
+      /**
+       * Bug 210：Proxy ownKeys 陷阱优先（[[OwnPropertyKeys]]）——handler 的
+       * "ownKeys" 槽派发（实参 target），并过规范不变量（重复名 / 漏不可扩展
+       * 靶的自有键 / 非字符串键 → 原生定抛 TypeError）。陷阱缺席 → 落回
+       * 靶面（下方通用路径）。
+       */
+      if (t0.shape.k === "brand" && t0.shape.name === "Proxy") {
+        const outcome = proxyOwnKeysTrapKeys(t0);
+        if (outcome.k === "keys") {
+          return abs({ k: "tuple", elements: outcome.keys }, undefined, undefined, "exact");
+        }
+        if (outcome.k === "opaque") {
+          return abs(
+            {
+              k: "arr",
+              element: joinAbs(
+                abs({ k: "prim", type: "string" }, undefined, undefined, "path"),
+                abs({ k: "prim", type: "symbol" }, undefined, undefined, "path"),
+              ),
+            },
+            undefined,
+            undefined,
+            "partial",
+          );
+        }
+        // absent（无 ownKeys 陷阱）→ 规范 step 6 转发**靶**的自有键面
+        const tKeys = outcome.target ? proxyTargetOwnStringKeys(outcome.target) : undefined;
+        if (tKeys) {
+          return abs(
+            { k: "tuple", elements: tKeys.map((n) => strLit(n)) },
+            undefined,
+            undefined,
+            "exact",
+          );
+        }
+      }
       if (t0.shape.k === "obj") {
         const os = t0.shape as { slots: Record<string, unknown>; open?: boolean; index?: unknown };
         if (!os.open && !os.index) {

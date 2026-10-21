@@ -17,7 +17,7 @@
 import type { Abs } from "../../abs.ts";
 import { abs, unknown, litValue, strLit } from "../../abs.ts";
 import { joinAbs, getSlot, propertyKeyOf } from "../../objects.ts";
-import { TYPED_ARRAY_CALLBACK_METHODS, builtinSuperCtorOf, brandHasProtoMember, classChainHasHole } from "../runtime/members.ts";
+import { TYPED_ARRAY_CALLBACK_METHODS, builtinSuperCtorOf, brandHasProtoMember, classChainHasHole, evalClassChain } from "../runtime/members.ts";
 import { typedArrayElementOf } from "../../builtins/shared.ts";
 import { typedArrayEnumKeyView } from "../../builtins/object/enum-entries.ts";
 import { MAX_CONCRETE_LOOP_ITERS } from "../runtime/loop-budget.ts";
@@ -26,7 +26,7 @@ import { withNewTargetReset, undef, asAbsVal } from "../runtime/state.ts";
 import { $call } from "../call.ts";
 import { callHostGlobalFn } from "../calls.ts";
 import { getFnImpl, absFunction, hostFnCtorFacet } from "../../abs-fn.ts";
-import { evalNamespaceCall, evalBuiltinInstanceMethod, isSymbolAbs, stringOfSymbol, evalPromiseMethod, boxedPrimitiveValue, sumHasPrimMember, evalArrayStatic, collectionIteratorAbs, abstractSeqIteratorAbs } from "../../builtins.ts";
+import { evalNamespaceCall, evalBuiltinInstanceMethod, isSymbolAbs, stringOfSymbol, evalPromiseMethod, boxedPrimitiveValue, sumHasPrimMember, evalArrayStatic, collectionIteratorAbs, abstractSeqIteratorAbs, protoBrandAbs } from "../../builtins.ts";
 import { isErrorCtorName } from "../../builtins/error.ts";
 import {
   validateCallableArg,
@@ -51,10 +51,12 @@ import {
 } from "../member-diag.ts";
 import { errorTypeAbs, throwPayloadOf, recordMayThrow } from "../may-throw.ts";
 import { isNullishLitAbs } from "../../surface.ts";
+import { lookupObjAccessor } from "../../accessors.ts";
 import { NudoThrow, $collectionForEach } from "../runtime.ts";
 import { callAbsMethod } from "../../methods.ts";
 import {
   classNameOfValue,
+  getEvalClass,
 } from "../class-registry.ts";
 
 import { invokeArrMethod } from "./invoke-arr.ts";
@@ -396,6 +398,20 @@ function $invokeInner(
       return runtimeAssignObject(args);
     }
     return (ns ? evalNamespaceCall(ns, method, args) : undefined) ?? unknown;
+  }
+  // Bug 208：内建原型对象上的**自有写**优先于内建方法表（原生 own → prototype
+  // 查找序：原型对象上的自有数据属性遮住内建方法面）——`Array.prototype.push
+  // = fn` 后 `a.push(2)` / `"a".toUpperCase()` 走用户写的 fn；改成非函数则
+  // 调用定抛 TypeError（`a.push is not a function`）。此前内建方法表直接命中，
+  // 用户的写在**调用面**被完全遮蔽（读面同理，归 containers/member.ts）。
+  // 位置：各内建派发臂之前（promise / regexp / brand / prim / 数组 / 通用
+  // 槽位面前）——先于一切内建实现。
+  {
+    const protoOwn = builtinProtoOwnWrite(thisVal, method);
+    if (protoOwn !== undefined) {
+      if (!isCallableValue(protoOwn)) throw new NudoThrow(errorTypeAbs("TypeError"));
+      return $call(protoOwn, args, thisVal);
+    }
   }
   // Promise 实例方法（then/catch/finally）：映射 resolved 通道
   if (thisVal.shape.k === "eff" && thisVal.shape.eff === "promise") {
@@ -835,6 +851,16 @@ function $invokeInner(
   if (definitelyUncallableMember(thisVal, method)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
+  // Bug 194 S19（调用面）：读不到**可调用**目标 → 原生 TypeError
+  // （`a.m is not a function`）。两种情形原生同抛：
+  //  - 方法确实不存在：`delete X.prototype.m` 之后（读面 / in 面已正确，
+  //    调用面此前折 unknown ⇒ L2 门禁假绿），或从未定义的方法
+  //    （`a.neverDefined()`）；
+  //  - 方法在但值不是函数（`a.m = undefined`）。
+  // 读面**不抛**（读 `a.m` 得 undefined 不抛）——本块只作用于调用面。
+  if (callSiteHasNoCallableTarget(thisVal, method, prop)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
   // bigint prim 接收者的原型外方法（M3）：BigInt.prototype 自有方法集是
   // **封闭**的 {toString, toLocaleString, valueOf}（规范全列，无宿主扩展
   // 面）——方法调用确定 TypeError（`(5n).toFixed(1)` 原生同抛）。与
@@ -929,8 +955,235 @@ function borrowedRecvBrandOf(recv: Abs): string | undefined {
   if (s.k === "eff") return s.eff === "promise" ? "Promise" : "Generator";
   return undefined;
 }
+
+// ---------------------------------------------------------------------------
+// Bug 193/196：用户类方法值的**摘下 / 借用**调用——按「方法体 + this = 接收者」
+// ---------------------------------------------------------------------------
+/**
+ * Bug 193/196：用户类方法体定位——**按方法体**（注册表的实例 / 静态方法记录），
+ * **不按接收者的成员表反查被调用者**。
+ *
+ * 原生：方法值是**函数**，`m()` / `m.call(recv)` 跑的就是那个函数体，
+ * `this` = 调用位给的接收者（摘下调用时 `this` 恒 undefined）。此前派发按
+ * `$invoke(recv, name, args)`——即**在接收者的成员表里反查同名方法**⇒
+ * 接收者不是本类实例时（外来对象 / undefined）一律「取不到方法」⇒ 假抛
+ * TypeError（FALSE-THROW）：`const m = new A().m; m()` 原生恒不抛。
+ *
+ * 静态 / 实例同名并存时按接收者形态定夺（类值 → 静态体；实例 → 实例体）；
+ * 两者并存且接收者形态不可判（外来对象 / undefined）⇒ 不可判（返回
+ * undefined，交回通用派发面保守处理，不猜）。
+ */
+function userClassMethodBody(
+  home: string,
+  name: string,
+  recv: Abs,
+): ((thisVal: Abs, ...args: Abs[]) => Abs) | undefined {
+  if (!getEvalClass(home)) return undefined;
+  const instBody = findMethod(home, name);
+  const statBody = findStaticMethod(home, name);
+  if (!instBody && !statBody) return undefined;
+  if (instBody && statBody) {
+    const clsName = classNameOfValue(recv as object);
+    if (clsName !== undefined) return statBody; // 类值接收者 → 静态体
+    if (recv.shape.k === "brand") return instBody; // 实例接收者 → 实例体
+    return undefined; // 形态不可判（外来对象 / undefined 接收者）
+  }
+  return instBody ?? statBody;
+}
+
+// ---------------------------------------------------------------------------
+// Bug 208：内建原型对象上的**自有写**优先于内建方法表
+// ---------------------------------------------------------------------------
+/** Abs 值是否可调用（fn 形状或挂了 impl 的宿主成员值） */
+function isCallableValue(a: Abs): boolean {
+  if (!a || typeof a !== "object" || !("shape" in a)) return false;
+  if (a.shape.k === "fn") return true;
+  return getFnImpl(a) !== undefined;
+}
+
+/**
+ * Bug 194 S19：Abs 值是否**确定**不可调用（非「可能不可调用」）——调用面
+ * 定抛 TypeError 的读面证据。
+ *
+ * - fn 形状 / 挂了 impl → 可调用；
+ * - any / sum（并集）→ 不可判（并集里可能有可调用成员）；
+ * - unknown 形状：只有 term 是**字面量**时才算确定（undef() = unknown
+ *   形状 + lit undefined；LiteralValue 不含函数 ⇒ 字面量必非可调用）；
+ *   无 term 的 unknown（推导失败）→ 不可判；
+ * - 其余（prim / obj / brand / arr / tuple / eff …）→ 确定不可调用。
+ */
+function isDefinitelyNotCallableValue(a: Abs): boolean {
+  if (isCallableValue(a)) return false;
+  const k = a.shape.k;
+  if (k === "any" || k === "sum") return false;
+  if (k === "unknown") {
+    const t = a.term;
+    return !!t && t.op === "lit";
+  }
+  return true;
+}
+
+/**
+ * Bug 194 S19：继承链上**每一环**都是注册用户类（原型面建模完备）。
+ *
+ * 链上有内建父类（`class MyDate extends Date {}`）时，原型面含内建真实原型
+ * 方法——BUILTIN_BRAND_METHODS 非全列 ⇒「缺席」不可证 ⇒ 保守不判。
+ * 链洞（extends 未注册父类）同理不可证。
+ */
+function classChainAllUserClasses(brandName: string): boolean {
+  for (const name of evalClassChain(brandName)) {
+    if (!getEvalClass(name)) return false;
+  }
+  return true;
+}
+
+/**
+ * Bug 194 S19：注册用户类的原型链上是否有该键的**访问器**。
+ *
+ * `Object.defineProperty(X.prototype, "m", {get(){…}})` 装的 getter 住原型
+ * 对象的访问器侧表——既不在 spec.accessors（类声明的 getter），也不在
+ * chainProtoSlotOf 的数据槽面。调用面判定「方法缺席」时须排除它（访问器
+ * 的返回值可能可调用 ⇒ 原生不抛）。
+ */
+function classProtoChainHasAccessor(brandName: string, key: string): boolean {
+  for (const name of evalClassChain(brandName)) {
+    if (!getEvalClass(name)) continue; // 只看注册用户类的原型对象
+    const pb = protoBrandAbs(name);
+    const inner = pb.shape.k === "brand" ? pb.shape.shape : undefined;
+    if (!inner || inner.shape.k !== "obj") continue;
+    if (lookupObjAccessor(inner, key)) return true;
+  }
+  return false;
+}
+
+/**
+ * Bug 194 S19：调用面「读不到可调用目标」判定（仅**注册用户类**的实例域）。
+ *
+ * 原生口径：调用点拿不到**可调用**目标时定抛 TypeError（`a.m is not a
+ * function`）——方法不存在（`delete X.prototype.m` 之后 / 从未定义）或
+ * 方法在但值不是函数，两种情形同抛。
+ *
+ * 判定域限定为注册用户类的实例（getEvalClass 命中）且**继承链每一环都是
+ * 注册用户类**：用户类的原型面是建模完备的（方法注册表 + 类声明访问器 +
+ * 原型数据槽 + 继承链），缺席可证。内建 brand 的真实原型方法面
+ * （BUILTIN_BRAND_METHODS 非全列）与内建父类链不在此域——保守不抛（避免
+ * 假抛 false positive）。
+ */
+function callSiteHasNoCallableTarget(recv: Abs, method: string, readValue: Abs): boolean {
+  const brandName = recv.shape.k === "brand" ? recv.shape.name : undefined;
+  if (brandName === undefined) return false;
+  // 类值接收者（A.m()）走静态派发面——不在此判定
+  if (classNameOfValue(recv as object) === brandName) return false;
+  // 非注册类（内建 brand / 宿主桥接类）→ 原型面不完备，缺席不可证
+  if (getEvalClass(brandName) === undefined) return false;
+  // 继承链每一环都得是注册用户类（链上有内建父类 / 链洞 → 缺席不可证）
+  if (!classChainAllUserClasses(brandName)) return false;
+  // Object.prototype 名恒可得（a.toString() 原生不抛）
+  if (OBJECT_PROTO_NAMES.has(method)) return false;
+  // 原型链数据槽 / 原型访问器上装了该键 → 成员在场（其值可能可调用）
+  if (classProtoChainHasAccessor(brandName, method)) return false;
+  // 方法在整个原型链上缺席（注册表 + 类声明访问器 + 原型数据槽）且接收者
+  // 自有面无同名成员（ctor `this.m = fn` 写入的承载者 / 实例字段）→
+  // 原生 TypeError
+  if (!brandHasProtoMember(brandName, method) && !instanceOwnFaceHasMember(recv, brandName, method)) {
+    return true;
+  }
+  // 方法在场但读到的值确定非可调用（undefined / 非函数字面量）→ 原生同抛
+  return isDefinitelyNotCallableValue(readValue);
+}
+
+/** 内建原型对象（`X.prototype`）内层 obj 的自有槽取值 */
+function builtinProtoOwnSlot(ctorName: string, method: string): Abs | undefined {
+  const pb = protoBrandAbs(ctorName);
+  const inner = pb.shape.k === "brand" ? pb.shape.shape : undefined;
+  if (inner?.shape.k !== "obj") return undefined;
+  const slot = getSlot(inner.shape.slots, method);
+  return slot && !slot.optional ? slot.value : undefined;
+}
+
+/**
+ * Bug 208：接收者的**内建原型 owner** 名（实例 brand / prim 装箱类型 /
+ * 闭对象 → Object / 数组 → Array / promise → Promise）——用于查内建原型
+ * 对象上的自有写。注册类（用户类）不在此列：用户类的原型写语义归 Bug 244。
+ */
+function builtinProtoOwnerOf(recv: Abs): string | undefined {
+  const s = recv.shape;
+  if (s.k === "brand") return s.name;
+  if (s.k === "prim") return PRIM_HOME_BRAND[s.type];
+  if (s.k === "obj") return "Object";
+  if (s.k === "arr" || s.k === "tuple") return "Array";
+  if (s.k === "eff") return s.eff === "promise" ? "Promise" : undefined;
+  return undefined;
+}
+
+/**
+ * Bug 208：接收者自身**没有**同名自有槽时，内建原型链上的自有写取值。
+ *
+ * 原生属性查找序（own → prototype）：原型对象上的自有数据属性**遮住**内建
+ * 方法面——`Array.prototype.push = fn` 后 `a.push(2)` 走用户写的 fn；改成
+ * 非函数则调用定抛 TypeError（`a.push is not a function`）。此前内建方法表
+ * 直接命中，用户的写被完全遮蔽（读面 / 调用面都不认）。
+ */
+function builtinProtoOwnWrite(recv: Abs, method: string): Abs | undefined {
+  // 接收者自有槽优先（原生 own 先于 prototype）——有则不查原型。
+  const s = recv.shape;
+  if (s.k === "brand") {
+    const inner = s.shape;
+    if (inner?.shape.k === "obj") {
+      const own = getSlot(inner.shape.slots, method);
+      if (own && !own.optional) return undefined;
+    }
+  } else if (s.k === "obj") {
+    const own = getSlot(s.slots, method);
+    if (own && !own.optional) return undefined;
+  }
+  const owner = builtinProtoOwnerOf(recv);
+  if (owner === undefined) return undefined;
+  for (const n of evalClassChain(owner)) {
+    if (getEvalClass(n)) continue; // 用户类：原型写语义归 Bug 244（不在本片）
+    const v = builtinProtoOwnSlot(n, method);
+    if (v !== undefined) return v;
+  }
+  return undefined;
+}
+
 setProtoMethodDispatch((home, name, thisVal, args) => {
   const recv: Abs = thisVal ?? $lit(undefined);
+  // Bug 193/196：用户类方法值（classMethodValueAbs 产物）的摘下 / 借用调用
+  // ——按**方法体 + this = 接收者**执行（原生：方法值是函数，调用它就跑那个
+  // 函数体；this = 调用位给的接收者，摘下调用时恒 undefined）。此前按接收者
+  // 的成员表反查被调用者（$invoke(recv,name,args)）⇒ 非本类实例的接收者
+  // 一律「取不到方法」⇒ 假抛 TypeError（FALSE-THROW）。
+  {
+    const body = userClassMethodBody(home, name, recv);
+    if (body) {
+      // 私有名（#m）：接收者 brand 校验（原生 PrivateCall——接收者须是
+      // 声明类实例）
+      privateNameGuard(recv, name);
+      let result: Abs = unknown;
+      let threw = false;
+      try {
+        result = body(recv, ...args);
+        return result;
+      } catch (e) {
+        threw = true;
+        result = throwPayloadOf(e);
+        throw e;
+      } finally {
+        noteEvalCallRecord({ fnName: `${home}.${name}`, args, result, threw });
+      }
+    }
+  }
+  // Bug 208：内建原型对象上的**自有写**优先于内建方法表——`Array.prototype
+  // .push = fn` 后 `Array.prototype.push.call(arr, x)` 走用户写的 fn；改成
+  // 非函数则定抛 TypeError（原生 `X.prototype.m is not a function`）。
+  {
+    const own = builtinProtoOwnSlot(home, name);
+    if (own !== undefined) {
+      if (!isCallableValue(own)) throw new NudoThrow(errorTypeAbs("TypeError"));
+      return $call(own, args, recv);
+    }
+  }
   // Bug 108：brand-checking 内建原型的借用调用——home 与接收者 brand 不匹配
   // 定抛 TypeError（原生 thisNumberValue/thisStringValue/… 前置校验：
   // Number.prototype.valueOf.call("5") 折 "5" 是假精确）。Object.prototype

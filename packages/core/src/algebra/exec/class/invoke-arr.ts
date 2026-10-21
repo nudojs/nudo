@@ -5,6 +5,12 @@
  * - 回调真执行仅限 effectFree facet；副作用回调多执行不可回滚 → 降级。
  * - 返回容器元素域 = 全部观测回调结果 join（不并入 OOB undefined，
  *   issue #156 元素域约定）；空数组 reduce 无初值 → 原生 TypeError。
+ * - Bug 198：keys / values / entries（及 @@iterator 面）的迭代器是**接收者的
+ *   live 视图**（原生 nextIndex 指针——每步按当前长度判结束、按当前内容
+ *   取值）；接收者被 mutator 就地改写后，迭代可见（arrayLiveEntries）。
+ * - Bug 198（S20）：live 迭代器**不登记静态元素侧表**——静态表是创建期拷贝
+ *   （长度探针 sideIterLen 读它 ⇒ for-of 的轮数停在创建时刻）；元素面与长度
+ *   由 live 消费视图（registerGenDrain）承担。
  */
 import type { Abs } from "../../abs.ts";
 import { abs, unknown, confJoin, litValue, bool, boolLit, numLit } from "../../abs.ts";
@@ -39,6 +45,79 @@ import { errorTypeAbs, recordMayThrow } from "../may-throw.ts";
 import { isNullishLitAbs } from "../../surface.ts";
 import { NudoThrow } from "../runtime.ts";
 import { toIntegerOrInfinityLit } from "../../methods.ts";
+// Bug 198：数组迭代器的 live 视图类型（CollectionLiveEntries——与 Map/Set 的
+// 集合 live 视图同款协议：take / takeAll / rest）。类型直连（不经 barrel），
+// 避免扩大 core 公共导出面。
+import type { CollectionLiveEntries } from "../../builtins/error/iterator.ts";
+
+/** tuple 的**取值序列**（hole 位按 Get 语义取 undefined——原生迭代器不跳 hole） */
+function tupleValues(shape: {
+  k: string;
+  elements?: Abs[];
+  holes?: number[];
+}): Abs[] {
+  const els = shape.elements ?? [];
+  const holes = shape.holes ?? [];
+  return els.map((el, i) => (holes.includes(i) ? undefAbs() : el));
+}
+
+/** entries 迭代器的条目元组 [下标, 取值]（原生 Array Iterator 的条目形状） */
+function entryTupleOf(i: number, v: Abs): Abs {
+  return abs({ k: "tuple", elements: [numLit(i), v] }, undefined, undefined, "exact");
+}
+
+/**
+ * Bug 198：数组迭代器的 **live 视图**——原生 %ArrayIteratorPrototype% 的
+ * next() 持 nextIndex 指针：每步按**当前** LengthOfArrayLike(O) 判结束、
+ * 按 Get(O, nextIndex) 取值 ⇒ 迭代期间的 push / unshift / shift 对迭代可见
+ * （`const a=[1,2,3]; const it=a.entries(); it.next(); a.shift();
+ * it.next().value` 原生 [1,3]，引擎快照口径 [1,2]）。
+ *
+ * 引擎的数组 mutator 是**就地改写**（writeInPlace——Abs 身份不变、shape 换新），
+ * 故每次读 arr.shape 即是接收者**当前**内容。
+ *
+ * 形状被降级为抽象 arr（splice 的元素域约定，issue #156）时长度不可知 ⇒
+ * 回落创建期快照（保持既有口径，不引入新的断言）。
+ *
+ * Bug 198（S20）：**不登记静态元素侧表**——静态表是创建期拷贝，长度探针
+ * （sideIterLen）读它 ⇒「剩余长度」停在创建时刻（for-of 少跑一轮：
+ * `a.values(); a.push(3)` 后原生再跑 2 轮，引擎只跑 1 轮）。元素面与长度
+ * 都由**消费视图**（registerGenDrain 的 live 视图）承担——它每次重读接收者
+ * 当前内容（与 Map/Set 集合迭代器同口径）。
+ */
+function arrayLiveEntries(
+  arr: Abs,
+  values: Abs[],
+  project: (el: Abs, i: number) => Abs,
+): { live: CollectionLiveEntries } {
+  const state = { i: 0 };
+  /** 接收者当前取值序列（非 tuple ⇒ 创建期快照——长度不可知） */
+  const list = (): Abs[] => {
+    const s = arr.shape as { k: string; elements?: Abs[]; holes?: number[] };
+    if (s.k !== "tuple") return values;
+    return tupleValues(s);
+  };
+  const projectedFrom = (l: Abs[], from: number): Abs[] =>
+    l.slice(from).map((v, k) => project(v, from + k));
+  const live: CollectionLiveEntries = {
+    take: (): Abs | undefined => {
+      const l = list();
+      if (state.i >= l.length) return undefined;
+      const v = l[state.i]!;
+      const i = state.i;
+      state.i++;
+      return project(v, i);
+    },
+    takeAll: (): Abs[] => {
+      const l = list();
+      const out = projectedFrom(l, state.i);
+      state.i = l.length;
+      return out;
+    },
+    rest: (): Abs[] => projectedFrom(list(), state.i),
+  };
+  return { live };
+}
 
 
 
@@ -405,7 +484,15 @@ export function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | un
       // "function"；spread/for-of/Array.from/.next() 链路经侧表全求值。
       // 原生数组迭代器：0..length-1 全下标（不跳过 hole），键是 number
       // （自有属性键才是字符串——Object.keys / for-in 不受此影响）
-      return collectionIteratorAbs(shape.elements.map((_, i) => numLit(i)));
+      // Bug 198：live 视图（原生 nextIndex 指针——迭代期间的 push/unshift/
+      // shift 对迭代可见；见 arrayLiveEntries）。
+      // Bug 198（S20）：**不登记静态元素侧表**——长度探针（sideIterLen）读
+      // 静态表会把「剩余长度」冻结在创建时刻（for-of 少跑一轮）；元素面与
+      // 长度都由 live 消费视图承担（与 Map/Set 集合迭代器同口径）。
+      const values = tupleValues(shape);
+      const { live } = arrayLiveEntries(arr, values, (_v, i) => numLit(i));
+      const it = collectionIteratorAbs(shape.elements.map((_, i) => numLit(i)), live);
+      return it;
     }
     // 长度未知：迭代器对象保守面（next 值域 el∪undefined、done 布尔域；
     // 不挂侧表——spread/for-of 走 unbounded join，不折精确长度）
@@ -413,27 +500,23 @@ export function invokeArrMethod(arr: Abs, method: string, args: Abs[]): Abs | un
   }
   if (method === "values") {
     if (shape.k === "tuple") {
-      const holes = shape.holes ?? [];
+      const values = tupleValues(shape);
       // 原生迭代器不跳过 hole：hole 位按 Get 语义产出 undefined
-      return collectionIteratorAbs(
-        shape.elements.map((el, i) => (holes.includes(i) ? undefAbs() : el)),
-      );
+      // Bug 198：live 视图（同 keys 臂）——不登记静态元素侧表（S20）
+      const { live } = arrayLiveEntries(arr, values, (v) => v);
+      const it = collectionIteratorAbs(values, live);
+      return it;
     }
     return abstractSeqIteratorAbs(shape.element);
   }
   if (method === "entries") {
     if (shape.k === "tuple") {
-      const holes = shape.holes ?? [];
-      return collectionIteratorAbs(
-        shape.elements.map((el, i) =>
-          abs(
-            { k: "tuple", elements: [numLit(i), holes.includes(i) ? undefAbs() : el] },
-            undefined,
-            undefined,
-            "exact",
-          ),
-        ),
-      );
+      const values = tupleValues(shape);
+      // Bug 198：live 视图（同 keys 臂）——条目元组的下标随当前长度走；
+      // 不登记静态元素侧表（S20）
+      const { live } = arrayLiveEntries(arr, values, (v, i) => entryTupleOf(i, v));
+      const it = collectionIteratorAbs(values.map((v, i) => entryTupleOf(i, v)), live);
+      return it;
     }
     return abstractSeqIteratorAbs(
       abs(

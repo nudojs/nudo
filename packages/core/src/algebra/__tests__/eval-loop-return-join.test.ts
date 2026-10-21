@@ -29,6 +29,10 @@ function disp(r: { result?: unknown }): string {
   return (formatAbs(r.result as never) ?? "").replace(/\s+#[a-z]+(\s+join\([^)]*\))?$/, "");
 }
 
+/** 生成器协议面（运行面）负控制源——投影面按 Bug 240 不发布 internal 槽 */
+const GEN_PROTO_PROBE = `export function* g() { yield 1; }
+export function probe() { const gi = g(); return typeof gi.next; }`;
+
 describe("Bug 99: while/for 体内 return 的 0 迭代路径（exec 面）", () => {
   it("while：any 参 → 返回臂与出口续体 join（不再折 0 #exact）", () => {
     const r = call(
@@ -201,8 +205,12 @@ describe("Bug 99: thunk 边界——gen/async 体内循环 return 不产幻影�
       [anyAbs],
     );
     const d = disp(r);
-    expect(d).toContain("GeneratorFunction");
+    // Bug 240：生成器的协议槽（next/return/throw/constructor/@@iterator）是
+    // internal 槽 ⇒ 不进投影面（`constructor: GeneratorFunction` 不再出现）；
+    // 「是生成器对象」改由**运行面**协议槽负控制钉（见下）
+    expect(d).toMatch(/^\{/);
     expect(d).not.toMatch(/\|\s*5\b/);
+    expect(disp(call(GEN_PROTO_PROBE, "probe"))).toBe('"function"');
   });
 
   it("generator + switch/fork 臂 return：同款不染（$gen 本地作用域）", () => {
@@ -212,7 +220,7 @@ describe("Bug 99: thunk 边界——gen/async 体内循环 return 不产幻影�
       [anyAbs],
     );
     const d = disp(r);
-    expect(d).toContain("GeneratorFunction");
+    expect(d).toMatch(/^\{/);
     expect(d).not.toMatch(/\|\s*5\b/);
   });
 });

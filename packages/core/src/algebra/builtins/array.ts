@@ -1,5 +1,13 @@
 /**
  * Array 构造 / Array.* 静态方法
+ *
+ * Invariants:
+ * - Bug 202：`Array.from(用户 iterable)` **实际驱动**用户迭代器（GetIterator
+ *   + IteratorNext，元素按迭代序取）——与 elemsOf / for-of / spread 同款
+ *   协议；迭代器报告 done ⇒ 元素数确切 ⇒ exact 元组。
+ * - Bug 195：`Array.isArray` 认**数组视图标注**（markMatchArrayView）的对象
+ *   ——标签模板对象是冻结的数组 exotic（原生 true）；RegExp exec/match
+ *   结果同款（原生亦是真数组）。
  */
 import type { Abs } from "../abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, unknown } from "../abs.ts";
@@ -12,8 +20,8 @@ import { numericBounds } from "../arithmetic.ts";
 import { isNullishLitAbs } from "../surface.ts";
 import { markFreshInstance } from "../instance-id.ts";
 import { recordMayThrow } from "../may-throw.ts";
-import { matchIterElements, replayGenDeferred, drainGenElements, genDrainViewOf } from "../exec/match-iter.ts";
-import { iterabilityKind } from "../exec/runtime/containers/iterate.ts";
+import { matchIterElements, replayGenDeferred, drainGenElements, genDrainViewOf, userIterLenOf } from "../exec/match-iter.ts";
+import { iterabilityKind, $elems } from "../exec/runtime/containers/iterate.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs } from "../exec/may-throw.ts";
 import { and, ge, lt, pTrue, type Pred } from "../pred.ts";
@@ -24,6 +32,11 @@ import { absFunction } from "../abs-fn.ts";
 import { boolPrim, peelBrand, noBody, str, mayCoerceThrowOperand } from "./shared.ts";
 import { thenableRiskOf } from "./promise.ts";
 import { isSymbolAbs } from "./symbol.ts";
+// Bug 195：标签模板对象是**数组 exotic**（原生 GetTemplateObject →
+// CreateArrayFromList + SetIntegrityLevel(frozen)）⇒ Array.isArray(s) 恒 true。
+// 引擎用「数组视图」标注（markMatchArrayView——与 RegExp exec/match 结果
+// 同款机制，json.ts 消费）标记这类对象 ⇒ isArray 与该标注同口径。
+import { isMatchArrayView } from "./regexp.ts";
 
 export function makeArrayCtorAbs(args: Abs[]): Abs {
   /**
@@ -268,8 +281,9 @@ function evalArrayFrom(args: Abs[]): Abs {
     // total，[...o] / for..of 的同款谓词），两个消费者口径一致。此前 obj
     // 臂只实现 array-like 半边：带 @@iterator 的对象被当零长 array-like 折
     // exact 空 tuple（wrong-exact）。非可调用字面量 → 原生 GetMethod
-    // definite TypeError；可调用/抽象 → 迭代路径（元素域 unknown、长度
-    // 不可判——与 elemsOf 对 obj 迭代物的 [unknown] 单代表同口径）。
+    // definite TypeError；可调用/抽象 → 迭代路径。
+    // Bug 202：迭代路径**实际驱动**用户迭代器（此前只判可迭代、不调
+    // @@iterator/next ⇒ 副作用整体丢失）；元素域与长度口径见下方分支。
     // optional 槽（可能缺席）按缺席处理——走 array-like 臂，不冒 definite
     // 假抛。生成器/模板标签等侧表迭代物已在上方 mi 臂精确处理，不受影响。
     if (iterabilityKind(a0) === "total") {
@@ -282,7 +296,28 @@ function evalArrayFrom(args: Abs[]): Abs {
         !(iterVal.term?.op === "lit" && iterVal.term.value === undefined)
       ) {
         validateCallableArg(iterVal, "Array.from @@iterator may not be callable");
-        return abs({ k: "arr", element: unknown }, undefined, undefined, "path");
+        // Bug 202：**驱动用户迭代器**（GetIterator + IteratorNext）——此前
+        // 只判「可迭代」却不实际调 @@iterator/next ⇒ 迭代器体内的副作用
+        // （计数 / 写状态）整体丢失，元素域折 unknown（wrong-exact 的 0）。
+        // 走 elemsOf 同款协议（$elems：元素按**迭代序**取，步数上界同款）。
+        const els = $elems(a0);
+        // 迭代器报告 done ⇒ 元素数确切（registerUserIterLen 登记）⇒ exact
+        // 元组（原生 Array.from 逐位产出，长度 = 迭代出的元素数）
+        const exactLen = userIterLenOf(a0);
+        if (exactLen !== undefined && els.length === exactLen) {
+          return abs(
+            { k: "tuple", elements: els.map((el, i) => mapOne(el, numLit(i))) },
+            undefined,
+            undefined,
+            "exact",
+          );
+        }
+        // 元素数不可知（迭代器未耗尽 / 非用户迭代器——引擎自建迭代器的
+        // @@iterator 是空体占位）⇒ 元素域 = 已采集元素 join（未耗尽时 elemsOf
+        // 已并入 unknown 兜底——剩余元素个数不可知，sound）
+        let el = unknown;
+        for (let i = 0; i < els.length; i++) el = joinAbs(el, mapOne(els[i]!, numLit(i)));
+        return abs({ k: "arr", element: el }, undefined, undefined, "path");
       }
     }
     // Bug 51：array-like——length 槽决定迭代次数（ToLength 折叠），元素按
@@ -402,6 +437,12 @@ export function evalArrayStatic(name: string, args: Abs[]): Abs | undefined {
       // Bug 56：arguments 对象不是数组 exotic——brand "Arguments" 包 tuple
       // 内层（$arguments），peelBrand 会看到 tuple，须在剥层前判定 false
       if (a0.shape.k === "brand" && a0.shape.name === "Arguments") return boolLit(false);
+      // Bug 195：**数组视图标注**的对象是数组 exotic——原生
+      // GetTemplateObject = CreateArrayFromList + SetIntegrityLevel(frozen)
+      // ⇒ 标签模板对象是**冻结的数组**（`Array.isArray(s)` 恒 true）；RegExp
+      // exec/match 结果同款（原生亦是真数组）。标注机制与 json.ts 的数组
+      // 序列化面同源（markMatchArrayView）。
+      if (isMatchArrayView(a0)) return boolLit(true);
       // Bug 57：Proxy 剥 brand 即靶形态（ArrayCreate 保留靶 IsArray 槽）
       const s = peelBrand(a0.shape);
       if (s.k === "arr" || s.k === "tuple") return boolLit(true);

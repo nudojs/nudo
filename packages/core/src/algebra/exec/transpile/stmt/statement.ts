@@ -114,6 +114,14 @@ let curSwitchBreakLabel: string | null = null;
 /** Bug 98：非纯 for-in 接收者临时名计数器（同块多 for-in 防重复声明） */
 let forInRecvSeq = 0;
 
+/**
+ * Bug 228：for 主路径（`for (let i = …)`）的**循环变量捕获槽**序号
+ * （跨语句/函数去重——同块多个 for 各自一个槽，不得重名）。
+ * 槽内是体退出瞬间的循环变量最新写（continue 之前的写也在内），
+ * $for 的 continue 臂经 `loopVar` 回调取用。
+ */
+let forLoopVarSeq = 0;
+
 /** Bug 98：for-in 接收者重读是否无副作用——标识符 / 非计算成员链
  *  （o、o.sub、o.a.b）。其余形态（调用、计算键、三元/短路等）经
  *  emitTranspileExpression 可能含求值副作用，重读会重复副作用 →
@@ -1004,24 +1012,38 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         names.length === 0
           ? null
           : `(__lp) => { ${names.map((n) => `${n} = $get(__lp, ${JSON.stringify(n)});`).join(" ")} }`;
+      // Bug 228：循环变量（状态线程形参 initName）在体里是**形参槽**——体对它的
+      // 写在 continue 抛出信号时随信号丢失（$for 拿不到「体退出瞬间的值」）。
+      // 原生：for (let i…) 每轮绑定独立，continue 前的 `i = 5` 写进本轮绑定
+      // ⇒ 下一轮 i++ 得 6。修法：体用 try/finally 把最新值写回共享槽，
+      // $for 的 continue 臂经 loopVar 回调取用（迭代次数/结果随之正确）。
+      const loopVarSlot = `__nudoLv${forLoopVarSeq++}`;
       const optsSrc = (() => {
-        const extra = opts.loopLabel ? `label: ${JSON.stringify(opts.loopLabel)}` : "";
-        if (!extra) return packSrc && unpackSrc
-          ? `, { pack: () => ${packSrc}, unpack: ${unpackSrc} }`
-          : "";
-        return packSrc && unpackSrc
-          ? `, { pack: () => ${packSrc}, unpack: ${unpackSrc}, ${extra} }`
-          : `, { ${extra} }`;
+        const parts: string[] = [];
+        if (packSrc && unpackSrc) parts.push(`pack: () => ${packSrc}`, `unpack: ${unpackSrc}`);
+        parts.push(`loopVar: () => ${loopVarSlot}`);
+        if (opts.loopLabel) parts.push(`label: ${JSON.stringify(opts.loopLabel)}`);
+        return `, { ${parts.join(", ")} }`;
       })();
+      // 体的 finally 捕获循环变量的最新写（continue / break 抛出信号时也跑到）
+      const bodyCaptured = bodyNarrowed
+        .split("\n")
+        .map((l) => (l.trim() === "" ? l : `${indent(depth + 2)}${l}`))
+        .join("\n");
       return [
+        `${pad}let ${loopVarSlot};`,
         `${pad}// for → $for (bounded unroll, max=${max})`,
         `${pad}$for(`,
         `${indent(depth + 1)}${initExpr},`,
         `${indent(depth + 1)}(${initName}) => ${testSrc},`,
         `${indent(depth + 1)}(${initName}) => { ${updateSrc ? `${updateSrc};` : ""} return ${initName}; },`,
         `${indent(depth + 1)}(${initName}) => {`,
-        bodyNarrowed,
-        `${indent(depth + 1)}  return ${initName};`,
+        `${indent(depth + 2)}try {`,
+        bodyCaptured,
+        `${indent(depth + 2)}  return ${initName};`,
+        `${indent(depth + 2)}} finally {`,
+        `${indent(depth + 3)}${loopVarSlot} = ${initName};`,
+        `${indent(depth + 2)}}`,
         `${indent(depth + 1)}},`,
         `${indent(depth + 1)}${max}${optsSrc}`,
         `${pad});`,
@@ -1448,10 +1470,15 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         lines.push(`${pad}catch (${catchTmp}) {`);
         // NudoReturn 是控制流信号，不是 catch 绑定
         lines.push(`${indent(depth + 1)}$rethrowIfNudoReturn(${catchTmp});`);
+        // Bug 211：循环信号（break / continue）也不是 catch 绑定——$catchVal
+        // 遇信号重抛 ⇒ catch 体不执行、信号透传到循环捕获点（原生：break 不是
+        // 异常，到不了 catch 处理器）。求值放在 soft 摘帧**之前**：信号透传时
+        // soft 效果不得被本帧消化（须上浮给外层帧）。
+        lines.push(`${indent(depth + 1)}const __cv_${markName} = $catchVal(${catchTmp});`);
         // soft：入口摘下、不立刻消化；catch 落出口 discard，rethrow orphan 上浮
         lines.push(`${indent(depth + 1)}const ${softVar} = $tryDetachSoftCatch();`);
         lines.push(`${indent(depth + 1)}const __xs_${markName} = $tryTakeSince(${markName});`);
-        lines.push(`${indent(depth + 1)}__xs_${markName}.push($catchVal(${catchTmp}));`);
+        lines.push(`${indent(depth + 1)}__xs_${markName}.push(__cv_${markName});`);
         lines.push(
           // catch 绑定可再赋（let 语义），不是 const；模式参载体 = catchTmp；
           // 可选 catch 绑定不引入用户可见绑定（Bug 175）
@@ -1600,6 +1627,8 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       let headAssignSrc: string | null = null;
       /** 头赋值写入的外层绑定名（进 pack/unpack 写回集） */
       const headAssignedNames: string[] = [];
+      /** 头解构（let/const）的子名——**回调内块级绑定**，不得进 pack 名集 */
+      const headLocalNames = new Set<string>();
       const headKind =
         stmt.left.type === "VariableDeclaration" ? stmt.left.kind : null;
       const headPat =
@@ -1616,12 +1645,19 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         } else if (headPat?.type === "ObjectPattern" || headPat?.type === "ArrayPattern") {
           // 解构绑定：用临时 _item 再 destructure
           bindName = `_of${stmt.loc?.start.line ?? 0}`;
+          const patNames = new Set<string>();
+          collectPatternNames(headPat, patNames);
           if (headKind === "var") {
             // var 头解构：子名已提升到函数级槽 → destructure 走**赋值**形态
             // （kw ""），写回同一函数级槽而非块级新绑定
-            const patNames = new Set<string>();
-            collectPatternNames(headPat, patNames);
             for (const n of patNames) headAssignedNames.push(n);
+          } else {
+            // let/const 头解构：子名是**循环体回调内**的块级绑定（emitDestructure
+            // 在回调里声明）——pack/unpack 闭包在回调**外**，引用它 ⇒ ReferenceError
+            // （`for (let {a} of arr) { a = … }` 的抽象出口直接抛）。
+            // 报告外发现：这些名字不是外层绑定（每轮独立 / const 不可再赋）⇒
+            // 排除出 pack 名集（体对它们的写只改块级绑定，不外泄）。
+            for (const n of patNames) headLocalNames.add(n);
           }
         }
       } else if (stmt.left.type === "Identifier") {
@@ -1754,7 +1790,16 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       }
       const bodyLocalDecls = new Set<string>();
       collectLoopBodyTopLevelDeclNames(stmt.body, bodyLocalDecls);
-      const names = [...assigned].filter((n) => n !== bindName && !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n));
+      const names = [...assigned].filter(
+        (n) =>
+          n !== bindName &&
+          !HOST_INTRINSIC_SET.has(n) &&
+          !bodyLocalDecls.has(n) &&
+          // 报告外发现：头解构（let/const）的子名是回调内块级绑定——pack/unpack
+          // 闭包在回调外，引用它 ⇒ ReferenceError（`for (let {a} of arr)` 抽象
+          // 出口直接抛）。排除：它们不是外层绑定（每轮独立 / const 不可再赋）。
+          !headLocalNames.has(n),
+      );
       const loopOpts = opts.loopLabel ? `label: ${JSON.stringify(opts.loopLabel)}` : "";
       const forAwaitOpt = isForAwait ? "forAwait: true" : "";
       // Bug 98：for-in 接收者以 thunk 传给 $forOf——快照键进体前逐迭代重查

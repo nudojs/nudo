@@ -129,6 +129,31 @@ export function getProtoAbs(o: Abs): Abs | undefined {
 }
 
 /**
+ * Bug 205：实例（brand 接收者）的真实 [[Prototype]] 记录。
+ *
+ * brand 实例此前**不记录** [[Prototype]]——原型被替换（`F.prototype = {}`）/
+ * `setPrototypeOf` 之后，instanceof 只能按构造器**名**匹配（unsound 的肯定
+ * 判断：类型守卫会走错分支）。本表按 Abs 对象身份记实例的原型对象：
+ * - 构造期捕获（exec/class/declare.ts 的 `$new`）——换原型前造的实例记旧
+ *   原型，换后造的新实例记新原型（原生 "false|true" 的区分依据）；
+ * - `setPrototypeOf` 更新（下方 setProtoAbs）。
+ *
+ * 与 protoTable（obj 接收者）分表：protoTable 参与 super 派发 / 原型链写门，
+ * 语义是「对象原型」；本表只服务 instanceof 的 [[Prototype]] 身份比较。
+ */
+const instanceProtoTable = new WeakMap<object, Abs>();
+
+/** 读实例记录的 [[Prototype]]（未记录 → undefined） */
+export function getInstanceProto(o: Abs): Abs | undefined {
+  return instanceProtoTable.get(o as object);
+}
+
+/** 记实例的 [[Prototype]]（构造期捕获 / setPrototypeOf 更新） */
+export function setInstanceProto(o: Abs, proto: Abs): void {
+  instanceProtoTable.set(o as object, proto);
+}
+
+/**
  * 对象字面量非计算 `__proto__: v` / `Object.setPrototypeOf(o, v)` / `o.__proto__ = v`
  * 的原型设定（保守建模）：
  * - v 为 null → null-proto（无 Object.prototype 回退）
@@ -146,6 +171,11 @@ export function setProtoAbs(o: Abs, proto: Abs): Abs {
     (o.shape as { open?: boolean }).open = true;
     // 记录原型（对象原型）：super 派发 / 原型链查找用（Bug 19）
     protoTable.set(o, proto);
+  } else if (o.shape.k === "brand") {
+    // Bug 205：brand 接收者（类 / 函数实例）此前**完全不记**原型——
+    // `Object.setPrototypeOf(f, {})` 之后引擎对原型链无知，instanceof 只能
+    // 按构造器名匹配（unsound 的肯定判断）。此处记下真实 [[Prototype]]。
+    setInstanceProto(o, proto);
   }
   return o;
 }

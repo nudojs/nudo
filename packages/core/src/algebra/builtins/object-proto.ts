@@ -15,6 +15,7 @@ import {
 import { absFunction } from "../abs-fn.ts";
 import { lookupObjAccessor } from "../accessors.ts";
 import { getEvalClass } from "../exec/class-registry.ts";
+import { protoBrandOwnMember } from "../exec/runtime/members.ts";
 import { classNameOfValue } from "../class-mark.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs } from "../exec/may-throw.ts";
@@ -77,6 +78,10 @@ function hasOwnDecision(recv: Abs, key: string): Abs {
       return boolLit(false);
     }
     if (classValueOwnStaticMember(recv, key)) return boolLit(true);
+    // Bug 192：`X.prototype` 品牌上的**自有**成员（owner 类的实例方法 / 访问器
+    // 就挂在 owner.prototype 上）→ hasOwnProperty 折 true。判定函数由
+    // exec/runtime/members.ts 导出（protoBrandOwnMember——单一事实源）。
+    if (protoBrandOwnMember(s.name, key)) return boolLit(true);
     if (inner.shape.k === "obj") {
       const slot = getSlot(inner.shape.slots, key);
       // Bug 84：internal 私有槽是内部槽——hasOwnProperty 折 false（$in 的
@@ -158,6 +163,11 @@ function propertyIsEnumerableDecision(recv: Abs, key: string): Abs {
   if (flags?.get(key)?.enumerable === false) return boolLit(false);
   // Bug 90：静态方法/静态访问器虽自有但**非枚举**（spec 表面）——PIE 恒 false
   if (classValueOwnStaticMember(recv, key)) return boolLit(false);
+  // Bug 192：`X.prototype` 上的类方法 / 访问器同样**非枚举**（ClassDefinition
+  // Evaluation 的方法定义是 non-enumerable）——PIE 恒 false
+  if (recv.shape.k === "brand" && protoBrandOwnMember(recv.shape.name, key)) {
+    return boolLit(false);
+  }
   if (ownV === true) {
     // 下标在数组/字符串上可枚举
     return boolLit(true);

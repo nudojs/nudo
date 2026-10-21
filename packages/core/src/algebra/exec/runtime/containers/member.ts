@@ -13,9 +13,45 @@
  *   未建模 → 诚实 unknown（不得 wrong-exact undefined）。
  * - Bug 149：符号投影键（"[Symbol.X]" → "@@X"）在 **Proxy 陷阱边界**还原成
  *   真 symbol（规范 PropertyKey）；字面量串键 "@@X" 不带标记，仍是字符串键。
+ * - Bug 218：prim（number/boolean/bigint/symbol）读**确定不存在**的成员 →
+ *   undefined 字面量（原生语义），不是 unknown——unknown 接收者不记
+ *   may-throw，会让后续读该值的 TypeError 丢失（L2 门禁假绿）。
+ * - Bug 219：symbol prim 的 toString/toLocaleString/valueOf 走
+ *   **Symbol.prototype 自己的面**（toString/valueOf 带 brand check——
+ *   借用调用非 symbol 接收者定抛 TypeError），不落 Object.prototype 泛型版。
+ * - Bug 206/225：类值写面的两个原生「不可写」——`A.prototype = v` 与
+ *   getter-only 静态访问器的写，都定抛 strict TypeError（例外：引擎内部
+ *   defineProperty 对原型的就地改写回装）。
+ * - Bug 234：类值的 `constructor` = 内建 Function（原生继承自
+ *   Function.prototype），不是「以类名命名的内建构造器」。
+ * - Bug 235：Proxy 无 get 陷阱时转发 `target.[[Get]](key, Receiver)`——
+ *   Receiver 必须是 proxy 自己（靶上 getter 的 this = receiver，不是靶）。
+ * - Bug 210：Proxy **get 陷阱**返回值过 [[Get]] 规范不变量（state.ts 的
+ *   enforceProxyGetInvariant）——靶上自有属性不可配置且不可写时，陷阱值
+ *   须 SameValue 靶值，否则原生定抛 TypeError（此前直接返陷阱值，假绿）。
+ * - Bug 209：Proxy **set 陷阱**返回值按规范 ToBoolean 判定——falsy（0 / "" /
+ *   null / undefined / false）→ strict TypeError（只认字面量 false 会漏）。
+ * - Bug 197：[[Set]] 写门——receiver **无自有该键**时沿 [[Prototype]] 链
+ *   上溯（OrdinarySet）：访问器（无 setter）→ strict TypeError；带 setter
+ *   → 派发 setter；数据属性 writable:false / frozen 原型 → strict
+ *   TypeError；链上无人持该键 → receiver 建自有属性。fn 臂 / 静态类值臂 /
+ *   数组下标臂另查 defineProperty 的 writable:false（见 proto-set.ts）。
+ *   **类实例面**同走该门（原型 = `A.prototype`，proto-set.ts 经
+ *   protoOfRecv 解析类注册表）——此前类实例未登记 protoTable ⇒ 门恒 allow
+ *   ⇒ 原型上动态装的只读属性 / getter-only 被静默写穿。
+ * - Bug 223/231：数组 length 写门——域判定走 ToNumber（具体非数值
+ *   undefined / {} / "abc" 定抛 RangeError，Symbol 抛 TypeError）；sealed
+ *   数组 length **截断**写要删不可配置元素 → strict TypeError（增长合法；
+ *   preventExtensions 不冻结元素 → 截断不抛）。见 array-length.ts。
+ * - Bug 198（S20）：内建 brand 实例上的 `@@iterator` 读值 = **原型上同一个
+ *   函数对象**（原生 m[Symbol.iterator] === Map.prototype[Symbol.iterator]）
+ *   ⇒ 走符号成员表（builtinSymbolMemberAbs），不得给 no-op fn——no-op fn 被
+ *   调用折 <abs:never>（自信的错值：原生返回集合迭代器）。Map/Set 的该成员
+ *   产出 **live 视图**集合迭代器（collectionIteratorFor），投影口径同原生：
+ *   Map → [k,v] 元组（entries），Set → 元素本身（values，非 [el,el]）。
  */
 import type { Abs } from "../../../abs.ts";
-import { abs, confJoin, litValue, numLit, str, strLit, unknown } from "../../../abs.ts";
+import { abs, boolLit, confJoin, litValue, numLit, str, strLit, unknown } from "../../../abs.ts";
 import { lit } from "../../../term.ts";
 import { absFunction, hostFnCtorFacet, getFnImpl } from "../../../abs-fn.ts";
 import {
@@ -47,15 +83,25 @@ import {
   OBJECT_PROTO_METHOD_NAMES,
   isSymbolAbs,
   symbolDescriptionAbs,
+  stringOfSymbol,
+  evalObjectProtoMethod,
   objectProtoBrand,
   builtinCtorAbs,
   ctorNameOfRecv,
   protoBrandAbs,
   protoOfRecv,
   functionProtoAbs,
+  collectionIteratorAbs,
   makeIntlCtorAbs,
 } from "../../../builtins.ts";
 import { arrayMethodAbs } from "../../../builtins/array.ts";
+// Bug 198（S20）：集合迭代器的 **live 视图** 构造器（collectionIteratorFor）——
+// 直连 builtins/error/iterator.ts，不经 barrel（与 iterate.ts 同款口径；barrel
+// 未导出该函数，且本分片不改 barrel）。
+import { collectionIteratorFor } from "../../../builtins/error/iterator.ts";
+// Bug 195：数组视图标注（模板对象 / RegExp exec 结果——原生都是**数组 exotic**）
+// 判身份；直连 builtins/regexp.ts 不经 barrel（与 iterate.ts 同款口径）。
+import { isMatchArrayView } from "../../../builtins/regexp.ts";
 import {
   noteUnknownMemberMissing,
   noteObjSlotMissing,
@@ -74,7 +120,7 @@ import {
 import { errorTypeAbs, recordMayThrow } from "../../may-throw.ts";
 import { getEvalClass, lookupClassValue, fnProtoOf, type EvalClassSpec } from "../../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../../class-mark.ts";
-import { markFreshInstance } from "../../../instance-id.ts";
+import { markFreshInstance, freshInstanceIdOf } from "../../../instance-id.ts";
 import {
   NudoThrow,
   undef,
@@ -85,10 +131,13 @@ import {
   $lit,
   $fnVal,
   noBody,
+  enforceProxyGetInvariant,
 } from "../state.ts";
 import { $typeof } from "../ops.ts";
-import { symbolAbsForSlotKey } from "../symbol-key.ts";
-import { findClassAccessor, findStaticClassAccessor, $in, BUILTIN_BRAND_METHODS, BUILTIN_BRAND_ACCESSORS, ITERABLE_BRANDS, evalClassChain, builtinSuperCtorOf, chainProtoSlotOf, classChainHasHole, chainHasOpaqueFnParent } from "../members.ts";
+import { symbolAbsForSlotKey, hostSymbolForSlotKey } from "../symbol-key.ts";
+import { findClassAccessor, findStaticClassAccessor, $in, BUILTIN_BRAND_METHODS, BUILTIN_BRAND_ACCESSORS, ITERABLE_BRANDS, evalClassChain, builtinSuperCtorOf, chainProtoSlotOf, classChainHasHole, chainHasOpaqueFnParent, openIndexValueOf } from "../members.ts";
+import { protoChainSetVerdict } from "../proto-set.ts";
+import { lengthToNumber } from "../array-length.ts";
 import { lookupObjAccessor } from "../../../accessors.ts";
 import { $call } from "../../call.ts";
 import { privateNameGuard, $setProto } from "./obj.ts";
@@ -302,6 +351,288 @@ function protoBrandMethodNames(ctorName: string): ReadonlySet<string> | undefine
 }
 
 /**
+ * Bug 204/207/237/243：内建 **brand 面**的成员模型（表键 = owner 名）。
+ *
+ * 内建成员面有两类 brand 名：实例 brand（"Map"）与原型对象 brand
+ * （"Map.prototype"）——读面先把 brand 名归一到 owner（去 ".prototype"
+ * 后缀）再查表。此前两张内建表（BUILTIN_BRAND_METHODS /
+ * BUILTIN_BRAND_ACCESSORS）都按**实例** brand 名建键 ⇒ 原型对象的成员读
+ * 必然查不到 → 落「内层闭 obj 槽 miss」折 **exact undefined**
+ * （wrong-exact：原生要么有值、要么定抛）。
+ *
+ * 四张表各自的原生依据：
+ * - BUILTIN_SYMBOL_MEMBERS（Bug 204）：原生是 **symbol 键**的自有成员
+ *   （Map.prototype[Symbol.toStringTag] === "Map"、
+ *   Array.prototype[Symbol.unscopables] 是 16 键对象）。引擎内部把 symbol
+ *   键投影成 "@@X" 槽键 ⇒ 与字符串键表平行的一张符号键表。
+ * - BUILTIN_PROTO_VALUES（Bug 237）：原型对象**自有数据属性**的取值，与
+ *   实例面不同（RegExp.prototype.source === "(?:)"、flags === ""、
+ *   Error.prototype.name === "Error"、message === ""）。
+ * - BUILTIN_PROTO_METHODS（Bug 237）：原型对象上的**自有方法**
+ *   （Intl.NumberFormat.prototype.resolvedOptions 等）。
+ * - BUILTIN_PROTO_BRAND_CHECK（Bug 243）：原生 getter 内做 brand check
+ *   （RequireInternalSlot(this, …)）——在**原型对象**上读即**定抛
+ *   TypeError**（this 不是实例）。折 exact undefined ⇒ 引擎判「读到
+ *   undefined 且不抛」⇒ L2 门禁假绿（原生必抛 vs 引擎判不抛）。
+ */
+type BuiltinSymbolMember =
+  | { k: "fn" }
+  | { k: "str"; v: string }
+  | { k: "obj"; slots: Record<string, Slot> };
+
+/** Bug 204：Array.prototype[Symbol.unscopables] 的 16 个自有键（原生全 true）。 */
+const ARRAY_UNSCOPABLES_SLOTS: Record<string, Slot> = Object.fromEntries(
+  [
+    "at", "copyWithin", "entries", "fill", "find", "findIndex", "findLast",
+    "findLastIndex", "flat", "flatMap", "includes", "keys", "toReversed",
+    "toSorted", "toSpliced", "values",
+  ].map((k) => [k, { value: boolLit(true) }]),
+);
+
+const BUILTIN_SYMBOL_MEMBERS: Record<string, Record<string, BuiltinSymbolMember>> = {
+  Map: { "@@toStringTag": { k: "str", v: "Map" }, "@@iterator": { k: "fn" } },
+  Set: { "@@toStringTag": { k: "str", v: "Set" }, "@@iterator": { k: "fn" } },
+  WeakMap: { "@@toStringTag": { k: "str", v: "WeakMap" } },
+  WeakSet: { "@@toStringTag": { k: "str", v: "WeakSet" } },
+  Promise: { "@@toStringTag": { k: "str", v: "Promise" } },
+  Symbol: { "@@toStringTag": { k: "str", v: "Symbol" }, "@@toPrimitive": { k: "fn" } },
+  Date: { "@@toPrimitive": { k: "fn" } },
+  Array: {
+    "@@iterator": { k: "fn" },
+    "@@unscopables": { k: "obj", slots: ARRAY_UNSCOPABLES_SLOTS },
+  },
+  String: { "@@iterator": { k: "fn" } },
+  RegExp: {
+    "@@match": { k: "fn" },
+    "@@matchAll": { k: "fn" },
+    "@@replace": { k: "fn" },
+    "@@search": { k: "fn" },
+    "@@split": { k: "fn" },
+  },
+  ArrayBuffer: { "@@toStringTag": { k: "str", v: "ArrayBuffer" } },
+  SharedArrayBuffer: { "@@toStringTag": { k: "str", v: "SharedArrayBuffer" } },
+  DataView: { "@@toStringTag": { k: "str", v: "DataView" } },
+  URLSearchParams: { "@@iterator": { k: "fn" } },
+  "Intl.NumberFormat": { "@@toStringTag": { k: "str", v: "NumberFormat" } },
+  "Intl.DateTimeFormat": { "@@toStringTag": { k: "str", v: "DateTimeFormat" } },
+  "Intl.Collator": { "@@toStringTag": { k: "str", v: "Collator" } },
+  "Intl.Locale": { "@@toStringTag": { k: "str", v: "Locale" } },
+  "Intl.ListFormat": { "@@toStringTag": { k: "str", v: "ListFormat" } },
+  "Intl.RelativeTimeFormat": { "@@toStringTag": { k: "str", v: "RelativeTimeFormat" } },
+  "Intl.Segmenter": { "@@toStringTag": { k: "str", v: "Segmenter" } },
+  "Intl.PluralRules": { "@@toStringTag": { k: "str", v: "PluralRules" } },
+  "Intl.DisplayNames": { "@@toStringTag": { k: "str", v: "DisplayNames" } },
+  "Intl.DurationFormat": { "@@toStringTag": { k: "str", v: "DurationFormat" } },
+};
+
+/** Bug 237：内建原型对象**自有数据属性**的取值（与实例面不同）。 */
+const BUILTIN_PROTO_VALUES: Record<string, Record<string, Abs>> = {
+  RegExp: {
+    source: strLit("(?:)"),
+    flags: strLit(""),
+    global: undef(),
+    ignoreCase: undef(),
+    multiline: undef(),
+    dotAll: undef(),
+    sticky: undef(),
+    unicode: undef(),
+    unicodeSets: undef(),
+    hasIndices: undef(),
+  },
+  Error: { name: strLit("Error"), message: strLit("") },
+  TypeError: { name: strLit("TypeError"), message: strLit("") },
+  RangeError: { name: strLit("RangeError"), message: strLit("") },
+  ReferenceError: { name: strLit("ReferenceError"), message: strLit("") },
+  SyntaxError: { name: strLit("SyntaxError"), message: strLit("") },
+  URIError: { name: strLit("URIError"), message: strLit("") },
+  EvalError: { name: strLit("EvalError"), message: strLit("") },
+  AggregateError: { name: strLit("AggregateError"), message: strLit("") },
+  Array: { length: numLit(0) },
+  String: { length: numLit(0) },
+};
+
+/** Bug 237：内建原型对象上的**自有方法**（原生是普通方法，非 brand getter）。 */
+const BUILTIN_PROTO_METHODS: Record<string, ReadonlySet<string>> = {
+  "Intl.NumberFormat": new Set([
+    "resolvedOptions", "formatToParts", "formatRange", "formatRangeToParts",
+  ]),
+  "Intl.DateTimeFormat": new Set([
+    "resolvedOptions", "formatToParts", "formatRange", "formatRangeToParts",
+  ]),
+  "Intl.Collator": new Set(["resolvedOptions"]),
+  "Intl.Locale": new Set([
+    "toString", "maximize", "minimize", "getCalendars", "getCollations",
+    "getHourCycles", "getNumberingSystems", "getTimeZones", "getTextInfo",
+    "getWeekInfo",
+  ]),
+  "Intl.ListFormat": new Set(["resolvedOptions", "format", "formatToParts"]),
+  "Intl.RelativeTimeFormat": new Set(["resolvedOptions", "format", "formatToParts"]),
+  "Intl.Segmenter": new Set(["resolvedOptions", "segment"]),
+  "Intl.PluralRules": new Set(["resolvedOptions", "select", "selectRange"]),
+  "Intl.DisplayNames": new Set(["resolvedOptions", "of"]),
+  "Intl.DurationFormat": new Set(["resolvedOptions", "format", "formatToParts"]),
+};
+
+/**
+ * Bug 243：内建原型对象上的 **brand check 访问器**——原生 getter 内
+ * RequireInternalSlot(this, …)（this 不是实例）⇒ 读即**定抛 TypeError**。
+ * 与 members.ts 的 BUILTIN_PROTO_BRAND_GUARDS（Symbol/Map/Set）同口径，
+ * 本表覆盖 Intl 家族（其 .prototype 此前连 brand 都不是，读面连访问器
+ * 落点都没有 ⇒ 折 exact undefined 且不记 throws）。
+ */
+const BUILTIN_PROTO_BRAND_CHECK: Record<string, ReadonlySet<string>> = {
+  "Intl.NumberFormat": new Set(["format"]),
+  "Intl.DateTimeFormat": new Set(["format"]),
+  "Intl.Collator": new Set(["compare"]),
+  "Intl.Locale": new Set([
+    "language", "script", "region", "baseName", "calendar", "caseFirst",
+    "collation", "firstDayOfWeek", "hourCycle", "numeric", "numberingSystem",
+  ]),
+};
+
+/**
+ * Bug 243：Intl 子构造器名（原生 Intl.<Sub> 是构造器，.prototype 是带
+ * brand 的原型对象——其上的 brand check 访问器才有「读即定抛」的落点）。
+ */
+const INTL_SUB_CTORS: ReadonlySet<string> = new Set([
+  "NumberFormat", "DateTimeFormat", "Collator", "Locale", "ListFormat",
+  "RelativeTimeFormat", "Segmenter", "PluralRules", "DisplayNames",
+  "DurationFormat",
+]);
+
+/**
+ * Bug 195：**数组视图对象**（标签模板对象 / RegExp exec 结果）——原生两者
+ * 都是**数组 exotic**（CreateArrayFromList / RegExpExecArray）⇒ 继承
+ * Array.prototype ⇒ 数组原型方法（join / indexOf / concat / map / slice…）
+ * 可派发。
+ *
+ * 引擎把这类对象建模成 obj 形状（自有下标槽 "0".."n-1" + length 槽）⇒
+ * 数组方法面（只认 tuple/arr 形状）落空 → 方法读折 exact undefined ⇒ 调用
+ * **假抛 TypeError**。修法：按自有下标槽 + length 槽投影成**等值 tuple**，
+ * 派发时把接收者换成该 tuple → 走既有数组派发面（不另造数组语义）。
+ */
+function arrayViewTuple(a: Abs): Abs | undefined {
+  if (a.shape.k !== "obj") return undefined;
+  const slots = (a.shape as ObjShape).slots;
+  const lenSlot = getSlot(slots, "length");
+  const lenR = lenSlot ? litValue(lenSlot.value) : undefined;
+  if (!lenR?.ok || typeof lenR.value !== "number" || !Number.isInteger(lenR.value)) return undefined;
+  const els: Abs[] = [];
+  for (let i = 0; i < lenR.value; i++) {
+    const slot = getSlot(slots, String(i));
+    if (!slot) return undefined;
+    els.push(slot.value);
+  }
+  return abs({ k: "tuple", elements: els }, undefined, undefined, "exact");
+}
+
+/** 数组视图对象上的数组原型方法值（调用时按 tuple 投影接收者）。 */
+function arrayViewMethodAbs(key: string): Abs {
+  return absFunction([], {
+    body: noBody,
+    apply: (args, thisVal) => {
+      const recv = thisVal;
+      const tup = recv ? arrayViewTuple(recv) : undefined;
+      if (!tup) return unknown;
+      return protoMethodDispatch?.("Array", key, tup, args) ?? unknown;
+    },
+  }, { ctor: false });
+}
+
+/**
+ * 表项**自有**取（表是普通对象字面量——继承名 "constructor" / "toString" /
+ * "valueOf" 等不是表项；裸 `table[k]` 会把宿主 Object.prototype 的成员当表项
+ * 命中 ⇒ 原型对象的 "constructor" 读会折成宿主 Object 函数（自信的错值）。
+ */
+function ownTableEntry<T>(table: Record<string, T>, key: string): T | undefined {
+  return Object.prototype.hasOwnProperty.call(table, key) ? table[key] : undefined;
+}
+
+/**
+ * Bug 207：内建 owner 沿**类链**解析——派生类实例（class M extends Set）的
+ * brand 名是派生类名（graft 产物），内建方法/访问器表按**内建**名建键 ⇒
+ * 直查落空 → 折 exact undefined（与 `"add" in s` 折 true 自相矛盾：读面
+ * 缺席、in 面说有）。沿 evalClassChain 找首个内建 owner（与 $in 面
+ * brandHasProtoMember 同口径——两面必须一致）。
+ */
+function builtinOwnerOf(brandName: string): string | undefined {
+  for (const n of evalClassChain(brandName)) {
+    if (ownTableEntry(BUILTIN_BRAND_METHODS, n)) return n;
+    if (ownTableEntry(BUILTIN_BRAND_ACCESSORS, n)) return n;
+    if (ownTableEntry(BUILTIN_SYMBOL_MEMBERS, n)) return n;
+    if (ownTableEntry(BUILTIN_PROTO_VALUES, n)) return n;
+    if (ownTableEntry(BUILTIN_PROTO_METHODS, n)) return n;
+    if (ownTableEntry(BUILTIN_PROTO_BRAND_CHECK, n)) return n;
+    if (ownTableEntry(PROTO_PRIM_METHOD_NAMES, n)) return n;
+  }
+  return undefined;
+}
+
+/**
+ * Bug 207：派生类链上**用户定义的同名成员**优先（原生派生类覆盖内建
+ * 成员：class M extends Set { add(x){…} } → s.add 是用户方法，不是内建
+ * 方法）。仅在链上确有用户定义时才让用户面赢。
+ */
+function userChainHasMember(brandName: string, key: string, upto: string): boolean {
+  for (const n of evalClassChain(brandName)) {
+    if (n === upto) return false;
+    const spec = getEvalClass(n);
+    if (spec && ownRecValue(spec.methods, key) !== undefined) return true;
+    if (spec && ownRecValue(spec.accessors, key) !== undefined) return true;
+  }
+  return false;
+}
+
+/** Bug 204：符号成员模型 → Abs 值（@@toStringTag 字符串 / 方法 / 对象）。 */
+function builtinSymbolMemberAbs(
+  owner: string,
+  key: string,
+  m: BuiltinSymbolMember,
+): Abs {
+  if (m.k === "str") return strLit(m.v);
+  if (m.k === "obj") return objOf(m.slots);
+  if (key === "@@iterator" && owner === "String") {
+    // Bug 204：String 原型的 @@iterator 借调（String.prototype
+    // [Symbol.iterator].call("ab")）原生返回**码点迭代器**（.next().value
+    // 是单字符）——走既有 collectionIteratorAbs 协议面。
+    return absFunction([], {
+      body: noBody,
+      apply: (_args, thisVal) => {
+        const recv = thisVal ?? $lit(undefined);
+        const svR = litValue(recv);
+        if (svR.ok && typeof svR.value === "string") {
+          return collectionIteratorAbs(Array.from(svR.value, (c) => strLit(c)));
+        }
+        return unknown;
+      },
+    }, { ctor: false });
+  }
+  if (key === "@@iterator" && (owner === "Map" || owner === "Set")) {
+    // Bug 204：Map/Set 原型的 @@iterator 借调（Map.prototype[Symbol.iterator]
+    // .call(m)）原生返回**集合迭代器**（.next().value 是 [k,v] / 元素）——
+    // 走既有 collectionIteratorAbs 协议面（next/@@iterator 槽），不另造
+    // 迭代器形状。
+    // Bug 198（S20）：改调 collectionIteratorFor——**live 视图**（原生迭代器
+    // 持条目指针：迭代期间的增删可见）+ 同口径投影。此前直接吃**快照**
+    // （mapEntriesAbs / setElementsAbs）⇒ 迭代期间的增删不可见。
+    // 原生投影口径：Map 的 @@iterator === Map.prototype.entries（[k,v]
+    // 元组）；Set 的 @@iterator === Set.prototype.values（**元素本身**，
+    // 不是 [el,el] 条目元组——entries 才是）。
+    return absFunction([], {
+      body: noBody,
+      apply: (_args, thisVal) => {
+        const recv = thisVal ?? $lit(undefined);
+        return collectionIteratorFor(recv, owner === "Map" ? "entries" : "values");
+      },
+    }, { ctor: false });
+  }
+  return protoMethodValueAbs(owner, key);
+}
+
+
+
+
+/**
  * Bug 49/56「方法值读」统一通道：原型方法的一等函数值。
  * - 值面：fn shape（typeof === "function"、=== undefined 折 false）；
  * - 调用面：apply 钩子把借用调用（v() / v.call(recv, …) / v.apply /
@@ -385,6 +716,35 @@ export function protoMethodValueAbs(home: string, name: string): Abs {
 }
 
 /**
+ * Bug 219：Symbol.prototype 的 toString / toLocaleString / valueOf 一等函数。
+ * - toString / valueOf：Symbol.prototype **自有**方法（thisSymbolValue 的
+ *   brand check——非 symbol 接收者定抛 TypeError：原生
+ *   `Symbol().toString.call(1)` 抛）；valueOf 返回符号自身。
+ * - toLocaleString：**不在** Symbol.prototype 上（继承自
+ *   Object.prototype.toLocaleString → ToObject(this).toString()）——symbol
+ *   接收者得 "Symbol(desc)"（无 brand check：借用调用合法）。
+ * 此前三者都落 Object.prototype 泛型版 → 错值 "[object Number]" /
+ * "[object Symbol]" 且 brand check 丢失（借用调用漏抛 TypeError）。
+ */
+function symbolProtoMethodAbs(name: "toString" | "toLocaleString" | "valueOf"): Abs {
+  return absFunction([], {
+    body: noBody,
+    apply: (_args, thisVal) => {
+      const recv = thisVal ?? $lit(undefined);
+      if (isSymbolAbs(recv)) {
+        if (name === "valueOf") return recv;
+        return stringOfSymbol(recv);
+      }
+      // brand check：Symbol.prototype.toString / valueOf 只接受 symbol 接收者
+      if (name !== "toLocaleString") throw new NudoThrow(errorTypeAbs("TypeError"));
+      // toLocaleString 继承自 Object.prototype（ToObject(this).toString()）——
+      // 非 symbol 接收者沿既有泛型投影（Object.prototype 面）
+      return evalObjectProtoMethod("toLocaleString", recv, []) ?? unknown;
+    },
+  }, { ctor: false });
+}
+
+/**
  * Bug 149：Proxy 陷阱的 key 实参。符号投影键（转译期 "[Symbol.X]" → "@@X"）
  * 在**陷阱边界**还原成真 symbol——规范要求 trap 收到的 key 与读取时的 key
  * 相同；此前把内部槽键表示当 PropertyKey 传出 ⇒ 按 symbol 分派的 handler
@@ -410,6 +770,13 @@ export function $get(
     /** Bug 149：键来自符号投影（"[Symbol.X]" → "@@X"）——陷阱边界还原真 symbol */
     symbolKey?: boolean;
   },
+  /**
+   * Bug 235：[[Get]] 的 **receiver**（规范 Proxy.[[Get]](P, key, Receiver)
+   * 无 get 陷阱时转发 `target.[[Get]](key, Receiver)`）。缺省 = 接收者自身。
+   * 只作用于本次读取的访问器 `this` 绑定——不向下递归传递（内层读取的
+   * receiver 仍是它自己的接收者）。
+   */
+  receiver?: Abs,
 ): Abs {
   // 私有名（"#" 键）：foreign-receiver brand check——原生
   // PrivateFieldGet 要求接收者是声明类实例，否则 TypeError
@@ -445,6 +812,22 @@ export function $get(
     if (ns === "Intl" && (key === "NumberFormat" || key === "DateTimeFormat")) {
       return makeIntlCtorAbs(key);
     }
+    // Bug 227：符号键投影（"@@X"）在**宿主对象**上须还原成**真 symbol**
+    // 再读——Math / JSON / Reflect / Intl / Atomics 的 Symbol.toStringTag
+    // 是 symbol 键的**自有数据属性**（原生 Math[Symbol.toStringTag] ===
+    // "Math"）。按投影串（"@@toStringTag"）裸读宿主对象恒 undefined
+    // （wrong-exact：自信的错值）。字面量串键 "@@X" 不带 symbolKey 标记，
+    // 仍是字符串键（不误伤）。
+    if (opts?.symbolKey) {
+      const hostSym = hostSymbolForSlotKey(key);
+      if (hostSym !== undefined) {
+        try {
+          return $lit((o as unknown as Record<symbol, unknown>)[hostSym]);
+        } catch {
+          return unknown;
+        }
+      }
+    }
     if (ns) {
       try {
         const raw = (o as Record<string, unknown>)[key];
@@ -453,10 +836,19 @@ export function $get(
           // 成员值被 $new 时不再记假 may TypeError（Intl.Collator 等原生可
           // 构造成员；Math.max 等方法值原生确定不可构造 → ctor:false 定抛）
           const ctor = hostFnCtorFacet(raw);
+          // Bug 243：Intl 子构造器（Intl.Collator / Intl.Locale …）的构造器
+          // 值须带**名字**（"Intl.<Sub>"）——其 .prototype 是带 brand 的原型
+          // 对象（brand check 访问器读即定抛 TypeError），需名字才能路由到
+          // 原型 brand。普通命名空间成员（Math.max）**不带**名字：原生
+          // Math.max.name 是 "max"，带 "Math.max" 会折成错值。
+          const isIntlSub = ns === "Intl" && INTL_SUB_CTORS.has(key);
           return absFunction([`${ns}.${key}`], {
             body: noBody,
             apply: (args) => evalNamespaceCall(ns, key, args) ?? unknown,
-          }, ctor !== undefined ? { ctor } : undefined);
+          }, {
+            ...(ctor !== undefined ? { ctor } : undefined),
+            ...(isIntlSub ? { name: `${ns}.${key}` } : undefined),
+          });
         }
         return $lit(raw);
       } catch {
@@ -534,21 +926,70 @@ export function $get(
     if (o.shape.name === "Proxy") {
       const parts = proxyPartsOf(o);
       if (parts) {
+        // Bug 235：proxy 是**独立的创建事件**（原生 new Proxy 每次新对象，
+        // 与靶必不同引用）——打新鲜实例标（懒打：首次经 Proxy 面读时），
+        // 使 `p === t` / getter 内 `this === t` 折确定 false（此前不可判）。
+        // 构造点（makeProxyAbs）打标更正确——越界（builtins/error/
+        // error-family.ts），此处补最小可判面。
+        if (freshInstanceIdOf(o) === undefined) markFreshInstance(o);
         const trap = proxyTrapOf(parts.handler, "get");
         if (trap.k === "fn") {
           // Bug 149：符号键的陷阱实参是真 symbol（规范 PropertyKey），不是 "@@X" 串
-          return $call(trap.fn, [parts.target, trapKeyAbs(key, opts?.symbolKey), o], parts.handler);
+          const r = $call(trap.fn, [parts.target, trapKeyAbs(key, opts?.symbolKey), o], parts.handler);
+          // Bug 210：Proxy [[Get]] 规范不变量（ES2024 10.5.4 step 6）——靶上该
+          // 自有属性**不可配置且不可写**时，get 陷阱须返回该属性的实际值
+          // （SameValue），否则原生定抛 TypeError。此前直接返回陷阱值（假绿）。
+          enforceProxyGetInvariant(parts.target, key, r, { symbolKey: opts?.symbolKey });
+          return r;
         }
         if (trap.k === "dead" || trap.k === "opaque") {
           recordMayThrow({ kind: "TypeError", cause: `Proxy get trap for '${key}' not callable / unknown` });
           return unknown;
         }
-        return $get(parts.target, key, opts);
+        // Bug 235：无 get 陷阱 → `target.[[Get]](key, Receiver)`——Receiver
+        // 是 **proxy 自己**（规范 Proxy.[[Get]] 转发 Receiver 给靶）；此前
+        // 直接读靶（丢掉 receiver）⇒ 靶上 getter 的 this 绑到 target 而非
+        // proxy ⇒ `this === t` 自信折 true（原生 false）。
+        return $get(parts.target, key, opts, receiver ?? o);
       }
       // 无侧表（退化副本）：沿通用 brand 内层（inner = target）路径
     }
     if (o.shape.name.endsWith(".prototype")) {
       const ctorName = o.shape.name.slice(0, -".prototype".length);
+      // Bug 208（读面）：原型对象上的**自有槽优先于内建方法表**——原生属性
+      // 查找序是 own → prototype：用户写在原型对象上的自有属性
+      // （`Array.prototype.push = fn`）遮住内建同名实现。此前内建方法表
+      // 命中即返回 ⇒ 读回内建实现（借用面 `Array.prototype.join.call(…)`
+      // 拿到的也是内建版）。constructor 例外——原型对象的 constructor 槽
+      // 是内建构造器名义面，类值的注册面优先（见下方 lookupClassValue）。
+      if (key !== "constructor" && key !== "__proto__") {
+        const protoInner = o.shape.shape;
+        if (protoInner.shape.k === "obj") {
+          const ownSlot = getSlot(protoInner.shape.slots, key);
+          if (ownSlot && !ownSlot.optional) return ownSlot.value;
+        }
+      }
+      // Bug 243：原生内建原型对象上的 **brand check 访问器**——getter 内
+      // RequireInternalSlot(this, …)（this 是原型对象、不是实例）⇒ 读即
+      // **定抛 TypeError**。此前该键在原型对象上既无值也无抛 ⇒ 折 exact
+      // undefined 且不记 throws ⇒ L2 门禁假绿（原生必抛 vs 引擎判不抛）。
+      // 先于方法表：brand check 访问器在原生上就是 getter（不是方法值）。
+      if (ownTableEntry(BUILTIN_PROTO_BRAND_CHECK, ctorName)?.has(key)) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      // Bug 204：原型对象上的 well-known Symbol 成员（Map.prototype
+      // [Symbol.toStringTag] === "Map"、Array.prototype[Symbol.unscopables]
+      // 是 16 键对象…）——原生是 symbol 键的自有成员，引擎按 "@@X" 槽键
+      // 寻址 ⇒ 与字符串键表平行的一张符号键表。
+      const symTable = ownTableEntry(BUILTIN_SYMBOL_MEMBERS, ctorName);
+      const symM = symTable ? ownTableEntry(symTable, key) : undefined;
+      if (symM) return builtinSymbolMemberAbs(ctorName, key, symM);
+      // Bug 237：原型对象**自有数据属性**的取值（RegExp.prototype.source
+      // === "(?:)"、flags === ""、Error.prototype.name === "Error"、
+      // message === ""）——与实例面不同，不可复用实例面的访问器名表。
+      const protoTable = ownTableEntry(BUILTIN_PROTO_VALUES, ctorName);
+      const protoVal = protoTable ? ownTableEntry(protoTable, key) : undefined;
+      if (protoVal) return protoVal;
       // Array 三键维持既有精确面（arrayMethodAbs：bindThis 注入 receiver）
       if (ctorName === "Array" && (key === "toString" || key === "toLocaleString" || key === "join")) {
         return arrayMethodAbs(key === "join" ? "join" : key);
@@ -560,6 +1001,12 @@ export function $get(
       if (protoMethods?.has(key)) {
         return protoMethodValueAbs(ctorName, key);
       }
+      // Bug 237：内建原型对象上的**自有方法**（Intl.NumberFormat.prototype
+      // .resolvedOptions / .formatToParts 等——原生是普通方法，读到函数值；
+      // 与 brand check 访问器（读即定抛）分表）。
+      if (ownTableEntry(BUILTIN_PROTO_METHODS, ctorName)?.has(key)) {
+        return protoMethodValueAbs(ctorName, key);
+      }
       // P3b：constructor → 注册类值优先（B.prototype.constructor === B 折
       // exact——protoBrandAbs 的 constructor 槽是 builtinCtorAbs 名义面，
       // 与 $class 类值不同引用）。类值/内建名未注册 → 沿旧口径。
@@ -569,23 +1016,63 @@ export function $get(
       }
     }
     const isClassVal = classNameOfValue(o as object) === o.shape.name;
+    // Bug 207：内建原型面按**类链**解析——派生类实例（class M extends Set）的
+    // brand 名是派生类名（graft 产物），内建方法/访问器表按**内建**名建键
+    // ⇒ 直查落空 → 折 exact undefined（与 `"add" in s` 折 true 自相矛盾：
+    // 读面缺席、in 面说有）。沿 evalClassChain 找首个内建 owner（与 $in 面
+    // brandHasProtoMember 同口径——两面必须一致）。
+    const builtinOwner = isClassVal ? undefined : builtinOwnerOf(o.shape.name);
+    const builtinHome = builtinOwner ?? o.shape.name;
+    // 派生类链上**用户定义的同名成员**优先（原生派生类覆盖内建成员：
+    // class M extends Set { add(x){…} } → s.add 是用户方法）——让用户面赢。
+    const userOwnsKey =
+      builtinOwner !== undefined && builtinOwner !== o.shape.name &&
+      userChainHasMember(o.shape.name, key, builtinOwner);
     // 内建 brand 原型方法读取（typeof m.forEach / m[Symbol.iterator]）：
     // Bug 13：具名方法值走方法值读通道——protoMethodValueAbs 的 apply 钩子
     // 把借用调用（m.get.call(m,k) / .apply / .bind 产物）转发回 $invoke 既有
     // 派发；此前 no-op fn 被直接调用折精确 undefined。@@iterator 维持 no-op
     // 形状（迭代协议派发另走，与数组臂同口径）。
     // （class 声明值同名内建时不误伤：类方法走 registry）
-    const builtinM = BUILTIN_BRAND_METHODS[o.shape.name];
+    const builtinM = BUILTIN_BRAND_METHODS[builtinHome];
     // Bug 40：@@iterator 只对原生可迭代 brand（Map/Set/TA，ITERABLE_BRANDS）
     // 折函数——此前任意有表 brand（Date/WeakMap/Error…）都折 "function"，
     // 非可迭代 brand 原生 undefined（wrong-exact）。
-    if (builtinM && !isClassVal && (builtinM.has(key) || (key === "@@iterator" && ITERABLE_BRANDS.has(o.shape.name)))) {
-      if (key !== "@@iterator") return protoMethodValueAbs(o.shape.name, key);
+    if (builtinM && !isClassVal && !userOwnsKey && (builtinM.has(key) || (key === "@@iterator" && ITERABLE_BRANDS.has(builtinHome)))) {
+      if (key !== "@@iterator") return protoMethodValueAbs(builtinHome, key);
+      // Bug 198（S20）：实例上的 @@iterator 与**原型上是同一个函数对象**
+      // （原生 m[Symbol.iterator] === Map.prototype[Symbol.iterator]）⇒ 读值
+      // 必须走符号成员表（builtinSymbolMemberAbs），不能给一个 no-op fn——
+      // no-op fn 被调用折 <abs:never>（**自信的错值**：原生返回集合迭代器
+      // [k,v] / 元素）。符号成员表无 @@iterator 条目者（TypedArray 家族）
+      // 维持 no-op 形状（无协议面可折）。
+      const instSymTable = ownTableEntry(BUILTIN_SYMBOL_MEMBERS, builtinHome);
+      const instIter = instSymTable ? ownTableEntry(instSymTable, "@@iterator") : undefined;
+      if (instIter) return builtinSymbolMemberAbs(builtinHome, "@@iterator", instIter);
       return absFunction([], { body: noBody }, { ctor: false });
     }
+    // Bug 204：实例面上的 well-known Symbol 成员（new Map()[Symbol.toStringTag]
+    // === "Map"、new Date()[Symbol.toPrimitive] 是函数）——原生是原型对象上
+    // 的 symbol 键自有成员，实例经原型链继承。@@iterator 维持上方 ITERABLE
+    // 臂的既有 no-op 形状（迭代协议派发另走），此处不夺。
+    if (!isClassVal && !userOwnsKey && key !== "@@iterator" && builtinOwner !== undefined) {
+      const instTable = ownTableEntry(BUILTIN_SYMBOL_MEMBERS, builtinOwner);
+      const instSym = instTable ? ownTableEntry(instTable, key) : undefined;
+      if (instSym) return builtinSymbolMemberAbs(builtinOwner, key, instSym);
+    }
+    // Bug 207：prim 包装构造器（Number / String / Boolean / Symbol /
+    // BigInt）的**实例面**方法（PROTO_PRIM_METHOD_NAMES）——原生
+    // `new Number(5).toFixed` 是函数（装箱对象继承原型方法）；此前实例
+    // brand 面无此表 ⇒ 折 exact undefined（wrong-exact）。派生类
+    // （class M extends Number）沿类链解析到同一 owner ⇒ 内建父子类面
+    // 与内建父本身一致。
+    if (!isClassVal && !userOwnsKey) {
+      const primMethods = ownTableEntry(PROTO_PRIM_METHOD_NAMES, builtinHome);
+      if (primMethods?.has(key)) return protoMethodValueAbs(builtinHome, key);
+    }
     // JS Map/Set 的 size 是属性不是方法；brand 内层为空 obj，须在 $get 委托
-    if (key === "size" && o.shape.name === "Map") return mapSizeAbs(o);
-    if (key === "size" && o.shape.name === "Set") return setSizeAbs(o);
+    if (key === "size" && builtinHome === "Map") return mapSizeAbs(o);
+    if (key === "size" && builtinHome === "Set") return setSizeAbs(o);
     const inner = o.shape.shape;
     // 自有数据属性优先于原型访问器（原生属性查找：own → prototype）
     // 必须 getSlot：constructor/toString 等键裸读会踩宿主 Object.prototype
@@ -608,7 +1095,8 @@ export function $get(
     }
     if (isClassVal) {
       const sacc = findStaticClassAccessor(o.shape.name, key);
-      if (sacc) return sacc.get ? sacc.get(o) : undef();
+      // Bug 235：receiver 优先（Proxy 转发读靶时，访问器的 this 是 receiver）
+      if (sacc) return sacc.get ? sacc.get(receiver ?? o) : undef();
       // 类值上读实例访问器键 → 原生 undefined。length 例外：实例访问器挂
       // .prototype（不在构造器 [[Prototype]] 链上），遮不住构造器自有
       // length（P2b arity 臂，见下方）。
@@ -682,7 +1170,8 @@ export function $get(
       }
     } else {
       const acc = findClassAccessor(o.shape.name, key);
-      if (acc) return acc.get ? acc.get(o) : undef();
+      // Bug 235：receiver 优先（Proxy 转发读靶时，访问器的 this 是 receiver）
+      if (acc) return acc.get ? acc.get(receiver ?? o) : undef();
       // 实例上读静态访问器键 → 原生 undefined（属性在构造器上）
       if (findStaticClassAccessor(o.shape.name, key)) return undef();
       // 实例方法读取（typeof a.m / 一等值）：沿继承链在 registry 找方法
@@ -713,14 +1202,17 @@ export function $get(
     }
     // 原型链 constructor：内建 brand（Error/Date/…）→ 对应构造器 Abs；
     // P3b：注册类（用户类/fn 伪父）实例/原型 → 类值本身（=== 折 exact）。
-    // 类值接收者不经此（B.constructor 原生继承 Function——保持既有口径）。
+    // Bug 234：类值（class 声明 / 有体类表达式）的 [[Prototype]] 是
+    // Function.prototype ⇒ `constructor` 继承自那里 = **内建 Function**
+    // （原生 `Widget.constructor === Function` 为 true、`.name` 为
+    // "Function"）。此前落 `builtinCtorAbs(类名)`——一个「以类名命名的
+    // 内建构造器」：=== Function 折确定 false、.name 折类名（自信错值）。
     if (key === "constructor") {
       const cn = ctorNameOfRecv(o);
       if (cn) {
-        if (!isClassVal) {
-          const cv = lookupClassValue(cn);
-          if (cv) return cv;
-        }
+        if (isClassVal) return builtinCtorAbs("Function");
+        const cv = lookupClassValue(cn);
+        if (cv) return cv;
         return builtinCtorAbs(cn);
       }
     }
@@ -790,6 +1282,17 @@ export function $get(
       if ((getFnImpl(o) as { kind?: string } | undefined)?.kind === "generator") {
         return generatorProtoBrandOf(o);
       }
+      // Bug 243：Intl 子构造器（Intl.<Sub>）的 .prototype 是**真正的原型
+      // 对象**（带 brand 的原型面）——其上的 brand check 访问器
+      // （Intl.NumberFormat.prototype.format / Intl.Collator.prototype
+      // .compare / Intl.Locale.prototype.baseName）读即定抛 TypeError，
+      // 需要原型 brand 才有落点。此前 fnProtoOf 只装 constructor 一个槽
+      // （闭 obj）⇒ 原型成员读全部落槽 miss ⇒ 折 exact undefined 且不记
+      // throws（L2 门禁假绿）。
+      const fnName = (o.shape as { name?: string }).name;
+      if (fnName !== undefined && fnName.startsWith("Intl.") && INTL_SUB_CTORS.has(fnName.slice(5))) {
+        return protoBrandAbs(fnName);
+      }
       return o.shape.ctor === false
         ? undef()
         : // P3b：fn 的 prototype 对象身份按 fn Abs 驻留（原生每 fn 唯一
@@ -850,6 +1353,18 @@ export function $get(
       if (key !== "@@iterator") return protoMethodValueAbs("Array", key);
       return { shape: { k: "fn", params: [], ctor: false }, conf: "path" };
     }
+    // Bug 219：symbol prim 的 toString / toLocaleString / valueOf —— 原生取自
+    // **Symbol.prototype 自己的面**（toString / valueOf 自有；toLocaleString
+    // 继承 Object.prototype 的 toLocaleString → this.toString()）。此前落
+    // Object.prototype 泛型版（**无 brand check**）→ 错值 "[object Number]" /
+    // "[object Symbol]"，且借用调用漏抛 TypeError（`Symbol().toString.call(1)`
+    // 原生定抛）。走 Symbol.prototype 通道（brand check + 描述串）。
+    if (
+      (o.shape as { type?: string }).type === "symbol" &&
+      (key === "toString" || key === "toLocaleString" || key === "valueOf")
+    ) {
+      return symbolProtoMethodAbs(key);
+    }
     // string.toString/valueOf 由 callAbsMethod 处理调用；一等读取仍给 OP 函数
     if (
       primProtoMethods?.has(key) === true &&
@@ -869,6 +1384,21 @@ export function $get(
     }
     return objectProtoMethodAbs(key);
   }
+  // Bug 218：number / boolean / bigint / symbol **原始值**读不存在的成员 →
+  // 原生 undefined（不是 unknown）。此前这类 prim 无「确定缺失」臂 → 一路
+  // 落尾部 unknown 接收者分支：既折了错值（unknown 而非 undefined），又
+  // **丢掉 may-throw**（unknown 接收者不记 throws）⇒ 后续读该值
+  // （`n.foo.bar`）不记 TypeError ⇒ L2 门禁假绿。string prim 早有同款臂
+  // （上方），此处补齐其余 prim。
+  if (o.shape.k === "prim" && (o.shape as { type?: string }).type !== "string") {
+    // 确定非下标非方法键 → undefined（原生 (5).foo === undefined）。
+    // 「可能存在的原型成员」不在此列（constructor / __proto__ / Object 与
+    // Array 原型名 / @@ 符号键 / 该 prim 自己的原型方法表）——它们走下方
+    // 各自的投影面，不得折 undef。
+    if (!isPossiblyProtoMemberKey(key) && !primProtoMethods?.has(key)) {
+      return undef();
+    }
+  }
   // OOB 合成 undefined 接收者（抽象下标可能 miss 后的成员读）：引擎精度
   // 产物，不记 may-throw / 不硬抛；marker 透传（issue #98）。透传是有意
   // 的召回权衡：越界读本身不抛、读到的 undefined 再被成员读原生必抛
@@ -886,12 +1416,22 @@ export function $get(
   }
   if (isObj(o)) {
     const acc = lookupObjAccessor(o, key);
-    if (acc) return acc.get ? acc.get(o) : undef();
+    // Bug 235：receiver 优先（Proxy 无 get 陷阱转发读靶时，靶上 getter 的
+    // this 必须是 receiver=proxy，不是 target）
+    if (acc) return acc.get ? acc.get(receiver ?? o) : undef();
     const slot = getSlot((o.shape as ObjShape).slots, key);
     if (slot) {
       // optional 槽在 JS 中可能缺席 → 读到 undefined，不能报 definite presence
       if (slot.optional) return joinAbs(slot.value, undef());
       return slot.value;
+    }
+    // Bug 195：数组视图对象（模板对象 / RegExp exec 结果——原生是数组 exotic）
+    // 上的**数组原型方法**（join / indexOf / concat / map / slice…）可派发：
+    // 原生模板对象继承 Array.prototype。此前 obj 接收者的数组方法面只认
+    // tuple/arr 形状 ⇒ 方法读落「确定不存在」折 exact undefined ⇒ 调用
+    // **假抛 TypeError**（原生不抛）。
+    if (ARRAY_PROTO_METHOD_NAMES.has(key) && isMatchArrayView(o)) {
+      return arrayViewMethodAbs(key);
     }
     // Object.prototype 方法（非 null-proto）：一等函数读取
     if (!isNullProtoObj(o) && OBJECT_PROTO_METHOD_NAMES.has(key)) {
@@ -907,7 +1447,14 @@ export function $get(
       const p = protoOfRecv(o);
       return isNullProtoObj(p) ? undef() : p;
     }
-    if ((o.shape as ObjShape).open) return unknown;
+    // Bug 217：开放对象**声明的索引值域**（shape.index.value）——成员读
+    // 优先用它（process.env.HOME → string | undefined），
+    // 无索引声明才退 unknown（那才是真正的「推断失败」）。此前该臂
+    // 无条件 return unknown ⇒ 丢弃声明值域 ⇒ envObj() 折
+    // Record<string, string | undefined> 而成员读折 unknown（两面矛盾）
+    // + 触发假 nudo:unknown-inference。符号键例外：原生
+    // process.env[Symbol.iterator] → undefined（env 无符号键）。
+    if ((o.shape as ObjShape).open) return openIndexValueOf(o, opts?.symbolKey === true) ?? unknown;
     // Object.prototype.constructor（null-proto 无 → undef）
     if (key === "constructor" && !isNullProtoObj(o)) {
       return builtinCtorAbs("Object");
@@ -958,6 +1505,45 @@ export function $get(
  *  区分——后者就地突变会跨 run 泄漏，维持只读）。 */
 const userFnSlots = new WeakSet<object>();
 
+/**
+ * Bug 205：宿主函数（转译的函数声明 / 函数表达式）**不是 Abs**——写面此前
+ * 直接丢弃（`F.prototype = {}` 引擎完全无感：原型替换不可观测，instanceof
+ * 只能按构造器**名**匹配 → unsound 的肯定判断，类型守卫会走错分支）。
+ *
+ * 建 **facade**：一等 fn Abs 承载写面槽（prototype），调用点根绑定重绑到它
+ * （转译侧单层成员写是 `F = $set(F, "prototype", v)`）——原生换的是构造器的
+ * prototype **属性**，facade 保留宿主函数身份（name / length / 可构造性 /
+ * 调用 impl 全透传），prototype 槽读回即新原型。
+ *
+ * 键域**只限 "prototype"**：其它键（`F.x = 1` 之类 expando）此前是 no-op，
+ * 不在 Bug 205 范围内，不改（避免牵动无关用例）。
+ */
+const hostFnFacades = new WeakMap<object, Abs>();
+
+function hostFnFacadeOf(hostFn: Function): Abs {
+  const cached = hostFnFacades.get(hostFn as object);
+  if (cached) return cached;
+  const facade = asAbsVal(hostFn);
+  if (facade.shape.k !== "fn") return facade;
+  // 槽面自建（与 $set 的 fn 臂同款：userFnSlots 只认本机制自建的槽）
+  facade.shape = { ...facade.shape, slots: {} };
+  userFnSlots.add(facade);
+  hostFnFacades.set(hostFn as object, facade);
+  return facade;
+}
+
+/** 宿主函数的 prototype 写：落进 facade 的 "prototype" 槽，返回 facade。 */
+function hostFnPrototypeSet(hostFn: Function, value: Abs): Abs {
+  const facade = hostFnFacadeOf(hostFn);
+  const slots = facade.shape.k === "fn" ? facade.shape.slots : undefined;
+  if (slots) {
+    setSlot(slots, "prototype", { value: asAbsVal(value) });
+    facade.conf = confJoin(facade.conf, value.conf);
+    clearStaleTermPred(facade);
+  }
+  return facade;
+}
+
 /** 成员写：返回新 obj/brand（不可变更新）；frozen/sealed/只读目标按 sloppy 静默失败。
  *  opts.internal（Bug 84）：私有字段落地——槽打 Slot.internal 标记；后续覆写
  *  保留既有标记（this.#x = v 不丢失 internal）。
@@ -976,6 +1562,14 @@ export function $set(
   // 非 Abs 目标 fail-closed 返回原接收者（调用点 `root = $set(root, …)` 重绑
   // 为自赋值 no-op），禁止读 .shape 炸宿主 TypeError（$get 同口径）
   if (!o || typeof o !== "object" || !("shape" in (o as object))) {
+    // Bug 205：宿主函数（转译的函数声明 / 函数表达式）不是 Abs——写此前
+    // 直接丢弃（`F.prototype = {}` 引擎完全无感：原型替换不可观测，
+    // instanceof 只能按构造器名匹配 → unsound 的肯定判断）。此处建
+    // **facade**（一等 fn Abs 承载 prototype 槽）并返回——调用点根绑定
+    // 重绑到它（`F = $set(F, "prototype", v)`），原型替换遂可观测。
+    if (typeof o === "function" && key === "prototype") {
+      return hostFnPrototypeSet(o as Function, value);
+    }
     return o;
   }
   if (o.shape.k === "brand") {
@@ -996,7 +1590,10 @@ export function $set(
           // Bug 149：符号键的陷阱实参是真 symbol（规范 PropertyKey），不是 "@@X" 串
           const res = $call(trap.fn, [parts.target, trapKeyAbs(key, opts?.symbolKey), value, o], parts.handler);
           const rv = litValue(res);
-          if (rv.ok && rv.value === false) throwStrictWrite();
+          // Bug 209：set 陷阱返回值按规范 **ToBoolean**——falsy（0 / "" / null /
+          // undefined / false）→ strict TypeError；此前只认字面量 false，其余
+          // falsy 静默通过（原生 strict 下 falsy 皆抛）。
+          if (rv.ok && !rv.value) throwStrictWrite();
           return o;
         }
         if (trap.k === "dead" || trap.k === "opaque") {
@@ -1013,8 +1610,29 @@ export function $set(
     const isClassVal = classNameOfValue(o as object) === o.shape.name;
     if (isClassVal) {
       const sacc = findStaticClassAccessor(o.shape.name, key);
-      if (sacc) return sacc.set ? sacc.set(o, value) : o;
+      if (sacc) {
+        if (sacc.set) return sacc.set(o, value);
+        // Bug 225：getter-only 静态访问器——strict 写原生 TypeError（与实例
+        // 面同款，见下方实例分支的 throwStrictWrite）；此前 `sacc.set ?
+        // … : o` 静默吞写（写穿无声，类字面体的 static get 写不抛）。
+        throwStrictWrite();
+      }
+      // Bug 206：类值的 prototype 是不可写 / 不可配置 / 不可枚举的 own
+      // property（原生 ClassDefinitionEvaluation）——`A.prototype = {}` 在
+      // strict 下定抛 TypeError；此前无「prototype 非可写」门 → 落到通用
+      // 槽写（写穿后类照常工作，换原型这件事在引擎侧完全无感）。
+      // 例外：引擎内部的 defineProperty 写回（把**就地改过**的原型对象重新
+      // 装回类值——值是同名原型 brand）——原生那一次是「就地改原型对象」，
+      // 不是给 C.prototype 赋值，不得被本门拦下（值判据：同名原型 brand）。
+      if (key === "prototype") {
+        const writeback = value.shape.k === "brand" && value.shape.name === `${o.shape.name}.prototype`;
+        if (!writeback) throwStrictWrite();
+      }
       if (findClassAccessor(o.shape.name, key)) return o;
+      // Bug 197：静态面 defineProperty 装的**不可写**属性（writable:false）→
+      // strict 写原生 TypeError；此前静态面只看类注册表访问器，flags 面
+      // （defineProperty 的 writable:false）完全没查 → 写穿无声（假绿）。
+      if (getPropFlags(o)?.get(key)?.writable === false) throwStrictWrite();
     } else {
       const acc = findClassAccessor(o.shape.name, key);
       if (acc) {
@@ -1036,6 +1654,21 @@ export function $set(
         // 判（构造器工件槽同无标记，不可放行）；超罕见边，留侧表迁移任务。
         if (!opts?.internal && BUILTIN_BRAND_ACCESSORS[o.shape.name]?.has(key)) {
           throwStrictWrite();
+        }
+        // Bug 197：类实例的 [[Set]] 原型链写门——receiver **无自有该键**时，
+        // 原生沿 [[Prototype]] 链上溯（A.prototype → 父类原型 → …）：首个
+        // 持有该键的原型的访问器（无 setter）/ 不可写数据属性 / frozen 原型
+        // ⇒ strict TypeError；带 setter → 派发 setter（不是静默建自有属性）。
+        // 此前类实例面**完全不过写门**（protoChainSetVerdict 只查 protoTable，
+        // 类实例未登记 ⇒ 链恒空 ⇒ 门恒 allow）⇒
+        // `Object.defineProperty(A.prototype, "y", { get(){…} })` 之后
+        // `a.y = 1` 静默写穿（原生定抛，门禁假绿）。
+        // 类字面量访问器由上方 findClassAccessor 覆盖（注册表面）；此处补
+        // **动态装到原型上**的访问器 / 只读数据属性（原型槽面）。
+        if (!getSlot(inner.shape.slots, key)) {
+          const verdict = protoChainSetVerdict(o, key);
+          if (verdict.kind === "deny") throwStrictWrite();
+          if (verdict.kind === "setter") return verdict.setter(o, value);
         }
         const st = extStateOf(o);
         if ((st === "sealed" || st === "nonext") && !getSlot(inner.shape.slots, key)) {
@@ -1077,14 +1710,27 @@ export function $set(
   // 合法且巨大（原生稀疏数组）不物化——就地降 arr（元素 ∪ undefined、长度未知）。
   // 抽象值按 sound 回退：元素与 undefined 取并、长度未知
   if (o.shape.k === "tuple" && key === "length") {
-    if (extStateOf(o) === "frozen") throwStrictWrite();
-    const vR = litValue(value);
-    const v = vR.ok ? vR.value : undefined;
-    if (typeof v === "number") {
+    const st = extStateOf(o);
+    if (st === "frozen") throwStrictWrite();
+    // Bug 231：原生 ArraySetLength 先 ToNumber(value) 再判整数与界——引擎
+    // 此前只判「**数字**字面量」，`undefined` / `{}` / "abc" 等**具体非数值**
+    // 落进抽象回退（不抛）→ 原生 RangeError 缺失（门禁假绿）。域判定统一
+    // 走 lengthToNumber：nan → RangeError；typeerror（Symbol）→ TypeError；
+    // abstract（不可判定）→ 仍按 sound 回退（原生本身不可判定）。
+    const len = lengthToNumber(value);
+    if (len.kind === "typeerror") throw new NudoThrow(errorTypeAbs("TypeError"));
+    if (len.kind === "nan") throw new NudoThrow(errorTypeAbs("RangeError"));
+    if (len.kind === "num") {
+      const v = len.n;
       // 负数/小数/NaN/Infinity/≥2^32：原生 hard RangeError（catch 可吸收）
       if (!Number.isInteger(v) || v < 0 || v > 4294967295) {
         throw new NudoThrow(errorTypeAbs("RangeError"));
       }
+      // Bug 223：sealed 数组 length **截断**写要删除被截掉的元素——sealed 的
+      // 元素是不可配置自有属性 → 原生 TypeError（"Cannot delete property
+      // '2'"）。增长合法（新增 hole，不删任何属性）；preventExtensions
+      // （nonext）不冻结元素 → 截断不抛（node 实测）。
+      if (st === "sealed" && v < o.shape.elements.length) throwStrictWrite();
       if (v > TUPLE_MATERIALIZE_CAP) {
         // 合法但巨大：不物化巨 tuple
         o.shape = widenTupleToArr(o.shape.elements, o.shape.holes, undefined);
@@ -1117,11 +1763,16 @@ export function $set(
     return o;
   }
   if (o.shape.k === "arr" && key === "length") {
-    const vR = litValue(value);
-    const v = vR.ok ? vR.value : undefined;
-    // 抽象数组也是数组：非法 length 字面量同样原生 RangeError
-    if (typeof v === "number" && (!Number.isInteger(v) || v < 0 || v > 4294967295)) {
-      throw new NudoThrow(errorTypeAbs("RangeError"));
+    // 抽象数组也是数组：非法 length 同样原生 RangeError（Bug 231：域判定
+    // 统一走 lengthToNumber——具体非数值（undefined / {}）也定抛）。
+    const len = lengthToNumber(value);
+    if (len.kind === "typeerror") throw new NudoThrow(errorTypeAbs("TypeError"));
+    if (len.kind === "nan") throw new NudoThrow(errorTypeAbs("RangeError"));
+    if (len.kind === "num") {
+      const v = len.n;
+      if (!Number.isInteger(v) || v < 0 || v > 4294967295) {
+        throw new NudoThrow(errorTypeAbs("RangeError"));
+      }
     }
     o.conf = "partial";
     clearStaleTermPred(o);
@@ -1133,6 +1784,10 @@ export function $set(
   // Number.isFinite 等）不就地改——env Abs 可能跨 run 复用，原地突变
   // 泄漏到后续分析（既有不写口径维持：userFnSlots 只认本机制自建的槽）。
   if (o.shape.k === "fn") {
+    // Bug 197：fn 上的 defineProperty **不可写**属性（writable:false）→
+    // strict 写原生 TypeError；此前 fn 臂只建槽（flags 面完全没查）→
+    // 写穿无声（假绿）。
+    if (getPropFlags(o)?.get(key)?.writable === false) throwStrictWrite();
     if (o.shape.slots === undefined) {
       o.shape = { ...o.shape, slots: {} };
       userFnSlots.add(o);
@@ -1195,6 +1850,16 @@ export function $set(
   // → 自有数据属性。不得 slots[key]=（宿主 __proto__ setter 丢键）。
   if (key === "__proto__" && !isNullProtoObj(o)) {
     return $setProto(o, value);
+  }
+  // Bug 197：[[Set]] 原型链写门——receiver **无自有该键**时，原生沿
+  // [[Prototype]] 链上溯找第一个「持有该键」的原型：访问器（无 setter）/
+  // 不可写数据属性 / frozen 原型 → strict TypeError；命中带 setter 的
+  // 访问器 → **派发 setter**（不是静默建自有属性）。此前只看自有槽与类
+  // 注册表 → 原型链上的访问器/不可写槽被跳过（写穿无声，门禁假绿）。
+  if (!hasKey) {
+    const verdict = protoChainSetVerdict(o, key);
+    if (verdict.kind === "deny") throwStrictWrite();
+    if (verdict.kind === "setter") return verdict.setter(o, value);
   }
   // 就地写槽（引用语义：const b = o; b.x = v 对 o 可见）——Abs 身份不变
   // Bug 84：覆写保留既有 internal 标记 / opts.internal 新打标

@@ -4,6 +4,11 @@
  * 优先走 core `absToConstraint`（与 interface/check 同一投影语义），
  * 再转成中间层 SchemaNode；投影失败时退回 shape 尽力提取并记 dropped。
  * Dialect 只负责 Node → 源码字符串；Abs 才是真理源。
+ *
+ * 不变量：产物必须**永远可 import**——生成源码里出现的每个标识符都得在
+ * 模块作用域内可解析（zod 产物只 import zod）。故 brand 名只有落在
+ * 「运行时全局构造器」表里才允许进 `z.instanceof(...)`；其余降级
+ * z.unknown() 并记 dropped（Bug 233）。
  */
 
 import type { Abs, NudoConstraint, Pred, Term } from "@nudojs/core";
@@ -457,6 +462,14 @@ function absToSchemaShape(a: Abs, budget: ProjectionBudget, dropped: string[]): 
       };
     }
     case "brand":
+      // Bug 233：brand 名不等于运行时值时**不得**走 z.instanceof——brand 名
+      // 原样当标识符插进产物，模块求值期即抛 ReferenceError，整个产物作废
+      // （GeneratorFunction / AsyncGeneratorFunction / 用户类名 / X.prototype …）。
+      // 降级 z.unknown()（放行不拒收）并把损失记进 dropped 台账。
+      if (!isRuntimeGlobalCtorName(s.name)) {
+        dropped.push(`brand not projected (no runtime constructor): ${s.name}`);
+        return { node: { k: "unknown" }, dropped };
+      }
       return { node: { k: "brand", name: s.name }, dropped };
     default:
       return { node: { k: "unknown" }, dropped };
@@ -464,6 +477,38 @@ function absToSchemaShape(a: Abs, budget: ProjectionBudget, dropped: string[]): 
 }
 
 // --- zod dialect ---
+
+/**
+ * 生成模块里可直接引用的**运行时全局构造器名**。
+ *
+ * zod 产物是一个独立模块（只 import zod），因此 `z.instanceof(X)` 的实参 X
+ * 只能是该模块作用域内可解析的绑定——即全局。brand 名若是「没有运行时值的
+ * 名字」（GeneratorFunction / AsyncGeneratorFunction / Intl.* / 用户类名 /
+ * `X.prototype` / `Object.prototype` …），原样插进产物会让模块**求值即抛**
+ * ReferenceError（Bug 233：整个 zod 产物作废，一个校验器都拿不到）。
+ *
+ * 只收「全局 + 可当构造器用」的名字：Proxy / Math / JSON / Reflect / Intl /
+ * Atomics 是全局但**不是构造器**（`x instanceof Proxy` 抛 TypeError），
+ * 不收——`z.instanceof` 的实参在模块求值期求值，非构造器同样炸。
+ */
+const RUNTIME_GLOBAL_CTOR_NAMES: ReadonlySet<string> = new Set([
+  "Array", "Object", "Function", "Boolean", "Number", "String", "Symbol", "BigInt",
+  "Date", "RegExp",
+  "Error", "EvalError", "RangeError", "ReferenceError", "SyntaxError",
+  "TypeError", "URIError", "AggregateError",
+  "Map", "Set", "WeakMap", "WeakSet", "WeakRef", "FinalizationRegistry",
+  "Promise",
+  "ArrayBuffer", "SharedArrayBuffer", "DataView",
+  "Int8Array", "Uint8Array", "Uint8ClampedArray", "Int16Array", "Uint16Array",
+  "Int32Array", "Uint32Array", "Float32Array", "Float64Array",
+  "BigInt64Array", "BigUint64Array",
+  "URL", "URLSearchParams", "TextEncoder", "TextDecoder",
+]);
+
+/** brand 名能否用 `z.instanceof(<name>)` 表达（须是运行时全局构造器名） */
+function isRuntimeGlobalCtorName(name: string): boolean {
+  return RUNTIME_GLOBAL_CTOR_NAMES.has(name);
+}
 
 function zodApplyRefinements(base: string, refinements: SchemaRefinement[]): string {
   let out = base;
@@ -527,7 +572,11 @@ export function schemaNodeToZod(node: SchemaNode): string {
     case "promise":
       return `z.promise(${schemaNodeToZod(node.inner)})`;
     case "brand":
-      return `z.instanceof(${node.name})`;
+      // 防御：brand 节点只允许全局构造器名（z.instanceof 的实参在模块求值期
+      // 求值——名字不在作用域内则整个产物 ReferenceError，Bug 233）
+      return isRuntimeGlobalCtorName(node.name)
+        ? `z.instanceof(${node.name})`
+        : "z.unknown()";
     case "never":
       return "z.never()";
     case "unknown":

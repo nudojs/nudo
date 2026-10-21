@@ -30,6 +30,12 @@
  * - classifyAssignSet（Bug 128）是 Object.assign 逐键 [[Set]] 单一分类：
  *   自有访问器 setter / __proto__ 原型 setter（null|对象设原型、原始值
  *   忽略、抽象 open）/ 自有·继承非可写定抛 / 其余建自有键。
+ * - Bug 210：Proxy [[OwnPropertyKeys]] 的单一实现（proxyOwnKeysTrapKeys
+ *   派发 + enforceProxyOwnKeysInvariant 校验）——重复名 / 非字符串键 /
+ *   漏靶的不可配置自有键 / 不可扩展靶的多余键 → 原生定抛 TypeError；
+ *   不可判面（抽象键 / 抽象靶键集）→ 不抛（sound 保守）。
+ *   proxyTargetOwnStringKeys / proxyTargetEnumerableStringKeys 给出靶的
+ *   自有字符串键面（gOPN / Object.keys 用；internal·inherited·"@@X" 槽剔除）。
  *
  * 兄弟模块边界：methods.ts（evalObjectMethod）经导出复用安装机器；
  * readProperty 供 json.ts（stringify 读值）。
@@ -67,6 +73,9 @@ import {
 import { TUPLE_MATERIALIZE_CAP } from "../../containers.ts";
 import { classInstanceInnerOf } from "../../exec/class-registry.ts";
 import { typedArrayEnumKeyView } from "./enum-entries.ts";
+import { proxyPartsOf, proxyTrapOf } from "../../exec/match-iter.ts";
+import { proxyTargetInnerObj } from "../../exec/runtime/state.ts";
+import { isNullishLitAbs } from "../../surface.ts";
 
 export function assignSourceSlots(src: Abs): Record<string, { value: Abs }> | undefined {
   const s = src.shape;
@@ -519,6 +528,51 @@ export function applyPropertyDescriptor(
     setPropFlags(next, key, tFlags);
     return next;
   };
+  /**
+   * 原型对象（`X.prototype`）的描述符**原地**安装——落进注册表持有的原型
+   * 对象本体（内层 obj 的槽记录 + 访问器侧表 + 标志表）：
+   * - 槽记录：内层 obj 的 slots 记录是**同一引用**（原型槽的既有约定——
+   *   `A.prototype.x = 1` 落同一 memo 对象，见 members.ts chainProtoSlotOf
+   *   注释），原地增删键 ⇒ 类注册表 / 实例原型链立即可见；
+   * - 访问器侧表：装在**内层 obj Abs** 上——写门
+   *   （exec/runtime/proto-set.ts 的 protoChainSetVerdict 经
+   *   lookupObjAccessor(holder, key) 查得到 ⇒ getter-only → 拒写 /
+   *   带 setter → 派发 setter）；
+   * - 标志表：writable/enumerable/configurable 落在同一 Abs（写门读
+   *   getPropFlags(holder).get(key).writable）。
+   */
+  const putProtoSlotsInPlace = (inner: Abs): void => {
+    if (inner.shape.k !== "obj") return;
+    const slots = inner.shape.slots as Record<
+      string,
+      { value: Abs; internal?: boolean; symbolKey?: boolean }
+    >;
+    if (!accessorPresent && valueF.present) {
+      const prev = getSlot(slots, key);
+      setSlot(slots, key, {
+        value: valueAbs ?? undefAbs(),
+        ...(prev?.internal ? { internal: true } : {}),
+        ...(prev?.symbolKey || opts?.symbolKey ? { symbolKey: true } : {}),
+      });
+    } else if (accessorPresent) {
+      // 访问器槽占位——真 getter 住侧表（读经侧表派发）
+      setSlot(slots, key, {
+        value: getF.present && getF.v !== undefined ? unknown : undefAbs(),
+      });
+    } else if (!exists) {
+      // 空描述符也定义键（值 undefined）
+      setSlot(slots, key, { value: undefAbs() });
+    }
+    // 机制变化（accessor→data）：旧 getter/setter 随键删除（否则写门仍见
+    // 旧 setter、读仍走旧 getter）
+    if (wasAccessor && !accessorPresent) {
+      accessorTable.get(inner)?.delete(key);
+    }
+    if (getThunk || setThunk) {
+      $objAccessor(inner, key, getThunk ?? null, setThunk ?? null);
+    }
+    setPropFlags(inner, key, flags);
+  };
   const putSlots = (inner: Abs): Abs => {
     if (inner.shape.k !== "obj") return inner;
     let slots = { ...inner.shape.slots };
@@ -593,9 +647,21 @@ export function applyPropertyDescriptor(
   if (out.shape.k === "obj") {
     out = putSlots(out);
   } else if (out.shape.k === "brand") {
-    const inner = putSlots(out.shape.shape);
-    if (inner !== out.shape.shape) {
-      out = abs({ k: "brand", name: out.shape.name, shape: inner }, out.term, out.pred, out.conf);
+    /**
+     * Bug 197/S3 越界配合：**原型对象**（`X.prototype`）的 defineProperty
+     * 必须落进**注册表持有的那个原型对象**（protoBrandAbs 的内层 obj）——
+     * 不可变更新会造出新 brand Abs，而类注册表 / 实例原型链仍持旧 brand ⇒
+     * 装上的访问器与槽**无人可见**（写门 protoChainSetVerdict 也查不到）。
+     * 原型槽的既有约定即**原地可变** ⇒ 此处照该口径原地装（其它 brand
+     * ——类实例等——仍走不可变更新 + 语句位写回）。
+     */
+    if (out.shape.name.endsWith(".prototype")) {
+      putProtoSlotsInPlace(out.shape.shape);
+    } else {
+      const inner = putSlots(out.shape.shape);
+      if (inner !== out.shape.shape) {
+        out = abs({ k: "brand", name: out.shape.name, shape: inner }, out.term, out.pred, out.conf);
+      }
     }
   }
   setPropFlags(out, key, flags);
@@ -679,6 +745,76 @@ export function wellKnownSymbolSlotKey(a: Abs | undefined): string | undefined {
 }
 
 /**
+ * Bug 230：Proxy [[Delete]] 规范不变量（ES2024 10.5.9 step 10）——
+ * deleteProperty 陷阱返回 **true** 时，若靶上该键是**不可配置**自有属性 ⇒
+ * 原生定抛 TypeError（"'deleteProperty' on proxy: ..."）。此前引擎直接返
+ * true（与原生不符——假绿）。
+ *
+ * 判据：靶上**自有**该键 + 该键不可配置（flags.configurable === false /
+ * 靶 frozen / 靶 sealed）⇒ 抛。靶无该自有键 / 该键可配置 / 键不可判
+ * （抽象键）→ 不抛（sound 保守）。
+ *
+ * 消费方：builtins/reflect.ts 的 Reflect.deleteProperty 臂（delete 运算符
+ * 路径在 exec/runtime/members.ts 的 $del——该文件归 S14，越界诉求见报告）。
+ */
+export function enforceProxyDeleteInvariant(proxy: Abs, keyAbs: Abs | undefined): void {
+  const parts = proxyPartsOf(proxy);
+  if (!parts) return;
+  const kvR = keyAbs ? litValue(keyAbs) : undefined;
+  const kv = kvR?.ok ? kvR.value : undefined;
+  if (typeof kv !== "string" && typeof kv !== "number") return; // 抽象键 → 不可判
+  const key = String(kv);
+  const inner = proxyTargetInnerObj(parts.target);
+  if (!inner) return;
+  const slots = (inner.shape as ObjShape).slots as Record<string, unknown>;
+  if (!Object.prototype.hasOwnProperty.call(slots, key)) return; // 靶无该自有键
+  const st = extStateOf(inner);
+  const nonConfigurable =
+    getPropFlags(inner)?.get(key)?.configurable === false || st === "frozen" || st === "sealed";
+  if (!nonConfigurable) return;
+  throw new NudoThrow(errorTypeAbs("TypeError"));
+}
+
+/**
+ * Bug 200/S4 接线：**brand 目标**（原型对象 `A.prototype`）——原生
+ * `Object.assign(A.prototype, {…})` 写的是原型对象的**自有属性**（for-in
+ * 沿原型链可见）。引擎的原型对象 = protoBrandAbs(name) 的**内层 obj** ⇒
+ * 逐键写该内层 obj 的槽（**原地**）——读侧
+ * （exec/runtime/containers/iterate.ts 的 brandProtoEnumerableKeys）枚举的
+ * 正是内层 obj 的可枚举槽，写侧必须落在同一处；不可变更新会造出新 brand，
+ * 类注册表 / 实例原型链仍持旧 brand ⇒ 写了也看不见。
+ *
+ * [[Set]] 语义同 Object.assign 的其它目标（Set(target, key, value,
+ * throw=true)）：自有访问器 → setter（无 setter → TypeError）；自有非可写
+ * 数据属性 → TypeError；其余 → 建/覆写自有数据槽。
+ *
+ * 消费方：exec/class/assign.ts 的 runtimeAssignObject（Object.assign 的
+ * **运行时**路径——invoke.ts 分派到它，非 builtins/object/methods.ts 的
+ * evalObjectMethod("assign")）与 builtins/object/methods.ts 的 assign 臂。
+ *
+ * @param target 目标（brand——原型对象）
+ * @param entries 源的可枚举自有键值对（值已按源 [[Get]] 语义求值——getter
+ *   由调用方求值；本函数只做目标侧 [[Set]] 分类与写）
+ */
+export function assignIntoBrandInner(target: Abs, entries: Array<[string, Abs]>): void {
+  const inner = target.shape.k === "brand" ? target.shape.shape : undefined;
+  if (!inner || inner.shape.k !== "obj") return;
+  const slots = (inner.shape as ObjShape).slots as Record<string, { value: Abs }>;
+  for (const [k, v] of entries) {
+    const ownAcc = lookupObjAccessor(inner, k);
+    if (ownAcc) {
+      if (!ownAcc.set) throw new NudoThrow(errorTypeAbs("TypeError"));
+      ownAcc.set(target, v);
+      continue;
+    }
+    if (getSlot(slots, k) !== undefined && getPropFlags(inner)?.get(k)?.writable === false) {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+    setSlot(slots, k, { value: v });
+  }
+}
+
+/**
  * Bug 128：Object.assign 逐键 [[Set]]（OrdinarySet）分类——evaluator
  * mergeObj（就地）与 evalObjectMethod("assign")（不可变）共用。原生
  * Object.assign 对目标逐键执行 Set(target, key, value, throw=true)：
@@ -748,4 +884,175 @@ export function classifyAssignSet(target: Abs, key: string, value: Abs): AssignS
     cur = getProtoAbs(cur);
   }
   return { act: "write" };
+}
+
+// ---------------------------------------------------------------------------
+// Bug 210：Proxy [[OwnPropertyKeys]] 陷阱派发 + 规范不变量
+//
+// 陷阱派发点此前缺失：Reflect.ownKeys / Object.getOwnPropertyNames /
+// Object.keys 对 Proxy 接收者直接走靶面或抽象面，handler 的 ownKeys 陷阱
+// 从不被调用——原生 [[OwnPropertyKeys]] 先查 handler 的 "ownKeys" 槽。
+// ---------------------------------------------------------------------------
+
+/**
+ * proxyTrapOf 的名字联合暂未含 "ownKeys"（match-iter.ts 归 S1/S2a 分片——
+ * 越界诉求：联合加 "ownKeys"，纯类型面、无行为变化）。运行时 GetMethod
+ * 语义与联合内各名字完全一致（同名槽查找 + 三值投影），故此处按同一入口
+ * 取槽；联合补齐后本调用无需改动。
+ */
+type ProxyTrapName = Parameters<typeof proxyTrapOf>[1];
+
+/** Proxy ownKeys 陷阱派发结果 */
+export type ProxyOwnKeysOutcome =
+  /** 无 ownKeys 陷阱（调用方回退**靶**语义——target 给出靶 Abs）*/
+  | { k: "absent"; target: Abs | undefined }
+  /** handler 形态不可判 / 陷阱结果元素面不可枚举 → 调用方保守（unknown）*/
+  | { k: "opaque"; target: Abs | undefined }
+  /** 陷阱结果键表（已过规范不变量校验）+ 靶 Abs（可枚举过滤用）*/
+  | { k: "keys"; keys: Abs[]; target: Abs };
+
+/**
+ * Bug 210：靶的自有**字符串**键（obj 槽 / brand 内层 obj 槽 / tuple 下标+length）；
+ *  键集不可判 → undefined。symbol 投影槽（"@@X"）不计入（原生它们是
+ *  symbol 键，不与字符串键同域）；internal 私有槽与 inherited 槽不计（原生
+ *  非自有——gOPN 面同口径）。
+ */
+export function proxyTargetOwnStringKeys(target: Abs): string[] | undefined {
+  const inner = proxyTargetInnerObj(target);
+  if (inner) {
+    const slots = (inner.shape as { slots: Record<string, { internal?: boolean; inherited?: boolean }> })
+      .slots;
+    return Object.keys(slots).filter(
+      (k) =>
+        slots[k]?.internal !== true &&
+        slots[k]?.inherited !== true &&
+        !k.startsWith("@@"),
+    );
+  }
+  if (target.shape.k === "tuple") {
+    const holes = (target.shape as { holes?: number[] }).holes ?? [];
+    const names = target.shape.elements
+      .map((_, i) => i)
+      .filter((i) => !holes.includes(i))
+      .map(String);
+    names.push("length");
+    return names;
+  }
+  return undefined;
+}
+
+/**
+ * Bug 210：靶的自有**可枚举**字符串键（Object.keys 面）；键集不可判 → undefined。
+ * tuple 靶：下标可枚举，**length 不可枚举**（原生数组 length 非可枚举）。
+ */
+export function proxyTargetEnumerableStringKeys(target: Abs): string[] | undefined {
+  const inner = proxyTargetInnerObj(target);
+  if (inner) {
+    const slots = (inner.shape as { slots: Record<string, { internal?: boolean; inherited?: boolean }> })
+      .slots;
+    return enumOwnKeys(inner, slots).filter(
+      (k) =>
+        (slots[k] as { internal?: boolean; inherited?: boolean } | undefined)?.inherited !== true &&
+        !k.startsWith("@@"),
+    );
+  }
+  if (target.shape.k === "tuple") {
+    const holes = (target.shape as { holes?: number[] }).holes ?? [];
+    return target.shape.elements
+      .map((_, i) => i)
+      .filter((i) => !holes.includes(i))
+      .map(String);
+  }
+  return undefined;
+}
+
+/**
+ * Bug 210：[[OwnPropertyKeys]] 规范不变量（ES2024 10.5.5 + MDN 口径）——
+ * - 陷阱结果含**重复项** → TypeError（原生 "'ownKeys' on proxy: trap
+ *   returned duplicate entries"）；
+ * - 陷阱结果含非字符串/非 symbol 键 → TypeError（原生 "1 is not a valid
+ *   property name"）；
+ * - 靶的**不可配置**自有键必须都在陷阱结果里 → 否则 TypeError（原生
+ *   "'ownKeys' on proxy: trap result did not include 'a'"）——**与靶是否
+ *   可扩展无关**（MDN："must contain the keys of all non-configurable
+ *   properties of the target object"）；
+ * - 靶**不可扩展**时：陷阱结果须含靶的**全部**自有键，且**不得**含靶没有
+ *   的键 → 否则 TypeError（原生 "trap returned extra keys but proxy target
+ *   is non-extensible"）。
+ *
+ * 不可判面（抽象键 / 抽象靶键集 / 靶的 symbol 自有键）→ 不抛（sound 保守：
+ * 原生只在确定违规时抛；引擎不得凭空造违规）。
+ */
+export function enforceProxyOwnKeysInvariant(target: Abs, keys: Abs[]): void {
+  const seen = new Set<string | symbol>();
+  for (const k of keys) {
+    const v: unknown = k.term?.op === "lit" ? k.term.value : undefined;
+    if (typeof v === "string" || typeof v === "symbol") {
+      if (seen.has(v)) throw new NudoThrow(errorTypeAbs("TypeError"));
+      seen.add(v);
+      continue;
+    }
+    // 抽象键（值不可判）→ 跳过（不凭空造抛）
+    if (k.term?.op === "lit") {
+      // 字面量但既非字符串也非 symbol → 键类型非法 → 定抛
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+  }
+  const targetKeys = proxyTargetOwnStringKeys(target);
+  if (targetKeys === undefined) return; // 靶键集不可判 → 不抛
+  const inner = proxyTargetInnerObj(target);
+  const st = inner ? extStateOf(inner) : extStateOf(target);
+  const flags = inner ? getPropFlags(inner) : getPropFlags(target);
+  // (a) 靶的不可配置自有键必须都在陷阱结果里（与靶可扩展性无关）
+  for (const tk of targetKeys) {
+    const nonConf =
+      st === "frozen" ||
+      st === "sealed" ||
+      flags?.get(tk)?.configurable === false ||
+      // 数组 length 恒不可配置（原生数组的 length 是 non-configurable）
+      (target.shape.k === "tuple" && tk === "length");
+    if (nonConf && !seen.has(tk)) throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  // (b) 靶不可扩展 → 陷阱结果须恰为靶的自有键集（不多不少）
+  if (st === undefined) return; // 靶可扩展 → 无此约束
+  for (const tk of targetKeys) {
+    if (!seen.has(tk)) throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  for (const k of seen) {
+    if (typeof k !== "string") continue; // symbol 键：靶自有 symbol 面不可判 → 跳过
+    if (!targetKeys.includes(k)) throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+}
+
+/**
+ * Bug 210：Proxy ownKeys 陷阱派发（单一实现——Reflect.ownKeys 与
+ * Object.getOwnPropertyNames / Object.keys 共用，不复制）。
+ *
+ * 返回：
+ * - absent：无 ownKeys 陷阱（调用方回退**靶**语义——规范 step 6）
+ * - opaque：handler 形态不可判 / 陷阱结果元素面不可枚举（调用方保守）
+ * - keys：陷阱结果键表（已过 enforceProxyOwnKeysInvariant 校验）
+ */
+export function proxyOwnKeysTrapKeys(o: Abs): ProxyOwnKeysOutcome {
+  if (o.shape.k !== "brand" || o.shape.name !== "Proxy") {
+    return { k: "absent", target: undefined };
+  }
+  const parts = proxyPartsOf(o);
+  if (!parts) return { k: "absent", target: undefined };
+  const trap = proxyTrapOf(parts.handler, "ownKeys" as unknown as ProxyTrapName);
+  if (trap.k === "absent") return { k: "absent", target: parts.target };
+  if (trap.k === "dead") throw new NudoThrow(errorTypeAbs("TypeError"));
+  if (trap.k === "opaque") return { k: "opaque", target: parts.target };
+  const r = $call(trap.fn, [parts.target], parts.handler);
+  // 非对象结果 → 原生定抛（CreateListFromArrayLike called on non-object）
+  if (r.shape.k === "prim" || isNullishLitAbs(r)) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  if (r.shape.k === "tuple") {
+    const keys = (r.shape as { elements: Abs[] }).elements;
+    enforceProxyOwnKeysInvariant(parts.target, keys);
+    return { k: "keys", keys, target: parts.target };
+  }
+  // arr（元素面不可枚举）/ 普通 obj（length 面不可判）→ 保守（键表不可判）
+  return { k: "opaque", target: parts.target };
 }

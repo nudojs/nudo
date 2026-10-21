@@ -363,11 +363,19 @@ describe("Bug 80: class expressions route through the class machinery", () => {
 describe("Bug 58: generator calls are total (body throws deferred to iteration)", () => {
   it("explicit throw in body does not surface at call time", () => {
     const r = evalSrc(`export function* genThrow() { throw new Error("e"); }`, "genThrow");
-    // Bug 22：生成器对象带迭代器协议面（无 yield 元素槽）；体内 throw 仍被
-    // $gen 丢弃式帧吞掉（调用期不表面）
-    expect(r.value).toContain("next");
+    // Bug 22：生成器对象带迭代器协议面（无 yield 元素槽）——**协议面在运行面**
+    // （`typeof gi.next`），不在**投影面**（Bug 240：协议槽是 internal 槽，
+    // 不进签名面）；体内 throw 仍被 $gen 丢弃式帧吞掉（调用期不表面）
+    expect(r.value).toMatch(/^\{/);
     expect(r.kinds).toEqual([]);
     expect(r.throws).not.toContain("Error");
+    // 协议面负控制（运行面）
+    const p = evalSrc(
+      `export function* genProto() { yield 1; }
+       export function probe() { const gi = genProto(); return typeof gi.next; }`,
+      "probe",
+    );
+    expect(p.value).toBe('"function"');
   });
 
   it("may-throw member access in body does not leak into the entry throws domain", () => {

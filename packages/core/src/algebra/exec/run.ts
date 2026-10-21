@@ -343,10 +343,24 @@ function runtimeArgNames(): string[] {
   return Object.keys(rtAllBindings()).filter((k) => k.startsWith("$"));
 }
 
-/** fn Abs → JS 可调用 wrapper 缓存（live binding 刷新复用同 wrapper，
- *  保持绑定函数身份稳定——`const g = imported; g === imported` 不随刷新翻假） */
-const importFnWrapperCache = new WeakMap<object, (...args: Abs[]) => Abs>();
-
+/**
+ * 具名导入的绑定物化：**原样直出声明 Abs**（不再把 fn Abs 包成 JS 箭头 wrapper）。
+ *
+ * Bug 932：此前 fn Abs 被包成 `w = (...args) => $call(v, args)`（原 Abs 只挂在
+ * `w.__nudoAbsFn` 上，没有任何一处在物化绑定时读它）⇒ 绑定值成了引擎为宿主
+ * 函数合成的**裸 fn 形状**（无 `paramTypes` / 无 `returnType`）⇒ 值面退化成
+ * 通用 fn，签名面渲染成**非法占位符** `() => ?`；而同一份 env 声明经
+ * **命名空间**导入（`bindNamespace`：槽直填原 Abs）渲染成完整的
+ * `(CallbackFn) => PromiseFn` ⇒ 同一文件、同一导出、两种导入形态两种类型。
+ *
+ * 直出原 Abs 后，具名与命名空间**共用同一物化逻辑**（都是原 Abs）⇒ 两种导入
+ * 形态给出同一个类型；调用面照旧派发到同一份声明类型。
+ *
+ * **可调用性不丢**：Abs 一等函数在两条调用面上原生可派发——
+ * 标识符调用走 `$callNamed`（Abs 分支 → `$call(fn, args)`，exec/calls.ts:769），
+ * `new` 走 `$new`（Abs 分支 → exec/class/declare.ts:565）。JS wrapper 只在
+ * 「宿主 JS 侧需要一个真函数」时才有意义，本路径没有这种需求。
+ */
 function bindImport(
   modules: RunTranspiledOptions["modules"],
   spec: string,
@@ -354,29 +368,11 @@ function bindImport(
 ): unknown {
   const mod = modules?.[spec] as AbsModuleExports | undefined;
   if (!mod) return unknown;
-  const absCallable = (v: Abs): unknown => {
-    // fn Abs → JS 可调用；class/其它 Abs 原样（供 $new / $get）
-    if (v && typeof v === "object" && "shape" in v) {
-      if ((v as Abs).shape.k === "fn") {
-        // 挂 __nudoAbsFn：$new 收到 wrapper 时回 Abs 派发——否则 wrapper 是
-        // 箭头（hostFnCtorFacet → 不可构造），imported 构造函数被误判
-        // Bug 9 假抛（`new G()` 原生合法）。
-        const hit = importFnWrapperCache.get(v as object);
-        if (hit) return hit;
-        const w = (...args: Abs[]) => $call(v, args);
-        (w as { __nudoAbsFn?: Abs }).__nudoAbsFn = v;
-        importFnWrapperCache.set(v as object, w);
-        return w;
-      }
-      return v;
-    }
-    return v;
-  };
   if (name === "default") {
     const d = (mod as AbsModuleExports).default;
     if (d === undefined) return unknown;
     if (typeof d === "function") return d;
-    return absCallable(d as Abs);
+    return d as Abs;
   }
   const named = (mod as AbsModuleExports).named;
   const v = named?.[name];
@@ -387,7 +383,7 @@ function bindImport(
     return unknown;
   }
   if (typeof v === "function") return v;
-  return absCallable(v as Abs);
+  return v as Abs;
 }
 
 /** `import * as ns`：整命名空间（named + default 槽）→ Abs 对象。

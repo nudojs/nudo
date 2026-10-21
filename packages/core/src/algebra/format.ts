@@ -10,6 +10,7 @@ import type { Pred } from "./pred.ts";
 import { predToString } from "./pred.ts";
 import { ProjectionBudget, PROJECTION_MAX_DEPTH } from "./projection-budget.ts";
 import { accessorReadDomain } from "./accessors.ts";
+import { canonicalArrayIndex } from "./objects.ts";
 
 export type FormatOptions = {
   /** 是否显示 term= */
@@ -117,6 +118,24 @@ function formatShapeB(a: Abs, budget: ProjectionBudget, ind: string = ""): strin
 /** pretty 断行的复合 shape（union 臂断行条件——map/set 即 brand） */
 const PRETTY_COMPOSITE_SHAPES = new Set(["obj", "arr", "tuple", "fn", "brand", "eff"]);
 
+/**
+ * Bug 240：**投影面剔除 internal 槽**（内部槽对属性 introspection 不可见）。
+ *
+ * `Slot.internal`（Bug 84 私有槽机制）是仓里既有的「该槽不是自有属性」标记：
+ * 枚举面 / 自有面早已过滤它（`builtins/invariants.ts` 的 `enumOwnKeys`、
+ * `builtins/object/methods.ts` 的 `enumKeys`、`builtins/json.ts` 的序列化
+ * 面），但**投影面**（本文件）此前不过滤 ⇒ 签名面把内部实现细节当用户
+ * 可见属性发布（生成器对象的 `next` / `return` / `throw` / `constructor` /
+ * `@@iterator` 五个协议槽）。
+ *
+ * 例外：**规范数组下标槽**保留——族 01 的建模口径里生成器的数字下标槽承载
+ * **元素域**（签名面靠它发布元素域面：`eval-spread-iter-elems` 钉住
+ * `"0": string`），不是内部实现细节 ⇒ 不在此剔除。
+ */
+function isHiddenInternalSlot(k: string, slot: { internal?: boolean }): boolean {
+  return slot.internal === true && canonicalArrayIndex(k) === undefined;
+}
+
 function formatShapeInner(a: Abs, budget: ProjectionBudget, ind: string): string {
   const s = a.shape;
   switch (s.k) {
@@ -151,20 +170,24 @@ function formatShapeInner(a: Abs, budget: ProjectionBudget, ind: string): string
       return s.type;
     }
     case "obj": {
-      const entries = Object.entries(s.slots).map(([k, slot]) => {
-        const opt = slot.optional ? "?" : "";
-        // 非标识符键 JSON 引号，避免展示串本身不可解析（`a, b: 1`）
-        const key = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(k) ? k : JSON.stringify(k);
-        // Bug 191：访问器键的槽是 `$lit(void 0)` 占位（真 getter 住侧表）——
-        // 投影须取 getter 读域，否则把 getter 的返回值谎报成 exact undefined。
-        const slotAbs = accessorReadDomain(a, k) ?? slot.value;
-        let val = formatShapeB(slotAbs, budget, `${ind}  `);
-        if (budget.showLits) {
-          const plv = litPredValue(slotAbs);
-          if (plv !== undefined) val = `lit(${JSON.stringify(plv)})`;
-        }
-        return `${key}${opt}: ${val}`;
-      });
+      // Bug 240：internal 槽不进投影面（内部槽不是自有属性）——规范数组
+      // 下标槽除外（承载元素域，族 01 口径）。
+      const entries = Object.entries(s.slots)
+        .filter(([k, slot]) => !isHiddenInternalSlot(k, slot))
+        .map(([k, slot]) => {
+          const opt = slot.optional ? "?" : "";
+          // 非标识符键 JSON 引号，避免展示串本身不可解析（`a, b: 1`）
+          const key = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(k) ? k : JSON.stringify(k);
+          // Bug 191：访问器键的槽是 `$lit(void 0)` 占位（真 getter 住侧表）——
+          // 投影须取 getter 读域，否则把 getter 的返回值谎报成 exact undefined。
+          const slotAbs = accessorReadDomain(a, k) ?? slot.value;
+          let val = formatShapeB(slotAbs, budget, `${ind}  `);
+          if (budget.showLits) {
+            const plv = litPredValue(slotAbs);
+            if (plv !== undefined) val = `lit(${JSON.stringify(plv)})`;
+          }
+          return `${key}${opt}: ${val}`;
+        });
       // pretty：每槽一行 + 尾逗号 + 2 空格缩进递增（值内嵌套以槽位
       // 行起点为基准列——悬挂式对齐）；空 obj 保持单行（与默认口径同形）
       if (budget.pretty && entries.length > 0) {

@@ -862,6 +862,10 @@ export type CaseLabelValue = string | number | boolean;
  * $removeUndefined / $removeNullish）——非 nullish 字面量的补集无 Abs 可表，
  * 保守放弃。
  * 成员判别式：命中 / 排除事实均走 $narrowMemberEq（keep=true / keep=false）。
+ *
+ * Bug 241（第二形态）：**非字面量 case 测试**（`case v === null:`）的
+ * nullish 比较事实走 compareExclude——判别变量可与判别式无关
+ * （`switch (true) { case v === null: … }`），故与判别名的排除事实分表。
  */
 export type SwitchCaseFacts = {
   /** 判别基名（标识符判别式 = 判别标识符；成员判别式 = 成员基名） */
@@ -874,6 +878,12 @@ export type SwitchCaseFacts = {
   exclude?: CaseLabelValue[];
   /** 排除事实里的 nullish 标签粒度（标识符判别式用） */
   excludeNullish?: "null" | "undefined" | "nullish";
+  /**
+   * Bug 241（第二形态）：非字面量 case 测试（nullish 比较 `v === null`）
+   * 的排除事实——「该测试为假」⇒ 被比较的变量不含该 nullish 粒度。
+   * 判别变量名可与判别式无关（判别式是字面量 true 时）⇒ 独立于 name。
+   */
+  compareExclude?: { name: string; grain: "null" | "undefined" | "nullish" }[];
 };
 
 /** case 测试节点的标签事实（null / undefined / prim 字面量；其余不可判） */
@@ -912,6 +922,101 @@ function armLabelsOf(tests: readonly unknown[]): ArmLabels {
 }
 
 /**
+ * Bug 241（第二形态）：非字面量 case 测试的 **nullish 比较**事实。
+ *
+ * 原生 case 测试是**运行时求值的表达式**——`case v === null:` 命中的是
+ * 「`v === null` 为真」那条路径（不是「判别值等于某标签」）。⇒ 该测试
+ * **为假**时（miss 路径 ⇒ 落到后续臂 / default），被比较的变量**不含**该
+ * nullish 粒度：`v === null` 为假 ⇒ v 不是 null（$removeNull）；`v == null`
+ * 为假 ⇒ v 既非 null 也非 undefined（$removeNullish）。
+ *
+ * 只认**可判的否定**：负向比较（`v !== null`）的否定是「v 是 null」——
+ * 无排除类 Abs 可表（保守放弃）；关系比较（`v > 0`）的否定含 NaN（NaN 与
+ * 任何比较皆假）——不可健全表示（同 narrowRelArmThunk 口径）。
+ */
+type NullishCompare = {
+  /** 被比较的变量名 */
+  name: string;
+  /** nullish 粒度（严格比较按 null/undefined 分粒；松散比较恒 nullish） */
+  grain: "null" | "undefined" | "nullish";
+  /** 负向比较（`!==` / `!=`）——命中即「不含该粒度」 */
+  negated: boolean;
+};
+
+/** case 测试节点的 nullish 比较事实（`X === null` / `X == null` / …） */
+function nullishCompareOf(test: unknown): NullishCompare | undefined {
+  const t = test as { type?: string; operator?: string; left?: unknown; right?: unknown };
+  if (t?.type !== "BinaryExpression") return undefined;
+  const op = t.operator;
+  if (op !== "===" && op !== "==" && op !== "!==" && op !== "!=") return undefined;
+  const identOf = (n: unknown): string | undefined => {
+    const x = n as { type?: string; name?: string };
+    return x?.type === "Identifier" ? x.name : undefined;
+  };
+  const isNullLit = (n: unknown): boolean => (n as { type?: string })?.type === "NullLiteral";
+  const isUndefIdent = (n: unknown): boolean => {
+    const x = n as { type?: string; name?: string };
+    return x?.type === "Identifier" && x.name === "undefined";
+  };
+  let varName: string | undefined;
+  let other: unknown;
+  if (identOf(t.left) !== undefined && (isNullLit(t.right) || isUndefIdent(t.right))) {
+    varName = identOf(t.left);
+    other = t.right;
+  } else if (identOf(t.right) !== undefined && (isNullLit(t.left) || isUndefIdent(t.left))) {
+    varName = identOf(t.right);
+    other = t.left;
+  }
+  // "undefined" 是全局绑定——不可作影子重绑的变量名
+  if (!varName || varName === "undefined") return undefined;
+  const negated = op === "!==" || op === "!=";
+  const loose = op === "==" || op === "!=";
+  // 松散比较：null 与 undefined 等值（null == undefined 为真）⇒ 粒度 nullish
+  const grain: NullishCompare["grain"] = loose
+    ? "nullish"
+    : isUndefIdent(other)
+      ? "undefined"
+      : "null";
+  return { name: varName, grain, negated };
+}
+
+/** 一臂的 nullish 比较事实（单测试臂——多测试臂的 miss 事实是「析取」的
+ *  否定，不可由单条比较推出 ⇒ 保守放弃） */
+function singleNullishCompare(arm: {
+  tests: readonly unknown[];
+  isDefault: boolean;
+}): NullishCompare | undefined {
+  if (arm.isDefault) return undefined;
+  if (arm.tests.length !== 1) return undefined;
+  return nullishCompareOf(arm.tests[0]);
+}
+
+/**
+ * Bug 241（第二形态）：判别式是**字面量 true** 时的臂事实（case 测试的
+ * 否定 ⇒ miss 路径收窄）。
+ *
+ * - 本臂自身：负向比较（`v !== null`）命中 ⇒ 「v 不含该 nullish 粒度」
+ *   （$removeNull / $removeNullish）；正向比较的命中是「v 含该粒度」——
+ *   无排除类 Abs 可表 ⇒ 保守放弃；
+ * - miss 路径（落到本臂 ⇒ **之前**各臂的 case 测试已求值且为假）⇒ 它们
+ *   的否定事实成立（正向比较 ⇒ 「v 不含该粒度」）。
+ */
+function booleanDiscCaseFacts(
+  arms: readonly { tests: readonly unknown[]; isDefault: boolean }[],
+  i: number,
+): SwitchCaseFacts | undefined {
+  const cmpExclude: { name: string; grain: "null" | "undefined" | "nullish" }[] = [];
+  const own = singleNullishCompare(arms[i]!);
+  if (own && own.negated) cmpExclude.push({ name: own.name, grain: own.grain });
+  for (let j = 0; j < i; j++) {
+    const c = singleNullishCompare(arms[j]!);
+    if (c && !c.negated) cmpExclude.push({ name: c.name, grain: c.grain });
+  }
+  if (cmpExclude.length === 0) return undefined;
+  return { name: cmpExclude[0]!.name, compareExclude: cmpExclude };
+}
+
+/**
  * switch 各臂的 case 标签窄化事实（Bug 184）。
  *
  * 判别目标：标识符（`switch (x)`）或成员（`switch (o.kind)`，复用
@@ -928,7 +1033,15 @@ export function switchCaseFacts(
   discriminant: unknown,
   arms: readonly { tests: readonly unknown[]; isDefault: boolean }[],
 ): (SwitchCaseFacts | undefined)[] {
-  const disc = discriminant as { type?: string; name?: string };
+  const disc = discriminant as { type?: string; name?: string; value?: unknown };
+  // Bug 241（第二形态）：判别式是**字面量 true** + 非字面量 case 测试
+  // （`case v === null:`）——臂事实来自 case 测试的**否定**（miss 路径
+  // 收窄）：判别值是布尔 true 且 case 测试是布尔值时，「该臂未命中」⟺
+  // 「该测试为假」⇒ 落到后续臂 / default 的路径上，被比较的变量不含该
+  // nullish 粒度。判别值是其它值时「未命中」不蕴含「测试为假」⇒ 不产事实。
+  if (disc?.type === "BooleanLiteral" && disc.value === true) {
+    return arms.map((_arm, i) => booleanDiscCaseFacts(arms, i));
+  }
   let name: string;
   let key: string | undefined;
   if (disc?.type === "Identifier" && disc.name) {
@@ -987,6 +1100,9 @@ export function switchCaseFacts(
  *
  * 跳过口径与既有窄化通道一致：判别名在 fork 绑定集（臂内写 / 快照重绑）时
  * 跳过（影子参数会吞掉臂内写）；strict 非法绑定名（arguments / eval）跳过。
+ *
+ * Bug 241（第二形态）：非字面量 case 测试的 nullish 比较事实
+ * （facts.compareExclude）——判别变量名可与判别式无关，各自独立跳过口径。
  */
 export function narrowCaseLabelArmThunk(
   thunk: string,
@@ -996,30 +1112,42 @@ export function narrowCaseLabelArmThunk(
   if (!facts) return thunk;
   const names =
     forkBindingNames instanceof Set ? (forkBindingNames as Set<string>) : new Set(forkBindingNames);
-  if (names.has(facts.name) || isStrictIllegalBinding(facts.name)) return thunk;
   let out = thunk;
-  if (facts.key !== undefined) {
-    // 成员判别式：排除（keep=false）在内、命中（keep=true）在外
-    for (const v of facts.exclude ?? []) {
-      out = `((${facts.name}) => ${out})($narrowMemberEq(${facts.name}, ${JSON.stringify(facts.key)}, ${JSON.stringify(v)}, false))`;
+  // 判别名窄化（既有口径）：判别名在 fork 绑定集（臂内写 / 快照重绑）时跳过
+  if (!(names.has(facts.name) || isStrictIllegalBinding(facts.name))) {
+    if (facts.key !== undefined) {
+      // 成员判别式：排除（keep=false）在内、命中（keep=true）在外
+      for (const v of facts.exclude ?? []) {
+        out = `((${facts.name}) => ${out})($narrowMemberEq(${facts.name}, ${JSON.stringify(facts.key)}, ${JSON.stringify(v)}, false))`;
+      }
+      for (const v of facts.hit ?? []) {
+        out = `((${facts.name}) => ${out})($narrowMemberEq(${facts.name}, ${JSON.stringify(facts.key)}, ${JSON.stringify(v)}, true))`;
+      }
+    } else {
+      if (facts.excludeNullish) {
+        const call =
+          facts.excludeNullish === "null" ? "$removeNull" :
+          facts.excludeNullish === "undefined" ? "$removeUndefined" :
+          "$removeNullish";
+        out = `((${facts.name}) => ${out})(${call}(${facts.name}))`;
+      }
+      const hit = facts.hit ?? [];
+      if (hit.length > 0) {
+        const lits = hit.map((v) => `$lit(${JSON.stringify(v)})`);
+        const arg = lits.length === 1 ? lits[0]! : lits.reduce((acc, l) => `$join(${acc}, ${l})`);
+        out = `((${facts.name}) => ${out})(${arg})`;
+      }
     }
-    for (const v of facts.hit ?? []) {
-      out = `((${facts.name}) => ${out})($narrowMemberEq(${facts.name}, ${JSON.stringify(facts.key)}, ${JSON.stringify(v)}, true))`;
-    }
-    return out;
   }
-  if (facts.excludeNullish) {
+  // Bug 241（第二形态）：case 测试的 nullish 比较事实（miss 路径收窄）——
+  // 变量名与判别式无关 ⇒ 各自独立判跳过（影子参数会吞掉臂内写）
+  for (const c of facts.compareExclude ?? []) {
+    if (names.has(c.name) || isStrictIllegalBinding(c.name)) continue;
     const call =
-      facts.excludeNullish === "null" ? "$removeNull" :
-      facts.excludeNullish === "undefined" ? "$removeUndefined" :
+      c.grain === "null" ? "$removeNull" :
+      c.grain === "undefined" ? "$removeUndefined" :
       "$removeNullish";
-    out = `((${facts.name}) => ${out})(${call}(${facts.name}))`;
-  }
-  const hit = facts.hit ?? [];
-  if (hit.length > 0) {
-    const lits = hit.map((v) => `$lit(${JSON.stringify(v)})`);
-    const arg = lits.length === 1 ? lits[0]! : lits.reduce((acc, l) => `$join(${acc}, ${l})`);
-    out = `((${facts.name}) => ${out})(${arg})`;
+    out = `((${c.name}) => ${out})(${call}(${c.name}))`;
   }
   return out;
 }

@@ -146,6 +146,30 @@ export function classSpecOf(
   /** Bug 142：静态块保留键前缀（NUL 开头——用户键不可能自然命中） */
   const STATIC_BLOCK_KEY_PREFIX = "\u0000nudoStaticBlock:";
   let staticBlockSeq = 0;
+  /**
+   * Bug 203：@@hasInstance 投影槽名（**符号键**投影与**普通字符串键**同名）。
+   *
+   * 原生两者是**不同的键**：符号键 `Symbol.hasInstance` 才是 instanceof
+   * 钩子；普通字符串键 `"@@hasInstance"` 只是一个普通静态属性。
+   * 修法（本文件侧）：
+   * - 符号键形态（`static [Symbol.hasInstance]…`）→ 仍进 spec（$class 侧
+   *   造钩子适配器），并给类值同名槽打 **symbolKey 标记**（同族 01 的
+   *   Bug 149 机制：读面据此把符号键槽与普通字符串键槽分开）；
+   * - 普通字符串键形态（`static "@@hasInstance"…`）→ **不进** spec 的
+   *   staticMethods/statics（进了则 members.ts 的 classDeclaresHasInstance
+   *   判"类声明了钩子"⇒ 被当钩子调用），改以**类值自有槽**安装（$set
+   *   写 own slot——与动态写 `A["@@hasInstance"]=fn` 同口径，槽无 symbolKey
+   *   标记 ⇒ 不是钩子）。
+   */
+  const HAS_INSTANCE_KEY = "@@hasInstance";
+  /** Bug 203：普通字符串键 "@@hasInstance" 的安装项（保留键入 statics 表
+   *  ——$class 侧只执行不挂静态槽，与静态块同机制）；排在静态元素**之前**
+   *  （原生：方法先于静态元素定义 ⇒ 静态字段初始化器可读该静态方法）。 */
+  const hasInstanceInstallParts: string[] = [];
+  let hasInstanceInstallSeq = 0;
+  /** Bug 203：类体声明了**符号键** `static [Symbol.hasInstance]` → 类值
+   *  同名槽需打 symbolKey 标记（类定义后置一步）。 */
+  let hasInstanceSymbolStatic = false;
   /** 方法形参展示名（未调用方法槽 shape.params） */
   const methodParamEntries: Array<[string, string[]]> = [];
   const staticMethodParamEntries: Array<[string, string[]]> = [];
@@ -170,11 +194,16 @@ export function classSpecOf(
    *   Identifier/String/Numeric → 原名（Numeric 原生 ToPropertyKey 成串）；
    * - 计算键（含 `[k]()` 的 Identifier 形状——babel 把 computed 标在成员上）：
    *   发射求值源，$class 折叠真名，不静默挂 "method"。
+   *
+   * Bug 203：symbolKey 标记——**符号键**投影（句法形 `Symbol.X` → "@@X"）
+   * 标 true；普通字符串键（含字面量 "@@hasInstance"）缺省。两者投影名同形
+   * （"@@hasInstance"）但**键不同**（原生是符号键 vs 普通自有属性）——
+   * 读面据此区分（符号键投影槽打 Slot.symbolKey 标记，同族 01 的 Bug 149）。
    */
   const keyOf = (
     key: unknown,
     computed: boolean,
-  ): { name: string; private?: boolean } | { computed: string } | null => {
+  ): { name: string; private?: boolean; symbolKey?: boolean } | { computed: string } | null => {
     const k = key as
       | { type?: string; name?: string; value?: unknown; id?: { name?: string } }
       | undefined;
@@ -206,7 +235,7 @@ export function classSpecOf(
       asMember.property?.type === "Identifier" &&
       asMember.property.name
     ) {
-      return { name: `@@${asMember.property.name}` };
+      return { name: `@@${asMember.property.name}`, symbolKey: true };
     }
     if (isExpression(k as Node)) {
       return { computed: emitTranspileExpression(k as Expression, opts) };
@@ -217,6 +246,21 @@ export function classSpecOf(
   /** thunk（单表达式）多行安全包装 */
   const thunkOf = (src: string, d: number): string =>
     [`(__this) => {`, `${indent(d + 1)}return ${src};`, `${indent(d)}}`].join("\n");
+
+  /**
+   * Bug 203：普通字符串键 `static "@@hasInstance"` 的**类值自有槽安装**
+   * thunk——把值写进类值 own slot "@@hasInstance"（$set 写语义：与动态写
+   * `A["@@hasInstance"]=fn` 同口径；槽无 symbolKey 标记 ⇒ 不是 instanceof
+   * 钩子）。类值 = thunk 首参（this = 类值，同静态字段口径）。
+   */
+  const hasInstanceInstallSrc = (valueSrc: string, selfName: string | undefined): string =>
+    [
+      `(__this) => {`,
+      ...(selfName ? [`${indent(depth + 3)}let ${selfName} = __this;`] : []),
+      `${indent(depth + 3)}$set(__this, ${JSON.stringify(HAS_INSTANCE_KEY)}, ${valueSrc});`,
+      `${indent(depth + 3)}return $lit(void 0);`,
+      `${indent(depth + 2)}}`,
+    ].join("\n");
 
   const paramsOf = (m: { params?: unknown[] }): string[] =>
     (m.params ?? []).map((p) => {
@@ -331,6 +375,21 @@ export function classSpecOf(
               `${indent(depth + 2)}}`,
             ].join("\n")
           : thunkOf(vsrc, depth + 2);
+        // Bug 203：普通字符串键 `static "@@hasInstance" = v`——**不是**符号
+        // 钩子（原生 instanceof 只看 Symbol.hasInstance）→ 不进 spec.statics
+        // （进了则 members.ts 的 classDeclaresHasInstance 判"类声明了钩子"），
+        // 改以类值自有槽安装（保留键入 statics 表：$class 侧只执行不挂槽）。
+        if (keyR && "name" in keyR && keyR.name === HAS_INSTANCE_KEY && keyR.symbolKey !== true) {
+          hasInstanceInstallParts.push(
+            `${indent(depth + 2)}${JSON.stringify(`${STATIC_BLOCK_KEY_PREFIX}hasInstanceStr${hasInstanceInstallSeq++}`)}: ${hasInstanceInstallSrc(vsrc, selfName)},`,
+          );
+          continue;
+        }
+        // Bug 203：符号键 `static [Symbol.hasInstance] = fn`——类值同名槽打
+        // symbolKey 标记（钩子适配器仍由 $class 侧承担）。
+        if (keyR && "name" in keyR && keyR.name === HAS_INSTANCE_KEY && keyR.symbolKey === true) {
+          hasInstanceSymbolStatic = true;
+        }
         // Bug 142：静态字段与静态块同表（类体源码序）
         if (keyR && "name" in keyR) {
           staticParts.push(`${indent(depth + 2)}${JSON.stringify(keyR.name)}: ${initSrc},`);
@@ -526,6 +585,31 @@ export function classSpecOf(
       // Bug 141：async generator 方法不进 $async（原生返回 AsyncGenerator
       // 本身，非 promise）——$gen 的 async 位承担 async 面。
       const staticAsync = m.async === true && m.generator !== true;
+      // Bug 203：普通字符串键 `static "@@hasInstance"(){}`——**不是**符号
+      // 钩子（原生 instanceof 只看 Symbol.hasInstance）→ 不进 spec 的
+      // staticMethods（进了则 members.ts 的 classDeclaresHasInstance 判"类
+      // 声明了钩子"⇒ 字符串键被当钩子调用）。改以类值自有槽安装：值是
+      // 一等 fn（$fnVal + bindThis ⇒ 调用时 this = 接收者=类值，同静态
+      // 方法口径）；槽无 symbolKey 标记 ⇒ 不是钩子。
+      if (keyR && "name" in keyR && keyR.name === HAS_INSTANCE_KEY && keyR.symbolKey !== true) {
+        const fnSrc = [
+          `$fnVal(${JSON.stringify(paramDisplayNames(m.params))}, (__this, ${bindFromArgs ? "...__margs" : paramList}) => {`,
+          ...(staticAsync
+            ? [`${indent(depth + 4)}return $async(() => {`, bodyStmts, `${indent(depth + 4)}});`]
+            : [bodyStmts]),
+          `${indent(depth + 3)}}, { bindThis: true, ctor: false, length: ${nativeParamArity(m.params)} })`,
+        ].join("\n");
+        hasInstanceInstallParts.push(
+          `${indent(depth + 2)}${JSON.stringify(`${STATIC_BLOCK_KEY_PREFIX}hasInstanceStr${hasInstanceInstallSeq++}`)}: ${hasInstanceInstallSrc(fnSrc, stmt.id?.name)},`,
+        );
+        continue;
+      }
+      // Bug 203：符号键 `static [Symbol.hasInstance]…`——类值同名槽打
+      // symbolKey 标记（读面据此把它与普通字符串键槽分开；同族 01 的
+      // Bug 149 机制）。钩子本身仍由 $class 侧适配器承担（spec 入口不变）。
+      if (keyR && "name" in keyR && keyR.name === HAS_INSTANCE_KEY && keyR.symbolKey === true) {
+        hasInstanceSymbolStatic = true;
+      }
       staticMethodParts.push(
         // R5：__this 首参 = 类值（接收者）——与实例方法 __this 载体同构
         `${indent(depth + 3)}${JSON.stringify(mname)}: (__this, ${bindFromArgs ? "...__margs" : paramList}) => {`,
@@ -585,10 +669,17 @@ export function classSpecOf(
     specLines.push(`${indent(depth + 2)}hasExtends: true,`);
     specLines.push(`${indent(depth + 2)}extends: ${superSrc},`);
   }
-  if (staticParts.length) {
+  if (staticParts.length || hasInstanceInstallParts.length) {
     // Bug 142：静态字段 + 静态块同表（源码序）——$class 逐项执行（静态块
     // 以保留键入表，不挂静态槽）
-    specLines.push(`${indent(depth + 2)}statics: {`, ...staticParts, `${indent(depth + 2)}},`);
+    // Bug 203：普通字符串键 "@@hasInstance" 的安装项排在**静态元素之前**
+    // （原生：方法先于静态元素定义 ⇒ 静态字段初始化器可读该静态方法）。
+    specLines.push(
+      `${indent(depth + 2)}statics: {`,
+      ...hasInstanceInstallParts,
+      ...staticParts,
+      `${indent(depth + 2)}},`,
+    );
   }
   if (computedKeyParts.length) {
     specLines.push(
@@ -662,6 +753,16 @@ export function classSpecOf(
   // Bug 142：静态块已并入 statics 表（与静态字段同序执行）——不再需要
   // $staticInit 尾段（静态块恒在全部静态字段之后 = 源码顺序丢失）。
   const staticInitLines: string[] = [];
+  // Bug 203：类体声明了**符号键** `static [Symbol.hasInstance]` → 类值同名
+  // 槽打 **symbolKey 标记**（读面据此把它与普通字符串键槽分开；同族 01 的
+  // Bug 149「符号键投影 → "@@X" 槽 + symbolKey 标记」同机制）。$class 侧
+  // 造的钩子适配器槽本身无标记（declare.ts 落槽不带标记）——类定义后置
+  // 一步补标（$get 读回同值再写，值身份不变）。
+  if (hasInstanceSymbolStatic) {
+    staticInitLines.push(
+      `${indent(depth + 2)}${name} = $set(${name}, ${JSON.stringify(HAS_INSTANCE_KEY)}, $get(${name}, ${JSON.stringify(HAS_INSTANCE_KEY)}), { symbolKey: true });`,
+    );
+  }
   return { name, displayName, specLines, staticInitLines };
 }
 
