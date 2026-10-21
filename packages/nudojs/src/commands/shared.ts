@@ -185,17 +185,61 @@ export function collectExternalRecords(
   return records.length > 0 ? records : undefined;
 }
 
+/**
+ * 目录扫描的分析目标。
+ *
+ * **同目录同 stem 的 `.ts` 与 `.js` 是同一模块的两份副本**：`migrate strip`
+ * 的产物 `.js` 与它的源 `.ts` 默认并存（源只有 `--backup` 才改名）⇒ 门禁把
+ * 同一个模块分析两遍，机器面 `summary.errors` / `functions` / `files` 恰好
+ * 翻倍（Bug 923）。这里按「模块」计数：同目录的 `.ts` 与 `.js` 只取 **`.ts`**
+ * （迁移前的事实源：带类型注解 ⇒ 推断更准；`.js` 是它的产物副本），
+ * `.ts` 被删掉后自然回落到 `.js`。
+ *
+ * 映射与 `migrate strip` 的产物扩展名同口径：`.ts → .js`、`.mts → .mjs`、
+ * `.cts → .js`（strip 只剥类型，不做模块系统转换）。
+ */
 export function collectNudoFiles(dir: string): string[] {
+  const entries = readdirSync(dir, { withFileTypes: true });
+  // 同目录里「会产出同名 .js / .mjs」的 TS 源（按 stem 索引）
+  const jsStems = new Set<string>(); // .ts / .cts 源 → 产物 .js
+  const mjsStems = new Set<string>(); // .mts 源 → 产物 .mjs
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const stem = sourceStemOf(entry.name);
+    if (stem === undefined) continue;
+    if (entry.name.toLowerCase().endsWith(".mts")) mjsStems.add(stem);
+    else jsStems.add(stem);
+  }
   const results: string[] = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+  for (const entry of entries) {
     const fullPath = join(dir, entry.name);
     if (entry.isDirectory() && entry.name !== "node_modules") {
       results.push(...collectNudoFiles(fullPath));
     } else if (entry.isFile() && isNudoTargetPath(fullPath)) {
+      // 产物副本（.js / .mjs）且同目录有对应 TS 源 ⇒ 跳过（同一模块只分析一遍）
+      const lower = entry.name.toLowerCase();
+      if (lower.endsWith(".mjs")) {
+        const stem = entry.name.slice(0, entry.name.length - 4);
+        if (mjsStems.has(stem)) continue;
+      } else if (lower.endsWith(".js")) {
+        const stem = entry.name.slice(0, entry.name.length - 3);
+        if (jsStems.has(stem)) continue;
+      }
       results.push(fullPath);
     }
   }
   return results;
+}
+
+/** 文件名 → stem（`foo.ts` → `foo`）；非 TS 源返回 undefined */
+function sourceStemOf(name: string): string | undefined {
+  const lower = name.toLowerCase();
+  for (const ext of [".ts", ".mts", ".cts"]) {
+    if (lower.endsWith(ext) && !lower.endsWith(`.d${ext}`)) {
+      return name.slice(0, name.length - ext.length);
+    }
+  }
+  return undefined;
 }
 
 /** 路径解析（无副作用）：返回可分析目标 + 路径错误，由调用方决定 exit/JSON 面。 */

@@ -70,8 +70,27 @@ const SKIP_KEYS = new Set([
   "extra",
 ]);
 
+/**
+ * 剥除选项（**可选**能力；分析面不传 ⇒ 行为与旧版逐字一致）。
+ *
+ * - report：剥除**事实**回报（只写不改）。migrate strip 的 notes 据此判定
+ *   「提示与事实是否一致」——注释 / 字符串里的 "enum " / "namespace "
+ *   不是声明，裸正则会误报（Bug 596）。
+ * - resolveSpecifier：相对说明符改写（migrate strip 的**产物**面）。
+ *   给「相对 spec」返回「产物 spec」，返回 undefined 表示不改写；
+ *   包说明符（"pkg" / "@scope/pkg"）永不进入该回调。
+ */
+type StripOptions = {
+  report?: { enumRemoved?: boolean; namespaceKept?: boolean };
+  resolveSpecifier?: (spec: string) => string | undefined;
+};
+
 /** 实参/形参模式等数组中的空洞（ArrayPattern 的 elision）保持原样 */
-function transformValue(value: unknown, source: string | undefined): unknown {
+function transformValue(
+  value: unknown,
+  source: string | undefined,
+  opts?: StripOptions,
+): unknown {
   if (Array.isArray(value)) {
     let changed = false;
     const out: unknown[] = [];
@@ -80,7 +99,7 @@ function transformValue(value: unknown, source: string | undefined): unknown {
         out.push(el);
         continue;
       }
-      const r = transformValue(el, source);
+      const r = transformValue(el, source, opts);
       if (r === REMOVE) {
         changed = true;
       } else {
@@ -92,7 +111,7 @@ function transformValue(value: unknown, source: string | undefined): unknown {
   }
   if (typeof value !== "object" || value === null) return value;
   if (typeof (value as { type?: unknown }).type !== "string") return value;
-  return transformNode(value as Node & Record<string, unknown>, source);
+  return transformNode(value as Node & Record<string, unknown>, source, opts);
 }
 
 function isTsDeclareLike(node: Node): boolean {
@@ -274,13 +293,51 @@ function unwrapExpression(node: Node & Record<string, unknown>): Node | null {
   }
 }
 
+/**
+ * 相对说明符改写（仅 migrate strip 的**产物**面启用）。
+ *
+ * 只改 `import` / `export … from` 的**字符串字面量**说明符；包说明符、
+ * 动态 import 的表达式、`import x = require(...)` 一律不动。
+ */
+function rewriteRelativeSpecifier(
+  node: Node & Record<string, unknown>,
+  resolve: (spec: string) => string | undefined,
+): void {
+  const src = node.source as { type?: string; value?: unknown } | undefined;
+  if (!src || src.type !== "StringLiteral" || typeof src.value !== "string") return;
+  const spec = src.value;
+  if (!spec.startsWith("./") && !spec.startsWith("../")) return;
+  const next = resolve(spec);
+  if (typeof next === "string" && next.length > 0 && next !== spec) {
+    src.value = next;
+  }
+}
+
 function transformNode(
   node: Node & Record<string, unknown>,
   source: string | undefined,
+  opts?: StripOptions,
 ): Node | typeof REMOVE {
+  // 剥除事实回报（先于删除判定：enum 节点本函数就要删掉它）
+  if (opts?.report) {
+    if (node.type === "TSEnumDeclaration") {
+      opts.report.enumRemoved = true;
+    } else if (node.type === "ExportNamedDeclaration") {
+      // export enum E {} —— 枚举挂在 export 的 declaration 上（整条语句被删，
+      // 枚举节点本身不会被访问到）⇒ 这里补一次事实回报
+      const decl = (node as { declaration?: { type?: string } }).declaration;
+      if (decl?.type === "TSEnumDeclaration") opts.report.enumRemoved = true;
+    } else if (node.type === "TSModuleDeclaration" && !isTsDeclareLike(node)) {
+      // 非 declare 的 namespace 有运行时语义 ⇒ 保留 ⇒ 「可能打印不干净」提示成立
+      opts.report.namespaceKept = true;
+    }
+  }
   if (isTypeOnlyStatement(node)) return REMOVE;
 
   deleteTypeSyntaxFields(node, source);
+
+  // 相对说明符改写（产物面；分析面不传 opts ⇒ 不动）
+  if (opts?.resolveSpecifier) rewriteRelativeSpecifier(node, opts.resolveSpecifier);
 
   // 值 import/export 里混入的 type-only specifier 逐个剔除
   if (node.type === "ImportDeclaration") {
@@ -297,7 +354,7 @@ function transformNode(
     if (SKIP_KEYS.has(key)) continue;
     const child = node[key];
     if (child === null || typeof child !== "object") continue;
-    const r = transformValue(child, source);
+    const r = transformValue(child, source, opts);
     if (r === REMOVE) {
       // 单槽位理论上不会收到 REMOVE（删除项均为数组上下文），防御性清槽
       delete node[key];
@@ -316,8 +373,10 @@ function transformNode(
  * @param source 源码文本（可选）。给了就把**类型注解的源码文本**留在节点上
  *   （`nudoTypeText` / `nudoReturnTypeText`，见文件头）——分析面据此读回
  *   `.ts` 源的声明类型；不给（migrate 的 keepTs 路径等）则纯剥除。
+ * @param opts 可选能力（见 StripOptions）：剥除事实回报 + 相对说明符改写。
+ *   分析面**不传** ⇒ 行为与旧版逐字一致。
  */
-export function stripTypes<T extends Node>(ast: T, source?: string): T {
-  transformValue(ast, source);
+export function stripTypes<T extends Node>(ast: T, source?: string, opts?: StripOptions): T {
+  transformValue(ast, source, opts);
   return ast;
 }

@@ -1,6 +1,6 @@
 ---
 "@nudojs/harvester": patch
-"@nudojs/nudojs": patch
+"nudojs": patch
 ---
 
 族 27 收口接线：让**三个产物面**（内存收割面 / 磁盘缓存面 / 落盘源码面）与
