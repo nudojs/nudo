@@ -297,6 +297,8 @@ export function emitDestructure(
   }
   if (pattern.type === "ObjectPattern") {
     const namedKeys: string[] = [];
+    /** Bug 160：动态计算键的临时绑定名（rest 排除集用——原生按**求值后的键**排除） */
+    const computedKeyNames: string[] = [];
     let restName: string | undefined;
     let restMember: Node | undefined;
     for (const prop of pattern.properties) {
@@ -309,20 +311,30 @@ export function emitDestructure(
         continue;
       }
       if (prop.type !== "ObjectProperty") continue;
-      const key = staticKeyOf(prop.key as { type?: string; name?: string; value?: unknown });
+      // Bug 160：计算键的**裸标识符**是**表达式**（`{ [k]: v }` 读 o[k]），
+      // 不得取标识符的源码名当键——此前读 o["k"]（恒 undefined）且 k 从未
+      // 求值。staticKeyOf 只看节点 type/name，不看 computed ⇒ 须在此分流。
+      const keyNode = prop.key as { type?: string; name?: string; value?: unknown };
+      const isComputed = (prop as { computed?: boolean }).computed === true;
+      const keyIsComputedIdent = isComputed && keyNode.type === "Identifier";
+      const key = keyIsComputedIdent ? null : staticKeyOf(keyNode);
       // Bug 47：计算键不得静默丢绑定（target 变自由标识符 → 值域腐化 +
       // 裸读 ReferenceError 面）。[Symbol.X] → "@@X" 投影（镜像对象字面量
       // 计算键 / 成员读写口径）；其余计算键经 $idx 计算读（键不可判定 →
       // 槽并 undefined，sound 过近似）。
-      const isComputed = (prop as { computed?: boolean }).computed === true;
       const symKey =
         key === null && isComputed
           ? symbolKeyOf(prop.key as unknown as Parameters<typeof symbolKeyOf>[0])
           : null;
-      const computedKeySrc =
-        key === null && symKey === null && isComputed
-          ? emitTranspileExpression(prop.key as Expression, opts)
-          : null;
+      // Bug 160：计算键表达式**只求值一次**（原生求值一次，读与 rest 排除集
+      // 共用同一值）→ 绑定临时量，读与排除集都引它。
+      let computedKeySrc: string | null = null;
+      if (key === null && symKey === null && isComputed) {
+        const t = `_n${tmpSeq.n++}`;
+        out.push(`${pad}const ${t} = ${emitTranspileExpression(prop.key as Expression, opts)};`);
+        computedKeySrc = t;
+        computedKeyNames.push(t);
+      }
       if (key === null && symKey === null && computedKeySrc === null) continue;
       const keyLit = key !== null ? JSON.stringify(key) : symKey;
       if (keyLit !== null) namedKeys.push(JSON.parse(keyLit));
@@ -368,23 +380,19 @@ export function emitDestructure(
         emitMemberTargetAssign(prop.value as Node, readSrc, pad, opts, out);
       }
     }
+    // Bug 160：rest 排除集 = 静态键名 + **动态计算键的求值结果**（原生按
+    // 求值后的键排除；此前只排静态名 → 计算键仍留在 rest 里）。
+    const dropList = [...namedKeys.map((k) => JSON.stringify(k)), ...computedKeyNames];
+    const restSrc = `$objRest(${fromSrc}, [${dropList.join(", ")}])`;
     if (restName) {
       if (kw === "" && isConstAssignTarget(restName, opts)) {
         out.push(`${pad}$throwConstAssign();`);
       } else {
-        out.push(
-          `${pad}${kw} ${restName} = $objRest(${fromSrc}, ${JSON.stringify(namedKeys)});`,
-        );
+        out.push(`${pad}${kw} ${restName} = ${restSrc};`);
       }
     } else if (restMember) {
       // rest 成员目标写回（namedKeys 须循环收齐后再算 $objRest）
-      emitMemberTargetAssign(
-        restMember,
-        `$objRest(${fromSrc}, ${JSON.stringify(namedKeys)})`,
-        pad,
-        opts,
-        out,
-      );
+      emitMemberTargetAssign(restMember, restSrc, pad, opts, out);
     }
     return;
   }
