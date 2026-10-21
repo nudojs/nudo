@@ -686,6 +686,12 @@ export async function runCheckFix(opts: {
   // 复检跑的就是磁盘现状的真实门禁状态（所以 dry-run 门禁仍红）。
   // --fix 不再绕过门禁。
   let residualErrors = 0;
+  // Bug 556：修复前的 error 码集 / 复检后的 error 码集——两者**不同**意味着
+  // 「旧错误被消掉、换了个新错误」（例如 nullish quickfix 若吞掉 throws 义务，
+  // 门禁会从 constraint-violated 变成 entry-may-throw）。只说「还剩 N 个残余
+  // error」会让用户误以为修复已生效，故末尾显式点出码集迁移。
+  const beforeErrorCodes = new Set<string>();
+  const afterErrorCodes = new Set<string>();
 
   for (const file of opts.targets) {
     let source: string;
@@ -711,6 +717,9 @@ export async function runCheckFix(opts: {
       entryThrows,
       skips: collectSkipReturns(source),
     });
+    for (const i of report.issues) {
+      if (i.severity === "error") beforeErrorCodes.add(i.code);
+    }
     const sidecar = sidecarPathOf(file);
     let sidecarText: string | undefined;
     // 与 plain check 同口径：ENOENT = miss；其余读失败上屏（不静默丢契约面）。
@@ -811,6 +820,9 @@ export async function runCheckFix(opts: {
         skips: collectSkipReturns(source),
       });
       residualErrors += post.issues.filter((i) => i.severity === "error").length;
+      for (const i of post.issues) {
+        if (i.severity === "error") afterErrorCodes.add(i.code);
+      }
     }
   }
 
@@ -825,6 +837,17 @@ export async function runCheckFix(opts: {
   }
   if (residualErrors > 0) {
     console.log(`check --fix: ${residualErrors} residual error(s) remain — gate stays red`);
+    // Bug 556：码集迁移（旧的 error 码没了、换了个新码）⇒ 修复没有让门禁转绿，
+    // 只是换了一种失败方式。必须显式点出，否则用户会误以为修复已生效。
+    const resolved = [...beforeErrorCodes].filter((c) => !afterErrorCodes.has(c));
+    const appeared = [...afterErrorCodes].filter((c) => !beforeErrorCodes.has(c));
+    if (appeared.length > 0 || resolved.length > 0) {
+      console.log(
+        `check --fix: diagnostic codes changed${
+          resolved.length > 0 ? ` (resolved: ${resolved.join(", ")})` : ""
+        }${appeared.length > 0 ? ` (new: ${appeared.join(", ")})` : ""} — the fix did not turn the gate green`,
+      );
+    }
   }
   return { planned, written, residualErrors };
 }

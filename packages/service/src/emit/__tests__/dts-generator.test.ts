@@ -159,7 +159,9 @@ describe("absToTSType", () => {
 
   it("optional 形参标签保留 ?（BUG-020）", () => {
     const f = fnAbs(["x", "options?"], num(), [num(), objOf({})]);
-    expect(absToTSType(f)).toBe("(x: number, options?: {}) => number");
+    // Bug 565：零成员对象不再是 TS 的 `{}`（= 任意非 nullish 值）⇒
+    // `Record<string, never>`（空对象类型）
+    expect(absToTSType(f)).toBe("(x: number, options?: Record<string, never>) => number");
   });
 
   it("非法 optional 名仍落 argN（BUG-020 回归）", () => {
@@ -285,8 +287,12 @@ function safeSqrt(x) {
 `;
     const result = analyzeFile("/test/sqrt2.js", source);
     const dts = generateDts(result);
-    // 单一 widen 主签名：参数联合 10 | -1 → number，返回 combined 同样 widen
-    expect(dts).toContain("export declare function safeSqrt(x: number): number;");
+    // 单一 widen 主签名。**参数面与返回面同源**（Bug 511）：无断言的 case
+    // 指令只是**见证**（"这次调用没抛、返回了这个"），不是调用域声明 ⇒
+    // 产物面取**推断域**（入口求值：实参无约束 ⇒ 返回 any），而不是把两个
+    // 点观测 join 成 number —— 后者会发布一个**不 sound** 的契约
+    // （`safeSqrt` 之外的真函数也接受别的实参，发布 number 会假红拒绝）。
+    expect(dts).toContain("export declare function safeSqrt(x: any): any;");
     expect(dts.match(/export declare function safeSqrt\b/g)).toHaveLength(1);
     // 字面量精度（含 throwing case 的 never）保留在 JSDoc
     expect(dts).toContain("Case: valid (10) => 10");
@@ -304,7 +310,8 @@ function pass(x) {
 `;
     const result = analyzeFile("/test/single-literal.js", source);
     const dts = generateDts(result);
-    expect(dts).toContain("export declare function pass(x: number): number;");
+    // 同上：单点观测不独占产物面（返回面取推断域 ⇒ any）——见 safeSqrt 用例的说明
+    expect(dts).toContain("export declare function pass(x: any): any;");
     expect(dts.match(/export declare function pass\b/g)).toHaveLength(1);
   });
 
@@ -320,7 +327,8 @@ function flag(x) {
 `;
     const result = analyzeFile("/test/flag.js", source);
     const dts = generateDts(result);
-    expect(dts).toContain("export declare function flag(x: string | boolean): string | boolean;");
+    // 同上：无断言 case 指令是见证、不是域声明 ⇒ 产物面取推断域（见 safeSqrt 用例的说明）
+    expect(dts).toContain("export declare function flag(x: any): any;");
     expect(dts).toContain('Case: s ("fast") => "fast"');
   });
 

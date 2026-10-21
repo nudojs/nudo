@@ -12,7 +12,7 @@
 import { readFileSync, existsSync, statSync, readdirSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import ts from "typescript";
-import { toJsBindingIdent } from "@nudojs/core/internal";
+import { isJsBindingIdent, toJsBindingIdent } from "@nudojs/core/internal";
 
 export type DtsExportDraft = {
   name: string;
@@ -282,8 +282,37 @@ function collectExports(
   return out;
 }
 
-function draftExportName(name: string, used?: Set<string>): string {
-  return toJsBindingIdent(name.includes(".") ? name.replace(/\./g, "_") : name, used);
+/**
+ * 草稿侧车键 = **导出名**（dts 导出名即契约身份）。
+ * `Class.method` → `Class_method`（C4.2 侧车键）。
+ */
+function draftIdentity(name: string): string {
+  return name.includes(".") ? toJsBindingIdent(name.replace(/\./g, "_")) : name;
+}
+
+/**
+ * 草稿模块内的**绑定名**：身份本身可作绑定时直接用；否则（保留字 / 非 ident /
+ * 与 builder import 撞名）走别名 `_nudo_<n>`——身份仍是导出名。
+ * （service/emit/export-binding.ts 有同形实现；harvester 不依赖 service，此处复刻。）
+ */
+function draftBindingName(identity: string, taken: (name: string) => boolean): string {
+  if (isJsBindingIdent(identity) && !taken(identity)) return identity;
+  let n = 1;
+  while (taken(`_nudo_${n}`)) n++;
+  return `_nudo_${n}`;
+}
+
+/** export 子句里的导出名表示：IdentifierName 裸写，否则 JSON 引号串 */
+function exportNameRepr(name: string): string {
+  return /^(?:[$_\p{ID_Start}])(?:[$\u200C\u200D\p{ID_Continue}])*$/u.test(name)
+    ? name
+    : JSON.stringify(name);
+}
+
+/** 草稿正文里的导出语句：绑定名可别名，身份恒为导出名 */
+function draftExportStmt(binding: string, identity: string, dsl: string): string[] {
+  if (binding === identity) return [`export const ${binding} = ${dsl};`];
+  return [`const ${binding} = ${dsl};`, `export { ${binding} as ${exportNameRepr(identity)} };`];
 }
 
 /** 组装 `@nudo:draft` 模块（与 formatDraftModule 同纪律：不 ambient 绑定）。 */
@@ -302,6 +331,7 @@ export function formatDtsContractDraft(
   // any() 也要
   if (draftable.some((e) => /\bany\s*\(/.test(e.dsl!))) used.add("any");
   const importList = BUILDERS.filter((b) => used.has(b)).join(", ");
+  const importNames = new Set<string>(used);
   const exportUsed = new Set<string>();
 
   const lines: string[] = [
@@ -332,7 +362,14 @@ export function formatDtsContractDraft(
     }
     if (e.note) lines.push(`// ${e.name} — ${e.note}`);
     else lines.push(`// ${e.name} — from TypeScript`);
-    lines.push(`export const ${draftExportName(e.name, exportUsed)} = ${e.dsl};`);
+    // 身份 = 导出名；绑定名撞 builder import（`export const number` vs
+    // `import { number }` ⇒ 解析期 SyntaxError）时走别名形态
+    const identity = draftIdentity(e.name);
+    const binding = draftBindingName(identity, (n) => importNames.has(n) || exportUsed.has(n));
+    exportUsed.add(binding);
+    for (const stmt of draftExportStmt(binding, identity, e.dsl)) {
+      lines.push(stmt);
+    }
     if (e.name.includes(".")) {
       lines.push(`//   sidecar key may also be written as \`${e.name}\``);
     }

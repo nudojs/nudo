@@ -18,12 +18,16 @@ import {
 } from "@nudojs/core";
 import { extractDirectives, parse } from "@nudojs/parser";
 import {
-  absToStandardSchemaModule,
+  absToStandardSchemaFunction,
   absToZodSchemaModule,
+  dtsModuleSurface,
+  domainEvidenceCases,
   projectFunctionDts,
+  projectModuleDts,
   type SchemaDialect,
   generateGuardFunctionFromAbs,
   type DtsContractFace,
+  type DtsFunctionProjection,
 } from "@nudojs/service/emit";
 import {
   defaultLoadModule,
@@ -34,6 +38,7 @@ import {
   mockSeedsToAbsMocks,
   tryEvalCall,
   type CaseResult,
+  type FunctionAnalysis,
 } from "@nudojs/service";
 import {
   EXPORT_FORMATS,
@@ -102,14 +107,38 @@ async function runExport(
   // dts 只发射导出面（export / export default / CJS exports —— 与 check
   // entry 表同源 localNamedExports；导出 class 的实例方法按 Class 前缀放行）
   const entryNames = localNamedExports(source);
+  // 模块导出面（导出名 / 类 / 再导出）：dts 投影按**导出名**声明，类成员进
+  // 类声明（一次一类），再导出面按原样复现（族 15 · S1）。
+  const dtsSurface = dtsModuleSurface(source);
+  /** dts 逐函数投影（模块面合成用：类声明一次一类 + 再导出 + brand 类） */
+  const dtsEntries: Array<{
+    fn: FunctionAnalysis;
+    projection: DtsFunctionProjection;
+    contract?: DtsContractFace;
+  }> = [];
   const onExportFace = (name: string): boolean => {
     if (entryNames.has(name) || name === "default") return true;
     const m = /^([A-Za-z_$][\w$]*)\.[A-Za-z_$][\w$]*$/.exec(name);
     return m !== null && entryNames.has(m[1]!);
   };
-  /** 契约参数面：eff.params → entry Abs（无 eff / 无参数契约 = 空表） */
-  const contractParamsOf = (eff: ReturnType<typeof effectiveInterface>): Array<{ name: string; abs: Abs }> =>
-    eff ? eff.params.map((p) => ({ name: p.param, abs: constraintToEntryAbs(p.constraint, p.param) })) : [];
+  /**
+   * 契约参数面：eff.params → entry Abs（无 eff / 无参数契约 = 空表）。
+   *
+   * `optional`：契约级**顶层形参可选性**（Bug 536）——`constraintToEntryAbs`
+   * 对标量契约会**丢掉** `isOptional`（entry Abs 里没有该信息），故可选性必须
+   * 由契约面显式带过来；缺省（undefined）= 契约未申报该位 ⇒ 按**必填**处理
+   * （契约是用户申报的调用域，权威）。
+   */
+  const contractParamsOf = (
+    eff: ReturnType<typeof effectiveInterface>,
+  ): Array<{ name: string; abs: Abs; optional?: boolean }> =>
+    eff
+      ? eff.params.map((p) => ({
+          name: p.param,
+          abs: constraintToEntryAbs(p.constraint, p.param),
+          optional: p.constraint.isOptional === true,
+        }))
+      : [];
 
   const effectiveDialect = schemaDialectOf(format, dialect);
   const schemaExports: Record<string, Abs> = {};
@@ -126,13 +155,16 @@ async function runExport(
 
     // 运行时校验器应尽量反映**契约域**，而不是单次调用点字面量。
     const eff = effectiveInterface(source, baseName, effOpts);
-    const paramExps: Array<{ name: string; abs: Abs }> = [];
+    const paramExps: Array<{ name: string; abs: Abs; optional?: boolean }> = [];
     let outputAbs: Abs | undefined;
     if (eff) {
       for (const p of eff.params) {
         paramExps.push({
           name: p.param,
           abs: constraintToEntryAbs(p.constraint, p.param),
+          // 契约级顶层形参可选性（Bug 536）：entry Abs 丢了 isOptional，
+          // 只能由契约面显式带过来
+          optional: p.constraint.isOptional === true,
         });
       }
       if (eff.returns) {
@@ -140,24 +172,36 @@ async function runExport(
       }
     }
     if (paramExps.length === 0) {
-      // 无显式参数契约：对各 case 同槽 argAbs 做 join
-      const arity = Math.max(0, ...caseResults.map((c) => c.argAbs.length));
+      // 无显式参数契约：对**域证据** case 的同槽 argAbs 做 join（合成证据
+      // call@/entry@ + 带断言的声明 case）。无断言的 case 指令是见证、不是域
+      // 声明 ⇒ 不参与（Bug 511：freeze 写回的单点见证会把入参面收窄成该点的
+      // 字面量）。
+      const domainCases = domainEvidenceCases(caseResults);
+      const arity = Math.max(0, ...domainCases.map((c) => c.argAbs.length));
       for (let i = 0; i < arity; i++) {
-        const parts = caseResults.map((c) => c.argAbs[i]).filter((a): a is Abs => !!a);
+        const parts = domainCases.map((c) => c.argAbs[i]).filter((a): a is Abs => !!a);
         if (parts.length === 0) continue;
         const joined = parts.reduce((a, b) => joinAbs(a, b));
         paramExps.push({ name: fn.paramNames[i] ?? `arg${i}`, abs: joined });
       }
     }
     if (!outputAbs) {
-      outputAbs = fn.combinedAbs ?? caseResults[0]?.abs;
+      // 兜底只吃**带断言**的 case（`=> expected`）：无断言 case 是见证，不是
+      // 域声明——拿它当返回面会把产物收窄成单个调用点的字面量（Bug 511）。
+      const asserted = caseResults.filter((c) => c.expected !== undefined);
+      outputAbs = fn.combinedAbs ?? asserted[0]?.abs;
     }
 
     if (wantsSchema(format)) {
       // 一个可 import 的 zod 模块：`<fn>Input`（参数对象）+ `<fn>Output`
       const inputSlots: Record<string, { value: Abs; optional?: boolean }> = {};
       for (const p of paramExps) {
-        inputSlots[p.name] = { value: p.abs };
+        // 契约级顶层形参可选性（Bug 536）：可选位在 zod 面是 `.optional()`，
+        // 缺省即必填（契约是用户申报的调用域，权威）
+        inputSlots[p.name] = {
+          value: p.abs,
+          ...(p.optional === true ? { optional: true } : {}),
+        };
       }
       schemaExports[`${baseName}Input`] = obj(inputSlots);
       if (outputAbs) {
@@ -166,27 +210,21 @@ async function runExport(
     }
 
     if (wantsStandard(format)) {
-      const exports: Record<string, Abs> = {};
-      if (eff) {
-        for (const p of eff.params) {
-          exports[`${baseName}_${p.param}`] = constraintToEntryAbs(p.constraint, p.param);
-        }
-        if (eff.returns) {
-          exports[`${baseName}Return`] = constraintToEntryAbs(eff.returns.constraint, "return");
-        }
-      }
-      if (Object.keys(exports).length === 0) {
-        // 无显式契约：输出用 combinedAbs；参数位对各 case 同槽 argAbs 做 join
-        if (outputAbs) exports[`${baseName}Output`] = outputAbs;
-        for (const p of paramExps) {
-          exports[`${baseName}_${p.name}`] = p.abs;
-        }
-      } else if (!exports[`${baseName}Return`]) {
-        // 仅有参数契约、无返回契约时，用观察 combined 作 Output
-        if (outputAbs) exports[`${baseName}Output`] = outputAbs;
-      }
-      if (Object.keys(exports).length > 0) {
-        const mod = absToStandardSchemaModule(exports);
+      // 入参面口径与 zod 面对齐（Bug 539）：`<fn>Input` 校验**整个入参对象**；
+      // 整参另出 `<fn>_<param>`；**解构形参的字段不提升为顶层整参校验器**
+      // （字段级校验器与整参校验器同名同形、语义却不同，消费方必然误用）。
+      const stdInputs = paramExps.map((p) => ({ name: p.name, abs: p.abs }));
+      const stdReturns = eff?.returns
+        ? constraintToEntryAbs(eff.returns.constraint, "return")
+        : undefined;
+      if (stdInputs.length > 0 || stdReturns !== undefined || outputAbs !== undefined) {
+        const mod = absToStandardSchemaFunction({
+          fn: baseName,
+          inputs: stdInputs,
+          formals: fn.formals,
+          returns: stdReturns,
+          output: outputAbs,
+        });
         standardChunks.push(`\n// === ${baseName} Standard Schema ===\n${mod.source}`);
         for (const note of mod.dropped) {
           droppedNotes.push(`${baseName} ${note}`);
@@ -196,7 +234,10 @@ async function runExport(
 
     if (format === "guard" || format === "all") {
       const lines: string[] = [`\n// === ${baseName} Type Guards ===`];
-      const absForGuard = fn.combinedAbs ?? caseResults[0]?.abs;
+      // 兜底只吃**带断言**的 case（同上：无断言 case 是见证，不是域声明 ——
+      // Bug 511：guard 面收窄成 data === 3 会把合法调用判非法）
+      const assertedCases = caseResults.filter((c) => c.expected !== undefined);
+      const absForGuard = fn.combinedAbs ?? assertedCases[0]?.abs;
       if (absForGuard) {
         lines.push(generateGuardFunctionFromAbs(`is${baseName}Output`, absForGuard));
       }
@@ -232,15 +273,25 @@ async function runExport(
                 ...(contractReturn !== undefined ? { return: contractReturn } : {}),
               }
             : undefined;
-        const dts = projectFunctionDts(fn, contractFace);
-        if (dts.lines.length > 0) {
-          dtsChunks.push(dts.lines.join("\n"));
-          for (const p of dts.params) {
-            if (p.type === "unknown") unevidencedParams.push(`${baseName}.${p.name}`);
-          }
+        const dts = projectFunctionDts(fn, contractFace, dtsSurface);
+        // 函数声明行由**模块面**统一合成（类声明一次一类、再导出面）⇒ 这里
+        // 只收集，不单独 push（否则同一条声明出两遍）。
+        dtsEntries.push({
+          fn,
+          projection: dts,
+          ...(contractFace !== undefined ? { contract: contractFace } : {}),
+        });
+        for (const p of dts.params) {
+          if (p.type === "unknown") unevidencedParams.push(`${baseName}.${p.name}`);
         }
       }
     }
+  }
+
+  // 模块面合成：类声明（一次一类）+ 再导出面 + brand 类声明
+  if (format === "dts" || format === "all") {
+    const mod = projectModuleDts(dtsSurface, dtsEntries);
+    if (mod.lines.length > 0) dtsChunks.push(mod.lines.join("\n"));
   }
 
   const stem = basename(filePath).replace(/\.[cm]?[jt]s$/, "");

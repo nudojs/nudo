@@ -595,7 +595,10 @@ describe("LSP Integration - Narrowing Features", () => {
     const result = analyzeFile(filePath, testCode);
     const processFn = result.functions.find(f => f.name === "process");
     expect(processFn).toBeDefined();
-    expect(processFn!.cases.length).toBe(2);
+    // 两条**点观测**见证 + 一条入口兜底见证（entry@）：无断言的 case 指令只是
+    // 见证、不是调用域声明 ⇒ 该函数仍走 entry@ 合成（返回面由推断域承担，
+    // Bug 511）⇒ 台账里多一条 entry@ 见证。
+    expect(processFn!.cases.length).toBe(3);
     // The "with-val" case should return a string
     const withValCase = processFn!.cases.find(c => c.name === "with-val");
     expect(withValCase).toBeDefined();

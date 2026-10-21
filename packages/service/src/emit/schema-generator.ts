@@ -15,6 +15,32 @@ import type { Abs, NudoConstraint, Pred, Term } from "@nudojs/core";
 import { absToConstraint, isIntFlag, predToString } from "@nudojs/core";
 import { formatObjectKey, sanitizeCommentText, toJsBindingIdent, ProjectionBudget } from "@nudojs/core/internal";
 
+/**
+ * 不确切置信度下的**字面量观测** → 放宽到基类型（Bug 1008）。
+ *
+ * 「不确切」= widened（多调用点 join 出来的）/ mock（mock 值）/ partial /
+ * opaque（分析没拿到确证）。这类观测里的字面量**不是**函数出口域的确证——
+ * 逐字投影会把「一次兜底观测」写死成 literal（rest 形参的 `xs.length` 被
+ * entry@ 兜底观测成 `1` ⇒ 三个方言把返回值投影成 `literal(1)` ⇒ 导出的
+ * 校验器**拒绝被导出函数自己的返回值** ⇒ 消费方假红）。
+ *
+ * 放宽**只松不紧**（literal(1) → number）：不会造成假红，只少一档精度。
+ * 契约面（手写契约的 `lit(42)`）走的是 pred 通道（term 是 var 而非 lit），
+ * 不受此规则影响 ⇒ 字面量精度保留。
+ *
+ * 不在 `emit/index.ts` 的导出清单里（内部工具，非公开 API）。
+ */
+export function widenUncertainLiteral(a: Abs): Abs | undefined {
+  if (a.term?.op !== "lit") return undefined;
+  const conf = a.conf;
+  if (conf !== "widened" && conf !== "mock" && conf !== "partial" && conf !== "opaque") return undefined;
+  const s = a.shape;
+  if (s.k !== "prim") return undefined;
+  if (s.type !== "number" && s.type !== "string" && s.type !== "boolean") return undefined;
+  // 去掉字面量 term（保留 shape / pred）⇒ 投影面按基类型渲染
+  return { ...a, term: undefined };
+}
+
 export type SchemaDialect = "zod";
 
 export type SchemaRefinement =
@@ -318,11 +344,19 @@ export function absToSchemaNode(a: Abs): { node: SchemaNode; dropped: string[] }
 function absToSchemaNodeB(a: Abs, budget: ProjectionBudget): { node: SchemaNode; dropped: string[] } {
   const dropped: string[] = [];
 
+  // Bug 1008：不确切置信度的字面量观测**不是**出口域 ⇒ 放宽到基类型
+  // （放宽只松不紧 ⇒ 不会假红）。契约面（pred 通道）不受影响。
+  const widened = widenUncertainLiteral(a);
+  if (widened) {
+    dropped.push(`literal observation widened to the base type (uncertain confidence: ${a.conf})`);
+    a = widened;
+  }
+
   // lit term 优先（与 projection 一致；NaN 不产 lit）
   if (a.term?.op === "lit") {
     const v = a.term.value;
     if (typeof v === "number" && Number.isNaN(v)) {
-      dropped.push("lit NaN not projected");
+      dropped.push("lit NaN not projected (widened to the number domain)");
     } else if (
       v === null ||
       v === undefined ||
@@ -546,6 +580,20 @@ export function schemaNodeToZod(node: SchemaNode): string {
       return "z.unknown()";
     }
     case "prim":
+      // Bug 1001：Abs 的 `number` prim 域 = **全部 JS number**（含 NaN / ±Infinity）
+      // ——`typeof v === "number"` 对 NaN / Infinity 都成立（standard / guard 面
+      // 同口径，门禁面也渲染 `nanZero() => NaN`）。而 zod 的 `z.number()`
+      // **只收有限数**（v4 的 parse：`!Number.isNaN(input) && Number.isFinite(input)`）
+      // ⇒ 直接 `z.number()` 是**收窄**映射（不是合法超近似）⇒ 导出的 schema
+      // **拒绝被导出函数自己的返回值**（`nanZero()` 恒返 NaN）⇒ 消费方假红。
+      // 放宽成「有限数 ∪ NaN ∪ ±Infinity」。
+      //
+      // 带 refinement 的 number **不放宽**：refinement 本身已把非有限值排除
+      // （`x > 5` / `Number.isInteger(x)` 对 NaN / ±Infinity 都为假）⇒
+      // `z.number().gt(5)` 的域与 Abs 域一致（不放宽才是收窄）。
+      if (node.type === "number" && node.refinements.length === 0) {
+        return "z.number().or(z.nan()).or(z.literal(Infinity)).or(z.literal(-Infinity))";
+      }
       return zodApplyRefinements(`z.${node.type}()`, node.refinements);
     case "obj": {
       const entries = node.slots

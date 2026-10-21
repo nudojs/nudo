@@ -1,6 +1,11 @@
 /**
  * Root 驱动推导（extract 侧车约束源 → deriveFromRoot / deriveOneRoot）。
- * 自 interface-derivation.ts 机械拆出；语义未改。
+ * 自 interface-derivation.ts 机械拆出。
+ *
+ * 不变量：**同一 (目标文件, 目标导出) 只产出一条派生行**——多个 root（同一
+ * root 文件的多份手写契约）命中同一下游导出时按并集（最宽者）合并；否则
+ * 同一导出名会被写进同一侧车两段（侧车成非法 ESM：Duplicate export）。
+ * 跨 root 文件的合并在写盘侧做（见 interface-derivation-emit.ts）。
  */
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, relative, resolve } from "node:path";
@@ -8,8 +13,10 @@ import { parse } from "@nudojs/parser";
 import {
   constraintToEntryAbs,
   effectiveInterface,
+  formatConstraint,
   interfaceDiagCount,
   isNodeModulesPath,
+  leqAbs,
   runTranspiled,
   callTranspiledExportFull,
   setEvalCallCollector,
@@ -360,19 +367,254 @@ export function deriveFromRoot(
 
   const derived: DerivedExport[] = [];
 
-  for (const plan of plans) {
-    // 展示口径：cwd 相对（cwd 外用 basename），避免 /tmp fixture 出现 ../../ 链
-    const relRoot = relative(process.cwd(), abs);
-    const label = `${relRoot === "" || relRoot.startsWith("..") ? basename(abs) : relRoot}:${plan.fnName}`;
-    const rows = deriveOneRoot(plan, source, abs, modules, importLocals, label);
-    for (const row of rows) {
+  // 推导会话覆盖**整个 root 文件**（不是一个 root 一个会话）：跨 root 合并
+  // 需要在同一次会话里回溯各 root 的推导链（root 节点 id 全局唯一）。
+  beginDerivationSession();
+  try {
+    const aggs: RootCalleeAgg[] = [];
+    for (const plan of plans) {
+      // 展示口径：cwd 相对（cwd 外用 basename），避免 /tmp fixture 出现 ../../ 链
+      const relRoot = relative(process.cwd(), abs);
+      const label = `${relRoot === "" || relRoot.startsWith("..") ? basename(abs) : relRoot}:${plan.fnName}`;
+      aggs.push(...deriveOneRoot(plan, source, abs, modules, importLocals, label));
+    }
+    // 跨 root 合并（Bug 524）：同一 (file, fn) 的多份证据合成**一条**派生行
+    for (const row of projectCalleeAggs(aggs)) {
       if (wanted && !wanted.has(row.fn)) continue;
       derived.push(row);
     }
+  } finally {
+    endDerivationSession();
   }
 
   takeInterfaceDiagsSince(since);
   return { roots, derived, hasRoot: true };
+}
+
+/**
+ * 单个 root 对某个下游导出的原始调用证据（跨 root 合并的原料）。
+ * 投影（组合式 / 展开式）在**合并之后**统一做——否则同一 (file, fn) 会被
+ * 写成多段同名 export（侧车成非法 ESM：Duplicate export）。
+ */
+type RootCalleeAgg = {
+  targetFile: string;
+  targetExport: string;
+  paramNames: string[];
+  /** 每个调用点的实参（按位） */
+  argAbs: Abs[][];
+  /** 每个调用点的返回值 */
+  resultAbs: Abs[];
+  /** 贡献该证据的 root 标签（`<root>:<fn>`） */
+  rootLabel: string;
+};
+
+/** projectParamSlot 的返回形态 */
+type ParamSlot = NonNullable<ReturnType<typeof projectParamSlot>>;
+
+/** 约束 → entry Abs（可比较用：leqAbs 需要锚在参数项上的 Abs） */
+export type ConstraintEntry = { abs: Abs; constraint: NudoConstraint };
+
+/**
+ * 约束并集：可比较时取**最宽**者（x>5 ⊆ x>1 → 并集 = x>1）。
+ * 不可比较（x>1 与 x<5 这类真析取）→ undefined——调用方按 not-projectable
+ * 处理，**禁止**拿任一侧窄化另一侧（那会让契约在另一个 root 的调用点假红）。
+ */
+export function widestConstraint(entries: ConstraintEntry[]): ConstraintEntry | undefined {
+  for (let i = 0; i < entries.length; i++) {
+    let widest = true;
+    for (let j = 0; j < entries.length; j++) {
+      if (i === j) continue;
+      if (!leqAbs(entries[j]!.abs, entries[i]!.abs).ok) {
+        widest = false;
+        break;
+      }
+    }
+    if (widest) return entries[i];
+  }
+  return undefined;
+}
+
+/** projectParamSlot 的结果 → 派生参数位 */
+function paramOf(name: string, slot: ParamSlot): DerivedParam {
+  return {
+    name,
+    constraint: slot.constraint,
+    dsl: slot.dsl,
+    prelude: slot.prelude,
+    imports: slot.imports,
+    ...(slot.rootNodeId !== undefined ? { rootNodeId: slot.rootNodeId } : {}),
+    ...(slot.shiftCount !== undefined ? { shiftCount: slot.shiftCount } : {}),
+  };
+}
+
+/**
+ * 跨 root 合并：同一 (file, fn) 的多份证据合成**一条**派生行。
+ * 参数位取各 root 约束的**并集**（Abs join），返回位同理；并集恰好等于某个
+ * root 的域时沿用该 root 的组合式投影（保持 `positive.shift(1)` 形态），
+ * 否则退回展开式（formatConstraint）。
+ */
+function projectCalleeAggs(aggs: RootCalleeAgg[]): DerivedExport[] {
+  const groups = new Map<string, RootCalleeAgg[]>();
+  for (const a of aggs) {
+    const key = `${a.targetFile}::${a.targetExport}`;
+    const list = groups.get(key);
+    if (list) list.push(a);
+    else groups.set(key, [a]);
+  }
+  const out: DerivedExport[] = [];
+  for (const group of groups.values()) {
+    const row = projectCalleeGroup(group);
+    if (row) out.push(row);
+  }
+  return out;
+}
+
+/** 贡献该合并行的 root 标签（排序 → 顺序无关） */
+function labelsOf(group: RootCalleeAgg[]): string {
+  return [...new Set(group.map((g) => g.rootLabel))].sort().join(", ");
+}
+
+/** 不可投影行（并集不可比较 / 无证据）：既有段原样保留 */
+function underivableRow(
+  first: RootCalleeAgg,
+  paramNames: string[],
+  derivedFrom: string,
+): DerivedExport {
+  return {
+    file: first.targetFile,
+    fn: first.targetExport,
+    paramNames,
+    params: [],
+    derivedFrom,
+    compositional: false,
+    underivable: true,
+  };
+}
+
+function projectCalleeGroup(group: RootCalleeAgg[]): DerivedExport | undefined {
+  const first = group[0]!;
+  const paramNames = first.paramNames;
+  const width = Math.max(
+    paramNames.length,
+    ...group.flatMap((g) => g.argAbs.map((a) => a.length)),
+    0,
+  );
+
+  // 逐 root 的逐位证据（[root][位][Abs]）与逐位投影
+  const rootAbs: Abs[][][] = group.map((g) => {
+    const per: Abs[][] = [];
+    for (let i = 0; i < width; i++) {
+      const list: Abs[] = [];
+      for (const args of g.argAbs) {
+        const a = args[i];
+        if (a) list.push(a);
+      }
+      per.push(list);
+    }
+    return per;
+  });
+  const rootSlots: (ParamSlot | undefined)[][] = group.map((g, gi) =>
+    rootAbs[gi]!.map((list, i) => projectParamSlot(list, paramNames[i] ?? `_${i}`)),
+  );
+  // 逐 root 的参数位：返回位的相对锚定需要**本 root** 的 rootNodeId
+  const rootParams: DerivedParam[][] = group.map((g, gi) => {
+    const ps: DerivedParam[] = [];
+    for (let i = 0; i < width; i++) {
+      const slot = rootSlots[gi]![i];
+      if (!slot) continue;
+      ps.push(paramOf(paramNames[i] ?? `_${i}`, slot));
+    }
+    return ps;
+  });
+
+  // ---- 参数位：跨 root 并集 ----
+  const params: DerivedParam[] = [];
+  let allCompositional = true;
+  let sawEvidence = false;
+  for (let i = 0; i < width; i++) {
+    const name = paramNames[i] ?? `_${i}`;
+    const present = rootSlots
+      .map((s) => s[i])
+      .filter((s): s is ParamSlot => s !== undefined);
+    if (present.length === 0) {
+      allCompositional = false;
+      continue;
+    }
+    // 并集 = 各 root **约束**的最宽者（约束层的并：x>1 ∪ x>5 = x>1）。
+    // 不能直接 join 实参 Abs：两个 root 的实参项不同（x+1 / x+5），
+    // Abs join 会因项不可统一而 not-projectable（sum 只吃字面量成员）。
+    const entries = present.map((s) => ({
+      abs: constraintToEntryAbs(s.constraint, name),
+      constraint: s.constraint,
+    }));
+    // 单 root：沿用本 root 的投影（与合并前形态一致）
+    const union = group.length === 1 ? entries[0]! : widestConstraint(entries);
+    if (!union) {
+      // 真析取（不可比较）→ 整行不可投影：保留既有段，禁止窄化
+      return underivableRow(first, paramNames, labelsOf(group));
+    }
+    const picked = present[entries.indexOf(union)]!;
+    params.push(paramOf(name, picked));
+    if (!picked.compositional) allCompositional = false;
+    sawEvidence = true;
+  }
+
+  // ---- 返回位：跨 root 并集 ----
+  const rootRetAbs: Abs[][] = group.map((g) =>
+    g.resultAbs.filter((a) => a.conf === "exact" || a.conf === "path"),
+  );
+  const retSlots = group
+    .map((g, gi) => projectReturnSlot(rootRetAbs[gi]!, rootParams[gi]!, paramNames))
+    .filter((s): s is NonNullable<typeof s> => s !== undefined);
+  let returns: DerivedExport["returns"];
+  if (retSlots.length > 0) {
+    const retEntries = retSlots.map((s) => ({
+      abs: constraintToEntryAbs(s.constraint, "__nudo_self__"),
+      constraint: s.constraint,
+    }));
+    const unionRet = group.length === 1 ? retEntries[0]! : widestConstraint(retEntries);
+    if (!unionRet) {
+      return underivableRow(first, paramNames, labelsOf(group));
+    }
+    const pickedRet = retSlots[retEntries.indexOf(unionRet)]!;
+    const dsls = new Set(retSlots.map((s) => s.dsl));
+    if (dsls.size === 1) {
+      // 各 root 的返回关系一致 → 沿用（相对合并后的参数位仍成立）
+      returns = {
+        constraint: unionRet.constraint,
+        dsl: pickedRet.dsl,
+        prelude: pickedRet.prelude,
+        imports: pickedRet.imports,
+      };
+      if (!pickedRet.compositional) allCompositional = false;
+    } else {
+      // 返回关系不一致 → 展开式（无相对锚）
+      returns = {
+        constraint: unionRet.constraint,
+        dsl: formatConstraint(unionRet.constraint),
+        prelude: [],
+        imports: [],
+      };
+      allCompositional = false;
+    }
+    sawEvidence = true;
+  }
+
+  const derivedFrom = labelsOf(group);
+
+  if (!sawEvidence) {
+    return underivableRow(first, paramNames, derivedFrom);
+  }
+
+  return {
+    file: first.targetFile,
+    fn: first.targetExport,
+    paramNames,
+    params,
+    ...(returns ? { returns } : {}),
+    derivedFrom,
+    compositional: allCompositional && params.length > 0,
+  };
 }
 
 function deriveOneRoot(
@@ -385,171 +627,101 @@ function deriveOneRoot(
   modules: Record<string, import("@nudojs/core").AbsModuleExports>,
   importLocals: Map<string, { modulePath: string; exportName: string }>,
   label: string,
-): DerivedExport[] {
-  beginDerivationSession();
+): RootCalleeAgg[] {
   const entryArgs: Abs[] = [];
-  try {
-    for (const p of plan.params) {
-      const entry = constraintToEntryAbs(p.constraint, p.name);
-      if (p.src) {
-        tagDerivationRoot(entry, {
-          expr: p.src.expr,
-          ...(p.src.importFrom !== undefined ? { importFrom: p.src.importFrom } : {}),
-          ...(p.src.importName !== undefined ? { importName: p.src.importName } : {}),
-        });
-      } else if (p.constraint.preds.length === 0 && !p.constraint.prim) {
-        // 无约束占位：用 unknown，不打 root
-      }
-      entryArgs.push(entry);
-    }
-
-    const calls: AbsCallRecord[] = [];
-    const bCalls: EvalCallRecord[] = [];
-    const prevCall = setEvalCallCollector((r) => bCalls.push(r));
-    try {
-      // evaluator 优先（迁移件 3）：derivation 打点在共享代数层（arithmetic.add
-      // noteDerivationAdd / joinAbs noteDerivationJoin），$add/$join 执行
-      // 时自动打点——无需 transpile 插桩。类方法（.名）走类方法桥
-      // （与 generalize 同轨：$new + $invoke），不再 fail-closed 跳过。
-      {
-        const run = runTranspiled(source, { mode: "analyze", modules });
-        if (plan.fnName.includes(".")) {
-          const [clsName, methodName] = plan.fnName.split(".", 2);
-          const clsAbs = run[clsName ?? ""];
-          if (clsAbs && typeof clsAbs === "object" && "shape" in (clsAbs as object)) {
-            // ctor 形参个数对推导不敏感：统一 any 占位（generalize 同口径精神）
-            const inst = $new(clsAbs as Abs, []);
-            $invoke(inst, methodName ?? "", entryArgs);
-          }
-        } else if (plan.fnName in run) {
-          callTranspiledExportFull(run, plan.fnName, entryArgs);
-        }
-        calls.push(
-          ...bCalls.map((r) => ({
-            fnName: r.fnName,
-            args: r.args,
-            result: r.result,
-            callLoc: r.callLoc,
-            threw: r.threw,
-          })),
-        );
-      }
-    } catch {
-      return [];
-    } finally {
-      setEvalCallCollector(prevCall);
-    }
-
-    const byCallee = new Map<string, CallAgg>();
-    for (const call of calls) {
-      const imp = importLocals.get(call.fnName);
-      let targetFile: string;
-      let targetExport = call.fnName;
-      if (imp) {
-        targetFile = imp.modulePath;
-        targetExport = imp.exportName;
-      } else {
-        targetFile = file;
-      }
-      if (isNodeModulesPath(targetFile)) continue;
-      if (!existsSync(targetFile)) continue;
-      const key = `${targetFile}::${targetExport}`;
-      let agg = byCallee.get(key);
-      if (!agg) {
-        agg = { targetFile, targetExport, argAbs: [], resultAbs: [] };
-        byCallee.set(key, agg);
-      }
-      agg.argAbs.push(call.args);
-      agg.resultAbs.push(call.threw ? unknownAbs : call.result);
-    }
-
-    const out: DerivedExport[] = [];
-    for (const agg of byCallee.values()) {
-      let targetSource: string;
-      try {
-        targetSource = readFileSync(agg.targetFile, "utf-8");
-      } catch {
-        continue;
-      }
-      const paramNames = functionParamNames(targetSource, agg.targetExport);
-      if (paramNames.length === 0 && agg.argAbs.every((a) => a.length === 0)) continue;
-
-      const width = Math.max(
-        paramNames.length,
-        ...agg.argAbs.map((a) => a.length),
-        0,
-      );
-      const params: DerivedParam[] = [];
-      let allCompositional = true;
-      let sawEvidence = false;
-
-      for (let i = 0; i < width; i++) {
-        const name = paramNames[i] ?? `_${i}`;
-        const absList: Abs[] = [];
-        for (const args of agg.argAbs) {
-          const a = args[i];
-          if (a) absList.push(a);
-        }
-        const slot = projectParamSlot(absList, name);
-        if (!slot) {
-          allCompositional = false;
-          continue;
-        }
-        sawEvidence = true;
-        if (!slot.compositional) allCompositional = false;
-        params.push({
-          name,
-          constraint: slot.constraint,
-          dsl: slot.dsl,
-          prelude: slot.prelude,
-          imports: slot.imports,
-          ...(slot.rootNodeId !== undefined ? { rootNodeId: slot.rootNodeId } : {}),
-          ...(slot.shiftCount !== undefined ? { shiftCount: slot.shiftCount } : {}),
-        });
-      }
-
-      const retAbs = agg.resultAbs.filter(
-        (a) => a.conf === "exact" || a.conf === "path",
-      );
-      const retSlot = projectReturnSlot(retAbs, params, paramNames);
-      if (retSlot && !retSlot.compositional) allCompositional = false;
-      if (retSlot) sawEvidence = true;
-
-      if (!sawEvidence) {
-        out.push({
-          file: agg.targetFile,
-          fn: agg.targetExport,
-          paramNames,
-          params: [],
-          derivedFrom: label,
-          compositional: false,
-          underivable: true,
-        });
-        continue;
-      }
-
-      out.push({
-        file: agg.targetFile,
-        fn: agg.targetExport,
-        paramNames,
-        params,
-        ...(retSlot
-          ? {
-              returns: {
-                constraint: retSlot.constraint,
-                dsl: retSlot.dsl,
-                prelude: retSlot.prelude,
-                imports: retSlot.imports,
-              },
-            }
-          : {}),
-        derivedFrom: label,
-        compositional: allCompositional && params.length > 0,
+  for (const p of plan.params) {
+    const entry = constraintToEntryAbs(p.constraint, p.name);
+    if (p.src) {
+      tagDerivationRoot(entry, {
+        expr: p.src.expr,
+        ...(p.src.importFrom !== undefined ? { importFrom: p.src.importFrom } : {}),
+        ...(p.src.importName !== undefined ? { importName: p.src.importName } : {}),
       });
+    } else if (p.constraint.preds.length === 0 && !p.constraint.prim) {
+      // 无约束占位：用 unknown，不打 root
     }
-    return out;
-  } finally {
-    endDerivationSession();
+    entryArgs.push(entry);
   }
+
+  const calls: AbsCallRecord[] = [];
+  const bCalls: EvalCallRecord[] = [];
+  const prevCall = setEvalCallCollector((r) => bCalls.push(r));
+  try {
+    // evaluator 优先（迁移件 3）：derivation 打点在共享代数层（arithmetic.add
+    // noteDerivationAdd / joinAbs noteDerivationJoin），$add/$join 执行
+    // 时自动打点——无需 transpile 插桩。类方法（.名）走类方法桥
+    // （与 generalize 同轨：$new + $invoke），不再 fail-closed 跳过。
+    {
+      const run = runTranspiled(source, { mode: "analyze", modules });
+      if (plan.fnName.includes(".")) {
+        const [clsName, methodName] = plan.fnName.split(".", 2);
+        const clsAbs = run[clsName ?? ""];
+        if (clsAbs && typeof clsAbs === "object" && "shape" in (clsAbs as object)) {
+          // ctor 形参个数对推导不敏感：统一 any 占位（generalize 同口径精神）
+          const inst = $new(clsAbs as Abs, []);
+          $invoke(inst, methodName ?? "", entryArgs);
+        }
+      } else if (plan.fnName in run) {
+        callTranspiledExportFull(run, plan.fnName, entryArgs);
+      }
+      calls.push(
+        ...bCalls.map((r) => ({
+          fnName: r.fnName,
+          args: r.args,
+          result: r.result,
+          callLoc: r.callLoc,
+          threw: r.threw,
+        })),
+      );
+    }
+  } catch {
+    return [];
+  } finally {
+    setEvalCallCollector(prevCall);
+  }
+
+  const byCallee = new Map<string, CallAgg>();
+  for (const call of calls) {
+    const imp = importLocals.get(call.fnName);
+    let targetFile: string;
+    let targetExport = call.fnName;
+    if (imp) {
+      targetFile = imp.modulePath;
+      targetExport = imp.exportName;
+    } else {
+      targetFile = file;
+    }
+    if (isNodeModulesPath(targetFile)) continue;
+    if (!existsSync(targetFile)) continue;
+    const key = `${targetFile}::${targetExport}`;
+    let agg = byCallee.get(key);
+    if (!agg) {
+      agg = { targetFile, targetExport, argAbs: [], resultAbs: [] };
+      byCallee.set(key, agg);
+    }
+    agg.argAbs.push(call.args);
+    agg.resultAbs.push(call.threw ? unknownAbs : call.result);
+  }
+
+  const out: RootCalleeAgg[] = [];
+  for (const agg of byCallee.values()) {
+    let targetSource: string;
+    try {
+      targetSource = readFileSync(agg.targetFile, "utf-8");
+    } catch {
+      continue;
+    }
+    const paramNames = functionParamNames(targetSource, agg.targetExport);
+    if (paramNames.length === 0 && agg.argAbs.every((a) => a.length === 0)) continue;
+    out.push({
+      targetFile: agg.targetFile,
+      targetExport: agg.targetExport,
+      paramNames,
+      argAbs: agg.argAbs,
+      resultAbs: agg.resultAbs,
+      rootLabel: label,
+    });
+  }
+  return out;
 }
 

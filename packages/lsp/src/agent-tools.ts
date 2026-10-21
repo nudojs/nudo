@@ -539,31 +539,39 @@ export function suggestCase(params: FunctionToolParams, deps: AgentToolDeps = {}
       return textResult(`Function "${params.functionName}" not found`);
     }
 
-    if (fn.cases.length > 0) {
-      // 手写指令 case 的 source 未标记，合成 case 才带 "callsite"；
+    // **已声明** case（源码里的 `@nudo:case` 指令，source = "directive"）与
+    // **合成** case（`call@` / `entry@` 见证）分开计数：合成见证是分析器的
+    // 观察，不是用户写下的指令（Bug 511：入口兜底见证也会进 case 台账）。
+    const declaredCases = fn.cases.filter((c) => c.source === "directive");
+    const syntheticCases = fn.cases.filter((c) => c.source !== "directive");
+
+    if (declaredCases.length > 0) {
+      return textResult(
+        `Function "${params.functionName}" already has ${declaredCases.length} case(s)`,
+      );
+    }
+
+    if (syntheticCases.length > 0) {
       // 全部为合成 case 时可产出直接粘贴回源码的指令文本
-      if (fn.cases.every((c) => c.source === "callsite")) {
-        const directives = fn.cases
-          .map((c) => buildCaseDirective(c.name, c.argAbs ?? []))
-          .filter((d): d is string => d !== null);
-        if (directives.length > 0) {
-          const skipped = fn.cases.length - directives.length;
-          const lines = [
-            `Function "${params.functionName}" has ${fn.cases.length} synthesized case(s); suggested directives:`,
-            "/**",
-            ...directives,
-            "*/",
-          ];
-          if (skipped > 0) {
-            lines.push(`(${skipped} case(s) skipped: not serializable as directives)`);
-          }
-          return textResult(lines.join("\n"));
+      const directives = syntheticCases
+        .map((c) => buildCaseDirective(c.name, c.argAbs ?? []))
+        .filter((d): d is string => d !== null);
+      if (directives.length > 0) {
+        const skipped = syntheticCases.length - directives.length;
+        const lines = [
+          `Function "${params.functionName}" has ${syntheticCases.length} synthesized case(s); suggested directives:`,
+          "/**",
+          ...directives,
+          "*/",
+        ];
+        if (skipped > 0) {
+          lines.push(`(${skipped} case(s) skipped: not serializable as directives)`);
         }
-        return textResult(
-          `Function "${params.functionName}" already has ${fn.cases.length} case(s) (none serializable as directives)`,
-        );
+        return textResult(lines.join("\n"));
       }
-      return textResult(`Function "${params.functionName}" already has ${fn.cases.length} case(s)`);
+      return textResult(
+        `Function "${params.functionName}" already has ${syntheticCases.length} case(s) (none serializable as directives)`,
+      );
     }
 
     return textResult(`Suggested: /** @nudo:case */\nfunction ${params.functionName}(...) { ... }`);

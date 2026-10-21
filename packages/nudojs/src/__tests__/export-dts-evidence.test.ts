@@ -105,7 +105,7 @@ describe("export dts — 契约/case 证据进投影", () => {
 });
 
 describe("export dts — 导出面过滤与 unknown 例外", () => {
-  it("非导出顶层函数不进 .d.ts；无证据参数 unknown + stderr 提示", () => {
+  it("非导出顶层函数不进 .d.ts；无证据参数渲染 any（Abs any ≠ unknown，Bug 544）", () => {
     const dir = fixtureDir({
       "leak.js": [
         `function helper(u) { return u.name; }`,
@@ -115,11 +115,10 @@ describe("export dts — 导出面过滤与 unknown 例外", () => {
     });
     const r = runCliTsx(["export", "leak.js", "--format", "dts"], { cwd: dir });
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain("export declare function public1(x: unknown): unknown;");
+    // 未受约束的入口形参 = Abs any（未约束）⇒ TS any（abs.md:100：
+    // 「unconstrained entry parameters display as `any`, never as `unknown`」）
+    expect(r.stdout).toContain("export declare function public1(x: any): any;");
     expect(r.stdout).not.toContain("helper");
-    // stderr 单行提示：点名参数 + 三条补证据路径
-    expect(r.stderr).toContain("note: public1.x rendered as unknown");
-    expect(r.stderr).toContain("sidecar contract (*.nudo.js), @nudo:contract, or @nudo:case");
   }, 30000);
 
   it("export default 函数进导出面", () => {
@@ -128,7 +127,10 @@ describe("export dts — 导出面过滤与 unknown 例外", () => {
     });
     const r = runCliTsx(["export", "defs.js", "--format", "dts"], { cwd: dir });
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain("export declare function makeGreeting");
+    // default 导出进导出面，且保持 `export default` 形态：局部绑定名
+    // `makeGreeting` **不是**导出名（Bug 515）⇒ 不得声明成命名导出
+    expect(r.stdout).toContain("export default function makeGreeting");
+    expect(r.stdout).not.toContain("export declare function makeGreeting");
   }, 30000);
 
   it("有函数但无导出声明：stdout 如实说明（exit 0）", () => {

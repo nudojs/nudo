@@ -24,7 +24,9 @@ export function scale(x) {
 `;
     const { result } = analyze(src);
     const fn = result.functions.find((f) => f.name === "scale");
-    expect(fn?.cases).toHaveLength(1);
+    // 见证（点观测）+ 入口兜底见证（entry@）：无断言的 case 指令不是域声明
+    // ⇒ 返回面由推断域承担（Bug 511）
+    expect(fn?.cases).toHaveLength(2);
     expect(fn?.cases[0]?.abs.shape.k).toBe("prim");
     // 无 TypeValue 专有叠报
     expect(result.diagnostics.filter((d) => d.code === "nudo:unknown-global")).toHaveLength(0);

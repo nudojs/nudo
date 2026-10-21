@@ -165,11 +165,11 @@ describe("dts contract face — 分支交互", () => {
 });
 
 describe("dts contract face — 无证据位上报", () => {
-  it("无契约无 case 值证据的参数位 type=unknown（stderr 提示数据源）", () => {
+  it("无契约无 case 值证据的参数位 type=any（Abs any ≠ unknown，Bug 544）", () => {
     const fn = fnOf("bare", ["x"], entryCase([anyAbs], anyAbs));
     const p = projectFunctionDts(fn);
-    expect(p.params).toEqual([{ name: "x", type: "unknown" }]);
-    expect(p.lines.join("\n")).toContain("bare(x: unknown)");
+    expect(p.params).toEqual([{ name: "x", type: "any" }]);
+    expect(p.lines.join("\n")).toContain("bare(x: any)");
   });
 
   it("无信息 entry@ 兜底行不进 JSDoc（Case 行与主签名不再矛盾）", () => {

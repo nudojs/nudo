@@ -357,7 +357,7 @@ pin 'pnpm run test:cli docs/examples/algebra/a-spread-optional.js' \
   '({  }) => { host: "localhost", port: 8080, debug: false }' \
   '({ host: "api.example.com" }) => { host: "api.example.com", port: 8080, debug: false }'
 pin 'pnpm run export:nudo docs/examples/algebra/a-spread-optional.js --format dts' \
-  'createConfig(options: { port: number; debug: boolean } | {} | { host: string })' \
+  'createConfig(options: { port: number; debug: boolean } | Record<string, never> | { host: string })' \
   ': { host: "localhost"; port: 3000; debug: true } | { host: "localhost"; port: 8080; debug: false } | { host: "api.example.com"; port: 8080; debug: false }' \
   'Case: call@L24'
 pin 'pnpm run test:cli docs/examples/algebra/b-hof-map.js' \

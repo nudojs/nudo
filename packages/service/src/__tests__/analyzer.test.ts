@@ -91,7 +91,10 @@ describe("analyzeFile", () => {
     const result = analyzeFile("/test/throws.js", THROWS_SOURCE);
     expect(result.functions).toHaveLength(1);
     const fn = result.functions[0];
-    expect(fn.cases).toHaveLength(2);
+    // 两条**点观测**见证 + 一条入口兜底见证（entry@）：无断言的 case 指令只是
+    // 见证、不是调用域声明 ⇒ 该函数仍走 entry@ 合成（返回面由推断域承担，
+    // Bug 511）⇒ 台账里多一条 entry@ 见证。
+    expect(fn.cases).toHaveLength(3);
 
     const negativeCaseThrows = fn.cases[1].throwsAbs;
     expect(negativeCaseThrows.shape.k).not.toBe("never");

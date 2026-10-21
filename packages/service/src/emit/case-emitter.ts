@@ -18,6 +18,19 @@ import type { AnalysisResult } from "../analyzer.ts";
  *   写；名字不同的**新调用点**照写 ⇒ 二次 freeze 追加新见证，不再因
  *   「函数上已有 case 指令」把新见证整条丢弃。
  * - 手写 case（非 call@ 命名）不动（hand-written）。
+ * - **不可表达就不写**：实参表达不出（rest 槽 / 稀疏元组的洞 / fn / eff /
+ *   brand / 不可承载的字符串）时整条放弃（null），不得静默近似成另一种
+ *   形态（近似会把观测事实说反，见 tuple 洞位的 #561）。
+ * - **写回只增不改**：新写的 JSDoc 块按**声明行的行首缩进**定位（不是
+ *   函数节点的列），新行沿用**源文件的主导行尾**（CRLF 文件不混排）。
+ * - **字节保真**：写回只动「该动的那几行」，其余字节原样搬运 ——
+ *   ① UTF-8 BOM 仍留在**文件最前**（不随首行下移，也不被当缩进抄进新行）；
+ *   ② 源文件的行尾约定不变（CRLF 文件写回后仍是纯 CRLF）；
+ *   ③ 文件末尾有无换行不变（末尾无换行 ⇒ 写回后仍无换行）。
+ * - **diff 与 native 同口径**：行模型区分「末行有/无终止符」，末行无终止符
+ *   时输出 `\ No newline at end of file` 标记 ⇒ 产出的补丁可被 `git apply`
+ *   接受；diff **按字节**呈现（BOM 留在首行内容里，native git 同形）⇒ 既
+ *   贴得上补丁，也不把「BOM 被吃掉」这类真实字节改动藏成空 diff。
  */
 
 /** 合成 case 的名字前缀；带此前缀的 @nudo:case 视为本模块生成物 */
@@ -40,6 +53,25 @@ const UNSAFE_KEY_CHARS = /[,()[\]{}:]/;
 
 /** 控制字符（含换行）：指令必须单行 */
 const CONTROL_CHARS = /[\x00-\x1f\x7f]/;
+
+/**
+ * UTF-8 BOM（U+FEFF 零宽不换行空格）。
+ *
+ * BOM 是**编码标记**不是源码内容：它在文件最前，语义上等于「本文件是
+ * UTF-8」。写回管线必须把它**单独保管**（读出 → 对不含 BOM 的正文做行级
+ * 编辑 → 写回时放回文件最前），否则固化指令插在声明行之上会把首行整体
+ * 下移 ⇒ BOM 落到文件中段（文件不再是「UTF-8 with BOM」，而变成「UTF-8
+ * 文本里夹了一个 U+FEFF」）。
+ *
+ * 注意：JS 正则的 `\s` **包含 U+FEFF** ⇒ 缩进匹配必须用 `[ \t]`，否则
+ * BOM 会被当成「缩进」抄进新插入的行。
+ */
+const BOM = "\uFEFF";
+
+/** 拆出文件头的 BOM：[bom, 正文]（无 BOM 时 bom 为空串） */
+function splitBom(source: string): [string, string] {
+  return source.startsWith(BOM) ? [BOM, source.slice(BOM.length)] : ["", source];
+}
 
 /**
  * 字符串字面量 → 可被 parseCaseArgExpr 原样解析回去的带引号文本。
@@ -129,6 +161,12 @@ function serializeCaseArgInner(a: Abs, budget: ProjectionBudget): string | null 
       // rest 槽指令文法不可表达（与 fn/eff/brand 同口径）→ 整体不可序列化，
       // 不得静默截断成固定位前缀
       if (s.rest) return null;
+      // 洞位（稀疏空槽）同样不可表达：case 实参文法没有空槽写法 ⇒ 整条放弃
+      // （与 rest 槽同口径）。洞位的 elements[i] 是 undefAbs()，与「显式
+      // undefined 元素」Abs 完全同形 ⇒ 序列化不可区分；静默近似成
+      // `[1, undefined, 3]` 会把观测到的 sparse（`1 in a` = false）说成
+      // dense（true）——固化把事实翻成了反面（#561）。
+      if (s.holes && s.holes.length > 0) return null;
       const parts: string[] = [];
       for (const el of s.elements) {
         const ser = serializeCaseArgB(el, budget);
@@ -177,7 +215,10 @@ export function buildCaseDirective(name: string, argsAbs: Abs[]): string | null 
  * removed 返回被删指令名列表（按出现顺序）。
  */
 export function stripGeneratedCaseDirectives(source: string): { source: string; removed: string[] } {
-  const lines = source.split("\n");
+  // BOM 单独保管：剥离**可能删掉首行**（BOM 就长在首行上）⇒ BOM 必须原样
+  // 接回，否则「剥离 → 写回」会把文件头的 BOM 弄丢（#562）。
+  const [bom, body] = splitBom(source);
+  const lines = body.split("\n");
   const removed: string[] = [];
   const drop = new Array<boolean>(lines.length).fill(false);
 
@@ -222,7 +263,7 @@ export function stripGeneratedCaseDirectives(source: string): { source: string; 
   }
 
   return {
-    source: lines.filter((_, i) => !drop[i]).join("\n"),
+    source: bom + lines.filter((_, i) => !drop[i]).join("\n"),
     removed,
   };
 }
@@ -263,6 +304,26 @@ function collectExistingCases(source: string): Map<string, CaseDirective[]> {
 }
 
 /**
+ * 一行的行首缩进（只认空格与制表符）。
+ * 缩进基准 = 声明**语句**所在行的行首缩进：函数节点自身的列是 `function`
+ * 关键字的列（`export function` = 7、`export default function` = 15），
+ * 按它缩进会让新写的 JSDoc 块与声明脱节（#507）。
+ */
+function leadingIndent(line: string): string {
+  return /^[ \t]*/.exec(line)?.[0] ?? "";
+}
+
+/**
+ * 源文件的**主导行尾**（CRLF 计数 > 裸 LF 计数 ⇒ CRLF）。
+ * 新插入的行按主导行尾写回 ⇒ CRLF 文件不会因固化变成混合行尾（#547）。
+ */
+function dominantEol(source: string): "\r\n" | "\n" {
+  const crlf = (source.match(/\r\n/g) ?? []).length;
+  const lf = (source.match(/\n/g) ?? []).length - crlf;
+  return crlf > lf ? "\r\n" : "\n";
+}
+
+/**
  * 把 analysis 中的合成 case（source === "callsite"）固化为源码指令：
  *
  * 1. 源码已有任何非 call@ 命名的 case → skip "hand-written"。
@@ -273,13 +334,22 @@ function collectExistingCases(source: string): Map<string, CaseDirective[]> {
  *    重复写，新调用点照写——二次 freeze 不再因「函数上已有 case 指令」
  *    而静默丢弃新增调用点（本次固化全在 ⇒ skip "already-generated"）。
  * 5. 写入位置：函数声明行正上方——已有 JSDoc 块则插到 `/**` 行后，
- *    无块则新建三行块。缩进取声明行的 loc.start.column（babel 0 基列）。
- *    多函数编辑按行号从下往上应用，避免行号漂移。
+ *    无块则新建三行块。缩进基准取**声明行的行首缩进**（不是
+ *    FunctionDeclaration 节点的 loc.start.column——那是 `function` 关键字的
+ *    列：`export function` = 7、`export default function` = 15，按它缩进会让
+ *    整块右移、与列 0 的声明脱节）。多函数编辑按行号从下往上应用，避免
+ *    行号漂移。
+ * 6. 新插入的行沿用**源文件的主导行尾**（CRLF 文件写回后不得混入裸 LF）。
  */
 export function insertGeneratedCaseDirectives(source: string, analysis: AnalysisResult): EmitResult {
   const written: EmitResult["written"] = [];
   const skipped: EmitResult["skipped"] = [];
-  const existing = collectExistingCases(source);
+  // BOM 单独保管：对**不含 BOM** 的正文做行级编辑，写回时把 BOM 放回**文件
+  // 最前** ⇒ 固化指令插在声明行之上时，首行（BOM 所在行）整体下移也不会
+  // 把 BOM 带走（否则 BOM 落到文件中段：文件不再是「UTF-8 with BOM」，而是
+  // 「UTF-8 文本里夹了一个 U+FEFF」，#562）。
+  const [bom, body] = splitBom(source);
+  const existing = collectExistingCases(body);
 
   type Edit = { line: number; column: number; directives: string[]; fn: string };
   const edits: Edit[] = [];
@@ -344,10 +414,25 @@ export function insertGeneratedCaseDirectives(source: string, analysis: Analysis
 
   // 从下往上应用编辑
   edits.sort((a, b) => b.line - a.line);
-  const lines = source.split("\n");
+  const lines = body.split("\n");
+  // split("\n") 把 CRLF 的 "\r" 留在每行行尾 ⇒ 原行行尾无损复原（join 时补回
+  // "\n"）；但**新插入的行是现造的**，不带 "\r" ⇒ CRLF 文件会变成混合行尾。
+  // 新行按源文件的**主导行尾**补齐（CRLF 主导 ⇒ 新行带 "\r"）。
+  //
+  // 行尾口径（#547 新块用什么行尾 / #563 保留源文件原有行尾）：
+  // - **既有行**：行尾逐行保留（split 留下的 "\r" 原样带过，join 时补 "\n"）
+  //   ⇒ 写回不改写源文件的行尾约定；
+  // - **新插入的行**：沿用**主导行尾**（CRLF 计数 > 裸 LF 计数 ⇒ CRLF）。
+  // 若写盘层后续改成「逐行记录行尾 + 逐行还原」的模型，本处 eolTail 须并入
+  // 那套模型（否则 "\r" 会重复一次）。
+  const eolTail = dominantEol(body) === "\r\n" ? "\r" : "";
   for (const edit of edits) {
     const declIdx = edit.line - 1;
-    const indent = " ".repeat(edit.column);
+    // 缩进基准 = 声明行的行首缩进（声明**语句**的列），不是函数节点的列：
+    // `export function` 的函数节点列是 7、`export default function` 是 15，
+    // 按它缩进会让新块与声明脱节（#507）。
+    const declLine = lines[declIdx];
+    const indent = declLine === undefined ? " ".repeat(edit.column) : leadingIndent(declLine);
 
     // 声明行正上方是否挂着可注入的 JSDoc 块（结束行必须是纯 `*/`）
     let insertIdx = -1;
@@ -359,7 +444,8 @@ export function insertGeneratedCaseDirectives(source: string, analysis: Analysis
         const t = lines[s];
         if (/^\s*\/\*\*/.test(t)) {
           insertIdx = s + 1; // 指令行插到 `/**` 行后第一行
-          blockIndent = t.match(/^\s*/)?.[0] ?? "";
+          // 缩进只认空格/制表符：`\s` 含 U+FEFF ⇒ BOM 会被当成缩进抄进新行
+          blockIndent = leadingIndent(t);
           break;
         }
         // 块内部行：星号续行 / 空行 / 块尾；撞到其他内容说明上面不是干净的注释块
@@ -372,14 +458,20 @@ export function insertGeneratedCaseDirectives(source: string, analysis: Analysis
     }
 
     if (insertIdx >= 0) {
-      lines.splice(insertIdx, 0, ...edit.directives.map((d) => blockIndent + d));
+      lines.splice(insertIdx, 0, ...edit.directives.map((d) => blockIndent + d + eolTail));
     } else {
-      lines.splice(declIdx, 0, `${indent}/**`, ...edit.directives.map((d) => indent + d), `${indent} */`);
+      lines.splice(
+        declIdx,
+        0,
+        `${indent}/**${eolTail}`,
+        ...edit.directives.map((d) => indent + d + eolTail),
+        `${indent} */${eolTail}`,
+      );
     }
   }
 
   return {
-    source: lines.join("\n"),
+    source: bom + lines.join("\n"),
     changed: written.length > 0,
     written,
     skipped,
@@ -390,15 +482,51 @@ export function insertGeneratedCaseDirectives(source: string, analysis: Analysis
 // unified diff（行级 LCS，无第三方依赖）
 // ---------------------------------------------------------------------------
 
-type DiffOp = { type: "equal" | "delete" | "insert"; text: string };
+/**
+ * unified diff 的「末行无终止符」标记。
+ * GNU diff 按 locale 翻译（中文环境是「\ 文件末尾没有换行符」），git diff 用
+ * 固定英文串 ⇒ 补丁消费方（git apply / patch）只认后者。
+ */
+const NO_NEWLINE_MARKER = "\\ No newline at end of file";
+
+/** diff 的一行：key = 比较键（含终止符信息），text = 输出用的行内容 */
+type DiffLine = { key: string; text: string; terminated: boolean };
+
+type DiffOp = {
+  type: "equal" | "delete" | "insert";
+  text: string;
+  /** 该行在旧侧的行号（insert 为 -1） */
+  aIdx: number;
+  /** 该行在新侧的行号（delete 为 -1） */
+  bIdx: number;
+};
+
+/**
+ * diff 的行模型：按 "\n" 切行（CRLF 的 "\r" 留在**行内容**里 ⇒ 输出与 native
+ * `diff -u` 一致），并记录每行**是否有终止符**：
+ * - key 带上终止符 ⇒ 「a\n」与「a」是**不同的行**（native diff 同口径：末尾
+ *   换行的有无本身就是内容差异）；
+ * - 文件末尾没有换行时，末行没有终止符 ⇒ 输出 `\ No newline at end of file`；
+ * - 「phantom 末行」（`split` 产生的末尾空串）**不算一行** ⇒ 行数不多算一格。
+ */
+function splitDiffLines(source: string): DiffLine[] {
+  if (source === "") return [];
+  const parts = source.split("\n");
+  const endsWithNewline = parts.length > 1 && parts[parts.length - 1] === "";
+  const real = endsWithNewline ? parts.slice(0, -1) : parts;
+  return real.map((raw, i) => {
+    const terminated = i < real.length - 1 || endsWithNewline;
+    return { key: terminated ? `${raw}\n` : raw, text: raw, terminated };
+  });
+}
 
 /** 行级 LCS：先裁公共前后缀把 DP 表压到真实差异窗口，再回溯产出操作序列 */
-function diffOps(a: string[], b: string[]): DiffOp[] {
+function diffOps(a: DiffLine[], b: DiffLine[]): DiffOp[] {
   let start = 0;
-  while (start < a.length && start < b.length && a[start] === b[start]) start++;
+  while (start < a.length && start < b.length && a[start]!.key === b[start]!.key) start++;
   let endA = a.length;
   let endB = b.length;
-  while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) {
+  while (endA > start && endB > start && a[endA - 1]!.key === b[endB - 1]!.key) {
     endA--;
     endB--;
   }
@@ -412,32 +540,42 @@ function diffOps(a: string[], b: string[]): DiffOp[] {
   for (let i = n - 1; i >= 0; i--) {
     for (let j = m - 1; j >= 0; j--) {
       dp[i * (m + 1) + j] =
-        midA[i] === midB[j]
+        midA[i]!.key === midB[j]!.key
           ? dp[(i + 1) * (m + 1) + (j + 1)] + 1
           : Math.max(dp[(i + 1) * (m + 1) + j], dp[i * (m + 1) + (j + 1)]);
     }
   }
 
   const ops: DiffOp[] = [];
-  for (let k = 0; k < start; k++) ops.push({ type: "equal", text: a[k] });
+  for (let k = 0; k < start; k++) ops.push({ type: "equal", text: a[k]!.text, aIdx: k, bIdx: k });
   let i = 0;
   let j = 0;
   while (i < n && j < m) {
-    if (midA[i] === midB[j]) {
-      ops.push({ type: "equal", text: midA[i] });
+    if (midA[i]!.key === midB[j]!.key) {
+      ops.push({ type: "equal", text: midA[i]!.text, aIdx: start + i, bIdx: start + j });
       i++;
       j++;
     } else if (dp[(i + 1) * (m + 1) + j] >= dp[i * (m + 1) + (j + 1)]) {
-      ops.push({ type: "delete", text: midA[i] });
+      ops.push({ type: "delete", text: midA[i]!.text, aIdx: start + i, bIdx: -1 });
       i++;
     } else {
-      ops.push({ type: "insert", text: midB[j] });
+      ops.push({ type: "insert", text: midB[j]!.text, aIdx: -1, bIdx: start + j });
       j++;
     }
   }
-  while (i < n) ops.push({ type: "delete", text: midA[i++] });
-  while (j < m) ops.push({ type: "insert", text: midB[j++] });
-  for (let k = endA; k < a.length; k++) ops.push({ type: "equal", text: a[k] });
+  while (i < n) {
+    ops.push({ type: "delete", text: midA[i]!.text, aIdx: start + i, bIdx: -1 });
+    i++;
+  }
+  while (j < m) {
+    ops.push({ type: "insert", text: midB[j]!.text, aIdx: -1, bIdx: start + j });
+    j++;
+  }
+  // 公共后缀：两侧剩余长度可能不同 ⇒ 新侧行号要按差平移
+  const shift = endA - endB;
+  for (let k = endA; k < a.length; k++) {
+    ops.push({ type: "equal", text: a[k]!.text, aIdx: k, bIdx: k - shift });
+  }
   return ops;
 }
 
@@ -449,10 +587,27 @@ function formatRange(start: number, count: number): string {
   return count === 1 ? `${s}` : `${s},${count}`;
 }
 
-/** 行级 unified diff：`--- a/path` 头 + `@@` hunk + 上下文 3 行；相同返回 "" */
+/**
+ * 行级 unified diff：`--- a/path` 头 + `@@` hunk + 上下文 3 行；相同返回 ""。
+ *
+ * 口径与 native `diff -u` / `git diff` 对齐：
+ * - **字节保真**：BOM 留在首行的**行内容**里（native git 同形：上下文行是
+ *   `﻿import …`）⇒ ① 产出的补丁能被 `git apply` 接受（git apply 按**字节**
+ *   比对上下文 ⇒ 上下文里少一枚 BOM 就贴不上）；② 「BOM 被发射器吃掉」
+ *   这类**真实**的字节改动不会被 diff 藏起来（把 BOM 剥掉再比 ⇒ 空 diff
+ *   谎报「无改动」，而文件其实被重写了）。
+ * - **末行没有终止符**时输出 `\ No newline at end of file` 标记 ⇒ 产出的补丁
+ *   能被 `git apply` 接受（缺标记时 git apply 按「该行有换行」解释 ⇒ 上下文
+ *   不匹配 ⇒ 补丁被拒，#564）。
+ */
 export function unifiedDiff(a: string, b: string, path: string): string {
   if (a === b) return "";
-  const ops = diffOps(a.split("\n"), b.split("\n"));
+  const oldLines = splitDiffLines(a);
+  const newLines = splitDiffLines(b);
+  const ops = diffOps(oldLines, newLines);
+  // 两侧逐行相同 ⇒ 没有内容差异（只有编码标记的差异也不算内容差异，但
+  // 上面按字节比对 ⇒ BOM 的有无本身就是首行的差异）
+  if (ops.every((op) => op.type === "equal")) return "";
 
   // 切 hunk：变更之间相等行 ≤ 2*context 时合并为一个 hunk
   const hunks: Array<{ start: number; ops: DiffOp[] }> = [];
@@ -493,6 +648,12 @@ export function unifiedDiff(a: string, b: string, path: string): string {
 
   // hunk 头行号：hunk 前累计的 delete+equal 决定旧侧、insert+equal 决定新侧
   const out: string[] = [`--- a/${path}`, `+++ b/${path}`];
+  // 末行无终止符的行号（两侧各自算）：末行在 diff 里要带
+  // `\ No newline at end of file` 标记。
+  const oldLast = oldLines.length - 1;
+  const newLast = newLines.length - 1;
+  const oldNoEol = oldLines.length > 0 && !oldLines[oldLast]!.terminated;
+  const newNoEol = newLines.length > 0 && !newLines[newLast]!.terminated;
   for (let h = 0; h < hunks.length; h++) {
     const { start, ops: hunkOps } = hunks[h];
     let oldCount = 0;
@@ -515,6 +676,14 @@ export function unifiedDiff(a: string, b: string, path: string): string {
     for (const op of hunkOps) {
       const prefix = op.type === "equal" ? " " : op.type === "delete" ? "-" : "+";
       out.push(prefix + op.text);
+      // 末行没有终止符 ⇒ 该行后面跟标记（与 native diff -u / git diff 同形）
+      if (op.type === "delete" && op.aIdx === oldLast && oldNoEol) {
+        out.push(NO_NEWLINE_MARKER);
+      } else if (op.type === "insert" && op.bIdx === newLast && newNoEol) {
+        out.push(NO_NEWLINE_MARKER);
+      } else if (op.type === "equal" && op.aIdx === oldLast && op.bIdx === newLast && oldNoEol) {
+        out.push(NO_NEWLINE_MARKER);
+      }
     }
   }
   return out.join("\n") + "\n";

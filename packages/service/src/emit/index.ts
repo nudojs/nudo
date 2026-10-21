@@ -64,9 +64,13 @@ export {
   generateDts,
   generateFunctionDtsLines,
   projectFunctionDts,
+  dtsModuleSurface,
+  projectModuleDts,
   absToTSType,
   type DtsContractFace,
   type DtsFunctionProjection,
+  type DtsModuleSurface,
+  type DtsModuleProjection,
 } from "./dts-generator.ts";
 
 export {
@@ -85,12 +89,17 @@ export {
 
 export {
   absToStandardSchema,
+  absToStandardSchemaFunction,
   absToStandardSchemaModule,
   validateSchemaNode,
+  type StandardSchemaFunctionSpec,
+  type StandardSchemaInputEntry,
   type StandardSchemaIssue,
   type StandardSchemaModuleProjection,
   type StandardSchemaResult,
 } from "./standard-schema.ts";
+
+export { domainEvidenceCases } from "./domain-cases.ts";
 
 export {
   generateGuardFunction,

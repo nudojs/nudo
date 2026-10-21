@@ -267,6 +267,9 @@ async function runContractDraft(
       ...(projectRoot ? { projectDir: projectRoot } : {}),
     });
     for (const line of formatDraftSummary(rel, draftRel, result, write)) console.log(line);
+    // Bug 557：既有草稿被人工改过 ⇒ 写盘被拒绝（文件原样保留）。
+    // 静默 exit 0 会让 CI 以为草稿已重新生成 ⇒ 拒绝覆盖必须非零退出。
+    if (write.skipped === "hand-edited") process.exitCode = 1;
   } else {
     for (const line of formatDraftSummary(rel, draftRel, result)) console.log(line);
   }
@@ -346,12 +349,9 @@ async function runContractEmit(
     const sc = relative(process.cwd(), result.sidecarPath) || result.sidecarPath;
     for (const line of formatEmitSummary(rel, sc, result)) console.log(line);
   }
-  for (const i of result.issues) {
-    if (i.severity === "error") {
-      // 仅打印；contract --emit 的 exit 由 usage/IO 与 --exit-on-diff 决定
-      console.log(`[${i.severity}] ${i.code}: ${i.message}`);
-    }
-  }
+  // Bug 508：诊断的**唯一渲染点**是 formatEmitSummary（它渲染后即消费
+  // result.issues）。这里再遍历一次会让同一条诊断出两遍（dry-run 路径尤其
+  // 明显：上面已逐条打印过 error 级）。故不再有第二个渲染点。
   const anyChanged = result.changed || derivedChanged;
   if (opts.exitOnDiff && anyChanged) process.exitCode = 1;
   if (anyChanged && !opts.dryRun) {

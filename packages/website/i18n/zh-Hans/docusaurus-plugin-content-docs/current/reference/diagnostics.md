@@ -166,10 +166,10 @@ Context: [调用点发现上限](../concepts/limits.md#调用点发现上限)
 ### `nudo:interface-emit-denied` {#nudo-interface-emit-denied}
 
 ```text
-emit target 'path/lib.nudo.js' is outside package.json#nudo.contract.emit allowlist
+emit target 'path/lib.js' is outside package.json#nudo.contract.emit allowlist (patterns match the source file path, not the sidecar path 'path/lib.nudo.js')
 ```
 
-`contract --emit` 拒绝写配置允许列表之外的侧车。**Warning** —— 该次写入被跳过。修复：移动目标路径，或扩展 `package.json#nudo.contract.emit`。
+`contract --emit` 拒绝写配置允许列表之外的侧车。**Warning** —— 该次写入被跳过。允许列表的匹配口径是**源文件路径**，不是侧车路径（消息里两条路径都会给出）。修复：移动目标路径，或扩展 `package.json#nudo.contract.emit`。
 
 Context: [固化生成段](../guides/contract.md#固化生成段)
 

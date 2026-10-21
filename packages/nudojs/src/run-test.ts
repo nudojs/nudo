@@ -31,7 +31,7 @@ export type CaseTestOutcome = {
   expected?: string;
   actual: string;
   throws?: string;
-  /** 合成 case（call@/entry@）— 不参与 exit */
+  /** 合成 case（分析器合成出来的观察，非源码声明）— 不参与 exit */
   synthetic: boolean;
 };
 
@@ -147,10 +147,15 @@ export function buildTestReport(
     }
     for (const c of cases) {
       caseLines.push(formatCaseLine(c));
-      const synthetic = c.name.startsWith("call@") || c.name.startsWith("entry@");
+      // synthetic 判据 = **来源**（源里没有这条 case ⇒ 合成出来的观察）。
+      // 不能只看名字前缀：`nudo test --freeze` 写回的见证 case 名叫
+      // `call@<file>:<line>`，但它是**写在源码里的** case 指令 ⇒ 已声明
+      // （无 `=> expected` ⇒ unchecked，不是 synthetic）。按名字前缀判会把它
+      // 误算成 synthetic，报告就写成「没有声明的断言」（Bug 511）。
+      const synthetic = c.source !== "directive";
       const throwsStr =
         c.throwsAbs && c.throwsAbs.shape.k !== "never" ? formatShape(c.throwsAbs) : undefined;
-      if (c.source !== "directive" || synthetic) {
+      if (synthetic) {
         outcomes.push({
           fn: fnName,
           caseName: c.name,

@@ -637,20 +637,53 @@ describe("unifiedDiff", () => {
   });
 
   it("omits the count when it is exactly 1", () => {
+    // 两侧末行都**没有终止符** ⇒ 与 native `diff -u` 同形：各跟一行
+    // `\ No newline at end of file` 标记（缺标记 ⇒ git apply 拒收，#564）。
     expect(unifiedDiff("one", "two", "t.txt")).toBe(
-      [`--- a/t.txt`, `+++ b/t.txt`, `@@ -1 +1 @@`, `-one`, `+two`, ""].join("\n"),
+      [
+        `--- a/t.txt`,
+        `+++ b/t.txt`,
+        `@@ -1 +1 @@`,
+        `-one`,
+        `\\ No newline at end of file`,
+        `+two`,
+        `\\ No newline at end of file`,
+        "",
+      ].join("\n"),
     );
   });
 
   it("formats pure insertion with old-side count 0", () => {
     expect(unifiedDiff("x\ny\nz", "new\nx\ny\nz", "t.txt")).toBe(
-      [`--- a/t.txt`, `+++ b/t.txt`, `@@ -1,3 +1,4 @@`, `+new`, ` x`, ` y`, ` z`, ""].join("\n"),
+      [
+        `--- a/t.txt`,
+        `+++ b/t.txt`,
+        `@@ -1,3 +1,4 @@`,
+        `+new`,
+        ` x`,
+        ` y`,
+        ` z`,
+        `\\ No newline at end of file`,
+        "",
+      ].join("\n"),
     );
   });
 
   it("formats pure deletion", () => {
+    // 末尾换行的有无本身就是内容差异（native diff 同口径）：旧侧末行「a」有
+    // 终止符、新侧没有 ⇒ 「a」不再算公共行，而是「删旧 + 加新」。
     expect(unifiedDiff("a\nb", "a", "t.txt")).toBe(
-      [`--- a/t.txt`, `+++ b/t.txt`, `@@ -1,2 +1 @@`, ` a`, `-b`, ""].join("\n"),
+      [
+        `--- a/t.txt`,
+        `+++ b/t.txt`,
+        `@@ -1,2 +1 @@`,
+        `-a`,
+        `-b`,
+        `\\ No newline at end of file`,
+        `+a`,
+        `\\ No newline at end of file`,
+        "",
+      ].join("\n"),
     );
   });
 
@@ -675,6 +708,7 @@ describe("unifiedDiff", () => {
         `-11`,
         `+Y11`,
         ` 12`,
+        `\\ No newline at end of file`,
         "",
       ].join("\n"),
     );

@@ -108,8 +108,8 @@ describe("Bug 233: zod brand 节点不得引用无运行时值的名字", () => 
     expect(absToSchemaSource(brandOf("Date"))).toBe("z.instanceof(Date)");
     expect(absToSchemaSource(brandOf("Map"))).toBe("z.instanceof(Map)");
     expect(absToSchemaSource(brandOf("RegExp"))).toBe("z.instanceof(RegExp)");
-    // 非 brand 形态不受影响
-    expect(absToSchemaSource(num())).toBe("z.number()");
+    // 非 brand 形态不受影响（number prim 的域渲染见 Bug 1001：含 NaN / ±Infinity）
+    expect(absToSchemaSource(num())).toContain("z.number()");
   });
 
   it("产物里的 z.instanceof 实参都是运行时全局构造器", () => {

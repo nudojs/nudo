@@ -18,6 +18,7 @@ import {
 } from "../schema-generator.ts";
 import { absToStandardSchemaModule } from "../standard-schema.ts";
 import { generateGuardFunctionFromAbs } from "../guard-generator.ts";
+import { loadGeneratedModule } from "./fixtures.ts";
 import type { CaseResult, FunctionAnalysis } from "../../analyzer-types.ts";
 
 function objAbs(slots: Record<string, Abs>, optionalKeys: string[] = []): Abs {
@@ -271,7 +272,9 @@ describe("export binding names: reserved words and post-clean collisions", () =>
     expect(idents).toHaveLength(2);
     expect(new Set(idents).size).toBe(2);
     expect(idents).toContain("a_b");
-    const body = asScript(source).replace(/z\.number\(\)/g, "1");
+    // number prim 的 zod 渲染是 `.or()` 链（Bug 1001：域含 NaN / ±Infinity）
+    // ⇒ 桩必须是合法成员表达式（`1.or(...)` 是非法 JS）
+    const body = asScript(source).replace(/z\.number\(\)/g, "z.number");
     expect(() => new Function(body)).not.toThrow();
   });
 
@@ -283,15 +286,17 @@ describe("export binding names: reserved words and post-clean collisions", () =>
     expect(idents.some((n) => n.startsWith("_1x"))).toBe(true);
   });
 
-  it("emits parseable modules for awkward export names", () => {
+  it("emits parseable modules for awkward export names", async () => {
     const names = ["class", "default", "let", "a-b", "a_b", "1x", "_1x", "", "计算", "foo*/bar"];
     const exports: Record<string, Abs> = {};
     for (const n of names) exports[n] = num();
     const mod = absToZodSchemaModule(exports);
-    const body = asScript(mod.source).replace(/z\.number\(\)/g, "1");
+    // number prim 的 zod 渲染是 `.or()` 链（Bug 1001）⇒ 桩必须是合法成员表达式
+    const body = asScript(mod.source).replace(/z\.number\(\)/g, "z.number");
     expect(() => new Function(body)).not.toThrow();
     const ss = absToStandardSchemaModule(exports);
-    expect(() => new Function(asScript(ss.source))).not.toThrow();
+    // 产物是 .ts（helper 带类型标注）⇒ 用 TS 感知装载（解析失败 ⇒ import 拒绝）
+    await expect(loadGeneratedModule(ss.source)).resolves.toBeTruthy();
   });
 
   it("keeps legal Unicode binding names unchanged", () => {
@@ -301,15 +306,16 @@ describe("export binding names: reserved words and post-clean collisions", () =>
     expect(g).toContain("export function 计算(");
   });
 
-  it("guards with cleaned colliding names stay distinct declarations", () => {
+  it("guards with cleaned colliding names stay distinct declarations", async () => {
     const a = num();
     const g1 = generateGuardFunctionFromAbs("a-b", a);
     const g2 = generateGuardFunctionFromAbs("a_b", a);
     // each call is a separate snippet; both must be valid bindings
     expect(g1).toMatch(/export function a_b\(/);
     expect(g2).toMatch(/export function a_b\(/);
-    expect(() => new Function(asScript(g1))).not.toThrow();
-    expect(() => new Function(asScript(g2))).not.toThrow();
+    // 守卫产物是 .ts（带类型标注——Bug 512）⇒ 用 TS 感知装载（解析失败 ⇒ import 拒绝）
+    await expect(loadGeneratedModule(g1)).resolves.toBeTruthy();
+    await expect(loadGeneratedModule(g2)).resolves.toBeTruthy();
   });
 });
 

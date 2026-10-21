@@ -147,6 +147,15 @@ export type SynthCandidate = {
   node?: Node;
   analysis: FunctionAnalysis;
   assignedName?: string;
+  /**
+   * **隔离调用点证据**（Bug 511）。
+   *
+   * 函数已带 case 见证（且只是**点观测**）⇒ 入口兜底求值只为产出**推断域**
+   * （点观测不得独占返回面，见 analyzer-orchestrate-uncached.ts 的接线）。
+   * 此时入口求值带出的调用点证据**不并入**共享台账：否则一次为取域而做的
+   * 求值会给别的函数凭空多出一条 call@ 见证（被调方的证据面被污染）。
+   */
+  domainOnly?: boolean;
 };
 
 /** @nudo:case 指令求值目标（主流程逐函数组装） */
@@ -838,6 +847,18 @@ export function synthesizeCallSiteCases(
       );
 }
 
+/**
+ * rest 形参的入口实参：**变长**（元素未知的数组 Abs）。
+ *
+ * Bug 1008：入口兜底只造**一个**占位实参 ⇒ `...xs` 的长度被观测成字面量 1
+ * ⇒ 投影面把这次兜底观测当出口域（`literal(1)`），导出校验器拒绝被导出
+ * 函数自己的返回值（dts 面写 number ⇒ 四方言矛盾）。变长实参让
+ * `xs.length` 落到 `number`（长度不确信 ⇒ 不是字面量）。
+ */
+function restEntryArgAbs(): Abs {
+  return makeAbsVal({ k: "arr", element: anyAbs }, undefined, undefined, "partial");
+}
+
 export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidate): void {
   const {
     source,
@@ -860,9 +881,18 @@ export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidat
     // string 形状上 ⇒ 不抛）。
     // 无注解（.js 源 / 未标注）或不可映射的类型（别名、泛型、对象类型）⇒
     // 仍是 any（不猜）——与 core `ts-type-shape.ts` 同口径。
+    //
+    // Bug 1008：rest 形参按**变长**造实参（元素未知的数组 Abs），不能按一个
+    // 占位实参造——否则 `withRest(...xs){ return xs.length; }` 的兜底观测会把
+    // `xs.length` 记成字面量 1 ⇒ 三方言（zod / standard / guard）把这次兜底
+    // 观测当出口域（literal(1)），导出校验器拒绝被导出函数自己的返回值；dts
+    // 面写 number ⇒ 四方言矛盾。
     const argAbsEntry = (fnNode ? extractFormals(fnNode) : []).map((f) =>
-      tsAnnotationArgAbs(f.tsType),
+      f.kind === "rest" ? restEntryArgAbs() : tsAnnotationArgAbs(f.tsType),
     );
+    // Bug 511：domainOnly 模式（函数已带点观测见证）——入口求值只为产出推断域。
+    const domainOnly = candidate.domainOnly === true;
+    const callRecordsBefore = env.callRecords.length;
     // evaluator 唯一求值；失败 fail-closed（entryAbs 保持 undefined）
     let entryAbs: Abs | undefined;
     let entryThrowsAbs: Abs = makeAbsVal({ k: "never" }, undefined, undefined, "exact");
@@ -935,6 +965,12 @@ export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidat
     } finally {
       setMayThrowCollector(null);
     }
+    // Bug 511（domainOnly 模式）：这次入口求值只为产出**推断域**——它带出的
+    // 调用点证据**不并入**共享台账（否则一次为取域而做的求值会污染别的函数
+    // 的证据面：被调方凭空多出一条 call@ 见证）。
+    if (domainOnly && env.callRecords.length > callRecordsBefore) {
+      env.callRecords.length = callRecordsBefore;
+    }
     // throws 域 = hard throw ∪ soft may-throw（any/nullish 成员访问等）
     const softThrows = mayThrowEffectsToAbs(entryEffects);
     if (entryThrowsAbs.shape.k === "never" && softThrows.shape.k !== "never") {
@@ -952,18 +988,28 @@ export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidat
         );
       }
     }
+    // Bug 1008：rest 形参的 entry@ 兜底观测**长度是合成调用元数的产物**
+    // （`...xs` 把那一个占位实参收进数组 ⇒ `xs.length` = 1），不是函数的行为
+    // ⇒ 该观测不确信（conf `partial`）⇒ 投影面可放宽成基类型，不把这次兜底
+    // 观测当出口域（zod/standard/guard 投影成 literal(1) ⇒ 导出校验器拒绝被
+    // 导出函数自己的返回值；dts 面写 number ⇒ 四方言矛盾）。
+    const hasRestFormal = (fnNode ? extractFormals(fnNode) : []).some((f) => f.kind === "rest");
+    const entryWitnessAbs =
+      hasRestFormal && entryAbs && entryAbs.conf === "exact"
+        ? { ...entryAbs, conf: "partial" as const }
+        : entryAbs;
     const caseResult: CaseResult = {
       name: `entry@L${candidate.analysis.loc.start.line}`,
       argAbs: argAbsEntry,
-      abs: entryAbs,
+      abs: entryWitnessAbs,
       throwsAbs: entryThrowsAbs,
     };
     // display 来自 generalize；attachAbs 补无损 abs 字段（后写覆盖 abs/conf）
     tryAttachIntension(caseResult, source, candidate.analysis.name);
-    attachAbsToIntension(caseResult, entryAbs, candidate.analysis.name);
+    attachAbsToIntension(caseResult, entryWitnessAbs, candidate.analysis.name);
     candidate.analysis.cases.push(caseResult);
     candidate.analysis.entryOnly = true;
-    candidate.analysis.combinedAbs = entryAbs;
+    candidate.analysis.combinedAbs = entryWitnessAbs;
     attachHofSnapshot(candidate.analysis, source);
     // 登记为「已回落 entry@」：调用点证据可能**稍后**才出现（调用点在
     // 别的函数体内 ⇒ 被调方先于调用方被处理）——见 settleEntryOnlyCandidates。
@@ -1007,7 +1053,10 @@ export function evaluateEntryCase(env: UncachedCaseEnv, candidate: SynthCandidat
             });
           }
         }
-        if (!eff && !env.sidecarLoadFailed) {
+        // domainOnly（Bug 511）：函数已带 case 见证 ⇒ 它**有**证据（只是不是域
+        // 声明）⇒ 不发「没有调用点域」的 entry-only info（该 info 说的是
+        // 「没有契约根且没有调用点域」，与带见证的事实不符）。
+        if (!eff && !env.sidecarLoadFailed && !domainOnly) {
           diagnostics.push({
             range: {
               start: candidate.analysis.loc.start,

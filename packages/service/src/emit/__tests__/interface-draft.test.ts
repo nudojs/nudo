@@ -241,10 +241,14 @@ describe("draftInterface", () => {
     );
     const r = await draftInterface(file);
     const entry = r.entries.find((e) => e.fn === "combo");
-    expect(entry!.dsl).toBe("fn({ a: shape({ x: number() }) }, number())");
+    // 返回位：观测集（lit(1)）只是真实返回域（number | string）的子集 ⇒
+    // 义务若只写 number() 会被自己的草稿判违规（Bug 509）⇒ 不投影返回义务
+    expect(entry!.dsl).toBe("fn({ a: shape({ x: number() }) })");
+    expect(entry!.returns?.projected).toBe(false);
+    expect(entry!.returns?.display).toContain("is not covered");
     // 建议行 = 绑定的完整替代：body-read 建议合入，callsite 证据不丢
     expect(r.draftSource).toContain(
-      "// export const combo = fn({ a: shape({ x: number() }), b: shape({ y: any() }) }, number());",
+      "// export const combo = fn({ a: shape({ x: number() }), b: shape({ y: any() }) });",
     );
   });
 

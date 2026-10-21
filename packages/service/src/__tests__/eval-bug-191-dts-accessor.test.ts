@@ -87,7 +87,11 @@ describe("Bug 191 dts 负控制：非 getter 槽不受影响", () => {
     );
   });
 
-  it("空对象仍渲染成 {}", () => {
-    expect(declOf(`export function g() { return {}; }`)).toContain("{}");
+  it("空对象渲染成 Record<string, never>（不是 TS 的 {}，Bug 565）", () => {
+    // TS 的 `{}` = 任意非 nullish 值（不是「空对象」）⇒ 属性读吃 TS2339 假红，
+    // 且在联合类型里吸收 `{ a: number }`（契约义务被静默作废）
+    expect(declOf(`export function g() { return {}; }`)).toContain(
+      "Record<string, never>",
+    );
   });
 });

@@ -15,6 +15,7 @@ import {
   formatAbs,
   bindingsOf,
   type Abs,
+  extractDeclaredThrows,
 } from "@nudojs/core";
 import {
   DIAG,
@@ -109,6 +110,18 @@ import {
  */
 const MODULE_UNREADABLE_CODE = { code: "nudo:module-unreadable" }.code;
 const MODULE_JSON_INVALID_CODE = { code: "nudo:json-invalid" }.code;
+
+/**
+ * case 实参是否**全是字面量** ⇒ 该 case 是**点观测**（返回值也只是那个点，
+ * 不是调用域）。
+ *
+ * Bug 511：约束构建器实参（`number()` 等）⇒ 求值在**域**上进行，返回值本身
+ * 就是域（`number`）⇒ 域形状的观测可以给出返回面；字面量实参 ⇒ 只观测到
+ * 一个点，点不能独占返回面。
+ */
+function isPointObservationArgs(args: Abs[]): boolean {
+  return args.length > 0 && args.every((a) => a.term?.op === "lit");
+}
 
 export function analyzeFileUncached(
   filePath: string,
@@ -611,8 +624,34 @@ export function analyzeFileUncachedInner(
 
     // 无 case，或本轮不求值 case（none / selected 未命中）→ entry@ 出签名；
     // skip 函数不走合成/entry@ 兜底——推断面由声明面接管（#176）
-    if (!skipped && caseIdxsToRun.length === 0) {
-      synthCandidates.push({ name: fn.name, node: fn.node, analysis });
+    //
+    // Bug 511：无断言的 case 指令是**见证**（"这次调用没抛、返回了这个"），不是
+    // 调用域声明。一个**点观测**（实参全是字面量 ⇒ 返回值也只是那个点）不能独占
+    // 返回面——否则 `nudo test --freeze` 把外部调用点写回源码后，导出面会塌缩成
+    // 那个单点字面量（zod 面 z.literal(3) / guard 面 data === 3）：守卫只接受 3，
+    // 把合法调用判非法，且 check 面（number | string）与 export 面（3）口径漂移。
+    // ⇒ 这类函数仍走 entry@/call@ 合成（域由推断面给出）；见证留在 case 台账里。
+    // 域形状的观测（实参是约束构建器 ⇒ 返回值本身就是域）与**带断言**的 case
+    // 都是域声明 ⇒ 不进合成路径（面由它们给出，与既有口径一致）。
+    const hasAssertedCase = caseIdxsToRun.some((i) => caseDirectives[i]?.expected !== undefined);
+    const hasDomainShapedCase = caseIdxsToRun.some(
+      (i) => !isPointObservationArgs(caseDirectives[i]?.argsAbs ?? []),
+    );
+    const pointWitnessOnly =
+      caseIdxsToRun.length > 0 &&
+      !hasAssertedCase &&
+      !hasDomainShapedCase &&
+      extractDeclaredThrows(source, fn.name) === undefined;
+    if (!skipped && (caseIdxsToRun.length === 0 || pointWitnessOnly)) {
+      // pointWitnessOnly：入口兜底**只为产出推断域**（见证不得独占返回面）——
+      // 其 entry@ 见证不进 case 台账，入口求值带出的调用点证据也不并入共享
+      // 台账（见 SynthCandidate.domainOnly）。
+      synthCandidates.push({
+        name: fn.name,
+        node: fn.node,
+        analysis,
+        ...(pointWitnessOnly ? { domainOnly: true } : {}),
+      });
     }
 
     // @nudo:case 指令求值（case 落 analysis.cases / caseHints / 诊断）→ cases 文件
@@ -801,7 +840,14 @@ export function analyzeFileUncachedInner(
       ].filter((r) => !isLeakedCallRecord(r)),
     );
     // T10b：跨文件注入的调用点域证据 ⊄ 手写契约 → nudo:interface-domain-exceeds
-    reportInjectedDomainExceeds(candidate.name, candidate.node, candidate.analysis.loc);
+    // 带 case 指令的函数已在上面的指令循环里报过 ⇒ 不重复报（Bug 511 接线
+    // 后指令函数也会进合成路径，两处都会触发 ⇒ 同一条诊断出两遍）。
+    const hasCaseDirective = functions.some(
+      (fn) => fn.name === candidate.name && fn.directives.some((d) => d.kind === "case"),
+    );
+    if (!hasCaseDirective) {
+      reportInjectedDomainExceeds(candidate.name, candidate.node, candidate.analysis.loc);
+    }
     if (records.length > 0) {
       // 调用点 case 合成（call@ / call@symbolic + combinedAbs）→ cases 文件
       synthesizeCallSiteCases(caseEnv, candidate, records, callSiteBudget);

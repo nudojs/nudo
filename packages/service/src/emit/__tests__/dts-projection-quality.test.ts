@@ -56,10 +56,11 @@ describe("absToTSType legality (E1)", () => {
     expect(check.ok, check.stderr).toBe(true);
   });
 
-  it("wraps function types under optional | undefined", () => {
+  it("wraps function types under optional property", () => {
     const ts = absToTSType(optSlot(fnAbs(["x"], num())));
-    // bare `(x: unknown) => number | undefined` attaches | undefined to the return
-    expect(ts).toBe("{ f: ((x: unknown) => number) | undefined }");
+    // optional 槽渲染成 TS 可选属性（Bug 543 / 560）：旧口径 `f: T | undefined`
+    // 在 TS 里是「键必需」⇒ 比契约 / zod / standard / check 四个面都严。
+    expect(ts).toBe("{ f?: ((x: unknown) => number) }");
     const check = tscNoEmit(`export type T = ${ts};`);
     expect(check.ok, check.stderr).toBe(true);
   });

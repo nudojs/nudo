@@ -166,10 +166,10 @@ Context: [Call-site discovery ceiling](../concepts/limits.md#call-site-discovery
 ### `nudo:interface-emit-denied` {#nudo-interface-emit-denied}
 
 ```text
-emit target 'path/lib.nudo.js' is outside package.json#nudo.contract.emit allowlist
+emit target 'path/lib.js' is outside package.json#nudo.contract.emit allowlist (patterns match the source file path, not the sidecar path 'path/lib.nudo.js')
 ```
 
-`contract --emit` refused to write a sidecar outside the configured allowlist. **Warning** — the write is skipped. Fix: move the target, or extend `package.json#nudo.contract.emit`.
+`contract --emit` refused to write a sidecar outside the configured allowlist. **Warning** — the write is skipped. The allowlist patterns match the **source file path**, not the sidecar path (the message names both). Fix: move the target, or extend `package.json#nudo.contract.emit`.
 
 Context: [Emit generated segments](../guides/contract.md#emit-generated-segments)
 
