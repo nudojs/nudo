@@ -301,7 +301,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="spy"></a>`spy` | fn | test mock helpers | `spy(): MockHelper` |
 | <a id="str"></a>`str` | fn | Abs constructors / faces | `str(): Abs` |
 | <a id="string"></a>`string` | fn | `@nudo:contract` builder grammar | `string(): ConstraintBuilder` |
-| <a id="striptypes"></a>`stripTypes` | fn | AST TS-stripping helper | `stripTypes<T extends Node>(ast: T, source?: string): T` |
+| <a id="striptypes"></a>`stripTypes` | fn | AST TS-stripping helper | `stripTypes<T extends Node>(ast: T, source?: string, opts?: StripOptions): T` |
 | <a id="strlit"></a>`strLit` | fn | literal Abs; `litValue` → `LitValueResult` tagged (`&#123;ok:true,value&#125;\ | `strLit(value: string): Abs` |
 | <a id="stub"></a>`stub` | fn | test mock helpers | `stub(): MockHelper` |
 | <a id="term"></a>`Term` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `Term = \| { op: "lit"; value: LiteralValue } \| { op: "var"; id: string } \| { op: "app"; fn: string; args: Term[] }` |
