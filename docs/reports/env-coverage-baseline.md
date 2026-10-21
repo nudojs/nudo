@@ -7,7 +7,7 @@
 > Categories still recommended for mock are listed below and aligned with
 > `docs/design/limitations.md` §2 (call-site ceiling).
 
-- Generated at: `2026-10-06T13:41:17.700Z`
+- Generated at: `2026-10-21T18:46:33.966Z`
 - Harvest budgets: maxFiles=`12`, maxMs=`2500`, disable=`NUDO_HARVEST_NODE=off`
 
 ## Summary — Node env probes
@@ -30,7 +30,7 @@ Leaf-clean ratio (format has no unknown/any token / total): **89.6%**
 | `fs.readFileSync` | resolved | clean | `(string, options?: string \| { encoding?: string, flag?: string }) => string \| Buffer` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
 | `fs.writeFileSync` | resolved | clean | `(string, string \| Buffer, options?: string \| { encoding?: string, flag?: string }) => undefined` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
 | `fs.existsSync` | resolved | clean | `(string) => boolean` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
-| `fs.statSync` | resolved | clean | `(string, options?: { bigint?: boolean, throwIfNoEntry?: boolean }) => { isFile: () => boolean, isDirectory: () => boolean, isSymbolicLink: () => boolean, isBlockDevice: () => boolean, isCharacterDevice: () => boolean, isFIFO: () => boolean, isSocket: () => boolean, size: number, mtime: Date, ctime: Date, atime: Date, birthtime: Date, mtimeMs: number, ctimeMs: number, atimeMs: number, birthtimeMs: number, mode: number, uid: number, gid: number, ino: number, dev: number, nlink: number }` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `fs.statSync` | resolved | clean | `(string, options?: { bigint?: boolean, throwIfNoEntry?: boolean }) => { isFile: () => boolean, isDirectory: () => boolean, isSymbolicLink: () => boolean, isBlockDevice: () => boolean, isCharacterDevice: () => boolean, isFIFO: () => boolean, isSocket: () => boolean, size: number, mode: number, uid: number, gid: number, ino: number, dev: number, nlink: number, blksize: number, blocks: number, rdev: number, mtime: Date, ctime: Date, atime: Date, birthtime: Date, mtimeMs: number, ctimeMs: number, atimeMs: number, birthtimeMs: number }` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
 | `fs.readdirSync` | resolved | clean | `(string, options?: { encoding?: string, withFileTypes?: boolean, recursive?: boolean }) => Array<string \| Dirent>` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
 | `fs.mkdirSync` | resolved | clean | `(string, options?: { recursive?: boolean, mode?: number }) => string \| undefined` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
 | `fs.rmSync` | resolved | clean | `(string, options?: { recursive?: boolean, force?: boolean, maxRetries?: number, retryDelay?: number }) => undefined` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
@@ -58,7 +58,7 @@ Leaf-clean ratio (format has no unknown/any token / total): **89.6%**
 | `url.URL` | resolved | clean | `(string, base?: string) => { href: string, origin: string, protocol: string, username: string, password: string, host: string, hostname: string, port: string, pathname: string, search: string, hash: string, toString: () => string, toJSON: () => string }` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
 | `url.URLSearchParams` | resolved | clean | `(init?: string \| Record<string, string> \| string[][]) => { get: (string) => string \| null, getAll: (string) => string[], has: (string) => boolean, set: (string, string) => undefined, append: (string, string) => undefined, delete: (string) => undefined, toString: () => string, size: number }` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
 | `url.fileURLToPath` | resolved | clean | `(string) => string` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
-| `url.pathToFileURL` | resolved | clean | `(string) => { href: string }` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `url.pathToFileURL` | resolved | clean | `(string) => { href: string, origin: string, protocol: string, username: string, password: string, host: string, hostname: string, port: string, pathname: string, search: string, hash: string, toString: () => string, toJSON: () => string }` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
 | `events.EventEmitter` | resolved | clean | `(options?: { captureRejections?: boolean }) => EventEmitter` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
 | `events.once` | resolved | clean | `(EventEmitter, string) => promise<EventArgs>` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
 | `events.on` | resolved | clean | `(EventEmitter, string) => AsyncIterator` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
@@ -93,7 +93,7 @@ Leaf-clean ratio (format has no unknown/any token / total): **89.6%**
 | `os.homedir` | resolved | clean | `() => string` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
 | `os.tmpdir` | resolved | clean | `() => string` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
 | `os.EOL` | resolved | clean | `string` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
-| `os.cpus` | resolved | clean | `() => { model: string, speed: number }[]` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `os.cpus` | resolved | clean | `() => { model: string, speed: number, times: { user: number, nice: number, sys: number, idle: number, irq: number } }[]` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
 | `Buffer.from` | resolved | clean | `(string \| number[] \| Buffer) => Buffer` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
 | `Buffer.alloc` | resolved | clean | `(number, fill?: string \| number \| Buffer, encoding?: string) => Buffer` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
 | `Buffer.concat` | resolved | clean | `(Buffer[]) => Buffer` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
@@ -102,12 +102,12 @@ Leaf-clean ratio (format has no unknown/any token / total): **89.6%**
 | `assert.deepStrictEqual` | resolved | mentions-unknown | `(any, any, message?: string \| Error) => undefined` | present in env; signature-level — format still mentions unknown/any leaves |
 | `child_process.spawn` | resolved | clean | `(string, string[], options?: { cwd?: string, env?: Record<string, string \| undefined>, stdio?: string \| string[], shell?: boolean \| string, timeout?: number, killSignal?: string \| number }) => ChildProcess` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
 | `child_process.execFile` | resolved | clean | `(string, args?: string[], callback?: CallbackFn) => ChildProcess` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
-| `child_process.spawnSync` | resolved | clean | `(string, string[], options?: { encoding?: string, timeout?: number, maxBuffer?: number, cwd?: string }) => { status: number \| null, stdout: string \| Buffer, stderr: string \| Buffer, error: Error \| undefined }` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
+| `child_process.spawnSync` | resolved | clean | `(string, string[], options?: { encoding?: string, timeout?: number, maxBuffer?: number, cwd?: string }) => { pid: number, output: (Buffer \| null)[], status: number \| null, signal: string \| null, stdout: string \| Buffer, stderr: string \| Buffer, error: Error \| undefined }` | present in handwritten env with concrete Abs shape (format has no unknown leaf) |
 | `child_process.spawn-native` | mock-required | — | `(string, string[], options?: { cwd?: string, env?: Record<string, string \| undefined>, stdio?: string \| string[], shell?: boolean \| string, timeout?: number, killSignal?: string \| number }) => ChildProcess` | native process spawn — no side-effect simulation; ChildProcess shape is signature-level |
 
 ### ES / web sample
 
-- ES: resolved 3/4
+- ES: resolved 4/4
 - Web: resolved 3/3
 
 ## Library three-state path

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-06T13:41:17.700Z",
+  "generatedAt": "2026-10-21T18:46:33.966Z",
   "note": "Extensional env coverage baseline — resolution rate is NOT a soundness/completeness claim. See design/limitations.md §2 and website semantics mock-boundary section.",
   "budgets": {
     "harvestNodeTypes": {
@@ -9,9 +9,9 @@
     }
   },
   "envModuleKeys": {
-    "es": 29,
-    "web": 62,
-    "nodeGlobals": 41,
+    "es": 55,
+    "web": 93,
+    "nodeGlobals": 130,
     "nodeModules": [
       "assert",
       "child_process",
@@ -91,7 +91,7 @@
           "statSync"
         ],
         "status": "resolved",
-        "format": "(string, options?: { bigint?: boolean, throwIfNoEntry?: boolean }) => { isFile: () => boolean, isDirectory: () => boolean, isSymbolicLink: () => boolean, isBlockDevice: () => boolean, isCharacterDevice: () => boolean, isFIFO: () => boolean, isSocket: () => boolean, size: number, mtime: Date, ctime: Date, atime: Date, birthtime: Date, mtimeMs: number, ctimeMs: number, atimeMs: number, birthtimeMs: number, mode: number, uid: number, gid: number, ino: number, dev: number, nlink: number }",
+        "format": "(string, options?: { bigint?: boolean, throwIfNoEntry?: boolean }) => { isFile: () => boolean, isDirectory: () => boolean, isSymbolicLink: () => boolean, isBlockDevice: () => boolean, isCharacterDevice: () => boolean, isFIFO: () => boolean, isSocket: () => boolean, size: number, mode: number, uid: number, gid: number, ino: number, dev: number, nlink: number, blksize: number, blocks: number, rdev: number, mtime: Date, ctime: Date, atime: Date, birthtime: Date, mtimeMs: number, ctimeMs: number, atimeMs: number, birthtimeMs: number }",
         "leaf": "clean",
         "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
       },
@@ -399,7 +399,7 @@
           "pathToFileURL"
         ],
         "status": "resolved",
-        "format": "(string) => { href: string }",
+        "format": "(string) => { href: string, origin: string, protocol: string, username: string, password: string, host: string, hostname: string, port: string, pathname: string, search: string, hash: string, toString: () => string, toJSON: () => string }",
         "leaf": "clean",
         "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
       },
@@ -787,7 +787,7 @@
           "cpus"
         ],
         "status": "resolved",
-        "format": "() => { model: string, speed: number }[]",
+        "format": "() => { model: string, speed: number, times: { user: number, nice: number, sys: number, idle: number, irq: number } }[]",
         "leaf": "clean",
         "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
       },
@@ -886,7 +886,7 @@
           "spawnSync"
         ],
         "status": "resolved",
-        "format": "(string, string[], options?: { encoding?: string, timeout?: number, maxBuffer?: number, cwd?: string }) => { status: number | null, stdout: string | Buffer, stderr: string | Buffer, error: Error | undefined }",
+        "format": "(string, string[], options?: { encoding?: string, timeout?: number, maxBuffer?: number, cwd?: string }) => { pid: number, output: (Buffer | null)[], status: number | null, signal: string | null, stdout: string | Buffer, stderr: string | Buffer, error: Error | undefined }",
         "leaf": "clean",
         "reason": "present in handwritten env with concrete Abs shape (format has no unknown leaf)"
       },
@@ -906,13 +906,13 @@
   },
   "esProbes": {
     "counts": {
-      "resolved": 3,
-      "unknown": 1,
+      "resolved": 4,
+      "unknown": 0,
       "mock-required": 0
     },
     "leaf": {
       "clean": 1,
-      "mentionsUnknown": 2
+      "mentionsUnknown": 3
     },
     "total": 4,
     "results": [
@@ -922,8 +922,10 @@
           "Array",
           "isArray"
         ],
-        "status": "unknown",
-        "reason": "missing from env globals"
+        "status": "resolved",
+        "format": "(unknown) => boolean",
+        "leaf": "mentions-unknown",
+        "reason": "present in env; signature-level — format still mentions unknown/any leaves"
       },
       {
         "id": "JSON.stringify",
@@ -977,7 +979,7 @@
           "fetch"
         ],
         "status": "resolved",
-        "format": "(string | { json: () => promise<unknown>, text: () => promise<string>, arrayBuffer: () => promise<unknown>, blob: () => promise<unknown>, formData: () => promise<unknown>, clone: () => unknown, ok: boolean, status: number, statusText: string, headers: { append: (string, string) => undefined, delete: (string) => undefined, get: (string) => string | null, has: (string) => boolean, set: (string, string) => undefined, forEach: (unknown) => undefined, entries: () => unknown, keys: () => unknown, values: () => unknown }, url: string, redirected: boolean, type: string, bodyUsed: boolean, method: string, body: unknown | null, mode: string, credentials: string, cache: string, redirect: string, referrer: string, integrity: string, signal: unknown }) => promise<{ json: () => promise<unknown>, text: () => promise<string>, arrayBuffer: () => promise<unknown>, blob: () => promise<unknown>, formData: () => promise<unknown>, clone: () => unknown, ok: boolean, status: number, statusText: string, headers: { append: (string, string) => undefined, delete: (string) => undefined, get: (string) => string | null, has: (string) => boolean, set: (string, string) => undefined, forEach: (unknown) => undefined, entries: () => unknown, keys: () => unknown, values: () => unknown }, url: string, redirected: boolean, type: string, bodyUsed: boolean }>",
+        "format": "(string | { json: () => promise<unknown>, text: () => promise<string>, arrayBuffer: () => promise<unknown>, blob: () => promise<unknown>, formData: () => promise<unknown>, clone: () => unknown, headers: { append: (string, string) => undefined, delete: (string) => undefined, get: (string) => string | null, has: (string) => boolean, set: (string, string) => undefined, forEach: (unknown) => undefined, entries: () => unknown, keys: () => unknown, values: () => unknown }, url: string, bodyUsed: boolean, method: string, body: unknown | null, mode: string, credentials: string, cache: string, redirect: string, referrer: string, referrerPolicy: string, integrity: string, signal: unknown, keepalive: boolean, duplex: string, destination: string }) => promise<{ json: () => promise<unknown>, text: () => promise<string>, arrayBuffer: () => promise<unknown>, blob: () => promise<unknown>, formData: () => promise<unknown>, clone: () => unknown, headers: { append: (string, string) => undefined, delete: (string) => undefined, get: (string) => string | null, has: (string) => boolean, set: (string, string) => undefined, forEach: (unknown) => undefined, entries: () => unknown, keys: () => unknown, values: () => unknown }, url: string, bodyUsed: boolean, ok: boolean, status: number, statusText: string, redirected: boolean, type: string }>",
         "leaf": "mentions-unknown",
         "reason": "present in env; signature-level — format still mentions unknown/any leaves"
       },

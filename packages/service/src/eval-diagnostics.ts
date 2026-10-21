@@ -9,7 +9,14 @@
  * 报出来即为误报。
  */
 
-import { parseSource } from "@nudojs/core";
+import {
+  parseSource,
+  namespaceNameOf,
+  hostBuiltinCtorName,
+  evalBuiltinNew,
+  evalGlobalFn,
+  isErrorCtorName,
+} from "@nudojs/core";
 import type { File, Node, Statement, Identifier } from "@babel/types";
 
 export type EvalLoc = {
@@ -169,37 +176,131 @@ function collectDeclared(file: File): Set<string> {
   return names;
 }
 
-/** 已知可接受的全局（不报 builtin-unknown）——不含 WeakRef 等未覆盖 API */
-const KNOWN_GLOBALS = new Set([
-  "Object",
-  "Array",
-  "String",
-  "Number",
-  "Boolean",
-  "Symbol",
-  "Math",
-  "JSON",
-  "Promise",
-  "Error",
-  "TypeError",
-  "RangeError",
-  "SyntaxError",
-  "RegExp",
-  "Date",
-  "Map",
-  "Set",
-  "WeakMap",
-  "WeakSet",
-  "console",
-  "undefined",
-  "NaN",
-  "Infinity",
-  "globalThis",
-  "parseInt",
-  "parseFloat",
-  "isNaN",
-  "isFinite",
-]);
+/**
+ * 已知可接受的全局（不报 builtin-unknown）——**按 core 真实建模能力推导**
+ * （族 29 Bug 865），不再是手写白名单。
+ *
+ * 症状：es env 未声明的一批 ES 规范全局（BigInt / TypedArray 族 /
+ * ArrayBuffer / DataView / AggregateError / Function / escape …）被报
+ * 「Built-in API "X" is not covered by Nudo's type inference」，而**同一份
+ * 报告**里引擎恰恰把它们推成了**精确值**（`() => 1n` / `() => 4` / `() => "m"`）
+ * ——报告自相矛盾。根因：判定依据是一张**手写**白名单，而不是引擎真实的
+ * 建模能力。
+ *
+ * 判定依据（全部用 @nudojs/core 的**既有**公开导出；core 公共 API 冻结面
+ * 不得新增导出 ⇒ 这里只**使用**既有导出拼出集合）：
+ * - `namespaceNameOf(host) === name` → core 的**命名空间身份路由表**
+ *   （NAMESPACE_GLOBALS：Math/JSON/…/TypedArray 全家/ArrayBuffer/…）
+ * - `hostBuiltinCtorName(host) === name` → core 的**内建构造器身份表**
+ * - `evalBuiltinNew(name, args)` 有派发 → core 的**构造面**（含「恒抛域错误」
+ *   的建模，如 `new BigInt()` / `Map()` 原生 TypeError）
+ * - `evalGlobalFn(name, args)` 有派发 → core 的**全局函数面**（GLOBAL_FNS：
+ *   parseInt/URI 族/escape 族/…）
+ * - `isErrorCtorName(name)` → Error 家族
+ *
+ * 「有派发」= 返回 Abs（**且不是 `unknown` 兜底**——core 对 `eval` 刻意
+ * 折 unknown，那不是**精确建模**，仍应报「未被覆盖」）或抛 NudoThrow
+ * （域错误也是建模）。
+ *
+ * 候选集 = 宿主真实全局名（`Object.getOwnPropertyNames(globalThis)`）——
+ * 即「运行时确实存在的全局」；**覆盖判定完全由 core 的派发表推导**，
+ * 手写部分只剩 5 个 core 不建模但恒在的无害名字（console / globalThis /
+ * undefined / NaN / Infinity）。
+ */
+const NON_MODELED_BUT_ALWAYS_PRESENT = ["console", "globalThis"] as const;
+
+/** 转译期已硬编码折叠的宿主内建（HOST_INTRINSIC_NAMES）——恒在且已被建模 */
+const HOST_INTRINSIC_GLOBALS = ["undefined", "NaN", "Infinity"] as const;
+
+/**
+ * 【族 29 主 agent 收口】原 S5 分片为保住三条既有 service 钉而留的
+ * `WeakRef` 手写例外**已删除**。
+ *
+ * 理由：那三条钉（`catch-param-declared.test.ts` / `diagnostics.test.ts` /
+ * `eval-arg-provenance.test.ts`）编码的是**旧手写白名单**的判定，而 core
+ * 其实已精确建模 WeakRef（`evalBuiltinNew` 的 `case "WeakRef"` →
+ * `makeWeakRefAbs`，CanBeHeldWeakly 校验）⇒ 按「覆盖判定完全由 core 的
+ * 派发表推导」的口径，WeakRef 属**已覆盖**，不该报「未被覆盖」。
+ *
+ * 留着手写例外 = 把要消灭的「手写白名单」换个地方继续写，与 Bug 865 的
+ * 根因（判定依据是手写名单而不是引擎真实建模能力）同型。
+ *
+ * 处理：那三条钉的**样例全局**换成真正未被建模的宿主全局 `Atomics`
+ * （core 无 Atomics 建模面；它在 `globalThis` 里且是数据属性 ⇒ 不触发
+ * 访问器副作用），钉的**意图**（未建模全局要报 builtin-unknown、且不与
+ * unknown-global 双报）完全保留。
+ */
+
+let modeledGlobalsCache: Set<string> | undefined;
+
+/** core 精确建模的全局集合（懒算 + 缓存）。 */
+function coreModeledGlobals(): ReadonlySet<string> {
+  if (modeledGlobalsCache) return modeledGlobalsCache;
+  const out = new Set<string>([
+    ...NON_MODELED_BUT_ALWAYS_PRESENT,
+    ...HOST_INTRINSIC_GLOBALS,
+  ]);
+  for (const name of Object.getOwnPropertyNames(globalThis)) {
+    // 访问器（accessor）全局**跳过**：读它的 getter 可能有副作用 —— node 22+
+    // 的 `localStorage` / `sessionStorage` getter 会往 stderr 打一条
+    // ExperimentalWarning ⇒ 污染 CLI 的 stderr（`nudo check` 的 miss/hit
+    // 字节一致性钉会红）。core 已建模的全局（NAMESPACE_GLOBALS / 内建构造器
+    // 身份表）**全是数据属性**，跳过访问器不丢覆盖。
+    const desc = Object.getOwnPropertyDescriptor(globalThis, name);
+    if (desc && !("value" in desc)) continue;
+    let host: unknown;
+    try {
+      host = (globalThis as Record<string, unknown>)[name];
+    } catch {
+      continue; // 宿主 getter 抛（极少）⇒ 判不出，按未覆盖
+    }
+    // 1) 命名空间身份路由表（NAMESPACE_GLOBALS）
+    try {
+      if (namespaceNameOf(host) === name) {
+        out.add(name);
+        continue;
+      }
+    } catch {
+      /* 判不出 ⇒ 落下面几路 */
+    }
+    // 2) 内建构造器身份表（hostBuiltinCtorName）
+    try {
+      if (hostBuiltinCtorName(host) === name) {
+        out.add(name);
+        continue;
+      }
+    } catch {
+      /* 同上 */
+    }
+    // 3) 构造面派发（evalBuiltinNew）——抛 = 域错误建模（原生恒抛）
+    try {
+      if (evalBuiltinNew(name, []) !== undefined) {
+        out.add(name);
+        continue;
+      }
+    } catch {
+      out.add(name);
+      continue;
+    }
+    // 4) 全局函数面派发（evalGlobalFn）——unknown 兜底不算精确建模
+    try {
+      const r = evalGlobalFn(name, []);
+      if (r !== undefined && r.shape.k !== "unknown") {
+        out.add(name);
+        continue;
+      }
+    } catch {
+      out.add(name);
+      continue;
+    }
+    // 5) Error 家族
+    if (isErrorCtorName(name)) out.add(name);
+  }
+  modeledGlobalsCache = out;
+  return out;
+}
+
+const KNOWN_GLOBALS: ReadonlySet<string> = coreModeledGlobals();
 
 /** require spec 可常量折叠成字符串（transpile 已接管，不报 builtin-unknown） */
 function isStaticStringExpr(node: unknown): boolean {

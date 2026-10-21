@@ -19,10 +19,10 @@ export function f() {
   it("still flags free unknown globals", () => {
     const src = `
 export function f() {
-  return WeakRef;
+  return Atomics;
 }
 `;
     const d = collectEvalDiagnostics(src);
-    expect(d.builtinUnknown.some((x) => x.name === "WeakRef")).toBe(true);
+    expect(d.builtinUnknown.some((x) => x.name === "Atomics")).toBe(true);
   });
 });

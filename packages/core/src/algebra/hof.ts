@@ -669,8 +669,44 @@ export function substAbs(a: Abs, map: ReadonlyMap<string, Abs>): Abs {
 }
 
 /**
+ * 裸宿主值 → Abs 的归一化桥（**普通调用面**实参归一化用）。
+ *
+ * hof.ts 是 algebra 层叶子，**不 import exec**（避免 hof ↔ exec 环，
+ * 见本文件 `setApplyCallbackHost` 同款纪律）⇒ 归一化实现由宿主在运行时
+ * 注册（`exec/class/invoke.ts` 注册 `asAbsVal`——与成员调用面同一门面，
+ * 同一宿主函数恒同一 Abs 身份 ⇒ 两种调用口径一致）。
+ *
+ * 未注册 ⇒ 回落 `unknown`（fail-closed，不崩）。
+ */
+let rawArgNormalizer: ((v: unknown) => Abs) | undefined;
+
+/** 注册裸宿主值 → Abs 的归一化实现（宿主加载期调用；同款注册式）。 */
+export function setRawArgNormalizer(fn: (v: unknown) => Abs): void {
+  rawArgNormalizer = fn;
+}
+
+/**
+ * 普通调用面实参归一化（Bug 882）：具名导入 / 直接调用的实参可能是
+ * **裸宿主值**（宿主函数 / 宿主构造器 / 用户函数声明——transpile 侧直发
+ * host function）。这类值没有 Abs 形状 ⇒ 流进代数解引用点（`arg.shape`）
+ * 会解引用 undefined ⇒ TypeError 冒泡 ⇒ 上层当成「这个调用可能抛」⇒
+ * 记 may TypeError ⇒ **L2 门禁假红**（native 必不抛）。
+ *
+ * 归一化口径与成员调用面（`exec/class/invoke.ts` 的 Bug 85 段）同款：
+ * 非 Abs 实参一律经 `asAbsVal` 收成 Abs。
+ */
+function normalizeCallArg(a: Abs | undefined): Abs {
+  if (a && typeof a === "object" && "shape" in (a as object)) return a;
+  return rawArgNormalizer ? rawArgNormalizer(a) : unknown;
+}
+
+/**
  * 从 pattern（声明形参）与 arg（实参 Abs）做结构合一，绑定 α 变量。
  * 首次绑定保留；只下钻 arr / obj / tuple / sum / fn 形参。
+ *
+ * Bug 882：**实参未必是 Abs**（普通调用面把裸宿主值原样灌进来——见
+ * `normalizeCallArg`）。无形状的实参**不参与类型变量绑定**（此前
+ * `arg.shape` 解引用 undefined ⇒ TypeError 冒泡 ⇒ L2 假红）。
  */
 function bindTypeVars(
   pattern: Abs,
@@ -679,13 +715,15 @@ function bindTypeVars(
   depth = 0,
 ): void {
   if (depth > 6 || map.size > 16) return;
+  // 无形状实参（裸宿主值）：不绑定、不下钻——「绑不出」而非「崩」。
+  const as = (arg as Abs | undefined)?.shape;
+  if (!as) return;
   const pt = pattern.term;
   if (pt?.op === "var") {
     if (!map.has(pt.id)) map.set(pt.id, arg);
     return;
   }
   const ps = pattern.shape;
-  const as = arg.shape;
   if (ps.k === "arr" && as.k === "arr") {
     bindTypeVars(ps.element, as.element, map, depth + 1);
     return;
@@ -745,7 +783,9 @@ export function instantiateReturn(fn: Abs, args: Abs[]): Abs {
   };
   const map = new Map<string, Abs>();
   src.paramTypes.forEach((p, i) => {
-    bindTypeVars(p, args[i] ?? unknown, map);
+    // Bug 882：普通调用面实参归一化（裸宿主值 → Abs）——与成员调用面
+    // （`exec/class/invoke.ts` 的 Bug 85 段）同款口径。
+    bindTypeVars(p, normalizeCallArg(args[i] ?? unknown), map);
   });
   // 条件类型 infer：T 绑定后投出 E/U；extends 不成立 → fallback 支
   if (src.inferFrom) {

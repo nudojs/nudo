@@ -30,6 +30,7 @@ import { evalNamespaceCall, evalBuiltinInstanceMethod, isSymbolAbs, stringOfSymb
 import { isErrorCtorName } from "../../builtins/error.ts";
 import {
   validateCallableArg,
+  setRawArgNormalizer,
 } from "../../hof.ts";
 import { privateNameGuard } from "../runtime/containers.ts";
 // 直连 member.ts（不经 containers barrel）：本模块体加载期即回调本 setter，
@@ -97,6 +98,34 @@ function enforceNumProtoArgDomain(method: string, argAbs: Abs | undefined): void
   if (bad) throw new NudoThrow(errorTypeAbs("RangeError"));
 }
 
+/**
+ * Bug 85（+ Bug 882）：实参归一化——函数声明绑定是裸宿主函数（statement.ts
+ * 直发 host function），作实参流入 Abs 解引用点 → 内部 TypeError 冒进
+ * may-throw ⇒ L2 假红。此处统一归一化实参（函数边界 prologue 的
+ * `$absVal` 同口径，copy-on-write：全 Abs 时不分配新数组）。callee 位
+ * （thisVal）不动——宿主函数直调路径依赖裸值 apply。
+ *
+ * Bug 882：同一归一化口径也服务**普通调用面**（具名导入 / 直接调用）——
+ * algebra 层 `hof.ts` 的 `setRawArgNormalizer` 注册本门面用的 `asAbsVal`，
+ * 两侧共用同一门面 ⇒ 同一宿主函数恒同一 Abs 身份 ⇒ 两种调用口径一致。
+ */
+export function normalizeCallArgs(args: Abs[]): Abs[] {
+  let norm = args;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i] as unknown;
+    if (!(a && typeof a === "object" && "shape" in a)) {
+      if (norm === args) norm = args.slice();
+      norm[i] = asAbsVal(a);
+    }
+  }
+  return norm;
+}
+
+// Bug 882：把「裸宿主值 → Abs」的归一化门面注册给 algebra 层（hof.ts 是
+// algebra 叶子，不 import exec，避免 hof ↔ exec 环；同款注册式，与
+// setApplyCallbackHost / setHostGlobalCallBridge 一致）。
+setRawArgNormalizer(asAbsVal);
+
 /** 实例方法调用：沿继承链；类 Abs 上回落 staticMethods；obj 上回落属性函数 */
 export function $invoke(
   thisVal: Abs,
@@ -127,14 +156,7 @@ export function $invoke(
   // catch 吞成引擎错误消息）。此处统一归一化实参（函数边界 prologue 的
   // $absVal 同口径，copy-on-write：全 Abs 时不分配新数组）。callee 位
   // （thisVal）不动——宿主函数直调路径依赖裸值 apply
-  let normArgs = argList;
-  for (let i = 0; i < argList.length; i++) {
-    const a = argList[i] as unknown;
-    if (!(a && typeof a === "object" && "shape" in a)) {
-      if (normArgs === argList) normArgs = argList.slice();
-      normArgs[i] = asAbsVal(a);
-    }
-  }
+  const normArgs = normalizeCallArgs(argList);
   // Bug 79：方法调用是普通调用面——调用期间 new.target 读 undefined
   return withNewTargetReset(() => $invokeInner(thisVal, method, normArgs, loc, preRead));
 }

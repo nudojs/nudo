@@ -78,7 +78,7 @@ import {
   enforceSetMethodArg,
   enforceTaSetItemConversion,
 } from "./binary.ts";
-import { makeUrlAbs, evalUrlSearchParamsMethod } from "./web.ts";
+import { makeUrlAbs, evalUrlSearchParamsMethod, makeTextDecoderAbs } from "./web.ts";
 import { makeBoxedAbs } from "./boxed.ts";
 import { makeIntlFormatAbs } from "./intl.ts";
 import {
@@ -174,6 +174,15 @@ export function evalBuiltinNew(className: string, args: Abs[]): Abs | undefined 
     case "URL":
       // Bug 85：input ToString + URL 解析校验（字面量真解析带 href 槽）
       return makeUrlAbs(args[0], args[1]);
+    case "TextDecoder":
+      // 族 29 Bug 886 / 889：web env 的 TextDecoder 声明已删（宿主回落才有
+      // 精确的 RangeError 语义 + 「类不可裸调」的 TypeError）⇒ 但**构造面**
+      // 必须仍认得 TextDecoder，否则：
+      // ① `nudo test` 报「Built-in API "TextDecoder" is not covered」（假阳）；
+      // ② Abs 面（evalBuiltinNew）与宿主面（$new 的 clsName 分支）口径分裂。
+      // label 校验（非法字符确定 RangeError / 知名 label 正常构造 /
+      // 未知 ASCII 形与抽象 → may）与 $new 宿主分支同 builder。
+      return makeTextDecoderAbs(args[0]);
     case "Intl.NumberFormat":
     case "Intl.DateTimeFormat":
       // Bug 44：makeIntlCtorAbs 的 fn name 按名派发——locale 校验构造
