@@ -327,8 +327,11 @@ export function emitDestructure(
       const keyLit = key !== null ? JSON.stringify(key) : symKey;
       if (keyLit !== null) namedKeys.push(JSON.parse(keyLit));
       // 键读取源：静态/符号投影键走 $get；抽象计算键走 $idx
+      // Bug 149：符号投影键带 symbolKey 标记——陷阱边界把 "@@X" 还原成真 symbol
       const readSrc =
-        keyLit !== null ? `$get(${fromSrc}, ${keyLit})` : `$idx(${fromSrc}, ${computedKeySrc})`;
+        keyLit !== null
+          ? `$get(${fromSrc}, ${keyLit}${symKey !== null ? ", { symbolKey: true }" : ""})`
+          : `$idx(${fromSrc}, ${computedKeySrc})`;
       if (prop.value.type === "AssignmentPattern") {
         const def = emitTranspileExpression(prop.value.right as Expression, opts);
         const left = prop.value.left;

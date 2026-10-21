@@ -99,8 +99,10 @@ function isNullishAbs(v: Abs): boolean {
 }
 
 /** 可选链 a?.b：nullish 短路为 undefined 字面量。非 nullish 臂的属性读对
- *  非 nullish 值原生不抛 → silent（不记 any may-throw，Bug 3） */
-export function $optionalGet(o: Abs, key: string): Abs {
+ *  非 nullish 值原生不抛 → silent（不记 any may-throw，Bug 3）。
+ *  opts.symbolKey（Bug 149）：键来自符号投影（"[Symbol.X]" → "@@X"）——
+ *  陷阱边界把 "@@X" 还原成真 symbol（规范 PropertyKey）。 */
+export function $optionalGet(o: Abs, key: string, opts?: { symbolKey?: boolean }): Abs {
   if (isNullishAbs(o)) {
     return abs(
       { k: "unknown" },
@@ -109,7 +111,7 @@ export function $optionalGet(o: Abs, key: string): Abs {
       "exact",
     );
   }
-  return $get(o, key, { silent: true });
+  return $get(o, key, { silent: true, symbolKey: opts?.symbolKey });
 }
 
 /** 可选链 a?.m()：nullish 短路为 undefined */

@@ -11,6 +11,8 @@
  * - 闭 shape 字面量 key miss → 精确 undefined（键确定不存在）；open
  *   shape / 抽象键 → 并 unknown（键可能存在）；已知原型访问器名槽面
  *   未建模 → 诚实 unknown（不得 wrong-exact undefined）。
+ * - Bug 149：符号投影键（"[Symbol.X]" → "@@X"）在 **Proxy 陷阱边界**还原成
+ *   真 symbol（规范 PropertyKey）；字面量串键 "@@X" 不带标记，仍是字符串键。
  */
 import type { Abs } from "../../../abs.ts";
 import { abs, confJoin, litValue, numLit, str, strLit, unknown } from "../../../abs.ts";
@@ -85,6 +87,7 @@ import {
   noBody,
 } from "../state.ts";
 import { $typeof } from "../ops.ts";
+import { symbolAbsForSlotKey } from "../symbol-key.ts";
 import { findClassAccessor, findStaticClassAccessor, $in, BUILTIN_BRAND_METHODS, BUILTIN_BRAND_ACCESSORS, ITERABLE_BRANDS, evalClassChain, builtinSuperCtorOf, chainProtoSlotOf, classChainHasHole, chainHasOpaqueFnParent } from "../members.ts";
 import { lookupObjAccessor } from "../../../accessors.ts";
 import { $call } from "../../call.ts";
@@ -381,11 +384,32 @@ export function protoMethodValueAbs(home: string, name: string): Abs {
   }, { ctor: false });
 }
 
+/**
+ * Bug 149：Proxy 陷阱的 key 实参。符号投影键（转译期 "[Symbol.X]" → "@@X"）
+ * 在**陷阱边界**还原成真 symbol——规范要求 trap 收到的 key 与读取时的 key
+ * 相同；此前把内部槽键表示当 PropertyKey 传出 ⇒ 按 symbol 分派的 handler
+ * 全部失灵（typeof k 得 "string"、k === Symbol.iterator 恒 false）。
+ *
+ * 普通字符串键（含用户字面量 "@@X"）原样传字符串——字面量串键与符号键是
+ * 两个不同的 PropertyKey，不得混叠。
+ */
+function trapKeyAbs(slotKey: string, isSymbolKey: boolean | undefined): Abs {
+  if (isSymbolKey) {
+    const sym = symbolAbsForSlotKey(slotKey);
+    if (sym) return sym;
+  }
+  return strLit(slotKey);
+}
+
 /** 成员读：obj.slots[key]；缺失 → undefined 字面量；brand 解包内层 */
 export function $get(
   o: Abs,
   key: string,
-  opts?: { /** 调用方已负责诊断（如 $invoke） */ silent?: boolean },
+  opts?: {
+    /** 调用方已负责诊断（如 $invoke） */ silent?: boolean;
+    /** Bug 149：键来自符号投影（"[Symbol.X]" → "@@X"）——陷阱边界还原真 symbol */
+    symbolKey?: boolean;
+  },
 ): Abs {
   // 私有名（"#" 键）：foreign-receiver brand check——原生
   // PrivateFieldGet 要求接收者是声明类实例，否则 TypeError
@@ -512,7 +536,8 @@ export function $get(
       if (parts) {
         const trap = proxyTrapOf(parts.handler, "get");
         if (trap.k === "fn") {
-          return $call(trap.fn, [parts.target, strLit(key), o], parts.handler);
+          // Bug 149：符号键的陷阱实参是真 symbol（规范 PropertyKey），不是 "@@X" 串
+          return $call(trap.fn, [parts.target, trapKeyAbs(key, opts?.symbolKey), o], parts.handler);
         }
         if (trap.k === "dead" || trap.k === "opaque") {
           recordMayThrow({ kind: "TypeError", cause: `Proxy get trap for '${key}' not callable / unknown` });
@@ -968,7 +993,8 @@ export function $set(
       if (parts) {
         const trap = proxyTrapOf(parts.handler, "set");
         if (trap.k === "fn") {
-          const res = $call(trap.fn, [parts.target, strLit(key), value, o], parts.handler);
+          // Bug 149：符号键的陷阱实参是真 symbol（规范 PropertyKey），不是 "@@X" 串
+          const res = $call(trap.fn, [parts.target, trapKeyAbs(key, opts?.symbolKey), value, o], parts.handler);
           const rv = litValue(res);
           if (rv.ok && rv.value === false) throwStrictWrite();
           return o;

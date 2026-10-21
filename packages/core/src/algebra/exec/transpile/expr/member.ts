@@ -4,7 +4,8 @@
  * 不变量：
  * - super 读三分支：类实例方法 $getSuper / 对象字面量方法 $getSuperObj /
  *   静态方法体不拦截（Super 节点已发父类构造器源）；
- * - 宿主 Symbol 常量键（m[Symbol.iterator]）投影 "@@name" 字符串键；
+ * - 宿主 Symbol 常量键（m[Symbol.iterator]）投影 "@@name" 字符串键，
+ *   并带 symbolKey 标记（陷阱边界还原成真 symbol——Bug 149）；
  * - 私有名（this.#x / C.#x）→ "#x" 混淆键槽（公有名不含 "#"，无碰撞）；
  * - 写目标的重绑路径在 ./assignment.ts（member-path 写回链），此处只读。
  */
@@ -53,7 +54,10 @@ export function transpileMemberExpr(
             : `$idx(${obj}, $lit(${key.value}))`;
         }
         // 宿主 Symbol 常量键（m[Symbol.iterator]）：投影为 "@@name" 字符串键，
-        // runtime $get 对内建 brand 解析为可 typeof 的方法形状
+        // runtime $get 对内建 brand 解析为可 typeof 的方法形状。
+        // Bug 149：同时标记「本键来自符号投影」——陷阱边界据此把 "@@name"
+        // 还原成真 symbol（规范 PropertyKey；字面量串键 "@@name" 不带标记，
+        // 仍是字符串键——两者是不同的 PropertyKey，不得混叠）。
         if (
           key.type === "MemberExpression" &&
           key.computed !== true &&
@@ -62,7 +66,9 @@ export function transpileMemberExpr(
           key.property.type === "Identifier"
         ) {
           const symKey = JSON.stringify(`@@${key.property.name}`);
-          return optional ? `$optionalGet(${obj}, ${symKey})` : `$get(${obj}, ${symKey})`;
+          return optional
+            ? `$optionalGet(${obj}, ${symKey}, { symbolKey: true })`
+            : `$get(${obj}, ${symKey}, { symbolKey: true })`;
         }
         if (isExpression(key)) {
           const k = transpileExpression(key, opts);

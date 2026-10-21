@@ -1,5 +1,9 @@
 /**
  * 访问器（get/set）侧表、in / instanceof / delete 路由。
+ *
+ * Bug 149：符号键（Symbol.iterator 等）按**宿主身份**反查 "@@X" 内部槽键
+ * 寻址（与读写面同口径），Proxy has 陷阱收到**真 symbol**（规范
+ * PropertyKey）——不再在「键不可判」处提前 return（陷阱此前完全不派发）。
  */
 import type { Abs } from "../../abs.ts";
 import { abs, bool, boolLit, confJoin, litValue, numLit, strLit, unknown, type Confidence } from "../../abs.ts";
@@ -21,6 +25,7 @@ import { TYPED_ARRAY_ELEMENT } from "../../builtins/shared.ts";
 import { OBJECT_PROTO_NAMES, ARRAY_PROTO_METHOD_NAMES } from "../member-diag.ts";
 import { $call } from "../call.ts";
 import { proxyPartsOf, proxyTrapOf } from "../match-iter.ts";
+import { slotKeyOfSymbolAbs } from "./symbol-key.ts";
 import { getEvalClass, lookupClassValue, BUILTIN_ERROR_SUPER, fnProtoOf } from "../class-registry.ts";
 import { classNameOfValue, markClassValue } from "../../class-mark.ts";
 import { NudoThrow, noBody, undef, throwStrictWrite, writeInPlace, clearStaleTermPred, asAbsVal, isDefinitelyTrue, isDefinitelyFalse, currentExecPhi, $lit, litTruth } from "./state.ts";
@@ -197,9 +202,16 @@ export function $in(key: Abs, o: Abs): Abs {
   // null/undefined/boolean 键走 ToPropertyKey（"null"/"undefined"/"true"）——
   // 原生 `undefined in o` / `null in o` 不抛，是普通字符串键查询。
   // 仅**右操作数**非对象才 TypeError。非字面量键 → boolean 近似。
-  const keyStr = propertyKeyOf(key);
+  //
+  // Bug 149：**符号键**（Symbol.iterator 等）——propertyKeyOf 对 symbol 返
+  // undefined，但那不是「键不可判」而是**真 symbol 键**：内部槽键按 "@@X"
+  // 投影寻址（与读写面同口径），Proxy has 陷阱收到**真 symbol**（规范
+  // PropertyKey：trap 的 key 与读取时的 key 相同）。此前此臂提前
+  // return bool() ⇒ has 陷阱**完全不派发**。
+  const symSlotKey = isSymbolAbs(key) ? slotKeyOfSymbolAbs(key) : undefined;
+  const keyStr = propertyKeyOf(key) ?? symSlotKey;
   if (keyStr === undefined) {
-    // 抽象 / symbol 键
+    // 抽象键 / 用户符号（Symbol("x")）——键不可判
     return bool();
   }
   const kv: string | number = keyStr;
@@ -223,7 +235,8 @@ export function $in(key: Abs, o: Abs): Abs {
     if (parts) {
       const trap = proxyTrapOf(parts.handler, "has");
       if (trap.k === "fn") {
-        return $call(trap.fn, [parts.target, strLit(String(kv))], parts.handler);
+        // Bug 149：符号键的陷阱实参是真 symbol（规范 PropertyKey），不是 "@@X" 串
+        return $call(trap.fn, [parts.target, symSlotKey !== undefined ? key : strLit(String(kv))], parts.handler);
       }
       if (trap.k === "dead" || trap.k === "opaque") {
         recordMayThrow({ kind: "TypeError", cause: `Proxy has trap for '${keyStr}' not callable / unknown` });

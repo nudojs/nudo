@@ -52,7 +52,9 @@ export function memberPathOf(m: { object: Node; property: Node; computed: boolea
         const symK = symbolKeyOf(k as unknown as Parameters<typeof symbolKeyOf>[0]);
         if (symK !== null) {
           layers.unshift({
-            get: (b) => `$get(${b}, ${symK})`,
+            // Bug 149：读侧同样带 symbolKey 标记——陷阱边界把 "@@X" 还原成
+            // 真 symbol（规范 PropertyKey）
+            get: (b) => `$get(${b}, ${symK}, { symbolKey: true })`,
             set: (b, v) => `$set(${b}, ${symK}, ${v}, { symbolKey: true })`,
           });
         } else {
