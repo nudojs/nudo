@@ -93,10 +93,13 @@ function wellKnownSymbolKeyOf(v: unknown): string | undefined {
   return wellKnownSymbolKeys.get(v);
 }
 
-/** 定义类 → 可 new 的 Abs（brand 标记；静态字段挂在 slots） */
+/** 定义类 → 可 new 的 Abs（brand 标记；静态字段挂在 slots）。
+ *  displayName（Bug 133）：对外可见的 **name**（原生无名类名为空串）；缺省
+ *  用内部类名（类声明 / 具名类表达式同口径）。 */
 export function $class(
   name: string,
   spec: Omit<EvalClassSpec, "name"> & { extends?: string | Abs | unknown; hasExtends?: boolean },
+  displayName?: string,
 ): Abs {
   // extends 是活引用：类值取 brand 名、宿主 ctor 取 .name、字符串向后兼容。
   // 原生 ClassDefinitionEvaluation：superclass 须为 null 或 constructor，否则
@@ -268,7 +271,9 @@ export function $class(
   // 在 statics 循环里按源序覆盖该槽（原生同名静态字段覆写 Function.name）。
   // 此前尾置：初始化器内 C.name 折 undefined，且用户 static name 被
   // 尾置 strLit(name) 冲回类名（双缺陷，同一处顺序修正）。
-  setSlot(slots, "name", { value: strLit(name) });
+  // Bug 133：name 槽取**对外可见**的类名（无名类为空串——原生口径）；内部
+  // 类名（brand 名 / 类注册键 / super 链键）仍是 name。
+  setSlot(slots, "name", { value: strLit(displayName ?? name) });
   const evalStatic = (v: Abs | ((cls: Abs) => Abs)): Abs =>
     typeof v === "function" ? asAbsVal((v as (cls: Abs) => Abs)(val)) : asAbsVal(v);
   if (full.statics) {

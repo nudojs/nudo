@@ -36,6 +36,7 @@ import {
   collectArrMutatorReceivers,
   collectPatternNames,
   finalizerBits,
+  withClassNameHint,
 } from "../helpers.ts";
 import { HOST_INTRINSIC_SET, UNDEF_LIT } from "../intrinsics.ts";
 import { NudoUnsupportedError } from "../../unsupported.ts";
@@ -458,7 +459,13 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
             const init = recInit(
               asVar
                 ? asVar
-                : anchorInit(emitTranspileExpression(d.init, opts)),
+                : anchorInit(
+                    emitTranspileExpression(
+                      d.init,
+                      // Bug 133：NamedEvaluation——`var K = class {}` 以绑定名为类名
+                      withClassNameHint(opts, d.init, d.id.name),
+                    ),
+                  ),
             );
             lines.push(`${pad}${d.id.name} = ${init};`);
             if (depth === 0) {
@@ -475,7 +482,11 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
               ? asVar
               : anchorInit(
                   d.init
-                    ? emitTranspileExpression(d.init, opts)
+                    ? emitTranspileExpression(
+                        d.init,
+                        // Bug 133：NamedEvaluation——`const K = class {}` 以绑定名为类名
+                        withClassNameHint(opts, d.init, d.id.name),
+                      )
                     : "$lit(void 0)",
                 ),
           );

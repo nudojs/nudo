@@ -13,7 +13,7 @@
  */
 import type { Expression, Node, AssignmentExpression } from "@babel/types";
 import type { TranspileOptions } from "../types.ts";
-import { isExpression, symbolKeyOf, privateNameKeySrc, isConstAssignTarget } from "../helpers.ts";
+import { isExpression, symbolKeyOf, privateNameKeySrc, isConstAssignTarget, withClassNameHint } from "../helpers.ts";
 import { COMPOUND_OPS } from "../ops.ts";
 import { NudoUnsupportedError } from "../../unsupported.ts";
 import { emitDestructure } from "../emit.ts";
@@ -42,7 +42,14 @@ export function transpileAssignmentExpr(
         return `((__d) => { ${out.join(" ")} return __d; })(${right})`;
       }
       const compoundFn = COMPOUND_OPS[expr.operator];
-      const right = transpileExpression(expr.right, opts);
+      // Bug 133：NamedEvaluation——`K = class {}`（左值是**标识符**）以绑定名
+      // 为类名；成员左值（`o.K = class {}`）不取名（原生同名）。
+      const right = transpileExpression(
+        expr.right,
+        expr.left.type === "Identifier"
+          ? withClassNameHint(opts, expr.right, (expr.left as { name: string }).name)
+          : opts,
+      );
       const op = expr.operator;
       if (op === "||=" || op === "&&=" || op === "??=") {
         const rNode = expr.right as Node;

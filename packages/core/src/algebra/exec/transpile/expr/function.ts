@@ -68,19 +68,36 @@ export function transpileFunctionExpr(
       // 从 superClass 读出，快路径绕过了它 ⇒ 原型链与类注册全丢
       // （`new B() instanceof A` 折 false；`extends null` 的 TypeError 不抛）。
       // 有父类时走与非空体同一条 classSpecOf 路径（对照：声明形态本就正确）。
-      if (members.length === 0 && !ce.superClass) return "$classExpr()";
+      //
+      // Bug 133：空体快路径同样取 **NamedEvaluation 名**（`const K = class {}`
+      // → "K"）——无名类不传名（原生名为空串）。
+      if (members.length === 0 && !ce.superClass) {
+        const emptyName = ce.id?.name ?? opts.classNameHint;
+        return emptyName === undefined ? "$classExpr()" : `$classExpr(${JSON.stringify(emptyName)})`;
+      }
       const depth = 1;
-      const { name, specLines, staticInitLines } = classSpecOf(
+      const { name, displayName, specLines, staticInitLines } = classSpecOf(
         ce as unknown as Parameters<typeof classSpecOf>[0],
         depth,
-        opts,
+        // Bug 133：NamedEvaluation 名只作用于**本类表达式**——类体（extends
+        // 子句 / 计算键 / 静态块 / 方法体）里的嵌套类表达式不得继承该名
+        // （原生内层仍是无名类）。
+        { ...opts, classNameHint: undefined },
+        opts.classNameHint,
       );
       // Bug 9：类 spec 发**纯表达式**（结尾不带 `;`）——子表达式位置
       // （return 值/数组元素/实参/new 被调者/…）由父级任意包裹；语句终止符
       // 由消费方补（命名/静态块分支 IIFE 内 `let NAME = …;`、声明位
       // transpileClass 自带 `});`）。此前抄声明形带 `;` → `return($class(…}););`
       // new Function SyntaxError，整模块加载失败。
-      const specSrc = [`$class(${JSON.stringify(name)}, {`, ...specLines, `${indent(depth)}})`].join("\n");
+      //
+      // Bug 133：第三实参 = 对外可见的 **name**（无名类为空串——原生无名类
+      // 名为 ""；内部类名仍是合成名，供发射/类注册用）。
+      const specSrc = [
+        `$class(${JSON.stringify(name)}, {`,
+        ...specLines,
+        `${indent(depth)}}, ${JSON.stringify(displayName)})`,
+      ].join("\n");
       if (ce.id || staticInitLines.length) {
         // 命名类表达式：内部名只作用于类体（词法屏蔽外层同名绑定）；
         // 静态块须在类值绑定后执行（Bug 77）——IIFE 内 let 绑定让方法体/

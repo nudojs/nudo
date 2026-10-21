@@ -903,8 +903,14 @@ export function $instanceofNonIdent(left: Abs, right?: Abs): Abs {
   return bool();
 }
 
-/** ClassExpression 值：构造器函数形状，不得折成精确 undefined */
-export function $classExpr(): Abs {
+/**
+ * ClassExpression 值：构造器函数形状，不得折成精确 undefined。
+ *
+ * Bug 133：name —— **NamedEvaluation 名**（`const K = class {}` → "K"）。
+ * 空类体走本快路径（fn 形状），类名落在 fn 形状的 name 位（$get(fn,"name")
+ * 读 shape.name）——无名类不传（原生名为空串）。
+ */
+export function $classExpr(name?: string): Abs {
   return absFunction(
     ["_rest"],
     {
@@ -912,7 +918,7 @@ export function $classExpr(): Abs {
       apply: () => unknown,
     },
     // Bug 9：类表达式值是构造器，可 new
-    { ctor: true },
+    name === undefined ? { ctor: true } : { ctor: true, name },
   );
 }
 

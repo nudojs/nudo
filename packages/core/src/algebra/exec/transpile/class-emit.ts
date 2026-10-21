@@ -8,6 +8,9 @@
  *   通道消费（求值侧 declare.ts 的 classImpl 挂载）。
  * - ctor 体隐式 return 语义：implicitReturn 只对 ctor 放行（裸 return 折
  *   undefined → TypeError 的原生派生类约束）。
+ * - Bug 133：**类名两分**——内部类名（brand 名 / 类注册键 / super 链键 /
+ *   发射用标识符）vs 对外可见的 **name**（原生无名类名为空串）；类表达式
+ *   的 NamedEvaluation 名经 nameHint 传入（类自身的名字优先）。
  */
 import type { Statement, Expression, Node } from "@babel/types";
 import type { TranspileOptions } from "./types.ts";
@@ -64,8 +67,14 @@ export function classSpecOf(
   },
   depth: number,
   opts: TranspileOptions,
-): { name: string; specLines: string[]; staticInitLines: string[] } {
-  const name = stmt.id?.name ?? "AnonymousClass";
+  /** Bug 133：NamedEvaluation 名（类表达式绑定到名字时的类名） */
+  nameHint?: string,
+): { name: string; displayName: string; specLines: string[]; staticInitLines: string[] } {
+  // Bug 133：类自身的名字（`class Named {}`）优先于绑定名——原生内层名优先；
+  // 匿名类表达式绑定到名字时以绑定名为类名（`const K = class {}` → "K"）；
+  // 两者皆无 → 合成名（发射用；对外可见的 name 是空串——原生无名类名为 ""）。
+  const name = stmt.id?.name ?? nameHint ?? "AnonymousClass";
+  const displayName = stmt.id?.name ?? nameHint ?? "";
   // Bug 11：保留 superClass 节点——Identifier 走活引用（TDZ 语义），
   // 其余表达式（字面量/{}/箭头/…）发 transpile 源码，定义期求值。
   const superClassNode = stmt.superClass as { type: string; name?: string } | null | undefined;
@@ -569,7 +578,7 @@ export function classSpecOf(
         `${indent(depth)}]);`,
       ]
     : [];
-  return { name, specLines, staticInitLines };
+  return { name, displayName, specLines, staticInitLines };
 }
 
 /** class C extends P { ctor, methods } → $class(...) */

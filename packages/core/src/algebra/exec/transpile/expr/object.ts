@@ -21,6 +21,7 @@ import {
   nativeParamArity,
   methodBindNames,
   collectForkBindingNames,
+  withClassNameHint,
 } from "../helpers.ts";
 import { emitParamBindingFromArgs } from "../emit.ts";
 import { emitTranspileExpression as transpileExpression } from "../transpile-dispatch.ts";
@@ -224,7 +225,18 @@ export function transpileObjectExpr(
         if (prop.computed) {
           flushProps();
           const symK = symbolKeyOf(prop.key as unknown as Parameters<typeof symbolKeyOf>[0]);
-          const v = transpileExpression(prop.value as Expression, opts);
+          // Bug 133：NamedEvaluation——计算键为**字面量**时以键值为类名
+          // （`{ ["K"]: class {} }` → "K"）；动态键的类名取决于运行期键值，
+          // 不静态回灌。[Symbol.X] 是符号键——原生不给类名。
+          const litKey = (() => {
+            const kk = prop.key as { type?: string; value?: unknown };
+            if (kk?.type === "StringLiteral" || kk?.type === "NumericLiteral") return String(kk.value);
+            return undefined;
+          })();
+          const v = transpileExpression(
+            prop.value as Expression,
+            withClassNameHint(opts, prop.value as Node, litKey),
+          );
           const base = acc === null ? `$obj({})` : acc;
           if (symK !== null) {
             // Bug 73：symbol 键投影写打 Slot.symbolKey 标记（JSON 枚举面不可见）
@@ -235,10 +247,8 @@ export function transpileObjectExpr(
           acc = `$setKey(${base}, ${k}, ${v})`;
           continue;
         }
-        const key = (() => {
-          const k = staticKeyOf(prop.key as { type?: string; name?: string; value?: unknown });
-          return k === null ? null : JSON.stringify(k);
-        })();
+        const rawKey = staticKeyOf(prop.key as { type?: string; name?: string; value?: unknown });
+        const key = rawKey === null ? null : JSON.stringify(rawKey);
         if (key === null) continue;
         // 非计算 `__proto__` 是 ES 特殊原型设定，不是自有键
         //（`{ "__proto__": v }` 经宿主 JS 对象字面量会丢键/改 [[Prototype]]）。
@@ -296,7 +306,11 @@ export function transpileObjectExpr(
             continue;
           }
         }
-        const valSrc = transpileExpression(prop.value as Expression, opts);
+        const valSrc = transpileExpression(
+          prop.value as Expression,
+          // Bug 133：NamedEvaluation——`{ K: class {} }` 以属性键为类名
+          withClassNameHint(opts, prop.value as Node, rawKey ?? undefined),
+        );
         props.push(`${key}: ${valSrc}`);
       }
       flushProps();

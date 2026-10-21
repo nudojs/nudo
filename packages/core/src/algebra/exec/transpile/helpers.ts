@@ -1126,3 +1126,21 @@ export function privateNameKeySrc(prop: { id?: { name?: string }; name?: string 
   const priv = prop.id?.name ?? prop.name;
   return priv ? JSON.stringify(`#${priv}`) : null;
 }
+
+/**
+ * Bug 133：ES **NamedEvaluation**——类表达式绑定到名字时以该名为类名
+ * （`const K = class {}` → `K.name === "K"`；`K = class {}` /
+ * `{ K: class {} }` 同）。原生只有「类表达式**自身**在具名位置」才取名，
+ * 其余位置（数组元素 / 实参 / 未绑定）类名是空串。
+ *
+ * 只给**类表达式**节点挂 hint：非类表达式原样返回 opts（不得把 hint 泄进
+ * 任意子表达式的类表达式里）。
+ */
+export function withClassNameHint(
+  opts: TranspileOptions,
+  node: Node | null | undefined,
+  name: string | undefined,
+): TranspileOptions {
+  if (name === undefined || node?.type !== "ClassExpression") return opts;
+  return { ...opts, classNameHint: name };
+}

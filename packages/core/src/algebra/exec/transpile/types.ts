@@ -12,6 +12,12 @@ export type TranspileOptions = {
   /** 当前类名（super 派发用） */
   className?: string;
   /**
+   * Bug 133：类表达式的 **NamedEvaluation 名**（`const K = class {}` → "K"）。
+   * 只对**本表达式自身**生效——类体内的嵌套类表达式拿不到该名（原生内层
+   * 仍是无名类）；类自身的名字（`class Named {}`）优先于绑定名。
+   */
+  classNameHint?: string;
+  /**
    * 静态方法体内 super 的接收者源（父类构造器——extends 表达式经
    * classSpecOf 前移计算注入）。super.x / super.m() / super[k] 落通用
    * $get/$invoke 路径（Super 节点直接发此源），消除 super 哨兵注释
