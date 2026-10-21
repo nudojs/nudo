@@ -59,7 +59,9 @@ import {
 import { emitCheckReport, formatSyntaxErrorBlock, syntaxErrorInfo } from "./check-report.ts";
 import {
   checkGateFromConfig,
+  configIgnoreThrows,
   invalidGateConfig,
+  invalidIgnoreThrowsConfig,
   mergeIgnoreThrows,
   resolveEntryThrows,
   type EntryThrowsMode,
@@ -188,23 +190,48 @@ function warnInvalidGateConfig(config: Parameters<typeof checkConfig>[0]): void 
 }
 
 /**
+ * package.json#nudo.check.ignoreThrows 形状告警（stderr 一行，不影响 exit code）：
+ * 数字 / 布尔 / 对象（以及数组里的非字符串元素）不是合法形态 ⇒ 回落默认
+ * （= 不忽略任何 throw 类）。合法形态（裸字符串 / 字符串数组，含逗号分隔）
+ * 由 configIgnoreThrows 统一解析，不在此报。
+ * 同一形状进程内去重（同 profile 告警口径）。
+ */
+const warnedIgnoreThrowsConfig = new Set<string>();
+function warnInvalidIgnoreThrowsConfig(
+  config: Parameters<typeof checkConfig>[0],
+): void {
+  const invalid = invalidIgnoreThrowsConfig(config);
+  if (invalid === undefined || warnedIgnoreThrowsConfig.has(invalid)) return;
+  warnedIgnoreThrowsConfig.add(invalid);
+  console.error(
+    `warning: package.json nudo.check.ignoreThrows: invalid value "${invalid}" (expected: a throw type name, a comma-separated string, or an array of them) — using default (no ignored throw classes)`,
+  );
+}
+
+/**
  * 门禁解析链（项目配置已知时的下半段）：
  * checkGateFromConfig → checkConfig → resolveEntryThrows（CLI 显式 >
  * CLI profile > pkg entryThrows > pkg profile > 默认 error）→
  * mergeIgnoreThrows（CLI 与 package.json 加法合并）。
  * runCheck 与 runCheckFix 共用此单源（G4：adoption 档项目 plain check
  * 与 --fix 不得一门绿一门红）。
+ *
+ * ignoreThrows 的配置面**不再**用 service checkConfig 的严格 `string[]`
+ * 过滤（679）：那条过滤把 `"TypeError"` / `["TypeError,RangeError"]` 静默
+ * 丢成空表 ⇒ 用户以为忽略了 TypeError，实际没忽略（门禁假红）。现在配置面
+ * 与 CLI 面共用同一解析器（切逗号 + trim + 接受裸字符串 / 数组）。
  */
 function resolveGateForConfig(
   config: Parameters<typeof checkConfig>[0],
   cli: GateCliOptions,
 ): { entryThrows: EntryThrowsMode; ignoreThrows: string[] } {
   warnInvalidGateConfig(config);
+  warnInvalidIgnoreThrowsConfig(config);
   const cCfg = checkConfig(config);
   const gate = checkGateFromConfig(config);
   return {
     entryThrows: resolveEntryThrows(cli, gate, cCfg.entryThrows),
-    ignoreThrows: mergeIgnoreThrows(cli.ignoreThrows, cCfg.ignoreThrows),
+    ignoreThrows: mergeIgnoreThrows(cli.ignoreThrows, configIgnoreThrows(config)),
   };
 }
 
@@ -290,9 +317,56 @@ export type CheckCacheState = {
   cached: boolean;
   useDisk: boolean;
   cachedJson: CheckJson | undefined;
-  /** package.json#nudo 键形状问题（468/936）——报告面可见（不要静默） */
+  /** package.json#nudo 键形状问题（468/936）或 nudo.env 非数组（934）——报告面可见（不要静默） */
   configShape: ConfigShapeIssue | null;
 };
+
+/**
+ * package.json#nudo.env 的**形状**问题探针（934）。
+ *
+ * 背景：`nudo.env` 的值不是数组时，配置层回落默认（env 列表被丢弃），并给
+ * 一条 stderr 提示 —— 但**报告面**看不到：用户只看到「env 没生效」的现象，
+ * 不知道自己写错了（旧实现更糟：消费点直接 `projectEnvNames is not
+ * iterable` ⇒ 五个 verb 全部裸崩；消费点现已显式 Array.isArray 守卫）。
+ *
+ * 与 468/936 的 `nudo` 键形状探针同一口径：同一个诊断码（config-shape）、
+ * 同一种 issue 形状（pkgPath = 出问题的 package.json + value + message），
+ * 报告面（人类面 issues 段 + `--json` 面）都可见。
+ *
+ * 停步规则不需要重走：项目配置已由 findProjectConfig 定位（`proj.projectDir`
+ * = 提供配置的 package.json 所在目录），直接读那一份即可。
+ */
+function projectEnvShapeIssue(projectDir: string | undefined): ConfigShapeIssue | null {
+  if (!projectDir) return null;
+  const pkgPath = resolve(projectDir, "package.json");
+  let pkg: unknown;
+  try {
+    pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+  } catch {
+    return null; // 读/解析失败：service 侧另有诊断，本探针不重复
+  }
+  if (pkg === null || typeof pkg !== "object") return null;
+  const nudo = (pkg as { nudo?: unknown }).nudo;
+  if (nudo === null || typeof nudo !== "object" || Array.isArray(nudo)) return null;
+  const raw = (nudo as { env?: unknown }).env;
+  if (raw === undefined || Array.isArray(raw)) return null;
+  let shown: string;
+  try {
+    const s = JSON.stringify(raw);
+    shown = s === undefined ? String(raw) : s;
+  } catch {
+    shown = typeof raw;
+  }
+  return {
+    pkgPath,
+    value: shown,
+    falsy: !raw,
+    message:
+      `package.json at ${pkgPath} has an invalid "nudo.env" value ` +
+      `(${shown}; expected an array of strings) — this env list is ignored ` +
+      `(the default env set applies)`,
+  };
+}
 
 async function loadCheckCache(
   filePath: string,
@@ -303,7 +377,12 @@ async function loadCheckCache(
   const { entryThrows, ignoreThrows } = resolveGateForConfig(proj?.config, opts);
   const autoBind = interfaceConfig(proj?.config).autoBind;
   const aCfg = analysisConfig(proj?.config);
-  const projectEnvNames = proj?.config.env ?? [];
+  // package.json#nudo.env 必须是数组：非数组时配置层回落默认（[]），但**消费
+  // 点**不许裸崩（934：`projectEnvNames is not iterable` ⇒ 五个 verb 全崩）。
+  // 这里显式 Array.isArray 守卫：形状问题由 projectEnvShapeIssue 报告（见下），
+  // 门禁本身继续跑（回落默认 env）。
+  const rawProjectEnv = proj?.config.env;
+  const projectEnvNames = Array.isArray(rawProjectEnv) ? rawProjectEnv : [];
   // 文件级 @nudo:env 命名 env（es/node/web）与项目配置合并——check 的
   // 符号面必须与 test 同口径注入，否则 @nudo:env 文件整体退化 unknown。
   // path 型 @nudo:env（./custom.env.ts）由 preloadPathEnvs 在 test 路径
@@ -385,7 +464,12 @@ async function loadCheckCache(
     // package.json#nudo 键形状问题（468/936）：service 侧按「本包无配置」
     // 处理并给 stderr 提示，但报告面看不到 ⇒ 这里补一份报告面可见的诊断
     // （并让 onboarding 不再谎报「本项目还没有 nudo 配置」）。
-    configShape: projectConfigShapeIssue(dirname(filePath)),
+    // nudo.env 非数组（934）是同一族的形状问题：`nudo` 键本身合法 ⇒ 上面的
+    // 探针看不见它，但 env 已被配置层丢弃（回落默认）⇒ 报告面必须说得出
+    // 「你写的 env 被忽略了」，否则用户只看到「env 没生效」的现象。
+    configShape:
+      projectConfigShapeIssue(dirname(filePath)) ??
+      projectEnvShapeIssue(proj?.projectDir),
   };
 }
 

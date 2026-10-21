@@ -597,6 +597,16 @@ A `--out` output-directory IO operation failed (`mkdir` / `write`). **Error** (u
 
 Context: [nudo export](../api/cli-reference.md#nudo-export)
 
+### `nudo:migrate-strip-failed` {#nudo-migrate-strip-failed}
+
+```text
+migrate strip: src/cls.ts: the emitted .js would still contain TypeScript syntax (class member modifier 'private') — Node cannot parse it
+```
+
+`nudo migrate strip --write` refused to write a product that Node cannot parse. **Error** (usage) — the strip pass removes type syntax only; class member modifiers (`private` / `public` / `protected` / `readonly` / `abstract` / `override`) and constructor parameter properties must be lowered by hand (or by `tsc`). `migrate` is a one-way gate: a half-written `.js` has no rollback path, so the file is left untouched and named.
+
+Context: [nudo migrate](../api/cli-reference.md#nudo-migrate)
+
 ## Reading `actual ⊭ expected`
 
 ```text

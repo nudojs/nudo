@@ -287,7 +287,40 @@ export function registerTestCommand(program: Command): void {
         };
 
         if (opts.watch) {
-          startWatch(paths, runOne, "test", () => envErrorSeen.clear());
+          // 族 21 Bug 928（test 面同机制）：`--from` 的调用点证据此前是**启动
+          // 快照** ⇒ 每轮从不刷新 ⇒ 同一轮里两个文件对同一次调用给出相反
+          // 裁决，且与同一磁盘状态下的全新非 watch 运行结论相反。改为
+          // **每轮开跑前重采**（与 `nudo check --watch --from` 同口径）。
+          let roundFrom: CallRecord[] | undefined = externalRecords;
+          let roundFromErrors: PathError[] = [];
+          startWatch(
+            paths,
+            async (t: string): Promise<void> => {
+              await runTest(t, {
+                ...(roundFrom ? { from: roundFrom } : {}),
+                ...(freeze ? { freeze } : {}),
+                json: opts.json,
+                abs: opts.abs,
+                envErrorSeen,
+                ...(opts.json && roundFromErrors.length > 0
+                  ? { pathErrors: [...allPathErrors, ...roundFromErrors] }
+                  : opts.json && allPathErrors.length > 0
+                    ? { pathErrors: allPathErrors }
+                    : {}),
+              });
+              // 本轮证据缺失 ⇒ 本轮红（runTest 之后落，避免被轮首复位吃掉）
+              if (roundFromErrors.length > 0) process.exitCode = 1;
+            },
+            "test",
+            () => {
+              envErrorSeen.clear();
+              roundFromErrors = [];
+              roundFrom = opts.from?.length
+                ? collectExternalRecords(opts.from, roundFromErrors)
+                : undefined;
+              if (roundFromErrors.length > 0) reportPathErrors(roundFromErrors);
+            },
+          );
           return;
         }
         for (const t of targets) await runOne(t);

@@ -363,7 +363,15 @@ type MultiEnvelope = {
 };
 
 /**
- * 路径错误纳入 CheckJsonMulti 信封：ok:false + pathErrors，并计入 summary.errors。
+ * 路径错误纳入 CheckJsonMulti 信封：ok:false + pathErrors[]。
+ *
+ * **summary.errors 不含路径错误**（695）：`summary.errors` 的定义是
+ * **诊断条数之和** —— core 侧 `serializeCheckJsonMulti` 逐文件求和，core
+ * 自己的契约测试断言 `multi.summary.errors === Σ reports[].summary.errors`。
+ * 旧实现把路径错误并进 summary.errors ⇒ 信封聚合数 ≠ Σreports[] ≠ 人类面
+ * （同一份 JSON 内部自相矛盾：3 条分析 error 被报成 4 条）。
+ * 路径错误只落在 `pathErrors[]`（文档口径：非空 pathErrors ⇒ ok:false ⇒
+ * exit 1），条数 = `pathErrors.length`。
  * ok↔exit 单一来源：CLI 在 --json 路径只按信封 ok 设 exit。
  */
 export function attachPathErrors<T extends MultiEnvelope>(
@@ -374,10 +382,6 @@ export function attachPathErrors<T extends MultiEnvelope>(
   return {
     ...envelope,
     ok: false,
-    summary: {
-      ...envelope.summary,
-      errors: envelope.summary.errors + errors.length,
-    },
     pathErrors: errors.map((e) => ({
       path: e.path,
       code: e.code,

@@ -85,7 +85,14 @@ describe("check syntax error UX — --json 面", () => {
     expect(envelope.reports[0].ok).toBe(true);
     expect(envelope.pathErrors).toHaveLength(1);
     expect(envelope.pathErrors[0].path).toBe(broken);
-    expect(envelope.summary.errors).toBe(1);
+    // 族 21 Bug 695：信封的 `summary.errors` 是**分析诊断**计数，必须等于
+    // Σ`reports[].summary.errors`（= 人类面计数）。语法错是**路径错误**
+    // （走 `pathErrors[]`），不是分析诊断 ⇒ 这里应是 0。
+    // （改前这里断言 1，把路径错误混进了分析 error 计数 ⇒ 信封内部自相矛盾。）
+    expect(envelope.summary.errors).toBe(0);
+    expect(envelope.summary.errors).toBe(
+      envelope.reports.reduce((n: number, rep: { summary?: { errors?: number } }) => n + (rep.summary?.errors ?? 0), 0),
+    );
   });
 
   it("干净文件 --json 不受影响：单 CheckJson、无 pathErrors 字段", () => {

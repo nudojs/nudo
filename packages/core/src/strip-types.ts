@@ -277,6 +277,102 @@ function deleteTypeSyntaxFields(
   if ("superTypeParameters" in node) delete node.superTypeParameters;
   // Babel 8 可能把继承泛型写在 typeArguments 上
   if ("superTypeArguments" in node) delete node.superTypeArguments;
+  // 类成员修饰符（`private` / `public` / `protected` / `readonly` / `abstract` /
+  // `override` / `declare`）——TS-only 语法 ⇒ 产物面必须剥掉，否则 Node 解析不了
+  // （Bug 672：`migrate strip` 写出的 `.js` 仍是 TS ⇒ `node --check` 失败）。
+  // 只在类成员节点上删：这些字段名在别的节点上没有 TS 语义。
+  if (typeof node.type === "string" && node.type.startsWith("Class")) {
+    delete node.accessibility;
+    delete node.readonly;
+    delete node.abstract;
+    delete node.override;
+    delete node.declare;
+  }
+}
+
+/**
+ * 构造器参数属性降级（Bug 672）。
+ *
+ * `constructor(private opening: number)` 的语义 =「字段 `opening` + 构造器里
+ * `this.opening = opening`」。TS 语法在 JS 里不存在 ⇒ 产物必须自己补上那半句
+ * 赋值（字段声明不必显式写：JS 的 `this.x = …` 就是动态字段，语义等价）。
+ *
+ * 两种 AST 形态都认：
+ * - Babel 7：`TSParameterProperty` 包装节点（修饰符在包装节点上）；
+ * - Babel 8 / 部分解析器：修饰符直接挂在普通参数节点上。
+ */
+function lowerConstructorParameterProperties(cls: Node & Record<string, unknown>): void {
+  const body = cls.body as { body?: unknown[] } | undefined;
+  const members = body?.body;
+  if (!Array.isArray(members)) return;
+  const ctor = members.find((m) => {
+    const rec = m as { type?: string; kind?: string } | undefined;
+    return rec?.type === "ClassMethod" && rec.kind === "constructor";
+  }) as (Node & Record<string, unknown>) | undefined;
+  if (!ctor) return;
+  const params = ctor.params as unknown[] | undefined;
+  if (!Array.isArray(params)) return;
+
+  const names: string[] = [];
+  const kept: unknown[] = [];
+  for (const p of params) {
+    const param = p as (Node & Record<string, unknown>) | undefined;
+    if (!param || typeof param !== "object") {
+      kept.push(p);
+      continue;
+    }
+    if (param.type === "TSParameterProperty") {
+      delete param.accessibility;
+      delete param.readonly;
+      delete param.override;
+      const inner = param.parameter as (Node & Record<string, unknown>) | undefined;
+      if (inner && inner.type === "Identifier" && typeof inner.name === "string") {
+        names.push(inner.name);
+        kept.push(inner);
+        continue;
+      }
+      // 解构模式：TS 不允许参数属性 ⇒ 保守原样保留（不生成赋值）
+      kept.push(param);
+      continue;
+    }
+    const isParamProp =
+      typeof param.accessibility === "string" ||
+      param.readonly === true ||
+      param.override === true;
+    if (isParamProp) {
+      delete param.accessibility;
+      delete param.readonly;
+      delete param.override;
+      if (param.type === "Identifier" && typeof param.name === "string") names.push(param.name);
+    }
+    kept.push(p);
+  }
+  if (names.length === 0) return;
+  ctor.params = kept;
+
+  // 构造器体开头插入 `this.x = x;`
+  const ctorBody = ctor.body as { body?: unknown[] } | undefined;
+  if (!ctorBody || !Array.isArray(ctorBody.body)) {
+    ctor.body = { type: "BlockStatement", body: [], directives: [] };
+  }
+  const stmts = (ctor.body as { body?: unknown[] }).body as unknown[];
+  stmts.unshift(
+    ...names.map((name) => ({
+      type: "ExpressionStatement",
+      expression: {
+        type: "AssignmentExpression",
+        operator: "=",
+        left: {
+          type: "MemberExpression",
+          object: { type: "ThisExpression" },
+          property: { type: "Identifier", name },
+          computed: false,
+          optional: false,
+        },
+        right: { type: "Identifier", name },
+      },
+    })),
+  );
 }
 
 /** 表达式级解包：类型断言/满足断言/非空断言/裸泛型引用 → 内层表达式 */
@@ -335,6 +431,12 @@ function transformNode(
   if (isTypeOnlyStatement(node)) return REMOVE;
 
   deleteTypeSyntaxFields(node, source);
+
+  // 构造器参数属性降级（Bug 672）——必须**在**递归之前：插入的赋值语句与
+  // 剥掉包装的形参随后一并走类型注解剥除。
+  if (node.type === "ClassDeclaration" || node.type === "ClassExpression") {
+    lowerConstructorParameterProperties(node);
+  }
 
   // 相对说明符改写（产物面；分析面不传 opts ⇒ 不动）
   if (opts?.resolveSpecifier) rewriteRelativeSpecifier(node, opts.resolveSpecifier);

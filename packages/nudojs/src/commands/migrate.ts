@@ -1,10 +1,23 @@
 /**
  * nudo migrate — TypeScript 单向退休：status / strip / verify / retire。
  * 实现在 ../migrate.ts（保留 @babel/generator 用法）；本文件只做命令注册。
+ *
+ * 命令层的两个职责（族 21 C5）：
+ * - **逐目标收集结果**（Bug 696）：`strip` 逐目标调用 ⇒ 一个目标失败
+ *   （语法错 / TS-only 残留）不再吞掉其它目标的成功结果；`--json` 下
+ *   stdout **永不为空**（失败也出信封：成功项 + `pathErrors`）。
+ * - **产物可解析性闸门**（Bug 672）：strip 的降级发射面**不**剥类成员
+ *   修饰符（`private` / `public` / `protected` / `readonly`）与构造器参数
+ *   属性（`constructor(private x)`）⇒ 产物仍是 TS 语法、Node 解析不了。
+ *   真源在 `packages/core/src/strip-types.ts`（经 `../migrate.ts` 的
+ *   `stripTsToJs`）——**族 16 的文件**，本命令层不碰它；这里做**命令层
+ *   能做的部分**：写盘**之前**检出「剥完仍有 TS-only 语法」的目标并
+ *   拒绝写盘 + 响亮报错（migrate 是一程闸门，写坏了没有回退路径）。
  */
 import type { Command } from "commander";
-import { statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { parseSource } from "@nudojs/core";
 
 /**
  * verify 的 tsc 基线根（Bug 582）：目录目标取目录本身，文件目标取其所在目录。
@@ -20,6 +33,97 @@ function verifyRoot(targets: string[]): string {
     return process.cwd();
   }
 }
+
+// ---------------------------------------------------------------------------
+// Bug 672 — 产物可解析性闸门（命令层）
+// ---------------------------------------------------------------------------
+
+/** 类成员节点（修饰符可能残留在上面） */
+const CLASS_MEMBER_TYPES = new Set([
+  "ClassProperty",
+  "ClassMethod",
+  "ClassPrivateProperty",
+  "ClassPrivateMethod",
+  "ClassAccessorProperty",
+  "TSAbstractClassProperty",
+  "TSAbstractMethodDefinition",
+]);
+
+/** 残留即「产物不是纯 JS」的类成员修饰符 */
+const MEMBER_MODIFIER_FLAGS = ["accessibility", "readonly", "abstract", "override"] as const;
+
+/**
+ * 剥除之后仍然残留的 **TS-only** 构造（= 产物里会出现的 TS 语法）。
+ *
+ * 只覆盖报告点名的两类（`private` / `public` / `protected` / `readonly`
+ * 类成员修饰符 + 构造器参数属性）；`namespace` / `enum` 等由 strip 自己的
+ * notes 负责（族 16 的既有口径），不在这里拦。
+ */
+function tsOnlyConstructs(ast: unknown, out: string[] = [], seen = new Set<object>()): string[] {
+  if (!ast || typeof ast !== "object") return out;
+  if (seen.has(ast)) return out;
+  seen.add(ast);
+  if (Array.isArray(ast)) {
+    for (const item of ast) tsOnlyConstructs(item, out, seen);
+    return out;
+  }
+  const node = ast as Record<string, unknown>;
+  const type = typeof node.type === "string" ? node.type : undefined;
+  if (type === "TSParameterProperty") {
+    out.push("constructor parameter property");
+  } else if (type && CLASS_MEMBER_TYPES.has(type)) {
+    for (const flag of MEMBER_MODIFIER_FLAGS) {
+      const value = node[flag];
+      if (value === true || (typeof value === "string" && value.length > 0)) {
+        out.push(`class member modifier '${flag === "readonly" ? "readonly" : value}'`);
+        break;
+      }
+    }
+  }
+  for (const key of Object.keys(node)) {
+    if (
+      key === "loc" ||
+      key === "extra" ||
+      key === "leadingComments" ||
+      key === "trailingComments" ||
+      key === "innerComments" ||
+      key === "comments" ||
+      key === "tokens"
+    ) {
+      continue;
+    }
+    tsOnlyConstructs(node[key], out, seen);
+  }
+  return out;
+}
+
+/**
+ * 一批 strip 目标里「剥完仍有 TS-only 语法」的源文件（Bug 672）。
+ *
+ * 判据用的是**剥除之后**的 AST（`parseSource` 默认走 strip pass）⇒
+ * 真源修好之后本闸门自动放行（不会误拦已可降级的构造）。
+ */
+function tsOnlyLeftovers(plan: Array<{ file: string }>): Array<{ file: string; found: string[] }> {
+  const out: Array<{ file: string; found: string[] }> = [];
+  for (const item of plan) {
+    let source: string;
+    try {
+      source = readFileSync(resolve(item.file), "utf-8");
+    } catch {
+      continue;
+    }
+    let ast: unknown;
+    try {
+      ast = parseSource(source);
+    } catch {
+      continue; // 语法错由库面报错（parse failed: <file>）
+    }
+    const found = tsOnlyConstructs(ast);
+    if (found.length > 0) out.push({ file: item.file, found });
+  }
+  return out;
+}
+
 
 export function registerMigrateCommand(program: Command): void {
   program
@@ -78,13 +182,65 @@ export function registerMigrateCommand(program: Command): void {
             return;
           }
           if (action === "strip") {
-            const results = await migrateStrip(targets, {
-              write: opts.write === true,
-              backup: opts.backup === true,
-              draft: opts.draft !== false,
-            });
+            // Bug 696：逐目标调用 ⇒ 一个目标失败（语法错）不再吞掉其它
+            // 目标的成功结果；失败项带**文件名**进 stderr 与 `--json` 信封。
+            const results: Awaited<ReturnType<typeof migrateStrip>> = [];
+            const failures: Array<{ path: string; message: string }> = [];
+            for (const target of targets) {
+              try {
+                // 计划（不写盘）——既拿到文件清单，也用于 Bug 672 的产物闸门
+                const plan = await migrateStrip([target], {
+                  write: false,
+                  draft: false,
+                });
+                // Bug 672：产物闸门——剥完仍有 TS-only 语法 ⇒ 写出去的 .js
+                // Node 解析不了（migrate 是一程闸门）⇒ 拒绝写盘并报错。
+                const leftovers = tsOnlyLeftovers(plan);
+                if (leftovers.length > 0) {
+                  for (const l of leftovers) {
+                    failures.push({
+                      path: l.file,
+                      message: `the emitted .js would still contain TypeScript syntax (${l.found.join("; ")}) — Node cannot parse it`,
+                    });
+                  }
+                  continue;
+                }
+                const written = opts.write
+                  ? await migrateStrip([target], {
+                      write: true,
+                      backup: opts.backup === true,
+                      draft: opts.draft !== false,
+                    })
+                  : plan;
+                results.push(...written);
+              } catch (err) {
+                failures.push({ path: target, message: (err as Error).message });
+              }
+            }
             if (opts.json) {
-              console.log(JSON.stringify(results, null, 2));
+              if (failures.length === 0) {
+                console.log(JSON.stringify(results, null, 2));
+              } else {
+                // 失败也必须是**合法 JSON**（stdout 永不为空）+ 已攒结果不丢
+                console.log(
+                  JSON.stringify(
+                    {
+                      ok: false,
+                      action: "strip",
+                      targets,
+                      results,
+                      pathErrors: failures.map((f) => ({
+                        path: f.path,
+                        code: "nudo:migrate-strip-failed",
+                        message: f.message,
+                      })),
+                      error: failures[0]!.message,
+                    },
+                    null,
+                    2,
+                  ),
+                );
+              }
             } else {
               for (const r of results) {
                 const mode = opts.write ? "wrote" : "dry";
@@ -92,9 +248,19 @@ export function registerMigrateCommand(program: Command): void {
                 if (r.sidecarDraft) console.log(`      draft  ${r.sidecarDraft}`);
                 for (const n of r.notes) console.log(`      note: ${n}`);
               }
-              if (!opts.write) {
+              if (!opts.write && failures.length === 0) {
                 console.log("\n(none written — pass --write to emit .js + sidecar draft)");
               }
+            }
+            // 失败描述：两种模式都走 stderr（**带文件名**）——人类面不受 --json 影响
+            for (const f of failures) {
+              console.error(`migrate strip: ${f.path}: ${f.message}`);
+            }
+            if (failures.length > 0) {
+              console.error(
+                "fix:  fix the reported file(s) and re-run; migrate strip only removes types (class member modifiers / constructor parameter properties must be lowered by hand or by tsc)",
+              );
+              process.exitCode = 1;
             }
             return;
           }

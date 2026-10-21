@@ -214,7 +214,19 @@ function listFiles(dir: string, out: string[] = [], depth = 0): string[] {
     return out;
   }
   for (const name of entries) {
-    if (name === "node_modules" || name === ".git" || name === "dist" || name === ".nudo") {
+    // 族 21 Bug 1026：`migrate verify` 的扫描集合必须与 `nudo check .` **同口径** ——
+    // 产品默认安全排除是 3 条（node_modules / dist / coverage，见 service 的
+    // `DEFAULT_ANALYSIS_EXCLUDE`）；此前只抄了 1 条（node_modules）⇒ `dist/` 与
+    // `coverage/` 的陈旧构建产物被当源码门禁 ⇒ `migrate verify`（绿）与
+    // `migrate retire` 装上的 `nudo check .`（红）扫描的文件集合不同。
+    // 另排除 `.git` / `.nudo`（不在服务默认表里，但显然不该被扫描）。
+    if (
+      name === "node_modules" ||
+      name === ".git" ||
+      name === "dist" ||
+      name === "coverage" ||
+      name === ".nudo"
+    ) {
       continue;
     }
     const p = join(dir, name);

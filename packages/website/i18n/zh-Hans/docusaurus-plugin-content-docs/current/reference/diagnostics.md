@@ -593,6 +593,16 @@ export --out mkdir failed: out/dir
 
 Context: [nudo export](../api/cli-reference.md#nudo-export)
 
+### `nudo:migrate-strip-failed` {#nudo-migrate-strip-failed}
+
+```text
+migrate strip: src/cls.ts: the emitted .js would still contain TypeScript syntax (class member modifier 'private') — Node cannot parse it
+```
+
+`nudo migrate strip --write` 拒绝写出 Node 解析不了的产物。**Error**（usage）——strip 只剥类型语法；类成员修饰符（`private` / `public` / `protected` / `readonly` / `abstract` / `override`）与构造器参数属性必须手工降级（或交给 `tsc`）。`migrate` 是一程闸门：半写的 `.js` 没有回退路径 ⇒ 文件一个字节都不落盘，并点名。
+
+Context: [nudo migrate](../api/cli-reference.md#nudo-migrate)
+
 ## 读懂 `actual ⊭ expected`
 
 ```text

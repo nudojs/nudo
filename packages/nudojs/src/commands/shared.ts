@@ -2,7 +2,15 @@
  * CLI 命令共享工具（路径采集、watch、reemit、abs 观察面）。
  * 从 index.ts 原样迁出，行为不变。
  */
-import { readFileSync, existsSync, watch, readdirSync, statSync } from "node:fs";
+import {
+  readFileSync,
+  existsSync,
+  watch,
+  readdirSync,
+  statSync,
+  realpathSync,
+  type Dirent,
+} from "node:fs";
 import { resolve, dirname, relative, join, basename } from "node:path";
 import {
   stripGeneratedCaseDirectives,
@@ -26,6 +34,9 @@ import {
   mockSeedsForSource,
   stablePathKey,
   tryRunEval,
+  shouldAnalyzeFile,
+  analysisConfig,
+  findProjectConfig,
   type CallRecord,
   type AnalysisResult,
 } from "@nudojs/service";
@@ -186,6 +197,80 @@ export function collectExternalRecords(
 }
 
 /**
+ * 产品默认安全排除的**目录段**（node_modules / dist / coverage）。
+ *
+ * 真源 = service 的默认 exclude 表（`analysisConfig(null).exclude`
+ * ⇒ `DEFAULT_ANALYSIS_EXCLUDE`，见 packages/service/src/evaluator/config.ts）。
+ * 这里**从产品表派生**而不是另抄一份（CLI 目录发现此前只抄了 `node_modules`
+ * 一条 ⇒ `dist/` / `coverage/` 里的构建产物被当源码门禁，Bug 1026）。
+ * 派生失败（产品表换形状）时只损失「不再进入目录」的剪枝性能，
+ * 纳入判定仍由 service 闸门（`shouldAnalyzeFile`）兜底。
+ */
+const DEFAULT_EXCLUDED_DIR_NAMES: ReadonlySet<string> = new Set(
+  analysisConfig(null)
+    .exclude.map((p) => /^\*\*\/([^/]+)\/\*\*$/.exec(p)?.[1])
+    .filter((name): name is string => name !== undefined),
+);
+
+/**
+ * CLI **目录目标**的范围闸门：只施加**产品默认安全排除**
+ * （node_modules / dist / coverage），**不**施加用户的 include/exclude ——
+ * 「点名路径即意图」是 CLI 的文档约定（docs/design/cli-semantics.md §7 的
+ * 「入口 × include/exclude」表：CLI `nudo check/test <path>` 忽略 include/exclude）。
+ * `mode` 同样不适用（那张表：CLI 忽略 mode）⇒ 这里固定 `mode: "all"`。
+ */
+const CLI_TARGET_SCOPE_CONFIG = { ...analysisConfig(null), mode: "all" as const };
+
+function inCliTargetScope(filePath: string): boolean {
+  return shouldAnalyzeFile(filePath, undefined, CLI_TARGET_SCOPE_CONFIG);
+}
+
+/**
+ * **watch 扫描**的范围闸门：产品默认安全排除 + **用户**的
+ * `nudo.analysis.include` / `exclude` —— 与 LSP / vite-plugin 走**同一个**
+ * `shouldAnalyzeFile` 闸门（同口径），但**不应用 mode**
+ * （docs/design/cli-semantics.md §7：「watch 扫描 | 应用 | 不应用 mode」）。
+ *
+ * 旧实现走的是纯扩展名过滤（`collectNudoFiles`）⇒ 文档里「watch 扫描：应用」
+ * 这一行在实现里是**空的**：范围外的文件照样被门禁报红，且与 IDE 对同一文件
+ * 给出相反结论（Bug 689）。
+ */
+function inWatchScope(filePath: string): boolean {
+  const proj = findProjectConfig(dirname(filePath));
+  const cfg = { ...analysisConfig(proj?.config), mode: "all" as const };
+  return shouldAnalyzeFile(filePath, undefined, cfg);
+}
+
+/**
+ * dirent 判定（**跟随符号链接**）：文件 / 目录 / 都不是。
+ *
+ * `Dirent.isFile()` / `isDirectory()` 对**符号链接**恒为 false ⇒ 旧实现把
+ * 链接进来的文件 / 目录**静默丢弃**（既不分析、也不报路径错误）⇒
+ * `check <dir>` 对链接进来的坏文件**假绿**（exit 0），同一文件直传却 FAILED
+ * （Bug 671）。这里用 `statSync`（跟随链接）判定；断链（ENOENT）⇒ 都不是
+ * （无法分析的路径，不静默当成「干净」——它本来就不是分析目标）。
+ */
+function entryKind(entry: Dirent, fullPath: string): "file" | "dir" | undefined {
+  if (entry.isDirectory()) return "dir";
+  if (entry.isFile()) return "file";
+  if (!entry.isSymbolicLink()) return undefined;
+  const st = statSync(fullPath, { throwIfNoEntry: false });
+  if (!st) return undefined; // 断链
+  if (st.isDirectory()) return "dir";
+  if (st.isFile()) return "file";
+  return undefined;
+}
+
+/** realpath（失败回落原路径）——符号链接目录防环用。 */
+function realPathOf(p: string): string {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+}
+
+/**
  * 目录扫描的分析目标。
  *
  * **同目录同 stem 的 `.ts` 与 `.js` 是同一模块的两份副本**：`migrate strip`
@@ -197,14 +282,42 @@ export function collectExternalRecords(
  *
  * 映射与 `migrate strip` 的产物扩展名同口径：`.ts → .js`、`.mts → .mjs`、
  * `.cts → .js`（strip 只剥类型，不做模块系统转换）。
+ *
+ * **符号链接**（Bug 671）：链接进来的文件 / 目录**参与**分析
+ * （跟随链接判定；目录链接按 realpath 防环）。
+ *
+ * **范围闸门**（两层，口径见上）：
+ * - **产品默认安全排除**（node_modules / dist / coverage）**始终**生效 ——
+ *   与 IDE / vite 走同一个 service 闸门（此前 CLI 只抄了 1/3，Bug 1026）。
+ * - **用户的 include / exclude** 只在 **watch 扫描**（`scope: "watch"`）时
+ *   生效（文档承诺 watch 扫描「应用」）；CLI 目录目标**忽略**它们
+ *   （「点名路径即意图」，Bug 689 的分工说明）。
  */
-export function collectNudoFiles(dir: string): string[] {
+export function collectNudoFiles(
+  dir: string,
+  opts?: { scope?: "target" | "watch" },
+): string[] {
+  const inScope = opts?.scope === "watch" ? inWatchScope : inCliTargetScope;
+  const seenDirs = new Set<string>([realPathOf(dir)]);
+  return collectNudoFilesIn(dir, inScope, seenDirs);
+}
+
+function collectNudoFilesIn(
+  dir: string,
+  inScope: (file: string) => boolean,
+  seenDirs: Set<string>,
+): string[] {
   const entries = readdirSync(dir, { withFileTypes: true });
+  // dirent 判定（跟随符号链接）——一次算完，两个循环共用
+  const kinds = new Map<string, "file" | "dir" | undefined>();
+  for (const entry of entries) {
+    kinds.set(entry.name, entryKind(entry, join(dir, entry.name)));
+  }
   // 同目录里「会产出同名 .js / .mjs」的 TS 源（按 stem 索引）
   const jsStems = new Set<string>(); // .ts / .cts 源 → 产物 .js
   const mjsStems = new Set<string>(); // .mts 源 → 产物 .mjs
   for (const entry of entries) {
-    if (!entry.isFile()) continue;
+    if (kinds.get(entry.name) !== "file") continue;
     const stem = sourceStemOf(entry.name);
     if (stem === undefined) continue;
     if (entry.name.toLowerCase().endsWith(".mts")) mjsStems.add(stem);
@@ -213,20 +326,31 @@ export function collectNudoFiles(dir: string): string[] {
   const results: string[] = [];
   for (const entry of entries) {
     const fullPath = join(dir, entry.name);
-    if (entry.isDirectory() && entry.name !== "node_modules") {
-      results.push(...collectNudoFiles(fullPath));
-    } else if (entry.isFile() && isNudoTargetPath(fullPath)) {
-      // 产物副本（.js / .mjs）且同目录有对应 TS 源 ⇒ 跳过（同一模块只分析一遍）
-      const lower = entry.name.toLowerCase();
-      if (lower.endsWith(".mjs")) {
-        const stem = entry.name.slice(0, entry.name.length - 4);
-        if (mjsStems.has(stem)) continue;
-      } else if (lower.endsWith(".js")) {
-        const stem = entry.name.slice(0, entry.name.length - 3);
-        if (jsStems.has(stem)) continue;
-      }
-      results.push(fullPath);
+    const kind = kinds.get(entry.name);
+    if (kind === "dir") {
+      // 产品默认安全排除（node_modules / dist / coverage）——不再进入
+      if (DEFAULT_EXCLUDED_DIR_NAMES.has(entry.name)) continue;
+      // 符号链接目录：按 realpath 防环（链接指回祖先 ⇒ 无限递归）
+      const real = realPathOf(fullPath);
+      if (seenDirs.has(real)) continue;
+      seenDirs.add(real);
+      results.push(...collectNudoFilesIn(fullPath, inScope, seenDirs));
+      continue;
     }
+    if (kind !== "file") continue;
+    if (!isNudoTargetPath(fullPath)) continue;
+    // 产物副本（.js / .mjs）且同目录有对应 TS 源 ⇒ 跳过（同一模块只分析一遍）
+    const lower = entry.name.toLowerCase();
+    if (lower.endsWith(".mjs")) {
+      const stem = entry.name.slice(0, entry.name.length - 4);
+      if (mjsStems.has(stem)) continue;
+    } else if (lower.endsWith(".js")) {
+      const stem = entry.name.slice(0, entry.name.length - 3);
+      if (jsStems.has(stem)) continue;
+    }
+    // 范围闸门（产品默认安全排除 [+ watch 扫描的用户 include/exclude]）
+    if (!inScope(fullPath)) continue;
+    results.push(fullPath);
   }
   return results;
 }
@@ -303,6 +427,58 @@ export function resolveTargets(path: string): string[] {
 
 export type WatchRunner = (file: string) => Promise<void>;
 
+/** watch 监视根：一个根 = 一个目录 + 是否递归。 */
+type WatchRoot = { root: string; recursive: boolean };
+
+/**
+ * **watch 监视根解析**（Bug 684 / 685 / 686 的共享路径解析）。
+ *
+ * **每个路径各自一个根**：
+ * - 目录路径 → 监视该目录（递归）
+ * - 文件路径 → 监视其**所在目录**（非递归）
+ *
+ * 旧实现只取**第 0 个路径**当监视根（`isDir ? primary : dirname(primary)`），
+ * 于是：
+ * - 多路径且**首个是文件** ⇒ 监视根是一个**文件**（`fs.watch` 只对它本身
+ *   触发），事件路径又被拼成目录形式的假路径 ⇒ 增量轮**永不触发**（Bug 684）；
+ * - 路径**跨多个目录** ⇒ 其余目录**从未被 `fs.watch` 注册** ⇒ 那些目录里的
+ *   文件是**永久盲区**（Bug 686）。
+ *
+ * 同一目录既是「文件路径的宿主」又是「目录路径」时取覆盖面更大的那档（递归）。
+ */
+function resolveWatchRoots(resolvedList: string[]): WatchRoot[] {
+  const byRoot = new Map<string, WatchRoot>();
+  for (const p of resolvedList) {
+    // 单次 stat：miss（含竞态删除）不计监视根；EACCES/EIO 上抛（fail loud）
+    const st = statSync(p, { throwIfNoEntry: false });
+    if (!st) continue;
+    const isDirPath = st.isDirectory();
+    const root = isDirPath ? p : dirname(p);
+    const key = stablePathKey(root);
+    const prev = byRoot.get(key);
+    if (prev) {
+      prev.recursive = prev.recursive || isDirPath;
+      continue;
+    }
+    byRoot.set(key, { root, recursive: isDirPath });
+  }
+  return [...byRoot.values()];
+}
+
+/**
+ * watch 横幅（人类进度）**一律走 stderr**（Bug 693）。
+ *
+ * `--json` 是**机器面**：stdout 必须是**纯 JSON**（`nudo test --watch --json`
+ * / `nudo health --watch --json` 的 stdout 契约）。旧实现用 `console.log`
+ * 把横幅写进 stdout ⇒ stdout = 横幅 + JSON + 横幅 ⇒ `JSON.parse(stdout)`
+ * 直接抛 SyntaxError。
+ *
+ * 横幅是**进度**不是数据 ⇒ 走 stderr 是通用纪律（非 JSON 模式下终端照样看得到）。
+ */
+function watchBanner(text: string): void {
+  console.error(text);
+}
+
 /**
  * watch 循环（check / test 共用）。返回关闭句柄（停掉 fs watcher 与
  * 去抖计时器；CLI 面常驻不用，测试/宿主用于确定性清理）。
@@ -320,11 +496,8 @@ export function startWatch(
   onRoundStart?: () => void,
 ): () => void {
   const resolvedList = paths.map((p) => resolve(p));
-  // 单次 stat：miss（含竞态删除）不计 dir；EACCES/EIO 上抛（fail loud）
-  const isDir = resolvedList.some(
-    (p) => statSync(p, { throwIfNoEntry: false })?.isDirectory() === true,
-  );
-  const primary = resolvedList[0]!;
+  // 监视根：**全部**路径各自一个根（见 resolveWatchRoots）
+  const watchRoots = resolveWatchRoots(resolvedList);
 
   // 路径身份统一 stablePathKey：watch 事件 / collectNudoFiles / buildModuleGraph 边
   // 各有 fs 原生形态，跨形态查 tracked / computeDirtySet 在 Windows 会 miss。
@@ -334,7 +507,9 @@ export function startWatch(
       // miss（watch 启动后被删）→ 跳过该路径不崩；其余 errno 上抛
       const st = statSync(p, { throwIfNoEntry: false });
       if (!st) continue;
-      if (st.isDirectory()) out.push(...collectNudoFiles(p));
+      // 目录扫描：watch 面**应用** include/exclude（文档承诺）+ 产品默认安全排除
+      if (st.isDirectory()) out.push(...collectNudoFiles(p, { scope: "watch" }));
+      // 点名文件 = 用户意图（与 CLI 非 watch 的「点名路径即意图」同口径）
       else out.push(p);
     }
     return out.map(stablePathKey);
@@ -345,7 +520,7 @@ export function startWatch(
   const runAll = async () => {
     onRoundStart?.();
     console.clear();
-    console.log(`[${new Date().toLocaleTimeString()}] nudo ${label}...\n`);
+    watchBanner(`[${new Date().toLocaleTimeString()}] nudo ${label}...\n`);
     process.exitCode = 0;
     for (const f of getFiles()) {
       try {
@@ -355,7 +530,7 @@ export function startWatch(
       }
     }
     graph = buildModuleGraph(getFiles());
-    console.log(`[${new Date().toLocaleTimeString()}] Watching for changes...`);
+    watchBanner(`[${new Date().toLocaleTimeString()}] Watching for changes...`);
   };
 
   const runIncremental = async (changedFiles: string[]) => {
@@ -366,6 +541,25 @@ export function startWatch(
     for (const rawCf of changedFiles) {
       // watch 事件路径是 join() fs 原生形态；与 tracked / 图键同走 stablePathKey
       const cf = stablePathKey(rawCf);
+      // Bug 697：**env 模板判定必须排在 isNudoTargetPath 之前**。
+      // env 模板的扩展名（.env.js / .env.mjs / .env.ts / mock-*.js / *.mock.js）
+      // 同时命中 isNudoTargetPath ⇒ 旧顺序下下面的 env 反向边分支是**死代码**
+      // ⇒ 改了 env 模板，依赖它的源文件永不复分析（IDE/watch 面板里类型一直是旧值）。
+      // （.env.mts / .env.cjs 不命中 isNudoTargetPath ⇒ 旧顺序下反而正常。）
+      if (isEnvTemplatePath(cf)) {
+        getAnalysisSession().clear();
+        const envDeps = envPathDependents(cf);
+        if (envDeps.length > 0) {
+          for (const srcRaw of envDeps) {
+            const src = stablePathKey(srcRaw);
+            if (tracked.has(src)) dirtyUnion.add(src);
+            for (const d of computeDirtySet(graph.dependents, src)) dirtyUnion.add(stablePathKey(d));
+          }
+        } else {
+          forceFull = true;
+        }
+        continue;
+      }
       if (isNudoTargetPath(cf)) {
         for (const d of computeDirtySet(graph.dependents, cf)) dirtyUnion.add(stablePathKey(d));
         continue;
@@ -375,7 +569,7 @@ export function startWatch(
         forceFull = true;
         continue;
       }
-      if (isEnvTemplatePath(cf) || !isSidecarPath(cf)) {
+      if (!isSidecarPath(cf)) {
         const envDeps = envPathDependents(cf);
         if (envDeps.length > 0) {
           for (const srcRaw of envDeps) {
@@ -383,9 +577,6 @@ export function startWatch(
             if (tracked.has(src)) dirtyUnion.add(src);
             for (const d of computeDirtySet(graph.dependents, src)) dirtyUnion.add(stablePathKey(d));
           }
-        } else if (isEnvTemplatePath(cf)) {
-          forceFull = true;
-          continue;
         }
       }
       if (isSidecarPath(cf)) {
@@ -403,7 +594,7 @@ export function startWatch(
     const ordered = topoSortDirty(graph.imports, dirty);
     onRoundStart?.();
     console.clear();
-    console.log(`[${new Date().toLocaleTimeString()}] nudo ${label} (incremental)...\n`);
+    watchBanner(`[${new Date().toLocaleTimeString()}] nudo ${label} (incremental)...\n`);
     process.exitCode = 0;
     getAnalysisSession().evictForDependents(ordered);
     for (const f of ordered) {
@@ -413,7 +604,7 @@ export function startWatch(
         console.error(`Error ${relative(process.cwd(), f)}:`, (err as Error).message);
       }
     }
-    console.log(`[${new Date().toLocaleTimeString()}] Watching for changes...`);
+    watchBanner(`[${new Date().toLocaleTimeString()}] Watching for changes...`);
     graph = buildModuleGraph(getFiles());
   };
 
@@ -424,33 +615,71 @@ export function startWatch(
   });
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-  const watchTarget = isDir ? primary : dirname(primary);
   const pendingChanged = new Set<string>();
 
-  const watcher = watch(watchTarget, { recursive: isDir }, (_event, filename) => {
-    if (!filename) return;
-    const fullPath = isDir ? join(watchTarget, filename) : primary;
-    if (!isWatchRelevantPath(fullPath)) return;
-    pendingChanged.add(fullPath);
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-      const changedFiles = [...pendingChanged];
-      pendingChanged.clear();
-      if (changedFiles.some((f) => !existsSync(f))) getAnalysisSession().clear();
-      // 与 runAll 的 BUG-023 同口径：增量轮本体抛错（buildModuleGraph/
-      // evictForDependents/topoSortDirty 都在 runOne 的 try 之外）不得静默吞掉，
-      // 否则该轮无声死掉，用户只看到上一轮结果冻结。
-      runIncremental(changedFiles).catch((err) => {
-        console.error(`nudo ${label} incremental failed: ${(err as Error).message}`);
-      });
-    }, 200);
-  });
+  /**
+   * 每个监视根一个 watcher；**事件路径按该事件所属的监视根换算**
+   * （Bug 685：旧实现无条件用第 0 个路径 ⇒ 同目录多文件时变更文件被误记成
+   * 首个路径 ⇒ 被改的文件永不被重新分析）。
+   */
+  const watchers = watchRoots.map(({ root, recursive }) =>
+    watch(root, { recursive }, (_event, filename) => {
+      if (!filename) return;
+      const fullPath = join(root, filename);
+      if (!isWatchRelevantPath(fullPath)) return;
+      pendingChanged.add(fullPath);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        const changedFiles = [...pendingChanged];
+        pendingChanged.clear();
+        if (changedFiles.some((f) => !existsSync(f))) getAnalysisSession().clear();
+        // 与 runAll 的 BUG-023 同口径：增量轮本体抛错（buildModuleGraph/
+        // evictForDependents/topoSortDirty 都在 runOne 的 try 之外）不得静默吞掉，
+        // 否则该轮无声死掉，用户只看到上一轮结果冻结。
+        runIncremental(changedFiles).catch((err) => {
+          console.error(`nudo ${label} incremental failed: ${(err as Error).message}`);
+        });
+      }, 200);
+    }),
+  );
+
+  /**
+   * 关闭句柄聚合：多监视根（Bug 686）下要一次关掉**全部** watcher ——
+   * 对外仍是单个 `close()`（调用方不变）。
+   */
+  const watcher = {
+    close: () => {
+      for (const w of watchers) w.close();
+    },
+  };
 
   // 关闭句柄：停 fs watcher + 去抖计时器（watch 是常驻面，CLI 不调用）
   return () => {
     if (debounceTimer) clearTimeout(debounceTimer);
     watcher.close();
   };
+}
+
+/**
+ * `--assume` 形如 `x>0` / `x>=1`（Bug 670：形如 `x=5` 的坏值此前只打一行
+ * stderr 就被吞掉 ⇒ 命令 exit 0 ⇒ CI 里把「假设没生效」当成功）。
+ *
+ * 返回 null 表示**坏值**：调用方必须报用法错误 + 置非零 exit。
+ */
+function parseAssumeEntry(
+  algebra: typeof import("@nudojs/core"),
+  raw: string,
+): { id: string; n: number; op: ">" | ">="; pred: import("@nudojs/core").Pred } | null {
+  const m = /^([A-Za-z_$][\w$]*)\s*(>=|>)\s*(-?\d+(?:\.\d+)?)$/.exec(raw.trim());
+  if (!m) return null;
+  const id = m[1]!;
+  const n = Number(m[3]);
+  const op = m[2] as ">" | ">=";
+  // Bug 973：`>=` 之前一律按 `>` 构造 ⇒ 用户写 `x>=1` 实际得到 `x>1`，
+  // 引擎里的谓词与用户写的不一致（`x+1 > 1.999…` 而不是 `x+1 >= 2`）。
+  // 谓词构造按运算符分派，用 core 既有导出（geNum/gtNum）。
+  const pred = op === ">=" ? algebra.geNum(algebra.v(id), n) : algebra.gtNum(algebra.v(id), n);
+  return { id, n, op, pred };
 }
 
 /** check --abs：代数 term/pred/conf 观察 */
@@ -463,31 +692,86 @@ export async function runAbsView(
   let phi = algebra.pTrue;
   const assumeIds = new Set<string>();
   const assumeLines: string[] = [];
+  const badAssume: string[] = [];
   for (const a of opts.assume ?? []) {
-    const m = /^([A-Za-z_$][\w$]*)\s*(>=|>)\s*(-?\d+(?:\.\d+)?)$/.exec(a.trim());
-    if (!m) {
-      console.error(`Cannot parse --assume: ${a} (supported forms: x>0 / x>=1)`);
+    const parsed = parseAssumeEntry(algebra, a);
+    if (!parsed) {
+      // Bug 670：坏值是**用法错误**，不是「打一行提示后继续」。
+      badAssume.push(a);
       continue;
     }
-    const id = m[1]!;
-    const n = Number(m[3]);
-    phi = algebra.gtNum(algebra.v(id), n);
-    assumeIds.add(id);
-    assumeLines.push(`${id} ${m[2]} ${m[3]}`);
+    // Bug 974：多条假设**合取**（此前每条都覆盖上一条 ⇒ 只有最后一条生效）。
+    // 用 core 既有导出 algebra.and（公共 API 冻结面不新增导出）。
+    phi = phi === algebra.pTrue ? parsed.pred : algebra.and(phi, parsed.pred);
+    assumeIds.add(parsed.id);
+    // 回显打印**实际构造出来的谓词**（运算符来自同一处分派 ⇒ 与引擎一致）
+    assumeLines.push(`${parsed.id} ${parsed.op} ${parsed.n}`);
   }
-  const list = opts.fn ? [opts.fn] : algebra.listFunctionNames(source);
+  if (badAssume.length > 0) {
+    for (const a of badAssume) {
+      usageError(
+        `Cannot parse --assume: ${a}`,
+        "supported forms: x>0 / x>=1 (e.g. --assume 'x>=1')",
+      );
+    }
+    process.exitCode = 1;
+    return;
+  }
+  // Bug 975：`--generalize` 分支**不吃** assume（generalizeFromAst 没有 Φ 入口）
+  // ⇒ 旧实现「接受、打印 assume 回显、然后忽略」＝ 静默说谎。
+  // 组合无意义 ⇒ 显式拒绝（用法错误 + 非零 exit），不回显假设。
+  if (opts.generalize && assumeLines.length > 0) {
+    usageError(
+      "--assume cannot be combined with --generalize",
+      "generalize (symbolic α) has no assumption (Φ) input; drop --assume or drop --generalize",
+    );
+    process.exitCode = 1;
+    return;
+  }
+  const fnNames = algebra.listFunctionNames(source);
+  let list: string[];
+  if (opts.fn !== undefined) {
+    // Bug 669：`--fn <不存在的名字>` 此前被当成「引擎推导失败」（unknown/partial），
+    // 而「文件本身没有函数」是既有的用法错误 ⇒ 同一类错误两个口径。
+    // 拼错名字现在与「文件里没有该函数」同款报错 + 非零 exit。
+    if (!fnNames.includes(opts.fn)) {
+      usageError(
+        `Function not found: ${basename(filePath)} — ${opts.fn}`,
+        fnNames.length > 0
+          ? `available: ${fnNames.join(", ")}`
+          : "this file declares no top-level function",
+      );
+      process.exitCode = 1;
+      return;
+    }
+    list = [opts.fn];
+  } else {
+    list = fnNames;
+  }
   if (list.length === 0) {
     console.error(`Function not found: ${basename(filePath)}`);
     process.exitCode = 1;
     return;
   }
-  const { defaultLoadModule: loadModule, tryEvalCall } = await import("@nudojs/service");
+  const {
+    defaultLoadModule: loadModule,
+    tryEvalCall,
+    findProjectConfig,
+    interfaceConfig,
+  } = await import("@nudojs/service");
   console.log(`nudo check --abs  ${basename(filePath)}`);
   if (assumeLines.length > 0) {
     console.log(`assume: ${assumeLines.join(", ")}`);
   }
   if (opts.generalize) console.log("mode: generalize (symbolic α)\n");
   else console.log("");
+  // Bug 692：`--abs` 面与签名表**同源** —— 有效契约（源码 `@nudo:contract` +
+  // 侧车 `*.nudo.js`）约束的形参真的进求值。此前 `--abs` 完全不看契约 ⇒
+  // 同一函数在 `check`（x: number => string）与 `check --abs`（x: any => any）
+  // 两个面上给出互斥的类型。
+  const proj = findProjectConfig(dirname(filePath));
+  const autoBind = interfaceConfig(proj?.config).autoBind;
+  const projectDir = proj?.projectDir;
   for (const name of list) {
     if (opts.generalize) {
       const g = algebra.generalizeFromAst(name, source, {
@@ -499,6 +783,19 @@ export async function runAbsView(
       continue;
     }
     const args = algebra.buildArgsFromAssume(source, name, assumeIds);
+    // 契约约束的形参：constraintToEntryAbs（core 既有导出，与 check 的签名表
+    // 同一入口 Abs 语义）覆盖 assume 推导出的入口 Abs。
+    const eff = contractOf(algebra, source, name, filePath, loadModule, autoBind, projectDir);
+    if (eff) {
+      const formals = algebra.extractFn(source, name)?.params ?? [];
+      const byParam = new Map(
+        eff.params.map((p) => [p.param, algebra.constraintToEntryAbs(p.constraint, p.param)]),
+      );
+      for (let i = 0; i < args.length; i++) {
+        const c = byParam.get(formals[i] ?? "");
+        if (c) args[i] = c;
+      }
+    }
     // fail-closed：B-only（Φ 种子经 tryEvalCall）；B 失败（类方法等）
     // → unknown（显式无信息，ast-eval 兜底已删）
     const evalResult = tryEvalCall(source, filePath, name, args, { phi });
@@ -506,5 +803,32 @@ export async function runAbsView(
     const label = `${name}(${args.map((a) => algebra.formatShape(a)).join(", ")})`;
     console.log(algebra.formatAbsMultiline(result, label));
     console.log("");
+  }
+}
+
+/**
+ * 有效契约（源码 `@nudo:contract` + 侧车 `*.nudo.js`）—— 与 check 签名表同源
+ * （core `effectiveInterface`，opts 与 `checkSource` 的侧车施加点同口径：
+ * `loadModule` / `fromFile` / `autoBind === false` / `projectDir`）。
+ * 解析失败一律降级为「无契约」（不得让观察面崩）。
+ */
+function contractOf(
+  algebra: typeof import("@nudojs/core"),
+  source: string,
+  name: string,
+  filePath: string,
+  loadModule: (spec: string, fromFile: string) => string | undefined,
+  autoBind: boolean | undefined,
+  projectDir: string | undefined,
+): import("@nudojs/core").EffectiveInterface | undefined {
+  try {
+    return algebra.effectiveInterface(source, name, {
+      loadModule,
+      fromFile: filePath,
+      ...(autoBind === false ? { autoBind: false } : {}),
+      ...(projectDir !== undefined ? { projectDir } : {}),
+    });
+  } catch {
+    return undefined;
   }
 }

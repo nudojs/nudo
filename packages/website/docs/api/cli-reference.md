@@ -430,9 +430,9 @@ nudo init [path]
 
 Setup verb (aligned with `tsc`'s `init` command): write an adoption baseline into the nearest `package.json` — `"nudo": { "check": { "profile": "adoption" } }` (L2 entry may-throw demoted to warning; L1 contract violations stay `error`).
 
-Idempotent: re-running on a `package.json` that already has a `nudo` key prints the current config without writing.
+Idempotent: re-running on a `package.json` that already has a `nudo` key prints the current config without writing. An **invalid** `nudo` value (`null` / scalar / array) is replaced by the baseline with a warning; an **inheritable** ancestor `nudo` config is never shadowed (refused); a workspace / container root is never written across (refused).
 
-**Exit codes:** `0` on success and idempotent re-runs; `1` on usage / IO errors (no `package.json` found, malformed JSON).
+**Exit codes:** `0` on success and idempotent re-runs; `1` on usage / IO errors (no `package.json` found, malformed JSON, shadowing an inheritable ancestor config, writing across a workspace / container root).
 
 ---
 

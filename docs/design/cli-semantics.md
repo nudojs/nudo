@@ -88,7 +88,7 @@ assertions
 
 | 命令 | 产品职责 |
 |------|----------|
-| `nudo init` | setup：写 `package.json#nudo = { check: { profile: "adoption" } }` 基线（幂等；已有 nudo 键只打印不写） |
+| `nudo init` | setup：写 `package.json#nudo = { check: { profile: "adoption" } }` 基线（幂等：**已有** nudo 键只打印不写；**形状非法**的 nudo 值（null / 标量 / 数组）被替换成基线并告警；祖先 package.json 已有**可继承**的 nudo 配置 ⇒ 拒绝写遮蔽键（exit 1）；最近的 package.json 是 workspace / 容器根 ⇒ 拒绝越界写盘（exit 1）） |
 | `nudo check` | Day 0 / CI 门禁；默认打印 signatures + L2 entry may-throw |
 | `nudo test` | case 报告 + 声明断言；`--from` 注入使用处；`--freeze` 固化见证 |
 | `nudo contract` | 打印 / `--draft` / `--emit` 侧车接口；`--from` 供域证据；**`--from-dts`** 逆向 `.d.ts`/TS 注解 → `@nudo:draft`（**不执法**，审阅后复制进 `*.nudo.js` 才是 L1） |
@@ -102,7 +102,7 @@ assertions
 
 | 命令 | exit 1 |
 |------|--------|
-| `nudo init` | 仅用法 / IO 错误（无 package.json、目标 package.json 非法 JSON）；幂等重跑 exit 0 |
+| `nudo init` | 用法 / IO 错误（无 package.json、目标 package.json 非法 JSON、**遮蔽祖先可继承配置**、**越界写容器根**）；幂等重跑 exit 0 |
 | `export` / `contract`（只读） | 仅用法 / IO 错误 |
 | `check`（含 `--abs` / `--json`） | 任一 error 级诊断（L1 或未 ignore 的 L2）；`--abs` 是观察面，**不是**关 CI 的旁路；路径/IO/语法错也 exit 1（`--json` 下并入 `pathErrors` 且 `ok:false`；语法错人类面为 tsc 风格 `path:line:col` 块） |
 | `check --fix[ --write]` | 物化后**残余** error 级诊断 > 0（物化前的 error 不直接挡 exit——能被 [fix]/[adjust] 吃掉的已落盘计划）。**dry-run 反映磁盘未变的真实门禁状态**（计划中尚未应用的 error 仍计入残余，CI 门禁不因「可修」转绿）；`--write` 反映应用后剩余。`--fix` 与 `--json` / `--abs` / `--gha` / `--gitlab` / `--watch` / `--verbose` / `--from` / `--what-if` 组合为 usage error（物化面不与观察/机器面组合） |

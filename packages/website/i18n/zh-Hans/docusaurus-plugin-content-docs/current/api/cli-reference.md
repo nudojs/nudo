@@ -415,9 +415,9 @@ nudo init [path]
 
 setup 动词（对齐 `tsc` 的 `init` 命令心智）：向最近的 `package.json` 写入 adoption 基线 —— `"nudo": { "check": { "profile": "adoption" } }`（L2 入口 may-throw 降为 warning；L1 契约违例仍是 `error`）。
 
-幂等：`package.json` 已有 `nudo` 键时只打印当前配置、不写盘。
+幂等：`package.json` 已有 `nudo` 键时只打印当前配置、不写盘；**形状非法**的 `nudo` 值（null / 标量 / 数组）被替换成基线并告警；祖先**可继承**的 `nudo` 配置不被遮蔽（拒绝写盘）；workspace / 容器根不被越界写入（拒绝写盘）。
 
-**退出码：** 成功与幂等重跑 `0`；用法 / IO 错误（找不到 `package.json`、JSON 非法）`1`。
+**退出码：** 成功与幂等重跑 `0`；用法 / IO 错误（找不到 `package.json`、JSON 非法、遮蔽祖先可继承配置、越界写 workspace / 容器根）`1`。
 
 ---
 

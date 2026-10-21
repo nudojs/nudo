@@ -17,11 +17,34 @@ import { collectExternalRecords, reportPathErrors, resolveTargetsCollect, variad
 // contract — 契约：打印 / draft / emit
 // ---------------------------------------------------------------------------
 
-async function runContractPrint(file: string, records?: CallRecord[]): Promise<void> {
+async function runContractPrint(
+  file: string,
+  records?: CallRecord[],
+  opts?: { json?: boolean },
+): Promise<void> {
   const { interfaceSurface } = await import("@nudojs/service/emit");
   const filePath = resolve(file);
   const entries = await interfaceSurface(filePath, { records });
   const rel = relative(process.cwd(), filePath) || filePath;
+  // 族 21 Bug 670：`--json` 是**机器面** ⇒ stdout 必须是合法 JSON。
+  // 改前本函数完全不看 `opts.json` ⇒ `nudo contract --json` 把人类文本
+  // （`<file>` + 每行签名）写进 stdout ⇒ `JSON.parse(stdout)` 抛错。
+  if (opts?.json === true) {
+    console.log(
+      JSON.stringify(
+        {
+          file: rel,
+          entries: entries.map((e) => ({
+            fn: e.fn,
+            signature: formatInterfaceSurfaceLine(e),
+          })),
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
   console.log(`${rel}`);
   if (entries.length === 0) {
     console.log("  (no top-level functions found)");
@@ -513,7 +536,7 @@ export function registerContractCommand(program: Command): void {
                 records: externalRecords,
               });
             } else {
-              await runContractPrint(t, externalRecords);
+              await runContractPrint(t, externalRecords, { json: opts.json === true });
             }
           } catch (err) {
             console.error(`Error analyzing ${relative(process.cwd(), t)}: ${(err as Error).message}`);

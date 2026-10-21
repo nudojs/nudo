@@ -40,7 +40,66 @@ import {
   runCheck,
   runCheckFix,
   type GateFlagsChannel,
+  type RunCheckOptions,
 } from "./check.ts";
+
+/** `nudo check --watch` 的编排参数（watch 分支专用） */
+export type CheckWatchOptions = {
+  /** --from 使用点路径：**每轮重采**调用点证据（928） */
+  from?: string[];
+  /** 人类面（每轮独立探针；机器面无探针） */
+  humanMode: boolean;
+  /** 与非 watch 面共用的门禁/观察选项 */
+  shared: RunCheckOptions;
+};
+
+/**
+ * `nudo check --watch` 的编排（928）。
+ *
+ * **--from 的调用点证据每轮重采**，不是启动快照：旧实现只在进程启动时采一次
+ * ⇒ 之后每轮都拿陈旧的调用点事实 ⇒ 同一轮里两个文件对同一次调用给出相反
+ * 裁决（被依赖方看新值、依赖方看旧值），且与同一磁盘状态下的**全新**非
+ * watch 运行结论相反。口径同 `nudo health`（health 的 --from 记录写在
+ * runHealth 内部，每轮重收）。
+ *
+ * 证据缺失（--from 文件这一轮读不到 / 解析失败）必须进入**本轮**门禁（红）：
+ * 否则「陈旧」会退化成「缺失也不报」。路径错误每轮报一次（stderr），
+ * exit 由 runner 在本轮文件处理完后落（startWatch 的轮首复位会吃掉更早的
+ * exit 写入）。
+ *
+ * 返回 startWatch 的关闭句柄（确定性清理；测试与宿主都能停）。
+ */
+export function startCheckWatch(
+  paths: string[],
+  opts: CheckWatchOptions,
+): () => void {
+  let roundFrom: CallRecord[] | undefined;
+  let roundFromErrors: PathError[] = [];
+  return startWatch(
+    paths,
+    async (t: string) => {
+      await runCheck(t, {
+        ...opts.shared,
+        from: roundFrom,
+        ...(opts.humanMode
+          ? { batchProbe: freshBatchProbe(), onboardingFinal: true }
+          : {}),
+      });
+      // 本轮证据缺失 ⇒ 本轮红（runCheck 之后落，runCheck 的 exit 写入不覆盖它）
+      if (roundFromErrors.length > 0) process.exitCode = 1;
+    },
+    "check",
+    () => {
+      // 每轮开跑前重采调用点证据（onRoundStart 在 startWatch 的轮首 exit 复位
+      // 之前跑 ⇒ 这里的 exit 写入会被复位吃掉，故 exit 只在 runner 里落）
+      roundFromErrors = [];
+      roundFrom = opts.from?.length
+        ? collectExternalRecords(opts.from, roundFromErrors)
+        : undefined;
+      if (roundFromErrors.length > 0) reportPathErrors(roundFromErrors);
+    },
+  );
+}
 
 export function registerCheckCommand(program: Command): void {
   program
@@ -199,9 +258,13 @@ export function registerCheckCommand(program: Command): void {
           if (targets.length === 0) return;
         }
         const fromErrors: PathError[] = [];
-        const externalRecords = opts.from?.length
-          ? collectExternalRecords(opts.from, opts.json ? fromErrors : undefined)
-          : undefined;
+        // watch 模式不在启动时采 --from（928）：启动快照会被后续每轮沿用 ⇒
+        // 被依赖方拿陈旧输入（同一轮两个文件对同一次调用给出相反裁决）。
+        // watch 分支每轮重采（startCheckWatch）。
+        const externalRecords =
+          opts.from?.length && !opts.watch
+            ? collectExternalRecords(opts.from, opts.json ? fromErrors : undefined)
+            : undefined;
         const allPathErrors = [...pathErrors, ...fromErrors];
         const ignoreThrows = parseIgnoreThrows(opts.ignoreThrows);
         const gateErr = validateGateFlags(opts);
@@ -330,19 +393,8 @@ export function registerCheckCommand(program: Command): void {
 
         if (opts.watch) {
           // watch 每轮独立探针（单文件轮即终轮）——指纹不跨轮残留
-          startWatch(
-            paths,
-            async (t: string) => {
-              await runCheck(t, {
-                ...shared,
-                json: opts.json,
-                ...(humanMode
-                  ? { batchProbe: freshBatchProbe(), onboardingFinal: true }
-                  : {}),
-              });
-            },
-            "check",
-          );
+          // --from 调用点证据每轮重采（928，见 startCheckWatch）
+          startCheckWatch(paths, { from: opts.from, humanMode, shared });
           return;
         }
         // GitLab Code Quality 只接受一份 JSON 数组报告：多 target 仿
