@@ -337,7 +337,7 @@ createEnvironment(parent?, bindings?)
 | <a id="$foriter"></a>`$forIter` | const | control-flow lowering | — |
 | <a id="$fork"></a>`$fork` | fn | control-flow lowering | `$fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): Abs` |
 | <a id="$ge"></a>`$ge` | fn | operator runtime | `$ge(a: Abs, b: Abs): Abs` |
-| <a id="$gen"></a>`$gen` | fn | async / generator | `$gen(body: () => Abs): Abs` |
+| <a id="$gen"></a>`$gen` | fn | async / generator | `$gen(body: () => Abs, asyncMode = false): Abs` |
 | <a id="$get"></a>`$get` | fn | object / member runtime | `$get( o: Abs, key: string, opts?: { silent?: boolean; symbolKey?: boolean; }, ): Abs` |
 | <a id="$idx"></a>`$idx` | fn | array runtime | `$idx( a: Abs, i: Abs, opts?: { silent?: boolean }, ): Abs` |
 | <a id="$idxset"></a>`$idxSet` | fn | array runtime | `$idxSet(a: Abs, i: Abs, value: Abs): Abs` |
