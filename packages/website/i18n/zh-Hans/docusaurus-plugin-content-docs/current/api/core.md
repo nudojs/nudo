@@ -326,7 +326,7 @@ createEnvironment(parent?, bindings?)
 | <a id="$await"></a>`$await` | fn | async / generator | `$await(v: Abs): Abs` |
 | <a id="$callnamed"></a>`$callNamed` | fn | call-site recording for analyze | `$callNamed( name: string, fn: unknown, args: Abs[], loc?: [number, number], argLocs?: Array<[number, number] \| null \| undefined>, ): Abs` |
 | <a id="$catchval"></a>`$catchVal` | fn | control-signal / throw | `$catchVal(e: unknown): Abs` |
-| <a id="$classexpr"></a>`$classExpr` | fn | value / class runtime | `$classExpr(): Abs` |
+| <a id="$classexpr"></a>`$classExpr` | fn | value / class runtime | `$classExpr(name?: string): Abs` |
 | <a id="$concat"></a>`$concat` | fn | object / member runtime | `$concat(a: Abs, b: Abs): Abs` |
 | <a id="$copy"></a>`$copy` | fn | array runtime | `$copy(a: Abs): Abs` |
 | <a id="$del"></a>`$del` | fn | object / member runtime | `$del(o: Abs, key: Abs): Abs` |
@@ -338,7 +338,7 @@ createEnvironment(parent?, bindings?)
 | <a id="$fork"></a>`$fork` | fn | control-flow lowering | `$fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): Abs` |
 | <a id="$ge"></a>`$ge` | fn | operator runtime | `$ge(a: Abs, b: Abs): Abs` |
 | <a id="$gen"></a>`$gen` | fn | async / generator | `$gen(body: () => Abs): Abs` |
-| <a id="$get"></a>`$get` | fn | object / member runtime | `$get( o: Abs, key: string, opts?: { silent?: boolean }, ): Abs` |
+| <a id="$get"></a>`$get` | fn | object / member runtime | `$get( o: Abs, key: string, opts?: { silent?: boolean; symbolKey?: boolean; }, ): Abs` |
 | <a id="$idx"></a>`$idx` | fn | array runtime | `$idx( a: Abs, i: Abs, opts?: { silent?: boolean }, ): Abs` |
 | <a id="$idxset"></a>`$idxSet` | fn | array runtime | `$idxSet(a: Abs, i: Abs, value: Abs): Abs` |
 | <a id="$in"></a>`$in` | fn | value / class runtime | `$in(key: Abs, o: Abs): Abs` |
@@ -353,7 +353,7 @@ createEnvironment(parent?, bindings?)
 | <a id="$not"></a>`$not` | fn | operator runtime | `$not(a: Abs): Abs` |
 | <a id="$nullishtest"></a>`$nullishTest` | fn | control-flow lowering | `$nullishTest(v: Abs): Abs` |
 | <a id="$obj"></a>`$obj` | fn | object / member runtime | `$obj(slots: Record<string, Abs>): Abs` |
-| <a id="$objrest"></a>`$objRest` | fn | object / member runtime | `$objRest(o: Abs, keys: string[]): Abs` |
+| <a id="$objrest"></a>`$objRest` | fn | object / member runtime | `$objRest(o: Abs, keys: Array<string \| Abs>): Abs` |
 | <a id="$pow"></a>`$pow` | fn | operator runtime | `$pow(a: Abs, b: Abs): Abs` |
 | <a id="$rawthis"></a>`$rawThis` | fn | value / class runtime | `$rawThis(v: unknown): Abs` |
 | <a id="$recordbinding"></a>`$recordBinding` | fn | call-site recording for analyze | `$recordBinding(name: string, value: unknown): void` |
