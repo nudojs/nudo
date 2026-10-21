@@ -7,6 +7,11 @@
  *   内层空 obj，原型链 @@iterator 不在内层建模）。
  * - 生成器/模板标签/matchAll 迭代物挂对象侧表：迭代 = 消费（从当前位
  *   取剩余），体内延迟异常在消费点重放（不得静默截断成前缀，Bug 34）。
+ * - async generator（仅 @@asyncIterator 槽的**生成器对象**，Bug 141）：
+ *   for-await 的元素域走**元素侧表**（与同步 generator 同口径：元素取
+ *   侧表剩余条目，长度亦由侧表给出）——不得落 asyncOnly 的 unknown 快
+ *   路径（元素域精度回退）；非生成器的仅异步可迭代对象元素域不可静态刻
+ *   画 → 仍折 unknown。
  * - unbounded（长度未知）单代表迭代只跑一次：0 次/出口臂由 fork-arm +
  *   snapExit join 承接；break/continue 打断代表体 → widen.markInterrupted
  *   （完整迭代效应不可观测，累加器域整体宽化）。
@@ -52,14 +57,19 @@ import {
   isNudoContinue,
   noBody,
   confPartialPacked,
+  litTruth,
 } from "../state.ts";
 import { markDomainShared } from "../../../len-sharing.ts";
+import { getFnImpl } from "../../../abs-fn.ts";
 import { DEFAULT_MAX_LOOP_ITERS, MAX_CONCRETE_LOOP_ITERS, LOOP_TRUNCATION_LABEL } from "../loop-budget.ts";
 import { makeLoopWidener } from "../loop-widen.ts";
 import { noteLoopTruncation } from "../../../call-budget.ts";
 import { isNudoThrow, callAtFunctionBoundary } from "../state.ts";
 import { $call } from "../../call.ts";
 import { $arr, tupleOrWiden, drainTupleOrWiden } from "./arr-make.ts";
+// $get 放在 builtins 之后导入：member.ts → builtins.ts → array.ts → iterate.ts
+// 已是既有环（函数级调用，无模块期求值）；保持导入序 = builtins 先求值。
+import { $get } from "./member.ts";
 
 /** 数组 rest：`const [a, ...rest] = arr` → rest = 从 start 起的尾段 */
 export function $arrRest(a: Abs, start: number): Abs {
@@ -180,6 +190,9 @@ export function $concat(a: Abs, b: Abs): Abs {
     if (drained) return drained;
     const mi = matchIterElements(x);
     if (mi) return mi;
+    // Bug 140：用户 iterable——按迭代序精确展开（GetIterator + IteratorNext）
+    const ui = collectUserIterElems(x, USER_ITER_MAX_STEPS);
+    if (ui) return ui.truncated ? [...ui.els, unknown] : ui.els;
     // brand 结构面在内层（issue #147）：Set/Map/match-iter brand 已在上方
     // 按名命中，此处只兜结构 delegation（内层 tuple 精确展开等）。
     if (x.shape.k === "brand") return expand(x.shape.shape);
@@ -377,15 +390,142 @@ function guardIterable(a: Abs, ctx: string): void {
   }
 }
 
-/** 数组解构模式接收者守卫：原生数组解构 = GetIterator + IteratorNext，
- *  非可迭代接收者抛 TypeError。emitDestructure 的 ArrayPattern 分支在逐项
- *  $idx / $arrRest 投影前调用；值域投影不变（字符串/元组等可迭代接收者
- *  不受影响）。 */
-export function $iterCheck(a: unknown): void {
+/**
+ * Bug 140：用户迭代器协议（GetIterator + IteratorNext）——步数安全上界。
+ *
+ * 原生迭代器是**惰性**的（可能无限 / 永不 done），引擎是抽象解释 ⇒ 必须
+ * 有界，否则用户迭代器不终止时挂死。超界 ⇒ 元素域折 unknown（sound：
+ * 剩余元素个数不可知，不得折确定长度 / 确定元素）。
+ */
+const USER_ITER_MAX_STEPS = 1024;
+
+/**
+ * fn 值是否**真实现**（可驱动）。
+ *
+ * 引擎自建迭代器的 `@@iterator` 是**空体占位** fn（`absFunction([], { body:
+ * noBody })`——无 apply、无真 body）；用户方法（`$fnVal` / 转译函数）有
+ * apply 钩子或真 body。占位 fn 调出来是 undefined（不是迭代器）⇒ 不算
+ * 用户 iterable。
+ *
+ * 不变量：`noBody` 是**全局唯一**占位 body 单例（`exec/runtime/state.ts` 与
+ * `builtins/shared.ts` 共用同一对象）——按身份判「是否占位」才成立。此前两
+ * 模块各有一份同形对象 ⇒ 身份比较对 builtins 侧建的占位恒失配 ⇒ 引擎原生
+ * 迭代器（`abstractSeqIteratorAbs` 的 `@@iterator`）被误判为真实现 ⇒ 跑
+ * 用户协议调占位 fn ⇒ 确定 TypeError（`[...Array.from('ab').keys()]` 假抛）。
+ */
+function hasRealImpl(fn: Abs): boolean {
+  const impl = getFnImpl(fn);
+  if (!impl) return false;
+  if (typeof impl.apply === "function") return true;
+  return !!impl.body && impl.body !== noBody;
+}
+
+/**
+ * 用户 iterable 的 `@@iterator` 槽值（非用户 iterable → undefined）。
+ *
+ * 判据（与原生 GetMethod 一致）：接收者带**自有** `@@iterator` 槽 **且**
+ * 引擎无其元素模型——生成器对象 / `$tpl` 标签对象 / 集合迭代器
+ * （Array/Map/Set 的 values/keys/entries）/ matchAll 迭代器各有侧表 ⇒ 走
+ * 既有消费路径（`$idx` peek / drain / 侧表切片），**不进**用户协议。
+ */
+function userIteratorFn(a: Abs): Abs | undefined {
+  if (matchIterElements(a) !== undefined) return undefined;
+  const fn = $get(a, "@@iterator", { symbolKey: true });
+  if (!fn || !hasRealImpl(fn)) return undefined;
+  return fn;
+}
+
+/**
+ * 用户迭代器协议采集：调 `@@iterator`（this = 接收者）拿迭代器 → 反复调
+ * `next()`（this = 迭代器）→ 读结果对象的 `value` / `done` → 元素列表
+ * （**迭代序**，不是索引序）。
+ *
+ * 返回 null = 非用户 iterable（调用方走既有 `$idx` / `$arrRest` 快速路径）。
+ * `truncated` = 元素列表可能不完整（步数上界触顶 / `done` 抽象不可判）⇒
+ * 尾域折 unknown（sound）。
+ */
+function collectUserIterElems(
+  a: Abs,
+  maxSteps: number,
+): { els: Abs[]; truncated: boolean } | null {
+  const iterFn = userIteratorFn(a);
+  if (!iterFn) return null;
+  const limit = Math.max(0, Math.min(maxSteps, USER_ITER_MAX_STEPS));
+  // GetIterator：调 @@iterator（this = 接收者）
+  const iter = $call(iterFn, [], a);
+  const els: Abs[] = [];
+  let truncated = false;
+  for (let i = 0; i < limit; i++) {
+    const nextFn = $get(iter, "next");
+    if (!hasRealImpl(nextFn)) {
+      // 原生：iter.next 不可调用 → TypeError（引擎保守：may-throw + 尾域折
+      // unknown——不因引擎建模缺口定抛假错）
+      recordMayThrow({ kind: "TypeError", cause: "iterator has no callable next method" });
+      truncated = true;
+      break;
+    }
+    // IteratorNext：调 next()（this = 迭代器）读结果对象的 value / done
+    const res = $call(nextFn, [], iter);
+    if (res.shape.k !== "obj" && res.shape.k !== "brand") {
+      recordMayThrow({ kind: "TypeError", cause: "iterator result is not an object" });
+      truncated = true;
+      break;
+    }
+    // done 语义 = ToBoolean（原生 Get(result, "done") 的真值判定）
+    const dt = litTruth($get(res, "done"));
+    if (dt !== false) {
+      // done 为真 → 迭代结束；done 抽象（不可判）→ 保守停（尾域折 unknown）
+      truncated = dt === undefined;
+      break;
+    }
+    els.push($get(res, "value"));
+  }
+  // 步数上界触顶（未 done）⇒ 剩余元素个数不可知 → 折 unknown（sound）
+  if (els.length >= limit && limit >= USER_ITER_MAX_STEPS) truncated = true;
+  return { els, truncated };
+}
+
+/**
+ * 用户 iterable 的**迭代序**元素读取器（`$iterCheck` 返回值）：
+ * - `get(i)`：第 i 个元素（迭代序）；越界 = 迭代已 done → exact undefined；
+ *   列表被截断（truncated）→ unknown（sound）。
+ * - `rest(i)`：从第 i 项起的剩余元素（原生 rest 语义：迭代到 done 为止）；
+ *   截断 → unknown（剩余长度不可知）。
+ */
+export interface UserIterReader {
+  get(i: number): Abs;
+  rest(i: number): Abs;
+}
+
+/**
+ * 数组解构模式接收者守卫 + **用户 iterable 迭代序元素读取器**。
+ *
+ * 两件事（同一调用，避免生成码再判一次接收者形态）：
+ * ①守卫：原生数组解构 = GetIterator + IteratorNext，非可迭代接收者抛
+ *   TypeError（definite）；抽象接收者记 may-throw。
+ * ②返回用户 iterable（对象带自有 `@@iterator` 槽、引擎无其元素模型）的
+ *   迭代序元素读取器；**非**用户 iterable → null ⇒ 调用方走既有 `$idx` /
+ *   `$arrRest` 快速路径（tuple / 数组 / 字符串 / Set / Map / 生成器 /
+ *   `$tpl` / 数组迭代器…逐字不变）。
+ *
+ * `maxElements`：本次最多取几个元素（原生按需取：模式有 n 个位置就取 n 个，
+ * 空位也消耗一个）；缺省 / 负数 = 取到 done（受 USER_ITER_MAX_STEPS 上界约束）。
+ */
+export function $iterCheck(a: unknown, maxElements?: number): UserIterReader | null {
   const v = asAbsVal(a);
   guardIterable(v, "array destructuring");
   // Bug 34：体内抛错的生成器（延迟异常挂对象侧表）——解构消费触达抛点
   replayGenDeferred(v);
+  const r = collectUserIterElems(
+    v,
+    maxElements === undefined || maxElements < 0 ? USER_ITER_MAX_STEPS : maxElements,
+  );
+  if (!r) return null;
+  const { els, truncated } = r;
+  return {
+    get: (i: number): Abs => (i < els.length ? els[i]! : truncated ? unknown : undef()),
+    rest: (i: number): Abs => (truncated ? unknown : $arr(els.slice(i))),
+  };
 }
 
 /** 元素列表（tuple 展开；arr 抽象；C1 Set/Map 逐条目；matchAll 迭代器逐匹配项；
@@ -475,6 +615,11 @@ function elemsOf(a: Abs): Abs[] {
   if (a.shape.k === "prim" && a.shape.type === "string") {
     return [abs({ k: "prim", type: "string" }, undefined, undefined, "path")];
   }
+  // Bug 140：用户 iterable（对象带自有 `@@iterator` 槽，引擎无其元素模型）——
+  // 元素按**迭代序**取（GetIterator + IteratorNext），不是按索引序。步数上界
+  // 触顶时尾域折 unknown（sound：剩余元素个数不可知）。
+  const ui = collectUserIterElems(a, USER_ITER_MAX_STEPS);
+  if (ui) return ui.truncated ? [...ui.els, unknown] : ui.els;
   // brand 结构面在内层（issue #147）：env/harvest 的 Array<T> brand 的
   // for-of / spread 元素域 = 内层 arr 元素（此前折 unknown）。Set/Map/
   // match-iter brand 已在上方按名命中侧表，此处只兜结构 delegation。
@@ -590,10 +735,16 @@ export function $forInKeys(o: Abs): Abs {
 }
 
 /** 侧表迭代物（生成器对象 / 模板标签 / matchAll 迭代器，Bug 22）的精确
- *  长度——matchIterElements 命中即长度已知（for-of 精确展开用）。 */
+ *  长度——matchIterElements 命中即长度已知（for-of 精确展开用）。
+ *  Bug 141：async generator **没有 @@iterator 槽**（原生只有 @@asyncIterator）
+ *  ⇒ matchIterElements 不命中；改读生成器消费视图的剩余条目数（与同步
+ *  generator 同口径：剩余 = 未消费条目）。 */
 function sideIterLen(a: Abs): number | undefined {
   const mi = matchIterElements(a);
-  return mi ? mi.length : undefined;
+  if (mi) return mi.length;
+  const gv = genDrainViewOf(a);
+  if (gv) return gv.peekAll().length;
+  return undefined;
 }
 
 /** Bug 98：for-in 快照键的在场重查——原生 EnumerateObjectProperties 到键
@@ -640,7 +791,9 @@ export function $forOf(
     label?: string;
     /** for await：接收者按 GetIterator(hint=async) 校验（@@asyncIterator 槽
      *  即全量）；仅异步可迭代（无 @@iterator 槽）的接收者不折同步槽位投影，
-     *  元素取抽象 unknown（原生由 next() 链驱动）。 */
+     *  元素取抽象 unknown（原生由 next() 链驱动）——**async generator 例外**
+     *  （Bug 141）：它是生成器对象，元素域走元素侧表（与同步 generator
+     *  同口径）。 */
     forAwait?: boolean;
     /** for-in（Bug 98）：接收者重查 thunk——快照键进体前重查在场，体内
      *  delete 的未访问键跳过该迭代（与原生 EnumerateObjectProperties 的
@@ -675,6 +828,8 @@ export function $forOf(
   // @@asyncIterator 槽）元素取抽象 unknown——不得折同步 $elems 投影
   //（对象槽位不是迭代产出，Bug 13 值域）；同步可迭代接收者走同步元素
   //（规范回退：同步迭代器逐项 await，promise 元素解包内层）。
+  // Bug 141：async generator 是「仅异步可迭代的**生成器对象**」——元素
+  // 域与长度都取自元素侧表（不得落 unknown 快路径）。
   const forAwait = opts?.forAwait === true;
   const asyncOnly =
     forAwait &&
@@ -714,7 +869,11 @@ export function $forOf(
         ? [...sv].length
         : collectionExactLen(iterable) ?? sideIterLen(iterable);
   const items = asyncOnly
-    ? [unknown]
+    ? // Bug 141：async generator（**生成器对象**，只有 @@asyncIterator 槽）——
+      // 元素域走**元素侧表**，与同步 generator 同口径（此前落 asyncOnly 的
+      // unknown 快路径 ⇒ for-await 元素域退 unknown，累加值精度回退）。
+      // 非生成器的仅异步可迭代对象元素域不可静态刻画 → 仍折 unknown。
+      (genDrainViewOf(iterable) ? elemsOf(iterable).map(awaitElem) : [unknown])
     : forAwait
       ? // Bug 34：for-await 消费生成器同样重放体内延迟异常（规范同步迭代器
         // 回退路径，元素逐项 await）

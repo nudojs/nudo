@@ -5,11 +5,12 @@
  * - sum：任一成员
  */
 
-import type { Abs, Shape } from "./abs.ts";
+import type { Abs } from "./abs.ts";
 import type { Pred } from "./pred.ts";
 import type { LiteralValue } from "./term.ts";
 import { safeMemberAccess } from "./codegen-escape.ts";
 import { ProjectionBudget } from "./projection-budget.ts";
+import { accessorReadDomain } from "./accessors.ts";
 
 /** Abs 上的运行时守卫表达式（JS boolean 布尔串） */
 export function denoteGuard(a: Abs, v: string): string {
@@ -27,7 +28,7 @@ function denoteGuardB(a: Abs, v: string, budget: ProjectionBudget): string {
     if (a.term?.op === "lit" && (!a.pred || a.pred.op === "true")) {
       return eqGuard(v, a.term.value);
     }
-    const shape = denoteShape(a.shape, v, budget);
+    const shape = denoteShape(a, v, budget);
     const pred = denotePred(a, v);
     if (shape === "true") return pred;
     if (pred === "true") return shape;
@@ -37,7 +38,9 @@ function denoteGuardB(a: Abs, v: string, budget: ProjectionBudget): string {
   }
 }
 
-function denoteShape(s: Shape, v: string, budget: ProjectionBudget): string {
+/** shape 守卫（按 Abs 递归：obj 槽需按对象身份查访问器侧表，Bug 191） */
+function denoteShape(a: Abs, v: string, budget: ProjectionBudget): string {
+  const s = a.shape;
   switch (s.k) {
     case "never":
       return "false";
@@ -63,7 +66,10 @@ function denoteShape(s: Shape, v: string, budget: ProjectionBudget): string {
       const checks = [`typeof ${v} === "object"`, `${v} !== null`];
       for (const [key, slot] of Object.entries(s.slots)) {
         const access = safeMemberAccess(v, key);
-        const inner = denoteGuardB(slot.value, access, budget);
+        // Bug 191：访问器键的槽是 `$lit(void 0)` 占位——守卫须按 getter 读域
+        // 判定（原生读 `data.ab` 走 getter），否则对函数自己的返回值报假红。
+        const slotAbs = accessorReadDomain(a, key) ?? slot.value;
+        const inner = denoteGuardB(slotAbs, access, budget);
         if (slot.optional) {
           if (inner !== "true") checks.push(`(${access} === undefined || ${inner})`);
         } else {
@@ -107,7 +113,8 @@ function denoteShape(s: Shape, v: string, budget: ProjectionBudget): string {
       if (s.eff === "promise") return `${v} instanceof Promise`;
       return "true";
     case "brand":
-      return denoteShape(s.shape.shape, v, budget);
+      // brand 的内层是 Abs（对象面按内层身份查访问器侧表）
+      return denoteShape(s.shape, v, budget);
     case "sum": {
       if (s.members.length === 0) return "false";
       const parts = s.members.map((m) => denoteGuardB(m, v, budget));

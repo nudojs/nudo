@@ -8,6 +8,11 @@
  * - 数组方法（map/filter/reduce/…）委派 invokeArrMethod（invoke-arr.ts）；
  *   mutator 语句快路径在 transpile 层（emitArrMutatorRebinds），两条路径
  *   的元素域语义必须同口径（issue #153：SpreadElement 折 $unknown 的教训）。
+ * - Bug 152：实参可以是 **thunk**（`() => [args]`）——调用点成员**先于实参**
+ *   求值（原生 CallExpression 顺序：引用取值（getter 在此触发）→ 实参 →
+ *   调用）。thunk 形态：$invoke 先读成员（预读），再求实参，最后派发；
+ *   派发复用预读值（不再二次读 ⇒ getter 只跑一次）。预读对 sum（union）
+ *   接收者跳过（派发按成员各读一次，预读会重复触发 getter）。
  */
 import type { Abs } from "../../abs.ts";
 import { abs, unknown, litValue, strLit } from "../../abs.ts";
@@ -94,25 +99,42 @@ function enforceNumProtoArgDomain(method: string, argAbs: Abs | undefined): void
 export function $invoke(
   thisVal: Abs,
   method: string,
-  args: Abs[],
+  args: Abs[] | (() => Abs[]),
   loc?: [number, number],
 ): Abs {
+  // Bug 152：实参 thunk（`() => [args]`）——调用点成员**先于实参**求值
+  // （原生 CallExpression：引用取值（getter 触发）→ 实参 → 调用）。
+  // 发射面（transpile/expr/call.ts）把实参包成 thunk 传入：此处**先读
+  // 成员**（预读，getter 在此跑），**再**求实参，最后派发；派发复用预读
+  // 值（generic 臂不再二次读 ⇒ getter 只跑一次）。
+  // 预读对 sum（union）接收者跳过：派发按成员各读一次（$invokeInner 的
+  // sum 臂），预读会与成员读重复（getter 跑两次）。
+  let preRead: Abs | undefined;
+  let argList: Abs[];
+  if (typeof args === "function") {
+    if (thisVal?.shape?.k !== "sum") {
+      preRead = $get(thisVal, method, { silent: true });
+    }
+    argList = args();
+  } else {
+    argList = args;
+  }
   // Bug 85：函数声明绑定是裸宿主函数（statement.ts 直发 host function），
   // 作实参流入 Object/Reflect 静态、$in、JSON.stringify、强制转换全局的
   // Abs 解引用点 → 内部 TypeError 冒泡（无 try 折 unknown / 有 try 被用户
   // catch 吞成引擎错误消息）。此处统一归一化实参（函数边界 prologue 的
   // $absVal 同口径，copy-on-write：全 Abs 时不分配新数组）。callee 位
   // （thisVal）不动——宿主函数直调路径依赖裸值 apply
-  let normArgs = args;
-  for (let i = 0; i < args.length; i++) {
-    const a = args[i] as unknown;
+  let normArgs = argList;
+  for (let i = 0; i < argList.length; i++) {
+    const a = argList[i] as unknown;
     if (!(a && typeof a === "object" && "shape" in a)) {
-      if (normArgs === args) normArgs = args.slice();
+      if (normArgs === argList) normArgs = argList.slice();
       normArgs[i] = asAbsVal(a);
     }
   }
   // Bug 79：方法调用是普通调用面——调用期间 new.target 读 undefined
-  return withNewTargetReset(() => $invokeInner(thisVal, method, normArgs, loc));
+  return withNewTargetReset(() => $invokeInner(thisVal, method, normArgs, loc, preRead));
 }
 
 // ---------------------------------------------------------------------------
@@ -187,18 +209,28 @@ function iteratorFaceOf(recv: Abs): Abs | undefined {
 /** obj[key]()：计算键成员调用（键运行时求值）。键折叠成槽名后走 $invoke
  *  既有派发；@@iterator 键按接收者形态折迭代器对象。键不可折叠（抽象键 /
  *  用户 symbol）→ 诚实 unknown（与 $call 对 unknown callee 同口径——
- *  unknown 是 fail-closed 令牌，不记 may-throw）。 */
+ *  unknown 是 fail-closed 令牌，不记 may-throw）。
+ *  Bug 152：实参 thunk 形态（`() => [args]`）——键求值后**先读成员**再求
+ *  实参（原生顺序：键 → 引用取值 → 实参 → 调用）。 */
 export function $invokeKey(
   thisVal: Abs,
   key: Abs,
-  args: Abs[],
+  args: Abs[] | (() => Abs[]),
   loc?: [number, number],
 ): Abs {
   const k = invokeKeySlotOf(key);
-  if (k === undefined) return unknown;
+  if (k === undefined) {
+    // 键不可折叠：诚实 unknown。实参仍须求值（原生：实参在调用前求值）——
+    // thunk 形态须显式触发（副作用不丢）。
+    if (typeof args === "function") args();
+    return unknown;
+  }
   if (k === "@@iterator") {
     const it = iteratorFaceOf(thisVal);
-    if (it !== undefined) return it;
+    if (it !== undefined) {
+      if (typeof args === "function") args();
+      return it;
+    }
   }
   return $invoke(thisVal, k, args, loc);
 }
@@ -226,6 +258,9 @@ function $invokeInner(
   method: string,
   args: Abs[],
   loc?: [number, number],
+  /** Bug 152：调用点预读值（成员已在实参之前读过——getter 已触发）；未预读
+   *  （非 thunk 实参 / sum 接收者）→ 走既有 $get 读。 */
+  preRead?: Abs,
 ): Abs {
   // 私有方法调用（"#" 键）：foreign-receiver brand check
   // （原生 PrivateCall：接收者必须是声明类实例）
@@ -759,7 +794,9 @@ function $invokeInner(
   // Bug 56：protoMethod kind（方法值读通道产物）跳过——$call 不传 receiver，
   // 回环 dispatch 会在 undefined 接收者上假定抛（copyWithin 假 throw）；
   // 借用调用走 $invoke 的 call/apply 分支（receiver 传递正确）
-  const prop = $get(thisVal, method, { silent: true });
+  // Bug 152：预读值优先——调用点已在实参之前读过成员（getter 已触发），
+  // 复用它不再二次读（getter 只跑一次）。
+  const prop = preRead !== undefined ? preRead : $get(thisVal, method, { silent: true });
   const impl = prop && typeof prop === "object" && "shape" in (prop as object)
     ? getFnImpl(prop as Abs)
     : undefined;

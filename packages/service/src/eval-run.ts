@@ -199,11 +199,20 @@ export function mergeHarvestUnderEnv(
  * 收集 @nudo:replace + @nudo:as → transpile 注入表。
  * `opts.diags`：行内指令文法诊断（nudo:directive-syntax）显式落袋——
  * 语句级抽取各自独立去重；不传则丢弃（纯查询形态）。
+ *
+ * **作用范围按 AST 节点身份界定**（Bug 166）：登记的是节点的**源文本字符
+ * 区间** `[stmtStart, stmtEnd)`，不是行号——
+ * - `@nudo:as`：目标是**承载指令的那条语句**；
+ * - `@nudo:replace`：目标是该语句子树内、**不跨作用域边界**（嵌套函数/类体/
+ *   嵌套语句块）的子表达式节点，逐个登记（同一指令可命中多个节点）。
+ * 旧口径是「行号窗口」→ 泄漏进嵌套语句与同行下一条语句（违反文档
+ * 「only affects the immediately following statement」）。
  */
 export function collectEvalReplacements(
   source: string,
   opts?: { diags?: DirectiveDiag[] },
 ): {
+  /** @nudo:replace 匹配表：每条 = 一个被标注的子表达式节点（字符区间） */
   targets: Array<{
     target: string;
     varName: string;
@@ -211,6 +220,7 @@ export function collectEvalReplacements(
     stmtEnd?: number;
   }>;
   values: Record<string, Abs>;
+  /** @nudo:as 覆盖表：每条 = 承载指令的那条语句（字符区间） */
   asTargets: Array<{ varName: string; stmtStart: number; stmtEnd: number }>;
   asValues: Record<string, Abs>;
 } {
@@ -229,7 +239,7 @@ export function collectEvalReplacements(
     const visitStmts = (stmts: unknown[]) => {
       for (const stmt of stmts) {
         if (!stmt || typeof stmt !== "object") continue;
-        const loc = (stmt as { loc?: { start: { line: number }; end: { line: number } } }).loc;
+        const node = stmt as DirectiveStmtNode;
         const dirs = extractInlineDirectives(
           stmt as never,
           opts?.diags ? { diags: opts.diags } : undefined,
@@ -237,31 +247,38 @@ export function collectEvalReplacements(
         for (const d of dirs) {
           if (d.kind === "replace") {
             const varName = `__rep${i++}`;
-            targets.push({
-              target: d.targetSource,
-              varName,
-              stmtStart: loc?.start.line,
-              stmtEnd: loc?.end.line,
-            });
             values[varName] = d.typeAbs;
-          } else if (d.kind === "as" && loc) {
+            // 作用域内文本命中的**每个**节点各登记一条（节点身份 = 字符区间）
+            const ranges = replaceCandidateRanges(node, source, d.targetSource);
+            if (ranges.length === 0) {
+              // 目标文本在本语句作用域内**无对应节点**（写法与源码不符）：
+              // 登记一条**无作用域**条目——指令仍在场（注入包在场 → B run
+              // 不被门禁拦，与旧口径一致），但转译面不命中任何节点。
+              targets.push({ target: d.targetSource, varName });
+            } else {
+              for (const range of ranges) {
+                targets.push({
+                  target: d.targetSource,
+                  varName,
+                  stmtStart: range.start,
+                  stmtEnd: range.end,
+                });
+              }
+            }
+          } else if (d.kind === "as") {
             const varName = `__as${i++}`;
-            asTargets.push({
-              varName,
-              stmtStart: loc.start.line,
-              stmtEnd: loc.end.line,
-            });
             asValues[varName] = d.typeAbs;
+            // @nudo:as 只覆盖**承载指令的那条语句**的 init / return 值
+            if (typeof node.start === "number" && typeof node.end === "number") {
+              asTargets.push({
+                varName,
+                stmtStart: node.start,
+                stmtEnd: node.end,
+              });
+            }
           }
         }
-        const s = stmt as {
-          type?: string;
-          body?: unknown;
-          block?: unknown;
-          consequent?: unknown;
-          alternate?: unknown;
-          declaration?: unknown;
-        };
+        const s = node;
         if (s.type === "BlockStatement" && Array.isArray(s.body)) visitStmts(s.body);
         if (s.type === "FunctionDeclaration" || s.type === "FunctionExpression") {
           if (s.body) visitStmts([s.body]);
@@ -291,6 +308,87 @@ export function collectEvalReplacements(
     noteEvalFallback(err);
   }
   return { targets, values, asTargets, asValues };
+}
+
+/** 指令语句节点（只取本文件用到的字段） */
+type DirectiveStmtNode = {
+  type?: string;
+  start?: number | null;
+  end?: number | null;
+  body?: unknown;
+  block?: unknown;
+  consequent?: unknown;
+  alternate?: unknown;
+  declaration?: unknown;
+};
+
+/**
+ * 指令作用域边界（Bug 166）：嵌套函数/方法/类体（新的函数作用域）与嵌套
+ * 语句块（新的语句列表）——指令的作用范围不下钻，否则会泄漏进嵌套语句。
+ */
+const SCOPE_BOUNDARY_TYPES = new Set([
+  "FunctionDeclaration",
+  "FunctionExpression",
+  "ArrowFunctionExpression",
+  "ObjectMethod",
+  "ClassMethod",
+  "ClassPrivateMethod",
+  "StaticBlock",
+  "ClassBody",
+  "ClassDeclaration",
+  "ClassExpression",
+  "BlockStatement",
+  "SwitchCase",
+]);
+
+/** 去全部空白（与 core transpile/helpers.ts 的 normWs 同口径） */
+function normWs(s: string): string {
+  return s.replace(/\s+/g, "");
+}
+
+/**
+ * 指令语句子树内、文本命中 target 的**候选节点区间**（Bug 166）。
+ * 不跨作用域边界（SCOPE_BOUNDARY_TYPES）；返回节点的源文本字符区间——
+ * 转译面按区间（节点身份）命中，不再按行号窗口。
+ */
+function replaceCandidateRanges(
+  stmt: DirectiveStmtNode,
+  source: string,
+  target: string,
+): Array<{ start: number; end: number }> {
+  const want = normWs(target);
+  if (want === "") return [];
+  const out: Array<{ start: number; end: number }> = [];
+  const seen = new Set<object>();
+  const walk = (n: DirectiveStmtNode): void => {
+    if (seen.has(n)) return;
+    seen.add(n);
+    if (n.type && SCOPE_BOUNDARY_TYPES.has(n.type)) return;
+    const start = n.start;
+    const end = n.end;
+    if (typeof start === "number" && typeof end === "number" && end > start) {
+      // 归一化后长度 ≤ 原文长度：原文更短则不可能命中（省一次切片）
+      if (end - start >= want.length && normWs(source.slice(start, end)) === want) {
+        out.push({ start, end });
+      }
+    }
+    for (const [k, v] of Object.entries(n)) {
+      if (k === "loc" || k === "start" || k === "end" || k === "range") continue;
+      if (k === "leadingComments" || k === "trailingComments" || k === "innerComments") continue;
+      if (k === "comments" || k === "tokens" || k === "extra") continue;
+      if (Array.isArray(v)) {
+        for (const item of v) {
+          if (item && typeof item === "object" && "type" in (item as object)) {
+            walk(item as DirectiveStmtNode);
+          }
+        }
+      } else if (v && typeof v === "object" && "type" in (v as object)) {
+        walk(v as DirectiveStmtNode);
+      }
+    }
+  };
+  walk(stmt);
+  return out;
 }
 
 export type EvalRunResult = {

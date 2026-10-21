@@ -9,6 +9,10 @@
  * - rest 形参经 $restBind（开放数组哨兵直通，不塌缩固定元组）；
  * - 函数体经 stmt/fn-body.ts transpileFnBodyStmts（var 提升边界扣除参数
  *   模式名）；表达式体提升为块体以容纳 prologue/rebind；
+ * - Bug 174：默认参数表达式在**本函数作用域**求值 ⇒ 其中的 `this` 读**本
+ *   函数**的 __this 槽（fnParamsHaveThis 扫形参面；声明面共用同一判定）；
+ * - Bug 188：表达式体的写回（rebinds）排在**表达式取值之后**——先捕获表达
+ *   式值（__mutRet）→ 再写回 → 返回捕获值（与语句级 emitRet 同口径）；
  * - 参数模式名集 paramNamesOfFn 是 stmt.ts paramNamesOf 的 expr 侧副本
  *   （对象方法简写也用，./object.ts 从本模块导入）。
  */
@@ -31,6 +35,8 @@ import {
   paramDisplayNames,
   nativeParamArity,
   collectPatternNames,
+  safeTmpName,
+  userIdentInfo,
 } from "../helpers.ts";
 import { emitArrMutatorRebinds, emitParamBinding, emitParamBindingFromArgs } from "../emit.ts";
 import { emitTranspileExpression as transpileExpression } from "../transpile-dispatch.ts";
@@ -41,6 +47,48 @@ export function paramNamesOfFn(params: Node[]): ReadonlySet<string> {
   const acc = new Set<string>();
   for (const p of params) collectPatternNames(p, acc);
   return acc;
+}
+
+/**
+ * Bug 174：形参（**默认值表达式**）里是否引用 `this`。
+ *
+ * 原生语义：默认参数表达式在**函数自身作用域**求值 ⇒ 其中的 `this` 是
+ * **被调函数自己的** this（严格模式：undefined / 调用接收者），**不是**外层
+ * 作用域的 this。`fnBodyHasThis` 只扫 `fn.body` ⇒ 形参默认值里的 `this`
+ * 不可见 ⇒ 默认表达式沿用外层 `thisParam`（外层方法体里甚至拿到**外层
+ * 对象**——自信错值 + 漏抛 TypeError）。
+ *
+ * 下降口径与 `fnBodyHasThis` 一致：嵌套**真函数**（FunctionDeclaration /
+ * FunctionExpression）有自己的 this 边界，不下降；箭头函数词法继承外层
+ * this，下降（箭头默认值里的 `this` 就是本函数的 this）。
+ *
+ * 声明面（stmt/statement.ts 的 FunctionDeclaration 分支）与表达式面共用
+ * 本函数——两面的默认参数都在**本函数**作用域求值。
+ */
+export function fnParamsHaveThis(params: Node[] | undefined | null): boolean {
+  if (!params || params.length === 0) return false;
+  const seen = new Set<Node>();
+  const walk = (n: Node): boolean => {
+    if (n.type === "ThisExpression") return true;
+    if (n.type === "FunctionDeclaration" || n.type === "FunctionExpression") return false;
+    if (seen.has(n)) return false;
+    seen.add(n);
+    for (const [k, v] of Object.entries(n)) {
+      if (k === "loc" || k === "start" || k === "end" || k === "leadingComments" || k === "trailingComments") continue;
+      if (Array.isArray(v)) {
+        for (const item of v) {
+          if (item && typeof item === "object" && "type" in (item as object)) {
+            if (walk(item as Node)) return true;
+          }
+        }
+      } else if (v && typeof v === "object" && "type" in (v as object)) {
+        if (walk(v as Node)) return true;
+      }
+    }
+    return false;
+  };
+  for (const p of params) if (walk(p)) return true;
+  return false;
 }
 
 /**
@@ -132,7 +180,12 @@ export function transpileFunctionExpr(
       const fnCtor = isArrow || !!fn.async || !!fn.generator ? false : true;
       // 函数声明/表达式有独立 this；箭头词法继承外层。仅非箭头且 body 含 this
       // 时注入宿主 this（$rawThis），并用 function 包装替代箭头（宿主 this 动态）
-      const hasThis = !isArrow && fnBodyHasThis(fn);
+      // Bug 174：默认参数表达式在**本函数作用域**求值 ⇒ 其中的 `this` 是
+      // **本函数自己的** this（严格模式：undefined / 调用接收者），不是外层
+      // 作用域的 this。fnBodyHasThis 只扫 body ⇒ 形参默认值里的 this 不可见
+      // ⇒ 默认表达式沿用外层 thisParam（外层方法体里拿到**外层对象**——
+      // 自信错值 + 漏抛 TypeError）。故形参面一并扫描（fnParamsHaveThis）。
+      const hasThis = !isArrow && (fnBodyHasThis(fn) || fnParamsHaveThis(fn.params));
       // 非箭头且体直接引用 arguments：建独立 tuple 槽。箭头不建槽（沿外层
       // argsBinding；无绑定 → $unknown()，见 Identifier 分支）。
       const hasArgs = !isArrow && fnBodyHasOwnArguments(fn);
@@ -140,9 +193,14 @@ export function transpileFunctionExpr(
       // （fnBodyHasOwnArguments 已含参数面）→ 默认表达式读 __nudoArgs 槽
       //（useArgsSlot 路径由 emitParamBindingFromArgs 处理，此处覆盖
       // hasArgs&&hasThis 真函数包装路径）；箭头默认值词法继承外层绑定
-      const paramOpts: TranspileOptions = !isArrow && hasArgs
-        ? { ...opts, argsBinding: "__nudoArgs" }
-        : opts;
+      // Bug 174：本函数有自己的 this 时，默认表达式的 this 读**本函数**的
+      // __this 槽（不读外层 thisParam）——__this 由 thisPrologue 在默认
+      // 值求值**之前**建立（见 allPrologue 顺序）。
+      const paramOpts: TranspileOptions = {
+        ...opts,
+        ...(!isArrow && hasArgs ? { argsBinding: "__nudoArgs" } : {}),
+        ...(hasThis ? { thisParam: "__this" } : {}),
+      };
       // M4：无副作用面 facet（保守静态判定；sort 等按调用次数敏感的内建
       // 只对 effectFree 回调真执行——副作用回调多执行不可回滚）
       const effectFree = fnBodyIsEffectFree(fn);
@@ -233,7 +291,13 @@ export function transpileFunctionExpr(
         );
         // Bug 58：generator 函数表达式体不在调用期执行——包 $gen（吞调用期
         // throws；yield 收集保持既有 eager 口径，与声明路径 stmt.ts 同编）
-        const inner = fn.generator ? `return $gen(() => {\n${raw}\n});` : raw;
+        // Bug 141：async generator（async function*）——$gen 第二实参 = async
+        // 位（next/return/throw 返 promise、装 @@asyncIterator 与
+        // @@toStringTag "AsyncGenerator"）；不进 $async 包装（原生 async
+        // generator 返回 AsyncGenerator 本身，非 promise）。
+        const inner = fn.generator
+          ? `return $gen(() => {\n${raw}\n}${fn.async === true ? ", true" : ""});`
+          : raw;
         // Bug 93：generator 标记透传 $fnVal opts.kind → impl——member.ts 的
         // fn 分支据此区分「不可构造但有 prototype」（generator 实例原型）
         // 与「无 prototype」（箭头/async/方法）。声明路径走宿主函数分支
@@ -252,14 +316,39 @@ export function transpileFunctionExpr(
         return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${genKindSrc} })`;
       }
       const bodySrc = transpileExpression(fn.body as Expression, fnBodyOpts);
+      // Bug 188：表达式体的**写回**（rebinds）不得排在表达式求值之前。
+      // 原生后缀 `o.n++` 的表达式值是**写前值**（写回在取值之后）；写回是
+      // 转译侧补正，不得先于宿主表达式的取值/副作用。与语句级 emitRet
+      // （stmt/statement.ts）同口径：先捕获表达式值 → 再发写回 → 最后返回
+      // 捕获值。捕获临时名避让用户标识符（用户自己有 `__mutRet` 时改名，
+      // 否则 `let __mutRet = __mutRet` ⇒ TDZ ReferenceError）。
+      const rebinds = emitArrMutatorRebinds(fn.body as Expression, fnBodyOpts, "  ");
+      const mutTmp = safeTmpName("__mutRet", userIdentInfo(opts.source));
+      /** 表达式体的返回序列（无写回时直返表达式） */
+      const retSeq = (pad: string): string[] => {
+        if (rebinds.length === 0) {
+          return [`${pad}return ${fn.async ? `$async(() => ${bodySrc})` : bodySrc};`];
+        }
+        if (fn.async) {
+          // async：捕获与写回都在 $async thunk **内**——写回是体的副作用，
+          // 不得逸出 thunk（体内 throw 须落 promise 拒绝通道）
+          return [
+            `${pad}return $async(() => {`,
+            `${pad}  let ${mutTmp} = ${bodySrc};`,
+            ...rebinds.map((l) => `${pad}  ${l}`),
+            `${pad}  return ${mutTmp};`,
+            `${pad}});`,
+          ];
+        }
+        return [
+          `${pad}let ${mutTmp} = ${bodySrc};`,
+          ...rebinds.map((l) => `${pad}${l}`),
+          `${pad}return ${mutTmp};`,
+        ];
+      };
       if (allPrologue.length > 0 || hasThis) {
         // 表达式体 + 模式参数/this 注入：提升为块体以容纳 prologue
-        const rebinds = emitArrMutatorRebinds(fn.body as Expression, fnBodyOpts, "  ");
-        const inner = [
-          ...allPrologue,
-          ...rebinds.map((l) => `  ${l}`),
-          `  return ${fn.async ? `$async(() => ${bodySrc})` : bodySrc};`,
-        ].join("\n");
+        const inner = [...allPrologue, ...retSeq("  ")].join("\n");
         if (hasThis) {
           const wrap = `function (${argsParamParts.join(", ")}) {\n${inner}\n}`;
           // Bug 7：hasArgs 时体内已归一缺参——钩子补齐会膨胀 arguments.length
@@ -269,12 +358,8 @@ export function transpileFunctionExpr(
       }
       // 表达式体：块体包裹跑语句级 rebind pass——`()=>n++` / `()=>a.push(1)`
       // 的写回此前静默丢失（表达式上下文无语句级扫描）
-      const rebinds = emitArrMutatorRebinds(fn.body as Expression, fnBodyOpts, "  ");
       if (rebinds.length > 0) {
-        const inner = [
-          ...rebinds.map((l) => `  ${l}`),
-          `  return ${fn.async ? `$async(() => ${bodySrc})` : bodySrc};`,
-        ].join("\n");
+        const inner = retSeq("  ").join("\n");
         return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed} })`;
       }
       if (fn.async) {

@@ -843,6 +843,187 @@ export function narrowDiscriminantArmThunks(
   return `((${params}) => ${thunk})(${args})`;
 }
 
+// --- switch case 标签窄化（Bug 184） ---------------------------------------
+
+/** case 标签的 prim 字面量值（string / number / boolean） */
+export type CaseLabelValue = string | number | boolean;
+
+/**
+ * switch 臂的 case 标签窄化事实（Bug 184）。
+ *
+ * 判别式（`switch (x)` / `switch (o.kind)`）天然携带两类事实：
+ * - **命中事实**：本臂的 case 标签是字面量时，判别值在本臂内**等于**该字面量
+ *   （`case 1:` ⇒ 臂内 x === 1；`case null:` ⇒ 臂内 v === null）；
+ * - **排除事实**：本臂**之外**的 case 标签是字面量时，判别值在本臂内**不等于**
+ *   该字面量（`default:` 臂里 v !== null —— `case null` 已捕获 null）。
+ *
+ * 标识符判别式：命中事实以影子重绑表达（`((x) => THUNK)($lit(1))`——臂内 x
+ * 恒为该字面量）；排除事实只有 **nullish** 标签可表达（$removeNull /
+ * $removeUndefined / $removeNullish）——非 nullish 字面量的补集无 Abs 可表，
+ * 保守放弃。
+ * 成员判别式：命中 / 排除事实均走 $narrowMemberEq（keep=true / keep=false）。
+ */
+export type SwitchCaseFacts = {
+  /** 判别基名（标识符判别式 = 判别标识符；成员判别式 = 成员基名） */
+  name: string;
+  /** 判别成员键（成员判别式 `switch (o.kind)`）；undefined = 标识符判别式 */
+  key?: string;
+  /** 命中事实：本臂的 case 标签 prim 字面量 */
+  hit?: CaseLabelValue[];
+  /** 排除事实：其它臂的 case 标签 prim 字面量（成员判别式用） */
+  exclude?: CaseLabelValue[];
+  /** 排除事实里的 nullish 标签粒度（标识符判别式用） */
+  excludeNullish?: "null" | "undefined" | "nullish";
+};
+
+/** case 测试节点的标签事实（null / undefined / prim 字面量；其余不可判） */
+type CaseLabelKind =
+  | { k: "prim"; v: CaseLabelValue }
+  | { k: "null" }
+  | { k: "undefined" };
+
+/** case 测试节点的标签事实（非字面量 → undefined＝不产事实） */
+function caseLabelOf(node: unknown): CaseLabelKind | undefined {
+  const t = node as { type?: string; name?: string };
+  if (t?.type === "NullLiteral") return { k: "null" };
+  if (t?.type === "Identifier" && t.name === "undefined") return { k: "undefined" };
+  if (isPrimLitNode(node)) return { k: "prim", v: (node as { value: CaseLabelValue }).value };
+  return undefined;
+}
+
+/** 一臂的标签事实集：prim 字面量集 + nullish 粒度 */
+type ArmLabels = { prims: CaseLabelValue[]; nullish: "null" | "undefined" | "nullish" | null };
+
+/** 收集一臂的 case 标签事实（prim 去重；null/undefined 合并粒度） */
+function armLabelsOf(tests: readonly unknown[]): ArmLabels {
+  const prims: CaseLabelValue[] = [];
+  let nullish: "null" | "undefined" | "nullish" | null = null;
+  for (const t of tests) {
+    const l = caseLabelOf(t);
+    if (!l) continue;
+    if (l.k === "prim") {
+      if (!prims.includes(l.v)) prims.push(l.v);
+      continue;
+    }
+    if (nullish === null) nullish = l.k;
+    else if (nullish !== l.k) nullish = "nullish";
+  }
+  return { prims, nullish };
+}
+
+/**
+ * switch 各臂的 case 标签窄化事实（Bug 184）。
+ *
+ * 判别目标：标识符（`switch (x)`）或成员（`switch (o.kind)`，复用
+ * memberGuardTarget 的判别身份识别）——其余形态（调用 / 计算键 / 三元）
+ * 不产事实（宁缺毋假）。
+ *
+ * 排除集合的取法：
+ * - 非 default 臂：**其它**非 default 臂的标签（贯穿路径上判别值仍是本臂的
+ *   命中值 ⇒ 与其它臂的标签值互斥）；
+ * - default 臂：**之前**的非 default 臂的标签（default 之后的臂可被贯穿
+ *   进入——那条路径上判别值可能是它们的标签值 ⇒ 不可排除）。
+ */
+export function switchCaseFacts(
+  discriminant: unknown,
+  arms: readonly { tests: readonly unknown[]; isDefault: boolean }[],
+): (SwitchCaseFacts | undefined)[] {
+  const disc = discriminant as { type?: string; name?: string };
+  let name: string;
+  let key: string | undefined;
+  if (disc?.type === "Identifier" && disc.name) {
+    name = disc.name;
+  } else {
+    const m = memberGuardTarget(discriminant);
+    if (!m) return arms.map(() => undefined);
+    name = m.name;
+    key = m.key;
+  }
+  const labels = arms.map((a) => armLabelsOf(a.tests));
+  return arms.map((arm, i) => {
+    const mine = labels[i]!;
+    const exclPrim: CaseLabelValue[] = [];
+    let exclNullish: "null" | "undefined" | "nullish" | null = null;
+    for (let j = 0; j < arms.length; j++) {
+      if (j === i) continue;
+      const other = arms[j]!;
+      if (other.isDefault) continue;
+      // default 臂只排除**之前**的臂（之后的臂可被贯穿进入）
+      if (arm.isDefault && j > i) continue;
+      const l = labels[j]!;
+      for (const p of l.prims) {
+        if (mine.prims.includes(p)) continue;
+        if (!exclPrim.includes(p)) exclPrim.push(p);
+      }
+      if (l.nullish) {
+        exclNullish = exclNullish === null ? l.nullish : exclNullish === l.nullish ? exclNullish : "nullish";
+      }
+    }
+    const facts: SwitchCaseFacts = { name };
+    if (key !== undefined) facts.key = key;
+    // 命中事实：仅非 default 臂（default 臂无标签 ⇒ 无命中值）
+    // 成员判别式的多标签臂（case "a": case "b": 共享体）——$narrowMemberEq
+    // 的 keep=true 是**单值**语义（链式多值 = 交集 ⇒ 剪空后原样返回），
+    // 保守放弃多标签臂的命中窄化。
+    if (!arm.isDefault && mine.prims.length > 0 && (key === undefined || mine.prims.length === 1)) {
+      facts.hit = [...mine.prims];
+    }
+    if (key !== undefined) {
+      if (exclPrim.length > 0) facts.exclude = exclPrim;
+    } else if (exclNullish) {
+      facts.excludeNullish = exclNullish;
+    }
+    return facts;
+  });
+}
+
+/**
+ * case 标签窄化在臂体上的应用（Bug 184）。
+ *
+ * 标识符判别式：命中事实 → 影子重绑为该字面量（`$lit(1)` / 多标签 `$join`）；
+ * 排除事实（nullish）→ `$removeNull` / `$removeUndefined` / `$removeNullish`
+ * 影子重绑。成员判别式：命中 → `$narrowMemberEq(..., true)`；排除 →
+ * `$narrowMemberEq(..., false)`（剪掉 key 值域恰为该字面量的成员）。
+ *
+ * 跳过口径与既有窄化通道一致：判别名在 fork 绑定集（臂内写 / 快照重绑）时
+ * 跳过（影子参数会吞掉臂内写）；strict 非法绑定名（arguments / eval）跳过。
+ */
+export function narrowCaseLabelArmThunk(
+  thunk: string,
+  facts: SwitchCaseFacts | undefined,
+  forkBindingNames: ReadonlySet<string> | readonly string[],
+): string {
+  if (!facts) return thunk;
+  const names =
+    forkBindingNames instanceof Set ? (forkBindingNames as Set<string>) : new Set(forkBindingNames);
+  if (names.has(facts.name) || isStrictIllegalBinding(facts.name)) return thunk;
+  let out = thunk;
+  if (facts.key !== undefined) {
+    // 成员判别式：排除（keep=false）在内、命中（keep=true）在外
+    for (const v of facts.exclude ?? []) {
+      out = `((${facts.name}) => ${out})($narrowMemberEq(${facts.name}, ${JSON.stringify(facts.key)}, ${JSON.stringify(v)}, false))`;
+    }
+    for (const v of facts.hit ?? []) {
+      out = `((${facts.name}) => ${out})($narrowMemberEq(${facts.name}, ${JSON.stringify(facts.key)}, ${JSON.stringify(v)}, true))`;
+    }
+    return out;
+  }
+  if (facts.excludeNullish) {
+    const call =
+      facts.excludeNullish === "null" ? "$removeNull" :
+      facts.excludeNullish === "undefined" ? "$removeUndefined" :
+      "$removeNullish";
+    out = `((${facts.name}) => ${out})(${call}(${facts.name}))`;
+  }
+  const hit = facts.hit ?? [];
+  if (hit.length > 0) {
+    const lits = hit.map((v) => `$lit(${JSON.stringify(v)})`);
+    const arg = lits.length === 1 ? lits[0]! : lits.reduce((acc, l) => `$join(${acc}, ${l})`);
+    out = `((${facts.name}) => ${out})(${arg})`;
+  }
+  return out;
+}
+
 // --- 关系守卫（Bug 1）-----------------------------------------------------
 
 /**

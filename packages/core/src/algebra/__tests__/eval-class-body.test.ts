@@ -462,7 +462,9 @@ describe("Bug 80 (differential): #x in o routes through $in", () => {
 
   it("transpile emits $in($lit(key), recv) — PrivateName not folded to void 0", () => {
     const out = transpileSource(`class A { #x = 1; has() { return #x in this; } }`);
-    expect(out).toContain(`$in($lit("#x"), __this)`);
+    // Bug 158：私有名键按**声明类**作用域化（"#<类名>::x"）——断言只绑
+    // "键是真实私有名（未被折成 void 0）"，不绑死作用域串
+    expect(out).toMatch(/\$in\(\$lit\("#[^"]*x"\), __this\)/);
   });
 });
 
@@ -517,6 +519,13 @@ describe("Bug 81 (differential): private-field compound assignment is read-modif
 
   it("transpile emits $add($get(...)) under the $set wrapper", () => {
     const out = transpileSource(`class A { #x = 1; inc() { this.#x += 1; return this.#x; } }`);
-    expect(out).toContain(`(($set(__this, "#x", __v)), __v))($add($get(__this, "#x"), $lit(1))`);
+    // Bug 158：私有名键按**声明类**作用域化（"#<类名>::x"）——断言只绑
+    // "复合赋值是读-改-写（读 $get 与写 $set 用同一私有名键）"，不绑死
+    // 作用域串与具体发射形状
+    const key = /"#[^"]*x"/.exec(out)?.[0];
+    expect(key).toBeDefined();
+    const esc = (key as string).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    expect(out).toMatch(new RegExp(`\\$add\\(\\$get\\([^,]+, ${esc}\\), \\$lit\\(1\\)\\)`));
+    expect(out).toMatch(new RegExp(`\\$set\\([^,]+, ${esc},`));
   });
 });

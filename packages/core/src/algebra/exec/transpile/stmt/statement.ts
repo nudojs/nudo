@@ -5,8 +5,42 @@
  * 不变量：
  * - switchBodySeq 是模块内私有计数器（跨语句/函数去重），只随
  *   transpileStatement 的 switch 共享体发射递增；
+ * - switch 臂内的 break 走**带标签**的 break 信号（$loopBreak(标签)）：信号
+ *   穿过嵌套 thunk（if 臂），由 switch 臂入口的 catch 吸收 ⇒ break 真的
+ *   退出 switch（原生语义）；带标签 ⇒ 外层循环不吸收（$isBreakTo 只匹配
+ *   同标签）；curSwitchBreakLabel 是当前正在发射的 switch 臂的标签（栈式
+ *   保存 / 恢复，嵌套 switch 各自一份）；
+ * - switch 的 case 测试**惰性**求值（test 为 getter，$switch 按序匹配时才
+ *   读）⇒ 命中即停（原生 CaseBlock 语义）；臂入口在抽象判别式路径补求值
+ *   全部 case 测试（$switch 抽象路径不读 getter）；
+ * - case 标签窄化（Bug 184）：命中 / 排除事实经 switchCaseFacts 计算，
+ *   经 narrowCaseLabelArmThunk 影子重绑进臂体；
  * - 语句级 emit 协议（fork 臂隔离/mutator rebinds/守卫剪影）与表达式侧
  *   short-circuit.ts 同源；控制流谓词在 ../stmt-predicates.ts（leaf）；
+ * - 关系守卫双向：事实臂窄化断言「测试为真」的方向（narrowRelArmThunk），
+ *   **早退**后的后续路径窄化断言**否定界**（narrowRelComplementArmThunk，
+ *   见 ./fn-body.ts）——事实臂以 return/throw 结束时 else 臂即后续路径；
+ * - 循环体守卫接线（Bug 183 / 185）：`for` / `while` / `do-while` 的**测试
+ *   事实**（nullish + 关系）经 loopBodyGuardsOf / narrowLoopBody 以影子参数
+ *   接进循环体——事实臂 = 「测试为真 ⇒ 体内成立」（与 `if` 的事实臂同义）；
+ *   跳过规则同既有 while 口径（体侧写守卫名 / 体顶层同名列 ⇒ 全跳过），
+ *   `for` 主路径另排除循环变量（状态线程形参，影子会顶掉它）；do-while 只
+ *   收窄**第 2 轮起**的体内拷贝（首轮先于测试求值 ⇒ 无事实，保持未收窄）；
+ * - Bug 141：async generator 声明面（`async function* g(){}`）——$gen 第二
+ *   实参 = async 位（next 返 promise、装 @@asyncIterator / @@toStringTag）；
+ *   **不进** $async 包装（原生返回 AsyncGenerator 本身，非 promise）；
+ * - Bug 174：默认参数表达式在**本函数作用域**求值 ⇒ 其中的 `this` 读本
+ *   函数的 __this 槽（形参面一并扫描 this——fnParamsHaveThis）；
+ * - for 头绑定的**作用域形态**（Bug 163 / 178）：`let`/`const` 头 = 回调
+ *   形参（每轮新绑定）；`var` 头 = **函数级共享槽**（每轮把迭代项写回
+ *   同一槽，循环后仍可见）；标识符头 / 成员表达式头 = **头赋值**（写回
+ *   既有绑定 / 成员槽，被写的根绑定进 pack/unpack 写回集）；
+ * - do-while 的体**恒在循环 thunk 内**执行（首轮用首轮标记移进 thunk），
+ *   否则体里的 break/continue 无人吸收 ⇒ 信号逃出函数体；
+ * - @nudo:as 是**类型覆盖**：被断言的表达式**仍求值**（副作用 + throws 域
+ *   保留），本次的值取断言值（与 @nudo:replace 同款：`(原表达式, 注入值)`）；
+ * - 解构临时名（`_d{n}`）的**首次分配**也要避让用户标识符（Bug 181）：与
+ *   用户同名绑定重复词法声明 ⇒ 整模块求值失败 ⇒ 导出退化 unknown；
  * - 未 lowering 的语句统一 default unsupported（不得假精确 no-op）。
  */
 import type { Expression, Node, Statement } from "@babel/types";
@@ -22,8 +56,12 @@ import {
   typeGuardOf,
   discriminantGuardsOf,
   narrowDiscriminantArmThunks,
+  switchCaseFacts,
+  narrowCaseLabelArmThunk,
   relGuardOf,
   narrowRelArmThunk,
+  type NullishGuard,
+  type RelGuard,
 } from "../stmt-predicates.ts";
 import {
   matchAsOverride,
@@ -37,6 +75,8 @@ import {
   collectPatternNames,
   finalizerBits,
   withClassNameHint,
+  userIdentInfo,
+  bumpDestrTmpSeq,
 } from "../helpers.ts";
 import { HOST_INTRINSIC_SET, UNDEF_LIT } from "../intrinsics.ts";
 import { NudoUnsupportedError } from "../../unsupported.ts";
@@ -50,12 +90,26 @@ import {
   catchMayRethrow,
 } from "../emit.ts";
 import { emitTranspileExpression } from "../transpile-dispatch.ts";
-import { paramNamesOf, transpileFnBodyStmts } from "./fn-body.ts";
+import { paramNamesOf, transpileFnBodyStmts, narrowRelComplementArmThunk } from "./fn-body.ts";
 import { computeConstScope } from "../helpers.ts";
+// Bug 174：形参默认值里的 `this` 判定（声明面与表达式面共用同一实现）
+import { fnParamsHaveThis } from "../expr/function.ts";
 import { transpileBlockAsThunk, extractForInitName } from "./block.ts";
 import { transpileClass } from "../class-emit.ts";
 /** switch 共享体函数名序号（跨语句/函数去重） */
 let switchBodySeq = 0;
+
+/** Bug 147：switch break 标签序号（跨语句/函数去重，标签即 break 信号靶） */
+let switchBreakSeq = 0;
+
+/**
+ * Bug 147：当前正在发射的 switch 臂的 break 标签（栈式保存 / 恢复）。
+ * switch 臂内的无标签 break 走 `$loopBreak(<标签>)`——带标签的 break 信号
+ * 不被外层循环吸收（$isBreakTo 只匹配同标签），由 switch 臂入口的 catch
+ * 吸收 ⇒ break 真的退出 switch（此前发 `return;` 只结束最近的 thunk：
+ * if 臂内的 break 只结束 if 臂 thunk ⇒ 臂内后续语句照跑）。
+ */
+let curSwitchBreakLabel: string | null = null;
 
 /** Bug 98：非纯 for-in 接收者临时名计数器（同块多 for-in 防重复声明） */
 let forInRecvSeq = 0;
@@ -73,6 +127,69 @@ function isPureForInRecv(n: Expression): boolean {
     default:
       return false;
   }
+}
+
+/**
+ * Bug 178：for 头成员表达式的**根绑定名**（`o.x` → `o`、`o.a.b` → `o`）——
+ * 头赋值写回的是根绑定（成员槽经 $set 就地更新 + 根重绑），根须进循环
+ * pack/unpack 写回集（否则抽象出口把成员写覆盖成旧值）。根不可重绑
+ * （`this.x` / 调用结果）返回 null（不进写回集）。
+ */
+function memberHeadRootName(m: Node): string | null {
+  let cur = m as { type?: string; object?: unknown; name?: string };
+  while (cur?.type === "MemberExpression") cur = cur.object as typeof cur;
+  if (cur?.type === "Identifier" && cur.name) return cur.name;
+  return null;
+}
+
+/**
+ * 循环体守卫事实（Bug 183 / 185）：测试为真 ⇒ 体内成立（**事实臂** cons）。
+ * nullish 守卫（`v !== null`）与关系守卫（`x > 0`）同口径接线——`for` /
+ * `while` 的测试在每轮迭代前求值、为真则进体，语义与 `if` 的事实臂等价。
+ * 跳过规则（与既有 while 口径一致）：体侧守卫名有写（含 mutator
+ * receiver）/ 体顶层同名词法声明 ⇒ 全部跳过（影子参数吞体侧写 / 重复
+ * 声明 SyntaxError）；extraSkip 供 for 主路径排除循环变量（状态线程形参
+ * ——影子会顶掉状态线程）。
+ */
+function loopBodyGuardsOf(
+  test: Node | null | undefined,
+  bodyLocalDecls: ReadonlySet<string>,
+  bodyWrites: ReadonlySet<string>,
+  extraSkip?: ReadonlySet<string>,
+): { nullish: NullishGuard[]; rel: RelGuard | undefined } {
+  const skip = (name: string): boolean =>
+    bodyWrites.has(name) ||
+    bodyLocalDecls.has(name) ||
+    (extraSkip?.has(name) ?? false);
+  const nullish = nullishGuardsOf(test).filter((g) => g.arm === "cons" && !skip(g.name));
+  const rel = relGuardOf(test);
+  return { nullish, rel: rel !== undefined && !skip(rel.name) ? rel : undefined };
+}
+
+/**
+ * 循环体守卫剪影（Bug 183 / 185）：把守卫事实以**影子参数**接进循环体——
+ * nullish 走 $removeNullish 通道（既有口径），关系走 $refineRel 通道
+ * （事实臂；补集方向不可健全表示，见 narrowRelArmThunk）。关系剪影在
+ * nullish 剪影**内侧**（同名时关系事实作用在已去 nullish 的值上）。
+ */
+function narrowLoopBody(
+  body: string,
+  guards: { nullish: NullishGuard[]; rel: RelGuard | undefined },
+  depth: number,
+  forkBindingNames: ReadonlySet<string> | readonly string[],
+): string {
+  let out = body;
+  if (guards.rel) {
+    out = narrowRelArmThunk(`{ ${out} }`, guards.rel, "cons", forkBindingNames);
+  }
+  if (guards.nullish.length > 0) {
+    out = [
+      `${indent(depth + 1)}((${guards.nullish.map((g) => g.name).join(", ")}) => {`,
+      out,
+      `${indent(depth + 1)}})(${guards.nullish.map((g) => nullishRemoveCallOf(g)).join(", ")});`,
+    ].join("\n");
+  }
+  return out;
 }
 
 export function transpileStatement(stmt: Statement, depth: number, opts: TranspileOptions): string {
@@ -219,7 +336,15 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       if (!stmt.id) return `${pad}// <anonymous fn skipped>`;
       // 嵌套函数声明不是 export 面；函数体是新边界，inLoop 必须归零
       const exportKw = depth === 0 ? "export " : "";
-      const hasThis = fnBodyHasThis(stmt as { body?: Node | null });
+      // Bug 174：默认参数表达式在**本函数作用域**求值 ⇒ 其中的 `this` 是
+      // **本函数自己的** this（严格模式：undefined / 调用接收者），不是外层
+      // 作用域的 this。fnBodyHasThis 只扫 body ⇒ 形参默认值里的 this 不可见
+      // ⇒ 默认表达式沿用外层 thisParam（外层方法体里拿到**外层对象**——
+      // 自信错值 + 漏抛 TypeError）。故形参面一并扫描（fnParamsHaveThis，
+      // 与表达式面共用同一判定）。
+      const hasThis =
+        fnBodyHasThis(stmt as { body?: Node | null }) ||
+        fnParamsHaveThis(stmt.params as Node[]);
       // `arguments`：体/嵌套箭头引用（含参数默认值）时建独立 tuple 槽（strict 映射，见 $arguments）
       const hasArgs = fnBodyHasOwnArguments(stmt as { body?: Node | null; params?: Node[] });
       const fnOpts: TranspileOptions = {
@@ -301,13 +426,18 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // function* → $gen 收集 yield。宿主函数是普通 function（transpile 已去
       // generator 化）——__nudoNonCtor 标记由 hoistNonCtorMarkers
       // 提升到作用域顶部（先用后声明也可见，Bug 9）
+      // Bug 141：async generator（`async function*`）——$gen 第二实参 = async
+      // 位（next/return/throw 返 promise、装 @@asyncIterator 与
+      // @@toStringTag "AsyncGenerator"）；**不进** $async 包装（原生 async
+      // generator 返回 AsyncGenerator 本身，非 promise）——generator 分支在
+      // async 分支之前，async generator 天然不走 $async。
       if (stmt.generator) {
         return [
           `${pad}${exportKw}function ${stmt.id.name}(${hostSig.join(", ")}) {`,
           restBind,
           `${indent(depth + 1)}return $gen(() => {`,
           bodySrc,
-          `${indent(depth + 1)}});`,
+          `${indent(depth + 1)}}${stmt.async === true ? ", true" : ""});`,
           `${pad}}`,
         ].join("\n");
       }
@@ -383,7 +513,18 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           `${pad}${prefix}(__mutRet);`,
         ].join("\n");
       };
-      if (asVar) return emitRet(asVar);
+      if (asVar) {
+        // Bug 164：@nudo:as 是**类型覆盖**（文档口径）——被断言的表达式
+        // **仍要求值**：副作用与 throws 域保留，本次返回**结果取断言值**
+        // （与 @nudo:replace 同款：逗号表达式 `(原表达式, 注入值)`——左值
+        // 求值后丢弃，右值是本次断言的结果）。旧口径把 argument 整段换成
+        // 注入常量 ⇒ 原表达式从不求值 ⇒ 副作用丢失 + 抛错域消失
+        // （L2 `nudo:entry-may-throw` 假绿）+ 下游观测到错值。
+        const argSrc = stmt.argument
+          ? emitTranspileExpression(stmt.argument, opts)
+          : "$lit(void 0)";
+        return emitRet(`((${argSrc}), ${asVar})`, (stmt.argument as Node | null) ?? null);
+      }
       if (!stmt.argument) return emitRet(`$lit(void 0)`);
       const retSrc = emitTranspileExpression(stmt.argument, opts);
       return emitRet(retSrc, stmt.argument as Node);
@@ -456,39 +597,37 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
               }
               continue;
             }
+            const initSrc = emitTranspileExpression(
+              d.init,
+              // Bug 133：NamedEvaluation——`var K = class {}` 以绑定名为类名
+              withClassNameHint(opts, d.init, d.id.name),
+            );
             const init = recInit(
-              asVar
-                ? asVar
-                : anchorInit(
-                    emitTranspileExpression(
-                      d.init,
-                      // Bug 133：NamedEvaluation——`var K = class {}` 以绑定名为类名
-                      withClassNameHint(opts, d.init, d.id.name),
-                    ),
-                  ),
+              // Bug 164：@nudo:as 是**类型覆盖**——原 init **仍求值**
+              // （副作用 + throws 域保留），本次绑定的值取断言值。
+              asVar ? `((${initSrc}), ${asVar})` : anchorInit(initSrc),
             );
             lines.push(`${pad}${d.id.name} = ${init};`);
             if (depth === 0) {
               lines.push(`${pad}$recordBinding(${JSON.stringify(d.id.name)}, ${d.id.name});`);
             }
-            if (!asVar) {
-              lines.push(...emitArrMutatorRebinds(d.init as Node, opts, pad));
-            }
+            // 原 init 仍求值（Bug 164）⇒ 语句位写回（mutator / 正则状态 /
+            // 可选链 delete）照发
+            lines.push(...emitArrMutatorRebinds(d.init as Node, opts, pad));
             continue;
           }
           // @nudo:as：覆盖整个声明语句的 init
+          const initSrc = d.init
+            ? emitTranspileExpression(
+                d.init,
+                // Bug 133：NamedEvaluation——`const K = class {}` 以绑定名为类名
+                withClassNameHint(opts, d.init, d.id.name),
+              )
+            : "$lit(void 0)";
           const init = recInit(
-            asVar
-              ? asVar
-              : anchorInit(
-                  d.init
-                    ? emitTranspileExpression(
-                        d.init,
-                        // Bug 133：NamedEvaluation——`const K = class {}` 以绑定名为类名
-                        withClassNameHint(opts, d.init, d.id.name),
-                      )
-                    : "$lit(void 0)",
-                ),
+            // Bug 164：@nudo:as 是**类型覆盖**——原 init **仍求值**
+            // （副作用 + throws 域保留），本次绑定的值取断言值。
+            asVar ? `((${initSrc}), ${asVar})` : anchorInit(initSrc),
           );
           const declKw = isVar ? "var" : kw;
           lines.push(`${pad}${declKw} ${d.id.name} = ${init};`);
@@ -497,7 +636,8 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
             lines.push(`${pad}$recordBinding(${JSON.stringify(d.id.name)}, ${d.id.name});`);
           }
           // P1：表达式位置 mutator（`const x = a.pop()`）同样重绑容器
-          if (d.init && !asVar) {
+          // （Bug 164：原 init 仍求值 ⇒ 写回照发）
+          if (d.init) {
             lines.push(...emitArrMutatorRebinds(d.init as Node, opts, pad));
           }
           continue;
@@ -508,6 +648,12 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           continue;
         }
         const initSrc = emitTranspileExpression(d.init, opts);
+        // Bug 181：解构临时名的**首次分配**也必须避让用户标识符——`_d{n}`
+        // 与用户同名绑定重复词法声明 ⇒ SyntaxError ⇒ 整模块求值失败 ⇒
+        // 导出退化 unknown（假 nudo:opaque-result）。计数器创建处
+        // （transpile.ts）已预置避让；此处再走一次避让路径，覆盖自带
+        // 计数器的转译单元（transpileBodyNode 等）。
+        bumpDestrTmpSeq(tmpSeq, userIdentInfo(opts.source));
         const tmp = `_d${tmpSeq.n++}`;
         lines.push(`${pad}const ${tmp} = ${initSrc};`);
         lines.push(...emitArrMutatorRebinds(d.init as Node, opts, pad));
@@ -597,15 +743,29 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const altNarrowed =
         altRaw === null
           ? null
-          : narrowDiscriminantArmThunks(
-              narrowTypeArmThunk(
-                narrowNullishArmThunks(altRaw, guards, "alt", recvSet),
-                tguard,
+          : narrowRelComplementArmThunk(
+              narrowDiscriminantArmThunks(
+                narrowTypeArmThunk(
+                  narrowNullishArmThunks(altRaw, guards, "alt", recvSet),
+                  tguard,
+                  "alt",
+                  recvSet,
+                ),
+                dguards,
                 "alt",
                 recvSet,
               ),
-              dguards,
-              "alt",
+              // Bug 182：事实臂以 return / throw 结束 ⇒ 该臂是**早退**，
+              // else 臂即**后续路径**（测试为假）⇒ 后续路径上可断言**否定
+              // 关系界**（`x <= 0` 为假 ⇒ `x > 0`）。早返回形态
+              // `if (x <= 0) { return 1; } return x;` 的尾句全终止 ⇒
+              // completeElseChains 把尾句收进**合成的 else** ⇒ 后续路径走
+              // 的正是这条 else 臂（此前不窄化 ⇒ 返回值域含未精化的 x ⇒
+              // `@nudo:contract return number().gt(0)` 被判违约 ⇒ 与语义等价
+              // 的 `if (x > 0) { return x; } else { return 1; }` 结论相反）。
+              // 事实臂**不**终止时（普通 if/else）不断言否定界——else 臂此时
+              // 只能断定 `¬(x <= k)`（NaN 亦满足），不可健全表示。
+              stmtReturns(stmt.consequent) ? rguard : undefined,
               recvSet,
             );
       const cons = wrapArm(consNarrowed, "fk1_");
@@ -725,6 +885,15 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         const bodyLocalDecls = new Set<string>();
         collectLoopBodyTopLevelDeclNames(stmt.body, bodyLocalDecls);
         const names = [...assigned].filter((n) => !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n));
+        // Bug 183：for 循环体接守卫事实（nullish + 关系）——测试在每轮迭代
+        // 前求值、为真则进体，语义与 `if`/`while` 的事实臂等价（此前 for
+        // 分支一条都没接 ⇒ `for (; v !== null; )` 与 `while (v !== null)`
+        // 结论相反）。跳过规则同 while（体侧写 / 体顶层同名声明）。
+        const bodyWrites = new Set<string>();
+        collectAssignedIds(stmt.body, bodyWrites);
+        collectArrMutatorReceivers(stmt.body, bodyWrites);
+        const loopGuards = loopBodyGuardsOf(stmt.test, bodyLocalDecls, bodyWrites);
+        const bodyNarrowed = narrowLoopBody(bodyStmts, loopGuards, depth + 1, names);
         const packSrc =
           names.length === 0
             ? null
@@ -753,7 +922,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           `${indent(depth + 1)}(__n) => ${testSrc},`,
           `${indent(depth + 1)}${stepSrc},`,
           `${indent(depth + 1)}(__n) => {`,
-          bodyStmts,
+          bodyNarrowed,
           `${indent(depth + 1)}  return __n;`,
           `${indent(depth + 1)}},`,
           `${indent(depth + 1)}${max}${optsSrc}`,
@@ -813,6 +982,20 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const bodyLocalDecls = new Set<string>();
       collectLoopBodyTopLevelDeclNames(stmt.body, bodyLocalDecls);
       const names = [...assigned].filter((n) => n !== initName && !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n));
+      // Bug 183：for 循环体接守卫事实（nullish + 关系）——同 fallback 路径。
+      // 循环变量本身（状态线程形参 initName）排除：影子参数会顶掉状态
+      // 线程（`for (let i = 0; i < 3; i++)` 的 i 是状态线程，不得被影子
+      // 参数遮蔽）。
+      const bodyWrites = new Set<string>();
+      collectAssignedIds(stmt.body, bodyWrites);
+      collectArrMutatorReceivers(stmt.body, bodyWrites);
+      const loopGuards = loopBodyGuardsOf(
+        stmt.test,
+        bodyLocalDecls,
+        bodyWrites,
+        new Set([initName]),
+      );
+      const bodyNarrowed = narrowLoopBody(bodyStmts, loopGuards, depth + 1, names);
       const packSrc =
         names.length === 0
           ? null
@@ -837,7 +1020,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         `${indent(depth + 1)}(${initName}) => ${testSrc},`,
         `${indent(depth + 1)}(${initName}) => { ${updateSrc ? `${updateSrc};` : ""} return ${initName}; },`,
         `${indent(depth + 1)}(${initName}) => {`,
-        bodyStmts,
+        bodyNarrowed,
         `${indent(depth + 1)}  return ${initName};`,
         `${indent(depth + 1)}},`,
         `${indent(depth + 1)}${max}${optsSrc}`,
@@ -854,11 +1037,19 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       // `src`：臂体在源 AST 里的**原数组引用**——`case 1: default: body` 形态下
       // default 的 consequent 与前一个 case 臂共享同一份（Bug 146：合并阶段
       // 不得再串一份 → 体被执行两次）。
-      type Arm = { tests: string[]; stmts: Statement[]; isDefault: boolean; src?: Statement[] };
+      type Arm = {
+        tests: string[];
+        /** case 测试的源节点（Bug 184：case 标签窄化事实的字面量识别） */
+        testNodes: Node[];
+        stmts: Statement[];
+        isDefault: boolean;
+        src?: Statement[];
+      };
 
       // 1) 空 case 测试并入下一有体臂；default 独立
       const pre: Arm[] = [];
       let pendingTests: string[] = [];
+      let pendingNodes: Node[] = [];
       for (const c of stmt.cases) {
         const testSrc = c.test ? emitTranspileExpression(c.test as Expression, opts) : null;
         if (testSrc === null) {
@@ -868,21 +1059,24 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           // 落入 default 体」。两条路径各自引用同一份体，但**合并阶段不得
           // 再串一份**（否则体在同一条臂里执行两次：返回值错、副作用翻倍）。
           if (pendingTests.length > 0 && c.consequent.length > 0) {
-            pre.push({ tests: pendingTests, stmts: c.consequent, isDefault: false, src: c.consequent });
+            pre.push({ tests: pendingTests, testNodes: pendingNodes, stmts: c.consequent, isDefault: false, src: c.consequent });
             pendingTests = [];
+            pendingNodes = [];
           }
-          pre.push({ tests: [], stmts: c.consequent, isDefault: true, src: c.consequent });
+          pre.push({ tests: [], testNodes: [], stmts: c.consequent, isDefault: true, src: c.consequent });
           continue;
         }
         if (c.consequent.length === 0) {
           pendingTests.push(testSrc);
+          pendingNodes.push(c.test as Node);
           continue;
         }
-        pre.push({ tests: [...pendingTests, testSrc], stmts: c.consequent, isDefault: false });
+        pre.push({ tests: [...pendingTests, testSrc], testNodes: [...pendingNodes, c.test as Node], stmts: c.consequent, isDefault: false });
         pendingTests = [];
+        pendingNodes = [];
       }
       if (pendingTests.length > 0) {
-        pre.push({ tests: pendingTests, stmts: [], isDefault: false });
+        pre.push({ tests: pendingTests, testNodes: pendingNodes, stmts: [], isDefault: false });
       }
 
       // 2) 非 break 贯穿：把后续臂体串进当前臂（JS 语义）
@@ -915,6 +1109,12 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         nonDefaultArms.every(armReturns) &&
         armReturns(defaultArm);
 
+      // Bug 184：case 标签窄化事实（命中 / 排除）——按臂序，与 merged 同序
+      const caseFacts = switchCaseFacts(
+        stmt.discriminant,
+        pre.map((a) => ({ tests: a.testNodes, isDefault: a.isDefault })),
+      );
+
       const caseLines: string[] = [];
       const sharedBodyDecls: string[] = [];
       let defaultSrc: string | null = null;
@@ -932,48 +1132,87 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const names = [...recvSet];
       // 源有 default 则每臂一槽；无 default 时多一个「no-match=快照」槽
       const nArms = merged.filter((a) => !a.isDefault).length + (defaultArm ? 1 : 0) + (defaultArm ? 0 : 1);
+      // Bug 147：switch 臂的 break 标签——带标签的 break 信号不被外层循环
+      // 吸收（$isBreakTo 只匹配同标签），由 switch 臂入口的 catch 吸收
+      const breakLabel = `__nudoSw${switchBreakSeq++}`;
+      // Bug 168：case 测试**惰性**求值——$switch 的 cases 实参数组在调用前
+      // 全部求值（JS 实参语义）⇒ 命中第一个 case 后后续 case 测试仍会执行。
+      // 修法：test 改为 getter（$switch 按序匹配时才读 c.test）⇒ 命中即停
+      // （原生 CaseBlock：逐个求值 case 测试，命中即跳出求值循环）。
+      const hasTests = stmt.cases.some((c) => c.test != null);
+      const testSrcs: string[] = [];
       const wrapArmThunk = (thunk: string, outIdx: number): string => {
-        if (names.length === 0) return thunk;
         // 与 if-fork 同口径：return/throw 臂不写 continue 路径绑定
-        return [
-          `() => {`,
-          ...names.map((n) => `${indent(depth + 1)}${n} = $copy(__sw0_${n});`),
-          `${indent(depth + 1)}let __cont = true;`,
-          `${indent(depth + 1)}try {`,
-          `${indent(depth + 2)}return (${thunk})();`,
-          `${indent(depth + 1)}} catch (e) {`,
-          `${indent(depth + 2)}if ($isForkExit(e)) __cont = false;`,
-          `${indent(depth + 2)}throw e;`,
-          `${indent(depth + 1)}} finally {`,
-          `${indent(depth + 2)}if (__cont) {`,
-          ...names.map((n) => `${indent(depth + 3)}__sw${outIdx + 1}_${n} = ${n};`),
-          ...names.map((n) => `${indent(depth + 3)}__sw${outIdx + 1}set_${n} = true;`),
-          `${indent(depth + 2)}}`,
-          `${indent(depth + 1)}}`,
-          `}`,
-        ].join("\n");
+        const lines: string[] = [`() => {`];
+        // 抽象判别式路径（$switch 不读 case 测试 getter）→ 臂入口补求值全部
+        // case 测试（原生：case 测试按序求值到命中为止；抽象路径判不出命中
+        // ⇒ 全部求值 = 上界）
+        if (hasTests) lines.push(`${indent(depth + 1)}if (!__swTestRead) __swEvalAll();`);
+        if (names.length > 0) {
+          lines.push(...names.map((n) => `${indent(depth + 1)}${n} = $copy(__sw0_${n});`));
+          lines.push(`${indent(depth + 1)}let __cont = true;`);
+        }
+        lines.push(`${indent(depth + 1)}try {`);
+        lines.push(`${indent(depth + 2)}return (${thunk})();`);
+        lines.push(`${indent(depth + 1)}} catch (e) {`);
+        // Bug 147：switch 臂的 break 信号 → 臂结束（switch 随之结束）
+        lines.push(`${indent(depth + 2)}if ($isBreakTo(e, ${JSON.stringify(breakLabel)})) {`);
+        lines.push(`${indent(depth + 3)}/* switch 臂 break：臂结束 */`);
+        lines.push(`${indent(depth + 2)}} else {`);
+        if (names.length > 0) lines.push(`${indent(depth + 3)}if ($isForkExit(e)) __cont = false;`);
+        lines.push(`${indent(depth + 3)}throw e;`);
+        lines.push(`${indent(depth + 2)}}`);
+        lines.push(`${indent(depth + 1)}}`);
+        if (names.length > 0) {
+          lines.push(`${indent(depth + 1)}finally {`);
+          lines.push(`${indent(depth + 2)}if (__cont) {`);
+          lines.push(...names.map((n) => `${indent(depth + 3)}__sw${outIdx + 1}_${n} = ${n};`));
+          lines.push(...names.map((n) => `${indent(depth + 3)}__sw${outIdx + 1}set_${n} = true;`));
+          lines.push(`${indent(depth + 2)}}`);
+          lines.push(`${indent(depth + 1)}}`);
+        }
+        lines.push(`}`);
+        return lines.join("\n");
       };
       let armSeq = 0;
-      for (const arm of merged) {
-        const body =
-          arm.stmts.length === 0
-            ? ""
-            : arm.stmts.map((s) => transpileStatement(s, depth + 2, armOpts)).join("\n");
-        const rawThunk = `() => {\n${body}\n${indent(depth + 1)}}`;
-        const thunk = wrapArmThunk(rawThunk, armSeq);
-        armSeq++;
-        const shared = arm.tests.length > 1 && !arm.isDefault;
-        const runRef = shared ? `__swBody${bodyIdxBase + bodyIdx++}` : thunk;
-        if (shared) {
-          sharedBodyDecls.push(`${pad}const ${runRef} = ${thunk};`);
-        }
-        if (arm.isDefault) {
-          defaultSrc = thunk;
-        } else {
-          for (const t of arm.tests) {
-            caseLines.push(`{ test: ${t}, run: ${runRef} },`);
+      // Bug 147：臂体发射期间本 switch 的 break 标签生效（嵌套 switch 各自一份）
+      const prevBreakLabel = curSwitchBreakLabel;
+      curSwitchBreakLabel = breakLabel;
+      try {
+        for (let armIdx = 0; armIdx < merged.length; armIdx++) {
+          const arm = merged[armIdx]!;
+          const body =
+            arm.stmts.length === 0
+              ? ""
+              : arm.stmts.map((s) => transpileStatement(s, depth + 2, armOpts)).join("\n");
+          // Bug 184：case 标签窄化——命中 / 排除事实影子重绑进臂体
+          const rawThunk = narrowCaseLabelArmThunk(
+            `() => {\n${body}\n${indent(depth + 1)}}`,
+            caseFacts[armIdx],
+            names,
+          );
+          const thunk = wrapArmThunk(rawThunk, armSeq);
+          armSeq++;
+          const shared = arm.tests.length > 1 && !arm.isDefault;
+          const runRef = shared ? `__swBody${bodyIdxBase + bodyIdx++}` : thunk;
+          if (shared) {
+            sharedBodyDecls.push(`${pad}const ${runRef} = ${thunk};`);
+          }
+          if (arm.isDefault) {
+            defaultSrc = thunk;
+          } else {
+            for (const t of arm.tests) {
+              const testIdx = testSrcs.length;
+              testSrcs.push(t);
+              // Bug 168：test 为 getter——$switch 按序匹配时才求值（命中即停）
+              caseLines.push(
+                `{ get test() { __swTestRead = true; return __swEval(${testIdx}); }, run: ${runRef} },`,
+              );
+            }
           }
         }
+      } finally {
+        curSwitchBreakLabel = prevBreakLabel;
       }
       // 无 default：合成 no-match 臂，把快照写入 join 槽（抽象 disc 时参与 join）
       if (!defaultArm && names.length > 0) {
@@ -984,17 +1223,51 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const discRebinds = emitArrMutatorRebinds(stmt.discriminant as Node, opts, pad);
       const switchCall = (discRef: string): string =>
         `$switch(${discRef}, [\n${caseLines.map((l) => indent(depth + 1) + l).join("\n")}\n${indent(depth + 1)}]${dflt})`;
+      // Bug 168/169：case 测试的惰性求值机制（test thunk + 缓存 + 抽象路径
+      // 补求值）+ 基线刷新（case 测试求值后刷新 __sw0_* ⇒ 臂入口恢复的是
+      // 「测试之后」的状态 ⇒ 测试里的写不被抹掉）。
+      const testHelpers: string[] = [];
+      if (testSrcs.length > 0) {
+        const refresh = names.map((n) => `${indent(depth + 2)}__sw0_${n} = $copy(${n});`);
+        testHelpers.push(
+          `${pad}const __swT = [${testSrcs.map((t) => `() => (${t})`).join(", ")}];`,
+          `${pad}const __swTV = [];`,
+          `${pad}const __swTD = [];`,
+          `${pad}let __swAllDone = false;`,
+          `${pad}let __swTestRead = false;`,
+          // 形参名用 __sw 前缀——不得与用户绑定同名（`i` 之类会遮蔽用户的
+          // 判别绑定 ⇒ 基线刷新拷到错误的值）
+          `${pad}const __swEval = (__swI) => {`,
+          `${indent(depth + 1)}if (!__swTD[__swI]) {`,
+          `${indent(depth + 2)}__swTD[__swI] = true;`,
+          `${indent(depth + 2)}__swTV[__swI] = __swT[__swI]();`,
+          ...refresh,
+          `${indent(depth + 1)}}`,
+          `${indent(depth + 1)}return __swTV[__swI];`,
+          `${pad}};`,
+          `${pad}const __swEvalAll = () => {`,
+          `${indent(depth + 1)}if (__swAllDone) return;`,
+          `${indent(depth + 1)}__swAllDone = true;`,
+          `${indent(depth + 1)}for (let __swJ = 0; __swJ < __swT.length; __swJ++) __swEval(__swJ);`,
+          `${pad}};`,
+        );
+      }
       if (names.length === 0) {
-        return [
+        const lines = [
           ...discRebinds,
+          ...testHelpers,
           ...sharedBodyDecls,
           allReturn
             ? `${pad}return ${switchCall(disc)};`
             : `${pad}${switchCall(disc)};`,
-        ].join("\n");
+        ];
+        // 测试机制带块级绑定（__swT / __swTV / …）→ switch 包块（同名不撞）
+        if (testHelpers.length === 0) return lines.join("\n");
+        return [`${pad}{`, ...lines, `${pad}}`].join("\n");
       }
       const decls = names.flatMap((n) => [
-        `${pad}const __sw0_${n} = $copy(${n});`,
+        // 基线可被 case 测试求值刷新（Bug 169）——故 let 而非 const
+        `${pad}let __sw0_${n} = $copy(${n});`,
         ...Array.from({ length: Math.max(nArms, armSeq + (defaultArm ? 0 : 1)) }, (_, i) =>
           `${pad}let __sw${i + 1}_${n}; let __sw${i + 1}set_${n} = false;`,
         ),
@@ -1018,6 +1291,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         `${pad}const __swD = (${disc});`,
         ...discRebinds,
         ...decls.map((l) => l.replace(new RegExp(`^${pad}`), `${pad}`)),
+        ...testHelpers,
         ...sharedBodyDecls.map((l) =>
           l.startsWith(pad) ? `${pad}${l.slice(pad.length)}` : `${pad}${l}`,
         ),
@@ -1039,6 +1313,8 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         const lines = [`${pad}${assignSrc};`];
         if (stmt.finalizer) {
           // Bug 148：finally 体是块作用域——其内 const 名单自算
+          // Bug 186：finally 体走 transpileFnBodyStmts（与函数体顶层同口径）
+          // ——早退补集窄化送达 finally 体内的嵌套语句表
           const finOpts: TranspileOptions = {
             ...opts,
             constNames: computeConstScope(
@@ -1048,7 +1324,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           };
           const finBody =
             stmt.finalizer.type === "BlockStatement"
-              ? stmt.finalizer.body.map((s) => transpileStatement(s, depth, finOpts)).join("\n")
+              ? transpileFnBodyStmts(stmt.finalizer.body, depth, finOpts)
               : transpileStatement(stmt.finalizer as unknown as Statement, depth, finOpts);
           lines.push(finBody);
         }
@@ -1105,7 +1381,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       };
       const tryBody =
         stmt.block.type === "BlockStatement"
-          ? stmt.block.body.map((s) => transpileStatement(s, depth + 1, tryScopeOpts)).join("\n")
+          ? transpileFnBodyStmts(stmt.block.body, depth + 1, tryScopeOpts)
           : transpileStatement(stmt.block as unknown as Statement, depth + 1, tryScopeOpts);
       const lines = [
         `${pad}const ${markName} = $tryMark();`,
@@ -1153,20 +1429,18 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
             }
           : {}),
       };
+      // Bug 186：catch 体走 transpileFnBodyStmts（与函数体顶层同口径）——
+      // 早退补集窄化送达 catch 体内的嵌套语句表
       const transpileCatchBody = (d: number, o: TranspileOptions): string =>
         !stmt.handler
           ? ""
           : stmt.handler.body.type === "BlockStatement"
-            ? stmt.handler.body.body
-                .map((s) =>
-                  transpileStatement(
-                    s,
-                    d,
-                    // Bug 148：catch 体是块作用域——本作用域的 const 名单自算
-                    { ...o, constNames: computeConstScope(stmt.handler!.body.body, o.constNames) },
-                  ),
-                )
-                .join("\n")
+            ? transpileFnBodyStmts(
+                stmt.handler.body.body,
+                d,
+                // Bug 148：catch 体是块作用域——本作用域的 const 名单自算
+                { ...o, constNames: computeConstScope(stmt.handler!.body.body, o.constNames) },
+              )
             : transpileStatement(stmt.handler.body as unknown as Statement, d, o);
       if (stmt.handler) {
         const catchBody = transpileCatchBody(depth + 1, catchOpts);
@@ -1229,9 +1503,7 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         };
         const finBody =
           stmt.finalizer.type === "BlockStatement"
-            ? stmt.finalizer.body
-                .map((s) => transpileStatement(s, depth + 1, finScopeOpts))
-                .join("\n")
+            ? transpileFnBodyStmts(stmt.finalizer.body, depth + 1, finScopeOpts)
             : transpileStatement(stmt.finalizer as unknown as Statement, depth + 1, finScopeOpts);
         lines.push(`${pad}finally {`);
         lines.push(finBody);
@@ -1313,16 +1585,54 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         ? `$forInKeys(${recvSrc})`
         : recvSrc;
       // for (const x of xs) / for (const [a,b] of xs)
+      //
+      // Bug 163 / 178：头绑定的**作用域形态**分四种，头绑定不是「一律回调形参」——
+      //  - let/const 头：块级、**每轮新绑定** → 回调形参（既有口径，不变）
+      //  - var 头：**函数级、整个循环共享一个绑定**、循环后仍可见 → 不得
+      //    降级成回调形参（此前形参遮蔽函数级槽 ⇒ 循环外恒 undefined、
+      //    且每轮独立绑定 ⇒ 闭包捕获值错）；改为每轮把迭代项**写回同一
+      //    函数级槽**（槽已由 collectVarHoistNames 提升到函数体/模块体顶部）
+      //  - 标识符头 `for (x of …)`：**赋值**给既有绑定 → 头赋值必须发射
+      //  - 成员表达式头 `for (o.x of …)`：**写回成员槽** → 头赋值必须发射
+      //    （此前两形态的赋值**整条不发射** ⇒ 目标恒为旧值）
       let bindName = "_item";
+      /** 头赋值语句源（写回既有绑定 / 成员槽）；null = 无头赋值 */
+      let headAssignSrc: string | null = null;
+      /** 头赋值写入的外层绑定名（进 pack/unpack 写回集） */
+      const headAssignedNames: string[] = [];
+      const headKind =
+        stmt.left.type === "VariableDeclaration" ? stmt.left.kind : null;
+      const headPat =
+        stmt.left.type === "VariableDeclaration" ? stmt.left.declarations[0]?.id : null;
       if (stmt.left.type === "VariableDeclaration") {
-        const decl = stmt.left.declarations[0];
-        if (decl?.id.type === "Identifier") bindName = decl.id.name;
-        else if (decl?.id.type === "ObjectPattern" || decl?.id.type === "ArrayPattern") {
+        if (headPat?.type === "Identifier") {
+          if (headKind === "var") {
+            // var 头：函数级共享绑定 —— 头赋值写回提升槽（不新建回调形参）
+            bindName = "_item";
+            headAssignedNames.push(headPat.name);
+          } else {
+            bindName = headPat.name;
+          }
+        } else if (headPat?.type === "ObjectPattern" || headPat?.type === "ArrayPattern") {
           // 解构绑定：用临时 _item 再 destructure
           bindName = `_of${stmt.loc?.start.line ?? 0}`;
+          if (headKind === "var") {
+            // var 头解构：子名已提升到函数级槽 → destructure 走**赋值**形态
+            // （kw ""），写回同一函数级槽而非块级新绑定
+            const patNames = new Set<string>();
+            collectPatternNames(headPat, patNames);
+            for (const n of patNames) headAssignedNames.push(n);
+          }
         }
       } else if (stmt.left.type === "Identifier") {
-        bindName = stmt.left.name;
+        // 标识符头：赋值给既有绑定（此前降级成回调形参 ⇒ 写回丢失）
+        bindName = "_item";
+        headAssignedNames.push(stmt.left.name);
+      } else if (stmt.left.type === "MemberExpression") {
+        // 成员表达式头：迭代项必须写回成员槽（此前整条不发射）
+        bindName = "_item";
+        const root = memberHeadRootName(stmt.left);
+        if (root) headAssignedNames.push(root);
       }
       const bodyLines: string[] = [];
       // for (const x of …) 头绑定在循环体内不可再赋
@@ -1363,10 +1673,24 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           stmt.left.declarations[0].id.type === "ArrayPattern")
       ) {
         // Bug 161：解构头的绑定种类随头（const 头不可再赋 / let·var 头可再赋）
+        // Bug 163：var 头的解构子名是**函数级提升槽**（collectVarHoistNames
+        // 收 for 头的 var 声明）→ destructure 走**赋值**形态（kw ""）写回
+        // 同一函数级槽；子名未在提升集内时退回块级 let（不得凭空写未声明名）
+        const patNames = new Set<string>();
+        collectPatternNames(stmt.left.declarations[0].id, patNames);
+        const hoisted = opts.hoistedVarNames;
+        const varHeadAssigned =
+          stmt.left.kind === "var" &&
+          hoisted !== undefined &&
+          [...patNames].every((n) => hoisted.has(n));
         emitDestructure(
           stmt.left.declarations[0].id as Node,
           bindName,
-          stmt.left.kind === "const" ? "const" : "let",
+          varHeadAssigned
+            ? ""
+            : stmt.left.kind === "const"
+              ? "const"
+              : "let",
           indent(depth + 2),
           { ...opts, constNames: loopConstNames },
           bodyLines,
@@ -1391,11 +1715,43 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
         stmt.body.type === "BlockStatement"
           ? stmt.body.body.map((s) => transpileStatement(s, depth + 2, bodyOpts)).join("\n")
           : transpileStatement(stmt.body, depth + 2, bodyOpts);
+      // Bug 163 / 178：头赋值发射（写回既有绑定 / 成员槽）——复用通用赋值
+      // 通道（const 守卫 / $set·$idxSet 写回 / 根重绑），不另起一套。
+      // 目标节点：var 头 / 标识符头 = 头标识符；成员头 = 头成员表达式。
+      if (headAssignedNames.length > 0 || stmt.left.type === "MemberExpression") {
+        const headTarget: Node | null =
+          stmt.left.type === "MemberExpression"
+            ? (stmt.left as unknown as Node)
+            : stmt.left.type === "Identifier"
+              ? ({ type: "Identifier", name: stmt.left.name } as unknown as Node)
+              : stmt.left.type === "VariableDeclaration" &&
+                  headKind === "var" &&
+                  headPat?.type === "Identifier"
+                ? ({ type: "Identifier", name: headPat.name } as unknown as Node)
+                : null;
+        if (headTarget) {
+          const synth = {
+            type: "AssignmentExpression",
+            operator: "=",
+            left: headTarget,
+            right: { type: "Identifier", name: bindName },
+          } as unknown as Expression;
+          headAssignSrc = emitTranspileExpression(synth, bodyOpts);
+        }
+      }
       const max = opts.maxLoopIters ?? 8;
       // 与 while/for 同协议：体内外层绑定 pack/unpack，抽象/空迭代出口可 join
       const assigned = new Set<string>();
       collectAssignedIds(stmt.body, assigned);
       collectArrMutatorReceivers(stmt.body, assigned);
+      // Bug 163 / 178：头赋值写入的外层绑定（var 头槽 / 标识符头 / 成员头根）
+      // 同样进写回集——否则抽象出口把头写覆盖成旧值
+      for (const n of headAssignedNames) {
+        // const 绑定被头赋值 = 原生 TypeError（$throwConstAssign 通道），
+        // 不得再进 pack/unpack（重绑 const 绑定是非法 JS）
+        if (opts.constNames?.has(n)) continue;
+        assigned.add(n);
+      }
       const bodyLocalDecls = new Set<string>();
       collectLoopBodyTopLevelDeclNames(stmt.body, bodyLocalDecls);
       const names = [...assigned].filter((n) => n !== bindName && !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n));
@@ -1418,6 +1774,9 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       return [
         ...recvPre,
         `${pad}$forOf(${iter}, (${bindName}, _i) => {`,
+        // Bug 163 / 178：头赋值在**每轮进体时**写回目标（原生：每轮把
+        // 迭代项赋给头目标）——放在 destructure 之前、循环体语句之前
+        ...(headAssignSrc ? [`${indent(depth + 2)}${headAssignSrc};`] : []),
         ...bodyLines,
         bodyStmts,
         `${pad}}, ${max}${optsSrc});`,
@@ -1462,18 +1821,12 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const bodyWrites = new Set<string>();
       collectAssignedIds(stmt.body, bodyWrites);
       collectArrMutatorReceivers(stmt.body, bodyWrites);
-      const loopGuards = nullishGuardsOf(stmt.test).filter(
-        (g) => g.arm === "cons" && !bodyWrites.has(g.name) && !bodyLocalDecls.has(g.name),
-      );
-      const bodyNarrowed =
-        loopGuards.length === 0
-          ? body
-          : [
-              `${indent(depth + 1)}((${loopGuards.map((g) => g.name).join(", ")}) => {`,
-              body,
-              `${indent(depth + 1)}})(${loopGuards.map((g) => nullishRemoveCallOf(g)).join(", ")});`,
-            ].join("\n");
+      // Bug 185：关系守卫（`x > 0`）与 nullish 守卫**同口径**接进循环体
+      // （此前 while 只接 nullish ⇒ 同一机制内部不自洽：`while (x > 0)`
+      // 的体内 x 折不出 > 0 事实）。事实臂 = 测试为真 ⇒ 体内成立。
+      const loopGuards = loopBodyGuardsOf(stmt.test, bodyLocalDecls, bodyWrites);
       const names = [...assigned].filter((n) => !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n));
+      const bodyNarrowed = narrowLoopBody(body, loopGuards, depth, names);
       const loopOpts = opts.loopLabel ? `label: ${JSON.stringify(opts.loopLabel)}` : "";
       if (names.length === 0) {
         return [
@@ -1527,18 +1880,14 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       const bodyWrites = new Set<string>();
       collectAssignedIds(stmt.body, bodyWrites);
       collectArrMutatorReceivers(stmt.body, bodyWrites);
-      const loopGuards = nullishGuardsOf(stmt.test).filter(
-        (g) => g.arm === "cons" && !bodyWrites.has(g.name) && !bodyLocalDecls.has(g.name),
-      );
-      const innerBody =
-        loopGuards.length === 0
-          ? bodyStmts
-          : [
-              `${indent(depth + 1)}((${loopGuards.map((g) => g.name).join(", ")}) => {`,
-              bodyStmts,
-              `${indent(depth + 1)}})(${loopGuards.map((g) => nullishRemoveCallOf(g)).join(", ")});`,
-            ].join("\n");
       const names = [...assigned].filter((n) => !HOST_INTRINSIC_SET.has(n) && !bodyLocalDecls.has(n));
+      // Bug 185 同构缺口：do-while 的**关系守卫**（`x > 0`）此前没接进体侧
+      // （只接了 nullish 守卫）⇒ 体内 x 折不出 > 0 事实（同一机制内部不
+      // 自洽：for / while 都接了）。改用 loopBodyGuardsOf + narrowLoopBody
+      // （与 for / while **同口径**）：nullish 走 $removeNullish 影子参数、
+      // 关系走 $refineRel 影子参数（事实臂；补集方向不可健全表示）。
+      const loopGuards = loopBodyGuardsOf(stmt.test, bodyLocalDecls, bodyWrites);
+      const innerBody = narrowLoopBody(bodyStmts, loopGuards, depth, names);
       const packSrc =
         names.length === 0
           ? null
@@ -1554,12 +1903,27 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
           : loopOpts
             ? `, { ${loopOpts} }`
             : "";
+      // Bug 170：体**恒在循环 thunk 内**执行。旧口径把首份体拷贝放在
+      // `$whileSeq` **之外**（`body; while (T) { body }`）——此刻没有任何循环
+      // 在运行，体里的 `break` / `continue` 发射的 $loopBreak() /
+      // $loopContinue() 无人吸收 → 信号冒泡出函数体 → 被记成「函数抛
+      // NudoLoopSignal」（L2 门禁假红 + 签名退化成 unknown）。
+      // 修法：`do B while(T)` ≡ `$whileSeq(() => 首轮 ? true : T, () => {
+      // 首轮 ? B₁ : B₂ })`——首轮用「首轮标记」把首份体 B₁ 移进 thunk
+      // （原生 do-while 首轮**先**跑体、后求值条件 ⇒ 首轮不求值 T），
+      // 此后各轮先过 T 再跑 B₂。B₁ / B₂ 两份拷贝沿用既有形态（首轮不收窄、
+      // 次轮收窄——issue #118 v3：收窄事实来自 T，首轮 T 尚未求值）。
       return [
-        `${pad}// do-while → body + $whileSeq (bounded, max=${max})`,
-        `{`,
+        `${pad}// do-while → $whileSeq (体恒在 thunk 内，bounded, max=${max})`,
+        `${pad}{`,
+        `${indent(depth + 1)}let __nudoDwFirst = true;`,
+        `${indent(depth + 1)}$whileSeq(() => __nudoDwFirst ? $lit(true) : ${test}, () => {`,
+        `${indent(depth + 2)}if (__nudoDwFirst) {`,
+        `${indent(depth + 3)}__nudoDwFirst = false;`,
         bodyStmts,
-        `${indent(depth + 1)}$whileSeq(() => ${test}, () => {`,
+        `${indent(depth + 2)}} else {`,
         innerBody,
+        `${indent(depth + 2)}}`,
         `${indent(depth + 1)}}, ${max}${optsSrc});`,
         `${pad}}`,
       ].join("\n");
@@ -1568,8 +1932,17 @@ export function transpileStatement(stmt: Statement, depth: number, opts: Transpi
       return transpileClass(stmt, depth, opts);
     }
     case "BreakStatement": {
-      // switch 臂内无标签 break = 臂结束（fall-through 合并已按结构吸收）
-      if (opts.inSwitchArm && !stmt.label) return `${pad}return;`;
+      // switch 臂内无标签 break = **退出 switch**（原生语义）——发带标签的
+      // break 信号（$loopBreak(标签)）：信号穿过嵌套 thunk（if 臂内的 break
+      // 此前只 `return;` 结束最近的 thunk ⇒ 臂内后续语句照跑、静态贯穿合流
+      // 也照串），由 switch 臂入口的 catch 吸收；带标签 ⇒ 外层循环不吸收
+      // （$isBreakTo 只匹配同标签）⇒ 不会误跳出外层循环。
+      if (opts.inSwitchArm && !stmt.label) {
+        if (curSwitchBreakLabel) {
+          return `${pad}$loopBreak(${JSON.stringify(curSwitchBreakLabel)});`;
+        }
+        return `${pad}return;`;
+      }
       // 带标签 break 可指向循环或 labeled block（`foo: { break foo; }`）；
       // 统一生成 $loopBreak(label)，由同标签循环/标签块吸收
       if (stmt.label) {

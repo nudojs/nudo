@@ -1,12 +1,22 @@
 /**
  * transpile 共享 AST 工具：形参名、match、fold、静态键、作用域收集、mutator receiver 扫描。
  * 不依赖 stmt/expr 发射器（无环）。
+ *
+ * 不变量（@nudo:as / @nudo:replace 指令面）：
+ * - **作用范围按 AST 节点身份**（源文本字符区间 [start, end)）判定，
+ *   不是「同一行号窗口」：多行语句 / 嵌套块 / 同行下一条语句都不再被命中
+ *   （Bug 166）。as 的目标是**承载指令的那条语句**；replace 的目标是该
+ *   语句子树内、**不跨作用域边界**的子表达式节点（边界在收集面划定）。
+ * - **replace 命中的子表达式仍要求值**（副作用与 throws 域保留），只是
+ *   结果被注入值取代（Bug 165）；旧口径整段替换 → 副作用与抛错域消失。
  */
 import type { Statement, Node, Expression } from "@babel/types";
 import { formalParamsFromNodes, formalParamDisplayNames } from "../../param-surface.ts";
 import type { TranspileOptions } from "./types.ts";
 import { isStatefulMethodName } from "./ops.ts";
 import { HOST_INTRINSIC_SET } from "./intrinsics.ts";
+import { emitTranspileExpression } from "./transpile-dispatch.ts";
+import { NudoUnsupportedError } from "../unsupported.ts";
 
 export function paramDisplayNames(params: unknown[] | undefined): string[] {
   return formalParamDisplayNames(formalParamsFromNodes(params as unknown as Parameters<typeof formalParamsFromNodes>[0]));
@@ -43,11 +53,19 @@ export function methodBindNames(params: unknown[] | undefined): string[] {
   });
 }
 
+/**
+ * Bug 166：@nudo:as 的作用范围 = **承载指令的那条语句**（节点身份：源文本
+ * 字符区间 [stmtStart, stmtEnd)），不是「整条语句的行区间」窗口。
+ *
+ * 旧口径 `line >= a.stmtStart && line <= a.stmtEnd`（只看行号）会让多行语句
+ * （if 块 / 多行 const）内部的嵌套语句、以及同行的下一条语句都被误覆盖——
+ * 违反文档「only affects the immediately following statement」。
+ */
 export function matchAsOverride(stmt: Node, opts: TranspileOptions): string | null {
-  if (!opts.asOverrides?.length || !stmt.loc) return null;
-  const line = stmt.loc.start.line;
+  if (!opts.asOverrides?.length) return null;
+  if (typeof stmt.start !== "number" || typeof stmt.end !== "number") return null;
   for (const a of opts.asOverrides) {
-    if (line >= a.stmtStart && line <= a.stmtEnd) return a.varName;
+    if (a.stmtStart === stmt.start && a.stmtEnd === stmt.end) return a.varName;
   }
   return null;
 }
@@ -397,18 +415,54 @@ export function normWs(s: string): string {
   return s.replace(/\s+/g, "");
 }
 
+/**
+ * Bug 165：正在被「求值式替换」展开的节点集合。
+ * 替换命中后要把**原表达式**再发射一遍（求值），内层那次发射不得再次
+ * 匹配本节点——否则自递归。用 WeakSet（节点身份）而非标志位。
+ */
+const replacingNodes = new WeakSet<Node>();
+
+/**
+ * @nudo:replace 命中面（Bug 165 + Bug 166）。
+ *
+ * - **Bug 166（作用域）**：命中条件是 **AST 节点身份**——节点的源文本字符
+ *   区间与登记区间完全一致（收集面已按「该语句子树内、不跨作用域边界」
+ *   圈定候选）。旧口径是「行号窗口 + 文本匹配」→ 泄漏进嵌套语句与同行
+ *   下一条语句。
+ * - **Bug 165（求值）**：命中的子表达式**仍要求值**（副作用与 throws 域
+ *   保留），只是**结果**被注入值取代——旧口径整段替换 → 副作用与抛错域
+ *   整段消失（L2 门禁假绿 + 错值）。
+ */
 export function matchReplacement(node: Node, opts: TranspileOptions): string | null {
   if (!opts.source || !opts.replacements?.length) return null;
-  if (node.start == null || node.end == null || !node.loc) return null;
-  const src = opts.source.slice(node.start, node.end);
-  const n = normWs(src);
-  const line = node.loc.start.line;
+  if (replacingNodes.has(node)) return null;
+  if (typeof node.start !== "number" || typeof node.end !== "number") return null;
   for (const r of opts.replacements) {
-    if (r.stmtStart != null && line < r.stmtStart) continue;
-    if (r.stmtEnd != null && line > r.stmtEnd) continue;
-    if (normWs(r.target) === n) return r.varName;
+    if (r.stmtStart == null || r.stmtEnd == null) continue;
+    if (r.stmtStart !== node.start || r.stmtEnd !== node.end) continue;
+    if (normWs(r.target) !== normWs(opts.source.slice(node.start, node.end))) continue;
+    return replacedValueSrc(node, r.varName, opts);
   }
   return null;
+}
+
+/**
+ * Bug 165：原表达式求值一次（副作用 + throws 域保留），结果取注入值。
+ * 逗号表达式 `(原表达式, 注入值)`：左值求值后丢弃，右值是本次替换的结果。
+ */
+function replacedValueSrc(node: Node, varName: string, opts: TranspileOptions): string {
+  replacingNodes.add(node);
+  try {
+    const orig = emitTranspileExpression(node as unknown as Expression, opts);
+    return `((${orig}), ${varName})`;
+  } catch (e) {
+    // 引擎**无法 lowering** 该表达式（unsupported）→ 本就无从求值：退回旧
+    // 口径（只给注入值）。否则整模块 fail-closed（unknown）——比修复前更差。
+    if (e instanceof NudoUnsupportedError) return varName;
+    throw e;
+  } finally {
+    replacingNodes.delete(node);
+  }
 }
 
 export function indent(n: number): string {
@@ -637,6 +691,73 @@ export function collectPatternNames(id: unknown, acc: Set<string>): void {
   } else if (n.type === "ArrayPattern") {
     for (const el of n.elements ?? []) collectPatternNames(el, acc);
   }
+}
+
+/**
+ * Bug 181：源文本里的**用户标识符**信息（临时名避让用）。
+ *
+ * 转译器发的解构临时名（`_d{n}` / `_n{n}` / `_p{i}` / `_rest{i}` /
+ * `_pd{i}`）此前不带任何避让：用户自己声明了同名标识符时，生成码出现
+ * `const _d0`（用户已有 `let _d0`）⇒ **重复声明 SyntaxError** ⇒ 整个
+ * 模块求值失败 ⇒ 全模块导出退化为 unknown（假 opaque-result）；另一面，
+ * 函数体里的 `const _d0` 会**遮蔽**模块级同名用户绑定 ⇒ 用户读到错值。
+ *
+ * 口径：收集源文本里出现过的**全部标识符词形**（保守超集——含属性名、
+ * 字符串与注释里的词形）。临时名只需避开用户名字，超集落在安全侧。
+ */
+export interface UserIdentInfo {
+  /** 源文本里出现过的标识符词形（保守超集） */
+  names: Set<string>;
+  /** 用户占用的 `_d{n}` / `_n{n}` 序号最大值（-1 = 无占用） */
+  tmpSeqMax: number;
+}
+
+const EMPTY_USER_IDENT: UserIdentInfo = { names: new Set<string>(), tmpSeqMax: -1 };
+
+/** 源文本 → 用户标识符信息（按源文本缓存：同一模块只扫一次） */
+const userIdentCache = new Map<string, UserIdentInfo>();
+
+export function userIdentInfo(source: string | undefined): UserIdentInfo {
+  if (!source) return EMPTY_USER_IDENT;
+  const hit = userIdentCache.get(source);
+  if (hit) return hit;
+  const names = new Set<string>();
+  const re = /[A-Za-z_$][A-Za-z0-9_$]*/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(source)) !== null) names.add(m[0]);
+  let tmpSeqMax = -1;
+  for (const name of names) {
+    const hitSeq = /^_[dn](\d+)$/.exec(name);
+    if (!hitSeq) continue;
+    const idx = Number(hitSeq[1]);
+    if (idx > tmpSeqMax) tmpSeqMax = idx;
+  }
+  const info: UserIdentInfo = { names, tmpSeqMax };
+  // 缓存按源文本持有——模块多时封顶清空（重扫成本可接受）
+  if (userIdentCache.size >= 64) userIdentCache.clear();
+  userIdentCache.set(source, info);
+  return info;
+}
+
+/**
+ * Bug 181：把共享的解构临时名计数器**推过**用户占用的 `_d{n}` / `_n{n}`
+ * 序号。计数器是 statement.ts 的 `_d{n}` 与 emit.ts 的 `_n{n}` 共用的
+ * （`n++`），推过后两族名都不再与用户标识符相撞。
+ */
+export function bumpDestrTmpSeq(seq: { n: number }, info: UserIdentInfo): void {
+  if (info.tmpSeqMax < 0) return;
+  if (seq.n <= info.tmpSeqMax) seq.n = info.tmpSeqMax + 1;
+}
+
+/**
+ * Bug 181：取一个不与用户标识符相撞的临时名（base 为期望基名）。
+ * 撞名时加数字后缀（`_p0` → `_p0_1`）——形参占位名不能改形（签名面按位对齐）。
+ */
+export function safeTmpName(base: string, info: UserIdentInfo): string {
+  if (!info.names.has(base)) return base;
+  let k = 1;
+  while (info.names.has(`${base}_${k}`)) k++;
+  return `${base}_${k}`;
 }
 
 /**

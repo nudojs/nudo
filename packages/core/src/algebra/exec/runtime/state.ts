@@ -8,6 +8,7 @@ import { lit } from "../../term.ts";
 import type { Phi } from "../../pred.ts";
 import { pTrue, and, predEquals } from "../../pred.ts";
 import { absFunction, getFnImpl, hostFnCtorFacet } from "../../abs-fn.ts";
+import { noBody as sharedNoBody } from "../../builtins/shared.ts";
 import { registerSymbolMeta } from "../../symbol-id.ts";
 import { NudoThrow, isNudoThrow } from "../nudo-throw.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -129,9 +130,18 @@ export function withInvariantSpecs<T>(
   }
 }
 
-/** apply 型 impl 的占位 body（AbsFnImpl.body 必需；$call 走 apply 不经 body） */
+/**
+ * apply 型 impl 的占位 body（AbsFnImpl.body 必需；$call 走 apply 不经 body）。
+ *
+ * **唯一单例**（Bug 140 收尾）：此前本文件与 `builtins/shared.ts` 各有一份
+ * 同形但**不同对象**的占位 body——按对象身份判「是否占位 body」的检查跨模块
+ * 必然失配（`impl.body !== noBody` 对 builtins 侧建的占位恒真）⇒ 引擎原生
+ * 迭代器的 `@@iterator` 占位 fn 被误判为「真实现」⇒ 对它跑用户迭代器协议
+ * ⇒ 调占位 fn ⇒ 确定 TypeError（`[...Array.from('ab').keys()]` 假抛）。
+ * 现在两侧共用同一对象，占位判据按身份比较恒成立。
+ */
 type EmptyBlock = { type: "BlockStatement"; body: never[]; directives: never[] };
-export const noBody: EmptyBlock = { type: "BlockStatement", body: [], directives: [] };
+export const noBody: EmptyBlock = sharedNoBody as unknown as EmptyBlock;
 
 /**
  * Bug 26：宿主全局函数 apply 桥（exec/calls.ts 的 callHostGlobalFn——模块

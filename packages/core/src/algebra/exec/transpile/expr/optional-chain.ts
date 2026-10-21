@@ -4,6 +4,8 @@
  * 不变量：
  * - ES：a?.b.c ≡ a == null ? undefined : a.b.c——`?.` 命中 nullish 时
  *   **剩余整条链**（含非可选访问/调用）不再求值；
+ * - 调用跳（`o.b?.()`）的 nullish 短路同口径：整链短路 undefined，剩余跳
+ *   不再求值/不抛（Bug 187）——短路臂之外不留剩余链；
  * - 非 nullish 臂接收者先过 $removeNullish（issue #97）——假臂里已证非
  *   nullish，成员读不再记 may-throw；
  * - 位置插桩（$nodoPos）与 transpile.ts positionRecordWrap 同口径：静态
@@ -259,7 +261,8 @@ function emitChainFrom(hops: ChainHop[], i: number, valSrc: string): string {
         ? shortCircuitHop(valSrc, (r) => `$callNamed("call", ${r}, ${hop.argsSrc}${hop.locArg})`, hops, i)
         : rest(`$callNamed("call", ${valSrc}, ${hop.argsSrc}${hop.locArg})`);
     case "invoke": {
-      const invokeOf = (recv: string, fnCheck: boolean): string => {
+      // 调用体（this 绑 recv）。
+      const callOf = (recv: string): string => {
         let call = `$invoke(${recv}, ${hop.method}, ${hop.argsSrc}${hop.locArg})`;
         // RegExp test/exec 的 lastIndex 写回：与非链路径同口径（receiver 为标识符时
         // 表达式内联 IIFE）。漏掉会让 `r.exec(s)?.[0]` 不推进 lastIndex。
@@ -270,30 +273,53 @@ function emitChainFrom(hops: ChainHop[], i: number, valSrc: string): string {
         if (hop.recvName && REGEX_STATEFUL_NAMES.has(rawMethod)) {
           call = `(() => { const __nudoReArgs = ${hop.argsSrc}; const __v = $invoke(${recv}, ${hop.method}, __nudoReArgs${hop.locArg}); $reStateCall(${hop.recvName}, ${hop.method}, __nudoReArgs); return __v; })()`;
         }
-        if (!fnCheck) return call;
-        // o.m?.()：方法值 nullish 短路；this 仍绑 recv（$invoke 二次 get 方法属已知
-        // 取舍——保 builtin 派发，getter 会跑两遍）
-        return `(($__fn) => $fork($nullishTest($__fn), () => $lit(void 0), () => ${call}))($get(${recv}, ${hop.method}))`;
+        return call;
       };
-      if (hop.recvOptional) {
-        return shortCircuitHop(valSrc, (r) => invokeOf(r, hop.fnOptional), hops, i);
+      // 剩余链的接收者 = 调用结果——调用体包一层 IIFE，惰性求值于 else 臂内
+      // （无剩余链时不包：保持既有发射形态不变）。
+      const contOf = (recv: string): string =>
+        i + 1 < hops.length ? rest(`(() => ${callOf(recv)})()`) : callOf(recv);
+      if (hop.fnOptional) {
+        // o.m?.()：方法值 nullish 短路；this 仍绑 recv（$invoke 二次 get 方法属已知
+        // 取舍——保 builtin 派发，getter 会跑两遍）。
+        // Bug 187：ES 的可选链短路是**整链**语义——方法值 nullish 时整条链
+        // 求值为 undefined，剩余跳（`o.b?.().c` 的 `.c`）**不再求值/不抛**。
+        // 故短路臂发 undefined，剩余链整体搬进 else 臂（接收者 = 调用结果）。
+        const fnFork = (recv: string): string =>
+          `(($__fn) => $fork($nullishTest($__fn), () => $lit(void 0), () => ${contOf(recv)}))($get(${recv}, ${hop.method}))`;
+        if (hop.recvOptional) {
+          // 接收者 nullish 亦整链短路：外层 fork 承载（内层 fn fork 在其 else 臂内）
+          return `(($__oc) => $fork($nullishTest($__oc), () => $lit(void 0), () => ${fnFork("$removeNullish($__oc)")}))(${valSrc})`;
+        }
+        return fnFork(valSrc);
       }
-      return rest(invokeOf(valSrc, hop.fnOptional));
+      if (hop.recvOptional) {
+        return shortCircuitHop(valSrc, (r) => callOf(r), hops, i);
+      }
+      return rest(callOf(valSrc));
     }
     case "invokeKey": {
       // 计算键调用：$invokeKey 保 this；fnOptional（o[k]?.()）的方法值
       // nullish 检查读 $idx(recv, key)——计算键无静态名（$get 不可用）。
       // 键/接收者源文本内联两次与 invoke hop 的 fnCheck 同取舍（保派发，
       // 副作用键表达式会跑两遍）。
-      const invokeOf = (recv: string, fnCheck: boolean): string => {
-        const call = `$invokeKey(${recv}, ${hop.keySrc}, ${hop.argsSrc}${hop.locArg})`;
-        if (!fnCheck) return call;
-        return `(($__fn) => $fork($nullishTest($__fn), () => $lit(void 0), () => ${call}))($idx(${recv}, ${hop.keySrc}))`;
-      };
-      if (hop.recvOptional) {
-        return shortCircuitHop(valSrc, (r) => invokeOf(r, hop.fnOptional), hops, i);
+      const callOf = (recv: string): string =>
+        `$invokeKey(${recv}, ${hop.keySrc}, ${hop.argsSrc}${hop.locArg})`;
+      const contOf = (recv: string): string =>
+        i + 1 < hops.length ? rest(`(() => ${callOf(recv)})()`) : callOf(recv);
+      if (hop.fnOptional) {
+        // 同 invoke hop（Bug 187）：方法值 nullish → 整链短路，剩余链进 else 臂
+        const fnFork = (recv: string): string =>
+          `(($__fn) => $fork($nullishTest($__fn), () => $lit(void 0), () => ${contOf(recv)}))($idx(${recv}, ${hop.keySrc}))`;
+        if (hop.recvOptional) {
+          return `(($__oc) => $fork($nullishTest($__oc), () => $lit(void 0), () => ${fnFork("$removeNullish($__oc)")}))(${valSrc})`;
+        }
+        return fnFork(valSrc);
       }
-      return rest(invokeOf(valSrc, hop.fnOptional));
+      if (hop.recvOptional) {
+        return shortCircuitHop(valSrc, (r) => callOf(r), hops, i);
+      }
+      return rest(callOf(valSrc));
     }
   }
 }

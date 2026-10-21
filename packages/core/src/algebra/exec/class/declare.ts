@@ -48,6 +48,13 @@ import {
 const classImpl = new WeakMap<object, EvalClassSpec>();
 
 /**
+ * Bug 142：静态块保留键前缀（NUL 开头——用户键不可能自然命中；与
+ * transpile/class-emit.ts 的同名常量保持一致）。静态块与静态字段同表
+ * （源码序），$class 逐项执行——保留键项只执行块体、不挂静态槽。
+ */
+const STATIC_BLOCK_KEY_PREFIX = "\u0000nudoStaticBlock:";
+
+/**
  * Bug 90：spec 成员记录的 own-property 语义（第一道，源头治理）——
  * transpile 侧（class-emit）产出的 methods/staticMethods/… 是宿主普通
  * 对象字面量，`spec.methods[key]` 原型链取值会把 Object.prototype 继承名
@@ -229,13 +236,21 @@ export function $class(
     }
     const rekey = (rec: Record<string, unknown> | undefined): void => {
       if (!rec) return;
-      for (const [synth, real] of renames) {
-        if (synth in rec && !(real in rec)) {
-          rec[real] = rec[synth];
-          delete rec[synth];
+      // Bug 142：保序重建——synth → 真名的重挂不得打乱记录序（静态元素按
+      // 表序执行：静态块与静态字段交错；重命名后置到表尾会丢类体源码序）。
+      // 口径不变：真名已被占用则不重命名（保留 synth 名）；抽象键摘除。
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(rec)) {
+        if (drops.has(k)) continue;
+        const real = renames.get(k);
+        if (real !== undefined && !(real in rec) && !(real in out)) {
+          out[real] = v;
+          continue;
         }
+        out[k] = v;
       }
-      for (const d of drops) delete rec[d];
+      for (const k of Object.keys(rec)) delete rec[k];
+      Object.assign(rec, out);
     };
     rekey(full.methods);
     rekey(full.methodParams);
@@ -244,6 +259,23 @@ export function $class(
     rekey(full.statics);
     rekey(full.accessors);
     rekey(full.staticAccessors);
+    // Bug 139：实例字段的计算键（synth 名）同 statics 折叠真名——键表达式
+    // 已在定义期求值（computedKeys 表），此处只把 synth 名换成真名；抽象键
+    // （any/symbol/…）不可静态列举 → 丢弃该字段（不假精确挂名，与旧
+    // 逐实例求值口径的"抽象键跳过"一致）。
+    if (full.instanceFields) {
+      const kept: NonNullable<EvalClassSpec["instanceFields"]> = [];
+      for (const f of full.instanceFields) {
+        if (f.name !== undefined && renames.has(f.name)) {
+          kept.push({ ...f, name: renames.get(f.name)! });
+        } else if (f.name !== undefined && drops.has(f.name)) {
+          // 抽象计算键——不挂名
+        } else {
+          kept.push(f);
+        }
+      }
+      full.instanceFields = kept;
+    }
   }
   registerEvalClass(full);
   const slots: Record<string, { value: Abs }> = {};
@@ -277,7 +309,17 @@ export function $class(
   const evalStatic = (v: Abs | ((cls: Abs) => Abs)): Abs =>
     typeof v === "function" ? asAbsVal((v as (cls: Abs) => Abs)(val)) : asAbsVal(v);
   if (full.statics) {
-    for (const [k, v] of Object.entries(full.statics)) setSlot(slots, k, { value: evalStatic(v) });
+    // Bug 142：静态元素按**类体源码序**执行——静态字段初始化器与静态块
+    // 同表（transpile 侧合并），静态块以保留键（NUL 前缀，用户键不可能
+    // 自然命中）入表：执行块体（this = 类值）但不挂静态槽。保留键前缀与
+    // transpile/class-emit.ts 的同名常量保持一致。
+    for (const [k, v] of Object.entries(full.statics)) {
+      if (k.startsWith(STATIC_BLOCK_KEY_PREFIX)) {
+        evalStatic(v);
+        continue;
+      }
+      setSlot(slots, k, { value: evalStatic(v) });
+    }
   }
   // Bug 50：static [Symbol.hasInstance]（方法/字段）以 "@@hasInstance" 槽
   // 挂到类值。R5：静态方法 impl 首参 __this = 类值——适配器把 receiver

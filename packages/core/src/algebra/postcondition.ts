@@ -32,6 +32,7 @@ import { isNullishLitAbs } from "./surface.ts";
 import { isOobUndef } from "./exec/runtime/state.ts";
 import { literalMeetsConstraint } from "./domain-membership.ts";
 import { getSlot } from "./objects.ts";
+import { accessorReadDomain } from "./accessors.ts";
 import { termEquals } from "./term.ts";
 import { formatAbs } from "./format.ts";
 import { formatConstraint } from "./interface.ts";
@@ -464,7 +465,9 @@ function assertShapeFields(
       }
       continue;
     }
-    const r = assertImplies(slot.value, field.constraint, opts);
+    // Bug 191：访问器键的槽是 `$lit(void 0)` 占位（真 getter 住侧表）——
+    // 按占位槽证明会把 getter 的返回值判成违约（假红），须取 getter 读域。
+    const r = assertImplies(accessorReadDomain(ret, key) ?? slot.value, field.constraint, opts);
     if (r.status === "disproved") {
       return disproved(`field ${key}: ${r.reason}`);
     }

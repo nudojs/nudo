@@ -55,6 +55,43 @@ export function emitSetterAccessorThunk(
 }
 
 /**
+ * Bug 158：私有名按**声明类**作用域化。
+ *
+ * 原生 Private Name 是**逐类定义**的：A 的 #x 与 B 的 #x 是两个不同私有名
+ * ——互不串值、派生类同名私有不覆盖基类私有、读外类私有抛 TypeError。
+ * 此前私有名键是裸 "#x" 混淆键（全局共享）→ 三条原生语义全失。
+ *
+ * 修法：类体内所有 PrivateName 节点的 id.name 改写为 "<类名>::<私有名>"
+ * （声明点与使用点共用同一键）。transpile 侧全部私有名路径（成员读/写、
+ * 复合赋值、update、调用、in 运算符）都从 PrivateName.id.name 取键
+ * （helpers.privateNameKeySrc / call.ts 内联同口径），改写一处即全路径
+ * 对齐；运行时沿用既有 privateNameGuard（"#" 前缀 brand 校验）——键按类
+ * 作用域化后，跨类读命中"非本类槽"→ 确定 TypeError。
+ *
+ * 嵌套类体自有私有名作用域独立——不进改写（否则外层类名串进内层私有名；
+ * 嵌套类体由其自身 classSpecOf 以自己的类名改写）。
+ *
+ * 改写在**副本**上进行（原 AST 不动）——同一 AST 多次转译不得累积改写。
+ */
+function scopePrivateNames(node: unknown, scope: string): unknown {
+  if (Array.isArray(node)) return node.map((n) => scopePrivateNames(n, scope));
+  if (!node || typeof node !== "object") return node;
+  const src = node as Record<string, unknown>;
+  const type = src.type as string | undefined;
+  if (type === "PrivateName") {
+    const id = src.id as { name?: string } | undefined;
+    const priv = id?.name ?? (src.name as string | undefined);
+    if (!priv) return { ...src };
+    return { ...src, id: { ...(id ?? {}), name: `${scope}::${priv}` } };
+  }
+  // 嵌套类：自有私有名作用域独立——只浅拷贝，不进改写
+  if (type === "ClassDeclaration" || type === "ClassExpression") return { ...src };
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(src)) out[k] = scopePrivateNames(src[k], scope);
+  return out;
+}
+
+/**
  * 类体成员 → $class spec 片段（类声明与类表达式共用，Bug 80）。
  * 返回 spec 行（不含 `let C = $class(...)` 包装）与静态块后置语句
  * （Bug 77：static 块须在类绑定完成后执行——块体内类名可见）。
@@ -78,7 +115,7 @@ export function classSpecOf(
   // Bug 11：保留 superClass 节点——Identifier 走活引用（TDZ 语义），
   // 其余表达式（字面量/{}/箭头/…）发 transpile 源码，定义期求值。
   const superClassNode = stmt.superClass as { type: string; name?: string } | null | undefined;
-  const methods = stmt.body.body as Array<{
+  const methods = scopePrivateNames(stmt.body.body, name) as Array<{
     type: string;
     key?: unknown;
     params?: unknown[];
@@ -94,13 +131,21 @@ export function classSpecOf(
   const ctorParts: string[] = [];
   const methodParts: string[] = [];
   const staticMethodParts: string[] = [];
-  const staticFieldParts: string[] = [];
+  /** Bug 142：静态元素有序表（静态字段 + 静态块按**类体源码顺序**混排）——
+   *  原生 InitializeStaticElements 源序执行（静态块与静态字段初始化器
+   *  交错）。此前静态块恒在全部静态字段初始化器之后（两块分表：静态字段
+   *  进 statics 表由 $class 求值，静态块另走 $staticInit 尾巴）→ 类体
+   *  源码顺序丢失（`static { A.q = 1 } static r = A.q + 1` 折 NaN）。
+   *  静态块以保留键入同表（不挂静态槽——$class 侧识别保留键改走"执行块"
+   *  分支，见 STATIC_BLOCK_KEY_PREFIX）。 */
+  const staticParts: string[] = [];
   /** Bug 59：实例字段 thunk（每次构造以新实例为 this 按源序求值） */
   const instanceFieldParts: string[] = [];
   /** Bug 60：计算键 synth 名 → 键表达式源（定义期求值，$class 折叠真名） */
   const computedKeyParts: string[] = [];
-  /** Bug 77：静态块 thunk（类绑定后执行；this = 类值） */
-  const staticInitParts: string[] = [];
+  /** Bug 142：静态块保留键前缀（NUL 开头——用户键不可能自然命中） */
+  const STATIC_BLOCK_KEY_PREFIX = "\u0000nudoStaticBlock:";
+  let staticBlockSeq = 0;
   /** 方法形参展示名（未调用方法槽 shape.params） */
   const methodParamEntries: Array<[string, string[]]> = [];
   const staticMethodParamEntries: Array<[string, string[]]> = [];
@@ -211,16 +256,35 @@ export function classSpecOf(
     if (m.type === "StaticBlock") {
       // this = 类值：thisParam 直接指类名绑定（静态块内 this.t = v 的
       // 不可变更新须重绑类绑定——经 memberPathOf 根可重绑路径落回）
-      const blkOpts: TranspileOptions = { ...methodOptsBase, thisParam: name };
+      // Bug 157：静态块内 super 的 home object 是类自身——super.<父类静态成员>
+      // 须按静态口径派发（父类构造器面），此前缺省落 $getSuper 实例原型链
+      // （super.m 折 exact undefined）。与静态字段/静态方法/静态访问器同口径
+      // 注入 staticSuperSrc。
+      // Bug 142：静态块与静态字段同表（源序）——块在 $class 内执行（类值
+      // 尚未回绑外层类名绑定）：类名引用经**类体自有词法绑定**（自有名
+      // 影子绑定 let C = __this，同静态字段口径）解析；无名类表达式无自
+      // 有绑定——this 走 __this（类值），类名引用保持自由（原生 TDZ）。
+      const blkOpts: TranspileOptions = {
+        ...methodOptsBase,
+        thisParam: stmt.id?.name ?? "__this",
+        ...(superSrc !== null ? { staticSuperSrc: superSrc } : {}),
+      };
       // StaticBlock.body 直接是语句数组（无 BlockStatement 包装）
       const blkBody = Array.isArray(m.body)
         ? (m.body as Statement[])
         : ((m.body as { body?: Statement[] })?.body ?? []);
       const stmts = transpileFnBodyStmts(blkBody, depth + 3, blkOpts, { skip: new Set() });
-      staticInitParts.push(
-        `${indent(depth + 2)}(__this) => {`,
-        stmts,
-        `${indent(depth + 2)}},`,
+      const selfName = stmt.id?.name;
+      const blockSrc = selfName
+        ? [
+            `(__this) => {`,
+            `${indent(depth + 3)}let ${selfName} = __this;`,
+            stmts,
+            `${indent(depth + 2)}}`,
+          ].join("\n")
+        : [`(__this) => {`, stmts, `${indent(depth + 2)}}`].join("\n");
+      staticParts.push(
+        `${indent(depth + 2)}${JSON.stringify(`${STATIC_BLOCK_KEY_PREFIX}${staticBlockSeq++}`)}: ${blockSrc},`,
       );
       continue;
     }
@@ -267,11 +331,12 @@ export function classSpecOf(
               `${indent(depth + 2)}}`,
             ].join("\n")
           : thunkOf(vsrc, depth + 2);
+        // Bug 142：静态字段与静态块同表（类体源码序）
         if (keyR && "name" in keyR) {
-          staticFieldParts.push(`${indent(depth + 2)}${JSON.stringify(keyR.name)}: ${initSrc},`);
+          staticParts.push(`${indent(depth + 2)}${JSON.stringify(keyR.name)}: ${initSrc},`);
         } else if (keyR && "computed" in keyR) {
           const synth = `__ck${ckSeq++}`;
-          staticFieldParts.push(`${indent(depth + 2)}${JSON.stringify(synth)}: ${initSrc},`);
+          staticParts.push(`${indent(depth + 2)}${JSON.stringify(synth)}: ${initSrc},`);
           computedKeyParts.push(`${indent(depth + 2)}${JSON.stringify(synth)}: ${keyR.computed},`);
         }
         // 无名键（解析异常）：无表达式可发射，跳过
@@ -290,10 +355,18 @@ export function classSpecOf(
           `${indent(depth + 2)}{ name: ${JSON.stringify(keyR.name)}, init: ${initSrc}${keyR.private === true ? ", private: true" : ""} },`,
         );
       } else if (keyR && "computed" in keyR) {
-        // 原生计算键逐实例求值（ClassFieldDefinitionEvaluation 在构造期）
+        // Bug 139：计算键在**类定义期**求值一次（原生
+        // ClassDefinitionEvaluation 求属性键——键表达式只跑一次，构造期
+        // 按已定键安装字段）。此前键表达式逐实例求值（定义期 0 次 / 每构造
+        // 1 次）：键可能每次不同 → 字段名漂移（`[k()] = 1` 两次构造得到两个
+        // 键），且定义期副作用缺失。键表达式进 computedKeys 表（定义期随
+        // spec 字面量求值，$class 折叠真名后挂到实例字段——与静态字段/方法
+        // 的计算键同机制）。
+        const synth = `__ck${ckSeq++}`;
         instanceFieldParts.push(
-          `${indent(depth + 2)}{ key: ${thunkOf(keyR.computed, depth + 2)}, init: ${initSrc} },`,
+          `${indent(depth + 2)}{ name: ${JSON.stringify(synth)}, init: ${initSrc} },`,
         );
+        computedKeyParts.push(`${indent(depth + 2)}${JSON.stringify(synth)}: ${keyR.computed},`);
       }
       continue;
     }
@@ -435,18 +508,30 @@ export function classSpecOf(
     }
     // Bug 58：generator 方法体不在调用期执行——包 $gen（吞调用期 throws，
     // yield 收集保持既有 eager 口径）
+    // Bug 141：async generator 方法——$gen 第二实参 = async 位（next/return/
+    // throw 返回 promise、装 @@asyncIterator/@@toStringTag）；不进 $async
+    // （原生 async generator 方法返回 AsyncGenerator 本身，非 promise）。
     if (m.generator) {
       bodyStmts = [
         `${indent(depth + 4)}return $gen(() => {`,
         bodyStmts,
-        `${indent(depth + 4)}});`,
+        `${indent(depth + 4)}}` + (m.async === true ? ", true" : "") + `);`,
       ].join("\n");
     }
     if (m.static) {
+      // Bug 159：static async 方法须进 $async 包装（原生 static async 方法
+      // 返回 promise；体 throw 不同步抛出调用点——确定拒绝）。此前静态方法
+      // 分支不包 $async：返回原始值（typeof → "number"）、体内 throw 变
+      // 同步抛。实例 async 方法同口径（下方分支）。
+      // Bug 141：async generator 方法不进 $async（原生返回 AsyncGenerator
+      // 本身，非 promise）——$gen 的 async 位承担 async 面。
+      const staticAsync = m.async === true && m.generator !== true;
       staticMethodParts.push(
         // R5：__this 首参 = 类值（接收者）——与实例方法 __this 载体同构
         `${indent(depth + 3)}${JSON.stringify(mname)}: (__this, ${bindFromArgs ? "...__margs" : paramList}) => {`,
-        bodyStmts,
+        ...(staticAsync
+          ? [`${indent(depth + 4)}return $async(() => {`, bodyStmts, `${indent(depth + 4)}});`]
+          : [bodyStmts]),
         `${indent(depth + 3)}},`,
       );
       staticMethodParamEntries.push([mname, paramDisplayNames(m.params)]);
@@ -464,7 +549,8 @@ export function classSpecOf(
         `${indent(depth + 3)}return __this;`,
         `${indent(depth + 2)}},`,
       );
-    } else if (m.async) {
+    } else if (m.async === true && m.generator !== true) {
+      // Bug 141：async generator 方法不进 $async（原生返 AsyncGenerator 本身）
       methodParts.push(
         `${indent(depth + 3)}${JSON.stringify(mname)}: (__this, ${bindFromArgs ? "...__margs" : paramList}) => {`,
         `${indent(depth + 4)}return $async(() => {`,
@@ -499,8 +585,10 @@ export function classSpecOf(
     specLines.push(`${indent(depth + 2)}hasExtends: true,`);
     specLines.push(`${indent(depth + 2)}extends: ${superSrc},`);
   }
-  if (staticFieldParts.length) {
-    specLines.push(`${indent(depth + 2)}statics: {`, ...staticFieldParts, `${indent(depth + 2)}},`);
+  if (staticParts.length) {
+    // Bug 142：静态字段 + 静态块同表（源码序）——$class 逐项执行（静态块
+    // 以保留键入表，不挂静态槽）
+    specLines.push(`${indent(depth + 2)}statics: {`, ...staticParts, `${indent(depth + 2)}},`);
   }
   if (computedKeyParts.length) {
     specLines.push(
@@ -571,13 +659,9 @@ export function classSpecOf(
       `${indent(depth + 2)}},`,
     );
   }
-  const staticInitLines = staticInitParts.length
-    ? [
-        `${indent(depth)}$staticInit(${name}, [`,
-        ...staticInitParts,
-        `${indent(depth)}]);`,
-      ]
-    : [];
+  // Bug 142：静态块已并入 statics 表（与静态字段同序执行）——不再需要
+  // $staticInit 尾段（静态块恒在全部静态字段之后 = 源码顺序丢失）。
+  const staticInitLines: string[] = [];
   return { name, displayName, specLines, staticInitLines };
 }
 

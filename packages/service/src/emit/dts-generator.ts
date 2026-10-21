@@ -1,5 +1,12 @@
 import type { Abs } from "@nudojs/core";
-import { joinAbs, litValue, abs as makeAbs, collectAbsFreeVars } from "@nudojs/core";
+import {
+  joinAbs,
+  litValue,
+  abs as makeAbs,
+  collectAbsFreeVars,
+  lookupObjAccessor,
+  unknown,
+} from "@nudojs/core";
 import {
   isTemplateLike,
   templatePartsOf,
@@ -91,6 +98,32 @@ function formatPropKey(k: string): string {
 }
 
 /**
+ * Bug 191：对象字面量访问器（getter）的**读域**——访问器不住在 shape 槽里
+ * （transpile 只落 `$lit(void 0)` 占位槽保键存在性，真 getter 住 core 的
+ * accessorTable 侧表）。dts 投影直读占位槽 ⇒ 把 getter 的返回值谎报成
+ * exact `undefined`（自信的错值：比真值更窄且自相矛盾——`{ab: 1}` 被声明
+ * 成 `{ab: undefined}`）。
+ *
+ * 读法与 core 投影面同口径（core 的 accessorReadDomain）：有 getter → 以
+ * 对象为接收者求值读域（getter 闭包的 `this` 就是该对象）；getter 抛
+ * （读域不可静态刻画）→ unknown（sound 超近似，**不得**回落 definite
+ * undefined）；无 getter（数据槽 / 仅 setter）→ 用槽值（仅 setter 的原生
+ * 读值恒 undefined，占位槽本就正确）。
+ *
+ * 注：core 的 accessorReadDomain 未进公共面（public-api 冻结）——此处按
+ * 公共面 `lookupObjAccessor` 同口径实现，不改 core 公共 API 形状。
+ */
+function slotAbsOf(a: Abs, k: string, fallback: Abs): Abs {
+  const acc = lookupObjAccessor(a, k);
+  if (!acc?.get) return fallback;
+  try {
+    return acc.get(a);
+  } catch {
+    return unknown;
+  }
+}
+
+/**
  * Abs → TS 类型串。有损：pred / 非 lit term 落到 shape 基类型。
  * `typeVars`：term var id → TS 类型参数名（HOF 泛型投影时传入；
  * `any`+var 在此映射下渲染为该参数名，否则 `unknown`）。
@@ -169,9 +202,13 @@ function absToTSTypeInner(a: Abs, typeVars: Map<string, string> | undefined, bud
     case "obj": {
       const entries = Object.entries(a.shape.slots).map(([k, slot]) => {
         // optional 槽与 TypeValue 桥接出口径一致：`k: T | undefined`，不用 `k?:`
-        const inner = absToTSTypeB(slot.value, typeVars, budget);
+        // Bug 191：访问器键的槽是 `$lit(void 0)` 占位（真 getter 住侧表）——
+        // dts 投影须取 getter 读域，否则把 getter 的返回值谎报成 exact
+        // `undefined`。
+        const slotAbs = slotAbsOf(a, k, slot.value);
+        const inner = absToTSTypeB(slotAbs, typeVars, budget);
         if (slot.optional) {
-          const t = wrapComplexAbs(slot.value, typeVars, budget);
+          const t = wrapComplexAbs(slotAbs, typeVars, budget);
           return `${formatPropKey(k)}: ${t} | undefined`;
         }
         return `${formatPropKey(k)}: ${inner}`;
@@ -322,8 +359,11 @@ function widenParamAbsInner(a: Abs, budget: ProjectionBudget): Abs {
     case "obj": {
       const slots: Record<string, { value: Abs; optional?: boolean }> = {};
       for (const [k, slot] of Object.entries(s.slots)) {
+        // Bug 191：访问器键的槽是 `$lit(void 0)` 占位——**先**取 getter 读域
+        // 再 widen（本分支造新对象，侧表按对象身份键控，造新后读域即丢）。
+        const src = slotAbsOf(a, k, slot.value);
         slots[k] = {
-          value: widenParamAbs(slot.value, budget),
+          value: widenParamAbs(src, budget),
           ...(slot.optional ? { optional: true } : {}),
         };
       }

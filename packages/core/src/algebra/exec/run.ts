@@ -49,7 +49,8 @@ export type RunTranspiledOptions = {
   mode?: "exec" | "analyze";
   /** @nudo:replace 注入值：varName → Abs */
   replacements?: Record<string, Abs>;
-  /** @nudo:replace 匹配表：传给 transpile */
+  /** @nudo:replace 匹配表：传给 transpile（stmtStart/stmtEnd = **字符区间**
+   *  `[start, end)`，非行号——Bug 166 起按 AST 节点身份定位） */
   replacementTargets?: Array<{
     target: string;
     varName: string;
@@ -58,7 +59,7 @@ export type RunTranspiledOptions = {
   }>;
   /** @nudo:as 注入值：varName → Abs */
   asOverrides?: Record<string, Abs>;
-  /** @nudo:as 语句范围表 */
+  /** @nudo:as 语句范围表（stmtStart/stmtEnd = **字符区间**，非行号） */
   asOverrideTargets?: Array<{ varName: string; stmtStart: number; stmtEnd: number }>;
   /** @nudo:env 全局 Abs（JSON/Math/console…）→ 作用域绑定 */
   envGlobals?: Record<string, Abs>;

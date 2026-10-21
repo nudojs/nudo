@@ -136,13 +136,17 @@ describe("Bug 84: transpile emits the private flag on instanceFields spec", () =
     );
     // init thunk 内含 '}'，不能用单列正则——按 entry 边界切片逐条断言
     const fields = code.slice(code.indexOf("instanceFields: ["), code.indexOf("],", code.indexOf("instanceFields: [")));
+    // Bug 158：私有名键按**声明类**作用域化（"#<类名>::<私有名>"）——私有名
+    // 条目按"可选作用域前缀"匹配（公有键无前缀），意图不变
     const entryOf = (name: string): string => {
-      const start = fields.indexOf(`{ name: "${name}",`);
-      expect(start, `entry ${name} emitted`).toBeGreaterThan(-1);
+      const re = new RegExp(`\\{ name: "(?:#[^"]*::)?${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}",`);
+      const m = re.exec(fields);
+      expect(m, `entry ${name} emitted`).not.toBeNull();
+      const start = m!.index;
       const next = fields.indexOf("{ name:", start + 1);
       return fields.slice(start, next === -1 ? undefined : next);
     };
-    expect(entryOf("#x")).toContain("private: true");
+    expect(entryOf("x")).toContain("private: true");
     expect(entryOf("#y")).not.toContain("private");
     expect(entryOf("pub")).not.toContain("private");
   });

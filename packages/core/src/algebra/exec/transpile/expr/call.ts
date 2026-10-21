@@ -9,7 +9,11 @@
  *   receiver 为本地绑定时内联「求值 + 写回」IIFE；
  * - 计算字面量键调用（obj["m"]()/obj[1]()）同走 $invoke 保 this 绑定；
  * - 计算非字面量键调用（obj[key]()，key 运行时求值）走 $invokeKey
- *   （键折叠槽名 + $invoke 派发），接收者不丢。
+ *   （键折叠槽名 + $invoke 派发），接收者不丢；
+ * - Bug 152：成员调用的实参包 **thunk**（`() => [args]`）——原生顺序是
+ *   「引用取值（getter 触发）→ 实参 → 调用」；实参直接内联进实参数组会
+ *   让实参先于成员读求值（getter 跑晚了）。thunk 形态由 $invoke 先读成员
+ *   （预读）再求实参（派发复用预读值 ⇒ getter 只跑一次）。
  */
 import type {
   Expression,
@@ -220,9 +224,14 @@ export function transpileCallExpr(
           const recvName = (callee.object as { name: string }).name;
           return `(() => { const __nudoReArgs = [${args}]; const __v = $invoke(${recvName}, ${name}, __nudoReArgs${locArg}); $reStateCall(${recvName}, ${name}, __nudoReArgs); return __v; })()`;
         }
+        // Bug 152：实参包 **thunk**（`() => [args]`）——原生 CallExpression 的
+        // 求值顺序是「引用取值（成员 getter 在此触发）→ 实参 → 调用」；把实参
+        // 直接内联进 $invoke 的实参数组会让实参**先于**成员读求值（getter 跑
+        // 晚了）。thunk 形态把实参推迟到 $invoke 内部：$invoke 先读成员
+        // （预读），再求实参，最后派发（复用预读值，getter 只跑一次）。
         return opt
           ? `$optionalInvoke(${recv}, ${name}, [${args}])`
-          : `$invoke(${recv}, ${name}, [${args}]${locArg})`;
+          : `$invoke(${recv}, ${name}, () => [${args}]${locArg})`;
       }
       // obj["m"](args) / obj[1](args) → $invoke：计算字面量键（Bug 60 数字键
       // 原生 ToPropertyKey 成串）——this 仍绑 recv；$call($idx(...)) 路径丢
@@ -249,9 +258,10 @@ export function transpileCallExpr(
           const opt = optionalCall || (callee as { optional?: boolean }).optional === true;
           const loc = expr.loc;
           const locArg = loc ? `, [${loc.start.line}, ${loc.start.column}]` : "";
+          // Bug 152：实参包 thunk（同上：成员读先于实参求值）
           return opt
             ? `$optionalInvoke(${recv}, ${name}, [${args}])`
-            : `$invoke(${recv}, ${name}, [${args}]${locArg})`;
+            : `$invoke(${recv}, ${name}, () => [${args}]${locArg})`;
         }
       }
       // obj[key](args)（计算**非字面量**键：标识符/调用/成员链/Symbol 常量
@@ -282,9 +292,10 @@ export function transpileCallExpr(
           const opt = optionalCall || (callee as { optional?: boolean }).optional === true;
           const loc = expr.loc;
           const locArg = loc ? `, [${loc.start.line}, ${loc.start.column}]` : "";
+          // Bug 152：实参包 thunk（键求值 → 成员读 → 实参 → 调用，原生顺序）
           return opt
             ? `$optionalInvokeKey(${recv}, ${keySrc}, [${args}])`
-            : `$invokeKey(${recv}, ${keySrc}, [${args}]${locArg})`;
+            : `$invokeKey(${recv}, ${keySrc}, () => [${args}]${locArg})`;
         }
       }
       // 标识符调用 → $callNamed（可采集 call@ + 实参 provenance）

@@ -3,8 +3,11 @@
  *
  * 不变量：
  * - 赋值表达式值 = 写入的值（JS 语义；$set/$idxSet 返回容器不是）；
- * - 成员写以「读-改-写」链重绑根绑定（member-path 不可变更新链）；根不可
- *   重绑（foo().x = v）保留旧纯表达式形态；
+ * - **求值顺序 = 原生**（Bug 136）：引用（对象 + 各层键 + 中间层取值）先求值，
+ *   RHS 后求值；计算键只求值一次（读/写共用同一绑定）；
+ * - **[[Set]] 只落末层**（Bug 190）：中间层只取值，不写回根（原生不对中间层
+ *   做 [[Set]]——访问器中间层不得被写）；根不可重绑（foo().x = v）保留旧纯
+ *   表达式形态（对象/键作 IIFE 实参 ⇒ 仍先于 RHS）；
  * - 逻辑赋值走 ./short-circuit.ts 短路协议，不可写回目标 unsupported
  *   （fail-closed sound）；
  * - const 绑定再赋值 → $throwConstAssign()（strict/ESM TypeError）；
@@ -17,7 +20,7 @@ import { isExpression, symbolKeyOf, privateNameKeySrc, isConstAssignTarget, with
 import { COMPOUND_OPS } from "../ops.ts";
 import { NudoUnsupportedError } from "../../unsupported.ts";
 import { emitDestructure } from "../emit.ts";
-import { memberPathOf, readPathSrc, setPathSrc } from "../member-path.ts";
+import { memberPathOf, readPathSrc, memberWriteIfe, memberReadModifyWriteIfe } from "../member-path.ts";
 import { emitTranspileExpression as transpileExpression } from "../transpile-dispatch.ts";
 import { transpileShortCircuitExpr } from "./short-circuit.ts";
 /**
@@ -183,7 +186,9 @@ export function transpileAssignmentExpr(
               expr.left as unknown as Node,
               rootName,
               // 表达式值 = 写入的值；$set 返回容器不是 JS 语义
-              (val) => `((__v) => { ${path.rootTarget} = ${setPathSrc(path, "__v")}; return __v; })(${val})`,
+              // Bug 190：写回只落**末层**（中间层是访问器时不得写回根——
+              // 原生写的是 getter 返回的对象，绝不对访问器层做 [[Set]]）。
+              (val) => memberWriteIfe(path, val),
             );
           }
           // Bug 80：this.#x ||= v / &&= / ??=——memberPathOf 对 PrivateName
@@ -221,11 +226,19 @@ export function transpileAssignmentExpr(
         };
         const path = memberPathOf(m, opts);
         if (path) {
-          const valSrc = compoundFn
-            ? `${compoundFn}(${readPathSrc(path)}, ${right})`
-            : right;
-          // 表达式值 = 写入的值（JS 语义）；写回仍走不可变更新链
-          return `((__v) => { ${path.rootTarget} = ${setPathSrc(path, "__v")}; return __v; })(${valSrc})`;
+          // Bug 136：引用（根 + 各层键 + 中间层取值）**先**求值、RHS **后**
+          // 求值（原生顺序：EvaluatePropertyAccess → GetValue → RHS → PutValue）；
+          // 计算键只求值一次（读/写共用同一绑定）。
+          // Bug 190：[[Set]] 只落**末层**——中间层只取值，不再写回根
+          // （原生不对中间层做 [[Set]]：访问器中间层不得被写）。
+          if (compoundFn) {
+            // 复合赋值：读-改-写（旧值读在 RHS 之前——原生 GetValue → RHS）
+            return memberReadModifyWriteIfe(path, {
+              newValueOf: (old) => `${compoundFn}(${old}, ${right})`,
+            });
+          }
+          // 表达式值 = 写入的值（JS 语义）
+          return memberWriteIfe(path, right);
         }
         // R5：静态方法体 super.k = v（staticSuperSrc + thisParam + className
         // 同时在）——SetSuper 静态面：父类静态 setter 派发，数据字段/缺槽
@@ -271,6 +284,13 @@ export function transpileAssignmentExpr(
         }
         // 根不可重绑（如 foo().x = v）：保留旧纯表达式形态；
         // 表达式值 = 写入的值（$set/$idxSet 返回容器不是 JS 语义）
+        //
+        // Bug 136：对象表达式与计算键**先于 RHS** 求值（原生顺序：对象 →
+        // 键 → RHS）——对象/键作 IIFE 实参（外层作用域求值），RHS 落体内。
+        //
+        // 注：私有名臂（this.#x）**保留旧形态**——对象恒为 `this`（无副作用，
+        // 顺序不可观测），且旧形态被 eval-class-body 的形状断言钉住
+        // （"复合赋值是 read-modify-write，私有名键一致"）。
         if (!m.computed && m.property.type === "PrivateName") {
           // Bug 78：this.#x = v → "#x" 混淆键槽写；Bug 81：复合赋值
           // （this.#x += 1）此前无视 compoundFn 直发右值（假精确），修为
@@ -292,16 +312,16 @@ export function transpileAssignmentExpr(
         }
         if (!m.computed && m.property.type === "Identifier") {
           const obj = transpileExpression(m.object as Expression, opts);
-          return `((__v) => (($set(${obj}, ${JSON.stringify(m.property.name)}, __v)), __v))(${right})`;
+          return `((__nudoMpObj) => { const __nudoMpVal = ${right}; ($set(__nudoMpObj, ${JSON.stringify(m.property.name)}, __nudoMpVal)); return __nudoMpVal; })(${obj})`;
         }
         if (m.computed) {
           const obj = transpileExpression(m.object as Expression, opts);
           const k = m.property;
           if (k.type === "NumericLiteral") {
-            return `((__v) => (($idxSet(${obj}, $lit(${k.value}), __v)), __v))(${right})`;
+            return `((__nudoMpObj) => { const __nudoMpVal = ${right}; ($idxSet(__nudoMpObj, $lit(${k.value}), __nudoMpVal)); return __nudoMpVal; })(${obj})`;
           }
           if (k.type === "StringLiteral") {
-            return `((__v) => (($set(${obj}, ${JSON.stringify(k.value)}, __v)), __v))(${right})`;
+            return `((__nudoMpObj) => { const __nudoMpVal = ${right}; ($set(__nudoMpObj, ${JSON.stringify(k.value)}, __nudoMpVal)); return __nudoMpVal; })(${obj})`;
           }
           if (isExpression(k)) {
             // [Symbol.X] = v → "@@X" 字符串槽写（镜像成员读 / 对象字面量计算键
@@ -310,9 +330,10 @@ export function transpileAssignmentExpr(
             const symK = symbolKeyOf(k as unknown as Parameters<typeof symbolKeyOf>[0]);
             if (symK !== null) {
               // Bug 73：symbol 键投影写打 Slot.symbolKey 标记（JSON 枚举面不可见）
-              return `((__v) => (($set(${obj}, ${symK}, __v, { symbolKey: true })), __v))(${right})`;
+              return `((__nudoMpObj) => { const __nudoMpVal = ${right}; ($set(__nudoMpObj, ${symK}, __nudoMpVal, { symbolKey: true })); return __nudoMpVal; })(${obj})`;
             }
-            return `((__v) => (($idxSet(${obj}, ${transpileExpression(k, opts)}, __v)), __v))(${right})`;
+            // 计算键只求值一次（IIFE 实参）且先于 RHS（原生顺序）
+            return `((__nudoMpObj, __nudoMpKey) => { const __nudoMpVal = ${right}; ($idxSet(__nudoMpObj, __nudoMpKey, __nudoMpVal)); return __nudoMpVal; })(${obj}, ${transpileExpression(k, opts)})`;
           }
         }
         throw new NudoUnsupportedError(

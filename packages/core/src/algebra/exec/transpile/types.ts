@@ -30,11 +30,17 @@ export type TranspileOptions = {
   replacements?: Array<{
     target: string;
     varName: string;
-    /** 仅该语句范围内生效（1-based 行） */
+    /**
+     * 仅该**节点**范围内生效——字符区间 `[stmtStart, stmtEnd)`
+     * （Babel 节点的 start/end 偏移），**不是行号**：Bug 166 修法把
+     * 「行号窗口」改成「AST 节点身份」，行号窗口会泄漏进嵌套/同行的
+     * 其它子表达式。
+     */
     stmtStart?: number;
     stmtEnd?: number;
   }>;
-  /** @nudo:as：覆盖紧随语句的 init / return */
+  /** @nudo:as：覆盖紧随语句的 init / return（stmtStart/stmtEnd = 字符区间，
+   *  语义同上——按节点身份定位，不按行号） */
   asOverrides?: Array<{ varName: string; stmtStart: number; stmtEnd: number }>;
   /** 循环嵌套深度（>0 时 return → $loopReturn，C2.1） */
   inLoop?: number;

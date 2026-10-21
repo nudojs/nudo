@@ -6,6 +6,15 @@
  *   （emitFnBlockBody / transpileFnBodyStmts）——逐语句 map(transpileStatement)
  *   会绕过早退 if 提升，`if (c) return X; return Y` 的早退值被语句级 $fork
  *   thunk 吞掉（假精确）；
+ * - 早退提升的 alt 臂 = **后续路径**（事实臂已 return/throw 提前退出 ⇒ 测试
+ *   为假）⇒ 该臂断言**否定关系界**（narrowRelComplementArmThunk，见下）；
+ * - 早退补集窄化的**送达范围**（Bug 186）：内含早退 if 且**无词法声明**的块
+ *   摊平到当前语句表（flattenEarlyReturnBlocks）——块正常完成 ⇒ 早退测试为
+ *   假 ⇒ 补集事实作用于块之后的路径；块内有词法声明时不摊平（作用域不外泄）；
+ * - try / catch / finally 的**块体**也走本入口（与函数体顶层同口径）——裸
+ *   map(transpileStatement) 会绕过早退提升（嵌套语句表拿不到补集窄化）；
+ * - 关系守卫的补集精化只用于**后续路径**（早退形态），普通 if/else 的 else
+ *   臂不断言否定界（NaN 亦满足 `¬(x <= k)`，不可健全表示）；
  * - 函数体边界 var 提升（Bug 21）：skip = 参数模式名；嵌套块不传
  *   varScope（var 已在函数级提升，块内改发赋值）；
  * - P4b 参数遮蔽：继承 constNames 被本函数参数模式名遮蔽时扣除（假
@@ -27,6 +36,7 @@ import {
   narrowDiscriminantArmThunks,
   relGuardOf,
   narrowRelArmThunk,
+  type RelGuard,
 } from "../stmt-predicates.ts";
 import {
   isExpression,
@@ -97,6 +107,62 @@ function hoistNonCtorMarkers(stmts: Statement[], depth: number): string {
   return names.map((n) => `${pad}${n}.__nudoNonCtor = 1;`).join("\n") + "\n";
 }
 
+/**
+ * 语句表内是否存在「早退 if」（无 else、cons 体 return）——块内早退的
+ * 存在性判定（Bug 186 跨块早退摊平的前置条件）。
+ */
+function blockHasEarlyReturn(stmts: readonly Statement[]): boolean {
+  return stmts.some(
+    (s) =>
+      (s.type === "IfStatement" && s.alternate == null && stmtReturns(s.consequent)) ||
+      (s.type === "BlockStatement" && blockHasEarlyReturn(s.body)),
+  );
+}
+
+/**
+ * 语句表内是否有**词法声明**（let/const/function/class）——块内**有**词法
+ * 声明时不得把块摊平到外层（作用域会被摊平 ⇒ 名字外泄 / 撞名）。`var`
+ * 是函数级作用域，摊平无差别。
+ */
+function hasLexicalDecl(stmts: readonly Statement[]): boolean {
+  return stmts.some(
+    (s) =>
+      (s.type === "VariableDeclaration" && s.kind !== "var") ||
+      s.type === "FunctionDeclaration" ||
+      s.type === "ClassDeclaration",
+  );
+}
+
+/**
+ * 跨块早退摊平（Bug 186）：把「内含早退 if 且**无词法声明**」的块摊平到
+ * 当前语句表。
+ *
+ * 原生语义：块内 `if (v === null) { return 0; }` 早退 ⇒ **块正常完成**
+ * ⇒ 早退测试为**假** ⇒ 「v 不再是 null」的补集事实作用于**块之后**的
+ * 路径。此前补集窄化只挂在「函数体顶层语句表」上（同层有 `if` + 其后
+ * `rest` 才提升），裸块 / try / catch / finally 块内的同一段代码拿不到
+ * 补集 ⇒ 同一段代码换位置结论相反（L2 假红）。
+ *
+ * 摊平口径：块内**无词法声明** ⇒ 块只是作用域包装，摊平到当前语句表后
+ * 语义无差别（`var` 本就是函数级）；早退 if 随即进入既有的同层提升路径
+ * ——补集事实送达块之后的路径。块内有词法声明时不摊平（宁缺毋假）。
+ */
+function flattenEarlyReturnBlocks(stmts: readonly Statement[]): Statement[] {
+  const out: Statement[] = [];
+  for (const s of stmts) {
+    if (
+      s.type === "BlockStatement" &&
+      !hasLexicalDecl(s.body) &&
+      blockHasEarlyReturn(s.body)
+    ) {
+      out.push(...flattenEarlyReturnBlocks(s.body));
+      continue;
+    }
+    out.push(s);
+  }
+  return out;
+}
+
 export function transpileFnBodyStmts(
   stmtsIn: Statement[],
   depth: number,
@@ -106,7 +172,9 @@ export function transpileFnBodyStmts(
    * var 已在函数级提升，块内按 hoistedVarNames 改发赋值（Bug 21）。 */
   varScope?: { skip: ReadonlySet<string> },
 ): string {
-  const stmts = completeElseChains(stmtsIn);
+  // Bug 186：跨块早退摊平（内含早退 if 的无声明块 → 当前语句表），
+  // 早退的补集事实由此送达块之后的路径
+  const stmts = completeElseChains(flattenEarlyReturnBlocks(stmtsIn));
   // Bug 21：函数体级 var 提升——收集体内（含嵌套块）var 名，顶部发射
   // `let <name> = $lit(void 0);`（声明前置、初始化留原位改发赋值）。
   const varHoist: string[] = [];
@@ -251,7 +319,14 @@ export function transpileFnBodyStmts(
     const cons = wrapArm(consNarrowed, "fk1_");
     const altBody = transpileFnBodyStmts(rest, depth + 1, { ...scopedOpts, inLoop: opts.inLoop });
     const altThunk = `() => {\n${altBody}\n${pad}}`;
-    const altNarrowed = narrowRelArmThunk(
+    // Bug 182：alt 臂 = **后续路径**（事实臂已 return / throw 提前退出 ⇒ 落到
+    // alt 的路径上测试为**假**）⇒ 该路径上可断言**否定关系界**
+    // （`x <= 0` 为假 ⇒ `x > 0`）。事实臂窄化（narrowRelArmThunk）只管
+    // 「测试为真」的方向，补集方向此前整体放弃 ⇒ 早返回形态
+    // `if (x <= 0) { return 1; } return x;` 的返回值域含未精化的 x ⇒
+    // `@nudo:contract return number().gt(0)` 被判违约（与语义等价的
+    // `if (x > 0) { return x; } else { return 1; }` 结论相反 ⇒ L1 假红）。
+    const altNarrowed = narrowRelComplementArmThunk(
       narrowDiscriminantArmThunks(
         narrowTypeArmThunk(
           narrowNullishArmThunks(altThunk, earlyGuards, "alt", recvSet),
@@ -264,7 +339,6 @@ export function transpileFnBodyStmts(
         recvSet,
       ),
       earlyRGuard,
-      "alt",
       recvSet,
     );
     const alt = wrapArm(altNarrowed, "fk2_");
@@ -293,6 +367,54 @@ export function transpileFnBodyStmts(
     return (varHoist.length ? varHoist.join("\n") + "\n" : "") + hoistNonCtorMarkers(stmts.slice(0, i), depth) + (head ? `${head}\n${promoted}` : promoted);
   }
   return (varHoist.length ? varHoist.join("\n") + "\n" : "") + hoistNonCtorMarkers(stmts, depth) + stmts.map((s) => transpileStatement(s, depth, scopedOpts)).join("\n");
+}
+
+/**
+ * 关系算子的**严格否定**（补集路径用）：`x <= k` 为假 ⇒ `x > k`（其余同理）。
+ * 注：JS 里 `¬(x <= k)` 还含 `x` 为 NaN 的情形（NaN 与任何比较皆假）——
+ * 严格说补集路径只能断定 `x > k ∨ x is NaN`；这里取**否定界**形态，
+ * NaN 的排除交给**契约谓词层**（`number().gt(0)` 这类契约本身排除 NaN ⇒
+ * 契约已排除 NaN 时补集路径满足 `> 0`）。否则「无法排除 NaN」会被误当成
+ * 「不满足契约」⇒ 语义等价的两种写法结论相反（L1 门禁假红）。
+ */
+const REL_COMPLEMENT_OP: Record<RelGuard["op"], RelGuard["op"]> = {
+  le: "gt",
+  lt: "ge",
+  ge: "lt",
+  gt: "le",
+};
+
+/**
+ * 关系守卫的**补集**精化（Bug 182）：`((x) => THUNK)($refineRel(x, "gt", k))`。
+ *
+ * 事实臂（`narrowRelArmThunk`）断言的是「测试为真」的方向（`x <= k`）；
+ * **后续路径**（事实臂以 return / throw 提前退出 ⇒ 落到该路径上测试为**假**）
+ * 断言的是**否定界**（`x > k`）。两者语义不同，不可混用。
+ *
+ * 两条实现路径共用本函数：
+ * - 早退提升（fn-body）：事实臂 return、尾句非全终止 ⇒ alt 臂 = 后续路径；
+ * - if/else 分支（statement）：尾句全终止时 `completeElseChains` 把尾句收进
+ *   **合成的 else** ⇒ 该 else 臂即后续路径（`if (x <= 0) { return 1; }
+ *   return x;` 走的就是这条）。
+ *
+ * 跳过口径与事实臂一致：守卫名在 fork 绑定集（臂内写 / 快照重绑）时跳过
+ * （影子参数会吞掉臂内写）；strict 非法绑定名（arguments / eval）跳过。
+ */
+export function narrowRelComplementArmThunk(
+  thunk: string,
+  guard: RelGuard | undefined,
+  forkBindingNames: ReadonlySet<string> | readonly string[],
+): string {
+  if (!guard) return thunk;
+  const names =
+    forkBindingNames instanceof Set
+      ? (forkBindingNames as Set<string>)
+      : new Set(forkBindingNames);
+  if (names.has(guard.name) || guard.name === "arguments" || guard.name === "eval") {
+    return thunk;
+  }
+  const op = REL_COMPLEMENT_OP[guard.op];
+  return `((${guard.name}) => ${thunk})($refineRel(${guard.name}, ${JSON.stringify(op)}, ${guard.k}))`;
 }
 
 

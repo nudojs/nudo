@@ -8,6 +8,8 @@
  *   自由 arguments 特判短路）；
  * - i++/i-- 走 $updateAdd/$updateSub（不得走 $add 字符串拼接臂），后缀表达式
  *   值 = ToNumeric 旧值且必须在表达式内立刻写回；
+ * - 成员自增/删除走 member-path 的路径计划（Bug 136/190）：计算键只求值一次、
+ *   引用先于 RHS、[[Set]] 只落末层（中间层只取值）；
  * - delete 成员目标经 ./optional-chain.ts 的链式 delete 发射，非成员目标
  *   unsupported（不得假精确 undefined）；
  * - 顶层逗号序列整体加括号（嵌套位裸发射撕裂宿主结构）。
@@ -29,7 +31,7 @@ import { nullishGuardsOf, typeGuardOf, discriminantGuardsOf, relGuardOf } from "
 import { isExpression, privateNameKeySrc, isConstAssignTarget } from "../helpers.ts";
 import { BIN_OPS } from "../ops.ts";
 import { NudoUnsupportedError } from "../../unsupported.ts";
-import { memberPathOf, readPathSrc, readPrefix, setPathSrc, setParentPathSrc } from "../member-path.ts";
+import { memberPathOf, memberDeleteIfe, memberReadModifyWriteIfe } from "../member-path.ts";
 import { emitTranspileExpression as transpileExpression } from "../transpile-dispatch.ts";
 import { transpileShortCircuitExpr } from "./short-circuit.ts";
 import { chainNeedsShortCircuit, flattenChain, emitDeleteChainFrom } from "./optional-chain.ts";
@@ -198,16 +200,7 @@ export function transpileOperatorExpr(
             property: Node;
             computed: boolean;
           };
-          const keySrc = m.computed
-            ? transpileExpression(m.property as Expression, opts)
-            : `$lit(${JSON.stringify((m.property as { name: string }).name)})`;
           const path = memberPathOf(m, opts);
-          const parentRead =
-            path && path.layers.length >= 2
-              ? readPrefix(path, path.layers.length - 2)
-              : path
-                ? path.rootSrc
-                : transpileExpression(m.object as Expression, opts);
           // Bug 176：删除在**求值点**发生（自包含 IIFE）——父对象与键各只
           // 求值一次（Bug 136 的 delete 键双求值同解），删除（$del）与布尔值
           // （$delRes）**同点**产出 ⇒ 同一条表达式里排在 delete 之后的读看到
@@ -215,10 +208,17 @@ export function transpileOperatorExpr(
           // 注：Proxy 的 deleteProperty 陷阱派发唯一在 $delRes（Bug 172），
           // $del 只做删除（陷阱在场时靶不动）⇒ 陷阱恰好派发一次。
           // 写回（品牌类实例的不可变更新）同点完成：可重绑根才写。
-          const rebind = path
-            ? ` ${path.rootTarget} = ${setParentPathSrc(path, "__nudoDelD")};`
-            : "";
-          return `(() => { const __nudoDelP = ${parentRead}; const __nudoDelK = ${keySrc}; const __nudoDelD = $del(__nudoDelP, __nudoDelK);${rebind} return $delRes(__nudoDelP, __nudoDelK); })()`;
+          // Bug 190：删除只作用在**持有末层键的那个对象**上——中间层不再写回
+          // 根（原生不对中间层做 [[Set]]：访问器中间层不得被写）。
+          if (path) {
+            return memberDeleteIfe(path);
+          }
+          // 根不可重绑（foo().x）：父对象与键各一次，无写回
+          const keySrc = m.computed
+            ? transpileExpression(m.property as Expression, opts)
+            : `$lit(${JSON.stringify((m.property as { name: string }).name)})`;
+          const parentRead = transpileExpression(m.object as Expression, opts);
+          return `(() => { const __nudoDelP = ${parentRead}; const __nudoDelK = ${keySrc}; const __nudoDelD = $del(__nudoDelP, __nudoDelK); return $delRes(__nudoDelP, __nudoDelK); })()`;
         }
         // 非成员目标的 delete 未 lowering：值应为 boolean，折 undefined 是假精确
         throw new NudoUnsupportedError(
@@ -281,17 +281,24 @@ export function transpileOperatorExpr(
         const m = arg as unknown as { object: Node; property: Node; computed: boolean };
         const path = memberPathOf(m, opts);
         if (path) {
-          const readSrc = readPathSrc(path);
           // Bug 155：成员目标**自包含**——原生 `o.p++` 是**一次 Get + 一次
           // Put**。此前拆成「表达式位求值」+「语句级 rebind 写回」两段，两段
           // 各自独立发了一次 readPathSrc ⇒ **读了两遍**（getter 跑两次；有状态
           // getter 第二次读到不同值 → 连返回值也错）。
           // 修法：读一次、写回下沉到表达式内（语句级 rebind pass 不再补写）。
           // 前缀：值 = 新值；后缀：值 = 旧值（ToNumeric 后），写回用同一旧值。
+          // Bug 136：计算键**只求值一次**（键绑临时量，读/写共用同一绑定）。
+          // Bug 190：[[Set]] 只落末层（中间层不再写回根——原生不做中间层 Put）。
           if (expr.prefix) {
-            return `((__v) => { const __n = ${fn}(__v); ${path.rootTarget} = ${setPathSrc(path, "__n")}; return __n; })(${readSrc})`;
+            // 前缀：$updateAdd/$updateSub 内部已 ToNumeric（旧值）
+            return memberReadModifyWriteIfe(path, { newValueOf: (old) => `${fn}(${old})` });
           }
-          return `((__old) => { ${path.rootTarget} = ${setPathSrc(path, `${fn}(__old)`)}; return __old; })($toNumeric(${readSrc}))`;
+          // 后缀：表达式值 = ToNumeric 旧值（原生 oldValue 口径）
+          return memberReadModifyWriteIfe(path, {
+            newValueOf: (old) => `${fn}(${old})`,
+            toNumericOld: true,
+            valueIsOld: true,
+          });
         }
         // Bug 80：this.#x++ / C.#n++——memberPathOf 对 PrivateName 返回
         // null，此前落 update:++ unsupported 令整模块 fail-closed。镜像

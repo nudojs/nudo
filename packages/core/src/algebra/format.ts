@@ -9,6 +9,7 @@ import { termEquals, termToString } from "./term.ts";
 import type { Pred } from "./pred.ts";
 import { predToString } from "./pred.ts";
 import { ProjectionBudget, PROJECTION_MAX_DEPTH } from "./projection-budget.ts";
+import { accessorReadDomain } from "./accessors.ts";
 
 export type FormatOptions = {
   /** 是否显示 term= */
@@ -154,9 +155,12 @@ function formatShapeInner(a: Abs, budget: ProjectionBudget, ind: string): string
         const opt = slot.optional ? "?" : "";
         // 非标识符键 JSON 引号，避免展示串本身不可解析（`a, b: 1`）
         const key = /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(k) ? k : JSON.stringify(k);
-        let val = formatShapeB(slot.value, budget, `${ind}  `);
+        // Bug 191：访问器键的槽是 `$lit(void 0)` 占位（真 getter 住侧表）——
+        // 投影须取 getter 读域，否则把 getter 的返回值谎报成 exact undefined。
+        const slotAbs = accessorReadDomain(a, k) ?? slot.value;
+        let val = formatShapeB(slotAbs, budget, `${ind}  `);
         if (budget.showLits) {
-          const plv = litPredValue(slot.value);
+          const plv = litPredValue(slotAbs);
           if (plv !== undefined) val = `lit(${JSON.stringify(plv)})`;
         }
         return `${key}${opt}: ${val}`;

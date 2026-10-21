@@ -2,11 +2,19 @@
  * 模式解构 / 形参绑定 / 语句位写回（defineProperty/delete）/ fork 臂 thunk。
  * 数组 mutator 已改为 $invoke 调用点就地变更（Bug 49/51），不再语句位重绑。
  * 发射时经 transpile-dispatch 调 transpileExpression（避免与 expr.ts 成环）。
+ *
+ * 不变量（解构临时名，@nudo:as / @nudo:replace 指令面无关）：
+ * - 发射的解构临时名（`_d{n}` / `_n{n}` / `_p{i}` / `_rest{i}` / `_pd{i}`）
+ *   **必须避开用户标识符**（源文本里出现过的词形，保守超集）：撞名会让
+ *   生成码出现重复声明（SyntaxError ⇒ 整模块求值失败 ⇒ 导出退化为
+ *   unknown）或**遮蔽**用户绑定（错值）——见 Bug 181。
+ * - 共享计数器（`opts.destrTmpSeq`）跨语句/跨形参唯一：`_d{n}`（语句位
+ *   init 临时）与 `_n{n}`（子模式临时）共用同一序号源，不得各自新建。
  */
 import type { Statement, Expression, Node } from "@babel/types";
 import type { TranspileOptions } from "./types.ts";
 import { emitTranspileExpression } from "./transpile-dispatch.ts";
-import { isExpression, foldRequireSpecArg, staticKeyOf, isConstAssignTarget, symbolKeyOf } from "./helpers.ts";
+import { isExpression, foldRequireSpecArg, staticKeyOf, isConstAssignTarget, symbolKeyOf, userIdentInfo, bumpDestrTmpSeq, safeTmpName } from "./helpers.ts";
 import { memberPathOf, readPathSrc, setPathSrc, readPrefix, setParentPathSrc } from "./member-path.ts";
 import type { MemberPath } from "./member-path.ts";
 import { STRING_REGEX_ARG_STATE_NAMES } from "./ops.ts";
@@ -73,6 +81,24 @@ function emitMemberTargetAssign(
   }
   throw new NudoUnsupportedError("assign-target", m.loc ? { line: m.loc.start.line, column: m.loc.start.column } : undefined);
 }
+
+/**
+ * Bug 140：原生数组解构 = GetIterator + IteratorNext。
+ *
+ * 接收者是**用户 iterable**（对象带自有 `@@iterator` 槽）时，元素按**迭代序**
+ * 取，**不是**按索引读。此前解构 lowering 一律走 `$idx(recv, i)`（按索引属性
+ * 读）——对用户 iterable 读到的是索引槽（多半没有）⇒ 折出**确定 undefined**
+ * （精确错值：原生是迭代序的第 2 个值）。
+ *
+ * 引擎侧的用户迭代协议在 `exec/runtime/containers/iterate.ts`：`$iterCheck`
+ * 兼做两件事——①可迭代性守卫（非可迭代 → TypeError）；②返回**用户 iterable 的
+ * 迭代序元素读取器**（非用户 iterable → null ⇒ 生成码走既有 `$idx` /
+ * `$arrRest` 快速路径：tuple / 数组 / 字符串 / Set / Map / 生成器 / `$tpl` /
+ * 数组迭代器…逐字不变）。
+ *
+ * 读取器按需取：模式有 n 个位置就取 n 个元素（原生空位也消耗一个迭代步），
+ * 有 rest 则取到 done（运行时步数上界兜底，超界折 unknown）。
+ */
 
 /**
  * Bug 111：delete o?.a 链的 OptionalMemberExpression 节点按普通 member 层
@@ -283,6 +309,12 @@ export function emitDestructure(
   out: string[],
   tmpSeq: { n: number },
 ): void {
+  // Bug 181：解构临时名与**用户标识符**避让——共享计数器推过用户占用的
+  // `_d{n}` / `_n{n}` 序号（statement.ts 的 `_d{n}` 与此处的 `_n{n}` 共用
+  // 同一计数器 `n++`）。用户自己声明 `_d0` 时，生成码的 `const _d0` 会与
+  // 用户声明重复（SyntaxError ⇒ 整模块求值失败 ⇒ 导出退化为 unknown），
+  // 在函数体内还会**遮蔽**模块级同名绑定（错值）。
+  bumpDestrTmpSeq(tmpSeq, userIdentInfo(opts.source));
   // 赋值解构（kw 为空）写 const 绑定 → TypeError；声明解构走 kw（let/const）
   const assignName = (name: string): void => {
     if (kw === "" && isConstAssignTarget(name, opts)) {
@@ -355,6 +387,14 @@ export function emitDestructure(
               `${pad}${kw} ${left.name} = $orDefault(${readSrc}, () => ${def});`,
             );
           }
+        } else if (left.type === "MemberExpression") {
+          // Bug 162：**成员目标**带默认值（`({ a: o.x = 1 } = src)`）——写回
+          // 不能丢。此前只认 Identifier / 子模式：成员目标落进「嵌套 + 默认」
+          // 分支后被当子模式递归，成员写回**静默丢弃** ⇒ 目标成员保持旧值
+          // （错值；原生是「读属性 → undefined 取默认 → 写回目标成员」）。
+          const t = `_n${tmpSeq.n++}`;
+          out.push(`${pad}const ${t} = $orDefault(${readSrc}, () => ${def});`);
+          emitMemberTargetAssign(left as Node, t, pad, opts, out);
         } else {
           // 嵌套 + 默认：const { a: { b } = {} } = o
           const t = `_n${tmpSeq.n++}`;
@@ -401,7 +441,27 @@ export function emitDestructure(
     // 逐项 $idx / $arrRest 投影前先过迭代性守卫（Bug 7：`const [x] = 1` /
     // `= {}` definite，抽象接收者 may）；字符串/元组等可迭代接收者与对象
     // 模式（$get 路径）不受影响。fromSrc 是临时名/绑定名，重复求值无副作用。
-    out.push(`${pad}$iterCheck(${fromSrc});`);
+    //
+    // Bug 140：接收者是**用户 iterable**（对象带自有 `@@iterator` 槽，引擎
+    // 无其元素模型）时，元素按**迭代序**取（GetIterator + IteratorNext），
+    // 不是按索引读（$idx 读索引属性 ⇒ 与迭代序无关的错值 / 确定 undefined）。
+    // `$iterCheck` 兼做守卫与**迭代序元素读取器**：非用户 iterable → null ⇒
+    // 走既有 `$idx` / `$arrRest` 快速路径（tuple / 数组 / 字符串 / Set / Map /
+    // 生成器 / `$tpl` / 数组迭代器…逐字不变）。
+    //
+    // 取元素个数：模式有 n 个位置就取 n 个（原生空位也消耗一个迭代步）；
+    // 有 rest ⇒ 取到 done（运行时步数上界兜底，超界折 unknown）。
+    const hasRest = pattern.elements.some(
+      (el) => el !== null && el.type === "RestElement",
+    );
+    const uiReader = `_n${tmpSeq.n++}`;
+    out.push(
+      `${pad}const ${uiReader} = $iterCheck(${fromSrc}, ${hasRest ? -1 : pattern.elements.length});`,
+    );
+    const readAt = (i: number): string =>
+      `${uiReader} ? ${uiReader}.get(${i}) : $idx(${fromSrc}, $lit(${i}))`;
+    const readRest = (i: number): string =>
+      `${uiReader} ? ${uiReader}.rest(${i}) : $arrRest(${fromSrc}, ${i})`;
     let restName: string | undefined;
     let restAt = 0;
     pattern.elements.forEach((el, i) => {
@@ -417,7 +477,7 @@ export function emitDestructure(
         // spurious-throw 面（差分 FALSE-THROW）。
         if (el.argument.type === "ObjectPattern" || el.argument.type === "ArrayPattern") {
           const t = `_n${tmpSeq.n++}`;
-          out.push(`${pad}const ${t} = $arrRest(${fromSrc}, ${i});`);
+          out.push(`${pad}const ${t} = ${readRest(i)};`);
           emitDestructure(el.argument, t, kw, pad, opts, out, tmpSeq);
           return;
         }
@@ -425,7 +485,7 @@ export function emitDestructure(
           // [...o.x] = src（赋值位 rest 成员目标）：成员写回，不得静默跳过
           emitMemberTargetAssign(
             el.argument as Node,
-            `$arrRest(${fromSrc}, ${i})`,
+            readRest(i),
             pad,
             opts,
             out,
@@ -442,13 +502,19 @@ export function emitDestructure(
       }
       if (el.type === "AssignmentPattern") {
         const def = emitTranspileExpression(el.right as Expression, opts);
-        const idx = `$idx(${fromSrc}, $lit(${i}))`;
+        const idx = readAt(i);
         if (el.left.type === "Identifier") {
           if (kw === "" && isConstAssignTarget(el.left.name, opts)) {
             out.push(`${pad}$throwConstAssign();`);
           } else {
             out.push(`${pad}${kw} ${el.left.name} = $orDefault(${idx}, () => ${def});`);
           }
+        } else if (el.left.type === "MemberExpression") {
+          // Bug 162：成员目标 + 默认值（`[o.x = 1] = src`）——同对象模式分支：
+          // 写回不能丢（读 → undefined 取默认 → 写回目标成员）。
+          const t = `_n${tmpSeq.n++}`;
+          out.push(`${pad}const ${t} = $orDefault(${idx}, () => ${def});`);
+          emitMemberTargetAssign(el.left as Node, t, pad, opts, out);
         } else {
           const t = `_n${tmpSeq.n++}`;
           out.push(`${pad}const ${t} = $orDefault(${idx}, () => ${def});`);
@@ -458,7 +524,7 @@ export function emitDestructure(
       }
       if (el.type === "ObjectPattern" || el.type === "ArrayPattern") {
         const t = `_n${tmpSeq.n++}`;
-        out.push(`${pad}const ${t} = $idx(${fromSrc}, $lit(${i}));`);
+        out.push(`${pad}const ${t} = ${readAt(i)};`);
         emitDestructure(el, t, kw, pad, opts, out, tmpSeq);
         return;
       }
@@ -466,18 +532,18 @@ export function emitDestructure(
         if (kw === "" && isConstAssignTarget(el.name, opts)) {
           out.push(`${pad}$throwConstAssign();`);
         } else {
-          out.push(`${pad}${kw} ${el.name} = $idx(${fromSrc}, $lit(${i}));`);
+          out.push(`${pad}${kw} ${el.name} = ${readAt(i)};`);
         }
       } else if (el.type === "MemberExpression") {
         // [o.x] = src：成员目标写回（不得静默跳过）
-        emitMemberTargetAssign(el as Node, `$idx(${fromSrc}, $lit(${i}))`, pad, opts, out);
+        emitMemberTargetAssign(el as Node, readAt(i), pad, opts, out);
       }
     });
     if (restName) {
       if (kw === "" && isConstAssignTarget(restName, opts)) {
         out.push(`${pad}$throwConstAssign();`);
       } else {
-        out.push(`${pad}${kw} ${restName} = $arrRest(${fromSrc}, ${restAt});`);
+        out.push(`${pad}${kw} ${restName} = ${readRest(restAt)};`);
       }
     }
   }
@@ -500,6 +566,12 @@ export function emitParamBinding(
   const prologue: string[] = [];
   const defaulted: number[] = [];
   let rest: string | undefined;
+  // Bug 181：共享解构临时名计数器（跨形参唯一）+ 与用户标识符避让。
+  // 此前每个形参各建一个 `{ n: 0 }` ⇒ 多个解构形参的 `_n{n}` 临时名互相
+  // 撞名（重复 const ⇒ SyntaxError ⇒ 整模块求值失败）。
+  const tmpSeq = opts.destrTmpSeq ?? { n: 0 };
+  const userInfo = userIdentInfo(opts.source);
+  bumpDestrTmpSeq(tmpSeq, userInfo);
   params.forEach((p, i) => {
     if (p.type === "Identifier") {
       sig.push(p.name);
@@ -510,14 +582,14 @@ export function emitParamBinding(
         rest = p.argument.name;
         return;
       }
-      const ph = `_rest${i}`;
+      const ph = safeTmpName(`_rest${i}`, userInfo);
       rest = ph;
       // Bug 161：形参绑定**可变**（原生 `function f([...a]) { a = 5; }` 合法）
       // ——此前按 const 发射 ⇒ 体内再赋抛 TypeError（假红 + 错值）。
-      emitDestructure(p.argument, ph, "let", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
+      emitDestructure(p.argument, ph, "let", pad, opts, prologue, tmpSeq);
       return;
     }
-    const ph = `_p${i}`;
+    const ph = safeTmpName(`_p${i}`, userInfo);
     sig.push(ph);
     if (p.type === "AssignmentPattern") {
       defaulted.push(i);
@@ -526,15 +598,15 @@ export function emitParamBinding(
         // Bug 161：默认参绑定可变（原生 `function f(a = 1) { a = 5; }` 合法）
         prologue.push(`${pad}let ${p.left.name} = $orDefault(${ph}, () => ${def});`);
       } else {
-        const t = `_pd${i}`;
+        const t = safeTmpName(`_pd${i}`, userInfo);
         prologue.push(`${pad}const ${t} = $orDefault(${ph}, () => ${def});`);
-        emitDestructure(p.left, t, "let", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
+        emitDestructure(p.left, t, "let", pad, opts, prologue, tmpSeq);
       }
       return;
     }
     if (p.type === "ObjectPattern" || p.type === "ArrayPattern") {
       // Bug 161：形参解构绑定可变（原生可再赋）
-      emitDestructure(p, ph, "let", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
+      emitDestructure(p, ph, "let", pad, opts, prologue, tmpSeq);
     }
   });
   return { sig, rest, prologue, defaulted };
@@ -558,17 +630,21 @@ export function emitParamBindingFromArgs(
   // rest 绑定是否已在 RestElement 处提前发射（模式 rest 参的 destructure
   // 行引用 `_rest{i}`，尾置绑定 = TDZ ReferenceError）
   let restBoundEarly = false;
+  // Bug 181：共享解构临时名计数器 + 与用户标识符避让
+  const tmpSeq = opts.destrTmpSeq ?? { n: 0 };
+  const userInfo = userIdentInfo(opts.source);
+  bumpDestrTmpSeq(tmpSeq, userInfo);
   params.forEach((p, i) => {
     if (p.type === "RestElement") {
       if (p.argument.type === "Identifier") {
         rest = p.argument.name;
       } else {
-        rest = `_rest${i}`;
+        rest = safeTmpName(`_rest${i}`, userInfo);
         restBoundEarly = true;
         // rest 语法上必为末参 → namedCount 此处已终值
         prologue.push(`${pad}let ${rest} = $arrRest(${argsSrc}, ${namedCount});`);
         // Bug 161：形参 rest 绑定可变
-        emitDestructure(p.argument, rest, "let", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
+        emitDestructure(p.argument, rest, "let", pad, opts, prologue, tmpSeq);
       }
       return;
     }
@@ -583,15 +659,15 @@ export function emitParamBindingFromArgs(
       if (p.left.type === "Identifier") {
         prologue.push(`${pad}let ${p.left.name} = $orDefault(${idxSrc}, () => ${def});`);
       } else {
-        const t = `_pd${i}`;
+        const t = safeTmpName(`_pd${i}`, userInfo);
         prologue.push(`${pad}let ${t} = $orDefault(${idxSrc}, () => ${def});`);
         // Bug 161：默认参的解构绑定可变
-        emitDestructure(p.left, t, "let", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
+        emitDestructure(p.left, t, "let", pad, opts, prologue, tmpSeq);
       }
       return;
     }
     if (p.type === "ObjectPattern" || p.type === "ArrayPattern") {
-      emitDestructure(p, idxSrc, "let", pad, opts, prologue, opts.destrTmpSeq ?? { n: 0 });
+      emitDestructure(p, idxSrc, "let", pad, opts, prologue, tmpSeq);
     }
   });
   if (rest && !restBoundEarly) {

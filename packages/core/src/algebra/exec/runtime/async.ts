@@ -48,6 +48,22 @@ export function wrapPromiseAbs(inner: Abs): Abs {
 }
 
 /**
+ * Bug 141：拒绝 promise（async generator 的 .throw() 面——原生返拒绝
+ * promise，不同步抛）。inner = never（fulfilled 臂不可能），reason 走
+ * rejected 通道。
+ */
+function rejectedPromiseAbs(reason: Abs): Abs {
+  return markFreshInstance(
+    abs(
+      { k: "eff", eff: "promise", inner: never, rejected: asAbsVal(reason) },
+      undefined,
+      undefined,
+      "path",
+    ),
+  );
+}
+
+/**
  * async 函数体包进 thunk，返回值经 wrapPromise。
  * 原生语义：async 函数体 throw 不同步抛出调用点——调用恒返回 promise，
  * 体抛错 ⇒ 确定拒绝（inner=never：fulfilled 臂不可能；rejected 通道携带
@@ -258,6 +274,14 @@ function genSelfIteratorFn(g: Abs): Abs {
     apply: (_args: Abs[], thisVal?: Abs) => thisVal ?? g,
   }, { ctor: false });
 }
+/**
+ * Bug 141：async generator 协议面——@@asyncIterator 自返方法（原生
+ * %AsyncGeneratorPrototype%[Symbol.asyncIterator] 是 function(){ return
+ * this; }——与同步面的 @@iterator 同款自返语义，故复用同一闭包）与
+ * @@toStringTag = "AsyncGenerator"（Object.prototype.toString 折
+ * "[object AsyncGenerator]"）。同步生成器不装 @@asyncIterator（原生
+ * async generator 不可 for-of 迭代——只有 @@asyncIterator 面）。
+ */
 function makeGenObject(
   els: Abs[],
   conf: Confidence,
@@ -266,11 +290,16 @@ function makeGenObject(
   full: Abs[],
   ctxs: number[],
   exact = false,
+  /** Bug 141：async generator 模式——迭代结果 promise 交付 + async 面槽 */
+  asyncMode = false,
 ): Abs {
   const state = { i: 0, done: false, poisoned: false };
   const live: Abs[] = [...full];
   const iterResultUnknown = (): Abs =>
     joinAbs(genIterResult(unknown, true), genIterResult(unknown, false));
+  // Bug 141：async generator——迭代结果经 promise 交付（原生 next() 返
+  // promise<iterResult>）
+  const deliver = (v: Abs): Abs => (asyncMode ? wrapPromiseAbs(v) : v);
   const next = $fnVal([], (): Abs => {
     // Bug 34：消费点重放——体内 soft may-throw 重记进当前帧（gate 面），
     // definite 载荷在 yield 前缀耗尽后抛（首个触达抛点的 next()）
@@ -278,20 +307,23 @@ function makeGenObject(
       for (const e of deferred.soft) recordMayThrow(e);
     }
     // Bug 52：.return/.throw 后续体不可判——不再给出定值
-    if (state.poisoned) return iterResultUnknown();
+    if (state.poisoned) return deliver(iterResultUnknown());
     if (state.done || state.i >= full.length) {
       if (!state.done) {
         state.done = true;
-        if (deferred?.throw !== undefined) throw new NudoThrow(deferred.throw);
+        if (deferred?.throw !== undefined) {
+          if (!asyncMode) throw new NudoThrow(deferred.throw);
+          return deliver(rejectedPromiseAbs(deferred.throw));
+        }
         // Bug 2：终末 return 值在首个 done:true 交付（此后 native 回 undefined）
-        return genIterResult(retVal, true);
+        return deliver(genIterResult(retVal, true));
       }
-      return genIterResult(undef(), true);
+      return deliver(genIterResult(undef(), true));
     }
     const v = full[state.i]!;
     state.i++;
     if (live.length > 0) live.shift();
-    return genIterResult(v, false);
+    return deliver(genIterResult(v, false));
   });
   // Bug 52：挂起点 = 最近一次 next() 交付的 yield（未启动/已耗尽 → 无挂起）
   const suspendedCtx = (): number =>
@@ -305,16 +337,16 @@ function makeGenObject(
         // finally 可再交付（yield）或覆盖（return）→ 值并 unknown、
         // done 并 boolean；续体不可判（poisoned）
         state.poisoned = true;
-        return joinAbs(genIterResult(v, true), genIterResult(unknown, false));
+        return deliver(joinAbs(genIterResult(v, true), genIterResult(unknown, false)));
       }
       if (ctx & YIELD_FINALLY_RETURNS) {
         // finally 无 yield：完成路径必 done:true；return 可覆盖注入值 →
         // 值并 unknown。后续 next() → {undefined, true}（native 完成语义）
-        return joinAbs(genIterResult(v, true), genIterResult(unknown, true));
+        return deliver(joinAbs(genIterResult(v, true), genIterResult(unknown, true)));
       }
       // finally 仅副作用（eager 收集期已执行）→ 注入值精确透传（native）
     }
-    return genIterResult(v, true);
+    return deliver(genIterResult(v, true));
   });
   const thr = $fnVal([], (...args: Abs[]): Abs => {
     const e = args.length > 0 ? args[0]! : undef();
@@ -340,11 +372,13 @@ function makeGenObject(
       const delegatedGen = (ctx & YIELD_DELEGATED_GEN) !== 0;
       const remaining = full.length - state.i;
       if (!catchYields && !rethrowsIntoCatch && !delegatedGen && remaining <= 0) {
-        return genIterResult(unknown, true);
+        return deliver(genIterResult(unknown, true));
       }
       state.poisoned = true;
-      return iterResultUnknown();
+      return deliver(iterResultUnknown());
     }
+    // Bug 141：async generator 的 .throw() 返回**拒绝 promise**（原生不同步抛）
+    if (asyncMode) return deliver(rejectedPromiseAbs(e));
     throw new NudoThrow(e);
   });
   const slots: Record<string, { value: Abs }> = {
@@ -359,7 +393,15 @@ function makeGenObject(
   const g = abs({ k: "obj", slots }, undefined, undefined, conf);
   // Bug 83：@@iterator 自返槽——闭包捕获 g（槽值在 g 落地后驻留；
   // shape 按引用共享，此处写入即生效）
-  slots["@@iterator"] = { value: genSelfIteratorFn(g) };
+  // Bug 141：async generator 装 @@asyncIterator（自返）+ @@toStringTag
+  // （"[object AsyncGenerator]"）——不装 @@iterator（原生 async generator
+  // 只有 async 迭代面）。
+  if (asyncMode) {
+    slots["@@asyncIterator"] = { value: genSelfIteratorFn(g) };
+    slots["@@toStringTag"] = { value: strLit("AsyncGenerator") };
+  } else {
+    slots["@@iterator"] = { value: genSelfIteratorFn(g) };
+  }
   registerGenElements(g, live);
   registerGenDrain(g, {
     drain: (): Abs[] => {
@@ -394,8 +436,11 @@ function makeGenObject(
  * Bug 53：侧表/next() 消费完整收集序列（ys.els）——$arr >cap widen 只影响
  * 形状槽（类型面），不再把 >8 yield 截断成单元素流。
  * Bug 52：yield 点 try 上下文（ys.ctxs，$yield 第二实参）随序列传递——
- * .return()/.throw() 挂起点语义见 makeGenObject。 */
-export function $gen(body: () => Abs): Abs {
+ * .return()/.throw() 挂起点语义见 makeGenObject。
+ * Bug 141：asyncMode（第二实参）= async generator 面——迭代结果经 promise
+ * 交付（next/return/throw 返 promise）、装 @@asyncIterator 自返槽与
+ * @@toStringTag "AsyncGenerator"（原生 async function* / async * 方法）。 */
+export function $gen(body: () => Abs, asyncMode = false): Abs {
   const ys: GenYieldCollector = { els: [], ctxs: [] };
   const marker = genPathSensitive;
   const prevOverride = genJoinOverride;
@@ -463,6 +508,7 @@ export function $gen(body: () => Abs): Abs {
       ys.els,
       ctxs,
       false,
+      asyncMode,
     );
   }
   setGenJoinOverride(prevOverride);
@@ -478,11 +524,12 @@ export function $gen(body: () => Abs): Abs {
       ys.els,
       ctxs,
       false,
+      asyncMode,
     );
   }
   // R1b：线性收集（非路径敏感）→ drain 视图 exact：消费端重组数组可越过
   // TUPLE_LITERAL_CAP 出 exact 元组（路径敏感拼接序列不可，退 widened arr）
-  return makeGenObject(els, arr.conf, ret, deferred, ys.els, ctxs, true);
+  return makeGenObject(els, arr.conf, ret, deferred, ys.els, ctxs, true, asyncMode);
 }
 
 /** yield v：压入当前生成器收集器；表达式值用 unknown。

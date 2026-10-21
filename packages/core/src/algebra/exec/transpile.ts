@@ -5,6 +5,12 @@
  *
  * 实现按语句/表达式/模式拆在 transpile/*.ts；本文件是 re-export facade，
  * 对外符号面保持不变（exec/index.ts `export * from "./transpile.ts"`）。
+ *
+ * 不变量（解构临时名，Bug 181）：
+ * - 模块级解构临时名计数器（`destrTmpSeq`）在**创建处**即预置避让：序号
+ *   推过用户已占用的 `_d{n}` / `_n{n}` ⇒ 首次分配（模块首条语句即解构
+ *   声明）也拿不到与用户同名绑定重复的临时名（重复词法声明 ⇒ SyntaxError
+ *   ⇒ 整模块求值失败 ⇒ 导出退化 unknown）。
  */
 import type { File, Expression, Statement, Node } from "@babel/types";
 import { parseSource } from "../parse-source.ts";
@@ -16,7 +22,12 @@ export {
   foldStaticStringExpr,
   foldRequireSpecArg,
 } from "./transpile/helpers.ts";
-import { collectVarHoistNames, collectExportVarNames } from "./transpile/helpers.ts";
+import {
+  collectVarHoistNames,
+  collectExportVarNames,
+  userIdentInfo,
+  bumpDestrTmpSeq,
+} from "./transpile/helpers.ts";
 export { transpileBodyNode } from "./transpile/stmt.ts";
 export { transpileExpression } from "./transpile/expr.ts";
 
@@ -34,6 +45,12 @@ export function transpileFile(file: File, opts: TranspileOptions = {}): string {
   const runtime = opts.runtimeImport ?? "@nudojs/core/exec";
   // Bug 15：解构临时名单调计数器（跨语句/prologue 唯一，与源行号解耦）
   const destrTmpSeq = opts.destrTmpSeq ?? { n: 0 };
+  // Bug 181：计数器创建处**预置避让**——用户自己声明了 `_d{n}` / `_n{n}`
+  // 时，**首次分配**（模块**首条语句**即解构声明）在避让生效前就拿到了
+  // `_d0` ⇒ 与用户同名绑定重复词法声明（SyntaxError ⇒ 整模块求值失败 ⇒
+  // 导出退化 unknown + 假 nudo:opaque-result）。此处把序号**推过**用户
+  // 占用的最大序号，首次分配起即安全（`_d`/`_n` 共用同一序号源）。
+  bumpDestrTmpSeq(destrTmpSeq, userIdentInfo(opts.source));
   // Bug 42：try 临时名单调计数器（`__nudoTm_`/`__nudoE_` 同口径）
   const tryTmpSeq = opts.tryTmpSeq ?? { n: 0 };
   // Bug 21：模块级 var 提升（模块体是单作用域——块内 var 提升到模块顶；
