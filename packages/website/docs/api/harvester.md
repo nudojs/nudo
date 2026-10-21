@@ -175,7 +175,7 @@ See also [Language Semantics — mock boundary](../concepts/semantics.md#mock-bo
 | <a id="depscacheroot"></a>`depsCacheRoot` | fn | 依赖包层缓存根（跨项目）；off/0 关闭 | `depsCacheRoot(): string \| undefined` |
 | <a id="dtsclosurehash"></a>`dtsClosureHash` | fn | dts 闭包内容哈希（覆盖每个实际读到的文件，不只入口） | `dtsClosureHash(files: string[]): string` |
 | <a id="dtscontractdraft"></a>`DtsContractDraft` | type | — | `DtsContractDraft = { label: string; files: string[]; exports: DtsExportDraft[]; draftSource: string; stats: { files: number; exports: num...` |
-| <a id="dtsexportdraft"></a>`DtsExportDraft` | type | — | `DtsExportDraft = { name: string; dsl?: string; note?: string; kind: "function" \| "value" \| "class" \| "other"; }` |
+| <a id="dtsexportdraft"></a>`DtsExportDraft` | type | — | `DtsExportDraft = { name: string; dsl?: string; note?: string; kind: "function" \| "value" \| "class" \| "other"; partial?: boolean; }` |
 | <a id="dtspathtocontractdraft"></a>`dtsPathToContractDraft` | fn | 目录/文件入口：内部解析 .d.ts 列表。 | `dtsPathToContractDraft( path: string, label?: string, ): DtsContractDraft` |
 | <a id="dtstocontractdraft"></a>`dtsToContractDraft` | fn | 从 .d.ts 路径列表生成契约草稿（不写盘）。 | `dtsToContractDraft( dtsFiles: string[], label?: string, ): DtsContractDraft` |
 | <a id="emitenvmodule"></a>`emitEnvModule` | fn | — | `emitEnvModule(env: HarvestedEnv, pkgName: string): string` |
@@ -207,7 +207,7 @@ See also [Language Semantics — mock boundary](../concepts/semantics.md#mock-bo
 | <a id="packageharvest"></a>`PackageHarvest` | type | — | `PackageHarvest = { pkg: string; root: string; dtsFiles: string[]; env: HarvestedEnv; }` |
 | <a id="packageharvesttoabsmodules"></a>`packageHarvestToAbsModules` | fn | — | `packageHarvestToAbsModules( pkg: string, h: PackageHarvest, ): Record<string, AbsModuleExports>` |
 | <a id="readharvestdisk"></a>`readHarvestDisk` | fn | — | `readHarvestDisk(root: string, key: string): HarvestJson \| undefined` |
-| <a id="resolvepackageroot"></a>`resolvePackageRoot` | fn | 在 node_modules 中解析包根（含 @types/*） | `resolvePackageRoot( pkg: string, fromDir: string = process.cwd(), ): string \| undefined` |
+| <a id="resolvepackageroot"></a>`resolvePackageRoot` | fn | 在 node_modules 中解析包根（含 @types/*）。 | `resolvePackageRoot( pkg: string, fromDir: string = process.cwd(), ): string \| undefined` |
 | <a id="serializeharvestjson"></a>`serializeHarvestJson` | fn | — | `serializeHarvestJson( pkg: string, env: HarvestedEnv, meta: { dtsHash: string; maxFiles: number; pkgVersion?: string }, ): HarvestJson` |
 | <a id="summarizenodeenv"></a>`summarizeNodeEnv` | fn | 把 harvest 结果压成「模块名 → 导出名列表」摘要，便于日志/测试 | `summarizeNodeEnv(env: HarvestedEnv)` |
 | <a id="writeharvestdisk"></a>`writeHarvestDisk` | fn | — | `writeHarvestDisk(root: string, key: string, value: HarvestJson): void` |
