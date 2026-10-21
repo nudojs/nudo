@@ -134,6 +134,11 @@ export function registerGenDeferred(val: Abs, deferred: GenDeferred): void {
 // makeProxyAbs 的 brand "Proxy"（inner = target Abs）只承载靶形态；
 // target/handler 引用挂本表——get/has/set 陷阱派发（$get/$set/$in）与
 // 无陷阱回退读靶用。独立于 error.ts（leaf 模块，无环）。
+//
+// Bug 300：proxyTrapOf 的陷阱名联合补 "getOwnPropertyDescriptor"
+// （[[GetOwnProperty]]）——此前该陷阱**从不派发**（handler 提供的描述符被
+// 无视，描述符面退化成「靶面 | undefined」并定抛）。ownKeys 陷阱不走本表
+// （proxyOwnKeysTrapKeys 直读 handler 槽，见 builtins/object/descriptor.ts）。
 
 export interface ProxyParts {
   target: Abs;
@@ -173,7 +178,11 @@ export function proxyTrapOf(
     | "setPrototypeOf"
     | "preventExtensions"
     | "getPrototypeOf"
-    | "construct",
+    | "construct"
+    // Bug 300：[[GetOwnProperty]] 陷阱（getOwnPropertyDescriptor）——此前
+    // 陷阱名并集里没有它 ⇒ 陷阱**从不派发**（handler 提供的描述符被无视，
+    // 描述符面退化成「靶面 | undefined」并定抛）。
+    | "getOwnPropertyDescriptor",
 ): ProxyTrap {
   if (!handler) return { k: "opaque" };
   const s = handler.shape;

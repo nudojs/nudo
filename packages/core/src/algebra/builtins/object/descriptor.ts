@@ -18,6 +18,21 @@
  *   侧表派发（getter 读折返回体、setter 写走侧表不误抛 writable:false）；
  *   描述符字段语义 = 新建属性缺省 false、已有属性仅显式 false 收紧；
  *   open/index 标记与 invariants/accessor 侧表随不可变更新迁移。
+ * - Bug 292：描述符字段语义改按 ES2024 10.4.5 ToPropertyDescriptor 的
+ *   **字段存在性**（HasProperty）——`get: undefined` 仍是「有 get 字段」
+ *   （⇒ 与 value/writable 共存 → 定抛）、`writable/enumerable/configurable:
+ *   undefined` ⇒ ToBoolean → false（收紧，不是「缺省保持原状」）。
+ *   安装机器实现 ValidateAndApplyPropertyDescriptor（10.4.9）：目标已有键
+ *   且**不可配置**时，标志/值/访问机制不可变（不可配置 / 枚举改 / 写门改 /
+ *   值改 / 数据↔访问器互转 → 重定义失败）；目标为**新键**且不可扩展 → 失败。
+ *   已有属性的标志**双向**应用描述符显式字段（未指定字段保持当前值）——
+ *   enumerable:false → enumerable:true 可恢复（此前只单向收紧，永不恢复）。
+ *   失败信号分两面：Object 口径定抛 TypeError（applyPropertyDescriptor）、
+ *   Reflect 口径返 false 不抛（applyPropertyDescriptorVerdict）。
+ * - Bug 300：Proxy [[GetOwnProperty]] 陷阱的单一实现
+ *   （proxyGetOwnPropDescTrap：派发 + ToPropertyDescriptor 非对象 → 定抛 +
+ *   completePropDescAbs 补全描述符）——Reflect 面在 builtins/reflect.ts
+ *   调用；Object 面需在 builtins/object/methods.ts 接线（越界诉求见报告）。
  * - Bug 86：tuple 接收者不再静默丢弃——下标键逐位装（增长段 hole、
  *   空描述符清 hole）、length 键截断/延长（非法 RangeError）、
  *   {writable:false} length 以 sealed 近似、frozen 相同值重定义放行。
@@ -42,7 +57,7 @@
  */
 
 import type { Abs } from "../../abs.ts";
-import { abs, litValue, strLit, boolLit, unknown } from "../../abs.ts";
+import { abs, litValue, strLit, boolLit, numLit, unknown } from "../../abs.ts";
 import {
   joinAbs,
   objOf,
@@ -253,12 +268,119 @@ export function validateDescriptorObject(descAbs: Abs | undefined, what: string)
 }
 
 /**
+ * Bug 292：目标的**当前**自有属性描述符（ValidateAndApplyPropertyDescriptor
+ * 的 current 面）——obj / brand 内层 obj / tuple 三类。
+ *
+ * - exists：自有键存在（obj 走槽表自有判定；tuple 走「下标在界内且非 hole」
+ *   或 "length"）；
+ * - isAccessor：访问器侧表命中（访问器真身住侧表，槽里只留占位）；
+ * - value：数据属性的当前值（Abs 原样，供 SameValue 比对）；
+ * - writable/enumerable/configurable：当前标志——**缺省**取原生默认
+ *   （数据属性可写/可枚举/可配置；数组 length 不可枚举/不可配置），
+ *   标志表有记录则以其为准；**不可扩展等级**（frozen/sealed）额外强制
+ *   不可写/不可配置（freeze/seal 的逐键落地由对象面负责，此处按等级兜底）；
+ * - extensible：目标是否仍可扩展（seal/freeze/preventExtensions → 否）。
+ */
+type CurrentPropDesc = {
+  exists: boolean;
+  isAccessor: boolean;
+  value: Abs | undefined;
+  writable: boolean;
+  enumerable: boolean;
+  configurable: boolean;
+  extensible: boolean;
+};
+
+function currentPropDesc(a0: Abs, key: string): CurrentPropDesc {
+  const st = extStateOf(a0);
+  const holder = a0.shape.k === "brand" ? a0.shape.shape : a0;
+  const hst = holder !== a0 ? extStateOf(holder) : undefined;
+  const frozen = st === "frozen" || hst === "frozen";
+  const sealed = st === "sealed" || hst === "sealed";
+  const nonext = st === "nonext" || hst === "nonext";
+  if (holder.shape.k === "obj") {
+    const slots = (holder.shape as ObjShape).slots as Record<string, { value: Abs }>;
+    const own = Object.prototype.hasOwnProperty.call(slots, key);
+    // 标志表：defineProperty 把 flags 记在**接收者**上（brand → brand；
+    // obj → obj）；内层 obj 的表作为兜底（原型对象的原地安装口径）。
+    const f =
+      getPropFlags(a0)?.get(key) ??
+      (holder !== a0 ? getPropFlags(holder)?.get(key) : undefined);
+    return {
+      exists: own,
+      isAccessor: own && lookupObjAccessor(holder, key) !== undefined,
+      value: own ? slots[key]?.value : undefined,
+      writable: f?.writable ?? !frozen,
+      enumerable: f?.enumerable ?? true,
+      configurable: f?.configurable ?? !(frozen || sealed),
+      extensible: !frozen && !sealed && !nonext,
+    };
+  }
+  if (a0.shape.k === "tuple") {
+    const sh = a0.shape as { k: "tuple"; elements: Abs[]; holes?: number[]; rest?: Abs };
+    const holes = sh.holes ?? [];
+    const idx = canonicalArrayIndex(key);
+    const isLen = key === "length";
+    const inRange =
+      idx !== undefined && idx < sh.elements.length && !holes.includes(idx);
+    const f = getPropFlags(a0)?.get(key);
+    return {
+      exists: isLen || inRange,
+      isAccessor: false,
+      value: isLen ? numLit(sh.elements.length) : inRange ? sh.elements[idx!] : undefined,
+      writable: f?.writable ?? true,
+      enumerable: f?.enumerable ?? (isLen ? false : true),
+      configurable: f?.configurable ?? (isLen ? false : true),
+      extensible: !frozen && !sealed && !nonext,
+    };
+  }
+  // 其它形态（prim/arr/fn/brand 非 obj 内层/抽象）：自有键集不可判 ⇒ 保守
+  // 「不存在且可扩展」（不凭空造抛）。
+  return {
+    exists: false,
+    isAccessor: false,
+    value: undefined,
+    writable: true,
+    enumerable: true,
+    configurable: true,
+    extensible: true,
+  };
+}
+
+/**
+ * Bug 292：SameValue 比对（描述符 [[Value]] 与当前值的不可变判定）。
+ * - 两侧都是字面量 → Object.is；
+ * - 一侧字面量一侧确定非字面量（fn/obj/…）→ 必不同（false）；
+ * - 任一侧是抽象值（any/unknown/sum）或两侧皆非字面量 → **不可判**
+ *   （undefined）——不抛（宁可漏抛不假抛）。
+ */
+function sameAbsValue(a: Abs | undefined, b: Abs | undefined): boolean | undefined {
+  if (a === undefined || b === undefined) return undefined;
+  if (a === b) return true;
+  const abstract = (x: Abs): boolean =>
+    x.shape.k === "any" || x.shape.k === "unknown" || x.shape.k === "sum";
+  if (abstract(a) || abstract(b)) return undefined;
+  const ra = litValue(a);
+  const rb = litValue(b);
+  if (ra.ok && rb.ok) return Object.is(ra.value, rb.value);
+  if (ra.ok !== rb.ok) return false; // 一侧字面量一侧确定非字面量 → 必不同
+  return undefined; // 两侧皆非字面量（fn/obj…）→ 不可判
+}
+
+/**
  * Bug 8：defineProperty 的描述符读取 / 冲突校验 / 访问器侧表安装 /
  * 槽位与 flags 落地——defineProperties 逐键复用（单一机器，不复制）。
  * 返回应用描述符后的 target（不可变更新）。
  *
  * Bug 117：opts.symbolKey——键来自 symbol 投影（"@@iterator" 等，读写路径
  * symbolKeyOf 同口径）时，安装槽沿用该标记（JSON.stringify/枚举面跳过）。
+ *
+ * Bug 302：Object 口径（重定义失败 → **定抛 TypeError**）与 Reflect 口径
+ * （重定义失败 → **返 false 不抛**，ES2024 10.4.9 ValidateAndApplyProperty-
+ * Descriptor 返 false 的两种消费方式）分面——同一台机器，失败信号由
+ * applyPropertyDescriptorVerdict 暴露（描述符**非法**（ToPropertyDescriptor
+ * 错：非对象 / get-set 与 value-writable 共存 / get-set 不可调用）在两种
+ * 口径下都定抛）。
  */
 export function applyPropertyDescriptor(
   a0: Abs,
@@ -266,6 +388,43 @@ export function applyPropertyDescriptor(
   descAbs: Abs,
   opts?: { symbolKey?: boolean },
 ): Abs {
+  const r = applyPropertyDescriptorCore(a0, key, descAbs, opts);
+  if (!r.ok) throw new NudoThrow(errorTypeAbs("TypeError"));
+  return r.next;
+}
+
+/**
+ * Bug 302：Reflect 口径的 [[DefineOwnProperty]]——重定义失败（不可配置属性
+ * 改标志/值、不可扩展目标建新键、机制变化、冻结属性改值）返 ok:false
+ * （原生 Reflect.defineProperty 返 false **不抛**）；描述符非法仍定抛。
+ */
+export function applyPropertyDescriptorVerdict(
+  a0: Abs,
+  key: string,
+  descAbs: Abs,
+  opts?: { symbolKey?: boolean },
+): { ok: boolean; next: Abs } {
+  return applyPropertyDescriptorCore(a0, key, descAbs, opts);
+}
+
+function applyPropertyDescriptorCore(
+  a0: Abs,
+  key: string,
+  descAbs: Abs,
+  opts?: { symbolKey?: boolean },
+): { ok: boolean; next: Abs } {
+  /** 重定义失败信号（Object 口径由外层包装成 TypeError；Reflect 口径返 false） */
+  let rejected = false;
+  /** 重定义失败（内层安装机器用：返回原 target 不落地） */
+  const reject = (): Abs => {
+    rejected = true;
+    return a0;
+  };
+  /** 重定义失败（外层判定用：ok:false —— Reflect 口径返 false） */
+  const rejectResult = (): { ok: boolean; next: Abs } => {
+    rejected = true;
+    return { ok: false, next: a0 };
+  };
   const dslots = descAbs.shape.k === "obj" ? descAbs.shape.slots : {};
   /**
    * 描述符字段读取：区分「缺省」「显式 undefined」「字面量值」「函数/抽象」。
@@ -282,6 +441,9 @@ export function applyPropertyDescriptor(
   const getF = field("get");
   const setF = field("set");
   const valueF = field("value");
+  const writableF = field("writable");
+  const enumerableF = field("enumerable");
+  const configurableF = field("configurable");
   // get/set 非函数且非 undefined → TypeError（Getter must be a function）
   const invalidAccessor = (f: { present: boolean; v: unknown }): boolean =>
     f.present && f.v !== undefined && f.v !== "fn-or-abstract";
@@ -290,10 +452,26 @@ export function applyPropertyDescriptor(
   if (invalidAccessor(getF) || invalidAccessor(setF)) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
-  // value 与访问器共存 → TypeError（Invalid property. 'value' present on …）
-  const accessorPresent =
-    (getF.present && getF.v !== undefined) || (setF.present && setF.v !== undefined);
-  if (accessorPresent && valueF.present && valueF.v !== undefined) {
+  /**
+   * Bug 292：ToPropertyDescriptor 的**字段存在性**语义（ES2024 10.4.5）——
+   * 源描述符**有**该属性才置对应字段（HasProperty 口径）：
+   * - `get: undefined` 仍是「有 get 字段」⇒ 与 value/writable 共存 →
+   *   TypeError（原生 Invalid property descriptor）；此前把「值 === undefined」
+   *   当「字段缺省」⇒ `{get:undefined,value:1}` 静默折 1。
+   * - `writable/enumerable/configurable: undefined` ⇒ ToBoolean → false
+   *   （**收紧**，不是「缺省保持原状」）。
+   * 访问器描述符 = 有 get 或 set 字段；数据描述符 = 有 value 或 writable 字段。
+   */
+  const hasGet = getF.present;
+  const hasSet = setF.present;
+  const hasValue = valueF.present;
+  const hasWritable = writableF.present;
+  const hasEnumerable = enumerableF.present;
+  const hasConfigurable = configurableF.present;
+  const accessorPresent = hasGet || hasSet;
+  const genericPresent = hasValue || hasWritable;
+  // 访问器字段与 value/writable 共存 → TypeError（Invalid property）
+  if (accessorPresent && genericPresent) {
     throw new NudoThrow(errorTypeAbs("TypeError"));
   }
   // Bug 20：访问器描述符安装（此前只校验不安装——成员读折裸 undefined、
@@ -328,56 +506,112 @@ export function applyPropertyDescriptor(
   // Bug 23 臂折 undefined、已有键保留旧值），后续成员读/调用折 exact
   // undefined 与幻影 TypeError。字段存在性由 valueF（上方）判定。
   const valueAbs = getSlot(dslots as Record<string, { value: Abs }>, "value")?.value;
-  /** ToBoolean：非 undefined 描述符值按 truthiness（writable: 5 → true）；
-   *  抽象值保守不收紧 */
+  /**
+   * ToBoolean（ES2024 10.4.5：显式 undefined → false）：
+   * - 缺省（无该属性）→ undefined（**不**出现在返回的描述符里）；
+   * - 字面量 → Boolean(v)（undefined → false）；
+   * - 函数 → true（truthy）；抽象值 → undefined（不可判，不收紧）。
+   * 此前把「值 === undefined」当「字段缺省」⇒ 显式 undefined 的布尔字段被
+   * 当缺省（不收紧）——与原生不符。
+   */
   const toBool = (k: string): boolean | undefined => {
-    const f = field(k);
-    if (!f.present || f.v === undefined || f.v === "fn-or-abstract") return undefined;
-    return Boolean(f.v);
+    const s = dslots[k]?.value;
+    if (s === undefined) return undefined; // 缺省
+    const lvR = litValue(s);
+    if (lvR.ok) return Boolean(lvR.value);
+    if (s.shape.k === "fn") return true; // 函数 truthy
+    return undefined; // 抽象 → 不可判
   };
   const writable = toBool("writable");
   const enumerable = toBool("enumerable");
   const configurable = toBool("configurable");
-  // 描述符字段语义：**新建属性**未指定字段默认 false；**已有属性**
-  // （对象字面量属性默认可写/可枚举/可配置）未指定字段保持原状，
-  // 仅显式 false 才收紧。原生对已有 configurable:false 属性改描述符
-  // 抛 TypeError 的形态不建模。
-  const innerForExists =
-    a0.shape.k === "brand" ? a0.shape.shape : a0;
-  const exists =
-    innerForExists.shape.k === "obj" &&
-    Object.prototype.hasOwnProperty.call(innerForExists.shape.slots, key);
-  // Bug 84：机制变化判定（accessor→data）——旧 getter/setter 须随键从
-  // 侧表删除（putSlots 的 migrateAccessors omitKey），且已有 flags 作为
-  // 基底合并（此前 setPropFlags 整条覆写，把 accessor 安装期记下的
-  // enumerable:false 抹掉——Object.keys 假多键）。
-  const wasAccessor = exists && lookupObjAccessor(innerForExists, key) !== undefined;
-  // Bug 84：已有属性机制变化（data↔accessor）且 configurable:false → 原生
-  // ValidateAndApplyPropertyDescriptor 定抛（"Attempting to change access
-  // mechanism for an unconfigurable property"）；此前静默安装（data→accessor
-  // 假 getter 值 / accessor→data 侧表残留）
-  if (exists && wasAccessor !== accessorPresent) {
-    if (getPropFlags(innerForExists)?.get(key)?.configurable === false) {
-      throw new NudoThrow(errorTypeAbs("TypeError"));
+  /**
+   * Bug 292：ValidateAndApplyPropertyDescriptor（ES2024 10.4.9）——
+   * 目标是**已有键**时校验「不可配置 ⇒ 标志/值不可变」；目标是新键时补
+   * **非可扩展门**（原生：不可扩展对象上建新键 → TypeError）。此前两者皆无
+   * ⇒ ① writable:false 属性被 `{value:2}` 重定义（值真被改写）；② 不可配置
+   * 属性的 writable/configurable/enumerable 被改（且 enumerable:true 永不
+   * 恢复——标志表只单向置 false）；③ seal/freeze/preventExtensions 之后
+   * defineProperty 新键静默建键。
+   *
+   * 校验口径（node v26 实测 + ES2024 10.4.9 step 4-5）：
+   * - current.[[Configurable]] === false 时：
+   *   ① Desc.[[Configurable]] 显式 true → 拒；
+   *   ② Desc.[[Enumerable]] 显式且 ≠ current → 拒；
+   *   ③ 机制变化（数据 ↔ 访问器）→ 拒（native 两种方向都拒）；
+   *   ④ current 是访问器：Desc.[[Getter]]/[[Setter]] 显式且 ≠ current → 拒
+   *      （引擎的访问器侧表只存 thunk、不存原函数值 ⇒ SameValue 不可判，
+   *      **不抛**——宁可漏抛也不假抛，见报告「遗留」）；
+   *   ⑤ current 是数据且 [[Writable]] === false：Desc.[[Writable]] 显式
+   *      true → 拒；Desc.[[Value]] 显式且 ≠ current → 拒（SameValue）。
+   * - current.[[Writable]] === true 时：值/可写随 Desc 改（可写 true→false
+   *   收紧、值可换）——原生同款。
+   */
+  const cur = currentPropDesc(a0, key);
+  // 旧局部名的等价物（安装机器用）：自有键存在 / 当前是访问器属性
+  const exists = cur.exists;
+  const wasAccessor = cur.isAccessor;
+  if (!cur.exists) {
+    // 新键：不可扩展目标 → TypeError（Cannot define property … not extensible）
+    if (!cur.extensible) {
+      return rejectResult();
+    }
+  } else if (cur.configurable === false) {
+    if (hasConfigurable && configurable === true) {
+      return rejectResult();
+    }
+    if (hasEnumerable && enumerable !== undefined && enumerable !== cur.enumerable) {
+      return rejectResult();
+    }
+    // 机制变化（数据 ↔ 访问器）——不可配置属性上原生定抛
+    if (genericPresent && cur.isAccessor) {
+      return rejectResult();
+    }
+    if (accessorPresent && !cur.isAccessor) {
+      return rejectResult();
+    }
+    if (!cur.isAccessor && cur.writable === false) {
+      if (hasWritable && writable === true) {
+        return rejectResult();
+      }
+      if (hasValue) {
+        const same = sameAbsValue(valueAbs, cur.value);
+        if (same === false) return rejectResult();
+      }
     }
   }
-  const flags: PropFlags = exists
-    ? { ...(getPropFlags(innerForExists)?.get(key) ?? {}) }
+  /**
+   * 标志表（PropFlags）——**双向**应用描述符的显式字段：
+   * - 新建属性：未指定字段默认 false（原生：新建属性的 enumerable/
+   *   configurable/writable 缺省皆 false）；
+   * - 已有属性：未指定字段保持当前值（原生 partial 语义），显式字段
+   *   **覆盖**当前值（双向——此前只单向置 false ⇒ enumerable:true 永不
+   *   恢复、configurable 不可回收）。
+   */
+  const flags: PropFlags = cur.exists
+    ? cur.isAccessor
+      ? { enumerable: cur.enumerable, configurable: cur.configurable }
+      : { writable: cur.writable, enumerable: cur.enumerable, configurable: cur.configurable }
     : {};
-  if (exists) {
-    if (wasAccessor && !accessorPresent) {
-      // 机制变化 accessor→data（spec ValidateAndApplyPropertyDescriptor）：
-      // [[Writable]] 缺省 false；[[Enumerable]]/[[Configurable]] 沿 current
-      flags.writable = writable ?? false;
-    } else if (writable === false && !accessorPresent) {
-      flags.writable = false;
+  if (!cur.exists) {
+    if (genericPresent) {
+      flags.writable = hasWritable && writable !== undefined ? writable : false;
     }
-    if (enumerable === false) flags.enumerable = false;
-    if (configurable === false) flags.configurable = false;
+    flags.enumerable = hasEnumerable && enumerable !== undefined ? enumerable : false;
+    flags.configurable = hasConfigurable && configurable !== undefined ? configurable : false;
   } else {
-    if (writable !== true && !accessorPresent) flags.writable = false;
-    if (enumerable !== true) flags.enumerable = false;
-    if (configurable !== true) flags.configurable = false;
+    if (genericPresent && cur.isAccessor) {
+      // 机制变化 accessor→data：[[Writable]] = 显式值或缺省 false
+      flags.writable = hasWritable && writable !== undefined ? writable : false;
+    } else if (hasWritable && writable !== undefined && !accessorPresent) {
+      flags.writable = writable;
+    }
+    if (accessorPresent && !cur.isAccessor) {
+      // 机制变化 data→accessor：[[Writable]] 不适用（访问器属性由侧表派发）
+      delete flags.writable;
+    }
+    if (hasEnumerable && enumerable !== undefined) flags.enumerable = enumerable;
+    if (hasConfigurable && configurable !== undefined) flags.configurable = configurable;
   }
   let out = a0;
   // Bug 86：tuple 接收者——此前只装 obj/brand，tuple/arr 上的描述符被静默
@@ -390,26 +624,11 @@ export function applyPropertyDescriptor(
     const st = extStateOf(t);
     // Bug 86：flags 按元组存在性重导——length 恒自有（enumerable:false /
     // configurable:false）；已有下标元素默认可写可枚举可配置（重定义只收
-    // 紧显式 false；此前沿用 obj 臂的「新键全 false」→ entries/keys 假剔除）
-    const idxOf = canonicalArrayIndex(key);
-    const tExists =
-      key === "length" || (idxOf !== undefined && idxOf < sh.elements.length && !sh.holes?.includes(idxOf));
-    const tFlags: PropFlags = tExists ? { ...(getPropFlags(t)?.get(key) ?? {}) } : {};
-    if (tExists) {
-      if (key === "length") {
-        if (writable === false) tFlags.writable = false;
-        tFlags.enumerable = false;
-        tFlags.configurable = false;
-      } else {
-        if (writable === false && !accessorPresent) tFlags.writable = false;
-        if (enumerable === false) tFlags.enumerable = false;
-        if (configurable === false) tFlags.configurable = false;
-      }
-    } else {
-      if (writable !== true && !accessorPresent) tFlags.writable = false;
-      if (enumerable !== true) tFlags.enumerable = false;
-      if (configurable !== true) tFlags.configurable = false;
-    }
+    // 紧显式 false；此前沿用 obj 臂的「新键全 false」→ entries/keys 假剔除）。
+    // Bug 292：改用**共享**的标志推导（currentPropDesc + 描述符显式字段
+    // 双向覆盖）——tuple 的 length/下标与 obj 臂同口径（length 不可枚举/
+    // 不可配置；下标可配置）。
+    const tFlags: PropFlags = { ...flags };
     const frozenIdentical = (): boolean => {
       // frozen 上完全相同的数据重定义原生允许；可证不同 → TypeError
       if (valueF.present && valueF.v !== "fn-or-abstract") {
@@ -424,11 +643,12 @@ export function applyPropertyDescriptor(
     };
     if (key === "length") {
       // length 上的访问器描述符：原生 TypeError（数组 length 不可改访问机制）
-      if (accessorPresent) throw new NudoThrow(errorTypeAbs("TypeError"));
+      // —— 重定义失败（Reflect 口径返 false 不抛）
+      if (accessorPresent) return reject();
       if (!valueF.present) {
         // partial redefine（如 {writable:false}）：无值变化
         if (st === "frozen" && (writable === false || enumerable === false || configurable === false)) {
-          throw new NudoThrow(errorTypeAbs("TypeError"));
+          return reject();
         }
         if (writable === false) {
           // Bug 86：length 不可写——以 sealed 近似（$arrMutContainer/
@@ -439,7 +659,7 @@ export function applyPropertyDescriptor(
         return t;
       }
       if (st === "frozen") {
-        if (!frozenIdentical()) throw new NudoThrow(errorTypeAbs("TypeError"));
+        if (!frozenIdentical()) return reject();
         return t;
       }
       if (typeof valueF.v !== "number" || !Number.isInteger(valueF.v) || valueF.v < 0 || valueF.v > 4294967295) {
@@ -478,12 +698,13 @@ export function applyPropertyDescriptor(
     }
     const existsHere = idx < sh.elements.length && !sh.holes?.includes(idx);
     // 不可扩展语义：新下标（≥ length 或 hole 位）→ TypeError
+    // （重定义失败——Reflect 口径返 false 不抛）
     if ((st === "sealed" || st === "nonext") && !existsHere) {
-      throw new NudoThrow(errorTypeAbs("TypeError"));
+      return reject();
     }
     if (st === "frozen") {
       if (accessorPresent || !frozenIdentical()) {
-        throw new NudoThrow(errorTypeAbs("TypeError"));
+        return reject();
       }
       return t;
     }
@@ -642,7 +863,7 @@ export function applyPropertyDescriptor(
   };
   if (out.shape.k === "tuple") {
     out = putTuple(out);
-    return out;
+    return { ok: !rejected, next: out };
   }
   if (out.shape.k === "obj") {
     out = putSlots(out);
@@ -665,7 +886,7 @@ export function applyPropertyDescriptor(
     }
   }
   setPropFlags(out, key, flags);
-  return out;
+  return { ok: !rejected, next: out };
 }
 
 /** Bug 8：自有属性描述符对象（getOwnPropertyDescriptor(s) 共用的 exact 形态） */
@@ -729,6 +950,89 @@ export function readProperty(o: Abs, key: string): Abs {
       ? ((o.shape as ObjShape).slots as Record<string, { value: Abs }>)
       : undefined;
   return slots?.[key] ? slots[key]!.value : undefAbs();
+}
+
+/**
+ * Bug 300：Proxy [[GetOwnProperty]] 陷阱派发（**Object / Reflect 两面共用**
+ * 单一实现——Reflect 面在 builtins/reflect.ts 调本函数；Object 面需在
+ * builtins/object/methods.ts 的 "getOwnPropertyDescriptor" 分支接线，
+ * 属 A 分片地盘 ⇒ 越界诉求见报告）。
+ *
+ * - fn：陷阱可调用 → 派发（实参 (target, key)），结果经 ToPropertyDescriptor
+ *   **非对象 → TypeError**（原生 TypeError，node v26 实测）；
+ * - dead / opaque：陷阱不可调用 / 形态不可判 → opaque（调用方保守 unknown）；
+ * - absent：无该陷阱 → 调用方回退靶的 [[GetOwnProperty]]。
+ */
+export function proxyGetOwnPropDescTrap(
+  proxy: Abs,
+  keyAbs: Abs | undefined,
+): { k: "desc"; desc: Abs } | { k: "opaque" } | { k: "absent" } {
+  const parts = proxyPartsOf(proxy);
+  if (!parts) return { k: "absent" };
+  const trap = proxyTrapOf(parts.handler, "getOwnPropertyDescriptor");
+  if (trap.k === "fn") {
+    const r = $call(trap.fn, [parts.target, keyAbs ?? undefAbs()], parts.handler);
+    // ToPropertyDescriptor：非对象结果 → TypeError（原生同款）
+    const s = r.shape;
+    if (s.k === "prim" || s.k === "never") {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+    if (s.k === "any" || s.k === "unknown" || s.k === "sum") {
+      return { k: "opaque" };
+    }
+    return { k: "desc", desc: completePropDescAbs(r) };
+  }
+  if (trap.k === "dead" || trap.k === "opaque") return { k: "opaque" };
+  return { k: "absent" };
+}
+
+/**
+ * Bug 300：CompletePropertyDescriptor（ES2024 10.4.9）——把陷阱返回的
+ * **部分**描述符补全为完整描述符对象（缺省字段取原生默认：数据描述符的
+ * writable/enumerable/configurable 缺省 false；访问器描述符的 get/set 缺省
+ * undefined）。原生 Reflect/Object.getOwnPropertyDescriptor 返的是补全后的
+ * 描述符（不是 handler 的原对象）——两面口径一致。
+ */
+export function completePropDescAbs(desc: Abs): Abs {
+  if (desc.shape.k !== "obj") return desc;
+  const slots = (desc.shape as ObjShape).slots as Record<string, { value: Abs }>;
+  const has = (k: string): boolean => Object.prototype.hasOwnProperty.call(slots, k);
+  const slotVal = (k: string): Abs | undefined => slots[k]?.value;
+  const boolOf = (k: string): boolean => {
+    const v = slotVal(k);
+    if (v === undefined) return false; // 缺省 → 原生默认 false
+    const lvR = litValue(v);
+    if (lvR.ok) return Boolean(lvR.value);
+    // 对象形恒真；其余（抽象 prim）不可判 → 落缺省 false
+    const sh = v.shape.k;
+    if (sh === "obj" || sh === "arr" || sh === "tuple" || sh === "fn" || sh === "brand") {
+      return true;
+    }
+    return false;
+  };
+  const accessor = has("get") || has("set");
+  if (accessor) {
+    return abs(
+      {
+        k: "obj",
+        slots: {
+          get: { value: slotVal("get") ?? undefAbs() },
+          set: { value: slotVal("set") ?? undefAbs() },
+          enumerable: { value: boolLit(boolOf("enumerable")) },
+          configurable: { value: boolLit(boolOf("configurable")) },
+        },
+      },
+      undefined,
+      undefined,
+      "exact",
+    );
+  }
+  return mkPropDescAbs(
+    slotVal("value") ?? undefAbs(),
+    boolOf("writable"),
+    boolOf("enumerable"),
+    boolOf("configurable"),
+  );
 }
 
 /**
@@ -796,11 +1100,23 @@ export function enforceProxyDeleteInvariant(proxy: Abs, keyAbs: Abs | undefined)
  * @param entries 源的可枚举自有键值对（值已按源 [[Get]] 语义求值——getter
  *   由调用方求值；本函数只做目标侧 [[Set]] 分类与写）
  */
-export function assignIntoBrandInner(target: Abs, entries: Array<[string, Abs]>): void {
+/**
+ * 写进 brand 内层 obj 的键值对。
+ * Bug 295：条目可选带第三元 `symbolKey`（true = 该键是**真 symbol 键**）。
+ * 原生 `Object.assign(A.prototype, {a:1, [Symbol.toStringTag]:2})` 复制的是
+ * symbol 键本身——引擎内部把 symbol 键投影成 "@@X" 槽名，若标记在入参处
+ * 丢失，symbol 键会退化成普通字符串键（`"@@toStringTag"` 成为可枚举字符串
+ * 属性 ⇒ for-in / keys 家族把它当真键发布）。第三元缺席 = 普通字符串键。
+ */
+export type BrandAssignEntry = [string, Abs] | [string, Abs, boolean];
+
+export function assignIntoBrandInner(target: Abs, entries: BrandAssignEntry[]): void {
   const inner = target.shape.k === "brand" ? target.shape.shape : undefined;
   if (!inner || inner.shape.k !== "obj") return;
   const slots = (inner.shape as ObjShape).slots as Record<string, { value: Abs }>;
-  for (const [k, v] of entries) {
+  for (const entry of entries) {
+    const [k, v] = entry;
+    const symbolKey = entry.length > 2 ? entry[2] === true : false;
     const ownAcc = lookupObjAccessor(inner, k);
     if (ownAcc) {
       if (!ownAcc.set) throw new NudoThrow(errorTypeAbs("TypeError"));
@@ -810,7 +1126,7 @@ export function assignIntoBrandInner(target: Abs, entries: Array<[string, Abs]>)
     if (getSlot(slots, k) !== undefined && getPropFlags(inner)?.get(k)?.writable === false) {
       throw new NudoThrow(errorTypeAbs("TypeError"));
     }
-    setSlot(slots, k, { value: v });
+    setSlot(slots, k, symbolKey ? { value: v, symbolKey: true } : { value: v });
   }
 }
 

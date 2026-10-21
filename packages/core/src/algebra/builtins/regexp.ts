@@ -1,16 +1,26 @@
 /**
  * RegExp 构造 / brand / 实例方法
+ *
+ * Invariants:
+ * - RegExpExecArray 原生是**数组 exotic**（IsArray = true，继承
+ *   Array.prototype）⇒ 匹配结果既有**数组方法面**（join / slice / map…，
+ *   经 markMatchArrayView 侧表 + 数组方法派发），也有**可迭代面**
+ *   （spread / for-of / 数组解构）。后者经「@@iterator 槽（非枚举）+
+ *   元素侧表」给出（Bug 290）——形状仍是 obj（容器 arr/tuple 无侧槽，
+ *   #136 的槽读面依赖它）。
  */
 import type { Abs } from "../abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, unknown } from "../abs.ts";
-import { objOf } from "../objects.ts";
+import { objOf, setSlot } from "../objects.ts";
 import { undefAbs } from "../hof.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
 import { pTrue } from "../pred.ts";
-import { boolPrim, str, mayCoerceThrowOperand } from "./shared.ts";
+import { boolPrim, str, mayCoerceThrowOperand, noBody } from "./shared.ts";
 import { setPropFlags } from "./invariants.ts";
 import { isSymbolAbs } from "../symbol-id.ts";
+import { absFunction } from "../abs-fn.ts";
+import { registerTplElements } from "../exec/match-iter.ts";
 
 export function evalRegExpCtor(args: Abs[]): Abs {
   // 字面量实参真构造验证（非法 pattern/flags 硬抛）；抽象/RegExp 实例保守
@@ -220,6 +230,35 @@ export function isMatchArrayView(a: Abs): boolean {
   return matchArrayViews.has(a);
 }
 
+/**
+ * Bug 290：匹配结果的**可迭代面**（原生 RegExpExecArray 是数组 exotic ⇒
+ * 继承 Array.prototype[Symbol.iterator] ⇒ spread / for-of / 数组解构可
+ * 展开下标序列）。
+ *
+ * 修前：结果只是「带下标槽的 obj」——迭代面按 obj 臂判 **definite 不可
+ * 迭代** ⇒ `[...m]` / `for (const x of m)` / `const [a,b] = m` **定抛
+ * TypeError**（原生全部正常返回 ⇒ 假抛 + L1/L2 假红）。
+ *
+ * 修法（同 Bug 195 的模板对象口径）：obj 形状 + **@@iterator 槽**（非枚举
+ * ——原生该方法在原型上，自有槽只是引擎的投影面）+ **元素侧表**（下标
+ * 序列）⇒ iterabilityKind 判 total、elemsOf 取到精确元素。
+ */
+function markArrayIterable(a: Abs, els: Abs[]): void {
+  const slots = (a.shape as { slots: Record<string, { value: Abs }> }).slots;
+  // 协议槽口径同生成器对象（exec/runtime/async.ts）：internal + symbolKey
+  // ——枚举面 / gOPN / JSON 面不可见（原生该方法在 **原型**上，自有槽只是
+  // 引擎的投影面）
+  setSlot(slots, "@@iterator", {
+    value: absFunction([], { body: noBody }, { ctor: false }),
+    internal: true,
+    symbolKey: true,
+  } as { value: Abs; internal?: boolean; symbolKey?: boolean });
+  // 非枚举：Object.keys / 展开 / assign 面不得见（原生数组的 length 与
+  // Symbol.iterator 均非枚举自有属性）
+  setPropFlags(a, "@@iterator", { enumerable: false });
+  registerTplElements(a, els);
+}
+
 /** d 旗标（ES2022 hasIndices）捕获组区间 [start, end] → 精确二元元组 */
 function indexPairAbs(pair: readonly [number, number]): Abs {
   return abs({ k: "tuple", elements: [numLit(pair[0]), numLit(pair[1])] }, undefined, undefined, "exact");
@@ -241,9 +280,13 @@ export function matchResultAbs(m: RegExpExecArray): Abs {
     index: { value: numLit(m.index) },
     input: { value: strLit(m.input) },
   };
+  // Bug 290：下标序列（迭代面元素侧表用——原生数组 exotic 的展开序）
+  const els: Abs[] = [];
   for (let i = 0; i < m.length; i++) {
     const g = m[i];
-    slots[String(i)] = { value: g === undefined ? undefAbs() : strLit(g) };
+    const v = g === undefined ? undefAbs() : strLit(g);
+    slots[String(i)] = { value: v };
+    els.push(v);
   }
   const named = m.groups;
   slots["groups"] = {
@@ -259,6 +302,8 @@ export function matchResultAbs(m: RegExpExecArray): Abs {
       : undefAbs(),
   };
   const indices = m.indices;
+  // Bug 290：indices 镜像 obj 原生同为数组 exotic ⇒ 同样可迭代（下标元素侧表）
+  const iels: Abs[] = [];
   if (indices) {
     const islots: Record<string, { value: Abs }> = {
       length: { value: numLit(indices.length) },
@@ -268,6 +313,7 @@ export function matchResultAbs(m: RegExpExecArray): Abs {
       // lib 类型 [number, number]，但宿主对未参与捕获组实为 undefined
       const p = pair as readonly [number, number] | undefined;
       islots[String(i)] = { value: p ? indexPairAbs(p) : undefAbs() };
+      iels.push(p ? indexPairAbs(p) : undefAbs());
     }
     const igroups = indices.groups as Record<string, readonly [number, number] | undefined> | undefined;
     islots["groups"] = {
@@ -291,10 +337,14 @@ export function matchResultAbs(m: RegExpExecArray): Abs {
   // Array，一并标注
   setPropFlags(result, "length", { enumerable: false });
   markMatchArrayView(result);
+  // Bug 290：可迭代面（原生数组 exotic）——@@iterator 槽 + 下标元素侧表
+  markArrayIterable(result, els);
   const indicesAbs = slots["indices"]?.value;
   if (indicesAbs) {
     setPropFlags(indicesAbs, "length", { enumerable: false });
     markMatchArrayView(indicesAbs);
+    // indices 镜像 obj 原生同为数组 exotic ⇒ 同样可迭代
+    markArrayIterable(indicesAbs, iels);
   }
   return result;
 }

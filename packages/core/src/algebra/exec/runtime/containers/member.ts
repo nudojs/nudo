@@ -49,6 +49,13 @@
  *   调用折 <abs:never>（自信的错值：原生返回集合迭代器）。Map/Set 的该成员
  *   产出 **live 视图**集合迭代器（collectionIteratorFor），投影口径同原生：
  *   Map → [k,v] 元组（entries），Set → 元素本身（values，非 [el,el]）。
+ * - Bug 291：fn 臂的**不变性写门**与 obj 臂同款——frozen 全写 strict
+ *   TypeError；sealed/nonext 新键 TypeError（函数亦是不可扩展对象）。
+ * - Bug 315：本模块向 builtins/object-proto.ts 注册**接收者 toString 解析
+ *   钩子**（Object.prototype.toLocaleString 委派 this.toString()）——注册式
+ *   注入断开 builtins↔exec 的 import 环（同 protoMethodDispatch 口径）。
+ * - Bug 325：fn impl 的 kind 值域含 "async-generator"（与 "generator" 同有
+ *   原生 prototype）——prototype 面读该戳。
  */
 import type { Abs } from "../../../abs.ts";
 import { abs, boolLit, confJoin, litValue, numLit, str, strLit, unknown } from "../../../abs.ts";
@@ -95,10 +102,15 @@ import {
   makeIntlCtorAbs,
 } from "../../../builtins.ts";
 import { arrayMethodAbs } from "../../../builtins/array.ts";
+// Bug 315：接收者 toString 解析钩子注册（直连 builtins/object-proto.ts，
+// 不经 barrel——barrel 未导出该注册函数，且本分片不改 barrel；同下方
+// collectionIteratorFor / isMatchArrayView 的直连口径）。
+import { setReceiverToStringResolver } from "../../../builtins/object-proto.ts";
 // Bug 198（S20）：集合迭代器的 **live 视图** 构造器（collectionIteratorFor）——
 // 直连 builtins/error/iterator.ts，不经 barrel（与 iterate.ts 同款口径；barrel
 // 未导出该函数，且本分片不改 barrel）。
 import { collectionIteratorFor } from "../../../builtins/error/iterator.ts";
+import { urlSearchParamsSizeAbs } from "../../../builtins/error/web.ts";
 // Bug 195：数组视图标注（模板对象 / RegExp exec 结果——原生都是**数组 exotic**）
 // 判身份；直连 builtins/regexp.ts 不经 barrel（与 iterate.ts 同款口径）。
 import { isMatchArrayView } from "../../../builtins/regexp.ts";
@@ -668,6 +680,21 @@ export function setProtoMethodDispatch(
  *  同条目重复读返回同一 Abs 引用 → 同 ref 臂折 true。 */
 const classMethodValues = new WeakMap<EvalClassSpec, Map<string, Abs>>();
 
+/**
+ * Bug 325：类方法的函数种类戳（spec 下传）——实例方法取 methodKinds、
+ * 静态方法取 staticMethodKinds；手写 spec（mock 等）无该字段 → undefined
+ * （读取面按保守 "Function" 标签）。
+ */
+function fnKindOfSpec(
+  spec: EvalClassSpec,
+  kind: "static" | "inst",
+  key: string,
+): "function" | "async" | "generator" | "async-generator" | undefined {
+  const table = kind === "static" ? spec.staticMethodKinds : spec.methodKinds;
+  if (!table) return undefined;
+  return table[key];
+}
+
 function classMethodValueAbs(
   spec: EvalClassSpec,
   kind: "static" | "inst",
@@ -696,6 +723,13 @@ function classMethodValueAbs(
       apply: (args, thisVal) =>
         protoMethodDispatch?.(spec.name, key, thisVal, args) ?? unknown,
       kind: "protoMethod",
+      // Bug 325：类方法的**函数种类**戳（async × generator 四象限）——
+      // 原生类方法标签面随种类变（"[object AsyncFunction]" 等）。种类从
+      // spec 下传（methodKinds / staticMethodKinds；transpile 期记录）。
+      // 与 impl.kind（派发角色维度）分开。
+      ...(fnKindOfSpec(spec, kind, key) !== undefined
+        ? { fnKind: fnKindOfSpec(spec, kind, key)! }
+        : {}),
     }, { ctor: false }),
   );
   byKey.set(memoKey, fn);
@@ -844,7 +878,14 @@ export function $get(
           const isIntlSub = ns === "Intl" && INTL_SUB_CTORS.has(key);
           return absFunction([`${ns}.${key}`], {
             body: noBody,
-            apply: (args) => evalNamespaceCall(ns, key, args) ?? unknown,
+            // Bug 311：命名空间静态方法值被**单独读出再调用**时，this 绑定
+            // 必须转发进静态派发（原生 Promise.resolve 是以 this 为接收者的
+            // 普通函数——this 非构造器 ⇒ TypeError）。thisVal 缺席（JS
+            // undefined）= 「this 是 undefined」——原生同样抛（this 非
+            // 构造器）；直接命名空间调用（`Promise.resolve(1)`）走
+            // $invoke → evalNamespaceCall 的**无 this** 通道，不经本钩子。
+            apply: (args, thisVal) =>
+              evalNamespaceCall(ns, key, args, thisVal ?? undef()) ?? unknown,
           }, {
             ...(ctor !== undefined ? { ctor } : undefined),
             ...(isIntlSub ? { name: `${ns}.${key}` } : undefined),
@@ -1073,6 +1114,8 @@ export function $get(
     // JS Map/Set 的 size 是属性不是方法；brand 内层为空 obj，须在 $get 委托
     if (key === "size" && builtinHome === "Map") return mapSizeAbs(o);
     if (key === "size" && builtinHome === "Set") return setSizeAbs(o);
+    // Bug 322：URLSearchParams 的 size 同款（原生是 getter）——条目数
+    if (key === "size" && builtinHome === "URLSearchParams") return urlSearchParamsSizeAbs(o);
     const inner = o.shape.shape;
     // 自有数据属性优先于原型访问器（原生属性查找：own → prototype）
     // 必须 getSlot：constructor/toString 等键裸读会踩宿主 Object.prototype
@@ -1252,6 +1295,22 @@ export function $get(
     if (!isClassVal && BUILTIN_BRAND_ACCESSORS[o.shape.name]?.has(key)) {
       return unknown;
     }
+    // Bug 332 顺带：**未建模**的 Intl 子构造器（Collator / Locale / …）的
+    // **实例方法面**读出 exact undefined（原生恒有该方法——`new
+    // Intl.Collator().compare` 是函数）⇒ 自信错值。台账口径：Intl.<Sub>
+    // 的方法面 imprecise ⇒ 折 **unknown**（不是 undefined）。
+    //
+    // 只覆盖「该子构造器**确有的**成员」（原型方法表 + brand check 访问器
+    // 表）——其余键（如实例 `.name`——原生恒 undefined）仍折 exact
+    // undefined。
+    if (
+      !isClassVal &&
+      o.shape.name.startsWith("Intl.") &&
+      (BUILTIN_PROTO_METHODS[o.shape.name]?.has(key) ||
+        BUILTIN_PROTO_BRAND_CHECK[o.shape.name]?.has(key))
+    ) {
+      return unknown;
+    }
     return $get(inner, key, opts);
   }
   // dual-facet fn 静态槽（Number.isFinite / Array.isArray）：自有槽优先
@@ -1268,6 +1327,12 @@ export function $get(
   if (o.shape.k === "fn") {
     if (key === "name") {
       const nm = (o.shape as { name?: string }).name;
+      // Bug 332：Intl 子构造器的**内部派发键**（"Intl.Collator"）不得污染
+      // 原生 `fn.name`（原生是**非限定名**："Collator" / "NumberFormat"）。
+      // 派发键仍留在 shape.name（原型 brand 路由要它）⇒ 读面剥前缀。
+      if (typeof nm === "string" && nm.startsWith("Intl.")) {
+        return strLit(nm.slice("Intl.".length));
+      }
       return typeof nm === "string" && nm ? strLit(nm) : str();
     }
     if (key === "length") return $len(o);
@@ -1279,7 +1344,10 @@ export function $get(
       //（`g.prototype.constructor === g` 原生 false——真 constructor 是
       // GeneratorFunction.prototype，不回指 g）。箭头/async/方法保持
       // exact undefined（原生无 prototype）。
-      if ((getFnImpl(o) as { kind?: string } | undefined)?.kind === "generator") {
+      // Bug 325：async generator（kind:"async-generator"）同样有原生
+      // prototype（%AsyncGeneratorFunction.prototype%）⇒ 同款 brand 面。
+      const fnKind = getFnImpl(o)?.fnKind;
+      if (fnKind === "generator" || fnKind === "async-generator") {
         return generatorProtoBrandOf(o);
       }
       // Bug 243：Intl 子构造器（Intl.<Sub>）的 .prototype 是**真正的原型
@@ -1505,6 +1573,12 @@ export function $get(
  *  区分——后者就地突变会跨 run 泄漏，维持只读）。 */
 const userFnSlots = new WeakSet<object>();
 
+/** Bug 291：fn 是否有自有该键（expando 槽）——sealed/nonext 的新键写门用 */
+function hasFnOwnKey(o: Abs, key: string): boolean {
+  const slots = (o.shape as { slots?: Record<string, unknown> }).slots;
+  return !!slots && Object.prototype.hasOwnProperty.call(slots, key);
+}
+
 /**
  * Bug 205：宿主函数（转译的函数声明 / 函数表达式）**不是 Abs**——写面此前
  * 直接丢弃（`F.prototype = {}` 引擎完全无感：原型替换不可观测，instanceof
@@ -1569,6 +1643,19 @@ export function $set(
     // 重绑到它（`F = $set(F, "prototype", v)`），原型替换遂可观测。
     if (typeof o === "function" && key === "prototype") {
       return hostFnPrototypeSet(o as Function, value);
+    }
+    // Bug 291 顺带：宿主函数（转译的**函数声明**）的**任意键**写也要过
+    // 不变性门——原生 `Object.freeze(f); f.x = 1` 在 strict 下定抛 TypeError
+    // （函数亦是不可扩展对象）；此前非 prototype 键直接 no-op ⇒ 冻结的
+    // 函数声明仍可加新键（**假冻结**）。facade 取 asAbsVal 的**稳定门面**
+    // （同一宿主函数恒同一 Abs ⇒ extState / flags 跨调用可见）。
+    if (typeof o === "function") {
+      const facade = asAbsVal(o as Function);
+      const st = extStateOf(facade);
+      if (st === "frozen") throwStrictWrite();
+      if ((st === "sealed" || st === "nonext") && !hasFnOwnKey(facade, key)) {
+        throwStrictWrite();
+      }
     }
     return o;
   }
@@ -1788,6 +1875,13 @@ export function $set(
     // strict 写原生 TypeError；此前 fn 臂只建槽（flags 面完全没查）→
     // 写穿无声（假绿）。
     if (getPropFlags(o)?.get(key)?.writable === false) throwStrictWrite();
+    // Bug 291：frozen / sealed（不可扩展）函数的写门——与 obj 臂同款：
+    // frozen 全写 TypeError；sealed/nonext 新键 TypeError（strict 硬抛）。
+    // 原生 `Object.freeze(f); f.x = 4` → TypeError（函数亦是不可扩展对象）
+    // ——此前 fn 臂不读 extState ⇒ 冻结的函数仍可写（假冻结）。
+    const st = extStateOf(o);
+    if (st === "frozen") throwStrictWrite();
+    if ((st === "sealed" || st === "nonext") && !hasFnOwnKey(o, key)) throwStrictWrite();
     if (o.shape.slots === undefined) {
       o.shape = { ...o.shape, slots: {} };
       userFnSlots.add(o);
@@ -1874,3 +1968,35 @@ export function $set(
   clearStaleTermPred(o);
   return o;
 }
+
+// ---------------------------------------------------------------------------
+// Bug 315：接收者 toString 解析钩子注册（Object.prototype.toLocaleString
+// 委派 this.toString()）
+// ---------------------------------------------------------------------------
+/**
+ * Bug 315：`Object.prototype.toLocaleString` 委派**接收者的 toString()**
+ * （原生表：`{toString(){return "CUSTOM"}}` → "CUSTOM"；抛错原样冒泡；
+ * `Object.create(null)` 接收者 → TypeError；`[1,2]` → "1,2"；`5` → "5"）。
+ * builtins/object-proto.ts 侧是 builtins 层（不能直连 exec 的 $get——反向
+ * 依赖成环）⇒ 按 protoMethodDispatch 同款注册式注入：这里把「读接收者的
+ * toString 成员」委派给**成员机制**（$get：自有槽 / 访问器 getter 求值 /
+ * 类方法派发 / 数组·prim 原型方法面），builtins 侧只管「取到可调用值后
+ * 以接收者为 this 调用」。
+ *
+ * 直接 import builtins/object-proto.ts（不经 barrel）——barrel 未导出该
+ * 注册函数，且本分片不改 barrel（与上方 collectionIteratorFor /
+// isMatchArrayView 的直连口径同款）。
+ */
+setReceiverToStringResolver((recv: Abs): Abs | undefined => {
+  // prim 接收者：走 **prim 原型方法通道**（Bug 49/105/219 口径）——通用 OP
+  // toString 只折标签（"[object Number]"，假精确；原生 (5).toString() →
+  // "5"、true.toString() → "true"）。
+  if (recv.shape.k === "prim") {
+    const ptype = (recv.shape as { type?: string }).type ?? "";
+    if (ptype === "symbol") return symbolProtoMethodAbs("toString");
+    if (PRIM_PROTO_METHOD_NAMES[ptype]?.has("toString")) {
+      return protoMethodValueAbs(ptype, "toString");
+    }
+  }
+  return $get(recv, "toString", { silent: true });
+});

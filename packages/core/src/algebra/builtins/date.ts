@@ -6,9 +6,21 @@
  * coercer 槽 total（ToPrimitive 恒得 "[object Object]" → Invalid Date）；其余
  * 抽象 may（coercer 可能产 Symbol/BigInt）。多参形式每个实参直接 ToNumber。
  * Bug 62：setter 实参逐个 ToNumber 校验；getter/toString 族值域建模。
+ *
+ * Invariants:
+ * - Bug 297：Date 的 time value 是**可写槽**（构造期写入 brand shape 的 tv
+ *   facet）。`Date.prototype.set*` 族不再是空操作——按规范语义回写该槽
+ *   （MakeDay/MakeTime 归一化、月日溢出、TimeClip 越界 → Invalid Date，与
+ *   原生逐条同口径：实现走**宿主 Date**，两位年映射差异（构造器 1900 偏移 vs
+ *   setter 不偏移）自动对齐）。**实参不可判定 → 作废该槽**（精确渲染面随之
+ *   降级为 may-throw，绝不给过期日期）。getTime/valueOf 与 toISOString 读
+ *   同一槽 ⇒ 读面 / 投影面（JSON.stringify）同源，不会自相矛盾。
+ * - Bug 319：`toJSON` 单列一档——Invalid Date（tv=NaN）→ **null 字面量**
+ *   （原生返回 null，不是字符串）；tv 已知且有效 → ISO 串；tv 不可知 → 保守
+ *   `string | null` 域（不再是恒 string）。
  */
 import type { Abs } from "../abs.ts";
-import { abs, strLit, numLit } from "../abs.ts";
+import { abs, strLit, numLit, absLit } from "../abs.ts";
 import { numPrim, str, mayCoerceThrowOperand } from "./shared.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
@@ -149,11 +161,12 @@ const DATE_NUMBER_GETTERS = new Set([
 ]);
 
 /** toString 族 → string（toISOString 原生对 Invalid Date 抛 RangeError——
- *  Date brand 的 time value 不可知，保守 total 不打点） */
+ *  Date brand 的 time value 不可知，保守 total 不打点）。
+ *  toJSON 不在此列：Bug 319——Invalid Date 返回 null（不是 string）。 */
 const DATE_STRING_METHODS = new Set([
   "toString", "toDateString", "toTimeString", "toUTCString", "toGMTString",
   "toLocaleString", "toLocaleDateString", "toLocaleTimeString",
-  "toISOString", "toJSON",
+  "toISOString",
 ]);
 
 /** setter：实参逐个 ToNumber（缺省合法——node 实测 setFullYear() → NaN） */
@@ -166,15 +179,83 @@ const DATE_SETTERS = new Set([
   "setYear",
 ]);
 
+/**
+ * Bug 297：Date brand 的 time value 槽（构造期写入；setter 可回写）。
+ * 非 Date brand / 无 tv facet → undefined（time value 不可知）。
+ */
+function dateTvOf(recv: Abs): number | undefined {
+  if (recv.shape.k !== "brand") return undefined;
+  const sh = recv.shape as { name?: string; tv?: number };
+  return sh.name === "Date" ? sh.tv : undefined;
+}
+
+/**
+ * Bug 297：回写 time value 槽。undefined = **不可知**（实参不可判定）——
+ * 作废槽位：精确渲染面（toISOString）随之降级为 may-throw，绝不给过期日期。
+ */
+function writeDateTv(recv: Abs, tv: number | undefined): void {
+  if (recv.shape.k !== "brand") return;
+  const sh = recv.shape as { name?: string; tv?: number };
+  if (sh.name !== "Date") return;
+  if (tv === undefined) delete sh.tv;
+  else sh.tv = tv;
+}
+
+/**
+ * Bug 297：setter 实参 → ToNumber 结果。不可判定 → undefined（实参存在但
+ * 值不可知——抽象 number / 抽象对象等）。缺省实参不进本函数（缺省 ≠ 显式
+ * undefined：前者保留当前时间分量，后者 → NaN → Invalid Date）。
+ */
+function setterArgNumber(a: Abs | undefined): number | undefined {
+  if (!a) return undefined;
+  const t = a.term;
+  if (t?.op !== "lit") return undefined;
+  const v = (t as { op: "lit"; value: unknown }).value;
+  if (typeof v === "number") return v;
+  if (typeof v === "string" || typeof v === "boolean" || v === null) return Number(v);
+  if (v === undefined) return NaN;
+  // bigint 字面量：调用点已定抛 TypeError（走不到这里）；其余 → 不可判定
+  return undefined;
+}
+
+/**
+ * Bug 297：setter 计算——以**宿主 Date** 实现规范语义：MakeDay/MakeTime
+ * 归一化（1 月 31 日 setUTCMonth(1) → 3 月 2 日）、两位年映射差异
+ * （构造器 1900 偏移 vs setter 不偏移）、TimeClip 越界 → Invalid Date，
+ * 与原生逐条同口径（node 实测；规范细节多且近年生效，用宿主实现避免手抄漂移）。
+ * 实参不可判定 → undefined（调用方作废 tv 槽）。
+ */
+function applyDateSetter(name: string, tv: number, args: Abs[]): number | undefined {
+  const vals: number[] = [];
+  for (const a of args) {
+    const v = setterArgNumber(a);
+    if (v === undefined) return undefined;
+    vals.push(v);
+  }
+  const d = new Date(tv);
+  const fn = (d as unknown as Record<string, (...a: number[]) => void>)[name];
+  if (typeof fn !== "function") return undefined;
+  fn.apply(d, vals);
+  return d.getTime();
+}
+
 export function evalDateMethod(name: string, recv: Abs, args: Abs[]): Abs | undefined {
+  // Bug 319：toJSON 单列一档——Invalid Date（tv=NaN）→ null 字面量（原生
+  // 返回 null，不是字符串）；tv 已知且有效 → ISO 串；tv 不可知 → 保守
+  // `string | null` 域（抽象 Date 可能是 Invalid Date）。
+  if (name === "toJSON") {
+    const tv = dateTvOf(recv);
+    if (tv !== undefined) {
+      if (Number.isNaN(tv)) return absLit(null);
+      return strLit(new Date(tv).toISOString());
+    }
+    return abs({ k: "sum", members: [str("path"), absLit(null)] }, undefined, undefined, "path");
+  }
   // toISOString：time-value facet 已知时精确——Invalid Date
   // （tv=NaN）确定 RangeError（原生）；valid → ISO 字面量
   // （确定性折叠）。facet 缺失（抽象 Date）→ may 档。
   if (name === "toISOString") {
-    const tv =
-      recv.shape.k === "brand" && (recv.shape as { name?: string }).name === "Date"
-        ? (recv.shape as { tv?: number }).tv
-        : undefined;
+    const tv = dateTvOf(recv);
     if (tv !== undefined) {
       if (Number.isNaN(tv)) {
         throw new NudoThrow(errorTypeAbs("RangeError"));
@@ -187,6 +268,12 @@ export function evalDateMethod(name: string, recv: Abs, args: Abs[]): Abs | unde
     });
     return str("path");
   }
+  // Bug 297：getTime / valueOf 读 time value 槽（tv 已知 → 精确 number；
+  // 不可知 → 抽象 number）。setter 回写后二者同步更新。
+  if (name === "getTime" || name === "valueOf") {
+    const tv = dateTvOf(recv);
+    return tv !== undefined ? numLit(tv) : numPrim("path");
+  }
   if (DATE_NUMBER_GETTERS.has(name)) return numPrim("path");
   if (DATE_STRING_METHODS.has(name)) return str("path");
   if (DATE_SETTERS.has(name)) {
@@ -196,7 +283,14 @@ export function evalDateMethod(name: string, recv: Abs, args: Abs[]): Abs | unde
       if (isToNumberThrowAbs(a)) throw new NudoThrow(errorTypeAbs("TypeError"));
       noteToPrimitiveMayThrow(a, `Date.prototype.${name} ToNumber argument may throw (Symbol/BigInt)`);
     }
-    return numPrim("path");
+    // Bug 297：setter 真正回写 time value（此前是空操作——精确渲染面给出
+    // 过期日期）。tv 不可知（抽象 Date）→ 新值不可知（返回抽象 number，槽位
+    // 保持不可知）；实参不可判定 → 作废槽位（精确面降级，不给过期日期）。
+    const tv = dateTvOf(recv);
+    if (tv === undefined) return numPrim("path");
+    const next = applyDateSetter(name, tv, args);
+    writeDateTv(recv, next);
+    return next === undefined ? numPrim("path") : numLit(next);
   }
   return undefined;
 }

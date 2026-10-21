@@ -6,6 +6,7 @@
 import type { Abs } from "../abs.ts";
 import { abs } from "../abs.ts";
 import { markClassValue, classNameOfValue } from "../class-mark.ts";
+import { setPropFlags } from "../builtins/invariants.ts";
 
 // 类值身份标记在 class-mark.ts（algebra 叶子）；此处 re-export 维持既有 import 面
 export { markClassValue, classNameOfValue };
@@ -35,10 +36,19 @@ export type EvalClassSpec = {
   methods?: Record<string, (thisVal: Abs, ...args: Abs[]) => Abs>;
   /** 实例方法形参展示名（AST 形参名；未调用方法槽 `shape.params` 用） */
   methodParams?: Record<string, string[]>;
+  /**
+   * Bug 325：实例方法的**函数种类**戳（async × generator 四象限）——
+   * 原生类方法的标签面（Object.prototype.toString.call(A.prototype.m)）
+   * 随 async / generator 变（"[object AsyncFunction]" 等）。类方法**同时**
+   * 可能是 generator ⇒ 与 impl.kind 的派发角色维度分开承载。
+   */
+  methodKinds?: Record<string, "function" | "async" | "generator" | "async-generator">;
   /** R5：静态方法 impl 首参 __this = 类值（接收者——沿链调用时是调用类） */
   staticMethods?: Record<string, (thisVal: Abs, ...args: Abs[]) => Abs>;
   /** 静态方法形参展示名 */
   staticMethodParams?: Record<string, string[]>;
+  /** Bug 325：静态方法的函数种类戳（实例方法同口径） */
+  staticMethodKinds?: Record<string, "function" | "async" | "generator" | "async-generator">;
   /**
    * P2b：构造器元数（首个默认值/rest 形参前的形参数，nativeParamArity
    * 口径）——类值 .length 自有属性。隐式构造器（基类零参 / 派生
@@ -224,6 +234,10 @@ export function fnProtoOf(fnAbs: Abs): Abs {
       undefined,
       "path",
     );
+    // 原生：函数 prototype 上的 `constructor` 是**不可枚举**数据属性 ⇒
+    // for-in / Object.keys 看不到（`for (const k in (function(){}).prototype)`
+    // 原生是 []，缺标记则引擎发布 ["constructor"]）。
+    setPropFlags(p, "constructor", { enumerable: false, writable: true, configurable: true });
     fnProtos.set(fnAbs, p);
   }
   return p;

@@ -7,12 +7,14 @@ import { abs, litValue, numLit, strLit, boolLit, bigintLit, unknown, confJoin } 
 import { objOf, isNullProtoObj, isNullProtoWithoutCoercer } from "../objects.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow, throwPayloadOf } from "../exec/may-throw.ts";
-import { numPrim, str, boolPrim, mayCoerceThrowOperand, isBigintPrimAbs } from "./shared.ts";
+import { numPrim, str, boolPrim, mayCoerceThrowOperand, mayToStringThrowOperand, isBigintPrimAbs } from "./shared.ts";
 import { builtinBrandToPrimitive } from "../arithmetic.ts";
 import { foldParseInt, foldParseFloat } from "./number.ts";
 import { makeArrayCtorAbs, arrayJoinToString, validateJoinElements } from "./array.ts";
-import { makeSymbolAbs, isSymbolAbs, stringOfSymbol } from "./symbol.ts";
-import { errorBrandAbs, isErrorCtorName, makeBoxedAbs } from "./error.ts";
+import { makeSymbolAbs, isSymbolAbs, stringOfSymbol, symbolDescriptionAbs } from "./symbol.ts";
+import { errorBrandAbs, isErrorCtorName, makeBoxedAbs, BOXED_PRIMITIVE_SLOT } from "./error.ts";
+import { setPropFlags } from "./invariants.ts";
+
 
 /** term 确为 lit（含 lit(undefined)）；litValue 无法区分「字面量 undefined」与「无 lit」 */
 function litTermOf(a: Abs | undefined): { value: unknown } | undefined {
@@ -29,6 +31,40 @@ function hasToPrimitiveCoercer(a: Abs): boolean {
     Object.prototype.hasOwnProperty.call(so.slots, "toString") ||
     Object.prototype.hasOwnProperty.call(so.slots, "valueOf")
   );
+}
+
+/**
+ * Bug 318/329：bigint / symbol 装箱（`Object(1n)` / `Object(Symbol("x"))`）
+ * ——原生是**包装对象**：内部槽 [[PrimitiveValue]] 存原语；原型上有
+ * valueOf / toString；symbol 箱另有 description 访问器（Symbol.prototype
+ * 的 getter）。此前建的是**空壳 brand**（objOf({})）⇒ 内部值无处可落：
+ * - `valueOf` 读不回原语 ⇒ `typeof Object(1n).valueOf()` 折 "object"
+ *   （原生 "bigint"）⇒ 签名面 wrong-exact；
+ * - symbol 箱无 description 槽 ⇒ `.description` 折 exact undefined
+ *   （原生 "x"）⇒ L2 假绿 / nudo test 假红。
+ *
+ * 落法（沿用 makeBoxedAbs 的既有惯例）：
+ * - [[PrimitiveValue]] → 装箱的原语（内部槽，不可枚举）——**读侧**
+ *   boxedPrimitiveValue 尚只认 String/Number/Boolean 三族（boxed.ts，
+ *   不在本分片可改面）⇒ BigInt/Symbol 箱的拆箱派发待该处放行（见报告
+ *   「越界诉求」：白名单加 "BigInt"/"Symbol" 一行即可，槽已在此落住）；
+ * - description（symbol 箱）→ 描述串（原生是 Symbol.prototype 的
+ *   getter；引擎以自有不可枚举槽表达同样的可观察值——值读面按自有槽
+ *   优先于原型方法表，故此槽不被遮蔽）。
+ */
+function makeBoxedPrimAbs(boxName: "BigInt" | "Symbol", prim: Abs): Abs {
+  const slots: Record<string, { value: Abs }> = {
+    [BOXED_PRIMITIVE_SLOT]: { value: prim },
+  };
+  if (boxName === "Symbol") {
+    const desc = symbolDescriptionAbs(prim);
+    if (desc) slots["description"] = { value: desc };
+  }
+  const inner = objOf(slots);
+  // 内部槽与访问器皆不可枚举（原生包装对象零可枚举自有属性）
+  setPropFlags(inner, BOXED_PRIMITIVE_SLOT, { enumerable: false });
+  if (boxName === "Symbol") setPropFlags(inner, "description", { enumerable: false });
+  return abs({ k: "brand", name: boxName, shape: inner }, undefined, undefined, "path");
 }
 
 /**
@@ -269,12 +305,16 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
       if (isNullProtoWithoutCoercer(args[0])) {
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }
-      // Bug 24：抽象臂（any/obj/fn/brand/sum）ToPrimitive 可能抛
-      //（throwing toString / null-proto）——与 Number/parseInt 同口径
-      if (mayCoerceThrowOperand(args[0])) {
+      // Bug 331：抽象臂（any/obj/fn/brand/sum）ToPrimitive 可能抛
+      //（throwing toString / null-proto）——**ToString 面**口径：
+      // 引擎已知的内建 brand（Date/Map/Set/…）其 toString 行为确定
+      // ⇒ 不记 may（原生 `String(new Date(0))` / `String(new Map())` /
+      // `String({})` 均不抛，此前一律记 may ⇒ L2 假红）；未知 brand
+      // （用户类 / Proxy）与带 coercer 槽的闭对象仍保守记 may。
+      if (mayToStringThrowOperand(args[0])) {
         recordMayThrow({
           kind: "TypeError",
-          cause: "String() ToPrimitive may throw (null-proto object / throwing toString)",
+          cause: "String() ToPrimitive may throw (unknown brand toString / throwing toString / null-proto object)",
         });
       }
       return str();
@@ -301,12 +341,10 @@ export function evalGlobalFn(name: string, args: Abs[]): Abs | undefined {
           return makeBoxedAbs(primType === "string" ? "String" : primType === "number" ? "Number" : "Boolean", arg);
         }
         const boxName = primType === "bigint" ? "BigInt" : "Symbol";
-        return abs(
-          { k: "brand", name: boxName, shape: objOf({}) },
-          undefined,
-          undefined,
-          "path",
-        );
+        // Bug 318/329：装箱 brand 携带原语（[[PrimitiveValue]] 槽 + 拆箱
+        // 方法 + symbol 箱 description）——此前是**空壳** brand（objOf({})），
+        // 内部值无处可落。
+        return makeBoxedPrimAbs(boxName, arg);
       }
       // obj/brand/arr/tuple/fn/eff/sum：ToObject 恒等
       return arg;

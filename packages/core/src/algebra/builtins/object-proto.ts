@@ -1,5 +1,16 @@
 /**
  * Object.prototype 成员（hasOwnProperty / isPrototypeOf / toString / …）
+ *
+ * Invariants:
+ * - toString 走 typeTagOf 的**标签面**（"[object X]"）；toLocaleString 走
+ *   **委派面**（Bug 315：node 实测 Object.prototype.toLocaleString 调
+ *   接收者的 toString()——**不**调接收者自有的 toLocaleString；接收者没有
+ *   可调用的 toString（null 原型对象）⇒ TypeError）。委派面的「读接收者
+ *   toString 成员」由 exec 侧（member.ts）注册钩子提供（避免
+ *   builtins↔exec 的 import 环）。
+ * - Bug 325：fn 形状的标签按**函数种类**分（Function / AsyncFunction /
+ *   GeneratorFunction / AsyncGeneratorFunction）——种类戳由 transpile 侧
+ *   $fnVal opts.kind 打。
  */
 import type { Abs } from "../abs.ts";
 import { abs, litValue, strLit, boolLit, unknown } from "../abs.ts";
@@ -12,12 +23,13 @@ import {
   setSizeAbs,
   setElementsAbs,
 } from "../collections.ts";
-import { absFunction } from "../abs-fn.ts";
+import { absFunction, getFnImpl } from "../abs-fn.ts";
 import { lookupObjAccessor } from "../accessors.ts";
 import { getEvalClass } from "../exec/class-registry.ts";
 import { protoBrandOwnMember } from "../exec/runtime/members.ts";
 import { classNameOfValue } from "../class-mark.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
+import { $call } from "../exec/call.ts";
 import { errorTypeAbs } from "../exec/may-throw.ts";
 import { str, boolPrim, noBody, peelBrand } from "./shared.ts";
 import { isErrorCtorName } from "./error.ts";
@@ -213,7 +225,21 @@ function typeTagOf(recv: Abs): string | undefined {
     return PRIM_TAGS[s.type];
   }
   if (s.k === "arr" || s.k === "tuple") return "Array";
-  if (s.k === "fn") return "Function";
+  if (s.k === "fn") {
+    // Bug 325：函数**种类**标签——原生 Object.prototype.toString 按函数的
+    // 种类给标签：async → "[object AsyncFunction]"、generator →
+    // "[object GeneratorFunction]"、async generator →
+    // "[object AsyncGeneratorFunction]"、普通函数 / 箭头 →
+    // "[object Function]"。此前整族折 "Function"（wrong-exact：社区判别
+    // `Object.prototype.toString.call(x).slice(8,-1) === "AsyncFunction"`
+    // 恒假）。种类戳由 transpile 侧 $fnVal opts.kind 打（async × generator
+    // 四象限）；无戳（宿主值 / 未打戳路径）→ 保守 "Function"。
+    const kind = getFnImpl(recv)?.fnKind;
+    if (kind === "async") return "AsyncFunction";
+    if (kind === "generator") return "GeneratorFunction";
+    if (kind === "async-generator") return "AsyncGeneratorFunction";
+    return "Function";
+  }
   if (s.k === "eff") return s.eff === "promise" ? "Promise" : "Generator";
   if (s.k === "brand") {
     // 只折叠标准 Object.prototype.toString 标签；未建模 brand（URLSearchParams
@@ -284,6 +310,41 @@ function typeTagOf(recv: Abs): string | undefined {
 }
 
 /**
+ * Bug 315：接收者 toString 解析钩子——由 exec 侧（member.ts）注册，把
+ * 「读接收者的 toString 成员」委派给**成员机制**（自带访问器求值 / 类方法
+ * 派发 / 数组原型方法面 / prim 原型方法面）。builtins↔exec 的 import 环按
+ * protoMethodDispatch 口径用注册回调断开。
+ * 返回 undefined = 接收者确定没有可调用的 toString（⇒ 原生 TypeError）。
+ */
+let receiverToStringResolver: ((recv: Abs) => Abs | undefined) | undefined;
+
+/** exec 侧（member.ts）注册接收者 toString 解析实现 */
+export function setReceiverToStringResolver(
+  r: (recv: Abs) => Abs | undefined,
+): void {
+  receiverToStringResolver = r;
+}
+
+/**
+ * Bug 315：接收者的 toString 成员（可调用值）——解析顺序：
+ * 1) exec 侧成员面（$get：自有槽 / 访问器 getter / 类方法 / 数组·prim
+ *    原型方法面）；
+ * 2) 兜底（exec 侧未装载）：obj 自有槽 / 访问器；其它形态走通用 OP
+ *    toString（标签面）。
+ */
+function resolveReceiverToString(recv: Abs): Abs | undefined {
+  if (receiverToStringResolver) return receiverToStringResolver(recv);
+  if (recv.shape.k === "obj") {
+    const acc = lookupObjAccessor(recv, "toString");
+    if (acc) return acc.get ? acc.get(recv) : undefined;
+    const slot = getSlot((recv.shape as { slots: Record<string, { value: Abs }> }).slots, "toString");
+    if (slot) return slot.value;
+    return undefined;
+  }
+  return objectProtoMethodAbs("toString");
+}
+
+/**
  * Object.prototype 方法语义（evaluator $invoke 与 Object.prototype.X.call 共用）。
  * null-proto 接收者无这些方法——返回 undefined（调用方走 TypeError 路径）。
  * 返回 undefined = 未接管。
@@ -295,13 +356,19 @@ export function evalObjectProtoMethod(
 ): Abs | undefined {
   if (!OBJECT_PROTO_METHOD_NAMES.has(name)) return undefined;
   if (thisVal && typeof thisVal === "object" && "shape" in thisVal && isNullProtoObj(thisVal)) {
+    // Bug 315：null 原型接收者**没有** toString 可委派 ⇒ 原生 TypeError
+    // （`Object.prototype.toLocaleString.call(Object.create(null))` 抛）——
+    // 此前返回 undefined ⇒ 调用方折 unknown（no-throw 假绿）。
+    if (name === "toLocaleString") throw new NudoThrow(errorTypeAbs("TypeError"));
     return undefined;
   }
   // nullish this：ToObject 原生抛 TypeError
   if (thisVal && thisVal.term?.op === "lit" && (thisVal.term.value === null || thisVal.term.value === undefined)) {
     // Object.prototype.toString.call(null) 合法（返回 "[object Null]"）；
     // hasOwnProperty / valueOf 等经 ToObject 抛
-    if (name !== "toString" && name !== "toLocaleString") {
+    // Bug 315：toLocaleString 同样经 ToObject 抛（原生
+    // "Object.prototype.toLocaleString called on null or undefined"）。
+    if (name !== "toString") {
       throw new NudoThrow(errorTypeAbs("TypeError"));
     }
   }
@@ -343,11 +410,23 @@ export function evalObjectProtoMethod(
       if (s.k === "prim") return abs({ k: "unknown" }, undefined, undefined, "path");
       return thisVal;
     }
-    case "toString":
-    case "toLocaleString": {
+    case "toString": {
       const tag = typeTagOf(thisVal);
       if (tag === undefined) return str();
       return strLit(`[object ${tag}]`);
+    }
+    case "toLocaleString": {
+      // Bug 315：node 实测 Object.prototype.toLocaleString 委派**接收者的
+      // toString()**（原生表：`{toString(){return "CUSTOM"}}` → "CUSTOM"；
+      // 抛错原样冒泡；`Object.create(null)` 接收者 → TypeError；`[1,2]` →
+      // "1,2"；`5` → "5"）。此前本臂与 toString 合流折 "[object X]" ⇒ 用户
+      // 自定义 toString 的**值与抛错全被吞**。
+      // 口径更正（报告正文写「委派到接收者的 toLocaleString / toString」，
+      // 与原生表不符）：原生**不**调接收者自有的 toLocaleString（node 实测
+      // 自有 toLocaleString 永不被调用）⇒ 只委派 toString。
+      const fn = resolveReceiverToString(thisVal);
+      if (fn === undefined) throw new NudoThrow(errorTypeAbs("TypeError"));
+      return $call(fn, [], thisVal);
     }
   }
   return undefined;

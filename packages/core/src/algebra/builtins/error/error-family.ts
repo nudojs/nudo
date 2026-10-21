@@ -23,9 +23,8 @@
 
 import type { Abs } from "../../abs.ts";
 import { abs, strLit, bool, unknown } from "../../abs.ts";
-import { objOf } from "../../objects.ts";
+import { objOf, getSlot } from "../../objects.ts";
 import { classifyCanBeHeldWeakly } from "../../collections.ts";
-import { undefAbs } from "../../hof.ts";
 import { NudoThrow } from "../../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../../exec/may-throw.ts";
 import { registerProxyParts } from "../../exec/match-iter.ts";
@@ -93,10 +92,45 @@ function errorMessageSlot(messageArg: Abs | undefined): Abs {
 }
 
 /**
+ * Bug 317：AggregateError 的 errors 槽存**拷贝**（原生 IterableToList 产
+ * 新列表）。tuple / arr 入参 → 新 Abs（内容同、身份异——引擎的 Abs 相等
+ * 判定走对象身份，故 `e.errors === a` 折 false，与原生同）；elements 数组
+ * 另拷贝一份（引擎的数组 mutator 就地改 elements 数组——共享同一数组
+ * 引用则 push 仍会连带改写副本）。副本打**新鲜实例标**（不同创建事件
+ * 引用必不同——strictEqAbs 据此把 `e.errors === a` 折 exact false；
+ * 不打标则落 partial boolean）。
+ * 抽象/不可判入参（prim / obj / brand / 缺省）→ 保守沿用入参 Abs
+ * （不假精确；缺省 ≡ 原生 []，引擎沿用 unknown 口径）。
+ */
+function iterableListCopy(a: Abs | undefined): Abs {
+  if (!a) return unknown;
+  const s = a.shape;
+  if (s.k === "tuple") {
+    return markFreshInstance(
+      abs(
+        {
+          k: "tuple",
+          elements: [...s.elements],
+          ...(s.rest !== undefined ? { rest: s.rest } : {}),
+          ...(s.holes !== undefined ? { holes: [...s.holes] } : {}),
+        },
+        undefined,
+        undefined,
+        a.conf,
+      ),
+    );
+  }
+  if (s.k === "arr") {
+    return markFreshInstance(abs({ k: "arr", element: s.element }, undefined, undefined, a.conf));
+  }
+  return a;
+}
+
+/**
  * Error brand：shape 带 name/message（字面量 message 保精确）。
  * AggregateError(errors, message[, options])：message 在第二实参，errors
- * 挂 .errors（原生是实参数组副本）；options.cause 挂 .cause（闭槽 miss
- * 会折 undefined 假精确——原生 .cause 可能有值）。
+ * 挂 .errors（原生是实参数组**副本**——见 iterableListCopy）；options.cause
+ * 挂 .cause（**仅当 options 真有 cause 键**才装槽——见 Bug 316）。
  * $new 的 new Error 路径共用——catch 形参成员访问可解。
  */
 export function errorBrandAbs(name: string, args: Abs[]): Abs {
@@ -121,10 +155,15 @@ export function errorBrandAbs(name: string, args: Abs[]): Abs {
   };
   const optionsArg = name === "AggregateError" ? args[2] : args[1];
   if (optionsArg && optionsArg.shape.k === "obj") {
-    const cause = Object.prototype.hasOwnProperty.call(optionsArg.shape.slots, "cause")
-      ? optionsArg.shape.slots["cause"]!.value
-      : undefAbs();
-    slots["cause"] = { value: cause };
+    // Bug 316：原生 InstallErrorCause（ES2022 10.2.1）——**只有 options
+    // 真有 `cause` 键**时才装 cause 槽：options 无 cause 键 ⇒ 错误对象
+    // **无**自有 cause 槽（`hasOwnProperty("cause")` / `Object.hasOwn` /
+    // `"cause" in e` 恒 false）；cause 键存在但值是 undefined ⇒ 装槽、
+    // 值为 undefined。
+    // 此前无 cause 键也装一个 undefAbs() 槽 ⇒ 自有面假 true（"cause" in e
+    // 也假 true——$in 走槽存在性判定）。
+    const causeSlot = getSlot(optionsArg.shape.slots, "cause");
+    if (causeSlot) slots["cause"] = { value: causeSlot.value };
   }
   if (name === "AggregateError") {
     // Bug 54：errors（args[0]）过 IterableToList——非可迭代定抛（node 实测
@@ -132,8 +171,13 @@ export function errorBrandAbs(name: string, args: Abs[]): Abs {
     // 可迭代合法："ab" → errors ['a','b']）。与 Promise.all（Bug 47）共用
     // 三档口径：prim 非 string/nullish/缺省 → NudoThrow；any/obj/… → may
     enforceIterableStaticArg(args[0], "AggregateError errors");
-    // errors：字面量 tuple 保留精确；抽象/缺省（原生 []）保守 unknown
-    slots["errors"] = { value: args[0] ?? unknown };
+    // Bug 317：原生 AggregateError 的 errors 是 **IterableToList 的拷贝**
+    // （新列表）：`e.errors !== errorsArg`、入参后续变更不改写 e.errors。
+    // 此前直接存**同一个** Abs（别名）⇒ `e.errors === a` 折 true、
+    // `a.push(3)` 就地改写 e.errors.length。tuple/arr 入参 → 造**新 Abs**
+    // （元素同、身份异；elements 数组另拷贝——否则就地 push 仍会连带
+    // 改写副本）；抽象/不可判入参 → 保守沿用入参 Abs（不假精确）。
+    slots["errors"] = { value: iterableListCopy(args[0]) };
   }
   // Bug 84：Error 家族自有槽（name/message/stack；AggregateError 的
   // errors/cause）原生全不可枚举——枚举视图（for-in/keys/spread/assign/

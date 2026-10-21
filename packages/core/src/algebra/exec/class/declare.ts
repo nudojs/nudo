@@ -216,8 +216,12 @@ export function $class(
     // Bug 90：记录容器一律换 null 原型副本（见 ownRec 注释）
     methods: ownRec(spec.methods),
     methodParams: ownRec(spec.methodParams),
+    // Bug 325：类方法的函数种类戳（async × generator 四象限）——读取面
+    // classMethodValueAbs 打 impl.fnKind ⇒ 标签面 AsyncFunction / …。
+    ...(spec.methodKinds ? { methodKinds: ownRec(spec.methodKinds) } : {}),
     staticMethods: ownRec(spec.staticMethods),
     staticMethodParams: ownRec(spec.staticMethodParams),
+    ...(spec.staticMethodKinds ? { staticMethodKinds: ownRec(spec.staticMethodKinds) } : {}),
     statics: ownRec(spec.statics),
     instanceFields: spec.instanceFields,
     accessors: ownRec(spec.accessors),
@@ -271,8 +275,11 @@ export function $class(
     };
     rekey(full.methods);
     rekey(full.methodParams);
+    // Bug 325：方法种类戳表随计算键折叠同步换名（否则 synth 名与真名错位）
+    rekey(full.methodKinds);
     rekey(full.staticMethods);
     rekey(full.staticMethodParams);
+    rekey(full.staticMethodKinds);
     rekey(full.statics);
     rekey(full.accessors);
     rekey(full.staticAccessors);
@@ -602,6 +609,40 @@ export function constructClass(className: string, thisVal: Abs, args: Abs[]): Ab
   return applyInstanceFields(spec, thisVal);
 }
 
+/**
+ * Bug 322：`new URL(...)` 实例补 `searchParams` 槽。
+ *
+ * 原生 `new URL(u).searchParams` **恒**是 URLSearchParams 实例（读面不是
+ * undefined）——core 的 URL 组件槽表（`builtins/error/web.ts` 的
+ * urlBrandAbs）只列了 10 个 URL 组件（href/origin/protocol/hostname/
+ * pathname/search/hash/port/username/password），**独缺 searchParams** ⇒
+ * 读它落「槽缺失 ⇒ undefined」⇒ `.get(...)` 在 undefined 上调用 ⇒
+ * **确定 TypeError** ⇒ 返回值折 `never`（错的确定值）⇒ 对完全合法、
+ * 确定性的代码报 `nudo:entry-may-throw` **假红**（L2/L5）。
+ *
+ * 本函数在**构造面**（$new 的宿主构造器分支）补槽：URL brand 的内层 obj
+ * 加一个 `searchParams` 槽，值 = URLSearchParams brand。
+ *
+ * 精度口径（不得折假精确）：URLSearchParams 的**条目表不建模**（仓内既有
+ * 精度债——builtin-coverage-registry 登记 "URLSearchParams.proto.get：
+ * 条目表不建模，接受 unknown"）⇒ `searchParams.get(k)` 折 **unknown**
+ * （原生给具体字符串），但**绝不再折 undefined / never / 假抛**。
+ * 越界诉求：条目表建模（get/has 按查询串取值）须落在
+ * `builtins/error/web.ts`（URLSearchParams brand 建模）+ 品牌方法派发面
+ * ——非本分片地盘，由主 agent 裁决合并。
+ */
+function withUrlSearchParamsSlot(u: Abs): Abs {
+  const sh = u.shape;
+  if (sh.k !== "brand" || sh.name !== "URL") return u;
+  const inner = sh.shape;
+  if (inner.shape.k !== "obj") return u;
+  const slots = inner.shape.slots;
+  if (getSlot(slots, "searchParams") !== undefined) return u;
+  // 就地加槽（brand 内层 obj 由 makeUrlAbs 每次新建 ⇒ 无跨实例共享）
+  setSlot(slots, "searchParams", { value: makeUrlSearchParamsAbs(undefined) });
+  return u;
+}
+
 /** new C(...) → 空 brand 实例 + ctor 写字段；非类构造走 impl/$call */
 export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Abs {
   // Bug 932 顺带清理：具名导入物化不再把 fn Abs 包成 JS 箭头 wrapper
@@ -729,7 +770,8 @@ export function $new(cls: Abs | ((...a: unknown[]) => unknown), args: Abs[]): Ab
       return makeTypedArrayAbs(clsName, args);
     }
     // Bug 85：new URL(input, base?) —— ToString + 解析校验（合法带 href 槽）
-    if (clsName === "URL") return makeUrlAbs(args[0], args[1]);
+    // Bug 322：构造面补 `searchParams` 槽（见 withUrlSearchParamsSlot）
+    if (clsName === "URL") return withUrlSearchParamsSlot(makeUrlAbs(args[0], args[1]));
     // Bug 22：装箱统一 makeBoxedAbs（[[PrimitiveValue]] 槽 + String 下标槽；
     // Number/String symbol 实参确定 TypeError、any → may——builder 内记）
     if (clsName === "Number" || clsName === "Boolean" || clsName === "String") {

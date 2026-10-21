@@ -15,6 +15,13 @@
  *   式值（__mutRet）→ 再写回 → 返回捕获值（与语句级 emitRet 同口径）；
  * - 参数模式名集 paramNamesOfFn 是 stmt.ts paramNamesOf 的 expr 侧副本
  *   （对象方法简写也用，./object.ts 从本模块导入）。
+ * - Bug 325：$fnVal opts.kind 打**函数种类**戳（async × generator 四象限：
+ *   "function" / "async" / "generator" / "async-generator"）——读取面
+ *   （builtins/object-proto.ts 的 typeTagOf）据此给
+ *   Object.prototype.toString 的标签面（AsyncFunction / GeneratorFunction /
+ *   AsyncGeneratorFunction）；kind 另被 member.ts 的 prototype 面读
+ *   （generator 与 async-generator 都有原生 prototype）。块体与表达式体两条
+ *   路径共用同一戳。
  */
 import type {
   Expression,
@@ -249,6 +256,23 @@ export function transpileFunctionExpr(
       // Bug 69：原生 fn.length（首个默认值/rest 前形参数）——宿主 impl 是
       // 解糖产物（`_p{i}` 占位全成真参），长度不可信，transpile 侧记真值
       const fnLen = nativeParamArity(fn.params);
+      // Bug 325：**函数种类**戳（async × generator 四象限）——原生
+      // Object.prototype.toString 的标签面据此区分（async →
+      // "[object AsyncFunction]"、generator → "[object GeneratorFunction]"、
+      // async generator → "[object AsyncGeneratorFunction]"、普通/箭头 →
+      // "[object Function]"）。此前只有 generator 打戳（且仅块体路径）⇒
+      // 三种特殊形态全折 "[object Function]"（wrong-exact——社区判别
+      // `Object.prototype.toString.call(x).slice(8,-1) === "AsyncFunction"`
+      // 恒假）。块体与表达式体两条路径共用本戳（表达式体只有 async 一维）。
+      // kind 另被 member.ts 的 prototype 面读（generator 与 async-generator
+      // 都有原生 prototype）⇒ 新值域须同步扩展。
+      const kindSrc = fn.generator
+        ? fn.async === true
+          ? `, fnKind: "async-generator"`
+          : `, fnKind: "generator"`
+        : fn.async === true
+          ? `, fnKind: "async"`
+          : `, fnKind: "function"`;
       // Bug 16：__this 必须 let——`this.s = v` 的赋值包装发射
       // `__this = $set(__this, …)` 重绑（构造调用 this 是对象时执行到），
       // const 重绑宿主 TypeError
@@ -302,18 +326,17 @@ export function transpileFunctionExpr(
         // fn 分支据此区分「不可构造但有 prototype」（generator 实例原型）
         // 与「无 prototype」（箭头/async/方法）。声明路径走宿主函数分支
         //（isHostGeneratorFn 源形判定），此处是表达式面。
-        const genKindSrc = fn.generator ? `, kind: "generator"` : "";
         if (hasThis) {
           const wrap = fn.async && !fn.generator
             ? `function (${argsParamParts.join(", ")}) { return $async(() => {\n${inner}\n}); }`
             : `function (${argsParamParts.join(", ")}) {\n${inner}\n}`;
           // Bug 7：hasArgs 时体内已归一缺参——钩子补齐会膨胀 arguments.length
-          return `$fnVal(${nameList}, ${wrap}, { ctor: ${fnCtor}${hasArgs ? ", padArgs: false" : ""}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${genKindSrc} })`;
+          return `$fnVal(${nameList}, ${wrap}, { ctor: ${fnCtor}${hasArgs ? ", padArgs: false" : ""}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc} })`;
         }
         if (fn.async && !fn.generator) {
-          return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => $async(() => {\n${inner}\n}), { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${genKindSrc} })`;
+          return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => $async(() => {\n${inner}\n}), { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc} })`;
         }
-        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${genKindSrc} })`;
+        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc} })`;
       }
       const bodySrc = transpileExpression(fn.body as Expression, fnBodyOpts);
       // Bug 188：表达式体的**写回**（rebinds）不得排在表达式求值之前。
@@ -352,20 +375,20 @@ export function transpileFunctionExpr(
         if (hasThis) {
           const wrap = `function (${argsParamParts.join(", ")}) {\n${inner}\n}`;
           // Bug 7：hasArgs 时体内已归一缺参——钩子补齐会膨胀 arguments.length
-          return `$fnVal(${nameList}, ${wrap}, { ctor: ${fnCtor}${hasArgs ? ", padArgs: false" : ""}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed} })`;
+          return `$fnVal(${nameList}, ${wrap}, { ctor: ${fnCtor}${hasArgs ? ", padArgs: false" : ""}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc} })`;
         }
-        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed} })`;
+        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc} })`;
       }
       // 表达式体：块体包裹跑语句级 rebind pass——`()=>n++` / `()=>a.push(1)`
       // 的写回此前静默丢失（表达式上下文无语句级扫描）
       if (rebinds.length > 0) {
         const inner = retSeq("  ").join("\n");
-        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed} })`;
+        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => {\n${inner}\n}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc} })`;
       }
       if (fn.async) {
-        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => $async(() => ${bodySrc}), { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed} })`;
+        return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => $async(() => ${bodySrc}), { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc} })`;
       }
-      return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => ${bodySrc}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed} })`;
+      return `$fnVal(${nameList}, (${argsParamParts.join(", ")}) => ${bodySrc}, { ctor: ${fnCtor}, length: ${fnLen}, effectFree: ${effectFree}, closed: ${closed}${kindSrc} })`;
       })();
       if (!nfeName) return fnValSrc;
       // IIFE 绑定 NFE 自身名：调用期 g 已是 fn Abs（体内引用按词法捕获）；

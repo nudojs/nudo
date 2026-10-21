@@ -160,7 +160,20 @@ export function makeBoxedAbs(name: "String" | "Number" | "Boolean", arg: Abs | u
 export function boxedPrimitiveValue(recv: Abs): Abs | undefined {
   if (recv.shape.k !== "brand") return undefined;
   const name = recv.shape.name;
-  if (name !== "String" && name !== "Number" && name !== "Boolean") return undefined;
+  // Bug 318/329：白名单含 **BigInt / Symbol**——`Object(1n)` /
+  // `Object(Symbol("x"))` 的包装对象也带 [[PrimitiveValue]] 槽（global.ts 的
+  // makeBoxedPrimAbs 落的）；此前只认 String/Number/Boolean ⇒ 拆箱派发
+  // 够不着 ⇒ `typeof Object(1n).valueOf()` 折 "object"（原生 "bigint"）、
+  // `Object(1n) + 1` 不抛（原生必抛 BigInt/number 混合 TypeError）。
+  if (
+    name !== "String" &&
+    name !== "Number" &&
+    name !== "Boolean" &&
+    name !== "BigInt" &&
+    name !== "Symbol"
+  ) {
+    return undefined;
+  }
   const inner = recv.shape.shape;
   if (!inner || inner.shape.k !== "obj") return undefined;
   return getSlot(inner.shape.slots, BOXED_PRIMITIVE_SLOT)?.value;

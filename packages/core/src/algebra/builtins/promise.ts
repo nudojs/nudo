@@ -3,7 +3,7 @@
  */
 import type { Abs } from "../abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, bigintLit, unknown, never } from "../abs.ts";
-import { joinAbs } from "../objects.ts";
+import { joinAbs, objOf } from "../objects.ts";
 import { isMapAbs, isSetAbs } from "../collections.ts";
 import { applyCallbackValue, undefAbs, asAbs, instantiateReturn } from "../hof.ts";
 import { absFunction, getFnImpl } from "../abs-fn.ts";
@@ -18,6 +18,7 @@ import {
   PROMISE_MICRO_ERROR_LABEL,
 } from "../call-budget.ts";
 import { numPrim, str, boolPrim, noBody } from "./shared.ts";
+import { setPropFlags } from "./invariants.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../exec/may-throw.ts";
 
@@ -517,10 +518,12 @@ export function evalPromiseCtor(args: Abs[]): Abs {
   }, { ctor: false });
 
   enterPromiseExecutorScope();
-  // executed = executor 真跑过（早退/抽象 fn/抛出 → promise<unknown>）。
+  // executed = executor 真跑过（抽象 fn / 不可调用 → promise<unknown>）。
   // finally 保证 scope 恒弹出：早退 return / 抛出走 catch 都不得泄漏栈帧
   //（泄漏会让后续所有 $fork 误记入已死的 executor 计数与路径 token 表）。
   let executed = true;
+  // Bug 310：executor 抛出的 reason（尚无 settle 时 → promise 被拒绝）
+  let threwReason: Abs | undefined;
   // N5：scope 路径面覆盖判定（leave 在 token 树清空前算好——fork/switch/
   // loop 臂 + hang + throw/return 退出臂）
   let armUnsettled = false;
@@ -542,11 +545,27 @@ export function evalPromiseCtor(args: Abs[]): Abs {
     } else {
       executed = false;
     }
-  } catch {
-    // executor 抛出 → rejected promise；resolved 通道不假装 settle
-    executed = false;
+  } catch (e) {
+    // Bug 310：executor 抛出 → 原生 promise **被拒绝**（reason = 抛出值），
+    // catch 臂必须可达。此前只翻 executed 标志 → 短路 promiseUnknown()
+    // （无 rejected 通道）→ await 永不抛 → catch 臂成死代码、try 臂成
+    // 确定错值。已 settle（first-wins）时抛错是原生 no-op（resolve 先赢），
+    // 故只在「尚无 settle」时把 reason 压进 reject 通道。
+    threwReason = e instanceof NudoThrow ? e.absValue : errorTypeAbs("Error");
   } finally {
     armUnsettled = leavePromiseExecutorScope(settledArms);
+  }
+  // 执行器抛错且此前无 settle → 走「确定拒绝」分支（rejected 通道 + never 内层）
+  if (threwReason !== undefined && resolveValues.length === 0 && rejectValues.length === 0) {
+    if (!armUnsettled) return promiseRejected(threwReason);
+    return markFreshInstance(
+      abs(
+        { k: "eff", eff: "promise", inner: never, rejected: threwReason, unsettled: true },
+        undefined,
+        undefined,
+        "path",
+      ),
+    );
   }
   if (!executed) return promiseUnknown();
 
@@ -635,10 +654,20 @@ export function evalPromiseMethod(
   // 同口径：非函数 prim（number/string/boolean/symbol/bigint）确定不可调用
   // → Identity；fn/any/obj/brand（可能经桥接可调）保守按可调用（结果域
   // unknown，sound）；sum 需全体成员非可调用才折 Identity。
+  // Bug 313：闭 obj / arr / tuple（形状已知、**无可调用成员**）同样**确定**
+  // 不可调用（原生只有函数有 [[Call]]）→ ≡ undefined（identity，透传原值）。
+  // 此前它们落进「可能可调用」→ 微任务臂真去调 → TypeError → promise<never>
+  // （自信错值）。口径与 evalPromiseCtor 的 executor 校验同源。
   const isIdentity = (h: Abs | undefined): boolean => {
     if (!h || isNullishLitAbs(h)) return true;
     const k = h.shape?.k;
     if (k === "prim") return true;
+    if (k === "tuple" || k === "arr") return true;
+    if (k === "obj") {
+      // 闭 obj（open ≠ true）无 [[Call]]；带 fn impl 的 obj 走 impl 通道
+      if (getFnImpl(h) !== undefined) return false;
+      return (h.shape as { open?: boolean }).open !== true;
+    }
     if (k === "sum") return h.shape.members.every(isIdentity);
     return false;
   };
@@ -1015,23 +1044,182 @@ export function enforceIterableStaticArg(a: Abs | undefined, what: string): void
   }
 }
 
-/** race/any 的元素联合（tuple → join；arr → element；string → char）；不可判 → undefined */
-function iterableElementOf(a: Abs | undefined): Abs | undefined {
+/**
+ * Bug 293/312：组合子（all / race / any / allSettled）的元素域。
+ * - tuple → 逐元素；arr → 元素域（单元素）；string prim → 字符域
+ * - 不可判（any/unknown/obj/brand…）→ undefined（调用方回落保守值域）
+ */
+function comboElements(a: Abs | undefined): Abs[] | undefined {
   if (!a) return undefined;
   const k = a.shape.k;
-  if (k === "tuple") {
-    const els = (a.shape as { elements: Abs[] }).elements;
-    if (els.length === 0) return undefined; // race([]) 原生永远 pending
-    return els.reduce((x, y) => joinAbs(x, y));
-  }
-  if (k === "arr") return (a.shape as { element: Abs }).element;
+  if (k === "tuple") return (a.shape as { elements: Abs[] }).elements;
+  if (k === "arr") return [(a.shape as { element: Abs }).element];
   if (k === "prim" && (a.shape as { type: string }).type === "string") {
-    return abs({ k: "prim", type: "string" }, undefined, undefined, "path");
+    return [abs({ k: "prim", type: "string" }, undefined, undefined, "path")];
   }
   return undefined;
 }
 
-export function evalPromiseStatic(name: string, args: Abs[]): Abs | undefined {
+/** Bug 293：组合子元素的 settle 通道（fulfilled 值 / 拒绝 reason / 状态未知） */
+interface ElementSettle {
+  /** fulfilled 臂的值（元素 promise → inner；确定拒绝 → never） */
+  value: Abs;
+  /** 拒绝 reason（无通道 → undefined） */
+  reason?: Abs;
+  /** 状态未知（元素可能永不 settle / thenable 采纳面不可判） */
+  unknownState: boolean;
+}
+
+/**
+ * Bug 293：组合子元素按 PromiseResolve 口径 unwrap——元素是 eff(promise) 时
+ * 取其 inner（**不是 promise 本身**；原生 race/any 的结算值是元素 promise
+ * 的值），并保留其 rejected 通道（组合子的拒绝域来源）。非 promise 元素按
+ * 原生 PromiseResolve 包装（值 = 元素本身；thenable 采纳面不可判 → 状态未知）。
+ */
+function elementSettle(el: Abs): ElementSettle {
+  if (isPromiseEff(el)) {
+    const sh = el.shape as { inner: Abs; rejected?: Abs; unsettled?: boolean };
+    return { value: sh.inner, reason: sh.rejected, unknownState: sh.unsettled === true };
+  }
+  return { value: el, reason: undefined, unknownState: thenableRiskOf(el) };
+}
+
+/** 元素域 join（空集 → unknown；never 由 joinAbs 吸收） */
+function joinOf(values: Abs[]): Abs {
+  if (values.length === 0) return unknown;
+  return values.reduce((a, b) => joinAbs(a, b));
+}
+
+/**
+ * Bug 312：allSettled 元素投影（判别联合）。
+ * - promise 元素且状态**确定** → 单臂：fulfilled {status:"fulfilled", value:
+ *   <解包值>} / rejected {status:"rejected", reason:<真 reason>}
+ *   （原生 allSettled 的 status 恒定；两臂 join 成无区分 sum 会让读 reason
+ *   命中 fulfilled 臂的缺槽 → undefined → .message 定抛假错）
+ * - 非 promise 元素 / 状态未知 → 两臂并集（非 promise 元素是既有钉测试
+ *   eval-namespace-statics-wave11 钉住的「status 两态并集 + value/reason
+ *   双槽」口径；状态未知时两臂都可能）
+ */
+function settledEntry(el: Abs): Abs {
+  const s = elementSettle(el);
+  if (isPromiseEff(el)) {
+    const fulfilledArm = abs(
+      {
+        k: "obj",
+        slots: {
+          status: { value: strLit("fulfilled") },
+          value: { value: s.value },
+        },
+      },
+      undefined,
+      undefined,
+      "path",
+    );
+    const rejectedArm = abs(
+      {
+        k: "obj",
+        slots: {
+          status: { value: strLit("rejected") },
+          reason: { value: s.reason ?? unknown },
+        },
+      },
+      undefined,
+      undefined,
+      "path",
+    );
+    if (s.value.shape.k === "never" && s.reason !== undefined) return rejectedArm;
+    if (s.reason === undefined && !s.unknownState) return fulfilledArm;
+    return joinAbs(fulfilledArm, rejectedArm);
+  }
+  const fulfilled = abs(
+    {
+      k: "obj",
+      slots: {
+        status: { value: joinAbs(strLit("fulfilled"), strLit("rejected")) },
+        value: { value: s.value },
+      },
+    },
+    undefined,
+    undefined,
+    "path",
+  );
+  const rejected = abs(
+    {
+      k: "obj",
+      slots: {
+        status: { value: strLit("rejected") },
+        reason: { value: unknown },
+      },
+    },
+    undefined,
+    undefined,
+    "path",
+  );
+  return joinAbs(fulfilled, rejected);
+}
+
+/**
+ * Bug 293：Promise.any 全拒 → AggregateError reason（原生：errors 数组 =
+ * 各元素 reason，message = "All promises were rejected"）。
+ * 本地构造（不引 error-family.ts——它已引本文件，闭环会成环），槽位口径与
+ * errorBrandAbs 同款（name 走原型链槽、stack/message/errors 不可枚举）。
+ */
+function aggregateErrorAbs(reasons: Abs[]): Abs {
+  const inner = objOf({
+    stack: { value: str("path") },
+    name: { value: strLit("AggregateError"), inherited: true },
+    message: { value: strLit("All promises were rejected") },
+    errors: { value: abs({ k: "tuple", elements: reasons }, undefined, undefined, "path") },
+  });
+  for (const k of ["stack", "name", "message", "errors"]) {
+    setPropFlags(inner, k, { enumerable: false });
+  }
+  return abs({ k: "brand", name: "AggregateError", shape: inner }, undefined, undefined, "path");
+}
+
+/**
+ * Bug 311：Promise 静态方法的 this 绑定（ES262 PromiseResolve /
+ * NewPromiseCapability：this 必须 IsConstructor，否则 TypeError）。
+ * thisVal 缺席 = 直接命名空间调用（this ≡ Promise 构造器 → 合法）。
+ */
+function checkPromiseStaticThis(thisVal: Abs | undefined): void {
+  if (thisVal === undefined) return;
+  // nullish this（Promise.resolve.call(null, 1)）→ 原生 TypeError（非对象）
+  if (isNullishLitAbs(thisVal)) throw new NudoThrow(errorTypeAbs("TypeError"));
+  const k = thisVal.shape.k;
+  // 不可判（any/unknown/sum）→ 记 may-throw（不硬抛——避免假抛）
+  if (k === "any" || k === "unknown" || k === "sum") {
+    recordMayThrow({ kind: "TypeError", cause: "Promise static method this may not be a constructor" });
+    return;
+  }
+  // 构造器判定：fn / brand 且 ctor:true（宿主 Promise 的 Abs 面即 fn+ctor）
+  const isCtor =
+    (k === "fn" || k === "brand") && (thisVal.shape as { ctor?: boolean }).ctor === true;
+  if (!isCtor) throw new NudoThrow(errorTypeAbs("TypeError"));
+}
+
+/** Bug 311：受 this 绑定约束的 Promise 静态方法（ES262：均以 this 为接收者） */
+const PROMISE_THIS_BOUND_STATICS = new Set([
+  "resolve",
+  "reject",
+  "all",
+  "race",
+  "allSettled",
+  "any",
+  "withResolvers",
+]);
+
+/**
+ * Bug 311：Promise 静态派发。thisVal = 静态方法值的 this 绑定（成员读出
+ * 的静态方法被单独调用时的接收者）；缺席 = 直接命名空间调用（this ≡
+ * Promise 构造器，合法）。非构造器接收者按原生抛 TypeError。
+ */
+export function evalPromiseStatic(
+  name: string,
+  args: Abs[],
+  thisVal?: Abs,
+): Abs | undefined {
+  if (PROMISE_THIS_BOUND_STATICS.has(name)) checkPromiseStaticThis(thisVal);
   switch (name) {
     case "withResolvers": {
       // Bug 24：ES2024 Promise.withResolvers() —— 恒返回三槽对象。promise
@@ -1073,40 +1261,52 @@ export function evalPromiseStatic(name: string, args: Abs[]): Abs | undefined {
       // 投影（fast path / promise<unknown[]>）。
       if (classifyIterableArg(args[0]) === "bad") return promiseUnknown();
       const a0 = args[0];
-      if (a0?.shape.k === "arr" && a0.shape.element.shape.k === "eff") {
-        // 元素 promise 的拒绝会拒绝 all → settle 不可判（采纳通道在 join 中
-        // 丢失）→ unsettled
-        const el = a0.shape.element.shape as {
-          inner: Abs;
-          rejected?: Abs;
-          unsettled?: boolean;
-        };
-        const base = abs({ k: "arr", element: el.inner }, undefined, undefined, "path");
-        return el.rejected !== undefined || el.unsettled === true
-          ? promiseUnsettled(base)
-          : promiseAbs(base, "path");
+      // Bug 293：逐元素取 settle 通道（元素 promise 解包 inner + 保留
+      // rejected）——all 的**拒绝域**来自任一元素的 rejected 通道（原生：任一
+      // 元素拒绝即 all 拒绝，reason = 该元素 reason）。
+      const els = comboElements(a0);
+      if (!els) {
+        return promiseUnsettled(
+          abs({ k: "arr", element: unknown }, undefined, undefined, "partial"),
+          "partial",
+        );
       }
-      // 字面量 tuple：逐元素展开 thenable（[Promise.resolve(1), 2] → [1, 2]，
-      // 与 race/any 的元素投影同口径）；任一元素 promise 携带拒绝通道/风险
-      // → all 结果 unsettled
-      if (a0?.shape.k === "tuple") {
-        let risky = false;
-        const els = a0.shape.elements.map((el) => {
-          if (el.shape.k === "eff" && el.shape.eff === "promise") {
-            const p = el.shape as { inner: Abs; rejected?: Abs; unsettled?: boolean };
-            if (p.rejected !== undefined || p.unsettled === true) risky = true;
-            return p.inner;
-          }
-          if (thenableRiskOf(el)) risky = true;
-          return el;
-        });
-        const base = abs({ k: "tuple", elements: els }, undefined, undefined, "path");
-        return risky ? promiseUnsettled(base) : promiseAbs(base, "path");
-      }
-      return promiseUnsettled(
-        abs({ k: "arr", element: unknown }, undefined, undefined, "partial"),
-        "partial",
+      const settles = els.map(elementSettle);
+      const values = settles.map((s) => s.value);
+      const reasons = settles.map((s) => s.reason).filter((r): r is Abs => r !== undefined);
+      const reason =
+        reasons.length === 0
+          ? undefined
+          : reasons.length === 1
+            ? reasons[0]!
+            : reasons.reduce((a, b) => joinAbs(a, b));
+      // 确定拒绝：某元素 inner=never 且带 reason → all 必拒绝（fulfilled 域
+      // 不可能）→ 内层 never + reason 通道（$await 抛 → catch 臂可达）
+      const definiteReject = settles.some(
+        (s) => s.value.shape.k === "never" && s.reason !== undefined,
       );
+      if (definiteReject) return promiseRejected(reason!, "path");
+      const base =
+        a0?.shape.k === "tuple"
+          ? abs({ k: "tuple", elements: values }, undefined, undefined, "path")
+          : abs(
+              { k: "arr", element: values.length === 1 ? values[0]! : joinOf(values) },
+              undefined,
+              undefined,
+              "path",
+            );
+      // 拒绝域存在（某元素可能拒绝）→ 结果可能拒绝 → rejected 通道 + unsettled
+      if (reason !== undefined) {
+        return markFreshInstance(
+          abs(
+            { k: "eff", eff: "promise", inner: base, rejected: reason, unsettled: true },
+            undefined,
+            undefined,
+            "path",
+          ),
+        );
+      }
+      return settles.some((s) => s.unknownState) ? promiseUnsettled(base) : promiseAbs(base, "path");
     }
     case "race":
     case "any": {
@@ -1114,57 +1314,95 @@ export function evalPromiseStatic(name: string, args: Abs[]): Abs | undefined {
       // promise 的 rejection（race(1) 同步侧返回正常 promise）。故此处不
       // 做 throws 记录（与 all 分叉：all 的 GetIterator 在PerformPromiseAll
       // 同步段），值域按元素联合投影。
-      const el = iterableElementOf(args[0]);
-      if (!el) {
-        // 元素不可判（含非可迭代接收者——原生折为 rejection，非同步抛）
+      // Bug 293：元素按 PromiseResolve 口径 unwrap（元素 promise → inner，
+      // **不是 promise 本身**——原生 race/any 的结算值是元素 promise 的值），
+      // 拒绝侧进 rejected 域。
+      const els = comboElements(args[0]);
+      if (!els || els.length === 0) {
+        // 元素不可判（含非可迭代接收者——原生折为 rejection，非同步抛）；
+        // 空集合 → 原生永远 pending
         return promiseUnknown();
       }
-      // race/any：任一元素 promise 的拒绝可能赢 → 采纳通道在元素联合中
-      // 丢失 → unsettled（纯原始值元素 settled）
-      const a0 = args[0];
-      const risky =
-        a0?.shape.k === "tuple"
-          ? a0.shape.elements.some((e) => isPromiseEff(e) || thenableRiskOf(e))
-          : a0?.shape.k === "arr"
-            ? isPromiseEff(a0.shape.element) || thenableRiskOf(a0.shape.element)
-            : thenableRiskOf(el);
-      return risky ? promiseUnsettled(el) : promiseAbs(el, "path");
+      const settles = els.map(elementSettle);
+      const value = joinOf(settles.map((s) => s.value));
+      const reasons = settles.map((s) => s.reason).filter((r): r is Abs => r !== undefined);
+      const unknownState = settles.some((s) => s.unknownState);
+      if (name === "any") {
+        // any：首个 fulfilled 赢 → fulfilled 域 = 各元素 fulfilled 值 join；
+        // 全拒 → AggregateError（原生 errors = 各 reason）
+        const allReject = settles.every(
+          (s) => s.value.shape.k === "never" && s.reason !== undefined,
+        );
+        if (allReject) return promiseRejected(aggregateErrorAbs(reasons), "path");
+        if (reasons.length === 0) {
+          return unknownState ? promiseUnsettled(value) : promiseAbs(value, "path");
+        }
+        // 部分元素可能拒绝 → 结果可能以 AggregateError 拒绝（errors 含已知
+        // reason + 未判元素的 unknown）
+        const errs = reasons.concat(
+          settles.filter((s) => s.reason === undefined).map(() => unknown),
+        );
+        return markFreshInstance(
+          abs(
+            {
+              k: "eff",
+              eff: "promise",
+              inner: value,
+              rejected: aggregateErrorAbs(errs),
+              unsettled: true,
+            },
+            undefined,
+            undefined,
+            "path",
+          ),
+        );
+      }
+      // race：首个 settle 赢 → fulfilled ∪ rejected 两域并存（原生：谁先
+      // settle 谁赢；引擎不建模时序 → 两域并集）
+      const reason =
+        reasons.length === 0
+          ? undefined
+          : reasons.length === 1
+            ? reasons[0]!
+            : reasons.reduce((a, b) => joinAbs(a, b));
+      if (reason !== undefined) {
+        return markFreshInstance(
+          abs(
+            {
+              k: "eff",
+              eff: "promise",
+              inner: value,
+              rejected: reason,
+              ...(unknownState ? { unsettled: true } : {}),
+            },
+            undefined,
+            undefined,
+            "path",
+          ),
+        );
+      }
+      return unknownState ? promiseUnsettled(value) : promiseAbs(value, "path");
     }
     case "allSettled": {
       // Bug 64：同 race/any——同步不抛；值域 arr<{status; value}|{status; reason}>。
       // 定非可迭代接收者（原生折为 rejection）→ 保守 promise<unknown>。
       if (classifyIterableArg(args[0]) === "bad") return promiseUnknown();
-      const el = iterableElementOf(args[0]) ?? unknown;
-      const entry = (value: Abs): Abs =>
-        abs(
-          {
-            k: "obj",
-            slots: {
-              status: { value: joinAbs(strLit("fulfilled"), strLit("rejected")) },
-              value: { value },
-            },
-          },
-          undefined,
-          undefined,
-          "path",
-        );
-      const rejected = abs(
-        {
-          k: "obj",
-          slots: {
-            status: { value: strLit("rejected") },
-            reason: { value: unknown },
-          },
-        },
-        undefined,
-        undefined,
-        "path",
-      );
-      const element = joinAbs(entry(el), rejected);
-      return promiseAbs(
-        abs({ k: "arr", element }, undefined, undefined, "path"),
-        "path",
-      );
+      const a0 = args[0];
+      // Bug 312：元素投影成**判别联合**（promise 元素状态确定 → 单臂；否则
+      // 两臂并集）——不再把元素 promise 原样塞进 value 槽。
+      const els = comboElements(a0);
+      if (!els) return promiseUnknown();
+      const entries = els.map(settledEntry);
+      const base =
+        a0?.shape.k === "tuple"
+          ? abs({ k: "tuple", elements: entries }, undefined, undefined, "path")
+          : abs(
+              { k: "arr", element: entries.length === 1 ? entries[0]! : joinOf(entries) },
+              undefined,
+              undefined,
+              "path",
+            );
+      return promiseAbs(base, "path");
     }
     default:
       return undefined;

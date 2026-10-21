@@ -18,12 +18,14 @@
  */
 
 import type { Abs } from "../../abs.ts";
-import { abs, strLit, litValue, bool, unknown } from "../../abs.ts";
-import { objOf, getSlot } from "../../objects.ts";
+import { abs, absLit, strLit, litValue, bool, boolLit, numLit, unknown } from "../../abs.ts";
+import { objOf, getSlot, setSlot } from "../../objects.ts";
 import { NudoThrow } from "../../exec/nudo-throw.ts";
 import { errorTypeAbs, recordMayThrow } from "../../exec/may-throw.ts";
 import { isSymbolAbs } from "../symbol.ts";
 import { str } from "../shared.ts";
+import { undefAbs } from "../../hof.ts";
+import { collectionIteratorAbs } from "./iterator.ts";
 
 import { isNullishLit } from "./error-family.ts";
 import { noteBoxedCtorArg } from "./boxed.ts";
@@ -50,12 +52,34 @@ function urlBrandAbs(u?: URL): Abs {
   for (const key of componentKeys) {
     slots[key] = { value: u ? strLit(u[key]) : str("path") };
   }
+  // Bug 322：`searchParams` 组件槽（原生 URL 恒带）——值 = URLSearchParams
+  // brand，条目表由宿主 URL 的 search 组件精确推出（原生 searchParams
+  // 与 search 组件同源）。抽象 input 臂（无宿主 URL）⇒ 条目表不可知
+  // （brand 缺席条目表 ⇒ 读取面 unknown）。
+  slots["searchParams"] = {
+    value: u
+      ? urlSearchParamsBrandAbs(parseQueryEntries(u.search))
+      : urlSearchParamsBrandAbs(),
+  };
   return abs(
     { k: "brand", name: "URL", shape: objOf(slots) },
     undefined,
     undefined,
     u ? "exact" : "path",
   );
+}
+
+/**
+ * 查询串 → 条目对（WHATWG application/x-www-form-urlencoded 解析）。
+ * 宿主 `new URLSearchParams(s)` 是规范实现（node v26 与浏览器一致）⇒
+ * 直接用宿主解析，避免自造解析器的偏差。
+ */
+function parseQueryEntries(search: string): UrlSearchParamsEntry[] {
+  try {
+    return [...new URLSearchParams(search).entries()];
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -184,14 +208,231 @@ export function makeTextDecoderAbs(label: Abs | undefined): Abs {
   return textDecoderBrandAbs();
 }
 
-/** URLSearchParams brand（条目表不建模——与 WeakMap/WeakSet 空 brand 同口径） */
-function urlSearchParamsBrandAbs(): Abs {
+/**
+ * URLSearchParams brand：带**条目表**（[name, value] 对的序列）。
+ *
+ * Bug 322：条目表此前不建模（空 brand）⇒ `sp.get("a")` 折 unknown。原生
+ * URLSearchParams 恒有可枚举的条目表（`new URLSearchParams("a=1")` → 一条
+ * `["a","1"]`）⇒ 条目表可从**确定来源**精确推出：
+ * - 字符串字面量 init → 按 WHATWG 查询串解析（宿主 `new URLSearchParams(s)`）；
+ * - URL brand 的 searchParams → 由宿主 URL 的 search 组件解析；
+ * - 二元组 tuple / record init → 元素/槽值均为字符串字面量时逐条给出。
+ * 条目表缺席 = **值域不可知**（抽象 init / may 臂）⇒ 读取面折 unknown。
+ *
+ * 条目表存内层 obj 的 `@@entries` 槽（内部槽——原生不可枚举/不可见）。
+ */
+export const URL_SEARCH_PARAMS_ENTRIES_SLOT = "@@entries";
+
+/** URLSearchParams 条目（[name, value] 字符串对） */
+export type UrlSearchParamsEntry = [string, string];
+
+/** URLSearchParams brand：entries 缺席 = 条目表不可知（unknown 域） */
+function urlSearchParamsBrandAbs(entries?: UrlSearchParamsEntry[]): Abs {
+  const slots: Record<string, { value: Abs }> = {};
+  if (entries !== undefined) {
+    slots[URL_SEARCH_PARAMS_ENTRIES_SLOT] = {
+      value: abs(
+        {
+          k: "tuple",
+          elements: entries.map(
+            ([n, v]) =>
+              abs({ k: "tuple", elements: [strLit(n), strLit(v)] }, undefined, undefined, "exact"),
+          ),
+        },
+        undefined,
+        undefined,
+        "exact",
+      ),
+    };
+  }
   return abs(
-    { k: "brand", name: "URLSearchParams", shape: objOf({}) },
+    { k: "brand", name: "URLSearchParams", shape: objOf(slots) },
     undefined,
     undefined,
-    "path",
+    entries !== undefined ? "exact" : "path",
   );
+}
+
+/**
+ * 读取 URLSearchParams brand 的条目表（宿主无关的 [name, value] 字符串对）。
+ * 缺席 = 条目表不可知（调用方按 unknown 口径）。
+ */
+export function urlSearchParamsEntriesOf(a: Abs): UrlSearchParamsEntry[] | undefined {
+  if (a.shape.k !== "brand" || a.shape.name !== "URLSearchParams") return undefined;
+  const inner = a.shape.shape;
+  if (inner.shape.k !== "obj") return undefined;
+  const slot = getSlot((inner.shape as { slots: Record<string, { value: Abs }> }).slots, URL_SEARCH_PARAMS_ENTRIES_SLOT);
+  if (!slot) return undefined;
+  const t = slot.value;
+  if (t.shape.k !== "tuple") return undefined;
+  const out: UrlSearchParamsEntry[] = [];
+  for (const el of t.shape.elements) {
+    if (el.shape.k !== "tuple" || el.shape.elements.length !== 2) return undefined;
+    const n = litValue(el.shape.elements[0]!);
+    const v = litValue(el.shape.elements[1]!);
+    if (!n.ok || typeof n.value !== "string") return undefined;
+    if (!v.ok || typeof v.value !== "string") return undefined;
+    out.push([n.value, v.value]);
+  }
+  return out;
+}
+
+/**
+ * Bug 322：URLSearchParams 的 `size` 访问器读（原生是 **getter**，非方法）——
+ * 条目数；条目表不可知 ⇒ number 域（path）。
+ */
+export function urlSearchParamsSizeAbs(a: Abs): Abs {
+  const entries = urlSearchParamsEntriesOf(a);
+  if (entries === undefined) return abs({ k: "prim", type: "number" }, undefined, undefined, "path");
+  return abs(
+    { k: "prim", type: "number" },
+    { op: "lit", value: entries.length as never },
+    undefined,
+    "exact",
+  );
+}
+
+/** 回写 URLSearchParams 条目表（set/append/delete 变更面） */
+function urlSearchParamsSetEntries(a: Abs, entries: UrlSearchParamsEntry[]): void {
+  if (a.shape.k !== "brand" || a.shape.name !== "URLSearchParams") return;
+  const inner = a.shape.shape;
+  if (inner.shape.k !== "obj") return;
+  setSlot(
+    (inner.shape as { slots: Record<string, { value: Abs }> }).slots,
+    URL_SEARCH_PARAMS_ENTRIES_SLOT,
+    {
+      value: abs(
+        {
+          k: "tuple",
+          elements: entries.map(
+            ([n, v]) =>
+              abs({ k: "tuple", elements: [strLit(n), strLit(v)] }, undefined, undefined, "exact"),
+          ),
+        },
+        undefined,
+        undefined,
+        "exact",
+      ),
+    },
+  );
+}
+
+/** 实参 ToString（URLSearchParams 的 name/value 强制字符串化） */
+function urlSpArgString(a: Abs | undefined): string | undefined {
+  if (!a) return undefined;
+  const v = litValue(a);
+  if (!v.ok) return undefined;
+  if (typeof v.value === "string") return v.value;
+  if (
+    typeof v.value === "number" ||
+    typeof v.value === "boolean" ||
+    typeof v.value === "bigint"
+  ) {
+    return String(v.value);
+  }
+  return undefined; // null / undefined → 字符串 "null" / "undefined"（原生 ToString）
+}
+
+/**
+ * Bug 322：URLSearchParams 品牌方法派发（条目表精确取值）。
+ *
+ * 原生语义（node v26 实测）：
+ * - `get(name)` → 首个匹配值；**无匹配返 `null`**（不是 undefined）；
+ * - `getAll(name)` → 全部匹配值数组（可为空）；
+ * - `has(name)` → boolean；
+ * - `size` → 条目数（**getter**，非方法）；
+ * - `toString()` → 查询串（"a=1&b=2"）；
+ * - `set(name, value)` → 删同名全部条目后追加一条；`append` → 追加；
+ *   `delete(name)` → 删同名全部条目，返 boolean（是否删过）；
+ * - `keys/values/entries` → 迭代器（条目表精确展开）。
+ *
+ * 条目表**不可知**（抽象 init / may 臂）⇒ 读面折 unknown（不假精确）；
+ * 实参 ToString 不可判 ⇒ 同理。
+ */
+export function evalUrlSearchParamsMethod(
+  method: string,
+  recv: Abs,
+  args: Abs[],
+): Abs | undefined {
+  const entries = urlSearchParamsEntriesOf(recv);
+  switch (method) {
+    case "get": {
+      const name = urlSpArgString(args[0]);
+      if (entries === undefined || name === undefined) return unknown;
+      const hit = entries.find(([n]) => n === name);
+      return hit ? strLit(hit[1]) : absLit(null);
+    }
+    case "getAll": {
+      const name = urlSpArgString(args[0]);
+      if (entries === undefined || name === undefined) return unknown;
+      const vals = entries.filter(([n]) => n === name).map(([, v]) => strLit(v));
+      return abs({ k: "tuple", elements: vals }, undefined, undefined, "exact");
+    }
+    case "has": {
+      const name = urlSpArgString(args[0]);
+      if (entries === undefined || name === undefined) return unknown;
+      return boolLit(entries.some(([n]) => n === name));
+    }
+    case "size": {
+      if (entries === undefined) return unknown;
+      return numLit(entries.length);
+    }
+    case "toString": {
+      if (entries === undefined) return unknown;
+      return strLit(
+        entries.map(([n, v]) => `${n}=${v}`).join("&"),
+      );
+    }
+    case "set": {
+      const name = urlSpArgString(args[0]);
+      const value = urlSpArgString(args[1]);
+      if (entries === undefined || name === undefined || value === undefined) return unknown;
+      urlSearchParamsSetEntries(recv, [
+        ...entries.filter(([n]) => n !== name),
+        [name, value],
+      ]);
+      return undefAbs();
+    }
+    case "append": {
+      const name = urlSpArgString(args[0]);
+      const value = urlSpArgString(args[1]);
+      if (entries === undefined || name === undefined || value === undefined) return unknown;
+      urlSearchParamsSetEntries(recv, [...entries, [name, value]]);
+      return undefAbs();
+    }
+    case "delete": {
+      const name = urlSpArgString(args[0]);
+      if (entries === undefined || name === undefined) return unknown;
+      const kept = entries.filter(([n]) => n !== name);
+      if (kept.length !== entries.length) urlSearchParamsSetEntries(recv, kept);
+      // 原生 `URLSearchParams.prototype.delete(name)` 返 **undefined**
+      // （WHATWG 规范：删除条目数不外露；node v26 实测确认——不是 boolean）
+      return undefAbs();
+    }
+    case "sort": {
+      if (entries === undefined) return unknown;
+      urlSearchParamsSetEntries(
+        recv,
+        [...entries].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)),
+      );
+      return undefAbs();
+    }
+    case "keys":
+    case "values":
+    case "entries": {
+      if (entries === undefined) return unknown;
+      const els = entries.map(([n, v]) =>
+        method === "entries"
+          ? abs({ k: "tuple", elements: [strLit(n), strLit(v)] }, undefined, undefined, "exact")
+          : method === "keys"
+            ? strLit(n)
+            : strLit(v),
+      );
+      return collectionIteratorAbs(els);
+    }
+    default:
+      return undefined;
+  }
 }
 
 /**
@@ -207,11 +448,18 @@ function urlSearchParamsBrandAbs(): Abs {
  *   ToString symbol 校验。
  */
 export function makeUrlSearchParamsAbs(init: Abs | undefined): Abs {
-  if (!init || isNullishLit(init)) return urlSearchParamsBrandAbs();
+  if (!init || isNullishLit(init)) return urlSearchParamsBrandAbs([]);
   if (isSymbolAbs(init)) throw new NudoThrow(errorTypeAbs("TypeError")); // ToString(symbol)
   const vR = litValue(init);
-  if (vR.ok) return urlSearchParamsBrandAbs(); // string/number/bool/bigint：ToString 解析恒不抛
+  // string/number/bool/bigint 字面量：ToString 后按查询串解析（恒不抛）——
+  // 条目表可精确推出（native: new URLSearchParams("a=1") → 一条 ["a","1"]；
+  // new URLSearchParams(42) → 一条 ["42",""]）。
+  if (vR.ok) {
+    const s = typeof vR.value === "string" ? vR.value : String(vR.value);
+    return urlSearchParamsBrandAbs(parseQueryEntries(s));
+  }
   if (init.shape.k === "tuple") {
+    const entries: UrlSearchParamsEntry[] = [];
     for (const el of init.shape.elements) {
       // 元素必须是 [name,value] 二元组：prim 恒非 entry（node: (["a"]) TypeError）
       if (el.shape.k === "prim") throw new NudoThrow(errorTypeAbs("TypeError"));
@@ -222,6 +470,12 @@ export function makeUrlSearchParamsAbs(init: Abs | undefined): Abs {
         // name/value ToString：symbol 确定 TypeError、any → may
         noteBoxedCtorArg("String", el.shape.elements[0]);
         noteBoxedCtorArg("String", el.shape.elements[1]);
+        // 两侧均为字符串字面量 ⇒ 条目表可精确推出
+        const nv = litValue(el.shape.elements[0]);
+        const vv = litValue(el.shape.elements[1]);
+        if (nv.ok && typeof nv.value === "string" && vv.ok && typeof vv.value === "string") {
+          entries.push([nv.value, vv.value]);
+        }
         continue;
       }
       // 闭 obj 且无 @@iterator 槽 → 非可迭代 pair 元素，确定 TypeError
@@ -240,7 +494,11 @@ export function makeUrlSearchParamsAbs(init: Abs | undefined): Abs {
         cause: "URLSearchParams init entries may not be [name, value] pairs",
       });
     }
-    return urlSearchParamsBrandAbs();
+    // 条目数与元素数一致 ⇒ 每个 pair 都是字符串字面量 ⇒ 表**完整**（exact）；
+    // 否则（抽象 pair 元素）表不可知 ⇒ unknown。
+    return urlSearchParamsBrandAbs(
+      entries.length === init.shape.elements.length ? entries : undefined,
+    );
   }
   if (init.shape.k === "obj") {
     if (init.shape.open === true) {
@@ -252,10 +510,15 @@ export function makeUrlSearchParamsAbs(init: Abs | undefined): Abs {
       return urlSearchParamsBrandAbs();
     }
     // record 路径：槽值 ToString（symbol 确定/any → may）
+    const entries: UrlSearchParamsEntry[] = [];
+    let allLiteral = true;
     for (const key of Object.keys(init.shape.slots)) {
       noteBoxedCtorArg("String", init.shape.slots[key]!.value);
+      const v = litValue(init.shape.slots[key]!.value);
+      if (v.ok && typeof v.value === "string") entries.push([key, v.value]);
+      else allLiteral = false;
     }
-    return urlSearchParamsBrandAbs();
+    return urlSearchParamsBrandAbs(allLiteral ? entries : undefined);
   }
   if (init.shape.k === "brand" && init.shape.name === "Map") {
     return urlSearchParamsBrandAbs(); // 条目恒二元组

@@ -21,6 +21,7 @@ import {
   collectForkBindingNames,
   paramDisplayNames,
   nativeParamArity,
+  fnKindOf,
 } from "./helpers.ts";
 import {
   emitParamBindingFromArgs,
@@ -173,6 +174,10 @@ export function classSpecOf(
   /** 方法形参展示名（未调用方法槽 shape.params） */
   const methodParamEntries: Array<[string, string[]]> = [];
   const staticMethodParamEntries: Array<[string, string[]]> = [];
+  // Bug 325：类方法的**函数种类**戳（async × generator 四象限）——原生类
+  // 方法的标签面随种类变（`Object.prototype.toString.call(A.prototype.m)`）。
+  const methodKindEntries: Array<[string, "function" | "async" | "generator" | "async-generator"]> = [];
+  const staticMethodKindEntries: Array<[string, "function" | "async" | "generator" | "async-generator"]> = [];
   /** P2b：构造器元数（.length 自有属性）——隐式构造器（基类/派生）恒 0 */
   let ctorLength = 0;
   const accessorDefs = new Map<string, { get?: string; set?: string }>();
@@ -619,6 +624,7 @@ export function classSpecOf(
         `${indent(depth + 3)}},`,
       );
       staticMethodParamEntries.push([mname, paramDisplayNames(m.params)]);
+      staticMethodKindEntries.push([mname, (fnKindOf(m) ?? "function")]);
       if (computedKeySrc) {
         computedKeyParts.push(`${indent(depth + 2)}${JSON.stringify(mname)}: ${computedKeySrc},`);
       }
@@ -643,6 +649,7 @@ export function classSpecOf(
         `${indent(depth + 3)}},`,
       );
       methodParamEntries.push([mname, paramDisplayNames(m.params)]);
+      methodKindEntries.push([mname, (fnKindOf(m) ?? "function")]);
     } else {
       methodParts.push(
         `${indent(depth + 3)}${JSON.stringify(mname)}: (__this, ${bindFromArgs ? "...__margs" : paramList}) => {`,
@@ -650,6 +657,7 @@ export function classSpecOf(
         `${indent(depth + 3)}},`,
       );
       methodParamEntries.push([mname, paramDisplayNames(m.params)]);
+      methodKindEntries.push([mname, (fnKindOf(m) ?? "function")]);
     }
     if (computedKeySrc) {
       computedKeyParts.push(`${indent(depth + 2)}${JSON.stringify(mname)}: ${computedKeySrc},`);
@@ -712,6 +720,22 @@ export function classSpecOf(
     specLines.push(`${indent(depth + 2)}methodParams: {`);
     for (const [k, names] of methodParamEntries) {
       specLines.push(`${indent(depth + 3)}${JSON.stringify(k)}: [${names.map((n) => JSON.stringify(n)).join(", ")}],`);
+    }
+    specLines.push(`${indent(depth + 2)}},`);
+  }
+  // Bug 325：类方法种类戳随 spec 下传（读取面 classMethodValueAbs 打
+  // impl.fnKind ⇒ 标签面 AsyncFunction / GeneratorFunction / …）
+  if (methodKindEntries.length) {
+    specLines.push(`${indent(depth + 2)}methodKinds: {`);
+    for (const [k, kind] of methodKindEntries) {
+      specLines.push(`${indent(depth + 3)}${JSON.stringify(k)}: ${JSON.stringify(kind)},`);
+    }
+    specLines.push(`${indent(depth + 2)}},`);
+  }
+  if (staticMethodKindEntries.length) {
+    specLines.push(`${indent(depth + 2)}staticMethodKinds: {`);
+    for (const [k, kind] of staticMethodKindEntries) {
+      specLines.push(`${indent(depth + 3)}${JSON.stringify(k)}: ${JSON.stringify(kind)},`);
     }
     specLines.push(`${indent(depth + 2)}},`);
   }

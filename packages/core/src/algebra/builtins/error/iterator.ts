@@ -29,7 +29,7 @@
 
 import type { Abs } from "../../abs.ts";
 import { abs, boolLit, bool, unknown, litValue } from "../../abs.ts";
-import { joinAbs } from "../../objects.ts";
+import { joinAbs, setSlot } from "../../objects.ts";
 import { undefAbs } from "../../hof.ts";
 import { registerGenElements, registerGenDrain } from "../../exec/match-iter.ts";
 import { absFunction } from "../../abs-fn.ts";
@@ -133,6 +133,30 @@ export function collectionLiveEntries(recv: Abs): CollectionLiveEntries | undefi
 }
 
 /**
+ * Bug 314：迭代器的 `@@iterator` **自反性**——原生 `it[Symbol.iterator]()`
+ * 返回**自身**（`it[Symbol.iterator]() === it` 为 true；Set/Map/Array/字符串
+ * 迭代器皆然）。此前 @@iterator 槽是 noBody 占位（调出来 undefined）⇒ 自反
+ * 判定折 false（`it[Symbol.iterator]() === it` → false）。
+ *
+ * 建模口径：**relation fn**（returnType = 迭代器自身）——$call 的 relation 面
+ * 直接返 returnType（同引用 ⇒ === 折 true）。
+ *
+ * 为什么不用 apply（apply 也能拿 thisVal 返接收者）：iterate.ts 的
+ * `hasRealImpl` 以「有 apply / 有真 body」判「用户实现的 fn」——引擎原生
+ * 迭代器的 @@iterator 一旦带 apply，就会被误判为**用户 iterable**（走
+ * collectUserIterElems 用户协议路径），改写迭代消费面（live 迭代器的
+ * 元素面 / 步数上界 / IteratorClose 登记口径全变）。relation fn 不带
+ * apply / 不带真 body ⇒ hasRealImpl 仍为 false ⇒ 迭代消费面**原样不动**。
+ */
+function selfIteratorFn(iter: Abs): Abs {
+  return absFunction(
+    [],
+    { relation: { paramTypes: [], returnType: iter } },
+    { ctor: false, returnType: iter },
+  );
+}
+
+/**
  * Bug 23：Map/Set keys/values/entries 迭代器对象——生成器对象（Bug 22）
  * 同款协议面：obj + next 方法槽（按调用序折 {value, done}，耗尽 →
  * {value: undefined, done: true}）+ @@iterator 槽 + 元素侧表
@@ -188,6 +212,10 @@ export function collectionIteratorAbs(els: Abs[], live?: CollectionLiveEntries):
     undefined,
     els.every((e) => e.conf === "exact") ? "exact" : "path",
   );
+  // Bug 314：@@iterator 返自身（原生 it[Symbol.iterator]() === it）——槽值
+  // 换成 relation fn（returnType = 本迭代器）。占位（noBody）先建再换：
+  // relation fn 的 returnType 需引用迭代器自身（先有迭代器后有 fn）。
+  setSlot(slots, "@@iterator", { value: selfIteratorFn(iter) });
   setPropFlags(iter, "next", { enumerable: false });
   setPropFlags(iter, "@@iterator", { enumerable: false });
   // Bug 198 根治点：live 迭代器**不登记静态侧表**（见上注释）——元素面
@@ -287,18 +315,21 @@ export function abstractSeqIteratorAbs(el: Abs): Abs {
     },
     { ctor: false },
   );
+  const slots: Record<string, { value: Abs }> = {
+    next: { value: next },
+    "@@iterator": { value: absFunction([], { body: noBody }, { ctor: false }) },
+  };
   const iter = abs(
     {
       k: "obj",
-      slots: {
-        next: { value: next },
-        "@@iterator": { value: absFunction([], { body: noBody }, { ctor: false }) },
-      },
+      slots,
     },
     undefined,
     undefined,
     "partial",
   );
+  // Bug 314：同 collectionIteratorAbs——@@iterator 返自身
+  setSlot(slots, "@@iterator", { value: selfIteratorFn(iter) });
   setPropFlags(iter, "next", { enumerable: false });
   setPropFlags(iter, "@@iterator", { enumerable: false });
   // R2b：同 collectionIteratorAbs——每次调用新迭代器对象

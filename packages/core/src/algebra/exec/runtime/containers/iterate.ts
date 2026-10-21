@@ -56,7 +56,7 @@ import {
 } from "../../../collections.ts";
 import { shouldWidenArrayLiteral, widenedArrayConf, TUPLE_MATERIALIZE_CAP } from "../../../containers.ts";
 import { registerTplElements, matchIterElements, replayGenDeferred, drainGenElements, genDrainViewOf, registerUserIter, userIterOf, registerUserIterLen, userIterLenOf } from "../../match-iter.ts";
-import { getPropFlags, enumOwnKeys, enterPromiseForkArm, leavePromiseForkArm, protoBrandAbs, markExtState, setPropFlags } from "../../../builtins.ts";
+import { getPropFlags, enumOwnStringKeys, enterPromiseForkArm, leavePromiseForkArm, protoBrandAbs, markExtState, setPropFlags } from "../../../builtins.ts";
 // Bug 195：模板对象是**数组 exotic**（原生 GetTemplateObject → CreateArrayFromList
 // + SetIntegrityLevel(frozen)）⇒ JSON.stringify 走数组序列化面（数组视图标注，
 // 与 RegExp exec 结果同款机制；直连 regexp.ts 不经 barrel）。
@@ -852,7 +852,10 @@ export function $forInKeys(o: Abs): Abs {
     }
     // 仅自有可枚举键——与 Object.keys 的 enumKeys 同口径
     // （getPropFlags().enumerable === false 的 defineProperty 键剔除）
-    const keys = enumOwnKeys(o, shape.slots);
+    // Bug 295：for-in 只枚举**字符串**键（symbol 键不进 for-in）⇒ 用
+    // enumOwnStringKeys（CopyDataProperties 视图 enumOwnKeys 含 symbol 键，
+    // 那是 spread / assign / 对象 rest 的口径）。
+    const keys = enumOwnStringKeys(o, shape.slots);
     const intKeys = keys.filter(isArrayIndexKey).sort((a, b) => Number(a) - Number(b));
     const strKeys = keys.filter((k) => !isArrayIndexKey(k));
     return $arr([...intKeys, ...strKeys].map((k) => $lit(k)));
@@ -908,7 +911,10 @@ export function $forInKeys(o: Abs): Abs {
     if (inner.shape.k === "obj") {
       // boxed String brand（Bug 57 附带，T2 移交）：length 不可枚举——原生
       // for (k in new String("ab")) 只枚举 ["0","1"]（内部槽已标 enumerable:false）
-      const own = enumOwnKeys(inner, inner.shape.slots).filter(
+      // flags 查 **brand 自身**（原型对象的 `constructor` 不可枚举标记挂在
+      // brand 上——ctor.ts 的 protoBrandAbs / objectProtoBrand）——并由
+      // isNonEnumerable 兜查内层（boxed / error 等把标记挂内层的形态）。
+      const own = enumOwnStringKeys(o, inner.shape.slots).filter(
         (k) => !(shape.name === "String" && k === "length"),
       );
       // Bug 200：原型链上的可枚举键（原生 for-in **沿原型链**枚举）——此前
@@ -969,7 +975,7 @@ function brandProtoEnumerableKeys(brandName: string, recv: Abs): string[] | unde
       ...Object.keys(spec?.methods ?? {}),
       ...Object.keys(spec?.accessors ?? {}),
     ]);
-    const keys = enumOwnKeys(inner, inner.shape.slots).filter(
+    const keys = enumOwnStringKeys(inner, inner.shape.slots).filter(
       (k) => k !== "constructor" && !nonEnumerable.has(k),
     );
     // 原生每层的键序：整数键升序 → 其余键按插入序

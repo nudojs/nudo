@@ -5,6 +5,9 @@
  * - 确定非对象目标（prim/nullish）原生 TypeError → throwStrictAssign 硬抛；
  *   抽象目标 may-throw 软记录（值域投影不变）。
  * - getter 源成员按源接收者求值后拷为数据槽（原生 [[Get]] 语义）。
+ * - Bug 295：源槽的 **symbolKey 标记随拷贝迁移**（原生 assign 复制可枚举
+ *   **symbol 键**——目标上的该键对 Object.keys/values/entries/JSON.stringify
+ *   不可见；标记丢失 ⇒ "@@X" 投影槽退化成普通字符串键 ⇒ 伪键进枚举面）。
  */
 import type { Abs } from "../../abs.ts";
 import { abs, unknown, confJoin, bool, str } from "../../abs.ts";
@@ -99,7 +102,15 @@ export function runtimeAssignObject(args: Abs[]): Abs {
       //（builtins/object/methods.ts 的 assign 臂同源）。
       const plan = classifyAssignSet(accObj, k, v);
       if (plan.act === "throw") throwStrictAssign();
-      if (plan.act === "write") setSlot(base, k, { value: v }); // "__proto__" 自有键经 setSlot（普通赋值触发宿主原型 setter，键静默丢失）
+      // Bug 295：源槽的 **symbolKey 标记随拷贝迁移**（原生 assign 复制的是
+      // **symbol 键**本身——`Object.keys(target)` 看不到它；此前标记被丢弃 ⇒
+      // "@@X" 投影槽退化成**普通字符串键** ⇒ Object.keys/values/entries/
+      // JSON.stringify 面把伪键当真键发布）。原生 assign 复制可枚举 symbol
+      // 键 ⇒ 该槽**照拷**（值可读 `t[Symbol.X]`），只是标记保留。
+      const srcSlot = s as { value: Abs; symbolKey?: boolean };
+      if (plan.act === "write") {
+        setSlot(base, k, srcSlot.symbolKey ? { value: v, symbolKey: true } : { value: v });
+      } // "__proto__" 自有键经 setSlot（普通赋值触发宿主原型 setter，键静默丢失）
       else if (plan.act === "open") {
         (accObj.shape as Extract<Abs["shape"], { k: "obj" }>).open = true;
       } else if (plan.act === "proto") {
@@ -142,8 +153,14 @@ export function runtimeAssignObject(args: Abs[]): Abs {
           .filter(([k]) => isEnumerableView(src, k))
           .map(([k, s]) => {
             const a = lookupObjAccessor(src, k);
-            const sv = s as { value: Abs };
-            return [k, a?.get ? a.get(src) : sv.value] as [string, Abs];
+            const sv = s as { value: Abs; symbolKey?: boolean };
+            // Bug 295：symbol 键标记随拷贝链传递（原生 assign 复制的是
+            // symbol 键本身；标记丢失 ⇒ symbol 键退化成字符串键）
+            return [k, a?.get ? a.get(src) : sv.value, sv.symbolKey === true] as [
+              string,
+              Abs,
+              boolean,
+            ];
           });
         assignIntoBrandInner(acc, srcEntries);
       }

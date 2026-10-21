@@ -181,6 +181,16 @@ export function setHostGlobalFnCall(bridge: (fn: unknown, args: Abs[]) => Abs | 
 export function asAbsVal(v: unknown): Abs {
   if (v && typeof v === "object" && "shape" in (v as object)) return v as Abs;
   if (typeof v === "function") {
+    // Bug 291：宿主函数 → Abs 的**稳定门面**——同一宿主函数恒同一 Abs。
+    //
+    // 此前每次 asAbsVal(hostFn) 都新建 Abs ⇒ 以 Abs 为键的旁表
+    // （propFlags / extState / userFnSlots）**跨调用丢失**：
+    // `function g(){} Object.freeze(g); Object.isFrozen(g)` 原生 true，
+    // 引擎 false（freeze 的标志落在第一次新建的 Abs 上；再读 g 是全新
+    // Abs ⇒ 标志查不到）。原生语义：同一函数**恒同一身份**（`g === g`
+    // 真、`Object.isFrozen(g)` 恒定）⇒ 门面必须稳定。
+    const cached = hostFnAbsCache.get(v as object);
+    if (cached) return cached;
     const n = Math.max(0, v.length);
     const params = Array.from({ length: n }, (_, i) => `arg${i}`);
     // Bug 9：宿主 generator/async 函数/箭头不可 new——可构造性 facet 进 shape
@@ -188,7 +198,7 @@ export function asAbsVal(v: unknown): Abs {
     // Bug 9：声明名 / 原生 fn.length 透传（v.name / v.length 是宿主真值）——
     // f.name / f.length 折 exact；匿名（name ""）不记 name
     const fnName = typeof v.name === "string" && v.name ? v.name : undefined;
-    return absFunction(
+    const a = absFunction(
       params,
       {
         body: noBody,
@@ -212,9 +222,14 @@ export function asAbsVal(v: unknown): Abs {
         length: v.length,
       },
     );
+    hostFnAbsCache.set(v as object, a);
+    return a;
   }
   return $lit(v);
 }
+
+/** 宿主函数 → 稳定 Abs 门面的旁表（Bug 291；WeakMap ⇒ 不泄漏宿主引用） */
+const hostFnAbsCache = new WeakMap<object, Abs>();
 
 /** transpile 侧收形入口（instanceof RHS 值等）：host 裸值 / Abs → Abs。
  *  `$` 前缀是运行时绑定表（runtimeArgNames）的注入约定。 */
@@ -306,7 +321,7 @@ function padOmittedArgs(
 export function $fnVal(
   params: string[],
   impl: (...args: Abs[]) => Abs,
-  opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean; kind?: string },
+  opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean; kind?: string; fnKind?: "function" | "async" | "generator" | "async-generator" },
 ): Abs {
   const argsOf =
     opts?.padArgs === false
@@ -333,6 +348,9 @@ export function $fnVal(
       // Bug 93：generator 表达式标记（transpile 透传）——member.ts fn 分支
       // 区分「不可构造但有 prototype」；宿主声明路径走 isHostGeneratorFn
       ...(opts?.kind !== undefined ? { kind: opts.kind } : {}),
+      // Bug 325：函数**种类**戳（async × generator 四象限）——与 kind 分开
+      // （kind 是派发角色维度）
+      ...(opts?.fnKind !== undefined ? { fnKind: opts.fnKind } : {}),
     },
     {
       ...(opts?.ctor !== undefined ? { ctor: opts.ctor } : {}),

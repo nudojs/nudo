@@ -9,8 +9,6 @@
       "return JSON.stringify(undefined);"
     ],
     "batch1.corpus6": [
-      "return new Date(0).getTime();",
-      "return new Date(86400000).getTime();",
       "return new Date(0).getUTCFullYear();",
       "return new Date(0).getUTCMonth();",
       "return new Date(0).getUTCDate();",
@@ -22,10 +20,7 @@
       "return new Date(2020, 0, 15).getFullYear();",
       "return new Date(2020, 0, 15).getMonth();",
       "return new Date(2020, 0, 15).getDate();",
-      "return new Date(2020, 0, 15).getDay();",
-      "return new Date(\"2020-01-15T00:00:00Z\").getTime();",
-      "return new Date(2020, 5, 1, 12, 30, 45, 500).getTime();",
-      "return new Date(1000).valueOf();"
+      "return new Date(2020, 0, 15).getDay();"
     ],
     "batch1.corpus7": [
       "return [1, 2, 3].at(5);",
@@ -35,7 +30,6 @@
       "return [1, 2, 3].flatMap(x => [x, x * 2]);",
       "return Array.from(\"abc\");",
       "return Array.from([1, 2, 3], x => x * 2);",
-      "let a = [3, 1, 2]; return a.sort((x, y) => x - y);",
       "let a = [1, 2, 3]; a.splice(1, 1, 9); return a;",
       "let a = [1, 2, 3]; a.splice(1, 0, 9); return a;"
     ],
@@ -54,7 +48,6 @@
       "return 'abc'.split(/x/)",
       "return Object.fromEntries([['a']])",
       "return Object.assign(5, {a:1})",
-      "return Object.defineProperty({}, 'a', {})",
       "return Array.from(5)",
       "return [1].with(0)",
       "return [1,2].indexOf(Symbol())",
@@ -74,7 +67,6 @@
       "return 'abc'.split(/x/)",
       "return Object.fromEntries([['a']])",
       "return Object.assign(5, {a:1})",
-      "return Object.defineProperty({}, 'a', {})",
       "return Array.from(5)",
       "return [1].with(0)",
       "return [1,2].indexOf(Symbol())",
@@ -91,8 +83,6 @@
       "return [1,2,3].includes(2)",
       "return [1,2,3].includes(2,-2)",
       "return [1,2,3].includes(2,2)",
-      "return [3,1,2].sort((a,b)=>a-b)",
-      "return [3,1,2].sort((a,b)=>b-a)",
       "return [10,9,8,7,6,5,4,3,2,1].sort()",
       "return [1,[2,3]].toString()",
       "return Array.isArray(null)",
@@ -116,8 +106,6 @@
       "return [1,2,3].includes(2)",
       "return [1,2,3].includes(2,-2)",
       "return [1,2,3].includes(2,2)",
-      "return [3,1,2].sort((a,b)=>a-b)",
-      "return [3,1,2].sort((a,b)=>b-a)",
       "return [10,9,8,7,6,5,4,3,2,1].sort()",
       "return [1,[2,3]].toString()",
       "return Array.isArray(null)",
@@ -131,7 +119,6 @@
       "return +undefined",
       "return [1] == 1",
       "return [1,2] == '1,2'",
-      "return [1,2] == [1,2]",
       "return String([1,2])",
       "return String({})",
       "return String({a:1})",
@@ -149,30 +136,22 @@
       "return /\\d+/.exec('a1b23c')",
       "return 'abc123'.match(/\\d+/)",
       "return 'a-b-c'.split(/-/)",
-      "return new Date(0).getTime()",
-      "return new Date(86400000).getTime()",
       "return Date.now() > 0",
-      "return new Date('2020-01-01T00:00:00Z').getTime()",
       "return new WeakMap([[{x:1},'v']]).get({x:1})",
       "return new WeakSet([{x:1}]).has({x:1})",
       "return typeof (()=>{}).call",
       "return (function(){return this}).call(undefined)",
       "return (function(){return Array.from(arguments).join(',')})(1,2,3)",
-      "return (()=>this)()",
-      "return [3,1,2].sort((a,b)=>a-b).join(',')"
+      "return (()=>this)()"
     ],
     "batch11.ctrlFlow": [
-      "return new Date(0).getTime()",
-      "return new Date(86400000).getTime()",
       "return Date.now() > 0",
-      "return new Date('2020-01-01T00:00:00Z').getTime()",
       "return new WeakMap([[{x:1},'v']]).get({x:1})",
       "return new WeakSet([{x:1}]).has({x:1})",
       "return typeof (()=>{}).call",
       "return (function(){return this}).call(undefined)",
       "return (function(){return Array.from(arguments).join(',')})(1,2,3)",
-      "return (()=>this)()",
-      "return [3,1,2].sort((a,b)=>a-b).join(',')"
+      "return (()=>this)()"
     ],
     "batch11.misc": [
       "return void 0",
@@ -180,7 +159,6 @@
       "return +undefined",
       "return [1] == 1",
       "return [1,2] == '1,2'",
-      "return [1,2] == [1,2]",
       "return String([1,2])",
       "return String({})",
       "return String({a:1})",
@@ -229,9 +207,6 @@
       "return [NaN].includes(NaN)",
       "return [1,NaN].includes(NaN)",
       "return [0,-0].includes(-0)",
-      "return [3,2,1].sort((a,b)=>a-b)",
-      "return [1,2,3].sort((a,b)=>b-a)",
-      "return [1,2,3].sort(()=>0)",
       "return [3,2,1].sort((a,b)=>1)",
       "return [1,2,3].sort((a,b)=>-1)",
       "return new Array(3)[0]",
@@ -334,9 +309,6 @@
       "return [NaN].includes(NaN)",
       "return [1,NaN].includes(NaN)",
       "return [0,-0].includes(-0)",
-      "return [3,2,1].sort((a,b)=>a-b)",
-      "return [1,2,3].sort((a,b)=>b-a)",
-      "return [1,2,3].sort(()=>0)",
       "return [3,2,1].sort((a,b)=>1)",
       "return [1,2,3].sort((a,b)=>-1)",
       "return new Array(3)[0]",
@@ -432,11 +404,6 @@
       "return 'abc'.match(/a(b)c/)"
     ],
     "batch13.arrEdge3": [
-      "return [3,1,2].sort((a,b)=>a-b).join(',')",
-      "return [3,1,2].sort((a,b)=>b-a).join(',')",
-      "return [1,2,3].sort(()=>0).join(',')",
-      "return [3,1,2].sort((a,b)=>NaN).join(',')",
-      "return [3,1,2].toSorted((a,b)=>b-a).join(',')",
       "return [1,[2,[3]]].flat().join(',')",
       "return [1,[2,[3]]].flat(0).join(',')",
       "return [1,[2,[3]]].flat(-1).join(',')",
@@ -490,11 +457,6 @@
       "return 'a,b'.split(/,/)",
       "return 'a1b2c'.split(/\\d/)",
       "return 'abc'.match('b')",
-      "return [3,1,2].sort((a,b)=>a-b).join(',')",
-      "return [3,1,2].sort((a,b)=>b-a).join(',')",
-      "return [1,2,3].sort(()=>0).join(',')",
-      "return [3,1,2].sort((a,b)=>NaN).join(',')",
-      "return [3,1,2].toSorted((a,b)=>b-a).join(',')",
       "return [1,[2,[3]]].flat().join(',')",
       "return [1,[2,[3]]].flat(0).join(',')",
       "return [1,[2,[3]]].flat(-1).join(',')",
@@ -524,7 +486,6 @@
       "return Object.hasOwn([1,2],'length')",
       "return Object.hasOwn('abc',0)",
       "let o=Object.create({x:1}); return Object.getOwnPropertyDescriptor(o,'x') === undefined",
-      "let o={}; return Object.defineProperty(o,'a',{value:1}) === o",
       "return Object.assign(5,{a:1})",
       "return ({}).valueOf().length ?? 'n'",
       "return Array.prototype.isPrototypeOf([])",
@@ -585,7 +546,6 @@
       "return Object.hasOwn([1,2],'length')",
       "return Object.hasOwn('abc',0)",
       "let o=Object.create({x:1}); return Object.getOwnPropertyDescriptor(o,'x') === undefined",
-      "let o={}; return Object.defineProperty(o,'a',{value:1}) === o",
       "return Object.assign(5,{a:1})",
       "return ({}).valueOf().length ?? 'n'",
       "return Array.prototype.isPrototypeOf([])",
@@ -612,7 +572,6 @@
       "return 'abc'.match('b')"
     ],
     "batch14a.dateEdge": [
-      "const d = new Date(0); return d.getTime()",
       "const d = new Date(86400000); return d.getUTCDate()",
       "const d = new Date(2020, 0, 15); return d.getFullYear()",
       "const d = new Date(2020, 0, 15); return d.getMonth()",
@@ -621,9 +580,7 @@
       "const d = new Date(2020, 5, 15); return d.getHours()",
       "const d = new Date(2020, 5, 15, 3, 30); return d.getMinutes()",
       "const d = new Date(0); return d.getUTCFullYear()",
-      "const d = new Date(2020, 0, 1); return d.getTime() === Date.UTC(2020, 0, 1)",
       "const d = new Date('2020-05-15T12:30:00Z'); return d.getUTCHours()",
-      "return Date.parse('2020-05-15T00:00:00Z') === new Date('2020-05-15T00:00:00Z').getTime()",
       "const d = new Date(2020, 11, 31); return d.getMonth()",
       "const d = new Date(2019, 1, 29); return d.getDate()",
       "const d = new Date(2020, 13, 1); return d.getFullYear()",
@@ -635,10 +592,6 @@
       "const d = new Date(0); d.setMinutes(30); return d.getUTCMinutes()",
       "const d = new Date(0); d.setSeconds(15); return d.getUTCSeconds()",
       "const d = new Date(0); d.setUTCHours(7); return d.getUTCHours()",
-      "const d = new Date(0); d.setTime(5000); return d.getTime()",
-      "const d = new Date(0); return d.valueOf()",
-      "const d = new Date(NaN); return Number.isNaN(d.getTime())",
-      "const d = new Date('bogus'); return Number.isNaN(d.getTime())",
       "const d = new Date('2020-05'); return d.getUTCMonth()",
       "const d = new Date('2020'); return d.getUTCFullYear()",
       "const d = new Date(2020, 5, 0); return d.getDate()",
@@ -663,13 +616,11 @@
       "const a = [1,2,3,4]; a.splice(1, 2); return a.length",
       "const a = [1,2,3]; a.splice(1, 0, 9, 8); return a[1] + a[2]",
       "const a = [1,2,3]; a.splice(5, 0, 7); return a.length",
-      "return [3,1,2].toSorted((a,b) => b-a).join('-')",
       "return [1,2,3].flatMap(x => [x, x*10]).join('-')",
       "return [[1],[[2]]].flatMap(x => x).length",
       "return [1,2,3].includes(2, -2)",
       "return [1,2,3].includes(1, -2)",
       "return [NaN].includes(NaN)",
-      "return [1,2,3,4,5].sort((a,b) => b-a).join('-')",
       "return Array.from('abc').join('-')",
       "return Array.from(new Set([1,2])).length",
       "return [1,[2,3]].toString()"
@@ -691,12 +642,9 @@
     "batch15a.globals15": [
       "return +undefined",
       "return [1,2] == '1,2'",
-      "return [1,2] === [1,2]",
       "return void 0"
     ],
     "batch15c.arr15": [
-      "return [10,9,8].sort((a,b)=>a-b)",
-      "return [10,9,8].sort((a,b)=>a-b).length",
       "return [1,2,3].at(5)",
       "return [1,2,3].at(-5)",
       "return [1,2,3].findLast((x)=>x>5)",
@@ -711,8 +659,6 @@
     "batch15c.misc15": [
       "return new Map([[1,2]]).get(3)",
       "return new Map([[1,2]]).delete(1)",
-      "return new Date(0).getTime()",
-      "return new Date(86400000).getTime()",
       "return Date.now() > 0",
       "return new Date('2020-01-02').getUTCFullYear()",
       "return new Date('2020-01-02').getUTCMonth()",
@@ -731,8 +677,6 @@
       "return [1,2,3].includes(2, 1.5)",
       "return [1,2,3].includes(2, '1')",
       "return [1,2,3].concat(Symbol())",
-      "return [1,2,3].sort((a,b)=>b-a)",
-      "return [1,2,3].sort((a,b)=>b-a).length",
       "return [1,[2,[3]]].flat().join(',')",
       "return Object.is([], [])"
     ],
@@ -742,8 +686,6 @@
       "return 'ab'.split(/(b)/)"
     ],
     "batch16b.arr16": [
-      "return [3,1,2].toSorted((a,b)=>a-b)",
-      "return [1,2,3].toSorted((a,b)=>b-a)",
       "return [1,[2,3]].flatMap(x=>[x,x])",
       "return [1,,3].flatMap(x=>[x,x])",
       "return [1,2,3].flatMap(x=>[x])",
@@ -757,13 +699,9 @@
       "return Array.from([1,2], x => x * 2)",
       "return Array.from({length: 3})",
       "return Array.from([1,,3], x => x === undefined ? 0 : x)",
-      "return [3,1,2].sort((a,b)=>a-b)",
-      "return [3,1,2].sort((a,b)=>b-a)",
-      "return [1,3,2].sort((a,b)=>0)",
       "return [].shift()",
       "return [].pop()",
       "return [1,2].flatMap(x => x > 1 ? [x, x] : 9)",
-      "return [1,2,3].toSorted((a,b)=>a>b?1:-1)",
       "return Array.from('\\uD83D\\uDE00')",
       "return Array(3)",
       "return new Array(3)",
@@ -774,8 +712,6 @@
     ],
     "batch16c.obj16": [
       "return Object.getOwnPropertySymbols({})",
-      "return Object.getPrototypeOf(Object.create({x: 1})) === Object.getPrototypeOf(Object.create({x: 1}))",
-      "return Object.freeze({}) === Object.freeze({})",
       "return Object.getOwnPropertyDescriptor({a: 1}, 'b')",
       "return Object.create(null).toString",
       "return Object.prototype.valueOf.call(5)"
@@ -814,13 +750,11 @@
       "return JSON.parse('{}').x"
     ],
     "batch16d.date16": [
-      "return new Date(0).getTime()",
       "return new Date(Date.UTC(2020, 0, 1)).getUTCFullYear()",
       "return new Date(Date.UTC(2020, 0, 1)).getUTCMonth()",
       "return new Date(Date.UTC(2020, 0, 1)).getUTCDate()",
       "return new Date(Date.UTC(2020, 0, 1)).getUTCDay()",
       "return new Date(Date.UTC(2020, 0, 1)).getUTCHours()",
-      "return new Date(NaN).getTime()",
       "return new Date(NaN).toString()",
       "return Date.now() > 0",
       "return new Date(2020, 0, 1).getFullYear()",
@@ -835,30 +769,19 @@
       "return new Date(2019, 1, 30).getDate()",
       "return new Date(2020, 0, 1, 25).getDate()",
       "return new Date(2020, 0, 1, -1).getDate()",
-      "return new Date('2020-01-01').getTime()",
       "return new Date('2020-01-01').getUTCFullYear()",
-      "return new Date('not a date').getTime()",
       "return new Date().getTime() > 0",
       "return Date.now() - Date.now()",
-      "return new Date(Date.UTC(2020, 0, 1)).valueOf()",
-      "return new Date(Date.UTC(2020, 0, 1)).getTime() === new Date(Date.UTC(2020, 0, 1)).getTime()",
       "return new Date(Date.UTC(2020, 5, 15)).getUTCDay()",
       "return new Date(Date.UTC(2000, 1, 29)).getUTCDate()",
       "return new Date(Date.UTC(1900, 0, 1)).getUTCFullYear()",
       "return new Date(Date.UTC(99, 0, 1)).getUTCFullYear()",
-      "return new Date(-1).getTime()",
-      "return new Date(8640000000000000).getTime()",
-      "return new Date(8640000000000001).getTime()",
-      "return new Date(-8640000000000000).getTime()",
-      "return new Date(-8640000000000001).getTime()",
       "return new Date(Date.parse('2020-01-01')).getUTCFullYear()",
       "return new Date(0).getUTCFullYear()",
       "return new Date(0).getUTCMonth()",
       "return new Date(0).getUTCDate()",
       "return new Date(0).getUTCDay()",
       "return new Date(0).getUTCHours()",
-      "return new Date(0).toJSON()",
-      "return new Date(NaN).toJSON()",
       "return new Date(0).getUTCSeconds()",
       "return new Date(0).getUTCMinutes()",
       "return new Date(0).getUTCMilliseconds()"
@@ -868,8 +791,7 @@
     ],
     "batch17a.iterA": [
       "return [...[1,,3].entries()]",
-      "return [...Array.from('ab').keys()]",
-      "return [...'abc'.matchAll(/b/g)][0].index"
+      "return [...Array.from('ab').keys()]"
     ],
     "batch17b.assignEdge": [
       "return Object.assign([], [1,,3])[1]",
@@ -888,18 +810,11 @@
       "return \"abcabc\".split(/b/g);",
       "return \"abcabc\".matchAll(/b/g);"
     ],
-    "batch20-transpile-adversarial.sameLineTryControlFlow": [
-      "let n = 0; do { n++; if (n === 1) continue; n += 10; } while (n < 3); return n;"
-    ],
+    "batch20-transpile-adversarial.sameLineTryControlFlow": [],
     "batch21-ctor-battery.bufferCtor": [
       "try { return new ArrayBuffer({}).byteLength; } catch (e) { return e.constructor.name; }"
     ],
     "batch21-ctor-battery.dateCtor": [
-      "try { return new Date(\"x\").getTime(); } catch (e) { return e.constructor.name; }",
-      "try { return new Date(\"bad-$$\").getTime(); } catch (e) { return e.constructor.name; }",
-      "try { return new Date(null).getTime(); } catch (e) { return e.constructor.name; }",
-      "try { return new Date(0).getTime(); } catch (e) { return e.constructor.name; }",
-      "try { return new Date(-1).getTime(); } catch (e) { return e.constructor.name; }",
       "try { return new Date({}).getTime(); } catch (e) { return e.constructor.name; }",
       "try { return new Date([]).getTime(); } catch (e) { return e.constructor.name; }"
     ],
@@ -923,7 +838,6 @@
       "try { return new String({}).valueOf(); } catch (e) { return e.constructor.name; }"
     ],
     "batch3.corpus1": [
-      "return [3,1,2].toSorted((a,b)=>b-a);",
       "return [1,2,3].at(9);",
       "return [[1,2],[3,4]].flatMap(x=>x.map(y=>y*2));"
     ],
@@ -954,10 +868,8 @@
       "return JSON.stringify(undefined);"
     ],
     "batch3.corpus18": [
-      "return new Date(0).getTime();",
       "return new Date(0).getUTCFullYear();",
       "return new Date(0).getFullYear();",
-      "return new Date(0).valueOf();",
       "return new Date(2020,0,15).getDate();",
       "return new Date(\"2020-01-15\").getUTCDate();",
       "return new Date(\"2020-01-15\").getUTCMonth();"
@@ -1002,7 +914,6 @@
       "return [1,2,3].includes(3,-1);",
       "return [NaN].includes(NaN);",
       "const a=[1,2,3]; a.length=0; return a[0];",
-      "const a=[10,9,8]; a.sort((x,y)=>x-y); return a.join(\",\");",
       "const a=[[1],[2]]; return a.flatMap((x)=>x)[1];",
       "const a=[1,2,3]; a.splice(0,0,9); return a[0];",
       "const a=[]; return a.pop();",
@@ -1074,7 +985,6 @@
     ],
     "batch5.corpus1": [
       "const a = new Uint8Array(3); return [a.length, a[0]]",
-      "const a = new Uint8Array([1,2,3]); return a.length",
       "const a = new Int32Array([1,-2,3]); return a[1]",
       "const a = new Float64Array([1.5,2.5]); return a[1]",
       "const a = new Uint8Array(4); a[0] = 255; return a[0]",
@@ -1097,10 +1007,7 @@
     "batch5.corpus3": [
       "return [1,2,3].at(5)",
       "return [1,2,3].flatMap(x => [x, x*2])",
-      "return [3,1,2].toSorted((a,b) => b-a)",
       "return Array.from('abc')",
-      "const a = [3, 1, 2]; a.sort((x, y) => x - y); return a.join(',')",
-      "const a = [3, 1, 2]; a.sort((x, y) => y - x); return a.join(',')",
       "return [1,2,3].includes(2)",
       "const a = [1,2,3]; const r = a.splice(1, 1, 9, 8); return [a, r]",
       "const a = [1,[2]]; return a.join('-')"
@@ -1151,14 +1058,8 @@
       "const a=[1,,3]; delete a[0]; return a[0]"
     ],
     "batch6.corpus5": [
-      "const a=[{v:1,i:0},{v:1,i:1},{v:1,i:2}]; a.sort((x,y)=>x.v-y.v); return a.map(o=>o.i)",
-      "const a=[{v:2,i:0},{v:1,i:1},{v:2,i:2},{v:1,i:3}]; a.sort((x,y)=>x.v-y.v); return a.map(o=>o.i)",
-      "const a=[1,2,3]; a.sort(()=>0); return a.join(',')",
       "const a=[1,2,3]; a.sort(()=>-1); return a.join(',')",
-      "const a=[null,3,1]; return a.sort().map(x=>x===null?'n':x)",
-      "const a=[1,-1,0.5,-0.5,2]; a.sort((x,y)=>x-y); return a.join(',')",
-      "const a=[[1],[1,2],[1,2,3]]; a.sort((x,y)=>x.length-y.length); return a.map(x=>x.length)",
-      "const a=[3,1,2]; return a.sort((x,y)=>y-x).join(',')"
+      "const a=[null,3,1]; return a.sort().map(x=>x===null?'n':x)"
     ],
     "batch6.corpus6": [
       "const o=Object.create({p:1}); return o.p",
@@ -1232,9 +1133,6 @@
       "return undefined | 0"
     ],
     "batch9.corpus1": [
-      "return [3,1,2].sort((a,b)=>b-a)",
-      "return [10,9].sort((a,b)=>a-b)",
-      "return [3,1,2].toSorted((a,b)=>b-a)",
       "return [1,2,3].at(99)",
       "return 'abc'.at(99)",
       "return [1,2,3,4].findLast(x=>x>10)",

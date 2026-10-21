@@ -8,6 +8,14 @@
  * - Bug 195：`Array.isArray` 认**数组视图标注**（markMatchArrayView）的对象
  *   ——标签模板对象是冻结的数组 exotic（原生 true）；RegExp exec/match
  *   结果同款（原生亦是真数组）。
+ * - Bug 294：array-like 读数（length / 逐索引）**先经访问器侧表**
+ *   （accessorReadDomain）——真 getter 住侧表、shape 里只有占位槽；
+ *   裸读槽 ⇒ length 被当 undefined（折空数组）+ getter 副作用消失。
+ *   每次 Array.from 读一次 length / 每个索引（与原生同款）。
+ * - Bug 296：`Array.from(items, mapFn, thisArg)` 的**第三实参**透传给
+ *   回调（此前丢弃 ⇒ 回调 this 恒 undefined ⇒ 假抛 / 计数器归零）。
+ * - Bug 330：Array.prototype.{toString,toLocaleString,join} 接收者为
+ *   **nullish** ⇒ 定抛 TypeError（ToObject）——不记抛 ⇒ L2 门禁假绿。
  */
 import type { Abs } from "../abs.ts";
 import { abs, litValue, numLit, strLit, boolLit, unknown } from "../abs.ts";
@@ -25,6 +33,7 @@ import { iterabilityKind, $elems } from "../exec/runtime/containers/iterate.ts";
 import { NudoThrow } from "../exec/nudo-throw.ts";
 import { errorTypeAbs } from "../exec/may-throw.ts";
 import { and, ge, lt, pTrue, type Pred } from "../pred.ts";
+import { accessorKeysOf, accessorReadDomain } from "../accessors.ts";
 import { lit, v, type Term } from "../term.ts";
 import { defaultLeakBudget } from "../leak.ts";
 import { emptyEnv } from "../ast-env.ts";
@@ -197,9 +206,22 @@ function evalArrayFrom(args: Abs[]): Abs {
   // validateCallableArg 定抛）。此前对 undefined-lit Abs 误当 mapper 应用于
   // applyCallbackValue → 假抛 TypeError（TypedArray.from Bug 37 同款口径）。
   const hasMapFn = !!mapFn && !(mapFn.term?.op === "lit" && mapFn.term.value === undefined);
+  // Bug 296：第三实参 thisArg（原生 Array.from(items, mapFn, thisArg)）——
+  // 此前 mapOne 不传 thisVal ⇒ 回调的 this 恒 undefined ⇒ 回调体读
+  // `this.k` 假抛 TypeError（"property 'k' on undefined"）、把计数器
+  // 永远写成 0。数组 HOF 通道（invoke-arr.ts 的 callFn）同款传 thisVal。
+  // 缺省（未给第三实参）⇒ undefined ≡ 旧行为（strict this）。
+  const thisArg = args[2];
   const mapOne = (el: Abs, i: Abs): Abs => {
     if (!hasMapFn) return el;
-    return applyCallbackValue(mapFn, [el, i], emptyEnv(), pTrue, defaultLeakBudget);
+    return applyCallbackValue(
+      mapFn,
+      [el, i],
+      emptyEnv(),
+      pTrue,
+      defaultLeakBudget,
+      thisArg,
+    );
   };
   // 无 mapFn 时下标 Abs 被 mapOne 丢弃——不 mint fresh var（零开销占位）
   const idxOrDrop = (lenTerm?: Term, lenNumeric = false): Abs =>
@@ -329,9 +351,24 @@ function evalArrayFrom(args: Abs[]): Abs {
     };
     const slots = os.slots ?? {};
     const open = !!os.open || !!os.index;
-    const lenAbs = Object.prototype.hasOwnProperty.call(slots, "length")
+    // Bug 294：array-like 读数**先经访问器侧表**——对象字面量的
+    // `get length()` / `get 0()` 在 shape 里只留 `$lit(void 0)` 占位槽
+    // （真 getter 住 accessorTable 侧表，见 accessors.ts）；裸读槽会把
+    // length 当 undefined（ToLength → 0 ⇒ Array.from 折空数组）、把索引
+    // 读成 undefined，且 getter 的副作用（计数 / 写状态）整体消失。
+    // 原生 Array.from 每次**恰好**读一次 length 与每个索引 ⇒ 本处按
+    // 「读一次」缓存（getter 副作用只发生一次，与原生同款）。
+    const accCache = new Map<string, Abs | undefined>();
+    const readKey = (key: string): Abs | undefined => {
+      if (accCache.has(key)) return accCache.get(key);
+      const v = accessorReadDomain(a0, key);
+      accCache.set(key, v);
+      return v;
+    };
+    const lenSlot = Object.prototype.hasOwnProperty.call(slots, "length")
       ? slots["length"]!.value
       : undefined;
+    const lenAbs = readKey("length") ?? lenSlot;
     // ToLength(literal)：number/string/bool/null/undefined（null→0、
     // undefined→NaN→0）；bigint 字面量 → ToNumber 定抛 TypeError
     let nLit: number | undefined;
@@ -368,12 +405,28 @@ function evalArrayFrom(args: Abs[]): Abs {
       }
       abstractLen = true;
     }
-    // 数字索引槽（obj 字面量数字键转字符串槽同口径）
-    const idxSlotAt = (i: number): Abs | undefined => slots[String(i)]?.value;
+    // 数字索引槽（obj 字面量数字键转字符串槽同口径）——**访问器优先**
+    // （Bug 294）：`get 0()` 这类索引访问器的真值住侧表，槽里只是占位。
+    const idxSlotAt = (i: number): Abs | undefined => {
+      const key = String(i);
+      const acc = readKey(key);
+      if (acc !== undefined) return acc;
+      return slots[key]?.value;
+    };
     const allIdxSlotValues = (): Abs[] => {
       const out: Abs[] = [];
+      const seen = new Set<string>();
       for (const kk of Object.keys(slots)) {
-        if (/^(0|[1-9][0-9]*)$/.test(kk)) out.push(slots[kk]!.value);
+        if (!/^(0|[1-9][0-9]*)$/.test(kk)) continue;
+        seen.add(kk);
+        out.push(readKey(kk) ?? slots[kk]!.value);
+      }
+      // 有访问器但**无槽**的索引键（defineProperty 装的 getter）——补齐，
+      // 否则抽象 length 臂的元素域丢掉这些值。
+      for (const kk of accessorKeysOf(a0)) {
+        if (seen.has(kk) || !/^(0|[1-9][0-9]*)$/.test(kk)) continue;
+        const acc = readKey(kk);
+        if (acc !== undefined) out.push(acc);
       }
       return out;
     };
@@ -635,7 +688,16 @@ export function arrayMethodAbs(name: "toString" | "toLocaleString" | "join"): Ab
     body: noBody,
     bindThis: true,
     apply: (a) => {
-      const recv = a[0] ?? undefAbs();
+      // Bug 330：接收者为 **nullish**（null / undefined）⇒ 原生 ToObject
+      // 定抛 TypeError（"Cannot convert undefined or null to object"）。
+      // 此前 `a[0] ?? undefAbs()` 把 nullish 接收者**静默替换**成
+      // undefined 值 ⇒ brand 判定（ToObject）从未发生 ⇒ 引擎全程不记
+      // 抛 ⇒ L2 门禁假绿（同一个 Array.prototype 上 slice / indexOf /
+      // map 却正确报红——自相矛盾）。
+      const recv = a[0];
+      if (recv === undefined || isNullishLitAbs(recv)) {
+        throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
       // join 带可选分隔符：字面量分隔符 + 全字面量元组精确折叠，其余
       // 保守 path string（与 $invoke 同口径）。Bug 36：一等 join 路径
       // 同样逐元素校验（symbol 确定 TypeError / 抽象 may）

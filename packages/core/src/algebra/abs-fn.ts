@@ -79,6 +79,16 @@ export type AbsFnImpl = {
   env?: AstEnv;
   kind?: string;
   /**
+   * Bug 325：**函数种类**戳（async × generator 四象限）——原生
+   * `Object.prototype.toString.call(f)` 据此给标签（Function /
+   * AsyncFunction / GeneratorFunction / AsyncGeneratorFunction）。
+   *
+   * 与 `kind` 分开：`kind` 是**派发角色**维度（"protoMethod" = 内建原型
+   * 方法值，抑制 $invokeInner 的回退再入），而类方法**同时**可能是
+   * generator（`class A { *m(){} }`）⇒ 两种语义不能共用一个字段。
+   */
+  fnKind?: "function" | "async" | "generator" | "async-generator";
+  /**
    * Bug 9：原生 fn.length（首个默认值/rest 形参前的形参数）——静态已知时
    * 记录（宿主函数 v.length / 全 Identifier 形参的 AST），$len / $get 的
    * f.length 折 exact；未记录（默认值/嵌套默认模式不可判）→ 保守 number≥0。

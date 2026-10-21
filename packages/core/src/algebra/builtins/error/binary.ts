@@ -19,13 +19,16 @@
  *   与 Map/Set ctor 口径不同）；mapFn IsCallable 前置 + tuple items 逐元素
  *   执行（Bug 37 对齐 Array.from）；of 逐项过元素转换（number ToNumber /
  *   bigint ToBigInt——enforceTaBigIntItem）。
+ * - TA buffer 形态缺省长度（Bug 303）：剩余字节数（bufLen − off）须为元素
+ *   大小整数倍，否则定抛 RangeError（原生 AllocateTypedArrayBuffer；不再
+ *   用 Math.floor 截断折出确定长度）；bufLen 不可判 → may RangeError。
  * - set-like 校验（Bug 28）：IsObject / ToNumber(.size) 非 NaN / .has·.keys
  *   callable 三读——Set/Map brand 天然合法、闭 obj 逐槽（无 size 槽定抛）、
  *   open obj/fn/any/unknown/sum → may。
  */
 
 import type { Abs } from "../../abs.ts";
-import { abs, numLit, litValue, boolLit, bool, unknown } from "../../abs.ts";
+import { abs, numLit, litValue, boolLit, bool, unknown, strLit } from "../../abs.ts";
 import { objOf, getSlot } from "../../objects.ts";
 import { isSetAbs, isMapAbs } from "../../collections.ts";
 import { validateCallableArg, applyCallbackValue } from "../../hof.ts";
@@ -392,7 +395,8 @@ const TA_BYTES_PER_ELEMENT: Record<string, number> = {
  * RangeError（node 实测 new Uint8Array(buf8,9) / (buf8,2,100) / Int32(buf8,6)
  * 均 RangeError）；组合不可判 → may RangeError。byteLength 显式 undefined ≡
  * 缺省（填满缓冲区，ToIndex(undefined)=0 同 DataView 口径）。字面量组合折
- * length 槽（显式 lenV / 缺省 floor((bufLen-offV)/BPE)，enumerable:false）。
+ * length 槽（显式 lenV / 缺省 (bufLen-offV)/BPE——Bug 303 起为整除，
+ * enumerable:false）。
  */
 function makeTypedArrayFromBuffer(
   name: string,
@@ -427,18 +431,31 @@ function makeTypedArrayFromBuffer(
       } else {
         recordMayThrow({ kind: "RangeError", cause: `${name} length may exceed the buffer bounds` });
       }
+    } else {
+      // Bug 303：缺省长度时「bufferByteLength − byteOffset 须是 elementSize
+      // 的整数倍」（原生 AllocateTypedArrayBuffer；node 实测 new Int32Array(
+      // buf6) → RangeError "byte length of Int32Array should be a multiple
+      // of 4"）。此前整支缺失 → Math.floor 截断折出确定错长度（buf6 → 1）。
+      if ((bufLenV - offV) % bpe !== 0) throw new NudoThrow(errorTypeAbs("RangeError"));
     }
-  } else if (!(offV === 0 && lenDefaulted)) {
-    recordMayThrow({ kind: "RangeError", cause: `${name} byteOffset/length may exceed the buffer bounds` });
+  } else {
+    // 不可判：缺省长度臂的新失败模式是「剩余字节数不是元素大小整数倍」
+    // （bufLen 抽象 → 可能非倍数）→ may RangeError；显式长度臂是越界档。
+    recordMayThrow({
+      kind: "RangeError",
+      cause: lenDefaulted
+        ? `${name} buffer byteLength may not be a multiple of the element size`
+        : `${name} byteOffset/length may exceed the buffer bounds`,
+    });
   }
-  // length 槽：可折则折（显式 lenV / 缺省尾段 floor；buffer 形态原生非
+  // length 槽：可折则折（显式 lenV / 缺省尾段整除；buffer 形态原生非
   // 可枚举自有数据属性，同数字形态口径）
   const slots: Record<string, { value: Abs }> = {};
   const foldLen =
     !lenDefaulted && lenV !== undefined
       ? lenV
       : lenDefaulted && offV !== undefined && bufLenV !== undefined
-        ? Math.floor((bufLenV - offV) / bpe)
+        ? (bufLenV - offV) / bpe
         : undefined;
   if (foldLen !== undefined) slots.length = { value: numLit(foldLen) };
   const inner = objOf(slots);
@@ -481,6 +498,40 @@ function enforceTaItemConversion(name: string, items: Abs): void {
   }
   if (items.shape.k === "arr") {
     enforceTaItem(items.shape.element, elem);
+  }
+}
+
+/**
+ * Bug 305：%TypedArray%.prototype.set 的**源元素逐项转换**判定（number 域
+ * ToNumber / bigint 域 ToBigInt）——与构造器 / from / of 同一口径
+ * （enforceTaItem / enforceTaItemConversion）。原生 %TypedArray%.prototype.set
+ * 对每个源元素做**目标元素类型**的转换（node 实测：new Uint8Array(2).set([1n])
+ * → TypeError；new BigInt64Array(2).set([1]) → TypeError；set([true]) /
+ * set(["2"]) 合法）。源形态：
+ * - tuple：逐元素；
+ * - arr：元素域代表（bigint prim 域 → 定抛、unknown → may）；
+ * - string prim：bigint 域**逐字符** StringToBigInt（坏字符 → SyntaxError；
+ *   node 实测 new BigInt64Array(2).set("ab") → SyntaxError）；number 域
+ *   ToNumber(字符) 恒 NaN→0 不抛（不判）；
+ * - TA 源：元素已是目标内容类型（Bug 304 先校验一致）→ 无转换面；
+ * - 其余（闭对象/open obj/any…）：元素不可判 → 不记（值域 imprecision）。
+ */
+export function enforceTaSetItemConversion(name: string, src: Abs): void {
+  const elem = typedArrayElementOf(name);
+  if (elem === undefined) return;
+  const k = src.shape.k;
+  if (k === "tuple" || k === "arr") {
+    enforceTaItemConversion(name, src);
+    return;
+  }
+  if (elem === "bigint" && k === "prim" && (src.shape as { type?: string }).type === "string") {
+    const r = litValue(src);
+    if (r.ok && typeof r.value === "string") {
+      for (const ch of r.value) enforceTaBigIntItem(strLit(ch));
+      return;
+    }
+    // 抽象 string prim：字符可判性未知 → may SyntaxError（enforceTaBigIntItem 口径）
+    enforceTaBigIntItem(src);
   }
 }
 

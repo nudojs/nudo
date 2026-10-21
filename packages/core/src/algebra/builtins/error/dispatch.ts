@@ -7,10 +7,13 @@
  * - 两入口是内建构造/实例方法的总分派（exec $new 宿主分支与 Abs 面
  *   evalBuiltinNew 共用各域 builder；未建模名/方法 → undefined 走通用
  *   回退，不得折精确值）。
- * - TA set 三段校验（Bug 38）：ToIndex(offset) + ToObject(source) +
- *   off+srcLen > tgtLen 越界——长度读 binary 域构造入槽的 length 槽
- *  （makeTypedArrayAbs 数字形态）/ taSetSourceLength（tuple 元数/字符串
+ * - TA set 四段校验（Bug 38/304/305）：ToIndex(offset) + ToObject(source) +
+ *   off+srcLen > tgtLen 越界 + 源/目标内容类型一致（number vs bigint）+
+ *   逐元素 ToNumber/ToBigInt 转换——长度读 binary 域构造入槽的 length 槽
+ *   （makeTypedArrayAbs 数字形态）/ taSetSourceLength（tuple 元数/字符串
  *   长度/TA 源槽/装箱折 0）；成功恒返 undefined，元素拷贝值域不建模。
+ *   原生报错序（node v26）：越界（RangeError）→ 内容类型（TypeError）→
+ *   元素转换（TypeError/SyntaxError）——越界不可判时后两段只记 may。
  * - ArrayBuffer.resize（Bug 39）：resizable 槽 false 字面量定抛
  *   TypeError；成功臂 byteLength 槽**原地更新**（$set 引用语义惯例——
  *   别名同步）；transfer/grow/slice 不在此扩 scope。
@@ -73,8 +76,9 @@ import {
   toIndexLiteralValue,
   mayBeNullishOperand,
   enforceSetMethodArg,
+  enforceTaSetItemConversion,
 } from "./binary.ts";
-import { makeUrlAbs } from "./web.ts";
+import { makeUrlAbs, evalUrlSearchParamsMethod } from "./web.ts";
 import { makeBoxedAbs } from "./boxed.ts";
 import { makeIntlFormatAbs } from "./intl.ts";
 import {
@@ -292,6 +296,18 @@ function brandObjSlots(recv: Abs): Record<string, { value: Abs }> | undefined {
     : undefined;
 }
 
+/**
+ * Bug 304：TypedArray 源的**内容类型**（number / bigint）——源带
+ * [[TypedArrayName]] 槽时按家族名查（规范约束的是内容类型而非家族名：
+ * Uint8Array.set(Int8Array) 原生合法）；非 TA 源 → undefined（无
+ * [[ContentType]] 槽，原生不比对内容类型）。
+ */
+function taContentTypeOf(src: Abs): "number" | "bigint" | undefined {
+  if (src.shape.k !== "brand") return undefined;
+  const name = (src.shape as { name?: string }).name ?? "";
+  return typedArrayElementOf(name);
+}
+
 /** brand 实例方法（Date/RegExp/Map/Set/Error 家族/装箱拆箱后的 prim 面在外层） */
 export function evalBuiltinInstanceMethod(
   brandName: string,
@@ -301,17 +317,27 @@ export function evalBuiltinInstanceMethod(
 ): Abs | undefined {
   if (brandName === "Date") return evalDateMethod(method, recv, args);
   if (brandName === "RegExp") return evalRegExpMethod(method, recv, args);
+  // Bug 322：URLSearchParams 品牌方法派发（条目表精确取值）——
+  // get/getAll/has/size/toString 读条目表；set/append/delete 改条目表。
+  // 条目表**不可知**（抽象 init / may 臂）⇒ 读面折 unknown（不假精确）。
+  if (brandName === "URLSearchParams") return evalUrlSearchParamsMethod(method, recv, args);
   // Bug 35：DataView get/set 存取族（bounds 校验 + 元素域返回）
   if (brandName === "DataView") return evalDataViewMethod(method, recv, args);
-  // Bug 38：%TypedArray%.prototype.set(source, offset) —— 原生三段校验：
+  // Bug 38：%TypedArray%.prototype.set(source, offset) —— 原生四段校验：
   // ① ToIndex(offset)（负/±∞/超 2^53-1 → RangeError；symbol/bigint →
   //    TypeError；抽象 → may RangeError，复用 enforceToIndex）；② ToObject
   //    (source)（nullish 字面量/缺省 → 定抛 TypeError；any/含 nullish 臂
   //    sum → may）；③ targetOffset + sourceLength > targetLength → RangeError
   //    ——target 长度读 makeTypedArrayAbs 的 length 槽（数字形态折叠），
   //    source 长度读 taSetSourceLength（tuple 元数/字符串长度/TA 源槽/装箱
-  //    折 0）；任一侧不可判 → 保守 may。成功恒返 undefined；元素拷贝值域
-  //    不建模（imprecision，同长度口径）。
+  //    折 0）；任一侧不可判 → 保守 may。④ 源/目标**内容类型**一致（Bug 304：
+  //    number vs bigint → TypeError；规范约束内容类型而非家族名——同族跨家族
+  //    合法）+ 逐元素 ToNumber/ToBigInt 转换（Bug 305：number 域收 bigint →
+  //    TypeError、bigint 域收 number → TypeError、坏 string → SyntaxError）。
+  //    原生报错序（node v26 实测）：越界（RangeError）**先于**内容类型
+  //    （TypeError）**先于**元素转换（TypeError）——故 ③④ 在 ③ 之后。
+  //    ③ 不可判时 ④ 只记 may（原生可能先抛 RangeError）。
+  // 成功恒返 undefined；元素拷贝值域不建模（imprecision，同长度口径）。
   if (typedArrayElementOf(brandName) !== undefined && method === "set") {
     const offset = args.length > 1 ? args[1] : undefined;
     enforceToIndex(offset, "TypedArray.prototype.set offset");
@@ -323,11 +349,31 @@ export function evalBuiltinInstanceMethod(
     const offV = toIndexLiteralValue(offset);
     const srcLen = taSetSourceLength(src);
     const tgtLen = taLengthSlotLit(recv);
+    // ③ 越界档（原生最先）：可判且越界 → 定抛 RangeError；不可判 → may
+    // （此时 ④ 只能记 may——原生可能先抛 RangeError）。
+    let boundsDecided = false;
     if (offV !== undefined && srcLen !== undefined && tgtLen !== undefined) {
       if (offV + srcLen > tgtLen) throw new NudoThrow(errorTypeAbs("RangeError"));
+      boundsDecided = true;
     } else {
       recordMayThrow({ kind: "RangeError", cause: "TypedArray.prototype.set may exceed target bounds" });
     }
+    // ④ Bug 304：源/目标内容类型（number vs bigint）一致校验——源带
+    // [[TypedArrayName]] 槽时比对 [[ContentType]]（不比较家族名：
+    // Uint8Array.set(Int8Array) 原生合法）。
+    const srcElem = taContentTypeOf(src);
+    const tgtElem = typedArrayElementOf(brandName);
+    if (srcElem !== undefined && tgtElem !== undefined && srcElem !== tgtElem) {
+      if (boundsDecided) throw new NudoThrow(errorTypeAbs("TypeError"));
+      recordMayThrow({
+        kind: "TypeError",
+        cause: "TypedArray.prototype.set source/target content types differ (number vs bigint)",
+      });
+    }
+    // ④' Bug 305：逐元素 ToNumber / ToBigInt 转换（源 tuple/arr/string）。
+    // 越界档不可判时不做定抛（原生可能先抛 RangeError；该臂已记 may
+    // RangeError，「可能抛」判定已覆盖）。
+    if (boundsDecided) enforceTaSetItemConversion(brandName, src);
     return undefAbs();
   }
   // Bug 39：ArrayBuffer.prototype.resize(newLength) —— ValidateAndApply：

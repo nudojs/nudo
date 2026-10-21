@@ -14,6 +14,22 @@
  *   Abs 对象原型进 protoTable（[[Prototype]] 事实，Bug 67——instanceof 链
  *   终止判定不得把 null 终止链折 true）；第二实参 propertiesObject 逐可
  *   枚举键过 ToPropertyDescriptor 安装自有属性（Bug 32/23）。
+ * - Bug 323：create 的第二实参按**值**判定——「If properties is not
+ *   undefined」⇒ 显式 `undefined` 与不传同义（整步跳过，不抛）；`null` 抛。
+ * - Bug 324：defineProperties 的第二实参走 **ToObject**——null/undefined
+ *   抛；其它原始值装箱成零自有可枚举属性的包装器 ⇒ 不定义任何属性、不抛
+ *   （非空字符串例外：装箱后有下标键 ⇒ 描述符是字符 ⇒ TypeError）。
+ * - Bug 291：freeze / seal 落**键级标志**（freeze ⇒ writable+configurable
+ *   假；seal ⇒ configurable 假）＋ isFrozen / isSealed 的**平凡真**判定
+ *   （不可扩展 ∧ 每个自有属性不可配置 ∧（数据属性）不可写）。
+ * - Bug 301：freeze / seal 对 **Proxy** 走陷阱（preventExtensions ＋ 逐键
+ *   defineProperty；falsy ⇒ TypeError）。
+ * - Bug 308：RegExp 实例的自有 `lastIndex`（gOPN = 「全部自有键」语义）
+ *   与 gOPD 的数据描述符（可写、非可枚举、不可配置）。
+ * - Bug 315：Object.prototype.toLocaleString 的委派在 object-proto.ts；
+ *   本模块的描述符面须与之同口径（gOPDs 的访问器描述符 = {get, set}）。
+ * - Bug 326：键家族（keys/values/entries）对**自有键集不完备**的对象折
+ *   partial（标记在 prop flags 侧表）——不得折 exact 空元组。
  * - 未建模方法 → undefined 走通用回退。
  */
 
@@ -77,14 +93,17 @@ import {
   proxyOwnKeysTrapKeys,
   proxyTargetEnumerableStringKeys,
   proxyTargetOwnStringKeys,
+  proxyGetOwnPropDescTrap,
   readProperty,
   validateDefineTarget,
   validateDescriptorObject,
   wellKnownSymbolSlotKey,
 } from "./descriptor.ts";
+import { proxyPartsOf } from "../../exec/match-iter.ts";
 import {
   boxedStringEnumEntries,
   builtinBrandNoEnumKeys,
+  builtinBrandOwnKeyNames,
   foldGroupBy,
   typedArrayEnumKeyView,
 } from "./enum-entries.ts";
@@ -107,6 +126,249 @@ export function protoChangeAllowed(t0: Abs, p0: Abs): boolean {
   if (getProtoAbs(t0) === p0) return true;
   if (getProtoAbs(t0) === undefined && p0 === objectProtoBrand()) return true;
   return false;
+}
+
+// ---------------------------------------------------------------------------
+// Bug 291 / 301：freeze / seal / preventExtensions 的键级标志 + Proxy 陷阱
+// ---------------------------------------------------------------------------
+
+/** Bug 291/301：Proxy 判定（brand 名为 "Proxy"） */
+function isProxyAbs(o: Abs): boolean {
+  return o.shape.k === "brand" && (o.shape as { name?: string }).name === "Proxy";
+}
+
+/**
+ * Bug 326：对象的**自有键集不完备**（键集可能多于槽表）——键家族
+ * （Object.keys/values/entries）据此折 partial，**不得**折 exact 空元组
+ * （自信的确切错值：native `Object.keys(Object.groupBy([1,2], f))` =
+ * ["[object Object]"]，引擎此前折 [] ⇒ dts / zod / guard 三个产物面据此
+ * 判「只接受空数组」⇒ TS 消费方吃假红、运行时校验器拒掉每一个真实值）。
+ *
+ * 标记载体 = **prop flags 侧表**（不是 shape 字段——shape 类型在共享
+ * 文件里；侧表是键名 → 标志的 WeakMap，加一个**不存在于槽表**的标记键
+ * 对任何视图零副作用：枚举视图按槽表键过滤、描述符面按实键查表）。
+ * 不用 shape.open 判：open 语义是「键集可能多于槽表」但**自有键集已知**
+ * 的对象也用它（Object.create(<obj>) 的空槽产品——动态继承不建模 ⇒ 缺槽
+ * 读保守 unknown；它的自有键集确为空，原生 keys = []，Bug 41 pin）⇒ 用
+ * open 判会把那一族也折 partial（既有测试 pin）。
+ */
+const KEY_SET_OPEN_MARK = "@@nudoKeySetOpen";
+
+/** 标记「自有键集不完备」（组键运行时决定、静态不可知的那一族） */
+function markKeySetOpen(o: Abs): Abs {
+  setPropFlags(o, KEY_SET_OPEN_MARK, {
+    writable: false,
+    enumerable: false,
+    configurable: false,
+  });
+  return o;
+}
+
+/** 该对象的自有键集是否不完备（⇒ 键家族折 partial） */
+function keySetIncomplete(o: Abs): boolean {
+  return getPropFlags(o)?.has(KEY_SET_OPEN_MARK) === true;
+}
+
+/**
+ * Bug 291：不变性（freeze / seal）作用时的**自有键**集合 + 标志落点。
+ * - obj：槽表键（internal 私有槽剔除——非自有属性）
+ * - tuple：下标键（+ "length"）
+ * - fn：函数自身槽（expando）
+ * - brand（用户类实例）：内层 obj 的槽（类字段）；标志记在 **brand** 上
+ *   （与 applyPropertyDescriptor 同款：flags 表记在接收者 brand）
+ * 键集不可判（开放 obj / 抽象接收者）→ undefined（不逐键落地标志）。
+ */
+function integrityOwnKeys(o: Abs): { target: Abs; keys: string[] } | undefined {
+  const s = o.shape;
+  if (s.k === "obj") {
+    const os = s as { slots: Record<string, { internal?: boolean }>; open?: boolean };
+    if (os.open) return undefined;
+    return {
+      target: o,
+      keys: Object.keys(os.slots).filter((k) => os.slots[k]?.internal !== true),
+    };
+  }
+  if (s.k === "tuple") {
+    const holes = (s as { holes?: number[] }).holes ?? [];
+    const keys = (s as { elements: Abs[] }).elements
+      .map((_, i) => String(i))
+      .filter((k) => !holes.includes(Number(k)));
+    keys.push("length");
+    return { target: o, keys };
+  }
+  if (s.k === "fn") {
+    const slots = (s as { slots?: Record<string, unknown> }).slots;
+    return { target: o, keys: slots ? Object.keys(slots) : [] };
+  }
+  if (s.k === "brand") {
+    const inner = classInstanceInnerOf(o);
+    if (!inner) return undefined;
+    const islots = (inner.shape as ObjShape).slots as Record<string, { internal?: boolean }>;
+    return {
+      target: o,
+      keys: Object.keys(islots).filter((k) => islots[k]?.internal !== true),
+    };
+  }
+  return undefined;
+}
+
+/**
+ * Bug 291：键级不变性标志落地——Object.freeze 把每个自有键的 writable /
+ * configurable 置 false；Object.seal 只置 configurable false（writable /
+ * enumerable 保持）。此前只打一个 extState 标签 ⇒ 描述符面完全看不到冻结
+ * （gOPD(o,"a").writable 仍折 true、configurable 仍折 true——原生冻结后
+ * 是 false）。
+ */
+function applyIntegrityFlags(o: Abs, level: "frozen" | "sealed"): void {
+  const t = integrityOwnKeys(o);
+  if (!t) return;
+  for (const key of t.keys) {
+    const prev = getPropFlags(t.target)?.get(key);
+    setPropFlags(t.target, key, {
+      writable: level === "frozen" ? false : prev?.writable,
+      enumerable: prev?.enumerable,
+      configurable: false,
+    });
+  }
+}
+
+/** 该自有键是**数据**属性（非访问器）——访问器无 [[Writable]]，不阻碍 frozen */
+function isDataProperty(o: Abs, key: string): boolean {
+  const s = o.shape;
+  if (s.k === "obj") return !lookupObjAccessor(o, key);
+  if (s.k === "brand") {
+    const inner = classInstanceInnerOf(o);
+    return inner ? !lookupObjAccessor(inner, key) : true;
+  }
+  return true; // tuple / fn：槽即数据属性
+}
+
+/**
+ * Bug 291：isFrozen / isSealed 判定（ES2024 §7.3.15/16 + node v26 实测）：
+ * - isSealed(O)：O 不可扩展 ∧ 每个自有属性都**不可配置**
+ * - isFrozen(O)：O 不可扩展 ∧ 每个自有属性都不可配置 ∧（**数据**属性）
+ *   不可写（访问器属性无 [[Writable]] ⇒ 不构成阻碍——node 实测
+ *   `Object.isFrozen(Object.freeze({get a(){}}))` === true）
+ * 此前只认 extState 标签 ⇒ `Object.isFrozen(Object.seal({}))` 折 false
+ * （原生 true——空对象密封即冻结）、`Object.isFrozen(
+ * Object.preventExtensions({}))` 折 false（原生 true）、defineProperty
+ * 收紧标志后再 preventExtensions 的对象也折 false（原生 true）。
+ */
+function integrityTruth(t: Abs, wantFrozen: boolean): boolean {
+  const st = extStateOf(t);
+  if (wantFrozen ? st === "frozen" : st === "sealed" || st === "frozen") return true;
+  // 仍可扩展 ⇒ 既不 sealed 也不 frozen
+  if (st === undefined) return false;
+  const own = integrityOwnKeys(t);
+  if (!own) return false;
+  for (const key of own.keys) {
+    const flags = getPropFlags(own.target)?.get(key);
+    if (flags?.configurable !== false) return false;
+    if (wantFrozen && isDataProperty(t, key) && flags?.writable !== false) return false;
+  }
+  return true;
+}
+
+/**
+ * Bug 301：Proxy 的 freeze / seal 陷阱派发（原生 SetIntegrityLevel,
+ * ES2024 10.4.6）：先 [[PreventExtensions]]（preventExtensions 陷阱），
+ * 再对每个自有键 [[DefineOwnProperty]]（defineProperty 陷阱，描述符带
+ * 当前 writable / enumerable + configurable:false）；任一陷阱返回 falsy ⇒
+ * TypeError。
+ * 此前 freeze / seal **完全无视**陷阱（直接落 extState 标记）⇒ 代理的
+ * 不可扩展性与键级标志全被跳过（假冻结：node 实测
+ * `Object.freeze(new Proxy(o, {preventExtensions(){return false}}))` 抛
+ * TypeError，引擎不抛；defineProperty 陷阱返回 false 也被吞）。
+ */
+function proxySetIntegrity(o: Abs, level: "frozen" | "sealed"): void {
+  const pe = proxyBooleanTrap(o, "preventExtensions", (t) => [t]);
+  if (pe === "opaque") {
+    recordMayThrow({ kind: "TypeError", cause: "Proxy preventExtensions trap result unknown" });
+    return;
+  }
+  if (pe !== undefined && pe.term?.op === "lit" && pe.term.value === false) {
+    throw new NudoThrow(errorTypeAbs("TypeError"));
+  }
+  const outcome = proxyOwnKeysTrapKeys(o);
+  let target: Abs | undefined;
+  let keys: string[] | undefined;
+  if (outcome.k === "keys") {
+    target = outcome.target;
+    keys = outcome.keys.map((k) => {
+      const kv = litValue(k);
+      return kv.ok ? String(kv.value) : "";
+    });
+  } else if (outcome.k === "absent") {
+    target = outcome.target;
+    keys = target ? proxyTargetOwnStringKeys(target) : undefined;
+  }
+  if (keys === undefined) {
+    recordMayThrow({ kind: "TypeError", cause: "Proxy own keys unknown" });
+    return;
+  }
+  for (const key of keys) {
+    const cur = target ? getPropFlags(target)?.get(key) : undefined;
+    const desc = abs(
+      {
+        k: "obj",
+        slots: {
+          writable: { value: boolLit(level === "frozen" ? false : cur?.writable !== false) },
+          enumerable: { value: boolLit(cur?.enumerable !== false) },
+          configurable: { value: boolLit(false) },
+        },
+      },
+      undefined,
+      undefined,
+      "exact",
+    );
+    const dp = proxyBooleanTrap(o, "defineProperty", (t) => [t, strLit(key), desc]);
+    if (dp === "opaque") {
+      recordMayThrow({ kind: "TypeError", cause: "Proxy defineProperty trap result unknown" });
+      continue;
+    }
+    if (dp !== undefined && dp.term?.op === "lit" && dp.term.value === false) {
+      throw new NudoThrow(errorTypeAbs("TypeError"));
+    }
+  }
+}
+
+/**
+ * Bug 57/84：访问器属性描述符（get/set thunk 包成 fn Abs；调用经 apply 钩子
+ * 求值）。this 回退 target——描述符 getter 被调用时 this 为接收者（obj 臂为
+ * 本体、类实例臂为承载槽的内层 inner，但原生 this 是 brand 实例，侧表 thunk
+ * 闭包已绑定接收者语义）。gOPD 与 gOPDs 共用（单一实现）。
+ */
+function accessorPropDescAbs(target: Abs, key: string): Abs | undefined {
+  const acc = lookupObjAccessor(target, key);
+  if (!acc) return undefined;
+  const flags = getPropFlags(target)?.get(key);
+  const wrapGet = (thunk: (t: Abs) => Abs): Abs =>
+    absFunction(["_this"], {
+      body: noBody,
+      apply: (_args, thisVal) => thunk(thisVal ?? target),
+    });
+  const wrapSet = (thunk: (t: Abs, v: Abs) => Abs): Abs =>
+    absFunction(["_this", "value"], {
+      body: noBody,
+      apply: (args2, thisVal) => {
+        thunk(thisVal ?? target, args2[0] ?? undefAbs());
+        return undefAbs(); // setter 返回值原生丢弃
+      },
+    });
+  return abs(
+    {
+      k: "obj",
+      slots: {
+        get: { value: acc.get ? wrapGet(acc.get) : undefAbs() },
+        set: { value: acc.set ? wrapSet(acc.set) : undefAbs() },
+        enumerable: { value: boolLit(flags?.enumerable !== false) },
+        configurable: { value: boolLit(flags?.configurable !== false) },
+      },
+    },
+    undefined,
+    undefined,
+    "exact",
+  );
 }
 
 /** Object.keys/values/entries/assign + 不变性方法 */
@@ -149,12 +411,16 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
   };
 
   /** Bug 84：用户类实例 brand 的公有可枚举自有键值对（私有 Slot.internal
-   * 剔除）；非类实例面 → undefined（调用方保持既有保守口径） */
+   * 剔除）；非类实例面 → undefined（调用方保持既有保守口径）
+   * Bug 295：Object.keys|values|entries 是**字符串键**视图——symbol 键不进
+   * （原生类实例的 keys 家族看不到 Symbol.toStringTag）。enumOwnKeys 是
+   * CopyDataProperties 视图（含 symbol 键）⇒ 这里用本地 enumKeys
+   * （includeSymbols 默认 false）。 */
   const classInstanceEnumEntries = (a0: Abs | undefined): Array<[string, Abs]> | undefined => {
     const inner = a0 ? classInstanceInnerOf(a0) : undefined;
     if (!inner) return undefined;
     const slots = (inner.shape as ObjShape).slots as Record<string, { value: Abs }>;
-    return enumOwnKeys(inner, slots).map((k) => [k, getSlot(slots, k)!.value] as [string, Abs]);
+    return enumKeys(slots, inner).map((k) => [k, getSlot(slots, k)!.value] as [string, Abs]);
   };
 
   /** Bug 125：TA brand 枚举投影素材——typedArrayEnumKeyView（exact/open/
@@ -241,12 +507,15 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       // ToPropertyDescriptor + DefineOwnProperty 安装为**自有属性**（此前
       // 整体忽略：createDescNull 静默 undefined / obj-proto 变体假 unknown）。
       const props = args[1];
-      if (props !== undefined) {
-        if (
-          !props ||
-          (props.term?.op === "lit" &&
-            (props.term.value === null || props.term.value === undefined))
-        ) {
+      // Bug 323：第二实参按**值**判定（规范「If properties is not undefined」）
+      // ——实参槽缺席与**显式** `undefined` 同义（整步跳过：只建对象、不定义
+      // 任何属性、不抛；node 实测 create(o) 与 create(o, undefined) 同为 OK）
+      // ⇒ 此前「槽在 + 值是 undefined」被误判成必抛 TypeError（L2 假红 +
+      // 返回值错折 never，与 1 参形态自相矛盾）；`null` 走 ToObject → 仍定抛。
+      const propsValueIsUndefined =
+        props !== undefined && props.term?.op === "lit" && props.term.value === undefined;
+      if (props !== undefined && !propsValueIsUndefined) {
+        if (!props || (props.term?.op === "lit" && props.term.value === null)) {
           throw new NudoThrow(errorTypeAbs("TypeError"));
         }
         if (props.shape.k === "any" || props.shape.k === "unknown" || props.shape.k === "sum") {
@@ -355,10 +624,16 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         }
       }
       if (a0?.shape.k === "obj") {
-        const keys = enumKeys(
-          (a0.shape as { slots: Record<string, unknown> }).slots,
-          a0,
-        ).map((k) => strLit(k));
+        // Bug 326：**自有键集不完备**的开放对象（典型产物：Object.groupBy 的
+        // 分组对象——组键由回调运行时 ToPropertyKey 决定，静态不可知）折
+        // partial；此前折 exact 空元组 = 自信的确切错值（native
+        // keys(groupBy(...)) = ["[object Object]"] vs 引擎 []）⇒ dts/zod/
+        // guard 三个产物面据此判「只接受空数组」。判据见 keySetIncomplete。
+        if (keySetIncomplete(a0)) {
+          return abs({ k: "arr", element: str("path") }, undefined, undefined, "partial");
+        }
+        const os = a0.shape as { slots: Record<string, unknown> };
+        const keys = enumKeys(os.slots, a0).map((k) => strLit(k));
         return abs({ k: "tuple", elements: keys }, undefined, undefined, "exact");
       }
       if (a0?.shape.k === "tuple") {
@@ -416,6 +691,10 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
           return abs({ k: "tuple", elements: brandKeys.map(([k]) => strLit(k)) }, undefined, undefined, "exact");
         }
         if (builtinBrandNoEnumKeys(a0)) {
+          // Bug 308 口径分离：此处是「**可枚举**自有键」视图（Object.keys
+          // 语义）——RegExp 的 `lastIndex` 是自有但**非可枚举** ⇒ 不入
+          // （原生 Object.keys(/x/) = []）；gOPN（「全部自有键」）另走
+          // builtinBrandOwnKeyNames。
           return abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
         }
         // Bug 84：用户类实例——内层闭 obj 公有可枚举自有键（私有槽 internal 剔除；
@@ -435,7 +714,13 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }
       if (a0?.shape.k === "obj") {
-        const slots = (a0.shape as { slots: Record<string, { value: Abs }> }).slots;
+        // Bug 326：自有键集不完备 ⇒ 诚实 partial（此前 exact 空元组 =
+        // 自信的确切错值，native values = [[1,2]]）
+        if (keySetIncomplete(a0)) {
+          return abs({ k: "arr", element: unknown }, undefined, undefined, "partial");
+        }
+        const os = a0.shape as { slots: Record<string, { value: Abs }> };
+        const slots = os.slots;
         // Bug 57：[[Get]] 语义——访问器 getter 求值（直接读占位槽会折
         // undefined/unknown）
         const vals = enumKeys(slots, a0).map((k) => readProperty(a0, k));
@@ -501,6 +786,8 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
           return abs({ k: "tuple", elements: brandVals.map(([, v]) => v) }, undefined, undefined, "exact");
         }
         if (builtinBrandNoEnumKeys(a0)) {
+          // Bug 308 口径分离：此处是「**可枚举**自有值」视图——RegExp 的
+          // `lastIndex` 非可枚举 ⇒ 不入（原生 Object.values(/x/) = []）。
           return abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
         }
         // Bug 84：用户类实例——公有可枚举自有值（私有槽 internal 剔除）
@@ -518,7 +805,26 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         throw new NudoThrow(errorTypeAbs("TypeError"));
       }
       if (a0?.shape.k === "obj") {
-        const slots = (a0.shape as { slots: Record<string, { value: Abs }> }).slots;
+        // Bug 326：自有键集不完备 ⇒ 诚实 partial（此前 exact 空元组 =
+        // 自信的确切错值，native entries = [["[object Object]",[1,2]]]）
+        if (keySetIncomplete(a0)) {
+          return abs(
+            {
+              k: "arr",
+              element: abs(
+                { k: "tuple", elements: [str("path"), unknown] },
+                undefined,
+                undefined,
+                "partial",
+              ),
+            },
+            undefined,
+            undefined,
+            "partial",
+          );
+        }
+        const os = a0.shape as { slots: Record<string, { value: Abs }> };
+        const slots = os.slots;
         // Bug 57：[[Get]] 语义——访问器 getter 求值
         const entries = enumKeys(slots, a0).map((k) =>
           abs({ k: "tuple", elements: [strLit(k), readProperty(a0, k)] }, undefined, undefined, "exact"),
@@ -606,6 +912,8 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
           );
         }
         if (builtinBrandNoEnumKeys(a0)) {
+          // Bug 308 口径分离：此处是「**可枚举**自有键值对」视图——RegExp 的
+          // `lastIndex` 非可枚举 ⇒ 不入（原生 Object.entries(/x/) = []）。
           return abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
         }
         // Bug 84：用户类实例——公有可枚举自有键值对（私有槽 internal 剔除）
@@ -930,13 +1238,18 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         ) {
           // Bug 200/S4 接线：原型对象目标（Object.assign(A.prototype, {…})）——
           // 写进原型对象的内层 obj（for-in 沿原型链可见）
+          const srcSlots = src.shape.slots as Record<string, { symbolKey?: boolean }>;
           assignIntoBrandInner(
             acc,
-            enumKeys(src.shape.slots, src, true).map(
-              (k) => [k, readProperty(src, k)] as [string, Abs],
+            enumKeys(srcSlots, src, true).map(
+              (k) =>
+                [k, readProperty(src, k), srcSlots[k]?.symbolKey === true] as [
+                  string,
+                  Abs,
+                  boolean,
+                ],
             ),
-          );
-        } else if (acc.shape.k === "tuple" && src.shape.k === "obj") {
+          );        } else if (acc.shape.k === "tuple" && src.shape.k === "obj") {
           // 数组 target：与 evaluator runtimeAssignObject 同口径——数字键按下标写
           // （扩展 length）、length 键截断/延长（延长段 hole、非法原生
           // RangeError）、非规范键 expando 忽略；源键序 = 原生属性序
@@ -996,6 +1309,14 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       // 异质对象不可行——「Cannot freeze array buffer views with elements」）
       if (a0) {
         taSetIntegrityGuard(a0, "freeze");
+        // Bug 301：Proxy 走陷阱派发（原生 SetIntegrityLevel：preventExtensions
+        // + 逐键 defineProperty；falsy ⇒ TypeError）
+        if (isProxyAbs(a0)) {
+          proxySetIntegrity(a0, "frozen");
+          return markExtState(a0, "frozen");
+        }
+        // Bug 291：键级标志落地（writable:false / configurable:false）
+        applyIntegrityFlags(a0, "frozen");
         return markExtState(a0, "frozen");
       }
       return undefined;
@@ -1006,6 +1327,13 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       // 不抛（V8 允许 preventExt）——不走守卫
       if (a0) {
         taSetIntegrityGuard(a0, "seal");
+        // Bug 301：Proxy 走陷阱派发（同 freeze）
+        if (isProxyAbs(a0)) {
+          proxySetIntegrity(a0, "sealed");
+          return markExtState(a0, "sealed");
+        }
+        // Bug 291：键级标志落地（configurable:false；writable 保持）
+        applyIntegrityFlags(a0, "sealed");
         return markExtState(a0, "sealed");
       }
       return undefined;
@@ -1034,13 +1362,17 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       const t = args[0];
       // ES：非对象（prim/null/undefined，含无实参）恒 frozen——不抛
       if (isPrimLike(t)) return boolLit(true);
-      return boolLit(extStateOf(t!) === "frozen");
+      if (!t) return boolLit(false);
+      // Bug 291：平凡真判定（不可扩展 + 每个自有属性不可配置 + 数据属性
+      // 不可写）——此前只认 extState 标签
+      return boolLit(integrityTruth(t, true));
     }
     case "isSealed": {
       const t = args[0];
       if (isPrimLike(t)) return boolLit(true);
-      const s = extStateOf(t!);
-      return boolLit(s === "sealed" || s === "frozen");
+      if (!t) return boolLit(false);
+      // Bug 291：平凡真判定（不可扩展 + 每个自有属性不可配置）
+      return boolLit(integrityTruth(t, false));
     }
     case "isExtensible": {
       const t = args[0];
@@ -1106,13 +1438,39 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       // tuple/arr/fn/brand 是对象（无字符串键槽 → 无操作）
       validateDefineTarget(a0, "Object.defineProperties");
       const props = args[1];
+      // Bug 324：第二实参走 **ToObject** —— null/undefined ⇒ 定抛 TypeError；
+      // 其它**原始值** ⇒ 装箱成零自有可枚举属性的包装器 ⇒ **不定义任何
+      // 属性、不抛**（node 实测 defineProperties(o, 5/true/1n) OK）；非空
+      // 字符串装箱后有下标键（"0"/"1"…）⇒ 每个「描述符」是字符（非对象）
+      // ⇒ ToPropertyDescriptor 定抛；空串零键 ⇒ 无操作不抛。
       if (
         !props ||
         (props.term?.op === "lit" &&
-          (props.term.value === null || props.term.value === undefined)) ||
-        props.shape.k === "prim"
+          (props.term.value === null || props.term.value === undefined))
       ) {
         throw new NudoThrow(errorTypeAbs("TypeError"));
+      }
+      if (props.shape.k === "prim") {
+        const isStringProps =
+          props.term?.op === "lit"
+            ? typeof props.term.value === "string"
+            : (props.shape as { type?: string }).type === "string";
+        if (isStringProps) {
+          if (props.term?.op === "lit") {
+            if ((props.term.value as string).length > 0) {
+              throw new NudoThrow(errorTypeAbs("TypeError"));
+            }
+          } else {
+            // 抽象 string prim：长度未知 ⇒ 可能非空 ⇒ may TypeError
+            recordMayThrow({
+              kind: "TypeError",
+              cause: "Object.defineProperties props must be an object",
+            });
+          }
+        }
+        // 其它 prim（number/boolean/bigint/symbol）⇒ 零自有可枚举属性 ⇒
+        // 无操作（返回 target 原样，不装任何属性）
+        return a0!;
       }
       if (props.shape.k === "any" || props.shape.k === "unknown" || props.shape.k === "sum") {
         recordMayThrow({
@@ -1163,6 +1521,31 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         }
         return abs({ k: "obj", slots }, undefined, undefined, "exact");
       };
+      /**
+       * Bug 291：gOPDs 的**访问器**描述符——原生
+       * `Object.getOwnPropertyDescriptors({get a(){}}).a` 是
+       * `{get: ƒ, set: undefined, enumerable, configurable}`（**无**
+       * value / writable 键）。此前 gOPDs 一律落数据描述符（value/
+       * writable/enumerable/configurable）⇒ `.a.get` 折 undefined
+       * （原生是函数）。与 gOPD 同口径（accessorPropDescAbs 单一实现）。
+       */
+      const descSlotsOfWithAccessors = (
+        target: Abs,
+        entries: Array<[string, Abs]>,
+        flagsOf: (key: string) => { writable: boolean; enumerable: boolean; configurable: boolean },
+      ): Abs => {
+        const slots: Record<string, { value: Abs }> = {};
+        for (const [key, value] of entries) {
+          const accDesc = accessorPropDescAbs(target, key);
+          if (accDesc) {
+            slots[key] = { value: accDesc };
+            continue;
+          }
+          const f = flagsOf(key);
+          slots[key] = { value: mkPropDescAbs(value, f.writable, f.enumerable, f.configurable) };
+        }
+        return abs({ k: "obj", slots }, undefined, undefined, "exact");
+      };
       if (a0.shape.k === "obj") {
         const os = a0.shape as { slots: Record<string, { value: Abs }>; open?: boolean; index?: unknown };
         if (os.open || os.index) {
@@ -1172,25 +1555,37 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
           for (const key of Object.keys(os.slots)) {
             // Bug 84：internal 私有槽非自有属性，不产 descriptor
             if ((os.slots[key] as { internal?: boolean })?.internal === true) continue;
+            // Bug 295：gOPDs 只产**字符串键**描述符（原生 symbol 键不进
+            // gOPDs —— symbol 键另有 getOwnPropertySymbols 面）
+            if ((os.slots[key] as { symbolKey?: boolean })?.symbolKey === true) continue;
             const value = os.slots[key]!.value;
             const flags = getPropFlags(a0)?.get(key);
+            // Bug 291：访问器描述符（get/set 键，无 value/writable）
+            const accDesc = accessorPropDescAbs(a0, key);
             slots[key] = {
-              value: mkPropDescAbs(
-                value,
-                flags?.writable !== false,
-                flags?.enumerable !== false,
-                flags?.configurable !== false,
-              ),
+              value:
+                accDesc ??
+                mkPropDescAbs(
+                  value,
+                  flags?.writable !== false,
+                  flags?.enumerable !== false,
+                  flags?.configurable !== false,
+                ),
             };
           }
           return abs({ k: "obj", slots, open: true }, undefined, undefined, "partial");
         }
         // Bug 84：internal 私有槽非自有属性，不产 descriptor
+        // Bug 295：gOPDs 只产**字符串键**描述符（symbol 键不进）
         const entries = Object.keys(os.slots)
-          .filter((key) => (os.slots[key] as { internal?: boolean })?.internal !== true)
+          .filter(
+            (key) =>
+              (os.slots[key] as { internal?: boolean })?.internal !== true &&
+              (os.slots[key] as { symbolKey?: boolean })?.symbolKey !== true,
+          )
           .map((key) => [key, os.slots[key]!.value] as [string, Abs]);
         const flagsMap = getPropFlags(a0);
-        return descSlotsOf(entries, (key) => {
+        return descSlotsOfWithAccessors(a0, entries, (key) => {
           const f = flagsMap?.get(key);
           return {
             writable: f?.writable !== false,
@@ -1207,11 +1602,22 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         entries.push(["length", numLit(a0.shape.elements.length)]);
         // 数组 length：writable:true、不可枚举、不可配置（node 实测）；
         // 索引元素全自有可写可枚举可配置（gOPD tuple 分支同口径）
-        return descSlotsOf(entries, (key) =>
-          key === "length"
-            ? { writable: true, enumerable: false, configurable: false }
-            : { writable: true, enumerable: true, configurable: true },
-        );
+        // Bug 291：冻结/密封后的键级标志（flags 表记在 tuple 自身）
+        const tFlags = getPropFlags(a0);
+        return descSlotsOf(entries, (key) => {
+          const f = tFlags?.get(key);
+          return key === "length"
+            ? {
+                writable: f?.writable !== false,
+                enumerable: false,
+                configurable: false,
+              }
+            : {
+                writable: f?.writable !== false,
+                enumerable: true,
+                configurable: f?.configurable !== false,
+              };
+        });
       }
       if (a0.term?.op === "lit" && typeof a0.term.value === "string") {
         // 字符串装箱：字符下标（不可写、可枚举、不可配置）+ length（全 false）
@@ -1348,6 +1754,20 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
           }
         }
         if (builtinBrandNoEnumKeys(a0)) {
+          // Bug 308：gOPN 语义是「**全部**自有键」——RegExp 实例有自有的
+          // `lastIndex`（ECMA-262 §22.2.6，非可枚举）⇒ 原生
+          // gOPN(/x/) = ["lastIndex"]；此前与「零**可枚举**键」表共用 →
+          // 折 exact 空元组（自信的确切错值）。source/flags/global 是原型
+          // 访问器（非自有键）⇒ 不入。
+          const brandOwn = builtinBrandOwnKeyNames(a0);
+          if (brandOwn) {
+            return abs(
+              { k: "tuple", elements: brandOwn.map((n) => strLit(n)) },
+              undefined,
+              undefined,
+              "exact",
+            );
+          }
           return abs({ k: "tuple", elements: [] }, undefined, undefined, "exact");
         }
         // Bug 84：用户类实例——自有字符串键投影（含不可枚举；私有槽
@@ -1439,43 +1859,32 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       const maybeDesc = maybePropDescAbs;
       /**
        * Bug 57/84：访问器属性描述符（get/set thunk 包成 fn Abs；
-       * 调用经 apply 钩子求值）。this 回退 target——gOPD 返回的
-       * 描述符 getter 被调用时 this 为接收者（obj 臂为本体 a0、
-       * 类实例臂为承载槽的内层 inner，但原生 this 是 brand 实例，
-       * 侧表 thunk 闭包已绑定接收者语义）。
+       * 调用经 apply 钩子求值）——与 gOPDs 共用（单一实现）。
        */
-      const accessorDescOf = (target: Abs, key: string): Abs | undefined => {
-        const acc = lookupObjAccessor(target, key);
-        if (!acc) return undefined;
-        const flags = getPropFlags(target)?.get(key);
-        const wrapGet = (thunk: (t: Abs) => Abs): Abs =>
-          absFunction(["_this"], {
-            body: noBody,
-            apply: (_args, thisVal) => thunk(thisVal ?? target),
-          });
-        const wrapSet = (thunk: (t: Abs, v: Abs) => Abs): Abs =>
-          absFunction(["_this", "value"], {
-            body: noBody,
-            apply: (args2, thisVal) => {
-              thunk(thisVal ?? target, args2[0] ?? undefAbs());
-              return undefAbs(); // setter 返回值原生丢弃
-            },
-          });
-        return abs(
-          {
-            k: "obj",
-            slots: {
-              get: { value: acc.get ? wrapGet(acc.get) : undefAbs() },
-              set: { value: acc.set ? wrapSet(acc.set) : undefAbs() },
-              enumerable: { value: boolLit(flags?.enumerable !== false) },
-              configurable: { value: boolLit(flags?.configurable !== false) },
-            },
-          },
-          undefined,
-          undefined,
-          "exact",
-        );
-      };
+      const accessorDescOf = (target: Abs, key: string): Abs | undefined =>
+        accessorPropDescAbs(target, key);
+      // Bug 300：Proxy 的 getOwnPropertyDescriptor 陷阱此前**从不派发**
+      // （Proxy brand 落不进 obj 分支 ⇒ 折「descriptor | undefined」并集 ⇒
+      // 读 .value 定抛 TypeError）。与 Reflect 面同款实现（descriptor.ts 的
+      // proxyGetOwnPropDescTrap：陷阱派发 + ToPropertyDescriptor 非对象定抛 +
+      // 描述符补全）。非 Proxy 接收者返回 absent ⇒ 既有分支不受影响。
+      const proxyDesc = proxyGetOwnPropDescTrap(a0, args[1]);
+      if (proxyDesc.k === "desc") return proxyDesc.desc;
+      if (proxyDesc.k === "opaque") return unknown;
+      if (proxyDesc.k === "absent") {
+        // Bug 300 顺带：Proxy **无** getOwnPropertyDescriptor 陷阱 ⇒ 原生
+        // 转发**靶**的 [[GetOwnProperty]]（规范 Proxy [[GetOwnProperty]] 的
+        // 陷阱缺席分支）。此前落「descriptor | undefined」并集 ⇒ 读 `.value`
+        // 定抛 TypeError（wrong-exact：原生恒有描述符）。
+        // 转发到靶走同函数的普通分支（靶不是 Proxy ⇒ 不会再次进入本段）。
+        const parts = proxyPartsOf(a0);
+        if (parts) {
+          return evalObjectMethod("getOwnPropertyDescriptor", [
+            parts.target,
+            ...args.slice(1),
+          ]);
+        }
+      }
       if (a0.shape.k === "obj") {
         const os = a0.shape as { slots: Record<string, { value: Abs }>; open?: boolean; index?: unknown };
         if (os.open || os.index || key === undefined) return maybeDesc();
@@ -1604,6 +2013,26 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       // internal 私有槽 → undefined；闭内层缺席键 → undefined（自有键集
       // 构造期静态可知）。动态 defineProperty 安装的访问器经内层侧表
       // 派发（同上臂 Bug 57 口径）。
+      // Bug 308：RegExp 实例的**自有** `lastIndex` 数据属性（ECMA-262
+      // §22.2.6）——可写、非可枚举、不可配置（node 实测
+      // gOPD(/x/,"lastIndex").writable === true）；此前整 brand 落
+      // 「descriptor | undefined」⇒ 读 .writable 即定抛 TypeError。
+      // source/flags/global 等是**原型访问器**（非自有键）⇒ 不在此臂。
+      if (
+        key === "lastIndex" &&
+        a0.shape.k === "brand" &&
+        (a0.shape as { name?: string }).name === "RegExp"
+      ) {
+        const rInner = a0.shape.shape;
+        if (rInner.shape.k === "obj" && !rInner.shape.open) {
+          const rSlots = (rInner.shape as ObjShape)
+            .slots as Record<string, { value: Abs }>;
+          if (Object.prototype.hasOwnProperty.call(rSlots, key)) {
+            return mkDesc(rSlots[key]!.value, true, false, false);
+          }
+        }
+        return undefAbs();
+      }
       if (key !== undefined && a0.shape.k === "brand" && isErrorCtorName((a0.shape as { name?: string }).name)) {
         const inner = a0.shape.shape;
         if (inner.shape.k === "obj" && !inner.shape.open) {
@@ -1628,14 +2057,26 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       }
       if (a0.shape.k === "tuple" && key !== undefined) {
         const holes = (a0.shape as { holes?: number[] }).holes ?? [];
+        // Bug 291：冻结/密封后的键级标志（flags 表记在 tuple 自身）
+        const tFlags = getPropFlags(a0)?.get(key);
         if (key === "length") {
           // 数组 length：writable:true、不可枚举、不可配置（node 实测）
-          return mkDesc(numLit(a0.shape.elements.length), true, false, false);
+          return mkDesc(
+            numLit(a0.shape.elements.length),
+            tFlags?.writable !== false,
+            false,
+            false,
+          );
         }
         const idx = canonicalArrayIndex(key);
         if (idx !== undefined) {
           if (idx < a0.shape.elements.length && !holes.includes(idx)) {
-            return mkDesc(a0.shape.elements[idx]!, true, true, true);
+            return mkDesc(
+              a0.shape.elements[idx]!,
+              tFlags?.writable !== false,
+              true,
+              tFlags?.configurable !== false,
+            );
           }
           return undefAbs();
         }
@@ -1774,8 +2215,12 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
       // null 原型 obj（未知键读 unknown，不假 undefined）
       const fold = foldGroupBy(a0, args[1], "Object.groupBy", "property");
       if (fold.status === "unknown") {
-        return markNullProtoObj(
-          abs({ k: "obj", slots: {}, open: true }, undefined, undefined, "partial"),
+        // Bug 326：键集不可判 ⇒ 自有键集不完备（键家族折 partial，不得折
+        // exact 空元组——native keys = ["[object Object]"]）
+        return markKeySetOpen(
+          markNullProtoObj(
+            abs({ k: "obj", slots: {}, open: true }, undefined, undefined, "partial"),
+          ),
         );
       }
       const slots: Record<string, { value: Abs }> = {};
@@ -1789,8 +2234,13 @@ export function evalObjectMethod(name: string, args: Abs[]): Abs | undefined {
         };
       }
       if (fold.open) {
-        return markNullProtoObj(
-          abs({ k: "obj", slots, open: true }, undefined, undefined, "partial"),
+        // Bug 326：组键集不可判（回调返回值非字面量 → 运行时 ToPropertyKey）
+        // ⇒ 自有键集不完备 ⇒ 键家族折 partial（此前折 exact 空元组 = 自信
+        // 的确切错值 ⇒ dts/zod/guard 三个产物面判「只接受空数组」）
+        return markKeySetOpen(
+          markNullProtoObj(
+            abs({ k: "obj", slots, open: true }, undefined, undefined, "partial"),
+          ),
         );
       }
       return markNullProtoObj(abs({ k: "obj", slots }, undefined, undefined, conf));

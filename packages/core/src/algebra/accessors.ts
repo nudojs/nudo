@@ -64,6 +64,19 @@ export function migrateAccessors(from: Abs, to: Abs, omitKey?: string): void {
 }
 
 /**
+ * 对象字面量访问器的**自有键列表**（Bug 294）。
+ *
+ * array-like 读数（`Array.from` / 借用调用）除槽键外还要覆盖「有访问器
+ * 但未必有槽」的键（`Object.defineProperty` 装的 getter）——访问器键的
+ * 读值经 accessorReadDomain 取（getter 副作用落地）。
+ */
+export function accessorKeysOf(o: Abs): string[] {
+  const target = o.shape.k === "brand" ? o.shape.shape : o;
+  const m = accessorTable.get(target);
+  return m ? [...m.keys()] : [];
+}
+
+/**
  * 访问器键的读域（**投影面统一读法**，Bug 191）。
  *
  * 键有 getter → 以对象为接收者求值读域（与 $get 同口径：getter 闭包的
@@ -73,6 +86,11 @@ export function migrateAccessors(from: Abs, to: Abs, omitKey?: string): void {
  * 原生读值恒 undefined，占位槽本就正确）。
  *
  * brand（类实例）取内层 obj 身份：类访问器在 class 注册表，不在本侧表。
+ *
+ * **值面同款读法**（Bug 294）：执行面（`Array.from` 的 array-like 臂）
+ * 读 length / 索引时也必须经本函数——裸读槽只会拿到 transpile 落的
+ * `$lit(void 0)` 占位（真 getter 住侧表）⇒ length 被当 undefined
+ * （ToLength → 0）且 getter 副作用整体消失。
  */
 export function accessorReadDomain(o: Abs, key: string): Abs | undefined {
   const target = o.shape.k === "brand" ? o.shape.shape : o;

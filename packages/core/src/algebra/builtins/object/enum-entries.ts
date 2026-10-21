@@ -17,6 +17,10 @@
  *   字面量合并（type 前缀区分 1 与 "1"）。
  * - 不可判（any/unknown/sum items、obj/fn/未知 brand items、不可执行回调）
  *   → status "unknown"/open，may-throw 在此记录，调用方折保守值。
+ * - Bug 308：**两套键视图不得混用**——BUILTIN_BRAND_NO_ENUM_KEYS 是「零
+ *   **可枚举**自有键」（服务 Object.keys/values/entries/for..in），
+ *   builtinBrandOwnKeyNames 是「**全部**自有键」（gOPN 语义）——RegExp
+ *   实例的自有 `lastIndex`（非可枚举）只进后者。
  *
  * 兄弟模块边界：methods.ts（Object.groupBy/枚举 case）与 error/ 域
  * （namespace 的 Map.groupBy）共用 foldGroupBy。
@@ -83,6 +87,23 @@ export function builtinBrandNoEnumKeys(a0: Abs | undefined): boolean {
   if (!a0 || a0.shape.k !== "brand") return false;
   const name = (a0.shape as { name?: string }).name ?? "";
   return BUILTIN_BRAND_NO_ENUM_KEYS.has(name);
+}
+
+/**
+ * Bug 308：内建 brand 的**自有键集**（gOPN 语义：「全部自有键」）。
+ * ECMA-262 §22.2.6：每个 RegExp 实例有一个**自有** `lastIndex` 数据属性
+ * （非可枚举）⇒ `Object.getOwnPropertyNames(/x/)` 原生是 ["lastIndex"]。
+ * 此前 gOPN 复用了「零**可枚举**自有键」表（BUILTIN_BRAND_NO_ENUM_KEYS，
+ * 服务 Object.keys/values/entries/for..in）⇒ RegExp 被折成 exact 空元组
+ * （自信的确切错值）。source/flags/global 等在原生是**原型访问器**（非
+ * 自有键）⇒ 不入此集。其余 brand 暂无自有键 ⇒ undefined（调用方沿既有
+ * 零可枚举键口径）。
+ */
+export function builtinBrandOwnKeyNames(a0: Abs | undefined): string[] | undefined {
+  if (!a0 || a0.shape.k !== "brand") return undefined;
+  const name = (a0.shape as { name?: string }).name ?? "";
+  if (name === "RegExp") return ["lastIndex"];
+  return undefined;
 }
 
 /**

@@ -39,6 +39,41 @@ export function nativeParamArity(params: unknown[] | undefined): number {
 }
 
 /**
+ * Bug 325：**函数种类**戳（async × generator 四象限）——原生
+ * `Object.prototype.toString.call(f)` 据此区分：
+ * 普通 → "[object Function]"、async → "[object AsyncFunction]"、
+ * generator → "[object GeneratorFunction]"、
+ * async generator → "[object AsyncGeneratorFunction]"。
+ *
+ * 发射成 `$fnVal` opts 的 `kind` 片段（`, fnKind: "async"` 等）。箭头函数
+ * 无 kind 域（原生标签恒 "[object Function]"）⇒ 返回空串。
+ *
+ * 单一事实源：函数声明 / 函数表达式（expr/function.ts）、对象方法简写
+ * （expr/object.ts）、类方法（class-emit.ts）三条产生路径共用——此前只有
+ * 函数表达式路径打戳 ⇒ 方法简写 / 类方法 / 函数声明三种形态全折
+ * "[object Function]"（wrong-exact）。
+ */
+export function fnKindSrc(fn: { async?: boolean; generator?: boolean } | null | undefined): string {
+  const kind = fnKindOf(fn);
+  return kind === undefined ? "" : `, fnKind: ${JSON.stringify(kind)}`;
+}
+
+/**
+ * Bug 325：函数种类戳的**值**（async × generator 四象限）——类方法 spec
+ * （methodKinds / staticMethodKinds）需要纯值（不是源码片段）。
+ */
+export function fnKindOf(
+  fn: { async?: boolean; generator?: boolean } | null | undefined,
+): "function" | "async" | "generator" | "async-generator" | undefined {
+  if (!fn) return undefined;
+  if (fn.generator === true) {
+    return fn.async === true ? "async-generator" : "generator";
+  }
+  if (fn.async === true) return "async";
+  return "function";
+}
+
+/**
  * ObjectMethod / 方法型 FunctionExpression 的宿主绑定名：
  * Identifier / 默认参左名 / RestElement 直通；其余占位 `_a`。
  * 与 emitParamBinding 的 sig 同精神，但保持方法简写路径轻量。

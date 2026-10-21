@@ -29,6 +29,7 @@ import {
   methodBindNames,
   collectForkBindingNames,
   withClassNameHint,
+  fnKindSrc,
 } from "../helpers.ts";
 import { emitParamBindingFromArgs } from "../emit.ts";
 import { emitTranspileExpression as transpileExpression } from "../transpile-dispatch.ts";
@@ -244,7 +245,10 @@ export function transpileObjectExpr(
           const bodySrc = `{\n${mBodyInner}\n}`;
           // Bug 9：对象方法是方法定义语法，原生不可 new → ctor: false
           // Bug 69：原生 fn.length（首个默认值/rest 前形参；bindThis 的 receiver 注入不占用户形参）
-          const fnValSrc = `$fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${mParams.join(", ")}) => ${bodySrc}, { bindThis: true, ctor: false, length: ${nativeParamArity(prop.params)} })`;
+          // Bug 325：方法简写也带**函数种类**戳（async / generator / async
+          // generator）——原生 `{async m(){}}` 的标签是 "[object
+          // AsyncFunction]"，此前整族折 "[object Function]"。
+          const fnValSrc = `$fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${mParams.join(", ")}) => ${bodySrc}, { bindThis: true, ctor: false, length: ${nativeParamArity(prop.params)}${fnKindSrc(prop)} })`;
           if (isProtoKey) {
             acc = `$setKey(${acc ?? "$obj({})"}, $lit("__proto__"), ${fnValSrc})`;
             // Bug 143：方法名 __proto__ 是自有**数据**属性（覆盖同键访问器）
@@ -361,8 +365,9 @@ export function transpileObjectExpr(
             }
             const bodySrc = `{\n${mBodyInner}\n}`;
             // Bug 9：方法型 FunctionExpression 仍是函数表达式——原生可 new（区别于 ObjectMethod）
+            // Bug 325：函数种类戳（async / generator）
             props.push(
-              `${key}: $fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${mParams.join(", ")}) => ${bodySrc}, { bindThis: true, ctor: true, length: ${nativeParamArity(fn.params)} })`,
+              `${key}: $fnVal([${displayNames.map((p) => JSON.stringify(p)).join(", ")}], (${mParams.join(", ")}) => ${bodySrc}, { bindThis: true, ctor: true, length: ${nativeParamArity(fn.params)}${fnKindSrc(fn)} })`,
             );
             // Bug 143：同键后写覆盖先写（数据属性覆盖先写的访问器）
             accDefs.set(key, { kind: "data" });

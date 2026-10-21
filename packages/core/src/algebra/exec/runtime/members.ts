@@ -307,6 +307,13 @@ export function $in(key: Abs, o: Abs): Abs {
     const slot = getSlot(objShape.slots, keyStr);
     if (slot) {
       if (slot.optional) return bool(); // optional 槽可能缺席
+      // Bug 295：symbol 键槽（Slot.symbolKey）只对**真 symbol 键**可见——
+      // 引擎把 symbol 键投影成 "@@X" 槽名，原生 `"@@toStringTag" in t` = false
+      // （那是字符串键，t 上只有 Symbol.toStringTag 这个 symbol 键）。
+      // 键是 symbol 时 symSlotKey === keyStr ⇒ 命中；键是字符串 ⇒ 不得命中。
+      if (slot.symbolKey === true && symSlotKey === undefined) {
+        return boolLit(false);
+      }
       return boolLit(true);
     }
     // N2：类值接收者——静态面（ctor [[Prototype]] 链）：自有/继承静态方法、
@@ -566,6 +573,11 @@ export const BUILTIN_BRAND_ACCESSORS: Record<string, ReadonlySet<string>> = {
       new Set(["buffer", "byteLength", "byteOffset", "length", "BYTES_PER_ELEMENT"]),
     ]),
   ),
+  // Bug 329：symbol **包装对象**（Object(Symbol("x"))）的 description
+  // 访问器挂在 Symbol.prototype 上 ⇒ 包装对象也继承到（原生
+  // `"description" in Object(Symbol("x"))` → true；此前折 exact false）。
+  // 值读由 global.ts 的装箱槽给出 exact 描述串（非本表职责）。
+  Symbol: new Set(["description"]),
 };
 
 /** evaluator 品牌链（**成员查找链**）：registry extends 优先，内建错误层级回退

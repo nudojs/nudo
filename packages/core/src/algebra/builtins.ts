@@ -14,6 +14,7 @@ export {
   setPropFlags,
   migrateInvariants,
   enumOwnKeys,
+  enumOwnStringKeys,
   isEnumerableView,
 } from "./builtins/invariants.ts";
 export { evalMathMethod } from "./builtins/math.ts";
