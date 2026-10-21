@@ -624,11 +624,12 @@ type SymbolTable = {
 | <a id="abstoschemanode"></a>`absToSchemaNode` | fn | Abs → SchemaNode + dropped（优先 core absToConstraint；失败则 shape 尽力） | `absToSchemaNode(a: Abs)` |
 | <a id="abstoschemasource"></a>`absToSchemaSource` | fn | — | `absToSchemaSource(a: Abs, opts?: { dialect?: SchemaDialect }): string` |
 | <a id="abstostandardschema"></a>`absToStandardSchema` | fn | 便捷：单个 Abs → 单导出模块（默认导出名 `schema`）。 | `absToStandardSchema( a: Abs, opts?: { name?: string }, ): StandardSchemaModuleProjection` |
+| <a id="abstostandardschemafunction"></a>`absToStandardSchemaFunction` | fn | Abs → Standard Schema v1 **函数级**模块源码（入参面 + 返回面）。 | `absToStandardSchemaFunction( spec: StandardSchemaFunctionSpec, opts?: { banner?: string }, ): StandardSchemaModuleProjection` |
 | <a id="abstostandardschemamodule"></a>`absToStandardSchemaModule` | fn | Abs → Standard Schema v1 模块源码。 | `absToStandardSchemaModule( exports: Record<string, Abs>, opts?: { banner?: string }, ): StandardSchemaModuleProjection` |
 | <a id="abstotstype"></a>`absToTSType` | fn | Abs → TS 类型串。有损：pred / 非 lit term 落到 shape 基类型。 | `absToTSType(a: Abs, typeVars?: Map<string, string>): string` |
 | <a id="abstozodschemamodule"></a>`absToZodSchemaModule` | fn | Abs 导出表 → 可 import 的 zod JS 模块源码。 | `absToZodSchemaModule( exports: Record<string, Abs>, opts?: { banner?: string }, ): ZodModuleProjection` |
 | <a id="addbudgetannotation"></a>`addBudgetAnnotation` | fn | `@nudo:budget forks=N` 注解 | `addBudgetAnnotation( source: string, fnName: string, forks = 64, )` |
-| <a id="addthrowsannotation"></a>`addThrowsAnnotation` | fn | ") \|\| lines[j]!.trim().startsWith("//")) return j; j--; &#125; return i; &#125; &#125; return -1; &#125; /** 在函数 JSDoc 里插入一行 `* @nudo:throws <Kind>`（已存在则不重复） | `addThrowsAnnotation( source: string, fnName: string, kind: string, )` |
+| <a id="addthrowsannotation"></a>`addThrowsAnnotation` | fn | `（其间只允许空行与 `*` 续行） for (let k = bottom - 1; k >= 0; k--) { const tk = lines[k]!.trim(); if (tk.startsWith("/**")) return { open: k, close: bottom }; if (tk === "" \|\| tk.startsWith("*")) continue; return undefined; } return undefined; } /** 在函数 JSDoc 里插入一行 `@nudo:throws &lt;Kind&gt;`（已存在则不重复）。 | `addThrowsAnnotation( source: string, fnName: string, kind: string, )` |
 | <a id="ambientsourcesofsidecar"></a>`ambientSourcesOfSidecar` | fn | `lib.nudo.{js,mjs,ts}` → candidate ambient sources next to it | `ambientSourcesOfSidecar(sidecarPath: string): string[]` |
 | <a id="analysis_abi"></a>`ANALYSIS_ABI` | const | 带包版本：升级 @nudojs/* 后旧 CheckJson 不得继续命中。 | `const ANALYSIS_ABI` |
 | <a id="analysisconfig"></a>`analysisConfig` | fn | 归一化 `nudo.analysis`。默认 mode=exports（A1：无指令但有 export/侧车的文件 进 IDE 分析；`all` / `directives` 需显式配置）。 | `analysisConfig(config: NudoConfig \| null \| undefined): AnalysisConfig` |
@@ -711,16 +712,20 @@ type SymbolTable = {
 | <a id="diskcache"></a>`DiskCache` | fn | — | `DiskCache { private readonly root: string \| undefined; private readonly ns: string; enabled = false; constructor(opts: DiskCacheOptions) ...` |
 | <a id="diskcacheoptions"></a>`DiskCacheOptions` | type | — | `DiskCacheOptions = { root?: string \| undefined; namespace: string; }` |
 | <a id="diskcacheroot"></a>`diskCacheRoot` | fn | 磁盘缓存根（B3）：config.cache / NUDO_CACHE_DIR / 默认关。 | `diskCacheRoot( config: NudoConfig \| null \| undefined, projectDir: string \| undefined, ): string \| undefined` |
+| <a id="domainevidencecases"></a>`domainEvidenceCases` | fn | 产物面（dts / zod / standard / guard）的**域证据 case**。 | `domainEvidenceCases(cases: readonly CaseResult[]): CaseResult[]` |
 | <a id="draftevidence"></a>`DraftEvidence` | type | DraftEvidence `body` = 仅来自函数体对形参的成员读取（草稿建议，非义务）。 | `DraftEvidence = "callsite" \| "directive" \| "symbolic" \| "body" \| "none"` |
 | <a id="draftinterface"></a>`draftInterface` | fn | 为单文件顶层导出生成 interface 草稿（不写盘）。 | `draftInterface( filePath: string, opts: InterfaceDraftOpts = {}, ): Promise<InterfaceDraftResult>` |
-| <a id="dtscontractface"></a>`DtsContractFace` | type | 契约面证据（export CLI 从 effectiveInterface 取——与 check 签名面同数据源： sidecar（*.nudo.js）∪ inline `@nudo:contract`）。 | `DtsContractFace { params: Array<{ name: string; abs: Abs }>; return?: Abs; }` |
-| <a id="dtsfunctionprojection"></a>`DtsFunctionProjection` | type | projectFunctionDts 的返回面：声明行 + 主签名参数位（unknown = 无证据） | `DtsFunctionProjection { lines: string[]; params: Array<{ name: string; type: string }>; }` |
+| <a id="dtscontractface"></a>`DtsContractFace` | type | 契约面证据（export CLI 从 effectiveInterface 取——与 check 签名面同数据源： sidecar（*.nudo.js）∪ inline `@nudo:contract`）。 | `DtsContractFace { params: Array<{ name: string; abs: Abs; optional?: boolean }>; return?: Abs; }` |
+| <a id="dtsfunctionprojection"></a>`DtsFunctionProjection` | type | projectFunctionDts 的返回面：声明行 + 主签名参数位（unknown = 无证据） | `DtsFunctionProjection { lines: string[]; params: Array<{ name: string; type: string }>; exportName?: string; classMember?: { className: s...` |
+| <a id="dtsmoduleprojection"></a>`DtsModuleProjection` | type | 模块面 dts 投影结果 | `DtsModuleProjection { lines: string[]; params: Array<{ name: string; type: string }>; }` |
+| <a id="dtsmodulesurface"></a>`dtsModuleSurface` | fn | 模块导出面扫描（源文件 → 导出名表 + 类面 + 再导出语句）。 | `dtsModuleSurface(source: string): DtsModuleSurface` |
+| <a id="dtsmodulesurface"></a>`DtsModuleSurface` | type | 模块导出面（源文件的导出面：导出名 → 本地绑定 + 类面 + 再导出） | `DtsModuleSurface { exportBindings: Map<string, string>; reexports: string[]; classes: Map<string, DtsClassSurface>; }` |
 | <a id="emitderivedfromroot"></a>`emitDerivedFromRoot` | fn | — | `emitDerivedFromRoot( rootFile: string, opts: { fnNames?: string[]; mode: "add" \| "update"; dryRun?: boolean; loadModule?: LoadModule; autoBind?: boolean; refreshExistingOnly?: boolean; }, ): EmitDerivedResult` |
 | <a id="emitderivedresult"></a>`EmitDerivedResult` | type | — | `EmitDerivedResult = { sidecars: Array<{ file: string; sidecarPath: string; fn: string; written: boolean; changed: boolean; skipped?: "nam...` |
 | <a id="emitinterface"></a>`emitInterface` | fn | 单文件 emit：分析 → 逐目标投影/自检 → 组装侧车内容 →（非 dryRun）写盘。 | `emitInterface( filePath: string, opts: EmitInterfaceOpts, ): Promise<EmitInterfaceResult>` |
 | <a id="emitinterfaceopts"></a>`EmitInterfaceOpts` | type | — | `EmitInterfaceOpts = { fnNames?: string[]; mode: "add" \| "update"; all?: boolean; dryRun?: boolean; records?: CallRecord[]; source?: strin...` |
 | <a id="emitinterfaceresult"></a>`EmitInterfaceResult` | type | — | `EmitInterfaceResult = { written: string[]; skipped: Array<{ fn: string; reason: EmitInterfaceSkipReason }>; changed: boolean; diff?: stri...` |
-| <a id="emitinterfaceskipreason"></a>`EmitInterfaceSkipReason` | type | — | `EmitInterfaceSkipReason = \| "name-clash" \| "not-projectable" \| "not-an-export" \| "no-change" \| "emit-denied" \| "multi-declarator"` |
+| <a id="emitinterfaceskipreason"></a>`EmitInterfaceSkipReason` | type | — | `EmitInterfaceSkipReason = \| "name-clash" \| "not-projectable" \| "not-an-export" \| "no-change" \| "emit-denied" \| "multi-declarator" \| "expo...` |
 | <a id="emitresult"></a>`EmitResult` | type | — | `EmitResult = { source: string; changed: boolean; written: Array<{ fn: string; cases: string[] }>; skipped: Array<{ fn: string; reason: Em...` |
 | <a id="emitskipreason"></a>`EmitSkipReason` | type | — | `EmitSkipReason = \| "hand-written" \| "already-generated" \| "entry-only" \| "no-serializable-cases" \| "no-declaration" \| "skipped"` |
 | <a id="entryvariantfacegroup"></a>`EntryVariantFaceGroup` | type | One browser/node face pair, scoped to a subpath or field source. | `EntryVariantFaceGroup = { key: string; browser: string[]; node: string[]; }` |
@@ -745,7 +750,7 @@ type SymbolTable = {
 | <a id="extractfnconstraintsources"></a>`extractFnConstraintSources` | fn | — | `extractFnConstraintSources( sidecarSrc: string, fnName: string, )` |
 | <a id="extractnudoimportspecs"></a>`extractNudoImportSpecs` | fn | 从源码提取 `@nudo:import` / `@nudo:import * as` 的 specifier | `extractNudoImportSpecs(source: string): string[]` |
 | <a id="filterdiagnosticsbylevel"></a>`filterDiagnosticsByLevel` | fn | 按 analysis.diagnostics 档过滤 evaluator/check **显示路径**诊断。 | `filterDiagnosticsByLevel<T extends { severity: string; code?: string }>( diags: T[], level: DiagnosticsLevel, ): T[]` |
-| <a id="findfndeclstart"></a>`findFnDeclStart` | fn | 在源码中找 `function <fn>` / `export function <fn>` / `const <fn> =` 的 JSDoc/声明行 | `findFnDeclStart(lines: string[], fnName: string): number` |
+| <a id="findfndeclstart"></a>`findFnDeclStart` | fn | 在源码中找 `function <fn>` / `export function <fn>` / `const <fn> =` 的 JSDoc/声明行。 | `findFnDeclStart(lines: string[], fnName: string): number` |
 | <a id="findowningpackage"></a>`findOwningPackage` | fn | Nearest package.json walking up from the file's directory. | `findOwningPackage( fromFile: string, )` |
 | <a id="findprojectconfig"></a>`findProjectConfig` | fn | — | `findProjectConfig( startDir: string, )` |
 | <a id="formatderivedsection"></a>`formatDerivedSection` | fn | 组装生成段（组合式 + import + prelude）。 | `formatDerivedSection( row: DerivedExport, opts: { rootSidecarDir: string; targetSidecarDir: string; takenNames?: Iterable<string>; }, )` |
@@ -757,7 +762,7 @@ type SymbolTable = {
 | <a id="generatedts"></a>`generateDts` | fn | — | `generateDts(result: AnalysisResult): string` |
 | <a id="generatefunctiondtslines"></a>`generateFunctionDtsLines` | fn | — | `generateFunctionDtsLines( fn: FunctionAnalysis, contract?: DtsContractFace, ): string[]` |
 | <a id="generateguardfunction"></a>`generateGuardFunction` | fn | 兼容别名：Abs 路径唯一 | `generateGuardFunction(name: string, abs: Abs): string` |
-| <a id="generateguardfunctionfromabs"></a>`generateGuardFunctionFromAbs` | fn | Abs 指称守卫（设计 §2.7）：保留 pred | `generateGuardFunctionFromAbs(name: string, abs: Abs): string` |
+| <a id="generateguardfunctionfromabs"></a>`generateGuardFunctionFromAbs` | fn | 守卫源码：`export function <name>(value: unknown): boolean { … }`。 | `generateGuardFunctionFromAbs(name: string, abs: Abs): string` |
 | <a id="getabsmodulecachesize"></a>`getAbsModuleCacheSize` | fn | 测试/诊断：当前条目数（≤ ABS_MODULE_CACHE_MAX） | `getAbsModuleCacheSize(): number` |
 | <a id="getanalysisfilecachesize"></a>`getAnalysisFileCacheSize` | fn | — | `getAnalysisFileCacheSize(): number` |
 | <a id="getanalysissession"></a>`getAnalysisSession` | fn | 进程内默认 AnalysisSession（LSP server / CLI watch / agent tools 共用） | `getAnalysisSession(): AnalysisSession` |
@@ -774,7 +779,7 @@ type SymbolTable = {
 | <a id="insertgeneratedcasedirectives"></a>`insertGeneratedCaseDirectives` | fn | 把 analysis 中的合成 case（source === "callsite"）固化为源码指令： 1. | `insertGeneratedCaseDirectives(source: string, analysis: AnalysisResult): EmitResult` |
 | <a id="interfaceconfig"></a>`interfaceConfig` | fn | 归一化 `nudo.contract` 配置段。 | `interfaceConfig(config: NudoConfig \| null \| undefined): InterfaceConfig` |
 | <a id="interfaceconfig"></a>`InterfaceConfig` | type | — | `InterfaceConfig = { autoBind: boolean; emit: string[]; }` |
-| <a id="interfacedraftentry"></a>`InterfaceDraftEntry` | type | — | `InterfaceDraftEntry = { fn: string; params: Array<{ name: string; constraint?: NudoConstraint; display: string; projected: boolean; bodyA...` |
+| <a id="interfacedraftentry"></a>`InterfaceDraftEntry` | type | — | `InterfaceDraftEntry = { fn: string; identity?: string; params: Array<{ name: string; constraint?: NudoConstraint; display: string; projec...` |
 | <a id="interfacedraftopts"></a>`InterfaceDraftOpts` | type | — | `InterfaceDraftOpts = { fnNames?: string[]; records?: CallRecord[]; loadModule?: LoadModule; autoBind?: boolean; bodyAccesses?: boolean; s...` |
 | <a id="interfacedraftresult"></a>`InterfaceDraftResult` | type | — | `InterfaceDraftResult = { file: string; entries: InterfaceDraftEntry[]; draftSource: string; sidecarPath: string; }` |
 | <a id="interfacesurface"></a>`interfaceSurface` | fn | 单文件 interface 表面：analyzer 推断结果给出函数清单与 implicit 展示， effectiveInterface 给出契约命中（手写 &gt; 生成段）。诊断 side-channel 在收尾时取走丢弃——打印命令不执法，interface-load 等错误留给 check 路径。 | `interfaceSurface( filePath: string, opts: InterfaceSurfaceOpts = {}, ): Promise<InterfaceSurfaceEntry[]>` |
@@ -808,7 +813,8 @@ type SymbolTable = {
 | <a id="paramcontracts"></a>`ParamContracts` | type | fnName → paramName → 契约证据（参数按声明序插入） | `ParamContracts = Map<string, Map<string, ParamContractEvidence>>` |
 | <a id="projectabstoschema"></a>`projectAbsToSchema` | fn | — | `projectAbsToSchema(a: Abs, opts?: { dialect?: SchemaDialect }): SchemaProjection` |
 | <a id="projectconfigmemostats"></a>`projectConfigMemoStats` | fn | 诊断/测试：memo 条目数 + 实际读盘（readFileSync+JSON.parse）次数 | `projectConfigMemoStats()` |
-| <a id="projectfunctiondts"></a>`projectFunctionDts` | fn | 为单个函数生成 .d.ts 投影（JSDoc + 单一 widen 主签名）。 | `projectFunctionDts( fn: FunctionAnalysis, contract?: DtsContractFace, ): DtsFunctionProjection` |
+| <a id="projectfunctiondts"></a>`projectFunctionDts` | fn | 为单个函数生成 .d.ts 投影（JSDoc + 单一 widen 主签名）。 | `projectFunctionDts( fn: FunctionAnalysis, contract?: DtsContractFace, surface?: DtsModuleSurface, ): DtsFunctionProjection` |
+| <a id="projectmoduledts"></a>`projectModuleDts` | fn | 模块面 dts 投影：逐函数投影 + 模块面 → 一份 .d.ts。 | `projectModuleDts( surface: DtsModuleSurface \| undefined, entries: ReadonlyArray<{ fn: FunctionAnalysis; projection: DtsFunctionProjection; contract?: DtsContractFace; }>, ): DtsModuleProjection` |
 | <a id="quickfixplan"></a>`QuickfixPlan` | type | — | `QuickfixPlan = { titleKind: QuickfixTitleKind; title: string; edits: TextEdit[]; sidecar?: { path: string; newText: string }; openPath?: ...` |
 | <a id="quickfixtitlekind"></a>`QuickfixTitleKind` | type | — | `QuickfixTitleKind = "fix" \| "silence" \| "review" \| "adjust" \| "scaffold"` |
 | <a id="referenceinfo"></a>`ReferenceInfo` | type | — | `ReferenceInfo = { name: string; loc: SourceLocation; uri?: string; }` |
@@ -841,6 +847,8 @@ type SymbolTable = {
 | <a id="sourcelocation"></a>`SourceLocation` | type | — | `SourceLocation = { start: { line: number; column: number }; end: { line: number; column: number }; }` |
 | <a id="stablepathkey"></a>`stablePathKey` | const | — | — |
 | <a id="stablepathkeygraph"></a>`stablePathKeyGraph` | const | — | — |
+| <a id="standardschemafunctionspec"></a>`StandardSchemaFunctionSpec` | type | 标准面**函数级**装配描述（入参面 + 返回面）。 | `StandardSchemaFunctionSpec = { fn: string; inputs?: ReadonlyArray<{ name: string; abs: Abs }>; formals?: ReadonlyArray<FormalParam>; retu...` |
+| <a id="standardschemainputentry"></a>`StandardSchemaInputEntry` | type | 标准面入参条目：整参（`param`）或**解构形参的字段**（`field`）。 | `StandardSchemaInputEntry = \| { kind: "param"; name: string; abs: Abs } \| { kind: "field"; name: string; abs: Abs }` |
 | <a id="standardschemaissue"></a>`StandardSchemaIssue` | type | — | `StandardSchemaIssue = { message: string; path?: ReadonlyArray<PropertyKey>; }` |
 | <a id="standardschemamoduleprojection"></a>`StandardSchemaModuleProjection` | type | — | `StandardSchemaModuleProjection = { source: string; dropped: string[]; }` |
 | <a id="standardschemaresult"></a>`StandardSchemaResult` | type | — | `StandardSchemaResult = \| { value: unknown; issues?: undefined } \| { issues: ReadonlyArray<StandardSchemaIssue>; value?: undefined }` |
@@ -858,10 +866,10 @@ type SymbolTable = {
 | <a id="tryruneval"></a>`tryRunEval` | fn | 模块图 + runTranspiled（默认 analyze 模式） | `tryRunEval( source: string, filePath: string, opts: { maxLoopIters?: number; mode?: "exec" \| "analyze"; envNames?: string[]; mocks?: Record<string, Abs>; lenientGlobals?: boolean; loadModule?: LoadModule; depKey?: string \| null; composed?: ComposedEvalModules; fresh?: boolean; } = {}, ): EvalRunResult \| undefined` |
 | <a id="typebinding"></a>`TypeBinding` | type | — | `TypeBinding = { name: string; type: string }` |
 | <a id="typeexprtodirective"></a>`typeExprToDirective` | fn | agent 面类型表达式 → `@nudo:as` 文法（认不出的表达式落到 `unknown`） | `typeExprToDirective(expr: string): string` |
-| <a id="unifieddiff"></a>`unifiedDiff` | fn | 行级 unified diff：`--- a/path` 头 + `@@` hunk + 上下文 3 行；相同返回 "" | `unifiedDiff(a: string, b: string, path: string): string` |
+| <a id="unifieddiff"></a>`unifiedDiff` | fn | 行级 unified diff：`--- a/path` 头 + `@@` hunk + 上下文 3 行；相同返回 ""。 | `unifiedDiff(a: string, b: string, path: string): string` |
 | <a id="validateschemanode"></a>`validateSchemaNode` | fn | SchemaNode 同步校验（生成模块与测试共用语义）。 | `validateSchemaNode(node: SchemaNode, value: unknown): StandardSchemaResult` |
 | <a id="wrapreturnnullable"></a>`wrapReturnNullable` | fn | 侧车 return 契约包一层 `nullable(...)`（nullish 臂违例的机械修法）。 | `wrapReturnNullable( sidecarSource: string, fnName: string, ): string \| undefined` |
-| <a id="writedraftresult"></a>`WriteDraftResult` | type | — | `WriteDraftResult = { draftPath: string; written: boolean; changed: boolean; draftable: boolean; draftSource: string; }` |
+| <a id="writedraftresult"></a>`WriteDraftResult` | type | — | `WriteDraftResult = { draftPath: string; written: boolean; changed: boolean; draftable: boolean; draftSource: string; skipped?: "hand-edit...` |
 | <a id="writeinterfacedraft"></a>`writeInterfaceDraft` | fn | 写入 `*.nudo.draft.js`（覆盖草稿文件本身；不碰正式 `*.nudo.js`）。 | `writeInterfaceDraft( filePath: string, draftSource: string, opts: { dryRun?: boolean; projectDir?: string; entries?: ReadonlyArray<Pick<InterfaceDraftEntry, "dsl" \| "skipped">>; draftable?: boolean; } = {}, ): WriteDraftResult` |
 | <a id="zodmoduleprojection"></a>`ZodModuleProjection` | type | — | `ZodModuleProjection = { source: string; dialect: SchemaDialect; dropped: string[]; }` |
 <!-- NUDO-API-SKELETON:END -->
