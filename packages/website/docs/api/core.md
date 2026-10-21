@@ -301,7 +301,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="spy"></a>`spy` | fn | test mock helpers | `spy(): MockHelper` |
 | <a id="str"></a>`str` | fn | Abs constructors / faces | `str(): Abs` |
 | <a id="string"></a>`string` | fn | `@nudo:contract` builder grammar | `string(): ConstraintBuilder` |
-| <a id="striptypes"></a>`stripTypes` | fn | AST TS-stripping helper | `stripTypes<T extends Node>(ast: T): T` |
+| <a id="striptypes"></a>`stripTypes` | fn | AST TS-stripping helper | `stripTypes<T extends Node>(ast: T, source?: string): T` |
 | <a id="strlit"></a>`strLit` | fn | literal Abs; `litValue` → `LitValueResult` tagged (`&#123;ok:true,value&#125;\ | `strLit(value: string): Abs` |
 | <a id="stub"></a>`stub` | fn | test mock helpers | `stub(): MockHelper` |
 | <a id="term"></a>`Term` | type | Abs = shape × term × pred × conf; `LiteralValue` 含 bigint | `Term = \| { op: "lit"; value: LiteralValue } \| { op: "var"; id: string } \| { op: "app"; fn: string; args: Term[] }` |
@@ -499,7 +499,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="falseconstraint"></a>`falseConstraint` | fn | — | `falseConstraint(c: Abs): Pred \| undefined` |
 | <a id="fnabs"></a>`FnAbs` | type | — | `FnAbs = Abs & { shape: { k: "fn"; params: string[]; name?: string; paramTypes?: Abs[]; returnType?: Abs; }; }` |
 | <a id="fnconstrainttoentryreqs"></a>`fnConstraintToEntryReqs` | fn | fn 约束 → 逐参约束表（interface 推导 / 入口签名消费）。 | `fnConstraintToEntryReqs( c: NudoConstraint, ): Array<{ param: string; constraint: NudoConstraint }>` |
-| <a id="formalparam"></a>`FormalParam` | type | C4.1：函数形参表面（contract surface）—— 侧车 `fn({…})` / `@nudo:contract` 参数名与求值形参的对齐基线。 | `FormalParam = \| { kind: "id"; name: string; index: number } \| { kind: "default"; name: string; index: number } \| { kind: "rest"; name: st...` |
+| <a id="formalparam"></a>`FormalParam` | type | C4.1：函数形参表面（contract surface）—— 侧车 `fn({…})` / `@nudo:contract` 参数名与求值形参的对齐基线。 | `FormalParam = \| { kind: "id"; name: string; index: number; tsType?: string } \| { kind: "default"; name: string; index: number; tsType?: s...` |
 | <a id="formalparamdisplaynames"></a>`formalParamDisplayNames` | fn | 求值/签名用形参名（与 analyzer extractParamNames / dts 对齐） | `formalParamDisplayNames(formals: FormalParam[]): string[]` |
 | <a id="formalparamsfromnodes"></a>`formalParamsFromNodes` | fn | — | `formalParamsFromNodes(params: AstParam[] \| undefined \| null): FormalParam[]` |
 | <a id="formalparamsignaturenames"></a>`formalParamSignatureNames` | fn | 签名展示名（C4.1 #64）：解构形参渲染为 `{ grade, findings }`， 不落回求值占位 `_p0`——否则读签名的人以为没有契约。 | `formalParamSignatureNames(formals: FormalParam[]): string[]` |
