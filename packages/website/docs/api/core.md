@@ -332,7 +332,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="$del"></a>`$del` | fn | object / member runtime | `$del(o: Abs, key: Abs): Abs` |
 | <a id="$elems"></a>`$elems` | fn | object / member runtime | `$elems(a: Abs): Abs[]` |
 | <a id="$eq"></a>`$eq` | fn | operator runtime | `$eq(a: Abs, b: Abs): Abs` |
-| <a id="$fnval"></a>`$fnVal` | fn | value / class runtime | `$fnVal( params: string[], impl: (...args: Abs[]) => Abs, opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean; kind?: string }, ): Abs` |
+| <a id="$fnval"></a>`$fnVal` | fn | value / class runtime | `$fnVal( params: string[], impl: (...args: Abs[]) => Abs, opts?: { bindThis?: boolean; ctor?: boolean; padArgs?: boolean; length?: number; effectFree?: boolean; closed?: boolean; kind?: string; fnKind?: "function" \| "async" \| "generator" \| "async-generator" }, ): Abs` |
 | <a id="$for"></a>`$for` | fn | control-flow lowering | `$for( init: Abs, test: (s: Abs) => Abs, step: (s: Abs) => Abs, body: (s: Abs) => Abs, maxIters: number = DEFAULT_MAX_LOOP_ITERS, opts?: { pack?: () => Abs; unpack?: (s: Abs) => void; label?: string; loopVar?: () => Abs; }, ): Abs` |
 | <a id="$foriter"></a>`$forIter` | const | control-flow lowering | — |
 | <a id="$fork"></a>`$fork` | fn | control-flow lowering | `$fork(test: Abs, consequent: () => Abs, alternate?: () => Abs): Abs` |
@@ -393,7 +393,7 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="absapplyreturn"></a>`AbsApplyReturn` | type | apply 可返回裸 Abs（无 throws）或带 throws 通道的 AbsApplyResult | `AbsApplyReturn = Abs \| AbsApplyResult` |
 | <a id="absassignrecord"></a>`AbsAssignRecord` | type | Abs 域赋值记录（eval 通道 $assignRecord 的同形投影） | `AbsAssignRecord = { name: string; prev?: Abs; next: Abs; line?: number; column?: number; conditional?: boolean; }` |
 | <a id="abscallrecord"></a>`AbsCallRecord` | type | Abs 域调用记录（eval 通道 EvalCallRecord 的同形投影） | `AbsCallRecord = { fnName: string; args: Abs[]; result: Abs; callLoc?: { line: number; column: number }; threw?: boolean; }` |
-| <a id="absfnimpl"></a>`AbsFnImpl` | type | — | `AbsFnImpl = { params: string[]; body?: Node; async?: boolean; env?: AstEnv; kind?: string; length?: number; apply?: (args: Abs[], thisVal...` |
+| <a id="absfnimpl"></a>`AbsFnImpl` | type | — | `AbsFnImpl = { params: string[]; body?: Node; async?: boolean; env?: AstEnv; kind?: string; fnKind?: "function" \| "async" \| "generator" \| ...` |
 | <a id="absfunction"></a>`absFunction` | fn | 造一个带实现的 Abs 函数值 | `absFunction( params: string[], impl: Omit<AbsFnImpl, "params">, opts?: { name?: string; paramTypes?: Abs[]; returnType?: Abs; slots?: Record<string, { value: Abs; optional?: boolean; readonly?: boolean }>; conf?: Confidence; ctor?: boolean; length?: number; }, ): Abs` |
 | <a id="absmoduleexports"></a>`AbsModuleExports` | type | — | `AbsModuleExports = { named: Record<string, Abs>; default?: Abs; evaluated?: boolean; cjsMain?: boolean; }` |
 | <a id="absshapekey"></a>`absShapeKey` | fn | — | `absShapeKey(a: Abs, seen: Set<object> = new Set()): string` |
@@ -473,14 +473,14 @@ Product-face inventory from `packages/core/PUBLIC_API.md` §2, grouped by subsec
 | <a id="evalglobalfn"></a>`evalGlobalFn` | fn | — | `evalGlobalFn(name: string, args: Abs[]): Abs \| undefined` |
 | <a id="evaljsonmethod"></a>`evalJsonMethod` | fn | JSON.parse / stringify：字面量实参真执行折叠；失败硬抛（catch 可吸收） | `evalJsonMethod(name: string, args: Abs[]): Abs \| undefined` |
 | <a id="evalmathmethod"></a>`evalMathMethod` | fn | — | `evalMathMethod(name: string, args: Abs[]): Abs \| undefined` |
-| <a id="evalnamespacecall"></a>`evalNamespaceCall` | fn | — | `evalNamespaceCall( ns: string, method: string, args: Abs[], ): Abs \| undefined` |
+| <a id="evalnamespacecall"></a>`evalNamespaceCall` | fn | 命名空间静态分派。Bug 311：thisVal = 静态方法值的 this 绑定（成员读出的 静态方法被单独调用时的接收者，如 `Promise.resolve.call(null, 1)`）； 缺席 = 直接命名空间调用（this ≡ 命名空间构造器，合法）。 | `evalNamespaceCall( ns: string, method: string, args: Abs[], thisVal?: Abs, ): Abs \| undefined` |
 | <a id="evalnumberstatic"></a>`evalNumberStatic` | fn | Number.isInteger / isNaN / parseFloat 等 | `evalNumberStatic(name: string, args: Abs[]): Abs \| undefined` |
 | <a id="evalobjectmethod"></a>`evalObjectMethod` | fn | Object.keys/values/entries/assign + 不变性方法 | `evalObjectMethod(name: string, args: Abs[]): Abs \| undefined` |
 | <a id="evalobjectprotomethod"></a>`evalObjectProtoMethod` | fn | Object.prototype 方法语义（evaluator $invoke 与 Object.prototype.X.call 共用）。 | `evalObjectProtoMethod( name: string, thisVal: Abs, args: Abs[], ): Abs \| undefined` |
 | <a id="evalposrecord"></a>`EvalPosRecord` | type | 位置级 Abs 记录（hover 重放插桩 `$nodoPos` 消费）： (1-based 行, 0-based 列) → 该位置表达式求值态 Abs | `EvalPosRecord = { line: number; column: number; abs: Abs; }` |
 | <a id="evalpromisector"></a>`evalPromiseCtor` | fn | new Promise(executor)：调用 executor(resolve, reject)，收集 resolve 实参作为 promise inner。原生只认第一次 settle——顺序双 resolve 取第一次；执行器内 $fork 分叉时各臂 settle 值 join（路径敏感，不得 first-wins 假精确）。 | `evalPromiseCtor(args: Abs[]): Abs` |
 | <a id="evalpromisemethod"></a>`evalPromiseMethod` | fn | then/catch/finally：可映射回调 → 新 inner；做不到诚实 promise&lt;unknown&gt; | `evalPromiseMethod( name: string, recv: Abs, args: Abs[], ): Abs \| undefined` |
-| <a id="evalpromisestatic"></a>`evalPromiseStatic` | fn | — | `evalPromiseStatic(name: string, args: Abs[]): Abs \| undefined` |
+| <a id="evalpromisestatic"></a>`evalPromiseStatic` | fn | Bug 311：Promise 静态派发。thisVal = 静态方法值的 this 绑定（成员读出 的静态方法被单独调用时的接收者）；缺席 = 直接命名空间调用（this ≡ Promise 构造器，合法）。非构造器接收者按原生抛 TypeError。 | `evalPromiseStatic( name: string, args: Abs[], thisVal?: Abs, ): Abs \| undefined` |
 | <a id="evalregexpctor"></a>`evalRegExpCtor` | fn | — | `evalRegExpCtor(args: Abs[]): Abs` |
 | <a id="evalregexpmethod"></a>`evalRegExpMethod` | fn | — | `evalRegExpMethod(name: string, recv: Abs, args: Abs[]): Abs \| undefined` |
 | <a id="evalstringstatic"></a>`evalStringStatic` | fn | String.fromCharCode / String.fromCodePoint： - fromCharCode：全部字面量 → 按 ToUint16 折成精确字符串（含越界/非整数/ 数字字符串）；symbol 字面量 → TypeError（ToNumber 抛）；任一抽象实参 → 抽象 string（不假精确） - fromCodePoint（Bug 38）：字面量过 ToNumber 后 IsValidCodePoint 校验 （node v26 实测：非整数/NaN/±∞/&lt;0/&gt;0x10FFFF → RangeError "Invalid code point"；null/""/false → 0 合法；"65" → 65；surrogate 0xD800 合法）； symbol/bigint 的 ToNumber → TypeError（fromCodePoint(1n) 原生抛，区别 于 fromCharCode 的 ToUint16 面——bigint ToString 合法但 ToNumber 抛）； 抽象实参 → may RangeError（+ symbol 载体 may TypeError）+ str("path") | `evalStringStatic(name: string, args: Abs[]): Abs \| undefined` |
