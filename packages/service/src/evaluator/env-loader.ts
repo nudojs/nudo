@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { type Abs, type Environment } from "@nudojs/core";
+import { createScopedSlot, registerCollectorScopeParticipant } from "@nudojs/core/internal";
 import { defineEnv as defineEsEnv } from "@nudojs/env/es";
 import { defineEnv as defineWebEnv } from "@nudojs/env/web";
 import { defineEnv as defineNodeEnv } from "@nudojs/env/node";
@@ -27,15 +28,52 @@ const impliedDeps: Record<string, string[]> = {
   node: ["es"],
 };
 
-function resolveEnvNames(names: string[]): string[] {
+/**
+ * 表项自有取：裸 `table[key]` 会命中 Object.prototype 的 constructor /
+ * toString 等键——env 名来自用户配置（`package.json#nudo.env`）与指令载荷，
+ * 键空间不受控 ⇒ 必须走自有取，否则 "constructor" 这类名会取到 Object 构造器
+ * 并在工厂调用处炸掉。
+ */
+function ownEnvEntry<T>(table: Record<string, T>, key: string): T | undefined {
+  return Object.hasOwn(table, key) ? table[key] : undefined;
+}
+
+/**
+ * 当前 env 基目录（相对 path env 说明符的解析基准）。
+ *
+ * 不变量：相对说明符（`./env.ts` / `../env.ts`）只按**发起方文件的目录**
+ * 解析——进程级 baseDir 注册表「逐个尝试」会让先预载的那个 `./env.ts`
+ * 赢下所有同名拼写（别的目录拿到别人的 env ⇒ 错值 + 零诊断）。
+ *
+ * 作用域化（core scoped slot）：并发分析各开各的 store，互不串台；
+ * 槽未设（作用域外）时回落模块级的最近一次 preload 基目录。
+ */
+let lastEnvBaseDir = process.cwd();
+const envBaseDirSlot = createScopedSlot<string | null>(() => null);
+registerCollectorScopeParticipant((body) => envBaseDirSlot.runScoped(body));
+
+function setEnvBaseDir(baseDir: string): void {
+  lastEnvBaseDir = baseDir;
+  envBaseDirSlot.set(baseDir);
+}
+
+function currentEnvBaseDir(): string {
+  return envBaseDirSlot.get() ?? lastEnvBaseDir;
+}
+
+function resolveEnvNames(names: readonly unknown[]): string[] {
   const resolved = new Set<string>();
   const visit = (name: string) => {
     if (resolved.has(name)) return;
-    const deps = impliedDeps[name];
+    const deps = ownEnvEntry(impliedDeps, name);
     if (deps) deps.forEach(visit);
     resolved.add(name);
   };
-  names.forEach(visit);
+  for (const name of names) {
+    // 元素级校验：配置里的 env 项类型不受控（非字符串元素不得裸崩）
+    if (typeof name !== "string") continue;
+    visit(name);
+  }
   return [...resolved];
 }
 
@@ -56,9 +94,10 @@ const PATH_ENV_CACHE_MAX = 64;
 const PATH_ENV_BY_PATH_MAX = 64;
 const PATH_ENV_BASE_DIRS_MAX = 64;
 const pathEnvCache = new BoundedLruMap<() => EnvDefinition>(PATH_ENV_CACHE_MAX);
-// resolvedPath → factory; looked up by trying the directive spelling as-is and
-// resolved against every baseDir seen during preload (covers `./env.ts`,
-// `../env.ts`, and bare `env.ts` spellings from different analyzed files).
+// resolvedPath → factory; looked up by the directive spelling resolved against
+// the **initiating file's own directory**（`./env.ts` / `../env.ts` 唯一候选，
+// 裸拼写 `env.ts` 先当前目录再回落历史 baseDir）——相对说明符不得按进程级
+// baseDir 注册表「逐个尝试」，否则先预载者赢下所有同名拼写。
 const pathEnvByPath = new BoundedLruMap<{
   factory: () => EnvDefinition;
   mtimeMs: number;
@@ -87,7 +126,10 @@ export function getPathEnvCacheSizes(): { byKey: number; byPath: number; baseDir
 }
 
 function isPathEnvName(name: string, baseDir: string): boolean {
-  if (name in envFactories) return false;
+  // 元素级校验：非字符串元素（配置 `nudo.env: [42]` 之类）不得裸崩
+  if (typeof name !== "string") return false;
+  // 内建名走自有取：`name in envFactories` 会命中 Object.prototype 的键
+  if (ownEnvEntry(envFactories, name)) return false;
   if (name.includes("/") || name.startsWith("./") || name.startsWith("../")) return true;
   const resolved = resolvePath(baseDir, name);
   return resolved.endsWith(".ts") && existsSync(resolved);
@@ -174,15 +216,45 @@ async function importPathEnv(resolvedPath: string, mtimeMs: number, size: number
     });
     recordPathEnvFile(resolvedPath, mtimeMs, baseDir);
     clearPathEnvError(resolvedPath);
+  } else {
+    // 工厂契约不合规（不导出 defineEnv / 不是函数）⇒ 失败必须进通道：
+    // 此前此处无 else 分支 ⇒ 零 env 诊断 ⇒ env 静默失效 ⇒ 用户代码被误判
+    // 「必然抛 ReferenceError」（假红），而同目录里**语法错**的 env 文件
+    // 反而有 nudo:env-unresolved 警告（口径分裂）。
+    const got = mod ? typeof mod.defineEnv : "no module";
+    recordPathEnvError(
+      resolvedPath,
+      baseDir,
+      new Error(`env file must export a defineEnv() function (got ${got})`),
+    );
   }
 }
 
-function lookupPathEnv(name: string): (() => EnvDefinition) | undefined {
+/** path env 注册表命中项：工厂 + 命中路径（诊断要点名 env 文件） */
+type PathEnvHit = { factory: () => EnvDefinition; path: string };
+
+/**
+ * 相对说明符的候选路径。
+ *
+ * 不变量：`./x.ts` / `../x.ts` 这类**相对说明符只按发起方文件的目录解析**
+ * （唯一候选）——进程级 baseDir 注册表「逐个尝试 + 先命中者胜出」会让先预载的
+ * 那个 `./env.ts` 赢下所有同名拼写（别的目录拿到别人的 env ⇒ 错值 + 零诊断）。
+ * 裸拼写（`env.ts`，无目录语义）先按当前基目录，再回落历史 baseDir（兼容旧行为）。
+ */
+function pathEnvCandidates(name: string, baseDir: string): string[] {
+  if (name.startsWith("/")) return [name];
+  if (name.startsWith("./") || name.startsWith("../")) return [resolvePath(baseDir, name)];
+  const out = [resolvePath(baseDir, name)];
+  for (const d of pathEnvBaseDirs) {
+    if (d === baseDir) continue;
+    out.push(resolvePath(d, name));
+  }
+  return out;
+}
+
+function lookupPathEnv(name: string, baseDir: string): PathEnvHit | undefined {
   if (pathEnvByPath.size === 0) return undefined;
-  const candidates = name.startsWith("/")
-    ? [name]
-    : [name, ...[...pathEnvBaseDirs].map((d) => resolvePath(d, name))];
-  for (const candidate of candidates) {
+  for (const candidate of pathEnvCandidates(name, baseDir)) {
     const hit = pathEnvByPath.get(candidate);
     if (!hit) continue;
     // mtime/size 任一变了 → 丢弃陈旧 factory（下次 preload 会重 import）
@@ -196,7 +268,7 @@ function lookupPathEnv(name: string): (() => EnvDefinition) | undefined {
       pathEnvByPath.delete(candidate);
       return undefined;
     }
-    return hit.factory;
+    return { factory: hit.factory, path: candidate };
   }
   return undefined;
 }
@@ -208,6 +280,9 @@ export function clearPathEnvCaches(): void {
   pathEnvBaseDirs.clear();
   pathEnvFiles.clear();
   pathEnvLoadErrors.length = 0;
+  // 基目录基准一并复位（相对说明符不得解析到上一轮的目录）
+  lastEnvBaseDir = process.cwd();
+  envBaseDirSlot.set(null);
 }
 
 // path env 文件级诊断（import 失败必须可见——issue #88）与缓存指纹。
@@ -243,6 +318,64 @@ function clearPathEnvError(path: string): void {
 }
 
 /**
+ * 未知名 env（既非内建、也不是可解析的 path env）⇒ 必须可见。
+ *
+ * 此前 loadEnvs 对查不到的名字直接 `continue` ⇒ 零诊断、env 不生效、分析
+ * 退化（`@nudo:env bogus` / `nodejs` / `Node` 全都静默）。诊断走既有的
+ * path env 失败通道（nudo:env-unresolved 消费面：CLI check/test + LSP）。
+ */
+function recordUnknownEnvName(name: string, baseDir: string): void {
+  const builtins = Object.keys(envFactories).join(", ");
+  recordPathEnvError(
+    name,
+    baseDir,
+    new Error(
+      `unknown env name "${name}" (built-in envs: ${builtins}; a path env needs a ./ or ../ prefix)`,
+    ),
+  );
+}
+
+/** 非法 env 项（非字符串元素）⇒ 丢弃 + 可见告警（不得裸崩） */
+function recordInvalidEnvEntry(entry: unknown, baseDir: string): void {
+  let rendered: string;
+  try {
+    rendered = JSON.stringify(entry) ?? String(entry);
+  } catch {
+    rendered = String(entry);
+  }
+  const kind = entry === null ? "null" : typeof entry;
+  recordPathEnvError(
+    rendered,
+    baseDir,
+    new Error(`invalid env entry: expected a string, got ${kind} (${rendered})`),
+  );
+}
+
+/**
+ * defineEnv() 返回形状校验：契约是 `{ globals, modules? }`。
+ * 缺失 / 非对象的 globals ⇒ 明确报错（此前 `Object.entries(undefined)` 抛出
+ * 的 TypeError 被求值侧兜底 catch 吃掉 ⇒ 用户什么也看不到）。
+ */
+function envDefinitionShapeError(def: unknown): string | null {
+  if (def === null || typeof def !== "object" || Array.isArray(def)) {
+    return `defineEnv() must return { globals } (got ${def === null ? "null" : typeof def})`;
+  }
+  const globals = (def as { globals?: unknown }).globals;
+  if (globals === null || typeof globals !== "object" || Array.isArray(globals)) {
+    return `defineEnv() must return { globals } (globals is ${
+      globals === null ? "null" : typeof globals
+    })`;
+  }
+  const modules = (def as { modules?: unknown }).modules;
+  if (modules !== undefined && (modules === null || typeof modules !== "object" || Array.isArray(modules))) {
+    return `defineEnv() must return { globals, modules? } (modules is ${
+      modules === null ? "null" : typeof modules
+    })`;
+  }
+  return null;
+}
+
+/**
  * path env 加载失败诊断（check/test 打印 nudo:env-unresolved warning 用）。
  * 传入 baseDir 时按记录时的 preload 目录精确过滤（批量 check 跨项目不泄漏）；
  * 不传返回全量（兼容既有全量消费面）。
@@ -274,8 +407,21 @@ export function getPathEnvDepContents(baseDir?: string): Array<{ path: string; c
 
 export async function preloadPathEnvs(envNames: string[], baseDir: string): Promise<void> {
   addPathEnvBaseDir(baseDir);
+  // 相对说明符的解析基准 = 本次 preload 的目录（发起方文件所在目录）
+  setEnvBaseDir(baseDir);
   for (const name of envNames) {
-    if (!isPathEnvName(name, baseDir)) continue;
+    // 元素级校验：配置里的 env 项类型不受控（非字符串元素不得裸崩）
+    if (typeof name !== "string") {
+      recordInvalidEnvEntry(name, baseDir);
+      continue;
+    }
+    // 内建名（es/web/node）不是 path 形态
+    if (ownEnvEntry(envFactories, name)) continue;
+    if (!isPathEnvName(name, baseDir)) {
+      // 未知名：既非内建、也不是可解析的 path env ⇒ 必须可见（不得静默忽略）
+      recordUnknownEnvName(name, baseDir);
+      continue;
+    }
     const resolved = resolvePath(baseDir, name);
     if (!existsSync(resolved)) {
       // 缺失文件必须可见（此前静默跳过 → env-关降级无任何诊断）：与 import
@@ -301,29 +447,75 @@ export async function loadEnvsAsync(
   baseDir: string = process.cwd(),
 ): Promise<LoadedEnv> {
   await preloadPathEnvs(envNames, baseDir);
-  return loadEnvs(envNames, globalEnv);
+  return loadEnvs(envNames, globalEnv, baseDir);
 }
 
-export function loadEnvs(envNames: string[], globalEnv: Environment): LoadedEnv {
+/**
+ * env 名 → Abs 全局 / 模块表。
+ *
+ * 不变量：
+ * - 名字表查项走**自有取**（`envFactories["constructor"]` 会取到 Object 构造器）；
+ * - 元素级校验：非字符串元素丢弃 + 可见告警（不裸崩）；
+ * - 查不到的名字**不得静默 `continue`**：未知名 → 可见告警；
+ * - path env 工厂必须满足 `defineEnv()` 契约：抛异常 / 返回形状非法 ⇒
+ *   可见告警（此前被求值侧兜底 catch 吃掉 ⇒ env 静默失效 ⇒ 假红）。
+ */
+export function loadEnvs(envNames: string[], globalEnv: Environment, baseDir?: string): LoadedEnv {
   const allModules: Record<string, Record<string, Abs>> = {};
   const allGlobals: Record<string, Abs> = {};
+  const base = baseDir ?? currentEnvBaseDir();
+  // 元素级校验：非法元素（非字符串）丢弃 + 可见告警——此前一路裸崩到
+  // `name.includes is not a function`（进程顶层兜底只打印 message）。
+  for (const raw of envNames) {
+    if (typeof raw !== "string") recordInvalidEnvEntry(raw, base);
+  }
   const resolved = resolveEnvNames(envNames);
 
   for (const name of resolved) {
-    const factory = envFactories[name] ?? lookupPathEnv(name);
-    if (!factory) continue;
-    const def = factory();
-
-    for (const [key, value] of Object.entries(def.globals)) {
-      allGlobals[key] = value;
-      globalEnv.bind(key, value);
+    const builtin = ownEnvEntry(envFactories, name);
+    if (builtin) {
+      applyEnvDefinition(builtin(), allModules, allGlobals, globalEnv);
+      continue;
     }
-    if (def.modules) {
-      for (const [modName, exports] of Object.entries(def.modules)) {
-        allModules[modName] = { ...allModules[modName], ...exports };
-      }
+    const hit = lookupPathEnv(name, base);
+    if (!hit) {
+      // path 形态的失败由 preload 通道负责（缺失文件 / import 失败）；
+      // 其余（未知名）在此可见化——静默跳过会让 env 不生效且零诊断。
+      if (!isPathEnvName(name, base)) recordUnknownEnvName(name, base);
+      continue;
     }
+    let def: EnvDefinition;
+    try {
+      def = hit.factory();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      recordPathEnvError(hit.path, base, new Error(`defineEnv() threw: ${msg}`));
+      continue;
+    }
+    const shapeError = envDefinitionShapeError(def);
+    if (shapeError) {
+      recordPathEnvError(hit.path, base, new Error(shapeError));
+      continue;
+    }
+    applyEnvDefinition(def, allModules, allGlobals, globalEnv);
   }
 
   return { modules: allModules, globals: allGlobals };
+}
+
+function applyEnvDefinition(
+  def: EnvDefinition,
+  allModules: Record<string, Record<string, Abs>>,
+  allGlobals: Record<string, Abs>,
+  globalEnv: Environment,
+): void {
+  for (const [key, value] of Object.entries(def.globals)) {
+    allGlobals[key] = value;
+    globalEnv.bind(key, value);
+  }
+  if (def.modules) {
+    for (const [modName, exports] of Object.entries(def.modules)) {
+      allModules[modName] = { ...allModules[modName], ...exports };
+    }
+  }
 }

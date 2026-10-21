@@ -39,7 +39,9 @@ function parseUncached(
   });
   // keepTs：保留 TS 节点（侧车 .nudo.ts 的语句级文本改写需要未剥除的
   // 区间——rewriteSidecarSource 据此切掉类型注解/声明）
-  return opts?.keepTs === true ? ast : stripTypes(ast);
+  // 剥除时把**类型注解文本**留在节点上（nudoTypeText / nudoReturnTypeText）——
+  // .ts 源的形参声明类型据此进推断（Bug 479）；纯 JS 源无注解 ⇒ 结构性 no-op。
+  return opts?.keepTs === true ? ast : stripTypes(ast, source);
 }
 
 export function parseSource(

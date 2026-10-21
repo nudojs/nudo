@@ -20,7 +20,7 @@ npx nudojs check errors-vs-typescript.js
 ```text
 nudo check  errors-vs-typescript.js
 FAILED
-  12 error · 0 warning · 0 info · 10 fn
+  12 error · 0 warning · 1 info · 10 fn
 
 signatures
   setDelay(ms: number) => number

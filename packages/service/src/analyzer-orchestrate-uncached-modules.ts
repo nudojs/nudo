@@ -29,7 +29,14 @@ import type { CallRecord } from "./evaluator/call-record.ts";
 
 /** 模块图组装上报的加载问题（cycle / depth / missing / …） */
 export type ModuleGraphIssues = Array<{
-  kind: "cycle" | "depth" | "missing" | "missing-export" | "exports-unresolved";
+  kind:
+    | "cycle"
+    | "depth"
+    | "missing"
+    | "missing-export"
+    | "exports-unresolved"
+    | "unreadable"
+    | "json-invalid";
   label: string;
   reason: string;
 }>;

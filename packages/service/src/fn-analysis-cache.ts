@@ -76,6 +76,8 @@ export type CachedFnAnalysis = {
       propKey?: Record<string, string>;
       nested?: string[];
       index: number;
+      /** Bug 479：TS 声明类型文本（.ts 源形参注解；缺省 = 无注解） */
+      tsType?: string;
     }>;
   };
   diagnostics: CachedDiagnostic[];

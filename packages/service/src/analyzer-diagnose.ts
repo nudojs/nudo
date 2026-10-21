@@ -206,7 +206,14 @@ export function synthesizeExternalFunctions(
   return out;
 }
 
-/** 0-based loc of the first import/require specifier for `module` (or null). */
+/**
+ * 首个 import/require specifier 的位置（或 null）。
+ *
+ * **行号口径：1 基**（与 service 诊断面的 Babel 口径一致：Diagnostic.range
+ * 的 line 是 1 基行号，column 是 0 基列号；LSP 侧再 `line - 1` 转 0 基）。
+ * 此前这里返回 **0 基**行号，而唯一的消费方（env-harvest-conflict 诊断）
+ * 按 1 基用 ⇒ 位置差一行（指到上一行）。
+ */
 export function findModuleImportLoc(
   source: string,
   module: string,
@@ -221,7 +228,8 @@ export function findModuleImportLoc(
     const beforeCode = maskCommentsAndStrings(source.slice(0, lit.start));
     if (!/(?:\bfrom|\brequire\s*\(|\bimport\s*\(|\bimport)\s*$/.test(beforeCode)) continue;
     const prefix = source.slice(0, lit.start);
-    const line = (prefix.match(/\n/g) ?? []).length;
+    // 1 基行号：前缀里的换行数 + 1（首行 = 1）
+    const line = (prefix.match(/\n/g) ?? []).length + 1;
     const lineStart = prefix.lastIndexOf("\n") + 1;
     return { line, column: lit.start - lineStart, length: lit.length };
   }

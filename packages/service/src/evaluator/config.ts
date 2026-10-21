@@ -95,7 +95,34 @@ export type CheckConfig = {
   ignoreThrows: string[];
 };
 
-/** package.json#nudo.check → 执法选项 */
+/**
+ * 配置层 stderr 提示的**去重**集合。
+ *
+ * 归一函数（interfaceConfig / applyBForkBudgetFromConfig）在多产品面被
+ * 反复调用（每文件数次）——不去重会把一条配置 typo 打成上百行噪声。
+ * 同一进程同一非法值只提示一次；`evictProjectConfigMemo()` 会清空
+ * （配置变更后允许重新提示）。
+ */
+const warnedConfigValues = new Set<string>();
+
+/** 同 key 只提示一次（配置层 stderr 通道） */
+function warnOnce(key: string, message: string): void {
+  if (warnedConfigValues.has(key)) return;
+  warnedConfigValues.add(key);
+  process.stderr?.write?.(message);
+}
+
+/** 值的可读描述（JSON 优先；循环引用等异常形状回落 typeof） */
+function describeValue(raw: unknown): string {
+  try {
+    const s = JSON.stringify(raw);
+    return s === undefined ? String(raw) : s;
+  } catch {
+    return typeof raw;
+  }
+}
+
+/** package.json#nudo 键 → 执法选项 */
 export function checkConfig(config: NudoConfig | null | undefined): CheckConfig {
   const raw = config?.check;
   const rawEntry = raw?.entryThrows;
@@ -106,16 +133,20 @@ export function checkConfig(config: NudoConfig | null | undefined): CheckConfig 
     // 显式 entryThrows 优先于 profile 预设（与 CLI resolveEntryThrows 同优先级）
     entryThrows = rawEntry;
   } else {
-    // 非法 entryThrows 始终告警——不得因 profile 合法而被吞掉
-    if (rawEntry !== undefined) {
-      process.stderr?.write?.(
-        `nudo.check.entryThrows: invalid value ${JSON.stringify(rawEntry)} (expected error|warning|off); using error\n`,
-      );
-    }
+    // 非法 entryThrows **不是**合法的显式值 → 落到 profile 预设（config.md
+    // 「L2 entryThrows resolution order」第 3/4 步：config 值 → config 预设）。
+    // 先算出最终生效档位，告警文案再按**生效值**拼——文案写死 "error" 会与
+    // 生效值矛盾（#467：adoption 预设下报 error、门禁实际 warning）。
     if (rawProfile === "adoption" || rawProfile === "strict") {
       // profile 预设（design-cli-semantics §1.4）：CLI 与 LSP 必须同口径，
       // 否则 IDE 把 CLI 已降级的 L2 显示为 error
       entryThrows = rawProfile === "adoption" ? "warning" : "error";
+    }
+    // 非法 entryThrows 始终告警——不得因 profile 合法而被吞掉
+    if (rawEntry !== undefined) {
+      process.stderr?.write?.(
+        `nudo.check.entryThrows: invalid value ${JSON.stringify(rawEntry)} (expected error|warning|off); using ${entryThrows}\n`,
+      );
     }
   }
   const ignore = Array.isArray(raw?.ignoreThrows)
@@ -191,17 +222,28 @@ function parseMaxForks(raw: unknown): number | undefined {
 /**
  * 把 fork 预算写进 core（core 保持无 IO）。
  * 优先级：env `NUDO_MAX_FORKS` > `package.json#nudo.analysis.maxForks` > 默认 5000。
- * 约定：n≥1 有限整数；非法值回默认。返回实际生效值。
- * 由 findProjectConfig / 宿主启动时调用（与 setSessionCacheFromProject 同时机）。
+ * 约定：n≥1 有限整数；**非法值回默认**（不回配置键——见 #490）。
+ * env 未设（缺席 / 空串）→ 看配置键；env 设了但非法 → 直接回默认 5000
+ * 并给一条 stderr 提示（否则用户以为在用默认、实际悄悄落在配置值上）。
+ * 返回实际生效值。由 findProjectConfig / 宿主启动时调用（与
+ * setSessionCacheFromProject 同时机）。
  */
 export function applyBForkBudgetFromConfig(
   config: NudoConfig | null | undefined,
   env: NodeJS.ProcessEnv = process.env,
 ): number {
-  const fromEnv = parseMaxForks(
-    env.NUDO_MAX_FORKS === undefined ? undefined : Number(env.NUDO_MAX_FORKS),
-  );
+  const rawEnv = env.NUDO_MAX_FORKS;
+  // 空串按「未设」处理（与 NUDO_CACHE_DIR 的空串口径一致）
+  const envSet = rawEnv !== undefined && rawEnv.trim() !== "";
+  const fromEnv = envSet ? parseMaxForks(Number(rawEnv)) : undefined;
   const fromCfg = parseMaxForks(config?.analysis?.maxForks);
+  if (envSet && fromEnv === undefined) {
+    warnOnce(
+      `maxforks:${rawEnv}`,
+      `nudo: NUDO_MAX_FORKS: invalid value ${JSON.stringify(rawEnv)} (expected an integer >= 1); using ${MAX_EVAL_TOTAL_FORKS}\n`,
+    );
+    return setEvalForkBudgetLimit(MAX_EVAL_TOTAL_FORKS);
+  }
   return setEvalForkBudgetLimit(fromEnv ?? fromCfg ?? MAX_EVAL_TOTAL_FORKS);
 }
 
@@ -210,18 +252,27 @@ export function currentBForkBudgetLimit(): number {
   return getEvalForkBudgetLimit();
 }
 
-/** 磁盘缓存根（B3）：config.cache / NUDO_CACHE_DIR / 默认关 */
+/**
+ * 磁盘缓存根（B3）：config.cache / NUDO_CACHE_DIR / 默认关。
+ *
+ * 优先级（config.md「Precedence note」）：**显式 `nudo.cache` 值一律赢过
+ * `NUDO_CACHE_DIR`**（含 `false` 与显式空串 `""`）；env 只在键**未设置**时读。
+ * 判据是「键是否被设置」而不是「值的形状」——`""` 是显式值（= 关闭），
+ * 旧实现让它落到 env 分支 ⇒ 用户的「显式关闭」被 env 推翻（#475）。
+ */
 export function diskCacheRoot(
   config: NudoConfig | null | undefined,
   projectDir: string | undefined,
 ): string | undefined {
   const raw = config?.cache;
-  if (raw === false) return undefined;
-  if (typeof raw === "string" && raw.length > 0) {
-    return projectDir ? resolve(projectDir, raw) : raw;
-  }
-  if (raw === true) {
-    return projectDir ? resolve(projectDir, ".nudo/cache") : undefined;
+  if (raw !== undefined) {
+    if (raw === false) return undefined;
+    if (raw === true) return projectDir ? resolve(projectDir, ".nudo/cache") : undefined;
+    if (typeof raw === "string") {
+      return raw.length > 0 ? (projectDir ? resolve(projectDir, raw) : raw) : undefined;
+    }
+    // 未知形状（null / 数字 / 对象）→ 关闭（宽松归一：回落默认，不读 env）
+    return undefined;
   }
   const env = process.env.NUDO_CACHE_DIR;
   if (env === "off" || env === "0") return undefined;
@@ -230,8 +281,31 @@ export function diskCacheRoot(
 }
 
 /**
+ * 归一化 `nudo.contract.autoBind`：**唯一归一点**（check / contract /
+ * export / health / test / LSP / vite 全部读这里）。
+ * - 缺席 / null → true（默认）
+ * - true / false → 原样
+ * - 函数（谓词形态，core 逐侧车路径判定）→ 透传
+ * - 其它形状（字符串 "false" / 0 / 对象…）→ **非法** → 按 config.md
+ *   「invalid values fall back to the default」回落 true + 一条 stderr 提示。
+ *   旧实现原样透传 ⇒ check 面（`=== false` 判「关」）与 contract/export 面
+ *   （core `sidecarAutoBindAllowed` 把非 true/非函数读成「关」）结论相反，
+ *   且磁盘缓存键分不清取值 ⇒ 缓存投毒（#487）。
+ */
+function normalizeAutoBind(raw: unknown): boolean {
+  if (raw === undefined || raw === null) return true;
+  if (raw === true || raw === false) return raw;
+  if (typeof raw === "function") return raw as unknown as boolean; // 谓词形态透传
+  warnOnce(
+    `autobind:${describeValue(raw)}`,
+    `nudo.contract.autoBind: invalid value ${describeValue(raw)} (expected boolean); using true\n`,
+  );
+  return true;
+}
+
+/**
  * 归一化 `nudo.contract` 配置段。
- * - autoBind 默认 true
+ * - autoBind 默认 true（非布尔值 → 回落默认，见 normalizeAutoBind）
  * - emit：string | string[] → string[]（空 = 不限制路径）
  */
 export function interfaceConfig(config: NudoConfig | null | undefined): InterfaceConfig {
@@ -245,7 +319,7 @@ export function interfaceConfig(config: NudoConfig | null | undefined): Interfac
           ? [raw]
           : [];
   return {
-    autoBind: config?.contract?.autoBind ?? true,
+    autoBind: normalizeAutoBind(config?.contract?.autoBind),
     emit,
   };
 }
@@ -360,14 +434,93 @@ function projectConfigMemoHit(entry: ProjectConfigMemoEntry): boolean {
   return true;
 }
 
-/** 清空 findProjectConfig 目录链 memo（项目配置 watch 通道 / 测试隔离） */
+/**
+ * 清空 findProjectConfig 目录链 memo（项目配置 watch 通道 / 测试隔离）。
+ * 同时清空配置层 stderr 提示的去重集合（配置变更后允许重新提示）。
+ */
 export function evictProjectConfigMemo(): void {
   projectConfigMemo.clear();
+  warnedConfigValues.clear();
 }
 
 /** 诊断/测试：memo 条目数 + 实际读盘（readFileSync+JSON.parse）次数 */
 export function projectConfigMemoStats(): { entries: number; diskReads: number } {
   return { entries: projectConfigMemo.size, diskReads: projectConfigDiskReads };
+}
+
+/**
+ * 项目级配置 → 进程级单槽（会话 LRU 上限 + fork 总次数预算）。
+ *
+ * 两个槽都是**进程级**（core 的 fork 预算单例 / session-cache-limits 的
+ * `fromProject` 单槽），而配置是**按项目目录**解析的 ⇒ 每次解析到项目配置
+ * 都必须重写这两个槽（含 memo 命中路径），否则「哪个项目最后被首次查找」
+ * 决定全局值 ⇒ 同一项目同一配置在不同目标顺序下结论不同（#481）。
+ */
+function applyProjectScopedState(config: NudoConfig | null): void {
+  setSessionCacheFromProject(config?.sessionCache);
+  applyBForkBudgetFromConfig(config);
+}
+
+/** package.json#nudo 键的读取结果 */
+type NudoKeyRead = {
+  /** package.json 是否**含** `nudo` 键（自有属性判定；不用真值判定） */
+  present: boolean;
+  /** 值形状是否合法（非数组对象） */
+  valid: boolean;
+  /** 值是否为假值（false / null / 0 / ""） */
+  falsy: boolean;
+  /** 原始值 */
+  value: unknown;
+};
+
+/**
+ * 读 package.json 的 `nudo` 键（**存在性** + **形状**两个维度）。
+ *
+ * 文档（config.md「Where the config is found」）：用**最近的、含 `nudo` 键的**
+ * package.json；「没有 `nudo` 键的 package.json 不截断搜索」（monorepo 根配置
+ * 对无自有配置的子包可见）。⇒ 键**存在**即截断搜索（#936：假值 `nudo` 键
+ * 不得让子包静默继承祖先的 check.ignoreThrows / nudo.env）；键不存在才继续
+ * 向上找。
+ */
+function readNudoKey(pkg: unknown): NudoKeyRead {
+  const absent: NudoKeyRead = { present: false, valid: false, falsy: false, value: undefined };
+  if (pkg === null || typeof pkg !== "object") return absent;
+  if (!Object.prototype.hasOwnProperty.call(pkg, "nudo")) return absent;
+  const value = (pkg as { nudo?: unknown }).nudo;
+  const valid = value !== null && typeof value === "object" && !Array.isArray(value);
+  return { present: true, valid, falsy: !valid && !value, value };
+}
+
+/**
+ * 项目级 `nudo.env` 的**元素级校验**（Bug 935）。
+ *
+ * `nudo.env` 的静态类型是 `string[]`，但值来自 package.json 的 JSON——
+ * JSON 不约束元素类型 ⇒ 元素可能是数字 / 对象 / null / 数组。旧口径把它
+ * 当字符串数组直接用（非字符串元素一路流到 env 装载面，报不出「哪一项
+ * 坏了」；env-loader 侧的元素级校验只覆盖**指令/env 装载面**，项目配置
+ * 这一层此前没有）。
+ *
+ * 口径（与 config.ts 其余配置诊断同风格：stderr 可见 + 不裸崩）：
+ * - `env` 不是数组 ⇒ 整项丢弃 + 一条诊断；
+ * - 数组里有非字符串元素 ⇒ **丢弃这些元素** + 一条诊断（逐项列出）。
+ */
+function sanitizeProjectEnv(nudo: NudoConfig, pkgPath: string): NudoConfig {
+  const raw = (nudo as { env?: unknown }).env;
+  if (raw === undefined) return nudo;
+  if (!Array.isArray(raw)) {
+    process.stderr?.write?.(
+      `nudo: package.json at ${pkgPath} has an invalid "nudo.env" value (${describeValue(raw)}; expected an array of strings); ignoring it\n`,
+    );
+    return { ...nudo, env: [] };
+  }
+  const bad = raw.filter((v) => typeof v !== "string");
+  if (bad.length === 0) return nudo;
+  process.stderr?.write?.(
+    `nudo: package.json at ${pkgPath} has ${bad.length} non-string "nudo.env" ${
+      bad.length === 1 ? "entry" : "entries"
+    } (${bad.map((v) => describeValue(v)).join(", ")}); ignoring them\n`,
+  );
+  return { ...nudo, env: raw.filter((v): v is string => typeof v === "string") };
 }
 
 export function findProjectConfig(
@@ -388,11 +541,20 @@ export function findProjectConfig(
   };
 
   const hit = projectConfigMemo.get(memoKey);
-  if (hit && projectConfigMemoHit(hit)) return hit.result;
+  if (hit && projectConfigMemoHit(hit)) {
+    // memo 命中**也必须**重写进程级单槽（fork 预算 / 会话 LRU 上限）：
+    // 这两个是按项目目录解析的配置，却写进进程级单例；只在 miss 路径写
+    // ⇒ 「哪个项目最后被首次查找」决定全局值 ⇒ 同一项目同一配置在不同
+    // 目标顺序下结论不同（fork 截断诊断时有时无，#481）。
+    applyProjectScopedState(hit.result?.config ?? null);
+    return hit.result;
+  }
 
   // 向上查找带 `nudo` 键的 package.json。子包自有 package.json（monorepo
   // packages/*）时**不**在此停步——否则仓库根的 nudo.contract.autoBind
-  // 对该子包完全不可见。
+  // 对该子包完全不可见。停步判据是**键存在**（hasOwnProperty），不是真值：
+  // 假值 `nudo` 键（false/null/0/""）也停步（#936），「无 nudo 键」才继续
+  // 向上（文档承诺的 monorepo 继承）。
   while (dir !== root) {
     const pkgPath = resolve(dir, "package.json");
     let statFp: string | undefined;
@@ -408,7 +570,7 @@ export function findProjectConfig(
       process.stderr?.write?.(
         `nudo: package.json stat failed at ${pkgPath} (${err instanceof Error ? err.message : String(err)}); project config disabled for this subtree (defaults + env apply)\n`,
       );
-      applyBForkBudgetFromConfig(null);
+      applyProjectScopedState(null);
       return memoize(null);
     }
     memoEntry.chain.push({ pkgPath, fp: statFp });
@@ -429,18 +591,30 @@ export function findProjectConfig(
         process.stderr?.write?.(
           `nudo: package.json parse failed at ${pkgPath} (${err instanceof Error ? err.message : String(err)}); project config disabled for this subtree (defaults + env apply)\n`,
         );
-        applyBForkBudgetFromConfig(null);
+        applyProjectScopedState(null);
         return memoize(null);
       }
-      const nudo =
-        pkg && typeof pkg === "object"
-          ? (pkg as { nudo?: NudoConfig }).nudo
-          : undefined;
-      if (nudo) {
+      const nudoKey = readNudoKey(pkg);
+      if (nudoKey.present) {
+        if (!nudoKey.valid) {
+          // nudo 键**存在**但形状非法（字符串/数字/布尔/数组）或为假值
+          // （false/null/0/""）：
+          // - 文档承诺「nearest package.json that **contains** a `nudo` key」
+          //   ⇒ 键存在即遮断祖先搜索（假值 nudo 键不得让子包静默继承根包
+          //   的 check.ignoreThrows / nudo.env，#936）；
+          // - 形状非法（真值非对象）不得被谎报成 NudoConfig 后静默忽略
+          //   （零线索，#468）——给一条 stderr 提示，并按「无配置」处理
+          //   （默认 + env 层；onboarding 也因此不被抑制）。
+          process.stderr?.write?.(
+            `nudo: package.json at ${pkgPath} has ${nudoKey.falsy ? "a falsy" : "an invalid"} "nudo" key (${describeValue(nudoKey.value)}; expected an object); treating this package as having no nudo config (ancestor configs are not inherited)\n`,
+          );
+          applyProjectScopedState(null);
+          return memoize(null);
+        }
+        const nudo = sanitizeProjectEnv(nudoKey.value as NudoConfig, pkgPath);
         // 会话 LRU 上限随项目配置接线（显式 set > env > 此层；见 session-cache-limits）
-        setSessionCacheFromProject(nudo.sessionCache);
         // fork 总次数预算：env NUDO_MAX_FORKS > nudo.analysis.maxForks > 默认
-        applyBForkBudgetFromConfig(nudo);
+        applyProjectScopedState(nudo);
         return memoize({ config: nudo, projectDir: dir });
       }
     }
@@ -450,6 +624,6 @@ export function findProjectConfig(
   }
 
   // 无项目 nudo 配置：仍应用 env 层（NUDO_MAX_FORKS）
-  applyBForkBudgetFromConfig(null);
+  applyProjectScopedState(null);
   return memoize(null);
 }

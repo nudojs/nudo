@@ -49,16 +49,50 @@ import { freeIdentifiers } from "./exec/body-fn.ts";
 import { withExecPhi } from "./exec/runtime.ts";
 import { $new, $invoke } from "./exec/class.ts";
 import { makeSymbolicRestAbs } from "./exec/runtime/containers.ts";
+import { resolveExportSlotCall } from "./export-slot.ts";
+import { absShapeForTsTypeText } from "./ts-type-shape.ts";
 
 /** generalize 的 evaluator 模块执行缓存（按 source；run 不依赖实参） */
-const evalRunMemo = new Map<string, Record<string, unknown>>();
+const evalRunMemo = new Map<string, Record<string, unknown>>;
+
+/**
+ * 函数作用域 mock 覆盖表的载体键（Bug 455）。
+ * `@nudo:mock` 是**函数级**指令（parser 绑到最近的函数）：同名 mock 被两个
+ * 函数各自声明时，平表「后者胜出」会把先声明的函数改写成错类型。
+ * service 侧（`@nudojs/service` 的 mock-abs.ts）把覆盖表挂在 inject.mocks 上
+ * （同一 `Symbol.for` 注册表符号）⇒ 本文件按**被求值的函数名**取本函数那
+ * 一份；无覆盖 ⇒ 原表（未冲突的 mock 仍是文件级可见）。
+ */
+const MOCK_SCOPE_OVERRIDES: unique symbol = Symbol.for("nudo.mock.scopeOverrides");
+
+/** 按被求值的函数作用域选 mock 覆盖（无覆盖 ⇒ 原 inject） */
+function scopeSelectedInject(
+  inject: RunTranspiledOptions | undefined,
+  fnName: string,
+): RunTranspiledOptions | undefined {
+  const mocks = inject?.mocks;
+  if (!mocks) return inject;
+  const overrides = (
+    mocks as unknown as Record<symbol, Record<string, Record<string, Abs>> | undefined>
+  )[MOCK_SCOPE_OVERRIDES];
+  const own = overrides?.[fnName];
+  if (!own) return inject;
+  return { ...inject, mocks: { ...mocks, ...own } };
+}
+
 function evalRunOf(
   source: string,
   modules?: Record<string, AbsModuleExports | Record<string, unknown>>,
   inject?: RunTranspiledOptions,
+  /**
+   * 作用域 mock 覆盖的 memo 区分位（Bug 455）。
+   * mock fn 的 formatAbs 只展形参不展返回值 ⇒ 两个作用域的同名 mock
+   * 指纹相同 ⇒ 键里必须带作用域名，否则共用同一份模块求值结果。
+   */
+  scopeKey?: string,
 ): Record<string, unknown> | undefined {
   // 内容指纹（CLI 每次新建 inject/modules 对象时身份键会 miss）
-  const mKey = `${source}|${runTranspiledOptionsMemoKey({ ...(inject ?? {}), ...(modules ? { modules } : {}) })}`;
+  const mKey = `${source}|${scopeKey ?? ""}|${runTranspiledOptionsMemoKey({ ...(inject ?? {}), ...(modules ? { modules } : {}) })}`;
   if (evalRunMemo.size >= 256) {
     const oldest = evalRunMemo.keys().next().value;
     if (oldest !== undefined) evalRunMemo.delete(oldest);
@@ -726,11 +760,18 @@ function generalizeFromAstUncached(
   const budget = opts.budget ?? defaultLeakBudget;
   const label = opts.label ?? "A";
 
-  const typeParams: TypeParam[] = params.map((p, i) => ({
-    id: `${label}${i + 1}`,
-    // 无约束参数 = any（任意 JS 值），不是 unknown（分析无信息）
-    value: abs({ k: "any" }, termVar(`${label}${i + 1}`), pTrue, "path"),
-  }));
+  const typeParams: TypeParam[] = params.map((p, i) => {
+    // Bug 479：`.ts` 源的形参带**声明类型**（剥除 pass 的旁路 nudoTypeText）
+    // ⇒ 入口形参不再是「无约束 any」（否则 `a.toUpperCase()` 之类在
+    // 合法 TypeScript 上产生 nudo:entry-may-throw 假红）。
+    // 无注解 / 不可映射的类型（别名、泛型、对象类型）⇒ 仍是 any（不猜）。
+    const shape = absShapeForTsTypeText(formals[i]?.tsType);
+    return {
+      id: `${label}${i + 1}`,
+      // 无约束参数 = any（任意 JS 值），不是 unknown（分析无信息）
+      value: abs(shape ?? { k: "any" }, termVar(`${label}${i + 1}`), pTrue, "path"),
+    };
+  });
 
   let entryReqs: Array<{ param: string; pred: import("./pred.ts").Pred; display?: string }> | undefined;
   /** refine 契约带来的 entryShapes（source=refine，不重复提升） */
@@ -966,14 +1007,26 @@ function generalizeFromAstUncached(
   const runCore = (args: Abs[], phi: Phi): Abs | undefined => {
     if (!evalEligible) return undefined;
     try {
-      const evalRun = evalRunOf(source, opts.modules, opts.inject);
+      // 同名 mock 按作用域各生效（Bug 455）：覆盖存在时按作用域名分键求值
+      const scopedInject = scopeSelectedInject(opts.inject, fnName);
+      const evalRun = evalRunOf(
+        source,
+        opts.modules,
+        scopedInject,
+        scopedInject === opts.inject ? undefined : fnName,
+      );
       if (!evalRun) {
         /* B 失败 fail-closed */
         return undefined;
       } else if (fnName.includes(".")) {
         // 类方法桥：模块导出表取类 Abs → $new（构造参数 any）→ $invoke
         const [clsName, methodName] = fnName.split(".", 2);
-        const clsAbs = evalRun[clsName ?? ""];
+        // Bug 489 同源：`export default class C {…}` 的类只挂在 default 槽 ⇒
+        // 按类名查表落空 ⇒ 方法签名退成 unknown。同一套导出槽兜底。
+        const clsSlot = resolveExportSlotCall(fileAst, clsName ?? "", evalRun);
+        const clsAbs = clsSlot
+          ? evalRun[clsSlot.kind === "cjs-member" ? clsSlot.key : clsSlot.key]
+          : undefined;
         if (clsAbs && typeof clsAbs === "object" && "shape" in (clsAbs as object)) {
           const nCtor = ctorParamCountOf(fileAst, clsName ?? "");
           const inst = $new(clsAbs as Abs, Array.from({ length: nCtor }, () => abs({ k: "any" }, undefined, pTrue, "path")));
@@ -990,8 +1043,30 @@ function generalizeFromAstUncached(
           return a;
         });
         return callTranspiledExportFull(evalRun, fnName, evalArgs, { phi }).result;
+      } else {
+        // Bug 489 / 995：本地名不在导出表 ⇒ 兜底解析导出槽
+        // （具名 default 导出 → default 槽；CJS 对象字面量 → 成员桥）。
+        // 查表落空会让签名退成 unknown + 一条指向错误的 nudo:opaque-result。
+        const slot = resolveExportSlotCall(fileAst, fnName, evalRun);
+        if (!slot) return undefined;
+        // 提升形状预绑定到实参（同具名槽口径）
+        const evalArgs = args.map((a, i) => {
+          const shape = promoteScan.promotedShapes.get(params[i]!);
+          if (shape && (a.shape.k === "any" || a.shape.k === "unknown")) {
+            return { shape, term: a.term, pred: a.pred, conf: "path" } as Abs;
+          }
+          return a;
+        });
+        if (slot.kind === "cjs-member") {
+          // CJS：module.exports = { f: fn } —— 成员挂在 default 槽这个对象上
+          const d = evalRun[slot.key];
+          if (!d || typeof d !== "object" || !("shape" in (d as object))) return undefined;
+          const dAbs = d as Abs;
+          if (dAbs.shape.k !== "obj") return undefined;
+          return withExecPhi(phi, () => $invoke(dAbs, slot.member, evalArgs));
+        }
+        return callTranspiledExportFull(evalRun, slot.key, evalArgs, { phi }).result;
       }
-      return undefined;
     } catch {
       /* B 失败 fail-closed */
       return undefined;

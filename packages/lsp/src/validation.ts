@@ -52,14 +52,23 @@ function sourceFingerprint(s: string): string {
 /**
  * 项目配置指纹：analysis.mode / diagnostics / autoBind / env / callSiteBudget /
  * evalMissingSlot 变更必须 miss analysisCache（与 CLI force-full 同口径）。
+ *
+ * 导出（测试可见）：指纹的**归一口径**是 #487 的契约面——写测试比留
+ * 内部函数更直接。
  */
-function projectConfigFingerprint(filePath: string): string {
+export function projectConfigFingerprint(filePath: string): string {
   try {
     const proj = findProjectConfig(dirname(filePath));
     const cfg = proj?.config ?? {};
+    // autoBind 必须取**归一后**的值（service 侧唯一归一点 `interfaceConfig`）：
+    // 分析面读的是归一值，指纹读原始值 ⇒ 两者口径分裂。写 `"autoBind": "false"`
+    // （非布尔，非法形状）时归一回落 true ⇒ 有效行为与「不写」完全相同，
+    // 但原始指纹不同 ⇒ 用户只改了这处无效写法也会 miss 缓存、全量重算
+    // （#487）。谓词形态（函数）无法 JSON 序列化，落一个稳定标记。
+    const autoBind = interfaceConfig(cfg).autoBind;
     return sourceFingerprint(
       JSON.stringify({
-        autoBind: cfg.contract?.autoBind ?? true,
+        autoBind: typeof autoBind === "function" ? "predicate" : autoBind,
         analysis: cfg.analysis ?? null,
         env: cfg.env ?? null,
         check: cfg.check ?? null,
@@ -481,8 +490,11 @@ export function evictModuleGraphCacheEntries(uris: string[]): void {
 }
 
 export function hasNudoDirectives(source: string): boolean {
-  // 与 service analysis-scope.hasNudoDirectives 同口径：指令住注释，字符串内不算
-  return /@nudo:(case|mock|pure|skip|sample|contract|import|env|mock-module|as|replace)\b/.test(
+  // 与 service analysis-scope.hasNudoDirectives 同口径：指令住注释，字符串内不算。
+  // 名单是**全部活指令**：parser 侧（case/mock/pure/skip/sample/env/mock-module/
+  // as/replace）+ core 侧（contract/import/assume/invariant/throws/budget）——
+  // 少一个，该指令所在的文件在 mode=directives 下就被整份跳过（静默无诊断）。
+  return /@nudo:(case|mock|pure|skip|sample|contract|import|env|mock-module|as|replace|assume|invariant|throws|budget)\b/.test(
     stripStringsKeepComments(source),
   );
 }
@@ -665,14 +677,50 @@ const severityMap: Record<JsDiagSeverity, DiagnosticSeverity> = {
   info: DiagnosticSeverity.Information,
 };
 
+/**
+ * 指令文法诊断（nudo:directive-syntax）的修复提示文案。
+ *
+ * check 通道（checkToLspDiagnostics 显式 extract）与 eval 通道（service
+ * drain）抽的是**同一条**指令诊断；两通道的诊断合并按 `code + message`
+ * 去重（push 与 pull 同口径，见 validateText / server.languages.diagnostics）
+ * ——文案不一致 → 同一条诊断被发布两次（一条带提示、一条不带）。
+ * 故：提示文案只此一处定义，两通道同渲染。
+ */
+const DIRECTIVE_SYNTAX_HINT = "Fix the directive syntax (see docs/reference/diagnostics.md)";
+
+/**
+ * service 的 `Diagnostic.range` 行号是 **1 基源码行**（Babel `node.loc`；
+ * CLI 报告与 check-json-map 直接印这个值），`line: 0` 是「无源码锚点」的
+ * **占位**（指令文法诊断 / mock 解析失败 / 模块缺失等），不是「第 0 行」。
+ *
+ * LSP 的 `Position.line` 是 0 基 uinteger：1 基 → 0 基要减 1，占位值减 1
+ * 会落成 -1（非法位置，IDE 侧丢弃或错位）——换算后必须钳位到 0。
+ */
+function lspLine(line: number): number {
+  return Math.max(0, line - 1);
+}
+
+/** service 的 column 已是 0 基（Babel）；负值（占位/异常）钳位到 0。 */
+function lspChar(column: number): number {
+  return Math.max(0, column);
+}
+
+/** eval 通道消息：指令文法诊断补上与 check 通道同文案的修复提示（去重键对齐）。 */
+function evalChannelMessage(d: JsDiagnostic): string {
+  if (d.code !== DIAG.directiveSyntax) return d.message;
+  return d.message.includes(DIRECTIVE_SYNTAX_HINT)
+    ? d.message
+    : `${d.message} · ${DIRECTIVE_SYNTAX_HINT}`;
+}
+
 export function toLspDiagnostic(d: JsDiagnostic, uri: string): LspDiagnostic {
   const diag: LspDiagnostic = {
     severity: severityMap[d.severity],
     range: {
-      start: { line: d.range.start.line - 1, character: d.range.start.column },
-      end: { line: d.range.end.line - 1, character: d.range.end.column },
+      start: { line: lspLine(d.range.start.line), character: lspChar(d.range.start.column) },
+      end: { line: lspLine(d.range.end.line), character: lspChar(d.range.end.column) },
     },
-    message: d.message,
+    message: evalChannelMessage(d),
     source: "nudo",
     code: d.code,
     data: { ...((d.data as object) ?? {}), suggestions: d.suggestions },
@@ -685,8 +733,8 @@ export function toLspDiagnostic(d: JsDiagnostic, uri: string): LspDiagnostic {
       location: {
         uri,
         range: {
-          start: { line: d.origin.line - 1, character: d.origin.column },
-          end: { line: d.origin.line - 1, character: d.origin.column },
+          start: { line: lspLine(d.origin.line), character: lspChar(d.origin.column) },
+          end: { line: lspLine(d.origin.line), character: lspChar(d.origin.column) },
         },
       },
       message: "value originates here",
@@ -801,14 +849,16 @@ export function checkToLspDiagnostics(
         severity: "warning",
         code: d.code,
         message: d.message,
-        suggestion: "Fix the directive syntax (see docs/reference/diagnostics.md)",
+        suggestion: DIRECTIVE_SYNTAX_HINT,
       });
     }
     return issues
       .filter((i) => i.severity === "error" || i.severity === "warning")
       .map((i) => {
-        const line = (i.line ?? 1) - 1;
-        const col = i.column ?? 0;
+        // core check issue 的 line 是 1 基源码行；无锚点时回落第 1 行，
+        // 换算到 LSP 的 0 基后钳位 ≥ 0（Position.line 是 uinteger）。
+        const line = lspLine(i.line ?? 1);
+        const col = lspChar(i.column ?? 0);
         const parts = [i.message];
         if (i.actual) parts.push(`actual: ${i.actual}`);
         if (i.expected) parts.push(`expected: ${i.expected}`);
@@ -862,6 +912,15 @@ export function checkToLspDiagnostics(
  * analyzeFileAsync 不再 preload，这里显式补一轮（幂等：ESM import 有模块缓存，
  * 常态开销仅 statSync）。只报本轮 env 名单解析出的路径：env 项从配置移除后，
  * 进程级错误表里的陈旧条目不得继续误报。
+ *
+ * 两类条目（service 侧 env-loader 的记录口径）：
+ * - **path 形**：记录的 path = `resolvePath(baseDir, name)`（缺失文件 /
+ *   import 失败 / defineEnv 契约违约）——按解析后路径匹配。
+ * - **按名字形**：记录的 path = **名字本身**（未知 env 名 `bogus` /
+ *   `nodejs`…、非字符串 env 项的 JSON 渲染）——此前只按解析后路径过滤，
+ *   这类条目永远匹配不上 ⇒ 在 IDE 里被整条吃掉（#470 / #937）。
+ *   按**本文件自己的 env 名单**匹配 ⇒ 同目录别的文件的无 path 诊断
+ *   不会误吸进来（`getPathEnvLoadErrors(baseDir)` 已按 baseDir 收窄）。
  */
 async function envUnresolvedDiags(filePath: string, source: string): Promise<LspDiagnostic[]> {
   let envNames: string[];
@@ -879,8 +938,15 @@ async function envUnresolvedDiags(filePath: string, source: string): Promise<Lsp
   }
   // preloadPathEnvs 记录的 path = resolvePath(baseDir, name)——同式过滤陈旧条目
   const candidates = new Set(envNames.map((n) => resolvePath(baseDir, n)));
+  // 按名字发的诊断：记录 path = 名字本身（未知名）/ JSON 渲染（非法 env 项）
+  const byName = new Set<string>(envNames);
+  for (const raw of envNames as unknown[]) {
+    if (typeof raw === "string") continue;
+    const rendered = JSON.stringify(raw);
+    if (typeof rendered === "string") byName.add(rendered);
+  }
   return getPathEnvLoadErrors(baseDir)
-    .filter((e) => candidates.has(e.path))
+    .filter((e) => candidates.has(e.path) || byName.has(e.path))
     .map((e) => ({
       severity: DiagnosticSeverity.Warning,
       range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },

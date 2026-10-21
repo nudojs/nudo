@@ -23,7 +23,9 @@ import {
   envPathDependents,
   isEnvTemplatePath,
   getAnalysisSession,
+  mockSeedsForSource,
   stablePathKey,
+  tryRunEval,
   type CallRecord,
   type AnalysisResult,
 } from "@nudojs/service";
@@ -102,6 +104,40 @@ export async function reemitUpdate(
   return { result, emitOut, removed: stripped.removed };
 }
 
+/**
+ * 现场文件可用性探针（Bug 466）。
+ *
+ * `collectCallRecords`（service）把求值异常 blanket 吞成「0 条记录」，于是
+ * **「现场文件读失败」与「现场文件里确实没有调用」在下游同形** ⇒
+ * `nudo test --from <坏文件>` 静默回落 entry@ + exit 0（假绿：用户以为跑过
+ * 调用点验证，实际什么都没验证）。
+ *
+ * 本探针在**该现场文件产出 0 条记录**时复跑一次求值（与 collectCallRecords
+ * 同参数 ⇒ 命中 eval memo，不重复执行现场文件的顶层代码）：
+ * - 解析失败（语法错）→ `mockSeedsForSource` 内的 `parse` 抛错；
+ * - 求值失败（模块装载失败 / 顶层抛）→ `tryRunEval` 返回 undefined。
+ *
+ * 两者都判为「现场文件读失败」，与「文件不存在」同口径（pathMissingCallsite
+ * 家族）：明确报错 + 非 0 退出。
+ */
+function probeCallsiteFile(
+  sitePath: string,
+  source: string,
+): { ok: true } | { ok: false; reason: string } {
+  try {
+    const mocks = mockSeedsForSource(source, { fromFile: sitePath });
+    const run = tryRunEval(source, sitePath, {
+      mode: "exec",
+      lenientGlobals: true,
+      ...(Object.keys(mocks).length > 0 ? { mocks } : {}),
+    });
+    if (!run) return { ok: false, reason: "evaluation failed (module did not load)" };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: `parse failed: ${(err as Error).message}` };
+  }
+}
+
 /** --from 公共采集。`errorSink` 提供时路径错误进 sink（不设 exit），否则保持 usageError+exit。 */
 export function collectExternalRecords(
   sites: string[],
@@ -125,7 +161,25 @@ export function collectExternalRecords(
     }
     const siteFiles = siteStat.isDirectory() ? collectNudoFiles(sitePath) : [sitePath];
     for (const sf of siteFiles) {
-      records.push(...collectCallRecords(sf, readFileSync(sf, "utf-8")));
+      const source = readFileSync(sf, "utf-8");
+      const siteRecords = collectCallRecords(sf, source);
+      // 0 条记录 ⇒ 「现场文件里没有调用」与「现场文件读失败」同形，必须区分
+      // （Bug 466：读失败被吞成 0 条记录 ⇒ 静默 entry@ + exit 0 假绿）。
+      if (siteRecords.length === 0) {
+        const probe = probeCallsiteFile(sf, source);
+        if (!probe.ok) {
+          const err: PathError = {
+            path: sf,
+            code: DIAG.pathMissingCallsite,
+            message: `Callsite file failed to load: ${sf} — ${probe.reason}`,
+            suggestion: `fix the callsite file (it must parse and evaluate) or pass --from <file-or-dir> that loads cleanly; it supplies call@ records for generation`,
+          };
+          if (errorSink) errorSink.push(err);
+          else reportPathErrors([err]);
+          continue;
+        }
+      }
+      records.push(...siteRecords);
     }
   }
   return records.length > 0 ? records : undefined;

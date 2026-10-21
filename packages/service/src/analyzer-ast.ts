@@ -7,6 +7,7 @@ import traverse from "@babel/traverse";
 import {
   type Abs,
   type Environment,
+  type FormalParam,
   formalParamsFromNodes,
   formalParamDisplayNames,
   unknown as absUnknown,
@@ -28,6 +29,7 @@ import {
   fnOrClassIdLoc,
   isModuleExportsMember,
   memberPropertyKey,
+  classMemberKeyName,
   classInstanceMethods,
   exportSpecifierLocalName,
   exportSpecifierExportedName,
@@ -42,8 +44,17 @@ export function locFromNode(node: Node): SourceLocation {
   };
 }
 
-export function extractParamNames(node: Node): string[] {
+/**
+ * 形参表面（formal param surface）。
+ *
+ * Bug 479：`.ts` 源的形参带**声明类型文本**（`FormalParam.tsType`，来自剥除
+ * pass 的旁路 `nudoTypeText`）⇒ 推断面（entry@ 实参）与产物面（dts 参数位）
+ * 据此读回用户在源码里写下的类型。无注解（.js 源 / 未标注）⇒ 无 `tsType`
+ * ⇒ 两个面都走既有路径（any / case-widen），行为不变。
+ */
+export function extractFormals(node: Node): FormalParam[] {
   const fn = node.type === "ExportDefaultDeclaration" ? node.declaration : node;
+  let params: unknown[] | undefined;
   if (
     fn.type === "FunctionDeclaration" ||
     fn.type === "FunctionExpression" ||
@@ -52,15 +63,30 @@ export function extractParamNames(node: Node): string[] {
     fn.type === "ObjectMethod" ||
     fn.type === "TSDeclareMethod"
   ) {
-    return formalParamDisplayNames(formalParamsFromNodes((fn as { params?: unknown[] }).params as never));
-  }
-  if (fn.type === "VariableDeclaration") {
+    params = (fn as { params?: unknown[] }).params;
+  } else if (fn.type === "VariableDeclaration") {
     const init = getDeclaratorInit(getDeclarations(fn)[0]);
     if (init && (init.type === "FunctionExpression" || init.type === "ArrowFunctionExpression")) {
-      return formalParamDisplayNames(formalParamsFromNodes(init.params as never));
+      params = init.params;
     }
   }
-  return [];
+  const formals = formalParamsFromNodes(params as never);
+  // Bug 479（core 侧缺口的服务侧兜底）：Babel 8 把 **rest 形参**的类型注解
+  // 挂在 RestElement 节点上（`...rest: number[]` ⇒ RestElement.nudoTypeText）。
+  // core `param-surface.ts` 现已优先读节点侧旁路（内层标识符为老口径兜底），
+  // 本兜底在 core 修好后**自动退化为 no-op**；保留以防 core 侧回退。
+  // 其余形参形态（id / default / pattern）core 已取到。
+  for (let i = 0; i < formals.length; i++) {
+    const f = formals[i]!;
+    if (f.kind !== "rest" || f.tsType !== undefined) continue;
+    const t = (params?.[i] as { nudoTypeText?: string } | undefined)?.nudoTypeText;
+    if (typeof t === "string" && t.length > 0) f.tsType = t;
+  }
+  return formals;
+}
+
+export function extractParamNames(node: Node): string[] {
+  return formalParamDisplayNames(extractFormals(node));
 }
 
 export function resolveFunctionNode(node: Node): Node {
@@ -92,6 +118,16 @@ export function isFnExprValue(node: Node | null | undefined): node is Node {
 
 export function namedFnExprId(node: Node): string | null {
   return node.type === "FunctionExpression" && node.id ? node.id.name : null;
+}
+
+/**
+ * Object member key as a slot name (`{ f: fn }` → "f"; `{ 1: fn }` → "1").
+ * Identifier / StringLiteral / NumericLiteral keys only — computed keys have
+ * no stable name (same口径 as core listTopFunctions' CJS branch).
+ */
+export function objectMemberKeyName(member: Node | null | undefined): string | null {
+  const key = classMemberKeyName(member);
+  return key === undefined ? null : String(key);
 }
 
 /** `module.exports` — the only assignment target carrying no stable name of its own. */
@@ -142,14 +178,21 @@ export function assignmentChainName(expr: Node): string | null {
  * this collects CJS-style function bindings:
  *
  *   const f = function () {};                           // declarator init
+ *   export const f = function () {};                    // exported declarator
  *   exports.applyToDefaults = function (a, b) {};       // namespace property
  *   module.exports = internals.clone = function () {};  // chained export
+ *   module.exports = { applyToDefaults: function () {} }; // CJS object literal
  *
  * Naming: identifier bindings win (call sites dispatch on them, and the
  * evaluator's call records key on the callee identifier); a named function
  * expression's own id beats a member property name; a bare
  * `module.exports = fn` becomes "default" (ESM default-export analogue).
  * Collected non-declaration entries carry `noDeclaration` — see FunctionAnalysis.
+ *
+ * `assignedName` carries the **export slot** when it differs from the census
+ * name (named `export default function f` → slot "default"; a named function
+ * expression in a CJS object literal → its object key): the entry evaluation
+ * falls back to that slot when the name itself is not an export key.
  *
  * Member / class-method calls are recorded as `Class.method` / bare `method`
  * (see `$invoke` noteEvalCallRecord) and synthesize `call@` the same way.
@@ -222,7 +265,17 @@ export function collectTopLevelFunctions(
   for (const stmt of body) {
     const decl = resolveFunctionNode(stmt);
     if (decl.type === "FunctionDeclaration" && decl.id) {
-      results.push({ name: decl.id.name, node: decl, stmt, noDeclaration: false });
+      // 具名 default 导出（export default function f）：普查名 = 本地名
+      // （与 core listTopFunctions 同口径），但模块的导出槽是 "default"
+      // （本地名不是导出名）——记下槽名，entry@ 求值在按名未命中时回退。
+      const assignedName = stmt.type === "ExportDefaultDeclaration" ? "default" : undefined;
+      results.push({
+        name: decl.id.name,
+        node: decl,
+        stmt,
+        noDeclaration: false,
+        ...(assignedName ? { assignedName } : {}),
+      });
       continue;
     }
     // C4.2/D6：导出 class 实例方法 → `Class.method`（dts 无稳定声明形态，noDeclaration）
@@ -230,6 +283,20 @@ export function collectTopLevelFunctions(
       continue; // 已在导出扫描后统一收集
     }
     if (stmt.type === "ExportNamedDeclaration") {
+      const declared = stmt.declaration;
+      // export const/let/var f = fn —— 与 core listTopFunctions 的
+      // VariableDeclaration 分支同口径（core 对 export 包装同样收：
+      // decl = stmt.declaration 后走同一条 declarator 收集）。
+      // 普查名 = 变量名（= 导出槽名），entry@ 求值按导出表命中。
+      if (declared?.type === "VariableDeclaration") {
+        for (const declarator of getDeclarations(declared)) {
+          const id = asIdentifier(declarator.id as Node);
+          if (id && isFnExprValue(declarator.init)) {
+            results.push({ name: id.name, node: declarator.init, stmt, noDeclaration: true });
+          }
+        }
+        continue;
+      }
       const d = resolveFunctionNode(stmt);
       if (d.type === "FunctionDeclaration" && d.id) {
         results.push({ name: d.id.name, node: d, stmt, noDeclaration: false });
@@ -241,12 +308,10 @@ export function collectTopLevelFunctions(
     }
     if (stmt.type === "ExportDefaultDeclaration") {
       const d: Node = stmt.declaration;
+      // 具名 default 导出在上面（resolveFunctionNode → FunctionDeclaration）
+      // 已收；这里只剩匿名 default 形态（普查名 = 导出槽 "default"）。
       if (d.type === "FunctionDeclaration") {
-        if (d.id) {
-          results.push({ name: d.id.name, node: d, stmt, noDeclaration: false });
-        } else {
-          results.push({ name: "default", node: d, stmt, noDeclaration: true });
-        }
+        results.push({ name: "default", node: d, stmt, noDeclaration: true });
       } else if (isFnExprValue(d)) {
         results.push({ name: "default", node: d, stmt, noDeclaration: true });
       }
@@ -272,6 +337,44 @@ export function collectTopLevelFunctions(
         const assignedName =
           namedFnExprId(fn) && chain && chain !== name ? chain : undefined;
         results.push({ name, node: fn, stmt, noDeclaration: true, ...(assignedName ? { assignedName } : {}) });
+      } else if (isModuleExportsTarget(expr.left as Node)) {
+        // module.exports = { f: fn } —— 与 core listTopFunctions 的 CJS 分支同口径：
+        // 逐个 ObjectProperty / ObjectMethod 取成员函数（key 名 = 导出槽名）。
+        const objLit = expr.right as Node;
+        if (objLit?.type === "ObjectExpression") {
+          for (const prop of objLit.properties) {
+            if (prop.type === "ObjectMethod") {
+              // 只收普通方法：getter / setter 不是可调用入口
+              if (prop.kind !== "method") continue;
+              const keyName = objectMemberKeyName(prop);
+              if (!keyName) continue;
+              results.push({
+                name: keyName,
+                node: prop,
+                stmt,
+                noDeclaration: true,
+                assignedName: keyName,
+              });
+              continue;
+            }
+            if (prop.type !== "ObjectProperty") continue;
+            const value = prop.value as Node;
+            if (!isFnExprValue(value)) continue;
+            const keyName = objectMemberKeyName(prop);
+            // 命名函数表达式的自有 id 优先于槽名（core: r.id?.name ?? keyName）
+            const fnId = namedFnExprId(value);
+            const name = fnId ?? keyName;
+            if (!name) continue;
+            const assignedName = fnId && keyName && keyName !== name ? keyName : undefined;
+            results.push({
+              name,
+              node: value,
+              stmt,
+              noDeclaration: true,
+              ...(assignedName ? { assignedName } : {}),
+            });
+          }
+        }
       }
     }
   }

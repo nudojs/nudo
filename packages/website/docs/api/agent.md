@@ -250,6 +250,8 @@ The `type` field of `nudo.whatIf` bindings accepts a primitive or a `|`-separate
 
 Constraint-builder forms (`number()`, `lit(...)`, `shape({...})`, `union(...)`, `array(...)`) and structural expressions (object/array literals, `=>` functions) parse through the directive grammar (`parseCaseArgExpr`); any other name becomes `unknown`.
 
+A name Nudo cannot express degrades to `unknown` — it is never silently widened to `any`. The `Bindings applied: …` note says what was *actually* injected, so a degraded binding reads `x: unknown (requested "Date" is not expressible; applied as unknown)`. A union with one inexpressible member degrades as a whole (`union(unknown, …)` is not a legal constraint-builder argument).
+
 ## Diagnostics
 
 Type errors (failed `@nudo:contract` assertions, unreachable code, …) are available as LSP diagnostics in both directions:

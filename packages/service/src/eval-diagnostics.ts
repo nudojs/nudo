@@ -2,6 +2,11 @@
  * 求值引擎静态诊断（AST，不执行）：
  * - unreachable：同块 return/throw 之后的语句
  * - builtin-unknown：未声明的全局调用（非 import / 局部 / $runtime）
+ *
+ * 不变量：只对**真正的自由标识符引用**报 builtin-unknown。命名位置
+ * （非计算 key/property、声明 id、import 绑定 local、import/export 别名位
+ * imported/exported、标签 label）都不是引用——它们指向别的名字或声明名字，
+ * 报出来即为误报。
  */
 
 import { parseSource } from "@nudojs/core";
@@ -289,9 +294,19 @@ function walkBuiltinUnknown(
     // 非计算的 key/property 是命名位置；计算 key（{[foo]: 1}、o[foo]、
     // class {[m]() {}}）会被求值 → 其中的标识符是活引用。
     // local（import 绑定）/ id（声明位置）始终是命名位置。
+    // imported/exported（import / export 的**别名位**）与 label（标签名）同样
+    // 是命名位置——它们声明或指向**别的**名字，不是对全局自由标识符的引用：
+    //   - `import { alpha as beta }` 的 alpha 是**源模块**的导出名；
+    //   - `export { y as renamed }` 的 renamed 是**导出名**（本身不是模块作用域
+    //     绑定——原生下体内引用 renamed 是 ReferenceError，仍会作为真自由全局被报，
+    //     只是锚点应落在**真正的引用位**而非名字位）；
+    //   - `outer:` / `break outer` 的 outer 是**标签**（独立命名空间）。
     const childIsName =
       ((key === "key" || key === "property") && n.computed !== true) ||
       key === "local" ||
+      key === "imported" ||
+      key === "exported" ||
+      key === "label" ||
       key === "id";
     const v = n[key];
     if (Array.isArray(v)) {

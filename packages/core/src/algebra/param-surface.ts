@@ -7,12 +7,15 @@
  * - ObjectPattern / ArrayPattern → 求值占位 `_p{i}`；契约面 = 顶层绑定名
  *   （对象属性 / 数组元素 Identifier）。嵌套 pattern 的绑定名标 `nested`，
  *   消费方可显式降级（C4.5 param-mismatch / 不执法）。
+ *
+ * Bug 479：`tsType` 携带**源码里的 TS 声明类型文本**（剥除 pass 留下的旁路
+ * `nudoTypeText`）——`.ts` 源的形参据此不是「无约束 any」。
  */
 
 export type FormalParam =
-  | { kind: "id"; name: string; index: number }
-  | { kind: "default"; name: string; index: number }
-  | { kind: "rest"; name: string; display: string; index: number }
+  | { kind: "id"; name: string; index: number; tsType?: string }
+  | { kind: "default"; name: string; index: number; tsType?: string }
+  | { kind: "rest"; name: string; display: string; index: number; tsType?: string }
   | {
       kind: "pattern";
       /** 求值/签名占位名（generalize 与 dts 用） */
@@ -32,6 +35,8 @@ export type FormalParam =
        */
       nestedPaths: string[];
       index: number;
+      /** TS 声明类型文本（.ts 源；缺省 = 无注解） */
+      tsType?: string;
     };
 
 type AstParam = {
@@ -40,6 +45,8 @@ type AstParam = {
   left?: AstParam;
   right?: unknown;
   argument?: AstParam;
+  /** Bug 479：剥除 pass 留下的类型注解文本旁路 */
+  nudoTypeText?: string;
   properties?: Array<{
     key?: AstParam;
     value?: AstParam;
@@ -195,16 +202,26 @@ function collectPatternNames(
   }
 }
 
+/**
+ * Bug 479：形参的 TS 声明类型文本（剥除 pass 的旁路 `nudoTypeText`）。
+ * 无注解（.js 源 / 未标注）⇒ undefined ⇒ 形参仍是「无约束 any」。
+ */
+function tsTypeOf(p: AstParam | undefined): { tsType?: string } {
+  const t = p?.nudoTypeText;
+  return t ? { tsType: t } : {};
+}
+
 export function formalParamsFromNodes(params: AstParam[] | undefined | null): FormalParam[] {
   const list = params ?? [];
   return list.map((p, index): FormalParam => {
     if (p?.type === "Identifier" && p.name) {
-      return { kind: "id", name: p.name, index };
+      return { kind: "id", name: p.name, index, ...tsTypeOf(p) };
     }
     if (p?.type === "AssignmentPattern") {
       const left = p.left as AstParam | undefined;
       if (left?.type === "Identifier" && left.name) {
-        return { kind: "default", name: left.name, index };
+        // 默认值的类型注解挂在 left（`b: number = 1`）
+        return { kind: "default", name: left.name, index, ...tsTypeOf(left) };
       }
       // 默认 + pattern：按 pattern 处理，占位 `_p{i}`
       const top: string[] = [];
@@ -220,13 +237,25 @@ export function formalParamsFromNodes(params: AstParam[] | undefined | null): Fo
         nested,
         nestedPaths,
         index,
+        ...tsTypeOf(p),
       };
     }
     if (p?.type === "RestElement") {
       const arg = p.argument as AstParam | undefined;
       const name =
         arg?.type === "Identifier" && arg.name ? arg.name : `arg${index}`;
-      return { kind: "rest", name, display: `...${name}`, index };
+      // rest 的注解挂在 **RestElement 节点**上（`...rest: string[]`）——
+      // Babel 8 不像 Identifier 那样把 typeAnnotation 挂到内层标识符。
+      // 旧实现只读内层 ⇒ rest 形参恒丢声明类型（Bug 479 的 rest 缺口）。
+      // 两处都读：先节点（当前 Babel 口径），再内层（老口径兜底）。
+      const tsType = tsTypeOf(p);
+      return {
+        kind: "rest",
+        name,
+        display: `...${name}`,
+        index,
+        ...(tsType.tsType ? tsType : tsTypeOf(arg)),
+      };
     }
     const top: string[] = [];
     const nested: string[] = [];
@@ -241,6 +270,7 @@ export function formalParamsFromNodes(params: AstParam[] | undefined | null): Fo
       nested,
       nestedPaths,
       index,
+      ...tsTypeOf(p),
     };
   });
 }

@@ -10,7 +10,6 @@ import {
   analysisConfig,
   DEFAULT_ANALYSIS_EXCLUDE,
   findProjectConfig,
-  matchesEmitAllowlist,
   type AnalysisConfig,
   type DiagnosticsLevel,
 } from "./evaluator/config.ts";
@@ -62,8 +61,12 @@ export function diagnosticsLevelForFile(filePath: string): DiagnosticsLevel {
 }
 
 export function hasNudoDirectives(source: string): boolean {
-  // 指令合法住在注释里，字符串/模板里的同形文本不算——先剥字符串再测
-  return /@nudo:(case|mock|pure|skip|sample|contract|import|env|mock-module|as|replace)\b/.test(
+  // 指令合法住在注释里，字符串/模板里的同形文本不算——先剥字符串再测。
+  // 名单是**全部活指令**：parser 侧（case/mock/pure/skip/sample/env/mock-module/
+  // as/replace）+ core 侧（contract/import/assume/invariant/throws/budget）——
+  // 少一个，该指令所在的文件在 mode=directives 下就被整份跳过（静默无诊断）：
+  // assume/invariant/throws/budget 曾缺席 → 只含这四种指令的文件永远无诊断。
+  return /@nudo:(case|mock|pure|skip|sample|contract|import|env|mock-module|as|replace|assume|invariant|throws|budget)\b/.test(
     stripStringsKeepComments(source),
   );
 }
@@ -108,7 +111,7 @@ export function shouldAnalyzeFile(
   }
   // include 空 = 不过滤（目标扩展名已由 isNudoTargetPath 保证）
   if (cfg.include.length > 0 && projectDir) {
-    if (!matchesEmitAllowlist(filePath, projectDir, cfg.include)) return false;
+    if (!cfg.include.some((p) => includeHit(p, projectDir, filePath, norm))) return false;
   }
 
   if (cfg.mode === "all") return true;
@@ -152,4 +155,48 @@ function excludeHit(
   if (!projectDir) return false;
   const rel = relative(projectDir, filePath).split(sep).join("/");
   return rel.startsWith("..") ? false : match(rel);
+}
+
+/**
+ * include 模式命中判定（`nudo.analysis.include` 白名单）。
+ *
+ * 与 exclude **刻意不同**的一条语义：白名单是「要分析哪些文件」，
+ * 字面量模式表示**这个文件 / 这个目录**，不做子串搜索——子串会把
+ * `src-other/x.js` 一并放进 `include: ["src"]` 的白名单（黑名单语义倒灌）。
+ *
+ * - 无通配符（`*` / `?`）→ **路径形态**匹配：模式等于该文件（相对项目根
+ *   或绝对路径）时命中；模式是目录时命中其下的文件（`src` → `src/**`，
+ *   `src/a.js` → 恰好这一个文件）。
+ * - 通配符模式 → 共享 glob 编译器（./glob.ts，与 exclude 同编译器、同
+ *   锚定语义）：优先 projectDir 相对路径匹配，另对归一化完整路径匹配
+ *   （`**` 前缀 / 绝对路径模式两种口径都能命中）。
+ * - 相对路径逃出 projectDir（`..` 前缀）不参与相对口径（与 excludeHit
+ *   同守卫）；完整路径口径仍可命中。
+ */
+function includeHit(
+  pattern: string,
+  projectDir: string | undefined,
+  filePath: string,
+  norm: string,
+): boolean {
+  const pat = pattern.replace(/\\/g, "/").replace(/^\.\//, "");
+  if (/[*?]/.test(pat)) {
+    const match = compilePattern(pat);
+    if (match(norm)) return true;
+    if (!projectDir) return false;
+    const rel = relative(projectDir, filePath).split(sep).join("/");
+    return rel.startsWith("..") ? false : match(rel);
+  }
+  // 字面量：路径形态（这个文件 / 这个目录），不是子串
+  if (projectDir) {
+    const rel = relative(projectDir, filePath).split(sep).join("/");
+    if (!rel.startsWith("..") && literalPathHit(pat, rel)) return true;
+  }
+  return literalPathHit(pat, norm);
+}
+
+/** 字面量路径形态命中：精确相等，或目录前缀（`src` 命中 `src/a.js`）。 */
+function literalPathHit(pattern: string, path: string): boolean {
+  if (path === pattern) return true;
+  return path.startsWith(pattern.endsWith("/") ? pattern : `${pattern}/`);
 }

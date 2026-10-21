@@ -74,11 +74,16 @@ describe("applyBForkBudgetFromConfig (env / package.json → core)", () => {
     expect(getEvalForkBudgetLimit()).toBe(5000);
   });
 
-  it("invalid env value is ignored (config layer still applies)", () => {
+  it("invalid env value falls back to the DEFAULT 5000 (not the config layer)", () => {
+    // Bug 490：旧行为让非法 env 沿 ?? 链落到配置键（33），与文档
+    // （config.md env 表「invalid falls back to the default」）和本文件
+    // 头注释「非法值回默认」都不符——用户以为在用默认，实际悄悄用着配置值。
+    // 修法：区分「env 未设」与「env 设了但非法」；后者直接回默认 + stderr 告警。
     const n = applyBForkBudgetFromConfig(
       { analysis: { maxForks: 33 } },
       { NUDO_MAX_FORKS: "abc" } as NodeJS.ProcessEnv,
     );
-    expect(n).toBe(33);
+    expect(n).toBe(5000);
+    expect(getEvalForkBudgetLimit()).toBe(5000);
   });
 });

@@ -165,7 +165,7 @@ hasIter([1]);
 
 === hasIter ===
 
-  call@L14  ([1]) => boolean
+  call@L14  ([1]) => true
 ```
 
 ### Primitive Conversions & Parsing

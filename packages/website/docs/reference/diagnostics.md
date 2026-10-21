@@ -381,9 +381,13 @@ Context: [@nudo:invariant](../concepts/directives.md#nudoinvariant--loop-invaria
 ```text
 path env failed to load: ./nudo-env.mjs — Cannot find package '@nudojs/env'
 path env failed to load: ./nope.mjs — path env not found: <resolved-path>
+unknown env name "bogus" (built-in envs: es, web, node; a path env needs a ./ or ../ prefix)
+env file must export a defineEnv() function (got undefined)
 ```
 
 A **path-type** env entry (`package.json#nudo.env` path item, or `/// @nudo:env <path>`) failed to load — either the direct `import()` and the bare-specifier rewrite fallback both failed, or the pointed-to file does not exist. **Warning** — the env falls back to "env off" semantics for that entry, so the analysis silently loses those bindings (a run where the env loads can infer more); do not treat the warning as benign.
+
+The same code also covers two env **contract** failures: an env name that is neither a built-in (`es`, `web`, `node`) nor a path (a path env needs a `./` or `../` prefix), and a path env file that does not export a `defineEnv()` function, exports a non-function, throws while being evaluated, or returns something other than `{ globals }`. Both were silent before: the env simply did not apply and the affected code was then judged to always throw `ReferenceError`. A non-string entry in `package.json#nudo.env` is reported the same way instead of crashing.
 
 **Emitted by:** `nudo check` (issues section), `nudo test` (env warnings section, identical line format; with `--json` the warning goes to stderr so stdout stays a single JSON document), and the LSP (warning diagnostic with this code, same message format). It never gates the exit code.
 
@@ -452,6 +456,26 @@ Module load chain too deep (depth N > M max): a.js -> b.js -> …
 ```
 
 **Fix:** the chain exceeds the loader depth budget — flatten re-export hops or raise the budget.
+
+Context: [nudo check](../guides/check.md#what-it-checks)
+
+### `nudo:module-unreadable` {#nudo-module-unreadable}
+
+```text
+cannot read module '/abs/path/dep.js' (EACCES): EACCES: permission denied, open '/abs/path/dep.js'
+```
+
+**Error.** The dependency **exists** but cannot be read (EACCES / EIO / EMFILE / ESTALE …). Distinct from `nudo:module-missing` (no such file): the file is there, only unreadable — its types stay unknown and the gate fails closed. **Fix:** fix the file permissions (or the module path); the dependency is present but unreadable, so its types are unknown.
+
+Context: [@nudo:mock-module](../concepts/directives.md#nudo--module-level-mock) · [nudo check](../guides/check.md#what-it-checks)
+
+### `nudo:json-invalid` {#nudo-json-invalid}
+
+```text
+JSON module './data.json' (from main.js) is not valid JSON: <parser message>
+```
+
+**Error.** A `.json` dependency is syntactically invalid JSON. Distinct from `nudo:module-missing` (the file is absent) and `nudo:module-unreadable` (the file cannot be read): the file is there and readable, but its content is not valid JSON, so no value can be imported. **Fix:** correct the JSON syntax — trailing commas, comments and single quotes are not valid JSON.
 
 Context: [nudo check](../guides/check.md#what-it-checks)
 

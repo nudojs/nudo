@@ -46,7 +46,7 @@ nudo check user.js
 ```text
 nudo check  user.js
 FAILED
-  2 error · 0 warning · 0 info · 3 fn
+  2 error · 0 warning · 2 info · 3 fn
 
 signatures
   getName(user: any) => any  throws TypeError
@@ -64,6 +64,8 @@ issues
       expected: entry total, or @nudo:throws / try-catch
       → ToNumber coercion of abstract operand → @nudo:throws TypeError  |  sidecar: fn({ … }): shape({ <body-read fields> })  |  refine / guard / try-catch
       fix:  nudo contract --draft  (emit a sidecar draft you can edit)
+  [INFO L1] export 'getName' has no contract root and no call-site domain (entry-only)  (nudo:interface-entry-only)
+  [INFO L5] export 'subtract' has no contract root and no call-site domain (entry-only)  (nudo:interface-entry-only)
 
 onboarding
   every error above is an L2 entry may-throw — unconstrained entry points, not broken contracts.

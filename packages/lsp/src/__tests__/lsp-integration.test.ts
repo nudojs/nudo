@@ -659,9 +659,10 @@ describe("LSP Integration - Agent Tools (whatIf / suggestCase / trace)", () => {
       expect(typeExprToDirective("string | null")).toBe("union(string(), null)");
       expect(typeExprToDirective("shape({ port: number() })")).toBe("shape({ port: number() })");
       expect(typeExprToDirective("{ port: number() }")).toBe("{ port: number() }");
-      expect(typeExprToDirective("Date")).toBe("any()");
-      // legacy T.* is removed — collapsed to any()
-      expect(typeExprToDirective("T.object({ port: T.number })")).toBe("any()");
+      // 认不出的裸名字不再静默洗成 any()（agent.md「any other name becomes `unknown`」）
+      expect(typeExprToDirective("Date")).toBe("unknown");
+      // legacy T.* is removed — 同样落到 unknown（`unknown` 是 @nudo:as 的合法载荷）
+      expect(typeExprToDirective("T.object({ port: T.number })")).toBe("unknown");
     });
 
     it("inserts an @nudo:as line above the declaring statement", () => {
@@ -680,6 +681,18 @@ describe("LSP Integration - Agent Tools (whatIf / suggestCase / trace)", () => {
       expect(applied).toEqual([]);
       expect(unapplied).toEqual(["nope"]);
       expect(source).toBe(whatIfSrc);
+    });
+
+    it("echoes the downgrade when the requested type is not expressible", () => {
+      // 认不出的名字注入 unknown；回显必须明说降级，不能把用户原文说成「按原样应用」
+      const { source, applied, unapplied } = injectBindings(whatIfSrc, [
+        { name: "x", type: "Date" },
+      ]);
+      expect(source).toBe("// @nudo:as unknown\nconst x = 1;\nconst y = x + 1;\n");
+      expect(unapplied).toEqual([]);
+      expect(applied).toHaveLength(1);
+      expect(applied[0]).toContain("unknown");
+      expect(applied[0]).toContain("not expressible");
     });
   });
 

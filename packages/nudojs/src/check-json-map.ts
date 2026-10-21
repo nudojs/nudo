@@ -10,6 +10,7 @@ import {
   type NudoSig,
 } from "@nudojs/core";
 import { DIAG } from "@nudojs/core/internal";
+import { CONFIG_SHAPE_CODE } from "./config-shape.ts";
 
 /**
  * 磁盘缓存私有的签名注记（additive；写盘加、读回消费后剥除，
@@ -152,7 +153,14 @@ export function mockFromErrorIssues(
   return mockFromErrors.map((fe) => {
     const isExpr = fe.code === DIAG.mockInvalid;
     return {
-      severity: "error" as const,
+      // 表达式认不出（mockInvalid）= **指令被忽略**（mock 不生效），按文档是
+      // warning（reference/diagnostics.md#nudo-mock-invalid「Warning」；
+      //  guides/check.md 诊断表「nudo:mock-invalid | engine | warning」）；
+      // mock 文件缺失 / 加载失败（moduleMissing）才是 error。
+      // 旧实现**无条件**提到 error ⇒ 与 service 侧同一分流
+      // （analyzer-orchestrate-uncached.ts:311 `isExpr ? "warning" : "error"`）
+      // 自相矛盾：同一文件里两条通道一 warning 一 error（#460）。
+      severity: isExpr ? ("warning" as const) : ("error" as const),
       code: (fe.code ?? DIAG.moduleMissing) as string,
       message: fe.message,
       suggestion: isExpr
@@ -183,16 +191,38 @@ export type DomainDiagnosticLike = {
   suggestions?: string[];
 };
 
+/**
+ * interface 家族诊断 → CheckIssue（check 面消费分析器诊断的唯一入口）。
+ *
+ * 白名单 = **check 面承诺可见**的 interface 家族码：
+ * - `nudo:interface-domain-exceeds`（L1 error/warning）：契约域被调用实参超出。
+ * - `nudo:interface-entry-only`（L1 **info**）：导出无契约根且无调用点域
+ *   （entry-only）。文档（guides/check.md、reference/diagnostics.md）承诺它
+ *   是 check 的 L1 info；此前白名单**只**留 domain-exceeds 一条 ⇒ 分析器
+ *   产出的 entry-only 被 CLI 静默丢弃（infos: 0），而 `nudo health` 走另一条
+ *   统计路径仍报「N entry-only」⇒ 同一事实两 verb 口径分裂（Bug 461）。
+ *   severity 固定 **info**：观察面提示，不挡门禁（ok / exit code 不变）。
+ *
+ * 函数名保持 `domainIssuesFromDiagnostics`：`commands/check.ts` 按名 import
+ * （共享热点文件，不在本分片改动范围），改名会断其 import。
+ */
 export function domainIssuesFromDiagnostics(
   diagnostics: readonly DomainDiagnosticLike[],
 ): CheckIssue[] {
   return diagnostics
-    .filter((d) => d.code === DIAG.interfaceDomainExceeds)
+    .filter(
+      (d) => d.code === DIAG.interfaceDomainExceeds || d.code === DIAG.interfaceEntryOnly,
+    )
     .map((d) => {
       const data = (d.data ?? {}) as { actual?: unknown; expected?: unknown };
+      const isEntryOnly = d.code === DIAG.interfaceEntryOnly;
       return {
-        severity: d.severity === "error" ? ("error" as const) : ("warning" as const),
-        code: DIAG.interfaceDomainExceeds,
+        severity: isEntryOnly
+          ? ("info" as const)
+          : d.severity === "error"
+            ? ("error" as const)
+            : ("warning" as const),
+        code: isEntryOnly ? DIAG.interfaceEntryOnly : DIAG.interfaceDomainExceeds,
         message: d.message,
         line: d.range.start.line,
         column: d.range.start.column,
@@ -285,6 +315,27 @@ type StripSummaryLike = {
 export function stripEnvUnresolvedIssues<T extends StripSummaryLike>(x: T): T {
   if (!x.issues.some((i) => i.code === ENV_UNRESOLVED_CODE)) return x;
   const issues = x.issues.filter((i) => i.code !== ENV_UNRESOLVED_CODE);
+  return {
+    ...x,
+    issues,
+    summary: {
+      ...x.summary,
+      errors: issues.filter((i) => i.severity === "error").length,
+      warnings: issues.filter((i) => i.severity === "warning").length,
+      infos: issues.filter((i) => i.severity === "info").length,
+    },
+  };
+}
+
+/**
+ * 剔除 package.json#nudo 键形状诊断（468/936）——同 env-unresolved 的
+ * live 事实处理：形状问题由本轮现场探针判定（配置可能刚被改好/写坏），
+ * 缓存命中轮若不剔除就会与 live merge **重复**（mergeCheckIssues 只追加、
+ * 不去重）⇒ 读回时剔除、由本轮 live merge 单一来源注入。
+ */
+export function stripConfigShapeIssues<T extends StripSummaryLike>(x: T): T {
+  if (!x.issues.some((i) => i.code === CONFIG_SHAPE_CODE)) return x;
+  const issues = x.issues.filter((i) => i.code !== CONFIG_SHAPE_CODE);
   return {
     ...x,
     issues,

@@ -11,11 +11,11 @@ import {
   effectiveInterface,
   formatShape,
   interfaceDiagCount,
-  leqAbs,
   takeInterfaceDiagsSince,
   type Abs,
 } from "@nudojs/core";
 import {
+  caseExpectedSatisfied,
   defaultLoadModule,
   findProjectConfig,
   interfaceConfig,
@@ -178,9 +178,12 @@ export function buildTestReport(
       const expected = formatShape(c.expected as Abs);
       let ok = false;
       try {
-        ok = leqAbs(c.abs, c.expected as Abs).ok;
+        // 期望判定与 service 分析面**同口径**（值级谓词）：裸 leqAbs 不做
+        // 值级判定 ⇒ `number().gt(0)` 这类谓词期望在报告面恒假红
+        // （分析面判满足、报告面判不满足）。
+        ok = caseExpectedSatisfied(c.abs, c.expected as Abs);
       } catch {
-        /* optional: leqAbs threw — treat case as failed */
+        /* optional: 判定抛错 — treat case as failed */
         ok = false;
       }
       outcomes.push({

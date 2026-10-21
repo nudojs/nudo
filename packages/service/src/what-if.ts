@@ -1,6 +1,11 @@
 /**
  * AI3 — what-if 绑定注入（CLI 与 LSP 同构）。
  * 把 `{name, type}` 注入为 `@nudo:as`，供 analyzeFile 观察 target 推断。
+ *
+ * 不变量：注入的类型表达式要么**按原样**表达，要么**明说**降级成了 `unknown`；
+ * 认不出的名字（`Date` / `T.Foo` …）不静默洗成 `any()`（`any()` 与 `unknown`
+ * 在 `@nudo:as` 文法里本就是同一个 Abs——洗成 `any()` 只会把「表达不了」
+ * 藏起来，并让 `applied` 回显说谎）。
  */
 import { parse, programBody, getDeclaratorId } from "@nudojs/parser";
 import { CONSTRAINT_EXPR_RE } from "@nudojs/core";
@@ -37,22 +42,48 @@ function splitTopLevelUnion(expr: string): string[] {
   return members.map((m) => m.trim()).filter(Boolean);
 }
 
-/** agent 面类型表达式 → `@nudo:as` 文法 */
-export function typeExprToDirective(expr: string): string {
+/**
+ * agent 面类型表达式 → `@nudo:as` 文法。
+ *
+ * `faithful=false` ⇒ 该表达式**认不出**（裸名字如 `Date`、TS 类型引用 `T.*`）。
+ * 认不出的表达式**不静默洗成 `any()`**：按文档契约（agent.md「any other name
+ * becomes `unknown`」）落到 `unknown`——`@nudo:as unknown` 是指令文法里的合法
+ * 载荷（`parseCaseArgExpr` → `absUnknown()`），且与 `any()` 同一个 Abs。
+ *
+ * 整条表达式只要有一项认不出，**整条**降级为 `unknown`：联合成员里塞裸
+ * `unknown` 不是合法的约束构建器实参（`union(number(), unknown)` 会炸）。
+ */
+function mapTypeExpr(expr: string): { directive: string; faithful: boolean } {
   const members = splitTopLevelUnion(expr);
-  if (members.length === 0) return "any()";
+  if (members.length === 0) return { directive: "unknown", faithful: false };
+  let faithful = true;
   const mapped = members.map((m) => {
-    if (m.startsWith("T.")) return "any()";
+    // TS 类型引用：`T.*` 文法已物理删除，认不出
+    if (m.startsWith("T.")) {
+      faithful = false;
+      return "unknown";
+    }
     if (m === "number" || m === "string" || m === "boolean") return `${m}()`;
     if (m === "unknown" || m === "any") return "any()";
     if (m === "null" || m === "undefined" || m === "true" || m === "false") return m;
     if (/^-?\d+(\.\d+)?$/.test(m)) return m;
     if (/^["']/.test(m)) return m;
-    if (/[([{]|=>/.test(m) && !m.startsWith("T.")) return m;
+    if (/[([{]|=>/.test(m)) return m;
     if (CONSTRAINT_EXPR_RE.test(m)) return m;
-    return "any()";
+    // 认不出的裸名字（`Date` / `notatype` / `bigint` …）——不洗成 any()
+    faithful = false;
+    return "unknown";
   });
-  return mapped.length === 1 ? mapped[0]! : `union(${mapped.join(", ")})`;
+  if (!faithful) return { directive: "unknown", faithful: false };
+  return {
+    directive: mapped.length === 1 ? mapped[0]! : `union(${mapped.join(", ")})`,
+    faithful: true,
+  };
+}
+
+/** agent 面类型表达式 → `@nudo:as` 文法（认不出的表达式落到 `unknown`） */
+export function typeExprToDirective(expr: string): string {
+  return mapTypeExpr(expr).directive;
 }
 
 function declaredNames(stmt: Statement, out: Set<string>): void {
@@ -164,11 +195,18 @@ export function injectBindings(
   for (const [line, group] of byLine) {
     // 语句级 as 只能表达一个类型；拆分后正常一行一个。同侧行撞车时只认第一个。
     const b = group[0]!;
+    const mapped = mapTypeExpr(b.type);
     insertions.push({
       index: line - 1,
-      text: `// @nudo:as ${typeExprToDirective(b.type)}`,
+      text: `// @nudo:as ${mapped.directive}`,
     });
-    applied.push(`${b.name}: ${b.type}`);
+    // 回显必须与**实际注入**一致：认不出的表达式注入的是 `unknown`，
+    // 回显用户原文会把「已降级」说成「按原样应用」——降级时明说降到了什么。
+    applied.push(
+      mapped.faithful
+        ? `${b.name}: ${b.type}`
+        : `${b.name}: ${mapped.directive} (requested "${b.type}" is not expressible; applied as ${mapped.directive})`,
+    );
     for (const shadowed of group.slice(1)) unapplied.push(shadowed.name);
   }
   insertions.sort((a, b) => b.index - a.index);

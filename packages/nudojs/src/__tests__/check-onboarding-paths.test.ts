@@ -197,7 +197,12 @@ export const one = fn({}, number().gt(10));
         issues: Array<{ code: string; severity: string }>;
       };
       expect(json.ok).toBe(false);
-      expect(json.issues.every((i) => i.code === "nudo:entry-may-throw")).toBe(true);
+      // 全部 **error** 必须是 L2 入口 may-throw（onboarding 的前提：error 全为 L2）。
+      // info 级诊断不参与该前提（Bug 461 起普通 check 也报 interface 家族的
+      // entry-only info —— 覆盖率缺口，不是门禁失败）。
+      const errors = json.issues.filter((i) => i.severity === "error");
+      expect(errors.length).toBeGreaterThan(0);
+      expect(errors.every((i) => i.code === "nudo:entry-may-throw")).toBe(true);
       expect(process.exitCode).toBe(1);
     } finally {
       rmSync(dir, { recursive: true, force: true });

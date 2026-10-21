@@ -2,6 +2,17 @@
  * @nudo:mock / sinon 指令 → Abs seed（供 求值引擎注入：runTranspiled
  * envGlobals / mockSeedsToAbsMocks）。
  * host 层：依赖 parser 指令形态；core 只吃 Abs 绑定。
+ *
+ * 不变量（族 14 · 分片 I）：
+ * - **作用域**：@nudo:mock 是**函数级**指令 ⇒ 同名 mock 被多个函数各自声明时，
+ *   平表只作兜底（后者胜出），真值按作用域取（`scoped` + 覆盖表，
+ *   载体键 MOCK_SCOPE_OVERRIDES ⇒ 随 inject.mocks 流转，core 的按函数求值
+ *   边界取本函数那一份）。
+ * - **可构造性**：内联 mock 按载荷形态带 `ctor` facet（箭头/generator/async
+ *   不可构造；function/class 表达式可构造）——与 `from` 形态的
+ *   hostFnCtorFacet 同口径，$new 的「定抛 vs may-throw」不再两条路径分叉。
+ * - **rejects**：`stub().rejects(e)` 建模成「必定 reject 的 promise」
+ *   （不是 never——never 会让返回契约空洞成立）。
  */
 
 import type { Node } from "@babel/types";
@@ -78,6 +89,37 @@ function stampFingerprint(a: Abs, fp: string): Abs {
   const impl = getFnImpl(a);
   if (impl) impl.fingerprint = fp;
   return a;
+}
+
+/**
+ * 内联 mock 载荷的**可构造性** facet（Bug 482）。
+ * 与 `from` 形态的 hostFnCtorFacet 同口径：
+ * - 箭头函数（含 async 箭头）/ 方法简写 / generator / async function → 不可构造
+ * - 普通 function 表达式 / class 表达式 → 可构造
+ * 判不出 ⇒ undefined（未知：$new 走 may-throw 软路径，不硬抛）。
+ */
+function inlineCtorFacet(expr: string | undefined): boolean | undefined {
+  if (!expr) return undefined;
+  // callsFake 包裹：引擎把 mock 建成**载荷函数本身**（seedFns 走 AST body）
+  // ⇒ 可构造性取内层载荷的形态。
+  const chain = expr.match(/^(?:sinon\.)?stub\(\)\.callsFake\((.+)\)$/);
+  const payload = (chain ? chain[1]! : expr).trim();
+  if (!payload) return undefined;
+  let init: Node | undefined;
+  try {
+    const file = parse(`const __mock = ${payload};`);
+    const decl = file.program.body[0];
+    if (decl?.type === "VariableDeclaration") {
+      init = decl.declarations[0]?.init ?? undefined;
+    }
+  } catch {
+    return undefined;
+  }
+  if (!init) return undefined;
+  if (init.type === "ArrowFunctionExpression") return false;
+  if (init.type === "FunctionExpression") return !init.generator && !init.async;
+  if (init.type === "ClassExpression") return true;
+  return undefined;
 }
 
 /** 用常量 Abs 造 mock 函数：调用即返回该值（结果 conf 标 mock） */
@@ -198,7 +240,21 @@ function absFromMockHelper(h: MockHelper): Abs {
       "path",
     );
   } else if (h.rejectedValue) {
-    defaultReturn = makeAbs({ k: "never" }, undefined, undefined, "exact");
+    // Bug 488：`stub().rejects(e)` 的语义是「返回一个必定 reject 的 promise」，
+    // 旧建模是 `never`（「没有值」的形状）⇒ never ⊑ 任意返回类型 ⇒ 返回契约
+    // 空洞成立（假绿）+ 签名/dts 写出 `never`。
+    // 与 resolves 分支同形（eff/promise）；内层 never = 永不 fulfill
+    // （reject 的值不是 fulfillment 类型），sync/async 两面口径一致。
+    defaultReturn = makeAbs(
+      {
+        k: "eff",
+        eff: "promise",
+        inner: makeAbs({ k: "never" }, undefined, undefined, "exact"),
+      },
+      undefined,
+      undefined,
+      "path",
+    );
   } else if (h.returnValue) {
     defaultReturn = h.returnValue;
   } else if (h.onFirstCallValue) {
@@ -228,7 +284,19 @@ function absFromSinon(sinonExpr: {
     );
   }
   if (sinonExpr.rejectedValue) {
-    return constantMockFn(makeAbs({ k: "never" }, undefined, undefined, "exact"));
+    // Bug 488：同 nudo 形态——reject 的 promise（不是 never）
+    return constantMockFn(
+      makeAbs(
+        {
+          k: "eff",
+          eff: "promise",
+          inner: makeAbs({ k: "never" }, undefined, undefined, "exact"),
+        },
+        undefined,
+        undefined,
+        "path",
+      ),
+    );
   }
   if (sinonExpr.returnValue) {
     return constantMockFn(sinonExpr.returnValue);
@@ -238,10 +306,33 @@ function absFromSinon(sinonExpr: {
 
 export type AbsMockSeeds = {
   seedVars: Record<string, Abs>;
-  seedFns: Record<string, { params: string[]; body: Node; async?: boolean; fingerprint?: string }>;
+  seedFns: Record<string, { params: string[]; body: Node; async?: boolean; fingerprint?: string; ctor?: boolean }>;
+  /**
+   * 按**函数作用域**分组的 mock 种子（Bug 455）。
+   * `@nudo:mock` 是函数级指令（parser 用 listFnDirectiveScopes 绑到最近的
+   * 函数），同名 mock 被两个函数各自声明时，平表「后者胜出」会把先声明的
+   * 函数改写成错类型 ⇒ 这里保留每个作用域各自的那一份。
+   */
+  scoped?: AbsMockScopeSeeds[];
   /** `@nudo:mock name from "path"` 解析失败（缺文件 / 缺绑定 / 求值失败）——fail-closed 诊断用 */
   fromErrors?: FromMockError[];
 };
+
+/** 单个函数作用域内的 mock 种子 */
+export type AbsMockScopeSeeds = {
+  /** 作用域名（parser 的函数作用域名：函数名 / `C.m` / `owner.m`） */
+  scope: string;
+  seedVars: Record<string, Abs>;
+  seedFns: AbsMockSeeds["seedFns"];
+};
+
+/**
+ * 作用域 mock 覆盖表的载体键（Bug 455）。
+ * `Symbol.for` ⇒ 跨包同一注册表符号：service 侧造表、core 侧（按函数求值的
+ * 边界）取本函数那一份；键是 symbol ⇒ 不进 `Object.keys` ⇒ 不会被当成
+ * mock 名注入成模块级绑定，也不污染 inject 指纹。
+ */
+export const MOCK_SCOPE_OVERRIDES: unique symbol = Symbol.for("nudo.mock.scopeOverrides");
 
 export type FromMockError = {
   name: string;
@@ -327,18 +418,97 @@ function loadFromMockBinding(
  * arrowFn mock 落在 seedFns（AST body，供 ast-eval），求值引擎的
  * envGlobals 注入只吃 Abs——不合并会把 mock 丢掉，函数体内的调用
  * 会落到真实原生函数（如 fetch 拿 Abs 当 URL，直接崩）。
+ *
+ * Bug 455：同名 mock 被多个函数各自声明时，作用域覆盖表随表一起流转
+ * （MOCK_SCOPE_OVERRIDES 载体键）⇒ 按函数求值的边界取本函数那一份，
+ * 平表保留「后者胜出」的兜底语义（无作用域信息的老路径不受影响）。
  */
 export function mockSeedsToAbsMocks(seeds: AbsMockSeeds): Record<string, Abs> {
   const out: Record<string, Abs> = { ...seeds.seedVars };
   for (const [name, fn] of Object.entries(seeds.seedFns)) {
-    out[name] = absFunction(fn.params, { body: fn.body, async: fn.async ?? false });
+    out[name] = absOfSeedFn(fn);
+  }
+  const overrides = mockScopeOverrides(seeds);
+  if (overrides) {
+    (out as unknown as Record<symbol, unknown>)[MOCK_SCOPE_OVERRIDES] = overrides;
   }
   return out;
 }
 
+/** seedFns 条目 → Abs 函数绑定（可构造性 facet 随条目走，Bug 482） */
+function absOfSeedFn(fn: AbsMockSeeds["seedFns"][string]): Abs {
+  return absFunction(
+    fn.params,
+    { body: fn.body, async: fn.async ?? false },
+    fn.ctor !== undefined ? { ctor: fn.ctor } : undefined,
+  );
+}
+
+/**
+ * 作用域覆盖表（Bug 455）：只收**被多个作用域同名声明**的 mock——
+ * 未冲突的 mock 全文件同一份（保持既有「文件级可见」语义），
+ * 冲突的按声明作用域各取各的。
+ */
+function mockScopeOverrides(
+  seeds: AbsMockSeeds,
+): Record<string, Record<string, Abs>> | undefined {
+  const scopes = seeds.scoped;
+  if (!scopes || scopes.length < 2) return undefined;
+  const scopesOfName = new Map<string, string[]>();
+  const note = (name: string, scope: string): void => {
+    const list = scopesOfName.get(name);
+    if (!list) {
+      scopesOfName.set(name, [scope]);
+      return;
+    }
+    // 同一作用域内重复声明同一名（两个 @nudo:mock getPort）不算冲突
+    if (!list.includes(scope)) list.push(scope);
+  };
+  for (const s of scopes) {
+    for (const name of Object.keys(s.seedVars)) note(name, s.scope);
+    for (const name of Object.keys(s.seedFns)) note(name, s.scope);
+  }
+  const conflicts = [...scopesOfName.entries()]
+    .filter(([, list]) => list.length > 1)
+    .map(([name]) => name);
+  if (conflicts.length === 0) return undefined;
+  const out: Record<string, Record<string, Abs>> = {};
+  for (const s of scopes) {
+    const own: Record<string, Abs> = {};
+    for (const name of conflicts) {
+      const v = s.seedVars[name] ?? (s.seedFns[name] ? absOfSeedFn(s.seedFns[name]) : undefined);
+      if (v) own[name] = v;
+    }
+    if (Object.keys(own).length > 0) out[s.scope] = own;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/** 取 inject.mocks 上挂的作用域覆盖表（core 的按函数求值边界用） */
+export function mockScopeOverridesOf(
+  mocks: Record<string, Abs> | undefined,
+): Record<string, Record<string, Abs>> | undefined {
+  if (!mocks) return undefined;
+  return (
+    mocks as unknown as Record<symbol, Record<string, Record<string, Abs>> | undefined>
+  )[MOCK_SCOPE_OVERRIDES];
+}
+
+/**
+ * 按函数作用域选 mock（同名 mock 各归各函数，Bug 455）。
+ * scope 无覆盖 ⇒ 原表（未冲突的 mock 仍是文件级可见）。
+ */
+export function mockScopeSelected(
+  mocks: Record<string, Abs>,
+  scope: string,
+): Record<string, Abs> {
+  const own = mockScopeOverridesOf(mocks)?.[scope];
+  return own ? { ...mocks, ...own } : mocks;
+}
+
 /** 从函数上的 @nudo:mock 指令收集 Abs seed */
 export function mockDirectivesToAbsSeeds(
-  functions: Array<{ directives: FunctionWithDirectives["directives"] }>,
+  functions: Array<{ directives: FunctionWithDirectives["directives"]; name?: string }>,
   opts?: {
     /** `@nudo:mock name from "path"` 相对解析基准（被分析文件） */
     fromFile?: string;
@@ -349,13 +519,31 @@ export function mockDirectivesToAbsSeeds(
   const seedVars: Record<string, Abs> = {};
   const seedFns: AbsMockSeeds["seedFns"] = {};
   const fromErrors: FromMockError[] = [];
+  // 作用域分组（Bug 455）：同名 mock 各归各声明函数——平表只保「后者胜出」
+  // 的兜底语义，作用域表保真（core 的按函数求值边界按 scope 取用）。
+  const scoped: AbsMockScopeSeeds[] = [];
   for (const fn of functions) {
+    const scope = typeof fn.name === "string" ? fn.name : "";
+    let scopeVars: Record<string, Abs> | undefined;
+    let scopeFns: AbsMockSeeds["seedFns"] | undefined;
+    const putVar = (name: string, abs: Abs): void => {
+      seedVars[name] = abs;
+      if (!scope) return;
+      scopeVars ??= {};
+      scopeVars[name] = abs;
+    };
+    const putFn = (name: string, seed: AbsMockSeeds["seedFns"][string]): void => {
+      seedFns[name] = seed;
+      if (!scope) return;
+      scopeFns ??= {};
+      scopeFns[name] = seed;
+    };
     for (const d of fn.directives) {
       if (d.kind !== "mock") continue;
       if (d.fromPath) {
         const r = loadFromMockBinding(d.name, d.fromPath, opts?.fromFile, opts?.loadModule);
         if (r.abs) {
-          seedVars[d.name] = r.abs;
+          putVar(d.name, r.abs);
         } else {
           fromErrors.push({
             name: d.name,
@@ -367,16 +555,18 @@ export function mockDirectivesToAbsSeeds(
       }
       if (d.arrowFn) {
         const body = d.arrowFn.body as Node;
-        seedFns[d.name] = {
+        putFn(d.name, {
           params: d.arrowFn.params,
           body,
           async: false,
           fingerprint: `fake=${d.arrowFn.params.join(",")}:${astContentKey(body)}`,
-        };
+          // Bug 482：内联 mock 也要带可构造性 facet（与 `from` 形态同口径）
+          ctor: inlineCtorFacet(d.expression),
+        });
       } else if (d.nudoMock) {
-        seedVars[d.name] = markMockConf(absFromMockHelper(d.nudoMock));
+        putVar(d.name, markMockConf(absFromMockHelper(d.nudoMock)));
       } else if (d.sinonExpr) {
-        seedVars[d.name] = markMockConf(absFromSinon(d.sinonExpr));
+        putVar(d.name, markMockConf(absFromSinon(d.sinonExpr)));
       } else if (d.expression) {
         // `= T.number` 等类型值 mock：此前只进 TypeValue env（applyMocks），
         // 求值引擎注入只吃 seed → 被当 unknown 全局（nudo:builtin-unknown）。
@@ -401,7 +591,7 @@ export function mockDirectivesToAbsSeeds(
               code: DIAG.mockInvalid,
             });
           } else {
-            seedVars[d.name] = abs;
+            putVar(d.name, abs);
           }
         } catch (e) {
           fromErrors.push({
@@ -415,8 +605,23 @@ export function mockDirectivesToAbsSeeds(
         }
       }
     }
+    if (scope && (scopeVars || scopeFns)) {
+      const prev = scoped.find((s) => s.scope === scope);
+      if (prev) {
+        // 同名作用域（同名嵌套函数）⇒ 合并，后声明者覆盖
+        Object.assign(prev.seedVars, scopeVars);
+        Object.assign(prev.seedFns, scopeFns);
+      } else {
+        scoped.push({ scope, seedVars: scopeVars ?? {}, seedFns: scopeFns ?? {} });
+      }
+    }
   }
-  return { seedVars, seedFns, ...(fromErrors.length > 0 ? { fromErrors } : {}) };
+  return {
+    seedVars,
+    seedFns,
+    ...(scoped.length > 0 ? { scoped } : {}),
+    ...(fromErrors.length > 0 ? { fromErrors } : {}),
+  };
 }
 
 /** 便捷入口：源码 → @nudo:mock 的 eval 注入 Abs 绑定（checkSource 注入管线用） */

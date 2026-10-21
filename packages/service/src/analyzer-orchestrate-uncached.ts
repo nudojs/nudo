@@ -12,9 +12,8 @@ import type { Node } from "@babel/types";
 import {
   createEnvironment,
   type Environment,
-  markPureFn,
   formatAbs,
-  formalParamsFromNodes,
+  bindingsOf,
   type Abs,
 } from "@nudojs/core";
 import {
@@ -32,17 +31,19 @@ import {
 import { findProjectConfig, interfaceConfig, analysisConfig } from "./evaluator/config.ts";
 import {
   mockDirectivesToAbsSeeds,
+  mockSeedsToAbsMocks,
 } from "./mock-abs.ts";
 import { defaultLoadModule } from "./load-module.ts";
 import { collectAbsBindingsFromGraph } from "./abs-modules-graph.ts";
 import {
   tryRunEval,
   composeEvalModules,
+  collectEnvGlobals,
   mockSeedFingerprint,
   setEnvHarvestConflictCollector,
   type EnvHarvestConflict,
 } from "./eval-run.ts";
-import { entryVariantForFile, entryVariantMessage, entryVariantSuggestion } from "./entry-variants.ts";
+import { entryVariantIssueForFile } from "./entry-variants.ts";
 import {
   fnAnalysisCacheGet,
   fnAnalysisCacheSet,
@@ -60,6 +61,7 @@ import type {
 } from "./analyzer-types.ts";
 import {
   locFromNode,
+  extractFormals,
   extractParamNames,
   resolveFunctionNode,
   fnNameLoc,
@@ -97,6 +99,16 @@ import {
   evaluateEntryCase,
   type UncachedCaseEnv,
 } from "./analyzer-orchestrate-uncached-cases.ts";
+
+/**
+ * 模块加载问题的**专用诊断码**（core 的 DIAG 注册表只读——越界上报，见报告）。
+ *
+ * 形态写成 `code: "nudo:…"` 字面量：docs 覆盖测试按 `code: "nudo:…"` 扫描
+ * 生产面 ⇒ 这两个新码的**文档锚点被强制**（core 侧补进 DIAG 注册表后，改用
+ * `DIAG.*` 也一样由注册表扫描强制）。
+ */
+const MODULE_UNREADABLE_CODE = { code: "nudo:module-unreadable" }.code;
+const MODULE_JSON_INVALID_CODE = { code: "nudo:json-invalid" }.code;
 
 export function analyzeFileUncached(
   filePath: string,
@@ -179,6 +191,16 @@ export function analyzeFileUncachedInner(
   // Environment 绑定 Abs（BindingInfo.abs）；nodeAbsMap 另走 absBinds
   const globalEnv = createEnvironment();
 
+  // @nudo:env 的 globals 进入分析环境：buildNodeTypeMap 按 env.lookup 给
+  // 标识符节点定类型——globalEnv 恒空 ⇒ env 全局在 IDE 面（hover /
+  // completion）无类型（#502）。口径与求值面一致：命名 env 同步可见；
+  // path 型 env 需先 preload（analyzeFileAsync 预载后同步面才可见），
+  // 看不到时保持"无信息"（fail-closed），不假装有类型。
+  const envGlobals = collectEnvGlobals(envNames);
+  for (const [envName, envValue] of Object.entries(envGlobals)) {
+    globalEnv.bind(envName, envValue);
+  }
+
   /** 求值引擎已报告的 method/property 名（避免双报） */
   const evalMemberDiagNames = new Set<string>();
   const evalMemberDiagSeen = new Set<string>();
@@ -243,11 +265,30 @@ export function analyzeFileUncachedInner(
   const canAbsModules = absModulesOk(source, envNames);
 
   /** B 已上报的模块加载问题种类（压 TypeValue 叠报） */
-  const evalModuleIssueKinds = new Set<"cycle" | "depth" | "missing" | "missing-export" | "exports-unresolved">();
+  const evalModuleIssueKinds = new Set<
+    | "cycle"
+    | "depth"
+    | "missing"
+    | "missing-export"
+    | "exports-unresolved"
+    | "unreadable"
+    | "json-invalid"
+  >();
 
   const pushBModuleIssues = (
     issues:
-      | Array<{ kind: "cycle" | "depth" | "missing" | "missing-export" | "exports-unresolved"; label: string; reason: string }>
+      | Array<{
+          kind:
+            | "cycle"
+            | "depth"
+            | "missing"
+            | "missing-export"
+            | "exports-unresolved"
+            | "unreadable"
+            | "json-invalid";
+          label: string;
+          reason: string;
+        }>
       | undefined,
   ) => {
     if (!issues) return;
@@ -262,10 +303,24 @@ export function analyzeFileUncachedInner(
               ? DIAG.missingExport
               : iss.kind === "exports-unresolved"
                 ? DIAG.exportsUnresolved
-                : DIAG.moduleMissing;
+                : iss.kind === "unreadable"
+                  ? // 「文件在但读不了」不得复用 module-missing（那是「不存在」）
+                    // ——事实相反的诊断码会让门禁判错（Bug 499）。
+                    MODULE_UNREADABLE_CODE
+                  : iss.kind === "json-invalid"
+                    ? // 「JSON 语法错」专用码（不是 module-missing——文件在、
+                      // 语法坏了；两种形态的处置不同）（Bug 457）。
+                      MODULE_JSON_INVALID_CODE
+                    : DIAG.moduleMissing;
       diagnostics.push({
         range: { start: { line: 1, column: 0 }, end: { line: 1, column: 0 } },
-        severity: iss.kind === "missing" || iss.kind === "missing-export" ? "error" : "warning",
+        severity:
+          iss.kind === "missing" ||
+          iss.kind === "missing-export" ||
+          iss.kind === "unreadable" ||
+          iss.kind === "json-invalid"
+            ? "error"
+            : "warning",
         message: iss.reason,
         code,
       });
@@ -282,7 +337,12 @@ export function analyzeFileUncachedInner(
     const isExpr = fe.code === DIAG.mockInvalid;
     diagnostics.push({
       range: { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } },
-      severity: "error",
+      // 表达式解析失败 = 指令被忽略（mock 不生效），按文档是 warning
+      // （docs/reference/diagnostics.md#nudo-mock-invalid、docs/guides/check.md
+      // 「nudo:mock-invalid | engine | warning」）；mock 文件缺失/加载失败
+      // （moduleMissing）才是 error。旧实现两条都报 error，与同一文件里
+      // validateMockDirectives 通道的 warning 自相矛盾（#460）。
+      severity: isExpr ? "warning" : "error",
       message: fe.message,
       code: fe.code ?? DIAG.moduleMissing,
       suggestions: isExpr
@@ -324,6 +384,16 @@ export function analyzeFileUncachedInner(
   // fail-closed：evalHosted 的 Abs bindings/nodeTypes 补齐已删
   // （collectAbsBindsAndNodes）——eval 侧的 nodeTypeMap/binding 通道是唯一源
 
+  // @nudo:pure 纯度标记：**在实例诞生地落**（eval-run 的 tryRunEval——
+  // 每次 runTranspiled 之后），不在这里补落。理由（Bug 462 + 分片 J 的
+  // fresh 语义）：memo 以**对象身份**为键（pureCallMemo / pureMemo：
+  // WeakMap<fnObj, argsKey, …>），标记必须与调用点解析到的函数值是**同一个
+  // 对象**。调用面（case / entry 求值）按用例新建**独立模块实例**
+  // （fresh 开关），这里取的 run 是 memo 里那份旧实例 ⇒ 标记落在被复用的
+  // 旧实例上，调用面永远命中不了。
+  //   - 顶层函数声明：转译面把顶层函数声明提升为 export（宿主 JS 函数对象）
+  //   - 函数表达式（const/let 绑定）：Abs fn 值（recordBinding 记录）
+
   // TypeValue evaluateProgram / applyMocks 已删除：非 eval-hosted 源不跑全程序求值；
   // 绑定/节点靠 Abs 宿主（collectAbsBindsAndNodes）。case 兜底 Abs-first。
 
@@ -359,6 +429,10 @@ export function analyzeFileUncachedInner(
     diagnostics,
     caseHints,
     callRecords,
+    // 外部调用点记录（--from 现场采集）：已固化函数的「二次 freeze」要靠它
+    // 看到新增的外部调用点（分片 H 的 synthesizeFrozenCallSiteCases 只认
+    // 外部记录——本地调用点行号会因插入 JSDoc 块漂移，纳入会产生重复见证）。
+    externalCallRecords,
   };
 
   // Abs 宿主补齐（T15）：B 未成功宿主时仍收集 Abs 绑定/节点表——
@@ -400,6 +474,18 @@ export function analyzeFileUncachedInner(
 
   const synthCandidates: { name: string; node: Node; analysis: FunctionAnalysis; assignedName?: string }[] = [];
 
+  // 顶层函数普查（noDeclaration 分类的唯一事实源）——指令路径与非指令路径
+  // 共用同一份结果：带 @nudo: 指令的函数此前走指令路径时**丢掉了**
+  // noDeclaration 分类（类方法作用域名 "C.m" 落到 dts 投影上 → 产出
+  // `export declare function C.m(...)` 这种非法 TS，#494）。
+  const topLevelFns = collectTopLevelFunctions(ast);
+  const noDeclByNode = new Map<Node, boolean>();
+  const noDeclByName = new Map<string, boolean>();
+  for (const t of topLevelFns) {
+    noDeclByNode.set(t.node, t.noDeclaration);
+    if (!noDeclByName.has(t.name)) noDeclByName.set(t.name, t.noDeclaration);
+  }
+
   // 函数级指纹：body-edit 时未引用的兄弟函数可命中缓存
   let fnFpMap: Map<string, { own: string; deps: string }> | undefined;
   try {
@@ -412,14 +498,14 @@ export function analyzeFileUncachedInner(
   // fnDepSeg（dep 内容指纹）已在模块图前一次算好：此处直接复用
 
   for (const fn of functions) {
-    const isPure = fn.directives.some((d) => d.kind === "pure");
     const skipDirective = fn.directives.find((d) => d.kind === "skip");
 
     const fnLoc = locFromNode(fn.node);
     const paramNames = extractParamNames(fn.node);
-    const formals = formalParamsFromNodes(
-      ((fn.node as { params?: unknown[] }).params ?? []) as never,
-    );
+    // Bug 479：形参表面（与 paramNames 同源 ⇒ 下标对齐）。`.ts` 源的形参
+    // 带**声明类型文本**（`FormalParam.tsType`）⇒ 产物面（dts 参数位）
+    // 据此保留源码里写下的类型。
+    const formals = extractFormals(fn.node);
     const analysis: FunctionAnalysis = {
       name: fn.name,
       loc: fnLoc,
@@ -427,6 +513,11 @@ export function analyzeFileUncachedInner(
       ...(formals.length > 0 ? { formals } : {}),
       cases: [],
     };
+    // noDeclaration 分类继承顶层函数普查（类方法 / CJS 绑定等无稳定导出名
+    // 的条目）——指令路径此前漏标，dts 投影会把作用域名 "C.m" 直接当函数名
+    // 产出非法 TS（#494）。节点身份优先，其次同名条目。
+    const noDecl = noDeclByNode.get(fn.node) ?? noDeclByName.get(fn.name);
+    if (noDecl) analysis.noDeclaration = true;
 
     // #176 skip×case 解耦：skip 只跳过**推断面**，不再 early-continue 整段——
     // @nudo:case 照常求值断言（运行时见证），用户不必在「声明返回面」与
@@ -515,15 +606,6 @@ export function analyzeFileUncachedInner(
       }
     }
 
-    // 纯度标记是求值语义面（调用可记忆化）：skip 函数保持旧口径不标记——
-    // skip 的产物只有声明面 + case 见证，不引入求值语义变化
-    if (isPure && !skipped) {
-      const fnVal = globalEnv.has(fn.name) ? globalEnv.lookup(fn.name) : null;
-      if (fnVal && typeof fnVal === "object") {
-        markPureFn(fnVal as object, fn.name);
-      }
-    }
-
     const sampleDirective = fn.directives.find((d) => d.kind === "sample");
     void sampleDirective; // TypeValue setSampleCount 已删
 
@@ -572,12 +654,21 @@ export function analyzeFileUncachedInner(
   // sites at all get a single entry evaluation with unknown parameters.
   const directiveFnNames = new Set(functions.map((f) => f.name));
   const directiveFnStmts = new Set(functions.map((f) => f.node));
-  for (const { name, node, stmt, noDeclaration, assignedName } of collectTopLevelFunctions(ast)) {
+  for (const { name, node, stmt, noDeclaration, assignedName } of topLevelFns) {
     if (directiveFnNames.has(name)) continue;
     // A statement carrying @nudo directives is already analyzed through the
     // directive path above (possibly under its "<anonymous>" name).
     if (directiveFnStmts.has(stmt)) continue;
-    const analysis: FunctionAnalysis = { name, loc: locFromNode(node), paramNames: extractParamNames(node), cases: [] };
+    const synthFormals = extractFormals(node);
+    const analysis: FunctionAnalysis = {
+      name,
+      loc: locFromNode(node),
+      paramNames: extractParamNames(node),
+      // Bug 479：合成路径的函数此前**不挂**形参表面 ⇒ 产物面（dts 参数位）
+      // 看不到 `.ts` 源的声明类型。形参表面与 paramNames 同源（下标对齐）。
+      ...(synthFormals.length > 0 ? { formals: synthFormals } : {}),
+      cases: [],
+    };
     if (noDeclaration) analysis.noDeclaration = true;
     functionResults.push(analysis);
     synthCandidates.push({ name, node, analysis, assignedName });
@@ -743,7 +834,9 @@ export function analyzeFileUncachedInner(
           start: { line: loc.line, column: loc.column },
           end: { line: loc.line, column: loc.column + loc.length },
         }
-      : { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } };
+      : // 定位不到 specifier ⇒ 锚在文件首行（1 基）——0 不是合法行号，
+        // 会顺着产物面流到 --json / GitLab / GHA（三面都要求 ≥ 1）。
+        { start: { line: 1, column: 0 }, end: { line: 1, column: 0 } };
     diagnostics.push({
       range,
       severity: "warning",
@@ -756,15 +849,23 @@ export function analyzeFileUncachedInner(
 
   // nudo:dual-entry：browser/node 双入口变体之一被分析 → 记录不跨文件注入，
   // 观察面只覆盖本入口（info，不是门禁；单入口包零误报）。
+  //
+  // 位置：**被分析入口文件的首行**（1 基行号 / 0 基列号）——与 check 通道
+  // （entry-variants 的 entryVariantIssueForFile）同一锚点。此前这里硬编码
+  // `line: 0 / column: 0` ⇒ `--json` 出 `"line": 0`、GitLab 出
+  // `"lines": {"begin": 0}`、GHA 注解行号 0（三面都要求 ≥ 1）。
   try {
-    const dual = entryVariantForFile(filePath);
+    const dual = entryVariantIssueForFile(filePath);
     if (dual) {
       diagnostics.push({
-        range: { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } },
-        severity: "info",
-        message: entryVariantMessage(dual),
-        code: DIAG.dualEntry,
-        suggestions: [entryVariantSuggestion()],
+        range: {
+          start: { line: dual.line, column: dual.column },
+          end: { line: dual.line, column: dual.column },
+        },
+        severity: dual.severity,
+        message: dual.message,
+        code: dual.code,
+        suggestions: [dual.suggestion],
       });
     }
   } catch {

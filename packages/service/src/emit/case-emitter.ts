@@ -12,6 +12,12 @@ import type { AnalysisResult } from "../analyzer.ts";
  * 原样 slice（不反转义），因此这里的"转义"策略是：选择一种引号包裹使值
  * 原样保留（含 `"` 的值用单引号包裹，反之亦然），无法原样保留的值一律
  * 返回 null（见 serializeStringLiteral）。
+ *
+ * 不变量 / Invariants:
+ * - 「已固化」判定按**见证身份（名字）逐条**比对：同名（同一调用点）不重复
+ *   写；名字不同的**新调用点**照写 ⇒ 二次 freeze 追加新见证，不再因
+ *   「函数上已有 case 指令」把新见证整条丢弃。
+ * - 手写 case（非 call@ 命名）不动（hand-written）。
  */
 
 /** 合成 case 的名字前缀；带此前缀的 @nudo:case 视为本模块生成物 */
@@ -259,12 +265,14 @@ function collectExistingCases(source: string): Map<string, CaseDirective[]> {
 /**
  * 把 analysis 中的合成 case（source === "callsite"）固化为源码指令：
  *
- * 1. 源码已有任何非 call@ 命名的 case → skip "hand-written"；
- *    已有 call@ case → skip "already-generated"。
+ * 1. 源码已有任何非 call@ 命名的 case → skip "hand-written"。
  * 2. fn.skipped / fn.noDeclaration / fn.entryOnly → 对应 skip。
  * 3. 逐 case 序列化；个别不可序列化的丢弃并在 skipped 记
  *    no-serializable-cases（函数整体仍写可序列化子集，全不可序列化才整函数跳过）。
- * 4. 写入位置：函数声明行正上方——已有 JSDoc 块则插到 `/**` 行后，
+ * 4. **已固化的见证按「见证身份（名字）」逐条比对**：同名（同一调用点）不
+ *    重复写，新调用点照写——二次 freeze 不再因「函数上已有 case 指令」
+ *    而静默丢弃新增调用点（本次固化全在 ⇒ skip "already-generated"）。
+ * 5. 写入位置：函数声明行正上方——已有 JSDoc 块则插到 `/**` 行后，
  *    无块则新建三行块。缩进取声明行的 loc.start.column（babel 0 基列）。
  *    多函数编辑按行号从下往上应用，避免行号漂移。
  */
@@ -282,10 +290,6 @@ export function insertGeneratedCaseDirectives(source: string, analysis: Analysis
       skipped.push({ fn: fn.name, reason: "hand-written" });
       continue;
     }
-    if (existingCases.length > 0) {
-      skipped.push({ fn: fn.name, reason: "already-generated" });
-      continue;
-    }
     if (fn.skipped) {
       skipped.push({ fn: fn.name, reason: "skipped" });
       continue;
@@ -300,21 +304,40 @@ export function insertGeneratedCaseDirectives(source: string, analysis: Analysis
     }
     const callsiteCases = fn.cases.filter((c) => c.source === "callsite");
     if (callsiteCases.length === 0) {
-      skipped.push({ fn: fn.name, reason: "no-serializable-cases", detail: "no callsite cases" });
+      skipped.push({
+        fn: fn.name,
+        reason: existingCases.length > 0 ? "already-generated" : "no-serializable-cases",
+        ...(existingCases.length > 0 ? {} : { detail: "no callsite cases" }),
+      });
       continue;
     }
+    // 已固化的见证身份（名字）：同一调用点不重复写；新调用点照写。
+    const existingNames = new Set(existingCases.map((c) => c.name));
     const built: string[] = [];
     const names: string[] = [];
+    /** 本轮因「不可序列化」被丢弃的见证数（逐 case 已记 skip） */
+    let dropped = 0;
     for (const c of callsiteCases) {
+      if (existingNames.has(c.name)) continue;
       const directive = buildCaseDirective(c.name, c.argAbs ?? []);
       if (directive === null) {
         skipped.push({ fn: fn.name, reason: "no-serializable-cases", detail: `case ${c.name} not serializable` });
+        dropped++;
       } else {
         built.push(directive);
         names.push(c.name);
       }
     }
-    if (built.length === 0) continue; // 全部不可序列化：上方已逐 case 记录 skip
+    if (built.length === 0) {
+      // 本轮无新见证可写：
+      // - 见证**已固化**（同名）⇒ skip "already-generated"；
+      // - 见证**不可序列化**⇒ 上面已逐 case 记 skip（不再叠一条
+      //   "already-generated"——那会把「写不出来」说成「早就写过了」）。
+      if (dropped === 0) {
+        skipped.push({ fn: fn.name, reason: "already-generated" });
+      }
+      continue;
+    }
     edits.push({ line: fn.loc.start.line, column: fn.loc.start.column, directives: built, fn: fn.name });
     written.push({ fn: fn.name, cases: names });
   }

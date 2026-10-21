@@ -27,7 +27,7 @@ import { transpile, transpileExpression, runtimeImportOf } from "./transpile.ts"
 import { ENV_SHADOW_SKIP_GLOBALS, HOST_INTRINSIC_SET } from "./transpile/intrinsics.ts";
 import { NudoUnsupportedError } from "./unsupported.ts";
 import { drainClassCollisions, beginClassEpoch } from "./class-registry.ts";
-import { registerLiveImportRefresh } from "./live-imports.ts";
+import { registerLiveImportRefresh, refreshLiveImports } from "./live-imports.ts";
 import { stripStaticExportDecls } from "./export-names.ts";
 import { errorTypeAbs, throwPayloadOf } from "./may-throw.ts";
 import { drainPromiseMicros } from "../builtins.ts";
@@ -169,11 +169,15 @@ function rewriteUserImports(js: string): string {
   // 多条 import 语句：注册闭包引用全部绑定（占位符在首个 import 位置，
   // 全部 rewrite 完成后替换为全量绑定——后续 import 的 `let` 文本位置在其后，
   // refresh 命中 TDZ 由 refreshLiveImports 容忍——绑定创建时读到的已是当前值）
+  // Bug 456：闭包存进**模块域变量**（`__nudoRefreshKeep`）——注册表持弱引用
+  // （live-imports.ts），闭包须由模块域强持有，否则模块域一死闭包即被回收，
+  // 跨轮复用的模块实例（会话缓存）其 import 绑定就永久停在快照上。
   if (registered) {
     js = js.replace(
       "__NUDO_LIVE_IMPORT_REGISTER__;",
-      `__nudoRegisterImportRefresh(() => { ${refreshBinds.join(" ")} });`,
+      `__nudoRegisterImportRefresh(__nudoRefreshKeep = () => { ${refreshBinds.join(" ")} });`,
     );
+    js = `let __nudoRefreshKeep;\n${js}`;
   }
   return js;
 }
@@ -1003,6 +1007,14 @@ export function callTranspiledExportFull(
     // 缓冲误归属到下一个无关 run。last-wins 解析语义不变（观测面修复）。
     beginClassEpoch();
     try {
+      // Bug 456：调用**入口**刷新 ESM live import 绑定。此前只在 $call 出口
+      // 刷新（调用返回后重读依赖当前导出值）⇒ 被调方在**本次调用内**读到的
+      // import 绑定是上一次调用留下的旧值。ESM import 环（a ⇄ b）里先求值的
+      // 一侧绑定到 unknown（对侧尚未求值），于是环内第一次调用恒得 unknown，
+      // 第二次才开始正确——同一导出按调用次序给出不同结果（原生恒定值）。
+      // 入口刷新 = 被调方读绑定前先对齐到依赖当前导出值（ESM live binding
+      // 语义）。refresh 闭包纯读不发起新调用（无重入）；注册表空时零开销。
+      refreshLiveImports();
       return callTranspiledExportFullInner(exports, name, args, opts);
     } finally {
       exitEvalCallBudgetSession();

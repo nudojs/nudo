@@ -321,9 +321,9 @@ function add(a, b) {
     expect(result.source).toBe(source);
   });
 
-  it("skips functions that already carry generated directives", () => {
+  it("does not rewrite an already-frozen witness of the same call site", () => {
     const source = `/**
- * @nudo:case "call@L2" (1)
+ * @nudo:case "call@L9" (1)
  */
 function add(a, b) {
   return a + b;
@@ -336,6 +336,25 @@ function add(a, b) {
     expect(result.changed).toBe(false);
     expect(result.skipped).toEqual([{ fn: "add", reason: "already-generated" }]);
     expect(result.source).toBe(source);
+  });
+
+  it("appends a newly discovered call site to an already-frozen function", () => {
+    // 二次 freeze：已固化函数**新增**的调用点要看得见（族 14 Bug 465）——
+    // 旧口径「函数已有 case 指令 ⇒ 整函数跳过」⇒ 新见证被静默丢弃。
+    const source = `/**
+ * @nudo:case "call@L2" (1)
+ */
+function add(a, b) {
+  return a + b;
+}
+`;
+    const result = insertGeneratedCaseDirectives(
+      source,
+      makeAnalysis([makeFn("add", 4, [{ name: "call@L9", args: [num()], source: "callsite" }])]),
+    );
+    expect(result.changed).toBe(true);
+    expect(result.written).toEqual([{ fn: "add", cases: ["call@L9"] }]);
+    expect(result.source).toContain('@nudo:case "call@L9"');
   });
 
   it("skips flagged functions: skipped / noDeclaration / entryOnly", () => {

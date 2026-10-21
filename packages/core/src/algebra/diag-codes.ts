@@ -77,6 +77,19 @@ export const DIAG = {
   moduleCycle: "nudo:module-cycle",
   moduleDepth: "nudo:module-depth",
   moduleMissing: "nudo:module-missing",
+  /**
+   * 模块**存在但不可读**（EACCES / EIO / EMFILE…）——与 moduleMissing
+   * （无此文件）严格区分（Bug 499）：文件就在那儿，只是读不了；折叠成
+   * 「不存在」会让诊断与事实相反。service 面（analyzer-orchestrate-uncached）
+   * 已用同一码。
+   */
+  moduleUnreadable: "nudo:module-unreadable",
+  /**
+   * `.json` 依赖**存在但 JSON 语法非法**（Bug 457）——与 moduleMissing
+   * （无此文件）、moduleUnreadable（读不了）都不同：文件在、也读得到，
+   * 只是内容不是合法 JSON ⇒ 取不到任何值。
+   */
+  jsonInvalid: "nudo:json-invalid",
   // --- 宿主面（LSP / CLI pathErrors 信封） ---
   internal: "nudo:internal",
   pathEmptyDir: "nudo:path-empty-dir",

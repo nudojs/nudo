@@ -137,6 +137,13 @@ export {
   type EvalBuiltinUnknown,
 } from "./eval-diagnostics.ts";
 
+/**
+ * case 期望值的**值级谓词判定**（与 service 分析面同口径）——
+ * 报告面（`nudo test`）必须复用它，否则「期望 `number().gt(0)`」这类
+ * 谓词期望在报告面恒假红（分析面判满足、报告面判不满足）。
+ */
+export { caseExpectedSatisfied } from "./analyzer-orchestrate-uncached-cases.ts";
+
 export {
   mockDirectivesToAbsSeeds,
   mockSeedsToAbsMocks,

@@ -73,6 +73,7 @@ import {
   normPath,
   type LoadDepsFingerprint,
 } from "./load-deps-fp.ts";
+import { guardLoadModule, type LoadReadFailure } from "./load-guard.ts";
 import { anyAbs } from "./abs.ts";
 import type { Abs } from "./abs.ts";
 import { abs } from "./abs.ts";
@@ -164,18 +165,35 @@ function checkSourceInScope(
   // Per-call loadModule cache: dep fingerprint + scan/refine share one read.
   // Identity for memo keys stays on the caller's raw loadModule — a fresh
   // wrapper each call would make loadModuleId() unique and defeat the memo.
+  //
+  // Bug 499：依赖**不可读**（EACCES / EIO / EMFILE…）时 loader 抛错——该
+  // 异常不得穿透到 `nudo check` 的整轮外面（stdout 0 字节、无任何报告）。
+  // 本闸把抛错降级为「该依赖不可用」（undefined）+ 一条结构化失败清单，
+  // 清单在报告里收口为一条明确诊断（口径同 service 侧 ModuleReadError 的
+  // 「不可读 ≠ 不存在」：错误轮的报告不得与真 miss 轮共享同一份结论）。
   let callOpts = opts;
+  /** 本轮读失败清单（同一路径只记一次） */
+  const loadReadFailures: LoadReadFailure[] = [];
+  const loadFailureKeys = new Set<string>();
   if (opts.loadModule && opts.fromFile) {
     const loadCache = new Map<string, string | undefined>();
     const raw = opts.loadModule;
     const fromFile = opts.fromFile;
     callOpts = {
       ...opts,
-      loadModule: (spec, from) => {
-        const k = `${from}\0${spec}`;
-        if (!loadCache.has(k)) loadCache.set(k, raw(spec, from));
-        return loadCache.get(k);
-      },
+      loadModule: guardLoadModule(
+        (spec, from) => {
+          const k = `${from}\0${spec}`;
+          if (!loadCache.has(k)) loadCache.set(k, raw(spec, from));
+          return loadCache.get(k);
+        },
+        (failure) => {
+          const key = `${failure.path}\0${failure.code}`;
+          if (loadFailureKeys.has(key)) return;
+          loadFailureKeys.add(key);
+          loadReadFailures.push(failure);
+        },
+      ),
     };
   }
 
@@ -207,6 +225,10 @@ function checkSourceInScope(
     // 读错误轮键不可信（#135）：错误轮报告（nudo:interface-load）与真 miss 轮
     // （干净）若共享 miss 键会互为跨次陈旧命中——不读也不写 memo
     !depsFp.readError &&
+    // Bug 499：本闸把读失败降级成 miss（指纹面看不到 readError）——但
+    // 「不可读」轮与「真不存在」轮的报告不同（前者多一条读失败诊断），
+    // 共用同一键会互为陈旧命中 ⇒ 读失败轮一律不碰 memo。
+    loadReadFailures.length === 0 &&
     !(sidecarFp?.startsWith("trunc:") ?? false);
   if (allowMemo) {
     memoKey = checkMemoKey(filePath, stable, opts, depsFp, sidecarFp);
@@ -271,8 +293,15 @@ function checkSourceInScope(
         ...takeRefineDiagsSince(refineSince),
         ...takeInterfaceDiagsSince(ifaceSince),
       ]);
-      if (diagIssues.length > 0) {
-        report.issues.push(...diagIssues);
+      // Bug 499：依赖不可读（EACCES/EIO/…）——降级为一条明确诊断，不再
+      // 让异常炸穿整轮 check。诊断码沿用既有的 nudo:module-missing（依赖
+      // 「不可用」），但消息写明**读失败**的事实与 errno（不得谎报
+      // 「文件不存在」）。严重级 error：依赖读不到 ⇒ 其类型面不可信，
+      // 门禁须 fail-closed。
+      const loadIssues = loadReadFailureIssues(loadReadFailures);
+      const allIssues = [...diagIssues, ...loadIssues];
+      if (allIssues.length > 0) {
+        report.issues.push(...allIssues);
         const errors = report.issues.filter((i) => i.severity === "error").length;
         const warnings = report.issues.filter((i) => i.severity === "warning").length;
         const infos = report.issues.filter((i) => i.severity === "info").length;
@@ -284,7 +313,10 @@ function checkSourceInScope(
           functions: report.summary.functions,
         };
       }
-      if (memoKey) checkMemoSet(memoKey, report, memoPaths);
+      // 读失败轮不写 memo（键与「真不存在」轮同形 ⇒ 会互为陈旧命中）
+      if (memoKey && loadReadFailures.length === 0) {
+        checkMemoSet(memoKey, report, memoPaths);
+      }
       return cloneCheckReport(report);
     } finally {
       setContractFaceResolver(prevFaceResolver);
@@ -292,6 +324,30 @@ function checkSourceInScope(
   } finally {
     setAbsTruncationCollector(prevTrunc);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Bug 499：依赖不可读（EACCES / EIO / EMFILE…）的诊断收口
+// ---------------------------------------------------------------------------
+
+/**
+ * 读失败清单 → 报告诊断。
+ *
+ * 诊断码用 `nudo:module-unreadable`（与 service 面同码）：「存在但不可读」
+ * 必须与 `nudo:module-missing`（「无此文件」）严格区分——文件就在那儿，只是
+ * 读不了，折叠成「不存在」会让诊断与事实相反（Bug 499）。消息带上路径 /
+ * errno / 原因。
+ *
+ * 严重级 error：依赖读不到 ⇒ 其类型面不可信，门禁须 fail-closed。
+ */
+function loadReadFailureIssues(failures: LoadReadFailure[]): CheckIssue[] {
+  return failures.map((f) => ({
+    severity: "error" as const,
+    code: DIAG.moduleUnreadable,
+    message: `cannot read module '${f.path}' (${f.code}): ${f.message}`,
+    suggestion:
+      "fix the file permissions (or the module path) — the dependency is present but unreadable, so its types are unknown",
+  }));
 }
 
 // ---------------------------------------------------------------------------

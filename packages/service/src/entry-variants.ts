@@ -304,6 +304,21 @@ export type EntryVariantIssue = {
   column: number;
 };
 
+/**
+ * dual-entry 信号的锚点：**被分析入口文件的首行**。
+ *
+ * 该信号是**包级事实**（package.json 声明了 browser / node 两个面），观察单位是
+ * 「这个入口文件整体只覆盖了一面」⇒ 落在文件首行（1 基行号 / 0 基列号，与
+ * `CheckIssue` 的 Babel 口径一致：`domainIssuesFromDiagnostics` 同形）。
+ *
+ * 不再用 `line: 0` 占位：0 不是合法行号，会顺着产物面流到
+ * `nudo check --json`（`"line": 0`）、GitLab Code Quality
+ * （`lines.begin: 0`）与 GHA 注解（`line=0`）——三面都要求行号 ≥ 1。
+ * 下游已有 `i.line ?? 1` 的文件级兜底，首行与之同口径，不需要下游再换算。
+ */
+const DUAL_ENTRY_ANCHOR_LINE = 1;
+const DUAL_ENTRY_ANCHOR_COLUMN = 0;
+
 export function entryVariantIssueForFile(filePath: string): EntryVariantIssue | null {
   const info = entryVariantForFile(filePath);
   if (!info) return null;
@@ -312,7 +327,7 @@ export function entryVariantIssueForFile(filePath: string): EntryVariantIssue | 
     code: DIAG.dualEntry,
     message: entryVariantMessage(info),
     suggestion: entryVariantSuggestion(),
-    line: 0,
-    column: 0,
+    line: DUAL_ENTRY_ANCHOR_LINE,
+    column: DUAL_ENTRY_ANCHOR_COLUMN,
   };
 }

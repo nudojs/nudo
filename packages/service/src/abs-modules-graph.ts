@@ -25,7 +25,8 @@ import type { Node } from "@babel/types";
 import { bareSpecToAbsModules } from "@nudojs/harvester";
 import { hashSource, stablePathKey, clearLiveImportRefreshers } from "@nudojs/core/internal";
 import { resolveNpmJsEntryDetailed } from "./evaluator/resolve-npm.ts";
-import { moduleResolveCandidates } from "./load-module.ts";
+import { moduleResolveCandidates, loadModuleOutcome, type ModuleLoadOutcome } from "./load-module.ts";
+import { resolveEvalInjection } from "./eval-injection.ts";
 import { BoundedLruMap } from "./lru-map.ts";
 
 /** seedFns → Abs fn（本地副本，避免 mock-abs ↔ 本模块循环依赖） */
@@ -45,33 +46,28 @@ function seedFnsToMocks(
 
 export type AbsLoadModule = (spec: string, fromFile: string) => string | undefined;
 
-/** 相对/绝对说明符 → 首个可读候选（路径 + 内容一次读出）；无命中 undefined */
-function readFirstRel(
-  spec: string,
-  fromFile: string,
-): { path: string; content: string } | undefined {
-  if (!spec.startsWith(".") && !spec.startsWith("/")) return undefined;
-  try {
-    for (const cand of moduleResolveCandidates(spec, fromFile)) {
-      try {
-        return { path: cand, content: readFileSync(cand, "utf-8") };
-      } catch {
-        /* next */
-      }
-    }
-    return undefined;
-  } catch {
-    return undefined;
-  }
+/**
+ * 相对/绝对说明符 → 首个**存在的**候选（三态结果，与 load-module.ts 同口径）。
+ *
+ * 三态：`ok`（路径 + 内容）/ `missing`（无此文件）/ `unreadable`（文件在，
+ * 但读不了——EACCES/EIO/…）。旧口径把 `readFileSync` 的**所有**错误都
+ * catch 掉 ⇒ EACCES 被说成「文件不存在」——诊断与事实相反（文件就在那儿，
+ * 只是读不了）。现在与 `loadModuleOutcome` 同一口径（Bug 499）。
+ */
+function readFirstRel(spec: string, fromFile: string): ModuleLoadOutcome {
+  return loadModuleOutcome(spec, fromFile);
 }
 
 /** 相对说明符 → 源码（与 defaultLoadModule 同一扩展名/入口候选表） */
 export function defaultAbsLoadModule(spec: string, fromFile: string): string | undefined {
-  return readFirstRel(spec, fromFile)?.content;
+  const r = readFirstRel(spec, fromFile);
+  return r.kind === "ok" ? r.content : undefined;
 }
 
 function resolveRel(spec: string, fromFile: string): string | null {
-  return readFirstRel(spec, fromFile)?.path ?? null;
+  const r = readFirstRel(spec, fromFile);
+  // unreadable 也给路径：调用方据此读盘并把「不可读」报成不可读（不是缺失）
+  return r.kind === "missing" ? null : r.path;
 }
 
 function importSpecs(source: string): string[] {
@@ -194,7 +190,14 @@ function buildModulesForFile(
 
 /** 模块加载守卫：与 TypeValue loadModuleEnv 口径对齐，供 analyzer 映射诊断 */
 export type AbsModuleLoadIssue = {
-  kind: "cycle" | "depth" | "missing" | "missing-export" | "exports-unresolved";
+  kind:
+    | "cycle"
+    | "depth"
+    | "missing"
+    | "missing-export"
+    | "exports-unresolved"
+    | "unreadable"
+    | "json-invalid";
   /** 诊断定位用标签（文件 basename 或 require/import 说明符） */
   label: string;
   reason: string;
@@ -293,6 +296,10 @@ export function getAbsModuleCacheSize(): number {
 
 export function clearAbsModuleCache(): void {
   absModuleCache.clear();
+  // 模块缓存全清 = 依赖模块实例（及其 run 表）不再可达 → 其 live import
+  // refresh 闭包无须再刷新，显式清注册表（core 侧持弱引用，本就会随模块域
+  // 回收；此处让下一轮从空开始）。
+  clearLiveImportRefreshers();
 }
 
 /** 键身份统一 stablePathKey（FIX-RESIDUAL-4）：跨盘符形态删除/命中一致 */
@@ -346,42 +353,191 @@ function nullAbs(): Abs {
   return abs({ k: "unknown" }, { op: "lit", value: null }, undefined, "exact");
 }
 
+/** JSON 依赖（`.json` 扩展名）判定——按解析后的绝对路径（spec 可无扩展名） */
+function isJsonModulePath(absPath: string): boolean {
+  return /\.json$/i.test(absPath);
+}
+
+/** JSON 解析错误文案（供诊断；解析失败返回 undefined） */
+function jsonParseErrorOf(text: string): string {
+  try {
+    JSON.parse(text);
+    return "";
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
+}
+
+/**
+ * JSON 依赖 → 导出表：default 槽 = 整个文档（原生 require 返回它本身；
+ * ESM `import d from "./x.json"` 的 default 也是它）。**不产具名导出**——
+ * 原生 JSON 模块没有具名导出（`import { a } from "./x.json"` 原生报错），
+ * 给了具名导出反而会把原生报错变成引擎「假绿」。
+ * cjsMain：require 返回 default 本身（与原生 require 一致）。
+ * 文档值 → Abs 借求值引擎的 default 导出通道（与 JS 模块同一套值语义）。
+ * 解析/求值失败 → undefined（调用方发诊断，不静默丢值）。
+ */
+function jsonModuleExports(text: string): AbsModuleExports | undefined {
+  let doc: unknown;
+  try {
+    doc = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  const run = tryRunTranspiled(`export default (${JSON.stringify(doc)});`, { mode: "analyze" });
+  const def = run?.["default"];
+  if (!isAbsVal(def)) return undefined;
+  return { named: {}, default: def, evaluated: true, cjsMain: true };
+}
+
 type ParamNodeLike = {
   type?: string;
   name?: string;
-  argument?: { type?: string; name?: string };
+  /** AssignmentPattern 的左值（`b = 2` 的真名在 left，不在节点自身） */
+  left?: { type?: string; name?: string } | null;
+  argument?: { type?: string; name?: string } | null;
 };
 
+/** 形参展示名（Babel 形参节点 → 名字）；未知形态落 `arg{i}` 兜底 */
 function paramNameOf(p: ParamNodeLike, i: number): string {
   if (p.type === "Identifier" && p.name) return p.name;
+  // 默认值形参 `b = 2` 是 AssignmentPattern——真名在 left（与 core
+  // formalParamsFromNodes 同口径）。此前不认该形态 ⇒ 带默认值的形参名字
+  // 整个丢失，弹窗里显示成 `arg1`（假名）。
+  if (p.type === "AssignmentPattern" && p.left?.type === "Identifier" && p.left.name) {
+    return p.left.name;
+  }
   if (p.type === "RestElement" && p.argument?.type === "Identifier" && p.argument.name) {
     return `...${p.argument.name}`;
   }
   return `arg${i}`;
 }
 
+/** 函数形态节点（声明 / 表达式 / 箭头）的声明形参表；非函数形态 → undefined */
+function declaredParams(node: {
+  type?: string;
+  params?: ParamNodeLike[];
+} | null | undefined): string[] | undefined {
+  if (!node) return undefined;
+  if (
+    node.type !== "FunctionDeclaration" &&
+    node.type !== "FunctionExpression" &&
+    node.type !== "ArrowFunctionExpression"
+  ) {
+    return undefined;
+  }
+  if (!node.params) return undefined;
+  return node.params.map(paramNameOf);
+}
+
+/** 成员表达式节点（`exports.X` / `module.exports.X` 的左值） */
+type MemberNodeLike = {
+  type?: string;
+  name?: string;
+  object?: MemberNodeLike | null;
+  property?: MemberNodeLike | null;
+  computed?: boolean;
+};
+
+/** CJS 导出键：`exports.X` / `module.exports.X` → "X"；其它形态 → undefined */
+function cjsExportKey(left: MemberNodeLike | null | undefined): string | undefined {
+  if (!left || left.type !== "MemberExpression" || left.computed) return undefined;
+  const obj = left.object;
+  const prop = left.property;
+  if (!obj || !prop || prop.type !== "Identifier" || !prop.name) return undefined;
+  if (obj.type === "Identifier" && obj.name === "exports") return prop.name;
+  if (
+    obj.type === "MemberExpression" &&
+    !obj.computed &&
+    obj.object?.type === "Identifier" &&
+    obj.object.name === "module" &&
+    obj.property?.type === "Identifier" &&
+    obj.property.name === "exports"
+  ) {
+    return prop.name;
+  }
+  return undefined;
+}
+
+/** 顶层语句的最小结构（只取形参表需要的字段） */
+type StmtNodeLike = {
+  type?: string;
+  /** 标识符节点的名字（`export default <本地标识符>` 用） */
+  name?: string;
+  id?: { name?: string } | null;
+  params?: ParamNodeLike[];
+  declaration?: StmtNodeLike | null;
+  declarations?: Array<{ id?: { name?: string } | null; init?: StmtNodeLike | null }>;
+  specifiers?: Array<{
+    type?: string;
+    local?: { name?: string; value?: string } | null;
+    exported?: { name?: string; value?: string } | null;
+  }>;
+  source?: { value?: unknown } | null;
+  expression?: {
+    type?: string;
+    left?: MemberNodeLike | null;
+    right?: StmtNodeLike | null;
+  } | null;
+};
+
 /**
- * 顶层函数声明/导出的形参表（evaluator JS 函数 → Abs fn 桥接用）：
- * key 为「导出名」——named 用声明名、default 用 "default"。
+ * 顶层函数声明/导出的**声明形参**表（evaluator JS 函数 → Abs fn 桥接用）：
+ * key 为「导出名」——named 用声明名、default 用 "default"；value = 源码里
+ * 声明了几个形参 + 各自的名字。
+ *
+ * 声明口径（不是运行期 `Function.length`——后者按规范**不计**带默认值 / rest
+ * 的形参，用它当声明形参数会把那几段整个吞掉）。
+ * 覆盖形态：裸函数声明 / `export function`（ExportNamedDeclaration 包着的
+ * FunctionDeclaration）/ `export default function|箭头` / `export const f = 箭头` /
+ * `export { local as exported }` 别名 / CJS `exports.X = function`。
  */
 function topLevelFnParams(file: Node): Map<string, string[]> {
   const out = new Map<string, string[]>();
-  const body = ((file as { program?: { body?: unknown[] } }).program?.body ?? []) as Array<{
-    type?: string;
-    id?: { name: string } | null;
-    params?: ParamNodeLike[];
-    declaration?: { type?: string; id?: { name: string } | null; params?: ParamNodeLike[] } | null;
-  }>;
+  const body = ((file as { program?: { body?: unknown[] } }).program?.body ?? []) as StmtNodeLike[];
+
+  // ① 本地声明 → 声明形参（函数声明 / const 绑定的函数表达式 / CJS 赋值导出）
+  const local = new Map<string, string[]>();
+  const record = (name: string | undefined, params: string[] | undefined): void => {
+    if (name && params) local.set(name, params);
+  };
   for (const stmt of body) {
-    if (stmt.type === "FunctionDeclaration" && stmt.id && stmt.params) {
-      out.set(stmt.id.name, stmt.params.map(paramNameOf));
+    const decl = stmt.declaration;
+    if (stmt.type === "FunctionDeclaration") record(stmt.id?.name, declaredParams(stmt));
+    if (stmt.type === "ExportNamedDeclaration") {
+      if (decl?.type === "FunctionDeclaration") record(decl.id?.name, declaredParams(decl));
+      if (decl?.type === "VariableDeclaration") {
+        for (const d of decl.declarations ?? []) record(d.id?.name, declaredParams(d.init));
+      }
+    }
+    if (stmt.type === "ExportDefaultDeclaration") record("default", declaredParams(decl));
+    if (stmt.type === "VariableDeclaration") {
+      for (const d of stmt.declarations ?? []) record(d.id?.name, declaredParams(d.init));
+    }
+    if (stmt.type === "ExpressionStatement" && stmt.expression?.type === "AssignmentExpression") {
+      record(cjsExportKey(stmt.expression.left), declaredParams(stmt.expression.right));
+    }
+  }
+  for (const [name, params] of local) out.set(name, params);
+
+  // ② 导出名 → 声明形参：别名导出（`export { local as exported }`）与
+  //    `export default <本地标识符>`——两者的导出值都是本地声明的函数。
+  for (const stmt of body) {
+    if (stmt.type === "ExportNamedDeclaration" && !stmt.source) {
+      for (const sp of stmt.specifiers ?? []) {
+        if (sp.type !== "ExportSpecifier") continue;
+        const exported = sp.exported?.name ?? sp.exported?.value;
+        const localName = sp.local?.name;
+        if (!exported || !localName) continue;
+        const params = local.get(localName);
+        if (params) out.set(exported, params);
+      }
     }
     if (stmt.type === "ExportDefaultDeclaration") {
-      const d = stmt.declaration as
-        | { type?: string; id?: { name: string } | null; params?: ParamNodeLike[] }
-        | null;
-      if (d && (d.type === "FunctionDeclaration" || d.type === "ArrowFunctionExpression") && d.params) {
-        out.set("default", d.params.map(paramNameOf));
+      const d = stmt.declaration;
+      if (d?.type === "Identifier" && d.name) {
+        const params = local.get(d.name);
+        if (params) out.set("default", params);
       }
     }
   }
@@ -419,9 +575,12 @@ export function evalExportsToModuleExports(
     if (typeof v === "function") {
       const hit = fnBridgeMemo.get(v as Function);
       if (hit) return hit;
-      const params =
-        paramTable.get(k) ??
-        Array.from({ length: (v as { length?: number }).length ?? 0 }, (_, i) => `arg${i}`);
+      // 声明形参表命中 → 用源码里的真名与真个数（AST 口径）。
+      // 未命中（本模块 AST 里没有该导出的声明）→ **不合成假名**（`arg0`/`arg1`
+      // 不是源码里的名字）也**不用运行期 `Function.length`**（按规范不计带
+      // 默认值 / rest 的形参 ⇒ 声明形参数被整段吞掉）：交白（无声明形参
+      // 信息），类型面按设计口径回落 any。
+      const params = paramTable.get(k) ?? [];
       // Bug 9：求值模块的宿主函数导出（函数声明产物）——generator/async 不可
       // new，普通声明可 new。可构造性 facet 进 shape（$new 校验）。
       const ctorFacet = hostFnCtorFacet(v as Function);
@@ -559,9 +718,12 @@ export function evalAbsModuleGraph(
   entryFile: string,
   opts: AbsGraphOptions = {},
 ): AbsModuleGraphResult {
-  // Bug ②：每轮模块图求值入口清空 live import 刷新注册表——上一轮闭包只指向
-  // 已死模块作用域（语义无害但滞留膨胀）；本轮各模块求值时重新注册。
-  clearLiveImportRefreshers();
+  // Bug ② / Bug 456：**不再**每轮清空 live import 刷新注册表。模块实例会被
+  // 会话缓存（abs-module 缓存 / evaluator run 缓存）跨轮复用，其 refresh 闭包
+  // 仍须活着——清了它，跨模块 import 绑定就永久停在绑定时刻的快照：ESM import
+  // 环里先求值的一侧绑定到 unknown 且此后无人再刷新，环内调用恒得 unknown。
+  // 注册表现按「模块域存活」自清（core live-imports.ts 持弱引用；闭包由模块域
+  // 变量强持有）——显式清理由 clearAbsModuleCache（模块缓存全清）承担。
   const load = opts.loadModule ?? defaultAbsLoadModule;
   // 命中校验分叉开关：opts.loadModule 存在（custom loader，LSP buffer 等）时
   // 条目自身按 loader 内容复核；缺省（默认 loader）保持 stat 快路径（见
@@ -694,15 +856,59 @@ export function evalAbsModuleGraph(
     let source: string | undefined = preloaded;
     const viaLoadPair: { spec: string; fromFile: string } = { spec, fromFile };
     if (source === undefined) {
-      const loaded = load(spec, fromFile);
-      if (loaded !== undefined) source = loaded;
+      // loader 抛错 = 真实 fs 故障（EACCES/EIO/…）：宿主 loader（service 的
+      // defaultLoadModule）按契约抛 ModuleReadError ⇒ 这里接住并报成
+      // 「不可读」——**不得**让异常穿透整轮（CLI 会整轮崩、stdout 0 字节），
+      // 也不得折叠成「文件不存在」（Bug 499）。
+      try {
+        const loaded = load(spec, fromFile);
+        if (loaded !== undefined) source = loaded;
+      } catch (err) {
+        // loader 抛错：**只降级 errno 级读故障**（EACCES / EIO / EMFILE /
+        // ESTALE…）——那是环境问题（文件在，读不了）⇒ 报成「不可读」，
+        // 既不折叠成「文件不存在」，也不让异常穿透整轮（CLI 会整轮崩、
+        // stdout 0 字节）。
+        // 其它异常（loader 内部错误 / 编程错误 / 宿主异常）**保持 fail-loud**
+        // （原样上抛）——吞掉会掩盖真实缺陷（既有 fail-closed 契约：图装载
+        // 失败必须以 graphError 可见，而不是静默空 modules）。
+        const e = err as { code?: string; message?: string } | undefined;
+        const code = e?.code;
+        if (typeof code !== "string" || !/^E[A-Z0-9_]+$/.test(code)) throw err;
+        pushIssue(
+          "unreadable",
+          spec,
+          // 措辞与 load-module.ts 的 ModuleReadError / core 的 check 面同源：
+          // 「cannot read module '<path>' (<errno>): …」——「读不到」≠
+          // 「不存在」（说成 not found 与事实相反：用户会去建一个已存在的
+          // 依赖文件）。
+          `cannot read module '${absPath}' (${code}): ${e?.message ?? String(err)}`,
+        );
+        loading.pop();
+        return placeholder;
+      }
     }
     if (source === undefined) {
       // A3：裸包入口用已解析的绝对路径读源（load 只认 import 说明符）；
       // preloaded = 命中校验已取过的 loader 内容，复用不再二次调用
       try {
         source = readFileSync(absPath, "utf-8");
-      } catch {
+      } catch (err) {
+        // 「不可读」与「不存在」必须分开（Bug 499）：EACCES 等真实 fs 故障
+        // 说明文件在、只是读不了——报成「Module file not found」与事实相反。
+        const code = (err as { code?: string } | undefined)?.code;
+        if (code !== undefined && code !== "ENOENT") {
+          pushIssue(
+            "unreadable",
+            spec,
+            // 措辞与 load-module.ts 的 ModuleReadError / core 的 check 面同源：
+            // 「cannot read module '<path>' (<errno>): …」——「读不到」≠
+            // 「不存在」（说成 not found 与事实相反：用户会去建一个已存在的
+            // 依赖文件）。
+            `cannot read module '${absPath}' (${code}): dependency '${spec}' (from ${moduleLabel(fromFile)}) is unreadable`,
+          );
+          loading.pop();
+          return placeholder;
+        }
         source = undefined;
       }
     }
@@ -733,16 +939,43 @@ export function evalAbsModuleGraph(
       localDeps,
     );
     let exports: AbsModuleExports;
-    const evalRun = tryRunTranspiled(source, { mode: "analyze", modules });
-    if (evalRun) {
-      // P1：evaluator 优先——转译执行收集导出（specifier/re-export/star/default
-      // 全量进 __nudoExport 动态表）；unsupported/internal 回落见
-      // tryRunTranspiled（回落事件入收集器）。
-      exports = evalExportsToModuleExports(evalRun, parse(source), `eval:${absPath}`);
+    if (isJsonModulePath(absPath)) {
+      // JSON 依赖：不是 JS 源——按 JSON 解析成导出表。原生语义（Node）：
+      //   - `require("./data.json")` → 整个文档（default 槽 = 文档本身）
+      //   - `import d from "./data.json"` → default 槽 = 整个文档
+      //   - JSON 模块**没有具名导出**（`import { a } from "./data.json"` 原生报错）
+      // 此前一律当 JS 转译：`{"a": 1}` 不是合法 JS 表达式语句（Babel
+      // "Missing semicolon"）→ fail-closed 空导出表且**零诊断** ⇒ 值被静默丢弃。
+      const jsonExports = jsonModuleExports(source);
+      if (jsonExports) {
+        exports = jsonExports;
+      } else {
+        // 「JSON 语法错」是**专用**诊断码（不是 module-missing——文件在、
+        // 语法坏了，与「文件不存在」是两种形态）（Bug 457）。
+        pushIssue(
+          "json-invalid",
+          spec,
+          `JSON module '${spec}' (from ${moduleLabel(fromFile)}) is not valid JSON: ${jsonParseErrorOf(source)}`,
+        );
+        exports = { named: {} };
+      }
     } else {
-      // fail-closed：B 失败 = 无信息（空导出表）——旧 ast-eval 兜底
-      // （evalProgramAbs + collectAbsExports）已删，无第二求值路径。
-      exports = { named: {} };
+      // 依赖模块的行内指令注入（Bug 473）：按**本依赖的源码**取注入表——
+      // 此前只有 root source 走 collectEvalReplacements，依赖模块里的
+      // @nudo:as / @nudo:replace 被静默忽略 ⇒ 同一文件「作为根」与
+      // 「作为依赖」给出不同类型。
+      const inj = resolveEvalInjection(source);
+      const evalRun = tryRunTranspiled(source, { mode: "analyze", modules, ...inj });
+      if (evalRun) {
+        // P1：evaluator 优先——转译执行收集导出（specifier/re-export/star/default
+        // 全量进 __nudoExport 动态表）；unsupported/internal 回落见
+        // tryRunTranspiled（回落事件入收集器）。
+        exports = evalExportsToModuleExports(evalRun, parse(source), `eval:${absPath}`);
+      } else {
+        // fail-closed：B 失败 = 无信息（空导出表）——旧 ast-eval 兜底
+        // （evalProgramAbs + collectAbsExports）已删，无第二求值路径。
+        exports = { named: {} };
+      }
     }
     // named import / re-export 缺名（仅 evaluated 表；fail-closed 空表不报）
     for (const iss of collectMissingExportIssues(source, modules, absPath)) {
@@ -923,10 +1156,14 @@ export function collectAbsBindingsFromGraph(
   try {
     const { modules } = evalAbsModuleGraph(source, filePath, opts);
     const mocks = seedFnsToMocks(opts.seedVars ?? {}, opts.seedFns ?? {});
+    // 根侧同样按源码取注入表（Bug 473）：与依赖侧同源 ⇒ 同一文件作为根 /
+    // 作为依赖得到同一类型。
+    const inj = resolveEvalInjection(source);
     const run = tryRunTranspiled(source, {
       mode: "analyze",
       modules,
       envGlobals: Object.keys(mocks).length ? mocks : undefined,
+      ...inj,
     });
     if (!run) return out;
     // 顶层 const/let（$recordBinding 通道，Abs 值）

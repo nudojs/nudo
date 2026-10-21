@@ -5,6 +5,8 @@
 import { loadModuleDepsFingerprint, hashSource, stableAnalyzeKeySource, stablePathKey } from "@nudojs/core/internal";
 import { defaultLoadModule } from "./load-module.ts";
 import { absStructureKey, type CallRecord } from "./evaluator/call-record.ts";
+import { pathEnvContentFingerprint } from "./eval-run.ts";
+import { dirname } from "node:path";
 import type {
   AnalysisResult,
   AnalyzeLoadModule,
@@ -76,7 +78,17 @@ export function analysisFileCacheKey(
   // than the default disk loader — distinguish in the memo key
   const lm = loadModule !== undefined && loadModule !== defaultLoadModule ? "lm1" : "lm0";
   // project nudo.env 变更必须 miss（fn 级键已有 envNames，文件级对齐）
-  const envSeg = projectEnvNames && projectEnvNames.length > 0 ? projectEnvNames.join(",") : "-";
+  // env 名只是维度之一：项目级 **path env 的文件内容**也必须进键
+  // （同名 env 文件改了内容 → 类型面必须跟着变；Bug 501）。
+  // 文件级 `/// @nudo:env` 的同款维度已由 depSeg 覆盖（load-deps-fp 采
+  // 路径 env 内容）——此处只补项目级。
+  const envSeg =
+    projectEnvNames && projectEnvNames.length > 0
+      ? `${projectEnvNames.join(",")}#${pathEnvContentFingerprint(
+          projectEnvNames,
+          dirname(filePath),
+        )}`
+      : "-";
   const abSeg = autoBind === false ? "ab0" : autoBind === true ? "ab1" : "ab?";
   // dep 内容变更（入口 source 未变）也必须 miss——default loader 同样进指纹。
   // 指纹失败/truncated/readerr → 禁用共享命中（fail-closed，见 noCache）。

@@ -7,6 +7,7 @@ import { resolve, dirname, relative } from "node:path";
 import type { Command } from "commander";
 import { analyzeFileAsync, type CallRecord } from "@nudojs/service";
 import { paintOne } from "../ui.ts";
+import { projectConfigShapeIssue } from "../config-shape.ts";
 import { budgetAttributionSegs, DIAG, type AbsBudgetStats } from "@nudojs/core/internal";
 import {
   collectExternalRecords,
@@ -34,6 +35,12 @@ type HealthReport = {
   budget?: AbsBudgetStats;
   /** D6-A：evaluator internal 回落计数（指标暴露，非 fail 条件） */
   internalFallbacks?: number;
+  /**
+   * package.json#nudo 键形状问题（468/936）：`nudo` 键存在但值不是对象 /
+   * 是假值 ⇒ 本包按「无 nudo 配置」处理（不继承祖先配置）。**报告面可见**
+   * ——不能只靠 stderr 一行（用户不知道自己写错了）。
+   */
+  configShape?: { pkgPath: string; message: string };
   error?: string;
 };
 
@@ -93,6 +100,11 @@ async function healthFile(filePath: string, records?: CallRecord[]): Promise<Hea
     if (drift.error) report.error = drift.error;
   } catch (err) {
     report.error = (err as Error).message;
+  }
+  // 配置形状（468/936）：与分析成败无关——配置写坏了也要看得见。
+  const shape = projectConfigShapeIssue(dirname(filePath));
+  if (shape) {
+    report.configShape = { pkgPath: shape.pkgPath, message: shape.message };
   }
   return report;
 }
@@ -195,6 +207,7 @@ async function runHealth(paths: string[], opts: { from?: string[]; json?: boolea
             ...(r.drift ? { drift: r.drift } : {}),
             ...(r.interfaceDrift ? { interfaceDrift: r.interfaceDrift } : {}),
             ...(r.internalFallbacks !== undefined ? { internal_fallbacks: r.internalFallbacks } : {}),
+            ...(r.configShape ? { configShape: r.configShape } : {}),
             ...(r.error ? { error: r.error } : {}),
           })),
           summary: {
@@ -232,6 +245,12 @@ async function runHealth(paths: string[], opts: { from?: string[]; json?: boolea
       }
       const entryInfo = r.entryOnly > 0 ? `, ${r.entryOnly} entry-only` : "";
       console.log(`  · ${r.functions} function(s)${entryInfo}`);
+      if (r.configShape) {
+        // 配置形状问题（468/936）——报告面可见：配置写坏了（`"nudo": true`
+        // / 假值键）本包按「无 nudo 配置」处理（不继承祖先配置），用户必须
+        // 知道，否则会以为祖先配置生效了。
+        console.log(paintOne(`  ⚠ config: ${r.configShape.message}`));
+      }
       if (r.uncovered.length > 0) {
         console.log(paintOne(`  ⚠ uncovered (no call-site evidence): ${r.uncovered.join(", ")}`));
       }

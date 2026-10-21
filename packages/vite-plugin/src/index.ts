@@ -9,12 +9,15 @@ import {
   collectSkipReturns,
   compileAnyMatcher,
   interfaceConfig,
+  collectEnvNames,
+  getPathEnvLoadErrors,
   type AnalysisResult,
   type Diagnostic,
   type DiagnosticsLevel,
 } from "@nudojs/service";
-import { dirname } from "node:path";
+import { dirname, resolve as resolvePath } from "node:path";
 import { checkSource, pTrue } from "@nudojs/core";
+import { DIAG } from "@nudojs/core/internal";
 import type { Plugin } from "vite";
 
 export type NudoPluginOptions = {
@@ -107,6 +110,65 @@ function viteDiagnosticsLevel(id: string): DiagnosticsLevel {
 }
 
 /**
+ * path env 加载失败 → `nudo:env-unresolved` warning（Bug 474）。
+ *
+ * path-env 的失败信息只存在于 service `getPathEnvLoadErrors` 这一个旁路
+ * 收集器里；CLI check / CLI test / LSP 都订阅了它，**vite-plugin 从未订阅**
+ * ⇒ `@nudo:env ./missing.js` 加载失败零诊断：env 静默不生效，该 env 提供的
+ * 全局退化成 unknown / 宿主真身，而构建日志里没有任何一行提示。
+ *
+ * 与 CLI / LSP 同源同码同文案（`path env failed to load: <path> — <error>`）：
+ * - 只报**本文件** env 名单解析出的路径（env 项被移除后进程级错误表里的
+ *   陈旧条目不得继续误报）——与 LSP `envUnresolvedDiags` 同口径；
+ * - `seen` 去重：同 baseDir 多文件构建时同一条失败只报一次。
+ */
+function envUnresolvedDiagnostics(
+  id: string,
+  code: string,
+  seen: Set<string>,
+): Diagnostic[] {
+  let envNames: string[];
+  try {
+    envNames = collectEnvNames(id, code, true);
+  } catch {
+    // env 名单解析失败不拖垮构建（分析器自身已 fail-closed）
+    return [];
+  }
+  if (envNames.length === 0) return [];
+  const baseDir = dirname(id);
+  // preloadPathEnvs 记录的 path = resolve(baseDir, name)——同式过滤陈旧条目
+  const candidates = new Set(envNames.map((n) => resolvePath(baseDir, n)));
+  // **按名字**发的诊断（未知 env 名 / 非字符串 env 项）记录的 path 是
+  // **名字本身**（不是解析后的路径）——只按 candidates 过滤 ⇒ 这类条目
+  // 永远匹配不上 ⇒ 构建日志里零诊断（与 LSP 面同一个洞，#470/#937）。
+  // 按**本文件自己的 env 名单**匹配 ⇒ 同目录别的文件的无 path 诊断
+  // 不会误吸进来（getPathEnvLoadErrors(baseDir) 已按 baseDir 收窄）。
+  const byName = new Set<string>(envNames);
+  for (const raw of envNames as unknown[]) {
+    if (typeof raw === "string") continue;
+    const rendered = JSON.stringify(raw);
+    if (typeof rendered === "string") byName.add(rendered);
+  }
+  const diags: Diagnostic[] = [];
+  for (const e of getPathEnvLoadErrors(baseDir)) {
+    if (!candidates.has(e.path) && !byName.has(e.path)) continue;
+    const key = `${e.baseDir}\0${e.path}\0${e.error}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    diags.push({
+      severity: "warning",
+      // 文案 = CLI check/test 面的同一句 + 诊断码后缀（与本插件 check 面诊断
+      // 的既有格式一致：`(nudo:xxx)` 随行可见——构建日志是纯文本面，不带码
+      // 等于把「env 静默不生效」这条线索又藏回诊断对象里）。
+      message: `path env failed to load: ${e.path} — ${e.error} (${DIAG.envUnresolved})`,
+      code: DIAG.envUnresolved,
+      range: { start: { line: 1, column: 0 }, end: { line: 1, column: 1 } },
+    });
+  }
+  return diags;
+}
+
+/**
  * 与 isNudoTargetPath 对齐：分析目标仅为 `.js` / `.mjs` / `.ts`。
  * `.cjs` / `.cts` / `.mts` / `.d.ts` / `.tsx` 不是分析目标（exclude
  * 已挡 `.d.ts` 与 `node_modules`；`*.nudo.js` 由 shouldAnalyzeFile 拒绝）。
@@ -139,12 +201,17 @@ export default function nudoPlugin(options: NudoPluginOptions = {}): Plugin {
   // 的纯函数，磁盘变化必然先过 watchChange。
   const checkOutcomeCache = new Map<string, { source: string; outcome: CheckProjection }>();
 
+  // path-env 加载失败去重表（同 baseDir 多文件构建只报一次；buildStart /
+  // watchChange 随其它缓存整表丢弃——新一轮构建必须重新上报）。
+  const envErrorSeen = new Set<string>();
+
   return {
     name: "vite-plugin-nudo",
 
     buildStart() {
       analysisCache.clear();
       checkOutcomeCache.clear();
+      envErrorSeen.clear();
       // 全新构建：丢掉上一轮会话 memo，避免跨 build 陈旧命中
       clearAnalysisSessionCaches();
     },
@@ -153,6 +220,7 @@ export default function nudoPlugin(options: NudoPluginOptions = {}): Plugin {
     watchChange() {
       analysisCache.clear();
       checkOutcomeCache.clear();
+      envErrorSeen.clear();
       clearAnalysisSessionCaches();
     },
 
@@ -173,11 +241,14 @@ export default function nudoPlugin(options: NudoPluginOptions = {}): Plugin {
           checkOutcomeCache.set(id, check);
         }
         const checkDiags = check.outcome.diagnostics;
+        // path env 加载失败（@nudo:env ./missing.js）必须可见：此前 vite-plugin
+        // 从不读 getPathEnvLoadErrors ⇒ env 静默不生效且零诊断（Bug 474）。
+        const envDiags = envUnresolvedDiagnostics(id, code, envErrorSeen);
         const level = viteDiagnosticsLevel(id);
         const merged = {
           ...result,
           diagnostics: filterDiagnosticsByLevel(
-            [...result.diagnostics, ...checkDiags],
+            [...result.diagnostics, ...checkDiags, ...envDiags],
             level,
           ),
         };

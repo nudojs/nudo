@@ -8,6 +8,7 @@
 import { parseSource as parse } from "./parse-source.ts";
 import { foldRequireSpecArg } from "./exec/transpile.ts";
 import { resolveDepPath } from "./load-deps-fp.ts";
+import { guardLoadModule } from "./load-guard.ts";
 import { listTopFunctions } from "./scan-top-functions.ts";
 
 // ---------------------------------------------------------------------------
@@ -214,11 +215,19 @@ export function collectCallResolvers(
   const load = opts?.loadModule;
   const fromFile = opts?.fromFile ?? "";
   const modCache = new Map<string, string | undefined>();
-  /** 按 (spec, 解析基文件) 加载——re-export 跳转必须相对中间模块，不是原始调用方 */
+  /**
+   * 按 (spec, 解析基文件) 加载——re-export 跳转必须相对中间模块，不是原始调用方。
+   *
+   * Bug 499：依赖**不可读**（EACCES/EIO/…）时 loader 抛错——异常不得穿透
+   * 到 `nudo check` 的整轮外面。此处降级为「该依赖不可用」（undefined），
+   * 调用图侧据此**跳过**该依赖的外部函数绑定（该依赖的类型面不可知，
+   * 按缺依赖处理；check 面另有 nudo:module-missing 诊断收口可见性）。
+   */
+  const loadGuarded = load ? guardLoadModule(load) : undefined;
   const loadSpecFrom = (spec: string, from: string): string | undefined => {
-    if (!load) return undefined;
+    if (!loadGuarded) return undefined;
     const key = from + "\0" + spec;
-    if (!modCache.has(key)) modCache.set(key, load(spec, from));
+    if (!modCache.has(key)) modCache.set(key, loadGuarded(spec, from));
     return modCache.get(key);
   };
   /** import spec → 被引模块的虚拟路径（interface 侧车解析基；无 fromFile 时不可得） */

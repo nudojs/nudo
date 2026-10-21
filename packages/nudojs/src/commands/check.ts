@@ -15,6 +15,7 @@ import {
   pTrue,
   sidecarPathOf,
   type CheckAction,
+  type CheckIssue,
   type CheckJson,
   type CheckReport,
   type GitlabCodeQualityIssue,
@@ -73,9 +74,15 @@ import {
   mockFromErrorIssues,
   reportFromCachedJson,
   stripCachedSigRets,
+  stripConfigShapeIssues,
   stripEnvUnresolvedIssues,
 } from "../check-json-map.ts";
 import { shouldComputeCacheKey, shouldUseDiskCache } from "../check-ci-flags.ts";
+import {
+  CONFIG_SHAPE_CODE,
+  projectConfigShapeIssue,
+  type ConfigShapeIssue,
+} from "../config-shape.ts";
 
 // ---------------------------------------------------------------------------
 // check — 门禁 + 签名表（Day 0 / CI）
@@ -126,6 +133,13 @@ type BatchProbe = {
   nonL2Error: boolean;
   /** 任一目标项目磁盘缓存已启用（nudo.cache / NUDO_CACHE_DIR） */
   cacheEnabled: boolean;
+  /**
+   * 任一目标项目的 package.json#nudo 键形状非法（468/936）——出现即
+   * **破坏** onboarding 前提：onboarding 说「本项目还没有 nudo 配置」，
+   * 但配置键存在（只是形状写坏）⇒ 那个前提不成立，onboarding 的
+   * 「nudo init」建议是错 advice。
+   */
+  configShape: boolean;
 };
 
 export function freshBatchProbe(): BatchProbe {
@@ -135,6 +149,7 @@ export function freshBatchProbe(): BatchProbe {
     errorIssues: 0,
     nonL2Error: false,
     cacheEnabled: false,
+    configShape: false,
   };
 }
 
@@ -275,6 +290,8 @@ export type CheckCacheState = {
   cached: boolean;
   useDisk: boolean;
   cachedJson: CheckJson | undefined;
+  /** package.json#nudo 键形状问题（468/936）——报告面可见（不要静默） */
+  configShape: ConfigShapeIssue | null;
 };
 
 async function loadCheckCache(
@@ -306,14 +323,17 @@ async function loadCheckCache(
   let sidecarContent: string | null = null;
   if (autoBind !== false) {
     // sidecar 读取失败分类：ENOENT = 无 sidecar（合法 miss，静默 absent）；
-    // EACCES/EISDIR 等读失败必须上屏——静默当 absent 会让 check 假绿
+    // EACCES/EISDIR 等读失败必须上屏——静默当 absent 会让 check 假绿。
+    // 措辞必须区分「不存在」与「读不到」（Bug 499）：文件就在那儿，只是
+    // 读不了——说成「treating as absent」与事实相反（用户会去建一个
+    // 已经存在的契约文件）。
     const scPath = sidecarPathOf(filePath);
     try {
       sidecarContent = readFileSync(scPath, "utf-8");
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
         console.error(
-          `warning: cannot read sidecar contract ${scPath}: ${(err as Error).message} — treating as absent`,
+          `warning: cannot read sidecar contract ${scPath}: ${(err as Error).message} — the contract is unreadable (not absent); its constraints are not applied`,
         );
       }
       sidecarContent = null;
@@ -362,6 +382,10 @@ async function loadCheckCache(
     cached: cachedJson !== undefined,
     useDisk,
     cachedJson,
+    // package.json#nudo 键形状问题（468/936）：service 侧按「本包无配置」
+    // 处理并给 stderr 提示，但报告面看不到 ⇒ 这里补一份报告面可见的诊断
+    // （并让 onboarding 不再谎报「本项目还没有 nudo 配置」）。
+    configShape: projectConfigShapeIssue(dirname(filePath)),
   };
 }
 
@@ -405,7 +429,6 @@ function buildCheckInjection(
   const mocks = mockSeedsToAbsMocks(seedPkg);
   const envGlobals = collectEnvGlobals(allEnvNames);
   const envMods = collectEnvModules(allEnvNames);
-  const hasCycle = graph.issues.some((i) => i.kind === "cycle");
   // env modules（fs/path/node:*…）并入模块图：与 test 路径
   // mergeHarvestUnderEnv 同口径，check 的 import/require 才能解析 env 模块
   let mergedMods = {
@@ -427,9 +450,18 @@ function buildCheckInjection(
     })),
   ];
   const inject: RunTranspiledOptions = {
-    ...(hasCycle
-      ? (Object.keys(envMods).length > 0 ? { modules: envMods } : {})
-      : { modules: mergedMods }),
+    // Bug 456：**不再**因为「检出环」就丢弃整张依赖图。旧实现在检出 cycle
+    // 时把 modules 降级成「只有 env 模块」⇒ 环内文件的 import 全部落空 ⇒
+    // 环内函数在 check 面恒为 unknown（原生是确定值）。
+    // 引擎侧已能正确处理环（core exec/run.ts 调用入口刷新 live import
+    // 绑定 + live-imports.ts 弱引用注册表），环内求值**有界**：
+    // - 装载层：模块图检出环即返回「环内已部分求值的导出 / 空导出」
+    //   （abs-modules-graph.ts evalDep 的 cycle 分支），不递归装载；
+    // - 求值层：调用/分支预算是硬闸（call-budget.ts），递归必被截断成
+    //   `nudo:recursion-truncated`（info），不会无限求值。
+    // ⇒ 无需「整图丢弃」这种有损降级；环本身仍由诊断面（`nudo:module-cycle`
+    // warning）报告，不靠丢图来「避免」环。
+    ...(Object.keys(mergedMods).length > 0 ? { modules: mergedMods } : {}),
     ...(Object.keys(mocks).length > 0 ? { mocks } : {}),
     ...(Object.keys(envGlobals).length > 0 ? { envGlobals } : {}),
     ...(reps.targets.length > 0
@@ -453,10 +485,15 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
   let mockFromErrors: MockFromError[] = [];
   // 注入装配失败（BUG-023）：降级分析仍跑，但门禁必须红且缓存不回写
   let injectionSetupFailed = false;
+  // interface 家族诊断（entry-only / domain-exceeds）——分析器通道产物
+  let domainIssues: CheckIssue[] = [];
   if (cache.cachedJson) {
     // env-unresolved 是 live 瞬态：旧缓存可能已持久化该条目（命中轮 live
     // merge 会再追加 → 重复告警），读回时剔除，由下方 live merge 单一来源注入
     cache.cachedJson = stripEnvUnresolvedIssues(cache.cachedJson);
+    // 配置形状诊断（468/936）同理：形状由本轮现场探针判定（配置可能刚被
+    // 改好/写坏）⇒ 读回剔除 + live merge 单一来源（mergeCheckIssues 只追加）。
+    cache.cachedJson = stripConfigShapeIssues(cache.cachedJson);
     report = reportFromCachedJson(cache.cachedJson);
     // 缓存私有 ret 已被上面消费：--json / jsonCollect / mergeJsonIssues
     // 面必须是纯 CheckJson 契约（与 miss 轮 serializeCheckJson 字节一致）
@@ -512,6 +549,34 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
       injectionSetupFailed = true;
       if (opts.gateFlags) opts.gateFlags.injectionSetupFailed = true;
     }
+    // Bug 461：普通 check 路径（无 --from）也必须跑分析器 —— 否则
+    // `nudo:interface-entry-only`（L1 info：「导出无契约根且无调用点域」）
+    // 在 check 面不可达，而 `nudo health` 走分析器统计仍报「N entry-only」
+    // ⇒ 同一事实两 verb 口径分裂。文档承诺：guides/check.md 诊断表
+    // （`nudo:interface-entry-only | L1 | info`）与 reference/diagnostics.md。
+    //
+    // **必须先于 checkSource 跑**：core 的侧车加载失败去重表按作用域共享。
+    // 分析器先探侧车 → 它取走自己那一份 interface-load 诊断并据此抑制
+    // 「无契约根」误报（侧车存在但加载失败 ≠ 没有契约）；checkSource 入口
+    // 会 reset 该去重表 ⇒ 它自己重新上报一份 interface-load error
+    // ⇒ 两条路径都拿得到诊断。顺序反了，分析器会因去重表已被 checkSource
+    // 占用而误报「无契约根」。
+    //
+    // 白名单仍是 domainIssuesFromDiagnostics（interface 家族的唯一入口）——
+    // 分析器的其它诊断不进 check 面，不放大诊断面。
+    try {
+      const analysis = await analyzeFileAsync(
+        filePath,
+        source,
+        undefined,
+        opts.from,
+        undefined,
+        "none",
+      );
+      domainIssues = domainIssuesFromDiagnostics(analysis.diagnostics);
+    } catch {
+      /* 分析器通道失败不得拖垮 check（诊断面降级，不造门禁） */
+    }
     report = checkSource(filePath, source, pTrue, {
       loadModule: defaultLoadModule,
       fromFile: filePath,
@@ -553,19 +618,39 @@ export async function runCheck(file: string, opts: RunCheckOptions = {}): Promis
     }
   }
 
-  if (opts.from && opts.from.length > 0) {
-    const analysis = await analyzeFileAsync(
-      filePath,
-      source,
-      undefined,
-      opts.from,
-      undefined,
-      "none",
-    );
-    const domainIssues = domainIssuesFromDiagnostics(analysis.diagnostics);
-    if (domainIssues.length > 0) {
-      report = mergeCheckIssues(report, domainIssues);
+  // package.json#nudo 键形状问题（468/936）必须**在报告面**可见：service
+  // 侧只给 stderr 一行 ⇒ check 的 issues 段 / --json 契约看不到，用户不知道
+  // 自己写错了（"nudo": true / 假值键）。这里补一条 warning 级 issue：
+  // - 诊断码用 `config-shape`（**不是** `nudo:` 前缀）——新 `nudo:*` 码必须
+  //   在 packages/website/docs/reference/diagnostics.md 有显式锚点（docs-coverage
+  //   门禁），CLI 侧无权改文档 ⇒ 用非 `nudo:` 码避开「打不出的文档深链」，
+  //   也不进诊断深链面（printDocsLinks 只认 `nudo:` 前缀码）。
+  // - 严重级 warning：形状写坏**不**该把门禁打红（该跑的分析照跑，
+  //   只是配置没生效）——但必须看得见，不能静默。
+  if (cache.configShape) {
+    const shapeIssues = [
+      {
+        severity: "warning" as const,
+        code: CONFIG_SHAPE_CODE,
+        message: cache.configShape.message,
+      },
+    ];
+    report = mergeCheckIssues(report, shapeIssues);
+    if (cache.cachedJson) {
+      cache.cachedJson = mergeJsonIssues(cache.cachedJson, shapeIssues);
     }
+    // onboarding 的「本项目还没有 nudo 配置」在形状写坏时不成立（#468）：
+    // 项目**有** nudo 键，只是形状非法 ⇒ 不打 onboarding 块（它的
+    // 「nudo init」建议在这里是错 advice）。
+    if (opts.batchProbe) opts.batchProbe.configShape = true;
+  }
+
+  // interface 家族诊断（entry-only / domain-exceeds）——分析器通道产物。
+  // 缓存命中轮不重跑分析器：entry-only 事实只取决于「本文件源码 + 侧车 +
+  // 项目配置」（三者都在磁盘缓存键里）⇒ 命中轮从缓存读回同一结论，
+  // 既不重复求值也不会陈旧。
+  if (domainIssues.length > 0) {
+    report = mergeCheckIssues(report, domainIssues);
   }
 
   // 段3 report+exit：打印面 + 缓存回写 + exit
@@ -628,13 +713,14 @@ export async function runCheckFix(opts: {
     });
     const sidecar = sidecarPathOf(file);
     let sidecarText: string | undefined;
-    // 与 plain check 同口径：ENOENT = miss；其余读失败上屏（不静默丢契约面）
+    // 与 plain check 同口径：ENOENT = miss；其余读失败上屏（不静默丢契约面）。
+    // 措辞同 plain check：区分「不存在」与「读不到」（Bug 499）。
     try {
       sidecarText = readFileSync(sidecar, "utf-8");
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
         console.error(
-          `warning: cannot read sidecar contract ${sidecar}: ${(err as Error).message} — treating as absent`,
+          `warning: cannot read sidecar contract ${sidecar}: ${(err as Error).message} — the contract is unreadable (not absent); its constraints are not applied`,
         );
       }
       sidecarText = undefined;

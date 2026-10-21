@@ -17,6 +17,7 @@ import {
   ProjectionBudget,
 } from "@nudojs/core/internal";
 import type { AnalysisResult, CaseResult, FunctionAnalysis } from "../analyzer.ts";
+import { tsAnnotationTypeText } from "../ts-annotation.ts";
 
 // ---------------------------------------------------------------------------
 // Abs → TS（dts 主路径）
@@ -34,6 +35,22 @@ function tsTypeParamName(id: string): string {
   let n = id.replace(/[^A-Za-z0-9_$]/g, "_");
   if (!/^[A-Za-z_$]/.test(n)) n = `T_${n}`;
   if (n.length === 0) n = "T";
+  return n;
+}
+
+/**
+ * 函数名 → 合法 TS 标识符（.d.ts 必须始终可被 tsc 解析）。
+ *
+ * 作用域名（类方法 `C.m`）不是合法标识符——直接落进 `export declare function
+ * C.m(...)` 就是非法 TS（#494）。清洗口径与 noDeclaration 分支的
+ * `Class_method` 投影一致（`C.m` → `C_m`），也与 zod / standard / guard 面
+ * 的 `C_m*` 命名同源。
+ */
+function dtsIdentifier(name: string): string {
+  if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name)) return name;
+  let n = name.replace(/[^A-Za-z0-9_$]/g, "_");
+  if (!/^[A-Za-z_$]/.test(n)) n = `_${n}`;
+  if (n.length === 0) n = "_";
   return n;
 }
 
@@ -459,6 +476,30 @@ function getParamName(fn: FunctionAnalysis, index: number): string {
   return `arg${index}`;
 }
 
+/**
+ * Bug 479：形参位上的 **TS 声明注解**（`.ts` 源）→ dts 类型串。
+ *
+ * 声明位证据优先级（自高而低，见 `computeMainSignature`）：
+ * 手写契约（sidecar / @nudo:contract）> TS 声明注解 > case-widen（观测值）。
+ *
+ * 不可放行 ⇒ undefined（调用方回落既有 case-widen）：
+ * - 无注解（`.js` 源 / 未标注）；
+ * - 注解含注释记号或换行（会破坏 .d.ts 文本结构）；
+ * - rest 位的注解不是数组类型（TS 硬规则：A rest parameter must be of an
+ *   array type）——放行会产出不可编译的 .d.ts。
+ */
+function tsParamAnnotation(fn: FunctionAnalysis, index: number, isRest: boolean): string | undefined {
+  const text = tsAnnotationTypeText(fn.formals?.[index]?.tsType);
+  if (!text) return undefined;
+  if (isRest && !isArrayTypeText(text)) return undefined;
+  return text;
+}
+
+/** 数组类型文本（`T[]` / `Array<T>` / `ReadonlyArray<T>`） */
+function isArrayTypeText(t: string): boolean {
+  return /\[\]$/.test(t) || /^Array<.*>$/.test(t) || /^ReadonlyArray<.*>$/.test(t);
+}
+
 // ---------------------------------------------------------------------------
 // Widening —— 主签名语义（注释保留自 TypeValue 路径；实现已在 Abs 侧）
 //
@@ -563,12 +604,15 @@ function computeMainSignature(
       name = `${name}${n}`;
     }
     usedNames.add(name);
-    // 手写契约（sidecar / @nudo:contract）优先于 case-widen：契约是用户
-    // 申报的调用域；case 见证只填契约未覆盖的参数位
+    // 声明位证据优先级（自高而低）：
+    //   1. 手写契约（sidecar / @nudo:contract）—— 用户申报的调用域（既有
+    //      口径「声明位取侧车契约」；`Case:` 行才是观测值）；
+    //   2. TS 声明注解（Bug 479，`.ts` 源）—— 源码里写下的类型，原文保留；
+    //   3. case-widen —— 观测值 join + 逆变 widen（无声明时的既有回落）。
     const contractAbs = contractByParam.get(bare);
     const typeStr = contractAbs
       ? contractParamType(contractAbs, isRest)
-      : paramTypeFromAbs(members);
+      : (tsParamAnnotation(fn, i, isRest) ?? paramTypeFromAbs(members));
     // 各 case 元数不一致时，短 case 不传的尾部参数标可选，长调用短调用都放行
     const optional = i >= minArity && !isRest;
     params.push(optional ? `${name}?: ${typeStr}` : `${name}: ${typeStr}`);
@@ -711,11 +755,14 @@ function computeHofSignature(
     }
     usedNames.add(name);
     const promoted = byParam.get(fn.paramNames[i] ?? rawName) ?? byParam.get(rawName);
-    const typeStr = promoted
-      ? absToTSType(promoted, typeVars)
-      : isRest
-        ? "unknown[]"
-        : "unknown";
+    // Bug 479：TS 声明注解优先于 HOF 提升位（声明 > 泛型快照；契约面已在
+    // 上游挡住——有契约参数时本函数根本不会被调用）。
+    const typeStr = tsParamAnnotation(fn, i, isRest)
+      ?? (promoted
+        ? absToTSType(promoted, typeVars)
+        : isRest
+          ? "unknown[]"
+          : "unknown");
     params.push(`${name}: ${typeStr}`);
     paramNames.push(name);
     paramTypes.push(typeStr);
@@ -757,9 +804,7 @@ function contractOnlySignature(
     usedNames.add(name);
     const typeStr = absVal
       ? contractParamType(absVal, isRest)
-      : isRest
-        ? "unknown[]"
-        : "unknown";
+      : (tsParamAnnotation(fn, i, isRest) ?? (isRest ? "unknown[]" : "unknown"));
     params.push(`${name}: ${typeStr}`);
     paramNames.push(name);
     paramTypes.push(typeStr);
@@ -792,6 +837,12 @@ export function projectFunctionDts(
     const m = /^([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)$/.exec(fn.name);
     if (!m) return { lines: [], params: [] };
     emitFn = { ...fn, name: `${m[1]}_${m[2]}`, noDeclaration: false };
+  }
+  // 双保险：任何非法标识符名都必须清洗——上游分类（noDeclaration）漏标时
+  // 也不能产出不可解析的 .d.ts（#494）。
+  const safeName = dtsIdentifier(emitFn.name);
+  if (safeName !== emitFn.name) {
+    emitFn = { ...emitFn, name: safeName };
   }
   fn = emitFn;
 

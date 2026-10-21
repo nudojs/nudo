@@ -455,6 +455,26 @@ Module load chain too deep (depth N > M max): a.js -> b.js -> …
 
 Context: [nudo check](../guides/check.md#what-it-checks)
 
+### `nudo:module-unreadable` {#nudo-module-unreadable}
+
+```text
+cannot read module '/abs/path/dep.js' (EACCES): EACCES: permission denied, open '/abs/path/dep.js'
+```
+
+**Error。** 依赖**存在但读不了**（EACCES / EIO / EMFILE / ESTALE…）。与 `nudo:module-missing`（没有这个文件）不同：文件就在那儿，只是读不了 ⇒ 它的类型保持 unknown，门禁 fail-closed。**修复：** 修文件权限（或模块路径）——依赖在，只是读不到，类型因此是 unknown。
+
+Context: [@nudo:mock-module](../concepts/directives.md#nudo--模块级-mock) · [nudo check](../guides/check.md#它检查什么)
+
+### `nudo:json-invalid` {#nudo-json-invalid}
+
+```text
+JSON module './data.json' (from main.js) is not valid JSON: <parser message>
+```
+
+**Error。** `.json` 依赖的 JSON 语法非法。与 `nudo:module-missing`（文件不存在）、`nudo:module-unreadable`（读不了）都不同：文件在、也读得到，只是内容不是合法 JSON ⇒ 取不到任何值。**修复：** 修正 JSON 语法——尾逗号、注释与单引号都不是合法 JSON。
+
+Context: [nudo check](../guides/check.md#它检查什么)
+
 ### `nudo:module-missing` {#nudo-module-missing}
 
 ```text

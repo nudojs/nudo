@@ -23,6 +23,7 @@ import {
   mergeCheckIssues,
   mergeJsonIssues,
   serializeCheckJsonForCache,
+  stripConfigShapeIssues,
   stripEnvUnresolvedIssues,
 } from "../check-json-map.ts";
 import { shouldEmitGha, shouldPrintDocsLinks } from "../check-ci-flags.ts";
@@ -257,13 +258,17 @@ export async function emitCheckReport(
   // #1 零配置 onboarding（issues 段之后、docs 段之前）：全部 error 为 L2 入口
   // may-throw + 全部目标零 @nudo:* 指令 + 零 nudo 配置的纯净新项目指纹。
   // 门禁语义不变（仍 exit 1）；探针只在人类面创建（--json/--gitlab/--gha 无）。
+  // 形状非法（468/936）时**不打**：项目**有** nudo 键（只是形状写坏），
+  // 「本项目还没有 nudo 配置」的前提不成立，onboarding 的「nudo init」
+  // 建议是错 advice——配置形状诊断已经在 issues 段里说清了。
   if (
     opts.batchProbe &&
     opts.onboardingFinal &&
     opts.batchProbe.errorIssues > 0 &&
     !opts.batchProbe.nonL2Error &&
     opts.batchProbe.filesWithDirectives === 0 &&
-    opts.batchProbe.filesWithConfig === 0
+    opts.batchProbe.filesWithConfig === 0 &&
+    !opts.batchProbe.configShape
   ) {
     printOnboardingBlock();
   }
@@ -288,9 +293,15 @@ export async function emitCheckReport(
     try {
       // env-unresolved 是 live 瞬态（每轮现场收集），不持久化——
       // 否则命中轮 live merge 再追加会重复告警
+      // 配置形状诊断（468/936）同理：它是**项目配置**的 live 事实，且
+      // 「nudo 键形状非法」与「没有 nudo 键」的缓存键相同（配置各维都是
+      // null）⇒ 用户把写坏的键改好后，旧的告警条目不得留在缓存里。
       // serializeCheckJsonForCache：签名附带缓存私有 ret（miss 轮渲染出的
       // 返回段）——命中轮 reportFromCachedJson 消费它保持签名行字节一致
-      cache.disk.set(cache.cacheKey, serializeCheckJsonForCache(stripEnvUnresolvedIssues(report)));
+      cache.disk.set(
+        cache.cacheKey,
+        serializeCheckJsonForCache(stripConfigShapeIssues(stripEnvUnresolvedIssues(report))),
+      );
     } catch {
       /* optional: disk cache write failed — check result still valid */
     }

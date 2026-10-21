@@ -13,18 +13,35 @@ function escapesPackageRoot(rel: string): boolean {
   return rel.split(/[/\\]/).some((seg) => seg === "..");
 }
 
-function findNodeModules(startDir: string): string | null {
+/**
+ * 逐级向上的 node_modules 候选目录（Node 语义：**每层都试一遍**，包不在本层
+ * 就继续往上——不是「第一个存在的 node_modules 目录」，Bug 500）。
+ */
+function nodeModulesCandidates(startDir: string): string[] {
+  const out: string[] = [];
   let dir = resolve(startDir);
   const root = resolve("/");
-
-  while (dir !== root) {
-    const nmPath = join(dir, "node_modules");
-    if (existsSync(nmPath)) return nmPath;
+  for (;;) {
+    out.push(join(dir, "node_modules"));
+    if (dir === root) break;
     const parent = dirname(dir);
     if (parent === dir) break;
     dir = parent;
   }
-  return null;
+  return out;
+}
+
+/**
+ * 逐级向上找包目录（每层重算候选，与 harvester 的 resolvePackageRoot 同口径：
+ * 本层没有该包就继续往上——同一个包因此不会因安装层级不同给出相反结论）。
+ */
+function findPackageDirs(fromDir: string, pkgName: string): string[] {
+  const out: string[] = [];
+  for (const nm of nodeModulesCandidates(fromDir)) {
+    const dir = join(nm, pkgName);
+    if (existsSync(dir)) out.push(dir);
+  }
+  return out;
 }
 
 /**
@@ -55,11 +72,36 @@ function warnPkgJsonReadError(pkgJsonPath: string, e: unknown): void {
 }
 
 /**
- * JS 入口条件键优先级。`browser` 排在 `default` 之后：
- * 有 default 时取 Node 面，仅 browser-only 包才落到 browser。
+ * 消费形态：ESM `import` / CJS `require`。
+ * Node 的 dual package（同一包发 .mjs 与 .cjs 两套构建）**存在的全部理由**
+ * 就是区分消费方——`exports` 的条件键必须按形态选，不能用一张固定顺序的表
+ * （Bug 477：固定表把 "require" 排在 "import" 前 ⇒ ESM import 解析到 CJS 构建）。
+ */
+export type NpmLoadMode = "import" | "require";
+
+/**
+ * JS 入口条件键优先级（**按消费形态分表**）。
+ * import 面：node → import → default → browser；require 面：node → require → default → browser。
+ * `browser` 排在 `default` 之后：有 default 时取 Node 面，仅 browser-only 包才落到 browser。
  * `types` 不在此表——见 pickExport 兜底（且不作为可执行入口）。
  */
-const JS_CONDITIONS = ["node", "require", "import", "default", "browser"] as const;
+const JS_CONDITIONS: Record<NpmLoadMode, readonly string[]> = {
+  import: ["node", "import", "default", "browser"],
+  require: ["node", "require", "default", "browser"],
+};
+
+/**
+ * 形态未给出时的尝试顺序：先 import 面再 require 面。
+ * 理由：Node 的 ESM 解析器是现代 JS 的默认入口（dual package 的 "import"
+ * 构建即主构建）；require 面兜底保证「只有 require 条件」的包不被误判 miss。
+ * 说明符级的形态一旦可得（调用方按 AST 知道），必须显式传入 mode。
+ */
+const AUTO_MODE_ORDER: readonly NpmLoadMode[] = ["import", "require"];
+
+/** 实际尝试的形态序列（显式 mode ⇒ 只有该形态）。 */
+function modeOrder(mode?: NpmLoadMode): readonly NpmLoadMode[] {
+  return mode ? [mode] : AUTO_MODE_ORDER;
+}
 
 /**
  * 递归展开 exports 目标树：字符串直出；数组按序首个命中（Node fallback 语义，
@@ -104,11 +146,12 @@ function pickExport(
 function pickNudoExport(
   entry: unknown,
   tryTarget: (rel: string) => string | null,
+  mode?: NpmLoadMode,
 ): string | null {
   if (typeof entry === "string") return null;
   if (Array.isArray(entry)) {
     for (const item of entry) {
-      const r = pickNudoExport(item, tryTarget);
+      const r = pickNudoExport(item, tryTarget, mode);
       if (r) return r;
     }
     return null;
@@ -116,10 +159,13 @@ function pickNudoExport(
   if (entry && typeof entry === "object") {
     const o = entry as Record<string, unknown>;
     if ("nudo" in o) {
-      return pickExport(o["nudo"], JS_CONDITIONS, tryTarget);
+      for (const m of modeOrder(mode)) {
+        const r = pickExport(o["nudo"], JS_CONDITIONS[m], tryTarget);
+        if (r) return r;
+      }
     }
     for (const v of Object.values(o)) {
-      const r = pickNudoExport(v, tryTarget);
+      const r = pickNudoExport(v, tryTarget, mode);
       if (r) return r;
     }
   }
@@ -210,17 +256,144 @@ export type ResolveNpmJsEntryResult = {
   exportsUnresolved: boolean;
 };
 
+/** 包内文件候选（精确路径 + 扩展名 + index 入口）。 */
+function pkgFileCandidates(p: string): string[] {
+  return [p, `${p}.js`, `${p}.cjs`, `${p}.mjs`, join(p, "index.js"), join(p, "index.cjs")];
+}
+
+/** 包内文件候选 → 首个存在者（stat 故障可见后按 miss）。 */
+function tryPkgFile(p: string): string | null {
+  for (const c of pkgFileCandidates(p)) {
+    if (statEntryVisible(c)) return c;
+  }
+  return null;
+}
+
+/** 最近的 package.json（导入方的包作用域）：目录 + 内容。 */
+function findPackageScope(fromDir: string): { dir: string; pkg: Record<string, unknown> } | null {
+  let dir = resolve(fromDir);
+  const root = resolve("/");
+  for (;;) {
+    const pj = join(dir, "package.json");
+    if (existsSync(pj)) {
+      try {
+        const pkg = JSON.parse(readFileSync(pj, "utf-8")) as Record<string, unknown>;
+        return { dir, pkg };
+      } catch (e) {
+        warnPkgJsonReadError(pj, e);
+        return null;
+      }
+    }
+    if (dir === root) return null;
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+/**
+ * 在 `imports` 映射里定位说明符（精确键优先，其次模式键 `#x/*`）。
+ * 与 exports 的模式键同向：单 `*`，返回 * 捕获段。
+ */
+function findImportsEntry(importsField: unknown, spec: string): ExportsEntry | null {
+  if (!importsField || typeof importsField !== "object" || Array.isArray(importsField)) return null;
+  const map = importsField as Record<string, unknown>;
+  if (Object.hasOwn(map, spec)) return { target: map[spec], substitution: null };
+
+  let best: { target: unknown; substitution: string; prefixLen: number } | null = null;
+  for (const [patternKey, target] of Object.entries(map)) {
+    const starIdx = patternKey.indexOf("*");
+    if (starIdx === -1) continue;
+    if (patternKey.indexOf("*", starIdx + 1) !== -1) continue; // 仅支持单 *
+    const prefix = patternKey.slice(0, starIdx);
+    const suffix = patternKey.slice(starIdx + 1);
+    if (!spec.startsWith(prefix) || !spec.endsWith(suffix)) continue;
+    if (spec.length < prefix.length + suffix.length) continue;
+    const substitution = spec.slice(prefix.length, spec.length - suffix.length);
+    if (!best || prefix.length > best.prefixLen) {
+      best = { target, substitution, prefixLen: prefix.length };
+    }
+  }
+  return best ? { target: best.target, substitution: best.substitution } : null;
+}
+
+/**
+ * Node 的 `#imports`（包内子路径映射，Bug 498）。
+ * 说明符以 `#` 开头 ⇒ 查**导入方**最近 package.json 的 `imports` 字段
+ * （不是包名——`node_modules/#helper` 必 miss）。
+ * 目标可以是包内相对路径，也可以是外部裸包（后者转裸包解析）。
+ *
+ * 解析不到 ⇒ exportsUnresolved=true（`#` 说明符语义上确定可解析，
+ * 解析失败是真缺失，不得静默塌成 unknown）。
+ */
+function resolveHashImport(
+  spec: string,
+  fromDir: string,
+  mode?: NpmLoadMode,
+): ResolveNpmJsEntryResult {
+  const none: ResolveNpmJsEntryResult = { path: null, exportsUnresolved: false };
+  const scope = findPackageScope(fromDir);
+  if (!scope) return { path: null, exportsUnresolved: true };
+
+  const entry = findImportsEntry(scope.pkg.imports, spec);
+  if (!entry) return { path: null, exportsUnresolved: true };
+
+  const resolveTarget = (target: unknown): string | null => {
+    if (target === null || target === undefined) return null; // 被显式屏蔽
+    if (typeof target === "string") {
+      const substituted = entry.substitution !== null ? target.replace("*", entry.substitution) : target;
+      if (substituted.startsWith("./") || substituted.startsWith("../")) {
+        return tryInsidePkg(scope.dir, substituted, tryPkgFile);
+      }
+      // 外部包目标（"dep" / "dep/sub"）⇒ 转裸包解析（从导入方包目录起）
+      if (substituted.startsWith("#")) return null; // 禁止自引用（否则无限递归）
+      return resolveNpmJsEntryDetailed(substituted, scope.dir, mode).path;
+    }
+    if (Array.isArray(target)) {
+      for (const item of target) {
+        const r = resolveTarget(item);
+        if (r) return r;
+      }
+      return null;
+    }
+    if (target && typeof target === "object") {
+      const o = target as Record<string, unknown>;
+      for (const m of modeOrder(mode)) {
+        for (const k of JS_CONDITIONS[m]) {
+          if (!Object.hasOwn(o, k)) continue;
+          const r = resolveTarget(o[k]);
+          if (r) return r;
+        }
+      }
+      return null;
+    }
+    return null;
+  };
+
+  const path = resolveTarget(entry.target);
+  if (path) return { path, exportsUnresolved: false };
+  return { path: null, exportsUnresolved: true };
+}
+
 /**
  * A3：裸包可执行入口（.js/.cjs/.mjs）。有源码就走 eval 执行，而不是 harvest stub
  * （ms/debug 等纯 JS 包的返回面由此从 unknown 变成真实折叠）。
+ *
+ * mode：消费形态（ESM import / CJS require）——决定 `exports` 的条件键集合；
+ * 省略 ⇒ 形态未知，按 import → require 顺序尝试（见 AUTO_MODE_ORDER）。
  */
 export function resolveNpmJsEntryDetailed(
   source: string,
   fromDir: string,
+  mode?: NpmLoadMode,
 ): ResolveNpmJsEntryResult {
   const none: ResolveNpmJsEntryResult = { path: null, exportsUnresolved: false };
   if (!source || source.startsWith(".") || source.startsWith("/") || source.startsWith("node:")) {
     return none;
+  }
+  // Node 的 #imports（包内子路径映射）——不是包名，走导入方的 imports 字段
+  if (source.startsWith("#")) {
+    return resolveHashImport(source, fromDir, mode);
   }
   const parts = source.startsWith("@")
     ? source.split("/").slice(0, 2)
@@ -228,17 +401,26 @@ export function resolveNpmJsEntryDetailed(
   const pkgName = parts.join("/");
   const subpath = source.slice(pkgName.length).replace(/^\//, "") || ".";
 
-  const nodeModules = findNodeModules(fromDir);
-  if (!nodeModules) return none;
-  const pkgDir = join(nodeModules, pkgName);
-  const pkgJsonPath = join(pkgDir, "package.json");
+  // 逐级向上找包（Node 语义：每层 node_modules 都试；本层没有就继续往上）
+  let exportsUnresolved = false;
+  for (const pkgDir of findPackageDirs(fromDir, pkgName)) {
+    const r = resolveInPkgDir(pkgDir, pkgName, subpath, mode);
+    if (r.path) return { path: r.path, exportsUnresolved: false };
+    if (r.exportsUnresolved) exportsUnresolved = true;
+  }
+  return { path: null, exportsUnresolved };
+}
 
-  const tryFile = (p: string): string | null => {
-    for (const c of [p, `${p}.js`, `${p}.cjs`, `${p}.mjs`, join(p, "index.js"), join(p, "index.cjs")]) {
-      if (statEntryVisible(c)) return c;
-    }
-    return null;
-  };
+/** 包目录内的入口解析（exports → legacy main → 直接子路径）。 */
+function resolveInPkgDir(
+  pkgDir: string,
+  pkgName: string,
+  subpath: string,
+  mode?: NpmLoadMode,
+): ResolveNpmJsEntryResult {
+  const none: ResolveNpmJsEntryResult = { path: null, exportsUnresolved: false };
+  const pkgJsonPath = join(pkgDir, "package.json");
+  const tryFile = tryPkgFile;
 
   let pkg: Record<string, unknown> = {};
   try {
@@ -256,8 +438,10 @@ export function resolveNpmJsEntryDetailed(
     const entry = findExportsEntry(exportsField, subpath);
     if (entry) {
       const tryTarget = makeTryTarget(pkgDir, entry.substitution, tryFile);
-      const rel = pickExport(entry.target, JS_CONDITIONS, tryTarget);
-      if (rel) return { path: rel, exportsUnresolved: false };
+      for (const m of modeOrder(mode)) {
+        const rel = pickExport(entry.target, JS_CONDITIONS[m], tryTarget);
+        if (rel) return { path: rel, exportsUnresolved: false };
+      }
     }
     // exports 声明了但键不匹配 / 目标缺失 / 目标逃出包目录
     return { path: null, exportsUnresolved: true };
@@ -282,13 +466,15 @@ export function resolveNpmJsEntryDetailed(
 export function resolveNpmJsEntry(
   source: string,
   fromDir: string,
+  mode?: NpmLoadMode,
 ): string | null {
-  return resolveNpmJsEntryDetailed(source, fromDir).path;
+  return resolveNpmJsEntryDetailed(source, fromDir, mode).path;
 }
 
 export function resolveNpmNudo(
   source: string,
   fromDir: string,
+  mode?: NpmLoadMode,
 ): string | null {
   const isRelative = source.startsWith(".") || source.startsWith("/");
   if (isRelative) return null;
@@ -300,10 +486,20 @@ export function resolveNpmNudo(
   // exports 键是 "./sub" / "."，不是 "/sub"（与 resolveNpmJsEntry 同口径）
   const subpath = source.slice(pkgName.length).replace(/^\//, "") || ".";
 
-  const nodeModules = findNodeModules(fromDir);
-  if (!nodeModules) return null;
+  // 逐级向上找包（与 resolveNpmJsEntryDetailed 同口径）
+  for (const pkgDir of findPackageDirs(fromDir, pkgName)) {
+    const hit = resolveNudoInPkgDir(pkgDir, subpath, mode);
+    if (hit) return hit;
+  }
+  return null;
+}
 
-  const pkgDir = join(nodeModules, pkgName);
+/** 包目录内的 nudo 侧车条件解析。 */
+function resolveNudoInPkgDir(
+  pkgDir: string,
+  subpath: string,
+  mode?: NpmLoadMode,
+): string | null {
   const pkgJsonPath = join(pkgDir, "package.json");
   let pkg: Record<string, unknown>;
   try {
@@ -323,7 +519,7 @@ export function resolveNpmNudo(
 
     const tryFile = (p: string): string | null => (statEntryVisible(p) ? p : null);
     const tryTarget = makeTryTarget(pkgDir, entry.substitution, tryFile);
-    return pickNudoExport(entry.target, tryTarget);
+    return pickNudoExport(entry.target, tryTarget, mode);
   } catch {
     // ignore parse errors
   }

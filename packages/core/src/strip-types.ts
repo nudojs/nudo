@@ -34,6 +34,20 @@ import type { Node } from "@babel/types";
  *    typeArguments）、typeAnnotation、returnType（含 TSTypePredicate）、
  *    参数 Identifier/ObjectPattern/ArrayPattern/RestElement 上的 optional 一律 delete
  *
+ * 类型注解文本旁路（Bug 479）：
+ *  - 剥除 pass 原本**直接 delete** `typeAnnotation` / `returnType`——分析面
+ *    （service / core check）拿到的 AST 上没有任何类型信息，`.ts` 源的形参
+ *    注解永远进不了推断（形参一律 any ⇒ `nudo:entry-may-throw` 假红）。
+ *  - 现在把注解的**源码文本**（"string" / "Array<number>"）留在节点上：
+ *    形参 → `nudoTypeText`，返回类型 → `nudoReturnTypeText`。
+ *  - 旁路字段是**不可枚举属性**（Object.defineProperty）：`Object.keys(node)`
+ *    看不见它 ⇒ ① AST 结构等价断言（parser 的 directives.test.ts：「剥除后的
+ *    TS 源 AST ≡ 等价 JS 源 AST」）不受影响；② 遍历器（transpile 的
+ *    `Object.keys(node)` 下钻）不会下钻进 TS 节点 ⇒ 分析管线语义零变化；
+ *    ③ 直接属性访问（`node.nudoTypeText`）仍可取到 ⇒ 分析面能读回声明类型。
+ *  - 文本而非 kind：可承载 `Array<string>` 等复合类型；dts 面可直接回填
+ *    源里的注解。
+ *
  * 已知不处理（会以 unknown 求值，不崩溃）：非 declare 的 namespace（运行时语义）、
  * TSImportEqualsDeclaration（import x = require(...)）、构造器参数属性
  * （constructor(private x)）——均在 .ts 推断目标场景之外。
@@ -57,7 +71,7 @@ const SKIP_KEYS = new Set([
 ]);
 
 /** 实参/形参模式等数组中的空洞（ArrayPattern 的 elision）保持原样 */
-function transformValue(value: unknown): unknown {
+function transformValue(value: unknown, source: string | undefined): unknown {
   if (Array.isArray(value)) {
     let changed = false;
     const out: unknown[] = [];
@@ -66,7 +80,7 @@ function transformValue(value: unknown): unknown {
         out.push(el);
         continue;
       }
-      const r = transformValue(el);
+      const r = transformValue(el, source);
       if (r === REMOVE) {
         changed = true;
       } else {
@@ -78,7 +92,7 @@ function transformValue(value: unknown): unknown {
   }
   if (typeof value !== "object" || value === null) return value;
   if (typeof (value as { type?: unknown }).type !== "string") return value;
-  return transformNode(value as Node & Record<string, unknown>);
+  return transformNode(value as Node & Record<string, unknown>, source);
 }
 
 function isTsDeclareLike(node: Node): boolean {
@@ -156,8 +170,44 @@ function isTypeOnlyStatement(node: Node): boolean {
   }
 }
 
-/** 求值器不读的类型字段：原地 delete */
-function deleteTypeSyntaxFields(node: Node & Record<string, unknown>): void {
+/**
+ * 注解节点 → 源码文本（Babel 8：TSTypeAnnotation 内层是类型节点本身，
+ * 其 start/end 正好覆盖类型文本——"a: string" 的内层区间是 "string"）。
+ */
+function tsTypeText(
+  source: string | undefined,
+  inner: { start?: number | null; end?: number | null } | undefined,
+): string | undefined {
+  if (!source || !inner) return undefined;
+  const s = inner.start;
+  const e = inner.end;
+  if (typeof s !== "number" || typeof e !== "number" || e <= s || e > source.length) {
+    return undefined;
+  }
+  const text = source.slice(s, e).trim();
+  return text.length > 0 ? text : undefined;
+}
+
+/**
+ * 旁路字段写入：**不可枚举**属性。
+ *
+ * 不可枚举 ⇒ `Object.keys(node)` / `for…in` / 结构等价断言都看不见它
+ * （AST 形状对既有消费方**零变化**），但 `node.nudoTypeText` 直接访问可得。
+ */
+function setTypeText(node: Node & Record<string, unknown>, key: string, text: string): void {
+  Object.defineProperty(node, key, {
+    value: text,
+    enumerable: false,
+    configurable: true,
+    writable: true,
+  });
+}
+
+/** 求值器不读的类型字段：原地 delete（类型文本留旁路，见文件头） */
+function deleteTypeSyntaxFields(
+  node: Node & Record<string, unknown>,
+  source: string | undefined,
+): void {
   const tp = node.typeParameters as { type?: string } | undefined;
   if (tp && typeof tp.type === "string" && tp.type.startsWith("TSTypeParameter")) {
     // 声明处（TSTypeParameterDeclaration）与调用处（TSTypeParameterInstantiation，
@@ -169,10 +219,32 @@ function deleteTypeSyntaxFields(node: Node & Record<string, unknown>): void {
   if (taArgs && typeof taArgs.type === "string" && taArgs.type.startsWith("TSTypeParameter")) {
     delete node.typeArguments;
   }
-  const ta = node.typeAnnotation as { type?: string } | undefined;
-  if (ta && ta.type === "TSTypeAnnotation") delete node.typeAnnotation;
-  const rt = node.returnType as { type?: string } | undefined;
-  if (rt && (rt.type === "TSTypeAnnotation" || rt.type === "TSTypePredicate")) delete node.returnType;
+  const ta = node.typeAnnotation as
+    | { type?: string; typeAnnotation?: { start?: number | null; end?: number | null } }
+    | undefined;
+  if (ta && ta.type === "TSTypeAnnotation") {
+    // Bug 479：类型注解文本留旁路（形参/变量/类成员的声明类型）
+    const text = tsTypeText(source, ta.typeAnnotation);
+    if (text !== undefined) setTypeText(node, "nudoTypeText", text);
+    delete node.typeAnnotation;
+  }
+  const rt = node.returnType as
+    | {
+        type?: string;
+        typeAnnotation?: { start?: number | null; end?: number | null };
+        start?: number | null;
+        end?: number | null;
+      }
+    | undefined;
+  if (rt && (rt.type === "TSTypeAnnotation" || rt.type === "TSTypePredicate")) {
+    // Bug 479：返回类型文本留旁路（TSTypePredicate 用自身区间）
+    const text =
+      rt.type === "TSTypeAnnotation"
+        ? tsTypeText(source, rt.typeAnnotation)
+        : tsTypeText(source, rt);
+    if (text !== undefined) setTypeText(node, "nudoReturnTypeText", text);
+    delete node.returnType;
+  }
   // `a?: T` 的可选标记。只在这些模式节点上删：OptionalMemberExpression 等
   // 表达式节点自己的 optional 语义（a?.b）不属于 TS 语法，不能动
   if (
@@ -202,10 +274,13 @@ function unwrapExpression(node: Node & Record<string, unknown>): Node | null {
   }
 }
 
-function transformNode(node: Node & Record<string, unknown>): Node | typeof REMOVE {
+function transformNode(
+  node: Node & Record<string, unknown>,
+  source: string | undefined,
+): Node | typeof REMOVE {
   if (isTypeOnlyStatement(node)) return REMOVE;
 
-  deleteTypeSyntaxFields(node);
+  deleteTypeSyntaxFields(node, source);
 
   // 值 import/export 里混入的 type-only specifier 逐个剔除
   if (node.type === "ImportDeclaration") {
@@ -222,7 +297,7 @@ function transformNode(node: Node & Record<string, unknown>): Node | typeof REMO
     if (SKIP_KEYS.has(key)) continue;
     const child = node[key];
     if (child === null || typeof child !== "object") continue;
-    const r = transformValue(child);
+    const r = transformValue(child, source);
     if (r === REMOVE) {
       // 单槽位理论上不会收到 REMOVE（删除项均为数组上下文），防御性清槽
       delete node[key];
@@ -237,8 +312,12 @@ function transformNode(node: Node & Record<string, unknown>): Node | typeof REMO
 /**
  * 原地剥除 AST 中的 TS-only 语法节点/字段，返回同一棵 AST（便于链式使用）。
  * 不改写任何 loc/start/end；语句删除只影响所在数组，不重排兄弟节点。
+ *
+ * @param source 源码文本（可选）。给了就把**类型注解的源码文本**留在节点上
+ *   （`nudoTypeText` / `nudoReturnTypeText`，见文件头）——分析面据此读回
+ *   `.ts` 源的声明类型；不给（migrate 的 keepTs 路径等）则纯剥除。
  */
-export function stripTypes<T extends Node>(ast: T): T {
-  transformValue(ast);
+export function stripTypes<T extends Node>(ast: T, source?: string): T {
+  transformValue(ast, source);
   return ast;
 }
