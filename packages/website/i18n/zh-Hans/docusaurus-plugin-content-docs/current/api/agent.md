@@ -272,7 +272,7 @@ Agent 工具来自 `AGENT_TOOL_SOURCES`（`packages/lsp/src/agent-tools.ts`）�
 
 | 名称 | 种类 | 说明 | 签名 |
 |------|------|------|------|
-| <a id="check"></a>`check` | fn | nudo.check / `nudo/check` — checkSource + serializeCheckJson | `nudo.check \| nudo/check` |
+| <a id="check"></a>`check` | fn | nudo.check / `nudo/check` — checkSource + mergeCheckIssues + serializeCheckJson | `nudo.check \| nudo/check` |
 | <a id="codelens"></a>`codeLens` | fn | (server-only, no command) — computeInterfaceLenses + interfaceTierOf | — |
 | <a id="contract"></a>`contract` | fn | nudo.contract / `nudo/contract` — interfaceSurface + formatInterfaceSurfaceLine | `nudo.contract \| nudo/contract` |
 | <a id="contract.draft"></a>`contract.draft` | fn | nudo.contract.draft / `nudo/contract.draft` — draftInterface + formatDraftSummary | `nudo.contract.draft \| nudo/contract.draft` |
@@ -280,8 +280,8 @@ Agent 工具来自 `AGENT_TOOL_SOURCES`（`packages/lsp/src/agent-tools.ts`）�
 | <a id="getactivecases"></a>`getActiveCases` | fn | nudo.getActiveCases / `nudo/getActiveCases` — editor command (not an agent tool) | `nudo.getActiveCases \| nudo/getActiveCases` |
 | <a id="hover"></a>`hover` | fn | nudo.hover / `nudo/hover` — getHoverAtPosition + interfaceTierOf | `nudo.hover \| nudo/hover` |
 | <a id="selectcase"></a>`selectCase` | fn | nudo.selectCase / `nudo/selectCase` — editor command (not an agent tool) | `nudo.selectCase \| nudo/selectCase` |
-| <a id="suggestcase"></a>`suggestCase` | fn | nudo.suggestCase / `nudo/suggestCase` — analyzeFile + buildCaseDirective | `nudo.suggestCase \| nudo/suggestCase` |
-| <a id="test"></a>`test` | fn | nudo.test / `nudo/test` — analyzeFile + serializeCaseJson | `nudo.test \| nudo/test` |
-| <a id="trace"></a>`trace` | fn | nudo.trace / `nudo/trace` — analyzeFile cases | `nudo.trace \| nudo/trace` |
-| <a id="whatif"></a>`whatIf` | fn | nudo.whatIf / `nudo/whatIf` — injectBindings + analyzeFile | `nudo.whatIf \| nudo/whatIf` |
+| <a id="suggestcase"></a>`suggestCase` | fn | nudo.suggestCase / `nudo/suggestCase` — analyzeFileAsync + buildCaseDirective | `nudo.suggestCase \| nudo/suggestCase` |
+| <a id="test"></a>`test` | fn | nudo.test / `nudo/test` — analyzeFileAsync + buildTestReport + serializeCaseJson | `nudo.test \| nudo/test` |
+| <a id="trace"></a>`trace` | fn | nudo.trace / `nudo/trace` — analyzeFileAsync cases | `nudo.trace \| nudo/trace` |
+| <a id="whatif"></a>`whatIf` | fn | nudo.whatIf / `nudo/whatIf` — injectBindings + analyzeFileAsync | `nudo.whatIf \| nudo/whatIf` |
 <!-- NUDO-API-SKELETON:END -->
