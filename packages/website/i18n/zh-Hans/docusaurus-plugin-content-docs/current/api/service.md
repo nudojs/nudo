@@ -655,7 +655,7 @@ type SymbolTable = {
 | <a id="buildtestreport"></a>`buildTestReport` | fn | 汇总一份 case 报告的断言结果（+ 逐函数展示行）。 | `buildTestReport( file: string, result: AnalysisResult, opts: TestReportOptions = {}, ): TestReport` |
 | <a id="callrecord"></a>`CallRecord` | type | — | — |
 | <a id="callsiterecords"></a>`CallsiteRecords` | type | 采集结果：记录 + 路径错误（两者必须分开呈现）。 | `CallsiteRecords = { records: CallRecord[]; errors: Array<{ path: string; message: string }>; }` |
-| <a id="caseexpectedsatisfied"></a>`caseExpectedSatisfied` | fn | 实际值是否满足期望（结构面 leqAbs + 值面谓词）。 | `caseExpectedSatisfied(actual: Abs, expected: Abs): boolean` |
+| <a id="caseexpectedsatisfied"></a>`caseExpectedSatisfied` | fn | 实际值是否满足期望（结构面 leqAbs + 对象槽字面量严格面 + 值面谓词）。 | `caseExpectedSatisfied(actual: Abs, expected: Abs): boolean` |
 | <a id="casehint"></a>`CaseHint` | type | — | `CaseHint = { line: number; label: string; ok: boolean; }` |
 | <a id="casejson"></a>`CaseJson` | type | — | `CaseJson = { version: 1; file: string; summary: { functions: number; externalFunctions: number; cases: number; diagnostics: number; }; fu...` |
 | <a id="casejsoncase"></a>`CaseJsonCase` | type | — | `CaseJsonCase = { name: string; args: string[]; result: string; throws: string \| null; source: string \| null; aggregatedFrom?: number; arg...` |
