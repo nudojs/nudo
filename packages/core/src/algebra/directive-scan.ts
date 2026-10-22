@@ -16,7 +16,7 @@
  */
 
 import type { Comment, File, Node } from "@babel/types";
-import { stripStringsKeepComments } from "./code-text.ts";
+import { maskStringsKeepComments } from "./code-text.ts";
 import { parseSource } from "./parse-source.ts";
 
 // ---------------------------------------------------------------------------
@@ -620,7 +620,38 @@ const LINE_COMMENT_PREFIX = "(?:^|[^/:])\\/\\/\\/?";
 
 function fileDirectiveVisibleText(source: string): string {
   // 剥字符串 + 块注释：只留 `//` / `///` 行注释可见
-  return stripStringsKeepComments(source).replace(/\/\*[\s\S]*?\*\//g, " ");
+  // 等长掩码（字符串→空格、块注释→空格）：下标与原文一一对应 ⇒ 位置闸门可比
+  return maskStringsKeepComments(source).replace(/\/\*[\s\S]*?\*\//g, (m) =>
+    " ".repeat(m.length),
+  );
+}
+
+/**
+ * 函数体区间（顶层判定用）：文件级指令（`@nudo:env` / `@nudo:mock-module` /
+ * `@nudo:import`）**不得**落在任何函数体内——函数体里的 `/// @nudo:env node`
+ * 不是「本函数用 node env」，此前文本路径**只看文本不看位置** ⇒ 对**整份文件**
+ * 生效（Bug 847）。
+ *
+ * 与 parser 的 AST 路径（`file-directives.ts` 的 `functionBodyRanges`）同口径：
+ * 两条路径都用「不在函数体内」判定，顶层位置（文件头 / `export` 行 / 语句之间）
+ * 一律放行。
+ *
+ * 解析失败（源码语法错误）⇒ 无区间 ⇒ 退化为旧行为（不闸门），不抛。
+ */
+function functionBodyRanges(source: string): [number, number][] {
+  try {
+    return listFnDirectiveScopes(parseSource(source)).map((scope) => [
+      scope.node.start ?? 0,
+      scope.node.end ?? 0,
+    ]);
+  } catch {
+    return [];
+  }
+}
+
+/** 偏移是否落在某个函数体内 */
+function inFunctionBody(ranges: [number, number][], offset: number): boolean {
+  return ranges.some(([s, e]) => offset >= s && offset < e);
 }
 
 export function extractFileEnvNames(source: string): string[] {
@@ -628,9 +659,13 @@ export function extractFileEnvNames(source: string): string[] {
   // S4-004 同族：标签/载荷同行分隔——`\s*`/`\s+` 跨行会把非注释行的
   // `@nudo:env` 或下一行载荷粘进上一条行注释
   const re = new RegExp(`${LINE_COMMENT_PREFIX}[ \\t]*@nudo:env[ \\t]+([^\\n*]+)`, "g");
+  // Bug 847：位置闸门——函数体里的文件级 env 不再对整份文件生效
+  const fnRanges = functionBodyRanges(source);
   const out: string[] = [];
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
+    const commentStart = m.index + m[0].indexOf("//");
+    if (inFunctionBody(fnRanges, commentStart)) continue;
     out.push(...parseEnvPayload(m[1]!));
   }
   return out;
@@ -642,9 +677,13 @@ export function extractMockModuleRecords(source: string): MockModuleRecord[] {
     `${LINE_COMMENT_PREFIX}[ \\t]*@nudo:mock-module[ \\t]+([^\\n]+)`,
     "g",
   );
+  // Bug 847：位置闸门——函数体里的文件级 mock-module 不再对整份文件生效
+  const fnRanges = functionBodyRanges(source);
   const out: MockModuleRecord[] = [];
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
+    const commentStart = m.index + m[0].indexOf("//");
+    if (inFunctionBody(fnRanges, commentStart)) continue;
     const rec = parseMockModulePayload(m[1]!);
     if (rec) out.push(rec);
   }
@@ -655,21 +694,32 @@ export function extractMockModuleRecords(source: string): MockModuleRecord[] {
  * 指令只认**注释行首**（`//` / `///` / 块注释 `*` 续行清洗后以 `@nudo:` 开头）。
  * 句中散文提及（「无 @nudo:import 同名约束时…」）不是指令。
  * 字符串正文里的同形文本不是指令（scanSource 已遮罩）。
- * 返回清洗后的注释行（文档序）。
+ * 返回清洗后的注释行（文档序）+ **是否在函数体外**（位置闸门用，Bug 847）。
  */
-function directiveCommentLinesRaw(source: string): string[] {
-  const src = stripStringsKeepComments(source);
-  const out: string[] = [];
+function directiveCommentLinesRaw(
+  source: string,
+): Array<{ text: string; inHeader: boolean }> {
+  // 等长掩码（字符串→空格、注释原文保留）：下标与原文一一对应 ⇒ 位置闸门可比
+  const src = maskStringsKeepComments(source);
+  const out: Array<{ text: string; inHeader: boolean }> = [];
+  // Bug 847：位置闸门——函数体里的文件级指令不再对整份文件生效
+  const fnRanges = functionBodyRanges(source);
   // 行注释（// 或 ///；排除 ////——Babel 值以 // 开头时 cleanDirectiveLine 不剥）
   const lineRe = /(?:^|[^/:])\/\/\/?([^\n]*)/g;
   let m: RegExpExecArray | null;
   while ((m = lineRe.exec(src))) {
-    out.push(cleanDirectiveLine(m[1]!, "line"));
+    const commentStart = m.index + m[0].indexOf("//");
+    out.push({
+      text: cleanDirectiveLine(m[1]!, "line"),
+      inHeader: !inFunctionBody(fnRanges, commentStart),
+    });
   }
   // 块注释（含 JSDoc）
   const blockRe = /\/\*([\s\S]*?)\*\//g;
   while ((m = blockRe.exec(src))) {
-    out.push(...commentTextToLines(m[1]!, "block"));
+    for (const line of commentTextToLines(m[1]!, "block")) {
+      out.push({ text: line, inHeader: true });
+    }
   }
   return out;
 }
@@ -682,7 +732,11 @@ function nudoImportPayloads(source: string): string[] {
   const lines = directiveCommentLinesRaw(source);
   const out: string[] = [];
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!;
+    const entry = lines[i]!;
+    const line = entry.text;
+    // Bug 847：位置闸门——行注释形态的 `@nudo:import` 不得落在**函数体内**；
+    // 函数体里的 import 不再对整份文件生效。
+    if (!entry.inHeader) continue;
     if (!/^@nudo:import\s/.test(line)) continue;
     let payload = line.replace(/^@nudo:import\s+/, "");
     // 多行 named：`{` 未闭合时拼后续注释行（直到 `}` / from "path"）
@@ -694,7 +748,7 @@ function nudoImportPayloads(source: string): string[] {
       }
       while (depth > 0 && i + 1 < lines.length) {
         i += 1;
-        const cont = lines[i]!;
+        const cont = lines[i]!.text;
         if (/^@nudo:/.test(cont)) {
           i -= 1;
           break;
@@ -838,6 +892,22 @@ export function scanCaseArgSpans(text: string): [number, number][] {
     const afterParen = parenStart + argsStr.length + 2;
     if (spans.some(([s, e]) => m!.index >= s && m!.index < e)) continue;
     spans.push([m.index, afterParen]);
+  }
+  // Bug 846：**畸形** case 标签（单引号名 / 空名 / 缺实参括号…）也有实参区间——
+  // 此前只登记合法形态的区间 ⇒ 畸形 case 的实参里写的 `@nudo:mock` / `@nudo:skip`
+  // **泄漏**成真指令（假红 / d.ts 丢方法）。
+  // 只遮罩**实参区间**（不含标签本身）：标签本身仍要报「畸形 case 名」诊断。
+  CASE_TAG_REGEX.lastIndex = 0;
+  while ((m = CASE_TAG_REGEX.exec(text)) !== null) {
+    if (spans.some(([s, e]) => m!.index >= s && m!.index < e)) continue;
+    const rest = m[1]!;
+    const rel = rest.indexOf("(");
+    if (rel === -1) continue;
+    const parenStart = m.index + m[0].length - rest.length + rel;
+    const argsStr = extractBalancedParens(text, parenStart);
+    if (argsStr === null) continue;
+    const afterParen = parenStart + argsStr.length + 2;
+    spans.push([parenStart, afterParen]);
   }
   return spans;
 }

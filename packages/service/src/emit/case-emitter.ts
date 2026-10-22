@@ -8,10 +8,12 @@ import type { AnalysisResult } from "../analyzer.ts";
  * 调用点固化（case emission）：把分析产出的合成 case（call@L* / call@symbolic）
  * 序列化为 `@nudo:case` 指令注释文本、从源码剥离已生成指令、把指令插回源码。
  *
- * 指令文法权威是 parser 的 parseCaseArgExpr；它对字符串字面量做的是
- * 原样 slice（不反转义），因此这里的"转义"策略是：选择一种引号包裹使值
- * 原样保留（含 `"` 的值用单引号包裹，反之亦然），无法原样保留的值一律
- * 返回 null（见 serializeStringLiteral）。
+ * 指令文法权威是 parser 的 parseCaseArgExpr。
+ * ★ 族 28 接线（Bug 840）：该文法对字符串字面量按 **JS 转义语义**解释
+ * （`scanStringLiteral` 取 Babel 的 cooked 值）⇒ 这里的"转义"策略改为
+ * **转义 `\` 与包裹引号**（见 serializeStringLiteral），使
+ * `serialize → parse` 往返保真；数值字面量同步对齐新数值文法
+ * （指数 / Infinity / NaN / bigint 现在都可表达）。
  *
  * 不变量 / Invariants:
  * - 「已固化」判定按**见证身份（名字）逐条**比对：同名（同一调用点）不重复
@@ -42,8 +44,12 @@ const GENERATED_CASE_LINE_REGEX = /^\s*\*?\s*@nudo:case\s+"(call@[^"]*)"/;
 /** 合法裸写的对象键：JS 标识符 */
 const IDENT_KEY_REGEX = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
-/** parseCaseArgExpr 能吃回去的数字字面量（科学计数法等不收） */
-const NUMBER_LITERAL_REGEX = /^-?\d+(\.\d+)?$/;
+/**
+ * parseCaseArgExpr 能吃回去的数字字面量。
+ * ★ 族 28 接线：与 parser 的新数值文法同口径（指数写法 `1e+21` / `1e-7` 现在可解析）
+ * —— 旧的 `/^-?\d+(\.\d+)?$/` 会让这些形态**不可表达**（`--freeze` 整条放弃该 case）。
+ */
+const NUMBER_LITERAL_REGEX = /^-?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$/;
 
 /** 字符串值中会破坏指令行结构的字符：参数逗号切分 / 括号配对（冒号在值位置安全，键位置才禁） */
 const UNSAFE_STRING_CHARS = /[,()[\]{}]/;
@@ -82,10 +88,16 @@ function serializeStringLiteral(value: string): string | null {
   if (CONTROL_CHARS.test(value)) return null;
   if (value.includes("*/")) return null;
   if (UNSAFE_STRING_CHARS.test(value)) return null;
+  // ★ 族 28 接线（Bug 840）：指令文法改为**解释 JS 转义**（parser 的
+  // `scanStringLiteral` 取 Babel 的 cooked 值）⇒ 序列化必须**转义** `\` 与
+  // 包裹引号，否则 `serialize → parse` 往返失真
+  // （`a\b` 会被读成 `a` + BS + `b`；`"foo\"` 会被读成**截断**字面量）。
   const hasDbl = value.includes('"');
   const hasSgl = value.includes("'");
-  if (hasDbl && hasSgl) return null;
-  return hasDbl ? `'${value}'` : `"${value}"`;
+  // 优先选值里**没有**的那种引号；两种都有 ⇒ 用双引号并转义其中的 `"`。
+  const quote = hasDbl && !hasSgl ? "'" : '"';
+  const escaped = value.replace(/\\/g, "\\\\").split(quote).join("\\" + quote);
+  return `${quote}${escaped}${quote}`;
 }
 
 /** 对象键 → 裸标识符或双引号包裹；无法安全表达返回 null */
@@ -121,7 +133,12 @@ function serializeCaseArgInner(a: Abs, budget: ProjectionBudget): string | null 
   if (a.term?.op === "lit") {
     const v = a.term.value;
     if (typeof v === "number") {
-      if (!Number.isFinite(v)) return null;
+      // ★ 族 28 接线：新数值文法（指数 / Infinity / NaN）可被 parseCaseArgExpr
+      // 吃回去 ⇒ 序列化侧同步放开，否则这些形态**不可表达**
+      // （`nudo test --freeze` 整条放弃该 case —— 静默数据丢失）。
+      if (Number.isNaN(v)) return "NaN";
+      if (v === Infinity) return "Infinity";
+      if (v === -Infinity) return "-Infinity";
       // String(-0)==="0" 会抹掉可观察的 -0（Object.is / 1/x）；必须字面保真
       const n = Object.is(v, -0) ? "-0" : String(v);
       return NUMBER_LITERAL_REGEX.test(n) ? n : null;
@@ -129,7 +146,8 @@ function serializeCaseArgInner(a: Abs, budget: ProjectionBudget): string | null 
     if (typeof v === "boolean") return v ? "true" : "false";
     if (v === null) return "null";
     if (v === undefined) return "undefined";
-    if (typeof v === "bigint") return null;
+    // ★ 族 28 接线：bigint 字面量（`7n`）现在可被新数值文法解析 ⇒ 可表达
+    if (typeof v === "bigint") return `${v}n`;
     if (typeof v === "string") return serializeStringLiteral(v);
     return null;
   }

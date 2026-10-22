@@ -156,7 +156,14 @@ export function parseNudoMockExpr(expr: string): MockHelper | null {
   if (stubCallsFakeMatch) {
     const arrowFn = parseArrowFunctionExpr(stubCallsFakeMatch[1].trim());
     if (arrowFn) {
-      return stub.callsFake({ params: arrowFn.params, body: arrowFn.body, async: false });
+      return stub.callsFake({
+        params: arrowFn.params,
+        body: arrowFn.body,
+        // Bug 857 的第三处：sinon 路径此前也把 async 硬编码成 false ⇒
+        // `stub().callsFake(async (x) => …)` 被建模成同步函数 ⇒ 调用点
+        // `.then(…)` 报「method 'then' missing」。
+        async: arrowFn.async === true,
+      });
     }
     return { kind: "mock-helper" };
   }

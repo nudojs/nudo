@@ -12,6 +12,7 @@ import {
   joinAbs,
   litValue,
   formatShape,
+  bigintLit,
 } from "@nudojs/core";
 // 字面量助手单源：core/internal 的 absLit（env/harvester 同源，见 kernel-merge.md）
 import { absLit } from "@nudojs/core/internal";
@@ -194,23 +195,46 @@ describe("serializeCaseArg", () => {
   });
 
   it("returns null for string/number literals that cannot survive the round-trip", () => {
-    // 两种引号并存：文法无转义机制，无法安全包裹
-    expect(serializeCaseArg(absLit(`a"b'c`))).toBeNull();
     // 结构字符：破坏参数切分 / 括号配对 / 对象键冒号定位 / JSDoc 终止
     expect(serializeCaseArg(absLit("a,b"))).toBeNull();
     expect(serializeCaseArg(absLit("a(b"))).toBeNull();
     expect(serializeCaseArg(absLit("a}b"))).toBeNull();
     expect(serializeCaseArg(absLit("a*/b"))).toBeNull();
     expect(serializeCaseArg(absLit("a\nb"))).toBeNull();
-    // 科学计数法 / 非有限数：文法的数字正则不收
-    expect(serializeCaseArg(absLit(NaN))).toBeNull();
-    expect(serializeCaseArg(absLit(Infinity))).toBeNull();
-    expect(serializeCaseArg(absLit(1e21))).toBeNull();
-    expect(serializeCaseArg(absLit(1e-7))).toBeNull();
     // 对象键含双引号 / 冒号 / 首尾引号
     expect(serializeCaseArg(absObj({ 'a"b': num() }))).toBeNull();
     expect(serializeCaseArg(absObj({ "a:b": num() }))).toBeNull();
     expect(serializeCaseArg(absObj({ "'q'": num() }))).toBeNull();
+  });
+
+  // ★ 族 28 接线（Bug 840）：指令文法改为**解释 JS 转义** + 完整数值文法
+  // ⇒ 下列形态从「不可表达」变成「可表达且往返保真」。
+  it("expresses values the widened grammar can now round-trip", () => {
+    // 两种引号并存：现在用双引号包裹并转义其中的 `"`
+    expect(serializeCaseArg(absLit(`a"b'c`))).toBe('"a\\"b\'c"');
+    // 非有限数 / 科学计数法：新数值文法可解析
+    expect(serializeCaseArg(absLit(NaN))).toBe("NaN");
+    expect(serializeCaseArg(absLit(Infinity))).toBe("Infinity");
+    expect(serializeCaseArg(absLit(-Infinity))).toBe("-Infinity");
+    expect(serializeCaseArg(absLit(1e21))).toBe("1e+21");
+    expect(serializeCaseArg(absLit(1e-7))).toBe("1e-7");
+    // 反斜杠：必须转义，否则往返丢字符
+    expect(serializeCaseArg(absLit("a\\b"))).toBe('"a\\\\b"');
+    // bigint 字面量（注意：`absLit(7n)` **不带字面项**（值不可判定）⇒ 不可表达；
+    // 有字面项的 bigint 走 `bigintLit`）
+    expect(serializeCaseArg(absLit(7n))).toBeNull();
+    expect(serializeCaseArg(bigintLit(7n))).toBe("7n");
+    // 往返保真（值相等）
+    for (const v of [`a"b'c`, "a\\b", 1e21, 1e-7, NaN, Infinity]) {
+      const s = serializeCaseArg(absLit(v as never));
+      expect(s, String(v)).not.toBeNull();
+      const back = parseCaseArgExpr(s!);
+      expect(litValue(back), String(v)).toEqual({ ok: true, value: v });
+    }
+    // bigint 往返
+    const bs = serializeCaseArg(bigintLit(7n));
+    expect(bs).toBe("7n");
+    expect(litValue(parseCaseArgExpr(bs!))).toEqual({ ok: true, value: 7n });
   });
 });
 

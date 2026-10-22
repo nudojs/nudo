@@ -14,7 +14,12 @@ import type { File, Statement, VariableDeclaration } from "@babel/types";
 export type TypeBinding = { name: string; type: string };
 
 /**
- * 顶层 `|` 切分；字符串内不切。与 parseCaseArgExpr 一致：引号内 `\` 不是转义。
+ * 顶层 `|` 切分；字符串内不切。
+ *
+ * ★ 族 28 接线（Bug 840）：与 parseCaseArgExpr 的**新**字面量文法一致 ——
+ * 引号内 `\` **是**转义（`\"` 不闭合字符串）。
+ * 旧口径（`\` 不当转义）会让 `"a\" | number` 在引号处提前闭合 ⇒
+ * 把**字符串内**的 `|` 误切成两个成员（切出来的成员随后解析失败）。
  */
 function splitTopLevelUnion(expr: string): string[] {
   const members: string[] = [];
@@ -24,6 +29,11 @@ function splitTopLevelUnion(expr: string): string[] {
   for (let i = 0; i < expr.length; i++) {
     const c = expr[i]!;
     if (inString) {
+      // 转义感知：`\` + 任意字符 ⇒ 整体跳过（不闭合字符串）
+      if (c === "\\") {
+        i++;
+        continue;
+      }
       if (c === inString) inString = null;
       continue;
     }

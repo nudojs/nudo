@@ -1,5 +1,9 @@
-import type { Comment, Node } from "@babel/types";
-import { parseEnvPayload, parseMockModulePayload } from "@nudojs/core";
+import type { Comment, File, Node } from "@babel/types";
+import {
+  listFnDirectiveScopes,
+  parseEnvPayload,
+  parseMockModulePayload,
+} from "@nudojs/core";
 import { DIAG } from "@nudojs/core/internal";
 import {
   emitDirectiveDiag,
@@ -41,6 +45,41 @@ function warnMisplacedFileTags(blockText: string): void {
 }
 
 /**
+ * 行注释形态的文件级指令**位置错位**（落在函数体内）→ nudo:directive-syntax。
+ * 与块注释形态对称：块形态被忽略且告警，行形态此前被**静默提升**成整文件作用域
+ * （Bug 847）——现在同样忽略 + 告警。
+ */
+function warnMisplacedFileTagLine(tag: "env" | "mock-module"): void {
+  emitDirectiveDiag({
+    code: DIAG.directiveSyntax,
+    message:
+      tag === "env"
+        ? `@nudo:env is a file-level directive — use '/// @nudo:env node' at the top of the file (line comment inside a function body is ignored)`
+        : `@nudo:mock-module is a file-level directive — use '/// @nudo:mock-module "fs" from "./mock-fs.js"' at the top of the file (line comment inside a function body is ignored)`,
+  });
+}
+
+/**
+ * 函数体区间（顶层判定用）：文件级指令**不得**落在任何函数体内——函数体里的
+ * `/// @nudo:env node` 不是「本函数用 node env」，此前被**静默提升**成整文件 env
+ * （Bug 847）。顶层位置（文件头 / `export` 行 / 语句之间）一律放行。
+ *
+ * 与 core 文本路径（`directive-scan.ts` 的 `functionBodyRanges`）同口径。
+ */
+function functionBodyRanges(ast: Node): [number, number][] {
+  if (ast.type !== "File") return [];
+  return listFnDirectiveScopes(ast as File).map((scope) => [
+    scope.node.start ?? 0,
+    scope.node.end ?? 0,
+  ]);
+}
+
+/** 偏移是否落在某个函数体内 */
+function inFunctionBody(ranges: [number, number][], offset: number): boolean {
+  return ranges.some(([s, e]) => offset >= s && offset < e);
+}
+
+/**
  * 从 AST 抽文件级指令（`@nudo:env` / `@nudo:mock-module`，只认行注释）。
  *
  * `diags`：调用方自备的诊断累积数组——JSDoc/块注释内错位的文件级指令族
@@ -61,6 +100,10 @@ function collectFileDirectives(ast: Node): FileDirective[] {
   if (ast.type !== "File") return results;
 
   const comments: readonly Comment[] = (ast as any).comments ?? [];
+  // Bug 847：文件级指令的**位置**闸门——行注释形态不得落在**函数体内**。
+  // 此前只看文本不看位置 ⇒ 函数体里的 `/// @nudo:env node` 被**静默提升**成
+  // 整文件 env（零诊断）；现在不提升 + 告警。
+  const fnRanges = functionBodyRanges(ast);
   for (const comment of comments) {
     if (comment.type === "CommentBlock") {
       warnMisplacedFileTags(comment.value);
@@ -68,6 +111,14 @@ function collectFileDirectives(ast: Node): FileDirective[] {
     }
     if (comment.type !== "CommentLine") continue;
     const text = comment.value;
+
+    const misplaced =
+      typeof comment.start === "number" && inFunctionBody(fnRanges, comment.start);
+    if (misplaced) {
+      if (MOCK_MODULE_REGEX.test(text)) warnMisplacedFileTagLine("mock-module");
+      else if (ENV_REGEX.test(text)) warnMisplacedFileTagLine("env");
+      continue;
+    }
 
     const mockModuleMatch = text.match(MOCK_MODULE_REGEX);
     if (mockModuleMatch) {

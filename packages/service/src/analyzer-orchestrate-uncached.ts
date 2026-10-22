@@ -23,7 +23,13 @@ import {
   runWithEvalMissingSlot,
   fnFingerprints,
 } from "@nudojs/core/internal";
-import { parse, extractDirectives, extractFileDirectives, type DirectiveDiag } from "@nudojs/parser";
+import {
+  parse,
+  extractDirectives,
+  extractFileDirectives,
+  runWithDirectiveDiags,
+  type DirectiveDiag,
+} from "@nudojs/parser";
 import {
   collapseAbsLits,
   isLeakedCallRecord,
@@ -164,14 +170,29 @@ export function analyzeFileUncachedInner(
   // 告警：块注释形态被抽取器忽略（只认行注释），不再静默（复用 nudo:directive-syntax）
   const fileDirectives = extractFileDirectives(ast, { diags: dirDiags });
   const diagnostics: Diagnostic[] = [];
-  for (const d of dirDiags) {
-    diagnostics.push({
-      range: { start: { line: 0, column: 0 }, end: { line: 0, column: 0 } },
-      severity: "warning",
-      message: d.message,
-      code: d.code,
-    });
-  }
+  // ★ 族 28 接线：指令诊断**增量**转成 analysis diagnostics。
+  // 为什么要增量：mock 载荷的解析（`mockDirectivesToAbsSeeds`）在**后面**才跑，
+  // 且它会往同一条 `dirDiags` 通道里加诊断（此前 `nudo test` 面**不挂 sink**
+  // ⇒ parser 侧的点名诊断只出现在 `nudo check` 面）。
+  let dirDiagCursor = 0;
+  const flushDirDiags = (): void => {
+    for (; dirDiagCursor < dirDiags.length; dirDiagCursor++) {
+      const d = dirDiags[dirDiagCursor]!;
+      diagnostics.push({
+        // ★ 族 28 接线（Bug 848）：parser 侧诊断现在带**位置**
+        // （`DirectiveDiag.at`）⇒ 不再一律落到 `0:0`
+        // （此前同文案的诊断在不同位置**塌缩成一条**且位置全丢）。
+        range: {
+          start: { line: d.at?.line ?? 0, column: d.at?.column ?? 0 },
+          end: { line: d.at?.line ?? 0, column: d.at?.column ?? 0 },
+        },
+        severity: "warning",
+        message: d.message,
+        code: d.code,
+      });
+    }
+  };
+  flushDirDiags();
   const bindings = new Map<string, BindingInfo>();
   const nodeAbsMap = new Map<Node, Abs>();
   const functionResults: FunctionAnalysis[] = [];
@@ -341,10 +362,16 @@ export function analyzeFileUncachedInner(
     }
   };
 
-  const seeds = mockDirectivesToAbsSeeds(functions, {
-    fromFile: filePath || undefined,
-    ...(loadModule ? { loadModule } : {}),
-  });
+  // ★ 族 28 接线：mock 载荷的解析挂**指令诊断 sink**
+  // ⇒ parser 侧的点名诊断（如「Unrecognized property in object literal: ok」）
+  // 在 `nudo test` 面也上屏（此前只有 `nudo check` 的 D1 段挂了 sink）。
+  const seeds = runWithDirectiveDiags(dirDiags, () =>
+    mockDirectivesToAbsSeeds(functions, {
+      fromFile: filePath || undefined,
+      ...(loadModule ? { loadModule } : {}),
+    }),
+  );
+  flushDirDiags();
   // @nudo:mock name from "path" 解析失败 → 明确诊断（缺文件/缺绑定/求值失败），不静默丢弃
   // 内联表达式解析失败 → nudo:mock-invalid
   for (const fe of seeds.fromErrors ?? []) {

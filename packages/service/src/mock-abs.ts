@@ -558,7 +558,11 @@ export function mockDirectivesToAbsSeeds(
         putFn(d.name, {
           params: d.arrowFn.params,
           body,
-          async: false,
+          // ★ 族 28 接线（Bug 857）：mock 载荷的 `async` 语义此前被丢
+          // （硬编码 `false`）⇒ `async (x) => …` 的 mock 返**同步**值 ⇒
+          // `f(1).then(…)` 报「then missing on number receiver」（error 级假红）。
+          // ⇒ 透传 parser 侧已扫出的 `async` 标志（`MockDirective.arrowFn.async?`）。
+          async: d.arrowFn.async === true,
           fingerprint: `fake=${d.arrowFn.params.join(",")}:${astContentKey(body)}`,
           // Bug 482：内联 mock 也要带可构造性 facet（与 `from` 形态同口径）
           ctor: inlineCtorFacet(d.expression),

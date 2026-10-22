@@ -31,6 +31,8 @@ import {
   memberPropertyKey,
   classMemberKeyName,
   classInstanceMethods,
+  getClassMembers,
+  methodFunctionNode,
   exportSpecifierLocalName,
   exportSpecifierExportedName,
   unwrapDefaultExport,
@@ -210,6 +212,28 @@ export function collectTopLevelFunctions(
   const exportedClassNames = new Set<string>();
   const collectClassMethods = (cname: string, decl: ClassDeclaration, stmt: Node): void => {
     for (const { name: keyName, node: methodNode } of classInstanceMethods(decl)) {
+      results.push({
+        name: `${cname}.${keyName}`,
+        node: methodNode,
+        stmt,
+        noDeclaration: true,
+      });
+    }
+    // ★ 族 28 接线（Bug 856）：**静态方法**与实例方法同为入口可见
+    // （core `scan-top-functions.ts` 的 `collectClassMethods` 就是同口径：
+    //  静态 + 实例都收）。此前 service 侧只收实例方法（parser 的
+    //  `classInstanceMethods` 刻意跳过 static —— 那是 parser 的**契约**，
+    //  不是缺陷）⇒ `nudo test` / `nudo health` / `nudo contract` 的函数
+    // 普查**看不见**静态方法（`nudo check` 的签名面却看得见 ⇒ 两面矛盾）。
+    // ⇒ 复用 parser **已导出**的 `getClassMembers` / `classMemberKeyName` /
+    //   `methodFunctionNode`（**parser 导出面零新增** ✓）。
+    for (const member of getClassMembers(decl)) {
+      const m = member as { static?: boolean; kind?: string };
+      if (m.static !== true) continue;
+      if (m.kind !== undefined && m.kind !== "method") continue; // skip ctor / get / set
+      const keyName = classMemberKeyName(member);
+      const methodNode = methodFunctionNode(member);
+      if (typeof keyName !== "string" || !methodNode) continue;
       results.push({
         name: `${cname}.${keyName}`,
         node: methodNode,
