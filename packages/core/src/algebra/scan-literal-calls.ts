@@ -3,38 +3,47 @@
  * alias(lit) / obj.fn(lit) / require 导入调用点，检查实参 vs 前置约束
  * （nudo:constraint-violated 执法面）＋ HOF 实参形状与静态实参求值辅助。
  * 自 scan.ts 机械拆出；语义未改（scan.ts re-export 保持对外形状不变）。
+ *
+ * ── 族 11 / S0：本文件已重排为**薄壳** ─────────────────────────────────────
+ *
+ * 职责只剩「**遍历 + 编排**」：AST 走查、契约绑定（effectiveInterface →
+ * 形参位索引）、调用点分发（本地 / 跨文件 / 转发）、HOF 实参形状检查。
+ * 三块**纯计算**的职责已抽到同包的内部模块（**只在 core 包内相对 import**，
+ * **零新增 core 公开导出** —— `src/index.ts` / `algebra/index.ts` /
+ * `algebra/exec/index.ts` / `internal.ts` 四张冻结面表一行不动）：
+ *
+ *   - `scan/literal-args.ts`   实参抽取：`isInformativeArg` / `evalArgAbs` /
+ *                               `parseCallArgs`（快路径分派表：Bug 430 在此）
+ *                               + `absUnknown` / `restArgAbs` / `arrayLengthOf`
+ *                               + `defaultArgAbss`（Bug 444 的默认值实参）
+ *   - `scan/literal-preds.ts`  字面量判定：`isExactUndef` / `nullishKindOf` /
+ *                               `predEqLiteral` / `predEqNullish` /
+ *                               `judgeLiteralPred`
+ *   - `scan/literal-shapes.ts` 结构执法：`checkReqs` / `checkShapeAgainstAbs` /
+ *                               `checkFieldConstraint` / `checkShapeReqs`
+ *
+ * **共享 ctx**：`LiteralScanCtx`（`scan/literal-args.ts` 导出）——
+ * `out` / `knownFns` / `opts` / `source` / `file` / `varAbs` / `resolve`。
+ * 三个内部模块的函数签名与本文件的 ctx 形状写在
+ * `packages/core/src/algebra/scan/*.ts` 的**文件头注释**里（族 11 共享契约）。
  */
 
 import { parseSource as parse } from "./parse-source.ts";
-import type { Node } from "@babel/types";
-import { freeIdentifiers } from "./exec/body-fn.ts";
-import { evalExprAbs } from "./exec/run.ts";
 import type { RefineEntry } from "./refine.ts";
-import {
-  instantiateConstraint,
-  isIntFlag,
-  type NudoConstraint,
-  type NudoField,
-} from "./constraint.ts";
+import { instantiateConstraint } from "./constraint.ts";
 import {
   effectiveInterface,
-  formatConstraint,
   type EffectiveInterface,
   type EffectiveInterfaceOpts,
 } from "./interface.ts";
-import { literalMeetsConstraint } from "./domain-membership.ts";
 import { generalizeFromAst, type PolyFn } from "./generalize.ts";
 import { locateContractParam, type FormalParam } from "./param-surface.ts";
-import { numLit, litValue, anyAbs, absLit, confJoin } from "./abs.ts";
-import type { Abs, Confidence } from "./abs.ts";
-import type { LiteralValue } from "./term.ts";
+import type { Abs } from "./abs.ts";
 import { hashSource } from "./hash-source.ts";
 import type { Phi, Pred } from "./pred.ts";
-import { predToString } from "./pred.ts";
 import { formatAbs, formatShape } from "./format.ts";
 import type { CheckIssue } from "./check-report.ts";
 import { getFnImpl } from "./abs-fn.ts";
-import { getSlot } from "./objects.ts";
 import {
   collectCallResolvers,
   collectForwarders,
@@ -42,10 +51,23 @@ import {
   type ExternalFnRef,
 } from "./scan-call-graph.ts";
 import { DIAG } from "./diag-codes.ts";
+import {
+  absUnknown,
+  defaultArgAbss,
+  evalArgAbs,
+  isInformativeArg,
+  parseCallArgs,
+  type LiteralScanCtx,
+} from "./scan/literal-args.ts";
+import { checkReqs, checkShapeReqs } from "./scan/literal-shapes.ts";
+
+/** 静态实参求值辅助（历史对外形状：`scan.ts` re-export 保持不变） */
+export { absUnknown };
+
 /**
  * HOF 实参是否满足目标 fn 形状。
  * 自定义放宽比较：JS 允许多余实参（src.params.length >= tgt.params.length）。
- * 不直接喂 leqAbs（arity 严格相等对 JS 太严）。
+ * 不直接喂 leqAbs(arity 严格相等对 JS 太严)。
  */
 function hofFnArgOk(src: Abs, tgt: Abs): boolean {
   if (src.shape.k !== "fn") return false;
@@ -55,94 +77,6 @@ function hofFnArgOk(src: Abs, tgt: Abs): boolean {
   if (src.shape.params.length < t.params.length) return false;
   // 有 returnType 槽时不要求 src 也有（弱信息可接受）
   return true;
-}
-
-
-// ---------------------------------------------------------------------------
-// 静态实参求值辅助（absUnknown / evalArgAbs）
-// ---------------------------------------------------------------------------
-
-export function absUnknown(): Abs {
-  return { shape: { k: "unknown" }, conf: "partial" };
-}
-
-/**
- * Bug 400：rest 形参的值 = 该位之后**全部实参**聚成的数组（不是第 i 个实参）。
- *
- * 形如 `sum(...nums)` 的 rest 形参吃的是「余下所有实参」⇒ 契约面
- * （`array(number().gt(0))`）要与**聚合值**比，而不是与首个实参比。聚合值用
- * **精确元组**（tuple）：元素逐个可判 ⇒ 元素契约逐元素查；conf 取元素里最差
- * 的那个（全 exact ⇒ exact）。
- */
-function restArgAbs(tail: Abs[]): Abs {
-  const conf = tail.reduce<Confidence>((c, a) => confJoin(c, a.conf), "exact");
-  return { shape: { k: "tuple", elements: tail }, conf };
-}
-
-/** 确定 undefined / null 字面量（term lit；区别于「无 lit」的 unknown） */
-function isExactUndef(a: Abs): boolean {
-  return (
-    a.term?.op === "lit" &&
-    ((a.term.value as unknown) === undefined || (a.term.value as unknown) === null)
-  );
-}
-
-/**
- * 实参的 nullish 身份（Bug 965）：`null` / `undefined` / 非 nullish。
- *
- * `isExactUndef` 把 null 与 undefined 合成一档（判「确定 undefined」）——
- * 判**值域**时必须分档：`lit(null)` 契约只收 null，`lit(undefined)` 契约
- * 只收 undefined，两者是不同的域。
- */
-function nullishKindOf(a: Abs): "null" | "undefined" | undefined {
-  if (a.term?.op !== "lit") return undefined;
-  if (a.term.value === null) return "null";
-  if (a.term.value === undefined) return "undefined";
-  return undefined;
-}
-
-/**
- * 数组实参的元素个数（Bug 922：`array(number()).min(3)` 的长度界）。
- *
- * tuple 形态带**逐元素**槽 ⇒ 长度可判；arr 形态只有 join 过的元素类型 ⇒
- * 长度不可判（undefined ⇒ 长度界不猜）。
- */
-function arrayLengthOf(a: Abs): number | undefined {
-  if (a.shape.k !== "tuple") return undefined;
-  return a.shape.elements.length;
-}
-
-/** 实参是否携带可执法信息（含确定 undefined；纯 unknown 不算） */
-function isInformativeArg(a: Abs | undefined | null): boolean {
-  // eval 执行态 args 可能有空洞（稀疏调用/可选实参）——fail-closed 当无信息
-  if (!a || typeof a !== "object") return false;
-  if (a.term?.op === "lit") return true;
-  return a.shape?.k !== "unknown" && a.shape !== undefined;
-}
-
-/** 静态求值实参节点 → Abs（标识符走绑定表；对象/数组字面量内的标识符也走绑定表） */
-function evalArgAbs(
-  node: Record<string, unknown>,
-  lookupVar?: (name: string) => Abs | undefined,
-): Abs | undefined {
-  if (node.type === "Identifier" && typeof node.name === "string" && lookupVar) {
-    return lookupVar(node.name);
-  }
-  try {
-    // B 表达式编译执行（fail-closed）；自由标识符
-    // 按绑定表注入（`{...base}` / `[x]` 等复合实参的标识符解析）
-    const free = freeIdentifiers(node as unknown as Node, []);
-    const bindings: Record<string, Abs> = {};
-    if (lookupVar) {
-      for (const name of free) {
-        const v = lookupVar(name);
-        if (v) bindings[name] = v;
-      }
-    }
-    return evalExprAbs(node as unknown as import("@babel/types").Expression, bindings);
-  } catch {
-    return undefined;
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -197,9 +131,6 @@ export function scanLiteralCalls(
     return list.shift();
   };
 
-  const flattenPred = (p: Pred): Pred[] =>
-    p.op === "and" ? p.args.flatMap(flattenPred) : p.op === "true" ? [] : [p];
-
   /**
    * effectiveInterface（§11 唯一读取口）调用侧收口：
    * - 同次扫描内按 (fn, fromFile, autoBind) 缓存——localNamedExports 走
@@ -219,20 +150,6 @@ export function scanLiteralCalls(
     const r = effectiveInterface(fnSource, fnName, eiOpts);
     eiCache.set(key, r);
     return r;
-  };
-
-  /** 解构/默认参契约名 → 实参字段路径投影（C4.1 平铺；#137 嵌套点路径逐段下钻） */
-  const projectArgPath = (arg: Abs, segments: string[]): Abs | undefined => {
-    let cur: Abs | undefined = arg;
-    for (const seg of segments) {
-      if (!cur) return undefined;
-      if (cur.shape.k === "brand") {
-        cur = cur.shape.shape as Abs;
-      }
-      if (cur.shape.k !== "obj") return undefined;
-      cur = getSlot(cur.shape.slots, seg)?.value;
-    }
-    return cur;
   };
 
   /** effectiveInterface → [paramIdx, RefineEntry, fieldPath?, rest?]（C4.1：解构契约带
@@ -287,808 +204,15 @@ export function scanLiteralCalls(
   // 蕴含源文件含 @nudo:contract/@nudo:contract，fn 级门恒开且必然已报——
   // 调用点级再报一次只会双报两种消息形态（此处历史上曾重复，已收口）。
 
-  /** eq(var, lit) / eq(lit, var) 的标量字面量端；非该形态 → undefined */
-  const predEqLiteral = (p: Pred): number | string | boolean | undefined => {
-    if (p.op !== "eq") return undefined;
-    const v =
-      p.a.op === "var" && p.b.op === "lit"
-        ? p.b.value
-        : p.b.op === "var" && p.a.op === "lit"
-          ? p.a.value
-          : undefined;
-    return typeof v === "number" || typeof v === "string" || typeof v === "boolean"
-      ? v
-      : undefined;
-  };
-
-  /**
-   * eq(var, lit null/undefined) 的 nullish 字面量端（Bug 965）；非该形态 → undefined。
-   *
-   * 用 tagged 形态返回：`undefined` 既是「字面量值 undefined」又是「非该形态」
-   * 的哨兵，裸值表达不了 ⇒ 装进对象里区分。
-   */
-  const predEqNullish = (p: Pred): { value: null | undefined } | undefined => {
-    if (p.op !== "eq") return undefined;
-    let lit: LiteralValue;
-    if (p.a.op === "var" && p.b.op === "lit") lit = p.b.value;
-    else if (p.b.op === "var" && p.a.op === "lit") lit = p.a.value;
-    else return undefined;
-    if (lit === null || lit === undefined) return { value: lit };
-    return undefined;
-  };
-
-  /**
-   * 字面量可判定的原子谓词 → true/false；不可判定（非字面量端 / 非
-   * number 值上的数值界）→ undefined。or 分支聚合用：任一 true 即过，
-   * 全可判定且全 false 才报，含 undefined 不猜。
-   *
-   * `argLen`：length 通道的实参长度（字符串字数 / 数组元素个数；不可判 ⇒
-   * undefined）——Bug 922 起长度界不再只对字符串求值。
-   */
-  const judgeLiteralPred = (
-    p: Pred,
-    lv: number | string | boolean,
-    argLen: number | undefined,
-  ): boolean | undefined => {
-    if (p.op === "eq") {
-      const v = predEqLiteral(p);
-      return v === undefined ? undefined : lv === v;
-    }
-    if (p.op !== "gt" && p.op !== "ge" && p.op !== "lt" && p.op !== "le") {
-      return undefined;
-    }
-    if (p.b.op !== "lit" || typeof p.b.value !== "number") return undefined;
-    const n = p.b.value;
-    if (p.a.op === "app" && p.a.fn === "length") {
-      if (argLen === undefined) return undefined;
-      if (p.op === "gt") return argLen > n;
-      if (p.op === "ge") return argLen >= n;
-      if (p.op === "lt") return argLen < n;
-      return argLen <= n;
-    }
-    if (typeof lv !== "number") return undefined;
-    if (p.op === "gt") return lv > n;
-    if (p.op === "ge") return lv >= n;
-    if (p.op === "lt") return lv < n;
-    return lv <= n;
-  };
-
-  const checkReqs = (
-    displayName: string,
-    reqs: Array<
-      [
-        number,
-        import("./pred.ts").Pred,
-        string[] | undefined,
-        string | undefined,
-        boolean | undefined,
-      ]
-    >,
-    paramNames: string[],
-    absArgs: Abs[],
-    /** target 参下标 → 实参下标；缺省恒等 */
-    argIndexOf: (reqIdx: number) => number | undefined,
-    loc?: { start: { line: number; column: number } },
-  ): void => {
-    for (const [idx, pred, fieldPath, contractParam, rest] of reqs) {
-      const argIdx = argIndexOf(idx);
-      if (argIdx === undefined) continue;
-      let arg = absArgs[argIdx];
-      if (!arg) continue;
-      // Bug 400：rest 形参 → 值 = 该位之后**全部实参**聚成的数组（不是第 i 个）
-      if (rest) arg = restArgAbs(absArgs.slice(argIdx));
-      // C4.1：解构契约展示名优先用契约面（x），不回落到求值占位 _p0
-      const paramName = contractParam || paramNames[idx] || `arg${idx}`;
-      // C4.1：解构契约字段投影后再判 pred；缺字段不能静默跳过（FN）
-      // #137：投影走路径（嵌套 'card.grade' 逐段下钻），展示用点连接串
-      if (fieldPath) {
-        const projected = projectArgPath(arg, fieldPath);
-        if (!projected) {
-          const k = arg.shape.k;
-          // unknown/any 无法证明缺字段；其余已知形态（含 obj 缺槽）→ 违例
-          if (k !== "unknown" && k !== "any") {
-            const field = fieldPath.join(".");
-            out.push({
-              severity: "error",
-              code: DIAG.constraintViolated,
-              message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-              actual: formatAbs(arg),
-              expected: `missing field ${field}`,
-              suggestion: `add the missing field ${field}`,
-              fn: displayName,
-              line: loc?.start.line,
-              column: loc?.start.column,
-            });
-          }
-          continue;
-        }
-        arg = projected;
-      }
-      const lvR = litValue(arg);
-      const lv = lvR.ok ? lvR.value : undefined;
-      const isStr = arg.shape.k === "prim" && (arg.shape as { type: string }).type === "string";
-      // length 通道：字符串取字面量长度；**数组**取元素个数（Bug 922：
-      // `array(number()).min(3)` 的长度界此前只在字符串上求值 ⇒ 数组实参的
-      // 长度界整条被跳过 ⇒ 门禁假绿）。
-      const argLen = typeof lv === "string" ? lv.length : arrayLengthOf(arg);
-      // 确定 undefined：不进 positive/nonEmpty 等 typed 域（any 仍放行）
-      const argIsUndef = isExactUndef(arg);
-      for (const p of flattenPred(pred)) {
-        // typeof 约束（string() / number() / boolean() 裸 prim）
-        // 只检查挂在参数自身上的 typeof；字段访问（u.name）交给 shape 路径
-        if (p.op === "typeof") {
-          if (p.t.op !== "var") continue;
-          const expected = p.type;
-          const actualPrim =
-            arg.shape.k === "prim"
-              ? (arg.shape as { type: string }).type
-              : arg.shape.k === "obj" || arg.shape.k === "arr" || arg.shape.k === "tuple"
-                ? "object"
-                : arg.shape.k === "fn"
-                  ? "function"
-                  : argIsUndef
-                    ? "undefined"
-                    : undefined;
-          // 只在有确定 prim 信息且不匹配时拦截；unknown/any 不猜
-          if (actualPrim !== undefined && actualPrim !== expected) {
-            out.push({
-              severity: "error",
-              code: DIAG.constraintViolated,
-              message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-              actual: formatAbs(arg),
-              expected: `typeof ${paramName} = "${expected}"`,
-              suggestion: `use a value of type ${expected}, or relax the refine on ${paramName}`,
-              fn: displayName,
-              line: loc?.start.line,
-              column: loc?.start.column,
-            });
-          }
-          continue;
-        }
-        // nullish 字面量域（lit(null) / lit(undefined)）：值域只有那**一个**
-        // nullish 值（Bug 965）。此前 eq 通道只认 number/string/boolean ⇒
-        // lit(null) / lit(undefined) 契约整条不执法（假绿：f(2) 被放行），
-        // 而 dts / zod / standard 三面都把这条契约当真 ⇒ 四面互相矛盾。
-        // 排在「确定 undefined」分支**之前**：null 与 undefined 是两个域，
-        // 实参恰为该 nullish 值时**满足**契约（不该报违例）。
-        if (p.op === "eq") {
-          const nv = predEqNullish(p);
-          if (nv !== undefined) {
-            const want = nv.value === null ? "null" : "undefined";
-            if (nullishKindOf(arg) !== want) {
-              out.push({
-                severity: "error",
-                code: DIAG.constraintViolated,
-                message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-                actual: formatAbs(arg),
-                expected: predToString(p),
-                suggestion: `use a value satisfying ${predToString(p)}, or relax the precondition on ${paramName}`,
-                fn: displayName,
-                line: loc?.start.line,
-                column: loc?.start.column,
-              });
-            }
-            continue;
-          }
-        }
-        // 确定 undefined 对数值界 / eq / or 同样不满足（undefined ⊭ positive）
-        if (argIsUndef) {
-          if (
-            p.op === "gt" ||
-            p.op === "ge" ||
-            p.op === "lt" ||
-            p.op === "le" ||
-            p.op === "eq" ||
-            p.op === "or"
-          ) {
-            out.push({
-              severity: "error",
-              code: DIAG.constraintViolated,
-              message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-              actual: formatAbs(arg),
-              expected: predToString(p),
-              suggestion: `use a value satisfying ${predToString(p)}, or relax the precondition on ${paramName}`,
-              fn: displayName,
-              line: loc?.start.line,
-              column: loc?.start.column,
-            });
-          }
-          continue;
-        }
-        // length 界通道（string().min/max 与 array(...).min/max）：只看长度，
-        // 与标量字面量无关 ⇒ 必须排在「lv 不可判定」的短路**之前**（数组实参
-        // 没有标量字面量，但长度可判——Bug 922）。
-        if (
-          (p.op === "gt" || p.op === "ge" || p.op === "lt" || p.op === "le") &&
-          p.b.op === "lit" &&
-          typeof p.b.value === "number" &&
-          p.a.op === "app" &&
-          p.a.fn === "length" &&
-          argLen !== undefined
-        ) {
-          const n = p.b.value;
-          const opSym = { gt: ">", ge: "≥", lt: "<", le: "≤" }[p.op];
-          let ok = true;
-          if (p.op === "gt") ok = argLen > n;
-          if (p.op === "ge") ok = argLen >= n;
-          if (p.op === "lt") ok = argLen < n;
-          if (p.op === "le") ok = argLen <= n;
-          if (!ok) {
-            out.push({
-              severity: "error",
-              code: DIAG.constraintViolated,
-              message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-              actual: formatAbs(arg),
-              expected: `length(${paramName}) ${opSym} ${n}`,
-              suggestion: `use a value whose length is ${opSym} ${n}, or relax the precondition on ${paramName}`,
-              fn: displayName,
-              line: loc?.start.line,
-              column: loc?.start.column,
-            });
-          }
-          continue;
-        }
-        if (lv === undefined) continue;
-        // eq / or 域（lit()/union() 契约实例化出的 eq/or 原子）：此前两个
-        // 消费分支都只认 typeof/gt/ge/lt/le，字面量/析取契约违例被静默
-        // 跳过——写了等于没写。可判定才报（宁缺勿滥）。
-        if (typeof lv === "number" || typeof lv === "string" || typeof lv === "boolean") {
-          if (p.op === "eq") {
-            const v = predEqLiteral(p);
-            if (v !== undefined && lv !== v) {
-              out.push({
-                severity: "error",
-                code: DIAG.constraintViolated,
-                message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-                actual: formatAbs(arg),
-                expected: predToString(p),
-                suggestion: `use a value satisfying ${predToString(p)}, or relax the precondition on ${paramName}`,
-                fn: displayName,
-                line: loc?.start.line,
-                column: loc?.start.column,
-              });
-            }
-            continue;
-          }
-          if (p.op === "or") {
-            let pass = false;
-            let unknown = false;
-            for (const q of p.args) {
-              const r = judgeLiteralPred(q, lv, argLen);
-              if (r === true) {
-                pass = true;
-                break;
-              }
-              if (r === undefined) unknown = true;
-            }
-            if (!pass && !unknown) {
-              out.push({
-                severity: "error",
-                code: DIAG.constraintViolated,
-                message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-                actual: formatAbs(arg),
-                expected: predToString(p),
-                suggestion: `use a value satisfying ${predToString(p)}, or relax the precondition on ${paramName}`,
-                fn: displayName,
-                line: loc?.start.line,
-                column: loc?.start.column,
-              });
-            }
-            continue;
-          }
-        }
-        if (
-          (p.op === "gt" || p.op === "ge" || p.op === "lt" || p.op === "le") &&
-          p.b.op === "lit" &&
-          typeof p.b.value === "number"
-        ) {
-          const n = p.b.value;
-          // length(t) 形式已在**上面的 length 通道**判完（字符串 / 数组）⇒
-          // 走到这里的是普通数值界。
-          // boolean/null 不进数值域（includes/every/some 返回 boolean 误当收窄）
-          if (typeof lv === "boolean" || lv === null) {
-            out.push({
-              severity: "error",
-              code: DIAG.constraintViolated,
-              message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-              actual: formatAbs(arg),
-              expected: predToString(p),
-              suggestion: `use a value satisfying ${predToString(p)}, or relax the precondition on ${paramName}`,
-              fn: displayName,
-              line: loc?.start.line,
-              column: loc?.start.column,
-            });
-            continue;
-          }
-          // 普通数值界
-          if (isStr || typeof lv !== "number") continue;
-          let ok = true;
-          if (p.op === "gt") ok = (lv as number) > n;
-          if (p.op === "ge") ok = (lv as number) >= n;
-          if (p.op === "lt") ok = (lv as number) < n;
-          if (p.op === "le") ok = (lv as number) <= n;
-          if (!ok) {
-            out.push({
-              severity: "error",
-              code: DIAG.constraintViolated,
-              message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-              actual: formatAbs(arg),
-              expected: predToString(p),
-              suggestion: `use a value satisfying ${predToString(p)}, or relax the precondition on ${paramName}`,
-              fn: displayName,
-              line: loc?.start.line,
-              column: loc?.start.column,
-            });
-          }
-        }
-      }
-    }
-  };
-
-  /**
-   * shape 约束：实参 object Abs 的每个字段 ⊭ 嵌套约束。
-   * 缺字段 / 类型不符 / 数值界违例 → nudo:constraint-violated。
-   */
-  const checkShapeAgainstAbs = (
-    displayName: string,
-    paramName: string,
-    constraint: NudoConstraint,
-    absArg: Abs,
-    path: string,
-    loc?: { start: { line: number; column: number } },
-  ): void => {
-    if (!constraint.fields) return;
-    // unknown 实参：无信息，不猜
-    if (absArg.shape.k === "unknown" && !absArg.term) return;
-
-    const slots =
-      absArg.shape.k === "obj"
-        ? (absArg.shape as { slots: Record<string, { value: Abs; optional?: boolean }> }).slots
-        : undefined;
-
-    if (!slots) {
-      // 有形状信息但不是 object。
-      // unknown/any 实参：无信息，不猜（与标量 pred 通道「any ≤ 任意目标」
-      // 同口径——check-recall-gold any-assign-to-number-ok；any 值上的
-      // shape 违例不可证，报 error 是假阳性，#76 缺口 B）
-      if (
-        absArg.shape.k !== "unknown" &&
-        absArg.shape.k !== "never" &&
-        absArg.shape.k !== "any"
-      ) {
-        out.push({
-          severity: "error",
-          code: DIAG.constraintViolated,
-          message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-          actual: formatAbs(absArg),
-          expected: `object shape at ${path}`,
-          suggestion: `use an object satisfying the ${path} shape constraint`,
-          fn: displayName,
-          line: loc?.start.line,
-          column: loc?.start.column,
-        });
-      }
-      return;
-    }
-
-    for (const [key, field] of Object.entries(constraint.fields) as Array<
-      [string, NudoField]
-    >) {
-      const slot = getSlot(slots, key);
-      const fieldPath = path === paramName ? `${paramName}.${key}` : `${path}.${key}`;
-      if (!slot) {
-        if (!field.optional && !field.constraint.isOptional) {
-          out.push({
-            severity: "error",
-            code: DIAG.constraintViolated,
-            message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-            actual: formatAbs(absArg),
-            expected: `missing field ${fieldPath}`,
-            suggestion: `add the missing field ${fieldPath}`,
-            fn: displayName,
-            line: loc?.start.line,
-            column: loc?.start.column,
-          });
-        }
-        continue;
-      }
-      checkFieldConstraint(displayName, paramName, field.constraint, slot.value, fieldPath, loc);
-    }
-  };
-
-  /** 单字段：prim 类型 + 数值界 + 嵌套 shape + array 元素 + int + 长度
-   *
-   *  Bug 400：`actualOf` = **报告用实参**（默认 = 被检字段本身）。rest 形参
-   *  的契约面是「该位之后全部实参聚成的数组」⇒ 元素违例要报**整个聚合值**
-   *  （`[1, -2]`），不是那个元素（`-2`）。 */
-  const checkFieldConstraint = (
-    displayName: string,
-    paramName: string,
-    constraint: NudoConstraint,
-    fieldAbs: Abs,
-    fieldPath: string,
-    loc?: { start: { line: number; column: number } },
-    actualOf?: Abs,
-  ): void => {
-    if (fieldAbs.shape.k === "unknown" && !fieldAbs.term) return;
-
-    // prim 类型
-    if (constraint.prim && fieldAbs.shape.k === "prim") {
-      const actualPrim = (fieldAbs.shape as { type: string }).type;
-      if (actualPrim !== constraint.prim) {
-        out.push({
-          severity: "error",
-          code: DIAG.constraintViolated,
-          message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-          actual: formatAbs(actualOf ?? fieldAbs),
-          expected: `typeof ${fieldPath} = "${constraint.prim}"`,
-          suggestion: `change ${fieldPath} to ${constraint.prim}`,
-          fn: displayName,
-          line: loc?.start.line,
-          column: loc?.start.column,
-        });
-        return;
-      }
-    }
-
-    // int：字面量必须是整数（builder 上 .int 是方法，标志须经 isIntFlag 读）
-    if (isIntFlag(constraint)) {
-      const ivR = litValue(fieldAbs);
-      const iv = ivR.ok ? ivR.value : undefined;
-      if (typeof iv === "number" && !Number.isInteger(iv)) {
-        out.push({
-          severity: "error",
-          code: DIAG.constraintViolated,
-          message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-          actual: formatAbs(actualOf ?? fieldAbs),
-          expected: `${fieldPath} is int`,
-          suggestion: `change ${fieldPath} to an integer`,
-          fn: displayName,
-          line: loc?.start.line,
-          column: loc?.start.column,
-        });
-      }
-    }
-
-    // 嵌套 shape
-    if (constraint.fields) {
-      checkShapeAgainstAbs(displayName, paramName, constraint, fieldAbs, fieldPath, loc);
-    }
-
-    // array 元素：逐元素检查
-    if (constraint.element) {
-      if (fieldAbs.shape.k === "arr") {
-        checkFieldConstraint(
-          displayName,
-          paramName,
-          constraint.element,
-          (fieldAbs.shape as { element: Abs }).element,
-          `${fieldPath}[]`,
-          loc,
-          actualOf,
-        );
-      } else if (fieldAbs.shape.k === "tuple") {
-        const els = (fieldAbs.shape as { elements: Abs[] }).elements;
-        els.forEach((el, i) => {
-          checkFieldConstraint(
-            displayName,
-            paramName,
-            constraint.element!,
-            el,
-            `${fieldPath}[${i}]`,
-            loc,
-            actualOf,
-          );
-        });
-      }
-    }
-
-    // 数值界 + 长度界（preds 里可能含 length(t) 比较）
-    const lvR = litValue(fieldAbs);
-    const lv = lvR.ok ? lvR.value : undefined;
-    const sv = typeof lv === "string" ? lv.length : undefined;
-    const isStr = fieldAbs.shape.k === "prim" && (fieldAbs.shape as { type: string }).type === "string";
-    for (const p of constraint.preds) {
-      const flat = p.op === "and" ? p.args : [p];
-      for (const atom of flat) {
-        if (
-          (atom.op === "gt" || atom.op === "ge" || atom.op === "lt" || atom.op === "le") &&
-          atom.b.op === "lit" &&
-          typeof atom.b.value === "number"
-        ) {
-          const n = atom.b.value;
-          const opSym = { gt: ">", ge: "≥", lt: "<", le: "≤" }[atom.op];
-          // length(t) 形式
-          if (atom.a.op === "app" && atom.a.fn === "length") {
-            if (sv === undefined) continue;
-            let ok = true;
-            if (atom.op === "gt") ok = sv > n;
-            if (atom.op === "ge") ok = sv >= n;
-            if (atom.op === "lt") ok = sv < n;
-            if (atom.op === "le") ok = sv <= n;
-            if (!ok) {
-              out.push({
-                severity: "error",
-                code: DIAG.constraintViolated,
-                message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-                actual: formatAbs(actualOf ?? fieldAbs),
-                expected: `length(${fieldPath}) ${opSym} ${n}`,
-                suggestion: `use a ${fieldPath} whose length is ${opSym} ${n}`,
-                fn: displayName,
-                line: loc?.start.line,
-                column: loc?.start.column,
-              });
-            }
-            continue;
-          }
-          // 普通数值界
-          if (lv === undefined || typeof lv !== "number" || isStr) continue;
-          let ok = true;
-          if (atom.op === "gt") ok = lv > n;
-          if (atom.op === "ge") ok = lv >= n;
-          if (atom.op === "lt") ok = lv < n;
-          if (atom.op === "le") ok = lv <= n;
-          if (!ok) {
-            out.push({
-              severity: "error",
-              code: DIAG.constraintViolated,
-              message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-              actual: formatAbs(actualOf ?? fieldAbs),
-              expected: `${fieldPath} ${opSym} ${n}`,
-              suggestion: `use a value satisfying ${fieldPath} ${opSym} ${n}, or relax the precondition on ${paramName}`,
-              fn: displayName,
-              line: loc?.start.line,
-              column: loc?.start.column,
-            });
-          }
-        }
-      }
-    }
-
-    // eq / union 域（lit()/union() 字段契约）：bounds 分支判不了——域隶属
-    // 判定（domain-membership 语义复用）；仅 eq/union 形态触发，防双报。
-    // litValue 哨兵：lit(undefined)/lit(null) 也是字面量证据，须看 term
-    // 后走完整域隶属（与 leq / domain-membership 同口径）。
-    const fieldLit = fieldAbs.term?.op === "lit" ? fieldAbs.term.value : undefined;
-    const fieldIsLit = fieldAbs.term?.op === "lit";
-    if (
-      fieldIsLit &&
-      (typeof fieldLit === "number" || typeof fieldLit === "string" || typeof fieldLit === "boolean" || fieldLit === null || fieldLit === undefined) &&
-      ((constraint.members?.length ?? 0) > 0 ||
-        constraint.preds.some((p) => p.op === "eq")) &&
-      !literalMeetsConstraint(fieldLit, constraint)
-    ) {
-      out.push({
-        severity: "error",
-        code: DIAG.constraintViolated,
-        message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-        actual: formatAbs(actualOf ?? fieldAbs),
-        expected: `${fieldPath} ∈ ${formatConstraint(constraint)}`,
-        suggestion: `use a ${fieldPath} satisfying ${formatConstraint(constraint)}`,
-        fn: displayName,
-        line: loc?.start.line,
-        column: loc?.start.column,
-      });
-    }
-  };
-
-  /** 对带 shape / array / int / prim 的 refine 做结构检查 */
-  const checkShapeReqs = (
-    displayName: string,
-    reqs: Array<[number, RefineEntry, string[] | undefined, boolean | undefined]>,
-    paramNames: string[],
-    absArgs: Abs[],
-    argIndexOf: (reqIdx: number) => number | undefined,
-    loc?: { start: { line: number; column: number } },
-  ): void => {
-    for (const [idx, entry, fieldPath, rest] of reqs) {
-      const c = entry.constraint;
-      if (!c.fields && !c.element && !isIntFlag(c) && !c.prim) continue;
-      const argIdx = argIndexOf(idx);
-      if (argIdx === undefined) continue;
-      let arg = absArgs[argIdx];
-      if (!arg) continue;
-      // Bug 400：rest 形参 → 值 = 该位之后**全部实参**聚成的数组（不是第 i 个）
-      let restAgg: Abs | undefined;
-      if (rest) {
-        restAgg = restArgAbs(absArgs.slice(argIdx));
-        arg = restAgg;
-      }
-      const paramName = entry.param || paramNames[idx] || `arg${idx}`;
-      // C4.1：解构契约 → 投影到字段再查；缺字段报 violation（与 checkReqs 同口径）
-      // #137：投影走路径（嵌套 'card.grade' 逐段下钻），展示用点连接串
-      if (fieldPath) {
-        const projected = projectArgPath(arg, fieldPath);
-        if (!projected) {
-          const k = arg.shape.k;
-          if (k !== "unknown" && k !== "any") {
-            const field = fieldPath.join(".");
-            out.push({
-              severity: "error",
-              code: DIAG.constraintViolated,
-              message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-              actual: formatAbs(arg),
-              expected: `missing field ${field}`,
-              suggestion: `add the missing field ${field}`,
-              fn: displayName,
-              line: loc?.start.line,
-              column: loc?.start.column,
-            });
-          }
-          continue;
-        }
-        arg = projected;
-      }
-      // 裸 prim 已由 checkReqs 的 typeof pred 覆盖；此处只处理 shape/array/int
-      // shape 字段
-      if (c.fields) {
-        checkShapeAgainstAbs(displayName, paramName, c, arg, paramName, loc);
-      }
-      // 顶层 array 元素
-      if (c.element) {
-        if (arg.shape.k === "arr") {
-          checkFieldConstraint(
-            displayName,
-            paramName,
-            c.element,
-            (arg.shape as { element: Abs }).element,
-            `${paramName}[]`,
-            loc,
-            restAgg,
-          );
-        } else if (arg.shape.k === "tuple") {
-          const els = (arg.shape as { elements: Abs[] }).elements;
-          els.forEach((el, i) => {
-            checkFieldConstraint(
-              displayName,
-              paramName,
-              c.element!,
-              el,
-              `${paramName}[${i}]`,
-              loc,
-              restAgg,
-            );
-          });
-        } else if (
-          isExactUndef(arg) ||
-          (arg.shape.k !== "unknown" && arg.shape.k !== "any")
-        ) {
-          out.push({
-            severity: "error",
-            code: DIAG.constraintViolated,
-            message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-            actual: formatAbs(arg),
-            expected: `array at ${paramName}`,
-            suggestion: `use a value satisfying the array constraint`,
-            fn: displayName,
-            line: loc?.start.line,
-            column: loc?.start.column,
-          });
-        }
-      }
-      // 顶层 int（builder 上 .int 是方法，标志须经 isIntFlag 读）
-      if (isIntFlag(c)) {
-        const ivR = litValue(arg);
-        const iv = ivR.ok ? ivR.value : undefined;
-        if (typeof iv === "number" && !Number.isInteger(iv)) {
-          out.push({
-            severity: "error",
-            code: DIAG.constraintViolated,
-            message: `${displayName}[${paramName}]: argument ⊭ precondition`,
-            actual: formatAbs(arg),
-            expected: `${paramName} is int`,
-            suggestion: `use an integer`,
-            fn: displayName,
-            line: loc?.start.line,
-            column: loc?.start.column,
-          });
-        }
-      }
-    }
-  };
-
-  const parseCallArgs = (
-    args: Array<Record<string, unknown>>,
-  ): { absArgs: Abs[]; hasInfo: boolean } => {
-    const absArgs: Abs[] = [];
-    let hasInfo = false;
-    const note = (abs: Abs | undefined): void => {
-      if (abs && isInformativeArg(abs)) hasInfo = true;
-    };
-    for (const a of args ?? []) {
-      if (a.type === "NumericLiteral" && typeof a.value === "number") {
-        absArgs.push(numLit(a.value));
-        hasInfo = true;
-      } else if (
-        a.type === "UnaryExpression" &&
-        (a as { operator?: string }).operator === "-" &&
-        (a as { argument?: Record<string, unknown> }).argument?.type === "NumericLiteral"
-      ) {
-        const num = (a as { argument: { value: number } }).argument;
-        absArgs.push(numLit(-num.value));
-        hasInfo = true;
-      } else if (a.type === "ObjectExpression") {
-        const abs = evalArgAbs(a, (n) => varAbs.get(n));
-        absArgs.push(abs ?? absUnknown());
-        note(abs);
-      } else if (a.type === "ArrayExpression") {
-        const abs = evalArgAbs(a, (n) => varAbs.get(n));
-        absArgs.push(abs ?? absUnknown());
-        note(abs);
-      } else if (a.type === "StringLiteral" && typeof a.value === "string") {
-        absArgs.push({
-          shape: { k: "prim", type: "string" },
-          term: { op: "lit", value: a.value },
-          conf: "exact",
-        });
-        hasInfo = true;
-      } else if (a.type === "NullLiteral") {
-        // `null` 字面量（Bug 965）：此前只抽 Numeric/String ⇒ `f(null)` **根本没有
-        // 实参 Abs** ⇒ 调用点前置条件整条不查（`lit(null)` / `lit(undefined)`
-        // 契约对 null 实参永远不报违例 = 假绿）。null 与 undefined 是**两个域**，
-        // 实参 Abs 必须能区分（`absLit` 用 `lit` term 承载这个区别）。
-        absArgs.push(absLit(null));
-        hasInfo = true;
-      } else if (a.type === "Identifier" && typeof a.name === "string") {
-        if (a.name === "undefined") {
-          // `undefined` 是**全局绑定**（不是局部变量）⇒ 实参确实可判 ⇒ 同样要抽
-          // （否则 `f(undefined)` 的实参是 unknown ⇒ 调用点检查整条被跳过）。
-          absArgs.push(absLit(undefined));
-          hasInfo = true;
-          continue;
-        }
-        const abs = varAbs.get(a.name);
-        absArgs.push(abs ?? absUnknown());
-        note(abs);
-      } else if (a.type === "MemberExpression") {
-        // 变量键查找（map[k]）→ any（any ≤ 任意目标；≠ unknown 不发明义务）
-        const computed = (a as { computed?: boolean }).computed === true;
-        const prop = (a as { property?: Record<string, unknown> }).property;
-        const litKey =
-          prop?.type === "StringLiteral" || prop?.type === "NumericLiteral";
-        if (computed && !litKey) {
-          absArgs.push(anyAbs);
-          hasInfo = true;
-          continue;
-        }
-        const abs = evalArgAbs(a, (n) => varAbs.get(n));
-        absArgs.push(abs ?? absUnknown());
-        note(abs);
-      } else if (a.type === "SpreadElement") {
-        // 字面量数组 spread（`f(...[1, -2])`）：静态展开元素（字面量快路径）。
-        // 非字面量（`f(...args)`）不猜——eval 通道实参回退。
-        const inner = (a as { argument?: Record<string, unknown> }).argument;
-        if (inner?.type === "ArrayExpression") {
-          for (const el of (inner.elements ?? []) as Array<Record<string, unknown> | null>) {
-            if (!el) continue;
-            if (el.type === "NumericLiteral" && typeof el.value === "number") {
-              absArgs.push(numLit(el.value));
-              hasInfo = true;
-            } else if (el.type === "StringLiteral" && typeof el.value === "string") {
-              absArgs.push({
-                shape: { k: "prim", type: "string" },
-                term: { op: "lit", value: el.value },
-                conf: "exact",
-              });
-              hasInfo = true;
-            } else {
-              const abs = evalArgAbs(el, (n) => varAbs.get(n));
-              absArgs.push(abs ?? absUnknown());
-              note(abs);
-            }
-          }
-        } else {
-          absArgs.push(absUnknown());
-        }
-      } else if (a.type === "CallExpression") {
-        // 内联调用（a.pop()/a.push(…)/xs.find(…)）：transpile 表达式位可能折
-        // $lit(undefined) 假精确，静态不猜——交给 eval 执行态实参回退。
-        absArgs.push(absUnknown());
-      } else {
-        absArgs.push(absUnknown());
-      }
-    }
-    return { absArgs, hasInfo };
+  /** 共享 ctx（族 11 S0 共享契约①）：显式传给三个内部模块 */
+  const ctx: LiteralScanCtx = {
+    out,
+    knownFns,
+    opts,
+    source,
+    file,
+    varAbs,
+    resolve,
   };
 
   const checkOneCall = (
@@ -1101,7 +225,7 @@ export function scanLiteralCalls(
     // 传参结构：实参字面量 Abs ≤ 形参必填 slot
     checkArgStructures(fnName, source, args, loc);
 
-    const parsed = parseCallArgs(args);
+    const parsed = parseCallArgs(ctx, args);
     let absArgs = parsed.absArgs;
     let hasInfo = parsed.hasInfo;
     // 值流回退：静态实参无信息（嵌套调用形参 / 复杂表达式）时按执行态实参执法。
@@ -1111,6 +235,16 @@ export function scanLiteralCalls(
       if (evalArgs && evalArgs.length > 0) {
         absArgs = evalArgs;
         hasInfo = evalArgs.some(isInformativeArg);
+      }
+    }
+    // Bug 444：零实参调用 → 用被调函数的**默认值形参**补齐实参位再执法。
+    // 此前 `absArgs.length === 0` 整条跳过 ⇒ 形参默认值本身违反自身契约时
+    // 「引擎自己算出了 -5 却不对账」（假绿）。默认值取不到 ⇒ 保持原早退。
+    if (absArgs.length === 0) {
+      const defaults = defaultArgAbss(fnName, source, file, (n) => varAbs.get(n));
+      if (defaults.length > 0) {
+        absArgs = defaults;
+        hasInfo = defaults.some(isInformativeArg);
       }
     }
     if (!hasInfo || absArgs.length === 0) return;
@@ -1135,8 +269,9 @@ export function scanLiteralCalls(
     // §3.3 执法分档：仅 handwritten 执法；generated 段是事实快照（drift 另报）
     if (ownEi?.source === "handwritten") {
       const ownFull = interfaceToIndexed(ownEi, paramNames, g?.formals);
-      checkShapeReqs(fnName, ownFull, paramNames, absArgs, (i) => i, loc);
+      checkShapeReqs(ctx, fnName, ownFull, paramNames, absArgs, (i) => i, loc);
       checkReqs(
+        ctx,
         fnName,
         ownFull.map(
           ([i, e, f, r]) =>
@@ -1167,8 +302,9 @@ export function scanLiteralCalls(
           wrapperArgOfTarget.set(targetIdx, wrapperIdx);
         });
         const mapArg = (targetIdx: number) => wrapperArgOfTarget.get(targetIdx);
-        checkShapeReqs(`${fnName}→${fwd.target}`, tFull, tParams, absArgs, mapArg, loc);
+        checkShapeReqs(ctx, `${fnName}→${fwd.target}`, tFull, tParams, absArgs, mapArg, loc);
         checkReqs(
+          ctx,
           `${fnName}→${fwd.target}`,
           tFull.map(
             ([i, e, f, r]) =>
@@ -1196,7 +332,7 @@ export function scanLiteralCalls(
     loc?: { start: { line: number; column: number } },
   ): void => {
     checkArgStructures(ext.fnName, ext.source, args, loc, displayName, ext.fromFile);
-    const parsedExt = parseCallArgs(args);
+    const parsedExt = parseCallArgs(ctx, args);
     let absArgs = parsedExt.absArgs;
     let hasInfo = parsedExt.hasInfo;
     if (!hasInfo) {
@@ -1204,6 +340,16 @@ export function scanLiteralCalls(
       if (evalArgs && evalArgs.length > 0) {
         absArgs = evalArgs;
         hasInfo = evalArgs.some(isInformativeArg);
+      }
+    }
+    // Bug 444（同上）：跨文件零实参调用 → 用被调方（ext.source）的默认值补齐。
+    // 跨文件时绑定表不可得（varAbs 是**调用方**的顶层绑定）⇒ 不做标识符解析，
+    // 只取标量字面量默认值（fail-closed）。
+    if (absArgs.length === 0) {
+      const defaults = defaultArgAbss(ext.fnName, ext.source, undefined, undefined);
+      if (defaults.length > 0) {
+        absArgs = defaults;
+        hasInfo = defaults.some(isInformativeArg);
       }
     }
     if (!hasInfo || absArgs.length === 0) return;
@@ -1237,8 +383,9 @@ export function scanLiteralCalls(
       });
       return;
     }
-    checkShapeReqs(displayName, full, paramNames, absArgs, (i) => i, loc);
+    checkShapeReqs(ctx, displayName, full, paramNames, absArgs, (i) => i, loc);
     checkReqs(
+      ctx,
       displayName,
       full.map(
         ([i, e, f, r]) =>

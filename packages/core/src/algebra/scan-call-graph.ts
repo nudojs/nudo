@@ -9,7 +9,7 @@ import { parseSource as parse } from "./parse-source.ts";
 import { foldRequireSpecArg } from "./exec/transpile.ts";
 import { resolveDepPath } from "./load-deps-fp.ts";
 import { guardLoadModule } from "./load-guard.ts";
-import { listTopFunctions } from "./scan-top-functions.ts";
+import { localNamedExports } from "./scan-named-exports.ts";
 
 // ---------------------------------------------------------------------------
 // 调用图收集（别名 / 对象属性 / require / 动态 import / 无条件转发）
@@ -56,6 +56,62 @@ function requireExportName(init: Record<string, unknown>): string | undefined {
   return undefined;
 }
 
+/**
+ * default 导出的**本地声明名**（Bug 442）：
+ * - `export default function calc(…)` / `export default class Calc` → "calc"
+ * - `export default calc`（标识符） → "calc"
+ * - `export { calc as default }` → "calc"
+ * - 匿名 default 导出（`export default function (x) {}` / `export default (x) => x`）
+ *   → undefined（调用方回落 "default"）
+ *
+ * 契约绑定面（interface.ts 的 binding）以**本地声明名**为键（`exports[fnName]`），
+ * 侧车写 `export const calc = fn(…)` 时只有本地名能绑上 ⇒ 跨文件 default
+ * 导入的调用点必须按本地名解析被调方，不能写死导出名 "default"。
+ */
+function defaultExportLocalName(modSrc: string): string | undefined {
+  let file: ReturnType<typeof parse>;
+  try {
+    file = parse(modSrc);
+  } catch {
+    return undefined;
+  }
+  for (const stmt of file.program.body) {
+    if (stmt.type === "ExportDefaultDeclaration") {
+      const d = stmt.declaration as
+        | { type?: string; id?: { name?: string }; name?: string }
+        | null
+        | undefined;
+      if (!d) continue;
+      if (
+        (d.type === "FunctionDeclaration" || d.type === "ClassDeclaration") &&
+        typeof d.id?.name === "string"
+      ) {
+        return d.id.name;
+      }
+      if (d.type === "Identifier" && typeof d.name === "string") return d.name;
+      continue;
+    }
+    if (stmt.type === "ExportNamedDeclaration" && !stmt.source) {
+      const specs = ((stmt as { specifiers?: unknown[] }).specifiers ?? []) as Array<
+        Record<string, unknown>
+      >;
+      for (const sp of specs) {
+        if (sp.type !== "ExportSpecifier") continue;
+        const exported = sp.exported as { type?: string; name?: string; value?: unknown } | undefined;
+        const local = sp.local as { type?: string; name?: string } | undefined;
+        const exportedName =
+          exported?.type === "Identifier"
+            ? exported.name
+            : exported && "value" in exported
+              ? String(exported.value ?? "")
+              : undefined;
+        if (exportedName === "default" && typeof local?.name === "string") return local.name;
+      }
+    }
+  }
+  return undefined;
+}
+
 /** `await import('./m')` / `import('./m')` → spec */
 function dynamicImportSpec(node: Record<string, unknown>): string | undefined {
   let n: Record<string, unknown> | undefined = node;
@@ -98,12 +154,20 @@ export function resolveExportSource(
     fromFile: modFromFile,
   });
   if (depth > 3) return here();
+  let file: ReturnType<typeof parse>;
   try {
-    if (listTopFunctions(modSrc).includes(fnName)) return here();
+    // Bug 910：短路判据必须是「本模块**导出**了这个名字」，不是「源码里
+    // 出现过这个名字」。旧判据用 listTopFunctions（含**未导出**的本地函数）
+    // ⇒ 中间模块里一个未导出的同名本地函数被误判成「该导出名由本模块定义」
+    // ⇒ 再导出链从不再往下跳 ⇒ 被再导出的函数的契约静默失效（假绿）。
+    // ESM 规则：未导出的本地绑定对模块导出表没有任何影响（星号导出只排除
+    // 本地**已导出**的名字）⇒ 判据改用导出名集合（localNamedExports）。
+    if (localNamedExports(modSrc).has(fnName)) return here();
+    file = parse(modSrc);
   } catch {
+    // 解析失败 → fail-closed（不跟进再导出链），与旧判据同口径
     return here();
   }
-  const file = parse(modSrc);
   let nextSpec: string | undefined;
   /** 跳到下一模块时要找的本地名（export { foo as bar } → foo） */
   let nextFnName = fnName;
@@ -277,10 +341,22 @@ export function collectCallResolvers(
                 );
               }
             } else if (sp.type === "ImportDefaultSpecifier") {
-              // 默认导出字面量名 "default"（与 interface/refine/generalize/abs-modules/check 同口径）
+              // Bug 442：绑定名不能写死 "default"——被调方的**契约绑定名**是
+              // default 导出的**本地声明名**（`export default function calc` →
+              // "calc"；`export default calc` / `export { calc as default }` →
+              // "calc"），侧车按该名绑定（interface.ts 的 binding 走
+              // exports[fnName]）。写死 "default" 时三条绑定分支全部落空
+              // ⇒ 具名侧车永远绑不上 ⇒ 跨文件 default 导入的调用点假绿。
+              // 匿名 default 导出（`export default function (x) {}`）取不到
+              // 本地名 ⇒ 回落 "default"（侧车须写 `export default fn(…)`）。
               const local = sp.local as { type?: string; name?: string } | undefined;
               if (local?.name) {
-                bindExternal(local.name, modSrc, "default", String(spec.value));
+                bindExternal(
+                  local.name,
+                  modSrc,
+                  defaultExportLocalName(modSrc) ?? "default",
+                  String(spec.value),
+                );
               }
             }
           }
@@ -367,6 +443,27 @@ export function collectCallResolvers(
             }
           }
         }
+        // Bug 441：本地类实例（const c = new C()）⇒ c.m ⇒ C.m。
+        // 此前 memberToFn 只收**对象字面量**成员 ⇒ `c.m(-1)` 这类成员调用
+        // 解析不出被调名 ⇒ 整条调用被跳过 ⇒ 类方法的侧车契约在任何调用点
+        // 都不执法（假绿）；而契约绑定面（interface.ts 的 C_m ↔ C.m）认得。
+        //
+        // 方法名取自 knownFns（listTopFunctions 的 `Class.method` 命名空间）：
+        // 与执法面的 knownFns 闸门（checkOneCall）**同源** ⇒ 不会映到执法面
+        // 认不出的名字；也不必再写一份类方法抽取（scan-top-functions.ts 的
+        // collectClassMethods）⇒ 无双实现、无求值时序依赖。
+        if (init.type === "NewExpression") {
+          const ctor = init.callee as { type?: string; name?: string } | undefined;
+          if (ctor?.type === "Identifier" && typeof ctor.name === "string") {
+            const prefix = `${ctor.name}.`;
+            for (const known of knownSet) {
+              if (!known.startsWith(prefix)) continue;
+              const method = known.slice(prefix.length);
+              if (!method) continue;
+              memberToFn.set(`${id.name}.${method}`, known);
+            }
+          }
+        }
       }
     }
   };
@@ -413,6 +510,9 @@ export function resolveCalleeFn(
           },
         };
       }
+      // 同文件成员：对象字面量成员（const api = { f }）与**本地类实例**
+      // （const c = new C() ⇒ c.m ⇒ C.m，memberToFn 在收集侧建好）——
+      // 两者都在 memberToFn 里按 `接收者.属性` 取到源码函数名（Bug 441）。
       const local = resolve.memberToFn.get(key);
       if (local) return local;
     }

@@ -202,15 +202,18 @@ export function assignmentChainName(expr: Node): string | null {
  *   module.exports = { applyToDefaults: function () {} }; // CJS object literal
  *
  * Naming: identifier bindings win (call sites dispatch on them, and the
- * evaluator's call records key on the callee identifier); a named function
- * expression's own id beats a member property name; a bare
- * `module.exports = fn` becomes "default" (ESM default-export analogue).
+ * evaluator's call records key on the callee identifier); for CJS member
+ * assignments the **export slot name wins over a named function expression's
+ * own id** (Bug 997 — the inner id is not the export slot: taking it left the
+ * sidecar contract unbound and the export symbol out of the signature table);
+ * a bare `module.exports = fn` becomes "default" (ESM default-export analogue).
  * Collected non-declaration entries carry `noDeclaration` — see FunctionAnalysis.
  *
- * `assignedName` carries the **export slot** when it differs from the census
- * name (named `export default function f` → slot "default"; a named function
- * expression in a CJS object literal → its object key): the entry evaluation
- * falls back to that slot when the name itself is not an export key.
+ * `assignedName` carries the **alternate name** when it differs from the census
+ * name (named `export default function f` → slot "default"; a CJS member
+ * assignment with a named function expression → the inner function id): the
+ * entry evaluation falls back to it when the census name itself is not
+ * resolvable.
  *
  * Member / class-method calls are recorded as `Class.method` / bare `method`
  * (see `$invoke` noteEvalCallRecord) and synthesize `call@` the same way.
@@ -227,7 +230,15 @@ export function collectTopLevelFunctions(
   const classDecls = new Map<string, { node: ClassDeclaration; stmt: Node }>();
   const exportedClassNames = new Set<string>();
   const collectClassMethods = (cname: string, decl: ClassDeclaration, stmt: Node): void => {
+    // Bug 437：静态方法与实例方法**同名**时普查名不得相同（core
+    // `scan-top-functions.ts` 的 `collectClassMethods` 同口径）—— 否则按名字
+    // 索引的表里两条记录互相顶替（形参取自一个、返回值取自另一个 ⇒ 自信的
+    // 错误值），且 dts 类体里出现重复成员声明。类方法名是 `Class.method`
+    // （方法体也按这个键登记）⇒ 不能给静态方法另起一个名字 ⇒ 同名时
+    // **只登记实例方法**。
+    const instanceKeys = new Set<string>();
     for (const { name: keyName, node: methodNode } of classInstanceMethods(decl)) {
+      instanceKeys.add(keyName);
       results.push({
         name: `${cname}.${keyName}`,
         node: methodNode,
@@ -250,6 +261,7 @@ export function collectTopLevelFunctions(
       const keyName = classMemberKeyName(member);
       const methodNode = methodFunctionNode(member);
       if (typeof keyName !== "string" || !methodNode) continue;
+      if (instanceKeys.has(keyName)) continue; // 同名 ⇒ 实例方法占位（见上）
       results.push({
         name: `${cname}.${keyName}`,
         node: methodNode,
@@ -370,12 +382,15 @@ export function collectTopLevelFunctions(
     if (expr?.type === "AssignmentExpression") {
       const fn = deepestAssignValue(expr);
       if (isFnExprValue(fn)) {
-        const name = namedFnExprId(fn) ?? assignmentChainName(expr) ?? "default";
-        // 命名函数表达式 id（_apply）与导出槽名（applyToDefaults）不同时
-        // 记录槽名——B run 的 CJS 命名空间按槽名导出（entry@ 求值回退用）
+        // Bug 997：**导出槽名优先** —— 具名函数表达式的内层 id（`function inner()`）
+        // 不是导出槽名；取内层 id 会让侧车契约整个不绑定（键查不到 ⇒ L1 门禁
+        // 假绿）+ 签名表里导出符号消失。槽名缺失（裸 `module.exports = fn`）才
+        // 回退内层 id。
         const chain = assignmentChainName(expr);
-        const assignedName =
-          namedFnExprId(fn) && chain && chain !== name ? chain : undefined;
+        const fnId = namedFnExprId(fn);
+        const name = chain ?? fnId ?? "default";
+        // 回退名：内层函数 id（槽名求值不中时按它自己再试一次）
+        const assignedName = fnId && fnId !== name ? fnId : undefined;
         results.push({ name, node: fn, stmt, noDeclaration: true, ...(assignedName ? { assignedName } : {}) });
       } else if (isModuleExportsTarget(expr.left as Node)) {
         // module.exports = { f: fn } —— 与 core listTopFunctions 的 CJS 分支同口径：
@@ -401,11 +416,12 @@ export function collectTopLevelFunctions(
             const value = prop.value as Node;
             if (!isFnExprValue(value)) continue;
             const keyName = objectMemberKeyName(prop);
-            // 命名函数表达式的自有 id 优先于槽名（core: r.id?.name ?? keyName）
+            // Bug 997：**导出槽名优先**（core: fallbackName ?? r.id?.name）——
+            // 命名函数表达式的自有 id 不夺走导出槽的身份
             const fnId = namedFnExprId(value);
-            const name = fnId ?? keyName;
+            const name = keyName ?? fnId;
             if (!name) continue;
-            const assignedName = fnId && keyName && keyName !== name ? keyName : undefined;
+            const assignedName = fnId && fnId !== name ? fnId : undefined;
             results.push({
               name,
               node: value,

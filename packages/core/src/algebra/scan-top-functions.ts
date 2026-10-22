@@ -25,6 +25,15 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
   const exportedClassNames = new Set<string>();
   const collectClassMethods = (cname: string, decl: Node) => {
     const body = (decl as { body?: { body?: unknown[] } }).body?.body ?? [];
+    // Bug 437：静态方法与实例方法**同名**时，普查名不得相同 —— 否则按名字索引
+    // 的签名表里两条记录互相顶替（形参取自一个、返回值取自另一个 ⇒ 自信的
+    // 错误值）。类方法名是 `Class.method`（`generalize` 的 env.fns 也按这个键
+    // 登记方法体）⇒ **不能**给静态方法另起一个名字（那样查不到方法体 ⇒
+    // 凭空造出 L2 入口 may-throw 假红）。⇒ 同名时**只登记实例方法**
+    // （静态方法在 `nudo check` 签名面不再重复出现；service 侧同口径）。
+    const instanceKeys = new Set<string>();
+    /** 源序的方法（key, isStatic）——静态与实例同名时只登记实例方法 */
+    const methods: Array<{ key: string; isStatic: boolean }> = [];
     for (const m of body) {
       const mem = m as {
         type?: string;
@@ -38,10 +47,16 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
         mem.type === "TSDeclareMethod";
       if (!isMethod) continue;
       if (mem.kind && mem.kind !== "method") continue; // skip ctor/get/set
-      // static 与实例方法同为入口可见（design §3.2）
       const keyName =
         mem.key?.type === "Identifier" ? mem.key.name : undefined;
-      if (keyName) names.push(`${cname}.${keyName}`);
+      if (!keyName) continue;
+      const isStatic = mem.static === true;
+      methods.push({ key: keyName, isStatic });
+      if (!isStatic) instanceKeys.add(keyName);
+    }
+    for (const m of methods) {
+      if (m.isStatic && instanceKeys.has(m.key)) continue; // 同名 ⇒ 实例方法占位
+      names.push(`${cname}.${m.key}`);
     }
   };
   for (const stmt of f.program.body) {
@@ -165,7 +180,10 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
       const r = init as { type?: string; id?: { name?: string } } | undefined;
       if (!r) return;
       if (r.type !== "FunctionExpression" && r.type !== "ArrowFunctionExpression") return;
-      const n = r.id?.name ?? fallbackName;
+      // Bug 997：**导出槽名优先** —— 具名函数表达式的内层 id（`function inner()`）
+      // 不是导出槽名；取内层 id 会让侧车契约整个不绑定（键查不到 ⇒ L1 门禁
+      // 假绿）+ 签名表里导出符号消失。槽名缺失（裸 `module.exports = fn`）才回退内层 id。
+      const n = fallbackName ?? r.id?.name;
       if (n && !names.includes(n)) names.push(n);
     };
 
@@ -176,6 +194,7 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
         for (const p of objLit.properties ?? []) {
           const prop2 = p as {
             type?: string;
+            kind?: string;
             key?: { type?: string; name?: string; value?: unknown };
             value?: unknown;
             params?: unknown[];
@@ -184,6 +203,9 @@ export function listTopFunctions(source: string, file?: ReturnType<typeof parse>
             id?: { name?: string };
           };
           if (prop2.type === "ObjectMethod" || prop2.type === "ClassMethod") {
+            // Bug 996：getter / setter **不是**可调用入口（`kind` 是 get/set）⇒
+            // 不进普查（否则凭空造出 `f() => unknown` + 假的 L2 entry-may-throw）。
+            if (prop2.kind && prop2.kind !== "method") continue;
             const keyName =
               prop2.key?.type === "Identifier"
                 ? prop2.key.name

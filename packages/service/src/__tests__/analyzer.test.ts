@@ -362,15 +362,18 @@ module.exports.pick = function (which) {
     expect(names).toContain("pick");
   });
 
-  it("prefers a named function expression id over the assigned property name", () => {
+  it("prefers the export slot name over a named function expression id (Bug 997)", () => {
     const source = `
 exports.applyToDefaults = function _apply(src, opts) {
   return src;
 };
 `;
     const result = analyzeFile("/test/cjs-named-fn.js", source);
-    const fn = result.functions.find((f) => f.name === "_apply");
+    // Bug 997：普查名取**导出槽名**（applyToDefaults）——内层函数 id（_apply）
+    // 不是导出槽名，取它会让侧车契约整个不绑定 + 签名表里导出符号消失。
+    const fn = result.functions.find((f) => f.name === "applyToDefaults");
     expect(fn).toBeDefined();
+    expect(result.functions.some((f) => f.name === "_apply")).toBe(false);
     expect(fn!.noDeclaration).toBe(true);
     // 入口无约束参数展示 any，不是 unknown（design-cli-semantics §2）；
     // CJS exports 赋值源经 求值引擎的 exports 命名空间建模（run.ts CJS 面）

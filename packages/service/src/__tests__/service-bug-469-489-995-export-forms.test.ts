@@ -102,9 +102,16 @@ describe("Bug 995：module.exports = { f: fn } 的成员函数进普查", () => 
     expect(censusNames("module.exports = { greet() { return 1; } };")).toEqual(["greet"]);
   });
 
-  it("命名函数表达式的自有 id 优先于槽名（与 core listTopFunctions 同口径）", () => {
-    expect(censusNames("module.exports = { greet: function named() { return 1; } };")).toEqual(["named"]);
-    expect(censusSlots("module.exports = { greet: function named() { return 1; } };")).toEqual(["named@greet"]);
+  it("导出槽名优先于命名函数表达式的自有 id（Bug 997，与 core listTopFunctions 同口径）", () => {
+    // Bug 997：普查名取**导出槽名**（greet）——内层函数 id（named）不是导出槽名，
+    // 取它会让侧车契约整个不绑定 + 签名表里导出符号消失。
+    expect(censusNames("module.exports = { greet: function named() { return 1; } };")).toEqual([
+      "greet",
+    ]);
+    // 回退名（entry@ 求值用）仍是内层函数 id
+    expect(censusSlots("module.exports = { greet: function named() { return 1; } };")).toEqual([
+      "greet@named",
+    ]);
   });
 
   it("getter / setter 不是可调用入口，不进普查", () => {
@@ -152,10 +159,10 @@ describe("普查口径与 core listTopFunctions 对齐（check 面不与 service
     });
   }
 
-  it("getter 形态：core 侧仍收（Bug 996 待收口），service 侧已不收——差异有界", () => {
-    // core scan-top-functions.ts 的 ObjectMethod 分支未按 kind 过滤
-    // （getter/setter 也被当函数）——core 侧修复属 14 分片外的越界项。
-    expect(listTopFunctions("module.exports = { get g() { return 1; } };")).toEqual(["g"]);
+  it("getter 形态：两面都不收（Bug 996 已收口）", () => {
+    // Bug 996：core scan-top-functions.ts 的 ObjectMethod 分支已按 kind 过滤
+    // （getter/setter 不是可调用入口）⇒ 两面口径一致（无差异）。
+    expect(listTopFunctions("module.exports = { get g() { return 1; } };")).toEqual([]);
     expect(censusNames("module.exports = { get g() { return 1; } };")).toEqual([]);
   });
 
